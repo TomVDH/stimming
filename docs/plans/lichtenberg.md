@@ -73,7 +73,7 @@ The first frame already holds three old burns: two cooled to black trees, one st
 2. Each candidate keeps a potential `φ = Σ (1 − R1 / r)` over the burn's cells, with `R1 = 0.5`. Adding a cell adds one term to every candidate: O(candidates).
 3. A new candidate sums over all cells once: O(cells).
 4. Pick one candidate with probability `Φ^η`, where `Φ` is φ normalized to the candidates' min and max. `η` runs from 1.6 (bushy) to 4 (sparse), random per burn inside the Branching band.
-5. Old char adds an attraction: `Φ *= 1 + 3 · exp(−d / 5)`, where `d` is the cell distance to old char (a distance field updated per burn).
+5. Old char adds an attraction: `Φ *= 1 + 2 · exp(−d / 4)`, where `d` is the cell distance to old char (a distance field updated per burn).
 6. The new cell records its parent. Walking the parent chain increments each ancestor's tip count, which sets the stroke width.
 7. Rate: `cells/s = 60 · (1 + 1.5 · held s) · voltage`, capped. A burn stops at 4,000 cells, on arc-over, or on release.
 
@@ -91,7 +91,7 @@ The first frame already holds three old burns: two cooled to black trees, one st
 
 MAX blending makes the stamp idempotent: the live burn re-stamps every frame, so widths can grow after a segment is born.
 
-**First frame.** Three seeded burns grow on the CPU at boot, stamp with aged heat, and draw once before `ready`.
+**First frame.** Three seeded burns (two on a portrait stage) grow on the CPU at boot, stamp with aged heat, and draw once before `ready`.
 
 ## Sound
 
@@ -135,9 +135,9 @@ Touch: hold to burn, tap to zap. The choice moves bottom left as a stepper, Clea
 
 **Produces:** the DBM grower, the stroke instancing, the char, heat and emission passes, bloom and the wood composite. Hold, release and tap work.
 
-- [ ] Grid, DBM growth, strokes, char and heat stamps, decay, emission, bloom, wood final pass.
-- [ ] Hold to grow, release to freeze, tap to zap. Bar v2 shell with the choice, Voltage and Clear wired.
-- [ ] First frame: three seeded burns.
+- [x] Grid, DBM growth, strokes, char and heat stamps, decay, emission, bloom, wood final pass.
+- [x] Hold to grow, release to freeze, tap to zap. Bar v2 shell with the choice, Voltage and Clear wired.
+- [x] First frame: three seeded burns.
 - [ ] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
 - [ ] Commit: `Lichtenberg burn: blockout, a DBM tree on a birch board`.
 

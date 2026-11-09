@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.12 0.012 60); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lichtenberg burn</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Lichtenberg burn: a high-voltage tree burns into a board. */
+:root { --stage: oklch(0.12 0.012 60); }
+.stage--lichtenberg canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--lichtenberg canvas.on { opacity: 1; }
+.stage--lichtenberg { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--lichtenberg canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Lichtenberg burn</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--lichtenberg" id="stage" tabindex="0" role="application" aria-label="A wooden board. Press and hold to send a high-voltage spark tree across it; release to freeze the burn.">
+      <p class="fail" hidden>Lichtenberg burn needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Lichtenberg burn</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+let voltage = 0.6, board = 'wood';
+// The handlers bind once the GL exists.
+const act = { board() {}, clear() {} };
+const ui = initPage({ id: 'lichtenberg', bar: {
+  choice: { label: 'Board', value: 'wood', options: [
+    { value: 'wood', label: 'Wood' }, { value: 'acrylic', label: 'Acrylic' },
+  ], onPick: v => act.board(v) },
+  slider: { label: 'Voltage', min: 0.2, max: 1, step: 0.01, value: voltage, onInput: v => { voltage = v; } },
+  actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
+  quality: true,
+  keys: [['hold', 'burn'], ['release', 'freeze'], ['click', 'zap'], ['space', 'burn']],
+} });
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- random ---------- */
+// Seeded random keeps the first frame the same on every load.
+function mulberry(a) {
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let rnd = mulberry(7193);
+
+/* ---------- board grid ---------- */
+// One cell is 4 CSS px; the grid takes the stage's aspect at boot and on Clear.
+const CELL = 4;
+let GW = 0, GH = 0;
+let old = null;      // 1 where an earlier burn charred the cell
+let dOld = null;     // cell distance to the nearest old char
+let owner = null;    // index of the live burn's cell, or -1
+let candAt = null;   // index of the candidate on this cell, or -1
+function grid() {
+  const r = stage.getBoundingClientRect();
+  GW = Math.max(40, Math.round(r.width / CELL));
+  GH = Math.max(40, Math.round(r.height / CELL));
+  const n = GW * GH;
+  old = new Uint8Array(n);
+  dOld = new Float32Array(n).fill(1e4);
+  owner = new Int32Array(n).fill(-1);
+  candAt = new Int32Array(n).fill(-1);
+}
+// A two-pass chamfer transform gives the distance to old char.
+function distance() {
+  const D = dOld, A = 1, B = Math.SQRT2;
+  for (let i = 0; i < D.length; i++) D[i] = old[i] ? 0 : 1e4;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const i = y * GW + x;
+    let d = D[i];
+    if (x > 0) d = Math.min(d, D[i - 1] + A);
+    if (y > 0) {
+      d = Math.min(d, D[i - GW] + A);
+      if (x > 0) d = Math.min(d, D[i - GW - 1] + B);
+      if (x < GW - 1) d = Math.min(d, D[i - GW + 1] + B);
+    }
+    D[i] = d;
+  }
+  for (let y = GH - 1; y >= 0; y--) for (let x = GW - 1; x >= 0; x--) {
+    const i = y * GW + x;
+    let d = D[i];
+    if (x < GW - 1) d = Math.min(d, D[i + 1] + A);
+    if (y < GH - 1) {
+      d = Math.min(d, D[i + GW] + A);
+      if (x < GW - 1) d = Math.min(d, D[i + GW + 1] + B);
+      if (x > 0) d = Math.min(d, D[i + GW - 1] + B);
+    }
+    D[i] = d;
+  }
+}
+
+/* ---------- segments ---------- */
+// One instance per segment: a.xy, b.xy, width, birth, flags, spare, parent id, child id.
+const STRIDE = 10, MAXSEG = 65536;
+const seg = new Float32Array(MAXSEG * STRIDE);
+let nSeg = 0;
+const BRANCH = 1, PATH = 2;
+// Width follows the tips a segment feeds, as current does.
+const widthOf = tips => Math.min(1.1, 0.2 + 0.12 * Math.log2(tips));
+
+/* ---------- DBM: dielectric breakdown, charge superposition ---------- */
+// Kim, Sewall and Lin (2007): each cell adds 1 - R1 / r to every candidate.
+const R1 = 0.5, MAXC = 4000;
+let burn = null;
+function newBurn(bx, by, eta) {
+  const gx = clamp(Math.floor(bx), 0, GW - 1), gy = clamp(Math.floor(by), 0, GH - 1);
+  burn = {
+    eta, seg0: nSeg, n: 0, done: false, end: '', t0: simT, held: 0,
+    cx: [], cy: [], par: [], tips: [], segOf: [], px: [], py: [],
+    kx: [], ky: [], kphi: [], kpar: [],
+    rx: gx, ry: gy, hot: 0,
+  };
+  addCell(gx, gy, -1, bx, by);
+  return burn;
+}
+function addCell(gx, gy, parent, fx, fy) {
+  const B = burn, k = B.n++;
+  const i = gy * GW + gx;
+  owner[i] = k;
+  B.cx.push(gx); B.cy.push(gy); B.par.push(parent); B.tips.push(1);
+  // Each cell sits off its grid centre, so lines never look ruled.
+  let px = fx ?? gx + 0.5 + (rnd() - 0.5) * 0.76, py = fy ?? gy + 0.5 + (rnd() - 0.5) * 0.76;
+  // Each step bends toward its parent's heading, so paths curve.
+  const gp = parent >= 0 ? B.par[parent] : -1;
+  if (fx == null && gp >= 0) {
+    px += (2 * B.px[parent] - B.px[gp] - px) * 0.35;
+    py += (2 * B.py[parent] - B.py[gp] - py) * 0.35;
+  }
+  B.px.push(px); B.py.push(py);
+  // A parent with a child already makes this a new branch.
+  let flags = 0;
+  if (parent >= 0 && B.tips[parent] > 1) flags |= BRANCH;
+  const s = nSeg < MAXSEG ? nSeg++ : -1;
+  B.segOf.push(s);
+  if (s >= 0) {
+    const o = s * STRIDE, ax = parent >= 0 ? B.px[parent] : px, ay = parent >= 0 ? B.py[parent] : py;
+    seg[o] = ax; seg[o + 1] = ay; seg[o + 2] = px; seg[o + 3] = py;
+    seg[o + 4] = widthOf(1); seg[o + 5] = simT; seg[o + 6] = flags; seg[o + 7] = 0;
+    seg[o + 8] = parent >= 0 ? B.segOf[parent] : s; seg[o + 9] = s;
+  }
+  // Every ancestor now feeds one more tip.
+  for (let p = parent; p >= 0; p = B.par[p]) {
+    const t = ++B.tips[p], sp = B.segOf[p];
+    if (sp >= 0) seg[sp * STRIDE + 4] = widthOf(t);
+  }
+  // The new charge raises every candidate's potential.
+  for (let c = 0; c < B.kx.length; c++) {
+    const dx = B.kx[c] - gx, dy = B.ky[c] - gy;
+    B.kphi[c] += 1 - R1 / Math.sqrt(dx * dx + dy * dy);
+  }
+  const ci = candAt[i];
+  if (ci >= 0) dropCand(ci);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const nx = gx + dx, ny = gy + dy;
+    if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+    const j = ny * GW + nx;
+    if (owner[j] >= 0 || candAt[j] >= 0) continue;
+    let phi = 0;
+    for (let q = 0; q < B.n; q++) {
+      const ex = B.cx[q] - nx, ey = B.cy[q] - ny;
+      phi += 1 - R1 / Math.sqrt(ex * ex + ey * ey);
+    }
+    candAt[j] = B.kx.length;
+    B.kx.push(nx); B.ky.push(ny); B.kphi.push(phi); B.kpar.push(k);
+  }
+}
+// Swap-remove keeps the candidate lists dense.
+function dropCand(c) {
+  const B = burn, last = B.kx.length - 1;
+  candAt[B.ky[c] * GW + B.kx[c]] = -1;
+  if (c !== last) {
+    B.kx[c] = B.kx[last]; B.ky[c] = B.ky[last]; B.kphi[c] = B.kphi[last]; B.kpar[c] = B.kpar[last];
+    candAt[B.ky[c] * GW + B.kx[c]] = c;
+  }
+  B.kx.pop(); B.ky.pop(); B.kphi.pop(); B.kpar.pop();
+}
+const wts = new Float64Array(1 << 16);
+// One growth step: pick a candidate by normalized potential to the power eta.
+function step() {
+  const B = burn, n = B.kx.length;
+  if (!n) return finish('stuck');
+  let lo = Infinity, hi = -Infinity;
+  for (let c = 0; c < n; c++) { const p = B.kphi[c]; if (p < lo) lo = p; if (p > hi) hi = p; }
+  const span = hi - lo || 1;
+  let sum = 0;
+  for (let c = 0; c < n; c++) {
+    // Old char conducts, so the tree reaches for it.
+    const d = dOld[B.ky[c] * GW + B.kx[c]];
+    const w = Math.pow((B.kphi[c] - lo) / span, B.eta) * (1 + 2 * Math.exp(-d / 4));
+    wts[c] = w;
+    sum += w;
+  }
+  let r = rnd() * sum, c = 0;
+  for (; c < n - 1; c++) { r -= wts[c]; if (r <= 0) break; }
+  const gx = B.kx[c], gy = B.ky[c], par = B.kpar[c];
+  addCell(gx, gy, par);
+  // The board edge and old char close the circuit.
+  const far = Math.hypot(gx - B.rx, gy - B.ry) > 4;
+  if (gx === 0 || gy === 0 || gx === GW - 1 || gy === GH - 1) return finish('edge');
+  if (far && dOld[gy * GW + gx] <= 1.5) return finish('arc');
+  if (B.n >= MAXC || nSeg >= MAXSEG) finish('full');
+}
+// The burn stops: its cells join the old char.
+function finish(why) {
+  const B = burn;
+  if (!B || B.done) return;
+  B.done = true;
+  B.end = why;
+  B.tEnd = simT;
+  if (why === 'edge' || why === 'arc') {
+    // The path from the contact back to the root carries the arc.
+    for (let p = B.n - 1; p >= 0; p = B.par[p]) {
+      const s = B.segOf[p];
+      if (s >= 0) seg[s * STRIDE + 6] = seg[s * STRIDE + 6] | PATH;
+    }
+    arcT = simT;
+  }
+  for (let k = 0; k < B.n; k++) old[B.cy[k] * GW + B.cx[k]] = 1;
+  for (let c = 0; c < B.kx.length; c++) candAt[B.ky[c] * GW + B.kx[c]] = -1;
+  for (let k = 0; k < B.n; k++) owner[B.cy[k] * GW + B.cx[k]] = -1;
+  B.kx.length = B.ky.length = B.kphi.length = B.kpar.length = 0;
+  distance();
+  hotUntil = Math.max(hotUntil, simT + 45);
+  // A user burn takes its last cells into the char at once.
+  if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); }
+}
+
+/* ---------- shaders ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+`;
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// Each segment draws as a capsule quad in board cells.
+const STROKE_VS = `#version 300 es
+layout(location = 0) in vec4 aSeg;
+layout(location = 1) in vec4 aInfo;
+layout(location = 2) in vec2 aIds;
+uniform vec4 uMap;     // ndc = p * uMap.xy + uMap.zw
+uniform float uPad;    // halo reach, cells
+uniform float uPx;     // cells per target pixel
+uniform float uJit;    // live jitter, cells
+uniform float uFrame;
+out vec2 vP;
+flat out vec4 vSeg;
+flat out vec4 vInfo;
+flat out float vId;
+vec2 h2(float n, float f) {
+  vec3 q = fract(vec3(n * 0.1031, n * 0.1030 + f * 0.0973, f * 0.1099 + 0.37));
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.xx + q.yz) * q.zy) - 0.5;
+}
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw;
+  // The live spark crawls: end points shake each frame, shared by neighbours.
+  if (uJit > 0.0) { a += h2(aIds.x, uFrame) * uJit; b += h2(aIds.y, uFrame) * uJit; }
+  vec2 d = b - a;
+  float L = length(d);
+  vec2 t = L > 1e-4 ? d / L : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
+  float R = aInfo.x * 0.5 + uPad + uPx * 1.5;
+  int v = gl_VertexID;
+  int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
+  float s = (k & 1) == 0 ? -1.0 : 1.0, q = k < 2 ? -1.0 : 1.0;
+  vec2 p = (s < 0.0 ? a - t * R : b + t * R) + n * R * q;
+  vP = p;
+  vSeg = vec4(a, b);
+  vInfo = aInfo;
+  vId = aIds.y;
+  gl_Position = vec4(p * uMap.xy + uMap.zw, 0.0, 1.0);
+}`;
+const SEGD = `
+in vec2 vP;
+flat in vec4 vSeg;
+flat in vec4 vInfo;
+flat in float vId;
+out vec4 o;
+float segD() {
+  vec2 pa = vP - vSeg.xy, ba = vSeg.zw - vSeg.xy;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return length(pa - ba * h);
+}`;
+// Char: R is the black core, G the brown halo; both deepen with age.
+const CHAR_FS = HEAD + SEGD + `
+uniform float uNow, uPx;
+void main() {
+  float d = segD(), w = vInfo.x * 0.5;
+  float depth = clamp((uNow - vInfo.y) * 1.4 + 0.35, 0.0, 1.0);
+  float core = clamp((w * 0.8 - d) / uPx + 0.5, 0.0, 1.0) * depth;
+  float halo = exp(-pow(d / (w + 0.8), 2.0)) * depth * 0.8;
+  o = vec4(core, halo, 0.0, 1.0);
+}`;
+// Heat: G is the glow, B the slow smoulder; thick trunks run hotter.
+const HEAT_FS = HEAD + SEGD + `
+uniform float uHeat;
+void main() {
+  float d = segD(), w = vInfo.x * 0.5;
+  float t = (0.35 + 0.65 * clamp(vInfo.x / 1.2, 0.0, 1.0)) * uHeat;
+  float h = exp(-pow(d / (w + 0.45), 2.0)) * t;
+  o = vec4(0.0, h, h, 1.0);
+}`;
+// The spark: a white-hot core and a blue halo, flashing as each step lands.
+const SPARK_FS = HEAD + SEGD + `
+uniform float uNow, uLive, uArc, uFrame, uPx, uFlick;
+float hash(float n) { return fract(sin(n * 0.3183 + uFrame * 1.731) * 43758.5453); }
+void main() {
+  float d = segD(), w = vInfo.x * 0.5;
+  float age = uNow - vInfo.y;
+  float flags = vInfo.z;
+  bool branch = mod(flags, 2.0) > 0.5, path = mod(floor(flags / 2.0), 2.0) > 0.5;
+  float r = d / (w * 0.55 + uPx * 0.9);
+  float core = exp(-r * r);
+  float halo = exp(-d / (w + 0.5));
+  // Trunks hum steadily; fresh tips and new forks flash hottest.
+  float I = 0.12 + 0.45 * clamp(vInfo.x / 1.1, 0.0, 1.0);
+  I += (branch ? 3.0 : 1.4) * exp(-age / 0.07) + 0.7 * exp(-age / 0.35);
+  I *= mix(1.0, 0.45 + 1.1 * hash(vId), uFlick);
+  I *= uLive;
+  if (path) I += uArc * (6.0 + 2.0 * clamp(vInfo.x, 0.0, 1.5));
+  vec3 c = vec3(0.72, 0.82, 1.0) * core * I * 1.2 + vec3(0.22, 0.28, 1.0) * halo * I * 0.18;
+  o = vec4(c, 1.0);
+}`;
+// Board space: the fragment's cell, from the cover-fit mapping.
+const BOARD = `
+uniform vec2 uRes, uGrid, uOff;
+uniform float uScale;
+vec2 boardAt(vec2 frag) { return (vec2(frag.x, uRes.y - frag.y) - uOff) / uScale; }
+vec2 texAt(vec2 b) { return vec2(b.x / uGrid.x, 1.0 - b.y / uGrid.y); }
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+  return s;
+}`;
+const DECAY_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec4 uK;
+void main() { o = texture(uSrc, vUv) * uK; }`;
+// Embers: hot wood glows by temperature; smoulder shows as sparse glints.
+const EMBER_FS = HEAD + BOARD + `
+out vec4 o;
+uniform sampler2D uHeatT, uCharT;
+uniform float uTime, uFlick, uAcrylic, uGlint;
+vec3 ember(float T) {
+  vec3 c = mix(vec3(0.55, 0.04, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.05, 0.45, T));
+  return mix(c, vec3(1.0, 0.78, 0.45), smoothstep(0.6, 1.0, T));
+}
+void main() {
+  vec2 b = boardAt(gl_FragCoord.xy), uv = texAt(b);
+  vec4 h = texture(uHeatT, uv);
+  vec4 ch = texture(uCharT, uv);
+  float T = h.g, S = h.b;
+  vec3 c;
+  if (uAcrylic > 0.5) {
+    c = vec3(0.25, 0.5, 1.0) * T * T * 1.6;
+  } else {
+    c = ember(T) * T * T * 2.4 * (0.35 + 0.65 * ch.r);
+    // Glints: rare hot points along the char, breathing slowly.
+    float n = vnoise(b * 0.55 + vec2(3.1, uTime * 0.07 * uFlick));
+    float g = smoothstep(0.78, 0.96, n) * (0.75 + 0.25 * sin(uTime * 2.3 * uFlick + n * 40.0));
+    c += vec3(1.0, 0.36, 0.06) * g * S * ch.r * 3.0 * uGlint;
+  }
+  o = vec4(c, 1.0);
+}`;
+// Bloom: a soft threshold, then a 13-tap downsample.
+const DOWN_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTex;
+uniform float uThr;
+vec3 tap(vec2 d) { return texture(uSrc, vUv + d * uTex).rgb; }
+void main() {
+  vec3 a = tap(vec2(-2, 2)), b = tap(vec2(0, 2)), c = tap(vec2(2, 2));
+  vec3 d = tap(vec2(-2, 0)), e = tap(vec2(0, 0)), f = tap(vec2(2, 0));
+  vec3 g = tap(vec2(-2, -2)), h = tap(vec2(0, -2)), i = tap(vec2(2, -2));
+  vec3 j = tap(vec2(-1, 1)), k = tap(vec2(1, 1)), l = tap(vec2(-1, -1)), m = tap(vec2(1, -1));
+  vec3 s = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+  if (uThr > 0.0) {
+    // A cap stops dense sparks from blowing the bloom out.
+    s = min(s, vec3(6.0));
+    float br = max(s.r, max(s.g, s.b));
+    s *= max(br - uThr, 0.0) / max(br, 1e-4);
+  }
+  o = vec4(s, 1.0);
+}`;
+// Bloom: a 9-tap tent upsample, added to the level below.
+const UP_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc, uAdd;
+uniform vec2 uTex;
+vec3 tap(vec2 d) { return texture(uSrc, vUv + d * uTex).rgb; }
+void main() {
+  vec3 s = tap(vec2(0)) * 4.0 + (tap(vec2(-1, 0)) + tap(vec2(1, 0)) + tap(vec2(0, -1)) + tap(vec2(0, 1))) * 2.0
+    + tap(vec2(-1, -1)) + tap(vec2(1, -1)) + tap(vec2(-1, 1)) + tap(vec2(1, 1));
+  o = vec4(s / 16.0 + texture(uAdd, vUv).rgb, 1.0);
+}`;
+// The board: birch under a warm key light, char on top, the glow lighting it.
+const FINAL_FS = HEAD + BOARD + `
+out vec4 o;
+uniform sampler2D uCharT, uEmit, uBloom, uWide;
+uniform vec3 uWoodA, uWoodB, uKey;
+uniform float uTime, uGlow, uAcrylic;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main() {
+  vec2 frag = gl_FragCoord.xy, b = boardAt(frag), uv = texAt(b);
+  vec2 sp = frag / uRes;
+  vec4 ch = texture(uCharT, uv);
+  vec3 emit = texture(uEmit, sp).rgb, bloom = texture(uBloom, sp).rgb, wide = texture(uWide, sp).rgb;
+  // The key light pools at the upper left and falls off to the corners.
+  vec2 kc = (vec2(sp.x, 1.0 - sp.y) - vec2(0.3, 0.22)) * vec2(uRes.x / uRes.y, 1.0);
+  float key = 0.02 + 0.4 * exp(-dot(kc, kc) / 0.28);
+  vec3 col;
+  if (uAcrylic > 0.5) {
+    // A dark clear block lit from its left edge; the tree is etched inside.
+    float edge = exp(-b.x / (uGrid.x * 0.55));
+    vec3 glass = vec3(0.006, 0.008, 0.014) + vec3(0.02, 0.035, 0.06) * edge;
+    vec3 lit = vec3(0.55, 0.75, 1.0) * (0.25 + 1.6 * edge);
+    col = glass + lit * (ch.r * 0.9 + ch.g * 0.12) + wide * 0.3;
+  } else {
+    // Birch: long grain along x, warped a little, with fine fibres.
+    float w = fbm(vec2(b.x * 0.012, b.y * 0.09));
+    float g = 0.5 + 0.5 * sin((b.y + w * 28.0) * 0.55 + fbm(b * 0.04) * 3.0);
+    float fib = vnoise(vec2(b.x * 0.35, b.y * 3.2));
+    vec3 alb = mix(uWoodA, uWoodB, g * 0.35 + fib * 0.2 + w * 0.3);
+    // Char: a caramel halo, then a black core.
+    alb *= mix(vec3(1.0), vec3(0.42, 0.26, 0.15), clamp(ch.g, 0.0, 1.0) * 0.75);
+    alb *= 1.0 - 0.96 * ch.r;
+    col = alb * (uKey * key + wide * 2.2 + bloom * 0.6);
+  }
+  col += emit + bloom * uGlow * 0.6;
+  // A vignette and fine grain finish the frame.
+  vec2 v = (sp - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.5 * smoothstep(0.4, 1.2, length(v));
+  vec3 outc = srgb(aces(col * 1.1));
+  outc += (hash(frag + fract(uTime) * 91.0) - 0.5) * 0.012;
+  o = vec4(outc, 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, triVao = null, segVao = null, segBuf = null;
+let charT = null, heat = null, emit = null, mips = [], ups = [];
+let K = 4;  // char texels per cell
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('float targets unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    char: compile(STROKE_VS, CHAR_FS), heat: compile(STROKE_VS, HEAT_FS), spark: compile(STROKE_VS, SPARK_FS),
+    decay: compile(TRI, DECAY_FS), ember: compile(TRI, EMBER_FS), down: compile(TRI, DOWN_FS),
+    up: compile(TRI, UP_FS), final: compile(TRI, FINAL_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  triVao = gl.createVertexArray();
+  segVao = gl.createVertexArray();
+  segBuf = gl.createBuffer();
+  gl.bindVertexArray(segVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, seg.byteLength, gl.DYNAMIC_DRAW);
+  for (let l = 0; l < 3; l++) { gl.enableVertexAttribArray(l); gl.vertexAttribDivisor(l, 1); }
+  gl.bindVertexArray(triVao);
+  gl.useProgram(P.final.p);
+  gl.uniform3fv(P.final.u.uWoodA, oklchLinear(0.76, 0.05, 80));
+  gl.uniform3fv(P.final.u.uWoodB, oklchLinear(0.64, 0.065, 66));
+  gl.uniform3fv(P.final.u.uKey, oklchLinear(0.86, 0.06, 70));
+}
+function target(w, h, fmt = gl.RGBA16F) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const t = { tex, fb, w, h };
+  wipe(t);
+  return t;
+}
+const pair = (w, h) => ({ r: target(w, h), w: target(w, h), swap() { [this.r, this.w] = [this.w, this.r]; } });
+function free(t) {
+  if (!t) return;
+  if (t.r) { free(t.r); free(t.w); return; }
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function wipe(t) {
+  if (t.r) { wipe(t.r); wipe(t.w); return; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function to(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+}
+function tri(dst) {
+  to(dst);
+  gl.bindVertexArray(triVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// Board targets: char at K texels per cell, heat at half that.
+function allocBoard(dpr) {
+  free(charT); free(heat);
+  K = Math.min(4 * Math.min(dpr, 2), 2048 / Math.max(GW, GH));
+  charT = target(Math.round(GW * K), Math.round(GH * K), gl.RGBA8);
+  heat = pair(Math.round(GW * K / 2), Math.round(GH * K / 2));
+}
+// Screen targets: emission at full size, five bloom levels below it.
+function allocScreen() {
+  const W = canvas.width, H = canvas.height;
+  if (emit && emit.w === W && emit.h === H) return;
+  [emit, ...mips, ...ups].forEach(free);
+  emit = target(W, H);
+  mips = []; ups = [];
+  let w = W, h = H;
+  for (let i = 0; i < 5; i++) {
+    w = Math.max(1, w >> 1); h = Math.max(1, h >> 1);
+    mips.push(target(w, h));
+    if (i < 4) ups.push(target(w, h));
+  }
+}
+
+/* ---------- layout ---------- */
+// Cover fit: the board fills the stage and crops, never stretches.
+const view = { s: 1, ox: 0, oy: 0, dpr: 1 };
+function layout() {
+  const { W, H, dpr } = fitCanvas(canvas, { maxDpr: 2 });
+  view.dpr = dpr;
+  view.s = Math.max(W / GW, H / GH);
+  view.ox = (W - GW * view.s) / 2;
+  view.oy = (H - GH * view.s) / 2;
+  allocScreen();
+}
+function toBoard(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const px = (cx - r.left) * (canvas.width / r.width), py = (cy - r.top) * (canvas.height / r.height);
+  return { x: (px - view.ox) / view.s, y: (py - view.oy) / view.s };
+}
+
+/* ---------- drawing ---------- */
+let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0;
+function segRange(s0, n) {
+  gl.bindVertexArray(segVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
+  const off = s0 * STRIDE * 4;
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, STRIDE * 4, off);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, STRIDE * 4, off + 16);
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, STRIDE * 4, off + 32);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+}
+function upload(s0, n) {
+  if (n <= 0) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, s0 * STRIDE * 4, seg, s0 * STRIDE, n * STRIDE);
+}
+// Board-space strokes map cells straight onto the board targets.
+function boardMap(q, px) {
+  gl.uniform4f(q.u.uMap, 2 / GW, -2 / GH, -1, 1);
+  gl.uniform1f(q.u.uPx, px);
+  gl.uniform1f(q.u.uJit, 0);
+}
+// MAX blending makes a stamp safe to repeat every frame.
+function stamp(s0, n, heatK, now = simT) {
+  if (n <= 0) return;
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.MAX);
+  let q = P.char;
+  gl.useProgram(q.p);
+  boardMap(q, 1 / K);
+  gl.uniform1f(q.u.uPad, 1.6);
+  gl.uniform1f(q.u.uNow, now);
+  to(charT);
+  segRange(s0, n);
+  if (heatK > 0) {
+    q = P.heat;
+    gl.useProgram(q.p);
+    boardMap(q, 2 / K);
+    gl.uniform1f(q.u.uPad, 0.9);
+    gl.uniform1f(q.u.uHeat, heatK);
+    to(heat.r);
+    segRange(s0, n);
+  }
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.disable(gl.BLEND);
+}
+function boardUniforms(q) {
+  gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
+  gl.uniform2f(q.u.uGrid, GW, GH);
+  gl.uniform2f(q.u.uOff, view.ox, view.oy);
+  gl.uniform1f(q.u.uScale, view.s);
+}
+function render(dt) {
+  const rm = reduced(), acrylic = board === 'acrylic' ? 1 : 0;
+  // Heat cools: the glow over 3 s, the smoulder over 18 s.
+  if (dt > 0) {
+    const q = P.decay;
+    gl.useProgram(q.p);
+    bind(q, 'uSrc', 0, heat.r);
+    gl.uniform4f(q.u.uK, 1, Math.exp(-dt / 3), Math.exp(-dt / 18), 1);
+    tri(heat.w);
+    heat.swap();
+  }
+  const B = burn;
+  const liveN = B ? B.n : 0;
+  if (B && sparkLive > 0) {
+    upload(B.seg0, Math.min(liveN, nSeg - B.seg0));
+    if (!B.done) stamp(B.seg0, Math.min(liveN, nSeg - B.seg0), 1);
+  }
+  // Emission: embers from the heat, then the live spark.
+  let q = P.ember;
+  gl.useProgram(q.p);
+  boardUniforms(q);
+  bind(q, 'uHeatT', 0, heat.r);
+  bind(q, 'uCharT', 1, charT);
+  gl.uniform1f(q.u.uTime, simT);
+  gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
+  gl.uniform1f(q.u.uAcrylic, acrylic);
+  gl.uniform1f(q.u.uGlint, 1);
+  tri(emit);
+  const arc = Math.max(0, 1 - (simT - arcT) / 0.45);
+  if (B && (sparkLive > 0 || arc > 0)) {
+    q = P.spark;
+    gl.useProgram(q.p);
+    gl.uniform4f(q.u.uMap, 2 * view.s / canvas.width, -2 * view.s / canvas.height, 2 * view.ox / canvas.width - 1, 1 - 2 * view.oy / canvas.height);
+    gl.uniform1f(q.u.uPx, 1 / view.s);
+    gl.uniform1f(q.u.uPad, 1.2);
+    gl.uniform1f(q.u.uJit, rm ? 0 : 0.22 * sparkLive);
+    gl.uniform1f(q.u.uFrame, frameNo % 997);
+    gl.uniform1f(q.u.uNow, simT);
+    gl.uniform1f(q.u.uLive, sparkLive);
+    gl.uniform1f(q.u.uArc, (rm ? 0.5 : 1) * arc * arc);
+    gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    to(emit);
+    segRange(B.seg0, Math.min(liveN, nSeg - B.seg0));
+    gl.disable(gl.BLEND);
+  }
+  bloomPass();
+  q = P.final;
+  gl.useProgram(q.p);
+  boardUniforms(q);
+  bind(q, 'uCharT', 0, charT);
+  bind(q, 'uEmit', 1, emit);
+  bind(q, 'uBloom', 2, ups[0]);
+  bind(q, 'uWide', 3, ups[2]);
+  gl.uniform1f(q.u.uTime, simT);
+  gl.uniform1f(q.u.uGlow, 1);
+  gl.uniform1f(q.u.uAcrylic, acrylic);
+  tri(null);
+  frameNo++;
+}
+function bloomPass() {
+  const d = P.down;
+  gl.useProgram(d.p);
+  let src = emit;
+  for (let i = 0; i < mips.length; i++) {
+    bind(d, 'uSrc', 0, src);
+    gl.uniform2f(d.u.uTex, 1 / src.w, 1 / src.h);
+    gl.uniform1f(d.u.uThr, i === 0 ? 0.55 : 0);
+    tri(mips[i]);
+    src = mips[i];
+  }
+  const u = P.up;
+  gl.useProgram(u.p);
+  for (let i = ups.length - 1; i >= 0; i--) {
+    const s = i === ups.length - 1 ? mips[i + 1] : ups[i + 1];
+    bind(u, 'uSrc', 0, s);
+    bind(u, 'uAdd', 1, mips[i]);
+    gl.uniform2f(u.u.uTex, 1 / s.w, 1 / s.h);
+    tri(ups[i]);
+  }
+}
+
+/* ---------- growth ---------- */
+const etaFor = () => 2.0 + rnd() * 0.9;
+let held = false, zapTo = 0;
+function grow(dt) {
+  const B = burn;
+  if (!B || B.done) return;
+  if (held) B.held += dt;
+  // Growth speeds up as the channel heats; a zap runs fast and short.
+  let rate = 80 * (1 + 1.5 * B.held) * (0.35 + 1.3 * voltage);
+  if (!held) rate = 420;
+  if (reduced()) rate *= 0.5;
+  B.acc = (B.acc || 0) + Math.min(rate, 700) * dt;
+  let steps = 0;
+  while (B.acc >= 1 && steps < 28 && !B.done) {
+    step();
+    B.acc -= 1;
+    steps++;
+    if (!held && B.n >= zapTo) finish('zap');
+  }
+}
+function press(bx, by) {
+  if (burn && !burn.done) finish('freeze');
+  rnd = Math.random;
+  newBurn(clamp(bx, 0.01, GW - 0.01), clamp(by, 0.01, GH - 0.01), etaFor()).user = true;
+  held = true;
+  sparkLive = 1;
+  live();
+}
+function release(tap) {
+  held = false;
+  const B = burn;
+  if (!B || B.done) return;
+  // A tap lets the spark run a few dozen steps; a hold freezes at once.
+  if (tap) zapTo = B.n + 30 + Math.floor(Math.random() * 30);
+  else finish('freeze');
+  live();
+}
+
+/* ---------- first frame ---------- */
+// Three seeded burns: two cold, the last still smouldering.
+function preburn() {
+  rnd = mulberry(7193);
+  // Portrait stages get their own spots; counts follow the board's area.
+  const spots = GH > GW ? [[0.7, 0.15, 900], [0.3, 0.86, 700]] : [[0.24, 0.62, 1500], [0.74, 0.3, 1100], [0.62, 0.78, 700]];
+  const area = Math.min(1, (GW * GH) / (312 * 188));
+  spots.forEach(([x, y, n], k) => {
+    n = Math.round(n * (0.35 + 0.65 * area));
+    newBurn(x * GW, y * GH, 1.8 + rnd() * 0.6);
+    while (!burn.done && burn.n < n) step();
+    if (!burn.done) finish('freeze');
+    upload(burn.seg0, burn.n);
+    stamp(burn.seg0, burn.n, k === spots.length - 1 ? 0.55 : 0, 1e6);
+  });
+  burn = null;
+  hotUntil = 40;
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, lastDraw = 0, visible = true, inputAt = 0;
+const live = () => { inputAt = performance.now(); wake(); };
+function wake() {
+  if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// Lively while a spark runs; drifting at 30 fps while embers glow.
+const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5;
+const busy = (now = performance.now()) => visible && (lively() || (simT < hotUntil && now - inputAt < 60000));
+function frame(now) {
+  raf = 0;
+  try {
+    if (lively() || now - lastDraw >= 31) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      lastDraw = now;
+      simT += dt;
+      grow(dt);
+      if (burn && burn.done) sparkLive = Math.max(0, sparkLive - dt / 0.2);
+      render(dt);
+    }
+  } finally {
+    if (busy(now)) raf = requestAnimationFrame(frame);
+  }
+}
+function still() { if (P) render(0); }
+
+/* ---------- pointer ---------- */
+// A press starts the burn at once; a release under 260 ms and 8 px is a tap.
+let ptr = null;
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t: performance.now() };
+  const b = toBoard(e.clientX, e.clientY);
+  press(b.x, b.y);
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const tap = e?.type === 'pointerup' && performance.now() - ptr.t < 260;
+  ptr = null;
+  release(tap);
+}
+
+/* ---------- state ---------- */
+// Clear sands the board back to fresh wood at the stage's aspect.
+function clearBoard() {
+  if (ptr) up();
+  burn = null;
+  nSeg = 0;
+  sparkLive = 0;
+  grid();
+  allocBoard(view.dpr);
+  layout();
+  still();
+}
+act.clear = () => { clearBoard(); live(); };
+act.board = v => { board = v; still(); live(); };
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  grid();
+  layout();
+  allocBoard(view.dpr);
+  distance();
+  preburn();
+  render(0);
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+inputAt = performance.now();
+wake();
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// Space burns from the board's centre, on keyboards only.
+let spaceHeld = false;
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  spaceHeld = true;
+  press(GW * (0.35 + Math.random() * 0.3), GH * (0.35 + Math.random() * 0.3));
+});
+stage.addEventListener('keyup', e => {
+  if (e.code !== 'Space' || !spaceHeld) return;
+  spaceHeld = false;
+  release(false);
+});
+
+new ResizeObserver(() => { if (burn && !burn.done) finish('freeze'); layout(); still(); }).observe(stage);
+onQuality(() => { layout(); still(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>
