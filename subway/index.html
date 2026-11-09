@@ -50,14 +50,16 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--subway" id="stage" tabindex="0" role="application" aria-label="A dim subway cabin seen at a tilt. Tunnel lamps pass the windows and sweep light and pole shadows over the floor and seats. Hold to brake.">
+    <div class="stage stage--subway" id="stage" tabindex="0" role="application" aria-label="Close, still shots inside a dim subway cabin. Tunnel lamps pass the windows and sweep light and pole shadows over the floor and seats. Hold to brake.">
       <p class="fail" hidden>Subway needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="lamps" role="group" aria-label="Tunnel lamps">
-        <button class="chip" type="button" data-value="sodium" aria-pressed="false">Sodium</button>
-        <button class="chip" type="button" data-value="white" aria-pressed="false">White</button>
-        <button class="chip" type="button" data-value="mixed" aria-pressed="true">Mixed</button>
+      <div class="choices" id="shots" role="group" aria-label="Shot">
+        <button class="chip" type="button" data-value="straps" aria-pressed="true">Straps</button>
+        <button class="chip" type="button" data-value="seats" aria-pressed="false">Seats</button>
+        <button class="chip" type="button" data-value="window" aria-pressed="false">Window</button>
+        <button class="chip" type="button" data-value="door" aria-pressed="false">Door</button>
+        <button class="chip" type="button" data-value="floor" aria-pressed="false">Floor</button>
       </div>
       <label class="slider"><span>Speed</span><input type="range" id="speed" min="0" max="1" step="0.01" value="0.45" aria-label="Speed: standing to fast"></label>
       <div class="edge">
@@ -67,7 +69,7 @@
         </div>
         <dl class="how" aria-label="How to play">
           <div><dt>Hold</dt><dd>brake</dd></div>
-          <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>lamps</dd></div>
+          <div class="fine"><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>shot</dd></div>
         </dl>
       </div>
     </div>
@@ -114,7 +116,7 @@ initPage({ id: 'subway' });
 const saved = k => { try { return localStorage.getItem(`stimming.subway.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.subway.${k}`, String(v)); } catch { /* storage is optional */ } };
 const opts = {
-  lamps: saved('lamps') || 'mixed',
+  shot: saved('shot') || 'straps',
   speed: saved('speed') != null ? +saved('speed') : 0.45,
 };
 // The Speed slider maps to cruise speed in metres per second.
@@ -517,7 +519,7 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
         // ---- Seats ----
         // Moquette: a dense diamond weave in deep blue with ochre and red flecks.
         vec2 uv = abs(N.y) > 0.5 ? P.xz : P.xy;
-        vec2 g = uv * 22.0;
+        vec2 g = uv * 34.0;
         vec2 c = floor(g), f = fract(g) - 0.5;
         float h = hash2(c);
         vec3 acc = h < 0.4 ? vec3(0.6, 0.36, 0.06) : h < 0.7 ? vec3(0.5, 0.06, 0.1) : vec3(0.1, 0.36, 0.38);
@@ -581,7 +583,7 @@ for (const sg of [-1, 1]) {
   add(new THREE.BoxGeometry(BENCH * 2, 0.36, 0.36), grilleM, 0, 0.18, sg * (HALF - 0.2));
   add(new THREE.BoxGeometry(BENCH * 2, 0.5, 0.08), seatM, 0, 0.71, sg * (HALF - 0.07));
   // A grab rail runs above each bench.
-  add(new THREE.CylinderGeometry(R, R, BENCH * 2, 10).rotateZ(Math.PI / 2), poleM, 0, 1.9, sg * 0.78);
+  add(new THREE.CylinderGeometry(R, R, BENCH * 2, 24).rotateZ(Math.PI / 2), poleM, 0, 1.9, sg * 0.78);
   // Each bench end has a screen frame: two tubes from the wall to the pole.
   for (const xe of [-BENCH - 0.15, BENCH + 0.15]) {
     for (const y of [0.92, 1.45]) add(new THREE.CylinderGeometry(0.016, 0.016, 0.5, 8).rotateX(Math.PI / 2), poleM, xe, y, sg * (HALF - 0.25));
@@ -589,7 +591,7 @@ for (const sg of [-1, 1]) {
   }
 }
 for (const [x, z] of POLES) {
-  add(new THREE.CylinderGeometry(R, R, ROOF, 12), poleM, x, ROOF / 2, z);
+  add(new THREE.CylinderGeometry(R, R, ROOF, 28), poleM, x, ROOF / 2, z);
   // Steel collars hold each pole at the floor and the roof.
   add(new THREE.CylinderGeometry(0.034, 0.04, 0.05, 14), steelM, x, 0.025, z);
   add(new THREE.CylinderGeometry(0.04, 0.034, 0.05, 14), steelM, x, ROOF - 0.025, z);
@@ -604,7 +606,7 @@ for (const [x, z] of POLES) {
       if (sg > 0 && x < 1.2) continue;
       const z = sg * 0.78, ph = (Math.sin(i * 12.9898) * 43758.5453) % 1;
       const strap = new THREE.BoxGeometry(0.024, 0.2, 0.008).translate(x, 1.78, z);
-      const ring = new THREE.TorusGeometry(0.055, 0.009, 6, 18).translate(x, 1.625, z);
+      const ring = new THREE.TorusGeometry(0.055, 0.009, 12, 40).translate(x, 1.625, z);
       for (const g of [strap, ring]) {
         const n = g.attributes.position.count;
         g.setAttribute('aPivot', new THREE.Float32BufferAttribute(new Array(n).fill([x, 1.89, z]).flat(), 3));
@@ -617,15 +619,26 @@ for (const [x, z] of POLES) {
 }
 
 /* ---------- framing ---------- */
-// A fixed, tilted look down across the aisle at the far bench and windows.
-function frame(w, h) {
-  camera.aspect = w / h;
-  const wide = w >= h;
-  camera.fov = wide ? 52 : 74;
-  camera.position.set(wide ? -3.0 : -0.7, 1.7, 1.0);
+// Still, tight shots with long lenses: camera, target, roll and horizontal fov.
+const SHOTS = {
+  straps: { pos: [-2.2, 1.25, 0.35], at: [0.6, 1.72, -0.9], roll: -10, hfov: 32 },
+  seats: { pos: [-3.3, 0.44, -0.45], at: [2.0, 0.5, -1.25], roll: 6, hfov: 34 },
+  window: { pos: [-0.3, 1.42, 0.55], at: [0.95, 1.5, -1.4], roll: -5, hfov: 36 },
+  door: { pos: [4.25, 1.15, 1.05], at: [4.75, 1.3, -1.4], roll: 7, hfov: 46 },
+  floor: { pos: [3.5, 1.3, -0.1], at: [4.55, 0.0, -1.0], roll: 14, hfov: 44 },
+};
+let shot = SHOTS.straps, view = [1, 1];
+function frame(w = view[0], h = view[1]) {
+  view = [w, h];
+  const a = w / h;
+  // Portrait keeps most of the landscape width in view.
+  const hf = THREE.MathUtils.degToRad(shot.hfov * (a < 1 ? 0.8 : 1));
+  camera.aspect = a;
+  camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hf / 2) / a));
+  camera.position.set(...shot.pos);
   camera.up.set(0, 1, 0);
-  camera.lookAt(wide ? 0.4 : 1.7, 0.45, -1.0);
-  camera.rotateZ(THREE.MathUtils.degToRad(wide ? 13 : 10));
+  camera.lookAt(...shot.at);
+  camera.rotateZ(THREE.MathUtils.degToRad(shot.roll));
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   U.uCam.value.copy(camera.position);
@@ -634,12 +647,6 @@ function frame(w, h) {
 /* ---------- motion ---------- */
 let time = 0, travel = 0, speed = 0, last = 0, target = 12, brake = false, mk = 1;
 let swing = 0, swingV = 0;
-const LAMPS = {
-  sodium: { a: [1.0, 0.5, 0.16], mix: 0 },
-  white: { a: [0.82, 0.9, 1.0], mix: 0 },
-  mixed: { a: [1.0, 0.5, 0.16], mix: 1 },
-};
-let lamps = LAMPS.mixed;
 // Each wheelset kicks the carriage as it crosses a rail joint.
 // The pairs sit 2.6 m apart; the far bogie kicks softer.
 const JOINT = 18, KICK = [[0, 1], [2.6, 1], [13, 0.45], [15.6, 0.45]];
@@ -652,7 +659,6 @@ function jolt() {
   }
   return y * Math.min(1, speed / 20);
 }
-const tmp = new THREE.Color();
 function update(dt, pace) {
   // The train eases to cruise, brakes on a hold, and stops when idle.
   const goal = brake ? 0 : target * pace;
@@ -676,10 +682,6 @@ function update(dt, pace) {
   U.uSmear.value = speed * SHUT;
   U.uSwing.value = swing;
   U.uSway.value = Math.min(1, speed / 20);
-  // Lamp colours ease to the new choice.
-  const e = Math.min(1, dt * 3);
-  U.uColA.value.lerp(tmp.setRGB(...lamps.a), e);
-  U.uMix.value += (lamps.mix - U.uMix.value) * e;
 }
 return {
   scene, camera, frame, update,
@@ -688,11 +690,8 @@ return {
   setSpeed(v) { target = v; },
   setBrake(on) { brake = on; },
   lively: () => speed > 0.05 || mk < 1 || Math.abs(swingV) > 0.003 || Math.abs(swing) > 0.003 || (!brake && target > 0 && speed < target * 0.99),
-  setLamps(v, now) {
-    lamps = LAMPS[v] || LAMPS.mixed;
-    mk = 0;
-    if (now) { U.uColA.value.setRGB(...lamps.a); U.uMix.value = lamps.mix; mk = 1; }
-  },
+  // A new shot is a hard cut.
+  setShot(v) { shot = SHOTS[v] || SHOTS.straps; frame(); },
   post: { bloom: [0.75, 0.55, 0.85], tint: [0.0008, 0.0007, 0.0009], vig: 0.5, vigIn: 0.4, grain: 0.035 },
 };
 }
@@ -902,18 +901,18 @@ popover(document.getElementById('setter'), document.getElementById('setBtn'));
 qualitySetting(document.getElementById('sets'));
 onQuality(() => { rung = 0; resize(true); wake(); });
 
-// The lamps ease to the new colour.
-const lampChoice = choices(document.getElementById('lamps'), v => { opts.lamps = v; save('lamps', v); S.setLamps(v); wake(); });
-lampChoice.set(opts.lamps);
-S.setLamps(opts.lamps, true);
+// Each shot cuts straight to its camera.
+const shotChoice = choices(document.getElementById('shots'), v => { opts.shot = v; save('shot', v); S.setShot(v); if (ready) draw(); wake(); });
+shotChoice.set(opts.shot);
+S.setShot(opts.shot);
 const speedEl = document.getElementById('speed');
 speedEl.value = String(opts.speed);
 S.setSpeed(cruise(opts.speed));
 speedEl.addEventListener('input', () => { opts.speed = +speedEl.value; save('speed', opts.speed); S.setSpeed(cruise(opts.speed)); wake(); });
-const KEYS = { Digit1: 'sodium', Digit2: 'white', Digit3: 'mixed' };
+const KEYS = { Digit1: 'straps', Digit2: 'seats', Digit3: 'window', Digit4: 'door', Digit5: 'floor' };
 addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (KEYS[e.code]) lampChoice.set(KEYS[e.code], true);
+  if (KEYS[e.code]) shotChoice.set(KEYS[e.code], true);
 });
 
 /* ---------- start ---------- */
