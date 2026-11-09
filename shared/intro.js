@@ -123,7 +123,7 @@ export const VARIETIES = {
     { fonts: { fd: 'Gabarito', fn: SLAB, fs: SLAB, fsn: SLAB } }),
   plate: look('plate', 'Plate: the title sits on a white plate', { nameK: 0.8, blur: 30, dim: 0.38 },
     { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
-  signal: look('signal', 'Signal: white flash, then the logo and title take the toy’s colour', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
+  signal: look('signal', 'Signal: white flash, then the logo takes the toy’s accent', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
     { stack: true, ink: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
   readout: look('readout', 'Readout: the title rides above the logo, all slab caps', { nameK: 0.6, logoK: 0.9, padK: 0.8, blur: 24, dim: 0.4 },
     { fonts: { fd: SLAB, fn: SLAB, fs: SLAB, fsn: SLAB } }),
@@ -325,7 +325,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
-  // The toy's accent inks the logo and title; without one they stay white.
+  // The toy's accent inks the logo; without one it stays white.
   if (V.ink && info?.accent) root.style.setProperty('--ink', info.accent);
   // The lab's Static mode fills lines a toy lacks, so every line shows.
   if (fill && info) for (const k of Object.keys(fill)) info[k] ||= fill[k];
