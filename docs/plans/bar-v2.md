@@ -95,7 +95,7 @@ An action can be disabled (`aria-disabled`) when it would do nothing.
 - Bottom left: the choice, always as a `stepper` (or as its `tray` chip). With no choice, the actions.
 - Bottom right: the actions. With no choice, the slider.
 - The slider moves to the first row of the Settings sheet when the bottom right holds actions.
-- Touch targets are 34 px, and control text goes up one size.
+- Chips are 36 px on coarse pointers, so every touch target is at least 34 px, even inside a joined block. Control text goes up one size.
 - Touch screens get no hover state, so a tap never leaves a lift behind.
 - The key strip uses touch words and sits above the bottom row.
 - Bottom corners that collide stack in two rows.
@@ -109,7 +109,7 @@ Every shell change and every toy port holds these. `tests/bar-v2.html` checks th
 2. The Settings sheet fits the stage at every width.
 3. A short name stays on a phone; a long one drops out before it collides.
 4. The page never scrolls sideways or past the stage.
-5. Touch targets are 34 px on coarse pointers (WCAG 2.5.8 asks for 24).
+5. Every touch target is at least 34 px on coarse pointers, including the stepper arrows and segments (WCAG 2.5.8 asks for 24).
 6. Every control has a visible focus ring and a keyboard path.
 7. Reduced motion stops every transition and the entrance.
 8. Text keeps 4.5:1 contrast: the key strip carries a dark halo on bright stages.
