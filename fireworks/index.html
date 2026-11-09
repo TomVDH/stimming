@@ -31,8 +31,32 @@
 #shell .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 #shell .chip svg { stroke-width: 1.8; stroke-linecap: round; }
 /* The longest name sets the width, so the arrows never move. */
-.stepper .name { display: grid; text-align: center; white-space: nowrap; }
-.stepper .name > * { grid-area: 1 / 1; }
+.stepper { position: relative; }
+.stepper .name { display: flex; align-items: center; gap: 6px; padding: 0 2px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.stepper .ico svg { display: block; width: 22px; height: 22px; }
+.stepper .lbl { display: grid; text-align: center; white-space: nowrap; }
+.stepper .lbl > * { grid-area: 1 / 1; }
+/* The name opens a grid of every shell, each with a small drawing. */
+.shells {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; grid-template-columns: repeat(5, 66px); gap: 4px; padding: 10px;
+  max-height: min(62vh, 460px); overflow: auto;
+  background: oklch(0.17 0.012 275 / 0.95); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.stepper.is-open .shells { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.shells button {
+  display: grid; justify-items: center; gap: 4px; padding: 7px 2px 6px; border: 1px solid transparent; border-radius: 10px;
+  background: none; color: var(--muted); font: 500 10.5px/1.1 inherit; font-family: inherit; cursor: pointer;
+}
+.shells button svg { width: 36px; height: 36px; transition: transform 0.15s ease; }
+.shells button:hover { color: var(--fg); }
+.shells button:hover svg { transform: scale(1.12); }
+.shells button[aria-pressed="true"] { color: var(--fg); border-color: var(--line); background: oklch(1 0 0 / 0.06); }
+@media (max-width: 560px) { .shells { grid-template-columns: repeat(4, 64px); } }
+@media (prefers-reduced-motion: reduce) { .shells, .shells button svg { transition: none; } }
 .stepper .sizer { visibility: hidden; }
 .stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
 .stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
@@ -72,7 +96,8 @@
     <div class="bar">
       <div class="stepper" id="shell" role="group" aria-label="Shell" tabindex="-1">
         <button class="chip icon" type="button" data-step="-1" aria-label="Previous shell" title="Previous shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-        <span class="name"><output aria-live="polite">Mix</output><span class="sizer" aria-hidden="true">Chrysanthemum</span></span>
+        <button class="name" id="shellBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="shells" title="All shells"><span class="ico" aria-hidden="true"></span><span class="lbl"><output aria-live="polite">Mix</output><span class="sizer" aria-hidden="true">Chrysanthemum</span></span></button>
+        <div class="shells" id="shells" role="group" aria-label="All shells"></div>
         <button class="chip icon" type="button" data-step="1" aria-label="Next shell" title="Next shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
       </div>
       <label class="slider"><span>Distance</span><input type="range" id="dist" min="0" max="1" step="0.01" value="0.5" aria-label="Distance: 300 to 1,500 metres"></label>
@@ -2604,6 +2629,50 @@ stage.addEventListener('keydown', e => {
 });
 
 /* ---------- bar ---------- */
+/* ---------- shell drawings ---------- */
+// A small drawing per shell for the stepper and the grid: dots and strokes on a dark disc.
+const IC = { G: 'oklch(0.86 0.15 82)', R: 'oklch(0.68 0.22 25)', P: 'oklch(0.76 0.17 350)', A: 'oklch(0.84 0.12 200)', N: 'oklch(0.82 0.18 145)',
+  B: 'oklch(0.68 0.15 255)', U: 'oklch(0.66 0.19 310)', W: 'oklch(0.97 0.02 90)', O: 'oklch(0.78 0.16 55)' };
+const f1 = n => +n.toFixed(1);
+const dt = (x, y, r, c) => `<circle cx="${f1(x)}" cy="${f1(y)}" r="${r}" fill="${c}"/>`;
+const ln = (x1, y1, x2, y2, c, w = 1.2) => `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+const ringD = (n, r, c, d = 1.3, cx = 0, cy = 0, sy = 1, rot = 0) => Array.from({ length: n }, (_, i) => {
+  const a = (i / n) * Math.PI * 2, x = r * Math.cos(a), y = r * Math.sin(a) * sy;
+  return dt(cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot), d, c);
+}).join('');
+const rays = (n, r0, r1, c, w = 1.2, cx = 0, cy = 0) => Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2; return ln(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a), cx + r1 * Math.cos(a), cy + r1 * Math.sin(a), c, w); }).join('');
+const burstI = (cx, cy, r, c) => rays(8, r * 0.3, r, c, 1, cx, cy) + dt(cx, cy, 1.2, IC.W);
+const DRAW = {
+  mix: () => burstI(-6, -5, 7, IC.R) + burstI(6, -3, 6, IC.N) + burstI(0, 7, 6, IC.G),
+  peony: () => ringD(14, 11, IC.R, 1.5) + ringD(8, 6, IC.R, 1.1),
+  chrysanthemum: () => rays(14, 3, 13, IC.A, 1),
+  willow: () => [-1, 1].flatMap(sd => [3, 7, 11].map(k => `<path d="M0 -2Q${sd * k} -14 ${sd * (k + 2)} 12" fill="none" stroke="${IC.G}" stroke-width="1.1" stroke-linecap="round"/>`)).join(''),
+  palm: () => [-2, -1, 0, 1, 2].map(k => `<path d="M0 0Q${k * 5} -14 ${k * 6.5} -4" fill="none" stroke="${IC.G}" stroke-width="2" stroke-linecap="round"/>`).join('') + ln(0, 0, 0, 14, IC.O, 1.4),
+  kamuro: () => [[5, 7], [8.5, 11], [12, 15]].map(([r, n]) => Array.from({ length: n }, (_, i) => { const a = Math.PI * (1.08 + 0.84 * (i / (n - 1))); return dt(r * Math.cos(a), r * Math.sin(a) + 3, 0.95, IC.G); }).join('')).join('') + [-9, -4, 4, 9].map(x => `<path d="M${x} 2q${x > 0 ? 1.5 : -1.5} 5 ${x > 0 ? 1 : -1} 10" fill="none" stroke="${IC.G}" stroke-width="0.9" stroke-dasharray="0.1 2" stroke-linecap="round"/>`).join(''),
+  crossette: () => [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + Math.PI / 4, x = 7 * Math.cos(a), y = 7 * Math.sin(a); return ln(0, 0, x, y, IC.G) + ln(x - 3, y, x + 3, y, IC.N) + ln(x, y - 3, x, y + 3, IC.N); }).join(''),
+  ring: () => ringD(18, 11, IC.A, 1.4),
+  saturn: () => ringD(10, 4.5, IC.O, 1.3) + ringD(20, 13, IC.U, 1.1, 0, 0, 0.32, -0.35),
+  pistil: () => ringD(7, 4, IC.W, 1.4) + ringD(16, 11, IC.N, 1.4),
+  strobe: () => [[-7, -6], [6, -8], [9, 3], [-2, 8], [-9, 4], [2, -1]].map(([x, y]) => ln(x - 2.5, y, x + 2.5, y, IC.W, 0.9) + ln(x, y - 2.5, x, y + 2.5, IC.W, 0.9) + dt(x, y, 1.3, IC.W)).join(''),
+  crackle: () => ringD(10, 10, IC.G, 1.3) + [[-5, -4], [5, 3], [-3, 6], [6, -6], [0, 0]].map(([x, y]) => ln(x - 1.6, y - 1.6, x + 1.6, y + 1.6, IC.W, 0.8) + ln(x - 1.6, y + 1.6, x + 1.6, y - 1.6, IC.W, 0.8)).join(''),
+  fish: () => [0, 1, 2, 3, 4, 5].map(k => { const a = k * Math.PI / 3; const x = 11 * Math.cos(a), y = 11 * Math.sin(a), nx = -Math.sin(a) * 2, ny = Math.cos(a) * 2; return `<path d="M${f1(x * 0.3)} ${f1(y * 0.3)}Q${f1(x * 0.5 + nx)} ${f1(y * 0.5 + ny)} ${f1(x * 0.65)} ${f1(y * 0.65)}T${f1(x)} ${f1(y)}" fill="none" stroke="${IC.A}" stroke-width="1.2" stroke-linecap="round"/>`; }).join(''),
+  heart: () => Array.from({ length: 22 }, (_, i) => { const t = (i / 22) * Math.PI * 2; return dt(11 * Math.pow(Math.sin(t), 3), -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * 0.72 - 1, 1.3, IC.P); }).join(''),
+  galaxy: () => Array.from({ length: 36 }, (_, i) => { const arm = i % 3, r = (Math.floor(i / 3) + 1) * 1.1, a = arm * 2.094 + r * 0.28; return dt(r * Math.cos(a), r * Math.sin(a) * 0.8, r < 4 ? 1.2 : 0.95, r < 4 ? IC.W : IC.A); }).join(''),
+  cascade: () => ringD(8, 4, IC.R, 1.1) + ringD(13, 8, IC.N, 1.1) + ringD(18, 12, IC.B, 1.1),
+  barrage: () => [-10, -5, 0, 5, 10].map((x, i) => ln(x * 0.3, 14, x, -2 - (i % 2) * 4, 'oklch(0.7 0.06 80)', 0.7) + burstI(x, -2 - (i % 2) * 4, 3.4, [IC.R, IC.G, IC.A, IC.P, IC.N][i])).join(''),
+  supernova: () => rays(16, 2, 14, IC.W, 1.1) + ringD(8, 14, IC.P, 1.3) + ringD(8, 9, IC.A, 1.1) + dt(0, 0, 2.6, IC.W),
+  smiley: () => ringD(18, 12, IC.G, 1.2) + dt(-4, -3, 1.6, IC.A) + dt(4, -3, 1.6, IC.A) + Array.from({ length: 7 }, (_, i) => { const a = Math.PI * (0.15 + 0.7 * i / 6); return dt(7 * Math.cos(a), 1 + 6 * Math.sin(a) - 1, 1.1, IC.P); }).join(''),
+  rainbow: () => [IC.R, IC.O, IC.G, IC.N, IC.B, IC.U].map((c, k) => `<path d="M${-13 + k * 1.6} 6A${13 - k * 1.6} ${13 - k * 1.6} 0 0 1 ${13 - k * 1.6} 6" fill="none" stroke="${c}" stroke-width="1.4"/>`).join(''),
+  butterfly: () => [-1, 1].map(sd => `<ellipse cx="${sd * 6}" cy="-3.5" rx="6" ry="5" transform="rotate(${sd * 25} ${sd * 6} -3.5)" fill="none" stroke="${IC.P}" stroke-width="1.4" stroke-dasharray="0.1 2.4" stroke-linecap="round"/><ellipse cx="${sd * 4.5}" cy="6" rx="3.6" ry="3.2" fill="none" stroke="${IC.U}" stroke-width="1.4" stroke-dasharray="0.1 2.3" stroke-linecap="round"/>` + ln(sd * 0.8, -9, sd * 3.5, -13, IC.G, 0.9)).join('') + ln(0, -8, 0, 9, IC.G, 1.3),
+  star: () => { const V = Array.from({ length: 10 }, (_, k) => { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 5.2 : 13; return [r * Math.cos(a), r * Math.sin(a)]; }); return `<path d="M${V.map(p => p.map(f1).join(' ')).join('L')}Z" fill="none" stroke="${IC.W}" stroke-width="1.5" stroke-dasharray="0.1 2.4" stroke-linecap="round" stroke-linejoin="round"/>` + dt(0, 0, 1.6, IC.W); },
+  cube: () => { const a = [[-7, -4], [5, -8], [10, -1], [-2, 3]], b = a.map(([x, y]) => [x, y + 11]); const e = (p, q) => ln(p[0], p[1], q[0], q[1], IC.W, 1.1); return [0, 1, 2, 3].map(i => e(a[i], a[(i + 1) % 4]) + e(b[i], b[(i + 1) % 4]) + e(a[i], b[i])).join(''); },
+  jelly: () => `<path d="M-11 0A11 10 0 0 1 11 0" fill="none" stroke="${IC.A}" stroke-width="1.5" stroke-dasharray="0.1 2.3" stroke-linecap="round"/>` + [-8, -4, 0, 4, 8].map(x => `<path d="M${x} 1q2 3 0 6t0 6" fill="none" stroke="${IC.P}" stroke-width="1.1" stroke-linecap="round"/>`).join(''),
+  swarm: () => [[-8, -6], [6, -8], [10, 2], [-3, 9], [-10, 5], [2, -1], [7, 9], [-5, 0]].map(([x, y], i) => dt(x, y, 1.4, IC.G) + `<path d="M${x} ${y}q${i % 2 ? 2 : -2} 2 0 4" fill="none" stroke="${IC.O}" stroke-width="0.8"/>`).join(''),
+};
+// The disc behind each drawing is the night sky.
+const shellIcon = id => `<svg viewBox="-17 -17 34 34" aria-hidden="true"><circle r="16.5" fill="oklch(0.14 0.03 275)" stroke="oklch(1 0 0 / 0.08)"/>${(DRAW[id] || DRAW.mix)()}</svg>`;
+/* ---------- end shell drawings ---------- */
+
 function popover(box, btn) {
   const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
   btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
@@ -2615,11 +2684,25 @@ document.getElementById('finale').addEventListener('click', finale);
 // The stepper walks the shell list and wraps at each end.
 const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
 let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
+// The grid: one button per shell; picking one closes it.
+const shellGrid = document.getElementById('shells');
+shellGrid.innerHTML = SHELL_LIST.map(([id, name]) => `<button type="button" data-shell="${id}" aria-pressed="false">${shellIcon(id)}<span>${name}</span></button>`).join('');
+popover(shellBox, document.getElementById('shellBtn'));
+shellGrid.addEventListener('click', e => {
+  const b = e.target.closest('[data-shell]');
+  if (!b) return;
+  const i = SHELL_LIST.findIndex(([id]) => id === b.dataset.shell);
+  stepShell(i - shellAt);
+  shellBox.classList.remove('is-open');
+  document.getElementById('shellBtn').setAttribute('aria-expanded', 'false');
+});
 function stepShell(d) {
   shellAt = (shellAt + d + SHELL_LIST.length) % SHELL_LIST.length;
   const [id, name] = SHELL_LIST[shellAt];
   opts.shell = id; save('shell', id);
   shellName.textContent = name;
+  shellBox.querySelector('.ico').innerHTML = shellIcon(id);
+  shellGrid.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.shell === id)));
   if (!d) return;
   // The name slides in from the side of the pressed arrow.
   shellName.classList.remove('from-next', 'from-prev');
