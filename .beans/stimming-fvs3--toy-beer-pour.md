@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:41Z
-updated_at: 2026-11-09T10:25:53Z
+updated_at: 2026-11-09T10:36:12Z
 ---
 
 Build Beer pour from docs/plans/beer.md. It starts in the Lab, on Bar v2. Pour a Belgian beer into a backlit glass: bubbles rise in trains, the head climbs, swells and settles, and each sip leaves a lacing ring.
@@ -38,3 +38,13 @@ Build Beer pour from docs/plans/beer.md. It starts in the Lab, on Bar v2. Pour a
 - Glass: condensation after the Train ride fog. The glass is chilled, cold beer fogs the wall below the level, and beads run.
 - The glass starts empty; the pointer's height sets a target flow and the bottle tips to meet it.
 - Tom: needs a serious overhaul next (direction to agree).
+
+## Overhaul brief (2026-11-09)
+
+Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild, macro shot, grab-the-bottle pour, fizz first, warm backlight, Duvel first, luminous painterly style, watch then sip.
+
+- [ ] Overhaul 1: three.js scene, macro camera, depth of field, backdrop, Duvel glass and bottle
+- [ ] Overhaul 2: GPU fizz (trains, wall bubbles, surge, pops); checkpoint with Tom
+- [ ] Overhaul 3: grab-the-bottle pour, stream, liquid
+- [ ] Overhaul 4: head, sips, lacing
+- [ ] Overhaul 5: the other 24 beers

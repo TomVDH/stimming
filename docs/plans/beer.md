@@ -10,7 +10,31 @@
 - Tom supplies the real labels later. Until then the labels are generated stand-ins: colours and type only, with no copied logos.
 - The fidelity bar is Dandelion: a premium backdrop, light flecks, grain, and the most we can get from the glass.
 
-**Architecture:** raw WebGL2. One full-screen pass ray-traces the scene in 3D:
+## Overhaul brief (Tom, 2026-11-09, ten questions)
+
+The ray-traced build (rounds 1 and 2) is the reference. The overhaul replaces it.
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Engine | Rebuild on three.js 0.170: glass and bottles as lathe meshes from the photo outlines, a physical transmission material, GPU particles. |
+| 2 | Shot | Macro close-up. The glass fills most of the frame, with a shallow depth of field. The bottle enters from the side only to pour. |
+| 3 | Pour | Grab the bottle itself. Drag it over the glass; dragging further round tips it more, so the angle sets the flow. A second drag on the glass tilts the glass. |
+| 4 | Perfect first | Bubbles and fizz. |
+| 5 | Light | Warm bar backlight: one lamp behind the glass, a dark bar, bokeh and flecks. |
+| 6 | Range | Duvel first, to final quality. The other 24 follow on the same system. |
+| 7 | Realism | Stylized. |
+| 8 | Fizz | All four: nucleation trains, bubbles clinging to the walls, the surge after pouring, pops with sparkles and spray at the surface. |
+| 9 | Style | Luminous painterly, after Dandelion: glowing gradients, soft bokeh, light bleeding through the foam, loose shapes. |
+| 10 | Loop | Watch it live, then sip. Sips lower the beer and leave lacing rings. Clear brings a fresh chilled glass and bottle. |
+
+Overhaul order:
+1. three.js scene: macro camera, depth of field, the warm backlight, the bokeh backdrop, the Duvel glass and bottle from their outlines.
+2. Fizz: GPU bubble particles for the trains, the wall bubbles, the surge and the pops. This is the checkpoint to show Tom.
+3. Grab-the-bottle pour, the stream and the liquid.
+4. The head, sips and lacing.
+5. The other 24 beers.
+
+**Architecture (rounds 1 and 2, reference):** raw WebGL2. One full-screen pass ray-traces the scene in 3D:
 - **Vessels:** the glass and the bottle are solids of revolution. Each is a 512-sample profile texture holding outer radius, inner radius and both slopes.
 - **Media:** the ray marches through air, glass, beer, foam and bottle glass. A step is a safe distance in meridian space, and bisection finds each boundary.
 - **Optics:** each boundary refracts by Snell's law. Fresnel reflection samples a studio (a key softbox and a rim strip). Total internal reflection keeps the ray inside the glass wall.
