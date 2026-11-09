@@ -936,13 +936,14 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   // Haze: the far land fades out; the sky itself turns milky.
   float hz = uStorm * (t > 5e3 ? 0.7 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
   c = mix(c * (1.0 - 0.35 * uStorm), air, hz);
+  float scud = 0.0;
   // Scud: loose patches of murk drift between the towers, fixed to the ground.
   // They sit on a layer 4.5 km below the eye, or on the first surface nearer than that.
   if (uStorm > 0.0 && d.y < 0.05) {
     float tp = min(4.5 / max(-d.y, 0.02), t);
     vec2 w = d.xz * tp + uCam;
     float n = textureLod(uNoise, vec3(w / 23.0, uTime * 0.004), 0.0).r * 0.65 + textureLod(uNoise, vec3(w / 7.0, 0.37 + uTime * 0.007), 0.0).g * 0.35;
-    float scud = smoothstep(0.42, 0.72, n) * uStorm * (1.0 - exp(-tp / 40.0));
+    scud = smoothstep(0.42, 0.72, n) * uStorm * (1.0 - exp(-tp / 40.0));
     c = mix(c, air * 1.15, scud * 0.55);
     skyA *= 1.0 - scud * 0.55;
   }
@@ -951,6 +952,22 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float tip = dot(d, normalize(uTip));
   vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
+  // Flashes light the murk round them: a soft ball, seen only through haze, scud and fog.
+  float murk = clamp(hz * 1.3 + scud + fa, 0.0, 1.0);
+  if (murk > 0.01) {
+    float ball = 0.0;
+    for (int i = 0; i < ${MAXFL}; i++) {
+      vec4 f = uFl[i];
+      if (f.z <= 0.0) continue;
+      vec2 rel = f.xy - uCam;
+      float dist = max(length(rel), 1.0);
+      vec3 fp = normalize(vec3(rel.x, 4.0 - H - dist * dist / 12742.0, rel.y));
+      float ang = acos(clamp(dot(d, fp), -1.0, 1.0)), rad = f.w * 1.8 / dist;
+      // The glow needs air between here and the flash: near surfaces cut it.
+      ball += f.z * exp(-ang * ang / (rad * rad)) * smoothstep(0.25, 0.8, t / dist);
+    }
+    c += vec3(0.62, 0.66, 0.9) * ball * murk * 0.5;
+  }
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
 }

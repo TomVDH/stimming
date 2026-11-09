@@ -64,7 +64,7 @@ export function createBolts() {
       const geo = new LineGeometry();
       geo.setPositions(ch.pts.flatMap(p => [p.x, p.y, p.z]));
       // A white-violet core inside a wide blue halo.
-      for (const [color, width, glow] of [[0xe4e6ff, 1.1 * ch.w + 0.5, 1], [0x6f78ff, 3.5 * ch.w + 1.5, 0.12]]) {
+      for (const [color, width, glow] of [[0xe4e6ff, 1.1 * ch.w + 0.5, 1], [0x6f78ff, 3 * ch.w + 1.5, 0.07]]) {
         const l = new Line2(geo, mat(color, width, glow * ch.w));
         l.frustumCulled = false;
         group.add(l); lines.push(l);
@@ -95,7 +95,7 @@ export function createBolts() {
         b.group.position.set(-camXZ[0], -H - (dx * dx + dz * dz) / R_EARTH2, -camXZ[1]);
         b.group.children.forEach(l => {
           const k = l.material.userData.glow * Math.min(f.level, 2.5) * (b.ground ? 1 - 0.85 * cover : 1);
-          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 2.5 * (1 - haze) * day);
+          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 1.5 * (1 - haze) * day);
           l.material.resolution.set(outW, outH);
         });
         if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
