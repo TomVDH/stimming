@@ -227,3 +227,8 @@ The twilight plume (spike 29 A, now the tile) in five print styles, each with po
 
 Rounds 2 and 3 were too oriented on the launch alone. Round 4 is one composition in four print styles: a bold reed fringe across the foot (26 stalks with plume heads, one cut-out), a trail that climbs from behind it and bends right, a spark at its head. Hover launches: the trail draws, the spark rides it; pointer y sets the climb.
 A Poster: four flat bands of sky from ink blue to a gold horizon, cream trail, four-ray star. B Halftone poster: the dawn as a dot gradient, dotted trail, a disc with ray dots. C Line: one weight of white line, gold rule, dashed trail, eight-ray burst. D Riso: two fluorescent inks on cream paper, the orange plate off register, paper grain. Emblems `launch32-a..d.svg`.
+
+## Icon spike 33 (15:50, Tom: less stylised, better fidelity, an ascent plume)
+
+Round 5 keeps round 4's composition (near reed fringe, far reed bed, trail, spark) and replaces the trail with a real exhaust column: 52 puffs along the climb, each a cold body, a lit body and a rim toward the light, softened by a small blur; a dusk gradient sky with a horizon glow and a mist band; a flame and a glowing spark at the head. Hover launches: puffs appear up to the head and grow as they age; pointer y sets the climb.
+A Ascent, dawn (sunlit above the shadow line). B Ascent, night (stars, flame-lit column). C Ascent, first sun (pale sky, all sunlit, violet reeds). One shared emblem: lit puffs white, cold grey, reeds white.
