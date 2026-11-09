@@ -78,7 +78,7 @@ The pipe is L = 1.6 m long, closed at both ends. Both ends are pressure antinode
 | Flame target | a = 1 − exp(−2.2 · drive · ηkL · \|p(x)\|). Height = gas · (1 + s · (2.2a − 0.45)), where s eases from 0 to 1 while a tone plays. Nodes dip to about 0.55 of rest; antinodes leap to about 2.75. |
 | Flame response | each height follows its target with a critically damped spring of about 80 ms |
 | Buzz | the tip of each flame trembles in proportion to a, as the gas jets pulse at audio rate |
-| Drum pulse | a Gaussian bump that moves at a display speed of 2.6 tube lengths per second, decays with τ 0.9 s and reflects at both ends. A capped end reflects pressure upright, so the bump comes back as a bump. Up to 8 pulses. |
+| Drum pulse | a Gaussian bump that moves at a display speed of 2 tube lengths per second, decays with τ 1.2 s and reflects at both ends. A capped end reflects pressure upright, so the bump comes back as a bump. Up to 8 pulses. The pulse adds after the spring, which is too slow for it. |
 | Colour | soot = smoothstep(0.9, 2.2, height / rest). Short flames stay blue; tall flames grow a yellow-orange tip. |
 
 - The real pulse would cross the pipe in 6 ms. The toy slows it about 100 times, so the eye can follow it. The physics stays true; only the clock changes.
