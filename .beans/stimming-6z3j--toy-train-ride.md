@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T19:17:00Z
+updated_at: 2026-11-09T19:34:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -87,3 +87,14 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Zurich HB: hall roof with a lamp field, four more platforms, a waiting train, no rain under the roof; a dense Zurich light field
 - [x] Larger stations get an island platform with its own canopy
 - [x] Walenstadt no longer sits on top of Zurich HB at the loop end
+
+## Round 10: Bar v2.5, shared glass rain, Murg (Tom, 2026-11-09)
+- [x] Bar v2.5: corners bar (Weather stepper with six states, Speed slider; Time, Drift, Wet glass and Quality in Settings) plus trainride/annex.json
+- [x] Weather: Clear, Drizzle, Rain, Downpour, Mist, Fog; random on load; Drift steps to a neighbour every two to five minutes; W and T keys
+- [x] shared/glassrain.js: one pane-rain and fog shader (beads, wind lanes, lens, fog) from Window seat's drops; Train Ride uses it; the sperm-like heads are gone
+- [x] Runs slant with train speed through a 0.3 s lag
+- [x] Line ends at Murg: tools/cut.py cut route.png 3.5 km past Murg and closed the loop; station values are route metres now
+- [x] Quiet stop line: flat grey type on the wall, a clock, and a stop's name only while pulling in; no screen, no country tells
+- [x] The train stops at six stations (Zurich HB, Thalwil, Wädenswil, Pfäffikon SZ, Ziegelbrücke, Murg) and runs through the rest
+- [x] Frame: no blind cassette, thinner cross bar with no latch, lighter reveal and seal
+- [ ] Window seat to adopt shared/glassrain.js (its own chat)

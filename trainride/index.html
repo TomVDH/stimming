@@ -23,24 +23,6 @@
 }
 .stage--trainride canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--trainride canvas { transition: none; } }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 260 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -49,34 +31,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A mountain valley by night or by day, seen through a carriage window on a high viaduct. Rain runs back along the glass as the train goes. Drag to lean and peer along the valley; scroll or pinch to lean against the glass.">
       <p class="fail" hidden>Train Ride needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="mode" role="group" aria-label="Weather">
-        <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
-        <button class="chip" type="button" data-value="rain" aria-pressed="true">Rain</button>
-        <button class="chip" type="button" data-value="fogged" aria-pressed="false">Fogged</button>
-      </div>
-      <div class="choices" id="time" role="group" aria-label="Time of day">
-        <button class="chip" type="button" data-value="night" aria-pressed="true">Night</button>
-        <button class="chip" type="button" data-value="day" aria-pressed="false">Day</button>
-      </div>
-      <label class="slider"><span>Speed</span><input type="range" id="speed" min="0" max="1" step="0.01" value="0.6" aria-label="Speed: standing to fast"></label>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>lean and peer</dd></div>
-          <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>lean to the glass</dd></div>
-          <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>weather</dd></div>
-          <div class="fine"><dt><kbd>T</kbd></dt><dd>day or night</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -104,8 +61,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { initPage, choices, whenVisible, reduced, onReducedChange, quality, pixelRatio, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, onReducedChange, quality, pixelRatio, onQuality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { GLASS_RAIN } from '../shared/glassrain.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -113,15 +71,16 @@ const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
-initPage({ id: 'trainride' });
 
 /* ---------- settings ---------- */
 // Settings persist per browser; storage is optional.
 const saved = k => { try { return localStorage.getItem(`stimming.trainride.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.trainride.${k}`, String(v)); } catch { /* storage is optional */ } };
 const opts = {
-  // The weather is new on every load: rain most often, then fog, then clear.
-  mode: ['rain', 'rain', 'rain', 'fogged', 'fogged', 'clear'][Math.floor(Math.random() * 6)],
+  // The weather is new on every load: rain most often, clear least.
+  mode: ['drizzle', 'rain', 'rain', 'downpour', 'mist', 'fog', 'clear'][Math.floor(Math.random() * 7)],
+  drift: saved('drift') !== '0',
+  wet: saved('wet') || '1',
   speed: saved('speed') != null ? +saved('speed') : 0.6,
   time: saved('time') || 'night',
 };
@@ -245,6 +204,8 @@ const OUTU = {
   uScale: { value: 1 },
   uSmear: { value: 0 },
   uRain: { value: 1 },
+  // uPour is the rain in the air; above 1 it thickens the streaks.
+  uPour: { value: 1 },
   uSpeed: { value: 0 },
   uView: { value: new THREE.Vector2(1, 1) },
   // x is the nearest platform's centre; y is its half length, 0 when none is near.
@@ -1180,7 +1141,7 @@ void main() {
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */`
     attribute vec4 aDrop;
-    uniform float uScale, uTime, uRain, uSpeed, uDay;
+    uniform float uScale, uTime, uPour, uSpeed, uDay;
     uniform vec2 uView;
     uniform vec4 uLP[${NL}];
     varying vec3 vC;
@@ -1219,7 +1180,7 @@ void main() {
       // By day the drops only catch the grey sky.
       c = mix(c, vec3(0.045, 0.05, 0.056), uDay);
       // One drop's light spreads over its streak, so long streaks dim.
-      vC = c * uRain * wpx / (wpx + len * 0.35);
+      vC = c * uPour * wpx / (wpx + len * 0.35);
       // Streaks right by the eye would smear into bands, so they fade out.
       vC *= smoothstep(0.8, 2.2, ca.w);
     }`,
@@ -1255,13 +1216,14 @@ const W = {
   uDay: { value: 0 },
   tRoom: { value: null },
   uSpeed: { value: 0 },
-  uRD: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
-  uRV: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
-  uRO: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
+  uRunM: { value: new THREE.Vector2(0, -1) },
+  uFlow: { value: 0 },
   uLamp: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
   tPid: { value: null },
   tStamp: { value: null },
   uStnK: { value: 0 },
+  // uPh is the stop line's half size on the wall.
+  uPh: { value: new THREE.Vector2(0.42, 0.033) },
 };
 const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: W, depthTest: false, depthWrite: false,
@@ -1270,7 +1232,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform sampler2D tOut;
   uniform vec2 uRes;
   uniform float uTime, uRad, uRain, uFog, uSpeed, uPatch, uDay;
-  uniform vec2 uRD[4], uRV[4], uRO[4];
+  uniform vec2 uRunM;
+  uniform float uFlow;
   uniform samplerCube tRoom;
   uniform vec2 uTan, uC0;
   uniform float uYaw;
@@ -1279,91 +1242,14 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec3 uLamp[3];
   uniform sampler2D tPid, tStamp;
   uniform float uStnK;
+  uniform vec2 uPh;
   varying vec2 vUv;
   const vec3 STNC = vec3(0.84, 0.92, 1.0);
   // The glass sits back in a reveal; a rubber seal holds it.
-  const float REVEAL = 0.07, SEAL = 0.006, BAR = 0.012;
+  const float REVEAL = 0.06, SEAL = 0.004, BAR = 0.008;
   ${NOISE}
   float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
-  // Still beads: one per cell.
-  // xy is the disc position, z the radius on screen, w the hit.
-  vec4 beads(vec2 p, float sc, float dens) {
-    vec2 g = p * sc, i = floor(g), f = fract(g);
-    if (hash1(i + 9.0) > dens) return vec4(0.0);
-    vec2 o = 0.25 + 0.5 * hash2(i);
-    float r = 0.05 + 0.12 * hash1(i + 3.0);
-    // Real beads sag a little and are never perfect discs.
-    vec2 dv = (f - o) / r * vec2(1.0 + 0.15 * hash1(i + 5.0), 0.92 + 0.1 * hash1(i + 6.0));
-    dv.y += 0.12 * dv.x * dv.x;
-    if (dot(dv, dv) > 1.0) return vec4(0.0);
-    return vec4(dv, r / sc, 1.0);
-  }
-  // Running drops: four classes, each a lattice that the CPU slides along its own path.
-  // uRD is the slide, uRV the velocity now, uRO the velocity a moment ago.
-  // The return has the same layout as beads; trail is the clear thread.
-  const float CS = 0.07;
-  vec4 runs(vec2 p, vec2 D, vec2 V, vec2 VO, float seed, float dens, out float trail) {
-    trail = 0.0;
-    float sp = length(V);
-    vec2 dn = sp > 1e-4 ? V / sp : vec2(0.0, -1.0);
-    vec2 dold = length(VO) > 1e-4 ? normalize(VO) : dn;
-    vec2 ax = vec2(-dn.y, dn.x);
-    // Fast drops draw long trails; the old part keeps the old slant.
-    float tl = 0.06 + sp * 0.2;
-    vec2 pp = p - D;
-    vec4 thread = vec4(0.0);
-    for (int j = 0; j < 10; j++) {
-      float t = float(j) * CS * 0.5;
-      if (t > tl + CS) break;
-      // Walk back up the bent trail to find heads that could own this pixel.
-      vec2 s = pp + dn * t + (dold - dn) * (t * t / (2.0 * tl));
-      vec2 c = floor(s / CS), ci = mod(c, 64.0);
-      if (hash1(ci + seed) > dens) continue;
-      float ph = hash1(ci + seed + 5.0);
-      // Stick-slip: each drop pauses and lurches round its lattice point.
-      float w = 1.3 + 1.7 * ph;
-      float A = min(0.35 * CS, 0.85 * sp / w);
-      vec2 head = (c + 0.2 + 0.6 * hash2(ci + seed * 1.7)) * CS + dn * A * sin(uTime * w + ph * 40.0);
-      vec2 d = pp - head;
-      float al = dot(d, dn), ac = dot(d, ax);
-      float hr = 0.0028 + 0.0032 * ph;
-      // The head: round in front, drawn out behind as speed grows.
-      vec2 q = vec2(ac / hr, al / (hr * (al > 0.0 ? 1.05 : 1.5 + sp * 0.8)));
-      if (dot(q, q) < 1.0) return vec4(ax * q.x + dn * q.y, hr * 1.2, 1.0);
-      float tb = -al;
-      if (tb <= 0.0 || tb > tl * 2.0) continue;
-      // The trail bends toward the old slant and wanders a little.
-      vec2 cp = head - dn * tb - (dold - dn) * (tb * tb / (2.0 * tl));
-      float acr = dot(pp - cp, ax) - 0.0018 * sin(tb * 52.0 + ph * 30.0) * smoothstep(0.0, 0.03, tb);
-      // The head wipes a track through fog; the track fogs over behind it.
-      trail = max(trail, smoothstep(1.0, 0.55, abs(acr) / hr) * (1.0 - tb / (tl * 2.0)));
-      if (tb > tl || thread.w > 0.0) continue;
-      float age = tb / tl;
-      // Beadlets break off along the thread.
-      float cell = tb * 70.0 + ph * 9.0;
-      vec2 bb = vec2(acr / 0.0015, (fract(cell) - 0.5) * 2.6);
-      if (hash1(vec2(ph * 91.0, floor(cell))) > 0.78 && dot(bb, bb) < 1.0) { thread = vec4(ax * bb.x + dn * bb.y, 0.0012, 0.5); continue; }
-      // The thread thins toward its tail and acts as a narrow cylinder lens.
-      float tw = 0.0011 * (1.0 - 0.6 * age);
-      if (abs(acr) < tw) thread = vec4(ax * (acr / tw), tw, 0.8 * (1.0 - age));
-    }
-    return thread;
-  }
-  // A water lens: a dome that flips and shrinks the view behind it.
-  // The edge bends light most, so the rim reads dark.
-  void lens(vec4 b, float k, inout vec2 off, inout float cover, inout float rim, inout float spec) {
-    if (b.w <= 0.0) return;
-    k *= b.w;
-    float dd = dot(b.xy, b.xy), h = sqrt(max(1.0 - dd, 0.0));
-    off -= b.xy / max(h, 0.25) * b.z * 3.0 * k;
-    // Each drop is a tiny fisheye: it shows a wide, flipped view, with sky in its lower half.
-    off += (-b.xy * 0.06 + vec2(0.0, 0.14)) * k * (1.0 - 0.4 * dd);
-    cover = max(cover, k * (1.0 - dd));
-    rim = max(rim, k * smoothstep(0.62, 1.0, dd));
-    // The carriage light above makes one small warm highlight.
-    vec3 N = normalize(vec3(b.xy, h * 1.4));
-    spec = max(spec, k * 2.2 * pow(max(dot(N, vec3(0.28, 0.5, 0.82)), 0.0), 160.0));
-  }
+  ${GLASS_RAIN}
   void main() {
     vec2 px = gl_FragCoord.xy / uRes;
     float asp = uRes.x / uRes.y;
@@ -1391,8 +1277,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 col;
     // A roller-blind cassette spans the top of the opening; its pull tab hangs in the middle.
     vec2 cr = vec2(p.x - uC0.x, uC0.y + uHalf.y - p.y);
-    bool cas = dW < 0.0 && cr.y < 0.034 && abs(cr.x) < uHalf.x - uRad * 0.3;
-    bool tab = dW < 0.0 && abs(cr.x) < 0.026 && cr.y >= 0.034 && cr.y < 0.052 && length(max(abs(vec2(cr.x, cr.y - 0.043)) - vec2(0.018, 0.001), 0.0)) < 0.008;
+    bool cas = false;
+    bool tab = false && abs(cr.x) < 0.026 && cr.y >= 0.034 && cr.y < 0.052 && length(max(abs(vec2(cr.x, cr.y - 0.043)) - vec2(0.018, 0.001), 0.0)) < 0.008;
     if (cas || tab) {
       float v = cr.y / 0.034;
       // Brushed aluminium: a lit shoulder up top, a curved lip and a dark slot below.
@@ -1421,9 +1307,6 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         col *= 1.0 - 0.5 * smoothstep(0.75, 1.0, abs(by));
         col += alb * STNC * uStnK * 0.3 * (0.5 + 0.5 * by);
         for (int i = 0; i < 3; i++) col += vec3(1.0, 0.82, 0.6) * uLamp[i].z * 0.4 * exp(-length(uLamp[i].xy - pg) * 8.0) * smoothstep(-0.2, 0.8, by);
-        // The hopper latch: a dark grip at the middle of the bar.
-        float lt = sdRR(vec2(q.x, q.y - yb), vec2(0.03, BAR * 0.7), 0.006);
-        if (lt < 0.0) col = mix(vec3(0.02), vec3(0.08), uDay) + mix(warm * 0.03, vec3(0.1), uDay) * smoothstep(-0.5, 1.0, by);
       }
     } else if (dW < 0.0 && d < -SEAL) {
       /* ---- glass ---- */
@@ -1431,34 +1314,15 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       p = pg;
       vec2 off = vec2(0.0);
       float cover = 0.0, rim = 0.0, spec = 0.0, clear = 0.0;
-      if (uRain > 0.001) {
-        // The wind strips some beads off the pane at speed.
-        float strip = 1.0 - 0.35 * smoothstep(5.0, 40.0, uSpeed);
-        lens(beads(p, 38.0, 0.2 * uRain * strip), uRain, off, cover, rim, spec);
-        lens(beads(p + 3.7, 85.0, 0.26 * uRain * strip), uRain, off, cover, rim, spec);
-        lens(beads(p + 7.1, 160.0, 0.26 * uRain), uRain, off, cover, rim, spec);
-        // A fine mist of tiny beads gives the pane its wet sheen.
-        lens(beads(p + 11.3, 340.0, 0.3 * uRain), uRain * 0.25, off, cover, rim, spec);
-        // Each class answers the head wind with its own lag and slant.
-        for (int k = 0; k < 4; k++) {
-          float tk;
-          lens(runs(p, uRD[k], uRV[k], uRO[k], float(k) * 13.7, 0.13 + 0.03 * float(k), tk), uRain, off, cover, rim, spec);
-          clear = max(clear, tk);
-        }
-        clear *= uRain;
-      }
-      // Fog: the mode base and a cold rim near the frame.
-      // Fog: an even base with soft drift, finer grain, and a cold rim at every frame edge.
-      float fog = uFog * (0.86 + 0.18 * fbm(p * 3.0) + 0.06 * vnoise(p * 70.0));
-      fog += 0.16 * smoothstep(-0.06, -SEAL, dg) * (0.7 + 0.4 * fbm(p * 20.0));
-      // Long rain fogs the pane in patches.
-      // They start at the cold frame and the low pane, then spread.
-      if (uPatch > 0.001) {
-        float field = fbm(p * 3.2 + 11.0) * 0.75 + fbm(p * 9.0 + 3.0) * 0.25;
-        field += 0.42 * smoothstep(-0.16, 0.0, dg) + 0.22 * smoothstep(0.0, -0.32, q.y);
-        float thr = mix(1.3, 0.6, uPatch) + (vnoise(p * 46.0) - 0.5) * 0.06;
-        fog += 0.75 * smoothstep(thr, thr + 0.3, field) * (0.9 + 0.15 * vnoise(p * 18.0));
-      }
+      // Shared pane rain: the wind strips the larger beads at speed.
+      // The shared drops are sized for a pane 0.44 m away; this one is 1 m.
+      vec3 Ls = vec3(0.28, 0.5, 0.82);
+      vec2 pr = p * 0.45;
+      grBeads(pr, uRain, 1.0 - 0.5 * smoothstep(5.0, 40.0, uSpeed), Ls, off, rim, spec, cover);
+      // Runs slant with the train's speed; trails stretch as it rises.
+      grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, Ls, off, rim, spec, cover, clear);
+      off /= 0.45;
+      float fog = grFog(p, uFog, dg, uPatch);
       fog = clamp(fog * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
       // Close to the glass, each drop covers more of the view.
       vec2 uv = px + off / vec2(asp, 1.0) / uEye.z;
@@ -1512,7 +1376,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Station light washes the drops and the fog at a platform.
       col += STNC * uStnK * (fog * 0.05 + cover * 0.08 + rim * 0.1);
       // Drops: a dark rim and a warm highlight from the room.
-      col *= 1.0 - 0.45 * rim;
+      col *= 1.0 - 0.5 * rim;
       // By day the bright far windows of the cabin make the highlight.
       col += mix(warm * 0.35 * roomG, vec3(0.6, 0.63, 0.66), uDay) * spec;
       // Dried tracks of old rain: grime that only a lamp shows.
@@ -1553,7 +1417,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       if (d < 0.0) {
         // The rubber seal: near black, with a soft sheen on its round edge.
         float r = 1.0 - abs(d / SEAL * 2.0 + 1.0);
-        col = mix(vec3(0.006), vec3(0.02), uDay) + mix(warm * 0.012 * roomG, vec3(0.05), uDay) * r * r;
+        col = mix(vec3(0.014), vec3(0.04), uDay) + mix(warm * 0.02 * roomG, vec3(0.06), uDay) * r * r;
       } else {
         // The ray strikes the reveal between the wall face and the glass.
         float a = 0.0, b = 1.0;
@@ -1565,11 +1429,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         vec3 alb = mix(vec3(0.84, 0.83, 0.8), vec3(0.74, 0.74, 0.72), smoothstep(0.6, 0.8, n2.y));
         // The last part toward the glass is the anodised window frame.
         float al = smoothstep(0.7, 0.72, f);
-        alb = mix(alb, vec3(0.5, 0.51, 0.53) * (0.94 + 0.06 * vnoise(vec2(dot(h2, n2.yx * vec2(1.0, -1.0)) * 900.0, f))), al);
+        alb = mix(alb, vec3(0.64, 0.65, 0.67) * (0.94 + 0.06 * vnoise(vec2(dot(h2, n2.yx * vec2(1.0, -1.0)) * 900.0, f))), al);
         // A dark joint where the lining meets the frame.
-        alb *= 1.0 - 0.7 * smoothstep(0.02, 0.0, abs(f - 0.71));
+        alb *= 1.0 - 0.45 * smoothstep(0.02, 0.0, abs(f - 0.71));
         // Night: the cabin light falls from above, so the sill is brightest.
-        vec3 night = vec3(1.0, 0.9, 0.8) * 0.13 * (0.4 + 0.6 * max(n2.y, 0.0)) * (1.0 - 0.45 * f);
+        vec3 night = vec3(1.0, 0.9, 0.8) * 0.13 * (0.62 + 0.38 * n2.y) * (1.0 - 0.3 * f);
+        // The rounded outer edge of the lining catches a soft line of light.
+        night *= 1.0 + 0.35 * smoothstep(0.12, 0.0, f);
         // Day: light through the glass; the reveal brightens toward it.
         vec3 day = vec3(1.0, 0.95, 0.88) * 0.55 * (0.45 + 0.4 * max(n2.y, 0.0) + 0.15 * max(-n2.y, 0.0)) * (0.55 + 0.6 * f);
         col = alb * mix(night, day, uDay);
@@ -1607,18 +1473,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // Spill: a little lamp light reaches the wall beside the window.
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
-      // The passenger display hangs over the window.
+      // The stop line: flat type straight on the wall over the window, no screen.
       float top = uC0.y + uHalf.y;
-      vec2 ph = vec2(min(uHalf.x * 0.55, 0.32), 0.033), pc = vec2(uC0.x, top + 0.026 + ph.y);
-      float db = sdRR(p - pc, ph + 0.007, 0.008);
-      col *= 0.75 + 0.25 * smoothstep(0.0, 0.02, db + 0.004 * sign(pc.y - p.y));
-      if (db < 0.0) {
-        col = mix(vec3(0.012, 0.013, 0.015), vec3(0.03, 0.032, 0.035), uDay);
-        vec2 su = (p - pc) / ph * 0.5 + 0.5;
-        if (sdRR(p - pc, ph, 0.003) < 0.0) {
-          vec3 scr = texture2D(tPid, su).rgb;
-          col = scr * mix(0.5, 1.0, uDay) + mix(warm * 0.006, vec3(0.012), uDay) * (1.0 - su.y);
-        }
+      vec2 ph = uPh, pc = vec2(uC0.x, top + 0.02 + ph.y);
+      vec2 su = (p - pc) / ph * 0.5 + 0.5;
+      if (su.x > 0.0 && su.x < 1.0 && su.y > 0.0 && su.y < 1.0) {
+        vec4 ink = texture2D(tPid, su);
+        col = mix(col, ink.rgb * light, ink.a);
       }
     }
     gl_FragColor = vec4(col, 1.0);
@@ -1633,55 +1494,27 @@ const tPid = new THREE.CanvasTexture(pid);
 tPid.colorSpace = THREE.SRGBColorSpace;
 tPid.anisotropy = 4;
 W.tPid.value = tPid;
-// Station distances come from the rail graph; they scale onto the map length.
-const STN = ROUTE.meta.stations.map(([n, d]) => [n.replace('Zürich Hauptbahnhof', 'Zürich HB'), d * TILE / ROUTE.meta.stations.at(-1)[1]]);
-// The loop closes at Walenstadt, on top of Zurich HB; Walenstadt moves back before the blend.
-STN.at(-1)[1] = TILE - 3200;
+// Station distances are route metres; the line ends at Murg, under Quinten.
+const STN = ROUTE.meta.stations.map(([n, d]) => [n.replace('Zürich Hauptbahnhof', 'Zürich HB'), d]);
 let pidKey = '';
 document.fonts?.ready.then(() => { pidKey = ''; });
 function drawPid(s) {
-  const n = STN.length, i = STN.findIndex(st => st[1] > s);
-  const next = i < 0 ? 0 : i;
-  const sN = i < 0 ? TILE : STN[next][1];
-  const now = new Date(), hm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  // The arrival estimate: the rest of the run at cruise, plus the braking.
-  const halt = dwell > 0;
-  const eta = halt ? 0 : (sN - s) / Math.max(target, 4) + 12;
-  const mins = Math.ceil(eta / 60);
-  const key = `${next}|${halt}|${mins}|${hm(now)}`;
+  const now = new Date(), hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  // The line stays quiet: a clock, and a stop's name only while the train pulls in or waits.
+  const st = stopX === null ? null : STN.find(([n, sv]) => STOPS.has(n) && Math.abs(((((sv - 1 - stopX) % TILE) + TILE + TILE / 2) % TILE) - TILE / 2) < 2);
+  const near = dwell > 0 || (stopX !== null && stopX - camX < 900 && speed < target * 0.9);
+  const name = near && st ? st[0] : '';
+  const key = `${name}|${hm}`;
   if (key === pidKey) return;
   pidKey = key;
-  const c = pc2, W2 = 1280, H2 = 132;
-  // A flat black panel, type only: the stop, the time to it, the stops after.
-  c.fillStyle = '#05070a';
-  c.fillRect(0, 0, W2, H2);
+  const c = pc2, W2 = pid.width, H2 = 132;
+  c.clearRect(0, 0, W2, H2);
   c.textBaseline = 'alphabetic';
-  c.textAlign = 'left';
-  c.fillStyle = '#7d8a99';
-  c.font = '500 26px Gabarito, sans-serif';
-  c.fillText(halt ? 'Halt' : 'Nächster Halt', 34, 46);
-  c.fillStyle = '#ffffff';
-  c.font = '700 60px Gabarito, sans-serif';
-  const name = STN[next][0];
-  c.fillText(name, 32, 104);
-  const nw = c.measureText(name).width;
-  // The stops after: one quiet line beside the name.
-  c.font = '500 30px Gabarito, sans-serif';
-  c.fillStyle = '#6f7c8a';
-  const after = [1, 2, 3].map(k => STN[(next + k) % n][0]).join('   ');
-  let ax = 32 + nw + 40;
-  c.save();
-  c.beginPath(); c.rect(ax, 0, 1000 - ax, H2); c.clip();
-  c.fillText(after, ax, 102);
-  c.restore();
-  // The right block: the clock, and the minutes in amber.
+  c.fillStyle = '#6a6f76';
+  c.font = '500 34px Gabarito, sans-serif';
   c.textAlign = 'right';
-  c.fillStyle = '#ffffff';
-  c.font = '600 54px Gabarito, sans-serif';
-  c.fillText(hm(now), W2 - 34, 104);
-  c.fillStyle = '#ffb43c';
-  c.font = '600 28px Gabarito, sans-serif';
-  c.fillText(halt ? 'jetzt' : mins <= 1 ? 'in 1 Min.' : `in ${mins} Min.`, W2 - 34, 46);
+  c.fillText(hm, W2, 90);
+  if (name) { c.textAlign = 'left'; c.fillText(name, 0, 90); }
   tPid.needsUpdate = true;
 }
 scene.add(glass);
@@ -1768,16 +1601,30 @@ function frame(w, h, pr) {
   W.uRes.value.set(w * pr, h * pr);
   OUTU.uView.value.set(w * pr, h * pr);
   // One big window: wide in landscape, tall in portrait.
-  if (w >= h) { W.uHalf.value.set(Math.min(asp.v * 0.5 - 0.07, 0.95), 0.4); W.uRad.value = 0.07; }
-  else { W.uHalf.value.set(asp.v * 0.5 - 0.05, 0.42); W.uRad.value = 0.045; }
-  W.uC0.value.set(0, -0.035);
+  if (w >= h) { W.uHalf.value.set(Math.min(asp.v * 0.5 - 0.07, 0.95), 0.4); W.uRad.value = 0.07; W.uC0.value.set(0, -0.035); }
+  else { W.uHalf.value.set(asp.v * 0.5 - 0.05, 0.34); W.uRad.value = 0.045; W.uC0.value.set(0, -0.06); }
+  // The stop line spans most of the window; its canvas keeps the type's aspect.
+  const phx = w >= h ? Math.min(W.uHalf.value.x * 0.7, 0.42) : W.uHalf.value.x * 0.95, phy = w >= h ? 0.033 : 0.026;
+  W.uPh.value.set(phx, phy);
+  const cw = Math.min(1280, Math.round(132 * phx / phy));
+  if (pid.width !== cw) { pid.width = cw; tPid.dispose(); pidKey = ''; }
   OUTU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2)) / 400;
 }
 
 /* ---------- motion ---------- */
 // QA can start at a point on the route with ?x=.
 let time = 0, camX = +(qs.get('x') || 13000), speed = 0, target = 27;
-const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
+// Each weather sets the rain in the air, the water on the pane and the pane fog.
+// air above 1 only thickens the streaks; the sky and haze cap at 1.
+const MODES = {
+  clear: { air: 0, wet: 0, fog: 0 },
+  drizzle: { air: 0.35, wet: 0.45, fog: 0.1 },
+  rain: { air: 1, wet: 1, fog: 0 },
+  downpour: { air: 1.8, wet: 1.2, fog: 0.15 },
+  mist: { air: 0.1, wet: 0.25, fog: 0.55 },
+  fog: { air: 0.45, wet: 0.45, fog: 0.85 },
+};
+let wetMul = 1;
 let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0;
 const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
 let drag = false;
@@ -1878,40 +1725,26 @@ function place() {
 // The stop point puts the middle name sign in the window.
 const A_UP = 1.0, A_DN = 0.9, DWELL = 18;
 let stopX = null, dwell = 0, arrive = () => {};
+// The train stops only at the larger stations; it runs through the rest.
+const STOPS = new Set(['Zürich HB', 'Thalwil', 'Wädenswil', 'Pfäffikon SZ', 'Ziegelbrücke', 'Murg']);
 function nextStop(x) {
   let best = Infinity;
-  for (const [, sv] of STN) {
+  for (const [n, sv] of STN) {
+    if (!STOPS.has(n)) continue;
     let d = ((((sv - 1 - x) % TILE) + TILE) % TILE);
     if (d < 2) d += TILE;
     best = Math.min(best, d);
   }
   return x + best;
 }
-// Running drops come in four classes, big and slow to small and quick.
-// Each class feels the head wind late, by its lag, and only above its grip speed.
-// Small drops slant most; big ones keep falling.
-const RUN = [
-  { lag: 0.5, grip: 3, drag: 0.05, fall: 0.2, lift: 0.08, gust: 0.9 },
-  { lag: 1.3, grip: 6, drag: 0.042, fall: 0.15, lift: 0.0, gust: 1.4 },
-  { lag: 2.4, grip: 9, drag: 0.034, fall: 0.11, lift: -0.04, gust: 0.6 },
-  { lag: 4.0, grip: 13, drag: 0.026, fall: 0.08, lift: 0.04, gust: 1.9 },
-].map(r => ({ ...r, s: 0, old: new THREE.Vector2(0, -r.fall) }));
-const RUN_P = 0.07 * 64;
+// Runs on the pane follow the head wind closely: a short lag, no more.
+// At rest they fall straight down; at speed they stream aft.
+let runS = 0, flow = 0;
 function runFlow(dt) {
-  RUN.forEach((r, k) => {
-    r.s += (speed - r.s) * (1 - Math.exp(-dt / r.lag));
-    // Wind force grows with the square of speed, so the slant eases in.
-    const grip = THREE.MathUtils.smoothstep(r.s, r.grip, r.grip + 14);
-    const gust = 1 + 0.18 * Math.sin(time * r.gust + k * 2.1) * Math.min(1, r.s / 12);
-    const wind = r.s * r.drag * grip * gust;
-    const v = W.uRV.value[k].set(-wind, -r.fall + wind * r.lift);
-    // The old velocity trails the new one, so trails bend through a change.
-    r.old.lerp(v, 1 - Math.exp(-dt / 1.2));
-    W.uRO.value[k].copy(r.old);
-    const D = W.uRD.value[k];
-    D.addScaledVector(v, dt);
-    D.set(((D.x % RUN_P) + RUN_P) % RUN_P, ((D.y % RUN_P) + RUN_P) % RUN_P);
-  });
+  runS += (speed - runS) * (1 - Math.exp(-dt / 0.3));
+  W.uRunM.value.set(-runS / 6, -1).normalize();
+  flow += dt * (0.25 + runS / 14);
+  W.uFlow.value = flow;
 }
 function update(dt, pace) {
   // The train rolls at speed while awake and slows to a stop when idle.
@@ -1936,18 +1769,19 @@ function update(dt, pace) {
   W.uTime.value = time;
   mk = Math.min(1, mk + dt * 0.04);
   // Patches show after about 30 s of rain; other weather dries them.
-  rainT = mode === MODES.rain ? rainT + dt : Math.max(0, rainT - dt * 4);
+  rainT = mode.wet >= 1 ? rainT + dt : Math.max(0, rainT - dt * 4);
   W.uPatch.value = THREE.MathUtils.smoothstep(rainT, 18, 75);
   // Weather eases over: rain arrives in the air first, then wets the pane.
   // The pane dries far more slowly than it wets.
-  air += (mode.rain - air) * Math.min(1, dt * 0.4);
-  const wetK = mode.rain > W.uRain.value ? 0.18 : 0.05;
-  W.uRain.value += (Math.min(mode.rain, air * 1.2) - W.uRain.value) * Math.min(1, dt * wetK);
+  air += (mode.air - air) * Math.min(1, dt * 0.4);
+  const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2), wetK = wetT > W.uRain.value ? 0.18 : 0.05;
+  W.uRain.value += (wetT - W.uRain.value) * Math.min(1, dt * wetK);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 0.12);
   // Night and day cross over in about two seconds.
   dayV += (dayT - dayV) * Math.min(1, dt * 1.6);
   if (Math.abs(dayT - dayV) < 0.002) dayV = dayT;
-  OUTU.uRain.value = air;
+  OUTU.uRain.value = Math.min(1, air);
+  OUTU.uPour.value = air;
   eye.lerp(eyeT, Math.min(1, dt * 7));
   place();
 }
@@ -1979,7 +1813,12 @@ return {
   lean(k) { eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far); },
   // A moving train draws at full rate; the sleep still stops it.
   lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT,
-  setMode(v, now) { mode = MODES[v] || MODES.rain; mk = now ? 1 : 0; if (now) { W.uRain.value = air = mode.rain; W.uFog.value = mode.fog; OUTU.uRain.value = mode.rain; } },
+  setMode(v, now) {
+    mode = MODES[v] || MODES.rain;
+    mk = now ? 1 : 0;
+    if (now) { air = mode.air; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
+  },
+  setWet(k) { wetMul = k; mk = 0; },
   post: { bloom: [0.7, 0.55, 0.8], tint: [0.0008, 0.0007, 0.0009], vig: 0.45, vigIn: 0.45, grain: 0.03 },
 };
 }
@@ -2002,7 +1841,8 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
 /* ---------- route ---------- */
-// The line from Zurich HB to Walenstadt, traced on OpenStreetMap rails.
+// The line from Zurich HB to Murg, traced on OpenStreetMap rails.
+// tools/cut.py cut the map at Murg and closed the loop.
 // Heights come from the Terrarium tiles (Mapzen, AWS Open Data).
 // route.png: R and G hold the height in decimetres plus 500 m.
 // B is 255 on a lake, else town density up to 250.
@@ -2275,33 +2115,54 @@ stage.addEventListener('pointercancel', endPress);
 stage.addEventListener('wheel', e => { e.preventDefault(); S.lean(Math.exp(-e.deltaY * 0.0015)); wake(); }, { passive: false });
 
 /* ---------- bar ---------- */
-function popover(box, btn) {
-  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+// Bar v2.5: the corners bar; annex.json holds the sheet under the stage.
+const WEATHER = [['clear', 'Clear'], ['drizzle', 'Drizzle'], ['rain', 'Rain'], ['downpour', 'Downpour'], ['mist', 'Mist'], ['fog', 'Fog']];
+const setWeather = v => { opts.mode = v; S.setMode(v); driftAt = time0() + driftGap(); wake(); };
+const setTime = v => { opts.time = v; save('time', v); S.setTime(v); wake(); };
+const ui = initPage({
+  id: 'trainride',
+  bar: {
+    choice: {
+      label: 'Weather', display: 'stepper', value: opts.mode,
+      options: WEATHER.map(([value, label]) => ({ value, label })),
+      onPick: setWeather,
+    },
+    slider: { label: 'Speed', min: 0, max: 1, step: 0.01, value: opts.speed, onInput: v => { opts.speed = v; save('speed', v); S.setSpeed(cruise(v)); wake(); } },
+    settings: [
+      { type: 'choice', id: 'time', label: 'Time', value: opts.time, options: [{ value: 'night', label: 'Night' }, { value: 'day', label: 'Day' }], onPick: setTime },
+      // Drift lets the weather wander to a neighbour every few minutes.
+      { type: 'toggle', id: 'drift', label: 'Drift', value: opts.drift, onToggle: on => { opts.drift = on; save('drift', on ? '1' : '0'); } },
+      { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
+    ],
+    quality: true,
+    keys: [['drag', 'lean and peer'], ['scroll', 'lean to the glass'], ['W', 'next weather'], ['T', 'day or night']],
+  },
+});
 onQuality(() => { rung = 0; resize(true); wake(); });
-
-// The scene eases to the new weather.
-const modes = choices(document.getElementById('mode'), v => { opts.mode = v; S.setMode(v); wake(); });
-modes.set(opts.mode);
+S.setWet(+opts.wet);
 S.setMode(opts.mode, true);
-const speedEl = document.getElementById('speed');
-speedEl.value = String(opts.speed);
 S.setSpeed(cruise(opts.speed));
-speedEl.addEventListener('input', () => { opts.speed = +speedEl.value; save('speed', opts.speed); S.setSpeed(cruise(opts.speed)); wake(); });
-const times = choices(document.getElementById('time'), v => { opts.time = v; save('time', v); S.setTime(v); wake(); });
-times.set(opts.time);
 S.setTime(opts.time, true);
-const KEYS = { Digit1: 'clear', Digit2: 'rain', Digit3: 'fogged' };
+// Drift: the weather steps to a neighbour every two to five minutes.
+const time0 = () => performance.now() / 1000;
+const driftGap = () => 120 + Math.random() * 180;
+let driftAt = time0() + driftGap();
+setInterval(() => {
+  if (!opts.drift || document.hidden || time0() < driftAt) return;
+  const i = WEATHER.findIndex(w => w[0] === opts.mode);
+  const j = Math.max(0, Math.min(WEATHER.length - 1, i + (Math.random() < 0.5 ? -1 : 1)));
+  ui.choice?.set(WEATHER[j][0]);
+  setWeather(WEATHER[j][0]);
+}, 5000);
 addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (KEYS[e.code]) { modes.set(KEYS[e.code], true); return; }
-  if (e.code === 'KeyT') times.set(opts.time === 'day' ? 'night' : 'day', true);
+  if (e.code === 'KeyW') {
+    const i = WEATHER.findIndex(w => w[0] === opts.mode);
+    const v = WEATHER[(i + 1) % WEATHER.length][0];
+    ui.choice?.set(v);
+    setWeather(v);
+  }
+  if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
 });
 
 /* ---------- start ---------- */
