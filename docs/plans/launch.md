@@ -262,3 +262,8 @@ It is live as `shared/emblems/launch.svg`. The menu tile still shows spike 33 A;
 ## Menu tile is Strata (2026-11-09)
 
 The menu tile now shows spike 34 C. The bands, water and reeds are static markup in `index.html`; the script only moves the hairline, its dot and mirror, and the warm overlay. Checked headless in the Lab at 1280: rest and hover, no script errors. `icons/picks.json` records the pick.
+
+## Main shelf as No. 38 (Beta) (2026-11-09, Tom: promote this to main)
+
+Tom vetted the toy for the main shelf. `toys.json`: `number` 38, `sub` null, the entry sits after Fireworks; `stage` stays beta. The Strata tile moves from the Lab list to the main shelf in `index.html`, where the menu passes it the pointer. The page's intro fallback shows the emblem and No. 38.
+Not signed off: the version tag stays v0.9.

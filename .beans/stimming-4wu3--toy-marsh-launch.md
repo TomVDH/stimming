@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T23:09:19Z
+updated_at: 2026-11-09T23:14:02Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -188,3 +188,5 @@ The Dawn slider now runs from 18° of depression (full night) to 1°: `dawnDeg(v
 ## Soft shadow line, thinner cloud (04:05)
 
 The trail's sunlit band no longer steps on at the shadow line: it rises over a third of the shadow height and eases in (squared), and the sunlit key is 1.15x instead of 1.6x. The ground cloud thins faster: extinction 3.0 falling with age over 18 s, alpha 0.9 down to 0.2 by 50 s. Checked at Dawn 0.45, T+45 and T+70.
+
+- [x] Main shelf as No. 38 (Beta), Tom's call (2026-11-09); sign-off is still Tom's
