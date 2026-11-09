@@ -84,7 +84,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 /* ---------- the bar ---------- */
 // Handlers bind once the scene exists.
 // Themes appear here one by one, each signed off before the next.
-const SCENES = [['prairie', 'Prairie'], ['winter', 'Winter'], ['harbour', 'Harbour']];
+const SCENES = [['prairie', 'Prairie'], ['winter', 'Winter'], ['harbour', 'Harbour'], ['rooftop', 'Rooftop']];
 const firstScene = (() => {
   const q = new URLSearchParams(location.search).get('scene');
   let saved = null;
@@ -1684,6 +1684,268 @@ function buildHarbour(grp) {
   themeTick(0);
 }
 
+// Rooftop: a line from a water tank stand to an antenna mast, over a city at dusk.
+const roofTex = new THREE.CanvasTexture(tex2D(512, 512, (g, w, h) => {
+  g.fillStyle = '#8d8a86'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '40,38,36' : '210,205,198'},${rnd(0.03, 0.09)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(1, 4)); }
+  for (let i = 0; i < 26; i++) { const x = rnd(0, w), y = rnd(0, h), r = rnd(20, 90), gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(50,48,46,0.22)'); gr.addColorStop(1, 'rgba(50,48,46,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+  // Tar seams run between the slabs.
+  g.strokeStyle = 'rgba(25,24,24,0.7)'; g.lineWidth = 3;
+  for (let k = 0; k <= w; k += 128) { g.beginPath(); g.moveTo(k + rnd(-2, 2), 0); g.lineTo(k + rnd(-2, 2), h); g.stroke(); g.beginPath(); g.moveTo(0, k); g.lineTo(w, k + rnd(-3, 3)); g.stroke(); }
+}));
+roofTex.colorSpace = THREE.SRGBColorSpace;
+roofTex.wrapS = roofTex.wrapT = THREE.RepeatWrapping;
+const CITY_C = new THREE.Vector3(30, 150, -330);
+function buildRooftop(grp) {
+  const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
+  const Z0 = -5.3, Z1 = 9;
+  // The roof slab, and the block's walls that drop away below it.
+  const rt = roofTex.clone(); rt.needsUpdate = true; rt.repeat.set(22 / 6, (Z1 - Z0) / 6);
+  const slab = add(new THREE.Mesh(new THREE.BoxGeometry(22, 0.3, Z1 - Z0), new THREE.MeshStandardMaterial({ map: rt, roughness: 0.92 })), false);
+  slab.position.set(0, -0.15, (Z0 + Z1) / 2);
+  const bodyG = new THREE.BoxGeometry(22, 30, Z1 - Z0), bp = bodyG.attributes.position, bc = new Float32Array(bp.count * 3);
+  const top = lin(0.42, 0.012, 260), foot = lin(0.2, 0.05, 275);
+  for (let i = 0; i < bp.count; i++) { const c = bp.getY(i) > 0 ? top : foot; bc.set(c, i * 3); }
+  bodyG.setAttribute('color', new THREE.BufferAttribute(bc, 3));
+  const body = add(new THREE.Mesh(bodyG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })), false);
+  body.position.set(0, -15.3, (Z0 + Z1) / 2);
+  // A low parapet and a pipe railing at the far edge; the city lies beyond.
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x9a9690, roughness: 0.95 });
+  add(new THREE.Mesh(new THREE.BoxGeometry(22, 0.55, 0.3), concrete)).position.set(0, 0.275, Z0 + 0.15);
+  const rail = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.06, 160)), roughness: 0.5, metalness: 0.4 });
+  for (const y of [0.85, 1.18]) { const p = add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 22, 8).rotateZ(Math.PI / 2), rail)); p.position.set(0, y, Z0 + 0.15); }
+  for (let x = -10.5; x <= 10.5; x += 1.5) add(new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.65, 8), rail)).position.set(x, 0.86, Z0 + 0.15);
+  // The water tank stand: four steel legs, cross braces, a tank on top.
+  const steel = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.38, 0.03, 200)), roughness: 0.55, metalness: 0.5 });
+  const TX = -POST_X - 0.18, TD = 1.7, LEG = 3.4;
+  for (const [dx, dz] of [[0, 0], [-TD, 0], [0, -TD], [-TD, -TD]]) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.14, LEG, 0.14), steel)).position.set(TX + dx, LEG / 2, dz);
+    contact(grp, TX + dx, dz, 0.3, 0.3, 0.55);
+  }
+  for (const [ax, az, bx, bz] of [[0, 0, -TD, 0], [0, -TD, -TD, -TD], [0, 0, 0, -TD], [-TD, 0, -TD, -TD]]) for (const y0 of [0.4, 1.9]) {
+    const mx = TX + (ax + bx) / 2, mz = (az + bz) / 2, len = Math.hypot(TD, 1.5);
+    const br = add(new THREE.Mesh(new THREE.BoxGeometry(0.05, len, 0.05), steel));
+    br.position.set(mx, y0 + 0.75, mz);
+    if (az === bz) br.rotation.z = Math.atan2(TD, 1.5) * (y0 > 1 ? 1 : -1);
+    else br.rotation.x = Math.atan2(TD, 1.5) * (y0 > 1 ? 1 : -1);
+  }
+  add(new THREE.Mesh(new THREE.BoxGeometry(TD + 0.5, 0.12, TD + 0.5), steel)).position.set(TX - TD / 2, LEG + 0.06, -TD / 2);
+  const tankMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.78, 0.04, 210)), roughness: 0.45, metalness: 0.35 });
+  const tank = add(new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 1.9, 40), tankMat));
+  tank.position.set(TX - TD / 2, LEG + 1.07, -TD / 2);
+  for (const y of [0.35, 1.0, 1.65]) add(new THREE.Mesh(new THREE.TorusGeometry(1.16, 0.025, 6, 48).rotateX(Math.PI / 2), steel)).position.set(TX - TD / 2, LEG + 0.12 + y, -TD / 2);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.08, 40), tankMat)).position.set(TX - TD / 2, LEG + 2.06, -TD / 2);
+  // A ladder runs up the front leg.
+  for (let y = 0.3; y < LEG; y += 0.3) add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.4, 6).rotateZ(Math.PI / 2), steel)).position.set(TX - 0.3, y, 0.12);
+  for (const dx of [-0.1, -0.5]) add(new THREE.Mesh(new THREE.BoxGeometry(0.03, LEG, 0.03), steel)).position.set(TX + dx, LEG / 2, 0.12);
+  // The antenna mast: a pipe, a yagi on top, three guy wires.
+  const MX = POST_X + 0.18, MH = 6.2;
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, MH, 12), steel)).position.set(MX, MH / 2, 0);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 16), steel)).position.set(MX, 0.06, 0);
+  contact(grp, MX, 0, 0.35, 0.35, 0.6);
+  const alu = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.35, metalness: 0.8 });
+  for (const [y, len, yaw] of [[MH - 0.15, 2.4, 0.5], [MH - 1.0, 1.7, 0.2]]) {
+    const boom = new THREE.Group();
+    boom.add(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, len, 6).rotateZ(Math.PI / 2), alu));
+    for (let i = 0; i < 9; i++) {
+      const el = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, lerp(0.95, 0.45, i / 8), 5).rotateX(Math.PI / 2), alu);
+      el.position.x = -len / 2 + (i + 0.5) * len / 9;
+      boom.add(el);
+    }
+    boom.position.set(MX, y, 0);
+    boom.rotation.y = yaw;
+    boom.traverse(o => { o.castShadow = true; });
+    grp.add(boom);
+  }
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x22262c });
+  for (const a of [0.6, 2.7, 4.8]) {
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(MX, MH - 1.6, 0), new THREE.Vector3(MX + Math.cos(a) * 2.6, 0.02, Math.sin(a) * 2.6)]);
+    grp.add(new THREE.Line(g, wireMat));
+  }
+  // A collar clamp takes the line at the mast.
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.08, 12), steel)).position.set(MX, LINE_Y, 0);
+  // Two condenser units hum by the parapet, fans turning.
+  const unitMat = new THREE.MeshStandardMaterial({ color: 0xdedbd2, roughness: 0.6 });
+  const grill = new THREE.MeshStandardMaterial({ color: 0x2a2d30, roughness: 0.7 });
+  const fans = [];
+  for (const [x, z, r] of [[1.4, -4.4, 0.05], [2.6, -4.45, -0.03]]) {
+    const u = add(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.75, 0.38), unitMat));
+    u.position.set(x, 0.42, z); u.rotation.y = r;
+    const gr = add(new THREE.Mesh(new THREE.CircleGeometry(0.27, 24), grill));
+    gr.position.set(x + 0.12, 0.42, z + 0.195); gr.rotation.y = r;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.01), unitMat);
+    blade.position.set(x + 0.12, 0.42, z + 0.2); blade.rotation.y = r;
+    grp.add(blade); fans.push(blade);
+    contact(grp, x, z, 0.65, 0.35, 0.6, r);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.5), concrete)).position.set(x, 0.04, z);
+  }
+  // Styrofoam planters with leggy greens line the edge.
+  const foam = new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.9 });
+  const leaf = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.12, 140)), roughness: 0.7, side: THREE.DoubleSide });
+  for (const [x, z] of [[-1.2, -4.6], [-0.4, -4.65], [5.6, -4.5]]) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.38), foam)).position.set(x, 0.15, z);
+    for (let i = 0; i < 7; i++) {
+      const lf = add(new THREE.Mesh(new THREE.PlaneGeometry(0.12, rnd(0.25, 0.5)), leaf));
+      lf.position.set(x + rnd(-0.22, 0.22), 0.45, z + rnd(-0.1, 0.1));
+      lf.rotation.set(rnd(-0.4, 0.4), rnd(0, Math.PI), rnd(-0.3, 0.3));
+    }
+    contact(grp, x, z, 0.45, 0.3, 0.5);
+  }
+  // A vent stack and a bucket by the tank.
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.1, 16), steel)).position.set(-7.5, 0.55, -3.6);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.3, 20), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.6, 0.14, 250)), roughness: 0.4 }))).position.set(-2.3, 0.15, 0.9);
+  // The city: low blocks to the horizon, a cluster of towers; lit windows.
+  const cityU = { uBody: { value: v3(lin(0.26, 0.04, 268)) }, uHaze: { value: v3(lin(0.55, 0.07, 290)) }, uWarm: { value: v3(lin(0.86, 0.13, 75)) }, uCool: { value: v3(lin(0.88, 0.05, 220)) } };
+  const cityMat = new THREE.ShaderMaterial({ uniforms: cityU,
+    vertexShader: /* glsl */ `
+      varying vec3 vW, vN; varying float vSeed;
+      void main() {
+        vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vW = w.xyz;
+        vN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+        vSeed = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBody, uHaze, uWarm, uCool; varying vec3 vW, vN; varying float vSeed;
+      float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        float d = length(vW - cameraPosition);
+        // Faces toward the west sky catch a little last light.
+        vec3 col = uBody * (0.75 + 0.35 * max(dot(vN, normalize(vec3(-0.3, 0.2, -1.0))), 0.0));
+        if (abs(vN.y) < 0.5) {
+          float u = dot(vW.xz, vec2(-vN.z, vN.x));
+          vec2 cell = floor(vec2(u / 2.6, vW.y / 3.2));
+          vec2 f = fract(vec2(u / 2.6, vW.y / 3.2));
+          float win = step(0.22, f.x) * step(f.x, 0.78) * step(0.3, f.y) * step(f.y, 0.78);
+          float h = h2(cell + vSeed * 91.0);
+          float lit = win * step(0.58 - vSeed * 0.2, h);
+          col = mix(col, mix(uWarm, uCool, step(0.8, h2(cell * 1.7 + 3.0))) * (0.6 + 0.6 * h), lit);
+          col *= mix(1.0, 0.6, win * (1.0 - lit));
+        } else col *= 0.7;
+        col = mix(col, uHaze, smoothstep(180.0, 900.0, d) * 0.85);
+        gl_FragColor = vec4(col, 1.0);
+      }` });
+  const N = 900, blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), cityMat, N);
+  const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
+  const tops = [];
+  let k = 0;
+  for (let i = 0; i < N * 3 && k < N; i++) {
+    const z = -rnd(230, 820), x = rnd(-1.1, 1.1) * (-z) + 20;
+    // Downtown stands off to the right of the line, far back.
+    const dt = Math.exp(-(((x - 60) / 100) ** 2) - (((z + 620) / 90) ** 2));
+    // Heights count from this roof; the street lies 32 m down.
+    const h = dt > 0.25 ? rnd(25, 45 + 55 * dt) : Math.random() < 0.12 ? rnd(4, 20) : rnd(-16, 4);
+    const w = rnd(12, 30), dd = rnd(12, 30);
+    blocks.setMatrixAt(k++, m.compose(p.set(x, -32, z), qq.setFromAxisAngle(up, rnd(-0.12, 0.12)), s.set(w, h + 32, dd)));
+    if (h > 45) tops.push(x, h + 1, z);
+  }
+  blocks.count = k;
+  blocks.frustumCulled = false;
+  blocks.userData.isoHide = true;
+  grp.add(blocks);
+  // Red warning lights blink on the tallest towers.
+  const beaconGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(tops, 3));
+  const beacons = new THREE.Points(beaconGeo, new THREE.PointsMaterial({ color: new THREE.Color().setRGB(4, 0.25, 0.15), size: 3.2, sizeAttenuation: false, fog: false, transparent: true }));
+  beacons.userData.isoHide = true;
+  grp.add(beacons);
+  // First stars come out high in the east.
+  const starP = [];
+  for (let i = 0; i < 420; i++) {
+    const az = rnd(0, TAU), e = Math.asin(rnd(0.22, 1));
+    starP.push(Math.cos(e) * Math.sin(az) * 820, Math.sin(e) * 820, Math.cos(e) * Math.cos(az) * 820);
+  }
+  const stars = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starP, 3)), new THREE.PointsMaterial({ color: 0xdfe6ff, size: 1.4, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.75, depthWrite: false }));
+  stars.userData.isoHide = true;
+  grp.add(stars);
+  // The furball: three pairs of jets turn and chase over the city.
+  const jetG = mergeGeometries([
+    new THREE.CylinderGeometry(0.55, 0.85, 11, 8).rotateX(Math.PI / 2),
+    new THREE.ConeGeometry(0.55, 3.6, 8).rotateX(Math.PI / 2).translate(0, 0, 7.3),
+    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-6.2, 0, -4.5, 6.2, 0, -4.5, 0, 0, 3.5, -2.8, 0, 2.5, 2.8, 0, 2.5, 0, 0, 5.5], 3)).setIndex([0, 1, 2, 3, 4, 5]),
+    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-0.9, 0, -5.8, -0.9, 0, -2.8, -1.4, 3.2, -6.4, 0.9, 0, -5.8, 0.9, 0, -2.8, 1.4, 3.2, -6.4], 3)).setIndex([0, 1, 2, 3, 4, 5]),
+  ].map(g => g.toNonIndexed()).map(g => { g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); return g; }));
+  const jetMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.42, 0.02, 250)), roughness: 0.45, metalness: 0.4, side: THREE.DoubleSide });
+  const burnTex = new THREE.CanvasTexture(tex2D(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,240,1)'); gr.addColorStop(0.3, 'rgba(255,170,80,0.8)'); gr.addColorStop(1, 'rgba(255,90,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }));
+  const PAIRS = [
+    { ax: 170, ay: 50, az: 110, wx: 0.21, wy: 0.33, wz: 0.42, px: 0, py: 1.1, pz: 0.4 },
+    { ax: 140, ay: 60, az: 130, wx: 0.27, wy: 0.19, wz: 0.36, px: 2.2, py: 0.2, pz: 2.9 },
+    { ax: 190, ay: 40, az: 90, wx: 0.17, wy: 0.41, wz: 0.31, px: 4.1, py: 2.5, pz: 1.3 },
+  ];
+  const jets = [];
+  for (const [pi, P] of PAIRS.entries()) for (const lag of [0, 1.3]) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(jetG, jetMat));
+    const burn = new THREE.Sprite(new THREE.SpriteMaterial({ map: burnTex, color: new THREE.Color().setRGB(3, 1.6, 0.8), blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    burn.position.z = -6.4; burn.scale.setScalar(4.2);
+    g.add(burn);
+    g.userData.isoHide = true;
+    grp.add(g);
+    jets.push({ g, P, lag, off: lag ? new THREE.Vector3(rnd(-8, 8), rnd(-6, 6), rnd(-8, 8)) : new THREE.Vector3(), seed: pi });
+  }
+  const TS = 1.6;
+  const path = (j, t, out) => {
+    const P = j.P, u = t * TS - j.lag;
+    return out.set(CITY_C.x + P.ax * Math.sin(P.wx * u + P.px), CITY_C.y + P.ay * Math.sin(P.wy * u + P.py), CITY_C.z + P.az * Math.sin(P.wz * u + P.pz)).add(j.off);
+  };
+  // Each contrail is a camera-facing ribbon along the jet's past path.
+  const SN = 70, SDT = 0.09, J = jets.length;
+  const tPos = new Float32Array(J * SN * 2 * 3), tAge = new Float32Array(J * SN * 2), tSide = new Float32Array(J * SN * 2), tIdx = [];
+  for (let j = 0; j < J; j++) for (let i = 0; i < SN; i++) {
+    const o = (j * SN + i) * 2;
+    tAge[o] = tAge[o + 1] = i / (SN - 1); tSide[o] = -1; tSide[o + 1] = 1;
+    if (i < SN - 1) tIdx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2);
+  }
+  const trailG = new THREE.BufferGeometry();
+  trailG.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+  trailG.setAttribute('aAge', new THREE.BufferAttribute(tAge, 1));
+  trailG.setAttribute('aSide', new THREE.BufferAttribute(tSide, 1));
+  trailG.setIndex(tIdx);
+  const trails = new THREE.Mesh(trailG, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { uLit: { value: v3(lin(0.95, 0.045, 55)) }, uShade: { value: v3(lin(0.7, 0.06, 300)) } },
+    vertexShader: `attribute float aAge, aSide; varying float vAge, vSide; void main() { vAge = aAge; vSide = aSide; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 uLit, uShade; varying float vAge, vSide;
+      void main() {
+        // Clamps keep pow and smoothstep off NaN at the ends.
+        float edge = smoothstep(0.0, 0.7, clamp(1.0 - vSide * vSide, 0.0, 1.0));
+        float a = pow(clamp(1.0 - vAge, 0.0, 1.0), 1.4) * edge * 0.8 * smoothstep(0.0, 0.04, vAge);
+        gl_FragColor = vec4(mix(uLit, uShade, vAge * 0.8), a);
+      }` }));
+  trails.frustumCulled = false;
+  trails.userData.isoHide = true;
+  grp.add(trails);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tg = new THREE.Vector3(), sd = new THREE.Vector3(), toC = new THREE.Vector3(), drift = new THREE.Vector3();
+  themeTick = t => {
+    const tt = t * (reduce ? 0.3 : 1);
+    for (const f of fans) f.rotation.z = -t * 9;
+    beacons.material.opacity = Math.sin(t * 2.4) > 0.2 ? 1 : 0.08;
+    for (const [j, jet] of jets.entries()) {
+      path(jet, tt, a); path(jet, tt + 0.05, b); path(jet, tt - 0.05, c);
+      jet.g.position.copy(a);
+      jet.g.lookAt(b);
+      // Lateral pull banks the jet into the turn.
+      tg.subVectors(b, a).normalize();
+      sd.crossVectors(up, tg).normalize();
+      const acc = (b.x + c.x - 2 * a.x) * sd.x + (b.y + c.y - 2 * a.y) * sd.y + (b.z + c.z - 2 * a.z) * sd.z;
+      jet.g.rotateZ(clamp(-acc * 4, -1.3, 1.3));
+      for (let i = 0; i < SN; i++) {
+        const age = i * SDT, o = (j * SN + i) * 2;
+        path(jet, tt - age - 0.04, a); path(jet, tt - age + 0.02, b);
+        // Old trail drifts down the wind and spreads.
+        drift.set(2.5, -0.4, 1.0).multiplyScalar(age);
+        a.add(drift);
+        tg.subVectors(b, a).normalize();
+        toC.subVectors(camera.position, a).normalize();
+        sd.crossVectors(tg, toC).normalize().multiplyScalar(0.8 + age * 1.6);
+        tPos[o * 3] = a.x - sd.x; tPos[o * 3 + 1] = a.y - sd.y; tPos[o * 3 + 2] = a.z - sd.z;
+        tPos[o * 3 + 3] = a.x + sd.x; tPos[o * 3 + 4] = a.y + sd.y; tPos[o * 3 + 5] = a.z + sd.z;
+      }
+    }
+    trailG.attributes.position.needsUpdate = true;
+  };
+  themeTick(0);
+}
+
 /* ---------- grass ---------- */
 // Blades bend in the same wind as the cloth; backlit tips glow.
 const grassU = { uTime: { value: 0 }, uWind: { value: 0 }, uScroll: { value: 0 }, uGlow: { value: new THREE.Vector3() } };
@@ -2226,6 +2488,18 @@ const THEMES = {
     // Just over the deck, by the landward end; the horizon sits low, the sky is vast.
     cam: { pos: [-9.8, 0.3, 5.6], look: [4.5, 1.75, -3.2], lookN: [2.5, 2.3, -2.4], fov: 58, fovN: 74 }, iso: { yaw: Math.PI * 0.75, at: [0.5, 0.6, -1.0] },
     mix: ['slicker', 'sheet', 'sheet', 'breton', 'sock', 'towel', 'sheet'], build: buildHarbour,
+  },
+  rooftop: {
+    sky: { zen: [0.3, 0.12, 268], mid: [0.45, 0.13, 262], hor: [0.74, 0.11, 50], haze: [0.55, 0.08, 300], cloud: [0.8, 0.1, 40], shade: [0.4, 0.08, 285] },
+    warm: [0.8, 0.14, 55], white: [0.9, 0.06, 70], sunK: 1.5, glow: 0.5, exp: 1, shadow: 0.6, elK: 0.4,
+    line: [0.92, 0.02, 80], grade: { con: 1.12, sat: 1.15, vig: 0.26, lift: [0.0, 0.0, 0.02] }, clouds: 0,
+    fog: [[0.55, 0.08, 290], 80, 1400], hemi: [[0.56, 0.1, 265], [0.4, 0.05, 285], 1.7],
+    ground: 'none', grass: { n: 0, h: [0.1, 0.2], cols: [[0.5, 0.05, 120], [0.5, 0.05, 120], [0.5, 0.05, 120]] },
+    wind: 'gusty', sun: 0.85, stiff: 1, frost: 0, snow: 0, daisies: 0,
+    deck: [-11, 11, -5.2, 9],
+    // Low on the roof, looking up: the line crosses a deep blue sky.
+    cam: { pos: [-0.6, 0.25, 6.2], look: [0.6, 3.4, -2.0], lookN: [0.3, 3.6, -2.0], fov: 56, fovN: 74 }, iso: { yaw: -Math.PI * 0.75, at: [-0.4, 1.0, -1.2] },
+    mix: ['sheet', 'tee', 'towel', 'sheet', 'dress', 'sock', 'pillow'], build: buildRooftop,
   },
 };
 let T = null, setGroup = null;

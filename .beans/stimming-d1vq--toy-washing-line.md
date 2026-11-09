@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T10:34:02Z
+updated_at: 2026-11-09T10:42:06Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -89,3 +89,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Harbour v3 (Tom: "how is this coen -- villeneuve?"): Villeneuve grey fog, flat grey sky, calm dark sea, pier into the fog, a container ship as one faint broadside silhouette on the horizon (even deck load, never a skyline), muted grade; the slicker is the one colour.
 
 - Harbour v4 (Tom: fix iso, more Villeneuve scale): camera drops to just over the deck with a wider lens; the pier runs to 90 m into the fog; iso hides the boat and lays a grey mist veil over the sea, so the pier floats in a void.
+
+- Rooftop (theme 4, anime): worm's-eye shot from a city roof at dusk; the line runs from a water tank stand to a TV antenna mast; deep blue sky with first stars, sunset cumulus, a far city of lit windows with red beacons; three pairs of jets turn and chase with camera-facing contrail ribbons. Iso shows the roof as a model.
