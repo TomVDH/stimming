@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:41Z
-updated_at: 2026-11-09T11:17:17Z
+updated_at: 2026-11-09T11:20:50Z
 ---
 
 Build Beer pour from docs/plans/beer.md. It starts in the Lab, on Bar v2. Pour a Belgian beer into a backlit glass: bubbles rise in trains, the head climbs, swells and settles, and each sip leaves a lacing ring.
@@ -56,3 +56,5 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 - Lookdev pass 2: beer depth gradient and caustic shimmer, cream line, head volume with mixed bubble sizes and glints, crisp narrow softbox streaks, warmer graded S-curve, higher camera to show the head's top, irregular nucleation trains.
 
 - Lookdev pass 3: tighter, lower lamp so the glass above the head stays clear; gentler bloom; soft table edge; the glass base glows with light piped from the beer; vertical caustic bands in the beer. Checked at 1280 and 375.
+
+- Camera orbit: a slow drift round the glass's axis plus a mouse-hover lean; off under reduced motion. Glass: back-wall highlights, slight chromatic fringe, solid stem and foot that bend the view, rounded lip highlight, soft table horizon under the lamp.

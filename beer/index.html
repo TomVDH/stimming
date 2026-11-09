@@ -199,7 +199,7 @@ const ROOM = `
 uniform vec3 uLamp;
 uniform float uTime;
 const float BACK_Z = -70.0;
-const vec2 LAMP = vec2(-3.0, 1.0);
+const vec2 LAMP = vec2(-3.0, 3.5);
 vec3 bokehTier(vec2 x, float n, float seed, vec2 rr, float gain) {
   vec3 c = vec3(0.0);
   for (int i = 0; i < 16; i++) {
@@ -218,7 +218,7 @@ vec3 bokehTier(vec2 x, float n, float seed, vec2 rr, float gain) {
   return c;
 }
 vec3 lampAt(vec2 x) {
-  vec2 ld = (x - LAMP) / vec2(11.0, 7.5);
+  vec2 ld = (x - LAMP) / vec2(11.0, 7.0);
   float dl = dot(ld, ld);
   return uLamp * (0.95 * exp(-pow(dl, 1.1) * 1.6) + 0.1 * exp(-sqrt(dl) * 1.8) + 0.025 * exp(-sqrt(dl) * 0.5));
 }
@@ -312,7 +312,8 @@ void main() {
   vec3 c = vec3(0.05, 0.043, 0.038) * uLamp * irr * tint;
   c += uLamp * pow(max(h.y, 0.0), 160.0) * irr * 0.5 * tint;
   c *= 1.0 - 0.65 * exp(-pow(max(length(p.xz) - gp(0.1).x, 0.0) / 0.7, 2.0));
-  c += uLamp * 0.06 * exp(-pow((p.z + 62.0) / 1.2, 2.0)) * exp(-pow((p.x - LAMP.x) / 20.0, 2.0));
+  // Far back the table meets the room: the lamp's glow carries on, so the horizon stays soft.
+  c = mix(c, lampAt(vec2(p.x, 0.0)) + vec3(0.004, 0.003, 0.0028), smoothstep(-40.0, -69.0, p.z));
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -598,6 +599,21 @@ void main() {
   vW = w.xyz; vL = position; vN = normalize(mat3(modelMatrix) * normal);
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
+const GLASS_BACK_FS = NOISE + ROOM + PROF + `
+uniform vec3 uKey;
+varying vec3 vW, vN, vL;
+void main() {
+  // Only the far half of the wall; the near half is the front pass's.
+  if (dot(vW.xz, cameraPosition.xz) > 0.0) discard;
+  vec3 v = normalize(cameraPosition - vW), n = -normalize(vN);
+  if (dot(n, v) < 0.0) n = -n;
+  float edge = 1.0 - max(dot(n, v), 0.0);
+  float F = 0.04 + 0.96 * pow(edge, 5.0);
+  vec3 col = studio(vW, reflect(-v, n)) * F * 0.55 + uLamp * pow(edge, 7.0) * 0.25;
+  // The far lip: a fine line across the back of the rim.
+  col += uKey * 0.18 * smoothstep(uGH - 0.2, uGH - 0.02, vL.y);
+  gl_FragColor = vec4(col, 1.0);
+}`;
 const GLASS_FS = NOISE + ROOM + PROF + `
 uniform sampler2D uScene;
 uniform vec2 uRes;
@@ -612,11 +628,17 @@ void main() {
   // The foot, stem and base are solid glass; the bowl is a thin wall.
   float solid = 1.0 - smoothstep(-0.05, 0.05, vW.y - uGYb);
   // The thin wall shifts the view a little, most at the silhouette.
-  vec2 off = n.xy * (0.0015 + 0.014 * pow(edge, 3.0) + 0.025 * solid);
-  vec3 through = texture2D(uScene, uv - off).rgb;
+  // Solid glass bends it hard; at the edges red and blue part a little.
+  vec2 nv = (viewMatrix * vec4(n, 0.0)).xy;
+  vec2 off = nv * (0.0015 + 0.014 * pow(edge, 3.0) + 0.06 * solid * (0.3 + edge));
+  float disp = 0.05 + 0.1 * solid;
+  vec3 through = vec3(texture2D(uScene, uv - off * (1.0 - disp)).r, texture2D(uScene, uv - off).g, texture2D(uScene, uv - off * (1.0 + disp)).b);
   // Seen edge-on the wall bends light away: a narrow dark band inside the silhouette.
   through *= 1.0 - 0.6 * smoothstep(0.62, 0.9, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
-  through *= mix(vec3(1.0), vec3(0.82, 0.88, 0.86), solid);
+  // Thick or grazing glass shows its faint green.
+  through *= mix(vec3(1.0), vec3(0.84, 0.93, 0.89), max(solid * 0.8, pow(edge, 3.0) * 0.6));
+  // Solid glass is darker at its edges, where light leaves it at a slant.
+  through *= 1.0 - 0.5 * solid * smoothstep(0.3, 0.9, edge);
   // The thick base pipes light down from the beer above it.
   float piped = solid * step(uGYb + 0.3, uLevel) * smoothstep(uGYb - 2.0, uGYb, vW.y);
   through += uLamp * exp(-uSigma * 2.5) * 0.35 * piped * (0.6 + 0.4 * c);
@@ -633,9 +655,15 @@ void main() {
   }
   float F = 0.04 + 0.96 * pow(edge, 5.0);
   vec3 col = through * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
-  // The silhouette and the lip catch the backlight as fine bright lines.
+  // The silhouette catches the backlight as a fine bright line.
   col += uLamp * pow(edge, 9.0) * 0.7;
-  col += uKey * smoothstep(uGH - 0.25, uGH, vL.y) * 0.25 * (0.4 + 0.6 * edge);
+  // The lip is a rounded bead: a crisp highlight on top, a darker band just under it.
+  float lipTop = smoothstep(uGH - 0.12, uGH - 0.02, vL.y);
+  float lipBand = smoothstep(uGH - 0.32, uGH - 0.2, vL.y) * (1.0 - smoothstep(uGH - 0.16, uGH - 0.1, vL.y));
+  col *= 1.0 - 0.25 * lipBand;
+  col += (uKey * 0.9 + uLamp * 0.3) * lipTop * (0.5 + 0.5 * edge);
+  // A faint stem-and-foot sparkle where the solid glass catches the key light.
+  col += uKey * 0.25 * solid * pow(max(dot(reflect(-v, n), normalize(KEY_DIR)), 0.0), 30.0);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -671,6 +699,7 @@ const U = {
   uGP: { value: null }, uGH: { value: 16 }, uGYb: { value: 5 }, uSigma: { value: new THREE.Vector3() },
   uLevel: { value: 0 }, uTop: { value: 0 }, uHaze: { value: 0 }, uSurge: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
 };
+let glassBack = null;
 let gTex = null, glassMesh = null, beerMesh = null, foamMesh = null, bottleMesh = null, fizzMesh = null, labTex = null;
 const quadGeo = new THREE.PlaneGeometry(2, 2);
 function fullQuad(mat, order) {
@@ -880,7 +909,7 @@ function build() {
   const bgMat = new THREE.ShaderMaterial({ vertexShader: FULL_VS, fragmentShader: BACK_FS, depthTest: false, depthWrite: false, uniforms: { ...U, ...camU } });
   back.add(fullQuad(bgMat, -10));
   back.userData.cam = camU;
-  const table = new THREE.Mesh(new THREE.PlaneGeometry(200, 92).rotateX(-Math.PI / 2).translate(0, 0, -16), new THREE.ShaderMaterial({ vertexShader: TABLE_VS, fragmentShader: TABLE_FS, uniforms: { ...U, uFill: { value: 0 } } }));
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(200, 106).rotateX(-Math.PI / 2).translate(0, 0, -16), new THREE.ShaderMaterial({ vertexShader: TABLE_VS, fragmentShader: TABLE_FS, uniforms: { ...U, uFill: { value: 0 } } }));
   table.userData.fill = table.material.uniforms.uFill;
   back.add(table);
   back.userData.table = table;
@@ -909,7 +938,14 @@ function build() {
   }));
   foamMesh.frustumCulled = false;
   foamMesh.renderOrder = 3;
-  mid.add(beerMesh, fizzMesh, foamMesh);
+  // The far wall of the glass: its highlights show through the empty bowl.
+  glassBack = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
+    vertexShader: GLASS_VS, fragmentShader: GLASS_BACK_FS, side: THREE.BackSide, transparent: true,
+    depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { ...U },
+  }));
+  glassBack.frustumCulled = false;
+  glassBack.renderOrder = 0;
+  mid.add(glassBack, beerMesh, fizzMesh, foamMesh);
 
   // Top: the middle as seen, and the glass over it.
   top.add(fullQuad(showTex(rtScene.texture), -10));
@@ -931,14 +967,28 @@ function build() {
 // A macro shot: the glass fills most of the frame; the bottle rests out of focus at the right.
 let narrow = false, dpr = 1;
 const rest = { x: 9.5, z: -7 };
+// The camera orbits the glass's axis: a slow drift, plus a lean toward the pointer.
+const camBase = { at: new THREE.Vector3(), dist: 34, lift: 3.4 };
+const orbit = { yaw: 0, pitch: 0, hx: 0, hy: 0 };
+function aimCamera() {
+  const drift = reduced() ? 0 : 1;
+  const yaw = drift * (0.24 * Math.sin(time * 0.11) + 0.09 * Math.sin(time * 0.23 + 1.0)) + orbit.yaw;
+  const pitch = drift * 0.05 * Math.sin(time * 0.17 + 0.4) + orbit.pitch;
+  const { at, dist, lift } = camBase;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const ex = at.x * 0.3, ez = dist;
+  camera.position.set(c * ex + s * ez, at.y + lift + dist * Math.sin(pitch), -s * ex + c * ez);
+  camera.lookAt(c * at.x, at.y + dist * Math.sin(pitch) * 0.3, -s * at.x);
+  camera.updateMatrixWorld();
+}
 function frameCamera(w, h) {
   const aspect = w / h;
   narrow = w < 640;
   const gh = glass.h;
   const at = new THREE.Vector3(narrow ? 0.6 : 2.2, gh * 0.6, 0);
   const dist = 34;
-  camera.position.set(at.x * 0.3, at.y + 3.4, dist);
-  camera.lookAt(at);
+  Object.assign(camBase, { at, dist, lift: 3.4 });
+  aimCamera();
   // The frame holds the bowl; on phones it also holds the glass's width.
   // The frame always keeps the glass's width, with room for the pour beside it.
   const halfH = Math.max(gh * 0.52, (narrow ? 7.6 : 10.5) / aspect);
@@ -1003,6 +1053,7 @@ function setBeer(id) {
   U.uHaze.value = beer.haze;
   glassMesh.geometry.dispose();
   glassMesh.geometry = glassGeometry(G.outline, glass.prof);
+  glassBack.geometry = glassMesh.geometry;
   bottleMesh.geometry.dispose();
   bottleMesh.geometry = new THREE.LatheGeometry(B.outline.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y)), 96);
   const bu = bottleMesh.material.uniforms;
@@ -1070,6 +1121,7 @@ act.reset = act.clear;
 /* ---------- render ---------- */
 let time = 0;
 function render() {
+  aimCamera();
   const lamp = oklchLinear(...LIGHTS[light]);
   U.uLamp.value.set(...lamp);
   U.uTime.value = time;
@@ -1132,6 +1184,9 @@ function frame(now) {
     foamStep(dt * pace);
     settleLevels();
     time += dt * pace * (reduced() ? 0.25 : 1);
+    // The lean follows the pointer, eased.
+    orbit.yaw += (orbit.hx * 0.38 - orbit.yaw) * ease(dt, 0.5);
+    orbit.pitch += (orbit.hy * 0.1 - orbit.pitch) * ease(dt, 0.5);
     render();
     again = !(idle && pace < 0.01);
   } finally {
@@ -1181,6 +1236,15 @@ wake();
 document.fonts.ready.then(() => { drawLabel(beer); uploadLabel(); live(); });
 
 canvas.addEventListener('pointerdown', down);
+// A mouse hover leans the camera round the glass.
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  const rc = canvas.getBoundingClientRect();
+  orbit.hx = clamp((e.clientX - rc.left) / rc.width * 2 - 1, -1, 1);
+  orbit.hy = clamp((e.clientY - rc.top) / rc.height * 2 - 1, -1, 1);
+  live();
+});
+canvas.addEventListener('pointerleave', () => { orbit.hx = orbit.hy = 0; live(); });
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
