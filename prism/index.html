@@ -24,6 +24,9 @@
 .stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
+/* A drag from the tray carries a piece; the open sheet fades meanwhile. */
+.s2-grid .s2-chip { touch-action: none; }
+html[data-carry] .s2-sheet { opacity: 0; pointer-events: none; }
 /* The spectroscope covers the table while it shows. */
 .stage canvas.spectro { z-index: 2; pointer-events: none; touch-action: none; }
 .stage canvas.spectro.on { pointer-events: auto; }
@@ -1538,6 +1541,16 @@ function drawPip(p) {
 }
 const ringR = p => p.r + Math.max(12, 0.045 * S);
 const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
+// The size grip rides the ring opposite the remove button.
+function gripAt(p) {
+  if (p.kind === 'source') return null;
+  const R = ringR(p), ka = knobA(p), from = p.slot ?? 0;
+  for (const j of [3 - from, ...[0, 1, 2, 3].filter(j => j !== from && j !== 3 - from)]) {
+    const a = SLOTS[j], x = p.x + Math.cos(a) * R, y = p.y + Math.sin(a) * R;
+    if (Math.abs(wrapA(a - ka)) > 0.5 && x > 12 && x < W - 12 && y > 12 && y < H - 12) return [x, y, a];
+  }
+  return null;
+}
 function ring(p) {
   const c = over, R = ringR(p), A = ringA;
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -1567,6 +1580,22 @@ function ring(p) {
   c.beginPath();
   c.arc(kx, ky, coarse ? 11 : 8.5, 0, TAU);
   c.stroke();
+  // The grip is a square with an outward arrow on each side.
+  const gp = gripAt(p);
+  if (!gp) return;
+  const [gx, gy, ga] = gp, h = coarse ? 6.5 : 5;
+  c.setTransform(pr * Math.cos(ga), pr * Math.sin(ga), -pr * Math.sin(ga), pr * Math.cos(ga), pr * gx, pr * gy);
+  c.fillStyle = FOC(A);
+  c.fillRect(-h, -h, 2 * h, 2 * h);
+  c.strokeStyle = FOC(0.6 * A);
+  c.lineWidth = 1.25;
+  c.beginPath();
+  for (const s of [1, -1]) {
+    const t = s * (h + 4), u = s * (h + 8);
+    c.moveTo(t, -3); c.lineTo(u, 0); c.lineTo(t, 3);
+  }
+  c.stroke();
+  c.setTransform(pr, 0, 0, pr, 0, 0);
 }
 // Edge strips and small glints add onto the table under the light.
 function edgeLight() {
@@ -1823,8 +1852,19 @@ function spot(kind) {
     const rx = q.x - x, ry = q.y - y, along = rx * ux + ry * uy, qr = q.r / Math.max(0.02, q.z);
     return along > 0 && along < len + qr && Math.abs(rx * uy - ry * ux) < qr + rr;
   });
-  // The first pass keeps every lit piece lit; the second allows shade.
-  for (const strict of [true, false]) {
+  // A spot off the light must not cut a beam that feeds a piece.
+  // The lamp's own beam always counts.
+  const cuts = (x, y) => {
+    for (let i = 0; i < nSeg; i++) {
+      const o = i * SG;
+      if (i && (SEG[o + 9] >= 1000 || SEG[o + 5] < 0.05)) continue;
+      const ax = SEG[o], ay = SEG[o + 1], dx = SEG[o + 2] - ax, dy = SEG[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+      const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll);
+      if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < rr + 0.02 * S) return true;
+    }
+    return false;
+  };
+  const inLight = strict => {
     for (const [, i] of cands.slice(0, 40)) {
       const o = i * SG, dx = SEG[o + 2] - SEG[o], dy = SEG[o + 3] - SEG[o + 1], len = Math.hypot(dx, dy);
       for (const t of ts) {
@@ -1833,17 +1873,22 @@ function spot(kind) {
         return [x, y, aim(kind, Math.atan2(dy, dx), x, y, cx, cy)];
       }
     }
-  }
+    return null;
+  };
+  // Order: lit and shading nothing, then dark and cutting nothing, then any.
+  const lit = inLight(true);
+  if (lit) return lit;
   const R = rng((Math.random() * 1e9) | 0);
   // A full table takes the roomiest of the tries, never the centre.
   let best = [cx, cy, 0], room = -Infinity;
-  for (let n = 0; n < 60; n++) {
+  for (let n = 0; n < 80; n++) {
     const x = m + R() * (W - 2 * m), y = safeT + m + R() * Math.max(1, H - safeT - safeB - 2 * m), a = R() * TAU;
-    if (free(x, y)) return [x, y, a];
-    const g = clear(x, y);
+    const cut = cuts(x, y);
+    if (free(x, y) && !cut) return [x, y, a];
+    const g = clear(x, y) - (cut ? S : 0);
     if (g > room) { room = g; best = [x, y, a]; }
   }
-  return best;
+  return inLight(false) ?? best;
 }
 // Each kind turns so its output heads toward the open table.
 function aim(kind, th, x, y, cx, cy) {
@@ -1875,6 +1920,81 @@ function addPiece(kind) {
   sync();
   wake();
 }
+/* ---------- carry: drag a piece out of the tray ---------- */
+// A press on a tray cell becomes a carry after 10 px.
+// The piece turns to meet the light it sits in, from a snapshot.
+let carry = null, carryEnd = 0;
+function carryAim(kind, x, y) {
+  const L = carry.seg;
+  let best = Infinity, th = pieces[0].rot;
+  for (let o = 0; o < L.length; o += SG) {
+    if (L[o + 5] < 0.12) continue;
+    const ax = L[o], ay = L[o + 1], dx = L[o + 2] - ax, dy = L[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+    const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll), d = Math.hypot(x - ax - dx * t, y - ay - dy * t);
+    if (d < best) { best = d; th = Math.atan2(dy, dx); }
+  }
+  return aim(kind, th, x, y, W / 2, (safeT + H - safeB) / 2);
+}
+function carryStart(e) {
+  const kind = carry.kind;
+  if (!ready || liveAdded() >= MAXADD || spec.on) { carry = null; return; }
+  measureBar();
+  carry.seg = SEG.slice(0, nSeg * SG);
+  const [x, y] = at(e), p = make(kind);
+  p.u = x / W;
+  p.v = y / H;
+  p.rot = carryAim(kind, x, y);
+  p.z = reduce ? 1 : 0.02;
+  p.zp = reduce ? 1 : 0;
+  build(p);
+  pieces.push(p);
+  carry.p = p;
+  select(pieces.length - 1);
+  ui.choice.set(kind);
+  document.documentElement.dataset.carry = '';
+  geomDirty = true;
+  moveX = x;
+  tick(x, 0.55);
+  sync();
+  wake();
+}
+function carryEndAt(e, drop) {
+  const c = carry;
+  carry = null;
+  if (!c?.p) return;
+  carryEnd = performance.now();
+  delete document.documentElement.dataset.carry;
+  // The open tray closes; Escape is its own close path.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  const r = panel.getBoundingClientRect(), inside = drop && e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom;
+  // A drop off the table takes the piece away again.
+  if (!inside) remove(pieces.indexOf(c.p));
+  panel.focus({ preventScroll: true });
+}
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest?.('.s2-grid [data-value]');
+  if (!b || b.dataset.value === 'spectro' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  carry = { kind: b.dataset.value, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
+});
+addEventListener('pointermove', e => {
+  if (!carry || e.pointerId !== carry.id) return;
+  if (!carry.p) {
+    if (Math.hypot(e.clientX - carry.x0, e.clientY - carry.y0) < 10) return;
+    carryStart(e);
+    if (!carry) return;
+  }
+  e.preventDefault();
+  const [x, y] = at(e), p = carry.p;
+  moveTo(p, x, y);
+  const rot = carryAim(p.kind, p.x, p.y);
+  if (rot !== p.rot) { p.rot = rot; p.snap = null; changed(p, 0); }
+});
+addEventListener('pointerup', e => { if (carry && e.pointerId === carry.id) { if (carry.p) carryEndAt(e, true); else carry = null; } });
+addEventListener('pointercancel', e => { if (carry && e.pointerId === carry.id) carryEndAt(e, false); });
+// The release after a carry is not a tap on the tray.
+document.addEventListener('click', e => {
+  if (performance.now() - carryEnd < 400 && e.target.closest?.('.s2-grid')) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 function kill(p) {
   if (p.dying || p.kind === 'source') return;
   p.dying = true;
@@ -1943,10 +2063,11 @@ function setRot(p, raw) {
   turning();
   changed(p, d);
 }
-// Pieces scale between half and double size; the lamp keeps its size.
+// Pieces scale from 0.4 to 3 times; the lamp keeps its size.
+const KMIN = 0.4, KMAX = 3;
 function setSize(p, k) {
   if (p.kind === 'source') return;
-  const nk = clamp(k, 0.5, 2.2), d = Math.abs(nk - p.k) * 0.2;
+  const nk = clamp(k, KMIN, KMAX), d = Math.abs(nk - p.k) * 0.2;
   if (!d) return;
   p.k = nk;
   changed(p, d);
@@ -2080,6 +2201,12 @@ function startDrag(i, x, y, id, turn, shift) {
   if (turn) turning();
   panel.style.cursor = 'grabbing';
 }
+// The grip scales the piece by the pointer's distance from its centre.
+function startSize(i, x, y, id) {
+  const p = pieces[i];
+  drag = { i, id, size: true, k0: p.k, d0: Math.max(4, Math.hypot(x - p.x, y - p.y)) };
+  panel.style.cursor = 'nwse-resize';
+}
 function startTwist() {
   const [a, b] = [...ptrs.values()];
   let i = drag ? drag.i : sel;
@@ -2100,6 +2227,8 @@ panel.addEventListener('pointerdown', e => {
   if (ptrs.size === 2) { tapDown = null; startTwist(); return; }
   if (ptrs.size > 2) return;
   const pad = coarse ? 14 : 4;
+  const gp = sel > 0 ? gripAt(pieces[sel]) : null;
+  if (gp && ringA > 0.3 && Math.hypot(x - gp[0], y - gp[1]) < (coarse ? 22 : 12)) { startSize(sel, x, y, e.pointerId); return; }
   if (sel >= 0 && onRing(pieces[sel], x, y, coarse ? 20 : 10)) { startDrag(sel, x, y, e.pointerId, true, false); return; }
   const i = pick(x, y, pad);
   if (i < 0) { tapDown = { x, y }; return; }
@@ -2112,7 +2241,9 @@ panel.addEventListener('pointermove', e => {
   if (!q) {
     // A mouse hover shows what can be grabbed.
     if (e.pointerType !== 'mouse' || !ready || e.target === dropB || dropB.contains(e.target)) return;
-    const [x, y] = at(e), hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
+    const [x, y] = at(e), gp = sel > 0 ? gripAt(pieces[sel]) : null;
+    if (gp && Math.hypot(x - gp[0], y - gp[1]) < 12) { panel.style.cursor = 'nwse-resize'; return; }
+    const hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
     panel.style.cursor = hot ? 'grab' : '';
     return;
   }
@@ -2130,6 +2261,7 @@ panel.addEventListener('pointermove', e => {
   }
   if (!drag || drag.id !== e.pointerId) return;
   const p = pieces[drag.i];
+  if (drag.size) { setSize(p, drag.k0 * Math.hypot(q.x - p.x, q.y - p.y) / drag.d0); return; }
   // Shift held mid-drag swaps between moving and turning.
   if (drag.shift !== e.shiftKey && e.pointerType === 'mouse' && (drag.shift || !drag.turn)) {
     startDrag(drag.i, q.x, q.y, drag.id, e.shiftKey, e.shiftKey);
