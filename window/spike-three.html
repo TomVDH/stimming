@@ -1,0 +1,1311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.01 260); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Window seat (three.js spike)</title>
+<meta name="robots" content="noindex">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Window seat: a night flight, seen through one cabin window. */
+:root { --stage: oklch(0.1 0.01 260); }
+.stage--window { cursor: grab; touch-action: none; }
+.stage--window.dragging { cursor: grabbing; }
+.stage--window canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--window canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--window canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/window.svg)"></span><span class="intro-name">Window seat</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to peer around, pull the time of day, dim the glass, tap a storm to make it flash.">
+      <p class="fail" hidden>Window seat needs WebGL2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Window seat</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
+import { bake, lookup, horizonEl, NU, NV } from './sky.js';
+import { bakeNoise } from './noise3d.js';
+import { createWing3 } from './wing3.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+
+const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.window.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.window.${k}`, String(v)); } catch { /* storage is optional */ } };
+const num = (k, d) => { const v = saved(k); return v != null && isFinite(+v) ? +v : d; };
+const opts = {
+  hour: saved('hour') || 'dusk',
+  storm: num('storm', 0),
+  cloud: num('cloud', 0.5),
+  towns: num('towns', 1),
+  dim: num('dim', 0),
+  aurora: saved('aurora') || 'on',
+  rain: +(saved('rain') || 0),
+};
+// A test hook sets values from the address, for screenshots.
+const qs = new URLSearchParams(location.search);
+for (const k of Object.keys(opts)) if (qs.has(k)) opts[k] = typeof opts[k] === 'number' ? +qs.get(k) : qs.get(k);
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+const ALT = 11;            // cruise height in km
+const SPEED = 0.25;        // ground speed in km/s, real cruise
+const HOR = horizonEl(ALT);
+// Each hour places one light: the sun by day and twilight, the moon at midnight.
+// az: bearing from straight out, toward the nose positive, in degrees.
+// rel: height above the eye's horizon, in degrees; the horizon dips 3.4.
+// E: light strength for the sky bake. disc: disc brightness.
+// tint: a small OKLCH grade for the hour.
+// mood: the cabin's own lamps, as the 787 tunes them through a flight.
+// lit: how strongly towns and streets burn below.
+const HOURS = {
+  dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, E: 4, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
+  morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, E: 5, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, E: 4, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.02, 230], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, E: 6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.07, 60], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
+  dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, E: 13, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
+  blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, E: 14, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
+  night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, E: 0.5, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
+};
+const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
+const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+// The baked sky and the light terms that follow from it.
+let sky = null;
+function buildSky() {
+  const h = HOURS[opts.hour] || HOURS.dusk;
+  const el = HOR + h.rel * D2R, az = h.az * D2R;
+  const b = bake(ALT, el, h.E);
+  // Night eyes see little colour: moonlit haze goes grey-blue.
+  if (h.moon) for (let i = 0; i < b.L.length; i += 4) {
+    const y = lum([b.L[i], b.L[i + 1], b.L[i + 2]]);
+    for (let c = 0; c < 3; c++) b.L[i + c] = (y + (b.L[i + c] - y) * 0.35) * [0.8, 0.95, 1.25][c];
+  }
+  const sun = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+  const sunR = h.r * D2R;
+  // The part of the disc above the eye's horizon.
+  const up = clamp(0.5 + (el - HOR) / (2 * sunR));
+  const Tsun = lookup(b.T, el, 0, HOR);
+  // Moonlight reads blue to night eyes.
+  const shift = h.moon ? [0.8, 0.95, 1.25] : [1, 1, 1];
+  const sunL = Tsun.map((v, i) => v * h.E * 1.5 * up * shift[i]);
+  // Mean sky light over the upper dome, scaled to the shading constants.
+  const amb = [0, 0, 0]; let n = 0;
+  for (const e of [5, 15, 30, 50, 75]) for (let a = 0; a < 180; a += 20) {
+    const v = lookup(b.L, e * D2R, a * D2R, HOR), w = Math.cos(e * D2R);
+    for (let c = 0; c < 3; c++) amb[c] += v[c] * w;
+    n += w;
+  }
+  // The glow that falls into the cabin, low along the window's bearing.
+  const out = Math.abs(az), glow = [0, 0, 0];
+  for (const e of [1, 4, 8]) { const v = lookup(b.L, HOR + e * D2R, out, HOR); for (let c = 0; c < 3; c++) glow[c] += v[c]; }
+  // The sky itself can dim without dimming the light on the clouds.
+  if (h.skyK) for (let i = 0; i < b.L.length; i += 4) for (let c = 0; c < 3; c++) b.L[i + c] *= h.skyK;
+  const t = linFit(...h.tint), tl = lum(t);
+  sky = {
+    h, b, sun, sunR, up, sunL,
+    sunAz: [Math.sin(az), Math.cos(az)],
+    amb: amb.map((v, i) => v / n * 12 + h.floor[i]), glow: glow.map(v => v),
+    disc: (h.moon ? [1, 0.97, 0.92] : [1, 1, 1]).map(v => v * h.disc),
+    squash: 0.8 + 0.2 * clamp((el - HOR) / (3 * D2R)),
+    tint: t.map(v => 1 + (v / tl - 1) * 0.35),
+    flareCol: norm(Tsun.map((v, i) => v * shift[i] + 1e-4)).map(v => v * 1.2),
+  };
+  // Daylight through the cabin's windows adds to the lamps' mood.
+  sky.cabin = h.mood.map((v, i) => v + Math.min(glow[i], 6) * 0.0025);
+}
+const FOV = 64 * D2R;      // field of view across the short side
+const ROLL = -6 * D2R;     // the camera tilts a little: a slanted, close look
+// The window in the cabin wall, in metres: a tall, wide airliner window.
+// The glass you see through is about 27 by 47 cm.
+// Local frame: x to the nose, y up, z out through the glass.
+const WIN = {
+  out: [0.2, 0.31], rOut: 0.19,     // the rim, where the bezel meets the wall
+  inn: [0.16, 0.265], rIn: 0.15,    // the pane, at the bottom of the recess
+  depth: 0.07, slot: 0.026,         // pane depth and the old shade slot
+  // Behind the scratch pane: the inner pane, then the outer pane in the skin.
+  zIn: 0.082, zOut: 0.106,
+  skin: [0.146, 0.248], rSkin: 0.136, // the skin opening, a little smaller
+};
+// The eye sits close, a little aft and above the window.
+// The head moves within a box around the rest pose, in metres.
+const EYE = [-0.04, 0.06, -0.33];
+const AIM = [0.03, 0.0, 0.05];
+const REACH = { x: [-0.22, 0.2], y: [-0.1, 0.16], z: [-0.14, 0.17] };
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+if (!gl) fail();
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+const MAXCELL = 8, MAXFL = 6;
+// Spike: three.js draws the wing, the nacelle and the fairings instead.
+const noWing = s => s
+  .replace('  // The wing is the nearest thing outside', '  tw = 1e5;\n  // The wing is the nearest thing outside')
+  .replace('if (tn > 0.0 && tn < tNear)', 'if (false)')
+  .replace('if (tf > 0.0 && tf < tNear)', 'if (false)');
+const P1 = program(QUAD_VS, noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL })), ['aPos']);
+const P2 = program(QUAD_VS, cabinFS({ ALT, WIN }), ['aPos']);
+// Pass 1 needs a float target for its bright lamps and discs.
+const floatOK = !!gl.getExtension('EXT_color_buffer_float');
+function texture(w, h, data = null) {
+  const tx = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tx);
+  if (data || floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tx;
+}
+const skyTex = { L: null, T: null };
+function uploadSky() {
+  for (const k of ['L', 'T']) { if (skyTex[k]) gl.deleteTexture(skyTex[k]); skyTex[k] = texture(NU, NV, sky.b[k]); }
+}
+// The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
+const NOISE_N = 64;
+const noiseTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, NOISE_N, NOISE_N, NOISE_N, 0, gl.RGBA, gl.UNSIGNED_BYTE, bakeNoise(NOISE_N));
+gl.generateMipmap(gl.TEXTURE_3D);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
+// The outside buffer: half size on Standard, three quarters on High.
+const outBuf = { fb: gl.createFramebuffer(), tex: null, w: 0, h: 0 };
+const outScale = () => (quality() === 'high' ? 0.75 : 0.5);
+function sizeOut() {
+  const w = Math.max(1, Math.round(W * outScale())), h = Math.max(1, Math.round(H * outScale()));
+  if (w === outBuf.w && h === outBuf.h) return;
+  if (outBuf.tex) gl.deleteTexture(outBuf.tex);
+  outBuf.tex = texture(w, h);
+  outBuf.w = w; outBuf.h = h;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outBuf.fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outBuf.tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+// The recess march takes more steps on High.
+const marchSteps = () => (quality() === 'high' ? 28 : 14);
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+/* ---------- the aircraft ---------- */
+// Aircraft frame: x to the nose, y up, z out of the left window.
+// Units are metres from the eye; the seat sits behind the wing.
+// The seat sits over the wing, so the wing fills the lower view.
+// The wing flexes up at cruise: dihedral plus a bend that grows outboard.
+const flex = z => { const s = z - 1.2; return -2.6 + 0.06 * s + 0.0018 * s * s; };
+// Wing stations, root to tip: leading edge x, trailing edge x, span z.
+// After the 787 planform: leading edge swept about 28 degrees.
+// The inboard trailing edge runs straight to a kink at the engine, then sweeps back.
+const ST = [[9.5, -1.2, 1.2], [5.93, -1.2, 8.0], [3.3, -2.2, 13], [0.68, -3.2, 18], [-1.42, -4.0, 22], [-3.0, -4.6, 25]];
+const WS = ST.map(([l, t, z]) => [[l, flex(z), z], [t, flex(z), z]]);
+// Each panel runs leading edge root, leading edge tip, trailing edge tip, trailing edge root.
+const PANELS = WS.slice(1).map((w, i) => [WS[i][0], w[0], w[1], WS[i][1]]);
+const SPAN = ST.map(w => (w[2] - ST[0][2]) / (ST[5][2] - ST[0][2]));
+// The winglet rises from the tip and sweeps back.
+const YT = flex(25.0);
+const LET = [[-3.0, YT, 25.0], [-4.1, YT + 2.1, 25.6], [-4.75, YT + 2.1, 25.6], [-4.6, YT, 25.0]];
+const TIP = [-4.4, YT + 2.05, 25.6];
+// The trailing edge x at span z.
+function teAt(z) {
+  for (let i = 1; i < ST.length; i++) if (z <= ST[i][2]) { const f = (z - ST[i - 1][2]) / (ST[i][2] - ST[i - 1][2]); return ST[i - 1][1] + (ST[i][1] - ST[i - 1][1]) * f; }
+  return ST[ST.length - 1][1];
+}
+// The engine hangs under the wing, its inlet ahead of the leading edge.
+const NAC = { a: [4.2, -3.85, 7.5], b: [8.6, -3.85, 7.5], r: 1.45 };
+// Three flap-track fairings sit under the trailing edge.
+// Each is a nose under the wing and a thin tail aft of it.
+const FAIRS = [10, 14.5, 19].map((z, j) => {
+  const te = [teAt(z), flex(z), z], k = 1 - 0.18 * j;
+  return { a: [te[0] + 2.0 * k, te[1] - 0.33 * k, z, 0.3 * k], b: [te[0] - 1.3 * k, te[1] - 0.46 * k, z, 0.045 * k] };
+});
+const wing3 = createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS });
+const sub = (a, b) => a.map((v, i) => v - b[i]);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// Each quad's normal faces the eye side, so the edge test agrees.
+function quadNormal(v) {
+  const n = norm(cross(sub(v[1], v[0]), sub(v[3], v[0])));
+  return dot(n, v[0]) > 0 ? n.map(x => -x) : n;
+}
+
+let W = 1, H = 1, dpr = 1, t = 0;
+// The plane banks gently left; the roll drifts slowly.
+let bank = 6 * D2R;
+// Aircraft axes in the world: the left wing dips by the bank.
+const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+// Camera axes in the cabin (a*) and in the world (F, R, U).
+const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
+function setBasis() {
+  // The eye moves with the head; the aim follows a third of the way.
+  // The impact's shock shakes the cabin.
+  const sk = EV.boom ? EV.boom.shake * (reduce ? 0.2 : 1) : 0;
+  const hx = head.x + head.hx * 0.02 + sk * 0.012 * Math.sin(t * 41) * Math.sin(t * 7.3), hy = head.y + head.hy * 0.015 + sk * 0.01 * Math.sin(t * 33 + 1);
+  // Leaning in close moves the anchor to the centre of the port.
+  const kz = clamp((head.z - 0.03) / (REACH.z[1] - 0.03)), near = kz * kz * (3 - 2 * kz);
+  const eye = [EYE[0] * (1 - near) + hx, EYE[1] * (1 - near) + hy, EYE[2] + head.z];
+  const Fa = norm(sub([AIM[0] + hx * 0.35, AIM[1] + hy * 0.35, AIM[2]], eye));
+  const R0 = norm(cross([0, 1, 0], Fa)), U0 = cross(Fa, R0);
+  // Roll turns the right and up axes about the view.
+  const cr = Math.cos(ROLL), sr = Math.sin(ROLL);
+  const Ra = R0.map((v, i) => cr * v + sr * U0[i]), Ua = U0.map((v, i) => cr * v - sr * R0[i]);
+  Object.assign(basis, { Fa, Ra, Ua, eye, F: toWorld(Fa), R: toWorld(Ra), U: toWorld(Ua) });
+  // On tall screens the window still fills most of the height.
+  basis.focal = Math.max(Math.min(W, H), H * 0.72) / 2 / Math.tan(FOV / 2);
+}
+// A cabin point in metres to screen pixels.
+function toScreen(p) {
+  const v = sub(p, basis.eye), z = dot(v, basis.Fa);
+  return [W / 2 + dot(v, basis.Ra) / z * basis.focal, H / 2 + dot(v, basis.Ua) / z * basis.focal];
+}
+
+/* ---------- flight ---------- */
+// The plane flies along world x; the left window looks along world z.
+const cam = { x: 0, z: 0 };
+
+// Storm cells live on the map; new ones form ahead as old ones fall behind.
+// The high wind blows toward the tail, so the anvils stream aft.
+const WIND = PI * 0.92;
+const cells = [];
+function newCell(ahead) {
+  const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.2, 0.4);
+  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
+    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
+}
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// The tower's frame without billows, as setTower in the shader builds it.
+// The top climbs first; the anvil spreads once the top arrives.
+function towerGeom(c) {
+  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s);
+  const top = base + 3.5 + (c.top - base - 3.5) * smooth(0.05, 0.6, c.s);
+  const len = c.r * 1.35 * anv + 0.3, r1 = rc * (0.8 + 0.45 * anv);
+  const r2 = clamp(rc * 0.7 + len * 0.42, r1 - len * 0.8, r1 + len * 0.8);
+  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4, ax: [Math.cos(c.shear), Math.sin(c.shear)] };
+}
+function stepCells(dt) {
+  const want = Math.round(opts.storm * MAXCELL);
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const c = cells[i];
+    c.age += dt;
+    // A cell towers up over 20 s and dies back over 15 s.
+    c.s = clamp(Math.min(c.age / 20, (c.life - c.age) / 15));
+    if (c.age > c.life || c.x - cam.x < -120 || i >= want) cells.splice(i, 1);
+  }
+  while (cells.length < want) cells.push(newCell(true));
+}
+// A flash is a burst of strokes within about a second.
+const flashes = [];
+// A flash inside a tower sits at height y, in km.
+function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) : 2.4) {
+  const strokes = [0];
+  // A heavy storm flickers: more strokes per flash.
+  const n = 1 + Math.floor(Math.random() * (4 + opts.storm * 5));
+  for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
+  flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0 });
+  if (flashes.length > MAXFL) flashes.shift();
+}
+function flashLevel(f) {
+  let s = 0;
+  for (const st of f.strokes) { const a = f.age - st; if (a >= 0) s += Math.exp(-a / 0.07) * (a < 0.02 ? a / 0.02 : 1); }
+  return s * f.k;
+}
+function stepFlashes(dt) {
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const f = flashes[i];
+    f.age += dt;
+    if (f.age > f.strokes[f.strokes.length - 1] + 0.6) flashes.splice(i, 1);
+  }
+  for (const c of cells) {
+    if (Math.random() < c.s * (0.1 + opts.storm * 0.32) * dt) {
+      const g = towerGeom(c), [ax, az] = g.ax;
+      // Most flashes sit in the core.
+      // A mature cell also sends some through its anvil.
+      if (g.anv > 0.5 && Math.random() < 0.25) {
+        const u = g.lean + rnd(0.15, 0.7) * g.len, v = rnd(-0.4, 0.4) * g.r1;
+        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 1.6));
+      } else {
+        const y = rnd(4, g.top - 2), a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * 0.7;
+        const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
+        flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
+      }
+      // A big flash can throw a red sprite high over the cell.
+      if (opts.storm > 0.4 && Math.random() < 0.03 * opts.storm) sprite(c);
+    }
+  }
+  // A heavy storm also flashes inside the deck all round the plane.
+  if (opts.storm > 0.3 && Math.random() < (opts.storm - 0.3) * dt) {
+    const a = rnd(0.2, PI - 0.2), r = rnd(15, 140);
+    flash(cam.x + Math.cos(a) * r, cam.z + Math.sin(a) * r, rnd(0.6, 1.3));
+  }
+}
+
+/* ---------- storm weather ---------- */
+// Sprites: red glows 50 to 90 km up.
+// Each lasts a fraction of a second.
+const sprites = [];
+// They stand over the storm's far side, low enough to see.
+function sprite(c) {
+  const dx = c.x - cam.x, dz = c.z - cam.z, k = Math.max(1, rnd(260, 420) / Math.hypot(dx, dz));
+  sprites.push({ x: cam.x + dx * k, z: cam.z + dz * k, age: -rnd(0.03, 0.12), life: rnd(0.15, 0.4), seed: rnd(0, 100), level: 0 });
+  if (sprites.length > 2) sprites.shift();
+}
+// Fog banks: the plane flies into thick cloud now and then.
+// An episode rises, holds and clears.
+// A heavier storm brings more of them.
+const fog = { level: 0, ep: null, hold: qs.has('fog') ? +qs.get('fog') : null };
+function stepWeather(dt) {
+  for (let i = sprites.length - 1; i >= 0; i--) {
+    const sp = sprites[i];
+    sp.age += dt;
+    sp.level = sp.age < 0 ? 0 : Math.min(1, sp.age / 0.03) * Math.exp(-Math.max(sp.age - 0.03, 0) / (sp.life * 0.5));
+    if (sp.age > sp.life * 3) sprites.splice(i, 1);
+  }
+  if (fog.hold != null) { fog.level = fog.hold; return; }
+  if (!fog.ep && opts.storm > 0.3 && Math.random() < (opts.storm - 0.3) * 0.01 * dt) {
+    fog.ep = { age: 0, rise: rnd(2, 5), hold: rnd(4, 18), fall: rnd(3, 7), peak: rnd(0.55, 1) };
+  }
+  let goal = 0;
+  const e = fog.ep;
+  if (e) {
+    e.age += dt;
+    goal = e.peak * Math.min(smooth(0, e.rise, e.age), 1 - smooth(e.rise + e.hold, e.rise + e.hold + e.fall, e.age));
+    if (e.age > e.rise + e.hold + e.fall) fog.ep = null;
+  }
+  // Thin wisps drift by between the banks.
+  goal = Math.max(goal, opts.storm > 0.3 ? (opts.storm - 0.3) * 0.25 * (0.5 + 0.5 * Math.sin(t * 0.07)) : 0);
+  fog.level += (goal - fog.level) * (1 - Math.exp(-dt / 0.6));
+}
+
+/* ---------- head and glass ---------- */
+// Drag moves the head; hover adds a small sway on mouse devices.
+const head = { x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, hx: 0, hy: 0, thx: 0, thy: 0 };
+function moveHead(dx, dy, dz) {
+  head.tx = clamp(head.tx + dx, REACH.x[0], REACH.x[1]);
+  head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
+  head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
+}
+// The glass dims in five steps, from clear to deep blue.
+// The tint spreads from the rim inward: the edge leads, the centre follows.
+const dim = { edge: opts.dim / 4, core: opts.dim / 4 };
+const DIM_K = [4.6, 3.3, 2.2];
+// Light through the tinted pane, per colour channel.
+const dimT = v => DIM_K.map(k => Math.exp(-v * k));
+
+/* ---------- loop ---------- */
+let raf = 0, last = 0, visible = true, ready = false;
+const spr = new Float32Array(8);
+const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4);
+function frameFn(now) {
+  raf = 0;
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+  last = now;
+  step(dt);
+  render();
+  if (visible) raf = requestAnimationFrame(frameFn);
+}
+function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+function step(dt) {
+  t += dt;
+  // The plane cruises at a steady pace.
+  cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
+  // The bank breathes between about 3 and 9 degrees.
+  if (!reduce) bank = (6 + 2.2 * Math.sin(t * 0.045) + 0.9 * Math.sin(t * 0.13)) * D2R;
+  const k = 1 - Math.exp(-dt / 0.35);
+  // The head eases toward its target, so moves feel bodily.
+  const kh = 1 - Math.exp(-dt / 0.18);
+  head.x += (head.tx - head.x) * kh; head.y += (head.ty - head.y) * kh; head.z += (head.tz - head.z) * kh;
+  head.hx += (head.thx - head.hx) * k; head.hy += (head.thy - head.hy) * k;
+  const goal = opts.dim / 4;
+  dim.edge += (goal - dim.edge) * (1 - Math.exp(-dt / (reduce ? 0.15 : 0.7)));
+  dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
+  stepCells(dt);
+  stepFlashes(dt);
+  stepWeather(dt);
+  stepEvents(dt);
+}
+// The strobe double-flashes every 1.6 seconds.
+function strobe() {
+  const p = t % 1.6;
+  return Math.exp(-p / 0.03) + Math.exp(-Math.max(0, p - 0.12) / 0.03) * (p > 0.12 ? 1 : 0);
+}
+// The aurora shows at midnight only, when Settings allow it.
+const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
+/* ---------- events ---------- */
+// Rare sights happen on their own: a meteor, a rocket launch, a passing jet.
+// Sights are rare: the first comes after one to three minutes, then every four to ten.
+const EV = { wait: rnd(60, 180), meteor: null, rocket: null, jet: null, boom: null };
+// A test hook: ?event=meteor, fireball, rocket or jet calls that sight soon and often.
+const forced = qs.get('event');
+if (forced) EV.wait = 2;
+// ?at=seconds starts the called sight part-way in; ?hold=1 freezes the sights there.
+const atT = +qs.get('at') || 0, hold = qs.has('hold');
+function startEvent(want = null) {
+  const call = want || forced;
+  const pool = [];
+  if (!EV.meteor) pool.push('meteor', 'meteor');
+  if (!EV.rocket) pool.push('rocket');
+  if (!EV.jet) pool.push('jet');
+  if (!EV.boom && Math.random() < 0.15) pool.push('boom');
+  if (!pool.length && !call) return;
+  const kind = call ? (call === 'fireball' ? 'meteor' : call) : pool[Math.floor(Math.random() * pool.length)];
+  if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
+  // The rocket lifts off 140 to 200 km out and heads away downrange.
+  if (kind === 'rocket') { const x = cam.x + rnd(40, 110), z = cam.z + rnd(140, 200); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
+  // The impact is rare on its own; the Sights button calls it any time.
+  // The impactor strikes 110 to 160 km out, close enough to loom over the wing.
+  if (kind === 'boom') EV.boom = { x: cam.x + rnd(25, 60), z: cam.z + rnd(110, 160), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU), shake: 0,
+    // Ejecta: rock thrown out at 2 to 5 km/s, in arcs under a strong, toy gravity.
+    ejecta: Array.from({ length: 36 }, () => { const a = rnd(0, TAU), e = rnd(0.45, 1.3), v = rnd(2, 5); return { vx: Math.cos(a) * Math.cos(e) * v, vy: Math.sin(e) * v, vz: Math.sin(a) * Math.cos(e) * v, life: rnd(20, 45) }; }) };
+  if (kind === 'jet') EV.jet = { x: cam.x + (call ? 30 : rnd(45, 60)), z: cam.z + rnd(6, 14), y: rnd(10.5, 11.6), s: 0, hist: [] };
+}
+
+// A meteor streaks across the part of the sky the window shows.
+// One in four is a fireball: slower, green, with a glowing train.
+function newMeteor(fireWant = null) {
+  setBasis();
+  // Start 6 to 24 degrees up, near the window's own bearing.
+  const F = basis.F, azC = Math.atan2(F[0], F[2]);
+  const fire = fireWant ?? Math.random() < 0.25;
+  // A fireball comes in from high above the window and falls steeply.
+  const elA = (fire ? rnd(16, 19) : rnd(6, 24)) * D2R;
+  const dir = (a, e) => [Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)];
+  // Fall at a slant, and end above the horizon.
+  const len = fire ? rnd(0.24, 0.3) : rnd(0.12, 0.3), th = fire ? rnd(-1.85, -1.3) : rnd(-2.6, -0.5);
+  // A fireball's path centres on the window, so its whole fall stays in view.
+  const dAz = Math.cos(th) * len / Math.cos(elA);
+  const azA = fire ? azC + rnd(-0.1, 0.1) - dAz / 2 : azC + rnd(-0.45, 0.45);
+  const A = dir(azA, elA);
+  const elB = Math.max((fire ? 4 : 3) * D2R, elA + Math.sin(th) * len), azB = azA + dAz;
+  const B = dir(azB, elB);
+  // tail: how far behind the head the glow persists, as a share of the path.
+  return { A, B, fire, dur: fire ? rnd(5, 6.5) : rnd(0.6, 1.2), age: 0, p: 0, tail: fire ? 0.25 : 0.12, b: 0, train: 0, trainAge: 0, seed: rnd(0, 100), hue: Math.random() };
+}
+
+// Rocket path, u seconds after lift-off: height and downrange in km.
+const ROCKET_T = 75;
+const rocketAt = (r, u) => {
+  const f = u / ROCKET_T, h = 120 * f ** 1.6, dr = 300 * f * f;
+  return [r.x + Math.cos(r.hd) * dr, h, r.z + Math.sin(r.hd) * dr];
+};
+// World point relative to the eye, from map x, height and map z.
+const rel = (x, h, z) => { const X = x - cam.x, Z = z - cam.z; return [X, h - ALT - (X * X + Z * Z) / 12742, Z]; };
+// True when a point above the ground stands in sunlight, past the Earth's shadow.
+function sunlit(p) {
+  const P = [p[0], 6371 + ALT + p[1], p[2]], b = dot(P, sky.sun), r2 = dot(P, P);
+  const rmin = b < 0 ? Math.sqrt(Math.max(0, r2 - b * b)) : Math.sqrt(r2);
+  return clamp((rmin - 6371 - 12) / 10);
+}
+
+// Jump a fresh sight forward by T seconds, for the test hook.
+function skipTo(T) {
+  for (let k = 0; k < T * 20; k++) stepEvents(0.05, true);
+}
+function stepEvents(dt, skipping = false) {
+  if (hold && !skipping && !EV.held) { EV.held = true; if (atT && forced) { EV.wait = 0; } }
+  if (hold && !skipping && EV.started) return;
+  EV.wait -= dt;
+  if (EV.wait <= 0 && !skipping) { startEvent(); EV.started = true; if (forced && atT) skipTo(atT); EV.wait = forced ? ({ rocket: 120, jet: 90, boom: 280, fireball: 25 }[forced] || 6) : rnd(240, 600) * (reduce ? 2.5 : 1); }
+  const m = EV.meteor;
+  if (m) {
+    m.age += dt;
+    m.p = clamp(m.age / m.dur);
+    // It brightens, flares near its end, then its train lingers.
+    // A plain meteor swells and dies.
+    // A fireball arrives already burning, bursts as it breaks up, then flares at the end.
+    const burst = m.fire ? 4 * Math.exp(-(((m.p - 0.62) / 0.035) ** 2)) + 2 * Math.exp(-(((m.p - 0.94) / 0.03) ** 2)) : 0;
+    const env = m.fire ? Math.min(1, m.p / 0.05) * Math.sin(Math.PI * (0.35 + 0.65 * m.p)) ** 0.5 : Math.sin(Math.PI * m.p) ** 0.6;
+    m.b = m.age < m.dur ? env * (m.fire ? 1.6 : 1.1) + burst : 0;
+    m.train = m.fire ? (m.age < m.dur ? 0.6 * m.p : 0.6 * Math.exp(-(m.age - m.dur) / 14)) : 0;
+    m.trainAge = m.age < m.dur ? 0 : clamp((m.age - m.dur) / 40);
+    if (m.age > m.dur + (m.fire ? 40 : 0.5)) EV.meteor = null;
+  }
+  const r = EV.rocket;
+  if (r) { r.s += dt; if (r.s > ROCKET_T + 45) EV.rocket = null; }
+  const bm = EV.boom;
+  if (bm) {
+    bm.s += dt;
+    const u = bm.s - BOOM_HIT;
+    // The flash: a hard peak at impact, then a long glow as the fireball rises.
+    bm.flash = u < 0 ? 0 : 1.5 * Math.exp(-u / 2.5) + 0.12 * Math.exp(-u / 40);
+    bm.crater = u < 0 ? 0 : Math.min(1, u / 2) * Math.exp(-u / 200);
+    bm.ring = u < 0 ? 0 : u * 2.4;
+    bm.ringK = u < 0 ? 0 : Math.exp(-u / 30);
+    // The ground shakes at impact; the shock front shakes the plane on arrival.
+    const q = bm.ring - Math.hypot(bm.x - cam.x, bm.z - cam.z);
+    bm.shake = u < 0 ? 0 : 0.25 * Math.exp(-u / 1.5) + (q > 0 ? Math.exp(-q / 8) * Math.min(1, q / 0.5) : 0);
+    if (bm.s > 270) EV.boom = null;
+  }
+  const j = EV.jet;
+  if (j) {
+    j.s += dt;
+    // It flies the other way, so it closes at about twice cruise speed.
+    j.x -= 0.25 * dt;
+    if (!j.hist.length || j.s - j.hist[j.hist.length - 1].s > 2) j.hist.push({ x: j.x, s: j.s });
+    if (j.hist.length > 24) j.hist.shift();
+    if (j.x - cam.x < -40) EV.jet = null;
+  }
+}
+
+// The impactor dives in over BOOM_HIT seconds from 160 km up, along a slant.
+const BOOM_HIT = 8;
+const boomAt = (b, f) => {
+  const back = 220 * (1 - f);
+  return [b.x - Math.cos(b.hd) * back, 160 * (1 - f) ** 1.15, b.z - Math.sin(b.hd) * back];
+};
+// The fireball, u seconds after impact: radius, centre height, squash, life.
+// It grows and rises; after 10 s it flattens into the mushroom cap.
+function capAt(b, u) {
+  const R = 20 * (1 - Math.exp(-u / 4)) + u * 0.04, sq = 1 - 0.45 * clamp((u - 10) / 40);
+  return { R, y: R * sq * 0.95 + u * 0.12, sq, life: Math.min(1, u / 0.3) * (b.s > 230 ? Math.max(0, (270 - b.s) / 40) : 1) };
+}
+// The mushroom stem, as a cell for the tower volume; it rises under the cap.
+function boomCell(b) {
+  const u = b.s - BOOM_HIT;
+  if (u <= 6) return null;
+  const cap = capAt(b, u);
+  return { x: b.x, z: b.z, r: 5 + Math.min(4, u * 0.05), top: Math.max(4.5, cap.y - cap.R * cap.sq * 0.4), s: Math.min(1, (u - 6) / 6) * (b.s > 230 ? Math.max(0, (270 - b.s) / 40) : 1),
+    seed: b.seed, shear: b.hd, glow: 6 * b.flash + 3 * b.crater };
+}
+
+// Trails: rocket plume and contrail, as chains of points with a radius and a colour.
+// A zero radius breaks one chain from the next.
+const TRAIL_N = 128;
+const trA = new Float32Array(TRAIL_N * 4), trB = new Float32Array(TRAIL_N * 4);
+const trailData = new Float32Array(TRAIL_N * 8);
+const trailTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, trailTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TRAIL_N, 2, 0, gl.RGBA, gl.FLOAT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+function trailUniforms() {
+  trA.fill(0); trB.fill(0);
+  let n = 0;
+  // shell: 0 draws a soft tube; 1 draws a hollow sheet, brightest at its rim.
+  const push = (p, rad, col, shell = 0) => { if (n < TRAIL_N) { trA.set([...p, rad], n * 4); trB.set([...col, shell], n * 4); n++; } };
+  const end = () => push([0, 0, 0], 0, [0, 0, 0]);
+  const r = EV.rocket;
+  if (r) {
+    const sNow = Math.min(r.s, ROCKET_T), fade = r.s > ROCKET_T ? Math.exp(-(r.s - ROCKET_T) / 25) : 1;
+    // Sunlight high above the dark ground: blue-white, as in the twilight jellyfish.
+    const sunCol = sky.h.moon ? [0.005, 0.006, 0.008] : [0.1, 0.12, 0.15];
+    const smoke = sky.amb.map((v, c) => v * 0.5 + sky.sunL[c] * 0.02);
+    const STAGE = ROCKET_T * 0.55;
+    for (let i = 0; i < 40; i++) {
+      const u = sNow * (i / 39) ** 0.8, age = r.s - u;
+      const [x, h, z] = rocketAt(r, u);
+      const p = rel(x, h, z);
+      const lit = sunlit(p) * fade;
+      // Low down, a smoke column; up high, exhaust that balloons into a thin bell.
+      const high = clamp((h - 45) / 40);
+      const rad = 0.12 + age * (0.006 + 0.012 * Math.max(h - 25, 0) * (0.3 + high));
+      const thin = Math.min(1, (0.3 / rad) ** 0.3);
+      // Staging leaves a short gap in the trail.
+      const gap = 1 - 0.85 * Math.exp(-(((u - STAGE) / 1.2) ** 2));
+      const col = [0, 1, 2].map(c => (sunCol[c] * lit * (0.5 + high) + smoke[c] * (1 - high) * 0.8) * thin * gap);
+      push(p, rad, col, high);
+    }
+    end();
+    if (r.s < ROCKET_T) {
+      // The flame: a short hot plume behind the head; it lengthens and blues in thin air.
+      const [x, h, z] = rocketAt(r, r.s), [x0, h0, z0] = rocketAt(r, Math.max(0, r.s - 1.5 - h * 0.02));
+      const hot = h < 40 ? [1.0, 0.62, 0.3] : [0.75, 0.8, 1.0];
+      const k = Math.min(1, r.s / 2) * (0.85 + 0.15 * Math.sin(t * 37));
+      push(rel(x, h, z), 0.08 + h * 0.004, hot.map(v => v * 0.9 * k));
+      push(rel(x0, h0, z0), 0.25 + h * 0.012, hot.map(v => v * 0.15 * k));
+      end();
+    }
+    // At staging, a puff of exhaust swells round the stack.
+    const ps = r.s - STAGE;
+    if (ps > 0 && ps < 30) {
+      // A short soft chain along the path, lopsided, so it reads as a cloud.
+      for (let i = 0; i < 4; i++) {
+        const [x, h, z] = rocketAt(r, STAGE - 1.2 + i * 0.8), q = rel(x, h, z);
+        const lit = sunlit(q), pr = (0.5 + ps * 0.45) * (0.7 + 0.5 * Math.sin(i * 2.1 + 1));
+        push(q, pr, sunCol.map(v => v * lit * 0.6 * Math.exp(-ps / 12)), 0.25);
+      }
+      end();
+    }
+  }
+  const bm = EV.boom;
+  if (bm && bm.s < BOOM_HIT + 40) {
+    const f = Math.min(1, bm.s / BOOM_HIT), smokeK = bm.s > BOOM_HIT ? Math.exp(-(bm.s - BOOM_HIT) / 16) : 1;
+    // A white-hot plasma head, a glowing wake, and a smoke trail lit by the fall.
+    for (let i = 0; i < 24; i++) {
+      const g = f * (i / 23);
+      const [x, h, z] = boomAt(bm, g);
+      const hot = bm.s < BOOM_HIT ? Math.exp(-(f - g) / 0.1) : 0;
+      const smokeCol = sky.amb.map(v => v * 0.6 + 0.004);
+      push(rel(x, h, z), 1.2 + (f - g) * 9, [1.0, 0.78, 0.55].map((v, c) => v * hot * 1.2 + smokeCol[c] * smokeK));
+    }
+    end();
+  }
+  if (bm && bm.ejecta) {
+    // Ejecta: glowing rock thrown out in arcs, cooling as it falls.
+    for (const e of bm.ejecta) {
+      const u = bm.s - BOOM_HIT;
+      if (u <= 0 || u > e.life) continue;
+      const pos = s => [bm.x + e.vx * s, e.vy * s - 0.06 * s * s, bm.z + e.vz * s];
+      const a = pos(u), b2 = pos(Math.max(0, u - 1.5)), b3 = pos(Math.max(0, u - 4));
+      if (a[1] < 0) continue;
+      const k = Math.exp(-u / 14);
+      // A hot head and a thin cooling tail behind it.
+      push(rel(a[0], a[1], a[2]), 0.14, [1.0, 0.62, 0.3].map(v => v * k * 1.2));
+      push(rel(b2[0], b2[1], b2[2]), 0.2, [1.0, 0.4, 0.15].map(v => v * k * 0.35));
+      push(rel(b3[0], b3[1], b3[2]), 0.3, [0.6, 0.2, 0.08].map(v => v * k * 0.08));
+      end();
+    }
+  }
+  const j = EV.jet;
+  if (j) {
+    // Twin contrails from the engines, close at first, merging as they spread.
+    const base = sky.sunL.map((v, c) => v * 0.04 + sky.amb[c] * 0.025);
+    for (const side of [-1, 1]) {
+      for (const hpt of j.hist) {
+        const age = j.s - hpt.s;
+        const sep = 0.011 * Math.exp(-age / 25);
+        push(rel(hpt.x + 0.08, j.y - 0.01 - age * 0.002, j.z + side * sep), 0.006 + age * 0.004, base.map(v => v * Math.exp(-age / 100)));
+      }
+      push(rel(j.x + 0.08, j.y - 0.01, j.z + side * 0.011), 0.004, base.map(v => v * 0.5));
+      end();
+    }
+  }
+  return n;
+}
+
+// Event lights go through the flare, as small points with a soft glow.
+function eventFlares(put) {
+  const m = EV.meteor;
+  if (m && m.b > 0.01) {
+    const s = Math.sin(Math.acos(clamp(dot(m.A, m.B), -1, 1)));
+    const w0 = Math.sin((1 - m.p) * Math.asin(s)) / s, w1 = Math.sin(m.p * Math.asin(s)) / s;
+    const H = norm(m.A.map((v, i) => v * w0 + m.B[i] * w1));
+    // Only a small, tight glow: the streak itself does the work.
+    put(4, H, m.fire ? m.b * 0.05 : m.b * 0.012, m.fire ? 0.3 : 0.15, m.fire ? [0.75, 1.0, 0.85] : [0.85, 0.9, 1.0], 0, 0);
+  }
+  const r = EV.rocket;
+  if (r && r.s < ROCKET_T) {
+    const [x, h, z] = rocketAt(r, r.s);
+    const p = rel(x, h, z), d = norm(p);
+    const flick = 0.85 + 0.15 * Math.sin(t * 37) * Math.sin(t * 23);
+    // Under the cloud deck, the flame shows only as a glow.
+    put(5, d, (h < 3.5 ? 0.08 : 0.3) * flick * Math.min(1, r.s / 3), 0.35, [1.0, 0.7, 0.4], 0, 0.15);
+  }
+  const bm = EV.boom;
+  if (bm) {
+    if (bm.s < BOOM_HIT) {
+      const [x, h, z] = boomAt(bm, bm.s / BOOM_HIT);
+      put(8, norm(rel(x, h, z)), 0.4 + 1.1 * (bm.s / BOOM_HIT) ** 2, 0.8, [1.0, 0.8, 0.6], 0, 0.4);
+    } else {
+      // The impact flash: huge at first, a warm glow after.
+      put(9, norm(rel(bm.x, 3, bm.z)), Math.min(2.5, bm.flash * 2), 1 + 2 * bm.flash, [1.0, 0.75, 0.5], 0, 0.6);
+    }
+  }
+  const j = EV.jet;
+  if (j) {
+    // Only its strobes throw a flare; the steady lights go in as points.
+    const sp = j.s % 1.2, str = Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    put(6, norm(rel(j.x, j.y, j.z - 0.03)), str * 0.1, 0.18, [0.9, 0.95, 1.0], 0, 0.25);
+  }
+}
+// Small steady lights in the glass pass: screen xy, radius, strength; and colour.
+const PTS = 10;
+const ptA = new Float32Array(PTS * 4), ptC = new Float32Array(PTS * 3);
+function pointUniforms(u) {
+  ptA.fill(0); ptC.fill(0);
+  let n = 0;
+  const tc = dimT(dim.core);
+  const add = (p, I, col) => {
+    if (n >= PTS || I <= 0) return;
+    const dW = norm(p), sp = screenOf(dW);
+    if (!sp) return;
+    const vis = seen(norm(toAir(dW)));
+    if (vis <= 0) return;
+    ptA.set([sp[0], sp[1], 1.1 * dpr, I * vis], n * 4);
+    ptC.set(col.map((v, c) => v * tc[c]), n * 3);
+    n++;
+  };
+  const j = EV.jet;
+  if (j) {
+    // Heading aft, its right wing faces us: green there, red on the far tip.
+    const sp = j.s % 1.2, str = Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const bc = (j.s + 0.5) % 1.0 < 0.1 ? 1 : 0, bc2 = (j.s % 1.0) < 0.1 ? 1 : 0;
+    add(rel(j.x, j.y, j.z - 0.03), 0.6, [0.15, 1.0, 0.35]);
+    add(rel(j.x, j.y, j.z + 0.03), 0.4, [1.0, 0.1, 0.06]);
+    add(rel(j.x, j.y, j.z - 0.031), str * 3, [0.9, 0.95, 1.0]);
+    add(rel(j.x, j.y, j.z + 0.031), str * 2, [0.9, 0.95, 1.0]);
+    add(rel(j.x, j.y + 0.004, j.z), bc * 2.5, [1.0, 0.08, 0.04]);
+    add(rel(j.x, j.y - 0.004, j.z), bc2 * 2.5, [1.0, 0.08, 0.04]);
+    add(rel(j.x + 0.032, j.y + 0.002, j.z), 0.5, [1.0, 1.0, 0.95]);
+  }
+  gl.uniform4fv(u['uPt[0]'], ptA); gl.uniform3fv(u['uPtC[0]'], ptC);
+}
+// The jet's body for the outside pass: fuselage and wing as capsules, relative to the eye.
+function jetUniforms(u) {
+  const j = EV.jet;
+  const z = [0, 0, 0];
+  gl.uniform3fv(u.uJetF0, j ? rel(j.x - 0.03, j.y, j.z) : z); gl.uniform3fv(u.uJetF1, j ? rel(j.x + 0.03, j.y, j.z) : z);
+  gl.uniform3fv(u.uJetW0, j ? rel(j.x + 0.004, j.y - 0.001, j.z - 0.03) : z); gl.uniform3fv(u.uJetW1, j ? rel(j.x + 0.004, j.y - 0.001, j.z + 0.03) : z);
+  gl.uniform3fv(u.uJetT0, j ? rel(j.x - 0.026, j.y, j.z) : z); gl.uniform3fv(u.uJetT1, j ? rel(j.x - 0.03, j.y + 0.009, j.z) : z);
+  gl.uniform1f(u.uJetOn, j ? 1 : 0);
+  // The impact's fireball rises from the ground and spreads into the cap.
+  const bm = EV.boom, uu = bm ? bm.s - BOOM_HIT : -1;
+  const cap = bm && uu > 0 ? capAt(bm, uu) : null;
+  if (cap) {
+    const temp = clamp(uu / 8);
+    const col = [1.0, 0.95 - 0.5 * temp, 0.85 - 0.75 * temp];
+    gl.uniform4fv(u.uBall, [...rel(bm.x, cap.y, bm.z), cap.R]);
+    gl.uniform4fv(u.uBallC, [...col, 0.9 * Math.exp(-uu / 8) + 0.12 * Math.exp(-uu / 40)]);
+    gl.uniform4fv(u.uBallS, [cap.sq, cap.life, 0, 0]);
+  } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); gl.uniform4fv(u.uBallS, [1, 0, 0, 0]); }
+}
+/* ---------- airports ---------- */
+// One airport site per 60 km cell, by an integer hash, so each stays put.
+// Planes land into one steady wind, heading toward the cabin side.
+const AP_CELL = 60, AP_N = 8, APP_N = 12, LAND = [-0.3, -0.954];
+const ihash = (x, y, s) => {
+  let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 1442695041)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  n ^= n >>> 16;
+  return (n >>> 0) / 4294967296;
+};
+// The shader's hash12, vnoise and seaField, so no airport lands in the sea.
+const fract = x => x - Math.floor(x);
+function hash12(px, py) {
+  let x = fract(px * 0.1031), y = fract(py * 0.1031), z = x;
+  const d = x * (y + 33.33) + y * (z + 33.33) + z * (x + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+function vnoise2(px, py) {
+  const ix = Math.floor(px), iy = Math.floor(py);
+  let fx = px - ix, fy = py - iy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hash12(ix, iy), b = hash12(ix + 1, iy), c = hash12(ix, iy + 1), e = hash12(ix + 1, iy + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
+}
+const SEA = 0.3;
+const seaField = (x, z) => vnoise2(x / 260 + 3.7, z / 260 + 3.7) * 0.65 + vnoise2((0.8 * x + 0.6 * z) / 95 + 1.3, (-0.6 * x + 0.8 * z) / 95 + 1.3) * 0.35;
+const apCache = new Map();
+function airportIn(i, j) {
+  const key = `${i},${j}`;
+  if (apCache.has(key)) return apCache.get(key);
+  let a = null;
+  if (ihash(i, j, 11) < 0.5) {
+    const x = (i + 0.2 + 0.6 * ihash(i, j, 12)) * AP_CELL, z = (j + 0.2 + 0.6 * ihash(i, j, 13)) * AP_CELL;
+    if (seaField(x, z) > SEA + 0.08) {
+      const th = ihash(i, j, 14) * PI, big = ihash(i, j, 15);
+      // The runway end that faces the wind takes the landings.
+      const s = Math.cos(th) * LAND[0] + Math.sin(th) * LAND[1] < 0 ? -1 : 1;
+      a = { x, z, c: Math.cos(th) * s, s: Math.sin(th) * s, half: 1.4 + 0.9 * big, twin: big > 0.6 ? 1.1 : 0,
+        seed: ihash(i, j, 16), apron: 0.6 + 0.9 * big, planes: big > 0.7 ? 3 : big > 0.3 ? 2 : 1 };
+    }
+  }
+  apCache.set(key, a);
+  return a;
+}
+// The nearest airports on the window's side, out to the horizon.
+const apList = [];
+function nearAirports() {
+  apList.length = 0;
+  const i0 = Math.floor((cam.x - 120) / AP_CELL), i1 = Math.floor((cam.x + 380) / AP_CELL);
+  const j0 = Math.floor((cam.z - 40) / AP_CELL), j1 = Math.floor((cam.z + 380) / AP_CELL);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const a = airportIn(i, j);
+    if (!a || a.z < cam.z - 30) continue;
+    a.dist = Math.hypot(a.x - cam.x, a.z - cam.z);
+    if (a.dist < 380) apList.push(a);
+  }
+  apList.sort((p, q) => p.dist - q.dist);
+  apList.length = Math.min(apList.length, AP_N);
+}
+// Planes ride a 3 degree glide path, land, and roll out.
+const apA = new Float32Array(AP_N * 4), apB = new Float32Array(AP_N * 4);
+const appA = new Float32Array(APP_N * 4), appC = new Float32Array(APP_N * 4);
+const GLIDE = Math.tan(3 * D2R), FINAL = 34, VAPP = 0.075;
+function airportUniforms(u) {
+  nearAirports();
+  apA.fill(0); apB.fill(0);
+  apList.forEach((a, i) => { apA.set([a.x, a.z, a.c, a.s], i * 4); apB.set([a.half, a.twin, a.seed, a.apron], i * 4); });
+  gl.uniform4fv(u['uAp[0]'], apA); gl.uniform4fv(u['uApB[0]'], apB);
+  gl.uniform1f(u.uBlink, reduce ? 0 : 1);
+  const planes = [];
+  for (const a of apList) for (let k = 0; k < a.planes; k++) {
+    // s: km before the threshold; under zero, the rollout.
+    const s = 30 - ((t * VAPP + a.seed * FINAL + k * FINAL / a.planes) % FINAL);
+    const tx = a.x - a.c * a.half, tz = a.z - a.s * a.half;
+    let along = -s, h = GLIDE * s + 0.015, land = 1;
+    if (s < 0) {
+      const v = clamp(-s / 4);
+      along = 0.3 + 1.8 * (1 - (1 - v) ** 2); h = 0.004;
+      land = 1 - clamp((v - 0.5) / 0.4);
+    }
+    const p = rel(tx + a.c * along, h, tz + a.s * along);
+    const dist = Math.hypot(...p);
+    planes.push({ p, dist, a, k, land: land * clamp((30 - s) / 3) });
+  }
+  planes.sort((p, q) => p.dist - q.dist);
+  appA.fill(0); appC.fill(0);
+  planes.slice(0, APP_N).forEach((q, i) => {
+    const { p, dist, a, k } = q;
+    // Landing lights shine ahead; seen from the side they fade.
+    const f = -(p[0] * a.c - p[1] * 0.05 + p[2] * a.s) / dist;
+    const lamp = q.land * (0.15 + 2.5 * Math.max(f, 0) ** 4);
+    const ph = t + a.seed * 7 + k * 0.37;
+    const beacon = !reduce && (ph % 1) < 0.08 ? 1.4 : 0;
+    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const kd = 300 / Math.max(dist, 8) ** 2;
+    appA.set([...p, 1], i * 4);
+    appC.set([(lamp + strobe * 1.5 + beacon) * kd, (lamp * 0.95 + strobe * 1.5 + beacon * 0.1) * kd, (lamp * 0.85 + strobe * 1.6 + beacon * 0.05) * kd, 0], i * 4);
+  });
+  gl.uniform4fv(u['uApp[0]'], appA); gl.uniform4fv(u['uAppC[0]'], appC);
+}
+// Both passes share the view, the bank and the sky table.
+function shared(u) {
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uTime, t);
+  // The shader takes the cabin axes; it turns outside rays by the bank.
+  gl.uniform3fv(u.uF, basis.Fa); gl.uniform3fv(u.uR, basis.Ra); gl.uniform3fv(u.uU, basis.Ua);
+  gl.uniform3fv(u.uEye, basis.eye);
+  gl.uniform2f(u.uBank, Math.cos(bank), Math.sin(bank));
+  gl.uniform1f(u.uFocal, basis.focal);
+  gl.uniform3fv(u.uSun, sky.sun);
+  gl.uniform2fv(u.uSunAz, sky.sunAz);
+  gl.uniform1f(u.uHorEl, HOR);
+  gl.uniform3fv(u.uTip, toWorld(TIP));
+  gl.uniform1f(u.uStrobe, reduce ? 0 : strobe());
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, skyTex.L); gl.uniform1i(u.uSkyL, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, skyTex.T); gl.uniform1i(u.uSkyT, 1);
+}
+function render() {
+  setBasis();
+  gl.bindVertexArray(quadVao);
+  fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
+  let sum = 0;
+  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
+  // A fireball lights the whole scene for a moment, as lightning does.
+  const flash = Math.min(1.6, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0) + (EV.boom ? (EV.boom.flash || 0) * 1.1 : 0));
+
+  // Pass 1: the outside, into its own buffer.
+  sizeOut();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outBuf.fb); gl.viewport(0, 0, outBuf.w, outBuf.h);
+  gl.useProgram(P1.p);
+  let u = P1.u;
+  shared(u);
+  gl.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
+  gl.uniform1f(u.uTowns, opts.towns);
+  gl.uniform1f(u.uLit, sky.h.lit);
+  gl.uniform2f(u.uCam, cam.x, cam.z);
+  // A storm closes the deck, fills the mid layer, thickens the cirrus.
+  const st = opts.storm;
+  gl.uniform1f(u.uCover, opts.cloud + (Math.min(opts.cloud, 0.34) - opts.cloud) * st);
+  gl.uniform1f(u.uStorm, st);
+  gl.uniform1f(u.uFog, fog.level);
+  // Wisp noise repeats every 3264 m in x, 63 m in z.
+  gl.uniform3f(u.uWisp, (cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63);
+  spr.fill(0);
+  sprites.forEach((sp, i) => spr.set([sp.x, sp.z, sp.level, sp.seed], i * 4));
+  gl.uniform4fv(u['uSpr[0]'], spr);
+  // Cirrus thickens as the deck closes.
+  gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1) * (1 - st) + st);
+  gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 26 : 18);
+  gl.uniform1i(u.uLightSteps, quality() === 'high' ? 4 : 3);
+  // The mid layer fills in as the deck closes.
+  gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1) * (1 - st) + st);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, noiseTex); gl.uniform1i(u.uNoise, 3);
+  gl.uniform1f(u.uFlash, flash);
+  // At midnight the aurora glows over the clouds and tints their tops green.
+  // A storm's overcast hides the aurora.
+  const aur = auroraOn() * (1 - smooth(0, 0.6, opts.storm));
+  gl.uniform1f(u.uAurora, aur);
+  gl.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
+  // The wing goes in world space, so it banks with the cabin.
+  gl.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorld)).flat());
+  gl.uniform3fv(u['uWN[0]'], PANELS.map(q => quadNormal(q.map(toWorld))).flat());
+  gl.uniform1fv(u['uWS[0]'], SPAN);
+  // Straight reference edges, root to tip, for the panel lines.
+  // The trailing edge line runs on from the outboard part, past the kink.
+  gl.uniform4f(u.uWL, ST[0][0], ST[0][2], ST[5][0], ST[5][2]);
+  gl.uniform2f(u.uWT, ST[1][1] - (ST[5][1] - ST[1][1]) / (ST[5][2] - ST[1][2]) * (ST[1][2] - ST[0][2]), ST[5][1]);
+  const let_ = LET.map(toWorld);
+  gl.uniform3fv(u['uLet[0]'], let_.flat()); gl.uniform3fv(u.uLetN, quadNormal(let_));
+  // Aircraft axes in the world: chord runs aft, up, and span runs out the window.
+  gl.uniform3fv(u.uChord, toWorld([-1, 0, 0])); gl.uniform3fv(u.uUpA, toWorld([0, 1, 0])); gl.uniform3fv(u.uSpan, toWorld([0, 0, 1]));
+  gl.uniform3fv(u.uNacA, toWorld(NAC.a)); gl.uniform3fv(u.uNacB, toWorld(NAC.b)); gl.uniform1f(u.uNacR, NAC.r);
+  gl.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorld(f.a), f.a[3]]));
+  gl.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorld(f.b), f.b[3]]));
+  const n = towerUniforms();
+  gl.uniform1i(u.uTowSteps, quality() === 'high' ? 56 : 32);
+  gl.uniform1i(u.uTowOct, quality() === 'high' ? 3 : 2);
+  gl.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.6);
+  gl.uniform4fv(u['uTw[0]'], tw); gl.uniform4fv(u['uTwB[0]'], twB); gl.uniform4fv(u['uTwC[0]'], twC);
+  gl.uniform1i(u.uNTw, n);
+  gl.uniform4fv(u['uFl[0]'], fl);
+  const b0 = EV.boom;
+  gl.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
+  gl.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
+  jetUniforms(u);
+  airportUniforms(u);
+  const nTr = trailUniforms();
+  // Both rows go up as one 128 by 2 float texture.
+  trailData.set(trA, 0); trailData.set(trB, TRAIL_N * 4);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, trailTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TRAIL_N, 2, gl.RGBA, gl.FLOAT, trailData);
+  gl.uniform1i(u.uTrail, 4); gl.uniform1i(u.uTrN, nTr);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Spike: the three.js aircraft goes over the outside buffer.
+  wing3.render({ basis, bank, sky, HOR, out: outBuf, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm });
+  gl.bindVertexArray(quadVao);
+
+  // Pass 2: the cabin, the frame and the glass, to the screen.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P2.p);
+  u = P2.u;
+  shared(u);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, outBuf.tex); gl.uniform1i(u.uOut, 2);
+  gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uDimE, dim.edge); gl.uniform1f(u.uDimC, dim.core);
+  gl.uniform1f(u.uFlash, flash);
+  gl.uniform1i(u.uSteps, marchSteps());
+  // The storm brings rain to the window, up to heavy.
+  gl.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
+  gl.uniform1f(u.uStorm, opts.storm);
+  // Less window light reaches the cabin through dimmed glass, and it turns blue.
+  const tg = dimT((dim.edge + dim.core) / 2);
+  gl.uniform3fv(u.uCabin, sky.cabin);
+  gl.uniform3fv(u.uGlow, sky.glow.map((v, i) => (v + [0.004, 0.05, 0.022][i] * aur) * tg[i])); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
+  gl.uniform1f(u.uSunR, sky.sunR); gl.uniform1f(u.uSquash, sky.squash);
+  gl.uniform1f(u.uMoon, sky.h.moon ? 1 : 0); gl.uniform1f(u.uStars, sky.h.stars);
+  const m = EV.meteor;
+  gl.uniform3fv(u.uMetA, m ? m.A : [0, 0, 1]); gl.uniform3fv(u.uMetB, m ? m.B : [0, 0, 1]);
+  gl.uniform4fv(u.uMet, m ? [m.p, m.tail, m.b, m.train] : [0, 0, 0, 0]);
+  gl.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, m.hue] : [0, 0, 0, 0]);
+  flareUniforms(u);
+  pointUniforms(u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+/* ---------- lens flare ---------- */
+// A world direction to screen pixels; null when it is behind the camera.
+function screenOf(v) {
+  const z = dot(v, basis.F);
+  if (z < 0.05) return null;
+  return [W / 2 + dot(v, basis.R) / z * basis.focal, H / 2 + dot(v, basis.U) / z * basis.focal];
+}
+// World to aircraft frame: undo the bank.
+const toAir = v => [v[0], v[1] * Math.cos(bank) + v[2] * Math.sin(bank), -v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+function sdBox2(x, y, bx, by, rr) {
+  const qx = Math.abs(x) - bx + rr, qy = Math.abs(y) - by + rr;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
+}
+// How much of a source shows through the glass, from 0 to 1.
+// The ray must clear the rim and the pane's edges.
+// rad is the source's angular radius; points get a 4 mm soft edge.
+function seen(dirA, rad = 0) {
+  const e = basis.eye;
+  if (dirA[2] <= 1e-4) return 0;
+  let cover = 1;
+  for (const z of [0, WIN.slot, WIN.depth, WIN.zOut]) {
+    const k = clamp(z / WIN.depth), tt = (z - e[2]) / dirA[2];
+    const x = e[0] + dirA[0] * tt, y = e[1] + dirA[1] * tt;
+    const bx = WIN.out[0] + (WIN.inn[0] - WIN.out[0]) * k, by = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * k;
+    let sd = z === WIN.zOut ? sdBox2(x, y, WIN.skin[0], WIN.skin[1], WIN.rSkin) : sdBox2(x, y, bx, by, WIN.rOut + (WIN.rIn - WIN.rOut) * k);
+    // The disc's radius on this plane, in metres.
+    const rr = Math.max(rad * tt, 0.002);
+    cover = Math.min(cover, clamp(0.5 - sd / (2 * rr)));
+  }
+  return cover;
+}
+// True when a world ray from the eye meets the wing or winglet.
+function onWing(d) {
+  for (const q of [...PANELS, LET]) {
+    const v = q.map(toWorld), n = quadNormal(v), dn = dot(d, n);
+    if (Math.abs(dn) < 1e-4) continue;
+    const tt = dot(v[0], n) / dn;
+    if (tt <= 0) continue;
+    const p = d.map(c => c * tt);
+    let s0 = 0, inside = true;
+    for (let i = 0; i < 4; i++) {
+      const s = dot(cross(sub(v[(i + 1) % 4], v[i]), sub(p, v[i])), n);
+      if (i === 0) s0 = s; else if (s * s0 < 0) { inside = false; break; }
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+// A world ray from the eye against one tower, by its shape without billows.
+// It returns the hit distance and height in km, or null.
+function towerHit(c, d) {
+  const C = [c.x - cam.x, c.z - cam.z], a2 = d[0] * d[0] + d[2] * d[2];
+  const g = towerGeom(c), [ax, az] = g.ax, u = g.lean + g.len * 0.45;
+  // Column first, then the anvil fan near the top.
+  const parts = [[C[0] + ax * g.lean * 0.4, C[1] + az * g.lean * 0.4, g.rc * 1.15, g.base, g.top],
+    [C[0] + ax * u, C[1] + az * u, (g.r1 + g.r2) * 0.45, g.top - 2.2 * g.anv, g.top]];
+  for (const [cx, cz, rr, lo, hi] of parts) {
+    const t = (d[0] * cx + d[2] * cz) / a2;
+    if (t <= 0) continue;
+    const m = Math.hypot(d[0] * t - cx, d[2] * t - cz);
+    const y = Math.hypot(d[0] * t, 6371 + ALT + d[1] * t, d[2] * t) - 6371;
+    if (m < rr && y > lo && y < hi) return { t, y };
+  }
+  return null;
+}
+// How much the storm towers hide a world direction, from 0 to 1.
+function towerCover(d) {
+  let hide = 0;
+  for (const c of cells) if (c.s > 0 && towerHit(c, d)) hide = Math.max(hide, c.s);
+  return hide;
+}
+// Ten flare slots: sun or moon, lightning, strobe, nav light, meteor, rocket, a jet's two lights, and the impact's two.
+const FLARES = 10;
+const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4);
+const flareSeen = new Array(FLARES).fill(0);
+function flareUniforms(u) {
+  flr.fill(0); flrC.fill(0);
+  // Each source shines through the tinted pane, dimmer and bluer.
+  const tc = dimT(dim.core), tl = lum(tc);
+  // streak: how strongly the source throws a short horizontal streak.
+  const put = (i, dirW, gain, size, col, rad = 0, streak = 0) => {
+    gain *= tl;
+    col = col.map((v, c) => v * tc[c] / tl);
+    const sp = screenOf(dirW);
+    const vis = sp ? seen(norm(toAir(dirW)), rad) : 0;
+    // Visibility eases, so a source does not pop at the rim.
+    flareSeen[i] += (vis - flareSeen[i]) * 0.35;
+    if (!sp || gain * flareSeen[i] < 1e-3) return;
+    flr.set([sp[0], sp[1], gain * flareSeen[i], size], i * 4);
+    flrC.set([...col, streak], i * 4);
+  };
+  // The sun or the moon: full only once the whole disc clears the frame.
+  const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
+  put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR, sky.h.moon ? 0 : 0.4);
+  // Lightning glows inside the cloud, so it throws no lens flare.
+  // The strobe and the red nav light on the wingtip.
+  const tipW = norm(toWorld(sub(TIP, basis.eye)));
+  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0], 0, 0.6);
+  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
+  eventFlares(put);
+  gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform4fv(u['uFlrC[0]'], flrC);
+}
+
+// Towers go in far to near, so near ones cover far ones.
+function towerUniforms() {
+  const all = cells.filter(c => c.s > 0.01);
+  const bc = EV.boom && boomCell(EV.boom);
+  if (bc) all.push(bc);
+  const list = all.map(c => ({ c, dist: Math.hypot(c.x - cam.x, c.z - cam.z) }));
+  list.sort((a, b) => b.dist - a.dist);
+  const near = list.slice(-MAXCELL);
+  near.forEach(({ c }, i) => {
+    tw.set([c.x, c.z, c.r, c.top], i * 4);
+    twB.set([c.seed, c.s, c.shear, c.glow * opts.towns * sky.h.lit], i * 4);
+    // The brightest flash inside this cell lights it from within.
+    let best = null;
+    for (const f of flashes) if (f.cell === c && (!best || f.level > best.level)) best = f;
+    // The mushroom glows from its fireball, low in the stem.
+    if (c === bc) twC.set([c.x, c.top * 0.35, c.z, 3 * EV.boom.flash + 0.3 * EV.boom.crater], i * 4);
+    else twC.set(best ? [best.x, best.y, best.z, best.level] : [c.x, 6, c.z, 0], i * 4);
+  });
+  return near.length;
+}
+
+/* ---------- size ---------- */
+function resize(force = false) {
+  const fit = fitCanvas(canvas, { budget: 1.6e6 });
+  if (!force && fit.W === W && fit.H === H) return;
+  W = fit.W; H = fit.H; dpr = fit.dpr;
+  if (ready) render();
+}
+
+/* ---------- input ---------- */
+const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
+// A tap on a tower lights it at that spot; elsewhere it lights the deck.
+function tapAt(x, y) {
+  setBasis();
+  const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
+  // The nearest tower under the tap flashes where the tap meets it.
+  let hit = null;
+  for (const c of cells) {
+    if (c.s < 0.2) continue;
+    const h = towerHit(c, d);
+    if (h && (!hit || h.t < hit.h.t)) hit = { c, h };
+  }
+  if (hit) {
+    const { c, h } = hit;
+    flash(cam.x + d[0] * h.t, cam.z + d[2] * h.t, 1.2, c, clamp(h.y, 3, c.top - 0.8));
+    return;
+  }
+  const Rr = 6371, b = (Rr + ALT) * d[1], c = (ALT - 2) * (2 * Rr + ALT + 2), disc = b * b - c;
+  if (disc < 0 || b > 0) return;
+  const tt = -b - Math.sqrt(disc);
+  flash(cam.x + d[0] * tt, cam.z + d[2] * tt, 1.2);
+}
+let drag = null;
+// Two touches pinch to lean; the map holds each live pointer.
+const touches = new Map();
+let pinch = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture?.(e.pointerId);
+  const [x, y] = toPx(e);
+  touches.set(e.pointerId, [x, y]);
+  if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
+  drag = { x0: x, y0: y, x, y, moved: false };
+  stage.classList.add('dragging');
+});
+stage.addEventListener('pointermove', e => {
+  const [x, y] = toPx(e);
+  if (e.pointerType === 'mouse') { head.thx = clamp(x / W * 2 - 1, -1, 1); head.thy = clamp(y / H * 2 - 1, -1, 1); }
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, [x, y]);
+  if (touches.size === 2) {
+    // Fingers apart lean in; together lean back.
+    const s2 = spread();
+    moveHead(0, 0, (s2 - pinch) / Math.min(W, H) * 0.3);
+    pinch = s2;
+    return;
+  }
+  if (!drag) return;
+  if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
+  // The head follows the drag: right moves toward the nose, up rises.
+  const k = 0.42 / Math.min(W, H);
+  moveHead((x - drag.x) * k, (y - drag.y) * k, 0);
+  drag.x = x; drag.y = y;
+});
+function release(e) {
+  touches.delete(e.pointerId);
+  if (touches.size) return;
+  if (drag && !drag.moved) tapAt(drag.x0, drag.y0);
+  drag = null;
+  stage.classList.remove('dragging');
+}
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', e => { touches.delete(e.pointerId); drag = null; stage.classList.remove('dragging'); });
+stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { head.thx = 0; head.thy = 0; } });
+// The wheel leans toward the glass or back into the seat.
+stage.addEventListener('wheel', e => { e.preventDefault(); moveHead(0, 0, -e.deltaY * 0.0004); }, { passive: false });
+// Arrow keys move the head; plus and minus lean.
+stage.addEventListener('keydown', e => {
+  const m = { ArrowLeft: [-0.02, 0, 0], ArrowRight: [0.02, 0, 0], ArrowUp: [0, 0.02, 0], ArrowDown: [0, -0.02, 0], '+': [0, 0, 0.02], '=': [0, 0, 0.02], '-': [0, 0, -0.02] }[e.key];
+  if (!m) return;
+  e.preventDefault();
+  moveHead(...m);
+});
+
+/* ---------- bar ---------- */
+if (!HOURS[opts.hour]) opts.hour = 'dusk';
+const pick3 = (a, b, c) => [{ value: a[0], label: a[1] }, { value: b[0], label: b[1] }, { value: c[0], label: c[1] }];
+const ui = initPage({
+  id: 'window',
+  bar: {
+    choice: {
+      label: 'Time of day', display: 'stepper', value: opts.hour,
+      options: Object.keys(HOURS).map(k => ({ value: k, label: HOUR_NAMES[k] })),
+      onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); render(); },
+    },
+    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { opts.storm = v; save('storm', v); } },
+    // Dim steps the glass through five levels, then back to clear.
+    actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } }],
+    settings: [
+      { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
+      { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
+      { type: 'choice', id: 'rain', label: 'Rain', value: String(opts.rain), options: pick3(['0', 'Off'], ['0.5', 'Light'], ['1', 'Heavy']), onPick: v => { opts.rain = +v; save('rain', v); render(); } },
+      { type: 'toggle', id: 'aurora', label: 'Aurora', value: opts.aurora === 'on', onToggle: on => { opts.aurora = on ? 'on' : 'off'; save('aurora', opts.aurora); render(); } },
+      // Sights: each option calls its sight now.
+      { type: 'choice', id: 'falling', label: 'Falling', value: '', options: [{ value: 'meteor', label: 'Meteor' }, { value: 'fireball', label: 'Fireball' }, { value: 'boom', label: 'Impact' }], onPick: v => startEvent(v) },
+      { type: 'choice', id: 'flying', label: 'Flying', value: '', options: [{ value: 'rocket', label: 'Rocket' }, { value: 'jet', label: 'Jet' }], onPick: v => startEvent(v) },
+    ],
+    quality: true,
+    keys: [['drag', 'lean and peer'], ['scroll', 'lean closer'], ['click', 'a storm flashes'], ['D', 'dim the glass']],
+  },
+});
+// Quality sets the canvas size, the pass 1 size and the march steps.
+onQuality(() => resize(true));
+
+/* ---------- start ---------- */
+// The flight opens with a few cells already standing.
+for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
+window.__ws = { cells, flashes, EV, newMeteor, cam, apList };
+buildSky();
+uploadSky();
+new ResizeObserver(() => resize()).observe(stage);
+resize();
+render();
+// One finished frame folds shader work into the intro.
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) wake(); });
+wake();
+</script>
+</body>
+</html>
