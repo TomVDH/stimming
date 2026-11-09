@@ -25,6 +25,7 @@ iframe { display: block; width: 100%; border: 0; }
   <button type="button" data-r="4">4 · Ticker band</button>
 </div>
 <script type="module">
+import { M, icon, picks, motif, PICKS_KEY } from './icons.js';
 // The categories: key, name, Flemish name, colour, and the toys on the main shelf.
 const CATS = [
   ['poke', 'Poke & pop', 'Prutsen', 'oklch(0.8 0.13 230)', ['pop', 'fidget', 'pins', 'eyes', 'domino', 'magnet', 'soap', 'balloons']],
@@ -151,10 +152,12 @@ html[data-r="4"] .dv .meta { padding: 0 14px; color: var(--c); }
 html:not([data-r="4"]) .wm .run { display: none; }
 html[data-r="4"] .wm > b, html[data-r="4"] .wm > i { display: none; }
 /* Round 5, demure: an outline hex, the name in plain heavy type, a quiet rule. */
-html:not([data-r="5"]) .dv svg.demure { display: none; }
+html:not([data-r="5"]) .dv .pick { display: none; }
+.dv .pick { all: unset; display: inline-grid; cursor: pointer; border-radius: 8px; }
+.dv .pick:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 html[data-r="5"] .dv svg:not(.demure) { display: none; }
 html[data-r="5"] .dv { gap: 12px; margin-bottom: 20px; }
-html[data-r="5"] .dv svg.demure { width: 34px; height: 34px; }
+html[data-r="5"] .dv svg.demure { width: 40px; height: 40px; }
 html[data-r="5"] .dv:hover svg.demure { rotate: 30deg; }
 html[data-r="5"] .wm { all: unset; font: 800 clamp(20px, 2.6vw, 26px)/1 "Gabarito", system-ui, sans-serif; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
 html[data-r="5"] .wm b, html[data-r="5"] .wm i { all: unset; }
@@ -182,7 +185,7 @@ for (const [k, name, nl, c, ids] of CATS) {
   const sec = d.createElement('section');
   sec.className = 'sec';
   const n = ids.filter(id => byId.has(id)).length;
-  sec.innerHTML = `<div class="dv" style="--c:${c}">${hexLine(k, c)}${hexIcon(k, c)}<span class="wm wm--${k}" aria-label="${name}">${letters(name)}<span class="run" aria-hidden="true">${Array(12).fill(`<span>${name.replace('&', '&amp;')}</span>`).join('')}</span></span><span class="rule"></span><span class="meta">${nl} · ${n}</span></div>`;
+  sec.innerHTML = `<div class="dv" style="--c:${c}"><button class="pick" type="button" data-k="${k}" title="Tap for the next motif">${icon(motif(k, picks()[k]), c).replace('<svg', '<svg class="demure"')}</button>${hexIcon(k, c)}<span class="wm wm--${k}" aria-label="${name}">${letters(name)}<span class="run" aria-hidden="true">${Array(12).fill(`<span>${name.replace('&', '&amp;')}</span>`).join('')}</span></span><span class="rule"></span><span class="meta">${nl} · ${n}</span></div>`;
   const ul = Object.assign(d.createElement('ul'), { className: 'shelf' });
   for (const id of ids) if (byId.has(id)) { ul.append(byId.get(id)); placed.add(id); }
   sec.append(ul);
@@ -191,6 +194,18 @@ for (const [k, name, nl, c, ids] of CATS) {
 // Anything not placed stays in the old shelf, so nothing goes missing.
 shelf.hidden = ![...byId.keys()].some(id => !placed.has(id));
 const fit = () => { frame.style.height = d.documentElement.scrollHeight + 'px'; };
+// A tap on a divider's icon steps to that category's next motif and saves it.
+d.addEventListener('click', e => {
+  const b = e.target.closest('.dv .pick');
+  if (!b) return;
+  const k = b.dataset.k, c = b.parentElement.style.getPropertyValue('--c');
+  const list = M[k].map(([l]) => l), next = list[(list.indexOf(picks()[k]) + 1) % list.length];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(PICKS_KEY)) || {}; } catch (err) {}
+  saved[k] = next;
+  try { localStorage.setItem(PICKS_KEY, JSON.stringify(saved)); } catch (err) {}
+  b.innerHTML = icon(motif(k, next), c).replace('<svg', '<svg class="demure"');
+});
 const setRound = r => {
   d.documentElement.dataset.r = r;
   document.querySelectorAll('.rounds button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === r));
