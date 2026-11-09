@@ -16,8 +16,8 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - [x] Task 1: stills at 1280 × 800, 375 × 812, 812 × 375, Dusk 0 / 0.5 / 1 (headless Chrome)
 - [x] Task 1: checkpoint with Tom: the cadrage. Tom (13:17): far further away, a Villeneuve static shot. Done: eye at 3 km, 32° lens, locked off, no dolly, barrel at 18°
 - [x] Task 2: approach and hold; charge: chase, cells, arcs, dust, sky dim, push-in, shake; `__qa.charge`, `__qa.jump`
-- [ ] Task 2: checkpoint: the draw
-- [ ] Task 3: shot: slug, rail heat, muzzle ring, bolt, Mach ring, recoil, hit, shards, burst, flash, respawn; `__qa.fire`
+- [x] Task 2: checkpoint: the draw. Tom (13:29, 13:33): daytime or dusk; the gun is stone with nothing glowing; keep the escalating charge chaos; the rock far out so the bolt takes seconds
+- [x] Task 3: shot: slug, muzzle flash, bolt, Mach ring, recoil, hit, shards, burst, flash, respawn; `__qa.shoot`
 - [ ] Task 3: checkpoint: the slug
 - [ ] Task 4: sound: wind, hum, clicks, slug, shot at the Mach delay, rumble; Q9
 - [ ] Task 5: persistence, reduced motion, Q1 to Q10 at three sizes, fps in the bean, `tests/bar-v2.html`, PR
@@ -41,3 +41,6 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - Headless QA runner: scratchpad `qa.mjs` on Playwright 1.62 with the Chrome channel and the GPU flags; the browser pane runs throttled while hidden.
 - Tom asked for a far, static, Villeneuve-like shot: the eye moved to (1500, 70, 1800), lens 32°, horizon on the lower third, no dolly, no wobble; the barrel dropped to 18° so the rock stays in frame at every size.
 - Charge cells moved from the inner faces to the rail flanks and tops: the inner faces never face the eye. Arcs bow up above the rails so they read against the sky.
+- Tom (13:29): a day or dusk scene, and no glowing parts on the gun. The night K2 sky became a sunlit dusk sky; cells, seams, chase glow, beacons and service lights are gone. The charge reads as lightning over the gap, dust lifting and a shake, all growing with the hold.
+- Tom (13:33): the rock far out, the bolt in flight for seconds. DA 40 km (same angular size), flight 9 s at a tap to 6 s at full charge; chaos saturates over 4 s, power over 2.5 s.
+- The shot runs on a hand-rolled state keyed to the sim clock, not a GSAP timeline: fewer moving parts for one sequence. Cost if wrong: the same code in GSAP form.
