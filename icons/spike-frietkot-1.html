@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Frietkot 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&family=Courgette&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.icons { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); cursor: pointer; }
+.tile svg { display: block; overflow: visible; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 420px) { .t256, .t256 svg { width: 200px; height: 200px; } }
+</style>
+</head>
+<body>
+<h1>Icon spike: Frietkot 1</h1>
+<p class="lede">Five directions for the Frietkot tile, each at 256, 128 and 64. Move the pointer over a tile to play its hover.</p>
+<div class="row" id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Shared parts: the brut block (offset shadow, face) and the night palette.
+  const INK = 'oklch(0.05 0.01 260)', NIGHT = 'oklch(0.14 0.03 262)', SHADOW = 'oklch(0.07 0.01 260)';
+  const RED = 'oklch(0.46 0.16 25)', CREAM = '#efe3c4', WARM = '#ffc46b', LAMP = '#ffe2a8';
+  const block = (id, inner) => `
+    <defs><clipPath id="${id}-clip"><rect x="16" y="16" width="92" height="92"/></clipPath></defs>
+    <rect x="22" y="22" width="92" height="92" fill="${SHADOW}"/>
+    <rect x="16" y="16" width="92" height="92" fill="${NIGHT}"/>
+    <g clip-path="url(#${id}-clip)">${inner}</g>`;
+  // A standing ink figure, feet at (x, y), h tall.
+  const fig = (x, y, h, extra = '') => {
+    const s = h / 22;
+    return `<g transform="translate(${x} ${y}) scale(${s})" fill="${INK}" ${extra}>
+      <circle cx="0" cy="-19.5" r="2.6"/><path d="M-2.6-16.4H2.6L2.2-8H-2.2Z"/>
+      <path d="M-1.2-8L-2.2 0M1.2-8L2.2 0" stroke="${INK}" stroke-width="2"/></g>`;
+  };
+
+  const DIRS = [
+    {
+      key: 'A', name: 'Lit board', idea: 'The shack face on: the cream board lit from below by three lamps, the warm window, one at the counter. Hover: the lamps strike in turn and a puff of steam lifts.',
+      svg: id => block(id, `
+        <defs>
+          <radialGradient id="${id}-cone" cx="0.5" cy="1" r="0.9"><stop offset="0" stop-color="${LAMP}" stop-opacity="0.85"/><stop offset="1" stop-color="${LAMP}" stop-opacity="0"/></radialGradient>
+          <linearGradient id="${id}-pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${WARM}" stop-opacity="0.35"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></linearGradient>
+        </defs>
+        <rect x="16" y="90" width="92" height="18" fill="oklch(0.1 0.015 260)"/>
+        <rect x="44" y="90" width="36" height="18" fill="url(#${id}-pool)"/>
+        <rect x="28" y="54" width="72" height="36" fill="${RED}"/>
+        <rect x="34" y="34" width="60" height="17" fill="oklch(0.1 0.02 260)"/>
+        <g class="board"><rect x="36" y="36" width="56" height="13" fill="${CREAM}" opacity="0.35"/>
+          <g class="lit">
+            <ellipse cx="45" cy="49" rx="9" ry="12" fill="url(#${id}-cone)"/>
+            <ellipse cx="64" cy="49" rx="9" ry="12" fill="url(#${id}-cone)"/>
+            <ellipse cx="83" cy="49" rx="9" ry="12" fill="url(#${id}-cone)"/>
+          </g>
+          <text x="64" y="44.6" text-anchor="middle" font-family="Gabarito" font-weight="800" font-size="7.4" fill="oklch(0.42 0.17 25)" letter-spacing="0.4">FRITUUR</text>
+        </g>
+        <g class="lamps" fill="${LAMP}"><rect x="43" y="50.5" width="4" height="1.6"/><rect x="62" y="50.5" width="4" height="1.6"/><rect x="81" y="50.5" width="4" height="1.6"/></g>
+        <rect class="win" x="36" y="60" width="42" height="16" fill="${WARM}"/>
+        ${fig(48, 76, 13)}
+        <rect x="35" y="76" width="44" height="2" fill="oklch(0.55 0.01 250)"/>
+        ${fig(68, 90, 20)}
+        <path class="steam" d="M88 34c-3-4 3-6 0-10s3-6 0-9" fill="none" stroke="oklch(0.85 0.02 260)" stroke-width="2.4" stroke-linecap="round" opacity="0"/>`),
+      play(s) {
+        const lit = s.querySelectorAll('.lit ellipse'), lamps = s.querySelectorAll('.lamps rect');
+        return gsap.timeline()
+          .set([lit, lamps], { opacity: 0 })
+          .to(lamps, { opacity: 1, duration: 0.05, stagger: { each: 0.16, ease: 'steps(1)' } })
+          .to(lit, { opacity: 1, duration: 0.18, stagger: 0.16 }, '<')
+          .fromTo(s.querySelector('.steam'), { opacity: 0, y: 6 }, { opacity: 0.7, y: -4, duration: 0.6, ease: 'power1.out' }, '-=0.2')
+          .to(s.querySelector('.steam'), { opacity: 0, y: -12, duration: 0.6 });
+      },
+    },
+    {
+      key: 'B', name: 'Cone', idea: 'One big paper cone of fries against the lit window: the frituur in one object. Hover: the fries pop up one by one and a dollop of mayo lands.',
+      svg: id => block(id, `
+        <defs><radialGradient id="${id}-glow" cx="0.5" cy="0.45" r="0.6"><stop offset="0" stop-color="${WARM}"/><stop offset="1" stop-color="oklch(0.45 0.14 50)"/></radialGradient></defs>
+        <rect x="16" y="16" width="92" height="92" fill="url(#${id}-glow)" opacity="0.9"/>
+        <rect x="16" y="16" width="92" height="92" fill="none" stroke="${INK}" stroke-width="10"/>
+        <g class="fries" stroke="#f2c14a" stroke-width="5" stroke-linecap="butt">
+          <path d="M54 62V40"/><path d="M61 62V34"/><path d="M68 62V37"/><path d="M75 62V42"/><path d="M58 62V46"/><path d="M71 62V45"/>
+        </g>
+        <path class="dollop" d="M58 44c0-6 14-6 14 0c0 3-3 4-7 4s-7-1-7-4Z" fill="#fbf4dc"/>
+        <path d="M46 60H82L64 100Z" fill="${CREAM}"/>
+        <path d="M46 60H82L64 100Z" fill="none" stroke="${INK}" stroke-width="2"/>
+        <path d="M52 66L64 92M64 62L68 88M76 64L66 94" stroke="oklch(0.8 0.03 80)" stroke-width="1.2"/>`),
+      play(s) {
+        const fries = s.querySelectorAll('.fries path'), d = s.querySelector('.dollop');
+        return gsap.timeline()
+          .fromTo(fries, { y: 22 }, { y: 0, duration: 0.28, ease: 'back.out(2.4)', stagger: 0.07 })
+          .fromTo(d, { y: -40, opacity: 0, scaleY: 1 }, { y: 0, opacity: 1, duration: 0.3, ease: 'power2.in' })
+          .to(d, { scaleY: 0.7, transformOrigin: '50% 100%', duration: 0.08, yoyo: true, repeat: 1 });
+      },
+    },
+    {
+      key: 'C', name: 'Kerkplein', idea: 'The diorama itself, small: the church tower left, the red frietkot on the golden section, its light streaking down the wet square. Hover: the bus slides past behind and the streak shimmers.',
+      svg: id => block(id, `
+        <defs><linearGradient id="${id}-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.12 0.03 265)"/><stop offset="1" stop-color="oklch(0.25 0.05 40)"/></linearGradient>
+        <linearGradient id="${id}-streak" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${WARM}" stop-opacity="0.6"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></linearGradient></defs>
+        <rect x="16" y="16" width="92" height="66" fill="url(#${id}-sky)"/>
+        <path d="M16 82V72l5-5 5 5v-3l5-4 5 4 5-3 5 3 5-4 5 4 5-2 5 2 5-4 5 4 5-3 5 3 5-4 5 4 5-2 5 2V82Z" fill="oklch(0.09 0.015 262)"/>
+        <path d="M26 82V44l5-14 5 14v38Z" fill="oklch(0.08 0.015 262)"/>
+        <circle cx="31" cy="50" r="2" fill="none" stroke="#ffe0a8" stroke-width="0.9"/>
+        <g class="bus"><rect x="-40" y="72" width="30" height="8" rx="1" fill="oklch(0.07 0.01 260)"/><rect x="-37" y="73.6" width="22" height="2.6" fill="oklch(0.55 0.08 70)" opacity="0.7"/><circle cx="-10" cy="77" r="1" fill="#fff"/></g>
+        <rect x="16" y="82" width="92" height="26" fill="oklch(0.1 0.015 260)"/>
+        <rect x="63" y="70" width="26" height="12" fill="${RED}"/>
+        <rect x="66" y="64" width="20" height="5" fill="${CREAM}" opacity="0.9"/>
+        <rect x="66" y="73" width="14" height="6" fill="${WARM}"/>
+        <rect class="streak" x="66" y="83" width="14" height="24" fill="url(#${id}-streak)"/>
+        ${fig(84, 82, 8)}`),
+      play(s) {
+        return gsap.timeline()
+          .fromTo(s.querySelector('.bus'), { x: 0 }, { x: 170, duration: 1.6, ease: 'none' })
+          .fromTo(s.querySelector('.streak'), { scaleX: 1 }, { scaleX: 1.25, transformOrigin: '50% 0%', duration: 0.2, yoyo: true, repeat: 5, ease: 'sine.inOut' }, 0);
+      },
+    },
+    {
+      key: 'D', name: 'Window', idea: 'The tile is the service window: warm tiles, the fryer in steam, the server in a paper cap. Hover: the cone comes out over the counter and the steam rolls.',
+      svg: id => block(id, `
+        <defs><linearGradient id="${id}-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd896"/><stop offset="1" stop-color="#d98a3c"/></linearGradient>
+        <pattern id="${id}-tiles" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="none" stroke="oklch(0.55 0.08 70)" stroke-width="0.5" opacity="0.5"/></pattern></defs>
+        <rect x="16" y="16" width="92" height="92" fill="${RED}"/>
+        <rect x="26" y="30" width="72" height="50" fill="url(#${id}-in)"/>
+        <rect x="26" y="30" width="72" height="50" fill="url(#${id}-tiles)"/>
+        <rect x="34" y="62" width="24" height="10" fill="oklch(0.55 0.01 250)"/>
+        <g class="steam" fill="#fff" opacity="0.45"><circle cx="42" cy="56" r="5"/><circle cx="49" cy="52" r="6"/><circle cx="45" cy="47" r="4"/></g>
+        <g fill="${INK}"><circle cx="76" cy="46" r="5"/><rect x="71" y="39" width="10" height="3.4"/><path d="M69 52h14l2 28H67Z"/></g>
+        <g class="cone"><path d="M84 66h8l-4 9Z" fill="${CREAM}"/><path d="M85 66v-4M88 66v-5M91 66v-3" stroke="#f2c14a" stroke-width="1.6"/></g>
+        <rect x="22" y="80" width="80" height="5" fill="oklch(0.6 0.01 250)"/>
+        <rect x="16" y="85" width="92" height="23" fill="${RED}"/>`),
+      play(s) {
+        return gsap.timeline()
+          .fromTo(s.querySelector('.cone'), { x: 0, y: 0 }, { x: 8, y: 8, duration: 0.4, ease: 'back.out(2)' })
+          .fromTo(s.querySelectorAll('.steam circle'), { y: 0, opacity: 0.45 }, { y: -12, opacity: 0, duration: 0.9, stagger: 0.1, ease: 'power1.out' }, 0);
+      },
+    },
+    {
+      key: 'E', name: 'Neon fries', idea: 'The wall neon from the shack: a cone of fries in red and yellow tube on dark brick, with a mayo dot. Hover: the tube strikes, flickers, then holds.',
+      svg: id => block(id, `
+        <defs>
+          <pattern id="${id}-brick" width="12" height="6" patternUnits="userSpaceOnUse"><path d="M0 6H12M6 0V3M0 3H12M12 3V6" stroke="oklch(0.2 0.02 262)" stroke-width="0.6" fill="none"/></pattern>
+          <filter id="${id}-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <rect x="16" y="16" width="92" height="92" fill="url(#${id}-brick)"/>
+        <g class="tube" filter="url(#${id}-glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M42 56H86L64 98Z" stroke="#ff4a3a" stroke-width="3"/>
+          <path d="M51 56V34M59 56V28M67 56V31M75 56V36M83 56V40" stroke="#ffd04a" stroke-width="3"/>
+          <circle cx="64" cy="70" r="3.4" stroke="#fff4dc" stroke-width="2.4"/>
+        </g>`),
+      play(s) {
+        const t = s.querySelector('.tube');
+        return gsap.timeline()
+          .set(t, { opacity: 0.15 })
+          .to(t, { opacity: 1, duration: 0.04 }).to(t, { opacity: 0.2, duration: 0.05 })
+          .to(t, { opacity: 1, duration: 0.04, delay: 0.08 }).to(t, { opacity: 0.4, duration: 0.04 })
+          .to(t, { opacity: 1, duration: 0.05, delay: 0.12 });
+      },
+    },
+  ];
+
+  const out = document.getElementById('out');
+  let uid = 0;
+  for (const d of DIRS) {
+    const card = document.createElement('div');
+    card.className = 'dir';
+    card.innerHTML = `<header><b>${d.key}</b><span>${d.name}</span></header><div class="icons"></div><p class="idea">${d.idea}</p>`;
+    const icons = card.querySelector('.icons');
+    for (const size of [256, 128, 64]) {
+      const tile = document.createElement('div');
+      tile.className = `tile t${size}`;
+      tile.tabIndex = 0;
+      const id = `f${d.key}${uid++}`;
+      tile.innerHTML = `<svg viewBox="0 0 128 128" aria-hidden="true">${d.svg(id)}</svg>`;
+      const svg = tile.querySelector('svg');
+      let tl = null;
+      const start = () => { if (reduce) return; tl?.kill(); tl = d.play(svg); };
+      tile.addEventListener('pointerenter', start);
+      tile.addEventListener('focus', start);
+      icons.append(tile);
+    }
+    out.append(card);
+  }
+})();
+</script>
+</body>
+</html>
