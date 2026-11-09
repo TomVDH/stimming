@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.008 280); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bismuth crystals</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Bismuth crystals: hopper crystals float on a pool of liquid metal. */
+:root { --stage: oklch(0.08 0.008 280); }
+.stage--bismuth canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--bismuth canvas.on { opacity: 1; }
+.stage--bismuth { cursor: grab; }
+@media (prefers-reduced-motion: reduce) { .stage--bismuth canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Bismuth crystals</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--bismuth" id="stage" tabindex="0" role="application" aria-label="Bismuth crystals float on a pool of liquid metal. Drag up from the pool to pull out a crystal; hold to grow one; click to seed one.">
+      <p class="fail" hidden>Bismuth crystals needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Bismuth crystals</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, reduced } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------- bar ---------- */
+// Handlers bind once the GL exists.
+const act = { add() {}, clear() {}, reset() {} };
+let habit = 'spiral', heat = 0.5, argon = false, glints = 0.7, turn = true;
+const ui = initPage({ id: 'bismuth', bar: {
+  choice: { label: 'Habit', value: 'spiral', options: [
+    { value: 'spiral', label: 'Spiral' }, { value: 'hopper', label: 'Hopper' }, { value: 'cluster', label: 'Cluster' },
+  ], onPick: v => { habit = v; } },
+  slider: { label: 'Heat', min: 0, max: 1, step: 0.01, value: heat, onInput: v => { heat = v; poke(); } },
+  actions: [{ verb: 'add', noun: 'Crystal', key: 'C', onPress: () => act.add() }, { verb: 'clear', key: 'X', onPress: () => act.clear() }],
+  settings: [
+    { type: 'choice', id: 'air', label: 'Air', value: 'air', persist: true,
+      options: [{ value: 'air', label: 'Air' }, { value: 'argon', label: 'Argon' }], onPick: v => { argon = v === 'argon'; poke(); } },
+    { type: 'slider', id: 'glints', label: 'Glints', min: 0, max: 1, step: 0.01, value: glints, persist: true, onInput: v => { glints = v; poke(); } },
+    { type: 'toggle', id: 'turn', label: 'Turn', value: true, persist: true, onToggle: v => { turn = v; poke(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag up', 'pull a crystal'], ['hold', 'grow'], ['click', 'seed'], ['drag', 'lift a crystal']],
+} });
+argon = ui.setting('air')?.value === 'argon';
+glints = ui.setting('glints')?.value ?? glints;
+turn = ui.setting('turn')?.value ?? turn;
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- matrices ---------- */
+// Matrices are column-major Float32Arrays, as WebGL reads them.
+function perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+}
+function lookAt(e, t, u = [0, 1, 0]) {
+  let z = [e[0] - t[0], e[1] - t[1], e[2] - t[2]];
+  const zl = Math.hypot(...z); z = z.map(v => v / zl);
+  let x = [u[1] * z[2] - u[2] * z[1], u[2] * z[0] - u[0] * z[2], u[0] * z[1] - u[1] * z[0]];
+  const xl = Math.hypot(...x); x = x.map(v => v / xl);
+  const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+  return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
+    -(x[0] * e[0] + x[1] * e[1] + x[2] * e[2]), -(y[0] * e[0] + y[1] * e[1] + y[2] * e[2]), -(z[0] * e[0] + z[1] * e[1] + z[2] * e[2]), 1]);
+}
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+function invert(m) {
+  const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = m;
+  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+  const d = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+  return new Float32Array([
+    (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d, (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d,
+    (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d, (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d,
+    (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d, (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d,
+    (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d, (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d,
+  ]);
+}
+// The pose matrix: translate, yaw, two tilts, uniform scale.
+function pose(x, y, z, yaw, ta, tb, s) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), ca = Math.cos(ta), sa = Math.sin(ta), cb = Math.cos(tb), sb = Math.sin(tb);
+  // R = Ry * Rx * Rz, with the columns written out.
+  const c0 = [cy * cb + sy * sa * sb, ca * sb, -sy * cb + cy * sa * sb];
+  const c1 = [-cy * sb + sy * sa * cb, ca * cb, sy * sb + cy * sa * cb];
+  const c2 = [sy * ca, -sa, cy * ca];
+  return [c0[0] * s, c0[1] * s, c0[2] * s, 0, c1[0] * s, c1[1] * s, c1[2] * s, 0, c2[0] * s, c2[1] * s, c2[2] * s, 0, x, y, z, 1];
+}
+
+/* ---------- thin film spectrum ---------- */
+// Sixteen wavelengths span 400 to 700 nm.
+const NL = 16;
+const LAMBDA = Array.from({ length: NL }, (_, i) => 400 + i * 20);
+// A multi-lobe Gaussian fit of the CIE 1931 curves (Wyman, Sloan, Shirley).
+const g = (l, mu, s1, s2) => Math.exp(-0.5 * ((l - mu) / (l < mu ? s1 : s2)) ** 2);
+const cie = l => [
+  1.056 * g(l, 599.8, 37.9, 31) + 0.362 * g(l, 442, 16, 26.7) - 0.065 * g(l, 501.1, 20.4, 26.2),
+  0.821 * g(l, 568.8, 46.9, 40.5) + 0.286 * g(l, 530.9, 16.3, 31.1),
+  1.217 * g(l, 437, 11.8, 36) + 0.681 * g(l, 459, 26, 13.8),
+];
+// Each wavelength gets linear sRGB weights; a flat spectrum sums to white.
+const SPEC = LAMBDA.map(l => {
+  const [X, Y, Z] = cie(l);
+  return [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z];
+});
+const sum = SPEC.reduce((s, w) => [s[0] + w[0], s[1] + w[1], s[2] + w[2]], [0, 0, 0]);
+const WEIGHTS = SPEC.flatMap(w => [w[0] / sum[0], w[1] / sum[1], w[2] / sum[2]]);
+// The oxide meets bismuth: a complex amplitude, a little stronger in the red.
+const R23 = LAMBDA.flatMap(l => {
+  const m = 0.6 + 0.12 * (l - 400) / 300, ph = Math.PI - 0.62;
+  return [m * Math.cos(ph), m * Math.sin(ph)];
+});
+
+/* ---------- shaders ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+`;
+// Shared GLSL: the film, the light around the scene, and noise.
+const LIGHT = `
+uniform vec3 uW[${NL}];
+uniform vec2 uR[${NL}];
+uniform float uLam[${NL}];
+uniform float uGlint;
+uniform float uHeat;
+const float NF = 2.4;
+// Two-interface Airy reflectance, summed over the spectrum.
+vec3 film(float d, float cosI) {
+  float cosT = sqrt(1.0 - (1.0 - cosI * cosI) / (NF * NF));
+  float r12 = (cosI - NF * cosT) / (cosI + NF * cosT);
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < ${NL}; i++) {
+    float del = 12.566371 * NF * d * cosT / uLam[i];
+    vec2 e = vec2(cos(del), -sin(del));
+    vec2 r = vec2(uR[i].x * e.x - uR[i].y * e.y, uR[i].x * e.y + uR[i].y * e.x);
+    vec2 num = vec2(r12, 0.0) + r;
+    vec2 den = vec2(1.0, 0.0) + r12 * r;
+    acc += uW[i] * (dot(num, num) / dot(den, den));
+  }
+  return max(acc, 0.0);
+}
+// The key light: a long strip, low over the far side of the pool.
+// A narrow stage swings it toward the centre, so it stays in frame.
+uniform vec3 KEY;
+const vec3 FILL = vec3(0.86, 0.22, 0.46);
+// Studio 1 lights the crystals as a light tent; the pool sees less.
+vec3 env(vec3 r, float studio) {
+  vec3 L = normalize(KEY);
+  vec3 S = normalize(cross(L, vec3(0.0, 1.0, 0.0)));
+  vec3 Nn = normalize(cross(S, L));
+  float across = dot(r, Nn), along = dot(r, S), face = dot(r, L);
+  // A soft dome above gives the film its colour.
+  vec3 c = vec3(0.004, 0.004, 0.007) + vec3(0.11, 0.115, 0.14) * smoothstep(-0.1, 0.95, r.y) * mix(0.3, 1.8, studio);
+  // A soft ring of light at eye level, for the crystals' side faces.
+  c += vec3(0.1, 0.105, 0.12) * studio * exp(-r.y * r.y / 0.08);
+  // A warm band at the horizon is the pool's glow.
+  c += vec3(0.07, 0.035, 0.02) * (0.4 + uHeat) * exp(-r.y * r.y / 0.02);
+  // The strip itself, sharp, with a soft halo.
+  float ends = smoothstep(0.3, 0.04, abs(along)) * step(0.0, face);
+  float core = exp(-across * across / 0.00005) * 26.0 * uGlint * mix(0.3, 1.0, studio);
+  c += vec3(1.0, 0.96, 0.9) * ends * (core + exp(-across * across / 0.003) * mix(0.1, 0.7, studio));
+  // A cool fill from the right.
+  float f = max(dot(r, normalize(FILL)), 0.0);
+  c += vec3(0.35, 0.42, 0.6) * pow(f, 6.0) * 0.55;
+  // Below the horizon the scene sees the pool.
+  vec3 melt = mix(vec3(0.03, 0.028, 0.03), vec3(0.15, 0.13, 0.125), studio) + vec3(0.1, 0.035, 0.01) * uHeat * (1.0 + studio);
+  c = mix(c, melt, smoothstep(0.0, -0.08, r.y));
+  return c;
+}
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+`;
+
+const TRI_VS = HEAD + `
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  vUv = p * 0.5 + 0.5;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+// One box per terrace edge; the pose array places each crystal.
+const CRYSTAL_VS = HEAD + `
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNor;
+layout(location = 2) in vec4 aC;
+layout(location = 3) in vec4 aH;
+layout(location = 4) in vec4 aF;
+uniform mat4 uVP;
+uniform mat4 uPose[16];
+uniform float uTime;
+uniform float uMirror;
+uniform float uSnap;
+out vec3 vW;
+out vec3 vN;
+out vec4 vF;
+out vec2 vEdge;
+out float vAge;
+void main() {
+  float age = uTime - aH.w;
+  float t = clamp(age / 0.18, 0.0, 1.0);
+  // The box grows in with a small overshoot.
+  float grow = uSnap > 0.5 ? step(0.0, age) : 1.0 + 2.2 * pow(t - 1.0, 3.0) + 1.2 * pow(t - 1.0, 2.0);
+  grow = age < 0.0 ? 0.0 : grow;
+  vec3 local = aC.xyz + aPos * aH.xyz * grow;
+  mat4 P = uPose[int(aC.w)];
+  vec4 w = P * vec4(local, 1.0);
+  vW = w.xyz;
+  vN = mat3(P) * aNor;
+  // Distance to the face's edges, in crystal units.
+  vec3 a = abs(aNor);
+  vec2 uv = a.x > 0.5 ? aPos.yz : a.y > 0.5 ? aPos.xz : aPos.xy;
+  vec2 hs = a.x > 0.5 ? aH.yz : a.y > 0.5 ? aH.xz : aH.xy;
+  vEdge = (1.0 - abs(uv)) * hs;
+  vF = aF;
+  vAge = age;
+  if (uMirror > 0.5) w.y = -w.y;
+  gl_Position = uVP * w;
+}`;
+
+const CRYSTAL_FS = HEAD + LIGHT + `
+in vec3 vW;
+in vec3 vN;
+in vec4 vF;
+in vec2 vEdge;
+in float vAge;
+uniform vec3 uEye;
+uniform float uMirror;
+uniform float uTau;
+uniform float uFilm;
+out vec4 o;
+void main() {
+  // The pool hides what lies under its surface.
+  if (vW.y < -0.004) discard;
+  vec3 eye = uMirror > 0.5 ? vec3(uEye.x, -uEye.y, uEye.z) : uEye;
+  vec3 V = normalize(eye - vW);
+  // Each terrace leans a little, so terraces glint in turn.
+  float s = vF.y;
+  vec3 jit = vec3(fract(s * 13.7), fract(s * 71.3), fract(s * 37.1)) - 0.5;
+  vec3 N = normalize(normalize(vN) + jit * 0.11);
+  float cosI = clamp(dot(N, V), 0.02, 1.0);
+  // Parabolic oxide growth: thickness follows the square root of age.
+  float d = vF.x * sqrt(clamp(vAge / uTau, 0.0, 1.0));
+  float e = min(vEdge.x, vEdge.y);
+  d *= 1.0 + 0.16 * (1.0 - smoothstep(0.0, 0.035, e));
+  d *= 1.0 + 0.07 * (vnoise(vW.xz * 9.0 + vW.y * 5.0) - 0.5);
+  d *= uFilm;
+  vec3 F = film(d, cosI);
+  vec3 R = reflect(-V, N);
+  vec3 col = F * env(R, 1.0) * vF.z;
+  // A thin dark seam marks each box edge.
+  col *= mix(0.55, 1.0, smoothstep(0.0, 0.008, e));
+  // The meniscus brightens the waterline.
+  col += vec3(0.05, 0.04, 0.04) * exp(-vW.y / 0.012) * (0.5 + uHeat);
+  o = vec4(col, 1.0);
+}`;
+
+// The pool: one ray-plane hit per pixel.
+const POOL_FS = HEAD + LIGHT + `
+in vec2 vUv;
+uniform mat4 uInv;
+uniform vec3 uEye;
+uniform float uTime;
+uniform sampler2D uRefl;
+uniform float uSwell;
+uniform float uFilm;
+out vec4 o;
+float swell(vec2 p) {
+  float t = uTime * uSwell;
+  float h = vnoise(p * 0.55 + vec2(t * 0.11, -t * 0.07)) * 0.6;
+  h += vnoise(p * 1.4 + vec2(-t * 0.19, t * 0.13)) * 0.28;
+  h += vnoise(p * 3.6 + vec2(t * 0.31, t * 0.23)) * 0.08;
+  return h;
+}
+void main() {
+  vec4 a = uInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 dir = normalize(a.xyz / a.w - uEye);
+  vec3 col;
+  // Above the horizon there is only dark, with a haze toward the key.
+  vec3 bg = vec3(0.004, 0.004, 0.007) + vec3(0.03, 0.027, 0.024) * pow(max(dot(dir, normalize(KEY)), 0.0), 24.0);
+  if (dir.y > -1e-4) { o = vec4(bg, 1.0); return; }
+  float t = -uEye.y / dir.y;
+  vec3 P = uEye + dir * t;
+  float r = length(P.xz);
+  // The swell gives the normal; it is gentle near the horizon.
+  vec2 ep = vec2(0.03, 0.0);
+  float h0 = swell(P.xz);
+  vec2 grad = vec2(swell(P.xz + ep.xy) - h0, swell(P.xz + ep.yx) - h0) / ep.x;
+  // Grazing rays magnify tilt, so far swells flatten.
+  float amp = 0.028 * uSwell / (1.0 + t * 0.3);
+  vec3 N = normalize(vec3(-grad.x * amp, 1.0, -grad.y * amp));
+  vec3 V = -dir;
+  float cosI = clamp(dot(N, V), 0.0, 1.0);
+  vec3 R = reflect(dir, N);
+  // Liquid bismuth: a pink-silver mirror, brighter at a grazing angle.
+  vec3 F0 = vec3(0.66, 0.62, 0.63);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - cosI, 5.0);
+  // A thin oxide skin drifts in slow swirls.
+  float sk = vnoise(P.xz * 0.45 + vec2(uTime * 0.012, 0.0)) * 0.65 + vnoise(P.xz * 1.3 - uTime * 0.02) * 0.35;
+  float skin = smoothstep(0.52, 0.8, sk) * uFilm;
+  F = mix(F, film(18.0 + 60.0 * sk, cosI), skin * 0.75);
+  vec3 refl = env(R, 0.0);
+  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uRefl, 0)) * 0.5 + N.xz * vec2(0.09, -0.09);
+  vec4 cr = texture(uRefl, uv);
+  // The melt's skin dulls the mirror image a little.
+  refl = mix(refl, cr.rgb * 0.5, cr.a);
+  col = F * refl;
+  // The ember: heat deep in the melt, under the mirror.
+  float em = exp(-r * r / 9.0) * (0.55 + 0.45 * vnoise(P.xz * 0.8 + uTime * 0.05));
+  col += vec3(1.0, 0.36, 0.09) * 0.09 * uHeat * em * (1.0 - F.g);
+  // The pool fades into the dark at its far edge.
+  float fade = smoothstep(34.0, 12.0, r) * smoothstep(80.0, 34.0, t);
+  o = vec4(mix(bg, col, fade), 1.0);
+}`;
+
+// Bright pass and blur for the bloom.
+const BRIGHT_FS = HEAD + `
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+out vec4 o;
+void main() {
+  vec3 c = vec3(0.0);
+  c += texture(uSrc, vUv + uTexel * vec2(-1, -1)).rgb;
+  c += texture(uSrc, vUv + uTexel * vec2(1, -1)).rgb;
+  c += texture(uSrc, vUv + uTexel * vec2(-1, 1)).rgb;
+  c += texture(uSrc, vUv + uTexel * vec2(1, 1)).rgb;
+  c *= 0.25;
+  float l = max(c.r, max(c.g, c.b));
+  o = vec4(c * max(l - 0.9, 0.0) / max(l, 1e-4), 1.0);
+}`;
+const BLUR_FS = HEAD + `
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 0.2270;
+  c += (texture(uSrc, vUv + uDir * 1.3846).rgb + texture(uSrc, vUv - uDir * 1.3846).rgb) * 0.3162;
+  c += (texture(uSrc, vUv + uDir * 3.2308).rgb + texture(uSrc, vUv - uDir * 3.2308).rgb) * 0.0703;
+  o = vec4(c, 1.0);
+}`;
+const FINAL_FS = HEAD + `
+in vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uB1;
+uniform sampler2D uB2;
+uniform float uTime;
+uniform vec2 uRes;
+out vec4 o;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main() {
+  vec3 c = texture(uScene, vUv).rgb;
+  c += texture(uB1, vUv).rgb * 0.5 + texture(uB2, vUv).rgb * 0.8;
+  c = aces(c * 1.35);
+  vec2 v = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - 0.5 * smoothstep(0.4, 1.2, length(v));
+  c = srgb(c);
+  c += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.012;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, cubeVao = null, instBuf = null, triVao = null;
+let scene = null, msaa = null, refl = null, b1 = null, b1t = null, b2 = null, b2t = null;
+const MAXI = 2048, STRIDE = 12, MAXP = 16;
+const inst = new Float32Array(MAXI * STRIDE);
+let nInst = 0, instDirty = true;
+const poses = new Float32Array(MAXP * 16);
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+// The unit cube: 36 vertices with flat face normals.
+function cube() {
+  const v = [];
+  const faces = [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]];
+  for (const [ax, sg] of faces) {
+    const u = (ax + 1) % 3, w = (ax + 2) % 3;
+    const q = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+    for (const [a, b] of q) {
+      const p = [0, 0, 0], n = [0, 0, 0];
+      p[ax] = sg; p[u] = sg > 0 ? a : b; p[w] = sg > 0 ? b : a;
+      n[ax] = sg;
+      v.push(...p, ...n);
+    }
+  }
+  return new Float32Array(v);
+}
+
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('float targets unavailable');
+  gl.getExtension('OES_texture_float_linear');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    crystal: compile(CRYSTAL_VS, CRYSTAL_FS), pool: compile(TRI_VS, POOL_FS),
+    bright: compile(TRI_VS, BRIGHT_FS), blur: compile(TRI_VS, BLUR_FS), final: compile(TRI_VS, FINAL_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  triVao = gl.createVertexArray();
+  // The cube mesh and the instance buffer share one vertex array.
+  cubeVao = gl.createVertexArray();
+  gl.bindVertexArray(cubeVao);
+  const cb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, cb);
+  gl.bufferData(gl.ARRAY_BUFFER, cube(), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  for (let i = 0; i < 3; i++) {
+    gl.enableVertexAttribArray(2 + i);
+    gl.vertexAttribPointer(2 + i, 4, gl.FLOAT, false, STRIDE * 4, i * 16);
+    gl.vertexAttribDivisor(2 + i, 1);
+  }
+  gl.bindVertexArray(null);
+  // Both programs that use the film get the spectrum once.
+  for (const q of [P.crystal, P.pool]) {
+    gl.useProgram(q.p);
+    gl.uniform3fv(q.u.uW, WEIGHTS);
+    gl.uniform2fv(q.u.uR, R23);
+    gl.uniform1fv(q.u.uLam, LAMBDA);
+  }
+}
+
+// A colour target, with an optional depth buffer.
+function target(w, h, depth = false) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  let rb = null;
+  if (depth) {
+    rb = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  }
+  return { tex, fb, rb, w, h };
+}
+// A multisampled colour and depth pair; it resolves into the scene target.
+function msTarget(w, h, samples) {
+  const fb = gl.createFramebuffer(), c = gl.createRenderbuffer(), d = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, c);
+  gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA16F, w, h);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, d);
+  gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, c);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, d);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  return { fb, c, d, w, h, ok };
+}
+function free(t) {
+  if (!t) return;
+  if (t.tex) gl.deleteTexture(t.tex);
+  if (t.rb) gl.deleteRenderbuffer(t.rb);
+  if (t.c) gl.deleteRenderbuffer(t.c);
+  if (t.d) gl.deleteRenderbuffer(t.d);
+  gl.deleteFramebuffer(t.fb);
+}
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function full(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.bindVertexArray(triVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- camera and layout ---------- */
+const cam = { eye: [0, 3.3, 8.6], at: [0, 0.45, 0], fov: 30, vp: null, inv: null };
+let W = 1, H = 1, portrait = false, rung = 0;
+function layout() {
+  const f = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  W = f.W; H = f.H;
+  const asp = W / H;
+  portrait = asp < 0.9;
+  // A phone tilts steeper and widens the lens, so the pool fills the frame.
+  if (portrait) { cam.eye = [0, 5.0, 9.2]; cam.at = [0, 0.3, -0.6]; cam.fov = 50; }
+  else { cam.eye = [0, 3.3, 8.6]; cam.at = [0, 0.45, 0]; cam.fov = asp < 1.3 ? 36 : 30; }
+  const vp = mul(perspective(cam.fov * Math.PI / 180, asp, 0.1, 80), lookAt(cam.eye, cam.at));
+  cam.vp = vp;
+  cam.inv = invert(vp);
+  if (!P) return;
+  [scene, msaa, refl, b1, b1t, b2, b2t].forEach(free);
+  scene = target(W, H, true);
+  const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
+  msaa = samples > 1 ? msTarget(W, H, samples) : null;
+  if (msaa && !msaa.ok) { free(msaa); msaa = null; }
+  const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1);
+  refl = target(hw, hh, true);
+  // A narrow stage runs its bloom at quarter size.
+  const bs = portrait ? 2 : 1;
+  b1 = target(Math.max(1, hw >> (bs - 1)), Math.max(1, hh >> (bs - 1)));
+  b1t = target(b1.w, b1.h);
+  b2 = target(Math.max(1, b1.w >> 1), Math.max(1, b1.h >> 1));
+  b2t = target(b2.w, b2.h);
+}
+
+/* ---------- crystals ---------- */
+// Crystal units: a terrace steps out by STEP and up by RISE.
+const STEP = 0.085, RISE = 0.07, CORE = 0.12;
+const crystals = [];
+let time = 0;
+// A seeded random, so the first frame is the same each load.
+let seedState = 7;
+const rnd = () => ((seedState = (seedState * 16807) % 2147483647) / 2147483647);
+
+// Edge e of terrace q: a box along one side of the square.
+function edgeBox(c, q, e, birth, k) {
+  const w = CORE + q * STEP, t = STEP * 1.3;
+  const top = (q + 1) * RISE + RISE, bot = top - RISE * 3.2;
+  const cy = (top + bot) / 2, hy = (top - bot) / 2;
+  const r = w - t / 2;
+  const side = [[0, r], [r, 0], [0, -r], [-r, 0]][e];
+  const along = e % 2 === 0;
+  // Each edge reaches past the corner, so the frame closes.
+  const half = [along ? w : t / 2, hy, along ? t / 2 : w];
+  // Inner terraces end with a thicker film than outer ones.
+  const dEnd = Math.max(52, 214 - 13.5 * k) + (rnd() - 0.5) * 16;
+  push(side[0], cy, side[1], c.pose, half, birth, dEnd, rnd(), 0.72 + 0.28 * Math.min(1, k / 4));
+}
+function push(x, y, z, p, h, birth, d, s, ao) {
+  if (nInst >= MAXI) return;
+  const o = nInst++ * STRIDE;
+  inst.set([x, y, z, p, h[0], h[1], h[2], birth, d, s, ao, 0], o);
+  instDirty = true;
+}
+// Adds terraces to a crystal; each one appears `gap` seconds after the last.
+function grow(c, steps, start = time, gap = 0.09) {
+  for (let i = 0; i < steps; i++) {
+    const k = c.n++;
+    const birth = start + i * gap;
+    if (k === 0) push(0, RISE * 0.6, 0, c.pose, [CORE, RISE * 1.4, CORE], birth, 230, rnd(), 0.6);
+    for (let e = 0; e < 4; e++) {
+      const q = c.habit === 'spiral' ? k + e / 4 : k;
+      edgeBox(c, q, e, birth + (c.habit === 'spiral' ? e * gap / 4 : 0), k);
+    }
+  }
+}
+function makeCrystal({ x, z, size, habit: h, yaw = rnd() * TAU, steps = 8, start = time, gap = 0.09 }) {
+  if (crystals.length >= MAXP) return null;
+  const c = { x, z, size, habit: h, yaw, ta: (rnd() - 0.5) * 0.12, tb: (rnd() - 0.5) * 0.12, n: 0, pose: crystals.length, phase: rnd() * TAU, kids: [] };
+  crystals.push(c);
+  grow(c, steps, start, gap);
+  // A cluster grows small crystals out of its rim, at angles.
+  if (h === 'cluster') {
+    const kids = 2 + Math.floor(rnd() * 3);
+    for (let i = 0; i < kids && crystals.length < MAXP; i++) {
+      const a = c.yaw + (i / kids) * TAU + rnd() * 0.6;
+      const reach = (CORE + steps * STEP) * size * 0.95;
+      const k = { x: x + Math.cos(a) * reach, z: z + Math.sin(a) * reach, size: size * (0.35 + rnd() * 0.2), habit: 'hopper', yaw: rnd() * TAU,
+        ta: (rnd() - 0.5) * 1.1, tb: (rnd() - 0.5) * 1.1, n: 0, pose: crystals.length, phase: c.phase, lift: 0.18 * size, parent: c };
+      crystals.push(k);
+      c.kids.push(k);
+      grow(k, 3 + Math.floor(rnd() * 3), start + steps * gap * 0.6, gap);
+    }
+  }
+  return c;
+}
+// Poses follow the float: each crystal bobs and turns on the melt.
+function setPoses() {
+  const rm = reduced();
+  for (const c of crystals) {
+    const bob = rm ? 0 : Math.sin(time * 0.7 + c.phase) * 0.012;
+    const y = -0.1 * c.size + bob + (c.lift ?? 0);
+    poses.set(pose(c.x, y, c.z, c.yaw, c.ta, c.tb, c.size), c.pose * 16);
+  }
+}
+// The first frame: three grown crystals with their films part way bloomed.
+function firstScene() {
+  crystals.length = 0;
+  nInst = 0;
+  seedState = 7;
+  time = 40;
+  const layoutSet = portrait
+    ? [{ x: -0.35, z: 1.1, size: 0.82, habit: 'spiral', yaw: 0.45, steps: 11 }, { x: 0.95, z: -1.6, size: 0.6, habit: 'hopper', yaw: -0.35, steps: 9 }]
+    : [{ x: -1.55, z: 0.25, size: 0.78, habit: 'spiral', yaw: 0.5, steps: 11 },
+      { x: 2.05, z: -1.15, size: 0.66, habit: 'hopper', yaw: -0.32, steps: 9 },
+      { x: 0.75, z: 2.35, size: 0.34, habit: 'spiral', yaw: 1.15, steps: 6 }];
+  // Older crystals started earlier; terraces spread over 30 s.
+  layoutSet.forEach((s, i) => makeCrystal({ ...s, start: time - 34 + i * 3, gap: 2.6 }));
+}
+
+/* ---------- draw ---------- */
+const key = () => (portrait ? [-0.1, 0.15, -1] : [-0.34, 0.15, -1]);
+function drawCrystals(mirror) {
+  const q = P.crystal;
+  gl.useProgram(q.p);
+  gl.uniformMatrix4fv(q.u.uVP, false, cam.vp);
+  gl.uniformMatrix4fv(q.u.uPose, false, poses);
+  gl.uniform1f(q.u.uTime, time);
+  gl.uniform1f(q.u.uMirror, mirror ? 1 : 0);
+  gl.uniform1f(q.u.uSnap, reduced() ? 1 : 0);
+  gl.uniform3fv(q.u.uEye, cam.eye);
+  gl.uniform1f(q.u.uTau, lerp(26, 9, heat));
+  gl.uniform1f(q.u.uFilm, argon ? 0 : 1);
+  gl.uniform1f(q.u.uGlint, glints);
+  gl.uniform1f(q.u.uHeat, heat);
+  gl.uniform3fv(q.u.KEY, key());
+  gl.bindVertexArray(cubeVao);
+  if (instDirty) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst.subarray(0, nInst * STRIDE));
+    instDirty = false;
+  }
+  // The mirror flips the winding, so culling stays off.
+  gl.enable(gl.DEPTH_TEST);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, nInst);
+  gl.disable(gl.DEPTH_TEST);
+}
+function render() {
+  setPoses();
+  // 1. The reflection: the crystals flipped under the surface.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, refl.fb);
+  gl.viewport(0, 0, refl.w, refl.h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  drawCrystals(true);
+  // 2. The pool, then the crystals, into the multisampled scene.
+  const dst = msaa ?? scene;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+  gl.viewport(0, 0, W, H);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  const p = P.pool;
+  gl.useProgram(p.p);
+  gl.uniformMatrix4fv(p.u.uInv, false, cam.inv);
+  gl.uniform3fv(p.u.uEye, cam.eye);
+  gl.uniform1f(p.u.uTime, time);
+  gl.uniform1f(p.u.uSwell, reduced() ? 0 : lerp(0.6, 1.4, heat));
+  gl.uniform1f(p.u.uFilm, argon ? 0 : 1);
+  gl.uniform1f(p.u.uGlint, glints);
+  gl.uniform1f(p.u.uHeat, heat);
+  gl.uniform3fv(p.u.KEY, key());
+  bind(p, 'uRefl', 0, refl);
+  gl.bindVertexArray(triVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  drawCrystals(false);
+  if (msaa) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msaa.fb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, scene.fb);
+    gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  }
+  // 3. Bloom: a bright pass, then two blur levels.
+  const br = P.bright, bl = P.blur;
+  gl.useProgram(br.p);
+  bind(br, 'uSrc', 0, scene);
+  gl.uniform2f(br.u.uTexel, 1 / W, 1 / H);
+  full(b1);
+  gl.useProgram(bl.p);
+  const blur = (a, t) => {
+    bind(bl, 'uSrc', 0, a); gl.uniform2f(bl.u.uDir, 1 / a.w, 0); full(t);
+    bind(bl, 'uSrc', 0, t); gl.uniform2f(bl.u.uDir, 0, 1 / a.h); full(a);
+  };
+  blur(b1, b1t);
+  // The second level blurs down from the first at half its size.
+  bind(bl, 'uSrc', 0, b1); gl.uniform2f(bl.u.uDir, 1 / b1.w, 0); full(b2t);
+  bind(bl, 'uSrc', 0, b2t); gl.uniform2f(bl.u.uDir, 0, 1 / b2t.h); full(b2);
+  blur(b2, b2t);
+  // 4. The grade, to the screen.
+  const fi = P.final;
+  gl.useProgram(fi.p);
+  bind(fi, 'uScene', 0, scene);
+  bind(fi, 'uB1', 1, b1);
+  bind(fi, 'uB2', 2, b2);
+  gl.uniform1f(fi.u.uTime, time);
+  gl.uniform2f(fi.u.uRes, W, H);
+  full(null);
+}
+
+/* ---------- frame loop ---------- */
+// Drifting runs at 30 fps; the loop sleeps 60 s after the last input.
+let raf = 0, lastDraw = 0, visible = true, lastInput = performance.now();
+function wake() {
+  if (!raf && visible && P) { lastDraw = performance.now() - 31; raf = requestAnimationFrame(frame); }
+}
+function poke() { lastInput = performance.now(); if (P && !raf) wake(); }
+const asleep = (now = performance.now()) => reduced() || now - lastInput > 60000;
+function frame(now) {
+  raf = 0;
+  try {
+    if (now - lastDraw >= 31) {
+      const dt = Math.min(0.05, (now - lastDraw) / 1000);
+      lastDraw = now;
+      time += dt;
+      for (const c of crystals) if (turn && !c.parent && !reduced()) c.yaw += dt * 0.05;
+      render();
+    }
+  } finally {
+    if (visible && !asleep(now)) raf = requestAnimationFrame(frame);
+  }
+}
+function still() { if (P) render(); }
+
+/* ---------- stubs until Task 2 ---------- */
+act.add = () => {
+  const lim = portrait ? 5 : 8;
+  if (crystals.filter(c => !c.parent).length >= lim) return;
+  const a = rnd() * TAU, r = 1 + rnd() * 2.2;
+  makeCrystal({ x: Math.cos(a) * r, z: Math.sin(a) * r * 0.7, size: 0.35 + rnd() * 0.3, habit, steps: 5 + Math.floor(rnd() * 5) });
+  poke();
+};
+act.clear = () => { crystals.length = 0; nInst = 0; instDirty = true; poke(); still(); };
+act.reset = () => { firstScene(); poke(); still(); };
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  layout();
+  firstScene();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+canvas.addEventListener('pointerdown', poke);
+let wasPortrait = portrait;
+new ResizeObserver(() => {
+  layout();
+  // The shot recomposes when the stage turns between wide and narrow.
+  if (portrait !== wasPortrait) { wasPortrait = portrait; firstScene(); }
+  still();
+}).observe(stage);
+onQuality(() => { layout(); still(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!asleep()) wake(); else still();
+});
+</script>
+</body>
+</html>
