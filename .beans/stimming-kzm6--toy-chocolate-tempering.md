@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:17:15Z
-updated_at: 2026-11-09T09:47:22Z
+updated_at: 2026-11-09T09:51:57Z
 parent: stimming-oh7b
 ---
 
@@ -16,7 +16,7 @@ Build Chocolate tempering from docs/plans/chocolate.md. It starts in the Lab, on
 - [x] Task 1: checkpoint with Tom on the stills at 1280 and 375 px (signed off 2026-11-09)
 - [x] Task 2: the set: gloss, sparkles, bloom streaks, contraction
 - [x] Task 3: snap test, pour ribbon, heat shimmer
-- [ ] Task 4: sound
+- [x] Task 4: sound
 - [ ] Task 5: Settings, ladder, sleep, Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an interactive GSAP hook
 - [ ] Tom sets the Dutch name (draft: Chocolade tempereren)
@@ -28,3 +28,8 @@ Build Chocolate tempering from docs/plans/chocolate.md. It starts in the Lab, on
 - The blade acts as a flow wall while it is down, so the roll cannot slump back into the lane.
 - 375 px grid is 160 x 347 cells (plan said about 120 x 260): the short side holds 160 cells at any width over 160 px.
 - Not yet: tap snap (taps make a dimple on liquid), sound, glint tuning, contraction rim, pour ribbon coil look. All in Tasks 2 to 4.
+
+## Sound notes (2026-11-09)
+
+- Raw Web Audio on the kit context, no Tone.js: scrape and pour loops, slap on lift, clean crack or thud and crumbs on a tap, faint crystal ticks.
+- Q9 in a probe: the context runs after a gesture, the scrape voice follows the blade, and the context suspends at rest. The stored sound key was restored. Levels are not heard by ear yet.
