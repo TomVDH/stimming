@@ -1767,10 +1767,12 @@ function tick(x, pitch = 1) {
 // The opening scene: the lamp sits left, the prism in the middle.
 // The beam meets the left face at minimum deviation.
 // The spectrum leaves to the right.
+// A tall stage turns the scene, so the fan runs down the long side.
+const PHI_TALL = 1.2;
 function composition() {
-  const phi = 0, R = (BASE_SIDE * S) / Math.sqrt(3);
+  const tall = H > W * 1.15, phi = tall ? PHI_TALL : 0, R = (BASE_SIDE * S) / Math.sqrt(3);
   const cx = W * 0.5, cy = (safeT + H - safeB) * 0.5;
-  const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = 0.36 * W;
+  const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = tall ? 0.3 * (H - safeT - safeB) : 0.36 * W;
   const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
   const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
   const m = (SPEC.source.w * S) / 2 + 10;
@@ -1814,11 +1816,22 @@ function spot(kind) {
   cands.sort((a, b) => b[0] - a[0]);
   // Sensors sit far down the light, so later pieces fit in front.
   const ts = kind === 'sensor' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
-  for (const [, i] of cands.slice(0, 40)) {
-    const o = i * SG, dx = SEG[o + 2] - SEG[o], dy = SEG[o + 3] - SEG[o + 1];
-    for (const t of ts) {
-      const x = SEG[o] + dx * t, y = SEG[o + 1] + dy * t;
-      if (free(x, y)) return [x, y, aim(kind, Math.atan2(dy, dx), x, y, cx, cy)];
+  // A spot shades a piece when that piece sits further along the same light.
+  // A growing piece counts at its full size, since the trace still sees it small.
+  const shades = (x, y, ux, uy, len) => pieces.some(q => {
+    if (q.dying || q.kind === 'source') return false;
+    const rx = q.x - x, ry = q.y - y, along = rx * ux + ry * uy, qr = q.r / Math.max(0.02, q.z);
+    return along > 0 && along < len + qr && Math.abs(rx * uy - ry * ux) < qr + rr;
+  });
+  // The first pass keeps every lit piece lit; the second allows shade.
+  for (const strict of [true, false]) {
+    for (const [, i] of cands.slice(0, 40)) {
+      const o = i * SG, dx = SEG[o + 2] - SEG[o], dy = SEG[o + 3] - SEG[o + 1], len = Math.hypot(dx, dy);
+      for (const t of ts) {
+        const x = SEG[o] + dx * t, y = SEG[o + 1] + dy * t;
+        if (!free(x, y) || (strict && shades(x, y, dx / len, dy / len, len * (1 - t)))) continue;
+        return [x, y, aim(kind, Math.atan2(dy, dx), x, y, cx, cy)];
+      }
     }
   }
   const R = rng((Math.random() * 1e9) | 0);
