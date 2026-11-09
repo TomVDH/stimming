@@ -607,6 +607,66 @@ t('disabled tray stays shut', () => {
   click(layer.querySelector('.s2-tray'));
 });
 
+/* ---------- the example: logo, breadcrumb, one chip, entrance ---------- */
+const clear = el => { const c = getComputedStyle(el); return c.backgroundColor === 'rgba(0, 0, 0, 0)' && c.borderTopWidth === '0px'; };
+t('logo sits unboxed at the far left', () => {
+  const { layer } = fixture();
+  const back = layer.querySelector('.s2-tl > :first-child');
+  ok(back.classList.contains('s2-back'), 'logo not first');
+  ok(clear(back), 'logo has a box');
+  const letters = [...back.querySelectorAll('.mark span')].filter(shown);
+  eq(letters.length, 8);
+  ok(letters[0].getBoundingClientRect().width > 0, 'logo has no width');
+});
+t('logo letters carry their colours', () => {
+  const { layer } = fixture();
+  const [a, b] = layer.querySelectorAll('.s2-back .mark span');
+  ok(getComputedStyle(a).color !== getComputedStyle(b).color, 'letters share one colour');
+});
+t('phone logo stays whole', () => {
+  const { layer } = narrowFixture({}, 343);
+  eq([...layer.querySelectorAll('.s2-back .mark span')].filter(shown).length, 8);
+});
+t('tiny logo keeps only its S', () => {
+  const { layer } = narrowFixture({}, 290);
+  const letters = [...layer.querySelectorAll('.s2-back .mark span')].filter(shown);
+  eq(letters.map(l => l.textContent).join(''), 'S');
+});
+t('name is unboxed after a slash', () => {
+  const { layer } = fixture();
+  const name = layer.querySelector('.s2-name');
+  ok(clear(name), 'name has a box');
+  ok(getComputedStyle(name, '::before').content.includes('/'), 'no slash');
+});
+t('picked chips share one look', () => {
+  const { layer } = fixture({
+    choice: { label: 'P', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+    settings: [{ type: 'toggle', id: 'x', label: 'X', value: true }],
+  });
+  const bar = getComputedStyle(layer.querySelector('.s2-tl [aria-pressed="true"]'));
+  const row = getComputedStyle(layer.querySelector('.s2-sheet [aria-pressed="true"]'));
+  eq(bar.backgroundColor, row.backgroundColor);
+  eq(bar.color, row.color);
+  ok(bar.backgroundColor !== 'rgba(0, 0, 0, 0)', 'pick not filled');
+});
+t('esc reads as a keycap', () => {
+  const { layer } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: true }] });
+  const em = layer.querySelector('.s2-hd em');
+  ok(getComputedStyle(em).borderTopWidth !== '0px', 'esc has no keycap border');
+});
+t('corners wait for the intro', async () => {
+  const intro = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'intro' }));
+  const { layer } = fixture({ actions: [{ verb: 'clear', onPress() {} }] });
+  ok(layer.hasAttribute('data-wait'), 'no wait while the intro shows');
+  intro.remove();
+  await wait(0);
+  ok(!layer.hasAttribute('data-wait'), 'still waiting after the intro');
+});
+t('no intro, no wait', () => {
+  const { layer } = fixture();
+  ok(!layer.hasAttribute('data-wait'), 'waits with no intro');
+});
+
 /* ---------- run ---------- */
 let pass = 0, ran = 0;
 for (const [name, fn, paneOnly] of queue) {

@@ -109,7 +109,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 
   | Slot | Holds | Limit |
   |---|---|---|
-  | Top left | Back block, toy name, then the choice | One choice group: `segments` (five or fewer), `stepper` (more), or `tray` (icons) |
+  | Top left | Stimming logo (unboxed), `/ TOY NAME`, then the choice | One choice group: `segments` (five or fewer), `stepper` (more), or `tray` (icons) |
   | Top right | Sound, Settings, (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order; does not count to the limit |
   | Bottom left | Actions | Three at most |
   | Bottom right | Main slider | One at most; a word label, no number |

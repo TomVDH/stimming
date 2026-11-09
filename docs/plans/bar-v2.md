@@ -40,7 +40,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 
 | Slot | Holds | Limit |
 |---|---|---|
-| Top left | Back block, toy name, then the choice | One choice group. See the choice rules below. |
+| Top left | Stimming logo (unboxed), `/ TOY NAME`, then the choice | One choice group. See the choice rules below. |
 | Top right | Sound, Settings, (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order. Does not count to the limit. |
 | Bottom left | Actions | Three at most. |
 | Bottom right | Main slider | One at most. A word label, no number. |
@@ -49,7 +49,9 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 - At most five visible controls. A choice group counts as one. The top-right cluster does not count.
 - An empty slot draws nothing.
 
-**Back block.** It shows `‹`. On hover or focus it opens to `‹ Stimming` and runs the mark's wave. It links to the menu.
+**Logo.** The colour Stimming mark, unboxed, at the far left. On hover or focus a `‹` slides in and the mark waves. It links to the menu. It shrinks to its `S` below 300 px.
+
+**One look (Tom, 2026-11-09).** A box always means a control; the logo and the name are never boxed. Every control shares one chip: dark glass, a hairline, a 1 px lift onto a hard shadow on hover, and the inverted flash box when picked or open. Every keycap shares one look. The corners slide in from their edges once the intro has gone.
 
 **Toy name.** Slab caps, from `toys.json` `name`. A Lab toy adds a quiet `LAB` tag. A toy with the new optional `toys.json` field `tier: "beta"` or `"alpha"` adds that tag, as the menu does.
 
@@ -87,7 +89,7 @@ An action can be disabled (`aria-disabled`) when it would do nothing.
 
 ### Phones (stage narrower than 640 px)
 
-- Top left: back block and toy name. The name hides below 360 px.
+- Top left: the logo and the toy name. The name hides below 360 px.
 - Top right: unchanged.
 - Bottom left: the choice, always as a `stepper` (or as its `tray` chip). With no choice, the actions.
 - Bottom right: the actions. With no choice, the slider.
