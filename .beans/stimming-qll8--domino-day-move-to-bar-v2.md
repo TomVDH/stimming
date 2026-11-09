@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:10:25Z
-updated_at: 2026-11-09T09:17:49Z
+updated_at: 2026-11-09T09:27:32Z
 parent: stimming-80dc
 ---
 
@@ -40,3 +40,9 @@ Port `domino/index.html` to Bar v2. Brief: docs/plans/bar-v2-migration.md.
 - Upgrade: drop an image on the table to make it the field picture; Add turns to the field.
 - Clear gets the C key.
 - Diegetic proposal: a click on a fallen tile rewinds the run (replaces Reset). Waits for Tom.
+
+## Mobile pass (2026-11-09)
+
+- Checked 1280, 375 x 812 and 812 x 375: no overlaps, sheets fit, no page scroll, 34 px targets, touch strip shows TWO-FINGER DRAG.
+- Two-finger drag turns the table on touch (checked with touch pointer events).
+- The opening run now fits the resting view in both lenses, crown tower included; in landscape it had touched the top edge.
