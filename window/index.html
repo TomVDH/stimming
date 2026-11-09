@@ -397,13 +397,23 @@ function newCell(ahead) {
   return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
     shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
 }
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// The tower's frame without billows, as setTower in the shader builds it.
+// The top climbs first; the anvil spreads once the top arrives.
+function towerGeom(c) {
+  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s);
+  const top = base + 3.5 + (c.top - base - 3.5) * smooth(0.05, 0.6, c.s);
+  const len = c.r * 1.35 * anv + 0.3, r1 = rc * (0.8 + 0.45 * anv);
+  const r2 = clamp(rc * 0.7 + len * 0.42, r1 - len * 0.8, r1 + len * 0.8);
+  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4, ax: [Math.cos(c.shear), Math.sin(c.shear)] };
+}
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
-    // Cells grow in and die back over tens of seconds.
-    c.s = clamp(Math.min(c.age / 12, (c.life - c.age) / 12));
+    // A cell towers up over 20 s and dies back over 15 s.
+    c.s = clamp(Math.min(c.age / 20, (c.life - c.age) / 15));
     if (c.age > c.life || c.x - cam.x < -120 || i >= want) cells.splice(i, 1);
   }
   while (cells.length < want) cells.push(newCell(true));
@@ -431,8 +441,17 @@ function stepFlashes(dt) {
   }
   for (const c of cells) {
     if (Math.random() < c.s * (0.15 + opts.storm * 0.5) * dt) {
-      const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * c.r * 0.7;
-      flash(c.x + Math.cos(a) * r, c.z + Math.sin(a) * r, 1, c);
+      const g = towerGeom(c), [ax, az] = g.ax;
+      // Most flashes sit in the core.
+      // A mature cell also sends some through its anvil.
+      if (g.anv > 0.5 && Math.random() < 0.25) {
+        const u = g.lean + rnd(0.15, 0.7) * g.len, v = rnd(-0.4, 0.4) * g.r1;
+        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 1.6));
+      } else {
+        const y = rnd(4, g.top - 2), a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * 0.7;
+        const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
+        flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
+      }
     }
   }
 }
@@ -1074,13 +1093,14 @@ function onWing(d) {
   return false;
 }
 // A world ray from the eye against one tower, by its shape without billows.
-// It returns the distance in km where the ray enters, or -1.
+// It returns the hit distance and height in km, or null.
 function towerHit(c, d) {
   const C = [c.x - cam.x, c.z - cam.z], a2 = d[0] * d[0] + d[2] * d[2];
-  const rc = c.r * 0.36 * (0.55 + 0.45 * c.s), ra = c.r * 1.0 * c.s;
-  const sh = [Math.cos(c.shear) * c.r * 0.55 * c.s, Math.sin(c.shear) * c.r * 0.55 * c.s];
-  // Column first, then the anvil slab near the top.
-  for (const [cx, cz, rr, lo, hi] of [[C[0], C[1], rc, 2.5, c.top], [C[0] + sh[0], C[1] + sh[1], ra * 0.8, c.top - 2.2, c.top]]) {
+  const g = towerGeom(c), [ax, az] = g.ax, u = g.lean + g.len * 0.45;
+  // Column first, then the anvil fan near the top.
+  const parts = [[C[0] + ax * g.lean * 0.4, C[1] + az * g.lean * 0.4, g.rc * 1.15, g.base, g.top],
+    [C[0] + ax * u, C[1] + az * u, (g.r1 + g.r2) * 0.45, g.top - 2.2 * g.anv, g.top]];
+  for (const [cx, cz, rr, lo, hi] of parts) {
     const t = (d[0] * cx + d[2] * cz) / a2;
     if (t <= 0) continue;
     const m = Math.hypot(d[0] * t - cx, d[2] * t - cz);
@@ -1273,7 +1293,7 @@ dimBtn.addEventListener('click', () => { opts.dim = (opts.dim + 1) % 5; save('di
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
-for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(12, 40); c.s = 1; cells.push(c); }
+for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
 window.__ws = { cells, flashes, EV, newMeteor, cam, apList };
 buildSky();
 uploadSky();

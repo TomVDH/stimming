@@ -715,23 +715,176 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   return g * T + L + uFloor * 0.5;
 }
 
-// Tower billows from the cloud noise volume.
+/* Storm towers: cumulonimbus volumes, one per cell. */
+// uTw: centre xz on the map, radius, top height, all in km.
+// uTwB: seed, strength, anvil bearing, town glow under the cell.
+// uTwC: flash xyz on the map, flash level.
+// A negative seed marks the impact's mushroom stem.
+// The stem keeps its own simple shape.
+
+// Soft union and soft cut of two shape fields.
+// k is the blend width.
+float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
+float smin(float a, float b, float k) { return -smax(-a, -b, k); }
+// A 2D capsule: radius r1 at the origin, r2 at (0, h).
+float sdUnevenCapsule(vec2 p, float r1, float r2, float h) {
+  p.x = abs(p.x);
+  float b = (r1 - r2) / h, a = sqrt(1.0 - b * b), k = dot(p, vec2(-b, a));
+  if (k < 0.0) return length(p) - r1;
+  if (k > a * h) return length(p - vec2(0.0, h)) - r2;
+  return dot(p, vec2(a, b)) - r1;
+}
+
+// The current storm tower, set once per cell before its march.
+// All sizes are in km.
+// gRc: core radius. gBase, gTop: cloud base and anvil top.
+// gLen: anvil reach downwind. gAx: the downwind bearing.
+// gR1, gR2: anvil half-width at the core and at the rim.
+// gLean: core drift downwind at the top. gOver: overshoot dome radius.
+// gAmp: billow size. gTile: billow noise tile.
+// gGrow: density as the cell forms.
+// gAnv: how far the anvil has spread.
+vec2 gAx; vec3 gSeed;
+float gRc, gBase, gTop, gLen, gR1, gR2, gLean, gOver, gAmp, gTile, gGrow, gAnv;
+vec4 gTur[4];
+
+void setTower(vec4 a, vec4 b) {
+  float s = b.y;
+  gGrow = smoothstep(0.0, 0.3, s);
+  gRc = a.z * 0.36;
+  gBase = 2.3;
+  // The top climbs first.
+  // The anvil spreads once the top meets the tropopause.
+  gTop = mix(gBase + 3.5, a.w, smoothstep(0.05, 0.6, s));
+  gAnv = smoothstep(0.3, 0.9, s);
+  gLen = a.z * 1.35 * gAnv + 0.3;
+  gAx = vec2(cos(b.z), sin(b.z));
+  gLean = gRc * 0.4;
+  gR1 = gRc * (0.8 + 0.45 * gAnv);
+  gR2 = clamp(gRc * 0.7 + gLen * 0.42, gR1 - gLen * 0.8, gR1 + gLen * 0.8);
+  // The overshooting top heaves slowly up and down.
+  gOver = gRc * 0.45 * smoothstep(0.5, 1.0, s) * (0.8 + 0.2 * sin(uTime * 0.05 + b.x));
+  gAmp = gRc * 0.4;
+  gTile = clamp(gRc * 1.6, 5.0, 11.0);
+  gSeed = vec3(b.x * 0.71, b.x * 0.37, b.x * 0.53);
+  // The core turret feeds the anvil.
+  // Three side turrets stand lower round it.
+  // A young cell is narrow; it fattens as it climbs.
+  float wide = 0.55 + 0.45 * smoothstep(0.0, 0.6, s);
+  for (int j = 0; j < 4; j++) {
+    float fj = float(j);
+    vec2 h = hash22(vec2(b.x * 1.37 + fj * 7.1, fj * 3.3 + 1.0));
+    float ang = h.x * 6.2832, off = j == 0 ? 0.0 : gRc * (0.4 + 0.4 * h.y);
+    float rad = j == 0 ? gRc * 0.8 : gRc * (0.4 + 0.22 * hash12(h * 9.1));
+    float top = j == 0 ? gTop - 0.4 : mix(gBase + 1.5, mix(gBase + 3.0, gTop - 3.2, 0.2 + 0.8 * hash12(h + 4.2)), smoothstep(0.0, 0.8, s));
+    gTur[j] = vec4(vec2(cos(ang), sin(ang)) * off * wide, rad * wide, top);
+  }
+}
+
+// The tower's shape without billows: about the depth inside, in km.
+// aw gives the anvil's share of the point, from 0 to 1.
+float towerShape(vec3 p, out float aw) {
+  float y = p.y;
+  float hk = clamp((y - gBase) / (gTop - gBase), 0.0, 1.0);
+  // The core leans downwind as it climbs.
+  vec2 q = p.xz - gAx * gLean * hk * hk;
+  float col = -1e3;
+  for (int j = 0; j < 4; j++) {
+    vec4 tu = gTur[j];
+    // Each turret is a capsule: a near-straight body and a domed head.
+    float r = tu.z * (1.0 + 0.12 * (1.0 - hk));
+    float dy = y - clamp(y, gBase - 1.0, tu.w - r);
+    col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), gRc * 0.3);
+  }
+  // The base is flat.
+  col = smin(col, (y - gBase) * 2.0, 0.3);
+  // The anvil: a fan that widens downwind.
+  // It is flat on top and thins to its rim.
+  vec2 a = p.xz - gAx * gLean;
+  vec2 uv = vec2(dot(a, vec2(-gAx.y, gAx.x)), dot(a, gAx));
+  float k = clamp(uv.y / gLen, 0.0, 1.0);
+  // Upwind, the anvil only rounds over the core and thins fast.
+  float ku = clamp(-uv.y / gR1, 0.0, 1.0);
+  float top = gTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
+  float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (0.4 + 0.6 * gAnv) * (1.0 - 0.85 * ku * ku);
+  float an = smin(-sdUnevenCapsule(uv, gR1, gR2, gLen), smin(top - y, y - bot, 0.3), 0.8);
+  // A young cell has no anvil yet.
+  an -= (1.0 - gAnv) * 4.0;
+  // The overshooting top: a squat dome rooted on the core turret's head.
+  float ov = gOver - length(vec3(q.x, (y - gTop + 0.4 + gOver * 0.2) * 1.35, q.y));
+  // The overshoot boils like the column, so it takes full billows.
+  aw = smoothstep(-0.6, 0.6, an - col) * smoothstep(0.6, -0.6, ov - max(col, an));
+  return smax(smax(col, an, 0.9), ov, 1.0);
+}
+// Cauliflower billows: round Worley lumps at three sizes in one fetch.
+// Each tower turns and shifts its sample.
+// So no two towers share a pattern.
+// The lumps rise slowly, so the tops boil.
+float billow(vec3 p, float lod, float aw) {
+  p.xz -= gAx * dot(p.xz, gAx) * 0.6 * aw;
+  vec3 r = vec3(p.x * 0.8 - p.z * 0.6, p.y - uTime * 0.012, p.x * 0.6 + p.z * 0.8) + gSeed;
+  vec4 m = textureLod(uNoise, r / gTile, lod);
+  return m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48;
+}
+// Small lumps on the big ones, at an odd scale and angle.
+float billowFine(vec3 p, float lod, float aw) {
+  p.xz -= gAx * dot(p.xz, gAx) * 0.7 * aw;
+  vec3 r = vec3(p.x * 0.47 + p.z * 0.88, p.y * 1.1 - uTime * 0.02, p.z * 0.47 - p.x * 0.88) - gSeed.zxy;
+  vec4 m = textureLod(uNoise, r / (gTile * 0.29), lod);
+  return m.g * 0.6 + m.b * 0.4 - 0.48;
+}
+// Billow size: full on the column, small on the anvil's top.
+float billowAmp(float y, float aw) {
+  return gAmp * mix(1.0, mix(0.45, 0.18, smoothstep(gTop - 0.9, gTop + 0.1, y)), aw);
+}
+// Density for light taps: the shape with the big lumps only.
+float towerLightDens(vec3 p, float lod) {
+  float aw, sh = towerShape(p, aw), A = billowAmp(p.y, aw);
+  if (sh < -A * 0.45 - 0.5) return 0.0;
+  return smoothstep(0.0, 0.5, sh + A * billow(p, lod, aw));
+}
+
+// The rain shaft: a grey curtain from the base to the ground.
+// Four taps integrate it; the deck in front hides it.
+vec4 rainShaft(vec3 d, vec2 dh, float a2, vec2 C, float tEnd, vec3 pf, float fl, float glow, vec3 dome) {
+  vec2 Cs = C + gAx * gRc * 0.3;
+  float rs = gRc * 0.8;
+  float bq = dot(dh, Cs), cq = dot(Cs, Cs) - rs * rs, disc = bq * bq - a2 * cq;
+  if (disc <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  float sq = sqrt(disc);
+  float ta = max((bq - sq) / a2, 0.0), tb = min((bq + sq) / a2, tEnd);
+  if (tb <= ta) return vec4(0.0, 0.0, 0.0, 1.0);
+  float dt = (tb - ta) * 0.25, od = 0.0;
+  vec3 col = vec3(0.0);
+  // Rain is grey: the sky's brightness, little of its hue.
+  vec3 grey = mix(vec3(dot(dome, vec3(0.3, 0.5, 0.2))), dome, 0.35) * 0.14;
+  for (int i = 0; i < 4; i++) {
+    float t = ta + dt * (float(i) + 0.5);
+    float y = heightAt(d, t);
+    vec2 rel = dh * t - Cs;
+    float r01 = dot(rel, rel) / (rs * rs);
+    // Streaks: noise across the map only, so it runs down in strands.
+    vec2 sl = rel + gAx * y * 0.25;
+    float str = vnoise(sl * 2.2 + gSeed.xy) * 0.7 + vnoise(sl * 6.0 - gSeed.yx) * 0.3;
+    float dn = 0.4 * (1.0 - r01) * smoothstep(0.4, 0.8, str) * smoothstep(gBase + 0.1, gBase - 0.5, y);
+    od += dn * dt;
+    vec3 q = vec3(rel.x, y, rel.y) - (pf - vec3(Cs.x - C.x, 0.0, Cs.y - C.y));
+    col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + vec3(0.75, 0.77, 1.0) * fl * 0.8 * exp(-length(q) / 5.0));
+  }
+  float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow;
+  return vec4(col / max(od, 1e-4) * al, 1.0 - al);
+}
+
+// The impact's mushroom stem: a column under a sheared slab.
 float tnoise(vec3 p, int oct) {
   float s = cnS(p, 5.0).r;
   if (oct > 1) { vec4 m = cnS(p + 0.63, 1.7); s = s * 0.65 + (m.g * 0.6 + m.b * 0.4) * 0.35; }
   return s;
 }
-
-// Storm towers: true volumes, a column under a sheared anvil.
-// uTw: centre xz on the map, radius, top height, all in km.
-// uTwB: seed, strength, anvil bearing, town glow under the cell.
-// uTwC: flash xyz on the map, flash level.
-// The column radius, the anvil radius and the top height.
-vec3 towerSize(vec4 a, vec4 b) { return vec3(a.z * 0.36 * (0.55 + 0.45 * b.y), a.z * 1.0 * b.y, a.w); }
-
-// A safe distance to the tower's outer bound, in km; it allows for the billows.
-// It follows the column's taper and the anvil's slab, so empty space is skipped.
-float towerBound(vec3 p, vec3 sz, vec2 sh) {
+// The stem radius, the cap radius and the top height.
+vec3 stemSize(vec4 a, vec4 b) { return vec3(a.z * 0.36 * (0.55 + 0.45 * b.y), a.z * 1.0 * b.y, a.w); }
+// A safe distance to the stem's outer bound, in km; it allows for the billows.
+float stemBound(vec3 p, vec3 sz, vec2 sh) {
   float y = p.y, top = sz.z;
   float rc = sz.x * (0.62 + 0.45 * smoothstep(2.0, 6.5, y) - 0.2 * smoothstep(6.5, top, y));
   float dc = max(length(p.xz) - rc - sz.x * 0.36 - 1.8, max(1.8 - y, y - top - 1.4));
@@ -741,30 +894,55 @@ float towerBound(vec3 p, vec3 sz, vec2 sh) {
   float da = max(ra - sz.y * 1.36 - 1.9, max(lo - 1.3 - y, y - hi - 0.6));
   return min(dc, da);
 }
-
 // oct 0 gives the smooth shape alone, for cheap light taps.
-float towerDens(vec3 p, vec4 b, vec3 sz, vec2 sh, int oct) {
+float stemDens(vec3 p, vec4 b, vec3 sz, vec2 sh, int oct) {
   float y = p.y, top = sz.z;
   float bl = oct > 0 ? (tnoise(vec3(p.x, p.y * 1.25, p.z) + b.x, oct) - 0.47) * 1.3 : 0.0;
-  // The column: narrow at the base, bulging mid-height, cauliflower billows.
   float rc = sz.x * (0.62 + 0.45 * smoothstep(2.0, 6.5, y) - 0.2 * smoothstep(6.5, top, y));
   float big = oct > 0 ? textureLod(uNoise, p / 14.0 + b.x * 0.37, 0.0).r - 0.47 : 0.0;
   float col = smoothstep(0.0, 0.7, rc - length(p.xz) + bl * 3.4 + big * sz.x * 0.7);
-  // The overshooting top domes over the core.
   float cap = top + 0.8 * exp(-dot(p.xz, p.xz) / (sz.x * sz.x * 0.5));
   col *= smoothstep(cap + 0.2, cap - 0.6, y + bl * 0.8);
-  // The anvil: a slab sheared downwind, thick at the core, thin at its rim.
-  // Its underside sags in lumps; its rim frays.
   float ra = length(p.xz - sh * smoothstep(top - 4.0, top, y));
   float k = clamp(ra / max(sz.y, 0.1), 0.0, 1.0);
   float lo = top - 3.4 + 2.6 * k, hi = top + 0.25 - 1.0 * k * k;
-  // Broad lobes break the anvil's rim from a circle.
   float lobe = vnoise(p.xz / (sz.y * 0.35 + 1.0) + b.x) - 0.5;
   float anv = smoothstep(0.0, 1.5, sz.y * (1.0 + lobe * 0.7) - ra + bl * 3.5) * smoothstep(lo - 0.4, lo + 0.4, y + bl * 1.6) * smoothstep(hi + 0.2, hi - 0.3, y + bl * 0.5);
   return max(col, anv) * smoothstep(1.8, 3.0, y) * b.y;
 }
+// The stem's march; it returns the light and, in alpha, what passes.
+vec4 stem(vec3 d, vec2 dh, float t0, float t1, vec4 a, vec4 b, vec4 f, float jit, float phase, float sunK, out float tIn) {
+  vec3 sz = stemSize(a, b);
+  vec2 sh = vec2(cos(b.z), sin(b.z)) * a.z * 0.55 * b.y;
+  vec3 pf = vec3(f.x - a.x, f.y, f.z - a.y);
+  vec3 col = vec3(0.0);
+  float Tc = 1.0, t = t0 + uTowStep * jit;
+  tIn = -1.0;
+  for (int k = 0; k < 96; k++) {
+    if (k >= uTowSteps || t > t1) break;
+    vec2 w = uCam + dh * t;
+    vec3 p = vec3(w.x - a.x, heightAt(d, t), w.y - a.y);
+    float bd = stemBound(p, sz, sh);
+    if (bd > 0.0) { t += max(bd, uTowStep); continue; }
+    float dn = stemDens(p, b, sz, sh, uTowOct);
+    if (dn <= 0.003) { t += uTowStep * 1.5; continue; }
+    if (tIn < 0.0) tIn = t;
+    float Tl = exp(-2.9 * stemDens(p + uSun * 1.2, b, sz, sh, 0));
+    float h01 = clamp((p.y - 2.0) / (sz.z - 2.0), 0.0, 1.0);
+    vec3 S = uSunL * 0.08 * sunK * Tl * phase;
+    S += uAmb * 0.026 * (0.3 + 0.7 * h01) * (0.4 + 0.6 * Tl);
+    S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - 2.0) / 9.0);
+    S += vec3(1.0, 0.55, 0.25) * f.w * 1.6 * exp(-length(p - pf) / 6.0);
+    float al = 1.0 - exp(-2.6 * dn * uTowStep);
+    col += Tc * S * al;
+    Tc *= 1.0 - al;
+    if (Tc < 0.05) break;
+    t += uTowStep;
+  }
+  return vec4(col, Tc);
+}
 
-// Each tower marches only inside its bounding cylinder.
+// Each tower marches only inside its bounding cylinder, far to near.
 // tEnd stops the march where the ray meets the ground.
 vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
   // Far towers melt into the haze along their own bearing.
@@ -773,56 +951,109 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
   vec3 haze = skyL(vec3(hz.x * cos(he), sin(he), hz.y * cos(he))) * 0.9;
   vec2 dh = d.xz;
   float a2 = max(dot(dh, dh), 1e-6);
-  float mu = max(dot(d, uSun), 0.0);
-  float phase = 0.55 + 1.4 * pow(mu, 5.0) + 2.0 * pow(mu, 40.0);
+  float mu = dot(d, uSun);
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
+  // The stem keeps its old phase curve.
+  float phaseOld = 0.55 + 1.4 * pow(max(mu, 0.0), 5.0) + 2.0 * pow(max(mu, 0.0), 40.0);
+  float phase = cloudPhase(mu);
   float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  bool hi = uTowOct > 2;
+  // Sky light on the towers: zenith, sun-side glow, far side.
+  vec2 sH = normalize(uSun.xz + 1e-5);
+  float ce = cos(uHorEl + 0.06), se = sin(uHorEl + 0.06);
+  vec3 twi = skyL(vec3(sH.x * ce, se, sH.y * ce));
+  vec3 dome = skyL(vec3(0.0, 1.0, 0.0)) * 0.5 + twi * 0.25 + skyL(vec3(-sH.x * ce, se, -sH.y * ce)) * 0.25;
   for (int i = 0; i < ${MAXCELL}; i++) {
     if (i >= uNTw) break;
     vec4 a = uTw[i], b = uTwB[i], f = uTwC[i];
-    vec3 sz = towerSize(a, b);
-    vec2 sh = vec2(cos(b.z), sin(b.z)) * a.z * 0.55 * b.y;
-    // The ray against a cylinder round both column and anvil.
-    vec2 Cb = a.xy - uCam + sh * 0.5;
-    float Rb = max(sz.x * 1.45 + 1.8, sz.y * 1.36 + 1.9) + length(sh) * 0.5 + 0.5;
-    float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
-    if (disc <= 0.0) continue;
-    float sq = sqrt(disc);
-    float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
-    if (t1 <= t0) continue;
-    // A negative seed marks the impact's mushroom cloud: it glows orange, and haze touches it less.
-    bool boom = b.x < 0.0;
+    vec2 C = a.xy - uCam;
     vec3 pf = vec3(f.x - a.x, f.y, f.z - a.y);
     vec3 col = vec3(0.0);
-    float Tc = 1.0, t = t0 + uTowStep * jit, tIn = -1.0;
-    for (int k = 0; k < 96; k++) {
-      if (k >= uTowSteps || t > t1) break;
-      vec2 w = uCam + dh * t;
-      vec3 p = vec3(w.x - a.x, heightAt(d, t), w.y - a.y);
-      // Outside the bound, skip ahead by the safe distance.
-      float bd = towerBound(p, sz, sh);
-      if (bd > 0.0) { t += max(bd, uTowStep); continue; }
-      float dn = towerDens(p, b, sz, sh, uTowOct);
-      // Empty space near the cloud takes longer steps.
-      if (dn <= 0.003) { t += uTowStep * 1.5; continue; }
-      {
+    float Tc = 1.0, tIn = -1.0;
+    bool boom = b.x < 0.0;
+    if (boom) {
+      vec3 sz = stemSize(a, b);
+      vec2 sh = vec2(cos(b.z), sin(b.z)) * a.z * 0.55 * b.y;
+      vec2 Cb = C + sh * 0.5;
+      float Rb = max(sz.x * 1.45 + 1.8, sz.y * 1.36 + 1.9) + length(sh) * 0.5 + 0.5;
+      float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
+      if (disc <= 0.0) continue;
+      float sq = sqrt(disc);
+      float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
+      if (t1 <= t0) continue;
+      vec4 r = stem(d, dh, t0, t1, a, b, f, jit, phaseOld, sunK, tIn);
+      col = r.rgb; Tc = r.a;
+    } else {
+      setTower(a, b);
+      // The bound: a cylinder round the core and the whole anvil fan.
+      float back = max(gR1, gRc * 1.5) + gLean, fwd = gLen + gR2;
+      vec2 Cb = C + gAx * (gLean + 0.5 * (fwd - back));
+      float Rb = 0.5 * (fwd + back) + gAmp * 0.5 + 0.6;
+      float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
+      if (disc <= 0.0) continue;
+      float sq = sqrt(disc);
+      float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
+      if (t1 <= t0) continue;
+      // The rain shaft lies under the tower, so it goes in first.
+      vec4 rs = rainShaft(d, dh, a2, C, tEnd, pf, f.w, b.w, dome);
+      c = c * rs.a + rs.rgb;
+      // Steps grow with distance, as a pixel's footprint does.
+      float st = uTowStep * clamp(t0 / 70.0, 0.75, 2.2);
+      float t = t0 + st * jit;
+      for (int k = 0; k < 96; k++) {
+        if (k >= uTowSteps || t > t1) break;
+        vec2 w = dh * t - C;
+        vec3 p = vec3(w.x, heightAt(d, t), w.y);
+        float aw, sh = towerShape(p, aw);
+        float A = billowAmp(p.y, aw);
+        // Far outside the shape, even the biggest lump cannot reach: skip ahead.
+        float gap = -sh - A * 0.45 - 0.5;
+        if (gap > 0.0) { t += max(gap * 0.8, st); continue; }
+        float lod = lodAt(t, gTile);
+        float fb = sh + A * billow(p, lod, aw);
+        if (hi) fb += A * (0.4 + 0.5 * aw) * billowFine(p, lodAt(t, gTile * 0.29), aw);
+        // The anvil is ice: far out, it frays to a veil.
+        float far = aw * smoothstep(0.0, gLen + gR2, dot(p.xz, gAx));
+        fb -= far * 0.6;
+        float dn = smoothstep(0.0, 0.3, fb) * gGrow * (1.0 - 0.7 * far);
+        if (dn < 0.004) { t += st; continue; }
         if (tIn < 0.0) tIn = t;
-        // One smooth tap toward the light gives its shadow inside the cloud.
-        float Tl = exp(-2.9 * towerDens(p + uSun * 1.2, b, sz, sh, 0));
-        float h01 = clamp((p.y - 2.0) / (sz.z - 2.0), 0.0, 1.0);
-        vec3 S = uSunL * 0.08 * sunK * Tl * phase;
-        S += uAmb * 0.026 * (0.3 + 0.7 * h01) * (0.4 + 0.6 * Tl);
+        float h01 = clamp((p.y - gBase) / (gTop - gBase), 0.0, 1.0);
+        // Light toward the sun: a lumpy tap near, a smooth tap far.
+        float aw2;
+        float od = hi ? towerLightDens(p + uSun * 0.5, lod + 1.0) * 0.8 : smoothstep(-0.2, 0.6, towerShape(p + uSun * 0.5, aw2)) * 0.8;
+        od += smoothstep(-0.3, 0.6, towerShape(p + uSun * 2.2, aw2)) * 1.8;
+        // Beer's law for the direct beam; light scattered many times spreads evenly.
+        float Tl = exp(-3.0 * od), Tm = 0.3 * exp(-0.6 * od);
+        // Powder: thin edges that face away from the light stay dark.
+        float powder = mix(1.0, 1.0 - exp(-5.0 * dn), 0.5 * (1.0 - max(mu, 0.0)));
+        vec3 S = uSunL * 0.1 * sunK * (Tl * phase + Tm * 0.7) * powder;
+        // Sky light falls from above; folds and the base see little.
+        // Creases sit deep in the base shape.
+        // Lump crowns stand out of it.
+        float crease = clamp(0.7 - 1.4 * sh / max(A, 0.1), 0.15, 1.2);
+        float open = exp(-0.45 * max(fb, 0.0)) * crease;
+        // A tap outward and up finds a lump in the way.
+        // So lump crowns catch the sky, and folds do not.
+        vec2 rad = normalize(p.xz - gAx * gLean * h01 + 1e-4);
+        if (hi) open *= 1.0 - 0.75 * towerLightDens(p + vec3(rad.x * 0.4, 0.3, rad.y * 0.4), lod + 1.0);
+        float sky = (0.2 + 0.8 * h01) * (0.25 + 0.75 * open);
+        S += (dome * 1.5 + uAmb * 0.015) * sky;
+        // The glow round the sun lights the side that faces it.
+        S += twi * 0.3 * Tl * (0.3 + 0.25 * phase) * open;
         // Streets under the cell light its base orange.
-        S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - 2.0) / (boom ? 9.0 : 1.5));
-        // Lightning lights the volume from inside.
-        vec3 q = p - pf;
-        S += (boom ? vec3(1.0, 0.55, 0.25) : vec3(0.72, 0.74, 1.0)) * f.w * 1.6 * exp(-length(q) / (boom ? 6.0 : 1.8));
-        float al = 1.0 - exp(-2.6 * dn * uTowStep);
+        S += vec3(1.0, 0.5, 0.2) * b.w * 0.05 * exp(-(p.y - gBase) / 1.5);
+        // Lightning: a hot core round the flash.
+        // A wide glow fills the tower.
+        float fd = length(p - pf);
+        S += vec3(0.75, 0.77, 1.0) * f.w * (2.0 * exp(-fd / 1.3) + 0.35 * exp(-fd / 5.0)) * (1.0 - 0.5 * clamp(open, 0.0, 1.0));
+        // Below the deck top, the deck in front hides the tower.
+        float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(DECK_HI, DECK_HI - 1.2, p.y));
         col += Tc * S * al;
         Tc *= 1.0 - al;
-        if (Tc < 0.05) break;
+        if (Tc < 0.03) break;
+        t += st;
       }
-      t += uTowStep;
     }
     if (tIn < 0.0) continue;
     float fog = (1.0 - exp(-tIn / 160.0)) * (boom ? 0.35 : 1.0);
