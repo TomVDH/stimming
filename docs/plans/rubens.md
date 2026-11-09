@@ -75,7 +75,7 @@ The pipe is L = 1.6 m long, closed at both ends. Both ends are pressure antinode
 | Resonances | f_n = n · c / 2L: propane 81, 161, 242 Hz and up; methane 139, 279 Hz and up |
 | Node spacing | λ/2 = c / 2f. Nodes sit half a wavelength apart at any pitch. |
 | Pressure field | the steady state of a pipe driven at x = 0: p(x) = cos(k̃ (L − x)) / sin(k̃ L), with k̃ = k (1 − iη), η = 0.02 |
-| Flame target | a = 1 − exp(−1.5 · drive · ηkL · \|p(x)\|). Height = gas · (1 + s · (2.2a − 0.45)), where s eases from 0 to 1 while a tone plays. Nodes dip to about 0.55 of rest; antinodes leap to about 2.75. |
+| Flame target | a = 1 − exp(−2.2 · drive · ηkL · \|p(x)\|). Height = gas · (1 + s · (2.2a − 0.45)), where s eases from 0 to 1 while a tone plays. Nodes dip to about 0.55 of rest; antinodes leap to about 2.75. |
 | Flame response | each height follows its target with a critically damped spring of about 80 ms |
 | Buzz | the tip of each flame trembles in proportion to a, as the gas jets pulse at audio rate |
 | Drum pulse | a Gaussian bump that moves at a display speed of 2.6 tube lengths per second, decays with τ 0.9 s and reflects at both ends. A capped end reflects pressure upright, so the bump comes back as a bump. Up to 8 pulses. |

@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.006 50); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rubens tube</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Rubens tube: a row of gas flames on a pipe, in a dark room. */
+:root { --stage: oklch(0.1 0.006 50); }
+.stage--rubens canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--rubens canvas.on { opacity: 1; }
+.stage--rubens { cursor: crosshair; }
+.stage--rubens.drag { cursor: ew-resize; }
+@media (prefers-reduced-motion: reduce) { .stage--rubens canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Rubens tube</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--rubens" id="stage" tabindex="0" role="application" aria-label="A long pipe with a row of gas flames on top. Drag across to sweep the pitch; the flames form standing waves. Tap to drum a pulse down the pipe.">
+      <p class="fail" hidden>Rubens tube needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Rubens tube</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, reduced, onReducedChange } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------- the pipe ---------- */
+// The pipe is 1.6 m long and closed at both ends.
+const LEN = 1.6, ETA = 0.02;
+// Sound is faster in methane, so its humps are wider at one pitch.
+const FUEL = { propane: { c: 258, soot: 1 }, methane: { c: 446, soot: 0.55 } };
+const FMIN = 60, FMAX = 1100;
+// The row holds 72 flames at most; the texture has room for 128.
+const MAXN = 128;
+
+let voice = 'tone', volume = 0.7;
+// The handlers bind once the GL exists.
+const act = { sweep() {} };
+const ui = initPage({ id: 'rubens', bar: {
+  choice: { label: 'Voice', value: 'tone', options: [
+    { value: 'tone', label: 'Tone' }, { value: 'chord', label: 'Chord' }, { value: 'tune', label: 'Tune' },
+  ], onPick: v => { voice = v; live(); } },
+  slider: { label: 'Volume', min: 0, max: 1, step: 0.01, value: volume, onInput: v => { volume = v; live(); } },
+  actions: [{ verb: 'sweep', key: 'S', onPress: () => act.sweep() }],
+  settings: [
+    { type: 'slider', id: 'gas', label: 'Gas', min: 0.5, max: 1.5, step: 0.01, value: 1, persist: true, onInput: v => { gas = v; live(); } },
+    { type: 'choice', id: 'fuel', label: 'Fuel', value: 'propane', persist: true,
+      options: [{ value: 'propane', label: 'Propane' }, { value: 'methane', label: 'Methane' }], onPick: v => { fuel = v; live(); } },
+    { type: 'toggle', id: 'sustain', label: 'Sustain', value: false, persist: true, onToggle: v => { sustain = v; } },
+  ],
+  quality: true,
+  keys: [['drag', 'sweep pitch'], ['click', 'drum'], ['s', 'sweep'], ['space', 'drum']],
+} });
+let gas = ui.setting('gas')?.value ?? 1;
+let fuel = ui.setting('fuel')?.value ?? 'propane';
+let sustain = ui.setting('sustain')?.value ?? false;
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, vao = null, htTex = null;
+let F = null, G1 = null, G2 = null, G3 = null;
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 o;
+float hash11(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * noise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+  return s / 0.875;
+}
+`;
+
+/* ---------- flame pass ---------- */
+// Each flame is a teardrop on its hole: blue at the root, soot light above.
+// Heights arrive in canvas pixels; the buffer is half size.
+const FLAME_FS = HEAD + `
+uniform sampler2D uHt;
+uniform vec4 uRow;      // first hole x, last hole x, base y, half width (px)
+uniform float uN, uScale, uTime, uRest, uSoot, uRM;
+
+vec3 flame(vec2 p, int i) {
+  if (i < 0 || i >= int(uN)) return vec3(0.0);
+  vec2 ht = texelFetch(uHt, ivec2(i, 0), 0).rg;
+  float h = max(ht.r, 2.0);
+  float t = (p.y - uRow.z) / h;
+  if (t < -0.2 || t > 1.4) return vec3(0.0);
+  float s = hash11(float(i) + 0.37);
+  float sp = (uRow.y - uRow.x) / uN;
+  float xi = uRow.x + (float(i) + 0.5) * sp;
+  float tm = uTime * mix(1.0, 0.35, uRM);
+  float rel = h / uRest;
+  // The upper flame sways; the root stays on its hole.
+  float sw = (noise(vec2(s * 31.0, t * 1.3 - tm * (2.4 + s))) - 0.5) * 1.6;
+  // A driven jet trembles at audio rate.
+  float bz = ht.g * sin(tm * 71.0 + s * 40.0 + t * 7.0) * 0.35 * (1.0 - uRM);
+  float w = uRow.w * (0.86 + 0.28 * s) * mix(1.0, 1.35, smoothstep(1.0, 3.0, rel));
+  float u = (p.x - xi - (sw + bz) * w * t * t) / w;
+  // A rounded root, widest near a third, then a taper to the tip.
+  float r = smoothstep(-0.16, 0.24, t) * pow(max(1.0 - t, 0.0), 0.5) * 1.05;
+  float core = clamp(1.0 - abs(u) / max(r, 1e-3), 0.0, 1.0);
+  float tear = fbm(vec2(u * 0.8 + s * 7.0, t * 2.4 - tm * 3.4 - s * 5.0));
+  float body = smoothstep(0.0, 0.5, core) * smoothstep(0.0, 0.3, 1.0 - t + (tear - 0.5) * 0.8);
+  body *= smoothstep(-0.16, 0.04, t);
+  // Rich flames make soot, and soot glows yellow and orange.
+  float soot = uSoot * smoothstep(0.15, 1.9, rel);
+  float st = soot * smoothstep(0.1, 0.42, t);
+  // The inner blue cone sits on the hole.
+  float cone = exp(-pow(max(t, 0.0) / 0.2, 2.0)) * smoothstep(0.15, 0.85, core) * smoothstep(-0.12, 0.02, t);
+  float edge = exp(-pow((core - 0.22) / 0.16, 2.0)) * exp(-max(t, 0.0) * 2.6) * smoothstep(-0.16, 0.0, t);
+  vec3 blue = vec3(0.1, 0.24, 1.0) * (cone * 0.9 + edge * 0.6 + body * 0.25 * (1.0 - st));
+  float temp = clamp(1.0 - (t - 0.2) / 0.9, 0.0, 1.0);
+  vec3 hot = mix(vec3(0.8, 0.13, 0.015), vec3(1.0, 0.42, 0.08), smoothstep(0.0, 0.6, temp));
+  hot = mix(hot, vec3(1.0, 0.66, 0.3), smoothstep(0.55, 1.0, temp) * 0.6);
+  return blue + hot * body * st * 1.25 * (0.7 + 0.6 * tear);
+}
+
+void main() {
+  vec2 p = gl_FragCoord.xy / uScale;
+  if (p.y < uRow.z - uRest) { o = vec4(0.0); return; }
+  float sp = (uRow.y - uRow.x) / uN;
+  int i = int(floor((p.x - uRow.x) / sp));
+  vec3 c = flame(p, i - 1) + flame(p, i) + flame(p, i + 1);
+  o = vec4(c, 1.0);
+}`;
+
+// One Kawase step down: five bilinear taps.
+const DOWN_FS = HEAD + `
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main() {
+  vec2 d = uTexel;
+  vec4 c = texture(uSrc, vUv) * 4.0;
+  c += texture(uSrc, vUv + vec2(-d.x, -d.y)) + texture(uSrc, vUv + vec2(d.x, -d.y));
+  c += texture(uSrc, vUv + vec2(-d.x, d.y)) + texture(uSrc, vUv + vec2(d.x, d.y));
+  o = c / 8.0;
+}`;
+
+/* ---------- composite ---------- */
+// The room, the pipe and the floor take their light from the flames.
+const COMP_FS = HEAD + `
+uniform sampler2D uF, uG1, uG2, uG3, uHt;
+uniform float uN;
+uniform vec2 uRes;
+uniform vec4 uPipe;     // first x, last x, centre y, radius (px)
+uniform vec2 uHouse;    // speaker housing length, end cap length (px)
+uniform float uBase, uRest, uTime, uPump, uKick, uRM;
+
+// The row's light at screen x, blurred over w pixels.
+vec3 rowLight(float x, float w) {
+  vec3 c = vec3(0.0);
+  for (int k = -3; k <= 3; k++) {
+    float xx = x + float(k) * w / 3.0;
+    float u = (xx - uPipe.x) / (uPipe.y - uPipe.x);
+    // Light falls off past the pipe's ends.
+    float fall = exp(-pow(max(max(-u, u - 1.0), 0.0) * 4.0, 2.0));
+    vec4 t = texture(uHt, vec2((clamp(u, 0.0, 1.0) * (uN - 1.0) + 0.5) / ${MAXN}.0, 0.5));
+    vec3 tint = mix(vec3(0.18, 0.3, 1.0) * 0.6, vec3(1.0, 0.52, 0.2), t.a);
+    c += tint * t.b * fall * exp(-float(k * k) / 4.5);
+  }
+  return c / 4.5;
+}
+vec3 glow(vec2 uv) { return texture(uG1, uv).rgb * 0.5 + texture(uG2, uv).rgb * 0.8 + texture(uG3, uv).rgb * 1.1; }
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+
+// Steel lit from above by the flames: diffuse, a sharp top glint and a sheen.
+vec3 steel(float ny, vec3 light, float albedo, float gloss) {
+  float nz = sqrt(max(1.0 - ny * ny, 0.0));
+  vec3 n = vec3(0.0, ny, nz), l = normalize(vec3(0.0, 1.0, 0.35)), h = normalize(l + vec3(0.0, 0.0, 1.0));
+  float d = max(dot(n, l), 0.0);
+  float sp = pow(max(dot(n, h), 0.0), gloss) * 1.3 + pow(max(dot(n, h), 0.0), 6.0) * 0.12;
+  vec3 c = light * (albedo * d + sp);
+  // The floor bounces a little warm light onto the underside.
+  c += light * 0.03 * max(-ny, 0.0);
+  return c + vec3(0.004, 0.0045, 0.006) * nz;
+}
+
+void main() {
+  vec2 p = gl_FragCoord.xy, uv = p / uRes;
+  float R = uPipe.w, pc = uPipe.z, yC = pc - R;
+  float px = uRes.y / 900.0;
+  float tm = uTime * mix(1.0, 0.35, uRM);
+  // Light from the flames above this x.
+  vec3 above = rowLight(p.x, R * 2.0) * 0.9;
+  vec3 col;
+
+  if (p.y >= yC) {
+    // Hot air above the flames bends what lies behind it.
+    vec2 off = vec2(0.0);
+    if (uRM < 0.5 && p.y > uBase) {
+      float heat = luma(texture(uG2, uv - vec2(0.0, 0.05)).rgb) * 3.0;
+      vec2 q = p / (13.0 * px) + vec2(0.0, -tm * 4.0);
+      off = (vec2(noise(q), noise(q + 31.7)) - 0.5) * min(heat, 1.5) * 7.0 * px / uRes;
+    }
+    // The wall: near black, warmed by the flames.
+    vec3 wall = vec3(0.0035, 0.0032, 0.0034) * (0.6 + 0.4 * uv.y);
+    float dy = max(p.y - uBase, 0.0) / uRes.y;
+    col = wall + glow(uv + off) * 0.3;
+    col += rowLight(p.x, uRes.y * (0.06 + 0.5 * dy)) * 0.03 / (1.0 + 40.0 * dy * dy);
+    col += texture(uF, uv + off).rgb;
+  } else {
+    // The floor: dark gloss with a blurred mirror image and a warm pool.
+    float d = yC - p.y;
+    float yr = 2.0 * yC - p.y;
+    vec2 ur = vec2(uv.x, yr / uRes.y);
+    float rough = clamp(d / (uRes.y * 0.25), 0.0, 1.0);
+    vec3 refl = mix(texture(uG1, ur).rgb * 1.2, texture(uG2, ur).rgb * 1.5, smoothstep(0.0, 0.6, rough));
+    float fres = 0.22 * exp(-d / (uRes.y * 0.2)) + 0.03;
+    col = vec3(0.003, 0.0028, 0.003);
+    // The pipe hides its own reflection's flames until they clear it.
+    if (yr < yC + 2.0 * R) refl *= 0.0;
+    col += refl * fres;
+    // The pipe shades the floor close in front of it.
+    float pool = smoothstep(0.0, 3.0 * R, d) * exp(-d / (uRes.y * 0.3));
+    col += rowLight(p.x, R * 3.0 + d * 1.5) * pool * 0.035;
+    col *= 1.0 - 0.85 * exp(-d / (0.35 * R));
+  }
+
+  // The pipe, the speaker housing and the end cap.
+  float hl = uHouse.x, cl = uHouse.y;
+  float pump = uPump * sin(tm * 38.0) * 0.012 + uKick * 0.08;
+  if (p.x > uPipe.x && p.x < uPipe.y && abs(p.y - pc) < R) {
+    float ny = (p.y - pc) / R;
+    vec3 c = steel(ny, above, 0.16, 70.0);
+    // Faint brushing along the pipe.
+    c *= 0.9 + 0.2 * noise(vec2(p.x / (90.0 * px), p.y / (1.2 * px)));
+    float aa = clamp((R - abs(p.y - pc)) / (1.2 * px), 0.0, 1.0);
+    col = mix(col, c, aa);
+  }
+  float RH = R * (1.5 + pump);
+  float hx0 = uPipe.x - hl;
+  if (p.x > hx0 && p.x <= uPipe.x && abs(p.y - pc) < RH) {
+    float ny = (p.y - pc) / RH;
+    vec3 c = steel(ny, above * 0.7 + uKick * vec3(0.05, 0.04, 0.03), 0.07, 24.0);
+    // Two seams mark the speaker's clamp rings.
+    float sx = (p.x - hx0) / hl;
+    c *= 1.0 - 0.6 * exp(-pow((sx - 0.12) / 0.025, 2.0)) - 0.5 * exp(-pow((sx - 0.9) / 0.02, 2.0));
+    float aa = clamp((RH - abs(p.y - pc)) / (1.2 * px), 0.0, 1.0) * clamp((p.x - hx0) / (1.2 * px), 0.0, 1.0);
+    col = mix(col, c, aa);
+  }
+  float RC = R * 1.1;
+  if (p.x >= uPipe.y && p.x < uPipe.y + cl && abs(p.y - pc) < RC) {
+    float ny = (p.y - pc) / RC;
+    vec3 c = steel(ny, above * 0.8, 0.12, 40.0);
+    float aa = clamp((RC - abs(p.y - pc)) / (1.2 * px), 0.0, 1.0) * clamp((uPipe.y + cl - p.x) / (1.2 * px), 0.0, 1.0);
+    col = mix(col, c, aa);
+  }
+
+  // The flames' roots sit on the holes, over the pipe's top edge.
+  if (p.x > uPipe.x && p.x < uPipe.y && p.y > pc && p.y < pc + R) col += texture(uF, uv).rgb;
+  // Bloom from the glow chain.
+  col += texture(uG1, uv).rgb * 0.1 + texture(uG2, uv).rgb * 0.16 + texture(uG3, uv).rgb * 0.22;
+
+  vec2 v = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.5 * smoothstep(0.4, 1.2, length(v));
+  vec3 outc = srgb(aces(col));
+  outc += (hash(p + fract(uTime) * 91.0) - 0.5) * 0.012;
+  o = vec4(outc, 1.0);
+}`;
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+function renderable(fmt) {
+  const t = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, 4, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(t);
+  return ok;
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('float targets unavailable');
+  if (!renderable(gl.RGBA16F)) throw new Error('RGBA16F is not renderable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { flame: compile(TRI, FLAME_FS), down: compile(TRI, DOWN_FS), comp: compile(TRI, COMP_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.disable(gl.BLEND);
+  // One texel per flame: height (px), buzz, light and warmth.
+  htTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, htTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, MAXN, 1);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+}
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+function free(t) {
+  if (!t) return;
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function bind(prog, name, unit, tex) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function draw(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// The flame buffer is half size; the glow levels are a quarter, an eighth and a sixteenth.
+function alloc() {
+  const W = canvas.width, H = canvas.height, k = rung >= 2 ? 3 : 2;
+  const fw = Math.ceil(W / k), fh = Math.ceil(H / k);
+  if (F && F.w === fw && F.h === fh) return;
+  [F, G1, G2, G3].forEach(free);
+  F = target(fw, fh);
+  G1 = target(Math.ceil(fw / 2), Math.ceil(fh / 2));
+  G2 = target(Math.ceil(fw / 4), Math.ceil(fh / 4));
+  G3 = target(Math.ceil(fw / 8), Math.ceil(fh / 8));
+}
+
+/* ---------- layout ---------- */
+// Device pixels, from the bottom left as GL counts.
+const row = { x0: 0, x1: 0, pc: 0, R: 0, base: 0, rest: 0, fw: 0, house: 0, cap: 0 };
+let N = 72, narrow = false;
+function layout() {
+  const { w, W, H, dpr } = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  narrow = w < 640;
+  N = narrow ? 32 : rung >= 3 ? 48 : 72;
+  const R = narrow ? clamp(W * 0.03, 7 * dpr, 13 * dpr) : clamp(H * 0.03, 10 * dpr, 24 * dpr);
+  row.R = R;
+  row.house = R * 2.1;
+  row.cap = R * 0.45;
+  row.x0 = W * (narrow ? 0.03 : 0.07) + row.house;
+  row.x1 = W * (narrow ? 0.97 : 0.93) - row.cap;
+  row.pc = H * (narrow ? 0.38 : 0.33);
+  row.base = row.pc + R * 0.9;
+  row.rest = H * (narrow ? 0.05 : 0.065);
+  row.fw = ((row.x1 - row.x0) / N) * 0.6;
+  alloc();
+}
+
+/* ---------- the standing wave ---------- */
+// The pipe is driven at x = 0, the speaker end, and capped at x = L.
+// p(x) = cos(k(L - x)) / sin(kL), with a small loss in k.
+// The result is scaled by ηkL, so a resonance peaks near 1.
+function field(f, x) {
+  const c = FUEL[fuel].c, k = (TAU * f) / c, b = k * ETA;
+  const num = Math.hypot(Math.cos(k * (LEN - x)), Math.sinh(b * (LEN - x)));
+  const den = Math.hypot(Math.sin(k * LEN), Math.sinh(b * LEN));
+  return (ETA * k * LEN * num) / den;
+}
+const hgt = new Float32Array(MAXN), vel = new Float32Array(MAXN), buzz = new Float32Array(MAXN);
+const htData = new Float32Array(MAXN * 4), glowRaw = new Float32Array(MAXN * 2);
+// Tone state: pitch, the envelope and the pointer's loudness.
+let pitch = 240, pitchT = 240, env = 0, envT = 0, loud = 0.8;
+// The gas eases down to pilot flames while the toy sleeps.
+let pilot = 1, pilotT = 1;
+let sweepT = -1;
+const restPx = () => row.rest * gas * pilot;
+// Propane sets the range, so Methane shows fewer humps at one pitch.
+// Each hump keeps five flames at the top of the range.
+const fmax = () => Math.min(FMAX, (N / 5) * FUEL.propane.c / (2 * LEN));
+function stepRow(dt) {
+  const r0 = restPx(), drive = volume * loud;
+  const w = 24, chord = voice === 'chord';
+  let moving = 0;
+  for (let i = 0; i < N; i++) {
+    const x = ((i + 0.5) / N) * LEN;
+    let A = field(pitch, x);
+    if (chord) A = Math.hypot(A, 0.8 * field(pitch * 1.5, x));
+    const a = env > 0.001 ? 1 - Math.exp(-2.2 * drive * A) : 0;
+    const tgt = r0 * (1 + env * (2.2 * a - 0.45));
+    // A critically damped spring follows the target.
+    vel[i] += (w * w * (tgt - hgt[i]) - 2 * w * vel[i]) * dt;
+    hgt[i] += vel[i] * dt;
+    buzz[i] = a * env;
+    moving = Math.max(moving, Math.abs(vel[i]) / Math.max(r0, 1));
+  }
+  return moving;
+}
+// Each flame casts light by its size; soot makes the light warm.
+// A short blur along the row smooths the light the room receives.
+function upload() {
+  const r0 = Math.max(row.rest, 1), sootK = FUEL[fuel].soot;
+  for (let i = 0; i < N; i++) {
+    const rel = hgt[i] / r0, soot = sootK * clamp((rel - 0.15) / 1.75);
+    glowRaw[i * 2] = rel * (0.2 + 1.4 * soot);
+    glowRaw[i * 2 + 1] = soot;
+  }
+  const k = Math.max(1, Math.round(N / 24));
+  for (let i = 0; i < N; i++) {
+    let L = 0, Wm = 0, n = 0;
+    for (let j = Math.max(0, i - k); j <= Math.min(N - 1, i + k); j++) { L += glowRaw[j * 2]; Wm += glowRaw[j * 2 + 1] * glowRaw[j * 2]; n++; }
+    htData[i * 4] = hgt[i];
+    htData[i * 4 + 1] = buzz[i];
+    htData[i * 4 + 2] = L / n;
+    htData[i * 4 + 3] = L > 0 ? Wm / L : 0;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, htTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, 1, gl.RGBA, gl.FLOAT, htData, 0);
+}
+
+/* ---------- render ---------- */
+let time = 0;
+function render() {
+  upload();
+  const W = canvas.width, H = canvas.height, rm = reduced() ? 1 : 0;
+  const q = P.flame;
+  gl.useProgram(q.p);
+  bind(q, 'uHt', 0, htTex);
+  gl.uniform4f(q.u.uRow, row.x0, row.x1, row.base, row.fw);
+  gl.uniform1f(q.u.uN, N);
+  gl.uniform1f(q.u.uScale, F.w / W);
+  gl.uniform1f(q.u.uTime, time);
+  gl.uniform1f(q.u.uRest, Math.max(restPx(), 1));
+  gl.uniform1f(q.u.uSoot, FUEL[fuel].soot);
+  gl.uniform1f(q.u.uRM, rm);
+  draw(F);
+  const d = P.down;
+  gl.useProgram(d.p);
+  for (const [src, dst] of [[F, G1], [G1, G2], [G2, G3]]) {
+    bind(d, 'uSrc', 0, src.tex);
+    gl.uniform2f(d.u.uTexel, 1 / src.w, 1 / src.h);
+    draw(dst);
+  }
+  const c = P.comp;
+  gl.useProgram(c.p);
+  bind(c, 'uF', 0, F.tex);
+  bind(c, 'uG1', 1, G1.tex);
+  bind(c, 'uG2', 2, G2.tex);
+  bind(c, 'uG3', 3, G3.tex);
+  bind(c, 'uHt', 4, htTex);
+  gl.uniform1f(c.u.uN, N);
+  gl.uniform2f(c.u.uRes, W, H);
+  gl.uniform4f(c.u.uPipe, row.x0, row.x1, row.pc, row.R);
+  gl.uniform2f(c.u.uHouse, row.house, row.cap);
+  gl.uniform1f(c.u.uBase, row.base);
+  gl.uniform1f(c.u.uRest, row.rest);
+  gl.uniform1f(c.u.uTime, time);
+  gl.uniform1f(c.u.uPump, env * volume * loud);
+  gl.uniform1f(c.u.uKick, 0);
+  gl.uniform1f(c.u.uRM, rm);
+  draw(null);
+}
+
+/* ---------- frame loop ---------- */
+// Lively frames run at full rate; drifting frames at 30 fps.
+// The loop sleeps 60 s after the last input, once the gas is down.
+let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now(), dragging = false;
+const live = () => { lastInput = performance.now(); pilotT = 1; wake(); };
+function wake() {
+  if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+let moving = 0;
+const lively = () => dragging || sweepT >= 0 || env > 0.003 || envT > 0 || moving > 0.02;
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const rm = reduced();
+    if (!lively() && now - lastDraw < 31) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    lastDraw = now;
+    if (now - lastInput > 60000) pilotT = 0.35;
+    pilot += (pilotT - pilot) * (1 - Math.exp(-dt / 0.6));
+    sweepStep(dt);
+    env += (envT - env) * (1 - Math.exp(-dt / (envT > env ? 0.12 : 0.4)));
+    pitch = Math.exp(lerp(Math.log(pitch), Math.log(pitchT), 1 - Math.exp(-dt / 0.03)));
+    moving = stepRow(dt);
+    // Reduced motion holds the flicker still while nothing moves.
+    if (!rm || lively()) time += dt;
+    render();
+    const asleep = pilotT < 1 && Math.abs(pilot - pilotT) < 0.005 && !lively();
+    again = !asleep && (!rm || lively());
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- sweep ---------- */
+// Sweep glides up through ten resonances and back in 8 s.
+function sweepStep(dt) {
+  if (sweepT < 0) return;
+  sweepT += dt;
+  const f1 = FUEL[fuel].c / (2 * LEN), u = sweepT / 8;
+  const tri = u < 0.5 ? u * 2 : 2 - u * 2;
+  pitchT = clamp(f1 * Math.exp(lerp(Math.log(0.9), Math.log(Math.min(10.3, fmax() / f1)), tri)), FMIN * 0.8, FMAX);
+  envT = 1;
+  if (u >= 1) { sweepT = -1; if (!dragging && !sustain) envT = 0; }
+}
+act.sweep = () => { sweepT = 0; pitch = pitchT = FUEL[fuel].c / (2 * LEN) * 0.9; live(); };
+
+/* ---------- pointer ---------- */
+// The pointer's x sets the pitch on a log scale; its height sets the loudness.
+// Press, hold and tap arrive with Task 2.
+let ptrId = null;
+function aim(e) {
+  const r = stage.getBoundingClientRect();
+  const u = clamp((e.clientX - r.left) / r.width), v = clamp((e.clientY - r.top) / r.height);
+  pitchT = FMIN * Math.pow(fmax() / FMIN, u);
+  loud = lerp(1, 0.45, v);
+}
+function down(e) {
+  if (ptrId !== null || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptrId = e.pointerId;
+  dragging = true;
+  sweepT = -1;
+  stage.classList.add('drag');
+  aim(e);
+  pitch = pitchT;
+  envT = 1;
+  live();
+}
+function move(e) {
+  if (e.pointerId !== ptrId) return;
+  aim(e);
+  live();
+}
+function up(e) {
+  if (ptrId === null || (e && e.pointerId !== ptrId)) return;
+  ptrId = null;
+  dragging = false;
+  stage.classList.remove('drag');
+  if (!sustain) envT = 0;
+  live();
+}
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  layout();
+  for (let i = 0; i < MAXN; i++) hgt[i] = restPx();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+
+new ResizeObserver(() => { layout(); for (let i = 0; i < N; i++) hgt[i] = hgt[i] || restPx(); render(); wake(); }).observe(stage);
+onQuality(() => { layout(); render(); });
+onReducedChange(() => { render(); wake(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>
