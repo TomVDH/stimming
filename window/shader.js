@@ -2016,24 +2016,6 @@ vec4 rainRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed) {
   }
   return vec4(0.0);
 }
-// Streams: thin water threads the airflow drags aft, wavering as they go.
-// Each thread breaks into lengths that slide along its lane.
-vec4 rainStream(vec2 p, vec2 m, float t, float Wc, float keep, float seed) {
-  vec2 ax = vec2(-m.y, m.x);
-  float u = dot(p, ax), v = dot(p, m);
-  float col = floor(u / Wc);
-  float h = hash12(vec2(col, seed));
-  if (h > keep) return vec4(0.0);
-  float s = v - t * (0.5 + 0.6 * hash12(vec2(col, seed + 3.0)));
-  float sl = s * 9.0 + h * 5.0, seg = floor(sl);
-  if (hash12(vec2(col, seg + seed)) > 0.55) return vec4(0.0);
-  float fu = (fract(u / Wc) - 0.5) * Wc - (h - 0.5) * Wc * 0.5 - sin(s * 140.0 + h * 30.0) * 0.0007 - sin(s * 47.0 + h * 9.0) * 0.0012;
-  // Each length tapers at both ends.
-  float k = fract(sl);
-  float tw = (0.001 + 0.0007 * hash12(vec2(col, seg))) * smoothstep(0.0, 0.15, k) * smoothstep(1.0, 0.7, k);
-  if (abs(fu) >= tw) return vec4(0.0);
-  return vec4(ax * (fu / tw), tw, 0.95);
-}
 // A drop acts as a lens: it flips the view behind it, and its edge reads dark.
 void rainLens(vec4 b, inout vec2 off, inout float rim, inout float spec) {
   if (b.w <= 0.0) return;
@@ -2172,14 +2154,12 @@ void main() {
         if (uRain > 0.0) {
           vec2 m = normalize(vec2(-1.0, -0.12));
           // At flight speed the airflow strips almost every drop.
-          // Thin threads stream aft; a few drops race across; a few tiny beads cling.
+          // Drops race aft with thin trails; only a few tiny beads cling.
           float bead = uRain * 0.12 * (1.0 - 0.6 * uStorm);
           rainLens(rainBead(pO + 0.37, 160.0, 0.2 * bead, 2.0), rOff, rRim, rSpec);
           rainLens(rainBead(pO + 0.71, 380.0, 0.35 * bead, 3.0), rOff, rRim, rSpec);
-          vec2 m2 = normalize(vec2(-1.0, -0.2));
-          rainLens(rainStream(pO, m, uTime * 0.45, 0.0055, 0.85 * uRain, 6.0), rOff, rRim, rSpec);
-          rainLens(rainStream(pO * 1.17 + 0.3, m2, uTime * 0.6, 0.0075, 0.7 * uRain, 7.0), rOff, rRim, rSpec);
-          rainLens(rainRun(pO, m, uTime * 1.8, 0.012, 0.35 * uRain, 4.0), rOff, rRim, rSpec);
+          rainLens(rainRun(pO, m, uTime * 0.9, 0.01, 0.8 * uRain, 4.0), rOff, rRim, rSpec);
+          rainLens(rainRun(pO * 1.3 + 0.2, m, uTime * 0.9, 0.01, 0.7 * uRain, 5.0), rOff, rRim, rSpec);
         }
         // The pane sits about 0.44 m from the eye.
         vec2 rPx = px + vec2(dot(vec3(rOff, 0.0), uR), dot(vec3(rOff, 0.0), uU)) * uFocal / 0.44;
