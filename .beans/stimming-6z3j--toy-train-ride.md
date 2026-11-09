@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T19:55:00Z
+updated_at: 2026-11-09T20:10:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -104,3 +104,10 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Tom: "Train ride now (shared)" is the sole base; Window seat told to adopt shared/glassrain.js
 - [x] shared/bokeh.js: disc bokeh after Buoy Business and Wind farm (48 golden-angle taps, hot texels weighted, blades, rim)
 - [x] Fog blur: the outside drops to an eighth in two 4x4 box steps, then gathers into discs at half size; no more speckled blooms
+
+## Round 12: cabin, track, express (Tom, 2026-11-09)
+- [x] A proper cabin view: a smaller window set in a two-tone wall (warm white over slate, trim at the sill line, heater grille), a fold-down table with its shadow, the seat ahead in the foreground with a pale headrest cover; brighter, cleaner cabin light
+- [x] The block ledge under the window is gone; the clock is gone; the stop line shows only a name while pulling in
+- [x] Track: the viaduct parapet gives way to an embankment with a second track (ballast, smeared sleepers, glinting rails, cable trough) and a grassy slope; the gaze tilts down 3 degrees to show it
+- [x] Express (Settings, key E): runs through every station
+- [ ] Real-device fps, live check at speed

@@ -81,6 +81,7 @@ const opts = {
   // The weather is new on every load: rain most often, clear least.
   mode: ['drizzle', 'rain', 'rain', 'downpour', 'mist', 'fog', 'clear'][Math.floor(Math.random() * 7)],
   drift: saved('drift') !== '0',
+  express: saved('express') === '1',
   wet: saved('wet') || '1',
   speed: saved('speed') != null ? +saved('speed') : 0.6,
   time: saved('time') || 'night',
@@ -638,7 +639,7 @@ const parapet = new THREE.Mesh(new THREE.BoxGeometry(400, 1.0, 0.4).translate(0,
   }`,
 }));
 parapet.frustumCulled = false;
-out.add(parapet);
+// The parapet stays out: the line now runs on an embankment beside a second track.
 
 /* Lamp posts every 28 m: a steel post, a slim head, an LED bar and its beam. */
 // Each part is a quad that the shader smears by the train speed.
@@ -1028,6 +1029,45 @@ void main() {
   parts.forEach(([x, y, z, sx, sy, sz], i) => im.setMatrixAt(i, mtx.makeScale(sx, sy, sz).setPosition(x, y, z)));
   im.frustumCulled = false;
   platform.add(im);
+}
+/* The track bed: an embankment with the second track, then a slope down to the land. */
+// The bed follows the camera; ballast and sleepers blur with the smear.
+const bed = new THREE.Group();
+out.add(bed);
+{
+  const top = new THREE.PlaneGeometry(500, 9.5).rotateX(-Math.PI / 2).translate(0, -2.5, -5.25);
+  const slope = new THREE.PlaneGeometry(500, 7.2).rotateX(-Math.PI / 2).rotateX(Math.atan2(-3.5, 6.2)).translate(0, -4.25, -13.1);
+  const body = /* glsl */`
+  // zc runs across the second track from its centre line.
+  float zc = vP.z + 7.5;
+  float s = uSmear;
+  vec2 bq = vec2(vP.x * 7.0, vP.z * 7.0);
+  float stones = mix(vnoise(bq) * 0.6 + vnoise(bq * 2.7) * 0.4, 0.5, smoothstep(0.02, 0.3, s));
+  alb = vec3(0.1, 0.095, 0.09) * (0.65 + 0.7 * stones);
+  if (N.y > 0.95) {
+    // Concrete sleepers every 0.6 m: a box convolved with the motion box.
+    float dx = abs(fract(vP.x / 0.6 + 0.5) - 0.5) * 0.6;
+    float cov = clamp((0.26 + s + 0.001 - dx * 2.0) / (2.0 * s + 0.002), 0.0, 1.0) * min(1.0, 0.26 / (s + 0.001));
+    alb = mix(alb, vec3(0.16, 0.155, 0.15), cov * step(abs(zc), 1.3));
+    // Two rails with polished heads.
+    float rd = min(abs(zc - 0.72), abs(zc + 0.72));
+    float rail = smoothstep(0.04, 0.025, rd);
+    alb = mix(alb, vec3(0.32, 0.31, 0.3), rail);
+    float head = smoothstep(0.018, 0.0, rd);
+    glow += head * (vec3(1.0, 0.75, 0.5) * trainLight(vP) * 0.25 + skyA(1.0) * 0.5 * uDay);
+    // A concrete cable trough runs along the far edge of the bed.
+    alb = mix(alb, vec3(0.3, 0.3, 0.29), smoothstep(0.26, 0.2, abs(zc + 2.7)));
+  } else {
+    // The slope grows grass toward its foot.
+    alb = mix(alb, vec3(0.05, 0.08, 0.035) * (0.7 + 0.6 * stones), smoothstep(-3.2, -5.0, vP.y));
+  }
+  // Rain wets the bed.
+  alb *= 1.0 - 0.25 * uRain;`;
+  for (const g of [top, slope]) {
+    const m = new THREE.Mesh(g, solid(body));
+    m.frustumCulled = false;
+    bed.add(m);
+  }
 }
 // Bigger stations get an island platform behind, with its own canopy.
 const island = new THREE.Group();
@@ -1447,22 +1487,25 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       }
     } else {
       /* ---- wall and passenger display ---- */
-      // Warm cream panels, lit by the cabin at night and the windows by day.
-      // Clean pale-grey panels, lit from the ceiling at night and the windows by day.
-      vec3 alb = vec3(0.8, 0.79, 0.76) * (0.985 + 0.03 * vnoise(p * 60.0));
-      vec3 light = mix(vec3(1.0, 0.9, 0.8) * 0.14 * (0.45 + 0.75 * smoothstep(-0.7, 0.8, p.y)), vec3(1.0, 0.97, 0.92) * 0.28 * (0.65 + 0.35 * smoothstep(-0.7, 0.8, p.y)), uDay);
-      // Panel joints beside and under the window.
-      float jx = abs(abs(p.x - uC0.x) - uHalf.x - 0.15), jy = abs(p.y - uC0.y + uHalf.y + 0.1);
-      alb *= 1.0 - 0.18 * smoothstep(0.002, 0.0, min(jx, jy));
+      // Two-tone wall: warm white above the sill line, a soft slate below.
+      float yS = uC0.y - uHalf.y - 0.03;
+      vec3 alb = p.y > yS ? vec3(0.88, 0.86, 0.82) : vec3(0.36, 0.41, 0.48);
+      alb *= 0.985 + 0.03 * vnoise(p * 60.0);
+      // A slim trim strip marks the sill line.
+      alb = mix(alb, vec3(0.62, 0.63, 0.65), smoothstep(0.006, 0.003, abs(p.y - yS)));
+      vec3 light = mix(vec3(1.0, 0.9, 0.8) * 0.21 * (0.55 + 0.6 * smoothstep(-0.7, 0.8, p.y)), vec3(1.0, 0.97, 0.92) * 0.34 * (0.7 + 0.3 * smoothstep(-0.7, 0.8, p.y)), uDay);
+      // Panel joints beside the window.
+      float jx = abs(abs(p.x - uC0.x) - uHalf.x - 0.15);
+      alb *= 1.0 - 0.12 * smoothstep(0.002, 0.0, jx) * step(yS, p.y);
       // A groove where the lining meets the wall, and a soft shadow round it.
-      alb *= 1.0 - 0.45 * smoothstep(0.005, 0.0, abs(dW - 0.004));
-      alb *= 0.8 + 0.2 * smoothstep(0.0, 0.05, dW);
-      // A pale ledge runs under the window, with a lit top edge.
-      float ly = uC0.y - uHalf.y - p.y;
-      if (ly > 0.004 && ly < 0.045 && abs(p.x - uC0.x) < uHalf.x + 0.06) {
-        alb = vec3(0.62, 0.62, 0.6);
-        alb *= 1.0 + 0.8 * smoothstep(0.012, 0.004, ly) - 0.4 * smoothstep(0.03, 0.045, ly);
-      }
+      alb *= 1.0 - 0.35 * smoothstep(0.005, 0.0, abs(dW - 0.004));
+      alb *= 0.88 + 0.12 * smoothstep(0.0, 0.05, dW);
+      // The fold-down table casts a soft shadow on the wall under it.
+      float yT = uC0.y - uHalf.y - 0.07, hwT = min(uHalf.x * 0.3, 0.2);
+      alb *= 1.0 - 0.45 * smoothstep(0.0, -0.06, p.y - yT) * smoothstep(-0.2, -0.06, p.y - yT) * smoothstep(hwT + 0.04, hwT - 0.02, abs(p.x - uC0.x));
+      // A heater grille runs low on the wall.
+      float gy = p.y - (yS - 0.24);
+      if (abs(gy) < 0.035) alb *= 0.75 + 0.25 * step(0.5, fract(gy * 160.0));
       col = alb * light;
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // Spill: a little lamp light reaches the wall beside the window.
@@ -1475,6 +1518,60 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         vec4 ink = texture2D(tPid, su);
         col = mix(col, ink.rgb * light, ink.a);
       }
+    }
+    /* ---- the cabin in front of the wall: the fold-down table and the seat ahead ---- */
+    // Rays in metres: the eye sits at uEye, the wall is the plane z = 0.
+    {
+      float S = 2.0 * uTan.y;
+      vec3 E = uEye;
+      float tB = 1e9;
+      vec3 fc = vec3(0.0);
+      vec3 cab = mix(vec3(1.0, 0.9, 0.8) * 0.21, vec3(1.0, 0.97, 0.92) * 0.34, uDay);
+      // The table: a pale laminate top 0.22 m deep, with a rounded front edge.
+      float yT = (uC0.y - uHalf.y - 0.07) * S, hw = min(uHalf.x * 0.3, 0.2) * S, cx = uC0.x * S, zT = 0.22;
+      if (dir.y < 0.0) {
+        float t = (yT - E.y) / dir.y;
+        vec3 P = E + dir * t;
+        if (t > 0.0 && P.z > 0.0 && P.z < zT && abs(P.x - cx) < hw) {
+          tB = t;
+          vec3 alb = vec3(0.74, 0.72, 0.68) * (0.97 + 0.03 * vnoise(P.xz * 80.0));
+          fc = alb * cab * (1.0 + 0.2 * smoothstep(hw, 0.0, abs(P.x - cx)));
+          fc *= 0.78 + 0.22 * smoothstep(0.0, 0.03, P.z);
+          fc *= 1.0 + 0.45 * smoothstep(zT - 0.015, zT, P.z);
+          // The window and passing lamps glint on the laminate.
+          fc += alb * STNC * uStnK * 0.15;
+        }
+      }
+      {
+        float t = (zT - E.z) / dir.z;
+        vec3 P = E + dir * t;
+        if (t > 0.0 && t < tB && P.y < yT && P.y > yT - 0.026 && abs(P.x - cx) < hw) {
+          tB = t;
+          fc = vec3(0.5, 0.5, 0.49) * cab * (0.6 + 0.5 * smoothstep(yT - 0.026, yT, P.y));
+        }
+      }
+      // The seat ahead: its back faces us from across the cabin, the headrest in a pale cover.
+      float xS = (uC0.x + uHalf.x + 0.14) * S;
+      if (dir.x > 0.0) {
+        float t = (xS - E.x) / dir.x;
+        vec3 P = E + dir * t;
+        float yTop = (uC0.y + 0.03) * S, zR = 0.95;
+        float shape = sdRR(vec2(P.z - 0.02 - zR * 0.5, P.y - (yTop - 0.6)), vec2(zR * 0.5, 0.6), 0.12);
+        if (t > 0.0 && t < tB && shape < 0.0) {
+          tB = t;
+          float cover = smoothstep(yTop - 0.25, yTop - 0.23, P.y) * smoothstep(0.1, 0.12, P.z) * smoothstep(zR - 0.06, zR - 0.08, P.z);
+          vec3 alb = mix(vec3(0.1, 0.13, 0.2), vec3(0.8, 0.79, 0.75), cover);
+          // A woven grain on the fabric; a stitched seam round the cover.
+          alb *= 0.9 + 0.12 * vnoise(P.zy * 300.0);
+          alb *= 1.0 - 0.3 * smoothstep(0.006, 0.0, abs(P.y - (yTop - 0.24))) * step(0.1, P.z) * step(P.z, zR - 0.06);
+          // Lit from above; the rounded edge reads lighter.
+          float l = (0.55 + 0.5 * smoothstep(yTop - 0.9, yTop, P.y)) * (1.0 + 0.45 * smoothstep(-0.035, 0.0, shape));
+          fc = alb * cab * l;
+          // The window light falls on the side nearest the wall.
+          fc += alb * mix(STNC * uStnK * 0.2, vec3(0.3), uDay) * smoothstep(0.4, 0.0, P.z) * 0.5;
+        }
+      }
+      if (tB < 1e8) col = fc;
     }
     gl_FragColor = vec4(col, 1.0);
   }`,
@@ -1493,12 +1590,11 @@ const STN = ROUTE.meta.stations.map(([n, d]) => [n.replace('Zürich Hauptbahnhof
 let pidKey = '';
 document.fonts?.ready.then(() => { pidKey = ''; });
 function drawPid(s) {
-  const now = new Date(), hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  // The line stays quiet: a clock, and a stop's name only while the train pulls in or waits.
+  // The line stays quiet: a stop's name shows only while the train pulls in or waits.
   const st = stopX === null ? null : STN.find(([n, sv]) => STOPS.has(n) && Math.abs(((((sv - 1 - stopX) % TILE) + TILE + TILE / 2) % TILE) - TILE / 2) < 2);
-  const near = dwell > 0 || (stopX !== null && stopX - camX < 900 && speed < target * 0.9);
+  const near = !express && (dwell > 0 || (stopX !== null && stopX - camX < 900 && speed < target * 0.9));
   const name = near && st ? st[0] : '';
-  const key = `${name}|${hm}`;
+  const key = name;
   if (key === pidKey) return;
   pidKey = key;
   const c = pc2, W2 = pid.width, H2 = 132;
@@ -1506,9 +1602,8 @@ function drawPid(s) {
   c.textBaseline = 'alphabetic';
   c.fillStyle = '#6a6f76';
   c.font = '500 34px Gabarito, sans-serif';
-  c.textAlign = 'right';
-  c.fillText(hm, W2, 90);
-  if (name) { c.textAlign = 'left'; c.fillText(name, 0, 90); }
+  // Only the stop's name, centred, while the train pulls in.
+  if (name) { c.textAlign = 'center'; c.fillText(name, W2 / 2, 90); }
   tPid.needsUpdate = true;
 }
 scene.add(glass);
@@ -1633,8 +1728,9 @@ function frame(w, h, pr) {
   W.uRes.value.set(w * pr, h * pr);
   OUTU.uView.value.set(w * pr, h * pr);
   // One big window: wide in landscape, tall in portrait.
-  if (w >= h) { W.uHalf.value.set(Math.min(asp.v * 0.5 - 0.07, 0.95), 0.4); W.uRad.value = 0.07; W.uC0.value.set(0, -0.035); }
-  else { W.uHalf.value.set(asp.v * 0.5 - 0.05, 0.34); W.uRad.value = 0.045; W.uC0.value.set(0, -0.06); }
+  // The window sits in the wall with room for the table below and the seat ahead.
+  if (w >= h) { W.uHalf.value.set(Math.min(asp.v * 0.5 - 0.3, 0.62), 0.27); W.uRad.value = 0.06; W.uC0.value.set(-0.08, 0.05); }
+  else { W.uHalf.value.set(asp.v * 0.5 - 0.07, 0.3); W.uRad.value = 0.045; W.uC0.value.set(0, 0.04); }
   // The stop line spans most of the window; its canvas keeps the type's aspect.
   const phx = w >= h ? Math.min(W.uHalf.value.x * 0.7, 0.42) : W.uHalf.value.x * 0.95, phy = w >= h ? 0.033 : 0.026;
   W.uPh.value.set(phx, phy);
@@ -1685,8 +1781,9 @@ function place() {
   outCam.position.set(camX + eye.x, eye.y + j * 0.006, eye.z - 1);
   // Under the Churfirsten the eye lifts to the summits.
   const sg = seg(camX);
-  outCam.rotation.set(-0.08 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
+  outCam.rotation.set(-0.135 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
   parapet.position.x = camX;
+  bed.position.x = camX;
   // The nearest station within a kilometre gets the platform.
   let sx = 0, sd = Infinity, sn = '';
   for (const [n, sv] of STN) {
@@ -1759,7 +1856,10 @@ const A_UP = 1.0, A_DN = 0.9, DWELL = 18;
 let stopX = null, dwell = 0, arrive = () => {};
 // The train stops only at the larger stations; it runs through the rest.
 const STOPS = new Set(['Zürich HB', 'Thalwil', 'Wädenswil', 'Pfäffikon SZ', 'Ziegelbrücke', 'Murg']);
+// Express runs through every station.
+let express = false;
 function nextStop(x) {
+  if (express) return x + 1e9;
   let best = Infinity;
   for (const [n, sv] of STN) {
     if (!STOPS.has(n)) continue;
@@ -1857,6 +1957,7 @@ return {
     if (now) { air = mode.air; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
   },
   setWet(k) { wetMul = k; mk = 0; },
+  setExpress(on) { express = on; stopX = null; if (on) dwell = 0; },
   post: { bloom: [0.7, 0.55, 0.8], tint: [0.0008, 0.0007, 0.0009], vig: 0.45, vigIn: 0.45, grain: 0.03 },
 };
 }
@@ -2170,14 +2271,17 @@ const ui = initPage({
       { type: 'choice', id: 'time', label: 'Time', value: opts.time, options: [{ value: 'night', label: 'Night' }, { value: 'day', label: 'Day' }], onPick: setTime },
       // Drift lets the weather wander to a neighbour every few minutes.
       { type: 'toggle', id: 'drift', label: 'Drift', value: opts.drift, onToggle: on => { opts.drift = on; save('drift', on ? '1' : '0'); } },
+      // Express runs through every station without stopping.
+      { type: 'toggle', id: 'express', label: 'Express', value: opts.express, onToggle: on => { opts.express = on; save('express', on ? '1' : '0'); S.setExpress(on); wake(); } },
       { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
     ],
     quality: true,
-    keys: [['drag', 'lean and peer'], ['scroll', 'lean to the glass'], ['W', 'next weather'], ['T', 'day or night']],
+    keys: [['drag', 'lean and peer'], ['scroll', 'lean to the glass'], ['W', 'next weather'], ['E', 'express']],
   },
 });
 onQuality(() => { rung = 0; resize(true); wake(); });
 S.setWet(+opts.wet);
+S.setExpress(opts.express);
 S.setMode(opts.mode, true);
 S.setSpeed(cruise(opts.speed));
 S.setTime(opts.time, true);
@@ -2200,6 +2304,7 @@ addEventListener('keydown', e => {
     ui.choice?.set(v);
     setWeather(v);
   }
+  if (e.code === 'KeyE') { const on = !opts.express; opts.express = on; save('express', on ? '1' : '0'); ui.setting('express')?.set(on); S.setExpress(on); wake(); }
   if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
 });
 
