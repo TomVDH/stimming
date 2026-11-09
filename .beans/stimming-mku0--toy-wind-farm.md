@@ -53,3 +53,7 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 
 - [ ] Tom picks bokeh and scene values in `?tune`; bake them in as the defaults
 - [ ] QA: the reduced-motion storm still flakes now and then (4 px at 4/255 between runs)
+
+- Wakes follow the blades (2026-11-09): each helix leaves a blade tip (it sat 90 deg off before). Its pitch follows rotor speed over a convection speed of 3x the wind. Puffs, tears and meander ride the air at that speed, so the coil and its texture travel together.
+
+- Rows spread (2026-11-09): a golden-ratio step places the turbines evenly across the frame; the gap in the middle is gone.

@@ -193,7 +193,8 @@ PLACED.forEach(([fx, d], i) => addTurbine(fx, d, 900 + i));
 for (let k = 1; farm.length < N_TURB && k < 4000; k++) {
   // Depths spread evenly on a log scale, so each step back holds the same count.
   const d = NEAR_D * 1.25 * Math.pow(FAR_D / (NEAR_D * 1.25), rand(k * 3 + 1));
-  const fx = 0.03 + 0.94 * rand(k * 3 + 2), x = (fx - 0.5) * SPAN * d;
+  // A golden-ratio step spreads them evenly across the frame, with no gap.
+  const fx = 0.02 + 0.98 * Math.pow((k * 0.6180339887 + 0.37) % 1, 1.3), x = (fx - 0.5) * SPAN * d;
   if (farm.some(t => Math.hypot(t.x - x, t.z + d) < MIN_GAP)) continue;
   // No two towers stack on one line of sight at a similar depth.
   if (farm.some(t => Math.abs(t.x / -t.z - x / d) < 0.012 && Math.abs(Math.log(-t.z / d)) < 0.3)) continue;
@@ -698,7 +699,8 @@ attribute float aHelix;
 attribute vec3 aBase;
 attribute float aSpin;
 attribute float aOn;
-uniform float uYaw, uTime;
+attribute float aOm;
+uniform float uYaw, uTime, uConv, uAdv;
 varying vec2 vUv2;
 varying float vK;
 varying vec3 vL;
@@ -710,13 +712,16 @@ void main() {
   // Each rotor and each helix gets its own noise seed.
   float seed = fract(aBase.x * 0.0137 + aBase.z * 0.0071) * 50.0 + aHelix * 3.7;
   float tt = uTime * 0.04;
+  // m moves downwind with the air, so the turbulence travels with the coil.
+  float m = s - uAdv;
   // Turbulence bends the coil: the radius swells and shrinks downwind.
-  float wob = fbm3(vec2(s * 3.0 + seed, tt)) - 0.5;
+  float wob = fbm3(vec2(m * 3.0 + seed, tt)) - 0.5;
   float r = 78.0 * (1.0 + 0.55 * s) * (1.0 + 0.7 * s * wob);
-  float th = aSpin + aHelix * 2.0943951 - s * 6.2832 * 3.0 + 2.4 * s * (fbm3(vec2(s * 2.0 + seed + 9.0, tt)) - 0.5);
+  // Each helix leaves a blade tip; downwind it holds the angle that blade had earlier.
+  float th = aSpin + 1.5707963 + aHelix * 2.0943951 - aOm * s * ${WAKE_L}.0 / uConv + 2.4 * s * (fbm3(vec2(m * 2.0 + seed + 9.0, tt)) - 0.5);
   vec3 p = vec3(r * cos(th), 112.0 + r * sin(th) * (1.0 - 0.25 * s), -12.0 - s * ${WAKE_L}.0);
   // The wake centre meanders away from the rotor axis.
-  p.xy += vec2(fbm3(vec2(s * 1.5 + seed, tt)) - 0.5, 0.6 * (fbm3(vec2(s * 1.5 + seed + 5.0, tt)) - 0.5)) * 220.0 * s;
+  p.xy += vec2(fbm3(vec2(m * 1.5 + seed, tt)) - 0.5, 0.6 * (fbm3(vec2(m * 1.5 + seed + 5.0, tt)) - 0.5)) * 220.0 * s;
   // The band spans out and along, so end-on it reads as a smear, not a line.
   p.xy += vec2(cos(th), sin(th)) * (w - 0.5) * (18.0 + 70.0 * s);
   p.z += (w - 0.5) * (10.0 + 30.0 * s);
@@ -735,7 +740,7 @@ void main() {
   vSeed = vec2(seed, aHelix);
 }`;
 const WAKE_FS = FOG + `
-uniform float uTime, uWakes;
+uniform float uTime, uWakes, uAdv;
 uniform vec3 uRed;
 uniform float uBlink;
 varying vec2 vUv2;
@@ -749,10 +754,12 @@ void main() {
   float across = smoothstep(0.0, 0.35, w) * smoothstep(1.0, 0.65, w);
   float along = smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.35, 1.0, s));
   // The coil breaks into puffs that drift downwind.
-  float n = fbm3(vec2(s * 14.0 - uTime * 0.6 + vSeed.x, w * 2.0 + s * 3.0 + vSeed.y * 3.1));
-  float puff = smoothstep(0.45, 0.85, n) * (0.6 + 0.4 * fbm3(vec2(s * 5.0 + vSeed.x, w + uTime * 0.1)));
+  // Puffs and tears ride the air at the coil's own speed.
+  float m = s - uAdv;
+  float n = fbm3(vec2(m * 14.0 + vSeed.x, w * 2.0 + s * 3.0 + vSeed.y * 3.1));
+  float puff = smoothstep(0.45, 0.85, n) * (0.6 + 0.4 * fbm3(vec2(m * 5.0 + vSeed.x, w + uTime * 0.1)));
   // Long tears leave only shreds of each turn.
-  puff *= smoothstep(0.42, 0.66, fbm3(vec2(s * 9.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
+  puff *= smoothstep(0.42, 0.66, fbm3(vec2(m * 9.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
   float a = across * along * puff * vK * uWakes;
   if (a < 0.002) discard;
   vec3 c = vL * 2.6 + uRed * vRed * 0.15 * (0.4 + 0.6 * uBlink);
@@ -774,26 +781,32 @@ const wakes = (() => {
   g.instanceCount = farm.length;
   g.setAttribute('aBase', new THREE.InstancedBufferAttribute(new Float32Array(farm.flatMap(t => [t.x, 0, t.z])), 3));
   const spin = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1), on = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
-  spin.setUsage(THREE.DynamicDrawUsage); on.setUsage(THREE.DynamicDrawUsage);
-  g.setAttribute('aSpin', spin); g.setAttribute('aOn', on);
+  const om = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+  spin.setUsage(THREE.DynamicDrawUsage); on.setUsage(THREE.DynamicDrawUsage); om.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('aSpin', spin); g.setAttribute('aOn', on); g.setAttribute('aOm', om);
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
-    uniforms: { ...U, uYaw: { value: YAW }, uWakes: { value: 0 } }, vertexShader: WAKE_VS, fragmentShader: WAKE_FS,
+    uniforms: { ...U, uYaw: { value: YAW }, uWakes: { value: 0 }, uConv: { value: 27 }, uAdv: { value: 0 } }, vertexShader: WAKE_VS, fragmentShader: WAKE_FS,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   }));
   m.frustumCulled = false; m.renderOrder = 3;
   scene.add(m);
-  return { m, spin, on };
+  return { m, spin, on, om, adv: 0 };
 })();
 
+// The coil travels downwind three times faster than the wind, for a readable pitch.
+const wakeConv = () => 3 * Math.max(windNow(), 3);
 function pushRotors() {
   farm.forEach((t, i) => {
     angAttr.array[i] = t.ang; pitchAttr.array[i] = t.pitch;
     // The coil turns with its rotor and fades as the rotor slows or stops.
     wakes.spin.array[i] = t.ang;
     wakes.on.array[i] = clamp(t.omega / OMAX) * (t.feathered ? 0 : 1);
+    wakes.om.array[i] = t.omega * (reduce ? 0.3 : 1);
   });
   angAttr.needsUpdate = true; pitchAttr.needsUpdate = true;
-  wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true;
+  wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true; wakes.om.needsUpdate = true;
+  wakes.m.material.uniforms.uConv.value = wakeConv();
+  wakes.m.material.uniforms.uAdv.value = wakes.adv;
   // Wakes form in moderate wind only, in fog; strong wind tears them apart.
   const w = windNow();
   wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.15 : 1) * TUNE.wakes;
@@ -1229,6 +1242,8 @@ function tick(dt, now) {
   simT += dt * (reduce ? 0.3 : 1) * calm;
   grainT = (grainT + 1) % 64;
   rotorsMoving = stepWind(dt, clock, calm);
+  // The wake's air moves downwind, in wake lengths.
+  wakes.adv += wakeConv() * dt * (reduce ? 0.3 : 1) * calm / WAKE_L;
   // The fog drifts downwind, faster in a strong wind.
   U.uDrift.value.x += WIND_DIR[0] * (3 + windNow() * 2.5) * dt * drift;
   U.uDrift.value.y += WIND_DIR[1] * (3 + windNow() * 2.5) * dt * drift;
