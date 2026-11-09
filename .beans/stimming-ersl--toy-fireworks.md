@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T09:03:56Z
+updated_at: 2026-11-09T09:16:59Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -120,3 +120,6 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Barges become small unlit floats; water rebuilt: calm wobble near, analytic glitter columns under every burst, broken into dashes
 
 - [x] Ultra shells (supernova, galaxy, cascade, kamuro, full holds, the tear) climb slowly on a heavy comet with a whistle
+
+- [x] Hills: wrap light, longer reach, sky fill
+- [x] Scenes: Bay, Island (snowy island, pines, cabin, beacon, snowfall, far range) and City (skyline with windows, quay lamps, aviation lights); Settings > Scene, ?scene= for one load
