@@ -29,7 +29,11 @@ Across the border the roads go dark. Only the towns of the neighbours glow, whit
 3. **Switch the country.** The Switch action darkens the whole network, then strikes it again, section by section, so the country draws itself in light.
 4. **Traffic (Tom, 2026-11-09).** A typical weekday, baked into the page and looped: 15 Belgian jam points (the R0, the E40 either side of Brussels, the E19 to Mechelen, the Antwerp ring and Kennedy tunnel, the E313, Zwijnaarde, Loncin and more) with hourly shapes. Town-bound lanes jam at 8, outbound lanes at 17; volume follows the hour. One toy hour lasts 6 s. About 41,000 cars run on the CPU (1.2 ms a step; 0.5 ms from altitude, where a quarter steps each frame). Speed falls with the jam, and stop-and-go waves run upstream, so cars bunch where it is bad. White heads, red tails, brake glow when slow; streaks lengthen with altitude. From altitude, jammed stretches of the ribbon tint red, like a briefing map. Rush runs the clock to the next peak; a small clock shows the hour.
 
-**City markers (Tom, 2026-11-09).** Big cities only, plus Mechelen and Bonheiden: Brussel, Antwerpen, Gent, Charleroi, Liège, Brugge, Namur, Leuven, Mons, Mechelen, Bonheiden. Thin cool corner brackets, slab caps and coordinates. Each fades in between 120 and 45 km and out again inside 5 km.
+**City flags (Tom, 2026-11-09).** Big cities only, plus Mechelen and Bonheiden. Huge glowing slab letters in the map's own sodium amber stand on a stripe that fades down to a ring on the city. Names in Dutch, French and German, then English in brackets; repeats drop out. No coordinates. A flag fades in between 170 and 60 km, out again inside 4 km, and only once the camera has started to climb. Neighbouring flags stand at different heights, and words never leave the screen.
+
+**Start scene (Tom, 2026-11-09).** The hero lamp stands on the E19 by Mechelen. The overpass has a slab, four girders, fascia beams, a steel railing on posts and round piers under a cap beam. Guardrails run on both outer edges. Towns below the horizon light domes in the haze.
+
+**Road surface (Tom, 2026-11-09).** All procedural, in the ribbon shader: asphalt grain and patches, polished wheel tracks, a wet sodium sheen that mirrors each nearby head as a long GGX streak (wetter in fog), cat's eyes on the edge lines, and clumped grass verges. Slip roads draw as single-lane ramps.
 5. **Fog.** The Fog chip thickens the low air. Every lamp grows a halo and the ribbons swell into a glowing mist; the close shot turns to an orange room.
 
 ## The physics
