@@ -182,6 +182,8 @@ const U = {
   uPartyP: { value: new THREE.Vector3(-24, 2.2, -60.5) },
   uPartyCol: { value: new THREE.Vector3() },
   uRefSign: { value: new THREE.Vector3() },
+  uSodium: { value: new THREE.Vector3(...linFit(0.78, 0.16, 62)).multiplyScalar(14) },
+  uStreet: { value: [[-12, 5.8, -38], [8, 5.8, -46], [22, 5.8, -36], [-39, 5.8, -55]].map(v => new THREE.Vector3(...v)) },
   uRefCone: { value: new THREE.Vector3() },
   uRefBox: { value: new THREE.Vector3(1.0, 0.7, 0.45).multiplyScalar(0.55) },
   uVeh1: { value: new THREE.Vector4() },
@@ -217,7 +219,8 @@ uniform vec3 uLamp, uLampCol, uWin, uStrip, uStripCol, uNeonA, uNeonB, uNeonCol,
 uniform vec4 uAp;
 uniform float uApZ, uHazeK, uOut;
 uniform vec4 uVeh0, uVeh1;
-uniform vec3 uPartyP, uPartyCol, uRefSign, uRefCone, uRefBox;
+uniform vec3 uPartyP, uPartyCol, uRefSign, uRefCone, uRefBox, uSodium;
+uniform vec3 uStreet[4];
 // A vehicle's headlights: x, z, heading, power.
 vec3 veh(vec3 p, vec4 v) {
   if (v.w <= 0.0) return vec3(0.0);
@@ -285,6 +288,12 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
   // Headlights sweep over the square.
   vec3 Lv0 = normalize(vec3(uVeh0.x, 0.7, uVeh0.y) - p), Lv1 = normalize(vec3(uVeh1.x, 0.7, uVeh1.y) - p);
   c += alb * (1.0 - inside) * (veh(p, uVeh0) * max(dot(n, Lv0), 0.0) + veh(p, uVeh1) * max(dot(n, Lv1), 0.0));
+  // The far streetlights each light a pool on the road.
+  for (int i = 0; i < 4; i++) {
+    vec3 Lst = uStreet[i] - p;
+    float ds = dot(Lst, Lst);
+    c += alb * uSodium * (1.0 - inside) * max(dot(n, Lst * inversesqrt(ds)), 0.0) / (ds + 2.0);
+  }
   // The party's coloured light spills out of the hall.
   vec3 Lp = uPartyP - p;
   c += alb * uPartyCol * (1.0 - inside) * max(dot(n, normalize(Lp)), 0.0) / (dot(Lp, Lp) + 3.0);
@@ -313,7 +322,7 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
     }
     // The sign, the fries, the seating room's light box and windows also lie in the wet.
     spec += reflRect(p, r, gloss, ${SIGN_REF.z}, vec4(${SIGN_REF.r}), uRefSign);
-    spec += reflRect(p, r, gloss, 1.0, vec4(0.6, 1.3, ${(S.top + 0.86).toFixed(2)}, ${(S.top + 2.0).toFixed(2)}), uRefCone);
+    spec += reflRect(p, r, gloss, ${(S.apZ + 0.03).toFixed(2)}, vec4(1.35, 2.05, 1.2, 2.25), uRefCone);
     spec += reflRect(p, r, gloss, ${(A.z1 + 0.03).toFixed(2)}, vec4(${(A.x0 + 0.25).toFixed(2)}, ${(A.x1 - 0.35).toFixed(2)}, ${(A.topL + 0.16).toFixed(2)}, ${(A.topL + 0.48).toFixed(2)}), uRefBox);
     spec += reflRect(p, r, gloss, ${A.z1.toFixed(2)}, vec4(${A.wins[0][0]}, ${A.wins[0][1]}, ${A.wy[0]}, ${A.wy[1]}), uRefBox * 0.35);
     spec += reflRect(p, r, gloss, ${A.z1.toFixed(2)}, vec4(${A.wins[1][0]}, ${A.wins[1][1]}, ${A.wy[0]}, ${A.wy[1]}), uRefBox * 0.35);
@@ -982,22 +991,15 @@ function neonTube(col) {
     }`,
   });
 }
-// The chase: the fries light one by one, the sign holds, flashes, goes dark but for the cone.
-function stepFrySign(t) {
-  const c = t % 7;
-  for (const s of FRY_SIGN) {
-    let on = 1;
-    if (s.role.startsWith('fry')) on = c < 1.9 ? (c > 0.3 * +s.role.slice(3) ? 1 : 0) : 1;
-    if (s.role === 'dollop' || s.role === 'stripe') on = c < 1.9 ? 0 : 1;
-    if (c > 3.3 && c < 4.0) on = Math.floor((c - 3.3) * 8) % 2 ? 0.1 : 1;
-    if (c > 6.4 && s.role !== 'cone') on = 0;
-    // Old glass flickers now and then.
-    if (Math.sin(t * 37 + s.col[0] * 91) > 0.995) on *= 0.4;
-    s.m.uniforms.uOn.value = on;
-  }
-  // The reflection in the wet cobbles follows the sign.
-  const lit = FRY_SIGN.reduce((a, s) => a + s.m.uniforms.uOn.value, 0) / FRY_SIGN.length;
-  U.uRefCone.value.set(...NEON_YELLOW).multiplyScalar(1.6 * lit);
+// The wall sign burns steady; rain gets into it and it sputters.
+let sputter = 0;
+function stepFrySign(t, dt) {
+  if (sputter > 0) sputter -= dt;
+  else if (Math.random() < dt * wx.rain * 2.5) sputter = 0.05 + Math.random() * 0.2;
+  const on = sputter > 0 ? 0.15 + 0.2 * Math.random() : 1;
+  for (const s of FRY_SIGN) s.m.uniforms.uOn.value = s.role === 'cone' ? Math.max(on, 0.6) : on;
+  // Its reflection in the wet cobbles follows it.
+  U.uRefCone.value.set(...NEON_YELLOW).multiplyScalar(1.4 * on);
 }
 const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const electrodeMats = [];
@@ -1014,11 +1016,10 @@ const tube = (pts, r = 0.016) => new THREE.TubeGeometry(new THREE.CatmullRomCurv
     e.position.x += Math.sign(p[0]) * -0.02;
     shack.add(e);
   }
-  // The fries sign on the roof box: a striped paper cone, six fries, a dollop of sauce.
-  // Each tube is its own piece, so the sign can run its chase.
-  const z = 1.0, y0 = S.top + 0.86, gx = 0.95;
-  // Drawn 1.5 times the sketch size, so it reads across the square.
-  const K = 1.5;
+  // A small fries neon on the front wall, right of the window:
+  // a striped paper cone, six fries, a dollop of the picked sauce.
+  const z = S.apZ + 0.03, y0 = 1.2, gx = 1.7;
+  const K = 1.25;
   const add = (pts, col, role, r = 0.016) => { const m = neonTube(col); shack.add(new THREE.Mesh(tube(pts.map(([x, y]) => [gx + x * K, y0 + y * K, z]), r * 1.3), m)); FRY_SIGN.push({ m, role, col }); };
   add([[-0.22, 0.46], [0, 0], [0.22, 0.46], [-0.22, 0.46]], NEON_RED, 'cone');
   add([[-0.13, 0.44], [0.02, 0.12]], NEON_WHITE, 'stripe', 0.012);
@@ -1036,21 +1037,53 @@ const tube = (pts, r = 0.016) => new THREE.TubeGeometry(new THREE.CatmullRomCurv
 const lateWins = [];
 // The church tower's front face, for the clock.
 const TOWER = { x: -52, z: -110 + 3.5, clockY: 21 };
+// The village: a far row of houses, a nearer scatter of cottages, chimneys, hedges and trees.
+// Everything stands on the ground: a hedge or a wall runs along the foot of each house.
+const VILLAGE = [];
 {
   const geos = [];
+  const house = (x, z, w, h, roofK, depth, hip) => {
+    const s = new THREE.Shape();
+    const roof = w * roofK;
+    s.moveTo(0, 0); s.lineTo(w, 0); s.lineTo(w, h);
+    // Some roofs are hipped: a short ridge instead of a point.
+    if (hip) { s.lineTo(w * 0.7, h + roof * 0.8); s.lineTo(w * 0.3, h + roof * 0.8); } else s.lineTo(w / 2, h + roof);
+    s.lineTo(0, h); s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false });
+    g.translate(x, 0, z - depth);
+    geos.push(g);
+    // A chimney on most roofs.
+    if (rnd() < 0.7) geos.push(new THREE.BoxGeometry(0.6, 1.6, 0.6).translate(x + w * (0.2 + rnd() * 0.6), h + roof * 0.55 + 0.4, z - depth * 0.5));
+    // A hedge or a low wall along the front.
+    geos.push(new THREE.BoxGeometry(w + 0.4, 0.9 + rnd() * 0.4, 0.5).translate(x + w / 2, 0.5, z + 1.6));
+    VILLAGE.push({ x, w, h, z });
+  };
+  // The far row, with gaps where the fields come through.
   let x = -130;
   while (x < 130) {
-    const w = 5 + rnd() * 3.5, h = 6 + rnd() * 4, roof = w * (0.45 + rnd() * 0.25), z = -95 - rnd() * 4;
-    const s = new THREE.Shape();
-    s.moveTo(0, 0); s.lineTo(w, 0); s.lineTo(w, h); s.lineTo(w / 2, h + roof); s.lineTo(0, h); s.closePath();
-    const g = new THREE.ExtrudeGeometry(s, { depth: 9, bevelEnabled: false });
-    g.translate(x, 0, z - 9);
-    geos.push(g);
-    // Each house has two floors of two windows; a few are lit at any time.
-    for (const fy of [1.4, h - 2.4]) for (const fx of [0.28, 0.72]) {
-      if (Math.abs(x) > 4 && rnd() < 0.55) lateWins.push({ x: x + w * fx, y: fy, z: z + 0.02, tv: rnd() < 0.2, on: rnd() < 0.25, k: 0 });
+    const w = 5 + rnd() * 3.5, h = 5.5 + rnd() * 3.5;
+    house(x, -95 - rnd() * 4, w, h, 0.45 + rnd() * 0.25, 9, rnd() < 0.3);
+    x += w + (rnd() < 0.25 ? 4 + rnd() * 9 : 0.2);
+  }
+  // Nearer cottages, single storey, one here and there; none in front of the hall.
+  for (let i = 0; i < 9; i++) {
+    const cx = -70 + i * 17 + (rnd() - 0.5) * 6;
+    if (cx > -36 && cx < -12) continue;
+    house(cx, -72 - rnd() * 6, 6 + rnd() * 3, 3.2 + rnd() * 0.8, 0.55, 7, rnd() < 0.5);
+  }
+  // Trees between the houses: dark round crowns on short trunks.
+  for (let i = 0; i < 16; i++) {
+    const tx = -110 + rnd() * 220, tz = -78 - rnd() * 22, r = 2 + rnd() * 2.5;
+    if (tx > -36 && tx < -12 && tz > -75) continue;
+    geos.push(new THREE.IcosahedronGeometry(r, 1).scale(1, 0.9 + rnd() * 0.4, 1).translate(tx, r + 2.2 + rnd() * 2, tz));
+    geos.push(new THREE.BoxGeometry(0.4, 3, 0.4).translate(tx, 1.5, tz));
+  }
+  // Windows on the far row: two floors of two, a few lit at any time.
+  for (const v of VILLAGE) {
+    const floors = v.h > 4.5 ? [1.4, v.h - 2.4] : [1.4];
+    for (const fy of floors) for (const fx of [0.28, 0.72]) {
+      if (rnd() < 0.55) lateWins.push({ x: v.x + v.w * fx, y: fy, z: v.z + 0.02, tv: rnd() < 0.2, on: rnd() < 0.25, k: 0 });
     }
-    x += w + (rnd() < 0.15 ? 3 + rnd() * 6 : 0);
   }
   // The church: a tower and a spire, far back on the left.
   const tower = new THREE.BoxGeometry(7, 26, 7).translate(TOWER.x, 13, -110);
@@ -1058,6 +1091,24 @@ const TOWER = { x: -52, z: -110 + 3.5, clockY: 21 };
   geos.push(tower, spire);
   scene.add(new THREE.Mesh(mergeGeometries(geos.map(g => (g.index ? g.toNonIndexed() : g))), M.gable));
 }
+
+// Sodium streetlights in the distance: a pole, an arm, an orange head and its pool on the road.
+const STREET = [[-13, 0, -38], [7, 0, -46], [21, 0, -36], [-40, 0, -55]];
+{
+  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.82, 0.16, 62).map(v => v * 6)) });
+  for (const [x, , z] of STREET) {
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.16, 6, 0.16), M.gable);
+    pole.position.set(x, 3, z);
+    scene.add(pole);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 0.12), M.gable);
+    arm.position.set(x + 0.55, 5.95, z);
+    scene.add(arm);
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.25), head);
+    h.position.set(x + 1.05, 5.85, z);
+    scene.add(h);
+  }
+}
+
 // Late windows: one instanced mesh; each window fades on or off by itself.
 const winMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.9, 1.3), new THREE.MeshBasicMaterial({ color: 0xffffff }), lateWins.length);
 {
@@ -1988,7 +2039,8 @@ const TABLE = { x: 1.9, z: 3.4 };
 const EDGE = 15;
 const people = [];
 let traffic = true, spawnIn = 2;
-const WALK = 1.35 * 1.3, SPEED = { 0: WALK, 1: 4.5, 6: 9, 8: 8 };
+// Time-lapse: everyone moves faster than life.
+const WALK = 1.35 * 1.75, SPEED = { 0: WALK, 1: 5.4, 6: 10.5, 8: 9.5 };
 const wetOut = () => wx.rain > 0.2;
 // Builds, as figures.js reads them: 0 average, 1 tall, 2 broad, 4 old, 6 hood, 7 cap, 8 long hair.
 function anyBuild() { const r = rnd(); return r < 0.38 ? 0 : r < 0.5 ? 1 : r < 0.62 ? 2 : r < 0.68 ? 4 : r < 0.76 ? 6 : r < 0.86 ? 7 : 8; }
@@ -2445,6 +2497,178 @@ function writePeople() {
   fPos.needsUpdate = fPose.needsUpdate = fGait.needsUpdate = fScale.needsUpdate = fVar.needsUpdate = sAttr.needsUpdate = sAttr2.needsUpdate = true;
 }
 
+/* ---------- moths ---------- */
+// Moths hold a light at a fixed angle, so they spiral round it instead of flying straight in.
+// Each one loops its lamp, darts in now and then, and drifts to another light after a while.
+const MOTHS = 16;
+const MOTH_LIGHTS = [
+  [-1.8, S.neonA[1], 1.45], [0.2, S.neonA[1], 1.45], [2.1, S.neonA[1], 1.45],
+  [0.95, S.top + 1.4, 1.2], [S.lamp[0], S.strip[1] + 0.05, 1.5], [(A.x0 + A.x1) / 2, A.topL + 0.32, 1.2],
+];
+const moths = Array.from({ length: MOTHS }, (_, i) => ({ to: i % MOTH_LIGHTS.length, from: i % MOTH_LIGHTS.length, mix: 1, a: rnd() * 6.3, w: 3 + rnd() * 4, r0: 0.15 + rnd() * 0.3, ph: rnd() * 9, dart: 0, next: 4 + rnd() * 10, p: new THREE.Vector3(), flap: rnd() * 6 }));
+const mothGeo = new THREE.InstancedBufferGeometry();
+{
+  const q = new THREE.PlaneGeometry(1, 1);
+  mothGeo.index = q.index;
+  mothGeo.setAttribute('position', q.getAttribute('position'));
+}
+const mothPos = new THREE.InstancedBufferAttribute(new Float32Array(MOTHS * 4), 4);
+mothGeo.setAttribute('aM', mothPos);
+mothGeo.instanceCount = MOTHS;
+const mothMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`
+  ${LIGHT}
+  attribute vec4 aM;
+  varying vec2 vUv;
+  varying float vFlap;
+  varying vec3 vC;
+  void main() {
+    vUv = position.xy;
+    vFlap = aM.w;
+    // Moths are tiny: 7 cm across, drawn a little larger so they read.
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    vec3 w = aM.xyz + (right * position.x + up * position.y) * 0.1;
+    // Lit by what they circle: the neon, the strip, the window.
+    vec3 Ln = neonPt(aM.xyz) - aM.xyz;
+    vec3 L = uLamp - aM.xyz;
+    vC = uNeonCol * 0.5 / (dot(Ln, Ln) + 0.02) + uLampCol * apMask(aM.xyz) * uOut * 0.05 / (dot(L, L) + 0.3)
+       + uStripCol * 0.3 / (dot(uStrip - aM.xyz, uStrip - aM.xyz) + 0.05) + vec3(0.02);
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vUv;
+  varying float vFlap;
+  varying vec3 vC;
+  void main() {
+    vec2 p = vUv;
+    // Two wings that open and close; a thin body between them.
+    float open = 0.25 + 0.75 * abs(sin(vFlap));
+    vec2 l = vec2(abs(p.x), p.y);
+    float wing = length((l - vec2(0.18 * open, 0.02)) / vec2(0.2 * open + 0.02, 0.14)) - 1.0;
+    float body = length(p / vec2(0.04, 0.16)) - 1.0;
+    float a = smoothstep(0.15, -0.15, min(wing, body));
+    if (a < 0.01) discard;
+    // Wing dust catches the light and sparkles a little.
+    vec3 c = vC * (0.6 + 0.6 * smoothstep(0.0, -0.6, wing));
+    gl_FragColor = vec4(c * a, a);
+  }`,
+});
+const mothMesh = new THREE.Mesh(mothGeo, mothMat);
+mothMesh.frustumCulled = false;
+mothMesh.renderOrder = 5;
+scene.add(mothMesh);
+let mothsOn = true;
+function stepMoths(dt) {
+  if (!mothsOn) return;
+  const calm = reduced();
+  moths.forEach((m, i) => {
+    m.ph += dt;
+    m.flap += dt * (calm ? 6 : 38 + 6 * Math.sin(m.ph * 3));
+    // Now and then a moth leaves for another light.
+    if ((m.next -= dt) <= 0) { m.from = m.to; m.to = Math.floor(rnd() * MOTH_LIGHTS.length); m.mix = 0; m.next = 6 + rnd() * 12; }
+    m.mix = Math.min(1, m.mix + dt * 0.6);
+    // A sudden dart at the lamp, then out again.
+    if (rnd() < dt * 0.25) m.dart = 1;
+    m.dart = Math.max(0, m.dart - dt * 3);
+    m.a += dt * m.w * (calm ? 0.3 : 1);
+    const r = m.r0 * (0.6 + 0.4 * Math.sin(m.ph * 1.7 + i)) * (1 - 0.8 * m.dart);
+    const a = MOTH_LIGHTS[m.from], b = MOTH_LIGHTS[m.to], u = m.mix * m.mix * (3 - 2 * m.mix);
+    const cx = a[0] + (b[0] - a[0]) * u, cy = a[1] + (b[1] - a[1]) * u, cz = a[2] + (b[2] - a[2]) * u;
+    // Erratic: the spiral wobbles in all three axes.
+    m.p.set(cx + Math.cos(m.a) * r + 0.04 * Math.sin(m.ph * 11 + i),
+            cy + Math.sin(m.a * 1.3) * r * 0.6 + 0.05 * Math.sin(m.ph * 7.3),
+            cz + 0.15 + Math.sin(m.a) * r * 0.5);
+    mothPos.array.set([m.p.x, m.p.y, m.p.z, m.flap], i * 4);
+  });
+  mothPos.needsUpdate = true;
+}
+
+/* ---------- the cone ---------- */
+// A paper cone on the outside ledge: the fries go in, a dollop of sauce drops on top,
+// and the customer at the window takes it.
+const CONE_AT = new THREE.Vector3(0.35, 1.08, S.apZ + 0.15);
+const coneG = new THREE.Group();
+coneG.position.copy(CONE_AT);
+coneG.visible = false;
+shack.add(coneG);
+const paperMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${LIGHT}
+  varying vec3 vP, vN;
+  void main() {
+    vec3 n = normalize(vN), v = normalize(cameraPosition - vP);
+    // White paper with a red band, as on the old cones.
+    float band = step(0.5, fract((vP.y - ${CONE_AT.y.toFixed(2)}) * 22.0));
+    vec3 alb = mix(vec3(0.85, 0.83, 0.78), vec3(0.6, 0.06, 0.04), band * 0.6);
+    gl_FragColor = vec4(shade(vP, n, v, alb, 0.0, 0.0) + alb * 0.06, 1.0);
+  }`,
+});
+{
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.24, 14, 1, true).rotateX(Math.PI), paperMat);
+  cone.position.y = 0.12;
+  coneG.add(cone);
+}
+const coneFries = new THREE.Group();
+coneG.add(coneFries);
+const fryStick = surface({ alb: linFit(0.78, 0.13, 78) });
+for (let i = 0; i < 9; i++) {
+  const st = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.12, 0.014), fryStick);
+  st.position.set((rnd() - 0.5) * 0.09, 0.26 + rnd() * 0.04, (rnd() - 0.5) * 0.05);
+  st.rotation.set((rnd() - 0.5) * 0.5, rnd() * 3, (rnd() - 0.5) * 0.5);
+  coneFries.add(st);
+}
+const dollopMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uSauce: { value: new THREE.Vector3(1, 1, 1) } },
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${LIGHT}
+  uniform vec3 uSauce;
+  varying vec3 vP, vN;
+  void main() {
+    vec3 n = normalize(vN), v = normalize(cameraPosition - vP);
+    vec3 c = shade(vP, n, v, uSauce, 0.0, 0.0) + uSauce * 0.05;
+    // A wet highlight from the strip light above.
+    vec3 h = normalize(normalize(uStrip - vP) + v);
+    c += uStripCol * pow(max(dot(n, h), 0.0), 40.0) * 0.6;
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+const dollop = new THREE.Mesh(new THREE.SphereGeometry(0.055, 14, 10), dollopMat);
+coneG.add(dollop);
+const coneState = { t: -1, taker: null };
+function fillCone(sauce) {
+  const sc = SAUCES.find(o => o.value === sauce) ?? SAUCES[0];
+  dollopMat.uniforms.uSauce.value.set(...linFit(...sc.lch));
+  coneG.visible = true;
+  coneState.t = 0;
+  coneState.taker = null;
+}
+function stepCone(dt) {
+  if (coneState.t < 0) return;
+  coneState.t += dt;
+  const t = coneState.t;
+  // The fries rise in, then the sauce drops and settles with a squash.
+  coneFries.scale.y = Math.min(1, t / 0.5);
+  coneFries.position.y = -0.1 * (1 - Math.min(1, t / 0.5));
+  const td = Math.max(0, t - 0.7);
+  const fall = Math.min(1, td / 0.25);
+  dollop.visible = t > 0.7;
+  dollop.position.y = 0.33 + 0.5 * (1 - fall) * (1 - fall);
+  const squash = fall >= 1 ? 1 - 0.35 * Math.exp(-(td - 0.25) * 9) * Math.cos((td - 0.25) * 30) : 1;
+  dollop.scale.set(1 / Math.sqrt(squash), squash * 0.75, 1 / Math.sqrt(squash));
+  // Then it goes out: the first one waiting at the window takes it.
+  if (t > 1.6) {
+    const f = people.find(o => o.state === 'wait');
+    if (f) { served(f); coneG.visible = false; coneState.t = -1; }
+  }
+}
+
 /* ---------- K2: bloom ---------- */
 // Lifted from Canal at dusk: bloom on a float target; only bright sources cross the threshold.
 function makeBloom(strength, radius, threshold) {
@@ -2645,7 +2869,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +QS.get('sleep') || 60000;
 let clockAt = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0, flare = 0, lastShake = 0, pace = reduced() ? 0 : 1;
-const busy = () => Math.abs(zoomT - zoom) > 1e-4 || !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy() || fryPuffs > 0;
+const busy = () => (coneState.t >= 0 && coneState.t < 2) || Math.abs(zoomT - zoom) > 1e-4 || !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy() || fryPuffs > 0;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2663,7 +2887,9 @@ function tick(now) {
     stepPeople(dt * run);
     stepWins(dt * run);
     stepParty(simT);
-    stepFrySign(simT);
+    stepFrySign(simT, dt);
+    stepMoths(dt * run);
+    stepCone(dt * run);
     stepSitters(dt * run);
     stepWeather(dt * run);
     rainMat.uniforms.uDrift.value = wind * gust * 2.5;
@@ -2838,6 +3064,7 @@ act.fill = () => {
   w.fry = -1;
   w.shake = 0.5;
   emitWell(w, 6, { speed: 0.4, size: 0.1 });
+  fillCone(ui.choice?.value ?? 'mayo');
   syncActions();
   wake();
 };
@@ -2858,7 +3085,8 @@ const LOOKS = { ink: 0, line: 1, haze: 2 };
 act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
 
 act.people(QS.get('people') ?? ui.setting('people')?.value ?? 'ink');
-act.moths = () => {};
+act.moths = on => { mothsOn = on; mothMesh.visible = on; wake(); };
+act.moths(ui.setting('moths')?.value ?? true);
 act.reset = () => {
   for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
   for (const d of drops) d.live = false;

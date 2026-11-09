@@ -258,7 +258,16 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] Reflections: the sign, the fries, the light box and the seating-room windows also lie in the wet cobbles.
 - [x] Shading: contact shade at wall feet and round the buildings on the ground; split-tone grade; stronger bloom.
 
-### Task 4: Sauce, cone, moths, traffic
+### Task 4: Moths, the cone, the village (Tom, 2026-11-09)
+
+- [x] Moths spiral round the neon, the strip and the light box; they dart in and drift to other lights; Settings > Moths turns them off.
+- [x] Fill: a paper cone on the ledge; the fries rise in, a dollop of the picked sauce drops and settles; the first customer waiting takes it.
+- [x] The roof chase is gone. A small fries neon sits on the front wall right of the window; in rain it sputters.
+- [x] The village: a far row with hipped and gabled roofs, chimneys, hedges along every front, a nearer scatter of cottages, trees; nothing floats.
+- [x] Four sodium streetlights in the distance light pools on the road.
+- [x] People move faster: walkers 1.75 times life, vehicles a fifth faster.
+
+### Task 4 (old): Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.
 - [ ] Moths spiral at the neon; a scooter or car crosses now and then.
