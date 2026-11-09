@@ -28,6 +28,10 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Round 5: Jam replaces mud (drag slows streets x3, a second stroke x8, a third walls them; brake lights crawl)
 - [x] Round 5: long press and a dragged destination replay the search; the path waits for the light
 - [x] Round 5: once the path locks, every other street and node recedes over 3.5 s
+- [x] Round 6: Courier: a car drives the found path, crawls through jams, replans or U-turns, blinks when boxed in
+- [x] Round 6: Blackout: double-tap cuts power round a point; the path and the car re-route; Clear restores
+- [x] Round 6: a jam stroke settles live instead of replaying, so the courier keeps driving
+- [ ] Round 6: 2800 m grabs (fetch.py HALF 1400, 11000 buildings); refetch running, old grabs still load
 - [ ] Round 5: checkpoint with Tom
 - [ ] Task 2: scouts, sparks, queue shimmer, path snap
 - [ ] Task 3: Seek (A*) and Race
@@ -52,3 +56,5 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - Round 5 (Tom, 2026-11-09): "more neat, more special and more distinct abilities to play with the algo", then picked Districts, Tree and Jam. three.js is not needed: the map is flat, top-down and already shaded in raw WebGL2.
   Districts: tap adds a source (the sixth replaces the oldest), tap a pin drops it, drag a pin moves it. Edges colour by owner; borders keep a lit seam.
   Tree: flow counts the nodes routed through each node. It gathers far to near over the tail, so it also shows after A*, BFS and the rest.
+
+- Round 6 (Tom, 2026-11-09): "bigger maps (slightly) and some more fun abilities; keep the rest focused". Grabs grow from 2200 m to 2800 m squares. The key strip trades Space for Blackout; Space still replays.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch city grabs from OpenStreetMap (Overpass) for Dijkstra flood.
 
-Each grab is a 2200 m square near a city centre, with a seeded random offset.
+Each grab is a 2800 m square near a city centre, with a seeded random offset.
 It keeps streets, buildings, water and parks, in metres at 0.5 m steps.
 Map data (c) OpenStreetMap contributors, under the ODbL.
 
@@ -10,7 +10,7 @@ Usage: python3 fetch.py <raw cache dir> [max new grabs]
 import gzip, json, math, os, random, sys, time, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HALF = 1100         # half the kept square, metres
+HALF = 1400         # half the kept square, metres
 PAD = 120           # extra fetched round the square, metres
 Q = 2               # coordinate step: 1 / Q metres
 UA = 'stimming-dijkstra-flood/1.0 (desk toy; github.com/TomVDH/stimming)'
@@ -229,7 +229,7 @@ def process(raw, lat0, lon0):
         rings = [r for r in (ring_rdp(r, 1.0) for r in rings_from(members)) if len(r) >= 4]
         if rings: dest.append(rings)
     blds.sort(key=area, reverse=True)
-    blds = blds[:7000]
+    blds = blds[:11000]
     return {
         'v': flat(verts),
         'e': [x for a, b, c in edges for x in (a, b, c)],
@@ -250,8 +250,11 @@ def main():
         lat, lon = float(lat), float(lon)
         sid = slug(name)
         out = os.path.join(HERE, sid + '.json')
+        # A grab smaller than HALF is fetched again.
         if os.path.exists(out):
-            continue
+            with open(out) as f:
+                if json.load(f).get('half', 0) >= HALF:
+                    continue
         # A seeded offset makes each grab a random spot near the centre.
         rnd = random.Random(sid)
         ox, oy = rnd.uniform(-320, 320), rnd.uniform(-320, 320)
