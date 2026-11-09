@@ -94,12 +94,13 @@ export const M = {
   ],
 };
 
-// The outline hex holds the glyph; one mask per icon cuts the negative space.
+// A neutral outline hex holds the glyph; only the glyph takes the colour.
+// One mask per icon cuts the negative space.
 let uid = 0;
 export const icon = (m, c) => {
   const id = 'm' + (uid++);
   return `<svg viewBox="0 0 44 44" aria-hidden="true">
-    <path d="M22 2.6L39 12.3V31.7L22 41.4L5 31.7V12.3Z" fill="color-mix(in oklch, ${c} 9%, transparent)" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M22 2.6L39 12.3V31.7L22 41.4L5 31.7V12.3Z" fill="oklch(0.2 0.012 275)" stroke="oklch(0.42 0.018 275)" stroke-width="2" stroke-linejoin="round"/>
     <g transform="translate(11 11) scale(0.917)" fill="${c}" stroke="${c}" stroke-width="0">
       <mask id="${id}" maskUnits="userSpaceOnUse" x="-2" y="-2" width="28" height="28"><rect x="-2" y="-2" width="28" height="28" fill="white"/><g fill="black" stroke="black">${m.cut || ''}</g></mask>
       <g mask="url(#${id})">${m.fill || ''}</g>${m.top || ''}
