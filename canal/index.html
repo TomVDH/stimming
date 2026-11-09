@@ -258,7 +258,11 @@ vec3 skyAmb(vec3 N) { return mix(uHor * 0.8, uZen * 1.3, 0.5 + 0.5 * N.y) * 0.9 
 // Streetlight on the ground plan: the plan spans x -1500 to 1500 and z -2000 to 1000.
 uniform sampler2D tPool;
 uniform float uPoolK;
-vec3 poolAt(vec2 xz) { return pow(texture2D(tPool, (xz - vec2(-1500.0, -2000.0)) / 3000.0).rgb, vec3(2.2)) * uPoolK; }`;
+// A soft knee keeps overlapping pools from clipping.
+vec3 poolAt(vec2 xz) {
+  vec3 p = pow(texture2D(tPool, (xz - vec2(-1500.0, -2000.0)) / 3000.0).rgb, vec3(2.2));
+  return (1.0 - exp(-p * 2.5)) / 2.5 * uPoolK;
+}`;
 
 /* ---------- dusk ---------- */
 // Three sky keys: blue hour, late blue, night; Dusk runs through them.
@@ -308,15 +312,33 @@ const UP = new THREE.Vector3(0, 1, 0);
 // The roof ridge runs along the front; a gable house turns its gable to the street.
 function house(w, b, d, rh, seed, kind, { win = true, gable = false } = {}) {
   const info = [win ? w : 0, b, seed, kind];
+  const parts = [];
   if (gable) {
-    const g = new THREE.ExtrudeGeometry(v2([[0, 0], [w, 0], [w, b], [w / 2, b + rh], [0, b]]), { depth: d, bevelEnabled: false });
-    return [tag(g, info, true)];
+    parts.push(tag(new THREE.ExtrudeGeometry(v2([[0, 0], [w, 0], [w, b], [w / 2, b + rh], [0, b]]), { depth: d, bevelEnabled: false }), info, true));
+  } else {
+    parts.push(tag(new THREE.ExtrudeGeometry(v2([[0, 0], [w, 0], [w, b], [0, b]]), { depth: d, bevelEnabled: false }), info, true));
+    if (rh > 0) {
+      const roof = new THREE.ExtrudeGeometry(v2([[-0.4, b - 0.15], [d + 0.4, b - 0.15], [d / 2, b + rh]]), { depth: w + 0.4, bevelEnabled: false });
+      roof.rotateY(-Math.PI / 2).translate(w + 0.2, 0, 0);
+      parts.push(tag(roof, info, true));
+    }
   }
-  const parts = [tag(new THREE.ExtrudeGeometry(v2([[0, 0], [w, 0], [w, b], [0, b]]), { depth: d, bevelEnabled: false }), info, true)];
-  if (rh > 0) {
-    const roof = new THREE.ExtrudeGeometry(v2([[-0.4, b - 0.15], [d + 0.4, b - 0.15], [d / 2, b + rh]]), { depth: w + 0.4, bevelEnabled: false });
-    roof.rotateY(-Math.PI / 2).translate(w + 0.2, 0, 0);
-    parts.push(tag(roof, info, true));
+  // Dwellings get a chimney, sometimes a dormer, and often a low extension at the back.
+  if (!win || kind === METAL || kind === CHURCH) return parts;
+  if (rh > 1.5 && rnd() < 0.55) {
+    const cx = gable ? w * (0.3 + 0.4 * rnd()) : w * (0.15 + 0.7 * rnd()), cz = gable ? d * (0.3 + 0.4 * rnd()) : d / 2 - 0.6 - rnd();
+    const cy = gable ? b + rh * (1 - Math.abs(cx - w / 2) / (w / 2)) : b + rh * 0.8;
+    parts.push(tag(new THREE.BoxGeometry(0.7, 2.4, 0.7).translate(cx, cy, cz), [0, b, seed, kind]));
+  }
+  if (!gable && rh >= 3.4 && w >= 7 && rnd() < 0.3) {
+    // The dormer sits on the front slope; its window comes from its own face coordinates.
+    const zf = d * 0.15, dd = d / 2 - zf - 0.3, yf = b - 0.15 + (rh + 0.15) * (zf + 0.4) / (d / 2 + 0.4);
+    const dm = tag(new THREE.BoxGeometry(2.4, 1.7, dd).translate(1.2, 0.85, dd / 2), [2.4, 1.7, seed + 7, kind], true);
+    parts.push(dm.translate(w * (0.25 + 0.5 * rnd()) - 1.2, yf - 0.2, zf));
+  }
+  if (rnd() < 0.5) {
+    const aw = w * (0.4 + 0.4 * rnd()), ad = 3.5 + 3 * rnd();
+    parts.push(tag(new THREE.BoxGeometry(aw, 2.9, ad).translate(rnd() * (w - aw) + aw / 2, 1.45, d + ad / 2), [0, 2.9, seed, kind]));
   }
   return parts;
 }
@@ -346,6 +368,10 @@ const brickKind = () => (rnd() < 0.22 ? RENDER : BRICK);
 function tree(x, z, r) {
   treeN++;
   occSet(x, z, 2);
+  // A soft shadow under the crown, on the plan.
+  worldOn(gc);
+  gc.fillStyle = 'rgba(0,0,0,0.22)';
+  gc.beginPath(); gc.arc(x, z, r * 1.1, 0, 6.283); gc.fill();
   parts.push(
     tag(new THREE.CylinderGeometry(0.2, 0.3, 3, 4).translate(x, QUAY + 1.5, z), [0, 0, 0, TREE]),
     tag(new THREE.SphereGeometry(r, 8, 5).scale(1, 1.15, 1).translate(x, QUAY + 2.4 + r, z), [0, 0, rnd() * 100, TREE]),
@@ -683,6 +709,10 @@ function tryPlot(geos, w, ox, oz, ux, uz, bx, bz, garden, mode) {
   // A driveway to the street, paved.
   gc.fillStyle = '#6e6c68';
   gc.fillRect(w * rnd() * 0.7, -12, 3, 12);
+  // A soft contact shadow round the footprint.
+  gc.fillStyle = 'rgba(0,0,0,0.2)';
+  gc.fillRect(-1.6, -1.6, w + 3.2, d + 3.2);
+  gc.fillRect(-0.7, -0.7, w + 1.4, d + 1.4);
   place(geos, ox, oz, [bx, 0, bz]);
   // A tree in some back gardens.
   if (mode !== 'industry' && mode !== 'core' && rnd() < 0.4) {
@@ -857,6 +887,13 @@ treeLine(-1600, -2050, 1600, -2050, 14);
 treeLine(1550, 1000, 1550, -2000, 12);
 treeLine(-1550, 1000, -1550, -2000, 12);
 church(); staminee(); frietkot(); station(); bridge(); walls(); posts();
+// Roads go back on top, so no garden covers the asphalt.
+worldOn(gc);
+gc.strokeStyle = '#4a4a4e'; gc.lineCap = gc.lineJoin = 'round';
+for (const { pts, h } of PL) {
+  gc.lineWidth = 2 * h;
+  gc.beginPath(); gc.moveTo(...pts[0]); for (const q of pts.slice(1)) gc.lineTo(...q); gc.stroke();
+}
 // The map texture: albedo, with the asphalt mask in alpha.
 const mapTex = (() => {
   const a = gc.getImageData(0, 0, MAP.px, MAP.px).data, m = gk.getImageData(0, 0, MAP.px, MAP.px).data;
@@ -895,14 +932,15 @@ poolC.width = poolC.height = 2048;
   g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 2048);
   g.globalCompositeOperation = 'lighter';
   for (const l of SL) {
-    const r = (l.led ? 10 : 12) * k;
+    const r = (l.led ? 9 : 11) * k;
     // Each pool stretches along its road, so lit streets read as strands.
     g.setTransform(1, 0, 0, 1, (l.x - MAP.x0) * k, (l.z - MAP.z0) * k);
     g.rotate(l.a);
-    g.scale(1.8, 1);
+    g.scale(2.4, 0.8);
     const grd = g.createRadialGradient(0, 0, 0, 0, 0, r);
-    grd.addColorStop(0, l.led ? 'rgba(235,228,212,0.62)' : 'rgba(255,165,72,0.66)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    // A near-Gaussian falloff from five stops.
+    const [cr, cg, cb] = l.led ? [235, 228, 212] : [255, 165, 72];
+    for (const [t, a] of [[0, 0.6], [0.25, 0.46], [0.5, 0.22], [0.75, 0.06], [1, 0]]) grd.addColorStop(t, `rgba(${cr},${cg},${cb},${a})`);
     g.fillStyle = grd;
     g.fillRect(-r, -r, 2 * r, 2 * r);
   }
@@ -930,7 +968,7 @@ const heads = new THREE.Points(slGeo, new THREE.ShaderMaterial({
     float on = smoothstep(aMark, aMark + 0.025, uDusk);
     // The haze between eye and lamp dims it.
     vCol = aCol * on * exp(-dist * uHaze * 0.35);
-    gl_PointSize = clamp(2600.0 / dist, 2.2, 22.0) * uDpr;
+    gl_PointSize = clamp(1800.0 / dist, 1.6, 12.0) * uDpr;
     gl_Position = projectionMatrix * viewMatrix * P;
     if (on <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }`,
@@ -938,7 +976,7 @@ const heads = new THREE.Points(slGeo, new THREE.ShaderMaterial({
   void main() {
     float r = length(gl_PointCoord - 0.5) * 2.0;
     // A hot core in a soft halo.
-    float g = exp(-r * r * 14.0) * 3.0 + exp(-r * r * 3.5) * 0.35;
+    float g = exp(-r * r * 18.0) * 2.2 + exp(-r * r * 5.0) * 0.08;
     gl_FragColor = vec4(vCol * g, 0.0);
   }`,
 }));
@@ -995,7 +1033,15 @@ const solidMat = new THREE.ShaderMaterial({
     // Roofs: grey concrete tile, red-brown tile or black glaze; the church has slate.
     float roof = (kind < 1.5 || is(kind, 4.0) || is(kind, 9.0)) && N.y > 0.25 && N.y < 0.98 ? 1.0 : 0.0;
     float rk = k2hash(vec2(sd, 2.0));
-    if (roof > 0.5) alb = is(kind, 4.0) ? vec3(0.03, 0.035, 0.045) : rk < 0.45 ? vec3(0.03, 0.03, 0.032) : rk < 0.8 ? vec3(0.075, 0.03, 0.02) : vec3(0.012);
+    if (roof > 0.5) {
+      alb = is(kind, 4.0) ? vec3(0.03, 0.035, 0.045) : rk < 0.45 ? vec3(0.03, 0.03, 0.032) : rk < 0.8 ? vec3(0.075, 0.03, 0.02) : vec3(0.012);
+      // Tile courses: a darker lip at the foot of each row.
+      float tq = vP.y / 0.3, tf = fwidth(tq);
+      alb *= mix(1.0, 0.72 + 0.28 * smoothstep(0.0, 0.25, fract(tq)), 1.0 - smoothstep(0.3, 0.8, tf));
+    }
+    // Flat roofs of extensions and dormers are dark roofing felt.
+    float felt = (kind < 1.5 || is(kind, 9.0)) && N.y > 0.98 && vP.y > ${(QUAY + 2).toFixed(1)} ? 1.0 : 0.0;
+    if (felt > 0.5) alb = vec3(0.022, 0.022, 0.024);
     // Rendered walls stand on a tarred black plinth.
     if (roof < 0.5 && is(kind, 1.0) && vUV.y < 0.6) alb = vec3(0.012);
     vec3 emit = vec3(0.0);
@@ -1006,6 +1052,9 @@ const solidMat = new THREE.ShaderMaterial({
     // Windows sit only on fronts and backs, where u runs along the wall.
     float w = vInfo.x, h = vInfo.y;
     bool face = length(vec2(dFdx(vUV.x), dFdy(vUV.x))) > 1e-5 && abs(N.y) < 0.3;
+    // Brick walls stand on a blue-stone plinth.
+    if (w > 0.0 && roof < 0.5 && abs(N.y) < 0.3 && (is(kind, 0.0) || is(kind, 9.0)) && vUV.y < 0.35) alb = vec3(0.05, 0.055, 0.06);
+    float shade = 1.0;
     if (w > 0.0 && roof < 0.5 && face) {
       float u = vUV.x, v = vUV.y;
       // The frietkot is one long counter window.
@@ -1019,6 +1068,14 @@ const solidMat = new THREE.ShaderMaterial({
         vec2 hw = vec2(cw * 0.27, fh * 0.27), c = vec2(0.0, fh * 0.52);
         // A gable holds one window in its middle.
         if (v > h) { ci = 99.0; ri = 0.0; cu = u - w * 0.5; rv = v - h; hw = vec2(0.4, 0.5); c = vec2(0.0, 1.1); }
+        // One front door per house; a bungalow keeps a garage door at one end.
+        float door = 0.0;
+        if (v < h && ri < 0.5 && h > 2.5) {
+          if (h < 4.0 && w > 9.5 && ci == n - 1.0) { door = 2.0; hw = vec2(cw * 0.45, 1.1); c = vec2(0.0, 1.1); }
+          else if (ci == floor(k2hash(vec2(sd, 3.3)) * n)) { door = 1.0; hw = vec2(min(0.5, cw * 0.28), 1.08); c = vec2(0.0, 1.08); }
+        }
+        // The overhang shades the top of the wall.
+        if (v < h && v > h - 0.45) shade = 0.72;
         vec2 d = abs(vec2(cu, rv) - c) - hw;
         float id = k2hash(vec2(sd * 3.7 + ci, ri * 1.9 + 0.3));
         // About four windows in ten light up as Dusk passes their mark.
@@ -1027,7 +1084,16 @@ const solidMat = new THREE.ShaderMaterial({
         // The staminee's ground floor is always lit, amber.
         bool cafe = is(kind, 9.0) && ri < 0.5;
         if (cafe) on = mix(0.5, 1.4, lit);
-        if (max(d.x, d.y) < 0.0) {
+        if (max(d.x, d.y) < 0.0 && door > 0.5) {
+          vec2 l = vec2(cu, rv) - c;
+          float fw = min(-d.x, -d.y);
+          // Doors: dark wood or anthracite in a thin frame; garage doors in pale panels.
+          if (door > 1.5) alb = vec3(0.3, 0.3, 0.29) * (0.85 + 0.15 * smoothstep(0.0, 0.08, abs(fract(l.y * 2.0) - 0.5)));
+          else alb = k2hash(vec2(sd, 4.1)) < 0.5 ? vec3(0.06, 0.035, 0.02) : vec3(0.025, 0.027, 0.03);
+          if (fw < 0.05) alb = vec3(0.3, 0.3, 0.28);
+          // A lit hall shows through the fanlight.
+          if (door < 1.5 && l.y > hw.y - 0.3 && fw > 0.07) { alb = vec3(0.0); glass = 1.0; emit = uWin * 0.6 * on; }
+        } else if (max(d.x, d.y) < 0.0) {
           vec2 l = vec2(cu, rv) - c;
           // Frames are white or dark; a roller shutter hangs part way down.
           float fw = min(-d.x, -d.y);
@@ -1056,14 +1122,14 @@ const solidMat = new THREE.ShaderMaterial({
         }
       }
     }
-    vec3 col = alb * skyAmb(N);
+    vec3 col = alb * skyAmb(N) * shade;
     // Walls darken toward the ground, where less sky reaches.
     col *= 0.6 + 0.4 * smoothstep(0.0, 3.0, vP.y - ${QUAY.toFixed(2)});
     col += alb * lampLit(vP, N) * (is(kind, 4.0) ? 1.0 + 2.0 * uBell : 1.0);
     // Streetlight reaches the lower walls and, less, the roofs.
     col += alb * poolAt(vP.xz) * 9.0 * (1.0 - smoothstep(0.0, 9.0, vP.y - ${QUAY.toFixed(2)})) * (N.y > 0.5 ? 0.3 : 1.0);
     // Dark glass holds a dim copy of the sky.
-    col += (glass * 0.25 + roof * 0.06) * k2sky(reflect(V, N)) + emit;
+    col += (glass * 0.25 + roof * 0.06 + felt * 0.03) * k2sky(reflect(V, N)) + emit;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
@@ -1168,7 +1234,7 @@ const groundMat = new THREE.ShaderMaterial({
     // The canal and the lake lie below the ground.
     if (cx < ${CANAL_X - 0.2} || length((vP.xz - vec2(${LAKE[0]}.0, ${LAKE[1]}.0)) / vec2(${LAKE[2]}.0, ${LAKE[3]}.0)) < 1.0) discard;
     float tow = 1.0 - step(${CANAL_X + 4}.0, cx);
-    float tar = max(tow, smoothstep(0.35, 0.65, mp.a));
+    float tar = max(tow, smoothstep(0.15, 0.85, mp.a));
     vec3 alb = pow(mp.rgb, vec3(2.2)) * 0.45 * (0.85 + 0.3 * n2);
     alb = mix(alb, vec3(0.046, 0.046, 0.05) * (0.9 + 0.2 * n), tow);
     // The square and the railway bed take their own detail.
@@ -1194,8 +1260,9 @@ const groundMat = new THREE.ShaderMaterial({
     col += refl * fres * (max(tar, sq) * mix(0.3, 0.9, wet) + steel * 0.8 + 0.05);
     // Streetlight pools; wet asphalt throws back a glossy share.
     vec3 pool = poolAt(vP.xz);
-    // Grass takes less of it; a small share shows the lamp's own colour.
-    col += pool * (alb * 16.0 * mix(0.4, 1.0, tar) + 0.006 + 0.04 * wet);
+    // Grass takes less of it and loses its colour under lamplight; a small share shows the lamp's own colour.
+    vec3 albP = mix(vec3(dot(alb, vec3(0.2126, 0.7152, 0.0722))), alb, tar);
+    col += pool * (albP * 16.0 * mix(0.3, 1.0, tar) + 0.005 + 0.04 * wet);
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
@@ -1258,7 +1325,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.45, 0.45, 0.85], tint: [0.0008, 0.0009, 0.0014], vig: 0.45, vigIn: 0.45, grain: 0.03 };
+const POST = { bloom: [0.16, 0.3, 1.2], tint: [0.0008, 0.0009, 0.0014], vig: 0.45, vigIn: 0.45, grain: 0.03 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));

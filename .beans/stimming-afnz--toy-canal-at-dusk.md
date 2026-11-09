@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:39:10Z
+updated_at: 2026-11-09T08:47:12Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -36,3 +36,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): more like Beernem. The canal now bends (x = 0.00012 (z + 160)^2), with water, walls, towpaths, lamps and the canal road on the curve; the ground is one plane with a hole for the canal. The village fills two lobed envelopes with wavy street grids, dense at the core. Added a large wood, a sand-pit lake, market-garden strips, a tree belt on the far towpath; the industry moved to the canal bank south of the village. Only buildings within 170 m of the canal draw in the mirror pass. Load to ready about 3 s on the M-series probe.
 
 - Tom (2026-11-09): better night light. About 1,860 streetlights along every road: orange sodium on the old roads, warm-white LED on about half the estate lights and all industry. Each switches on at its own photocell mark between Dusk 0.28 and 0.43. Pools are painted once on a 2048 px plan texture, stretched along the road; the ground and the lower walls read them. The night haze picks up a warm town glow; the west afterglow warms the walls that face it. Light points blend colour only, so the mirror's sky mask holds.
+
+- Tom (2026-11-09): less bloom, better blending and buildings. Bloom drops to 0.16 at threshold 1.2; streetlight heads are smaller with a faint halo. Pools take a five-stop falloff, stretch 2.4 to 1 along the road, and pass a soft knee in the shader. Lawns under lamps lose their colour. Roads repaint over gardens, which had covered asphalt and lit green. Houses gain chimneys, dormers, rear extensions, doors, bungalow garage doors, a blue-stone plinth, eaves shade, tile courses, felt flat roofs, and soft contact shadows; trees cast soft shadows on the plan.
