@@ -25,6 +25,26 @@
 /* Letterbox bars clip the canvas to 2.39 to 1. */
 .stage--canal[data-letterbox] canvas { clip-path: inset(var(--box, 0px) 0); }
 @media (prefers-reduced-motion: reduce) { .stage--canal canvas { transition: none; } }
+/* The camera rocker: three heights in one slab, on the right edge. */
+.stim-ui > .cn-rock { top: 50%; right: 12px; transform: translateY(-50%); perspective: 260px; }
+.cn-pad {
+  display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 2px;
+  box-shadow: var(--hard); transition: transform 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+/* The slab tips toward the end that is down. */
+.cn-pad[data-v="sky"] { transform: rotateX(16deg); }
+.cn-pad[data-v="path"] { transform: rotateX(-16deg); }
+.cn-pad button {
+  box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+  width: 58px; height: var(--chip); margin: 0; padding: 0; border: 0; border-radius: 0;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--muted); background: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: color 0.15s ease, background 0.15s ease;
+}
+.cn-pad button + button { border-top: 1px solid var(--line); }
+@media (hover: hover) { .cn-pad button:hover { color: var(--fg); } }
+.cn-pad button[aria-checked="true"] { color: var(--bg); background: var(--fg); }
+.cn-pad button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
+@media (prefers-reduced-motion: reduce) { .cn-pad { transition: none; } }
 </style>
 </head>
 <body>
@@ -86,13 +106,11 @@ const ui = initPage({ id: 'canal', bar: {
   ], onPick: v => { save('weather', v); act.weather(v); } },
   slider: { label: 'Dusk', min: 0, max: 1, step: 0.01, value: QS.has('dusk') ? +QS.get('dusk') : +saved('dusk', 0.35), onInput: v => { save('dusk', v); act.dusk(v); } },
   settings: [
-    { type: 'choice', id: 'view', label: 'View', value: 'sky', persist: true, onPick: v => act.view(v),
-      options: [{ value: 'sky', label: 'Sky eye' }, { value: 'path', label: 'Towpath' }] },
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => act.letterbox(on) },
   ],
   quality: true,
   actions: [{ verb: 'add', noun: 'Boat', key: ' ', onPress: () => act.boat() }],
-  keys: [['click', 'a lamp'], ['drag', 'look round'], ['space', 'boat']],
+  keys: [['click', 'a lamp'], ['drag', 'look round'], ['scroll', 'zoom'], ['space', 'boat']],
 } });
 
 // Seeded random keeps the street the same on every load.
@@ -1162,12 +1180,15 @@ function placeRain() {
     const T = size.w < size.h ? SKY_P : SKY_T;
     RU.uRainC.value.set(T.x, QUAY, T.z);
     RU.uRainS.value.set(900, 40, 900);
+  } else if (view === 'tower') {
+    RU.uRainC.value.set(canalX(-110), QUAY, -110);
+    RU.uRainS.value.set(260, 40, 260);
   } else {
     camera.getWorldDirection(fwd2);
     RU.uRainC.value.set(camera.position.x + fwd2.x * 35, QUAY - 1, camera.position.z + fwd2.z * 35);
     RU.uRainS.value.set(70, 26, 70);
   }
-  rainGeo.instanceCount = Math.round(k * (sky ? RAIN_N : 16000));
+  rainGeo.instanceCount = Math.round(k * (sky ? RAIN_N : view === 'tower' ? 36000 : 16000));
   RU.uFall.value = (reduced() ? 0.5 : 1) * (5 + 4 * k);
   RU.uRes.value.set(size.w * size.dpr, size.h * size.dpr);
 }
@@ -1644,10 +1665,10 @@ function tuneAO() {
   const key = view + quality() + rung;
   if (key === aoKey) return;
   aoKey = key;
-  const sky = view === 'sky';
+  const r = { sky: [7, 9, 6], tower: [3, 4, 5], path: [1.2, 2, 4] }[view];
   gtao.enabled = rung < 2;
-  gtao.updateGtaoMaterial({ radius: sky ? 7 : 1.2, thickness: sky ? 9 : 2, distanceExponent: 1, scale: 1, samples: quality() === 'high' ? 16 : 8 });
-  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: sky ? 6 : 4, rings: 2, samples: 8 });
+  gtao.updateGtaoMaterial({ radius: r[0], thickness: r[1], distanceExponent: 1, scale: 1, samples: quality() === 'high' ? 16 : 8 });
+  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: r[2], rings: 2, samples: 8 });
 }
 const taa = new (class extends Pass {
   /* ---------- temporal anti-aliasing ---------- */
@@ -1712,37 +1733,57 @@ const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // Sky eye circles the crossing from high up; drag turns it round a little.
 const SKY_T = new THREE.Vector3(150, 0, -200), SKY_P = new THREE.Vector3(160, 0, -170);
 let view = 'sky';
+// Three camera heights: Sky eye over the town, Tower over the canal, Path on the towpath.
+// Each pose gives position, target, lens, near plane and exposure.
+const VIEWS = ['sky', 'tower', 'path'];
+let zoom = 1, fly = null;
+const orbit = (T, dist, el, az) => new THREE.Vector3(T.x + dist * Math.cos(el) * Math.sin(az), T.y + dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
+function pose(v, portrait) {
+  if (v === 'sky') {
+    // Phones look along the main road, over the bridge; wide screens look across the canal.
+    const T = portrait ? SKY_P : SKY_T;
+    const dist = (portrait ? 1300 : 1150) * zoom, el = (portrait ? 0.78 : 0.6) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
+    return { p: orbit(T, dist, el, az), t: T.clone(), fov: portrait ? 46 : 34, near: 2, exp: 1.7 };
+  }
+  if (v === 'tower') {
+    // From church-tower height, down the canal to the bridge and the square.
+    const T = new THREE.Vector3(canalX(-120), 0, -120);
+    const dist = (portrait ? 240 : 190) * zoom, el = (portrait ? 0.5 : 0.36) - look.pitch * 2, az = (portrait ? -0.18 : -0.42) + look.yaw * 2.5;
+    return { p: orbit(T, dist, el, az), t: T, fov: portrait ? 52 : 40, near: 0.5, exp: 1.45 };
+  }
+  // A low eye on the near towpath, turned a little toward the far bank; zoom narrows the lens.
+  const p = new THREE.Vector3((portrait ? -12.6 : -14.6) + canalX(14), QUAY + 1.6, 14);
+  const rx = (portrait ? -0.06 : 0.0) + look.pitch, ry = -(portrait ? 0.26 : 0.22) + look.yaw;
+  const f = new THREE.Vector3(-Math.sin(ry) * Math.cos(rx), Math.sin(rx), -Math.cos(ry) * Math.cos(rx));
+  return { p, t: p.clone().addScaledVector(f, 50), fov: (portrait ? 62 : 44) * zoom, near: 0.1, exp: 1.25 };
+}
+const ease = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 function frame() {
   const portrait = size.w < size.h;
   camera.aspect = size.w / size.h;
-  if (view === 'sky') {
-    camera.fov = portrait ? 46 : 34;
-    // Phones look along the main road, over the bridge; wide screens look across the canal.
-    const dist = portrait ? 1300 : 1150, el = (portrait ? 0.78 : 0.6) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
-    const T = portrait ? SKY_P : SKY_T;
-    camera.position.set(T.x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(T);
-    // A far near plane keeps depth precise for the occlusion pass.
-    camera.near = 2;
-    tuneAO();
-    // From the air the ground gets less sky; the exposure opens up.
-    renderer.toneMappingExposure = 1.7;
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld();
-    return;
+  let q = pose(view, portrait);
+  // A flight eases from the last pose to the new one over 1.2 s.
+  if (fly) {
+    const k = Math.min(1, (performance.now() - fly.t0) / (reduced() ? 1 : 1200));
+    if (k >= 1) fly = null;
+    else {
+      const e = ease(k), a = fly.from;
+      q = { p: a.p.clone().lerp(q.p, e), t: a.t.clone().lerp(q.t, e), fov: a.fov + (q.fov - a.fov) * e, near: Math.min(a.near, q.near), exp: a.exp + (q.exp - a.exp) * e };
+    }
   }
-  camera.fov = portrait ? 62 : 44;
-  camera.near = 0.1;
+  camera.position.copy(q.p);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(q.t);
+  camera.fov = q.fov;
+  // A far near plane keeps depth precise for the occlusion pass.
+  camera.near = q.near;
+  renderer.toneMappingExposure = q.exp;
+  camPose = q;
   tuneAO();
-  renderer.toneMappingExposure = 1.25;
-  // A low eye on the near towpath, turned a little toward the far bank.
-  // Phones stand at the edge, so the water fills the foreground.
-  camera.position.set((portrait ? -12.6 : -14.6) + canalX(14), QUAY + 1.6, 14);
-  camera.rotation.order = 'YXZ';
-  camera.rotation.set((portrait ? -0.06 : 0.0) + look.pitch, -(portrait ? 0.26 : 0.22) + look.yaw, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
+let camPose = null;
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
@@ -1780,7 +1821,7 @@ function draw() {
 const SLEEP = +QS.get('sleep') || 60000;
 // raf is -1 while a drifting frame waits out its 31 ms gap.
 let raf = 0, driftT = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || nowS() < warmUntil || U.uBell.value > 0.01 || boats.length > 0 || easing() || nowS() < tapUntil;
+const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || nowS() < warmUntil || U.uBell.value > 0.01 || boats.length > 0 || easing() || nowS() < tapUntil || !!fly;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -1849,23 +1890,44 @@ onReducedChange(() => { motion(); wake(); });
 
 /* Pointer: a press turns into a drag after 8 px, or a hold after 260 ms. */
 let press = null;
+// Scroll or pinch zooms: the high views move in and out, the towpath narrows its lens.
+const ZOOM = { sky: [0.35, 1.5], tower: [0.4, 1.8], path: [0.45, 1.3] };
+function setZoom(z) {
+  const [a, b] = ZOOM[view];
+  zoom = Math.max(a, Math.min(b, z));
+  taa.reset = true;
+  wake();
+}
+stage.addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom * Math.exp(e.deltaY * 0.0012)); }, { passive: false });
+// Two fingers down start a pinch and cancel any drag or tap.
+const pts = new Map();
+let pinch = null;
+const spread = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 2) { pinch = { d0: spread(), z0: zoom }; press = null; stage.classList.remove('held'); wake(); return; }
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, yaw: look.ty, pitch: look.tp };
   wake();
 });
 stage.addEventListener('pointermove', e => {
+  if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pts.size >= 2) { setZoom(pinch.z0 * pinch.d0 / spread()); return; }
   if (!press || e.pointerId !== press.id) return;
   if (!press.drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.drag = true; stage.classList.add('held'); }
   if (!press.drag) return;
   // Drag looks along the canal, a little each way.
   const s = 1.4 / Math.max(size.w, size.h);
-  look.ty = Math.max(-0.3, Math.min(0.3, press.yaw + (e.clientX - press.x) * s));
+  // The high views turn further round than the towpath.
+  const yr = view === 'path' ? 0.3 : 0.6;
+  look.ty = Math.max(-yr, Math.min(yr, press.yaw + (e.clientX - press.x) * s));
   look.tp = Math.max(-0.08, Math.min(0.1, press.pitch + (e.clientY - press.y) * s * 0.5));
   wake();
 });
 const end = e => {
+  pts.delete(e.pointerId);
+  if (pts.size < 2) pinch = null;
   if (!press || e.pointerId !== press.id) return;
   press = null;
   stage.classList.remove('held');
@@ -1948,7 +2010,7 @@ function plink(g, t) {
 function soundTick(dt) {
   const g = graph();
   if (!g) return;
-  const t = g.ac.currentTime, rk = U.uRainK.value, far = view === 'sky' ? 0.55 : 1;
+  const t = g.ac.currentTime, rk = U.uRainK.value, far = { sky: 0.55, tower: 0.8, path: 1 }[view];
   g.hissG.gain.setTargetAtTime(0.16 * rk * far, t, 0.4);
   g.windG.gain.setTargetAtTime((0.025 + 0.11 * W.uWind.value) * far, t, 0.6);
   if (reduced() || rk < 0.02) return;
@@ -2076,7 +2138,7 @@ function ripple(cx, cy) {
   if (proj.y >= -1e-4) return;
   const t = -camera.position.y / proj.y, x = camera.position.x + proj.x * t, z = camera.position.z + proj.z * t;
   if (Math.abs(x - canalX(z)) > CANAL_X) return;
-  W.uTap.value[tapN++ % 4].set(x, z, U.uTime.value, view === 'sky' ? 3 : 1);
+  W.uTap.value[tapN++ % 4].set(x, z, U.uTime.value, { sky: 3, tower: 2, path: 1 }[view]);
   tapUntil = nowS() + 4;
   taa.reset = true;
   wake();
@@ -2106,8 +2168,49 @@ function easeWeather(dt) {
 const easing = () => Math.abs(wx[0] - W.uWind.value) + Math.abs(wx[1] - W.uSmear.value) + Math.abs(wx[2] - U.uRainK.value) > 0.004;
 act.dusk = v => { setDusk(v); taa.reset = true; wake(); draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
-act.view = v => { view = v; look.yaw = look.ty = look.pitch = look.tp = 0; frame(); wake(); draw(); };
-view = ui.setting('view')?.value === 'path' ? 'path' : 'sky';
+// A new view flies from wherever the camera is now.
+act.view = v => {
+  if (v === view || !VIEWS.includes(v)) return;
+  fly = camPose ? { from: camPose, t0: performance.now() } : null;
+  view = v;
+  look.yaw = look.ty = look.pitch = look.tp = 0;
+  zoom = 1;
+  save('view', v);
+  rock.dataset.v = v;
+  rock.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.v === v)));
+  wake();
+};
+view = VIEWS.includes(saved('view', 'sky')) ? saved('view', 'sky') : 'sky';
+/* ---------- the camera rocker ---------- */
+// One slab, three heights, top to bottom; arrow keys step it while it has focus.
+const rock = document.createElement('div');
+rock.className = 'cn-pad';
+rock.setAttribute('role', 'radiogroup');
+rock.setAttribute('aria-label', 'Camera');
+rock.dataset.v = view;
+for (const [v, label] of [['sky', 'Sky'], ['tower', 'Tower'], ['path', 'Path']]) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.v = v; b.textContent = label;
+  b.setAttribute('role', 'radio');
+  b.setAttribute('aria-checked', String(v === view));
+  b.addEventListener('click', () => act.view(v));
+  rock.append(b);
+}
+rock.addEventListener('keydown', e => {
+  const d = { ArrowUp: -1, ArrowDown: 1 }[e.key];
+  if (!d) return;
+  e.preventDefault(); e.stopPropagation();
+  const v = VIEWS[Math.max(0, Math.min(2, VIEWS.indexOf(view) + d))];
+  act.view(v);
+  rock.querySelector(`[data-v="${v}"]`).focus();
+});
+{
+  const slot = document.createElement('div');
+  slot.className = 'cn-rock';
+  slot.append(rock);
+  document.querySelector('.stim-ui')?.append(slot);
+}
+/* ---------- end camera rocker ---------- */
 setDusk(ui.slider?.value ?? 0.35);
 // The saved weather applies at once on load, with no easing.
 wx = WEATHER[ui.choice?.value] ?? WEATHER.dry;

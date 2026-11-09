@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T09:25:51Z
+updated_at: 2026-11-09T09:34:47Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -65,3 +65,5 @@ Canal at dusk (`canal/index.html`) is built and in the Lab, Dutch name Vaart bij
 - Bar v2: Weather, Dusk, + Boat; View, Letterbox and Quality in Settings; Weather and Dusk persist.
 
 Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a browser (Q6), and a listen-through.
+
+- Tom (2026-11-09): camera control. A vertical three-way rocker on the right edge (Sky, Tower, Path) replaces the View row; the slab tips toward the end that is down; arrow keys step it. Tower is a new middle view over the canal toward the bridge and the church. The camera flies between views over 1.2 s (1 s cut-off under reduced motion). Scroll or pinch zooms: the high views move in and out, the towpath narrows its lens. AO reach and the rain box follow the view.
