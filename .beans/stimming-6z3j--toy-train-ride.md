@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T07:53:57Z
+updated_at: 2026-11-09T09:38:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -42,3 +42,12 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 
 ## Gallery
 - [x] The Night viaduct gallery card opens Train Ride; viaduct/protos/window.html redirects to trainride/; new thumbnail.
+
+## Round 5: valley, lamps, day
+- [x] New land: winding river with lakes, pasture benches, wooded ridges, snow peaks out to 18 km
+- [x] Terrain rows snap per row, so the land never swims; vertex normals and day shadows
+- [x] Lakes mirror the peaks (coarse reflected march)
+- [x] Night sky cleaned up: stars, softer moonlit cloud
+- [x] Lamp posts redone: steel post, slim head, LED bar, beam in rain; dead and flickering lamps
+- [x] Day look: Swiss valley, blue sky and cumulus, aerial haze, ACES with a punchier grade; T or the Night/Day chips
+- [ ] Check lamps and smear at speed in a live tab (headless stills are static)
