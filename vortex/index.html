@@ -94,7 +94,7 @@ let breakup = ui.setting('breakup')?.value ?? 0.5;
 let markReady;
 const glReady = new Promise(r => { markReady = r; });
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
 
 /* ---------- K7: vortex filaments ---------- */
 // Each ring is a closed filament of N nodes with circulation G and core radius a.
@@ -1155,7 +1155,8 @@ try {
   throw err;
 }
 markReady();
-wake();
+// The pre-rolled rings wait under the intro, so the first frame shows them.
+Promise.race([introDone, new Promise(r => setTimeout(r, 9000))]).then(() => touch());
 
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
