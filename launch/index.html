@@ -1015,13 +1015,25 @@ const KINDS = {
 // The climb rate eases after the turn: the orbiter gains speed, not height.
 const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5) / (1 + (t / 45) * (t / 45)));
 const worldY = (h, D) => D * 0.5 * Math.sqrt(Math.max(h, 0) / 120);
-// An orbiter rises straight, then leans downrange from T+14, into the dark sky.
-// It never levels out; it leaves the frame still climbing.
+// The lens as framed: the sky's reach in elevation, the frame's half-width in azimuth.
+function lensReach() {
+  const portrait = size.w < size.h;
+  const fov = THREE.MathUtils.degToRad(portrait ? 66 : 50), hf = portrait ? 0.76 : 0.7;
+  const up = Math.atan((2 * hf - 1) * Math.tan(fov / 2));
+  return { elev: up + fov / 2, az: Math.atan((size.w / size.h) * Math.tan(fov / 2)) };
+}
+// The arc as seen from the eye. Elevation climbs to 0.78 of the sky; azimuth sweeps
+// to 0.8 of the half-width; the rocket recedes downrange. Past T+70 the track
+// flattens and sinks a little: orbit insertion, in frame to SECO and beyond.
 function rocketAt(f, t, out) {
-  const D = f.D, h = altKm(t, f.k);
-  // Side on: the arc runs across the frame, a little away from the eye.
-  const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 115), 1.3);
-  return out.set(f.x + D * 1.1 * s, 2 + worldY(h, D), f.z - D * 0.14 * s);
+  const D = f.D, h = altKm(t, f.k), L = lensReach();
+  const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 115), 1.2);
+  const climb = Math.min(1, Math.sqrt(Math.max(h, 0) / 120)) * (1 - 0.18 * THREE.MathUtils.smoothstep(t, 70, 128));
+  const r0 = Math.hypot(f.x, D), a0 = Math.atan2(f.x, D);
+  const az = a0 + (L.az * 0.8 - a0) * s;
+  const el = L.elev * 0.78 * climb;
+  const r = r0 * (1 + 1.2 * s);
+  return out.set(Math.sin(az) * Math.cos(el) * r, 2 + Math.sin(el) * r, -Math.cos(az) * Math.cos(el) * r);
 }
 // World metres per real metre at altitude h: the scale of the body and flame.
 const scaleAt = (h, D) => Math.min(1, (worldY(h + 0.02, D) - worldY(h, D)) / 20);
@@ -1125,14 +1137,16 @@ scene.add(flame);
 /* ---------- the rocket: a slim body, lit from below by its own flame ---------- */
 // Unit height along y from the nozzle; Heavy adds two side cores.
 const bodyMat = new THREE.ShaderMaterial({
-  uniforms: U,
+  uniforms: { ...U, uBodySun: { value: 0 } },
   vertexShader: /* glsl */`varying vec3 vN, vP; void main() { vN = normalize(mat3(modelMatrix) * normal); vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; varying vec3 vN, vP; ${HEAD}
+  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; uniform float uBodySun; varying vec3 vN, vP; ${HEAD}
   void main() {
     vec3 F = normalize(uFlame.xyz - vP);
     float fl = max(dot(vN, F), 0.0) * 0.6 + 0.15;
     float rim = pow(1.0 - abs(dot(vN, normalize(cameraPosition - vP))), 3.0);
-    vec3 c = vec3(0.75, 0.75, 0.72) * (uAmb * 2.0 + uFlameC * uFlame.w * fl * 0.08) + uGlowC * rim * 0.5;
+    // Above the shadow line the body takes the sun: a bright speck in a dark sky.
+    float sun = (max(dot(vN, normalize(uSun)), 0.0) * 0.8 + 0.3) * uBodySun;
+    vec3 c = vec3(0.75, 0.75, 0.72) * (uAmb * 2.0 + uFlameC * uFlame.w * fl * 0.08 + vec3(1.0, 0.9, 0.78) * sun * 1.6) + uGlowC * rim * 0.5;
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
   }`,
 });
@@ -1600,7 +1614,7 @@ const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
   const D = PAD;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1 };
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1, done: false };
   PU.uScale.value = D;
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
   // Fresh fluids for every launch, centred on the pad.
@@ -1669,12 +1683,15 @@ function flyTo(f) {
   flame.visible = eng > 0.01;
   // Body and flame shrink as the altitude scale compresses.
   const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
-  body.visible = te < END - 6;
+  // The body stays to the end: a sunlit dot after SECO that fades over the last 8 s.
+  const fade = 1 - THREE.MathUtils.smoothstep(te, END - 8, END);
+  body.visible = te < END && fade > 0.01;
+  bodyMat.uniforms.uBodySun.value = THREE.MathUtils.smoothstep(h, U.uShadowH.value - 3, U.uShadowH.value + 6);
   body.position.copy(rp);
   body.quaternion.setFromUnitVectors(yUp, tmpA.copy(FU.uAxis.value).negate());
   // After staging only the upper stage flies, with a smaller engine.
   const up = f.stage > 1 ? 0.36 : 1;
-  core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1), bl * sk * up, bw * sk * (f.stage > 1 ? 0.85 : 1));
+  core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1) * fade, bl * sk * up * fade, bw * sk * (f.stage > 1 ? 0.85 : 1) * fade);
   FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
   // Exhaust: walk the path since the last puff and drop one each spacing.

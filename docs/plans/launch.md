@@ -177,3 +177,8 @@ Fix: the jitter and the flicker are gone; the three-sine wobble and the launch s
 
 Cause: the focus hunt added blur to every pixel for 1.3 s on each toggle.
 Fix: the hunt scales the near blur and its cap only; far pixels have zero blur by the one-sided model. In flight the focus distance is the smaller of the pad and the rocket's distance, so the rocket never sits beyond the focus.
+
+## The arc stays in frame to SECO (13:00, Tom: the rocket must complete its trip to orbit)
+
+Cause: downrange 1.1 D left the frame near T+60; the body hid at END-6.
+Fix: `rocketAt` works from the eye: `lensReach()` gives the sky's elevation span and the frame's half-width for the unzoomed lens; elevation climbs to 0.78 of the span (square root of altitude), azimuth sweeps to 0.8 of the half-width, the rocket recedes to 2.2 x the pad distance. Past T+70 the track flattens and sinks 18%: insertion. The body stays to END, sunlit above the shadow line (`uBodySun`), and fades over the last 8 s. `done: false` is set on the flight, so GSAP's set at END is a plain property. Checked at T+30, 60, 90, 115 (1280) and 60, 115 (375): in frame every time.

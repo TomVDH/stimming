@@ -27,7 +27,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Review 2 (Tom, 2026-11-09): bokeh on BokehShader2, one-sided, steady taps
 - [x] Review 2: calm camera (no jitter, 30 fps)
 - [x] Review 2: rocket sharp through the zoom toggle
-- [ ] Review 2: the arc stays in frame to SECO
+- [x] Review 2: the arc stays in frame to SECO
 - [ ] Review 2: living reed sway, cleaner reed model
 - [ ] Review 2: birds nearer the eye, spruced up
 - [ ] Tom sets the Dutch name (proposal: Moeraslancering)
