@@ -56,7 +56,7 @@
 }
 </script>
 <script type="module">
-import { initPage, keyWord, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, audioKit, sound } from '../shared/stim.js';
+import { initPage, keyWord, whenVisible, fitCanvas, onQuality, quality, oklchLinear, reduced, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -137,8 +137,9 @@ let vel = null, pres = null, div = null, scal = null;
 // The fluid fills the beaker's inside, a 2:3 portrait box.
 const TA = 2 / 3;
 let SW = 0, SH = 0;
-// The performance ladder's rung; slow frames raise it, never lower it.
-let rung = 0;
+// The performance ladder: slow frames first drop the pixel ratio, then the grid.
+// A new quality choice clears the pixel-ratio step; the grid step stays.
+let lowDpr = false, lowGrid = false;
 const MAXS = 12, JACOBI = 24;
 
 const TRI = `#version 300 es
@@ -269,6 +270,9 @@ void main() {
 }`;
 /* ---------- end K5 ---------- */
 
+const COPY_FS = HEAD + `
+uniform sampler2D uSrc;
+void main() { o = texture(uSrc, vUv); }`;
 // The first frame: the rainbow already formed, acid left, base right.
 const SEED_FS = HEAD + `
 void main() {
@@ -526,7 +530,7 @@ async function initGL() {
   const progs = {
     force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS), jac: compile(TRI, JAC_FS),
     grad: compile(TRI, GRAD_FS), scal: compile(TRI, SCAL_FS), beaker: compile(TRI, BEAKER_FS),
-    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS),
+    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS), copy: compile(TRI, COPY_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -598,20 +602,28 @@ function bind(prog, name, unit, t) {
   gl.bindTexture(gl.TEXTURE_2D, t.tex);
   gl.uniform1i(prog.u[name], unit);
 }
+function copy(src, dst) {
+  gl.useProgram(P.copy.p);
+  bind(P.copy, 'uSrc', 0, src);
+  draw(dst);
+}
 function draw(dst) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
   gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // The grid is 128 by 192; the ladder's lower rung drops it to 96 by 144.
+// A regrid copies the flow and the scalars across, so nothing jumps.
 function alloc() {
-  const sw = rung >= 3 ? 96 : 128, sh = Math.round(sw / TA);
+  const sw = lowGrid ? 96 : 128, sh = Math.round(sw / TA);
   if (sw === SW && sh === SH) return;
+  const nv = pair(sw, sh, FMT.vel), ns = pair(sw, sh, FMT.four);
+  if (vel) { copy(vel.r, nv.r); copy(scal.r, ns.r); }
   [vel, pres, div, scal].forEach(free);
-  vel = pair(sw, sh, FMT.vel);
+  vel = nv;
+  scal = ns;
   pres = pair(sw, sh, FMT.one);
   div = target(sw, sh, FMT.one);
-  scal = pair(sw, sh, FMT.four);
   SW = sw;
   SH = sh;
 }
@@ -718,7 +730,8 @@ function advectScalar(tex, dt) {
 const box = { x: 0, y: 0, hw: 0, ih: 0, wall: 0, base: 0 };
 let dpr = 1, time = 0;
 function layout() {
-  const { W, H, dpr: d } = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  // On High the first step falls back to Standard, not to 1x.
+  const { W, H, dpr: d } = fitCanvas(canvas, !lowDpr ? { maxDpr: 2 } : quality() === 'high' ? { maxDpr: 2, quality: 'standard' } : { maxDpr: 1 });
   dpr = d;
   let ih = H * 0.6, iw = ih * TA;
   if (iw > W * 0.56) { iw = W * 0.56; ih = iw / TA; }
@@ -1060,10 +1073,23 @@ const live = (ms = 5000) => { liveUntil = Math.max(liveUntil, performance.now() 
 function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
+// After 4 s of run time, 2 s of frames slower than 1/38 s step down one rung.
+let runT = 0, slowT = 0, avgDt = 1 / 60;
+function watchdog(real) {
+  runT += real;
+  avgDt += (Math.min(real, 0.25) - avgDt) * 0.1;
+  if (runT < 4 || lowGrid) return;
+  slowT = avgDt > 1 / 38 ? slowT + real : 0;
+  if (slowT < 2) return;
+  slowT = 0;
+  avgDt = 1 / 60;
+  if (!lowDpr) { lowDpr = true; layout(); } else { lowGrid = true; alloc(); }
+}
 function frame(now) {
   raf = 0;
-  const dt = Math.min(0.033, (now - last) / 1000);
+  const real = (now - last) / 1000, dt = Math.min(0.033, real);
   last = now;
+  watchdog(real);
   try {
     time += dt;
     stirStep(dt);
@@ -1221,7 +1247,7 @@ stage.addEventListener('keyup', e => {
 });
 
 new ResizeObserver(() => { layout(); still(); }).observe(stage);
-onQuality(() => { layout(); still(); });
+onQuality(() => { lowDpr = false; layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
