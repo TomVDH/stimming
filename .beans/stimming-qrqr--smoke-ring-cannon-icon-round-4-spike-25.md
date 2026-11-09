@@ -14,5 +14,6 @@ Round 4 of the Smoke ring cannon menu icon. Tom asked for fresh directions A to 
 - [x] Emblems vortex25-a..e
 - [x] Send Tom stills at rest and on hover
 - [x] Tom prefers A (shaded) but wants it softer, smokier: spike 26 holds A1 to A4
+- [x] Tom rejects all soft variants; the laser is the new subject: spike 27 holds L1 to L4
 - [ ] Tom picks a direction
 - [ ] Install the pick on the menu and update icons/picks.json
