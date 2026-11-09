@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:14:44Z
-updated_at: 2026-11-09T11:01:10Z
+updated_at: 2026-11-09T11:04:51Z
 ---
 
 Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chip shack stands alone on an empty village square at night: a warm steamy service window, a humming neon strip, a low wide toy-scale shot. Drop fries, shake the basket, pick a sauce, fill a cone.
@@ -40,3 +40,5 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - Tom (2026-11-09): lean (no font/clock/dog switches), 24 fps stop-motion with grain, sharper Haze, better umbrellas, no floating lights at the hall, shifting weather, youth scenes, steam must not cover the foreground. Built as Task 3f.
 
 - Icon (2026-11-09): the square at icon scale (church and clock, hall party windows, the red frituur with its sign, the fries neon, a reflection). Hover runs the fries chase; a walker steps to the pointer in stop-motion with three ghosts.
+
+- Tom (2026-11-09): renamed to Frietkot. The icon is redrawn to match: the village and church, the parish hall's windows, a sodium streetlight, the red frietkot with its two-line sign and the wall fries neon. Hover strikes the neon, sputters the wall sign and walks a stop-motion figure to the pointer. Dutch name still the draft (Frietkot bij nacht) for Tom.

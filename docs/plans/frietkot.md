@@ -1,4 +1,4 @@
-# Frietkot at night (`frietkot`) implementation plan
+# Frietkot (`frietkot`) implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
