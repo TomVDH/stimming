@@ -72,3 +72,25 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 - Fixes: NaN guards on beer, head, stream and glass (a NaN pixel spread through the bloom as black blocks); the soft-box glint terms no longer overflow at grazing angles.
 - Fire's shader (Tom's question): not reused. It is a WebGPU gas-volume sim on three 0.186; this toy is WebGL 2 on 0.170. The stream borrows its idea of a refracting, flowing volume instead.
 - Pour staging pass (2026-11-09, Tom: "the entire pour looks weird"): the tilt is capped at 28° and pivots on the low edge of the foot; the bottle rises, slides in level from the right and comes forward only at the end, aiming just behind the glass's axis; the jet reads clear gold (tinted refraction, core line, see-through middle) and is as wide as the neck at the mouth; spray droplets leap from where it lands and stay inside the glass; a young head heaps up where the jet lands, then spreads; the empty glass's back wall is lighter, so the bowl reads clearer.
+- Leak fix (2026-11-09, Tom: fizz, sparkles and the jet showed through the glass): the middle layer keeps a stencil; the glass's silhouette writes it and fizz, pops and splash draw only inside it. The jet depth-tests against the head and stops at the beer's surface.
+- Smoke (Tom asked to use Fire's smoke shader): Fire's sim runs on WebGPU (three 0.186), so its lighting model is ported to GLSL instead: a ray-marched volume (28 dithered steps) with Henyey-Greenstein forward scatter, a two-tap self-shadow with Beer-Lambert, powder and multi-scatter terms, and an edge fade at the box walls. Density is procedural drifting 3D noise in a sagging cone off the neck. A fresh bottle breathes out cold CO2 fog as it lifts (fades over about 2 s); a faint wisp stays while it pours. Off under reduced motion.
+- Head volume: the head is lit as a volume too (Fire's smoke model): a five-step march toward the lamp through bubble-cell density sets how much backlight soaks through; thin crowns and edges glow, deep foam stays creamy. Kept subtle (0.18).
+- Pour motion (Tom: "eclipses through glass", "pour from one position", "smoother"): the lifted bottle and the jet draw a second time after the glass, depth-tested, so whatever is in front of the glass shows in front of it. The bottle rests clear of the glass's outline, rises, comes forward beside the glass, slides over the rim and only then tips; a critically damped spring (w = 9) eases every move; lift and return take about a second. While holding, a drag moves the pour: sideways along the rim, up for a longer drop and a bigger head; the jet still lands inside.
+- Soft shading (Tom: soft, Pixar-like, close to now): finer grain, gentler S-curve, wider softer bloom, a warm rim light on the bowl, calmer caustic shimmer in the beer, smoother foam with a warm-to-cool gradient.
+
+## QA pass (2026-11-09, internal browser)
+
+Checked at 800 x 600, 375 x 812 and 812 x 375: Pour, hold and drag, swirl, Sip, Clear, the three lights, the beer stepper. Console clean. 50 frames/s during a pour at 1024 x 768, dpr 1 (hidden pane; not a device number).
+
+Fixed:
+- Five beers had no measured outline (Omer, Averbode, Kriek Boon, Kwak glasses; the Westvleteren bottle): picking one threw and left the name and the scene out of step. They now get a stand-in shape from their sizes; a bottle without a label draws none.
+- The bottle crossed in front of the bowl as it came in: it now tips while it rises beside the glass, then brings its mouth over the rim.
+- On phones the tilted glass slid left and its foot left the frame: the tipped glass now draws back, so the bowl stays put.
+- The neck's fog read as gritty specks: larger, smoother puffs.
+- The head blew out to flat white on phones: lower exposure, rounder falloff, bloom on true highlights only.
+
+Known, not fixed:
+- [ ] The glass shader's stem streak and foot ring are tuned to Duvel; stand-in glasses show a bright blob at the bowl's floor. For Overhaul 5.
+- [ ] Kwak's stand-in is a straight tumbler, not the coachman bulb; no stand.
+- [ ] Spill visuals; sips leave no lacing yet.
+- [ ] Not checked: a real phone, real touch, reduced motion, the Fizz slider's range, Foam time Real.

@@ -1779,6 +1779,8 @@ uniform int uSteps;
 uniform sampler2D uOut;
 // A soft copy of the outside lights the bezel; uEnvOn is 0 where no page binds it.
 uniform sampler2D uEnv; uniform float uEnvOn;
+// The sun or moon's light, for the patch it throws through the opening; 0 where unset.
+uniform vec3 uSunC;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 // Extra ghost strength per flare; 0 keeps the old ghosts.
@@ -1917,6 +1919,21 @@ float rainStreaks(vec2 px) {
   }
   return s;
 }
+// Light through the opening, as it lands on the far side: sample the soft outside at q.
+vec3 envAt(vec2 q) {
+  vec3 P = vec3(q, Z_OUT) - uEye;
+  vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+  return texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb;
+}
+// The sun in the cabin frame: the bank turned back out.
+vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
+// How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
+float sunThrough(vec3 P) {
+  vec3 L = sunCabin();
+  if (L.z <= 0.05) return 0.0;
+  vec2 q = P.xy + L.xy * (Z_OUT - P.z) / L.z;
+  return smoothstep(0.01, -0.01, sdBox(q, SKIN, RSK));
+}
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
   vec3 view = out1.rgb;
@@ -1946,8 +1963,9 @@ vec3 glass(vec3 da, vec2 px) {
 vec3 scratches(vec2 pG, vec2 px) {
   vec3 s = vec3(0.0);
   float fw = max(fwidth(pG.x), 1e-6);
-  // Every scratch catches the cabin light and the window glow a little.
-  vec3 amb = (uCabin * 1.2 + uGlow * 0.012) * 0.7;
+  // A scratch shows only when light reaches it: the cabin a little, a bright view behind it more.
+  vec3 back = texture(uOut, px / uRes).rgb;
+  vec3 amb = (uCabin * 1.2 + uGlow * 0.012) * 0.18 + back * 0.08;
   for (int l = 0; l < 3; l++) {
     float cs = l == 0 ? 0.0045 : l == 1 ? 0.008 : 0.017;
     vec2 g = pG / cs + float(l) * 17.3;
@@ -2069,11 +2087,8 @@ void main() {
   wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.5));
   vec3 wallL = outGlow * 0.8;
   if (uEnvOn > 0.5) {
-    // Near the rim, the wall takes the colour of the glass it faces; it fades out smoothly.
-    vec3 P = vec3(clamp(p0, -INB, INB) * 0.5, Z_OUT) - uEye;
-    vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
-    vec3 e = texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 0.5 + outGlow * 0.3;
-    wallL = mix(wallL, e, exp(-max(sOut, 0.0) / 0.05));
+    // The wall sits beside the opening, not across it: it gets only a weak, broad spill.
+    wallL = mix(wallL, envAt(vec2(0.0)) * 0.25 + outGlow * 0.4, exp(-max(sOut, 0.0) / 0.05));
   }
   wall += alb * wallL * exp(-max(sOut, 0.0) / 0.07);
   // A soft shadow rings the rim of the recess.
@@ -2117,11 +2132,13 @@ void main() {
       // The light comes through the stretch of glass across the hole from this spot.
       vec3 envL = outGlow * 1.6;
       if (uEnvOn > 0.5) {
-        vec3 P = vec3(ph * 0.45, Z_OUT) - uEye;
-        vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
-        // The whole tunnel sees the glass: light falls off gently toward the cabin.
+        // Light crosses the opening in straight lines: this wall sees the far side of the glass.
+        // So the sill catches the sky, and the head of the tunnel the dimmer ground.
         float reach = (0.45 + 0.55 * max(-g2.y, 0.0)) * (0.3 + 0.7 * k);
-        envL = (texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 1.7 + outGlow * 0.5) * reach;
+        envL = (envAt(-ph * 0.55) * 1.7 + outGlow * 0.5) * reach;
+        // The sun or moon lays a patch on the wall that faces it, cut by the opening.
+        vec3 Ls = sunCabin();
+        envL += uSunC * 0.02 * max(dot(n, Ls), 0.0) * sunThrough(vec3(ph, hit));
         sky = 1.0;
       }
       inner = alb * (cabin * (0.25 + 1.3 * diff) + envL * sky);
@@ -2171,10 +2188,8 @@ void main() {
         float gk = clamp(sSk / 0.03, 0.0, 1.0);
         vec3 gasket = alb * 0.4 * (cabin * 0.5 + outGlow * (1.5 - gk));
         if (uEnvOn > 0.5) {
-          // The gasket sits right at the outside: it takes the light of the glass beside it.
-          vec3 P = vec3(pO * 0.6, Z_OUT) - uEye;
-          vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
-          gasket += alb * texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 0.55 * (1.0 - 0.7 * gk);
+          // The gasket faces into the opening: it takes the light from across it.
+          gasket += alb * envAt(-pO * 0.55) * 0.5 * (1.0 - 0.7 * gk);
         }
         // The inner pane's edge catches a thin line of light.
         gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));

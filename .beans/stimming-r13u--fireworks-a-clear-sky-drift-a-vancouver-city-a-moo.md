@@ -17,3 +17,12 @@ Tom (2026-11-09): improve the fidelity of the Island and City scenes; the standa
 - [x] QA: clean console; stills at 1280 and 375, at rest, mid-show and under Cloud
 
 Not checked here: fps on a real device, and a full drift cycle in real time (it runs over minutes; the logic was read, not watched).
+
+## Follow-up (Tom, 2026-11-09): too dense, the sky looked unnatural, wanted window glints
+
+- The skyline thins out: towers on a wider grid, fewer of them, and a low gap between the West End and the core.
+- The light dome is a low, wide band along the horizon, and the distance haze carries it, so far land greys out instead of going black.
+- The city's snow glows less; the North Shore's homes reach higher and lift the hillside.
+- Ski areas read as soft patches; high lamps stay out of the water's mirror, so no squiggles near the shore.
+- Fewer lit windows; crowns only on towers over 130 m, white only.
+- Glass: every pane tilts a hair on its own, so it mirrors its own bit of sky, and a burst glints pane by pane across the facades. Far panes lose their tilt, so nothing fizzes.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:10:00Z
+updated_at: 2026-11-09T23:05:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -167,3 +167,26 @@ Open from the critics:
 - [x] Station: sign contrast, platform gradient, saturated back wall
 - [x] Track band takes up to a third of the glass on some crops
 - Done: the seated eye sits 7 cm left and 5 cm low, so the jambs foreshorten unequally; shore-light columns vary in length and width; the mirrored shore averages two rays; terrain shadows fade out close up; station signs read in shade; the gaze tilts 1 degree less, so the track takes less glass
+
+## Round 20: Pixar-lite land, cleaner track bed (Tom, 2026-11-09)
+- [x] Terrain: wrapped key light, shade tinted cool blue (never black), warm rim on edges turned from the eye (strongest against the sun), moon rim at night; cleaner saturated greens, less grain
+- [x] Track bed: warm grey ballast with soft speed bands, contact shadow under each rail, a grassy far verge melting into a grass slope; rail web lighter rust, not a black void
+- [x] Ballast filtered: rotated gradient-noise layers (no cell grid); each layer fades by its own footprint, along the track with the motion smear and across it separately, so at speed the stones become clean streaks and far off everything settles to its mean; sleepers fade to average cover; verge noise filtered too
+- [x] No dark spots: terrain self-shadow floors at 55 %; shaded faces take strong sky fill and a green bounce; woods are rich green, not black
+- [x] The cabin bobs too: the eye takes the rail-joint jolts and a slow sway against the wall, so the window moves with the outside
+
+## Round 21: glow, glint, no avatar (Tom, 2026-11-09)
+- [x] The viewer's head-and-shoulders ghost on the glass is gone
+- [x] Glow after Window seat: quarter-size bright pass with a soft knee and four-tap block average, blurred twice (9-tap Gaussian), added back; replaces UnrealBloomPass, so lights no longer bloom into square pips
+- [x] Rails glint: anisotropic specular from each lamp, the moon and the sun, stretched along the rail
+- [x] Dev plan page trainride/dev/ (relief, line, stations, baked strip); Tom: the relief map goes into the annex later for background and explanation
+- [x] Oncoming trains now and then: a 150 or 210 m two-unit train every one to two and a half minutes on the second track at 31 m/s; window band and doors blurred by the relative speed; lit windows at night, headlights; its bow wave knocks the carriage; ?opp=seconds calls one for QA
+- [x] Landscape lights by sector: a streetlight string on the far lake shore from the map's lake mask, houses climbing above it; dense in Zurich and the gold coast, sparse on the Linth plain, nearly dark on the Walensee; a sodium motorway string over the Linth plain; Quinten's few lights across from Murg
+- [x] Stations, Pixar-lite: light concrete platform with a crisp white line, calm mottling, pale canopy soffit and white fascia, lighter columns and platform wall; wrapped sun, strong sky fill and a warm bounce on every station surface; canopy lights halved to suit
+- [x] Zurich lights sit on the ground; no floating cluster
+- [x] Catenary masts: wider, darker, less smear fade, so they flick past the window
+- [x] Pane rain calmer: shared grBeads takes a dens factor (Train Ride 0.4); runs stick and slip below 18 m/s (grRuns stick); Window seat calls unchanged
+- [x] Dev: window.__train.S.hold(x) parks the train at a route metre
+- [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
+- [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
+- [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks

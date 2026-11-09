@@ -236,3 +236,15 @@ A Ascent, dawn (sunlit above the shadow line). B Ascent, night (stars, flame-lit
 ## Menu tile: Ascent, dawn (16:00, Tom's pick: spike 33 A)
 
 The Lab tile is spike 33 A, drawn by the menu script from the same seeded streams as the spike: near and far reeds, 52 puffs with cold, lit and rim bodies, flame, halo and spark. Lab tiles run the play loop on hover, so the plume launches again and again while the pointer stays; the main-shelf wiring would give pointer y as the climb. Emblem `shared/emblems/launch.svg` is the 33 A emblem; `icons/picks.json` records the pick and the cut rounds.
+
+## Emblem redrawn for the intro (16:30, Tom: the icon renders badly on the intro)
+
+The spike 33 emblem read as a white slab with scratches and a blob: a 34 px ground bar, 23 thin reeds, the lower plume in grey behind them, no spark.
+The new emblem is drawn for the mask, not exported from the icon: seven wind-bent reeds on a low bank, each a curved stem with a drooping plume and three with a blade; an all-white exhaust column of 18 puffs that rises through a gap in the bed; a four-point spark ahead of it. A black halo parts the reeds from the plume.
+Checked as the intro draws it: white on dark at 152 px, dark in the white flash box, and at 44 px. `shared/emblems/launch.svg`, `icons/spike/emblems/launch33-a..c.svg` and the `emblem()` in `icons/spike-33.html` hold the same drawing.
+A plate variant (grey dawn sky, white plume, reeds cut out in black) exists as a second option; it is not in the repo.
+Dutch name: Tom rejected Tien tellen. Options put to Tom: Aftellen, Hemelvaart, Rietkraag, Tien seconden. `toys.json` stays as it is until Tom picks.
+
+## Dutch name: Hemelvaart (Tom's pick, 2026-11-09)
+
+Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` holds it; the page fallback carries no Dutch, so nothing else changes.
