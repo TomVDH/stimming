@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:48:01Z
-updated_at: 2026-11-09T08:41:54Z
+updated_at: 2026-11-09T11:14:51Z
 ---
 
 Smoke ring cannon (`vortex`, Lab). Vortex rings of smoke fly through haze; a laser light sheet cuts a bright plane, and each ring flares as it crosses it. Plan: docs/plans/vortex.md (vortex filaments, Biot-Savart on the CPU; smoke particles advected on the GPU).
@@ -40,3 +40,7 @@ Smoke ring cannon (`vortex`, Lab). Vortex rings of smoke fly through haze; a las
 | Q10 frame times | not measured; needs a real device |
 
 Fixes from QA: one frame chain only (a queued fire woke a second one); drift frames paced by a timer; tendrils fade in about 4 s.
+
+## Main shelf (2026-11-09)
+
+Tom moved the toy to the main shelf as No. 35 (Beta), with the voxel ring icon (spike 24 D) and its emblem in the intro.
