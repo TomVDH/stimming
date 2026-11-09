@@ -24,7 +24,17 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   -webkit-font-smoothing: antialiased;
 }
-::selection { background: var(--pick); }
+/* No browser interaction markers: no ring, tap flash, callout or selection. */
+*, *::before, *::after {
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important; user-select: none !important;
+}
+/* Real fields keep typing and copying. */
+input, textarea, select { -webkit-user-select: text !important; user-select: text !important; }
+:focus, :focus-visible { outline: none !important; }
+::selection { background: transparent; }
+img, svg { -webkit-user-drag: none; }
 .defs { position: absolute; width: 0; height: 0; }
 .wrap { max-width: 1240px; margin: 0 auto; padding-block: clamp(40px, 7vw, 88px) 28px; display: grid; justify-items: center; gap: clamp(36px, 6vw, 72px); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -61,7 +71,6 @@ main > .shelf { max-width: calc(6 * 150px + 5 * 28px); }
   font-size: 15px; color: var(--muted); transition: color 0.2s ease;
 }
 .lab-back:hover { color: var(--fg); }
-.lab-back:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .lab-back svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 @media (prefers-reduced-motion: reduce) { .lab-back { transition: none; } }
 /* The credit line closes the page, as quiet as the Lab toggle. */
@@ -100,7 +109,6 @@ body { overflow-x: clip; }
 /* A quiet Lab link sits under the mark; the Lab view hides it. */
 .lab-link { font-family: "Iosevka Term Slab", ui-monospace, monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); text-decoration: none; transition: color 0.2s ease; }
 .lab-link:hover { color: var(--fg); }
-.lab-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
 :root[data-view="lab"] .lab-link { visibility: hidden; }
 .credit::before {
   content: ""; position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: 560px; translate: -50% 0; pointer-events: none;
@@ -113,7 +121,6 @@ body { overflow-x: clip; }
 @media (max-width: 560px) { .name { font-size: 13px; } }
 .toy { display: grid; justify-items: center; gap: 10px; color: inherit; text-decoration: none; border-radius: 16px; text-align: center; }
 a.toy { cursor: pointer; }
-a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .obj svg { width: 70%; height: 70%; overflow: visible; }
 /* Each toy arrives through grainy blur as it scrolls into view. */
@@ -1170,7 +1177,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             // Badges show in the Lab only, for now.
             const obj = s && document.querySelector(`.lab a.toy#${CSS.escape(id)} .obj`);
             if (!obj) continue;
-            const b = Object.assign(document.createElement('img'), { className: 'series', src: s.badge, alt: '', title: s.name });
+            const b = Object.assign(document.createElement('img'), { className: 'series', src: s.badge, alt: '', title: s.name, draggable: false });
             obj.append(b);
             obj.closest('.toy').dataset.series = t.series;
             const li = obj.closest('li');
@@ -1221,7 +1228,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             path.animate([{ strokeDasharray: L, strokeDashoffset: L }, { strokeDasharray: L, strokeDashoffset: 0 }], { duration: 600, easing: 'ease-out', fill: 'forwards' });
           }
           const count = Object.assign(document.createElement('span'), { textContent: `${on.length} toys` });
-          tag.replaceChildren(Object.assign(document.createElement('img'), { src: s.badge, alt: '' }), s.name, count);
+          tag.replaceChildren(Object.assign(document.createElement('img'), { src: s.badge, alt: '', draggable: false }), s.name, count);
           const [x, y] = mid(li);
           const top = li.querySelector('.obj').getBoundingClientRect().top - bb.top;
           tag.style.left = `${x.toFixed(1)}px`;
