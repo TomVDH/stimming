@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
+import { makeTrain } from './train.js';
 
 export function build() {
 // Seeded random keeps the scene the same on every load.
@@ -822,43 +823,10 @@ function atX(s, side = 0) {
 }
 const train = (() => {
   // A raked locomotive and three long wagons: one heavy, monolithic machine.
-  const LOCO = 20, CAR = 24, GAP = 1.0, N = 4;
-  const lens = [LOCO, CAR, CAR, CAR], offs = [];
-  for (let i = 0, o = 0; i < N; o += lens[i] + GAP, i++) offs.push(o + lens[i] / 2);
-  const SPAN = offs[N - 1] + lens[N - 1] / 2;
-  const attrs = (g, col, kind) => {
-    g = g.index ? g.toNonIndexed() : g;
-    g.deleteAttribute('uv'); g.clearGroups();
-    paint(g, col);
-    g.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(kind), 1));
-    return g;
-  };
-  // Hull section: a chamfered box on the bogies, built along +z.
-  function hull(len, loco) {
-    const h = loco ? 3.4 : 3.7, ch = loco ? 0.55 : 0.8, x = 1.65, y0 = 1.1, y1 = y0 + h;
-    const shape = new THREE.Shape([[-x + 0.2, y0], [x - 0.2, y0], [x, y0 + 0.2], [x, y1 - ch], [x - ch, y1], [-x + ch, y1], [-x, y1 - ch], [-x, y0 + 0.2]].map(([a, b]) => new THREE.Vector2(a, b)));
-    let g = new THREE.ExtrudeGeometry(shape, { depth: len, steps: loco ? 24 : 1, bevelEnabled: false });
-    g.translate(0, 0, -len / 2);
-    if (loco) {
-      // The nose rakes down to a wedge over its last 6.5 m.
-      const p = g.attributes.position, zN = len / 2 - 6.5;
-      for (let i = 0; i < p.count; i++) {
-        const z = p.getZ(i);
-        if (z <= zN) continue;
-        const t = (z - zN) / 6.5, y = p.getY(i);
-        if (y > 2.2) p.setY(i, 2.2 + (y - 2.2) * (1 - 0.72 * t));
-        p.setX(i, p.getX(i) * (1 - 0.08 * t));
-      }
-      g.computeVertexNormals();
-    }
-    const DARK = [0.025, 0.025, 0.027], BODY = [0.15, 0.15, 0.155];
-    const bits = [attrs(g, BODY, loco ? 1 : 0)];
-    for (const z of [-len / 2 + 3.6, len / 2 - 3.6]) bits.push(attrs(new THREE.BoxGeometry(2.7, 1.0, 3.2).translate(0, 0.55, z), DARK, 0));
-    // A low roof block breaks the long top line.
-    const rl = len * (loco ? 0.45 : 0.8);
-    bits.push(attrs(new THREE.BoxGeometry(2.0, 0.35, rl).translate(0, y1 + 0.17, loco ? -len * 0.18 : 0), DARK, 0));
-    return mergeGeometries(bits);
-  }
+  const shape = makeTrain({ consist: ['loco', 'car', 'car', 'car'] });
+  const N = shape.parts.length, SPAN = shape.span;
+  // Port's path takes a side offset from the track line.
+  const path = (s, side = 0) => atX(s, TRACK + side);
   // Hull: dark wet paint with panel seams, a cab slit and flank markers.
   const hullMat = new THREE.ShaderMaterial({
     uniforms: { ...k2, ...lightU },
@@ -912,10 +880,9 @@ const train = (() => {
       gl_FragColor = vec4(col + em * (1.0 - 0.7 * f), 1.0);
     }`,
   });
-  const locoG = hull(LOCO, true), carG0 = hull(CAR, false);
   const cars = [];
   for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(i ? carG0 : locoG, hullMat);
+    const m = new THREE.Mesh(shape.parts[i].geo, hullMat);
     m.userData.live = true;
     scene.add(m);
     cars.push(m);
@@ -943,17 +910,15 @@ const train = (() => {
   const Y = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3(), p = new THREE.Vector3();
   // Place the train: s is the nose's place on the track, dir its heading.
   function place(s, dir, sea) {
-    for (let i = 0; i < N; i++) {
-      const c = atX(s - dir * offs[i], TRACK);
-      cars[i].position.set(c.x, DECK, c.z);
-      // Each car faces the way the train runs.
-      cars[i].rotation.y = c.yaw + (dir < 0 ? Math.PI : 0);
-      p.set(c.x, DECK + 1.7, c.z);
+    shape.lay(s, dir, path, (i, x, z, yaw) => {
+      cars[i].position.set(x, DECK, z);
+      cars[i].rotation.y = yaw;
+      p.set(x, DECK + 1.7, z);
       lights[carL[i]].pos.copy(p);
       // A hidden train throws no glint.
       if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, on ? 0.6 : 0);
-    }
-    const h = atX(s + dir * 0.2, TRACK), ahead = atX(s + dir * 80, TRACK);
+    });
+    const L = shape.lamps(s, dir, path), h = L.head, ahead = path(s + dir * 80);
     head.set(h.x, DECK + 2.0, h.z);
     d.set(ahead.x - h.x, -2.5, ahead.z - h.z).normalize();
     lights[headL].pos.copy(head); lights[headL].dir.copy(d);
@@ -961,10 +926,9 @@ const train = (() => {
     beam.position.copy(head);
     beam.quaternion.setFromUnitVectors(Y, d);
     const pos = lampG.attributes.position;
-    for (const [k, side] of [[0, -0.9], [1, 0.9]]) {
-      const t = atX(s - dir * (SPAN + 0.1), TRACK + side), f = atX(s + dir * 0.15, TRACK + side);
-      pos.setXYZ(k, t.x, DECK + 1.6, t.z);
-      pos.setXYZ(k + 2, f.x, DECK + 1.75, f.z);
+    for (const k of [0, 1]) {
+      pos.setXYZ(k, L.tails[k].x, DECK + 1.6, L.tails[k].z);
+      pos.setXYZ(k + 2, L.heads[k].x, DECK + 1.75, L.heads[k].z);
     }
     pos.needsUpdate = true;
   }
