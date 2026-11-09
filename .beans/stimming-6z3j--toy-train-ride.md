@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T21:30:00Z
+updated_at: 2026-11-09T21:45:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -146,3 +146,8 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Lake bug found: the rail level came from the ground beside the track, which in tunnels is the hill above; lakes sank up to 240 m. Now the rail level is the lowest near ground over 800 m, held to a band per stretch, so lakes sit 10 to 25 m below the eye
 - [x] Default weather Clear; Drift moves it every one to three minutes
 - [x] cut.py and lakes.py removed
+
+## Round 18: mullion, faked GI, catenary masts (Tom, 2026-11-09)
+- [x] Cross bar: a 19 mm mullion; by day dark against the view with a sunlit top edge, by night lit from the lamp above
+- [x] Faked GI: the baked cabin traces sun patches through our window wall onto floor and far wall, bounces a warm wash, rebakes when day and night change; on the wall itself the sunlit faces of the recess spill warm light beside them and the sunlit floor fills from below
+- [x] Catenary masts every 50 m (H-beam, bracket); every other one has a lamp, every one within 450 m of a station; lamps lowered to just above eye level so they show
