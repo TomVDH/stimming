@@ -49,6 +49,7 @@ Read `README.md` for the toy list and the full rules.
 - `tvtree/channels.js` holds the TV tree's 155 channel shaders in seven groups of 25, one shader each.
   `tvtree/channels.html` is the live contact sheet. `tvtree/lab.html` is the older four-tree lab, `noindex`.
   Publish all three TV tree files with the page.
+- `glasslab/` (noindex) is a dev page for pane rain: every glass-rain shader split A/B at full resolution, with knobs. `shared/glassrain.js` (Tom's base, 2026-11-09) and `shared/bokeh.js` are the shared shaders it tests.
 - `<id>/legacy.html` keeps an older build of a toy (`noindex`), reached from the header's Classic link: today Pop field (CPU-lit), Heat putty, Caustic pool, Prism, Glass, Neon sign and Lava lamp.
 - `toys.json` (root) is the one source for each toy's name, number, intro subtitle, emblem, Dutch (Flemish) name and IPA. The intro reads it (the menu shows English names only); each page's own intro text is only the fallback. It also holds an optional motto (`tag`, `tagNl`) that the intro shows under the subtitle; the number stays off in the intro (the lab can show it). Tom sets the Dutch words and mottos. Add a new toy here.
 - `toys.json` shape: one entry per toy, every field present, in this order: `name`, `nl`, `ipa`, `tag`, `tagNl`, `number`, `series`, `stage` (`alpha`, `beta` or null), `emblem`, `sound`, `legacy`, `sub` (the Lab tag). Main shelf toys come first by number, then the Lab by name. Use null, not a missing key.
