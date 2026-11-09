@@ -78,6 +78,37 @@ export const M = {
       top: `<path d="M14.6 6.2A5.4 5.4 0 1 0 17 14.4A4.4 4.4 0 0 1 14.6 6.2Z"/><path d="M12 4V20M5.5 12.2H18.5" stroke-width="1.4"/>`,
     }],
   ],
+  candy: [
+    ['Diorama box', {
+      fill: `<path d="M12 1.4L22.2 7.2V16.8L12 22.6L1.8 16.8V7.2Z"/>`,
+      cut: `<path d="M12 12.6V22.6M1.8 7.2L12 12.6L22.2 7.2" stroke-width="1.4" fill="none"/><path d="M4.6 15.8L7.6 11L10.2 14.6V18.8Z"/><circle cx="16.4" cy="14" r="1.6"/>`,
+    }],
+    ['Snow globe', {
+      fill: `<circle cx="12" cy="10.4" r="9"/><path d="M4.6 18.4H19.4L21 22.8H3Z"/>`,
+      cut: `<circle cx="12" cy="10.4" r="7.2"/>`,
+      top: `<path d="M12 4.8L16 11.6H13.4L16.4 15.6H7.6L10.6 11.6H8Z"/><circle cx="7" cy="7.6" r="0.9"/><circle cx="17.4" cy="6.8" r="0.8"/><circle cx="16.2" cy="9.4" r="0.6"/><path d="M8.6 3.8a7.6 7.6 0 0 0-3.4 3" stroke-width="1.3" fill="none" stroke-linecap="round"/>`,
+    }],
+    ['Little stage', {
+      fill: `<path d="M1.6 2H22.4V22.4H1.6Z"/>`,
+      cut: `<path d="M4.4 6.4H19.6V22.4H4.4Z"/>`,
+      top: `<path d="M4.4 6.4C6.6 9 8.6 9.4 10.4 7.6V6.4ZM19.6 6.4C17.4 9 15.4 9.4 13.6 7.6V6.4Z"/><path d="M4.4 6.4V18.6C5.8 17.4 6.4 13 6 9.6ZM19.6 6.4V18.6C18.2 17.4 17.6 13 18 9.6Z"/><path d="M12 12.2L13 14.6L15.6 14.9L13.6 16.6L14.2 19.2L12 17.8L9.8 19.2L10.4 16.6L8.4 14.9L11 14.6Z"/>`,
+    }],
+  ],
+  sonder: [
+    ['Lit window', {
+      fill: `<path d="M3 1.6H21V22.4H3Z"/>`,
+      cut: `<path d="M6.4 5H17.6V19H6.4Z"/>`,
+      top: `<circle cx="12" cy="10.6" r="2.6"/><path d="M6.4 19C6.6 15.4 9 13.8 12 13.8S17.4 15.4 17.6 19Z"/>`,
+    }],
+    ['Bench and lamp', {
+      fill: `<path d="M1.6 14.6H16.4V16.6H1.6ZM2.6 11.4H15.4V13.2H2.6ZM3 16.6H4.8V21.4H3ZM13.2 16.6H15V21.4H13.2Z"/><path d="M19.4 4H21V21.4H19.4Z"/><path d="M17 2.2H23.4L22.4 5H18Z"/>`,
+      top: `<path d="M20.2 6.4L17.6 12.4M20.2 6.4L22.8 12.4" stroke-width="0.9" opacity="0.6"/>`,
+    }],
+    ['Coffee', {
+      fill: `<path d="M3 10.4H17.4V15.8A5.6 5.6 0 0 1 11.8 21.4H8.6A5.6 5.6 0 0 1 3 15.8Z"/><path d="M17.4 12H19a2.8 2.8 0 0 1 0 5.6H17V15.8H19a1 1 0 0 0 0-2H17.4Z"/><path d="M1.8 22H18.6V23.4H1.8Z"/>`,
+      top: `<path d="M7.4 2.4C6.2 4 8.6 5 7.4 7.4M11.4 1.6C10.2 3.2 12.6 4.2 11.4 6.6" stroke-width="1.5" fill="none" stroke-linecap="round"/>`,
+    }],
+  ],
   odd: [
     ['Asterisk', {
       fill: `<g transform="rotate(14 12 12)"><path d="M10.3 1.2H13.7V9.1L20.4 5.2L22.1 8.2L15.4 12L22.1 15.8L20.4 18.8L13.7 14.9V22.8H10.3V14.9L3.6 18.8L1.9 15.8L8.6 12L1.9 8.2L3.6 5.2L10.3 9.1Z"/></g>`,
@@ -108,7 +139,8 @@ export const icon = (m, c) => {
 };
 
 // Tom's picks live in the browser; these are the defaults.
-export const DEFAULTS = { poke: 'Bubble sheet', goo: 'Slime face', light: 'Prism', science: 'Flask', dark: 'Moon and star', odd: 'Asterisk' };
+// Tom's picks, 2026-11-09.
+export const DEFAULTS = { poke: 'Pop!', goo: 'Drop', light: 'Glint', science: 'Atom', dark: 'Moon and star', odd: 'Asterisk', candy: 'Snow globe', sonder: 'Lit window' };
 export const PICKS_KEY = 'stimming.serieslab.icons3';
 export function picks() {
   let p = {};
