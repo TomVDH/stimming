@@ -20,7 +20,8 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - [x] Task 3: shot: slug, muzzle flash, bolt, Mach ring, recoil, hit, shards, burst, flash, respawn; `__qa.shoot`
 - [x] Task 3: checkpoint: the slug (stills sent 13:45)
 - [x] Task 4: sound: wind, hum, clicks, slug, crack at the Mach arrival, rumble; Q9 (context runs on hold, hum stops on release and on mute, pending drains, suspended after settle)
-- [ ] Task 5: persistence, reduced motion, Q1 to Q10 at three sizes, fps in the bean, `tests/bar-v2.html`, PR
+- [x] Task 5: persistence, reduced motion, Q1 to Q10 at three sizes, `tests/bar-v2.html` 98/98; fps below
+- [ ] Task 5: fresh-eyes review of the branch, then the PR
 - [ ] Tom sets the Dutch name (proposal: Spoorkanon) and IPA
 - [ ] Record the session cost
 
@@ -44,3 +45,11 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - Tom (13:29): a day or dusk scene, and no glowing parts on the gun. The night K2 sky became a sunlit dusk sky; cells, seams, chase glow, beacons and service lights are gone. The charge reads as lightning over the gap, dust lifting and a shake, all growing with the hold.
 - Tom (13:33): the rock far out, the bolt in flight for seconds. DA 40 km (same angular size), flight 9 s at a tap to 6 s at full charge; chaos saturates over 4 s, power over 2.5 s.
 - The shot runs on a hand-rolled state keyed to the sim clock, not a GSAP timeline: fewer moving parts for one sequence. Cost if wrong: the same code in GSAP form.
+
+## QA (2026-11-09, headless Chrome on Metal, 1280 × 800)
+
+- Q1 `node --check` clean on the toy module and the four menu scripts. Q2 clean console through chips, slider, Settings, hold, release, Space, drag.
+- Q4 zero `requestAnimationFrame` calls in 2 s once asleep (`?sleep=2500`). Q5 zero when hidden. Q6 reduced motion: clean, no arcs.
+- Q7 two visible controls. Q8 Space charges and fires. Q9 see Task 4. Q10 hold 30 fps, shot 30 fps (the 30 fps film cadence is the cap).
+- `tests/bar-v2.html`: DONE 98/98.
+- Tom checks fps, sound by ear and the hold on a real device.

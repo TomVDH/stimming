@@ -71,7 +71,8 @@ const store = {
   get(k) { try { return localStorage.getItem(`stimming.railgun.${k}`); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(`stimming.railgun.${k}`, String(v)); } catch { /* storage off */ } },
 };
-// Each size: first and last angular diameter in degrees, approach seconds, shard count, rumble gain.
+// Per size: first and last diameter in degrees.
+// Then approach seconds, shard count, rumble gain.
 const SIZES = {
   boulder: { th0: 0.8, thMax: 8, T: 60, shards: 24, rumble: 0.7 },
   mountain: { th0: 1.4, thMax: 14, T: 90, shards: 40, rumble: 1.0 },
@@ -140,7 +141,8 @@ const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
 const AX_UP = new THREE.Vector3(0, Math.cos(ELEV), Math.sin(ELEV));
 const A0 = new THREE.Vector3(0, BASE_Y, 0);
 const axisAt = (s, out) => out.copy(A0).addScaledVector(AX, L * s);
-// The asteroid hangs 40 km out along the axis; the bolt takes seconds to reach it.
+// The asteroid hangs 40 km out along the axis.
+// The bolt takes seconds to reach it.
 const DA = 40000;
 
 /* ---------- uniforms ---------- */
@@ -179,7 +181,8 @@ const U = {
 };
 
 /* ---------- sun: late light over a dusty plain ---------- */
-// The sun sits ahead and to the left, so the gun stands against its glow.
+// The sun sits ahead and to the left.
+// The gun stands against its glow.
 const SUN_AZ = new THREE.Vector2(-0.62, -0.78).normalize();
 const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 function sun(deg) {
@@ -193,7 +196,7 @@ function sun(deg) {
   U.uHorC.value.set(...lerp3([0.78, 0.38, 0.17], [0.72, 0.68, 0.62], low));
   renderer.toneMappingExposure = 0.9;
 }
-// The slider runs from the sun on the horizon to fifteen degrees up.
+// The slider lifts the sun from the horizon to 15 degrees.
 const sunDeg = v => 1 + 14 * v * v;
 const setSun = () => { sun(sunDeg(opts.sun)); draw(); };
 
@@ -226,8 +229,10 @@ float k3fbm(vec3 p) {
 /* ---------- end K2 ---------- */
 
 /* ---------- K2: sky ---------- */
-// A day sky in place of the night one: zenith, horizon, dust band, the sun.
-// Kept from Marsh launch: wisps. New: the rock, the bolt and the hit light the air.
+// A day sky replaces the night one.
+// Zenith, horizon, dust band, the sun.
+// Kept from Marsh launch: wisps.
+// New: the rock, the bolt and the hit light the air.
 const K2_SKY = /* glsl */`
 uniform vec3 uSunC, uZenC, uHorC;
 uniform float uSunE;
@@ -293,14 +298,14 @@ float k2hazeAmount(vec3 P) {
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
 }
-// The haze takes the sky's colour at the horizon, without the sun's disc.
+// The haze takes the horizon sky colour without the sun's disc.
 vec3 k2hazeColor(vec3 dir) { return k2skyS(normalize(vec3(dir.x, 0.02, dir.z)), 0.0) * 0.9; }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
 /* ---------- end K2 ---------- */
 
-// Shared lighting: the sky's hemisphere, the sun, a rim from behind, the rock's glow.
+// Shared lighting: sky hemisphere, sun, rim, the rock's glow.
 const LIGHT = /* glsl */`
 uniform float uL;
 uniform vec3 uAxisA, uAxisD, uAxisUp;
@@ -349,7 +354,8 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(30000, 30000).rotateX(-Mat
     float sw = 4.0 + 0.05 * uShock.z;
     float shock = exp(-(r - uShock.z) * (r - uShock.z) / (2.0 * sw * sw));
     float inside = smoothstep(uShock.z, uShock.z - sw * 3.0, r);
-    // Dust stands up in the front and catches the sun; the air behind it is swept clean.
+    // Dust stands up in the front and catches the sun.
+    // The air behind it is swept clean.
     col *= 1.0 - 0.25 * uShock.w * inside * (1.0 - shock);
     col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 1.6 * shock * uShock.w;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
@@ -391,7 +397,7 @@ function part(geo, isRail, side) {
 }
 function buildGun() {
   const pieces = [];
-  // Rails: long boxes pitched up the axis, one each side of the gap.
+  // Rails: long boxes pitched up the axis, one per side.
   for (const side of [-1, 1]) {
     const g = new THREE.BoxGeometry(RW, RH, L, 3, 4, 140).translate(0, 0, -L / 2).rotateX(ELEV);
     g.translate(side * (GAP / 2 + RW / 2), A0.y, A0.z);
@@ -402,7 +408,8 @@ function buildGun() {
     const g = new THREE.BoxGeometry(96, 76, 70, 4, 4, 3).translate(0, 0, -35).rotateX(ELEV).translate(0, A0.y, A0.z);
     pieces.push(part(chip(g), false, 0));
   }
-  // Cradles: two uprights and a lintel over both rails, taller as the barrel climbs.
+  // Cradles: two uprights and a lintel over both rails.
+  // They grow taller as the barrel climbs.
   const c = new THREE.Vector3();
   for (let i = 0; i < CRADLES; i++) {
     const s = (i + 1) / (CRADLES + 0.5);
@@ -518,7 +525,8 @@ function placeAst() {
 function retune() { astSize(); draw(); }
 
 /* ---------- plume: fire that streams away from the planet ---------- */
-// Lifted from Coast and meteor and fixed in place: billboards behind the rock.
+// Lifted from Coast and meteor, then fixed in place.
+// Billboards sit behind the rock.
 const QN = 48;
 const plumeGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
 {
@@ -558,7 +566,7 @@ const plume = new THREE.Mesh(plumeGeo, new THREE.ShaderMaterial({
     float n = k2fbm(vUv * 2.2 + vSeed + vec2(uTime * 0.08, -uTime * 0.12));
     float a = smoothstep(1.0, 0.2, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.75, d) * uBurn * (1.0 - 0.6 * vF) * 0.8;
     if (a < 0.003) discard;
-    // White-hot at the rock, fire behind it, then smoke lit by the sky.
+    // White-hot at the rock, fire behind it, then lit smoke.
     vec3 col = mix(uHot * 4.0, uFireC * 2.0 * (0.6 + 0.8 * n), smoothstep(0.0, 0.12, vF));
     col = mix(col, uSmoke * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.35 * (0.4 + 0.6 * n)) + uAstC * 0.25 * exp(-vF * 3.0), smoothstep(0.3, 0.8, vF));
     col = mix(col, k2hazeColor(normalize(vC - cameraPosition)), k2hazeAmount(vC) * 0.6);
@@ -571,7 +579,8 @@ scene.add(plume);
 
 
 /* ---------- dust: puffs that lift off the plain ---------- */
-// Alpha-blended billboards lit by the sun and the sky; a ring buffer of puffs.
+// Alpha-blended billboards lit by the sun and the sky.
+// A ring buffer holds the puffs.
 const DUST_N = 400;
 const dustGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
 const dustSlot = (name, n) => {
@@ -595,7 +604,8 @@ const dust = new THREE.Mesh(dustGeo, new THREE.ShaderMaterial({
     float age = uTime - aD0.w, life = aD1.w;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     float f = age / life;
-    // The puff slows as it rises and swells to three times its size.
+    // The puff slows as it rises.
+    // It swells to three times its size.
     vec3 C = aD0.xyz + aD1.xyz * age * (1.0 - 0.45 * f) + vec3(0.0, 0.6 * age, 0.0);
     float size = aD2.x * (0.4 + 2.0 * f);
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
@@ -649,7 +659,8 @@ const RAMPS = [
   BLUE, // charge blue
 ];
 const starGeo = new THREE.InstancedBufferGeometry();
-// Three columns, tail (0), middle (1) and head (2), so a trail can bend.
+// Three columns: tail (0), middle (1), head (2).
+// A trail can bend.
 starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
 starGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
 const slot = name => {
@@ -748,7 +759,8 @@ function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, r
   starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
 }
-// Upload only the slots written since the last draw; a wrap gives two ranges.
+// Upload only the slots written since the last draw.
+// A wrap gives two ranges.
 function commitStars() {
   if (dirtyFrom < 0) return;
   const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
@@ -802,7 +814,8 @@ const arcMat = new THREE.ShaderMaterial({
     vec4 c1 = projectionMatrix * viewMatrix * vec4(aP1, 1.0);
     vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * uRes;
     d = length(d) > 1e-3 ? normalize(d) : vec2(0.0, 1.0);
-    // The ribbon is 6 px to each side; the core sits in the middle.
+    // The ribbon is 8 px to each side.
+    // The core sits in the middle.
     float W = 8.0 * uDpr;
     vec4 c = position.x < 0.5 ? c0 : c1;
     c.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c.w;
@@ -824,7 +837,7 @@ const arcs = new THREE.Mesh(arcGeo, arcMat);
 arcs.frustumCulled = false;
 arcs.renderOrder = 3;
 scene.add(arcs);
-// Each live arc: two ends, a birth, a life, a bow and a seed.
+// Each live arc: two ends, birth, life, bow, seed.
 const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.Vector3(), b: new THREE.Vector3(), t0: 0, life: 0.1, bow: 10, seed: 0 }));
 const arcP = Array.from({ length: ARC_PTS }, () => new THREE.Vector3());
 const tmpC = new THREE.Vector3();
@@ -839,7 +852,7 @@ function spawnArc(st) {
     arc.b.set(GAP / 2, tmpC.y + (rnd() - 0.3) * RH * 0.8, tmpC.z + (rnd() - 0.5) * 4);
     arc.bow = 25 + rnd() * 20;
   } else if (kind < 0.8) {
-    // Crown: from one rail's top seam to the other's, a crescent over the barrel.
+    // Crown: a crescent from one rail top to the other.
     arc.a.set(-25 + (rnd() - 0.5) * 8, tmpC.y + RH / 2 + 1, tmpC.z + (rnd() - 0.5) * 6);
     arc.b.set(25 + (rnd() - 0.5) * 8, tmpC.y + RH / 2 + 1, tmpC.z + (rnd() - 0.5) * 6);
     arc.bow = 30 + rnd() * 30;
@@ -854,7 +867,8 @@ function spawnArc(st) {
   arc.on = true; arc.t0 = simT; arc.life = 0.08 + rnd() * 0.1; arc.seed = rnd() * 100;
   click(arc);
 }
-// Rebuild every live arc's points: a bowed line with two octaves of jitter.
+// Rebuild every live arc's points each frame.
+// A bowed line with two octaves of jitter.
 function updateArcs() {
   const p0 = arcGeo.attributes.aP0, p1 = arcGeo.attributes.aP1, kk = arcGeo.attributes.aK;
   let any = false;
@@ -897,7 +911,8 @@ const arcsAlive = () => arcList.some(a => a.on);
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
-  // Full size on High, 0.7 on Standard, half on the ladder's rung 2 and on phones.
+  // Full size on High, 0.7 on Standard.
+  // Half on rung 2 and on phones.
   bloom.setSize = (w, h) => { const m = rung >= 2 || w / (size.dpr || 1) < 640 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
   // A sigma of radius / 2.5 gives each layer a round falloff.
   for (const m of bloom.separableBlurMaterials) {
@@ -977,7 +992,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- post chain ---------- */
 const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.075 };
 let size = { w: 1, h: 1, dpr: 1 };
-// The scene renders with 4x multisampling into a half-float target; the chain starts from it.
+// The scene renders with 4x multisampling into a half-float target.
+// The chain starts from it.
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = makeBloom(...POST.bloom);
@@ -990,13 +1006,15 @@ function setSamples(n) {
 }
 
 /* ---------- camera: a low eye beside the breech ---------- */
-// The barrel runs from the lower left up to the right; the rock waits past the muzzle.
+// The barrel runs from the lower left up to the right.
+// The rock waits past the muzzle.
 const look = { yaw: 0, pitch: 0 }, lookTo = { yaw: 0, pitch: 0 };
 const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0 };
 let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
 function frame() {
   const portrait = size.w < size.h;
-  // A long lens from three kilometres: the whole gun, the rock above its muzzle.
+  // A long lens from three kilometres.
+  // The whole gun, the rock above its muzzle.
   const fov = portrait ? 50 : 32;
   camera.aspect = size.w / size.h;
   // The charge pushes the lens in a little.
@@ -1005,8 +1023,9 @@ function frame() {
   const hf = portrait ? 0.70 : 0.72;
   baseUp = Math.atan((2 * hf - 1) * Math.tan(rad(camera.fov / 2)));
   if (portrait) camera.position.set(900, 70, 2200); else camera.position.set(1500, 70, 1800);
-  const yaw0 = portrait ? rad(7) : rad(18);
-  // A locked-off camera: the hold and the recoil are the only things that move it.
+  const yaw0 = portrait ? rad(11) : rad(18);
+  // A locked-off camera.
+  // Only the hold and the recoil move it.
   const wk = reduced() ? 0 : 1.2 * chaos * chaos + 2.2 * cam.shake, t = simT;
   const jit = () => (Math.random() - 0.5) * 0.0005;
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
@@ -1037,7 +1056,8 @@ function aimAst() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  // Rung 1 drops the pixel ratio; rung 2 drops multisampling and shrinks the bloom.
+  // Rung 1 drops the pixel ratio.
+  // Rung 2 drops multisampling and shrinks the bloom.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
@@ -1070,7 +1090,8 @@ function draw() {
 
 
 /* ---------- the approach ---------- */
-// The rock closes in on its size curve; at the top it holds and waits.
+// The rock closes in on its size curve.
+// At the top it holds and waits.
 function stepAst(dt) {
   if (ast.state === 'approach') {
     ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
@@ -1082,7 +1103,9 @@ function stepAst(dt) {
 }
 
 /* ---------- the charge ---------- */
-// A press starts the charge; the level follows the hold time; any release fires.
+// A press starts the charge.
+// The level follows the hold time.
+// Any release fires.
 let charge = null;
 const CHASE_T = c => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(c, 1.5));
 const levelOf = held => 0.12 + 0.88 * (1 - Math.exp(-held / 2.5));
@@ -1117,7 +1140,7 @@ function stepCharge(dt) {
     if (ac) { humStart(ac); humUpdate(ac); }
     U.uChase.value = charge.chase;
     U.uChaseW.value = THREE.MathUtils.lerp(0.25, 0.08, c);
-    // Arcs: a few a second at first, a storm after a long hold.
+    // Arcs: a few a second at first, then a storm.
     if (chaos > 0.1 && !reduced()) {
       const rate = THREE.MathUtils.lerp(1, 24, chaos);
       if (rnd() < dt * rate) {
@@ -1125,7 +1148,7 @@ function stepCharge(dt) {
         spawnArc(st);
       }
     }
-    // Dust lifts off the plain round the breech and along the first rails.
+    // Dust lifts off the plain round the breech and first rails.
     if (chaos > 0.08) {
       charge.dust += dt * 70 * chaos * chaos;
       while (charge.dust >= 1) {
@@ -1140,7 +1163,7 @@ function stepCharge(dt) {
       }
     }
   } else {
-    // The level, the chaos and the chase let go over a fraction of a second.
+    // Level, chaos and chase let go in a fraction of a second.
     U.uCharge.value *= Math.exp(-dt / 0.2);
     chaos *= Math.exp(-dt / 0.3);
     if (U.uCharge.value < 0.005) U.uCharge.value = 0;
@@ -1183,7 +1206,8 @@ function flare(m, pos, size, gain) {
 }
 
 /* ---------- the bolt: one ribbon from the breech to the rock ---------- */
-// Forty-eight segments; each frame they take the head's last quarter second of path.
+// Forty-eight segments.
+// Each frame they take the head's last quarter second.
 const BOLT_SEG = 48, BOLT_PTS = BOLT_SEG + 1;
 const boltGeo = new THREE.BufferGeometry();
 {
@@ -1245,7 +1269,8 @@ bolt.visible = false;
 scene.add(bolt);
 
 /* ---------- shards: the rock in pieces ---------- */
-// One instanced mesh; each shard's pose comes from its birth time in closed form.
+// One instanced mesh.
+// Each shard's pose comes from its birth time in closed form.
 const SHARD_MAX = 56;
 const shardBase = (() => {
   let g = mergeVertices(new THREE.IcosahedronGeometry(1, 1));
@@ -1285,7 +1310,8 @@ const shardMat = new THREE.ShaderMaterial({
   void main() {
     float age = uTime - aSeed.z;
     if (age < 0.0 || age > 9.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    // Mild drag, a slow fall, a spin; the shard shrinks away over its last two seconds.
+    // Mild drag, a slow fall, a spin.
+    // The shard shrinks away over its last two seconds.
     float k = 0.15;
     vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, 0.25 * age * age, 0.0);
     float sc = aSeed.y * (1.0 - smoothstep(7.0, 9.0, age));
@@ -1317,7 +1343,9 @@ scene.add(shards);
 let shardsEnd = 0;
 
 /* ---------- the shot ---------- */
-// One shot at a time. The slug runs the rails in 0.3 s, then the bolt crosses to the rock.
+// One shot at a time.
+// The slug runs the rails in 0.3 s.
+// Then the bolt crosses to the rock.
 let shot = null, hitFlash = 0;
 const MUZZLE = axisAt(1, new THREE.Vector3());
 const yUp = new THREE.Vector3(0, 1, 0);
@@ -1336,7 +1364,8 @@ fire = c => {
   const T = THREE.MathUtils.lerp(9, 6, c);
   const canHit = ast.state === 'approach' || ast.state === 'hold';
   shot = { t0: simT, c, T, target: ast.pos.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T };
-  // The Mach ring starts at the muzzle's foot and reaches the eye at the speed of sound.
+  // The Mach ring starts at the muzzle's foot.
+  // It reaches the eye at the speed of sound.
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
   U.uFire.value = 1;
   cam.shake = 1.0 * c; cam.kickP = rad(0.6) * c; cam.kickY = -rad(0.3) * c;
@@ -1399,7 +1428,8 @@ function stepShot(dt) {
   if (!shot) { U.uFire.value *= Math.exp(-dt / 0.15); return; }
   const age = simT - shot.t0;
   U.uFire.value = Math.exp(-age / 0.15);
-  // The Mach ring: out from the muzzle at 340 m/s, fading over fourteen seconds.
+  // The Mach ring runs out from the muzzle at 340 m/s.
+  // It fades over fourteen seconds.
   const sa = Math.max(0, age - 0.3);
   U.uShock.value.z = 340 * sa;
   U.uShock.value.w = shot.c * Math.max(0, 1 - sa / 14);
@@ -1540,7 +1570,8 @@ function hiss(ac, t, dur, rate = 1) {
   return s;
 }
 /* ---------- the wind bed ---------- */
-// Low wind over the plain, and a whistle through the cradles. It dips under a charge.
+// Low wind over the plain, a whistle through the cradles.
+// It dips under a charge.
 let bed = null;
 function windBed(ac) {
   if (bed) return;
@@ -1567,7 +1598,8 @@ function soundBed() {
   bed.g2.gain.setTargetAtTime(0.006 * k, ac.currentTime, 0.3);
 }
 /* ---------- the charge hum ---------- */
-// Two saws a few cents apart, a sub, and a tremor that runs with the chase.
+// Two saws a few cents apart, a sub.
+// A tremor runs with the chase.
 let hum = null;
 function humStart(ac) {
   if (hum) return;
@@ -1622,7 +1654,8 @@ click = arc => {
   s.connect(bp).connect(g).connect(pan).connect(kit.out);
   track(t + dur + 0.05, s);
 };
-// The slug: a chirp that rises as it runs the rails, left to right.
+// The slug: a chirp that rises along the rails.
+// It pans left to right.
 function chirp(ac, c) {
   const t = ac.currentTime;
   const o = ac.createOscillator(), g = ac.createGain(), pan = ac.createStereoPanner();
@@ -1633,7 +1666,8 @@ function chirp(ac, c) {
   o.start(t); o.stop(t + 0.35);
   track(t + 0.4, o);
 }
-// The crack: it plays when the Mach ring reaches the eye, seconds after the flash.
+// The crack plays when the Mach ring reaches the eye.
+// That is seconds after the flash.
 crack = sh => {
   const ac = kit.live();
   if (!ac) return;
@@ -1661,7 +1695,8 @@ crack = sh => {
   }
   track(t + 2.1, sub, cr, wh, tail);
 };
-// The rumble: forty kilometres of air, compressed eight times, so it lands fifteen seconds after the flash.
+// The rumble crosses forty kilometres of air, compressed eight times.
+// It lands fifteen seconds after the flash.
 function rumble(c) {
   const ac = kit.live();
   if (!ac) return;
@@ -1676,7 +1711,8 @@ function rumble(c) {
   o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
   track(t + 7.5, s, o);
 }
-// Sound on mid-charge starts the hum where the hold is; off stops everything.
+// Sound on mid-charge starts the hum where the hold is.
+// Sound off stops everything.
 sound.onChange(on => {
   if (!on) { stopAll(); humStop(kit.ac); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
@@ -1712,7 +1748,8 @@ const end = e => {
 stage.addEventListener('pointerup', end);
 stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
-// Space holds the charge; the shell ignores it while a sheet has focus.
+// Space holds the charge.
+// The shell ignores it while a sheet has focus.
 let spaceDown = false;
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
@@ -1741,10 +1778,11 @@ window.__qa = {
   info: () => ({ ...renderer.info.render }),
   size: v => { opts.size = v; retune(); },
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th) }),
-  // Hold at a level: the charge starts as if held long enough for c.
+  // Hold at a level: the charge starts as if held for c.
   charge(c) { act.press(); charge.t0 = simT + 1.6 * Math.log(1 - (c - 0.12) / 0.88); stepCharge(0); frame(); draw(); },
   release() { act.release(); },
-  // Jump the clock by t seconds; the rock and the charge catch up.
+  // Jump the clock by t seconds.
+  // The rock and the charge catch up.
   jump(t) { simT += t; U.uTime.value = simT; stepAst(t); stepCharge(Math.min(t, 0.1)); frame(); draw(); },
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; astSize(); frame(); draw(); },
   charged: () => U.uCharge.value,
