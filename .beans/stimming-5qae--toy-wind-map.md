@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T08:44:33Z
+updated_at: 2026-11-09T09:25:40Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -60,10 +60,24 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 
 Spec: docs/superpowers/specs/2026-11-09-windmap-round-2-design.md.
 
-- [ ] Icon round (five pointer-driven directions), Tom picks
+- [x] Icon round (five pointer-driven directions): icons/spike-19.html
+- [ ] Tom picks an icon direction
 - [ ] Emblem; promotion to the main shelf as No. 33 (Beta)
-- [ ] Chart grid
-- [ ] Light pass: bloom, eye glow, gust flash, merge ring
-- [ ] Gestures: high pressure, flick, jet stream
-- [ ] Chart layer: fronts, tracks, H and L
-- [ ] Globe projection
+- [x] Chart grid
+- [x] Light pass: bloom, eye glow, gust flash, merge ring
+- [x] Gestures: high pressure, flick, jet stream
+- [x] Chart layer: fronts, tracks, H and L
+- [x] Globe projection
+- [x] Round 2 QA in both projections
+
+## Round 2 QA (2026-11-09)
+
+Browser pane, background tab, in-memory frame pump; checks live in the git-ignored .superpowers/sdd workspace.
+
+- Grid: line contrast over bright wind 0.022 (major), 0.018 (minor).
+- Light: a tap lifts its point from 0.18 to 0.45 within 0.1 s; drifting stays at 30 fps.
+- Gestures: 7 of 7 checks pass; a slow circling start became a high 0 of 10 times; Fujiwhara still merges at 7.5 s.
+- Chart: tracks and marks land on their storms at 1280 and after a resize to 375 px; fronts grow, then occlude by 40 s.
+- Globe: off-disc taps do nothing; the wrap is continuous (max step 0.012 world, Γ steady); a projection switch mid-gesture frees the storm.
+- Q2, Q4 to Q6 and Q9 pass in both projections. Q10 with every option on at High, background tab: chart 37 ms median, globe 23 ms.
+- Session time: about 01:50 to 03:00.
