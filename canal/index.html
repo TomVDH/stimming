@@ -137,7 +137,7 @@ const canvas = renderer.domElement;
 stage.prepend(canvas);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 4000);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 9000);
 // Layer 1 holds what the water mirrors.
 const LIGHT = 1;
 // The towpaths sit this high above the water.
@@ -281,7 +281,8 @@ float k2hazeAmount(vec3 P) {
   float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
   // Exponential height fog integrated along the ray.
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
-  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+  // The haze never quite closes, so far spires stay as faint silhouettes.
+  return min(1.0 - exp(-dist * uHaze * max(avg, 0.0)), 0.86);
 }
 uniform vec3 uTown;
 vec3 k2hazeColor(vec3 dir) { return uHor * 0.9 + uGlowC * k2glow(dir) * 0.5 + uTown; }
@@ -328,6 +329,28 @@ uniform highp sampler2D tGrid;
 uniform int uCanal0;
 uniform float uRainK, uRings;
 ${LAMP_STATE}
+// Wet asphalt: each lamp leaves a glint stretched toward the eye, as on a real wet road.
+vec3 streetGlint(vec3 P, vec3 V) {
+  vec2 c = floor((P.xz - vec2(-1500.0, -2000.0)) / 12.0);
+  if (c.x < 0.0 || c.y < 0.0 || c.x > 249.0 || c.y > 249.0) return vec3(0.0);
+  ivec2 ci = ivec2(c);
+  vec4 a = texelFetch(tGrid, ivec2(ci.x * 2, ci.y), 0), b = texelFetch(tGrid, ivec2(ci.x * 2 + 1, ci.y), 0);
+  float ids[8] = float[8](a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w);
+  // The view's ground direction; the glint is long along it and narrow across it.
+  vec2 fw = normalize(V.xz + 1e-5), sd = vec2(-fw.y, fw.x);
+  vec3 s = vec3(0.0);
+  for (int k = 0; k < 8; k++) {
+    if (ids[k] < 0.0) break;
+    vec4 lp, lc;
+    vec4 ls = lampState(int(ids[k]), lp, lc);
+    if (ls.a <= 0.0) continue;
+    vec3 l = normalize(lp.xyz - P), h = normalize(l - V);
+    vec2 hh = vec2(dot(h.xz, fw) * 0.3, dot(h.xz, sd));
+    float g = pow(max(normalize(vec3(hh.x, h.y, hh.y)).y, 0.0), 220.0);
+    s += ls.rgb * ls.a * g * 3.0;
+  }
+  return s;
+}
 // Raindrop rings on a 0.9 m grid; each cell rings at its own time. Returns a slope.
 vec2 rainRings(vec2 p, float t, float k) {
   vec2 n = vec2(0.0);
@@ -401,7 +424,7 @@ U.uPink.value.set(...linFit(0.5, 0.12, 10));
 /* ---------- end dusk ---------- */
 
 /* ---------- sky dome ---------- */
-const sky = new THREE.Mesh(new THREE.SphereGeometry(2500, 32, 16), new THREE.ShaderMaterial({
+const sky = new THREE.Mesh(new THREE.SphereGeometry(8500, 32, 16), new THREE.ShaderMaterial({
   uniforms: U, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} void main() { gl_FragColor = vec4(k2sky(normalize(vP - cameraPosition)), 1.0); }`,
@@ -1178,9 +1201,72 @@ poplars(1000, -2000);
 // A belt of round trees along the far towpath, open near the village.
 for (let z = 1000; z > -2000; z -= 10 + 4 * rnd()) if (Math.abs(z - ROAD_Z) > 260) tree(canalX(z) + 17.5, z, 2.6 + 1.8 * rnd());
 treeLine(-1600, -2050, 1600, -2050, 14);
+// Beyond the tree lines: neighbouring villages, each round its church spire, and a row of turbines.
+function farVillage(cx, cz, r, n) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * 6.283, q = r * Math.sqrt(rnd()), w = 7 + 7 * rnd(), f = rnd() * 6.283;
+    place(house(w, 4 + 2.5 * rnd(), 9, 3 + 2 * rnd(), rnd() * 100, rnd() < 0.3 ? RENDER : BRICK), cx + Math.cos(a) * q, cz + Math.sin(a) * q, [Math.cos(f), 0, Math.sin(f)]);
+  }
+  for (let i = 0; i < n * 2; i++) {
+    const a = rnd() * 6.283, q = r * Math.sqrt(rnd());
+    bulb(cx + Math.cos(a) * q, QUAY + 2 + 6 * rnd(), cz + Math.sin(a) * q, rnd() < 0.5 ? [1, 0.6, 0.25] : [1, 0.85, 0.6], 0.2 + 0.3 * rnd(), 4);
+  }
+  parts.push(tag(new THREE.BoxGeometry(9, 32, 9).translate(cx, QUAY + 16, cz), [0, 0, 41.3, CHURCH]));
+  parts.push(tag(new THREE.ConeGeometry(6, 28, 8).translate(cx, QUAY + 46, cz), [0, 0, 41.3, CHURCH]));
+  bulb(cx, QUAY + 25, cz, [1, 0.55, 0.22], 0, 6);
+}
+for (const [x, z, r] of [[-700, -2500, 200], [1900, -2300, 220], [-2600, -3600, 260], [1200, -4800, 320], [4200, -2600, 300], [-4200, -900, 240], [3800, 900, 260], [-1800, 3200, 220], [200, -7000, 420]]) farVillage(x, z, r, Math.round(r / 7));
+// Turbines: a white tower, a nacelle, three blades, a blinking red light on top.
+for (let i = 0; i < 4; i++) {
+  const x = 2300 + i * 420, z = -3200 + i * 160, a = rnd() * 6.283;
+  parts.push(tag(new THREE.CylinderGeometry(1.6, 2.6, 100, 10).translate(x, QUAY + 50, z), [0, 0, 5, PAINT]));
+  parts.push(tag(new THREE.BoxGeometry(4, 4, 11).translate(x, QUAY + 101, z + 2), [0, 0, 5, PAINT]));
+  for (let b = 0; b < 3; b++) parts.push(tag(new THREE.BoxGeometry(2.2, 46, 0.6).translate(0, 23, 0).rotateZ(a + (b * 2 * Math.PI) / 3).translate(x, QUAY + 101, z - 4), [0, 0, 5, PAINT]));
+  bulb(x, QUAY + 104, z + 2, [1, 0.05, 0.03], i * 0.37, 5);
+}
 treeLine(1550, 1000, 1550, -2000, 12);
 treeLine(-1550, 1000, -1550, -2000, 12);
 church(); staminee(); frietkot(); school(); station(); bridge(); walls(); posts(); kermis(); railway();
+// Road detail over the village, 0.34 m a pixel: red marks paint, green marks kerbs, blue marks cycle paths.
+const DW = { x0: -360, z0: -560, size: 700, px: 2048 };
+const detTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = DW.px;
+  const g = c.getContext('2d'), k = DW.px / DW.size;
+  g.fillStyle = '#000'; g.fillRect(0, 0, DW.px, DW.px);
+  g.setTransform(k, 0, 0, k, -DW.x0 * k, -DW.z0 * k);
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = g.lineJoin = 'round';
+  // A polyline moved sideways by off metres.
+  const offset = (pts, off) => pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1;
+    return [p[0] - dz / L * off, p[1] + dx / L * off];
+  });
+  const stroke = (pts, w, col, dash = []) => {
+    g.strokeStyle = col; g.lineWidth = w; g.setLineDash(dash);
+    g.beginPath(); g.moveTo(...pts[0]); for (const q of pts.slice(1)) g.lineTo(...q); g.stroke();
+  };
+  for (const { pts, h } of PL) {
+    for (const sd of [-1, 1]) stroke(offset(pts, sd * (h + 0.1)), 0.3, '#00ff00');
+    if (h < 2.75) continue;
+    for (const sd of [-1, 1]) stroke(offset(pts, sd * (h - 0.35)), 0.15, '#ff0000');
+    if (h >= 3.5) stroke(pts, 0.14, '#ff0000', [3, 6]);
+  }
+  // Red cycle paths along the main road and the far canal road.
+  const main = PL[0].pts.concat(PL[1].pts), canal = PL[2];
+  for (const sd of [-1, 1]) stroke(offset(main, sd * 5.2), 1.7, '#0000ff');
+  stroke(offset(canal.pts, 4), 1.7, '#0000ff');
+  // A zebra crossing to the kerkplein.
+  g.setLineDash([]);
+  g.fillStyle = '#ff0000';
+  for (let i = 0; i < 7; i++) g.fillRect(212 + i * 1, ROAD_Z - 3.6, 0.5, 7.2);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = false;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+})();
 // Roads go back on top, so no garden covers the asphalt.
 worldOn(gc);
 gc.strokeStyle = '#4a4a4e'; gc.lineCap = gc.lineJoin = 'round';
@@ -1788,23 +1874,35 @@ function bulbPoints(list) {
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
     vertexShader: /* glsl */`attribute vec3 aCol; attribute vec2 aPh; uniform float uDusk, uDpr, uHaze, uNow, uCross;
-    varying vec3 vCol;
+    varying vec3 vCol; varying float vKind;
     void main() {
       vec4 P = modelMatrix * vec4(position, 1.0);
       float dist = length(P.xyz - cameraPosition), k = aPh.y, on;
       if (k < 0.5) on = 0.65 + 0.35 * sin(uNow * 2.0 + aPh.x * 0.9);
       else if (k < 1.5) on = 0.5 + 0.5 * step(0.5, fract(uNow * 1.5 + aPh.x * 0.16));
       else if (k < 2.5) on = uCross * step(0.5, fract(uNow * 0.95 + aPh.x / 6.2832));
-      else on = 1.0;
-      // Kermis and floodlights wake with the dusk; the crossing works day and night.
-      if (k < 2.5 && k > 1.5) {} else on *= smoothstep(0.1, 0.25, uDusk);
-      vCol = aCol * on * exp(-dist * uHaze * 0.35) * (k > 2.5 ? 3.0 : 1.6);
-      gl_PointSize = clamp((k > 2.5 ? 1800.0 : 700.0) / dist, 1.4, k > 2.5 ? 14.0 : 7.0) * uDpr;
+      else if (k < 3.5) on = smoothstep(0.1, 0.25, uDusk);
+      // Far villages: each window wakes at its own dusk mark; turbines blink red; a glow hangs over each village.
+      else if (k < 4.5) on = smoothstep(aPh.x, aPh.x + 0.03, uDusk);
+      else if (k < 5.5) on = step(0.55, fract(uNow * 0.5 + aPh.x));
+      else on = smoothstep(0.3, 0.7, uDusk);
+      // Kermis bulbs wake with the dusk; the crossing works day and night.
+      if (k < 1.5) on *= smoothstep(0.1, 0.25, uDusk);
+      vKind = k;
+      float far = k > 3.5 ? 0.1 : 0.35, gain = k > 5.5 ? 0.12 : k > 4.5 ? 4.0 : k > 3.5 ? 2.2 : k > 2.5 ? 3.0 : 1.6;
+      vCol = aCol * on * exp(-dist * uHaze * far) * gain;
+      float sz = k > 5.5 ? clamp(250000.0 / dist, 30.0, 220.0) : k > 3.5 ? clamp(1400.0 / dist, 1.2, 3.0) : clamp((k > 2.5 ? 1800.0 : 700.0) / dist, 1.4, k > 2.5 ? 14.0 : 7.0);
+      gl_PointSize = sz * uDpr;
       gl_Position = projectionMatrix * viewMatrix * P;
       if (on <= 0.001) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     }`,
-    fragmentShader: /* glsl */`varying vec3 vCol;
-    void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vCol * (exp(-r * r * 10.0) * 2.0 + exp(-r * r * 3.0) * 0.12), 0.0); }`,
+    fragmentShader: /* glsl */`varying vec3 vCol; varying float vKind;
+    void main() {
+      float r = length(gl_PointCoord - 0.5) * 2.0;
+      // A village glow is all halo; a bulb is a hot core in a faint halo.
+      float g = vKind > 5.5 ? exp(-r * r * 3.0) * (1.0 - r) : exp(-r * r * 10.0) * 2.0 + exp(-r * r * 3.0) * 0.12;
+      gl_FragColor = vec4(vCol * max(g, 0.0), 0.0);
+    }`,
   }));
   m.frustumCulled = false;
   m.layers.enable(LIGHT);
@@ -2014,9 +2112,9 @@ function stepPlaces(dt) {
 
 /* ---------- ground: the painted map, the towpaths and the railway ---------- */
 const groundMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, tMap: { value: mapTex } },
+  uniforms: { ...U, ...W, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, tMap: { value: mapTex }, tDet: { value: detTex } },
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform sampler2D tMap; uniform mat4 uTexM; varying vec3 vP; ${HEAD}
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform sampler2D tMap; uniform sampler2D tDet; uniform mat4 uTexM; uniform float uSmear; varying vec3 vP; ${HEAD}
   float band(float x, float a, float b) { return step(a, x) * (1.0 - step(b, x)); }
   void main() {
     vec3 V = normalize(vP - cameraPosition);
@@ -2031,6 +2129,16 @@ const groundMat = new THREE.ShaderMaterial({
     float tar = max(tow, smoothstep(0.15, 0.85, mp.a));
     vec3 alb = pow(mp.rgb, vec3(2.2)) * 0.45 * (0.85 + 0.3 * n2);
     alb = mix(alb, vec3(0.046, 0.046, 0.05) * (0.9 + 0.2 * n), tow);
+    // Close up: aggregate grain in the asphalt, fading where it would alias.
+    float near = 1.0 - smoothstep(0.03, 0.12, fwidth(x) + fwidth(z));
+    alb *= mix(1.0, 0.82 + 0.36 * k2noise(vP.xz * 9.0) * k2noise(vP.xz * 2.3 + 7.0), tar * near);
+    // Road detail: worn white paint, pale kerbs, red-brown cycle paths.
+    vec2 du = (vP.xz - vec2(${DW.x0}.0, ${DW.z0}.0)) / ${DW.size}.0;
+    vec3 det = du.x > 0.0 && du.y > 0.0 && du.x < 1.0 && du.y < 1.0 ? texture2D(tDet, du).rgb : vec3(0.0);
+    alb = mix(alb, vec3(0.085, 0.034, 0.028) * (0.85 + 0.3 * n), det.b);
+    alb = mix(alb, vec3(0.13, 0.13, 0.12), det.g);
+    alb = mix(alb, vec3(0.42, 0.42, 0.4) * (0.75 + 0.25 * k2noise(vP.xz * 4.0)), det.r * 0.9);
+    tar = max(tar, det.b);
     // The square and the railway bed take their own detail.
     float sq = band(x, ${SQ.x0}.0, ${SQ.x1}.0) * band(z, ${SQ.z0}.0, ${SQ.z1}.0);
     float steel = 0.0;
@@ -2041,7 +2149,9 @@ const groundMat = new THREE.ShaderMaterial({
     }
     // Puddles lie on the asphalt where the noise runs high.
     float pud = tar * smoothstep(0.55, 0.61, k2fbm(vP.xz * 0.13 + 3.0));
-    float wet = max(tar, sq) * max(pud, 0.5);
+    // Rain soaks the road; between showers it stays damp, darkest in the gutters.
+    float wet = max(tar, sq) * max(pud, mix(0.45, 1.0, uRainK) * (0.75 + 0.25 * k2noise(vP.xz * 0.3)));
+    wet = max(wet, det.g * 0.9) * (1.0 - 0.6 * det.r);
     alb *= 1.0 - 0.4 * wet;
     vec3 N = vec3(0.0, 1.0, 0.0);
     vec3 col = alb * (skyAmb(N) + lampLit(vP, N));
@@ -2055,6 +2165,16 @@ const groundMat = new THREE.ShaderMaterial({
     R = reflect(V, normalize(vec3(pr.x * 0.4, 1.0, pr.y * 0.4)));
     vec3 refl = mix(k2sky(R), m.rgb, clamp(m.a, 0.0, 1.0) * pud);
     col += refl * fres * (max(tar, sq) * mix(0.3, 0.9, wet) + steel * 0.8 + 0.05);
+    // Near the canal, wet asphalt also mirrors the lit banks in long broken streaks.
+    if (wet > 0.3 && pud < 0.5 && cx < 60.0) {
+      vec2 uv = M.xy / M.w;
+      float len = 0.004 + 0.01 * uSmear;
+      vec3 sm = vec3(0.0);
+      for (int i = -5; i <= 5; i++) sm += texture2D(tMirror, uv + vec2(0.0, float(i) * len)).rgb * exp(-float(i * i) / 12.0);
+      col += sm / 5.9 * fres * wet * 0.55 * (0.5 + k2noise(vec2(x * 2.0, z * 0.6))) * (1.0 - smoothstep(40.0, 60.0, cx));
+    }
+    // Everywhere, each lamp leaves its stretched glint on the wet road, broken by the grain.
+    col += streetGlint(vP, V) * wet * tar * (0.4 + 0.8 * k2noise(vP.xz * vec2(3.0, 1.0)));
     // Streetlights; grass loses its colour under them, wet asphalt throws back a gloss.
     vec3 albP = mix(vec3(dot(alb, vec3(0.2126, 0.7152, 0.0722))), alb, tar);
     vec3 sheen = vec3(0.0);
@@ -2064,6 +2184,18 @@ const groundMat = new THREE.ShaderMaterial({
 });
 groundMat.extensions = { derivatives: true };
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2).translate(0, QUAY, -500), groundMat));
+// Beyond the map: plain field parcels out to the horizon, under the haze.
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000).rotateX(-Math.PI / 2).translate(0, QUAY - 0.3, -500), new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD}
+  void main() {
+    if (vP.x > -1500.0 && vP.x < 1500.0 && vP.z > -2000.0 && vP.z < 1000.0) discard;
+    float h = k2hash(floor(vP.xz / vec2(160.0, 220.0)));
+    vec3 alb = h < 0.5 ? vec3(0.012, 0.018, 0.008) : h < 0.8 ? vec3(0.02, 0.016, 0.01) : vec3(0.026, 0.024, 0.016);
+    gl_FragColor = vec4(k2haze(alb * skyAmb(vec3(0.0, 1.0, 0.0)), vP), 1.0);
+  }`,
+})));
 /* ---------- end ground ---------- */
 
 /* ---------- K2: bloom ---------- */
@@ -2647,7 +2779,7 @@ function easeWeather(dt) {
   W.uWind.value += (wx[0] - W.uWind.value) * k2;
   W.uSmear.value += (wx[1] - W.uSmear.value) * k2;
   U.uRainK.value += (wx[2] - U.uRainK.value) * k;
-  U.uHaze.value = 0.0042 * (1 + 0.6 * U.uRainK.value);
+  U.uHaze.value = 0.0026 * (1 + 1.2 * U.uRainK.value);
 }
 const easing = () => Math.abs(wx[0] - W.uWind.value) + Math.abs(wx[1] - W.uSmear.value) + Math.abs(wx[2] - U.uRainK.value) > 0.004;
 act.dusk = v => { setDusk(v); taa.reset = true; wake(); draw(); };
