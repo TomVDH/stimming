@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Dijkstra 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Dijkstra 1</h1>
+<p class="lede">Dijkstra, round 1: five directions. Each shows at 256, 128 and 64. Move the pointer over a tile: light floods the streets and the path finds the pointer.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  const SHADOW = 'oklch(0.07 0.01 265)';
+
+  /* ================= The street web ================= */
+
+  // A seeded random keeps every tile the same city.
+  const mulberry = a => () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  // Six by six junctions, jittered; a few streets drop; one avenue runs fast.
+  const city = (() => {
+    const rnd = mulberry(27), n = 6, X = [], Y = [], E = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      X.push(26 + i * 15.2 + (i && i < n - 1 ? (rnd() - 0.5) * 5 : 0));
+      Y.push(26 + j * 15.2 + (j && j < n - 1 ? (rnd() - 0.5) * 5 : 0));
+    }
+    const id = (i, j) => j * n + i;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (i < n - 1 && (rnd() > 0.16 || j === 0 || j === n - 1)) E.push([id(i, j), id(i + 1, j), 1]);
+      if (j < n - 1 && (rnd() > 0.16 || i === 0 || i === n - 1)) E.push([id(i, j), id(i, j + 1), 1]);
+    }
+    // The avenue: a diagonal from the bottom left; light runs it fast.
+    for (let k = 0; k < n - 1; k++) E.push([id(k, n - 1 - k), id(k + 1, n - 2 - k), 0.55]);
+    const w = E.map(([a, b, m]) => Math.hypot(X[a] - X[b], Y[a] - Y[b]) * m);
+    return { X, Y, E, w, N: X.length, n };
+  })();
+  // A plain O(n²) Dijkstra over 36 junctions.
+  const run = s => {
+    const { N, E, w } = city, d = new Array(N).fill(Infinity), par = new Array(N).fill(-1), done = new Array(N).fill(false);
+    d[s] = 0;
+    for (;;) {
+      let u = -1;
+      for (let i = 0; i < N; i++) if (!done[i] && d[i] < Infinity && (u < 0 || d[i] < d[u])) u = i;
+      if (u < 0) break;
+      done[u] = true;
+      E.forEach(([a, b], k) => { const v = a === u ? b : b === u ? a : -1; if (v >= 0 && d[u] + w[k] < d[v]) { d[v] = d[u] + w[k]; par[v] = u; } });
+    }
+    // Flow counts the routes through each junction, for trunks.
+    const flow = new Array(N).fill(1);
+    [...Array(N).keys()].sort((a, b) => d[b] - d[a]).forEach(v => { if (par[v] >= 0) flow[par[v]] += flow[v]; });
+    return { d, par, flow, max: Math.max(...d) };
+  };
+  const SRC = 30, TGT = 17;
+  const near = (p, skip) => {
+    let best = 0, bd = Infinity;
+    city.X.forEach((x, i) => { const d = Math.hypot(x - p[0], city.Y[i] - p[1]); if (i !== skip && d < bd) { bd = d; best = i; } });
+    return best;
+  };
+  const pathOf = (g, t) => { const a = []; for (let v = t; v >= 0; v = g.par[v]) a.unshift(v); return a; };
+  // Heat: sodium near the source, then rust far away; white stays the path's.
+  const heat = t => `oklch(${f(0.84 - 0.32 * t)} ${f(0.13 + 0.03 * t)} ${f(82 - 46 * t)})`;
+
+  // A flood: a wave clock W lights each street from its nearer end.
+  // proj maps web points to drawing points; the options style the parts.
+  const flood = (svg, { proj = p => p, cold, lit, path, src, tgt, pathW = 2.6, widthOf, tint }) => {
+    const P = i => proj([city.X[i], city.Y[i]]);
+    const gc = el('g', {}, svg), gl = el('g', {}, svg), gp = el('g', {}, svg), gn = el('g', {}, svg);
+    city.E.forEach(([a, b]) => { const A = P(a), B = P(b); el('line', { x1: f(A[0]), y1: f(A[1]), x2: f(B[0]), y2: f(B[1]), ...cold }, gc); });
+    const litL = city.E.map(() => el('line', { ...lit, 'stroke-linecap': 'round' }, gl));
+    const pl = el('polyline', { fill: 'none', 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-width': pathW, ...path }, gp);
+    const sM = src(gn), tM = tgt(gn);
+    let g = run(SRC), s = SRC, t = TGT, W = 0;
+    const draw = () => {
+      city.E.forEach(([a, b], k) => {
+        const [n0, n1] = g.d[a] <= g.d[b] ? [a, b] : [b, a];
+        const fr = clamp((W - g.d[n0]) / city.w[k], 0, 1), L = litL[k];
+        if (fr <= 0) { L.setAttribute('display', 'none'); return; }
+        const A = P(n0), B = P(n1), q = [lerp(A[0], B[0], fr), lerp(A[1], B[1], fr)];
+        set(L, { display: '', x1: f(A[0]), y1: f(A[1]), x2: f(q[0]), y2: f(q[1]), stroke: tint || heat(g.d[n0] / g.max) });
+        if (widthOf) L.setAttribute('stroke-width', widthOf(g.par[n1] === n0 ? g.flow[n1] : 0));
+      });
+      if (W >= g.d[t]) { pl.setAttribute('points', pathOf(g, t).map(i => P(i).map(f).join(',')).join(' ')); pl.setAttribute('display', ''); }
+      else pl.setAttribute('display', 'none');
+      sM(P(s)); tM(P(t), W >= g.d[t]);
+    };
+    const st = { W: 0 };
+    let tl = null, demo = null;
+    const go = (from = 0, d = 0.9) => { tl?.kill(); st.W = from; tl = gsap.to(st, { W: g.max * 1.02, duration: d, ease: 'none', onUpdate: () => { W = st.W; draw(); } }); };
+    // Rest: the flood stops just past the destination, so the path shows.
+    const restW = () => Math.max(g.max * 0.62, g.d[TGT] + 4);
+    const rest = () => { tl?.kill(); g = run(SRC); s = SRC; t = TGT; tl = gsap.to(st, { W: restW(), duration: 0.5, ease: 'power2.out', onUpdate: () => { W = st.W; draw(); } }); };
+    W = restW(); st.W = W; draw();
+    const aim = p => { const n = near(p, s); if (n !== t) { t = n; draw(); } };
+    return {
+      enter(p) {
+        // Focus without a pointer: a demo picks a new destination every 1.4 s.
+        if (!p) { demo?.kill(); go(); demo = gsap.timeline({ repeat: -1 }).call(() => { t = Math.floor(Math.random() * city.N); if (t === s) t = TGT; go(); }, null, 1.4); return; }
+        t = near(p, s); go();
+      },
+      move(p) { if (p) aim(p); },
+      leave() { demo?.kill(); demo = null; rest(); },
+      // The abstract tile moves the source instead.
+      reseed(p) { const n = near(p); if (n !== s) { s = n; g = run(s); if (t === s) t = TGT; go(g.max * 0.15, 0.6); } },
+    };
+  };
+  const pinDot = (fill, r = 3) => gn => { const c = el('rect', { width: r * 2, height: r * 2, fill }, gn); return p => set(c, { x: f(p[0] - r), y: f(p[1] - r) }); };
+  const pinRing = (stroke, r = 4.5, sw = 1.6, on = stroke) => gn => { const c = el('rect', { width: r * 2, height: r * 2, fill: 'none', 'stroke-width': sw }, gn); return (p, lit) => set(c, { x: f(p[0] - r), y: f(p[1] - r), stroke: lit ? on : stroke }); };
+
+  // The menu sheen and tile, as other spikes draw them.
+  const rad = (defs, id, cx, cy, r, stops) => { const g = el('radialGradient', { id, cx, cy, r }, defs); stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g)); };
+  const lin = (defs, id, x1, y1, x2, y2, stops) => { const g = el('linearGradient', { id, x1, y1, x2, y2 }, defs); stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g)); };
+  const glowF = (defs, id, sd = 1.4) => { const g = el('filter', { id, x: -0.5, y: -0.5, width: 2, height: 2 }, defs); el('feGaussianBlur', { stdDeviation: sd, result: 'b' }, g); const m = el('feMerge', {}, g); el('feMergeNode', { in: 'b' }, m); el('feMergeNode', { in: 'SourceGraphic' }, m); };
+  const face = (svg, fill, rx = 7) => { el('rect', { x: 20, y: 20, width: 100, height: 100, rx, fill: SHADOW }, svg); return el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill }, svg); };
+  const sheen = (svg, defs, id, rx = 7) => {
+    rad(defs, `${id}lit`, 0.32, 0.26, 0.7, [[0, '#fff', 0.38], [1, '#fff', 0]]);
+    lin(defs, `${id}rim`, 0, 0, 1, 1, [[0, '#fff', 0.62], [0.5, '#fff', 0]]);
+    el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill: `url(#${id}lit)`, opacity: 0.25, 'pointer-events': 'none' }, svg);
+    el('rect', { x: 14.9, y: 14.9, width: 98.2, height: 98.2, rx: rx - 0.8, fill: 'none', stroke: `url(#${id}rim)`, 'stroke-width': 1.4, opacity: 0.6, 'pointer-events': 'none' }, svg);
+  };
+  // City blocks: one rectangle inside each grid cell.
+  const blocks = (inset = 3) => {
+    const out = [], { X, Y, n } = city;
+    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+      const a = j * n + i, x0 = Math.max(X[a], X[a + n]) + inset, x1 = Math.min(X[a + 1], X[a + n + 1]) - inset;
+      const y0 = Math.max(Y[a], Y[a + 1]) + inset, y1 = Math.min(Y[a + n], Y[a + n + 1]) - inset;
+      if (x1 - x0 > 2 && y1 - y0 > 2) out.push([x0, y0, x1, y1, i, j]);
+    }
+    return out;
+  };
+  const lineD = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+  const edgesD = (proj = p => p) => city.E.map(([a, b]) => lineD([proj([city.X[a], city.Y[a]]), proj([city.X[b], city.Y[b]])])).join('');
+  const defPath = (proj = p => p) => lineD(pathOf(run(SRC), TGT).map(i => proj([city.X[i], city.Y[i]])));
+
+  /* ================= Directions ================= */
+
+  const iso = ([x, y], h = 0) => [64 + (x - y) * 0.6, 64 + (x + y - 128) * 0.42 - h];
+  const DIRS = [
+    {
+      l: 'A', name: 'Shaded object',
+      idea: 'A night map tile. Rooftops sit between cold streets; light floods out from the source pin and the path finds the pointer.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        glowF(defs, `${id}g`, 1.2);
+        face(svg, 'oklch(0.13 0.018 275)');
+        const cp = el('clipPath', { id: `${id}c` }, defs); el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 7 }, cp);
+        const g = el('g', { 'clip-path': `url(#${id}c)` }, svg);
+        const rnd = mulberry(5);
+        blocks(2.4).forEach(([x0, y0, x1, y1]) => {
+          const t = 0.2 + rnd() * 0.07;
+          el('rect', { x: f(x0 + 1.2), y: f(y0 + 1.2), width: f(x1 - x0), height: f(y1 - y0), fill: 'oklch(0.08 0.01 275)' }, g);
+          el('rect', { x: f(x0), y: f(y0), width: f(x1 - x0), height: f(y1 - y0), fill: `oklch(${f(t)} 0.012 270)` }, g);
+          el('rect', { x: f(x0), y: f(y0), width: f(x1 - x0), height: 1, fill: `oklch(${f(t + 0.08)} 0.012 270)` }, g);
+        });
+        const lg = el('g', { filter: `url(#${id}g)` }, g);
+        const c = flood(lg, {
+          cold: { stroke: 'oklch(0.3 0.02 270)', 'stroke-width': 1.3 }, lit: { 'stroke-width': 1.6 },
+          path: { stroke: 'oklch(0.99 0.02 90)' }, pathW: 2.4,
+          src: pinDot('oklch(0.99 0.02 90)', 3), tgt: pinRing('oklch(0.75 0.02 270)', 5, 1.5, 'oklch(0.99 0.02 90)'),
+        });
+        sheen(svg, defs, id);
+        return c;
+      },
+      emblem: () => `${EMB_HEAD}
+  <path d="${edgesD()}" stroke="#7a7a7a" stroke-width="2.2" fill="none"/>
+  <path d="${defPath()}" stroke="#fff" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="${f(city.X[SRC] - 6)}" y="${f(city.Y[SRC] - 6)}" width="12" height="12" fill="#fff"/>
+  <rect x="${f(city.X[TGT] - 7)}" y="${f(city.Y[TGT] - 7)}" width="14" height="14" fill="none" stroke="#fff" stroke-width="3"/>
+</svg>
+`,
+    },
+    {
+      l: 'B', name: 'Stencil cut-out',
+      idea: 'A sodium-yellow plate with the streets cut through it. The slots start dark; the flood lights them from below, and the path burns white.',
+      art(svg) {
+        el('rect', { x: 20, y: 20, width: 100, height: 100, fill: SHADOW }, svg);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, fill: 'oklch(0.82 0.13 80)' }, svg);
+        return flood(svg, {
+          cold: { stroke: 'oklch(0.16 0.02 270)', 'stroke-width': 4.2, 'stroke-linecap': 'square' }, lit: { 'stroke-width': 2.4 },
+          tint: 'oklch(0.62 0.17 45)', path: { stroke: '#fff' }, pathW: 4.2,
+          src: pinDot('oklch(0.16 0.02 270)', 5), tgt: pinRing('oklch(0.16 0.02 270)', 6, 2.6, 'oklch(0.16 0.02 270)'),
+        });
+      },
+      emblem: () => `${EMB_HEAD}
+  <rect x="14" y="14" width="100" height="100" fill="#fff"/>
+  <path d="${edgesD()}" stroke="#000" stroke-width="6" stroke-linecap="square" fill="none"/>
+  <path d="${defPath()}" stroke="#8c8c8c" stroke-width="6" fill="none" stroke-linejoin="round"/>
+</svg>
+`,
+    },
+    {
+      l: 'C', name: 'Single-weight line',
+      idea: 'The web in one stroke weight, no tile. Streets warm in flood order; the path is the same line, only white.',
+      box: [20, 20, 88, 88],
+      art(svg) {
+        return flood(svg, {
+          cold: { stroke: 'oklch(0.42 0.03 268)', 'stroke-width': 2.4, 'stroke-linecap': 'round' }, lit: { 'stroke-width': 2.4 },
+          path: { stroke: 'oklch(0.99 0.02 90)' }, pathW: 2.4,
+          src: pinDot('oklch(0.99 0.02 90)', 3.6), tgt: pinRing('oklch(0.6 0.03 268)', 5, 2.4, 'oklch(0.99 0.02 90)'),
+        });
+      },
+      emblem: () => `${EMB_HEAD}
+  <path d="${edgesD()}" stroke="#808080" stroke-width="3.6" stroke-linecap="round" fill="none"/>
+  <path d="${defPath()}" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
+`,
+    },
+    {
+      l: 'D', name: 'Isometric block',
+      idea: 'A slab of city at night. The flood runs the streets between little blocks; the found route glows white across the slab.',
+      box: [4, 22, 120, 96],
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        glowF(defs, `${id}g`, 1.1);
+        const T = 9, cs = [[14, 14], [114, 14], [114, 114], [14, 114]].map(p => iso(p));
+        const down = p => [p[0], p[1] + T];
+        el('path', { d: lineD([cs[1], cs[2], cs[3], down(cs[3]), down(cs[2]), down(cs[1])]) + 'Z', fill: SHADOW, transform: 'translate(5 5)' }, svg);
+        el('path', { d: lineD([cs[3], cs[2], down(cs[2]), down(cs[3])]) + 'Z', fill: 'oklch(0.2 0.02 268)' }, svg);
+        el('path', { d: lineD([cs[2], cs[1], down(cs[1]), down(cs[2])]) + 'Z', fill: 'oklch(0.14 0.016 270)' }, svg);
+        el('path', { d: lineD(cs) + 'Z', fill: 'oklch(0.12 0.016 272)' }, svg);
+        const lg = el('g', { filter: `url(#${id}g)` }, svg);
+        const c = flood(lg, {
+          proj: p => iso(p), cold: { stroke: 'oklch(0.32 0.02 270)', 'stroke-width': 1.4 }, lit: { 'stroke-width': 2 },
+          path: { stroke: 'oklch(0.99 0.02 90)' }, pathW: 2.2,
+          src: pinDot('oklch(0.99 0.02 90)', 2.6), tgt: pinRing('oklch(0.7 0.02 270)', 4, 1.4, 'oklch(0.99 0.02 90)'),
+        });
+        // Blocks rise between the streets, painted back to front.
+        const rnd = mulberry(11), bg = el('g', {}, svg);
+        blocks(3.2).sort((a, b) => (a[4] + a[5]) - (b[4] + b[5])).forEach(([x0, y0, x1, y1]) => {
+          const h = 2 + rnd() * 6;
+          const q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+          const top = q.map(p => iso(p, h)), base = q.map(p => iso(p));
+          el('path', { d: lineD([base[3], base[2], top[2], top[3]]) + 'Z', fill: 'oklch(0.24 0.014 268)' }, bg);
+          el('path', { d: lineD([base[2], base[1], top[1], top[2]]) + 'Z', fill: 'oklch(0.17 0.014 270)' }, bg);
+          el('path', { d: lineD(top) + 'Z', fill: 'oklch(0.33 0.012 265)' }, bg);
+        });
+        return c;
+      },
+      emblem: () => {
+        const rnd = mulberry(11);
+        let tops = '';
+        blocks(3.2).sort((a, b) => (a[4] + a[5]) - (b[4] + b[5])).forEach(([x0, y0, x1, y1]) => { const h = 2 + rnd() * 6; tops += lineD([[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => iso(p, h))) + 'Z'; });
+        return `${EMB_HEAD}
+  <path d="${lineD([[14, 14], [114, 14], [114, 114], [14, 114]].map(p => iso(p)))}Z" fill="#3a3a3a"/>
+  <path d="${tops}" fill="#8a8a8a"/>
+  <path d="${defPath(p => iso(p))}" stroke="#fff" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+</svg>
+`;
+      },
+    },
+    {
+      l: 'E', name: 'Abstract mark',
+      idea: 'Only the shortest-path tree. Trunks thicken by the routes they carry. The pointer moves the source and the tree regrows.',
+      box: [20, 20, 88, 88],
+      art(svg) {
+        const c = flood(svg, {
+          cold: { stroke: 'none' }, lit: {},
+          widthOf: fl => (fl ? f(1 + Math.sqrt(fl) * 0.9) : 0.6),
+          path: { stroke: 'none' }, pathW: 0,
+          src: pinDot('oklch(0.99 0.02 90)', 4.2), tgt: () => () => {},
+        });
+        return { enter: p => (p ? c.reseed(p) : c.enter(null)), move: p => p && c.reseed(p), leave: () => c.leave() };
+      },
+      emblem: () => {
+        const g = run(SRC);
+        let s = '';
+        city.E.forEach(([a, b]) => {
+          const [p, ch] = g.par[b] === a ? [a, b] : g.par[a] === b ? [b, a] : [-1, -1];
+          if (p < 0) return;
+          s += `<line x1="${f(city.X[p])}" y1="${f(city.Y[p])}" x2="${f(city.X[ch])}" y2="${f(city.Y[ch])}" stroke="#fff" stroke-width="${f(1.6 + Math.sqrt(g.flow[ch]) * 1.3)}" stroke-linecap="round"/>`;
+        });
+        return `${EMB_HEAD}
+  ${s}
+  <rect x="${f(city.X[SRC] - 7)}" y="${f(city.Y[SRC] - 7)}" width="14" height="14" fill="#fff"/>
+</svg>
+`;
+      },
+    },
+  ];
+
+  /* ================= Gallery ================= */
+
+  const NAME = 'Dijkstra';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : { x: 14, y: 14, width: 100, height: 100 }, side = Math.max(b.width, b.height);
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-dijkstra';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `dijkstra-${D.l.toLowerCase()}`;
+    const url = `spike/emblems/${file}.svg`;
+    window.EMBLEMS[file] = D.emblem();
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      <div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>
+      <p class="idea">${D.idea}</p>`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tile => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tile);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tile.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tile.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tile.addEventListener('pointerleave', () => c.leave());
+      tile.addEventListener('focus', () => c.enter(null));
+      tile.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
