@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T07:30:08Z
+updated_at: 2026-11-09T07:40:56Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -23,6 +23,6 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 ## Notes
 
 - Bar v2 spec from the start: Weather segments, Dusk slider, Letterbox and Quality in Settings.
-- Tom (2026-11-09): the first pass read Dutch. The street is now a Flemish village canal: two-storey houses, whitewash on a tarred plinth, red pantiles, some eaves to the water, garden-wall gaps, a village church spire for the belfry.
-- Both banks carry houses; the plan named only the far side.
+- Tom (2026-11-09): not a town canal; a rural Flemish in-between place ("Bevergem", marginal and ordinary). The set is now ribbon sprawl along a wide straight canal: towpaths, poplars on the near bank, terraces, lone houses with blank side walls, farmhouses, bungalows, a metal shed, empty lots, a plain concrete road bridge, the next village's church tower over the fields.
+- Lamps are road lamps on steel arms over the towpaths: the sodium warm-up fits them.
 - Task 1 stills sent; waiting on Tom before Task 2.
