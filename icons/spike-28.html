@@ -47,7 +47,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 /* Emblems: the flash box and the dark glass, as the intro shows them. */
 .emb { display: flex; gap: 12px; }
 .emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
-.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; -webkit-mask: var(--emblem) center / contain no-repeat; -webkit-mask-source-type: luminance; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
 .flash { background: #fff; color: var(--intro-bg); }
 .glass { color: #fff; background: oklch(0.3 0.06 300); }
 .glass::before {
@@ -64,7 +64,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 </head>
 <body>
 <h1>Icon spike 28</h1>
-<p class="lede">Ten seconds (was Marsh launch), round 1: no rocket drawn. A streak, a rim of light, a ring of sound. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
+<p class="lede">Smoke ring cannon, round 6: built in the toy's own grain. F is a frame of the toy; O and K are the two picks. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
 <div id="out"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
 <script>
@@ -81,19 +81,22 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     if (parent) parent.appendChild(e);
     return e;
   };
-  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
   const TAU = Math.PI * 2;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const polyD = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
   const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+
 
   /* ================= Shared kit ================= */
 
-  const SHADOW = 'oklch(0.07 0.01 265)';
-  const GOLD = 'oklch(0.9 0.15 85)', HOT = 'oklch(0.98 0.04 95)', EMBER = 'oklch(0.7 0.16 45)', ROSE = 'oklch(0.55 0.12 350)';
+  const SHADOW = 'oklch(0.07 0.01 265)', GREEN = 'oklch(0.88 0.27 142)';
   const lin = (defs, id, x1, y1, x2, y2, stops, user) => {
     const g = el('linearGradient', { id, x1, y1, x2, y2, ...(user ? { gradientUnits: 'userSpaceOnUse' } : {}) }, defs);
+    stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
+    return g;
+  };
+  const rad = (defs, id, cx, cy, r, stops, user) => {
+    const g = el('radialGradient', { id, cx, cy, r, ...(user ? { gradientUnits: 'userSpaceOnUse' } : {}) }, defs);
     stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
     return g;
   };
@@ -104,21 +107,36 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
     el('feMergeNode', { in: 'b' }, m);
     el('feMergeNode', { in: 'SourceGraphic' }, m);
   };
-  // The dusk face: deep blue above, a rose band low.
-  const duskDefs = (defs, id) => lin(defs, `${id}bg`, 0, 0, 0, 1, [[0, 'oklch(0.17 0.05 272)'], [0.62, 'oklch(0.27 0.07 305)'], [1, 'oklch(0.4 0.1 340)']]);
-  // A square block with a hard offset shadow.
-  const block = (svg, fill) => {
-    el('rect', { x: 20, y: 20, width: 94, height: 94, fill: SHADOW }, svg);
-    return el('rect', { x: 14, y: 14, width: 94, height: 94, fill }, svg);
+  // The menu sheen: a lit spot and a rim, as #lit and #rim give it.
+  const sheenDefs = (defs, id) => {
+    rad(defs, `${id}lit`, 0.32, 0.26, 0.7, [[0, '#fff', 0.38], [1, '#fff', 0]]);
+    lin(defs, `${id}rim`, 0, 0, 1, 1, [[0, '#fff', 0.62], [0.5, '#fff', 0]]);
   };
-  const clipBlock = (defs, id) => { const c = el('clipPath', { id }, defs); el('rect', { x: 14, y: 14, width: 94, height: 94 }, c); return `url(#${id})`; };
-  // A flat-top hex block with a hard offset shadow.
-  const HEX = (cx, cy, r) => Array.from({ length: 6 }, (_, i) => { const a = (i / 6) * TAU; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
-  const hexBlock = (svg, fill) => {
-    el('path', { d: polyD(HEX(67, 67, 48)), fill: SHADOW }, svg);
-    return el('path', { d: polyD(HEX(61, 61, 48)), fill }, svg);
+  const sheen = (svg, id, rx = 7, outline = 'oklch(0.34 0.03 258)') => {
+    el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill: `url(#${id}lit)`, opacity: 0.4, 'pointer-events': 'none' }, svg);
+    el('rect', { x: 14.9, y: 14.9, width: 98.2, height: 98.2, rx: rx - 0.8, fill: 'none', stroke: `url(#${id}rim)`, 'stroke-width': 1.8, 'pointer-events': 'none' }, svg);
+    el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill: 'none', stroke: outline, 'stroke-width': 1, 'pointer-events': 'none' }, svg);
   };
-  const clipHex = (defs, id) => { const c = el('clipPath', { id }, defs); el('path', { d: polyD(HEX(61, 61, 48)) }, c); return `url(#${id})`; };
+  // The menu tile: a hard shadow and a rounded face.
+  const face = (svg, fill, rx = 7) => {
+    el('rect', { x: 20, y: 20, width: 100, height: 100, rx, fill: SHADOW }, svg);
+    return el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill }, svg);
+  };
+  const clipFace = (defs, id, rx = 7) => { const c = el('clipPath', { id }, defs); el('rect', { x: 14, y: 14, width: 100, height: 100, rx }, c); return `url(#${id})`; };
+  // A smoke churn: noise drifts while the pointer stays; scale eases in and out.
+  const churnF = (defs, id, freq = 0.06, seed = 3) => {
+    const g = el('filter', { id, x: -0.2, y: -0.2, width: 1.4, height: 1.4 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: freq, numOctaves: 2, seed, result: 'n' }, g);
+    const off = el('feOffset', { in: 'n', dx: 0, dy: 0, result: 'm' }, g);
+    const disp = el('feDisplacementMap', { in: 'SourceGraphic', in2: 'm', scale: 0, xChannelSelector: 'R', yChannelSelector: 'G' }, g);
+    const st = { x: 0, k: 0 };
+    let run = null;
+    const put = () => { off.setAttribute('dx', f(st.x)); disp.setAttribute('scale', f(st.k)); };
+    return {
+      on(k) { gsap.to(st, { k, duration: 0.5, overwrite: 'auto', onUpdate: put }); if (!run) run = gsap.to(st, { x: '+=60', duration: 6, repeat: -1, ease: 'none', onUpdate: put }); },
+      off() { run?.kill(); run = null; gsap.to(st, { k: 0, duration: 0.7, ease: 'power2.out', overwrite: 'auto', onUpdate: put }); },
+    };
+  };
   // A control: aim from the pointer, a demo on focus, a rest on leave.
   const ctl = ({ aim, rest, demo, enter = () => {}, leave = () => {} }) => {
     let tl = null;
@@ -138,177 +156,316 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       sweep(a, b, d = 1.8) { return gsap.fromTo(st, { v: a }, { v: b, duration: d, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: () => draw(st.v) }); },
     };
   };
+  const polyD = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const lineD = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
 
-  /* ================= Current: the menu tile today ================= */
-
-  const CURRENT_ART = (svg, id) => {
-    const defs = el('defs', {}, svg);
-    lin(defs, `${id}sky`, 0, 16, 0, 80, [[0, 'oklch(0.2 0.06 270)'], [0.7, 'oklch(0.32 0.08 320)'], [1, 'oklch(0.66 0.14 50)']], true);
-    lin(defs, `${id}glow`, 0, 80, 0, 30, [[0, 'oklch(0.5 0.03 270)'], [0.55, 'oklch(0.58 0.04 270)'], [0.8, 'oklch(0.88 0.14 80)']], true);
-    const c = el('clipPath', { id: `${id}c` }, defs); el('rect', { x: 16, y: 16, width: 92, height: 92 }, c);
-    el('rect', { x: 22, y: 22, width: 92, height: 92, fill: 'oklch(0.07 0.01 260)' }, svg);
-    el('rect', { x: 16, y: 16, width: 92, height: 92, fill: `url(#${id}sky)` }, svg);
-    const g = el('g', { 'clip-path': `url(#${id}c)` }, svg);
-    const plume = el('path', { d: 'M58 80C58 66 59 52 66 34', stroke: `url(#${id}glow)`, 'stroke-width': 3.2, 'stroke-linecap': 'round', fill: 'none' }, g);
-    const rocket = el('circle', { cx: 61, cy: 57, r: 2.4, fill: 'oklch(0.97 0.05 90)' }, g);
-    el('rect', { x: 16, y: 78, width: 92, height: 3, fill: 'oklch(0.11 0.02 280)' }, g);
-    el('rect', { x: 16, y: 81, width: 92, height: 27, fill: 'oklch(0.2 0.05 310)' }, g);
-    el('rect', { x: 16, y: 81, width: 92, height: 2, fill: 'oklch(0.55 0.12 45)', opacity: 0.7 }, g);
-    const reeds = el('g', { stroke: 'oklch(0.08 0.01 280)', 'stroke-width': 1.6, 'stroke-linecap': 'square', fill: 'oklch(0.08 0.01 280)' }, g);
-    el('path', { d: 'M20 108L18 86M25 108L27 82M30 108L29 90M34 108L37 94M90 108L88 92M95 108L98 80M100 108L102 86M105 108L103 90' }, reeds);
-    el('path', { d: 'M16 108V98L24 96L32 99L40 104L48 108ZM84 108L90 101L98 97L108 96V108Z', stroke: 'none' }, reeds);
-    const st = { p: 0.55 };
-    let len = plume.getTotalLength() || 60;
-    plume.style.strokeDasharray = len;
-    const draw = () => {
-      const pt = plume.getPointAtLength(st.p * len);
-      set(rocket, { cx: f(pt.x), cy: f(pt.y) });
-      plume.style.strokeDashoffset = f(len * (1 - st.p));
-    };
-    draw();
-    let flight = null;
-    const fly = () => { st.p = 0; draw(); flight = gsap.to(st, { p: 1, duration: 1.6, ease: 'power2.in', onUpdate: draw, onComplete: () => { flight = gsap.delayedCall(0.3, fly); } }); };
-    return ctl({
-      aim() {},
-      enter() { if (!flight) fly(); },
-      rest() { flight?.kill(); flight = null; gsap.fromTo(st, { p: 0 }, { p: 0.55, duration: 0.5, ease: 'power1.out', overwrite: true, onUpdate: draw }); },
-      demo: () => ({ kill() {} }),
-    });
+  // The vortex ring's rolled core: an Archimedean spiral of smoke, two and a half turns.
+  // A plane at offset u cuts it at these radial offsets, as nested rings.
+  const TURNS = 2.5;
+  const cuts = u => {
+    const out = [], n = 600, F = s => (s / (TAU * TURNS)) * Math.sin(s) - u;
+    let pa = 0, fa = F(0.0001);
+    for (let i = 1; i <= n; i++) {
+      const s = (i / n) * TAU * TURNS, fb = F(s);
+      if ((fa < 0) !== (fb < 0)) { const t = fa / (fa - fb), q = pa + (s - pa) * t; out.push({ q: (q / (TAU * TURNS)) * Math.cos(q), w: q / (TAU * TURNS) }); }
+      pa = s; fa = fb;
+    }
+    return out;
   };
 
-  /* ================= Round 1: no rocket drawn ================= */
+  // The menu icon today: spike 24 D.
+  const OLD = [
+    {
+      l: 'D', name: 'Isometric block',
+      idea: 'A block of the room: the cannon box fires a ring of smoke cubes through the sheet. Left and right move the ring; cubes inside the sheet light green.',
+      box: [10, 8, 112, 112],
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        glowF(defs, `${id}g`, 1.1);
+        lin(defs, `${id}fl`, 0, 0, 1, 0, [[0, 'oklch(0.3 0.02 255)'], [1, 'oklch(0.22 0.02 262)']]);
+        lin(defs, `${id}sh`, 0, 0, 0, 1, [[0, 'oklch(0.85 0.24 142)', 0.5], [1, 'oklch(0.7 0.2 142)', 0.08]]);
+        const iso = (x, y, z) => [64 + (x - z) * 0.866, 74 + (x + z) * 0.5 - y];
+        const P = pts => polyD(pts.map(q => iso(...q)));
+        const BX = 44, BZ = 30, F = -30, T = 9;
+        el('path', { d: polyD([iso(-BX, F, BZ), iso(BX, F, BZ), iso(BX, F, -BZ), iso(BX, F - T, -BZ), iso(BX, F - T, BZ), iso(-BX, F - T, BZ)].map(p => [p[0] + 6, p[1] + 6])), fill: SHADOW }, svg);
+        el('path', { d: P([[-BX, F, BZ], [BX, F, BZ], [BX, F - T, BZ], [-BX, F - T, BZ]]), fill: 'oklch(0.2 0.016 262)' }, svg);
+        el('path', { d: P([[BX, F, BZ], [BX, F, -BZ], [BX, F - T, -BZ], [BX, F - T, BZ]]), fill: 'oklch(0.14 0.014 266)' }, svg);
+        el('path', { d: P([[-BX, F, -BZ], [BX, F, -BZ], [BX, F, BZ], [-BX, F, BZ]]), fill: `url(#${id}fl)` }, svg);
+        const SX = 10;
+        // The cannon: a box with a dark round mouth on its front face.
+        const cb = { x0: -BX + 2, x1: -BX + 18, y1: F + 30, z: 13 };
+        el('path', { d: P([[cb.x0, F, cb.z], [cb.x1, F, cb.z], [cb.x1, cb.y1, cb.z], [cb.x0, cb.y1, cb.z]]), fill: 'oklch(0.52 0.03 60)' }, svg);
+        el('path', { d: P([[cb.x1, F, cb.z], [cb.x1, F, -cb.z], [cb.x1, cb.y1, -cb.z], [cb.x1, cb.y1, cb.z]]), fill: 'oklch(0.66 0.04 62)' }, svg);
+        el('path', { d: P([[cb.x0, cb.y1, -cb.z], [cb.x1, cb.y1, -cb.z], [cb.x1, cb.y1, cb.z], [cb.x0, cb.y1, cb.z]]), fill: 'oklch(0.8 0.04 70)' }, svg);
+        const mouth = []; for (let i = 0; i < 24; i++) { const a = (i / 24) * TAU; mouth.push(iso(cb.x1, F + 15 + 8 * Math.sin(a), 8 * Math.cos(a))); }
+        el('path', { d: polyD(mouth), fill: 'oklch(0.18 0.02 60)' }, svg);
+        el('path', { d: P([[SX, F, -BZ], [SX, F, BZ], [SX, 44, BZ], [SX, 44, -BZ]]), fill: `url(#${id}sh)` }, svg);
+        el('path', { d: lineD([iso(SX, F, -BZ), iso(SX, F, BZ)]), stroke: GREEN, 'stroke-width': 2.2, filter: `url(#${id}g)` }, svg);
+        const cubes = el('g', {}, svg), glow = el('g', { filter: `url(#${id}g)` }, svg);
+        const pool = [];
+        const S = 5.2, R = 20, A = 7.5, YC = F + 33;
+        const cube = (x, y, z, hot, i) => {
+          if (!pool[i]) pool[i] = [0, 1, 2].map(() => el('path', {}, cubes));
+          const h = S / 2, q = pool[i];
+          const top = [[x - h, y + h, z - h], [x + h, y + h, z - h], [x + h, y + h, z + h], [x - h, y + h, z + h]];
+          const fx = [[x + h, y - h, z - h], [x + h, y - h, z + h], [x + h, y + h, z + h], [x + h, y + h, z - h]];
+          const fz = [[x - h, y - h, z + h], [x + h, y - h, z + h], [x + h, y + h, z + h], [x - h, y + h, z + h]];
+          const C = hot ? ['oklch(0.96 0.19 142)', 'oklch(0.78 0.25 142)', 'oklch(0.6 0.21 145)'] : ['oklch(0.95 0.012 245)', 'oklch(0.74 0.02 250)', 'oklch(0.52 0.022 256)'];
+          [top, fx, fz].forEach((pts, j) => { q[j].setAttribute('d', P(pts)); q[j].setAttribute('fill', C[j]); q[j].setAttribute('display', ''); });
+          (hot ? glow : cubes).append(...q);
+        };
+        const k = knob(SX - 6, u => {
+          const list = [];
+          // Voxels on a fixed grid; the torus slides through it, so cubes pop in and out.
+          for (let gx = -12; gx <= 12; gx++) for (let gy = -6; gy <= 6; gy++) for (let gz = -6; gz <= 6; gz++) {
+            const x = gx * S, y = gy * S, z = gz * S, q = Math.hypot(y, z) - R, d = Math.hypot(q, x - u);
+            if (d < A) list.push([x, YC + y, z]);
+          }
+          // Painter's order: far cubes first.
+          list.sort((a, b) => (a[0] + a[2] + a[1]) - (b[0] + b[2] + b[1]));
+          list.forEach((c, i) => cube(c[0], c[1], c[2], Math.abs(c[0] - SX) < S * 0.6, i));
+          for (let i = list.length; i < pool.length; i++) pool[i].forEach(e => e.setAttribute('display', 'none'));
+        });
+        return ctl({
+          aim: p => k.to(lerp(-BX + 30, BX - 8, clamp((p[0] - 22) / 84, 0, 1)), 0.3),
+          rest: () => k.to(SX - 6, 0.8, 'power3.out'),
+          demo: () => k.sweep(-BX + 30, BX - 8, 2.2),
+        });
+      },
+      emblem() {
+        const iso = (x, y, z) => [64 + (x - z) * 0.866 * 1.8, 64 + ((x + z) * 0.5 - y) * 1.8];
+        const S = 5.2, R = 20, A = 7.5;
+        let grey = '', white = '';
+        for (let gx = -2; gx <= 2; gx++) for (let gy = -6; gy <= 6; gy++) for (let gz = -6; gz <= 6; gz++) {
+          const x = gx * S, y = gy * S, z = gz * S;
+          if (Math.hypot(Math.hypot(y, z) - R, x) >= A) continue;
+          const h = S / 2, top = [[x - h, y + h, z - h], [x + h, y + h, z - h], [x + h, y + h, z + h], [x - h, y + h, z + h]].map(q => iso(...q));
+          const d = polyD(top);
+          if (gx === 0) white += d; else grey += d;
+        }
+        return `${EMB_HEAD}
+  <path d="${grey}" fill="#8c8c8c"/>
+  <path d="${white}" fill="#fff"/>
+</svg>
+`;
+      },
+    },
+  ];
+  const CURRENT_ART = OLD[0].art;
+
+
+
+  /* ================= Round 6: the toy's own grain ================= */
+
+  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
+  // A seeded random source, so every tile draws the same smoke.
+  const rng = s => () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  // Smoke particles: an angle round the ring, an angle round the tube, a depth into the tube.
+  const parts = (n, seed) => {
+    const r = rng(seed);
+    return Array.from({ length: n }, () => {
+      return { th: r() * TAU, ph: r() * TAU, rho: Math.pow(r(), 0.7), s: 0.4 + r() * 0.55, k: r() };
+    });
+  };
+  // One particle's place: ring centre c, radius R, tube a, tilt t, roll of the tube.
+  const torus = (p, c, R, a, tilt, roll) => {
+    const ph = p.ph + roll, rr = R + a * p.rho * Math.cos(ph), h = a * p.rho * Math.sin(ph);
+    const x = rr * Math.cos(p.th), y = rr * Math.sin(p.th);
+    // The tilt turns the ring about its vertical axis; the tube depth stays.
+    return [c[0] + x * Math.cos(tilt) + h * Math.sin(tilt), c[1] + y, -x * Math.sin(tilt) + h * Math.cos(tilt)];
+  };
+  const inPoly = (pt, poly) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  // The toy's colours: charcoal room, blue-grey smoke, laser green.
+  const SMOKE = k => `oklch(${f(0.62 + k * 0.28)} 0.03 240)`;
+  const LIT = k => `oklch(${f(0.7 + k * 0.22)} ${f(0.18 + k * 0.08)} 142)`;
+  const room = (defs, id) => rad(defs, `${id}bg`, 0.15, 0.1, 1.1, [[0, 'oklch(0.22 0.01 250)'], [1, 'oklch(0.11 0.008 255)']]);
+  // The laser's grain: dense green speckle inside the shape, as the toy draws it.
+  const grain = (defs, id, seed = 7, freq = 1.8, blur = 0) => {
+    const g = el('filter', { id, x: -0.2, y: -0.2, width: 1.4, height: 1.4 }, defs);
+    el('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: blur, result: 'src' }, g);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: freq, numOctaves: 1, seed, result: 'n' }, g);
+    el('feColorMatrix', { in: 'n', type: 'matrix', values: '0 0 0 0 0.35  0 0 0 0 1  0 0 0 0 0.4  0 0 0 2.2 -0.9', result: 's' }, g);
+    el('feComposite', { in: 's', in2: 'src', operator: 'in', result: 'k' }, g);
+    el('feComposite', { in: 'k', in2: 'src', operator: 'arithmetic', k1: 0, k2: 0.9, k3: 0.6, k4: 0 }, g);
+  };
+  // A cloud of particles that a draw function places.
+  const cloud = (parent, ps) => {
+    const dots = ps.map(() => el('circle', {}, parent));
+    return place => ps.forEach((p, i) => {
+      const o = place(p);
+      if (!o) { dots[i].setAttribute('display', 'none'); return; }
+      set(dots[i], { cx: f(o.x), cy: f(o.y), r: f(o.r), fill: o.c, opacity: f(o.a), display: '' });
+    });
+  };
+  // The grainy fan and floor stripe, as one frame of the toy shows them.
+  const FAN = [[-10, -10], [60, -10], [104, 140], [-10, 140]];
+  const fanLayer = (inner, defs, id) => {
+    rad(defs, `${id}fan`, 10, -8, 150, [[0, 'oklch(0.62 0.2 142)', 0.95], [0.5, 'oklch(0.42 0.13 145)', 0.5], [1, 'oklch(0.3 0.08 150)', 0.1]], true);
+    grain(defs, `${id}fg`, 5, 1.8, 7);
+    el('path', { d: polyD(FAN), fill: `url(#${id}fan)`, filter: `url(#${id}fg)` }, inner);
+    grain(defs, `${id}ff`, 6, 1.8, 2.5);
+    el('path', { d: 'M-6 97L134 116L134 121L-6 103Z', fill: 'oklch(0.62 0.2 142)', opacity: 0.85, filter: `url(#${id}ff)` }, inner);
+  };
+  // Soft smoke: a slight blur merges the particles, as the toy's haze does.
+  const softF = (defs, id) => { const g = el('filter', { id, x: -0.2, y: -0.2, width: 1.4, height: 1.4 }, defs); el('feGaussianBlur', { stdDeviation: 0.45 }, g); };
 
   const DIRS = [
     {
-      l: 'Current', name: 'Sky box',
-      box: [10, 10, 110, 110],
+      l: 'Current', name: 'Isometric block',
+      box: [10, 8, 112, 112],
       art: CURRENT_ART,
     },
     {
-      l: 'A', name: 'Slant',
-      idea: 'A dark block. One hard gold streak leaves the lower left corner on a slant, a hot square speck at its head. Pointer x pulls the head along; on focus it draws itself again and again.',
-      box: [10, 10, 110, 110],
+      l: 'F', name: 'Frame',
+      idea: 'The control: one frame of the toy, in its own grain. A ring of smoke particles crosses the green cone; the part in the light turns green. Left and right fly it; the tube rolls as a real ring does.',
       art(svg, id) {
         const defs = el('defs', {}, svg);
-        duskDefs(defs, id);
-        lin(defs, `${id}st`, 0, 1, 1, 0, [[0, EMBER, 0.15], [0.45, EMBER, 0.75], [1, GOLD, 1]]);
-        glowF(defs, `${id}g`, 1.8);
-        block(svg, `url(#${id}bg)`);
-        const inner = el('g', { 'clip-path': clipBlock(defs, `${id}c`) }, svg);
-        const streak = el('path', { fill: `url(#${id}st)` }, inner);
-        const head = el('rect', { width: 7, height: 7, fill: HOT, filter: `url(#${id}g)` }, inner);
-        // The streak: a wedge from the corner to the head, wide at the tail, a point at the head.
-        const T = [16, 112], E = [106, 22];
-        const k = knob(0.55, u => {
-          const hx = lerp(T[0], E[0], u), hy = lerp(T[1], E[1], u);
-          const dx = hx - T[0], dy = hy - T[1], m = Math.hypot(dx, dy) || 1, nx = -dy / m, ny = dx / m;
-          const w = 5.5;
-          streak.setAttribute('d', polyD([[T[0] - nx * w, T[1] - ny * w], [T[0] + nx * w, T[1] + ny * w], [hx + nx * 1.2, hy + ny * 1.2], [hx - nx * 1.2, hy - ny * 1.2]]));
-          set(head, { x: f(hx - 3.5), y: f(hy - 3.5), opacity: f(0.3 + 0.7 * u) });
+        sheenDefs(defs, id);
+        room(defs, id);
+        grain(defs, `${id}gr`);
+        face(svg, `url(#${id}bg)`);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`) }, svg);
+        const fan = el('g', { transform: 'translate(14 14) scale(0.78125)' }, inner);
+        fanLayer(fan, defs, id);
+        softF(defs, `${id}sf`);
+        const ps = parts(2400, 11);
+        const draw = cloud(el('g', { filter: `url(#${id}sf)` }, inner), ps);
+        sheen(svg, id);
+        const fanS = FAN.map(([x, y]) => [14 + x * 0.78125, 14 + y * 0.78125]);
+        const st = { x: 76, roll: 0 };
+        const render = () => draw(p => {
+          const q = torus(p, [st.x, 60], 17, 12, 0.75, st.roll), lit = inPoly(q, fanS);
+          return { x: q[0], y: q[1], r: p.s * 0.85, c: lit ? LIT(p.k) : SMOKE(p.k), a: (lit ? 0.6 : 0.4) + 0.35 * (1 - p.rho) };
         });
+        render();
+        let roll = null;
         return ctl({
-          aim: p => k.to(clamp((p[0] - 20) / 86, 0.08, 1)),
-          rest: () => k.to(0.55, 0.8, 'power3.out'),
-          demo: () => gsap.fromTo(k.st, { v: 0.05 }, { v: 1, duration: 1.5, ease: 'power2.in', repeat: -1, repeatDelay: 0.4, onUpdate: () => k.to(k.st.v, 0) }),
+          aim: p => gsap.to(st, { x: lerp(34, 100, clamp((p[0] - 18) / 92, 0, 1)), duration: 0.4, ease: 'power2.out', overwrite: 'auto', onUpdate: render }),
+          rest: () => gsap.to(st, { x: 76, duration: 0.9, ease: 'power3.out', overwrite: 'auto', onUpdate: render }),
+          demo: () => gsap.fromTo(st, { x: 34 }, { x: 100, duration: 2.4, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: render }),
+          enter: () => { if (!roll) roll = gsap.to(st, { roll: `+=${TAU}`, duration: 1.6, repeat: -1, ease: 'none', onUpdate: render }); },
+          leave: () => { roll?.kill(); roll = null; },
         });
       },
       emblem() {
         return `${EMB_HEAD}
-  <path d="M8 124L20 112L104 22L112 30L24 120Z" fill="#8c8c8c"/>
-  <rect x="100" y="16" width="16" height="16" fill="#fff"/>
+  <path d="M4 4L74 4L116 124L4 124Z" fill="#8c8c8c"/>
+  <ellipse cx="82" cy="60" rx="20" ry="34" fill="none" stroke="#fff" stroke-width="17"/>
 </svg>
 `;
       },
     },
     {
-      l: 'B', name: 'Rim',
-      idea: 'A hex block. A thin dawn hairline sits on the lower third; one dot climbs above it. The higher the dot, the brighter the line: light reaches the sky first. Pointer y lifts the dot.',
-      box: [6, 6, 116, 116],
+      l: 'O', name: 'Smoke O',
+      idea: 'The ring square on, as a fat O of smoke particles. A green sheet cuts through it and the slice in the light burns green. Left and right move the sheet; hover rolls the smoke.',
       art(svg, id) {
         const defs = el('defs', {}, svg);
-        duskDefs(defs, id);
-        lin(defs, `${id}rim`, 0, 1, 0, 0, [[0, EMBER, 0.9], [1, EMBER, 0]], false);
-        glowF(defs, `${id}g`, 1.4);
-        hexBlock(svg, `url(#${id}bg)`);
-        const inner = el('g', { 'clip-path': clipHex(defs, `${id}c`) }, svg);
-        const haze = el('rect', { x: 10, y: 60, width: 104, height: 26, fill: `url(#${id}rim)`, opacity: 0.3 }, inner);
-        const line = el('rect', { x: 10, y: 85, width: 104, height: 1.4, fill: EMBER, opacity: 0.45 }, inner);
-        el('rect', { x: 10, y: 86.4, width: 104, height: 30, fill: 'oklch(0.12 0.02 290)' }, inner);
-        const dot = el('rect', { x: 60.5, width: 5, height: 5, fill: HOT, filter: `url(#${id}g)` }, inner);
-        const k = knob(0.35, u => {
-          set(dot, { y: f(82 - 58 * u), opacity: f(0.5 + 0.5 * u) });
-          set(line, { opacity: f(0.35 + 0.65 * u), height: f(1.2 + 1.6 * u), y: f(85 - 0.8 * u), fill: u > 0.6 ? GOLD : EMBER });
-          set(haze, { opacity: f(0.12 + 0.5 * u) });
-        });
-        return ctl({
-          aim: p => k.to(clamp((96 - p[1]) / 72, 0, 1)),
-          rest: () => k.to(0.35, 0.8, 'power3.out'),
-          demo: () => k.sweep(0.05, 1, 2),
-        });
-      },
-      emblem() {
-        return `${EMB_HEAD}
-  <path d="M64 6L114 35V93L64 122L14 93V35Z" fill="none" stroke="#8c8c8c" stroke-width="8"/>
-  <rect x="26" y="84" width="76" height="6" fill="#fff"/>
-  <rect x="58" y="40" width="12" height="12" fill="#fff"/>
-</svg>
-`;
-      },
-    },
-    {
-      l: 'C', name: 'Ring',
-      idea: 'A block with a dawn line and three brut reeds. A ring grows from a point on the horizon and the reeds lean away as it passes: the sound, ten seconds after the light. Hover fires rings.',
-      box: [10, 10, 110, 110],
-      art(svg, id) {
-        const defs = el('defs', {}, svg);
-        duskDefs(defs, id);
-        glowF(defs, `${id}g`, 1.2);
-        block(svg, `url(#${id}bg)`);
-        const inner = el('g', { 'clip-path': clipBlock(defs, `${id}c`) }, svg);
-        el('rect', { x: 14, y: 84, width: 94, height: 1.6, fill: EMBER, opacity: 0.8 }, inner);
-        el('rect', { x: 14, y: 85.6, width: 94, height: 24, fill: 'oklch(0.13 0.02 290)' }, inner);
-        const origin = [64, 84];
-        const rings = [0, 1, 2].map(() => el('circle', { cx: origin[0], cy: origin[1], fill: 'none', stroke: GOLD, filter: `url(#${id}g)` }, inner));
-        // Three reeds: hard bars from the ground, each with a blunt head.
-        const RX = [30, 50, 92];
-        const reeds = RX.map(x => {
-          const g = el('g', {}, inner);
-          el('rect', { x: x - 1.4, y: 60, width: 2.8, height: 50, fill: 'oklch(0.08 0.01 280)' }, g);
-          // The plume: a slanted wedge that leans downwind, wider at its base.
-          el('path', { d: polyD([[x - 2.2, 62], [x + 2.2, 62], [x + 9, 48], [x + 4, 44]]), fill: 'oklch(0.08 0.01 280)' }, g);
-          return { g, x };
-        });
-        const st = [{ p: 2 }, { p: 2 }, { p: 2 }];
-        const draw = () => {
-          let lean = RX.map(() => 0);
-          st.forEach((s, i) => {
-            const p = s.p, on = p <= 1, r = 6 + 70 * p;
-            set(rings[i], { r: f(r), 'stroke-width': f(3.2 - 2.4 * p), opacity: on ? f(p < 0.12 ? p / 0.12 : 1 - Math.max(0, p - 0.55) / 0.45) : 0 });
-            if (!on) return;
-            // A reed leans away from the ring as its edge passes the reed's foot.
-            RX.forEach((x, j) => { const d = Math.hypot(x - origin[0], 108 - origin[1]) - r; lean[j] += Math.sign(x - origin[0]) * 14 * Math.exp(-(d * d) / 90) * (1 - p * 0.5); });
+        sheenDefs(defs, id);
+        room(defs, id);
+        grain(defs, `${id}gr`, 3, 1.8, 2);
+        lin(defs, `${id}sh`, 0, 0, 0, 1, [[0, 'oklch(0.66 0.2 142)', 0.85], [1, 'oklch(0.45 0.14 145)', 0.3]]);
+        face(svg, `url(#${id}bg)`);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`) }, svg);
+        const blade = el('rect', { y: 0, width: 9, height: 128, fill: `url(#${id}sh)`, filter: `url(#${id}gr)` }, inner);
+        softF(defs, `${id}sf`);
+        const ps = parts(2800, 23);
+        const draw = cloud(el('g', { filter: `url(#${id}sf)` }, inner), ps);
+        sheen(svg, id);
+        const st = { sx: 50, roll: 0 };
+        const render = () => {
+          blade.setAttribute('x', f(st.sx - 4.5));
+          draw(p => {
+            const q = torus(p, [64, 64], 25, 16, 0.18, st.roll), lit = Math.abs(q[0] - st.sx) < 6;
+            return { x: q[0], y: q[1], r: p.s * 0.9, c: lit ? LIT(p.k) : SMOKE(p.k), a: (lit ? 0.7 : 0.4) + 0.35 * (1 - p.rho) };
           });
-          reeds.forEach((rd, j) => rd.g.setAttribute('transform', `translate(${f(rd.x)} 110) skewX(${f(lean[j])}) translate(${f(-rd.x)} -110)`));
         };
-        draw();
+        render();
+        let roll = null;
+        return ctl({
+          aim: p => gsap.to(st, { sx: clamp(p[0], 22, 106), duration: 0.3, ease: 'power2.out', overwrite: 'auto', onUpdate: render }),
+          rest: () => gsap.to(st, { sx: 50, duration: 0.9, ease: 'power3.out', overwrite: 'auto', onUpdate: render }),
+          demo: () => gsap.fromTo(st, { sx: 24 }, { sx: 104, duration: 2.2, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: render }),
+          enter: () => { if (!roll) roll = gsap.to(st, { roll: `+=${TAU}`, duration: 1.8, repeat: -1, ease: 'none', onUpdate: render }); },
+          leave: () => { roll?.kill(); roll = null; },
+        });
+      },
+      emblem() {
+        return `${EMB_HEAD}
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#8c8c8c" stroke-width="26"/>
+  <rect x="34" y="4" width="16" height="120" fill="#fff"/>
+</svg>
+`;
+      },
+    },
+    {
+      l: 'K', name: 'Blown kiss',
+      idea: 'Puckered lips, backlit by the green cone, blow a ring of smoke particles into the light. Hover: the lips pucker and puff ring after ring; each rolls, swells and drifts off.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        sheenDefs(defs, id);
+        room(defs, id);
+        grain(defs, `${id}gr`, 9);
+        glowF(defs, `${id}g`, 1.2);
+        face(svg, `url(#${id}bg)`);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`) }, svg);
+        const fan = el('g', { transform: 'translate(14 14) scale(0.78125)' }, inner);
+        fanLayer(fan, defs, id);
+        // Puckered lips, front on: a full upper lip with a bow, a round lower lip, a dark mouth.
+        const lips = el('g', { transform: 'translate(42 92)' }, inner);
+        const lipD = 'M-17 0C-15 -7 -9 -11 -4.5 -10.5C-2 -10.2 0 -7.5 0 -7.5C0 -7.5 2 -10.2 4.5 -10.5C9 -11 15 -7 17 0C14 9.5 -14 9.5 -17 0Z';
+        el('path', { d: lipD, fill: 'none', stroke: 'oklch(0.75 0.22 142)', 'stroke-width': 2.2, transform: 'translate(-1 -1)', filter: `url(#${id}g)` }, lips);
+        const lip = el('path', { d: lipD, fill: 'oklch(0.3 0.05 15)' }, lips);
+        el('path', { d: 'M-12 -1.5C-6 1 6 1 12 -1.5', fill: 'none', stroke: 'oklch(0.18 0.03 15)', 'stroke-width': 1.4 }, lips);
+        const mouth = el('ellipse', { cx: 0, cy: -0.5, rx: 4, ry: 3, fill: 'oklch(0.1 0.01 15)' }, lips);
+        softF(defs, `${id}sf`);
+        const ps = parts(1700, 37);
+        const groups = [0, 1].map(() => el('g', { filter: `url(#${id}sf)` }, inner));
+        const draws = groups.map(g => cloud(g, ps));
+        sheen(svg, id);
+        const fanS = FAN.map(([x, y]) => [14 + x * 0.78125, 14 + y * 0.78125]);
+        const rings = [{ t: 0.62, roll: 0 }, { t: 2, roll: 0 }];
+        const st = { pk: 0 };
+        const render = () => {
+          lips.setAttribute('transform', `translate(42 92) scale(${f(1 - 0.12 * st.pk)} ${f(1 + 0.1 * st.pk)})`);
+          mouth.setAttribute('rx', f(4 - 1.6 * st.pk));
+          rings.forEach((r, i) => draws[i](p => {
+            if (r.t > 1) return null;
+            // The ring leaves the mouth small, swells and drifts up and right.
+            const t = r.t, c = [42 + 46 * t, 86 - 44 * t], R = 4 + 15 * Math.sqrt(t), a = 2.5 + 9 * Math.sqrt(t);
+            const q = torus(p, c, R, a, 0.35, r.roll), lit = inPoly(q, fanS);
+            const fade = t > 0.8 ? (1 - t) / 0.2 : 1;
+            return { x: q[0], y: q[1], r: p.s * (0.45 + 0.35 * t), c: lit ? LIT(p.k) : SMOKE(p.k), a: fade * ((lit ? 0.75 : 0.5) + 0.25 * (1 - p.rho)) };
+          }));
+        };
+        render();
         let gun = null, n = 0;
-        const fire = () => { const s = st[n++ % 3]; gsap.fromTo(s, { p: 0 }, { p: 1, duration: 1.6, ease: 'power1.out', onUpdate: draw }); };
-        const start = () => { if (gun) return; fire(); gun = gsap.delayedCall(0.7, function again() { fire(); gun = gsap.delayedCall(0.7, again); }); };
+        const puff = () => {
+          const r = rings[n++ % 2];
+          gsap.timeline({ onUpdate: render })
+            .to(st, { pk: 1, duration: 0.18, ease: 'power2.in' })
+            .to(st, { pk: 0, duration: 0.4, ease: 'elastic.out(1, 0.5)' });
+          gsap.fromTo(r, { t: 0, roll: 0 }, { t: 1, roll: TAU * 1.5, duration: 1.8, ease: 'power1.out', delay: 0.16, onUpdate: render });
+        };
+        const start = () => { if (gun) return; puff(); gun = gsap.delayedCall(1, function again() { puff(); gun = gsap.delayedCall(1, again); }); };
         return ctl({
           aim() {},
-          rest() { gun?.kill(); gun = null; st.forEach(s => gsap.killTweensOf(s)); st.forEach(s => { s.p = 2; }); gsap.fromTo(st[0], { p: 0 }, { p: 0.45, duration: 0.8, ease: 'power2.out', onUpdate: draw }); },
+          rest() { gun?.kill(); gun = null; rings.forEach(r => gsap.killTweensOf(r)); rings[1].t = 2; gsap.fromTo(rings[0], { t: 0 }, { t: 0.62, duration: 0.9, ease: 'power2.out', onUpdate: render }); },
           demo: () => { start(); return { kill() {} }; },
           enter: start,
         });
       },
       emblem() {
         return `${EMB_HEAD}
-  <path d="M14 92H114" stroke="#fff" stroke-width="6"/>
-  <circle cx="64" cy="92" r="24" fill="none" stroke="#8c8c8c" stroke-width="6"/>
-  <circle cx="64" cy="92" r="46" fill="none" stroke="#8c8c8c" stroke-width="4"/>
-  <rect x="26" y="56" width="8" height="40" fill="#fff" transform="skewX(-8) translate(8 0)"/>
-  <rect x="44" y="62" width="8" height="34" fill="#fff" transform="skewX(-5) translate(6 0)"/>
-  <rect x="90" y="54" width="8" height="42" fill="#fff" transform="skewX(9) translate(-14 0)"/>
+  <path d="M4 4L74 4L116 124L4 124Z" fill="#8c8c8c"/>
+  <g transform="translate(40 96) scale(1.5)"><path d="M-17 0C-15 -7 -9 -11 -4.5 -10.5C-2 -10.2 0 -7.5 0 -7.5C0 -7.5 2 -10.2 4.5 -10.5C9 -11 15 -7 17 0C14 9.5 -14 9.5 -17 0Z" fill="#fff"/><ellipse cx="0" cy="-0.5" rx="4" ry="3" fill="#000"/></g>
+  <ellipse cx="86" cy="42" rx="16" ry="24" fill="none" stroke="#fff" stroke-width="12"/>
 </svg>
 `;
       },
@@ -317,7 +474,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= Gallery ================= */
 
-  const NAME = 'Ten seconds';
+  const NAME = 'Smoke ring cannon';
   // Every icon is framed to its drawing, so its long side fills 110 of 128.
   const fitIcon = (svg, box) => {
     const b = box === 'auto' ? svg.getBBox() : box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : { x: 14, y: 14, width: 100, height: 100 }, side = Math.max(b.width, b.height);
@@ -330,26 +487,26 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   };
   const out = document.getElementById('out');
   const sec = document.createElement('section');
-  sec.id = 'row-launch';
+  sec.id = 'row-vortex';
   sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
   out.append(sec);
   let uid = 0;
   window.EMBLEMS = {};
   window.CTL = {};
   for (const D of DIRS) {
-    const file = `launch28-${D.l.toLowerCase()}`;
+    const file = `vortex28-${D.l.toLowerCase()}`;
     const url = D.l === 'Current' ? '' : `spike/emblems/${file}.svg`;
     if (D.emblem) window.EMBLEMS[file] = D.emblem();
     const card = document.createElement('article');
     card.className = 'dir';
-    card.id = D.l === 'Current' ? 'launch-current' : file;
+    card.id = D.l === 'Current' ? 'vortex-current' : file;
     card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
       <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
       <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
       ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
       ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
     sec.querySelector('.row').append(card);
-    card.querySelectorAll('.tile').forEach(tile => {
+    card.querySelectorAll('.tile').forEach((tile, ti) => {
       const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tile);
       const c = D.art(svg, `u${++uid}`);
       fitIcon(svg, D.box);

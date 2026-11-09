@@ -15,5 +15,6 @@ Round 4 of the Smoke ring cannon menu icon. Tom asked for fresh directions A to 
 - [x] Send Tom stills at rest and on hover
 - [x] Tom prefers A (shaded) but wants it softer, smokier: spike 26 holds A1 to A4
 - [x] Tom rejects all soft variants; the laser is the new subject: spike 27 holds L1 to L4
+- [x] Tom rejects spike 27: icons must show roughly what the toy looks like. Spike 28 builds F (frame), O (smoke O), K (blown kiss) from particles in the toy's grain
 - [ ] Tom picks a direction
 - [ ] Install the pick on the menu and update icons/picks.json
