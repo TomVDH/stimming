@@ -131,7 +131,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality, setQuality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'fireworks' });
@@ -167,6 +167,41 @@ const LIGHT = 1;
 const SHORE_Z = -1500;
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = 0;
+/* ---------- look knobs ---------- */
+// Every tunable look value; the dev panel (?dev) edits them live.
+// Each row: key, label, default, min, max, step.
+const FX_ROWS = [
+  ['Bloom', [
+    ['bloom', 'Strength', 0.9, 0, 3, 0.01], ['bloomRadius', 'Radius', 0.5, 0, 1, 0.01],
+    ['bloomThreshold', 'Threshold', 0.9, 0, 4, 0.01], ['bloomScale', 'Resolution', 1, 0.25, 1, 0.05],
+    ['orbs', 'Orbs', 1, 0, 3, 0.01],
+  ]],
+  ['Flare streak', [
+    ['flare', 'Streak', 1, 0, 3, 0.01], ['flareLength', 'Length', 0.35, 0.02, 1.5, 0.01],
+    ['flareThin', 'Thinness', 160, 20, 600, 1], ['flareWarmth', 'Warmth', 0.2, -1, 1, 0.01],
+    ['streakFade', 'Fade (s)', 0.12, 0.02, 1, 0.005], ['streakTail', 'Tail share', 0.15, 0, 1, 0.01],
+    ['streakTailFade', 'Tail fade (s)', 0.6, 0.05, 4, 0.01],
+  ]],
+  ['Flare ghosts', [
+    ['ghosts', 'Ghosts', 1, 0, 3, 0.01], ['ghostSpread', 'Spread', 1, 0.3, 2, 0.01],
+    ['ghostFade', 'Fade (s)', 0.25, 0.02, 2, 0.005],
+  ]],
+  ['Clouds', [
+    ['cloudCover', 'Cover', 0.52, 0.3, 0.8, 0.005], ['cloudBase', 'Base (m)', 260, 120, 600, 5],
+    ['cloudDepth', 'Depth (m)', 300, 50, 600, 5], ['cloudGlow', 'Glow', 0.38, 0, 1.5, 0.01],
+  ]],
+  ['Night', [
+    ['ambient', 'Ambient', 1, 0, 3, 0.01], ['haze', 'Haze', 0.45, 0, 2, 0.01],
+  ]],
+  ['Grade', [
+    ['vignette', 'Vignette', 0.5, 0, 1, 0.01], ['grain', 'Grain', 0.03, 0, 0.12, 0.001], ['lift', 'Lift', 1, 0, 4, 0.01],
+  ]],
+];
+const FX_DEF = Object.fromEntries(FX_ROWS.flatMap(([, rows]) => rows.map(r => [r[0], r[2]])));
+const DEV = new URLSearchParams(location.search).has('dev');
+// Saved tweaks load only in dev mode, so the shipped look never drifts.
+const FX = { ...FX_DEF, ...(DEV ? (() => { try { return JSON.parse(localStorage.getItem('stimming.fireworks.fx')) || {}; } catch { return {}; } })() : {}) };
+/* ---------- end look knobs ---------- */
 
 /* ---------- burst lights ---------- */
 // Eight burst lights; every lit shader reads this array.
@@ -343,7 +378,7 @@ sky.renderOrder = -1;
 scene.add(sky);
 
 // The deck: four stacked sheets; a sheet shows where its column reaches it.
-const CU = { uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() } };
+const CU = { uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() }, uGlow: { value: 0.38 } };
 const SHEETS = [500, 420, 345, 275];
 const cloudGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(30000, 16000).rotateX(Math.PI / 2).translate(0, 0, -7000));
 // Top sheet first, so each lower sheet draws over the one above.
@@ -356,7 +391,7 @@ const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
   void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH * 0.01; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; ${HEAD}
+  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; uniform float uGlow; ${HEAD}
   void main() {
     vec3 v = vP - cameraPosition;
     if (v.y < 1.0) discard;
@@ -387,7 +422,7 @@ const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
     }
     // The festival's fires tint the underside above the beach.
     float shore = smoothstep(-3400.0, -1800.0, vP.z) * (1.0 - smoothstep(-1500.0, -400.0, vP.z));
-    vec3 col = lit * 0.38 + uCool * 0.005 + uWarm * 0.006 * shore;
+    vec3 col = lit * uGlow + uCool * 0.005 + uWarm * 0.006 * shore;
     col = mix(col, k2hazeColor(V), k2hazeAmount(vP));
     // Lit air in front of the deck still glows.
     gl_FragColor = vec4((col + burstGlow(V) * 0.3) * a, a);
@@ -1250,7 +1285,7 @@ function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
   // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
-  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  bloom.setSize = (w, h) => { const m = (rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7) * FX.bloomScale; full(Math.max(1, w * m), Math.max(1, h * m)); };
   // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
   // A sigma of radius / 2.5 gives each layer a round falloff.
   for (const m of bloom.separableBlurMaterials) {
@@ -1383,53 +1418,46 @@ function makeFlares() {
   return new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uFP: { value: Array.from({ length: FL_N }, () => new THREE.Vector3()) },
+      uFP: { value: Array.from({ length: FL_N }, () => new THREE.Vector4()) },
       uFC: { value: Array.from({ length: FL_N }, () => new THREE.Vector3()) },
       uN: { value: 0 },
       uAsp: { value: 1 },
-      uRes: { value: new THREE.Vector2(1, 1) },
+      // Streak gain, length, thinness, warmth; ghost gain, spread.
+      uSt: { value: new THREE.Vector4() },
+      uGh: { value: new THREE.Vector2() },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
-    uniform vec2 uRes;
-    uniform vec3 uFP[${FL_N}];
+    uniform vec4 uFP[${FL_N}];
     uniform vec3 uFC[${FL_N}];
     uniform int uN;
     uniform float uAsp;
+    uniform vec4 uSt;
+    uniform vec2 uGh;
     varying vec2 vUv;
-    // One ghost channel: a faint disc with a soft, brighter rim.
-    float gring(float r, float R) {
-      float rim = exp(-pow((r - R * 0.85) / (R * 0.18), 2.0));
-      return (0.35 * smoothstep(R, R * 0.6, r) + 0.65 * rim);
-    }
-    // A ghost: red, green and blue sit at slightly different sizes.
-    vec3 ghost(vec2 uv, vec2 at, float R) {
-      float r = length((uv - at) * vec2(uAsp, 1.0));
-      return vec3(gring(r, R * 1.04), gring(r, R), gring(r, R * 0.96));
-    }
+    // Blue never exceeds green; green never exceeds red.
+    vec3 warm(vec3 c) { float g = min(c.g, c.r); return vec3(c.r, g, min(c.b, g)); }
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
-      // Streak widths scale with the frame height, not with pixels.
-      float px = uRes.y / 900.0;
       for (int i = 0; i < ${FL_N}; i++) {
         if (i >= uN) break;
         vec2 p = uFP[i].xy;
-        float k = uFP[i].z;
-        vec3 col = uFC[i];
-        vec2 d = (vUv - p) * vec2(uAsp, 1.0);
-        float dy = d.y * uRes.y / px, ax = abs(d.x);
-        // The streak: a soft core in a wide sheath; both taper toward the ends.
-        float core = exp(-dy * dy / 3.0) * exp(-ax * 3.5);
-        float sheath = exp(-dy * dy / 120.0) * exp(-ax * 6.0);
-        c += (vec3(0.55, 0.7, 1.0) * core * 0.6 + mix(col, vec3(0.25, 0.45, 1.0), 0.7) * sheath * 0.18) * k;
-        vec2 ax2 = vec2(0.5) - p;
-        // Ghosts: soft rings on the axis, each channel a touch wider for a fringe.
-        c += ghost(vUv, p + ax2 * 0.6, 0.02) * col * k * 0.06;
-        c += ghost(vUv, p + ax2 * 1.35, 0.055) * vec3(0.5, 1.0, 0.7) * k * 0.02;
-        c += ghost(vUv, p + ax2 * 1.7, 0.03) * col * vec3(1.0, 0.6, 0.95) * k * 0.04;
-        c += ghost(vUv, p + ax2 * 2.0, 0.1) * vec3(0.5, 0.75, 1.0) * k * 0.014;
-        c += ghost(vUv, p + ax2 * 2.45, 0.04) * col * k * 0.03;
+        // Warmth pulls the colour toward deep orange, or toward cream below 0.
+        vec3 tint = mix(uFC[i], uSt.w > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(uSt.w), 0.0, 1.0));
+        vec3 col = warm(max(tint, 0.0));
+        vec2 d = vUv - p;
+        float ax = d.x * uAsp, ay = abs(d.y);
+        // A thin bright line in a softer sheath; length sets the taper.
+        float line = exp(-ay * uSt.z) + 0.3 * exp(-ay * uSt.z * 0.08);
+        c += col * line * exp(-abs(ax) / uSt.y) * uSt.x * uFP[i].z;
+        // Ghosts: soft blobs on the line from the burst through the centre.
+        vec2 tc = (vec2(0.5) - p) * uGh.y;
+        vec2 g0 = (vUv - p - tc * 0.7) * vec2(uAsp, 1.0);
+        vec2 g1 = (vUv - p - tc * 1.4) * vec2(uAsp, 1.0);
+        vec2 g2 = (vUv - p - tc * 2.2) * vec2(uAsp, 1.0);
+        float gs = 0.9 * exp(-dot(g0, g0) / 0.0025) + 0.6 * exp(-dot(g1, g1) / 0.0081) + 0.4 * exp(-dot(g2, g2) / 0.0225);
+        c += col * gs * uGh.x * 0.06 * uFP[i].w;
       }
       gl_FragColor = vec4(c, 1.0);
     }`,
@@ -1440,16 +1468,15 @@ function placeFlares(pass) {
   let n = 0;
   if (!reduced()) for (const L of live) {
     if (n >= FL_N) break;
-    if (L.fl < 0.02) continue;
+    if (L.st < 0.01 && L.gh < 0.01) continue;
     tmpV.copy(L.pos).project(camera);
     if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.05 || Math.abs(tmpV.y) > 1.05) continue;
-    pass.uniforms.uFP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, L.fl);
+    pass.uniforms.uFP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, L.st, L.gh);
     pass.uniforms.uFC.value[n].set(L.col[0], L.col[1], L.col[2]);
     n++;
   }
   pass.uniforms.uN.value = n;
   pass.uniforms.uAsp.value = size.w / size.h;
-  pass.uniforms.uRes.value.set(size.w * size.dpr, size.h * size.dpr);
 }
 /* ---------- end flares ---------- */
 
@@ -1462,7 +1489,8 @@ const orbPass = makeOrbs();
 composer.addPass(orbPass);
 const flarePass = makeFlares();
 composer.addPass(flarePass);
-composer.addPass(makeBloom(...POST.bloom));
+const bloomPass = makeBloom(...POST.bloom);
+composer.addPass(bloomPass);
 const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
@@ -1672,12 +1700,14 @@ function updateLights() {
     const h = Math.min(1, Math.max(0, age / 0.15)), col = [0, 1, 2].map(c => HOT[c] + (L.col[c] - HOT[c]) * h);
     if (I > 0.002) {
       const eye = L.pos.y > U.uCloud.value.x ? cloudT(L.pos, true) : 1;
-      // The flare lives for the flash only: tau 0.12 s.
-      const fl = age < 0 ? 0 : Math.min(1, age / rise) * Math.exp(-age / 0.12) * Math.min(1.5, L.k * 0.5) * eye;
-      live.push({ pos: L.pos, col, I, eye, fl });
+      // Streak and ghosts each fade on their own envelope; the streak keeps a tail.
+      const on = age < 0 ? 0 : Math.min(1, age / rise) * Math.min(1.5, L.k * 0.5) * eye;
+      const st = on * ((1 - FX.streakTail) * Math.exp(-age / FX.streakFade) + FX.streakTail * Math.exp(-age / FX.streakTailFade));
+      const gh = on * Math.exp(-age / FX.ghostFade);
+      live.push({ pos: L.pos, col, I, eye, st, gh });
     }
   }
-  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge, eye: 1, fl: 0 });
+  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge, eye: 1, st: 0, gh: 0 });
   live.sort((a, b) => b.I - a.I);
   const n = Math.min(LN, live.length);
   for (let i = 0; i < n; i++) {
@@ -1798,7 +1828,7 @@ function finale() {
 }
 /* ---------- end finale ---------- */
 function orbList() {
-  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye }));
+  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye * FX.orbs }));
   for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
   return list;
 }
@@ -1994,6 +2024,95 @@ renderer.compileAsync(scene, camera).then(() => {
   markReady();
   wake();
 }, () => { canvas.classList.add('on'); markReady(); });
+
+/* ---------- dev panel ---------- */
+// ?dev opens a panel of look knobs; the backquote key toggles it.
+const COOL = U.uCool.value.clone();
+function applyFX() {
+  bloomPass.strength = FX.bloom; bloomPass.radius = FX.bloomRadius; bloomPass.threshold = FX.bloomThreshold;
+  flarePass.uniforms.uSt.value.set(FX.flare, FX.flareLength, FX.flareThin, FX.flareWarmth);
+  flarePass.uniforms.uGh.value.set(FX.ghosts, FX.ghostSpread);
+  U.uCloud.value.x = FX.cloudBase; U.uCloud.value.y = FX.cloudDepth; U.uCloud.value.z = FX.cloudCover;
+  CU.uGlow.value = FX.cloudGlow;
+  U.uCool.value.copy(COOL).multiplyScalar(FX.ambient);
+  U.uHaze.value = FX.haze * 0.001;
+  grade.uniforms.uVig.value = FX.vignette;
+  grade.uniforms.uGrain.value = FX.grain;
+  grade.uniforms.uTint.value.set(...POST.tint.map(v => v * FX.lift));
+}
+applyFX();
+let devBox = null, devFrames = 0;
+const devRender = composer.render.bind(composer);
+composer.render = (...a) => { devFrames++; devRender(...a); };
+function devPanel() {
+  const css = document.createElement('style');
+  css.textContent = `
+  .fxdev { position: fixed; top: 12px; right: 12px; z-index: 50; width: 300px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto;
+    padding: 10px 12px 12px; border-radius: 10px; background: oklch(0.14 0.012 275 / 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    color: oklch(0.92 0.01 275); font: 500 12px/1.3 Gabarito, system-ui, sans-serif; box-shadow: 0 8px 30px oklch(0 0 0 / 0.5); }
+  .fxdev[hidden] { display: none; }
+  .fxdev header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .fxdev header b { flex: 1; font-size: 13px; letter-spacing: 0.04em; }
+  .fxdev header output { color: oklch(0.65 0.02 275); font-variant-numeric: tabular-nums; }
+  .fxdev button { font: inherit; color: inherit; background: oklch(0.24 0.015 275); border: 0; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  .fxdev button:hover { background: oklch(0.3 0.02 275); }
+  .fxdev button[aria-pressed="true"] { background: oklch(0.82 0.13 80); color: oklch(0.16 0.012 275); }
+  .fxdev .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .fxdev h3 { margin: 10px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(0.65 0.02 275); }
+  .fxdev label { display: grid; grid-template-columns: 82px 1fr 46px; align-items: center; gap: 8px; padding: 1px 0; }
+  .fxdev label.mod span { color: oklch(0.84 0.13 80); }
+  .fxdev input[type=range] { width: 100%; accent-color: oklch(0.82 0.13 80); }
+  .fxdev input[type=number] { width: 46px; font: inherit; color: inherit; background: transparent; border: 0; text-align: right; font-variant-numeric: tabular-nums; }`;
+  document.head.append(css);
+  const box = document.createElement('aside');
+  box.className = 'fxdev';
+  box.setAttribute('aria-label', 'Look knobs');
+  box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
+    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
+      `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
+  document.body.append(box);
+  const fps = box.querySelector('header output');
+  const show = () => {
+    box.querySelectorAll('label[data-k]').forEach(l => {
+      const k = l.dataset.k, [r, n] = l.querySelectorAll('input');
+      r.value = n.value = FX[k];
+      l.classList.toggle('mod', FX[k] !== FX_DEF[k]);
+    });
+    box.querySelectorAll('[data-q]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.q === quality())));
+  };
+  const store = () => { try { localStorage.setItem('stimming.fireworks.fx', JSON.stringify(changed())); } catch { /* storage is optional */ } };
+  const changed = () => Object.fromEntries(Object.entries(FX).filter(([k, v]) => v !== FX_DEF[k]));
+  const set = (k, v) => {
+    FX[k] = v;
+    applyFX();
+    if (k === 'bloomScale') resize();
+    updateLights(); draw(); store(); show();
+  };
+  box.addEventListener('input', e => {
+    const l = e.target.closest('label[data-k]');
+    if (l && e.target.value !== '') set(l.dataset.k, +e.target.value);
+  });
+  box.addEventListener('click', e => {
+    const q = e.target.dataset.q, a = e.target.dataset.a;
+    if (q) { setQuality(q); show(); }
+    if (a === 'close') box.hidden = true;
+    if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
+    if (a === 'finale') finale();
+    if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(changed(), null, 2));
+    if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
+  });
+  // Frames drawn per second; the loop sleeps when idle, so 0 is normal.
+  setInterval(() => { if (!box.hidden) fps.textContent = `${devFrames * 2} fps · r${rung}`; devFrames = 0; }, 500);
+  show();
+  return box;
+}
+if (DEV) devBox = devPanel();
+addEventListener('keydown', e => {
+  if (e.key !== '`' || e.target.closest?.('input, textarea')) return;
+  if (!devBox) devBox = devPanel(); else devBox.hidden = !devBox.hidden;
+});
+/* ---------- end dev panel ---------- */
 </script>
 </body>
 </html>
