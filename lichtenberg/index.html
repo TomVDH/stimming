@@ -64,16 +64,36 @@ let voltage = 0.6, board = 'wood';
 // The board eases from wood (0) to acrylic (1).
 let boardMix = 0;
 // The handlers bind once the GL exists.
-const act = { board() {}, clear() {} };
+const act = { board() {}, clear() {}, still() {} };
+// Settings: branching sets the DBM exponent, ember life the cooling times.
+let branching = 0.4, emberLife = 0.35, glow = 1;
+const tauGlow = () => 1.5 + 4.5 * emberLife, tauSmoulder = () => 8 + 28 * emberLife;
 const ui = initPage({ id: 'lichtenberg', bar: {
   choice: { label: 'Board', value: 'wood', options: [
     { value: 'wood', label: 'Wood' }, { value: 'acrylic', label: 'Acrylic' },
   ], onPick: v => act.board(v) },
   slider: { label: 'Voltage', min: 0.2, max: 1, step: 0.01, value: voltage, onInput: v => { voltage = v; } },
   actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
+  settings: [
+    { type: 'slider', id: 'branching', label: 'Branching', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { branching = v; } },
+    { type: 'slider', id: 'embers', label: 'Ember life', min: 0, max: 1, step: 0.01, value: 0.35, persist: true, onInput: v => { emberLife = v; } },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 1, persist: true, onInput: v => { glow = v; act.still(); } },
+  ],
   quality: true,
   keys: [['hold', 'burn'], ['release', 'freeze'], ['click', 'zap'], ['space', 'burn']],
 } });
+
+branching = ui.setting('branching')?.value ?? branching;
+emberLife = ui.setting('embers')?.value ?? emberLife;
+glow = ui.setting('glow')?.value ?? glow;
+// Touch screens have no Space key, so its entry hides.
+const COARSE = matchMedia('(pointer: coarse)');
+function touchKeys() {
+  const row = [...stage.parentElement.querySelectorAll('.s2-keys > div')][3];
+  if (row) row.hidden = COARSE.matches;
+}
+touchKeys();
+COARSE.addEventListener?.('change', touchKeys);
 
 let markReady;
 const glReady = new Promise(r => { markReady = r; });
@@ -153,7 +173,10 @@ const widthOf = tips => Math.min(1.1, 0.2 + 0.12 * Math.log2(tips));
 
 /* ---------- DBM: dielectric breakdown, charge superposition ---------- */
 // Kim, Sewall and Lin (2007): each cell adds 1 - R1 / r to every candidate.
-const R1 = 0.5, MAXC = 4000;
+const R1 = 0.5;
+// The ladder's last rung lowers the cell cap and steps per frame.
+const maxCells = () => (rung >= 3 ? 2500 : 4000), maxSteps = () => (rung >= 3 ? 16 : 28);
+let rung = 0;
 let burn = null;
 function newBurn(bx, by, eta) {
   const gx = clamp(Math.floor(bx), 0, GW - 1), gy = clamp(Math.floor(by), 0, GH - 1);
@@ -252,7 +275,7 @@ function step() {
   const far = Math.hypot(gx - B.rx, gy - B.ry) > 4;
   if (gx === 0 || gy === 0 || gx === GW - 1 || gy === GH - 1) return finish('edge');
   if (far && dOld[gy * GW + gx] <= 1.5) { B.hit = touched(gx, gy); return finish('arc'); }
-  if (B.n >= MAXC || nSeg >= MAXSEG) finish('full');
+  if (B.n >= maxCells() || nSeg >= MAXSEG) finish('full');
 }
 // The nearest old burn within two cells of the contact.
 function touched(gx, gy) {
@@ -285,7 +308,7 @@ function finish(why) {
   for (let k = 0; k < B.n; k++) owner[B.cy[k] * GW + B.cx[k]] = -1;
   B.kx.length = B.ky.length = B.kphi.length = B.kpar.length = 0;
   distance();
-  hotUntil = Math.max(hotUntil, simT + 45);
+  hotUntil = Math.max(hotUntil, simT + tauSmoulder() * 2.5);
   // A user burn takes its last cells into the char at once.
   if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); lastHot = simT; }
   if (B.user && (why === 'arc' || why === 'edge')) snap(B.px[B.n - 1]);
@@ -587,7 +610,9 @@ async function initGL() {
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
-  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  // After 3 s the link check below waits for the driver instead.
+  const t0 = performance.now();
+  if (par) while (!gl.isContextLost() && performance.now() - t0 < 3000 && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
   for (const q of all) {
     if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
     locate(q);
@@ -659,13 +684,17 @@ function allocBoard(dpr) {
 // Screen targets: emission at full size, five bloom levels below it.
 function allocScreen() {
   const W = canvas.width, H = canvas.height;
-  if (emit && emit.w === W && emit.h === H) return;
+  const skip = rung >= 2 ? 1 : 0;
+  if (emit && emit.w === W && emit.h === H && emit.skip === skip) return;
   [emit, ...mips, ...ups].forEach(free);
   emit = target(W, H);
+  emit.skip = skip;
   mips = []; ups = [];
   let w = W, h = H;
+  // The second rung starts the bloom one level smaller.
   for (let i = 0; i < 5; i++) {
-    w = Math.max(1, w >> 1); h = Math.max(1, h >> 1);
+    const sh = i === 0 ? 1 + skip : 1;
+    w = Math.max(1, w >> sh); h = Math.max(1, h >> sh);
     mips.push(target(w, h));
     if (i < 4) ups.push(target(w, h));
   }
@@ -675,7 +704,7 @@ function allocScreen() {
 // Cover fit: the board fills the stage and crops, never stretches.
 const view = { s: 1, ox: 0, oy: 0, dpr: 1 };
 function layout() {
-  const { W, H, dpr } = fitCanvas(canvas, { maxDpr: 2 });
+  const { W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
   view.dpr = dpr;
   view.s = Math.max(W / GW, H / GH);
   view.ox = (W - GW * view.s) / 2;
@@ -689,6 +718,8 @@ function toBoard(cx, cy) {
 }
 
 /* ---------- drawing ---------- */
+// The ambient clock drives glints; it eases to a stop before sleep.
+let ambT = 0;
 let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0, arcOld = null;
 // Clear's sweep runs 0 to 1; -1 means no sweep.
 let sweep = -1;
@@ -745,12 +776,12 @@ function boardUniforms(q) {
 }
 function render(dt) {
   const rm = reduced(), acrylic = boardMix * boardMix * (3 - 2 * boardMix);
-  // Heat cools: the glow over 3 s, the smoulder over 18 s.
+  // Heat cools: the glow and the smoulder, each at its own rate.
   if (dt > 0) {
     const q = P.decay;
     gl.useProgram(q.p);
     bind(q, 'uSrc', 0, heat.r);
-    gl.uniform4f(q.u.uK, 1, Math.exp(-dt / 3), Math.exp(-dt / 18), 1);
+    gl.uniform4f(q.u.uK, 1, Math.exp(-dt / tauGlow()), Math.exp(-dt / tauSmoulder()), 1);
     tri(heat.w);
     heat.swap();
   }
@@ -766,7 +797,7 @@ function render(dt) {
   boardUniforms(q);
   bind(q, 'uHeatT', 0, heat.r);
   bind(q, 'uCharT', 1, charT);
-  gl.uniform1f(q.u.uTime, simT);
+  gl.uniform1f(q.u.uTime, ambT);
   gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
   gl.uniform1f(q.u.uAcrylic, acrylic);
   gl.uniform1f(q.u.uGlint, 1);
@@ -809,7 +840,7 @@ function render(dt) {
   bind(q, 'uBloom', 2, ups[0]);
   bind(q, 'uWide', 3, ups[2]);
   gl.uniform1f(q.u.uTime, simT);
-  gl.uniform1f(q.u.uGlow, 1);
+  gl.uniform1f(q.u.uGlow, glow);
   gl.uniform1f(q.u.uAcrylic, acrylic);
   gl.uniform1f(q.u.uFlash, (rm ? 0.08 : 0.2) * arc * arc * arc);
   gl.uniform1f(q.u.uSweep, sweepX());
@@ -913,7 +944,7 @@ function soundFrame() {
   const t = a.ac.currentTime;
   a.gain.gain.setTargetAtTime(growing ? 0.05 + 0.1 * Math.min(1, (B.rate || 0) / 500) : 0, t, growing ? 0.02 : 0.05);
   if (growing) a.pan.pan.setTargetAtTime(panOf(B.px[B.n - 1]), t, 0.03);
-  const heat = board === 'wood' ? Math.exp(-(simT - lastHot) / 5) : 0;
+  const heat = board === 'wood' ? Math.exp(-(simT - lastHot) / (tauGlow() * 1.7)) : 0;
   a.hissG.gain.setTargetAtTime(0.035 * heat, t, 0.2);
   if (!growing && heat > 0.02 && Math.random() < heat * 0.25 && burns.length) {
     const L = burns[burns.length - 1], o = (L.seg0 + Math.floor(Math.random() * L.n)) * STRIDE;
@@ -933,7 +964,8 @@ function silence() {
 }
 
 /* ---------- growth ---------- */
-const etaFor = () => 2.0 + rnd() * 0.9;
+// Sparse is eta near 3; bushy is eta near 1.6.
+const etaFor = () => 3.0 - 1.4 * branching - 0.45 + rnd() * 0.9;
 let held = false, zapTo = 0;
 function grow(dt) {
   const B = burn;
@@ -946,7 +978,7 @@ function grow(dt) {
   B.rate = Math.min(rate, 700);
   B.acc = (B.acc || 0) + B.rate * dt;
   let steps = 0;
-  while (B.acc >= 1 && steps < 28 && !B.done) {
+  while (B.acc >= 1 && steps < maxSteps() && !B.done) {
     step();
     // Some steps crack; a new branch always does.
     const k = B.n - 1, sk = B.segOf[k];
@@ -1008,11 +1040,26 @@ function wake() {
 const boardTo = () => (board === 'acrylic' ? 1 : 0);
 const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0 || boardMix !== boardTo();
 const busy = (now = performance.now()) => visible && (lively() || (simT < hotUntil && now - inputAt < 60000));
+// Watchdog: slow lively frames step the ladder down, never back up.
+let runT = 0, slowT = 0, ftAvg = 1 / 60;
+function watch(ft) {
+  runT += ft;
+  ftAvg += (ft - ftAvg) * 0.1;
+  if (runT < 4 || rung >= 3) return;
+  slowT = ftAvg > 1 / 38 ? slowT + ft : 0;
+  if (slowT < 2) return;
+  rung++;
+  slowT = 0;
+  layout();
+}
 function frame(now) {
   raf = 0;
   try {
     if (lively() || now - lastDraw >= 31) {
+      if (lively()) watch(Math.min(0.25, (now - last) / 1000));
       const dt = Math.min(0.05, (now - last) / 1000);
+      // Ambient motion eases out over the 2 s before sleep.
+      ambT += dt * clamp((60000 - (now - inputAt)) / 2000);
       last = now;
       lastDraw = now;
       simT += dt;
@@ -1071,6 +1118,7 @@ act.clear = () => {
   if (reduced()) clearBoard(); else sweep = 0;
   live();
 };
+act.still = () => still();
 act.board = v => { board = v; if (reduced()) { boardMix = boardTo(); still(); } live(); };
 
 /* ---------- boot ---------- */

@@ -156,11 +156,11 @@ Touch: hold to burn, tap to zap. The choice moves bottom left as a stepper, Clea
 ### Task 4: Sound
 
 - [x] Buzz, crackle, snap and sizzle, panned with the tip. Q9.
-- [ ] Commit: `Lichtenberg burn: buzz, crackle and snap`.
+- [x] Commit: `Lichtenberg burn: buzz, crackle and snap`.
 
 ### Task 5: Settings, frame loop and QA
 
-- [ ] Branching, Ember life, Glow; persistence. Frame loop states, watchdog ladder, reduced motion.
+- [x] Branching, Ember life, Glow; persistence. Frame loop states, watchdog ladder, reduced motion.
 - [ ] Q1 to Q10 in the browser pane. Tick the bean and record the cost. Commit.
 
 ## Kit handoff
