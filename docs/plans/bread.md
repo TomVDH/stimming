@@ -87,7 +87,7 @@ Shapes stay few and plain. Light, haze and glow carry the scene.
 |---|---|
 | Top left | logo, `/ BROODAUTOMAAT`, `LAB` tag. No choice. |
 | Top right | Sound, Settings, (i) |
-| Bottom left | `Coin` (key Space), `+ Car` (key C) |
+| Bottom left | `Coin` (key C; Space on the stage), `+ Car` (key V) |
 | Bottom right | Slider `Tube`: steady to dying (how often it flickers by itself) |
 | Bottom centre | `[CLICK] coin slot` · `[CLICK] tube` · `[CLICK] open hatch` · `[DRAG] look` |
 
@@ -178,8 +178,8 @@ Four visible controls.
 
 ### Task 2: Coin, carousel and hatch
 
-- [ ] Coin slot pick, coin drop and glint, drum turn with overshoot, hatch swing, loaf glow and steam.
-- [ ] Take a loaf; empty compartments stay dark; Reset restocks.
+- [x] Coin slot pick, coin drop and glint, drum turn with overshoot, hatch swing, loaf glow and steam.
+- [x] Take a loaf; empty compartments stay dark; Reset restocks.
 - [ ] Commit: `Broodautomaat: coin, carousel and hatch`.
 
 ### Task 3: Tube, moths and cars

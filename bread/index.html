@@ -76,8 +76,8 @@ const QS = new URLSearchParams(location.search);
 const ui = initPage({ id: 'bread', silent: true, bar: {
   slider: { label: 'Tube', min: 0, max: 1, step: 0.01, value: 0.25, onInput: v => act.tube(v) },
   actions: [
-    { verb: 'coin', label: 'Coin', key: 'Space', onPress: () => act.coin() },
-    { verb: 'add', noun: 'Car', key: 'C', onPress: () => act.car() },
+    { verb: 'coin', label: 'Coin', key: 'C', onPress: () => act.coin() },
+    { verb: 'add', noun: 'Car', key: 'V', onPress: () => act.car() },
   ],
   settings: [
     { type: 'choice', id: 'view', label: 'View', value: 'road', persist: true, onPick: v => act.view(v),
@@ -89,7 +89,7 @@ const ui = initPage({ id: 'bread', silent: true, bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'coin slot'], ['click', 'tube'], ['click', 'open hatch'], ['drag', 'look']],
+  keys: [['click', 'the machine: buy'], ['click', 'open hatch: take'], ['space', 'coin'], ['drag', 'look']],
 } });
 
 // Seeded random keeps the land the same on every load.
@@ -464,7 +464,6 @@ const cells = [];
   core.position.y = (TIERS * TIER_H) / 2;
   drum.add(core);
 }
-drum.rotation.y = 0.12;
 
 /* the doors */
 // One small door per tier: a steel frame round a glass pane, hinged on the left.
@@ -862,8 +861,6 @@ composer.addPass(new OutputPass());
 
 /* ---------- camera and size ---------- */
 let size = { w: 1, h: 1, dpr: 1 };
-// Look offsets from a drag; they ease toward the target.
-const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // A dead-level eye on the road; a shifted lens drops the horizon low.
 // A long lens flattens the land, as in Beach walker.
 const SHOT = {
@@ -877,6 +874,8 @@ const SHOT = {
     tall: { pos: [9.1, 1.2, -12], yaw: 0, vfov: 46, horizon: 0.72 },
   },
 };
+// Look offsets from a drag; they ease toward the target.
+const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 const TUBE_W = new THREE.Vector3(), probe = new THREE.Vector3();
 let focal = 1;
 function frame() {
@@ -893,6 +892,7 @@ function frame() {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   mothMat.uniforms.uPx.value = focal * size.dpr;
+  steamMat.uniforms.uPx.value = focal * size.dpr;
   // The sharp band follows the machine's centre on screen.
   probe.copy(STOP.localToWorld(new THREE.Vector3(0, 1.2, M.front))).project(camera);
   tilt.uniforms.uFocus.value = probe.y * 0.5 + 0.5;
@@ -916,30 +916,322 @@ function resize() {
   frame();
   draw();
 }
-let visible = !document.hidden;
+/* ---------- frame loop ---------- */
+// Full rate while something moves; the loop sleeps when all is still.
+// Moths and the tube add ambient drift in Task 3.
+let visible = !document.hidden, raf = 0, lastT = 0, lastInput = performance.now();
+const anims = new Set();
+// One tween: fn gets progress 0 to 1; done runs once at the end.
+function anim(dur, fn, done) {
+  const a = { t: 0, dur: Math.max(0.001, dur), fn, done };
+  anims.add(a);
+  wake();
+  return a;
+}
+const after = (s, fn) => anim(s, () => {}, fn);
 function draw() {
   if (!visible) return;
   composer.render();
 }
-whenVisible(stage, vis => { visible = vis; if (vis) draw(); });
+function tick(now) {
+  raf = 0;
+  if (!visible || document.hidden) { lastT = 0; return; }
+  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+  lastT = now;
+  try {
+    for (const a of [...anims]) {
+      a.t += dt;
+      const k = Math.min(1, a.t / a.dur);
+      a.fn(k);
+      if (k >= 1) { anims.delete(a); a.done?.(); }
+    }
+    stepSteam(dt);
+    stepLook(dt);
+    frame();
+    draw();
+  } finally {
+    if (visible && (anims.size || steam.on > 0.001 || lookBusy())) raf = requestAnimationFrame(tick);
+    else lastT = 0;
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw();
+  wake();
+});
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(() => draw());
+onReducedChange(() => wake());
+
+/* ---------- easing ---------- */
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const inOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const inQuad = k => k * k;
+// A motor stop: an eased turn that runs 2 % past and settles back.
+const motor = k => (reduced() ? inOut(k) : inOut(clamp01(k / 0.82)) + 0.02 * Math.sin(Math.PI * clamp01((k - 0.62) / 0.38)));
+// A sprung swing: it overshoots once and settles.
+const spring = k => (reduced() ? inOut(k) : 1 - Math.exp(-6 * k) * Math.cos(9 * k) * (1 - k));
+
+/* ---------- the hatch glow and steam ---------- */
+// A warm lamp waits at the open door; zero intensity keeps the shader count fixed.
+const hotLight = new THREE.PointLight(WARM, 0, 2.6, 2);
+STOP.add(hotLight);
+// The hot loaf swaps to its own glowing crust.
+const hotCrust = crust.clone();
+hotCrust.emissiveIntensity = 0.1;
+// Steam: soft puffs rise from the open compartment and curl as they cool.
+const STEAM_N = 48;
+const steamGeo = new THREE.BufferGeometry();
+{
+  const seed = new Float32Array(STEAM_N);
+  for (let i = 0; i < STEAM_N; i++) seed[i] = i / STEAM_N + rnd() * 0.02;
+  steamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STEAM_N * 3), 3));
+  steamGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+}
+const steamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 }, uAmt: { value: 0 }, uOrigin: { value: new THREE.Vector3() }, uPx: { value: 1 }, uWarm: { value: WARM }, uCool: { value: TUBE } },
+  vertexShader: /* glsl */`
+  attribute float aSeed; uniform float uTime, uAmt, uPx; uniform vec3 uOrigin;
+  varying float vLife, vA;
+  void main() {
+    // Each puff lives 2.4 s; the seed staggers them.
+    float life = fract(uTime / 2.4 + aSeed);
+    float s = aSeed * 61.0;
+    vec3 p = uOrigin + vec3(sin(s + life * 4.0) * 0.05 * life, life * 0.55, 0.05 + life * 0.08 + cos(s * 1.3 + life * 3.0) * 0.03 * life);
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uPx * (0.03 + 0.11 * life) / -mv.z;
+    vLife = life;
+    vA = uAmt * smoothstep(0.0, 0.12, life) * (1.0 - life);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uWarm, uCool; varying float vLife, vA;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.0, d) * vA;
+    // Warm at the hatch, cool white higher up in the tube light.
+    gl_FragColor = vec4(mix(uWarm * 1.4, uCool, smoothstep(0.1, 0.6, vLife)) * a * 0.34, 1.0);
+  }`,
+});
+const steamPts = new THREE.Points(steamGeo, steamMat);
+steamPts.frustumCulled = false;
+STOP.add(steamPts);
+const steam = { on: 0, goal: 0, t: 0 };
+function stepSteam(dt) {
+  steam.on += (steam.goal - steam.on) * (1 - Math.exp(-dt * 2.2));
+  if (steam.on < 0.001 && !steam.goal) return;
+  steam.t += dt * (reduced() ? 0.4 : 1);
+  steamMat.uniforms.uTime.value = steam.t;
+  steamMat.uniforms.uAmt.value = steam.on;
+}
+
+/* ---------- coin, carousel and hatch ---------- */
+// One loaf per sale: coin, turn, unlock, swing. The buyer takes it, the door shuts.
+const STEP = (Math.PI * 2) / DRUM.sectors;
+const machine = { state: 'idle', cell: null, door: null };
+const coinAction = () => ui.action('coin');
+const greenLamp = readyLamp.material.color.clone(), redLamp = lin(0.6, 0.22, 28, 5);
+// The ready lamp turns red when the drum is empty.
+function stock() {
+  const left = cells.some(c => c.full);
+  readyLamp.material.color.copy(left ? greenLamp : redLamp);
+  const a = coinAction();
+  if (a) a.disabled = !left || machine.state !== 'idle';
+  return left;
+}
+// The coin glint: a bright fleck at the slot; bloom turns it into a spark.
+const glint = glowPlate(0.02, 0.02, lin(0.95, 0.08, 85), 30, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.05);
+glint.visible = false;
+const priceWin = STOP.children.find(m => m.isMesh && m.geometry.parameters?.width === 0.14);
+function coin() {
+  if (machine.state !== 'idle' || !stock()) return;
+  const full = cells.filter(c => c.full);
+  const cell = full[Math.floor(Math.random() * full.length)];
+  machine.state = 'busy';
+  stock();
+  // The coin drops: a glint, then the price window blinks twice.
+  glint.visible = true;
+  anim(0.3, k => { glint.scale.setScalar(1 + 2 * Math.sin(Math.PI * k)); glint.position.y = COIN.y + 0.04 - 0.05 * k; }, () => { glint.visible = false; });
+  if (priceWin) anim(0.6, k => { priceWin.visible = Math.floor(k * 4) % 2 === 0; }, () => { priceWin.visible = true; });
+  // The motor turns the whole stack the short way round, always forward.
+  after(0.45, () => {
+    const from = drum.rotation.y, target = -cell.sector * STEP;
+    let delta = (((target - from) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (delta < 0.2) delta += Math.PI * 2;
+    anim(0.7 + delta * 0.45, k => {
+      drum.rotation.y = from + delta * motor(k);
+      readyLamp.visible = Math.floor(k * 10) % 2 === 0;
+    }, () => {
+      drum.rotation.y = target;
+      readyLamp.visible = true;
+      openDoor(cell);
+    });
+  });
+}
+function openDoor(cell) {
+  const door = doors[cell.tier];
+  machine.cell = cell;
+  machine.door = door;
+  // The tier's button lights; the latch lets go; the door swings out.
+  buttons[cell.tier].material.color.multiplyScalar(4);
+  cell.loaf.material = hotCrust;
+  hotLight.position.set(DRUM.x, COL.y0 + (cell.tier + 0.5) * TIER_H, M.front + 0.12);
+  steamMat.uniforms.uOrigin.value.set(DRUM.x, COL.y0 + cell.tier * TIER_H + 0.1, M.front + 0.02);
+  after(0.15, () => {
+    anim(1.1, k => {
+      door.pivot.rotation.y = -1.85 * spring(k);
+      hotLight.intensity = 3.2 * clamp01(k * 2);
+      hotCrust.emissiveIntensity = 0.1 + 1.6 * clamp01(k * 1.5);
+    }, () => { machine.state = 'open'; });
+    steam.goal = 1;
+  });
+}
+function take() {
+  if (machine.state !== 'open') return;
+  const { cell, door } = machine;
+  machine.state = 'busy';
+  // The loaf slides out toward the buyer and is gone.
+  const z0 = cell.loaf.position.z;
+  anim(0.4, k => { cell.loaf.position.z = z0 + 0.35 * inQuad(k); cell.loaf.scale.setScalar(1 - inQuad(k)); }, () => {
+    cell.loaf.visible = false;
+    cell.loaf.position.z = z0;
+    cell.loaf.scale.set(0.95, 1, 0.9);
+    cell.loaf.material = crust;
+    cell.full = false;
+  });
+  steam.goal = 0;
+  // The door swings shut and bounces once on its latch.
+  after(0.45, () => {
+    const from = door.pivot.rotation.y;
+    anim(0.38, k => { door.pivot.rotation.y = from * (1 - inQuad(k)); hotLight.intensity = 3.2 * (1 - k); }, () => {
+      anim(0.18, k => { door.pivot.rotation.y = -0.06 * Math.sin(Math.PI * k); }, () => {
+        door.pivot.rotation.y = 0;
+        buttons[cell.tier].material.color.multiplyScalar(0.25);
+        hotCrust.emissiveIntensity = 0.1;
+        machine.state = 'idle';
+        machine.cell = machine.door = null;
+        stock();
+      });
+    });
+  });
+}
+// Reset closes any open door and restocks the drum, one tier at a time.
+function restock() {
+  if (machine.state === 'busy') return;
+  if (machine.state === 'open') {
+    machine.door.pivot.rotation.y = 0;
+    buttons[machine.cell.tier].material.color.multiplyScalar(0.25);
+    machine.cell.loaf.material = crust;
+    hotLight.intensity = 0;
+    steam.goal = 0;
+    machine.state = 'idle';
+    machine.cell = machine.door = null;
+  }
+  for (let t = 0; t < TIERS; t++) {
+    after(0.08 * t, () => {
+      for (const c of cells) if (c.tier === t && !c.full) { c.full = true; c.loaf.visible = true; }
+      buttons[t].material.color.multiplyScalar(3);
+      after(0.12, () => buttons[t].material.color.multiplyScalar(1 / 3));
+    });
+  }
+  after(0.08 * TIERS + 0.2, stock);
+}
+drum.rotation.y = 0;
+
+/* ---------- picking ---------- */
+// A tap on the machine buys a loaf, or takes the one in the open hatch.
+// The machine is small in the long lens, so a tap near it counts too.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), box3 = new THREE.Box3(), corner = new THREE.Vector3();
+const cabinet = STOP.children.filter(m => m.isMesh);
+function nearMachine(px, py, r) {
+  box3.setFromCenterAndSize(new THREE.Vector3(0, M.y0 + (M.h + HOOD.R) / 2, M.front - M.d / 2), new THREE.Vector3(M.w, M.h + HOOD.R, M.d));
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box3.max.x : box3.min.x, i & 2 ? box3.max.y : box3.min.y, i & 4 ? box3.max.z : box3.min.z);
+    STOP.localToWorld(corner).project(camera);
+    const sx = (corner.x * 0.5 + 0.5) * r.width, sy = (0.5 - corner.y * 0.5) * r.height;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  const pad = Math.max(18, (x1 - x0) * 0.25);
+  return px > x0 - pad && px < x1 + pad && py > y0 - pad && py < y1 + pad;
+}
+function tapAt(cx, cy) {
+  const r = stage.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+  ndc.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(STOP, true).length > 0 || nearMachine(px, py, r);
+  if (!hit) return;
+  if (machine.state === 'open') take(); else coin();
+}
+
+/* ---------- pointer ---------- */
+// A press turns into a drag after 8 px, or a hold after 260 ms.
+let press = null;
+const lookBusy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4;
+function stepLook(dt) {
+  const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
+  look.yaw += (look.ty - look.yaw) * k;
+  look.pitch += (look.tp - look.pitch) * k;
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  // Capture can fail for a pointer the browser no longer tracks.
+  try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, yaw: look.ty, pitch: look.tp };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (!press.drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.drag = true; stage.classList.add('held'); }
+  if (!press.drag) return;
+  // A drag looks round a little; the long lens makes small turns big.
+  const s = 0.12 / Math.max(size.w, size.h);
+  look.ty = Math.max(-0.08, Math.min(0.08, press.yaw - (e.clientX - press.x) * s));
+  look.tp = Math.max(-0.12, Math.min(0.12, press.pitch + ((e.clientY - press.y) / size.h) * 0.25));
+  wake();
+});
+const endPress = e => {
+  if (!press || e.pointerId !== press.id) return;
+  press = null;
+  stage.classList.remove('held');
+  wake();
+};
+stage.addEventListener('pointerup', e => {
+  if (press && e.pointerId === press.id && !press.drag && performance.now() - press.at < 260) tapAt(e.clientX, e.clientY);
+  endPress(e);
+});
+stage.addEventListener('pointercancel', endPress);
+stage.addEventListener('lostpointercapture', endPress);
+// Space buys a loaf, or takes the one waiting, when the stage has focus.
+stage.addEventListener('keydown', e => {
+  if (e.key !== ' ' || e.repeat) return;
+  e.preventDefault();
+  if (machine.state === 'open') take(); else coin();
+});
 
 /* ---------- bar ---------- */
-// Blockout: the look only. Motion and sound come in later tasks.
+act.coin = () => (machine.state === 'open' ? take() : coin());
+act.reset = () => restock();
 act.tilt = v => { tilt.uniforms.uAmt.value = v; draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
 act.view = v => { setView(v); frame(); draw(); };
 setView(QS.get('view') || ui.setting('view')?.value || 'road');
 act.tilt(ui.setting('tilt')?.value ?? 0.6);
 act.letterbox(!!ui.setting('letterbox')?.value);
+stock();
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
 resize();
 renderer.compileAsync(scene, camera).then(() => {
   draw();
+  wake();
   canvas.classList.add('on');
   markReady();
 }, () => { canvas.classList.add('on'); markReady(); });

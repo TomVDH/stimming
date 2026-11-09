@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:15:30Z
-updated_at: 2026-11-09T09:54:36Z
+updated_at: 2026-11-09T10:49:15Z
 ---
 
 Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vending machine glows alone at the edge of a dark Flemish village road at night: drop a coin, the carousel turns, a hatch opens on a warm loaf; cars sweep past; a fluorescent tube flickers with moths.
@@ -14,7 +14,7 @@ Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vend
 - [x] Task 1: blockout: machine, drum, canopy, tube, road, fields, far land, sky; bloom, tilt-shift, grade
 - [x] Task 1: toys.json entry and Lab menu entry with a pointer-reactive icon
 - [ ] Task 1: stills at 1280 and 375 px; checkpoint with Tom
-- [ ] Task 2: coin, carousel, hatch, loaf glow, steam
+- [x] Task 2: coin, carousel, hatch, loaf glow, steam
 - [ ] Task 3: tube flicker, moths, passing cars with spot shadow
 - [ ] Task 4: rain and wet road
 - [ ] Task 5: sound
@@ -35,3 +35,5 @@ Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vend
 - Tom (2026-11-09): look approved, with less flare and a quintessential Flemish village in the background. Flare gain cut to 0.14; a village of brick gables with a church, spire and lit clock now closes the road. Phones stand on the verge so the village and the machine share the frame.
 
 - Tom (2026-11-09): horizon too empty; build Village edge next. Added willow lines, farms, a pylon line, wind turbines with red beacons and a second spire. Village edge is a second View in Settings: the machine against the blind gable of a terrace house under a sodium lamp, dead frontal.
+
+- Task 2 (2026-11-09): a tap on the machine (or near it) buys; the carousel turns forward with a 2 % overshoot; the tier's door springs open with a warm glow and steam; a second tap takes the loaf and the door shuts with a bounce. Empty cells stay empty; the lamp turns red when sold out; Reset restocks tier by tier. Coin is key C, Space on the stage; + Car is key V (the shell matches e.key, so 'Space' cannot bind).
