@@ -188,3 +188,9 @@ Fix: `rocketAt` works from the eye: `lensReach()` gives the sky's elevation span
 Wind: one mean direction (`WIND`), a gust strength per point (`gustAt`: an 80 m envelope for lulls and gusts, 16 m fronts, both carried along the wind at 4 m/s). The banks keep `gust()` as a sideways push from the same field.
 Stalk: a length-keeping bend; the tangent turns by th * u^2 (`stalkAt`, `stalkTan`, small-angle series). th = lean + 0.06 H g + sway + the sound front. Sway is a sine at 4.5 / sqrt(H) rad/s (tall stalks swing slower), amplitude 0.03 to 0.12 rad with the gust, plus a smaller cross-wind sine.
 Leaves: three, alternating sides at nodes 0.3, 0.5, 0.7 H, lengths 0.36 to 0.26 H, a 5 to 8 Hz flutter that grows in a gust. Plume: 0.2 H panicle, 35 degrees off upright, nodding 0.5 rad behind the stalk at 1.6 x the amplitude. Taper 8 mm to 3 mm. Named constants head the shader.
+
+## Birds near the eye (13:45, Tom: closer to the POV, spruced up)
+
+Beds sit 30 to 220 m out, left or right of the lane to the pad (`seedBirds`). The three near beds break sideways and low, wheel inside the lens for ten seconds (goal 18 m to their side, 17 m up, 40 m out), then pass the eye on their side; speed cap 9 m/s. Far beds keep the far point.
+The bird is drawn: a continuous wingbeat on the flap phase (wrist leads the tip), tapered wings, body, head, notched tail; 0.9 m span, never under six pixels. Colour has a floor (0.05 linear) so a bird reads against a black sky; the dawn glow warms it.
+QA: `__qa.birds()` lists airborne birds; the headless harness must wait in real time (`--wait`), since a clock jump lifts every bed at once.
