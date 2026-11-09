@@ -1778,6 +1778,26 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           </a>
         </li>
         <li>
+          <a class="toy" id="flametest" href="flametest/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 275)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.14 0.015 275)"/>
+                <path id="flametest-flame" d="M40 94C30 94 27 84 30 74C33 64 37 56 40 36C44 52 51 62 50 76C49 86 47 94 40 94Z" fill="oklch(0.6 0.22 24)"/>
+                <path d="M35 94L40 80L45 94Z" fill="oklch(0.72 0.14 250)"/>
+                <path d="M53 70H71L62 84Z" fill="none" stroke="oklch(0.8 0.02 270)" stroke-width="1.6"/>
+                <rect x="56" y="28" width="48" height="22" fill="oklch(0.05 0.01 275)"/>
+                <g id="flametest-lines" stroke-width="2.6">
+                  <line x1="89.7" y1="29" x2="89.7" y2="49" stroke="oklch(0.62 0.24 25)"/>
+                  <line x1="82.9" y1="29" x2="82.9" y2="49" stroke="oklch(0.75 0.17 55)"/>
+                  <line x1="65.9" y1="29" x2="65.9" y2="49" stroke="oklch(0.55 0.2 265)"/>
+                </g>
+              </svg>
+            </span>
+            <span class="name">Flame test</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="bench" href="bench/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2763,6 +2783,34 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       play: () => loop({ repeatDelay: 0.5 })
         .fromTo(ts, { scale: 0.4, opacity: 0, svgOrigin: '62 60' }, { scale: 1, opacity: 1, svgOrigin: '62 60', duration: 0.32, ease: 'back.out(2)', stagger: 0.16 }),
       rest() { gsap.to(ts, { scale: 1, opacity: 1, svgOrigin: '62 60', duration: 0.3, overwrite: true }); },
+    };
+  }
+
+  // Each salt flares the flame in its colour and sets its lines on the plate.
+  {
+    const flame = $('flametest-flame'), lines = [...document.querySelectorAll('#flametest-lines line')];
+    const X = l => 102 - ((780 - l) / 390) * 44;
+    const SALT = [
+      ['oklch(0.6 0.22 24)', [[670.8, 'oklch(0.62 0.24 25)'], [610.4, 'oklch(0.75 0.17 55)'], [460.3, 'oklch(0.55 0.2 265)']]],
+      ['oklch(0.82 0.17 80)', [[588.6, 'oklch(0.86 0.18 85)'], [589.9, 'oklch(0.86 0.18 85)'], [589.3, 'oklch(0.86 0.18 85)']]],
+      ['oklch(0.74 0.15 170)', [[515.3, 'oklch(0.78 0.22 145)'], [521.8, 'oklch(0.8 0.22 140)'], [435, 'oklch(0.5 0.22 275)']]],
+      ['oklch(0.6 0.21 28)', [[606, 'oklch(0.7 0.2 40)'], [659, 'oklch(0.62 0.24 28)'], [682, 'oklch(0.58 0.23 27)']]],
+      ['oklch(0.86 0.13 125)', [[553.5, 'oklch(0.86 0.2 130)'], [524, 'oklch(0.8 0.22 142)'], [513, 'oklch(0.78 0.2 150)']]],
+    ];
+    const show = (i, d = 0.25) => {
+      const [fill, ls] = SALT[i];
+      gsap.to(flame, { attr: { fill }, duration: d, overwrite: 'auto' });
+      lines.forEach((el, k) => gsap.to(el, { attr: { x1: X(ls[k][0]), x2: X(ls[k][0]), stroke: ls[k][1] }, duration: d, ease: 'power3.out', overwrite: 'auto' }));
+    };
+    const puff = () => gsap.fromTo(flame, { scaleX: 1.25, scaleY: 1.2 }, { scaleX: 1, scaleY: 1, duration: 0.5, ease: 'power2.out', transformOrigin: '50% 100%', overwrite: 'auto' });
+    toys.flametest = {
+      play() {
+        const tl = gsap.timeline({ repeat: -1 });
+        SALT.forEach((s, i) => tl.add(() => { show((i + 1) % SALT.length); puff(); }, i * 0.6));
+        tl.add(() => {}, SALT.length * 0.6);
+        return tl;
+      },
+      rest() { show(0, 0.4); gsap.to(flame, { scaleX: 1, scaleY: 1, duration: 0.3, overwrite: 'auto' }); },
     };
   }
 

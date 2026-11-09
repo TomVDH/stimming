@@ -19,8 +19,8 @@
 ## The shot
 
 A dark room. No burner, no bench, no glassware: the flame stands on a small blue cone that rises from nothing.
-To its right, a thin shaft of the flame's light crosses to a glass wedge. The wedge is only an outline with lit edges.
-Out of the wedge, a fan of thin coloured sheets of light falls onto a dark plate. Each sheet lands as one sharp line.
+To its right, a thin shaft of the flame's light crosses to a glass wedge. The wedge is only an outline with lit edges, and it points down.
+Out of the wedge, a fan of thin coloured sheets of light rises onto a dark plate. Each sheet lands as one sharp line.
 The plate shows only lines: no rainbow, no labels. Faint ticks every 50 nm are the only marks.
 The first frame is a picture: a pinch of Lithium burns, so the flame is crimson and three lines stand on the plate.
 
@@ -83,9 +83,9 @@ Weights are drawn from published flame spectra and then tuned by eye. The table 
 
 ## Tech
 
-**Layout.** World units fit the stage's short side. Landscape: the flame sits at 0.24 W, its base at 0.18 H. The wedge sits at 0.46 W, beam height. The plate spans 0.56 W to 0.95 W at 0.22 H. Portrait recomposes (see Review focus).
+**Layout.** World units fit the stage's short side. Landscape: the flame sits at 0.24 W, its base at 0.2 H. The wedge sits at 0.43 W, beam height, and points down, so the fan rises. The plate spans 0.5 W to 0.94 W, from 0.6 H to 0.72 H. This keeps the plate clear of the bottom bar. Portrait recomposes (see Review focus).
 
-**Wavelength to plate.** `t = (1/λ² − 1/780²) / (1/390² − 1/780²)` for the prism; `t = (780 − λ) / 390` for the grating. Violet lands at the plate's left, red at its right.
+**Wavelength to plate.** The prism uses the mean of `(1/λ² − 1/780²) / (1/390² − 1/780²)` (Cauchy) and `(780 − λ) / 390` (even); pure Cauchy crowds every salt into the plate's right third. The grating uses the even term alone. Violet lands at the plate's left, red at its right.
 
 **Line colour.** The CIE 1931 multi-lobe fit from `prism/index.html` (Wyman, Sloan and Shirley), in GLSL, gives linear sRGB per wavelength. A floor lifts the dim edges so 404 and 767 nm still read as violet and deep red.
 
@@ -133,7 +133,7 @@ The CPU rebuilds it each frame from the salt amounts and drops lines under 0.002
 
 ## Review focus
 
-1. **375 px portrait.** The flame stands upper left, at 0.3 W and from 0.5 H to 0.85 H. The wedge sits at 0.68 W, beam height. The fan falls to a plate across the bottom, from 0.06 W to 0.94 W at 0.16 H. The bar's bottom row sits below the plate.
+1. **375 px portrait.** The flame stands lower left, at 0.28 W and from 0.22 H to 0.52 H. The wedge sits at 0.66 W, beam height. The fan rises to a plate across the top, from 0.06 W to 0.94 W, 0.66 H to 0.73 H. The bar's bottom row sits below the flame.
 2. **The doublet.** At plate scale the two sodium lines sit 1 to 2 px apart. Only the loupe splits them, never a widened plate.
 3. **Bloom on bright lines.** Sodium is the brightest line. The threshold keeps it from washing the plate white.
 4. **Mixes stay readable.** Three salts at once give up to 30 lines; each line keeps its own colour.
