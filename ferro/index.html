@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Ferrofluid: the dish at full width under the shared header. */
+/* Ferrofluid: the dish fills the stage under the Bar v2 corners. */
 :root { --stage: oklch(0.185 0.006 265); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -29,28 +29,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D - =" aria-label="A dish of ferrofluid. The pointer holds a faint glow above it, which acts as a magnet; scrolling sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the glow, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall.">
+    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D 1 2 3 4 - =" aria-label="A dish of ferrofluid. The pointer holds a faint glow above it, which acts as a magnet; scrolling or pinching sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the glow, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall, 1 to 4 pick the fluid.">
       <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Fluid">
-        <button class="chip" type="button" data-value="ink" aria-pressed="true">Ink</button>
-        <button class="chip" type="button" data-value="alien" aria-pressed="false">Alien</button>
-        <button class="chip" type="button" data-value="magma" aria-pressed="false">Magma</button>
-        <button class="chip" type="button" data-value="oil" aria-pressed="false">Oil</button>
-      </div>
-      <div class="actions">
-        <button class="chip" id="drip" type="button" aria-keyshortcuts="D">Drip</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div class="fine"><dt>Hover</dt><dd>move the glow</dd></div>
-        <div class="touch"><dt>Drag</dt><dd>move the glow</dd></div>
-        <div class="fine"><dt>Scroll</dt><dd>field strength</dd></div>
-        <div><dt>Hold</dt><dd>charge, lift drops</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>full field</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ferrofluid</h1><div class="vignette" hidden></div></section>
@@ -63,10 +44,30 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, oklchRgb, choices, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'ferro' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, sound, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
+// The fluid choice restores from its own key.
+const FLUID_KEY = 'stimming.ferro.fluid';
+let fluidNow = 'ink';
+try { const v = localStorage.getItem(FLUID_KEY); if (['ink', 'alien', 'magma', 'oil'].includes(v)) fluidNow = v; } catch (err) { /* storage is optional */ }
+// Each fluid's dot shows its glow; Oil shows its film.
+const ui = initPage({ id: 'ferro', bar: {
+  choice: { label: 'Fluid', value: fluidNow,
+    options: [
+      { value: 'ink', label: 'Ink', key: '1', dot: 'oklch(0.86 0.09 215)' },
+      { value: 'alien', label: 'Alien', key: '2', dot: 'oklch(0.86 0.23 150)' },
+      { value: 'magma', label: 'Magma', key: '3', dot: 'oklch(0.72 0.2 45)' },
+      { value: 'oil', label: 'Oil', key: '4', dot: 'linear-gradient(135deg, oklch(0.74 0.14 320), oklch(0.82 0.12 200), oklch(0.88 0.13 95))' },
+    ],
+    onPick: v => {
+      setFluid(v);
+      try { localStorage.setItem(FLUID_KEY, fluidNow); } catch (err) { /* storage is optional */ }
+    } },
+  // Field sets the resting strength, as scroll and pinch do.
+  slider: { label: 'Field', min: 0.5, max: 1.7, step: 0.01, value: 1, onInput: v => setDial(v) },
+  actions: [{ verb: 'drip', label: 'Drip', key: 'D', onPress: () => drip() }],
+  quality: true,
+  keys: [['hover', 'move the glow'], ['hold + drag', 'charge, lift drops'], ['scroll', 'field strength'], ['space', 'full field']],
+} });
 const panel = document.getElementById('pool');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1177,7 +1178,19 @@ function stir() {
   stirT = tNow;
   wake();
 }
+// Two fingers pinch the field strength; touches holds each finger.
+const touches = new Map();
+let pinchD = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
 panel.addEventListener('pointermove', e => {
+  if (touches.has(e.pointerId)) {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) {
+      const d = spread();
+      if (pinchD > 0 && d > 0) turnDial(Math.log(d / pinchD) * 0.9);
+      pinchD = d;
+    }
+  }
   if (!ready || (e.pointerType === 'touch' && e.pointerId !== ptrId)) return;
   if (!aimAt(e)) return;
   mag.via = 'pointer';
@@ -1189,6 +1202,16 @@ panel.addEventListener('pointermove', e => {
 });
 panel.addEventListener('pointerdown', e => {
   if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    // A second finger starts a pinch; the field stops charging.
+    if (touches.size > 1) {
+      pinchD = touches.size === 2 ? spread() : 0;
+      mag.pressed = false;
+      stir();
+      return;
+    }
+  }
   aimAt(e);
   mag.via = 'pointer';
   mag.present = true;
@@ -1199,6 +1222,8 @@ panel.addEventListener('pointerdown', e => {
   stir();
 });
 function release(e) {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinchD = 0;
   if (e.pointerId !== ptrId) return;
   ptrId = -1;
   mag.pressed = false;
@@ -1215,6 +1240,20 @@ panel.addEventListener('lostpointercapture', release);
 // Scroll over the dish turns the resting field up or down.
 function turnDial(by) {
   mag.dial = clamp(mag.dial + by, DMIN, DMAX);
+  ui.slider.set(mag.dial);
+  stir();
+}
+// The Field slider sets the dial directly.
+function setDial(v) {
+  mag.dial = clamp(v, DMIN, DMAX);
+  if (!ready) return;
+  // A lifted magnet comes back over the dish, so the change shows.
+  if (!mag.present) {
+    const r = Math.hypot(mag.x, mag.z);
+    if (r > 0.6) { mag.x *= 0.6 / r; mag.z *= 0.6 / r; }
+    mag.via = 'key';
+    mag.present = true;
+  }
   stir();
 }
 panel.addEventListener('wheel', e => {
@@ -1231,7 +1270,7 @@ panel.addEventListener('pointerleave', e => {
 });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   if (ARROWS[e.key]) {
     e.preventDefault();
     keys.add(e.key);
@@ -1248,14 +1287,11 @@ addEventListener('keydown', e => {
     mag.present = mag.locked = false;
     keys.clear();
     stir();
-  } else if (e.key === 'd' || e.key === 'D') {
-    if (!e.repeat) drip();
   } else if (e.key === '-' || e.key === '=' || e.key === '+') {
     if (!mag.present) { mag.via = 'key'; mag.present = true; }
     turnDial(e.key === '-' ? -0.15 : 0.15);
   }
 });
-document.getElementById('drip').addEventListener('click', drip);
 addEventListener('keyup', e => { keys.delete(e.key); });
 addEventListener('blur', () => keys.clear());
 sound.onChange(on => {
@@ -1302,10 +1338,8 @@ const FLUIDS = {
   magma: { base: [0.04, 0.01, 35], glow: [0.72, 0.2, 45], inner: 2.2, irid: 0, rough: 0.08, light: 0.08 },
   oil: { base: [0.08, 0.006, 280], glow: [0.93, 0.02, 250], inner: 0, irid: 1, rough: 0.05, light: 1 },
 };
-const FLUID_KEY = 'stimming.ferro.fluid';
-let fluidNow = 'ink', GLU = null, lightK = 1;
+let GLU = null, lightK = 1;
 const inks = [];
-try { const v = localStorage.getItem(FLUID_KEY); if (FLUIDS[v]) fluidNow = v; } catch (err) { /* storage is optional */ }
 // Light from inside: thin tips and grazing rims glow brightest.
 function innerGlow(shader, tip) {
   Object.assign(shader.uniforms, GLU);
@@ -1343,12 +1377,6 @@ function setFluid(name) {
   groove.material.color.copy(col).multiplyScalar(0.55);
   if (ready) { draw(); wake(); }
 }
-const fluidPick = choices(document.querySelector('.choices'), v => {
-  setFluid(v);
-  try { localStorage.setItem(FLUID_KEY, fluidNow); } catch (err) { /* storage is optional */ }
-});
-fluidPick.set(fluidNow);
-
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
