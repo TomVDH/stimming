@@ -1112,6 +1112,26 @@ function zz(ac, name, t, out, gain, rate = jit(0.08)) {
   s.start(t);
   return [s, g];
 }
+// Recorded takes, cut from Tom's picks; until they load, ZzFX and the synth play.
+const SFX = { boom: ['boom-1', 'boom-2', 'boom-3', 'boom-4', 'boom-5'], crackle: ['crackle-1', 'crackle-2'] };
+// Gain per take: the first half second of each boom sits near -16 dB.
+const SFX_GAIN = { 'boom-1': 1.64, 'boom-2': 1.53, 'boom-3': 0.69, 'boom-4': 0.79, 'boom-5': 1.45, burst: 0.73, 'crackle-1': 1.6, 'crackle-2': 0.55, report: 0.9, cake: 0.6 };
+let sfx = null, sfxLoad = null;
+function loadSfx(ac) {
+  sfxLoad ||= Promise.all(Object.keys(SFX_GAIN).map(n => fetch(`sfx/${n}.mp3`).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => [n, buf])))
+    .then(list => { sfx = Object.fromEntries(list); }).catch(() => {});
+}
+const take = k => SFX[k][Math.floor(Math.random() * SFX[k].length)];
+// One recorded take at time t, through out, at a set rate.
+function smp(ac, name, t, out, gain, rate = 1) {
+  const s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = sfx[name];
+  s.playbackRate.value = rate;
+  g.gain.value = gain * SFX_GAIN[name];
+  s.connect(g).connect(out);
+  s.start(t);
+  return [s, g];
+}
 function track(end, kind, ...nodes) { pend.add({ end, kind, nodes }); }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const count = kind => { let n = 0; for (const h of pend) if (h.kind === kind) n++; return n; };
@@ -1123,6 +1143,7 @@ function stopAll() {
 // Shared bus: a 3.5 s reverb, a crackle bank, and the water bed.
 function bus(ac) {
   loadZz(ac);
+  loadSfx(ac);
   if (rvb) return;
   const len = Math.round(ac.sampleRate * 3.5), ir = ac.createBuffer(2, len, ac.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -1201,6 +1222,24 @@ function lift(ac, t, T, out, lvl) {
 // The boom: a crack, a body through the distance low-pass, a sub, reverb and a slap off the shore.
 function boom(ac, t, out, lvl, lp, cal) {
   if (count('boom') >= 6) return;
+  if (sfx) {
+    // A recorded boom; big shells play slower and deeper.
+    const bl = filt(ac, 'lowpass', lp * jit(0.15));
+    bl.connect(out);
+    const [b, bg] = smp(ac, take('boom'), t, bl, lvl, jit(0.06) * (1.08 - 0.08 * cal));
+    // A soft synth sub keeps the weight on small speakers.
+    const s = ac.createOscillator();
+    s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
+    const sg = env(ac, t, lvl * (0.25 + 0.1 * cal), 0.008, 0.9);
+    s.connect(sg).connect(out); s.start(t); s.stop(t + 1.1);
+    const send = ac.createGain(); send.gain.value = 0.3;
+    bg.connect(send).connect(rvb);
+    const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
+    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.22;
+    bg.connect(dl).connect(dlp).connect(dg).connect(out);
+    track(t + 3.5, 'boom', b, s, send, dl);
+    return;
+  }
   if (zzBufs) {
     const bl = filt(ac, 'lowpass', lp * jit(0.15));
     bl.connect(out);
@@ -1236,6 +1275,15 @@ function boom(ac, t, out, lvl, lp, cal) {
 }
 function crackle(ac, t, out, lvl) {
   if (count('crackle') >= 2) return;
+  if (sfx) {
+    // A recorded crackle, with its low thump cut away.
+    const hp = filt(ac, 'highpass', 900);
+    hp.connect(out);
+    const [s, g] = smp(ac, take('crackle'), t, hp, lvl * 0.9, jit(0.1));
+    const send = ac.createGain(); send.gain.value = 0.2; g.connect(send).connect(rvb);
+    track(t + 4.2, 'crackle', s, send);
+    return;
+  }
   const s = ac.createBufferSource(), bp = filt(ac, 'bandpass', 4500 * jit(0.2), 1.1), g = ac.createGain();
   s.buffer = crackBufs[Math.floor(Math.random() * 3)]; s.playbackRate.value = jit(0.15);
   g.gain.value = lvl * 0.9;
@@ -1266,6 +1314,13 @@ function soundShell(pos, wait, T, type, style, cal) {
   const f = THREE.MathUtils.clamp(far, 0, 1), lvl = dB(-6 - 14 * f) * jit(0.12), lp = 6000 * Math.pow(900 / 6000, f);
   lift(ac, t0, T, pan, lvl);
   boom(ac, tb, pan, lvl * (type === 'supernova' ? 1.4 : 1), lp, cal);
+  if (sfx) {
+    const bl = filt(ac, 'lowpass', lp);
+    bl.connect(pan);
+    // Big shells add a bright, fizzing burst; one shell in five cracks sharp.
+    if ((type === 'supernova' || cal > 1.6) && count('burst') < 2) track(tb + 3.4, 'burst', smp(ac, 'burst', tb + 0.02, bl, lvl * 0.7, jit(0.05))[0]);
+    else if (Math.random() < 0.2 && count('report') < 2) track(tb + 1.3, 'report', smp(ac, 'report', tb, bl, lvl * 0.45, jit(0.1) * 0.8)[0]);
+  }
   if (CRACKLY.has(type) || style === 'crackle') crackle(ac, tb + 0.6 + Math.random() * 0.4, pan, lvl);
   if (SIZZLY.has(type)) sizzle(ac, tb + 0.2, pan, lvl, 2.5);
 }
@@ -1942,6 +1997,18 @@ function tearTick() {
   U.uTear.value.set(0.075 * tear.open, tear.glow, eye, a);
   if (a > 10.6) { tear = null; U.uTear.value.set(0, 0, 0, 0); }
 }
+// The cake take rattles under a barrage, timed to its first bursts.
+function soundCake(pos) {
+  const ac = kit.live();
+  if (!ac || !sfx) return;
+  const d = pos.distanceTo(camera.position), t = ac.currentTime + 0.9 + d / 343;
+  const pan = ac.createStereoPanner(), bl = filt(ac, 'lowpass', 6000 * Math.pow(900 / 6000, THREE.MathUtils.clamp((d - 300) / 1200, 0, 1)));
+  pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
+  bl.connect(pan).connect(kit.out);
+  const [s, g] = smp(ac, 'cake', t, bl, dB(-8));
+  const send = ac.createGain(); send.gain.value = 0.25; g.connect(send).connect(rvb);
+  track(t + 6, 'cake', s, send);
+}
 function soundTear(pos, wait) {
   const ac = kit.live();
   if (!ac) return;
@@ -1950,6 +2017,7 @@ function soundTear(pos, wait) {
   const pan = ac.createStereoPanner();
   pan.connect(kit.out);
   // A deep double crack, then a long low rumble.
+  if (sfx) track(t + 2.6, 'report', smp(ac, 'report', t, pan, dB(-1), 0.5)[0]);
   boom(ac, t, pan, dB(-2), 500, 2.5);
   boom(ac, t + 0.25, pan, dB(-6), 260, 2.5);
   boom(ac, t + 1.1, pan, dB(-10), 180, 2.5);
@@ -1973,6 +2041,7 @@ function launch(ndc, cal) {
       const at = new THREE.Vector2(ndc.x + (i / 15 - 0.5) * 0.9, ndc.y - 0.12 + rnd() * 0.24);
       fire(burstPoint(at, 0.7), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal, pick(['gold', 'colour', 'glitter']));
     }
+    soundCake(burstPoint(ndc, 0.7));
   } else fire(burstPoint(ndc, cal), simT, type, cal);
   commitStars();
   commitSmoke();
