@@ -8,11 +8,12 @@ for e in d['elements']:
         if n: st.setdefault(n, (e['lat'], e['lon']))
     elif e['type'] == 'way':
         ways.append([(p['lat'], p['lon']) for p in e['geometry']])
-seq = ['Zürich HB', 'Zürich Enge', 'Zürich Wollishofen', 'Kilchberg', 'Rüschlikon', 'Thalwil', 'Oberrieden', 'Horgen', 'Au ZH', 'Wädenswil', 'Richterswil', 'Bäch', 'Freienbach SBB', 'Pfäffikon SZ', 'Altendorf', 'Lachen', 'Siebnen-Wangen', 'Reichenburg', 'Bilten', 'Ziegelbrücke', 'Weesen', 'Mühlehorn', 'Murg', 'Unterterzen', 'Walenstadt']
-for s in seq:
-    print(s, st.get(s) or [k for k in st if s.split()[0] in k][:5])
-
-seq = ['Zürich Hauptbahnhof', 'Zürich Enge', 'Zürich Wollishofen', 'Kilchberg', 'Rüschlikon', 'Thalwil', 'Oberrieden', 'Horgen', 'Wädenswil', 'Richterswil', 'Bäch SZ', 'Freienbach SBB', 'Pfäffikon SZ', 'Altendorf', 'Lachen SZ', 'Siebnen-Wangen', 'Reichenburg', 'Bilten', 'Ziegelbrücke', 'Weesen', 'Mühlehorn', 'Murg', 'Unterterzen', 'Walenstadt']
+# OSM names: Au ZH is "Au"; Weesen survives only as a disused stop node.
+if 'Au' in st: st.setdefault('Au ZH', st['Au'])
+st.setdefault('Weesen', (47.1298274, 9.0944397))
+seq = ['Zürich Hauptbahnhof', 'Zürich Wiedikon', 'Zürich Enge', 'Zürich Wollishofen', 'Kilchberg', 'Rüschlikon', 'Thalwil', 'Oberrieden', 'Horgen', 'Au ZH', 'Wädenswil', 'Richterswil', 'Bäch SZ', 'Freienbach SBB', 'Pfäffikon SZ', 'Altendorf', 'Lachen SZ', 'Siebnen-Wangen', 'Schübelbach-Buttikon', 'Reichenburg', 'Bilten', 'Ziegelbrücke', 'Weesen', 'Mühlehorn', 'Murg', 'Unterterzen']
+missing = [s for s in seq if s not in st]
+if missing: print('MISSING', missing, [k for k in st if any(m.split()[0] in k for m in missing)][:20]); raise SystemExit(1)
 R = 6371000.0
 def xy(p):  # local metres around the area centre
     return ((p[1] - 9.0) * math.cos(math.radians(47.25)) * math.pi / 180 * R, (p[0] - 47.25) * math.pi / 180 * R)
@@ -61,6 +62,6 @@ for s0, s1 in zip(seq, seq[1:]):
     total += L
     stations.append((s1, total))
     print(f'{s1:22s} {total/1000:7.2f} km  (+{L/1000:.2f})')
-json.dump({'pts': pts, 'stations': stations}, open('dem/track.json', 'w'))
+json.dump({'pts': pts, 'stations': stations, 'coords': {n: st[n] for n in seq}}, open('dem/track.json', 'w'))
 lats = [p[0] for p in pts]; lons = [p[1] for p in pts]
 print(len(pts), min(lats), max(lats), min(lons), max(lons))

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T21:15:00Z
+updated_at: 2026-11-09T21:30:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -139,3 +139,10 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [ ] Far cliff shores still show the coarse far mesh as small teeth
 - [x] Inset: no glow on the wall round the window; the recess darkens toward the glass, a lit bevel at the wall edge, a contact shadow on the glass by the frame
 - [x] Water only on flat ground, so the coarse lake mask never paints a cliff; far land takes per-pixel normals; far vertices filter their height
+
+## Round 17: route rebuilt from OSM (Tom, 2026-11-09)
+- [x] tools/fetch.sh pulls 425 Terrarium tiles and OSM rails, stations, lakes and places; track.py traces Zurich HB to Murg (plus 3 km to Unterterzen for the loop); build.py bakes route.png and route.json
+- [x] 25 stations, Zürich Wiedikon added; "Au ZH" is "Au" in OSM; Weesen comes from its disused stop node
+- [x] Lake bug found: the rail level came from the ground beside the track, which in tunnels is the hill above; lakes sank up to 240 m. Now the rail level is the lowest near ground over 800 m, held to a band per stretch, so lakes sit 10 to 25 m below the eye
+- [x] Default weather Clear; Drift moves it every one to three minutes
+- [x] cut.py and lakes.py removed

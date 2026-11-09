@@ -78,8 +78,8 @@ playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firs
 const saved = k => { try { return localStorage.getItem(`stimming.trainride.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.trainride.${k}`, String(v)); } catch { /* storage is optional */ } };
 const opts = {
-  // The weather is new on every load: rain most often, clear least.
-  mode: ['drizzle', 'rain', 'rain', 'downpour', 'mist', 'fog', 'clear'][Math.floor(Math.random() * 7)],
+  // The ride opens clear; Drift then moves the weather on by itself.
+  mode: 'clear',
   drift: saved('drift') !== '0',
   express: saved('express') === '1',
   wet: saved('wet') || '1',
@@ -2084,7 +2084,7 @@ renderer.toneMappingExposure = 1.0;
 
 /* ---------- route ---------- */
 // The line from Zurich HB to Murg, traced on OpenStreetMap rails.
-// tools/cut.py cut the map at Murg and closed the loop.
+// tools/fetch.sh, track.py and build.py bake it; the last 3 km loop back to the start.
 // Heights come from the Terrarium tiles (Mapzen, AWS Open Data).
 // route.png: R and G hold the height in decimetres plus 500 m.
 // B is 255 on a lake, else town density up to 250.
@@ -2388,9 +2388,9 @@ S.setExpress(opts.express);
 S.setMode(opts.mode, true);
 S.setSpeed(cruise(opts.speed));
 S.setTime(opts.time, true);
-// Drift: the weather steps to a neighbour every two to five minutes.
+// Drift: the weather steps to a neighbour every one to three minutes.
 const time0 = () => performance.now() / 1000;
-const driftGap = () => 120 + Math.random() * 180;
+const driftGap = () => 70 + Math.random() * 110;
 let driftAt = time0() + driftGap();
 setInterval(() => {
   if (!opts.drift || document.hidden || time0() < driftAt) return;
