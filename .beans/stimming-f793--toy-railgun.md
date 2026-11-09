@@ -3,11 +3,12 @@
 title: 'Toy: Railgun'
 status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-09T19:40:51Z
+updated_at: 2026-11-09T23:50:42Z
 ---
 
-Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
+Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
 
 ## Checklist
 
@@ -27,6 +28,10 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - [x] Task 6: the barrel lowers 14° after the shot and climbs back to 26° for the next rock
 - [x] Task 6: dust and strikes land on the plain outside the terraces; the portrait eye stands 3 km back
 - [x] Task 6: QA again at 1280 × 800, 375 × 812, 812 × 375: no console errors; hold 30 fps, shot 30 fps; sleep and hidden draw 0 frames; Space charges and fires
+- [x] Task 7: the gun after Tom's reference still: a banded round barrel, a breech housing, booms, a pylon with braced struts; two sibling guns far off
+- [x] Task 7: the aim drops to 6°; the barrel lowers 4° after the shot; the rock sits low over the horizon
+- [x] Task 7: faraway mesas, buttes and two ranges; long cirrus streaks
+- [x] Task 7: QA again at 1280 × 800, 375 × 812, 812 × 375: no console errors; hold 30 fps, shot 30 fps; sleep and hidden draw 0 frames; Space charges and fires
 - [ ] Tom sets the Dutch name (proposal: Spoorkanon) and IPA
 - [ ] Record the session cost
 
