@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T19:06:00Z
+updated_at: 2026-11-09T19:17:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -76,3 +76,14 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Platforms: coping, white safety line, tactile strip, wet asphalt with puddle mirror; canopy with LED strips on columns; sector plates A to D; masts on the open ends; fence; benches and bins; signs hang on rods under the canopy
 - [x] Station light reaches the rain, the frame, the wall and the glass
 - [x] Frame: anodised window frame, green glass edge, blind cassette with pull tab, maker's etching, cleaning scratches, viewer's own reflection, double-glazing ghost
+
+## Round 9: window, cabin, weather, display, Zurich HB (Tom, 2026-11-09)
+- [x] Bigger window with a cross bar: a top hopper pane with its own tilted reflection, an aluminium bar and a latch
+- [x] Lighter, cleaner cabin: pale grey panels and lining, neutral light, brighter cube-map room
+- [x] Finer drops: smaller irregular beads, a fine mist, thinner threads, softer rims; each drop shows a flipped wide view with sky below
+- [x] Smoother fog with finer grain and soft patch edges
+- [x] Weather: random on load; rain arrives in the air first, the pane wets over seconds and dries slowly; fog eases
+- [x] Passenger display: type only (next stop, minutes in amber, the stops after, clock); no track meter
+- [x] Zurich HB: hall roof with a lamp field, four more platforms, a waiting train, no rain under the roof; a dense Zurich light field
+- [x] Larger stations get an island platform with its own canopy
+- [x] Walenstadt no longer sits on top of Zurich HB at the loop end
