@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:21:37Z
+updated_at: 2026-11-09T08:24:37Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -69,3 +69,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Smoke noise lives in world space, so overlapping puffs make one billow field. Ground clouds squat flat on the ground. Fill light is low: smoke turned from the dawn stays dark; rims and backlight carry it.
 - Reed banks: clumps and plume tips instead of flat crests.
 - Film: 24 fps always, moving grain (0.075), a small exposure flicker, a shakier hand with jitter, a shake at ignition and liftoff, and a push-in that overshoots and corrects twice.
+
+## Bokeh (2026-11-09, Tom: as in Wind farm and Buoy Business)
+
+- Wind farm's pass, ported: 28 golden-angle taps turned per pixel, a reach test so sharp things keep their edges, and hot pixels weighted so bright lights open into discs.
+- Wide-lens circle of confusion: K · |1/d − 1/focus|, focus on the pad; only the near reeds go soft.
+- A focus hunt at liftoff: soft, past sharp, then sharp. The flame opens into a disc for half a second.
