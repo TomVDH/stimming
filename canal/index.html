@@ -25,18 +25,20 @@
 /* Letterbox bars clip the canvas to 2.39 to 1. */
 .stage--canal[data-letterbox] canvas { clip-path: inset(var(--box, 0px) 0); }
 @media (prefers-reduced-motion: reduce) { .stage--canal canvas { transition: none; } }
-/* The camera rocker: three heights in one slab, on the right edge. */
+/* The camera rocker: four places in one slab, on the right edge. */
 .stim-ui > .cn-rock { top: 50%; right: 12px; transform: translateY(-50%); perspective: 260px; }
 .cn-pad {
   display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 2px;
   box-shadow: var(--hard); transition: transform 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 /* The slab tips toward the end that is down. */
-.cn-pad[data-v="sky"] { transform: rotateX(16deg); }
-.cn-pad[data-v="path"] { transform: rotateX(-16deg); }
+.cn-pad[data-v="vaart"] { transform: rotateX(16deg); }
+.cn-pad[data-v="kerk"] { transform: rotateX(6deg); }
+.cn-pad[data-v="station"] { transform: rotateX(-6deg); }
+.cn-pad[data-v="voetbal"] { transform: rotateX(-16deg); }
 .cn-pad button {
   box-sizing: border-box; display: flex; align-items: center; justify-content: center;
-  width: 58px; height: var(--chip); margin: 0; padding: 0; border: 0; border-radius: 0;
+  width: 72px; height: var(--chip); margin: 0; padding: 0; border: 0; border-radius: 0;
   font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--muted); background: none; cursor: pointer;
   -webkit-tap-highlight-color: transparent; transition: color 0.15s ease, background 0.15s ease;
 }
@@ -292,13 +294,14 @@ const LAMP_STATE = /* glsl */`
 uniform float uNow, uWarmT;
 uniform vec3 uPink;
 // One lamp's level and colour: the photocell follows Dusk; a tap forces it on or off.
-// Rows per lamp: position and mark, colour and reach, then state and the tap time.
+// Rows per lamp: position and mark, colour and reach, then state, tap time and instant flag.
 vec4 lampState(int id, out vec4 lp, out vec4 lc) {
   ivec2 at = ivec2(id % 2048, (id / 2048) * 3);
   lp = texelFetch(tSL, at, 0);
   lc = texelFetch(tSL, at + ivec2(0, 1), 0);
   vec4 st = texelFetch(tSL, at + ivec2(0, 2), 0);
-  bool led = lc.w < 22.0;
+  // Instant lamps (LED, kermis, floodlights) skip the sodium warm-up.
+  bool led = st.z > 0.5;
   float lvl, warm;
   if (st.x == 0.0) { lvl = smoothstep(lp.w, lp.w + 0.025, uDusk); warm = lvl; }
   else if (st.x > 0.0) {
@@ -409,6 +412,7 @@ scene.add(sky);
 /* ---------- buildings ---------- */
 // Surface kinds in aInfo.w.
 const BRICK = 0, RENDER = 1, CONCRETE = 2, STEEL = 3, CHURCH = 4, METAL = 5, TREE = 6, FRIT = 7, SIGN = 8, STAM = 9, LAMPHEAD = 10;
+const AWNING = 11, BUMPER = 12, PAINT = 13, BIKES = 14;
 const fr = x => x - Math.floor(x);
 const v2 = ps => new THREE.Shape(ps.map(([x, y]) => new THREE.Vector2(x, y)));
 const UP = new THREE.Vector3(0, 1, 0);
@@ -897,6 +901,127 @@ function sports(x, z) {
 }
 /* ---------- end farms, woods, hedgerows, a sports ground ---------- */
 
+
+/* ---------- places: the kermis, the station and the pitch ---------- */
+// Lamps the places add to the network: colour, reach and an early mark.
+const PLACE_LAMPS = [];
+const lampOf = (x, z, y, [L, C, h], gain, reach, mark = 0.18) => PLACE_LAMPS.push({ x, z, y, col: linFit(L, C, h).map(v => v * gain), reach, mark });
+// Festoons and blinking lights: bulbs as points, with a colour and a chase phase each.
+const BULBS = [];
+const bulb = (x, y, z, col, ph = 0, kind = 0) => BULBS.push({ x, y, z, col, ph, kind });
+// Where the kermis rides stand on the square.
+// The wheel stands at the east end, its face turned to the square.
+const KERMIS = { carousel: [64, -184], cars: [80, -184], wheel: [98, -184] };
+// A stall: a lit counter under a striped awning.
+function stall(x, z, a, seed) {
+  const bx = Math.cos(a), bz = Math.sin(a);
+  const body = tag(new THREE.BoxGeometry(4, 2.6, 2.4).translate(2, 1.3, 1.2), [4, 2.6, seed, FRIT], true);
+  const awn = tag(new THREE.BoxGeometry(4.4, 0.08, 1.6).translate(2.2, 0, 0.8), [4.4, 1, seed, AWNING], true);
+  awn.rotateX(0.35).translate(-0.2, 2.9, -1.3);
+  place([body, awn], x, z, [bx, 0, bz]);
+}
+function kermis() {
+  let s = 0;
+  for (const [x, z, a] of [[54, -171, Math.PI / 2], [73, -171, Math.PI / 2], [101, -191, Math.PI], [52, -219, -Math.PI / 2], [95, -228, -Math.PI / 2]]) {
+    stall(x, z, a, ++s);
+    lampOf(x + 2 * Math.sin(a), z - 2 * Math.cos(a), 2.6, [0.85, 0.1, 75], 1.4, 12, 0.15);
+  }
+  // The bumper cars run under a flat roof on six posts, with a coloured floor.
+  const [bx, bz] = KERMIS.cars;
+  for (const dx of [-7.6, 0, 7.6]) for (const dz of [-4.6, 4.6]) parts.push(tag(new THREE.CylinderGeometry(0.12, 0.12, 4.4, 6).translate(bx + dx, QUAY + 2.2, bz + dz), [0, 0, 0, STEEL]));
+  parts.push(tag(new THREE.BoxGeometry(16.4, 0.5, 10.4).translate(bx, QUAY + 4.6, bz), [0, 0, 3, PAINT]));
+  parts.push(tag(new THREE.BoxGeometry(15, 0.15, 9).translate(bx, QUAY + 0.08, bz), [0, 0, 0, BUMPER]));
+  for (let i = 0; i <= 16; i++) for (const dz of [-5.2, 5.2]) bulb(bx - 8.2 + i * 1.025, QUAY + 4.35, bz + dz, [1, 0.8, 0.45], i * 0.6, 1);
+  for (let i = 1; i < 10; i++) for (const dx of [-8.2, 8.2]) bulb(bx + dx, QUAY + 4.35, bz - 5.2 + i * 1.04, [1, 0.8, 0.45], i * 0.6, 1);
+  lampOf(bx, bz, 4.2, [0.8, 0.14, 220], 2.0, 20);
+  // The carousel's base and the wheel's legs stay still; their tops turn.
+  const [cx, cz] = KERMIS.carousel;
+  parts.push(tag(new THREE.CylinderGeometry(5.3, 5.5, 0.7, 28).translate(cx, QUAY + 0.35, cz), [0, 0, 1, PAINT]));
+  lampOf(cx, cz, 5, [0.75, 0.18, 350], 2.2, 22);
+  const [wx, wz] = KERMIS.wheel;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = new THREE.BoxGeometry(0.35, 11, 0.35);
+    leg.rotateZ(sx * 0.3).rotateX(sz * 0.12).translate(sx * 1.6, QUAY + 5, sz * 0.9).rotateY(Math.PI / 2).translate(wx, 0, wz);
+    parts.push(tag(leg, [0, 0, 2, PAINT]));
+  }
+  lampOf(wx - 2, wz, 9.5, [0.85, 0.12, 85], 2.0, 24);
+  // Festoons cross the square between corner poles.
+  const poles = [[56, -178], [100, -178], [100, -196], [56, -196]];
+  for (const [x, z] of poles) parts.push(tag(new THREE.CylinderGeometry(0.1, 0.12, 6, 6).translate(x, QUAY + 3, z), [0, 0, 0, STEEL]));
+  for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0], [0, 2]]) {
+    const [x0, z0] = poles[a], [x1, z1] = poles[b], n = Math.round(Math.hypot(x1 - x0, z1 - z0) / 1.3);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      bulb(x0 + (x1 - x0) * t, QUAY + 5.9 - 1.6 * Math.sin(Math.PI * t), z0 + (z1 - z0) * t, [[1, 0.25, 0.3], [1, 0.75, 0.2], [0.3, 0.7, 1], [0.4, 1, 0.5]][i % 4], i, 0);
+    }
+  }
+}
+// The station: two platforms with shelters, overhead masts, a bike shelter and a level crossing.
+const RAIL = { x: [-82.6, -77.4], stop: -100, cross: ROAD_Z };
+function railway() {
+  // Platforms, one each side of the tracks, long enough for four coaches.
+  for (const x of [-88, -72]) parts.push(tag(new THREE.BoxGeometry(4, 0.8, 104).translate(x, QUAY + 0.4, -101), [0, 0, 0, CONCRETE]));
+  // Shelters: a thin roof on a row of posts.
+  for (const x of [-88.6, -71.4]) {
+    for (let z = -124; z <= -84; z += 8) parts.push(tag(new THREE.CylinderGeometry(0.08, 0.08, 3.2, 6).translate(x, QUAY + 2.4, z), [0, 0, 0, STEEL]));
+    parts.push(tag(new THREE.BoxGeometry(3.2, 0.18, 44).translate(x, QUAY + 4.1, -104), [0, 0, 4, PAINT]));
+    for (let z = -120; z <= -88; z += 16) lampOf(x, z, 3.9, [0.93, 0.03, 230], 0.6, 13, 0.12);
+  }
+  for (const x of [-88, -72]) for (const z of [-140, -64]) lampOf(x, z, 5, [0.93, 0.03, 230], 0.6, 14, 0.15);
+  // Overhead-line portals every 60 m; the wires follow in the moving parts.
+  for (let z = -760; z <= 560; z += 60) {
+    if (Math.abs(z - ROAD_Z) < 8) continue;
+    for (const x of [-86.8, -73.2]) parts.push(tag(new THREE.BoxGeometry(0.3, 7.6, 0.3).translate(x, QUAY + 3.8, z), [0, 0, 0, STEEL]));
+    parts.push(tag(new THREE.BoxGeometry(14, 0.3, 0.3).translate(-80, QUAY + 7.4, z), [0, 0, 0, STEEL]));
+  }
+  // A bike shelter beside the station hall.
+  for (let z = -120; z <= -104; z += 4) parts.push(tag(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 5).translate(-96, QUAY + 1.2, z), [0, 0, 0, STEEL]));
+  parts.push(tag(new THREE.BoxGeometry(3, 0.12, 18).translate(-97, QUAY + 2.45, -112), [0, 0, 4, PAINT]));
+  parts.push(tag(new THREE.BoxGeometry(2, 1, 17).translate(-97.2, QUAY + 0.5, -112), [0, 0, 0, BIKES]));
+  // Level crossing: a post each side of the road on each side of the tracks, red lights on top.
+  for (const x of [-90.5, -69.5]) for (const s of [-1, 1]) {
+    const z = ROAD_Z + s * 5.5;
+    parts.push(tag(new THREE.CylinderGeometry(0.1, 0.1, 3, 6).translate(x, QUAY + 1.5, z), [0, 0, 0, STEEL]));
+    for (const dx of [-0.3, 0.3]) bulb(x + dx, QUAY + 2.8, z, [1, 0.08, 0.04], dx > 0 ? 0 : Math.PI, 2);
+  }
+}
+// The village pitch: mown stripes, white lines, floodlights, a kantine and a small stand.
+const PITCH = [-300, 90];
+function voetbal() {
+  const [x, z] = PITCH;
+  reserve(x - 75, z - 55, x + 75, z + 60);
+  worldOn(gc);
+  for (let i = 0; i < 10; i++) { gc.fillStyle = i % 2 ? '#4b8a3a' : '#559a42'; gc.fillRect(x - 52 + i * 10.4, z - 33, 10.4, 66); }
+  gc.strokeStyle = '#d8e0d0'; gc.lineWidth = 0.4;
+  gc.strokeRect(x - 50, z - 32, 100, 64);
+  gc.beginPath(); gc.moveTo(x, z - 32); gc.lineTo(x, z + 32); gc.stroke();
+  gc.beginPath(); gc.arc(x, z, 9.15, 0, 6.283); gc.stroke();
+  for (const s of [-1, 1]) gc.strokeRect(s > 0 ? x + 50 - 16.5 : x - 50, z - 20, 16.5, 40);
+  gc.fillStyle = '#6e6c68'; gc.fillRect(x - 70, z + 40, 40, 16);
+  // Goals: two white frames.
+  for (const s of [-1, 1]) {
+    const gx = x + s * 50;
+    for (const dz of [-3.66, 3.66]) parts.push(tag(new THREE.BoxGeometry(0.12, 2.44, 0.12).translate(gx, QUAY + 1.22, z + dz), [0, 0, 5, PAINT]));
+    parts.push(tag(new THREE.BoxGeometry(0.12, 0.12, 7.44).translate(gx, QUAY + 2.44, z), [0, 0, 5, PAINT]));
+  }
+  // Floodlights: a mast at each corner, its bank aimed at the pitch.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const mx = x + sx * 46, mz = z + sz * 40;
+    parts.push(tag(new THREE.CylinderGeometry(0.25, 0.4, 24, 8).translate(mx, QUAY + 12, mz), [0, 0, 0, STEEL]));
+    const bank = new THREE.BoxGeometry(3.2, 1.6, 0.4);
+    bank.rotateX(-sz * 0.7).rotateY(sx * sz * 0.5).translate(mx, QUAY + 24.4, mz);
+    parts.push(tag(bank, [0, 0, 6, PAINT]));
+    for (const d of [-0.9, 0.9]) bulb(mx + d, QUAY + 24.2, mz - sz * 0.4, [1, 0.97, 0.9], 0, 3);
+    lampOf(mx - sx * 2, mz - sz * 2, 23.5, [0.95, 0.03, 240], 12, 95, 0.25);
+  }
+  // The kantine: a low flat-roofed clubhouse; a small covered stand on the far side.
+  place(house(18, 3.4, 9, 0, 71.2, BRICK), x - 32, z + 44, [0, 0, 1]);
+  parts.push(tag(new THREE.BoxGeometry(30, 2, 4).translate(x, QUAY + 1, z - 39), [0, 0, 0, CONCRETE]));
+  for (let i = 0; i <= 6; i++) parts.push(tag(new THREE.CylinderGeometry(0.08, 0.08, 4.4, 6).translate(x - 15 + i * 5, QUAY + 2.2, z - 37.2), [0, 0, 0, STEEL]));
+  parts.push(tag(new THREE.BoxGeometry(31, 0.2, 5).rotateX(0.18).translate(x, QUAY + 4.6, z - 39.5), [0, 0, 3, PAINT]));
+}
+/* ---------- end places ---------- */
+
 /* ---------- layout ---------- */
 fields();
 // Kept clear: the canal and towpaths, the railway, the square, the church and the station.
@@ -906,10 +1031,11 @@ reserve(40, -236, 104, -164);
 reserve(48, -216, 96, -195);
 reserve(26, -150, 34, -138);
 reserve(-128, -154, -84, -102);
+reserve(-100, -156, -66, -46);
 worldOn(gc);
 gc.fillStyle = '#5b5650'; gc.fillRect(-88, MAP.z0, 16, MAP.size);
 gc.fillStyle = '#8a857c'; gc.fillRect(42, -234, 60, 70);
-sports(-300, 90);
+voetbal();
 reserve(LAKE[0] - LAKE[2] - 10, LAKE[1] - LAKE[3] - 10, LAKE[0] + LAKE[2] + 10, LAKE[1] + LAKE[3] + 10);
 worldOn(gc);
 gc.fillStyle = '#1f2b2c'; gc.beginPath(); gc.ellipse(LAKE[0], LAKE[1], LAKE[2] + 3, LAKE[3] + 3, 0, 0, 6.283); gc.fill();
@@ -991,7 +1117,7 @@ for (let z = 1000; z > -2000; z -= 10 + 4 * rnd()) if (Math.abs(z - ROAD_Z) > 26
 treeLine(-1600, -2050, 1600, -2050, 14);
 treeLine(1550, 1000, 1550, -2000, 12);
 treeLine(-1550, 1000, -1550, -2000, 12);
-church(); staminee(); frietkot(); station(); bridge(); walls(); posts();
+church(); staminee(); frietkot(); station(); bridge(); walls(); posts(); kermis(); railway();
 // Roads go back on top, so no garden covers the asphalt.
 worldOn(gc);
 gc.strokeStyle = '#4a4a4e'; gc.lineCap = gc.lineJoin = 'round';
@@ -1031,17 +1157,22 @@ for (const { pts, h, mode } of PL) {
 // The ten lamps on the towpaths by the bridge join the network.
 U.uCanal0.value = SL.length;
 for (const p of LAMP_POS) SL.push({ x: p.x, z: p.z, y: p.y - QUAY, led: false, mark: 0.28 + 0.15 * rnd() });
+// The kermis, the station and the pitch add their own lamps.
+SL.push(...PLACE_LAMPS);
 const SODIUM = linFit(0.72, 0.17, 62), LED = linFit(0.93, 0.025, 85);
 // Lamp data, three rows per lamp: position and mark, colour and reach, state and tap time.
+// A lamp may carry its own colour and reach; LED street heads are dimmer and tighter than sodium.
+const lampCol = l => l.col ?? (l.led ? LED.map(x => x * 0.55) : SODIUM);
+const lampReach = l => l.reach ?? (l.led ? 20 : 24);
 const SLW = 2048, SLH = 3 * Math.ceil(SL.length / SLW);
 const slRow = i => (Math.floor(i / SLW) * 3) * SLW + (i % SLW);
 {
   const d = new Float32Array(SLW * SLH * 4);
   SL.forEach((l, i) => {
-    const o = slRow(i) * 4, c = l.led ? LED : SODIUM;
+    const o = slRow(i) * 4;
     d.set([l.x, QUAY + l.y, l.z, l.mark], o);
-    // LED heads are dimmer and tighter than the old sodium ones.
-    d.set(l.led ? [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, 20] : [c[0], c[1], c[2], 24], o + SLW * 4);
+    d.set([...lampCol(l), lampReach(l)], o + SLW * 4);
+    d.set([0, 0, l.led || l.col ? 1 : 0, 0], o + 2 * SLW * 4);
   });
   U.tSL.value = new THREE.DataTexture(d, SLW, SLH, THREE.RGBAFormat, THREE.FloatType);
   U.tSL.value.needsUpdate = true;
@@ -1050,7 +1181,7 @@ const slRow = i => (Math.floor(i / SLW) * 3) * SLW + (i % SLW);
 {
   const C = 12, N = 250, lists = Array.from({ length: N * N }, () => []);
   SL.forEach((l, i) => {
-    const R = (l.led ? 20 : 24) + C * 0.75;
+    const R = lampReach(l) + C * 0.75;
     const i0 = Math.max(0, Math.floor((l.x - R - MAP.x0) / C)), i1 = Math.min(N - 1, Math.floor((l.x + R - MAP.x0) / C));
     const j0 = Math.max(0, Math.floor((l.z - R - MAP.z0) / C)), j1 = Math.min(N - 1, Math.floor((l.z + R - MAP.z0) / C));
     for (let j = j0; j <= j1; j++) for (let k = i0; k <= i1; k++) {
@@ -1086,7 +1217,7 @@ const heads = new THREE.Points(slGeo, new THREE.ShaderMaterial({
     vec4 ls = lampState(int(aIdx), lp, lc);
     float on = ls.a;
     // The haze between eye and lamp dims it; LED heads read whiter than their light.
-    vCol = (lc.w < 22.0 ? ls.rgb / 0.55 : ls.rgb) * on * exp(-dist * uHaze * 0.35);
+    vCol = ls.rgb * on * exp(-dist * uHaze * 0.35);
     gl_PointSize = clamp(1800.0 / dist, 1.6, 12.0) * uDpr;
     gl_Position = projectionMatrix * viewMatrix * P;
     if (on <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -1174,21 +1305,21 @@ scene.add(rain);
 // The box follows the view: a slab over the town from the air, a block ahead on the towpath.
 const fwd2 = new THREE.Vector3();
 function placeRain() {
-  const sky = view === 'sky', k = U.uRainK.value;
+  const sky = view !== 'vaart' && zoom > 3, k = U.uRainK.value;
   rain.visible = k > 0.003;
   if (sky) {
-    const T = size.w < size.h ? SKY_P : SKY_T;
-    RU.uRainC.value.set(T.x, QUAY, T.z);
+    const T = PLACES[view].T;
+    RU.uRainC.value.set(T[0], QUAY, T[1]);
     RU.uRainS.value.set(900, 40, 900);
-  } else if (view === 'tower') {
-    RU.uRainC.value.set(canalX(-110), QUAY, -110);
+  } else if (PLACES[view]) {
+    RU.uRainC.value.set(PLACES[view].T[0], QUAY, PLACES[view].T[1]);
     RU.uRainS.value.set(260, 40, 260);
   } else {
     camera.getWorldDirection(fwd2);
     RU.uRainC.value.set(camera.position.x + fwd2.x * 35, QUAY - 1, camera.position.z + fwd2.z * 35);
     RU.uRainS.value.set(70, 26, 70);
   }
-  rainGeo.instanceCount = Math.round(k * (sky ? RAIN_N : view === 'tower' ? 36000 : 16000));
+  rainGeo.instanceCount = Math.round(k * (sky ? RAIN_N : view !== 'vaart' ? 36000 : 16000));
   RU.uFall.value = (reduced() ? 0.5 : 1) * (5 + 4 * k);
   RU.uRes.value.set(size.w * size.dpr, size.h * size.dpr);
 }
@@ -1237,6 +1368,12 @@ const solidMat = new THREE.ShaderMaterial({
     // Sheds: grey or green metal in vertical ribs.
     else if (is(kind, 5.0)) base = (hv < 0.6 ? vec3(0.15, 0.16, 0.16) : vec3(0.07, 0.11, 0.09)) * (0.92 + 0.08 * sin((abs(N.x) > 0.5 ? vP.z : vP.x) * 25.0) * (1.0 - smoothstep(0.3, 1.0, fwidth(vP.z * 25.0 + vP.x * 25.0))));
     else if (is(kind, 6.0)) base = vec3(0.012, 0.018, 0.01) * (0.6 + 0.8 * k2noise(vec2(vP.x + vP.z, vP.y) * 0.9));
+    // Awnings: stripes across, red, blue or green on white.
+    else if (is(kind, 11.0)) base = mod(floor(vUV.x * 2.2), 2.0) < 1.0 ? (hv < 0.4 ? vec3(0.45, 0.03, 0.03) : hv < 0.7 ? vec3(0.03, 0.08, 0.4) : vec3(0.04, 0.25, 0.06)) : vec3(0.6);
+    // Bright paint: kermis reds, golds and whites, white goals, grey shelters.
+    else if (is(kind, 13.0)) base = sd < 1.5 ? vec3(0.4, 0.03, 0.05) : sd < 2.5 ? vec3(0.45, 0.3, 0.05) : sd < 3.5 ? vec3(0.18, 0.18, 0.2) : sd < 4.5 ? vec3(0.12, 0.13, 0.13) : sd < 5.5 ? vec3(0.7) : vec3(0.06);
+    // Parked bikes: dark, broken by thin uprights.
+    else if (is(kind, 14.0)) base = vec3(0.025) * (0.6 + 0.8 * step(0.7, fract((abs(N.x) > 0.5 ? vP.z : vP.x) * 1.6)));
     else base = vec3(0.02);
     vec3 alb = is(kind, 0.0) || is(kind, 9.0) ? brick(vP, N, base) : base;
     // Roofs: grey concrete tile, red-brown tile or black glaze; the church has slate.
@@ -1257,6 +1394,12 @@ const solidMat = new THREE.ShaderMaterial({
     float glass = 0.0;
     float lit = smoothstep(0.1, 0.35, uDusk);
     // Signs glow: frietkot yellow, staminee red, platform white.
+    // The bumper-car floor glows in coloured tiles once the kermis lights up.
+    if (is(kind, 12.0) && N.y > 0.5) {
+      vec2 tq = floor(vP.xz / 1.5);
+      float th = k2hash(tq);
+      emit = (th < 0.33 ? vec3(1.0, 0.2, 0.5) : th < 0.66 ? vec3(0.2, 0.6, 1.0) : vec3(1.0, 0.75, 0.2)) * 0.25 * smoothstep(0.12, 0.3, uDusk);
+    }
     if (is(kind, 10.0) && N.y < -0.5) {
       vec4 lp, lc;
       vec4 ls = lampState(uCanal0 + int(sd + 0.5), lp, lc);
@@ -1531,6 +1674,218 @@ function stepBoats(dt) {
 }
 /* ---------- end paper boats ---------- */
 
+/* ---------- places: the moving parts ---------- */
+// A lit prop: a base colour, an optional second colour in radial stripes, an optional glow.
+function propMat(alb, { alt = null, stripes = 0, glow = null } = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...U, uAlb: { value: new THREE.Vector3(...alb) }, uAlt: { value: new THREE.Vector3(...(alt ?? alb)) }, uStripes: { value: stripes }, uGlow: { value: new THREE.Vector3(...(glow ?? [0, 0, 0])) } },
+    side: THREE.DoubleSide,
+    vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL;
+    void main() { vL = position; vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`uniform vec3 uAlb, uAlt, uGlow; uniform float uStripes; varying vec3 vP; varying vec3 vN; varying vec3 vL; ${HEAD}
+    void main() {
+      vec3 N = normalize(vN), V = normalize(vP - cameraPosition);
+      if (dot(N, V) > 0.0) N = -N;
+      vec3 alb = uAlb;
+      if (uStripes > 0.0 && fract(atan(vL.z, vL.x) / 6.2832 * uStripes) > 0.5) alb = uAlt;
+      vec3 sp = vec3(0.0);
+      vec3 col = alb * (skyAmb(N) + lampLit(vP, N) + streetLit(vP, N, V, 0.2, sp)) + sp * 0.3;
+      col += uGlow * smoothstep(0.12, 0.3, uDusk);
+      gl_FragColor = vec4(k2haze(col, vP), 1.0);
+    }`,
+  });
+}
+// Bulbs: kind 0 chases slowly, 1 runs in a ring, 2 blinks in pairs at the crossing, 3 burns steady.
+function bulbPoints(list) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(list.flatMap(b => [b.x, b.y, b.z]), 3));
+  g.setAttribute('aCol', new THREE.Float32BufferAttribute(list.flatMap(b => b.col), 3));
+  g.setAttribute('aPh', new THREE.Float32BufferAttribute(list.flatMap(b => [b.ph, b.kind]), 2));
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, ...SLU, uCross: { value: 0 } }, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`attribute vec3 aCol; attribute vec2 aPh; uniform float uDusk, uDpr, uHaze, uNow, uCross;
+    varying vec3 vCol;
+    void main() {
+      vec4 P = modelMatrix * vec4(position, 1.0);
+      float dist = length(P.xyz - cameraPosition), k = aPh.y, on;
+      if (k < 0.5) on = 0.65 + 0.35 * sin(uNow * 2.0 + aPh.x * 0.9);
+      else if (k < 1.5) on = 0.5 + 0.5 * step(0.5, fract(uNow * 1.5 + aPh.x * 0.16));
+      else if (k < 2.5) on = uCross * step(0.5, fract(uNow * 0.95 + aPh.x / 6.2832));
+      else on = 1.0;
+      // Kermis and floodlights wake with the dusk; the crossing works day and night.
+      if (k < 2.5 && k > 1.5) {} else on *= smoothstep(0.1, 0.25, uDusk);
+      vCol = aCol * on * exp(-dist * uHaze * 0.35) * (k > 2.5 ? 3.0 : 1.6);
+      gl_PointSize = clamp((k > 2.5 ? 1800.0 : 700.0) / dist, 1.4, k > 2.5 ? 14.0 : 7.0) * uDpr;
+      gl_Position = projectionMatrix * viewMatrix * P;
+      if (on <= 0.001) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }`,
+    fragmentShader: /* glsl */`varying vec3 vCol;
+    void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vCol * (exp(-r * r * 10.0) * 2.0 + exp(-r * r * 3.0) * 0.12), 0.0); }`,
+  }));
+  m.frustumCulled = false;
+  m.layers.enable(LIGHT);
+  return m;
+}
+const bulbs = bulbPoints(BULBS);
+scene.add(bulbs);
+// The carousel: a striped roof, twelve poles and a ring of bulbs, all turning.
+const carousel = new THREE.Group();
+{
+  const [cx, cz] = KERMIS.carousel;
+  carousel.position.set(cx, QUAY + 0.7, cz);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(6.2, 2.4, 24, 1, true), propMat([0.42, 0.04, 0.05], { alt: [0.62, 0.6, 0.55], stripes: 12, glow: [0.08, 0.02, 0.03] }));
+  roof.position.y = 5.2;
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.2, 0.3, 24), propMat([0.45, 0.32, 0.06]));
+  deck.position.y = 3.9;
+  carousel.add(roof, deck, new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 6.4, 8).translate(0, 3.2, 0), propMat([0.45, 0.32, 0.06])));
+  const pm = propMat([0.55, 0.45, 0.2]);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * 6.283;
+    carousel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.6, 5).translate(Math.cos(a) * 4.6, 2, Math.sin(a) * 4.6), pm));
+    carousel.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 1.2).translate(Math.cos(a) * 4.6, 1.2, Math.sin(a) * 4.6).rotateY(0), propMat(i % 2 ? [0.6, 0.58, 0.52] : [0.12, 0.08, 0.06])));
+  }
+  const ring = [];
+  for (let i = 0; i < 32; i++) { const a = (i / 32) * 6.283; ring.push({ x: Math.cos(a) * 6.1, y: 4, z: Math.sin(a) * 6.1, col: [1, 0.85, 0.5], ph: i, kind: 1 }); }
+  carousel.add(bulbPoints(ring));
+  carousel.traverse(o => o.layers.enable(LIGHT));
+  scene.add(carousel);
+}
+// The wheel: a rim, spokes and eight gondolas that stay upright as it turns.
+const wheel = new THREE.Group(), gondolas = [];
+{
+  const [wx, wz] = KERMIS.wheel;
+  wheel.position.set(wx, QUAY + 10, wz);
+  wheel.rotation.y = Math.PI / 2;
+  const steel = propMat([0.5, 0.48, 0.45]);
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(8, 0.14, 6, 48), steel));
+  for (let i = 0; i < 8; i++) wheel.add(new THREE.Mesh(new THREE.BoxGeometry(16, 0.1, 0.1).rotateZ((i / 8) * Math.PI), steel));
+  const rim = [];
+  for (let i = 0; i < 40; i++) { const a = (i / 40) * 6.283; rim.push({ x: Math.cos(a) * 8.2, y: Math.sin(a) * 8.2, z: 0, col: i % 2 ? [1, 0.3, 0.5] : [0.4, 0.8, 1], ph: i, kind: 1 }); }
+  wheel.add(bulbPoints(rim));
+  const gm = [propMat([0.45, 0.05, 0.06], { glow: [0.15, 0.08, 0.04] }), propMat([0.05, 0.12, 0.45], { glow: [0.15, 0.08, 0.04] })];
+  for (let i = 0; i < 8; i++) {
+    const g = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.2, 1.2).translate(0, -0.7, 0), gm[i % 2]);
+    gondolas.push(g);
+    scene.add(g);
+  }
+  wheel.traverse(o => o.layers.enable(LIGHT));
+  scene.add(wheel);
+}
+// Bumper cars: six little cars that weave under the roof.
+const cars = [];
+{
+  const [bx, bz] = KERMIS.cars, cols = [[0.5, 0.04, 0.05], [0.05, 0.1, 0.5], [0.5, 0.4, 0.04], [0.05, 0.4, 0.1], [0.5, 0.2, 0.04], [0.4, 0.05, 0.4]];
+  for (let i = 0; i < 6; i++) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.7, 1.1).translate(0, 0.45, 0), propMat(cols[i], { glow: cols[i].map(v => v * 0.3) }));
+    c.userData = { ph: i * 1.7, r: 2 + (i % 3) * 1.2, w: 0.5 + 0.15 * i };
+    c.position.set(bx, QUAY, bz);
+    cars.push(c);
+    scene.add(c);
+  }
+}
+// The train: four double-deck coaches with two rows of lit windows.
+const trainMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL;
+  void main() { vL = position; vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vL; ${HEAD}
+  void main() {
+    vec3 N = normalize(vN), V = normalize(vP - cameraPosition);
+    vec3 alb = vec3(0.55, 0.56, 0.58), emit = vec3(0.0);
+    if (N.y > 0.5) alb = vec3(0.12, 0.12, 0.13);
+    else if (abs(N.x) > 0.5) {
+      // A red stripe low down; two decks of windows above it.
+      if (vL.y > 0.35 && vL.y < 0.55) alb = vec3(0.4, 0.03, 0.03);
+      bool win = fract(vL.z / 1.7) < 0.78 && abs(vL.z) < 12.4;
+      bool deck = (vL.y > 1.0 && vL.y < 1.75) || (vL.y > 2.55 && vL.y < 3.3);
+      if (win && deck) { alb = vec3(0.0); emit = vec3(1.0, 0.92, 0.75) * 1.4; }
+    }
+    vec3 sp = vec3(0.0);
+    vec3 col = alb * (skyAmb(N) + streetLit(vP, N, V, 0.3, sp)) + sp * 0.3 + emit;
+    gl_FragColor = vec4(k2haze(col, vP), 1.0);
+  }`,
+});
+const train = new THREE.Group();
+{
+  for (let i = 0; i < 4; i++) {
+    const car = new THREE.Mesh(new THREE.BoxGeometry(2.9, 4.2, 26).translate(0, 2.3, 0), trainMat);
+    car.position.z = (i - 1.5) * 26.6;
+    train.add(car);
+  }
+  const lamps = [];
+  for (const s of [-1, 1]) for (const dx of [-0.9, 0.9]) lamps.push({ x: dx, y: 1.2, z: s * 53.2, col: [1, 0.95, 0.85], ph: 0, kind: 3 });
+  train.add(bulbPoints(lamps));
+  train.traverse(o => o.layers.enable(LIGHT));
+  train.visible = false;
+  scene.add(train);
+}
+// Overhead wires over both tracks.
+{
+  const pos = [];
+  for (const x of RAIL.x) pos.push(x, QUAY + 6.6, -760, x, QUAY + 6.6, 560);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x0a0b0d })));
+}
+// Barrier arms: red and white, lowered across the road while a train is near.
+const arms = [];
+{
+  const am = propMat([0.6, 0.6, 0.58], { glow: [0.05, 0, 0] });
+  for (const [x, s] of [[-90.5, -1], [-69.5, 1]]) for (const zs of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(x, QUAY + 1.2, ROAD_Z + zs * 5.5);
+    arm.add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 6.5).translate(0, 0, -zs * 3.25), am));
+    arm.userData.zs = zs;
+    arms.push(arm);
+    scene.add(arm);
+  }
+}
+// The train's timetable: arrive, dwell 20 s, depart; each run reverses the last.
+const TRAIN_RUN = 70, TRAIN_DWELL = 20, TRAIN_CYCLE = 190;
+let crossK = 0;
+function trainAt(t) {
+  const n = Math.floor(t / TRAIN_CYCLE), u = t - n * TRAIN_CYCLE, dir = n % 2 ? 1 : -1;
+  let z;
+  // Constant braking into the stop, constant pull away from it.
+  if (u < TRAIN_RUN) z = RAIL.stop - dir * 900 * (1 - u / TRAIN_RUN) ** 2;
+  else if (u < TRAIN_RUN + TRAIN_DWELL) z = RAIL.stop;
+  else if (u < 2 * TRAIN_RUN + TRAIN_DWELL) z = RAIL.stop + dir * 900 * ((u - TRAIN_RUN - TRAIN_DWELL) / TRAIN_RUN) ** 2;
+  else return null;
+  return { z, dir };
+}
+// Every frame: the rides turn, the cars weave, the train runs and the crossing answers.
+function stepPlaces(dt) {
+  const t = U.uTime.value, lit = Math.min(1, Math.max(0, (U.uDusk.value - 0.1) / 0.15));
+  carousel.rotation.y = t * 0.55 * lit;
+  wheel.rotation.z = -t * 0.12 * lit;
+  gondolas.forEach((g, i) => {
+    const a = wheel.rotation.z + (i / 8) * 6.283;
+    // The wheel faces x, so its local x runs along -z.
+    g.position.set(wheel.position.x, wheel.position.y + Math.sin(a) * 8, wheel.position.z - Math.cos(a) * 8);
+    g.rotation.y = Math.PI / 2;
+  });
+  const [bx, bz] = KERMIS.cars;
+  cars.forEach(c => {
+    const { ph, r, w } = c.userData, a = t * w * lit + ph;
+    c.position.set(bx + Math.cos(a) * r * 1.6, QUAY, bz + Math.sin(a * 1.3) * r);
+    c.rotation.y = -Math.atan2(Math.cos(a * 1.3) * r * 1.3, -Math.sin(a) * r * 1.6);
+  });
+  const tr = trainAt(t);
+  train.visible = !!tr;
+  let near = false;
+  if (tr) {
+    train.position.set(RAIL.x[tr.dir > 0 ? 1 : 0], QUAY + 0.4, tr.z);
+    near = Math.abs(tr.z - RAIL.cross) < 53 + 260;
+  }
+  // The arms come down in about 6 s and go up again once the train is clear.
+  crossK += ((near ? 1 : 0) - crossK) * (1 - Math.exp(-dt / 2));
+  bulbs.material.uniforms.uCross.value = near || crossK > 0.05 ? 1 : 0;
+  for (const a of arms) a.rotation.x = a.userData.zs * (1 - crossK) * 1.5;
+}
+/* ---------- end places: the moving parts ---------- */
+
 /* ---------- ground: the painted map, the towpaths and the railway ---------- */
 const groundMat = new THREE.ShaderMaterial({
   uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, tMap: { value: mapTex } },
@@ -1662,10 +2017,10 @@ composer.addPass(gtao);
 let aoKey = '';
 // The occlusion reach follows the view: wide from the air, tight on the towpath.
 function tuneAO() {
-  const key = view + quality() + rung;
+  const key = view + quality() + rung + (zoom > 3);
   if (key === aoKey) return;
   aoKey = key;
-  const r = { sky: [7, 9, 6], tower: [3, 4, 5], path: [1.2, 2, 4] }[view];
+  const r = view === 'vaart' ? [1.2, 2, 4] : zoom > 3 ? [7, 9, 6] : [2.5, 3.5, 5];
   gtao.enabled = rung < 2;
   gtao.updateGtaoMaterial({ radius: r[0], thickness: r[1], distanceExponent: 1, scale: 1, samples: quality() === 'high' ? 16 : 8 });
   gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: r[2], rings: 2, samples: 8 });
@@ -1731,25 +2086,27 @@ let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // Sky eye circles the crossing from high up; drag turns it round a little.
-const SKY_T = new THREE.Vector3(150, 0, -200), SKY_P = new THREE.Vector3(160, 0, -170);
-let view = 'sky';
-// Three camera heights: Sky eye over the town, Tower over the canal, Path on the towpath.
+let view = 'kerk';
+// Four places: the canal from the towpath, the church square, the station and the pitch.
+// Scrolling out from any of the three high places reaches the sky over the town.
 // Each pose gives position, target, lens, near plane and exposure.
-const VIEWS = ['sky', 'tower', 'path'];
+const VIEWS = ['vaart', 'kerk', 'station', 'voetbal'];
 let zoom = 1, fly = null;
 const orbit = (T, dist, el, az) => new THREE.Vector3(T.x + dist * Math.cos(el) * Math.sin(az), T.y + dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
+// Target, distance, elevation and azimuth for each place; phones sit higher and further back.
+const PLACES = {
+  kerk: { T: [76, -196], d: [100, 140], el: [0.42, 0.56], az: [-0.95, -0.75] },
+  station: { T: [-84, -110], d: [110, 150], el: [0.36, 0.5], az: [0.75, 0.55] },
+  voetbal: { T: [PITCH[0], PITCH[1]], d: [150, 200], el: [0.45, 0.6], az: [-0.6, -0.4] },
+};
 function pose(v, portrait) {
-  if (v === 'sky') {
-    // Phones look along the main road, over the bridge; wide screens look across the canal.
-    const T = portrait ? SKY_P : SKY_T;
-    const dist = (portrait ? 1300 : 1150) * zoom, el = (portrait ? 0.78 : 0.6) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
-    return { p: orbit(T, dist, el, az), t: T.clone(), fov: portrait ? 46 : 34, near: 2, exp: 1.7 };
-  }
-  if (v === 'tower') {
-    // From church-tower height, down the canal to the bridge and the square.
-    const T = new THREE.Vector3(canalX(-120), 0, -120);
-    const dist = (portrait ? 240 : 190) * zoom, el = (portrait ? 0.5 : 0.36) - look.pitch * 2, az = (portrait ? -0.18 : -0.42) + look.yaw * 2.5;
-    return { p: orbit(T, dist, el, az), t: T, fov: portrait ? 52 : 40, near: 0.5, exp: 1.45 };
+  const P = PLACES[v];
+  if (P) {
+    const i = portrait ? 1 : 0, T = new THREE.Vector3(P.T[0], 0, P.T[1]);
+    // Far out, the camera climbs toward a top-down view of the whole sprawl.
+    const out = Math.max(0, Math.log(zoom) / Math.log(9));
+    const el = P.el[i] + (0.75 - P.el[i]) * out - look.pitch * 2, az = P.az[i] + look.yaw * 2.5;
+    return { p: orbit(T, P.d[i] * zoom, el, az), t: T, fov: portrait ? 50 : 38, near: zoom > 3 ? 2 : 0.5, exp: 1.45 + 0.25 * out };
   }
   // A low eye on the near towpath, turned a little toward the far bank; zoom narrows the lens.
   const p = new THREE.Vector3((portrait ? -12.6 : -14.6) + canalX(14), QUAY + 1.6, 14);
@@ -1839,6 +2196,7 @@ function tick(now) {
     U.uBell.value *= Math.exp(-dt / 2);
     easeWeather(dt);
     stepBoats(dt);
+    stepPlaces(dt);
     soundTick(dt);
     const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
     look.yaw += (look.ty - look.yaw) * k;
@@ -1891,7 +2249,7 @@ onReducedChange(() => { motion(); wake(); });
 /* Pointer: a press turns into a drag after 8 px, or a hold after 260 ms. */
 let press = null;
 // Scroll or pinch zooms: the high views move in and out, the towpath narrows its lens.
-const ZOOM = { sky: [0.35, 1.5], tower: [0.4, 1.8], path: [0.45, 1.3] };
+const ZOOM = { vaart: [0.45, 1.3], kerk: [0.35, 9], station: [0.35, 9], voetbal: [0.35, 9] };
 function setZoom(z) {
   const [a, b] = ZOOM[view];
   zoom = Math.max(a, Math.min(b, z));
@@ -1920,7 +2278,7 @@ stage.addEventListener('pointermove', e => {
   // Drag looks along the canal, a little each way.
   const s = 1.4 / Math.max(size.w, size.h);
   // The high views turn further round than the towpath.
-  const yr = view === 'path' ? 0.3 : 0.6;
+  const yr = view === 'vaart' ? 0.3 : 0.6;
   look.ty = Math.max(-yr, Math.min(yr, press.yaw + (e.clientX - press.x) * s));
   look.tp = Math.max(-0.08, Math.min(0.1, press.pitch + (e.clientY - press.y) * s * 0.5));
   wake();
@@ -2010,7 +2368,7 @@ function plink(g, t) {
 function soundTick(dt) {
   const g = graph();
   if (!g) return;
-  const t = g.ac.currentTime, rk = U.uRainK.value, far = { sky: 0.55, tower: 0.8, path: 1 }[view];
+  const t = g.ac.currentTime, rk = U.uRainK.value, far = view === 'vaart' ? 1 : zoom > 3 ? 0.55 : 0.8;
   g.hissG.gain.setTargetAtTime(0.16 * rk * far, t, 0.4);
   g.windG.gain.setTargetAtTime((0.025 + 0.11 * W.uWind.value) * far, t, 0.6);
   if (reduced() || rk < 0.02) return;
@@ -2065,7 +2423,7 @@ function carillon() {
   const ac = g.ac, t0 = Math.max(ac.currentTime + 0.6, g.bellEnd);
   if (g.bellEnd > ac.currentTime + 4) return;
   const lp = ac.createBiquadFilter(), dry = ac.createGain(), send = ac.createGain(), p = ac.createStereoPanner();
-  lp.type = 'lowpass'; lp.frequency.value = view === 'sky' ? 1800 : 2600;
+  lp.type = 'lowpass'; lp.frequency.value = view === 'kerk' && zoom < 2 ? 4200 : 2200;
   dry.gain.value = 0.35; send.gain.value = 0.9;
   p.pan.value = panAt(56, QUAY + 30, -205.5);
   lp.connect(dry).connect(p).connect(g.bus);
@@ -2138,7 +2496,7 @@ function ripple(cx, cy) {
   if (proj.y >= -1e-4) return;
   const t = -camera.position.y / proj.y, x = camera.position.x + proj.x * t, z = camera.position.z + proj.z * t;
   if (Math.abs(x - canalX(z)) > CANAL_X) return;
-  W.uTap.value[tapN++ % 4].set(x, z, U.uTime.value, { sky: 3, tower: 2, path: 1 }[view]);
+  W.uTap.value[tapN++ % 4].set(x, z, U.uTime.value, view === 'vaart' ? 1 : zoom > 3 ? 3 : 2);
   tapUntil = nowS() + 4;
   taa.reset = true;
   wake();
@@ -2180,15 +2538,15 @@ act.view = v => {
   rock.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.v === v)));
   wake();
 };
-view = VIEWS.includes(saved('view', 'sky')) ? saved('view', 'sky') : 'sky';
+view = VIEWS.includes(saved('view', 'kerk')) ? saved('view', 'kerk') : 'kerk';
 /* ---------- the camera rocker ---------- */
-// One slab, three heights, top to bottom; arrow keys step it while it has focus.
+// One slab, four places, top to bottom; arrow keys step it while it has focus.
 const rock = document.createElement('div');
 rock.className = 'cn-pad';
 rock.setAttribute('role', 'radiogroup');
 rock.setAttribute('aria-label', 'Camera');
 rock.dataset.v = view;
-for (const [v, label] of [['sky', 'Sky'], ['tower', 'Tower'], ['path', 'Path']]) {
+for (const [v, label] of [['vaart', 'Vaart'], ['kerk', 'Kerk'], ['station', 'Station'], ['voetbal', 'Voetbal']]) {
   const b = document.createElement('button');
   b.type = 'button'; b.dataset.v = v; b.textContent = label;
   b.setAttribute('role', 'radio');
@@ -2200,7 +2558,7 @@ rock.addEventListener('keydown', e => {
   const d = { ArrowUp: -1, ArrowDown: 1 }[e.key];
   if (!d) return;
   e.preventDefault(); e.stopPropagation();
-  const v = VIEWS[Math.max(0, Math.min(2, VIEWS.indexOf(view) + d))];
+  const v = VIEWS[Math.max(0, Math.min(VIEWS.length - 1, VIEWS.indexOf(view) + d))];
   act.view(v);
   rock.querySelector(`[data-v="${v}"]`).focus();
 });

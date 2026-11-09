@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T09:34:47Z
+updated_at: 2026-11-09T09:48:58Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -67,3 +67,5 @@ Canal at dusk (`canal/index.html`) is built and in the Lab, Dutch name Vaart bij
 Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a browser (Q6), and a listen-through.
 
 - Tom (2026-11-09): camera control. A vertical three-way rocker on the right edge (Sky, Tower, Path) replaces the View row; the slab tips toward the end that is down; arrow keys step it. Tower is a new middle view over the canal toward the bridge and the church. The camera flies between views over 1.2 s (1 s cut-off under reduced motion). Scroll or pinch zooms: the high views move in and out, the towpath narrows its lens. AO reach and the rain box follow the view.
+
+- Tom (2026-11-09): four places, modelled out. The rocker now has four stops: Vaart (the towpath), Kerk, Station and Voetbal; scrolling out from a high place climbs to a top-down view of the sprawl (zoom to 9x). Kerkplein: a kermis with a striped carousel that turns, a small wheel with upright gondolas, bumper cars under a lit roof on a glowing floor, five stalls with striped awnings and lit counters, festoons of chasing bulbs; its coloured lamps join the per-lamp light. Station: two 104 m platforms with shelters and lamps, overhead-line portals and wires, a bike shelter, a level crossing whose arms drop and red lights blink while a train is near, and a four-coach double-deck train on a 190 s timetable that brakes into the station, dwells 20 s and pulls out, alternating direction. Voetbal: a mown, lined pitch with goals, four floodlight masts that light it, a kantine and a covered stand. Lamps now carry their own colour, reach and an instant flag.
