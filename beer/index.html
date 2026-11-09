@@ -162,7 +162,7 @@ const ui = initPage({ id: 'beer', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['hold', 'pour'], ['s', 'sip'], ['c', 'fresh glass'], ['space', 'pour']],
+  keys: [['hold', 'pour'], ['drag glass', 'swirl'], ['s', 'sip'], ['c', 'fresh glass']],
 } });
 let light = ui.setting('light')?.value ?? 'warm';
 let foamTime = ui.setting('foamTime')?.value ?? 'fast';
@@ -265,6 +265,8 @@ vec3 studio(vec3 o, vec3 d) {
 const PROF = `
 uniform sampler2D uGP;
 uniform float uGH, uGYb;
+uniform vec2 uSlope;   // the beer surface's tilt: rise per cm in x and z
+#define LEV(xz) (uLevel + dot(uSlope, (xz)))
 const float GMAX = ${GMAX.toFixed(1)};
 vec4 gp(float y) { return texture2D(uGP, vec2(clamp(y / GMAX, 0.0, 1.0), 0.5)); }
 `;
@@ -406,12 +408,14 @@ attribute vec2 aTS;    // height fraction, radial fraction (1 on the wall)
 uniform float uLevel;
 varying vec3 vW, vN;
 void main() {
-  float y = mix(uGYb + 0.05, uLevel, aTS.x);
+  vec2 dir = normalize(position.xz + 1e-6);
+  // Two steps: the radius at the flat level, then the tilted level there.
+  float top = LEV(dir * gp(uLevel).y * aTS.y);
+  float y = mix(uGYb + 0.05, top, aTS.x);
   vec4 P = gp(y);
   float r = P.y * aTS.y;
-  vec2 dir = normalize(position.xz + 1e-6);
   vec3 pos = vec3(dir.x * r, y, dir.y * r);
-  vec3 n = aTS.x > 0.999 && aTS.y < 0.999 ? vec3(0.0, 1.0, 0.0) : normalize(vec3(dir.x, -P.w, dir.y));
+  vec3 n = aTS.x > 0.999 && aTS.y < 0.999 ? normalize(vec3(-uSlope.x, 1.0, -uSlope.y)) : normalize(vec3(dir.x, -P.w, dir.y));
   vW = pos; vN = n;
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
 }`;
@@ -421,7 +425,7 @@ uniform mat4 projectionMatrix;
 uniform vec3 uSigma, uKey;
 uniform float uLevel, uHaze, uSurge;
 varying vec3 vW, vN;
-bool inBeer(vec3 p) { return p.y > uGYb && p.y < uLevel && length(p.xz) < gp(p.y).y; }
+bool inBeer(vec3 p) { return p.y > uGYb && p.y < LEV(p.xz) && length(p.xz) < gp(p.y).y; }
 void main() {
   vec3 v = normalize(cameraPosition - vW), n = normalize(vN);
   float c = max(dot(n, v), 0.0);
@@ -448,7 +452,7 @@ void main() {
   float k = max(dot(normalize(d2), Ld), 0.0);
   float panel = pow(k, 3.0) * 0.45 + pow(k, 14.0) * 0.9 + pow(k, 60.0) * 1.1;
   // The panel is brighter at its top; the beer is brightest high and darkens toward the floor.
-  float lift = smoothstep(uGYb, uLevel + 1.0, X.y);
+  float lift = smoothstep(uGYb, LEV(X.xz) + 1.0, X.y);
   vec3 light = behind + uLamp * panel * (0.55 + 0.6 * lift);
   // The curved beer gathers light into soft moving streaks: a caustic shimmer.
   // A cylinder bends light into near-vertical bands.
@@ -461,7 +465,7 @@ void main() {
   float ext = (uHaze * 0.5 + uSurge * 0.12) * t;
   col = col * exp(-ext) + uLamp * 0.45 * exp(-uSigma * (0.8 + 0.6 * t)) * (1.0 - exp(-ext));
   // Just under the head the beer is full of fine bubbles: a bright, creamy band.
-  col += uLamp * exp(-uSigma * 1.2) * 0.35 * smoothstep(uLevel - 0.7, uLevel - 0.02, vW.y);
+  col += uLamp * exp(-uSigma * 1.2) * 0.35 * smoothstep(LEV(vW.xz) - 0.7, LEV(vW.xz) - 0.02, vW.y);
   col = col * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -475,10 +479,12 @@ varying vec3 vW, vN;
 varying float vS, vHit;
 ${NOISE}
 void main() {
-  float y = mix(uLevel - 0.05, uTop, aTS.x);
+  vec2 dir = normalize(position.xz + 1e-6);
+  vec2 xz0 = dir * gp(uLevel).y * aTS.y;
+  float tilt = dot(uSlope, xz0);
+  float y = mix(uLevel - 0.05, uTop, aTS.x) + tilt;
   vec4 P = gp(min(y, uGH - 0.05));
   float r = P.y * aTS.y;
-  vec2 dir = normalize(position.xz + 1e-6);
   vec3 pos = vec3(dir.x * r, y, dir.y * r);
   vec3 n = normalize(vec3(dir.x, 0.0, dir.y));
   if (aTS.x > 0.999) {
@@ -506,7 +512,7 @@ void main() {
   vec3 v = normalize(cameraPosition - vW);
   vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
   if (dot(n, v) < 0.0) n = -n;
-  float sf = clamp((vW.y - uLevel) / max(uTop - uLevel, 0.05), 0.0, 1.0);
+  float sf = clamp((vW.y - LEV(vW.xz)) / max(uTop - uLevel, 0.05), 0.0, 1.0);
   float r = length(vW.xz);
   // A creamy head: soft key light with wrap, darker toward the sides for its round body.
   float key = clamp((dot(n, normalize(KEY_DIR)) + 0.5) / 1.5, 0.0, 1.0);
@@ -597,18 +603,19 @@ void main() {
       float rate = 0.6 + 1.2 * uFizz;
       float t = fract(uTime * rate * (0.5 + h1(seed)) + seed);
       float ang = aB.x, rr = sqrt(aB.y) * (gp(uLevel).y - 0.2);
-      c = vec3(sin(ang) * rr, uLevel + 0.02, cos(ang) * rr);
+      c = vec3(sin(ang) * rr, 0.0, cos(ang) * rr);
+      c.y = LEV(c.xz) + 0.02;
       if (kind < 3.5) { R = 0.06 * (1.0 - t / 0.05); alpha = step(t, 0.05); }
       else {
         float tt = t * 0.6 / max(rate, 0.1);
         float vy = 18.0 + 22.0 * h1(seed * 2.3), vx = (h1(seed * 4.1) - 0.5) * 10.0;
         c += vec3(vx * tt, vy * tt - 490.0 * tt * tt, (h1(seed * 6.7) - 0.5) * 10.0 * tt);
         R = 0.012;
-        alpha = step(t, 0.12) * step(uLevel, c.y);
+        alpha = step(t, 0.12) * step(LEV(c.xz), c.y);
       }
       alpha *= step(0.15, uFizz);
     }
-    if (c.y > uLevel - R * 0.6 && kind < 2.5) alpha = 0.0;
+    if (c.y > LEV(c.xz) - R * 0.6 && kind < 2.5) alpha = 0.0;
   }
   // Out of focus, a bubble spreads into a soft disc and dims.
   vec4 view = viewMatrix * vec4(c, 1.0);
@@ -768,7 +775,7 @@ const back = new THREE.Scene(), mid = new THREE.Scene(), top = new THREE.Scene()
 const U = {
   uTime: { value: 0 }, uLamp: { value: new THREE.Vector3(1, 0.8, 0.5) }, uKey: { value: new THREE.Vector3(1, 0.95, 0.88) },
   uGP: { value: null }, uGH: { value: 16 }, uGYb: { value: 5 }, uSigma: { value: new THREE.Vector3() },
-  uLevel: { value: 0 }, uTop: { value: 0 }, uHaze: { value: 0 }, uSurge: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
+  uLevel: { value: 0 }, uTop: { value: 0 }, uSlope: { value: new THREE.Vector2() }, uHaze: { value: 0 }, uSurge: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
 };
 let glassBack = null;
 let gTex = null, glassMesh = null, beerMesh = null, foamMesh = null, bottleMesh = null, fizzMesh = null, labTex = null, streamMesh = null;
@@ -1077,8 +1084,10 @@ function aimCamera() {
   const { at, dist, lift } = camBase;
   const c = Math.cos(yaw), s = Math.sin(yaw);
   const ex = at.x * 0.3, ez = dist;
-  camera.position.set(c * ex + s * ez, at.y + lift + dist * Math.sin(pitch), -s * ex + c * ez);
-  camera.lookAt(c * at.x, at.y + dist * Math.sin(pitch) * 0.3, -s * at.x);
+  // The glass stays at the origin; when it slides, the world shifts the other way.
+  const gx = swirl.x, gz = swirl.z;
+  camera.position.set(c * ex + s * ez - gx, at.y + lift + dist * Math.sin(pitch), -s * ex + c * ez - gz);
+  camera.lookAt(c * at.x - gx, at.y + dist * Math.sin(pitch) * 0.3, -s * at.x - gz);
   camera.updateMatrixWorld();
 }
 function frameCamera(w, h) {
@@ -1322,7 +1331,44 @@ function sipStep(dt) {
   sip.foam -= df;
   sip.beer = fill.vol > 0 ? sip.beer - db : 0;
 }
-act.clear = () => { pour.auto = 0; pour.on = false; sip.beer = sip.foam = 0; freshGlass(); Object.assign(bot, { lift: 0, th: 0 }); live(); };
+/* ---------- swirl and spill ---------- */
+// Grab the glass: it slides on the table after the pointer and springs home.
+// The beer surface tilts as a damped slosh wave driven by the glass's motion.
+// A wave past the rim spills: the head first, then the beer.
+const swirl = { on: false, tx: 0, tz: 0, x: 0, z: 0, vx: 0, vz: 0, sx: 0, sz: 0, wx: 0, wz: 0, spilt: 0 };
+const REACH = 3.2;
+function swirlStep(dt) {
+  if (!swirl.on) { swirl.tx = 0; swirl.tz = 0; }
+  // A stiff spring: the hand leads, the glass follows.
+  const k = swirl.on ? 260 : 90, c = 2 * Math.sqrt(k) * (swirl.on ? 0.9 : 1.0);
+  const ax = k * (swirl.tx - swirl.x) - c * swirl.vx, az = k * (swirl.tz - swirl.z) - c * swirl.vz;
+  swirl.vx += ax * dt; swirl.vz += az * dt;
+  swirl.x += swirl.vx * dt; swirl.z += swirl.vz * dt;
+  // The first slosh mode of a cylinder: k = 1.84 / R.
+  const R = Math.max(glass.ri(fill.level), 1), kk = 1.84 / R;
+  const depth = Math.max(fill.level - glass.ybot, 0.2);
+  const w = Math.sqrt(G * kk * Math.tanh(kk * depth));
+  // A head damps the wave.
+  const zeta = 0.05 + 0.25 * clamp(fill.foam / Math.max(fill.vol, 1));
+  const ex = -ax / G, ez = -az / G;
+  swirl.wx += (-w * w * (swirl.sx - ex) - 2 * zeta * w * swirl.wx) * dt;
+  swirl.wz += (-w * w * (swirl.sz - ez) - 2 * zeta * w * swirl.wz) * dt;
+  swirl.sx = clamp(swirl.sx + swirl.wx * dt, -1.2, 1.2);
+  swirl.sz = clamp(swirl.sz + swirl.wz * dt, -1.2, 1.2);
+  if (fill.vol < 1) { swirl.sx = swirl.sz = swirl.wx = swirl.wz = 0; return; }
+  const tilt = Math.hypot(swirl.sx, swirl.sz), rimR = glass.ri(glass.h - 0.1);
+  // Swirling frees gas: the head swells a little.
+  const stir = Math.hypot(swirl.wx, swirl.wz);
+  fill.post = Math.min(fill.post + stir * dt * 0.02, 1);
+  fx.surge = Math.min(fx.surge + stir * dt * 0.03, 1);
+  // Spill past the rim.
+  const overTop = fill.top + fill.crown + tilt * rimR - glass.h;
+  if (overTop > 0 && fill.foam > 0) { const d = Math.min(fill.foam, overTop * 90 * dt); fill.foam -= d; swirl.spilt += d; }
+  const overBeer = fill.level + tilt * rimR - glass.h;
+  if (overBeer > 0) { const d = Math.min(fill.vol, overBeer * 140 * dt); fill.vol -= d; swirl.spilt += d; }
+}
+const swirlLively = () => swirl.on || Math.abs(swirl.x) + Math.abs(swirl.z) + Math.abs(swirl.vx) + Math.abs(swirl.vz) > 0.01 || Math.abs(swirl.sx) + Math.abs(swirl.sz) + Math.abs(swirl.wx) + Math.abs(swirl.wz) > 0.002;
+act.clear = () => { pour.auto = 0; pour.on = false; sip.beer = sip.foam = 0; Object.assign(swirl, { on: false, x: 0, z: 0, vx: 0, vz: 0, sx: 0, sz: 0, wx: 0, wz: 0 }); freshGlass(); Object.assign(bot, { lift: 0, th: 0 }); live(); };
 act.reset = act.clear;
 
 /* ---------- render ---------- */
@@ -1367,6 +1413,10 @@ function render() {
   gu.uMistAge.value = fx.mistAge;
   // The bottle rests at the right, out of focus; its beer level shows through the glass.
   bottleMesh.position.copy(bot.pos);
+  bottleMesh.position.x -= swirl.x;
+  bottleMesh.position.z -= swirl.z;
+  back.userData.table.position.set(-swirl.x, 0, -swirl.z);
+  U.uSlope.value.set(swirl.sx, swirl.sz);
   bottleMesh.rotation.z = bot.th;
   bottleMesh.updateMatrixWorld();
   bottleMesh.material.uniforms.uBLevel.value = bot.vol > 0.5 ? bot.pos.y + bot.Lw : -99;
@@ -1387,7 +1437,7 @@ function render() {
 let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now(), pace = 1, ready = false;
 const live = () => { lastInput = performance.now(); wake(); };
 function wake() { if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); } }
-const lively = () => sip.beer > 0.05 || pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
+const lively = () => swirlLively() || sip.beer > 0.05 || pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
 function frame(now) {
   raf = 0;
   let again = true;
@@ -1400,6 +1450,7 @@ function frame(now) {
     pace += ((idle ? 0 : 1) - pace) * ease(dt, 0.6);
     bottleStep(dt);
     sipStep(dt);
+    swirlStep(dt);
     foamStep(dt * pace);
     settleLevels();
     time += dt * pace * (reduced() ? 0.25 : 1);
@@ -1414,11 +1465,31 @@ function frame(now) {
 }
 
 /* ---------- pointer ---------- */
+// Is the pointer over the glass's bowl? Project its box to the screen.
+const _v = new THREE.Vector3();
+function onGlass(e) {
+  const rc = canvas.getBoundingClientRect();
+  const px = (e.clientX - rc.left) / rc.width * 2 - 1, py = 1 - (e.clientY - rc.top) / rc.height * 2;
+  const R = glass.ro(glass.h * 0.6) + 1.5;
+  let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+  for (const [x, y] of [[-R, glass.ybot - 1], [R, glass.ybot - 1], [-R, glass.h + 3], [R, glass.h + 3]]) {
+    _v.set(x, y, 0).project(camera);
+    x0 = Math.min(x0, _v.x); x1 = Math.max(x1, _v.x); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y);
+  }
+  return px > x0 && px < x1 && py > y0 && py < y1;
+}
 let ptr = null;
 function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
-  ptr = { id: e.pointerId, y: e.clientY };
+  ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, swirl: false };
+  if (fill.vol > 5 && bot.lift < 0.05 && onGlass(e)) {
+    ptr.swirl = true;
+    swirl.on = true;
+    stage.classList.add('pour');
+    live();
+    return;
+  }
   readyPour();
   pour.gain = 0;
   pour.on = true;
@@ -1427,7 +1498,9 @@ function down(e) {
 }
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const was = ptr.swirl;
   ptr = null;
+  if (was) { swirl.on = false; stage.classList.remove('pour'); live(); return; }
   pour.on = false;
   fill.post = Math.max(fill.post, 0.6);
   stage.classList.remove('pour');
@@ -1459,7 +1532,16 @@ canvas.addEventListener('pointerdown', down);
 // A mouse hover leans the camera round the glass.
 canvas.addEventListener('pointermove', e => {
   // A drag down tips the bottle further: more flow, more head.
-  if (ptr && e.pointerId === ptr.id) pour.gain = clamp((e.clientY - ptr.y) / 140, -0.5, 1.2);
+  if (ptr && e.pointerId === ptr.id) {
+    if (ptr.swirl) {
+      // Screen pixels to table cm at the glass; up the screen is away from the viewer.
+      const cm = 2 * camBase.dist * Math.tan(camera.fov * Math.PI / 360) / Math.max(canvas.clientHeight, 1);
+      const dx = (e.clientX - ptr.x) * cm, dz = (e.clientY - ptr.y) * cm * 1.6;
+      const m = Math.hypot(dx, dz), f = m > REACH ? REACH / m : 1;
+      swirl.tx = dx * f; swirl.tz = dz * f;
+      live();
+    } else pour.gain = clamp((e.clientY - ptr.y) / 140, -0.5, 1.2);
+  }
   if (e.pointerType !== 'mouse') return;
   const rc = canvas.getBoundingClientRect();
   orbit.hx = clamp((e.clientX - rc.left) / rc.width * 2 - 1, -1, 1);
