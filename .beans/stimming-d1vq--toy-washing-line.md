@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T10:13:04Z
+updated_at: 2026-11-09T10:18:33Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -66,7 +66,7 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Summer v5 (Tom: wider, flatter; add iso; stay in this style): wide lens set back and level, the line on a gentle slant. Settings > View adds Iso: a true isometric orthographic camera with a soft tilt-shift band; grass replants for each view.
 - [ ] Six more themes in this Coen style, one by one, each with Wide and Iso.
   - [x] Winter plains: whiteout haze, red snow fence with drifts, telephone poles on a buried road, bare tree, grain elevator, snowfall, frozen washing (long johns, buffalo-check flannel, rime), footprints, galvanised tub.
-  - [ ] Harbour village with a fishing boat (Tom's ask).
+  - [x] Harbour village with a fishing boat (Tom's ask): wharf deck on pilings, red shingled fish shed with buoys and a ring, timber piling with rope wraps, lobster traps, rope coil; sea with rolling waves, a lobster boat riding the swell, mooring buoy, gulls; painted houses up the far hill and a lighthouse in sea fog; slicker, Breton shirts, work trousers on the line.
   - [ ] Anime city with a jet dogfight and contrails in a deep blue evening sky (Tom's ask).
   - [ ] Three more from: Delta gold, Desert motel, Suburb dusk, Trailer night, Storm front.
 

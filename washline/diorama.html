@@ -84,7 +84,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 /* ---------- the bar ---------- */
 // Handlers bind once the scene exists.
 // Themes appear here one by one, each signed off before the next.
-const SCENES = [['prairie', 'Prairie'], ['winter', 'Winter']];
+const SCENES = [['prairie', 'Prairie'], ['winter', 'Winter'], ['harbour', 'Harbour']];
 const firstScene = (() => {
   const q = new URLSearchParams(location.search).get('scene');
   let saved = null;
@@ -338,6 +338,10 @@ ITEMS.longjohns = { w: [0.72, 0.82], h: [1.3, 1.45], pegs: [0.32, 0.68], kg: 2.6
     }
     return a > 0.03 && v > (0.22 - a) * 0.3 && v < 0.5 - (0.22 - a) * 0.25;
   } };
+// Harbour wear: a yellow oilskin slicker, Breton shirts with navy stripes.
+ITEMS.slicker = { w: [0.95, 1.05], h: [0.82, 0.9], pegs: [0.3, 0.7], kg: 2.2, cols: ['yellow'], pats: [0], second: 'navy', mask: null };
+ITEMS.breton = { w: [0.88, 0.98], h: [0.7, 0.78], pegs: [0.3, 0.7], kg: 1.1, cols: ['white', 'cream'], pats: [9], second: 'navy', weave: 'jersey', mask: null };
+ITEMS.slicker.mask = ITEMS.breton.mask = ITEMS.tee.mask;
 ITEMS.blanket = { w: [1.4, 1.6], h: [1.0, 1.15], pegs: [0, 0.5, 1], kg: 3.2, cols: ['cream'], pats: [11], weave: 'twill' };
 ITEMS.flannel = { w: [0.95, 1.05], h: [0.78, 0.86], pegs: [0.3, 0.7], kg: 1.6, cols: ['red', 'navy', 'sage', 'khaki', 'red'], pats: [10], weave: 'twill', mask: ITEMS.tee.mask };
 const MIX = ['sheet', 'towel', 'tee', 'trousers', 'dress', 'pillow', 'cloth', 'sock', 'tee'];
@@ -346,7 +350,7 @@ const itemMask = it => (it.I.mask ? (it.flip ? (u, v) => it.I.mask(1 - u, v) : i
 function rollItem(kind = pick(T ? T.mix : MIX)) {
   const I = ITEMS[kind];
   const a = pick(I.cols);
-  let b = pick(['white', 'cream', 'red', 'navy', 'sky']);
+  let b = I.second || pick(['white', 'cream', 'red', 'navy', 'sky']);
   for (let k = 0; k < 8 && b === a; k++) b = pick(['white', 'cream', 'red', 'navy', 'sky']);
   return { kind, I, w: rnd(...I.w), h: rnd(...I.h), alb: COLOURS[a], alb2: COLOURS[b], pat: pick(I.pats), freq: rnd(5, 8) };
 }
@@ -364,7 +368,8 @@ let slack = SLACK.slack;
 // The near post rises out of the frame; the far land runs to the horizon.
 const POST_X = 3.3, LINE_Y = 1.92, ROPE_N = 72, ROPE_KG = 0.04, ITER = 8, H = 1 / 120, MAX_SHEETS = 8;
 const sim = { rope: null, sheets: [], pegs: [], flyers: [], half: POST_X, seg: 0.1 };
-function onLawn(x, z) { return Math.abs(x) < 60 && Math.abs(z) < 60; }
+// Cloth and pegs land on the ground; a harbour has only its wharf deck.
+function onLawn(x, z) { const d = T?.deck; if (d) return x > d[0] && x < d[1] && z > d[2] && z < d[3]; return Math.abs(x) < 60 && Math.abs(z) < 60; }
 
 function build() {
   for (const c of [...sim.sheets]) removeSheet(c);
@@ -1509,6 +1514,206 @@ function buildWinter(grp) {
   grp.add(prints);
 }
 
+// Harbour: a fish shed on a wharf, a piling, the sea, a lobster boat, a village and a light.
+let themeTick = null;
+const shingleTex = new THREE.CanvasTexture(tex2D(256, 256, (g, w, h) => {
+  g.fillStyle = '#7a2c22'; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 16) for (let x = -(y / 16 % 2) * 10; x < w; x += rnd(16, 26)) {
+    g.fillStyle = `hsl(${rnd(4, 14)}, ${rnd(40, 55)}%, ${rnd(26, 36)}%)`; g.fillRect(x + 1, y + 1, rnd(14, 24), 15);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + 14, 26, 2);
+  }
+  for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(230,225,215,${rnd(0.03, 0.1)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 3), rnd(4, 14)); }
+}));
+shingleTex.colorSpace = THREE.SRGBColorSpace;
+shingleTex.wrapS = shingleTex.wrapT = THREE.RepeatWrapping;
+const deckTex = new THREE.CanvasTexture(tex2D(512, 512, (g, w, h) => {
+  g.fillStyle = '#6d6458'; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 32) {
+    g.fillStyle = `hsl(${rnd(28, 38)}, ${rnd(8, 16)}%, ${rnd(32, 44)}%)`; g.fillRect(0, y + 2, w, 28);
+    for (let i = 0; i < 30; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '30,25,20' : '200,195,185'},${rnd(0.05, 0.15)})`; g.fillRect(rnd(0, w), y + rnd(3, 27), rnd(20, 90), 1); }
+    g.fillStyle = 'rgba(15,12,10,0.8)'; g.fillRect(0, y, w, 2);
+    for (let x = rnd(0, 60); x < w; x += rnd(90, 180)) { g.fillStyle = 'rgba(20,15,12,0.7)'; g.fillRect(x, y + 2, 2, 28); g.fillStyle = 'rgba(60,60,60,0.9)'; g.fillRect(x + 6, y + 8, 2, 2); g.fillRect(x + 6, y + 22, 2, 2); }
+  }
+  for (let i = 0; i < 60; i++) { const x = rnd(0, w), y = rnd(0, h), r = rnd(10, 40), gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(225,225,215,0.12)'); gr.addColorStop(1, 'rgba(225,225,215,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+}));
+deckTex.colorSpace = THREE.SRGBColorSpace;
+deckTex.wrapS = deckTex.wrapT = THREE.RepeatWrapping;
+const waveNormal = normalTile(256, (u, v) => {
+  let h = 0;
+  for (const [a, b, k] of [[3, 1, 1], [5, -2, 0.5], [9, 4, 0.25], [17, -7, 0.12]]) h += k * Math.sin((u * a + v * b) * TAU + k * 3);
+  return h;
+}, 1.6);
+waveNormal.repeat.set(60, 60);
+function buildHarbour(grp) {
+  const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+  const SEA = -1.3;
+  // The sea: waves rolled by a scrolling normal map, reflecting the sky.
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.42, 0.04, 215)), roughness: 0.24, metalness: 0.1, normalMap: waveNormal, normalScale: new THREE.Vector2(0.55, 0.55), envMapIntensity: 1.1 }));
+  sea.position.y = SEA;
+  sea.receiveShadow = true;
+  grp.add(sea);
+  // The wharf: grey planks on timber pilings.
+  const D = T.deck, deckW = D[1] - D[0], deckD = D[3] - D[2];
+  const dt = deckTex.clone(); dt.needsUpdate = true; dt.repeat.set(deckW / 4, deckD / 4);
+  const deck = add(new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.22, deckD), new THREE.MeshStandardMaterial({ map: dt, roughness: 0.9 })));
+  deck.position.set((D[0] + D[1]) / 2, -0.11, (D[2] + D[3]) / 2);
+  const pileMat = new THREE.MeshStandardMaterial({ map: logTex, color: 0xa39a8c, roughness: 0.95 });
+  const piles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.18, 3.2, 12), pileMat, 40);
+  let k = 0;
+  for (let x = D[0] + 0.3; x < D[1]; x += 1.9) for (const z of [D[2] + 0.2, D[3] - 0.2]) if (k < 40) piles.setMatrixAt(k++, m.compose(p.set(x, -1.6, z), q.identity(), sc.set(1, 1, 1)));
+  for (let z = D[2] + 2; z < D[3] - 1; z += 2.2) if (k < 40) piles.setMatrixAt(k++, m.compose(p.set(D[1] - 0.2, -1.6, z), q.identity(), sc.set(1, 1, 1)));
+  piles.count = k;
+  add(piles);
+  // The fish shed: red shingles, a gable toward the line, a small window.
+  const SX = -POST_X - 0.12, shed = new THREE.Group();
+  const sh = shingleTex.clone(); sh.needsUpdate = true; sh.repeat.set(2.4, 1.2);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.7, 3.6), new THREE.MeshStandardMaterial({ map: sh, roughness: 0.9 }));
+  body.position.set(SX - 2.2, 1.35, -0.4);
+  const roofShape = new THREE.Shape([new THREE.Vector2(-2.1, 0), new THREE.Vector2(2.1, 0), new THREE.Vector2(0, 1.5)]);
+  const gable = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: 4.4, bevelEnabled: false }).translate(0, 0, -2.2).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ map: sh, roughness: 0.9 }));
+  gable.position.set(SX - 2.2, 2.7, -0.4);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x34383d, roughness: 0.75 });
+  for (const sz of [1, -1]) {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.08, 2.75), roofMat);
+    r.position.set(SX - 2.2, 3.42, -0.4 + sz * 0.98); r.rotation.x = sz * 0.62;
+    shed.add(r);
+  }
+  const trimW = new THREE.MeshStandardMaterial({ color: 0xece6da, roughness: 0.6 });
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.8).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1d2630, roughness: 0.1, metalness: 0.4 }));
+  win.position.set(SX + 0.005, 1.6, 0.9);
+  for (const [h, w, y, z] of [[0.92, 0.07, 1.6, 0.52], [0.92, 0.07, 1.6, 1.28], [0.07, 0.83, 2.05, 0.9], [0.07, 0.83, 1.15, 0.9]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, h, w), trimW); b.position.set(SX + 0.02, y, z); shed.add(b); }
+  const cornerB = new THREE.Mesh(new THREE.BoxGeometry(0.07, 2.7, 0.14), trimW); cornerB.position.set(SX + 0.01, 1.35, 1.38); shed.add(cornerB);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 }));
+  ring.position.set(SX + 0.02, LINE_Y, 0);
+  shed.add(body, gable, win, ring);
+  // Buoys hang on the shed wall, each painted in its owner's colours.
+  const buoyCols = [[0.62, 0.17, 30], [0.85, 0.15, 90], [0.55, 0.12, 250], [0.95, 0.01, 90], [0.6, 0.14, 150]];
+  for (let i = 0; i < 6; i++) {
+    const c1 = buoyCols[i % 5], c2 = buoyCols[(i + 2) % 5];
+    const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.22, 16), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(...c1)), roughness: 0.5 }));
+    const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.05, 0.16, 16), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(...c2)), roughness: 0.5 }));
+    const y = 1.0 + (i % 2) * 0.35, z = -1.8 + i * 0.32;
+    b1.position.set(SX + 0.13, y, z); b2.position.set(SX + 0.13, y - 0.19, z);
+    shed.add(b1, b2);
+  }
+  shed.traverse(o => { o.castShadow = o.receiveShadow = true; });
+  grp.add(shed);
+  contact(grp, SX - 0.1, -0.4, 0.4, 2.0, 0.55);
+  // The piling: a thick weathered timber, rope wrapped round it.
+  const piling = add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 4.6, 16), pileMat));
+  piling.position.set(POST_X + 0.18, 0.8, 0);
+  for (let i = 0; i < 5; i++) add(new THREE.Mesh(new THREE.TorusGeometry(0.215, 0.022, 6, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc9b98f, roughness: 0.9 }))).position.set(POST_X + 0.18, LINE_Y - 0.12 + i * 0.045, 0);
+  contact(grp, POST_X + 0.18, 0, 0.4, 0.4, 0.6);
+  // Lobster traps stacked by the shed, rope coiled on the deck.
+  const trapTex = new THREE.CanvasTexture(tex2D(64, 64, (g) => {
+    g.strokeStyle = '#3f6b4a'; g.lineWidth = 2;
+    for (let i = 0; i <= 64; i += 8) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 64); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(64, i); g.stroke(); }
+    g.strokeStyle = '#6b5a44'; g.lineWidth = 4; g.strokeRect(2, 2, 60, 60);
+  }));
+  trapTex.colorSpace = THREE.SRGBColorSpace;
+  const trapMat = new THREE.MeshStandardMaterial({ map: trapTex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, roughness: 0.8 });
+  for (const [x, y, z, r] of [[-1.9, 0.22, 1.6, 0.1], [-1.9, 0.66, 1.65, -0.08], [-1.15, 0.22, 1.9, 0.3], [-2.6, 0.22, 2.4, -0.2]]) {
+    const t = add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.44, 0.55), trapMat));
+    t.position.set(x, y, z); t.rotation.y = r;
+  }
+  contact(grp, -1.9, 1.8, 1.2, 0.8, 0.5);
+  const coil = add(new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.05, 8, 32).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc9b98f, roughness: 0.9 })));
+  coil.position.set(1.4, 0.05, 1.8);
+  add(new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.05, 8, 32).rotateX(Math.PI / 2), coil.material)).position.set(1.4, 0.12, 1.8);
+  // The lobster boat: a white hull with a red bottom, a wheelhouse, a mast; it rides the swell.
+  const hullG = new THREE.BoxGeometry(7, 1.5, 2.5, 20, 6, 8), hp = hullG.attributes.position, hc = new Float32Array(hp.count * 3);
+  for (let i = 0; i < hp.count; i++) {
+    let x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
+    const bow = smooth(1.2, 3.5, x), keel = smooth(0.75, -0.75, y);
+    z *= (1 - bow * 0.95) * (1 - keel * 0.55);
+    y += bow * bow * 0.45 * (y > 0 ? 1 : 0.3);
+    hp.setXYZ(i, x, y, z);
+    const c = y < -0.35 ? lin(0.42, 0.14, 25) : y < -0.22 ? [0.02, 0.02, 0.02] : y > 0.6 ? lin(0.55, 0.1, 160) : [0.85, 0.86, 0.86];
+    hc[i * 3] = c[0]; hc[i * 3 + 1] = c[1]; hc[i * 3 + 2] = c[2];
+  }
+  hullG.setAttribute('color', new THREE.BufferAttribute(hc, 3));
+  hullG.computeVertexNormals();
+  const boat = new THREE.Group();
+  const hull = new THREE.Mesh(hullG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45 }));
+  const house = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.3, 1.9), new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.5 }));
+  house.position.set(0.3, 1.35, 0);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 1.6), new THREE.MeshStandardMaterial({ color: 0x18222c, roughness: 0.1, metalness: 0.5 }));
+  glass.position.set(1.21, 1.55, 0);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 2.1), new THREE.MeshStandardMaterial({ color: 0x2c5a7a, roughness: 0.5 }));
+  cab.position.set(0.3, 2.05, 0);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 3.4, 8), new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.6 }));
+  mast.position.set(-0.4, 3.4, 0);
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.6, 8).rotateZ(Math.PI / 2.4), mast.material);
+  boom.position.set(-1.4, 2.6, 0);
+  boat.add(hull, house, glass, cab, mast, boom);
+  boat.traverse(o => { o.castShadow = o.receiveShadow = true; });
+  boat.position.set(-3, SEA + 0.25, -15);
+  boat.rotation.y = 0.4;
+  grp.add(boat);
+  // A mooring buoy off the bow.
+  const mb = add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 10), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.66, 0.17, 45)), roughness: 0.4 })));
+  mb.position.set(1.5, SEA + 0.05, -17);
+  // The far shore: a dark hill, a row of painted houses up its flank, a lighthouse on the point.
+  const hillH = (x, z) => Math.max(0, (-z - 52) * 0.5) * (0.7 + 0.3 * noise3D(x * 0.02, z * 0.02, 4)) + 4 * Math.max(0, noise3D(x * 0.05, z * 0.05, 1));
+  const hg = new THREE.PlaneGeometry(400, 120, 160, 60).rotateX(-Math.PI / 2), hgp = hg.attributes.position;
+  for (let i = 0; i < hgp.count; i++) { const x = hgp.getX(i), z = hgp.getZ(i) - 110; hgp.setY(i, hillH(x, z)); }
+  hg.computeVertexNormals();
+  const hill = new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.38, 0.04, 150)), roughness: 0.95 }));
+  hill.position.set(0, SEA, -110 + 0);
+  grp.add(hill);
+  const houseCols = [[0.52, 0.15, 28], [0.8, 0.13, 90], [0.55, 0.09, 220], [0.92, 0.01, 90], [0.6, 0.1, 165], [0.5, 0.12, 300]];
+  for (let i = 0; i < 26; i++) {
+    const x = -70 + i * 5.4 + rnd(-1.5, 1.5), z = -56 - (i % 3) * 6 - rnd(0, 3), y = SEA + hillH(x, z) - 0.3;
+    const hs = new THREE.Group(), w = rnd(4, 6.5), hh = rnd(3.5, 5.5);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 5), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(...pick(houseCols))), roughness: 0.8 }));
+    b.position.y = hh / 2;
+    const rs = new THREE.Shape([new THREE.Vector2(-2.7, 0), new THREE.Vector2(2.7, 0), new THREE.Vector2(0, 2.2)]);
+    const rf = new THREE.Mesh(new THREE.ExtrudeGeometry(rs, { depth: w + 0.4, bevelEnabled: false }).translate(0, 0, -(w + 0.4) / 2).rotateY(Math.PI / 2), roofMat);
+    rf.position.y = hh;
+    hs.add(b, rf);
+    hs.position.set(x, y, z);
+    hs.rotation.y = rnd(-0.15, 0.15);
+    grp.add(hs);
+  }
+  const light = new THREE.Group();
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.6, 14, 20), new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.6 }));
+  tower.position.y = 7;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.33, 2, 20), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.17, 27)), roughness: 0.6 }));
+  band.position.y = 9;
+  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.4, 16), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: new THREE.Color().setRGB(6, 5, 3) }));
+  lamp.position.y = 14.7;
+  const capL = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.2, 16), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.17, 27)) }));
+  capL.position.y = 16;
+  const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(6, 2), new THREE.MeshStandardMaterial({ color: 0x4b4d50, roughness: 1 }));
+  rock.scale.set(1.8, 0.7, 1.4);
+  light.add(rock, tower, band, lamp, capL);
+  light.position.set(-6, SEA, -82);
+  grp.add(light);
+  // Gulls wheel over the water.
+  const gullG = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-0.35, 0.06, 0), new THREE.Vector3(0, 0, 0.05), new THREE.Vector3(0, 0, -0.05), new THREE.Vector3(0.35, 0.06, 0), new THREE.Vector3(0, 0, 0.05), new THREE.Vector3(0, 0, -0.05)]);
+  gullG.computeVertexNormals();
+  const gulls = new THREE.InstancedMesh(gullG, new THREE.MeshStandardMaterial({ color: 0xf4f4f2, side: THREE.DoubleSide, roughness: 0.8 }), 7);
+  grp.add(gulls);
+  const gp = Array.from({ length: 7 }, () => ({ cx: rnd(-10, 8), cz: rnd(-22, -8), r: rnd(3, 7), h: rnd(5, 10), w: rnd(0.25, 0.5) * (Math.random() < 0.5 ? -1 : 1), ph: rnd(0, TAU) }));
+  themeTick = t => {
+    const sw = 0.5 + WIND[st.wind].u * 0.15;
+    boat.position.y = SEA + 0.25 + Math.sin(t * 0.9) * 0.08 * sw;
+    boat.rotation.z = Math.sin(t * 0.7) * 0.035 * sw;
+    boat.rotation.x = Math.sin(t * 0.55 + 1) * 0.02 * sw;
+    mb.position.y = SEA + 0.05 + Math.sin(t * 1.1 + 2) * 0.07 * sw;
+    sea.material.normalMap.offset.set(t * 0.004 * sw, -t * 0.006 * sw);
+    gp.forEach((g, i) => {
+      const a = g.ph + t * g.w;
+      const flap = Math.sin(t * 6 + i) * 0.35;
+      q.setFromEuler(new THREE.Euler(0, -a + Math.PI / 2, flap * 0.3));
+      gulls.setMatrixAt(i, m.compose(p.set(g.cx + Math.cos(a) * g.r, g.h + Math.sin(t * 0.5 + i) * 0.4, g.cz + Math.sin(a) * g.r), q, sc.set(1, 1 + flap, 1)));
+    });
+    gulls.instanceMatrix.needsUpdate = true;
+  };
+  themeTick(0);
+}
+
 /* ---------- grass ---------- */
 // Blades bend in the same wind as the cloth; backlit tips glow.
 const grassU = { uTime: { value: 0 }, uWind: { value: 0 }, uScroll: { value: 0 }, uGlow: { value: new THREE.Vector3() } };
@@ -1772,6 +1977,7 @@ function syncLight() {
   grassU.uScroll.value = st.scroll;
   cloudU.uCloudT.value = st.t * (0.6 + WIND[st.wind].u * 0.4);
   if (fan) fan.rotation.z = -st.t * (0.6 + WIND[st.wind].u * 0.5) * st.windScale;
+  if (themeTick) themeTick(st.t);
   if (smokeU) { smokeU.uTime.value = st.t; smokeU.uWind.value = WIND[st.wind].u * st.windScale; smokeU.uPx.value = camera.isOrthographicCamera ? view.h * 0.12 : view.h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))); }
   if (snow.visible) {
     snowU.uTime.value = st.t;
@@ -2039,6 +2245,18 @@ const THEMES = {
     cam: { pos: [1.6, 1.45, 6.4], look: [-0.4, 1.75, -3.0], lookN: [-0.2, 1.8, -3.0], fov: 52, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [0.2, 1.2, -3.0] },
     mix: ['blanket', 'flannel', 'longjohns', 'sock', 'sock', 'flannel', 'towel'], build: buildWinter,
   },
+  harbour: {
+    sky: { zen: [0.7, 0.04, 235], mid: [0.79, 0.03, 225], hor: [0.87, 0.02, 210], haze: [0.84, 0.02, 215], cloud: [0.9, 0.012, 220], shade: [0.78, 0.02, 230] },
+    warm: [0.93, 0.05, 75], white: [0.96, 0.02, 90], sunK: 2.4, glow: 0.4, exp: 1, shadow: 0.6, elK: 0.5,
+    line: [0.24, 0.02, 60], grade: { con: 1.1, sat: 0.92, vig: 0.22, lift: [0.0, 0.006, 0.014] }, clouds: 0,
+    fog: [[0.83, 0.02, 215], 0, 0], fogExp: 0.016, hemi: [[0.85, 0.03, 225], [0.6, 0.03, 215], 1.0],
+    ground: 'none', grass: { n: 0, h: [0.1, 0.2], cols: [[0.5, 0.05, 120], [0.5, 0.05, 120], [0.5, 0.05, 120]] },
+    wind: 'gusty', sun: 0.62, stiff: 1.2, frost: 0, snow: 0, daisies: 0,
+    deck: [-9, 7, -3.2, 9],
+    // Out along the wharf, low, past the line to the moored boat.
+    cam: { pos: [3.4, 1.3, 6.4], look: [-1.6, 1.25, -6], lookN: [-1.0, 1.4, -6], fov: 50, fovN: 68 }, iso: { yaw: -Math.PI / 4, at: [-0.5, 0.6, -1.5] },
+    mix: ['slicker', 'breton', 'trousers', 'sock', 'sock', 'towel', 'breton', 'cloth'], build: buildHarbour,
+  },
 };
 let T = null, setGroup = null;
 function disposeTree(o) {
@@ -2067,14 +2285,16 @@ function applyTheme(id) {
   grade.uniforms.uLift.value.set(...T.grade.lift);
   cloudU.uCloudK.value = T.clouds ? 0.45 : 0;
   ground.material.map?.dispose();
-  ground.material.map = groundTex(T.ground);
+  ground.material.map = groundTex(T.ground === 'none' ? 'prairie' : T.ground);
   // Snow gets wind-carved relief; other grounds stay flat under their grass.
   ground.material.normalMap = T.ground === 'snow' ? snowNormal : null;
   ground.material.roughness = T.ground === 'snow' ? 0.8 : 1;
   ground.material.needsUpdate = true;
+  ground.visible = T.ground !== 'none';
   if (setGroup) { if (basketObj) setGroup.remove(basketObj); scene.remove(setGroup); disposeTree(setGroup); }
   fan = null;
   smokeU = null;
+  themeTick = null;
   setGroup = new THREE.Group();
   T.build(setGroup);
   scene.add(setGroup);
