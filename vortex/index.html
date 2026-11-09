@@ -560,7 +560,7 @@ void main() {
   float r = length(v), dd = dot(s.xyz, uN) - uH;
   vec3 vl = v / r;
   float sheet = exp(-dd * dd / (uW * uW)) * fanMask(vl) * hg(dot(vl, toCam), 0.55) / (r + 0.45);
-  vC = (uBack * back * 0.04 + uLaser * sheet * 3.0) * uSmoke * fade * max(s.w, 0.25) * k2;
+  vC = (uBack * back * 0.06 + uLaser * sheet * 3.0) * uSmoke * fade * max(s.w, 0.25) * k2;
 }`;
 // A tight disc with a short falloff keeps the motes crisp.
 const PART_FS = HEAD + `
@@ -600,24 +600,41 @@ void main() {
   vec2 c = gl_PointCoord * 2.0 - 1.0;
   o = vec4(vM * exp(-2.5 * dot(c, c)), 0.0, 0.0, 1.0);
 }`;
+// Blurs the atlas along x or y inside each tile, so particle grain smooths into smoke.
+const BLUR_FS = HEAD + `
+out vec4 o;
+uniform sampler2D uSrc;
+uniform ivec2 uDir, uTile;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), t = c / uTile, base = t * uTile, l = c - base;
+  const float W[5] = float[5](0.07, 0.24, 0.38, 0.24, 0.07);
+  float v = 0.0;
+  for (int i = 0; i < 5; i++) {
+    ivec2 q = clamp(l + uDir * (i - 2), ivec2(0), uTile - 1);
+    v += W[i] * texelFetch(uSrc, base + q, 0).r;
+  }
+  o = vec4(v, 0.0, 0.0, 1.0);
+}`;
 // The smoke volume, as in Fire: detail noise, a short self-shadow march,
 // Beer-Lambert with a multi-scatter lift, and forward scatter.
-const VOL_FS = HEAD + PHASE + VOLUME + `
+const VOL_FS = HEAD + PHASE + SHEET + VOLUME + `
 in vec2 vUv;
 layout(location = 0) out vec4 o;
 layout(location = 1) out vec4 o2;
 uniform sampler3D uNoise;
-uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uN;
+uniform vec3 uEye, uR, uU, uF, uBackDir, uBack;
 uniform vec2 uTan;
-uniform float uTime, uSigma, uFrame, uH, uGain;
+uniform float uTime, uSigma, uFrame, uGain;
 float dens(vec3 p) {
   float d = vol(p);
   if (d < 2e-3) return 0.0;
-  // Two octaves of noise erode the edges into crisp wisps.
-  float n = texture(uNoise, p * 3.1 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
-    + texture(uNoise, p * 8.7 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
-  float e = d * (0.3 + 1.4 * n);
-  return e * smoothstep(0.015, 0.1, e);
+  // Fine noise breaks the edges into wisps; the body stays rolled and smooth.
+  float n = texture(uNoise, p * 2.6 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
+    + texture(uNoise, p * 6.9 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
+  float e = d * (0.7 + 0.6 * n);
+  // A threshold gives the silhouette a crisp edge over a smooth body.
+  // Thin smoke survives at a quarter, so wakes still trail.
+  return e * mix(0.25, 1.0, smoothstep(0.03, 0.16, e));
 }
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
@@ -631,7 +648,8 @@ void main() {
   float dt = (t1 - t0) / float(STEPS), j = ign(gl_FragCoord.xy + uFrame * 5.588);
   float T = 1.0, Ts = th < t0 ? 1.0 : -1.0;
   vec3 L = vec3(0.0);
-  float ph = hg(dot(uBackDir, -d), 0.6);
+  // Two phase lobes: a strong forward glow and a weak back scatter.
+  float c = dot(uBackDir, -d), ph = mix(hg(c, 0.65), hg(c, -0.25), 0.3);
   for (int i = 0; i < STEPS; i++) {
     float t = t0 + (float(i) + j) * dt;
     if (Ts < 0.0 && t >= th) Ts = T;
@@ -642,7 +660,12 @@ void main() {
     float beer = exp(-tau);
     float lit = beer + 0.5 * exp(-0.25 * tau) * 0.6;
     float powder = 1.0 - exp(-2.0 * dd * uSigma * 0.08);
-    vec3 S = uBack * uGain * (lit * ph * mix(1.0, powder, 0.35) + 0.05);
+    // Multiple scatter in the room fills the shadow side a little.
+    vec3 S = uBack * uGain * (lit * ph * mix(1.0, powder, 0.35) + 0.14 * exp(-0.3 * tau));
+    // Laser light that spills off the sheet tints smoke close to it.
+    vec3 lv = p - uLens;
+    float lr = length(lv), pd = dot(p, uN) - uH;
+    S += uLaser * exp(-pd * pd / 0.02) * fanMask(lv / lr) / (lr * lr + 0.15) * 0.5 * beer;
     float Tstep = exp(-dd * uSigma * dt);
     L += T * S * (1.0 - Tstep);
     T *= Tstep;
@@ -740,7 +763,7 @@ void main() {
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 let gl = null, P = null, vao = null;
-let state = null, nodesTex = null, scene = null, blooms = [], atlas = null, noiseTex = null, volT = null;
+let state = null, nodesTex = null, scene = null, blooms = [], atlas = null, atlasB = null, noiseTex = null, volT = null;
 const nodeData = new Float32Array(N * SLOTS * 4);
 function compile(vs, fs) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -843,7 +866,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     haze: compile(TRI, HAZE_FS), advect: compile(TRI, ADVECT_FS), seed: compile(TRI, SEED_FS),
-    part: compile(PART_VS, PART_FS), splat: compile(SPLAT_VS, SPLAT_FS), vol: compile(TRI, VOL_FS), ghost: compile(GHOST_VS, DOT_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
+    part: compile(PART_VS, PART_FS), splat: compile(SPLAT_VS, SPLAT_FS), blur: compile(TRI, BLUR_FS), vol: compile(TRI, VOL_FS), ghost: compile(GHOST_VS, DOT_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
     up: compile(TRI, UP_FS), grade: compile(TRI, GRADE_FS),
   };
   // Polling lets the driver link off the main thread.
@@ -858,7 +881,9 @@ async function initGL() {
   gl.bindVertexArray(vao);
   state = { r: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST), w: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST),
     swap() { [this.r, this.w] = [this.w, this.r]; } };
-  atlas = target(ATLAS[0], ATLAS[1], renderable(gl.R16F) ? gl.R16F : gl.RGBA16F, gl.LINEAR);
+  const af = renderable(gl.R16F) ? gl.R16F : gl.RGBA16F;
+  atlas = target(ATLAS[0], ATLAS[1], af, gl.LINEAR);
+  atlasB = target(ATLAS[0], ATLAS[1], af, gl.LINEAR);
   noiseTex = makeNoise();
   nodesTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, nodesTex);
@@ -1018,7 +1043,7 @@ function volUniforms(q) {
   gl.uniform2fv(q.u.uAtlas, ATLAS);
 }
 // Smoke extinction per unit density; the sheet's gain on smoke.
-const SIGMA = 3.5, SHEET_SMOKE = 70;
+const SIGMA = 7, SHEET_SMOKE = 60;
 let frameN = 0;
 function render() {
   const W = canvas.width, H = canvas.height;
@@ -1038,12 +1063,22 @@ function render() {
     gl.uniform1fv(q.u.uFade, fades);
     volUniforms(q);
     gl.uniform1i(q.u.uRows, rows());
-    gl.uniform1f(q.u.uMass, 0.05 * (smoke === 'dense' ? 1.6 : 1) * ROWS / rows());
-    gl.uniform1f(q.u.uSplat, 2.5);
+    gl.uniform1f(q.u.uMass, 0.075 * (smoke === 'dense' ? 1.6 : 1) * ROWS / rows());
+    gl.uniform1f(q.u.uSplat, 3);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.drawArraysInstanced(gl.POINTS, 0, SLOTS * 64 * rows(), 2);
     gl.disable(gl.BLEND);
+    // Two blur passes, x then y, smooth the grain out of the density.
+    q = P.blur;
+    gl.useProgram(q.p);
+    gl.uniform2i(q.u.uTile, VRES[0], VRES[1]);
+    bind(q, 'uSrc', 0, atlas);
+    gl.uniform2i(q.u.uDir, 1, 0);
+    draw(atlasB);
+    bind(q, 'uSrc', 0, atlasB);
+    gl.uniform2i(q.u.uDir, 0, 1);
+    draw(atlas);
     // March the volume at reduced size.
     q = P.vol;
     gl.useProgram(q.p);
@@ -1053,13 +1088,11 @@ function render() {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_3D, noiseTex);
     gl.uniform1i(q.u.uNoise, 1);
-    const s = sheetNow();
-    gl.uniform3fv(q.u.uN, s.n);
-    gl.uniform1f(q.u.uH, s.h);
+    sheetUniforms(q, 0.03);
     gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
     gl.uniform1f(q.u.uTime, simTime);
     gl.uniform1f(q.u.uSigma, SIGMA);
-    gl.uniform1f(q.u.uGain, 1.0);
+    gl.uniform1f(q.u.uGain, 2.2);
     gl.uniform1f(q.u.uFrame, reduced() ? 0 : frameN % 64);
     gl.bindFramebuffer(gl.FRAMEBUFFER, volT.fb);
     gl.viewport(0, 0, volT.w, volT.h);
