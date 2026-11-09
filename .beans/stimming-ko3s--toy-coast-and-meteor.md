@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:41:23Z
-updated_at: 2026-11-09T08:40:47Z
+updated_at: 2026-11-09T08:49:46Z
 ---
 
 Coast and meteor (`meteor`), plan `docs/plans/meteor.md`. Rank 10. Uses K2 and K6 from `fireworks/index.html`. Bar v2.
@@ -57,3 +57,11 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - Wet ground: `uWet` (high-water mark, dryness). Exposed bed stays dark and mirrors the sky; sparse cells glint; it dries over 10 s after the sea returns.
 - Reefs lowered to 1.3 m and broken up: at 2.4 m they read as a wave wall when bared.
 - Not verified live: the pane stayed hidden, so every still came through a probe page.
+
+## Task 3, round 2 (2026-11-09, Tom: all out)
+
+- The Impact is 96 s. The entry takes 9 s: a big head (capsule 4 to 7 px) with a plume of 72 billboards behind it that run white-hot, fire, then smoke lit by the sky and the head; three breakups shed 150 fragments.
+- Lens flare: the `flares` pass from Fireworks (streak and ghosts), marked as a lift. It follows the brightest light with an eased gain, so it never pops. It runs before bloom.
+- Tsunami: the swell looms from 7 km over 30 s (`power2.out`, so it slows as it shoals) and grows to 16 m at 170 m with a 120 m width and a steeper shoreward face (`uWave.y`). It breaks over 7 s into white water (`uWave.x`: a white lip, spray on the face, a foam sheet behind), falls to a 3.6 m bore, runs up the bank to 1.6 m at the camera, and drains. The face is dark water that stands against the afterglow.
+- Draw-back now takes 17 s; the stones dry over 10 s at the end.
+- Still not verified live (hidden pane). Tom should check the wall's scale on a real screen: it sits about 30 px above the horizon at 1280 px when it breaks.

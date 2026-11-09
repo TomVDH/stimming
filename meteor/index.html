@@ -159,6 +159,8 @@ const U = {
   uGlare: { value: 0 },
   // Wet ground: the high-water mark, and how dry it is (0 wet, 1 dry).
   uWet: { value: new THREE.Vector2(0.3, 1) },
+  // The returning wave: white water, crest width.
+  uWave: { value: new THREE.Vector4(0, 110, 0, 0) },
 };
 
 /* ---------- K2: noise ---------- */
@@ -263,7 +265,7 @@ const WORLD_GLSL = /* glsl */`
 uniform float uTime;
 uniform vec3 uGround;
 uniform sampler2D tHeight;
-uniform vec4 uHB, uLevel, uShock;
+uniform vec4 uHB, uLevel, uShock, uWave;
 uniform vec2 uWet;
 vec3 skyLight(vec3 N) {
   vec3 up = uZen * 0.55 + uMid * 0.25 + uAnti * 0.2;
@@ -306,7 +308,9 @@ float level(vec2 xz) {
   float s = -xz.y;
   float drop = uLevel.x * smoothstep(uLevel.y - 400.0, uLevel.y + 400.0, s);
   drop *= 1.0 - smoothstep(uLevel.z - 150.0, uLevel.z + 150.0, s);
-  float c = cosh((s - uLevel.z) / 110.0);
+  // The crest is steeper on its shoreward face as it shoals.
+  float wdt = uWave.y * (s < uLevel.z ? 0.45 : 1.0);
+  float c = cosh((s - uLevel.z) / wdt);
   return -drop + uLevel.w / (c * c);
 }
 // The shock ring on the sea at xz: 1 at the crisp front, trailing off behind.
@@ -571,8 +575,21 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     float steep = smoothstep(0.05, 0.22, abs(lvN - lv0) / 6.0);
     float sC = -vXZ.y;
     float churn = smoothstep(uLevel.z - 60.0, uLevel.z + 120.0, sC) * (1.0 - smoothstep(uLevel.z + 300.0, uLevel.z + 900.0, sC)) * min(uLevel.w * 0.5, 1.0);
+    // The breaking crest: a white cap on the face, spray torn off the top, a foam sheet behind.
+    // The lip: the top of the face, where the water turns over.
+    float lip = smoothstep(uLevel.z - uWave.y * 0.5, uLevel.z - uWave.y * 0.15, sC) * (1.0 - smoothstep(uLevel.z + 15.0, uLevel.z + 90.0, sC));
+    float face = smoothstep(uLevel.z - uWave.y * 1.1, uLevel.z - uWave.y * 0.5, sC) * (1.0 - smoothstep(uLevel.z - uWave.y * 0.45, uLevel.z - uWave.y * 0.1, sC));
+    float spray = k2noise(vXZ * vec2(0.35, 0.12) + vec2(uTime * 1.5, -uTime * 3.0));
+    float white = uWave.x * (lip * (0.9 + 1.0 * spray) + face * 0.35 * spray + 0.5 * churn);
+    // The wall's face is dark water that stands against the afterglow.
+    float wall = min(uLevel.w / 5.0, 1.0);
+    col = mix(col, deep * 0.35, max(face, steep) * 0.85 * wall);
+    // The face glows green: the dusk comes through the thin lip of the wave.
+    col += vec3(0.08, 0.22, 0.17) * steep * uWave.x * skyLight(vec3(0.0, 1.0, 0.0)) * 6.0;
     foam = max(foam, (steep + 0.7 * churn) * smoothstep(0.25, 0.6, fn));
+    foam = max(foam, min(white, 1.0) * smoothstep(0.15, 0.55, fn + 0.3 * white));
     // The shock darkens the water and tears spray off the crests.
+    foam = min(foam, 1.0);
     col = mix(col, deep * 0.4, shock * 0.6);
     foam = max(foam, shock * smoothstep(0.55, 0.8, k2noise(vXZ * 0.4 + uTime * 2.0)));
     // The meteor lays a path of glints on the waves, broken where the land shades it.
@@ -965,6 +982,143 @@ steam.renderOrder = 2.1;
 scene.add(steam);
 /* ---------- end impact meshes ---------- */
 
+/* ---------- asteroid plume: fire that cools to smoke along the entry ---------- */
+// One billboard per station along the path; a puff lights when the head passes.
+// It starts white-hot, cools through orange, and ends as lit smoke.
+const QN = 72;
+const plumeGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+{
+  const Q = new Float32Array(QN * 4);
+  for (let i = 0; i < QN; i++) Q.set([i / (QN - 1), rnd() * 100, (rnd() - 0.5), (rnd() - 0.5)], i * 4);
+  // aQ: path fraction, seed, lateral drift x, lateral drift y.
+  plumeGeo.setAttribute('aQ', new THREE.InstancedBufferAttribute(Q, 4));
+  plumeGeo.instanceCount = QN;
+}
+// uPlume: progress 0..1, seconds per unit of path, opacity, head glow.
+const QU = { uPS: { value: new THREE.Vector3() }, uPE: { value: new THREE.Vector3() }, uPlume: { value: new THREE.Vector4(0, 9, 0, 0) },
+  uHot: { value: new THREE.Vector3(...linFit(0.95, 0.06, 80)) }, uFire: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uSmoke: { value: new THREE.Vector3(...linFit(0.32, 0.02, 300)) } };
+const plume = new THREE.Mesh(plumeGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...QU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute vec4 aQ; uniform vec3 uPS, uPE; uniform vec4 uPlume;
+  varying vec2 vUv; varying vec3 vC; varying float vAge, vSeed, vOn;
+  void main() {
+    // Age in seconds since the head passed this station.
+    float age = (uPlume.x - aQ.x) * uPlume.y;
+    vOn = step(0.0, age);
+    vec3 dir = normalize(uPE - uPS);
+    vec3 side = normalize(cross(dir, vec3(0.0, 1.0, 0.0)));
+    vec3 upv = cross(side, dir);
+    // The puff swells and drifts off the path as it ages.
+    float size = (130.0 + 330.0 * (1.0 - exp(-age / 4.0))) * (0.8 + 0.4 * fract(aQ.y));
+    vec3 C = mix(uPS, uPE, aQ.x) + (side * aQ.z + upv * aQ.w) * 70.0 * min(age, 6.0) + vec3(0.0, 10.0 * age, 0.0);
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    vec3 P = C + (right * position.x + up * position.y) * size;
+    vUv = position.xy; vC = C; vAge = age; vSeed = aQ.y;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`uniform vec4 uPlume; uniform vec3 uHot, uFire, uSmoke, uPS, uPE;
+  varying vec2 vUv; varying vec3 vC; varying float vAge, vSeed, vOn; ${HEAD}
+  void main() {
+    if (vOn < 0.5) discard;
+    float d = length(vUv);
+    float n = k2fbm(vUv * 2.2 + vSeed + vec2(uTime * 0.15, -uTime * 0.25));
+    float a = smoothstep(1.0, 0.2, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.75, d) * uPlume.z;
+    a *= smoothstep(0.0, 0.3, vAge) * exp(-vAge / 18.0);
+    if (a < 0.003) discard;
+    // White-hot for a moment, fire for two seconds, then smoke lit by the sky and the head.
+    vec3 col = mix(uHot * 5.0, uFire * 2.6 * (0.6 + 0.8 * n), smoothstep(0.0, 0.5, vAge));
+    col = mix(col, uSmoke * (skyLight(vec3(0.0, 1.0, 0.0)) * 3.0 + uBand * 0.6), smoothstep(1.2, 6.0, vAge));
+    // The head lights the smoke nearest to it.
+    vec3 toHead = mix(uPS, uPE, uPlume.x) - vC;
+    col += uFire * uPlume.w * 1.5 * exp(-length(toHead) / 500.0) * (0.5 + 0.5 * n);
+    col = mix(col, k2hazeColor(normalize(vC - cameraPosition)), k2hazeAmount(vC) * 0.5);
+    gl_FragColor = vec4(col * a, a);
+  }`,
+}));
+plume.frustumCulled = false;
+plume.visible = false;
+plume.renderOrder = 2.4;
+scene.add(plume);
+/* ---------- end asteroid plume ---------- */
+
+/* ---------- flares, from Fireworks ---------- */
+// The brightest light flares the lens: a horizontal streak and ghosts.
+// The pass runs before bloom, so the streak's core glows.
+// Ghosts sit on the line from the light through the frame centre.
+const FL_N = 1;
+function makeFlares() {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uFP: { value: Array.from({ length: FL_N }, () => new THREE.Vector4()) },
+      uFC: { value: Array.from({ length: FL_N }, () => new THREE.Vector3()) },
+      uN: { value: 0 },
+      uAsp: { value: 1 },
+      // Streak gain, length, thinness, warmth; ghost gain, spread.
+      uSt: { value: new THREE.Vector4(1, 0.35, 160, 0.2) },
+      uGh: { value: new THREE.Vector2(1, 1) },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec4 uFP[${FL_N}];
+    uniform vec3 uFC[${FL_N}];
+    uniform int uN;
+    uniform float uAsp;
+    uniform vec4 uSt;
+    uniform vec2 uGh;
+    varying vec2 vUv;
+    // Blue never exceeds green; green never exceeds red.
+    vec3 warm(vec3 c) { float g = min(c.g, c.r); return vec3(c.r, g, min(c.b, g)); }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      for (int i = 0; i < ${FL_N}; i++) {
+        if (i >= uN) break;
+        vec2 p = uFP[i].xy;
+        // Warmth pulls the colour toward deep orange, or toward cream below 0.
+        vec3 tint = mix(uFC[i], uSt.w > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(uSt.w), 0.0, 1.0));
+        vec3 col = warm(max(tint, 0.0));
+        vec2 d = vUv - p;
+        float ax = d.x * uAsp, ay = abs(d.y);
+        // A thin bright line in a softer sheath; length sets the taper.
+        float line = exp(-ay * uSt.z) + 0.3 * exp(-ay * uSt.z * 0.08);
+        c += col * line * exp(-abs(ax) / uSt.y) * uSt.x * uFP[i].z;
+        // Ghosts: soft blobs on the line from the light through the centre.
+        vec2 tc = (vec2(0.5) - p) * uGh.y;
+        vec2 g0 = (vUv - p - tc * 0.7) * vec2(uAsp, 1.0);
+        vec2 g1 = (vUv - p - tc * 1.4) * vec2(uAsp, 1.0);
+        vec2 g2 = (vUv - p - tc * 2.2) * vec2(uAsp, 1.0);
+        float gs = 0.9 * exp(-dot(g0, g0) / 0.0025) + 0.6 * exp(-dot(g1, g1) / 0.0081) + 0.4 * exp(-dot(g2, g2) / 0.0225);
+        c += col * gs * uGh.x * 0.06 * uFP[i].w;
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+// The scene's one light takes the flare slot when the camera sees it.
+// The streak follows the light's strength; it eases, so it never pops.
+const tmpV = new THREE.Vector3();
+let flareK = 0;
+function placeFlares(pass, light, dt) {
+  let n = 0;
+  const want = light && !reduced() ? Math.min(light.I * 1.4, 2.2) : 0;
+  flareK += (want - flareK) * Math.min(1, dt * 8);
+  if (light && flareK > 0.01) {
+    tmpV.copy(light.pos).project(camera);
+    if (tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05) {
+      pass.uniforms.uFP.value[0].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, flareK, flareK);
+      pass.uniforms.uFC.value[0].copy(U.uFireCol.value);
+      n = 1;
+    }
+  }
+  pass.uniforms.uN.value = n;
+  pass.uniforms.uAsp.value = size.w / size.h;
+}
+/* ---------- end flares ---------- */
+
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
 // This toy runs it at half size; rung 3 of the ladder drops it to a third.
@@ -1049,6 +1203,8 @@ const POST = { bloom: [0.7, 0.5, 0.9], tint: [0.0008, 0.0009, 0.0014], vig: 0.45
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+const flarePass = makeFlares();
+composer.addPass(flarePass);
 const bloomPass = makeBloom(...POST.bloom);
 composer.addPass(bloomPass);
 const grade = makeGrade(POST);
@@ -1178,66 +1334,87 @@ function trainFrame() {
   TU.uTr.value.set(1.6 * Math.exp(-a / 5) * Math.min(1, a / 0.2), 0.4 * sm(1, 4, a) * (1 - sm(9, 20, a)), 14 + 5 * a, 0);
 }
 
-// An Impact: the impactor dives from the tap to the horizon on that bearing.
-// Beyond the horizon: flash, dome, shock ring, ejecta, steam; then the sea
-// pulls back from the cove, pauses, and returns as one breaking swell.
-const IM_HIT = 3.0, IM_LEN = 48, IM_DIST = 11000;
+// An Impact: the asteroid takes nine seconds to come down from the tap to the
+// horizon, a thick plume of fire and smoke behind it. Beyond the horizon: flash,
+// dome, shock ring, ejecta, steam. The sea pulls back from the cove and pauses.
+// Then one swell looms out of the dusk, slows as it shoals, stands up as a wall,
+// breaks into white water, and runs up the bank as a foam bore.
+const IM_HIT = 9.0, IM_LEN = 96, IM_DIST = 11000;
 const WHITE = [1, 0.97, 0.9], ORANGE = linFit(0.72, 0.17, 50), EMBERS = linFit(0.42, 0.14, 35);
 let expBase = 1;
 function impact(d) {
-  const az = azOf(d), el = clamp(elOf(d), rad(4), rad(60));
+  const az = azOf(d), el = clamp(elOf(d), rad(6), rad(60));
   const site = camera.position.clone().add(dirOf(az, 0).multiplyScalar(IM_DIST));
   site.y = 0;
-  const E = site.clone().setY(400);
-  const S = camera.position.clone().addScaledVector(dirOf(az + (rnd() - 0.5) * rad(8), el), 5000);
-  const st = { p: 0, g: 0, I: 0, F: 0, cool: 0, drop: 0, front: 6000, crest: 3500, w: 0, ringR: 0, ringS: 0, domeR: 0, domeA: 0, stH: 0, stA: 0, stG: 0, dry: 1, hw: 0.3 };
+  const E = site.clone().setY(300);
+  // The entry starts at the tap and a little to one side, so the path slants.
+  const S = camera.position.clone().addScaledVector(dirOf(az + cliffSide * rad(10 + rnd() * 8), el), 6500);
+  const st = { p: 0, g: 0, I: 0, F: 0, cool: 0, drop: 0, front: 7000, crest: 7000, w: 0, wdt: 260, white: 0, ringR: 0, ringS: 0, domeR: 0, domeA: 0, stH: 0, stA: 0, stG: 0, dry: 1, hw: 0.3, pl: 0 };
   const ev = { kind: 'impact', S, E, site, t0: simT, sd: rnd() * 100, st, long: true, len: IM_LEN };
   const R = reduced();
+  const T = IM_HIT;
   ev.tl = paused()
-    // The entry: a hard, bright streak, fastest at the end.
-    .to(st, { p: 1, duration: IM_HIT, ease: 'power2.in' }, 0)
-    .to(st, { g: 1, duration: 0.3 }, 0)
-    .to(st, { I: 1.4, duration: IM_HIT, ease: 'power3.in' }, 0)
-    .call(() => breakup(ev, IM_HIT, 60), null, IM_HIT * 0.7)
+    // The entry: steady, then faster, with the plume thickening behind.
+    .to(st, { p: 1, duration: T, ease: 'power1.in' }, 0)
+    .to(st, { g: 1, duration: 0.6 }, 0)
+    .to(st, { pl: 1, duration: 1.2 }, 0)
+    .to(st, { I: 0.35, duration: T * 0.6, ease: 'power1.in' }, 0)
+    .to(st, { I: 0.9, duration: T * 0.4, ease: 'power2.in' }, T * 0.6)
+    .call(() => breakup(ev, T, 30), null, T * 0.5)
+    .call(() => breakup(ev, T, 50), null, T * 0.72)
+    .call(() => breakup(ev, T, 70), null, T * 0.88)
+    .to(st, { pl: 0, duration: 16, ease: 'power1.in' }, T + 2)
     // The flash: up in 0.4 s (200 ms on reduced motion), white to orange to embers.
-    .to(st, { F: 1, duration: R ? 0.2 : 0.4, ease: 'power2.out' }, IM_HIT)
-    .to(st, { F: 0.12, duration: 3.5, ease: 'power2.out' }, IM_HIT + 0.4)
-    .to(st, { F: 0, duration: 30, ease: 'power1.out' }, IM_HIT + 4)
-    .to(st, { cool: 1, duration: 2.5, ease: 'power1.in' }, IM_HIT + 0.3)
-    .to(st, { cool: 2, duration: 8, ease: 'power1.inOut' }, IM_HIT + 3)
-    .call(() => ejecta(ev), null, IM_HIT)
+    .to(st, { F: 1, duration: R ? 0.2 : 0.4, ease: 'power2.out' }, T)
+    .to(st, { F: 0.12, duration: 3.5, ease: 'power2.out' }, T + 0.4)
+    .to(st, { F: 0, duration: 40, ease: 'power1.out' }, T + 4)
+    .to(st, { cool: 1, duration: 2.5, ease: 'power1.in' }, T + 0.3)
+    .to(st, { cool: 2, duration: 8, ease: 'power1.inOut' }, T + 3)
+    .call(() => ejecta(ev), null, T)
     // The condensation dome: grown and gone in 1.5 s.
-    .to(st, { domeR: 2600, duration: 1.5, ease: 'power3.out' }, IM_HIT)
-    .to(st, { domeA: 0.9, duration: 0.25 }, IM_HIT)
-    .to(st, { domeA: 0, duration: 1.1, ease: 'power1.in' }, IM_HIT + 0.4)
+    .to(st, { domeR: 2600, duration: 1.5, ease: 'power3.out' }, T)
+    .to(st, { domeA: 0.9, duration: 0.25 }, T)
+    .to(st, { domeA: 0, duration: 1.1, ease: 'power1.in' }, T + 0.4)
     // The shock ring crosses 12 km of sea in 6.5 s, then dies in the cove.
-    .to(st, { ringS: 1, duration: 0.3 }, IM_HIT + 0.2)
-    .to(st, { ringR: IM_DIST + 900, duration: 6.5, ease: 'none' }, IM_HIT + 0.2)
-    .to(st, { ringS: 0, duration: 1.6, ease: 'power1.in' }, IM_HIT + 5.4)
-    // The steam column stands up over 12 s and thins away by the end.
-    .to(st, { stG: 1, duration: 12, ease: 'power1.out' }, IM_HIT + 0.5)
-    .to(st, { stH: 3200, duration: 14, ease: 'power1.out' }, IM_HIT + 0.5)
-    .to(st, { stA: 0.85, duration: 3 }, IM_HIT + 0.5)
-    .to(st, { stA: 0, duration: 12, ease: 'power1.in' }, IM_LEN - 13)
-    // The draw-back: the trough comes in from the sea and drains the cove.
-    .to(st, { drop: 4.6, duration: 4, ease: 'power1.inOut' }, IM_HIT + 2)
-    .to(st, { front: -350, duration: 11, ease: 'power1.inOut' }, IM_HIT + 2)
-    .to(st, { dry: 0, duration: 0.5 }, IM_HIT + 2)
-    .to(st, { dry: 0.45, duration: 9, ease: 'power1.in' }, IM_HIT + 11)
-    // The return: a crest that grows as it shoals, floods the bank, then drains.
-    .to(st, { w: 1.2, duration: 2 }, IM_HIT + 19)
-    .to(st, { crest: -70, duration: 10, ease: 'power1.out' }, IM_HIT + 19)
-    .to(st, { w: 2.6, duration: 8, ease: 'power1.in' }, IM_HIT + 21)
-    .to(st, { dry: 0, duration: 1 }, IM_HIT + 27)
-    .to(st, { hw: 2.3, duration: 1 }, IM_HIT + 27)
-    .to(st, { w: 0, duration: 5, ease: 'power1.out' }, IM_HIT + 29.5)
-    .to(st, { drop: 0, duration: 3 }, IM_HIT + 30)
+    .to(st, { ringS: 1, duration: 0.3 }, T + 0.2)
+    .to(st, { ringR: IM_DIST + 900, duration: 6.5, ease: 'none' }, T + 0.2)
+    .to(st, { ringS: 0, duration: 1.6, ease: 'power1.in' }, T + 5.4)
+    // The steam column stands up over 14 s and thins away by the end.
+    .to(st, { stG: 1, duration: 14, ease: 'power1.out' }, T + 0.5)
+    .to(st, { stH: 3400, duration: 16, ease: 'power1.out' }, T + 0.5)
+    .to(st, { stA: 0.85, duration: 3 }, T + 0.5)
+    .to(st, { stA: 0, duration: 16, ease: 'power1.in' }, IM_LEN - 17)
+    // The draw-back: the trough comes in from the sea and drains the cove over 17 s.
+    .to(st, { drop: 4.8, duration: 8, ease: 'power1.inOut' }, T + 3)
+    .to(st, { front: -350, duration: 17, ease: 'power1.inOut' }, T + 3)
+    .to(st, { dry: 0, duration: 0.5 }, T + 3)
+    .to(st, { dry: 0.45, duration: 12, ease: 'power1.in' }, T + 16)
+    // The return: the swell looms from 7 km and slows as it shoals, growing to a wall.
+    .to(st, { w: 1.5, duration: 6 }, T + 24)
+    .to(st, { crest: 170, duration: 30, ease: 'power2.out' }, T + 24)
+    .to(st, { w: 16, duration: 24, ease: 'power2.in' }, T + 30)
+    .to(st, { wdt: 120, duration: 30, ease: 'power1.out' }, T + 24)
+    // It breaks: white water explodes off the face as the wall falls into a bore.
+    .to(st, { white: 1, duration: 2.5, ease: 'power2.out' }, T + 52)
+    .to(st, { crest: 70, duration: 7, ease: 'none' }, T + 54)
+    .to(st, { w: 3.6, duration: 7, ease: 'power1.out' }, T + 54)
+    .to(st, { wdt: 80, duration: 7 }, T + 54)
+    // The bore runs up the bank, then drains; the sea stands at its level again.
+    .to(st, { crest: -50, duration: 9, ease: 'power1.out' }, T + 61)
+    .to(st, { w: 1.6, duration: 9, ease: 'power1.out' }, T + 61)
+    .to(st, { dry: 0, duration: 1 }, T + 64)
+    .to(st, { hw: 2.0, duration: 1 }, T + 64)
+    .to(st, { drop: 0, duration: 6 }, T + 62)
+    .to(st, { w: 0, duration: 7, ease: 'power1.out' }, T + 70)
+    .to(st, { white: 0, duration: 8 }, T + 70)
     // Wet stones keep a sheen, then dry over 10 s.
-    .to(st, { dry: 1, duration: 10, ease: 'power1.in' }, IM_HIT + 34.5)
-    .to(st, { hw: 0.3, duration: 10 }, IM_HIT + 34.5);
+    .to(st, { dry: 1, duration: 10, ease: 'power1.in' }, T + 78)
+    .to(st, { hw: 0.3, duration: 10 }, T + 78);
+  QU.uPS.value.copy(S); QU.uPE.value.copy(E);
   ev.frame = age => {
-    // The sea, the ring, the dome and the steam read the state every frame.
+    // The sea, the ring, the dome, the steam and the plume read the state every frame.
     U.uLevel.value.set(st.drop, st.front, st.crest, st.w);
+    U.uWave.value.set(st.white, st.wdt, 0, 0);
     U.uShock.value.set(st.ringR, 320, st.ringS, 0);
     U.uWet.value.set(st.hw, st.dry);
     U.uImpact.value.set(site.x, site.y, site.z, 1.3 * st.F);
@@ -1251,10 +1428,13 @@ function impact(d) {
     DU.uDome.value = st.domeA;
     steam.visible = st.stA > 0.002;
     PU.uSteam.value.set(st.stA, st.stH, 420 + 160 * st.stG, st.stG);
-    if (age < IM_HIT) {
+    plume.visible = st.pl > 0.002;
+    QU.uPlume.value.set(Math.min(st.p, 1), T, st.pl, age < T ? st.I : 0);
+    if (age < T) {
       const f = flick(age, ev.sd), head = along(ev, st.p);
-      return { head, tail: along(ev, Math.max(0, st.p - 0.3)), gain: st.g * (8 + 14 * st.I) * f, width: 3.4,
-        light: { pos: head, I: st.I * f, col: black.set(...WHITE).lerp(tmp3.set(...HEAD_C), 0.5).clone() } };
+      // A big head: a wide capsule and a short tail; the plume carries the rest.
+      return { head, tail: along(ev, Math.max(0, st.p - 0.05)), gain: st.g * (4 + 5 * st.I) * f, width: 4 + 3 * st.I,
+        light: { pos: head, I: st.I * f, col: black.set(...WHITE).lerp(tmp3.set(...ORANGE), 0.35).clone() } };
     }
     // After the hit, the fireball at the site is the light; it cools with the flash.
     return { head: E, tail: E, gain: 0, width: 1,
@@ -1262,9 +1442,9 @@ function impact(d) {
   };
   // Everything the impact drives returns to rest when it ends.
   ev.end = () => {
-    U.uLevel.value.set(0, 0, 0, 0); U.uShock.value.set(0, 320, 0, 0); U.uWet.value.set(0.3, 1);
+    U.uLevel.value.set(0, 0, 0, 0); U.uWave.value.set(0, 110, 0, 0); U.uShock.value.set(0, 320, 0, 0); U.uWet.value.set(0.3, 1);
     U.uImpact.value.w = 0; U.uGlare.value = 0; renderer.toneMappingExposure = expBase;
-    dome.visible = steam.visible = false;
+    dome.visible = steam.visible = plume.visible = false;
   };
   return ev;
 }
@@ -1335,6 +1515,7 @@ function stepEvents() {
   aMH.needsUpdate = aMT.needsUpdate = true;
   if (cliffNext && !events.length) applyCliff();
   if (queued && !longOn()) { const q = queued; queued = null; start(q.kind, q.d); }
+  placeFlares(flarePass, best && best.I > 1e-3 ? best : null, stepDt);
   const F = U.uFireball.value;
   if (best && best.I > 1e-3) {
     F.set(best.pos.x, best.pos.y, best.pos.z, best.I);
@@ -1394,7 +1575,7 @@ function draw() {
 /* Frame loop: full rate while dragging, 30 fps while the waves drift, then sleep. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
-let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0, stepDt = 0;
 const busy = () => !!press || events.length > 0 || !!queued || !!trainEv || simT < lastDeath;
 function tick(now) {
   raf = 0;
@@ -1407,7 +1588,8 @@ function tick(now) {
   const lively = busy();
   try {
     // The waves run on the sim clock, slowed by the pace.
-    simT += dt * (lively ? 1 : pace);
+    stepDt = dt * (lively ? 1 : pace);
+    simT += stepDt;
     U.uTime.value = simT;
     if (lively || now - lastDraw >= 31) {
       stepEvents();
