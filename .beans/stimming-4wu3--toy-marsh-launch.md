@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:59:36Z
+updated_at: 2026-11-09T09:03:13Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -117,3 +117,8 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Birds take off one by one over 3 s, each on its own heading, loose flocking, a wingbeat bob; smaller.
 - Framing back to the 36-degree lens with the horizon on 0.7; hero reeds only at the far sides; the centre opens on the mesas.
 - Cost: 7 march steps, 22 bokeh taps, 4,800 + 9,000 reeds on Standard, 90 ground puffs.
+
+## Defined ground clouds (2026-11-09, Tom: darker, starker, definition)
+
+- Ground-cloud density: big slow lumps carry small ridged ones (90 m field, ridged at 2.3x and 5.1x), then a hard smoothstep cut (0.42 to 0.6), so every lump has an edge.
+- Lighting: tops lit by the sky, undersides in self-shadow (tk squared), fill cut to 0.1. Ten march steps with a steadier jitter, so the march leaves no grain.
