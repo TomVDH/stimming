@@ -82,10 +82,9 @@ let seed = 4242;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
 // The scene: the festival bay, a lonesome winter island, or a harbour city.
-// A new scene reloads the page; the intro plays only on a fresh visit.
+// For now only the city ships (Tom, 2026-11-09); ?scene= still opens the others for work.
 const SCENES = ['bay', 'island', 'city'];
-// ?scene= picks one for this load only, without saving it.
-const SCENE = (() => { const q = new URLSearchParams(location.search).get('scene'); if (SCENES.includes(q)) return q; try { const v = localStorage.getItem('stimming.fireworks.scene'); return SCENES.includes(v) ? v : 'bay'; } catch { return 'bay'; } })();
+const SCENE = (() => { const q = new URLSearchParams(location.search).get('scene'); return SCENES.includes(q) ? q : 'city'; })();
 const SC_ID = SCENES.indexOf(SCENE);
 const rescene = (() => { try { const v = sessionStorage.getItem('stimming.fireworks.rescene') === '1'; sessionStorage.removeItem('stimming.fireworks.rescene'); return v; } catch { return false; } })();
 
@@ -3196,12 +3195,6 @@ const shellIcon = id => `<svg viewBox="-17 -17 34 34" aria-hidden="true"><circle
 const setShell = id => { opts.shell = id; save('shell', id); };
 const setDist = v => { opts.dist = v; save('dist', v); placeBarges(); draw(); };
 const setSmoke = v => { opts.smoke = v; save('smoke', v); SU.uSmokeK.value = v === 'thick' ? 1.15 : 0.75; };
-// A new scene saves and reloads; the intro stays away on that reload.
-const setScene = v => {
-  if (v === SCENE) return;
-  try { localStorage.setItem('stimming.fireworks.scene', v); sessionStorage.setItem('stimming.fireworks.rescene', '1'); } catch { /* storage is optional */ }
-  location.reload();
-};
 const setBill = v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); };
 const setWater = v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); };
 const ui = initPage({ id: 'fireworks', bar: {
@@ -3211,7 +3204,6 @@ const ui = initPage({ id: 'fireworks', bar: {
   slider: { label: 'Distance', min: 0, max: 1, step: 0.01, value: opts.dist, onInput: setDist },
   actions: [{ verb: 'showtime', label: 'Showtime', key: 'S', onPress: () => showtime() }],
   settings: [
-    { type: 'choice', id: 'scene', label: 'Scene', value: SCENE, options: [{ value: 'bay', label: 'Bay' }, { value: 'island', label: 'Island' }, { value: 'city', label: 'City' }], onPick: setScene },
     { type: 'choice', id: 'weather', label: 'Sky', value: opts.sky, options: [{ value: 'drift', label: 'Drift' }, { value: 'clear', label: 'Clear' }, { value: 'cloud', label: 'Cloud' }], onPick: v => { setSky(v); save('weather', v); updateLights(); draw(); } },
     { type: 'choice', id: 'smoke', label: 'Smoke', value: opts.smoke, options: [{ value: 'thin', label: 'Thin' }, { value: 'thick', label: 'Thick' }], onPick: setSmoke },
     { type: 'choice', id: 'water', label: 'Water', value: 'calm', options: [{ value: 'calm', label: 'Calm' }, { value: 'ripple', label: 'Ripple' }], onPick: setWater },
