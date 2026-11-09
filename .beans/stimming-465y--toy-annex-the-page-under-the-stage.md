@@ -5,7 +5,7 @@ status: todo
 type: feature
 priority: normal
 created_at: 2026-11-09T09:37:22Z
-updated_at: 2026-11-09T09:48:14Z
+updated_at: 2026-11-09T09:48:50Z
 ---
 
 Wireframe the annex a visitor scrolls into under a toy's stage, and the transition into it. Successor to the parked section.about.
@@ -32,7 +32,7 @@ Tom picked A · Recede (2026-11-09). The 12 px lip is the stage cue.
 
 Bar v2 rule 4 amended (Tom, 2026-11-09): the page scrolls past the stage only into the annex.
 
-Still open: keep or drop the signoff note kind.
+Notes carry change and version only; sign-offs stay off the page (Tom, 2026-11-09).
 
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)

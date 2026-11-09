@@ -55,10 +55,6 @@ Notes show the last three, with "Show all N notes".
 
 - `tech` holds library keys. `shared/credits.json` (new) holds each library's name, version, licence and URL once. Fonts are in it too.
 - `credits` holds the toy's own sources: recorded sounds, data, images. Examples: Glass's recorded shot, Window seat's NASA Black Marble lights.
-- `notes.kind` is `change`, `version` or `signoff`.
+- `notes.kind` is `change` or `version`. Sign-offs stay off the page (Tom, 2026-11-09); `data-done` stays internal.
 - With no `annex.json`, the annex shows the title block, controls and footer only.
 - The shell fetches `annex.json` once the visitor scrolls near the annex, not at load.
-
-## Questions for Tom
-
-1. `data-done` is internal. Notes of kind `signoff` would make sign-offs visible. Keep or drop that kind?
