@@ -1059,7 +1059,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="vortex" href="vortex/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" data-box="10 8 112 112" aria-hidden="true">
+              <svg class="art" viewBox="-12 9 158 158" aria-hidden="true">
                 <defs>
                   <filter id="vortex-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
                   <linearGradient id="vortex-floor" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.3 0.02 255)"/><stop offset="1" stop-color="oklch(0.22 0.02 262)"/></linearGradient>
@@ -1074,10 +1074,10 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
                 <path d="M30.23 97.5L52.74 84.5L52.74 54.5L30.23 67.5Z" fill="oklch(0.66 0.04 62)"/>
                 <path d="M38.89 46.5L52.74 54.5L30.23 67.5L16.37 59.5Z" fill="oklch(0.8 0.04 70)"/>
                 <path d="M34.56 80L34.79 77.79L35.48 75.46L36.59 73.17L38.02 71.07L39.69 69.31L41.48 68L43.28 67.24L44.95 67.07L46.38 67.51L47.48 68.54L48.18 70.07L48.41 72L48.18 74.21L47.48 76.54L46.38 78.83L44.95 80.93L43.28 82.69L41.48 84L39.69 84.76L38.02 84.93L36.59 84.49L35.48 83.46L34.79 81.93Z" fill="oklch(0.18 0.02 60)"/>
+                <g id="vortex-cubes"></g>
                 <path d="M98.64 94L46.68 124L46.68 50L98.64 20Z" fill="url(#vortex-sheet)"/>
                 <path d="M98.64 94L46.68 124" stroke="oklch(0.88 0.27 142)" stroke-width="2.2" filter="url(#vortex-glow)"/>
-                <g id="vortex-cubes"></g>
-                <g id="vortex-hot" filter="url(#vortex-glow)"></g>
+                <g id="vortex-hot"></g>
               </svg>
             </span>
             <span class="name">Smoke ring cannon<span class="beta"><i>(</i>Beta<i>)</i></span></span>
@@ -1109,7 +1109,8 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           const [toys, series] = await Promise.all(['toys.json', 'series.json'].map(u => fetch(u).then(r => r.json())));
           for (const [id, t] of Object.entries(toys)) {
             const s = t.series && series[t.series];
-            const obj = s && document.querySelector(`a.toy#${CSS.escape(id)} .obj`);
+            // Badges show in the Lab only, for now.
+            const obj = s && document.querySelector(`.lab a.toy#${CSS.escape(id)} .obj`);
             if (!obj) continue;
             const b = Object.assign(document.createElement('img'), { className: 'series', src: s.badge, alt: '', title: s.name });
             obj.append(b);
@@ -3514,13 +3515,13 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     const cubes = $('vortex-cubes'), hot = $('vortex-hot');
     const iso = (x, y, z) => [64 + (x - z) * 0.866, 74 + (x + z) * 0.5 - y];
     const P = pts => 'M' + pts.map(q => iso(...q).map(v => +v.toFixed(2)).join(' ')).join('L') + 'Z';
-    // Cube size, ring radius, tube radius, ring height and sheet place, in iso units.
-    const S = 5.2, R = 20, A = 7.5, YC = 3, SX = 10, U0 = SX - 6, U1 = -14, U2 = 36;
+    // Cube size, ring radius, ring height and sheet place, in iso units.
+    const S = 5.2, R = 20, YC = 3, SX = 10, U0 = SX - 2.6, U1 = -14, U2 = 36;
     // Face shades: top, front right, front left.
     const SMOKE = ['oklch(0.95 0.012 245)', 'oklch(0.74 0.02 250)', 'oklch(0.52 0.022 256)'];
     const LIT = ['oklch(0.96 0.19 142)', 'oklch(0.78 0.25 142)', 'oklch(0.6 0.21 145)'];
     const pool = [];
-    const cube = (i, x, y, z, lit) => {
+    const cube = (i, x, y, z, lit, group) => {
       pool[i] ||= [0, 1, 2].map(() => document.createElementNS('http://www.w3.org/2000/svg', 'path'));
       const h = S / 2, q = pool[i], C = lit ? LIT : SMOKE;
       const faces = [
@@ -3528,19 +3529,27 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         [[x + h, y - h, z - h], [x + h, y - h, z + h], [x + h, y + h, z + h], [x + h, y + h, z - h]],
         [[x - h, y - h, z + h], [x + h, y - h, z + h], [x + h, y + h, z + h], [x - h, y + h, z + h]],
       ];
-      faces.forEach((pts, j) => { q[j].setAttribute('d', P(pts)); q[j].setAttribute('fill', C[j]); q[j].removeAttribute('display'); });
-      (lit ? hot : cubes).append(...q);
+      faces.forEach((pts, j) => {
+        q[j].setAttribute('d', P(pts)); q[j].setAttribute('fill', C[j]); q[j].removeAttribute('display');
+        lit ? q[j].setAttribute('filter', 'url(#vortex-glow)') : q[j].removeAttribute('filter');
+      });
+      group.append(...q);
     };
     // The torus slides along x through a fixed grid, so cubes pop in and out.
     const draw = u => {
       const list = [];
       for (let gx = -12; gx <= 12; gx++) for (let gy = -6; gy <= 6; gy++) for (let gz = -6; gz <= 6; gz++) {
         const x = gx * S, y = gy * S, z = gz * S;
-        if (Math.hypot(Math.hypot(y, z) - R, x - u) < A) list.push([x, YC + y, z]);
+        // A flat ring: one cube wide, one or two cubes deep.
+        if (Math.abs(Math.hypot(y, z) - R) < S * 0.8 && Math.abs(x - u) < S * 0.75) list.push([x, YC + y, z]);
       }
       // Far cubes draw first.
       list.sort((a, b) => a[0] + a[1] + a[2] - (b[0] + b[1] + b[2]));
-      list.forEach((c, i) => cube(i, c[0], c[1], c[2], Math.abs(c[0] - SX) < S * 0.6));
+      // Cubes in the sheet glow; cubes behind it sit under the sheet.
+      list.forEach((c, i) => {
+        const lit = Math.abs(c[0] - SX) < S * 0.6;
+        cube(i, c[0], c[1], c[2], lit, lit || c[0] > SX ? hot : cubes);
+      });
       for (let i = list.length; i < pool.length; i++) pool[i].forEach(e => e.setAttribute('display', 'none'));
     };
     const st = { u: U0 };
