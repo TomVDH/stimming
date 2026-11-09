@@ -240,7 +240,11 @@ function makeSheet(layer, { title, anchor, align = 'right', focusPressed = false
       else if (refocus || el.contains(document.activeElement)) anchor.focus({ preventScroll: true });
     },
   };
-  anchor.addEventListener('click', () => sheet.open(!sheet.isOpen, true));
+  // A disabled anchor never opens its sheet.
+  anchor.addEventListener('click', () => {
+    if (!sheet.isOpen && anchor.getAttribute('aria-disabled') === 'true') return;
+    sheet.open(!sheet.isOpen, true);
+  });
   return sheet;
 }
 
