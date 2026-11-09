@@ -222,3 +222,8 @@ The Lab tile is spike 29 A, drawn by the menu script from the same seeded stream
 ## Icon spike 31 (15:20, Tom: more stylised before settling)
 
 The twilight plume (spike 29 A, now the tile) in five print styles, each with pointer y as the Dawn slider: B Stencil (a three-ink cut-out: cream plume on ink blue, gold over it above the line, a rose bleed at the line), C Line (one-weight scalloped contour, dashed rule, gold hatching above it), D Isometric block (a marsh slab with a stack of discs that turn gold), E Abstract mark (a slanted bar and a slit), F Halftone (a dot grid sized by plume coverage, gold above the line, as the Vortex F3 emblem is). Emblems `launch31-b..f.svg`.
+
+## Icon spike 32 (15:35, Tom: reeds, trail and spark; bright and iconic)
+
+Rounds 2 and 3 were too oriented on the launch alone. Round 4 is one composition in four print styles: a bold reed fringe across the foot (26 stalks with plume heads, one cut-out), a trail that climbs from behind it and bends right, a spark at its head. Hover launches: the trail draws, the spark rides it; pointer y sets the climb.
+A Poster: four flat bands of sky from ink blue to a gold horizon, cream trail, four-ray star. B Halftone poster: the dawn as a dot gradient, dotted trail, a disc with ray dots. C Line: one weight of white line, gold rule, dashed trail, eight-ray burst. D Riso: two fluorescent inks on cream paper, the orange plate off register, paper grain. Emblems `launch32-a..d.svg`.
