@@ -103,9 +103,10 @@ const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, 
 /* ---------- K7: vortex filaments ---------- */
 // Each ring is a closed filament of N nodes with circulation G and core radius a.
 // Every node moves with the regularized Biot-Savart velocity of all filaments.
-const N = 32, SLOTS = 8, INV4PI = 1 / (4 * Math.PI);
+// Sixteen rings and their smoke can live at once.
+const N = 32, SLOTS = 16, INV4PI = 1 / (4 * Math.PI);
 // Core spread rate, circulation life and entrainment growth, per second.
-const NU = 1.2e-4, TAU_G = 8, GROW = 0.035;
+const NU = 1.2e-4, TAU_G = 11, GROW = 0.035;
 // Lobes grow at this rate per second; Breakup sets it.
 const lobeRate = () => 0.25 + 0.7 * breakup;
 const rings = Array.from({ length: SLOTS }, () => ({
@@ -194,7 +195,7 @@ function filamentStep(dt) {
     for (let i = 0; i < N; i++) r.p[i * 3 + 1] -= sink;
     r.c = c;
     r.n = n;
-    if (r.G < r.G0 * 0.12 || Math.hypot(c[0], c[1], c[2]) > 4.5 || r.age > 16) kill(r);
+    if (r.G < r.G0 * 0.12 || Math.hypot(c[0], c[1], c[2]) > 4.5 || r.age > 22) kill(r);
   }
   meet();
 }
@@ -228,12 +229,14 @@ function kill(r) {
   s.burst = !!r.dying;
 }
 function freeSlot() {
-  let best = 0, oldest = Infinity;
+  let best = -1, faint = Infinity, oldest = Infinity, old = 0;
   for (let k = 0; k < SLOTS; k++) {
     if (!rings[k].on && slot[k].fade <= 0) return k;
-    if (slot[k].born < oldest) { oldest = slot[k].born; best = k; }
+    // The faintest dead smoke goes first, then the oldest ring.
+    if (!rings[k].on && slot[k].fade < faint) { faint = slot[k].fade; best = k; }
+    if (slot[k].born < oldest) { oldest = slot[k].born; old = k; }
   }
-  // All slots busy: the oldest ring and its smoke give way.
+  if (best < 0) best = old;
   rings[best].on = false;
   rings[best].G = 0;
   Object.assign(slot[best], { fade: 0, dead: -1 });
@@ -288,7 +291,7 @@ function fire({ from, dir, R = 0.18, U = 0.9 }) {
 // The sheet stands 0.9 units from the muzzle, so rings cross it young and play out beyond it.
 const MUZZLE = [-1.22, -0.06, 0], SHEET_X = -0.32;
 // Each slot holds ROWS rows of 64 particles.
-const ROWS = 128;
+const ROWS = 96;
 // Smoke density lives in a box, splatted into an atlas of z slices.
 const BOX_MIN = [-1.45, -1.15, -1.1], BOX_SIZE = [3.8, 2.3, 2.2];
 const VRES = [224, 128, 112], TILES = [8, 14], ATLAS = [VRES[0] * TILES[0], VRES[1] * TILES[1]];
@@ -1070,7 +1073,8 @@ function step(dt) {
     const s = slot[k];
     if (!rings[k].on && s.dead >= 0) {
       // Tendrils fade out over about 4 s; burst smoke lingers longer.
-      s.fade = Math.exp(-(simTime - s.dead) / (s.burst ? 1.8 : 1.3));
+      // Smoke hangs on after its ring dies, so the room fills when you spam.
+      s.fade = Math.exp(-(simTime - s.dead) / (s.burst ? 4.0 : 3.2));
       if (s.fade < 0.03) { s.fade = 0; s.dead = -1; }
     }
   }
@@ -1107,7 +1111,7 @@ function render() {
     gl.uniform1fv(q.u.uFade, fades);
     volUniforms(q);
     gl.uniform1i(q.u.uRows, rows());
-    gl.uniform1f(q.u.uMass, 0.075 * (smoke === 'dense' ? 1.6 : 1) * ROWS / rows());
+    gl.uniform1f(q.u.uMass, 0.075 * (smoke === 'dense' ? 1.6 : 1) * 128 / rows());
     gl.uniform1f(q.u.uSplat, 3);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -1182,7 +1186,7 @@ function render() {
     gl.uniform1f(q.u.uPx, 0.5 * H * f);
     gl.uniform1f(q.u.uSize, 0.014);
     // Half the particles carry twice the light, so the smoke keeps its brightness.
-    gl.uniform1f(q.u.uSmoke, (smoke === 'dense' ? 1.5 : 1) * ROWS / rows());
+    gl.uniform1f(q.u.uSmoke, (smoke === 'dense' ? 1.5 : 1) * 128 / rows());
     gl.uniform1i(q.u.uRows, rows());
     gl.drawArrays(gl.POINTS, 0, SLOTS * 64 * rows());
   }
