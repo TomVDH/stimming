@@ -693,11 +693,14 @@ void main() {
   // Seen edge-on the wall bends light away: a narrow dark band inside the silhouette.
   through *= 1.0 - 0.22 * smoothstep(0.7, 0.92, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
   // Thick or grazing glass shows its faint green.
-  through *= mix(vec3(1.0), vec3(0.86, 0.94, 0.9), max(solid * 0.7, pow(edge, 4.0) * 0.4));
+  through *= mix(vec3(1.0), vec3(0.88, 0.95, 0.92), max(solid * 0.35, pow(edge, 4.0) * 0.4));
   // Solid glass is darker at its edges, where light leaves it at a slant.
   through *= 1.0 - 0.25 * solid * smoothstep(0.3, 0.9, edge);
   // Light trapped in solid glass glows at its edges.
-  through += uLamp * solid * (0.018 + 0.05 * pow(edge, 2.0));
+  // Clear solid glass: a light lift, and the stem squeezes the lamp into a centre streak.
+  through += uLamp * solid * (0.03 + 0.04 * pow(edge, 3.0));
+  float stem = solid * step(1.2, vL.y) * pow(c, 5.0);
+  through += uLamp * stem * 0.3;
   // The thick base pipes light down from the beer above it.
   float piped = solid * step(uGYb + 0.3, uLevel) * smoothstep(uGYb - 2.0, uGYb, vW.y);
   through += uLamp * exp(-uSigma * 2.5) * 0.35 * piped * (0.6 + 0.4 * c);
@@ -727,8 +730,11 @@ void main() {
   // A faint stem-and-foot sparkle where the solid glass catches the key light.
   col += uKey * 0.25 * solid * pow(max(dot(reflect(-v, n), normalize(KEY_DIR)), 0.0), 30.0);
   // The foot's rounded rim catches the lamp as a soft line.
-  float rimFoot = solid * smoothstep(0.35, 0.05, abs(vL.y - 0.45)) * smoothstep(0.2, 0.7, edge);
-  col += (uLamp * 0.14 + uKey * 0.06) * rimFoot;
+  // The foot's outer edge: a bright ring where the disc ends.
+  float footR = max(gp(0.1).x, gp(0.4).x);
+  float fr = footR - length(vL.xz);
+  float rimFoot = solid * step(vL.y, 1.1) * smoothstep(0.16, 0.04, fr) * smoothstep(-0.02, 0.03, fr);
+  col += (uLamp * 0.3 + uKey * 0.25) * rimFoot;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -1141,8 +1147,8 @@ function setBeer(id) {
   glass.load(gv);
   const bv = vesselProfile(B.outline, BMAX, B.kind === 'champ' ? 1.8 : 0.6, ro => (ro < 1.7 ? 0.42 : 0.3));
   bottleV.load(bv);
-  // The style runs the colour a little richer than the measured beer.
-  look.sigma = sigmaFor(beer).map(x => x * 1.75);
+  // The measured colour, as in photos: Duvel reads pale straw gold.
+  look.sigma = sigmaFor(beer).map(x => x * 1.05);
   look.foam = hexLin(beer.foam);
   gTex.image.data.set(glass.prof);
   gTex.needsUpdate = true;
@@ -1264,7 +1270,7 @@ function bottleStep(dt) {
   // The glass takes what the jet brings; a long drop whips up more head.
   if (dv > 0) {
     const drop = Math.max(bot.lip.y - yT, 0);
-    const fp = beer.power * (0.3 + 0.9 * fizz * beer.fizz) * (0.2 + 0.035 * drop);
+    const fp = beer.power * (0.3 + 0.9 * fizz * beer.fizz) * (0.42 + 0.07 * drop);
     fill.age = fill.age * fill.foam / (fill.foam + dv * fp + 1e-6);
     fill.foam += dv * fp;
     fill.vol += dv * (1 - 0.2 * Math.min(fp, 1));
