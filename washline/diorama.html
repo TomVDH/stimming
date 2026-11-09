@@ -83,7 +83,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 
 /* ---------- the bar ---------- */
 // Handlers bind once the scene exists.
-const act = { wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {} };
+const act = { wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {}, view() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
   choice: { label: 'Wind', value: 'gusty',
     options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }],
@@ -96,6 +96,8 @@ const ui = initPage({ id: 'washline', silent: true, bar: {
   settings: [
     { type: 'choice', id: 'fabric', label: 'Fabric', value: 'cotton', persist: true, onPick: v => act.fabric(v),
       options: [{ value: 'cotton', label: 'Cotton' }, { value: 'linen', label: 'Linen' }, { value: 'silk', label: 'Silk' }] },
+    { type: 'choice', id: 'view', label: 'View', value: 'wide', persist: true, onPick: v => act.view(v),
+      options: [{ value: 'wide', label: 'Wide' }, { value: 'iso', label: 'Iso' }] },
     { type: 'choice', id: 'line', label: 'Line', value: 'slack', persist: true, onPick: v => act.line(v),
       options: [{ value: 'slack', label: 'Slack' }, { value: 'taut', label: 'Taut' }] },
   ],
@@ -540,11 +542,15 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+// Two cameras: a wide lens, and a true isometric view.
+const persp = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+const isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 140);
+let viewMode = ui.setting('view')?.value === 'iso' ? 'iso' : 'wide', camera = persp;
 // The composer target takes 4x MSAA, so cut-out edges stay smooth.
 const msaa = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, msaa);
-composer.addPass(new RenderPass(scene, camera));
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
 // Tilt-shift: blur grows above and below a sharp band, as in a miniature photo.
 const TILT = {
   uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2(1, 0) }, uRes: { value: new THREE.Vector2(1, 1) }, uFocus: { value: 0.5 }, uBand: { value: 0.16 }, uAmount: { value: 1.5 } },
@@ -1012,10 +1018,10 @@ grassMat.onBeforeCompile = sh => {
 grassMat.customProgramCacheKey = () => 'grass';
 let grass = null;
 // The camera's ground position and heading, for planting.
-const VIEW = { x: -4.4, z: 2.1, head: Math.atan2(-2.8, 5.6) };
+const VIEW = { x: -1.7, z: 7.0, head: Math.atan2(-7.5, 2.6) };
 function plantGrass() {
   if (grass) { scene.remove(grass); grass.dispose(); }
-  const N = quality() === 'high' ? 110000 : 50000;
+  const N = (quality() === 'high' ? 110000 : 50000) * (viewMode === 'iso' ? 1.5 : 1);
   grass = new THREE.InstancedMesh(bladeGeo(), grassMat, N);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), col = new THREE.Color();
   const base = lin(0.66, 0.1, 95), dry = lin(0.78, 0.09, 80), deep = lin(0.5, 0.09, 125);
@@ -1023,15 +1029,18 @@ function plantGrass() {
   while (k < N) {
     // Blades fill the wedge the camera sees, thicker near the line.
     // Blades fill the wedge the camera sees, densest near the lens.
-    const ang = VIEW.head + rnd(-0.95, 0.95), d = 0.5 + 16 * Math.random() ** 1.7;
-    const x = VIEW.x + Math.cos(ang) * d, z = VIEW.z + Math.sin(ang) * d;
+    // Wide: the wedge the lens sees. Iso: a disc round the line.
+    let x, z;
+    // Iso samples a rectangle that covers the frame, set square to the view.
+    if (viewMode === 'iso') { const u = rnd(-8.5, 8.5), v = rnd(-11, 11); x = 0.3 + (u + v) * 0.7071; z = (u - v) * 0.7071; }
+    else { const ang = VIEW.head + rnd(-0.75, 0.75), d = 2 + 18 * Math.random() ** 1.4; x = VIEW.x + Math.cos(ang) * d; z = VIEW.z + Math.sin(ang) * d; }
     const worn = Math.exp(-(z * z) / 0.6) * 0.45;
     p.set(x, -0.005, z);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, TAU));
     const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rnd(-0.25, 0.25));
     q.multiply(tilt);
     const hgt = rnd(0.12, 0.42) * (1 - worn) * (Math.random() < 0.05 ? 1.5 : 1);
-    s.set(rnd(1.0, 1.8), hgt, 1);
+    s.set(rnd(1.0, 1.8) * (viewMode === 'iso' ? 1.4 : 1), hgt, 1);
     grass.setMatrixAt(k, m.compose(p, q, s));
     const r = Math.random(), c = r < 0.6 ? base : r < 0.85 ? deep : dry;
     col.setRGB(...c).multiplyScalar(rnd(0.8, 1.15));
@@ -1057,8 +1066,8 @@ daisyTex.colorSpace = THREE.SRGBColorSpace;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
   let k = 0;
   while (k < N) {
-    const ang = VIEW.head + rnd(-0.9, 0.9), d = 1 + 12 * Math.random() ** 1.4;
-    const x = VIEW.x + Math.cos(ang) * d, z = VIEW.z + Math.sin(ang) * d;
+    const ang = rnd(0, TAU), d = 9 * Math.sqrt(Math.random());
+    const x = 0.3 + Math.cos(ang) * d, z = Math.sin(ang) * d * 0.8;
     p.set(x, rnd(0.14, 0.36), z);
     q.setFromEuler(new THREE.Euler(rnd(-0.4, 0.4), rnd(0, TAU), rnd(-0.4, 0.4)));
     const sc = rnd(0.7, 1.2);
@@ -1261,12 +1270,25 @@ function loose(dt) {
 // One fixed shot, the line slightly below eye level, its ends past the frame on a phone.
 const view = { w: 1, h: 1 };
 function frameCamera() {
-  // A wide lens, low and close to the near post: the line runs away into the field.
   const a = view.w / view.h, narrow = a < 1;
-  camera.fov = narrow ? 68 : 52;
-  camera.aspect = a;
-  camera.position.set(VIEW.x, 1.15, VIEW.z);
-  camera.lookAt(narrow ? 0.6 : 1.2, narrow ? 1.6 : 1.45, -0.7);
+  if (viewMode === 'iso') {
+    // True isometric: 45 degrees round, 35.26 degrees down, no perspective.
+    const h = narrow ? 11 : 8.4, w = h * a;
+    Object.assign(isoCam, { left: -w / 2, right: w / 2, top: h / 2, bottom: -h / 2 });
+    isoCam.position.set(0.3 - 30 * 0.57735, 0.9 + 30 * 0.57735, 30 * 0.57735);
+    isoCam.lookAt(0.3, 0.9, 0);
+    camera = isoCam;
+  } else {
+    // A wide lens, level and set back: the line crosses the frame on a gentle slant.
+    persp.fov = narrow ? 72 : 54;
+    persp.aspect = a;
+    persp.position.set(VIEW.x, 1.25, VIEW.z);
+    persp.lookAt(narrow ? 0.4 : 0.9, 1.4, -0.5);
+    camera = persp;
+  }
+  renderPass.camera = camera;
+  // Iso reads as a model: a soft tilt-shift band through the line.
+  tiltH.enabled = tiltV.enabled = viewMode === 'iso';
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
@@ -1472,6 +1494,12 @@ act.fabric = v => {
     c.mesh.material.roughness = FABRIC.rough;
     c.mesh.material.sheen = FABRIC.sheen;
   }
+  wake();
+};
+act.view = v => {
+  viewMode = v === 'iso' ? 'iso' : 'wide';
+  plantGrass();
+  frameCamera();
   wake();
 };
 act.line = v => {

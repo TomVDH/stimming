@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T09:24:44Z
+updated_at: 2026-11-09T09:28:00Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -62,3 +62,6 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Summer v3 (Tom: iso or Wes Anderson framing): Wes Anderson cut. Dead-centre level long-lens shot; symmetric pink facade with mint shutters, door, awning, pots and box hedges; two white poles rise out of frame; washing hangs in mirrored pairs on a pastel palette; deep focus.
 
 - Summer v4 (Tom: too Wes, line too small; Coen brothers): wide lens, low and close to the near T-post (cropped by the frame), the line runs away to a far post on open prairie. Tall dry grass, barbed-wire fence, windmill and farmhouse on the horizon, big sky, deep focus, natural palette.
+
+- Summer v5 (Tom: wider, flatter; add iso; stay in this style): wide lens set back and level, the line on a gentle slant. Settings > View adds Iso: a true isometric orthographic camera with a soft tilt-shift band; grass replants for each view.
+- [ ] Six more themes in this Coen style, one by one, each with Wide and Iso.
