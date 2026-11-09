@@ -29,34 +29,31 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--eyes" id="stage" tabindex="0" role="application" aria-label="A cluster of googly eyes that watch the pointer. Arrow keys move what they watch, Shift with arrows drags an eye, Enter blinks one, B blinks them all, D makes them dizzy and Space shakes them.">
+    <div class="stage stage--eyes" id="stage" tabindex="0" role="application" aria-label="A cluster of googly eyes that watch the pointer. Arrow keys move what they watch, Shift with arrows drags an eye, Enter blinks one, B blinks them all, D makes them dizzy and Space shakes them. Shuffle deals a new cluster.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Googly eyes needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="shake" type="button" aria-keyshortcuts="Space">Shake</button>
-        <button class="chip" id="blink" type="button" aria-keyshortcuts="B">Blink</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Move</span><span class="touch">Drag</span></dt><dd>they watch</dd></div>
-        <div><dt>Circle fast</dt><dd>dizzy</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> an eye</dt><dd>blink</dd></div>
-        <div><dt>Drag</dt><dd>shake</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>rattle</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Googly eyes</h1><div class="vignette" hidden></div></section>
 </div>
 
 <script type="module">
-import { initPage, sound } from '../shared/stim.js';
-initPage({ id: 'eyes' });
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+// The intro holds until the page and its font have loaded.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+const ui = initPage({ id: 'eyes', bar: {
+  actions: [
+    { verb: 'shuffle', onPress: () => reshuffle() },
+    { verb: 'shake', onPress: () => shake() },
+    { verb: 'blink', key: 'B', onPress: () => blinkAll() },
+  ],
+  quality: true,
+  keys: [['click', 'blink'], ['drag', 'move an eye'], ['drag round', 'dizzy'], ['space', 'shake']],
+} });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const shakeB = document.getElementById('shake'), blinkB = document.getElementById('blink');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; plan(); });
@@ -234,7 +231,7 @@ const GRAV = 1700, PULL = 7800, WHIRL = 5200, JMAX = 4000, AMAX = 40000;
 const REST = 0.42, MU = 0.3, ROLL = 1.6, ZETA = 0.17, CLICK_V = 70, BOUNCE_V = 40;
 const COH = 5, BW = 32, BZ = 0.3, WW = 24, WZ = 0.22, QW = 26, QZ = 0.3, SUB = 1 / 240, FILL = 0.6, STRIDE = 20;
 let eyes = [], W = 0, H = 0, S = 1, pr = 1, tall = false;
-const seed = (Math.random() * 2 ** 31) | 0;
+let seed = (Math.random() * 2 ** 31) | 0;
 const board = { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 };
 
 function setSize(e) {
@@ -628,7 +625,8 @@ function stepLids(dt, t) {
     e.qv += qa * dt;
     e.q += e.qv * dt;
     e.lift += ((e.held ? 1 : 0) - e.lift) * (1 - Math.exp(-dt * 18));
-    if (e.blink >= 0 || e.blinkAt || Math.abs(e.q) + Math.abs(e.qv) > 0.002 || Math.abs((e.held ? 1 : 0) - e.lift) > 0.004) busy = true;
+    // A lid held shut for the intro does no per-frame work.
+    if ((e.blink >= 0 && e.hold !== Infinity) || e.blinkAt || Math.abs(e.q) + Math.abs(e.qv) > 0.002 || Math.abs((e.held ? 1 : 0) - e.lift) > 0.004) busy = true;
   }
   return busy;
 }
@@ -694,7 +692,7 @@ function plan() {
 }
 function idleTick() {
   plan();
-  if (!ready || !onScreen || document.hidden || dz || ptr || !eyes.length) return;
+  if (!ready || !onScreen || document.hidden || dz || ptr || !eyes.length || shutAll) return;
   const t = clock();
   let act = false;
   // A still pointer bores the eyes one or two at a time.
@@ -1074,7 +1072,7 @@ function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 2, Math.sqrt(1.4e6 / (w * h)));
+  const p = pixelRatio(w, h, { maxDpr: 2, budget: 1.4e6, low: lowDpr });
   const cw = Math.round(w * p), ch = Math.round(h * p);
   if (w !== W || h !== H) layout(w, h);
   pr = cw / w;
@@ -1103,7 +1101,7 @@ function frame(ms) {
   raf = -1;
   const raw = Math.max(0, (ms - last) / 1000), dt = clamp(raw, 1 / 240, 1 / 30);
   last = ms;
-  // Sustained slow frames drop the pixel ratio to 1.
+  // Sustained slow frames drop the pixel ratio one quality step.
   if (!lowDpr) {
     slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 24) { lowDpr = true; fit(); }
@@ -1241,15 +1239,14 @@ function blinkAll() {
 }
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  // Keys inside a shell sheet belong to the sheet.
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const k = e.key;
   if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
     if (!e.repeat) shake();
-  } else if (k === 'b' || k === 'B') {
-    if (!e.repeat) blinkAll();
   } else if (k === 'd' || k === 'D') {
     if (!e.repeat) goDizzy(Math.random() < 0.5 ? 1 : -1);
   } else if (k === 'Enter' && e.target === panel) {
@@ -1288,8 +1285,6 @@ addEventListener('keyup', e => {
   if (e.key === 'Shift' && kgrab) { kgrabUntil = 0; wake(); }
 });
 panel.addEventListener('blur', () => { if (kbd) { kbd = false; loseGaze(1); if (ready) draw(); } });
-shakeB.addEventListener('click', shake);
-blinkB.addEventListener('click', blinkAll);
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1300,7 +1295,7 @@ function failed() {
   ready = false;
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  shakeB.disabled = blinkB.disabled = true;
+  for (const v of ['shuffle', 'shake', 'blink']) ui.action(v).disabled = true;
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; cancelAnimationFrame(raf); raf = 0; });
 canvas.addEventListener('webglcontextrestored', async () => {
@@ -1311,15 +1306,42 @@ canvas.addEventListener('webglcontextrestored', async () => {
     wake();
   } catch (err) { console.error(err); failed(); }
 });
-// The eyes open in a ripple from the middle, then stare.
-function opening() {
-  const t = clock();
+// Every lid shuts and holds until opening() lets go.
+let shutAll = false;
+function shut() {
+  shutAll = true;
   for (const e of eyes) {
     e.blink = 0.46;
     e.blinkDur = 0.3;
+    e.blinks = 0;
+    e.blinkAt = 0;
+    e.hold = Infinity;
+  }
+}
+// The eyes open in a ripple from the middle, then stare.
+function opening() {
+  const t = clock();
+  shutAll = false;
+  for (const e of eyes) {
+    if (e.hold !== Infinity) continue;
     e.hold = t + 0.35 + Math.hypot(e.x - W / 2, e.y - H / 2) / (700 * S);
     e.lookQ = [{ x: 0, y: -1, reach: 0, until: e.hold + rand(1.1, 1.8) }];
   }
+  wake();
+}
+// Shuffle deals a new cluster, which opens in a ripple.
+function reshuffle() {
+  if (!ready || !W) return;
+  if (ptr?.eye) ptr = null;
+  kgrab = null;
+  dz = null;
+  seed = (Math.random() * 2 ** 31) | 0;
+  buildEyes();
+  lastInput = clock();
+  if (!reduce) { shut(); opening(); }
+  stepLids(0, clock());
+  draw();
+  wake();
 }
 async function boot() {
   await idle();
@@ -1332,24 +1354,24 @@ async function boot() {
   }
   try { await initGL(); } catch (err) { console.error(err); failed(); return; }
   ready = true;
-  if (!reduce) opening();
+  // The ripple plays once the intro has gone, so it is seen.
+  if (!reduce) {
+    shut();
+    Promise.race([introDone, new Promise(r => setTimeout(r, 9000))]).then(opening);
+  }
   stepLids(0, clock());
   draw();
   requestAnimationFrame(() => canvas.classList.add('on'));
   new ResizeObserver(fit).observe(panel);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+  // A new quality choice clears the slow-frame step and refits.
+  onQuality(() => { lowDpr = false; slow = 0; fit(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
   wake();
   plan();
 }
 if (document.readyState === 'complete') boot();
 else addEventListener('load', boot, { once: true });
-</script>
-<script type="module">
-import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 </body>
 </html>
