@@ -219,6 +219,8 @@ const OUTU = {
   // uHall is 1 under the Zurich HB hall; uIsl is 1 where an island platform stands behind.
   uHall: { value: 0 },
   uIsl: { value: 0 },
+  // uOpp: the oncoming train's front x, its length, 1 while it runs, its smear in metres.
+  uOpp: { value: new THREE.Vector4(0, 200, 0, 0) },
 };
 
 // Light, sky and haze for night and day; uDay blends the two.
@@ -1208,6 +1210,67 @@ out.add(bed);
     bed.add(m);
   }
 }
+/* The oncoming train: now and then a two-unit train rushes past on the second track. */
+// One quad spans its whole side; the shader draws body, windows and doors, blurred by the relative speed.
+{
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 4.0).translate(0.5, -0.4, -4.95), new THREE.ShaderMaterial({
+    uniforms: OUTU, transparent: true, depthWrite: true,
+    vertexShader: /* glsl */`
+    uniform vec4 uOpp;
+    uniform float uCamX;
+    varying vec3 vW;
+    varying float vU;
+    void main() {
+      vec3 p = position;
+      p.x = uOpp.x + p.x * uOpp.y;
+      vU = p.x - uOpp.x;
+      vec4 w = modelMatrix * vec4(p, 1.0);
+      vW = w.xyz;
+      gl_Position = uOpp.z > 0.5 ? projectionMatrix * viewMatrix * w : vec4(2.0, 2.0, 2.0, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec4 uOpp;
+    uniform vec4 uLP[${NL}];
+    varying vec3 vW;
+    varying float vU;
+    ${TRAIN}
+    ${HAZE}
+    // A box convolved with the motion smear: how much of a feature covers this pixel.
+    float cover(float d, float w, float s) { return clamp((w + s + 0.001 - abs(d) * 2.0) / (2.0 * s + 0.002), 0.0, 1.0) * min(1.0, w / (s + 0.001)); }
+    void main() {
+      float s = uOpp.w, y = vW.y;
+      // The cars: rounded noses at both ends, a gap where the two units couple.
+      float u = vU, len = uOpp.y;
+      float nose = smoothstep(0.0, 2.5, u) * smoothstep(0.0, 2.5, len - u);
+      float gap = 1.0 - cover(u - len * 0.5, 0.6, s) * 0.9;
+      float top = 1.55 - (1.0 - nose) * 1.2;
+      if (y > top || nose * gap < 0.02) discard;
+      // Pale body, a dark skirt and a coloured band; the roof edge darkens.
+      vec3 alb = vec3(0.62, 0.63, 0.64);
+      alb = mix(alb, vec3(0.08), smoothstep(-1.75, -1.85, y));
+      alb = mix(alb, vec3(0.42, 0.08, 0.07), smoothstep(0.03, 0.0, abs(y + 1.05) - 0.12));
+      // Windows every 2.7 m and doors every 26 m, smeared by the rush.
+      float wx = mod(u, 2.7) - 1.35;
+      float win = cover(wx, 1.8, s) * smoothstep(0.42, 0.38, abs(y - 0.15)) * step(3.0, u) * step(u, len - 3.0);
+      float door = cover(mod(u, 26.0) - 13.0, 1.4, s) * step(y, 0.75);
+      alb = mix(alb, vec3(0.05, 0.06, 0.07), max(win, door * 0.85));
+      vec3 N = vec3(0.0, 0.0, 1.0);
+      vec3 night = vec3(0.012) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.25;
+      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - vW; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
+      // Its side faces away from the sun: sky light plus a neutral bounce off the bed.
+      vec3 day = sunC() * max(dot(N, uSun), 0.0) * 0.3 + skyA(0.5) * 0.9 + sunC() * vec3(0.16, 0.15, 0.13);
+      vec3 c = alb * mix(night, day, uDay);
+      // Lit windows at night; headlights at the leading nose, day and night.
+      c += vec3(1.0, 0.88, 0.7) * win * 0.9 * mix(1.0, 0.1, uDay);
+      float head = exp(-pow((u - 0.6) / (0.5 + s), 2.0)) * exp(-pow((y + 1.25) / 0.18, 2.0));
+      c += vec3(1.0, 0.95, 0.85) * head * mix(6.0, 2.0, uDay);
+      gl_FragColor = vec4(c, nose * gap);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 2;
+  out.add(m);
+}
 // Bigger stations get an island platform behind, with its own canopy.
 const island = new THREE.Group();
 platform.add(island);
@@ -1932,6 +1995,17 @@ let drag = false;
 // Each wheelset kicks the carriage as it crosses a rail joint.
 // The pairs sit 2.6 m apart; the far bogie kicks softer.
 const JOINT = 25, KICK = [[0, 1], [2.6, 1], [16, 0.45], [18.6, 0.45]];
+// The oncoming train: front x, length, speed; it comes every one to two and a half minutes.
+// QA can call the first one sooner with ?opp=seconds.
+const opp = { on: false, x: 0, len: 210, v: 31, next: qs.has('opp') ? +qs.get('opp') : 25 + Math.random() * 40 };
+function oncoming(dt) {
+  if (!opp.on && time > opp.next && speed > 4) { opp.on = true; opp.x = camX + 1600; opp.len = Math.random() < 0.5 ? 150 : 210; }
+  if (opp.on) {
+    opp.x -= opp.v * dt;
+    if (opp.x + opp.len < camX - 300) { opp.on = false; opp.next = time + 60 + Math.random() * 90; }
+  }
+  OUTU.uOpp.value.set(opp.x, opp.len, opp.on ? 1 : 0, (speed + opp.v) / 40);
+}
 function jolt() {
   if (speed < 0.5) return 0;
   let y = 0;
@@ -1939,7 +2013,10 @@ function jolt() {
     const t = ((((camX - b) % JOINT) + JOINT) % JOINT) / speed;
     y += w * Math.exp(-t / 0.09) * Math.sin(t * 55);
   }
-  return y * Math.min(1, speed / 25);
+  y *= Math.min(1, speed / 25);
+  // The oncoming train's bow wave knocks the carriage as it passes.
+  if (opp.on) { const d = opp.x - camX; y += Math.exp(-d * d / 60) * Math.sin(time * 40) * 0.8 + (d > -opp.len && d < 0 ? Math.sin(time * 23) * 0.25 : 0); }
+  return y;
 }
 const proj = new THREE.Vector3();
 const MAJOR = new Set(['Zürich Enge', 'Thalwil', 'Horgen', 'Wädenswil', 'Richterswil', 'Pfäffikon SZ', 'Lachen SZ', 'Ziegelbrücke']);
@@ -2087,6 +2164,7 @@ function update(dt, pace) {
   camX += speed * dt;
   time += dt;
   runFlow(dt);
+  oncoming(dt);
   OUTU.uTime.value = time;
   W.uTime.value = time;
   mk = Math.min(1, mk + dt * 0.04);

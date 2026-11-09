@@ -180,6 +180,6 @@ Open from the critics:
 - [x] Glow after Window seat: quarter-size bright pass with a soft knee and four-tap block average, blurred twice (9-tap Gaussian), added back; replaces UnrealBloomPass, so lights no longer bloom into square pips
 - [x] Rails glint: anisotropic specular from each lamp, the moon and the sun, stretched along the rail
 - [x] Dev plan page trainride/dev/ (relief, line, stations, baked strip); Tom: the relief map goes into the annex later for background and explanation
-- [ ] Oncoming trains now and then
+- [x] Oncoming trains now and then: a 150 or 210 m two-unit train every one to two and a half minutes on the second track at 31 m/s; window band and doors blurred by the relative speed; lit windows at night, headlights; its bow wave knocks the carriage; ?opp=seconds calls one for QA
 - [ ] Landscape lights, sector by sector
 - [ ] Stations rework
