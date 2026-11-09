@@ -1136,10 +1136,14 @@ function loadSfx(ac) {
   sfxLoad = Promise.all([next(), next(), next(), next()]);
 }
 const has = n => !!sfx?.[n];
+// The synth's distance cut runs 6 kHz to 900 Hz; recordings get 12 kHz to 2.5 kHz.
+const recLp = lp => 12000 * Math.pow(lp / 6000, 0.55);
 // A loaded take from a set, or null.
 const take = k => { const l = SFX[k].filter(has); return l.length ? l[Math.floor(Math.random() * l.length)] : null; };
 // One recorded take at time t, through out, at a set rate.
+let lastTake = '';
 function smp(ac, name, t, out, gain, rate = 1) {
+  lastTake = name;
   const s = ac.createBufferSource(), g = ac.createGain();
   s.buffer = sfx[name];
   s.playbackRate.value = rate;
@@ -1247,20 +1251,16 @@ function boom(ac, t, out, lvl, lp, cal, set = 'boom') {
   const nm = sfx && (take(set) || take('boom'));
   if (nm) {
     // A recorded boom; big shells play slower and deeper.
-    const bl = filt(ac, 'lowpass', lp * jit(0.15));
+    // Recordings carry their own distance, so the filter only trims far ones.
+    const bl = filt(ac, 'lowpass', recLp(lp));
     bl.connect(out);
-    const [b, bg] = smp(ac, nm, t, bl, lvl, jit(0.06) * (1.08 - 0.08 * cal));
-    // A soft synth sub keeps the weight on small speakers.
-    const s = ac.createOscillator();
-    s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
-    const sg = env(ac, t, lvl * (0.25 + 0.1 * cal), 0.008, 0.9);
-    s.connect(sg).connect(out); s.start(t); s.stop(t + 1.1);
-    const send = ac.createGain(); send.gain.value = 0.3;
+    const [b, bg] = smp(ac, nm, t, bl, lvl * 1.3, jit(0.06) * (1.08 - 0.08 * cal));
+    const send = ac.createGain(); send.gain.value = 0.25;
     bg.connect(send).connect(rvb);
     const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
-    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.22;
+    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.15;
     bg.connect(dl).connect(dlp).connect(dg).connect(out);
-    track(t + 3.5, 'boom', b, s, send, dl);
+    track(t + 3.5, 'boom', b, send, dl);
     return;
   }
   if (zzBufs) {
@@ -1341,7 +1341,7 @@ function soundShell(pos, wait, T, type, style, cal) {
   // Crackling shells play a recorded boom that rattles into pops.
   boom(ac, tb, pan, lvl * (type === 'supernova' ? 1.4 : 1), lp, cal, sfx && crackly ? 'crackshell' : 'boom');
   if (sfx) {
-    const bl = filt(ac, 'lowpass', lp);
+    const bl = filt(ac, 'lowpass', recLp(lp));
     bl.connect(pan);
     // A supernova cracks deep; one other shell in five cracks sharp.
     if (type === 'supernova' && has('report') && count('report') < 2) track(tb + 3, 'report', smp(ac, 'report', tb, bl, lvl * 0.8, 0.6)[0]);
@@ -2228,6 +2228,8 @@ const ndcOf = e => {
 };
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
+  // The first touch starts the recordings loading, ahead of the first boom.
+  if (kit.ac) bus(kit.ac);
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
   wake();
@@ -2409,6 +2411,8 @@ function devPanel() {
   .fxdev button[aria-pressed="true"] { background: oklch(0.82 0.13 80); color: oklch(0.16 0.012 275); }
   .fxdev .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
   .fxdev h3 { margin: 10px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(0.65 0.02 275); }
+  .fxdev .snd { margin: 0 0 4px; color: oklch(0.65 0.02 275); }
+  .fxdev .takes button { padding: 3px 6px; font-size: 11px; }
   .fxdev label { display: grid; grid-template-columns: 82px 1fr 46px; align-items: center; gap: 8px; padding: 1px 0; }
   .fxdev label.mod span { color: oklch(0.84 0.13 80); }
   .fxdev input[type=range] { width: 100%; accent-color: oklch(0.82 0.13 80); }
@@ -2419,6 +2423,7 @@ function devPanel() {
   box.setAttribute('aria-label', 'Look knobs');
   box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
     <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="tear">Tear</button><button data-a="bolt">Bolt</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    <h3>Sounds</h3><p class="snd"><output></output></p><div class="acts takes">${Object.keys(SFX_GAIN).map(n => `<button data-take="${n}">${n}</button>`).join('')}</div>
     ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
       `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
   document.body.append(box);
@@ -2444,7 +2449,12 @@ function devPanel() {
     if (l && e.target.value !== '') set(l.dataset.k, +e.target.value);
   });
   box.addEventListener('click', e => {
-    const q = e.target.dataset.q, a = e.target.dataset.a;
+    const q = e.target.dataset.q, a = e.target.dataset.a, tk = e.target.dataset.take;
+    // A take button plays that recording dry, straight to the output.
+    if (tk) {
+      const ac = kit.wake();
+      if (ac) { bus(ac); if (has(tk)) smp(ac, tk, ac.currentTime + 0.02, kit.out, 0.6); }
+    }
     if (q) { setQuality(q); show(); }
     if (a === 'close') box.hidden = true;
     if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
@@ -2455,7 +2465,10 @@ function devPanel() {
     if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
   });
   // Frames drawn per second; the loop sleeps when idle, so 0 is normal.
-  setInterval(() => { if (!box.hidden) fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to}`; devFrames = 0; }, 500);
+  setInterval(() => { if (!box.hidden) {
+      fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to}`;
+      box.querySelector('.snd output').textContent = `${Object.keys(sfx || {}).length}/${Object.keys(SFX_GAIN).length} takes loaded · sound ${kit.ac?.state || 'off'} · last ${lastTake || 'none'}`;
+    } devFrames = 0; }, 500);
   show();
   return box;
 }
