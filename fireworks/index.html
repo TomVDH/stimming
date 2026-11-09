@@ -271,14 +271,25 @@ const U = {
   uHaze: { value: 0.00045 },
   uHazeH: { value: 140 },
   uTime: { value: 0 },
-  // Cloud deck: base, depth, cover, on; the offset carries the wind.
-  uCloud: { value: new THREE.Vector4(260, 300, 0.52, 1) },
+  // Cloud deck: base, depth, cover, fade; the offset carries the wind.
+  // The fade runs from 0 (no deck) to 1, so the deck eases in and out.
+  uCloud: { value: new THREE.Vector4(260, 300, 0.52, 0) },
   uCloudO: { value: new THREE.Vector2() },
   // The torn sky: opening, rim glow, eye, age; then the seam and the eye.
   uTear: { value: new THREE.Vector4() },
   uTP: { value: Array.from({ length: 8 }, () => new THREE.Vector2()) },
   uEye: { value: new THREE.Vector3() },
+  // A city's light dome: azimuth, width, strength; then its colour.
+  uDome: { value: new THREE.Vector3(0, 1, 0) },
+  uDomeC: { value: new THREE.Vector3(1, 0.62, 0.42) },
 };
+// The moon: its direction, then its strength; only the island has one.
+U.uMoon = { value: new THREE.Vector4(0, 0, -1, 0) };
+if (SCENE === 'island') { const az = 0.21, el = 0.13; U.uMoon.value.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el), 1); }
+// The city's sodium and LED glow sits low over downtown.
+if (SCENE === 'city') U.uDome.value.set(0.12, 0.7, 0.02);
+// Snowfall follows the cloud: none under a clear sky.
+const snowAmt = { value: 0 };
 // The island's night is colder and brighter: moonlight on snow.
 if (SCENE === 'island') U.uCool.value.multiply(new THREE.Vector3(0.95, 1.12, 1.45));
 const LIGHTS_GLSL = /* glsl */`
@@ -337,6 +348,23 @@ uniform vec3 uCool;
 uniform vec4 uTear;
 uniform vec2 uTP[8];
 uniform vec3 uEye;
+uniform vec3 uDome;
+uniform vec3 uDomeC;
+uniform vec4 uMoon;
+// The moon: a lit disc with dark seas, a tight halo and a wide one.
+vec3 moonSky(vec3 dir) {
+  if (uMoon.w <= 0.0) return vec3(0.0);
+  float cd = dot(dir, uMoon.xyz);
+  if (cd < 0.9) return vec3(0.0);
+  float ang = acos(min(cd, 1.0));
+  vec3 t1 = normalize(cross(uMoon.xyz, vec3(0.0, 1.0, 0.0))), t2 = cross(t1, uMoon.xyz);
+  vec2 m = vec2(dot(dir, t1), dot(dir, t2)) / 0.0105;
+  float r = length(m);
+  float seas = 1.0 - 0.28 * smoothstep(0.55, 0.15, length(m - vec2(-0.25, 0.2))) - 0.2 * smoothstep(0.4, 0.1, length(m - vec2(0.3, -0.25))) - 0.12 * k2noise(m * 3.0 + 7.0);
+  float disc = smoothstep(1.0, 0.94, r) * (0.75 + 0.25 * sqrt(max(1.0 - r * r, 0.0))) * seas;
+  vec3 c = vec3(0.98, 0.97, 1.0) * 1.05 * disc + vec3(0.55, 0.62, 0.8) * (0.025 * exp(-ang / 0.025) + 0.01 * exp(-ang / 0.22));
+  return c * uMoon.w;
+}
 // Stars on the sky grid; q is azimuth and height, as for the seam.
 float k2starsQ(vec2 q) {
   q *= 260.0;
@@ -393,6 +421,8 @@ vec3 k2sky(vec3 dir) {
   float up = max(dir.y, 0.0);
   vec3 col = vec3(0.0016, 0.0021, 0.0045) + uCool * 0.016 * exp(-up * 9.0);
   vec2 q = vec2(atan(dir.x, -dir.z), dir.y);
+  float da = (q.x - uDome.x) / uDome.y;
+  col += uDomeC * uDome.z * exp(-up * 6.0 - da * da);
   float sk = smoothstep(0.03, 0.25, dir.y);
   if (uTear.x > 0.0005) {
     float side, along;
@@ -410,7 +440,7 @@ vec3 k2sky(vec3 dir) {
     col += (vec3(1.0, 0.8, 0.6) * exp(-e * e / 8e-7) * 1.4 + vec3(1.0, 0.32, 0.08) * exp(-e / 0.0025) * 0.28
       + vec3(0.5, 0.04, 0.2) * exp(-e / 0.04) * 0.035) * uTear.y * smoothstep(0.0, 0.08, sin(3.14159 * along));
   } else col += vec3(0.85, 0.9, 1.0) * k2starsQ(q) * sk;
-  return col + burstGlow(dir);
+  return col + moonSky(dir) + burstGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
 
@@ -452,14 +482,14 @@ float cloudD(vec2 xz) {
 vec2 cloudCol(float D) { return vec2(uCloud.x + 110.0 * (1.0 - D), uCloud.x + uCloud.y * D); }
 // The part of a point's light that comes through the deck to the eye.
 float cloudVeil(vec3 P) {
-  if (uCloud.w < 0.5 || P.y <= uCloud.x) return 1.0;
+  if (uCloud.w < 0.001 || P.y <= uCloud.x) return 1.0;
   vec3 v = P - cameraPosition;
   if (v.y < 1.0) return 1.0;
   float mid = 0.5 * (uCloud.x + min(P.y, uCloud.x + uCloud.y));
   vec3 X = cameraPosition + v * ((mid - cameraPosition.y) / v.y);
   float D = cloudD(X.xz);
   vec2 c = cloudCol(D);
-  return exp(-D * max(min(P.y, c.y) - c.x, 0.0) * length(v) / v.y * ${CLOUD_SIGMA});
+  return mix(1.0, exp(-D * max(min(P.y, c.y) - c.x, 0.0) * length(v) / v.y * ${CLOUD_SIGMA}), uCloud.w);
 }`;
 // The same density on the CPU, in float32 steps, for lights and orbs.
 const f32 = Math.fround, fr = x => x - Math.floor(x);
@@ -484,12 +514,14 @@ function cloudD(x, z) {
 // Light through the deck: to the ground (from above) or to the eye.
 function cloudT(P, eye) {
   const C = U.uCloud.value;
-  if (C.w < 0.5 || P.y <= C.x) return 1;
+  if (C.w < 0.001 || P.y <= C.x) return 1;
   const depth = D => Math.max(Math.min(P.y, C.x + C.y * D) - (C.x + 110 * (1 - D)), 0);
-  if (!eye) { const D = cloudD(P.x, P.z); return 0.3 + 0.7 * Math.exp(-D * depth(D) * CLOUD_SIGMA); }
+  // The fade blends the veil in, as the shader does.
+  const veil = T => 1 - C.w * (1 - T);
+  if (!eye) { const D = cloudD(P.x, P.z); return veil(0.3 + 0.7 * Math.exp(-D * depth(D) * CLOUD_SIGMA)); }
   const o = camera.position, vy = P.y - o.y, t = (0.5 * (C.x + Math.min(P.y, C.x + C.y)) - o.y) / vy;
   const D = cloudD(o.x + (P.x - o.x) * t, o.z + (P.z - o.z) * t);
-  return Math.exp(-D * depth(D) * P.distanceTo(o) / vy * CLOUD_SIGMA);
+  return veil(Math.exp(-D * depth(D) * P.distanceTo(o) / vy * CLOUD_SIGMA));
 }
 /* ---------- end cloud deck ---------- */
 const HEAD = `${LIGHTS_GLSL}\n${K2_NOISE}\n${CLOUD_GLSL}\n${K2_SKY}\n${K2_HAZE}`;
@@ -504,7 +536,11 @@ sky.renderOrder = -1;
 scene.add(sky);
 
 // The deck: four stacked sheets; a sheet shows where its column reaches it.
-const CU = { uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() }, uGlow: { value: 0.38 } };
+const CU = {
+  uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() }, uGlow: { value: 0.38 },
+  // The lit band under the deck: where it starts and ends in z, and how bright.
+  uBand: { value: new THREE.Vector4(-3400, -1800, -1500, -400) }, uBandK: { value: 0.006 },
+};
 const SHEETS = [500, 420, 345, 275];
 const cloudGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(30000, 16000).rotateX(Math.PI / 2).translate(0, 0, -7000));
 // Top sheet first, so each lower sheet draws over the one above.
@@ -517,7 +553,7 @@ const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
   void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH * 0.01; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; uniform float uGlow; ${HEAD}
+  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; uniform float uGlow; uniform vec4 uBand; uniform float uBandK; ${HEAD}
   void main() {
     vec3 v = vP - cameraPosition;
     if (v.y < 1.0) discard;
@@ -531,7 +567,7 @@ const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
     vec2 q = (vP.xz + uCloudO) * vec2(0.006, 0.009);
     float b = k2noise(q + vK * 3.1) * 0.5 + k2noise(q * 2.7 - vK * 1.7) * 0.3 + k2noise(q * 7.3 + vK) * 0.2;
     float dens = D * inside * smoothstep(0.35, 0.65, b + 0.3 * D - 0.1);
-    float a = (1.0 - exp(-dens * min(75.0 / V.y, 700.0) * ${CLOUD_SIGMA})) * fade;
+    float a = (1.0 - exp(-dens * min(75.0 / V.y, 700.0) * ${CLOUD_SIGMA})) * fade * uCloud.w;
     if (a < 0.003) discard;
     vec3 lit = vec3(0.0);
     for (int i = 0; i < ${LN}; i++) {
@@ -546,9 +582,9 @@ const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
       float ph = pow(max(dot(V, normalize(d)), 0.0), 6.0) * (1.0 - a);
       lit += uLC[i] * fall * (0.1 + 0.9 * sh) * (1.0 + 2.0 * ph);
     }
-    // The festival's fires tint the underside above the beach.
-    float shore = smoothstep(-3400.0, -1800.0, vP.z) * (1.0 - smoothstep(-1500.0, -400.0, vP.z));
-    vec3 col = lit * uGlow + uCool * 0.005 + uWarm * 0.006 * shore;
+    // The festival's fires, or the city, tint the underside above the shore.
+    float shore = smoothstep(uBand.x, uBand.y, vP.z) * (1.0 - smoothstep(uBand.z, uBand.w, vP.z));
+    vec3 col = lit * uGlow + uCool * 0.005 + uWarm * uBandK * shore;
     col = mix(col, k2hazeColor(V), k2hazeAmount(vP));
     // Lit air in front of the deck still glows.
     gl_FragColor = vec4((col + burstGlow(V) * 0.3) * a, a);
@@ -575,11 +611,29 @@ function bayH(x, b) {
   const m = 45 + 170 * r1 * r1 * (0.6 + 0.4 * noise(x * 0.0001, 1.7)) + 60 * r2 * r2 * r1 + 18 * r3 * r2 + 5 * noise(x * 0.012, b * 0.014);
   return beach + smooth(70, 650, b) * Math.max(0, m);
 }
-// The harbour city: a quay 3 m up, then low hills behind the towers.
+// The harbour city, after Vancouver: the West End and downtown on a low peninsula,
+// Stanley Park's forest to the west, the inlet, then the North Shore and its range.
+const INLET = [1550, 2650];
+const peak = (x, b, px, pb, r, h) => h * Math.exp(-((x - px) ** 2 + (b - pb) ** 2) / (r * r));
 function cityH(x, b) {
   if (b < 0) return -2 + b * 0.05;
-  const r1 = 1 - Math.abs(noise(x * 0.0004, b * 0.0006 + 3.3));
-  return 3 + smooth(700, 1500, b) * (40 + 140 * r1 * r1);
+  // The peninsula: a seawall, then ground that climbs to a low spine.
+  const park = smooth(-650, -950, x);
+  const pen = 3 + 22 * smooth(80, 1300, b) * (1 - park) + park * smooth(0, 140, b) * (28 + 10 * noise(x * 0.004, b * 0.004));
+  if (b < INLET[0]) return pen;
+  // The inlet: the banks drop into deep water.
+  if (b < INLET[1]) return Math.min(pen * smooth(INLET[0] + 60, INLET[0], b), -6 + 8 * smooth(INLET[1] - 60, INLET[1], b));
+  // The North Shore: a lit hillside, then the range.
+  const u = b - INLET[1];
+  const r1 = 1 - Math.abs(noise(x * 0.00028, b * 0.0004 + 3.3));
+  const r2 = 1 - Math.abs(noise(x * 0.0011, b * 0.0015 + 7.1));
+  const r3 = 1 - Math.abs(noise(x * 0.004, b * 0.005 + 1.9));
+  const hill = 2 + 430 * Math.pow(smooth(0, 1500, u), 1.1) + 6 * noise(x * 0.01, b * 0.01);
+  let m = (520 + 420 * r1 * r1 + 140 * r2 * r1 + 30 * r3 * r2) * smooth(1300, 4600, u);
+  // Named peaks: Cypress, the Lions' twin horns, Grouse and Seymour.
+  m += peak(x, b, -4200, 6900, 1400, 420) + peak(x, b, 900, 6300, 1000, 470) + peak(x, b, 3600, 7100, 1300, 520);
+  m += peak(x, b, -2780, 8400, 340, 430) + peak(x, b, -2380, 8350, 320, 470);
+  return hill + m;
 }
 const landH = SCENE === 'city' ? cityH : bayH;
 // The winter island: one snowy hill out on open water, a white range far off.
@@ -632,10 +686,10 @@ function gridGeometry() {
   return g;
 }
 function landGeometry() {
-  const NX = 760, NB = 96, pos = [], bb = [], idx = [];
+  const city = SCENE === 'city', NX = 760, NB = city ? 170 : 96, pos = [], bb = [], idx = [];
   for (let j = 0; j <= NB; j++) {
     // Rows bunch up near the shore, where the beach sits.
-    const b = -30 + 1630 * Math.pow(j / NB, 1.6);
+    const b = -30 + (city ? 9530 : 1630) * Math.pow(j / NB, city ? 1.9 : 1.6);
     for (let i = 0; i <= NX; i++) {
       const x = -9000 + 18000 * (i / NX);
       pos.push(x, landH(x, b), shoreZ(x) - b);
@@ -658,6 +712,8 @@ function landGeometry() {
 const FN = 16;
 const FIRE = linFit(0.74, 0.17, 52);
 CU.uWarm.value.set(...FIRE);
+// Over the city, its own light glows orange on the deck, from the bay to the range.
+if (SCENE === 'city') { CU.uWarm.value.set(1, 0.6, 0.38); CU.uBand.value.set(-8000, -4500, -1700, -700); CU.uBandK.value = 0.03; }
 const fires = [];
 if (SCENE === 'bay') for (const [cx, n] of [[-700, 4], [-330, 2], [90, 3], [520, 4], [880, 2], [-1050, 1]]) {
   for (let i = 0; i < n && fires.length < FN; i++) fires.push(landAt(cx + (rnd() - 0.5) * 140, 18 + rnd() * 50, 1));
@@ -736,12 +792,23 @@ const landMat = mirror => new THREE.ShaderMaterial({
     #if SCENE == 1
     // Snow on gentle slopes, dark rock on steep ones, wet stone at the waterline.
     float snow = smoothstep(0.55, 0.8, N.y) * smoothstep(1.0, 3.5, vB);
-    vec3 alb = mix(vec3(0.045, 0.048, 0.055), vec3(0.62, 0.66, 0.74), snow);
+    vec3 alb = mix(vec3(0.045, 0.048, 0.055), vec3(0.5, 0.53, 0.6), snow);
     #elif SCENE == 2
-    // A pale stone quay, then dark scrub on the hills behind.
-    float quay = 1.0 - smoothstep(60.0, 160.0, vB);
-    vec3 alb = mix(vec3(0.06, 0.06, 0.058), vec3(0.15, 0.145, 0.14), quay);
-    alb *= 1.0 - 0.5 * smoothstep(0.2, 0.6, 1.0 - N.y);
+    // A pale seawall, dark streets, then conifer forest on the park and the North Shore.
+    float quay = 1.0 - smoothstep(20.0, 70.0, vB);
+    float park = smoothstep(-650.0, -950.0, vP.x) * step(vB, ${INLET[0]}.0);
+    float north = step(${INLET[1]}.0, vB);
+    float forest = max(park, north) * (1.0 - quay);
+    float tex = k2noise(vP.xz * 0.03) * 0.6 + k2noise(vP.xz * 0.11) * 0.4;
+    vec3 alb = mix(vec3(0.045, 0.045, 0.047), vec3(0.15, 0.145, 0.14), quay);
+    alb = mix(alb, vec3(0.022, 0.034, 0.026) * (0.6 + 0.8 * tex), forest);
+    alb *= 1.0 - 0.45 * smoothstep(0.2, 0.6, 1.0 - N.y);
+    // Snow caps the range above about 1100 m; steep faces stay dark.
+    float snow = smoothstep(980.0, 1240.0, vP.y + 160.0 * k2noise(vP.xz * 0.002)) * smoothstep(0.45, 0.75, N.y);
+    alb = mix(alb, vec3(0.6, 0.64, 0.72), snow);
+    // Streets and homes glow faintly between the lights.
+    vec3 emit = vec3(1.0, 0.66, 0.4) * 0.0016 * (1.0 - forest) * step(60.0, vB) * step(vB, ${INLET[0]}.0)
+      + vec3(1.0, 0.7, 0.45) * 0.0009 * north * (1.0 - smoothstep(150.0, 520.0, vP.y)) * (0.4 + tex);
     #else
     // Pale sand on the beach; dark scrub, then darker rock on steep slopes.
     float sand = 1.0 - smoothstep(40.0, 140.0, vB);
@@ -770,8 +837,15 @@ const landMat = mirror => new THREE.ShaderMaterial({
     }
     // Faint sky light from above keeps the shapes readable; snow holds moonlight.
     vec3 amb = uCool * 0.006 * (0.3 + 0.7 * N.y);
-    #if SCENE == 1
+    #if SCENE == 1 || SCENE == 2
     amb *= 1.0 + 6.0 * snow;
+    #endif
+    #if SCENE == 1
+    // Moonlight from one side; bursts light the snow a little less than bare rock.
+    amb += vec3(0.62, 0.7, 0.9) * 0.12 * max(dot(N, uMoon.xyz), 0.0) * uMoon.w;
+    // Backlit snow catches a thin rim of moonlight on its ridges.
+    amb += vec3(0.62, 0.7, 0.9) * 0.05 * snow * uMoon.w * pow(1.0 - max(dot(N, V), 0.0), 2.0) * smoothstep(-0.3, 0.4, dot(N, uMoon.xyz));
+    lit *= 0.65;
     #endif
     // Campfires reach only the beach; the mirror skips them.
     vec3 fl = vec3(0.0);
@@ -779,6 +853,9 @@ const landMat = mirror => new THREE.ShaderMaterial({
     if (SCENE == 1 || vB < 300.0) fl = fireLit(vP, N) * 1.2;
     #endif
     vec3 c = alb * (amb + lit * 2.0 + fill * 0.3 + fl);
+    #if SCENE == 2
+    c += emit;
+    #endif
     #if SCENE == 1
     // Snow glints: a soft sheen toward each burst.
     for (int i = 0; i < ${LN}; i++) {
@@ -796,6 +873,8 @@ const landMirror = new THREE.Mesh(land.geometry, landMat(true));
 landMirror.layers.set(LIGHT);
 scene.add(land, landMirror);
 
+// Unlit hulls and steel, drawn with the barges' material once it exists.
+const darkParts = [];
 // Light dots: string lights, lanterns, torches and a few homes up the hill.
 const dots = { pos: [], col: [], k: [], str: [] };
 const WARM = linFit(0.86, 0.09, 75), AMBER = linFit(0.78, 0.15, 60), COOLW = linFit(0.9, 0.04, 240);
@@ -832,64 +911,177 @@ if (SCENE === 'island') {
   // A cabin window and a lamp by its door, a beacon on the point, and nothing else.
   dot(isleAt(1.8, 0.7, 3), AMBER, 0.9, 2.4, 0.03); dot(isleAt(1.83, 0.7, 2.6), AMBER, 0.7, 2.0, 0.03);
   dot(isleAt(1.7, 0.78, 2.2), WARM, 0.8, 2.2, 0.05);
-  dot(isleAt(0.35, 0.93, 9), COOLW, 1.6, 3.2, 0.9);
+  dot(isleAt(0.35, 0.93, 10.5), COOLW, 1.6, 3.2, 0.9);
 }
 if (SCENE === 'city') {
-  // Street lamps along the quay, and a few boats in the harbour.
-  for (let x = -2600; x <= 2600; x += 24) dot(landAt(x + (rnd() - 0.5) * 6, 14, 7), rnd() < 0.8 ? AMBER : WARM, 0.55, 1.8, 0.02);
-  for (let i = 0; i < 6; i++) {
-    const z = -400 - rnd() * 800, x = (rnd() - 0.5) * 1.1 * -z;
-    for (let j = 0; j < 3; j++) dot(new THREE.Vector3(x + (rnd() - 0.5) * 10, 1.5 + rnd() * 5, z), j ? AMBER : COOLW, 0.7, 2.2, 0.03);
+  // The seawall's lamps round English Bay, and the avenue behind the beach.
+  for (let x = -2600; x <= 1800; x += 18) dot(landAt(x + (rnd() - 0.5) * 5, 6, 5), rnd() < 0.7 ? WARM : AMBER, 0.5, 1.7, 0.02);
+  for (let x = -650; x <= 900; x += 26) dot(landAt(x, 48 + (rnd() - 0.5) * 6, 7), AMBER, 0.45, 1.6, 0.02);
+  // The North Shore: a road along the water, then homes that thin out up the slope.
+  const nsAt = (x, u, y) => landAt(x, INLET[1] + u, y);
+  for (let x = -6200; x <= 6200; x += 26) dot(nsAt(x + (rnd() - 0.5) * 8, 40 + 20 * noise(x * 0.001, 2.2), 6), AMBER, 0.42, 1.5, 0.02);
+  for (let i = 0, n = 0; i < 12000 && n < 2600; i++) {
+    const x = (rnd() - 0.5) * 11000, u = 70 + Math.pow(rnd(), 1.4) * 1900, p = nsAt(x, u, 3);
+    if (p.y > 560 || rnd() < p.y / 800) continue;
+    const r = rnd();
+    dot(p, r < 0.55 ? AMBER : r < 0.85 ? WARM : COOLW, 0.35 + rnd() * 0.4, 1.5 + rnd() * 0.7, 0.02);
+    n++;
+  }
+  // Ski runs light the faces of three mountains: strings of white lamps down from each top.
+  for (const [px, pb, runs, len] of [[900, 6300, 4, 460], [3600, 7100, 3, 420], [-4200, 6900, 3, 380]]) {
+    for (let r = 0; r < runs; r++) {
+      const x0 = px + (r - (runs - 1) / 2) * 130, bend = (rnd() - 0.5) * 240;
+      for (let t = 0, k = 0; t <= 1; t += 6 / len, k++) {
+        const x = x0 + bend * Math.sin(t * 2.6) + (r - (runs - 1) / 2) * 90 * t, bb = pb - 140 - len * t;
+        dot(landAt(x, bb, 4), COOLW, 0.3, 1.4, 0.03);
+        // Lit snow: a soft wide glow round the run.
+        if (k % 4 === 0) dot(landAt(x, bb, 2), COOLW, 0.045, 7, 0);
+      }
+    }
+    // The lodge at the top.
+    for (let k = 0; k < 14; k++) dot(landAt(px + (rnd() - 0.5) * 70, pb - 80 - rnd() * 60, 3 + rnd() * 6), rnd() < 0.6 ? WARM : AMBER, 0.6, 1.9, 0.02);
+  }
+  // Freighters at anchor in the bay: lamps along the deck, a lit bridge aft.
+  const SHIPS = [[-430, -1180, 0.15], [530, -1290, -0.1], [-760, -1430, 0.05]];
+  for (const [x, z, a] of SHIPS) {
+    const c = Math.cos(a), sn = Math.sin(a), at = (u, y, v = 0) => new THREE.Vector3(x + u * c - v * sn, y, z + u * sn + v * c);
+    for (let u = -80; u <= 64; u += 12) dot(at(u, 11.5), WARM, 0.5, 1.7, 0.02);
+    for (let k = 0; k < 9; k++) dot(at(66 + (k % 3) * 5, 15 + Math.floor(k / 3) * 3.4, 13.5), rnd() < 0.7 ? COOLW : WARM, 0.55, 1.6, 0.03);
+    dot(at(-78, 24), COOLW, 0.9, 2.2, 0.02); dot(at(70, 32), COOLW, 0.9, 2.2, 0.02);
   }
 }
 if (SCENE === 'city') {
-  // The skyline: two rows of towers along the quay, tallest in the middle.
-  const parts = [];
+  /* The skyline: slim glass towers, densest and tallest in the core. */
+  const parts = [], dark = darkParts;
   let id = 0;
-  const RED_A = linFit(0.6, 0.22, 25);
-  for (const [b0, b1, tall] of [[70, 200, 1], [260, 480, 1.25]]) {
-    for (let x = -2800; x < 2800;) {
-      const w = 26 + rnd() * 48, d = 22 + rnd() * 26, c = Math.exp(-(x * x) / (1200 * 1200));
-      const h = (28 + rnd() * 60 + c * (110 + rnd() * 210)) * tall;
-      const base = landAt(x + w / 2, b0 + rnd() * (b1 - b0), 0);
-      const g = new THREE.BoxGeometry(w, h, d).translate(base.x, base.y + h / 2, base.z);
-      g.setAttribute('aId', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(id++), 1));
-      parts.push(g);
-      // Red aviation lights blink slowly on the tall towers.
-      if (h > 230) dot(new THREE.Vector3(base.x, base.y + h + 2, base.z + d / 2), RED_A, 1.2, 2.6, 0.9);
-      x += w + 4 + rnd() * 20;
-    }
+  const RED_A = linFit(0.6, 0.22, 25), NECK = linFit(0.9, 0.07, 160);
+  // Each box carries its id, kind (0 homes, 1 offices) and top.
+  const tower = (g, kind, top) => {
+    const n = g.attributes.position.count;
+    g.setAttribute('aK', new THREE.Float32BufferAttribute(Array.from({ length: n }, () => [id, kind, top]).flat(), 3));
+    parts.push(g); id++;
+  };
+  const box = (w, h, d, base, kind, shape) => {
+    const g = new THREE.BoxGeometry(w, h, d, 1, shape ? 10 : 1, 1);
+    if (shape) { const P = g.attributes.position; for (let i = 0; i < P.count; i++) P.setX(i, shape(P.getX(i), (P.getY(i) + h / 2) / h)); g.computeVertexNormals(); }
+    g.translate(base.x, base.y + h / 2, base.z);
+    tower(g, kind, base.y + h);
+    if (h > 140) dot(new THREE.Vector3(base.x, base.y + h + 2, base.z), RED_A, 1.2, 2.6, 0.9);
+  };
+  // Landmarks, loosely placed: the tallest tower, a round-topped lookout, a twisting tower by the bridge.
+  const SPECIAL = [[560, 1000], [980, 1350], [860, 240]];
+  box(30, 201, 26, landAt(560, 1000), 1);
+  {
+    const base = landAt(980, 1350);
+    box(22, 140, 22, base, 1);
+    const disc = new THREE.CylinderGeometry(24, 20, 11, 28).translate(base.x, base.y + 146, base.z);
+    tower(disc, 1, base.y + 151.5);
+    for (let k = 0; k < 18; k++) { const a = (k / 18) * Math.PI * 2; dot(new THREE.Vector3(base.x + Math.cos(a) * 24.5, base.y + 146, base.z + Math.sin(a) * 24.5), WARM, 0.8, 2.0, 0.03); }
+  }
+  // The base is narrow and the tower flares out as it climbs.
+  box(44, 150, 30, landAt(860, 240), 0, (x, t) => x * (0.32 + 0.68 * t) - (1 - t) * 12);
+  // The rest on a jittered grid; the West End is homes, the core mostly offices.
+  for (let gx = -700; gx < 1700; gx += 46) for (let gb = 70; gb < 1440; gb += 46) {
+    const x = gx + (rnd() - 0.5) * 14, bb = gb + (rnd() - 0.5) * 12;
+    if (SPECIAL.some(([sx, sb]) => Math.hypot(sx - x, sb - bb) < 55)) continue;
+    const west = smooth(-700, -550, x) * (1 - smooth(150, 350, x));
+    const core = smooth(150, 400, x) * (1 - smooth(1250, 1500, x)) * smooth(300, 650, bb);
+    const yale = smooth(700, 900, x) * (1 - smooth(1450, 1650, x)) * (1 - smooth(500, 700, bb));
+    const zone = Math.max(west, core, yale);
+    if (rnd() > zone * 0.55) continue;
+    const isCore = core >= west && core >= yale, office = isCore && rnd() < 0.6;
+    // Heights cluster: a slow swell over the ground, then a long tail of tall towers.
+    const swell = 0.75 + 0.5 * noise(x * 0.0016, bb * 0.0016 + 4.4);
+    let h;
+    if (isCore) h = (70 + 110 * Math.pow(rnd(), 1.6)) * swell + (rnd() < 0.12 ? 50 + rnd() * 40 : 0);
+    else if (yale > west) h = (45 + 95 * Math.pow(rnd(), 1.5)) * swell;
+    else h = (28 + 80 * Math.pow(rnd(), 1.7)) * swell + bb * 0.03;
+    // Close to the beach the towers step down; a few low blocks fill the gaps.
+    h *= 0.5 + 0.5 * smooth(60, 420, bb);
+    if (rnd() < 0.2) h = 12 + rnd() * 18;
+    const w = office ? 30 + rnd() * 14 : 21 + rnd() * 9, d = office ? 26 + rnd() * 12 : 20 + rnd() * 9;
+    box(w, h, d, landAt(x, bb), office ? 1 : 0);
   }
   const towers = new THREE.Mesh(mergeGeometries(parts), new THREE.ShaderMaterial({
     uniforms: U,
-    vertexShader: /* glsl */`attribute float aId; varying vec3 vP; varying vec3 vN; varying float vId;
-    void main() { vId = aId; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-    fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying float vId; uniform float uTime; ${HEAD}
+    vertexShader: /* glsl */`attribute vec3 aK; varying vec3 vP; varying vec3 vN; varying vec3 vK;
+    void main() { vK = aK; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vK; uniform float uTime; ${HEAD}
     void main() {
-      vec3 N = normalize(vN);
-      // Facade metres, then a grid of windows 3.6 m by 3.4 m.
-      vec2 f = abs(N.z) > 0.5 ? vP.xy : vP.zy;
-      vec2 cell = floor(f / vec2(3.6, 3.4)), fr = fract(f / vec2(3.6, 3.4));
-      float win = step(0.18, fr.x) * step(fr.x, 0.82) * step(0.25, fr.y) * step(fr.y, 0.8);
+      vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+      float office = vK.y, id = vK.x;
+      // Facade metres: homes have 2.9 m floors and 3.2 m bays; offices 3.8 m floors and 1.6 m mullions.
+      vec2 f = abs(N.z) > abs(N.x) ? vP.xy : vP.zy;
+      vec2 fs = office > 0.5 ? vec2(1.6, 3.8) : vec2(3.2, 2.9);
+      vec2 g = f / fs, cell = floor(g), fr = fract(g);
+      float hs = k2hash(cell + id * 13.1), hf = k2hash(vec2(cell.y, id * 7.7));
+      float wall = step(0.5, 1.0 - abs(N.y));
+      // Homes: windows above a pale balcony slab. Offices: whole floors lit between mullions.
+      float win = office > 0.5 ? step(0.08, fr.x) * step(0.12, fr.y) * step(fr.y, 0.92) : step(0.14, fr.x) * step(fr.x, 0.86) * step(0.3, fr.y) * step(fr.y, 0.88);
+      float slab = office > 0.5 ? 0.0 : (1.0 - step(0.12, fr.y)) * 0.6;
+      float on = office > 0.5 ? step(0.7, hf) * step(0.12, hs) : step(0.64, hs);
+      on *= step(0.05, fract(hs * 7.3 + floor(uTime / 23.0 + hs * 5.0) * 0.37));
       // Windows below a pixel blur to their average, so far towers do not shimmer.
-      win = mix(win, 0.3, clamp(fwidth(f.x) / 1.5, 0.0, 1.0));
-      float hs = k2hash(cell + vId * 13.1);
-      // About two in five windows are lit; now and then one switches.
-      float on = step(0.6, hs) * step(0.5, 1.0 - N.y) * step(0.06, fract(hs * 7.3 + floor(uTime / 23.0 + hs * 5.0) * 0.37));
-      vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.72, 0.84, 1.0), step(0.82, fract(hs * 13.7)));
-      vec3 lit = vec3(0.0);
+      float blur = clamp(fwidth(g.x) * 0.8, 0.0, 1.0);
+      win = mix(win, 0.55, blur);
+      slab = mix(slab, 0.08, blur);
+      vec3 wc = office > 0.5 ? vec3(0.8, 0.9, 1.0) : mix(vec3(1.0, 0.72, 0.42), vec3(0.72, 0.84, 1.0), step(0.84, fract(hs * 13.7)));
+      // Glass: a dark teal pane that mirrors the sky and every burst.
+      vec3 R = reflect(-V, N);
+      float fres = 0.05 + 0.55 * pow(1.0 - max(dot(N, V), 0.0), 4.0);
+      vec3 glass = k2sky(R) * fres * (office > 0.5 ? 1.0 : 0.6) * wall;
+      vec3 lit = vec3(0.0), spec = vec3(0.0);
       for (int i = 0; i < ${LN}; i++) {
         if (i >= uLN) break;
         vec3 L = uL[i].xyz - vP;
         float d2 = dot(L, L);
-        lit += uLC[i] * uL[i].w * max((dot(N, L * inversesqrt(d2)) + 0.25) / 1.25, 0.0) / (1.0 + d2 / 2.2e6);
+        L *= inversesqrt(d2);
+        lit += uLC[i] * uL[i].w * max((dot(N, L) + 0.25) / 1.25, 0.0) / (1.0 + d2 / 2.2e6);
+        spec += uLC[i] * uL[i].w * pow(max(dot(R, L), 0.0), 180.0) * wall / (1.0 + d2 / 2.0e7);
       }
-      vec3 c = vec3(0.05, 0.052, 0.058) * (uCool * 0.006 + lit * 2.0) + wc * win * on * 0.22;
+      vec3 base = mix(vec3(0.03, 0.045, 0.05), vec3(0.09, 0.09, 0.09), slab);
+      vec3 c = base * (uCool * 0.006 + lit * 1.2) + glass + spec * 0.9 + wc * win * on * wall * 0.24;
+      // Some crowns glow: a lit band round the top floors.
+      float crown = step(0.88, k2hash(vec2(id, 3.1))) * smoothstep(7.0, 5.0, vK.z - vP.y) * wall;
+      c += mix(vec3(0.85, 0.95, 1.0), vec3(0.5, 0.95, 0.85), step(0.7, k2hash(vec2(id, 9.4)))) * crown * 0.12;
       gl_FragColor = vec4(k2haze(c, vP), 1.0);
     }`,
   }));
   towers.layers.enable(LIGHT);
   scene.add(towers);
+
+  /* The suspension bridge west of the park: towers, a deck and a necklace of lamps. */
+  const A = landAt(-1500, INLET[0] - 30), B = landAt(-950, INLET[1] + 30);
+  const bp = t => new THREE.Vector3(A.x + (B.x - A.x) * t, 0, A.z + (B.z - A.z) * t);
+  const deckY = t => 38 + 23 * Math.sin(Math.PI * t);
+  const ax = new THREE.Vector3(B.x - A.x, 0, B.z - A.z).normalize(), side = new THREE.Vector3(-ax.z, 0, ax.x);
+  const yaw = Math.atan2(-ax.z, ax.x);
+  for (let k = 0; k < 24; k++) {
+    const t0 = k / 24, t1 = (k + 1) / 24, p0 = bp(t0), p1 = bp(t1), len = p0.distanceTo(p1) + 1;
+    const g = new THREE.BoxGeometry(len, 2.5, 16).rotateY(yaw).translate((p0.x + p1.x) / 2, (deckY(t0) + deckY(t1)) / 2, (p0.z + p1.z) / 2);
+    dark.push(g);
+  }
+  const TW = [0.34, 0.66];
+  for (const t of TW) for (const sgn of [-1, 1]) {
+    const p = bp(t).addScaledVector(side, sgn * 9);
+    dark.push(new THREE.BoxGeometry(4, 111, 4).translate(p.x, 55.5, p.z));
+    dot(new THREE.Vector3(p.x, 113, p.z), RED_A, 1.1, 2.4, 0.9);
+  }
+  // Main cables: from each anchor to a tower top, and a sag between the towers.
+  const cableY = t => (t < TW[0] ? deckY(0) + (111 - deckY(0)) * (t / TW[0]) ** 1.6
+    : t > TW[1] ? deckY(1) + (111 - deckY(1)) * ((1 - t) / (1 - TW[1])) ** 1.6
+    : 111 - (111 - deckY(0.5) - 4) * (1 - ((t - 0.5) / (TW[1] - 0.5)) ** 2));
+  for (const sgn of [-1, 1]) for (let t = 0; t <= 1.0001; t += 0.012) {
+    const p = bp(t).addScaledVector(side, sgn * 9);
+    dot(new THREE.Vector3(p.x, cableY(t), p.z), NECK, 0.7, 1.9, 0.02);
+  }
+  for (let t = 0; t <= 1.0001; t += 0.02) { const p = bp(t); dot(new THREE.Vector3(p.x, deckY(t) + 6, p.z), AMBER, 0.5, 1.6, 0.02); }
+
+  /* The freighters' hulls and their bridges aft. */
+  for (const [x, z, a] of [[-430, -1180, 0.15], [530, -1290, -0.1], [-760, -1430, 0.05]]) {
+    dark.push(new THREE.BoxGeometry(170, 10, 26).translate(-8, 5, 0).rotateY(-a).translate(x, 0, z));
+    dark.push(new THREE.BoxGeometry(16, 18, 24).translate(70, 19, 0).rotateY(-a).translate(x, 0, z));
+  }
 }
 // The flames: one tall sprite per fire.
 for (const [i, f] of fires.entries()) { dot(f.clone().setY(f.y + 0.6), FIRE, 2.2, 6.5, -1 - i * 1.37); }
@@ -925,7 +1117,8 @@ const dotMat = new THREE.ShaderMaterial({
     vec2 q = gl_PointCoord - 0.5;
     // Flames stand taller than they are wide.
     float a = vFire > 0.5 ? exp(-(q.x * q.x * 40.0 + q.y * q.y * 9.0)) : exp(-dot(q, q) * 18.0);
-    gl_FragColor = vec4(vCol * 1.7 * a * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+    // Lamps above the cloud base, such as the ski runs, sit behind the deck.
+    gl_FragColor = vec4(vCol * 1.7 * a * (1.0 - k2hazeAmount(vP) * 0.6) * cloudVeil(vP), 0.0);
   }`,
 });
 const dotPts = new THREE.Points(dotGeo, dotMat);
@@ -941,11 +1134,11 @@ if (SCENE === 'island') {
   g.setAttribute('position', new THREE.BufferAttribute(P, 3));
   g.setAttribute('aS', new THREE.BufferAttribute(A, 1));
   const flakes = new THREE.Points(g, new THREE.ShaderMaterial({
-    uniforms: { ...U, uDpr: dotMat.uniforms.uDpr },
+    uniforms: { ...U, uDpr: dotMat.uniforms.uDpr, uSnow: snowAmt },
     transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-    vertexShader: /* glsl */`attribute float aS; uniform float uDpr; uniform float uTime; varying vec3 vCol; varying vec3 vP; ${LIGHTS_GLSL}
+    vertexShader: /* glsl */`attribute float aS; uniform float uDpr; uniform float uTime; uniform float uSnow; varying vec3 vCol; varying vec3 vP; ${LIGHTS_GLSL}
     uniform vec3 uCool;
     void main() {
       // Each flake falls at its own pace, sways, and drifts on a light wind.
@@ -954,9 +1147,11 @@ if (SCENE === 'island') {
       p.x = mod(p.x + 450.0 + uTime * 1.4 + sin(uTime * 0.7 + aS * 40.0) * 1.5, 900.0) - 450.0;
       vP = p;
       float d = length(p - cameraPosition);
-      vCol = uCool * 0.05 + burstLit(p, 420.0) * 0.16;
+      // Fewer flakes fall as the cloud thins; none under a clear sky.
+      float on = step(aS, uSnow);
+      vCol = (uCool * 0.05 + burstLit(p, 420.0) * 0.16) * on;
       gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-      gl_PointSize = clamp(320.0 / d, 1.2, 5.0) * uDpr;
+      gl_PointSize = on * clamp(320.0 / d, 1.2, 5.0) * uDpr;
     }`,
     fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP;
     void main() { vec2 q = gl_PointCoord - 0.5; gl_FragColor = vec4(vCol * exp(-dot(q, q) * 16.0), 0.0); }`,
@@ -1003,19 +1198,86 @@ const barges = new THREE.Group();
   barges.add(hull);
 }
 scene.add(barges);
-// The island's pines: dark cones on the gentler slopes.
+if (darkParts.length) {
+  const darkMesh = new THREE.Mesh(mergeGeometries(darkParts), bargeMat);
+  darkMesh.layers.enable(LIGHT);
+  scene.add(darkMesh);
+}
+// The island's furniture: tiered pines, a cabin, a lighthouse, boulders and ice floes.
+// Each part carries its albedo and whether snow settles on it.
 if (SCENE === 'island') {
-  const cones = [];
-  for (let k = 0, n = 0; k < 600 && n < 70; k++) {
-    const p = isleAt(rnd() * Math.PI * 2, 0.15 + rnd() * 0.75);
-    if (p.y < 4 || p.y > 70) continue;
-    const h = 12 + rnd() * 10;
-    cones.push(new THREE.ConeGeometry(h * 0.28, h, 7).translate(p.x, p.y + h / 2 - 0.5, p.z));
+  const parts = [];
+  const part = (g, col, snowy = 1) => {
+    const n = g.attributes.position.count;
+    g.setAttribute('aC', new THREE.Float32BufferAttribute(Array.from({ length: n }, () => col).flat(), 3));
+    g.setAttribute('aS', new THREE.Float32BufferAttribute(new Array(n).fill(snowy), 1));
+    parts.push(g.index ? g.toNonIndexed() : g);
+  };
+  const PINE = [0.018, 0.032, 0.024], BARK = [0.04, 0.025, 0.015], ROCK = [0.04, 0.042, 0.048];
+  // Pines: three tiers on a short trunk, thicker in groves.
+  for (let k = 0, n = 0; k < 2400 && n < 150; k++) {
+    const p = isleAt(rnd() * Math.PI * 2, 0.12 + rnd() * 0.8);
+    if (p.y < 4 || p.y > 82 || noise(p.x * 0.012, p.z * 0.012) < -0.15) continue;
+    const h = 9 + rnd() * 11, lean = (rnd() - 0.5) * 0.06;
+    part(new THREE.CylinderGeometry(0.25, 0.35, h * 0.3, 5).translate(p.x, p.y + h * 0.12, p.z), BARK, 0);
+    for (const [r, hh, y] of [[0.32, 0.46, 0.3], [0.24, 0.4, 0.52], [0.15, 0.36, 0.74]]) {
+      part(new THREE.ConeGeometry(h * r, h * hh, 9).rotateZ(lean).translate(p.x, p.y + h * y, p.z), PINE);
+    }
     n++;
   }
-  const pines = new THREE.Mesh(mergeGeometries(cones), bargeMat);
-  pines.layers.enable(LIGHT);
-  scene.add(pines);
+  // The cabin by the fire: log walls, a steep roof and a stone chimney.
+  {
+    const c = isleAt(1.79, 0.7), yaw = 0.25;
+    const at = g => g.rotateY(yaw).translate(c.x, c.y, c.z);
+    part(at(new THREE.BoxGeometry(8, 4, 6).translate(0, 1.8, 0)), BARK, 0);
+    for (const s of [-1, 1]) part(at(new THREE.BoxGeometry(9, 0.35, 4.1).rotateX(s * 0.72).translate(0, 4.9, s * 1.55)), [0.035, 0.03, 0.03]);
+    part(at(new THREE.BoxGeometry(0.9, 3, 0.9).translate(2.6, 5.8, -1)), ROCK);
+  }
+  // The lighthouse on the point: a white tower with a red band.
+  {
+    const l = isleAt(0.35, 0.93);
+    part(new THREE.CylinderGeometry(1.1, 1.6, 9, 14).translate(l.x, l.y + 4.5, l.z), [0.42, 0.42, 0.44], 0);
+    part(new THREE.CylinderGeometry(1.32, 1.42, 1.6, 14).translate(l.x, l.y + 6, l.z), [0.32, 0.03, 0.03], 0);
+    part(new THREE.CylinderGeometry(1.5, 1.5, 0.5, 14).translate(l.x, l.y + 9.2, l.z), [0.05, 0.05, 0.05]);
+    part(new THREE.ConeGeometry(1.3, 1.4, 14).translate(l.x, l.y + 11.8, l.z), [0.3, 0.03, 0.03]);
+  }
+  // Boulders at the waterline, each with a cap of snow.
+  for (let k = 0; k < 46; k++) {
+    const a = rnd() * Math.PI * 2, p = isleAt(a, 0.97 + rnd() * 0.07), r = 1.5 + rnd() * 3.5;
+    part(new THREE.DodecahedronGeometry(r, 0).scale(1, 0.55 + rnd() * 0.3, 1).rotateY(rnd() * 3).translate(p.x, Math.max(p.y, 0) + r * 0.2, p.z), ROCK);
+  }
+  // Ice floes: flat, ragged plates afloat round the shore.
+  for (let k = 0; k < 60; k++) {
+    const a = rnd() * Math.PI * 2, f = 1.04 + Math.pow(rnd(), 1.6) * 0.5, R = isleR(a) * f, r = 2 + rnd() * 8;
+    const x = ISLE.x + Math.cos(a) * R, z = ISLE.z + (Math.sin(a) * R) / 1.15;
+    const g = new THREE.CylinderGeometry(r, r, 0.5, 7);
+    const P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) { const j = 0.65 + 0.7 * chash(P.getX(i) * 0.3 + k, P.getZ(i) * 0.3); P.setX(i, P.getX(i) * j); P.setZ(i, P.getZ(i) * j); }
+    g.computeVertexNormals();
+    part(g.rotateY(rnd() * 3).translate(x, 0.12, z), [0.3, 0.32, 0.37]);
+  }
+  const isleMat = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */`attribute vec3 aC; attribute float aS; varying vec3 vP; varying vec3 vN; varying vec3 vC; varying float vS;
+    void main() { vC = aC; vS = aS; vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying vec3 vC; varying float vS; ${HEAD}
+    void main() {
+      vec3 N = normalize(vN);
+      float snow = vS * smoothstep(0.42, 0.8, N.y);
+      vec3 alb = mix(vC, vec3(0.5, 0.53, 0.6), snow), lit = vec3(0.0);
+      for (int i = 0; i < ${LN}; i++) {
+        if (i >= uLN) break;
+        vec3 L = uL[i].xyz - vP;
+        float d2 = dot(L, L);
+        lit += uLC[i] * uL[i].w * max((dot(N, L * inversesqrt(d2)) + 0.2) / 1.2, 0.0) / (1.0 + d2 / 1.4e6);
+      }
+      vec3 amb = uCool * 0.006 * (0.4 + 0.6 * N.y) * (1.0 + 6.0 * snow) + vec3(0.62, 0.7, 0.9) * 0.12 * max(dot(N, uMoon.xyz), 0.0) * uMoon.w;
+      gl_FragColor = vec4(k2haze(alb * (amb + lit * 1.1), vP), 1.0);
+    }`,
+  });
+  const isle = new THREE.Mesh(mergeGeometries(parts), isleMat);
+  isle.layers.enable(LIGHT);
+  scene.add(isle);
 }
 // The line sits 150 m in front of the burst plane, so the hulls read.
 const placeBarges = () => { barges.position.z = -shellDist() + 150; barges.updateMatrixWorld(); };
@@ -1828,6 +2090,12 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(20000, 12000).rotateX(-Math
       float tx = H.x / H.y, tz = H.z / H.y;
       // A soft power keeps the column while the stars burn, not just at the flash.
       glit += uLC[i] * sqrt(uL[i].w) * exp(-(tx * tx / 0.0036 + tz * tz / 0.0256));
+    }
+    // The moon lays a glade the same way: a long column of glints.
+    if (uMoon.w > 0.0) {
+      vec3 H = normalize(uMoon.xyz + E);
+      float tx = H.x / H.y, tz = H.z / H.y;
+      glit += vec3(0.62, 0.7, 0.9) * 0.35 * uMoon.w * exp(-(tx * tx / 0.0016 + tz * tz / 0.02));
     }
     // The wave rows switch each patch on and off, so the column breaks into dashes.
     float sparkle = smoothstep(0.5, 0.8, mix(w3, rB, far)) * smoothstep(0.3, 0.6, mix(w2, rA, far));
@@ -3049,19 +3317,29 @@ placeBarges();
 choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
 /* ---------- weather ---------- */
-// On Drift the deck comes and goes on its own.
-// A reload starts clear, broken, cloudy or overcast at random.
-const WX = [0, 0.35, 0.8, 1];
-const wx = { w: WX[Math.floor(Math.random() * WX.length)], to: 0, next: 0, last: 0 };
-wx.to = wx.w;
-wx.next = performance.now() + (40 + Math.random() * 80) * 1000;
+// On Drift the sky starts clear and turns cloudy now and then, at random.
+// A change takes two and a half to four minutes and eases in and out.
+// Weights for the cloudy states: broken, cloudy, overcast.
+const WX_CLOUDY = [[0.35, 0.5], [0.8, 0.35], [1, 0.15]];
+const pickCloudy = (not = -1) => {
+  const pool = WX_CLOUDY.filter(([w]) => w !== not), sum = pool.reduce((s, [, p]) => s + p, 0);
+  let r = Math.random() * sum;
+  for (const [w, p] of pool) if ((r -= p) <= 0) return w;
+  return pool[0][0];
+};
+// Clear holds two to seven minutes; cloud holds one to three and a half.
+const holdFor = w => (w > 0.01 ? 60 + Math.random() * 150 : 120 + Math.random() * 300) * 1000;
+const wx = { w: 0, from: 0, to: 0, p: 0, dur: 0, next: performance.now() + holdFor(0), last: 0 };
 // Cover from the weather: 0 is clear, 0.8 is the tuned deck, 1 is overcast.
 function applyCover() {
   const w = opts.sky === 'clear' ? 0 : opts.sky === 'cloud' ? 0.8 : wx.w;
-  const cover = 0.36 + ((FX.cloudCover - 0.36) * w) / 0.8, on = cover > 0.37;
-  U.uCloud.value.z = cover;
-  U.uCloud.value.w = on ? 1 : 0;
-  cloud.visible = on;
+  U.uCloud.value.z = 0.36 + ((FX.cloudCover - 0.36) * w) / 0.8;
+  // The first wisps fade in, so the deck never pops on or off.
+  const t = Math.min(1, w / 0.2);
+  U.uCloud.value.w = t * t * (3 - 2 * t);
+  cloud.visible = w > 0.002;
+  if (SCENE === 'island') U.uMoon.value.w = 1 - 0.97 * U.uCloud.value.w;
+  snowAmt.value = Math.min(1, Math.max(0, (w - 0.2) / 0.5));
 }
 /* Heat lightning: silent flickers deep in far cloud, only under a thick deck. */
 const BOLT_COL = linFit(0.9, 0.06, 285);
@@ -3104,14 +3382,18 @@ function weatherTick(now) {
     }
   } else boltNext = 0;
   if (opts.sky !== 'drift') return;
-  // Every one to three minutes the sky turns toward another state.
-  if (now > wx.next) {
-    const other = WX.filter(x => Math.abs(x - wx.w) > 0.2);
-    wx.to = other[Math.floor(Math.random() * other.length)];
-    wx.next = now + (60 + Math.random() * 120) * 1000;
+  if (wx.dur) {
+    // A change under way eases along a smoothstep.
+    wx.p = Math.min(1, wx.p + dt / wx.dur);
+    wx.w = wx.from + (wx.to - wx.from) * wx.p * wx.p * (3 - 2 * wx.p);
+    applyCover();
+    if (wx.p >= 1) { wx.dur = 0; wx.next = now + holdFor(wx.to); }
+  } else if (now > wx.next) {
+    // Cloud mostly clears; now and then it thickens or thins instead.
+    wx.from = wx.w;
+    wx.to = wx.w < 0.01 ? pickCloudy() : Math.random() < 0.75 ? 0 : pickCloudy(wx.w);
+    wx.p = 0; wx.dur = 150 + Math.random() * 90;
   }
-  // A full change takes about 90 s.
-  if (wx.w !== wx.to) { wx.w += Math.max(-dt / 90, Math.min(dt / 90, wx.to - wx.w)); applyCover(); }
 }
 const setSky = v => { opts.sky = v; applyCover(); };
 choices(document.getElementById('billSet'), v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); }).set(saved('bill') === 'on' ? 'on' : 'off');
