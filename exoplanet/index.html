@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.01 230); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exoplanet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Exoplanet: a spectrograph waterfall of one star, folded by hand. */
+:root { --stage: oklch(0.08 0.01 230); }
+.stage--exoplanet canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--exoplanet canvas.on { opacity: 1; }
+.stage--exoplanet { cursor: ew-resize; }
+.stage--exoplanet.fold { cursor: grabbing; }
+/* The readout: one line of instrument telemetry under the top corners. */
+.stage--exoplanet .read {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em;
+  color: oklch(0.72 0.01 230 / 0.55); white-space: nowrap; pointer-events: none; z-index: 2;
+  font-variant-numeric: tabular-nums;
+}
+.stage--exoplanet .read.lock { color: oklch(0.85 0.08 200 / 0.9); }
+@media (prefers-reduced-motion: reduce) { .stage--exoplanet canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Exoplanet</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--exoplanet" id="stage" tabindex="0" role="application" aria-label="A spectrograph waterfall of one star. Drag left or right to fold the exposures by a trial period until the line wobble and the transit band line up.">
+      <p class="fail" hidden>Exoplanet needs WebGL 2, which this browser does not give.</p>
+      <span class="read" id="read" aria-live="off">P — · K — · δ —</span>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Exoplanet</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced, audioKit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage'), readEl = document.getElementById('read');
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+
+/* ---------- targets ---------- */
+// Each target is a seed and a few numbers. Names are catalog-shaped, not real.
+// vsini broadens the lines. K is the wobble in stage pixels at 1280 px.
+// P is in days. depth is the drawn transit depth. kind wrong never folds.
+const TARGETS = [
+  { id: 't1', name: 'TOI-4811', type: 'G2', lines: 52, depth: 0.7, vsini: 2, P: 3.52, K: 4.5, dip: 0.3, kind: 'planet' },
+  { id: 't2', name: 'HD 219134 c', type: 'K3', lines: 60, depth: 0.85, vsini: 1, P: 6.76, K: 2.5, dip: 0.14, kind: 'planet' },
+  { id: 't3', name: 'WASP-1207', type: 'F6', lines: 34, depth: 0.45, vsini: 9, P: 1.09, K: 6, dip: 0.34, kind: 'planet' },
+  { id: 't4', name: 'KIC 8462852', type: 'F3', lines: 30, depth: 0.4, vsini: 12, P: 0, K: 0, dip: 0, kind: 'wrong' },
+  { id: 't5', name: 'GJ 3470', type: 'M1', lines: 60, depth: 0.9, vsini: 1, P: 12.4, K: 2, dip: 0.16, kind: 'planet' },
+  { id: 't6', name: 'HAT-P-2219', type: 'K0', lines: 56, depth: 0.75, vsini: 3, P: 2.21, K: 4, dip: 0.26, ecc: 0.35, kind: 'planet' },
+  { id: 't7', name: 'EPIC 204278916', type: 'K5', lines: 58, depth: 0.8, vsini: 2, P: 0, K: 0, dip: 0, kind: 'wrong' },
+  { id: 't8', name: 'TOI-700 d', type: 'M2', lines: 60, depth: 0.9, vsini: 1, P: 18.7, K: 1.6, dip: 0.1, kind: 'planet' },
+];
+const TYPES = ['F3', 'F6', 'G0', 'G2', 'K0', 'K3', 'K5', 'M1', 'M2'];
+// A random target. One in four is wrong.
+function shuffled(seed) {
+  const r = mulberry(seed);
+  const ti = Math.floor(r() * TYPES.length), type = TYPES[ti], hot = ti / (TYPES.length - 1);
+  const wrong = r() < 0.25;
+  const n = Math.floor(2000 + r() * 7000);
+  return {
+    id: 'rnd', name: `TOI-${n}`, type, seed,
+    lines: Math.round(30 + 30 * hot), depth: 0.4 + 0.5 * hot, vsini: 1 + (1 - hot) * 12 * r(),
+    P: wrong ? 0 : Math.exp(Math.log(0.7) + r() * (Math.log(16) - Math.log(0.7))),
+    K: wrong ? 0 : 1.6 + r() * 4.4, dip: wrong ? 0 : 0.1 + r() * 0.24,
+    ecc: r() < 0.2 ? 0.3 : 0, kind: wrong ? 'wrong' : 'planet',
+  };
+}
+function mulberry(a) {
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const seedOf = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+
+/* ---------- state ---------- */
+const N = 256, TW = 4096, WIN = 12;
+let target = TARGETS[0], shuffleSeed = 7;
+let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
+// Trial period P in days; 0 means time order. lock holds while folded true.
+let P = 0, locked = false, folding = false;
+let time = 0;
+
+const act = { shuffle() {}, reset() {}, exposure() {}, pick() {} };
+const ui = initPage({ id: 'exoplanet', bar: {
+  choice: { label: 'Target', value: 't1', display: 'stepper',
+    options: TARGETS.map((t, i) => ({ value: t.id, label: t.name, key: String(i + 1) })),
+    onPick: v => act.pick(v) },
+  slider: { label: 'Exposure', min: 0, max: 1, step: 0.01, value: exposure, onInput: v => act.exposure(v) },
+  actions: [{ verb: 'shuffle', key: ' ', onPress: () => act.shuffle() }],
+  settings: [
+    { type: 'toggle', id: 'tell', label: 'Tellurics', value: true, persist: true, onToggle: v => { tell = v ? 1 : 0; live(); } },
+    { type: 'toggle', id: 'cosmic', label: 'Cosmic rays', value: true, persist: true, onToggle: v => { cosmic = v ? 1 : 0; live(); } },
+    { type: 'choice', id: 'stretch', label: 'Stretch', value: 'linear', persist: true,
+      options: [{ value: 'linear', label: 'Linear' }, { value: 'log', label: 'Log' }], onPick: v => { logStretch = v === 'log' ? 1 : 0; live(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'fold'], ['scroll', 'fine'], ['tap', 'cut'], ['1-8', 'target']],
+} });
+{
+  const v = k => ui.setting(k)?.value;
+  tell = v('tell') === false ? 0 : 1;
+  cosmic = v('cosmic') === false ? 0 : 1;
+  logStretch = v('stretch') === 'log' ? 1 : 0;
+}
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- templates ---------- */
+// The stellar template: one continuum with Gaussian lines, broadened by rotation.
+// Units are template pixels; the window is WIN nm across TW pixels.
+const star = new Float32Array(TW), tellu = new Float32Array(TW), work = new Float32Array(TW);
+// Line cores: where the strongest lines sit, for the Rossiter bump and the cut.
+let lineCores = [], cols = [0.3, 0.7];
+function template(t) {
+  const r = mulberry(t.seed ?? seedOf(t.name));
+  star.fill(1);
+  lineCores = [];
+  cols = [0.1 + r() * 0.8, 0.1 + r() * 0.8];
+  const pxPerNm = TW / WIN;
+  for (let i = 0; i < t.lines; i++) {
+    const c = r() * TW;
+    const strong = r() < 0.12;
+    const d = (strong ? 0.75 + r() * 0.25 : Math.pow(r(), 0.8) * 0.8) * t.depth;
+    const sig = (strong ? 0.014 + r() * 0.01 : 0.005 + r() * 0.01) * pxPerNm;
+    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
+    for (let x = lo; x <= hi; x++) {
+      const z = (x - c) / sig;
+      // Strong lines keep Lorentz wings; weak ones are Gaussian.
+      const prof = strong ? 0.7 * Math.exp(-z * z * 0.5) + 0.3 / (1 + z * z) : Math.exp(-z * z * 0.5);
+      star[x] *= 1 - d * prof;
+    }
+    if (d > 0.45 * t.depth) lineCores.push(c / TW);
+  }
+  // Rotation: a half-ellipse kernel, its half-width from vsini.
+  const hw = Math.max(1, Math.round(0.004 * t.vsini * pxPerNm));
+  if (hw > 1) {
+    const k = [];
+    let sum = 0;
+    for (let i = -hw; i <= hw; i++) { const v = Math.sqrt(Math.max(0, 1 - (i / hw) ** 2)); k.push(v); sum += v; }
+    work.set(star);
+    for (let x = 0; x < TW; x++) {
+      let acc = 0;
+      for (let i = -hw; i <= hw; i++) acc += work[clamp(x + i, 0, TW - 1)] * k[i + hw];
+      star[x] = acc / sum;
+    }
+  }
+}
+// Earth's air: a few narrow fixed lines, mostly in the right half of the window.
+function telluric() {
+  const r = mulberry(0x5eed);
+  tellu.fill(1);
+  const pxPerNm = TW / WIN;
+  for (let i = 0; i < 11; i++) {
+    const c = (0.35 + r() * 0.62) * TW, d = 0.12 + r() * 0.42, sig = (0.003 + r() * 0.003) * pxPerNm;
+    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
+    for (let x = lo; x <= hi; x++) { const z = (x - c) / sig; tellu[x] *= 1 - d * Math.exp(-z * z * 0.5); }
+  }
+}
+
+/* ---------- exposures ---------- */
+// Parallel arrays, one record per exposure. Index 0 is the oldest.
+const E = {
+  t: new Float32Array(N), rv: new Float32Array(N), flux: new Float32Array(N), seed: new Float32Array(N),
+  transit: new Float32Array(N), gap: new Float32Array(N), rm: new Float32Array(N), age: new Float32Array(N),
+  y: new Float32Array(N), yTo: new Float32Array(N),
+};
+const order = new Int32Array(N), rank = new Float32Array(N);
+let tNow = 0, rndE = mulberry(1);
+// A wrong star dims in events, never on a period.
+let events = [];
+function fluxAt(t) {
+  if (target.kind === 'planet') {
+    const ph = ((t / target.P) % 1 + 1) % 1, dur = 0.035 + 0.02 * Math.cbrt(target.P / 3), d = ph > 0.5 ? ph - 1 : ph;
+    if (Math.abs(d) > dur) return { f: 1, tr: -1 };
+    const u = d / dur, edge = 0.18;
+    const k = clamp((1 - Math.abs(u)) / edge);
+    return { f: 1 - target.dip * k, tr: (u + 1) / 2 };
+  }
+  let f = 1 + 0.02 * Math.sin(t * 0.21) + 0.012 * Math.sin(t * 0.83 + 1.3);
+  for (const ev of events) {
+    if (t < ev.t0 || t > ev.t0 + ev.dur) continue;
+    const u = (t - ev.t0) / ev.dur;
+    // A slow ingress and a fast egress.
+    const k = u < ev.split ? Math.pow(u / ev.split, 1.6) : Math.pow(1 - (u - ev.split) / (1 - ev.split), 0.6);
+    f -= ev.depth * k;
+  }
+  return { f: Math.max(0.05, f), tr: -1 };
+}
+function rvAt(t) {
+  if (target.kind !== 'planet') return 0;
+  const th = TAU * t / target.P;
+  const e = target.ecc || 0;
+  return target.K * (Math.sin(th) + e * Math.sin(2 * th) * 0.8);
+}
+// Writes one exposure at slot i for time t.
+function expose(i, t) {
+  E.t[i] = t;
+  const { f, tr } = fluxAt(t);
+  E.rv[i] = rvAt(t) + 0.6 * Math.sin(TAU * t / 365) + (rndE() - 0.5) * 0.35;
+  // Sky transparency jitters a little from row to row.
+  E.flux[i] = f * (0.985 + rndE() * 0.03);
+  E.transit[i] = tr;
+  E.rm[i] = tr >= 0 ? (tr * 2 - 1) : 0;
+  E.gap[i] = rndE() < 1 / 14 ? 1 : 0;
+  E.seed[i] = Math.floor(rndE() * 65535);
+}
+function newEvents() {
+  events = [];
+  if (target.kind !== 'wrong') return;
+  let t = rndE() * 6;
+  while (t < 400) {
+    const dur = 0.6 + rndE() * 3.2;
+    events.push({ t0: t, dur, depth: 0.15 + rndE() * 0.25, split: 0.55 + rndE() * 0.3 });
+    t += dur + 2 + rndE() * 12 * (rndE() < 0.3 ? 0.2 : 1);
+  }
+}
+// A full stack for a new target. The sweep runs top to bottom over 1.5 s.
+function restack(sweep = true) {
+  rndE = mulberry((target.seed ?? seedOf(target.name)) ^ 0x9e37);
+  newEvents();
+  tNow = 0;
+  for (let i = 0; i < N; i++) { tNow += 0.28 + rndE() * 0.18; expose(i, tNow); }
+  reorder();
+  for (let i = 0; i < N; i++) { E.y[i] = E.yTo[i]; E.age[i] = sweep ? -(1 - rank[i] / N) * 1.5 - 0.1 : 1; }
+}
+// One more exposure. The oldest slot takes it.
+let oldest = 0;
+function arrive() {
+  tNow += 0.28 + rndE() * 0.18;
+  const i = oldest;
+  oldest = (oldest + 1) % N;
+  expose(i, tNow);
+  E.age[i] = 0;
+  reorder();
+  // A new row starts where its slot is, so it sweeps in, not slides in.
+  E.y[i] = E.yTo[i];
+  if (P > 0) periodogramDirty = true;
+}
+// Rank every exposure: by time, or by phase when folded.
+function reorder() {
+  for (let i = 0; i < N; i++) order[i] = i;
+  if (P > 0) {
+    const ph = rank;
+    for (let i = 0; i < N; i++) { const p = (E.t[i] / P) % 1; ph[i] = p + 0.5 > 1 ? p - 0.5 : p + 0.5; }
+    order.sort((a, b) => ph[a] - ph[b]);
+  } else {
+    order.sort((a, b) => E.t[b] - E.t[a]);
+  }
+  for (let k = 0; k < N; k++) { rank[order[k]] = k; E.yTo[order[k]] = k; }
+}
+let periodogramDirty = false;
+
+/* ---------- shaders ---------- */
+// Strips: one instance per exposure, in device pixels from the bottom left.
+const STRIP_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+layout(location=1) in vec4 aA;
+layout(location=2) in vec4 aB;
+uniform vec2 uRes;
+uniform vec4 uBox;
+uniform float uRowH;
+out vec2 vUV;
+flat out vec4 vA;
+flat out vec4 vB;
+void main() {
+  // Snap strip edges to whole pixels; overlap one pixel so eased rows leave no seam.
+  float y0 = floor(uBox.w - (aA.x + 1.0) * uRowH + 0.5);
+  float y1 = floor(uBox.w - aA.x * uRowH + 0.5) + 1.0;
+  vec2 p = vec2(mix(uBox.x, uBox.z, aC.x), mix(y0, y1, aC.y));
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vUV = vec2(aC.x, mix(y0, y1, aC.y));
+  vA = aA;
+  vB = aB;
+}`;
+const STRIP_FS = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUV;
+flat in vec4 vA;
+flat in vec4 vB;
+uniform sampler2D uStar;
+uniform sampler2D uTell;
+uniform vec2 uRes;
+uniform vec4 uBox;
+uniform float uDpr;
+uniform float uTell1;
+uniform float uCosmic;
+uniform float uLog;
+uniform float uNoise;
+uniform float uRm;
+uniform float uTime;
+uniform vec3 uGrey;
+uniform vec3 uBg;
+uniform vec2 uCols;
+out vec4 o;
+// A PCG hash: one integer in, one float in 0..1 out.
+uint pcg(uint v) { v = v * 747796405u + 2891336453u; uint w = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u; return (w >> 22u) ^ w; }
+float hash(uvec2 p) { return float(pcg(p.x ^ pcg(p.y))) / 4294967295.0; }
+void main() {
+  float u = vUV.x;
+  float widthPx = uBox.z - uBox.x;
+  // The wobble is in stage pixels at 1280; scale it to this stage.
+  float rvN = vA.y * uDpr * (widthPx / (1280.0 * uDpr)) / widthPx;
+  float s = texture(uStar, vec2(u - rvN, 0.5)).r;
+  float tl = mix(1.0, texture(uTell, vec2(u, 0.5)).r, uTell1);
+  float f = s * tl;
+  // Rossiter: the hidden strip of the disc stops absorbing at its own velocity.
+  if (vB.x >= 0.0) {
+    float off = vB.z * uRm / widthPx;
+    float sh = texture(uStar, vec2(u - rvN - off, 0.5)).r;
+    f += (1.0 - sh) * 0.3 * tl;
+  }
+  // The blaze: an order is brightest at its centre.
+  f *= mix(0.42, 1.0, pow(cos((u - 0.5) * 3.14159), 1.4));
+  f *= vA.z;
+  // One hot column and one dead column, fixed on the detector.
+  float colPx = 0.5 * uDpr / widthPx;
+  f += 0.35 * step(abs(u - uCols.x), colPx);
+  f *= 1.0 - 0.75 * step(abs(u - uCols.y), colPx);
+  // Noise: photon noise with the root of the flux, read noise on top.
+  uvec2 px = uvec2(uint(u * widthPx / uDpr), uint(vA.w));
+  float n = hash(px) + hash(px + uvec2(7919u, 104729u)) - 1.0;
+  f += n * uNoise * (0.6 * sqrt(max(f, 0.0)) + 0.25);
+  // Cosmic rays: one hot pixel or a short streak, never in the same place twice.
+  float cr = hash(uvec2(px.x / 2u, uint(vA.w) * 3u + 11u));
+  f += step(1.0 - 0.0007 * uCosmic, cr) * (2.0 + 4.0 * hash(px + uvec2(3u, 5u)));
+  // A gap row is black with a dashed mark at the left.
+  float xpx = u * widthPx / uDpr;
+  float dash = step(0.5, fract(xpx / 6.0)) * step(xpx, 10.0);
+  f = mix(f, dash * 0.35, vB.y);
+  // The readout sweep: pixels beyond the read edge are still dark.
+  float age = vB.w;
+  float edge = step(u, age);
+  float lead = exp(-max(0.0, (age - u)) * 60.0) * step(0.0, age) * step(age, 1.0) * 1.5;
+  f = f * edge + lead * step(u, age);
+  if (age < 0.0) f = 0.0;
+  // The grade: a linear or log stretch, grain, vignette.
+  float v = mix(f * 0.92, log(1.0 + f * 9.0) / log(10.0), uLog);
+  float g = hash(uvec2(gl_FragCoord.xy) + uvec2(uint(uTime * 60.0) * 1931u, 0u)) - 0.5;
+  v += g * 0.025;
+  vec2 q = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  v *= 1.0 - 0.35 * dot(q, q) * dot(q, q);
+  vec3 c = uBg + uGrey * max(v, 0.0);
+  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+// The stage behind the strips: the bg colour with the vignette.
+const BG_VS = `#version 300 es
+layout(location=0) in vec2 aC;
+void main() { gl_Position = vec4(aC * 2.0 - 1.0, 0.0, 1.0); }`;
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec3 uBg;
+out vec4 o;
+void main() {
+  vec2 q = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  vec3 c = uBg * (1.0 - 0.4 * dot(q, q));
+  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null;
+const inst = new Float32Array(N * 8);
+function compile(vs, fs) {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+// A 1-D template texture, R16F, linear. Sampling R16F needs no extension.
+function tex1d(data) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, TW, 1, 0, gl.RED, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function upload(t, data) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TW, 1, gl.RED, gl.FLOAT, data);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { strip: compile(STRIP_VS, STRIP_FS), bg: compile(BG_VS, BG_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  Pg = progs;
+  const corners = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+  quadVao = gl.createVertexArray();
+  gl.bindVertexArray(quadVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  // Strips: the corner buffer, then two vec4 per instance.
+  stripVao = gl.createVertexArray();
+  gl.bindVertexArray(stripVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+  gl.vertexAttribDivisor(2, 1);
+  gl.bindVertexArray(null);
+  starTex = tex1d(star);
+  tellTex = tex1d(tellu);
+}
+
+/* ---------- layout ---------- */
+// Device pixels, from the bottom left as GL counts. box is x0, y0, x1, y1.
+const G = { box: [0, 0, 1, 1], lc: [0, 0, 1, 1], pg: [0, 0, 1, 1], rowH: 1, dpr: 1, W: 1, H: 1, w: 1, h: 1 };
+let rung = 0;
+function layout() {
+  const { w, h, W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
+  Object.assign(G, { W, H, dpr, w, h });
+  const coarse = matchMedia('(pointer: coarse)').matches, narrow = w < 640;
+  // Reserves keep the frame clear of the bar's corners and the key strip.
+  const top = (coarse ? 62 : 52) * dpr, bottom = (narrow ? 128 : coarse ? 96 : 84) * dpr;
+  const lcW = Math.round(w * (narrow ? 0.08 : 0.1)) * dpr, gapX = 8 * dpr;
+  const pgH = 16 * dpr, pgGap = 10 * dpr;
+  const x0 = lcW + gapX, x1 = W - 14 * dpr;
+  const yTop = H - top, yBot = bottom + pgH + pgGap;
+  G.box = [x0, yBot, x1, yTop];
+  G.lc = [10 * dpr, yBot, lcW - 2 * dpr, yTop];
+  G.pg = [x0, bottom, x1, bottom + pgH];
+  G.rowH = (yTop - yBot) / N;
+}
+
+/* ---------- render ---------- */
+const GREY = linFit(0.72, 0.01, 230), BG = linFit(0.08, 0.01, 230), CYAN = linFit(0.85, 0.08, 200);
+function render() {
+  gl.viewport(0, 0, G.W, G.H);
+  gl.disable(gl.BLEND);
+  gl.useProgram(Pg.bg.p);
+  gl.bindVertexArray(quadVao);
+  gl.uniform2f(Pg.bg.u.uRes, G.W, G.H);
+  gl.uniform3fv(Pg.bg.u.uBg, BG);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Strips, oldest slot first; order does not matter without blending.
+  for (let i = 0; i < N; i++) {
+    const o = i * 8;
+    inst[o] = E.y[i]; inst[o + 1] = E.rv[i]; inst[o + 2] = E.flux[i]; inst[o + 3] = E.seed[i];
+    inst[o + 4] = E.transit[i]; inst[o + 5] = E.gap[i]; inst[o + 6] = E.rm[i]; inst[o + 7] = E.age[i];
+  }
+  const s = Pg.strip, u = s.u;
+  gl.useProgram(s.p);
+  gl.bindVertexArray(stripVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, starTex);
+  gl.uniform1i(u.uStar, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, tellTex);
+  gl.uniform1i(u.uTell, 1);
+  gl.uniform2f(u.uRes, G.W, G.H);
+  gl.uniform4fv(u.uBox, G.box);
+  gl.uniform1f(u.uRowH, G.rowH);
+  gl.uniform1f(u.uDpr, G.dpr);
+  gl.uniform1f(u.uTell1, tell);
+  gl.uniform1f(u.uCosmic, cosmic);
+  gl.uniform1f(u.uLog, logStretch);
+  // Noise falls with exposure: short is loud, long is clean.
+  gl.uniform1f(u.uNoise, 0.025 + 0.16 * Math.pow(1 - exposure, 2.2));
+  gl.uniform1f(u.uRm, 0.004 * target.vsini * (G.box[2] - G.box[0]) / WIN * 1.6);
+  gl.uniform1f(u.uTime, time);
+  gl.uniform3fv(u.uGrey, GREY);
+  gl.uniform3fv(u.uBg, BG);
+  gl.uniform2f(u.uCols, cols[0], cols[1]);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, N);
+}
+
+/* ---------- step ---------- */
+let sinceArrive = 0;
+const cadence = () => 0.5 + 2.5 * exposure;
+function step(dt) {
+  const k = reduced() ? 1 : 1 - Math.exp(-dt / 0.11);
+  for (let i = 0; i < N; i++) {
+    E.y[i] += (E.yTo[i] - E.y[i]) * k;
+    if (Math.abs(E.yTo[i] - E.y[i]) < 0.02) E.y[i] = E.yTo[i];
+    if (E.age[i] < 1) E.age[i] = reduced() && E.age[i] >= 0 ? 1 : Math.min(1, E.age[i] + dt / 0.3);
+  }
+  sinceArrive += dt;
+  if (sinceArrive >= cadence()) { sinceArrive = 0; arrive(); }
+}
+const moving = () => { for (let i = 0; i < N; i++) if (E.y[i] !== E.yTo[i] || E.age[i] < 1) return true; return false; };
+const settling = () => folding || moving();
+
+/* ---------- controls ---------- */
+act.pick = v => {
+  const t = TARGETS.find(x => x.id === v);
+  if (!t) return;
+  setTarget(t);
+};
+act.shuffle = () => {
+  shuffleSeed = (shuffleSeed * 1103515245 + 12345) >>> 0;
+  setTarget(shuffled(shuffleSeed));
+};
+act.exposure = v => { exposure = v; live(); };
+act.reset = () => {
+  P = 0; locked = false;
+  exposure = 0.33;
+  ui.slider?.set(exposure);
+  reorder();
+  readout();
+  live();
+};
+function setTarget(t) {
+  target = t;
+  template(t);
+  if (gl) upload(starTex, star);
+  P = 0; locked = false;
+  restack(true);
+  readout();
+  live();
+}
+function readout() {
+  readEl.classList.toggle('lock', locked);
+  readEl.textContent = locked
+    ? `P ${target.P.toFixed(4)} d · K ${Math.round(target.K * 31)} m/s · δ ${(target.dip / 4 * 100).toFixed(2)} %`
+    : P > 0 ? `P ${P.toFixed(3)} d · K — · δ —` : 'P — · K — · δ —';
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of lively run time, 2 s of slow frames steps down one rung.
+// Rungs: pixel ratio, then grain, then half the rows drawn.
+let runT = 0, slowT = 0, ftAvg = 1 / 60;
+function watchdog(raw, lively) {
+  if (!lively || raw > 0.25) return;
+  runT += raw;
+  ftAvg += (raw - ftAvg) * 0.1;
+  if (runT < 4 || rung >= 3) return;
+  slowT = ftAvg > 1 / 38 ? slowT + raw : 0;
+  if (slowT < 2) return;
+  rung++;
+  slowT = 0;
+  ftAvg = 1 / 60;
+  layout();
+}
+
+/* ---------- frame loop ---------- */
+// Lively at full rate, drifting at 30 fps, asleep 60 s after the last input.
+let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now();
+const SLEEP = 60000, EASE = 2000;
+function live() { lastInput = performance.now(); wake(); }
+function wake() {
+  if (!raf && visible && Pg) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
+  const lively = settling();
+  watchdog(raw, lively);
+  last = now;
+  const idle = now - lastInput;
+  try {
+    // The shutter closes over the last 2 s before sleep.
+    const flow = clamp((SLEEP + EASE - idle) / EASE);
+    time += dt;
+    step(dt * (lively ? 1 : flow));
+    if (lively || now - lastDraw >= 31) { render(); lastDraw = now; }
+  } finally {
+    if (visible && (lively || idle < SLEEP + EASE)) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- boot ---------- */
+try {
+  telluric();
+  template(target);
+  await initGL();
+  layout();
+  // The first frame is a full stack in time order, no sweep.
+  restack(false);
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  readEl.hidden = true;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+new ResizeObserver(() => { layout(); if (Pg) render(); }).observe(stage);
+onQuality(() => { rung = 0; slowT = 0; layout(); if (Pg) render(); });
+// A hidden tab stops the loop and the exposure clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>

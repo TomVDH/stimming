@@ -2135,6 +2135,28 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             <span class="name">Beer pour</span>
           </a>
         </li>
+        <li>
+          <a class="toy" id="exoplanet" href="exoplanet/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 230)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.12 0.012 230)"/>
+                <rect x="24" y="24" width="76" height="76" fill="oklch(0.05 0.01 230)"/>
+                <g id="exoplanet-rows" fill="oklch(0.62 0.01 230)">
+                  <rect x="24" y="24" width="76" height="4"/><rect x="24" y="33" width="76" height="4"/><rect x="24" y="42" width="76" height="4"/><rect x="24" y="51" width="76" height="4"/><rect x="24" y="60" width="76" height="4"/><rect x="24" y="69" width="76" height="4"/><rect x="24" y="78" width="76" height="4"/><rect x="24" y="87" width="76" height="4"/>
+                </g>
+                <rect id="exoplanet-band" x="24" y="60" width="76" height="4" fill="oklch(0.05 0.01 230)"/>
+                <g id="exoplanet-lines" stroke="oklch(0.05 0.01 230)" stroke-width="3">
+                  <line x1="44" y1="24" x2="44" y2="28"/><line x1="46" y1="33" x2="46" y2="37"/><line x1="49" y1="42" x2="49" y2="46"/><line x1="50" y1="51" x2="50" y2="55"/><line x1="49" y1="60" x2="49" y2="64"/><line x1="46" y1="69" x2="46" y2="73"/><line x1="44" y1="78" x2="44" y2="82"/><line x1="42" y1="87" x2="42" y2="91"/>
+                  <line x1="70" y1="24" x2="70" y2="28"/><line x1="72" y1="33" x2="72" y2="37"/><line x1="75" y1="42" x2="75" y2="46"/><line x1="76" y1="51" x2="76" y2="55"/><line x1="75" y1="60" x2="75" y2="64"/><line x1="72" y1="69" x2="72" y2="73"/><line x1="70" y1="78" x2="70" y2="82"/><line x1="68" y1="87" x2="68" y2="91"/>
+                </g>
+                <g stroke="oklch(0.05 0.01 230)" stroke-width="2"><line x1="88" y1="24" x2="88" y2="91"/></g>
+                <rect id="exoplanet-cursor" x="24" y="94" width="76" height="2" fill="oklch(0.85 0.08 200)" opacity="0.7"/>
+              </svg>
+            </span>
+            <span class="name">Exoplanet</span>
+          </a>
+        </li>
       </ul>
     </section>
   </main>
@@ -3393,6 +3415,23 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         return tl;
       },
       rest() { show(0, 0.4); gsap.to(flame, { scaleX: 1, scaleY: 1, duration: 0.3, overwrite: 'auto' }); },
+    };
+  }
+
+  // Exoplanet: the line wobble scrambles, then folds into one clean sine.
+  {
+    const lines = [...document.querySelectorAll('#exoplanet-lines line')];
+    const home = lines.map(l => +l.getAttribute('x1'));
+    const n = lines.length / 2;
+    const sine = i => Math.sin((i % n) / n * Math.PI * 2) * 4;
+    const setX = (l, x) => { l.setAttribute('x1', x); l.setAttribute('x2', x); };
+    const st = { k: 0 }, seed = lines.map(() => (Math.random() - 0.5) * 10);
+    const draw = () => lines.forEach((l, i) => setX(l, (home[i] - sine(i)) + sine(i) * st.k + seed[i] * (1 - st.k) * 0.6));
+    toys.exoplanet = {
+      play: () => loop({ repeatDelay: 0.8 })
+        .fromTo(st, { k: 1 }, { k: 0, duration: 0.5, ease: 'power2.out', onUpdate: draw })
+        .to(st, { k: 1, duration: 1.1, ease: 'power3.inOut', onUpdate: draw }, '+=0.3'),
+      rest() { gsap.to(st, { k: 1, duration: 0.4, onUpdate: draw, overwrite: 'auto' }); },
     };
   }
 
