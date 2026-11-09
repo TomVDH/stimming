@@ -30,6 +30,8 @@
   font-variant-numeric: tabular-nums;
 }
 .stage--exoplanet .read.lock { color: oklch(0.85 0.08 200 / 0.9); }
+/* On a phone the readout drops under the top corners. */
+@media (max-width: 640px) { .stage--exoplanet .read { top: 50px; font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .stage--exoplanet canvas { transition: none; } }
 </style>
 </head>
@@ -117,6 +119,8 @@ let target = TARGETS[0], shuffleSeed = 7;
 let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
 // Trial period P in days; 0 means time order. lock holds while folded true.
 let P = 0, locked = false;
+// The pointer press in flight, and the row the cut shows.
+let press = null, holdT = 0, cutRow = -1, cutUntil = Infinity;
 let time = 0;
 
 const act = { shuffle() {}, reset() {}, exposure() {}, pick() {} };
@@ -276,6 +280,7 @@ function arrive() {
   expose(i, tNow);
   E.age[i] = 0;
   reorder();
+  if (settling()) sfx.shutter();
   // A new row starts where its slot is, so it sweeps in, not slides in.
   E.y[i] = E.yTo[i];
   periodogramDirty = true;
@@ -347,6 +352,7 @@ function powerAt(p) {
 function scrub(dlog) {
   if (P <= 0) P = 3;
   const gain = 1 / (1 + 6 * powerAt(P));
+  stir = Math.min(1.5, stir + Math.abs(dlog) * 12);
   setPeriod(Math.exp(clamp(Math.log(P) + dlog * gain, LMIN, LMAX)));
 }
 function setPeriod(p) {
@@ -367,7 +373,8 @@ function pull(dt, strength) {
   setPeriod(P + (target.P - P) * k);
   if (Math.abs(P / target.P - 1) < 1e-4) setPeriod(target.P);
 }
-function onLock() {}
+let lockAt = -1e9;
+function onLock() { lockAt = performance.now(); }
 
 /* ---------- shaders ---------- */
 // Strips: one instance per exposure, in device pixels from the bottom left.
@@ -664,6 +671,32 @@ function mark(x0, y0, x1, y1, c, a) {
   marks[o] = x0; marks[o + 1] = y0; marks[o + 2] = x1; marks[o + 3] = y1;
   marks[o + 4] = c[0]; marks[o + 5] = c[1]; marks[o + 6] = c[2]; marks[o + 7] = a;
 }
+// The cut trace: the row's own spectrum, sampled from the templates.
+const CUTN = 512;
+function drawCut() {
+  if (cutRow < 0) return;
+  const now = performance.now();
+  if (now > cutUntil) { cutRow = -1; cutUntil = Infinity; return; }
+  const fade = cutUntil === Infinity ? 1 : clamp((cutUntil - now) / 500);
+  const i = cutRow, d = G.dpr, [x0, , x1, y1] = G.box, w = x1 - x0, h = 34 * d, base = y1 - 4 * d - h;
+  const rvN = E.rv[i] * d * (w / (1280 * d)) / w;
+  const f = E.flux[i], gap = E.gap[i] > 0.5;
+  for (let k = 0; k < CUTN; k++) {
+    const u = (k + 0.5) / CUTN;
+    let v = 0;
+    if (!gap) {
+      const si = clamp(Math.round((u - rvN) * TW), 0, TW - 1), ti = Math.round(u * TW);
+      v = star[si] * (tell ? tellu[Math.min(TW - 1, ti)] : 1) * f;
+      v *= 0.42 + 0.58 * Math.pow(Math.cos((u - 0.5) * Math.PI), 1.4);
+    }
+    const xa = x0 + u * w, ya = base + v * h;
+    mark(xa - w / CUTN * 0.5, ya - 0.7 * d, xa + w / CUTN * 0.5 + 0.5, ya + 0.7 * d, CYAN, 0.55 * fade);
+  }
+  // A tick at the left marks the row the cut comes from.
+  const yr = y1 - (E.y[i] + 0.5) * G.rowH;
+  mark(x0 - 7 * d, yr - d, x0 - 2 * d, yr + d, CYAN, 0.9 * fade);
+  mark(x0, yr - 0.5 * d, x1, yr + 0.5 * d, CYAN, 0.12 * fade);
+}
 function drawMarks() {
   nMarks = 0;
   const d = G.dpr, [lx0, ly0, lx1, ly1] = G.lc, [px0, py0, px1, py1] = G.pg, bh = ly1 - ly0;
@@ -681,12 +714,18 @@ function drawMarks() {
     if (h < 0.5) continue;
     mark(px0 + k * bw, py0, px0 + (k + 1) * bw + 0.5, py0 + h, GREY, 0.22);
   }
+  // The phase cursor sweeps the folded stack; the sound follows it.
+  if (P > 0) {
+    const [bx0, , bx1, by1] = G.box, yc = by1 - phase * N * G.rowH;
+    mark(bx0, yc - 0.5 * d, bx1, yc + 0.5 * d, CYAN, locked ? 0.22 : 0.1);
+  }
   // The cursor at the trial period, and a hairline across the band.
   mark(px0, py0, px1, py0 + Math.max(1, d * 0.5), GREY, 0.08);
   if (P > 0) {
     const x = px0 + pgPos(P) * (px1 - px0);
     mark(x - d * 0.5, py0 - 2 * d, x + d * 0.5, py1 + 2 * d, CYAN, locked ? 0.9 : 0.45);
   }
+  drawCut();
   gl.useProgram(Pg.mark.p);
   gl.bindVertexArray(markVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
@@ -712,9 +751,10 @@ function step(dt) {
   if (sinceArrive >= cadence()) { sinceArrive = 0; arrive(); }
   if (periodogramDirty) { periodogramDirty = false; periodogram(); }
   pull(dt, press?.fold ? 0.25 : 1);
+  if (locked && performance.now() - lockAt < 800) readout();
 }
 const moving = () => { for (let i = 0; i < N; i++) if (E.y[i] !== E.yTo[i] || E.age[i] < 1) return true; return false; };
-const settling = () => !!press || moving() || (P > 0 && !locked && target.kind === 'planet' && Math.abs(P / target.P - 1) < 0.015);
+const settling = () => !!press || moving() || cutRow >= 0 || performance.now() - lockAt < 800 || performance.now() - lastInput < 4000 || (P > 0 && !locked && target.kind === 'planet' && Math.abs(P / target.P - 1) < 0.015);
 
 /* ---------- controls ---------- */
 act.pick = v => {
@@ -737,6 +777,8 @@ act.reset = () => {
 };
 function setTarget(t) {
   target = t;
+  onTargetT = 0;
+  growlT = 0;
   template(t);
   if (gl) upload(starTex, star);
   P = 0; locked = false;
@@ -744,11 +786,116 @@ function setTarget(t) {
   readout();
   live();
 }
+// The readout. Just after a lock the digits still wander, as a fit converges.
 function readout() {
   readEl.classList.toggle('lock', locked);
-  readEl.textContent = locked
-    ? `P ${target.P.toFixed(4)} d · K ${Math.round(target.K * 31)} m/s · δ ${(target.dip / 25 * 100).toFixed(2)} %`
-    : P > 0 ? `P ${P.toFixed(3)} d · K — · δ —` : 'P — · K — · δ —';
+  if (!locked) { readEl.textContent = P > 0 ? `P ${P.toFixed(3)} d · K — · δ —` : 'P — · K — · δ —'; return; }
+  const age = (performance.now() - lockAt) / 1000, j = Math.max(0, 1 - age / 0.7) ** 2;
+  const w = () => (Math.random() - 0.5) * 2 * j;
+  const Pd = target.P * (1 + 0.004 * w()), K = target.K * 31 * (1 + 0.25 * w()), dip = target.dip / 25 * 100 * (1 + 0.3 * w());
+  readEl.textContent = `P ${Pd.toFixed(4)} d · K ${Math.round(K)} m/s · δ ${dip.toFixed(2)} %`;
+}
+
+/* ---------- sound ---------- */
+// Web Audio on the shared kit: muted by default, woken by a gesture.
+const kit = audioKit({ keys: new Set([' ', '1', '2', '3', '4', '5', '6', '7', '8']) });
+let bus = null, phase = 0, onTargetT = 0, growlT = 0, lastCursorRow = -1, stir = 0;
+const pan = x => clamp((x / G.W) * 2 - 1, -1, 1) * 0.6;
+function voices() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (bus?.ac === ac) return bus;
+  const g = (v, to = kit.out) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
+  const osc = (type, f, to) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.connect(to); o.start(); return o; };
+  const noise = to => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.connect(to); n.start(); return n; };
+  const filt = (type, f, q, to) => { const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; n.connect(to); return n; };
+  // The hum: two low sines a little apart, and a filtered noise floor.
+  const humG = g(0.1), hum1 = osc('sine', 54, humG), hum2 = osc('sine', 54.4, humG);
+  const floorG = g(0.05), floorF = filt('lowpass', 160, 0.7, floorG); noise(floorF);
+  // The hiss: the read noise made audible, with the exposure.
+  const hissG = g(0), hissF = filt('highpass', 2600, 0.5, hissG); noise(hissF);
+  // The stir: rows in flight rustle.
+  const stirG = g(0), stirF = filt('bandpass', 700, 0.9, stirG); noise(stirF);
+  // The planet: a pure tone that follows the wobble once the fold locks.
+  const toneP = ac.createStereoPanner(); toneP.connect(kit.out);
+  const toneG = g(0, toneP), tone = osc('sine', 220, toneG);
+  // The growl: a sub-harmonic that swells on a wrong star's dips.
+  const growlG = g(0), growlF = filt('lowpass', 110, 1.2, growlG), growl = osc('sawtooth', 27, growlF);
+  bus = { ac, hum1, hum2, humG, floorG, hissG, stirG, tone, toneG, toneP, growl, growlG };
+  return bus;
+}
+// One short filtered burst; every hit jitters.
+function burst({ f, q = 1, type = 'bandpass', dur, lvl, pan: p = 0, sweep = 0, delay = 0 }) {
+  const b = voices();
+  if (!b) return;
+  const ac = b.ac, t = ac.currentTime + 0.005 + delay;
+  const src = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(), sp = ac.createStereoPanner();
+  src.buffer = kit.noise;
+  fl.type = type; fl.Q.value = q;
+  fl.frequency.setValueAtTime(f, t);
+  if (sweep) fl.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(lvl, t + Math.min(0.01, dur * 0.25));
+  g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+  sp.pan.value = p;
+  src.connect(fl).connect(g).connect(sp).connect(kit.out);
+  src.start(t, Math.random() * 0.6);
+  src.stop(t + dur + 0.05);
+}
+const sfx = {
+  // The shutter: a dry click from the left, where the readout starts.
+  shutter() { burst({ f: rnd(2200, 3200), q: 5, dur: rnd(0.018, 0.03), lvl: rnd(0.08, 0.13), pan: -0.35 }); },
+  // The thud: the transit crosses the cursor.
+  thud() {
+    const b = voices();
+    if (!b) return;
+    const ac = b.ac, t = ac.currentTime + 0.01;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(rnd(52, 60), t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.35);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(1e-4, t + 0.45);
+    o.connect(g).connect(kit.out);
+    o.start(t); o.stop(t + 0.5);
+  },
+};
+// Per frame: levels follow the stage; the cursor drives the tone and the thud.
+function soundFrame(dt) {
+  onTargetT += dt;
+  // The cursor runs one orbit in 8 s, folded or not.
+  const prev = phase;
+  phase = (phase + dt / 8) % 1;
+  const row = Math.floor(phase * N);
+  const b = voices();
+  if (b) {
+    const t = b.ac.currentTime, set = (p, v, k = 0.08) => p.setTargetAtTime(v, t, k);
+    // A wrong star pulls the hum's two sines apart the longer it stays.
+    const spread = target.kind === 'wrong' ? 0.4 + 1.6 * clamp(onTargetT / 60) : locked ? 0.15 : 0.4;
+    set(b.hum2.frequency, 54 + spread, 0.5);
+    set(b.hissG.gain, 0.01 + 0.09 * Math.pow(1 - exposure, 2.2), 0.2);
+    set(b.stirG.gain, clamp(stir) * 0.16, 0.05);
+    if (locked) {
+      // The tone bends with the star's velocity at the cursor's phase.
+      const th = TAU * phase, rv = Math.sin(th) + (target.ecc || 0) * 0.8 * Math.sin(2 * th);
+      set(b.tone.frequency, 220 * Math.pow(2, rv * 0.25), 0.05);
+      set(b.toneG.gain, 0.07, 0.3);
+      set(b.toneP.pan, rv * 0.5, 0.05);
+      if (prev > phase) sfx.thud();
+    } else set(b.toneG.gain, 0, 0.15);
+    // The growl swells for 2 s each time the cursor meets a dip, at no set interval.
+    if (target.kind === 'wrong' && P > 0 && row !== lastCursorRow && growlT <= 0) {
+      const i = order[row], j = order[(row + N - 1) % N];
+      const dip = k => E.gap[k] < 0.5 && E.flux[k] < 0.8;
+      if (dip(i) && !dip(j)) growlT = 2;
+    }
+    growlT = Math.max(0, growlT - dt);
+    const sw = growlT > 1.7 ? (2 - growlT) / 0.3 : growlT / 1.7;
+    set(b.growlG.gain, 0.22 * sw, 0.08);
+  }
+  lastCursorRow = row;
+  stir = Math.max(0, stir - dt * 2.5);
 }
 
 /* ---------- performance ladder ---------- */
@@ -770,7 +917,7 @@ function watchdog(raw, lively) {
 
 /* ---------- frame loop ---------- */
 // Lively at full rate, drifting at 30 fps, asleep 60 s after the last input.
-let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now();
+let raf = 0, last = 0, lastDraw = 0, visible = true, rested = false, lastInput = performance.now();
 const SLEEP = 60000, EASE = 2000;
 function live() { lastInput = performance.now(); wake(); }
 function wake() {
@@ -788,9 +935,13 @@ function frame(now) {
     const flow = clamp((SLEEP + EASE - idle) / EASE);
     time += dt;
     step(dt * (lively ? 1 : flow));
+    soundFrame(dt);
     if (lively || now - lastDraw >= 31) { render(); lastDraw = now; }
   } finally {
     if (visible && (lively || idle < SLEEP + EASE)) raf = requestAnimationFrame(frame);
+    // Once the stage settles, the audio context sleeps.
+    if (!lively && !rested) { rested = true; kit.rest(() => !settling()); }
+    if (lively) rested = false;
   }
 }
 
@@ -817,7 +968,6 @@ wake();
 
 /* ---------- pointer ---------- */
 // A press turns into a fold after 8 px, or a hold after 260 ms. Else it is a tap.
-let press = null, holdT = 0;
 const KX = 1 / 180, KY = 1 / 1400;
 canvas.addEventListener('pointerdown', e => {
   if (press) return;
@@ -863,17 +1013,27 @@ canvas.addEventListener('wheel', e => {
   scrub(-dy * 0.00035);
   live();
 }, { passive: false });
-// The cut: that row's spectrum, shown at the top. Built in Task 3.
-function cut() {}
-function uncut() {}
+// The cut: one row's spectrum, drawn across the top of the frame.
+// Hover shows it while the pointer rests; a tap holds it for 2 s.
+function cut(cx, cy, sticky) {
+  const r = canvas.getBoundingClientRect();
+  const x = (cx - r.left) * G.dpr, y = G.H - (cy - r.top) * G.dpr;
+  const [x0, y0, x1, y1] = G.box;
+  if (x < x0 || x > x1 || y < y0 || y > y1) { if (!sticky) uncut(); return; }
+  const k = clamp(Math.floor((y1 - y) / G.rowH), 0, N - 1);
+  cutRow = order[k];
+  cutUntil = sticky ? performance.now() + 2000 : Infinity;
+  live();
+}
+function uncut() { if (cutUntil === Infinity) cutRow = -1; }
 
-window.__exo = () => ({ press, P, locked, raf, visible, target: target.name, kind: target.kind, lastInput: performance.now() - lastInput });
+window.__exo = () => ({ press, P, locked, raf, visible, target: target.name, kind: target.kind, lastInput: performance.now() - lastInput, ac: kit.ac?.state ?? 'none', cutRow, phase, stir, growlT, dbg: cutRow >= 0 ? { flux: E.flux[cutRow], gap: E.gap[cutRow], y: E.y[cutRow], rank: rank[cutRow], star: [star[100], star[1000], star[2000]], box: G.box, rowH: G.rowH, top: canvas.getBoundingClientRect().top, nMarks } : null });
 new ResizeObserver(() => { layout(); if (Pg) render(); }).observe(stage);
 onQuality(() => { rung = 0; slowT = 0; layout(); if (Pg) render(); });
 // A hidden tab stops the loop and the exposure clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; if (kit.ac?.state === 'running') kit.ac.suspend().catch(() => {}); return; }
   wake();
 });
 </script>
