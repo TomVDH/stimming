@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:10:27Z
-updated_at: 2026-11-09T09:13:12Z
+updated_at: 2026-11-09T09:18:59Z
 parent: stimming-80dc
 ---
 
@@ -39,3 +39,6 @@ None fits. Drag already wipes the glass in the scene. Weather and wind are the s
 
 Rain passes one bar spec to initPage. Weather segments top left (stepper bottom left on phones), Space steps them. Wind is the main slider, bottom right. Settings holds the site Quality row. Key strip: drag, arrows, space; touch shows drag only.
 Fixed: the page ignored site Quality; High now renders at the screen ratio, and the slow-frame step falls back to Standard. The intro fallback still said Stimming Lab. Page keys no longer fire inside the Settings sheet.
+
+## Mobile and compliance (80559e3)
+Checked at 1280 x 800, 375 x 812 (mobile preset) and 812 x 375. No corner overlaps another or the key strip. No control leaves the stage. No page scroll. The Settings sheet fits at each size. The canvas draws no UI, so no corner hides any of it. At 375 the shell drops the name to avoid a collision.
