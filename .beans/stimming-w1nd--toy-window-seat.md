@@ -49,7 +49,7 @@ Decisions:
 - [x] Sun at the horizon (Dusk, Dawn) or moon (Midnight); deck lumps and towers lit from it
 - [x] Lens flare ported from Beach walker for sun or moon, lightning, strobe and nav light; each shows only when seen through the glass
 - [ ] Checkpoint 4: Tom tests live
-- [ ] Sound: cabin drone, far thunder after each flash, shade slide
+- [ ] Sound: cabin bed done (recorded loop, cabin.mp3, seam cross-faded in memory, gain 0.2); far thunder after each flash and the shade slide still to do
 - [x] Menu Lab entry: tilted window with horizon, wing and sun; hover glints the sun with a flare streak
 - [x] Remove the `window.__ws` test hook (gone with the three.js swap, 2026-11-09)
 - [ ] QA: 1280 and 375 px, clean console, reduced motion, hidden tab stops the loop
@@ -76,3 +76,4 @@ Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, 
 - 2026-11-09 (Tom, via toy-trainride): pane rain now uses shared/glassrain.js (grBeads, grRuns). Rain space is the pane in metres times 0.45 / 0.55, as in glasslab/. Strip 0.15 at flight speed; aft direction and flow unchanged.
 
 - 2026-11-09: the three.js build (stimming-glot) is now the toy; the raw WebGL2 build is legacy.html.
+- 2026-11-09 (Tom): the autopilot banks at random (2 to 14 degrees mostly, sometimes -8 to 18; about 2 degrees a second; holds 12 to 45 s). Aileron to 7 degrees, spoilers on the dropping wing, flaps trim with bank. The winglet root sits inside the tip.

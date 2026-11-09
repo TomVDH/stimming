@@ -55,7 +55,7 @@
 }
 </script>
 <script type="module">
-import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality } from '../shared/stim.js';
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
@@ -606,7 +606,7 @@ function step(dt) {
   // The plane cruises at a steady pace.
   cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
   // The bank breathes between about 3 and 9 degrees.
-  if (!reduce) bank = (6 + 2.2 * Math.sin(t * 0.045) + 0.9 * Math.sin(t * 0.13)) * D2R;
+  if (!reduce) stepBank();
   const k = 1 - Math.exp(-dt / 0.35);
   // The head eases toward its target, so moves feel bodily.
   const kh = 1 - Math.exp(-dt / 0.18);
@@ -1442,7 +1442,70 @@ gl.finish();
 ready = true;
 markReady();
 requestAnimationFrame(() => canvas.classList.add('on'));
-whenVisible(stage, v => { visible = v; if (v) wake(); });
+/* ---------- banking ---------- */
+// The autopilot rolls to a new bank now and then, and holds it.
+// Most turns stay left-wing-down, as the seat looks best; a few roll right.
+// A roll eases in and out at about 2 degrees a second; the hold lasts 12 to 45 s.
+const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
+function stepBank() {
+  if (t > roll.t0 + roll.dur + roll.hold) {
+    roll.from = bank / D2R;
+    roll.to = Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
+    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / 2; roll.hold = rnd(12, 45);
+  }
+  const k = clamp((t - roll.t0) / roll.dur), e = k * k * k * (k * (k * 6 - 15) + 10);
+  // A slow wander rides on top, as the autopilot trims.
+  bank = (roll.from + (roll.to - roll.from) * e + 0.35 * Math.sin(t * 0.31) + 0.15 * Math.sin(t * 0.83)) * D2R;
+}
+
+/* ---------- sound ---------- */
+// A recorded cabin bed: engine rumble, air and far voices, looped quietly.
+// Source: freesound community 180218, "airplane in flight cabin rumble".
+// The seam cross-fades over 2 s inside the buffer, so the loop never clicks.
+const BED = 0.2, SEAM = 2;
+const kit = audioKit({ gain: 0.55, sleepMs: 1e9 });
+let bed = null, bedLoad = null;
+function seamless(buf, ac) {
+  // MP3 frames pad both ends; trim 60 ms from each.
+  const trim = Math.round(0.06 * buf.sampleRate), F = Math.round(SEAM * buf.sampleRate);
+  const N = buf.length - 2 * trim, L = N - F;
+  const out = ac.createBuffer(buf.numberOfChannels, L, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    for (let i = 0; i < L; i++) dst[i] = src[trim + i];
+    // The tail fades out over the head as it fades in: equal power.
+    for (let i = 0; i < F; i++) {
+      const a = (i + 0.5) / F;
+      dst[i] = src[trim + i] * Math.sin(a * Math.PI / 2) + src[trim + L + i] * Math.cos(a * Math.PI / 2);
+    }
+  }
+  return out;
+}
+async function startBed() {
+  const ac = kit.live();
+  if (!ac || bed) return;
+  bedLoad ||= fetch('cabin.mp3').then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(b => seamless(b, ac));
+  bed = { pending: true };
+  try {
+    const buf = await bedLoad;
+    const src = ac.createBufferSource(), g = ac.createGain();
+    src.buffer = buf; src.loop = true;
+    g.gain.setValueAtTime(0, ac.currentTime);
+    g.gain.linearRampToValueAtTime(BED, ac.currentTime + 2);
+    src.connect(g).connect(kit.out);
+    src.start();
+    bed = { src, g };
+  } catch { bed = null; }
+}
+sound.onChange(on => { if (on) setTimeout(startBed, 50); });
+['pointerup', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => setTimeout(startBed, 50), { passive: true }));
+
+// A hidden page goes quiet and still.
+whenVisible(stage, v => {
+  visible = v;
+  if (v) { wake(); if (sound.on) kit.ac?.resume()?.catch(() => {}); startBed(); }
+  else kit.ac?.suspend()?.catch(() => {});
+});
 wake();
 </script>
 </body>

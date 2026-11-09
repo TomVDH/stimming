@@ -155,8 +155,9 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
 
   // The winglet: a thin foil that rises and sweeps back.
   const [l0, l1, l2, l3] = LET;
-  add(loft(Array.from({ length: 7 }, (_, i) => {
-    const f = i / 6, le = V(...l0).lerp(V(...l1), f), te = V(...l3).lerp(V(...l2), f);
+  // The root starts 9.5 cm down, inside the tip, so it never floats on the skin.
+  add(loft(Array.from({ length: 8 }, (_, i) => {
+    const f = i === 0 ? -0.045 : (i - 1) / 6, le = V(...l0).lerp(V(...l1), f), te = V(...l3).lerp(V(...l2), f);
     const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
     const pt = (s, side) => le.clone().lerp(te, s).add(V(0, 0, side * 0.09 * naca(s) * le.distanceTo(te)));
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
@@ -257,14 +258,16 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
-      const ail = Math.max(-0.09, Math.min(0.09, -mo.rate * 24));
+      // About 7 degrees of aileron hold a 3 degree-a-second roll.
+      const ail = Math.max(-0.14, Math.min(0.14, -mo.rate * 2.5));
       // More bank asks for more lift, so the flaps trim down a little.
-      const trim = (bank - 6 * Math.PI / 180) * 0.3;
+      const trim = Math.max(-0.035, Math.min(0.035, (bank - 6 * Math.PI / 180) * 0.15));
       hinged.forEach(h => {
         const n = turb * (Math.sin(t * 1.7 + h.ph) + 0.6 * Math.sin(t * 4.3 + h.ph * 2));
         const a = h.role === 'aileron' ? ail + n * 0.006
           : h.role === 'flaperon' ? ail * 0.35 + trim + n * 0.003
-          : h.role === 'spoiler' ? Math.min(0, ail * 0.8) - Math.abs(n) * 0.002
+          // Spoilers rise only on the wing that drops, and only past a small roll.
+          : h.role === 'spoiler' ? Math.min(0, (ail + 0.03) * 1.3) - Math.abs(n) * 0.002
           : trim + n * 0.002;
         h.piv.quaternion.setFromAxisAngle(h.axis, a);
       });
