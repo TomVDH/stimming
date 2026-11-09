@@ -1704,8 +1704,9 @@ const flashTex = softTex([[0, 'rgba(255,255,240,1)'], [0.25, 'rgba(255,190,110,0
 const hash1 = (n, k) => { const x = Math.sin(n * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
 function buildStrangereal(grp) {
   const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
-  // The roof ends just past the tank; the tower drops 140 m to the street.
-  const Z0 = -2.6, Z1 = 9, TOWER = 140;
+  // The roof ends past the tank and runs back to the long lens.
+  // The tower drops 140 m to the street.
+  const Z0 = -2.6, Z1 = 36, TOWER = 140;
   const rt = roofTex.clone(); rt.needsUpdate = true; rt.repeat.set(22 / 6, (Z1 - Z0) / 6);
   const slab = add(new THREE.Mesh(new THREE.BoxGeometry(22, 0.3, Z1 - Z0), new THREE.MeshStandardMaterial({ map: rt, roughness: 0.92 })), false);
   slab.position.set(0, -0.15, (Z0 + Z1) / 2);
@@ -1787,7 +1788,12 @@ function buildStrangereal(grp) {
         vec2 a2 = smoothstep(0.49 - f5, 0.49 + f5, e5);
         float art = mix(max(a2.x, a2.y), 0.04, smoothstep(0.03, 0.08, max(f5.x, f5.y)));
         vec3 col = uDark + uRoad * (road * 0.55 + art * 1.4);
-        col = mix(col, uHaze, 1.0 - exp(-max(d - 400.0, 0.0) / 3600.0));
+        // A bay cuts across: dark water with scattered glints.
+        float shore = -3600.0 + 240.0 * sin(vW.x / 900.0) + 120.0 * sin(vW.x / 310.0 + 2.0);
+        float wet = 1.0 - smoothstep(280.0, 300.0, abs(vW.z - shore));
+        float gl = step(0.985, fract(sin(dot(floor(vW.xz / vec2(5.0, 30.0)), vec2(12.99, 78.23))) * 43758.5)) * (1.0 - far);
+        col = mix(col, uDark * 0.5 + uRoad * gl * 0.6, wet);
+        col = mix(col, uHaze, 1.0 - exp(-max(d - 400.0, 0.0) / 5000.0));
         gl_FragColor = vec4(col, 1.0);
       }` });
   const street = new THREE.Mesh(new THREE.PlaneGeometry(26000, 26000).rotateX(-Math.PI / 2), groundMat);
@@ -1819,7 +1825,7 @@ function buildStrangereal(grp) {
           vec2 f = fract(c), cell = floor(c);
           float win = step(0.2, f.x) * step(f.x, 0.8) * step(0.28, f.y) * step(f.y, 0.78);
           float h = h2(cell + vSeed * 91.0);
-          float lit = win * step(0.62 - vSeed * 0.18, h);
+          float lit = win * step(0.76 - vSeed * 0.16, h);
           vec3 lc = mix(uWarm, uCool, step(0.78, h2(cell * 1.7 + 3.0))) * (0.55 + 0.6 * h);
           // Far windows shrink below a pixel; their mean light stands in.
           float far = smoothstep(0.2, 0.6, max(fw.x, fw.y));
@@ -1828,24 +1834,31 @@ function buildStrangereal(grp) {
         } else col *= 0.65;
         // Lights hold through the haze longer than walls do.
         // Haze darkens with height, as the sky does behind the towers.
-        float hz = 1.0 - exp(-max(d - 300.0, 0.0) / 6500.0);
+        float hz = 1.0 - exp(-max(d - 300.0, 0.0) / 5200.0);
         vec3 haze = mix(uHaze, uHazeHi, smoothstep(0.0, 450.0, vW.y + 140.0));
         col = mix(col, haze + uWarm * glow * 0.15, hz * mix(1.0, 0.5, glow));
         gl_FragColor = vec4(col, 1.0);
       }` });
   const N = 5200, blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), cityMat, N);
   const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
-  const tops = [], DIST = [[-520, -1600, 420], [950, -2500, 560], [-2300, -4300, 800], [2700, -5300, 700]];
+  // Each district: centre, radius, and its skyline's height in degrees.
+  const tops = [], DIST = [[-120, -1300, 300, 0.9], [260, -2300, 420, 1.7], [-350, -4700, 650, 2.6], [420, -6700, 800, 3.2], [-250, -9300, 1100, 3.7]];
+  const shore = x => -3600 + 240 * Math.sin(x / 900) + 120 * Math.sin(x / 310 + 2);
   let k = 0;
-  for (let i = 0; i < N * 4 && k < N; i++) {
-    const d = 420 * Math.pow(18, Math.random()), az = rnd(-1.05, 1.05);
+  for (let i = 0; i < N * 6 && k < N; i++) {
+    const d = 350 * Math.pow(30, Math.random()), az = rnd(-0.32, 0.36);
     const x = Math.sin(az) * d, z = -Math.cos(az) * d;
-    let tower = 0;
-    for (const [cx, cz, r] of DIST) tower = Math.max(tower, Math.exp(-(((x - cx) ** 2 + (z - cz) ** 2) / (r * r))));
+    if (Math.abs(z - shore(x)) < 330) continue;
+    let tower = 0, deg = 0;
+    for (const [cx, cz, r, e] of DIST) {
+      const w = Math.exp(-(((x - cx) ** 2 + (z - cz) ** 2) / (r * r)));
+      if (w > tower) { tower = w; deg = e; }
+    }
     const sz = 1 + d / 2500;
-    const h = tower > 0.3 && Math.random() < 0.6 ? rnd(110, 200 + 280 * tower) : rnd(9, 40) * (Math.random() < 0.06 ? 2.2 : 1);
+    // Layers stack: near towers stay low in the lens, far ones rise higher.
+    const h = tower > 0.3 && Math.random() < 0.6 ? TOWER + d * Math.tan(deg * Math.PI / 180) * rnd(0.45, 1) * (0.6 + 0.4 * tower) : rnd(9, 40) * (Math.random() < 0.06 ? 2.2 : 1);
     blocks.setMatrixAt(k++, m.compose(p.set(x, -TOWER, z), qq.setFromAxisAngle(up, Math.round(rnd(-0.5, 0.5)) * 0.08), s.set(rnd(14, 34) * sz, h, rnd(14, 34) * sz)));
-    if (h > 330) tops.push(x, h - TOWER + 2, z);
+    if (h > 330 && Math.random() < 0.4) tops.push(x, h - TOWER + 2, z);
   }
   blocks.count = k;
   blocks.frustumCulled = false;
@@ -1891,17 +1904,17 @@ function buildStrangereal(grp) {
     new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-6.2, 0, -4.5, 6.2, 0, -4.5, 0, 0, 3.5], 3)),
     new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-0.9, 0, -5.8, -0.9, 0, -2.8, -1.4, 3.2, -6.4, 0.9, 0, -5.8, 0.9, 0, -2.8, 1.4, 3.2, -6.4], 3)),
   ].map(g => (g.index ? g.toNonIndexed() : g)).map(g => { g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); return g; }));
-  jetG.scale(2.4, 2.4, 2.4);
+  jetG.scale(1.3, 1.3, 1.3);
   const jetMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...lin(0.2, 0.02, 260)), side: THREE.DoubleSide, fog: false });
-  const BALLS = [{ c: new THREE.Vector3(-700, 1050, -6200), n: 6 }, { c: new THREE.Vector3(2100, 780, -4700), n: 5 }, { c: new THREE.Vector3(5200, 1400, -8200), n: 3 }];
+  const BALLS = [{ c: new THREE.Vector3(-300, 560, -5200), n: 6, k: 0.8 }, { c: new THREE.Vector3(900, 690, -7800), n: 5, k: 1.1 }, { c: new THREE.Vector3(-1400, 820, -10200), n: 4, k: 1.3 }];
   const jets = [];
   for (const B of BALLS) for (let pi = 0; pi < B.n; pi++) {
-    const P = { c: B.c, ax: rnd(700, 1200), ay: rnd(180, 420), az: rnd(500, 900), wx: rnd(0.11, 0.2), wy: rnd(0.15, 0.32), wz: rnd(0.2, 0.34), px: rnd(0, TAU), py: rnd(0, TAU), pz: rnd(0, TAU) };
+    const P = { c: B.c, ax: rnd(600, 1000) * B.k, ay: rnd(80, 160) * B.k, az: rnd(400, 800) * B.k, wx: rnd(0.11, 0.2), wy: rnd(0.15, 0.32), wz: rnd(0.2, 0.34), px: rnd(0, TAU), py: rnd(0, TAU), pz: rnd(0, TAU) };
     for (const lag of [0, rnd(0.7, 1.4)]) {
       const g = new THREE.Group();
       g.add(new THREE.Mesh(jetG, jetMat));
       const burn = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, color: new THREE.Color().setRGB(2.5, 1.4, 0.8), blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-      burn.position.z = -16; burn.scale.setScalar(26);
+      burn.position.z = -9; burn.scale.setScalar(13);
       g.add(burn);
       g.userData.isoHide = true;
       grp.add(g);
@@ -2001,10 +2014,10 @@ function buildStrangereal(grp) {
       const lat = ((b.x + c.x - 2 * a.x) * sd.x + (b.y + c.y - 2 * a.y) * sd.y + (b.z + c.z - 2 * a.z) * sd.z) / 0.0025;
       jet.g.rotateZ(-Math.atan2(lat, 60));
       for (let i = 0; i < SN; i++) {
-        const age = i * 0.16;
+        const age = i * 0.1;
         path(jet, tt - age - 0.06, tp[i]).add(dv.set(9, -1.5, 3).multiplyScalar(age));
-        ta[i] = Math.pow(1 - i / (SN - 1), 1.3) * 0.5 * smooth(0, 3, i);
-        tw[i] = 3.5 + age * 3.5;
+        ta[i] = Math.pow(1 - i / (SN - 1), 1.5) * 0.42 * smooth(0, 3, i);
+        tw[i] = 1.8 + age * 1.6;
       }
       writeSlot(j, SN, C_TRAIL);
     }
@@ -2023,7 +2036,7 @@ function buildStrangereal(grp) {
         const ts = e.t0 + head * (1 - i / (SN - 1)), age = el - (ts - e.t0);
         missile(e, ts, tp[i]).add(dv.set(9, -1.5, 3).multiplyScalar(age));
         ta[i] = clamp(1 - age / (LIFE - 1.5)) * 0.65 * smooth(0, 2, i);
-        tw[i] = 2 + age * 3;
+        tw[i] = 1.2 + age * 1.8;
       }
       writeSlot(slot, SN, C_SMOKE);
       sparkP.set(el < FLY ? [tp[0].x, tp[0].y, tp[0].z] : OFF, (sp++) * 3);
@@ -2594,9 +2607,9 @@ const THEMES = {
     fog: [[0.5, 0.06, 250], 3000, 40000], hemi: [[0.5, 0.08, 262], [0.3, 0.05, 270], 1.6],
     ground: 'none', grass: { n: 0, h: [0.1, 0.2], cols: [[0.5, 0.05, 120], [0.5, 0.05, 120], [0.5, 0.05, 120]] },
     wind: 'gusty', sun: 0.85, stiff: 1, frost: 0, snow: 0, daisies: 0,
-    deck: [-11, 11, -2.6, 9], near: 0.2, far: 12500,
-    // Standing on a tower roof: level, the line just below the eye, the city beyond.
-    cam: { pos: [-0.6, 2.3, 7.8], look: [0.8, 2.25, -2.0], lookN: [0.3, 2.3, -2.0], fov: 50, fovN: 70 }, iso: { yaw: -Math.PI * 0.75, at: [-0.4, 1.0, -1.0] },
+    deck: [-11, 11, -2.6, 36], near: 1, far: 12500,
+    // A long lens from the far end of the roof: the line, then the city layers stacked behind.
+    cam: { pos: [-1.5, 2.3, 30], look: [0.4, 6.2, -60], lookN: [0.0, 5.0, -60], fov: 13, fovN: 30 }, iso: { yaw: -Math.PI * 0.75, at: [-0.4, 1.0, -1.0] },
     mix: ['sheet', 'sheet', 'tee', 'towel', 'pillow', 'sock', 'sheet'], build: buildStrangereal,
   },
 };

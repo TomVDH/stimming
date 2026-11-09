@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T11:06:51Z
+updated_at: 2026-11-09T11:10:26Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -95,3 +95,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Strangereal (theme 4 renamed from Rooftop; Tom: "more sweeping wide vistas of cities and furballs in the DISTANCE, brutal furball, anime blue, too toony"): level wide shot from a 140 m tower roof; the city sprawls 6 km to far ridges under a blue-hour sky with a dark cloud band; street grid glows sodium orange; two furballs kilometres out: eight jets with contrails, a missile every 1.6 s with smoke, flares, flash, smoke puff and burning debris on a hit. Per-theme camera near/far for the vista.
 
 - Strangereal v2 (Tom: more imposing, better blending of skylines, furball without explosions): four tower districts, nearer and up to ~480 m; haze darkens with height so towers stay dark masses with lit windows; distant windows fade to a mean glow; warm light-pollution band over the horizon; ridges sit under the haze. Explosions, puffs and debris removed: missiles miss and burn out; flares stay. Three furballs, 28 jets.
+
+- Strangereal v3 (Tom: far tighter zoom lens on a multilayered sweeping scape of cities, furball going on): 13 degree long lens from 30 m back on a longer roof; city packed along the lens axis in five tower districts whose skylines rise with distance (0.9 to 3.7 degrees), a bay between the banks; furballs sit low over the far banks; thinner, shorter contrails; fewer lit windows.
