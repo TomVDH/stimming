@@ -2702,6 +2702,12 @@ place();
 return {
   scene, camera, frame, update,
   get speed() { return speed; },
+  // Metres to the next stop, while the train rolls toward it.
+  get toStop() { return dwell > 0 || stopX === null ? Infinity : stopX - camX; },
+  get dwelling() { return dwell > 0; },
+  get brake() { return A_DN; },
+  // The oncoming train's front, relative to the eye; NaN when none runs.
+  get oppAt() { return opp.on ? opp.x - camX : NaN; },
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
   get day() { return dayV; },
@@ -2926,7 +2932,57 @@ function watchdog(dt) {
 }
 
 /* ---------- sound ---------- */
-// Rain hisses on the glass, the bogies rumble, and each rail joint clacks.
+// A real cabin recording carries the ride (freesound community, inside-train-start-cruise-and-stop).
+// trainride/dev/sonograph.png marks each clip's source and the peaks cut out.
+// bed: a clean cruise stretch, looped; level and pitch follow the speed.
+// away and stop: the pull-away and the arrival, timed to the train.
+// points, joints and pass: one-shots on the switches, the joints and the oncoming train.
+const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'pass', 'idle'];
+const SEAM = 1.5;
+let clipLoad = null, clips = null;
+function seamless(buf, ac) {
+  // MP3 frames pad both ends; trim 60 ms from each.
+  const trim = Math.round(0.06 * buf.sampleRate), F = Math.round(SEAM * buf.sampleRate);
+  const L = buf.length - 2 * trim - F, out = ac.createBuffer(1, L, buf.sampleRate);
+  const src = buf.getChannelData(0), dst = out.getChannelData(0);
+  for (let i = 0; i < L; i++) dst[i] = src[trim + i];
+  // The tail fades out over the head as it fades in: equal power.
+  for (let i = 0; i < F; i++) { const a = (i + 0.5) / F; dst[i] = src[trim + i] * Math.sin(a * Math.PI / 2) + src[trim + L + i] * Math.cos(a * Math.PI / 2); }
+  return out;
+}
+function loadClips(ac) {
+  clipLoad ||= Promise.all(CLIPS.map(n => fetch(`sound/${n}.mp3`).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b))))
+    .then(bs => {
+      clips = Object.fromEntries(CLIPS.map((n, i) => [n, bs[i]]));
+      clips.bed = seamless(clips.bed, ac);
+      clips.idle = seamless(clips.idle, ac);
+    }).catch(() => { clipLoad = null; });
+  return clipLoad;
+}
+// A looping layer with its own gain.
+function loopLayer(ac, buf) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.loop = true; g.gain.value = 0;
+  src.connect(g).connect(kit.out);
+  src.start(0, Math.random() * buf.duration);
+  return { src, g };
+}
+// A one-shot from offset, with short fades; returns its gain to duck or stop it.
+function shot(ac, buf, level, offset = 0, fadeIn = 0.03) {
+  const src = ac.createBufferSource(), g = ac.createGain(), now = ac.currentTime;
+  src.buffer = buf;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(level, now + fadeIn);
+  src.connect(g).connect(kit.out);
+  src.start(now, Math.min(offset, buf.duration - 0.1));
+  return { src, g, end: now + buf.duration - offset };
+}
+function fadeOut(ac, s, tau = 0.6) {
+  if (!s) return;
+  s.g.gain.setTargetAtTime(0, ac.currentTime, tau);
+  s.src.stop(ac.currentTime + tau * 6);
+}
+// Rain hisses on the glass and each rail joint clacks; the recording does the rest.
 const kit = audioKit({ gain: 0.6, noiseSeconds: 2 });
 const JOINT = 25, BOGIE = [0, 2.6, 16, 18.6];
 let V = null, joint = null, dropBudget = 0;
@@ -2942,6 +2998,8 @@ function voices() {
   const ac = kit.live();
   if (!ac || !kit.noise) return null;
   V ||= { rain: loopNoise(ac, 'bandpass', 4200, 0.5), rumble: loopNoise(ac, 'lowpass', 150, 0.7) };
+  if (!clips) loadClips(ac);
+  else if (!V.bed) { V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle); }
   return V;
 }
 function burst(ac, at, { f, q, dur, level, type = 'bandpass' }) {
@@ -2968,8 +3026,12 @@ function voice(dt) {
   if (!v) return;
   const ac = kit.ac, now = ac.currentTime, sp = S.speed, k = Math.min(1, sp / 30);
   v.rain.g.gain.setTargetAtTime(0.05 * S.rain, now, 0.2);
-  v.rumble.g.gain.setTargetAtTime(0.32 * Math.pow(k, 0.8), now, 0.2);
-  v.rumble.fl.frequency.setTargetAtTime(110 + 90 * k, now, 0.3);
+  if (v.bed) recorded(v, ac, now, sp, k);
+  else {
+    // The synth rumble stands in until the recording loads.
+    v.rumble.g.gain.setTargetAtTime(0.32 * Math.pow(k, 0.8), now, 0.2);
+    v.rumble.fl.frequency.setTargetAtTime(110 + 90 * k, now, 0.3);
+  }
   // Single drops tick on the pane at a rate set by the rain.
   dropBudget = Math.min(4, dropBudget + dt * 9 * S.rain);
   while (dropBudget >= 1) {
@@ -2978,13 +3040,52 @@ function voice(dt) {
   }
   // Each bogie wheel crosses the joint in turn; the gap shrinks with speed.
   const j = Math.floor(S.camX / JOINT);
-  if (joint !== null && j !== joint && sp > 2) for (const b of BOGIE) clack(ac, now + b / sp, 0.25 + 0.5 * k);
+  // With the recording on, the synth clacks sit far under it.
+  const ck = v.bed ? 0.3 : 1;
+  if (joint !== null && j !== joint && sp > 2) for (const b of BOGIE) clack(ac, now + b / sp, (0.25 + 0.5 * k) * ck);
   joint = j;
 }
-// The arrival chime: two soft falling notes.
+// The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
+const REC = { away: null, stop: null, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+// The arrival clip squeals and stops 36.5 s in; braking ends on that mark.
+const STOP_AT = 36.5;
+function recorded(v, ac, now, sp, k) {
+  // Under the pull-away or the arrival, the bed steps back.
+  const dip = (REC.away && now < REC.away.end - 4) || REC.stop ? 0.25 : 1;
+  v.bed.g.gain.setTargetAtTime(1.1 * Math.min(1, sp / 22) ** 0.7 * dip, now, 0.8);
+  v.bed.src.playbackRate.setTargetAtTime(0.82 + 0.22 * Math.min(1, sp / 32), now, 1.0);
+  v.idle.g.gain.setTargetAtTime(S.dwelling && !REC.stop ? 0.5 : 0, now, 1.2);
+  v.rumble.g.gain.setTargetAtTime(0, now, 0.3);
+  // Pull away: the doors close and the motors wind up with the train.
+  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5); }
+  if (REC.away && (now > REC.away.end || sp < REC.prevSp - 0.05)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
+  // Arrival: start the clip so its last squeal lands on the stop.
+  // Time left: cruise to the braking point, then brake to the mark.
+  const bd = sp * sp / (2 * S.brake), tLeft = sp > 0.5 ? Math.max(S.toStop - bd, 0) / sp + sp / S.brake : Infinity;
+  if (!REC.stop && sp > 3 && tLeft < STOP_AT && S.toStop < 1500) {
+    fadeOut(ac, REC.away, 1); REC.away = null;
+    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 1.5);
+  }
+  if (REC.stop && now > REC.stop.end) REC.stop = null;
+  // Points: a clatter through each station's throat at speed.
+  const d = Math.abs(S.stationNear(S.camX)[1]);
+  if (sp > 8 && d < 140 && REC.stn >= 140 && S.toStop > 300) shot(ac, clips.points, 0.8 * k);
+  REC.stn = d;
+  // A worn joint now and then, louder at speed.
+  if (sp > 12 && S.camX > REC.nextJoint) { shot(ac, clips.joints, 0.55 * k); REC.nextJoint = S.camX + 600 + Math.random() * 1400; }
+  if (REC.nextJoint > S.camX + 3000 || REC.nextJoint < S.camX - 3000) REC.nextJoint = S.camX + 800;
+  // The oncoming train: a rush of air and steel as its front draws level.
+  const o = S.oppAt;
+  if (o === o && o < 80 && !REC.opp) { shot(ac, clips.pass, 1.0, 0.6); REC.opp = true; }
+  if (o !== o) REC.opp = false;
+  REC.prevSp = sp;
+  // Dev: the layer state, for QA.
+  if (window.__train) window.__rec = `away=${!!REC.away} stop=${REC.stop ? (ac.currentTime - REC.stop.end + REC.stop.src.buffer.duration).toFixed(1) : '-'} bed=${v.bed.g.gain.value.toFixed(2)} idle=${v.idle.g.gain.value.toFixed(2)}`;
+}
+// The arrival chime: two soft falling notes; the recording has its own.
 function chime() {
   const ac = kit.live();
-  if (!ac) return;
+  if (!ac || clips) return;
   const now = ac.currentTime;
   [[659.3, 0], [523.3, 0.42]].forEach(([f, t]) => {
     const o = ac.createOscillator(), g = ac.createGain();
@@ -3004,6 +3105,9 @@ function hush() {
   const now = kit.ac.currentTime;
   V.rain.g.gain.setTargetAtTime(0, now, 0.15);
   V.rumble.g.gain.setTargetAtTime(0, now, 0.15);
+  for (const l of [V.bed, V.idle]) l?.g.gain.setTargetAtTime(0, now, 0.15);
+  fadeOut(kit.ac, REC.away, 0.15); fadeOut(kit.ac, REC.stop, 0.15);
+  REC.away = REC.stop = null;
 }
 
 /* ---------- loop ---------- */
