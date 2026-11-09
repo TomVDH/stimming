@@ -21,50 +21,9 @@
 }
 .stage--fireworks canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fireworks canvas { transition: none; } }
-/* Shell is one stepper pill: an arrow each side of the name. */
-.stepper {
-  display: inline-flex; align-items: center; color: var(--fg); font-size: 13px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background-color: oklch(0.15 0.012 275 / 0.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-}
-/* The arrows drop their own ring and backing, so the pill matches a chip's height. */
-#shell .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
-#shell .chip svg { stroke-width: 1.8; stroke-linecap: round; }
-/* The longest name sets the width, so the arrows never move. */
-.stepper { position: relative; }
-.stepper .name { display: flex; align-items: center; gap: 6px; padding: 0 2px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
-.stepper .ico svg { display: block; width: 22px; height: 22px; }
-.stepper .lbl { display: grid; text-align: center; white-space: nowrap; }
-.stepper .lbl > * { grid-area: 1 / 1; }
-/* The name opens a grid of every shell, each with a small drawing. */
-.shells {
-  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: grid; grid-template-columns: repeat(5, 66px); gap: 4px; padding: 10px;
-  max-height: min(62vh, 460px); overflow: auto;
-  background: oklch(0.17 0.012 275 / 0.95); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.stepper.is-open .shells { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-.shells button {
-  display: grid; justify-items: center; gap: 4px; padding: 7px 2px 6px; border: 1px solid transparent; border-radius: 10px;
-  background: none; color: var(--muted); font: 500 10.5px/1.1 inherit; font-family: inherit; cursor: pointer;
-}
-.shells button svg { width: 36px; height: 36px; transition: transform 0.15s ease; }
-.shells button:hover { color: var(--fg); }
-.shells button:hover svg { transform: scale(1.12); }
-.shells button[aria-pressed="true"] { color: var(--fg); border-color: var(--line); background: oklch(1 0 0 / 0.06); }
-@media (max-width: 560px) { .shells { grid-template-columns: repeat(4, 64px); } }
-@media (prefers-reduced-motion: reduce) { .shells, .shells button svg { transition: none; } }
-.stepper .sizer { visibility: hidden; }
-.stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
-.stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
-@keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
-@media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
-/* The bill: a cheeky running cost of the show, top right of the stage. */
+/* The bill: a cheeky running cost of the show, under the top-right cluster. */
 .bill {
-  position: absolute; top: 12px; right: 14px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 999px;
+  position: absolute; top: calc(12px + var(--chip, 26px) + 12px); right: 14px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 999px;
   font: 700 15px/1 inherit; font-family: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
   color: oklch(0.74 0.19 25); background: oklch(0.14 0.012 275 / 0.62);
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: pointer;
@@ -73,24 +32,6 @@
 .bill.ka { animation: bill-ka 0.32s ease-out; }
 @keyframes bill-ka { 30% { transform: scale(1.14); color: oklch(0.86 0.17 30); } }
 @media (prefers-reduced-motion: reduce) { .bill.ka { animation: none; } }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -99,56 +40,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--fireworks" id="stage" tabindex="0" role="application" aria-label="A dark bay at night. Press the sky to launch a shell.">
       <p class="fail" hidden>Fireworks needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="stepper" id="shell" role="group" aria-label="Shell" tabindex="-1">
-        <button class="chip icon" type="button" data-step="-1" aria-label="Previous shell" title="Previous shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-        <button class="name" id="shellBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="shells" title="All shells"><span class="ico" aria-hidden="true"></span><span class="lbl"><output aria-live="polite">Mix</output><span class="sizer" aria-hidden="true">Chrysanthemum</span></span></button>
-        <div class="shells" id="shells" role="group" aria-label="All shells"></div>
-        <button class="chip icon" type="button" data-step="1" aria-label="Next shell" title="Next shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
-      </div>
-      <label class="slider"><span>Distance</span><input type="range" id="dist" min="0" max="1" step="0.01" value="0.5" aria-label="Distance: 300 to 1,500 metres"></label>
-      <div class="actions">
-        <button class="chip" id="finale" type="button">Showtime</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Smoke</span><div class="choices" id="smoke" role="group" aria-label="Smoke">
-              <button class="chip" type="button" data-value="thin" aria-pressed="true">Thin</button>
-              <button class="chip" type="button" data-value="thick" aria-pressed="false">Thick</button>
-            </div></div>
-            <div class="group"><span>Scene</span><div class="choices" id="scenes" role="group" aria-label="Scene">
-              <button class="chip" type="button" data-value="bay" aria-pressed="true">Bay</button>
-              <button class="chip" type="button" data-value="island" aria-pressed="false">Island</button>
-              <button class="chip" type="button" data-value="city" aria-pressed="false">City</button>
-            </div></div>
-            <div class="group"><span>Bill</span><div class="choices" id="billSet" role="group" aria-label="Bill">
-              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
-              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
-            </div></div>
-            <div class="group"><span>Sky</span><div class="choices" id="sky" role="group" aria-label="Sky">
-              <button class="chip" type="button" data-value="drift" aria-pressed="true">Drift</button>
-              <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
-              <button class="chip" type="button" data-value="cloud" aria-pressed="false">Cloud</button>
-            </div></div>
-            <div class="group"><span>Water</span><div class="choices" id="water" role="group" aria-label="Water">
-              <button class="chip" type="button" data-value="calm" aria-pressed="true">Calm</button>
-              <button class="chip" type="button" data-value="ripple" aria-pressed="false">Ripple</button>
-            </div></div>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>launch</dd></div>
-          <div><dt>Hold</dt><dd>bigger shell</dd></div>
-          <div class="fine"><dt><kbd>Space</kbd></dt><dd>shell</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -178,11 +72,9 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality, setQuality, audioKit, sound } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, setQuality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
-initPage({ id: 'fireworks' });
-qualitySetting(document.getElementById('sets'));
 const stage = document.getElementById('stage');
 
 // Seeded random keeps the bay the same on every load.
@@ -3214,11 +3106,20 @@ stage.addEventListener('pointerup', e => {
 const cancel = e => { if (press && e.pointerId === press.id) { press = null; chargeEnd(false); wake(); } };
 stage.addEventListener('pointercancel', cancel);
 stage.addEventListener('lostpointercapture', cancel);
-// Space launches a shell at a random point in the sky.
-stage.addEventListener('keydown', e => {
-  if (e.code !== 'Space') return;
+// Space launches a shell at a random point; the arrows step the shell.
+// Keys inside a control, a sheet or a field stay with it.
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('.stim-ui, input, textarea, select, button, a')) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
+    return;
+  }
+  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (!d) return;
   e.preventDefault();
-  launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
+  const i = SHELL_LIST.findIndex(([id]) => id === opts.shell);
+  ui.choice.set(SHELL_LIST[(i + d + SHELL_LIST.length) % SHELL_LIST.length][0], true);
 });
 
 /* ---------- bar ---------- */
@@ -3266,55 +3167,35 @@ const DRAW = {
 const shellIcon = id => `<svg viewBox="-17 -17 34 34" aria-hidden="true"><circle r="16.5" fill="oklch(0.14 0.03 275)" stroke="oklch(1 0 0 / 0.08)"/>${(DRAW[id] || DRAW.mix)()}</svg>`;
 /* ---------- end shell drawings ---------- */
 
-function popover(box, btn) {
-  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-document.getElementById('finale').addEventListener('click', showtime);
-// The stepper walks the shell list and wraps at each end.
-const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
-let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
-// The grid: one button per shell; picking one closes it.
-const shellGrid = document.getElementById('shells');
-shellGrid.innerHTML = SHELL_LIST.map(([id, name]) => `<button type="button" data-shell="${id}" aria-pressed="false">${shellIcon(id)}<span>${name}</span></button>`).join('');
-popover(shellBox, document.getElementById('shellBtn'));
-shellGrid.addEventListener('click', e => {
-  const b = e.target.closest('[data-shell]');
-  if (!b) return;
-  const i = SHELL_LIST.findIndex(([id]) => id === b.dataset.shell);
-  stepShell(i - shellAt);
-  shellBox.classList.remove('is-open');
-  document.getElementById('shellBtn').setAttribute('aria-expanded', 'false');
-});
-function stepShell(d) {
-  shellAt = (shellAt + d + SHELL_LIST.length) % SHELL_LIST.length;
-  const [id, name] = SHELL_LIST[shellAt];
-  opts.shell = id; save('shell', id);
-  shellName.textContent = name;
-  shellBox.querySelector('.ico').innerHTML = shellIcon(id);
-  shellGrid.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.shell === id)));
-  if (!d) return;
-  // The name slides in from the side of the pressed arrow.
-  shellName.classList.remove('from-next', 'from-prev');
-  void shellName.offsetWidth;
-  shellName.classList.add(d > 0 ? 'from-next' : 'from-prev');
-}
-stepShell(0);
-shellBox.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => stepShell(+b.dataset.step)));
-// Left and right arrows step while the stepper has focus.
-shellBox.addEventListener('keydown', e => {
-  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
-  if (!d) return;
-  e.preventDefault(); e.stopPropagation(); stepShell(d);
-});
-const distEl = document.getElementById('dist');
-distEl.value = String(opts.dist);
-distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); placeBarges(); draw(); });
+/* ---------- bar ---------- */
+const setShell = id => { opts.shell = id; save('shell', id); };
+const setDist = v => { opts.dist = v; save('dist', v); placeBarges(); draw(); };
+const setSmoke = v => { opts.smoke = v; save('smoke', v); SU.uSmokeK.value = v === 'thick' ? 1.15 : 0.75; };
+// A new scene saves and reloads; the intro stays away on that reload.
+const setScene = v => {
+  if (v === SCENE) return;
+  try { localStorage.setItem('stimming.fireworks.scene', v); sessionStorage.setItem('stimming.fireworks.rescene', '1'); } catch { /* storage is optional */ }
+  location.reload();
+};
+const setBill = v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); };
+const setWater = v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); };
+const ui = initPage({ id: 'fireworks', bar: {
+  choice: { label: 'Shell', display: 'tray', value: opts.shell,
+    options: SHELL_LIST.map(([value, label]) => ({ value, label, icon: shellIcon(value) })),
+    onPick: v => { setShell(v); stage.focus({ preventScroll: true }); } },
+  slider: { label: 'Distance', min: 0, max: 1, step: 0.01, value: opts.dist, onInput: setDist },
+  actions: [{ verb: 'showtime', label: 'Showtime', key: 'S', onPress: () => showtime() }],
+  settings: [
+    { type: 'choice', id: 'scene', label: 'Scene', value: SCENE, options: [{ value: 'bay', label: 'Bay' }, { value: 'island', label: 'Island' }, { value: 'city', label: 'City' }], onPick: setScene },
+    { type: 'choice', id: 'weather', label: 'Sky', value: opts.sky, options: [{ value: 'drift', label: 'Drift' }, { value: 'clear', label: 'Clear' }, { value: 'cloud', label: 'Cloud' }], onPick: v => { setSky(v); save('weather', v); updateLights(); draw(); } },
+    { type: 'choice', id: 'smoke', label: 'Smoke', value: opts.smoke, options: [{ value: 'thin', label: 'Thin' }, { value: 'thick', label: 'Thick' }], onPick: setSmoke },
+    { type: 'choice', id: 'water', label: 'Water', value: 'calm', options: [{ value: 'calm', label: 'Calm' }, { value: 'ripple', label: 'Ripple' }], onPick: setWater },
+    { type: 'choice', id: 'bill', label: 'Bill', value: saved('bill') === 'on' ? 'on' : 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], onPick: setBill },
+  ],
+  quality: true,
+  keys: [['click', 'launch'], ['hold', 'bigger shell'], ['space', 'random shell'], ['← →', 'shell']],
+} });
 placeBarges();
-choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
 /* ---------- weather ---------- */
 // On Drift the sky starts clear and turns cloudy now and then, at random.
@@ -3396,18 +3277,9 @@ function weatherTick(now) {
   }
 }
 const setSky = v => { opts.sky = v; applyCover(); };
-choices(document.getElementById('billSet'), v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); }).set(saved('bill') === 'on' ? 'on' : 'off');
 billEl.hidden = saved('bill') !== 'on';
-// A new scene saves and reloads; the intro stays away on that reload.
-choices(document.getElementById('scenes'), v => {
-  if (v === SCENE) return;
-  try { localStorage.setItem('stimming.fireworks.scene', v); sessionStorage.setItem('stimming.fireworks.rescene', '1'); } catch { /* storage is optional */ }
-  location.reload();
-}).set(SCENE);
-choices(document.getElementById('sky'), v => { setSky(v); save('weather', v); updateLights(); draw(); }).set(opts.sky);
 setSky(opts.sky);
 /* ---------- end weather ---------- */
-choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.

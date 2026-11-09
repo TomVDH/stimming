@@ -88,7 +88,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 - [ ] trainride
 
 ## Batch 12
-- [ ] fireworks
+- [x] fireworks
 - [ ] windfarm
 - [ ] window
 - [ ] viaduct
