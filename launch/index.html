@@ -89,9 +89,6 @@ const ui = initPage({ id: 'launch', bar: {
   slider: { label: 'Dawn', min: 0, max: 1, step: 0.005, value: opts.dawn, onInput: v => { opts.dawn = v; store.set('dawn', v); setDawn(); } },
   actions: [{ verb: 'launch', label: 'Launch', onPress: () => act.launch() }],
   settings: [
-    { type: 'choice', id: 'distance', label: 'Distance', value: 'mid', persist: true,
-      options: [{ value: 'near', label: 'Near' }, { value: 'mid', label: 'Mid' }, { value: 'far', label: 'Far' }],
-      onPick: v => setDistance(v) },
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Bokeh, after Buoy Business and Wind farm: a disc shape and a texture.
     { type: 'choice', id: 'shape', label: 'Bokeh', value: 'round', persist: true,
@@ -100,6 +97,10 @@ const ui = initPage({ id: 'launch', bar: {
     { type: 'choice', id: 'texture', label: 'Texture', value: 'clean', persist: true,
       options: [{ value: 'clean', label: 'Clean' }, { value: 'scatter', label: 'Scatter' }, { value: 'grain', label: 'Grain' }, { value: 'bubble', label: 'Bubble' }, { value: 'swirl', label: 'Swirl' }],
       onPick: () => setLens() },
+    // Fine control for the near reeds: blur size, focus (far left is auto), highlight discs.
+    { type: 'slider', id: 'aperture', label: 'Aperture', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: () => draw() },
+    { type: 'slider', id: 'focus', label: 'Focus', min: 0, max: 1, step: 0.01, value: 0, persist: true, onInput: () => wake() },
+    { type: 'slider', id: 'glow', label: 'Highlights', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => draw() },
   ],
   quality: true,
   keys: [['click', 'launch'], ['drag', 'look around'], ['space', 'launch']],
@@ -130,7 +131,7 @@ stage.prepend(canvas);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 80000);
 // The eye stands on a low dike above the reeds.
-const EYE = 4;
+const EYE = 5.5;
 camera.position.set(0, EYE, 0);
 camera.rotation.order = 'YXZ';
 // Layer 1 holds what the water mirrors.
@@ -158,6 +159,8 @@ const U = {
   uFront: { value: new THREE.Vector4(0, 0, 0, 0) },
   // Thick air round a low flame glows; thin air high up does not.
   uAir: { value: 1 },
+  // Wisps: a random offset per load, and how much sky they cover.
+  uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.3 + Math.random() * 0.7) },
 };
 
 /* ---------- dawn: sky, sun and the Earth's shadow line ---------- */
@@ -217,6 +220,19 @@ uniform float uDawn;
 uniform vec4 uFlame;
 uniform vec3 uFlameC;
 uniform float uAir;
+uniform vec3 uWisp;
+// Wisps: thin streaks of high cloud on a sheet 7 km up.
+// Unlit they are grey shapes; near dawn their undersides catch the glow.
+vec3 wisps(vec3 dir, vec3 col, float t, float cs) {
+  if (dir.y < 0.015 || uWisp.z < 0.01) return col;
+  vec2 p = dir.xz / dir.y * 7.0;
+  float n = k2noise(vec2(p.x * 0.09, p.y * 0.55) + uWisp.xy) * 0.65 + k2noise(vec2(p.x * 0.3, p.y * 2.1) + uWisp.yx) * 0.35;
+  float d = smoothstep(0.74 - 0.1 * uWisp.z, 0.92, n) * smoothstep(0.015, 0.07, dir.y) * (1.0 - smoothstep(0.25, 0.45, dir.y));
+  if (d < 0.002) return col;
+  vec3 glowC = mix(vec3(0.55, 0.3, 0.32), vec3(1.0, 0.55, 0.35), pow(max(cs, 0.0), 3.0));
+  vec3 cloud = mix(col * 0.85 + vec3(0.002, 0.002, 0.004), glowC * (0.05 + 0.5 * t * t), smoothstep(0.2, 0.9, t) * (0.35 + 0.65 * max(cs, 0.0)));
+  return mix(col, cloud, d * 0.5);
+}
 // Air round the flame glows; a view ray collects it.
 vec3 flameGlow(vec3 dir) {
   if (uFlame.w < 0.001) return vec3(0.0);
@@ -252,7 +268,8 @@ vec3 k2sky(vec3 dir) {
   col += ${v3(SKY.belt)} * anti * exp(-pow((up - 0.12) / 0.07, 2.0)) * t;
   col *= 0.06 + 0.94 * t * t;
   float dark = (1.0 - t) * (1.0 - t);
-  return col + vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5 + flameGlow(dir);
+  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5;
+  return wisps(dir, col, t, cs) + flameGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
 
@@ -320,7 +337,7 @@ const mirrorCam = new THREE.PerspectiveCamera();
 mirrorCam.layers.set(MIRROR);
 const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
 const texM = new THREE.Matrix4();
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(16000, 9000).rotateX(-Math.PI / 2).translate(0, 0, -4400), new THREE.ShaderMaterial({
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200000, 120000).rotateX(-Math.PI / 2).translate(0, 0, -59000), new THREE.ShaderMaterial({
   uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
@@ -422,14 +439,15 @@ vec3 reedLight(vec3 P, float head, float tone, float edge) {
 /* ---------- reeds: instanced stalks with plumes and leaves ---------- */
 // One instance is a stalk, three leaves and a plume, each a camera-facing ribbon.
 // aG: x = t along the piece, y = side, z = piece (0 stalk, 1 to 3 leaves, 4 plume).
-function reedGeometry() {
+// The light form, for far beds, keeps only the stalk and the plume.
+function reedGeometry(lite = false) {
   const g = [], idx = [];
   const piece = (k, n) => {
     const base = g.length / 3;
     for (let i = 0; i <= n; i++) for (const s of [-1, 1]) g.push(i / n, s, k);
     for (let i = 0; i < n; i++) { const a = base + i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   };
-  piece(0, 10); piece(1, 6); piece(2, 6); piece(3, 6); piece(4, 10);
+  if (lite) { piece(0, 4); piece(4, 6); } else { piece(0, 10); piece(1, 6); piece(2, 6); piece(3, 6); piece(4, 10); }
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute('aG', new THREE.Float32BufferAttribute(g, 3));
   geo.setIndex(idx);
@@ -524,6 +542,17 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
 reeds.frustumCulled = false;
 reeds.layers.enable(MIRROR);
 scene.add(reeds);
+// Far beds: many more stalks at a third of the vertices each.
+const FAR_MAX = 18000;
+const farGeo = reedGeometry(true);
+const aIF = new THREE.InstancedBufferAttribute(new Float32Array(FAR_MAX * 4), 4);
+const aJF = new THREE.InstancedBufferAttribute(new Float32Array(FAR_MAX * 4), 4);
+farGeo.setAttribute('aI', aIF);
+farGeo.setAttribute('aJ', aJF);
+const reedsFar = new THREE.Mesh(farGeo, reeds.material);
+reedsFar.frustumCulled = false;
+reedsFar.layers.enable(MIRROR);
+scene.add(reedsFar);
 // Place the stalks in clumps on dry ground; most sit near the eye.
 const noise = createNoise2D(rnd);
 U.uSway.value = reduced() ? 0 : 1;
@@ -534,7 +563,7 @@ function plantReeds(count) {
   while (n < count && tries++ < count * 40) {
     // A square bias puts most stalks in the near fringe.
     const u = rnd();
-    const z = -7 - 56 * u * u;
+    const z = -7 - 30 * u * u;
     const half = 1.3 * -z + 6;
     const x = (rnd() * 2 - 1) * half;
     if (wet(x, z) < 0.6 + rnd() * 1.5) continue;
@@ -553,6 +582,23 @@ function plantReeds(count) {
   }
   reedGeo.instanceCount = n;
   aI.needsUpdate = aJ.needsUpdate = true;
+}
+// Far beds fill the banks out to the first channel.
+function plantFar(count) {
+  seed = 9137;
+  let n = 0, tries = 0;
+  while (n < count && tries++ < count * 30) {
+    const z = -16 - 104 * rnd();
+    const x = (rnd() * 2 - 1) * (1.3 * -z + 6);
+    if (wet(x, z) < 0.4 + rnd()) continue;
+    const clump = noise(x * 0.05, z * 0.05) * 0.7 + noise(x * 0.25, z * 0.25) * 0.3;
+    if (clump < -0.35 + rnd() * 0.4) continue;
+    aIF.setXYZW(n, x, z, 1.6 + rnd() * 1.4 + Math.max(0, clump) * 0.5, rnd() * Math.PI * 2);
+    aJF.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
+    n++;
+  }
+  farGeo.instanceCount = n;
+  aIF.needsUpdate = aJF.needsUpdate = true;
 }
 
 /* ---------- reed banks: far beds as feathered ribbons ---------- */
@@ -654,9 +700,8 @@ function buildShore(D) {
   const sn = createNoise2D(() => (s = (s * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i <= n; i++) {
     const x = -X + 2 * X * i / n;
-    // A low bank with tree lines, gaps and a few tall stands.
-    const trees = Math.max(0, sn(x * 0.004, 0.5)) * 14 + Math.max(0, sn(x * 0.03, 2.5)) * 6 + Math.max(0, sn(x * 0.0015, 9.1) - 0.3) * 18;
-    const top = 1.6 + trees;
+    // A low bank with thorn scrub; the acacias stand on it as their own shapes.
+    const top = 1.2 + Math.max(0, sn(x * 0.02, 2.5)) * 2.5 + Math.max(0, sn(x * 0.11, 5.1)) * 1.2;
     const z = -D - 30 * sn(x * 0.0008, 4.4);
     pos.push(x, 0, z, x, top, z, x, 0.6, z - 2500);
     if (i < n) {
@@ -704,7 +749,7 @@ function buildMesas() {
   const mr = () => (ms = (ms * 16807) % 2147483647) / 2147483647;
   const sn = createNoise2D(mr);
   // Distance, count, lowest and highest top, in metres.
-  for (const [dist, count, h0, h1] of [[7000, 7, 30, 130], [16000, 12, 140, 460], [42000, 18, 500, 1500]]) {
+  for (const [dist, count, h0, h1] of [[5000, 6, 40, 180], [12000, 12, 160, 520], [30000, 16, 450, 1300]]) {
     const span = dist * 2.2, list = [];
     for (let i = 0; i < count; i++) {
       // Wide mesas, narrow buttes, and some with a lower bench.
@@ -743,6 +788,69 @@ function buildMesas() {
   }
 }
 buildMesas();
+
+/* ---------- acacias: flat-crowned thorn trees on the shore and the plain ---------- */
+// One quad per tree, upright and turned to the eye; the shader draws crown and trunk.
+const ACACIAS = 280;
+const acGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0));
+const aAc = new THREE.InstancedBufferAttribute(new Float32Array(ACACIAS * 4), 4);
+acGeo.setAttribute('aAc', aAc);
+{
+  let as = 4242;
+  const ar = () => (as = (as * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < ACACIAS; i++) {
+    // Two in three stand along the far shore; the rest dot the plain to 9 km.
+    const onShore = i < ACACIAS * 0.66;
+    const z = onShore ? -DIST.mid - 20 - ar() * 300 : -DIST.mid - 400 - Math.pow(ar(), 1.5) * 7000;
+    const x = (ar() * 2 - 1) * -z * 1.1;
+    aAc.setXYZW(i, x, z, 5 + ar() * 7, ar() * 100);
+  }
+  acGeo.instanceCount = ACACIAS;
+}
+const acacias = new THREE.Mesh(acGeo, new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, depthWrite: false,
+  vertexShader: /* glsl */`
+  attribute vec4 aAc;
+  varying vec2 vQ; varying vec3 vP; varying float vSeed;
+  void main() {
+    vec3 base = vec3(aAc.x, 0.0, aAc.y);
+    vec3 V = normalize(cameraPosition - base);
+    vec3 rt = normalize(vec3(V.z, 0.0, -V.x));
+    // The crown is about twice as wide as the tree is tall.
+    float H = aAc.z, W = H * 2.2;
+    vec3 P = base + rt * position.x * W + vec3(0.0, position.y * H, 0.0);
+    vQ = vec2(position.x * 2.2, position.y);
+    vP = P; vSeed = aAc.w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; varying vec2 vQ; varying vec3 vP; varying float vSeed; ${HEAD}
+  float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+  void main() {
+    vec2 q = vQ;
+    float lean = (fract(vSeed * 0.37) - 0.5) * 0.3;
+    // A flat umbrella crown with a ragged edge, a little lopsided.
+    float n = k2noise(vec2(q.x * 7.0 + vSeed, q.y * 9.0)) * 0.5 + k2noise(vec2(q.x * 19.0, vSeed)) * 0.5;
+    vec2 cq = (q - vec2(lean, 0.82)) / vec2(1.0, 0.13 + 0.05 * fract(vSeed));
+    float crown = 1.0 - smoothstep(0.85, 1.0, length(cq) + (n - 0.5) * 0.35) ;
+    crown *= step(0.66, q.y + 0.04 * n);
+    // A thin trunk that forks under the crown.
+    float tr = min(seg(q, vec2(0.0, 0.0), vec2(lean * 0.5, 0.5)), min(seg(q, vec2(lean * 0.5, 0.5), vec2(lean - 0.45, 0.8)), seg(q, vec2(lean * 0.5, 0.5), vec2(lean + 0.4, 0.8))));
+    float trunk = 1.0 - smoothstep(0.025, 0.05, tr);
+    float a = max(crown, trunk);
+    if (a < 0.05) discard;
+    float dist = length(vP.xz - cameraPosition.xz);
+    vec3 dir = normalize(vP - cameraPosition);
+    vec3 c = uAmb * 0.05 + uGlowC * 0.008;
+    float air = 1.0 - exp(-dist / 11000.0);
+    c = mix(c, k2sky(normalize(vec3(dir.x, max(dir.y, 0.004), dir.z))) * 0.97, air);
+    gl_FragColor = vec4(c * a, a);
+  }`,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+}));
+acacias.frustumCulled = false;
+acacias.renderOrder = 0.6;
+acacias.layers.enable(MIRROR);
+scene.add(acacias);
 
 /* ---------- mist: low sheets over the far flats ---------- */
 const mistMat = new THREE.ShaderMaterial({
@@ -1131,7 +1239,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   // Puff density at a sphere-local point; the cheap form skips fine octaves.
   float puffDens(vec3 q, float fq, vec3 drift, bool cheap) {
     // Ground clouds squat: their spheres are flattened and cut at the ground.
-    vec3 qe = vKind > 0.5 ? vec3(q.x, q.y * 1.7, q.z) : q;
+    vec3 qe = vKind > 0.5 ? vec3(q.x, q.y * 1.8, q.z) : q;
     float r2 = dot(qe, qe);
     if (r2 > 1.0) return 0.0;
     vec3 w = vC + q * vR;
@@ -1139,7 +1247,8 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     // Noise in world space: overlapping puffs share one billow field.
     vec3 wp = w / (uScale * mix(0.014, 0.02, vKind)) + drift;
     float n = cheap ? n3(wp) * 0.85 + 0.075 : billow(wp);
-    float env = exp(-r2 * 2.4);
+    // Ground clouds are densest low down, where they drag along the ground.
+    float env = exp(-r2 * 2.4) * (vKind > 0.5 ? 1.0 + 0.8 * clamp(-q.y * 2.0 + 0.3, 0.0, 1.0) : 1.0);
     return clamp(env * (n * mix(1.7, 2.0, vKind) - mix(0.35, 0.5, vKind) + 0.3 * (1.0 - vSpread)), 0.0, 1.0);
   }
   void main() {
@@ -1162,7 +1271,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     // Sunlit exhaust is silver with a faint warm core, pale blue at the edges.
     vec3 gold = vec3(1.0, 0.86, 0.74), blue = vec3(0.62, 0.74, 1.0);
     vec3 fdv = uFlame.xyz - vC;
-    float reach = uScale * (vKind > 0.5 ? 0.03 : 0.012);
+    float reach = uScale * (vKind > 0.5 ? 0.06 : 0.012);
     // Ground clouds lose the flame's light as it climbs away.
     vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind);
     // Little fill: smoke turned from the dawn stays a dark shape.
@@ -1187,14 +1296,15 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
       float sk = puffDens(q + Ld * 0.3, fq, drift, true) + puffDens(q + Ld * 0.65, fq, drift, true);
       float sf = puffDens(q + Fd * 0.3, fq, drift, true) + puffDens(q + Fd * 0.65, fq, drift, true);
       // Ground clouds shade softer, so their cores stay grey, not black holes.
-      float tk = exp(-sk * mix(2.6, 1.0, vKind) * vA), tf = exp(-sf * mix(2.0, 1.0, vKind) * vA);
+      float tk = exp(-sk * mix(2.6, 0.5, vKind) * vA), tf = exp(-sf * mix(2.0, 0.5, vKind) * vA);
       // Powder: thin rims glow when backlit; thick cores stay dark.
-      float pw = 1.0 - exp(-dens * 4.0);
+      float pw = mix(1.0 - exp(-dens * 4.0), 1.0, vKind);
       // Dense cores scatter gold in sunlight; thin rims scatter blue.
       vec3 key = keyC * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, dot(q, q))), sun);
       // Below the shadow line the key lights only thin edges: a rim, not a glow.
       float thin = mix(1.0 - smoothstep(0.15, 0.6, dens), 1.0, sun);
-      vec3 Li = key * tk * pd * pw * 2.2 * thin + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 1.1 + 0.4 * tk, vKind);
+      // Ground clouds take an even fill, so no puff shows a dark core and a bright ring.
+      vec3 Li = key * tk * pd * pw * mix(2.2 * thin, 0.5, vKind) + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 2.4, vKind);
       float ab = 1.0 - exp(-od);
       // Fire: exhaust just out of the nozzle still burns, hottest where densest.
       float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens);
@@ -1205,7 +1315,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     }
     float a = 1.0 - T;
     if (a < 0.003) discard;
-    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, 0.5 * k2hazeAmount(vC)) : col;
+    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, 0.3 * k2hazeAmount(vC)) : col;
     gl_FragColor = vec4(col, a);
   }`,
 }));
@@ -1244,7 +1354,7 @@ let flight = null;
 const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
-  const D = DIST[ui.setting('distance').value] ?? DIST.mid;
+  const D = DIST.mid;
   const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0, roarOn: false };
   PU.uScale.value = D;
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
@@ -1315,13 +1425,16 @@ function flyTo(f) {
   core.scale.set(bw * sk, bl * sk, bw * sk);
   FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame, D * 0.0009);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
-  // Ground clouds: forty billows roll sideways off the pad in the first 8 s.
-  const steamDue = Math.min(40, Math.floor(THREE.MathUtils.clamp((te - 0.2) / 8, 0, 1) * 40));
+  // Ground clouds: the blast hits the ground and rolls out sideways, low and heavy.
+  // Most come in the seconds round liftoff; later ones push the front further.
+  const steamDue = Math.min(110, Math.floor(Math.pow(THREE.MathUtils.clamp((te - 0.3) / (PRE + 7), 0, 1), 0.7) * 110));
   while (f.steam < steamDue) {
-    const s = f.steam++ % 2 ? 1 : -1, r = D * (0.026 + 0.03 * rnd()) * k.plume;
-    tmpA.set(f.x + (rnd() - 0.5) * D * 0.004, r * 0.45, f.z + (rnd() - 0.5) * D * 0.004);
-    rv.set(s * D * (0.004 + 0.024 * rnd()), D * 0.0015 * rnd(), (rnd() - 0.5) * D * 0.01);
-    writePuff(tmpA, f.start + (te - 0.01), rv, 0.3, 0, r, 1, 50 + rnd() * 10, D * 0.0006, 3 + rnd() * 4, 0.9);
+    const n = f.steam++, s = n % 2 ? 1 : -1, r = D * (0.024 + 0.034 * rnd()) * k.plume;
+    // Some roll toward or away from the eye, so the wall has depth.
+    const along = rnd() < 0.2 ? 0.2 : 1, late = THREE.MathUtils.clamp((te - PRE) / 6, 0, 1);
+    tmpA.set(f.x + (rnd() - 0.5) * D * 0.006, r * 0.22, f.z + (rnd() - 0.5) * D * 0.006);
+    rv.set(s * along * D * (0.012 + 0.03 * rnd()) * (1 + 0.6 * late), 0, (1 - along) * s * D * 0.03 + (rnd() - 0.5) * D * 0.006);
+    writePuff(tmpA, f.start + (te - 0.01), rv, 0.32, 0, r, 1, 45 + rnd() * 12, D * 0.00012, 2 + rnd() * 3, 0.95);
   }
   // Exhaust: walk the path since the last puff and drop one each spacing.
   const q = quality() === 'high' ? 1 : 2.3;
@@ -1370,7 +1483,6 @@ function flyTo(f) {
 }
 function endFlight() {
   flight.tl.kill();
-  if (shoreDue) { buildShore(shoreDue); shoreDue = 0; }
   body.visible = false;
   U.uFront.value.w = 0;
   birds.forEach(b => { b.a = 0; b.up = false; });
@@ -1383,7 +1495,7 @@ function endFlight() {
 }
 // The pad sits on the far shore below a screen x in -1..1.
 function padBelow(ndcX) {
-  const D = DIST[ui.setting('distance').value] ?? DIST.mid;
+  const D = DIST.mid;
   camera.updateMatrixWorld();
   tmpA.set(ndcX, 0, 0.5).unproject(camera).sub(camera.position).normalize();
   // Cast along the ground plane only; the pitch does not move the pad.
@@ -1879,12 +1991,15 @@ let dofK = 72, dofCap = 14, focusD = 1 / 2000, focusTo = 1 / 2000;
 // Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
 const fwdA = new THREE.Vector3();
 function autofocus(dt) {
-  let d = DIST[ui.setting('distance').value] ?? DIST.mid;
+  let d = DIST.mid;
   if (flight && simT - flight.start > PRE - 0.5) d = camera.position.distanceTo(tmpF.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z));
   else {
     camera.getWorldDirection(fwdA);
     if (fwdA.y < -0.03) d = THREE.MathUtils.clamp(EYE / -fwdA.y, 8, d);
   }
+  // The Focus slider overrides: 5 m at its first step, the pad at its end.
+  const mf = ui.setting('focus').value;
+  if (mf > 0.005) d = 5 * Math.pow(DIST.mid / 5, mf);
   focusTo = 1 / d;
   focusD += (focusTo - focusD) * (1 - Math.exp(-dt * (reduced() ? 20 : 2.5)));
 }
@@ -1963,7 +2078,8 @@ function resize() {
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
-  plantReeds(rung >= 3 ? 5000 : quality() === 'high' ? REED_MAX : 9000);
+  plantReeds(rung >= 3 ? 3500 : quality() === 'high' ? 9000 : 6500);
+  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? FAR_MAX : 11000);
   frame();
   draw();
 }
@@ -1982,8 +2098,10 @@ function draw() {
   dofPass.uniforms.uHunt.value = flight && !reduced() ? flight.hunt * dofPass.uniforms.uCap.value * 0.6 : 0;
   // A longer lens has a shallower field: the blur grows with the square of the zoom.
   const zk = 1 / Math.pow(flight && !reduced() ? flight.zoom : 1, 2);
-  dofPass.uniforms.uK.value = dofK * zk;
-  dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk);
+  const ap = ui.setting('aperture').value;
+  dofPass.uniforms.uK.value = dofK * zk * ap;
+  dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap));
+  dofPass.uniforms.uLampW.value = 30 * ui.setting('glow').value;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   dofPass.uniforms.uSeedB.value = grade.uniforms.uSeed.value;
   composer.render();
@@ -2105,13 +2223,6 @@ document.addEventListener('keydown', e => {
   if (flight) { follow = !follow; wake(); } else act.launch();
 });
 
-// A flight keeps its pad; the new shore waits until it ends.
-let shoreDue = 0;
-function setDistance(v) {
-  const D = DIST[v] ?? DIST.mid;
-  if (flight) { shoreDue = D; return; }
-  buildShore(D); draw();
-}
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
 // Shapes: blades, oval, donut, star.
 const SHAPE = { round: [0, 1, 0, 0], hex: [6, 1, 0, 0], oval: [0, 0.55, 0, 0], donut: [0, 1, 1, 0], star: [0, 1, 0, 1] };
@@ -2136,7 +2247,7 @@ function setLens() {
 // The intro holds until shaders compile and the first frame draws.
 dawn(9 - 8 * opts.dawn);
 buildBanks();
-buildShore(DIST[ui.setting('distance').value] ?? DIST.mid);
+buildShore(DIST.mid);
 setBox(ui.setting('letterbox').value);
 setLens();
 resize();

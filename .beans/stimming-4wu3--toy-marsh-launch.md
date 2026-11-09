@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:40:35Z
+updated_at: 2026-11-09T08:50:29Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -92,3 +92,12 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Settings: Bokeh (Round, Hex, Oval, Donut, Star) and Texture (Clean, Scatter, Grain, Bubble, Swirl), persisted. Autofocus follows the rocket, or racks to the ground where the frame looks down; blur grows with the zoom squared.
 - Smoke: grey-blue body from the sky; the dawn key lights only thin edges; sunlit exhaust is silver and pale blue. Exhaust under 1.6 s old burns orange-white near the engine.
 - Review fixes: composer pixel ratio (was 1x on Retina); a roar never replays after it ends and resumes at its faded level; a hidden tab silences the bed and suspends the context; a start wakes the sound and a missed roar retries; 24 fps by frame accumulator, drifting waits by timeout, ladder threshold 62 ms; timelines killed; shore geometry disposed; Distance waits for the flight to end; a flight keeps the scene awake; nothing draws before compile.
+
+## Ground blast, landscape, bokeh sliders (2026-11-09)
+
+- Ground clouds: 110 flat-bottomed billows blast sideways along the ground from ignition to T+7, later ones faster; an even fill, so no puff shows a dark core.
+- Eye raised to 5.5 m. Distance is fixed at Mid (2 km); the setting is gone.
+- Reeds: 6,500 to 9,000 full stalks near the eye plus 11,000 to 18,000 light ones (stalk and plume only) out to 120 m.
+- Landscape: the plain runs to the horizon; mesas at 5, 12 and 30 km stand on it; 280 flat-crowned acacias line the far shore and dot the plain.
+- Sky: random horizontal wisps on a sheet 7 km up, grey before dawn, pink and gold underlit near sunrise.
+- Bokeh: Aperture, Focus (far left is auto) and Highlights sliders in Settings, after the Bokeh and Texture rows.
