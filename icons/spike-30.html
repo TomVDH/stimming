@@ -46,8 +46,8 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 .big { margin-bottom: 4px; }
 /* Emblems: the flash box and the dark glass, as the intro shows them. */
 .emb { display: flex; gap: 12px; }
-.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
-.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.emb > div { position: relative; display: grid; place-items: center; width: 150px; height: 150px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 120px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
 .flash { background: #fff; color: var(--intro-bg); }
 .glass { color: #fff; background: oklch(0.3 0.06 300); }
 .glass::before {
@@ -471,6 +471,52 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       },
     },
   ];
+
+
+  /* ================= F emblems: the frame in grain ================= */
+
+  // The F frame in emblem space: the tile face fills the whole 128 square.
+  const EF = { c: [79.4, 58.9], R: 21.8, a: 15.4, tilt: 0.75 };
+  // Light in the cone: bright at the apex, soft at its right edge.
+  const coneL = (x, y) => {
+    const [ax, ay] = [60, -10], [bx, by] = [104, 140];
+    const side = ((bx - ax) * (y - ay) - (by - ay) * (x - ax)) / Math.hypot(bx - ax, by - ay);
+    const edge = clamp(side / 22, 0, 1), d = Math.hypot(x + 10, y + 10);
+    return edge * clamp(1 - d / 210, 0, 1);
+  };
+  const floorD = (x, y) => Math.abs(y - (97 + 19 * (x + 6) / 140 + 3)) < 3.4;
+  const ringPts = (n, seed) => parts(n, seed).map(p => { const q = torus(p, EF.c, EF.R, EF.a, EF.tilt, 0); return { x: q[0], y: q[1], lit: coneL(q[0], q[1]) > 0.08, k: p.k, rho: p.rho }; });
+  // Stipple: grey dots for the cone, white for the floor and the lit smoke.
+  const stippleEmblem = (scale, seed = 5) => {
+    const r = rng(seed), out = [];
+    const n = Math.round(1800 / (scale * scale));
+    for (let i = 0; i < n; i++) { const x = r() * 128, y = r() * 128; if (r() < coneL(x, y) * 0.95) out.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.75 * scale)}" fill="#9a9a9a"/>`); }
+    for (let i = 0; i < n / 5; i++) { const x = r() * 128, y = 90 + r() * 32; if (floorD(x, y)) out.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.8 * scale)}" fill="#fff"/>`); }
+    ringPts(Math.round(1700 / (scale * scale)), 11).forEach(q => out.push(`<circle cx="${f(q.x)}" cy="${f(q.y)}" r="${f(0.85 * scale)}" fill="${q.lit ? '#fff' : '#b4b4b4'}"/>`));
+    return `${EMB_HEAD}\n  ${out.join('\n  ')}\n</svg>\n`;
+  };
+  // Halftone: a grid of white dots sized by the frame's light.
+  const halftoneEmblem = (N = 34) => {
+    const cell = 128 / N, dens = new Float32Array(N * N);
+    ringPts(4000, 11).forEach(q => { const i = Math.floor(q.x / cell), j = Math.floor(q.y / cell); if (i >= 0 && j >= 0 && i < N && j < N) dens[j * N + i] += q.lit ? 1.6 : 1; });
+    let max = 0; dens.forEach(v => { max = Math.max(max, v); });
+    const out = [];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const L = Math.max(coneL(x, y) * 0.55, floorD(x, y) ? 0.8 : 0, Math.min(1, (dens[j * N + i] / max) * 1.5));
+      const rr = (cell / 2) * Math.sqrt(L) * 1.12;
+      if (rr > 0.25) out.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(rr)}" fill="#fff"/>`);
+    }
+    return `${EMB_HEAD}\n  ${out.join('\n  ')}\n</svg>\n`;
+  };
+  {
+    const F = DIRS.find(d => d.l === 'F');
+    F.emblem = () => stippleEmblem(1);
+    DIRS.splice(DIRS.indexOf(F) + 1, 0,
+      { l: 'F2', name: 'Frame, coarse grain', idea: 'F with a coarse stipple emblem: fewer, bigger particles, so the grain holds at intro size.', art: F.art, emblem: () => stippleEmblem(1.8, 9) },
+      { l: 'F3', name: 'Frame, halftone', idea: 'F with a halftone emblem: a grid of dots sized by the frame\'s light, like print.', art: F.art, emblem: () => halftoneEmblem() },
+    );
+  }
 
   /* ================= Gallery ================= */
 
