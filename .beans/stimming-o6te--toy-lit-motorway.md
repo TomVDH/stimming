@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:39Z
-updated_at: 2026-11-09T10:37:10Z
+updated_at: 2026-11-09T10:43:14Z
 ---
 
 Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzing sodium lamp over a motorway overpass; the zoom pulls out through the dark until the whole Belgian motorway network glows as orange ribbons. Sections strike up pink then orange; traffic streams; haze and fog catch the light.
@@ -20,6 +20,8 @@ Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzin
 - [x] Task 3: traffic from a baked weekday (jam points, rush hours), stop-and-go waves, red jams from altitude, Rush, clock
 - [x] City flags: huge amber letters on a fading stripe, NL / FR / DE (EN), no coordinates
 - [x] Start scene on the E19 by Mechelen: shaped overpass, guardrails, town domes; procedural wet road surface
+- [x] Opening: overhead outline, then the network boots up from Brussels; zoom in to the evening jam by Mechelen
+- [x] Far glow: rotated tilt-shift taps, softer bloom from orbit
 - [ ] Slip roads baked into roads.json (download pending)
 - [ ] Task 3: Traffic setting in Settings
 - [ ] Task 4: sound: buzz, strike tick, road hiss, altitude wind

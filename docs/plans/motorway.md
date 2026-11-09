@@ -31,7 +31,11 @@ Across the border the roads go dark. Only the towns of the neighbours glow, whit
 
 **City flags (Tom, 2026-11-09).** Big cities only, plus Mechelen and Bonheiden. Huge glowing slab letters in the map's own sodium amber stand on a stripe that fades down to a ring on the city. Names in Dutch, French and German, then English in brackets; repeats drop out. No coordinates. A flag fades in between 170 and 60 km, out again inside 4 km, and only once the camera has started to climb. Neighbouring flags stand at different heights, and words never leave the screen.
 
-**Start scene (Tom, 2026-11-09).** The hero lamp stands on the E19 by Mechelen. The overpass has a slab, four girders, fascia beams, a steel railing on posts and round piers under a cap beam. Guardrails run on both outer edges. Towns below the horizon light domes in the haze.
+**Opening (Tom, 2026-11-09).** The page opens overhead on the dark country: only the border outline glows, with faint town domes. As the intro clears the outline brightens, then the network boots: lamps strike pink and warm to orange in a ripple out from Brussels, motorways first, slip roads 0.6 s later, main roads 1.2 s later. Traffic lights up behind them. The outline then settles to faint. The whole reveal takes about 12 s.
+
+**The jam shot (Tom, 2026-11-09).** Zoom all the way in and you hang 25 m above the E19 by Mechelen at evening rush, looking down the outbound carriageway: a river of red tail-light pairs crawls under the sodium lamps toward the overpass 60 m ahead, while white headlights flow the other way. A local fleet of 150 cars per km loops 4 km either side of the spot. Flags show only from overhead, and only near their city.
+
+**Far glow.** The tilt-shift disc turns per pixel and eases off from orbit; the bloom widens there, so thin lines glow round, not blocky.
 
 **Road surface (Tom, 2026-11-09).** All procedural, in the ribbon shader: asphalt grain and patches, polished wheel tracks, a wet sodium sheen that mirrors each nearby head as a long GGX streak (wetter in fog), cat's eyes on the edge lines, and clumped grass verges. Slip roads draw as single-lane ramps.
 5. **Fog.** The Fog chip thickens the low air. Every lamp grows a halo and the ribbons swell into a glowing mist; the close shot turns to an orange room.
