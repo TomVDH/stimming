@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:10:12Z
-updated_at: 2026-11-09T09:15:42Z
+updated_at: 2026-11-09T09:20:21Z
 parent: stimming-80dc
 ---
 
@@ -49,3 +49,7 @@ None fits. A pinch of chemical thrown in the flame would clone Flame test. A bel
 One bar spec replaces the header, the bar, the Fuel and Settings trays and their popover wiring. Fuel is a stepper with colour dots. Quality stays one row with four steps: Low and Medium are Fire own steps, Standard and High set the site choice. Stored keys are the same as v1.
 
 Bugs fixed: the controls show the stored values at once and work during the GPU compile; Reset is disabled until the sim is ready. Escape that closes a sheet keeps the word; keys in a sheet no longer burn letters. Reduced motion: a slider redraws its still once the drag rests. Without WebGPU only the logo and the name stay.
+
+## Mobile and compliance check (80559e3)
+
+Checked at 1280 x 800, 375 x 812 (mobile preset, touch) and 812 x 375. No overlaps. The sheet fits the stage, and the page does not scroll. Touch words show (TAP; TYPE hides). Targets are 34 px. The fire stays clear of every corner. No code change needed.
