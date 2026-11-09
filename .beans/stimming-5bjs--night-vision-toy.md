@@ -14,4 +14,4 @@ New Lab toy: night vision goggles as a shader showcase. 3D night scene by defaul
 - [x] Bar v2, webcam, sound
 - [x] toys.json and Lab tile
 - [x] QA stills at 1280, 375x812, 812x375
-- [ ] PR
+- [x] PR (#34)
