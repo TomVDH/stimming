@@ -33,7 +33,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--washline" id="stage" tabindex="0" role="application" aria-label="Washing hangs on a line between two weathered posts on open prairie under a big sky. Tap a peg to unclip it; a piece with no pegs flies away. Drag a piece to pull it, or drag the line to pluck it. Tap the sky for a gust. Move the Sun slider behind the line and the washing glows.">
+    <div class="stage stage--washline" id="stage" tabindex="0" role="application" aria-label="Washing hangs on a line between two weathered posts, in one of several scenes: open prairie, or snowbound plains. Tap a peg to unclip it; a piece with no pegs flies away. Drag a piece to pull it, or drag the line to pluck it. Tap the sky for a gust. Move the Sun slider behind the line and the washing glows.">
       <p class="fail" hidden>Washing line needs WebGL 2, which this browser doesn't have.</p>
     </div>
   </main>
@@ -83,17 +83,25 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 
 /* ---------- the bar ---------- */
 // Handlers bind once the scene exists.
-const act = { wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {}, view() {} };
+// Themes appear here one by one, each signed off before the next.
+const SCENES = [['prairie', 'Prairie'], ['winter', 'Winter']];
+const firstScene = (() => {
+  const q = new URLSearchParams(location.search).get('scene');
+  let saved = null;
+  try { saved = localStorage.getItem('stimming.washline.dscene'); } catch { /* storage can be blocked */ }
+  return [q, saved].find(v => SCENES.some(([id]) => id === v)) || 'prairie';
+})();
+const act = { scene() {}, wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {}, view() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Wind', value: 'gusty',
-    options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }],
-    onPick: v => act.wind(v) },
+  choice: { label: 'Scene', value: firstScene, options: SCENES.map(([value, label]) => ({ value, label })), onPick: v => act.scene(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.3, onInput: v => act.sun(v) },
   actions: [
     { verb: 'add', noun: 'Sheet', onPress: () => act.add() },
     { verb: 'release', onPress: () => act.release() },
   ],
   settings: [
+    { type: 'choice', id: 'wind', label: 'Wind', value: 'gusty', onPick: v => act.wind(v),
+      options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }] },
     { type: 'choice', id: 'fabric', label: 'Fabric', value: 'cotton', persist: true, onPick: v => act.fabric(v),
       options: [{ value: 'cotton', label: 'Cotton' }, { value: 'linen', label: 'Linen' }, { value: 'silk', label: 'Silk' }] },
     { type: 'choice', id: 'view', label: 'View', value: 'wide', persist: true, onPick: v => act.view(v),
@@ -319,10 +327,22 @@ const ITEMS = {
     // Hung by the cuff: the leg, then the foot turns out.
     mask(u, v) { return v < 0.72 ? u < 0.56 : !(u > 0.82 && v > 0.9 && (u - 0.82) ** 2 + (v - 0.9) ** 2 > 0.012); } },
 };
+ITEMS.longjohns = { w: [0.72, 0.82], h: [1.3, 1.45], pegs: [0.32, 0.68], kg: 2.6, cols: ['red'], pats: [0], weave: 'jersey',
+  // Hung by the shoulders: long sleeves, a buttoned front, two legs.
+  mask(u, v) {
+    const a = Math.min(u, 1 - u), c = Math.abs(u - 0.5);
+    if (a >= 0.22) {
+      if (c * c / 0.012 + v * v / 0.004 <= 1) return false;
+      if (v > 0.56) return c > 0.012 + 0.05 * (v - 0.56) / 0.44 && c < 0.28 - 0.05 * (v - 0.56) / 0.44;
+      return true;
+    }
+    return a > 0.03 && v > (0.22 - a) * 0.3 && v < 0.5 - (0.22 - a) * 0.25;
+  } };
+ITEMS.flannel = { w: [0.95, 1.05], h: [0.78, 0.86], pegs: [0.3, 0.7], kg: 1.6, cols: ['red', 'navy', 'sage', 'khaki', 'red'], pats: [10], weave: 'twill', mask: ITEMS.tee.mask };
 const MIX = ['sheet', 'towel', 'tee', 'trousers', 'dress', 'pillow', 'cloth', 'sock', 'tee'];
 // A mirrored copy flips the shape and the pegs, as in a reflection.
 const itemMask = it => (it.I.mask ? (it.flip ? (u, v) => it.I.mask(1 - u, v) : it.I.mask) : null);
-function rollItem(kind = pick(MIX)) {
+function rollItem(kind = pick(T ? T.mix : MIX)) {
   const I = ITEMS[kind];
   const a = pick(I.cols);
   let b = pick(['white', 'cream', 'red', 'navy', 'sky']);
@@ -354,7 +374,7 @@ function build() {
   // A full line, a fresh mix each visit.
   const gap = 0.16, room = POST_X * 2 - 0.5, items = [];
   let used = 0;
-  for (const kind of ['sheet', 'tee', 'trousers', 'towel', 'dress', 'tee', 'sock', 'towel', 'cloth', 'sock'].sort(() => Math.random() - 0.5)) {
+  for (const kind of T.mix.slice().sort(() => Math.random() - 0.5)) {
     const it = rollItem(kind);
     if (used + it.w + (items.length ? gap : 0) > room) continue;
     used += it.w + (items.length ? gap : 0);
@@ -520,7 +540,7 @@ function step(t) {
       const c = pg.c;
       c.x[pg.p] = r.x[pg.ri]; c.y[pg.p] = r.y[pg.ri] - 0.012; c.z[pg.p] = r.z[pg.ri];
     }
-    for (const c of sim.sheets) K4.solveCloth(c, FABRIC.bend);
+    for (const c of sim.sheets) K4.solveCloth(c, Math.min(1, FABRIC.bend * T.stiff));
   }
   for (const c of sim.sheets) if (c.free) lawn(c);
 }
@@ -598,11 +618,11 @@ function setSun(s) {
   // Behind the line the sun stands high enough to clear the roof.
   const th = Math.PI * s, el = lerp(0.5, 0.2, s) + 0.7 * Math.sin(th) ** 3;
   SUN.dir.set(lerp(0.65, -0.45, s), Math.tan(Math.min(el, 1.4)), Math.cos(th)).normalize();
-  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(3);
+  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(T ? T.sunK : 3);
   SUN.b = smooth(0.45, 0.9, s);
   sunLight.position.copy(SUN.dir).multiplyScalar(12);
   sunLight.color.setRGB(SUN.col.x / 3, SUN.col.y / 3, SUN.col.z / 3);
-  sunLight.intensity = 3.2;
+  sunLight.intensity = 3.2 * (T ? T.sunK / 3 : 1);
 }
 function shadowSize() { return quality() === 'high' ? 4096 : 2048; }
 sunLight.shadow.mapSize.set(shadowSize(), shadowSize());
@@ -612,7 +632,7 @@ sunLight.shadow.mapSize.set(shadowSize(), shadowSize());
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 },
   uZen: { value: SKY.zen }, uMid: { value: SKY.mid }, uHor: { value: SKY.hor }, uHaze: { value: SKY.haze },
-  uCloud: { value: SKY.cloud }, uShade: { value: SKY.shade }, uDrift: { value: new THREE.Vector2() }, uLift: { value: 0 },
+  uCloud: { value: SKY.cloud }, uShade: { value: SKY.shade }, uDrift: { value: new THREE.Vector2() }, uLift: { value: 0 }, uGlowK: { value: 1 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -620,7 +640,7 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uMid, uHor, uHaze, uCloud, uShade; uniform float uB, uLift; uniform vec2 uDrift;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uMid, uHor, uHaze, uCloud, uShade; uniform float uB, uLift, uGlowK; uniform vec2 uDrift;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float vnoise(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -658,12 +678,35 @@ const sky = new THREE.Mesh(
         }
         // Far below the floating lawn: sea haze.
         col = mix(col, mix(uHor * 1.02, uHaze, smoothstep(0.0, 0.25, -e)), smoothstep(0.0, -0.01, e));
-        col += uSunCol * 0.33 * (0.08 * pow(cs, 8.0) + 0.45 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.99975, cs));
+        col += uSunCol * 0.33 * uGlowK * (0.08 * pow(cs, 8.0) + 0.45 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.99975, cs));
         gl_FragColor = vec4(col, 1.0);
       }` }));
 sky.frustumCulled = false;
 sky.renderOrder = -10;
 scene.add(sky);
+// Snowfall: flakes that wrap through a box round the line and drift.
+const SNOW_N = 2400;
+const snowGeo = new THREE.BufferGeometry();
+snowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SNOW_N * 3).map(() => Math.random()), 3));
+const snowU = { uTime: { value: 0 }, uWind: { value: 0 }, uPx: { value: 400 }, uOrigin: { value: new THREE.Vector3(-9, -1, -7) }, uBox: { value: new THREE.Vector3(20, 8, 16) } };
+const snow = new THREE.Points(snowGeo, new THREE.ShaderMaterial({ uniforms: snowU, transparent: true, depthWrite: false,
+  vertexShader: /* glsl */ `
+    uniform float uTime, uWind, uPx; uniform vec3 uOrigin, uBox; varying float vA;
+    void main() {
+      vec3 q = fract(position + vec3(uWind * 0.35, -0.75, 0.15) * uTime / uBox);
+      q.x = fract(q.x + 0.012 * sin(uTime * 1.3 + position.y * 40.0));
+      vec4 mv = viewMatrix * vec4(uOrigin + q * uBox, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = clamp(0.035 * uPx / -mv.z, 1.0, 48.0);
+      vA = 0.6 + 0.4 * fract(position.x * 13.7);
+    }`,
+  fragmentShader: /* glsl */ `
+    varying float vA;
+    void main() { float a = 1.0 - smoothstep(0.15, 0.5, length(gl_PointCoord - 0.5)); gl_FragColor = vec4(vec3(1.0), a * vA * 0.9); }` }));
+snow.frustumCulled = false;
+snow.renderOrder = 20;
+snow.visible = false;
+scene.add(snow);
 // The same sky, simpler, lights the scene for sheen and reflections.
 {
   const envScene = new THREE.Scene();
@@ -743,6 +786,14 @@ function clothTexture(c) {
       for (let y = 0, row = 0; y < c.h + s; y += s, row++) for (let x = (row % 2) * s / 2; x < c.w + s; x += s) { g.beginPath(); g.arc(x * px, y * py, 0.0055 * px, 0, TAU); g.fill(); }
     }
     if (p === 9) for (let y = 0.07; y < c.h; y += 0.022) g.fillRect(0, y * py, W, 0.009 * py);
+    if (p === 10) {
+      // Buffalo check: black crossing stripes over the ground colour.
+      const s = 0.045;
+      g.fillStyle = '#141414'; g.globalAlpha = 0.5;
+      for (let x = 0; x < c.w; x += 2 * s) g.fillRect(x * px, 0, s * px, Hh);
+      for (let y = 0; y < c.h; y += 2 * s) g.fillRect(0, y * py, W, s * py);
+      g.globalAlpha = 1;
+    }
     // Details that make each piece what it is.
     const stitch = it.kind === 'trousers' ? 'oklch(0.72 0.13 70)' : okl(it.alb, 1);
     const seam = (pts, dark = 0.22) => {
@@ -769,6 +820,15 @@ function clothTexture(c) {
       for (let k = 0; k < W + Hh; k += 4) { g.save(); g.translate(k, 0); g.rotate(0.6); g.fillRect(0, -Hh, 1, Hh * 3); g.restore(); }
     }
     if (it.kind === 'dress') seam([[0.25, 0.42], [0.75, 0.42]]);
+    if (it.kind === 'flannel' || it.kind === 'longjohns') {
+      // A button placket down the front, and ribbed cuffs.
+      const end = it.kind === 'flannel' ? 0.97 : 0.46;
+      seam([[0.485, 0.08], [0.485, end]], 0.18); seam([[0.515, 0.08], [0.515, end]], 0.18);
+      g.fillStyle = '#efe9dc';
+      for (let v = 0.14; v < end; v += it.kind === 'flannel' ? 0.15 : 0.09) { g.beginPath(); g.arc(0.5 * W, v * Hh, 0.006 * px, 0, TAU); g.fill(); }
+      g.fillStyle = 'rgba(0,0,0,0.14)';
+      if (it.kind === 'longjohns') for (const y of [0.92, 0.95, 0.98]) g.fillRect(0, y * Hh, W, 0.004 * py);
+    }
     if (it.kind === 'pillow') { g.fillStyle = 'rgba(0,0,0,0.06)'; g.fillRect(0, 0.84 * Hh, W, 0.16 * Hh); seam([[0, 0.84], [1, 0.84]]); }
     if (it.kind === 'sheet') { seam([[0, 0.045], [1, 0.045]], 0.12); }
     if (it.kind === 'cloth') {
@@ -798,6 +858,8 @@ function clothTexture(c) {
     const o = (y * W + x) * 4, u = (x + 0.5) / W, v = (y + 0.5) / Hh;
     if (!inside(u, v)) { d[o + 3] = 0; continue; }
     let k = 1 + (Math.random() - 0.5) * 0.04;
+    // Frozen cloth: a white rime that gathers at the hems.
+    if (T.frost) { const f = Math.random() * (0.06 + 0.1 * Math.random()); d[o] += (255 - d[o]) * f; d[o + 1] += (255 - d[o + 1]) * f; d[o + 2] += (255 - d[o + 2]) * f; }
     const hem = !inside(u + du, v) || !inside(u - du, v) || !inside(u, v + dv) || !inside(u, v - dv);
     if (hem) {
       const inner = !inside(u + su, v) || !inside(u - su, v) || !inside(u, v + sv) || !inside(u, v - sv);
@@ -873,45 +935,41 @@ function makeMesh(c) {
 }
 
 /* ---------- lawn, house, hedge ---------- */
-// The lawn: mowing stripes and clover patches under the blades.
-const lawnTex = new THREE.CanvasTexture(tex2D(1024, 1024, (g, w, h) => {
-  // Dry prairie: straw, olive and dust, in streaks.
-  g.fillStyle = '#8f8048'; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 30000; i++) {
-    g.fillStyle = `hsla(${rnd(38, 80)}, ${rnd(25, 50)}%, ${rnd(28, 62)}%, ${rnd(0.25, 0.7)})`;
-    g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 3), rnd(3, 10));
-  }
-}));
-lawnTex.colorSpace = THREE.SRGBColorSpace;
-lawnTex.wrapS = lawnTex.wrapT = THREE.RepeatWrapping;
-lawnTex.repeat.set(10, 10);
-lawnTex.anisotropy = MAX_ANISO;
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: lawnTex, roughness: 1 }));
+// The ground: one tiled painting per theme.
+function groundTex(kind) {
+  const t = new THREE.CanvasTexture(tex2D(1024, 1024, (g, w, h) => {
+    if (kind === 'snow') {
+      // Snow: soft drifts, wind ripples, a few glints.
+      g.fillStyle = '#e8ecf1'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 160; i++) {
+        const x = rnd(0, w), y = rnd(0, h), r = rnd(30, 140), gr = g.createRadialGradient(x, y, 0, x, y, r);
+        const dark = Math.random() < 0.5;
+        gr.addColorStop(0, dark ? 'rgba(150,165,190,0.16)' : 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r);
+      }
+      for (let i = 0; i < 2600; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '150,165,190' : '255,255,255'},${rnd(0.08, 0.25)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(8, 40), rnd(1, 2)); }
+      for (let i = 0; i < 1500; i++) { g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(rnd(0, w), rnd(0, h), 1, 1); }
+      return;
+    }
+    // Dry prairie: straw, olive and dust, in streaks.
+    g.fillStyle = '#8f8048'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 30000; i++) {
+      g.fillStyle = `hsla(${rnd(38, 80)}, ${rnd(25, 50)}%, ${rnd(28, 62)}%, ${rnd(0.25, 0.7)})`;
+      g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 3), rnd(3, 10));
+    }
+  }));
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(10, 10);
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 1 }));
 ground.receiveShadow = true;
 scene.add(ground);
-// Distance haze lays the far prairie into the sky.
-scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(0.88, 0.03, 85)), 22, 160);
+// Distance haze lays the far land into the sky.
+scene.fog = new THREE.Fog(0xffffff, 22, 160);
 
-
-// A barbed-wire fence crosses the field behind the line.
-{
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6d5e4a, roughness: 0.9 });
-  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.06, 1.25, 8), wood, 64);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-  for (let k = 0; k < 64; k++) {
-    q.setFromEuler(new THREE.Euler(rnd(-0.05, 0.05), 0, rnd(-0.06, 0.06)));
-    posts.setMatrixAt(k, m.compose(p.set(-60 + k * 2.8 + rnd(-0.2, 0.2), 0.6, -11 + rnd(-0.1, 0.1)), q, sc));
-  }
-  posts.castShadow = posts.receiveShadow = true;
-  scene.add(posts);
-  const wire = new THREE.LineBasicMaterial({ color: 0x3b3833 });
-  for (const y of [0.5, 0.82, 1.12]) {
-    const pts = [];
-    for (let x = -60; x <= 60; x += 2.8) pts.push(new THREE.Vector3(x, y - 0.03 * Math.random(), -11));
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wire));
-  }
-}
-// A white farmhouse and a windmill stand far off on the horizon.
 const clapTex = new THREE.CanvasTexture(tex2D(128, 128, (g, w, h) => {
   g.fillStyle = '#ece6da'; g.fillRect(0, 0, w, h);
   for (let y = 0; y < h; y += 8) { g.fillStyle = 'rgba(70,60,50,0.22)'; g.fillRect(0, y + 6, w, 2); }
@@ -920,8 +978,23 @@ clapTex.colorSpace = THREE.SRGBColorSpace;
 clapTex.wrapS = clapTex.wrapT = THREE.RepeatWrapping;
 clapTex.repeat.set(3, 2);
 let fan = null;
-{
-  const add = o => { o.castShadow = o.receiveShadow = true; scene.add(o); return o; };
+// Prairie: a barbed-wire fence, a white farmhouse, a windmill on the horizon.
+function buildPrairie(grp) {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6d5e4a, roughness: 0.9 });
+  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.06, 1.25, 8), wood, 64);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+  for (let k = 0; k < 64; k++) {
+    q.setFromEuler(new THREE.Euler(rnd(-0.05, 0.05), 0, rnd(-0.06, 0.06)));
+    posts.setMatrixAt(k, m.compose(p.set(-60 + k * 2.8 + rnd(-0.2, 0.2), 0.6, -11 + rnd(-0.1, 0.1)), q, sc));
+  }
+  posts.castShadow = posts.receiveShadow = true;
+  grp.add(posts);
+  const wire = new THREE.LineBasicMaterial({ color: 0x3b3833 });
+  for (const y of [0.5, 0.82, 1.12]) {
+    const pts = [];
+    for (let x = -60; x <= 60; x += 2.8) pts.push(new THREE.Vector3(x, y - 0.03 * Math.random(), -11));
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wire));
+  }
   const house = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(9, 4.2, 6), new THREE.MeshStandardMaterial({ map: clapTex, roughness: 0.9 }));
   body.position.y = 2.1;
@@ -938,7 +1011,7 @@ let fan = null;
   house.position.set(-28, 0, -62);
   house.rotation.y = 0.35;
   house.traverse(o => { o.castShadow = o.receiveShadow = true; });
-  scene.add(house);
+  grp.add(house);
   // The windmill: a tapered lattice tower, a wheel of blades and a tail vane.
   const steel = new THREE.MeshStandardMaterial({ color: 0x77736b, metalness: 0.6, roughness: 0.5 });
   const mill = new THREE.Group();
@@ -974,7 +1047,109 @@ let fan = null;
   mill.position.set(24, 0, -48);
   mill.rotation.y = -0.4;
   mill.traverse(o => { o.castShadow = true; });
-  scene.add(mill);
+  grp.add(mill);
+  if (basketObj) grp.add(basketObj);
+}
+
+// Winter: a red snow fence, poles along a buried road, a bare tree, an elevator in the whiteout.
+function buildWinter(grp) {
+  const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+  // The snow fence slants away; drifts pile up along its foot.
+  const a = new THREE.Vector2(-34, -8), b = new THREE.Vector2(44, -19), dir = b.clone().sub(a), len = dir.length();
+  dir.normalize();
+  const yaw = -Math.atan2(dir.y, dir.x);
+  const slatN = Math.floor(len / 0.1);
+  const slats = new THREE.InstancedMesh(new THREE.BoxGeometry(0.038, 1.2, 0.012), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.13, 32)), roughness: 0.9 }), slatN);
+  for (let k = 0; k < slatN; k++) {
+    const t = k * 0.1 + rnd(-0.01, 0.01);
+    q.setFromEuler(new THREE.Euler(rnd(-0.04, 0.04), yaw, rnd(-0.05, 0.05)));
+    slats.setMatrixAt(k, m.compose(p.set(a.x + dir.x * t, 0.5 + rnd(-0.03, 0.03), a.y + dir.y * t), q, sc.set(1, rnd(0.9, 1.05), 1)));
+  }
+  add(slats);
+  const stakeN = Math.floor(len / 2.4);
+  const stakes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 1.45, 0.07), new THREE.MeshStandardMaterial({ color: 0x4a3e33, roughness: 0.9 }), stakeN);
+  for (let k = 0; k < stakeN; k++) stakes.setMatrixAt(k, m.compose(p.set(a.x + dir.x * k * 2.4, 0.6, a.y + dir.y * k * 2.4 - 0.05), q.setFromEuler(new THREE.Euler(0, yaw, rnd(-0.04, 0.04))), sc.set(1, 1, 1)));
+  add(stakes);
+  const snowMat = new THREE.MeshStandardMaterial({ color: 0xf2f5f9, roughness: 0.95 });
+  const driftN = Math.floor(len / 1.6);
+  const drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
+  for (let k = 0; k < driftN; k++) drifts.setMatrixAt(k, m.compose(p.set(a.x + dir.x * k * 1.6, 0, a.y + dir.y * k * 1.6 + 0.6), q.setFromEuler(new THREE.Euler(0, yaw, 0)), sc.set(rnd(1.2, 2), rnd(0.25, 0.45), rnd(0.7, 1.1))));
+  add(drifts, false);
+  // A buried road runs off to the left, telephone poles along it.
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(5, 140).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc9cfd8, roughness: 1 }));
+  road.position.set(-15, 0.004, -40);
+  road.rotation.y = 0.08;
+  add(road, false);
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x3f3730, roughness: 0.9 });
+  const tops = [];
+  for (let k = 0; k < 9; k++) {
+    const z = 6 - k * 13, x = -18.5 + z * 0.08;
+    const pole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 9, 10), poleMat));
+    pole.position.set(x, 4.5, z);
+    const arm = add(new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.12), poleMat));
+    arm.position.set(x, 8.4, z);
+    tops.push([x, z]);
+  }
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x2c2a28 });
+  for (const off of [-0.8, -0.3, 0.3, 0.8]) for (let k = 0; k < tops.length - 1; k++) {
+    const pts = [], [x0, z0] = tops[k], [x1, z1] = tops[k + 1];
+    for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector3(lerp(x0, x1, t) + off, 8.45 - 0.5 * Math.sin(Math.PI * t), lerp(z0, z1, t))); }
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+  }
+  // A bare tree: branches split and taper, three levels deep.
+  const bark = new THREE.MeshStandardMaterial({ color: 0x3a332e, roughness: 0.95 });
+  const tree = new THREE.Group();
+  const branch = (parent, len, rad, depth) => {
+    const g = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.65, rad, len, 7).translate(0, len / 2, 0), bark);
+    g.castShadow = true;
+    parent.add(g);
+    if (depth === 0) return;
+    const n = depth > 2 ? 3 : 2 + (Math.random() < 0.5 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const j = new THREE.Group();
+      j.position.y = len * rnd(0.55, 0.95);
+      j.rotation.set(rnd(0.35, 0.8) * (Math.random() < 0.5 ? -1 : 1), rnd(0, TAU), rnd(0.35, 0.8) * (Math.random() < 0.5 ? -1 : 1));
+      g.add(j);
+      branch(j, len * rnd(0.55, 0.75), rad * 0.6, depth - 1);
+    }
+  };
+  branch(tree, 3.2, 0.24, 5);
+  tree.position.set(11, 0, -17);
+  grp.add(tree);
+  // A grain elevator and its silos, pale in the whiteout.
+  const conc = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.9 });
+  const elev = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(6, 24, 8), conc); shaft.position.y = 12;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 5), conc); head.position.y = 26.5;
+  elev.add(shaft, head);
+  for (const x of [5.5, 9.5, 13.5]) { const silo = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 18, 20), conc); silo.position.set(x, 9, 0); elev.add(silo); }
+  elev.position.set(-46, 0, -88);
+  grp.add(elev);
+  // Snow caps the posts; a galvanised tub waits by the near post.
+  for (const sx of [-1, 1]) {
+    const cap = add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 1.04), snowMat), false);
+    cap.position.set(sx * (POST_X + 0.07), 2.575, 0);
+    const top = add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 6).scale(1, 0.4, 1), snowMat), false);
+    top.position.set(sx * (POST_X + 0.07), 2.71, 0);
+  }
+  const tub = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.3, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9adb2, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide })));
+  tub.position.set(-2.3, 0.15, 1.0);
+  const tubSnow = add(new THREE.Mesh(new THREE.CircleGeometry(0.29, 24).rotateX(-Math.PI / 2), snowMat), false);
+  tubSnow.position.set(-2.3, 0.27, 1.0);
+  // Footprints lead from the lens out to the line.
+  const printTex = new THREE.CanvasTexture(tex2D(64, 128, (g) => {
+    g.fillStyle = 'rgba(70,85,110,0.55)';
+    g.beginPath(); g.ellipse(32, 44, 18, 30, 0, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(32, 100, 14, 20, 0, 0, TAU); g.fill();
+  }));
+  printTex.colorSpace = THREE.SRGBColorSpace;
+  const steps = 26, prints = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.26).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false }), steps);
+  for (let k = 0; k < steps; k++) {
+    const t = k / (steps - 1), x = lerp(-0.2, -1.2, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 9, t);
+    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, 0.12 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
+  }
+  grp.add(prints);
 }
 
 /* ---------- grass ---------- */
@@ -1021,10 +1196,10 @@ let grass = null;
 const VIEW = { x: -1.7, z: 7.0, head: Math.atan2(-7.5, 2.6) };
 function plantGrass() {
   if (grass) { scene.remove(grass); grass.dispose(); }
-  const N = (quality() === 'high' ? 110000 : 50000) * (viewMode === 'iso' ? 1.5 : 1);
+  const N = Math.round((quality() === 'high' ? 110000 : 50000) * (viewMode === 'iso' ? 1.5 : 1) * T.grass.n);
   grass = new THREE.InstancedMesh(bladeGeo(), grassMat, N);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), col = new THREE.Color();
-  const base = lin(0.66, 0.1, 95), dry = lin(0.78, 0.09, 80), deep = lin(0.5, 0.09, 125);
+  const [base, dry, deep] = T.grass.cols.map(c => lin(...c));
   let k = 0;
   while (k < N) {
     // Blades fill the wedge the camera sees, thicker near the line.
@@ -1039,7 +1214,7 @@ function plantGrass() {
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, TAU));
     const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rnd(-0.25, 0.25));
     q.multiply(tilt);
-    const hgt = rnd(0.12, 0.42) * (1 - worn) * (Math.random() < 0.05 ? 1.5 : 1);
+    const hgt = rnd(...T.grass.h) * (1 - worn) * (Math.random() < 0.05 ? 1.5 : 1);
     s.set(rnd(1.0, 1.8) * (viewMode === 'iso' ? 1.4 : 1), hgt, 1);
     grass.setMatrixAt(k, m.compose(p, q, s));
     const r = Math.random(), c = r < 0.6 ? base : r < 0.85 ? deep : dry;
@@ -1051,8 +1226,6 @@ function plantGrass() {
   grass.frustumCulled = false;
   scene.add(grass);
 }
-plantGrass();
-
 // Daisies and clover flowers dot the lawn.
 const daisyTex = new THREE.CanvasTexture(tex2D(64, 64, (g) => {
   g.translate(32, 32);
@@ -1061,6 +1234,7 @@ const daisyTex = new THREE.CanvasTexture(tex2D(64, 64, (g) => {
   g.fillStyle = '#f2c22e'; g.beginPath(); g.arc(0, 0, 7.5, 0, TAU); g.fill();
 }));
 daisyTex.colorSpace = THREE.SRGBColorSpace;
+let daisies = null;
 {
   const N = 260, flowers = new THREE.InstancedMesh(new THREE.CircleGeometry(0.014, 12).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: daisyTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 }), N);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
@@ -1076,6 +1250,7 @@ daisyTex.colorSpace = THREE.SRGBColorSpace;
   flowers.castShadow = true;
   flowers.receiveShadow = true;
   scene.add(flowers);
+  daisies = flowers;
 }
 
 /* ---------- posts, basket, pegs, line ---------- */
@@ -1106,7 +1281,8 @@ const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 }
     for (const o of [post, arm, brace, brace2, hook]) { o.castShadow = o.receiveShadow = true; scene.add(o); }
   }
 }
-// A wicker basket waits on the lawn with one folded towel inside.
+// A wicker basket waits on the lawn with one folded towel inside; the prairie keeps it.
+let basketObj = null;
 {
   const wick = new THREE.CanvasTexture(tex2D(256, 128, (g, w, h) => {
     g.fillStyle = '#a07c4c'; g.fillRect(0, 0, w, h);
@@ -1134,7 +1310,7 @@ const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 }
   basket.traverse(o => { o.castShadow = o.receiveShadow = true; });
   basket.position.set(-2.3, 0, 1.0);
   basket.rotation.y = 0.5;
-  scene.add(basket);
+  basketObj = basket;
 }
 // Pegs: two wooden jaws and a steel spring.
 const pegGeo = mergeGeometries([
@@ -1222,7 +1398,7 @@ function syncScene() {
 function syncLight() {
   skyU.uB.value = SUN.b;
   clothU.uTrans.value = FABRIC.tau * (0.15 + 0.85 * SUN.b);
-  renderer.toneMappingExposure = lerp(1.05, 0.85, SUN.b);
+  renderer.toneMappingExposure = T.exp * lerp(1.05, 0.85, SUN.b);
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
   skyU.uDrift.value.set(st.drift, st.drift * 0.25);
@@ -1231,6 +1407,12 @@ function syncLight() {
   grassU.uWind.value = WIND[st.wind].u * st.windScale * (reduce ? 0.3 : 1);
   grassU.uScroll.value = st.scroll;
   if (fan) fan.rotation.z = -st.t * (0.6 + WIND[st.wind].u * 0.5) * st.windScale;
+  if (snow.visible) {
+    snowU.uTime.value = st.t;
+    snowU.uWind.value = WIND[st.wind].u * st.windScale;
+    // An orthographic view has no depth to scale by; a fixed size stands in.
+    snowU.uPx.value = camera.isOrthographicCamera ? view.h * renderer.getPixelRatio() * 0.9 : (view.h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  }
   grassU.uGlow.value.copy(SUN.col).multiplyScalar(0.22 * SUN.b);
   // The sharp band follows the middle of the washing on screen.
   ndc.set(0, LINE_Y - 0.45, 0).project(camera);
@@ -1464,6 +1646,72 @@ document.addEventListener('keydown', e => {
   act.add();
 });
 
+/* ---------- themes ---------- */
+// Each theme: sky, sun, haze, ground, grass, set, wardrobe and weather.
+const THEMES = {
+  prairie: {
+    sky: { zen: [0.56, 0.12, 248], mid: [0.72, 0.085, 238], hor: [0.9, 0.035, 85], haze: [0.84, 0.04, 80], cloud: [0.98, 0.012, 85], shade: [0.76, 0.035, 250] },
+    warm: [0.95, 0.08, 68], white: [0.99, 0.02, 88], sunK: 3, glow: 1, exp: 1, shadow: 1,
+    fog: [[0.88, 0.03, 85], 22, 160], hemi: [[0.82, 0.06, 240], [0.62, 0.07, 85], 1.0],
+    ground: 'prairie', grass: { n: 1, h: [0.12, 0.42], cols: [[0.66, 0.1, 95], [0.78, 0.09, 80], [0.5, 0.09, 125]] },
+    wind: 'gusty', sun: 0.3, stiff: 1, frost: 0, snow: 0, daisies: 1,
+    mix: ['sheet', 'tee', 'trousers', 'towel', 'dress', 'tee', 'sock', 'towel', 'cloth', 'sock'], build: buildPrairie,
+  },
+  winter: {
+    sky: { zen: [0.79, 0.02, 255], mid: [0.86, 0.012, 250], hor: [0.93, 0.006, 250], haze: [0.92, 0.006, 250], cloud: [0.9, 0.01, 250], shade: [0.85, 0.012, 252] },
+    warm: [0.95, 0.02, 250], white: [0.97, 0.01, 250], sunK: 1.3, glow: 0.12, exp: 0.97, shadow: 0.35,
+    fog: [[0.93, 0.006, 250], 8, 80], hemi: [[0.95, 0.01, 250], [0.9, 0.012, 250], 1.7],
+    ground: 'snow', grass: { n: 0.022, h: [0.15, 0.5], cols: [[0.55, 0.05, 70], [0.62, 0.06, 80], [0.45, 0.04, 60]] },
+    wind: 'breeze', sun: 0.35, stiff: 3, frost: 1, snow: 1, daisies: 0,
+    mix: ['longjohns', 'sheet', 'flannel', 'sock', 'sock', 'towel', 'flannel', 'sheet'], build: buildWinter,
+  },
+};
+let T = null, setGroup = null;
+function disposeTree(o) {
+  o.traverse(n => {
+    n.geometry?.dispose();
+    for (const mt of [n.material].flat()) if (mt && mt !== woodMat) mt.dispose();
+  });
+}
+function applyTheme(id) {
+  T = THEMES[id] || THEMES.prairie;
+  for (const k of ['zen', 'mid', 'hor', 'haze', 'cloud', 'shade']) SKY[k].set(...lin(...T.sky[k]));
+  SKY.warm.set(...lin(...T.warm));
+  SKY.white.set(...lin(...T.white));
+  skyU.uGlowK.value = T.glow;
+  scene.fog.color.setRGB(...lin(...T.fog[0]));
+  scene.fog.near = T.fog[1]; scene.fog.far = T.fog[2];
+  hemi.color.setRGB(...lin(...T.hemi[0]));
+  hemi.groundColor.setRGB(...lin(...T.hemi[1]));
+  hemi.intensity = T.hemi[2];
+  sunLight.shadow.intensity = T.shadow;
+  ground.material.map?.dispose();
+  ground.material.map = groundTex(T.ground);
+  ground.material.needsUpdate = true;
+  if (setGroup) { if (basketObj) setGroup.remove(basketObj); scene.remove(setGroup); disposeTree(setGroup); }
+  fan = null;
+  setGroup = new THREE.Group();
+  T.build(setGroup);
+  scene.add(setGroup);
+  if (daisies) daisies.visible = !!T.daisies;
+  snow.visible = !!T.snow;
+  plantGrass();
+  st.wind = T.wind;
+  ui.setting('wind')?.set(T.wind);
+  setSun(T.sun);
+  ui.slider?.set(T.sun);
+}
+act.scene = v => {
+  if (!THEMES[v]) return;
+  applyTheme(v);
+  try { localStorage.setItem('stimming.washline.dscene', v); } catch { /* storage can be blocked */ }
+  endGesture();
+  build();
+  settle(3);
+  frameCamera();
+  wake();
+};
+
 /* ---------- controls ---------- */
 act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
 act.sun = v => { setSun(v); wake(); };
@@ -1515,8 +1763,7 @@ onQuality(() => {
   resize();
 });
 
-st.wind = 'gusty';
-setSun(0.3);
+applyTheme(firstScene);
 FABRIC = FABRICS[ui.setting('fabric')?.value] || FABRICS.cotton;
 slack = SLACK[ui.setting('line')?.value] || SLACK.slack;
 build();
