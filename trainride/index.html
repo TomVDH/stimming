@@ -602,7 +602,7 @@ const glints = [];
 {
   const pos = [], col = [], size = [];
   const SOD = [1.0, 0.55, 0.2], WARM = [1.0, 0.75, 0.45], WHITE = [0.85, 0.92, 1.0];
-  const light = (x, z, c, k, sz) => { pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * k)); size.push(sz); };
+  const light = (x, z, c, k, sz) => { pos.push(x, 2 + rnd() * 4, z); col.push(...c.map(q => q * k)); size.push(sz); };
   const pick = () => rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
   // Each real town and village gets a cluster; the map spreads the rest.
   const KIND = { c: [1400, 1400, 1.4], t: [420, 650, 1.2], s: [220, 400, 0.9], v: [110, 260, 0.8] };
@@ -618,7 +618,8 @@ const glints = [];
   for (let i = 0; i < 6000; i++) {
     const x = ((range(-2600, 3400) % TILE) + TILE) % TILE, t = 70 + 3200 * rnd() ** 1.6;
     const c = rnd() < 0.45 ? WHITE : rnd() < 0.6 ? WARM : SOD;
-    pos.push(x, 3 + rnd() ** 2 * (rnd() < 0.04 ? 80 : 26), -t);
+    // Lights sit on the ground or on low buildings, never floating.
+    pos.push(x, 2 + rnd() ** 2 * 12, -t);
     col.push(...c.map(q => q * range(1.2, 3)));
     size.push(range(22, 44));
   }
@@ -679,7 +680,8 @@ const glints = [];
       // Lights go out by day, and none stand in the water.
       if (uDay > 0.995 || shore(w.xz) < 6.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); vP = w; return; }
       // Far lights lift a little, so the coarse far mesh never hides them.
-      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.008;
+      // The far mesh is filtered now, so far lights need only a small lift.
+      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.002;
       vP = w;
       // Distant lights shimmer a little in the valley air.
       vC = color * (1.0 - uDay) * (0.85 + 0.15 * sin(uTime * 3.0 + position.x * 0.37 + position.z * 0.11));
@@ -801,16 +803,18 @@ function strip(geo, w, cy, add, order, frag) {
 }
 // A box shape convolved with the motion box: a trapezoid of cover.
 const COVER = w => /* glsl */`clamp((${w} + uSmear + 0.001 - abs(vL.x) * 2.0) / (2.0 * uSmear + 0.002), 0.0, 1.0) * min(1.0, ${w} / (uSmear + 0.001))`;
-strip(new THREE.PlaneGeometry(1, 7.4).translate(0, 1.1, -3.0), 0.24, 1.1, false, 3, /* glsl */`
+strip(new THREE.PlaneGeometry(1, 7.4).translate(0, 1.1, -2.8), 0.34, 1.1, false, 3, /* glsl */`
 void main() {
-  float cov = ${COVER('0.24')};
+  // A mast zips past in a few frames; the blur keeps more of its body, so it reads.
+  float cov = pow(${COVER('0.34')}, 0.55);
   // An H-beam catenary mast: two lit flanges round a darker web, blurred by the smear.
-  float fl = mix(smoothstep(0.07, 0.1, abs(vL.x)), 0.5, smoothstep(0.02, 0.15, uSmear));
+  float fl = mix(smoothstep(0.1, 0.14, abs(vL.x)), 0.5, smoothstep(0.02, 0.15, uSmear));
   float k = max(vK, 0.0);
   vec3 cn = vec3(0.003, 0.003, 0.004) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.03;
   cn += LAMPC * k * 0.06 * exp(-max(0.1 - vW.y, 0.0) * 1.5) * step(vW.y, 0.23);
-  vec3 N = normalize(vec3(clamp(vL.x / (0.12 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
-  vec3 cd = vec3(0.08, 0.085, 0.09) * (sunC() * max(dot(N, uSun), 0.0) + skyA(0.0));
+  vec3 N = normalize(vec3(clamp(vL.x / (0.17 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
+  // Dark galvanised steel, a silhouette against the bright view.
+  vec3 cd = vec3(0.05, 0.052, 0.055) * (sunC() * max(dot(N, uSun), 0.0) + skyA(0.0) * 0.8);
   vec3 c = mix(cn, cd, uDay) * (0.55 + 0.6 * fl);
   // The cantilever bracket and its insulator sit near the top.
   c = mix(c, mix(vec3(0.01), vec3(0.25, 0.23, 0.2), uDay), smoothstep(0.04, 0.0, abs(vW.y - 3.9)) * 0.8);
@@ -1654,9 +1658,11 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // The shared drops are sized for a pane 0.44 m away; this one is 1 m.
       vec3 Ls = vec3(0.28, 0.5, 0.82);
       vec2 pr = p * 0.45;
-      grBeads(pr, uRain, 1.0 - 0.5 * smoothstep(5.0, 40.0, uSpeed), Ls, off, rim, spec, cover);
+      // Fewer, calmer beads: the pane must not read as speckle.
+      grBeads(pr, uRain, 1.0 - 0.5 * smoothstep(5.0, 40.0, uSpeed), 0.4, Ls, off, rim, spec, cover);
       // Runs slant with the train's speed; trails stretch as it rises.
-      grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, Ls, off, rim, spec, cover, clear);
+      // Slow or still, drops hold and slip; by 18 m/s the air drives them freely.
+      grRuns(pr, uRunM, uFlow, uRain, 1.0 + uSpeed / 18.0, 1.0 - smoothstep(4.0, 18.0, uSpeed), Ls, off, rim, spec, cover, clear);
       off /= 0.45;
       float fog = grFog(p, uFog, dg, uPatch);
       // The deep frame shades the glass right next to it.
@@ -2229,6 +2235,8 @@ return {
   get day() { return dayV; },
   setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
   setSpeed(v) { target = v; },
+  // Dev: stand still at a point, as at a stop, for stills.
+  hold(x) { camX = x; speed = 0; stopX = x; dwell = 1e9; place(); },
   // Dev scrub: jump to a point on the line; the next stop is found again.
   seek(x) { camX = x; stopX = null; dwell = 0; place(); },
   get length() { return TILE; },
@@ -2672,6 +2680,8 @@ addEventListener('keydown', e => {
 /* ---------- dev scrub (?dev) ---------- */
 // A strip over the stage scrubs the whole line; readouts show km, the nearest station and speed.
 if (qs.has('dev')) {
+  // QA scripts drive the scene through this handle.
+  window.__train = { S, wake };
   const L = S.length;
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
