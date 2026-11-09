@@ -12,6 +12,7 @@ Round 4 of the Smoke ring cannon menu icon. Tom asked for fresh directions A to 
 
 - [x] Build icons/spike-25.html: Current plus A to E, shaded and interactive
 - [x] Emblems vortex25-a..e
-- [ ] Send Tom stills at rest and on hover
+- [x] Send Tom stills at rest and on hover
+- [x] Tom prefers A (shaded) but wants it softer, smokier: spike 26 holds A1 to A4
 - [ ] Tom picks a direction
 - [ ] Install the pick on the menu and update icons/picks.json
