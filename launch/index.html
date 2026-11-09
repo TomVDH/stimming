@@ -2146,10 +2146,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
       c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      // Film grain moves every frame; the exposure flickers a little.
+      // Film grain moves with the seed; the exposure holds steady.
       vec2 gp = gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0);
       c *= 1.0 + (h(gp) - 0.5) * uGrain * (1.2 - 0.6 * smoothstep(0.0, 0.3, lum)) * 2.0;
-      c *= 1.0 + 0.012 * (fract(sin(uSeed * 12.9898) * 43758.5453) - 0.5) * step(0.5, uSeed);
       // Bars cover what lies outside a 2.39 frame; tall stages get none.
       float bar = max(0.0, 0.5 - 0.5 * (uRes.x / uRes.y) / 2.39);
       if (uBox > 0.5 && (vUv.y < bar || vUv.y > 1.0 - bar)) c = vec3(0.0);
@@ -2289,9 +2288,8 @@ function frame() {
   // A hand on the camera: a slow, tiny wobble while the scene is awake.
   // The launch adds a shake that dies away as the rocket climbs.
   const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 2.2), t = simT;
-  const jit = () => (Math.random() - 0.5) * 0.0005;
-  const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
-  const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1) + jit());
+  const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3));
+  const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1));
   const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
   camera.rotation.set(baseUp + look.pitch + auto.pitch + wp, look.yaw + auto.yaw + wy, wr);
   camera.updateProjectionMatrix();
@@ -2326,10 +2324,12 @@ function resize() {
 }
 // A page that loads hidden may get no visibility event before input.
 let visible = !document.hidden;
+let grainTick = 0, drawN = 0;
 let compiled = false, lastSimDraw = 0;
 function draw() {
   // Nothing draws before the shaders compile behind the intro.
   if (!visible || !compiled) return;
+  drawN++;
   commitStars();
   commitPuffs();
   updateGround(Math.min(0.1, simT - lastSimDraw));
@@ -2353,15 +2353,16 @@ function draw() {
   du.uCapPx.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap)) * (1 + cam.hunt * 0.5);
   du.maxblur.value = du.uCapPx.value / dofPass.material.defines.RINGS;
   du.gain.value = 2 * ui.setting('glow').value;
-  if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
+  // The grain reseeds every second drawn frame: alive, not fizzing.
+  if (!reduced() && (++grainTick & 1)) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   composer.render();
 }
 
-/* Frame loop: 24 fps, idle or not; it sleeps 60 s after the last input. */
+/* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 // One film frame in ms; nap holds a drifting wait.
-const FRAME = 1000 / 24;
+const FRAME = 1000 / 30;
 let nap = 0;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
 const busy = () => !!press || !!flight || gFluid.live || gsap.isTweening(cam) || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
@@ -2383,12 +2384,12 @@ function tick(now) {
     aimFollow(dt);
     easeLook(dt);
     autofocus(dt);
-    // The film runs at 24 frames a second, idle or not.
+    // The film runs at 30 frames a second: every second tick of a 60 Hz screen.
     if (now - lastDraw >= FRAME - 2) {
       frame();
       draw();
       watch(now, lively);
-      // Step the clock by whole film frames, so 60 Hz screens average 24.
+      // Step the clock by whole film frames, so 60 Hz screens hold an even cadence.
       lastDraw = now - lastDraw > FRAME * 3 ? now : lastDraw + FRAME;
     }
   } finally {
@@ -2415,8 +2416,8 @@ function watch(now, lively) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  // Frames come every 42 ms by design; a 60 Hz screen gives 50; past 62 is slow.
-  if (watchSum / watchN > (lively ? 62 : 90) && rung < 3) { rung++; resize(); }
+  // Frames come every 33 ms by design; past 50 is slow.
+  if (watchSum / watchN > (lively ? 50 : 90) && rung < 3) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
@@ -2482,6 +2483,7 @@ function setLens() {
 window.__qa = {
   dawn(v) { opts.dawn = v; setDawn(); draw(); },
   simT: () => simT,
+  draws: () => drawN,
   flightT: () => (flight ? simT - flight.start - PRE : null),
   // Jump the flight to T+t seconds: the clock, the timeline and the trail catch up.
   jump(t) { if (!flight) return; const te = Math.max(0, t + PRE); simT = flight.start + te; flight.lastSim = simT; frame(); draw(); },

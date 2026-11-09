@@ -167,3 +167,8 @@ Fix: the pass is three.js's `BokehShader2`, patched by string: a near-only blur 
 Defaults: 80 px per dioptre, cap 13 px per 800 px. The hunt scales the near blur and cap, never the distance.
 Settings: Bokeh is Round or Pentagon. The Texture row and the Hex, Oval, Donut and Star shapes are gone (no equivalent in the addon).
 QA hooks on `window.__qa`: `dawn(v)`, `simT()`, `flightT()`, `jump(t)`.
+
+## Calm camera (12:40, Tom: the camera twitches)
+
+Cause: a fresh random offset on yaw and pitch every drawn frame, an exposure flicker every frame, and a 24 fps gate on a 60 Hz screen (a 2-3-2-3 cadence).
+Fix: the jitter and the flicker are gone; the three-sine wobble and the launch shake stay. The film runs at 30 fps (an even cadence); the grain reseeds every second frame. Ladder threshold 50 ms. `__qa.draws()` counts frames; measured 30.0 fps in the pane.
