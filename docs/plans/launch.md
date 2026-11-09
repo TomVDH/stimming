@@ -208,3 +208,9 @@ Fix: panicle 0.08 to 0.14 of the stalk (`PLUME_LEN` 0.11), held 12 degrees off t
 
 The toy is now Ten seconds (`toys.json`, menu label, page title, intro fallback, h1). Dutch set to Tien tellen /tin ˈtɛlən/ as Tom's draft pick; he confirms. The folder stays `launch`.
 Icon spike 28 (`icons/spike-28.html`, sheet entry `[28, ['launch']]`): Current (the sky box) and three directions with no rocket drawn. A Slant: a gold streak from the corner with a hot square head. B Rim: a hex, a dawn hairline, a dot that brightens the line as it climbs. C Ring: a sound ring from the horizon that leans three brut reeds as it passes. Emblems in `icons/spike/emblems/launch28-a..c.svg`. Tom picks; the menu tile follows in the next commit.
+
+## Icon spike 29 (14:50, Tom: round 1 was clip art, too like the other tiles)
+
+Round 1's symbols on a dusk box resembled the landscape tiles. Round 2 follows what Tom picked elsewhere (Fireworks A, Dijkstra A, Vortex D, Ink, Oil slick, Foil, Sonar): a live miniature of the toy's own phenomenon, drawn by code, steered by the pointer. No horizon box, no ring.
+A Twilight plume: 46 puffs along a bent path, cold below the shadow line, gold and rose above it; pointer y is the Dawn slider. B Reed bed: 120 seeded stalks with plume wedges; a speck flashes, a beat later a wave leans every reed away. C Late shadow: the kit's own block; the face flashes, ten ticks count, the hard shadow kicks loose and judders back. D Ground cloud: 36 billows blast out along the ground from a hot core, lit from within, then darken; pointer x is the wind.
+GSAP cannot tween `oklch()` strings (ticks turned teal), so colours are set, never tweened; the flash is a white sheet whose opacity tweens.
