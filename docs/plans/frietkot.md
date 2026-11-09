@@ -249,6 +249,15 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] The script line uses Courgette, plain and readable.
 - [x] Framing on thirds: a wider lens (53°, 68° on phones), the horizon on the lower third, two thirds of night sky; the frituur on the right-hand third, the church tower on the left third. Zoom stays.
 
+### Task 3h: Pump (Tom, 2026-11-09)
+
+- [x] Traffic: footpaths at many depths, a road lane each way at the front, bikes 26 %, motorbikes and cars 25 %, irregular arrivals; most vehicles pass, some turn in to park in frame.
+- [x] Hall door: a warm corridor in a dark frame, a step, a pool of light; no floating panel.
+- [x] Weather: fronts fade over half of each spell; rain swells and eases within it.
+- [x] Fries neon: glass-tube shader, a striped cone, six fries, a dollop in the picked sauce's colour; a chase: fries one by one, hold, flash, dark but for the cone.
+- [x] Reflections: the sign, the fries, the light box and the seating-room windows also lie in the wet cobbles.
+- [x] Shading: contact shade at wall feet and round the buildings on the ground; split-tone grade; stronger bloom.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.
