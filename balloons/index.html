@@ -25,8 +25,6 @@
   position: absolute; left: 50%; top: 40%; width: 1px; height: 1px; margin: 0; padding: 0;
   font-size: 16px; color: transparent; background: transparent; border: 0; opacity: 0; pointer-events: none;
 }
-/* Each swatch shows its foil. */
-.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
@@ -36,25 +34,10 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--balloons" id="stage" tabindex="0" role="application" aria-label="Foil balloon letters float on a dark stage, saying HI. Type to inflate more; drag to bat them, rub one to squeak it and hold one to prick it, or use the arrow keys to bat, Backspace to prick and Enter to let them all go.">
       <input class="keys" id="keys" type="text" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Letters to inflate">
       <p class="fail" hidden>Balloon letters needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Foil">
-        <button class="chip" type="button" data-foil="gold" aria-pressed="true"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.95 0.08 95), oklch(0.8 0.15 80) 55%, oklch(0.6 0.12 70))" aria-hidden="true"></span>Gold</button>
-        <button class="chip" type="button" data-foil="silver" aria-pressed="false"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.97 0.01 250), oklch(0.8 0.015 255) 55%, oklch(0.58 0.02 260))" aria-hidden="true"></span>Silver</button>
-        <button class="chip" type="button" data-foil="rose" aria-pressed="false"><span class="sw" style="--c: linear-gradient(135deg, oklch(0.93 0.06 20), oklch(0.78 0.12 15) 55%, oklch(0.58 0.12 10))" aria-hidden="true"></span>Rose</button>
-        <button class="chip" type="button" data-foil="holo" aria-pressed="false"><span class="sw" style="--c: conic-gradient(from 40deg, oklch(0.82 0.15 350), oklch(0.88 0.14 90), oklch(0.86 0.14 165), oklch(0.8 0.13 240), oklch(0.8 0.15 300), oklch(0.82 0.15 350))" aria-hidden="true"></span>Holo</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Type</dt><dd>inflate</dd></div>
-        <div><dt>Drag</dt><dd>bat it</dd></div>
-        <div><dt>Hold</dt><dd>prick</dd></div>
-        <div class="fine"><dt><kbd>Enter</kbd></dt><dd>let go</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Balloon letters</h1><div class="vignette" hidden></div></section>
@@ -67,11 +50,33 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'balloons' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
 const panel = document.getElementById('stage'), keysIn = document.getElementById('keys');
+// Each foil dot is a small swatch of its foil.
+const FOIL_OPTS = [
+  { value: 'gold', label: 'Gold', dot: 'linear-gradient(135deg, oklch(0.95 0.08 95), oklch(0.8 0.15 80) 55%, oklch(0.6 0.12 70))' },
+  { value: 'silver', label: 'Silver', dot: 'linear-gradient(135deg, oklch(0.97 0.01 250), oklch(0.8 0.015 255) 55%, oklch(0.58 0.02 260))' },
+  { value: 'rose', label: 'Rose', dot: 'linear-gradient(135deg, oklch(0.93 0.06 20), oklch(0.78 0.12 15) 55%, oklch(0.58 0.12 10))' },
+  { value: 'holo', label: 'Holo', dot: 'conic-gradient(from 40deg, oklch(0.82 0.15 350), oklch(0.88 0.14 90), oklch(0.86 0.14 165), oklch(0.8 0.13 240), oklch(0.8 0.15 300), oklch(0.82 0.15 350))' },
+];
+// The foil choice comes back on the next visit.
+const FOIL_KEY = 'stimming.balloons.foil';
+const savedFoil = (() => { try { return localStorage.getItem(FOIL_KEY); } catch (err) { return null; } })();
+const COARSE = matchMedia('(pointer: coarse)').matches;
+// The handlers bind once the stage exists.
+const act = { foil() {}, letGo() {}, type() {}, reset() {} };
+// Every printable key types, so the bar binds no shortcut keys.
+const ui = initPage({ id: 'balloons', bar: {
+  choice: { label: 'Foil', value: FOIL_OPTS.some(o => o.value === savedFoil) ? savedFoil : 'gold', options: FOIL_OPTS, onPick: v => act.foil(v) },
+  actions: [
+    { verb: 'let go', label: 'Let go', onPress: () => act.letGo() },
+    // Touch screens get a visible way to the keyboard.
+    ...(COARSE ? [{ verb: 'type', label: 'Type', onPress: () => act.type() }] : []),
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['type', 'inflate'], ['drag', 'bat it'], ['hold', 'prick'], ['enter', 'let go']],
+} });
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; poke(); });
@@ -968,7 +973,7 @@ void main() {
 // SW holds its width.
 let SW = 3.56, ambient = 1, lastPoke = 0, simT = 0;
 const letters = [], ropes = [];
-let word = [], foil = 'gold', LID = 0, ropeColor = 0;
+let word = [], foil = ui.choice.value, LID = 0, ropeColor = 0;
 const SMAX = 0.92, GAP = 0.085, SPACE = 0.42, LINE = 1.5, MAXTOK = 24, ROPE_N = 18;
 
 function makeLetter(g) {
@@ -1024,11 +1029,29 @@ function makeRope(L) {
 }
 
 /* ---------- layout: the word sits in rows, as large as fits ---------- */
+// The word sits between bandB and bandT, in world units.
+// The shell's corner rows push the band in.
+let bandT = 1, bandB = -0.72;
+function measureBands() {
+  const h = panel.clientHeight;
+  if (!h) return;
+  let t = 0, b = 0;
+  for (const el of document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
+    if (!el.offsetParent || !el.offsetHeight) continue;
+    if (el.offsetTop < h / 2) t = Math.max(t, el.offsetTop + el.offsetHeight);
+    else b = Math.max(b, h - el.offsetTop);
+  }
+  // A gap of 24 px leaves room for the bob and the tilt.
+  bandT = t ? Math.min(1, 1 - (2 * (t + 24)) / h) : 1;
+  bandB = Math.max(-0.72, -1 + (2 * (b + 24)) / h);
+}
 const tokW = t => (t.space ? SPACE : t.g.maxX - t.g.minX);
 function rowW(r) { let w = 0; r.forEach((t, i) => { w += tokW(t) + (i ? GAP : 0); }); return w; }
 function trim(r) { while (r.length && r[0].space) r.shift(); while (r.length && r[r.length - 1].space) r.pop(); return r; }
+// split counts the words broken across rows.
 function rowsFor(limit) {
   const rows = [[]];
+  let split = 0;
   for (const t of word) {
     let row = rows[rows.length - 1];
     if (row.length && !t.space && rowW([...row, t]) > limit) {
@@ -1036,25 +1059,54 @@ function rowsFor(limit) {
       let k = -1;
       for (let i = row.length - 1; i >= 0; i--) if (row[i].space) { k = i; break; }
       if (k >= 0) rows.push(row.splice(k + 1));
-      else rows.push([]);
+      else { rows.push([]); split++; }
       row = rows[rows.length - 1];
     }
     row.push(t);
   }
-  return rows.map(trim).filter(r => r.length);
+  const out = rows.map(trim).filter(r => r.length);
+  out.split = split;
+  return out;
 }
+// Let go does nothing with no word up.
+const syncGo = () => { ui.action('let go').disabled = !word.some(t => !t.space); };
+syncGo();
 function layout() {
+  syncGo();
   if (!word.some(t => !t.space)) return;
   let best = null;
-  const total = rowW(word);
-  for (let n = 1; n <= 4; n++) {
+  const total = rowW(word), yc0 = 0.14 + (bandB + 0.72) / 2;
+  // ext gives the foil's top or bottom in cap heights from a row's baseline.
+  // The puff stands about 0.08 cap heights past the outline.
+  const ext = (row, up) => {
+    const v = row.filter(t => !t.space).map(t => (up ? t.g.maxY : t.g.minY) - t.g.base);
+    return up ? Math.max(...v) + 0.08 : Math.min(...v) - 0.08;
+  };
+  // Each row count gives its tightest width.
+  // Tall stages stack more rows.
+  const maxRows = SW < 1.2 ? 7 : SW < 2 ? 5 : 4, limits = [];
+  for (let n = 1; n <= maxRows; n++) {
     let lo = 0, hi = total + 0.01;
     for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (rowsFor(mid).length <= n) hi = mid; else lo = mid; }
-    const rows = rowsFor(hi), m = rows.length, wide = Math.max(...rows.map(rowW));
-    const s = Math.min(SMAX, (SW - 0.36) / wide, 1.72 / (m + (m - 1) * (LINE - 1) + 0.6));
-    if (!best || s > best.s * 1.05) best = { s, rows };
+    limits.push(hi);
   }
-  const { s, rows } = best, m = rows.length, yc = 0.14, span = (m - 1) * LINE * s;
+  // The widest word gives the tightest width with no broken word.
+  let w0 = 0, run = [];
+  for (const t of [...word, { space: true }]) { if (t.space) { if (run.length) w0 = Math.max(w0, rowW(run)); run = []; } else run.push(t); }
+  limits.push(w0 + 1e-6);
+  for (const limit of limits) {
+    const rows = rowsFor(limit), m = rows.length, wide = Math.max(...rows.map(rowW));
+    if (m > maxRows) continue;
+    // kT and kB give the word's top and bottom from its centre, per unit size.
+    const half = (m - 1) * LINE * 0.5, kT = half - 0.5 + ext(rows[0], true), kB = -half - 0.5 + ext(rows[m - 1], false);
+    const s = Math.min(SMAX, (SW - 0.36) / wide, (bandT - bandB) / (m + (m - 1) * (LINE - 1) + 0.6), (bandT - bandB) / (kT - kB));
+    // The word sinks from its usual centre until its top clears the band.
+    const yc = Math.max(bandB - s * kB, Math.min(yc0, bandT - s * kT));
+    // A broken word must earn its place with much bigger letters.
+    const sc = s * (rows.split ? 0.8 : 1);
+    if (!best || sc > best.sc * 1.05) best = { s, rows, yc, sc };
+  }
+  const { s, rows, yc } = best, m = rows.length, span = (m - 1) * LINE * s;
   rows.forEach((row, i) => {
     let pen = (-rowW(row) * s) / 2;
     const yb = yc - 0.5 * s + span / 2 - i * LINE * s;
@@ -1161,6 +1213,7 @@ function letGo() {
   poke();
   const ls = word.filter(t => !t.space);
   word = [];
+  syncGo();
   if (!ls.length) return;
   ls.forEach((L, i) => { L.state = 'away'; L.t = -i * 0.07 - Math.random() * 0.05; L.drift = rnd(-0.35, 0.35); sparkle(L, 2); });
   wheeSound();
@@ -1194,7 +1247,7 @@ function gust(k) {
 let kbdRub = 0;
 function chooseFoil(kind) {
   foil = kind;
-  chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.foil === kind)));
+  try { localStorage.setItem(FOIL_KEY, kind); } catch (err) { /* storage is optional */ }
   // The new foil sweeps across the word, letter by letter.
   const ls = word.filter(t => !t.space);
   ls.forEach((L, i) => { L.swap = { at: simT + i * 0.06, kind }; });
@@ -1363,6 +1416,8 @@ function collide() {
     const A = act[i], B = act[j], dx = B.x - A.x, dy = B.y - A.y, rr = A.g.rad * A.k + B.g.rad * B.k;
     const key = A.id * PAIR + B.id;
     if (dx * dx + dy * dy > rr * rr) { ghost.delete(key); continue; }
+    // A released letter rises past the next word without a push.
+    if ((A.state === 'away') !== (B.state === 'away')) continue;
     pool.w = pool.x = pool.y = pool.nx = pool.ny = pool.pen = 0;
     contacts(A, B, 1);
     contacts(B, A, -1);
@@ -1599,6 +1654,7 @@ function onSize(w, h) {
   camera.updateProjectionMatrix();
   SW = 2 * camera.aspect;
   rect = null;
+  measureBands();
   const db = renderer.getDrawingBufferSize(new THREE.Vector2());
   bgMat.uniforms.uRes.value.copy(db);
   layout();
@@ -1948,7 +2004,7 @@ let bsT = 0;
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   const t = e.target, own = t === keysIn;
-  if (!own && t.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (!own && t.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const k = e.key || '', onButton = !own && t.closest?.('button, a');
   if (k === 'Enter') {
     if (onButton) return;
@@ -1980,11 +2036,27 @@ keysIn.addEventListener('input', e => {
   else for (const ch of v.slice(SENT.length)) typeChar(ch.toUpperCase());
   keysIn.value = SENT;
 });
-const chips = [...document.querySelectorAll('.chip[data-foil]')];
-// A pointer click gives the keys back to the stage.
-const backToStage = e => { if (e.detail > 0) panel.focus({ preventScroll: true }); };
-chips.forEach(c => c.addEventListener('click', e => { chooseFoil(c.dataset.foil); backToStage(e); }));
-document.getElementById('snd').addEventListener('click', backToStage);
+// A pointer click on a corner chip gives the keys back to the stage.
+// Sheets and the touch keyboard keep their focus.
+document.querySelector('.stim-ui')?.addEventListener('click', e => {
+  if (document.activeElement === keysIn) return;
+  if (e.detail > 0 && e.target.closest('.s2-chip, .snd') && !e.target.closest('.s2-sheet')) panel.focus({ preventScroll: true });
+});
+// Reset lets the word go, then inflates HI again.
+let resetT = 0;
+function resetAll() {
+  clearTimeout(resetT);
+  if (!ready) return;
+  letGo();
+  resetT = setTimeout(() => { for (const ch of 'HI') typeChar(ch); }, reduce ? 150 : 650);
+}
+Object.assign(act, {
+  foil: chooseFoil,
+  letGo,
+  // Focus inside the click puts up the touch keyboard.
+  type: () => { keysIn.focus({ preventScroll: true }); poke(); },
+  reset: resetAll,
+});
 sound.onChange(on => {
   if (on) audio();
   else { squeakStop(); creakStop(); if (ac) ac.suspend()?.catch(() => {}); }
@@ -2121,6 +2193,9 @@ async function start() {
 
   panel.prepend(canvas);
   fitRenderer(2, onSize, 1.4e6);
+  // The corners change size with the phone layout and the toy name.
+  const ro = new ResizeObserver(() => { measureBands(); layout(); poke(); });
+  document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)').forEach(el => ro.observe(el));
   if (!panel.clientWidth) onSize(16, 9);
   // HI arrives already inflated.
   for (const ch of 'HI') {
