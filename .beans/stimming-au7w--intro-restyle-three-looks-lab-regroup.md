@@ -1,10 +1,11 @@
 ---
 # stimming-au7w
 title: 'Intro restyle: three looks, lab regroup'
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-09T22:21:16Z
-updated_at: 2026-11-09T22:21:16Z
+updated_at: 2026-11-09T23:09:08Z
 parent: stimming-jdik
 ---
 
@@ -28,3 +29,9 @@ Third round, 2026-11-09: Signal takes a per-toy ink (colour or gradient) after a
 Decision, 2026-11-09: Tom picks Signal as the intro for now, default on every toy. The other looks stay in the lab. Open: per-toy inks beyond the main shelf are hue placeholders; the Snap or Classic table question.
 
 Accents, 2026-11-09: every toy in toys.json carries `accent` (one colour or a gradient), a first proposal for all 79. The Signal intro reads it. `introlab/accents.html` shows them all. Open: Tom's review of the accents; other surfaces that use them.
+
+## Summary of Changes
+
+Signal is the default intro: white flash, then the logo takes the toy's accent; the title stays white. Signal keeps Classic's beats. toys.json carries `accent` for every toy (first proposals). Brut, Label, Poster, Plate, Readout and Strobe stay in the lab's Restyle group. The lab groups knobs as Layout, Type, Box, Glass, Timing (locked) and Options. `introlab/accents.html` shows every accent.
+
+Follow-ups: Tom reviews the accents; Snap or Classic beats; accents on other surfaces.
