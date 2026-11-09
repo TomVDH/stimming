@@ -28,7 +28,8 @@ Tom found the first loop flat: a dark frame, small crystals, colour that took 9 
 | Release after a hold | Harvest: the hero arcs up, flips once, shrinks and lands on the pile behind. A new seed rises at the centre. |
 
 - The camera frames the hero and pulls back as it grows (16 terraces at most).
-- The pile holds 7 crystals (4 on a phone); a full pile remelts its oldest one.
+- Harvests stack into a floating tower beside the hero (Tom, 2026-11-09). Each narrow base nests in the pit below. A landing rocks the tower. The 8th crystal (6th on a phone) topples it: every crystal flies off and melts where it lands, and the new crystal starts the next tower.
+- Render pass 3 (Tom: "severely improve"): a light tent of soft boxes (overhead, a cool left strip, a warm right strip), a two-pixel bevel on every edge, shading down into the pit, film that drifts across each face, a cleaner chrome melt and soft contact shadows.
 - Each terrace settles on its own film band (64 to 228 nm), so every crystal shows the rainbow.
 - The key light swings slowly round the far side, so glints travel.
 - Bar: Habit (Spiral, Hopper, Cluster), Heat (bloom speed, ember, hum), actions Harvest (H) and Clear (X). Space holds the ratchet.

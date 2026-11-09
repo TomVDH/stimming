@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:47:02Z
-updated_at: 2026-11-09T08:42:05Z
+updated_at: 2026-11-09T08:50:26Z
 ---
 
 Build Bismuth crystals from docs/plans/bismuth.md. It starts in the Lab. Drag up from a liquid-metal pool to pull out a hopper crystal; its square terraces step out while you drag, and a thin-film oxide rainbow blooms across each new face. Raw WebGL2, instanced boxes, Bar v2.
@@ -38,3 +38,5 @@ Build Bismuth crystals from docs/plans/bismuth.md. It starts in the Lab. Drag up
 - Task 4 voices are in with the rework (tick per click on a pentatonic scale, slurp on harvest, plop and shimmer on landing, plop on seed, sizzle on remelt, melt hum by Heat). Not yet heard: the probe tab is hidden, so the audio is unverified.
 - [ ] Tom tries Ratchet grow by hand and signs off the loop
 - [ ] Sound listen-through with Tom
+
+- 2026-11-09: Tom asked for stacking and much better rendering. Harvests now stack into a floating tower that rocks on each landing and topples at 8 (6 on a phone). Render: soft-box light tent, edge bevels, pit shading, drifting film, cleaner chrome melt, contact shadows; the camera leans toward a tall tower.
