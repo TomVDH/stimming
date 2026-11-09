@@ -327,6 +327,24 @@ uniform vec3 uEye;
 uniform float uTime;
 uniform sampler2D uRefl;
 uniform float uSwell;
+// Rings: x, z, birth time, strength. The bump: x, z, height, radius.
+uniform vec4 uRip[8];
+uniform vec4 uBump;
+// Ring packets spread at 1.2 units a second and fade in about 3 s.
+float rings(vec2 p) {
+  float h = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float age = uTime - uRip[i].z;
+    if (age < 0.0 || age > 4.0 || uRip[i].w <= 0.0) continue;
+    float d = length(p - uRip[i].xy), f = d - 1.2 * age;
+    float env = exp(-f * f / pow(0.18 + 0.28 * age, 2.0)) * exp(-age * 0.9) / (1.0 + d * 1.2);
+    h += uRip[i].w * 0.04 * sin(f * 17.0) * env;
+  }
+  // The melt clings to a crystal as it leaves and stands up in a bump.
+  vec2 b = p - uBump.xy;
+  h += uBump.z * exp(-dot(b, b) / (uBump.w * uBump.w));
+  return h;
+}
 uniform float uFilm;
 out vec4 o;
 float swell(vec2 p) {
@@ -350,9 +368,13 @@ void main() {
   vec2 ep = vec2(0.03, 0.0);
   float h0 = swell(P.xz);
   vec2 grad = vec2(swell(P.xz + ep.xy) - h0, swell(P.xz + ep.yx) - h0) / ep.x;
+  float r0 = rings(P.xz);
+  vec2 rg = vec2(rings(P.xz + ep.xy) - r0, rings(P.xz + ep.yx) - r0) / ep.x;
   // Grazing rays magnify tilt, so far swells flatten.
   float amp = 0.028 * uSwell / (1.0 + t * 0.3);
-  vec3 N = normalize(vec3(-grad.x * amp, 1.0, -grad.y * amp));
+  // Rings are real heights; grazing views flatten them less than swells.
+  rg /= 1.0 + t * 0.06;
+  vec3 N = normalize(vec3(-grad.x * amp - rg.x, 1.0, -grad.y * amp - rg.y));
   vec3 V = -dir;
   float cosI = clamp(dot(N, V), 0.0, 1.0);
   vec3 R = reflect(dir, N);
@@ -369,6 +391,8 @@ void main() {
   // The melt's skin dulls the mirror image a little.
   refl = mix(refl, cr.rgb * 0.5, cr.a);
   col = F * refl;
+  // Ring crests catch the soft light above, so the rings read on dark melt.
+  col += F * vec3(0.55, 0.5, 0.47) * smoothstep(0.01, 0.25, length(rg)) * 0.36;
   // The ember: heat deep in the melt, under the mirror.
   float em = exp(-r * r / 9.0) * (0.55 + 0.45 * vnoise(P.xz * 0.8 + uTime * 0.05));
   col += vec3(1.0, 0.36, 0.09) * 0.09 * uHeat * em * (1.0 - F.g);
@@ -687,15 +711,19 @@ function addKid(c, start = time, gap = 0.09) {
 // One terrace while a hand pulls; a cluster sprouts at steps 6 and 10.
 function growStep(c) {
   if (!grow(c, 1, time, 0.06)) return false;
+  // A crystal growing in the melt sends out a small ring per terrace.
+  if (c.lift < 0.1) ripple(c.x, c.z, 0.3, time, edge(c));
   if (c.habit === 'cluster' && (c.n === 6 || c.n === 10)) addKid(c);
   return true;
 }
 const topLevel = () => crystals.filter(c => !c.parent);
+// The crystal's half width on the melt, in world units.
+const edge = c => (CORE + c.n * STEP) * c.size;
 // Too many crystals: the oldest one not in hand goes back into the melt.
 function makeRoom() {
   const live = topLevel().filter(c => !c.melting).sort((p, q) => p.order - q.order);
   const over = Math.max(live.length - (portrait ? 4 : 7), crystals.length > MAXP - 6 ? 1 : 0);
-  live.filter(c => !c.held).slice(0, over).forEach(c => { c.melting = true; c.melt = 0; });
+  live.filter(c => !c.held).slice(0, over).forEach(c => { c.melting = true; c.melt = 0; ripple(c.x, c.z, 0.7, time, edge(c)); });
 }
 // Poses follow the float: each crystal bobs, turns and sinks when it melts.
 function setPoses() {
@@ -719,16 +747,28 @@ function setPoses() {
 // Springs, spin and melting, once per frame.
 function step(dt) {
   const rm = reduced();
+  // A bump with no crystal falls back fast.
+  if (!hand.c?.attached) bump[2] *= Math.exp(-dt * 14);
   for (const c of crystals) {
     if (c.parent) continue;
     // A released crystal drops back and bobs to rest on the melt.
+    const was = c.lift;
     if (!c.held) {
       c.liftV += (-26 * c.lift - (rm ? 10 : 5.5) * c.liftV) * dt;
       c.lift += c.liftV * dt;
     }
+    // A falling crystal rings the melt where it lands.
+    if (was > 0.03 && c.lift <= 0.03 && c.liftV < -0.4) ripple(c.x, c.z, Math.min(1.4, -c.liftV / 2.5), time, edge(c));
+    // The melt clings to a rising crystal, then lets go with a ring.
+    if (c === hand.c) {
+      const r = (CORE + c.n * STEP) * c.size;
+      if (c.attached && c.lift < 0.42) bump.set([c.x, c.z, c.lift * 0.5, r * 1.15]);
+      else if (c.attached) { c.attached = false; ripple(c.x, c.z, 1.2, time, r); }
+    }
     c.spin *= Math.exp(-dt * 1.2);
     c.yaw += (c.spin + (turn && !rm ? 0.05 : 0)) * dt;
     if (c.melting) c.melt += dt / 1.8;
+    if (c.melting && c.melt >= 1 && !c.rang) { c.rang = true; ripple(c.x, c.z, 0.5, time, edge(c) * 0.5); }
   }
   // Floating crystals that touch drift apart on the melt.
   const tops = topLevel().filter(c => !c.melting);
@@ -762,6 +802,25 @@ function firstScene() {
   // Older crystals started earlier; terraces spread over 30 s.
   layoutSet.forEach((s, i) => makeCrystal({ ...s, start: time - 34 + i * 3, gap: 2.6 }));
   rebuild();
+}
+
+/* ---------- ripples ---------- */
+// The eight newest rings; each starts where a crystal meets the melt.
+const rips = [];
+const ripBuf = new Float32Array(32);
+// The bump: x, z, height, radius.
+const bump = new Float32Array([0, 0, 0, 0.3]);
+// A ring starts at radius r0, the crystal's edge, so the crystal never hides it.
+// It starts early by the time the front needs to reach r0, at full strength.
+function ripple(x, z, a = 1, t0 = time, r0 = 0) {
+  const lead = r0 / 1.2;
+  rips.push([x, z, t0 - lead, a * Math.exp(0.9 * lead) * (reduced() ? 0.4 : 1)]);
+  if (rips.length > 8) rips.shift();
+}
+function ripData() {
+  ripBuf.fill(0);
+  rips.forEach((r, i) => ripBuf.set(r, i * 4));
+  return ripBuf;
 }
 
 /* ---------- draw ---------- */
@@ -815,6 +874,8 @@ function render() {
   gl.uniform1f(p.u.uGlint, glints);
   gl.uniform1f(p.u.uHeat, heat);
   gl.uniform3fv(p.u.KEY, key());
+  gl.uniform4fv(p.u.uRip, ripData());
+  gl.uniform4fv(p.u.uBump, bump);
   bind(p, 'uRefl', 0, refl);
   gl.bindVertexArray(triVao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -929,6 +990,7 @@ function down(e) {
     c = makeCrystal({ x: p[0], z: p[1], size: (portrait ? 0.46 : 0.42) + rnd() * 0.12, habit, steps: 1, gap: 0.05 });
     if (!c) return;
     kind = 'pool';
+    ripple(c.x, c.z, 0.5);
   }
   // Capture can fail for a pointer that already lifted.
   try { canvas.setPointerCapture(e.pointerId); } catch { /* the press still works */ }
@@ -936,6 +998,7 @@ function down(e) {
   Object.assign(hand, { id: e.pointerId, mode: 'press', kind, c, x0: e.clientX, y0: e.clientY, t0: performance.now(),
     cx: c.x, lift0: c.lift, wpp: Math.max(0.002, Math.hypot(q1[0] - q[0], q1[1] - q[1])), up: 0, acc: 0, lastLift: c.lift, lastT: performance.now() });
   c.held = true;
+  c.attached = c.lift < 0.42;
   c.liftV = 0;
   stage.classList.add('grab');
 }
@@ -963,10 +1026,13 @@ function up(e) {
   const c = hand.c;
   if (hand.mode === 'press') {
     // A tap on the pool seeds a small crystal; a tap on a crystal spins it.
-    if (hand.kind === 'pool') grow(c, 2 + Math.floor(rnd() * 2), time + 0.05, 0.07);
-    else c.spin += (rnd() > 0.5 ? 1 : -1) * 1.8;
+    if (hand.kind === 'pool') { grow(c, 2 + Math.floor(rnd() * 2), time + 0.05, 0.07); ripple(c.x, c.z, 0.8, time, edge(c)); }
+    else { c.spin += (rnd() > 0.5 ? 1 : -1) * 1.8; ripple(c.x, c.z, 0.4, time, edge(c)); }
   }
   c.held = false;
+  // A crystal let go while the melt still clings drops back in.
+  if (c.attached && c.lift > 0.05) ripple(c.x, c.z, 0.6, time, edge(c));
+  c.attached = false;
   c.liftV = clamp(c.liftV, -3, 4);
   hand.id = null;
   hand.c = null;
@@ -1003,11 +1069,13 @@ act.add = () => {
 };
 // Clear sends every crystal back into the melt, one after another.
 act.clear = () => {
-  topLevel().filter(c => !c.melting && !c.held).forEach((c, i) => { c.melting = true; c.melt = -i * 0.06; });
+  topLevel().filter(c => !c.melting && !c.held).forEach((c, i) => { c.melting = true; c.melt = -i * 0.06; ripple(c.x, c.z, 0.7, time + i * 0.108, edge(c)); });
   poke();
 };
 act.reset = () => {
   if (hand.c) { hand.c.held = false; hand.id = null; hand.c = null; }
+  rips.length = 0;
+  bump[2] = 0;
   firstScene();
   poke();
   still();
