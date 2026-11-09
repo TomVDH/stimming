@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:53:10Z
+updated_at: 2026-11-09T08:59:36Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -108,3 +108,12 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - The pad is fixed on the right third, behind the reeds; a tap or Space only starts the launch (tap-to-place is gone).
 - The flash bursts through the reeds; 0.9 s later the operator starts to follow, then pushes in at liftoff.
 - The climb leans east, toward the dawn glow, so the arc crosses the frame right to left.
+
+## Staged orbiter and the side-on arc (2026-11-09)
+
+- Two stages: MECO at T+40, the spent stage tumbles off as a spark, the upper stage lights at T+41.6 and burns to T+112; the flight runs to T+128 and leaves the frame still climbing. The climb rate eases after the turn (altitude / (1 + (t/45)²)).
+- The arc runs across the frame (1.1 D downrange), a little away from the eye; the pad sits left of centre, the climb goes right into the dark sky.
+- Zoom push-in softened (0.78, 0.85, 0.82, out from T+14); shake halved.
+- Birds take off one by one over 3 s, each on its own heading, loose flocking, a wingbeat bob; smaller.
+- Framing back to the 36-degree lens with the horizon on 0.7; hero reeds only at the far sides; the centre opens on the mesas.
+- Cost: 7 march steps, 22 bokeh taps, 4,800 + 9,000 reeds on Standard, 90 ground puffs.

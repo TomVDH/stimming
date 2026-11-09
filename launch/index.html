@@ -571,10 +571,10 @@ function plantReeds(count) {
     const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
     if (clump < -0.25 + rnd() * 0.5) continue;
     // The near fringe frames the pool: low and thin in the middle, tall at the sides.
-    const side = z > -20 ? THREE.MathUtils.smoothstep(Math.abs(x / z), 0.1, 0.34) : 1;
+    const side = z > -22 ? THREE.MathUtils.smoothstep(Math.abs(x / z), 0.2, 0.5) : 1;
     if (rnd() > 0.3 + 0.7 * side) continue;
     // Hero stalks at the sides rise past the horizon and frame the shot.
-    const tall = z > -13 && side > 0.6 && rnd() < 0.16;
+    const tall = z > -13 && side > 0.9 && rnd() < 0.12;
     const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
     aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
     aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
@@ -1030,14 +1030,16 @@ const KINDS = {
   heavy: { climb: 0.9, flame: 1.45, plume: 1.4, boosters: true },
 };
 // Seconds after liftoff to real altitude in km; the first seconds hang.
-const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5));
+// The climb rate eases after the turn: the orbiter gains speed, not height.
+const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5) / (1 + (t / 45) * (t / 45)));
 const worldY = (h, D) => D * 0.5 * Math.sqrt(Math.max(h, 0) / 120);
-// An orbiter rises straight, then leans east, toward the dawn, from T+14.
-// It never levels out; the arc crosses the frame from the right third to the glow.
+// An orbiter rises straight, then leans downrange from T+14, into the dark sky.
+// It never levels out; it leaves the frame still climbing.
 function rocketAt(f, t, out) {
   const D = f.D, h = altKm(t, f.k);
-  const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 80), 1.4);
-  return out.set(f.x - D * 0.55 * s, 2 + worldY(h, D), f.z - D * 0.3 * s);
+  // Side on: the arc runs across the frame, a little away from the eye.
+  const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 115), 1.3);
+  return out.set(f.x + D * 1.1 * s, 2 + worldY(h, D), f.z - D * 0.14 * s);
 }
 // World metres per real metre at altitude h: the scale of the body and flame.
 const scaleAt = (h, D) => Math.min(1, (worldY(h + 0.02, D) - worldY(h, D)) / 20);
@@ -1260,7 +1262,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     disc = sqrt(disc);
     float t0 = max(-b - disc, 0.0), t1 = -b + disc;
     if (t1 <= t0) discard;
-    const int N = 9;
+    const int N = 7;
     float dt = (t1 - t0) / float(N);
     float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     // Sunlight above the shadow line; below it, the dawn glow and the flame.
@@ -1350,13 +1352,13 @@ function commitPuffs() {
 
 /* ---------- launch: one flight on the sim clock ---------- */
 // The ignition runs 3 s before liftoff; the plume is gone by T+80.
-const PRE = 3, END = 83;
+const PRE = 3, END = 128;
 let flight = null;
 const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
   const D = DIST.mid;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0, roarOn: false };
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0, roarOn: false, stage: 1 };
   PU.uScale.value = D;
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
   f.tl = gsap.timeline({ paused: true })
@@ -1365,13 +1367,17 @@ function launch(kind, padX) {
     .to(f, { flash: 0, duration: 1.8, ease: 'power2.out' }, 0.06)
     .to(f, { engine: 0.6, duration: 0.5 }, 0)
     .to(f, { engine: 1, duration: 1.2 }, PRE - 0.6)
-    // Main engine cut-off: the moving star fades out.
-    .to(f, { engine: 0, duration: 4, ease: 'power1.in' }, PRE + 52)
+    // Main engine cut-off at T+40; the spent stage falls away and the second stage lights.
+    .to(f, { engine: 0, duration: 0.4, ease: 'power2.in' }, PRE + 40)
+    .call(() => stageSep(f), null, PRE + 41.2)
+    .to(f, { engine: 0.55, duration: 0.8, ease: 'power2.out' }, PRE + 41.6)
+    // Second engine cut-off, near the edge of the frame.
+    .to(f, { engine: 0, duration: 5, ease: 'power1.in' }, PRE + 112)
     // A documentary push-in at liftoff: fast, a touch too far, then a correction.
     // A hand on the zoom ring: a fast push past the mark, then two corrections.
-    .to(f, { zoom: 0.6, duration: 0.45, ease: 'power4.out' }, PRE + 0.2)
-    .to(f, { zoom: 0.7, duration: 0.3, ease: 'power2.inOut' }, PRE + 0.85)
-    .to(f, { zoom: 0.66, duration: 0.25, ease: 'power2.inOut' }, PRE + 1.6)
+    .to(f, { zoom: 0.78, duration: 0.5, ease: 'power3.out' }, PRE + 0.2)
+    .to(f, { zoom: 0.85, duration: 0.35, ease: 'power2.inOut' }, PRE + 0.9)
+    .to(f, { zoom: 0.82, duration: 0.3, ease: 'power2.inOut' }, PRE + 1.7)
     // The focus hunts on the push-in: soft, past sharp, then sharp.
     .to(f, { hunt: 1, duration: 0.25, ease: 'power2.out' }, PRE + 0.25)
     .to(f, { hunt: 0.25, duration: 0.35, ease: 'power2.inOut' }, PRE + 0.55)
@@ -1382,15 +1388,24 @@ function launch(kind, padX) {
     .to(f, { shake: 0.35, duration: 2.5, ease: 'power2.out' }, 0.1)
     .to(f, { shake: 0.8, duration: 0.3 }, PRE)
     .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
-    .to(f, { zoom: 1, duration: 7, ease: 'sine.inOut' }, PRE + 12)
-    .set(f, { done: true }, END);
+    .to(f, { zoom: 1, duration: 10, ease: 'sine.inOut' }, PRE + 14)
   if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
+  f.tl.set(f, { done: true }, END);
   // The roar reaches the eye: the camera takes a second jolt.
   const dl = delayOf(f);
   f.tl.to(f, { shake: 0.9, duration: 0.25 }, dl).to(f, { shake: 0.15, duration: 4, ease: 'power2.out' }, dl + 0.25);
   seedBirds(f);
   roar(f);
   return f;
+}
+// Staging: the first stage tumbles away as a dim spark; the upper stage is short.
+function stageSep(f) {
+  f.stage = 2;
+  rocketAt(f, 41.2, rp);
+  rocketAt(f, 41.0, rq);
+  rv.subVectors(rp, rq).multiplyScalar(0.6 / 0.2).add(tmpA.set(0, -f.D * 0.004, 0));
+  writeStar(rp, simT, rv, 0.12, 2, 14, 3, 2.6, 2, 0.7);
+  thud(f);
 }
 // Two spent boosters fall away as sparks with short trails.
 function separate(f) {
@@ -1410,7 +1425,7 @@ function flyTo(f) {
   rocketAt(f, t - 0.05, rq);
   const eng = f.engine, h = altKm(t, k);
   // The flame dims to a star as it climbs away.
-  const w = eng * (1 - 0.55 * THREE.MathUtils.smoothstep(h, 10, 60)) + f.flash * (reduced() ? 1.2 : 3);
+  const w = eng * (1 - 0.55 * THREE.MathUtils.smoothstep(h, 10, 60)) * (f.stage > 1 ? 0.7 : 1) + f.flash * (reduced() ? 1.2 : 3);
   U.uFlame.value.set(rp.x, rp.y, rp.z, w);
   U.uAir.value = 1 - 0.85 * THREE.MathUtils.smoothstep(h, 1, 20);
   FU.uAxis.value.copy(rq).sub(rp);
@@ -1422,15 +1437,17 @@ function flyTo(f) {
   if (te > 0.9 && !f.userFollow && !f.followed) { follow = true; f.followed = true; }
   // Body and flame shrink as the altitude scale compresses.
   const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
-  body.visible = te < END - 20;
+  body.visible = te < END - 6;
   body.position.copy(rp);
   body.quaternion.setFromUnitVectors(yUp, tmpA.copy(FU.uAxis.value).negate());
-  core.scale.set(bw * sk, bl * sk, bw * sk);
-  FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame, D * 0.0009);
+  // After staging only the upper stage flies, with a smaller engine.
+  const up = f.stage > 1 ? 0.36 : 1;
+  core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1), bl * sk * up, bw * sk * (f.stage > 1 ? 0.85 : 1));
+  FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
   // Ground clouds: the blast hits the ground and rolls out sideways, low and heavy.
   // Most come in the seconds round liftoff; later ones push the front further.
-  const steamDue = Math.min(110, Math.floor(Math.pow(THREE.MathUtils.clamp((te - 0.3) / (PRE + 7), 0, 1), 0.7) * 110));
+  const steamDue = Math.min(90, Math.floor(Math.pow(THREE.MathUtils.clamp((te - 0.3) / (PRE + 7), 0, 1), 0.7) * 90));
   while (f.steam < steamDue) {
     const n = f.steam++, s = n % 2 ? 1 : -1, r = D * (0.024 + 0.034 * rnd()) * k.plume;
     // Some roll toward or away from the eye, so the wall has depth.
@@ -1451,7 +1468,8 @@ function flyTo(f) {
       tmpB.copy(tmpA);
       const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
       // One puff each part-radius: the trail stays one continuous column.
-      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3);
+      // The upper stage burns thin in vacuum: a faint, wide, sparse trail.
+      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3) * (f.stage > 1 ? 1.3 : 1);
       if (f.acc < R * 0.2 * Math.sqrt(q)) continue;
       f.acc = 0;
       rocketAt(f, tt - 0.05, rq);
@@ -1461,8 +1479,8 @@ function flyTo(f) {
         // High up the thin air lets the exhaust spread into a wide glowing fan.
         rv.multiplyScalar(D * (0.0003 + 0.0025 * hi) * (0.5 + 0.5 * rnd())).addScaledVector(back, D * 0.001 * (1 + hi * 2));
         const r = R * (0.85 + 0.3 * rnd());
-        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6));
-        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, 0.9 - 0.45 * hi);
+        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6)) * (f.stage > 1 ? 0.5 : 1);
+        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, (0.9 - 0.45 * hi) * (f.stage > 1 ? 0.3 : 1));
       }
     }
     f.emitT = tt;
@@ -1496,11 +1514,12 @@ function endFlight() {
   flame.visible = false;
   ui.action('launch').disabled = false;
 }
-// The pad stands where the shot puts it: small, on the right third, easy to miss.
+// The pad stands where the shot puts it: small, left of centre, easy to miss.
+// The climb then crosses the frame to the right, into the dark sky.
 function padX() {
   const portrait = size.w < size.h;
-  const tanH = Math.tan(THREE.MathUtils.degToRad((portrait ? 54 : 34) / 2)) * size.w / size.h;
-  return DIST.mid * (portrait ? 0.24 : 0.34) * tanH;
+  const tanH = Math.tan(THREE.MathUtils.degToRad((portrait ? 56 : 36) / 2)) * size.w / size.h;
+  return -DIST.mid * (portrait ? 0.3 : 0.2) * tanH;
 }
 function start() {
   // Every start is a gesture: it may wake the sound.
@@ -1545,8 +1564,8 @@ const birdMesh = new THREE.Mesh(birdGeo, new THREE.ShaderMaterial({
     vec3 P = aBP.xyz;
     vec3 V = normalize(cameraPosition - P);
     vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
-    // A heron spans 1.6 m, never less than seven pixels.
-    float s = max(0.8, length(cameraPosition - P) * uPx * 3.5);
+    // A bird spans 1.1 m, never less than five pixels.
+    float s = max(0.55, length(cameraPosition - P) * uPx * 2.5);
     vQ = position.xy;
     // Mirror the shape when the bird flies left on screen.
     float dir = sign(dot(aBV.xyz, rt) + 1e-4);
@@ -1566,7 +1585,7 @@ const birdMesh = new THREE.Mesh(birdGeo, new THREE.ShaderMaterial({
     vec2 q = vec2(abs(vQ.x), vQ.y);
     float d = min(seg(q, vec2(0.0), mid), seg(q, mid, tip));
     d = min(d, length(vQ - vec2(0.15, 0.0)) - 0.08);
-    float a = (1.0 - smoothstep(0.07, 0.16, d)) * vA;
+    float a = (1.0 - smoothstep(0.05, 0.13, d)) * vA;
     if (a < 0.02) discard;
     gl_FragColor = vec4(uAmb * 0.15 * a, a);
   }`,
@@ -1588,6 +1607,10 @@ function seedBirds(f) {
     b.bed = i % beds.length;
     b.p.set(bed.x + (Math.random() - 0.5) * 40, 1.2, bed.z + (Math.random() - 0.5) * 30);
     b.v.set(0, 0, 0); b.up = false; b.t = 0; b.a = 0;
+    // Each bird waits its own moment after the front, and picks its own way.
+    b.wait = Math.pow(Math.random(), 1.6) * 3.2;
+    b.turn = (Math.random() - 0.5) * 2.6;
+    b.goalX = (Math.random() - 0.5) * 600;
   });
 }
 // Flee from the pad and climb; then flock toward a far point to the left.
@@ -1598,21 +1621,26 @@ function flyBirds(f, dt) {
     if (bed.lifted || R < bed.d) return;
     bed.lifted = true;
     wings(f, bed);
-    birds.forEach(b => {
-      if (b.bed !== i) return;
-      b.up = true;
-      away.set(b.p.x - f.x, 0, b.p.z - f.z).normalize();
-      b.v.set(away.x * 6 + (Math.random() - 0.5) * 4, 7 + Math.random() * 4, away.z * 6 + (Math.random() - 0.5) * 4);
-    });
+    birds.forEach(b => { if (b.bed === i) b.armed = simT + b.wait; });
   });
-  const goal = tmpF.set(f.x - f.D * 0.5, 90, -f.D * 0.35);
+  // Birds take off one by one, each in its own direction, some back over the marsh.
+  for (const b of birds) {
+    if (b.up || !b.armed || simT < b.armed) continue;
+    b.up = true; b.armed = 0;
+    away.set(b.p.x - f.x, 0, b.p.z - f.z).normalize();
+    const c = Math.cos(b.turn), sn = Math.sin(b.turn);
+    const dx = away.x * c - away.z * sn, dz = away.x * sn + away.z * c;
+    const sp = 3 + Math.random() * 5;
+    b.v.set(dx * sp, 4 + Math.random() * 6, dz * sp);
+  }
+  const goal = tmpF.set(f.x - f.D * 0.45, 70, -f.D * 0.3);
   const calm = reduced();
   for (const b of birds) {
     if (!b.up) continue;
     b.t += dt;
-    b.ph += dt * (7 + 3 * Math.min(1, 4 / (b.t + 1)));
+    b.ph += dt * (5.5 + 2.5 * Math.min(1, 4 / (b.t + 1)) + 1.5 * Math.sin(b.goalX));
     // Fade in at take-off; fade out after 30 s.
-    b.a = Math.min(1, b.t * 3) * (1 - THREE.MathUtils.smoothstep(b.t, 26, 32));
+    b.a = Math.min(1, b.t * 3) * (1 - THREE.MathUtils.smoothstep(b.t, 22, 30));
     if (calm) { b.p.y += dt * 6; continue; }
     aliV.set(0, 0, 0); cohV.set(0, 0, 0);
     let n = 0;
@@ -1625,10 +1653,14 @@ function flyBirds(f, dt) {
       aliV.add(o.v); cohV.add(o.p); n++;
     }
     if (n) {
-      b.v.addScaledVector(aliV.divideScalar(n).sub(b.v), 0.8 * dt);
-      b.v.addScaledVector(cohV.divideScalar(n).sub(b.p), 0.25 * dt);
+      b.v.addScaledVector(aliV.divideScalar(n).sub(b.v), 0.35 * dt);
+      b.v.addScaledVector(cohV.divideScalar(n).sub(b.p), 0.08 * dt);
     }
-    b.v.addScaledVector(tmpA.subVectors(goal, b.p).normalize(), 3 * dt);
+    // A loose pull toward the far point, each bird's own, after a few seconds of panic.
+    const pull = 1.8 * THREE.MathUtils.smoothstep(b.t, 2, 7);
+    b.v.addScaledVector(tmpA.set(goal.x + b.goalX, goal.y, goal.z).sub(b.p).normalize(), pull * dt);
+    // A flutter: the path bobs with the wingbeat.
+    b.v.y += Math.sin(b.ph * 0.5) * 2.5 * dt;
     const sp = b.v.length();
     if (sp > 14) b.v.multiplyScalar(14 / sp);
     b.p.addScaledVector(b.v, dt);
@@ -1777,8 +1809,8 @@ function roar(f, off = 0) {
 function thud(f) {
   const ac = kit.live();
   if (!ac) return;
-  rocketAt(f, 18, rp);
-  const t = ac.currentTime + rp.distanceTo(camera.position) / C_SOUND / 6;
+  // The thud comes from wherever the rocket is now, after its compressed delay.
+  const t = ac.currentTime + tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z).distanceTo(camera.position) / C_SOUND / 6;
   for (const dt of [0, 0.18 * jit(0.2)]) {
     const o = ac.createOscillator(), g = ac.createGain();
     o.frequency.setValueAtTime(70 * jit(0.1), t + dt); o.frequency.exponentialRampToValueAtTime(35, t + dt + 0.25);
@@ -1934,8 +1966,8 @@ function makeDof() {
       float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
       vec3 acc = c0;
       float wsum = 1.0;
-      for (int k = 0; k < 28; k++) {
-        float rk = sqrt((float(k) + 0.5) / 28.0), a = float(k) * 2.39996 + rot;
+      for (int k = 0; k < 22; k++) {
+        float rk = sqrt((float(k) + 0.5) / 22.0), a = float(k) * 2.39996 + rot;
         vec2 dir = vec2(cos(a), sin(a)) * rk * blade(a);
         // Star: four points, pinched between them.
         if (uStar > 0.5) dir *= 0.42 + 0.58 * pow(abs(cos(2.0 * a)), 3.0);
@@ -2042,15 +2074,15 @@ const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uF
 function frame() {
   const portrait = size.w < size.h;
   // A longer lens compresses the marsh; the horizon sits on the lower third.
-  const fov = portrait ? 54 : 34;
+  const fov = portrait ? 56 : 36;
   camera.aspect = size.w / size.h;
-  const hf = portrait ? 0.74 : 0.67;
+  const hf = portrait ? 0.76 : 0.7;
   // The launch zoom narrows the lens; the horizon holds its place in the frame.
   camera.fov = fov * (flight && !reduced() ? flight.zoom : 1);
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
   // A hand on the camera: a slow, tiny wobble while the scene is awake.
   // The launch adds a shake that dies away as the rocket climbs.
-  const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 4), t = simT;
+  const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 2.2), t = simT;
   const jit = () => (Math.random() - 0.5) * 0.0005;
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
   const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1) + jit());
@@ -2078,8 +2110,8 @@ function resize() {
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
-  plantReeds(rung >= 3 ? 3500 : quality() === 'high' ? 9000 : 6500);
-  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? FAR_MAX : 11000);
+  plantReeds(rung >= 3 ? 3000 : quality() === 'high' ? 7000 : 4800);
+  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? 14000 : 9000);
   frame();
   draw();
 }
