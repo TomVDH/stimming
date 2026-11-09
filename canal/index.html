@@ -66,7 +66,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -1794,6 +1794,7 @@ function tick(now) {
     U.uBell.value *= Math.exp(-dt / 2);
     easeWeather(dt);
     stepBoats(dt);
+    soundTick(dt);
     const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
     look.yaw += (look.ty - look.yaw) * k;
     look.pitch += (look.tp - look.pitch) * k;
@@ -1806,7 +1807,7 @@ function tick(now) {
   } finally {
     if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
     // On sleep, one full jitter cycle settles the resting frame.
-    else { lastT = 0; frame(); for (let i = 0; i < JIT.length; i++) draw(); }
+    else { lastT = 0; frame(); for (let i = 0; i < JIT.length; i++) draw(); kit.rest(() => !raf && !pending()); }
   }
 }
 function wake() {
@@ -1828,7 +1829,7 @@ function watch(now, lively) {
 }
 whenVisible(stage, vis => {
   visible = vis;
-  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; stopAll(); return; }
   draw();
   wake();
 });
@@ -1870,6 +1871,150 @@ stage.addEventListener('pointerup', e => {
 stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
 
+
+/* ---------- sound: rain, wind, lamps and a far carillon ---------- */
+// Muted by default; the kit starts on a gesture and sleeps when the toy settles.
+const kit = audioKit({ keys: new Set([' ']) });
+let A = null;
+// Scheduled one-shots; a hidden tab stops them all.
+const voices = new Set();
+let pendEnd = 0;
+const jit = (x, k) => x * (1 + (Math.random() - 0.5) * 2 * k);
+// A decaying noise burst makes the reverb's impulse.
+function impulse(ac, sec, decay) {
+  const n = Math.round(ac.sampleRate * sec), b = ac.createBuffer(2, n, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay);
+  }
+  return b;
+}
+function noiseLoop(ac, rate) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start();
+  return s;
+}
+// The graph builds once per context: a bus, a long reverb, and the two beds.
+function graph() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (A?.ac === ac) return A;
+  const bus = ac.createGain();
+  bus.connect(kit.out);
+  const verb = ac.createConvolver();
+  verb.buffer = impulse(ac, 5, 2.4);
+  verb.connect(bus);
+  // Rain on stone: a soft band of hiss.
+  const hissG = ac.createGain(); hissG.gain.value = 0;
+  const hbp = ac.createBiquadFilter(); hbp.type = 'bandpass'; hbp.frequency.value = 3200; hbp.Q.value = 0.4;
+  noiseLoop(ac, 1).connect(hbp).connect(hissG).connect(bus);
+  // Wind: low noise whose filter breathes.
+  const windG = ac.createGain(); windG.gain.value = 0;
+  const wlp = ac.createBiquadFilter(); wlp.type = 'lowpass'; wlp.frequency.value = 240; wlp.Q.value = 0.8;
+  const lfo = ac.createOscillator(), lfoG = ac.createGain();
+  lfo.frequency.value = 0.07; lfoG.gain.value = 110;
+  lfo.connect(lfoG).connect(wlp.frequency); lfo.start();
+  noiseLoop(ac, 0.3).connect(wlp).connect(windG).connect(bus);
+  A = { ac, bus, verb, hissG, windG, bellEnd: 0 };
+  return A;
+}
+// A voice's pan from its place on screen.
+function panAt(x, y, z) {
+  proj.set(x, y, z).project(camera);
+  return Math.max(-0.9, Math.min(0.9, proj.x * 0.8));
+}
+function track(node, end) { voices.add(node); pendEnd = Math.max(pendEnd, end); node.onended = () => voices.delete(node); }
+// One plink: a short sine that drops a little, somewhere on the water.
+function plink(g, t) {
+  const ac = g.ac, o = ac.createOscillator(), e = ac.createGain(), p = ac.createStereoPanner();
+  const f = 1300 * Math.pow(2.6, Math.random());
+  o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.82, t + 0.05);
+  e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(jit(0.018, 0.5), t + 0.002);
+  e.gain.exponentialRampToValueAtTime(0.0001, t + jit(0.05, 0.4));
+  p.pan.value = (Math.random() - 0.5) * 1.6;
+  o.connect(e).connect(p).connect(g.bus);
+  o.start(t); o.stop(t + 0.08);
+  track(o, t + 0.08);
+}
+// The beds follow the eased weather; plinks fall at a rate set by the rain.
+function soundTick(dt) {
+  const g = graph();
+  if (!g) return;
+  const t = g.ac.currentTime, rk = U.uRainK.value, far = view === 'sky' ? 0.55 : 1;
+  g.hissG.gain.setTargetAtTime(0.16 * rk * far, t, 0.4);
+  g.windG.gain.setTargetAtTime((0.025 + 0.11 * W.uWind.value) * far, t, 0.6);
+  if (reduced() || rk < 0.02) return;
+  for (let n = rk * 28 * far * dt; n > 0; n--) if (Math.random() < n) plink(g, t + Math.random() * dt);
+}
+// A lamp: a relay click; sodium then hums up through its warm-up and falls silent.
+function lampSound(i, on) {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t = ac.currentTime + 0.01, l = SL[i], p = ac.createStereoPanner();
+  p.pan.value = panAt(l.x, QUAY + l.y, l.z);
+  p.connect(g.bus);
+  const c = ac.createBufferSource(), cb = ac.createBiquadFilter(), ce = ac.createGain();
+  c.buffer = kit.noise; c.playbackRate.value = jit(1, 0.2);
+  cb.type = 'bandpass'; cb.frequency.value = jit(2200, 0.25); cb.Q.value = 3;
+  ce.gain.setValueAtTime(jit(0.35, 0.3), t); ce.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+  c.connect(cb).connect(ce).connect(p);
+  c.start(t, Math.random() * 0.5); c.stop(t + 0.04);
+  track(c, t + 0.04);
+  if (!on || l.led) return;
+  // Mains hum at 100 Hz, rising as the arc strikes and warms, then settling.
+  const warm = U.uWarmT.value, o = ac.createOscillator(), bp = ac.createBiquadFilter(), e = ac.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(jit(92, 0.02), t); o.frequency.linearRampToValueAtTime(jit(100, 0.01), t + warm);
+  bp.type = 'bandpass'; bp.frequency.value = 300; bp.Q.value = 1.2;
+  e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(jit(0.05, 0.3), t + warm * 0.8);
+  e.gain.exponentialRampToValueAtTime(0.0005, t + warm + 1.2);
+  o.connect(bp).connect(e).connect(p);
+  o.start(t); o.stop(t + warm + 1.3);
+  track(o, t + warm + 1.3);
+}
+// The carillon: an original eight-note phrase, minor, on additive bells.
+// Partials: hum 0.5, prime 1, minor tierce 1.2, quint 1.5, nominal 2.
+const PHRASE = [[67, 0], [70, 0.42], [74, 0.84], [72, 1.26], [70, 1.68], [67, 2.1], [65, 2.52], [67, 3.06]];
+const PARTS = [[0.5, 0.45, 6], [1, 1, 3.6], [1.2, 0.55, 2.6], [1.5, 0.3, 2], [2, 0.45, 1.6]];
+function bell(g, dest, f, t, k) {
+  for (const [r, a, dk] of PARTS) {
+    const o = g.ac.createOscillator(), e = g.ac.createGain();
+    o.frequency.value = f * r;
+    e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(a * k, t + 0.004);
+    e.gain.exponentialRampToValueAtTime(0.0001, t + dk);
+    o.connect(e).connect(dest);
+    o.start(t); o.stop(t + dk + 0.05);
+    track(o, t + dk + 0.05);
+  }
+}
+// Sound from the tower arrives 0.6 s late, dulled by distance, mostly reverb.
+// A second tap waits for the phrase to end; it never overlaps.
+function carillon() {
+  const g = graph();
+  if (!g) return;
+  const ac = g.ac, t0 = Math.max(ac.currentTime + 0.6, g.bellEnd);
+  if (g.bellEnd > ac.currentTime + 4) return;
+  const lp = ac.createBiquadFilter(), dry = ac.createGain(), send = ac.createGain(), p = ac.createStereoPanner();
+  lp.type = 'lowpass'; lp.frequency.value = view === 'sky' ? 1800 : 2600;
+  dry.gain.value = 0.35; send.gain.value = 0.9;
+  p.pan.value = panAt(56, QUAY + 30, -205.5);
+  lp.connect(dry).connect(p).connect(g.bus);
+  lp.connect(send).connect(g.verb);
+  const cents = (Math.random() - 0.5) * 0.06;
+  for (const [m, dt] of PHRASE) bell(g, lp, 440 * Math.pow(2, (m - 69) / 12 + cents / 12), t0 + (dt ? jit(dt, 0.03) : 0), jit(0.09, 0.15));
+  g.bellEnd = t0 + 3.06 + 0.5;
+  pendEnd = Math.max(pendEnd, t0 + 9);
+}
+// A hidden tab stops every voice and lets the beds fall silent.
+function stopAll() {
+  for (const v of voices) { try { v.stop(); } catch (e) { /* already stopped */ } }
+  voices.clear();
+  if (A) { A.bellEnd = 0; A.hissG.gain.value = 0; A.windG.gain.value = 0; }
+}
+const pending = () => (kit.ac ? kit.ac.currentTime < pendEnd : false);
+/* ---------- end sound ---------- */
+
 /* ---------- lamps you can tap ---------- */
 let warmUntil = 0;
 // A lamp's handle: toggle flips it against what it shows now.
@@ -1883,6 +2028,7 @@ function lamp(i) {
       d[o + 1] = nowS();
       U.tSL.value.needsUpdate = true;
       warmUntil = d[o + 1] + 3.2;
+      lampSound(i, !lit);
       taa.reset = true;
       wake();
       return !lit;
@@ -1931,7 +2077,7 @@ function ripple(cx, cy) {
 function tapAt(cx, cy) {
   const hit = pickAt(cx, cy);
   if (hit?.lamp != null) lamp(hit.lamp).toggle();
-  else if (hit?.belfry) { U.uBell.value = 1; taa.reset = true; wake(); }
+  else if (hit?.belfry) { U.uBell.value = 1; carillon(); taa.reset = true; wake(); }
   else ripple(cx, cy);
 }
 
