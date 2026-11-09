@@ -4,7 +4,7 @@
 
 **Goal:** A bread vending machine glows alone at the edge of a dark Flemish village road at night. Drop a coin: the carousel turns, a hatch swings open on a warm loaf.
 
-**Architecture:** three.js 0.170. A small diorama of plain boxes and one drum, lit by a `RectAreaLight` tube, a warm glow from the machine face and a car's `SpotLight`. Post: bloom, grade and a tilt-shift pass.
+**Architecture:** three.js 0.170. A small diorama: the classic Flemish carousel machine with a yellow hood, lit by a `RectAreaLight` tube, the glowing hood and a car's `SpotLight`. Post: bloom, grade and a tilt-shift pass.
 
 **Tech stack:** three.js 0.170 (EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, OutputPass, RectAreaLightUniformsLib), Tone.js through `kit.tone()`.
 
@@ -28,8 +28,8 @@
 One lit stop in a vast dark landscape, at toy scale.
 
 - **Camera:** low and wide, about 0.9 m above the road on the near verge, 30 mm equivalent. The machine sits right of centre in the lower third.
-- **Machine:** a plain tall box in dark enamel on a concrete pad. A flat canopy over it holds one bare fluorescent tube. The front shows a drum of glass hatches in three tiers, lit warm from inside. A small coin panel sits at the right, with a green dot and a slot.
-- **Header:** a plain lightbox over the drum with a loaf pictogram. No word, no brand.
+- **Machine (Tom, 2026-11-09: the classic Flemish type):** a tall narrow cream cabinet on a small concrete pad. A column of eight small glass doors sits left of centre, one per tier, with a lit button beside each. Behind the doors, a stacked carousel of eight tiers turns, one loaf per compartment, lit cool white. A steel coin unit sits at the right: price window, slot, green ready lamp, return cup.
+- **Hood:** a curved yellow lightbox on top with the plain word BROODAUTOMAAT. No brand. A bare fluorescent tube hangs under its front lip.
 - **Road:** a two-lane village road in front, black asphalt with a worn white edge line. The tube light makes a pool on it.
 - **Land:** flat fields to a far horizon. A row of poplars as a silhouette. Far away, a church tower and four or five farm windows. The horizon has a faint sodium skyglow from a town out of frame.
 - **Sky:** deep blue-black, a few stars, a thin band of low cloud lit orange from below.
@@ -39,7 +39,7 @@ Shapes stay few and plain. Light, haze and glow carry the scene.
 
 ## Hero moments
 
-1. **The coin.** A clink, the green dot blinks, the drum turns with a motor whirr and stops with a little overshoot. A hatch door swings open. Warm light spills out onto the pad, and steam curls up through the tube light.
+1. **The coin.** A clink, the green lamp blinks, the tall carousel turns behind the doors with a motor whirr and stops with a little overshoot. One small door swings open on its tier. Warm light spills out onto the pad, and steam curls up through the tube light.
 2. **The car.** Headlights rise over the road from far away. The beam sweeps across the fields, and the machine's long shadow swings across the land. The car passes in a whoosh, and its red tail lights shrink into the dark.
 3. **The tube.** Tap it: it dies, the ends glow orange, the starter ticks, and it strikes back with two or three blue-white stutters. The moths scatter, then spiral back in.
 4. **Rain.** The road turns to a black mirror. Every light makes a long vertical streak on it. Drops show only inside the light.
@@ -100,7 +100,7 @@ Four visible controls.
 ## 375 px recompose
 
 - Portrait: the camera steps back and up a little. The fov goes from 38 to 58.
-- The machine moves to the centre, in the lower half. The canopy and the tube sit at about 45 % height, so the moths show against the sky.
+- The machine moves to the centre, in the lower half. The hood and the tube sit at about 45 % height, so the moths show against the sky.
 - The road crosses the frame low; the fields and the skyglow fill the band above it.
 - The tilt-shift band narrows and moves with the machine.
 - The bottom row holds Coin and + Car. The Tube slider moves into Settings.
@@ -109,8 +109,9 @@ Four visible controls.
 
 **Scene.**
 
-- **Machine:** a `RoundedBoxGeometry` casing with a box cut-out (an extruded frame). A drum of 3 tiers × 8 sectors; each sector is a compartment with a glass door on a hinge. One loaf per compartment: a squashed capsule with a crust shader.
-- **Light:** the tube is a `RectAreaLight` (1.2 × 0.04 m) under the canopy, aimed down and out. It also has an emissive cylinder that blooms. The machine face adds a weak warm `RectAreaLight` aimed out to the pad. A dim blue `HemisphereLight` gives the moon.
+- **Machine:** a cabinet shell built round the door column. A carousel of 8 tiers × 8 compartments on one axis; eight cabinet doors on left hinges, one per tier. One loaf per compartment: a squashed capsule with a crust shader.
+- **Hood:** an open quarter cylinder with a canvas texture for the word, a flat crown and two end caps, all emissive yellow. A warm `RectAreaLight` throws its wash forward.
+- **Light:** the tube is a `RectAreaLight` (0.76 × 0.06 m) under the hood's lip, aimed down and out, with an emissive cylinder that blooms. A cool point light inside lights the carousel. A dim blue `HemisphereLight` gives the moon.
 - **Ground:** one plane for the road and one for the field, with a noise shader. The edge line is in the road shader.
 - **Far land:** a silhouette band of poplars, a church tower and far windows on a curved strip. Fog is shader haze by distance, as in K2.
 - **Sky:** a big sphere with a gradient, a skyglow band, stars and a cloud strip.
@@ -148,7 +149,7 @@ Four visible controls.
 ## Review focus
 
 1. `RectAreaLight` needs `RectAreaLightUniformsLib.init()` before the first compile.
-2. The spot shadow casts only from the machine and the canopy; everything else does not cast.
+2. The spot shadow casts only from the machine and the hood; everything else does not cast.
 3. The tilt-shift must not blur the bar or the key strip: it is a canvas pass only.
 4. 375 px: the coin panel and the hatch stay big enough to tap (34 px targets), or a tap near the machine counts.
 5. Bloom on the tube must not wash the moths out.
@@ -159,7 +160,7 @@ Four visible controls.
 
 **Files:** Create `bread/index.html`, the bean, the `toys.json` entry and the Lab menu `<li>` with its hook.
 
-- [ ] Scene: machine, drum, canopy, tube, road, field, far land, sky. Lights: tube, warm face, moon. No motion yet.
+- [x] Scene: cabinet, carousel, doors, hood, tube, road, field, far land, sky. Lights: tube, hood, carousel, moon. No motion yet.
 - [ ] Post: K2 bloom, tilt-shift, grade.
 - [ ] Camera at 1280 and 375 px.
 - [ ] Bar v2 spec wired, with stub handlers.

@@ -240,193 +240,222 @@ sodium.position.set(140, 6, ROAD.z0 - 1);
 scene.add(sodium);
 
 /* ---------- the stop ---------- */
-// The machine stands on a concrete pad, against a plain wall, under a canopy.
+// The machine stands alone on a small concrete pad on the far verge.
 const STOP = new THREE.Group();
-STOP.position.set(1.4, 0, ROAD.z0 - 2.2);
-STOP.rotation.y = -0.12;
+STOP.position.set(1.4, 0, ROAD.z0 - 2.0);
+STOP.rotation.y = -0.18;
 scene.add(STOP);
 const concrete = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.008, 80), map: noiseTex(64, 0.25), roughness: 0.92 });
-const enamel = new THREE.MeshStandardMaterial({ color: lin(0.74, 0.02, 95), roughness: 0.42, metalness: 0.05 });
+const enamel = new THREE.MeshStandardMaterial({ color: lin(0.86, 0.02, 95), roughness: 0.4, metalness: 0.05 });
+const steel = new THREE.MeshStandardMaterial({ color: lin(0.72, 0.008, 250), roughness: 0.3, metalness: 0.8 });
 const trim = new THREE.MeshStandardMaterial({ color: lin(0.24, 0.01, 260), roughness: 0.5, metalness: 0.4 });
 const cast = m => { m.castShadow = true; m.receiveShadow = true; return m; };
-const box = (w, h, d, mat, x, y, z, r = 0) => {
+const box = (w, h, d, mat, x, y, z, r = 0, parent = STOP) => {
   const g = r ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d);
   const m = cast(new THREE.Mesh(g, mat));
+  m.position.set(x, y, z);
+  parent.add(m);
+  return m;
+};
+box(1.6, 0.12, 1.4, concrete, 0, 0.06, 0.2);
+
+/* the cabinet */
+// A tall narrow cabinet; a column of small doors sits left of centre.
+// Each door opens on one tier of the carousel behind it.
+const M = { w: 0.86, h: 1.92, d: 0.72, front: 0.36, y0: 0.12 };
+const TIERS = 8, TIER_H = 0.17;
+const COL = { x0: -0.37, x1: -0.03, y0: 0.4 };
+COL.y1 = COL.y0 + TIERS * TIER_H;
+{
+  const { w, h, d, y0 } = M, cz = M.front - d / 2, fz = M.front - 0.02;
+  // Back, sides and top as one shell, open at the door column.
+  box(w, h, 0.04, enamel, 0, y0 + h / 2, cz - d / 2 + 0.02);
+  box(0.04, h, d, enamel, -w / 2 + 0.02, y0 + h / 2, cz, 0.015);
+  box(0.04, h, d, enamel, w / 2 - 0.02, y0 + h / 2, cz, 0.015);
+  box(w, 0.04, d, enamel, 0, y0 + h - 0.02, cz);
+  // The front panel, built round the door column.
+  box(COL.x0 + w / 2, h, 0.04, enamel, (-w / 2 + COL.x0) / 2, y0 + h / 2, fz);
+  box(w / 2 - COL.x1, h, 0.04, enamel, (COL.x1 + w / 2) / 2, y0 + h / 2, fz);
+  box(COL.x1 - COL.x0, COL.y0 - y0, 0.04, enamel, (COL.x0 + COL.x1) / 2, (y0 + COL.y0) / 2, fz);
+  box(COL.x1 - COL.x0, y0 + h - COL.y1, 0.04, enamel, (COL.x0 + COL.x1) / 2, (COL.y1 + y0 + h) / 2, fz);
+  // A dark plinth keeps the cabinet off the wet concrete.
+  box(w - 0.04, 0.1, d - 0.04, trim, 0, y0 + 0.05, cz);
+}
+
+/* coin unit */
+// Right of the doors: a price window, a coin slot, a green ready lamp and a return cup.
+const COIN = { x: 0.2, y: 1.18 };
+const glowPlate = (w, h, col, k, x, y, z = M.front + 0.025) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(k) }));
   m.position.set(x, y, z);
   STOP.add(m);
   return m;
 };
-box(3.6, 0.14, 2.8, concrete, 0, 0.07, 0.3);
-// Two slim posts at the back carry the canopy; the machine stands free.
-box(0.08, 2.86, 0.08, trim, -1.3, 1.57, -0.6);
-box(0.08, 2.86, 0.08, trim, 1.3, 1.57, -0.6);
-box(3.0, 0.1, 1.9, trim, 0, 3.0, 0.1);
-
-/* the machine */
-// Front face at z = M.front; the window shows the drum; the coin panel sits right.
-const M = { w: 1.5, h: 2.45, d: 1.2, front: 0.6, y0: 0.14 };
-const WIN = { x0: -0.66, x1: 0.32, y0: 0.5, y1: 1.78 };
-{
-  const { w, h, d, y0 } = M, cz = M.front - d / 2;
-  // Back, sides and top as one rounded shell, open at the front.
-  box(w, h, 0.06, enamel, 0, y0 + h / 2, cz - d / 2 + 0.03);
-  box(0.06, h, d, enamel, -w / 2 + 0.03, y0 + h / 2, cz, 0.02);
-  box(0.06, h, d, enamel, w / 2 - 0.03, y0 + h / 2, cz, 0.02);
-  box(w, 0.08, d, enamel, 0, y0 + h - 0.04, cz, 0.02);
-  // The front frame around the window.
-  const fz = M.front - 0.03, x0 = -w / 2, x1 = w / 2;
-  box(WIN.x0 - x0, h, 0.06, enamel, (x0 + WIN.x0) / 2, y0 + h / 2, fz);
-  box(x1 - WIN.x1, h, 0.06, enamel, (WIN.x1 + x1) / 2, y0 + h / 2, fz);
-  box(WIN.x1 - WIN.x0, WIN.y0 - y0, 0.06, enamel, (WIN.x0 + WIN.x1) / 2, (y0 + WIN.y0) / 2, fz);
-  box(WIN.x1 - WIN.x0, y0 + h - WIN.y1, 0.06, enamel, (WIN.x0 + WIN.x1) / 2, (WIN.y1 + y0 + h) / 2, fz);
-  // A dark plinth and a dark lip round the window.
-  box(w + 0.02, 0.12, d + 0.02, trim, 0, y0 + 0.06, cz);
-  const lip = 0.03;
-  box(WIN.x1 - WIN.x0 + lip * 2, lip, 0.08, trim, (WIN.x0 + WIN.x1) / 2, WIN.y0 - lip / 2, fz + 0.01);
-  box(WIN.x1 - WIN.x0 + lip * 2, lip, 0.08, trim, (WIN.x0 + WIN.x1) / 2, WIN.y1 + lip / 2, fz + 0.01);
-  box(lip, WIN.y1 - WIN.y0, 0.08, trim, WIN.x0 - lip / 2, (WIN.y0 + WIN.y1) / 2, fz + 0.01);
-  box(lip, WIN.y1 - WIN.y0, 0.08, trim, WIN.x1 + lip / 2, (WIN.y0 + WIN.y1) / 2, fz + 0.01);
+box(0.24, 0.5, 0.04, steel, COIN.x, COIN.y, M.front + 0.0, 0.01);
+glowPlate(0.14, 0.05, lin(0.8, 0.17, 60), 3, COIN.x, COIN.y + 0.16);
+const readyLamp = glowPlate(0.024, 0.024, lin(0.82, 0.2, 145), 5, COIN.x - 0.06, COIN.y + 0.05);
+box(0.06, 0.1, 0.03, trim, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.025, 0.006);
+glowPlate(0.008, 0.06, lin(0.6, 0.02, 250), 0.8, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.042);
+box(0.1, 0.06, 0.05, trim, COIN.x, COIN.y - 0.16, M.front + 0.03, 0.01);
+// One small lit button sits beside each door.
+const buttons = [];
+for (let t = 0; t < TIERS; t++) {
+  buttons.push(glowPlate(0.03, 0.03, lin(0.9, 0.02, 230), 1.4, COL.x1 + 0.04, COL.y0 + (t + 0.5) * TIER_H));
 }
 
-/* header lightbox: a loaf pictogram, no word */
-const HEAD = { y: M.y0 + M.h - 0.32, h: 0.34 };
-{
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, '#fff1d6'); grad.addColorStop(1, '#ffd79a');
-  g.fillStyle = grad; g.fillRect(0, 0, 512, 128);
-  // A loaf in profile: a dome with three scores.
-  g.fillStyle = '#7a3a12';
-  g.beginPath();
-  g.moveTo(196, 98); g.lineTo(316, 98);
-  g.bezierCurveTo(338, 98, 340, 46, 300, 36); g.bezierCurveTo(270, 26, 240, 26, 212, 36);
-  g.bezierCurveTo(172, 46, 174, 98, 196, 98); g.fill();
-  g.strokeStyle = '#ffe2b0'; g.lineWidth = 7; g.lineCap = 'round';
-  for (const x of [222, 256, 290]) { g.beginPath(); g.moveTo(x - 10, 70); g.lineTo(x + 8, 46); g.stroke(); }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.1, roughness: 0.4 });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(M.w - 0.16, HEAD.h), mat);
-  m.position.set(0, HEAD.y, M.front + 0.002);
-  STOP.add(m);
-}
-
-/* coin panel */
-// A dark plate: the slot, a green ready dot and a small price window.
-const COIN = { x: 0.5, y: 1.22 };
-{
-  box(0.26, 0.56, 0.04, trim, COIN.x, COIN.y, M.front + 0.01, 0.01);
-  const glow = (w, h, col, k, x, y) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(k) }));
-    m.position.set(x, y, M.front + 0.032);
-    STOP.add(m);
-    return m;
-  };
-  glow(0.14, 0.05, lin(0.8, 0.17, 60), 3, COIN.x, COIN.y + 0.17);
-  glow(0.035, 0.035, lin(0.82, 0.2, 145), 5, COIN.x, COIN.y + 0.06);
-  glow(0.012, 0.09, lin(0.6, 0.02, 250), 1.2, COIN.x, COIN.y - 0.08);
-}
-
-/* ---------- the drum ---------- */
-// Three tiers of eight compartments turn on one vertical axis.
-// Each compartment holds one loaf behind a glass hatch on a hinge.
-const DRUM = { tiers: 3, sectors: 8, r: 0.5, tierH: 0.4, x: (WIN.x0 + WIN.x1) / 2, z: M.front - M.d / 2 + 0.02 };
+/* ---------- the carousel ---------- */
+// Eight tiers of eight compartments turn on one vertical axis behind the doors.
+// One loaf sits in each compartment.
+const DRUM = { sectors: 8, r: 0.27, x: (COL.x0 + COL.x1) / 2, z: M.front - 0.32 };
 const drum = new THREE.Group();
-drum.position.set(DRUM.x, WIN.y0 + 0.02, DRUM.z);
+drum.position.set(DRUM.x, COL.y0, DRUM.z);
 STOP.add(drum);
-const cellMat = new THREE.MeshStandardMaterial({ color: lin(0.3, 0.03, 70), emissive: WARM, emissiveIntensity: 0.12, roughness: 0.8 });
-const shelfMat = new THREE.MeshStandardMaterial({ color: lin(0.7, 0.02, 80), roughness: 0.35, metalness: 0.6 });
-const glassMat = new THREE.MeshStandardMaterial({ color: lin(0.5, 0.01, 200), roughness: 0.06, metalness: 0.2, transparent: true, opacity: 0.22, depthWrite: false });
-const crust = new THREE.MeshStandardMaterial({ color: lin(0.52, 0.12, 58), emissive: WARM, emissiveIntensity: 0.18, roughness: 0.62 });
-const hatches = [];
+const shelfMat = new THREE.MeshStandardMaterial({ color: lin(0.78, 0.01, 230), roughness: 0.3, metalness: 0.7 });
+const cellMat = new THREE.MeshStandardMaterial({ color: lin(0.5, 0.01, 230), emissive: lin(0.9, 0.02, 230), emissiveIntensity: 0.06, roughness: 0.7 });
+const crust = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.12, 60), emissive: WARM, emissiveIntensity: 0.1, roughness: 0.6 });
+const cells = [];
 {
-  const { tiers, sectors, r, tierH } = DRUM, step = (Math.PI * 2) / sectors;
-  const chord = 2 * r * Math.sin(step / 2) - 0.02;
-  // Each tier: a shelf disc and a lid disc; walls between compartments.
-  for (let t = 0; t < tiers; t++) {
-    const y = t * tierH;
-    const disc = cast(new THREE.Mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, 0.02, 40), shelfMat));
-    disc.position.y = y;
+  const { sectors, r } = DRUM, step = (Math.PI * 2) / sectors;
+  for (let t = 0; t <= TIERS; t++) {
+    const disc = cast(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.012, 32), shelfMat));
+    disc.position.y = t * TIER_H;
     drum.add(disc);
+  }
+  for (let t = 0; t < TIERS; t++) {
+    const y = t * TIER_H;
     for (let s = 0; s < sectors; s++) {
-      const a = s * step;
       const cell = new THREE.Group();
-      cell.rotation.y = a;
+      cell.rotation.y = s * step;
       drum.add(cell);
-      // The back of each compartment glows a little, as if lit inside.
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(chord * 0.55, tierH - 0.03), cellMat);
-      back.position.set(0, y + tierH / 2, 0.14);
-      cell.add(back);
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.012, tierH - 0.02, r - 0.12), shelfMat);
-      wall.position.set(0, y + tierH / 2, (r + 0.12) / 2);
+      // Dividers between compartments; the back glows faint cool white.
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.006, TIER_H - 0.012, r - 0.06), shelfMat);
+      wall.position.set(0, y + TIER_H / 2, (r + 0.06) / 2);
       wall.rotation.y = step / 2;
       cell.add(wall);
-      // The loaf: a squashed capsule, scored on top later.
-      const loaf = cast(new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.12, 6, 14), crust));
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(0.1, TIER_H - 0.012), cellMat);
+      back.position.set(0, y + TIER_H / 2, 0.07);
+      cell.add(back);
+      // The loaf: a squashed capsule lying across the compartment.
+      const loaf = cast(new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.08, 6, 12), crust));
       loaf.rotation.z = Math.PI / 2;
-      loaf.scale.set(0.82, 1, 0.9);
-      loaf.position.set(0, y + 0.08, r * 0.62);
+      loaf.scale.set(0.95, 1, 0.9);
+      loaf.position.set(0, y + 0.055, r * 0.6);
       cell.add(loaf);
-      // The hatch: a pivot at its left edge, a frame and a glass pane.
-      const pivot = new THREE.Group();
-      pivot.position.set(-chord / 2, y + tierH / 2, r * Math.cos(step / 2));
-      cell.add(pivot);
-      const pane = new THREE.Mesh(new THREE.PlaneGeometry(chord - 0.03, tierH - 0.06), glassMat);
-      pane.position.x = chord / 2;
-      pivot.add(pane);
-      const frame = new THREE.Mesh(mergeGeometries([
-        new THREE.BoxGeometry(chord, 0.016, 0.014).translate(chord / 2, (tierH - 0.04) / 2, 0),
-        new THREE.BoxGeometry(chord, 0.016, 0.014).translate(chord / 2, -(tierH - 0.04) / 2, 0),
-        new THREE.BoxGeometry(0.016, tierH - 0.04, 0.014).translate(0.008, 0, 0),
-        new THREE.BoxGeometry(0.016, tierH - 0.04, 0.014).translate(chord - 0.008, 0, 0),
-        new THREE.BoxGeometry(0.03, 0.012, 0.02).translate(chord - 0.04, 0, 0.012),
-      ]), trim);
-      pivot.add(frame);
-      hatches.push({ tier: t, sector: s, pivot, loaf, back, full: true });
+      cells.push({ tier: t, sector: s, loaf, full: true });
     }
   }
-  const top = cast(new THREE.Mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, 0.02, 40), shelfMat));
-  top.position.y = tiers * tierH;
-  drum.add(top);
-  const core = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, tiers * tierH, 16), trim));
-  core.position.y = (tiers * tierH) / 2;
+  const core = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, TIERS * TIER_H, 12), steel));
+  core.position.y = (TIERS * TIER_H) / 2;
   drum.add(core);
 }
-// The front sector faces +z; a small offset shows the drum's turn.
-drum.rotation.y = 0.18;
+drum.rotation.y = 0.12;
+
+/* the doors */
+// One small door per tier: a steel frame round a glass pane, hinged on the left.
+const glassMat = new THREE.MeshStandardMaterial({ color: lin(0.4, 0.01, 220), roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.18, depthWrite: false });
+const doors = [];
+{
+  const w = COL.x1 - COL.x0, h = TIER_H - 0.012, f = 0.022;
+  const frameGeo = mergeGeometries([
+    new THREE.BoxGeometry(w, f, 0.016).translate(w / 2, (h - f) / 2, 0),
+    new THREE.BoxGeometry(w, f, 0.016).translate(w / 2, -(h - f) / 2, 0),
+    new THREE.BoxGeometry(f, h, 0.016).translate(f / 2, 0, 0),
+    new THREE.BoxGeometry(f, h, 0.016).translate(w - f / 2, 0, 0),
+    // The pull: a short bar near the free edge.
+    new THREE.BoxGeometry(0.012, h * 0.5, 0.02).translate(w - 0.04, 0, 0.016),
+  ]);
+  for (let t = 0; t < TIERS; t++) {
+    const pivot = new THREE.Group();
+    pivot.position.set(COL.x0, COL.y0 + (t + 0.5) * TIER_H, M.front);
+    STOP.add(pivot);
+    pivot.add(cast(new THREE.Mesh(frameGeo, steel)));
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(w - f * 2, h - f * 2), glassMat);
+    pane.position.x = w / 2;
+    pivot.add(pane);
+    doors.push({ tier: t, pivot, open: 0 });
+  }
+}
+
+/* ---------- the hood ---------- */
+// A curved yellow lightbox crowns the cabinet and carries the plain word.
+const HOOD = { R: 0.3, over: 0.12, w: M.w + 0.06 };
+HOOD.y = M.y0 + M.h;
+HOOD.cz = M.front + HOOD.over - HOOD.R;
+const hoodTex = (() => {
+  // The canvas runs round the arc in x and along the hood in y.
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 1024;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 256, 0);
+  grad.addColorStop(0, '#ff9f00'); grad.addColorStop(0.5, '#ffc400'); grad.addColorStop(1, '#e08a00');
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 1024);
+  g.save();
+  g.translate(96, 512);
+  g.rotate(Math.PI / 2);
+  g.fillStyle = '#1e1204';
+  g.font = '900 84px Gabarito, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('BROODAUTOMAAT', 0, 0);
+  g.restore();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+})();
+const hoodMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: hoodTex, emissiveIntensity: 0.75, roughness: 0.3, side: THREE.DoubleSide });
+const hoodCap = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: lin(0.86, 0.17, 88), emissiveIntensity: 0.6, roughness: 0.3 });
+{
+  const { R, w, y, cz } = HOOD;
+  // The arc runs from the front lip up to the crown.
+  const arc = new THREE.Mesh(new THREE.CylinderGeometry(R, R, w, 40, 1, true, 0, Math.PI / 2).rotateZ(Math.PI / 2), hoodMat);
+  arc.position.set(0, y, cz);
+  STOP.add(arc);
+  // A flat crown runs back from the arc to the rear of the cabinet.
+  const back = cz - (M.front - M.d);
+  const crown = new THREE.Mesh(new THREE.PlaneGeometry(w, back).rotateX(-Math.PI / 2), hoodCap);
+  crown.position.set(0, y + R, cz - back / 2);
+  STOP.add(crown);
+  // Two end caps close the hood.
+  const s = new THREE.Shape();
+  s.moveTo(-back, 0); s.lineTo(R, 0); s.absarc(0, 0, R, 0, Math.PI / 2, false); s.lineTo(-back, R); s.closePath();
+  for (const side of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.ShapeGeometry(s, 12).rotateY(-Math.PI / 2), hoodCap);
+    cap.position.set(side * w / 2, y, cz);
+    cap.material.side = THREE.DoubleSide;
+    STOP.add(cap);
+  }
+}
 
 /* ---------- the tube ---------- */
-// One bare fluorescent tube under the canopy's front edge.
-const TUBE_POS = new THREE.Vector3(0, 2.9, 0.82);
+// One bare fluorescent tube under the hood's front lip.
+const TUBE_POS = new THREE.Vector3(0, HOOD.y - 0.03, M.front + 0.1);
 const tubeMat = new THREE.MeshBasicMaterial({ color: TUBE.clone().multiplyScalar(9) });
-const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.22, 12).rotateZ(Math.PI / 2), tubeMat);
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.76, 12).rotateZ(Math.PI / 2), tubeMat);
 tube.position.copy(TUBE_POS);
 STOP.add(tube);
 // The end caps stay dark grey; a dying tube glows orange there.
 for (const s of [-1, 1]) {
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.05, 10).rotateZ(Math.PI / 2), trim);
-  c.position.set(TUBE_POS.x + s * 0.63, TUBE_POS.y, TUBE_POS.z);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.04, 10).rotateZ(Math.PI / 2), trim);
+  c.position.set(TUBE_POS.x + s * 0.4, TUBE_POS.y, TUBE_POS.z);
   STOP.add(c);
 }
-// The area light: long and thin, aimed down and out over the pad and road.
-const tubeLight = new THREE.RectAreaLight(TUBE, 90, 1.22, 0.1);
-tubeLight.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.03, 0));
+// The area light: long and thin, aimed down the doors and out over the pad.
+const tubeLight = new THREE.RectAreaLight(TUBE, 26, 0.76, 0.06);
+tubeLight.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.02, 0));
 STOP.add(tubeLight);
-tubeLight.lookAt(STOP.localToWorld(new THREE.Vector3(0, 0, 1.9)));
-// The machine face throws warm light out onto the pad.
-const faceLight = new THREE.RectAreaLight(WARM, 9, WIN.x1 - WIN.x0, WIN.y1 - WIN.y0);
-faceLight.position.set(DRUM.x, (WIN.y0 + WIN.y1) / 2, M.front + 0.05);
-STOP.add(faceLight);
-faceLight.lookAt(STOP.localToWorld(new THREE.Vector3(DRUM.x, 0.2, 3)));
-// Inside the drum, a warm lamp lights the loaves from above.
-const drumLight = new THREE.PointLight(WARM, 1.6, 2.2, 2);
-drumLight.position.set(DRUM.x, WIN.y1 - 0.1, DRUM.z + 0.15);
+tubeLight.lookAt(STOP.localToWorld(new THREE.Vector3(0, 0, 1.8)));
+// The hood throws a warm yellow wash forward and down.
+const hoodLight = new THREE.RectAreaLight(lin(0.86, 0.17, 88), 7, HOOD.w, 0.24);
+hoodLight.position.set(0, HOOD.y + 0.12, M.front + HOOD.over + 0.02);
+STOP.add(hoodLight);
+hoodLight.lookAt(STOP.localToWorld(new THREE.Vector3(0, 0.3, 3)));
+// Inside the carousel, a cool white lamp lights the loaves.
+const drumLight = new THREE.PointLight(lin(0.95, 0.02, 230), 0.9, 1.4, 2);
+drumLight.position.set(DRUM.x, COL.y1 - 0.05, DRUM.z + 0.05);
 STOP.add(drumLight);
-// The tube also lights the wall and canopy from close; a short point light fills them.
-const tubeFill = new THREE.PointLight(TUBE, 9, 9, 2);
-tubeFill.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.15, 0.1));
+// A short point light fills the cabinet and pad, and casts the machine's shadow.
+const tubeFill = new THREE.PointLight(TUBE, 2.2, 7, 2);
+tubeFill.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.05, 0.12));
 tubeFill.castShadow = true;
 tubeFill.shadow.mapSize.set(512, 512);
 tubeFill.shadow.bias = -0.002;
@@ -446,8 +475,8 @@ const mothGeo = new THREE.BufferGeometry();
 {
   const p = new Float32Array(MOTHS * 3);
   for (let i = 0; i < MOTHS; i++) {
-    const a = rnd() * Math.PI * 2, r = 0.15 + rnd() * 0.7;
-    p.set([TUBE_POS.x + Math.cos(a) * r * 1.2, TUBE_POS.y - 0.1 - rnd() * 0.6, TUBE_POS.z + Math.sin(a) * r * 0.6 + 0.2], i * 3);
+    const a = rnd() * Math.PI * 2, r = 0.12 + rnd() * 0.55;
+    p.set([TUBE_POS.x + Math.cos(a) * r * 1.1, TUBE_POS.y - 0.05 + (rnd() - 0.4) * 0.7, TUBE_POS.z + Math.sin(a) * r * 0.5 + 0.2], i * 3);
   }
   mothGeo.setAttribute('position', new THREE.BufferAttribute(p, 3));
 }
@@ -571,11 +600,11 @@ function frame() {
   camera.fov = portrait ? 58 : 36;
   const stop = STOP.position;
   if (portrait) {
-    camera.position.set(stop.x - 1.2, 1.2, 6.6);
-    aim.set(stop.x - 0.15, 2.9, stop.z);
+    camera.position.set(stop.x - 0.75, 0.95, 3.3);
+    aim.set(stop.x - 0.05, 1.95, stop.z);
   } else {
-    camera.position.set(stop.x - 4.2, 1.1, 5.4);
-    aim.set(stop.x - 1.5, 2.45, stop.z);
+    camera.position.set(stop.x - 3.0, 0.95, 3.0);
+    aim.set(stop.x - 1.1, 1.75, stop.z);
   }
   camera.lookAt(aim);
   camera.rotation.order = 'YXZ';
@@ -584,7 +613,7 @@ function frame() {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   // The sharp band follows the machine's centre on screen.
-  const c = STOP.localToWorld(new THREE.Vector3(0, 1.4, M.front)).project(camera);
+  const c = STOP.localToWorld(new THREE.Vector3(0, 1.3, M.front)).project(camera);
   tilt.uniforms.uFocus.value = c.y * 0.5 + 0.5;
   tilt.uniforms.uBand.value = portrait ? 0.08 : 0.13;
 }

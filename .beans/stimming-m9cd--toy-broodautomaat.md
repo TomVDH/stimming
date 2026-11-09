@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:15:30Z
-updated_at: 2026-11-09T09:22:36Z
+updated_at: 2026-11-09T09:34:35Z
 ---
 
 Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vending machine glows alone at the edge of a dark Flemish village road at night: drop a coin, the carousel turns, a hatch opens on a warm loaf; cars sweep past; a fluorescent tube flickers with moths.
@@ -27,3 +27,5 @@ Build Broodautomaat from docs/plans/bread.md. It starts in the Lab. A bread vend
 - Task 1 stills sent to Tom (1280 and 375 px); waiting on his sign-off before Task 2.
 - The wall behind the machine was cut: two slim posts carry the canopy, so the machine stands free.
 - Bar v2 is wired with stub handlers; the sound toggle stays hidden (silent) until Task 5.
+
+- Tom (2026-11-09): rebuild as the classic Flemish broodautomaat. Now a cream cabinet, a curved yellow hood with the word BROODAUTOMAAT, eight small doors over an eight-tier carousel, and a steel coin unit. The tube hangs under the hood's lip. New stills sent.
