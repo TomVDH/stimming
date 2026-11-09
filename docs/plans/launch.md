@@ -194,3 +194,7 @@ Leaves: three, alternating sides at nodes 0.3, 0.5, 0.7 H, lengths 0.36 to 0.26 
 Beds sit 30 to 220 m out, left or right of the lane to the pad (`seedBirds`). The three near beds break sideways and low, wheel inside the lens for ten seconds (goal 18 m to their side, 17 m up, 40 m out), then pass the eye on their side; speed cap 9 m/s. Far beds keep the far point.
 The bird is drawn: a continuous wingbeat on the flap phase (wrist leads the tip), tapered wings, body, head, notched tail; 0.9 m span, never under six pixels. Colour has a floor (0.05 linear) so a bird reads against a black sky; the dawn glow warms it.
 QA: `__qa.birds()` lists airborne birds; the headless harness must wait in real time (`--wait`), since a clock jump lifts every bed at once.
+
+## No launch shockwave (13:55, Tom: a shockwave hits the POV and jitters it)
+
+Gone: the camera shake tweens at ignition, liftoff and roar arrival, and the reed push wave (`uFront` stays at zero; the shader path remains for later). The camera keeps only its slow handheld wobble. The birds still lift as the sound front reaches each bed, and the roar still arrives late in the sound.

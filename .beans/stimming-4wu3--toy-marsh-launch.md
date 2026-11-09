@@ -30,7 +30,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Review 2: the arc stays in frame to SECO
 - [x] Review 2: living reed sway, cleaner reed model
 - [x] Review 2: birds nearer the eye, spruced up
-- [ ] Review 2: no launch shockwave: camera jolts and the reed push wave gone
+- [x] Review 2: no launch shockwave: camera jolts and the reed push wave gone
 - [ ] Tom sets the Dutch name (proposal: Moeraslancering)
 - [ ] Record the session cost
 

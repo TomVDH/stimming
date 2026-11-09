@@ -1656,16 +1656,8 @@ function launch(kind, padX) {
     .to(f, { engine: 0.55, duration: 0.8, ease: 'power2.out' }, PRE + 41.6)
     // Second engine cut-off, near the edge of the frame.
     .to(f, { engine: 0, duration: 5, ease: 'power1.in' }, PRE + 112)
-    // Shake: a jolt at ignition, a rumble through liftoff.
-    .to(f, { shake: 1, duration: 0.08 }, 0)
-    .to(f, { shake: 0.35, duration: 2.5, ease: 'power2.out' }, 0.1)
-    .to(f, { shake: 0.8, duration: 0.3 }, PRE)
-    .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
   if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
   f.tl.set(f, { done: true }, END);
-  // The roar reaches the eye: the camera takes a second jolt.
-  const dl = delayOf(f);
-  f.tl.to(f, { shake: 0.9, duration: 0.25 }, dl).to(f, { shake: 0.15, duration: 4, ease: 'power2.out' }, dl + 0.25);
   seedBirds(f);
   roar(f);
   return f;
@@ -1756,9 +1748,6 @@ function flyTo(f) {
       writeStar(rp, simT - rnd() * 0.03, rv, 1.2, rnd() < 0.5 ? 0 : 2, 0.5 + rnd() * 0.7, 0.12, 1.2, 2, 0.6);
     }
   }
-  // The front: strong while it crosses the marsh, gone past the eye.
-  const R = frontR(f);
-  U.uFront.value.set(f.x, f.z, R, reduced() ? 0 : 1.2 * (1 - THREE.MathUtils.smoothstep(R, f.D * 1.2, f.D * 1.6)));
   flyBirds(f, Math.min(0.1, simT - (f.lastSim ?? simT)));
   f.lastSim = simT;
   uploadBirds();
@@ -2346,9 +2335,8 @@ function frame() {
   // The launch zoom narrows the lens; the horizon holds its place in the frame.
   camera.fov = fov * cam.zoom;
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-  // A hand on the camera: a slow, tiny wobble while the scene is awake.
-  // The launch adds a shake that dies away as the rocket climbs.
-  const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 2.2), t = simT;
+  // A hand on the camera: a slow, tiny wobble while the scene is awake. No launch shake.
+  const wk = reduced() ? 0 : pace, t = simT;
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3));
   const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1));
   const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
