@@ -190,3 +190,5 @@ Open from the critics:
 - [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
 - [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
 - [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
+- [x] Signs matte: no self light, flat muted navy, soft white rule; station LED strips dark by day, half as strong at night; columns and slab matte, warm light concrete, calmer sky fill
+- [x] Terrain restyle, smooth and neat: muted sage meadows in wide bands, no grain, far roofs merge into a soft town tint (no speckle), gentle woods, softer shadows
