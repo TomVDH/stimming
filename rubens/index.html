@@ -55,7 +55,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, reduced, onReducedChange } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, reduced, onReducedChange, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -588,6 +588,7 @@ function frame(now) {
     if (env < 0.01) cut = false;
     pitch = Math.exp(lerp(Math.log(pitch), Math.log(pitchT), 1 - Math.exp(-dt / 0.03)));
     moving = stepRow(dt);
+    audioStep();
     // Reduced motion holds the flicker still while nothing moves.
     if (!rm || lively()) time += dt;
     render();
@@ -595,6 +596,7 @@ function frame(now) {
     again = !asleep && (!rm || lively());
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf);
   }
 }
 
@@ -611,6 +613,74 @@ function sweepStep(dt) {
 }
 act.sweep = () => { sweepT = 0; pitch = pitchT = FUEL[fuel].c / (2 * LEN) * 0.9; live(); };
 
+/* ---------- sound ---------- */
+// The tone the user hears is the tone that drives the flames.
+// Space counts as a gesture, so it can start the sound.
+const kit = audioKit({ keys: new Set([' ']) });
+let V = null, T = null, toneLoad = null;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// The first live call loads Tone; the voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
+}
+function buildVoices() {
+  // The speaker sits at the left end, so the tone leans left.
+  const pan = new T.Panner(-0.25).connect(kit.out);
+  const toneG = new T.Gain(0).connect(pan);
+  const o1 = new T.Oscillator(pitch, 'sine').connect(toneG).start();
+  const fifthG = new T.Gain(0).connect(toneG);
+  const o2 = new T.Oscillator(pitch * 1.5, 'sine').connect(fifthG).start();
+  // Gas hiss: pink noise near 3 kHz.
+  const hissG = new T.Gain(0).connect(kit.out);
+  new T.Noise('pink').connect(new T.Filter({ type: 'bandpass', frequency: 3000, Q: 0.8 }).connect(hissG)).start();
+  // Flame roar: brown noise below 300 Hz.
+  const roarG = new T.Gain(0).connect(kit.out);
+  new T.Noise('brown').connect(new T.Filter({ type: 'lowpass', frequency: 300, Q: 0.5 }).connect(roarG)).start();
+  // The drum: a membrane thump and a short click, at the speaker.
+  const drumPan = new T.Panner(-0.6).connect(kit.out);
+  const boom = new T.MembraneSynth({ pitchDecay: 0.06, octaves: 2.5, envelope: { attack: 0.002, decay: 0.45, sustain: 0, release: 0.1 }, volume: -4 }).connect(drumPan);
+  const click = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.03, sustain: 0, release: 0.01 }, volume: -18 })
+    .connect(new T.Filter({ type: 'highpass', frequency: 1800 }).connect(drumPan));
+  return { toneG, o1, o2, fifthG, hissG, roarG, boom, click };
+}
+// The pipe's response at one pitch: near 1 at a resonance, small between.
+function response(f) {
+  const k = (TAU * f) / FUEL[fuel].c, b = ETA * k * LEN;
+  return b / Math.hypot(Math.sin(k * LEN), Math.sinh(b));
+}
+// Each frame steers the voices toward the flames' state.
+function audioStep() {
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime;
+  const sing = 0.35 + 0.65 * Math.min(1, response(pitch));
+  v.o1.frequency.setTargetAtTime(pitch, t, 0.01);
+  v.o2.frequency.setTargetAtTime(pitch * 1.5, t, 0.01);
+  v.toneG.gain.setTargetAtTime(0.3 * env * volume * loud * sing, t, cut ? 0.012 : 0.03);
+  v.fifthG.gain.setTargetAtTime(voice === 'chord' ? 0.8 : 0, t, 0.05);
+  v.hissG.gain.setTargetAtTime(0.03 * gas * pilot, t, 0.2);
+  // The roar follows how far the row stands above rest.
+  const r0 = Math.max(restPx(), 1);
+  let lift = 0;
+  for (let i = 0; i < N; i++) lift += Math.max(0, disp[i] / r0 - 1);
+  v.roarG.gain.setTargetAtTime(Math.min(0.5, 0.25 * lift / N) * gas, t, 0.08);
+}
+// No two hits sound the same: pitch, level and time jitter.
+function thump() {
+  const v = voices();
+  if (!v) return;
+  const t = kit.ac.currentTime + 0.005 * Math.random();
+  const f1 = FUEL[fuel].c / (2 * LEN);
+  v.boom.triggerAttackRelease(f1 * jit(0.06), 0.25, t, Math.min(1, 0.8 * jit(0.15)));
+  v.click.triggerAttackRelease(0.03, t, 0.6 * jit(0.2));
+}
+
 /* ---------- drum ---------- */
 // The speaker kicks once; a bump of tall flames runs down the pipe.
 // The capped end reflects pressure upright, so the bump returns as a bump.
@@ -621,6 +691,7 @@ function drum() {
   if (pulses.length >= 8) pulses.shift();
   pulses.push({ x: 0, dir: 1, t: 0, a: lerp(0.85, 1.1, Math.random()) });
   kick = 1;
+  thump();
   live();
 }
 function pulseStep(dt) {
@@ -751,7 +822,7 @@ onReducedChange(() => { render(); wake(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => !raf); return; }
   wake();
 });
 </script>
