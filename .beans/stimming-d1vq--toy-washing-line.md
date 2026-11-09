@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T08:34:23Z
+updated_at: 2026-11-09T08:44:54Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -48,3 +48,11 @@ Scene is the bar choice (stepper); Wind moved to Settings. ?env=<id> picks a sce
 | Desert | bleached blue, dunes | dust | indigo and saffron ikat, scarves, robes |
 
 - Open: dunes read flat; each scene still needs tuning after Tom picks.
+
+## Dioramas, one by one (Tom, 2026-11-09)
+
+Tom asked for higher-fidelity mini dioramas with their own camera angles, one scene at a time. washline/diorama.html (noindex) holds them; the seven-scene page stays as it is.
+
+- [x] Summer: floating lawn slab with soil strata, 30k to 70k wind-blown grass blades, daisies, two posts with hooks, wicker basket, cotton cord line, wooden pegs with steel springs.
+  Physical cloth (sheen, weave normal maps: plain, twill, jersey, terry), per-piece canvas textures with seams, topstitching, collar rib, belt loops and hems, real sun shadows, back light darkened by pieces in front, 4x MSAA, tilt-shift, orbit by dragging the sky.
+- [ ] Riviera, Monsoon, Snow, Dusk, Night, Desert dioramas, after Tom signs off Summer.
