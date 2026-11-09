@@ -34,10 +34,12 @@ const K2_STORM = /* glsl */`
 uniform vec3 uMoon, uMoonSky, uMoonC, uAir, uZen, uAmb, uSnowC;
 uniform float uTime, uCloudY, uHaze, uHazeH, uMoonK, uMoonAir, uGapLo, uGapHi, uGapScale;
 uniform float uBaseOn, uMoonOn, uGapIn, uStarK, uLightK, uFlareK, uConeK;
-uniform vec2 uWind;
+uniform vec2 uWind, uCloudOff;
+uniform float uCurtK;
 // Gap mask at a point on the cloud plane: 1 in a gap, 0 under cloud.
 float k2gapAt(vec2 q) {
-  vec2 p = (q - uWind * uTime) * uGapScale;
+  // The cloud moves by the wind's sum, so gusts never make it jump.
+  vec2 p = (q - uCloudOff) * uGapScale;
   vec2 w = vec2(k2noise(p * 0.7 + 3.1 + uTime * 0.01), k2noise(p * 0.7 + 8.3 - uTime * 0.012));
   return smoothstep(uGapLo, uGapHi, k2fbm(p + w * 1.3));
 }
@@ -100,7 +102,7 @@ const k2 = {
   uMoonK: { value: 1.0 }, uMoonAir: { value: 0.05 },
   uGapLo: { value: 0.5 }, uGapHi: { value: 0.66 }, uGapScale: { value: 0.0011 },
   uBaseOn: { value: 1 }, uMoonOn: { value: 1 }, uGapIn: { value: 1 }, uStarK: { value: 1 },
-  uWind: { value: new THREE.Vector2(26, 9) },
+  uWind: { value: new THREE.Vector2(26, 9) }, uCloudOff: { value: new THREE.Vector2() }, uCurtK: { value: 1 },
   uFlareK: { value: 1 }, uLightK: { value: 1 }, uConeK: { value: 1 },
 };
 
@@ -506,7 +508,9 @@ if (steelParts.length) scene.add(new THREE.Mesh(mergeGeometries(steelParts), ste
 }
 /* ---------- end span ---------- */
 
-/* Peaks: two sawtooth rows of wedges behind the far shed. */
+/* Peaks: sawtooth rows of wedges behind the far shed. */
+// Crest points feed the spindrift.
+const crests = [];
 {
   // A wedge: a long ramp up to a crest, then a steep cliff down.
   // dir 1 rises to the right; both planes lean back from the foot.
@@ -516,6 +520,7 @@ if (steelParts.length) scene.add(new THREE.Mesh(mergeGeometries(steelParts), ste
     const L = [X(0), yLow, z], C = [X(ramp), yCrest, z], N = [X(ramp + cliff), yNext, z];
     const fL = [X(-80), foot, z + dz], fC = [X(ramp + 60), foot, z + dz], fN = [X(ramp + cliff + 160), foot, z + dz];
     tri.push(L, C, fC, L, fC, fL, C, N, fN, C, fN, fC);
+    crests.push(C);
   }
   function row(x0, x1, z, crest, width, dirs) {
     let x = x0, i = 0, yLow = crest * 0.62;
@@ -692,9 +697,122 @@ const train = (() => {
   }
   let on = true;
   function show(v) { on = v; for (const c of cars) c.visible = v; lamps.visible = beam.visible = v; lights[headL].power = v ? HEAD_P : 0; }
-  return { place, show, SPAN, headL, head, get on() { return on; } };
+  return { place, show, SPAN, headL, head, dir: dir3, get on() { return on; } };
 })();
 /* ---------- end train ---------- */
+
+/* ---------- K2: precipitation ---------- */
+// Snow in three layers, one wind. The headlamp lights flakes in its beam.
+// Spray leaves the plough; spindrift streams off the moonlit crests.
+const snowU = {
+  uDrift: { value: new THREE.Vector3() },
+  uCenter: { value: new THREE.Vector3() },
+  uHP: { value: new THREE.Vector3() }, uHD: { value: new THREE.Vector3(0, 0, -1) }, uHOn: { value: 1 },
+  uFwd: { value: new THREE.Vector3(0, 0, -1) }, uSpeedK: { value: 0 }, uPlough: { value: new THREE.Vector3() },
+  uSnowK: { value: 1 }, uSprayK: { value: 1 }, uDriftK: { value: 1 },
+};
+const SNOW_GLSL = /* glsl */`
+uniform vec3 uDrift, uCenter, uHP, uHD, uFwd, uPlough;
+uniform float uHOn, uSpeedK, uSnowK, uSprayK, uDriftK, uScale;
+// Headlamp light on a flake: a cone down the track, fading with distance.
+float k2beam(vec3 p) {
+  vec3 L = p - uHP;
+  float a = dot(L, uHD);
+  if (a <= 0.0) return 0.0;
+  float r = length(L - uHD * a);
+  return uHOn * smoothstep(a * 0.34, a * 0.12, r) * exp(-a / 70.0) * smoothstep(0.0, 3.0, a);
+}
+// Moon on a flake through the gaps, plus the storm ambient.
+vec3 k2flake(vec3 p) {
+  return uAir * 12.0 + uMoonC * uMoonK * 0.6 * k2gap(p) + vec3(1.0, 0.94, 0.82) * 9.0 * k2beam(p);
+}`;
+function snowLayer({ n, box, center, size, streak, kind, seedK }) {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3), seed = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    pos.set([rnd() * box[0], rnd() * box[1], rnd() * box[2]], i * 3);
+    seed.set([rnd(), rnd(), rnd(), rnd()], i * 4);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...k2, ...projU, ...snowU, uBox: { value: new THREE.Vector3(...box) }, uFix: { value: new THREE.Vector3(...(center || [0, 0, 0])) } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    defines: { KIND: kind },
+    vertexShader: /* glsl */`
+    attribute vec4 aSeed;
+    uniform vec3 uBox, uFix;
+    varying vec3 vC;
+    varying float vA;
+    varying vec2 vDir;
+    ${HEAD}
+    ${SNOW_GLSL}
+    void main() {
+      vec3 p;
+      float a = 1.0;
+#if KIND == 0 || KIND == 1
+      // Flakes wrap in a box that rides with the camera, or sits on the span.
+      vec3 c = KIND == 0 ? uCenter : uFix;
+      vec3 sway = vec3(sin(uTime * 1.3 + aSeed.x * 40.0), 0.0, cos(uTime * 1.1 + aSeed.y * 40.0)) * 0.6;
+      p = mod(position + uDrift * (0.8 + 0.4 * aSeed.z) - c + uBox * 0.5, uBox) - uBox * 0.5 + c + sway;
+      a = uSnowK;
+#elif KIND == 2
+      // Spray: each grain flies out of the plough on its own beat.
+      float age = fract(uTime * 1.6 + aSeed.x);
+      float side = aSeed.y < 0.5 ? -1.0 : 1.0;
+      vec3 right = normalize(vec3(-uFwd.z, 0.0, uFwd.x));
+      vec3 v = right * side * (5.0 + 9.0 * aSeed.z) + uFwd * (2.0 + 6.0 * aSeed.w) * uSpeedK + vec3(0.0, 4.0 + 6.0 * aSeed.w, 0.0);
+      p = uPlough + v * age * (0.6 + uSpeedK) + vec3(uWind.x, -9.0, uWind.y) * 0.06 * age * age * 6.0;
+      // More grains fly as the train runs faster; none at rest.
+      a = step(aSeed.z, uSpeedK) * (1.0 - age) * smoothstep(0.0, 0.08, age) * uSprayK;
+#else
+      // Spindrift: thin plumes streaming downwind off each crest.
+      float age = fract(uTime * 0.12 + aSeed.x);
+      vec3 w = normalize(vec3(uWind.x, 0.0, uWind.y));
+      p = position + w * age * (160.0 + 120.0 * aSeed.y) + vec3(0.0, 30.0 * age * aSeed.z - 10.0 * age, 0.0) + vec3(aSeed.z - 0.5, 0.0, aSeed.w - 0.5) * 18.0 * age;
+      a = (1.0 - age) * smoothstep(0.0, 0.1, age) * uDriftK * smoothstep(0.2, 0.7, k2gap(position));
+#endif
+      vec4 mv = viewMatrix * vec4(p, 1.0);
+      vC = k2flake(p) * (1.0 - 0.6 * k2hazeAmount(p));
+      vA = a;
+      // Streaks stretch along the wind on screen.
+      vec4 q = projectionMatrix * viewMatrix * vec4(p + vec3(uWind.x, -6.0, uWind.y) * 0.08, 1.0);
+      vec4 o = projectionMatrix * mv;
+      vDir = normalize(q.xy / q.w - o.xy / o.w + 1e-5);
+      gl_PointSize = clamp(${size.toFixed(1)} * uScale / -mv.z, 1.0, ${streak ? '14.0' : '7.0'});
+      gl_Position = o;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vC;
+    varying float vA;
+    varying vec2 vDir;
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      c.y = -c.y;
+      ${streak
+        ? 'float along = dot(c, vDir), across = dot(c, vec2(-vDir.y, vDir.x)); float a = exp(-across * across * 400.0) * smoothstep(0.5, 0.1, abs(along));'
+        : 'float a = smoothstep(0.5, 0.15, length(c));'}
+      gl_FragColor = vec4(vC * a * vA * ${seedK.toFixed(2)}, 1.0);
+    }`,
+  }));
+  m.frustumCulled = false; m.renderOrder = 4; m.userData.live = true;
+  scene.add(m);
+  return m;
+}
+const near = snowLayer({ n: 2500, box: [140, 90, 140], kind: 0, size: 80, streak: false, seedK: 1.0 });
+const mid = snowLayer({ n: 4000, box: [900, 320, 1000], center: [-150, 70, -380], kind: 1, size: 700, streak: true, seedK: 0.9 });
+const spray = snowLayer({ n: 1200, box: [1, 1, 1], kind: 2, size: 70, streak: false, seedK: 0.9 });
+let drift = null;
+{
+  // Thirty grains per crest, all born on the crest point.
+  const g = 30, pts = crests.filter(c => c[1] > 520);
+  drift = snowLayer({ n: pts.length * g, box: [1, 1, 1], kind: 3, size: 900, streak: false, seedK: 0.18 });
+  const a = drift.geometry.attributes.position;
+  pts.forEach((c, i) => { for (let k = 0; k < g; k++) a.setXYZ(i * g + k, c[0], c[1], c[2]); });
+}
+const wind = { x: 26, z: 9, gust: 1 };
+const curtK = 1;
+/* ---------- end K2 ---------- */
 
 /* Sky: the storm ceiling, drawn on a far sphere. */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(30000, 48, 24), new THREE.ShaderMaterial({
@@ -795,9 +913,18 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
       vec4 nz = texture2D(tNorm, vUv);
       if (nz.a > 0.5) col += headLight(P, normalize(nz.xyz * 2.0 - 1.0), normalize(cameraPosition - P)) * (1.0 - k2hazeAmount(P));
     }
-    if (base.a < 0.999) {
-      vec4 fp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
-      col += k2sky(normalize(fp.xyz / fp.w - cameraPosition)) * (1.0 - base.a);
+    vec4 fp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+    vec3 dir = normalize(fp.xyz / fp.w - cameraPosition);
+    if (base.a < 0.999) col += k2sky(dir) * (1.0 - base.a);
+    // Far curtains: sheets of snow at three depths, in front of the pixel.
+    float dist = base.a > 0.5 ? length(P - cameraPosition) : 1e9;
+    for (int i = 0; i < 3; i++) {
+      float D = 260.0 * pow(2.2, float(i));
+      if (D > dist || uCurtK <= 0.0) break;
+      vec3 Q = cameraPosition + dir * D;
+      vec2 u = vec2((Q.x + Q.z * 0.5 - uCloudOff.x * 1.6) * 0.005, Q.y * 0.006 + uTime * 0.06);
+      float sheet = smoothstep(0.4, 0.85, k2noise(u) * 0.65 + k2noise(u * 2.7 + 4.0) * 0.35);
+      col += (uAir * 2.2 + uMoonC * uMoonK * 0.07 * k2gap(Q)) * sheet * 0.6 * uCurtK * (1.0 - 0.25 * float(i));
     }
     gl_FragColor = vec4(col, 1.0);
     gl_FragDepthEXT = z;
@@ -880,11 +1007,22 @@ function update(dt, pace) {
     if (run.s >= END + train.SPAN || run.s <= START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; run.vNow = 0; }
   }
   train.place(run.s, run.dir);
+  // Gusts swing the wind between 0.6 and 1.4 of its base.
+  wind.gust = 1 + 0.4 * Math.sin(time * 0.31) * Math.sin(time * 0.13 + 1.7);
+  k2.uWind.value.set(wind.x * wind.gust, wind.z * wind.gust);
+  k2.uCloudOff.value.addScaledVector(k2.uWind.value, dt * pace);
+  snowU.uDrift.value.add(new THREE.Vector3(wind.x * wind.gust, -2.2, wind.z * wind.gust).multiplyScalar(dt * pace));
+  snowU.uCenter.value.copy(camera.position).addScaledVector(camera.getWorldDirection(fwdV), 55);
+  snowU.uHP.value.copy(train.head); snowU.uHD.value.copy(train.dir); snowU.uHOn.value = train.on ? 1 : 0;
+  snowU.uPlough.value.copy(train.head).setY(DECK + 0.9);
+  snowU.uFwd.value.copy(train.dir).setY(0).normalize();
+  snowU.uSpeedK.value = train.on ? Math.min(1, (run.vNow || 0) / Math.max(1, run.v)) : 0;
   uploadLights();
   headU.uTP.value.copy(lightU.uLP.value[train.headL]);
   headU.uTC.value.copy(lightU.uLC.value[train.headL]);
   headU.uTD.value.copy(lightU.uLD.value[train.headL]);
 }
+const fwdV = new THREE.Vector3();
 function sendTrain() {
   if (run.gone) run.wait = 0;
   run.user = true;
@@ -893,7 +1031,13 @@ function sendTrain() {
 function tap() { sendTrain(); }
 // A moving train runs at full rate, so it never steps.
 const lively = () => run.user || (train.on && !run.gone && paceNow > 0);
-function lower() {}
+// Lower applies the quality rung, down or back up.
+function lower(rung) {
+  mid.geometry.setDrawRange(0, rung >= 1 ? 2000 : Infinity);
+  spray.geometry.setDrawRange(0, rung >= 1 ? 600 : Infinity);
+  k2.uCurtK.value = rung >= 2 ? 0 : curtK;
+  near.visible = rung < 3;
+}
 
 // Dispose frees every geometry, material and texture this scene made.
 function dispose() {
