@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Category icons lab</title>
+<meta name="color-scheme" content="dark">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
+:root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.6 0.02 275); --line: oklch(0.28 0.015 275); --mono: "Iosevka Term Slab", ui-monospace, monospace; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--mono); }
+body { padding: 20px 16px 60px; }
+h1 { margin: 0 0 4px; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; text-align: center; }
+p.lede { margin: 0 auto 22px; max-width: 60ch; text-align: center; color: var(--muted); }
+/* One table: a row per category, a column per direction. */
+.sheet { display: grid; grid-template-columns: 150px repeat(4, minmax(140px, 1fr)); max-width: 1100px; margin: 0 auto; border-top: 1px solid var(--line); }
+.sheet > * { border-bottom: 1px solid var(--line); padding: 16px 10px; }
+.head { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); text-align: center; align-self: end; }
+.cat { display: grid; align-content: center; gap: 2px; }
+.cat b { font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c); }
+.cat small { color: var(--muted); }
+/* Each cell: the icon large, then at header and tile sizes, then in a header. */
+.cell { display: grid; justify-items: center; gap: 10px; cursor: pointer; border-radius: 10px; transition: background 0.2s; }
+.cell:hover { background: oklch(0.2 0.012 275); }
+.cell.pick { background: color-mix(in oklch, var(--c) 16%, transparent); outline: 1px solid var(--c); outline-offset: -1px; }
+.sizes { display: flex; align-items: flex-end; gap: 12px; }
+.sizes svg:nth-child(1) { width: 72px; height: 72px; }
+.sizes svg:nth-child(2) { width: 32px; height: 32px; }
+.sizes svg:nth-child(3) { width: 20px; height: 20px; }
+.hdr { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c); }
+.hdr svg { width: 22px; height: 22px; flex: none; }
+.hdr::after { content: ""; flex: 1; height: 1px; background: color-mix(in oklch, var(--c) 35%, transparent); }
+.out { max-width: 1100px; margin: 22px auto 0; display: grid; gap: 8px; }
+.out code { display: block; padding: 10px 12px; background: oklch(0.12 0.01 275); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); white-space: pre-wrap; }
+@media (max-width: 760px) { .sheet { grid-template-columns: 110px repeat(4, 150px); overflow-x: auto; } }
+</style>
+<body>
+<h1>Category icons</h1>
+<p class="lede">Four directions for each category. Tap a cell to pick it; the picks show below as JSON.</p>
+<div class="sheet" id="sheet"></div>
+<div class="out"><code id="out">{}</code></div>
+<script type="module">
+// The categories, their colours and their Flemish names.
+const CATS = [
+  ['poke', 'Poke & pop', 'Prutsen', 'oklch(0.8 0.12 230)'],
+  ['goo', 'Goo', 'Smurrie', 'oklch(0.82 0.19 135)'],
+  ['light', 'Light & glass', 'Licht', 'oklch(0.86 0.12 195)'],
+  ['science', 'Science fair', 'Wetenschapsbeurs', 'oklch(0.74 0.14 250)'],
+  ['dark', 'After dark', 'Na donker', 'oklch(0.74 0.14 295)'],
+  ['odd', 'Odd one out', 'Raar', 'oklch(0.84 0.16 330)'],
+  ['belgian', 'Belgian', 'Belgisch', 'oklch(0.8 0.15 72)'],
+  ['maths', 'Maths class', 'Wiskundeles', 'oklch(0.74 0.18 345)'],
+];
+const SHADOW = 'oklch(0.07 0.01 260)', INK = 'oklch(0.16 0.012 275)', WHITE = 'oklch(0.97 0.01 90)';
+
+// Each glyph is drawn in a 24 x 24 box; `f` is the fill colour.
+const GLYPH = {
+  poke: f => `<circle cx="7" cy="7" r="4.6" fill="${f}"/><circle cx="17" cy="7" r="4.6" fill="${f}"/><circle cx="7" cy="17" r="4.6" fill="${f}"/>
+    <path d="M13.2 13.2l7.6 7.6M20.8 13.2l-7.6 7.6" stroke="${f}" stroke-width="2.4" stroke-linecap="square"/>`,
+  goo: f => `<path d="M3 3H21V10L18.5 12.5V18L16 21L13.5 18V14L11 16.5L8.5 14V12L6 14L3 11Z" fill="${f}"/>`,
+  light: f => `<path d="M10 3L17 20H3Z" fill="${f}"/><path d="M17.5 10L23 7.5M17.8 12L23 12M17.5 14L23 16.5" stroke="${f}" stroke-width="2" stroke-linecap="square"/>`,
+  science: f => `<path d="M9 2H15V4H14V9L20.5 20V22H3.5V20L10 9V4H9Z" fill="${f}"/><path d="M7 16H17" stroke="${INK}" stroke-width="1.6"/>`,
+  dark: f => `<path d="M14 3A9 9 0 1 0 21 17A7.5 7.5 0 0 1 14 3Z" fill="${f}"/><path d="M19 3l1 2.2 2.2 1-2.2 1L19 9.4l-1-2.2-2.2-1 2.2-1Z" fill="${f}"/>`,
+  odd: f => `<g transform="rotate(14 12 12)"><path d="M10.4 2H13.6V9.2L19.8 5.6L21.4 8.4L15.2 12L21.4 15.6L19.8 18.4L13.6 14.8V22H10.4V14.8L4.2 18.4L2.6 15.6L8.8 12L2.6 8.4L4.2 5.6L10.4 9.2Z" fill="${f}"/></g>`,
+  // A Belgian waffle: a tilted slab with a grid of square pockets.
+  belgian: f => `<g transform="rotate(-8 12 12)"><path d="M3 3H21V21H3Z" fill="${f}"/><path d="M5.5 5.5h3.5v3.5h-3.5zM10.25 5.5h3.5v3.5h-3.5zM15 5.5h3.5v3.5H15zM5.5 10.25h3.5v3.5h-3.5zM10.25 10.25h3.5v3.5h-3.5zM15 10.25h3.5v3.5H15zM5.5 15h3.5v3.5h-3.5zM10.25 15h3.5v3.5h-3.5zM15 15h3.5v3.5H15z" fill="${f === SHADOW ? SHADOW : INK}" opacity="${f === SHADOW ? 0 : 0.55}"/></g>`,
+  maths: f => `<path d="M3 3V21H21" stroke="${f}" stroke-width="2" fill="none" stroke-linecap="square"/><path d="M5.5 17L9.5 9L13 14L18.5 4.5" stroke="${f}" stroke-width="2.6" fill="none" stroke-linejoin="miter"/>`,
+};
+
+// The four directions: a container shape around the same glyph.
+const DIRS = {
+  // A · Brut plate: a colour block with a hard offset shadow, dark glyph.
+  plate: (k, c) => `<svg viewBox="0 0 40 40"><rect x="7" y="7" width="30" height="30" fill="${SHADOW}"/><rect x="3" y="3" width="30" height="30" fill="${c}"/><g transform="translate(6 6)">${GLYPH[k](INK)}</g></svg>`,
+  // B · Hex: the toy icons' hex block, with the glyph cut out in ink.
+  hex: (k, c) => `<svg viewBox="0 0 40 40"><path d="M21 3L37 12V30L21 39L5 30V12Z" fill="${SHADOW}" transform="translate(2.5 1.5)"/><path d="M20 2L36 11V29L20 38L4 29V11Z" fill="${c}"/><g transform="translate(8.5 8.5) scale(0.96)">${GLYPH[k](INK)}</g></svg>`,
+  // C · Pennant: a tilted flag, as if pinned to the shelf.
+  pennant: (k, c) => `<svg viewBox="0 0 40 40"><g transform="rotate(-8 20 20)"><path d="M6 5H36L30 20L36 35H6Z" fill="${SHADOW}" transform="translate(2.5 2.5)"/><path d="M6 5H36L30 20L36 35H6Z" fill="${c}"/><g transform="translate(8 8) scale(0.92)">${GLYPH[k](INK)}</g></g></svg>`,
+  // D · Glyph: no container, the glyph in colour with a hard shadow.
+  glyph: (k, c) => `<svg viewBox="0 0 40 40"><g transform="translate(5.5 5.5) scale(1.25)">${GLYPH[k](SHADOW)}</g><g transform="translate(3.5 3.5) scale(1.25)">${GLYPH[k](c)}</g></svg>`,
+};
+const NAMES = { plate: 'A · Brut plate', hex: 'B · Hex block', pennant: 'C · Pennant', glyph: 'D · Glyph' };
+
+const sheet = document.getElementById('sheet'), out = document.getElementById('out');
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem('stimming.serieslab.icons')) || {}; } catch (e) {}
+sheet.insertAdjacentHTML('beforeend', '<div></div>' + Object.values(NAMES).map(n => `<div class="head">${n}</div>`).join(''));
+for (const [k, name, nl, c] of CATS) {
+  sheet.insertAdjacentHTML('beforeend', `<div class="cat" style="--c:${c}"><b>${name}</b><small>${nl}</small></div>`);
+  for (const d of Object.keys(DIRS)) {
+    const svg = DIRS[d](k, c);
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (picks[k] === d ? ' pick' : '');
+    cell.style.setProperty('--c', c);
+    cell.dataset.k = k;
+    cell.dataset.d = d;
+    cell.innerHTML = `<div class="sizes">${svg}${svg}${svg}</div><div class="hdr">${svg}${name}</div>`;
+    cell.addEventListener('click', () => {
+      picks[k] = picks[k] === d ? undefined : d;
+      sheet.querySelectorAll(`.cell[data-k="${k}"]`).forEach(x => x.classList.toggle('pick', picks[k] === x.dataset.d));
+      show();
+    });
+    sheet.append(cell);
+  }
+}
+function show() {
+  const clean = Object.fromEntries(Object.entries(picks).filter(([, v]) => v));
+  out.textContent = JSON.stringify(clean);
+  try { localStorage.setItem('stimming.serieslab.icons', JSON.stringify(clean)); } catch (e) {}
+}
+show();
+</script>
+</body>
+</html>
