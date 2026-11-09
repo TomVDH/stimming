@@ -755,7 +755,8 @@ dotPts.layers.enable(LIGHT);
 scene.add(dotPts);
 
 /* ---------- barges ---------- */
-// Seven firing barges at anchor, a little in front of where the shells burst.
+// Seven small firing floats at anchor, a little in front of where the shells burst.
+// They carry no lamps; bursts and their own muzzle flashes light them.
 // The Distance setting moves the line; every shell leaves from the nearest one.
 const BARGE_X = [-1050, -700, -350, 0, 350, 700, 1050].map(x => x + (rnd() - 0.5) * 80);
 const bargeMat = new THREE.ShaderMaterial({
@@ -771,9 +772,7 @@ const bargeMat = new THREE.ShaderMaterial({
       float d2 = dot(L, L);
       lit += uLC[i] * uL[i].w * max(dot(N, L * inversesqrt(d2)), 0.0) / (1.0 + d2 / 1.4e6);
     }
-    // Deck lamps wash the tops and the racks in warm light.
-    vec3 deck = vec3(1.0, 0.62, 0.3) * 0.02 * max(N.y, 0.0) + vec3(1.0, 0.62, 0.3) * 0.006 * max(N.z, 0.0);
-    vec3 c = vec3(0.07, 0.065, 0.06) * (uCool * 0.006 * (0.4 + 0.6 * N.y) + lit * 1.7) + vec3(0.07, 0.065, 0.06) * deck * 8.0;
+    vec3 c = vec3(0.07, 0.065, 0.06) * (uCool * 0.006 * (0.4 + 0.6 * N.y) + lit * 1.7);
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
   }`,
 });
@@ -782,35 +781,14 @@ const barges = new THREE.Group();
   const parts = [];
   const box = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
   for (const bx of BARGE_X) {
-    // A low hull, two mortar racks and a small wheelhouse.
-    box(50, 3, 12, bx, 0.8, 0);
-    box(11, 2.2, 4.5, bx - 11, 3.4, 0.5);
-    box(11, 2.2, 4.5, bx + 4, 3.4, -1);
-    box(4.5, 4.2, 4, bx + 20, 4.4, 2);
-    box(0.5, 8, 0.5, bx + 20, 8.5, 2);
+    // A low pontoon with two mortar racks.
+    box(26, 1.4, 9, bx, 0.3, 0);
+    box(6, 1.3, 3, bx - 5, 1.6, 0.5);
+    box(6, 1.3, 3, bx + 5, 1.6, -0.5);
   }
-  const g = mergeGeometries(parts);
-  const hull = new THREE.Mesh(g, bargeMat);
+  const hull = new THREE.Mesh(mergeGeometries(parts), bargeMat);
   hull.layers.enable(LIGHT);
   barges.add(hull);
-  // Work lights: red at the corners, white over the racks.
-  const L = { pos: [], col: [], k: [], str: [] }, RED_L = linFit(0.62, 0.22, 25);
-  const lamp = (x, y, z, col, k) => { L.pos.push(x, y, z); L.col.push(...col); L.k.push(k, 2.0, 0.03, rnd() * 100); L.str.push(-1); };
-  for (const bx of BARGE_X) {
-    lamp(bx - 24, 2.6, 6.2, RED_L, 0.9); lamp(bx + 24, 2.6, 6.2, RED_L, 0.9);
-    // A row of deck lamps along the near rail, and a white light up the mast.
-    for (let k = 0; k < 5; k++) lamp(bx - 18 + k * 9, 2.8, 6.3, WARM, 0.45);
-    lamp(bx + 20, 12.6, 2, COOLW, 1.0);
-  }
-  const lg = new THREE.BufferGeometry();
-  lg.setAttribute('position', new THREE.Float32BufferAttribute(L.pos, 3));
-  lg.setAttribute('aCol', new THREE.Float32BufferAttribute(L.col, 3));
-  lg.setAttribute('aK', new THREE.Float32BufferAttribute(L.k, 4));
-  lg.setAttribute('aStr', new THREE.Float32BufferAttribute(L.str, 1));
-  const lamps = new THREE.Points(lg, dotMat);
-  lamps.frustumCulled = false;
-  lamps.layers.enable(LIGHT);
-  barges.add(lamps);
 }
 scene.add(barges);
 // The line sits 150 m in front of the burst plane, so the hulls read.
@@ -819,7 +797,7 @@ const placeBarges = () => { barges.position.z = -shellDist() + 150; barges.updat
 function bargeBase(x, out) {
   let best = BARGE_X[0];
   for (const bx of BARGE_X) if (Math.abs(bx - x) < Math.abs(best - x)) best = bx;
-  return out.set(best + (rnd() - 0.5) * 18, 3.5, barges.position.z + (rnd() - 0.5) * 5);
+  return out.set(best + (rnd() - 0.5) * 12, 2, barges.position.z + (rnd() - 0.5) * 3);
 }
 // A spot on the beach near the waterline, for the small shells.
 const beachBase = (x, out) => out.copy(landAt(x + (rnd() - 0.5) * 60, 12 + rnd() * 30, 0.5));
@@ -1572,10 +1550,10 @@ mirrorCam.layers.set(LIGHT);
 const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
 const texM = new THREE.Matrix4();
 const water = new THREE.Mesh(new THREE.PlaneGeometry(18000, 2600).rotateX(-Math.PI / 2).translate(0, 0, -1290), new THREE.ShaderMaterial({
-  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, uRipple: { value: 1 } },
+  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, uRipple: { value: 1 }, uGlit: { value: 1.3 } },
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; uniform float uTime; varying vec3 vP; varying vec4 vM; ${HEAD}
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; uniform float uTime; uniform float uGlit; varying vec3 vP; varying vec4 vM; ${HEAD}
   void main() {
     vec3 v = normalize(vP - cameraPosition);
     float dist = length(vP.xz - cameraPosition.xz);
@@ -1588,24 +1566,43 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(18000, 2600).rotateX(-Math.
     float w3 = k2noise(p * vec2(0.25, 0.6) + vec2(t * 0.8, -t * 1.3) + 11.0);
     float n = (w1 - 0.5) + 0.5 * (w2 - 0.5) + 0.25 * (w3 - 0.5);
     // Near water bends the mirror more on screen than far water.
-    float near = 1.0 / (1.0 + dist / 300.0);
+    float near = 1.0 / (1.0 + dist / 300.0), far = smoothstep(120.0, 1400.0, dist);
     vec3 nrm = normalize(vec3(n * 0.08 * uRipple, 1.0, n * 0.05 * uRipple));
     vec3 r = reflect(v, nrm);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
-    vec2 uv = vM.xy / vM.w + vec2(n * 0.012, n * 0.03) * uRipple * near;
-    // Nine taps smear each light into a streak, longer where the view grazes.
-    float len = (0.0015 + 0.006 * smoothstep(150.0, 1500.0, dist)) * uRipple;
+    // Wave rows: world waves up close; far off, rows a few pixels high, so they never alias.
+    float span = 6.0 + dist * 0.05;
+    float rA = k2noise(vec2(p.x / span + t * 0.1, gl_FragCoord.y * 0.32 + t * 1.6));
+    float rB = k2noise(vec2(p.x / (span * 0.4) - t * 0.2, gl_FragCoord.y * 0.85 - t * 2.4) + 9.0);
+    float slope = mix((w2 - 0.5) * 1.4 + (w3 - 0.5) * 0.9, (rA - 0.5) * 1.5 + (rB - 0.5) * 0.9, far);
+    float side = mix(w3 - 0.5, rB - 0.5, far);
+    vec2 uv0 = vM.xy / vM.w;
+    // The calm image: a small wobble, stretched where the view grazes.
+    vec2 uvC = uv0 + vec2(side * 0.008, slope * 0.016) * uRipple * (0.4 + near);
+    float len = (0.0015 + 0.005 * far) * uRipple;
     vec4 m = vec4(0.0);
     float ws = 0.0;
-    for (int i = -4; i <= 4; i++) {
-      float fi = float(i), w = exp(-fi * fi / 8.0);
-      m += texture2D(tMirror, uv + vec2(0.0, fi * len)) * w;
+    for (int i = -3; i <= 3; i++) {
+      float fi = float(i), w = exp(-fi * fi / 4.5);
+      m += texture2D(tMirror, uvC + vec2(0.0, fi * len)) * w;
       ws += w;
     }
     m /= ws;
-    // Crests catch the light; near troughs break the streaks into glints.
-    float crest = smoothstep(0.5, 0.8, w2 * 0.6 + w3 * 0.4);
-    m.rgb *= mix(1.0, 0.35 + 1.6 * crest, 0.25 + 0.6 * near);
+    // Glitter: for each burst, the wave tilt that bounces it into the eye,
+    // weighed by how likely that tilt is; this draws a column under every light.
+    // Slopes spread 0.06 across the view and 0.16 along it, so the columns run tall.
+    vec3 glit = vec3(0.0), E = -v;
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 H = normalize(normalize(uL[i].xyz - vP) + E);
+      float tx = H.x / H.y, tz = H.z / H.y;
+      // A soft power keeps the column while the stars burn, not just at the flash.
+      glit += uLC[i] * sqrt(uL[i].w) * exp(-(tx * tx / 0.0036 + tz * tz / 0.0256));
+    }
+    // The wave rows switch each patch on and off, so the column breaks into dashes.
+    float sparkle = smoothstep(0.5, 0.8, mix(w3, rB, far)) * smoothstep(0.3, 0.6, mix(w2, rA, far));
+    m.rgb = m.rgb * mix(0.9, 0.5, far);
+    m.rgb += glit * sparkle * uGlit * (0.4 + 1.6 * far);
     vec3 skyR = k2sky(r) * (1.0 - clamp(m.a, 0.0, 1.0));
     vec3 c = vec3(0.0004, 0.0006, 0.001) + (skyR + m.rgb * 1.4) * fres;
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
