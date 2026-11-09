@@ -848,10 +848,16 @@ void main() {
       float tb = -bb - sqrt(hh);
       vec3 p = d * tb - uBall.xyz, nn = p / uBall.w;
       float limb = pow(max(dot(nn, -d), 0.0), 0.5);
-      float churn = cn(p * 0.9 + vec3(0.0, uTime * 0.3, 0.0), 4.0, 0.0).r;
+      float churn = cn(p * 0.22 + vec3(0.0, uTime * 0.08, 0.0), 4.0, 0.0).r;
       float up = clamp((d * tb).y + H + dot((d * tb).xz, (d * tb).xz) / 12742.0, 0.0, 99.0);
-      c = glowC * (0.5 + 0.9 * churn) * (0.45 + 0.55 * limb) * (up < 3.5 ? max(gDeckT, 0.15) : 1.0);
-      skyA = 0.0;
+      // Dark lanes of smoke break the hot surface into cells.
+      float churn2 = cn(p * 0.6 - vec3(0.0, uTime * 0.15, 0.0), 4.0, 0.0).g;
+      float cells = smoothstep(0.3, 0.7, churn) * (0.5 + 0.5 * churn2);
+      // The rim is smoke, not a hard edge.
+      // A dim dome turns to thin smoke, so the plume behind shows through.
+      float op = smoothstep(0.0, 0.35, limb) * clamp(uBallC.w * 5.0, 0.0, 1.0);
+      c = mix(c, glowC * (0.1 + 1.3 * cells) * (0.35 + 0.65 * limb) * (up < 3.5 ? max(gDeckT, 0.15) : 1.0), op);
+      skyA *= 1.0 - op;
     }
     // Its glow spills into the air round it.
     c += glowC * 0.25 * exp(-max(q - uBall.w, 0.0) / (uBall.w * 0.7 + 1.0));
