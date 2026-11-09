@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T10:31:40Z
+updated_at: 2026-11-09T10:43:41Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -84,3 +84,12 @@ Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a brows
 - Sint-Amandus and Maria Moeder Gods stand on their footprints. The kerkplein is a cleared square beside Sint-Amandus; the kermis moves there by one matrix.
 - Shops, cafés and frituren on the map light their ground floors.
 - The page credits OpenStreetMap at the foot of the stage.
+
+## Notes: lit E40 and the wip
+
+- The bake holds a motorway layer out to 8 km (`mw`), from an Overpass export. The E40 passes about 2 km west of the bridge.
+- Masts stand on the central reserve every 42 m, two sodium heads each; they join the streetlight network.
+- The carriageways draw as their own strip: asphalt, lane lines, a sodium pool under each mast.
+- Traffic: white head lamps show from the front, red tail lamps from behind.
+- A staande wip stands on the nearest open lawn to the kerkplein: a 27 m mast, three tiers of feather birds, a red top light, a shelter and a gilde house.
+- The sky dome follows the camera; far from the origin it fell past the far plane and showed black.

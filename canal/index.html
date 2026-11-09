@@ -850,7 +850,7 @@ function landuse() {
 
 /* ---------- roads ---------- */
 // Half widths by road class: motorway, link, secondary, tertiary, unclassified, residential, service, track, cycleway, footway, pedestrian.
-const RW = { 1: 11, 2: 4, 3: 4, 4: 3.4, 5: 2.8, 6: 2.6, 7: 1.8, 8: 1.3, 9: 1.1, 10: 0.7, 11: 3 };
+const RW = { 1: 6, 2: 4, 3: 4, 4: 3.4, 5: 2.8, 6: 2.6, 7: 1.8, 8: 1.3, 9: 1.1, 10: 0.7, 11: 3 };
 // Lamps by class: sodium on the old roads, a mix on the estates, none on motorways and service roads.
 const RMODE = { 3: 'auto', 4: 'auto', 5: 'auto', 6: 'estate', 11: 'auto' };
 // Every drivable road as a polyline, with its half width and lamp mix.
@@ -1246,6 +1246,50 @@ function voetbal() {
   parts.push(tag(new THREE.BoxGeometry(31, 0.2, 5).rotateX(0.18).rotateY(yawL + Math.PI / 2).translate(sx, QUAY + 4.6, sz), [0, 0, 3, PAINT]));
   for (let i = 0; i <= 6; i++) { const [px, pz] = at(-15 + i * 5, -(hw + 4.2)); parts.push(tag(new THREE.CylinderGeometry(0.08, 0.08, 4.4, 6).translate(px, QUAY + 2.2, pz), [0, 0, 0, STEEL])); }
 }
+// A staande wip: the archers' mast of a West Flemish gilde, feather birds on its top perches.
+// It stands on the nearest open lawn to the kerkplein.
+let WIP = null;
+function wip() {
+  const free = (x, z) => { for (let a = -14; a <= 14; a += 2) for (let b = -14; b <= 14; b += 2) if (occGet(x + a, z + b) !== 0) return false; return true; };
+  const lawns = LUSE.filter(l => [2, 3, 14].includes(l.c) && l.A > 1500).sort((a, b) => dist2(centroid(a.ps), ...SQ.C) - dist2(centroid(b.ps), ...SQ.C));
+  for (const l of lawns) {
+    const o = obb(l.ps);
+    for (let i = 0; i < 40 && !WIP; i++) {
+      const u = (0.2 + 0.6 * rnd()) * o.lu, v = (0.2 + 0.6 * rnd()) * o.lv, x = o.o[0] + o.u[0] * u + o.v[0] * v, z = o.o[1] + o.u[1] * u + o.v[1] * v;
+      if (inPoly(l.ps, x, z) && !inSq(SQ, x, z, 10) && free(x, z)) WIP = [x, z];
+    }
+    if (WIP) break;
+  }
+  if (!WIP) return;
+  const [x, z] = WIP;
+  reserve(x - 14, z - 14, x + 14, z + 14, 2);
+  // A tapered steel mast, 27 m tall.
+  parts.push(tag(new THREE.CylinderGeometry(0.16, 0.42, 27, 8).translate(x, QUAY + 13.5, z), [0, 0, 0, STEEL]));
+  // Three tiers of perches: a cross of bars, each bar set with pins, a feather bird on every pin.
+  const cols = [1, 5, 2, 5];
+  for (let t = 0; t < 3; t++) {
+    const y = QUAY + 24.2 + t * 1.2, w = 3.2 - t * 0.9;
+    for (const a of [0, Math.PI / 2]) {
+      parts.push(tag(new THREE.BoxGeometry(2 * w, 0.07, 0.07).rotateY(a).translate(x, y, z), [0, 0, 0, STEEL]));
+      for (let i = -3; i <= 3; i++) {
+        if (!i) continue;
+        const ox = Math.cos(a) * i * w / 3, oz = -Math.sin(a) * i * w / 3;
+        parts.push(tag(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 4).translate(x + ox, y + 0.25, z + oz), [0, 0, 0, STEEL]));
+        parts.push(tag(new THREE.ConeGeometry(0.13, 0.42, 6).translate(x + ox, y + 0.68, z + oz), [0, 0, cols[(i + t + 4) % 4], PAINT]));
+      }
+    }
+  }
+  // The top bird sits alone on a spike above the perches.
+  parts.push(tag(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 4).translate(x, QUAY + 27.6, z), [0, 0, 0, STEEL]));
+  parts.push(tag(new THREE.ConeGeometry(0.2, 0.6, 6).translate(x, QUAY + 28.5, z), [0, 0, 2, PAINT]));
+  bulb(x, QUAY + 29, z, [1, 0.05, 0.03], 0, 3);
+  // At the foot: the archers' shelter, a low roof on posts, and the gilde's small clubhouse.
+  const back = [Math.cos(0.6), 0, Math.sin(0.6)], at = frameAt(x, z, back);
+  for (const u of [-3, 3]) for (const d of [7, 11]) parts.push(tag(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6).translate(...at(u, 1.3, d)), [0, 0, 0, STEEL]));
+  parts.push(tag(new THREE.BoxGeometry(7, 0.15, 5).rotateY(Math.atan2(back[0], back[2])).translate(...at(0, 2.65, 9)), [0, 0, 6, PAINT]));
+  place(house(8, 2.8, 5, 1.8, 77.7, BRICK, { ext: false }), ...at(-4, 0, 14).filter((_, i) => i !== 1), back);
+  lampOf(...at(0, 0, 9).filter((_, i) => i !== 1), 2.4, [0.85, 0.1, 75], 1.2, 14, 0.15);
+}
 /* ---------- end places ---------- */
 
 /* ---------- layout ---------- */
@@ -1274,6 +1318,7 @@ const sqP = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(SQM);
 for (let s = -SQH[0] + 4; s <= SQH[0] - 4; s += 9) tree(SQ.C[0] + SQ.U[0] * s + SQ.V[0] * (SQH[1] + 1), SQ.C[1] + SQ.U[1] * s + SQ.V[1] * (SQH[1] + 1), 3.2 + 0.6 * rnd());
 voetbal();
 railway();
+wip();
 bridge(); walls(); posts();
 poplars(1000, -2000);
 // A belt of round trees along the far towpath, open near the village.
@@ -1395,6 +1440,88 @@ for (const { pts, h, mode } of PL) {
     const led = mode === 'industry' || ((mode === 'estate' || mode === 'town') && rnd() < 0.45);
     SL.push({ x, z, y: mode === 'industry' ? 10 : 7, led, mark: 0.28 + 0.15 * rnd() });
   }
+}
+// The E40 burns sodium orange all night, as Belgian motorways long have.
+// A mast stands on the central reserve every 42 m; each arm hangs a head over one carriageway.
+// Oneway lines join only end to start, so each keeps its direction of travel.
+function joinOneway(lines) {
+  const out = lines.map(l => l.slice());
+  for (let again = true; again;) {
+    again = false;
+    for (let i = 0; i < out.length && !again; i++) for (let j = 0; j < out.length && !again; j++) {
+      const a = out[i], b = out[j];
+      if (i === j || Math.hypot(a[a.length - 1][0] - b[0][0], a[a.length - 1][1] - b[0][1]) > 0.6) continue;
+      out[i] = a.concat(b.slice(1)); out.splice(j, 1); again = true;
+    }
+  }
+  return out;
+}
+// The motorways come from their own layer, out to 8 km: the E40 west of the village, the E403 beyond it.
+const E40 = joinOneway(OSM.mw.filter(m => m[0] === 1).map(m => unpack(m[2]))).filter(l => lenOf(l) > 400);
+{
+  const masts = [];
+  for (const pts of E40) {
+    const L = lenOf(pts);
+    for (let s = 10; s < L; s += 42) {
+      const p = along(pts, s);
+      if (!p || Math.abs(p.x) > 7000 || Math.abs(p.z) > 7000) continue;
+      let o = null;
+      for (const q of E40) if (q !== pts) { const n = nearOn(q, p.x, p.z); if (n.d < 45 && (!o || n.d < o.d)) o = n; }
+      if (!o) continue;
+      const mx = (p.x + o.x) / 2, mz = (p.z + o.z) / 2;
+      if (masts.some(m => Math.hypot(m[0] - mx, m[1] - mz) < 25)) continue;
+      masts.push([mx, mz]);
+      parts.push(tag(new THREE.CylinderGeometry(0.14, 0.24, 13, 6).translate(mx, QUAY + 6.5, mz), [0, 0, 0, STEEL]));
+      for (const [hx, hz] of [[p.x, p.z], [o.x, o.z]]) {
+        const ex = mx + (hx - mx) * 0.7, ez = mz + (hz - mz) * 0.7, len = Math.hypot(ex - mx, ez - mz);
+        parts.push(tag(new THREE.BoxGeometry(len, 0.1, 0.1).rotateY(Math.atan2(-(ez - mz), ex - mx)).translate((mx + ex) / 2, QUAY + 12.8, (mz + ez) / 2), [0, 0, 0, STEEL]));
+        SL.push({ x: ex, z: ez, y: 12.6, led: false, mark: 0.24 + 0.06 * rnd(), reach: 34 });
+      }
+    }
+  }
+}
+// The carriageways: dark asphalt with sodium pools under each mast, and lane lines.
+// aL runs -1 on the median side to 1 on the hard shoulder.
+{
+  const pos = [], aS = [], aL = [], idx = [];
+  for (const pts of E40) {
+    let acc = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      const nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L;
+      if (i) acc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      const base = pos.length / 3;
+      for (const k of [-1, 1]) { pos.push(pts[i][0] + nx * 6 * k, QUAY + 0.05, pts[i][1] + nz * 6 * k); aS.push(acc); aL.push(k); }
+      if (i) idx.push(base - 2, base, base - 1, base - 1, base, base + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aS', new THREE.Float32BufferAttribute(aS, 1));
+  g.setAttribute('aL', new THREE.Float32BufferAttribute(aL, 1));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`attribute float aS, aL; varying float vS, vL; varying vec3 vP;
+    void main() { vS = aS; vL = aL; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`varying float vS, vL; varying vec3 vP; ${HEAD}
+    void main() {
+      float lat = vL * 6.0, d = abs(fract((vS - 10.0) / 42.0 + 0.5) - 0.5) * 42.0;
+      float on = smoothstep(0.24, 0.34, uDusk);
+      // Each pool is brightest under the arm, on the median side.
+      float pool = exp(-d * d / 260.0) * (0.5 + 0.5 * (0.5 - 0.5 * vL)) + 0.08;
+      vec3 alb = vec3(0.045, 0.045, 0.05) * (0.85 + 0.3 * k2noise(vP.xz * 0.5));
+      // Lines: solid at both edges, dashed between the two lanes.
+      float aa = fwidth(lat) + 0.02;
+      float line = max(1.0 - smoothstep(0.07, 0.07 + aa, abs(lat + 5.5)), 1.0 - smoothstep(0.07, 0.07 + aa, abs(lat - 3.3)));
+      line = max(line, (1.0 - smoothstep(0.07, 0.07 + aa, abs(lat + 1.1))) * step(0.6, fract(vS / 12.0)));
+      alb = mix(alb, vec3(0.42), line * 0.85);
+      vec3 col = alb * skyAmb(vec3(0.0, 1.0, 0.0)) + alb * vec3(1.0, 0.45, 0.12) * pool * on * 6.5;
+      gl_FragColor = vec4(k2haze(col, vP), 1.0);
+    }`,
+  }));
+  m.material.extensions = { derivatives: true };
+  scene.add(m);
 }
 // The ten lamps on the towpaths by the bridge join the network.
 U.uCanal0.value = SL.length;
@@ -2198,6 +2325,7 @@ function stepPlaces(dt) {
     c.position.set(bx + Math.cos(a) * r * 1.6, QUAY, bz + Math.sin(a * 1.3) * r);
     c.rotation.y = -Math.atan2(Math.cos(a * 1.3) * r * 1.3, -Math.sin(a) * r * 1.6);
   });
+  traffic(reduced() ? dt * 0.5 : dt);
   const tr = trainAt(t);
   train.visible = !!tr;
   let near = false;
@@ -2214,6 +2342,58 @@ function stepPlaces(dt) {
   bulbs.material.uniforms.uCross.value = near || crossK > 0.05 ? 1 : 0;
   for (const a of arms) a.rotation.x = a.userData.zs * (1 - crossK) * 1.5;
 }
+// E40 traffic: each car shows white head lamps from the front and red tail lamps from behind.
+const traffic = (() => {
+  const cars = [];
+  for (const pts of E40) {
+    const L = lenOf(pts), n = Math.min(60, Math.floor(L / 90));
+    for (let i = 0; i < n; i++) cars.push({ pts, L, s: rnd() * L, v: 29 + 8 * rnd(), lane: 1.8 + 3.6 * Math.floor(rnd() * 2) });
+  }
+  const N = cars.length * 4, pos = new Float32Array(N * 3), dir = new Float32Array(N * 2), col = [], front = [];
+  for (let i = 0; i < cars.length; i++) for (const f of [1, 1, -1, -1]) { col.push(...(f > 0 ? [1, 0.93, 0.8] : [1, 0.06, 0.03])); front.push(f); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aDir', new THREE.BufferAttribute(dir, 2));
+  g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aFront', new THREE.Float32BufferAttribute(front, 1));
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, ...SLU }, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`attribute vec2 aDir; attribute vec3 aCol; attribute float aFront; uniform float uDpr, uHaze; varying vec3 vCol;
+    void main() {
+      vec4 P = modelMatrix * vec4(position, 1.0);
+      float dist = length(P.xyz - cameraPosition);
+      // A lamp shows only to an eye on its own side of the car.
+      float face = dot(normalize(cameraPosition.xz - P.xz), aDir) * aFront;
+      vCol = aCol * smoothstep(-0.15, 0.35, face) * exp(-dist * uHaze * 0.25) * (aFront > 0.0 ? 2.2 : 1.4);
+      gl_PointSize = clamp(900.0 / dist, 1.2, 6.0) * uDpr;
+      gl_Position = projectionMatrix * viewMatrix * P;
+    }`,
+    fragmentShader: /* glsl */`varying vec3 vCol;
+    void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vCol * max(exp(-r * r * 9.0) * 2.0 + exp(-r * r * 3.0) * 0.1, 0.0), 0.0); }`,
+  }));
+  m.frustumCulled = false;
+  scene.add(m);
+  // Cars run on along their line and wrap round at the end.
+  return dt => {
+    for (let i = 0; i < cars.length; i++) {
+      const c = cars[i];
+      c.s = (c.s + c.v * dt) % c.L;
+      const p = along(c.pts, c.s);
+      if (!p) continue;
+      // The lane sits right of the line's centre; the lamp pairs sit 1.6 m apart, the car 4.4 m long.
+      const nx = -p.dz, nz = p.dx, cx = p.x - nx * (c.lane - 5.4), cz = p.z - nz * (c.lane - 5.4);
+      [[2.2, 0.8], [2.2, -0.8], [-2.2, 0.8], [-2.2, -0.8]].forEach(([a, b], k) => {
+        const j = i * 4 + k;
+        pos.set([cx + p.dx * a + nx * b, QUAY + 0.75, cz + p.dz * a + nz * b], j * 3);
+        dir.set([p.dx, p.dz], j * 2);
+      });
+    }
+    g.attributes.position.needsUpdate = true;
+    g.attributes.aDir.needsUpdate = true;
+  };
+})();
 /* ---------- end places: the moving parts ---------- */
 
 /* ---------- ground: the painted map, the towpaths and the railway ---------- */
@@ -2527,6 +2707,8 @@ let visible = !document.hidden;
 function draw() {
   if (!visible) return;
   U.uNow.value = nowS();
+  // The sky dome follows the eye, so its far side never passes the far plane.
+  sky.position.copy(camera.position);
   placeRain();
   renderMirror();
   // A new view, size or lens restarts the history.

@@ -2,6 +2,7 @@
 
 Usage: python3 beernem.py <dir with t*.osm> <out.json>
 Fetch the tiles from api.openstreetmap.org/api/0.6/map (bbox per tile).
+mw.json in the same dir: Overpass, way[highway~"^motorway"], out geom.
 The frame: origin on the canal under the Parkstraat bridge.
 -z runs down the canal toward Brugge; +y is up; units are metres.
 """
@@ -180,13 +181,23 @@ for z in range(Z0, Z1 + 1, 25):
     else: CT.append([round(c0, 2), None])
 for i, r in enumerate(CT):
     if r[1] is None: r[1] = next(CT[j][1] for j in sorted(range(len(CT)), key=lambda j: abs(j - i)) if CT[j][1] is not None)
+# Motorways out to 8 km, from an Overpass export (mw.json) beside the tiles.
+out_mw = []
+try:
+    for e in json.load(open(f'{src}/mw.json'))['elements']:
+        t = e.get('tags', {})
+        pts = [loc(((g['lon'] - LON0) * KX, (g['lat'] - LAT0) * KY)) for g in e['geometry']]
+        if any(abs(x) < 8000 and abs(z) < 8000 for x, z in pts):
+            out_mw.append([1 if t.get('highway') == 'motorway' else 2, t.get('ref', ''), pack(pts)])
+except FileNotFoundError:
+    pass
 la, lo = O[1]/KY + LAT0, O[0]/KX + LON0
 json.dump({
     'src': 'OpenStreetMap contributors, ODbL', 'origin': [round(la, 6), round(lo, 6)],
     'heading': round(math.degrees(math.atan2(dx, dy)) % 360, 2), 'q': Q,
     'rect': [X0, X1, Z0, Z1], 'ct': {'z0': Z0, 'dz': 25, 'x': [r[0] for r in CT], 'h': [r[1] for r in CT]},
     'b': out_b, 'l': out_l, 'w': out_w, 'r': out_r, 'rail': out_rail, 'ww': out_ww,
-    'tr': out_tr, 'hedge': out_h, 'trees': trees, 'lamps': lamps, 'poi': poi,
+    'tr': out_tr, 'hedge': out_h, 'trees': trees, 'lamps': lamps, 'poi': poi, 'mw': out_mw,
 }, open(out, 'w'), separators=(',', ':'), ensure_ascii=False)
 print('origin', la, lo, 'heading', math.degrees(math.atan2(dx, dy)) % 360,
       'b', len(out_b), 'l', len(out_l), 'w', len(out_w), 'r', len(out_r), 'rail', len(out_rail),
