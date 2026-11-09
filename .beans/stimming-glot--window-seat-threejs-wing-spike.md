@@ -25,3 +25,11 @@ Findings (2026-11-09, browser pane, 707x755):
 - Fairings read as flat blades in daylight; they need a rounder, shorter canoe.
 - Spoiler side edges catch the sun as ridges.
 - The shader's wing fog, storm air and flash tint do not reach the meshes yet.
+
+Round 2 (Tom, 2026-11-09: "the wing looks better"; better flaps that move with the bank):
+- [x] Compare page: `window/compare.html`, live and spike side by side, hour chips
+- [x] Flaps: elliptic noses tucked under a cove lip; inboard flap, flaperon, outboard flap, aileron; 3 cm seams
+- [x] Seven spoilers form the lip; fixed shroud inboard and over the aileron
+- [x] Fairings: round pods hung under the trailing edge
+- [x] Motion: roll rate drives aileron (to 5 degrees), flaperon and spoilers; bank trims the flaps down
+- [x] Fix: the shader's view axes are left-handed; the camera now takes -R and the composite flips x

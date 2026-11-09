@@ -26,15 +26,25 @@ function loft(sections) {
     const mid = P(a).add(P(d)).multiplyScalar(0.5), out = mid.clone().sub(cen[j].clone().lerp(cen[j + 1], 0.5));
     tri(a, b, d, out); tri(a, d, c, out);
   }
-  // The caps are fans round each end centre.
+  // Each cap zips the upper and lower skins together, inside the outline.
+  // A centre fan would spill past thin, cambered sections.
+  // The caps take their own vertices, so their normals stay off the skin.
   const axis = cen[cen.length - 1].clone().sub(cen[0]);
+  const sideN = idx.length;
   [[0, axis.clone().negate()], [sections.length - 1, axis]].forEach(([j, out]) => {
-    const ci = pos.length / 3; pos.push(cen[j].x, cen[j].y, cen[j].z);
-    for (let k = 0; k < M; k++) tri(ci, j * M + k, j * M + (k + 1) % M, out);
+    const c0 = pos.length / 3;
+    sections[j].forEach(p => pos.push(p.x, p.y, p.z));
+    let i = 0, k = M - 1, up = true;
+    while (k - i > 1) {
+      if (up) { tri(c0 + i, c0 + i + 1, c0 + k, out); i++; } else { tri(c0 + i, c0 + k - 1, c0 + k, out); k--; }
+      up = !up;
+    }
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
+  // Group 0 is the skin; group 1 is the end caps, the seam faces.
+  g.addGroup(0, sideN, 0); g.addGroup(sideN, idx.length - sideN, 1);
   g.computeVertexNormals();
   return g;
 }
@@ -74,12 +84,25 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
     return Array.from({ length: n + 1 }, (_, i) => lerp(z0, z1, i / n));
   };
   const part = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => section(s0, s1, z)));
-  // A spoiler: a thin plate on the upper skin.
+  // A thin plate on the upper skin: a spoiler, or the fixed shroud.
+  // Past the rear spar it overhangs the flap nose as the cove lip.
   const plate = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => {
-    const ss = Array.from({ length: 7 }, (_, k) => lerp(s0, s1, k / 6));
-    const up = ss.map(s => at(s, z, 1).add(V(0, 0.004, 0)));
-    return [...up, ...up.slice().reverse().map(p => p.clone().add(V(0, -0.02, 0)))];
+    const ss = Array.from({ length: 9 }, (_, k) => lerp(s0, s1, k / 8));
+    const up = ss.map(s => at(s, z, 1).add(V(0, 0.003, 0)));
+    return [...up, ...up.slice().reverse().map(p => p.clone().add(V(0, -0.014, 0)))];
   }));
+  // A flap section: the wing's own skin aft of s0, with an elliptic nose.
+  // The nose sits under the shroud lip, so the seam reads as a cove.
+  const flapSection = (s0, z) => {
+    const ss = Array.from({ length: N + 1 }, (_, k) => s0 + (1 - s0) * (1 - Math.cos(Math.PI * k / N)) / 2);
+    const nose = (1 - s0) * 0.14;
+    const pt = (s, side) => {
+      const u = at(s, z, 1), l = at(s, z, -1), x = Math.min(1, (s - s0) / nose);
+      return V(u.x, (u.y + l.y) / 2 - 0.016 + side * (u.y - l.y) / 2 * Math.sqrt(x * (2 - x)), z);
+    };
+    return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
+  };
+  const flap = (s0, z0, z1) => loft(span(z0, z1).map(z => flapSection(s0, z)));
 
   // Grey gloss paint with a clear coat.
   const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.35, 0.37), roughness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.14 });
@@ -88,29 +111,41 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   const metal = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.7, 0.7, 0.72), roughness: 0.22, metalness: 1 });
 
   const air = new THREE.Group();
+  // Seam faces sit in the gaps, out of the light.
+  const seam = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), roughness: 0.8 });
   const add = (geo, mat = paint, parent = air) => {
-    const m = new THREE.Mesh(geo, mat); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
+    const m = new THREE.Mesh(geo, geo.groups.length ? [mat, seam] : mat); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
   const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   // Main box ahead of the rear spar, and the full-chord tip past the aileron.
-  add(part(0, 0.72, Z0, 23.4));
+  const SPAR = 0.7, LIP = 0.765, FLAP = 0.715, SPOIL = 0.6;
+  add(part(0, SPAR, Z0, 23.4));
   add(part(0, 1, 23.4, ZT));
-  // A hinged surface twitches about its forward edge.
+  // Each moving surface turns about its hinge line.
+  // The role sets how it answers the bank.
   const hinged = [];
-  const hinge = (geo, s0, z0, z1, mat, gain) => {
-    const a = at(s0, z0, 1), b = at(s0, z1, 1);
+  const hinge = (geo, a, b, mat, role) => {
     const piv = new THREE.Group(); piv.position.copy(a); air.add(piv);
     geo.translate(-a.x, -a.y, -a.z);
     add(geo, mat, piv);
-    hinged.push({ piv, axis: b.sub(a).normalize(), gain, ph: Math.random() * 9 });
+    hinged.push({ piv, axis: b.clone().sub(a).normalize(), role, ph: Math.random() * 9 });
   };
-  // Inboard flap, outboard flap and aileron; seams split them.
-  hinge(part(0.745, 1, Z0 + 0.4, 7.8), 0.745, Z0 + 0.4, 7.8, flapPaint, 0);
-  hinge(part(0.745, 1, 8.2, 17.4), 0.745, 8.2, 17.4, flapPaint, 0.15);
-  hinge(part(0.745, 1, 17.8, 23.3), 0.745, 17.8, 23.3, flapPaint, 1);
-  // Six spoiler panels ride the upper skin ahead of the flaps.
-  [[3.2, 5.2], [5.3, 7.3], [8.6, 10.6], [10.7, 12.7], [12.8, 14.8], [14.9, 16.9]].forEach(([z0, z1]) =>
-    hinge(plate(0.575, 0.715, z0, z1), 0.575, z0, z1, paint, 0.4));
+  // Flap hinges sit on the nose's centre line.
+  const noseAt = z => at(FLAP + 0.02, z, 1).lerp(at(FLAP + 0.02, z, -1), 0.5);
+  const flapPart = (z0, z1, role) => hinge(flap(FLAP, z0, z1), noseAt(z0), noseAt(z1), flapPaint, role);
+  // Seams between surfaces are 3 cm wide.
+  flapPart(Z0 + 0.3, 7.985, 'flap');
+  flapPart(8.015, 9.785, 'flaperon');
+  flapPart(9.815, 17.385, 'flap');
+  flapPart(17.415, 23.3, 'aileron');
+  // Seven spoilers form the cove lip over the flaps; fixed shroud elsewhere.
+  const cuts = [2.0, 4.2, 6.4, 8.6, 10.8, 13.0, 15.2, 17.4];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const z0 = cuts[i] + 0.025, z1 = cuts[i + 1] - 0.025;
+    hinge(plate(SPOIL, LIP, z0, z1), at(SPOIL, z0, 1), at(SPOIL, z1, 1), paint, 'spoiler');
+  }
+  add(plate(SPOIL, LIP, Z0, 1.975));
+  add(plate(SPOIL, LIP, 17.425, 23.3));
 
   // The winglet: a thin foil that rises and sweeps back.
   const [l0, l1, l2, l3] = LET;
@@ -137,19 +172,22 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   const pyl = new THREE.BoxGeometry(5.4, low - ny + 0.3, 0.32); pyl.translate(nx + 1.6, (low + ny) / 2 + 0.1, nz);
   add(pyl, paint);
 
-  // Flap-track fairings: canoes under the trailing edge, tails aft.
+  // Flap-track fairings: round pods under the flaps, tapering aft.
   FAIRS.forEach(f => {
-    const a = V(f.a[0], f.a[1], f.a[2]), b = V(f.b[0], f.b[1], f.b[2]), len = a.distanceTo(b) + 0.8;
-    const r0 = f.a[3] * 1.4;
-    const pts = Array.from({ length: 14 }, (_, i) => {
-      const u = i / 13;
-      return new THREE.Vector2(Math.max(0.01, r0 * Math.sin(Math.PI * Math.min(1, u * 1.35 + 0.02) * 0.5) * (1 - 0.82 * (1 - u) ** 2)), u * len);
+    const z = f.a[2], nose = at(0.55, z, -1), te = at(1, z, -1);
+    const len = nose.x - te.x + 1.1, r0 = 0.3;
+    const pts = Array.from({ length: 20 }, (_, i) => {
+      const u = i / 19;
+      // The body swells fast behind the nose and tapers to a point aft.
+      const body = Math.pow(Math.sin(Math.PI / 2 * Math.min(1, u / 0.8)), 0.55);
+      const tip = u > 0.8 ? Math.sqrt(Math.max(0, 1 - ((u - 0.8) / 0.2) ** 2)) : 1;
+      return new THREE.Vector2(Math.max(0.004, r0 * body * tip), u * len);
     });
-    const g = new THREE.LatheGeometry(pts, 24);
-    g.rotateZ(-Math.PI / 2); g.scale(1, 1.25, 0.8);
+    const g = new THREE.LatheGeometry(pts, 28);
+    g.rotateZ(-Math.PI / 2); g.scale(1, 1.15, 0.7);
     const m = add(g, flapPaint);
-    m.position.copy(b.clone().add(V(-0.4, -0.05, 0)));
-    m.quaternion.setFromUnitVectors(V(1, 0, 0), a.clone().sub(b).normalize());
+    // The pod's top meets the thin trailing edge, so it never pokes through.
+    m.position.set(te.x - 1.1, te.y - r0 * 1.15 * 0.85, z);
   });
 
   const scene = new THREE.Scene();
@@ -167,8 +205,9 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   scene.add(strobeL, navL);
 
   // A debug handle for the spike only.
-  window.__w3 = { scene, air, sun, paint, flapPaint, hinged, THREE };
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
+  window.__w3 = { scene, air, sun, paint, flapPaint, hinged, THREE, cam };
+  const mo = { t: null, bank: 0, rate: 0 };
   cam.matrixAutoUpdate = false;
   let rt = null;
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -184,7 +223,9 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
       const ph = Math.acos(Math.max(-1, Math.min(1, (dx * sky.sunAz[0] + dz * sky.sunAz[1]) / lh)));
       // Satin paint never mirrors the ground: it sees the sky just above.
       const c = lookup(sky.b.L, Math.max(th, 0) * 0.45 + 0.03, ph, HOR), o = (j * W + i) * 4;
-      for (let k = 0; k < 3; k++) data[o + k] = c[k] + sky.h.floor[k];
+      // Grey paint keeps half the sky's colour.
+      const y = 0.3 * c[0] + 0.5 * c[1] + 0.2 * c[2];
+      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k]) / 2 + sky.h.floor[k];
       data[o + 3] = 1;
     }
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -201,7 +242,7 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   const vs = `#version 300 es
 in vec2 aPos; out vec2 vUv; void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
   const fs = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main() { o = texture(uW, vUv); }`;
+precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main() { o = texture(uW, vec2(1.0 - vUv.x, vUv.y)); }`;
   const prog = gl.createProgram();
   [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([k, src]) => { const s = gl.createShader(k); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(prog, s); });
   gl.bindAttribLocation(prog, 0, 'aPos'); gl.linkProgram(prog);
@@ -223,10 +264,28 @@ precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main(
         rt = new THREE.WebGLRenderTarget(out.w, out.h, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true });
       }
       air.rotation.x = bank;
-      hinged.forEach(h => h.piv.quaternion.setFromAxisAngle(h.axis, h.gain * turb * 0.02 * (Math.sin(t * 1.7 + h.ph) + 0.6 * Math.sin(t * 4.3 + h.ph * 2))));
+      // The roll rate drives the controls; a low-pass keeps them smooth.
+      const dt = mo.t === null ? 0 : t - mo.t;
+      if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
+      mo.t = t; mo.bank = bank;
+      // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
+      const ail = Math.max(-0.09, Math.min(0.09, -mo.rate * 24));
+      // More bank asks for more lift, so the flaps trim down a little.
+      const trim = (bank - 6 * Math.PI / 180) * 0.3;
+      hinged.forEach(h => {
+        const n = turb * (Math.sin(t * 1.7 + h.ph) + 0.6 * Math.sin(t * 4.3 + h.ph * 2));
+        const a = h.role === 'aileron' ? ail + n * 0.006
+          : h.role === 'flaperon' ? ail * 0.35 + trim + n * 0.003
+          : h.role === 'spoiler' ? Math.min(0, ail * 0.8) - Math.abs(n) * 0.002
+          : trim + n * 0.002;
+        h.piv.quaternion.setFromAxisAngle(h.axis, a);
+      });
       // The camera sits at the eye with the outside pass's axes and focal length.
+      // The shader's axes are left-handed: R cross U gives F.
+      // The camera takes -R, so it stays right-handed and culls correctly.
+      // The composite flips x back.
       const R = V(...basis.R), U = V(...basis.U), F = V(...basis.F);
-      cam.matrixWorld.makeBasis(R, U, F.clone().negate());
+      cam.matrixWorld.makeBasis(R.negate(), U, F.clone().negate());
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
       cam.fov = 2 * Math.atan(H / 2 / basis.focal) * 180 / Math.PI; cam.aspect = W / H; cam.updateProjectionMatrix();
       // Lambert divides by pi; the shader's sun term is 0.012 on grey paint.
