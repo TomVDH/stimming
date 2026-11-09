@@ -133,6 +133,10 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .name .beta, .name .alpha { margin-left: 0.5em; color: var(--muted); }
 .name .beta i, .name .alpha i { font-style: normal; opacity: 0.4; }
 .toy:not(a) .name { color: var(--muted); }
+/* A toy in a series wears the series badge at the tile's top right. */
+.obj .series { position: absolute; top: 2%; right: 4%; width: 21%; height: auto; pointer-events: auto; transform-origin: 50% 20%; rotate: 8deg; transition: rotate 0.35s cubic-bezier(0.3, 1.6, 0.5, 1), scale 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
+a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scale: 1.15; }
+@media (prefers-reduced-motion: reduce) { .obj .series { transition: none; } }
 .sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Planned toys draw as outlines until they ship. */
 .planned .art, .planned .art * { fill: none !important; stroke: var(--sketch) !important; stroke-width: 2px !important; }
@@ -1044,6 +1048,20 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         }, { rootMargin: '0px 0px -6% 0px' });
         const watch = () => document.querySelectorAll('.toy').forEach(t => io.observe(t));
         document.readyState === 'loading' ? addEventListener('DOMContentLoaded', watch) : watch();
+      })();
+      // toys.json names each toy's series; series.json holds the badge.
+      (async () => {
+        try {
+          const [toys, series] = await Promise.all(['toys.json', 'series.json'].map(u => fetch(u).then(r => r.json())));
+          for (const [id, t] of Object.entries(toys)) {
+            const s = t.series && series[t.series];
+            const obj = s && document.querySelector(`a.toy#${CSS.escape(id)} .obj`);
+            if (!obj) continue;
+            const b = Object.assign(document.createElement('img'), { className: 'series', src: s.badge, alt: '', title: s.name });
+            obj.append(b);
+            obj.closest('.toy').dataset.series = t.series;
+          }
+        } catch { /* The menu works without badges. */ }
       })();
     </script>
     <script>
