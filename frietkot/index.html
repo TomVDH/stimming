@@ -1089,9 +1089,8 @@ const FAR_LAMPS = [];
     house(bx, -128 - vr() * 18, w, h, 0.2 + vr() * 0.35, 12, vr() < 0.6 ? 3 : 1, false);
     bx += w + (vr() < 0.2 ? 6 + vr() * 10 : 0.5);
   }
-  // Landmarks on the far skyline: a second spire, a water tower, a mill.
+  // Landmarks on the far skyline: a second spire and a mill.
   geos.push(new THREE.BoxGeometry(6, 24, 6).translate(78, 12, -175), new THREE.ConeGeometry(4.4, 20, 4).rotateY(Math.PI / 4).translate(78, 34, -175));
-  geos.push(new THREE.CylinderGeometry(1.2, 1.6, 26, 8).translate(-118, 13, -160), new THREE.CylinderGeometry(6, 4.5, 6, 12).translate(-118, 28, -160));
   geos.push(new THREE.CylinderGeometry(2.2, 3.4, 12, 8).translate(135, 6, -150), new THREE.ConeGeometry(2.6, 3.5, 8).translate(135, 13.7, -150));
   geos.push(new THREE.BoxGeometry(0.5, 16, 0.3).rotateZ(0.6).translate(135, 12, -147.5), new THREE.BoxGeometry(0.5, 16, 0.3).rotateZ(-0.97).translate(135, 12, -147.5));
   // Trees: a few on the square's edge, more crowns above the roofs behind.
@@ -1109,7 +1108,7 @@ const FAR_LAMPS = [];
     for (let fy = 1.4; fy < v.h - 1.0; fy += 3.0) floors.push(fy);
     const cols = v.w > 7 ? [0.2, 0.5, 0.8] : [0.28, 0.72];
     for (const fy of floors) for (const fx of cols) {
-      if (vr() < (far ? 0.35 : 0.7)) lateWins.push({ x: v.x + v.w * fx, y: fy, z: v.z + 0.02, tv: vr() < 0.2, on: vr() < (far ? 0.3 : 0.45), k: 0 });
+      if (vr() < (far ? 0.35 : 0.7)) lateWins.push({ x: v.x + v.w * fx, y: fy, z: v.z + 0.02, tv: false, on: vr() < (far ? 0.3 : 0.45), k: 0 });
     }
   }
   // The church: a west tower and spire on the square, the nave running back behind it.
@@ -1429,6 +1428,15 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.Shad
 }));
 sky.frustumCulled = false;
 sky.renderOrder = -1;
+// ?day: a flat daylight view, only to tune the skyline's shapes.
+const DAY = QS.has('day');
+if (DAY) {
+  U.uSky.value.set(0.55, 0.62, 0.8);
+  U.uGround.value.set(0.35, 0.33, 0.3);
+  U.uHaze.value.set(0.62, 0.68, 0.78);
+  sky.material.uniforms.uZen.value.set(0.18, 0.32, 0.7);
+  sky.material.uniforms.uHor.value.set(0.55, 0.62, 0.75);
+}
 scene.add(sky);
 
 /* ---------- the light shaft ---------- */
@@ -1797,6 +1805,8 @@ function applyWeather(dt, snap) {
   U.uWet.value = wx.wet;
   U.uRipple.value = Math.min(1, wx.rain * 2) * wx.wet;
   U.uHazeK.value = mix(a.haze, b.haze);
+  // Daylight is clear: the skyline must read to its last roof.
+  if (DAY) U.uHazeK.value *= 0.25;
   // Fog catches the town glow and hides the far side of the square.
   wx.fog = Math.max(0, (U.uHazeK.value - 0.016) / 0.024);
   U.uHaze.value.copy(HAZE0).multiplyScalar(1 + 0.8 * wx.fog);
@@ -3378,7 +3388,7 @@ act.traffic = on => { traffic = on; wake(); };
 // Camcorder: the handheld sway and the tape look of the late nineties.
 act.camcorder = on => { camcorder = on; grade.uniforms.uDV.value = on ? 1 : 0; frame(); draw(); };
 act.weather = v => { setWeather(v); wake(); draw(); };
-setWeather(ui.setting('weather')?.value ?? 'shift');
+setWeather(DAY ? 'dry' : ui.setting('weather')?.value ?? 'shift');
 // Three looks for the people, for Tom to pick from.
 const LOOKS = { ink: 0, line: 1, haze: 2 };
 act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
