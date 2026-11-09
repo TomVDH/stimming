@@ -30,8 +30,8 @@
   font-variant-numeric: tabular-nums;
 }
 .stage--exoplanet .read.lock { color: oklch(0.85 0.08 200 / 0.9); }
-/* On a phone the readout drops under the top corners. */
-@media (max-width: 640px) { .stage--exoplanet .read { top: 50px; font-size: 10px; } }
+/* Under 900 px the readout drops under the top corners, right-aligned. */
+@media (max-width: 900px) { .stage--exoplanet .read { top: 50px; left: auto; right: 14px; transform: none; font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .stage--exoplanet canvas { transition: none; } }
 </style>
 </head>
@@ -120,7 +120,7 @@ let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
 // Trial period P in days; 0 means time order. lock holds while folded true.
 let P = 0, locked = false;
 // The pointer press in flight, and the row the cut shows.
-let press = null, holdT = 0, cutRow = -1, cutUntil = Infinity;
+let press = null, holdT = 0, pinch = null, cutRow = -1, cutUntil = Infinity;
 let time = 0;
 
 const act = { shuffle() {}, reset() {}, exposure() {}, pick() {} };
@@ -609,7 +609,7 @@ function layout() {
   Object.assign(G, { W, H, dpr, w, h });
   const coarse = matchMedia('(pointer: coarse)').matches, narrow = w < 640;
   // Reserves keep the frame clear of the bar's corners and the key strip.
-  const top = (coarse ? 62 : 52) * dpr, bottom = (narrow ? 128 : coarse ? 96 : 84) * dpr;
+  const top = (coarse || w < 900 ? 64 : 52) * dpr, bottom = (narrow ? 128 : coarse ? 96 : 84) * dpr;
   const lcW = Math.round(w * (narrow ? 0.08 : 0.1)) * dpr, gapX = 8 * dpr;
   const pgH = 22 * dpr, pgGap = 10 * dpr;
   const x0 = lcW + gapX, x1 = W - 14 * dpr;
@@ -970,14 +970,34 @@ wake();
 // A press turns into a fold after 8 px, or a hold after 260 ms. Else it is a tap.
 const KX = 1 / 180, KY = 1 / 1400;
 canvas.addEventListener('pointerdown', e => {
+  // A second finger turns the press into a pinch: the fine dial.
+  if (press && !pinch && e.pointerType === 'touch') {
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
+    pinch = { id: e.pointerId, x: e.clientX, y: e.clientY, d: 0 };
+    press.fold = true; press.hold = false;
+    clearTimeout(holdT);
+    uncut();
+    stage.classList.add('fold');
+    live();
+    return;
+  }
   if (press) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer has no capture */ }
-  press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, fold: false, hold: false };
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, cx: e.clientX, cy: e.clientY, fold: false, hold: false };
   holdT = setTimeout(() => { if (press && !press.fold) { press.hold = true; cut(e.clientX, e.clientY, true); } }, 260);
   live();
 });
 canvas.addEventListener('pointermove', e => {
+  if (pinch && press && (e.pointerId === pinch.id || e.pointerId === press.id)) {
+    if (e.pointerId === pinch.id) { pinch.x = e.clientX; pinch.y = e.clientY; } else { press.cx = e.clientX; press.cy = e.clientY; }
+    const d = Math.hypot(pinch.x - press.cx, pinch.y - press.cy);
+    if (pinch.d) scrub((d - pinch.d) * KX * 0.12);
+    pinch.d = d;
+    live();
+    return;
+  }
   if (!press || e.pointerId !== press.id) { if (!press && e.pointerType === 'mouse') cut(e.clientX, e.clientY, false); return; }
+  press.cx = e.clientX; press.cy = e.clientY;
   // A hold that moves on becomes a fold; the cut goes away.
   if (!press.fold && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) {
     press.fold = true;
@@ -995,7 +1015,10 @@ canvas.addEventListener('pointermove', e => {
   live();
 });
 function endPress(e) {
-  if (!press || (e && e.pointerId !== press.id)) return;
+  if (!press) return;
+  // Either finger lifting ends a pinch and the press with it.
+  if (e && e.pointerId !== press.id && !(pinch && e.pointerId === pinch.id)) return;
+  pinch = null;
   clearTimeout(holdT);
   if (!press.fold && !press.hold && e?.type === 'pointerup') cut(e.clientX, e.clientY, true);
   press = null;
@@ -1027,7 +1050,6 @@ function cut(cx, cy, sticky) {
 }
 function uncut() { if (cutUntil === Infinity) cutRow = -1; }
 
-window.__exo = () => ({ press, P, locked, raf, visible, target: target.name, kind: target.kind, lastInput: performance.now() - lastInput, ac: kit.ac?.state ?? 'none', cutRow, phase, stir, growlT, dbg: cutRow >= 0 ? { flux: E.flux[cutRow], gap: E.gap[cutRow], y: E.y[cutRow], rank: rank[cutRow], star: [star[100], star[1000], star[2000]], box: G.box, rowH: G.rowH, top: canvas.getBoundingClientRect().top, nMarks } : null });
 new ResizeObserver(() => { layout(); if (Pg) render(); }).observe(stage);
 onQuality(() => { rung = 0; slowT = 0; layout(); if (Pg) render(); });
 // A hidden tab stops the loop and the exposure clock with it.

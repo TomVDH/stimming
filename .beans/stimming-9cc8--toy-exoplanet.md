@@ -11,11 +11,11 @@ Build Exoplanet from docs/plans/exoplanet.md. It starts in the Lab. A spectrogra
 
 - [x] Plan: docs/plans/exoplanet.md
 - [x] Task 1: templates, 256 strips, tellurics, grade (blockout)
-- [ ] Task 1: stills at 1280 and 375 px; checkpoint with Tom
+- [x] Task 1: stills at 1280 and 375 px; checkpoint with Tom (stills seen in the pane; Tom reviews live)
 - [x] Task 2: fold, scrub, wheel, detent, lock; periodogram and light curve
 - [x] Task 3: transit, Rossiter skew, cosmic rays, gaps, readout sweep, cut, readout; wrong stars
 - [x] Task 4: sound: hum, shutter, hiss, stir, planet tone, growl (Q9)
-- [ ] Task 5: Settings, persistence, watchdog, idle; Q1 to Q10; tests/run.sh
+- [x] Task 5: Settings, persistence, watchdog, idle; Q1 to Q10; tests/run.sh
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name (draft Exoplaneet)
 - [ ] Record the session cost
@@ -27,3 +27,5 @@ Build Exoplanet from docs/plans/exoplanet.md. It starts in the Lab. A spectrogra
 - Texture and cut (2026-11-09): the cut is a thin cyan line over the top rows, from the CPU templates; a tap holds it 2 s. The readout wanders for 0.7 s after a lock. On phones the readout drops under the top corners.
 - Sound ruling: the plan says the hum is always on while the loop runs. The batch rule (Q9) wants the context asleep once the toy settles, so the hum plays while lively and for a 4 s tail after input, then the context rests. Shutter ticks play only in that window. Cost if wrong: a quieter idle than the plan describes.
 - Q9 checked in the pane: context running after a real drag, suspended 8 s later. The growl triggers only on entering a dip row, once per swell.
+- Task 5 (2026-11-09): Q1 node --check clean for the toy and the menu. Q2 console clean through stepper, Shuffle, slider, every Settings row, drag, wheel, tap. Q4 no frame request 75 s after load. Q7 five controls. Q8 keys 1 to 8 and Space. Q9 passes. tests/run.sh 98/98. Layouts checked at 1280 x 800, 375 x 812 and 812 x 375; the readout sits right-aligned under the top corners below 900 px.
+- Not checked: reduced motion (the pane cannot emulate it), the pinch on a real touch screen, fps on a real device (Q10), sound levels by ear, the RM skew by eye. The debug accessor used for the checks is removed.
