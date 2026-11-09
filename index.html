@@ -6,6 +6,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=Gabarito:wght@400..900&display=swap">
+<link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js">
+<link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js">
 <style>
 /* Layout: the title, then the toys, all centred. The menu is always dark. */
 :root {
@@ -1232,6 +1234,53 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
         for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
         shelf.append(...items);
+      })();
+    </script>
+    <script>
+      // The menu warms the browser cache for the next page: fetch only, never run.
+      (() => {
+        const c = navigator.connection;
+        if (c && (c.saveData || /2g/.test(c.effectiveType || ''))) return;
+        const seen = new Set();
+        const warm = url => {
+          const u = new URL(url, location.href);
+          if (seen.has(u.href)) return null;
+          seen.add(u.href);
+          return fetch(u, { priority: 'low', credentials: 'same-origin' }).catch(() => null);
+        };
+        // Every toy page loads the shell; most load three.js.
+        const SHELL = ['shared/stim.css', 'shared/intro.css', 'shared/stim.js', 'shared/intro.js', 'toys.json',
+          'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm', 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js'];
+        const idle = window.requestIdleCallback || (f => setTimeout(f, 1200));
+        addEventListener('load', () => idle(() => SHELL.forEach(warm), { timeout: 4000 }));
+        // A specifier resolves through the page's importmap, then against the page.
+        const resolve = (spec, map, base) => {
+          if (map[spec]) return map[spec];
+          const pre = Object.keys(map).filter(k => k.endsWith('/') && spec.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+          if (pre) return map[pre] + spec.slice(pre.length);
+          return /^(\.{0,2}\/|https:)/.test(spec) ? new URL(spec, base).href : null;
+        };
+        // A hover, focus or touch on a tile warms that toy's page, emblem and modules.
+        const aim = async a => {
+          const res = await warm(a.href);
+          if (!res || !res.ok) return;
+          warm(`shared/emblems/${a.id}.svg`);
+          const html = await res.text();
+          let map = {};
+          try { map = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1] || '{}').imports || {}; } catch {}
+          for (const m of html.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)(['"])([^'"\n]+)\1/g)) {
+            const url = resolve(m[2], map, a.href);
+            if (url) warm(url);
+          }
+        };
+        const onTile = e => { const a = e.target.closest?.('a.toy'); if (a) aim(a); };
+        const main = document.querySelector('main');
+        // A pointer that only crosses a tile warms nothing.
+        let dwell = 0;
+        main.addEventListener('pointerover', e => { clearTimeout(dwell); dwell = setTimeout(onTile, 90, e); }, { passive: true });
+        main.addEventListener('pointerout', () => clearTimeout(dwell), { passive: true });
+        main.addEventListener('touchstart', onTile, { passive: true });
+        main.addEventListener('focusin', onTile);
       })();
     </script>
     <section class="lab" aria-label="Lab">

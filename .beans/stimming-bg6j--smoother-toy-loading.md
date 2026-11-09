@@ -1,11 +1,11 @@
 ---
 # stimming-bg6j
 title: Smoother toy loading
-status: todo
+status: in-progress
 type: task
 priority: low
 created_at: 2026-11-04T12:00:00Z
-updated_at: 2026-11-04T12:00:00Z
+updated_at: 2026-11-09T21:50:20Z
 ---
 
 Make toys open faster from the menu. Shelved by Tom on 2026-11-04 in favour of the toy builds.
@@ -26,7 +26,20 @@ Headless Chromium, cold and warm opens, measured on 2026-11-04.
 - After the intro, the largest frame gap was 17 to 50 ms, with no long tasks. Headless runs on SwiftShader, so a real-GPU stutter does not show; a trace from a real machine is needed.
 - jsdelivr URLs are versioned and served `immutable` for a year, so a fixed warm list stays valid.
 
-## Options
+## Plan (2026-11-09)
+
+Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. The contract, recipe and numbers are in `docs/plans/loading.md`.
+
+- [x] Baseline: menu and 36 toys, fast and throttled
+- [x] Menu: GSAP preload; warm the shell in idle time; warm a toy on hover, focus or touch
+- [x] Shell: `stage()`, `idle()`, `pageReady()`, `later()`; one `toys.json` request per page
+- [x] TV tree: preloads, stage marks, first-frame `ready`, tree mesh in a worker
+- [ ] Tom checks TV tree on Pages
+- [ ] Next toys, one by one: Fireworks, Window seat, Walker, Domino Day, Prism, Glass
+- [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
+- [ ] Elective offline cache: service worker behind a "Keep offline" switch
+
+## Options (2026-11-04)
 
 - [ ] Intro length: a shorter hold, or tap to skip. This is Tom's design call.
 - [ ] A1. The menu warms the browser cache in idle time: fetch only, never run. The list is in the notes below.

@@ -12,6 +12,25 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="./channels.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/geometries/RoundedBoxGeometry.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
 <style>
 /* TV tree: the night stage under the Bar v2 corners. */
 :root { --stage: oklch(0.15 0.03 285); }
@@ -39,14 +58,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">TV tree</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <script type="module">
-import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF, NCH } from './channels.js';
 // Each action runs only once the tree is ready.
 const run = k => () => { if (ready) { ACTS[k](); wake(); } };
@@ -77,7 +91,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 // Seeded random keeps the tree the same on every visit.
 const rng = s => () => {
   s = (s + 0x6d2b79f5) | 0;
@@ -629,7 +642,7 @@ function treeSurface(strands, h = 0.012, K = 0.1) {
 // Each branch becomes a strand of samples along its curve.
 // aInfo holds wobble slot, along, colour mix and the place along the branch.
 const meshCache = new Map();
-function treeGeometry() {
+function treeStrands() {
   const meta = [], strands = [];
   TREE.forEach((br, bi) => {
     const main = branchCurve(br), mainLen = main.getLength();
@@ -654,19 +667,48 @@ function treeGeometry() {
     if (!bi) S.unshift({ ...S[0], y: S[0].y - 0.6 });
     strands.push({ slot: br.w, S });
   });
+  return { meta, strands };
+}
+function surfaceGeometry(m) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(m.P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(m.N, 3));
+  g.setAttribute('aInfo', new THREE.Float32BufferAttribute(m.INFO, 4));
+  g.setIndex(Array.isArray(m.I) ? m.I : new THREE.BufferAttribute(m.I, 1));
+  return g;
+}
+function treeGeometry() {
+  const { meta, strands } = treeStrands();
   // A stage shape builds its mesh once.
   const key = KX + ',' + KY;
   let g = meshCache.get(key);
-  if (!g) {
-    const m = treeSurface(strands);
-    g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(m.P, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(m.N, 3));
-    g.setAttribute('aInfo', new THREE.Float32BufferAttribute(m.INFO, 4));
-    g.setIndex(m.I);
-    meshCache.set(key, g);
-  }
+  if (!g) meshCache.set(key, g = surfaceGeometry(treeSurface(strands)));
   return { g, meta };
+}
+// The first tree meshes in a worker, so the intro keeps its frame rate.
+// A worker that fails leaves the cache empty; build() then meshes in place.
+async function premesh(w, h) {
+  [KX, KY] = treeShape(w / h);
+  const key = KX + ',' + KY, { strands } = treeStrands();
+  const src = `${treeSurface}
+    onmessage = e => {
+      const m = treeSurface(e.data), out = { P: new Float32Array(m.P), N: new Float32Array(m.N), INFO: new Float32Array(m.INFO), I: new Uint32Array(m.I) };
+      postMessage(out, [out.P.buffer, out.N.buffer, out.INFO.buffer, out.I.buffer]);
+    };`;
+  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+  try {
+    const m = await new Promise((res, rej) => {
+      const wk = new Worker(url);
+      wk.onmessage = e => { wk.terminate(); res(e.data); };
+      wk.onerror = e => { wk.terminate(); rej(e); };
+      wk.postMessage(strands);
+    });
+    meshCache.set(key, surfaceGeometry(m));
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /* ---------- the sets: cheerful little televisions ---------- */
@@ -1907,9 +1949,10 @@ function bands() {
   return [clamp(top / h, 0, 0.2), clamp(foot / h, 0, 0.3)];
 }
 // The camera frames the whole tree, wide or tall.
+const treeShape = A => (A < 1.1 ? [0.82, clamp(0.95 / A, 1.12, 1.6)] : [1.42, 1]);
 function fit(w, h) {
   // A tall stage grows a taller tree, so the crown fills the frame.
-  const A = w / h, portrait = A < 1.1, kx = portrait ? 0.82 : 1.42, ky = portrait ? clamp(0.95 / A, 1.12, 1.6) : 1;
+  const A = w / h, portrait = A < 1.1, [kx, ky] = treeShape(A);
   view.A = A;
   if (kx !== KX || ky !== KY || !built) { KX = kx; KY = ky; build(); }
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
@@ -2324,6 +2367,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  stage('build');
   try {
     renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   } catch (err) {
@@ -2444,6 +2488,7 @@ async function start() {
   lantern.on = ui.setting('lantern').value;
   lantern.fade = lantern.on ? 1 : 0;
   panel.prepend(canvas);
+  await premesh(panel.clientWidth || 16, panel.clientHeight || 9);
   fitRenderer(renderer, panel, 2, onSize, 1.4e6);
   // Corners that move, resize or stack refit the tree.
   if (layer) {
@@ -2470,6 +2515,7 @@ async function start() {
   draw();
   // The lit sets show at once, even before the loop runs.
   canvas.classList.add('on');
+  stage('first-frame');
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; vis(); }).observe(panel);
   document.addEventListener('visibilitychange', vis);
 }
@@ -2477,9 +2523,9 @@ start().catch(err => { console.error(err); failed(); });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>
