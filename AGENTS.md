@@ -73,10 +73,11 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 
 - Dark only. Colours are OKLCH tokens. The font is Gabarito; menu toy labels use the self-hosted Iosevka Term Slab in caps.
 - Libraries: Tom picked one set. Add no other library without Tom.
+  Renderers: use the lightest tier that draws the idea: DOM/SVG, Canvas 2D, raw WebGL2 (GLSL), then three.js for real 3D scenes. Guide, costs and the audit of every toy: `docs/stack.md`.
 
   | Role | Library |
   |---|---|
-  | Rendering | three.js 0.170.0 (Galaxy and Fire keep the 0.186.1 WebGPU build) |
+  | Rendering | Raw WebGL2 for shader toys; three.js 0.170.0 for 3D scenes (Galaxy, Fire and Ink Water keep the 0.186.1 WebGPU build) |
   | Colour | culori 4.0.1 |
   | Sound | Tone.js 15.0.4 |
   | Motion | GSAP 3.13.0 (the menu keeps the cdnjs UMD build) |
