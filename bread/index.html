@@ -127,7 +127,7 @@ const TUBE = lin(0.97, 0.035, 160);
 const WARM = lin(0.84, 0.13, 62);
 const SKYGLOW = lin(0.42, 0.08, 52);
 const NIGHT = lin(0.12, 0.03, 265);
-scene.fog = new THREE.FogExp2(lin(0.13, 0.025, 255).getHex(), 0.0065);
+scene.fog = new THREE.FogExp2(lin(0.15, 0.03, 40).getHex(), 0.0026);
 
 /* ---------- sky ---------- */
 // One sphere: deep blue overhead, a sodium skyglow low on the horizon.
@@ -185,18 +185,23 @@ field.position.y = -0.03;
 field.receiveShadow = true;
 scene.add(field);
 
-// The road runs along x; the machine stands on its far verge.
-const ROAD = { z0: -3.0, z1: 3.0 };
-const asphaltTex = noiseTex(256, 0.35); asphaltTex.repeat.set(160, 4);
-const road = new THREE.Mesh(new THREE.PlaneGeometry(800, ROAD.z1 - ROAD.z0).rotateX(-Math.PI / 2),
-  new THREE.MeshStandardMaterial({ color: lin(0.24, 0.006, 260), map: asphaltTex, roughness: 0.82 }));
+// The road runs straight away from the eye, along -z, to the horizon.
+const ROAD = { x0: -3.0, x1: 3.0, len: 1800 };
+const asphaltTex = noiseTex(256, 0.35); asphaltTex.repeat.set(4, 240);
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD.x1 - ROAD.x0, ROAD.len).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: lin(0.24, 0.006, 260), map: asphaltTex, roughness: 0.55 }));
+road.position.z = -ROAD.len / 2 + 30;
 road.receiveShadow = true;
 scene.add(road);
-// Worn white edge lines catch the light, and later the rain.
+// Worn white edge lines and a dashed centre line catch the light, and later the rain.
 const lineMat = new THREE.MeshStandardMaterial({ color: lin(0.78, 0.01, 90), roughness: 0.7 });
-for (const z of [ROAD.z0 + 0.25, ROAD.z1 - 0.25]) {
-  const l = new THREE.Mesh(new THREE.PlaneGeometry(800, 0.12).rotateX(-Math.PI / 2), lineMat);
-  l.position.set(0, 0.004, z);
+{
+  const parts = [];
+  for (const x of [ROAD.x0 + 0.25, ROAD.x1 - 0.25]) parts.push(new THREE.PlaneGeometry(0.12, ROAD.len).rotateX(-Math.PI / 2).translate(x, 0, -ROAD.len / 2 + 30));
+  // Dashes of 3 m with 9 m gaps, as on Flemish country roads.
+  for (let z = 20; z > -600; z -= 12) parts.push(new THREE.PlaneGeometry(0.1, 3).rotateX(-Math.PI / 2).translate(0, 0, z));
+  const l = new THREE.Mesh(mergeGeometries(parts), lineMat);
+  l.position.y = 0.004;
   l.receiveShadow = true;
   scene.add(l);
 }
@@ -206,15 +211,15 @@ for (const z of [ROAD.z0 + 0.25, ROAD.z1 - 0.25]) {
 const inkMat = new THREE.MeshBasicMaterial({ color: lin(0.07, 0.012, 265), fog: false });
 {
   const parts = [];
-  // A row of poplars along a far field edge, left of the machine.
-  for (let i = 0; i < 26; i++) {
-    const x = -260 + i * 9.5 + rnd() * 3, z = -150 - i * 1.6, h = 16 + rnd() * 6;
-    parts.push(new THREE.SphereGeometry(1, 8, 10).scale(1.3 + rnd() * 0.5, h / 2, 1.4).translate(x, h / 2 + 1, z));
+  // A row of poplars crosses the fields on the horizon, left of the road.
+  for (let i = 0; i < 18; i++) {
+    const x = -12 - i * 12 - rnd() * 3, z = -440 - i * 2, h = 16 + rnd() * 5;
+    parts.push(new THREE.SphereGeometry(1, 12, 12).scale(1.6 + rnd() * 0.6, h / 2, 1.6).translate(x, h / 2 + 1, z));
   }
   // Low hedges and tree clumps, scattered along the horizon.
   for (let i = 0; i < 18; i++) {
-    const a = -1.2 + i * 0.16 + rnd() * 0.05, r = 300 + rnd() * 260, h = 6 + rnd() * 9;
-    parts.push(new THREE.SphereGeometry(1, 8, 6).scale(10 + rnd() * 18, h, 8).translate(Math.sin(a) * r, 0, -Math.cos(a) * r));
+    const a = -1.2 + i * 0.16 + rnd() * 0.05, r = 700 + rnd() * 300, h = 8 + rnd() * 10;
+    parts.push(new THREE.SphereGeometry(1, 20, 8).scale(10 + rnd() * 18, h * 0.8, 8).translate(Math.sin(a) * r, 0, -Math.cos(a) * r));
   }
   // The next village's church: a tower and a needle spire.
   const cx = -120, cz = -520;
@@ -234,16 +239,20 @@ for (const [x, y, z, w] of [[160, 3, -333.5, 1.6], [176, 3.2, -333.5, 1.4], [-10
   m.lookAt(0, y, 0);
   scene.add(m);
 }
-// One far sodium lamp down the road marks how long the road is.
-const sodium = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 14), fog: false }));
-sodium.position.set(140, 6, ROAD.z0 - 1);
-scene.add(sodium);
+// Far sodium lamps down the road mark how long the road is.
+const sodiumMat = new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 14), fog: false });
+for (const z of [-420, -900]) {
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(z < -500 ? 0.5 : 0.3, 10, 8), sodiumMat);
+  lamp.position.set(ROAD.x1 + 1.2, 6, z);
+  scene.add(lamp);
+}
 
 /* ---------- the stop ---------- */
 // The machine stands alone on a small concrete pad on the far verge.
 const STOP = new THREE.Group();
-STOP.position.set(1.4, 0, ROAD.z0 - 2.0);
-STOP.rotation.y = -0.18;
+// It faces the road at an angle, so the eye sees it three-quarter on.
+STOP.position.set(ROAD.x1 + 2.3, 0, -36);
+STOP.rotation.y = -0.45;
 scene.add(STOP);
 const concrete = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.008, 80), map: noiseTex(64, 0.25), roughness: 0.92 });
 const enamel = new THREE.MeshStandardMaterial({ color: lin(0.86, 0.02, 95), roughness: 0.4, metalness: 0.05 });
@@ -464,8 +473,9 @@ STOP.add(tubeFill);
 // The moon: a faint blue sky light over everything.
 scene.add(new THREE.HemisphereLight(lin(0.45, 0.04, 255), lin(0.12, 0.02, 120), 0.3));
 // A low moon behind the camera rims the road with cold light.
-const moon = new THREE.DirectionalLight(lin(0.7, 0.04, 250), 0.08);
-moon.position.set(-30, 25, 60);
+// It hangs low down the road, so the asphalt shines toward the eye.
+const moon = new THREE.DirectionalLight(lin(0.7, 0.04, 250), 0.22);
+moon.position.set(-20, 18, -200);
 scene.add(moon);
 
 /* ---------- moths ---------- */
@@ -483,7 +493,7 @@ const mothGeo = new THREE.BufferGeometry();
 const mothMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   uniforms: { uCol: { value: TUBE.clone().multiplyScalar(2.2) }, uPx: { value: 1 } },
-  vertexShader: /* glsl */`uniform float uPx; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = uPx * 0.05 / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  vertexShader: /* glsl */`uniform float uPx; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = uPx * 0.035 / -mv.z; gl_Position = projectionMatrix * mv; }`,
   fragmentShader: /* glsl */`uniform vec3 uCol; void main() { vec2 q = gl_PointCoord - 0.5; float d = length(q * vec2(1.0, 1.8)); gl_FragColor = vec4(uCol * smoothstep(0.5, 0.1, d), 1.0); }`,
 });
 const moths = new THREE.Points(mothGeo, mothMat);
@@ -577,6 +587,45 @@ const tilt = new ShaderPass({
   }`,
 });
 
+/* ---------- flare ---------- */
+// The flare follows Buoy Business: veil, orb, anamorphic streak and ghosts.
+// It is lifted from Beach walker's POST_FS, without the depth test.
+const flare = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uSun: { value: new THREE.Vector2(0.5, 0.5) },
+    uAspect: { value: 1 },
+    uCol: { value: new THREE.Vector3(...TUBE.toArray()) },
+    uGain: { value: 0.32 },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uAspect, uGain; uniform vec3 uCol; varying vec2 vUv;
+  void main() {
+    vec3 base = texture2D(tDiffuse, vUv).rgb;
+    vec2 d = vUv - uSun;
+    float ax = d.x * uAspect, ay = d.y;
+    // A wide veil and a soft orb, squashed sideways.
+    float r = length(vec2(ax * 0.6, ay));
+    vec3 add = uCol * (0.02 * exp(-r * 1.5) + 0.06 * exp(-r * 5.0) + 0.3 * exp(-r * 22.0));
+    // Three nested bands: a soft core, a wide sheath and a broad haze.
+    float line = 0.6 * exp(-abs(ay) * 110.0) + 0.12 * exp(-abs(ay) * 20.0) + 0.03 * exp(-abs(ay) * 4.0);
+    add += mix(uCol, vec3(0.55, 0.72, 1.0), 0.45) * line * exp(-abs(ax) / 1.1);
+    // Ghosts sit on the line from the source through the frame centre.
+    vec2 toC = vec2(0.5) - uSun;
+    vec3 gs[4];
+    gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
+    for (int i = 0; i < 4; i++) {
+      vec2 g = (vUv - (uSun + toC * gs[i].x)) * vec2(uAspect, 1.0);
+      float gr = length(g) / gs[i].y;
+      add += mix(uCol, uCol * vec3(1.0, 0.5, 0.2), 0.4) * exp(-gr * gr) * gs[i].z * 0.1;
+    }
+    add *= uGain;
+    // Screen blend on the bright end: the flare washes, never clips.
+    gl_FragColor = vec4(base + add * (1.0 - clamp(base, 0.0, 1.0)), 1.0);
+  }`,
+});
+
 /* ---------- post chain ---------- */
 const POST = { bloom: [0.3, 0.45, 1.1], tint: [0.0006, 0.0007, 0.0012], vig: 0.6, vigIn: 0.35, grain: 0.035 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
@@ -584,6 +633,7 @@ const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(tilt);
 composer.addPass(makeBloom(...POST.bloom));
+composer.addPass(flare);
 const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
@@ -592,30 +642,36 @@ composer.addPass(new OutputPass());
 let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
-const aim = new THREE.Vector3();
+// A dead-level eye on the road; a shifted lens drops the horizon low.
+// A long lens flattens the land, as in Beach walker.
+const SHOT = {
+  wide: { pos: [0.9, 1.15, 0], yaw: -0.06, vfov: 12.5, horizon: 0.64 },
+  tall: { pos: [1.2, 1.15, -12], yaw: -0.16, vfov: 22, horizon: 0.58 },
+};
+const TUBE_W = new THREE.Vector3(), probe = new THREE.Vector3();
+let focal = 1;
 function frame() {
-  const portrait = size.w < size.h;
-  camera.aspect = size.w / size.h;
-  // A low eye on the near verge; phones step back and widen the lens.
-  camera.fov = portrait ? 58 : 36;
-  const stop = STOP.position;
-  if (portrait) {
-    camera.position.set(stop.x - 0.75, 0.95, 3.3);
-    aim.set(stop.x - 0.05, 1.95, stop.z);
-  } else {
-    camera.position.set(stop.x - 3.0, 0.95, 3.0);
-    aim.set(stop.x - 1.1, 1.75, stop.z);
-  }
-  camera.lookAt(aim);
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y += look.yaw;
-  camera.rotation.x += look.pitch;
+  const portrait = size.w < size.h, S = portrait ? SHOT.tall : SHOT.wide;
+  const w = size.w, h = size.h;
+  const hy = h * S.horizon + look.pitch * h;
+  focal = h / (2 * Math.tan((S.vfov * Math.PI) / 360));
+  const half = Math.max(hy, h - hy);
+  camera.fov = (2 * Math.atan(half / focal) * 180) / Math.PI;
+  camera.aspect = w / (2 * half);
+  camera.setViewOffset(w, 2 * half, 0, half - hy, w, h);
+  camera.position.set(...S.pos);
+  camera.rotation.set(0, S.yaw + look.yaw, 0, 'YXZ');
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+  mothMat.uniforms.uPx.value = focal * size.dpr;
   // The sharp band follows the machine's centre on screen.
-  const c = STOP.localToWorld(new THREE.Vector3(0, 1.3, M.front)).project(camera);
-  tilt.uniforms.uFocus.value = c.y * 0.5 + 0.5;
-  tilt.uniforms.uBand.value = portrait ? 0.08 : 0.13;
+  probe.copy(STOP.localToWorld(new THREE.Vector3(0, 1.2, M.front))).project(camera);
+  tilt.uniforms.uFocus.value = probe.y * 0.5 + 0.5;
+  tilt.uniforms.uBand.value = portrait ? 0.07 : 0.1;
+  // The flare sits on the tube.
+  TUBE_W.copy(STOP.localToWorld(TUBE_POS.clone())).project(camera);
+  flare.uniforms.uSun.value.set(TUBE_W.x * 0.5 + 0.5, TUBE_W.y * 0.5 + 0.5);
+  flare.uniforms.uAspect.value = w / h;
 }
 function resize() {
   const r = stage.getBoundingClientRect();
@@ -627,7 +683,6 @@ function resize() {
   const W = w * size.dpr, H = h * size.dpr;
   grade.uniforms.uRes.value.set(W, H);
   tilt.uniforms.uRes.value.set(W, H);
-  mothMat.uniforms.uPx.value = H * 0.6;
   stage.style.setProperty('--box', `${Math.max(0, (h - w / 2.39) / 2)}px`);
   frame();
   draw();

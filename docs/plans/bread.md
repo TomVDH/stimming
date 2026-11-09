@@ -27,11 +27,12 @@
 
 One lit stop in a vast dark landscape, at toy scale.
 
-- **Camera:** low and wide, about 0.9 m above the road on the near verge, 30 mm equivalent. The machine sits right of centre in the lower third.
+- **Camera (Tom, 2026-11-09: more sweeping, Coen brothers, cue from Beach walker):** a dead-level eye on the road, 1.15 m up. A long lens (12.5° vertical) flattens the land. A shifted lens drops the horizon to the lower third, so the sky fills the frame. The road runs straight to the horizon; the machine stands small on the right verge, three-quarter on, 36 m away.
+- **Lens:** a Buoy Business flare on the tube (veil, orb, a thin anamorphic streak, ghosts), lifted from Beach walker's `POST_FS`.
 - **Machine (Tom, 2026-11-09: the classic Flemish type):** a tall narrow cream cabinet on a small concrete pad. A column of eight small glass doors sits left of centre, one per tier, with a lit button beside each. Behind the doors, a stacked carousel of eight tiers turns, one loaf per compartment, lit cool white. A steel coin unit sits at the right: price window, slot, green ready lamp, return cup.
 - **Hood:** a curved yellow lightbox on top with the plain word BROODAUTOMAAT. No brand. A bare fluorescent tube hangs under its front lip.
-- **Road:** a two-lane village road in front, black asphalt with a worn white edge line. The tube light makes a pool on it.
-- **Land:** flat fields to a far horizon. A row of poplars as a silhouette. Far away, a church tower and four or five farm windows. The horizon has a faint sodium skyglow from a town out of frame.
+- **Road:** a straight two-lane country road from the eye to the horizon, with worn edge lines and a dashed centre line. A low moon down the road puts a cold sheen on the asphalt.
+- **Land:** flat fields to a far horizon, in warm haze. A row of poplars on the horizon, left of the road. Two far sodium lamps down the road, a church, a few farm windows. The horizon has a sodium skyglow from a town out of frame.
 - **Sky:** deep blue-black, a few stars, a thin band of low cloud lit orange from below.
 - **Tilt-shift:** a sharp band through the machine; above and below, the blur grows. The scene reads as a model.
 
