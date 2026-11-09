@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T20:28:00Z
+updated_at: 2026-11-09T20:40:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -119,3 +119,7 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Window fills the view with a slim margin of wall; stop line off (the station signs name each stop)
 - [x] Cross bar is a slim flush satin mullion with hairline seals
 - [x] Lighter top reveal at night; phone view tilts less, so it is not mostly track bed
+
+## Round 14: night light, dev scrub (Tom, 2026-11-09)
+- [x] Night cabin light: fainter, one ceiling lamp above the window; its pool fades down and to the sides; the reveal dims toward the sides
+- [x] ?dev: a scrub strip over the stage for the whole line (72.8 km), with km, the nearest station and km/h

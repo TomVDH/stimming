@@ -1499,7 +1499,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // A dark joint where the lining meets the frame.
         alb *= 1.0 - 0.45 * smoothstep(0.02, 0.0, abs(f - 0.71));
         // Night: the cabin light falls from above, so the sill is brightest.
-        vec3 night = vec3(1.0, 0.9, 0.8) * 0.15 * (0.78 + 0.22 * n2.y) * (1.0 - 0.25 * f);
+        vec3 night = vec3(1.0, 0.88, 0.74) * 0.12 * (0.7 + 0.3 * n2.y) * (1.0 - 0.3 * f);
+        // The lamp sits above the middle of the window, so the reveal dims toward the sides.
+        night *= 0.55 + 0.45 * exp(-pow((h2.x) * 0.9, 2.0));
         // The rounded outer edge of the lining catches a soft line of light.
         night *= 1.0 + 0.35 * smoothstep(0.12, 0.0, f);
         // Day: light through the glass; the reveal brightens toward it.
@@ -1522,7 +1524,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // A bright, clean wall: one smooth pale panel, so the eye goes to the window.
       vec3 alb = vec3(0.9, 0.89, 0.86) * (0.992 + 0.016 * vnoise(p * 40.0));
       float up = smoothstep(-0.8, 0.8, p.y);
-      vec3 light = mix(vec3(1.0, 0.93, 0.85) * 0.32 * (0.7 + 0.45 * up), vec3(1.0, 0.98, 0.95) * 0.42 * (0.8 + 0.25 * up), uDay);
+      // Night: one ceiling lamp above the window; its pool fades softly down and out.
+      vec2 lp = (p - vec2(uC0.x, 0.78)) * vec2(0.45, 1.0);
+      float pool = 0.22 + 0.95 * exp(-dot(lp, lp) * 2.2);
+      vec3 light = mix(vec3(1.0, 0.88, 0.74) * 0.16 * pool, vec3(1.0, 0.98, 0.95) * 0.42 * (0.8 + 0.25 * up), uDay);
       // By day the window throws a soft glow onto the wall round it.
       light += vec3(1.0, 0.98, 0.95) * 0.12 * uDay * exp(-max(dW, 0.0) * 5.0);
       // A groove where the lining meets the wall, and a soft shadow round it.
@@ -1899,6 +1904,10 @@ return {
   get day() { return dayV; },
   setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
   setSpeed(v) { target = v; },
+  // Dev scrub: jump to a point on the line; the next stop is found again.
+  seek(x) { camX = x; stopX = null; dwell = 0; place(); },
+  get length() { return TILE; },
+  stationNear(x) { let b = null, bd = Infinity; for (const [n, sv] of STN) { const d = Math.abs(sv - x); if (d < bd) { bd = d; b = n; } } return [b, bd]; },
   set onArrive(f) { arrive = f; },
   outside: [out, outCam],
   before(r) {
@@ -2280,6 +2289,32 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE') { const on = !opts.express; opts.express = on; save('express', on ? '1' : '0'); ui.setting('express')?.set(on); S.setExpress(on); wake(); }
   if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
 });
+
+/* ---------- dev scrub (?dev) ---------- */
+// A strip over the stage scrubs the whole line; readouts show km, the nearest station and speed.
+if (qs.has('dev')) {
+  const L = S.length;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
+  box.innerHTML = '<input type="range" min="0" step="10" style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><span data-k></span><span data-s></span><span data-v></span></div>';
+  const range = box.querySelector('input'), km = box.querySelector('[data-k]'), stn = box.querySelector('[data-s]'), vel = box.querySelector('[data-v]');
+  range.max = String(Math.round(L));
+  document.body.append(box);
+  let held = false;
+  range.addEventListener('pointerdown', () => { held = true; });
+  addEventListener('pointerup', () => { held = false; });
+  range.addEventListener('input', () => { S.seek(+range.value); wake(); });
+  const show = () => {
+    const x = ((S.camX % L) + L) % L;
+    if (!held) range.value = String(Math.round(x));
+    const [n, d] = S.stationNear(x);
+    km.textContent = `${(x / 1000).toFixed(2)} / ${(L / 1000).toFixed(1)} km`;
+    stn.textContent = `${n} ${d < 50 ? '' : `${(d / 1000).toFixed(1)} km`}`;
+    vel.textContent = `${Math.round(S.speed * 3.6)} km/h`;
+  };
+  setInterval(show, 200);
+  show();
+}
 
 /* ---------- start ---------- */
 onReducedChange(() => wake());
