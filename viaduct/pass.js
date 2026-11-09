@@ -811,7 +811,7 @@ let drift = null;
   pts.forEach((c, i) => { for (let k = 0; k < g; k++) a.setXYZ(i * g + k, c[0], c[1], c[2]); });
 }
 const wind = { x: 26, z: 9, gust: 1 };
-const curtK = 1;
+let curtK = 1;
 /* ---------- end K2 ---------- */
 
 /* Sky: the storm ceiling, drawn on a far sphere. */
@@ -907,9 +907,11 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
     vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
     vec3 P = wp.xyz / wp.w;
     vec3 col = base.rgb;
+    // One gap sample per pixel serves the moon layer and the curtains.
+    float g = base.a > 0.001 ? k2gap(P) : 0.5;
     // The moon reaches the still layer only through the gaps.
     if (base.a > 0.001) {
-      col += texture2D(tMoon, vUv).rgb * k2gap(P);
+      col += texture2D(tMoon, vUv).rgb * g;
       vec4 nz = texture2D(tNorm, vUv);
       if (nz.a > 0.5) col += headLight(P, normalize(nz.xyz * 2.0 - 1.0), normalize(cameraPosition - P)) * (1.0 - k2hazeAmount(P));
     }
@@ -924,7 +926,7 @@ const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
       vec3 Q = cameraPosition + dir * D;
       vec2 u = vec2((Q.x + Q.z * 0.5 - uCloudOff.x * 1.6) * 0.005, Q.y * 0.006 + uTime * 0.06);
       float sheet = smoothstep(0.4, 0.85, k2noise(u) * 0.65 + k2noise(u * 2.7 + 4.0) * 0.35);
-      col += (uAir * 2.2 + uMoonC * uMoonK * 0.07 * k2gap(Q)) * sheet * 0.6 * uCurtK * (1.0 - 0.25 * float(i));
+      col += (uAir * 2.2 + uMoonC * uMoonK * 0.07 * g) * sheet * 0.6 * uCurtK * (1.0 - 0.25 * float(i));
     }
     gl_FragColor = vec4(col, 1.0);
     gl_FragDepthEXT = z;
@@ -1049,10 +1051,67 @@ function dispose() {
   });
 }
 
+/* ---------- tune: every look knob, for the ?tune panel ---------- */
+// Each knob: group, key, label, range, step, default, and what it sets.
+// bake: true knobs change the matte painting, so the page re-bakes.
+const U = k2, S = snowU;
+const col3 = (v3) => ({ get: () => '#' + new THREE.Color(v3.x * 4, v3.y * 4, v3.z * 4).getHexString(), set: hex => { const c = new THREE.Color(hex); v3.set(c.r / 4, c.g / 4, c.b / 4); } });
+const uni = (u) => ({ get: () => u.value, set: v => { u.value = v; } });
+const TUNE = [];
+function knob(group, key, label, min, max, step, io, bake = false) { TUNE.push({ group, key, label, min, max, step, bake, def: io.get(), ...io }); }
+function colour(group, key, label, v3, bake = false) { const io = col3(v3); TUNE.push({ group, key, label, type: 'color', bake, def: io.get(), ...io }); }
+// Sky.
+knob('Sky', 'moonK', 'Moonlight', 0, 3, 0.01, uni(U.uMoonK), true);
+knob('Sky', 'moonAir', 'Moonlit air', 0, 0.3, 0.001, uni(U.uMoonAir), true);
+knob('Sky', 'starK', 'Stars', 0, 3, 0.01, uni(U.uStarK));
+colour('Sky', 'air', 'Storm air', U.uAir.value, true);
+colour('Sky', 'zen', 'Clear sky', U.uZen.value);
+// Cloud.
+knob('Cloud', 'gapLo', 'Gaps open from', 0, 1, 0.01, uni(U.uGapLo));
+knob('Cloud', 'gapHi', 'Gaps open to', 0, 1, 0.01, uni(U.uGapHi));
+knob('Cloud', 'gapScale', 'Gap size', 0.0003, 0.004, 0.0001, uni(U.uGapScale));
+knob('Cloud', 'windX', 'Wind across', -60, 60, 0.5, { get: () => wind.x, set: v => { wind.x = v; } });
+knob('Cloud', 'windZ', 'Wind toward', -60, 60, 0.5, { get: () => wind.z, set: v => { wind.z = v; } });
+knob('Cloud', 'cloudY', 'Cloud height', 400, 3000, 10, uni(U.uCloudY));
+// Snow.
+knob('Snow', 'snowK', 'Snowfall', 0, 3, 0.01, uni(S.uSnowK));
+knob('Snow', 'curtK', 'Far curtains', 0, 3, 0.01, { get: () => curtK, set: v => { curtK = v; U.uCurtK.value = v; } });
+knob('Snow', 'sprayK', 'Plough spray', 0, 3, 0.01, uni(S.uSprayK));
+knob('Snow', 'driftK', 'Spindrift', 0, 3, 0.01, uni(S.uDriftK));
+knob('Snow', 'haze', 'Snowy air', 0, 0.006, 0.00005, uni(U.uHaze), true);
+knob('Snow', 'hazeH', 'Air height', 20, 600, 1, uni(U.uHazeH), true);
+colour('Snow', 'snowC', 'Snow colour', U.uSnowC.value, true);
+// Span.
+colour('Span', 'amb', 'Storm light', U.uAmb.value, true);
+knob('Span', 'lightK', 'Lamp power', 0, 4, 0.01, uni(U.uLightK), true);
+// Train.
+knob('Train', 'speed', 'Train speed', 2, 40, 0.5, { get: () => run.v, set: v => { run.v = v; } });
+knob('Train', 'pause', 'Pause between trains', 0, 30, 0.5, { get: () => runPause, set: v => { runPause = v; } });
+knob('Train', 'coneK', 'Headlight beam', 0, 4, 0.01, uni(U.uConeK));
+knob('Train', 'flareK', 'Lamp flares', 0, 4, 0.01, uni(U.uFlareK));
+// Lens: the camera, per orientation.
+for (const [o, name] of [['w', 'Lens (wide)'], ['p', 'Lens (portrait)']]) {
+  const c = CAM[o];
+  const io = k => ({ get: () => c[k], set: v => { c[k] = v; frame(view.w, view.h, view.pr); } });
+  knob(name, o + 'fov', 'Lens (fov)', 15, 100, 0.5, io('fov'), true);
+  knob(name, o + 'px', 'Position x', -800, 800, 1, io('px'), true);
+  knob(name, o + 'py', 'Height', 20, 600, 1, io('py'), true);
+  knob(name, o + 'pz', 'Position z', -800, 900, 1, io('pz'), true);
+  knob(name, o + 'tx', 'Look x', -1500, 1500, 1, io('tx'), true);
+  knob(name, o + 'ty', 'Look y', -300, 400, 1, io('ty'), true);
+  knob(name, o + 'tz', 'Look z', -3000, 200, 1, io('tz'), true);
+}
+const tune = {
+  list: TUNE,
+  // set returns true when the matte painting needs a re-bake.
+  set(key, v) { const k = TUNE.find(t => t.key === key); if (!k) return false; k.set(v); return k.bake; },
+};
+/* ---------- end tune ---------- */
+
 // QA can park the train with ?train=<s>, in metres along the track.
 const parkAt = new URLSearchParams(location.search).get('train');
 if (parkAt !== null) { parked = true; run.s = +parkAt; }
 train.place(run.s, run.dir);
 
-return { scene, camera, frame, bake, dispose, orbs, update, tap, lively, lower, get bakes() { return bakes; }, get run() { return run; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
+return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, lively, lower, get bakes() { return bakes; }, get run() { return run; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
 }

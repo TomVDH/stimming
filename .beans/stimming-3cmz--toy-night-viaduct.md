@@ -44,7 +44,7 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [ ] Sound
 - [ ] Checkpoint 2: Tom reviews motion and sound
 - [ ] Pass: parked by Tom 2026-11-04; Port first
-- [ ] Pass snowbound, sub-project 1: shared `train.js`, span, storm and moon gaps, long freight with plough (spec `docs/plans/viaduct-pass-snowbound.md`)
+- [x] Pass snowbound, sub-project 1: shared `train.js`, span, storm and moon gaps, long freight with plough (spec `docs/plans/viaduct-pass-snowbound.md`)
 - [ ] Pass snowbound, sub-project 2: avalanche on tap
 - [ ] Prototypes: Tom picks any to grow (all six final in the gallery)
 - [ ] Menu Lab entry: icon and `toys.viaduct` hook kept as they are
@@ -64,4 +64,7 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - Headless SwiftShader is slow (about 1 s per Port frame), so it cannot judge fps. A real-device check is still needed.
 - The bake hides static parts each frame; tune knobs marked bake re-render the still layer 150 ms after the last move.
 - Polish pass not yet seen in a visible pane; frame times not measured.
+- Pass snowbound: stills from a hidden-tab probe at 1280 and 375 px, and one real-page look with the tune desk.
+- Pass frame times on Tom's Mac (rAF median, page at 834 x 899, dpr 2): 8.4 ms at first load; 24.9 ms after a Pass, Port, Pass switch, before the comp lost two gap samples per pixel. Not measured since; the pane went hidden.
+- Pass open: peak wedges show a few thin slivers; snow and gap levels want Tom's eye in `?tune`.
 - havoc (`TomVDH/havoc`) holds the lens flare, disc blur and box-fog shaders used as models; it is WebGPU/TSL, so ports are rewrites in GLSL.
