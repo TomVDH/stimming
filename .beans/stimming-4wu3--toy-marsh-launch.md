@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:01:06Z
+updated_at: 2026-11-09T08:08:58Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -46,3 +46,12 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Each puff is now a raymarched sphere: 9 steps of 3D billow noise, Beer-Lambert, a self-shadow toward the sun and the flame.
 - No burst: the trail is one continuous column that widens into a glowing fan up high, and sweeps right across the sky (downrange 0.95 D).
 - Liftoff ground clouds: forty large billows roll sideways off the pad, lit orange from below.
+
+## Cinematic pass (2026-11-09, Tom: restyle the marsh, tilt down, professional staging)
+
+- Reeds: slim stems, three long arching leaves, and a feather plume that nods downwind; one wind combs them all. Plume hairs use alpha to coverage on a 4x multisampled target.
+- Depth of field: focus on the far shore; near stalks soften (scatter-as-gather, 28 taps, depth from the scene target).
+- Grade: cool shadows, warm highlights, a faint lens fringe at the edges.
+- Camera: the drag eases to its target; the view tilts down to -0.2 rad.
+- Trail: tighter spacing and less spread up high, so the sunlit fan stays smooth.
+- Rocket: an orbital launcher, two stages; Heavy adds two strap-on boosters.
