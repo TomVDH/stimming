@@ -17,7 +17,7 @@ Bean: `stimming-80dc`. One session per toy. The orchestrating session starts the
 4. **Diegetic check.** Ask: does a control belong inside the scene? Examples: a dial on the TV tree, a knob on the Oscilloscope, a crank on the Music box, a switch on the Neon sign, a lever on the Gear train, a chain on a lamp.
    - A diegetic control draws on the toy's canvas, under the shell layer, and is grabbed by the pointer like any other part of the toy.
    - It replaces a bar control, never duplicates it. It needs a keyboard path too: a key in the key strip.
-   - If it fits, propose it to Tom with one still, and build it only on his yes. If it does not fit, say so in one line.
+   - If it fits, propose it to Tom with one still in `docs/plans/diegetic/<id>-diegetic-<name>.jpg`, add a row to `bar-v2-diegetic.md`, and build it only on his yes. If it does not fit, say so in one line in that file.
    - A toy whose own on-screen legend teaches its keys sets `keys: false`.
 5. **Port.** Replace `<header data-shell>`, `.bar`, `dl.how` and local tray or popover code with one `bar` spec to `initPage`. Delete the dead CSS and JS.
 6. **Fix and upgrade.** Fix the bugs from step 2. Upgrade where it is cheap and clearly better: idle pages do no per-frame work, 30 fps or better, `prefers-reduced-motion`, sound muted by default. Keep every look Tom approved.

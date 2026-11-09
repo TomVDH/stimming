@@ -49,7 +49,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 - At most five visible controls. A choice group counts as one. The top-right cluster does not count.
 - An empty slot draws nothing.
 
-**Logo.** The colour Stimming mark, unboxed, at the far left. On hover or focus a `‹` slides in and the mark waves. It links to the menu. It shrinks to its `S` below 300 px.
+**Logo.** The Stimming mark in B612, unboxed, at the far left. It rests white. Hover, focus or a tap waves it into colour, and a `‹` slides in. It links to the menu. It shrinks to its `S` below 300 px.
 
 **One look (Tom, 2026-11-09).** A box always means a control; the logo and the name are never boxed. Every control shares one chip: dark glass, a hairline, a 1 px lift onto a hard shadow on hover, and the inverted flash box when picked or open. Every keycap shares one look. The corners slide in from their edges once the intro has gone.
 
@@ -77,7 +77,9 @@ Palette options carry a square colour dot.
 
 An action can be disabled (`aria-disabled`) when it would do nothing.
 
-A held action (`hold: true`, `onDown`, `onUp`) runs while the chip, its key, or Enter/Space on the focused chip is held. It looks pressed while held, opens no long-press menu, and lets go on release, cancel, window blur or disable.
+A held action (`hold: true`, `onDown`, `onUp`) runs while the chip, its key, or Enter/Space on the focused chip is held. It looks pressed while held, opens no long-press menu, and lets go on release, cancel, window blur or disable. A held action does not call `onPress`; `ui.action(verb).held` reads its state.
+
+**Shortcut keys.** An action or a choice option takes `key`: a printed key (`C`, `1`) or the name `Space`. The keycap shows it as written. Keys skip modified presses, text fields and open sheets. A toy that takes typed text binds no shortcut a typed letter needs.
 
 **Key strip.** Bottom centre, above the bottom row when a bottom slot is used.
 - Each entry is a keycap, then a verb in lower case. Example: `[CLICK] place`.
@@ -87,7 +89,7 @@ A held action (`hold: true`, `onDown`, `onUp`) runs while the chip, its key, or 
 - (i) toggles it back. (i) also opens the how-to as a sheet for screen readers.
 - A toy with its own on-screen legend sets `keys: false`. Today: Sonar, Oscilloscope, ShadyOS.
 
-**Diegetic toys.** A toy's own on-screen UI draws on its canvas, under the shell layer. The shell never reads it.
+**Diegetic toys.** A toy's own on-screen UI draws on its canvas, under the shell layer. The shell never reads it. Every port proposes a diegetic control or says none fits; the proposals and Tom's verdicts live in [bar-v2-diegetic.md](bar-v2-diegetic.md).
 
 ### Phones (stage narrower than 640 px, or a top row that does not fit)
 
@@ -114,7 +116,7 @@ Every shell change and every toy port holds these. `tests/bar-v2.html` checks th
 5. Every touch target is at least 34 px on coarse pointers, including the stepper arrows and segments (WCAG 2.5.8 asks for 24).
 6. Every control has a visible focus ring and a keyboard path.
 7. Reduced motion stops every transition and the entrance.
-8. Text keeps 4.5:1 contrast: the key strip carries a dark halo on bright stages.
+8. Text keeps 4.5:1 contrast: the key strip, the logo and the toy name share one dark halo (`--halo`) on bright stages.
 
 ## 2. Look
 
@@ -126,9 +128,11 @@ All new rules live in `shared/stim.css` under `.stim2`. The shell adds `.stim2` 
 | `--glass` | `oklch(0.13 0.012 275 / 0.86)` | Control backing |
 | `--shadow` | `3px 3px 0 oklch(0.07 0.01 275)` | Picked chip |
 | `--hard` | `5px 5px 0 oklch(0.05 0.01 275)` | Sheets |
+| `--lift` | `2px 2px 0 oklch(0.05 0.01 275)` | Hovered chip |
+| `--halo` | `0 0 3px` and `0 1px 2px` in `oklch(0.05 0.01 275)` | Bare text on the stage: logo, name, key strip |
 
 - Text: slab, 500, 11 px, caps, 0.07em tracking. Keycaps: 700, 10 px.
-- Chips: 26 px tall (34 px on touch), 2 px radius, 1 px `--line` border, `--glass` backing.
+- Chips: 26 px tall (36 px on touch), never narrower than they are tall, 2 px radius, 1 px `--line` border, `--glass` backing. A chip inside a joined block is 2 px less, so 34 px on touch.
 - Picked: `--fg` fill, `--bg` text, `--shadow`. This is the intro's flash box.
 - Choice groups: one block, 1 px hairlines between options.
 - Slider: a 2 px track, the filled part in `--fg`, a 6 × 12 px bar thumb.
