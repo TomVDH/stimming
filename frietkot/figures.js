@@ -206,6 +206,19 @@ float car(vec2 p, out float glass) {
   glass = smoothstep(0.03, -0.02, cab + 0.08) * step(0.92, p.y);
   return d;
 }
+// A regional bus, 12 m long and 3.1 m tall: a long box, a band of windows, two axles.
+// win: 1 in the window glass. sign: 1 in the destination sign over the windscreen.
+float bus(vec2 p, out float win, out float sign) {
+  float body = rbox(p, vec2(0.0, 1.72), vec2(5.9, 1.42), 0.28);
+  float arch = min(length(p - vec2(-3.6, 0.47)), length(p - vec2(3.9, 0.47)));
+  float d = max(body, -(arch - 0.58));
+  d = min(d, arch - 0.47);
+  float band = rbox(p, vec2(0.1, 2.02), vec2(5.6, 0.6), 0.08);
+  float gap = abs(fract((p.x + 5.5) / 1.45) - 0.5) * 1.45 - 0.07;
+  win = smoothstep(0.02, -0.02, band) * smoothstep(0.0, 0.03, gap);
+  sign = smoothstep(0.02, -0.02, rbox(p, vec2(5.05, 2.84), vec2(0.6, 0.11), 0.03));
+  return d;
+}
 // An umbrella held in the hand: a shallow canopy on eight ribs, tipped into the walk.
 // The hem dips between the rib tips; a ferrule on top, a hooked handle below the hand.
 float umbrella(vec2 p, vec2 hand, float tilt) {

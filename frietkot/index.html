@@ -106,7 +106,6 @@ const ui = initPage({ id: 'frietkot', bar: {
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
-    { type: 'toggle', id: 'moths', label: 'Moths', value: true, persist: true, onToggle: on => act.moths(on) },
     { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
   ],
   reset: () => act.reset(),
@@ -231,7 +230,7 @@ const U = {
 // The window's warm light; a drop flares it for a moment.
 const LAMP = new THREE.Vector3(...oklchLinear(0.9, 0.07, 70));
 function setLight() {
-  const f = 1 + 0.7 * U.uFlare.value;
+  const f = 1 + 0.3 * U.uFlare.value;
   U.uLampCol.value.copy(LAMP).multiplyScalar(7 * f);
   // What the lens sees through the window: the lit back wall and steam.
   U.uWin.value.copy(LAMP).multiplyScalar(1.4 * f);
@@ -392,6 +391,8 @@ void main() {
 
 /* ---------- the square ---------- */
 // Belgian setts in running bond, damp on top, rough in the joints.
+// The road runs between two granite curbs, across the front of the square.
+const ROAD = [8.9, 10.95];
 const groundMat = new THREE.ShaderMaterial({
   uniforms: U,
   vertexShader: VS,
@@ -414,12 +415,18 @@ const groundMat = new THREE.ShaderMaterial({
     float detail = 1.0 - smoothstep(0.015, 0.06, fw);
     float stone = mix(0.8, 1.0 - smoothstep(-0.012, 0.002, sd), detail);
     float r1 = hash12(id), r2 = hash12(id + 7.7);
+    // The road in front of the square: smooth dark asphalt between the two curbs.
+    float road = step(${ROAD[0].toFixed(2)}, g.y) * step(g.y, ${ROAD[1].toFixed(2)});
+    stone = mix(stone, 1.0, road);
     // Each sett is a low dome with its own tilt.
     vec2 grad = (f / (hs * hs) * 0.0012 + (vec2(r1, r2) - 0.5) * vec2(0.02, 0.05)) * stone * detail;
     vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
     vec3 v = normalize(cameraPosition - vP);
     vec3 alb = mix(vec3(0.09, 0.09, 0.1), vec3(0.2, 0.19, 0.17), r1) * (0.85 + 0.3 * fbm(g * 0.7));
     alb = mix(alb * 0.5, alb, stone);
+    alb = mix(alb, vec3(0.055, 0.055, 0.06) * (0.85 + 0.3 * fbm(g * 3.0)), road);
+    grad *= 1.0 - road;
+    n = normalize(vec3(-grad.x, 1.0, -grad.y));
     // Damp patches shine more; joints stay rough.
     float wet = 0.55 + 0.45 * smoothstep(0.35, 0.65, fbm(g * 0.25 + 4.0));
     float gloss = mix(stone * wet * mix(0.55, 0.85, r2), mix(0.75, 0.92, stone), uWet);
@@ -447,18 +454,25 @@ const groundMat = new THREE.ShaderMaterial({
 groundMat.extensions = { derivatives: true };
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), groundMat);
 scene.add(ground);
+// Two granite curbs: the square's edge behind the road, the near pavement in front.
+const curbMat = surface({ alb: linFit(0.4, 0.01, 260) });
+for (const z of [ROAD[0] - 0.15, ROAD[1] + 0.15]) {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(160, 0.13, 0.3), curbMat);
+  c.position.set(0, 0.065, z);
+  scene.add(c);
+}
 
 /* ---------- surfaces ---------- */
 // One material maker for every lit box.
 // ribs: corrugation on painted panels; tiles: a grid on the back wall.
-function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
+function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0, rim = 0 }) {
   return new THREE.ShaderMaterial({
-    uniforms: { ...U, uAlb: { value: new THREE.Vector3(...alb) }, uIn: { value: inside }, uGloss: { value: gloss }, uRibs: { value: ribs }, uTiles: { value: tiles } },
+    uniforms: { ...U, uAlb: { value: new THREE.Vector3(...alb) }, uIn: { value: inside }, uGloss: { value: gloss }, uRibs: { value: ribs }, uTiles: { value: tiles }, uRim: { value: rim } },
     vertexShader: VS,
     fragmentShader: /* glsl */`
     ${LIGHT}
     uniform vec3 uAlb;
-    uniform float uIn, uGloss, uRibs, uTiles;
+    uniform float uIn, uGloss, uRibs, uTiles, uRim;
     varying vec3 vP, vN;
     void main() {
       vec3 n = normalize(vN);
@@ -481,6 +495,8 @@ function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
       if (uIn < 0.5) alb *= mix(0.45, 1.0, smoothstep(0.0, 0.9, vP.y));
       vec3 v = normalize(cameraPosition - vP);
       vec3 c = shade(vP, n, v, alb, uGloss, uIn);
+      // A soft rim: the town's glow catches the frituur's edges, lifting it off the square.
+      if (uRim > 0.0) c += uRim * vec3(0.16, 0.11, 0.1) * pow(1.0 - max(dot(n, v), 0.0), 2.5) * smoothstep(0.2, 1.6, vP.y);
       gl_FragColor = vec4(haze(c, vP), 1.0);
     }`,
     extensions: { derivatives: true },
@@ -488,11 +504,11 @@ function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
 }
 const lin = (L, C, h) => linFit(L, C, h);
 const M = {
-  paint: surface({ alb: lin(0.62, 0.03, 85), ribs: 1 }),
-  trim: surface({ alb: lin(0.32, 0.02, 260) }),
+  paint: surface({ alb: lin(0.62, 0.03, 85), ribs: 1, rim: 1 }),
+  trim: surface({ alb: lin(0.32, 0.02, 260), rim: 1 }),
   plinth: surface({ alb: lin(0.18, 0.01, 260) }),
   steelOut: surface({ alb: lin(0.6, 0.01, 250), gloss: 0.5 }),
-  awning: surface({ alb: lin(0.55, 0.12, 25) }),
+  awning: surface({ alb: lin(0.55, 0.12, 25), rim: 1 }),
   inWall: surface({ alb: lin(0.4, 0.06, 195), inside: 1, tiles: 1 }),
   inPlain: surface({ alb: lin(0.36, 0.04, 200), inside: 1 }),
   steel: surface({ alb: lin(0.62, 0.01, 250), inside: 1 }),
@@ -500,6 +516,30 @@ const M = {
   gable: surface({ alb: lin(0.2, 0.012, 260) }),
   cooler: new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.85, 0.04, 230).map(v => v * 1.6)) }),
 };
+// The village as a painted backdrop: soft brushed tones, deep haze, never sharp.
+M.village = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${NOISE}
+  uniform vec3 uSky, uHaze, uPartyCol;
+  uniform float uHazeK;
+  varying vec3 vP, vN;
+  void main() {
+    vec3 n = normalize(vN);
+    // Long horizontal strokes, as a loaded brush lays them.
+    float br = fbm(vec2(vP.x * 0.12 + vP.z * 0.05, vP.y * 0.7 + vP.x * 0.02));
+    // Warm street glow at the foot of the walls, cool shadow up top.
+    vec3 c = mix(vec3(0.03, 0.021, 0.016), vec3(0.008, 0.009, 0.016), smoothstep(0.0, 8.0, vP.y));
+    c *= 0.7 + 0.6 * br;
+    // Roofs and ledges that face up hold a little sky.
+    c += uSky * 5.0 * smoothstep(0.3, 1.0, n.y) * (0.8 + 0.4 * br);
+    // Atmosphere: twice the haze of the square, so the village sits back.
+    float d = length(vP - cameraPosition);
+    c = mix(c, uHaze * 1.15, 1.0 - exp(-d * uHazeK * 2.0));
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
 // Menu boards: white letters on black, too far off to read.
 M.menu = new THREE.ShaderMaterial({
   uniforms: U,
@@ -1156,7 +1196,7 @@ const FAR_LAMPS = [];
   geos.push(new THREE.ExtrudeGeometry(nave, { depth: 30, bevelEnabled: false }).translate(C.x, 0, C.z - 3.5 - 30));
   // A lit door in the tower: a late rehearsal.
   lateWins.push({ x: C.x, y: 1.6, z: C.z + 3.55, tv: false, on: true, k: 0, tall: true });
-  scene.add(new THREE.Mesh(mergeGeometries(geos.map(g => (g.index ? g.toNonIndexed() : g))), M.gable));
+  scene.add(new THREE.Mesh(mergeGeometries(geos.map(g => (g.index ? g.toNonIndexed() : g))), QS.has('day') ? M.gable : M.village));
 }
 
 // Sodium streetlights in the distance: a pole, an arm, an orange head and its pool on the road.
@@ -1198,16 +1238,16 @@ const winMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.1, 1.5), new T
 const haloMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vUv = uv; vC = instanceColor; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vec2 q = (vUv - 0.5) * 2.0; gl_FragColor = vec4(vC * 0.07 * exp(-dot(q, q) * 2.2), 1.0); }`,
+  fragmentShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vec2 q = (vUv - 0.5) * 2.0; gl_FragColor = vec4(vC * 0.12 * exp(-dot(q, q) * 2.6), 1.0); }`,
 });
-const haloMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.6, 3.0), haloMat, lateWins.length);
+const haloMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.0, 4.4), haloMat, lateWins.length);
 {
   const m4 = new THREE.Matrix4();
   lateWins.forEach((w, i) => { m4.makeTranslation(w.x, w.y, w.z - 0.01); haloMesh.setMatrixAt(i, m4); haloMesh.setColorAt(i, new THREE.Color(0, 0, 0)); });
   scene.add(haloMesh);
 }
-const WARM = new THREE.Color().setRGB(...linFit(0.82, 0.1, 70).map(v => v * 0.9));
-const SCREEN = new THREE.Color().setRGB(...linFit(0.7, 0.08, 250).map(v => v * 0.8));
+const WARM = new THREE.Color().setRGB(...linFit(0.82, 0.1, 70).map(v => v * 0.45));
+const SCREEN = new THREE.Color().setRGB(...linFit(0.7, 0.08, 250).map(v => v * 0.4));
 const OFF = new THREE.Color().setRGB(0.004, 0.004, 0.006);
 const tmpC = new THREE.Color();
 function paintWins() {
@@ -1903,10 +1943,12 @@ const figMat = new THREE.ShaderMaterial({
     vGait = aGait;
     vVar = aVar;
     // Mirror the shape to face the way it moves.
-    vQ = vec2(position.x * aScale * aPose.z, position.y);
+    // The bus stands taller than the quad: it stretches up as well.
+    float sy = abs(aPose.x - 11.0) < 0.5 ? 1.55 : 1.0;
+    vQ = vec2(position.x * aScale * aPose.z, position.y * sy);
     // Upright billboards: they turn to the lens round the vertical only.
     vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
-    vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y, 0.0);
+    vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y * sy, 0.0);
     // Three passes: staff, then those behind the window line, before the light and steam.
     // Everyone nearer than the window line draws after them.
     bool staff = aPose.x > 2.5 && aPose.x < 3.5;
@@ -1930,7 +1972,7 @@ const figMat = new THREE.ShaderMaterial({
     int k = int(kind + 0.5);
     float ph = vPose.y, extra = vPose.w, style = uStyle;
     vec2 p = vQ, hand = vec2(0.27, 1.1);
-    float d = 1e3, glass = 0.0;
+    float d = 1e3, glass = 0.0, busWin = 0.0, busSign = 0.0;
     bool smoker = k == 4;
     float build = vVar.x, pose = vVar.y, seed = vVar.z;
     // kind 10: someone up to no good, in a long coat and a hat.
@@ -1983,6 +2025,7 @@ const figMat = new THREE.ShaderMaterial({
       if (k == 6) d = min(d, motoRider(mp));
     }
     if (k == 8 || k == 9) d = car(p, glass);
+    if (k == 11) d = bus(p, busWin, busSign);
     // A paper cone, held out at the hand.
     float cone = (k == 0 && extra > 0.5 && umb < 0.5) ? taper(p, hand + vec2(0.01, -0.02), hand + vec2(0.05, 0.15), 0.012, 0.055) : 1e3;
     float aa = max(fwidth(d), 0.004);
@@ -2037,17 +2080,29 @@ const figMat = new THREE.ShaderMaterial({
       c += vec3(1.0) * gl * 2.0;
       a = max(a, gl);
     }
+    // The bus: yellow below the windows, white above, lit warm inside, a glowing sign.
+    if (k == 11) {
+      float inB = step(d, 0.0) * step(0.3, p.y);
+      vec3 liv = p.y < 1.35 ? vec3(0.9, 0.7, 0.05) : vec3(0.85, 0.85, 0.8);
+      c = mix(c, liv * (0.02 + front * 0.25 + uSky * 6.0), inB * (1.0 - busWin));
+      float bay = fract((p.x + 5.5) / 1.45);
+      float pax = step(0.6, fract(sin(floor((p.x + 5.5) / 1.45) * 12.9 + seed * 7.0) * 437.5))
+                * smoothstep(0.2, 0.14, length(vec2(bay * 1.45 - 0.7, p.y - 1.75) / vec2(0.9, 1.2)));
+      c = mix(c, vec3(1.0, 0.86, 0.62) * 0.35 * (1.0 - 0.85 * pax), busWin);
+      c += vec3(1.0, 0.55, 0.1) * 1.6 * busSign;
+      a = max(a, step(d, 0.0));
+    }
     // A car's glass holds a little sky.
     c += (uSky * 14.0 + back * 0.02) * glass;
     // The ember glows hot, brighter on each draw.
     float ember = smoker ? exp(-dot(p - hand, p - hand) / 0.0008) : 0.0;
     c += vec3(1.0, 0.32, 0.06) * ember * (1.5 + 10.0 * extra);
     // Lamps on the move: white at the front, red at the back. Parked ones are dark.
-    bool moving = k == 1 || k == 6 || k == 8;
-    vec2 head = k == 1 ? vec2(0.5, 0.9) : k == 6 ? vec2(0.82, 0.84) : vec2(2.08, 0.66);
-    vec2 tail = k == 6 ? vec2(-0.82, 0.78) : vec2(-2.08, 0.7);
-    float hl = moving ? exp(-dot(p - head, p - head) / (k == 8 ? 0.005 : 0.0015)) : 0.0;
-    float tl = (k == 6 || k == 8) ? exp(-dot(p - tail, p - tail) / 0.0025) : 0.0;
+    bool moving = k == 1 || k == 6 || k == 8 || k == 11;
+    vec2 head = k == 1 ? vec2(0.5, 0.9) : k == 6 ? vec2(0.82, 0.84) : k == 11 ? vec2(5.88, 0.8) : vec2(2.08, 0.66);
+    vec2 tail = k == 6 ? vec2(-0.82, 0.78) : k == 11 ? vec2(-5.88, 0.85) : vec2(-2.08, 0.7);
+    float hl = moving ? exp(-dot(p - head, p - head) / (k == 8 || k == 11 ? 0.005 : 0.0015)) : 0.0;
+    float tl = (k == 6 || k == 8 || k == 11) ? exp(-dot(p - tail, p - tail) / 0.0025) : 0.0;
     c += vec3(1.0, 0.95, 0.85) * hl * 7.0 + vec3(1.0, 0.05, 0.03) * tl * 3.0;
     a = max(a, max(max(ember, hl), tl) * 0.9);
     if (a < 0.002) discard;
@@ -2141,11 +2196,11 @@ const PARK = { 6: { x: 3.6, z: 4.6, park: 7 }, 8: { x: -8.6, z: 8.1, park: 9 } }
 // The road across the front of the square: one lane each way.
 const LANES = [9.3, 10.4];
 // Footpaths: people cross the square at many depths.
-const footZ = () => 3.6 + rnd() * 5.2;
+const footZ = () => 3.6 + rnd() * 4.8;
 const TABLE = { x: 1.9, z: 3.4 };
 const EDGE = 15;
 const people = [];
-let traffic = true, spawnIn = 2;
+let traffic = true, spawnIn = 2, busIn = 25;
 // Time-lapse: everyone moves faster than life.
 const WALK = 1.35 * 1.75, SPEED = { 0: WALK, 1: 5.4, 6: 10.5, 8: 9.5 };
 const wetOut = () => wx.rain > 0.2;
@@ -2232,6 +2287,12 @@ function spawn() {
   spot.who = f;
   // Cars and motorbikes come along the road, then turn in to their place.
   go(f, vk === 1 ? [[pk.x + side * 2, pk.z + 1.5], [pk.x, pk.z]] : [[pk.x + side * 3, vz], [pk.x, pk.z]], 'park');
+}
+// The bus keeps to its lane and does not stop here.
+function spawnBus() {
+  const side = rnd() < 0.5 ? -1 : 1, lane = side > 0 ? LANES[1] : LANES[0];
+  const f = person({ kind: 11, x: side * (EDGE + 8) - 1, z: lane, speed: 7.5, alpha: 1 });
+  go(f, [[-side * (EDGE + 9) - 1, lane]], 'pass');
 }
 // Close to the lens: someone walks, cycles or scoots past on the near pavement.
 function spawnNear(side) {
@@ -2349,6 +2410,8 @@ function stepPeople(dt) {
     spawnIn -= dt;
     // Arrivals bunch and thin out, never on a beat.
     if (spawnIn <= 0) { spawn(); spawnIn = (1.2 + rnd() * rnd() * 7) * (1 + wx.rain * 0.6); }
+    // The regional bus comes by now and then, on time or nearly.
+    if ((busIn -= dt) <= 0) { spawnBus(); busIn = 70 + rnd() * 60; }
     youthIn -= dt;
     if (youthIn <= 0) { spawnYouth(); youthIn = 18 + rnd() * 22; }
     dealIn -= dt;
@@ -2423,7 +2486,7 @@ function stepPeople(dt) {
       const brake = f.state === 'park' && f.kind !== 0 ? Math.max(0.2, Math.min(1, d / 5)) : 1;
       const step = f.speed * brake * dt;
       if (Math.abs(dx) > 0.01) f.face = Math.sign(dx);
-      f.ph += step * (f.kind === 1 ? 2.2 : f.kind === 6 || f.kind === 8 ? 0 : 5.8);
+      f.ph += step * (f.kind === 1 ? 2.2 : f.kind === 6 || f.kind === 8 || f.kind === 11 ? 0 : 5.8);
       f.gait += (1 - f.gait) * Math.min(1, dt * 6);
       if (d <= step) { f.x = q.x; f.z = q.z; f.path.shift(); }
       else { f.x += dx / d * step; f.z += dz / d * step; }
@@ -2563,9 +2626,9 @@ function leave(f) {
   for (const i of [0, 3]) RACK[i].bike = person({ kind: 2, x: RACK[i].x, z: RACK[i].z, face: i ? -1 : 1, alpha: 1, state: 'parked', left: true });
 }
 // Height of each kind's top, for its shadow; half length of vehicles, for their lamps.
-const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4, 10: 1.85, 13: 0.9 };
-const SCALE = { 6: 1.1, 7: 1.1, 8: 2.4, 9: 2.4 };
-const NOSE = { 1: [0.5, 0.35], 6: [0.82, 1.6], 8: [2.1, 3.2] };
+const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4, 10: 1.85, 11: 3.1, 13: 0.9 };
+const SCALE = { 6: 1.1, 7: 1.1, 8: 2.4, 9: 2.4, 11: 6.2 };
+const NOSE = { 1: [0.5, 0.35], 6: [0.82, 1.6], 8: [2.1, 3.2], 11: [5.9, 3.6] };
 // Where a figure was at time t, from its history, in between samples.
 function sampleAt(f, t) {
   const h = f.hist;
@@ -2904,6 +2967,12 @@ const POST = { bloom: [0.36, 0.75, 0.88], tint: [0.0004, 0.0005, 0.0009], vig: 0
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+// A guard before the bloom: a stray bright or broken pixel must not flash the frame.
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tDiffuse; varying vec2 vUv; void main() { vec3 c = texture2D(tDiffuse, vUv).rgb; if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0); gl_FragColor = vec4(min(c, vec3(6.0)), 1.0); }`,
+}));
 composer.addPass(makeBloom(...POST.bloom));
 const tilts = [tiltPass([1, 0]), tiltPass([0, 1])];
 for (const p of tilts) composer.addPass(p);
@@ -2991,7 +3060,7 @@ function draw() {
   // A new grain each frame; a new exposure each step.
   grade.uniforms.uFrame.value = ++frameN % 100000;
   const st = Math.floor(simT * STEP);
-  grade.uniforms.uFlick.value = camcorder ? (Math.sin(st * 12.9898) * 43758.5453 % 1) * 0.024 : 0;
+  grade.uniforms.uFlick.value = camcorder ? (Math.sin(st * 12.9898) * 43758.5453 % 1) * 0.01 : 0;
   writeSteam();
   writePeople();
   composer.render();
@@ -3262,9 +3331,9 @@ function drip(g, t) {
 function engineFor(g, f) {
   const ac = g.ac, o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
   const tyre = ac.createBufferSource(), tf = ac.createBiquadFilter(), tg = ac.createGain();
-  const car = f.kind === 8, bike = f.kind === 1;
+  const car = f.kind === 8 || f.kind === 11, bike = f.kind === 1;
   o.type = 'sawtooth'; o2.type = 'square';
-  const base = car ? 42 : f.scale ? 118 : 70;
+  const base = f.kind === 11 ? 31 : car ? 42 : f.scale ? 118 : 70;
   o.frequency.value = base; o2.frequency.value = base * 1.5;
   lp.type = 'lowpass'; lp.frequency.value = car ? 260 : 900;
   e.gain.value = 0;
@@ -3299,7 +3368,7 @@ function soundTick(dt) {
   // Each engine follows its vehicle: level, pan, pitch and Doppler.
   const live = new Set();
   for (const f of people) {
-    if (!(f.kind === 8 || f.kind === 6 || (f.kind === 1 && f.speed > 3))) continue;
+    if (!(f.kind === 8 || f.kind === 11 || f.kind === 6 || (f.kind === 1 && f.speed > 3))) continue;
     live.add(f);
     let v = g.engines.get(f);
     if (!v) { v = engineFor(g, f); g.engines.set(f, v); }
@@ -3487,7 +3556,8 @@ act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
 
 act.people(QS.get('people') ?? 'ink');
 act.moths = on => { mothsOn = on; mothMesh.visible = on; wake(); };
-act.moths(ui.setting('moths')?.value ?? true);
+// Moths stay off: Tom found them too busy.
+act.moths(false);
 act.reset = () => {
   for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
   for (const d of drops) d.live = false;
