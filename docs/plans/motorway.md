@@ -197,3 +197,11 @@ Round 4's dashboard read as try-hard. It is gone: the glowing HUD, the compariso
 - **Map.** Proportional circles at the 15 jam points, area following the queue; the three worst carry a plain label with the km. Hovering a circle shows its own day curve, the queue now, and its peak.
 - **Trains.** Hold-ups follow the traffic, and a moving train claws time back, so lateness peaks in the rush (about 20 %).
 - The day's curves are precomputed once, on first open (97 steps).
+
+## Round 6 (Tom, 2026-11-09): a printed map
+
+Every overlay now reads like a printed map or a newspaper graphic: plain Gabarito set straight on the map with a tight dark halo for legibility, hairlines, no boxes, no glow, no caps micro-labels.
+
+- **Cities:** a dot and the Dutch name; French, German and English follow in a quieter italic line, without repeats. Names grow a little as the camera nears.
+- **Jam points:** hairline circles sized by queue; the worst three carry a short leader line and `R0 Machelen 35 km`. Hovering shows the point's own day curve as a bare line, with the queue now and its worst moment.
+- **Study:** the total queue set large at top left (`251 km of queues at 17:36`), one sentence, a plain ranked list, one sentence on trains. The day runs along the bottom as a bare line on a baseline, with hour ticks and the two peaks noted; drag along it to scrub. Pause is an underlined word; the source line sits beside it.
