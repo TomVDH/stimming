@@ -206,6 +206,16 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] Village windows go on and off, one at a time; a screen flickers blue. The tower clock is lit and shows the real local time.
 - [x] Neon script on the roof box: "Frituur Stefan & Hilde" (Tom). The cone glyph stands on the box at its right end.
 
+### Task 3d: Iterations and the parish hall (Tom, 2026-11-09)
+
+- [x] Tower clock is an open dial: only marks and hands are lit, the stone shows between. Three dials: `?clock=a` bars, `b` ring and minute stripes, `c` four long marks and dots.
+- [x] Neon hands: `?font=a` Sacramento, `b` Tilt Neon, `c` Neonderthaw, `d` Monoton (`e` keeps Yellowtail).
+- [x] Three original dogs: `?dog=a` wiry terrier, `b` dachshund, `c` shaggy sheepdog. Tom asked for the dog from Man bijt hond; no description of it was found, and a TV show's character stays out (no brands). Tom can describe it.
+- [x] The seating room's roof falls from the kiosk side; its light box stays level on two posts. The shapes behind its glass shift, lean, lift a fork and now and then stand up.
+- [x] A bike rack of six hoops. Some riders leave their bike and walk on, so bikes pile up; now and then someone comes back for one.
+- [x] A parish hall left of the shack with a party on: five tall windows flash in colour at 126 BPM, mirror-ball specks, dancers' shapes; the door stands open; two stand outside smoking; coloured light spills on the square.
+- [x] Time-lapse trails are smooth: nine echoes 45 ms apart with an exponential fade, no stepped walk. The square renders every frame while lively and at 48 fps while drifting.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.
