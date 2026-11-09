@@ -94,3 +94,10 @@ Known, not fixed:
 - [ ] Kwak's stand-in is a straight tumbler, not the coachman bulb; no stand.
 - [ ] Spill visuals; sips leave no lacing yet.
 - [ ] Not checked: a real phone, real touch, reduced motion, the Fizz slider's range, Foam time Real.
+
+- Pour, swirl and exposure (2026-11-09, Tom: the pour looks weird and has a black line; the swirl looks weird; less exposure):
+  - The black line was the jet's own outline: its Fresnel term darkened the tube's silhouette. Reflections now only add light, and the silhouette fades out. The jet is see-through gold with a key glint.
+  - The jet stopped in mid-air in an empty tilted glass: its aim was held at 62% of the glass's height. It now lands on the beer, or on the bowl's floor while the glass is empty.
+  - Gaps showed between the tilted beer, the head and the wall: both meshes took their edge radius at the wrong height. `wallHit()` now finds where the tilted plane meets the wall, so the beer's top is one flat plane edge to edge and the head sits on it.
+  - Swirl: the wave is driven at 55% and capped at a slope of 0.45; more damping. The head is stiff: its top follows only 35% of the swirl, so it no longer slides about as a rigid wedge.
+  - Exposure down from 0.95 to 0.78.

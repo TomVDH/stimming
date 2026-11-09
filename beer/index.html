@@ -285,6 +285,15 @@ uniform vec2 uSlope;   // the beer surface's tilt: rise per cm in x and z
 #define LEV(xz) (uLevel + dot(uSlope, (xz)))
 const float GMAX = ${GMAX.toFixed(1)};
 vec4 gp(float y) { return texture2D(uGP, vec2(clamp(y / GMAX, 0.0, 1.0), 0.5)); }
+// Where a tilted level meets the inner wall in one direction: radius, height.
+vec2 wallHit(vec2 dir, float lev) {
+  float y = clamp(lev, uGYb + 0.02, uGH), r = texture2D(uGP, vec2(y / GMAX, 0.5)).y;
+  for (int i = 0; i < 6; i++) {
+    y = clamp(lev + dot(uSlope, dir * r), uGYb + 0.02, uGH);
+    r = mix(r, texture2D(uGP, vec2(y / GMAX, 0.5)).y, 0.7);
+  }
+  return vec2(r, y);
+}
 `;
 const FULL_VS = `
 varying vec2 vUv;
@@ -489,16 +498,18 @@ void main() {
   vec3 behind = texture2D(uBehind, clamp(uv + nv * 0.05, 0.001, 0.999)).rgb;
   // The path through the tube: longest at its centre.
   float path = 2.0 * vR * c;
-  // Clear gold: the room behind, tinted; saturated past what the thin path gives.
-  vec3 Tg = exp(-uSigma * (1.2 + path * 4.0));
-  vec3 col = behind * mix(vec3(1.0), Tg, 0.75) * 1.15;
-  // Subsurface glow, and the lamp piped along the jet as a core line.
-  col += uLamp * Tg * (0.04 + 0.1 * c);
-  col += uLamp * Tg * 0.5 * pow(c, 10.0);
-  float F = 0.03 + 0.97 * pow(1.0 - c, 5.0);
-  col = col * (1.0 - F) + studio(vP, reflect(-v, n)) * F;
-  // See-through in the middle, denser at the rim where the path bends most.
-  float a = smoothstep(0.0, 0.03, vS) * uFlow * (0.7 + 0.3 * (1.0 - c));
+  // Clear gold: the room behind shows through, tinted by the beer.
+  vec3 Tg = exp(-uSigma * (0.5 + path * 2.2));
+  vec3 col = behind * mix(vec3(1.0), Tg, 0.85) * 1.1;
+  // Light scattered inside, and the lamp piped along the jet as a core line.
+  col += uLamp * Tg * (0.05 + 0.1 * c);
+  col += uLamp * Tg * 0.45 * pow(c, 12.0);
+  // Reflections add light; they never darken the edge.
+  vec3 rw = normalize(dirW(reflect(-v, n)));
+  col += uKey * 0.9 * pow(max(dot(rw, normalize(KEY_DIR)), 0.0), 50.0);
+  col += uLamp * 0.12 * pow(1.0 - c, 3.0);
+  // The silhouette fades out, so the jet has no hard outline.
+  float a = smoothstep(0.0, 0.03, vS) * uFlow * smoothstep(0.0, 0.45, c) * 0.8;
   gl_FragColor = vec4(safe(col) * a, a);
 }`;
 
@@ -512,13 +523,19 @@ uniform float uLevel;
 varying vec3 vW, vN;
 void main() {
   vec2 dir = normalize(position.xz + 1e-6);
-  // Two steps: the radius at the flat level, then the tilted level there.
-  float top = max(LEV(dir * gp(clamp(uLevel, uGYb, uGH)).y * aTS.y), uGYb + 0.05);
-  float y = mix(uGYb + 0.05, top, aTS.x);
-  vec4 P = gp(y);
-  float r = P.y * aTS.y;
-  vec3 pos = vec3(dir.x * r, y, dir.y * r);
-  vec3 n = aTS.x > 0.999 && aTS.y < 0.999 ? normalize(vec3(-uSlope.x, 1.0, -uSlope.y)) : normalize(vec3(dir.x, -P.w, dir.y));
+  // The top is one flat plane; its edge sits where that plane meets the wall.
+  vec2 wh = wallHit(dir, uLevel);
+  vec3 pos, n;
+  if (aTS.x > 0.999) {
+    vec2 xz = dir * wh.x * aTS.y;
+    pos = vec3(xz.x, clamp(LEV(xz), uGYb + 0.05, uGH), xz.y);
+    n = aTS.y < 0.999 ? normalize(vec3(-uSlope.x, 1.0, -uSlope.y)) : normalize(vec3(dir.x, -gp(pos.y).w, dir.y));
+  } else {
+    float y = mix(uGYb + 0.05, max(wh.y, uGYb + 0.05), aTS.x);
+    vec4 P = gp(y);
+    pos = vec3(dir.x * P.y, y, dir.y * P.y);
+    n = normalize(vec3(dir.x, -P.w, dir.y));
+  }
   vW = pos; vN = n;
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
 }`;
@@ -581,22 +598,31 @@ void main() {
 const FOAM_VS = PROF + `
 attribute vec2 aTS;
 uniform float uLevel, uTop, uDome, uRock, uTime, uMound;
+uniform vec2 uSwirl;   // the swirl's share of the surface slope
 uniform vec3 uHit;     // jet landing x, z; strength 0..1
 varying vec3 vW, vN;
 varying float vS, vHit;
 ${NOISE}
 void main() {
   vec2 dir = normalize(position.xz + 1e-6);
-  float Rw = gp(clamp(uLevel, uGYb, uGH)).y;
-  vec2 xz0 = dir * Rw * aTS.y;
+  // The head's foot sits on the beer's plane, edge to edge with it.
+  vec2 wb = wallHit(dir, uLevel);
+  float Rw = max(wb.x, 0.5), t0 = max(uTop - uLevel, 0.0);
   // A young head is a mound where the jet lands; it spreads as it grows.
-  float t0 = max(uTop - uLevel, 0.0);
-  vec2 dm = xz0 - uHit.xy;
-  float th = max(t0 * mix(1.0, 2.6 * exp(-dot(dm, dm) / (Rw * Rw * 0.3)), uMound), 0.02);
-  float y = LEV(xz0) - 0.05 + aTS.x * (th + 0.05);
-  vec4 P = gp(min(y, uGH - 0.05));
-  float r = P.y * aTS.y;
-  vec3 pos = vec3(dir.x * r, y, dir.y * r);
+  // Foam is stiff: its top follows a swirl far less than the beer under it.
+  #define TH(q) max(t0 * mix(1.0, 2.6 * exp(-dot((q) - uHit.xy, (q) - uHit.xy) / (Rw * Rw * 0.3)), uMound) - 0.65 * dot(uSwirl, (q)), 0.02)
+  float thw = TH(dir * wb.x);
+  vec3 pos;
+  if (aTS.x > 0.999) {
+    float rT = gp(min(wb.y + thw, uGH - 0.05)).y;
+    vec2 xz = dir * rT * aTS.y;
+    float k4 = aTS.y * aTS.y; k4 *= k4;
+    pos = vec3(xz.x, mix(LEV(xz) + TH(xz), wb.y + thw, k4), xz.y);
+  } else {
+    float y = wb.y - 0.05 + aTS.x * (thw + 0.05);
+    float r = gp(min(y, uGH - 0.05)).y;
+    pos = vec3(dir.x * r, y, dir.y * r);
+  }
   vec3 n = normalize(vec3(dir.x, 0.0, dir.y));
   if (aTS.x > 0.999) {
     // The top domes and stands in soft peaks.
@@ -617,6 +643,7 @@ void main() {
 const FOAM_FS = NOISE + ROOM + PROF + `
 uniform vec3 uFoamCol, uSigma, uKey;
 uniform float uLevel, uTop, uCell, uCoarse, uDome;
+uniform vec2 uSwirl;
 varying vec3 vW, vN;
 varying float vS, vHit;
 // The head as a volume, lit as Fire lights its smoke.
@@ -624,7 +651,7 @@ varying float vS, vHit;
 float foamD(vec3 p) {
   float lev = LEV(p.xz), R = max(gp(clamp(p.y, uGYb, uGH)).y, 0.1);
   float rr = length(p.xz) / R;
-  float top = uTop + dot(uSlope, p.xz) + uDome * (1.0 - rr * rr);
+  float top = uTop + dot(uSlope - 0.65 * uSwirl, p.xz) + uDome * (1.0 - rr * rr);
   if (p.y < lev || p.y > top || rr > 1.0) return 0.0;
   return 2.6 * (0.6 + 0.8 * vn(p * 5.0));
 }
@@ -917,7 +944,7 @@ void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
   vec2 q = vUv - 0.5;
   c *= 1.0 - uVig * smoothstep(0.2, 0.75, length(q * vec2(1.2, 1.0)));
-  c = aces(c * 0.95);
+  c = aces(c * 0.78);
   c = pow(c, vec3(1.0 / 2.2));
   // A gentle S-curve and a warm lift in the shadows.
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
@@ -1193,7 +1220,7 @@ function build() {
   fizzMesh.renderOrder = 2;
   foamMesh = new THREE.Mesh(bodyGeometry(24, 128, 24), new THREE.ShaderMaterial({
     vertexShader: FOAM_VS, fragmentShader: FOAM_FS,
-    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uMound: { value: 0 }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
+    uniforms: { ...U, uFoamCol: { value: new THREE.Vector3(1, 1, 1) }, uMound: { value: 0 }, uSwirl: { value: new THREE.Vector2() }, uDome: { value: 0 }, uRock: { value: 0 }, uCell: { value: 0.15 }, uCoarse: { value: 0 }, uHit: { value: new THREE.Vector3() } },
   }));
   foamMesh.frustumCulled = false;
   foamMesh.renderOrder = 3;
@@ -1539,9 +1566,12 @@ function bottleStep(dt) {
   const rimR = glass.ri(glass.h - 0.3);
   const tl = clamp(pose.tilt / 0.45);
   // A sideways drag slides the pour along the rim; the jet still lands inside.
-  const ax = clamp(lerp(rimR * 0.2, glass.ri(glass.h * 0.62) * 0.7, tl) + pour.hx, -rimR * 0.6, rimR * 0.75);
-  const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : glass.ybot + 0.2;
-  bot.aimG.set(ax, Math.max(surf, lerp(glass.ybot + 0.2, glass.h * 0.62, tl)), -1.2);
+  const ax = clamp(lerp(rimR * 0.2, glass.ri(glass.h * 0.5) * 0.5, tl) + pour.hx, -rimR * 0.6, rimR * 0.75);
+  // The jet lands on the beer, or on the bowl's floor while the glass is empty.
+  let floorY = glass.ybot + 0.2;
+  for (let y = glass.ybot; y < glass.h; y += 0.1) if (glass.ri(y) >= Math.abs(ax) + 0.3) { floorY = y; break; }
+  const surf = fill.vol > 0.5 ? fill.top + fill.crown + (fill.slope + swirl.sx) * ax : -99;
+  bot.aimG.set(ax, Math.max(surf, floorY), -0.6);
   const aimW = _aw.copy(bot.aimG).applyMatrix4(G2W);
   // The mouth sits just above the rim's highest point.
   const rimTop = Math.max(_rw.set(-rimR, glass.h, 0).applyMatrix4(G2W).y, _rw.set(rimR, glass.h, 0).applyMatrix4(G2W).y);
@@ -1653,12 +1683,12 @@ function swirlStep(dt) {
   const depth = Math.max(fill.level - glass.ybot, 0.2);
   const w = Math.sqrt(G * kk * Math.tanh(kk * depth));
   // A head damps the wave.
-  const zeta = 0.05 + 0.25 * clamp(fill.foam / Math.max(fill.vol, 1));
-  const ex = -ax / G, ez = -az / G;
+  const zeta = 0.1 + 0.3 * clamp(fill.foam / Math.max(fill.vol, 1));
+  const ex = -0.55 * ax / G, ez = -0.55 * az / G;
   swirl.wx += (-w * w * (swirl.sx - ex) - 2 * zeta * w * swirl.wx) * dt;
   swirl.wz += (-w * w * (swirl.sz - ez) - 2 * zeta * w * swirl.wz) * dt;
-  swirl.sx = clamp(swirl.sx + swirl.wx * dt, -1.2, 1.2);
-  swirl.sz = clamp(swirl.sz + swirl.wz * dt, -1.2, 1.2);
+  swirl.sx = clamp(swirl.sx + swirl.wx * dt, -0.45, 0.45);
+  swirl.sz = clamp(swirl.sz + swirl.wz * dt, -0.45, 0.45);
   if (fill.vol < 1) { swirl.sx = swirl.sz = swirl.wx = swirl.wz = 0; return; }
   const tilt = Math.hypot(swirl.sx, swirl.sz), rimR = glass.ri(glass.h - 0.1);
   // Swirling frees gas: the head swells a little.
@@ -1666,7 +1696,7 @@ function swirlStep(dt) {
   fill.post = Math.min(fill.post + stir * dt * 0.02, 1);
   fx.surge = Math.min(fx.surge + stir * dt * 0.03, 1);
   // Spill past the rim.
-  const overTop = fill.top + fill.crown + tilt * rimR - glass.h;
+  const overTop = fill.top + fill.crown + 0.35 * tilt * rimR - glass.h;
   if (overTop > 0 && fill.foam > 0) { const d = Math.min(fill.foam, overTop * 90 * dt); fill.foam -= d; swirl.spilt += d; }
   const overBeer = fill.level + tilt * rimR - glass.h;
   if (overBeer > 0) { const d = Math.min(fill.vol, overBeer * 140 * dt); fill.vol -= d; swirl.spilt += d; }
@@ -1702,6 +1732,7 @@ function render() {
   // The jet lands at its parabola's end.
   fu.uHit.value.set(bot.aimG.x, bot.aimG.z, clamp(bot.q / 30) * clamp(thick / 0.6));
   fu.uMound.value = fx.mound;
+  fu.uSwirl.value.set(swirl.sx, swirl.sz);
   fu.uRock.value = (beer.rock || 0.2) * clamp(thick / 2.5) * (0.5 + 0.5 * Math.exp(-fill.age / beer.half));
   fu.uCoarse.value = Math.sqrt(fill.age / beer.half) * 0.6;
   const zu = fizzMesh.material.uniforms;
