@@ -178,116 +178,116 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= A · Shaded object ================= */
 
-  // A console: the live waterfall under a bearing strip.
-  // The pointer aims the ear; new rows hear only that beam.
+  // A porthole screen: the live waterfall behind round glass.
+  // The pointer aims the ear; new rows hear only that bearing.
   {
-    const X0 = 24, X1 = 100, SY = 38, SH = 62, G = 26, NS = 32, REST = 0.62;
+    const C = [62, 62], R = 44, G = 30, NS = 34, REST = 0.72;
+    const X0 = C[0] - R, X1 = C[0] + R, Y0 = C[1] - R;
     const sx = e => X0 + e * (X1 - X0);
+    // The ear shows as two notches on the rim, above its bearing.
+    const notch = e => { const x = sx(e), y = C[1] - Math.sqrt(Math.max(0, R * R - (x - C[0]) ** 2)); return brackets(x, 7, f(y - 3), f(y + 9), 3.5); };
     DIRS.push({
-      toy: 'sonar', l: 'A', name: 'Shaded object', box: [16, 16, 98, 98],
+      toy: 'sonar', l: 'A', name: 'Shaded object', box: [12, 12, 106, 106],
       art(svg, id) {
         svg.innerHTML = `
           <defs>
-            <linearGradient id="${id}f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.28 0.03 25)"/><stop offset="1" stop-color="oklch(0.19 0.025 25)"/></linearGradient>
-            <linearGradient id="${id}gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.1"/><stop offset="0.45" stop-color="#fff" stop-opacity="0"/></linearGradient>
-            <clipPath id="${id}c"><rect x="${X0}" y="22" width="${X1 - X0}" height="${SY + SH - 22}" rx="3"/></clipPath>
+            <clipPath id="${id}c"><circle cx="${C[0]}" cy="${C[1]}" r="${R}"/></clipPath>
+            <radialGradient id="${id}gl" cx="0.35" cy="0.25" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></radialGradient>
+            <linearGradient id="${id}bz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.36 0.03 25)"/><stop offset="1" stop-color="oklch(0.16 0.02 25)"/></linearGradient>
           </defs>
-          <rect x="22" y="22" width="92" height="92" fill="${SHADOW}"/>
-          <rect x="16" y="16" width="92" height="92" fill="url(#${id}f)"/>
-          <path d="M16 16H108" stroke="oklch(0.38 0.03 25)" stroke-width="1.6"/>
-          <rect x="${X0 - 2}" y="20" width="${X1 - X0 + 4}" height="${SY + SH - 18}" rx="4" fill="oklch(0.1 0.015 25)"/>
+          <circle cx="${C[0] + 6}" cy="${C[1] + 6}" r="${R + 6}" fill="${SHADOW}"/>
+          <circle cx="${C[0]}" cy="${C[1]}" r="${R + 6}" fill="url(#${id}bz)"/>
           <g clip-path="url(#${id}c)">
-            <rect x="${X0}" y="22" width="${X1 - X0}" height="${SY + SH - 22}" fill="oklch(0.08 0.02 25)"/>
+            <rect x="${X0}" y="${Y0}" width="${2 * R}" height="${2 * R}" fill="oklch(0.08 0.02 25)"/>
             <g class="ras"></g>
-            <path class="lvl" fill="oklch(0.3 0.12 27)" stroke="${RED}" stroke-width="1"/>
-            <path class="ear" fill="none" stroke="${HOTR}" stroke-width="1.6"/>
-            <path d="M${X0} ${SY - 1}H${X1}" stroke="oklch(0.3 0.08 25)" stroke-width="0.8"/>
-            <rect x="${X0}" y="22" width="${X1 - X0}" height="${SY + SH - 22}" fill="url(#${id}gl)"/>
+            <circle cx="${C[0]}" cy="${C[1]}" r="${R}" fill="url(#${id}gl)"/>
           </g>
-          <circle cx="100" cy="104" r="1.8" fill="${RED}"/><circle cx="94" cy="104" r="1.8" fill="oklch(0.32 0.04 25)"/>`;
-        const defs = el('defs', {}, svg), ras = svg.querySelector('.ras'), lvl = svg.querySelector('.lvl'), ear = svg.querySelector('.ear');
-        const s = sono(G, NS, REST), paintRas = raster(defs, ras, id, X0, SY, X1 - X0, SH, G, NS);
-        const paint = () => {
-          paintRas(s.rows);
-          // The strip draws the newest row as a level curve.
-          const r = s.rows[0];
-          lvl.setAttribute('d', `M${X0} ${SY - 1}` + r.map((v, k) => `L${f(sx((k + 0.5) / NS))} ${f(SY - 1 - v * 12)}`).join('') + `L${X1} ${SY - 1}Z`);
-          ear.setAttribute('d', brackets(sx(s.ex), 6, 23, SY - 2));
-        };
+          <circle cx="${C[0]}" cy="${C[1]}" r="${R}" fill="none" stroke="${RED}" stroke-width="2"/>
+          <path class="ear" fill="none" stroke="${HOTR}" stroke-width="2.6" stroke-linecap="square"/>`;
+        const defs = el('defs', {}, svg), ras = svg.querySelector('.ras'), ear = svg.querySelector('.ear');
+        const s = sono(G, NS, REST), paintRas = raster(defs, ras, id, X0, Y0, 2 * R, 2 * R, G, NS);
+        const paintEar = () => ear.setAttribute('d', notch(s.ex));
+        const paint = () => { paintRas(s.rows); paintEar(); };
         paint();
         const loop = every(0.07, () => { s.step(); paint(); });
-        const aim = p => gsap.to(s, { ex: clamp((p[0] - X0) / (X1 - X0), 0.04, 0.96), duration: 0.25, ease: 'power2.out', onUpdate: paint, overwrite: 'auto' });
+        const aim = p => gsap.to(s, { ex: clamp((p[0] - X0) / (X1 - X0), 0.1, 0.9), duration: 0.25, ease: 'power2.out', onUpdate: paintEar, overwrite: 'auto' });
         return ctl(aim,
-          () => { loop.stop(); gsap.to(s, { ex: REST, duration: 0.6, onUpdate: () => ear.setAttribute('d', brackets(sx(s.ex), 6, 23, SY - 2)), overwrite: 'auto' }); },
-          () => { const d = { t: 0 }; return gsap.to(d, { t: 1, duration: 4, repeat: -1, ease: 'none', onUpdate: () => aim([sx(0.5 + 0.42 * Math.sin(d.t * TAU)), 60]) }); },
+          () => { loop.stop(); gsap.to(s, { ex: REST, duration: 0.6, onUpdate: paintEar, overwrite: 'auto' }); },
+          () => { const d = { t: 0 }; return gsap.to(d, { t: 1, duration: 4, repeat: -1, ease: 'none', onUpdate: () => aim([sx(0.5 + 0.38 * Math.sin(d.t * TAU)), 60]) }); },
           () => loop.start());
       },
       emblem: emb(`
-        <rect x="8" y="8" width="112" height="112" fill="#fff"/>
-        <rect x="18" y="16" width="92" height="96" rx="5" fill="#000"/>
-        <path d="M18 40H110" stroke="#fff" stroke-width="3"/>
-        <path d="M24 39L32 39L36 26L40 39L52 39L56 32L60 39L104 39" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
-        <path d="${brackets(86, 9, 20, 38, 4)}" fill="none" stroke="#fff" stroke-width="3"/>
-        <g fill="none" stroke="#fff" stroke-linecap="round">
-          <path d="M36 50V104" stroke-width="5"/>
-          <path d="M56 50V104" stroke-width="3" stroke-dasharray="6 5"/>
-          <path d="M86 50C86 64 94 70 94 80S86 96 86 104" stroke-width="6"/>
+        <clipPath id="p"><circle cx="64" cy="64" r="43"/></clipPath>
+        <g clip-path="url(#p)" fill="none" stroke="#fff" stroke-linecap="round">
+          <path d="M38 14V114" stroke-width="7"/>
+          <path d="M54 14V114" stroke-width="4.5" stroke-dasharray="7 7"/>
+          <path d="M74 14C74 40 88 50 88 66S72 92 72 114" stroke-width="10"/>
         </g>
+        <circle cx="64" cy="64" r="51" fill="none" stroke="#fff" stroke-width="7"/>
       `),
     });
   }
 
   /* ================= B · Stencil cut-out ================= */
 
-  // A plate cut in slats; the waterfall runs behind them.
-  // The ear notch at the top follows the pointer.
+  // A plate with the sonogram cut through it: a ship line, its harmonic, a whale's glide.
+  // The ear cut slides along the top; the trace below it burns brightest.
   {
-    const X0 = 22, X1 = 102, Y0 = 30, N = 8, SL = 6, GP = 4, NS = 28, REST = 0.62;
-    const sx = e => X0 + e * (X1 - X0);
-    const SLATS = Array.from({ length: N }, (_, g) => `<rect x="${X0}" y="${Y0 + g * (SL + GP)}" width="${X1 - X0}" height="${SL}" rx="3"/>`).join('');
-    const PLATE = 'M12 12H112V96L96 112H12Z';
+    const PLATE = 'M14 14H114V98L98 114H14Z';
+    const T = [
+      { d: 'M36 38V100', x: 36, w: 7 },
+      { d: 'M54 38V100', x: 54, w: 5, dash: '7 7' },
+      { d: 'M84 38C84 56 96 62 96 74S80 90 80 100', x: 88, w: 10 },
+    ];
+    const LX0 = 26, LX1 = 102, REST = 88;
+    const earCut = x => brackets(x, 9, 20, 30, 4);
     DIRS.push({
-      toy: 'sonar', l: 'B', name: 'Stencil cut-out', box: [12, 12, 106, 106],
+      toy: 'sonar', l: 'B', name: 'Stencil cut-out', box: [14, 14, 106, 106],
       art(svg, id) {
         svg.innerHTML = `
-          <defs><clipPath id="${id}h">${SLATS}<rect x="${X0}" y="18" width="${X1 - X0}" height="5" rx="2.5"/></clipPath></defs>
+          <defs><mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+            <path d="${PLATE}" fill="#fff"/>
+            <g fill="none" stroke="#000" stroke-linecap="round">
+              ${T.map(t => `<path d="${t.d}" stroke-width="${t.w}"${t.dash ? ` stroke-dasharray="${t.dash}"` : ''}/>`).join('')}
+              <path d="M${LX0} 25H${LX1}" stroke-width="3"/>
+              <path class="ec" d="${earCut(REST)}" stroke-width="4" stroke-linecap="square"/>
+            </g>
+          </mask></defs>
           <path d="${PLATE}" transform="translate(6 6)" fill="${SHADOW}"/>
-          <path d="${PLATE}" fill="oklch(0.22 0.03 25)"/>
-          <path d="M12 12H112" stroke="oklch(0.36 0.035 25)" stroke-width="1.6"/>
-          <g clip-path="url(#${id}h)">
-            <rect x="${X0}" y="18" width="${X1 - X0}" height="${Y0 + N * (SL + GP) - 18}" fill="oklch(0.09 0.02 25)"/>
-            <g class="ras"></g>
-            <rect class="ear" y="18" width="16" height="5" fill="${HOTR}"/>
-          </g>`;
-        const defs = el('defs', {}, svg), ras = svg.querySelector('.ras'), ear = svg.querySelector('.ear');
-        const s = sono(N, NS, REST, 0.2);
-        // Each slat is one row; the raster rows line up with the slats.
-        const stops = [];
-        for (let g = 0; g < N; g++) {
-          const gr = el('linearGradient', { id: `${id}r${g}`, x1: 0, x2: 1, y1: 0, y2: 0 }, defs);
-          stops.push(Array.from({ length: NS }, (_, k) => el('stop', { offset: f(k / (NS - 1)) }, gr)));
-          el('rect', { x: X0, y: Y0 + g * (SL + GP), width: X1 - X0, height: SL, fill: `url(#${id}r${g})` }, ras);
-        }
+          <path d="${PLATE}" fill="oklch(0.1 0.03 25)"/>
+          <g fill="none" stroke-linecap="round">
+            ${T.map(t => `<path class="gl" d="${t.d}" stroke-width="${t.w + 4}"/>`).join('')}
+            ${T.map(t => `<path class="pl" d="${t.d}" pathLength="100" stroke="${HOTR}" stroke-width="${t.w + 4}" stroke-dasharray="10 190" stroke-dashoffset="10" opacity="0"/>`).join('')}
+            <path d="M${LX0} 25H${LX1}" stroke="oklch(0.5 0.2 27)" stroke-width="5"/>
+            <path class="eg" d="${earCut(REST)}" stroke="${HOTR}" stroke-width="7" stroke-linecap="square"/>
+          </g>
+          <path d="${PLATE}" fill="oklch(0.23 0.03 25)" mask="url(#${id}m)"/>
+          <path d="M14 14H114" stroke="oklch(0.36 0.035 25)" stroke-width="1.6" mask="url(#${id}m)"/>`;
+        const gl = [...svg.querySelectorAll('.gl')], pl = [...svg.querySelectorAll('.pl')], ec = svg.querySelector('.ec'), eg = svg.querySelector('.eg');
+        const st = { x: REST };
         const paint = () => {
-          s.rows.forEach((r, g) => r.forEach((v, k) => stops[g][k].setAttribute('stop-color', phos(v))));
-          ear.setAttribute('x', f(sx(s.ex) - 8));
+          ec.setAttribute('d', earCut(st.x)); eg.setAttribute('d', earCut(st.x));
+          T.forEach((t, i) => gl[i].setAttribute('stroke', phos(0.25 + 0.75 * Math.exp(-(((st.x - t.x) / 12) ** 2)))));
         };
         paint();
-        const loop = every(0.14, () => { s.step(); paint(); });
-        const aim = p => gsap.to(s, { ex: clamp((p[0] - X0) / (X1 - X0), 0.05, 0.95), duration: 0.25, ease: 'power2.out', onUpdate: () => ear.setAttribute('x', f(sx(s.ex) - 8)), overwrite: 'auto' });
+        // Echo pulses run down each trace, strongest under the ear.
+        const run = () => T.forEach((t, i) => {
+          const k = Math.exp(-(((st.x - t.x) / 12) ** 2));
+          gsap.fromTo(pl[i], { strokeDashoffset: 10, opacity: 0.25 + 0.75 * k }, { strokeDashoffset: -100, duration: 0.9, ease: 'none', delay: i * 0.12 });
+        });
+        const loop = every(1, run);
+        const aim = p => gsap.to(st, { x: clamp(p[0], LX0 + 10, LX1 - 10), duration: 0.25, ease: 'power2.out', onUpdate: paint, overwrite: 'auto' });
         return ctl(aim,
-          () => { loop.stop(); gsap.to(s, { ex: REST, duration: 0.6, onUpdate: () => ear.setAttribute('x', f(sx(s.ex) - 8)), overwrite: 'auto' }); },
-          () => { const d = { t: 0 }; return gsap.to(d, { t: 1, duration: 4, repeat: -1, ease: 'none', onUpdate: () => aim([sx(0.5 + 0.42 * Math.sin(d.t * TAU)), 60]) }); },
+          () => { loop.stop(); gsap.to(st, { x: REST, duration: 0.6, ease: 'power2.inOut', onUpdate: paint, overwrite: 'auto' }); },
+          () => { const d = { t: 0 }; return gsap.to(d, { t: 1, duration: 3.6, repeat: -1, ease: 'none', onUpdate: () => aim([64 + 34 * Math.sin(d.t * TAU), 60]) }); },
           () => loop.start());
       },
       emblem: emb(`
         <path d="${PLATE}" fill="#fff"/>
-        <g fill="#000">${SLATS}</g>
-        <rect x="${X0}" y="18" width="${X1 - X0}" height="5" rx="2.5" fill="#000"/>
-        <g fill="#fff">
-          <rect x="${f(sx(0.18) - 2.5)}" y="${Y0}" width="5" height="${N * (SL + GP)}"/>
-          <rect x="${f(sx(REST) - 3)}" y="${Y0}" width="6" height="${N * (SL + GP)}"/>
-          <rect x="${f(sx(REST) - 8)}" y="18" width="16" height="5"/>
+        <g fill="none" stroke="#000" stroke-linecap="round">
+          ${T.map(t => `<path d="${t.d}" stroke-width="${t.w + 1}"${t.dash ? ` stroke-dasharray="${t.dash}"` : ''}/>`).join('\n')}
+          <path d="M${LX0} 25H${LX1}" stroke-width="3.5"/>
+          <path d="${earCut(REST)}" stroke-width="4.5" stroke-linecap="square"/>
         </g>
       `),
     });
@@ -333,13 +333,13 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
           () => loop.start());
       },
       emblem: emb(`
-        <g fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round">
+        <g fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round">
           <path d="${AXIS}"/>
           <path d="M32 ${YT}V${YB}"/>
-          <path d="M48 ${YT}V${YB}" stroke-dasharray="7 8"/>
-          <path d="${song(CALL)}" stroke-width="7"/>
+          <path d="M48 ${YT}V${YB}" stroke-width="5" stroke-dasharray="7 8"/>
+          <path d="${song(CALL)}" stroke-width="10"/>
         </g>
-        <circle cx="${f(CALL[0])}" cy="${YT}" r="7" fill="#fff"/>
+        <circle cx="${f(CALL[0])}" cy="${YT}" r="9" fill="#fff"/>
       `),
     });
   }
@@ -349,7 +349,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   // A 3D waterfall: each row is a ridge on the slab, newest at the back.
   // The ridges roll forward; the ear lifts the bearing it hears.
   {
-    const O = [64, 70], S = 30, H = 12, c30 = 0.866, G = 9, NS = 26, LIFT = 22, REST = 0.62;
+    const O = [64, 70], S = 30, H = 12, c30 = 0.866, G = 7, NS = 24, LIFT = 24, REST = 0.62;
     const P = (i, j) => [O[0] + (i - j) * c30 * S, O[1] + (i + j) * 0.5 * S];
     const TOP = [P(-1, -1), P(1, -1), P(1, 1), P(-1, 1)];
     const L = [P(-1, 1), P(1, 1), [P(1, 1)[0], P(1, 1)[1] + H], [P(-1, 1)[0], P(-1, 1)[1] + H]];
@@ -374,7 +374,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         const rd = svg.querySelector('.rd');
         // The back ridge draws first, so the front ones hide it.
         const paths = Array.from({ length: G }, () => el('path', { fill: 'oklch(0.13 0.03 25)', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }, rd));
-        const s = sono(G, NS, REST, 0.2, 0.25);
+        const s = sono(G, NS, REST, 0.24, 0.1);
         const paint = () => s.rows.forEach((r, g) => {
           paths[g].setAttribute('d', ridge(r, g));
           paths[g].setAttribute('stroke', phos(0.35 + 0.65 * (g / (G - 1)) ** 0.7 * Math.max(...r)));
@@ -389,12 +389,12 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
           () => loop.start());
       },
       emblem: (() => {
-        const s = sono(G, NS, REST, 0.2, 0.25);
+        const s = sono(G, NS, REST, 0.24, 0);
         return emb(`
           <path d="${poly(SIL)}" fill="#fff"/>
           <path d="${poly(TOP)}" fill="none" stroke="#000" stroke-width="2"/>
           <path d="M${f(P(1, 1)[0])} ${f(P(1, 1)[1])}V${f(P(1, 1)[1] + H)}" stroke="#000" stroke-width="2"/>
-          ${[0, 2, 4, 6, 8].map(g => `<path d="${ridge(s.rows[g], g)}" fill="#fff" stroke="#000" stroke-width="3" stroke-linejoin="round"/>`).join('\n')}
+          ${[0, 3, 6].map(g => `<path d="${ridge(s.rows[g], g)}" fill="#fff" stroke="#000" stroke-width="4" stroke-linejoin="round"/>`).join('\n')}
         `);
       })(),
     });
@@ -402,10 +402,10 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= E · Abstract mark ================= */
 
-  // A chunky sonogram: six rows of five pills.
+  // A chunky sonogram: five rows of four pills.
   // The pointer's column hears; the rows fall while it stays.
   {
-    const C = 5, G = 6, PW = 14, PH = 9, GX = 4, GY = 5, X0 = 22, Y0 = 26, REST = 0.62;
+    const C = 4, G = 5, PW = 19, PH = 12, GX = 5, GY = 6, X0 = 20, Y0 = 24, REST = 0.62;
     const pill = (c, g) => [X0 + c * (PW + GX), Y0 + g * (PH + GY)];
     DIRS.push({
       toy: 'sonar', l: 'E', name: 'Abstract mark', box: [X0, Y0, C * (PW + GX) - GX, G * (PH + GY) - GY],
@@ -423,10 +423,10 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       },
       emblem: (() => {
         const s = sono(G, C, REST, 0.3);
-        const lum = v => `oklch(${f(0.25 + 0.75 * Math.min(1, v * 1.15))} 0 0)`;
+        const lum = v => (v > 0.55 ? '#fff' : v > 0.3 ? '#8c8c8c' : '#3a3a3a');
         // The mark is scaled up to fill the emblem square.
         return emb(`
-          <g transform="translate(64 64) scale(1.3) translate(-64 -64)">
+          <g transform="translate(64 64) scale(1.25) translate(-64 -64)">
             ${s.rows.map((r, g) => r.map((v, c) => { const [x, y] = pill(c, g); return `<rect x="${x}" y="${y}" width="${PW}" height="${PH}" rx="${PH / 2}" fill="${lum(v)}"/>`; }).join('')).join('\n')}
           </g>
         `);
