@@ -512,16 +512,28 @@ function towerGeom(c) {
   const r2 = clamp(rc * 0.7 + len * 0.42, r1 - len * 0.8, r1 + len * 0.8);
   return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4, ax: [Math.cos(c.shear), Math.sin(c.shear)] };
 }
+// A calmer storm retires its oldest cells; they die back over 15 s.
+// A stronger one adds a cell every few seconds; each towers up over 20 s.
+let cellNext = 0;
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
-    // A cell towers up over 20 s and dies back over 15 s.
     c.s = clamp(Math.min(c.age / 20, (c.life - c.age) / 15));
-    if (c.age > c.life || c.x - cam.x < -120 || i >= want) cells.splice(i, 1);
+    if (c.age > c.life || c.x - cam.x < -120) cells.splice(i, 1);
   }
-  while (cells.length < want) cells.push(newCell(true));
+  const live = cells.filter(c => !c.dying);
+  live.sort((a, b) => b.age - a.age);
+  for (let n = live.length; n > want; n--) {
+    const c = live[live.length - n];
+    c.dying = true; c.life = Math.min(c.life, c.age + 15);
+  }
+  if (live.length < want && t > cellNext) {
+    // Half arrive in view, half far ahead.
+    cells.push(newCell(Math.random() < 0.5));
+    cellNext = t + rnd(1.5, 4);
+  }
 }
 // A flash is a burst of strokes within about a second.
 const flashes = [];
@@ -658,8 +670,12 @@ function stepTurb(dt) {
   turb.vx += (-60 * turb.x - 7 * turb.vx) * dt; turb.vy += (-60 * turb.y - 7 * turb.vy) * dt;
   turb.x += turb.vx * dt; turb.y += turb.vy * dt;
 }
+// The slider sets a target; the weather eases toward it over about five seconds.
+let stormTarget = opts.storm;
 function step(dt) {
   t += dt;
+  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / 5);
+  if (Math.abs(stormTarget - opts.storm) < 1e-3) opts.storm = stormTarget;
   stepTurb(dt);
   stepAurora(dt);
   // The plane cruises at a steady pace.
@@ -1482,7 +1498,7 @@ const ui = initPage({
       options: Object.keys(HOURS).map(k => ({ value: k, label: HOUR_NAMES[k] })),
       onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); histFresh = true; render(); },
     },
-    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { opts.storm = v; save('storm', v); } },
+    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } }],
     settings: [
