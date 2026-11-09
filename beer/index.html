@@ -124,10 +124,11 @@ class Vessel {
   volBelow(L) {
     let v = 0;
     const dy = this.max / NP;
+    // The last slice counts in part, so the level moves smoothly.
     for (let i = Math.floor(this.ybot / dy); i < NP; i++) {
-      const y = (i + 0.5) * dy, r = this.prof[i * 4 + 1];
-      if (y > L) break;
-      v += Math.PI * r * r * dy;
+      const y0 = i * dy, r = this.prof[i * 4 + 1];
+      if (y0 >= L) break;
+      v += Math.PI * r * r * Math.min(L - y0, dy);
     }
     return v;
   }
@@ -961,7 +962,9 @@ function build() {
   blurScene = new THREE.Scene();
   blurScene.add(fullQuad(blurMat, 0));
   gTex = new THREE.DataTexture(new Float32Array(NP * 4), NP, 1, THREE.RGBAFormat, THREE.FloatType);
-  gTex.magFilter = gTex.minFilter = THREE.NearestFilter;
+  // Linear filtering keeps the wall radius smooth as the level moves.
+  const lin = renderer.extensions.has('OES_texture_float_linear');
+  gTex.magFilter = gTex.minFilter = lin ? THREE.LinearFilter : THREE.NearestFilter;
   U.uGP.value = gTex;
   labTex = new THREE.CanvasTexture(labCanvas);
   labTex.colorSpace = THREE.NoColorSpace;
@@ -1286,8 +1289,21 @@ function readyPour() {
   else if (bot.vol < bot.cap * 0.05 && bot.lift < 0.05) fillBottle();
 }
 act.pour = () => { readyPour(); pour.auto = 1e-3; live(); };
-act.sip = () => { pour.auto = 0; fill.vol = Math.max(0, fill.vol - fill.cap * 0.1); fill.foam *= 0.85; live(); };
-act.clear = () => { pour.auto = 0; pour.on = false; freshGlass(); Object.assign(bot, { lift: 0, th: 0 }); live(); };
+// A sip drains at a steady rate with an eased start; the head rides down.
+const sip = { beer: 0, foam: 0, t: 0 };
+act.sip = () => { pour.auto = 0; if (sip.beer < 0.05) sip.t = 0; sip.beer += fill.cap * 0.1; sip.foam += 0.15; live(); };
+function sipStep(dt) {
+  if (sip.beer < 0.05) { sip.beer = sip.foam = 0; return; }
+  sip.t += dt;
+  const db = Math.min(sip.beer, fill.vol, dt * 45 * smooth(0, 0.35, sip.t) + 1e-3);
+  // The foam goes in step with the beer.
+  const df = sip.foam * db / sip.beer;
+  fill.vol -= db;
+  fill.foam *= 1 - df;
+  sip.foam -= df;
+  sip.beer = fill.vol > 0 ? sip.beer - db : 0;
+}
+act.clear = () => { pour.auto = 0; pour.on = false; sip.beer = sip.foam = 0; freshGlass(); Object.assign(bot, { lift: 0, th: 0 }); live(); };
 act.reset = act.clear;
 
 /* ---------- render ---------- */
@@ -1352,7 +1368,7 @@ function render() {
 let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now(), pace = 1, ready = false;
 const live = () => { lastInput = performance.now(); wake(); };
 function wake() { if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); } }
-const lively = () => pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
+const lively = () => sip.beer > 0.05 || pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
 function frame(now) {
   raf = 0;
   let again = true;
@@ -1364,6 +1380,7 @@ function frame(now) {
     const idle = now - lastInput > 60000 && !lively();
     pace += ((idle ? 0 : 1) - pace) * ease(dt, 0.6);
     bottleStep(dt);
+    sipStep(dt);
     foamStep(dt * pace);
     settleLevels();
     time += dt * pace * (reduced() ? 0.25 : 1);
