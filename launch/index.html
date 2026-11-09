@@ -59,6 +59,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { BokehShader } from 'three/addons/shaders/BokehShader2.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
@@ -91,12 +92,9 @@ const ui = initPage({ id: 'launch', bar: {
   actions: [{ verb: 'launch', label: 'Launch', onPress: () => act.launch() }],
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
-    // Bokeh, after Buoy Business and Wind farm: a disc shape and a texture.
+    // Bokeh on three.js's BokehShader2: a round or a five-blade disc.
     { type: 'choice', id: 'shape', label: 'Bokeh', value: 'round', persist: true,
-      options: [{ value: 'round', label: 'Round' }, { value: 'hex', label: 'Hex' }, { value: 'oval', label: 'Oval' }, { value: 'donut', label: 'Donut' }, { value: 'star', label: 'Star' }],
-      onPick: () => setLens() },
-    { type: 'choice', id: 'texture', label: 'Texture', value: 'clean', persist: true,
-      options: [{ value: 'clean', label: 'Clean' }, { value: 'scatter', label: 'Scatter' }, { value: 'grain', label: 'Grain' }, { value: 'bubble', label: 'Bubble' }, { value: 'swirl', label: 'Swirl' }],
+      options: [{ value: 'round', label: 'Round' }, { value: 'pentagon', label: 'Pentagon' }],
       onPick: () => setLens() },
     // Fine control for the near reeds: blur size, focus (far left is auto), highlight discs.
     { type: 'slider', id: 'aperture', label: 'Aperture', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: () => draw() },
@@ -2161,105 +2159,58 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 }
 /* ---------- end K2 ---------- */
 
-/* ---------- bokeh: depth of field, after Wind farm and Buoy Business ---------- */
-// Focus sits on the pad; near reeds and far sky open into soft discs.
-// 28 golden-angle disc taps, turned per pixel, so the taps blend into grain.
-// Hot pixels weigh more, so the flame and sparks open into discs.
+/* ---------- bokeh: depth of field on three.js's BokehShader2 ---------- */
+// Focus sits on the pad. Only what lies nearer blurs; the distance stays sharp.
+// Fixed ring taps with no per-pixel turn, so discs read as discs, not grain.
+// Eight depth probes widen the gather, so a near reed bleeds over the sky.
+// Patches to the addon: a near-only blur in dioptres; no tone map mid-chain.
 function makeDof() {
-  const pass = new ShaderPass({
-    uniforms: {
-      tScene: { value: null }, tDepth: { value: null },
-      uNear: { value: camera.near }, uFar: { value: camera.far }, uFocus: { value: 2000 }, uK: { value: 72 }, uCap: { value: 14 }, uHunt: { value: 0 },
-      uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uFringe: { value: 0 },
-      uDonut: { value: 0 }, uStar: { value: 0 }, uScatter: { value: 0 }, uGrainB: { value: 0 }, uSwirl: { value: 0 }, uSeedB: { value: 0 },
-      uRes: { value: new THREE.Vector2(1, 1) }, uLampW: { value: 30 }, uLampT: { value: 0.25 },
-    },
-    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */`
-    uniform sampler2D tScene, tDepth;
-    uniform float uNear, uFar, uFocus, uK, uCap, uHunt, uLampW, uLampT;
-    uniform float uBlades, uOval, uRim, uCat, uFringe, uDonut, uStar, uScatter, uGrainB, uSwirl, uSeedB;
-    float bh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float bn(vec2 p) {
-      vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-      return mix(mix(bh(i), bh(i + vec2(1, 0)), u.x), mix(bh(i + vec2(0, 1)), bh(i + vec2(1, 1)), u.x), u.y);
-    }
-    // Aperture blades turn the disc into a polygon; under three keeps it round.
-    float blade(float a) {
-      if (uBlades < 2.5) return 1.0;
-      float s = 6.2832 / uBlades;
-      return cos(0.5 * s) / cos(mod(a, s) - 0.5 * s);
-    }
-    uniform vec2 uRes;
-    varying vec2 vUv;
-    // Distance in metres from the depth buffer.
-    float dist(vec2 uv) {
-      float z = texture2D(tDepth, uv).r * 2.0 - 1.0;
-      return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
-    }
-    // The blur radius in pixels: a wide lens, so only the near reeds go soft.
-    // A focus hunt adds blur everywhere, so the flame opens into a disc.
-    // Only what lies nearer than the focus blurs; the distance stays sharp.
-    float coc(float d) { return min(uK * max(1.0 / max(d, 0.5) - 1.0 / uFocus, 0.0) + uHunt, uCap); }
-    void main() {
-      vec3 c0 = texture2D(tScene, vUv).rgb;
-      // Interleaved gradient noise turns the disc per pixel.
-      float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-      // A near reed bleeds over the sky behind it: the gather radius is the widest blur nearby.
-      // Eight depth probes find it; a sharp pixel with sharp neighbours returns at once.
-      float r = coc(dist(vUv));
+  const fs = BokehShader.fragmentShader
+    .replace(/float blur = 0\.0;[\s\S]*?blur = clamp\(blur,0\.0,1\.0\);/, 'float blur = nearBlur(vUv);')
+    .replace('void main() {', `
+    uniform float uK, uCapPx;
+    // Blur in pixels: uK per dioptre nearer than the focus, capped; far points stay at zero.
+    float cocPx(float d) { return min(uK * max(1.0 / max(d, 0.5) - 1.0 / focalDepth, 0.0), uCapPx); }
+    float cocAt(vec2 uv) { return cocPx(linearize(texture2D(tDepth, uv).x)); }
+    // The widest blur within a cap radius, as a fraction of the cap.
+    float nearBlur(vec2 uv) {
+      float r = cocPx(linearize(depthblur ? bdepth(uv) : texture2D(tDepth, uv).x));
+      vec2 px = uCapPx / vec2(textureWidth, textureHeight);
       for (int j = 0; j < 8; j++) {
-        float a = float(j) * 0.7854 + rot, rj = (j < 4) ? 1.0 : 0.5;
-        r = max(r, coc(dist(vUv + vec2(cos(a), sin(a)) * rj * uCap / uRes)));
+        float a = float(j) * 0.7854, rj = (j < 4) ? 1.0 : 0.5;
+        r = max(r, cocAt(uv + vec2(cos(a), sin(a)) * rj * px));
       }
-      if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
-      vec3 acc = c0;
-      float wsum = 1.0;
-      for (int k = 0; k < 22; k++) {
-        float rk = sqrt((float(k) + 0.5) / 22.0), a = float(k) * 2.39996 + rot;
-        vec2 dir = vec2(cos(a), sin(a)) * rk * blade(a);
-        // Star: four points, pinched between them.
-        if (uStar > 0.5) dir *= 0.42 + 0.58 * pow(abs(cos(2.0 * a)), 3.0);
-        // Oval squeezes the disc sideways, as an anamorphic lens does.
-        dir.x *= uOval;
-        // Swirl: discs stretch round the frame's centre, as an old portrait lens does.
-        if (uSwirl > 0.0) {
-          vec2 cc = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-          float L = length(cc);
-          vec2 tg = L > 1e-3 ? vec2(-cc.y, cc.x) / L : vec2(0.0);
-          dir += tg * dot(dir, tg) * uSwirl * L * 2.0;
-        }
-        vec2 uv = vUv + dir * r / uRes;
-        vec3 col = texture2D(tScene, uv).rgb;
-        // Fringe: the disc's edge leans magenta outside, green inside.
-        col *= mix(vec3(1.0), mix(vec3(0.94, 1.06, 0.96), vec3(1.1, 0.92, 1.08), smoothstep(0.55, 1.0, rk)), uFringe);
-        // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
-        float reach = smoothstep(0.0, 1.0, coc(dist(uv)) - rk * r + 1.0);
-        float hot = max(max(col.r, max(col.g, col.b)) - uLampT, 0.0);
-        float w = (1.0 + hot * hot * uLampW) * reach;
-        // Donut: a mirror lens blocks the disc's centre.
-        if (uDonut > 0.5) w *= smoothstep(0.4, 0.55, rk);
-        // Scatter: dust and onion rings break each disc into flecks.
-        if (uScatter > 0.0) w *= mix(1.0, 0.1 + 1.6 * smoothstep(0.45, 0.7, bn(dir * 7.0 + 3.1)) + 0.4 * sin(rk * 18.0), uScatter);
-        // Grain: each tap flickers, so discs fizz like film.
-        if (uGrainB > 0.0) w *= mix(1.0, 0.25 + 1.5 * bh(gl_FragCoord.xy * 0.37 + float(k) * 7.13 + uSeedB), uGrainB);
-        // Rim: the outer taps weigh more, so each disc shows a bright ring.
-        if (uRim > 0.0) w *= mix(1.0, 0.1 + 3.0 * smoothstep(0.6, 1.0, rk), uRim);
-        // Cat's eye: a second circle clips discs toward the frame's edge.
-        if (uCat > 0.0) w *= step(length(dir + (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * uCat), 1.0);
-        acc += col * w;
-        wsum += w;
-      }
-      gl_FragColor = vec4(acc / wsum, 1.0);
-    }`,
-  });
-  // The pass reads the scene and its depth from sceneRT, not from the composer's buffers.
-  pass.textureID = 'tUnused';
+      return r / max(uCapPx, 1e-3);
+    }
+    void main() {`)
+    .replace('#include <tonemapping_fragment>', '')
+    .replace('#include <colorspace_fragment>', '');
+  const pass = new ShaderPass({
+    defines: { RINGS: 5, SAMPLES: 4 },
+    uniforms: { ...BokehShader.uniforms, uK: { value: 72 }, uCapPx: { value: 14 } },
+    vertexShader: BokehShader.vertexShader,
+    fragmentShader: fs,
+  }, 'tUnused');
+  const u = pass.uniforms;
+  u.shaderFocus.value = false; u.manualdof.value = false; u.showFocus.value = false; u.vignetting.value = false;
+  // A steady pattern: no noise, a 3x3 depth tap to settle the reed edges.
+  u.noise.value = false; u.dithering.value = 0.0001; u.depthblur.value = true;
+  u.bias.value = 0.5; u.fringe.value = 0.4; u.threshold.value = 0.5; u.gain.value = 2;
+  u.znear.value = camera.near; u.zfar.value = camera.far;
   pass.material.depthTest = false;
   pass.material.depthWrite = false;
+  // The pass reads the scene and its depth from sceneRT, not from the composer's buffers.
   const render = pass.render.bind(pass);
-  pass.render = (r, wb, rb, dt, mask) => { pass.uniforms.tScene.value = sceneRT.texture; pass.uniforms.tDepth.value = sceneRT.depthTexture; render(r, wb, rb, dt, mask); };
+  pass.render = (r, wb, rb, dt, mask) => { u.tColor.value = sceneRT.texture; u.tDepth.value = sceneRT.depthTexture; render(r, wb, rb, dt, mask); };
   return pass;
+}
+// Taps: rings x samples. Standard 5 x 4 (60 taps), High 6 x 5 (105), rung 2 and under 3 x 3 (18).
+function dofTaps() {
+  const [R, S] = rung >= 2 ? [3, 3] : quality() === 'high' ? [6, 5] : [5, 4];
+  const d = dofPass.material.defines;
+  if (d.RINGS === R && d.SAMPLES === S) return;
+  d.RINGS = R; d.SAMPLES = S;
+  dofPass.material.needsUpdate = true;
 }
 
 /* ---------- post chain ---------- */
@@ -2276,7 +2227,7 @@ makeSceneRT(2, 2);
 const composer = new EffectComposer(renderer);
 const dofPass = makeDof();
 // Blur scale in pixels; the focus in dioptres, so a rack eases evenly.
-let dofK = 130, dofCap = 18, focusD = 1 / 2000, focusTo = 1 / 2000;
+let dofK = 80, dofCap = 13, focusD = 1 / 2000, focusTo = 1 / 2000;
 // Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
 const fwdA = new THREE.Vector3();
 function autofocus(dt) {
@@ -2359,10 +2310,12 @@ function resize() {
   const m = rung >= 2 ? 0.35 : quality() === 'high' ? 0.75 : 0.5;
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
-  dofPass.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  dofPass.uniforms.textureWidth.value = w * size.dpr;
+  dofPass.uniforms.textureHeight.value = h * size.dpr;
+  dofTaps();
   birdMesh.material.uniforms.uPx.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
-  dofK = 130 * h * size.dpr / 800;
-  dofCap = 18 * h * size.dpr / 800;
+  dofK = 80 * h * size.dpr / 800;
+  dofCap = 13 * h * size.dpr / 800;
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
@@ -2389,17 +2342,18 @@ function draw() {
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
   placeOrbs(orbPass, orbList());
-  // Focus rides on the pad: the flight's distance, else the setting's.
-  dofPass.uniforms.uFocus.value = 1 / focusD;
-  dofPass.uniforms.uHunt.value = cam.hunt * dofPass.uniforms.uCap.value * 0.6;
+  // Focus sits at the pad, or where the Focus slider puts it.
+  const du = dofPass.uniforms;
+  du.focalDepth.value = 1 / focusD;
   // A longer lens has a shallower field: the blur grows with the square of the zoom.
   const zk = 1 / Math.pow(cam.zoom, 2);
   const ap = ui.setting('aperture').value;
-  dofPass.uniforms.uK.value = dofK * zk * ap;
-  dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap));
-  dofPass.uniforms.uLampW.value = 30 * ui.setting('glow').value;
+  // The focus hunt opens the near blur only; the distance never softens.
+  du.uK.value = dofK * zk * ap * (1 + cam.hunt * 1.5);
+  du.uCapPx.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap)) * (1 + cam.hunt * 0.5);
+  du.maxblur.value = du.uCapPx.value / dofPass.material.defines.RINGS;
+  du.gain.value = 2 * ui.setting('glow').value;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
-  dofPass.uniforms.uSeedB.value = grade.uniforms.uSeed.value;
   composer.render();
 }
 
@@ -2519,24 +2473,19 @@ document.addEventListener('keydown', e => {
 });
 
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
-// Shapes: blades, oval, donut, star.
-const SHAPE = { round: [0, 1, 0, 0], hex: [6, 1, 0, 0], oval: [0, 0.55, 0, 0], donut: [0, 1, 1, 0], star: [0, 1, 0, 1] };
-// Textures: rim, cat's eye, fringe, scatter, grain, swirl.
-const TEXTURE = {
-  clean: [0, 0, 0, 0, 0, 0],
-  scatter: [0.2, 0, 0.3, 1, 0, 0],
-  grain: [0.1, 0, 0.2, 0, 1, 0],
-  bubble: [0.85, 0, 0.6, 0, 0, 0],
-  swirl: [0.35, 0.9, 0.5, 0, 0, 1],
-};
 function setLens() {
-  const u = dofPass.uniforms;
-  const [b, o, d, st] = SHAPE[ui.setting('shape').value] ?? SHAPE.round;
-  const [r, c, f, sc, g, sw] = TEXTURE[ui.setting('texture').value] ?? TEXTURE.clean;
-  u.uBlades.value = b; u.uOval.value = o; u.uDonut.value = d; u.uStar.value = st;
-  u.uRim.value = r; u.uCat.value = c; u.uFringe.value = f; u.uScatter.value = sc; u.uGrainB.value = g; u.uSwirl.value = sw;
+  dofPass.uniforms.pentagon.value = ui.setting('shape').value === 'pentagon';
   draw();
 }
+
+/* QA hooks: Dawn, the sim clock, a jump along a flight. Not for the UI. */
+window.__qa = {
+  dawn(v) { opts.dawn = v; setDawn(); draw(); },
+  simT: () => simT,
+  flightT: () => (flight ? simT - flight.start - PRE : null),
+  // Jump the flight to T+t seconds: the clock, the timeline and the trail catch up.
+  jump(t) { if (!flight) return; const te = Math.max(0, t + PRE); simT = flight.start + te; flight.lastSim = simT; frame(); draw(); },
+};
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.

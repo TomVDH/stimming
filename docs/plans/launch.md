@@ -159,3 +159,11 @@ Shading: dawn-sky ambient, plus a rim from `uFlame` on the side that faces it, p
 ## Kit handoff
 
 `shadowH(δ)` and the sunlit-plume shading, marked. Any dawn or dusk toy with high smoke can copy them.
+
+## Bokeh on BokehShader2 (12:30, Tom: grainy and vague)
+
+Cause: 22 golden-angle taps turned per pixel on thin reeds read as fizz; the eight-probe dilation pushed the fizz a cap radius into the sky, where the one-sided reach let one or two taps count.
+Fix: the pass is three.js's `BokehShader2`, patched by string: a near-only blur in dioptres (`uK`, `uCapPx`), the widest blur among eight fixed probes, no tone map mid-chain. Fixed ring taps: Standard 5 x 4 (60), High 6 x 5 (105), rung 2 and under 3 x 3 (18); `depthblur` on; no noise.
+Defaults: 80 px per dioptre, cap 13 px per 800 px. The hunt scales the near blur and cap, never the distance.
+Settings: Bokeh is Round or Pentagon. The Texture row and the Hex, Oval, Donut and Star shapes are gone (no equivalent in the addon).
+QA hooks on `window.__qa`: `dawn(v)`, `simT()`, `flightT()`, `jump(t)`.
