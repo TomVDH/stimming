@@ -804,7 +804,7 @@ function commitStars() {
 /* ---------- trajectory: real altitude on a log scale ---------- */
 // Real altitude (km) maps to world height on a log scale.
 // 0 to 120 km then fits the frame at every distance.
-const ALT_K = 0.121, ALT_H0 = 3;
+const ALT_K = 0.089, ALT_H0 = 3;
 const KINDS = {
   // Climb rate, flame size, plume density, boosters.
   small: { climb: 1.25, flame: 0.7, plume: 0.7, boosters: false },
@@ -817,8 +817,8 @@ const worldY = (h, D) => D * ALT_K * Math.log(1 + h / ALT_H0);
 // The gravity turn starts at T+8 and bends the path right and away.
 function rocketAt(f, t, out) {
   const D = f.D, h = altKm(t, f.k);
-  const s = Math.pow(THREE.MathUtils.smoothstep(t, 8, 65), 1.5);
-  return out.set(f.x + D * 0.8 * s, 2 + worldY(h, D), f.z - D * 0.25 * s);
+  const s = Math.pow(THREE.MathUtils.smoothstep(t, 8, 65), 1.3);
+  return out.set(f.x + D * 0.95 * s, 2 + worldY(h, D), f.z - D * 0.12 * s);
 }
 
 /* ---------- K2: orbs ---------- */
@@ -932,63 +932,91 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   vertexShader: /* glsl */`
   attribute vec4 aQ, aR, aS, aT;
   uniform float uTime, uShear, uScale;
-  varying vec2 vQ; varying vec3 vP;
-  varying float vA, vH, vSeed, vKind, vNear, vSpread;
+  varying vec3 vC, vW;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread;
   void main() {
     float age = uTime - aQ.w, life = aT.x;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     float h = aS.x, k = aR.w;
     vec3 P = aQ.xyz + aR.xyz * (1.0 - exp(-k * age)) / k;
     // The upper wind turns with height, so the trail shears into a zigzag.
-    float wind = uScale * 0.0007 * (0.3 + h / 12.0);
+    float wind = uScale * 0.0005 * (0.3 + h / 12.0);
     P.x += wind * age * sin(h * 0.22 + 0.8) * uShear;
     P.z += wind * age * 0.4 * cos(h * 0.17) * uShear;
     // Steam rises once its push is spent.
     P.y += aT.y * age;
-    float r = aS.z * (0.12 + 0.88 * (1.0 - exp(-age / aT.z)));
+    float r = aS.z * (0.3 + 0.7 * (1.0 - exp(-age / aT.z)));
+    // The quad covers the sphere; the fragment marches through it.
     vec3 V = normalize(cameraPosition - P);
     vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
     vec3 up = cross(V, rt);
-    float spin = aS.y * 6.283;
-    vec2 q = mat2(cos(spin), -sin(spin), sin(spin), cos(spin)) * position.xy;
-    vec3 W = P + (rt * q.x + up * q.y) * r;
-    vQ = position.xy; vP = P; vH = h; vSeed = aS.y; vKind = aS.w;
+    vec3 W = P + (rt * position.x + up * position.y) * r * 1.02 + V * r;
+    vC = P; vW = W; vR = r; vH = h; vSeed = aS.y; vKind = aS.w;
     // The puff thins as it spreads; it fades in fast and out slowly.
-    vA = aT.w * smoothstep(0.0, 0.25, age) * (1.0 - smoothstep(life * 0.6, life, age)) * pow(aS.z * 0.12 / r, 0.7);
+    vA = aT.w * smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(life * 0.55, life, age)) * pow(aS.z * 0.3 / r, 0.6);
     vNear = 1.0 - smoothstep(0.0, 6.0, age);
     vSpread = 1.0 - exp(-age / aT.z);
     gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  uniform float uShadowH, uScale;
+  uniform float uShadowH, uScale, uTime;
   uniform vec3 uAmb;
-  varying vec2 vQ; varying vec3 vP;
-  varying float vA, vH, vSeed, vKind, vNear, vSpread;
+  varying vec3 vC, vW;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread;
   ${HEAD}
+  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float n3(vec3 p) {
+    vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), u.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), u.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+  }
+  // Billows: three octaves, the fine ones ride on the coarse.
+  float billow(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.13 + 3.1) + 0.15 * n3(p * 4.37 + 7.7); }
   void main() {
-    float d = length(vQ);
-    if (d > 1.0) discard;
-    // Billows: noise eats the edge of each puff.
-    float n = k2noise(vQ * 2.6 + vSeed * 31.0) * 0.6 + k2noise(vQ * 6.1 + vSeed * 17.0) * 0.4;
-    float shape = smoothstep(1.0, 0.0, d + (n - 0.5) * 0.25 * (1.0 - vSpread * 0.6));
-    float a = shape * vA;
-    if (a < 0.002) discard;
-    vec3 V = normalize(vP - cameraPosition);
-    // Sunlight above the shadow line: a gold core and blue edges.
+    // March the view ray through this puff's sphere.
+    vec3 rd = normalize(vW - cameraPosition), oc = cameraPosition - vC;
+    float b = dot(oc, rd), c = dot(oc, oc) - vR * vR, disc = b * b - c;
+    if (disc < 0.0) discard;
+    disc = sqrt(disc);
+    float t0 = max(-b - disc, 0.0), t1 = -b + disc;
+    if (t1 <= t0) discard;
+    const int N = 9;
+    float dt = (t1 - t0) / float(N);
+    float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    // Sunlight above the shadow line; below it, the dawn and the flame.
     float sun = smoothstep(uShadowH - 2.0, uShadowH + 2.0, vH) * (1.0 - vKind);
-    float fwd = 0.5 + 1.5 * pow(max(dot(normalize(V.xz), normalize(uSun.xz)), 0.0), 3.0);
+    vec3 L = normalize(uSun), Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
+    float fwd = 0.5 + 1.5 * pow(max(dot(normalize(rd.xz), normalize(uSun.xz)), 0.0), 3.0);
     vec3 gold = vec3(1.0, 0.52, 0.16), blue = vec3(0.3, 0.52, 1.0);
-    // Dense young exhaust scatters gold; the spread-out edges scatter blue.
-    float core = smoothstep(0.15, 0.8, shape) * (1.0 - 0.7 * smoothstep(0.3, 0.95, vSpread));
-    vec3 lit = mix(blue * 0.55, gold * 1.1, core) * fwd * 0.4;
-    // Below it: the dawn's ambient, and the flame near the engine.
-    vec3 fd = uFlame.xyz - vP;
-    float reach = uScale * (vKind > 0.5 ? 0.06 : 0.02);
-    vec3 fl = uFlameC * uFlame.w * (1.4 / (1.0 + dot(fd, fd) / (reach * reach)) + 0.6 * vNear * (1.0 - vKind));
-    vec3 amb = vKind > 0.5 ? k2hazeColor(V) * 1.1 : uAmb * 1.8;
-    vec3 c = mix(amb + fl, lit, sun);
-    c = vKind > 0.5 ? k2haze(c, vP) : c;
-    gl_FragColor = vec4(c * a, a);
+    vec3 fdv = uFlame.xyz - vC;
+    float reach = uScale * (vKind > 0.5 ? 0.05 : 0.02);
+    vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind));
+    vec3 amb = vKind > 0.5 ? k2hazeColor(rd) * 1.2 + uAmb : uAmb * 1.8 + k2hazeColor(rd) * 0.25;
+    vec3 drift = vec3(vSeed * 17.0, vSeed * 9.0 - uTime * 0.04, vSeed * 5.0);
+    float T = 1.0;
+    vec3 col = vec3(0.0);
+    for (int i = 0; i < N; i++) {
+      vec3 q = (cameraPosition + rd * (t0 + (float(i) + jit) * dt) - vC) / vR;
+      float r2 = dot(q, q);
+      // Ground clouds get harder billows than the thin trail.
+      float dens = clamp(billow(q * mix(1.6, 2.0, vKind) + drift) * mix(1.4, 1.9, vKind) - mix(0.25, 0.55, vKind) - r2 * 1.05 + 0.25 * (1.0 - vSpread), 0.0, 1.0);
+      if (dens <= 0.0) continue;
+      float od = dens * (dt / vR) * 3.2 * vA;
+      // The side that faces a light is brighter: a cheap self-shadow.
+      float sl = 0.2 + 0.8 * smoothstep(-0.7, 0.8, dot(q, L));
+      float fl = 0.25 + 0.75 * smoothstep(-0.7, 0.8, dot(q, Fd));
+      // Dense cores scatter gold; thin rims scatter blue.
+      vec3 sc = mix(blue * 0.6, gold * 1.1, smoothstep(0.95, 0.2, r2) * (1.0 - 0.6 * vSpread)) * fwd * 0.45 * sl;
+      vec3 Li = mix(amb * (0.6 + 0.4 * fl) + flame * fl, sc, sun);
+      float ab = 1.0 - exp(-od);
+      col += T * ab * Li;
+      T *= 1.0 - ab;
+      if (T < 0.02) break;
+    }
+    float a = 1.0 - T;
+    if (a < 0.003) discard;
+    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, k2hazeAmount(vC)) : col;
+    gl_FragColor = vec4(col, a);
   }`,
 }));
 puffs.frustumCulled = false;
@@ -1068,13 +1096,13 @@ function flyTo(f) {
   FU.uSize.value = D * 0.0028 * k.flame * (1 - 0.6 * THREE.MathUtils.smoothstep(h, 8, 50)) * (dist / D);
   FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
   flame.visible = eng > 0.01;
-  // Steam: sixty clouds billow sideways from the base in the first 8 s.
-  const steamDue = Math.min(60, Math.floor(THREE.MathUtils.clamp((te - 0.2) / 8, 0, 1) * 60));
+  // Ground clouds: forty billows roll sideways off the pad in the first 8 s.
+  const steamDue = Math.min(40, Math.floor(THREE.MathUtils.clamp((te - 0.2) / 8, 0, 1) * 40));
   while (f.steam < steamDue) {
-    const s = f.steam++ % 2 ? 1 : -1;
-    tmpA.set(f.x + (rnd() - 0.5) * D * 0.004, 4, f.z + (rnd() - 0.5) * D * 0.004);
-    rv.set(s * D * (0.006 + 0.022 * rnd()), D * 0.0008 * rnd(), (rnd() - 0.5) * D * 0.01);
-    writePuff(tmpA, f.start + (te - 0.01), rv, 0.32, 0, D * (0.012 + 0.02 * rnd()) * k.plume, 1, 45 + rnd() * 10, D * 0.0012, 3 + rnd() * 3, 0.5);
+    const s = f.steam++ % 2 ? 1 : -1, r = D * (0.026 + 0.03 * rnd()) * k.plume;
+    tmpA.set(f.x + (rnd() - 0.5) * D * 0.004, r * 0.45, f.z + (rnd() - 0.5) * D * 0.004);
+    rv.set(s * D * (0.004 + 0.024 * rnd()), D * 0.0015 * rnd(), (rnd() - 0.5) * D * 0.01);
+    writePuff(tmpA, f.start + (te - 0.01), rv, 0.3, 0, r, 1, 50 + rnd() * 10, D * 0.0006, 3 + rnd() * 4, 0.9);
   }
   // Exhaust: walk the path since the last puff and drop one each spacing.
   const q = quality() === 'high' ? 1 : 2.3;
@@ -1087,20 +1115,19 @@ function flyTo(f) {
       f.acc += tmpA.distanceTo(tmpB);
       tmpB.copy(tmpA);
       const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
-      const gap = D * (0.0005 + 0.0016 * hi) * q / k.plume;
-      if (f.acc < gap) continue;
+      // One puff each part-radius: the trail stays one continuous column.
+      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3);
+      if (f.acc < R * 0.28 * Math.sqrt(q)) continue;
       f.acc = 0;
-      // High up the exhaust flies outward: the bell opens round the engine.
-      const n = 1 + Math.round(10 * hi / q);
       rocketAt(f, tt - 0.05, rq);
       const back = rq.sub(tmpA).normalize();
-      for (let j = 0; j < n; j++) {
+      {
         rv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).addScaledVector(back, -rv.dot(back)).normalize();
-        // One speed for every puff of a step: they form a shell, the bell.
-        rv.multiplyScalar(D * (0.0008 + 0.015 * hi) * (0.92 + 0.08 * rnd())).addScaledVector(back, D * 0.002 * (1 + hi * 4));
-        const r = D * (0.006 + 0.018 * hi + 0.008 * hi * rnd()) * k.plume;
-        const life = Math.max(4, Math.min(55, END - PRE - tt - rnd() * 6));
-        writePuff(tmpA, f.start + PRE + tt, rv, 0.3 - 0.15 * hi, hh, r, 0, life, 0, 2.5 + hh * 0.06, 0.45 - 0.39 * hi);
+        // High up the thin air lets the exhaust spread into a wide glowing fan.
+        rv.multiplyScalar(D * (0.0003 + 0.004 * hi) * (0.5 + 0.5 * rnd())).addScaledVector(back, D * 0.001 * (1 + hi * 2));
+        const r = R * (0.85 + 0.3 * rnd());
+        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6));
+        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, 0.9 - 0.45 * hi);
       }
     }
     f.emitT = tt;

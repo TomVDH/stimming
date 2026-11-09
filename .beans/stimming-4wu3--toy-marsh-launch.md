@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T07:54:54Z
+updated_at: 2026-11-09T08:01:06Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -40,3 +40,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Plume: 3,200 puffs in a ring, written once at birth. Above the shadow line (±2 km soft edge) they take sunlight: gold core, blue spread edges.
 - High up each step emits a shell of puffs at one speed: the bell, with rings behind it.
 - Tap or Space in flight toggles the follow view; tall stages follow from the start. Launch is aria-disabled until T+80.
+
+## Volumetric pass (2026-11-09, Tom: the bell read as a failed rocket)
+
+- Each puff is now a raymarched sphere: 9 steps of 3D billow noise, Beer-Lambert, a self-shadow toward the sun and the flame.
+- No burst: the trail is one continuous column that widens into a glowing fan up high, and sweeps right across the sky (downrange 0.95 D).
+- Liftoff ground clouds: forty large billows roll sideways off the pad, lit orange from below.
