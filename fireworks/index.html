@@ -38,23 +38,6 @@
 .stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
 @keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
 @media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
-/* The charge ring follows a held press: it fills, ticks, warms, then strains. */
-.charge { position: absolute; left: 0; top: 0; width: 84px; height: 84px; margin: -42px 0 0 -42px; pointer-events: none; z-index: 3; --c: oklch(0.96 0.03 90); }
-.charge[hidden] { display: none; }
-.charge svg { width: 100%; height: 100%; overflow: visible; }
-.charge .track { fill: none; stroke: oklch(1 0 0 / 0.16); stroke-width: 1.5; }
-.charge .arc, .charge .over { fill: none; stroke-linecap: round; transform: rotate(-90deg); }
-.charge .arc { stroke: var(--c); stroke-width: 3; stroke-dasharray: 0 1; filter: drop-shadow(0 0 5px var(--c)); }
-.charge .over { stroke: oklch(0.66 0.24 28); stroke-width: 2.5; stroke-dasharray: 0 1; filter: drop-shadow(0 0 6px oklch(0.66 0.24 28)); }
-.charge .tk { stroke: oklch(1 0 0 / 0.55); stroke-width: 2; stroke-linecap: round; }
-.charge .tk.on { stroke: var(--c); }
-.charge.step svg { animation: charge-step 0.2s ease-out; }
-.charge.strain svg { animation: charge-strain 0.09s linear infinite; }
-.charge.go svg { animation: charge-go 0.38s ease-out forwards; }
-@keyframes charge-step { 45% { transform: scale(1.14); } }
-@keyframes charge-strain { 25% { transform: translate(1.5px, -1px); } 75% { transform: translate(-1.5px, 1px); } }
-@keyframes charge-go { to { transform: scale(1.9); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .charge svg { animation: none !important; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -2146,7 +2129,7 @@ function updateLights() {
   }
   if (press?.seed) {
     const over = (performance.now() - press.at) / 1000 - 4;
-    live.push({ pos: press.seed, col: SEED, I: (0.02 + 0.1 * press.charge) * (over > 0 ? 0.6 + 0.9 * rnd() * Math.min(1, over / 2) + Math.min(1, over / 2) : 1), eye: 1, st: 0, gh: 0 });
+    live.push({ pos: press.seed, col: SEED, I: seedPulse() * (0.02 + 0.1 * press.charge) * (over > 0 ? 0.6 + 0.9 * rnd() * Math.min(1, over / 2) + Math.min(1, over / 2) : 1), eye: 1, st: 0, gh: 0 });
   }
   // The open seam lights the deck, the bay and the hills in ember red.
   if (tear && tear.glow > 0.01) live.push({ pos: tear.at, col: TEAR_COL, I: 0.22 * tear.glow, eye: 1, st: 0, gh: 0, wide: true });
@@ -2516,27 +2499,13 @@ onQuality(() => resize());
 onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; SU.uDrift.value = on ? 0.5 : 1; wake(); });
 
 /* ---------- launch feel ---------- */
-// A held press shows a charge ring, hisses like a fuse, and ticks at each calibre step.
-// Release pops the ring, buzzes once, and kicks the view a touch.
-const charge = document.createElement('div');
-charge.className = 'charge';
-charge.hidden = true;
-charge.setAttribute('aria-hidden', 'true');
-{
-  // Ticks at the calibre steps: 0.26 s, 0.75 s and 1.5 s of a 1.5 s fill.
-  const tk = [0.26 / 1.5, 0.5, 1].map(f => { const a = f * Math.PI * 2 - Math.PI / 2; return `<line class="tk" x1="${(Math.cos(a) * 30).toFixed(2)}" y1="${(Math.sin(a) * 30).toFixed(2)}" x2="${(Math.cos(a) * 35).toFixed(2)}" y2="${(Math.sin(a) * 35).toFixed(2)}"/>`; }).join('');
-  charge.innerHTML = `<svg viewBox="-42 -42 84 84"><circle class="track" r="26"/><circle class="arc" r="26" pathLength="1"/><circle class="over" r="38" pathLength="1"/>${tk}</svg>`;
-}
-stage.append(charge);
+// A held press hisses like a fuse; the seed light pulses at each calibre step.
+// Release buzzes once and kicks the view a touch.
 const STEPS = [0.26, 0.75, 1.5];
 let camRx = 0, kickAt = -9, kickK = 0, fuse = null;
 const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not allowed */ } };
-function chargeStart(e) {
-  const r = stage.getBoundingClientRect();
-  press.cx = e.clientX - r.left; press.cy = e.clientY - r.top; press.step = 0;
-  charge.classList.remove('go', 'step', 'strain');
-  charge.style.left = `${press.cx}px`; charge.style.top = `${press.cy}px`;
-  charge.hidden = false;
+function chargeStart() {
+  press.step = 0; press.pulse = -9;
   // The fuse: noise through a band that climbs as the charge builds.
   const ac = kit.live();
   if (ac) {
@@ -2549,23 +2518,12 @@ function chargeStart(e) {
     fuse = { n, bp, g };
   }
 }
-function chargeMove(e) {
-  const r = stage.getBoundingClientRect();
-  press.cx = e.clientX - r.left; press.cy = e.clientY - r.top;
-  charge.style.left = `${press.cx}px`; charge.style.top = `${press.cy}px`;
-}
 function chargeTick() {
-  if (!press || charge.hidden) return;
-  const held = (performance.now() - press.at) / 1000, f = Math.min(1, held / 1.5), over = Math.max(0, held - 4) / 2;
-  charge.querySelector('.arc').style.strokeDasharray = `${f.toFixed(3)} 1`;
-  charge.querySelector('.over').style.strokeDasharray = `${Math.min(1, over).toFixed(3)} 1`;
-  // White to gold as it fills; red once it strains.
-  charge.style.setProperty('--c', held > 4 ? 'oklch(0.7 0.22 30)' : `oklch(${(0.96 - 0.12 * f).toFixed(3)} ${(0.03 + 0.14 * f).toFixed(3)} ${(90 - 15 * f).toFixed(1)})`);
-  charge.classList.toggle('strain', held > 4 && !reduced());
+  if (!press) return;
+  const held = (performance.now() - press.at) / 1000, f = Math.min(1, held / 1.5);
   while (press.step < STEPS.length && held >= STEPS[press.step]) {
-    charge.querySelectorAll('.tk')[press.step].classList.add('on');
     press.step++;
-    charge.classList.remove('step'); void charge.offsetWidth; charge.classList.add('step');
+    press.pulse = simT;
     buzz(10);
     const ac = kit.live();
     if (ac) {
@@ -2576,6 +2534,8 @@ function chargeTick() {
   }
   if (fuse) fuse.bp.frequency.value = 900 + 2600 * f + (held > 4 ? 1500 * Math.random() : 0);
 }
+// The seed's pulse: a step flares it to about three times, gone in 0.2 s.
+const seedPulse = () => (press ? 1 + 2 * Math.exp(-Math.max(0, simT - press.pulse) / 0.07) : 1);
 function chargeEnd(fired, cal = 1) {
   if (fuse) {
     const ac = kit.ac, t = ac.currentTime;
@@ -2585,12 +2545,7 @@ function chargeEnd(fired, cal = 1) {
     fuse.n.stop(t + 0.1);
     fuse = null;
   }
-  charge.querySelectorAll('.tk').forEach(t => t.classList.remove('on'));
-  if (!fired) { charge.hidden = true; return; }
-  charge.classList.remove('step', 'strain');
-  void charge.offsetWidth;
-  charge.classList.add('go');
-  setTimeout(() => { if (!press) charge.hidden = true; }, 400);
+  if (!fired) return;
   buzz(cal > 1.5 ? 28 : 16);
   if (!reduced()) { kickAt = simT; kickK = 0.0025 * cal; }
 }
@@ -2611,12 +2566,11 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
-  chargeStart(e);
+  chargeStart();
   wake();
 });
 stage.addEventListener('pointermove', e => {
   if (!press || e.pointerId !== press.id) return;
-  chargeMove(e);
   // After 8 px of travel the seed follows the pointer.
   if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.moved = true;
   if (press.moved) press.ndc = ndcOf(e);
