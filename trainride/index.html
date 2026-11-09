@@ -873,7 +873,7 @@ vec3 stnLight(vec3 P, vec3 N) {
     if (i > 1 && uIsl < 0.5) break;
     vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : i == 1 ? -8.4 : i == 2 ? -16.6 : -20.6) - P.z);
     float d2 = dot(L, L);
-    c += STNC * 18.0 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 0.8);
+    c += STNC * 8.0 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 0.8);
   }
   // Beyond the canopy, a mast every 24 m lights the open platform.
   float mx = (floor(x / 24.0) + 0.5) * 24.0;
@@ -925,7 +925,9 @@ const solid = body => new THREE.ShaderMaterial({
       float d = length(L);
       night += LAMPC * uLP[i].w * 3.0 / (d * d + 1.0) * max(dot(N, L / d) * 0.8 + 0.2, 0.0);
     }
-    vec3 day = (sunC() * max(dot(N, uSun), 0.0) * shade + skyA(N.y)) ;
+    // Station day light, Pixar-lite: a wrapped sun and a strong sky fill with a warm bounce.
+    float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
+    vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
     gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
   }`,
 });
@@ -939,17 +941,17 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
     // Concrete coping at the edge, with joints every metre that blur with the smear.
     float j = (0.5 - abs(fract(x) - 0.5));
     float joint = (1.0 - smoothstep(0.0, 0.01 + uSmear * 0.5, j)) * 0.03 / (0.03 + uSmear);
-    vec3 asph = vec3(0.1, 0.102, 0.108) * (0.8 + 0.4 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (0.9 + 0.2 * vnoise(vec2(x * 9.0, vP.z * 9.0)));
+    vec3 asph = vec3(0.2, 0.198, 0.19) * (0.93 + 0.14 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (0.96 + 0.08 * vnoise(vec2(x * 9.0, vP.z * 9.0)));
     // Patched asphalt: darker repair rectangles.
     vec2 pc = floor(vec2(x / 7.0, vP.z / 3.0));
-    if (hash1(pc) > 0.75) asph *= 0.75;
+    if (hash1(pc) > 0.75) asph *= 0.9;
     alb = asph;
     float cop = 1.0 - smoothstep(0.34, 0.36, dz);
-    alb = mix(alb, vec3(0.3, 0.3, 0.29) * (1.0 - 0.6 * joint) * (0.9 + 0.2 * vnoise(vec2(x * 3.0, dz * 20.0))), cop);
+    alb = mix(alb, vec3(0.46, 0.45, 0.42) * (1.0 - 0.6 * joint) * (0.9 + 0.2 * vnoise(vec2(x * 3.0, dz * 20.0))), cop);
     // The edge itself is a dark lip.
     alb *= 1.0 - 0.6 * smoothstep(0.03, 0.0, dz);
     float line = smoothstep(1.18, 1.2, dz) * smoothstep(1.32, 1.3, dz);
-    alb = mix(alb, vec3(0.72, 0.72, 0.7) * (0.85 + 0.15 * vnoise(vec2(x * 4.0, 1.0))), line);
+    alb = mix(alb, vec3(0.85, 0.85, 0.83), line);
     // The tactile guide: pale ribs that run along the platform.
     float tac = smoothstep(1.58, 1.6, dz) * smoothstep(1.92, 1.9, dz);
     alb = mix(alb, vec3(0.42, 0.42, 0.4) * (0.75 + 0.25 * step(0.5, fract(dz * 30.0))), tac);
@@ -982,7 +984,7 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
     shade = 1.0 - 0.75 * max(canopyAt(x) * step(dz, 9.0), uHall);
   } else {
     // The platform wall above the track: dark concrete with a drip line.
-    alb = vec3(0.12, 0.12, 0.12) * (0.85 + 0.3 * vnoise(vec2(x * 2.0, vP.y * 14.0)));
+    alb = vec3(0.24, 0.235, 0.225) * (0.9 + 0.2 * vnoise(vec2(x * 2.0, vP.y * 14.0)));
     alb *= 0.6 + 0.4 * smoothstep(-2.5, -1.95, vP.y);
   }
 `)));
@@ -991,13 +993,13 @@ const canopyBody = (z1, z2) => /* glsl */`
   if (N.y < -0.5) {
     float j = (0.5 - abs(fract(x / 1.5) - 0.5)) * 1.5;
     float rib = (1.0 - smoothstep(0.0, 0.03 + uSmear * 0.5, j)) * 0.06 / (0.06 + uSmear);
-    alb = vec3(0.12, 0.125, 0.13) * (1.0 - 0.5 * rib);
+    alb = vec3(0.34, 0.35, 0.36) * (1.0 - 0.35 * rib);
     // Each strip is a slim diffuser, 8 cm wide, broken every 3 m.
     float s = (smoothstep(0.045, 0.035, abs(vP.z - (${z1}))) + smoothstep(0.045, 0.035, abs(vP.z - (${z2})))) * mix(smoothstep(1.46, 1.41, abs(fract(x / 3.0) - 0.5) * 3.0), 1.0, smoothstep(0.02, 0.1, uSmear));
     glow = STNC * s * (2.2 * (1.0 - uDay) + 0.25 * uDay);
     shade = 0.0;
   } else if (N.z > 0.5) {
-    alb = vec3(0.16, 0.17, 0.18);
+    alb = vec3(0.6, 0.6, 0.58);
     // A thin lit seam runs under the fascia.
     glow = STNC * 0.4 * smoothstep(1.36, 1.33, vP.y) * (1.0 - uDay);
   } else alb = vec3(0.14);
@@ -1045,7 +1047,8 @@ function pstrip(geo, w, xs, order, add, frag, attrs = {}) {
     vec3 litBy(vec3 P, vec3 N, vec3 alb) {
       vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * trainLight(P) * 0.15 + stnLight(P, N);
       for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - P; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
-      vec3 day = sunC() * max(dot(N, uSun), 0.0) + skyA(N.y);
+      float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
+      vec3 day = sunC() * wrapS * wrapS + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
       return alb * mix(night, day, uDay);
     }
     ${frag}`,
@@ -1067,7 +1070,7 @@ const COLFRAG = /* glsl */`
 void main() {
   float cov = ${PCOVER('0.22')};
   vec3 N = normalize(vec3(clamp(vL.x / (0.11 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
-  vec3 c = litBy(vW, N, vec3(0.2, 0.22, 0.22));
+  vec3 c = litBy(vW, N, vec3(0.42, 0.44, 0.44));
   // A dark plinth at the foot.
   c *= 1.0 - 0.5 * smoothstep(-1.5, -1.6, vW.y);
   gl_FragColor = vec4(c, cov);

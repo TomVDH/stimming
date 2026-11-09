@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:45:00Z
+updated_at: 2026-11-09T23:05:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -182,4 +182,4 @@ Open from the critics:
 - [x] Dev plan page trainride/dev/ (relief, line, stations, baked strip); Tom: the relief map goes into the annex later for background and explanation
 - [x] Oncoming trains now and then: a 150 or 210 m two-unit train every one to two and a half minutes on the second track at 31 m/s; window band and doors blurred by the relative speed; lit windows at night, headlights; its bow wave knocks the carriage; ?opp=seconds calls one for QA
 - [x] Landscape lights by sector: a streetlight string on the far lake shore from the map's lake mask, houses climbing above it; dense in Zurich and the gold coast, sparse on the Linth plain, nearly dark on the Walensee; a sodium motorway string over the Linth plain; Quinten's few lights across from Murg
-- [ ] Stations rework
+- [x] Stations, Pixar-lite: light concrete platform with a crisp white line, calm mottling, pale canopy soffit and white fascia, lighter columns and platform wall; wrapped sun, strong sky fill and a warm bounce on every station surface; canopy lights halved to suit
