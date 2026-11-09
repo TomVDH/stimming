@@ -1,5 +1,5 @@
-// Spike: the near aircraft as three.js meshes, drawn into the outside buffer.
-// The raw shader still draws the sky, the land, the clouds and the cabin.
+// The near aircraft as three.js meshes, drawn into the outside target.
+// The outside shader draws the sky, the land and the clouds there first.
 import * as THREE from 'three';
 import { lookup } from './sky.js';
 
@@ -43,20 +43,14 @@ function loft(sections) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
+  g.userData.loft = true;
   // Group 0 is the skin; group 1 is the end caps, the seam faces.
   g.addGroup(0, sideN, 0); g.addGroup(sideN, idx.length - sideN, 1);
   g.computeVertexNormals();
   return g;
 }
 
-export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
-  const renderer = new THREE.WebGLRenderer({ canvas, context: gl, antialias: false });
-  renderer.autoClear = true;
-  renderer.setClearColor(0x000000, 0);
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  renderer.toneMapping = THREE.NoToneMapping;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
 
   // Planform: leading and trailing edge x at span z.
   const edge = (z, col) => {
@@ -113,8 +107,20 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   const air = new THREE.Group();
   // Seam faces sit in the gaps, out of the light.
   const seam = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), roughness: 0.8 });
+  // Every material writes alpha 0: the cabin pass reads it as no sky.
+  // The shadow pass draws front faces, as the mesh mirror flips them.
+  [paint, flapPaint, dark, metal, seam].forEach(m => Object.assign(m, {
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.ZeroFactor, shadowSide: THREE.FrontSide,
+  }));
+  // The view's axes are left-handed, so the camera matrix mirrors.
+  // Each mesh mirrors its geometry and its scale: the world stays put.
+  // The negative scale tells three.js to flip the front face.
   const add = (geo, mat = paint, parent = air) => {
-    const m = new THREE.Mesh(geo, geo.groups.length ? [mat, seam] : mat); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
+    geo.scale(1, 1, -1);
+    const m = new THREE.Mesh(geo, geo.userData.loft ? [mat, seam] : mat);
+    m.scale.z = -1;
+    m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
   const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   // Main box ahead of the rear spar, and the full-chord tip past the aileron.
@@ -207,9 +213,8 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
   // A debug handle for the spike only.
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
   window.__w3 = { scene, air, sun, paint, flapPaint, hinged, THREE, cam };
-  const mo = { t: null, bank: 0, rate: 0 };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1 };
   cam.matrixAutoUpdate = false;
-  let rt = null;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
 
@@ -238,31 +243,11 @@ export function createWing3({ gl, canvas, ST, flex, LET, NAC, FAIRS }) {
     scene.environment = envRT.texture;
   }
 
-  // Composite: premultiplied wing over the outside buffer; wing alpha clears sky alpha.
-  const vs = `#version 300 es
-in vec2 aPos; out vec2 vUv; void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
-  const fs = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main() { o = texture(uW, vec2(1.0 - vUv.x, vUv.y)); }`;
-  const prog = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([k, src]) => { const s = gl.createShader(k); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(prog, s); });
-  gl.bindAttribLocation(prog, 0, 'aPos'); gl.linkProgram(prog);
-  const uW = gl.getUniformLocation(prog, 'uW');
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  gl.bindVertexArray(null);
-
   return {
-    // Draws the aircraft into the outside buffer, in the outside pass's view.
-    render({ basis, bank, sky, HOR, out, W, H, t, flash, strobe, tip, turb }) {
-      renderer.resetState();
+    scene, cam,
+    // Poses the aircraft and the lights for this frame, in the outside pass's view.
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
-      if (!rt || rt.width !== out.w || rt.height !== out.h) {
-        if (rt) rt.dispose();
-        rt = new THREE.WebGLRenderTarget(out.w, out.h, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true });
-      }
       air.rotation.x = bank;
       // The roll rate drives the controls; a low-pass keeps them smooth.
       const dt = mo.t === null ? 0 : t - mo.t;
@@ -282,10 +267,8 @@ precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main(
       });
       // The camera sits at the eye with the outside pass's axes and focal length.
       // The shader's axes are left-handed: R cross U gives F.
-      // The camera takes -R, so it stays right-handed and culls correctly.
-      // The composite flips x back.
       const R = V(...basis.R), U = V(...basis.U), F = V(...basis.F);
-      cam.matrixWorld.makeBasis(R.negate(), U, F.clone().negate());
+      cam.matrixWorld.makeBasis(R, U, F.clone().negate());
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
       cam.fov = 2 * Math.atan(H / 2 / basis.focal) * 180 / Math.PI; cam.aspect = W / H; cam.updateProjectionMatrix();
       // Lambert divides by pi; the shader's sun term is 0.012 on grey paint.
@@ -295,31 +278,11 @@ precision highp float; in vec2 vUv; uniform sampler2D uW; out vec4 o; void main(
       const c = V(3, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
+      if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
       flashL.intensity = flash * 0.06;
       const tw = V(...tip);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 120;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
-      renderer.setRenderTarget(rt);
-      renderer.render(scene, cam);
-      renderer.setRenderTarget(null);
-      const tex = renderer.properties.get(rt.texture).__webglTexture;
-      // Hand the context back in the state the raw passes expect.
-      gl.bindFramebuffer(gl.FRAMEBUFFER, out.fb); gl.viewport(0, 0, out.w, out.h);
-      gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.STENCIL_TEST);
-      gl.colorMask(true, true, true, true); gl.depthMask(true);
-      gl.enable(gl.BLEND);
-      gl.blendEquation(gl.FUNC_ADD);
-      gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
-      gl.useProgram(prog);
-      gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(uW, 5);
-      gl.bindVertexArray(vao);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      gl.disable(gl.BLEND);
-      gl.bindVertexArray(null);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
     },
   };
 }

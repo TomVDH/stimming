@@ -33,3 +33,11 @@ Round 2 (Tom, 2026-11-09: "the wing looks better"; better flaps that move with t
 - [x] Fairings: round pods hung under the trailing edge
 - [x] Motion: roll rate drives aileron (to 5 degrees), flaperon and spoilers; bank trims the flaps down
 - [x] Fix: the shader's view axes are left-handed; the camera now takes -R and the composite flips x
+
+Round 3 (Tom, 2026-11-09: nicer weather on a performance-efficient three.js build). Steps, one at a time:
+- [x] Step 1: three.js owns the frame. Both shaders run as RawShaderMaterial passes; sky, noise and trail are three.js textures; the outside target is a 4x MSAA half-float target.
+  The wing draws first; the outside quad sits on the far plane, so depth skips pixels under the wing. Shadows redraw at 5 Hz.
+  Bench (M4, 1248x752, Dusk, Storm 1, render plus readPixels): live 5.2 ms median, port 5.5 ms.
+- [ ] Step 2: clouds at quarter size, traced in a rotating subset, with history blend; spend the saving on fuller cloud and haze bands
+- [ ] Step 3: branching bolts with glow, cloud tops lit from inside, the wing in the storm's fog and light
+- [ ] Step 4: rain on the glass as instanced drops, bloom, phone check
