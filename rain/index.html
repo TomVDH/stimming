@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Rain on glass: a dusk window under the shared header. */
+/* Rain on glass: a dusk window in the Bar v2 shell. */
 :root { --stage: oklch(0.25 0.045 290); }
 /* On the dusk glass the fail line keeps a pale tone. */
 .fail { color: oklch(0.74 0.02 285); }
@@ -27,28 +27,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/rain.svg)"></span><span class="intro-name">Rain on glass</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/rain.svg)"></span><span class="intro-name">Rain on glass</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--rain" id="pane" tabindex="0" role="application" aria-label="A rainy window at dusk. Drag to wipe the fog. Arrow keys wipe a stripe; Space steps through drizzle, rain and storm.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Rain on glass needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Weather" aria-keyshortcuts="Space">
-        <button class="chip" type="button" data-value="drizzle" aria-pressed="false">Drizzle</button>
-        <button class="chip" type="button" data-value="rain" aria-pressed="true">Rain</button>
-        <button class="chip" type="button" data-value="storm" aria-pressed="false">Storm</button>
-      </div>
-      <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="1" step="0.01" value="0"></label>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>wipe the fog</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>wipe a stripe</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>next weather</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Rain on glass</h1><div class="vignette" hidden></div></section>
@@ -85,8 +71,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-import { initPage, sound, choices } from '../shared/stim.js';
-initPage({ id: 'rain' });
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+// Space steps the weather; arrows wipe stripes. The page binds both below.
+const ui = initPage({ id: 'rain', bar: {
+  choice: { label: 'Weather', value: 'rain',
+    options: [{ value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'storm', label: 'Storm' }],
+    onPick: v => { wx = WEATHER[v]; rainLevel(); } },
+  slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { windGoal = v; rainLevel(); } },
+  quality: true,
+  keys: [['drag', 'wipe the fog'], ['arrows', 'wipe a stripe'], ['space', 'next weather']],
+} });
 const panel = document.getElementById('pane'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1090,7 +1084,7 @@ function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   rect = null;
-  const p = Math.min(devicePixelRatio || 1, lowDpr ? 1 : 1.5, Math.sqrt(1.4e6 / (w * h)));
+  const p = pixelRatio(w, h, { maxDpr: 1.5, budget: 1.4e6, low: lowDpr });
   const cw = Math.round(w * p), ch = Math.round(h * p);
   if (w !== W || h !== H) layoutGlass(w, h);
   if (canvas.width === cw && canvas.height === ch) return;
@@ -1228,7 +1222,7 @@ function frame(now) {
   if (!running || !ready) return;
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(raw, 1 / 20);
   last = now;
-  // Sustained slow frames drop the pixel ratio to 1.
+  // Sustained slow frames step the pixel ratio down one level.
   if (!lowDpr && ++frames > 30) {
     slow = raw > 0.024 ? slow + 1 : Math.max(0, slow - 1);
     if (slow > 40) { lowDpr = true; fit(); }
@@ -1292,18 +1286,14 @@ panel.addEventListener('pointerup', lift);
 panel.addEventListener('pointercancel', lift);
 panel.addEventListener('contextmenu', e => e.preventDefault());
 
-const wxGroup = document.querySelector('.choices');
-const weather = choices(wxGroup, v => { wx = WEATHER[v]; rainLevel(); });
 // Space steps to the next weather and wraps round.
 const nextWeather = () => {
   const keys = Object.keys(WEATHER);
-  weather.set(keys[(keys.indexOf(weather.value) + 1) % keys.length], true);
+  ui.choice.set(keys[(keys.indexOf(ui.choice.value) + 1) % keys.length], true);
 };
-const windIn = document.getElementById('wind');
-windIn.addEventListener('input', () => { windGoal = +windIn.value; rainLevel(); });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   if (e.key.startsWith('Arrow')) {
     e.preventDefault();
     if (ready) sweep(e.key);
@@ -1314,6 +1304,8 @@ addEventListener('keydown', e => {
     if (!e.repeat) nextWeather();
   }
 });
+// A new quality choice clears the slow-frame step.
+onQuality(() => { lowDpr = false; slow = 0; fit(); });
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1325,8 +1317,7 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  wxGroup.querySelectorAll('.chip').forEach(b => { b.disabled = true; });
-  windIn.disabled = true;
+  ui.hideControls();
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
