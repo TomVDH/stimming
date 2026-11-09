@@ -9,7 +9,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&family=Tilt+Neon&family=Neonderthaw&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&family=Tilt+Neon&family=Courgette&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
@@ -277,23 +277,27 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
   // Sky and ground bounce.
   c += alb * mix(uGround, uSky, 0.5 + 0.5 * n.y);
   if (gloss > 0.0) {
-    // Fresnel for wet stone.
-    float fr = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-    vec3 r = reflect(-v, n);
+    // Reflections see a calmer surface: the setts break them up, not into tiles.
+    vec3 nr = normalize(mix(vec3(0.0, 1.0, 0.0), n, 0.3));
+    float fr = 0.02 + 0.98 * pow(1.0 - max(dot(nr, v), 0.0), 5.0);
+    vec3 r = reflect(-v, nr);
     vec3 spec = vec3(0.0);
     if (r.z < -0.01 && p.z > uApZ) {
       float t = (uApZ - p.z) / r.z;
       vec3 q = p + r * t;
-      float w = 0.02 + t * (1.0 - gloss) * 0.35;
-      spec += uWin * rectSoft(q.xy, uAp, vec2(w, w * 3.0 + 0.06));
+      // Soft edges that widen with distance; the streak smears upward more than across.
+      float w = 0.06 + t * (1.0 - gloss) * 0.5;
+      float win = rectSoft(q.xy, uAp, vec2(w, w * 4.0 + 0.1));
+      // The image fades along its length, as a wet surface scatters more far off.
+      spec += uWin * win / (1.0 + t * 0.15);
       // The neon tube is thin; a blurred image of it is dimmer.
       float tn = (uNeonA.z - p.z) / r.z;
       vec3 qn = p + r * tn;
-      float wn = 0.03 + tn * (1.0 - gloss) * 0.3;
-      float band = exp(-pow((qn.y - uNeonA.y) / wn, 2.0)) * step(abs(qn.x), uNeonB.x) * 0.03 / wn;
-      spec += uNeonCol * 3.0 * band;
+      float wn = 0.05 + tn * (1.0 - gloss) * 0.35;
+      float band = exp(-pow((qn.y - uNeonA.y) / wn, 2.0)) * smoothstep(uNeonB.x + wn, uNeonB.x - wn, abs(qn.x)) * 0.03 / wn;
+      spec += uNeonCol * 3.0 * band / (1.0 + tn * 0.15);
     }
-    c += spec * fr * gloss * 0.6;
+    c += spec * fr * gloss * 0.55;
   }
   return c;
 }
@@ -355,6 +359,9 @@ const groundMat = new THREE.ShaderMaterial({
     float wet = 0.55 + 0.45 * smoothstep(0.35, 0.65, fbm(g * 0.25 + 4.0));
     float gloss = mix(stone * wet * mix(0.55, 0.85, r2), mix(0.75, 0.92, stone), uWet);
     alb *= mix(1.0, 0.6, uWet);
+    // Wet stone is never flat: a fine unevenness wobbles the reflections.
+    vec2 wob = vec2(fbm(g * 3.1 + 7.0), fbm(g * 3.1 + 19.0)) - 0.5;
+    n = normalize(n + vec3(wob.x, 0.0, wob.y) * 0.06 * (0.3 + uWet) * detail);
     // Rain rings: each cell starts a ring at its own moment.
     if (uRipple > 0.0) {
       vec2 rc = floor(g * 2.2), rf = fract(g * 2.2) - 0.5;
@@ -1470,8 +1477,8 @@ const signMat = new THREE.ShaderMaterial({
   m.renderOrder = 2;
   shack.add(m);
 }
-// The sign's two hands: tube capitals over a neon script.
-const CAPS = ['Tilt Neon', 150], SCRIPT = ['Neonderthaw', 200];
+// The sign's two hands: tube capitals over a plain, readable script.
+const CAPS = ['Tilt Neon', 150], SCRIPT = ['Courgette', 150];
 function fitText(g, text, family, px, maxW) {
   g.font = `${px}px "${family}"`;
   const w = g.measureText(text).width;
@@ -2471,12 +2478,14 @@ function frame() {
   camera.aspect = size.w / size.h;
   // A low, wide lens on the cobbles; the shack sits right of centre.
   // Phones step in, centre the shack, and keep sky above for the plume.
-  const T = portrait ? new THREE.Vector3(1.4, 3.4, 0) : new THREE.Vector3(-1.3, 2.2, 0);
-  const P = portrait ? new THREE.Vector3(1.2, 0.95, 16) : new THREE.Vector3(-1.0, 1.05, 16.5);
+  // A still, wide frame on thirds: the horizon on the lower third, the frituur
+  // on the right-hand third, the church on the left, two thirds of night sky.
+  const T = portrait ? new THREE.Vector3(1.4, 4.4, 0) : new THREE.Vector3(0.6, 3.7, 0);
+  const P = portrait ? new THREE.Vector3(1.2, 0.95, 16) : new THREE.Vector3(-0.6, 1.05, 16.5);
   // A wide lens; scroll or pinch zooms in a little; the zoom ring breathes slowly.
   const hh = camcorder && !reduced() ? 1 : 0;
   const n = (a, b, c, o) => Math.sin(simT * a + o) * 0.6 + Math.sin(simT * b + o * 2.1) * 0.3 + Math.sin(simT * c + o * 3.7) * 0.1;
-  camera.fov = (portrait ? 64 : 47) * zoom + hh * n(0.19, 0.31, 0.47, 0.5) * 0.35;
+  camera.fov = (portrait ? 68 : 53) * zoom + hh * n(0.19, 0.31, 0.47, 0.5) * 0.35;
   // Handheld: the lens drifts and sways by a few centimetres.
   T.x += hh * n(0.43, 1.13, 2.3, 2.0) * 0.035;
   T.y += hh * n(0.61, 1.57, 3.1, 2.7) * 0.025;

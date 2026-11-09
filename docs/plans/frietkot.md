@@ -243,6 +243,12 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] Youth, one scene at a time: a brommer gang (one will not start, then pulls away on a wheelie), a boombox with dancers at the table, a can kicked across the square, two on the bike rack sharing a cone, a trolley ride, a couple in the hall door.
 - [x] New poses in figures.js and the sheet: dancing, sitting on a rail, kicking, kick-starting, an embrace, pushing a trolley; a running gait.
 
+### Task 3g: Reflections, sign, framing (Tom, 2026-11-09)
+
+- [x] Wet reflections see a calmer normal, widen with distance, smear upward, fade along their length, and wobble with a fine unevenness. No hard edge, no tiles.
+- [x] The script line uses Courgette, plain and readable.
+- [x] Framing on thirds: a wider lens (53°, 68° on phones), panned right, the horizon on the lower third, two thirds of night sky. Zoom stays.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.
