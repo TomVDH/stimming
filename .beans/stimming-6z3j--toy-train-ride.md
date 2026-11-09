@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T22:28:00Z
+updated_at: 2026-11-09T22:35:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -172,3 +172,5 @@ Open from the critics:
 - [x] Terrain: wrapped key light, shade tinted cool blue (never black), warm rim on edges turned from the eye (strongest against the sun), moon rim at night; cleaner saturated greens, less grain
 - [x] Track bed: warm grey ballast with soft speed bands, contact shadow under each rail, a grassy far verge melting into a grass slope; rail web lighter rust, not a black void
 - [x] Ballast filtered: rotated gradient-noise layers (no cell grid); each layer fades by its own footprint, along the track with the motion smear and across it separately, so at speed the stones become clean streaks and far off everything settles to its mean; sleepers fade to average cover; verge noise filtered too
+- [x] No dark spots: terrain self-shadow floors at 55 %; shaded faces take strong sky fill and a green bounce; woods are rich green, not black
+- [x] The cabin bobs too: the eye takes the rail-joint jolts and a slow sway against the wall, so the window moves with the outside
