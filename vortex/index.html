@@ -106,6 +106,8 @@ const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, 
 const N = 32, SLOTS = 8, INV4PI = 1 / (4 * Math.PI);
 // Core spread rate, circulation life and entrainment growth, per second.
 const NU = 1.2e-4, TAU_G = 8, GROW = 0.035;
+// Lobes grow at this rate per second; Breakup sets it.
+const lobeRate = () => 0.25 + 0.7 * breakup;
 const rings = Array.from({ length: SLOTS }, () => ({
   on: false, p: new Float64Array(N * 3), q: new Float64Array(N * 3), v: new Float64Array(N * 3),
   G: 0, G0: 0, a: 0.04, a0: 0.04, age: 0, R0: 0.18, m: 6, ph: 0, amp: 0, born: 0,
@@ -166,7 +168,7 @@ function filamentStep(dt) {
     r.age += dt;
     r.a = Math.sqrt(r.a0 * r.a0 + 4 * NU * r.age);
     // Lobes grow from the seeded wave; big lobes kill the ring fast.
-    const sigma = 0.35 + 0.9 * breakup;
+    const sigma = lobeRate();
     const amp = Math.min(r.R0 * 0.4, r.amp * Math.exp(sigma * r.age));
     const life = r.dying ? 0.45 : amp > r.R0 * 0.22 ? 1.1 : TAU_G;
     r.G *= Math.exp(-dt / life);
@@ -180,11 +182,16 @@ function filamentStep(dt) {
       let px = rx - ax * n[0], py = ry - ax * n[1], pz = rz - ax * n[2];
       const pl = Math.hypot(px, py, pz) || 1;
       px /= pl; py /= pl; pz /= pl;
-      const w = r.m * TAU * i / N + r.ph, s = Math.sin(w) * da, k = Math.cos(w) * da * 0.6;
+      // Two modes with their own phases keep the wave irregular.
+      const w = r.m * TAU * i / N + r.ph, w2 = (r.m + 3) * TAU * i / N + r.ph2;
+      const s = (Math.sin(w) * 0.7 + Math.sin(w2) * 0.3) * da, k = (Math.cos(w) * 0.7 - Math.cos(w2 * 1.1) * 0.3) * da * 0.6;
       r.p[o] = c[0] + rx * g + px * s + n[0] * k;
       r.p[o + 1] = c[1] + ry * g + py * s + n[1] * k;
       r.p[o + 2] = c[2] + rz * g + pz * s + n[2] * k;
     }
+    // Fog is a touch heavier than air, so old rings sink a little.
+    const sink = 0.025 * clamp((r.age - 0.5) / 2.5) * dt;
+    for (let i = 0; i < N; i++) r.p[i * 3 + 1] -= sink;
     r.c = c;
     r.n = n;
     if (r.G < r.G0 * 0.12 || Math.hypot(c[0], c[1], c[2]) > 4.5 || r.age > 16) kill(r);
@@ -248,7 +255,8 @@ function fire({ from, dir, R = 0.18, U = 0.9 }) {
   const k = freeSlot(), r = rings[k];
   const l = Math.hypot(...dir), d = dir.map(v => v / l), { e1, e2 } = basis(d);
   const C = from.map((v, i) => v + d[i] * 0.04);
-  r.m = 5 + Math.floor(rnd() * 4);
+  r.m = 6 + Math.floor(rnd() * 4);
+  r.ph2 = rnd() * TAU;
   r.ph = rnd() * TAU;
   r.amp = R * 0.006;
   for (let i = 0; i < N; i++) {
@@ -460,8 +468,14 @@ in vec2 vUv;
 out vec4 o;
 uniform sampler2D uState, uNodes;
 uniform float uOn[${SLOTS}], uCore[${SLOTS}], uTurb[${SLOTS}], uFade[${SLOTS}];
-uniform float uDt, uTime;
+uniform float uDt, uTime, uFrame;
+uniform float uAge[${SLOTS}];
 uniform int uRows;
+uint pcg(uint v) {
+  uint s = v * 747796405u + 2891336453u;
+  uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
 vec3 induced(vec3 x) {
   vec3 u = vec3(0.0);
   for (int k = 0; k < ${SLOTS}; k++) {
@@ -490,11 +504,17 @@ void main() {
   vec4 s = texelFetch(uState, c, 0);
   int k = c.y / ${ROWS};
   if (uFade[k] <= 0.0 || c.y - k * ${ROWS} >= uRows) { o = s; return; }
-  float tb = uTurb[k];
-  vec3 u1 = induced(s.xyz) + tb * abc(s.xyz, uTime);
+  float tb = uTurb[k], age = uAge[k];
+  // Old smoke sinks a little.
+  vec3 sink = vec3(0.0, -0.025 * smoothstep(0.5, 3.0, age), 0.0);
+  vec3 u1 = induced(s.xyz) + tb * abc(s.xyz, uTime) + sink;
   vec3 m = s.xyz + u1 * uDt * 0.5;
-  vec3 u2 = induced(m) + tb * abc(m, uTime);
-  o = vec4(s.xyz + u2 * uDt, s.w);
+  vec3 u2 = induced(m) + tb * abc(m, uTime) + sink;
+  // A random walk spreads the smoke; it grows with age.
+  uint h = pcg(uint(c.x + c.y * 64) ^ (uint(uFrame) * 2654435761u));
+  vec3 g = vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) / 511.5 - 1.0;
+  float D = 1e-5 + 7e-5 * smoothstep(0.5, 5.0, age);
+  o = vec4(s.xyz + u2 * uDt + g * sqrt(6.0 * D * uDt), s.w);
 }`;
 // A new ring's smoke: core, bubble and a short slug behind it.
 const SEED_FS = HEAD + `
@@ -520,7 +540,8 @@ void main() {
   if (r2 < 0.7) {
     float rho = uCoreR * 1.3 * sqrt(-2.0 * log(max(r3, 1e-5))), psi = 6.2831853 * r4;
     p = uC + rad * (uR + rho * cos(psi)) + uA * (rho * sin(psi));
-    r5 = 0.6 + 0.4 * r5;
+    // Two light and two dark bands round the core; the spin winds them into a spiral.
+    r5 = (0.6 + 0.4 * r5) * mix(0.3, 1.0, 0.5 + 0.5 * sin(2.0 * psi));
   } else if (r2 < 0.82) {
     // Uniform in an oblate bubble round the ring.
     float z = r4 * 2.0 - 1.0, rr = pow(r3, 0.333);
@@ -945,6 +966,8 @@ function camUniforms(q) {
   gl.uniform3fv(q.u.uBackDir, BACK_DIR);
   gl.uniform3fv(q.u.uBack, BACK);
 }
+let advN = 0;
+const ages = new Float32Array(SLOTS);
 const fades = new Float32Array(SLOTS), ons = new Float32Array(SLOTS), cores = new Float32Array(SLOTS), turbs = new Float32Array(SLOTS);
 function slotUniforms() {
   for (let k = 0; k < SLOTS; k++) {
@@ -953,9 +976,10 @@ function slotUniforms() {
     const up = clamp((simTime - s.born) / 0.1);
     // A wider ring spreads the same smoke, so it gets more light.
     fades[k] = s.fade * up * Math.min(1.6, r.R0 / 0.18);
+    ages[k] = s.born >= 0 ? simTime - s.born : 0;
     ons[k] = r.on ? 1 : 0;
     cores[k] = r.a;
-    const lobes = r.on ? clamp(r.amp * Math.exp((0.35 + 0.9 * breakup) * r.age) / (r.R0 * 0.22)) : 1;
+    const lobes = r.on ? clamp(r.amp * Math.exp(lobeRate() * r.age) / (r.R0 * 0.22)) : 1;
     turbs[k] = r.dying || s.burst ? 0.05 + 0.12 * breakup : (0.004 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
   }
 }
@@ -1003,6 +1027,8 @@ function advect(dt) {
   gl.uniform1fv(q.u.uFade, fades);
   gl.uniform1f(q.u.uDt, dt);
   gl.uniform1f(q.u.uTime, simTime);
+  gl.uniform1f(q.u.uFrame, ++advN);
+  gl.uniform1fv(q.u.uAge, ages);
   gl.uniform1i(q.u.uRows, rows());
   draw(state.w);
   state.swap();
@@ -1043,7 +1069,8 @@ function volUniforms(q) {
   gl.uniform2fv(q.u.uAtlas, ATLAS);
 }
 // Smoke extinction per unit density; the sheet's gain on smoke.
-const SIGMA = 7, SHEET_SMOKE = 60;
+// The laser sheet is 5 cm thick in scene units.
+const SIGMA = 7, SHEET_SMOKE = 45, SHEET_W = 0.05;
 let frameN = 0;
 function render() {
   const W = canvas.width, H = canvas.height;
@@ -1088,7 +1115,7 @@ function render() {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_3D, noiseTex);
     gl.uniform1i(q.u.uNoise, 1);
-    sheetUniforms(q, 0.03);
+    sheetUniforms(q, SHEET_W);
     gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
     gl.uniform1f(q.u.uTime, simTime);
     gl.uniform1f(q.u.uSigma, SIGMA);
@@ -1102,7 +1129,7 @@ function render() {
   let q = P.haze;
   gl.useProgram(q.p);
   camUniforms(q);
-  sheetUniforms(q, 0.03);
+  sheetUniforms(q, SHEET_W);
   volUniforms(q);
   bind(q, 'uVol', 0, atlas);
   bind(q, 'uVolA', 1, volT.a);
@@ -1125,7 +1152,7 @@ function render() {
     q = P.part;
     gl.useProgram(q.p);
     camUniforms(q);
-    sheetUniforms(q, 0.03);
+    sheetUniforms(q, SHEET_W);
     bind(q, 'uState', 0, state.r);
     gl.uniform1fv(q.u.uFade, fades);
     const f = 1 / cam.tan;
