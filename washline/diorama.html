@@ -1048,6 +1048,7 @@ function buildPrairie(grp) {
   mill.rotation.y = -0.4;
   mill.traverse(o => { o.castShadow = true; });
   grp.add(mill);
+  buildTPosts(grp);
   if (basketObj) grp.add(basketObj);
 }
 
@@ -1114,9 +1115,60 @@ function buildWinter(grp) {
       branch(j, len * rnd(0.55, 0.75), rad * 0.6, depth - 1);
     }
   };
-  branch(tree, 3.2, 0.24, 5);
-  tree.position.set(11, 0, -17);
+  // The line's far end: an old cottonwood, its crown out of the frame.
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 3.4, 14).translate(0, 1.7, 0), bark);
+  trunk.castShadow = trunk.receiveShadow = true;
+  tree.add(trunk);
+  for (let i = 0; i < 4; i++) {
+    const j = new THREE.Group();
+    j.position.y = rnd(2.6, 3.3);
+    j.rotation.set(rnd(0.3, 0.7) * (i % 2 ? 1 : -1), (i / 4) * TAU + rnd(-0.4, 0.4), rnd(0.3, 0.7) * (i < 2 ? 1 : -1));
+    tree.add(j);
+    branch(j, rnd(2.2, 3), 0.14, 4);
+  }
+  tree.position.set(POST_X + 0.24, 0, 0);
   grp.add(tree);
+  const band = add(new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.008, 6, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 })));
+  band.position.set(POST_X + 0.24, LINE_Y, 0);
+  // The near end: a red barn, board and batten, its wall and roof out of the frame.
+  const barnTex = new THREE.CanvasTexture(tex2D(256, 256, (g, w, h) => {
+    g.fillStyle = '#7e2a22'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 32) {
+      g.fillStyle = `rgba(0,0,0,${rnd(0.05, 0.2)})`; g.fillRect(x, 0, 32, h);
+      g.fillStyle = '#93362b'; g.fillRect(x + 27, 0, 6, h);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 33, 0, 2, h);
+    }
+    for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(210,190,170,${rnd(0.03, 0.1)})`; g.fillRect(rnd(0, w), 0, rnd(1, 3), rnd(40, h)); }
+  }));
+  barnTex.colorSpace = THREE.SRGBColorSpace;
+  barnTex.wrapS = barnTex.wrapT = THREE.RepeatWrapping;
+  barnTex.repeat.set(4, 2.5);
+  const barn = add(new THREE.Mesh(new THREE.BoxGeometry(10, 9, 14), new THREE.MeshStandardMaterial({ map: barnTex, roughness: 0.9 })));
+  barn.position.set(-POST_X - 0.1 - 5, 4.5, -1);
+  // A gable roof under snow; the eave overhangs the wall.
+  const slope = 0.62, half = 5.4;
+  const roof = add(new THREE.Mesh(new THREE.BoxGeometry(half / Math.cos(slope) + 0.4, 0.22, 14.8), new THREE.MeshStandardMaterial({ color: 0x3b3b3e, roughness: 0.8 })));
+  roof.position.set(-POST_X - 0.1 - half / 2 + 0.2, 9 + Math.tan(slope) * half / 2, -1);
+  roof.rotation.z = -slope;
+  const roofSnow = add(new THREE.Mesh(new THREE.BoxGeometry(half / Math.cos(slope) + 0.3, 0.12, 14.7), snowMat), false);
+  roofSnow.position.copy(roof.position).add(new THREE.Vector3(Math.sin(slope) * 0.15, Math.cos(slope) * 0.15, 0));
+  roofSnow.rotation.z = -slope;
+  const trim = new THREE.MeshStandardMaterial({ color: 0xece8de, roughness: 0.7 });
+  // White corner boards and a big door framed with an X.
+  const corner = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 9, 0.22), trim));
+  corner.position.set(-POST_X - 0.07, 4.5, 5.9);
+  const doorX = -POST_X - 0.08;
+  for (const [w, h, y, z, r] of [[0.06, 3.2, 1.6, -3.4, 0], [0.06, 3.2, 1.6, -0.6, 0], [0.06, 0.12, 3.2, -2, 0], [0.06, 0.12, 0.06, -2, 0], [0.06, 0.1, 1.6, -2, 0.85], [0.06, 0.1, 1.6, -2, -0.85]]) {
+    const b = add(new THREE.Mesh(new THREE.BoxGeometry(w, r ? 0.1 : h, r ? 3.6 : (h > 1 ? 0.14 : 2.9)), trim));
+    b.position.set(doorX, y, z);
+    if (r) b.rotation.x = r;
+  }
+  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
+  ring.position.set(-POST_X - 0.06, LINE_Y, 0);
+  // A drift banks against the barn wall.
+  const bank = add(new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), snowMat), false);
+  bank.scale.set(0.7, 0.35, 7);
+  bank.position.set(-POST_X - 0.1, 0, 0.5);
   // A grain elevator and its silos, pale in the whiteout.
   const conc = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.9 });
   const elev = new THREE.Group();
@@ -1126,17 +1178,11 @@ function buildWinter(grp) {
   for (const x of [5.5, 9.5, 13.5]) { const silo = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 18, 20), conc); silo.position.set(x, 9, 0); elev.add(silo); }
   elev.position.set(-46, 0, -88);
   grp.add(elev);
-  // Snow caps the posts; a galvanised tub waits by the near post.
-  for (const sx of [-1, 1]) {
-    const cap = add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 1.04), snowMat), false);
-    cap.position.set(sx * (POST_X + 0.07), 2.575, 0);
-    const top = add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 6).scale(1, 0.4, 1), snowMat), false);
-    top.position.set(sx * (POST_X + 0.07), 2.71, 0);
-  }
+  // A galvanised tub waits by the barn.
   const tub = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.3, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9adb2, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide })));
-  tub.position.set(-2.3, 0.15, 1.0);
+  tub.position.set(-2.4, 0.15, 1.6);
   const tubSnow = add(new THREE.Mesh(new THREE.CircleGeometry(0.29, 24).rotateX(-Math.PI / 2), snowMat), false);
-  tubSnow.position.set(-2.3, 0.27, 1.0);
+  tubSnow.position.set(-2.4, 0.27, 1.6);
   // Footprints lead from the lens out to the line.
   const printTex = new THREE.CanvasTexture(tex2D(64, 128, (g) => {
     g.fillStyle = 'rgba(70,85,110,0.55)';
@@ -1146,8 +1192,8 @@ function buildWinter(grp) {
   printTex.colorSpace = THREE.SRGBColorSpace;
   const steps = 26, prints = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.26).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false }), steps);
   for (let k = 0; k < steps; k++) {
-    const t = k / (steps - 1), x = lerp(-0.2, -1.2, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 9, t);
-    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, 0.12 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
+    const t = k / (steps - 1), x = lerp(-0.4, 2.2, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 8, t);
+    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, -0.3 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
   }
   grp.add(prints);
 }
@@ -1193,8 +1239,10 @@ grassMat.onBeforeCompile = sh => {
 grassMat.customProgramCacheKey = () => 'grass';
 let grass = null;
 // The camera's ground position and heading, for planting.
-const VIEW = { x: -1.7, z: 7.0, head: Math.atan2(-7.5, 2.6) };
+// The theme camera's ground spot and heading, for planting.
+const VIEW = { x: 0, z: 0, head: 0 };
 function plantGrass() {
+  VIEW.x = T.cam.pos[0]; VIEW.z = T.cam.pos[2]; VIEW.head = Math.atan2(T.cam.look[2] - T.cam.pos[2], T.cam.look[0] - T.cam.pos[0]);
   if (grass) { scene.remove(grass); grass.dispose(); }
   const N = Math.round((quality() === 'high' ? 110000 : 50000) * (viewMode === 'iso' ? 1.5 : 1) * T.grass.n);
   grass = new THREE.InstancedMesh(bladeGeo(), grassMat, N);
@@ -1207,7 +1255,7 @@ function plantGrass() {
     // Wide: the wedge the lens sees. Iso: a disc round the line.
     let x, z;
     // Iso samples a rectangle that covers the frame, set square to the view.
-    if (viewMode === 'iso') { const u = rnd(-8.5, 8.5), v = rnd(-11, 11); x = 0.3 + (u + v) * 0.7071; z = (u - v) * 0.7071; }
+    if (viewMode === 'iso') { const u = rnd(-8.5, 8.5), v = rnd(-11, 11), cy = Math.cos(T.iso.yaw), sy = Math.sin(T.iso.yaw); x = T.iso.at[0] + u * cy - v * sy; z = T.iso.at[2] - u * sy - v * cy; }
     else { const ang = VIEW.head + rnd(-0.75, 0.75), d = 2 + 18 * Math.random() ** 1.4; x = VIEW.x + Math.cos(ang) * d; z = VIEW.z + Math.sin(ang) * d; }
     const worn = Math.exp(-(z * z) / 0.6) * 0.45;
     p.set(x, -0.005, z);
@@ -1264,8 +1312,8 @@ const woodTex = new THREE.CanvasTexture(tex2D(64, 512, (g, w, h) => {
 woodTex.colorSpace = THREE.SRGBColorSpace;
 woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping;
 const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 });
-// Two weathered T-posts; the near one rises out of the frame.
-{
+// Two weathered T-posts carry the prairie line.
+function buildTPosts(grp) {
   const hookMat = new THREE.MeshStandardMaterial({ color: 0x7d7a74, metalness: 0.9, roughness: 0.5 });
   for (const sx of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.11, 2.7, 0.11), woodMat);
@@ -1278,7 +1326,7 @@ const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 }
     const brace2 = brace.clone(); brace2.position.z = -0.2; brace2.rotation.x = -0.8;
     const hook = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.0035, 8, 18).rotateY(Math.PI / 2), hookMat);
     hook.position.set(sx * (POST_X + 0.005), LINE_Y, 0);
-    for (const o of [post, arm, brace, brace2, hook]) { o.castShadow = o.receiveShadow = true; scene.add(o); }
+    for (const o of [post, arm, brace, brace2, hook]) { o.castShadow = o.receiveShadow = true; grp.add(o); }
   }
 }
 // A wicker basket waits on the lawn with one folded towel inside; the prairie keeps it.
@@ -1452,20 +1500,20 @@ function loose(dt) {
 // One fixed shot, the line slightly below eye level, its ends past the frame on a phone.
 const view = { w: 1, h: 1 };
 function frameCamera() {
-  const a = view.w / view.h, narrow = a < 1;
+  const a = view.w / view.h, narrow = a < 1, C = T.cam, I = T.iso;
   if (viewMode === 'iso') {
-    // True isometric: 45 degrees round, 35.26 degrees down, no perspective.
-    const h = narrow ? 11 : 8.4, w = h * a;
+    // True isometric: 35.26 degrees down, turned per theme, no perspective.
+    const h = narrow ? 11 : 8.4, w = h * a, [tx, ty, tz] = I.at;
     Object.assign(isoCam, { left: -w / 2, right: w / 2, top: h / 2, bottom: -h / 2 });
-    isoCam.position.set(0.3 - 30 * 0.57735, 0.9 + 30 * 0.57735, 30 * 0.57735);
-    isoCam.lookAt(0.3, 0.9, 0);
+    isoCam.position.set(tx + 30 * 0.8165 * Math.sin(I.yaw), ty + 30 * 0.57735, tz + 30 * 0.8165 * Math.cos(I.yaw));
+    isoCam.lookAt(tx, ty, tz);
     camera = isoCam;
   } else {
-    // A wide lens, level and set back: the line crosses the frame on a gentle slant.
-    persp.fov = narrow ? 72 : 54;
+    // Each theme frames its own shot: a wide lens, level or looking a little up.
+    persp.fov = narrow ? C.fovN : C.fov;
     persp.aspect = a;
-    persp.position.set(VIEW.x, 1.25, VIEW.z);
-    persp.lookAt(narrow ? 0.4 : 0.9, 1.4, -0.5);
+    persp.position.set(...C.pos);
+    persp.lookAt(...(narrow ? C.lookN : C.look));
     camera = persp;
   }
   renderPass.camera = camera;
@@ -1655,6 +1703,7 @@ const THEMES = {
     fog: [[0.88, 0.03, 85], 22, 160], hemi: [[0.82, 0.06, 240], [0.62, 0.07, 85], 1.0],
     ground: 'prairie', grass: { n: 1, h: [0.12, 0.42], cols: [[0.66, 0.1, 95], [0.78, 0.09, 80], [0.5, 0.09, 125]] },
     wind: 'gusty', sun: 0.3, stiff: 1, frost: 0, snow: 0, daisies: 1,
+    cam: { pos: [-1.7, 1.25, 7.0], look: [0.9, 1.4, -0.5], lookN: [0.4, 1.4, -0.5], fov: 54, fovN: 72 }, iso: { yaw: -Math.PI / 4, at: [0.3, 0.9, 0] },
     mix: ['sheet', 'tee', 'trousers', 'towel', 'dress', 'tee', 'sock', 'towel', 'cloth', 'sock'], build: buildPrairie,
   },
   winter: {
@@ -1663,6 +1712,8 @@ const THEMES = {
     fog: [[0.93, 0.006, 250], 8, 80], hemi: [[0.95, 0.01, 250], [0.9, 0.012, 250], 1.7],
     ground: 'snow', grass: { n: 0.022, h: [0.15, 0.5], cols: [[0.55, 0.05, 70], [0.62, 0.06, 80], [0.45, 0.04, 60]] },
     wind: 'breeze', sun: 0.35, stiff: 3, frost: 1, snow: 1, daisies: 0,
+    // Low, from the tree side, looking a little up toward the barn.
+    cam: { pos: [2.8, 0.85, 6.4], look: [-1.1, 1.8, -0.6], lookN: [-0.5, 1.8, -0.6], fov: 50, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [-0.3, 1.0, 0] },
     mix: ['longjohns', 'sheet', 'flannel', 'sock', 'sock', 'towel', 'flannel', 'sheet'], build: buildWinter,
   },
 };

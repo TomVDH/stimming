@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T09:33:49Z
+updated_at: 2026-11-09T09:43:11Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -69,3 +69,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
   - [ ] Harbour village with a fishing boat (Tom's ask).
   - [ ] Anime city with a jet dogfight and contrails in a deep blue evening sky (Tom's ask).
   - [ ] Three more from: Delta gold, Desert motel, Suburb dusk, Trailer night, Storm front.
+
+- Tom: each diorama needs its own camera angle and distinctly different anchors and backgrounds. Themes now carry cam (wide) and iso (yaw) settings. Prairie: T-posts, level wide shot from the left. Winter: red barn wall (gable roof, X door, ring) to a bare cottonwood, low camera from the tree side looking up; iso turned the other way.
