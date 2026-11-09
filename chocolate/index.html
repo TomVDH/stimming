@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.008 260); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chocolate tempering</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Chocolate tempering: molten chocolate on a cold black marble slab. */
+:root { --stage: oklch(0.1 0.008 260); }
+.stage--chocolate canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--chocolate canvas.on { opacity: 1; }
+.stage--chocolate { cursor: crosshair; }
+.stage--chocolate.drag { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--chocolate canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Chocolate tempering</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--chocolate" id="stage" tabindex="0" role="application" aria-label="Molten chocolate on a cold black marble slab. Drag to scrape and fold it, hold to pour hot chocolate, tap set chocolate to snap it.">
+      <p class="fail" hidden>Chocolate tempering needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Chocolate tempering</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, onReducedChange } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+/* ---------- chocolates ---------- */
+// The cell value w mixes them: 0 is dark, 0.5 is milk, 1 is white.
+const KIND = {
+  dark: { w: 0, melt: 48 },
+  milk: { w: 0.5, melt: 45 },
+  white: { w: 1, melt: 42 },
+};
+// Milk fat softens the crystals, so the window drops by up to 3 °C.
+const offset = w => -w * (4 - w);
+const ROOM = { chilled: 15, room: 19 };
+
+let kind = 'dark', lamp = 0;
+const act = { pour() {}, clear() {}, reset() {} };
+const ui = initPage({ id: 'chocolate', bar: {
+  choice: { label: 'Chocolate', value: 'dark', options: [
+    { value: 'dark', label: 'Dark' }, { value: 'milk', label: 'Milk' }, { value: 'white', label: 'White' },
+  ], onPick: v => { kind = v; live(); } },
+  slider: { label: 'Lamp', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { lamp = v; live(); } },
+  actions: [
+    { verb: 'add', noun: 'Pour', key: 'P', onPress: () => act.pour() },
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+  ],
+  settings: [
+    { type: 'choice', id: 'thermal', label: 'Thermal', value: 'halo', persist: true,
+      options: [{ value: 'halo', label: 'Halo' }, { value: 'full', label: 'Full' }, { value: 'off', label: 'Off' }],
+      onPick: v => { thermal = v; live(); } },
+    { type: 'choice', id: 'marble', label: 'Marble', value: 'chilled', persist: true,
+      options: [{ value: 'chilled', label: 'Chilled' }, { value: 'room', label: 'Room' }],
+      onPick: v => { marble = v; live(); } },
+    { type: 'choice', id: 'pace', label: 'Pace', value: 'calm', persist: true,
+      options: [{ value: 'calm', label: 'Calm' }, { value: 'brisk', label: 'Brisk' }],
+      onPick: v => { pace = v; live(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'scrape'], ['hold', 'pour'], ['click', 'snap'], ['space', 'pour']],
+} });
+let thermal = ui.setting('thermal')?.value ?? 'halo';
+let marble = ui.setting('marble')?.value ?? 'chilled';
+let pace = ui.setting('pace')?.value ?? 'calm';
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, vao = null, MT = null, floatLinear = false;
+const tex = { A: null, B: null, C: null };
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 o;
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 hash3(vec2 p) {
+  vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973));
+  q += dot(q, q.yxz + 33.33);
+  return fract((q.xxy + q.yzz) * q.zyx);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p, int oct) {
+  float s = 0.0, a = 0.5, n = 0.0;
+  for (int i = 0; i < 6; i++) {
+    if (i >= oct) break;
+    s += a * noise(p); n += a;
+    p = mat2(1.6, 1.2, -1.2, 1.6) * p + 17.1;
+    a *= 0.5;
+  }
+  return s / n;
+}
+`;
+
+/* ---------- marble ---------- */
+// Belgian black marble: blue-black stone, sharp white calcite veins.
+// It renders once per size into a float texture: albedo, then vein mask.
+const MARBLE_FS = HEAD + `
+uniform vec2 uRes;
+uniform float uDpr;
+float ridge(float n, float w) { return exp(-pow((n - 0.5) / w, 2.0)); }
+void main() {
+  vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
+  vec2 p = px / 420.0;
+  vec2 q = p + 0.55 * vec2(fbm(p * 1.4 + 3.1, 5), fbm(p * 1.4 + 8.7, 5));
+  vec2 r = q + 0.25 * vec2(fbm(q * 3.0 + 1.7, 4), fbm(q * 3.0 + 4.2, 4));
+  // Main veins: thin lines where the warped field crosses its middle.
+  float n1 = fbm(r * 1.6 + 2.0, 6);
+  float v1 = ridge(n1, 0.0035 + 0.004 * fbm(p * 5.0, 3));
+  // Veins break and fade along their length.
+  v1 *= smoothstep(0.42, 0.66, fbm(p * 2.2 + 9.0, 4));
+  // A finer second net at another angle.
+  float n2 = fbm(mat2(0.8, -0.6, 0.6, 0.8) * r * 3.4 + 11.0, 5);
+  float v2 = ridge(n2, 0.0025) * smoothstep(0.5, 0.72, fbm(p * 3.1 + 2.0, 4)) * 0.4;
+  // Hairline cracks between the veins.
+  float n3 = fbm(r * 7.0 + 5.0, 4);
+  float v3 = ridge(n3, 0.003) * 0.22 * smoothstep(0.4, 0.75, fbm(p * 4.0 + 7.0, 3));
+  // Soft milky clouds near the big veins.
+  float cloud = ridge(n1, 0.04) * 0.025 * fbm(p * 8.0, 4);
+  float vein = clamp(v1 + v2 + v3, 0.0, 1.0);
+  vec3 base = vec3(0.0075, 0.0085, 0.011) * (0.75 + 0.5 * fbm(p * 6.0 + 1.0, 4));
+  // Fossil specks: tiny grey flecks in the stone.
+  float speck = step(0.985, hash(floor(px / 1.5))) * 0.02 * fbm(p * 9.0, 2);
+  vec3 white = vec3(0.62, 0.64, 0.66);
+  vec3 c = base + vec3(speck) + white * cloud + mix(base, white, vein);
+  o = vec4(c, vein);
+}`;
+
+/* ---------- slab ---------- */
+// One pass: marble, chocolate cover, studio reflection, glints and bloom.
+// Grid textures: A = (h, T, v, u), B = (bloom, w, cos 2a, sin 2a), C = (activity, slab T, shear, 0).
+const SLAB_FS = HEAD + `
+uniform sampler2D uM, uA, uB, uC;
+uniform vec2 uRes, uGrid;
+uniform float uCellPx, uDpr, uTime, uLamp, uThermal, uRM, uHk, uGlints;
+uniform vec4 uPtr;      // x, y (px, GL), radius (px), on
+uniform vec4 uBlade;    // x, y (px, GL), dir x, dir y
+uniform vec2 uBladeK;   // half length (px), on
+uniform vec4 uPour;     // x, y (px, GL), radius (px), on
+uniform vec4 uBox;      // softbox centre x, y (px), half size x, y
+uniform vec4 uCam;      // camera x, y, z; softbox z
+uniform vec3 uCol0, uCol1, uCol2;
+
+vec4 cubic(float v) {
+  vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
+  vec4 s = n * n * n;
+  float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+  return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+}
+// A smooth B-spline read from four bilinear taps.
+vec4 bicubic(sampler2D t, vec2 uv) {
+  vec2 st = uv * uGrid - 0.5;
+  vec2 i = floor(st), f = fract(st);
+  vec4 xc = cubic(f.x), yc = cubic(f.y);
+  vec4 c = i.xxyy + vec2(-0.5, 1.5).xyxy;
+  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+  vec4 off = (c + vec4(xc.yw, yc.yw) / s) / uGrid.xxyy;
+  vec4 a = texture(t, off.xz), b = texture(t, off.yz), d = texture(t, off.xw), e = texture(t, off.yw);
+  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
+  return mix(mix(e, d, sx), mix(b, a, sx), sy);
+}
+// The pour stream lands as a raised coil.
+float pourBump(vec2 fc) {
+  if (uPour.w <= 0.0) return 0.0;
+  float d = length(fc - uPour.xy) / uPour.z;
+  return uPour.w * 1.4 * exp(-d * d * 1.6);
+}
+float height(vec2 fc) {
+  vec2 g = vec2(fc.x, uRes.y - fc.y) / uCellPx;
+  return bicubic(uA, g / uGrid).r + pourBump(fc);
+}
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+
+// A dark studio: one softbox, one strip light and the heat lamp.
+vec3 env(vec3 P, vec3 R, float rough) {
+  vec3 c = vec3(0.006, 0.0065, 0.008) * smoothstep(-0.2, 1.0, R.z);
+  if (R.z < 0.02) return c;
+  float t = (uCam.w - P.z) / R.z;
+  vec2 h = P.xy + R.xy * t;
+  float soft = 1.5 * uDpr + rough * t;
+  vec2 q = h - uBox.xy;
+  vec2 d = abs(q) - uBox.zw;
+  float sd = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+  float box = 1.0 - smoothstep(-soft, soft, sd);
+  // The panel is brighter at its centre, as a diffuser is.
+  float fall = 1.0 - 0.3 * dot(q / uBox.zw, q / uBox.zw);
+  c += vec3(14.0, 13.6, 12.8) * box * fall * mix(1.0, 0.45, smoothstep(0.0, 0.4, rough));
+  // A thin strip light, low on the far side.
+  vec2 sq = h - vec2(uRes.x * 1.15, -uRes.y * 0.25);
+  sq = mat2(0.94, -0.34, 0.34, 0.94) * sq;
+  float strip = (1.0 - smoothstep(-soft, soft, abs(sq.y) - 6.0 * uDpr)) * (1.0 - smoothstep(-soft, soft, abs(sq.x) - uRes.x * 0.5));
+  c += vec3(6.0, 6.4, 7.2) * strip * mix(1.0, 0.4, smoothstep(0.0, 0.4, rough));
+  // The heat lamp: a hot amber disc above the slab.
+  float ld = length(h - vec2(uRes.x * 0.62, uRes.y * 1.5)) - 70.0 * uDpr;
+  c += vec3(9.0, 3.2, 0.7) * uLamp * (1.0 - smoothstep(-soft, soft, ld));
+  return c;
+}
+
+// Kitchen strip-thermometer colours, centred on the chocolate's window.
+vec3 lc(float T, float off) {
+  float x = (T - off - 26.0) / 9.0;
+  vec3 c = vec3(1.0, 0.12, 0.04) * exp(-pow((x - 0.12) / 0.11, 2.0));
+  c += vec3(1.0, 0.62, 0.05) * exp(-pow((x - 0.36) / 0.12, 2.0)) * 0.9;
+  c += vec3(0.12, 1.0, 0.28) * exp(-pow((x - 0.61) / 0.1, 2.0));
+  c += vec3(0.08, 0.45, 1.0) * exp(-pow((x - 0.88) / 0.11, 2.0));
+  c += vec3(0.3, 0.1, 0.8) * smoothstep(0.92, 1.15, x) * 0.28;
+  return c;
+}
+
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec2 g = vec2(fc.x, uRes.y - fc.y) / uCellPx;
+  vec2 uv = g / uGrid;
+  vec4 A = bicubic(uA, uv);
+  // Smooth reads keep cell steps out of bloom and edges.
+  vec4 B = bicubic(uB, uv);
+  vec4 C = texture(uC, uv);
+  float h = max(A.r + pourBump(fc), 0.0);
+  float T = A.g, v = max(A.b, 0.0), u = max(A.a, 0.0);
+  float w = clamp(B.g, 0.0, 1.0);
+  float solid = clamp(v + u, 0.0, 1.0);
+  float q = v / max(v + u, 1e-3);
+
+  // Height in px per unit, and the surface normal.
+  float e = 0.75 * uCellPx;
+  float hx = height(fc + vec2(e, 0.0)) - height(fc - vec2(e, 0.0));
+  float hy = height(fc + vec2(0.0, e)) - height(fc - vec2(0.0, e));
+  vec3 N = normalize(vec3(-hx * uHk / (2.0 * e), -hy * uHk / (2.0 * e), 1.0));
+  // Blade marks: fine grooves along the last stroke.
+  float sm = length(B.ba);
+  float ang = 0.5 * atan(B.a, B.b);
+  vec2 sd = vec2(cos(ang), -sin(ang));
+  vec2 sp = vec2(-sd.y, sd.x);
+  vec2 cp = fc / uDpr;
+  float gx = dot(cp, sp) * 0.9 + noise(vec2(dot(cp, sd) * 0.02, 3.0)) * 4.0;
+  float gro = (noise(vec2(gx, 1.0)) - 0.5) + 0.5 * (noise(vec2(gx * 2.7, 5.0)) - 0.5);
+  float cover = 1.0 - exp(-h * 30.0);
+  N = normalize(N + vec3(sp.x, sp.y, 0.0) * gro * 0.07 * sm * cover);
+
+  // Pinhole view, from the surface to the camera.
+  vec3 Pw = vec3(fc, h * uHk);
+  vec3 V = normalize(uCam.xyz - Pw);
+  vec3 R = reflect(-V, N);
+  float cosv = max(dot(N, V), 0.0);
+
+  // The marble: albedo from the pre-pass, polished, so it mirrors too.
+  vec4 m = texture(uM, vUv);
+  vec3 Lk = normalize(vec3(uBox.xy - fc, uCam.w));
+  vec2 lampP = vec2(uRes.x * 0.62, uRes.y * 0.92);
+  float lampPool = uLamp * (0.35 + 0.65 * exp(-dot(fc - lampP, fc - lampP) / pow(0.55 * max(uRes.x, uRes.y), 2.0)));
+  vec3 lampC = vec3(1.0, 0.42, 0.12) * lampPool * 1.6;
+  vec3 key = vec3(1.0, 0.98, 0.94) * 1.1;
+  vec3 slabD = m.rgb * (key * (0.28 + 0.72 * max(Lk.z, 0.0)) + lampC);
+  // Polished stone: a faint, slightly soft mirror.
+  vec3 slab = slabD + 0.012 * env(vec3(fc, 0.0), reflect(-normalize(uCam.xyz - vec3(fc, 0.0)), vec3(0, 0, 1)), 0.03);
+
+  // The chocolate: absorption through thin films, then its own colour.
+  vec3 alb = w < 0.5 ? mix(uCol0, uCol1, w * 2.0) : mix(uCol1, uCol2, w * 2.0 - 2.0 + 1.0);
+  vec3 k = mix(vec3(24.0, 32.0, 44.0), vec3(7.0, 8.0, 11.0), w);
+  vec3 trans = exp(-h * k);
+  // Set chocolate scatters a little more: its surface lifts in tone.
+  vec3 choc = alb * (key * (0.3 + 0.7 * max(dot(N, Lk), 0.0)) + lampC);
+  // Untempered chocolate sets matte and mottled.
+  float body = smoothstep(0.03, 0.14, h);
+  float dull = (1.0 - q) * smoothstep(0.35, 0.9, solid) * body;
+  choc *= 1.0 + dull * (0.35 + 0.5 * fbm(cp / 26.0, 3));
+  vec3 col = slab * trans + choc * (1.0 - trans);
+
+  // Fat bloom: grey-white streaks along the strokes, then a haze.
+  float bl = B.r;
+  vec2 bq = vec2(dot(cp, sd), dot(cp, sp));
+  float streak = fbm(bq * vec2(0.012, 0.16) + 4.0, 4);
+  float mott = fbm(cp / 14.0 + 2.0, 4);
+  // Strokes give streaks; untouched pools bloom in soft blotches.
+  float bpat = mix(smoothstep(0.5, 0.75, mott), smoothstep(0.5, 0.78, streak * 0.8 + mott * 0.3), smoothstep(0.2, 0.6, sm));
+  float bloom = clamp(bl, 0.0, 1.0) * (0.22 + 0.5 * bpat) * body;
+  col = mix(col, vec3(0.34, 0.32, 0.3) * (key * 0.9 + lampC), bloom);
+
+  // Gloss: wet chocolate is a mirror; tempered stays one; failed goes matte.
+  float rough = mix(0.012, 0.004, smoothstep(0.5, 0.95, solid) * q);
+  rough = mix(rough, 0.45, dull);
+  rough = mix(rough, 0.8, bloom);
+  float F = 0.035 + 0.965 * pow(1.0 - cosv, 5.0);
+  vec3 spec = env(Pw, R, rough) * F * cover * (1.0 - bloom * 0.7);
+  col += spec;
+
+  // Crystal glints: sparse facets that catch the softbox while crystals grow.
+  if (uGlints > 0.5 && cover > 0.3) {
+    float cell = 3.0 * uDpr;
+    vec2 id = floor(fc / cell);
+    vec3 r3 = hash3(id + 7.0);
+    float dens = (v * 0.25 + u * 0.12) * (0.25 + C.r * 30.0);
+    if (r3.x < dens) {
+      vec3 Ng = normalize(N + vec3(r3.yz - 0.5, 0.0) * mix(0.5, 0.9, 1.0 - q));
+      vec3 Rg = reflect(-V, Ng);
+      float tw = uRM > 0.5 ? 0.6 : 0.5 + 0.5 * sin(uTime * (3.0 + r3.y * 9.0) + r3.z * 40.0);
+      vec2 f = fract(fc / cell) - 0.5;
+      float dot_ = exp(-dot(f, f) * 18.0);
+      vec3 gc = mix(vec3(0.9, 0.8, 0.65), vec3(1.0, 0.97, 0.9), q);
+      col += gc * env(Pw, Rg, 0.0).g * 0.035 * tw * dot_ * mix(0.4, 1.0, q) * (1.0 - bloom);
+    }
+  }
+
+  // The scraper: a steel blade seen from above, with its shadow.
+  if (uBladeK.y > 0.0) {
+    vec2 bd = uBlade.zw, bt = vec2(-bd.y, bd.x);
+    vec2 rel = fc - uBlade.xy;
+    float along = dot(rel, bd), across = dot(rel, bt);
+    float inLen = 1.0 - smoothstep(uBladeK.x - 2.0 * uDpr, uBladeK.x, abs(across));
+    float shadow = exp(-pow((along + 6.0 * uDpr) / (7.0 * uDpr), 2.0)) * inLen;
+    col *= 1.0 - 0.55 * shadow * uBladeK.y;
+    float body = (1.0 - smoothstep(1.6 * uDpr, 2.6 * uDpr, abs(along + 3.0 * uDpr))) * inLen;
+    vec3 steel = vec3(0.32, 0.34, 0.37) + vec3(1.4) * exp(-pow((along + 3.0 * uDpr) / (0.7 * uDpr), 2.0));
+    col = mix(col, steel, body * uBladeK.y);
+  }
+
+  // Thermal read-out: strip-thermometer colours on the chocolate.
+  float off = -w * (4.0 - w);
+  float Tc = mix(C.g, T, smoothstep(0.004, 0.03, h));
+  if (uThermal > 1.5) {
+    col = mix(col, col * 0.35 + lc(Tc, off) * 0.22, 0.75 * cover);
+  } else if (uThermal > 0.5 && uPtr.w > 0.0) {
+    float d = length(fc - uPtr.xy);
+    float inside = 1.0 - smoothstep(uPtr.z - 1.5 * uDpr, uPtr.z, d);
+    float ring = exp(-pow((d - uPtr.z) / (1.1 * uDpr), 2.0));
+    vec3 tc = lc(Tc, off);
+    col = mix(col, col * 0.45 + tc * 0.22, inside * uPtr.w * mix(0.3, 0.8, cover));
+    col += (tc * 0.5 + vec3(0.04)) * ring * uPtr.w;
+  }
+
+  // Grade: exposure, filmic curve, vignette, grain.
+  vec2 cq = vUv - 0.5;
+  col *= 1.0 - 0.55 * dot(cq, cq) * 1.6;
+  vec3 outc = srgb(aces(col * 1.15));
+  outc += (hash(fc + fract(uTime) * 91.0) - 0.5) * 0.01;
+  o = vec4(outc, 1.0);
+}`;
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+function renderable(fmt) {
+  const t = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, 4, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(t);
+  return ok;
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float');
+  if (!renderable(gl.RGBA16F)) throw new Error('RGBA16F is not renderable');
+  floatLinear = !!gl.getExtension('OES_texture_float_linear');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { marble: compile(TRI, MARBLE_FS), slab: compile(TRI, SLAB_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.disable(gl.BLEND);
+}
+function dataTex(w, h, fmt = gl.RGBA16F) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(w, h) {
+  const t = dataTex(w, h);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return { tex: t, fb, w, h };
+}
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.uniform1i(prog.u[name], unit);
+}
+function draw(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- the slab sim ---------- */
+// A thin film on a grid: thickness, heat, two crystal forms, mix, bloom, strokes.
+// Cells are square; the short side holds 160 of them (115 on the coarse rung).
+const S = { gw: 0, gh: 0, n: 0, cs: 1 };
+const FIELDS = ['h', 'T', 'v', 'u', 'w', 'bl', 'sc', 'ss', 'act', 'ts', 'sh'];
+let F = {}, tmp = {}, upA = null, upB = null, upC = null;
+let cssW = 1, cssH = 1, dpr = 1, narrow = false;
+
+function room() { return ROOM[marble] ?? 15; }
+function makeGrid(gw, gh) {
+  const old = F, ow = S.gw, oh = S.gh, n = gw * gh;
+  const next = {};
+  for (const k of FIELDS) next[k] = new Float32Array(n);
+  next.ts.fill(room());
+  next.T.fill(room());
+  // A resize resamples the old slab, so no chocolate is lost to a new shape.
+  if (ow && oh) {
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      const sx = Math.min(ow - 1, Math.round((x + 0.5) * ow / gw - 0.5)), sy = Math.min(oh - 1, Math.round((y + 0.5) * oh / gh - 0.5));
+      const i = y * gw + x, j = sy * ow + sx;
+      for (const k of FIELDS) next[k][i] = old[k][j];
+    }
+  }
+  F = next;
+  tmp = { wall: new Uint8Array(n), fl: new Float32Array(n), nh: new Float32Array(n), eT: new Float32Array(n), eV: new Float32Array(n), eU: new Float32Array(n), eW: new Float32Array(n) };
+  upA = new Float32Array(n * 4);
+  upB = new Float32Array(n * 4);
+  upC = new Float32Array(n * 4);
+  Object.assign(S, { gw, gh, n });
+  if (gl) {
+    // Height needs 32 bits where the GPU can filter them: half floats fray the reflections.
+    for (const k of ['A', 'B', 'C']) { if (tex[k]) gl.deleteTexture(tex[k]); tex[k] = dataTex(gw, gh, k === 'A' && floatLinear ? gl.RGBA32F : gl.RGBA16F); }
+  }
+}
+
+// Deposits mass m at grid point (x, y) with a Gaussian of radius r, and mixes it in.
+// A half plane (px, py, nx, ny) keeps the deposit on its forward side.
+function deposit(x, y, m, r, T, v, u, w, hp = null) {
+  const { gw, gh } = S, R = Math.ceil(r * 2.2);
+  const x0 = Math.max(0, Math.floor(x - R)), x1 = Math.min(gw - 1, Math.ceil(x + R));
+  const y0 = Math.max(0, Math.floor(y - R)), y1 = Math.min(gh - 1, Math.ceil(y + R));
+  let sum = 0;
+  for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
+    const dx = xx + 0.5 - x, dy = yy + 0.5 - y;
+    if (hp && (xx + 0.5 - hp[0]) * hp[2] + (yy + 0.5 - hp[1]) * hp[3] < 0.6) continue;
+    sum += Math.exp(-(dx * dx + dy * dy) / (r * r));
+  }
+  if (sum <= 0) return;
+  for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
+    const dx = xx + 0.5 - x, dy = yy + 0.5 - y;
+    if (hp && (xx + 0.5 - hp[0]) * hp[2] + (yy + 0.5 - hp[1]) * hp[3] < 0.6) continue;
+    const dm = m * Math.exp(-(dx * dx + dy * dy) / (r * r)) / sum;
+    if (dm <= 0) continue;
+    mixIn(yy * gw + xx, dm, T, v, u, w);
+  }
+}
+// Mass-weighted mix of a new portion into one cell.
+function mixIn(i, dm, T, v, u, w) {
+  const h0 = F.h[i], h1 = h0 + dm, a = dm / h1;
+  F.T[i] = h0 > 1e-5 ? lerp(F.T[i], T, a) : T;
+  F.v[i] = lerp(h0 > 1e-5 ? F.v[i] : 0, v, a);
+  F.u[i] = lerp(h0 > 1e-5 ? F.u[i] : 0, u, a);
+  F.w[i] = h0 > 1e-5 ? lerp(F.w[i], w, a) : w;
+  // Fresh liquid washes the bloom out of a cell.
+  F.bl[i] *= 1 - a;
+  F.h[i] = h1;
+}
+
+// Thin-film flow: flux = h^3 / viscosity times the slope.
+// Viscosity grows as the chocolate cools, and without bound as it sets.
+const FL0 = 1.6;
+function fluidity(T, s) {
+  const k = Math.max(0, 1 - s / 0.55);
+  return FL0 * Math.exp(0.07 * (T - 45)) * k * k;
+}
+function flow(dt) {
+  const { gw, gh, n } = S, { h, T, v, u, w } = F, { wall, fl, nh, eT, eV, eU, eW } = tmp;
+  for (let i = 0; i < n; i++) {
+    const hi = h[i];
+    fl[i] = hi > 1e-4 ? fluidity(T[i], v[i] + u[i]) : 0;
+    nh[i] = hi; eT[i] = hi * T[i]; eV[i] = hi * v[i]; eU[i] = hi * u[i]; eW[i] = hi * w[i];
+  }
+  const cap = 0.1 / dt;
+  let moved = 0;
+  const face = (i, j) => {
+    const d = h[i] - h[j];
+    // The blade is a wall: nothing flows through it.
+    if (d === 0 || wall[i] || wall[j]) return;
+    const s = d > 0 ? i : j, t = d > 0 ? j : i;
+    if (fl[s] === 0) return;
+    const hf = 0.5 * (h[i] + h[j]);
+    const m = Math.min(cap, hf * hf * hf * fl[s]);
+    const f = Math.min(m * Math.abs(d) * dt, h[s] * 0.2);
+    if (f < 1e-7) return;
+    moved += f;
+    nh[s] -= f; nh[t] += f;
+    eT[s] -= f * T[s]; eT[t] += f * T[s];
+    eV[s] -= f * v[s]; eV[t] += f * v[s];
+    eU[s] -= f * u[s]; eU[t] += f * u[s];
+    eW[s] -= f * w[s]; eW[t] += f * w[s];
+  };
+  for (let y = 0; y < gh; y++) {
+    const r = y * gw;
+    for (let x = 0; x < gw - 1; x++) face(r + x, r + x + 1);
+    if (y < gh - 1) for (let x = 0; x < gw; x++) face(r + x, r + x + gw);
+  }
+  for (let i = 0; i < n; i++) {
+    const hi = nh[i];
+    if (hi > 1e-5) { h[i] = hi; T[i] = eT[i] / hi; v[i] = eV[i] / hi; u[i] = eU[i] / hi; w[i] = eW[i] / hi; }
+    else { h[i] = Math.max(0, hi); }
+  }
+  return moved;
+}
+
+// Heat, crystals and bloom, per cell.
+// Form V melts at 33.8 °C; forms III and IV, lumped as U, near 28 °C.
+const K_COOL = 0.065, K_LAMP = 1.17, H0 = 0.06, K_SLAB = 0.0015, K_ROOM = 0.002;
+function cells(dt) {
+  const { gw, gh, n } = S, { h, T, v, u, w, bl, sc, ss, act, ts, sh } = F;
+  const rm = room();
+  const lx = gw * 0.62, ly = -gh * 0.1, lr2 = Math.pow(0.55 * Math.max(gw, gh), 2);
+  let busy = 0;
+  for (let i = 0; i < n; i++) {
+    const hi = h[i];
+    ts[i] += (rm - ts[i]) * K_ROOM * dt;
+    if (hi < 1e-4) { T[i] = ts[i]; v[i] = u[i] = bl[i] = act[i] = 0; continue; }
+    const x = i % gw, y = (i / gw) | 0;
+    const dx = x - lx, dy = y - ly;
+    const L = lamp * (0.35 + 0.65 * Math.exp(-(dx * dx + dy * dy) / lr2));
+    const T0 = T[i];
+    let Ti = T0 + (((ts[i] - T0) * K_COOL + L * K_LAMP) / (hi + H0)) * dt;
+    // The marble warms under hot chocolate and loses its chill.
+    if (hi > 0.02) ts[i] += (T0 - ts[i]) * K_SLAB * dt;
+    const off = -w[i] * (4 - w[i]), mV = 33.8 + off, mU = 28 + off;
+    let vi = v[i], ui = u[i];
+    if (Ti > mV) vi *= Math.exp(-0.8 * (Ti - mV) * dt);
+    if (Ti > mU) ui *= Math.exp(-0.4 * (Ti - mU) * (Ti - mU + 1) * dt);
+    const free = Math.max(0, 1 - vi - ui), s = sh[i];
+    let dv = 0, du = 0;
+    if (Ti < mV) {
+      if (Ti < mV - 3) dv += 0.001 * (mV - 3 - Ti) * (0.15 + 4 * s);
+      dv += 0.15 * vi * clamp((mV - Ti) / 8, 0, 2);
+      dv *= free * dt;
+    }
+    if (Ti < mU) {
+      // V seeds take up the melt first, so few new U crystals start.
+      du += 0.004 * (mU - Ti) * (1 + 2 * s) * Math.max(0, 1 - vi / 0.08);
+      du += 0.5 * ui * clamp((mU - Ti) / 5, 0, 1.5);
+      du *= free * dt;
+    }
+    vi += dv; ui += du;
+    // Crystals release latent heat as they form.
+    Ti += 3 * (dv + du);
+    const solid = vi + ui;
+    // Fat bloom rises on set chocolate that holds unstable crystals.
+    const qq = vi / Math.max(solid, 1e-3);
+    if (solid > 0.8 && Ti < mU - 1) bl[i] += 0.12 * Math.max(0, (0.85 - qq) / 0.85) * (1 - bl[i]) * dt;
+    else if (solid < 0.3) bl[i] *= Math.exp(-2 * dt);
+    const a = (dv + du) / Math.max(dt, 1e-4);
+    act[i] += (a - act[i]) * Math.min(1, dt * 4);
+    sh[i] = s * Math.exp(-dt / 0.6);
+    // Hot chocolate levels itself; tacky chocolate keeps its blade marks.
+    const lev = Math.exp(-dt * 0.5 * Math.exp(0.07 * (Ti - 45)) * Math.max(0, 1 - solid / 0.4));
+    sc[i] *= lev; ss[i] *= lev;
+    busy = Math.max(busy, Math.abs(Ti - T0) / dt, a * 20);
+    T[i] = Ti; v[i] = vi; u[i] = ui;
+  }
+  return busy;
+}
+
+/* ---------- scraper ---------- */
+// The blade crosses the stroke, cut into bins. Each step it lifts the chocolate
+// it swept, above a thin film, and lays the load just ahead as a rolling wave.
+const NB = 32;
+const load = { m: new Float32Array(NB), T: new Float32Array(NB), v: new Float32Array(NB), u: new Float32Array(NB), w: new Float32Array(NB) };
+const blade = { x: 0, y: 0, dx: 1, dy: 0, on: 0, live: false, half: 12 };
+function bladeHalf() { return (narrow ? 0.15 : 0.08) * Math.min(S.gw, S.gh); }
+function scrape(x0, y0, x1, y1, dt) {
+  const { gw, gh } = S, { h, T, v, u, w, sc, ss, sh } = F;
+  const mx = x1 - x0, my = y1 - y0, len = Math.hypot(mx, my);
+  if (len < 1e-3) return;
+  // The blade turns smoothly toward the stroke.
+  const k = 0.35;
+  let dx = lerp(blade.dx, mx / len, k), dy = lerp(blade.dy, my / len, k);
+  const dl = Math.hypot(dx, dy) || 1;
+  dx /= dl; dy /= dl;
+  blade.dx = dx; blade.dy = dy;
+  const tx = -dy, ty = dx, half = blade.half = bladeHalf();
+  // A fast stroke rides up and leaves a thicker film.
+  const speed = len / Math.max(dt, 1e-3) / Math.min(gw, gh);
+  const film = 0.03 + 0.08 * clamp(speed / 3);
+  const c2 = dx * dx - dy * dy, s2 = 2 * dx * dy;
+  for (let b = 0; b < NB; b++) load.m[b] = load.T[b] = load.v[b] = load.u[b] = load.w[b] = 0;
+  const R = half + len + 2;
+  const xa = Math.max(0, Math.floor(Math.min(x0, x1) - R)), xb = Math.min(gw - 1, Math.ceil(Math.max(x0, x1) + R));
+  const ya = Math.max(0, Math.floor(Math.min(y0, y1) - R)), yb = Math.min(gh - 1, Math.ceil(Math.max(y0, y1) + R));
+  for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+    const px = x + 0.5 - x0, py = y + 0.5 - y0;
+    const al = px * dx + py * dy;
+    if (al < -0.6 || al > len + 0.6) continue;
+    const ac = (x + 0.5 - x1) * tx + (y + 0.5 - y1) * ty;
+    if (Math.abs(ac) > half) continue;
+    const i = y * gw + x;
+    sc[i] = c2; ss[i] = s2;
+    sh[i] = Math.max(sh[i], clamp(0.4 + speed * 0.3));
+    const solid = v[i] + u[i];
+    if (solid > 0.6) continue;
+    const take = Math.max(0, h[i] - film) * (1 - smooth(0.35, 0.6, solid));
+    if (take <= 0) continue;
+    const b = Math.min(NB - 1, Math.max(0, Math.floor((ac + half) / (2 * half) * NB)));
+    load.m[b] += take; load.T[b] += take * T[i]; load.v[b] += take * v[i]; load.u[b] += take * u[i]; load.w[b] += take * w[i];
+    h[i] -= take;
+  }
+  // The load spreads a little along the blade.
+  const sm = new Float32Array(NB * 5);
+  for (let b = 0; b < NB; b++) {
+    const l = Math.max(0, b - 1), r = Math.min(NB - 1, b + 1);
+    for (const [arr, o] of [[load.m, 0], [load.T, 1], [load.v, 2], [load.u, 3], [load.w, 4]]) sm[o * NB + b] = 0.25 * arr[l] + 0.5 * arr[b] + 0.25 * arr[r];
+  }
+  // The roll sits just ahead of the blade; the ends spill side ridges.
+  for (let b = 0; b < NB; b++) {
+    const m = sm[b];
+    if (m <= 1e-6) continue;
+    const T_ = sm[NB + b] / m, v_ = sm[2 * NB + b] / m, u_ = sm[3 * NB + b] / m, w_ = sm[4 * NB + b] / m;
+    const ac = ((b + 0.5) / NB * 2 - 1) * half;
+    const end = b < 2 || b >= NB - 2 ? 0.3 : 0;
+    const width = clamp(Math.sqrt(m) * 1.4, 0.9, 4);
+    const ax = x1 + tx * ac + dx * (1 + width * 0.6), ay = y1 + ty * ac + dy * (1 + width * 0.6);
+    // The roll never lands behind the blade, so no band is left there.
+    deposit(ax, ay, m * (1 - end), width * 0.5 + 0.5, T_, v_, u_, w_, [x1, y1, dx, dy]);
+    if (end) {
+      const sg = ac < 0 ? -1 : 1;
+      deposit(x1 + tx * (half + 1.6) * sg - dx, y1 + ty * (half + 1.6) * sg - dy, m * end, 1.2, T_, v_, u_, w_);
+    }
+  }
+  blade.x = x1; blade.y = y1;
+  markWall();
+}
+// Cells under the blade line block flow until the blade lifts.
+function markWall() {
+  const { gw, gh } = S, wall = tmp.wall;
+  wall.fill(0);
+  if (!blade.live) return;
+  const { x, y, dx, dy, half } = blade, tx = -dy, ty = dx, R = half + 2;
+  for (let yy = Math.max(0, Math.floor(y - R)); yy <= Math.min(gh - 1, Math.ceil(y + R)); yy++) {
+    for (let xx = Math.max(0, Math.floor(x - R)); xx <= Math.min(gw - 1, Math.ceil(x + R)); xx++) {
+      const px = xx + 0.5 - x, py = yy + 0.5 - y;
+      const al = px * dx + py * dy, ac = px * tx + py * ty;
+      if (al > -1.2 && al < 0.6 && Math.abs(ac) <= half) wall[yy * gw + xx] = 1;
+    }
+  }
+}
+
+// A dimple: a tap on liquid pushes the chocolate out into a ring.
+function dimple(x, y) {
+  const { gw, gh } = S, { h, T, v, u, w } = F, r = 3.2;
+  let got = 0, tT = 0, tw = 0;
+  for (let yy = Math.max(0, Math.floor(y - r)); yy <= Math.min(gh - 1, Math.ceil(y + r)); yy++) {
+    for (let xx = Math.max(0, Math.floor(x - r)); xx <= Math.min(gw - 1, Math.ceil(x + r)); xx++) {
+      const d = Math.hypot(xx + 0.5 - x, yy + 0.5 - y);
+      if (d > r) continue;
+      const i = yy * gw + xx;
+      if (v[i] + u[i] > 0.5) continue;
+      const t = h[i] * 0.45 * (1 - d / r);
+      h[i] -= t; got += t; tT += t * T[i]; tw += t * w[i];
+    }
+  }
+  if (got <= 0) return;
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    deposit(x + Math.cos(a) * r * 1.15, y + Math.sin(a) * r * 1.15, got / 12, 1.1, tT / got, 0, 0, tw / got);
+  }
+}
+
+/* ---------- the first picture ---------- */
+// A hot pool of dark chocolate, with one cooled smear across the veins.
+function seed() {
+  const { gw, gh } = S, { h, T, v, u, w, bl, sc, ss, act, ts, sh } = F;
+  const rm = room();
+  for (let i = 0; i < S.n; i++) { h[i] = v[i] = u[i] = bl[i] = sc[i] = ss[i] = act[i] = sh[i] = 0; ts[i] = rm; T[i] = rm; w[i] = KIND[kind].w; }
+  const short = Math.min(gw, gh);
+  const cx = gw * (narrow ? 0.5 : 0.44), cy = gh * (narrow ? 0.36 : 0.44), r = short * (narrow ? 0.3 : 0.24);
+  // A smear: the blade has dragged a thin film to one side.
+  const ex = cx + r * (narrow ? 0.1 : 1.9), ey = cy + r * (narrow ? 1.9 : 0.5);
+  const ax = ex - cx, ay = ey - cy, al = Math.hypot(ax, ay), ux = ax / al, uy = ay / al;
+  const c2 = ux * ux - uy * uy, s2 = 2 * ux * uy;
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const i = y * gw + x, px = x + 0.5 - cx, py = y + 0.5 - cy;
+    const a = Math.atan2(py, px);
+    const rr = r * (1 + 0.07 * Math.sin(a * 3 + 1.3) + 0.05 * Math.sin(a * 5 + 0.4));
+    const d = Math.hypot(px, py) / rr;
+    let hh = d < 1 ? 1.5 * Math.pow(1 - d * d, 0.45) : 0;
+    const along = px * ux + py * uy, across = -px * uy + py * ux;
+    if (along > r * 0.7 && along < al + r * 0.15) {
+      const t = (along - r * 0.7) / (al - r * 0.55);
+      const wid = r * (0.75 - 0.25 * t);
+      const f = 1 - smooth(wid * 0.8, wid, Math.abs(across));
+      const film = (0.022 + 0.035 * (1 - t)) * f * (1 - smooth(0.75, 1, t));
+      if (film > hh) {
+        hh = film; sc[i] = c2; ss[i] = s2;
+        T[i] = lerp(31, 24, t);
+        // A ridge stays where the blade lifted.
+      }
+    }
+    if (hh > 0) {
+      h[i] = hh;
+      if (d < 1.05) T[i] = 46;
+    }
+  }
+  // The blade lifted at the far end and left a ridge there.
+  for (let k = -10; k <= 10; k++) {
+    const t = k / 10, wid = r * 0.55;
+    deposit(ex - uy * t * wid + ux * 1.5, ey + ux * t * wid + uy * 1.5, 0.55 * (1 - t * t * 0.6), 1.6, 27, 0, 0, KIND[kind].w);
+  }
+}
+
+/* ---------- layout ---------- */
+const view = { hk: 1, cam: [0, 0, 0, 0], box: [0, 0, 0, 0] };
+function layout() {
+  const fit = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
+  cssW = fit.w; cssH = fit.h; dpr = fit.dpr;
+  narrow = cssW < 640;
+  const per = rung >= 3 ? 115 : 160;
+  // A collapsed stage keeps a sane cell size, so the grid never explodes.
+  const cs = Math.max(160, Math.min(cssW, cssH)) / per;
+  const gw = Math.max(8, Math.ceil(cssW / cs)), gh = Math.max(8, Math.ceil(cssH / cs));
+  S.cs = cs;
+  if (gw !== S.gw || gh !== S.gh) makeGrid(gw, gh);
+  const W = canvas.width, H = canvas.height;
+  // The camera sits above the centre; the softbox reflects into the upper left.
+  const camZ = 1.15 * Math.hypot(W, H) * 0.5, boxZ = camZ * 0.9;
+  const k = (camZ + boxZ) / camZ;
+  const sx = narrow ? 0.5 : 0.33, sy = narrow ? 0.78 : 0.7;
+  view.cam = [W * 0.5, H * 0.5, camZ, boxZ];
+  view.box = [W * 0.5 + (W * sx - W * 0.5) * k, H * 0.5 + (H * sy - H * 0.5) * k, W * (narrow ? 0.34 : 0.22) * k, H * (narrow ? 0.07 : 0.11) * k];
+  // One height unit stands this many px above the slab.
+  view.hk = S.cs * dpr * 3.2;
+  if (MT) { gl.deleteTexture(MT.tex); gl.deleteFramebuffer(MT.fb); }
+  if (gl) {
+    MT = target(W, H);
+    gl.useProgram(P.marble.p);
+    gl.uniform2f(P.marble.u.uRes, W, H);
+    gl.uniform1f(P.marble.u.uDpr, dpr);
+    draw(MT);
+  }
+}
+
+/* ---------- render ---------- */
+let time = 0;
+const ptr = { x: 0, y: 0, on: 0, onT: 0 };
+const pour = { x: 0, y: 0, on: 0, live: false, t: 0 };
+const cols = {};
+function kindCols() {
+  cols.c0 = oklchLinear(0.26, 0.035, 52);
+  cols.c1 = oklchLinear(0.44, 0.08, 55);
+  cols.c2 = oklchLinear(0.9, 0.045, 88);
+}
+function upload() {
+  const { n, gw, gh } = S, { h, T, v, u, w, bl, sc, ss, act, ts, sh } = F;
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    upA[j] = h[i]; upA[j + 1] = T[i]; upA[j + 2] = v[i]; upA[j + 3] = u[i];
+    upB[j] = bl[i]; upB[j + 1] = w[i]; upB[j + 2] = sc[i]; upB[j + 3] = ss[i];
+    upC[j] = act[i]; upC[j + 1] = ts[i]; upC[j + 2] = sh[i];
+  }
+  for (const [k, d] of [['A', upA], ['B', upB], ['C', upC]]) {
+    gl.bindTexture(gl.TEXTURE_2D, tex[k]);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gw, gh, gl.RGBA, gl.FLOAT, d);
+  }
+}
+function render() {
+  upload();
+  const W = canvas.width, H = canvas.height, p = P.slab, U = p.u;
+  gl.useProgram(p.p);
+  bind(p, 'uM', 0, MT.tex);
+  bind(p, 'uA', 1, tex.A);
+  bind(p, 'uB', 2, tex.B);
+  bind(p, 'uC', 3, tex.C);
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform2f(U.uGrid, S.gw, S.gh);
+  gl.uniform1f(U.uCellPx, S.cs * dpr);
+  gl.uniform1f(U.uDpr, dpr);
+  gl.uniform1f(U.uTime, time);
+  gl.uniform1f(U.uLamp, lamp);
+  gl.uniform1f(U.uThermal, thermal === 'full' ? 2 : thermal === 'halo' ? 1 : 0);
+  gl.uniform1f(U.uRM, reduced() ? 1 : 0);
+  gl.uniform1f(U.uHk, view.hk);
+  gl.uniform1f(U.uGlints, rung >= 2 ? 0 : 1);
+  const toPx = (gx, gy) => [gx * S.cs * dpr, H - gy * S.cs * dpr];
+  const [px, py] = toPx(ptr.x, ptr.y);
+  gl.uniform4f(U.uPtr, px, py, (narrow ? 64 : 84) * dpr, ptr.on);
+  const [bx, by] = toPx(blade.x, blade.y);
+  gl.uniform4f(U.uBlade, bx, by, blade.dx, -blade.dy);
+  gl.uniform2f(U.uBladeK, blade.half * S.cs * dpr, blade.on);
+  const [qx, qy] = toPx(pour.x, pour.y);
+  gl.uniform4f(U.uPour, qx, qy, 1.6 * S.cs * dpr, pour.on);
+  gl.uniform4f(U.uBox, ...view.box);
+  gl.uniform4f(U.uCam, ...view.cam);
+  gl.uniform3f(U.uCol0, ...cols.c0);
+  gl.uniform3f(U.uCol1, ...cols.c1);
+  gl.uniform3f(U.uCol2, ...cols.c2);
+  draw(null);
+}
+
+/* ---------- frame loop ---------- */
+// Lively frames run at full rate; cooling and setting run at 30 fps.
+// The loop sleeps once the slab is still, or 60 s after the last input.
+let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now();
+let busy = 1, quietFor = 0, dragging = false;
+const live = () => { lastInput = performance.now(); quietFor = 0; wake(); };
+function wake() {
+  if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+const lively = () => dragging || pour.live || pour.t > 0 || blade.on > 0.01 || Math.abs(ptr.on - ptr.onT) > 0.01;
+function step(dt) {
+  // Pace speeds heat and crystals, not the hand.
+  const sdt = dt * (pace === 'brisk' ? 2.2 : 1.2);
+  if (pour.live || pour.t > 0) {
+    pour.t = Math.max(0, pour.t - dt);
+    // The stream coils as it lands, so the ribbon folds onto itself.
+    const a = time * 15, cr = 1.1;
+    deposit(pour.x + Math.cos(a) * cr, pour.y + Math.sin(a * 0.8) * cr, 7 * dt, 1.7, KIND[kind].melt, 0, 0, KIND[kind].w);
+  }
+  pour.on += ((pour.live || pour.t > 0 ? 1 : 0) - pour.on) * (1 - Math.exp(-dt / 0.08));
+  const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
+  let moved = 0;
+  for (let k = 0; k < sub; k++) moved += flow(dt / sub);
+  busy = Math.max(cells(sdt), moved * 40);
+  blade.on += ((blade.live ? 1 : 0) - blade.on) * (1 - Math.exp(-dt / 0.06));
+  ptr.on += (ptr.onT - ptr.on) * (1 - Math.exp(-dt / 0.08));
+}
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const hot = lively();
+    if (!hot && now - lastDraw < 31) return;
+    if (hot && now - lastDraw < 100) watchdog((now - lastDraw) / 1000);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    lastDraw = now;
+    step(dt);
+    if (!reduced() || hot) time += dt;
+    render();
+    quietFor = busy < 0.02 && !hot ? quietFor + dt : 0;
+    again = quietFor < 2 && (hot || now - lastInput < 60000);
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of full-rate frames, an average above 1/38 s for 2 s steps down one rung.
+// Rungs: pixel ratio down, then the glints off, then a coarser grid.
+let runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 3) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  layout();
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms.
+// A drag scrapes; a hold pours; a release that is neither is a tap.
+let press = null, holdTo = 0;
+function grid(e) {
+  const r = stage.getBoundingClientRect();
+  return [(e.clientX - r.left) / S.cs, (e.clientY - r.top) / S.cs];
+}
+function down(e) {
+  if (press || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = grid(e);
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x, y, mode: 'press', t: performance.now() };
+  ptr.x = x; ptr.y = y; ptr.onT = 1;
+  blade.x = x; blade.y = y; blade.half = bladeHalf();
+  holdTo = setTimeout(() => {
+    if (press?.mode !== 'press') return;
+    press.mode = 'hold';
+    pour.live = true; pour.x = press.x; pour.y = press.y;
+    live();
+  }, 260);
+  live();
+}
+function move(e) {
+  const [x, y] = grid(e);
+  if (!press) {
+    // A mouse shows the thermal halo as it hovers.
+    if (e.pointerType === 'mouse') { ptr.x = x; ptr.y = y; ptr.onT = 1; live(); }
+    return;
+  }
+  if (e.pointerId !== press.id) return;
+  ptr.x = x; ptr.y = y;
+  if (press.mode === 'press' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) {
+    clearTimeout(holdTo);
+    press.mode = 'drag';
+    dragging = true;
+    blade.live = true;
+    stage.classList.add('drag');
+  }
+  const now = performance.now(), dt = Math.max(1 / 240, (now - press.t) / 1000);
+  if (press.mode === 'drag') scrape(press.x, press.y, x, y, dt);
+  if (press.mode === 'hold') { pour.x = x; pour.y = y; }
+  press.x = x; press.y = y; press.t = now;
+  live();
+}
+function up(e) {
+  if (!press || (e && e.pointerId !== press.id)) return;
+  clearTimeout(holdTo);
+  const tap = press.mode === 'press' && e?.type === 'pointerup';
+  const [x, y] = [press.x, press.y];
+  press = null;
+  dragging = false;
+  blade.live = false;
+  tmp.wall.fill(0);
+  pour.live = false;
+  stage.classList.remove('drag');
+  if (e?.pointerType !== 'mouse') ptr.onT = 0;
+  if (tap) tapAt(x, y);
+  live();
+}
+function leave(e) { if (!press && e.pointerType === 'mouse') { ptr.onT = 0; live(); } }
+function tapAt(x, y) {
+  const i = clamp(Math.floor(y), 0, S.gh - 1) * S.gw + clamp(Math.floor(x), 0, S.gw - 1);
+  // The snap test arrives in Task 3; liquid takes a dimple now.
+  if (F.v[i] + F.u[i] < 0.5 && F.h[i] > 0.02) dimple(x, y);
+}
+
+act.pour = () => {
+  pour.x = S.gw * (narrow ? 0.5 : 0.44) + (Math.random() - 0.5) * 4;
+  pour.y = S.gh * (narrow ? 0.36 : 0.44) + (Math.random() - 0.5) * 4;
+  pour.t = 1.6;
+  live();
+};
+act.clear = () => {
+  for (const k of ['h', 'v', 'u', 'bl', 'sc', 'ss', 'act', 'sh']) F[k].fill(0);
+  F.T.set(F.ts);
+  live();
+};
+act.reset = () => { seed(); live(); };
+
+/* ---------- boot ---------- */
+try {
+  kindCols();
+  await initGL();
+  layout();
+  seed();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', leave);
+// Space pours at the centre, on keyboards only.
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  act.pour();
+});
+
+new ResizeObserver(() => { layout(); render(); wake(); }).observe(stage);
+onQuality(() => { rung = 0; runFor = slowFor = 0; layout(); render(); });
+onReducedChange(() => { render(); wake(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>

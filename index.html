@@ -1084,6 +1084,24 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           </a>
         </li>
         <li>
+          <a class="toy" id="chocolate" href="chocolate/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.15 0.012 260)"/>
+                <path d="M16 40L38 46L52 64L74 70L108 96" fill="none" stroke="oklch(0.82 0.01 250)" stroke-width="1.6"/>
+                <path d="M52 64L46 84L58 108" fill="none" stroke="oklch(0.6 0.01 250)" stroke-width="1"/>
+                <path id="chocolate-film" d="M60 50H86L90 84H64Z" fill="oklch(0.4 0.07 50)" opacity="0.55"/>
+                <path id="chocolate-pool" d="M34 44L56 38L66 48L62 74L44 82L30 66Z" fill="oklch(0.3 0.05 45)"/>
+                <rect id="chocolate-gloss" x="38" y="48" width="18" height="6" fill="oklch(0.97 0.01 90)" opacity="0.35"/>
+                <circle id="chocolate-ring" cx="64" cy="64" r="11" fill="none" stroke="#2bff6a" stroke-width="1.6" opacity="0"/>
+                <rect id="chocolate-blade" x="72" y="44" width="3" height="40" fill="oklch(0.86 0.01 250)"/>
+              </svg>
+            </span>
+            <span class="name">Chocolate tempering</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="canal" href="canal/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2830,6 +2848,41 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       play() { toys.frietkot.enter(null); return { kill() {} }; },
       rest() { toys.frietkot.leave(); },
     };
+  }
+
+  // The blade follows the pointer and spreads the film; a thermal ring reads its height.
+  {
+    const film = $('chocolate-film'), blade = $('chocolate-blade'), gloss = $('chocolate-gloss'), ring = $('chocolate-ring');
+    // Strip-thermometer colours: violet hot at the top, green in the window, red cool below.
+    const lcCol = y => (y < 46 ? '#8a4dff' : y < 58 ? '#2b8cff' : y < 74 ? '#2bff6a' : y < 88 ? '#ffb02b' : '#ff3a2b');
+    const aim = p => {
+      const x = Math.max(66, Math.min(100, p[0]));
+      gsap.to(blade, { x: x - 72, duration: 0.25, ease: 'power2.out', overwrite: 'auto' });
+      gsap.to(film, { attr: { d: `M60 50H${x + 12}L${x + 16} 84H64Z` }, duration: 0.3, ease: 'power2.out', overwrite: 'auto' });
+      gsap.set(ring, { attr: { cx: p[0], cy: p[1], stroke: lcCol(p[1]) } });
+    };
+    toys.chocolate = {
+      enter(p) {
+        gsap.to(gloss, { opacity: 0.95, duration: 0.25, ease: 'power2.out', overwrite: true });
+        gsap.to(ring, { opacity: 0.9, duration: 0.2, overwrite: true });
+        if (p) aim(p);
+      },
+      move(p) { if (p) aim(p); },
+      leave() {
+        gsap.to(gloss, { opacity: 0.35, duration: 0.5, overwrite: true });
+        gsap.to(ring, { opacity: 0, duration: 0.3, overwrite: true });
+        gsap.to(blade, { x: 0, duration: 0.6, ease: 'power3.out', overwrite: true });
+        gsap.to(film, { attr: { d: 'M60 50H86L90 84H64Z' }, duration: 0.6, ease: 'power3.out', overwrite: true });
+      },
+      play() { toys.chocolate.enter([88, 66]); return { kill() {} }; },
+      rest() { toys.chocolate.leave(); },
+    };
+    // The Lab calls play and rest only; the icon follows the pointer itself.
+    const el = $('chocolate'), svg = el.querySelector('svg');
+    el.addEventListener('pointermove', e => {
+      const r = svg.getBoundingClientRect();
+      toys.chocolate.move([((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128]);
+    });
   }
 
   // A streetlight warms from pink-red to sodium orange; its pool and glint follow.
