@@ -216,6 +216,22 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] A parish hall left of the shack with a party on: five tall windows flash in colour at 126 BPM, mirror-ball specks, dancers' shapes; the door stands open; two stand outside smoking; coloured light spills on the square.
 - [x] Time-lapse trails are smooth: nine echoes 45 ms apart with an exponential fade, no stepped walk. The square renders every frame while lively and at 48 fps while drifting.
 
+### Task 3e: Busier, shadier, more 90s (Tom, 2026-11-09)
+
+- [x] `frietkot/figures.js` holds every figure shape in one GLSL source; the toy and the sheet both use it.
+- [x] Builds: average, tall, broad, child, old with a stick, long coat and hat, hood, cap, long hair, staff in apron and paper cap. Poses: pockets, arms crossed, a phone of 1999, a can, a wave, pointing at the menu, eating fries, scooping, handing over.
+- [x] `frietkot/people.html` (noindex): an animated sheet of 24 figures, vehicles and dogs, in Ink, Line or Haze.
+- [x] A line forms when the window is busy and shuffles forward. Arrivals every 2.5 to 5.5 s.
+- [x] Smokers keep their own rhythm: draw length, pause, exhale; they smoke 18 to 45 s.
+- [x] The deal: a long coat and a hat glances left and right by the kiosk side; a hooded buyer comes; a glinting packet changes hands; both bolt.
+- [x] Staff: aprons and paper caps; the cook scoops at the boil, the server reaches out to the customer.
+- [x] Backlit food photos over the counter: a burger, fries in a cone, a long sausage, a big special burger. No words, no brands.
+- [x] The seating room: slim shapes walk in by the far door, sit, eat, get up and leave.
+- [x] The rack sits further out; the parish hall moves left and dims.
+- [x] Neon sign: FRITUUR in tube capitals over "Bij Bruno en Anja" in script (`?caps=a|b`, `?font=a|b|c|e`).
+- [x] Dog: Tom's reference is the Man bijt hond logo, a scruffy line-drawn mongrel. The logo stays out; `mutt` is our own scruffy mongrel in its spirit, and the default (`?dog=d`). It sits when its owner stops.
+- [x] Camera: a wider lens (47°, 64° on phones), scroll or pinch to zoom to 0.68, a breathing zoom ring and a handheld sway. Settings > Camcorder turns the sway and a tape-colour grade on and off.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.
