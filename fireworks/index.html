@@ -38,6 +38,23 @@
 .stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
 @keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
 @media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
+/* The charge ring follows a held press: it fills, ticks, warms, then strains. */
+.charge { position: absolute; left: 0; top: 0; width: 84px; height: 84px; margin: -42px 0 0 -42px; pointer-events: none; z-index: 3; --c: oklch(0.96 0.03 90); }
+.charge[hidden] { display: none; }
+.charge svg { width: 100%; height: 100%; overflow: visible; }
+.charge .track { fill: none; stroke: oklch(1 0 0 / 0.16); stroke-width: 1.5; }
+.charge .arc, .charge .over { fill: none; stroke-linecap: round; transform: rotate(-90deg); }
+.charge .arc { stroke: var(--c); stroke-width: 3; stroke-dasharray: 0 1; filter: drop-shadow(0 0 5px var(--c)); }
+.charge .over { stroke: oklch(0.66 0.24 28); stroke-width: 2.5; stroke-dasharray: 0 1; filter: drop-shadow(0 0 6px oklch(0.66 0.24 28)); }
+.charge .tk { stroke: oklch(1 0 0 / 0.55); stroke-width: 2; stroke-linecap: round; }
+.charge .tk.on { stroke: var(--c); }
+.charge.step svg { animation: charge-step 0.2s ease-out; }
+.charge.strain svg { animation: charge-strain 0.09s linear infinite; }
+.charge.go svg { animation: charge-go 0.38s ease-out forwards; }
+@keyframes charge-step { 45% { transform: scale(1.14); } }
+@keyframes charge-strain { 25% { transform: translate(1.5px, -1px); } 75% { transform: translate(-1.5px, 1px); } }
+@keyframes charge-go { to { transform: scale(1.9); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .charge svg { animation: none !important; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -2292,7 +2309,8 @@ function frame() {
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.72 : 0.64;
   horizonNdc = 1 - 2 * hf;
-  camera.rotation.set(Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), 0, 0);
+  camRx = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  camera.rotation.set(camRx, 0, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
@@ -2328,7 +2346,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt || simT - kickAt < 0.6;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2354,6 +2372,8 @@ function tick(now) {
     }
     tearTick();
     weatherTick(now);
+    chargeTick();
+    kickTick();
     if (lively || now - lastDraw >= 31) {
       updateLights();
       draw();
@@ -2394,6 +2414,92 @@ new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; SU.uDrift.value = on ? 0.5 : 1; wake(); });
 
+/* ---------- launch feel ---------- */
+// A held press shows a charge ring, hisses like a fuse, and ticks at each calibre step.
+// Release pops the ring, buzzes once, and kicks the view a touch.
+const charge = document.createElement('div');
+charge.className = 'charge';
+charge.hidden = true;
+charge.setAttribute('aria-hidden', 'true');
+{
+  // Ticks at the calibre steps: 0.26 s, 0.75 s and 1.5 s of a 1.5 s fill.
+  const tk = [0.26 / 1.5, 0.5, 1].map(f => { const a = f * Math.PI * 2 - Math.PI / 2; return `<line class="tk" x1="${(Math.cos(a) * 30).toFixed(2)}" y1="${(Math.sin(a) * 30).toFixed(2)}" x2="${(Math.cos(a) * 35).toFixed(2)}" y2="${(Math.sin(a) * 35).toFixed(2)}"/>`; }).join('');
+  charge.innerHTML = `<svg viewBox="-42 -42 84 84"><circle class="track" r="26"/><circle class="arc" r="26" pathLength="1"/><circle class="over" r="38" pathLength="1"/>${tk}</svg>`;
+}
+stage.append(charge);
+const STEPS = [0.26, 0.75, 1.5];
+let camRx = 0, kickAt = -9, kickK = 0, fuse = null;
+const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not allowed */ } };
+function chargeStart(e) {
+  const r = stage.getBoundingClientRect();
+  press.cx = e.clientX - r.left; press.cy = e.clientY - r.top; press.step = 0;
+  charge.classList.remove('go', 'step', 'strain');
+  charge.style.left = `${press.cx}px`; charge.style.top = `${press.cy}px`;
+  charge.hidden = false;
+  // The fuse: noise through a band that climbs as the charge builds.
+  const ac = kit.live();
+  if (ac) {
+    bus(ac);
+    const n = ac.createBufferSource(), bp = filt(ac, 'bandpass', 900, 2.2), g = ac.createGain();
+    n.buffer = kit.noise; n.loop = true; n.start();
+    g.gain.setValueAtTime(0.0001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.12);
+    n.connect(bp).connect(g).connect(kit.out);
+    fuse = { n, bp, g };
+  }
+}
+function chargeMove(e) {
+  const r = stage.getBoundingClientRect();
+  press.cx = e.clientX - r.left; press.cy = e.clientY - r.top;
+  charge.style.left = `${press.cx}px`; charge.style.top = `${press.cy}px`;
+}
+function chargeTick() {
+  if (!press || charge.hidden) return;
+  const held = (performance.now() - press.at) / 1000, f = Math.min(1, held / 1.5), over = Math.max(0, held - 4) / 2;
+  charge.querySelector('.arc').style.strokeDasharray = `${f.toFixed(3)} 1`;
+  charge.querySelector('.over').style.strokeDasharray = `${Math.min(1, over).toFixed(3)} 1`;
+  // White to gold as it fills; red once it strains.
+  charge.style.setProperty('--c', held > 4 ? 'oklch(0.7 0.22 30)' : `oklch(${(0.96 - 0.12 * f).toFixed(3)} ${(0.03 + 0.14 * f).toFixed(3)} ${(90 - 15 * f).toFixed(1)})`);
+  charge.classList.toggle('strain', held > 4 && !reduced());
+  while (press.step < STEPS.length && held >= STEPS[press.step]) {
+    charge.querySelectorAll('.tk')[press.step].classList.add('on');
+    press.step++;
+    charge.classList.remove('step'); void charge.offsetWidth; charge.classList.add('step');
+    buzz(10);
+    const ac = kit.live();
+    if (ac) {
+      const o = ac.createOscillator(), g = env(ac, ac.currentTime, 0.08, 0.002, 0.05);
+      o.frequency.value = 900 + 300 * press.step;
+      o.connect(g).connect(kit.out); o.start(); o.stop(ac.currentTime + 0.08);
+    }
+  }
+  if (fuse) fuse.bp.frequency.value = 900 + 2600 * f + (held > 4 ? 1500 * Math.random() : 0);
+}
+function chargeEnd(fired, cal = 1) {
+  if (fuse) {
+    const ac = kit.ac, t = ac.currentTime;
+    fuse.g.gain.cancelScheduledValues(t);
+    fuse.g.gain.setValueAtTime(Math.max(fuse.g.gain.value, 0.0002), t);
+    fuse.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    fuse.n.stop(t + 0.1);
+    fuse = null;
+  }
+  charge.querySelectorAll('.tk').forEach(t => t.classList.remove('on'));
+  if (!fired) { charge.hidden = true; return; }
+  charge.classList.remove('step', 'strain');
+  void charge.offsetWidth;
+  charge.classList.add('go');
+  setTimeout(() => { if (!press) charge.hidden = true; }, 400);
+  buzz(cal > 1.5 ? 28 : 16);
+  if (!reduced()) { kickAt = simT; kickK = 0.0025 * cal; }
+}
+// The recoil: the view dips a hair and settles in about 0.15 s.
+function kickTick() {
+  const a = simT - kickAt;
+  camera.rotation.x = camRx - (a >= 0 && a < 0.6 ? kickK * Math.exp(-a / 0.12) * Math.cos(a * 30) : 0);
+}
+/* ---------- end launch feel ---------- */
+
 /* Pointer: press grows a seed light; release launches; hold sets the calibre. */
 let press = null;
 const ndcOf = e => {
@@ -2404,10 +2510,12 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
+  chargeStart(e);
   wake();
 });
 stage.addEventListener('pointermove', e => {
   if (!press || e.pointerId !== press.id) return;
+  chargeMove(e);
   // After 8 px of travel the seed follows the pointer.
   if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.moved = true;
   if (press.moved) press.ndc = ndcOf(e);
@@ -2417,11 +2525,13 @@ stage.addEventListener('pointerup', e => {
   const held = (performance.now() - press.at) / 1000, ndc = press.ndc;
   press = null;
   // Held past 6 s, the shell bursts too hard and tears the sky.
-  if (held >= 6 && !tear) { overcharge(ndc); return; }
+  if (held >= 6 && !tear) { chargeEnd(true, 2.5); overcharge(ndc); return; }
   // A tap is calibre 1; a hold reaches calibre 2 at 1.5 s.
-  launch(ndc, held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5));
+  const cal = held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5);
+  chargeEnd(true, cal);
+  launch(ndc, cal);
 });
-const cancel = e => { if (press && e.pointerId === press.id) { press = null; wake(); } };
+const cancel = e => { if (press && e.pointerId === press.id) { press = null; chargeEnd(false); wake(); } };
 stage.addEventListener('pointercancel', cancel);
 stage.addEventListener('lostpointercapture', cancel);
 // Space launches a shell at a random point in the sky.

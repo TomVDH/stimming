@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T08:43:30Z
+updated_at: 2026-11-09T08:45:07Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -104,3 +104,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Sound measured on the output: takes decode at page load; first shell recorded; launches all recorded (slowed report as mortar, whistles 1 in 3); booms +4 dB
 
 - [x] Barges: seven firing barges on the bay; shells leave the nearest one with a muzzle flash and smoke
+
+- [x] Launch feel: charge ring (fill, steps, overcharge strain), fuse hiss, step ticks and haptics, release pop and recoil
