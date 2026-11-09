@@ -84,6 +84,8 @@ uniform vec4 uBoom; uniform vec2 uBoomL;
 // uFog is the fog bank now.
 // uSpr: red sprites high over the storm, as map xz, level, seed.
 uniform float uStorm, uFog; uniform vec4 uSpr[2];
+// uWisp: the plane's wrapped place in metres, for wing fog.
+uniform vec3 uWisp;
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -604,14 +606,49 @@ float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
 
 /* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
 const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
+// In a storm the deck weaves into bands and heaves up.
+// gWeave and gSkirt hold both for the current main sample.
+// Light taps near it reuse them.
+float gWeave = 0.0, gSkirt = 0.0;
+// Weaves: long bands along the wind, crossed by a second, finer set.
+float weave(vec2 w) {
+  vec2 b = mat2(0.94, 0.34, -0.34, 0.94) * w;
+  return textureLod(uNoise, vec3(w.x / 55.0, w.y / 9.0, 0.41), 0.0).r * 0.6 + textureLod(uNoise, vec3(b.x / 38.0, b.y / 5.5, 0.67), 0.0).r * 0.4;
+}
+// The skirt: the deck swells round each tower's base.
+float towerSkirt(vec2 w) {
+  float k = 0.0;
+  for (int i = 0; i < ${MAXCELL}; i++) {
+    if (i >= uNTw) break;
+    vec4 a = uTw[i], b = uTwB[i];
+    if (b.x < 0.0) continue;
+    vec2 q = w - a.xy;
+    float r = a.z * 0.7;
+    k = max(k, b.y * exp(-dot(q, q) / (r * r)));
+  }
+  return k;
+}
+// Sets the storm terms for a main deck sample at w.
+void deckStorm(vec2 w) {
+  if (uStorm <= 0.0) return;
+  gWeave = weave(w + vec2(uTime * 0.012, 0.0));
+  gSkirt = towerSkirt(w);
+}
 // Deck density at p = (map x, height, map z) in km, from 0 to 1.
 // fine adds the Worley erosion that frays the edges.
 float deckDens(vec3 p, float lod, bool fine) {
   vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
-  float c = smoothstep(uCover - 0.1, uCover + 0.14, coverAt(w, 70.0, 0.13));
+  float cv = coverAt(w, 70.0, 0.13), lift = 0.0;
+  if (uStorm > 0.0) {
+    // Bands rise as ridges; the skirt peaks at each core.
+    float wv = smoothstep(0.35, 0.75, gWeave);
+    cv += uStorm * (0.35 * (wv - 0.4) + 0.5 * gSkirt);
+    lift = uStorm * (1.8 * wv + 4.6 * gSkirt * gSkirt);
+  }
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, cv);
   if (c <= 0.0) return 0.0;
-  float base = 1.55, top = base + 0.7 + 1.5 * c;
-  float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c, p.y);
+  float base = 1.55, top = base + 0.7 + 1.5 * c + lift;
+  float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c - 0.5 * lift, p.y);
   if (hgt <= 0.0) return 0.0;
   float d = clamp((cn(vec3(w.x, p.y * 1.6, w.y), 7.0, lod).r * hgt - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
   if (fine && d > 0.0) {
@@ -640,10 +677,12 @@ vec2 shellSeg(vec3 d, float lo, float hi) {
   return vec2(top.x, min(bot.x > 0.0 ? bot.x : top.y, top.x + 900.0));
 }
 
+vec3 stormGlow(vec3 d);
 // The deck as a volume: light from above through the cloud, town light from below.
 // It returns the light it scatters and, in alpha, what it lets through.
 vec4 deck(vec3 d) {
-  vec2 seg = shellSeg(d, DECK_LO, DECK_HI);
+  // A storm lifts the deck's ceiling for the heaved tops.
+  vec2 seg = shellSeg(d, DECK_LO, DECK_HI + uStorm * 6.0);
   if (seg.x < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   int N = uDeckSteps;
@@ -660,6 +699,9 @@ vec4 deck(vec3 d) {
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
+  // In a storm the deck takes the towers' murk light.
+  // So deck and towers read as one.
+  vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 0.75 * uStorm : vec3(0.0);
   vec3 col = vec3(0.0), last = vec3(0.0);
   float Tc = 1.0, lastD = 0.0;
   for (int i = 0; i < 40; i++) {
@@ -667,6 +709,7 @@ vec4 deck(vec3 d) {
     vec2 w = uCam + d.xz * t;
     vec3 p = vec3(w.x, heightAt(d, t), w.y);
     float lod = lodAt(t, 7.0);
+    deckStorm(w);
     float dn = deckDens(p, lod, lod < 3.0);
     if (dn > 0.002) {
       float h01 = clamp((p.y - 1.55) / 2.0, 0.0, 1.0);
@@ -681,6 +724,7 @@ vec4 deck(vec3 d) {
       }
       // Sky light from above; the base sees less of it.
       S += uAmb * 0.026 * (0.3 + 0.7 * h01);
+      if (uStorm > 0.0) S += murk * (0.25 + 0.75 * clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0));
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
@@ -702,6 +746,7 @@ vec4 deck(vec3 d) {
   if (Tc >= 0.02 && t < t1) {
     float tm = 0.5 * (t + t1);
     vec2 wm = uCam + d.xz * tm;
+    deckStorm(wm);
     float far = deckDens(vec3(wm.x, heightAt(d, tm), wm.y), 6.0, false);
     float a = 1.0 - exp(-SIG * 0.35 * far * (t1 - t));
     col += Tc * last * a;
@@ -713,14 +758,22 @@ vec4 deck(vec3 d) {
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, coverAt(w, 55.0, 0.71)) * step(0.01, uMid);
+  float cv = coverAt(w, 55.0, 0.71), lo = 5.2, lo2 = 5.45, hi = 6.1, hi2 = 5.75;
+  // In a storm the mid layer runs in bands along the wind.
+  if (uStorm > 0.0) {
+    float wv = smoothstep(0.35, 0.75, weave(w * 0.8 + 31.0));
+    cv += uStorm * 0.4 * (wv - 0.35);
+    lo -= uStorm * 0.7 * wv; lo2 -= uStorm * 0.7 * wv;
+    hi += uStorm * 0.6 * wv; hi2 += uStorm * 0.6 * wv;
+  }
+  float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, cv) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
-  float hgt = smoothstep(5.2, 5.45, p.y) * smoothstep(6.1, 5.75, p.y);
+  float hgt = smoothstep(lo, lo2, p.y) * smoothstep(hi, hi2, p.y);
   vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 6.0, lod);
   return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
 }
 vec4 midLayer(vec3 d) {
-  vec2 seg = shellSeg(d, 5.2, 6.1);
+  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.1 + uStorm * 0.6);
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   const int N = 12;
@@ -740,6 +793,7 @@ vec4 midLayer(vec3 d) {
       // Thin cloud: one tap toward the light is enough.
       float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 6.0) + 1.5) * 0.3);
       vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03;
+      if (uStorm > 0.0) S += stormGlow(vec3(0.0, 1.0, 0.0)) * 0.6 * uStorm;
       float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
       col += Tc * S * a;
       Tc *= 1.0 - a;
@@ -885,6 +939,33 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
 }
+
+// Fog by the wing: layered wisps in the near 30 m.
+// The air stands still, so wisps stream aft past the plane.
+// tEnd is the distance to the nearest surface, in metres.
+vec3 nearFog(vec3 c, vec3 d, float tEnd) {
+  if (uFog <= 0.05) return c;
+  float t1 = min(tEnd, 30.0), t = 1.0, T = 1.0;
+  vec3 air = stormGlow(d) * 1.3, col = vec3(0.0);
+  // Ten steps, each 45 % longer, sampled mid-step against grain.
+  for (int i = 0; i < 10; i++) {
+    float tn = min(t * 1.45, t1);
+    float tm = 0.5 * (t + tn), dt = tn - t;
+    vec3 p = d * tm + uWisp;
+    // Long streaks along the flight path, stacked in thin sheets.
+    float n = textureLod(uNoise, p / vec3(136.0, 7.0, 21.0), 0.0).r * 0.7 + textureLod(uNoise, p / vec3(48.0, 3.0, 9.0) + 0.37, 0.0).g * 0.3;
+    float dn = smoothstep(0.62 - 0.35 * uFog, 0.9 - 0.3 * uFog, n) * smoothstep(0.05, 0.5, uFog);
+    // The strobe and nav light glow in wisps by the tip.
+    float ft = length(d * tm - uTip);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + vec3(0.8, 0.03, 0.02) * 0.02) * exp(-ft / 5.0);
+    float a = 1.0 - exp(-0.09 * dn * dt);
+    col += T * L * a;
+    T *= 1.0 - a;
+    t = tn;
+    if (t >= t1) break;
+  }
+  return c * T + col;
+}
 // Red sprites: brief red glows 50 to 90 km up.
 // Tendrils hang under a red crown; their feet turn blue.
 vec3 sprites(vec3 d) {
@@ -1000,6 +1081,12 @@ float towerShape(vec3 p, out float aw) {
     float dy = y - clamp(y, gBase - 1.0, tu.w - r);
     col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), gRc * 0.3);
   }
+  // The foot: a broad, low swell into the deck.
+  // It narrows as it climbs, so the column rises out of it.
+  // Lobes break its outline from a circle.
+  float lobe = 1.0 + 0.28 * sin(3.0 * atan(q.y, q.x) + gSeed.x) + 0.15 * sin(5.0 * atan(q.y, q.x) - gSeed.y);
+  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * gGrow * lobe;
+  col = smax(col, min(fr - length(q), (gBase + 4.5 - y) * 0.8), gRc * 0.5);
   // The base is flat.
   col = smin(col, (y - gBase) * 2.0, 0.3);
   // The anvil: a fan that widens downwind.
@@ -1192,8 +1279,9 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       col = r.rgb; Tc = r.a;
     } else {
       setTower(a, b);
+      float deckTop = DECK_HI;
       // The bound: a cylinder round the core and the whole anvil fan.
-      float back = max(gR1, gRc * 1.5) + gLean, fwd = gLen + gR2;
+      float back = max(gR1, gRc * 2.5) + gLean, fwd = max(gLen + gR2, gRc * 2.5 - gLean);
       vec2 Cb = C + gAx * (gLean + 0.5 * (fwd - back));
       float Rb = 0.5 * (fwd + back) + gAmp * 0.5 + 0.6;
       float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
@@ -1259,7 +1347,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // The flash is a soft ball of light inside the cloud, brightest deep in.
         S += vec3(0.75, 0.77, 1.0) * f.w * (1.6 * exp(-fd * fd / 5.0) + 0.45 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0));
         // Below the deck top, the deck in front hides the tower.
-        float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(DECK_HI, DECK_HI - 1.2, p.y));
+        float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(deckTop, deckTop - 1.2, p.y));
         col += Tc * S * al;
         Tc *= 1.0 - al;
         if (Tc < 0.03) break;
@@ -1538,7 +1626,7 @@ void main() {
   // The wing is the nearest thing outside: where it shows, nothing behind it needs tracing.
   float skyA = 0.0;
   // Wing distances are in metres; the storm air takes km.
-  if (tw < 1e5) { o = vec4(stormAir(wingCol(d, nW, uvW, tw, E, uStrobe), d, tw * 0.001, skyA), 0.0); return; }
+  if (tw < 1e5) { o = vec4(nearFog(stormAir(wingCol(d, nW, uvW, tw, E, uStrobe), d, tw * 0.001, skyA), d, tw), 0.0); return; }
   vec3 c = vec3(0.0);
   float tg = hitLayer(d, 0.0);
   // In a thick fog bank nothing far shows; skip the far view.
@@ -1657,6 +1745,7 @@ void main() {
       tNear = tf; skyA = 0.0;
     }
   }
+  c = nearFog(c, d, tNear);
   o = vec4(c, skyA);
 }`;
 
@@ -2044,9 +2133,11 @@ void main() {
         float rRim = 0.0, rSpec = 0.0;
         if (uRain > 0.0) {
           vec2 m = normalize(vec2(-1.0, -0.12));
-          rainLens(rainBead(pO, 70.0, 0.32 * uRain, 1.0), rOff, rRim, rSpec);
-          rainLens(rainBead(pO + 0.37, 160.0, 0.36 * uRain, 2.0), rOff, rRim, rSpec);
-          rainLens(rainBead(pO + 0.71, 380.0, 0.42 * uRain, 3.0), rOff, rRim, rSpec);
+          // In a storm the airflow strips most beads; runs and streaks stay.
+          float bead = uRain * (1.0 - 0.8 * uStorm);
+          rainLens(rainBead(pO, 70.0, 0.32 * bead, 1.0), rOff, rRim, rSpec);
+          rainLens(rainBead(pO + 0.37, 160.0, 0.36 * bead, 2.0), rOff, rRim, rSpec);
+          rainLens(rainBead(pO + 0.71, 380.0, 0.42 * bead, 3.0), rOff, rRim, rSpec);
           rainLens(rainRun(pO, m, uTime * 0.9, 0.01, 0.8 * uRain, 4.0), rOff, rRim, rSpec);
           rainLens(rainRun(pO * 1.3 + 0.2, m, uTime * 0.9, 0.01, 0.7 * uRain, 5.0), rOff, rRim, rSpec);
         }
