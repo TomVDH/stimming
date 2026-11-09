@@ -1548,7 +1548,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float lit = 0.5 + 0.5 * smoothstep(0.08, -0.06, (p.y - E.y) / kk);
       vec3 self = warm * mix(0.04, 0.012, smoothstep(-0.3, 0.6, -sdH)) * lit;
       room = mix(room, self, me * (1.0 - uDay) * 0.85);
-      col += room * F * 0.5 * (1.0 - fog);
+      // By day the sunlit cabin shows a little more in the pane.
+      col += room * F * mix(0.5, 1.1, uDay) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
       col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog) * (1.0 - me * 0.8);
       // The glass reflects the lit carriage as a soft warm gradient.
@@ -1663,7 +1664,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         vec2 gO = normalize(vec2(sdRR(p - uC0 + vec2(e2, 0.0), uHalf, uRad) - sdRR(p - uC0 - vec2(e2, 0.0), uHalf, uRad), sdRR(p - uC0 + vec2(0.0, e2), uHalf, uRad) - sdRR(p - uC0 - vec2(0.0, e2), uHalf, uRad)) + 1e-6);
         float faceW = max(dot(-gO, uSunW.xy), 0.0);
         float sk = sunAt(p.x);
-        col += alb * vec3(1.0, 0.85, 0.64) * uDay * sk * (0.16 * faceW * exp(-max(dW, 0.0) * 9.0) + 0.03 * (1.0 - up));
+        col += alb * vec3(1.0, 0.84, 0.6) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // Spill: a little lamp light reaches the wall beside the window.
@@ -1799,7 +1800,7 @@ W.tRoom.value = roomRT.texture;
       float pane = smoothstep(0.78, 0.7, abs(fract(H.x / 2.4) - 0.5) * 2.4) * smoothstep(0.48, 0.42, abs(H.y - 0.05));
       float sunP = pane * step(0.0, tt) * step(vP.z, 1.75 + 0.1);
       // The patches glow; their bounce fills the whole cabin with a warm wash.
-      vec3 dayC = vec3(0.5, 0.52, 0.55) * 0.35 + vec3(1.0, 0.86, 0.66) * (sunP * 2.2 + 0.25);
+      vec3 dayC = vec3(0.5, 0.52, 0.55) * 0.3 + vec3(1.0, 0.84, 0.6) * (sunP * 5.0 + 0.3);
       gl_FragColor = vec4(mix(c, dayC, uD), 1.0);
     }`,
   })));
