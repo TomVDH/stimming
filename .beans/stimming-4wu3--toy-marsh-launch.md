@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:08:58Z
+updated_at: 2026-11-09T08:15:21Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -55,3 +55,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Camera: the drag eases to its target; the view tilts down to -0.2 rad.
 - Trail: tighter spacing and less spread up high, so the sunlit fan stays smooth.
 - Rocket: an orbital launcher, two stages; Heavy adds two strap-on boosters.
+
+## Backlight, landscape and camera (2026-11-09)
+
+- Puffs march two short shadow steps toward each light. A Henyey-Greenstein phase (g 0.72) and a powder term make backlit rims glow: the dawn horizon below the shadow line, the sun above it, the flame always.
+- Mesas: three ranges at 7, 16 and 42 km in real metres (mesas, buttes, benches). Air melts them into the low sky; tops above the shadow line take alpenglow.
+- Camera: a tiny handheld wobble while awake. At liftoff a documentary push-in (to 0.68 of the lens in 1.1 s, a correction to 0.74, out again from T+12). The horizon holds its place during the zoom.

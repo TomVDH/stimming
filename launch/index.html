@@ -121,7 +121,7 @@ const canvas = renderer.domElement;
 stage.prepend(canvas);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 30000);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 80000);
 // The eye stands on a low dike above the reeds.
 const EYE = 4;
 camera.position.set(0, EYE, 0);
@@ -654,6 +654,76 @@ function buildShore(D) {
   U.uShore.value = -D;
 }
 
+/* ---------- mesas: a giant, quiet landscape far behind the shore ---------- */
+// Three ranges of flat-topped mesas at 7, 16 and 35 km, in real metres.
+// Air fades each range toward the sky; the highest tops catch first light.
+const mesaMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; uniform float uShadowH; varying vec3 vP; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    float dist = length(v.xz);
+    vec3 dir = normalize(v);
+    // Faces toward the dawn take a little of its glow.
+    float side = 0.5 + 0.5 * dot(normalize(v.xz), normalize(uSun.xz));
+    vec3 rock = uAmb * (0.08 + 0.06 * side) + uGlowC * 0.012 * side;
+    // Alpenglow: tops above the Earth's shadow line glow pink.
+    float lit = smoothstep(uShadowH * 1000.0 - 80.0, uShadowH * 1000.0 + 40.0, vP.y);
+    rock += vec3(1.0, 0.45, 0.35) * uGlowC * 1.4 * lit;
+    // Aerial perspective: far ranges melt into the low sky; low parts more.
+    float air = (1.0 - exp(-dist / 11000.0)) * (1.0 - 0.15 * smoothstep(0.0, 1400.0, vP.y));
+    vec3 skyC = k2sky(normalize(vec3(dir.x, max(dir.y, 0.004), dir.z)));
+    gl_FragColor = vec4(mix(rock, skyC * 0.97, air), 1.0);
+  }`,
+});
+const mesas = new THREE.Group();
+scene.add(mesas);
+function buildMesas() {
+  let ms = 777;
+  const mr = () => (ms = (ms * 16807) % 2147483647) / 2147483647;
+  const sn = createNoise2D(mr);
+  // Distance, count, lowest and highest top, in metres.
+  for (const [dist, count, h0, h1] of [[7000, 7, 30, 130], [16000, 12, 140, 460], [42000, 18, 500, 1500]]) {
+    const span = dist * 2.2, list = [];
+    for (let i = 0; i < count; i++) {
+      // Wide mesas, narrow buttes, and some with a lower bench.
+      const butte = mr() < 0.3;
+      list.push({ c: (mr() * 2 - 1) * span * 0.8, w: dist * (butte ? 0.006 + 0.012 * mr() : 0.025 + 0.09 * mr()), h: h0 + (h1 - h0) * mr(), bench: !butte && mr() < 0.45 });
+    }
+    const n = 1400, pos = [], idx = [];
+    for (let i = 0; i <= n; i++) {
+      const x = -span + 2 * span * i / n;
+      // Low rolling ground ties the mesas together.
+      let y = h0 * 0.12 * (0.6 + 0.4 * sn(x / dist * 3, dist));
+      for (const m of list) {
+        const d = Math.abs(x - m.c), w = m.w, h = m.h;
+        // A worn cap rock: a near-flat top with a ragged edge.
+        let yy = h * (1 - 0.05 * Math.abs(sn(x / w * 3, m.c)) - 0.02 * Math.abs(sn(x / w * 11, m.c + 3)));
+        if (d > w) {
+          // The cliff drops to a bench or to the talus; the talus flares out.
+          const bw = m.bench ? w * 0.4 : w * 0.05, bh = m.bench ? 0.55 : 0.6;
+          const talus = Math.max(0, 1 - (d - w - bw) / (w * 0.75 + 0.2 * h * 4));
+          yy = d < w + bw ? h * bh * (1 - 0.04 * Math.abs(sn(x / w * 7, m.c))) : h * bh * Math.pow(talus, 1.3);
+        }
+        y = Math.max(y, yy);
+      }
+      const z = -dist - (x * x) / (2 * dist) * 0.25;
+      pos.push(x, -40, z, x, y, z);
+      if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    const m = new THREE.Mesh(geo, mesaMat);
+    m.frustumCulled = false;
+    m.renderOrder = -0.5;
+    m.layers.enable(MIRROR);
+    mesas.add(m);
+  }
+}
+buildMesas();
+
 /* ---------- mist: low sheets over the far flats ---------- */
 const mistMat = new THREE.ShaderMaterial({
   uniforms: U, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -981,7 +1051,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   uniform float uShadowH, uScale, uTime;
-  uniform vec3 uAmb;
+  uniform vec3 uAmb, uGlowC;
   varying vec3 vC, vW;
   varying float vR, vA, vH, vSeed, vKind, vNear, vSpread;
   ${HEAD}
@@ -993,6 +1063,15 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   }
   // Billows: three octaves, the fine ones ride on the coarse.
   float billow(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.13 + 3.1) + 0.15 * n3(p * 4.37 + 7.7); }
+  // Henyey-Greenstein: g above 0 throws light forward.
+  float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+  // Puff density at a sphere-local point; the cheap form skips fine octaves.
+  float puffDens(vec3 q, float fq, vec3 drift, bool cheap) {
+    float r2 = dot(q, q);
+    if (r2 > 1.0) return 0.0;
+    float n = cheap ? n3(q * fq + drift) * 0.85 + 0.075 : billow(q * fq + drift);
+    return clamp(n * mix(1.4, 1.9, vKind) - mix(0.25, 0.55, vKind) - r2 * 1.05 + 0.25 * (1.0 - vSpread), 0.0, 1.0);
+  }
   void main() {
     // March the view ray through this puff's sphere.
     vec3 rd = normalize(vW - cameraPosition), oc = cameraPosition - vC;
@@ -1004,31 +1083,39 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     const int N = 9;
     float dt = (t1 - t0) / float(N);
     float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    // Sunlight above the shadow line; below it, the dawn and the flame.
+    // Sunlight above the shadow line; below it, the dawn glow and the flame.
     float sun = smoothstep(uShadowH - 2.0, uShadowH + 2.0, vH) * (1.0 - vKind);
-    vec3 L = normalize(uSun), Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
-    float fwd = 0.5 + 1.5 * pow(max(dot(normalize(rd.xz), normalize(uSun.xz)), 0.0), 3.0);
+    // The key light: the sun when sunlit, else the bright horizon toward the sun.
+    vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
+    vec3 Ld = normalize(mix(Lg, L, sun));
+    vec3 Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
     vec3 gold = vec3(1.0, 0.52, 0.16), blue = vec3(0.3, 0.52, 1.0);
     vec3 fdv = uFlame.xyz - vC;
     float reach = uScale * (vKind > 0.5 ? 0.05 : 0.02);
     vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind));
-    vec3 amb = vKind > 0.5 ? k2hazeColor(rd) * 1.2 + uAmb : uAmb * 1.8 + k2hazeColor(rd) * 0.25;
+    vec3 amb = vKind > 0.5 ? k2hazeColor(rd) * 0.7 + uAmb * 0.8 : uAmb * 1.2 + k2hazeColor(rd) * 0.15;
+    // Phase: light that passes the smoke toward the eye scatters most.
+    float pd = 0.75 * hg(dot(rd, Ld), 0.72) + 0.25 * hg(dot(rd, Ld), -0.2);
+    float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
+    vec3 keyC = mix(uGlowC * 7.0, mix(blue * 0.5, gold * 1.2, 0.55) * 1.6, sun);
     vec3 drift = vec3(vSeed * 17.0, vSeed * 9.0 - uTime * 0.04, vSeed * 5.0);
+    float fq = mix(1.6, 2.0, vKind);
     float T = 1.0;
     vec3 col = vec3(0.0);
     for (int i = 0; i < N; i++) {
       vec3 q = (cameraPosition + rd * (t0 + (float(i) + jit) * dt) - vC) / vR;
-      float r2 = dot(q, q);
-      // Ground clouds get harder billows than the thin trail.
-      float dens = clamp(billow(q * mix(1.6, 2.0, vKind) + drift) * mix(1.4, 1.9, vKind) - mix(0.25, 0.55, vKind) - r2 * 1.05 + 0.25 * (1.0 - vSpread), 0.0, 1.0);
+      float dens = puffDens(q, fq, drift, false);
       if (dens <= 0.0) continue;
       float od = dens * (dt / vR) * 3.2 * vA;
-      // The side that faces a light is brighter: a cheap self-shadow.
-      float sl = 0.2 + 0.8 * smoothstep(-0.7, 0.8, dot(q, L));
-      float fl = 0.25 + 0.75 * smoothstep(-0.7, 0.8, dot(q, Fd));
-      // Dense cores scatter gold; thin rims scatter blue.
-      vec3 sc = mix(blue * 0.6, gold * 1.1, smoothstep(0.95, 0.2, r2) * (1.0 - 0.6 * vSpread)) * fwd * 0.45 * sl;
-      vec3 Li = mix(amb * (0.6 + 0.4 * fl) + flame * fl, sc, sun);
+      // Two short steps toward each light give the self-shadow.
+      float sk = puffDens(q + Ld * 0.3, fq, drift, true) + puffDens(q + Ld * 0.65, fq, drift, true);
+      float sf = puffDens(q + Fd * 0.3, fq, drift, true) + puffDens(q + Fd * 0.65, fq, drift, true);
+      float tk = exp(-sk * 1.1 * vA), tf = exp(-sf * 1.1 * vA);
+      // Powder: thin rims glow when backlit; thick cores stay dark.
+      float pw = 1.0 - exp(-dens * 4.0);
+      // Dense cores scatter gold in sunlight; thin rims scatter blue.
+      vec3 key = keyC * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, dot(q, q))), sun);
+      vec3 Li = key * tk * pd * pw * 4.0 + flame * tf * (0.35 + pf * 2.5) * pw + amb * (0.55 + 0.45 * tk);
       float ab = 1.0 - exp(-od);
       col += T * ab * Li;
       T *= 1.0 - ab;
@@ -1076,7 +1163,7 @@ const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
   const D = DIST[ui.setting('distance').value] ?? DIST.mid;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false };
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1 };
   PU.uScale.value = D;
   f.tl = gsap.timeline({ paused: true })
     // Ignition: a flash, then the engines burn on the pad.
@@ -1086,6 +1173,10 @@ function launch(kind, padX) {
     .to(f, { engine: 1, duration: 1.2 }, PRE - 0.6)
     // Main engine cut-off: the moving star fades out.
     .to(f, { engine: 0, duration: 4, ease: 'power1.in' }, PRE + 52)
+    // A documentary push-in at liftoff: fast, a touch too far, then a correction.
+    .to(f, { zoom: 0.68, duration: 1.1, ease: 'power3.out' }, PRE + 0.15)
+    .to(f, { zoom: 0.74, duration: 0.7, ease: 'sine.inOut' }, PRE + 1.35)
+    .to(f, { zoom: 1, duration: 7, ease: 'sine.inOut' }, PRE + 12)
     .set(f, { done: true }, END);
   if (f.k.boosters) f.tl.call(() => separate(f), null, PRE + 18);
   return f;
@@ -1370,11 +1461,18 @@ const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uF
 // The horizon sits low: the climb needs a tall sky.
 function frame() {
   const portrait = size.w < size.h;
-  camera.fov = portrait ? 62 : 40;
+  const fov = portrait ? 62 : 40;
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.78 : 0.7;
+  // The launch zoom narrows the lens; the horizon holds its place in the frame.
+  camera.fov = fov * (flight && !reduced() ? flight.zoom : 1);
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-  camera.rotation.set(baseUp + look.pitch + auto.pitch, look.yaw + auto.yaw, 0);
+  // A hand on the camera: a slow, tiny wobble while the scene is awake.
+  const wk = reduced() ? 0 : pace, t = simT;
+  const wy = wk * (0.0011 * Math.sin(t * 0.61) + 0.0005 * Math.sin(t * 1.73 + 1.3));
+  const wp = wk * (0.0008 * Math.sin(t * 0.83 + 0.4) + 0.0004 * Math.sin(t * 2.11));
+  const wr = wk * 0.0006 * Math.sin(t * 0.47 + 2.0);
+  camera.rotation.set(baseUp + look.pitch + auto.pitch + wp, look.yaw + auto.yaw + wy, wr);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
