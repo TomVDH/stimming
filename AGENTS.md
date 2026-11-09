@@ -26,8 +26,8 @@ Read `README.md` for the toy list and the full rules.
 ## Layout
 
 - `index.html` is the menu: a body fragment; the Pages build adds the doctype and viewport.
-  - Main shelf (7): morpher, pop, fidget, domino, pins, galaxy, prism.
-  - Lab (`section.lab`, 22 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. The menu has no link to it.
+  - Main shelf (38): morpher, pop, fidget, domino, pins, galaxy, prism, kaleido, ferro, neon, magnet, soap, glass, chladni, pendulum, pool, putty, scope, walker, fire, rain, tvtree, balloons, bubbles, lava, eyes, sonar, trails, shadyos, window, chamber, ink, windmap, vortex, dijkstra, fireworks, launch, frietkot.
+  - Lab (`section.lab`, 40 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. The menu has no link to it.
 - Menu icons are inline SVG in an angular brut style: a hex, square or angled block with a hard offset shadow.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
