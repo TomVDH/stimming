@@ -602,12 +602,19 @@ const boomAt = (b, f) => {
   const back = 220 * (1 - f);
   return [b.x - Math.cos(b.hd) * back, 160 * (1 - f) ** 1.15, b.z - Math.sin(b.hd) * back];
 };
-// The mushroom cloud, as a cell for the tower volume.
+// The fireball, u seconds after impact: radius, centre height, squash, life.
+// It grows and rises; after 10 s it flattens into the mushroom cap.
+function capAt(b, u) {
+  const R = 20 * (1 - Math.exp(-u / 4)) + u * 0.04, sq = 1 - 0.45 * clamp((u - 10) / 40);
+  return { R, y: R * sq * 0.95 + u * 0.12, sq, life: Math.min(1, u / 0.3) * (b.s > 230 ? Math.max(0, (270 - b.s) / 40) : 1) };
+}
+// The mushroom stem, as a cell for the tower volume; it rises under the cap.
 function boomCell(b) {
   const u = b.s - BOOM_HIT;
-  if (u <= 0) return null;
-  return { x: b.x, z: b.z, r: 26, top: 4 + 76 * (1 - Math.exp(-u / 30)), s: Math.min(1, u / 3) * (b.s > 230 ? Math.max(0, (270 - b.s) / 40) : 1),
-    seed: b.seed, shear: b.hd, glow: 40 * b.flash + 4 * b.crater };
+  if (u <= 6) return null;
+  const cap = capAt(b, u);
+  return { x: b.x, z: b.z, r: 5 + Math.min(4, u * 0.05), top: Math.max(4.5, cap.y - cap.R * cap.sq * 0.4), s: Math.min(1, (u - 6) / 6) * (b.s > 230 ? Math.max(0, (270 - b.s) / 40) : 1),
+    seed: b.seed, shear: b.hd, glow: 6 * b.flash + 3 * b.crater };
 }
 
 // Trails: rocket plume and contrail, as chains of points with a radius and a colour.
@@ -788,16 +795,16 @@ function jetUniforms(u) {
   gl.uniform3fv(u.uJetW0, j ? rel(j.x + 0.004, j.y - 0.001, j.z - 0.03) : z); gl.uniform3fv(u.uJetW1, j ? rel(j.x + 0.004, j.y - 0.001, j.z + 0.03) : z);
   gl.uniform3fv(u.uJetT0, j ? rel(j.x - 0.026, j.y, j.z) : z); gl.uniform3fv(u.uJetT1, j ? rel(j.x - 0.03, j.y + 0.009, j.z) : z);
   gl.uniform1f(u.uJetOn, j ? 1 : 0);
-  // The impact's fireball: a glowing dome that rises and cools.
+  // The impact's fireball rises from the ground and spreads into the cap.
   const bm = EV.boom, uu = bm ? bm.s - BOOM_HIT : -1;
-  if (bm && uu > 0 && uu < 32) {
-    // The dome sits on the ground, then fades as the plume takes over.
-    const R = 30 * (1 - Math.exp(-uu / 4)), y = R * 0.25 + uu * 0.15;
+  const cap = bm && uu > 0 ? capAt(bm, uu) : null;
+  if (cap) {
     const temp = clamp(uu / 8);
     const col = [1.0, 0.95 - 0.5 * temp, 0.85 - 0.75 * temp];
-    gl.uniform4fv(u.uBall, [...rel(bm.x, y, bm.z), R]);
-    gl.uniform4fv(u.uBallC, [...col, (0.9 * Math.exp(-uu / 8) + 0.22 * Math.exp(-uu / 40)) * clamp((32 - uu) / 12)]);
-  } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); }
+    gl.uniform4fv(u.uBall, [...rel(bm.x, cap.y, bm.z), cap.R]);
+    gl.uniform4fv(u.uBallC, [...col, 0.9 * Math.exp(-uu / 8) + 0.12 * Math.exp(-uu / 40)]);
+    gl.uniform4fv(u.uBallS, [cap.sq, cap.life, 0, 0]);
+  } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); gl.uniform4fv(u.uBallS, [1, 0, 0, 0]); }
 }
 // Both passes share the view, the bank and the sky table.
 function shared(u) {

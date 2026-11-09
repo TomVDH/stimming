@@ -67,7 +67,8 @@ uniform vec4 uFl[${MAXFL}];
 uniform highp sampler2D uTrail; uniform int uTrN;
 // The passing jet's body, and the impact's fireball dome.
 uniform vec3 uJetF0, uJetF1, uJetW0, uJetW1, uJetT0, uJetT1; uniform float uJetOn;
-uniform vec4 uBall, uBallC;
+// The impact's fireball: centre and radius; colour and glow; squash and life.
+uniform vec4 uBall, uBallC, uBallS;
 // The impact: site xz, shock ring radius, ring strength; then flash light, crater glow.
 uniform vec4 uBoom; uniform vec2 uBoomL;
 out vec4 o;
@@ -838,25 +839,33 @@ void main() {
   vec3 c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
   float tg = hitLayer(d, 0.0);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
-  // The fireball dome: white-hot, cooling to orange, its surface churning.
-  if (uBallC.w > 0.0) {
-    vec3 oc = -uBall.xyz;
-    float bb = dot(oc, d), cc = dot(oc, oc) - uBall.w * uBall.w, hh = bb * bb - cc;
-    float q = length(oc - d * bb);
+  // The impact's fireball: a sphere that rises, cools to smoke and flattens into the cap.
+  if (uBallS.y > 0.0) {
+    // The cap squashes in height, so the test runs in a stretched space.
+    vec3 sq = vec3(1.0, 1.0 / uBallS.x, 1.0);
+    vec3 oc = -uBall.xyz * sq, ds = d * sq;
+    float a2 = dot(ds, ds), bb = dot(oc, ds), cc = dot(oc, oc) - uBall.w * uBall.w, hh = bb * bb - a2 * cc;
+    float q = length(oc - ds * bb / a2);
     vec3 glowC = uBallC.rgb * uBallC.w;
-    if (hh > 0.0 && -bb - sqrt(hh) > 0.0) {
-      float tb = -bb - sqrt(hh);
-      vec3 p = d * tb - uBall.xyz, nn = p / uBall.w;
-      float limb = pow(max(dot(nn, -d), 0.0), 0.5);
+    if (hh > 0.0 && (-bb - sqrt(hh)) / a2 > 0.0) {
+      float tb = (-bb - sqrt(hh)) / a2;
+      vec3 p = d * tb - uBall.xyz, nn = normalize((p * sq) / uBall.w * sq);
+      float limb = max(dot(nn, -d), 0.0);
       float churn = cn(p * 0.22 + vec3(0.0, uTime * 0.08, 0.0), 4.0, 0.0).r;
-      float up = clamp((d * tb).y + H + dot((d * tb).xz, (d * tb).xz) / 12742.0, 0.0, 99.0);
-      // Dark lanes of smoke break the hot surface into cells.
       float churn2 = cn(p * 0.6 - vec3(0.0, uTime * 0.15, 0.0), 4.0, 0.0).g;
+      // Dark lanes of smoke break the hot surface into cells.
       float cells = smoothstep(0.3, 0.7, churn) * (0.5 + 0.5 * churn2);
-      // The rim is smoke, not a hard edge.
-      // A dim dome turns to thin smoke, so the plume behind shows through.
-      float op = smoothstep(0.0, 0.35, limb) * clamp(uBallC.w * 5.0, 0.0, 1.0);
-      c = mix(c, glowC * (0.1 + 1.3 * cells) * (0.35 + 0.65 * limb) * (up < 3.5 ? max(gDeckT, 0.15) : 1.0), op);
+      // Smoke: lit by the sky above and by the crater's fire below.
+      vec3 smoke = uAmb * 0.03 * (0.4 + 0.6 * max(nn.y, 0.0)) * (0.6 + 0.6 * churn2);
+      smoke += vec3(1.0, 0.45, 0.15) * (uBoomL.y * 0.35 + uBallC.w * 0.2) * max(-nn.y, 0.0) * (0.5 + churn);
+      smoke += uSunL * 0.01 * max(dot(nn, uSun), 0.0);
+      vec3 col = smoke + glowC * (0.1 + 1.3 * cells) * (0.35 + 0.65 * sqrt(limb));
+      // The rim billows: noise eats into the edge, so it is never a hard disc.
+      float op = smoothstep(0.02, 0.3, limb - 0.2 * (churn - 0.5) - 0.3 * (churn2 - 0.5)) * uBallS.y;
+      // The cloud deck hides the part below its tops.
+      float up = (d * tb).y + H + dot((d * tb).xz, (d * tb).xz) / 12742.0;
+      op *= mix(gDeckT, 1.0, smoothstep(3.2, 4.2, up));
+      c = mix(c, col, op);
       skyA *= 1.0 - op;
     }
     // Its glow spills into the air round it.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-09T07:40:42Z
+updated_at: 2026-11-09T07:46:46Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -55,3 +55,5 @@ They happen on their own, every 22 to 55 s: a meteor (one in four a green fireba
 Sights round 3: rocket launches 140-200 km out and heads away on a flatter climb; fireball enters from 30-42 deg, its wake runs past the start, and it breaks into seven fragments at 62 %; impact strikes 110-160 km out with a 30 km dome, 80 km plume, 36 ejecta, a wider sky glow and a shock front that shakes the cabin on arrival. Not yet seen: the pane was hidden.
 
 Seen in the pane: fireball path centred and starts just above the window (16-19 deg); rocket staging puff softened; impact moved to 25-60 km forward so it sits mid-window; dome churns in large billows, cools to orange by 8 s, sits on the ground and fades by 32 s. Open: the plume reads as a pillar, it needs a mushroom cap.
+
+Impact fireball rebuilt: one opaque sphere that rises, cools to smoke and flattens into the mushroom cap (capAt); the deck hides its base; a narrow dim stem rises under it. Seen in the pane at 12 s and 62 s.
