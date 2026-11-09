@@ -25,8 +25,26 @@
 /* The halo spills edge light onto the page around the stage. */
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
 /* A drag from the tray carries a piece; the open sheet fades meanwhile. */
-.s2-grid .s2-chip { touch-action: none; }
-html[data-carry] .s2-sheet { opacity: 0; pointer-events: none; }
+/* The piece palette rises from the + Piece button: one labelled tile per piece. */
+.palette {
+  position: absolute; left: 0; top: 0; z-index: 6; box-sizing: border-box; width: min(372px, calc(100% - 24px));
+  color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); box-shadow: var(--hard);
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase;
+}
+.palette[hidden] { display: none; }
+/* A short stage lays the tiles out in one row. */
+.palette.wide { width: min(664px, calc(100% - 24px)); }
+.palette .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; padding: 10px 12px 12px; }
+.palette .tile {
+  display: grid; justify-items: center; align-content: center; gap: 8px; height: 76px; padding: 8px 4px 7px;
+  font: inherit; letter-spacing: 0.04em; line-height: 1.15; text-align: center; color: var(--muted);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 2px; cursor: grab; touch-action: none;
+  -webkit-tap-highlight-color: transparent; transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.palette .tile svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.palette .tile svg .solid { fill: currentColor; stroke: none; }
+@media (hover: hover) { .palette .tile:hover { color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift); } }
+html[data-carry] .palette { opacity: 0; pointer-events: none; }
 /* The zoom chip shows only while the view is zoomed; a press resets it. */
 .zoomchip {
   position: absolute; left: 50%; top: 8px; z-index: 1; transform: translateX(-50%);
@@ -113,8 +131,6 @@ const KINDS = [
   { value: 'convex', label: 'Convex mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg>' },
   { value: 'concave', label: 'Concave mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg>' },
   { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
-  // The spectroscope is a view, not a piece.
-  { value: 'spectro', label: 'Spectroscope', icon: '<svg viewBox="0 0 16 16"><path d="M1.6 5.2h6.2l-3.1 5.4z"/><path d="M10.2 2v12M12.3 2v12M14.4 2v12"/></svg>' },
 ];
 // The lamp shines white light or one laser line.
 // Each value is one wavelength bin; -1 is the full spectrum.
@@ -125,14 +141,14 @@ const LIGHTS = [
   { value: '1', label: 'Violet', dot: 'oklch(0.58 0.24 300)' },
 ];
 const ui = initPage({ id: 'prism', bar: {
-  choice: { label: 'Piece', display: 'tray', value: 'prism', options: KINDS,
-    onPick: v => {
-      if (v === 'spectro') { openSpectro(); return; }
-      if (spec.on) closeSpectro();
-      addPiece(v);
-      panel.focus({ preventScroll: true });
-    } },
-  actions: [{ verb: 'clear', key: 'C', onPress: () => clearAll() }],
+  // Two modes: the light table, and the spectroscope's line readout.
+  choice: { label: 'Mode', display: 'segments', value: 'table',
+    options: [{ value: 'table', label: 'Table' }, { value: 'spectro', label: 'Spectroscope' }],
+    onPick: v => (v === 'spectro' ? openSpectro() : closeSpectro()) },
+  actions: [
+    { verb: 'add', noun: 'Piece', key: 'A', onPress: () => palette.toggle() },
+    { verb: 'clear', key: 'C', onPress: () => clearAll() },
+  ],
   settings: [
     { type: 'choice', id: 'light', label: 'Light', value: '-1', options: LIGHTS,
       onPick: v => { lightBin = +v; geomDirty = true; wake(); } },
@@ -159,10 +175,50 @@ const rowsShow = (labels, show) => document.querySelectorAll('.stim-ui .s2-row')
 });
 rowsShow(SPEC_ROWS, false);
 const spec = spectroscope({ stage: panel, kit: { live: () => kit.live(), rest: f => kit.rest(f), get out() { return kit.out; }, get noise() { return kit.noise; } }, ui, onExit: () => closeSpectro() });
+/* ---------- the piece palette ---------- */
+// Tap a tile to drop the piece into the light; drag it to place it.
+const palette = (() => {
+  const el = document.createElement('div');
+  el.className = 'palette';
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Pieces');
+  el.innerHTML = '<div class="s2-hd"><span>Pieces</span><em aria-hidden="true">tap or drag</em></div><div class="grid"></div>';
+  const grid = el.querySelector('.grid');
+  for (const k of KINDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tile';
+    b.dataset.kind = k.value;
+    b.innerHTML = `${k.icon}<span>${k.label}</span>`;
+    b.addEventListener('click', () => { close(); addPiece(k.value); panel.focus({ preventScroll: true }); });
+    grid.append(b);
+  }
+  panel.parentElement.append(el);
+  const btn = () => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => /\+\s*Piece/i.test(b.textContent));
+  // The palette opens above its button and stays inside the stage.
+  function place() {
+    const b = btn(), fr = panel.parentElement.getBoundingClientRect();
+    if (!b) return;
+    const r0 = b.getBoundingClientRect();
+    el.classList.toggle('wide', r0.top - fr.top < 330);
+    const r = r0, w = el.offsetWidth, h = el.offsetHeight;
+    const x = clamp(r.left - fr.left, 12, Math.max(12, fr.width - w - 12)), y = Math.max(12, r.top - fr.top - h - 8);
+    el.style.transform = `translate(${x}px, ${y}px)`;
+  }
+  function open() { if (spec.on) return; el.hidden = false; place(); btn()?.setAttribute('aria-expanded', 'true'); el.querySelector('.tile')?.focus({ preventScroll: true }); }
+  function close() { if (el.hidden) return; el.hidden = true; btn()?.setAttribute('aria-expanded', 'false'); }
+  document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !btn()?.contains(e.target)) close(); }, true);
+  document.addEventListener('keydown', e => { if (!el.hidden && e.key === 'Escape') { e.preventDefault(); close(); panel.focus({ preventScroll: true }); } }, true);
+  addEventListener('resize', () => { if (!el.hidden) place(); });
+  return { open, close, toggle: () => (el.hidden ? open() : close()), get isOpen() { return !el.hidden; } };
+})();
 async function openSpectro() {
   if (spec.on) { spec.strike(); return; }
   select(-1);
-  try { if (!(await spec.open())) return; } catch (err) { console.warn('Spectroscope:', err.message); ui.choice.set('prism'); return; }
+  palette.close();
+  try { if (!(await spec.open())) { ui.choice.set('table'); return; } } catch (err) { console.warn('Spectroscope:', err.message); ui.choice.set('table'); return; }
+  ui.choice.set('spectro');
   document.documentElement.dataset.spectro = '';
   rowsShow(SPEC_ROWS, true);
   rowsShow(TABLE_ROWS, false);
@@ -176,7 +232,7 @@ function closeSpectro() {
   delete document.documentElement.dataset.spectro;
   rowsShow(SPEC_ROWS, false);
   rowsShow(TABLE_ROWS, true);
-  ui.choice.set('prism');
+  ui.choice.set('table');
   sync();
   panel.focus({ preventScroll: true });
 }
@@ -1900,9 +1956,8 @@ function applyLayout() {
 }
 function sync() {
   const n = liveAdded();
-  // Clear also leaves the spectroscope.
-  ui.action('clear').disabled = !n && !spec.on;
-  ui.choice.disabled = n >= MAXADD;
+  ui.action('clear').disabled = !n || spec.on;
+  ui.action('add').disabled = n >= MAXADD || spec.on;
 }
 const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
 // A new piece drops into the light, turned to meet it.
@@ -2030,7 +2085,6 @@ function carryStart(e) {
   pieces.push(p);
   carry.p = p;
   select(pieces.length - 1);
-  ui.choice.set(kind);
   document.documentElement.dataset.carry = '';
   geomDirty = true;
   moveX = x;
@@ -2044,17 +2098,16 @@ function carryEndAt(e, drop) {
   if (!c?.p) return;
   carryEnd = performance.now();
   delete document.documentElement.dataset.carry;
-  // The open tray closes; Escape is its own close path.
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  palette.close();
   const r = panel.getBoundingClientRect(), inside = drop && e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom;
   // A drop off the table takes the piece away again.
   if (!inside) remove(pieces.indexOf(c.p));
   panel.focus({ preventScroll: true });
 }
 document.addEventListener('pointerdown', e => {
-  const b = e.target.closest?.('.s2-grid [data-value]');
-  if (!b || b.dataset.value === 'spectro' || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  carry = { kind: b.dataset.value, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
+  const b = e.target.closest?.('.palette [data-kind]');
+  if (!b || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  carry = { kind: b.dataset.kind, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
 });
 addEventListener('pointermove', e => {
   if (!carry || e.pointerId !== carry.id) return;
@@ -2073,7 +2126,7 @@ addEventListener('pointerup', e => { if (carry && e.pointerId === carry.id) { if
 addEventListener('pointercancel', e => { if (carry && e.pointerId === carry.id) carryEndAt(e, false); });
 // The release after a carry is not a tap on the tray.
 document.addEventListener('click', e => {
-  if (performance.now() - carryEnd < 400 && e.target.closest?.('.s2-grid')) { e.stopPropagation(); e.preventDefault(); }
+  if (performance.now() - carryEnd < 400 && e.target.closest?.('.palette')) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 function kill(p) {
   if (p.dying || p.kind === 'source') return;
@@ -2116,7 +2169,6 @@ function sweep() {
   sync();
 }
 function clearAll() {
-  if (spec.on) { closeSpectro(); return; }
   if (!ready || !liveAdded()) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });

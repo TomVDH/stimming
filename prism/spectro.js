@@ -316,7 +316,6 @@ const CSS = `
 .spec-els .s2-chip { padding: 0 8px; gap: 5px; text-transform: none; letter-spacing: 0.02em; }
 .spec-els .s2-chip i { width: 7px; height: 7px; background: var(--c); flex: none; }
 .spec-els .s2-chip[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); box-shadow: var(--shadow); }
-.spec-els .spec-back { margin-left: 8px; }
 .spec-nm { position: absolute; left: 0; top: 0; padding: 4px 7px; color: var(--fg); background: var(--glass); border: 1px solid var(--line);
   white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; letter-spacing: 0.04em; text-transform: none; }
 .spec-nm b { font-weight: 700; margin-left: 6px; }
@@ -483,13 +482,7 @@ export function spectroscope({ stage, kit, ui, onExit }) {
       b.addEventListener('click', () => ui.setting('element')?.set(s.id, true));
       return b;
     });
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 's2-chip spec-back';
-    back.textContent = '‹ Table';
-    back.title = 'Back to the table (Esc)';
-    back.addEventListener('click', () => onExit?.());
-    els.append(...chips, back);
+    els.append(...chips);
     el.append(els, nm);
     stage.append(el);
     hud = { el, els, nm, chips };
