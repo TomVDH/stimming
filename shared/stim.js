@@ -231,7 +231,8 @@ export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs =
   async function tone() {
     if (!ac) return null;
     toneMod ||= import(TONE_URL).then(T => {
-      T.setContext(new T.Context({ context: ac, lookAhead: 0, latencyHint: 'interactive' }));
+      // Tone makes a spare context on import; true disposes it.
+      T.setContext(new T.Context({ context: ac, lookAhead: 0, latencyHint: 'interactive' }), true);
       return T;
     });
     return toneMod;
