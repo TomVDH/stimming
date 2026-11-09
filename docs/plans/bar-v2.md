@@ -108,7 +108,7 @@ Every shell change and every toy port holds these. `tests/bar-v2.html` checks th
 1. No control leaves the stage, and no corner overlaps another or the key strip.
 2. The Settings sheet fits the stage at every width.
 3. A short name stays on a phone; a long one drops out before it collides.
-4. The page never scrolls sideways or past the stage.
+4. The page never scrolls sideways. It scrolls past the stage only into the toy's annex (Tom, 2026-11-09; see `annex.md`).
 5. Every touch target is at least 34 px on coarse pointers, including the stepper arrows and segments (WCAG 2.5.8 asks for 24).
 6. Every control has a visible focus ring and a keyboard path.
 7. Reduced motion stops every transition and the entrance.

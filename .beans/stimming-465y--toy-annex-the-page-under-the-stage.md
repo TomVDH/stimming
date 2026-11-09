@@ -5,7 +5,7 @@ status: todo
 type: feature
 priority: normal
 created_at: 2026-11-09T09:37:22Z
-updated_at: 2026-11-09T09:46:34Z
+updated_at: 2026-11-09T09:48:14Z
 ---
 
 Wireframe the annex a visitor scrolls into under a toy's stage, and the transition into it. Successor to the parked section.about.
@@ -30,10 +30,13 @@ All: corners fade in the first quarter; one exit progress drives everything (vie
 
 Tom picked A · Recede (2026-11-09). The 12 px lip is the stage cue.
 
-Still open: Bar v2 rule 4 (page scrolls past the stage only into the annex); keep or drop the signoff note kind.
+Bar v2 rule 4 amended (Tom, 2026-11-09): the page scrolls past the stage only into the annex.
+
+Still open: keep or drop the signoff note kind.
 
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)
 - [ ] annex.json loader and shared/credits.json
 - [ ] Bar v2 bottom corners lift by the lip
+- [ ] tests/bar-v2.html: the no-scroll check allows the annex, still fails on sideways scroll
 - [ ] One toy first; Tom picks which
