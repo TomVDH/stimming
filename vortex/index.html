@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.01 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smoke ring cannon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Smoke ring cannon: vortex rings in haze, cut by a laser sheet. */
+:root { --stage: oklch(0.1 0.01 265); }
+.stage--vortex { background: var(--stage); cursor: crosshair; }
+.stage--vortex canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--vortex canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--vortex canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Smoke ring cannon</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--vortex" id="stage" tabindex="0" role="application" aria-label="Smoke rings fly through haze and flare as they cross a laser sheet. Click or tap to fire a ring toward that point.">
+      <p class="fail" hidden>Smoke ring cannon needs WebGL 2 with float render targets, which this browser does not give.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Smoke ring cannon</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------- bar ---------- */
+// The handlers bind once the GL exists.
+const act = { sheet() {}, pair() {}, collide() {}, clear() {}, laser() {}, reset() {} };
+const LASER = { green: [0.87, 0.29, 142], red: [0.63, 0.25, 29], blue: [0.55, 0.24, 264] };
+const ui = initPage({ id: 'vortex', bar: {
+  choice: { label: 'Sheet', value: 'across', options: [
+    { value: 'across', label: 'Across' }, { value: 'along', label: 'Along' }, { value: 'scan', label: 'Scan' },
+  ], onPick: v => act.sheet(v) },
+  slider: { label: 'Haze', min: 0, max: 1, step: 0.01, value: 0.5, onInput: v => { haze = v; still(); } },
+  actions: [
+    { verb: 'pair', label: 'Pair', key: 'P', onPress: () => act.pair() },
+    { verb: 'collide', label: 'Collide', key: 'C', onPress: () => act.collide() },
+    { verb: 'clear', key: 'X', onPress: () => act.clear() },
+  ],
+  settings: [
+    { type: 'choice', id: 'laser', label: 'Laser', value: 'green', persist: true,
+      options: [{ value: 'green', label: 'Green' }, { value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }], onPick: v => act.laser(v) },
+    { type: 'choice', id: 'smoke', label: 'Smoke', value: 'light', persist: true,
+      options: [{ value: 'light', label: 'Light' }, { value: 'dense', label: 'Dense' }], onPick: v => { smoke = v; still(); } },
+    { type: 'slider', id: 'breakup', label: 'Breakup', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => { breakup = v; } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['click', 'fire'], ['drag', 'aim'], ['hold', 'charge'], ['space', 'pair']],
+} });
+let sheetMode = 'across', haze = ui.slider?.value ?? 0.5;
+let laser = ui.setting('laser')?.value ?? 'green', smoke = ui.setting('smoke')?.value ?? 'light';
+let breakup = ui.setting('breakup')?.value ?? 0.5;
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- K7: vortex filaments ---------- */
+// Each ring is a closed filament of N nodes with circulation G and core radius a.
+// Every node moves with the regularized Biot-Savart velocity of all filaments.
+const N = 32, SLOTS = 8, INV4PI = 1 / (4 * Math.PI);
+// Core spread rate, circulation life and entrainment growth, per second.
+const NU = 1.2e-4, TAU_G = 8, GROW = 0.035;
+const rings = Array.from({ length: SLOTS }, () => ({
+  on: false, p: new Float64Array(N * 3), q: new Float64Array(N * 3), v: new Float64Array(N * 3),
+  G: 0, G0: 0, a: 0.04, a0: 0.04, age: 0, R0: 0.18, m: 6, ph: 0, amp: 0, born: 0,
+}));
+// Induced velocity at (x, y, z); src picks the node array, 'p' or 'q'.
+function induced(x, y, z, src, out, only = null) {
+  let ux = 0, uy = 0, uz = 0;
+  for (const r of only ? [only] : rings) {
+    if (!r.on) continue;
+    const P = r[src], k = r.G * INV4PI, a2 = r.a * r.a;
+    let x0 = P[(N - 1) * 3], y0 = P[(N - 1) * 3 + 1], z0 = P[(N - 1) * 3 + 2];
+    for (let i = 0; i < N; i++) {
+      const x1 = P[i * 3], y1 = P[i * 3 + 1], z1 = P[i * 3 + 2];
+      const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+      const rx = x - (x0 + x1) * 0.5, ry = y - (y0 + y1) * 0.5, rz = z - (z0 + z1) * 0.5;
+      const d2 = rx * rx + ry * ry + rz * rz + a2, f = k / (d2 * Math.sqrt(d2));
+      ux += (dy * rz - dz * ry) * f;
+      uy += (dz * rx - dx * rz) * f;
+      uz += (dx * ry - dy * rx) * f;
+      x0 = x1; y0 = y1; z0 = z1;
+    }
+  }
+  out[0] = ux; out[1] = uy; out[2] = uz;
+}
+const tmp = [0, 0, 0];
+function velocities(src) {
+  for (const r of rings) {
+    if (!r.on) continue;
+    const P = r[src];
+    for (let i = 0; i < N; i++) {
+      induced(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], src, tmp);
+      r.v[i * 3] = tmp[0]; r.v[i * 3 + 1] = tmp[1]; r.v[i * 3 + 2] = tmp[2];
+    }
+  }
+}
+// The centroid and the travel normal of a ring.
+function frameOf(r) {
+  const P = r.p, c = [0, 0, 0], n = [0, 0, 0];
+  for (let i = 0; i < N; i++) { c[0] += P[i * 3]; c[1] += P[i * 3 + 1]; c[2] += P[i * 3 + 2]; }
+  c[0] /= N; c[1] /= N; c[2] /= N;
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    const ax = P[i * 3] - c[0], ay = P[i * 3 + 1] - c[1], az = P[i * 3 + 2] - c[2];
+    const bx = P[j * 3] - c[0], by = P[j * 3 + 1] - c[1], bz = P[j * 3 + 2] - c[2];
+    n[0] += ay * bz - az * by; n[1] += az * bx - ax * bz; n[2] += ax * by - ay * bx;
+  }
+  const l = Math.hypot(n[0], n[1], n[2]) || 1;
+  return { c, n: [n[0] / l, n[1] / l, n[2] / l] };
+}
+// One midpoint step for every live ring.
+function filamentStep(dt) {
+  velocities('p');
+  for (const r of rings) if (r.on) for (let i = 0; i < N * 3; i++) r.q[i] = r.p[i] + r.v[i] * dt * 0.5;
+  velocities('q');
+  for (const r of rings) {
+    if (!r.on) continue;
+    for (let i = 0; i < N * 3; i++) r.p[i] += r.v[i] * dt;
+    r.age += dt;
+    r.a = Math.sqrt(r.a0 * r.a0 + 4 * NU * r.age);
+    // Lobes grow from the seeded wave; big lobes kill the ring fast.
+    const sigma = 0.35 + 0.9 * breakup;
+    const amp = Math.min(r.R0 * 0.4, r.amp * Math.exp(sigma * r.age));
+    const life = amp > r.R0 * 0.22 ? 1.1 : TAU_G;
+    r.G *= Math.exp(-dt / life);
+    const { c, n } = frameOf(r);
+    const g = 1 + GROW * dt, da = amp * sigma * dt;
+    for (let i = 0; i < N; i++) {
+      const o = i * 3;
+      let rx = r.p[o] - c[0], ry = r.p[o + 1] - c[1], rz = r.p[o + 2] - c[2];
+      const ax = (rx * n[0] + ry * n[1] + rz * n[2]);
+      // The in-plane radial direction of this node.
+      let px = rx - ax * n[0], py = ry - ax * n[1], pz = rz - ax * n[2];
+      const pl = Math.hypot(px, py, pz) || 1;
+      px /= pl; py /= pl; pz /= pl;
+      const w = r.m * TAU * i / N + r.ph, s = Math.sin(w) * da, k = Math.cos(w) * da * 0.6;
+      r.p[o] = c[0] + rx * g + px * s + n[0] * k;
+      r.p[o + 1] = c[1] + ry * g + py * s + n[1] * k;
+      r.p[o + 2] = c[2] + rz * g + pz * s + n[2] * k;
+    }
+    r.c = c;
+    if (r.G < r.G0 * 0.12 || Math.hypot(c[0], c[1], c[2]) > 4.5 || r.age > 16) kill(r);
+  }
+}
+/* ---------- end K7 ---------- */
+
+/* ---------- slots ---------- */
+// A slot holds one ring and its smoke; the smoke fades after the ring dies.
+const slot = Array.from({ length: SLOTS }, () => ({ fade: 0, dead: -1, born: -1 }));
+let simTime = 0;
+function kill(r) {
+  r.on = false;
+  r.G = 0;
+  slot[rings.indexOf(r)].dead = simTime;
+}
+function freeSlot() {
+  let best = 0, oldest = Infinity;
+  for (let k = 0; k < SLOTS; k++) {
+    if (!rings[k].on && slot[k].fade <= 0) return k;
+    if (slot[k].born < oldest) { oldest = slot[k].born; best = k; }
+  }
+  return best;
+}
+const basis = d => {
+  const up = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let e1 = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+  const l = Math.hypot(...e1);
+  e1 = e1.map(v => v / l);
+  const e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+  return { e1, e2 };
+};
+// Seeded random keeps the pre-roll the same on every load.
+let seedN = 9173;
+const rnd = () => (seedN = (seedN * 16807) % 2147483647) / 2147483647;
+// Fire one ring from `from` along `dir`; U is its start speed.
+function fire({ from, dir, R = 0.18, U = 0.9 }) {
+  const k = freeSlot(), r = rings[k];
+  const l = Math.hypot(...dir), d = dir.map(v => v / l), { e1, e2 } = basis(d);
+  const C = from.map((v, i) => v + d[i] * 0.04);
+  r.m = 5 + Math.floor(rnd() * 4);
+  r.ph = rnd() * TAU;
+  r.amp = R * 0.006;
+  for (let i = 0; i < N; i++) {
+    const t = TAU * i / N, rr = R * (1 + 0.012 * Math.sin(r.m * t + r.ph));
+    for (let j = 0; j < 3; j++) r.p[i * 3 + j] = C[j] + rr * (Math.cos(t) * e1[j] + Math.sin(t) * e2[j]);
+  }
+  r.a0 = r.a = R * 0.24;
+  r.R0 = R;
+  r.age = 0;
+  // Calibrate circulation: unit G gives speed U1 along d.
+  r.on = true;
+  r.G = 1;
+  induced(r.p[0], r.p[1], r.p[2], 'p', tmp, r);
+  const U1 = tmp[0] * d[0] + tmp[1] * d[1] + tmp[2] * d[2];
+  r.G = r.G0 = U / Math.max(1e-4, U1);
+  r.c = C;
+  slot[k].fade = 1;
+  slot[k].dead = -1;
+  slot[k].born = simTime;
+  seedSmoke(k, C, d, e1, e2, R, r.a);
+  return k;
+}
+
+/* ---------- scene ---------- */
+// The launch axis is +x; the muzzle sits just inside the frame's left edge.
+const MUZZLE = [-1.22, -0.06, 0], SHEET_X = 0.42;
+// Each slot holds PER particles in ROWS rows of 64.
+const ROWS = 128, PER = ROWS * 64;
+const SHEETS = {
+  // Across leans 24 degrees, so the camera sees it nearly edge on.
+  across: { n: [Math.cos(0.42), 0, Math.sin(0.42)], h: 0.42 * Math.cos(0.42), lens: [0.42, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
+  along: { n: [0, 0, 1], h: 0, lens: [0.25, 1.75, 0], fan: [0, -1, 0], half: 0.72 },
+};
+const cam = { eye: [0, 0, 0], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tan: 0.4, aspect: 1, portrait: false };
+const norm = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// Wide frames look from the front left; tall frames roll so rings rise.
+function aimCamera(W, H) {
+  const portrait = W / H < 0.85;
+  const T = portrait ? [0.3, -0.02, 0] : [0.18, 0.02, 0];
+  const yaw = 28 * Math.PI / 180, pitch = 9 * Math.PI / 180, dist = portrait ? 3.5 : 3.3;
+  const eye = [T[0] - Math.sin(yaw) * Math.cos(pitch) * dist, T[1] + Math.sin(pitch) * dist, T[2] + Math.cos(yaw) * Math.cos(pitch) * dist];
+  const F = norm(T.map((v, i) => v - eye[i]));
+  let R = norm(cross(F, [0, 1, 0])), U = cross(R, F);
+  if (portrait) [R, U] = [U.map(v => -v), R];
+  Object.assign(cam, { eye, R, U, F, aspect: W / H, portrait, tan: Math.tan((portrait ? 60 : 46) * Math.PI / 360) });
+}
+// A screen point to a world ray direction.
+function rayAt(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const nx = ((cx - r.left) / r.width) * 2 - 1, ny = 1 - ((cy - r.top) / r.height) * 2;
+  return norm([0, 1, 2].map(i => cam.F[i] + nx * cam.tan * cam.aspect * cam.R[i] + ny * cam.tan * cam.U[i]));
+}
+
+/* ---------- shaders ---------- */
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+`;
+// Henyey-Greenstein phase, normalized to 1 at g = 0.
+const PHASE = `
+float hg(float c, float g) {
+  float d = 1.0 + g * g - 2.0 * g * c;
+  return (1.0 - g * g) / (d * sqrt(d));
+}`;
+const NOISE = `
+float h31(vec3 p) {
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+float vnoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h31(i), h31(i + vec3(1, 0, 0)), f.x), mix(h31(i + vec3(0, 1, 0)), h31(i + vec3(1, 1, 0)), f.x), f.y),
+    mix(mix(h31(i + vec3(0, 0, 1)), h31(i + vec3(1, 0, 1)), f.x), mix(h31(i + vec3(0, 1, 1)), h31(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p) { return 0.55 * vnoise(p) + 0.3 * vnoise(p * 2.1 + 3.7) + 0.15 * vnoise(p * 4.3 + 9.1); }
+// Laser speckle: exponential intensity on a fine lattice, interpolated.
+float sx(vec3 i) { return -log(max(h31(i), 1e-3)); }
+float speckle(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(sx(i), sx(i + vec3(1, 0, 0)), f.x), mix(sx(i + vec3(0, 1, 0)), sx(i + vec3(1, 1, 0)), f.x), f.y),
+    mix(mix(sx(i + vec3(0, 0, 1)), sx(i + vec3(1, 0, 1)), f.x), mix(sx(i + vec3(0, 1, 1)), sx(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}`;
+// Sheet uniforms are shared by the haze and the smoke.
+const SHEET = `
+uniform vec3 uN, uLens, uFan, uLaser;
+uniform float uH, uFanCos;
+float fanMask(vec3 vl) { return smoothstep(uFanCos - 0.025, uFanCos + 0.025, dot(vl, uFan)); }
+`;
+
+// The room: a dark gradient, a backlight shaft in fbm haze, and the laser sheet.
+const HAZE_FS = HEAD + PHASE + NOISE + SHEET + `
+in vec2 vUv;
+out vec4 o;
+uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
+uniform vec2 uTan;
+uniform float uHaze, uTime, uW;
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 d = normalize(uF + ndc.x * uTan.x * uR + ndc.y * uTan.y * uU);
+  vec3 col = uRoom * (0.75 + 0.35 * d.y);
+  vec3 drift = vec3(uTime * 0.03, uTime * 0.012, -uTime * 0.02);
+  // The backlight shaft: the ray's closest point to the shaft axis.
+  vec3 S0 = vec3(-2.6, 2.1, -1.5), w0 = uEye - S0;
+  float b = dot(d, uBackDir), dq = dot(d, w0), e = dot(uBackDir, w0), den = max(1.0 - b * b, 1e-4);
+  float t = max((b * e - dq) / den, 0.0), s = e + t * b;
+  float dist = length(w0 + t * d - s * uBackDir);
+  float shaft = exp(-dist * dist / 0.6) * smoothstep(0.3, 2.0, s);
+  float n = fbm((uEye + t * d) * 0.9 + drift);
+  col += uBack * shaft * hg(dot(uBackDir, -d), 0.55) * (0.2 + 1.1 * n * n) * uHaze * 0.06;
+  // Faint haze everywhere, so the dark is never flat.
+  col += uBack * (0.004 + 0.006 * fbm(d * 3.0 + drift)) * uHaze;
+  // The laser sheet: the ray meets its plane once.
+  float dn = dot(d, uN);
+  float th = (uH - dot(uEye, uN)) / dn;
+  if (abs(dn) > 1e-4 && th > 0.0) {
+    vec3 q = uEye + th * d, v = q - uLens;
+    float r = length(v);
+    vec3 vl = v / r;
+    float thick = min(uW * 1.77 / abs(dn), 0.2);
+    float dens = 0.45 + 0.8 * fbm(q * 1.6 + drift * 2.0);
+    float sp = speckle(q * 260.0);
+    float lit = fanMask(vl) * thick * dens * (0.45 + 0.55 * sp) * hg(dot(vl, -d), 0.5) / (r * r + 0.15);
+    col += uLaser * lit * uHaze * 0.9;
+  }
+  o = vec4(col, 1.0);
+}`;
+
+/* smoke particles */
+// The state texture is 64 wide; each slot owns ROWS rows.
+const ADVECT_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uState, uNodes;
+uniform float uOn[${SLOTS}], uCore[${SLOTS}], uTurb[${SLOTS}], uFade[${SLOTS}];
+uniform float uDt, uTime;
+vec3 induced(vec3 x) {
+  vec3 u = vec3(0.0);
+  for (int k = 0; k < ${SLOTS}; k++) {
+    if (uOn[k] < 0.5) continue;
+    float a2 = uCore[k] * uCore[k];
+    vec4 p0 = texelFetch(uNodes, ivec2(${N - 1}, k), 0);
+    for (int i = 0; i < ${N}; i++) {
+      vec4 p1 = texelFetch(uNodes, ivec2(i, k), 0);
+      vec3 r = x - 0.5 * (p0.xyz + p1.xyz);
+      float d2 = dot(r, r) + a2;
+      u += p1.w * cross(p1.xyz - p0.xyz, r) / (d2 * sqrt(d2));
+      p0 = p1;
+    }
+  }
+  return u * 0.0795775;
+}
+// Two octaves of ABC flow: divergence free, so smoke does not clump.
+vec3 abc(vec3 p, float t) {
+  vec3 a = p * 9.0 + vec3(t * 0.7, -t * 0.5, t * 0.6);
+  vec3 u = vec3(sin(a.z) + cos(a.y), sin(a.x) + cos(a.z), sin(a.y) + cos(a.x));
+  a = p * 23.0 + vec3(1.7, -t * 1.1, 2.9 + t * 0.9);
+  return u + 0.6 * vec3(sin(a.z) + cos(a.y), sin(a.x) + cos(a.z), sin(a.y) + cos(a.x));
+}
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec4 s = texelFetch(uState, c, 0);
+  int k = c.y / ${ROWS};
+  if (uFade[k] <= 0.0) { o = s; return; }
+  float tb = uTurb[k];
+  vec3 u1 = induced(s.xyz) + tb * abc(s.xyz, uTime);
+  vec3 m = s.xyz + u1 * uDt * 0.5;
+  vec3 u2 = induced(m) + tb * abc(m, uTime);
+  o = vec4(s.xyz + u2 * uDt, s.w);
+}`;
+// A new ring's smoke: core, bubble and a short slug behind it.
+const SEED_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform vec3 uC, uA, uE1, uE2;
+uniform float uR, uCoreR;
+uniform int uRow;
+uniform uint uSeed;
+uint pcg(uint v) {
+  uint s = v * 747796405u + 2891336453u;
+  uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+float rf(inout uint h) { h = pcg(h); return float(h) / 4294967295.0; }
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  uint h = uint(c.x + (c.y - uRow) * 64) ^ (uSeed * 2654435761u);
+  float r1 = rf(h), r2 = rf(h), r3 = rf(h), r4 = rf(h), r5 = rf(h);
+  float phi = 6.2831853 * r1;
+  vec3 rad = cos(phi) * uE1 + sin(phi) * uE2;
+  vec3 p;
+  if (r2 < 0.7) {
+    float rho = uCoreR * 1.3 * sqrt(-2.0 * log(max(r3, 1e-5))), psi = 6.2831853 * r4;
+    p = uC + rad * (uR + rho * cos(psi)) + uA * (rho * sin(psi));
+    r5 = 0.6 + 0.4 * r5;
+  } else if (r2 < 0.82) {
+    // Uniform in an oblate bubble round the ring.
+    float z = r4 * 2.0 - 1.0, rr = pow(r3, 0.333);
+    float rh = sqrt(max(0.0, 1.0 - z * z)) * rr;
+    p = uC + rad * rh * uR * 1.1 + uA * (z * rr * 0.65 - 0.1) * uR;
+    r5 = 0.2 + 0.2 * r5;
+  } else {
+    p = uC - uA * r3 * uR * 1.2 + rad * sqrt(r4) * uR * 0.75;
+    r5 = 0.3 + 0.3 * r5;
+  }
+  o = vec4(p, r5);
+}`;
+// Smoke shading: dim backlight scatter, bright inside the sheet.
+const SMOKE_VS = HEAD + PHASE + SHEET + `
+uniform sampler2D uState;
+uniform float uFade[${SLOTS}];
+uniform vec3 uEye, uR, uU, uF, uBackDir, uBack;
+uniform vec2 uFoc;
+uniform float uPx, uW, uSmoke, uSize;
+out vec3 vC;
+void main() {
+  int id = gl_VertexID, k = id / ${PER}, l = id - k * ${PER};
+  vec4 s = texelFetch(uState, ivec2(l % 64, k * ${ROWS} + l / 64), 0);
+  float fade = uFade[k];
+  vec3 q = s.xyz - uEye;
+  float z = dot(q, uF);
+  if (fade <= 0.001 || z < 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); return; }
+  gl_Position = vec4(dot(q, uR) * uFoc.x, dot(q, uU) * uFoc.y, 0.0, z);
+  float ps = uPx * uSize / z, size = max(ps, 1.5);
+  gl_PointSize = size;
+  // Points smaller than 1.5 px keep their energy, not their size.
+  float k2 = (ps * ps) / (size * size);
+  vec3 toCam = -q / length(q);
+  float back = hg(dot(uBackDir, toCam), 0.6);
+  vec3 v = s.xyz - uLens;
+  float r = length(v), dd = dot(s.xyz, uN) - uH;
+  vec3 vl = v / r;
+  float sheet = exp(-dd * dd / (uW * uW)) * fanMask(vl) * hg(dot(vl, toCam), 0.55) / (r + 0.45);
+  vC = (uBack * back * 0.011 + uLaser * sheet * 0.75) * uSmoke * fade * s.w * k2;
+}`;
+const SMOKE_FS = HEAD + `
+in vec3 vC;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(c, c);
+  // A soft Gaussian disc, so dense smoke reads as one body.
+  o = vec4(vC * exp(-3.0 * r2) * max(0.0, 1.0 - r2) * 2.0, 1.0);
+}`;
+
+/* post */
+const BRIGHT_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main() {
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec2 off = vec2((i & 1) == 0 ? -1.0 : 1.0, i < 2 ? -1.0 : 1.0) * uTexel;
+    c += texture(uSrc, vUv + off).rgb;
+  }
+  c *= 0.25;
+  float l = max(c.r, max(c.g, c.b));
+  // A soft knee above the threshold keeps dim smoke out of the bloom.
+  float k = clamp(l - 0.18, 0.0, 0.3);
+  float w = max(l - 0.48, k * k / 1.2) / max(l, 1e-4);
+  o = vec4(c * w, 1.0);
+}`;
+const DOWN_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 4.0;
+  c += texture(uSrc, vUv + vec2(-1, -1) * uTexel).rgb + texture(uSrc, vUv + vec2(1, -1) * uTexel).rgb;
+  c += texture(uSrc, vUv + vec2(-1, 1) * uTexel).rgb + texture(uSrc, vUv + vec2(1, 1) * uTexel).rgb;
+  o = vec4(c / 8.0, 1.0);
+}`;
+const UP_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main() {
+  vec2 t = uTexel;
+  vec3 c = texture(uSrc, vUv + vec2(-2, 0) * t).rgb + texture(uSrc, vUv + vec2(2, 0) * t).rgb;
+  c += texture(uSrc, vUv + vec2(0, -2) * t).rgb + texture(uSrc, vUv + vec2(0, 2) * t).rgb;
+  c += 2.0 * (texture(uSrc, vUv + vec2(-1, -1) * t).rgb + texture(uSrc, vUv + vec2(1, -1) * t).rgb);
+  c += 2.0 * (texture(uSrc, vUv + vec2(-1, 1) * t).rgb + texture(uSrc, vUv + vec2(1, 1) * t).rgb);
+  o = vec4(c / 12.0, 1.0);
+}`;
+const GRADE_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uScene, uBloom;
+uniform float uBloomK, uTime;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec3 c = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uBloomK;
+  c = aces(max(c, 0.0) * 1.15);
+  vec2 v = vUv - 0.5;
+  c *= 1.0 - 0.55 * dot(v, v);
+  c = pow(c, vec3(1.0 / 2.2));
+  c += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.022;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, vao = null;
+let state = null, nodesTex = null, scene = null, blooms = [];
+const nodeData = new Float32Array(N * SLOTS * 4);
+function compile(vs, fs) {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+function renderable(fmt) {
+  const t = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, 4, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(t);
+  return ok;
+}
+function target(w, h, fmt, filter) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+function free(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex ?? t);
+  gl.uniform1i(prog.u[name], unit);
+}
+function draw(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('float targets unavailable');
+  if (!renderable(gl.RGBA32F) || !renderable(gl.RGBA16F)) throw new Error('float targets unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    haze: compile(TRI, HAZE_FS), advect: compile(TRI, ADVECT_FS), seed: compile(TRI, SEED_FS),
+    smoke: compile(SMOKE_VS, SMOKE_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
+    up: compile(TRI, UP_FS), grade: compile(TRI, GRADE_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  state = { r: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST), w: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST),
+    swap() { [this.r, this.w] = [this.w, this.r]; } };
+  nodesTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, nodesTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, N, SLOTS);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+}
+
+/* ---------- layout ---------- */
+let rung = 0, time = 0;
+function layout() {
+  const { W, H } = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  aimCamera(W, H);
+  if (scene && scene.w === W && scene.h === H) return;
+  free(scene);
+  blooms.forEach(free);
+  scene = target(W, H, gl.RGBA16F, gl.LINEAR);
+  blooms = [];
+  let w = Math.max(1, W >> 1), h = Math.max(1, H >> 1);
+  for (let i = 0; i < 5; i++) { blooms.push(target(w, h, gl.RGBA16F, gl.LINEAR)); w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); }
+}
+
+/* ---------- passes ---------- */
+// The backlight rakes from the upper left, behind the rings.
+const BACK_DIR = norm([0.72, -0.5, 0.42]);
+let BACK = oklchLinear(0.82, 0.025, 250), ROOM = oklchLinear(0.105, 0.012, 265);
+function sheetNow() {
+  const s = SHEETS[sheetMode === 'along' ? 'along' : 'across'];
+  return s;
+}
+function sheetUniforms(q, w) {
+  const s = sheetNow();
+  gl.uniform3fv(q.u.uN, s.n);
+  gl.uniform1f(q.u.uH, s.h);
+  gl.uniform3fv(q.u.uLens, s.lens);
+  gl.uniform3fv(q.u.uFan, s.fan);
+  gl.uniform1f(q.u.uFanCos, Math.cos(s.half));
+  gl.uniform3fv(q.u.uLaser, oklchLinear(...LASER[laser]).map(v => Math.max(0, v)));
+  gl.uniform1f(q.u.uW, w);
+}
+function camUniforms(q) {
+  gl.uniform3fv(q.u.uEye, cam.eye);
+  gl.uniform3fv(q.u.uR, cam.R);
+  gl.uniform3fv(q.u.uU, cam.U);
+  gl.uniform3fv(q.u.uF, cam.F);
+  gl.uniform3fv(q.u.uBackDir, BACK_DIR);
+  gl.uniform3fv(q.u.uBack, BACK);
+}
+const fades = new Float32Array(SLOTS), ons = new Float32Array(SLOTS), cores = new Float32Array(SLOTS), turbs = new Float32Array(SLOTS);
+function slotUniforms() {
+  for (let k = 0; k < SLOTS; k++) {
+    const r = rings[k], s = slot[k];
+    // Smoke rolls up over 0.1 s, then fades over 2.2 s once the ring dies.
+    const up = clamp((simTime - s.born) / 0.1);
+    fades[k] = s.fade * up;
+    ons[k] = r.on ? 1 : 0;
+    cores[k] = r.a;
+    const lobes = r.on ? clamp(r.amp * Math.exp((0.35 + 0.9 * breakup) * r.age) / (r.R0 * 0.22)) : 1;
+    turbs[k] = (0.004 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
+  }
+}
+function uploadNodes() {
+  nodeData.fill(0);
+  for (let k = 0; k < SLOTS; k++) {
+    const r = rings[k];
+    if (!r.on) continue;
+    for (let i = 0; i < N; i++) {
+      const o = (k * N + i) * 4;
+      nodeData[o] = r.p[i * 3]; nodeData[o + 1] = r.p[i * 3 + 1]; nodeData[o + 2] = r.p[i * 3 + 2]; nodeData[o + 3] = r.G;
+    }
+  }
+  gl.bindTexture(gl.TEXTURE_2D, nodesTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, SLOTS, gl.RGBA, gl.FLOAT, nodeData);
+}
+let seedCount = 1;
+function seedSmoke(k, C, d, e1, e2, R, a) {
+  if (!P) return;
+  const q = P.seed;
+  gl.useProgram(q.p);
+  gl.uniform3fv(q.u.uC, C);
+  gl.uniform3fv(q.u.uA, d);
+  gl.uniform3fv(q.u.uE1, e1);
+  gl.uniform3fv(q.u.uE2, e2);
+  gl.uniform1f(q.u.uR, R);
+  gl.uniform1f(q.u.uCoreR, a);
+  gl.uniform1i(q.u.uRow, k * ROWS);
+  gl.uniform1ui(q.u.uSeed, seedCount++);
+  // Both halves of the pair get the seed, so the next advect reads it.
+  for (const t of [state.r, state.w]) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.viewport(0, k * ROWS, 64, ROWS);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+function advect(dt) {
+  const q = P.advect;
+  gl.useProgram(q.p);
+  bind(q, 'uState', 0, state.r);
+  bind(q, 'uNodes', 1, nodesTex);
+  gl.uniform1fv(q.u.uOn, ons);
+  gl.uniform1fv(q.u.uCore, cores);
+  gl.uniform1fv(q.u.uTurb, turbs);
+  gl.uniform1fv(q.u.uFade, fades);
+  gl.uniform1f(q.u.uDt, dt);
+  gl.uniform1f(q.u.uTime, simTime);
+  draw(state.w);
+  state.swap();
+}
+// One sim step: filaments on the CPU, then smoke on the GPU.
+function step(dt) {
+  simTime += dt;
+  filamentStep(dt);
+  for (let k = 0; k < SLOTS; k++) {
+    const s = slot[k];
+    if (!rings[k].on && s.dead >= 0) {
+      s.fade = Math.exp(-(simTime - s.dead) / 2.2);
+      if (s.fade < 0.01) { s.fade = 0; s.dead = -1; }
+    }
+  }
+  uploadNodes();
+  slotUniforms();
+  advect(dt);
+}
+function render() {
+  const W = canvas.width, H = canvas.height;
+  const sheetW = 0.012;
+  gl.disable(gl.BLEND);
+  // The room and the sheet.
+  let q = P.haze;
+  gl.useProgram(q.p);
+  camUniforms(q);
+  sheetUniforms(q, sheetW);
+  gl.uniform3fv(q.u.uRoom, ROOM);
+  gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
+  gl.uniform1f(q.u.uHaze, 0.25 + 1.5 * haze);
+  gl.uniform1f(q.u.uTime, reduced() ? 0 : time);
+  draw(scene);
+  // The smoke, added on top.
+  slotUniforms();
+  q = P.smoke;
+  gl.useProgram(q.p);
+  camUniforms(q);
+  sheetUniforms(q, 0.018);
+  bind(q, 'uState', 0, state.r);
+  gl.uniform1fv(q.u.uFade, fades);
+  const f = 1 / cam.tan;
+  gl.uniform2f(q.u.uFoc, f / cam.aspect, f);
+  gl.uniform1f(q.u.uPx, 0.5 * H * f);
+  gl.uniform1f(q.u.uSize, 0.032);
+  gl.uniform1f(q.u.uSmoke, smoke === 'dense' ? 1.5 : 1);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0, 0, W, H);
+  gl.drawArrays(gl.POINTS, 0, SLOTS * PER);
+  gl.disable(gl.BLEND);
+  // Bloom: bright pass, four levels down, then back up.
+  q = P.bright;
+  gl.useProgram(q.p);
+  bind(q, 'uSrc', 0, scene);
+  gl.uniform2f(q.u.uTexel, 0.5 / W, 0.5 / H);
+  draw(blooms[0]);
+  q = P.down;
+  gl.useProgram(q.p);
+  for (let i = 1; i < blooms.length; i++) {
+    bind(q, 'uSrc', 0, blooms[i - 1]);
+    gl.uniform2f(q.u.uTexel, 1 / blooms[i - 1].w, 1 / blooms[i - 1].h);
+    draw(blooms[i]);
+  }
+  q = P.up;
+  gl.useProgram(q.p);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  for (let i = blooms.length - 2; i >= 0; i--) {
+    bind(q, 'uSrc', 0, blooms[i + 1]);
+    gl.uniform2f(q.u.uTexel, 0.5 / blooms[i + 1].w, 0.5 / blooms[i + 1].h);
+    draw(blooms[i]);
+  }
+  gl.disable(gl.BLEND);
+  q = P.grade;
+  gl.useProgram(q.p);
+  bind(q, 'uScene', 0, scene);
+  bind(q, 'uBloom', 1, blooms[0]);
+  gl.uniform1f(q.u.uBloomK, 0.6);
+  gl.uniform1f(q.u.uTime, time);
+  draw(null);
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, visible = true, liveUntil = 0;
+const queue = [];
+const busy = () => visible && (performance.now() < liveUntil || queue.length > 0
+  || rings.some(r => r.on) || slot.some(s => s.fade > 0));
+function wake() { if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+function frame(now) {
+  raf = 0;
+  const dt = Math.min(1 / 30, (now - last) / 1000);
+  last = now;
+  try {
+    time += dt;
+    const sdt = reduced() ? dt * 0.6 : dt;
+    while (queue.length && queue[0].t <= simTime) queue.shift().fn();
+    step(sdt);
+    render();
+  } finally {
+    if (busy()) raf = requestAnimationFrame(frame);
+  }
+}
+function still() { if (P) render(); }
+const later = (dt, fn) => { queue.push({ t: simTime + dt, fn }); queue.sort((a, b) => a.t - b.t); };
+
+/* ---------- firing ---------- */
+// The aim is the tap's ray, met with the plane z = 0.
+function aimAt(cx, cy) {
+  const d = rayAt(cx, cy), e = cam.eye;
+  let dir = [1, 0, 0];
+  if (Math.abs(d[2]) > 1e-4) {
+    const t = -e[2] / d[2];
+    if (t > 0) dir = norm([0, 1, 2].map(i => e[i] + d[i] * t - MUZZLE[i]));
+  }
+  // The cannon turns 50 degrees at most from its axis.
+  const lim = Math.cos(50 * Math.PI / 180);
+  if (dir[0] < lim) {
+    const side = Math.hypot(dir[1], dir[2]) || 1, s = Math.sin(50 * Math.PI / 180);
+    dir = [lim, dir[1] / side * s, dir[2] / side * s];
+  }
+  return dir;
+}
+const jitter = (v, k) => v * (1 + (Math.random() * 2 - 1) * k);
+function shoot(dir) {
+  fire({ from: MUZZLE, dir, R: jitter(0.18, 0.06), U: jitter(0.95, 0.06) });
+  wake();
+}
+act.pair = () => {
+  const dir = [1, 0.02, 0];
+  shoot(dir);
+  later(0.32, () => shoot(dir));
+};
+act.collide = () => {
+  const far = [2 * SHEET_X - MUZZLE[0] + 0.3, MUZZLE[1], 0];
+  fire({ from: MUZZLE, dir: [1, 0, 0], R: 0.19, U: 0.9 });
+  fire({ from: far, dir: [-1, 0, 0], R: 0.19, U: 0.9 });
+  wake();
+};
+act.clear = () => {
+  queue.length = 0;
+  rings.forEach(r => { if (r.on) kill(r); });
+  wake();
+};
+act.sheet = v => { sheetMode = v; still(); };
+act.laser = v => { laser = LASER[v] ? v : 'green'; still(); };
+act.reset = () => {
+  act.clear();
+  ui.choice?.set('across');
+  sheetMode = 'across';
+  ui.slider?.set(0.5);
+  haze = 0.5;
+};
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms.
+// A release that is neither is a tap.
+let ptr = null;
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: performance.now() };
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  ptr.x = e.clientX;
+  ptr.y = e.clientY;
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const p = ptr;
+  ptr = null;
+  // Aim and charge arrive with Task 2; every clean release fires for now.
+  if (e?.type === 'pointerup') shoot(aimAt(p.x, p.y));
+}
+
+/* ---------- first frame ---------- */
+// Two rings, pre-rolled: one flares in the sheet, one beyond it breaks up.
+function preroll() {
+  seedN = 9173;
+  fire({ from: MUZZLE, dir: [1, 0.16, -0.05], R: 0.2, U: 0.95 });
+  for (let i = 0; i < 66; i++) step(1 / 60);
+  const b = rings[fire({ from: MUZZLE, dir: [1, -0.05, 0.02], R: 0.17, U: 0.95 })], s = SHEETS.across;
+  // Step until the second ring's centre reaches the sheet.
+  for (let i = 0; i < 240 && b.on && b.c[0] * s.n[0] + b.c[2] * s.n[2] < s.h; i++) step(1 / 60);
+}
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  layout();
+  preroll();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+wake();
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  act.pair();
+});
+
+new ResizeObserver(() => { layout(); still(); }).observe(stage);
+onQuality(() => { layout(); still(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>
