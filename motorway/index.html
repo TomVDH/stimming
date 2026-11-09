@@ -123,7 +123,7 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -1864,7 +1864,96 @@ const tilt0 = new ShaderPass({
     }`,
 });
 composer.addPass(tilt0);
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.4, 0.7);
+// A soft bloom: a 13-tap downsample chain, then tent upsamples.
+// No coarse level is ever stretched, so glows stay round, never square.
+class SoftBloom extends Pass {
+  constructor(levels = 7) {
+    super();
+    this.strength = 0.7; this.radius = 0.4; this.threshold = 0.8; this.full = true;
+    this.levels = levels; this.down = []; this.up = []; this.size = [1, 1];
+    const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    for (let i = 0; i < levels; i++) { this.down.push(rt()); this.up.push(rt()); }
+    const vs = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+    const tap13 = `
+      vec3 s(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+      vec3 down13() {
+        vec3 a = s(vec2(-2, -2)), b = s(vec2(0, -2)), c = s(vec2(2, -2)), d = s(vec2(-2, 0)), e = s(vec2(0, 0));
+        vec3 f = s(vec2(2, 0)), g = s(vec2(-2, 2)), h = s(vec2(0, 2)), i = s(vec2(2, 2));
+        vec3 j = s(vec2(-1, -1)), k = s(vec2(1, -1)), l = s(vec2(-1, 1)), m = s(vec2(1, 1));
+        return e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+      }`;
+    this.downMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uFirst: { value: 0 }, uTh: { value: 0.8 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uFirst, uTh; varying vec2 vUv; ${tap13}
+        void main() {
+          vec3 c = down13();
+          if (uFirst > 0.5) {
+            // A soft knee keeps faint light out without a hard edge.
+            float br = max(c.r, max(c.g, c.b)), knee = uTh * 0.5;
+            float soft = clamp(br - uTh + knee, 0.0, 2.0 * knee);
+            soft = soft * soft / (4.0 * knee + 1e-4);
+            c *= max(soft, br - uTh) / max(br, 1e-4);
+            c = min(c, vec3(20.0));
+          }
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.upMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uW: { value: 0.7 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tSrc, tBase; uniform vec2 uTexel; uniform float uW; varying vec2 vUv;
+        vec3 s(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+        void main() {
+          // A 3 by 3 tent widens each level smoothly.
+          vec3 t = s(vec2(-1, -1)) + 2.0 * s(vec2(0, -1)) + s(vec2(1, -1)) + 2.0 * s(vec2(-1, 0)) + 4.0 * s(vec2(0, 0))
+            + 2.0 * s(vec2(1, 0)) + s(vec2(-1, 1)) + 2.0 * s(vec2(0, 1)) + s(vec2(1, 1));
+          gl_FragColor = vec4(texture2D(tBase, vUv).rgb + t / 16.0 * uW, 1.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.mixMat = new THREE.ShaderMaterial({
+      uniforms: { tScene: { value: null }, tBloom: { value: null }, uK: { value: 0.7 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tScene, tBloom; uniform float uK; varying vec2 vUv;
+        void main() { vec4 c = texture2D(tScene, vUv); gl_FragColor = vec4(c.rgb + texture2D(tBloom, vUv).rgb * uK, c.a); }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.quad = new FullScreenQuad(null);
+  }
+  setSize(w, h) {
+    this.size = [w, h];
+    let cw = Math.max(1, Math.round(w / (this.full ? 1 : 2))), ch = Math.max(1, Math.round(h / (this.full ? 1 : 2)));
+    for (let i = 0; i < this.levels; i++) {
+      cw = Math.max(1, cw >> 1); ch = Math.max(1, ch >> 1);
+      this.down[i].setSize(cw, ch); this.up[i].setSize(cw, ch);
+    }
+  }
+  pass(renderer, mat, target) { this.quad.material = mat; renderer.setRenderTarget(target); this.quad.render(renderer); }
+  render(renderer, writeBuffer, readBuffer) {
+    const D = this.downMat.uniforms, Up = this.upMat.uniforms, n = this.levels;
+    D.uTh.value = this.threshold;
+    let src = readBuffer.texture, sw = this.size[0], sh = this.size[1];
+    for (let i = 0; i < n; i++) {
+      D.tSrc.value = src; D.uTexel.value.set(1 / sw, 1 / sh); D.uFirst.value = i === 0 ? 1 : 0;
+      this.pass(renderer, this.downMat, this.down[i]);
+      src = this.down[i].texture; sw = this.down[i].width; sh = this.down[i].height;
+    }
+    // Wider levels weigh by the radius; the smallest level seeds the climb.
+    let top = this.down[n - 1];
+    for (let i = n - 2; i >= 0; i--) {
+      Up.tSrc.value = top.texture; Up.tBase.value = this.down[i].texture;
+      Up.uTexel.value.set(1 / top.width, 1 / top.height); Up.uW.value = 0.35 + 0.65 * this.radius;
+      this.pass(renderer, this.upMat, this.up[i]);
+      top = this.up[i];
+    }
+    const M = this.mixMat.uniforms;
+    M.tScene.value = readBuffer.texture; M.tBloom.value = top.texture; M.uK.value = this.strength / 2.5;
+    this.pass(renderer, this.mixMat, this.renderToScreen ? null : writeBuffer);
+  }
+}
+const bloom = new SoftBloom();
 composer.addPass(bloom);
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uSeed: { value: 0 }, uScan: { value: 0 } },
@@ -1909,9 +1998,9 @@ function resize() {
   renderer.setSize(size.w, size.h, false);
   composer.setPixelRatio(pr);
   composer.setSize(size.w, size.h);
-  // Full detail renders the bloom at screen size, so glows stay round, not blocky.
-  const b = (bloomFull ? 1 : 0.5) * (rung > 1 ? 0.7 : 1);
-  bloom.resolution.set(size.w * pr * b, size.h * pr * b);
+  // Full detail starts the bloom chain at screen size; Half starts it at half.
+  bloom.full = bloomFull && rung < 2;
+  bloom.setSize(size.w * pr, size.h * pr);
   camera.aspect = size.w / size.h;
   camera.fov = camera.aspect < 0.8 ? 58 : 40;
   U.uPxK.value = (2 * Math.tan((camera.fov * Math.PI) / 360)) / size.h;
