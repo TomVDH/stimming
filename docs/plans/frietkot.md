@@ -185,6 +185,18 @@ Five visible controls: Sauce, three actions, Wind.
 - [x] Steam pools under the roof, waits behind the header, spills out under the awning, then drifts grey in the wind. Drifting loop at 30 fps; sleeps 60 s after input.
 - [ ] Commit: `Frietkot: steam through the lamplight`.
 
+### Task 3b: A deeper shack, and people (Tom, 2026-11-09)
+
+Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 2000s frietbaraks.
+
+- [x] The shack is 5 m wide and 3.6 m deep. Water-green mosaic, three menu boards (illegible), a lit drinks cooler, the fryer at the window, a serving counter beside it.
+- [x] A seating room on the right (zitgedeelte): steamed-up amber windows with soft seated shapes, a light box with a red band. A high standing table on the square.
+- [x] People are flat soft shapes on upright billboards, not modelled bodies: a coat, a head, two legs. Two staff inside follow the fryer and the queue. Customers walk or cycle in, wait at the window, leave with a cone, eat or smoke at the table. Some cyclists only pass, lamp lit. A staffer steps out to smoke now and then.
+- [x] Time-lapse feel: four echoes per figure, 0.1 s apart, and the walk steps at 10 fps.
+- [x] Backlit by the window: dark shapes with a thin rim. Long shadows run from their feet across the cobbles.
+- [x] The ember flares on each draw; thin smoke leaves the mouth.
+- [x] Traffic in Settings turns the arrivals on and off.
+
 ### Task 4: Sauce, cone, moths, traffic
 
 - [ ] The cone fills; the sauce lands in its colour.

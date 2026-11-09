@@ -134,16 +134,18 @@ const V3 = (a) => new THREE.Vector3(...a);
 /* ---------- the shack's measures, in metres ---------- */
 // The front faces +z. The service window is an opening in the front wall.
 const S = {
-  w: 3.4, d: 2.4, floor: 0.25, top: 2.6,
-  ap: [-1.3, 1.3, 1.05, 2.05],   // window x0, x1, y0, y1
+  x0: -2.5, x1: 2.5, z0: -2.4, floor: 0.25, top: 2.7,
+  ap: [-2.0, 0.9, 1.05, 2.05],   // window x0, x1, y0, y1
   apZ: 1.2,                      // front wall plane
-  lamp: [0, 2.5, -0.1],          // ceiling tube, inside
-  neonA: [-1.72, 2.645, 1.3], neonB: [1.72, 2.645, 1.3],
-  strip: [0, 2.0, 1.42],         // warm tube under the awning
-  vent: [1.1, 3.5, -0.7],
+  lamp: [-0.55, 2.6, -0.2],      // ceiling tube, inside
+  neonA: [-2.52, 2.745, 1.3], neonB: [2.52, 2.745, 1.3],
+  strip: [-0.55, 2.0, 1.42],     // warm tube under the awning
+  vent: [1.7, 3.6, -1.7],
 };
+// The seating room on the right: lower, with steamed-up windows.
+const A = { x0: 2.5, x1: 6.0, z0: -1.6, z1: 1.0, top: 2.45, wins: [[2.9, 4.1], [4.4, 5.6]], wy: [0.95, 1.95] };
 // The oil sits at a working height above the shack floor.
-const OIL_Y = 1.12, WELL_Z = 0.3, WELLS = [-0.72, 0.72];
+const OIL_Y = 1.12, WELL_Z = 0.3, WELLS = [-1.45, -0.5];
 
 /* ---------- light ---------- */
 // One uniform set feeds every surface, the shaft and the steam.
@@ -165,16 +167,19 @@ const U = {
   uTime: { value: 0 },
   uFlare: { value: 0 },
   // Outside, the window light reads brighter than the lamp's falloff gives.
-  uOut: { value: 9 },
+  uOut: { value: 6.5 },
+  uAnnexP: { value: new THREE.Vector3((A.x0 + A.x1) / 2, 1.45, A.z1 - 0.1) },
+  uAnnexCol: { value: new THREE.Vector3() },
 };
 // The window's warm light; a drop flares it for a moment.
 const LAMP = new THREE.Vector3(...oklchLinear(0.9, 0.07, 70));
 function setLight() {
   const f = 1 + 0.7 * U.uFlare.value;
-  U.uLampCol.value.copy(LAMP).multiplyScalar(5 * f);
+  U.uLampCol.value.copy(LAMP).multiplyScalar(7 * f);
   // What the lens sees through the window: the lit back wall and steam.
   U.uWin.value.copy(LAMP).multiplyScalar(1.4 * f);
   U.uStripCol.value.copy(LAMP).multiplyScalar(0.9);
+  U.uAnnexCol.value.copy(LAMP).multiplyScalar(1.1);
 }
 let neonKey = 'red';
 const neonLin = new THREE.Vector3();
@@ -187,7 +192,7 @@ function setNeon(k) {
 }
 
 const LIGHT = /* glsl */`
-uniform vec3 uLamp, uLampCol, uWin, uStrip, uStripCol, uNeonA, uNeonB, uNeonCol, uSky, uGround, uHaze;
+uniform vec3 uLamp, uLampCol, uWin, uStrip, uStripCol, uNeonA, uNeonB, uNeonCol, uSky, uGround, uHaze, uAnnexP, uAnnexCol;
 uniform vec4 uAp;
 uniform float uApZ, uHazeK, uOut;
 // Light from the ceiling tube passes the window opening only.
@@ -233,6 +238,10 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
   float dn2 = dot(Ln, Ln);
   vec3 ln = Ln * inversesqrt(dn2);
   c += alb * uNeonCol * (1.0 - inside) * max(dot(n, ln), 0.0) / (dn2 + 0.08);
+  // The seating room's windows wash the square in front of them.
+  vec3 La = uAnnexP - p;
+  float da2 = dot(La, La);
+  c += alb * uAnnexCol * (1.0 - inside) * step(uAnnexP.z, p.z) * max(dot(n, La * inversesqrt(da2)), 0.0) / (da2 + 0.5);
   // Sky and ground bounce.
   c += alb * mix(uGround, uSky, 0.5 + 0.5 * n.y);
   if (gloss > 0.0) {
@@ -344,7 +353,7 @@ function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
       }
       if (uTiles > 0.0) {
         // Grout lines, filtered so they do not shimmer.
-        vec2 g = vec2(vP.x + vP.z, vP.y) / 0.15;
+        vec2 g = vec2(vP.x + vP.z, vP.y) / 0.06;
         vec2 t = abs(fract(g) - 0.5), fw = fwidth(g) + 1e-4;
         vec2 line = 1.0 - smoothstep(0.47 - fw, 0.47 + fw, t);
         alb *= mix(0.72, 1.0, line.x * line.y);
@@ -368,7 +377,72 @@ const M = {
   steel: surface({ alb: lin(0.62, 0.01, 250), inside: 1 }),
   dark: surface({ alb: lin(0.14, 0.01, 260), inside: 1 }),
   gable: surface({ alb: lin(0.2, 0.012, 260) }),
+  cooler: new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.85, 0.04, 230).map(v => v * 1.6)) }),
 };
+// Menu boards: white letters on black, too far off to read.
+M.menu = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${NOISE}
+  uniform vec3 uLampCol;
+  varying vec3 vP, vN;
+  void main() {
+    float row = floor((vP.y - 1.45) / 0.055);
+    float rx = fract((vP.y - 1.45) / 0.055);
+    // Each line holds a word on the left and a price on the right.
+    float u = fract((vP.x + 2.2) / 1.05);
+    float len = 0.3 + 0.35 * hash12(vec2(row, floor((vP.x + 2.2) / 1.05)));
+    float word = step(0.08, u) * step(u, len) + step(0.82, u) * step(u, 0.93);
+    float glyph = step(0.3, hash12(floor(vec2(vP.x * 90.0, row))));
+    float ink = word * glyph * step(0.3, rx) * step(rx, 0.75) * step(1.0, row) * step(row, 9.0);
+    vec3 c = mix(vec3(0.012), vec3(0.75, 0.74, 0.7), ink) * uLampCol * 0.12;
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+// The seating room's glass: warm light through condensation, people as soft shapes.
+const annexGlass = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${NOISE}
+  uniform float uTime;
+  varying vec3 vP, vN;
+  // Soft shapes: the fog blurs everything behind the glass.
+  float blob(vec2 p, vec2 c, vec2 r) { return smoothstep(1.6, 0.2, length((p - c) / r)); }
+  void main() {
+    vec2 p = vP.xy;
+    vec3 warm = vec3(1.0, 0.55, 0.24);
+    float fog = 0.55 + 0.45 * fbm(p * 3.0 + vec2(0.0, uTime * 0.02));
+    // Drops run down through the fog in clear streaks.
+    float streak = smoothstep(0.92, 1.0, hash12(vec2(floor(p.x * 40.0), 1.0))) * fbm(vec2(p.x * 40.0, p.y * 3.0));
+    // Two seated figures: a head and shoulders each, blurred by the fog.
+    float sit = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      vec2 c = vec2(3.3 + fi * 1.05 + 0.05 * sin(uTime * 0.3 + fi), 1.32 + 0.02 * sin(uTime * 0.7 + fi * 2.0));
+      sit = max(sit, max(blob(p, c + vec2(0.0, 0.27), vec2(0.1, 0.12)), blob(p, c, vec2(0.24, 0.2))));
+    }
+    // The pane is brightest in its middle, where the lamp inside hangs.
+    float x = fract((p.x - 2.9) / 1.5), mid = 1.0 - 0.6 * pow(abs(x - 0.4) * 2.0, 2.0);
+    vec3 c = warm * (0.35 + 0.45 * fog) * (1.0 - 0.45 * sit) * (1.0 - 0.4 * streak) * mid;
+    gl_FragColor = vec4(c * 0.16, 1.0);
+  }`,
+});
+// The light box over the seating room: warm white over a red band.
+const lightBox = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vec3 white = vec3(1.0, 0.9, 0.74) * 0.62, red = vec3(0.9, 0.08, 0.05) * 0.7;
+    vec3 c = mix(red, white, step(0.36, vUv.y));
+    // The tubes behind the panel make it brighter in the middle.
+    c *= 0.75 + 0.35 * sin(vUv.x * 3.1416);
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
 const shack = new THREE.Group();
 scene.add(shack);
 // A box from its corner bounds.
@@ -379,39 +453,45 @@ function box(x0, x1, y0, y1, z0, z1, mat, parent = shack) {
   return m;
 }
 {
-  const [ax0, ax1, ay0, ay1] = S.ap, hw = S.w / 2, hd = S.d / 2, t = 0.06, Z = S.apZ;
+  const [ax0, ax1, ay0, ay1] = S.ap, t = 0.06, Z = S.apZ, X0 = S.x0, X1 = S.x1, Z0 = S.z0;
   // Plinth, set back so the shack floats a little.
-  box(-hw + 0.12, hw - 0.12, 0, S.floor, -hd + 0.12, hd - 0.12, M.plinth);
+  box(X0 + 0.12, X1 - 0.12, 0, S.floor, Z0 + 0.12, Z - 0.12, M.plinth);
   // Shell: front wall in four pieces round the window, two sides, the back.
-  box(-hw, hw, S.floor, ay0, Z - t, Z, M.paint);
-  box(-hw, hw, ay1, S.top, Z - t, Z, M.paint);
-  box(-hw, ax0, ay0, ay1, Z - t, Z, M.paint);
-  box(ax1, hw, ay0, ay1, Z - t, Z, M.paint);
-  box(-hw, -hw + t, S.floor, S.top, -hd, Z - t, M.paint);
-  box(hw - t, hw, S.floor, S.top, -hd, Z - t, M.paint);
-  box(-hw, hw, S.floor, S.top, -hd, -hd + t, M.paint);
-  // Roof slab with a small overhang, and its dark edge band.
-  box(-hw - 0.06, hw + 0.06, S.top, S.top + 0.08, -hd - 0.06, Z + 0.08, M.trim);
-  // Inside: back wall tiles, side walls, ceiling, floor.
-  box(-hw + t, hw - t, S.floor, S.top, -hd + t, -hd + t + 0.01, M.inWall);
-  box(-hw + t, -hw + t + 0.01, S.floor, S.top, -hd + t, Z - t, M.inPlain);
-  box(hw - t - 0.01, hw - t, S.floor, S.top, -hd + t, Z - t, M.inPlain);
-  box(-hw + t, hw - t, S.top - 0.01, S.top, -hd + t, Z - t, M.inPlain);
-  // The prep counter along the back, its hood above.
-  box(-1.5, 1.5, S.floor, 0.95, -hd + t, -0.5, M.steel);
-  box(-1.5, 1.5, 1.95, 2.3, -hd + t, -0.55, M.steel);
+  box(X0, X1, S.floor, ay0, Z - t, Z, M.paint);
+  box(X0, X1, ay1, S.top, Z - t, Z, M.paint);
+  box(X0, ax0, ay0, ay1, Z - t, Z, M.paint);
+  box(ax1, X1, ay0, ay1, Z - t, Z, M.paint);
+  box(X0, X0 + t, S.floor, S.top, Z0, Z - t, M.paint);
+  box(X1 - t, X1, S.floor, S.top, Z0, Z - t, M.paint);
+  box(X0, X1, S.floor, S.top, Z0, Z0 + t, M.paint);
+  // Roof slab with a small overhang.
+  box(X0 - 0.06, X1 + 0.06, S.top, S.top + 0.08, Z0 - 0.06, Z + 0.08, M.trim);
+  // Inside: mosaic on the back wall, plain sides, ceiling.
+  box(X0 + t, X1 - t, S.floor, S.top, Z0 + t, Z0 + t + 0.01, M.inWall);
+  box(X0 + t, X0 + t + 0.01, S.floor, S.top, Z0 + t, Z - t, M.inPlain);
+  box(X1 - t - 0.01, X1 - t, S.floor, S.top, Z0 + t, Z - t, M.inPlain);
+  box(X0 + t, X1 - t, S.top - 0.01, S.top, Z0 + t, Z - t, M.inPlain);
+  // The prep counter along the back, its hood, and the menu boards above it.
+  box(X0 + t, X1 - t, S.floor, 0.95, Z0 + t, Z0 + 0.7, M.steel);
+  box(X0 + t, -0.2, 2.15, 2.45, Z0 + t, Z0 + 0.65, M.steel);
+  for (const [x0, x1] of [[-2.2, -1.25], [-1.15, -0.2], [-0.1, 0.85]]) box(x0, x1, 1.45, 2.05, Z0 + t + 0.01, Z0 + t + 0.04, M.menu);
+  // A drinks cooler with a lit door at the back right.
+  box(1.05, 1.75, S.floor, 2.0, Z0 + t, Z0 + 0.7, M.dark);
+  box(1.1, 1.7, 0.4, 1.95, Z0 + 0.7, Z0 + 0.71, M.cooler);
   // The fryer stands just inside the window, so the queue sees it boil.
-  box(-1.5, 1.5, S.floor, OIL_Y - 0.005, WELL_Z - 0.26, WELL_Z + 0.26, M.steel);
+  box(-1.98, 0.02, S.floor, OIL_Y - 0.005, WELL_Z - 0.26, WELL_Z + 0.26, M.steel);
   // A raised rim round each well.
   for (const x of WELLS) {
     box(x - 0.45, x + 0.45, OIL_Y - 0.01, OIL_Y + 0.03, WELL_Z + 0.2, WELL_Z + 0.24, M.steel);
     box(x - 0.45, x + 0.45, OIL_Y - 0.01, OIL_Y + 0.03, WELL_Z - 0.24, WELL_Z - 0.2, M.steel);
   }
+  // The serving counter beside the fryer.
+  box(0.05, X1 - t, S.floor, 1.0, WELL_Z - 0.26, WELL_Z + 0.26, M.steel);
   // The serving shelf inside, and the ledge outside.
-  box(-hw + t, hw - t, 1.0, 1.05, 0.85, Z - t, M.steel);
+  box(X0 + t, X1 - t, 1.0, 1.05, 0.85, Z - t, M.steel);
   box(ax0 - 0.1, ax1 + 0.1, 1.02, 1.07, Z, Z + 0.28, M.steelOut);
   // Roof box for the neon glyph.
-  box(-1.15, 1.15, S.top + 0.08, S.top + 0.72, 0.9, 1.14, M.trim);
+  box(-1.4, 0.3, S.top + 0.08, S.top + 0.72, 0.9, 1.14, M.trim);
   // Roof vent.
   const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.82, 12), M.trim);
   vent.position.set(S.vent[0], S.top + 0.08 + 0.41, S.vent[2]);
@@ -425,6 +505,33 @@ function box(x0, x1, y0, y1, z0, z1, mat, parent = shack) {
   flap.rotation.x = Math.PI / 2 - 0.44;
   box(ax0 - 0.12, ax1 + 0.12, 0, 0.95, -0.02, 0.02, M.awning, flap);
   shack.add(flap);
+
+  // The seating room: front wall round two windows, a roof, a light box.
+  const [w0, w1] = A.wins, [wy0, wy1] = A.wy;
+  box(A.x0, A.x1, S.floor, wy0, A.z1 - t, A.z1, M.paint);
+  box(A.x0, A.x1, wy1, A.top, A.z1 - t, A.z1, M.paint);
+  box(A.x0, w0[0], wy0, wy1, A.z1 - t, A.z1, M.paint);
+  box(w0[1], w1[0], wy0, wy1, A.z1 - t, A.z1, M.paint);
+  box(w1[1], A.x1, wy0, wy1, A.z1 - t, A.z1, M.paint);
+  box(A.x1 - t, A.x1, S.floor, A.top, A.z0, A.z1 - t, M.paint);
+  box(A.x0, A.x1, S.floor, A.top, A.z0, A.z0 + t, M.paint);
+  box(A.x0 - 0.04, A.x1 + 0.06, A.top, A.top + 0.07, A.z0 - 0.06, A.z1 + 0.06, M.trim);
+  box(A.x0 + 0.1, A.x1 - 0.1, 0, S.floor, A.z0 + 0.1, A.z1 - 0.1, M.plinth);
+  for (const [x0, x1] of A.wins) {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, wy1 - wy0), annexGlass);
+    g.position.set((x0 + x1) / 2, (wy0 + wy1) / 2, A.z1 - 0.02);
+    shack.add(g);
+  }
+  const lb = new THREE.Mesh(new THREE.PlaneGeometry(A.x1 - A.x0 - 0.3, 0.32), lightBox);
+  lb.position.set((A.x0 + A.x1) / 2, A.top + 0.27, A.z1 + 0.03);
+  shack.add(lb);
+  box(A.x0 + 0.1, A.x1 - 0.1, A.top + 0.07, A.top + 0.47, A.z1 - 0.06, A.z1 + 0.02, M.trim);
+
+  // A high standing table on the square, in the window light.
+  box(1.88, 1.92, 0, 1.08, 3.38, 3.42, M.trim);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.03, 20), M.steelOut);
+  top.position.set(1.9, 1.1, 3.4);
+  shack.add(top);
 }
 
 /* ---------- fryer ---------- */
@@ -692,16 +799,16 @@ const tube = (pts, r = 0.016) => new THREE.TubeGeometry(new THREE.CatmullRomCurv
     shack.add(e);
   }
   // The glyph on the roof box: a cone, and fries standing up out of it.
-  const z = 1.165, y0 = S.top + 0.14;
-  const cone = [[-0.2, y0 + 0.44, z], [0, y0, z], [0.2, y0 + 0.44, z], [-0.2, y0 + 0.44, z]];
+  const z = 1.165, y0 = S.top + 0.14, gx = -0.55;
+  const cone = [[gx - 0.2, y0 + 0.44, z], [gx, y0, z], [gx + 0.2, y0 + 0.44, z], [gx - 0.2, y0 + 0.44, z]];
   shack.add(new THREE.Mesh(tube(cone), neonMat));
   const friesMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.86, 0.17, 88).map(v => v * 7)) });
   for (const [x, h] of [[-0.11, 0.14], [-0.04, 0.2], [0.04, 0.16], [0.11, 0.12]]) {
-    shack.add(new THREE.Mesh(tube([[x, y0 + 0.47, z], [x + x * 0.25, y0 + 0.47 + h, z]], 0.013), friesMat));
+    shack.add(new THREE.Mesh(tube([[gx + x, y0 + 0.47, z], [gx + x * 1.25, y0 + 0.47 + h, z]], 0.013), friesMat));
   }
   // The warm tube under the awning.
   const stripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...LAMP.toArray().map(v => v * 6)) });
-  shack.add(new THREE.Mesh(tube([[-1.1, S.strip[1] + 0.05, S.apZ + 0.12], [1.1, S.strip[1] + 0.05, S.apZ + 0.12]], 0.014), stripMat));
+  shack.add(new THREE.Mesh(tube([[S.ap[0] + 0.2, S.strip[1] + 0.05, S.apZ + 0.12], [S.ap[1] - 0.2, S.strip[1] + 0.05, S.apZ + 0.12]], 0.014), stripMat));
 }
 
 /* ---------- the far side of the square ---------- */
@@ -770,7 +877,7 @@ scene.add(sky);
 
 /* ---------- the light shaft ---------- */
 // Haze glows where the window light passes: a short ray march in a box.
-const SHAFT = { lo: [-8, 0.0, S.apZ], hi: [8, 2.4, 10] };
+const SHAFT = { lo: [-11, 0.0, S.apZ], hi: [9, 2.4, 12] };
 const shaftMat = new THREE.ShaderMaterial({
   uniforms: { ...U, uLo: { value: V3(SHAFT.lo) }, uHi: { value: V3(SHAFT.hi) }, uDens: { value: 0.0022 } },
   side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: true,
@@ -865,7 +972,7 @@ const steamMat = new THREE.ShaderMaterial({
     float g = 0.6;
     float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5);
     // Inside the shack the tube lights the steam directly.
-    float inside = step(vP.z, uApZ) * step(abs(vP.x), 1.64) * step(vP.y, 2.6) * step(-1.14, vP.z);
+    float inside = step(vP.z, uApZ) * step(${S.x0.toFixed(2)}, vP.x) * step(vP.x, ${S.x1.toFixed(2)}) * step(vP.y, ${S.top.toFixed(2)}) * step(${S.z0.toFixed(2)}, vP.z);
     // A floor on the phase keeps side-lit steam from going grey.
     vec3 c = uLampCol * mix(uOut * 0.22 * apMask(vP), 0.6, inside) * (0.5 + ph) * 0.12 / (d2 + 0.3);
     // The tube under the awning lights steam as it rolls out.
@@ -902,7 +1009,7 @@ function emit(src, n, { speed = 0.3, spread = 0.06, size = 0.12, life = 6, kind 
 }
 // Steam from one well; out flings it toward the window.
 const emitWell = (w, n, o = {}) => emit([w.x, OIL_Y + 0.06, WELL_Z], n, { speed: 0.5, spread: 0.6, size: 0.1, life: 6.5, kind: 1, ...o });
-const SHACK_X = S.w / 2 - 0.08, ROOF = S.top - 0.1, HEADER = S.ap[3] - 0.05;
+const ROOF = S.top - 0.1, HEADER = S.ap[3] - 0.05;
 function stepSteam(dt, plume = 1) {
   // The vent breathes a thin plume while the toy is awake.
   emitAcc += dt * 9 * plume;
@@ -921,7 +1028,7 @@ function stepSteam(dt, plume = 1) {
     const drag = 0.9 + q.size * 1.5;
     // Warm air keeps a little lift after the steam itself has cooled.
     q.v.y += (0.9 * q.T + 0.18 - drag * q.v.y * 0.5) * dt;
-    const inside = q.p.z < S.apZ && Math.abs(q.p.x) < SHACK_X && q.p.y < S.top;
+    const inside = q.p.z < S.apZ && q.p.z > S.z0 && q.p.x > S.x0 && q.p.x < S.x1 && q.p.y < S.top;
     if (inside) {
       // Steam pools under the roof and spills toward the window.
       q.v.x -= q.v.x * dt * 2;
@@ -930,24 +1037,26 @@ function stepSteam(dt, plume = 1) {
       if (q.p.y > ROOF) { q.p.y = ROOF; q.v.y = Math.min(q.v.y, 0); }
       // The wall above the window holds it back until it sinks below the header.
       if (q.p.z > S.apZ - 0.1 && q.p.y > HEADER) { q.v.z = Math.min(q.v.z, 0); q.v.y -= 1.2 * dt; }
-      q.p.x = Math.max(-SHACK_X + 0.05, Math.min(SHACK_X - 0.05, q.p.x));
-      q.p.z = Math.max(-1.08, q.p.z);
+      // Beside the window the front wall holds it in.
+      if (q.p.z > S.apZ - 0.1 && (q.p.x < S.ap[0] + 0.1 || q.p.x > S.ap[1] - 0.1)) { q.v.z = Math.min(q.v.z, 0); q.v.x += Math.sign(S.lamp[0] - q.p.x) * 1.5 * dt; }
+      q.p.x = Math.max(S.x0 + 0.15, Math.min(S.x1 - 0.15, q.p.x));
+      q.p.z = Math.max(S.z0 + 0.12, q.p.z);
       // Crowded steam spreads sideways.
       q.size += dt * 0.12;
     } else {
       // Under the awning, steam slides out along the flap.
-      if (q.p.z > S.apZ && q.p.z < 2.1 && q.p.y > 1.9 && q.p.y < 2.6 && Math.abs(q.p.x) < 1.45) {
+      if (q.p.z > S.apZ && q.p.z < 2.1 && q.p.y > 1.9 && q.p.y < 2.6 && q.p.x > S.ap[0] - 0.1 && q.p.x < S.ap[1] + 0.1) {
         const lid = 2.08 + (q.p.z - 1.24) * 0.466 - 0.08;
         if (q.p.y > lid) { q.p.y = lid; q.v.y = Math.min(q.v.y, 0); q.v.z += 1.6 * dt; }
       }
       q.v.x += (windAt(q.p.y) - q.v.x) * drag * dt * 0.8;
       q.v.z += (-q.v.z * drag * 0.4 + windAt(q.p.y) * 0.15) * dt;
       // In the open, dry night air takes the steam up faster.
-      if (q.kind) q.age += dt * 0.7;
+      if (q.kind === 1) q.age += dt * 0.7;
     }
     q.p.addScaledVector(q.v, dt);
     q.size += dt * (0.08 + 0.18 * (1 - q.T));
-    if (q.age < q.life) { livePuffs++; if (q.kind) fryPuffs++; }
+    if (q.age < q.life) { livePuffs++; if (q.kind === 1) fryPuffs++; }
   }
 }
 function writeSteam() {
@@ -957,12 +1066,346 @@ function writeSteam() {
     const u = live ? q.age / q.life : 1;
     P.set([q.p.x, q.p.y, q.p.z, live ? q.size : 0], i * 4);
     // Clear at the source; white once it condenses, a few cm out; gone as it mixes.
-    F[i * 2] = live ? smooth(0.1, 0.4, q.age) * (1 - smooth(0.45, 1, u)) * (q.kind ? 0.9 : 0.7) : 0;
+    // Cigarette smoke is thin; it shows no condensation gap.
+    F[i * 2] = live ? (q.kind === 2 ? 0.35 * (1 - u) : smooth(0.1, 0.4, q.age) * (1 - smooth(0.45, 1, u)) * (q.kind ? 0.9 : 0.7)) : 0;
     F[i * 2 + 1] = q.seed;
   });
   aPos.needsUpdate = aFade.needsUpdate = true;
 }
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/* ---------- people ---------- */
+// Flat soft shapes, not modelled bodies. Each leaves a short trail of echoes,
+// and the walk steps at 10 fps, so the square plays like a slow time-lapse.
+const ECHO = 5, FIGS = 14, ECHO_DT = 0.1;
+// kind 0: on foot; 1: on a bike; 2: a parked bike; 3: staff inside; 4: smoking.
+const figQuad = new THREE.PlaneGeometry(2, 2.1).translate(0, 1.05, 0);
+const figGeo = new THREE.InstancedBufferGeometry();
+figGeo.index = figQuad.index;
+figGeo.setAttribute('position', figQuad.getAttribute('position'));
+const fPos = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * ECHO * 4), 4);
+const fPose = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * ECHO * 4), 4);
+figGeo.setAttribute('aPos', fPos);
+figGeo.setAttribute('aPose', fPose);
+figGeo.instanceCount = FIGS * ECHO;
+const figMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aPos;
+  attribute vec4 aPose;
+  varying vec3 vP;
+  varying vec2 vQ;
+  varying vec4 vPose;
+  varying float vA;
+  void main() {
+    vPose = aPose;
+    vA = aPos.w;
+    // Mirror the shape to face the way it moves.
+    vQ = vec2(position.x * aPose.z, position.y);
+    // Upright billboards: they turn to the lens round the vertical only.
+    vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
+    vP = aPos.xyz + right * position.x + vec3(0.0, position.y, 0.0);
+    gl_Position = aPos.w > 0.001 ? projectionMatrix * viewMatrix * vec4(vP, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  ${LIGHT}
+  varying vec3 vP;
+  varying vec2 vQ;
+  varying vec4 vPose;
+  varying float vA;
+  float cap(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - r;
+  }
+  float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+  // A coat, a head and two legs that swing with the step.
+  float walker(vec2 p, float ph) {
+    float s = sin(ph), bob = 0.03 * abs(cos(ph));
+    float d = smin(length(p - vec2(0.03, 1.6 + bob)) - 0.115, cap(p, vec2(0.0, 0.92 + bob), vec2(0.0, 1.36 + bob), 0.17), 0.07);
+    return smin(d, min(cap(p, vec2(0.0, 0.9), vec2(0.17 * s, 0.05), 0.07), cap(p, vec2(0.0, 0.9), vec2(-0.17 * s, 0.05), 0.07)), 0.08);
+  }
+  float bike(vec2 p) {
+    float w = min(abs(length(p - vec2(-0.52, 0.33)) - 0.3), abs(length(p - vec2(0.52, 0.33)) - 0.3)) - 0.022;
+    float f = min(min(cap(p, vec2(-0.52, 0.33), vec2(-0.12, 0.86), 0.022), cap(p, vec2(-0.12, 0.8), vec2(0.42, 0.86), 0.022)),
+                  min(cap(p, vec2(0.42, 0.95), vec2(0.52, 0.33), 0.022), cap(p, vec2(-0.52, 0.33), vec2(0.0, 0.33), 0.022)));
+    return min(w, f);
+  }
+  float rider(vec2 p, float ph) {
+    float d = smin(length(p - vec2(0.24, 1.66)) - 0.11, cap(p, vec2(-0.12, 0.98), vec2(0.14, 1.44), 0.16), 0.07);
+    vec2 pedal = vec2(0.0, 0.33) + 0.15 * vec2(cos(ph), sin(ph));
+    d = smin(d, cap(p, vec2(-0.1, 0.95), pedal, 0.07), 0.06);
+    return smin(d, cap(p, vec2(0.1, 1.35), vec2(0.42, 0.98), 0.05), 0.05);
+  }
+  void main() {
+    if (vA < 0.001) discard;
+    float kind = vPose.x, ph = vPose.y, extra = vPose.w;
+    vec2 p = vQ;
+    float d = 1e3;
+    if (kind < 0.5 || kind > 2.5) d = walker(p, ph);
+    if (kind > 0.5 && kind < 2.5) d = bike(p);
+    if (kind > 0.5 && kind < 1.5) d = min(d, rider(p, ph));
+    // A paper cone, or a cigarette held low and lifted to the mouth.
+    vec2 hand = kind > 3.5 ? mix(vec2(0.25, 1.08), vec2(0.17, 1.5), smoothstep(0.3, 0.9, extra)) : vec2(0.27, 1.1);
+    float cone = (kind < 0.5 && extra > 0.5) ? cap(p, hand, hand + vec2(0.02, 0.16), 0.045) : 1e3;
+    // Soft edges: the shapes are seen through haze and a slow shutter.
+    // Staff blur more: they stand behind steam and glass.
+    float soft = kind > 2.5 && kind < 3.5 ? 0.09 : 0.04;
+    float a = smoothstep(soft, -soft, min(d, cone));
+    if (a < 0.003 && kind < 3.5) discard;
+    // The light that reaches the figure, from the window and the neon.
+    vec3 L = uLamp - vP;
+    float inside = step(vP.z, uApZ);
+    // back: the window behind them; front: the neon and the strip above.
+    vec3 back = uLampCol * mix(apMask(vP) * uOut, 1.0, inside) / (dot(L, L) + 0.3);
+    vec3 Ln = neonPt(vP) - vP;
+    vec3 front = (uNeonCol / (dot(Ln, Ln) + 0.1) + uStripCol * 0.4 / (dot(uStrip - vP, uStrip - vP) + 0.2)) * (1.0 - inside);
+    vec3 lit = back;
+    // Outside: dark shapes with a rim of light; inside: soft, lamp-lit shapes.
+    // Lit from behind, a figure is dark with a thin rim of light.
+    float rim = smoothstep(-0.05, 0.0, d);
+    // Inside, the lamp sits above: heads and shoulders catch it, legs fall dark.
+    float fall = smoothstep(0.6, 1.7, vQ.y);
+    vec3 c = mix(vec3(0.003) + front * 0.03 + back * rim * 0.025, back * (0.015 + 0.05 * fall), inside);
+    if (cone < 0.0) c = (back * 0.05 + front * 0.2) + uSky;
+    // The ember glows hot, brighter on each draw.
+    float ember = exp(-dot(p - hand, p - hand) / 0.0009) * step(3.5, kind);
+    c += vec3(1.0, 0.32, 0.06) * ember * (1.5 + 10.0 * extra);
+    // A bike lamp, white at the front.
+    vec2 lamp = vec2(0.5, 0.9);
+    float bl = exp(-dot(p - lamp, p - lamp) / 0.0012) * step(0.5, kind) * step(kind, 1.5);
+    c += vec3(1.0, 0.95, 0.85) * bl * 6.0;
+    a = max(a, max(ember, bl) * 0.9);
+    c = haze(c, vP);
+    gl_FragColor = vec4(c * a * vA, a * vA);
+  }`,
+});
+const figs = new THREE.Mesh(figGeo, figMat);
+figs.frustumCulled = false;
+figs.renderOrder = 2;
+scene.add(figs);
+
+// Long shadows: the window light throws each figure out across the cobbles.
+const shQuad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
+const shGeo = new THREE.InstancedBufferGeometry();
+shGeo.index = shQuad.index;
+shGeo.setAttribute('position', shQuad.getAttribute('position'));
+const sAttr = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * 4), 4);
+const sAttr2 = new THREE.InstancedBufferAttribute(new Float32Array(FIGS * 2), 2);
+shGeo.setAttribute('aS', sAttr);
+shGeo.setAttribute('aS2', sAttr2);
+shGeo.instanceCount = FIGS;
+const shMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  vertexShader: /* glsl */`
+  attribute vec4 aS;   // foot x, foot z, angle, length
+  attribute vec2 aS2;  // strength, unused
+  varying vec2 vUv;
+  varying float vK;
+  void main() {
+    vUv = vec2(position.x, position.z);
+    vK = aS2.x;
+    float c = cos(aS.z), s = sin(aS.z);
+    // Narrow at the feet, wider at the head.
+    vec2 q = vec2(position.x * aS.w, position.z * mix(0.32, 0.6, position.x));
+    vec3 w = vec3(aS.x + q.x * c - q.y * s, 0.01, aS.y + q.x * s + q.y * c);
+    gl_Position = vK > 0.001 ? projectionMatrix * viewMatrix * vec4(w, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vUv;
+  varying float vK;
+  void main() {
+    float a = vK * smoothstep(0.5, 0.15, abs(vUv.y)) * (1.0 - 0.7 * vUv.x) * smoothstep(0.0, 0.05, vUv.x);
+    gl_FragColor = vec4(0.0, 0.0, 0.0, a);
+  }`,
+});
+const shadows = new THREE.Mesh(shGeo, shMat);
+shadows.frustumCulled = false;
+shadows.renderOrder = 1;
+scene.add(shadows);
+
+// The window light at a point, as the shaders see it.
+function apMaskJS(x, y, z) {
+  if (z <= S.apZ) return 0;
+  const L = S.lamp, t = (S.apZ - L[2]) / (z - L[2]);
+  const qx = L[0] + t * (x - L[0]), qy = L[1] + t * (y - L[1]);
+  const sx = 0.55 * (1 - t) + 0.01, sy = 0.12 * (1 - t) + 0.01;
+  const st = (a, b, v) => smooth(a, b, v);
+  return st(S.ap[0] - sx, S.ap[0] + sx, qx) * (1 - st(S.ap[1] - sx, S.ap[1] + sx, qx)) * st(S.ap[2] - sy, S.ap[2] + sy, qy) * (1 - st(S.ap[3] - sy, S.ap[3] + sy, qy));
+}
+
+// Where people stand: at the window, by the bike rack, at the standing table.
+const QUEUE = [-1.6, -0.55, 0.45].map(x => ({ x, z: 2.0, who: null }));
+const RACK = { x: -3.9, z: 2.6 };
+const TABLE = { x: 1.9, z: 3.4 };
+const EDGE = 15;
+const people = [];
+let traffic = true, spawnIn = 3;
+const WALK = 1.35 * 1.3, RIDE = 4.5;
+function person(o) {
+  const f = { kind: 0, x: 0, z: 0, y: 0, face: 1, ph: 0, path: [], speed: WALK, state: 'idle', t: 0, hold: 0, ember: 0, trail: [], trailT: 0, alpha: 0, gone: false, ...o };
+  people.push(f);
+  return f;
+}
+const go = (f, pts, state) => { f.path = pts.map(([x, z]) => ({ x, z })); f.state = state; };
+function freeSpot() { return QUEUE.filter(q => !q.who).sort(() => rnd() - 0.5)[0] ?? null; }
+function spawn() {
+  const side = rnd() < 0.5 ? -1 : 1, z = 5 + rnd() * 5;
+  // Some cyclists only pass by, their lamp sweeping the square.
+  if (rnd() < 0.3) {
+    const f = person({ kind: 1, x: side * EDGE - 1, z, speed: RIDE, alpha: 1 });
+    go(f, [[-side * EDGE - 1, z + (rnd() - 0.5) * 2]], 'pass');
+    return;
+  }
+  const spot = freeSpot();
+  if (!spot) return;
+  const bike = rnd() < 0.35;
+  const f = person({ kind: bike ? 1 : 0, x: side * EDGE - 1, z, speed: bike ? RIDE : WALK, alpha: 1, spot, bike });
+  spot.who = f;
+  if (bike) go(f, [[RACK.x + side * 2, RACK.z + 1.5], [RACK.x, RACK.z]], 'park');
+  else go(f, [[spot.x, spot.z + 1.2], [spot.x, spot.z]], 'order');
+}
+// The two in the shack: one minds the fryer, one serves.
+const staff = [
+  person({ kind: 3, x: -1.0, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work' }),
+  person({ kind: 3, x: 0.6, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work' }),
+];
+let breakIn = 40;
+function stepPeople(dt) {
+  if (traffic) {
+    spawnIn -= dt;
+    if (spawnIn <= 0) { spawn(); spawnIn = 4 + rnd() * 7; }
+  }
+  // Staff targets: the fryer that boils, the first customer waiting.
+  const hot = wells.filter(w => w.inOil).sort((a, b) => b.boil - a.boil)[0];
+  const waiting = people.find(f => f.state === 'wait');
+  if (staff[0].state === 'work') staff[0].tx = hot ? hot.x : -1.0 + 0.4 * Math.sin(simT * 0.2);
+  if (staff[1].state === 'work') staff[1].tx = waiting ? Math.max(-1.9, Math.min(2.1, waiting.x)) : 0.6 + 0.8 * Math.sin(simT * 0.13 + 2);
+  // Now and then the server steps out for a smoke by the side wall.
+  breakIn -= dt;
+  if (breakIn <= 0 && staff[1].state === 'work' && !waiting) {
+    staff[1].state = 'out';
+    breakIn = 60 + rnd() * 40;
+    person({ kind: 4, x: S.x0 - 0.5, z: 1.7, alpha: 1, state: 'smoke', t: 14 + rnd() * 6, staffer: staff[1], face: 1 });
+  }
+  for (const f of people) {
+    if (f.kind === 3) {
+      if (f.state === 'out') { f.alpha = Math.max(0, f.alpha - dt * 3); continue; }
+      f.alpha = Math.min(1, f.alpha + dt * 3);
+      const dx = (f.tx ?? f.x) - f.x;
+      const v = Math.sign(dx) * Math.min(Math.abs(dx) * 3, f.speed);
+      f.x += v * dt;
+      if (Math.abs(v) > 0.05) { f.face = Math.sign(v); f.ph += Math.abs(v) * dt * 6; }
+      continue;
+    }
+    if (f.path.length) {
+      const q = f.path[0], dx = q.x - f.x, dz = q.z - f.z, d = Math.hypot(dx, dz);
+      const step = f.speed * dt;
+      if (Math.abs(dx) > 0.01) f.face = Math.sign(dx);
+      f.ph += step * (f.kind === 1 ? 2.2 : 5.2);
+      if (d <= step) { f.x = q.x; f.z = q.z; f.path.shift(); }
+      else { f.x += dx / d * step; f.z += dz / d * step; }
+      if (f.path.length) continue;
+      arrive(f);
+    } else {
+      f.t -= dt;
+      if (f.state === 'wait' && f.t <= 0) served(f);
+      else if (f.state === 'eat' && f.t <= 0) leave(f);
+      else if (f.state === 'smoke') {
+        // A draw every few seconds: the ember flares, then smoke leaves the mouth.
+        const cyc = (f.t * 0.23 + f.x) % 1;
+        const was = f.ember;
+        f.ember = cyc < 0.25 ? Math.sin(cyc / 0.25 * Math.PI) : 0;
+        if (was > 0.5 && f.ember <= 0.5) emit([f.x + 0.2 * f.face, 1.5, f.z], 3, { speed: 0.15, spread: 0.05, size: 0.06, life: 3, kind: 2 });
+        if (f.t <= 0) {
+          if (f.staffer) { f.staffer.state = 'work'; f.gone = true; }
+          else leave(f);
+        }
+      }
+    }
+  }
+  // Drop those who walked off the square.
+  for (let i = people.length - 1; i >= 0; i--) if (people[i].gone) people.splice(i, 1);
+  // Echo trail: a sample of each figure every 0.1 s.
+  for (const f of people) {
+    f.trailT -= dt;
+    if (f.trailT <= 0) {
+      f.trailT += ECHO_DT;
+      f.trail.unshift({ x: f.x, z: f.z, ph: Math.floor(f.ph / 1.2) * 1.2, face: f.face });
+      if (f.trail.length > ECHO) f.trail.pop();
+    }
+  }
+}
+function arrive(f) {
+  if (f.state === 'pass') { f.gone = true; return; }
+  if (f.state === 'park') {
+    // The bike stays at the rack; the rider walks up to the window.
+    f.parked = person({ kind: 2, x: f.x, z: f.z, face: f.face, alpha: 1, state: 'parked' });
+    f.kind = 0; f.speed = WALK;
+    go(f, [[f.spot.x, f.spot.z + 1.0], [f.spot.x, f.spot.z]], 'order');
+    return;
+  }
+  if (f.state === 'order') { f.state = 'wait'; f.t = 4 + rnd() * 5; f.face = 1; return; }
+  if (f.state === 'toTable') { f.state = f.smokes ? 'smoke' : 'eat'; f.t = 9 + rnd() * 8; f.kind = f.smokes ? 4 : 0; f.hold = f.smokes ? 0 : 1; return; }
+  if (f.state === 'toBike') {
+    f.parked.gone = true;
+    f.kind = 1; f.speed = RIDE;
+    const side = rnd() < 0.5 ? -1 : 1;
+    go(f, [[f.x + side * 2, f.z + 2], [side * EDGE - 1, f.z + 4 + rnd() * 3]], 'out');
+    return;
+  }
+  if (f.state === 'out') f.gone = true;
+}
+function served(f) {
+  f.hold = 1;
+  f.spot.who = null;
+  if (f.bike) { go(f, [[f.x, f.z + 1], [f.parked.x + 0.6, f.parked.z]], 'toBike'); return; }
+  const r = rnd();
+  if (r < 0.45 && !people.some(o => o.state === 'toTable' || o.state === 'eat' || (o.state === 'smoke' && !o.staffer))) {
+    f.smokes = r < 0.2;
+    go(f, [[f.x, f.z + 1.2], [TABLE.x - 0.45, TABLE.z]], 'toTable');
+    return;
+  }
+  leave(f);
+}
+function leave(f) {
+  f.kind = 0;
+  const side = rnd() < 0.5 ? -1 : 1;
+  go(f, [[f.x, f.z + 2.5], [side * EDGE - 1, f.z + 4 + rnd() * 4]], 'out');
+}
+// The first frame already has life: one at the window, one at the table.
+{
+  const f = person({ kind: 0, x: QUEUE[1].x, z: QUEUE[1].z, alpha: 1, state: 'wait', t: 5, spot: QUEUE[1], face: 1 });
+  QUEUE[1].who = f;
+  person({ kind: 4, x: TABLE.x - 0.45, z: TABLE.z, alpha: 1, state: 'smoke', t: 12, face: 1 });
+}
+function writePeople() {
+  const P = fPos.array, Q = fPose.array, SA = sAttr.array, SB = sAttr2.array;
+  P.fill(0); SB.fill(0);
+  const L = S.lamp, echoes = reduced() ? 1 : ECHO;
+  people.slice(0, FIGS).forEach((f, i) => {
+    for (let k = 0; k < echoes; k++) {
+      const e = k === 0 ? { x: f.x, z: f.z, ph: Math.floor(f.ph / 1.2) * 1.2, face: f.face } : f.trail[k];
+      if (!e) continue;
+      // Echoes fade with age; still figures leave no trail.
+      const moved = k === 0 ? 1 : Math.min(1, Math.hypot(e.x - f.x, e.z - f.z) * 3);
+      const j = (i * ECHO + k) * 4;
+      P.set([e.x, f.y, e.z, f.alpha * (k === 0 ? 1 : 0.42 * 0.6 ** k * moved)], j);
+      Q.set([f.kind, e.ph, e.face, f.kind === 4 ? f.ember : f.hold], j);
+    }
+    // The shadow runs from the feet away from the lamp, as far as the head's.
+    const m = f.kind === 3 ? 0 : apMaskJS(f.x, 1.0, f.z);
+    if (m > 0.01) {
+      const hy = f.kind === 2 ? 0.9 : 1.75, k = L[1] / (L[1] - hy);
+      const gx = L[0] + k * (f.x - L[0]), gz = L[2] + k * (f.z - L[2]);
+      SA.set([f.x, f.z, Math.atan2(gz - f.z, gx - f.x), Math.hypot(gx - f.x, gz - f.z)], i * 4);
+      SB[i * 2] = 0.8 * m * f.alpha;
+    }
+  });
+  fPos.needsUpdate = fPose.needsUpdate = sAttr.needsUpdate = sAttr2.needsUpdate = true;
+}
 
 /* ---------- K2: bloom ---------- */
 // Lifted from Canal at dusk: bloom on a float target; only bright sources cross the threshold.
@@ -1067,14 +1510,14 @@ let tiltK = 0.6;
 let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
-const focusPt = new THREE.Vector3(0, 1.6, 0.6);
+const focusPt = new THREE.Vector3(0.6, 1.6, 0.8);
 function frame() {
   const portrait = size.w < size.h * 0.9;
   camera.aspect = size.w / size.h;
   // A low, wide lens on the cobbles; the shack sits right of centre.
   // Phones step in, centre the shack, and keep sky above for the plume.
-  const T = portrait ? new THREE.Vector3(0.1, 3.6, 0) : new THREE.Vector3(-2.3, 2.2, 0);
-  const P = portrait ? new THREE.Vector3(-0.8, 0.95, 16) : new THREE.Vector3(-1.4, 1.05, 15.5);
+  const T = portrait ? new THREE.Vector3(1.8, 3.5, 0) : new THREE.Vector3(-1.4, 2.3, 0);
+  const P = portrait ? new THREE.Vector3(1.6, 0.95, 18) : new THREE.Vector3(-1.0, 1.05, 21);
   camera.fov = portrait ? 58 : 38;
   // A drag swings the lens round the shack a little.
   const off = P.clone().sub(T);
@@ -1115,6 +1558,7 @@ let visible = !document.hidden;
 function draw() {
   if (!visible) return;
   writeSteam();
+  writePeople();
   composer.render();
 }
 
@@ -1137,6 +1581,7 @@ function tick(now) {
     simT += dt * run;
     U.uTime.value = simT;
     stepSteam(dt * run * (reduced() ? 0.5 : 1), pace);
+    stepPeople(dt * run);
     // A hold on the shack keeps the basket shaking.
     if (press?.hold && now - lastShake > 700) act.shake();
     stepFryer(dt);
@@ -1187,7 +1632,7 @@ onReducedChange(() => wake());
 /* Pointer: a press turns into a drag after 8 px, or a hold after 260 ms. */
 let press = null;
 // The shack's screen box, for taps and holds.
-const SHACK_BOX = [[-1.8, 0, -1.3], [1.8, 3.4, 1.5]];
+const SHACK_BOX = [[S.x0 - 0.1, 0, S.z0], [A.x1 + 0.1, 3.5, 1.5]];
 function onShack(cx, cy) {
   const r = stage.getBoundingClientRect();
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -1281,7 +1726,7 @@ act.sauce = () => wake();
 act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
-act.traffic = () => {};
+act.traffic = on => { traffic = on; wake(); };
 act.moths = () => {};
 act.reset = () => {
   for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
@@ -1294,6 +1739,7 @@ syncActions();
 wind = ui.slider?.value ?? 0.3;
 tiltK = ui.setting('tilt')?.value ?? 0.6;
 setNeon(ui.setting('neon')?.value ?? 'red');
+traffic = ui.setting('traffic')?.value ?? true;
 setLight();
 // The vent plume starts 6 s old, so the first frame is a picture.
 for (let i = 0; i < 180; i++) stepSteam(1 / 30);
