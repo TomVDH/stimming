@@ -153,7 +153,8 @@ const pace = () => (reduce ? 0.4 : 1);
 const windU = () => lerp(0.025, 0.16, opts.wind);
 // Speed at the top of the colour ramp, in world units per second.
 const VREF = 0.3;
-const MAXV = 12, MAXG = 4;
+// Twelve storms live at once; four more slots let the weakest fade out.
+const MAXV = 16, MAXLIVE = 12, MAXG = 4;
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
@@ -428,7 +429,7 @@ void main() {
   bool dead = age > mod(lw, 8.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
   for (int k = 0; k < ${MAXV}; k++) {
     if (k >= uNV) break;
-    if (length(p - uVort[k].xy) < 0.3 * uVort[k].w) dead = true;
+    if (abs(uVort[k].z) > 0.02 && length(p - uVort[k].xy) < 0.45 * uVort[k].w) dead = true;
   }
   if (dead) {
     vec3 h = vec3(pcg3d(uvec3(uvec2(ij), uFrame))) * (1.0 / 4294967296.0);
@@ -439,6 +440,24 @@ void main() {
     lw = 2.0 + 4.0 * h.z + 8.0 * floor(hue * 255.0);
   }
   o = vec4(p, age, lw);
+}`;
+// Light fades fast inside each eye, so a moving eye stays clear.
+// It draws with a multiply blend after the decay pass.
+const EYE_FS = `#version 300 es
+precision highp float;
+uniform vec4 uVort[${MAXV}]; uniform int uNV; uniform float uScale, uK;
+out vec4 o;
+void main() {
+  vec2 p = gl_FragCoord.xy / uScale;
+  float m = 1.0;
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    float s = clamp(abs(q.z) / 0.08, 0.0, 1.0);
+    float eye = 1.0 - smoothstep(0.3 * q.w, 0.85 * q.w, length(p - q.xy));
+    m *= mix(1.0, uK, eye * s);
+  }
+  o = vec4(m);
 }`;
 // The chart: slate, a graticule every 15 degrees, then the plate.
 const OUT_FS = `#version 300 es
@@ -470,6 +489,7 @@ const P = {
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   segTex: program(SEG_TEX_VS, SEG_FS, ['aCorner']),
   update: program(QUAD_VS, UPDATE_FS, ['aPos']),
+  eye: program(QUAD_VS, EYE_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
 };
 const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.26, 0.022, 245);
@@ -522,12 +542,148 @@ function seedState() {
   stB = stateTarget(TW, TH, null);
 }
 
+/* ---------- the field on the CPU ---------- */
+// The same simplex noise as SNOISE, so storms ride the flow the particles see.
+const mod289 = x => x - Math.floor(x / 289) * 289;
+const permute = x => mod289((x * 34 + 1) * x);
+function snoise3(x, y, z) {
+  const s = (x + y + z) / 3;
+  let ix = Math.floor(x + s), iy = Math.floor(y + s), iz = Math.floor(z + s);
+  const t0 = (ix + iy + iz) / 6;
+  const x0 = x - ix + t0, y0 = y - iy + t0, z0 = z - iz + t0;
+  const gx = x0 >= y0 ? 1 : 0, gy = y0 >= z0 ? 1 : 0, gz = z0 >= x0 ? 1 : 0;
+  const i1 = [Math.min(gx, 1 - gz), Math.min(gy, 1 - gx), Math.min(gz, 1 - gy)];
+  const i2 = [Math.max(gx, 1 - gz), Math.max(gy, 1 - gx), Math.max(gz, 1 - gy)];
+  ix = mod289(ix); iy = mod289(iy); iz = mod289(iz);
+  const off = [[0, 0, 0], i1, i2, [1, 1, 1]], cs = [0, 1 / 6, 1 / 3, 0.5];
+  let sum = 0;
+  for (let c = 0; c < 4; c++) {
+    const o = off[c];
+    const px = x0 - o[0] + cs[c], py = y0 - o[1] + cs[c], pz = z0 - o[2] + cs[c];
+    const p = permute(permute(permute(iz + o[2]) + iy + o[1]) + ix + o[0]);
+    const j = p - 49 * Math.floor(p / 49);
+    const xq = Math.floor(j / 7), yq = Math.floor(j - 7 * xq);
+    const xx = xq * (2 / 7) + (0.5 / 7 - 1), yy = yq * (2 / 7) + (0.5 / 7 - 1);
+    const h = 1 - Math.abs(xx) - Math.abs(yy), sh = h <= 0 ? -1 : 0;
+    const ax = xx + (Math.floor(xx) * 2 + 1) * sh, ay = yy + (Math.floor(yy) * 2 + 1) * sh;
+    const n = 1.79284291400159 - 0.85373472095314 * (ax * ax + ay * ay + h * h);
+    let m = Math.max(0.6 - (px * px + py * py + pz * pz), 0); m *= m;
+    sum += m * m * n * (ax * px + ay * py + h * pz);
+  }
+  return 42 * sum;
+}
+const NOISE_A = 0.009;
+const psiN = (x, y) => snoise3(x * 1.6, y * 1.6, t * 0.03) + 0.3 * snoise3(x * 3.9 + 7.3, y * 3.9 + 7.3, t * 0.05 + 3.1);
+function baseVel(x, y, out) {
+  const e = 0.004;
+  out[0] = windU() + NOISE_A * (psiN(x, y + e) - psiN(x, y - e)) / (2 * e);
+  out[1] = -NOISE_A * (psiN(x + e, y) - psiN(x - e, y)) / (2 * e);
+  return out;
+}
+
 /* ---------- storms ---------- */
-// Each vortex is { x, y, g, rc }: centre, circulation, core radius.
+// Each vortex is { x, y, g, rc, amp }: centre, circulation, core radius, fade.
+// A held vortex follows the pointer; a dying one fades to make room.
 const vortices = [];
 const gusts = [];
 const spin = () => (opts.hemi === 'south' ? -1 : 1);
 const vortData = new Float32Array(MAXV * 4), gustData = new Float32Array(MAXG * 4);
+const G_MAX = 0.3, RC_MAX = 0.12;
+// Lamb-Oseen tangential speed at distance r.
+const vTheta = (g, rc, r) => g / (2 * Math.PI * r) * (1 - Math.exp(-(r * r) / (rc * rc)));
+const live = () => vortices.filter(v => !v.dying);
+function spawnCyclone(x, y, g, rc = 0.05, held = false) {
+  const alive = live();
+  // The weakest storm fades out to make room, so nothing pops.
+  if (alive.length >= MAXLIVE) alive.reduce((a, b) => (Math.abs(a.g) < Math.abs(b.g) ? a : b)).dying = true;
+  if (vortices.length >= MAXV) {
+    const k = vortices.findIndex(v => v.dying);
+    vortices.splice(k < 0 ? 0 : k, 1);
+  }
+  const v = { x, y, g, rc, amp: held ? 1 : 0, held, dying: false };
+  vortices.push(v);
+  return v;
+}
+function gust(x, y) {
+  if (gusts.length >= MAXG) gusts.shift();
+  gusts.push({ x, y, q: reduce ? 0.05 : 0.13, r: 0.03 });
+}
+// Storms ride the flow, feel each other, drift poleward and weaken.
+const bv = [0, 0];
+// Velocity each storm induces on the others, at positions px, py.
+function induced(px, py, vx, vy) {
+  const n = vortices.length;
+  for (let i = 0; i < n; i++) {
+    const a = vortices[i];
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const o = vortices[j], ge = o.g * o.amp;
+      const dx = px[i] - px[j], dy = py[i] - py[j], r = Math.hypot(dx, dy) + 1e-6;
+      const vt = vTheta(ge, o.rc, r);
+      vx[i] += -dy / r * vt; vy[i] += dx / r * vt;
+      // Same-sign cores pull in as they orbit, so the pair merges.
+      if (ge * a.g > 0 && r < 0.4) { const pull = 0.05 * Math.abs(vt); vx[i] -= dx / r * pull; vy[i] -= dy / r * pull; }
+    }
+  }
+}
+function stepStorms(dt) {
+  if (!dt) return;
+  const n = vortices.length, ux = new Float32Array(n), uy = new Float32Array(n);
+  const pole = spin();
+  for (let i = 0; i < n; i++) {
+    const a = vortices[i];
+    // Storms steer at a third of the wind, as real ones lag the jet.
+    baseVel(a.x, a.y, bv);
+    ux[i] = bv[0] * 0.35; uy[i] = bv[1] * 0.35;
+    // Beta drift carries a storm toward the pole and west.
+    const b = 0.07 * Math.abs(a.g * a.amp);
+    ux[i] -= b * 0.35; uy[i] += b * pole;
+  }
+  // Close pairs orbit fast, so the pair motion runs in 10 ms RK2 steps.
+  const steps = Math.ceil(dt / 0.01), h = dt / steps;
+  const px = new Float32Array(n), py = new Float32Array(n), vx = new Float32Array(n), vy = new Float32Array(n);
+  for (let s = 0; s < steps; s++) {
+    for (let i = 0; i < n; i++) { px[i] = vortices[i].x; py[i] = vortices[i].y; vx[i] = ux[i]; vy[i] = uy[i]; }
+    induced(px, py, vx, vy);
+    for (let i = 0; i < n; i++) { px[i] += vx[i] * h / 2; py[i] += vy[i] * h / 2; vx[i] = ux[i]; vy[i] = uy[i]; }
+    induced(px, py, vx, vy);
+    for (let i = 0; i < n; i++) if (!vortices[i].held) { vortices[i].x += vx[i] * h; vortices[i].y += vy[i] * h; }
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    const a = vortices[i];
+    if (!a.held) a.g *= Math.exp(-dt / 45);
+    const out = a.x < -0.05 || a.x > AX + 0.05 || a.y < -0.05 || a.y > AY + 0.05;
+    if (a.dying || out) a.amp = Math.max(0, a.amp - dt / 0.6);
+    else a.amp = Math.min(1, a.amp + dt / 1.2);
+    if (!a.held && (a.amp <= 0 || Math.abs(a.g) < 0.004)) vortices.splice(i, 1);
+  }
+  mergeStorms();
+  for (let k = gusts.length - 1; k >= 0; k--) {
+    gusts[k].q *= Math.exp(-dt / 0.3);
+    if (Math.abs(gusts[k].q) < 0.002) gusts.splice(k, 1);
+  }
+}
+// Same-sign cores closer than 0.6 times their summed radii become one.
+function mergeStorms() {
+  for (let i = 0; i < vortices.length; i++) {
+    for (let j = i + 1; j < vortices.length; j++) {
+      const a = vortices[i], b = vortices[j];
+      if (a.dying || b.dying || a.g * b.g <= 0) continue;
+      if (Math.hypot(a.x - b.x, a.y - b.y) > 0.6 * (a.rc + b.rc)) continue;
+      // The held storm, else the stronger one, absorbs the other.
+      const [k, o] = b.held || (!a.held && Math.abs(b.g * b.amp) > Math.abs(a.g * a.amp)) ? [b, a] : [a, b];
+      const gk = Math.abs(k.g * k.amp), go = Math.abs(o.g * o.amp), w = go / (gk + go + 1e-6);
+      if (!k.held) { k.x = lerp(k.x, o.x, w); k.y = lerp(k.y, o.y, w); }
+      k.g = clamp(k.g * k.amp + o.g * o.amp, -G_MAX, G_MAX); k.amp = 1;
+      k.rc = Math.min(RC_MAX, Math.hypot(k.rc, o.rc));
+      vortices.splice(vortices.indexOf(o), 1);
+      onMerge(k);
+      return mergeStorms();
+    }
+  }
+}
+// Sound and light for a merge arrive in later tasks.
+function onMerge() {}
 
 /* ---------- state ---------- */
 // One world unit spans the short side, so portrait recomposes the chart.
@@ -537,9 +693,9 @@ let areaK = 1;
 
 function setField(u) {
   gl.uniform1f(u.uU, windU());
-  gl.uniform1f(u.uA, 0.009);
+  gl.uniform1f(u.uA, NOISE_A);
   gl.uniform1f(u.uT, t);
-  vortices.forEach((v, k) => vortData.set([v.x, v.y, v.g, v.rc], k * 4));
+  vortices.forEach((v, k) => vortData.set([v.x, v.y, v.g * v.amp, v.rc], k * 4));
   gusts.forEach((g, k) => gustData.set([g.x, g.y, g.q, g.r], k * 4));
   gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
   gl.uniform4fv(u.uGust, gustData); gl.uniform1i(u.uNG, gusts.length);
@@ -578,11 +734,29 @@ function segTexPass(dt) {
   gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE0);
 }
+function eyePass(dt) {
+  if (!vortices.length) return;
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.eye.p); gl.bindVertexArray(quadVao);
+  const u = P.eye.u;
+  vortices.forEach((v, k) => vortData.set([v.x, v.y, v.g * v.amp, v.rc], k * 4));
+  gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
+  gl.uniform1f(u.uScale, S);
+  gl.uniform1f(u.uK, Math.exp(-dt / 0.12));
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.disable(gl.BLEND);
+}
 // One sim step: fade the plate, move the particles, draw their segments.
+// The preroll holds the storms still, so the first frame keeps its framing.
+let holdStorms = false;
 function simStep(dt) {
   t += dt;
   decayPass(dt);
   const adv = dt * pace();
+  if (!holdStorms) stepStorms(adv);
+  eyePass(dt);
   updatePass(adv);
   segTexPass(adv);
   [stA, stB] = [stB, stA];
@@ -602,11 +776,13 @@ function render() {
 // The first frame shows a plate already exposed: run the flow a while.
 function preroll(seconds) {
   const n = Math.ceil(seconds * 30);
+  holdStorms = true;
   for (let i = 0; i < n; i++) simStep(1 / 30);
+  holdStorms = false;
 }
 function seedCyclone() {
   vortices.length = 0;
-  vortices.push({ x: AX * 0.54, y: AY * 0.5, g: 0.16 * spin(), rc: 0.055 });
+  spawnCyclone(AX * 0.54, AY * 0.5, 0.16 * spin(), 0.055).amp = 1;
 }
 
 /* ---------- loop ---------- */
@@ -617,8 +793,9 @@ function frameFn(now) {
   raf = 0;
   const quiet = now - lastInput;
   if (quiet > SLEEP_AFTER + EASE_OUT) return;
-  // Drifting frames hold to 30 fps.
-  if (last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
+  // Drifting frames hold to 30 fps; input and gusts run at full rate.
+  const lively = press || quiet < 1500 || gusts.length;
+  if (!lively && last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
   last = now;
   const ease = quiet > SLEEP_AFTER ? 1 - (quiet - SLEEP_AFTER) / EASE_OUT : 1;
@@ -664,14 +841,87 @@ choices(document.getElementById('look'), v => { opts.look = v; save('look', v); 
 choices(document.getElementById('count'), v => { opts.count = v; save('count', v); seedState(); clearAcc(); preroll(1); wake(); }).set(opts.count);
 choices(document.getElementById('trail'), v => { opts.trail = v; save('trail', v); wake(); }).set(opts.trail);
 choices(document.getElementById('hemi'), v => { opts.hemi = v; save('hemi', v); wake(); }).set(opts.hemi);
-document.getElementById('add').addEventListener('click', () => {
-  if (vortices.length >= MAXV) vortices.shift();
-  vortices.push({ x: AX * (0.2 + 0.6 * Math.random()), y: AY * (0.25 + 0.5 * Math.random()), g: 0.14 * spin(), rc: 0.05 });
+// + Cyclone finds open air and spins the hemisphere's way.
+function addCyclone() {
+  let best = null, room = -1;
+  for (let k = 0; k < 12; k++) {
+    const x = AX * (0.15 + 0.7 * Math.random()), y = AY * (0.2 + 0.6 * Math.random());
+    const d = live().reduce((m, v) => Math.min(m, Math.hypot(v.x - x, v.y - y)), 9);
+    if (d > room) { room = d; best = [x, y]; }
+  }
+  spawnCyclone(best[0], best[1], (0.12 + 0.05 * Math.random()) * spin(), 0.045 + 0.015 * Math.random());
+  wake();
+}
+document.getElementById('add').addEventListener('click', addCyclone);
+document.getElementById('clear').addEventListener('click', () => { vortices.forEach(v => { v.dying = true; v.held = false; }); gusts.length = 0; clearAcc(); wake(); });
+
+/* ---------- input ---------- */
+// A press turns into a spin after 8 px of travel or a 260 ms hold.
+// A release that is neither is a tap, and a tap is a gust.
+let press = null;
+function toWorld(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * AX, (1 - (e.clientY - r.top) / r.height) * AY];
+}
+function startSpin() {
+  const p = press;
+  clearTimeout(p.timer);
+  p.mode = 'spin';
+  // A press inside a storm grabs it; open air seeds a new one.
+  const near = live().find(v => Math.hypot(v.x - p.w0[0], v.y - p.w0[1]) < Math.max(0.06, 1.5 * v.rc));
+  p.v = near || spawnCyclone(p.w0[0], p.w0[1], 0, 0.045, true);
+  p.v.held = true; p.v.amp = 1;
+  p.c = [p.v.x, p.v.y]; p.r = 0.05; p.wl = p.w0; p.tl = performance.now();
+}
+// Each move adds the angle the pointer swept around the seed.
+function feed(w, now) {
+  const p = press, v = p.v;
+  const rx = p.wl[0] - v.x, ry = p.wl[1] - v.y, r2 = rx * rx + ry * ry;
+  const dx = w[0] - p.wl[0], dy = w[1] - p.wl[1];
+  if (r2 > 0.015 * 0.015) {
+    const dth = (rx * dy - ry * dx) / r2;
+    v.g = clamp(v.g + 0.013 * dth, -G_MAX, G_MAX);
+  }
+  // The centre eases toward the middle of the drawn path.
+  const k = 1 - Math.exp(-(now - p.tl) / 1500);
+  p.c[0] += (w[0] - p.c[0]) * k; p.c[1] += (w[1] - p.c[1]) * k;
+  v.x += (p.c[0] - v.x) * 0.5; v.y += (p.c[1] - v.y) * 0.5;
+  // Tight circles make a tight core.
+  p.r += (Math.sqrt(r2) - p.r) * Math.min(1, k * 2);
+  v.rc = clamp(p.r * 0.7, 0.04, 0.1);
+  p.wl = w; p.tl = now;
+}
+function endPress(tap) {
+  const p = press;
+  if (!p) return;
+  press = null;
+  clearTimeout(p.timer);
+  if (p.mode === 'spin') p.v.held = false;
+  else if (tap) gust(p.w0[0], p.w0[1]);
+  wake();
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0 || press) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, w0: toWorld(e), mode: 'press' };
+  press.timer = setTimeout(() => { if (press?.mode === 'press') startSpin(); }, 260);
   wake();
 });
-document.getElementById('clear').addEventListener('click', () => { vortices.length = 0; gusts.length = 0; clearAcc(); wake(); });
-stage.addEventListener('pointerdown', wake);
-stage.addEventListener('keydown', wake);
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (press.mode === 'press' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) startSpin();
+  if (press.mode === 'spin') feed(toWorld(e), performance.now());
+  wake();
+});
+stage.addEventListener('pointerup', e => { if (press && e.pointerId === press.id) endPress(true); });
+stage.addEventListener('pointercancel', () => endPress(false));
+stage.addEventListener('lostpointercapture', () => endPress(false));
+stage.addEventListener('keydown', e => {
+  wake();
+  if (e.key !== ' ') return;
+  e.preventDefault();
+  if (!e.repeat) addCyclone();
+});
 
 /* ---------- start ---------- */
 bakeRamp();
