@@ -101,6 +101,8 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 - **Advect:** each particle sums Biot-Savart over the live nodes, adds curl noise scaled by ring age and Breakup, then steps forward.
 - **Draw:** soft Gaussian points with additive blend into the RGBA16F scene. Brightness is backlight scatter plus `exp(-(d/w)²)` of the distance d to the sheet, times laser colour and phase. Points near the lens grow and soften.
 
+**Smoke volume (Tom, 2026-11-09: Fire's fidelity).** Each frame the particles splat into a 160 × 96 × 80 density atlas (z slices in tiles, two slices per particle). A half-size pass raymarches it as Fire does: two octaves of 3D noise erode the edges, a three-tap march toward the backlight gives Beer-Lambert shadow with a multi-scatter lift and powder, and Henyey-Greenstein sets forward scatter. It writes colour, transmittance, and the transmittance at the sheet. The sheet reads the atlas at its own plane, so the laser cuts a crisp slice, and a march toward the lens shades the fan below each ring.
+
 **Haze and sheet.** One full-screen pass before the smoke: background gradient, faint backlight in fbm haze, and the sheet. The view ray meets the sheet plane once; the glow there is fan mask × 1/r × haze density × speckle, divided by the cosine to the plane's normal (capped), so the sheet reads brightest edge-on.
 
 **Post.** Bright pass, then a dual-filter bloom (four levels down and up). Grade: filmic curve, vignette, grain.

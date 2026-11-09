@@ -276,6 +276,9 @@ function fire({ from, dir, R = 0.18, U = 0.9 }) {
 const MUZZLE = [-1.22, -0.06, 0], SHEET_X = 0.42;
 // Each slot holds ROWS rows of 64 particles.
 const ROWS = 128;
+// Smoke density lives in a box, splatted into an atlas of z slices.
+const BOX_MIN = [-1.45, -1.15, -1.1], BOX_SIZE = [3.8, 2.3, 2.2];
+const VRES = [160, 96, 80], TILES = [8, 10], ATLAS = [VRES[0] * TILES[0], VRES[1] * TILES[1]];
 const SHEETS = {
   // Across leans 24 degrees, so the camera sees it nearly edge on.
   across: { n: [Math.cos(0.42), 0, Math.sin(0.42)], h: 0.42 * Math.cos(0.42), lens: [0.42, 1.75, 0], fan: [0, -1, 0], half: 0.6 },
@@ -314,6 +317,7 @@ const HEAD = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
+precision highp sampler3D;
 `;
 // Henyey-Greenstein phase, normalized to 1 at g = 0.
 const PHASE = `
@@ -342,6 +346,28 @@ float speckle(vec3 p) {
   return mix(mix(mix(sx(i), sx(i + vec3(1, 0, 0)), f.x), mix(sx(i + vec3(0, 1, 0)), sx(i + vec3(1, 1, 0)), f.x), f.y),
     mix(mix(sx(i + vec3(0, 0, 1)), sx(i + vec3(1, 0, 1)), f.x), mix(sx(i + vec3(0, 1, 1)), sx(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }`;
+// The density atlas: z slices in tiles, blended by hand between slices.
+const VOLUME = `
+uniform sampler2D uVol;
+uniform vec3 uBoxMin, uBoxSize, uVRes;
+uniform vec2 uTiles, uAtlas;
+float atlasAt(vec2 xy, float z) {
+  vec2 tile = vec2(mod(z, uTiles.x), floor(z / uTiles.x));
+  return texture(uVol, (tile * uVRes.xy + xy) / uAtlas).r;
+}
+float vol(vec3 p) {
+  vec3 g = (p - uBoxMin) / uBoxSize;
+  if (any(lessThan(g, vec3(0.0))) || any(greaterThan(g, vec3(1.0)))) return 0.0;
+  vec3 c = g * uVRes;
+  vec2 xy = clamp(c.xy, vec2(1.0), uVRes.xy - 1.0);
+  float z = clamp(c.z - 0.5, 0.0, uVRes.z - 1.0), z0 = floor(z);
+  float a = atlasAt(xy, z0), b = atlasAt(xy, min(z0 + 1.0, uVRes.z - 1.0));
+  // Soft walls stop a hard cut at the box edge.
+  vec3 e = min(g, 1.0 - g);
+  return mix(a, b, z - z0) * smoothstep(0.0, 0.05, min(e.x, min(e.y, e.z)));
+}
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+`;
 // Sheet uniforms are shared by the haze and the smoke.
 const SHEET = `
 uniform vec3 uN, uLens, uFan, uLaser;
@@ -350,20 +376,21 @@ float fanMask(vec3 vl) { return smoothstep(uFanCos - 0.025, uFanCos + 0.025, dot
 `;
 
 // The room: a dark gradient, a backlight shaft in fbm haze, and the laser sheet.
-const HAZE_FS = HEAD + PHASE + NOISE + SHEET + `
+const HAZE_FS = HEAD + PHASE + NOISE + SHEET + VOLUME + `
 in vec2 vUv;
 out vec4 o;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
-uniform vec2 uTan;
-uniform float uHaze, uTime, uW;
+uniform vec2 uTan, uVTexel;
+uniform float uHaze, uTime, uW, uSmokeOn, uSigma, uSheetSmoke;
 uniform vec4 uPuff;
+uniform sampler2D uVolA, uVolB;
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 d = normalize(uF + ndc.x * uTan.x * uR + ndc.y * uTan.y * uU);
   vec3 col = uRoom * (0.75 + 0.35 * d.y);
   vec3 drift = vec3(uTime * 0.03, uTime * 0.012, -uTime * 0.02);
   // The backlight shaft: the ray's closest point to the shaft axis.
-  vec3 S0 = vec3(-2.6, 2.1, -1.5), w0 = uEye - S0;
+  vec3 S0 = vec3(-1.4, 2.3, -2.9), w0 = uEye - S0;
   float b = dot(d, uBackDir), dq = dot(d, w0), e = dot(uBackDir, w0), den = max(1.0 - b * b, 1e-4);
   float t = max((b * e - dq) / den, 0.0), s = e + t * b;
   float dist = length(w0 + t * d - s * uBackDir);
@@ -378,6 +405,16 @@ void main() {
     float pd = length(m - dot(m, d) * d), pr = 0.07 + 0.12 * uPuff.w;
     col += uBack * uPuff.w * exp(-pd * pd / (pr * pr)) * (0.6 + 0.6 * fbm(uPuff.xyz * 6.0 + drift * 4.0)) * 0.22;
   }
+  // The smoke volume, raymarched at half size, sits in front of the room.
+  float Ts = 1.0;
+  if (uSmokeOn > 0.5) {
+    // Four taps hide the march's dither.
+    vec2 h = uVTexel * 0.6;
+    vec4 V = 0.25 * (texture(uVolA, vUv + vec2(-h.x, -h.y)) + texture(uVolA, vUv + vec2(h.x, -h.y))
+      + texture(uVolA, vUv + vec2(-h.x, h.y)) + texture(uVolA, vUv + vec2(h.x, h.y)));
+    col = col * V.a + V.rgb;
+    Ts = texture(uVolB, vUv).r;
+  }
   // The laser sheet: the ray meets its plane once.
   float dn = dot(d, uN);
   float th = (uH - dot(uEye, uN)) / dn;
@@ -388,8 +425,17 @@ void main() {
     float thick = min(uW * 1.77 / abs(dn), 0.2);
     float dens = 0.45 + 0.8 * fbm(q * 1.6 + drift * 2.0);
     float sp = speckle(q * 260.0 + vec3(0.0, uTime * 0.6, 0.0));
-    float lit = fanMask(vl) * thick * dens * (0.45 + 0.55 * sp) * hg(dot(vl, -d), 0.5) / (r * r + 0.15);
-    col += uLaser * lit * uHaze * 0.9;
+    float lit = fanMask(vl) * thick * hg(dot(vl, -d), 0.5) / (r * r + 0.15);
+    float glow = dens * (0.45 + 0.55 * sp) * uHaze * 0.9;
+    if (uSmokeOn > 0.5 && lit > 0.0) {
+      // Smoke in the plane flares; smoke nearer the lens shades the fan below it.
+      glow += vol(q) * uSheetSmoke * (0.7 + 0.3 * sp);
+      float reach = min(r, 1.8), st = reach / 14.0, sum = 0.0, j = ign(gl_FragCoord.xy);
+      // The march starts a core width out, so a ring does not shade its own slice.
+      for (int i = 0; i < 14; i++) sum += vol(q - vl * (0.08 + (float(i) + j) * st));
+      glow *= exp(-sum * st * uSigma * 1.6);
+    }
+    col += uLaser * lit * glow * Ts;
   }
   o = vec4(col, 1.0);
 }`;
@@ -467,41 +513,92 @@ void main() {
     float z = r4 * 2.0 - 1.0, rr = pow(r3, 0.333);
     float rh = sqrt(max(0.0, 1.0 - z * z)) * rr;
     p = uC + rad * rh * uR * 1.1 + uA * (z * rr * 0.65 - 0.1) * uR;
-    r5 = 0.2 + 0.2 * r5;
+    r5 = 0.04 + 0.06 * r5;
   } else {
     p = uC - uA * r3 * uR * 1.2 + rad * sqrt(r4) * uR * 0.75;
-    r5 = 0.3 + 0.3 * r5;
+    r5 = 0.15 + 0.2 * r5;
   }
   o = vec4(p, r5);
 }`;
-// Smoke shading: dim backlight scatter, bright inside the sheet.
-const SMOKE_VS = HEAD + PHASE + SHEET + `
+// Each particle splats into the two z slices around it.
+const SPLAT_VS = HEAD + `
 uniform sampler2D uState;
 uniform float uFade[${SLOTS}];
-uniform vec3 uEye, uR, uU, uF, uBackDir, uBack;
-uniform vec2 uFoc;
-uniform float uPx, uW, uSmoke, uSize;
+uniform vec3 uBoxMin, uBoxSize, uVRes;
+uniform vec2 uTiles, uAtlas;
+uniform float uMass, uSplat;
 uniform int uRows;
-out vec3 vC;
+out float vM;
 void main() {
   int per = 64 * uRows, id = gl_VertexID, k = id / per, l = id - k * per;
   vec4 s = texelFetch(uState, ivec2(l % 64, k * ${ROWS} + l / 64), 0);
-  float fade = uFade[k];
-  vec3 q = s.xyz - uEye;
-  float z = dot(q, uF);
-  if (fade <= 0.001 || z < 0.1) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); return; }
-  gl_Position = vec4(dot(q, uR) * uFoc.x, dot(q, uU) * uFoc.y, 0.0, z);
-  float ps = uPx * uSize / z, size = max(ps, 1.5);
-  gl_PointSize = size;
-  // Points smaller than 1.5 px keep their energy, not their size.
-  float k2 = (ps * ps) / (size * size);
-  vec3 toCam = -q / length(q);
-  float back = hg(dot(uBackDir, toCam), 0.6);
-  vec3 v = s.xyz - uLens;
-  float r = length(v), dd = dot(s.xyz, uN) - uH;
-  vec3 vl = v / r;
-  float sheet = exp(-dd * dd / (uW * uW)) * fanMask(vl) * hg(dot(vl, toCam), 0.55) / (r + 0.45);
-  vC = (uBack * back * 0.011 + uLaser * sheet * 0.75) * uSmoke * fade * s.w * k2;
+  vec3 c = (s.xyz - uBoxMin) / uBoxSize * uVRes;
+  float zc = c.z - 0.5, z0 = floor(zc), f = zc - z0, z = z0 + float(gl_InstanceID);
+  bool out_ = uFade[k] <= 0.001 || z < 0.0 || z > uVRes.z - 1.0
+    || any(lessThan(c.xy, vec2(0.0))) || any(greaterThan(c.xy, uVRes.xy));
+  if (out_) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vM = 0.0; return; }
+  vec2 tile = vec2(mod(z, uTiles.x), floor(z / uTiles.x));
+  gl_Position = vec4((tile * uVRes.xy + c.xy) / uAtlas * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = uSplat;
+  vM = (gl_InstanceID == 0 ? 1.0 - f : f) * uFade[k] * s.w * uMass;
+}`;
+const SPLAT_FS = HEAD + `
+in float vM;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  o = vec4(vM * exp(-2.5 * dot(c, c)), 0.0, 0.0, 1.0);
+}`;
+// The smoke volume, as in Fire: detail noise, a short self-shadow march,
+// Beer-Lambert with a multi-scatter lift, and forward scatter.
+const VOL_FS = HEAD + PHASE + VOLUME + `
+in vec2 vUv;
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 o2;
+uniform sampler3D uNoise;
+uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uN;
+uniform vec2 uTan;
+uniform float uTime, uSigma, uFrame, uH, uGain;
+float dens(vec3 p) {
+  float d = vol(p);
+  if (d < 2e-3) return 0.0;
+  // Two octaves of noise erode the edges into wisps.
+  float n = texture(uNoise, p * 1.9 + uTime * vec3(0.02, 0.05, 0.01)).r * 0.6
+    + texture(uNoise, p * 5.3 - uTime * vec3(0.04, 0.0, 0.03)).r * 0.4;
+  return max(0.0, d * (0.4 + 1.2 * n) - 0.06 * (1.0 - n));
+}
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 d = normalize(uF + ndc.x * uTan.x * uR + ndc.y * uTan.y * uU);
+  vec3 inv = 1.0 / d, a = (uBoxMin - uEye) * inv, b = (uBoxMin + uBoxSize - uEye) * inv;
+  vec3 lo = min(a, b), hi = max(a, b);
+  float t0 = max(max(lo.x, lo.y), max(lo.z, 0.0)), t1 = min(hi.x, min(hi.y, hi.z));
+  if (t1 <= t0) { o = vec4(0.0, 0.0, 0.0, 1.0); o2 = vec4(1.0); return; }
+  float dn = dot(d, uN), th = abs(dn) > 1e-4 ? (uH - dot(uEye, uN)) / dn : -1.0;
+  const int STEPS = 56;
+  float dt = (t1 - t0) / float(STEPS), j = ign(gl_FragCoord.xy + uFrame * 5.588);
+  float T = 1.0, Ts = th < t0 ? 1.0 : -1.0;
+  vec3 L = vec3(0.0);
+  float ph = hg(dot(uBackDir, -d), 0.6);
+  for (int i = 0; i < STEPS; i++) {
+    float t = t0 + (float(i) + j) * dt;
+    if (Ts < 0.0 && t >= th) Ts = T;
+    vec3 p = uEye + t * d;
+    float dd = dens(p);
+    if (dd <= 0.0) continue;
+    float tau = (vol(p - uBackDir * 0.06) + vol(p - uBackDir * 0.18) + vol(p - uBackDir * 0.36)) * 0.12 * uSigma;
+    float beer = exp(-tau);
+    float lit = beer + 0.5 * exp(-0.25 * tau) * 0.6;
+    float powder = 1.0 - exp(-2.0 * dd * uSigma * 0.08);
+    vec3 S = uBack * uGain * (lit * ph * mix(1.0, powder, 0.35) + 0.05);
+    float Tstep = exp(-dd * uSigma * dt);
+    L += T * S * (1.0 - Tstep);
+    T *= Tstep;
+    if (T < 0.01) break;
+  }
+  if (Ts < 0.0) Ts = T;
+  o = vec4(L, T);
+  o2 = vec4(Ts, 0.0, 0.0, 1.0);
 }`;
 // The aim ring: a dotted circle at the muzzle, turned to the pointer.
 const GHOST_VS = HEAD + `
@@ -517,7 +614,7 @@ void main() {
   gl_PointSize = max(2.0, uPx * 0.014 / z);
   vC = uBack * uA;
 }`;
-const SMOKE_FS = HEAD + `
+const DOT_FS = HEAD + `
 in vec3 vC;
 out vec4 o;
 void main() {
@@ -591,7 +688,7 @@ void main() {
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 let gl = null, P = null, vao = null;
-let state = null, nodesTex = null, scene = null, blooms = [];
+let state = null, nodesTex = null, scene = null, blooms = [], atlas = null, noiseTex = null, volT = null;
 const nodeData = new Float32Array(N * SLOTS * 4);
 function compile(vs, fs) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -636,6 +733,43 @@ function target(w, h, fmt, filter) {
   gl.clear(gl.COLOR_BUFFER_BIT);
   return { tex, fb, w, h };
 }
+// A tiling 32-cube of value noise, two octaves, for smoke detail.
+function makeNoise() {
+  const n = 32, data = new Uint8Array(n * n * n);
+  const lat = p => { const a = new Float32Array(p * p * p); for (let i = 0; i < a.length; i++) a[i] = Math.random(); return a; };
+  const A = lat(8), B = lat(16);
+  const smooth = x => x * x * (3 - 2 * x);
+  const at = (L, p, x, y, z) => L[((z % p) * p + (y % p)) * p + (x % p)];
+  const sample = (L, p, x, y, z) => {
+    const fx = x * p / n, fy = y * p / n, fz = z * p / n;
+    const ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+    const u = smooth(fx - ix), v = smooth(fy - iy), w = smooth(fz - iz);
+    const l = (a, b, t) => a + (b - a) * t;
+    const c = (dx, dy, dz) => at(L, p, ix + dx, iy + dy, iz + dz);
+    return l(l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v), l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v), w);
+  };
+  for (let z = 0; z < n; z++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    data[(z * n + y) * n + x] = Math.round(255 * (0.65 * sample(A, 8, x, y, z) + 0.35 * sample(B, 16, x, y, z)));
+  }
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, t);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, n, n, n, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+  for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return t;
+}
+// The volume pass writes colour and transmittance, and the transmittance at the sheet.
+function volTarget(w, h) {
+  const a = target(w, h, gl.RGBA16F, gl.LINEAR), b = target(w, h, gl.RGBA16F, gl.LINEAR);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a.tex, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b.tex, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  return { fb, w, h, a, b };
+}
+function freeVol(v) { if (v) { free(v.a); free(v.b); gl.deleteFramebuffer(v.fb); } }
 function free(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
 function bind(prog, name, unit, t) {
   gl.activeTexture(gl.TEXTURE0 + unit);
@@ -657,7 +791,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     haze: compile(TRI, HAZE_FS), advect: compile(TRI, ADVECT_FS), seed: compile(TRI, SEED_FS),
-    smoke: compile(SMOKE_VS, SMOKE_FS), ghost: compile(GHOST_VS, SMOKE_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
+    splat: compile(SPLAT_VS, SPLAT_FS), vol: compile(TRI, VOL_FS), ghost: compile(GHOST_VS, DOT_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
     up: compile(TRI, UP_FS), grade: compile(TRI, GRADE_FS),
   };
   // Polling lets the driver link off the main thread.
@@ -672,6 +806,8 @@ async function initGL() {
   gl.bindVertexArray(vao);
   state = { r: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST), w: target(64, ROWS * SLOTS, gl.RGBA32F, gl.NEAREST),
     swap() { [this.r, this.w] = [this.w, this.r]; } };
+  atlas = target(ATLAS[0], ATLAS[1], renderable(gl.R16F) ? gl.R16F : gl.RGBA16F, gl.LINEAR);
+  noiseTex = makeNoise();
   nodesTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, nodesTex);
   gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, N, SLOTS);
@@ -691,15 +827,18 @@ function layout() {
   bloomShift = shift;
   free(scene);
   blooms.forEach(free);
+  freeVol(volT);
   scene = target(W, H, gl.RGBA16F, gl.LINEAR);
+  // The volume marches at half size, or a quarter on the ladder's second rung.
+  volT = volTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
   blooms = [];
   let w = Math.max(1, W >> shift), h = Math.max(1, H >> shift);
   for (let i = 0; i < 5; i++) { blooms.push(target(w, h, gl.RGBA16F, gl.LINEAR)); w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); }
 }
 
 /* ---------- passes ---------- */
-// The backlight rakes from the upper left, behind the rings.
-const BACK_DIR = norm([0.72, -0.5, 0.42]);
+// The backlight sits high behind the rings, so smoke glows at its rim.
+const BACK_DIR = norm([0.3, -0.45, 0.84]);
 let BACK = oklchLinear(0.82, 0.025, 250), ROOM = oklchLinear(0.105, 0.012, 265);
 // Scan sweeps the Across sheet back and forth on the drift clock.
 let driftT = 0;
@@ -819,43 +958,88 @@ function step(dt) {
   slotUniforms();
   advect(dt);
 }
+function volUniforms(q) {
+  gl.uniform3fv(q.u.uBoxMin, BOX_MIN);
+  gl.uniform3fv(q.u.uBoxSize, BOX_SIZE);
+  gl.uniform3fv(q.u.uVRes, VRES);
+  gl.uniform2fv(q.u.uTiles, TILES);
+  gl.uniform2fv(q.u.uAtlas, ATLAS);
+}
+// Smoke extinction per unit density; the sheet's gain on smoke.
+const SIGMA = 3.5, SHEET_SMOKE = 45;
+let frameN = 0;
 function render() {
   const W = canvas.width, H = canvas.height;
-  const sheetW = 0.012;
+  frameN++;
+  slotUniforms();
+  const smokeOn = fades.some(f => f > 0);
   gl.disable(gl.BLEND);
-  // The room and the sheet.
+  if (smokeOn) {
+    // Splat every live particle into the density atlas.
+    let q = P.splat;
+    gl.useProgram(q.p);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, atlas.fb);
+    gl.viewport(0, 0, atlas.w, atlas.h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    bind(q, 'uState', 0, state.r);
+    gl.uniform1fv(q.u.uFade, fades);
+    volUniforms(q);
+    gl.uniform1i(q.u.uRows, rows());
+    gl.uniform1f(q.u.uMass, 0.05 * (smoke === 'dense' ? 1.6 : 1) * ROWS / rows());
+    gl.uniform1f(q.u.uSplat, 3.5);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArraysInstanced(gl.POINTS, 0, SLOTS * 64 * rows(), 2);
+    gl.disable(gl.BLEND);
+    // March the volume at reduced size.
+    q = P.vol;
+    gl.useProgram(q.p);
+    camUniforms(q);
+    volUniforms(q);
+    bind(q, 'uVol', 0, atlas);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+    gl.uniform1i(q.u.uNoise, 1);
+    const s = sheetNow();
+    gl.uniform3fv(q.u.uN, s.n);
+    gl.uniform1f(q.u.uH, s.h);
+    gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
+    gl.uniform1f(q.u.uTime, simTime);
+    gl.uniform1f(q.u.uSigma, SIGMA);
+    gl.uniform1f(q.u.uGain, 0.75);
+    gl.uniform1f(q.u.uFrame, reduced() ? 0 : frameN % 64);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, volT.fb);
+    gl.viewport(0, 0, volT.w, volT.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  // The room, the smoke and the sheet.
   let q = P.haze;
   gl.useProgram(q.p);
   camUniforms(q);
-  sheetUniforms(q, sheetW);
+  sheetUniforms(q, 0.012);
+  volUniforms(q);
+  bind(q, 'uVol', 0, atlas);
+  bind(q, 'uVolA', 1, volT.a);
+  bind(q, 'uVolB', 2, volT.b);
+  gl.uniform1f(q.u.uSmokeOn, smokeOn ? 1 : 0);
+  gl.uniform2f(q.u.uVTexel, 1 / volT.w, 1 / volT.h);
+  gl.uniform1f(q.u.uSigma, SIGMA);
+  gl.uniform1f(q.u.uSheetSmoke, SHEET_SMOKE);
   gl.uniform3fv(q.u.uRoom, ROOM);
   gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
   gl.uniform1f(q.u.uHaze, 0.25 + 1.5 * haze);
   gl.uniform1f(q.u.uTime, driftT);
   gl.uniform4f(q.u.uPuff, MUZZLE[0], MUZZLE[1], MUZZLE[2], ptr ? 0.25 + 0.75 * chargeNow() : 0);
   draw(scene);
-  // The smoke, added on top.
-  slotUniforms();
-  q = P.smoke;
-  gl.useProgram(q.p);
-  camUniforms(q);
-  sheetUniforms(q, 0.018);
-  bind(q, 'uState', 0, state.r);
-  gl.uniform1fv(q.u.uFade, fades);
-  const f = 1 / cam.tan;
-  gl.uniform2f(q.u.uFoc, f / cam.aspect, f);
-  gl.uniform1f(q.u.uPx, 0.5 * H * f);
-  gl.uniform1f(q.u.uSize, 0.032);
-  // Half the particles carry twice the light, so the smoke keeps its brightness.
-  gl.uniform1f(q.u.uSmoke, (smoke === 'dense' ? 1.5 : 1) * ROWS / rows());
-  gl.uniform1i(q.u.uRows, rows());
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
-  gl.viewport(0, 0, W, H);
-  gl.drawArrays(gl.POINTS, 0, SLOTS * 64 * rows());
-  if (ptr) ghost(f, H);
-  gl.disable(gl.BLEND);
+  if (ptr) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+    gl.viewport(0, 0, W, H);
+    ghost(1 / cam.tan, H);
+    gl.disable(gl.BLEND);
+  }
   // Bloom: bright pass, four levels down, then back up.
   q = P.bright;
   gl.useProgram(q.p);
@@ -887,7 +1071,6 @@ function render() {
   gl.uniform1f(q.u.uTime, time);
   draw(null);
 }
-
 // The aim ring grows with charge and pulses while held.
 function ghost(f, H) {
   const q = P.ghost, c = chargeNow(), { e1, e2 } = basis(aimDir);
