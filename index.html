@@ -1016,8 +1016,10 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
                 <rect x="16" y="16" width="92" height="92" fill="url(#windmap-sh)"/>
                 <path d="M16 46H108M16 78H108M46 16V108M78 16V108" stroke="oklch(0.36 0.03 245)" stroke-width="0.8"/>
                 <circle id="windmap-halo" r="17" fill="url(#windmap-glow)"/>
+                <circle id="windmap-halo2" r="12" fill="url(#windmap-glow)"/>
                 <g id="windmap-lines" clip-path="url(#windmap-clip)" fill="none" stroke="oklch(0.95 0.01 250)" stroke-linecap="round"></g>
-                <circle id="windmap-eye" r="3.4" fill="oklch(0.14 0.02 255)"/>
+                <circle id="windmap-eye" r="3.2" fill="oklch(0.14 0.02 255)"/>
+                <circle id="windmap-eye2" r="2.6" fill="oklch(0.14 0.02 255)"/>
               </svg>
             </span>
             <span class="name">Wind map<span class="beta"><i>(</i>Beta<i>)</i></span></span>
@@ -2953,58 +2955,69 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     rest() { gsap.to(sbPool, { x: 0, duration: 0.4, overwrite: true }); },
   };
 
-  // Silk lit: a slate chart of silk lines winding into a glowing storm under the pointer.
+  // Twin storms: the pointer leads one storm; a second orbits it, as real pairs do.
   {
     const f = n => +n.toFixed(2), T0 = 16, T1 = 108, RC = 9;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const g = $('windmap-lines'), eye = $('windmap-eye'), halo = $('windmap-halo');
-    // A light westerly plus one storm with inflow, in viewBox units.
+    const g = $('windmap-lines'), eyes = [$('windmap-eye'), $('windmap-eye2')], halos = [$('windmap-halo'), $('windmap-halo2')];
+    // A light westerly plus both storms, each with inflow, in viewBox units.
     const tmp = [0, 0];
-    const vel = (x, y, s) => {
-      const dx = x - s.x, dy = y - s.y, r2 = dx * dx + dy * dy + 0.01, r = Math.sqrt(r2);
-      const vt = (s.g / r) * (1 - Math.exp(-r2 / (RC * RC)));
-      const inflow = 0.3 * Math.abs(vt) * (1 - clamp((r - RC) / (2 * RC), 0, 1));
-      tmp[0] = 0.35 - (dy * vt) / r - (dx * inflow) / r; tmp[1] = (dx * vt) / r - (dy * inflow) / r;
+    const vel = (x, y, st) => {
+      tmp[0] = 0.35; tmp[1] = 0;
+      for (const s of st) {
+        const dx = x - s.x, dy = y - s.y, r2 = dx * dx + dy * dy + 0.01, r = Math.sqrt(r2);
+        const vt = (s.g / r) * (1 - Math.exp(-r2 / (RC * RC)));
+        const inflow = 0.3 * Math.abs(vt) * (1 - clamp((r - RC) / (2 * RC), 0, 1));
+        tmp[0] += -(dy * vt) / r - (dx * inflow) / r; tmp[1] += (dx * vt) / r - (dy * inflow) / r;
+      }
       return tmp;
     };
-    // One streamline, until it leaves the tile or reaches the eye.
-    const trace = (x, y, s, n = 90, h = 1.6) => {
+    // One streamline, until it leaves the tile or reaches an eye.
+    const trace = (x, y, st, n = 120, h = 1.5) => {
       const pts = [[x, y]];
       for (let i = 0; i < n; i++) {
-        let v = vel(x, y, s), k = h / Math.max(0.2, Math.hypot(v[0], v[1]));
+        let v = vel(x, y, st), k = h / Math.max(0.2, Math.hypot(v[0], v[1]));
         const mx = x + v[0] * k / 2, my = y + v[1] * k / 2;
-        v = vel(mx, my, s); k = h / Math.max(0.2, Math.hypot(v[0], v[1]));
+        v = vel(mx, my, st); k = h / Math.max(0.2, Math.hypot(v[0], v[1]));
         x += v[0] * k; y += v[1] * k;
         if (x < T0 || y < T0 || x > T1 || y > T1) break;
         pts.push([x, y]);
-        if (Math.hypot(x - s.x, y - s.y) < 3.5) break;
+        if (st.some(s => Math.hypot(x - s.x, y - s.y) < 3.5)) break;
       }
       return pts.length > 1 ? 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') : '';
     };
     const mk = (w, o) => { const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('stroke-width', w); p.setAttribute('opacity', o); g.append(p); return p; };
-    const ys = Array.from({ length: 9 }, (_, i) => T0 + 4 + (i + 0.5) * (84 / 9));
-    const flow = ys.map((_, i) => mk(1, i % 2 ? 0.45 : 0.7)), arms = Array.from({ length: 4 }, () => mk(1.8, 1));
-    const REST = { x: 66, y: 60, g: 12 }, s = { ...REST };
+    const ys = Array.from({ length: 8 }, (_, i) => T0 + 4 + (i + 0.5) * (84 / 8));
+    const flow = ys.map((_, i) => mk(1, i % 2 ? 0.45 : 0.7)), arms = Array.from({ length: 3 }, () => mk(1.7, 1));
+    const REST = { x: 62, y: 62, g: 9 }, s = { ...REST }, t = { x: 0, y: 0, g: 7 }, orbit = { a: 0.6, d: 20 };
     const draw = () => {
-      ys.forEach((y, i) => flow[i].setAttribute('d', trace(T0, y, s)));
-      // Spiral arms start on a ring and wind into the eye.
-      arms.forEach((p, k) => { const a = (k / 4) * TAU + 0.4; p.setAttribute('d', trace(s.x + 30 * Math.cos(a), s.y + 30 * Math.sin(a), s, 160, 1.3)); });
-      eye.setAttribute('cx', f(s.x)); eye.setAttribute('cy', f(s.y));
-      // The eye glows warmer as the storm winds up.
-      halo.setAttribute('cx', f(s.x)); halo.setAttribute('cy', f(s.y)); halo.setAttribute('r', f(10 + s.g * 0.6));
+      t.x = s.x + orbit.d * Math.cos(orbit.a); t.y = s.y + orbit.d * Math.sin(orbit.a);
+      const st = [s, t];
+      ys.forEach((y, i) => flow[i].setAttribute('d', trace(T0, y, st)));
+      // Spiral arms start on a ring round the lead storm and wind inward.
+      arms.forEach((p, k) => { const a = k * 2.1 + 0.4; p.setAttribute('d', trace(s.x + 32 * Math.cos(a), s.y + 32 * Math.sin(a), st, 160, 1.3)); });
+      [s, t].forEach((o, k) => {
+        eyes[k].setAttribute('cx', f(o.x)); eyes[k].setAttribute('cy', f(o.y));
+        halos[k].setAttribute('cx', f(o.x)); halos[k].setAttribute('cy', f(o.y));
+      });
+      // The lead eye glows warmer as it winds up.
+      halos[0].setAttribute('r', f(9 + s.g * 0.5));
     };
     draw();
-    const aim = p => gsap.to(s, { x: clamp(p[0], 24, 100), y: clamp(p[1], 24, 100), g: 16, duration: 0.45, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
+    // The partner orbits only while the pointer stays.
+    const spin = gsap.to(orbit, { a: 0.6 - TAU, duration: 3.2, repeat: -1, ease: 'none', paused: true, onUpdate: draw });
+    const aim = p => gsap.to(s, { x: clamp(p[0], 28, 96), y: clamp(p[1], 28, 96), g: 12, duration: 0.45, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
     let demo = null;
     toys.windmap = {
-      // With no pointer, the storm circles the chart.
+      // With no pointer, the pair circles the chart.
       enter(p) {
+        spin.play();
         if (p) { aim(p); return; }
         const d = { a: 0 };
-        demo = gsap.to(d, { a: TAU, duration: 3, repeat: -1, ease: 'none', onUpdate: () => aim([64 + 22 * Math.cos(d.a), 62 + 18 * Math.sin(d.a)]) });
+        demo = gsap.to(d, { a: TAU, duration: 3, repeat: -1, ease: 'none', onUpdate: () => aim([62 + 18 * Math.cos(d.a), 62 + 14 * Math.sin(d.a)]) });
       },
       move(p) { if (p && !demo) aim(p); },
-      leave() { demo?.kill(); demo = null; gsap.to(s, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onUpdate: draw }); },
+      leave() { demo?.kill(); demo = null; spin.pause(); gsap.to(s, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onUpdate: draw }); },
       // The Lab plays the demo on hover and lets go on leave.
       play() { toys.windmap.enter(null); return { kill() {} }; },
       rest() { toys.windmap.leave(); },
