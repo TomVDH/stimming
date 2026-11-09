@@ -1,10 +1,11 @@
 ---
 # stimming-848s
 title: 'Settings bar standard: elements, buttons and controls'
-status: in-progress
+status: scrapped
 type: feature
+priority: normal
 created_at: 2026-11-03T09:55:39Z
-updated_at: 2026-11-03T09:55:39Z
+updated_at: 2026-11-09T07:04:21Z
 parent: stimming-avdk
 ---
 
@@ -31,3 +32,7 @@ Write one standard for the settings bar so every toy builds it the same way, the
 - [ ] Write the standard into AGENTS.md Conventions
 - [ ] Brief toy sessions; each toy session audits its bar against it
 - [ ] Main shelf toys pass the audit
+
+## Reasons for Scrapping
+
+Superseded by Bar v2 (stimming-tbpn).

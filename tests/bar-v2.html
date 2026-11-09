@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Bar v2 tests</title>
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+#fx main { width: 900px; margin-bottom: 24px; }
+#fx .stage { height: 300px; background: var(--stage); }
+#out { font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<pre id="out"></pre>
+<div id="fx"></div>
+<script type="module">
+import * as stim from '../shared/stim.js';
+const { buildBar } = stim;
+
+/* ---------- harness ---------- */
+const out = document.getElementById('out'), fx = document.getElementById('fx');
+const queue = [];
+const t = (name, fn) => queue.push([name, fn, false]);
+// Headless Chrome draws no frames, so ResizeObserver tests run in the pane only.
+const HEADLESS = navigator.userAgent.includes('Headless');
+t.pane = (name, fn) => queue.push([name, fn, true]);
+const ok = (cond, msg = 'expected true') => { if (!cond) throw new Error(msg); };
+const eq = (a, b) => { if (a !== b) throw new Error(`${JSON.stringify(a)} !== ${JSON.stringify(b)}`); };
+const frames = (n = 2) => new Promise(r => { const f = k => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// Each fixture gets its own main and stage.
+function fixture(spec = {}, opts = {}) {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.append(stage);
+  fx.append(main);
+  const ui = buildBar(stage, spec, { id: 'bartest', ...opts });
+  return { main, stage, ui, frame: stage.parentElement, layer: stage.parentElement.querySelector('.stim-ui') };
+}
+const shown = el => !!el && el.checkVisibility();
+const click = el => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+const key = (k, init = {}, target = document.body) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+const tray = (cls = 's2-sheet') => [...document.querySelectorAll(`.${cls}`)];
+
+/* ---------- Task 1: frame, layer, top corners ---------- */
+t('frame wraps stage', () => {
+  const { stage, frame } = fixture();
+  ok(frame.classList.contains('stim-frame'), 'no stim-frame');
+  ok(frame.querySelector(':scope > .stim-ui') && stage.nextElementSibling?.classList.contains('stim-ui'), 'layer not beside stage');
+});
+t('root gets stim2', () => { fixture(); ok(document.documentElement.classList.contains('stim2')); });
+t('back block links home', () => {
+  const { layer } = fixture();
+  const a = layer.querySelector('.s2-back');
+  eq(a?.tagName, 'A');
+  ok(a.getAttribute('href').endsWith('index.html'), a.getAttribute('href'));
+  eq(a.getAttribute('aria-label'), 'Back to Stimming');
+});
+t('fallback name', () => { const { layer } = fixture(); eq(layer.querySelector('.s2-name').firstChild.textContent, 'bartest'); });
+t('applyToy tags', () => {
+  const { layer, ui } = fixture();
+  ui.applyToy({ name: 'Galaxy', sub: 'Stimming Lab', tier: 'beta' });
+  ok(layer.querySelector('.s2-name').textContent.startsWith('Galaxy'));
+  eq([...layer.querySelectorAll('.s2-tag')].map(e => e.textContent).join(','), 'LAB,BETA');
+});
+t('applyToy missing toy', () => {
+  const { layer, ui } = fixture();
+  ui.applyToy(undefined);
+  eq(layer.querySelector('.s2-name').firstChild.textContent, 'bartest');
+  eq(layer.querySelectorAll('.s2-tag').length, 0);
+});
+t('cluster order', () => {
+  const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], keys: [['click', 'place']] });
+  const names = () => [...layer.querySelector('.s2-tr').children].map(e => e.className.split(' ')[0]);
+  eq(names().join(','), 'snd,s2-set,s2-info');
+  ui.applyToy({ legacy: true });
+  eq(names().join(','), 'ver,snd,s2-set,s2-info');
+});
+t('empty slot draws nothing', () => {
+  const { layer } = fixture();
+  ['.s2-bl', '.s2-br'].forEach(s => { const el = layer.querySelector(s); eq(el.children.length, 0); ok(!shown(el), `${s} shown`); });
+});
+t('icons keep their size', () => {
+  const { layer } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }] });
+  eq(Math.round(layer.querySelector('.snd svg').getBoundingClientRect().width), 14);
+  eq(Math.round(layer.querySelector('.s2-set svg').getBoundingClientRect().width), 14);
+  eq(getComputedStyle(layer.querySelector('.snd')).paddingLeft, '0px');
+});
+t('hideControls', () => {
+  const { layer, ui } = fixture({ settings: [{ type: 'toggle', id: 'x', label: 'X', value: false }], keys: [['click', 'place']], quality: true });
+  ui.hideControls();
+  const visible = [...layer.querySelectorAll('.s2-back, .s2-name, .snd, .s2-set, .s2-info, .s2-keys, .s2-bl, .s2-br')].filter(shown).map(e => e.className.split(' ')[0]);
+  eq(visible.join(','), 's2-back,s2-name');
+});
+
+/* ---------- Task 2: choice ---------- */
+const opts = n => Array.from({ length: n }, (_, i) => ({ value: `o${i}`, label: `Opt ${i}` }));
+const spy = () => { const f = (...a) => { f.calls.push(a); }; f.calls = []; return f; };
+t('auto segments', () => {
+  const { layer } = fixture({ choice: { label: 'Palette', value: 'o1', options: opts(3), onPick: spy() } });
+  const seg = layer.querySelector('.s2-tl .s2-seg');
+  ok(seg, 'no segments');
+  eq(seg.querySelectorAll('.s2-chip').length, 3);
+  eq(seg.querySelectorAll('[aria-pressed="true"]').length, 1);
+  eq(seg.querySelector('[aria-pressed="true"]').dataset.value, 'o1');
+});
+t('auto stepper', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'Kind', value: 'o4', options: opts(6), onPick } });
+  const step = layer.querySelector('.s2-tl .s2-step');
+  ok(step, 'no stepper');
+  eq(step.querySelector('.s2-step-now').textContent, 'Opt 4');
+  click(step.querySelector('.s2-step-next'));
+  eq(step.querySelector('.s2-step-now').textContent, 'Opt 5');
+  click(step.querySelector('.s2-step-next'));
+  eq(ui.choice.value, 'o0');
+  eq(onPick.calls.length, 2);
+});
+t('arrow keys step', () => {
+  const onPick = spy();
+  const { layer } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  const first = layer.querySelector('.s2-seg .s2-chip');
+  first.focus();
+  key('ArrowRight', {}, first);
+  eq(onPick.calls.length, 1);
+  eq(onPick.calls[0][0], 'o1');
+  eq(document.activeElement.dataset.value, 'o1');
+});
+t('tray', () => {
+  const onPick = spy();
+  const icon = '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/></svg>';
+  const { layer } = fixture({ choice: { label: 'Add', display: 'tray', value: 'star', onPick,
+    options: [{ value: 'star', label: 'Star', icon }, { value: 'binary', label: 'Binary', icon }] } });
+  const chip = layer.querySelector('.s2-tl .s2-tray');
+  eq(chip.textContent.trim(), '+ Star');
+  click(chip);
+  const sheet = layer.querySelector('.s2-sheet');
+  ok(shown(sheet), 'sheet not open');
+  eq(chip.getAttribute('aria-expanded'), 'true');
+  const b = sheet.querySelector('[aria-label="Binary"]');
+  ok(b?.querySelector('svg'), 'no icon button');
+  click(b);
+  eq(chip.textContent.trim(), '+ Binary');
+  ok(!shown(sheet), 'sheet still open');
+  eq(onPick.calls.length, 1);
+  eq(onPick.calls[0][0], 'binary');
+});
+t('set does not fire', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  ui.choice.set('o2');
+  eq(ui.choice.value, 'o2');
+  eq(layer.querySelector('.s2-seg [aria-pressed="true"]').dataset.value, 'o2');
+  eq(onPick.calls.length, 0);
+  ui.choice.set('o1', true);
+  eq(onPick.calls.length, 1);
+});
+t('choice disabled', () => {
+  const onPick = spy();
+  const { layer, ui } = fixture({ choice: { label: 'P', value: 'o0', options: opts(3), onPick } });
+  ui.choice.disabled = true;
+  click(layer.querySelectorAll('.s2-seg .s2-chip')[2]);
+  eq(ui.choice.value, 'o0');
+  eq(onPick.calls.length, 0);
+  eq(layer.querySelector('.s2-seg').getAttribute('aria-disabled'), 'true');
+});
+t('palette dot', () => {
+  const { layer } = fixture({ choice: { label: 'P', value: 'a', options: [{ value: 'a', label: 'Ember', dot: 'rgb(255, 0, 0)' }, { value: 'b', label: 'Sea' }] } });
+  eq(getComputedStyle(layer.querySelector('.s2-dot')).backgroundColor, 'rgb(255, 0, 0)');
+});
+t('option key', () => {
+  const onPick = spy();
+  const { ui } = fixture({ choice: { label: 'P', value: 'a', onPick, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B', key: '7' }] } });
+  key('7');
+  eq(ui.choice.value, 'b');
+  eq(onPick.calls.length, 1);
+});
+
+/* ---------- Task 3: actions, slider, keys ---------- */
+const warns = fn => { const w = console.warn, got = []; console.warn = (...a) => got.push(a); try { fn(); } finally { console.warn = w; } return got; };
+t('action labels', () => {
+  const { layer } = fixture({ actions: [{ verb: 'add', noun: 'Star', onPress() {} }, { verb: 'shuffle', onPress() {} }, { verb: 'clear', onPress() {} }] });
+  const chips = [...layer.querySelectorAll('.s2-bl .s2-chip')];
+  eq(chips.map(c => c.querySelector('.s2-label').textContent).join(','), '+ Star,Shuffle,Clear');
+  ok(chips[1].querySelector('svg'), 'no die icon');
+});
+t('own verb label', () => {
+  const { layer } = fixture({ actions: [{ verb: 'flip', onPress() {} }, { verb: 'blow', label: 'Puff', onPress() {} }] });
+  eq([...layer.querySelectorAll('.s2-bl .s2-label')].map(c => c.textContent).join(','), 'Flip,Puff');
+});
+t('action press', () => {
+  const onPress = spy();
+  const { layer, ui } = fixture({ actions: [{ verb: 'clear', onPress }] });
+  const b = layer.querySelector('.s2-bl .s2-chip');
+  click(b);
+  eq(onPress.calls.length, 1);
+  ui.action('clear').disabled = true;
+  click(b);
+  eq(onPress.calls.length, 1);
+  eq(b.getAttribute('aria-disabled'), 'true');
+});
+t('action key', () => {
+  const onPress = spy();
+  const { layer } = fixture({ actions: [{ verb: 'drip', key: 'J', onPress }] });
+  key('j');
+  key('J');
+  eq(onPress.calls.length, 2);
+  eq(layer.querySelector('.s2-bl .s2-chip kbd')?.textContent, 'J');
+});
+t('keys ignore modifiers', () => {
+  const onPress = spy();
+  fixture({ actions: [{ verb: 'blow', key: 'K', onPress }] });
+  key('k', { metaKey: true });
+  key('k', { ctrlKey: true });
+  key('k', { altKey: true });
+  eq(onPress.calls.length, 0);
+});
+t('keys ignore fields', () => {
+  const onPress = spy();
+  const { layer } = fixture({ actions: [{ verb: 'ping', key: 'L', onPress }],
+    choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  const field = document.body.appendChild(document.createElement('input'));
+  key('l', {}, field);
+  field.remove();
+  click(layer.querySelector('.s2-tray'));
+  const inSheet = layer.querySelector('.s2-sheet .s2-chip');
+  ok(shown(inSheet), 'tray sheet not open');
+  key('l', {}, inSheet);
+  key('Escape', {}, inSheet);
+  eq(onPress.calls.length, 0);
+  key('l');
+  eq(onPress.calls.length, 1);
+});
+t('slider', () => {
+  const onInput = spy();
+  const { layer, ui } = fixture({ slider: { label: 'Gravity', min: 0.3, max: 1.2, step: 0.05, value: 0.3, onInput } });
+  const sl = layer.querySelector('.s2-br .s2-slider');
+  eq(sl.textContent.trim(), 'Gravity');
+  const input = sl.querySelector('input[type="range"]');
+  input.value = '0.6';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(onInput.calls.length, 1);
+  eq(onInput.calls[0][0], 0.6);
+  ui.slider.set(0.9);
+  eq(input.value, '0.9');
+  eq(ui.slider.value, 0.9);
+  eq(onInput.calls.length, 1);
+});
+t('limits warn', () => {
+  const got = warns(() => fixture({ actions: ['a', 'b', 'c', 'd'].map(v => ({ verb: v, onPress() {} })) }));
+  eq(got.length, 1);
+  const got2 = warns(() => fixture({ actions: [{ verb: 'clear', onPress() {} }, { verb: 'reset', onPress() {} }] }));
+  eq(got2.length, 1);
+});
+
+/* ---------- Task 4: Settings sheet ---------- */
+const store = { set: (k, v) => localStorage.setItem(`stimming.bartest.${k}`, v), get: k => localStorage.getItem(`stimming.bartest.${k}`), del: k => localStorage.removeItem(`stimming.bartest.${k}`) };
+const rows = () => [
+  { type: 'slider', id: 'streak', label: 'Star streaks', min: 0, max: 1, step: 0.01, value: 0.18, persist: true, onInput: spy() },
+  { type: 'choice', id: 'mode', label: 'Mode', value: 'a', persist: true, onPick: spy(), options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+  { type: 'toggle', id: 'trail', label: 'Trails', value: false, onToggle: spy() },
+];
+const openSet = layer => { click(layer.querySelector('.s2-set')); return layer.querySelector('.s2-sheet--right'); };
+t('sheet anatomy', () => {
+  const { layer } = fixture({ settings: rows(), quality: true, reset() {} });
+  const sh = openSet(layer);
+  ok(shown(sh), 'settings sheet hidden');
+  eq(sh.querySelector('.s2-hd').textContent, 'Settingsesc');
+  eq([...sh.querySelectorAll('.s2-lab')].map(e => e.textContent).join(','), 'bartest,Site');
+  eq([...sh.querySelectorAll('.s2-sec')[0].querySelectorAll('.s2-row > span:first-child')].map(e => e.textContent).join(','), 'Star streaks,Mode,Trails');
+  eq([...sh.querySelectorAll('.s2-sec')[1].querySelectorAll('.s2-chip')].map(e => e.textContent).join(','), 'Standard,High');
+  eq(sh.querySelector('.s2-ft .s2-chip').textContent, 'Reset');
+  click(layer.querySelector('.s2-set'));
+});
+t('row types', () => {
+  const r = rows();
+  const { layer } = fixture({ settings: r });
+  const sh = openSet(layer);
+  click(sh.querySelector('[data-value="b"]'));
+  eq(r[1].onPick.calls[0][0], 'b');
+  click(sh.querySelector('[data-value="on"]'));
+  eq(r[2].onToggle.calls[0][0], true);
+  click(layer.querySelector('.s2-set'));
+});
+t('persist writes', () => {
+  store.del('streak');
+  const { layer } = fixture({ settings: rows() });
+  const input = layer.querySelector('.s2-sheet input[type="range"]');
+  input.value = '0.5';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  eq(store.get('streak'), '0.5');
+});
+t('persist restores', () => {
+  store.set('streak', '0.4');
+  store.set('mode', 'b');
+  const r = rows();
+  const { ui } = fixture({ settings: r });
+  eq(ui.setting('streak').value, 0.4);
+  eq(ui.setting('mode').value, 'b');
+  eq(r[0].onInput.calls.length + r[1].onPick.calls.length, 0);
+});
+t('junk restores to default', () => {
+  for (const junk of ['abc', '9', '']) {
+    store.set('streak', junk);
+    store.set('mode', 'zzz');
+    const { ui } = fixture({ settings: rows() });
+    eq(ui.setting('streak').value, 0.18);
+    eq(ui.setting('mode').value, 'a');
+  }
+  store.del('streak'); store.del('mode');
+});
+t('quality row', () => {
+  const before = stim.quality();
+  const { layer } = fixture({ quality: true });
+  const sh = openSet(layer);
+  click(sh.querySelector('[data-value="high"]'));
+  eq(stim.quality(), 'high');
+  stim.setQuality('standard');
+  eq(sh.querySelector('[data-value="standard"]').getAttribute('aria-pressed'), 'true');
+  stim.setQuality(before);
+  click(layer.querySelector('.s2-set'));
+});
+t('reset', () => {
+  const reset = spy();
+  const { layer } = fixture({ settings: rows(), reset });
+  const sh = openSet(layer);
+  click(sh.querySelector('.s2-ft .s2-chip'));
+  eq(reset.calls.length, 1);
+  ok(!shown(sh), 'sheet still open');
+});
+t('no rows hides button', () => {
+  const { layer } = fixture({ quality: false });
+  ok(!shown(layer.querySelector('.s2-set')));
+});
+t('focus', () => {
+  const { layer } = fixture({ settings: rows(), quality: true });
+  const btn = layer.querySelector('.s2-set');
+  btn.focus();
+  const sh = openSet(layer);
+  ok(sh.contains(document.activeElement), 'focus outside sheet');
+  key('Escape', {}, document.activeElement);
+  ok(!shown(sh), 'Escape left it open');
+  eq(document.activeElement, btn);
+});
+t('no hover open', () => {
+  const { layer } = fixture({ settings: rows() });
+  layer.querySelector('.s2-set').dispatchEvent(new MouseEvent('mouseenter'));
+  layer.querySelector('.s2-set').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  ok(!shown(layer.querySelector('.s2-sheet--right')));
+});
+t('one sheet at a time', () => {
+  const { layer } = fixture({ settings: rows(), choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }] } });
+  click(layer.querySelector('.s2-tray'));
+  openSet(layer);
+  ok(!shown(layer.querySelector('.s2-sheet--left')), 'tray stayed open');
+  ok(shown(layer.querySelector('.s2-sheet--right')), 'settings not open');
+  click(layer.querySelector('.s2-set'));
+});
+
+/* ---------- Task 5: key strip ---------- */
+const down = el => el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+const strip = layer => layer.querySelector('.s2-keys');
+t('entries', () => {
+  const { layer } = fixture({ keys: [['click', 'place'], ['scroll', 'zoom']] });
+  const dl = strip(layer);
+  eq(dl?.tagName, 'DL');
+  eq(dl.getAttribute('aria-label'), 'How to play');
+  const items = [...dl.children];
+  eq(items.length, 2);
+  ok(items[0].querySelector('dt kbd'), 'no keycap');
+  eq(items[1].querySelector('dd').textContent, 'zoom');
+});
+t('touch words', () => {
+  eq(stim.keyWord('click', true), 'TAP');
+  eq(stim.keyWord('scroll', true), 'PINCH');
+  eq(stim.keyWord('double-click', true), 'DOUBLE-TAP');
+  eq(stim.keyWord('hold + drag', true), 'HOLD + DRAG');
+  eq(stim.keyWord('click', false), 'CLICK');
+});
+t('fade on gestures', () => {
+  const { layer, stage } = fixture({ keys: [['click', 'place']] });
+  down(stage); down(stage);
+  ok(!strip(layer).classList.contains('is-faded'), 'faded after two');
+  down(stage);
+  ok(strip(layer).classList.contains('is-faded'), 'not faded after three');
+});
+t('controls are not gestures', () => {
+  const { layer } = fixture({ keys: [['click', 'place']], actions: [{ verb: 'clear', onPress() {} }] });
+  const chip = layer.querySelector('.s2-bl .s2-chip');
+  for (let i = 0; i < 4; i++) { down(chip); click(chip); }
+  ok(!strip(layer).classList.contains('is-faded'));
+});
+t('fade on time', async () => {
+  const intro = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'intro' }));
+  const { layer } = fixture({ keys: [['click', 'place']] }, { keyDelay: 50 });
+  await wait(120);
+  ok(!strip(layer).classList.contains('is-faded'), 'faded during the intro');
+  intro.remove();
+  await wait(150);
+  ok(strip(layer).classList.contains('is-faded'), 'not faded after the delay');
+});
+t('(i) returns it', () => {
+  const { layer, stage } = fixture({ keys: [['click', 'place']] });
+  const info = layer.querySelector('.s2-info');
+  eq(info.getAttribute('aria-expanded'), 'true');
+  down(stage); down(stage); down(stage);
+  eq(info.getAttribute('aria-expanded'), 'false');
+  click(info);
+  ok(!strip(layer).classList.contains('is-faded'), 'still faded');
+  eq(info.getAttribute('aria-expanded'), 'true');
+  click(info);
+  ok(strip(layer).classList.contains('is-faded'), 'second click did not hide');
+});
+t('keys false', () => {
+  const { layer } = fixture({ keys: false });
+  ok(!strip(layer) && !layer.querySelector('.s2-info'));
+});
+t('five entries warn', () => {
+  const got = warns(() => fixture({ keys: [1, 2, 3, 4, 5].map(i => ['click', `v${i}`]) }));
+  eq(got.length, 1);
+});
+
+/* ---------- Task 6: narrow layout ---------- */
+const full = () => ({
+  choice: { label: 'Palette', value: 'o0', options: opts(3) },
+  slider: { label: 'Speed', min: 0, max: 1, step: 0.1, value: 0.2 },
+  actions: [{ verb: 'flip', onPress() {} }],
+  settings: [{ type: 'toggle', id: 'n1', label: 'Glow', value: true }],
+});
+const resize = async (fx, w) => { fx.main.style.width = `${w}px`; await wait(80); };
+t.pane('narrow moves', async () => {
+  const f = fixture(full());
+  await resize(f, 375);
+  ok(f.frame.hasAttribute('data-narrow'), 'no data-narrow');
+  ok(f.layer.querySelector('.s2-bl > .s2-step'), 'choice not a stepper in bottom left');
+  ok(f.layer.querySelector('.s2-br > .s2-chip .s2-label')?.textContent === 'Flip', 'action not bottom right');
+  const sec = f.layer.querySelector('.s2-sheet--right .s2-sec');
+  eq(sec.querySelector('.s2-row')?.classList.contains('s2-slider'), true);
+  ok(!f.layer.querySelector('.s2-br .s2-slider'), 'slider still on stage');
+  await resize(f, 900);
+  ok(!f.frame.hasAttribute('data-narrow'), 'data-narrow stuck');
+  ok(f.layer.querySelector('.s2-tl > .s2-seg'), 'segments not back top left');
+  ok(f.layer.querySelector('.s2-br > .s2-slider'), 'slider not back');
+  ok(f.layer.querySelector('.s2-bl .s2-label')?.textContent === 'Flip', 'action not back bottom left');
+});
+t.pane('narrow without choice', async () => {
+  const spec = full();
+  delete spec.choice;
+  const f = fixture(spec);
+  await resize(f, 375);
+  ok(f.layer.querySelector('.s2-bl .s2-label')?.textContent === 'Flip', 'action not bottom left');
+  ok(f.layer.querySelector('.s2-br > .s2-slider'), 'slider not bottom right');
+});
+t.pane('narrow slider alone opens settings', async () => {
+  const f = fixture({ choice: { label: 'P', value: 'o0', options: opts(3) }, slider: { label: 'Speed', value: 0.5 }, actions: [{ verb: 'flip', onPress() {} }] });
+  ok(!shown(f.layer.querySelector('.s2-set')), 'settings shown with no rows');
+  await resize(f, 375);
+  ok(shown(f.layer.querySelector('.s2-set')), 'settings hidden with the slider inside');
+  await resize(f, 900);
+  ok(!shown(f.layer.querySelector('.s2-set')), 'settings stayed after the slider left');
+});
+t.pane('tray stays tray', async () => {
+  const f = fixture({ choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  await resize(f, 375);
+  ok(f.layer.querySelector('.s2-bl > .s2-tray'), 'tray chip not bottom left');
+});
+t.pane('values survive', async () => {
+  const f = fixture({ ...full(), choice: { label: 'Kind', value: 'o0', options: opts(3) } });
+  f.ui.choice.set('o2');
+  f.ui.slider.set(0.7);
+  await resize(f, 375);
+  eq(f.ui.choice.value, 'o2');
+  eq(f.layer.querySelector('.s2-step-now').textContent, 'Opt 2');
+  await resize(f, 900);
+  eq(f.ui.slider.value, 0.7);
+  eq(f.layer.querySelector('.s2-seg [aria-pressed="true"]').dataset.value, 'o2');
+});
+t.pane('crossing closes sheets', async () => {
+  const f = fixture(full());
+  click(f.layer.querySelector('.s2-set'));
+  ok(shown(f.layer.querySelector('.s2-sheet--right')), 'did not open');
+  await resize(f, 375);
+  ok(!shown(f.layer.querySelector('.s2-sheet--right')), 'still open after crossing');
+});
+t.pane('name hides', async () => {
+  const f = fixture();
+  await resize(f, 340);
+  ok(!shown(f.layer.querySelector('.s2-name')), 'name shown at 340');
+  await resize(f, 375);
+  ok(shown(f.layer.querySelector('.s2-name')), 'name hidden at 375');
+});
+
+t('narrow at build', () => {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.style.width = '375px';
+  main.append(stage);
+  fx.append(main);
+  buildBar(stage, { choice: { label: 'P', value: 'o0', options: opts(3) } }, { id: 'bartest' });
+  ok(stage.parentElement.hasAttribute('data-narrow'), 'not narrow at build');
+  ok(stage.parentElement.querySelector('.s2-bl > .s2-step'), 'choice not placed at build');
+});
+
+/* ---------- final review fixes ---------- */
+const narrowFixture = (spec, w = 343) => {
+  const main = document.createElement('main'), stage = document.createElement('div');
+  stage.className = 'stage';
+  main.style.width = `${w}px`;
+  main.append(stage);
+  fx.append(main);
+  const ui = buildBar(stage, spec, { id: 'bartest' });
+  return { main, stage, ui, frame: stage.parentElement, layer: stage.parentElement.querySelector('.stim-ui') };
+};
+t('key strip fits a phone', () => {
+  const { frame, layer } = narrowFixture({ actions: [{ verb: 'clear', onPress() {} }],
+    keys: [['click', 'place'], ['hold + drag', 'throw a cluster'], ['drag', 'move'], ['scroll', 'zoom']] });
+  const f = frame.getBoundingClientRect(), k = layer.querySelector('.s2-keys').getBoundingClientRect();
+  ok(k.left >= f.left && k.right <= f.right, `strip ${Math.round(k.left)}..${Math.round(k.right)} outside frame ${Math.round(f.left)}..${Math.round(f.right)}`);
+});
+t('tray pick keeps the toy focus', () => {
+  const target = document.body.appendChild(Object.assign(document.createElement('div'), { tabIndex: 0 }));
+  const { layer } = fixture({ choice: { label: 'Add', display: 'tray', value: 'a', onPick: () => target.focus(),
+    options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  click(layer.querySelector('.s2-tray'));
+  click(layer.querySelector('.s2-sheet--left [data-value="b"]'));
+  const got = document.activeElement;
+  target.remove();
+  eq(got, target);
+});
+t('narrow tray sheet rises from its chip', () => {
+  const { layer } = narrowFixture({ choice: { label: 'Add', display: 'tray', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } });
+  const chip = layer.querySelector('.s2-bl > .s2-tray');
+  click(chip);
+  const sh = layer.querySelector('.s2-sheet--left').getBoundingClientRect(), c = chip.getBoundingClientRect();
+  ok(sh.bottom <= c.top && c.top - sh.bottom < 20, `sheet bottom ${Math.round(sh.bottom)} vs chip top ${Math.round(c.top)}`);
+  click(chip);
+});
+
+/* ---------- run ---------- */
+let pass = 0, ran = 0;
+for (const [name, fn, paneOnly] of queue) {
+  if (paneOnly && HEADLESS) { out.textContent += `SKIP ${name} (pane only)\n`; continue; }
+  ran++;
+  try { await fn(); pass++; out.textContent += `PASS ${name}\n`; }
+  catch (err) { out.textContent += `FAIL ${name}: ${err.message}\n`; console.error(name, err); }
+}
+out.textContent += `DONE ${pass}/${ran}\n`;
+try { Object.keys(localStorage).filter(k => k.startsWith('stimming.bartest.')).forEach(k => localStorage.removeItem(k)); } catch (err) { /* storage is optional */ }
+</script>
+</body>
+</html>
