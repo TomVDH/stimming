@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:47:54Z
-updated_at: 2026-11-09T08:50:34Z
+updated_at: 2026-11-09T08:55:46Z
 parent: stimming-oh7b
 ---
 
@@ -40,3 +40,5 @@ Build Lichtenberg burn from docs/plans/lichtenberg.md. It starts in the Lab. Pre
 - QA in a probe page (hidden pane): Q1 syntax ok (page and menu). Q2 console clean after hold, tap, Space, C, both chips, all Settings rows. Q4 drifting 12 fps, asleep 0 frames 61 s after input. Q5 by code review only (the probe forces visibility). Q6 reduced motion not emulated in the pane; code path checked. Q7 three controls, four key rows (three on touch). Q8 Space burns and freezes, C clears. Q9 context runs after the gesture, suspends once cooled. Q10 CPU about 0.2 ms a frame for the growth step in the probe; real-device fps unmeasured.
 - 375 px: stepper bottom left, Clear bottom right, Voltage in Settings, 34 px targets, no overlaps.
 - Session cost: no dollar figure available in this session; left open for Tom.
+
+- Menu icon: interactive. A spark tree grows where the pointer enters, reaches for the pointer as it moves, and cools to orange then fades on leave. Lab icons get only play and rest, so the icon adds its own pointer listeners.
