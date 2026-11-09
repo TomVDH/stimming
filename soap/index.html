@@ -13,35 +13,14 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Soap cutting: the board at full width under the shared header. */
+/* Soap cutting: the board fills the stage under the corner controls. */
 :root { --stage: oklch(0.21 0.008 265); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.setter { position: relative; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings lights while it holds the soap in use. */
-.setter.holds #setBtn { color: var(--fg); border-color: var(--fg); }
-/* Settings opens a tray above the bar. */
-.sets {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: grid; gap: 8px; width: max-content; padding: 10px; white-space: nowrap;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-/* A clear strip bridges the gap, so hover survives the move up. */
-.sets::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px; }
-.setter.is-open .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .setter:hover .sets { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .chip { padding: 4px 9px; }
-@media (prefers-reduced-motion: reduce) { .stage canvas, .sets { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
@@ -50,33 +29,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; drag the same line again, or saw back and forth, to cut deeper until it parts. Shift-drag, or a drag in from the mat, slices right through. Fallen pieces cut too. Tap a scored cube on top to pop it; hold to spread the crack; Ctrl-click pops the whole grid. Space makes the next cut, Enter pops the grid, B blows the shavings away, N brings a new bar, 1 to 6 pick the soap.">
       <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="soaps" role="group" aria-label="Soap"></div>
-      <div class="actions">
-        <button class="chip" id="fresh" type="button" aria-keyshortcuts="N">New bar</button>
-        <button class="chip" id="blow" type="button" aria-keyshortcuts="B">Blow</button>
-      </div>
-      <div class="edge">
-        <div class="setter" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Soap</span><button class="chip" id="swirl" type="button" aria-pressed="false" aria-keyshortcuts="6"></button></div>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>score; saw to go deeper</dd></div>
-          <div class="fine"><dt><kbd>Shift</kbd> drag</dt><dd>slice through</dd></div>
-          <div class="touch"><dt>Drag in from the mat</dt><dd>slice through</dd></div>
-          <div class="fine"><dt><kbd>Ctrl</kbd> click a cube</dt><dd>pop the grid</dd></div>
-          <div class="touch"><dt>Tap a cube</dt><dd>pop</dd></div>
-          <div class="fine"><dt><kbd>Space</kbd></dt><dd>next cut</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Soap cutting</h1><div class="vignette" hidden></div></section>
@@ -89,10 +44,7 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, choices, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'soap' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
 const panel = document.getElementById('table');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -147,9 +99,32 @@ function swatchCss(v) {
   if (v.speck) return `radial-gradient(circle at 30% 40%, ${css(v.sp)} 0 1.2px, transparent 1.6px), radial-gradient(circle at 72% 65%, ${css(v.sp)} 0 1.2px, transparent 1.6px), ${css(v.a)}`;
   return css(v.a);
 }
-// The last soap lives in Settings; the bar holds the rest.
-const SWIRL = SOAPS.length - 1;
-let soapAt = Math.floor(Math.random() * SWIRL);
+let soapAt = Math.floor(Math.random() * SOAPS.length);
+// A pick slides a fresh bar of that soap in.
+// A pick during the load waits for the first bar to settle.
+function setSoap(i) {
+  if (i === soapAt) return;
+  soapAt = i;
+  if (ready) newBar();
+}
+const coarse = matchMedia('(pointer: coarse)').matches;
+const ui = initPage({ id: 'soap', bar: {
+  choice: { label: 'Soap', value: String(soapAt),
+    options: SOAPS.map((v, i) => ({ value: String(i), label: v.name, key: String(i + 1), dot: swatchCss(v) })),
+    onPick: v => setSoap(+v) },
+  actions: [
+    { verb: 'new', label: 'New bar', key: 'N', onPress: () => newBar() },
+    { verb: 'blow', label: 'Blow', key: 'B', onPress: () => blow() },
+  ],
+  quality: true,
+  keys: coarse
+    ? [['drag', 'score, saw deeper'], ['drag from the mat', 'slice through'], ['tap a cube', 'pop'], ['hold a cube', 'spread the crack']]
+    : [['drag', 'score, saw deeper'], ['shift + drag', 'slice through'], ['ctrl + click', 'pop the grid'], ['space', 'next cut']],
+} });
+// A pointer pick on a corner control hands the keys back to the stage.
+document.querySelector('.stim-ui')?.addEventListener('click', e => {
+  if (e.detail && e.target.closest('.s2-tl, .s2-bl, .s2-br')) panel.focus({ preventScroll: true });
+});
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 const MAXV = 16, LEAD = 0.004;
@@ -2207,6 +2182,8 @@ function fit(w, h) {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   const k = clamp((w / h - 0.8) / 0.98), X = lerp(10.5, 14, k), Z0 = -6.5, Z1 = lerp(8.5, 8, k);
+  // The corner rows take about 56 px at the top and the bottom.
+  const my = Math.min(0.92, 1 - 112 / h);
   let lo = 8, hi = 300;
   for (let it = 0; it < 28; it++) {
     const d = (lo + hi) / 2;
@@ -2214,7 +2191,7 @@ function fit(w, h) {
     let ok = true;
     for (const x of [-X, X]) for (const y of [0, 8.6]) for (const z of [Z0, Z1]) {
       vtmp.set(x, y, z).project(camera);
-      if (Math.abs(vtmp.x) > 0.95 || Math.abs(vtmp.y) > 0.92) ok = false;
+      if (Math.abs(vtmp.x) > 0.95 || Math.abs(vtmp.y) > my) ok = false;
     }
     if (ok) hi = d; else lo = d;
   }
@@ -2701,60 +2678,18 @@ panel.addEventListener('lostpointercapture', release);
 panel.addEventListener('focus', () => { kbFocus = panel.matches(':focus-visible'); wake(); });
 panel.addEventListener('blur', () => { kbFocus = false; wake(); });
 
-/* ---------- the soap chips ---------- */
-const soapsEl = document.getElementById('soaps'), swirlEl = document.getElementById('swirl');
-const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
-const chipFace = v => `<span class="dot" style="--c: ${swatchCss(v)}" aria-hidden="true"></span>${v.name}`;
-soapsEl.innerHTML = SOAPS.slice(0, SWIRL).map((v, i) => `<button class="chip" type="button" data-value="${i}" aria-pressed="false" aria-keyshortcuts="${i + 1}">${chipFace(v)}</button>`).join('');
-swirlEl.innerHTML = chipFace(SOAPS[SWIRL]);
-const soapChips = [...soapsEl.children];
-// Swirl off goes back to the last soap from the bar.
-let soapBack = soapAt;
-function paintSoaps() {
-  soapChips.forEach((el, i) => el.setAttribute('aria-pressed', String(i === soapAt)));
-  swirlEl.setAttribute('aria-pressed', String(soapAt === SWIRL));
-  setter.classList.toggle('holds', soapAt === SWIRL);
-}
-// A new pick slides a fresh bar of that soap in.
-// A pick before the toy loads changes nothing.
-function setSoap(i) {
-  if (ready && i !== soapAt) {
-    if (i !== SWIRL) soapBack = i;
-    soapAt = i;
-    newBar();
-  }
-  paintSoaps();
-}
-choices(soapsEl, v => setSoap(+v));
-// A pointer pick hands the keys back to the stage.
-soapsEl.addEventListener('click', e => { if (e.detail) panel.focus({ preventScroll: true }); });
-const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
-setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
-swirlEl.addEventListener('click', e => {
-  setSoap(soapAt === SWIRL ? soapBack : SWIRL);
-  openSets(false);
-  if (e.detail) panel.focus({ preventScroll: true });
-});
-document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
-paintSoaps();
-
+/* ---------- keys: the shell binds N, B and 1 to 6 ---------- */
 addEventListener('keydown', e => {
   if (!ready || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  // Buttons and links keep their own keys.
-  if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
+  // Buttons, links and the Settings sheet keep their own keys.
+  if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea, .s2-sheet')) return;
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) nextCut(); }
-  else if (e.key === 'n' || e.key === 'N') { if (!e.repeat) newBar(); }
-  else if (e.key === 'b' || e.key === 'B') { if (!e.repeat) blow(); }
   else if (e.key === 'Enter') {
     // Enter pops the whole grid from its middle.
     const rings = !e.repeat && !press && !sweep && !stroke ? gridPlan() : null;
     if (rings) startPress(rings, 'auto');
   }
-  else if (e.key >= '1' && e.key <= String(SOAPS.length)) setSoap(+e.key - 1);
 });
-document.getElementById('fresh').addEventListener('click', () => newBar());
-document.getElementById('blow').addEventListener('click', () => blow());
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -2765,9 +2700,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
-  document.getElementById('fresh').disabled = true;
-  document.getElementById('blow').disabled = true;
-  [...soapChips, swirlEl, setBtn].forEach(el => { el.disabled = true; });
+  ui.hideControls?.();
 }
 async function start() {
   let RoomEnvironment;
