@@ -299,12 +299,15 @@ const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] 
 // Camera axes in the cabin (a*) and in the world (F, R, U).
 const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
 function setBasis() {
-  // The eye moves with the head; the aim follows a third of the way.
+  // The eye moves with the head; the aim follows a third of the way at rest.
   // The impact's shock shakes the cabin.
   const sk = EV.boom ? EV.boom.shake * (reduce ? 0.2 : 1) : 0;
   const hx = head.x + head.hx * 0.02 + sk * 0.012 * Math.sin(t * 41) * Math.sin(t * 7.3), hy = head.y + head.hy * 0.015 + sk * 0.01 * Math.sin(t * 33 + 1);
-  const eye = [EYE[0] + hx, EYE[1] + hy, EYE[2] + head.z];
-  const Fa = norm(sub([AIM[0] + hx * 0.35, AIM[1] + hy * 0.35, AIM[2]], eye));
+  // Leaning in close centres the eye on the port and frees the look.
+  const kz = clamp((head.z - 0.03) / (REACH.z[1] - 0.03)), near = kz * kz * (3 - 2 * kz);
+  const eye = [EYE[0] * (1 - near) + hx, EYE[1] * (1 - near) + hy, EYE[2] + head.z];
+  const follow = 0.35 + 0.55 * near;
+  const Fa = norm(sub([AIM[0] + hx * follow, AIM[1] + hy * follow, AIM[2]], eye));
   const R0 = norm(cross([0, 1, 0], Fa)), U0 = cross(Fa, R0);
   // Roll turns the right and up axes about the view.
   const cr = Math.cos(ROLL), sr = Math.sin(ROLL);
