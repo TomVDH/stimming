@@ -140,6 +140,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 ## Process
 
 - Perfect one thing first. Never roll a change across all toys at once. Tom picks which toys get it.
+- New toys start in the Lab. A toy reaches the main shelf only after Tom vets it (Tom, 2026-11-09). Never move a toy to the main shelf on your own.
 - Commit and push after every change, one logical commit at a time.
 - Toy chats can share one checkout and one git index. Never `git add -A`, `git commit -a` or a whole-file `git add index.html`.
   Commit only through `tools/commit.sh -m "msg" [--hunks <patch>] -- <paths>`; it commits and pushes. For shared files, pass your hunks: `git diff HEAD -- index.html`, trimmed to yours.
