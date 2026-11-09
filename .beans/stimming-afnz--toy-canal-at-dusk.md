@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:14:54Z
+updated_at: 2026-11-09T08:30:58Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -32,3 +32,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): more sprawl. Added side streets off the main road, two estates of fermettes and bungalows, an industrial street of sheds, field roads, five farms with yard lights. One road list feeds the ground shader and the ribbons. Sky eye pulls back; phones look along the main road over the bridge.
 
 - Tom (2026-11-09): far more, from aerial photos. Studied Esri orthophotos of Beernem, Moerbrugge and Balgerhoeke. The plan is now generated: wandering old roads out from the centre, ring lanes, field lanes, 22 estates of cul-de-sacs, an old core of crooked wall-to-wall streets, an industrial zone by the canal, 16 farms, woods, hedgerow trees, a sports ground. A 2 m occupancy grid packs about 1,800 plots without overlap; a 2048 px painted ground map holds parcels, hedges, gardens, driveways and asphalt. About 250k triangles in one merged mesh.
+
+- Tom (2026-11-09): more like Beernem. The canal now bends (x = 0.00012 (z + 160)^2), with water, walls, towpaths, lamps and the canal road on the curve; the ground is one plane with a hole for the canal. The village fills two lobed envelopes with wavy street grids, dense at the core. Added a large wood, a sand-pit lake, market-garden strips, a tree belt on the far towpath; the industry moved to the canal bank south of the village. Only buildings within 170 m of the canal draw in the mirror pass. Load to ready about 3 s on the M-series probe.

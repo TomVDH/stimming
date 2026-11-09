@@ -154,10 +154,13 @@ vec3 lampLit(vec3 P, vec3 N) {
 }`;
 // The main road crosses the canal here; the village sits round the crossing.
 const ROAD_Z = -160;
+// The canal bends gently away from the bridge in both directions.
+const BEND = 0.00012;
+const canalX = z => BEND * (z - ROAD_Z) ** 2;
 // Lamp heads: five each side of the bridge on both towpaths.
 const LAMP_POS = [
-  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(-CANAL_X - 2.4, QUAY + 7.5, z)),
-  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(CANAL_X + 2.4, QUAY + 7.5, z)),
+  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(canalX(z) - CANAL_X - 2.4, QUAY + 7.5, z)),
+  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(canalX(z) + CANAL_X + 2.4, QUAY + 7.5, z)),
 ];
 LAMP_POS.forEach((p, i) => U.uLamp.value[i].set(p.x, p.y, p.z, 0));
 // Fixed lights: position, colour as OKLCH, and full strength.
@@ -170,7 +173,7 @@ const VENUES = [
   { p: [56, 1.5, -194], c: [0.85, 0.1, 70], k: 9 },
   { p: [397, 6, -319], c: [0.75, 0.15, 60], k: 4 },
   { p: [-353, 6, -332], c: [0.75, 0.15, 60], k: 4 },
-  { p: [265, 9, -640], c: [0.92, 0.04, 240], k: 6 },
+  { p: [250, 9, 290], c: [0.92, 0.04, 240], k: 6 },
 ];
 VENUES.forEach((v, i) => {
   U.uLamp.value[TAPS + i].set(v.p[0], QUAY + v.p[1], v.p[2], 0);
@@ -241,6 +244,7 @@ vec3 k2haze(vec3 c, vec3 P) {
 /* ---------- end K2 ---------- */
 const HEAD = `${LAMPS_GLSL}\n${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}
 uniform float uDusk, uTime, uBell;
+float canalX(float z) { float t = z - (${ROAD_Z}.0); return ${BEND} * t * t; }
 uniform vec3 uWin;
 // Sky light on a surface: the zenith from above, the horizon from the side.
 vec3 skyAmb(vec3 N) { return mix(uHor * 0.8, uZen * 1.3, 0.5 + 0.5 * N.y) * 0.9; }`;
@@ -397,7 +401,7 @@ function poplars(z0, z1) {
   for (let z = z0; z > z1; z -= 7 + 2 * rnd()) {
     if (Math.abs(z - ROAD_Z) < 9) continue;
     // Columns: narrow, tall, with a short bare trunk.
-    const x = -22 + rnd(), h = 19 + 7 * rnd(), r = 1.1 + 0.35 * rnd();
+    const x = canalX(z) - 22 + rnd(), h = 19 + 7 * rnd(), r = 1.1 + 0.35 * rnd();
     parts.push(tag(new THREE.CylinderGeometry(0.16, 0.26, 3.5, 5).translate(x, QUAY + 1.75, z), [0, 0, 0, TREE]));
     parts.push(tag(new THREE.SphereGeometry(1, 10, 9).scale(r, h * 0.45, r).translate(x, QUAY + 2.6 + h * 0.45, z), [0, 0, rnd() * 100, TREE]));
   }
@@ -462,12 +466,26 @@ function bridge() {
 }
 // Concrete quay walls face the water.
 function walls() {
-  for (const s of [-1, 1]) parts.push(tag(new THREE.PlaneGeometry(3000, QUAY).rotateY(-s * Math.PI / 2).translate(s * CANAL_X, QUAY / 2, -500), [0, 0, 5.5, CONCRETE]));
+  for (const s of [-1, 1]) parts.push(tag(canalStrip(s * CANAL_X, s * CANAL_X, 0, QUAY), [0, 0, 5.5, CONCRETE]));
+}
+// A strip along the canal from offset o0 at height y0 to offset o1 at height y1.
+function canalStrip(o0, o1, y0, y1) {
+  const pos = [], idx = [];
+  for (let z = 1000, i = 0; z >= -2000; z -= 15, i++) {
+    const c = canalX(z);
+    pos.push(c + o0, y0, z, c + o1, y1, z);
+    if (i) { const a = (i - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
 // Road lamps: a steel pole and an arm that hangs the head over the towpath.
 function posts() {
   for (const p of LAMP_POS) {
-    const px = p.x + Math.sign(p.x) * 1.6;
+    const px = p.x + Math.sign(p.x - canalX(p.z)) * 1.6;
     parts.push(
       tag(new THREE.CylinderGeometry(0.07, 0.11, p.y - QUAY, 6).translate(px, (p.y + QUAY) / 2, p.z), [0, 0, 0, STEEL]),
       tag(new THREE.BoxGeometry(1.7, 0.08, 0.08).translate((px + p.x) / 2, p.y + 0.1, p.z), [0, 0, 0, STEEL]),
@@ -480,6 +498,8 @@ function posts() {
 /* ---------- plan: occupancy grid and the painted ground map ---------- */
 // The plan spans x -1500 to 1500 and z -2000 to 1000.
 const MAP = { x0: -1500, z0: -2000, size: 3000, px: 2048 };
+// A lake in an old sand pit: centre and radii.
+const LAKE = [560, -820, 75, 48];
 // Occupancy in 2 m cells: 0 free, 1 road, 2 building, 3 garden, 4 kept clear, 5 industry only.
 const CELL = 2, GN = MAP.size / CELL;
 const occ = new Uint8Array(GN * GN);
@@ -517,6 +537,8 @@ function fields() {
     frameOn(gc, x, z, ux, uz, -uz, ux);
     gc.fillStyle = pick(FIELD);
     gc.fillRect(0, 0, w, d);
+    // Some parcels are market-garden strips.
+    if (rnd() < 0.12) for (let k = 0, n = 5 + Math.floor(rnd() * 8); k < n; k++) { gc.fillStyle = pick(FIELD); gc.fillRect(0, d * k / n, w, d / n * 0.8); }
     if (rnd() < 0.35) {
       gc.strokeStyle = '#2c3d22'; gc.lineWidth = 3 / K; gc.strokeRect(0, 0, w, d);
       HEDGED.push({ x, z, ux, uz, w, d });
@@ -546,11 +568,11 @@ function polyRoad(pts, h, mode) {
 }
 // A road that wanders from a start; it stops at the canal and the map edge.
 function wander(x, z, a, len, step = 40, bend = 0.1) {
-  const pts = [[x, z]], side = Math.sign(x);
+  const pts = [[x, z]], side = Math.sign(x - canalX(z));
   for (let s = 0; s < len; s += step) {
     a += (rnd() - 0.5) * 2 * bend;
-    const nx = x + Math.cos(a) * step, nz = z + Math.sin(a) * step;
-    if (Math.sign(nx) !== side || Math.abs(nx) < 26 || occGet(nx, nz) === 4) break;
+    const nx = x + Math.cos(a) * step, nz = z + Math.sin(a) * step, cx = nx - canalX(nz);
+    if (Math.sign(cx) !== side || Math.abs(cx) < 26 || occGet(nx, nz) === 4) break;
     x = nx; z = nz; pts.push([x, z]);
   }
   return pts;
@@ -588,6 +610,30 @@ const CENTRES = [[44, -170], [-44, -160]];
 function modeAt(x, z) {
   const d = Math.min(...CENTRES.map(([cx, cz]) => Math.hypot(x - cx, z - cz)));
   return d < 300 ? 'core' : d < 750 ? 'village' : 'sparse';
+}
+// The village envelope: a lobed blob round a centre.
+function inside(e, x, z) {
+  const dx = x - e.x, dz = z - e.z, a = Math.atan2(dz, dx);
+  return Math.hypot(dx, dz) < e.r * (1 + 0.16 * Math.sin(3 * a + e.p) + 0.08 * Math.sin(5 * a + 2 * e.p));
+}
+// Fill an envelope with two crossing sets of gently wavy streets, broken here and there.
+function grid(e, ang, sp, side) {
+  const d1 = [Math.cos(ang), Math.sin(ang)], d2 = [-d1[1], d1[0]], R = e.r * 1.3;
+  for (const [A, B] of [[d1, d2], [d2, d1]]) {
+    for (let k = -Math.ceil(R / sp); k <= Math.ceil(R / sp); k++) {
+      if (rnd() < 0.12) continue;
+      const off = k * sp + (rnd() - 0.5) * sp * 0.3, ph = rnd() * 6.28, amp = 4 + 8 * rnd();
+      let pts = [];
+      const flush = () => { if (pts.length > 2) polyRoad(pts, 2.8, 'town'); pts = []; };
+      for (let t = -R; t <= R; t += 20) {
+        const o = off + amp * Math.sin(t / 90 + ph);
+        const x = e.x + A[0] * t + B[0] * o, z = e.z + A[1] * t + B[1] * o, cx = x - canalX(z);
+        if (inside(e, x, z) && Math.sign(cx) === side && Math.abs(cx) > 28 && occGet(x, z) !== 4 && occGet(x, z) !== 5 && rnd() > 0.025) pts.push([x, z]);
+        else flush();
+      }
+      flush();
+    }
+  }
 }
 // Gap, setback and garden depth for each mix.
 const SPACING = {
@@ -638,7 +684,7 @@ function plots(filter) {
     for (const s of [-1, 1]) {
       for (let a = 3; a < L - 3;) {
         const p = along(pts, a);
-        const mode = mode0 === 'auto' ? modeAt(p.x, p.z) : mode0;
+        const mode = mode0 === 'auto' ? modeAt(p.x, p.z) : mode0 === 'town' ? (modeAt(p.x, p.z) === 'core' ? 'core' : 'estate') : mode0;
         const { w, geos } = plotGeos(mode);
         const [gap, set, garden] = SPACING[mode]();
         if (a + w > L - 3) break;
@@ -703,7 +749,7 @@ function sports(x, z) {
 /* ---------- layout ---------- */
 fields();
 // Kept clear: the canal and towpaths, the railway, the square, the church and the station.
-reserve(-18, MAP.z0, 18, MAP.z0 + MAP.size);
+for (let z = MAP.z0; z < MAP.z0 + MAP.size; z += 2) reserve(canalX(z) - 18, z, canalX(z) + 18, z + 2);
 reserve(-92, MAP.z0, -68, MAP.z0 + MAP.size);
 reserve(40, -236, 104, -164);
 reserve(48, -216, 96, -195);
@@ -712,12 +758,16 @@ reserve(-128, -154, -84, -102);
 worldOn(gc);
 gc.fillStyle = '#5b5650'; gc.fillRect(-88, MAP.z0, 16, MAP.size);
 gc.fillStyle = '#8a857c'; gc.fillRect(42, -234, 60, 70);
-sports(-330, -520);
-reserve(30, -800, 440, -570, 5);
+sports(-300, 90);
+reserve(LAKE[0] - LAKE[2] - 10, LAKE[1] - LAKE[3] - 10, LAKE[0] + LAKE[2] + 10, LAKE[1] + LAKE[3] + 10);
+worldOn(gc);
+gc.fillStyle = '#1f2b2c'; gc.beginPath(); gc.ellipse(LAKE[0], LAKE[1], LAKE[2] + 3, LAKE[3] + 3, 0, 0, 6.283); gc.fill();
+// The industrial zone sits south of the village, on the canal bank.
+reserve(46, 150, 430, 420, 5);
 // The main road and the canal road run straight; the old roads wander out from the centre.
 polyRoad([[-1500, ROAD_Z], [-17, ROAD_Z]], 4, 'auto');
 polyRoad([[17, ROAD_Z], [1500, ROAD_Z]], 4, 'auto');
-polyRoad([[21, 1000], [21, -2000]], 2.75, 'auto');
+polyRoad(Array.from({ length: 76 }, (_, i) => { const z = 1000 - i * 40; return [canalX(z) + 21, z]; }), 2.75, 'auto');
 // Short core streets round the square.
 polyRoad([[38, -239], [108, -239]], 3, 'core');
 polyRoad([[107, -164], [107, -240]], 3, 'core');
@@ -741,10 +791,13 @@ for (const group of [RAD.slice(0, 3), RAD.slice(3, 6), RAD.slice(6, 9), RAD.slic
     }
   }
 }
-// The industrial zone: a grid of streets by the canal, north of the village.
-polyRoad([[24, -640], [430, -640]], 4, 'industry');
-polyRoad([[200, -560], [200, -780]], 3.5, 'industry');
-polyRoad([[330, -560], [330, -780]], 3.5, 'industry');
+// The industrial zone's streets.
+polyRoad([[canalX(270) + 25, 270], [425, 300]], 4, 'industry');
+polyRoad([[180, 160], [195, 412]], 3.5, 'industry');
+polyRoad([[320, 160], [330, 412]], 3.5, 'industry');
+// The village fills two envelopes, one each side of the canal.
+grid({ x: 270, z: -270, r: 470, p: 1.3 }, 0.25, 72, 1);
+grid({ x: -250, z: -60, r: 300, p: 4.1 }, -0.35, 68, -1);
 // The old core: short crooked streets off the main road, wall to wall.
 for (const x of [118, 165, 215, -40, -150, -205]) for (const s of [-1, 1]) {
   if (x < 0 && x > -60 && s < 0) continue;
@@ -762,14 +815,14 @@ for (const r of RAD) {
   }
 }
 // Estates off the old roads.
-for (let i = 0; i < 22; i++) {
-  const r = pick(RAD), p = along(r, 160 + 520 * rnd());
+for (let i = 0; i < 8; i++) {
+  const r = pick(RAD), p = along(r, 500 + 500 * rnd());
   if (p) estate(p, rnd() < 0.5 ? 1 : -1);
 }
 // Plots: the core first, then the old roads, then the estates and the industry.
 plots(m => m === 'core' || m === 'industry');
 plots(m => m === 'auto');
-plots(m => m === 'estate');
+plots(m => m === 'town' || m === 'estate');
 for (let i = 0, n = 0; i < 80 && n < 16; i++) {
   const x = MAP.x0 + 200 + rnd() * (MAP.size - 400), z = MAP.z0 + 300 + rnd() * (MAP.size - 600);
   if (Math.hypot(x - 44, z + 170) > 420 && Math.abs(x) > 60 && farm(x, z, rnd() * 6.283)) n++;
@@ -778,8 +831,12 @@ for (let i = 0; i < 6; i++) {
   const x = MAP.x0 + 200 + rnd() * (MAP.size - 400), z = MAP.z0 + 300 + rnd() * (MAP.size - 600);
   if (Math.hypot(x - 44, z + 170) > 500) wood(x, z, 60 + 60 * rnd(), 90);
 }
-hedgerows(2600);
+// A large wood south of the near bank, as at Beernem.
+wood(-560, 430, 230, 700);
+hedgerows(3200);
 poplars(1000, -2000);
+// A belt of round trees along the far towpath, open near the village.
+for (let z = 1000; z > -2000; z -= 10 + 4 * rnd()) if (Math.abs(z - ROAD_Z) > 260) tree(canalX(z) + 17.5, z, 2.6 + 1.8 * rnd());
 treeLine(-1600, -2050, 1600, -2050, 14);
 treeLine(1550, 1000, 1550, -2000, 12);
 treeLine(-1550, 1000, -1550, -2000, 12);
@@ -917,9 +974,16 @@ const solidMat = new THREE.ShaderMaterial({
   }`,
 });
 solidMat.extensions = { derivatives: true };
-const solids = new THREE.Mesh(mergeGeometries(parts), solidMat);
+// Only what stands near the canal shows in the water; the rest skips the mirror pass.
+const nearC = [], farC = [];
+for (const g of parts) {
+  g.computeBoundingBox();
+  const b = g.boundingBox, x = (b.min.x + b.max.x) / 2, z = (b.min.z + b.max.z) / 2;
+  (Math.abs(x - canalX(z)) < 170 || b.max.y > 40 ? nearC : farC).push(g);
+}
+const solids = new THREE.Mesh(mergeGeometries(nearC), solidMat);
 solids.layers.enable(LIGHT);
-scene.add(solids);
+scene.add(solids, new THREE.Mesh(mergeGeometries(farC), solidMat));
 /* ---------- end solids ---------- */
 
 /* ---------- K2: mirror ---------- */
@@ -953,8 +1017,8 @@ function renderMirror() {
 /* ---------- water ---------- */
 // Wind ripple and smear follow the weather; Dry is near still.
 const W = { uWind: { value: 0.1 }, uSmear: { value: 0.3 } };
-const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL_X * 2, 3000).rotateX(-Math.PI / 2).translate(0, 0, -500), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...W, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
+const water = new THREE.Mesh(canalStrip(-CANAL_X, CANAL_X, 0, 0), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...W, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } }, side: THREE.DoubleSide,
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uWind, uSmear; varying vec3 vP; varying vec4 vM; ${HEAD}
@@ -990,6 +1054,8 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL_X * 2, 3000).rotateX(
   }`,
 }));
 scene.add(water);
+// The lake in an old sand pit takes the same water.
+scene.add(new THREE.Mesh(new THREE.CircleGeometry(1, 48).scale(LAKE[2], LAKE[3], 1).rotateX(-Math.PI / 2).translate(LAKE[0], 0, LAKE[1]), water.material));
 /* ---------- end water ---------- */
 
 /* ---------- ground: the painted map, the towpaths and the railway ---------- */
@@ -1004,7 +1070,10 @@ const groundMat = new THREE.ShaderMaterial({
     vec4 mp = texture2D(tMap, (vP.xz - vec2(${MAP.x0}.0, ${MAP.z0}.0)) / ${MAP.size}.0);
     float n = k2noise(vP.xz * 0.7), n2 = k2fbm(vP.xz * 0.04);
     // The map holds the albedo; its alpha marks asphalt.
-    float tow = 1.0 - step(${CANAL_X + 4}.0, ax);
+    float cx = abs(x - canalX(z));
+    // The canal and the lake lie below the ground.
+    if (cx < ${CANAL_X - 0.2} || length((vP.xz - vec2(${LAKE[0]}.0, ${LAKE[1]}.0)) / vec2(${LAKE[2]}.0, ${LAKE[3]}.0)) < 1.0) discard;
+    float tow = 1.0 - step(${CANAL_X + 4}.0, cx);
     float tar = max(tow, smoothstep(0.35, 0.65, mp.a));
     vec3 alb = pow(mp.rgb, vec3(2.2)) * 0.45 * (0.85 + 0.3 * n2);
     alb = mix(alb, vec3(0.046, 0.046, 0.05) * (0.9 + 0.2 * n), tow);
@@ -1033,10 +1102,7 @@ const groundMat = new THREE.ShaderMaterial({
   }`,
 });
 groundMat.extensions = { derivatives: true };
-for (const s of [-1, 1]) {
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1488, 3000).rotateX(-Math.PI / 2).translate(s * (CANAL_X + 744), QUAY, -500), groundMat);
-  scene.add(ground);
-}
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2).translate(0, QUAY, -500), groundMat));
 /* ---------- end ground ---------- */
 
 /* ---------- K2: bloom ---------- */
@@ -1108,7 +1174,7 @@ let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
 // Sky eye circles the crossing from high up; drag turns it round a little.
-const SKY_T = new THREE.Vector3(40, 0, -230), SKY_P = new THREE.Vector3(160, 0, -170);
+const SKY_T = new THREE.Vector3(150, 0, -200), SKY_P = new THREE.Vector3(160, 0, -170);
 let view = 'sky';
 function frame() {
   const portrait = size.w < size.h;
@@ -1116,7 +1182,7 @@ function frame() {
   if (view === 'sky') {
     camera.fov = portrait ? 46 : 34;
     // Phones look along the main road, over the bridge; wide screens look across the canal.
-    const dist = portrait ? 1250 : 1050, el = (portrait ? 0.78 : 0.6) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
+    const dist = portrait ? 1300 : 1150, el = (portrait ? 0.78 : 0.6) - look.pitch * 2, az = (portrait ? -1.45 : -0.5) + look.yaw * 2;
     const T = portrait ? SKY_P : SKY_T;
     camera.position.set(T.x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), T.z + dist * Math.cos(el) * Math.cos(az));
     camera.lookAt(T);
@@ -1130,7 +1196,7 @@ function frame() {
   renderer.toneMappingExposure = 1.25;
   // A low eye on the near towpath, turned a little toward the far bank.
   // Phones stand at the edge, so the water fills the foreground.
-  camera.position.set(portrait ? -12.6 : -14.6, QUAY + 1.6, 14);
+  camera.position.set((portrait ? -12.6 : -14.6) + canalX(14), QUAY + 1.6, 14);
   camera.rotation.order = 'YXZ';
   camera.rotation.set((portrait ? -0.06 : 0.0) + look.pitch, -(portrait ? 0.26 : 0.22) + look.yaw, 0);
   camera.updateProjectionMatrix();
