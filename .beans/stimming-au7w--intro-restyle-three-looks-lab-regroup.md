@@ -26,3 +26,5 @@ Second round, 2026-11-09: Plate, Signal and Readout added on Tom's request. Same
 Third round, 2026-11-09: Signal takes a per-toy ink (colour or gradient) after a white flash. Strobe moved into Restyle on the shared beats. Open: Tom's lab was on Snap when he compared timing; he has not yet said whether the looks keep Classic's table or move to Snap's.
 
 Decision, 2026-11-09: Tom picks Signal as the intro for now, default on every toy. The other looks stay in the lab. Open: per-toy inks beyond the main shelf are hue placeholders; the Snap or Classic table question.
+
+Accents, 2026-11-09: every toy in toys.json carries `accent` (one colour or a gradient), a first proposal for all 79. The Signal intro reads it. `introlab/accents.html` shows them all. Open: Tom's review of the accents; other surfaces that use them.

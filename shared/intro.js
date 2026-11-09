@@ -1,6 +1,6 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
-// The root toys.json holds each toy's name, subtitle, emblem and Dutch name.
+// The root toys.json holds each toy's name, subtitle, emblem, accent and Dutch name.
 // The page's own intro text stays when toys.json cannot load.
 
 const TOYS = new URL('../toys.json', import.meta.url);
@@ -180,19 +180,6 @@ export const VARIETIES = {
   },
 };
 
-// Signal's ink per toy: one colour or a gradient. These are proposals.
-const INKS = {
-  morpher: 'linear-gradient(100deg, oklch(0.84 0.17 340), oklch(0.84 0.14 250))',
-  pop: 'oklch(0.9 0.2 128)',
-  fidget: 'oklch(0.83 0.17 62)',
-  domino: 'linear-gradient(100deg, oklch(0.74 0.2 28), oklch(0.9 0.18 100))',
-  pins: 'oklch(0.89 0.06 240)',
-  galaxy: 'linear-gradient(100deg, oklch(0.8 0.16 305), oklch(0.87 0.13 200))',
-  prism: 'linear-gradient(100deg, oklch(0.74 0.2 28), oklch(0.9 0.18 100), oklch(0.86 0.2 145), oklch(0.84 0.13 215), oklch(0.74 0.17 300))',
-};
-// Any other toy gets one bright colour; its id picks the hue.
-const inkOf = id => INKS[id] || `oklch(0.88 0.16 ${[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)})`;
-
 // A look's style can never change a beat; these keys are dropped from it.
 const BEAT = /^(lead|pop|flash|unfurl|hold|wipe|fade|read\w+|\w+Lag)$/;
 // A variety's full table: the base, its timing, then its style.
@@ -334,11 +321,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const T = { ...tableOf(variety), ...timing };
   root.classList.add('is-live');
   if (V.look) root.dataset.look = V.look;
-  if (V.ink) root.style.setProperty('--ink', inkOf(id || toyId()));
   if (V.layout) root.dataset.layout = V.layout;
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
+  // The toy's accent inks the logo and title; without one they stay white.
+  if (V.ink && info?.accent) root.style.setProperty('--ink', info.accent);
   // The lab's Static mode fills lines a toy lacks, so every line shows.
   if (fill && info) for (const k of Object.keys(fill)) info[k] ||= fill[k];
   let nl = null;
