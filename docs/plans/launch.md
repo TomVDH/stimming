@@ -267,3 +267,7 @@ The menu tile now shows spike 34 C. The bands, water and reeds are static markup
 
 Tom vetted the toy for the main shelf. `toys.json`: `number` 38, `sub` null, the entry sits after Fireworks; `stage` stays beta. The Strata tile moves from the Lab list to the main shelf in `index.html`, where the menu passes it the pointer. The page's intro fallback shows the emblem and No. 38.
 Not signed off: the version tag stays v0.9.
+
+## Signed off (2026-11-09, Tom: "its done")
+
+The menu tile and the intro carry `data-done`; the Beta tag goes; `toys.json` drops the stage. The version steps to 0.10, codename Hemelvaart.
