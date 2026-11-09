@@ -68,7 +68,7 @@ const ease = (dt, tau) => 1 - Math.exp(-dt / tau);
 /* ---------- profiles ---------- */
 // A profile is NP samples of outer radius, inner radius and both slopes, by height.
 // Glasses span 0 to GMAX cm, bottles 0 to BMAX cm.
-const NP = 512, GMAX = 24, BMAX = 32;
+const NP = 512, GMAX = 26, BMAX = 32;
 function slopes(a, max) {
   const dy = max / NP;
   for (let i = 0; i < NP; i++) {
@@ -104,7 +104,25 @@ function glassShape(s) {
   };
   return { H, hs, fh, ybot, bowl };
 }
+// A Catmull-Rom spline through an outline measured from a photo.
+function outlineR(pts, y) {
+  const step = pts[1][0] - pts[0][0], n = pts.length;
+  if (y < 0 || y > pts[n - 1][0]) return 0;
+  const f = y / step, i = Math.floor(f), t = f - i;
+  const P = k => pts[clamp(k, 0, n - 1)][1];
+  const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+  return Math.max(0, 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t));
+}
 function glassProfile(s) {
+  if (s.outline) {
+    const a = new Float32Array(NP * 4), dy = GMAX / NP, H = s.outline[s.outline.length - 1][0];
+    for (let i = 0; i < NP; i++) {
+      const y = (i + 0.5) * dy, ro = outlineR(s.outline, y);
+      a[i * 4] = ro;
+      if (y > s.ybot && y <= H) a[i * 4 + 1] = Math.max(ro - s.wall, 0) * Math.pow(Math.sin(Math.min((y - s.ybot) / 0.7, 1) * Math.PI / 2), 0.5);
+    }
+    return { prof: slopes(a, GMAX), h: H, ybot: s.ybot };
+  }
   const a = new Float32Array(NP * 4), dy = GMAX / NP, g = glassShape(s);
   const stemR = s.rock ? 0.75 : 0.5;
   for (let i = 0; i < NP; i++) {
@@ -129,6 +147,16 @@ function glassProfile(s) {
 }
 // A bottle from its catalogue sizes: kind, height, body radius, shoulder, neck length and radius.
 function bottleProfile(s) {
+  if (s.outline) {
+    const a = new Float32Array(NP * 4), dy = BMAX / NP, H = s.outline[s.outline.length - 1][0], ybot = 0.6;
+    for (let i = 0; i < NP; i++) {
+      const y = (i + 0.5) * dy, ro = outlineR(s.outline, y);
+      a[i * 4] = ro;
+      // The neck's wall is thicker than the body's.
+      if (y > ybot && y <= H) a[i * 4 + 1] = Math.max(ro - (ro < 1.7 ? 0.42 : 0.3), 0) * Math.pow(Math.sin(Math.min((y - ybot) / 0.6, 1) * Math.PI / 2), 0.5);
+    }
+    return { prof: slopes(a, BMAX), h: H, ybot };
+  }
   const a = new Float32Array(NP * 4), dy = BMAX / NP;
   const sh = s.kind === 'skittle' ? s.h * 0.3 : s.sh, n0 = s.h - s.nl;
   const body = y => (s.kind === 'bulb' ? s.r * (0.86 + 0.14 * Math.sin(Math.PI * clamp(y / (sh * 1.2)))) : s.r);
@@ -323,6 +351,17 @@ uniform vec3 uBub;       // rise constant A, growth G, start radius
 uniform vec4 uStream;    // x, z, flow, top radius
 uniform vec2 uStreamY;   // top y, end y
 uniform vec4 uCaus;      // beer radius, unused, unused, shadow fade
+uniform sampler2D uHF;   // waves on the beer (r) and the head's mound (g), cm
+uniform vec2 uSlosh;     // the beer surface's slope in world x and z
+uniform float uMenisc, uRl, uRf, uRocky, uDome, uFoamOn, uFizzN, uRaft;
+uniform vec4 uPuff[16];  // surge cloud centres and radii (cm)
+uniform float uPuffD[16];
+uniform int uNPuff;
+uniform vec3 uJet;       // the stream's exit speed: x, z across, and down (cm/s)
+uniform float uChill, uCold, uMistAge;
+uniform vec4 uBig[32];   // big bubbles from the pour: centre and radius
+uniform vec3 uFilm;      // the wall film: azimuth, top height (glass cm), strength
+uniform int uNBig;
 
 const int AIR = 0, GLS = 1, BEER = 2, FOAM = 3, BGL = 4, BBEER = 5, TABLE = 6;
 const float GMAX = ${GMAX.toFixed(1)}, BMAX = ${BMAX.toFixed(1)};
@@ -467,22 +506,42 @@ vec3 env(vec3 o, vec3 d) {
   return studio(o, d);
 }
 
+/* ---------- the beer's surface and the head's top ---------- */
+const float HF_HALF = 6.5;
+vec2 hfAt(vec3 g) { return texture(uHF, g.xz / (2.0 * HF_HALF) + 0.5).rg; }
+// The level, the slosh, the waves, and a meniscus that climbs the wall.
+float surfY(vec3 p, vec3 g, float r) {
+  return uLevel + dot(uSlosh, p.xz - uGO.xz) + hfAt(g).r + uMenisc * exp(-max(uRl - r, 0.0) / 0.12);
+}
+// The head: a dome, rocky peaks and a mound where the stream lands.
+float foamY(vec3 p, vec3 g, float r) {
+  float k = clamp(r / max(uRf, 0.5), 0.0, 1.0);
+  float rock = uRocky * (fbm(g.xz * 0.85 + 3.7) - 0.45);
+  return uFoamTop + (uDome + rock) * (1.0 - 0.6 * k * k) + hfAt(g).g + dot(uSlosh, p.xz - uGO.xz) * 0.5;
+}
+
 /* ---------- media ---------- */
 int mediumAt(vec3 p) {
   if (p.y < 0.0) return TABLE;
   vec3 g = uGRi * (p - uGO);
   float r = length(g.xz);
-  if (r < uGRmax + 0.02 && g.y > -0.01 && g.y < uGH + 1.6) {
+  if (r < uGRmax + 0.02 && g.y > -0.01 && g.y < uGH + 2.6) {
     vec4 Pr = gp(g.y);
     if (g.y <= uGH) {
       if (g.y > uGYb && r < Pr.y) {
-        if (p.y < uLevel) return BEER;
-        if (p.y < uFoamTop) return FOAM;
+        float sY = surfY(p, g, r);
+        if (p.y < sY) return BEER;
+        // The poured beer runs down the tilted wall as a thin rippling film.
+        if (uFilm.z > 0.0 && g.y < uFilm.y && Pr.y - r < 0.32) {
+          float da = abs(mod(atan(g.x, g.z) - uFilm.x + 3.14159, 6.28318) - 3.14159);
+          float halfw = 0.22 + 0.07 * (uFilm.y - g.y);
+          float wv = noise(vec2(atan(g.x, g.z) * 9.0, g.y * 2.5 + uTime * 14.0));
+          float th = uFilm.z * 0.16 * (0.55 + 0.9 * wv) * smoothstep(halfw, halfw * 0.4, da) * smoothstep(0.0, 0.6, uFilm.y - g.y);
+          if (Pr.y - r < th) return BEER;
+        }
+        if (uFoamOn > 0.5 && p.y < foamY(p, g, r)) return FOAM;
       } else if (r < Pr.x) return GLS;
-    } else if (uFoamTop > uRimY && r < uGRtop) {
-      float k = r / uGRtop;
-      if (p.y < uFoamTop - (uFoamTop - uRimY) * k * k) return FOAM;
-    }
+    } else if (uFoamOn > 0.5 && r < uGRtop && p.y < foamY(p, g, r)) return FOAM;
   }
   if (uBOn > 0.5) {
     vec3 b = uBRi * (p - uBO);
@@ -502,7 +561,7 @@ float stepAt(vec3 p) {
   float d = max(p.y, 0.0) + 0.01;
   vec3 g = uGRi * (p - uGO);
   float r = length(g.xz);
-  float bx = max(r - uGRmax - 0.1, max(-g.y - 0.1, g.y - uGH - 1.7));
+  float bx = max(r - uGRmax - 0.1, max(-g.y - 0.1, g.y - uGH - 2.7));
   if (bx > 0.0) d = min(d, bx + 0.02);
   else {
     d = min(d, 0.6);
@@ -510,7 +569,11 @@ float stepAt(vec3 p) {
     d = min(d, abs(r - Pr.x) / sqrt(1.0 + Pr.z * Pr.z));
     if (g.y > uGYb - 0.4) d = min(d, abs(r - Pr.y) / sqrt(1.0 + Pr.w * Pr.w));
     d = min(d, min(abs(g.y - uGH), abs(g.y)));
-    if (r < uGRtop + 0.5) d = min(d, min(abs(p.y - uLevel), abs(p.y - uFoamTop)));
+    if (r < uGRtop + 0.5) {
+      // Waves and peaks stay within these bands, so the step stays safe.
+      d = min(d, max(abs(p.y - uLevel - hfAt(g).r) - abs(dot(uSlosh, p.xz - uGO.xz)) - uMenisc, 0.0) + 0.006);
+      if (uFoamOn > 0.5) d = min(d, max(abs(p.y - uFoamTop - uDome * 0.5) - uDome * 0.5 - uRocky * 0.6 - hfAt(g).g - 0.3, 0.0) + 0.006);
+    }
   }
   if (uBOn > 0.5) {
     vec3 b = uBRi * (p - uBO);
@@ -542,14 +605,61 @@ vec3 revNormal(vec3 g, vec4 Pr, float h, float yb) {
   if (eT <= eB) return vec3(0.0, 1.0, 0.0);
   return vec3(0.0, -1.0, 0.0);
 }
+float surfAt(vec3 p) { vec3 g = uGRi * (p - uGO); return surfY(p, g, length(g.xz)); }
+float foamAt(vec3 p) { vec3 g = uGRi * (p - uGO); return foamY(p, g, length(g.xz)); }
 vec3 normalAt(vec3 p, int a, int b) {
   if (a == GLS || b == GLS) { vec3 g = uGRi * (p - uGO); return uGR * revNormal(g, gp(g.y), uGH, uGYb); }
   if (a == BGL || b == BGL) { vec3 q = uBRi * (p - uBO); return uBR * revNormal(q, bp(q.y), uBH, uBYb); }
+  if (a == BEER || b == BEER) {
+    vec3 g = uGRi * (p - uGO);
+    if (uFilm.z > 0.0 && p.y > surfAt(p) + 0.04) {
+      // A film surface faces into the glass, rippled by its flow.
+      float r = max(length(g.xz), 1e-3), ang = atan(g.x, g.z);
+      float e2 = 0.05;
+      float n0 = noise(vec2(ang * 9.0, g.y * 2.5 + uTime * 14.0));
+      float ny = noise(vec2(ang * 9.0, (g.y + e2) * 2.5 + uTime * 14.0)) - n0;
+      vec3 nl = -vec3(g.x / r, 0.0, g.z / r) + vec3(0.0, -ny * 3.0, 0.0);
+      return normalize(uGR * nl);
+    }
+    const float e = 0.04;
+    float sx = surfAt(p + vec3(e, 0.0, 0.0)) - surfAt(p - vec3(e, 0.0, 0.0));
+    float sz = surfAt(p + vec3(0.0, 0.0, e)) - surfAt(p - vec3(0.0, 0.0, e));
+    return normalize(vec3(-sx / (2.0 * e), 1.0, -sz / (2.0 * e)));
+  }
   return vec3(0.0, 1.0, 0.0);
 }
 float ior(int m) { return m == GLS || m == BGL ? 1.52 : m == BEER || m == BBEER ? 1.335 : 1.0; }
 
 /* ---------- bubbles ---------- */
+// A bubble in beer is a small diverging lens.
+// Light bent through it makes a bright core; its rim reflects the glowing beer.
+// Its front face reflects the key light as a crisp glint.
+void bubbleLit(vec3 q, vec3 d, float R, float Rv, inout vec3 acc, inout vec3 T) {
+  float cover = min(1.0, (R * R) / (Rv * Rv) * 1.3);
+  vec2 qq = vec2(dot(q, uCam[0]), dot(q, uCam[1])) / Rv;
+  float rr = min(length(qq), 1.0);
+  vec3 N = normalize(-q / Rv - d * sqrt(max(1.0 - rr * rr, 0.0)));
+  float spec = pow(max(dot(reflect(d, N), normalize(KEY_DIR)), 0.0), 48.0);
+  float core = exp(-dot(qq - vec2(-0.18, 0.22), qq - vec2(-0.18, 0.22)) * 5.0);
+  float rim = smoothstep(0.55, 1.0, rr);
+  vec3 lit = uLamp * exp(-uSigma * 2.5);
+  acc += T * cover * (lit * (1.5 * core + 0.55 * rim) + uKey * 5.0 * spec);
+  T *= 1.0 - cover * (0.2 + 0.5 * smoothstep(0.3, 0.8, rr) * (1.0 - rim * 0.6));
+}
+// Big bubbles from the pour rise fast and wobble.
+void bigBubbles(vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
+  for (int i = 0; i < 32; i++) {
+    if (i >= uNBig) break;
+    vec4 B = uBig[i];
+    vec3 oc = B.xyz - o;
+    float tc = dot(oc, d);
+    if (tc < ta || tc > tb) continue;
+    vec3 q = oc - d * tc;
+    float Rv = max(B.w, uPxCm * 0.7);
+    if (dot(q, q) > Rv * Rv) continue;
+    bubbleLit(q, d, B.w, Rv, acc, T);
+  }
+}
 // A bubble's radius grows linearly as CO2 diffuses in, so its height grows as age cubed.
 void bubbles(vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
   vec2 dxz = d.xz;
@@ -579,24 +689,75 @@ void bubbles(vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
       vec3 q = oc - d * tc;
       float Rv = max(R, uPxCm * 0.7);
       if (dot(q, q) > Rv * Rv) continue;
-      float cover = min(1.0, (R * R) / (Rv * Rv) * 1.3);
-      vec2 qq = vec2(dot(q, cr), dot(q, cu)) / Rv;
-      float rr = length(qq);
-      float spark = exp(-dot(qq - vec2(-0.22, 0.28), qq - vec2(-0.22, 0.28)) * 6.0);
-      acc += T * (uLamp * exp(-uSigma * 2.5) * 2.6 + uKey * 0.5) * spark * cover;
-      T *= 1.0 - 0.6 * smoothstep(0.35, 1.0, rr) * cover;
+      bubbleLit(q, d, R, Rv, acc, T);
     }
   }
+}
+
+// Free bubbles rise in columns all through the beer.
+void fizz(vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
+  if (uFizzN <= 0.002) return;
+  const float C = 0.5;
+  vec3 cr = uCam[0], cu = uCam[1];
+  vec2 pa = (o.xz + d.xz * ta) / C, pb = (o.xz + d.xz * tb) / C;
+  float dd = max(dot(d.xz, d.xz), 1e-6);
+  int steps = int(min(ceil(length(pb - pa) * 1.6) + 1.0, 28.0));
+  vec2 prev = vec2(1e5);
+  vec3 lit = uLamp * exp(-uSigma * 2.5) * 2.4 + uKey * 0.45;
+  for (int i = 0; i < 28; i++) {
+    if (i >= steps) break;
+    vec2 cell = floor(mix(pa, pb, (float(i) + 0.5) / float(steps)));
+    if (cell == prev) continue;
+    prev = cell;
+    if (hash(cell + 13.1) > uFizzN) continue;
+    vec2 cx = (cell + 0.15 + 0.7 * hash2(cell)) * C;
+    float tcol = clamp(dot(cx - o.xz, d.xz) / dd, ta, tb);
+    vec3 p = o + d * tcol;
+    float sp = 0.22 + 0.4 * hash(cell + 7.7), v = 2.2 + 4.5 * hash(cell + 3.3), R = 0.018 + 0.04 * hash(cell + 5.1);
+    float yb = (floor((p.y - uTime * v) / sp + 0.5) * sp) + uTime * v;
+    if (yb > uLevel) continue;
+    vec3 oc = vec3(cx.x, yb, cx.y) - o;
+    float tc = dot(oc, d);
+    vec3 q = oc - d * tc;
+    float Rv = max(R, uPxCm * 0.7);
+    if (dot(q, q) > Rv * Rv) continue;
+    bubbleLit(q, d, R, Rv, acc, T);
+  }
+}
+// The surge: clouds of fine bubbles from the pour scatter the light and clear as they rise.
+float erfa(float x) {
+  float t = 1.0 / (1.0 + 0.47047 * abs(x));
+  return sign(x) * (1.0 - t * (0.3480242 + t * (-0.0958798 + t * 0.7478556)) * exp(-x * x));
+}
+void surge(vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
+  float tau = 0.0;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uNPuff) break;
+    vec4 P = uPuff[i];
+    float s = P.w;
+    vec3 oc = P.xyz - o;
+    float tc = dot(oc, d), d2 = dot(oc, oc) - tc * tc;
+    if (d2 > 9.0 * s * s) continue;
+    tau += uPuffD[i] * exp(-d2 / (s * s)) * s * 0.886 * (erfa((tb - tc) / s) - erfa((ta - tc) / s));
+  }
+  if (tau <= 0.0) return;
+  acc += T * (1.0 - exp(-tau)) * (uLamp * exp(-uSigma * 1.2) * 0.85 + uKey * 0.12);
+  T *= exp(-tau * 0.85);
 }
 
 void absorb(int med, vec3 o, vec3 d, float ta, float tb, inout vec3 acc, inout vec3 T) {
   float L = max(tb - ta, 0.0);
   if (med == GLS) T *= exp(-vec3(0.03, 0.008, 0.022) * L);
   else if (med == BEER || med == BBEER) {
-    if (med == BEER) bubbles(o, d, ta, tb, acc, T);
-    // Haze scatters the lamp's light inside the beer.
+    if (med == BEER) { surge(o, d, ta, tb, acc, T); fizz(o, d, ta, tb, acc, T); bubbles(o, d, ta, tb, acc, T); bigBubbles(o, d, ta, tb, acc, T); }
+    // Haze scatters light forward (Henyey-Greenstein, g = 0.65): it glows toward the lamp.
     float ext = uHaze * 0.6 * L;
-    acc += T * uLamp * 0.5 * exp(-uSigma * 2.2) * (1.0 - exp(-ext));
+    vec3 pm = o + d * (0.5 * (ta + tb));
+    vec3 Ld = normalize(vec3(LAMP, BACK_Z) - pm);
+    float gg = 0.65, ct = dot(d, Ld);
+    float hg = (1.0 - gg * gg) / pow(1.0 + gg * gg - 2.0 * gg * ct, 1.5);
+    vec3 ins = uLamp * (0.12 + 0.22 * hg) * exp(-uSigma * 2.0) + uKey * 0.05 * exp(-uSigma * 1.0);
+    acc += T * ins * (1.0 - exp(-ext));
     T *= exp(-uSigma * L - ext);
   } else if (med == BGL) T *= exp(-uBTint * L);
 }
@@ -623,16 +784,28 @@ vec3 foamShade(vec3 p, vec3 d, int from) {
   float key = max(dot(normalize(KEY_DIR), from == AIR ? vec3(0.0, 1.0, 0.0) : normalize(vec3(g.x, 0.2, g.z))), 0.0);
   vec3 glow = uLamp * exp(-uSigma * 0.4) * 0.35;
   if (from == AIR) {
+    // The head's top: its own slope sets the light; hollows between peaks stay dim.
+    const float e = 0.06;
+    float fx = foamAt(p + vec3(e, 0.0, 0.0)) - foamAt(p - vec3(e, 0.0, 0.0));
+    float fz = foamAt(p + vec3(0.0, 0.0, e)) - foamAt(p - vec3(0.0, 0.0, e));
+    vec3 n = normalize(vec3(-fx / (2.0 * e), 1.0, -fz / (2.0 * e)));
+    float wrap = clamp((dot(n, normalize(KEY_DIR)) + 0.35) / 1.35, 0.0, 1.0);
+    float k = clamp(r / max(uRf, 0.5), 0.0, 1.0);
+    float base = uFoamTop + uDome * (1.0 - 0.6 * k * k) + hfAt(g).g;
+    float ao = clamp(0.62 + 0.9 * (p.y - base) / max(uRocky, 0.05), 0.35, 1.08);
     vec2 q = g.xz / (uCell * 1.7 * (1.0 + uCoarse * 1.4));
     vec4 F = voro(q + 0.35 * vec2(noise(q * 0.4), noise(q * 0.4 + 3.1)));
     float film = 1.0 - smoothstep(0.02, 0.1, F.y - F.x);
-    float shade = 0.5 + 0.55 * key;
+    float shade = (0.18 + 0.95 * wrap) * ao;
     vec3 cell = uFoamCol * shade * (0.75 + 0.3 * (1.0 - F.x));
-    cell += uKey * 0.6 * exp(-dot(F.zw - vec2(-0.15, 0.15), F.zw - vec2(-0.15, 0.15)) * 28.0) * key;
-    return mix(cell, uFoamCol * shade * 1.25, film) + glow * 0.2;
+    // Each bubble's cap catches the key light as a tiny glint.
+    cell += uKey * 0.9 * exp(-dot(F.zw - vec2(-0.15, 0.15), F.zw - vec2(-0.15, 0.15)) * 28.0) * pow(wrap, 3.0) * ao;
+    vec3 rim = uLamp * pow(1.0 - max(dot(n, -d), 0.0), 3.0) * 0.35 * exp(-uSigma * 0.3);
+    return mix(cell, uFoamCol * shade * 1.25, film) + glow * 0.15 + rim;
   }
   float ang = atan(g.x, g.z);
-  float cs = uCell * (1.0 + 1.1 * sf) * (1.0 + uCoarse * (0.4 + sf));
+  // Bubbles pressed on the glass read larger than those inside the head.
+  float cs = 1.5 * uCell * (1.0 + 1.1 * sf) * (1.0 + uCoarse * (0.4 + sf));
   vec2 q = vec2(ang * max(r, 1.0), p.y) / cs;
   q += 0.4 * vec2(noise(q * 0.31), noise(q * 0.31 + 7.3));
   vec4 F = voro(q);
@@ -641,10 +814,13 @@ vec3 foamShade(vec3 p, vec3 d, int from) {
   float film = 1.0 - smoothstep(0.03, 0.1 + phi * 0.5, F.y - F.x);
   float lift = 0.35 + 0.65 * sf;
   vec3 beerTint = uLamp * exp(-uSigma * 2.0) * 0.5 + 0.015;
-  vec3 cell = uFoamCol * (0.3 + 0.5 * key) * lift * (0.72 + 0.32 * (1.0 - F.x)) + glow;
-  cell += uKey * 0.5 * key * lift * exp(-dot(F.zw - vec2(-0.12, 0.16), F.zw - vec2(-0.12, 0.16)) * 30.0);
+  // The backlight shines through the head's thin edge, golden at the bottom.
+  float edge = pow(1.0 - abs(dot(normalize(vec3(g.x, 0.0, g.z)), normalize(vec3(-d.x, 0.0, -d.z)))), 2.0);
+  glow *= 1.0 + 3.0 * edge;
+  vec3 cell = uFoamCol * (0.45 + 0.75 * key) * (0.55 + 0.45 * lift) * (0.62 + 0.42 * (1.0 - F.x)) + glow;
+  cell += uKey * 0.7 * key * lift * exp(-dot(F.zw - vec2(-0.12, 0.16), F.zw - vec2(-0.12, 0.16)) * 30.0);
   cell = mix(cell, beerTint, phi * 0.9);
-  vec3 filmC = uFoamCol * (0.55 + 0.75 * key) * (0.5 + 0.5 * lift) + glow * 0.7;
+  vec3 filmC = uFoamCol * (0.95 + 0.9 * key) * (0.6 + 0.4 * lift) + glow * 0.7;
   filmC = mix(filmC, beerTint * 1.4, phi * 0.6);
   return mix(cell, filmC, film);
 }
@@ -657,8 +833,17 @@ float streamT(vec3 o, vec3 d, float ta, float tb, out vec3 n, out float chord) {
   vec2 dxz = d.xz;
   float dd = dot(dxz, dxz);
   if (dd < 1e-6) return -1.0;
-  float ts = clamp(dot(uStream.xy - o.xz, dxz) / dd, ta, tb);
+  // The jet leaves the mouth with some speed and falls on a parabola.
+  vec2 axis = uStream.xy;
+  float ts = clamp(dot(axis - o.xz, dxz) / dd, ta, tb);
   vec3 p = o + d * ts;
+  for (int it = 0; it < 2; it++) {
+    float hh = max(uStreamY.x - p.y, 0.0);
+    float tf = (sqrt(uJet.z * uJet.z + 2.0 * 981.0 * hh) - uJet.z) / 981.0;
+    axis = uStream.xy + uJet.xy * tf;
+    ts = clamp(dot(axis - o.xz, dxz) / dd, ta, tb);
+    p = o + d * ts;
+  }
   if (p.y > uStreamY.x || p.y < uStreamY.y) return -1.0;
   float h = uStreamY.x - p.y;
   float v0 = 30.0 + 50.0 * uStream.z;
@@ -667,12 +852,12 @@ float streamT(vec3 o, vec3 d, float ta, float tb, out vec3 n, out float chord) {
   float tt = (v - v0) / 981.0;
   rad *= 1.0 + 0.3 * smoothstep(5.0, 14.0, h) * (1.0 - uRM) * sin((tt - uTime) * 6.2832 * 13.0);
   rad *= smoothstep(0.0, 0.6, h + 0.2);
-  float dist = length(p.xz - uStream.xy);
+  float dist = length(p.xz - axis);
   if (dist > rad) return -1.0;
   float back = sqrt(rad * rad - dist * dist) / sqrt(dd);
   float th = ts - back;
   vec3 hp = o + d * th;
-  n = normalize(vec3(hp.x - uStream.x, 0.0, hp.z - uStream.y));
+  n = normalize(vec3(hp.x - axis.x, 0.0, hp.z - axis.y));
   chord = 2.0 * sqrt(rad * rad - dist * dist);
   return th;
 }
@@ -708,6 +893,69 @@ vec3 metalShade(vec3 p, vec3 d) {
   return uMetal * (studio(p, reflect(d, n)) * 0.9 + uKey * 0.05 * diff);
 }
 
+/* ---------- condensation ---------- */
+// The Train ride pane's method on a curved glass: fog, beads as lenses, and runs.
+float gFog = 0.0, gRim = 0.0;
+vec3 gVeil = vec3(0.0);
+// A water bead: the offset inside it, its radius, and 1 when present.
+vec4 bead(vec2 p, float scale, float density) {
+  vec2 q = p * scale, c = floor(q), f = fract(q);
+  if (hash(c + 3.1) > density) return vec4(0.0);
+  vec2 ctr = 0.28 + 0.44 * hash2(c + 1.7);
+  float rr = 0.16 + 0.26 * hash(c + 9.2);
+  vec2 dv = (f - ctr) / rr;
+  if (dot(dv, dv) > 1.0) return vec4(0.0);
+  return vec4(dv, rr / scale, 1.0);
+}
+// The lamp's glow alone, for light the fog scatters.
+vec3 lampGlow(vec3 o, vec3 d) {
+  float t = (BACK_Z - o.z) / min(d.z, -1e-3);
+  vec2 ld = ((o + d * t).xy - LAMP) / vec2(9.0, 15.0);
+  float dl = dot(ld, ld);
+  return uLamp * (3.4 * exp(-pow(dl, 1.15) * 1.8) + 0.3 * exp(-sqrt(dl) * 1.5) + 0.05 * exp(-sqrt(dl) * 0.45));
+}
+// Cold beer behind the wall fogs the glass; beads gather and now and then run.
+void mist(vec3 hp, vec3 d, inout vec3 n) {
+  vec3 g = uGRi * (hp - uGO);
+  float r = length(g.xz);
+  vec4 Pr = gp(g.y);
+  if (r < Pr.y + 0.03 || g.y < 0.3 || g.y > uGH - 0.15) return;
+  vec2 p = vec2(atan(g.x, g.z) * Pr.x, g.y);
+  float below = smoothstep(uLevel + 0.5, uLevel - 0.3, hp.y) * step(uGYb - 0.8, g.y);
+  float fog = uChill * (0.7 + 0.45 * fbm(p * 1.3)) + uCold * below * (0.8 + 0.35 * fbm(p * 2.1 + 5.0));
+  fog = clamp(fog, 0.0, 1.0);
+  if (fog < 0.01) return;
+  float dens = clamp(fog * (0.25 + 0.6 * uMistAge), 0.0, 0.85);
+  vec4 b1 = bead(p, 7.0, dens * 0.5), b2 = bead(p + 3.7, 17.0, dens * 0.9), b3 = bead(p + 7.1, 38.0, dens);
+  vec4 b = b1.w > 0.0 ? b1 : b2.w > 0.0 ? b2 : b3;
+  // A big bead slides down now and then and wipes a clear track.
+  float clear = 0.0;
+  float col = floor(p.x * 1.3);
+  if (uMistAge > 0.45 && hash(vec2(col, 7.0)) < 0.22 * fog) {
+    float head = uGH - mod(uTime * (0.35 + 0.7 * hash(vec2(col, 3.0))) + hash(vec2(col, 5.0)) * 23.0, uGH + 5.0);
+    float xc = (col + 0.5) / 1.3 + 0.06 * sin(p.y * 2.6 + col * 1.7);
+    float dx = (p.x - xc) / 0.08, dv = p.y - head;
+    if (dv > 0.0 && dv < 5.0 && abs(dx) < 1.0) clear = (1.0 - dv / 5.0) * smoothstep(1.0, 0.4, abs(dx));
+    vec2 hb = vec2(dx, dv / 0.12);
+    if (dot(hb, hb) < 1.0) b = vec4(hb, 0.08, 1.0);
+  }
+  float cover = 0.0;
+  if (b.w > 0.0) {
+    float dd = dot(b.xy, b.xy);
+    cover = 1.0 - dd * 0.35;
+    // The bead is a water dome; it tilts the wall's normal toward its edge.
+    vec3 tu = normalize(cross(vec3(0.0, 1.0, 0.0), n)), tv = cross(n, tu);
+    n = normalize(n + (tu * b.x + tv * b.y) * 0.85 / max(sqrt(1.0 - dd * 0.97), 0.25));
+    gRim = smoothstep(0.6, 0.98, dd);
+  }
+  gFog = fog * (1.0 - cover * 0.94) * (1.0 - clear * 0.9);
+  // The fog glows with the light behind it: golden through beer, white over the head.
+  vec3 back = lampGlow(hp, d);
+  float foamBehind = step(uLevel, hp.y) * step(hp.y, uFoamTop + uDome) * uFoamOn;
+  vec3 tint = hp.y < uLevel ? exp(-uSigma * 1.6 * Pr.y) * (1.0 - 0.4 * uHaze) + uHaze * 0.2 : vec3(0.5);
+  gVeil = back * tint * (1.0 - foamBehind) * 0.55 + uFoamCol * (0.25 + 0.2 * dot(back, vec3(0.3))) * foamBehind + uKey * 0.035;
+}
+
 /* ---------- trace ---------- */
 vec2 sphere(vec3 o, vec3 d, vec3 c, float r) {
   vec3 oc = o - c;
@@ -718,7 +966,7 @@ vec2 sphere(vec3 o, vec3 d, vec3 c, float r) {
 }
 vec2 bounds(vec3 o, vec3 d) {
   vec3 gc = uGO + uGR * vec3(0.0, uGH * 0.5 + 0.8, 0.0);
-  vec2 a = sphere(o, d, gc, length(vec2(uGH * 0.5 + 1.8, uGRmax + 0.3)));
+  vec2 a = sphere(o, d, gc, length(vec2(uGH * 0.5 + 2.8, uGRmax + 0.3)));
   if (uBOn > 0.5) {
     vec3 bc = uBO + uBR * vec3(0.0, uBH * 0.5, 0.0);
     vec2 b = sphere(o, d, bc, length(vec2(uBH * 0.5 + 0.3, uBRmax + 0.3)));
@@ -756,6 +1004,18 @@ vec3 trace(vec3 o, vec3 d) {
     absorb(med, o, d, seg, b, acc, T);
     if (mn == TABLE) return acc + T * tableAt(hp);
     if (mn == FOAM) return acc + T * foamShade(hp, d, med);
+    if (med == AIR && mn == BEER && uRaft > 0.0) {
+      // A raft of small bubbles gathers at the wall; now and then one pops.
+      vec3 g = uGRi * (hp - uGO);
+      float r = length(g.xz);
+      vec4 F = voro(g.xz / 0.16);
+      float ring = smoothstep(0.55, 0.75, F.x) * smoothstep(0.95, 0.75, F.x);
+      float near = exp(-max(uRl - r, 0.0) / 0.5) + 0.12;
+      vec2 cell = floor(g.xz / 0.16);
+      float there = step(hash(cell + 2.3), uRaft * near);
+      float pop = step(0.992, hash(cell + floor(uTime * 9.0 + hash(cell) * 9.0)));
+      acc += T * (uKey * 0.7 * ring * there + uKey * 3.0 * pop * there * exp(-F.x * F.x * 18.0));
+    }
     if (mn == BGL && med == AIR || mn == AIR && med == BGL) {
       vec4 lab = labelAt(uBRi * (hp - uBO));
       if (lab.a > 0.5) return acc + T * (med == AIR ? labelShade(hp, d, lab.rgb) : vec3(0.004));
@@ -765,6 +1025,8 @@ vec3 trace(vec3 o, vec3 d) {
     if (mn == GLS && med == AIR && dot(uMetal, uMetal) > 0.0 && (uGRi * (hp - uGO)).y > uGH - 0.32) return acc + T * metalShade(hp, d);
     vec3 n = normalAt(hp, med, mn);
     if (dot(n, d) > 0.0) n = -n;
+    // The first touch of the glass picks up its mist and beads.
+    if (events == 0 && med == AIR && mn == GLS && (uChill + uCold) > 0.0) mist(hp, d, n);
     float n1 = ior(med), n2 = ior(mn);
     float c = -dot(n, d);
     float f0 = pow((n1 - n2) / (n1 + n2), 2.0);
@@ -821,6 +1083,7 @@ void main() {
   vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
   vec3 d = normalize(uCam * vec3(ndc.x * uTanH * uRes.x / uRes.y, ndc.y * uTanH, -1.0));
   vec3 col = trace(uEye, d);
+  col = mix(col, gVeil, gFog * 0.88) * (1.0 - 0.35 * gRim);
   col += motes(gl_FragCoord.xy) * (1.0 - uRM * 0.5);
   o = vec4(col, 1.0);
 }`;
@@ -922,6 +1185,13 @@ async function initGL() {
   gl.disable(gl.BLEND);
   gTex = dataTex();
   bTex = dataTex();
+  hfTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, hfTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RG16F, HN, HN);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   labTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, labTex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -1134,15 +1404,15 @@ function settleLevels() {
   }
   bfill.level = bfill.vol > 0.5 ? bottle.levelFor(bfill.vol) : -99;
 }
-// A fresh round: beer to 3.2 cm under the rim, a head to the rim, and a third left in the bottle.
+// A fresh round: a chilled, empty glass and a full bottle.
 function freshGlass() {
   poseGlass(0);
-  const full = glass.volBelow(glass.lipLow());
-  fill.vol = glass.volBelow(rimW() - 3.2);
-  fill.foam = full - fill.vol + 3;
-  fill.age = 2;
+  fill.vol = 0;
+  fill.foam = 0;
+  fill.age = 0;
   fill.post = 0;
-  bfill.vol = bfill.full * 0.3;
+  bfill.vol = bfill.full;
+  Object.assign(mistS, { chill: 0.55, cold: 0, age: 0.15 });
   settleLevels();
 }
 
@@ -1167,6 +1437,148 @@ function makeSites() {
   sitesLocal = out;
 }
 
+/* ---------- the beer's surface ---------- */
+// A 64 x 64 wave grid spans the glass's cross-section, in glass-local x and z.
+const HN = 64, HF_HALF = 6.5, HDX = 2 * HF_HALF / HN;
+const wave = { h: new Float32Array(HN * HN), p: new Float32Array(HN * HN), n: new Float32Array(HN * HN), out: new Float32Array(HN * HN * 2) };
+const slosh = { x: 0, vx: 0, z: 0, vz: 0, tilt: 0, w: 0 };
+const mound = { a: 0, x: 0, z: 0 };
+let hfTex = null, fizzSurge = 0, puffT = 0;
+const puffs = [];
+const rnd = () => Math.random();
+// A Gaussian dent in the surface, in glass-local cm.
+function kick(x, z, amp, rad) {
+  const r2 = rad * rad;
+  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) {
+    const cx = -HF_HALF + (i + 0.5) * HDX - x, cz = -HF_HALF + (j + 0.5) * HDX - z, d2 = cx * cx + cz * cz;
+    if (d2 < 9 * r2) wave.h[j * HN + i] += amp * Math.exp(-d2 / r2);
+  }
+}
+// The wave equation in four substeps; foam damps the waves hard.
+function waveStep(dt, R, foamy) {
+  if (R <= 0.2) { wave.h.fill(0); wave.p.fill(0); return; }
+  const sub = 4, k2 = (24 * (dt / sub) / HDX) ** 2, damp = foamy ? 0.985 : 0.9975;
+  for (let s = 0; s < sub; s++) {
+    const { h, p, n } = wave;
+    for (let j = 1; j < HN - 1; j++) for (let i = 1; i < HN - 1; i++) {
+      const k = j * HN + i, cx = -HF_HALF + (i + 0.5) * HDX, cz = -HF_HALF + (j + 0.5) * HDX;
+      if (cx * cx + cz * cz > R * R) { n[k] = 0; continue; }
+      const lap = h[k - 1] + h[k + 1] + h[k - HN] + h[k + HN] - 4 * h[k];
+      n[k] = (2 * h[k] - p[k] + Math.min(k2, 0.45) * lap) * damp;
+    }
+    wave.p = h; wave.h = n; wave.n = p;
+  }
+}
+// The first slosh mode of a cylinder: omega squared is g times 1.841 over R.
+function sloshStep(dt, R, foamThick) {
+  const w = (pour.tilt - slosh.tilt) / Math.max(dt, 1e-3), alpha = (w - slosh.w) / Math.max(dt, 1e-3);
+  slosh.tilt = pour.tilt; slosh.w = w;
+  const om = Math.sqrt(981 * 1.841 / Math.max(R, 1)), z = 0.04 + 0.25 * Math.min(foamThick / 3, 1);
+  for (const ax of ['x', 'z']) {
+    const drive = ax === 'x' ? -clamp(alpha, -60, 60) * 0.004 : 0;
+    const v = 'v' + ax;
+    slosh[v] += (-om * om * slosh[ax] - 2 * z * om * slosh[v] + drive * om * om) * dt;
+    slosh[ax] = clamp(slosh[ax] + slosh[v] * dt, -0.25, 0.25);
+  }
+}
+// The surge: clouds of fine bubbles from the impact rise, spread and feed the head.
+function surgeStep(dt, pouring, ix, iz, drop) {
+  if (pouring && pour.flow > 0.05) {
+    puffT += dt;
+    while (puffT > 1 / 14) {
+      puffT -= 1 / 14;
+      if (puffs.length >= 16) puffs.shift();
+      puffs.push({ x: ix + (rnd() - 0.5) * 0.8, y: fill.level - 0.5 - 2.4 * drop * rnd(), z: iz + (rnd() - 0.5) * 0.8,
+        s: 0.45, d: 0.9 * pour.flow * drop * (0.5 + fizz * beer.fizz), v: 1.4 + 2.6 * rnd() });
+    }
+  }
+  for (const q of puffs) {
+    q.y += q.v * dt;
+    q.s += 0.5 * dt;
+    q.d *= Math.exp(-dt / 7);
+    if (q.y + q.s * 0.4 > fill.level) { fill.post = Math.min(fill.post + q.d * dt * 0.4, 1.2); q.d *= Math.exp(-dt / 0.7); }
+  }
+  for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i].d < 0.01 || fill.vol < 1) puffs.splice(i, 1);
+}
+function surfaceStep(dt) {
+  const oy = glass.origin()[1];
+  const R = fill.vol > 1 ? glass.ri(fill.level - oy) : 0;
+  const thick = fill.foam > 0.5 ? fill.top - fill.level : 0;
+  const pouring = pour.flow > 0.03;
+  // The stream lands at its end point; that point moves into glass-local cm.
+  const [mx] = bottle.world(0, bottle.h);
+  const ix = mx + jet.dx, iz = bottle.z;
+  const lx = glass.co * (ix - glass.origin()[0]) + glass.si * (fill.level - oy), lz = iz;
+  const drop = clamp((bottle.world(0, bottle.h)[1] - fill.level) / 14, 0.15, 1.5);
+  if (pouring && R > 0.3) {
+    kick(lx + (rnd() - 0.5) * 0.3, lz + (rnd() - 0.5) * 0.3, -0.06 * pour.flow * drop * (0.6 + 0.8 * rnd()), 0.35);
+    mound.x = lx; mound.z = lz;
+    mound.a = Math.min(mound.a + pour.flow * drop * dt * 1.4 * beer.power, 1.6);
+  }
+  mound.a *= Math.exp(-dt / 1.8);
+  // March down the jet: if it meets the inner wall before the beer, a film runs from there.
+  film.s = 0;
+  jet.end = Math.max(fill.foam > 0.5 ? fill.top - 0.4 : fill.level, 0);
+  if (pouring) {
+    const [jx, jy] = bottle.world(0, bottle.h), [ox, , oz] = glass.origin();
+    for (let i = 1; i <= 80; i++) {
+      const h = i * 0.25, tf = (Math.sqrt(jet.w0 * jet.w0 + 2 * 981 * h) - jet.w0) / 981;
+      const x = jx + jet.ux * tf, y = jy - h, z = bottle.z;
+      if (y <= jet.end) break;
+      const dx = x - ox, dy = y - oy;
+      const lx2 = glass.co * dx + glass.si * dy, ly = -glass.si * dx + glass.co * dy, lz2 = z - oz;
+      if (ly > glass.ybot && ly < glass.h - 0.1 && Math.hypot(lx2, lz2) > glass.ri(ly) - 0.1) {
+        film.a = Math.atan2(lx2, lz2); film.y = ly; film.s = pour.flow; jet.end = y;
+        break;
+      }
+    }
+  }
+  waveStep(dt, R, thick > 0.3);
+  sloshStep(dt, Math.max(R, 1), thick);
+  surgeStep(dt, pouring, ix, iz, drop);
+  bigStep(dt, pouring, ix, iz, drop, R, lx);
+  // The chilled glass dries slowly; cold beer fogs the wall behind it.
+  mistS.chill = Math.max(mistS.chill - dt * mistS.chill / 150, 0.12);
+  const coldT = fill.vol > 1 ? 1 : 0;
+  mistS.cold += (coldT - mistS.cold) * ease(dt, coldT > mistS.cold ? 25 : 60);
+  mistS.age = Math.min(mistS.age + dt / 45 * Math.max(mistS.cold, mistS.chill), 1);
+  fizzSurge = Math.min(fizzSurge * Math.exp(-dt / 20) + pour.flow * drop * dt * 0.3, 0.5);
+  const out = wave.out;
+  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) {
+    const k = j * HN + i, cx = -HF_HALF + (i + 0.5) * HDX - mound.x, cz = -HF_HALF + (j + 0.5) * HDX - mound.z;
+    out[k * 2] = clamp(wave.h[k], -0.6, 0.6);
+    out[k * 2 + 1] = mound.a * Math.exp(-(cx * cx + cz * cz) / 1.9);
+  }
+}
+const jet = { dx: 0, ux: 0, w0: 0, end: 0 };
+const film = { a: 0, y: 0, s: 0 };
+// Big bubbles from the plunging stream: they rise fast, wobble and pop.
+const bigs = [];
+let bigT = 0;
+function bigStep(dt, pouring, ix, iz, drop, R) {
+  if (pouring && R > 0.5) {
+    bigT += dt * 45 * pour.flow * drop;
+    while (bigT > 1) {
+      bigT -= 1;
+      if (bigs.length >= 32) bigs.shift();
+      bigs.push({ x: ix + (rnd() - 0.5) * 0.7, y: fill.level - 0.3 - 3 * drop * rnd(), z: iz + (rnd() - 0.5) * 0.7,
+        r: 0.04 + 0.11 * rnd() ** 2, ph: rnd() * 6.3, vx: (rnd() - 0.5) * 5, vz: (rnd() - 0.5) * 5 });
+    }
+  }
+  const [ox, , oz] = glass.origin();
+  for (const b of bigs) {
+    // Bigger bubbles rise faster and zigzag.
+    b.y += Math.min(9 + 120 * b.r, 28) * dt;
+    b.ph += dt * (9 + 40 * b.r);
+    b.x += (b.vx + Math.sin(b.ph) * 60 * b.r) * dt;
+    b.z += (b.vz + Math.cos(b.ph * 0.8) * 60 * b.r) * dt;
+    b.vx *= Math.exp(-dt * 3); b.vz *= Math.exp(-dt * 3);
+    const dx = b.x - ox, dz = b.z - oz, rr = Math.hypot(dx, dz), lim = Math.max(R - b.r - 0.15, 0.1);
+    if (rr > lim) { b.x = ox + dx / rr * lim; b.z = oz + dz / rr * lim; }
+  }
+  for (let i = bigs.length - 1; i >= 0; i--) if (bigs[i].y > fill.level - bigs[i].r || fill.vol < 1) bigs.splice(i, 1);
+}
+
 /* ---------- beer ---------- */
 const METAL = { gold: [1.0, 0.72, 0.32], silver: [0.85, 0.86, 0.88] };
 const look = { sigma: [0, 0, 0], foam: [1, 1, 1], tint: [1, 1, 1], paint: [0, 0, 0, 0], metal: [0, 0, 0], lab: [0, 0, 0, 0] };
@@ -1181,7 +1593,7 @@ function setBeer(id) {
   look.paint = B.paint ? [...hexLin(B.paint), 1] : [0, 0, 0, 0];
   look.metal = METAL[beer.glass.metal] || [0, 0, 0];
   const sh = B.kind === 'skittle' ? B.h * 0.3 : B.sh;
-  look.lab = beer.label.shape === 'diamond' || beer.label.shape === 'round'
+  look.lab = B.lab ? B.lab.slice() : beer.label.shape === 'diamond' || beer.label.shape === 'round'
     ? [sh * 0.22, sh * 0.22 + Math.min(sh * 0.62, 7.5), B.h - B.nl + 0.6, B.h - B.nl + 2.2]
     : [B.kind === 'champ' ? 2.6 : 1.8, sh - 0.9, B.h - B.nl + 0.6, B.h - 1.6];
   bfill.full = Math.round(Math.min(bottle.volBelow(1e3) * 0.96, (B.cl || 33) * 10));
@@ -1199,11 +1611,14 @@ function setBeer(id) {
   poseBottle();
   makeSites();
   freshGlass();
+  wave.h.fill(0); wave.p.fill(0); puffs.length = 0; bigs.length = 0; mound.a = 0; slosh.x = slosh.z = slosh.vx = slosh.vz = 0; fizzSurge = 0;
 }
 
 /* ---------- pour ---------- */
 // The pointer's x tilts the glass; its height sets the drop and the bottle's angle.
-const pour = { on: false, auto: 0, y: 20, k: 0, flow: 0, glug: 0, tiltT: 0, tilt: 0 };
+// bt: the bottle's tilt; q: the flow (cm³/s); qT: the flow the pointer asks for.
+const pour = { on: false, auto: 0, y: 20, k: 0, flow: 0, glug: 0, tiltT: 0, tilt: 0, bt: 0, q: 0, qT: 0 };
+const mistS = { chill: 0.55, cold: 0, age: 0.15 };
 function stopPour() { pour.on = false; pour.auto = 0; }
 function aimAt(clientX, clientY) {
   const [wx, wy] = toWorld(clientX, clientY);
@@ -1214,27 +1629,36 @@ function aimAt(clientX, clientY) {
 function poseBottle() {
   const k = smooth(0, 1, pour.k);
   const mouth = glass.world(0.4, glass.h);
-  // The mouth stays low enough that the bottle stays in frame.
-  const my = clamp(pour.y, rimW() + 2.0, rimW() + 6.5);
-  const empty = 1 - bfill.vol / Math.max(bfill.full, 1);
-  const tiltP = Math.min(lerp(1.72, 2.05, clamp((my - rimW() - 2) / 4.5)) + 0.7 * empty, 2.9);
-  const mx = lerp(rest.x, mouth[0] + 0.8, k);
+  // A low pour starts close to the rim; a high pour lifts the bottle.
+  const my = rimW() + 1.4 + 0.4 * clamp(pour.y - rimW() - 1, 0, 14);
+  // The jet flies forward, so the mouth sits back by its throw.
+  const mx = lerp(rest.x, mouth[0] + 0.5 - clamp(jet.dx, -4, 0), k);
   const myk = lerp(bottle.h, my, k) + Math.sin(Math.PI * k) * 5;
   const mz = lerp(rest.z, 0, k);
-  bottle.pose(tiltP * k, bottle.h, mx, myk, mz);
+  bottle.pose(pour.bt * k, bottle.h, mx, myk, mz);
 }
 // Pour action: tilt and pour low, then straighten and finish high.
 function autoStep(dt) {
   if (!pour.auto) return;
   pour.auto += dt;
   const t = pour.auto;
-  if (t < 3.4) { pour.tiltT = -0.62; pour.y = glass.h + 4; }
-  else { pour.tiltT = 0; pour.y = glass.h + 15; }
-  if (fill.vol + fill.foam >= fill.cap * 1.02 || bfill.vol < 1 || t > 9) { stopPour(); fill.post = 1; }
+  // Pour gently down the tilted wall, then straighten and finish higher for the head.
+  const half = bfill.vol < bfill.full * 0.5;
+  pour.tiltT = half ? 0 : -0.62;
+  pour.y = rimW() + (half ? 9 : 1.5);
+  const keep = beer.pour?.yeast ? 0.04 : 0.005;
+  if (fill.vol + fill.foam >= fill.cap * 1.01 || bfill.vol < bfill.full * keep || t > 30) { stopPour(); fill.post = 1; }
 }
 function pourStep(dt) {
   const on = pour.on || pour.auto > 0;
   pour.k = clamp(pour.k + (on ? dt / 0.45 : -dt / 0.6));
+  // The pointer's height asks for a flow: low is a gentle trickle, high is a fast pour.
+  pour.qT = on ? lerp(9, 55, clamp(pour.y - rimW() - 1, 0, 14) / 14) : 0;
+  // The hand tips the bottle until the flow matches; it tips further as the bottle empties.
+  if (on) {
+    if (pour.bt < 1.0) pour.bt = 1.0;
+    if (pour.k > 0.9) pour.bt = clamp(pour.bt + dt * clamp((pour.qT - pour.q) / 30, -0.8, 0.5), 0.6, 3.05);
+  } else pour.bt = Math.max(pour.bt - dt * 1.6, Math.min(pour.bt, 1.0));
   pour.tilt += ((on ? pour.tiltT : 0) - pour.tilt) * ease(dt, 0.2);
   poseGlass(pour.tilt);
   poseBottle();
@@ -1242,8 +1666,16 @@ function pourStep(dt) {
   // The bottle pours once its beer stands above the low side of the mouth.
   const head = bfill.vol > 0.5 ? bfill.level - bottle.lipLow() : 0;
   pour.glug += dt * (4 + 3 * pour.flow);
-  const q = head > 0 ? Math.min(0.42 * Math.PI * 0.85 * 0.85 * Math.sqrt(2 * 981 * head), 140) * (0.72 + 0.28 * Math.sin(pour.glug * Math.PI * 2)) : 0;
-  pour.flow += (q / 140 - pour.flow) * ease(dt, 0.06);
+  // Air must glug back in through the neck, so a 33 cl neck passes about 60 cm³/s at most.
+  const q = head > 0 && pour.k > 0.5 ? 60 * smooth(0, 1.4, head) * (0.75 + 0.25 * Math.sin(pour.glug * Math.PI * 2)) : 0;
+  pour.q += (q - pour.q) * ease(dt, 0.12);
+  pour.flow += (q / 60 - pour.flow) * ease(dt, 0.06);
+  // The jet leaves along the bottle's axis, then falls.
+  const u0 = Math.min(q / (Math.PI * 0.85 * 0.85), 70), th = bottle.tilt;
+  jet.ux = -Math.sin(th) * u0;
+  jet.w0 = Math.max(-Math.cos(th) * u0, 0);
+  const fallH = Math.max(bottle.world(0, bottle.h)[1] - Math.max(fill.foam > 0.5 ? fill.top : fill.level, 0), 0);
+  jet.dx += (jet.ux * (Math.sqrt(jet.w0 * jet.w0 + 2 * 981 * fallH) - jet.w0) / 981 - jet.dx) * ease(dt, 0.15);
   if (q <= 0) return;
   const dv = Math.min(q * dt, bfill.vol);
   bfill.vol -= dv;
@@ -1276,11 +1708,20 @@ function foamStep(dt) {
 /* ---------- actions ---------- */
 act.pour = () => {
   if (bfill.vol < 1) bfill.vol = bfill.full;
+  if (fill.vol + fill.foam > fill.cap * 0.9) { fill.vol = 0; fill.foam = 0; }
   if (fill.vol + fill.foam < fill.cap * 0.98) { pour.auto = 1e-3; pour.on = false; }
   live();
 };
-act.sip = () => { stopPour(); fill.vol = Math.max(0, fill.vol - fill.cap * 0.1); fill.foam *= 0.85; live(); };
-act.clear = () => { stopPour(); fill.vol = 0; fill.foam = 0; fill.post = 0; bfill.vol = bfill.full; live(); };
+act.sip = () => {
+  stopPour();
+  fill.vol = Math.max(0, fill.vol - fill.cap * 0.1);
+  fill.foam *= 0.85;
+  // Setting the glass down sloshes the beer.
+  slosh.vx += (rnd() - 0.5) * 0.6; slosh.vz += (rnd() - 0.5) * 0.6;
+  kick((rnd() - 0.5) * 2, (rnd() - 0.5) * 2, 0.08, 1.2);
+  live();
+};
+act.clear = () => { stopPour(); freshGlass(); live(); };
 act.reset = () => { stopPour(); freshGlass(); live(); };
 
 /* ---------- render ---------- */
@@ -1304,6 +1745,10 @@ function render() {
   bind(q, 'uGP', 0, gTex);
   bind(q, 'uBP', 1, bTex);
   bind(q, 'uLabel', 2, labTex);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, hfTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, HN, HN, gl.RG, gl.FLOAT, wave.out);
+  gl.uniform1i(u.uHF, 3);
   gl.uniform2f(u.uRes, W, H);
   gl.uniformMatrix3fv(u.uCam, false, cam.m);
   gl.uniform3fv(u.uEye, cam.eye);
@@ -1349,8 +1794,32 @@ function render() {
   gl.uniform3f(u.uBub, 1.13 * (0.6 + 0.6 * fizz), 0.04, 0.012);
   const [mx, my] = bottle.world(0, bottle.h);
   gl.uniform4f(u.uStream, mx, bottle.z, pour.flow, 0.25 + 0.2 * pour.flow);
-  gl.uniform2f(u.uStreamY, my - 0.2, fill.foam > 0.5 ? fill.top - 0.4 : Math.max(fill.level, 0));
+  gl.uniform2f(u.uStreamY, my - 0.2, jet.end);
+  gl.uniform3f(u.uFilm, film.a, film.y, film.s);
   gl.uniform4f(u.uCaus, 0, 0, 0, clamp(1 - liftY / 2.5));
+  const oy = glass.origin()[1], thick = fill.foam > 0.5 ? fill.top - fill.level : 0;
+  gl.uniform2f(u.uSlosh, slosh.x, slosh.z);
+  gl.uniform1f(u.uMenisc, 0.12);
+  gl.uniform1f(u.uRl, glass.ri(fill.level - oy));
+  gl.uniform1f(u.uRf, glass.ri(Math.min(fill.top - oy, glass.h - 0.05)));
+  gl.uniform1f(u.uFoamOn, thick > 0.04 ? 1 : 0);
+  gl.uniform1f(u.uRocky, (beer.rock || 0.2) * clamp(thick / 2.5) * (0.5 + 0.5 * Math.exp(-fill.age / beer.half)));
+  gl.uniform1f(u.uDome, Math.min(0.55, thick * 0.14) * (0.6 + 0.4 * Math.exp(-fill.age / beer.half)));
+  gl.uniform1f(u.uFizzN, fill.vol > 1 ? clamp(0.05 + 0.16 * fizz * beer.fizz + fizzSurge, 0, 0.6) : 0);
+  gl.uniform1f(u.uRaft, thick < 0.3 && fill.vol > 1 ? 0.25 + 0.4 * fizz : 0);
+  const pb = new Float32Array(64), pd = new Float32Array(16);
+  puffs.forEach((q2, i) => { pb.set([q2.x, q2.y, q2.z, q2.s], i * 4); pd[i] = q2.d; });
+  gl.uniform4fv(u.uPuff, pb);
+  gl.uniform1fv(u.uPuffD, pd);
+  gl.uniform1i(u.uNPuff, puffs.length);
+  gl.uniform3f(u.uJet, jet.ux, 0, jet.w0);
+  gl.uniform1f(u.uChill, mistS.chill);
+  gl.uniform1f(u.uCold, mistS.cold * 0.85);
+  gl.uniform1f(u.uMistAge, mistS.age);
+  const bb = new Float32Array(128);
+  bigs.forEach((b, i) => bb.set([b.x, b.y, b.z, b.r], i * 4));
+  gl.uniform4fv(u.uBig, bb);
+  gl.uniform1i(u.uNBig, bigs.length);
   draw(S0);
   const d = P.down;
   gl.useProgram(d.p);
@@ -1382,7 +1851,8 @@ const live = () => { lastInput = performance.now(); wake(); };
 function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
-const lively = () => pour.on || pour.auto > 0 || pour.flow > 0.01 || pour.k > 0 || Math.abs(pour.tilt) > 0.002 || fill.post > 0.02;
+const lively = () => pour.on || pour.auto > 0 || pour.flow > 0.01 || pour.k > 0 || Math.abs(pour.tilt) > 0.002 || fill.post > 0.02
+  || puffs.length > 0 || bigs.length > 0 || Math.abs(slosh.vx) + Math.abs(slosh.vz) > 0.01 || mound.a > 0.02;
 function frame(now) {
   raf = 0;
   let again = true;
@@ -1397,6 +1867,7 @@ function frame(now) {
     autoStep(dt);
     pourStep(dt);
     foamStep(dt * pace);
+    surfaceStep(dt * pace);
     settleLevels();
     time += dt * pace * (reduced() ? 0.25 : 1);
     render();
