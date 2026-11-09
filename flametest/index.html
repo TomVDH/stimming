@@ -22,6 +22,7 @@
 .stage--flametest canvas.on { opacity: 1; }
 .stage--flametest { cursor: crosshair; }
 .stage--flametest.blow { cursor: grabbing; }
+.stage--flametest.loupe { cursor: zoom-in; }
 @media (prefers-reduced-motion: reduce) { .stage--flametest canvas { transition: none; } }
 </style>
 </head>
@@ -127,8 +128,7 @@ const ui = initPage({ id: 'flametest', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  // Touch screens have no number keys, so that entry drops.
-  keys: [['click', 'flick'], ['hold', 'feed'], ['drag', 'blow'], ['1-7', 'salt']].filter(k => k[0] !== '1-7' || !matchMedia('(pointer: coarse)').matches),
+  keys: [['click', 'flick'], ['hold', 'feed'], ['drag', 'blow'], ['press plate', 'magnify']],
 } });
 {
   const v = k => ui.setting(k)?.value;
@@ -179,8 +179,9 @@ uniform vec3 uTint2;
 uniform vec3 uWedge;        // centre x, y, half side
 uniform vec2 uIn, uOut;     // beam entry and exit on the wedge
 uniform vec4 uPlate;        // x0, y0, x1, y1
+uniform vec4 uLoupe;        // centre x, y, radius, shown
 uniform int uN;
-uniform vec4 uLX[${MAXL}];  // plate x, sigma px, intensity, spare
+uniform vec4 uLX[${MAXL}];  // plate x, sigma px, intensity, band sigma
 uniform vec3 uLC[${MAXL}];
 
 float g3(float x, float m, float s1, float s2) { float t = (x - m) / (x < m ? s1 : s2); return exp(-0.5 * t * t); }
@@ -356,6 +357,33 @@ void main() {
         float len = (j % 2 == 0) ? 9.0 : 5.5;
         c += vec3(0.07, 0.075, 0.09) * exp(-pow((p.x - tx) / (0.6 * uDpr), 2.0)) * step(below, len * uDpr);
       }
+    }
+  }
+  // The loupe magnifies the plate 16 times around its centre.
+  if (uLoupe.w > 0.001) {
+    vec2 d = p - uLoupe.xy;
+    float r = uLoupe.z * (0.7 + 0.3 * uLoupe.w), dl = length(d), mag = 16.0;
+    c *= 1.0 - 0.6 * uLoupe.w * exp(-pow(max(dl - r, 0.0) / (6.0 * uDpr), 2.0));
+    if (dl < r + 3.0 * uDpr) {
+      float xs = uLoupe.x + d.x / mag;
+      vec3 lc = vec3(0.003, 0.0035, 0.005);
+      for (int i = 0; i < ${MAXL}; i++) {
+        if (i >= uN) break;
+        float sg = max(1.2 * uDpr, uLX[i].w * mag);
+        float e = exp(-0.5 * pow((p.x - uLoupe.x - (uLX[i].x - uLoupe.x) * mag) / sg, 2.0)) * uLX[i].z;
+        lc += uLC[i] * e * 3.2 + vec3(e * e * 0.6);
+      }
+      float lam = plateLam(xs);
+      if (uSootK > 0.001) lc += spectral(lam) * planck(lam) * uSootK * 0.6 * cobaltT(lam);
+      // Ticks every nanometre along the floor, longer every five.
+      float fw = max(fwidth(lam), 1e-4), yb = (d.y + r) / r;
+      float t1 = 1.0 - smoothstep(0.0, 1.2 * fw, abs(fract(lam + 0.5) - 0.5));
+      float t5 = 1.0 - smoothstep(0.0, 1.2 * fw, abs(fract(lam / 5.0 + 0.5) - 0.5) * 5.0);
+      lc += vec3(0.09, 0.095, 0.11) * max(t1 * step(yb, 0.14), t5 * step(yb, 0.26));
+      lc *= 1.0 - 0.45 * smoothstep(0.55 * r, r, dl);
+      float inside = 1.0 - smoothstep(r - uDpr, r, dl);
+      c = mix(c, lc, inside * uLoupe.w);
+      c += exp(-pow((dl - r) / (1.1 * uDpr), 2.0)) * uLoupe.w * vec3(0.2, 0.21, 0.25);
     }
   }
   o = vec4(c, 1.0);
@@ -561,6 +589,7 @@ function buildLines() {
     LX[n * 4] = x1 - lamT(l[0]) * pw;
     LX[n * 4 + 1] = Math.max(1.1 * px, 0.5 * wid * dTdL(l[0]) * pw);
     // A band spreads its light, so its peak is lower.
+    LX[n * 4 + 3] = 0.5 * wid * dTdL(l[0]) * pw;
     LX[n * 4 + 2] = w * (wid ? 0.4 : 1) * (cobalt ? 1 - 0.94 * Math.exp(-(((l[0] - 590) / 28) ** 2)) : 1);
     LC.set(l.rgb, n * 3);
     n++;
@@ -638,6 +667,7 @@ function render() {
   gl.uniform2fv(s.u.uIn, G.inP);
   gl.uniform2fv(s.u.uOut, G.outP);
   gl.uniform4fv(s.u.uPlate, G.plate);
+  gl.uniform4f(s.u.uLoupe, loupe.x, loupe.y, loupe.r, loupe.v);
   gl.uniform1i(s.u.uN, nLines);
   if (nLines) {
     gl.uniform4fv(s.u.uLX, LX, 0, nLines * 4);
@@ -700,12 +730,14 @@ function step(dt) {
     while (feedAcc >= 1) { feedAcc -= 1; launch(salt, at[0], at[1], 1, 0.04); }
   }
   grainStep(dt);
+  loupe.v += (loupe.to - loupe.v) * (1 - Math.exp(-dt / 0.07));
+  if (Math.abs(loupe.to - loupe.v) < 1e-3) loupe.v = loupe.to;
   leanTo *= Math.exp(-dt / 0.35);
   lean += (leanTo - lean) * (1 - Math.exp(-dt / 0.15));
   grating += (gratingTo - grating) * (1 - Math.exp(-dt / 0.15));
   if (Math.abs(gratingTo - grating) < 1e-3) grating = gratingTo;
 }
-const settling = () => feeding || ptr || grains.length > 0 || puffE > 0 || puffV > 1e-3 || amt.some(a => a > 0) || shown.some(a => a > 0)
+const settling = () => feeding || ptr || loupe.v !== loupe.to || grains.length > 0 || puffE > 0 || puffV > 1e-3 || amt.some(a => a > 0) || shown.some(a => a > 0)
   || Math.abs(lean) > 1e-3 || grating !== gratingTo;
 
 /* ---------- frame loop ---------- */
@@ -853,6 +885,31 @@ act.reset = () => {
 // A press becomes a drag after 8 px, or a hold after 260 ms.
 // A release that is neither is a tap.
 let ptr = null, holdTo = 0;
+/* ---------- loupe ---------- */
+// The loupe follows the pointer along the plate.
+// On touch it lifts above the finger.
+const loupe = { x: 0, y: 0, r: 1, v: 0, to: 0 };
+function onPlate([x, y]) {
+  const [x0, y0, x1, y1] = G.plate, h = y1 - y0;
+  return x > x0 - 0.02 * G.S && x < x1 + 0.02 * G.S && y > y0 - 0.5 * h && y < y1 + 0.5 * h;
+}
+function aim([x], touch) {
+  const [x0, y0, x1, y1] = G.plate;
+  loupe.r = 0.1 * G.S;
+  loupe.x = clamp(x, x0, x1);
+  loupe.y = (y0 + y1) / 2 + (touch ? loupe.r * 1.3 : 0);
+  loupe.to = 1;
+  live();
+}
+function unaim() { if (loupe.to) { loupe.to = 0; live(); } stage.classList.remove('loupe'); }
+function hover(e) {
+  if (ptr || e.pointerType === 'touch') return;
+  const at = toGL(e.clientX, e.clientY);
+  const on = onPlate(at);
+  stage.classList.toggle('loupe', on);
+  if (on) aim(at, false); else unaim();
+}
+
 // Client pixels to device pixels, from the bottom left.
 function toGL(cx, cy) {
   const r = canvas.getBoundingClientRect();
@@ -862,6 +919,9 @@ function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, cx: e.clientX, cy: e.clientY, t: performance.now(), mode: 'press' };
+  // A press on the plate holds the loupe instead.
+  const at = toGL(e.clientX, e.clientY);
+  if (onPlate(at)) { ptr.mode = 'loupe'; ptr.touch = e.pointerType === 'touch'; aim(at, ptr.touch); return; }
   holdTo = setTimeout(() => {
     if (ptr?.mode !== 'press') return;
     ptr.mode = 'hold';
@@ -872,7 +932,9 @@ function down(e) {
   live();
 }
 function move(e) {
-  if (!ptr || e.pointerId !== ptr.id) return;
+  if (!ptr) { hover(e); return; }
+  if (e.pointerId !== ptr.id) return;
+  if (ptr.mode === 'loupe') { aim(toGL(e.clientX, e.clientY), ptr.touch); return; }
   const now = performance.now(), dt = Math.max(0.008, (now - ptr.t) / 1000);
   if (ptr.mode === 'press' && Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > 8) {
     clearTimeout(holdTo);
@@ -895,6 +957,7 @@ function up(e) {
   clearTimeout(holdTo);
   const m = ptr.mode;
   ptr = null;
+  if (m === 'loupe') { if (!e || e.pointerType === 'touch' || !onPlate(toGL(e.clientX, e.clientY))) unaim(); return; }
   feeding = false;
   feedAt = null;
   stage.classList.remove('blow');
@@ -924,6 +987,7 @@ wake();
 
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerleave', () => { if (!ptr) unaim(); });
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);

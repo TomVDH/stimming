@@ -29,7 +29,7 @@ The first frame is a picture: a pinch of Lithium burns, so the flame is crimson 
 1. **The flare.** A flick puffs the flame up and out in the salt's colour within one frame. The colour then fades back to the gas flame's blue over seconds.
 2. **Lines bloom.** The lines on the plate swell and glow as the salt catches, then thin and fade as it burns off. Each line's shaft dims with it.
 3. **Mixes.** Flick Copper into a Strontium flame: the flame turns through a muddy mix while both line sets stand on the plate together.
-4. **The doublet.** The loupe on the plate magnifies about 12 times. The sodium line splits into two, 0.6 nm apart.
+4. **The doublet.** The loupe on the plate magnifies 16 times. The sodium line splits into two, 0.6 nm apart.
 5. **The chord.** Each line plays as a tone, its light frequency shifted down 40 octaves. The sodium doublet beats slowly, about once every two seconds.
 
 ## Loop
@@ -159,7 +159,7 @@ The CPU rebuilds it each frame from the salt amounts and drops lines under 0.002
 
 ### Task 3: The loupe
 
-- [ ] A round loupe over the plate (hover on mouse, press on touch). It magnifies about 12 times and splits the sodium doublet.
+- [ ] A round loupe over the plate (hover on mouse, press on touch). It magnifies 16 times and splits the sodium doublet.
 - [ ] Commit: `Flame test: the loupe on the plate`.
 
 ### Task 4: Sound
