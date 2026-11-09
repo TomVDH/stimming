@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:53:57Z
+updated_at: 2026-11-09T08:59:04Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -40,3 +40,5 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): less bloom, better blending and buildings. Bloom drops to 0.16 at threshold 1.2; streetlight heads are smaller with a faint halo. Pools take a five-stop falloff, stretch 2.4 to 1 along the road, and pass a soft knee in the shader. Lawns under lamps lose their colour. Roads repaint over gardens, which had covered asphalt and lit green. Houses gain chimneys, dormers, rear extensions, doors, bungalow garage doors, a blue-stone plinth, eaves shade, tile courses, felt flat roofs, and soft contact shadows; trees cast soft shadows on the plan.
 
 - Tom (2026-11-09): real per-lamp light, on three.js 0.170 and WebGL 2 (no renderer change). The streetlights are static, so they pack once into a float texture (position, mark, colour, reach) and a 250 x 250 grid of 12 m cells, each listing its eight nearest lamps. Every lit fragment, also in the mirror pass, sums those lamps: windowed inverse-square falloff, a downward cone, Lambert diffuse, and a Blinn gloss on wet asphalt and glass. The painted pool texture is gone. Frame cost on a real device is not measured yet; the hidden-pane timing is not reliable.
+
+- Tom (2026-11-09): AO and TAA. GTAOPass (three 0.170 addon) after the render pass, blend 0.85; reach 7 m from the sky, 1.2 m on the towpath; 8 samples on Standard, 16 on High; off at ladder rung 2. Sky eye moves the near plane to 2 m for depth precision. A small TAA pass: Halton (2,3) sub-pixel jitter via setViewOffset, history blend 0.12 with a 3 x 3 neighbourhood clamp; it resets on a new view, size, Dusk or weather; on sleep one full jitter cycle settles the frame.
