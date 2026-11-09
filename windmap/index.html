@@ -799,7 +799,7 @@ function spawnCyclone(x, y, g, rc = 0.05, held = false) {
     const k = vortices.findIndex(v => v.dying);
     vortices.splice(k < 0 ? 0 : k, 1);
   }
-  const v = { x, y, g, rc, amp: held ? 1 : 0, held, dying: false, kind: 'low', vx: 0, vy: 0 };
+  const v = { x, y, g, rc, amp: held ? 1 : 0, held, dying: false, kind: 'low', vx: 0, vy: 0, born: t };
   vortices.push(v);
   return v;
 }
@@ -843,7 +843,7 @@ function stepStorms(dt) {
     baseVel(a.x, a.y, bv);
     ux[i] = bv[0] * 0.35; uy[i] = bv[1] * 0.35;
     // Beta drift carries a storm toward the pole and west.
-    const b = 0.07 * Math.abs(a.g * a.amp);
+    const b = 0.045 * Math.abs(a.g * a.amp);
     ux[i] -= b * 0.35; uy[i] += b * pole;
   }
   // Close pairs orbit fast, so the pair motion runs in 10 ms RK2 steps.
@@ -1140,8 +1140,70 @@ function drawChart() {
     c.fillText(v.kind === 'high' ? 'H' : 'L', px, py);
   }
 }
-// Fronts arrive in the next task.
-function drawFronts() {}
+/* ---------- fronts ---------- */
+// Each low older than 3 s trails a warm front and a cold front.
+// They start at 1.5 rc on a bearing that turns with the storm's age.
+const WARM = [0.62, 0.12, 25], COLD = [0.62, 0.1, 250], OCCL = [0.6, 0.1, 310];
+const fv = [0, 0];
+function traceFront(v, bearing, len) {
+  const sg = Math.sign(v.g) || 1, pts = [];
+  let x = v.x + 1.5 * v.rc * Math.cos(bearing), y = v.y + 1.5 * v.rc * Math.sin(bearing), l = 0;
+  pts.push([x, y]);
+  // Each step blends outward from the eye with the local flow.
+  const dir = (px, py) => {
+    cpuVel(px, py, fv);
+    const rx = px - v.x, ry = py - v.y, rl = Math.hypot(rx, ry) || 1, fl = Math.hypot(fv[0], fv[1]) || 1;
+    const dx = 0.6 * rx / rl + 0.4 * fv[0] / fl, dy = 0.6 * ry / rl + 0.4 * fv[1] / fl, dl = Math.hypot(dx, dy) || 1;
+    return [dx / dl, dy / dl];
+  };
+  while (l < len) {
+    const [ax, ay] = dir(x, y), [bx, by] = dir(x + ax * 0.002, y + ay * 0.002);
+    x += bx * 0.004; y += by * 0.004; l += 0.004;
+    pts.push([x, y]);
+  }
+  return { pts, sg };
+}
+function frontsFor(v) {
+  const age = t - v.born;
+  if (v.kind !== 'low' || age < 3 || Math.abs(v.g * v.amp) < 0.03) return [];
+  const turn = age * 0.15 * (Math.sign(v.g) || 1), len = Math.min(6 * v.rc, (age - 3) * 0.02 + 0.01);
+  const warm = traceFront(v, (60 * Math.PI) / 180 + turn, len), cold = traceFront(v, (200 * Math.PI) / 180 + turn, len);
+  // From 25 s the cold front catches the warm one, from the eye outward.
+  const f = clamp((age - 25) / 15), cut = p => Math.max(1, Math.round(p.length * f));
+  const out = [];
+  if (f > 0) out.push({ kind: 'occluded', pts: warm.pts.slice(0, cut(warm.pts) + 1), sg: warm.sg });
+  out.push({ kind: 'warm', pts: warm.pts.slice(f > 0 ? cut(warm.pts) : 0), sg: warm.sg });
+  out.push({ kind: 'cold', pts: cold.pts.slice(f > 0 ? cut(cold.pts) : 0), sg: cold.sg });
+  return out.filter(fr => fr.pts.length > 1);
+}
+// Symbols sit every 14 CSS px on the side the front moves toward.
+function drawFront(c, fr, alpha) {
+  const ink = fr.kind === 'warm' ? WARM : fr.kind === 'cold' ? COLD : OCCL;
+  const px = fr.pts.map(([x, y]) => toScreen(x, y));
+  c.strokeStyle = c.fillStyle = css(ink, alpha);
+  c.lineWidth = 1.25 * dpr;
+  c.beginPath(); px.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke();
+  const r = 3.5 * dpr, step = 14 * dpr;
+  let acc = step / 2, k = 0;
+  for (let i = 1; i < px.length; i++) {
+    const [ax, ay] = px[i - 1], [bx, by] = px[i], seg = Math.hypot(bx - ax, by - ay);
+    while (acc <= seg) {
+      const u = acc / seg, x = ax + (bx - ax) * u, y = ay + (by - ay) * u;
+      const tx = (bx - ax) / seg, ty = (by - ay) / seg, nx = -ty * fr.sg, ny = tx * fr.sg;
+      const half = fr.kind === 'warm' || (fr.kind === 'occluded' && k % 2 === 0);
+      c.beginPath();
+      if (half) c.arc(x, y, r, Math.atan2(ny, nx) - Math.PI / 2, Math.atan2(ny, nx) + Math.PI / 2);
+      else { c.moveTo(x - tx * r, y - ty * r); c.lineTo(x + nx * r * 1.4, y + ny * r * 1.4); c.lineTo(x + tx * r, y + ty * r); }
+      c.closePath(); c.fill();
+      acc += step; k++;
+    }
+    acc -= seg;
+  }
+}
+function drawFronts(c) {
+  if (cpu.at < 0 || t - cpu.at > 0.5) buildGrid();
+  for (const v of vortices) for (const fr of frontsFor(v)) drawFront(c, fr, 0.9 * v.amp);
+}
 
 /* ---------- flashes ---------- */
 // A gust lights its point for 0.3 s; a merge ring runs 0.6 s.
