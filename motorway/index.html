@@ -202,8 +202,8 @@ const TOWNS = [
   [6.13, 49.61, 5, 0.5], [3.52, 50.36, 4, 0.4], [2.37, 51.03, 5, 0.5], [4.48, 51.92, 10, 0.8], [6.95, 50.94, 12, 0.9],
   [3.83, 51.33, 3, 0.3], [4.3, 51.49, 3, 0.35], [6.17, 49.12, 6, 0.5],
 ];
-// The hero lamp stands on the E19 by Mechelen.
-const HERO_LL = [4.4495, 51.0175];
+// The hero lamp stands on the northbound E19, 170 m short of the L53 rail bridges.
+const HERO_LL = [4.4529, 51.01224];
 
 // Roads and border come from OpenStreetMap, simplified offline into roads.json.
 // Classes: 0 motorway, 1 trunk, 2 primary, 3 a neighbour's motorway, 4 a slip road.
@@ -290,7 +290,7 @@ let hB = -1, hBs = 0, sep = 18;
     }
   });
 }
-sep = Math.min(40, Math.max(12, sep));
+sep = Math.min(60, Math.max(12, sep));
 // The reserve's centre at the hero lamp is the world origin, for precision.
 const ORIGIN = [PA[0] - NA[0] * sep / 2, PA[1] - NA[1] * sep / 2];
 dense.forEach(d => d.p.forEach(q => { q[0] -= ORIGIN[0]; q[1] -= ORIGIN[1]; }));
@@ -677,13 +677,13 @@ const ribMat = new THREE.ShaderMaterial({
       // Asphalt, the lines and the verge: three lanes one way, or one lane each way.
       float dash = step(mod(vS, 12.0), 3.0), alb, m;
       if (link) {
-        alb = a < 2.6 ? 0.055 : 0.07 * exp(-(a - 2.6) / 18.0);
+        alb = a < 2.6 ? 0.055 : 0.04 * exp(-(a - 2.6) / 9.0);
         m = band(vLat, -2.3, 0.12) + band(vLat, 2.3, 0.12);
       } else if (vHoff > 0.0) {
-        alb = vLat > -6.0 && vLat < 8.4 ? 0.055 : 0.07 * exp(-max(-6.0 - vLat, vLat - 8.4) / 18.0);
+        alb = vLat > -6.0 && vLat < 8.4 ? 0.055 : 0.04 * exp(-max(-6.0 - vLat, vLat - 8.4) / 9.0);
         m = band(vLat, -5.3, 0.15) + band(vLat, 5.3, 0.15) + (band(vLat, -1.75, 0.12) + band(vLat, 1.75, 0.12)) * dash;
       } else {
-        alb = a < 4.2 ? 0.055 : 0.07 * exp(-(a - 4.2) / 18.0);
+        alb = a < 4.2 ? 0.055 : 0.04 * exp(-(a - 4.2) / 9.0);
         m = band(vLat, -3.6, 0.12) + band(vLat, 3.6, 0.12) + band(vLat, 0.0, 0.12) * dash;
       }
       alb += m * 0.3 * (1.0 - smoothstep(0.15, 1.0, fl));
@@ -959,33 +959,152 @@ scene.add(set);
 const concrete = new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.92 });
 const steel = new THREE.MeshStandardMaterial({ color: 0x6d7076, roughness: 0.55, metalness: 0.4 });
 const box = (w, h, d, x, y, z, m = concrete) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); set.add(b); return b; };
-// The overpass crosses the motorway ahead of the camera.
-// The overpass stands 60 m ahead, so the jam crawls under it.
-const OVER = 60 * JAM.dir;
-const fascia = new THREE.MeshStandardMaterial({ color: 0xa9a7a1, roughness: 0.8 });
-box(12, 0.5, 74, OVER, 7.25, 0);
-// Four girders under the slab, a fascia beam on each edge.
-for (const dx of [-4.5, -1.5, 1.5, 4.5]) box(0.5, 1.1, 74, OVER + dx, 6.45, 0);
-for (const dx of [-5.95, 5.95]) box(0.3, 1.5, 74.6, OVER + dx, 7.0, 0, fascia);
-// A steel railing: a top rail and posts every 1.5 m.
-for (const dx of [-5.9, 5.9]) box(0.08, 0.08, 74, OVER + dx, 8.62, 0, steel);
+const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
+// Railway L53 runs east to west under both carriageways, in a shallow cutting.
+// Track geometry from OpenStreetMap; the east end runs on straight.
+const RAIL_Y = -6;
+const ballast = new THREE.MeshStandardMaterial({ color: 0x3d3a36, roughness: 1 });
+const sleeperM = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.95 });
+const railM = new THREE.MeshStandardMaterial({ color: 0xa4a9ae, roughness: 0.3, metalness: 0.85 });
+const slopeM = new THREE.MeshStandardMaterial({ color: 0x3c4632, roughness: 1, side: THREE.DoubleSide });
+const TRACK_LL = [
+  [[4.437, 51.01352], [4.442996, 51.013568], [4.444135, 51.013572], [4.445955, 51.013604], [4.449112, 51.013658], [4.454975, 51.013738], [4.461, 51.01382]],
+  [[4.437, 51.0135], [4.442941, 51.013534], [4.444136, 51.013537], [4.445961, 51.013555], [4.449113, 51.013606], [4.454983, 51.013696], [4.461, 51.01378]],
+];
+const path = P => {
+  const s = [0];
+  for (let i = 1; i < P.length; i++) s.push(s[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  // A point and its unit tangent at distance u along the path.
+  const at = u => {
+    let i = 1;
+    while (i < P.length - 1 && s[i] < u) i++;
+    const a = P[i - 1], b = P[i], l = s[i] - s[i - 1] || 1, f = (u - s[i - 1]) / l;
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, (b[0] - a[0]) / l, (b[1] - a[1]) / l];
+  };
+  return { P, s, L: s[s.length - 1], at };
+};
+const TRACKS = TRACK_LL.map(t => path(t.map(([lo, la]) => geo(lo, la))));
+const CUT = path(TRACKS[0].P.map((q, i) => [(q[0] + TRACKS[1].P[i][0]) / 2, (q[1] + TRACKS[1].P[i][1]) / 2]));
+// A strip along a path: two edges at their own offsets and heights.
+function railStrip(T, o0, y0, o1, y1, mat, step = 8) {
+  const pos = [], idx = [];
+  for (let u = 0, k = 0; u <= T.L; u += step, k++) {
+    const [x, z, tx, tz] = T.at(Math.min(u, T.L)), nx = -tz, nz = tx;
+    pos.push(x + nx * o0, y0, z + nz * o0, x + nx * o1, y1, z + nz * o1);
+    if (k) { const v = k * 2; idx.push(v - 2, v - 1, v, v - 1, v + 1, v); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); scene.add(m); return m;
+}
+// The cutting: a flat floor and grass slopes up to the fields.
+railStrip(CUT, -7, RAIL_Y, 7, RAIL_Y, ballast);
+railStrip(CUT, 7, RAIL_Y, 15, 0, slopeM);
+railStrip(CUT, -7, RAIL_Y, -15, 0, slopeM);
+// Two tracks: a raised ballast bed, sleepers every 0.6 m, two rails.
+TRACKS.forEach(T => {
+  railStrip(T, -1.7, RAIL_Y + 0.25, 1.7, RAIL_Y + 0.25, ballast, 6);
+  for (const o of [-0.72, 0.72]) railStrip(T, o - 0.04, RAIL_Y + 0.42, o + 0.04, RAIL_Y + 0.42, railM, 4);
+  const n = Math.floor(T.L / 0.6), sl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 0.14, 2.5), sleeperM, n);
+  for (let i = 0; i < n; i++) {
+    const [x, z, tx, tz] = T.at(i * 0.6);
+    q4.setFromAxisAngle(yAx, -Math.atan2(tz, tx));
+    m4.compose(new THREE.Vector3(x, RAIL_Y + 0.33, z), q4, new THREE.Vector3(1, 1, 1));
+    sl.setMatrixAt(i, m4);
+  }
+  scene.add(sl);
+});
+// Catenary portals every 60 m, and a contact wire over each track.
 {
-  const xs = [-5.9, 5.9], n = 50, inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 1.1, 0.06), steel, n * 2), mm = new THREE.Matrix4();
-  xs.forEach((dx, j) => { for (let i = 0; i < n; i++) inst.setMatrixAt(j * n + i, mm.makeTranslation(OVER + dx, 8.05, -36.75 + i * 1.5)); });
-  set.add(inst);
+  const mast = new THREE.MeshStandardMaterial({ color: 0x6f7378, roughness: 0.6, metalness: 0.5 });
+  const portals = [];
+  for (let u = 20; u < CUT.L; u += 60) portals.push(u);
+  const legs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 7, 0.3), mast, portals.length * 2);
+  const beams = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 0.3, 12), mast, portals.length);
+  portals.forEach((u, i) => {
+    const [x, z, tx, tz] = CUT.at(u), nx = -tz, nz = tx;
+    q4.setFromAxisAngle(yAx, -Math.atan2(tz, tx));
+    for (const [j, o] of [[0, -5.6], [1, 5.6]]) {
+      m4.compose(new THREE.Vector3(x + nx * o, RAIL_Y + 3.5, z + nz * o), q4, new THREE.Vector3(1, 1, 1));
+      legs.setMatrixAt(i * 2 + j, m4);
+    }
+    m4.compose(new THREE.Vector3(x, RAIL_Y + 6.9, z), q4, new THREE.Vector3(1, 1, 1));
+    beams.setMatrixAt(i, m4);
+  });
+  scene.add(legs, beams);
+  TRACKS.forEach(T => railStrip(T, -0.02, RAIL_Y + 5.7, 0.02, RAIL_Y + 5.7, mast, 10));
 }
-// Round piers under a cap beam.
-box(2.0, 0.6, 44, OVER, 5.6, 0);
-for (const z of [-19, 0, 19]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 5.3, 20), concrete); c.position.set(OVER, 2.65, z); set.add(c); }
-// Earth embankments carry the side road up to the deck.
-const grass = new THREE.MeshStandardMaterial({ color: 0x48523c, roughness: 1 });
-const tarmac = new THREE.MeshStandardMaterial({ color: 0x2c2c2e, roughness: 0.85 });
-for (const sd of [-1, 1]) {
-  const sh = new THREE.Shape([[25, 0], [37, 7.5], [150, 7.5], [175, 0]].map(([u, v]) => new THREE.Vector2(-sd * u, v)));
-  const g = new THREE.ExtrudeGeometry(sh, { depth: 34, bevelEnabled: false }).rotateY(Math.PI / 2).translate(OVER - 17, 0, 0);
-  set.add(new THREE.Mesh(g, grass));
-  box(10, 0.12, 113, OVER, 7.56, sd * 93.5, tarmac);
+// Signals stand beside each track; their lamps keep their colour under sodium.
+{
+  const post = new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.7 });
+  const red = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.2, 0.12) });
+  const green = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 4, 1.6) });
+  [[0, 0.32, -3.2, red], [1, 0.68, 3.2, green], [0, 0.6, -3.2, green], [1, 0.4, 3.2, red]].forEach(([k, f, o, lamp]) => {
+    const T = TRACKS[k], [x, z, tx, tz] = T.at(T.L * f), nx = -tz, nz = tx;
+    const pb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 4.2, 0.18), post); pb.position.set(x + nx * o, RAIL_Y + 2.1, z + nz * o); scene.add(pb);
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lamp); l.position.set(x + nx * o, RAIL_Y + 4.0, z + nz * o); scene.add(l);
+  });
 }
+// Each carriageway crosses on its own bridge: a deck over the cutting, parapets on top.
+const BRIDGES = [];
+{
+  const deckM = new THREE.MeshStandardMaterial({ color: 0x7c7b77, roughness: 0.9 });
+  [hA, hB].forEach(r => {
+    if (r < 0) return;
+    const p = dense[r].p;
+    // The road point nearest the cutting's centre line marks the bridge.
+    let bi = 0, bd = Infinity;
+    p.forEach((q, i) => {
+      for (let u = 0; u < CUT.L; u += 20) { const [x, z] = CUT.at(u), d = Math.hypot(q[0] - x, q[1] - z); if (d < bd) { bd = d; bi = i; } }
+    });
+    if (bd > 60) return;
+    const [x, z] = p[bi], [tx, tz] = tangent(p, bi);
+    BRIDGES.push([x, z]);
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = -Math.atan2(tz, tx);
+    // In the group frame x runs along the road and z to its right.
+    const add = (w, h, d, px, py, pz, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(px, py, pz); g.add(b); };
+    add(34, 1.6, 17, 0, -0.85, 1.2, deckM);
+    for (const pz of [-7.2, 9.6]) add(34, 1.1, 0.35, 0, 0.5, pz, concrete);
+    scene.add(g);
+  });
+}
+// A local train passes every minute or so, windows lit, under both bridges.
+const train = (() => {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0x2b2e34, roughness: 0.5, metalness: 0.3 });
+  const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.35, 1.05) });
+  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 4.8, 4.2) });
+  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.1, 0.08) });
+  const cars = [0, 1, 2, 3].map(i => {
+    const c = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(24, 3.8, 2.9), body); b.position.y = 2.3; c.add(b);
+    for (const sz of [-1.46, 1.46]) { const w = new THREE.Mesh(new THREE.BoxGeometry(21, 0.75, 0.02), glass); w.position.set(0, 2.7, sz); c.add(w); }
+    if (i === 0) for (const sz of [-0.9, 0.9]) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), head); h.position.set(12.05, 1.2, sz); c.add(h); }
+    if (i === 3) for (const sz of [-0.9, 0.9]) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), tail); h.position.set(-12.05, 1.2, sz); c.add(h); }
+    g.add(c);
+    return c;
+  });
+  g.visible = false;
+  scene.add(g);
+  return { g, cars };
+})();
+function stepTrain(t) {
+  // 33 m/s over the whole cutting, then a pause before the next one.
+  const T = TRACKS[0], run = T.L + 110, period = run / 33 + 40, u0 = ((t % period) * 33) - 5;
+  train.g.visible = u0 < run;
+  if (!train.g.visible) return;
+  train.cars.forEach((c, i) => {
+    const u = u0 - i * 24.6;
+    c.visible = u > 12 && u < T.L - 12;
+    if (!c.visible) return;
+    const [x, z, tx, tz] = T.at(u);
+    c.position.set(x, RAIL_Y + 0.42, z); c.rotation.y = -Math.atan2(tz, tx);
+  });
+}
+// Distance from a ground point to the rail cutting's centre line.
+const railDist = (x, z) => { let d = Infinity; for (let u = 0; u <= CUT.L; u += 10) { const [cx, cz] = CUT.at(u); d = Math.min(d, Math.hypot(x - cx, z - cz)); } return d; };
 
 // Poles, arms and housings for the lamps near the hero, as instances.
 const NEAR = LAMPS.filter(l => l.r === hA && Math.hypot(l.x, l.z) < 1500);
@@ -998,7 +1117,6 @@ const refrGeo = mergeGeometries([-1, 1].map(sd => new THREE.PlaneGeometry(0.32, 
 const poles = new THREE.InstancedMesh(poleGeo, steel, NEAR.length);
 const refrMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...SOD).multiplyScalar(5), side: THREE.DoubleSide });
 const refrs = new THREE.InstancedMesh(refrGeo, refrMat, NEAR.length);
-const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
 NEAR.forEach((l, i) => {
   q4.setFromAxisAngle(yAx, -Math.atan2(l.tz, l.tx));
   // The pole stands on the reserve's centre, one arm per carriageway.
@@ -1055,7 +1173,7 @@ scene.add(poles, refrs);
         const o = off + k * (5 + 34 * rnd(i, j + 11 + k)), a = (rnd(i, j + 23 + k) - 0.5) * 8;
         const px = x + tx * a - tz * o, pz = z + tz * a + tx * o;
         // Trees keep clear of the overpass embankments.
-        if (Math.abs(px * HT.x + pz * HT.z - OVER) < 24) continue;
+        if (railDist(px, pz) < 24) continue;
         // The camera's own corner stays clear.
         if (Math.hypot(px + HT.x * 26 * JAM.dir, pz + HT.z * 26 * JAM.dir) < 55) continue;
         at.push([px, pz, 9 + 9 * rnd(i, j + 31 + k)]);
@@ -1135,28 +1253,6 @@ const GX = 22 * JAM.dir, JZ = JAM.side * sep / 2;
     arrowExit(g, W - 52, H * 0.66, 58);
   });
 }
-// Cars cross the overpass, headlights first.
-const deckCars = (() => {
-  const body = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.5, metalness: 0.3 });
-  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 5.6, 4.8) });
-  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.15, 0.1) });
-  return [0, 1, 2, 3, 4, 5].map(i => {
-    const g = new THREE.Group(), dir = i % 2 ? 1 : -1;
-    const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.3, 4.3), body); b.position.y = 0.75; g.add(b);
-    for (const sx of [-0.65, 0.65]) {
-      const h = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), head); h.position.set(sx, 0.7, dir * 2.16); g.add(h);
-      const t = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), tail); t.position.set(sx, 0.8, -dir * 2.16); g.add(t);
-    }
-    g.position.set(OVER + dir * 2.2, 7.6, 0);
-    set.add(g);
-    return { g, dir, ph: i * 61.7, v: 13 + (i % 3) * 3 };
-  });
-})();
-function stepDeck(t) {
-  // Each car loops a 400 m run along the side road.
-  for (const c of deckCars) c.g.position.z = c.dir * (((t * c.v + c.ph) % 400) - 200);
-}
-
 // Point lights at the eight heads nearest the hero light the solids.
 const HEADS = LAMPS.filter(l => (l.r === hA || l.r === hB) && Math.hypot(l.x, l.z) < 300).map(l => new THREE.Vector3(l.x, HEAD_H - 0.2, l.z));
 HEADS.sort((a, b) => a.lengthSq() - b.lengthSq());
@@ -1167,6 +1263,13 @@ const lights = HEADS.slice(0, 8).map(h => {
   scene.add(L);
   return L;
 });
+// Four more heads light the bridges, so the crossing reads from the start.
+if (BRIDGES.length) {
+  const [bx, bz] = BRIDGES[0];
+  LAMPS.filter(l => (l.r === hA || l.r === hB) && Math.hypot(l.x - bx, l.z - bz) < 140)
+    .sort((a, b) => Math.hypot(a.x - bx, a.z - bz) - Math.hypot(b.x - bx, b.z - bz)).slice(0, 4)
+    .forEach(h => { const L = new THREE.PointLight(new THREE.Color(...SOD), LIGHT_I, 0, 2); L.position.set(h.x, HEAD_H - 0.2, h.z); scene.add(L); lights.push(L); });
+}
 scene.add(new THREE.HemisphereLight(new THREE.Color(...linFit(0.3, 0.05, 262)), 0x000000, 0.06));
 
 /* ---------- traffic ---------- */
@@ -2015,7 +2118,7 @@ function draw() {
   const t = nowS();
   U.uNow.value = t;
   const D = place(z);
-  if (z < 0.3) stepDeck(t);
+  if (z < 0.3) stepTrain(t);
   updateSound(t);
   // Air eases toward the chip.
   ribMat.uniforms.uHalf.value = 60 + air.wide * 2;
