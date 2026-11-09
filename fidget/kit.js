@@ -202,8 +202,9 @@ const sleep = b => live.delete(b);
 // An armed safety and a latched key prime the board.
 // A plain key then fires the launch.
 // Mounted parts register themselves here; unmounted ones clear their slot.
+// The page sets shuffle; a press on the stick's nub calls it.
 const board = {
-  armed: false, latched: false, firing: false, fire: null,
+  armed: false, latched: false, firing: false, fire: null, shuffle: null,
   dial: null, keys: null, safety: null,
   get primed() { return this.armed && this.latched && !this.firing; },
   set(k, v) { this[k] = v; this.dial?.prime(); },

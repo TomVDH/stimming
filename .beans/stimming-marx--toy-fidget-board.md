@@ -5,7 +5,7 @@ status: todo
 type: epic
 priority: normal
 created_at: 2026-11-03T09:55:39Z
-updated_at: 2026-11-09T08:19:41Z
+updated_at: 2026-11-09T08:34:05Z
 parent: stimming-ft0e
 ---
 
@@ -28,3 +28,9 @@ Sign-off (`data-done`) waits until the bar changes land.
 
 Visible controls: two of five. The board pads its top and bottom rows clear of the corner chips.
 Diegetic check: Shuffle and Reset act on the whole board; proposal goes to Tom with a still.
+
+## Diegetic Shuffle (2026-11-09, Tom: yes)
+
+A short press on the stick's nub, with no push, shuffles the board. The wave runs outward from the stick.
+The Shuffle chip leaves the bar. S stays as its key; Space on the focused stick also shuffles. Reset stays a chip (R).
+Key strip: click flip and press, drag turn slide flick, click stick shuffle, S shuffle.

@@ -2,7 +2,7 @@ import {
   NS, reduce, TAU, PI, D2R, R2D, clamp, lerp, mod, f2, f3, rnd, angDiff, KEYS, css, mixLch, ramp, C, TICK, BUTTER, el, set, nid, grad, DOWN, blur, LIGHT, svgIn, mat, skin, WELL, well, shine, wake, sleep, S, spring, rest, board, snd, BEZEL,
 } from '../kit.js';
 
-const MARKUP = `<div class="grp"><div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick"></div></div>`;
+const MARKUP = `<div class="grp"><div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick. Press the nub to shuffle the board."></div></div>`;
 
 export default {
   id: 'joy', slot: 'small',
@@ -26,7 +26,9 @@ export default {
       const nub = skin(svg, ng, 'circle', { cx: 100, cy: 100, r: 40 }, mat(C.coral, 0.1), { rim: 3, shadow: { b: 6, y: 8, o: 0.6 } });
       // A shallow thumb dish sits in the top of the nub.
       el('circle', { cx: 100, cy: 100, r: 22, fill: grad(defs, 'linearGradient', DOWN, [[0, '#000', 0.22], [0.6, '#000', 0], [1, '#fff', 0.35]]).url }, ng);
-      const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null };
+      const s = { x: S(), y: S(), pr: S(), pid: null, ox: 0, oy: 0, keys: 0, rect: null, tap: false, cx: 0, cy: 0, t0: 0 };
+      // A short press on the nub that does not push shuffles the board.
+      const TAP_PX = 6, TAP_MS = 450;
       const body = {
         step(h) {
           // Held, the nub tracks firmly; let go, it wobbles home.
@@ -69,11 +71,13 @@ export default {
         s.rect = joyEl.getBoundingClientRect();
         const [qx, qy] = local(e), onNub = Math.hypot(qx - s.x.x, qy - s.y.x) < 44;
         s.ox = onNub ? s.x.x - qx : 0; s.oy = onNub ? s.y.x - qy : 0;
+        s.tap = onNub; s.cx = e.clientX; s.cy = e.clientY; s.t0 = e.timeStamp;
         s.pr.t = 1; joyEl.classList.add('held');
         aim(qx + s.ox, qy + s.oy);
       });
       joyEl.addEventListener('pointermove', e => {
         if (e.pointerId !== s.pid) return;
+        if (Math.hypot(e.clientX - s.cx, e.clientY - s.cy) > TAP_PX) s.tap = false;
         const [qx, qy] = local(e);
         aim(qx + s.ox, qy + s.oy);
       });
@@ -82,8 +86,11 @@ export default {
       const up = e => {
         if (e.pointerId !== s.pid) return;
         s.pid = null; s.pr.t = 0; joyEl.classList.remove('held');
-        if (!held.size) boing();
+        const tap = s.tap && e.type === 'pointerup' && e.timeStamp - s.t0 < TAP_MS;
+        s.tap = false;
+        if (!held.size && !tap) boing();
         steer();
+        if (tap) board.shuffle?.(joyEl);
       };
       ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => joyEl.addEventListener(t, up));
       const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }, held = new Set();
@@ -109,7 +116,10 @@ export default {
           if (!held.size) boing();
           steer();
         }
-        else if (KEYS.includes(e.key)) { s.pr.t = 0; wake(body); }
+        else if (KEYS.includes(e.key)) {
+          s.pr.t = 0; wake(body);
+          if (!held.size) board.shuffle?.(joyEl);
+        }
       });
       joyEl.addEventListener('blur', () => {
         held.clear(); s.pr.t = 0;
