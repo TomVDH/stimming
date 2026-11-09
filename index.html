@@ -1033,6 +1033,32 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <a class="lab-back" href="./"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>Toys</a>
       <ul class="shelf" aria-label="Lab">
         <li>
+          <a class="toy" id="bread" href="bread/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <defs><clipPath id="bread-win-clip"><rect x="50" y="60" width="22" height="30"/></clipPath></defs>
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 265)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.16 0.03 265)"/>
+                <rect x="16" y="70" width="92" height="12" fill="oklch(0.3 0.08 45)"/>
+                <rect x="16" y="82" width="92" height="26" fill="oklch(0.11 0.012 265)"/>
+                <path id="bread-pool" d="M40 102H90L104 108H26Z" fill="oklch(0.9 0.05 160)" opacity="0.15"/>
+                <rect x="38" y="36" width="52" height="4" fill="oklch(0.1 0.01 265)"/>
+                <rect x="42" y="40" width="3" height="62" fill="oklch(0.1 0.01 265)"/>
+                <rect x="46" y="44" width="36" height="58" fill="oklch(0.74 0.02 95)"/>
+                <rect id="bread-win" x="50" y="60" width="22" height="30" fill="oklch(0.62 0.13 62)"/>
+                <g id="bread-drum" clip-path="url(#bread-win-clip)" fill="oklch(0.42 0.11 50)">
+                  <path d="M38 67h6v3h-6zM47 67h6v3h-6zM56 67h6v3h-6zM65 67h6v3h-6zM74 67h6v3h-6zM38 77h6v3h-6zM47 77h6v3h-6zM56 77h6v3h-6zM65 77h6v3h-6zM74 77h6v3h-6zM38 87h6v2h-6zM47 87h6v2h-6zM56 87h6v2h-6zM65 87h6v2h-6zM74 87h6v2h-6z"/>
+                  <path d="M50 70h22v1H50zM50 80h22v1H50z" fill="oklch(0.2 0.01 265)"/>
+                </g>
+                <rect x="50" y="48" width="28" height="7" fill="oklch(0.9 0.05 85)"/>
+                <rect id="bread-dot" x="75" y="66" width="3" height="3" fill="oklch(0.8 0.2 145)"/>
+                <rect id="bread-tube" x="50" y="40" width="28" height="2.4" fill="oklch(0.97 0.04 160)"/>
+              </svg>
+            </span>
+            <span class="name">Broodautomaat</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="canal" href="canal/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2708,6 +2734,41 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       play() { toys.window.enter(null); return { kill() {} }; },
       rest() { toys.window.leave(); },
     };
+  }
+
+  // The tube flickers on; the drum turns with the pointer.
+  {
+    const tube = $('bread-tube'), pool = $('bread-pool'), drum = $('bread-drum'), dot = $('bread-dot');
+    let strike = null;
+    toys.bread = {
+      enter(p) {
+        strike?.kill();
+        strike = gsap.timeline()
+          .to([tube, pool], { opacity: 0.15, duration: 0.05, ease: 'steps(1)' })
+          .to([tube, pool], { opacity: 1, duration: 0.05, ease: 'steps(1)' }, '+=0.08')
+          .to([tube, pool], { opacity: 0.3, duration: 0.05, ease: 'steps(1)' }, '+=0.06')
+          .to(tube, { opacity: 1, duration: 0.05, ease: 'steps(1)' }, '+=0.1')
+          .to(pool, { opacity: 0.55, duration: 0.3 }, '<');
+        gsap.fromTo(dot, { opacity: 0.2 }, { opacity: 1, duration: 0.3, repeat: 1, yoyo: true });
+        if (p) toys.bread.move(p);
+      },
+      // Pointer x turns the drum; the loaves slide past the window.
+      move(p) { if (p) gsap.to(drum, { x: (64 - p[0]) * 0.16, duration: 0.5, ease: 'power2.out', overwrite: 'auto' }); },
+      leave() {
+        strike?.kill();
+        gsap.to(tube, { opacity: 1, duration: 0.3, overwrite: true });
+        gsap.to(pool, { opacity: 0.15, duration: 0.4, overwrite: true });
+        gsap.to(drum, { x: 0, duration: 0.6, ease: 'power3.out', overwrite: true });
+      },
+      play() { toys.bread.enter(null); return { kill() {} }; },
+      rest() { toys.bread.leave(); },
+    };
+    // The Lab calls play and rest only; the icon follows the pointer itself.
+    const el = $('bread'), svg = el.querySelector('svg');
+    el.addEventListener('pointermove', e => {
+      const r = svg.getBoundingClientRect();
+      toys.bread.move([((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128]);
+    });
   }
 
   // A streetlight warms from pink-red to sodium orange; its pool and glint follow.
