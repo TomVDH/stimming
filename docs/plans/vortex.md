@@ -6,7 +6,7 @@
 
 **Architecture:** raw WebGL2. The rings are vortex filaments on the CPU (Biot-Savart). Smoke is a GPU particle system that the same filaments advect. A full-screen pass draws the haze and the laser sheet; a small bloom and a grade finish the frame.
 
-**Tech stack:** raw WebGL2 (RGBA32F particle state, RGBA16F scene and bloom), Tone.js through `kit.tone()`. Bar v2 through `initPage({ bar })`.
+**Tech stack:** raw WebGL2 (RGBA32F particle state, RGBA16F scene and bloom), plain Web Audio voices on `audioKit()`. Bar v2 through `initPage({ bar })`.
 
 **Spec:** the science-fair batch of 2026-11-09 (with Lichtenberg burn, Rubens tube, Flame test, Bismuth crystals); batch rules in [README.md](README.md).
 
@@ -96,10 +96,10 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 
 **Filaments (CPU, `K7`).** Up to 8 rings × 32 nodes. RK2 at a fixed 1/120 s step, two steps a frame. Each ring keeps Γ, a, age, charge and a slot index. Nodes start on a circle with a small random radial wave (modes 5 to 8) that seeds the lobes. Node data goes to an 32 × 8 RGBA32F texture each frame (xyz, Γ).
 
-**Smoke (GPU).** A position texture, 64 wide and 64 rows per ring slot (4 096 particles each; 2 048 on the lowest rung). RGBA32F: xyz and birth time.
+**Smoke (GPU).** A position texture, 64 wide and 128 rows per ring slot (8 192 particles each). RGBA32F: xyz and birth time.
 - **Seed:** on fire, one pass with a scissor writes the slot's rows: 70 % in a Gaussian round the core (σ 1.3a), 30 % in the ring's bubble.
 - **Advect:** each particle sums Biot-Savart over the live nodes, adds curl noise scaled by ring age and Breakup, then steps forward.
-- **Draw:** points with additive blend into the RGBA16F scene. Brightness is backlight scatter plus `exp(-(d/w)²)` of the distance d to the sheet, times laser colour and phase. Points near the lens grow and soften.
+- **Draw:** soft Gaussian points with additive blend into the RGBA16F scene. Brightness is backlight scatter plus `exp(-(d/w)²)` of the distance d to the sheet, times laser colour and phase. Points near the lens grow and soften.
 
 **Haze and sheet.** One full-screen pass before the smoke: background gradient, faint backlight in fbm haze, and the sheet. The view ray meets the sheet plane once; the glow there is fan mask × 1/r × haze density × speckle, divided by the cosine to the plane's normal (capped), so the sheet reads brightest edge-on.
 
@@ -130,7 +130,7 @@ Rings leave a muzzle just inside the left edge and fly right, a little toward yo
 ## Review focus
 
 1. **No float targets:** without `EXT_color_buffer_float` (RGBA32F), show `.fail`.
-2. **Eight rings at once:** the ninth fire takes the oldest slot; its smoke fades over 0.3 s first.
+2. **Eight rings at once:** the ninth fire takes the oldest slot; its smoke goes at once.
 3. **A drag that leaves the stage:** pointer capture keeps the aim; `lostpointercapture` cancels without a fire.
 4. **Head-on cores:** the 2a test ends both rings cleanly, with no velocity spike.
 5. **Bloom:** many flares at once must not white out the frame.

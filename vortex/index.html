@@ -54,7 +54,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, onReducedChange, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -164,7 +164,7 @@ function filamentStep(dt) {
     // Lobes grow from the seeded wave; big lobes kill the ring fast.
     const sigma = 0.35 + 0.9 * breakup;
     const amp = Math.min(r.R0 * 0.4, r.amp * Math.exp(sigma * r.age));
-    const life = amp > r.R0 * 0.22 ? 1.1 : TAU_G;
+    const life = r.dying ? 0.45 : amp > r.R0 * 0.22 ? 1.1 : TAU_G;
     r.G *= Math.exp(-dt / life);
     const { c, n } = frameOf(r);
     const g = 1 + GROW * dt, da = amp * sigma * dt;
@@ -182,7 +182,25 @@ function filamentStep(dt) {
       r.p[o + 2] = c[2] + rz * g + pz * s + n[2] * k;
     }
     r.c = c;
+    r.n = n;
     if (r.G < r.G0 * 0.12 || Math.hypot(c[0], c[1], c[2]) > 4.5 || r.age > 16) kill(r);
+  }
+  meet();
+}
+// Head-on cores that come within 2a end both rings in tendrils.
+// Filaments cannot reconnect, so this stands in for the split.
+function meet() {
+  for (let i = 0; i < SLOTS; i++) for (let j = i + 1; j < SLOTS; j++) {
+    const A = rings[i], B = rings[j];
+    if (!A.on || !B.on || (A.dying && B.dying)) continue;
+    if (A.n[0] * B.n[0] + A.n[1] * B.n[1] + A.n[2] * B.n[2] > -0.3) continue;
+    const lim = 4 * Math.max(A.a, B.a) ** 2;
+    let hit = false;
+    for (let a = 0; a < N && !hit; a++) for (let b = 0; b < N; b++) {
+      const dx = A.p[a * 3] - B.p[b * 3], dy = A.p[a * 3 + 1] - B.p[b * 3 + 1], dz = A.p[a * 3 + 2] - B.p[b * 3 + 2];
+      if (dx * dx + dy * dy + dz * dz < lim) { hit = true; break; }
+    }
+    if (hit) A.dying = B.dying = true;
   }
 }
 /* ---------- end K7 ---------- */
@@ -194,7 +212,9 @@ let simTime = 0;
 function kill(r) {
   r.on = false;
   r.G = 0;
-  slot[rings.indexOf(r)].dead = simTime;
+  const s = slot[rings.indexOf(r)];
+  s.dead = simTime;
+  s.burst = !!r.dying;
 }
 function freeSlot() {
   let best = 0, oldest = Infinity;
@@ -202,6 +222,10 @@ function freeSlot() {
     if (!rings[k].on && slot[k].fade <= 0) return k;
     if (slot[k].born < oldest) { oldest = slot[k].born; best = k; }
   }
+  // All slots busy: the oldest ring and its smoke give way.
+  rings[best].on = false;
+  rings[best].G = 0;
+  Object.assign(slot[best], { fade: 0, dead: -1 });
   return best;
 }
 const basis = d => {
@@ -230,6 +254,8 @@ function fire({ from, dir, R = 0.18, U = 0.9 }) {
   r.a0 = r.a = R * 0.24;
   r.R0 = R;
   r.age = 0;
+  r.dying = false;
+  r.side = null;
   // Calibrate circulation: unit G gives speed U1 along d.
   r.on = true;
   r.G = 1;
@@ -237,6 +263,7 @@ function fire({ from, dir, R = 0.18, U = 0.9 }) {
   const U1 = tmp[0] * d[0] + tmp[1] * d[1] + tmp[2] * d[2];
   r.G = r.G0 = U / Math.max(1e-4, U1);
   r.c = C;
+  r.n = d;
   slot[k].fade = 1;
   slot[k].dead = -1;
   slot[k].born = simTime;
@@ -329,6 +356,7 @@ out vec4 o;
 uniform vec3 uEye, uR, uU, uF, uBackDir, uBack, uRoom;
 uniform vec2 uTan;
 uniform float uHaze, uTime, uW;
+uniform vec4 uPuff;
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 d = normalize(uF + ndc.x * uTan.x * uR + ndc.y * uTan.y * uU);
@@ -344,6 +372,12 @@ void main() {
   col += uBack * shaft * hg(dot(uBackDir, -d), 0.55) * (0.2 + 1.1 * n * n) * uHaze * 0.06;
   // Faint haze everywhere, so the dark is never flat.
   col += uBack * (0.004 + 0.006 * fbm(d * 3.0 + drift)) * uHaze;
+  // A charge swells the haze at the muzzle.
+  if (uPuff.w > 0.0) {
+    vec3 m = uPuff.xyz - uEye;
+    float pd = length(m - dot(m, d) * d), pr = 0.07 + 0.12 * uPuff.w;
+    col += uBack * uPuff.w * exp(-pd * pd / (pr * pr)) * (0.6 + 0.6 * fbm(uPuff.xyz * 6.0 + drift * 4.0)) * 0.22;
+  }
   // The laser sheet: the ray meets its plane once.
   float dn = dot(d, uN);
   float th = (uH - dot(uEye, uN)) / dn;
@@ -353,7 +387,7 @@ void main() {
     vec3 vl = v / r;
     float thick = min(uW * 1.77 / abs(dn), 0.2);
     float dens = 0.45 + 0.8 * fbm(q * 1.6 + drift * 2.0);
-    float sp = speckle(q * 260.0);
+    float sp = speckle(q * 260.0 + vec3(0.0, uTime * 0.6, 0.0));
     float lit = fanMask(vl) * thick * dens * (0.45 + 0.55 * sp) * hg(dot(vl, -d), 0.5) / (r * r + 0.15);
     col += uLaser * lit * uHaze * 0.9;
   }
@@ -466,6 +500,20 @@ void main() {
   vec3 vl = v / r;
   float sheet = exp(-dd * dd / (uW * uW)) * fanMask(vl) * hg(dot(vl, toCam), 0.55) / (r + 0.45);
   vC = (uBack * back * 0.011 + uLaser * sheet * 0.75) * uSmoke * fade * s.w * k2;
+}`;
+// The aim ring: a dotted circle at the muzzle, turned to the pointer.
+const GHOST_VS = HEAD + `
+uniform vec3 uEye, uR, uU, uF, uC, uE1, uE2, uBack;
+uniform vec2 uFoc;
+uniform float uRad, uA, uPx;
+out vec3 vC;
+void main() {
+  float t = 6.2831853 * float(gl_VertexID) / 72.0;
+  vec3 q = uC + uRad * (cos(t) * uE1 + sin(t) * uE2) - uEye;
+  float z = dot(q, uF);
+  gl_Position = vec4(dot(q, uR) * uFoc.x, dot(q, uU) * uFoc.y, 0.0, z);
+  gl_PointSize = max(2.0, uPx * 0.014 / z);
+  vC = uBack * uA;
 }`;
 const SMOKE_FS = HEAD + `
 in vec3 vC;
@@ -606,7 +654,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     haze: compile(TRI, HAZE_FS), advect: compile(TRI, ADVECT_FS), seed: compile(TRI, SEED_FS),
-    smoke: compile(SMOKE_VS, SMOKE_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
+    smoke: compile(SMOKE_VS, SMOKE_FS), ghost: compile(GHOST_VS, SMOKE_FS), bright: compile(TRI, BRIGHT_FS), down: compile(TRI, DOWN_FS),
     up: compile(TRI, UP_FS), grade: compile(TRI, GRADE_FS),
   };
   // Polling lets the driver link off the main thread.
@@ -646,9 +694,14 @@ function layout() {
 // The backlight rakes from the upper left, behind the rings.
 const BACK_DIR = norm([0.72, -0.5, 0.42]);
 let BACK = oklchLinear(0.82, 0.025, 250), ROOM = oklchLinear(0.105, 0.012, 265);
+// Scan sweeps the Across sheet back and forth on the drift clock.
+let driftT = 0;
 function sheetNow() {
-  const s = SHEETS[sheetMode === 'along' ? 'along' : 'across'];
-  return s;
+  if (sheetMode === 'along') return SHEETS.along;
+  const s = SHEETS.across;
+  if (sheetMode !== 'scan') return s;
+  const x = SHEET_X + 0.75 * Math.sin(driftT * 0.35);
+  return { ...s, h: x * s.n[0], lens: [x, 1.75, 0] };
 }
 function sheetUniforms(q, w) {
   const s = sheetNow();
@@ -674,11 +727,12 @@ function slotUniforms() {
     const r = rings[k], s = slot[k];
     // Smoke rolls up over 0.1 s, then fades over 2.2 s once the ring dies.
     const up = clamp((simTime - s.born) / 0.1);
-    fades[k] = s.fade * up;
+    // A wider ring spreads the same smoke, so it gets more light.
+    fades[k] = s.fade * up * Math.min(1.6, r.R0 / 0.18);
     ons[k] = r.on ? 1 : 0;
     cores[k] = r.a;
     const lobes = r.on ? clamp(r.amp * Math.exp((0.35 + 0.9 * breakup) * r.age) / (r.R0 * 0.22)) : 1;
-    turbs[k] = (0.004 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
+    turbs[k] = r.dying || s.burst ? 0.05 + 0.12 * breakup : (0.004 + 0.06 * breakup * lobes * lobes) * (r.on ? 1 : 0.6);
   }
 }
 function uploadNodes() {
@@ -728,14 +782,27 @@ function advect(dt) {
   draw(state.w);
   state.swap();
 }
+// A ring that crosses the sheet ticks once, panned to the ring.
+function crossings() {
+  if (sheetMode === 'along') return;
+  const s = sheetNow();
+  for (const r of rings) {
+    if (!r.on) continue;
+    const side = Math.sign(r.c[0] * s.n[0] + r.c[1] * s.n[1] + r.c[2] * s.n[2] - s.h);
+    if (r.side !== null && side !== r.side) sfx.tick(r.c);
+    r.side = side;
+  }
+}
 // One sim step: filaments on the CPU, then smoke on the GPU.
 function step(dt) {
   simTime += dt;
+  while (queue.length && queue[0].t <= simTime) queue.shift().fn();
   filamentStep(dt);
+  crossings();
   for (let k = 0; k < SLOTS; k++) {
     const s = slot[k];
     if (!rings[k].on && s.dead >= 0) {
-      s.fade = Math.exp(-(simTime - s.dead) / 2.2);
+      s.fade = Math.exp(-(simTime - s.dead) / (s.burst ? 3.5 : 2.6));
       if (s.fade < 0.01) { s.fade = 0; s.dead = -1; }
     }
   }
@@ -755,7 +822,8 @@ function render() {
   gl.uniform3fv(q.u.uRoom, ROOM);
   gl.uniform2f(q.u.uTan, cam.tan * cam.aspect, cam.tan);
   gl.uniform1f(q.u.uHaze, 0.25 + 1.5 * haze);
-  gl.uniform1f(q.u.uTime, reduced() ? 0 : time);
+  gl.uniform1f(q.u.uTime, driftT);
+  gl.uniform4f(q.u.uPuff, MUZZLE[0], MUZZLE[1], MUZZLE[2], ptr ? 0.25 + 0.75 * chargeNow() : 0);
   draw(scene);
   // The smoke, added on top.
   slotUniforms();
@@ -775,6 +843,7 @@ function render() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
   gl.viewport(0, 0, W, H);
   gl.drawArrays(gl.POINTS, 0, SLOTS * PER);
+  if (ptr) ghost(f, H);
   gl.disable(gl.BLEND);
   // Bloom: bright pass, four levels down, then back up.
   q = P.bright;
@@ -808,31 +877,54 @@ function render() {
   draw(null);
 }
 
+// The aim ring grows with charge and pulses while held.
+function ghost(f, H) {
+  const q = P.ghost, c = chargeNow(), { e1, e2 } = basis(aimDir);
+  gl.useProgram(q.p);
+  camUniforms(q);
+  gl.uniform2f(q.u.uFoc, f / cam.aspect, f);
+  gl.uniform1f(q.u.uPx, 0.5 * H * f);
+  gl.uniform3fv(q.u.uC, MUZZLE.map((v, i) => v + aimDir[i] * 0.05));
+  gl.uniform3fv(q.u.uE1, e1);
+  gl.uniform3fv(q.u.uE2, e2);
+  gl.uniform1f(q.u.uRad, ringR(c));
+  gl.uniform1f(q.u.uA, 0.05 + 0.08 * c * (0.75 + 0.25 * Math.sin(time * 14)));
+  gl.drawArrays(gl.POINTS, 0, 72);
+}
+
 /* ---------- frame loop ---------- */
-let raf = 0, last = 0, visible = true, liveUntil = 0;
+let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now();
 const queue = [];
-const busy = () => visible && (performance.now() < liveUntil || queue.length > 0
-  || rings.some(r => r.on) || slot.some(s => s.fade > 0));
-function wake() { if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+// Rings, smoke or a queued fire keep the sim stepping at full rate.
+const simBusy = () => queue.length > 0 || rings.some(r => r.on) || slot.some(s => s.fade > 0);
+// Haze drifts for 60 s after the last input, then eases still over 2 s.
+const driftSpeed = (now = performance.now()) => (reduced() ? 0 : clamp((62000 - (now - lastInput)) / 2000));
+const busy = () => visible && (!!ptr || simBusy() || driftSpeed() > 0);
+function wake() { if (!raf && visible && P) { last = lastDraw = performance.now(); raf = requestAnimationFrame(frame); } }
+function touch() { lastInput = performance.now(); wake(); }
 function frame(now) {
   raf = 0;
+  const lively = !!ptr || simBusy();
+  // Drift alone runs at 30 fps.
+  if (!lively && now - lastDraw < 31) { raf = requestAnimationFrame(frame); return; }
   const dt = Math.min(1 / 30, (now - last) / 1000);
-  last = now;
+  last = lastDraw = now;
   try {
     time += dt;
-    const sdt = reduced() ? dt * 0.6 : dt;
-    while (queue.length && queue[0].t <= simTime) queue.shift().fn();
-    step(sdt);
+    driftT += dt * driftSpeed(now);
+    if (simBusy()) step(reduced() ? dt * 0.6 : dt);
     render();
+    sfx.room(rings.some(r => r.on));
   } finally {
     if (busy()) raf = requestAnimationFrame(frame);
+    else { sfx.room(false); sfx.rest(); }
   }
 }
 function still() { if (P) render(); }
 const later = (dt, fn) => { queue.push({ t: simTime + dt, fn }); queue.sort((a, b) => a.t - b.t); };
 
 /* ---------- firing ---------- */
-// The aim is the tap's ray, met with the plane z = 0.
+// The aim is the pointer's ray, met with the plane z = 0.
 function aimAt(cx, cy) {
   const d = rayAt(cx, cy), e = cam.eye;
   let dir = [1, 0, 0];
@@ -849,27 +941,31 @@ function aimAt(cx, cy) {
   return dir;
 }
 const jitter = (v, k) => v * (1 + (Math.random() * 2 - 1) * k);
-function shoot(dir) {
-  fire({ from: MUZZLE, dir, R: jitter(0.18, 0.06), U: jitter(0.95, 0.06) });
-  wake();
+// Charge makes a wider, faster ring.
+const ringR = c => 0.16 + 0.12 * c, ringU = c => 0.85 + 0.55 * c;
+function shoot(dir, c = 0, from = MUZZLE) {
+  fire({ from, dir, R: jitter(ringR(c), 0.06), U: jitter(ringU(c), 0.06) });
+  sfx.thup(c, from.map((v, i) => v + dir[i] * 0.1));
+  touch();
 }
+// Two rings on one axis: the rear one catches up and passes through.
 act.pair = () => {
-  const dir = [1, 0.02, 0];
-  shoot(dir);
-  later(0.32, () => shoot(dir));
+  const dir = norm([1, (Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.06]);
+  shoot(dir, 0.1);
+  later(0.42, () => shoot(dir, 0.1));
 };
+// Two rings meet head on, inside the sheet.
 act.collide = () => {
-  const far = [2 * SHEET_X - MUZZLE[0] + 0.3, MUZZLE[1], 0];
-  fire({ from: MUZZLE, dir: [1, 0, 0], R: 0.19, U: 0.9 });
-  fire({ from: far, dir: [-1, 0, 0], R: 0.19, U: 0.9 });
-  wake();
+  const far = [2 * SHEET_X - MUZZLE[0], MUZZLE[1], 0];
+  shoot([1, 0, 0], 0.15);
+  shoot([-1, 0, 0], 0.15, far);
 };
 act.clear = () => {
   queue.length = 0;
   rings.forEach(r => { if (r.on) kill(r); });
-  wake();
+  touch();
 };
-act.sheet = v => { sheetMode = v; still(); };
+act.sheet = v => { sheetMode = v; touch(); still(); };
 act.laser = v => { laser = LASER[v] ? v : 'green'; still(); };
 act.reset = () => {
   act.clear();
@@ -881,25 +977,120 @@ act.reset = () => {
 
 /* ---------- pointer ---------- */
 // A press becomes a drag after 8 px, or a hold after 260 ms.
-// A release that is neither is a tap.
-let ptr = null;
+// A drag aims; a hold charges; release fires along the aim.
+let ptr = null, holdTo = 0, aimDir = [1, 0, 0];
+const chargeNow = () => (ptr?.held ? clamp((performance.now() - ptr.th) / 1200) : 0);
 function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
-  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: performance.now() };
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, drag: false, held: false, th: 0 };
+  aimDir = aimAt(e.clientX, e.clientY);
+  holdTo = setTimeout(() => { if (ptr && !ptr.drag) { ptr.held = true; ptr.th = performance.now(); } }, 260);
+  touch();
 }
 function move(e) {
   if (!ptr || e.pointerId !== ptr.id) return;
-  ptr.x = e.clientX;
-  ptr.y = e.clientY;
+  if (!ptr.drag && Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > 8) ptr.drag = true;
+  aimDir = aimAt(e.clientX, e.clientY);
 }
+// A cancel or a lost capture ends the gesture without a fire.
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
-  const p = ptr;
+  clearTimeout(holdTo);
+  const c = chargeNow();
   ptr = null;
-  // Aim and charge arrive with Task 2; every clean release fires for now.
-  if (e?.type === 'pointerup') shoot(aimAt(p.x, p.y));
+  if (e?.type === 'pointerup') shoot(aimDir, c);
+  else touch();
 }
+
+/* ---------- sound ---------- */
+// Web Audio voices on the shared kit: muted by default, gesture start, sleep.
+const kit = audioKit({ keys: new Set([' ']) });
+// Screen x of a world point, from -1 to 1, for panning.
+function panOf(p) {
+  const q = p.map((v, i) => v - cam.eye[i]);
+  const z = q[0] * cam.F[0] + q[1] * cam.F[1] + q[2] * cam.F[2];
+  const x = (q[0] * cam.R[0] + q[1] * cam.R[1] + q[2] * cam.R[2]) / (Math.max(0.1, z) * cam.tan * cam.aspect);
+  return clamp(x, -1, 1) * 0.8;
+}
+const sfx = (() => {
+  let bed = null;
+  const vary = k => 1 + (Math.random() * 2 - 1) * k;
+  const db = d => 10 ** (d / 20);
+  function panner(ac, p) {
+    const n = ac.createStereoPanner();
+    n.pan.value = panOf(p);
+    n.connect(kit.out);
+    return n;
+  }
+  return {
+    rest() { kit.rest(() => !busy()); },
+    // A soft thup: a falling sine body and a puff of band-passed air.
+    thup(c, p) {
+      const ac = kit.live();
+      if (!ac) return;
+      const t = ac.currentTime + 0.004, f = (104 - 38 * c) * vary(0.08), lv = db((Math.random() * 2 - 1) * 2);
+      const out = panner(ac, p);
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(f * 1.9, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.85 * lv * (0.75 + 0.4 * c), t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24 + 0.12 * c);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.42);
+      const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), ng = ac.createGain();
+      n.buffer = kit.noise;
+      bp.type = 'bandpass';
+      bp.frequency.value = (440 - 140 * c) * vary(0.12);
+      bp.Q.value = 0.8;
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(0.5 * lv, t + 0.006);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      n.connect(bp).connect(ng).connect(out);
+      n.start(t, Math.random() * 0.6);
+      n.stop(t + 0.2);
+    },
+    // A faint glassy tick as a ring crosses the sheet.
+    tick(p) {
+      const ac = kit.live();
+      if (!ac) return;
+      const t = ac.currentTime + 0.004, f = 2900 * vary(0.12), lv = 0.05 * db((Math.random() * 2 - 1) * 2);
+      const out = panner(ac, p);
+      [[1, 1], [2.76, 0.35]].forEach(([m, a]) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = f * m;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(lv * a, t + 0.003);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2 / m);
+        o.connect(g).connect(out);
+        o.start(t);
+        o.stop(t + 0.25);
+      });
+    },
+    // Low room noise under the rings, at about -40 dB.
+    room(on) {
+      const ac = kit.live();
+      if (!ac) return;
+      if (!bed && on) {
+        const n = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+        n.buffer = kit.noise;
+        n.loop = true;
+        lp.type = 'lowpass';
+        lp.frequency.value = 300;
+        g.gain.value = 0;
+        n.connect(lp).connect(g).connect(kit.out);
+        n.start();
+        bed = g;
+      }
+      if (bed && bed.on !== on) {
+        bed.gain.setTargetAtTime(on ? 0.035 : 0, ac.currentTime, on ? 0.4 : 0.6);
+        bed.on = on;
+      }
+    },
+  };
+})();
 
 /* ---------- first frame ---------- */
 // Two rings, pre-rolled: one flares in the sheet, one beyond it breaks up.
@@ -941,6 +1132,7 @@ stage.addEventListener('keydown', e => {
 });
 
 new ResizeObserver(() => { layout(); still(); }).observe(stage);
+onReducedChange(() => { touch(); still(); });
 onQuality(() => { layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {

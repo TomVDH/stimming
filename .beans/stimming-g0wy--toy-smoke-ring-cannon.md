@@ -5,17 +5,17 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:48:01Z
-updated_at: 2026-11-09T08:00:45Z
+updated_at: 2026-11-09T08:10:44Z
 ---
 
 Smoke ring cannon (`vortex`, Lab). Vortex rings of smoke fly through haze; a laser light sheet cuts a bright plane, and each ring flares as it crosses it. Plan: docs/plans/vortex.md (vortex filaments, Biot-Savart on the CPU; smoke particles advected on the GPU).
 
 - [x] Plan: docs/plans/vortex.md
 - [x] Task 1: blockout (scene, haze, sheet, pre-rolled rings, bloom), toys.json and Lab menu entry
-- [ ] Blockout stills at 1280 and 375 px; Tom signs off
-- [ ] Task 2: aim, charge, Pair, Collide, breakup
-- [ ] Task 3: Along and Scan sheets, Settings, frame loop
-- [ ] Task 4: sound (thup, flare tick, room)
+- [x] Blockout stills at 1280 and 375 px; Tom signs off (2026-11-09)
+- [x] Task 2: aim, charge, Pair, Collide, breakup
+- [x] Task 3: Along and Scan sheets, Settings, frame loop
+- [x] Task 4: sound (thup, flare tick, room); not heard yet
 - [ ] Task 5: QA and watchdog; record the session cost
 
 ## Blockout notes (2026-11-09)
