@@ -658,16 +658,16 @@ landMirror.layers.set(LIGHT);
 scene.add(land, landMirror);
 
 // Light dots: string lights, lanterns, torches and a few homes up the hill.
-const dots = { pos: [], col: [], k: [] };
+const dots = { pos: [], col: [], k: [], str: [] };
 const WARM = linFit(0.86, 0.09, 75), AMBER = linFit(0.78, 0.15, 60), COOLW = linFit(0.9, 0.04, 240);
 const PARTY = [linFit(0.7, 0.2, 25), linFit(0.78, 0.18, 145), linFit(0.65, 0.17, 260), linFit(0.82, 0.15, 85), linFit(0.7, 0.2, 330)];
-function dot(p, col, k, size, tw) { dots.pos.push(p.x, p.y, p.z); dots.col.push(...col); dots.k.push(k, size, tw, rnd() * 100); }
+function dot(p, col, k, size, tw, str = -1) { dots.pos.push(p.x, p.y, p.z); dots.col.push(...col); dots.k.push(k, size, tw, rnd() * 100); dots.str.push(str); }
 // String lights sag between poles near the fires.
 for (let s = 0; s < 7; s++) {
   const x0 = (rnd() - 0.5) * 2200, len = 60 + rnd() * 120, b0 = 10 + rnd() * 60, n = Math.round(len / 5), party = rnd() < 0.45;
   for (let i = 0; i <= n; i++) {
     const t = i / n, x = x0 + len * t, sag = 2.2 * 4 * t * (1 - t);
-    dot(landAt(x, b0 + 8 * Math.sin(t * 3 + s), 5 - sag), party ? PARTY[i % 5] : WARM, 0.45, 2.0, party ? 0.2 : 0.05);
+    dot(landAt(x, b0 + 8 * Math.sin(t * 3 + s), 5 - sag), party ? PARTY[i % 5] : WARM, 0.45, 2.0, party ? 0.2 : 0.05, s);
   }
 }
 // Lanterns, torches and phones scattered over the beach.
@@ -693,12 +693,15 @@ const dotGeo = new THREE.BufferGeometry();
 dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(dots.pos, 3));
 dotGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(dots.col, 3));
 dotGeo.setAttribute('aK', new THREE.Float32BufferAttribute(dots.k, 4));
+dotGeo.setAttribute('aStr', new THREE.Float32BufferAttribute(dots.str, 1));
 const dotMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FU, uDpr: { value: 1 } },
+  uniforms: { ...U, ...FU, uDpr: { value: 1 }, uBrown: { value: new THREE.Vector2(-1, 0) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`attribute vec3 aCol; attribute vec4 aK; uniform float uDpr; uniform float uTime; uniform float uPace;
+  vertexShader: /* glsl */`attribute vec3 aCol; attribute vec4 aK; attribute float aStr; uniform float uDpr; uniform float uTime; uniform float uPace;
+  // A brown-out: string index and how far it dims.
+  uniform vec2 uBrown;
   varying vec3 vCol; varying float vFire; varying vec3 vP;
   void main() {
     vP = position;
@@ -708,6 +711,7 @@ const dotMat = new THREE.ShaderMaterial({
     float f = aK.z < 0.0
       ? 0.8 + 0.2 * (sin(t * 7.3 - aK.z * 11.0) * 0.5 + sin(t * 13.1 - aK.z * 5.0) * 0.3 + sin(t * 23.7 - aK.z * 3.0) * 0.2) * uPace
       : 1.0 - aK.z * uPace * (0.5 + 0.5 * sin(t * (1.5 + fract(aK.w) * 3.0) + aK.w));
+    if (abs(aStr - uBrown.x) < 0.5) f *= 1.0 - uBrown.y;
     vCol = aCol * aK.x * f;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = aK.y * uDpr;
@@ -723,6 +727,91 @@ const dotMat = new THREE.ShaderMaterial({
 const dotPts = new THREE.Points(dotGeo, dotMat);
 dotPts.layers.enable(LIGHT);
 scene.add(dotPts);
+
+/* ---------- the crowd ---------- */
+// Excitement rises with the burst light and falls back over about 9 s.
+// It raises phones over the crowd and sets off camera flashes.
+const CROWD_N = 420;
+const crowdPos = [], crowdSeed = [];
+for (let i = 0; i < CROWD_N; i++) {
+  const p = landAt((rnd() - 0.5) * 2600, 6 + Math.pow(rnd(), 1.5) * 160, 1.6);
+  crowdPos.push(p.x, p.y, p.z);
+  // Threshold for this phone, and a seed.
+  crowdSeed.push(0.08 + rnd() * 0.85, rnd());
+}
+const crowdGeo = new THREE.BufferGeometry();
+crowdGeo.setAttribute('position', new THREE.Float32BufferAttribute(crowdPos, 3));
+crowdGeo.setAttribute('aS', new THREE.Float32BufferAttribute(crowdSeed, 2));
+const flashAt = new THREE.Float32BufferAttribute(new Float32Array(CROWD_N).fill(-1e4), 1);
+flashAt.setUsage(THREE.DynamicDrawUsage);
+crowdGeo.setAttribute('aF', flashAt);
+const CU2 = { uCrowd: { value: 0 } };
+const crowdMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...CU2, uDpr: dotMat.uniforms.uDpr },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute vec2 aS; attribute float aF; uniform float uDpr; uniform float uTime; uniform float uCrowd;
+  varying vec3 vCol; varying vec3 vP;
+  void main() {
+    // A phone goes up once excitement passes its threshold, and comes down after.
+    float up = smoothstep(aS.x, aS.x + 0.12, uCrowd);
+    vec3 p = position + vec3(0.0, 0.7 * up, 0.0);
+    vP = p;
+    // A camera flash: a 60 ms white pop, gone in a third of a second.
+    float age = uTime - aF;
+    float fl = age >= 0.0 && age < 0.33 ? exp(-age / 0.06) : 0.0;
+    vCol = vec3(0.5, 0.68, 1.0) * up * 1.0 + vec3(1.0, 0.97, 0.92) * fl * 4.0;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    gl_PointSize = (up > 0.01 || fl > 0.01) ? (1.8 + 5.0 * fl) * uDpr : 0.0;
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP; ${HEAD}
+  void main() {
+    vec2 q = gl_PointCoord - 0.5;
+    gl_FragColor = vec4(vCol * exp(-dot(q, q) * 18.0) * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+  }`,
+});
+const crowdPts = new THREE.Points(crowdGeo, crowdMat);
+crowdPts.frustumCulled = false;
+crowdPts.layers.enable(LIGHT);
+scene.add(crowdPts);
+const crowd = { E: 0, last: 0 };
+// Called once per drawn frame from updateLights.
+function crowdTick() {
+  const dt = Math.min(0.25, Math.max(0, simT - crowd.last));
+  crowd.last = simT;
+  let raw = 0;
+  for (const L of live) if (!L.wide && L.st !== undefined && L.I > 0.05 && L.col !== SEED) raw += L.I;
+  const target = 1 - Math.exp(-raw / 1.6);
+  // Fast to rise, slow to settle.
+  const tau = target > crowd.E ? 0.6 : 9;
+  crowd.E += (target - crowd.E) * (1 - Math.exp(-dt / tau));
+  if (crowd.E < 0.002) crowd.E = 0;
+  CU2.uCrowd.value = crowd.E;
+  // Flashes per second: about 3 after one shell, about 40 in a finale.
+  if (reduced() || crowd.E < 0.04) return;
+  const rate = 1 + 40 * crowd.E * crowd.E;
+  let n = 0;
+  for (let k = rate * dt; k > 0; k--) if (Math.random() < Math.min(1, k)) {
+    flashAt.setX(Math.floor(Math.random() * CROWD_N), simT + Math.random() * dt);
+    n++;
+  }
+  if (n) flashAt.needsUpdate = true;
+}
+// Now and then one string of lights browns out for a moment.
+const brown = { s: -1, t0: 0, next: 30 + Math.random() * 40 };
+function brownTick() {
+  const u = dotMat.uniforms.uBrown.value;
+  if (reduced()) { u.set(-1, 0); return; }
+  if (brown.s < 0 && simT > brown.next) { brown.s = Math.floor(Math.random() * 7); brown.t0 = simT; }
+  if (brown.s < 0) return;
+  const a = simT - brown.t0;
+  // A stutter down, a dim hold, a stutter back up.
+  const dip = a < 0.5 ? (Math.sin(a * 60) > 0 ? 0.7 : 0.25) : a < 1.6 ? 0.7 : a < 2.0 ? (Math.sin(a * 50) > 0 ? 0.5 : 0.1) : 0;
+  u.set(brown.s, dip);
+  if (a > 2.0) { brown.s = -1; brown.next = simT + 25 + Math.random() * 50; u.set(-1, 0); }
+}
+/* ---------- end crowd ---------- */
 
 /* ---------- K6: burst particles ---------- */
 // A ring buffer of star slots on one instanced streak quad.
@@ -1878,6 +1967,8 @@ function updateLights() {
     U.uLC.value[i].set(L.col[0], L.col[1], L.col[2]);
   }
   U.uLN.value = n;
+  crowdTick();
+  brownTick();
 }
 
 /* ---------- launch ---------- */
@@ -2334,20 +2425,20 @@ function boltI() {
   if (a > bolt.end) { bolt = null; return 0; }
   let I = 0;
   for (const [t, amp] of bolt.pulses) if (a >= t) I += amp * Math.min(1, (a - t) / 0.012) * Math.exp(-(a - t) / 0.06);
-  return I * 20 * FX.bolt;
+  return I * 14 * FX.bolt;
 }
 function weatherTick(now) {
   const dt = wx.last ? Math.min(1, (now - wx.last) / 1000) : 0;
   wx.last = now;
-  // Lightning needs a heavy deck: cover past 0.47.
+  // Lightning needs a heavy deck: cover past 0.5, cloudy or overcast.
   const C = U.uCloud.value;
-  if (C.w > 0.5 && C.z > 0.47 && FX.boltRate > 0 && !reduced()) {
-    if (!boltNext) boltNext = now + 3000 + Math.random() * 9000;
+  if (C.w > 0.5 && C.z > 0.5 && FX.boltRate > 0 && !reduced()) {
+    if (!boltNext) boltNext = now + 8000 + Math.random() * 15000;
     if (now > boltNext && !bolt) {
       strike();
-      // Heavier cloud flashes more often: every 3 to 14 s at full cover.
-      const heavy = Math.min(1, (C.z - 0.47) / 0.1);
-      boltNext = now + ((3 + Math.random() * 11) * 1000) / (FX.boltRate * (0.4 + 0.6 * heavy));
+      // Heavier cloud flashes more often: every 8 to 30 s when overcast.
+      const heavy = Math.min(1, (C.z - 0.5) / 0.06);
+      boltNext = now + ((8 + Math.random() * 22) * 1000) / (FX.boltRate * (0.5 + 0.5 * heavy));
     }
   } else boltNext = 0;
   if (opts.sky !== 'drift') return;
@@ -2466,7 +2557,7 @@ function devPanel() {
   });
   // Frames drawn per second; the loop sleeps when idle, so 0 is normal.
   setInterval(() => { if (!box.hidden) {
-      fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to}`;
+      fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to} · crowd ${crowd.E.toFixed(2)}`;
       box.querySelector('.snd output').textContent = `${Object.keys(sfx || {}).length}/${Object.keys(SFX_GAIN).length} takes loaded · sound ${kit.ac?.state || 'off'} · last ${lastTake || 'none'}`;
     } devFrames = 0; }, 500);
   show();
