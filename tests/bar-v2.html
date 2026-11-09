@@ -303,6 +303,35 @@ t('row types', () => {
   eq(r[2].onToggle.calls[0][0], true);
   click(layer.querySelector('.s2-set'));
 });
+const walls = ['Brick', 'Steel', 'Concrete', 'Tile', 'Sequins', 'Foam'].map(l => ({ value: l.toLowerCase(), label: l }));
+t('long settings row is a stepper', () => {
+  const r = { type: 'choice', id: 'wall', label: 'Wall', value: 'brick', onPick: spy(), options: walls };
+  const { layer, ui } = fixture({ settings: [r] });
+  const sh = openSet(layer);
+  ok(sh.querySelector('.s2-row .s2-step'), 'six options do not make a stepper');
+  ok(!sh.querySelector('.s2-row .s2-seg'), 'six options still make segments');
+  click(sh.querySelector('.s2-step-next'));
+  eq(r.onPick.calls[0][0], 'steel');
+  eq(ui.setting('wall').value, 'steel');
+  eq(sh.querySelector('.s2-step-now').textContent, 'Steel');
+  click(layer.querySelector('.s2-set'));
+});
+t('settings row honours display', () => {
+  const r = { type: 'choice', id: 'two', label: 'Two', value: 'a', display: 'stepper', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] };
+  const { layer } = fixture({ settings: [r] });
+  ok(openSet(layer).querySelector('.s2-row .s2-step'), 'display: stepper ignored');
+  click(layer.querySelector('.s2-set'));
+});
+t('long settings row fits the sheet', () => {
+  const { frame, layer } = narrowFixture({ settings: [{ type: 'choice', id: 'wall', label: 'Wall', value: 'sequins', options: walls }] }, 375);
+  const sh = openSet(layer);
+  const row = sh.querySelector('.s2-row'), s = sh.getBoundingClientRect();
+  ok(row.scrollWidth <= row.clientWidth + 1, `row overflows: ${row.scrollWidth} > ${row.clientWidth}`);
+  const f = frame.getBoundingClientRect();
+  ok(s.left >= f.left - 0.5 && s.right <= f.right + 0.5, 'sheet leaves the frame');
+  ok(sh.scrollWidth <= s.width + 1, 'sheet scrolls sideways');
+  click(layer.querySelector('.s2-set'));
+});
 t('persist writes', () => {
   store.del('streak');
   const { layer } = fixture({ settings: rows() });

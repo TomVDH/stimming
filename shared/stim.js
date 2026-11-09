@@ -423,7 +423,9 @@ function makeRow(row, key, layer) {
     save(out(v));
     if (fire) (toggle ? row.onToggle : row.onPick)?.(out(v));
   };
-  ctl = makeChoice({ label: row.label, options }, 'segments', state, pick, layer);
+  // More than five options step one at a time.
+  const display = toggle ? 'segments' : row.display === 'stepper' || options.length > 5 ? 'stepper' : 'segments';
+  ctl = makeChoice({ label: row.label, options }, display, state, pick, layer);
   ctl.sync();
   const el = make('div', 's2-row', `<span>${row.label}</span>`);
   el.append(ctl.el);

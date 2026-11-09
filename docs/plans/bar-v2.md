@@ -155,7 +155,7 @@ It drops from the top-right cluster, right-aligned, 280 px wide (full width less
 - Section 1: the toy's rows, under the toy name. On phones the slider comes first.
 - Section 2: site rows. Today only Quality. Shown when `quality` is true.
 - Footer: Reset, when the toy passes `reset`.
-- Row types: `slider`, `choice` (segments, five options at most), `toggle` (`Off`/`On` segments).
+- Row types: `slider`, `choice` (segments up to five options; a `‹ Name ›` stepper above five or with `display: 'stepper'`), `toggle` (`Off`/`On` segments).
 - Opens on click or tap. Hover does not open it.
 - Closes on Escape, a click outside, or the button again. Focus returns to the button.
 - Focus moves into the sheet when it opens. Tab stays inside it.
