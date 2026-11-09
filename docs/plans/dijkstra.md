@@ -1,4 +1,4 @@
-# Dijkstra flood (`dijkstra`) implementation plan
+# Dijkstra (`dijkstra`) implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
@@ -30,11 +30,23 @@ Tom asked for different looks: city grids, circuit boards and natural networks. 
 Why Cells stays the default: degree-3 junctions make paths wind, and the panes give the heat map an area.
 All four are built at the stage's own aspect in under 30 ms at 1280 px.
 
+## Round 4 (Tom, 2026-11-09): Dijkstra, more searches, better pins
+
+Tom: "call this toy Dijkstra; better UX; more algorithms; truly expand our limits; the cells look awful; Shuffle should really shuffle the end points", then "long press sets destination; Streets the default; wider maps".
+
+- **Name:** Dijkstra.
+- **Searches** (the top-left choice, a stepper): Dijkstra (floods the whole map), A* (straight-line estimate, scaled by the cheapest cost per pixel), Greedy (estimate only), BFS (hop layers), DFS (one random dive), Two-way (two Dijkstra fronts that meet). Each records when light reaches a node, so one wave clock plays them all. Long walks squeeze into the time of a full flood.
+- **Pins:** tap sets the source; a long press (380 ms) sets the destination; drag a pin to move it (the search settles live; a moved source plays again on release). A drag from open ground walls off the streets it crosses (rust dashes); Clear removes the walls.
+- **Shuffle** drops both pins somewhere new. **Remap** builds a new map; on Streets it flies to another city.
+- **Map** moves to Settings (Streets, Cells, Circuit, Roots). Streets is the default.
+- **Ground for every map:** the face and background passes are gone; every map shades its ground in the final pass. Cells become raised stone tiles with grout along the web; Circuit chips are raised packages on a solder mask; Roots sit on soil. A spill strength per map keeps dense webs calm.
+- **Wider maps:** grabs are now 2200 m squares, residential roads and up (no service roads), up to 7000 buildings.
+
 ## Streets: real city grabs (Tom, 2026-11-09)
 
 Tom: "realistic streets based on random OpenStreetMap grabs; cache at least 120".
 
-- `dijkstra/maps/fetch.py` asks Overpass for a 1300 m square near each of about 190 city centres, with a seeded random offset.
+- `dijkstra/maps/fetch.py` asks Overpass for a 2200 m square near each of about 190 city centres, with a seeded random offset.
 - It keeps streets (motorway to service, no parking aisles), buildings (the largest 3500), water (with islands as holes), rivers, canals and green.
 - Streets split at junctions; bends simplify (RDP, 1 m) and become hidden joints. Only the largest connected part stays.
 - Coordinates are integer deltas at 0.5 m (buildings at 1 m). One grab is about 200 KB raw, 75 KB gzipped.
@@ -199,7 +211,8 @@ The choice moves bottom left as a stepper, Shuffle and Clear bottom right, Speed
 - [x] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
 - [x] Commit: `Dijkstra flood: blockout, light floods a Voronoi web`.
 - [x] Round 2 (Tom): four webs (Cells, Streets, Circuit, Roots) on the top-left choice; Search moves to Settings; the demure, high-fidelity look.
-- [ ] Round 3 (Tom): Streets from 120 or more cached OpenStreetMap grabs; the shaded night city. Stills. **Checkpoint with Tom.**
+- [x] Round 3 (Tom): Streets from cached OpenStreetMap grabs; the shaded night city.
+- [ ] Round 4 (Tom): the name Dijkstra, six searches, pins, walls, Shuffle and Remap, shaded ground for all maps, 2200 m grabs (120 or more). **Checkpoint with Tom.**
 
 ### Task 2: Finesse and mud
 

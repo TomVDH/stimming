@@ -1,11 +1,11 @@
 ---
 # stimming-nl1y
-title: 'Toy: Dijkstra flood'
+title: 'Toy: Dijkstra'
 status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:10:04Z
-updated_at: 2026-11-09T09:52:56Z
+updated_at: 2026-11-09T10:50:10Z
 ---
 
 Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a node: light floods a Voronoi web in Dijkstra order; drag a target: the shortest path snaps on and re-routes. Raw WebGL2, Bar v2.
@@ -19,8 +19,10 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Round 2: demure, high-fidelity look (hairlines, muted ramps, hairline front, low bloom)
 - [x] Round 2: stills sent; Tom asked for real streets
 - [x] Round 3: OpenStreetMap fetch script; shaded night city (masks, bevels, shadows, water, light spill)
-- [ ] Round 3: cache 120 or more grabs (fetch running)
-- [ ] Round 3: checkpoint with Tom
+- [x] Round 3: first grabs and stills sent
+- [x] Round 4: rename to Dijkstra; six searches; pins, long press, walls; Shuffle and Remap; shaded ground for all maps
+- [ ] Round 4: cache 120 or more 2200 m grabs (fetch running)
+- [ ] Round 4: checkpoint with Tom
 - [ ] Task 2: scouts, sparks, queue shimmer, path snap; mud brush
 - [ ] Task 3: Seek (A*) and Race
 - [ ] Task 4: sound: pops, lock chord, blips; Q9

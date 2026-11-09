@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch city grabs from OpenStreetMap (Overpass) for Dijkstra flood.
 
-Each grab is a 1300 m square near a city centre, with a seeded random offset.
+Each grab is a 2200 m square near a city centre, with a seeded random offset.
 It keeps streets, buildings, water and parks, in metres at 0.5 m steps.
 Map data (c) OpenStreetMap contributors, under the ODbL.
 
@@ -10,8 +10,8 @@ Usage: python3 fetch.py <raw cache dir> [max new grabs]
 import gzip, json, math, os, random, sys, time, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HALF = 650          # half the kept square, metres
-PAD = 110           # extra fetched round the square, metres
+HALF = 1100         # half the kept square, metres
+PAD = 120           # extra fetched round the square, metres
 Q = 2               # coordinate step: 1 / Q metres
 UA = 'stimming-dijkstra-flood/1.0 (desk toy; github.com/TomVDH/stimming)'
 URL = 'https://overpass-api.de/api/interpreter'
@@ -34,7 +34,7 @@ def query(bb):
     b = f'{s:.6f},{w:.6f},{n:.6f},{e:.6f}'
     return f'''[out:json][timeout:180][maxsize:512000000];
 (
- way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|service)(_link)?$"]({b});
+ way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)(_link)?$"]({b});
  way["building"]({b});
  way["natural"="water"]({b});
  way["waterway"~"^(river|canal|riverbank)$"]({b});
@@ -165,7 +165,7 @@ def process(raw, lat0, lon0):
                 continue
             chain = [node[i] for i in ids[start:k + 1]]
             if any(inside(p) for p in chain):
-                pts = rdp(chain, 1.0)
+                pts = rdp(chain, 1.5)
                 prev = vert(('n', ids[start]), pts[0])
                 for j in range(1, len(pts)):
                     cur = vert(('n', ids[k]), pts[j]) if j == len(pts) - 1 else vert(('m', ids[start], ids[k], j), pts[j])
@@ -205,8 +205,8 @@ def process(raw, lat0, lon0):
         if not t:
             continue
         if 'building' in t:
-            r = ring_of(w['nodes'], 0.9)
-            if r and area(r) > 20 and inside((sum(p[0] for p in r) / len(r), sum(p[1] for p in r) / len(r))):
+            r = ring_of(w['nodes'], 1.2)
+            if r and area(r) > 30 and inside((sum(p[0] for p in r) / len(r), sum(p[1] for p in r) / len(r))):
                 blds.append(r)
         elif t.get('natural') == 'water' or t.get('waterway') == 'riverbank':
             r = ring_of(w['nodes'], 1.0)
@@ -229,7 +229,7 @@ def process(raw, lat0, lon0):
         rings = [r for r in (ring_rdp(r, 1.0) for r in rings_from(members)) if len(r) >= 4]
         if rings: dest.append(rings)
     blds.sort(key=area, reverse=True)
-    blds = blds[:3500]
+    blds = blds[:7000]
     return {
         'v': flat(verts),
         'e': [x for a, b, c in edges for x in (a, b, c)],
@@ -273,7 +273,7 @@ def main():
         except Exception as ex:
             print(f'{name}: process failed: {ex}', flush=True)
             continue
-        if not d or len(d['e']) // 3 < 400:
+        if not d or len(d['e']) // 3 < 800:
             print(f'{name}: too few streets, skipped', flush=True)
             continue
         d = {'name': name, 'cc': cc, 'lat': round(lat0, 5), 'lon': round(lon0, 5), 'half': HALF, 'q': Q, 'bq': 1, **d}
