@@ -50,7 +50,8 @@ export const outsideFS = ({ ALT, WIN, MAXCELL, MAXFL }) => `#version 300 es
 precision highp float;
 precision highp sampler3D;
 ${common({ ALT, WIN })}
-uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uFocal, uCover, uFlash, uCirrus;
+// uLit: how strongly street and town lights burn; daylight turns them down.
+uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uLit, uFocal, uCover, uFlash, uCirrus;
 uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid, uAurora;
 uniform highp sampler3D uNoise;
 uniform vec2 uCam;
@@ -352,7 +353,7 @@ float townDome(vec2 w) {
     g += s.z * sqrt(s.z) * exp(-dot(q, q) / (rd * rd)) * smoothstep(15.0, 9.0, length(q));
   }
   // The scale keeps the deck's mean glow at its approved level.
-  return g * 0.83;
+  return g * 0.83 * uLit;
 }
 
 // The town field at one ground point.
@@ -499,6 +500,8 @@ vec3 ground(vec2 w, float fw) {
   // The impact lights the land round it; the crater glows on for minutes.
   g += boomLight(w, 45.0) * 0.25;
   if (uBoomL.y > 0.0) { vec2 cq = w - uBoom.xy; g += vec3(1.0, 0.4, 0.1) * uBoomL.y * 0.6 * exp(-dot(cq, cq) / 3.0); }
+  // Everything added after this point is man-made light.
+  vec3 gLand = g;
   Town t = townAt(w, fw);
   vec2 wq = t.wq;
   // Districts differ in their share of LED lamps.
@@ -561,7 +564,7 @@ vec3 ground(vec2 w, float fw) {
   float near = exp(-t.road / 0.5);
   float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn);
   g += lampLight(w, 0.45, pf, fw, 41.0, led) * 0.0016;
-  return g;
+  return gLand + (g - gLand) * uLit;
 }
 
 // Lightning lights the cloud around each flash from inside.
@@ -1543,6 +1546,8 @@ vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   float fres = 0.04 + 0.76 * pow(1.0 - abs(dot(d, n)), 5.0);
   // Diffuse light from the whole sky dome on grey paint.
   vec3 c = uAmb * 0.03 * (0.85 + 0.3 * uv.y);
+  // The sun or moon lights the skin directly when it stands above it.
+  c += uSunL * 0.012 * max(dot(n, uSun), 0.0);
   c += env * fres;
   // The sun or moon glints off the top skin: a hot core, a sheen, a wide haze.
   float sd = max(dot(r, uSun), 0.0);
@@ -1922,24 +1927,39 @@ vec3 glass(vec3 da, vec2 px) {
 vec3 scratches(vec2 pG, vec2 px) {
   vec3 s = vec3(0.0);
   float fw = max(fwidth(pG.x), 1e-6);
-  for (int l = 0; l < 2; l++) {
-    float cs = l == 0 ? 0.006 : 0.0105;
+  // Every scratch catches the cabin light and the window glow a little.
+  vec3 amb = (uCabin * 1.2 + uGlow * 0.012) * 0.7;
+  for (int l = 0; l < 3; l++) {
+    float cs = l == 0 ? 0.0045 : l == 1 ? 0.008 : 0.017;
     vec2 g = pG / cs + float(l) * 17.3;
     vec2 id = floor(g), f = fract(g) - 0.5;
-    if (hash12(id + 3.1) > 0.22) continue;
+    if (hash12(id + 3.1) > (l == 2 ? 0.1 : 0.3)) continue;
     float a = hash12(id) * PI;
     vec2 t = vec2(cos(a), sin(a));
     float along = dot(f, t), across = dot(f, vec2(-t.y, t.x));
-    float line = smoothstep(fw / cs * 1.3, 0.0, abs(across)) * smoothstep(0.5, 0.25, abs(along));
+    // Long scratches bow a little.
+    across += along * along * (hash12(id + 7.7) - 0.5) * 0.5;
+    float w = fw / cs * (l == 2 ? 1.5 : 1.1);
+    float line = smoothstep(w, 0.0, abs(across)) * smoothstep(0.5, 0.2, abs(along)) * (0.35 + 0.65 * hash12(id + 1.3));
     if (line <= 0.0) continue;
-    for (int i = 0; i < 4; i++) {
+    s += amb * line * (l == 2 ? 0.55 : 0.3);
+    // A bright source glints along the scratch that lies across its line.
+    for (int i = 0; i < 10; i++) {
       vec4 fl = uFlr[i];
       if (fl.z <= 0.0) continue;
       vec2 r = px - fl.xy;
       float dist = length(r);
       float al = dot(r / max(dist, 1.0), t);
-      s += uFlrC[i].rgb * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.1)) * 0.22;
+      s += uFlrC[i].rgb * fl.z * line * exp(-al * al * 90.0) * exp(-dist / (uRes.y * 0.12)) * 0.25;
     }
+  }
+  // Cleaning swirls: broken arcs round one centre, from a cloth.
+  vec2 sc = pG - vec2(0.03, -0.04);
+  float rr = length(sc), ring = floor(rr / 0.0045);
+  float seg = floor((atan(sc.y, sc.x) + PI) * 5.0 + hash12(vec2(ring, 2.0)) * 9.0);
+  if (hash12(vec2(ring, seg)) < 0.16) {
+    float arc = smoothstep(fw / 0.0045 * 1.2, 0.0, abs(fract(rr / 0.0045) - 0.5));
+    s += amb * arc * 0.18 * smoothstep(0.2, 0.02, rr);
   }
   return s;
 }

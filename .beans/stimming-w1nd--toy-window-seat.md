@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-09T09:15:18Z
+updated_at: 2026-11-09T10:34:11Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -63,3 +63,5 @@ Impact fireball: traced as a displaced surface (large Worley lobes), fire in the
 Performance: the wing early-out skips the outside where it covers the view; High traces the outside at 0.75 scale; High deck 26 steps, light 4, towers 56. Frame on High, 1816x1752: 50 ms before, 8-17 ms after. Rain on the window: Settings Rain Off, Light or Heavy (beads in three sizes, runs blown aft), after the train ride.
 
 Storm blend fix: storm air hazes the background before the towers; towers haze by their own distance in storm grey; murk lights them, the moon's silver lining fades with Storm; trails and approach lights dim by distance. Sights now come on their own every 4 to 10 minutes (first after 1 to 3); Tom plans a new trigger menu later.
+
+Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, morning, noon, golden hour, dusk, blue hour, midnight); Storm slider bottom right; Dim action (key D); Settings: Cloud, Towns, Rain, Aurora, Falling and Flying sights, site Quality. The cabin light is the hour's 787 mood plus daylight through the window. Town lights go out by day (uLit). Glass scratches rebuilt: three hairline layers and cleaning swirls catch the cabin light. window/annex.json added; the shell has no annex yet.
