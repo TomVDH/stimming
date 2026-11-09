@@ -775,11 +775,11 @@ const barges = new THREE.Group();
   const box = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
   for (const bx of BARGE_X) {
     // A low hull, two mortar racks and a small wheelhouse.
-    box(110, 6, 26, bx, 1.5, 0);
-    box(24, 4.5, 10, bx - 24, 6.6, 1);
-    box(24, 4.5, 10, bx + 8, 6.6, -2);
-    box(10, 9, 9, bx + 44, 8.8, 4);
-    box(1, 16, 1, bx + 44, 17, 4);
+    box(50, 3, 12, bx, 0.8, 0);
+    box(11, 2.2, 4.5, bx - 11, 3.4, 0.5);
+    box(11, 2.2, 4.5, bx + 4, 3.4, -1);
+    box(4.5, 4.2, 4, bx + 20, 4.4, 2);
+    box(0.5, 8, 0.5, bx + 20, 8.5, 2);
   }
   const g = mergeGeometries(parts);
   const hull = new THREE.Mesh(g, bargeMat);
@@ -789,10 +789,10 @@ const barges = new THREE.Group();
   const L = { pos: [], col: [], k: [], str: [] }, RED_L = linFit(0.62, 0.22, 25);
   const lamp = (x, y, z, col, k) => { L.pos.push(x, y, z); L.col.push(...col); L.k.push(k, 2.0, 0.03, rnd() * 100); L.str.push(-1); };
   for (const bx of BARGE_X) {
-    lamp(bx - 54, 5, 13.5, RED_L, 1.0); lamp(bx + 54, 5, 13.5, RED_L, 1.0);
+    lamp(bx - 24, 2.6, 6.2, RED_L, 0.9); lamp(bx + 24, 2.6, 6.2, RED_L, 0.9);
     // A row of deck lamps along the near rail, and a white light up the mast.
-    for (let k = 0; k < 9; k++) lamp(bx - 44 + k * 11, 5.2, 13.6, WARM, 0.5);
-    lamp(bx + 44, 25.5, 4, COOLW, 1.1); lamp(bx + 44, 13.5, 9, WARM, 0.8);
+    for (let k = 0; k < 5; k++) lamp(bx - 18 + k * 9, 2.8, 6.3, WARM, 0.45);
+    lamp(bx + 20, 12.6, 2, COOLW, 1.0);
   }
   const lg = new THREE.BufferGeometry();
   lg.setAttribute('position', new THREE.Float32BufferAttribute(L.pos, 3));
@@ -811,8 +811,15 @@ const placeBarges = () => { barges.position.z = -shellDist() + 150; barges.updat
 function bargeBase(x, out) {
   let best = BARGE_X[0];
   for (const bx of BARGE_X) if (Math.abs(bx - x) < Math.abs(best - x)) best = bx;
-  return out.set(best + (rnd() - 0.5) * 40, 6, barges.position.z + (rnd() - 0.5) * 10);
+  return out.set(best + (rnd() - 0.5) * 18, 3.5, barges.position.z + (rnd() - 0.5) * 5);
 }
+// A spot on the beach near the waterline, for the small shells.
+const beachBase = (x, out) => out.copy(landAt(x + (rnd() - 0.5) * 60, 12 + rnd() * 30, 0.5));
+// Mid and big shells and the showpieces leave the barges; small ones leave the beach.
+const BARGE_ONLY = new Set(['supernova', 'galaxy', 'cascade', 'saturn', 'smiley', 'rainbow', 'butterfly', 'star', 'cube', 'jelly', 'swarm', 'heart']);
+const fromBeach = (type, cal) => cal < 1.35 && !BARGE_ONLY.has(type);
+// Beach shells burst over the shore, just behind the waterline.
+const beachDist = () => -SHORE_Z - 40;
 /* ---------- end barges ---------- */
 
 /* ---------- the crowd ---------- */
@@ -1507,7 +1514,7 @@ function sizzle(ac, t, out, lvl, dur) {
   n.connect(hp).connect(g).connect(out);
   track(t + dur + 0.3, 'sizzle', n);
 }
-const CRACKLY = new Set(['strobe', 'crackle', 'crossette', 'supernova']), SIZZLY = new Set(['willow', 'kamuro', 'palm']);
+const CRACKLY = new Set(['strobe', 'crackle', 'crossette', 'supernova']), SIZZLY = new Set(['willow', 'kamuro', 'palm', 'jelly', 'swarm']);
 // Called by fire(): wait is the launch delay, T the climb, on the sim clock.
 function soundShell(pos, wait, T, type, style, cal) {
   const ac = kit.live();
@@ -1982,6 +1989,89 @@ const SHELLS = {
     });
     return [cols[0], 0.8];
   },
+  // Pattern shells: points on a flat figure that faces the shore.
+  smiley(pos, t0, cal, s) {
+    const sp = (60 + 30 * cal) * s, pts = [];
+    for (let i = 0; i < 64; i++) { const a = (i / 64) * Math.PI * 2; pts.push([Math.cos(a), Math.sin(a), GOLD]); }
+    for (const ex of [-0.36, 0.36]) for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; pts.push([ex + 0.09 * Math.cos(a), 0.3 + 0.12 * Math.sin(a), AQUA]); }
+    for (let i = 0; i <= 22; i++) { const a = Math.PI * (1.15 + 0.7 * (i / 22)); pts.push([0.58 * Math.cos(a), -0.02 + 0.58 * Math.sin(a), PINK]); }
+    figure(pos, t0, pts, sp, 2.6);
+    return [GOLD, 0.9];
+  },
+  rainbow(pos, t0, cal, s) {
+    const sp = (70 + 35 * cal) * s, pts = [], cols = [RED, ORANGE, GOLD, GREEN, BLUE, PURPLE];
+    cols.forEach((c, k) => { const r = 1 - k * 0.075; for (let i = 0; i <= 34; i++) { const a = Math.PI * (i / 34); pts.push([r * Math.cos(a), r * Math.sin(a) - 0.35, c]); } });
+    figure(pos, t0, pts, sp, 2.8);
+    return [GOLD, 1];
+  },
+  butterfly(pos, t0, cal, s) {
+    // Two big upper wings, two small lower ones, a body and antennae.
+    const sp = (60 + 30 * cal) * s, pts = [];
+    const lobe = (cx, cy, rx, ry, tilt, c, n) => {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, x = rx * Math.cos(a), y = ry * Math.sin(a);
+        pts.push([cx + x * Math.cos(tilt) - y * Math.sin(tilt), cy + x * Math.sin(tilt) + y * Math.cos(tilt), c]);
+      }
+    };
+    for (const sd of [-1, 1]) {
+      lobe(sd * 0.48, 0.24, 0.44, 0.34, sd * 0.5, PINK, 34);
+      lobe(sd * 0.34, -0.34, 0.26, 0.22, -sd * 0.6, PURPLE, 22);
+      for (let i = 0; i <= 5; i++) pts.push([sd * (0.04 + i * 0.05), 0.5 + i * 0.07, GOLD]);
+    }
+    for (let i = 0; i <= 10; i++) pts.push([0, -0.5 + i * 0.1, GOLD]);
+    figure(pos, t0, pts, sp, 2.6);
+    return [PINK, 1];
+  },
+  star(pos, t0, cal, s) {
+    const sp = (65 + 35 * cal) * s, pts = [], c = pick([GOLD, WHITE, AQUA]);
+    const V = Array.from({ length: 10 }, (_, k) => { const a = Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 0.42 : 1; return [r * Math.cos(a), r * Math.sin(a)]; });
+    for (let k = 0; k < 10; k++) for (let i = 0; i < 9; i++) {
+      const [ax, ay] = V[k], [bx, by] = V[(k + 1) % 10], f = i / 9;
+      pts.push([ax + (bx - ax) * f, ay + (by - ay) * f, c]);
+    }
+    figure(pos, t0, pts, sp, 2.5);
+    sphere(pos, t0, 30, 14 * s, 1.8, WHITE, 1.4, 0.15, 1.4);
+    return [c, blueish(c)];
+  },
+  cube(pos, t0, cal, s) {
+    // Stars along the twelve edges of a cube, turned at random.
+    const sp = (55 + 30 * cal) * s, c = pick([WHITE, AQUA, GREEN]);
+    const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4 + rnd() * 0.5, 0.5 + rnd() * 0.6, rnd() * 0.4));
+    for (let e = 0; e < 12; e++) {
+      const ax = e >> 2, a = (e & 1) * 2 - 1, b = (e & 2) - 1;
+      for (let i = 0; i <= 10; i++) {
+        const t = (i / 10) * 2 - 1, p3 = ax === 0 ? [t, a, b] : ax === 1 ? [a, t, b] : [a, b, t];
+        v.set(...p3).multiplyScalar(0.62).applyQuaternion(rot).multiplyScalar(sp);
+        writeStar(pos, t0, v, 1.25, c, 2.6 * (0.8 + rnd() * 0.4), 0.15, 1.5);
+      }
+    }
+    return [c, blueish(c)];
+  },
+  jelly(pos, t0, cal, s) {
+    // A glowing dome; tentacles drip from points on its rim as it spreads.
+    const sp = (55 + 30 * cal) * s, n = Math.round(120 + 40 * cal), rim = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      sphereDir(i, n, v);
+      if (v.y < 0.05) continue;
+      writeStar(pos, t0, v.multiplyScalar(sp * 0.8), 1.4, i % 3 ? AQUA : PURPLE, 2.2 * (0.7 + rnd() * 0.6), 0.2, 1.4, 0, 1, PINK);
+    }
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      rim.set(Math.cos(a), 0.08, Math.sin(a) * 0.6).normalize().multiplyScalar(sp * 0.8);
+      for (let j = 0; j < 16; j++) {
+        const tj = 0.15 + j * 0.1;
+        posAt(pos, rim, 1.4, tj, p);
+        writeStar(p, t0 + tj, q.set((rnd() - 0.5) * 2, -6 - rnd() * 3, (rnd() - 0.5) * 2), 0.6, PINK, 2.8 + rnd() * 0.8, 1.1, 1.0, GLITTER, 0.7);
+      }
+    }
+    return [AQUA, 1];
+  },
+  swarm(pos, t0, cal, s) {
+    // A cloud of gold bees that wriggle off in every direction.
+    sphere(pos, t0, Math.round(90 + 40 * cal), (35 + 20 * cal) * s, 1.3, GOLD, 3.2, 0.25, 1.1, FISH, 0.9);
+    sphere(pos, t0, 30, 12 * s, 2.0, ORANGE, 1.2, 0.1, 1.4);
+    return [GOLD, 0.7];
+  },
   supernova(pos, t0, cal, s) {
     // A huge white flash; every star splits into three colours, then glitter hangs.
     const n = Math.round(150 + 60 * cal), speed = (120 + 60 * cal) * s;
@@ -2000,6 +2090,15 @@ const SHELLS = {
     return [WHITE, 4];
   },
 };
+// A flat figure facing the shore: each point is x, y and a colour ramp.
+// Drag slows the stars, so the figure holds its shape before it droops.
+function figure(pos, t0, pts, speed, life) {
+  const u = new THREE.Vector3(1, 0, 0), w = new THREE.Vector3(0, 1, 0).applyAxisAngle(u, (rnd() - 0.5) * 0.3);
+  for (const [x, y, c] of pts) {
+    v.copy(u).multiplyScalar(x).addScaledVector(w, y).multiplyScalar(speed * 0.8 * (0.97 + rnd() * 0.06));
+    writeStar(pos, t0, v, 1.25, c, life * (0.75 + rnd() * 0.5), 0.15, 1.55);
+  }
+}
 // A ring of stars in the plane of u and w.
 function ring(pos, t0, n, speed, r, [u, w]) {
   for (let i = 0; i < n; i++) {
@@ -2011,10 +2110,11 @@ function ring(pos, t0, n, speed, r, [u, w]) {
 // The stepper's list; Barrage fires a fan of small shells.
 const SHELL_LIST = [['mix', 'Mix'], ['peony', 'Peony'], ['chrysanthemum', 'Chrysanthemum'], ['willow', 'Willow'], ['palm', 'Palm'],
   ['kamuro', 'Kamuro'], ['crossette', 'Crossette'], ['ring', 'Ring'], ['saturn', 'Saturn'], ['pistil', 'Pistil'], ['strobe', 'Strobe'],
-  ['crackle', 'Crackle'], ['fish', 'Fish'], ['heart', 'Heart'], ['galaxy', 'Galaxy'], ['cascade', 'Cascade'], ['barrage', 'Barrage'], ['supernova', 'Supernova']];
+  ['crackle', 'Crackle'], ['fish', 'Fish'], ['heart', 'Heart'], ['galaxy', 'Galaxy'], ['cascade', 'Cascade'], ['barrage', 'Barrage'], ['supernova', 'Supernova'],
+  ['smiley', 'Smiley'], ['rainbow', 'Rainbow'], ['butterfly', 'Butterfly'], ['star', 'Star'], ['cube', 'Cube'], ['jelly', 'Jellyfish'], ['swarm', 'Swarm']];
 // Mix picks the classics often and the wild ones now and then.
 const MIX = ['peony', 'peony', 'chrysanthemum', 'chrysanthemum', 'willow', 'palm', 'kamuro', 'crossette', 'ring', 'saturn', 'pistil',
-  'strobe', 'crackle', 'fish', 'heart', 'galaxy', 'cascade', 'barrage', 'supernova'];
+  'strobe', 'crackle', 'fish', 'heart', 'galaxy', 'cascade', 'barrage', 'supernova', 'smiley', 'rainbow', 'butterfly', 'star', 'cube', 'jelly', 'swarm'];
 
 /* ---------- burst lights over time ---------- */
 const lights = [], live = [];
@@ -2077,8 +2177,8 @@ const shellDist = () => 300 + 1200 * opts.dist;
 const shellScale = () => 0.6 + 0.6 * opts.dist;
 const ray = new THREE.Raycaster(), ndcV = new THREE.Vector2();
 // Map a screen point onto the altitude band that keeps the burst in view.
-function burstPoint(ndc, cal, out = new THREE.Vector3()) {
-  const d = shellDist(), R = 50 * cal * shellScale();
+function burstPoint(ndc, cal, out = new THREE.Vector3(), dist = shellDist()) {
+  const d = dist, R = 50 * cal * shellScale();
   const at = y => {
     ray.setFromCamera(ndcV.set(ndc.x, y), camera);
     const t = (-d - camera.position.z) / ray.ray.direction.z;
@@ -2092,17 +2192,17 @@ function burstPoint(ndc, cal, out = new THREE.Vector3()) {
 // Comet styles; dark comets climb unseen and carry bigger shells.
 const COMETS = ['gold', 'gold', 'glitter', 'colour', 'dark', 'spin', 'crackle'];
 // A comet climbs from the water and the shell bursts at its apex.
-function fire(pos, t0, type, cal, style = pick(COMETS)) {
+function fire(pos, t0, type, cal, style = pick(COMETS), site = 'barge') {
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
   const s = shellScale(), k = 1.2;
   if (style === 'dark') cal *= 1.3;
-  // The shell leaves the nearest barge; a mortar leans at most about 27 degrees.
-  const base = bargeBase(pos.x, new THREE.Vector3());
+  // The shell leaves the nearest barge or the beach; a mortar leans at most about 27 degrees.
+  const base = site === 'beach' ? beachBase(pos.x, new THREE.Vector3()) : bargeBase(pos.x, new THREE.Vector3());
   pos.x = base.x + THREE.MathUtils.clamp(pos.x - base.x, -0.5 * pos.y, 0.5 * pos.y);
   const { v0, T } = climb(pos.y - base.y, k), e = (1 - Math.exp(-k * T)) / k;
   const up = new THREE.Vector3((pos.x - base.x) / e, v0, (pos.z - base.z) / e);
   // The mortar's muzzle flash lights the barge and the water.
-  addLight(v.copy(base).setY(8), ORANGE, t0, 0.2 * lightK(cal));
+  addLight(v.copy(base).setY(base.y + 5), ORANGE, t0, (site === 'beach' ? 0.1 : 0.2) * lightK(cal));
   for (let i = 0; i < 3; i++) writePuff(q.copy(base).add(v.set((rnd() - 0.5) * 8, 2 + rnd() * 4, (rnd() - 0.5) * 6)), t0 + rnd() * 0.1, v.set((rnd() - 0.5) * 3, 5 + rnd() * 4, (rnd() - 0.5) * 3), 6 + rnd() * 4, 1.6, 7 + rnd() * 3, 0.35);
   const col = pick(COLOURS);
   // The tail is a stream of embers shed along the climb, not one rigid streak.
@@ -2258,10 +2358,11 @@ function launch(ndc, cal) {
     // Sixteen small shells fan out across the sky, 0.11 s apart.
     for (let i = 0; i < 16; i++) {
       const at = new THREE.Vector2(ndc.x + (i / 15 - 0.5) * 0.9, ndc.y - 0.12 + rnd() * 0.24);
-      fire(burstPoint(at, 0.7), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal, pick(['gold', 'colour', 'glitter']));
+      fire(burstPoint(at, 0.7, undefined, beachDist()), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal, pick(['gold', 'colour', 'glitter']), 'beach');
     }
-    soundCake(burstPoint(ndc, 0.7));
-  } else fire(burstPoint(ndc, cal), simT, type, cal);
+    soundCake(burstPoint(ndc, 0.7, undefined, beachDist()));
+  } else if (fromBeach(type, cal)) fire(burstPoint(ndc, cal, undefined, beachDist()), simT, type, cal, undefined, 'beach');
+  else fire(burstPoint(ndc, cal), simT, type, cal);
   commitStars();
   commitSmoke();
   wake();
