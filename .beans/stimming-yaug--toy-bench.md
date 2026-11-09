@@ -5,14 +5,14 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:29:16Z
-updated_at: 2026-11-09T07:39:20Z
+updated_at: 2026-11-09T07:45:04Z
 ---
 
 Build Bench from docs/plans/bench.md (D5: yes, one page, two chips). It starts in the Lab. One backlit beaker, two experiments: Electrolysis (a rainbow from acid to base, bubbles 2:1) and Clock (the iodine clock snaps to ink black). Bar v2.
 
 - [x] Task 1: K5 lift from Marbling; lab light, glass, meniscus, rods (blockout)
-- [ ] Task 1: Q1, Q2, stills at 1280 and 375 px; checkpoint with Tom
-- [ ] Task 2: electrolysis: signed scalar, both indicators, nucleation points, 2:1 rates, bubble lift, stir; seeded rainbow
+- [x] Task 1: Q1, Q2, stills at 1280 and 375 px; checkpoint with Tom
+- [x] Task 2: electrolysis: signed scalar, both indicators, nucleation points, 2:1 rates, bubble lift, stir; seeded rainbow
 - [ ] Task 3: clock: mix fraction, progress, pour jet and level, the snap and its front, Reset
 - [ ] Task 4: sound: fizz, hum, pour, clink, the snap; Q9
 - [ ] Task 5: Bar v2 with per-chip slider label, Settings, persistence; Q1 to Q10
@@ -24,3 +24,5 @@ Build Bench from docs/plans/bench.md (D5: yes, one page, two chips). It starts i
 
 - Task 1 rulings: commits go to main through tools/commit.sh (shared checkout, as the brief says), not a feature worktree. The slider runs 0 to 1; the toy relabels it and the key strip per chip through the DOM, since Bar v2 has no relabel call. The watchdog waits for Task 5.
 - Dutch name draft: Labotafel. Tom sets it.
+
+- Task 2 ruling: opening Electrolysis (page load or chip) shows the seeded rainbow; Reset gives fresh green indicator, so the bloom can be watched from the start.

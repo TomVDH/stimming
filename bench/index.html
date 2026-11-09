@@ -131,7 +131,8 @@ let indicator = ui.setting('indicator')?.value ?? 'universal';
 /* ---------- WebGL ---------- */
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
-let gl = null, P = null, FMT = null;
+let gl = null, P = null, FMT = null, triVao = null, bubVao = null, bubBuf = null;
+const MAXB = 600;
 let vel = null, pres = null, div = null, scal = null;
 // The fluid fills the beaker's inside, a 2:3 portrait box.
 const TA = 2 / 3;
@@ -251,6 +252,43 @@ void main() {
   o = s;
 }`;
 /* ---------- end K5 ---------- */
+
+// The first frame: the rainbow already formed, acid left, base right.
+const SEED_FS = HEAD + `
+void main() {
+  float u = vUv.x * 2.0 - 1.0;
+  float w = 0.07 * sin(vUv.y * 9.0 + 1.3) + 0.05 * sin(vUv.y * 17.0 - u * 5.0);
+  o = vec4(-1.6 * tanh((u + w) * 1.5), 0.0, 0.0, 1.0);
+}`;
+// Bubbles: dark rims and bright cores, as light bends through them.
+const BUB_VS = `#version 300 es
+in vec3 aB;
+uniform vec4 uMap;
+uniform vec2 uRes;
+uniform float uA;
+out float vS;
+void main() {
+  vec2 px = vec2(uMap.x + (aB.x / uA * 2.0 - 1.0) * uMap.z, uMap.y + aB.y * uMap.w);
+  gl_Position = vec4(px / uRes * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = max(2.0, aB.z * uMap.w * 2.0 + 1.0);
+  vS = gl_PointSize;
+}`;
+const BUB_FS = `#version 300 es
+precision highp float;
+in float vS;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float d = length(c);
+  if (d > 1.0) discard;
+  float aa = clamp((1.0 - d) * vS * 0.5, 0.0, 1.0);
+  float rim = smoothstep(0.45, 0.95, d);
+  vec3 col = mix(vec3(1.0), vec3(0.05, 0.06, 0.07), rim);
+  vec2 h = c - vec2(-0.3, -0.35);
+  col = mix(col, vec3(1.0), exp(-dot(h, h) * 14.0));
+  float a = mix(0.3, 0.85, rim) * aa;
+  o = vec4(col * a, a);
+}`;
 
 // The beaker: lab light, liquid, rods and glass, in one pass.
 const BEAKER_FS = HEAD + `
@@ -443,6 +481,7 @@ async function initGL() {
   const progs = {
     force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS), jac: compile(TRI, JAC_FS),
     grad: compile(TRI, GRAD_FS), scal: compile(TRI, SCAL_FS), beaker: compile(TRI, BEAKER_FS),
+    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -452,7 +491,17 @@ async function initGL() {
     locate(q);
   }
   P = progs;
-  gl.bindVertexArray(gl.createVertexArray());
+  triVao = gl.createVertexArray();
+  // Bubbles have their own vertex array: x, y and radius each.
+  bubVao = gl.createVertexArray();
+  gl.bindVertexArray(bubVao);
+  bubBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAXB * 12, gl.DYNAMIC_DRAW);
+  const loc = gl.getAttribLocation(P.bub.p, 'aB');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(triVao);
   gl.disable(gl.BLEND);
   gl.useProgram(P.beaker.p);
   gl.uniform3fv(P.beaker.u.uPanel, oklchLinear(0.92, 0.01, 240));
@@ -645,6 +694,112 @@ function toFluid(cx, cy) {
   return { x: ((px - box.x) / box.hw + 1) * 0.5 * TA, y: (py - box.y) / box.ih };
 }
 
+/* ---------- electrolysis ---------- */
+// The anode (+) sits left and makes acid; the cathode (-) sits right and makes base.
+// Rod geometry matches the shader: centres at u = -0.4 and 0.4, half width 0.07.
+const ROD_U = [-0.4, 0.4], ROD_B = 0.1;
+const rodX = i => (ROD_U[i] + 1) * 0.5 * TA, ROD_R = 0.07 * 0.5 * TA;
+let power = false, pulseUntil = 0;
+// Current from the slider; it never drops to nothing.
+const amps = () => (mode === 'electro' && (power || performance.now() < pulseUntil) ? 0.15 + 0.85 * EXP.electro.value : 0);
+// Seeded random keeps the nucleation sites the same on every load.
+let seed = 4021;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const sites = [], bubbles = [], bubData = new Float32Array(MAXB * 3);
+// Each rod gets 6 to 10 sites; the first sits at the tip.
+function buildSites() {
+  sites.length = 0;
+  seed = 4021;
+  for (let i = 0; i < 2; i++) {
+    const n = 6 + Math.floor(rnd() * 5);
+    for (let k = 0; k < n; k++) {
+      const tip = k === 0;
+      sites.push({ rod: i, tip, side: rnd() < 0.5 ? -1 : 1, rate: lerp(0.5, 1.5, rnd()), ph: rnd(),
+        y: tip ? ROD_B - 0.008 : lerp(ROD_B + 0.03, level - 0.1, rnd()) });
+    }
+  }
+}
+function spawn(s) {
+  const coarse = bubbleSize === 'coarse';
+  const r = coarse ? lerp(0.008, 0.015, rnd()) : lerp(0.004, 0.0078, rnd());
+  const x = s.tip ? rodX(s.rod) + (rnd() - 0.5) * ROD_R : rodX(s.rod) + s.side * (ROD_R + r * 0.6);
+  bubbles.push({ rod: s.rod, x0: x, x, y: s.y, y0: s.y, r0: r, r,
+    v: 0.22 + r * 26, vx: (s.tip ? (rnd() - 0.5) : s.side) * lerp(0.004, 0.018, rnd()),
+    w: rnd() * TAU, f: lerp(7, 13, rnd()), a: r * lerp(0.3, 0.8, rnd()) });
+}
+// Bubbles rise by size, wobble, grow a little and pop at the surface.
+const band = new Float32Array(6), bandX = new Float32Array(6);
+function electroStep(dt) {
+  const I = amps(), rm = reduced();
+  if (I > 0) {
+    const per = bubbleSize === 'coarse' ? 2.6 : 6.5;
+    for (const s of sites) {
+      // The cathode makes twice the gas: two volumes of hydrogen to one of oxygen.
+      s.ph += dt * I * per * s.rate * (s.rod === 1 ? 2 : 1);
+      while (s.ph >= 1) { s.ph -= 1; if (bubbles.length < MAXB) spawn(s); }
+    }
+    // Acid and base form at the rods; their sum cancels on its own.
+    const h = (level - ROD_B) / 3;
+    for (let i = 0; i < 2; i++) for (let k = 0; k < 3; k++) {
+      scalarSplat(rodX(i), ROD_B + h * (k + 0.5), 0.045, (i ? -1 : 1) * 0.55 * I * dt);
+    }
+  }
+  band.fill(0);
+  bandX.fill(0);
+  const sp = rm ? 0.5 : 1, wob = rm ? 0.3 : 1, h = (level - ROD_B) / 3;
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.y += b.v * sp * dt;
+    b.x0 += b.vx * dt;
+    b.w += b.f * dt;
+    b.r = b.r0 * (1 + 0.6 * (b.y - b.y0));
+    b.x = b.x0 + Math.sin(b.w) * b.a * wob;
+    if (b.y > level - b.r * 0.5) { bubbles.splice(i, 1); continue; }
+    const k = b.rod * 3 + clamp(Math.floor((b.y - ROD_B) / h), 0, 2);
+    band[k]++;
+    bandX[k] += b.x;
+  }
+  // Each band of rising bubbles lifts the water beside its rod.
+  for (let k = 0; k < 6; k++) {
+    if (!band[k]) continue;
+    splat(bandX[k] / band[k], ROD_B + h * ((k % 3) + 0.5), 0, Math.min(0.16, band[k] * 0.003) * dt, 0.05);
+  }
+}
+function drawBubbles() {
+  const n = bubbles.length;
+  if (!n) return;
+  for (let i = 0; i < n; i++) {
+    const b = bubbles[i];
+    bubData[i * 3] = b.x;
+    bubData[i * 3 + 1] = b.y;
+    bubData[i * 3 + 2] = b.r;
+  }
+  const q = P.bub;
+  gl.useProgram(q.p);
+  gl.uniform4f(q.u.uMap, box.x, box.y, box.hw, box.ih);
+  gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(q.u.uA, TA);
+  gl.bindVertexArray(bubVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, bubData, 0, n * 3);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.drawArrays(gl.POINTS, 0, n);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(triVao);
+}
+// The rainbow, pre-exposed: a seeded field, then 2 s of current.
+function seedRainbow() {
+  gl.useProgram(P.seed.p);
+  draw(scal.r);
+  power = true;
+  for (let i = 0; i < 60; i++) { electroStep(1 / 30); simStep(1 / 30); }
+  power = false;
+  bubbles.length = 0;
+}
+
 /* ---------- frame loop ---------- */
 let raf = 0, last = 0, visible = true, liveUntil = 0, stirT = -1;
 const live = (ms = 5000) => { liveUntil = Math.max(liveUntil, performance.now() + ms); wake(); };
@@ -658,13 +813,17 @@ function frame(now) {
   try {
     time += dt;
     stirStep(dt);
+    electroStep(dt);
     simStep(reduced() ? dt * 0.8 : dt);
     beaker();
+    drawBubbles();
   } finally {
-    if (visible && (now < liveUntil || stirT >= 0)) raf = requestAnimationFrame(frame);
+    if (busy(now)) raf = requestAnimationFrame(frame);
   }
 }
-function still() { if (P) beaker(); }
+// The loop sleeps once the current is off, the bubbles are gone and the flow settles.
+const busy = (now = performance.now()) => visible && (now < liveUntil || stirT >= 0 || amps() > 0 || bubbles.length > 0);
+function still() { if (P) { beaker(); drawBubbles(); } }
 
 /* ---------- stirring ---------- */
 // Stir sweeps a glass rod round the beaker for one second.
@@ -683,7 +842,7 @@ function stirStep(dt) {
 let ptr = null, holdTo = 0;
 function down(e) {
   if (ptr || e.button > 0) return;
-  canvas.setPointerCapture?.(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: performance.now(), mode: 'press' };
   holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'hold'; hold(true); } }, 260);
 }
@@ -717,26 +876,39 @@ function up(e) {
   if (m === 'press' && e?.type === 'pointerup') tap();
   if (m === 'hold') hold(false);
 }
-// Electrolysis and the pour arrive with Tasks 2 and 3.
-function hold(on) { live(); }
-function tap() { live(); }
+// Hold switches the current on; a tap gives a 0.4 s pulse.
+// The pour arrives with Task 3.
+function hold(on) {
+  if (mode === 'electro') power = on;
+  live();
+}
+function tap() {
+  if (mode === 'electro') pulseUntil = performance.now() + 400;
+  live();
+}
 
 /* ---------- state ---------- */
-function resetBeaker() {
+// Reset gives fresh indicator; opening Electrolysis shows the formed rainbow.
+function resetBeaker(rainbow = false) {
   stirT = -1;
+  power = false;
+  pulseUntil = 0;
   level = EXP[mode].level;
+  bubbles.length = 0;
+  buildSites();
   if (!P) return;
   wipe(vel);
   wipe(pres);
   wipe(scal);
   nSp = nSc = 0;
+  if (rainbow && mode === 'electro') seedRainbow();
   still();
 }
 act.mode = v => {
   if (ptr) up();
   mode = v;
   relabel();
-  resetBeaker();
+  resetBeaker(true);
 };
 act.stir = () => { stirT = 0; live(); };
 act.reset = () => resetBeaker();
@@ -747,8 +919,7 @@ try {
   await initGL();
   layout();
   alloc();
-  resetBeaker();
-  beaker();
+  resetBeaker(true);
   canvas.classList.add('on');
 } catch (err) {
   stage.querySelector('.fail').hidden = false;
@@ -785,7 +956,7 @@ onQuality(() => { layout(); still(); });
 whenVisible(stage, v => {
   visible = v;
   if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
-  if (performance.now() < liveUntil || stirT >= 0) wake(); else still();
+  if (busy()) wake(); else still();
 });
 </script>
 </body>
