@@ -1062,6 +1062,29 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
           </a>
         </li>
         <li>
+          <a class="toy" id="frietkot" href="frietkot/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.17 0.03 262)"/>
+                <rect x="16" y="88" width="92" height="20" fill="oklch(0.12 0.015 260)"/>
+                <path id="frietkot-pool" d="M44 88H84L100 108H28Z" fill="#ffc46b" opacity="0.12"/>
+                <g id="frietkot-steam" fill="none" stroke="oklch(0.85 0.02 80)" stroke-width="3" stroke-linecap="square" opacity="0">
+                  <path d="M56 66L52 56L58 46"/>
+                  <path d="M68 66L72 54L66 42"/>
+                </g>
+                <rect x="38" y="58" width="52" height="30" fill="oklch(0.36 0.03 85)"/>
+                <rect id="frietkot-win" x="44" y="64" width="40" height="13" fill="#6b4a2a"/>
+                <path d="M42 64L38 56H90L86 64Z" fill="oklch(0.42 0.12 25)"/>
+                <rect x="58" y="44" width="14" height="10" fill="oklch(0.12 0.02 260)"/>
+                <path id="frietkot-cone" d="M61 46L65 52L69 46Z" fill="none" stroke="#5a2a2a" stroke-width="1.6"/>
+                <rect id="frietkot-neon" x="36" y="54" width="56" height="2.4" fill="#5a2a2a"/>
+              </svg>
+            </span>
+            <span class="name">Frietkot at night</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="canal" href="canal/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2779,6 +2802,35 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       const r = svg.getBoundingClientRect();
       toys.bread.move([((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128]);
     });
+  }
+
+  // The neon strikes with a stutter; the window warms; steam leans to the pointer.
+  {
+    const fkNeon = [$('frietkot-neon'), $('frietkot-cone')], fkWin = $('frietkot-win'), fkPool = $('frietkot-pool'), fkSteam = $('frietkot-steam');
+    let fkRise = null;
+    const fkOn = () => {
+      gsap.timeline()
+        .set(fkNeon, { attr: { fill: '#ff4a5a', stroke: '#ff4a5a' } })
+        .to(fkNeon, { opacity: 0.2, duration: 0.05, repeat: 3, yoyo: true, ease: 'steps(1)' })
+        .set(fkNeon, { opacity: 1 });
+      gsap.to(fkWin, { attr: { fill: '#ffd38a' }, duration: 0.5, ease: 'power2.out', overwrite: true });
+      gsap.to(fkPool, { opacity: 0.55, duration: 0.6, ease: 'power2.out', overwrite: true });
+      fkRise ??= gsap.fromTo(fkSteam, { opacity: 0, y: 6 }, { opacity: 0.8, y: -8, duration: 1.4, ease: 'sine.out', repeat: -1 });
+    };
+    const fkLean = p => gsap.to(fkSteam, { x: Math.max(-10, Math.min(10, (p[0] - 64) * 0.25)), duration: 0.5, ease: 'power3.out', overwrite: 'auto' });
+    toys.frietkot = {
+      enter(p) { fkOn(); if (p) fkLean(p); },
+      move(p) { if (p) fkLean(p); },
+      leave() {
+        fkRise?.kill(); fkRise = null;
+        gsap.to(fkSteam, { opacity: 0, x: 0, y: 0, duration: 0.4, overwrite: true });
+        gsap.to(fkNeon, { opacity: 1, attr: { fill: '#5a2a2a', stroke: '#5a2a2a' }, duration: 0.4, overwrite: true });
+        gsap.to(fkWin, { attr: { fill: '#6b4a2a' }, duration: 0.4, overwrite: true });
+        gsap.to(fkPool, { opacity: 0.12, duration: 0.4, overwrite: true });
+      },
+      play() { toys.frietkot.enter(null); return { kill() {} }; },
+      rest() { toys.frietkot.leave(); },
+    };
   }
 
   // A streetlight warms from pink-red to sodium orange; its pool and glint follow.
