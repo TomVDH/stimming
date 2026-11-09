@@ -26,7 +26,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [ ] Task 5: Q4 (idle rAF), Q6 (reduced motion), Q9 (full run to sleep), Q10 (frame times): the pane stays hidden; Tom checks on a real device
 - [x] Review 2 (Tom, 2026-11-09): bokeh on BokehShader2, one-sided, steady taps
 - [x] Review 2: calm camera (no jitter, 30 fps)
-- [ ] Review 2: rocket sharp through the zoom toggle
+- [x] Review 2: rocket sharp through the zoom toggle
 - [ ] Review 2: the arc stays in frame to SECO
 - [ ] Review 2: living reed sway, cleaner reed model
 - [ ] Review 2: birds nearer the eye, spruced up

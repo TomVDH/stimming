@@ -172,3 +172,8 @@ QA hooks on `window.__qa`: `dawn(v)`, `simT()`, `flightT()`, `jump(t)`.
 
 Cause: a fresh random offset on yaw and pitch every drawn frame, an exposure flicker every frame, and a 24 fps gate on a 60 Hz screen (a 2-3-2-3 cadence).
 Fix: the jitter and the flicker are gone; the three-sine wobble and the launch shake stay. The film runs at 30 fps (an even cadence); the grain reseeds every second frame. Ladder threshold 50 ms. `__qa.draws()` counts frames; measured 30.0 fps in the pane.
+
+## Rocket sharp through the zoom (12:45, Tom: the rocket went soft on the toggle)
+
+Cause: the focus hunt added blur to every pixel for 1.3 s on each toggle.
+Fix: the hunt scales the near blur and its cap only; far pixels have zero blur by the one-sided model. In flight the focus distance is the smaller of the pad and the rocket's distance, so the rocket never sits beyond the focus.
