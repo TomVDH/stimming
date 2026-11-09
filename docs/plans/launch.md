@@ -232,3 +232,7 @@ A Poster: four flat bands of sky from ink blue to a gold horizon, cream trail, f
 
 Round 5 keeps round 4's composition (near reed fringe, far reed bed, trail, spark) and replaces the trail with a real exhaust column: 52 puffs along the climb, each a cold body, a lit body and a rim toward the light, softened by a small blur; a dusk gradient sky with a horizon glow and a mist band; a flame and a glowing spark at the head. Hover launches: puffs appear up to the head and grow as they age; pointer y sets the climb.
 A Ascent, dawn (sunlit above the shadow line). B Ascent, night (stars, flame-lit column). C Ascent, first sun (pale sky, all sunlit, violet reeds). One shared emblem: lit puffs white, cold grey, reeds white.
+
+## Menu tile: Ascent, dawn (16:00, Tom's pick: spike 33 A)
+
+The Lab tile is spike 33 A, drawn by the menu script from the same seeded streams as the spike: near and far reeds, 52 puffs with cold, lit and rim bodies, flame, halo and spark. Lab tiles run the play loop on hover, so the plume launches again and again while the pointer stays; the main-shelf wiring would give pointer y as the climb. Emblem `shared/emblems/launch.svg` is the 33 A emblem; `icons/picks.json` records the pick and the cut rounds.

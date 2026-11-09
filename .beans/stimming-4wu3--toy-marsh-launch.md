@@ -32,7 +32,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Review 2: birds nearer the eye, spruced up
 - [x] Review 2: no launch shockwave: camera jolts and the reed push wave gone
 - [ ] Tom confirms the Dutch name (set to Tien tellen, 2026-11-09; was Moeraslancering)
-- [x] Icon: Tom chose spike 29 A, the Twilight plume (2026-11-09); the menu tile, hover and emblem follow it. Spike 28 cut.
+- [x] Icon: Tom chose spike 33 A, Ascent at dawn (2026-11-09), after rounds 28, 29, 31 and 32; the menu tile, hover and emblem follow it.
 - [ ] Record the session cost
 
 ## Blockout notes (2026-11-09)
