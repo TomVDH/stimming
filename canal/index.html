@@ -137,6 +137,11 @@ const U = {
   uTime: { value: 0 },
   // The church tower brightens while the bells ring.
   uBell: { value: 0 },
+  // Streetlight pools painted on a plan texture, and how far they are switched on.
+  tPool: { value: null },
+  uPoolK: { value: 0 },
+  // Town light in the night haze.
+  uTown: { value: new THREE.Vector3() },
 };
 const LAMPS_GLSL = /* glsl */`
 uniform vec4 uLamp[${LN}];
@@ -237,7 +242,8 @@ float k2hazeAmount(vec3 P) {
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
 }
-vec3 k2hazeColor(vec3 dir) { return uHor * 0.9 + uGlowC * k2glow(dir) * 0.5; }
+uniform vec3 uTown;
+vec3 k2hazeColor(vec3 dir) { return uHor * 0.9 + uGlowC * k2glow(dir) * 0.5 + uTown; }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
@@ -247,14 +253,19 @@ uniform float uDusk, uTime, uBell;
 float canalX(float z) { float t = z - (${ROAD_Z}.0); return ${BEND} * t * t; }
 uniform vec3 uWin;
 // Sky light on a surface: the zenith from above, the horizon from the side.
-vec3 skyAmb(vec3 N) { return mix(uHor * 0.8, uZen * 1.3, 0.5 + 0.5 * N.y) * 0.9; }`;
+// The afterglow in the west warms the walls that face it.
+vec3 skyAmb(vec3 N) { return mix(uHor * 0.8, uZen * 1.3, 0.5 + 0.5 * N.y) * 0.9 + uGlowC * 1.2 * max(dot(N, uSun), 0.0); }
+// Streetlight on the ground plan: the plan spans x -1500 to 1500 and z -2000 to 1000.
+uniform sampler2D tPool;
+uniform float uPoolK;
+vec3 poolAt(vec2 xz) { return pow(texture2D(tPool, (xz - vec2(-1500.0, -2000.0)) / 3000.0).rgb, vec3(2.2)) * uPoolK; }`;
 
 /* ---------- dusk ---------- */
 // Three sky keys: blue hour, late blue, night; Dusk runs through them.
 const KEYS = [
   { zen: [0.4, 0.1, 262], hor: [0.6, 0.065, 248], glow: [0.6, 0.07, 35] },
   { zen: [0.24, 0.085, 266], hor: [0.4, 0.07, 256], glow: [0.4, 0.05, 30] },
-  { zen: [0.075, 0.02, 268], hor: [0.15, 0.028, 255], glow: [0.17, 0.035, 55] },
+  { zen: [0.075, 0.02, 268], hor: [0.16, 0.034, 45], glow: [0.17, 0.035, 55] },
 ].map(k => ({ zen: linFit(...k.zen), hor: linFit(...k.hor), glow: linFit(...k.glow) }));
 const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 function setDusk(d) {
@@ -266,11 +277,16 @@ function setDusk(d) {
   // The afterglow fades before the sky goes dark.
   U.uGlowC.value.set(...lerp3(a.glow, b.glow, f).map(x => x * 0.35 * (1 - d) ** 1.5));
   U.uStars.value = Math.max(0, (d - 0.55) / 0.45);
+  // Streetlights switch on between 0.28 and 0.45; their light lifts the night haze.
+  const sl = Math.min(1, Math.max(0, (d - 0.28) / 0.17)), sk = sl * sl * (3 - 2 * sl);
+  U.uPoolK.value = sk;
+  U.uTown.value.set(...TOWN.map(x => x * sk));
   // The frietkot, staminee, station and church lights come on as it darkens.
   const on = Math.min(1, Math.max(0, (d - 0.1) / 0.3));
   VENUES.forEach((v, i) => { U.uLamp.value[TAPS + i].w = v.k * on * on * (3 - 2 * on); });
 }
 U.uWin.value.set(...linFit(0.8, 0.12, 70).map(x => x * 2.6));
+const TOWN = linFit(0.6, 0.12, 55).map(x => x * 0.01);
 /* ---------- end dusk ---------- */
 
 /* ---------- sky dome ---------- */
@@ -855,6 +871,82 @@ const mapTex = (() => {
 })();
 /* ---------- end layout ---------- */
 
+/* ---------- streetlights ---------- */
+// One light every 35 m or so along each road, alternating sides.
+// Old roads keep orange sodium; estates and industry often have white LED.
+const SL = [];
+for (const { pts, h, mode } of PL) {
+  let L = 0;
+  for (let i = 0; i + 1 < pts.length; i++) L += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+  for (let a = 6 + 12 * rnd(), k = 0; a < L - 3; a += (mode === 'industry' ? 28 : 34) + 6 * rnd(), k++) {
+    const p = along(pts, a), s = k % 2 ? 1 : -1;
+    const x = p.x - p.dz * s * (h + 0.8), z = p.z + p.dx * s * (h + 0.8);
+    if (Math.abs(x - canalX(z)) < 17) continue;
+    const led = mode === 'industry' || ((mode === 'estate' || mode === 'town') && rnd() < 0.45);
+    SL.push({ x, z, y: mode === 'industry' ? 10 : 7, led, a: Math.atan2(p.dz, p.dx) });
+  }
+}
+const SODIUM = linFit(0.72, 0.17, 62), LED = linFit(0.93, 0.025, 85);
+// Pools: a soft disc of light under each head, painted once on a plan texture.
+const poolC = document.createElement('canvas');
+poolC.width = poolC.height = 2048;
+{
+  const g = poolC.getContext('2d'), k = 2048 / MAP.size;
+  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 2048);
+  g.globalCompositeOperation = 'lighter';
+  for (const l of SL) {
+    const r = (l.led ? 10 : 12) * k;
+    // Each pool stretches along its road, so lit streets read as strands.
+    g.setTransform(1, 0, 0, 1, (l.x - MAP.x0) * k, (l.z - MAP.z0) * k);
+    g.rotate(l.a);
+    g.scale(1.8, 1);
+    const grd = g.createRadialGradient(0, 0, 0, 0, 0, r);
+    grd.addColorStop(0, l.led ? 'rgba(235,228,212,0.62)' : 'rgba(255,165,72,0.66)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(-r, -r, 2 * r, 2 * r);
+  }
+}
+U.tPool.value = new THREE.CanvasTexture(poolC);
+U.tPool.value.flipY = false;
+U.tPool.value.minFilter = THREE.LinearMipmapLinearFilter;
+// The heads: glowing points that switch on one by one round their photocell mark.
+const slGeo = new THREE.BufferGeometry();
+slGeo.setAttribute('position', new THREE.Float32BufferAttribute(SL.flatMap(l => [l.x, QUAY + l.y, l.z]), 3));
+slGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(SL.flatMap(l => (l.led ? LED : SODIUM)), 3));
+slGeo.setAttribute('aMark', new THREE.Float32BufferAttribute(SL.map(() => 0.28 + 0.15 * rnd()), 1));
+const SLU = { uDpr: { value: 1 } };
+const heads = new THREE.Points(slGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...SLU }, transparent: true, depthWrite: false,
+  // Colour adds; alpha stays, so the mirror's sky mask is untouched.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute vec3 aCol; attribute float aMark; uniform float uDusk, uDpr, uHaze, uHazeH;
+  varying vec3 vCol;
+  void main() {
+    vec4 P = modelMatrix * vec4(position, 1.0);
+    float dist = length(P.xyz - cameraPosition);
+    // A short warm-up as each lamp passes its mark.
+    float on = smoothstep(aMark, aMark + 0.025, uDusk);
+    // The haze between eye and lamp dims it.
+    vCol = aCol * on * exp(-dist * uHaze * 0.35);
+    gl_PointSize = clamp(2600.0 / dist, 2.2, 22.0) * uDpr;
+    gl_Position = projectionMatrix * viewMatrix * P;
+    if (on <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol;
+  void main() {
+    float r = length(gl_PointCoord - 0.5) * 2.0;
+    // A hot core in a soft halo.
+    float g = exp(-r * r * 14.0) * 3.0 + exp(-r * r * 3.5) * 0.35;
+    gl_FragColor = vec4(vCol * g, 0.0);
+  }`,
+}));
+heads.frustumCulled = false;
+heads.layers.enable(LIGHT);
+scene.add(heads);
+/* ---------- end streetlights ---------- */
+
 /* ---------- solids: one material for every built surface ---------- */
 const solidMat = new THREE.ShaderMaterial({
   uniforms: U, side: THREE.DoubleSide,
@@ -968,6 +1060,8 @@ const solidMat = new THREE.ShaderMaterial({
     // Walls darken toward the ground, where less sky reaches.
     col *= 0.6 + 0.4 * smoothstep(0.0, 3.0, vP.y - ${QUAY.toFixed(2)});
     col += alb * lampLit(vP, N) * (is(kind, 4.0) ? 1.0 + 2.0 * uBell : 1.0);
+    // Streetlight reaches the lower walls and, less, the roofs.
+    col += alb * poolAt(vP.xz) * 9.0 * (1.0 - smoothstep(0.0, 9.0, vP.y - ${QUAY.toFixed(2)})) * (N.y > 0.5 ? 0.3 : 1.0);
     // Dark glass holds a dim copy of the sky.
     col += (glass * 0.25 + roof * 0.06) * k2sky(reflect(V, N)) + emit;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
@@ -1098,6 +1192,10 @@ const groundMat = new THREE.ShaderMaterial({
     vec4 m = texture2D(tMirror, M.xy / M.w);
     vec3 refl = mix(k2sky(R), m.rgb, clamp(m.a, 0.0, 1.0) * pud);
     col += refl * fres * (max(tar, sq) * mix(0.3, 0.9, wet) + steel * 0.8 + 0.05);
+    // Streetlight pools; wet asphalt throws back a glossy share.
+    vec3 pool = poolAt(vP.xz);
+    // Grass takes less of it; a small share shows the lamp's own colour.
+    col += pool * (alb * 16.0 * mix(0.4, 1.0, tar) + 0.006 + 0.04 * wet);
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
@@ -1208,6 +1306,7 @@ function resize() {
   // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the mirror.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
+  SLU.uDpr.value = size.dpr;
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   // The mirror runs at half size, three quarters on High, a quarter on rung 2.
