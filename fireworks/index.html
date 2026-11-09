@@ -62,6 +62,17 @@
 .stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
 @keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
 @media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
+/* The bill: a cheeky running cost of the show, top right of the stage. */
+.bill {
+  position: absolute; top: 12px; right: 14px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 999px;
+  font: 700 15px/1 inherit; font-family: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+  color: oklch(0.74 0.19 25); background: oklch(0.14 0.012 275 / 0.62);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: pointer;
+}
+.bill[hidden] { display: none; }
+.bill.ka { animation: bill-ka 0.32s ease-out; }
+@keyframes bill-ka { 30% { transform: scale(1.14); color: oklch(0.86 0.17 30); } }
+@media (prefers-reduced-motion: reduce) { .bill.ka { animation: none; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -116,6 +127,10 @@
               <button class="chip" type="button" data-value="bay" aria-pressed="true">Bay</button>
               <button class="chip" type="button" data-value="island" aria-pressed="false">Island</button>
               <button class="chip" type="button" data-value="city" aria-pressed="false">City</button>
+            </div></div>
+            <div class="group"><span>Bill</span><div class="choices" id="billSet" role="group" aria-label="Bill">
+              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
             </div></div>
             <div class="group"><span>Sky</span><div class="choices" id="sky" role="group" aria-label="Sky">
               <button class="chip" type="button" data-value="drift" aria-pressed="true">Drift</button>
@@ -2413,9 +2428,48 @@ function burstPoint(ndc, cal, out = new THREE.Vector3(), dist = shellDist()) {
 // Comet styles; dark comets climb unseen and carry bigger shells.
 const COMETS = ['gold', 'gold', 'glitter', 'colour', 'dark', 'spin', 'crackle'];
 // A comet climbs from the water and the shell bursts at its apex.
+/* ---------- the bill ---------- */
+// What each shell would cost at a pro display, in dollars, at calibre 1.
+// Size scales it steeply; beach shells cost half; a dark-comet salute costs more.
+const PRICE = {
+  peony: 28, chrysanthemum: 34, willow: 46, palm: 52, kamuro: 70, crossette: 44, ring: 38, saturn: 64, pistil: 40,
+  strobe: 30, crackle: 30, fish: 36, heart: 85, galaxy: 160, cascade: 110, supernova: 480,
+  smiley: 140, rainbow: 180, butterfly: 150, star: 120, cube: 160, jelly: 170, swarm: 60,
+};
+const priceOf = (type, cal, style, site) => Math.round((PRICE[type] || 40) * Math.pow(cal, 2.6) * (site === 'beach' ? 0.5 : 1) * (style === 'dark' ? 1.2 : 1));
+const billEl = document.createElement('button');
+billEl.type = 'button';
+billEl.className = 'bill';
+billEl.title = 'Tear up the bill';
+billEl.hidden = true;
+stage.append(billEl);
+let spent = +(saved('spent') || 0), shown = spent, billAnim = 0;
+const money = n => `-$${Math.round(n).toLocaleString('en-US')}`;
+billEl.textContent = money(spent);
+// Each launch adds its price; the figure counts up and kicks.
+function bill(n) {
+  spent += n;
+  save('spent', spent);
+  if (billEl.hidden) { shown = spent; billEl.textContent = money(spent); return; }
+  billEl.classList.toggle('ka', false);
+  void billEl.offsetWidth;
+  billEl.classList.toggle('ka', true);
+  const from = shown, t0 = performance.now();
+  cancelAnimationFrame(billAnim);
+  const step = now => {
+    const k = Math.min(1, (now - t0) / 420);
+    shown = from + (spent - from) * (1 - Math.pow(1 - k, 3));
+    billEl.textContent = money(shown);
+    if (k < 1) billAnim = requestAnimationFrame(step);
+  };
+  billAnim = requestAnimationFrame(step);
+}
+billEl.addEventListener('click', () => { spent = shown = 0; save('spent', 0); billEl.textContent = money(0); });
+/* ---------- end bill ---------- */
 // Ultra shells climb slowly on a heavy comet, about 5 to 6 s, to build the wait.
 const ULTRA = new Set(['supernova', 'galaxy', 'cascade', 'kamuro']);
 function fire(pos, t0, type, cal, style = pick(COMETS), site = 'barge') {
+  bill(priceOf(type, cal, style, site));
   const ultra = site === 'barge' && (ULTRA.has(type) || cal >= 1.95);
   if (ultra && style === 'dark') style = 'gold';
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
@@ -2603,45 +2657,64 @@ function launch(ndc, cal) {
   wake();
 }
 /* ---------- showtime ---------- */
-// The show as cues: [time, x, y, shell, calibre, comet, site], x and y as for a tap.
-// Five acts: an opening, the classics, the zany ones, a build, and the finale.
+// The show as cues: [burst time, x, y, shell, calibre, comet, site], x and y as for a tap.
+// About a minute: five acts with quiet breaths between, a hush, then a finale that rattles.
 // Each run jitters a little, so no two shows match.
 function buildShow() {
-  const S = [], j = () => (Math.random() - 0.5) * 0.04;
+  const S = [], j = () => (Math.random() - 0.5) * 0.04, R = Math.random;
   // Only the salutes ride dark comets; their white flash would wash out a pattern.
   const lit = () => pick(['gold', 'glitter', 'colour', 'spin', 'crackle']);
   const add = (t, x, y, type, cal, style = lit(), site = 'barge') => S.push([t, x + j(), y + j(), type, cal, style, site]);
-  // Opening: three dark comets end in white salutes; a cake sweeps the beach.
-  [-0.5, 0, 0.5].forEach((x, i) => add(i * 0.25, x, 0.58, 'strobe', 1.3, 'dark'));
-  for (let i = 0; i < 12; i++) add(0.9 + i * 0.12, -0.8 + (1.6 * i) / 11, 0.28 + 0.06 * (i % 2), i % 2 ? 'ring' : 'peony', 0.85, 'gold', 'beach');
-  // The classics: mirrored pairs that climb, then three showpieces.
+  // 0 to 5 s, the opening: three salutes, then a cake sweeps the beach.
+  [-0.5, 0, 0.5].forEach((x, i) => add(i * 0.3, x, 0.58, 'strobe', 1.3, 'dark'));
+  for (let i = 0; i < 14; i++) add(1.2 + i * 0.14, -0.85 + (1.7 * i) / 13, 0.26 + 0.06 * (i % 2), i % 2 ? 'ring' : 'peony', 0.85, 'gold', 'beach');
+  // 5 to 7.5 s, a breath: one gold willow hangs alone.
+  add(5.2, 0, 0.72, 'willow', 1.7, 'gold');
+  // 8 to 17 s, the classics: mirrored pairs that climb, then three showpieces.
   ['peony', 'chrysanthemum', 'ring', 'pistil', 'saturn', 'crossette'].forEach((type, k) => {
-    for (const sd of [-1, 1]) add(3.6 + k * 1.05 + (sd > 0 ? 0.12 : 0), sd * (0.22 + 0.08 * k), 0.42 + 0.05 * k, type, 1.4);
+    for (const sd of [-1, 1]) add(8 + k * 1.1 + (sd > 0 ? 0.14 : 0), sd * (0.22 + 0.08 * k), 0.42 + 0.05 * k, type, 1.4);
   });
-  add(10.0, 0, 0.72, 'galaxy', 1.7); add(10.7, -0.42, 0.55, 'cascade', 1.5); add(10.9, 0.42, 0.55, 'palm', 1.5);
-  // The zany act.
-  add(12.2, 0, 0.6, 'smiley', 1.6);
-  add(13.4, -0.5, 0.58, 'butterfly', 1.5); add(13.6, 0.5, 0.58, 'star', 1.5);
-  add(14.9, 0, 0.78, 'rainbow', 1.8);
-  add(16.1, -0.4, 0.6, 'jelly', 1.5); add(16.3, 0.4, 0.55, 'cube', 1.5); add(16.9, 0, 0.45, 'heart', 1.4);
-  add(18.0, -0.6, 0.4, 'swarm', 1.3); add(18.2, 0.6, 0.4, 'swarm', 1.3); add(18.6, 0, 0.32, 'fish', 1.0, 'spin', 'beach');
-  // The build: comets left and right, faster and higher, then a crown.
-  for (let i = 0; i < 16; i++) add(19.6 + i * 0.24, (i % 2 ? -1 : 1) * (0.15 + 0.04 * i), 0.34 + 0.02 * i, ['strobe', 'crackle', 'peony'][i % 3], 1.1 + 0.02 * i, i % 3 === 1 ? 'crackle' : 'gold', i % 2 ? 'beach' : 'barge');
-  add(23.9, 0, 0.78, 'kamuro', 1.9, 'gold'); add(24.5, -0.5, 0.55, 'crossette', 1.5); add(24.6, 0.5, 0.55, 'crossette', 1.5);
-  for (let i = 0; i < 9; i++) add(25.8 + i * 0.07, -0.8 + (1.6 * i) / 8, 0.5 + 0.04 * (i % 2), i % 2 ? 'crackle' : 'strobe', 1.35, i % 2 ? 'crackle' : 'glitter');
-  // The finale: a wall of chrysanthemums, a beach rattle, gold willows, a supernova, three salutes.
-  for (let i = 0; i < 10; i++) add(28.0 + i * 0.08, -0.85 + (1.7 * i) / 9, 0.5 + 0.15 * Math.abs(Math.sin(i * 1.3)), 'chrysanthemum', 1.5);
-  for (let i = 0; i < 20; i++) add(28.6 + i * 0.07, (Math.random() - 0.5) * 1.6, 0.25 + Math.random() * 0.12, 'crackle', 0.8, 'crackle', 'beach');
-  [-0.45, 0, 0.45].forEach((x, i) => add(30.4 + i * 0.05, x, 0.82, 'willow', 2.0, 'gold'));
-  add(31.6, 0, 0.74, 'supernova', 2.2);
-  [-0.35, 0.35, 0].forEach((x, i) => add(33.0 + i * 0.3, x, 0.62, 'strobe', 1.5, 'dark'));
+  add(15.0, 0, 0.74, 'galaxy', 1.7); add(15.9, -0.45, 0.55, 'cascade', 1.5); add(16.1, 0.45, 0.55, 'palm', 1.5);
+  // 19 to 21 s, a breath: two low kamuro crowns drift down.
+  add(19.0, -0.3, 0.42, 'kamuro', 1.3, 'gold'); add(19.6, 0.3, 0.4, 'kamuro', 1.3, 'gold');
+  // 22 to 32 s, the zany act.
+  add(22.0, 0, 0.6, 'smiley', 1.6);
+  add(23.6, -0.5, 0.58, 'butterfly', 1.5); add(23.8, 0.5, 0.58, 'star', 1.5);
+  add(25.4, 0, 0.8, 'rainbow', 1.8);
+  add(27.0, -0.4, 0.6, 'jelly', 1.5); add(27.2, 0.4, 0.55, 'cube', 1.5);
+  add(28.7, 0, 0.48, 'heart', 1.5);
+  add(30.0, -0.6, 0.42, 'swarm', 1.3); add(30.2, 0.6, 0.42, 'swarm', 1.3); add(30.6, 0, 0.32, 'fish', 1.0, 'spin', 'beach');
+  // 32 to 35 s, a breath: a lone white strobe, then nothing.
+  add(32.8, 0.1, 0.65, 'strobe', 1.2, 'glitter');
+  // 35 to 45 s, the build: comets left and right, faster and higher, a crown, a wall.
+  for (let i = 0; i < 26; i++) {
+    const t = 35 + 7.2 * Math.pow(i / 25, 0.8);
+    add(t, (i % 2 ? -1 : 1) * (0.12 + 0.03 * i), 0.32 + 0.016 * i, ['strobe', 'crackle', 'peony', 'chrysanthemum'][i % 4], 1.05 + 0.02 * i, i % 4 === 1 ? 'crackle' : 'gold', i % 2 ? 'beach' : 'barge');
+  }
+  add(40.5, 0, 0.8, 'kamuro', 1.9, 'gold'); add(41.2, -0.55, 0.55, 'crossette', 1.5); add(41.3, 0.55, 0.55, 'crossette', 1.5);
+  for (let i = 0; i < 11; i++) add(43.0 + i * 0.06, -0.85 + (1.7 * i) / 10, 0.5 + 0.05 * (i % 2), i % 2 ? 'crackle' : 'strobe', 1.35, i % 2 ? 'crackle' : 'glitter');
+  // 44.5 to 46 s: the hush. Nothing launches; the smoke hangs.
+  // 46 to 58 s, the finale.
+  for (let i = 0; i < 13; i++) add(46.0 + i * 0.055, -0.88 + (1.76 * i) / 12, 0.5 + 0.16 * Math.abs(Math.sin(i * 1.3)), 'chrysanthemum', 1.55);
+  for (let i = 0; i < 44; i++) add(46.6 + i * 0.085, (R() - 0.5) * 1.7, 0.22 + R() * 0.14, i % 3 ? 'crackle' : 'strobe', 0.8, i % 3 ? 'crackle' : 'glitter', 'beach');
+  for (let i = 0; i < 34; i++) add(47.2 + i * 0.15, (R() - 0.5) * 1.6, 0.4 + 0.012 * i + R() * 0.12, pick(['peony', 'crackle', 'strobe', 'chrysanthemum', 'pistil', 'ring']), 1.3 + 0.012 * i);
+  [-0.6, -0.2, 0.2, 0.6].forEach((x, i) => add(51.0 + i * 0.08, x, 0.84, i % 2 ? 'kamuro' : 'willow', 2.0, 'gold'));
+  add(52.6, -0.5, 0.7, 'galaxy', 1.8); add(52.7, 0.5, 0.7, 'galaxy', 1.8); add(52.9, 0, 0.76, 'supernova', 2.2);
+  // The rattle: a chain of salutes, faster and faster, then everything at once.
+  // One salute in three flashes white; a whole chain of them blows the frame out.
+  for (let i = 0; i < 16; i++) add(55.4 + 2.6 * Math.pow(i / 15, 0.7), (R() - 0.5) * 1.5, 0.5 + R() * 0.25, i % 3 ? 'crackle' : 'strobe', 1.4, i % 3 ? 'crackle' : 'dark');
+  for (let i = 0; i < 9; i++) add(58.2 + i * 0.03, -0.8 + (1.6 * i) / 8, 0.62 + 0.1 * (i % 2), i === 4 ? 'supernova' : 'strobe', i === 4 ? 2.3 : 1.5, i === 4 ? 'gold' : 'dark');
   return S.sort((p, q) => p[0] - q[0]);
 }
 let show = null;
 // Cues fire about 0.6 s before they are due, so the ring buffer holds one act, not the show.
+// A cue marks the burst; the shell leaves early by its climb time.
+const climbLead = ([, , , type, cal, , site]) => (site === 'beach' ? 2.6 : ULTRA.has(type) || cal >= 1.95 ? 5.6 : 3.3);
 function showtime() {
   if (show) return;
-  show = { t0: simT, cues: buildShow(), i: 0 };
+  // Launch times sorted; the show's clock starts after the longest climb.
+  const cues = buildShow().map(c => [c[0] - climbLead(c), ...c.slice(1)]).sort((p, q) => p[0] - q[0]);
+  show = { t0: simT + 5.6, cues, i: 0 };
   wake();
 }
 function showTick() {
@@ -3038,6 +3111,8 @@ function weatherTick(now) {
   if (wx.w !== wx.to) { wx.w += Math.max(-dt / 90, Math.min(dt / 90, wx.to - wx.w)); applyCover(); }
 }
 const setSky = v => { opts.sky = v; applyCover(); };
+choices(document.getElementById('billSet'), v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); }).set(saved('bill') === 'on' ? 'on' : 'off');
+billEl.hidden = saved('bill') !== 'on';
 // A new scene saves and reloads; the intro stays away on that reload.
 choices(document.getElementById('scenes'), v => {
   if (v === SCENE) return;

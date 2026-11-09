@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T09:16:59Z
+updated_at: 2026-11-09T09:28:54Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -123,3 +123,6 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 
 - [x] Hills: wrap light, longer reach, sky fill
 - [x] Scenes: Bay, Island (snowy island, pines, cabin, beacon, snowfall, far range) and City (skyline with windows, quay lamps, aviation lights); Settings > Scene, ?scene= for one load
+
+- [x] Showtime runs about a minute: acts with breaths, a hush, a finale that rattles; cues mark bursts
+- [x] Bill toggle: a running -$ cost of every shell, top right; tap to tear it up
