@@ -936,11 +936,38 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   // Haze: the far land fades out; the sky itself turns milky.
   float hz = uStorm * (t > 5e3 ? 0.7 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
   c = mix(c * (1.0 - 0.35 * uStorm), air, hz);
+  float scud = 0.0;
+  // Scud: loose patches of murk drift between the towers, fixed to the ground.
+  // They sit on a layer 4.5 km below the eye, or on the first surface nearer than that.
+  if (uStorm > 0.0 && d.y < 0.05) {
+    float tp = min(4.5 / max(-d.y, 0.02), t);
+    vec2 w = d.xz * tp + uCam;
+    float n = textureLod(uNoise, vec3(w / 23.0, uTime * 0.004), 0.0).r * 0.65 + textureLod(uNoise, vec3(w / 7.0, 0.37 + uTime * 0.007), 0.0).g * 0.35;
+    scud = smoothstep(0.42, 0.72, n) * uStorm * (1.0 - exp(-tp / 40.0));
+    c = mix(c, air * 1.15, scud * 0.55);
+    skyA *= 1.0 - scud * 0.55;
+  }
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
   vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
+  // Flashes light the murk round them: a soft ball, seen only through haze, scud and fog.
+  float murk = clamp(hz * 1.3 + scud + fa, 0.0, 1.0);
+  if (murk > 0.01) {
+    float ball = 0.0;
+    for (int i = 0; i < ${MAXFL}; i++) {
+      vec4 f = uFl[i];
+      if (f.z <= 0.0) continue;
+      vec2 rel = f.xy - uCam;
+      float dist = max(length(rel), 1.0);
+      vec3 fp = normalize(vec3(rel.x, 4.0 - H - dist * dist / 12742.0, rel.y));
+      float ang = acos(clamp(dot(d, fp), -1.0, 1.0)), rad = f.w * 1.8 / dist;
+      // The glow needs air between here and the flash: near surfaces cut it.
+      ball += f.z * exp(-ang * ang / (rad * rad)) * smoothstep(0.25, 0.8, t / dist);
+    }
+    c += vec3(0.62, 0.66, 0.9) * ball * murk * 0.5;
+  }
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
 }
@@ -1764,8 +1791,12 @@ uniform vec2 uRes; uniform float uTime, uDpr, uFocal, uFlash, uDimE, uDimC, uRai
 uniform vec3 uF, uR, uU;
 uniform int uSteps;
 uniform sampler2D uOut;
+// A soft copy of the outside lights the bezel; uEnvOn is 0 where no page binds it.
+uniform sampler2D uEnv; uniform float uEnvOn;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
+// Extra ghost strength per flare; 0 keeps the old ghosts.
+uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
@@ -2019,7 +2050,7 @@ vec3 flare(vec2 px, vec3 base) {
       vec3 gs = k == 0 ? vec3(0.7, 0.05, 0.9) : k == 1 ? vec3(1.4, 0.09, 0.6) : k == 2 ? vec3(2.2, 0.15, 0.4) : vec3(-0.45, 0.03, 0.5);
       vec2 g = (uv - (sp + toC * gs.x)) * vec2(aspect, 1.0);
       float gr = length(g) / (gs.y * f.w);
-      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak);
+      a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak) * (1.0 + uFlrG[i]);
     }
     add += a * f.z;
   }
@@ -2050,7 +2081,15 @@ void main() {
   vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * (0.85 + 0.15 * vnoise(p0 * 900.0));
   // A seam between two wall panels gives the plane its slant.
   wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.5));
-  wall += alb * outGlow * 0.8 * exp(-max(sOut, 0.0) / 0.07);
+  vec3 wallL = outGlow * 0.8;
+  if (uEnvOn > 0.5) {
+    // Near the rim, the wall takes the colour of the glass it faces; it fades out smoothly.
+    vec3 P = vec3(clamp(p0, -INB, INB) * 0.5, Z_OUT) - uEye;
+    vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+    vec3 e = texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 0.5 + outGlow * 0.3;
+    wallL = mix(wallL, e, exp(-max(sOut, 0.0) / 0.05));
+  }
+  wall += alb * wallL * exp(-max(sOut, 0.0) / 0.07);
   // A soft shadow rings the rim of the recess.
   wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
   // The rim rolls over into the wall; its outward face catches the light from above.
@@ -2089,7 +2128,17 @@ void main() {
       float diff = max(dot(n, Lc), 0.0);
       // Sky light through the glass falls on the sill and lower walls.
       float sky = (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
-      inner = alb * (cabin * (0.25 + 1.3 * diff) + outGlow * 1.6 * sky);
+      // The light comes through the stretch of glass across the hole from this spot.
+      vec3 envL = outGlow * 1.6;
+      if (uEnvOn > 0.5) {
+        vec3 P = vec3(ph * 0.45, Z_OUT) - uEye;
+        vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+        // The whole tunnel sees the glass: light falls off gently toward the cabin.
+        float reach = (0.45 + 0.55 * max(-g2.y, 0.0)) * (0.3 + 0.7 * k);
+        envL = (texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 1.7 + outGlow * 0.5) * reach;
+        sky = 1.0;
+      }
+      inner = alb * (cabin * (0.25 + 1.3 * diff) + envL * sky);
       // The rolled lip at the rim catches the cabin light.
       inner += alb * cabin * 1.2 * smoothstep(0.0, 0.003, hit) * smoothstep(0.01, 0.004, hit) * (0.3 + diff);
       // The corners and the joint to the pane sit in soft shadow.
@@ -2120,8 +2169,9 @@ void main() {
           grRuns(pr, m, uTime * 0.9, uRain, 1.0, L, rOff, rRim, rSpec, rCover, rClear);
           rOff /= RS;
         }
-        // The pane sits about 0.44 m from the eye.
-        vec2 rPx = px + vec2(dot(vec3(rOff, 0.0), uR), dot(vec3(rOff, 0.0), uU)) * uFocal / 0.44;
+        // The bent ray leaves the pane at pO + rOff: project that point, so the pane's tilt and the head hold.
+        vec3 Pr = vec3(pO + rOff, Z_OUT) - uEye;
+        vec2 rPx = uRes * 0.5 + vec2(dot(Pr, uR), dot(Pr, uU)) / max(dot(Pr, uF), 1e-3) * uFocal;
         view = glass(da, rPx) + ghosts(px);
         view *= 1.0 - 0.7 * rRim;
         view += (outGlow * 3.0 + cabin * 1.2) * rSpec * 0.6;
@@ -2134,6 +2184,12 @@ void main() {
         // Between the panes: the grey rubber gasket, lit through the glass.
         float gk = clamp(sSk / 0.03, 0.0, 1.0);
         vec3 gasket = alb * 0.4 * (cabin * 0.5 + outGlow * (1.5 - gk));
+        if (uEnvOn > 0.5) {
+          // The gasket sits right at the outside: it takes the light of the glass beside it.
+          vec3 P = vec3(pO * 0.6, Z_OUT) - uEye;
+          vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+          gasket += alb * texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb * 0.55 * (1.0 - 0.7 * gk);
+        }
         // The inner pane's edge catches a thin line of light.
         gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));
         view = mix(view, gasket, smoothstep(-aaO, aaO, sSk));

@@ -286,7 +286,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
       flashL.intensity = flash * 0.06;
-      boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.9 : 0;
+      boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.3 : 0;
       if (bolt) boltL.position.copy(bolt.dir).multiplyScalar(50);
       // The bank's sight range, as the shader's fogAt sets it: 120 km to 40 m.
       const vis = 120000 * Math.exp(-8 * Math.pow(fogLevel, 1.6));

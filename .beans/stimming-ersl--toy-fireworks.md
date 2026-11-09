@@ -1,11 +1,11 @@
 ---
 # stimming-ersl
 title: 'Toy: Fireworks'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T09:28:54Z
+updated_at: 2026-11-09T21:10:57Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -31,7 +31,7 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
   - 375 px: a calibre-2 shell at the top stays in frame; the bar starts 42 px under the shoreline
   - Ready in 0.2 s with warm shaders (height texture 30 ms, land 30 ms, compile 12 ms)
 - [ ] Not checked here: reduced motion (the pane cannot emulate it), fps on a real device
-- [ ] Record the session cost
+- [x] Record the session cost: the app shows no cost per session. The session ran on Fable 5.1, then Opus 5.5.
 
 ## K2 fixes in this copy
 
@@ -126,3 +126,9 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 
 - [x] Showtime runs about a minute: acts with breaths, a hush, a finale that rattles; cues mark bursts
 - [x] Bill toggle: a running -$ cost of every shell, top right; tap to tear it up
+
+## Summary of Changes
+
+Tom signs off Fireworks on 2026-11-09. It moves from the Lab to the main shelf as No. 36 and carries `data-done` on its intro and menu entry. The version steps to 0.8, codename Vuurwerk.
+Last fixes before sign-off: the camera kicks only on full-charge shells, and crowd flashes fade within about 2 s of the last burst. The menu icon is the Bloom (spike fireworks-2 A).
+D1 (Night viaduct breakage) and a real-device fps and reduced-motion check stay open.

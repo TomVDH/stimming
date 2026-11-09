@@ -203,3 +203,18 @@ Gone: the camera shake tweens at ignition, liftoff and roar arrival, and the ree
 
 Cause: the panicle ran to 0.26 of the stalk and hung 35 degrees plus the stalk's lean, so each hero reed read as a palm frond blown flat; the near-field blur made blobs of them.
 Fix: panicle 0.08 to 0.14 of the stalk (`PLUME_LEN` 0.11), held 12 degrees off the stalk's top (`PLUME_DROOP` 0.22) with the tip drooping; gust bend 0.035 H and the top angle capped at 0.45 rad; plume lag 1.3 x. Compared against the pre-rewrite build served from `5fb0a40` at Dawn 0.9.
+
+## Rename and icon spike 28 (14:30, Tom: less overt, less literal)
+
+The toy is now Ten seconds (`toys.json`, menu label, page title, intro fallback, h1). Dutch set to Tien tellen /tin ˈtɛlən/ as Tom's draft pick; he confirms. The folder stays `launch`.
+Icon spike 28 (`icons/spike-28.html`, sheet entry `[28, ['launch']]`): Current (the sky box) and three directions with no rocket drawn. A Slant: a gold streak from the corner with a hot square head. B Rim: a hex, a dawn hairline, a dot that brightens the line as it climbs. C Ring: a sound ring from the horizon that leans three brut reeds as it passes. Emblems in `icons/spike/emblems/launch28-a..c.svg`. Tom picks; the menu tile follows in the next commit.
+
+## Icon spike 29 (14:50, Tom: round 1 was clip art, too like the other tiles)
+
+Round 1's symbols on a dusk box resembled the landscape tiles. Round 2 follows what Tom picked elsewhere (Fireworks A, Dijkstra A, Vortex D, Ink, Oil slick, Foil, Sonar): a live miniature of the toy's own phenomenon, drawn by code, steered by the pointer. No horizon box, no ring.
+A Twilight plume: 46 puffs along a bent path, cold below the shadow line, gold and rose above it; pointer y is the Dawn slider. B Reed bed: 120 seeded stalks with plume wedges; a speck flashes, a beat later a wave leans every reed away. C Late shadow: the kit's own block; the face flashes, ten ticks count, the hard shadow kicks loose and judders back. D Ground cloud: 36 billows blast out along the ground from a hot core, lit from within, then darken; pointer x is the wind.
+GSAP cannot tween `oklch()` strings (ticks turned teal), so colours are set, never tweened; the flash is a white sheet whose opacity tweens.
+
+## Menu tile: Twilight plume (15:05, Tom's pick: spike 29 A)
+
+The Lab tile is spike 29 A, drawn by the menu script from the same seeded stream as the spike: 46 puffs, a cold and a lit body each, the shadow line on pointer y, a sweeping dawn on focus or the play loop. Emblem copied to `shared/emblems/launch.svg` and set in `toys.json`. `icons/picks.json` records the pick and that spike 28 was cut.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T20:28:00Z
+updated_at: 2026-11-09T21:15:00Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -119,3 +119,21 @@ Lab toy grown from viaduct/protos/window.html: a night valley seen through one c
 - [x] Window fills the view with a slim margin of wall; stop line off (the station signs name each stop)
 - [x] Cross bar is a slim flush satin mullion with hairline seals
 - [x] Lighter top reveal at night; phone view tilts less, so it is not mostly track bed
+
+## Round 14: night light, dev scrub (Tom, 2026-11-09)
+- [x] Night cabin light: fainter, one ceiling lamp above the window; its pool fades down and to the sides; the reveal dims toward the sides
+- [x] ?dev: a scrub strip over the stage for the whole line (72.8 km), with km, the nearest station and km/h
+
+## Round 15: rails, sun in the cabin, water, land, start at HB (Tom, 2026-11-09)
+- [x] Second track 5.6 m out: real 15 cm rails (polished head mirrors the sky and the carriage, rust web in shadow), angular ballast that streaks at speed, sleepers with pads and clips; lamp posts moved between the tracks
+- [x] Clear dries the pane fast; scratches and smudges stay
+- [x] Sun now stands beyond the window (contre-jour): by day the cabin is dark, the window glows onto the wall, the frame faces turned to the sun take direct light, and passing posts sweep shadow bands across it
+- [x] Water: four octaves of gradient-noise waves, each faded by its footprint (no aliasing streaks); calm far mirror; lighter shallows and a lap line; a sun glitter path; the mirrored land refines its hit with four halvings
+- [x] Land: field hedges, less sky in valleys, back-lit grass and leaf edges against the sun
+- [x] The ride starts standing in Zurich HB's hall; the waiting train sits one track further out
+
+## Round 16: true sun shadow, flat lakes (Tom, 2026-11-09)
+- [x] Sun on the reveal is traced: each point steps toward the sun to the glass plane and is lit only if it clears the opening, so the frame casts slanted shadow edges; the wall is 13 cm deep
+- [x] Lakes: the elevation tiles held lake beds (to -170 m); tools/lakes.py sets every lake cell, and anything deeper, to one surface 12 m below the eye; no more cliffs into the Walensee near Weesen
+- [x] Field hedges fade out sooner, so they never dash
+- [ ] Far cliff shores still show the coarse far mesh as small teeth

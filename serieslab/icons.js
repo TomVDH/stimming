@@ -140,7 +140,7 @@ export const icon = (m, c) => {
 
 // Tom's picks live in the browser; these are the defaults.
 // Tom's picks, 2026-11-09.
-export const DEFAULTS = { poke: 'Pop!', goo: 'Drop', light: 'Glint', science: 'Atom', dark: 'Moon and star', odd: 'Asterisk', candy: 'Snow globe', sonder: 'Lit window' };
+export const DEFAULTS = { poke: 'Pop!', goo: 'Drop', light: 'Glint', science: 'Atom', dark: 'Moon and star', odd: 'Asterisk', candy: 'Diorama box', sonder: 'Coffee' };
 export const PICKS_KEY = 'stimming.serieslab.icons3';
 export function picks() {
   let p = {};

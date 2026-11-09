@@ -365,7 +365,7 @@ function sizeGlow() {
 function glow(src) {
   sizeGlow();
   const [a, b] = glowRT, tx = [1 / a.width, 1 / a.height];
-  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0.55);
+  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0.85);
   renderer.setRenderTarget(a); renderer.render(PB.scene, quadCam);
   UG.uniform2f(PBl.u.uTexel, ...tx);
   // Two rounds of a separable blur widen the glow without gaps.
@@ -376,9 +376,27 @@ function glow(src) {
     renderer.setRenderTarget(a); renderer.render(PBl.scene, quadCam);
   }
   UG.tex(PA.u.uSrc, src.texture); UG.tex(PA.u.uGlow, a.texture);
-  UG.uniform2f(PA.u.uTexel, 1 / outBuf.w, 1 / outBuf.h); UG.uniform1f(PA.u.uK, 0.7);
+  UG.uniform2f(PA.u.uTexel, 1 / outBuf.w, 1 / outBuf.h); UG.uniform1f(PA.u.uK, 0.35);
   renderer.setRenderTarget(finalRT); renderer.render(PA.scene, quadCam);
   return finalRT;
+}
+// The bezel's light: the whole outside, softened, at a quarter size.
+// It shares the glow targets' size; the strobe and the bolts reach it the same frame.
+const envRT = [null, null];
+function envLight(src) {
+  const w = glowRT[0].width, h = glowRT[0].height;
+  if (!envRT[0] || envRT[0].width !== w || envRT[0].height !== h) { envRT.forEach(r => r && r.dispose()); envRT[0] = rt(w, h); envRT[1] = rt(w, h); }
+  const [a, b] = envRT, tx = [1 / w, 1 / h];
+  UG.tex(PB.u.uSrc, src.texture); UG.uniform2f(PB.u.uTexel, ...tx); UG.uniform1f(PB.u.uThr, 0);
+  renderer.setRenderTarget(a); renderer.render(PB.scene, quadCam);
+  UG.uniform2f(PBl.u.uTexel, ...tx);
+  for (let i = 0; i < 2; i++) {
+    UG.tex(PBl.u.uSrc, a.texture); UG.uniform2f(PBl.u.uDir, 1, 0);
+    renderer.setRenderTarget(b); renderer.render(PBl.scene, quadCam);
+    UG.tex(PBl.u.uSrc, b.texture); UG.uniform2f(PBl.u.uDir, 0, 1);
+    renderer.setRenderTarget(a); renderer.render(PBl.scene, quadCam);
+  }
+  return a;
 }
 // The recess march takes more steps on High.
 const marchSteps = () => (quality() === 'high' ? 28 : 14);
@@ -437,7 +455,10 @@ function setBasis() {
   // The eye moves with the head; the aim follows a third of the way.
   // The impact's shock shakes the cabin.
   const sk = EV.boom ? EV.boom.shake * (reduce ? 0.2 : 1) : 0;
-  const hx = head.x + head.hx * 0.02 + sk * 0.012 * Math.sin(t * 41) * Math.sin(t * 7.3), hy = head.y + head.hy * 0.015 + sk * 0.01 * Math.sin(t * 33 + 1);
+  // A storm adds its jolts and a fine tremble to the head.
+  const tr = reduce ? 0 : opts.storm * 0.0012;
+  const hx = head.x + head.hx * 0.02 + sk * 0.012 * Math.sin(t * 41) * Math.sin(t * 7.3) + turb.x + tr * Math.sin(t * 29) * Math.sin(t * 5.1),
+    hy = head.y + head.hy * 0.015 + sk * 0.01 * Math.sin(t * 33 + 1) + turb.y + tr * Math.sin(t * 37 + 2);
   // Leaning in close moves the anchor to the centre of the port.
   const kz = clamp((head.z - 0.03) / (REACH.z[1] - 0.03)), near = kz * kz * (3 - 2 * kz);
   const eye = [EYE[0] * (1 - near) + hx, EYE[1] * (1 - near) + hy, EYE[2] + head.z];
@@ -464,8 +485,20 @@ const cam = { x: 0, z: 0 };
 // The high wind blows toward the tail, so the anvils stream aft.
 const WIND = PI * 0.92;
 const cells = [];
+// New cells take the most open spot of eight tries, by bearing and range, so towers spread evenly.
 function newCell(ahead) {
-  const side = rnd(25, 160), a = (ahead ? rnd(70, 160) : rnd(-20, 140)) + side * rnd(-0.2, 0.4);
+  let best = null, room = -1;
+  for (let k = 0; k < 8; k++) {
+    const sd = rnd(25, 160), ah = (ahead ? rnd(70, 160) : rnd(-20, 140)) + sd * rnd(-0.2, 0.4);
+    const br = Math.atan2(sd, ah), rg = Math.hypot(sd, ah);
+    let near = 1e9;
+    for (const c of cells) {
+      const cs = c.z - cam.z, ca = c.x - cam.x;
+      near = Math.min(near, Math.abs(br - Math.atan2(cs, ca)) * 120 + Math.abs(rg - Math.hypot(cs, ca)) * 0.25);
+    }
+    if (near > room) { room = near; best = [ah, sd]; }
+  }
+  const [a, side] = best;
   return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
     shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
 }
@@ -601,8 +634,21 @@ function frameFn(now) {
   if (visible) raf = requestAnimationFrame(frameFn);
 }
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+// Turbulence: in a storm the cabin jolts now and then and trembles between jolts.
+// A damped spring carries the eye back; the jolts come faster as the storm grows.
+const turb = { x: 0, y: 0, vx: 0, vy: 0, next: 0 };
+function stepTurb(dt) {
+  const s = reduce ? 0 : opts.storm;
+  if (s > 0.05 && t > turb.next) {
+    turb.vx += rnd(-1, 1) * s * 0.05; turb.vy += rnd(-1, 1) * s * 0.12;
+    turb.next = t + rnd(0.3, 3.0) / (0.25 + s);
+  }
+  turb.vx += (-60 * turb.x - 7 * turb.vx) * dt; turb.vy += (-60 * turb.y - 7 * turb.vy) * dt;
+  turb.x += turb.vx * dt; turb.y += turb.vy * dt;
+}
 function step(dt) {
   t += dt;
+  stepTurb(dt);
   // The plane cruises at a steady pace.
   cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
   // The bank breathes between about 3 and 9 degrees.
@@ -620,11 +666,10 @@ function step(dt) {
   stepWeather(dt);
   stepEvents(dt);
 }
-// The strobe double-flashes every 1.6 seconds.
-function strobe() {
-  const p = t % 1.6;
-  return Math.exp(-p / 0.03) + Math.exp(-Math.max(0, p - 0.12) / 0.03) * (p > 0.12 ? 1 : 0);
-}
+// An anticollision strobe: two hard 50 ms pulses, 120 ms apart, no afterglow.
+const pulse = p => (p < 0.05 || (p >= 0.12 && p < 0.17) ? 1.25 : 0);
+// The wingtip strobe double-flashes every 1.6 seconds.
+function strobe() { return pulse(t % 1.6); }
 // The aurora shows at midnight only, when Settings allow it.
 const auroraOn = () => (opts.hour === 'night' && opts.aurora === 'on' ? 1 : 0);
 /* ---------- events ---------- */
@@ -1046,7 +1091,7 @@ function airportUniforms(u) {
     const lamp = q.land * (0.15 + 2.5 * Math.max(f, 0) ** 4);
     const ph = t + a.seed * 7 + k * 0.37;
     const beacon = !reduce && (ph % 1) < 0.08 ? 1.4 : 0;
-    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : pulse(sp);
     const kd = 300 / Math.max(dist, 8) ** 2;
     appA.set([...p, 1], i * 4);
     appC.set([(lamp + strobe * 1.5 + beacon) * kd, (lamp * 0.95 + strobe * 1.5 + beacon * 0.1) * kd, (lamp * 0.85 + strobe * 1.6 + beacon * 0.05) * kd, 0], i * 4);
@@ -1163,12 +1208,13 @@ function render() {
   renderer.setRenderTarget(next);
   renderer.render(PR.scene, quadCam);
   histFresh = false; frameN++;
-  const lit = glow(next);
+  const lit = glow(next), env = envLight(lit);
 
   // Pass 2: the cabin, the frame and the glass, to the screen.
   u = P2.u;
   shared(u);
   UG.tex(u.uOut, lit.texture);
+  UG.tex(u.uEnv, env.texture); UG.uniform1f(u.uEnvOn, 1);
   UG.uniform1f(u.uDpr, dpr);
   UG.uniform1f(u.uDimE, dim.edge); UG.uniform1f(u.uDimC, dim.core);
   UG.uniform1f(u.uFlash, flash);
@@ -1265,14 +1311,15 @@ function towerCover(d) {
 }
 // Ten flare slots: sun or moon, lightning, strobe, nav light, meteor, rocket, a jet's two lights, and the impact's two.
 const FLARES = 10;
-const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4);
+const flr = new Float32Array(FLARES * 4), flrC = new Float32Array(FLARES * 4), flrG = new Float32Array(FLARES);
 const flareSeen = new Array(FLARES).fill(0);
 function flareUniforms(u) {
-  flr.fill(0); flrC.fill(0);
+  flr.fill(0); flrC.fill(0); flrG.fill(0);
   // Each source shines through the tinted pane, dimmer and bluer.
   const tc = dimT(dim.core), tl = lum(tc);
   // streak: how strongly the source throws a short horizontal streak.
-  const put = (i, dirW, gain, size, col, rad = 0, streak = 0) => {
+  // ghost: extra strength for the ghosts; the window lights throw strong ones.
+  const put = (i, dirW, gain, size, col, rad = 0, streak = 0, ghost = 0) => {
     gain *= tl;
     col = col.map((v, c) => v * tc[c] / tl);
     const sp = screenOf(dirW);
@@ -1281,7 +1328,7 @@ function flareUniforms(u) {
     flareSeen[i] += (vis - flareSeen[i]) * 0.35;
     if (!sp || gain * flareSeen[i] < 1e-3) return;
     flr.set([sp[0], sp[1], gain * flareSeen[i], size], i * 4);
-    flrC.set([...col, streak], i * 4);
+    flrC.set([...col, streak], i * 4); flrG[i] = ghost;
   };
   // The sun or the moon: full only once the whole disc clears the frame.
   const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
@@ -1289,10 +1336,10 @@ function flareUniforms(u) {
   // Lightning glows inside the cloud, so it throws no lens flare.
   // The strobe and the red nav light on the wingtip.
   const tipW = norm(toWorld(sub(TIP, basis.eye)));
-  put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0], 0, 0.6);
-  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
+  put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, 3.5);
+  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05], 0, 0, 6);
   eventFlares(put);
-  UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC);
+  UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
 
 // Towers go in far to near, so near ones cover far ones.
@@ -1455,7 +1502,7 @@ function stepBank() {
   }
   const k = clamp((t - roll.t0) / roll.dur), e = k * k * k * (k * (k * 6 - 15) + 10);
   // A slow wander rides on top, as the autopilot trims.
-  bank = (roll.from + (roll.to - roll.from) * e + 0.35 * Math.sin(t * 0.31) + 0.15 * Math.sin(t * 0.83)) * D2R;
+  bank = (roll.from + (roll.to - roll.from) * e + 0.35 * Math.sin(t * 0.31) + 0.15 * Math.sin(t * 0.83)) * D2R + turb.y * 0.4;
 }
 
 /* ---------- sound ---------- */
