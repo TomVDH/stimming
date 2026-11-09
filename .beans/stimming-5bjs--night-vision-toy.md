@@ -22,3 +22,4 @@ New Lab toy: night vision goggles as a shader showcase. 3D night scene by defaul
 - [x] Room place (apartment)
 - [x] Raid place (city under AA fire)
 - [ ] Faint light lines at two room wall junctions
+- [x] Science pass: MCP gamma gain, P43 fast decay plus slow tail, CIE phosphor colours, autogating, cathode shading, shear seam, finer grain

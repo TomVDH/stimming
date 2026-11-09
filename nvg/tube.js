@@ -213,8 +213,28 @@ export class Tube {
       ${HASH}
       uniform sampler2D tHalo, tGain, tPrev;
       uniform vec2 uCells;
-      uniform float uFrame, uKq, uDt, uTau, uPower, uScint, uEbi, uDist, uSoft;
+      uniform float uFrame, uKq, uDt, uTau, uTail, uPower, uScint, uEbi, uDist, uSoft;
       in vec2 vUv;
+
+      // MCP gain varies per photoelectron: a gamma law, shape 2, mean 1.
+      // Excess noise factor 1 + 1/k = 1.5, as measured for chevron MCPs.
+      float mcp(float n, inout uint s) {
+        if (n < 0.5) return 0.0;
+        if (n > 8.5) {
+          float u1 = max(rnd(s), 1e-7), u2 = rnd(s);
+          return max(0.0, n + sqrt(n * 0.5) * sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2));
+        }
+        float a = 0.0;
+        for (int j = 0; j < 9; j++) {
+          if (float(j) >= n) break;
+          a -= log(max(rnd(s) * rnd(s), 1e-9));
+        }
+        return a * 0.5;
+      }
+      float vn(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h2(i, 3.0), h2(i + vec2(1, 0), 3.0), f.x), mix(h2(i + vec2(0, 1), 3.0), h2(i + vec2(1, 1), 3.0), f.x), f.y);
+      }
 
       float poisson(float lam, inout uint s) {
         if (lam < 10.0) {
@@ -240,6 +260,9 @@ export class Tube {
       float tubeY(int i, vec2 p, uint seed) {
         vec4 T = uTube[i];
         vec2 q = (p - T.xy) / T.z;
+        float fi = float(i);
+        // Shear: a fibre-optic twister seam offsets the image by a pixel.
+        if (i == 0) q.x += 0.0025 * smoothstep(-0.004, 0.004, q.y - 0.18 - 0.03 * q.x);
         float r2 = dot(q, q);
         // Objective distortion pulls the rim slightly.
         vec2 pd = T.xy + q * (1.0 + uDist * r2) * T.z;
@@ -249,7 +272,6 @@ export class Tube {
         vec2 o = soft / uScreen;
         float S = 0.4 * sigAt(uv) + 0.15 * (sigAt(uv + vec2(o.x, 0.0)) + sigAt(uv - vec2(o.x, 0.0)) + sigAt(uv + vec2(0.0, o.y)) + sigAt(uv - vec2(0.0, o.y)));
         S += texture(tHalo, uv).r + uEbi;
-        float fi = float(i);
         // Fibre bundle: each fibre has its own small gain error.
         vec3 fib = hex(q * 150.0 + fi * 13.1);
         float fp = 1.0 + 0.07 * (h2(fib.xy * 4.0, 11.0 + fi) - 0.5);
@@ -262,15 +284,22 @@ export class Tube {
           float rad = 0.004 + 0.012 * h2(vec2(k, 9), 90.0 + fi);
           fp *= 1.0 - (0.55 + 0.45 * h2(vec2(k, 1), 30.0 + fi)) * smoothstep(rad, rad * 0.35, length(q - c));
         }
-        float lam = S * uKq * fp * T.w;
+        // Photocathode sensitivity drifts a few percent across the tube.
+        fp *= 1.0 + 0.06 * (vn(q * 2.2 + fi * 7.0) - 0.5) + 0.03 * (vn(q * 6.0 - fi * 3.0) - 0.5);
+        vec2 gs = texelFetch(tGain, ivec2(i, 0), 0).rg;
+        float G = gs.r;
+        // Autogating: once MCP gain hits its floor, about 60x down,
+        // the cathode is pulsed off for part of each frame.
+        // Fewer photoelectrons reach the MCP, so gain rises to hold brightness.
+        float duty = clamp(60.0 / max(gs.g, 60.0), 0.02, 1.0);
+        float lam = S * uKq * fp * T.w * duty;
         uint s = seed ^ (uint(i) * 2654435761u);
-        float n = poisson(lam, s);
-        float G = texelFetch(tGain, ivec2(i, 0), 0).r;
+        float n = mcp(poisson(lam, s), s);
         // Ion feedback and field emission: random bright sparks.
         if (rnd(s) < uScint * clamp(G / 0.13, 0.15, 4.0)) n += uKq * (3.0 + 9.0 * rnd(s));
         // One emission point glows steadily in tube one.
         if (i == 1) n += uKq * 9.0 * smoothstep(0.006, 0.0, length(q - vec2(-0.31, 0.22)));
-        return n * G / uKq * uPower;
+        return n * G / (uKq * duty) * uPower;
       }
 
       void main() {
@@ -287,14 +316,16 @@ export class Tube {
           wsum += w;
         }
         y = wsum > 0.0 ? y / wsum : 0.0;
-        // Phosphor: a fast rise and an exponential decay.
-        float prev = texture(tPrev, vUv).r;
-        float a = y > prev ? 0.9 : 1.0 - exp(-uDt / uTau);
-        outColor = vec4(mix(prev, y, a), 0.0, 0.0, 1.0);
+        // P43 decays to 10 % in about a millisecond: each frame stands alone.
+        // A weak slow tail keeps a trace of bright light only.
+        float slow = texture(tPrev, vUv).g;
+        float k = exp(-uDt / uTau);
+        slow = slow * k + uTail * y * (1.0 - k);
+        outColor = vec4(y + slow, slow, 0.0, 1.0);
       }`, {
       ...sigU, uTube: tubeU, uN: nU, uScreen: screenU,
       tHalo: { value: null }, tGain: { value: null }, tPrev: { value: null }, uCells: { value: new THREE.Vector2() },
-      uFrame: { value: 0 }, uKq: { value: 1 }, uDt: { value: 0.016 }, uTau: { value: 0.05 }, uPower: { value: 0 },
+      uFrame: { value: 0 }, uKq: { value: 1 }, uDt: { value: 0.016 }, uTau: { value: 0.12 }, uTail: { value: 0.05 }, uPower: { value: 0 },
       uScint: { value: 0.00008 }, uEbi: { value: 0.1 }, uDist: { value: -0.035 }, uSoft: { value: 0.7 },
     });
 
@@ -318,12 +349,23 @@ export class Tube {
         }
         return s;
       }
+      // Phosphor colours from CIE 1931 chromaticity, in linear sRGB.
+      // P43 (Gd2O2S:Tb) sits at x 0.333, y 0.556; P45 (Y2O2S:Tb) near x 0.29, y 0.31.
+      vec3 xyRGB(vec2 xy) {
+        vec3 X = vec3(xy.x / xy.y, 1.0, (1.0 - xy.x - xy.y) / xy.y);
+        return mat3(3.2406, -0.9689, 0.0557, -1.5372, 1.8758, -0.2040, -0.4986, 0.0415, 1.0570) * X;
+      }
       vec3 phos(float L) {
-        // P43 green: deep green blacks, yellow-green mids, near white peaks.
-        vec3 g = vec3(0.92 * pow(L, 2.2), pow(L, 1.08), 0.7 * pow(L, 2.6));
-        // P45 white: neutral with blue-grey blacks.
-        vec3 w = vec3(0.84 * pow(L, 1.12), 0.9 * pow(L, 1.07), pow(L, 0.98)) + vec3(0.0, 0.004, 0.012) * L;
-        return mix(g, w, uPhos);
+        vec3 c = xyRGB(mix(vec2(0.333, 0.556), vec2(0.29, 0.31), uPhos));
+        c = max(c, 0.0);
+        c /= max(c.r, max(c.g, c.b));
+        // The eye adapts to a uniform green field and sees it less saturated.
+        c = mix(c, vec3(1.0), 0.16);
+        c /= dot(c, vec3(0.2126, 0.7152, 0.0722));
+        vec3 col = L * c;
+        // Past the display gamut, a bright screen reads paler to the eye.
+        float m = max(col.r, max(col.g, col.b));
+        return min(mix(col, vec3(L), smoothstep(0.75, 1.5, m)), vec3(1.0));
       }
       void main() {
         vec2 p = vUv * uScreen;

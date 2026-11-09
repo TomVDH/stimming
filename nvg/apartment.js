@@ -439,5 +439,5 @@ export function buildApartment() {
   }
 
   fogify(scene, air);
-  return { scene, camera, eye, update, setPx, air, look: { yaw: [-1.2, 1.5], pitch: [-0.7, 0.45], start: -0.12, yaw0: 0.3 }, expo: 1.4, focus: 3, shadows: true };
+  return { scene, camera, eye, update, setPx, air, look: { yaw: [-1.2, 1.5], pitch: [-0.7, 0.45], start: -0.12, yaw0: 0.3 }, expo: 2.2, focus: 3, shadows: true };
 }

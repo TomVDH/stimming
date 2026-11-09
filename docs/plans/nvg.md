@@ -39,6 +39,16 @@ flowchart LR
 - ABC reads every d32 texel in each tube: mean plus peak energy. It drops fast, recovers slowly.
 - The phosphor rises fast and decays with the Afterglow time.
 
+## Tube physics
+
+- Photoelectrons: Poisson counts per cell; below 10 exact, above Gaussian.
+- MCP gain per photoelectron follows a gamma law, shape 2: excess noise factor 1.5.
+- Equivalent background input adds dark counts; ion feedback adds bright sparks that rise with gain.
+- Autogating: once MCP gain reaches its floor (about 60x down), the cathode duty cycle drops. Fewer photoelectrons, higher gain.
+- Phosphor: P43 decays in about 1 ms, so each frame stands alone. A weak slow tail (Afterglow) keeps traces of bright light only.
+- Colour: P43 at CIE x 0.333, y 0.556; P45 near x 0.29, y 0.31; converted to linear sRGB, with 16 % chromatic adaptation and pale highlights past the gamut.
+- Fixed pattern: fibre gain errors, multifibre chicken wire, blemishes, one emission point, low-frequency cathode shading, one shear seam.
+
 ## Places
 
 - **Harbour** (default): quay, ten yachts with rocking masts, a fishing boat, breakwaters with green and red lights, channel buoys, a far town, a lighthouse sweeping through sea haze, a freighter at anchor, gulls, low cloud, a low moon with a glitter path.
