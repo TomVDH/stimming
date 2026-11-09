@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T07:18:57Z
+updated_at: 2026-11-09T07:23:54Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -82,3 +82,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Lens flare on fresh bursts: anamorphic streak and centre-mirrored ghosts
 
 - [x] Icon round: spike-17 with A to E pointer-driven directions and emblems
+
+- [x] Round bloom at every size (cubic mip reads); softer flares before bloom; no bright beach line
