@@ -72,6 +72,8 @@ const store = {
 };
 // Distance to the pad in metres; the roar delay follows it.
 const DIST = { near: 1200, mid: 2000, far: 3400 };
+// The pad stands at the far distance; the roar takes ten seconds to arrive.
+const PAD = DIST.far;
 const opts = {
   kind: ['small', 'medium', 'heavy'].includes(store.get('kind')) ? store.get('kind') : 'medium',
   dawn: Number.isFinite(+store.get('dawn')) && store.get('dawn') !== null ? Math.min(1, Math.max(0, +store.get('dawn'))) : 0.4,
@@ -103,7 +105,7 @@ const ui = initPage({ id: 'launch', bar: {
     { type: 'slider', id: 'glow', label: 'Highlights', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => draw() },
   ],
   quality: true,
-  keys: [['click', 'launch'], ['drag', 'look around'], ['space', 'launch']],
+  keys: [['click', 'launch'], ['click', 'zoom in or out'], ['drag', 'look around']],
 } });
 
 const stage = document.getElementById('stage');
@@ -226,8 +228,8 @@ uniform vec3 uWisp;
 vec3 wisps(vec3 dir, vec3 col, float t, float cs) {
   if (dir.y < 0.015 || uWisp.z < 0.01) return col;
   vec2 p = dir.xz / dir.y * 7.0;
-  float n = k2noise(vec2(p.x * 0.09, p.y * 0.55) + uWisp.xy) * 0.65 + k2noise(vec2(p.x * 0.3, p.y * 2.1) + uWisp.yx) * 0.35;
-  float d = smoothstep(0.74 - 0.1 * uWisp.z, 0.92, n) * smoothstep(0.015, 0.07, dir.y) * (1.0 - smoothstep(0.25, 0.45, dir.y));
+  float n = k2noise(vec2(p.x * 0.045, p.y * 0.3) + uWisp.xy) * 0.6 + k2noise(vec2(p.x * 0.16, p.y * 1.3) + uWisp.yx) * 0.4;
+  float d = smoothstep(0.78 - 0.08 * uWisp.z, 0.95, n) * smoothstep(0.015, 0.07, dir.y) * (1.0 - smoothstep(0.25, 0.45, dir.y));
   if (d < 0.002) return col;
   vec3 glowC = mix(vec3(0.55, 0.3, 0.32), vec3(1.0, 0.55, 0.35), pow(max(cs, 0.0), 3.0));
   vec3 cloud = mix(col * 0.85 + vec3(0.002, 0.002, 0.004), glowC * (0.05 + 0.5 * t * t), smoothstep(0.2, 0.9, t) * (0.35 + 0.65 * max(cs, 0.0)));
@@ -749,7 +751,7 @@ function buildMesas() {
   const mr = () => (ms = (ms * 16807) % 2147483647) / 2147483647;
   const sn = createNoise2D(mr);
   // Distance, count, lowest and highest top, in metres.
-  for (const [dist, count, h0, h1] of [[5000, 6, 40, 180], [12000, 12, 160, 520], [30000, 16, 450, 1300]]) {
+  for (const [dist, count, h0, h1] of [[9000, 6, 60, 220], [20000, 12, 200, 600], [45000, 16, 500, 1400]]) {
     const span = dist * 2.2, list = [];
     for (let i = 0; i < count; i++) {
       // Wide mesas, narrow buttes, and some with a lower bench.
@@ -800,16 +802,11 @@ const gantry = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)
   void main() {
     vec2 q = vQ;
     float px = max(fwidth(q.x), 0.004), py = max(fwidth(q.y), 0.004);
-    // The tower: two legs, a top beam, rungs every eighth, and the crane arm.
-    float legs = step(abs(q.x - 0.74), 0.012 + px) + step(abs(q.x - 0.82), 0.012 + px);
-    float rungs = step(abs(fract(q.y * 8.0) - 0.5), 0.06 + py * 4.0) * step(0.73, q.x) * step(q.x, 0.83);
-    float beam = step(0.93, q.y) * step(q.x, 0.83) * step(0.6, q.x);
-    float arm = step(abs(q.y - 0.86), 0.012 + py) * step(0.55, q.x) * step(q.x, 0.74);
-    float tower = min(1.0, legs + rungs + beam + arm) * step(q.y, 0.96);
-    // A low service block and a tank to the left.
-    float block = step(q.x, 0.4) * step(0.08, q.x) * step(q.y, 0.17);
-    float tank = step(length((q - vec2(0.5, 0.1)) * vec2(1.0, 1.6)), 0.08);
-    float a = min(1.0, tower + block + tank);
+    // One slim rod, a little wider at the foot, with a small head.
+    float rod = step(abs(q.x - 0.6), 0.03 + px) * step(q.y, 0.94);
+    float head = step(abs(q.x - 0.6), 0.07 + px) * step(0.88, q.y) * step(q.y, 0.96);
+    float foot = step(abs(q.x - 0.6), 0.09) * step(q.y, 0.06);
+    float a = min(1.0, rod + head + foot);
     if (a < 0.05) discard;
     vec3 c = uAmb * 0.04;
     gl_FragColor = vec4(k2haze(c, vP) * a, a);
@@ -820,10 +817,10 @@ gantry.frustumCulled = false;
 gantry.renderOrder = 0.6;
 gantry.layers.enable(MIRROR);
 scene.add(gantry);
-// The quad is 110 m wide and 75 m tall; the tower stands right of the pad.
+// The quad is 30 m wide and 45 m tall; the rod stands just right of the pad.
 function placeGantry(x) {
-  gantry.position.set(x - 30, 0, -DIST.mid - 12);
-  gantry.scale.set(110, 75, 1);
+  gantry.position.set(x + 10, 0, -PAD - 8);
+  gantry.scale.set(30, 45, 1);
 }
 
 /* ---------- mist: low sheets over the far flats ---------- */
@@ -1547,8 +1544,8 @@ let flight = null;
 const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
-  const D = DIST.mid;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0, roarOn: false, stage: 1 };
+  const D = PAD;
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1 };
   PU.uScale.value = D;
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
   // A fresh fluid for every launch, centred on the pad.
@@ -1567,22 +1564,11 @@ function launch(kind, padX) {
     .to(f, { engine: 0.55, duration: 0.8, ease: 'power2.out' }, PRE + 41.6)
     // Second engine cut-off, near the edge of the frame.
     .to(f, { engine: 0, duration: 5, ease: 'power1.in' }, PRE + 112)
-    // A documentary push-in at liftoff: fast, a touch too far, then a correction.
-    // A hand on the zoom ring: a fast push past the mark, then two corrections.
-    .to(f, { zoom: 0.78, duration: 0.5, ease: 'power3.out' }, PRE + 0.2)
-    .to(f, { zoom: 0.85, duration: 0.35, ease: 'power2.inOut' }, PRE + 0.9)
-    .to(f, { zoom: 0.82, duration: 0.3, ease: 'power2.inOut' }, PRE + 1.7)
-    // The focus hunts on the push-in: soft, past sharp, then sharp.
-    .to(f, { hunt: 1, duration: 0.25, ease: 'power2.out' }, PRE + 0.25)
-    .to(f, { hunt: 0.25, duration: 0.35, ease: 'power2.inOut' }, PRE + 0.55)
-    .to(f, { hunt: 0.55, duration: 0.2 }, PRE + 0.95)
-    .to(f, { hunt: 0, duration: 0.45, ease: 'power2.out' }, PRE + 1.2)
     // Shake: a jolt at ignition, a rumble through liftoff.
     .to(f, { shake: 1, duration: 0.08 }, 0)
     .to(f, { shake: 0.35, duration: 2.5, ease: 'power2.out' }, 0.1)
     .to(f, { shake: 0.8, duration: 0.3 }, PRE)
     .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
-    .to(f, { zoom: 1, duration: 10, ease: 'sine.inOut' }, PRE + 14)
   if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
   f.tl.set(f, { done: true }, END);
   // The roar reaches the eye: the camera takes a second jolt.
@@ -1627,8 +1613,6 @@ function flyTo(f) {
   FU.uAxis.value.normalize();
   FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
   flame.visible = eng > 0.01;
-  // Nine tenths of a second after the flash, the operator starts to follow.
-  if (te > 0.9 && !f.userFollow && !f.followed) { follow = true; f.followed = true; }
   // Body and flame shrink as the altitude scale compresses.
   const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
   body.visible = te < END - 6;
@@ -1687,6 +1671,7 @@ function flyTo(f) {
 }
 function endFlight() {
   flight.tl.kill();
+  if (zoomed) snapZoom(false);
 
   body.visible = false;
   U.uFront.value.w = 0;
@@ -1703,21 +1688,38 @@ function endFlight() {
 function padX() {
   const portrait = size.w < size.h;
   const tanH = Math.tan(THREE.MathUtils.degToRad((portrait ? 56 : 36) / 2)) * size.w / size.h;
-  return -DIST.mid * (portrait ? 0.3 : 0.2) * tanH;
+  return -PAD * (portrait ? 0.3 : 0.2) * tanH;
 }
 function start() {
   // Every start is a gesture: it may wake the sound.
   if (sound.on) kit.wake();
-  if (flight) { follow = !follow; flight.userFollow = true; wake(); return; }
+  // In flight a click snaps the zoom in, or back out to the landscape.
+  if (flight) { snapZoom(!zoomed); return; }
   flight = launch(opts.kind, padX());
-  // The operator is caught out: the camera holds, then turns to the rocket.
-  follow = false;
+  // The camera holds the wide shot until the viewer clicks.
+  if (zoomed) snapZoom(false);
   ui.action('launch').disabled = true;
   wake();
 }
 act.launch = () => start();
 let follow = false;
 const auto = { pitch: 0, yaw: 0 };
+// The snap zoom, BSG style: a fast push past the mark, two corrections, a focus hunt.
+// It runs the same way out, back to the wide landscape.
+const cam = { zoom: 1, hunt: 0 };
+let zoomed = false, zoomTl = null;
+function snapZoom(on) {
+  zoomed = on;
+  follow = on;
+  zoomTl?.kill();
+  const z = on ? 0.5 : 1, k = reduced() ? 0 : 1;
+  zoomTl = gsap.timeline()
+    .to(cam, { zoom: on ? 0.42 : 1.1, duration: 0.45 * k, ease: 'power3.out' }, 0)
+    .to(cam, { zoom: on ? 0.56 : 0.96, duration: 0.3 * k, ease: 'power2.inOut' }, 0.5 * k)
+    .to(cam, { zoom: z, duration: 0.3 * k, ease: 'power2.inOut' }, 0.85 * k)
+    .to(cam, { hunt: k, duration: 0.2 }, 0.05).to(cam, { hunt: 0.3 * k, duration: 0.3 }, 0.3).to(cam, { hunt: 0.6 * k, duration: 0.2 }, 0.65).to(cam, { hunt: 0, duration: 0.4 }, 0.9);
+  wake();
+}
 
 /* ---------- sound front: the roar's ring crosses the marsh ---------- */
 // It spreads at 343 m/s from the pad; reeds lean as it passes.
@@ -2141,7 +2143,8 @@ function makeDof() {
     }
     // The blur radius in pixels: a wide lens, so only the near reeds go soft.
     // A focus hunt adds blur everywhere, so the flame opens into a disc.
-    float coc(float d) { return min(uK * abs(1.0 / max(d, 0.5) - 1.0 / uFocus) + uHunt, uCap); }
+    // Only what lies nearer than the focus blurs; the distance stays sharp.
+    float coc(float d) { return min(uK * max(1.0 / max(d, 0.5) - 1.0 / uFocus, 0.0) + uHunt, uCap); }
     void main() {
       vec3 c0 = texture2D(tDiffuse, vUv).rgb;
       float r = coc(dist(vUv));
@@ -2206,15 +2209,11 @@ let dofK = 72, dofCap = 14, focusD = 1 / 2000, focusTo = 1 / 2000;
 // Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
 const fwdA = new THREE.Vector3();
 function autofocus(dt) {
-  let d = DIST.mid;
-  if (flight && simT - flight.start > PRE - 0.5) d = camera.position.distanceTo(tmpF.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z));
-  else {
-    camera.getWorldDirection(fwdA);
-    if (fwdA.y < -0.03) d = THREE.MathUtils.clamp(EYE / -fwdA.y, 8, d);
-  }
+  // Focus sits at the pad: the near edge of the pool and the reeds in front of it blur.
+  let d = PAD;
   // The Focus slider overrides: 5 m at its first step, the pad at its end.
   const mf = ui.setting('focus').value;
-  if (mf > 0.005) d = 5 * Math.pow(DIST.mid / 5, mf);
+  if (mf > 0.005) d = 5 * Math.pow(PAD / 5, mf);
   focusTo = 1 / d;
   focusD += (focusTo - focusD) * (1 - Math.exp(-dt * (reduced() ? 20 : 2.5)));
 }
@@ -2248,7 +2247,7 @@ function aimFollow(dt) {
     tp = THREE.MathUtils.clamp(elev - baseUp - Math.atan(0.3 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) - look.pitch, 0, 1.0);
     ty = -Math.atan2(dx, -dz) * 0.6;
   }
-  const e = 1 - Math.exp(-dt * (reduced() ? 6 : 1.5));
+  const e = 1 - Math.exp(-dt * (reduced() ? 6 : 2.6));
   auto.pitch += (tp - auto.pitch) * e;
   auto.yaw += (ty - auto.yaw) * e;
 }
@@ -2263,7 +2262,7 @@ function frame() {
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.76 : 0.7;
   // The launch zoom narrows the lens; the horizon holds its place in the frame.
-  camera.fov = fov * (flight && !reduced() ? flight.zoom : 1);
+  camera.fov = fov * cam.zoom;
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
   // A hand on the camera: a slow, tiny wobble while the scene is awake.
   // The launch adds a shake that dies away as the rocket climbs.
@@ -2314,9 +2313,9 @@ function draw() {
   placeOrbs(orbPass, orbList());
   // Focus rides on the pad: the flight's distance, else the setting's.
   dofPass.uniforms.uFocus.value = 1 / focusD;
-  dofPass.uniforms.uHunt.value = flight && !reduced() ? flight.hunt * dofPass.uniforms.uCap.value * 0.6 : 0;
+  dofPass.uniforms.uHunt.value = cam.hunt * dofPass.uniforms.uCap.value * 0.6;
   // A longer lens has a shallower field: the blur grows with the square of the zoom.
-  const zk = 1 / Math.pow(flight && !reduced() ? flight.zoom : 1, 2);
+  const zk = 1 / Math.pow(cam.zoom, 2);
   const ap = ui.setting('aperture').value;
   dofPass.uniforms.uK.value = dofK * zk * ap;
   dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap));
@@ -2333,7 +2332,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 24;
 let nap = 0;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || !!flight || fluidLive || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!flight || fluidLive || gsap.isTweening(cam) || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2438,7 +2437,7 @@ stage.addEventListener('lostpointercapture', end);
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
   e.preventDefault();
-  if (flight) { follow = !follow; wake(); } else act.launch();
+  if (flight) snapZoom(!zoomed); else act.launch();
 });
 
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
@@ -2465,7 +2464,7 @@ function setLens() {
 // The intro holds until shaders compile and the first frame draws.
 dawn(9 - 8 * opts.dawn);
 buildBanks();
-buildShore(DIST.mid);
+buildShore(PAD);
 setBox(ui.setting('letterbox').value);
 setLens();
 resize();

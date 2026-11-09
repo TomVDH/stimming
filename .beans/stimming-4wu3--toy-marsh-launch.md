@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T09:34:12Z
+updated_at: 2026-11-09T09:40:30Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -135,3 +135,11 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - The slab shader warps the lookup with two noise scales for billow detail, lights by the density slope with dawn key, top light and flame, and shadows through the density toward the dawn.
 - Acacias cut; the shore is one clean line; a faint lattice gantry stands beside the pad.
 - Lesson: velocities in uv per second must stay near 0.05 (about 100 m/s); forces ten times larger blew the smoke out of the grid within a step.
+
+## Click zoom, far pad, near-only bokeh (2026-11-09)
+
+- No automatic push-in or follow: the camera holds the wide landscape. In flight a click or Space snaps the zoom in (0.5x, past the mark, two corrections, a focus hunt) and the next click snaps it back out the same way. Reduced motion snaps at once.
+- Bokeh is one-sided: only what lies nearer than the pad blurs (the near pool edge and the reeds); the distance is always sharp. The look-down rack is gone.
+- The pad is fixed at Far (3.4 km); the roar takes ten seconds. The Distance setting is gone for good.
+- The installation is one slim rod, 45 m. Mesas at 9, 20 and 45 km. Wisps sparser and larger.
+- The fluid cloud checked through the page's own loop (probe tickN): it shows in the real page; Tom's tab was stale.
