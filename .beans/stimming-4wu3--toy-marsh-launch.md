@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:30:42Z
+updated_at: 2026-11-09T08:40:35Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -22,7 +22,8 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Task 3: sound front and birds
 - [x] Task 4: sound with delays; mute test (the context suspends; birds still lift)
 - [ ] Task 4: Q9 full run to sleep, and the hidden-tab resume, by ear
-- [ ] Task 5: bar polish, Settings persistence, menu hook; Q1 to Q10
+- [x] Task 5: Settings persistence, menu hook, Q1, Q2, Q7, Q8 in the pane; fresh-eyes review, five Important findings fixed
+- [ ] Task 5: Q4 (idle rAF), Q6 (reduced motion), Q9 (full run to sleep), Q10 (frame times): the pane stays hidden; Tom checks on a real device
 - [ ] Tom sets the Dutch name (proposal: Moeraslancering)
 - [ ] Record the session cost
 
@@ -85,3 +86,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Wing flutter per bed, after its own delay; chirps stop for 10 s. Heavy adds a faint double thud at separation.
 - Mute stops every scheduled node; a hidden tab stops them and the roar resumes from the timeline.
 - The performance ladder now judges 24 fps frames (gaps past 50 ms count as slow).
+
+## Bokeh kinds, fire, review fixes (2026-11-09)
+
+- Settings: Bokeh (Round, Hex, Oval, Donut, Star) and Texture (Clean, Scatter, Grain, Bubble, Swirl), persisted. Autofocus follows the rocket, or racks to the ground where the frame looks down; blur grows with the zoom squared.
+- Smoke: grey-blue body from the sky; the dawn key lights only thin edges; sunlit exhaust is silver and pale blue. Exhaust under 1.6 s old burns orange-white near the engine.
+- Review fixes: composer pixel ratio (was 1x on Retina); a roar never replays after it ends and resumes at its faded level; a hidden tab silences the bed and suspends the context; a start wakes the sound and a missed roar retries; 24 fps by frame accumulator, drifting waits by timeout, ladder threshold 62 ms; timelines killed; shore geometry disposed; Distance waits for the flight to end; a flight keeps the scene awake; nothing draws before compile.

@@ -93,6 +93,13 @@ const ui = initPage({ id: 'launch', bar: {
       options: [{ value: 'near', label: 'Near' }, { value: 'mid', label: 'Mid' }, { value: 'far', label: 'Far' }],
       onPick: v => setDistance(v) },
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+    // Bokeh, after Buoy Business and Wind farm: a disc shape and a texture.
+    { type: 'choice', id: 'shape', label: 'Bokeh', value: 'round', persist: true,
+      options: [{ value: 'round', label: 'Round' }, { value: 'hex', label: 'Hex' }, { value: 'oval', label: 'Oval' }, { value: 'donut', label: 'Donut' }, { value: 'star', label: 'Star' }],
+      onPick: () => setLens() },
+    { type: 'choice', id: 'texture', label: 'Texture', value: 'clean', persist: true,
+      options: [{ value: 'clean', label: 'Clean' }, { value: 'scatter', label: 'Scatter' }, { value: 'grain', label: 'Grain' }, { value: 'bubble', label: 'Bubble' }, { value: 'swirl', label: 'Swirl' }],
+      onPick: () => setLens() },
   ],
   quality: true,
   keys: [['click', 'launch'], ['drag', 'look around'], ['space', 'launch']],
@@ -403,11 +410,11 @@ vec3 reedLight(vec3 P, float head, float tone, float edge) {
   vec3 alb = mix(mix(vec3(0.09, 0.075, 0.055), vec3(0.14, 0.11, 0.075), tone), vec3(0.32, 0.26, 0.19), head);
   vec3 c = alb * uAmb * 1.3;
   // Backlight: thin edges and plume hairs glow toward the dawn.
-  c += uGlowC * toward * (0.003 + head * (0.025 + 0.16 * edge * edge));
+  c += uGlowC * toward * (0.003 + head * (0.01 + 0.05 * edge * edge));
   // The flame rims the stems and plumes that stand against it.
   vec3 F = normalize(uFlame.xyz - P);
   float face = pow(max(dot(V, F), 0.0), 5.0);
-  c += uFlameC * uFlame.w * (0.0003 + face * (0.002 + head * (0.006 + 0.03 * edge * edge))) * (0.3 + 0.7 * uAir);
+  c += uFlameC * uFlame.w * (0.0003 + face * (0.0015 + head * (0.003 + 0.012 * edge * edge))) * (0.3 + 0.7 * uAir);
   return k2haze(c, P);
 }`;
 /* ---------- end reed shading ---------- */
@@ -640,6 +647,7 @@ const shoreMat = new THREE.ShaderMaterial({
 const shore = new THREE.Group();
 scene.add(shore);
 function buildShore(D) {
+  shore.children.forEach(m => m.geometry.dispose());
   shore.clear();
   const pos = [], idx = [], n = 1500, X = 7000;
   let s = 9001;
@@ -1078,7 +1086,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   attribute vec4 aQ, aR, aS, aT;
   uniform float uTime, uShear, uScale;
   varying vec3 vC, vW;
-  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
   void main() {
     float age = uTime - aQ.w, life = aT.x;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -1100,6 +1108,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     // The puff thins as it spreads; it fades in fast and out slowly.
     vA = aT.w * smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(life * 0.55, life, age)) * pow(aS.z * 0.3 / r, 0.6);
     vNear = 1.0 - smoothstep(0.0, 6.0, age);
+    vAge = age;
     vSpread = 1.0 - exp(-age / aT.z);
     gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);
   }`,
@@ -1107,7 +1116,7 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   uniform float uShadowH, uScale, uTime;
   uniform vec3 uAmb, uGlowC;
   varying vec3 vC, vW;
-  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
   ${HEAD}
   float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
   float n3(vec3 p) {
@@ -1150,17 +1159,21 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
     vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
     vec3 Ld = normalize(mix(Lg, L, sun));
     vec3 Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
-    vec3 gold = vec3(1.0, 0.52, 0.16), blue = vec3(0.3, 0.52, 1.0);
+    // Sunlit exhaust is silver with a faint warm core, pale blue at the edges.
+    vec3 gold = vec3(1.0, 0.86, 0.74), blue = vec3(0.62, 0.74, 1.0);
     vec3 fdv = uFlame.xyz - vC;
-    float reach = uScale * (vKind > 0.5 ? 0.05 : 0.02);
+    float reach = uScale * (vKind > 0.5 ? 0.03 : 0.012);
     // Ground clouds lose the flame's light as it climbs away.
     vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind);
     // Little fill: smoke turned from the dawn stays a dark shape.
-    vec3 amb = uAmb * 0.35 + k2hazeColor(rd) * 0.06;
+    // Sky fill gives a cool grey body; smoke turned from the dawn stays dim.
+    vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
     // Phase: light that passes the smoke toward the eye scatters most.
     float pd = 0.75 * hg(dot(rd, Ld), 0.72) + 0.25 * hg(dot(rd, Ld), -0.2);
     float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
-    vec3 keyC = mix(uGlowC * 7.0, mix(blue * 0.5, gold * 1.2, 0.55) * 1.6, sun);
+    // The dawn key is the horizon's own colour, soft, never a flat orange.
+    vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
+    vec3 keyC = mix(mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, mix(blue * 0.5, gold * 1.2, 0.55) * 1.6, sun);
     vec3 drift = vec3(0.0, -uTime * 0.03, uTime * 0.01);
     float fq = mix(1.6, 2.0, vKind);
     float T = 1.0;
@@ -1173,20 +1186,26 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
       // Two short steps toward each light give the self-shadow.
       float sk = puffDens(q + Ld * 0.3, fq, drift, true) + puffDens(q + Ld * 0.65, fq, drift, true);
       float sf = puffDens(q + Fd * 0.3, fq, drift, true) + puffDens(q + Fd * 0.65, fq, drift, true);
-      float tk = exp(-sk * 2.6 * vA), tf = exp(-sf * 2.0 * vA);
+      // Ground clouds shade softer, so their cores stay grey, not black holes.
+      float tk = exp(-sk * mix(2.6, 1.0, vKind) * vA), tf = exp(-sf * mix(2.0, 1.0, vKind) * vA);
       // Powder: thin rims glow when backlit; thick cores stay dark.
       float pw = 1.0 - exp(-dens * 4.0);
       // Dense cores scatter gold in sunlight; thin rims scatter blue.
       vec3 key = keyC * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, dot(q, q))), sun);
-      vec3 Li = key * tk * pd * pw * 2.6 + flame * tf * (0.2 + pf * 2.2) * pw + amb * (0.4 + 0.6 * tk);
+      // Below the shadow line the key lights only thin edges: a rim, not a glow.
+      float thin = mix(1.0 - smoothstep(0.15, 0.6, dens), 1.0, sun);
+      vec3 Li = key * tk * pd * pw * 2.2 * thin + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 1.1 + 0.4 * tk, vKind);
       float ab = 1.0 - exp(-od);
-      col += T * ab * Li;
+      // Fire: exhaust just out of the nozzle still burns, hottest where densest.
+      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens);
+      vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-vAge / 0.5)) * burn * 22.0;
+      col += T * ab * (Li + fire);
       T *= 1.0 - ab;
       if (T < 0.02) break;
     }
     float a = 1.0 - T;
     if (a < 0.003) discard;
-    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, k2hazeAmount(vC)) : col;
+    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, 0.5 * k2hazeAmount(vC)) : col;
     gl_FragColor = vec4(col, a);
   }`,
 }));
@@ -1350,6 +1369,8 @@ function flyTo(f) {
   if (f.done) endFlight();
 }
 function endFlight() {
+  flight.tl.kill();
+  if (shoreDue) { buildShore(shoreDue); shoreDue = 0; }
   body.visible = false;
   U.uFront.value.w = 0;
   birds.forEach(b => { b.a = 0; b.up = false; });
@@ -1370,6 +1391,8 @@ function padBelow(ndcX) {
   return THREE.MathUtils.clamp(dx * D, -D * 0.8, D * 0.8);
 }
 function start(ndcX) {
+  // Every start is a gesture: it may wake the sound.
+  if (sound.on) kit.wake();
   if (flight) { follow = !follow; wake(); return; }
   flight = launch(opts.kind, padBelow(ndcX));
   // A tall stage follows the climb from the start, so the turn stays in frame.
@@ -1570,6 +1593,8 @@ function soundBed() {
   marsh(ac);
   const now = ac.currentTime;
   bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
+  // A roar that could not start (asleep, interrupted) starts when it can.
+  if (flight && !flight.roarOn) roar(flight, Math.max(0, simT - flight.start - delayOf(flight)));
   if (pace > 0.2 && simT > hushUntil && now > nextChirp) {
     if (nextChirp > 0) chirp(ac, now + 0.05);
     nextChirp = now + 6 + Math.random() * 6;
@@ -1596,19 +1621,22 @@ function wings(f, bed0) {
 // off says how far into the roar to begin, so a resume picks up mid-roar.
 function roar(f, off = 0) {
   const ac = kit.live();
-  if (!ac || f.roarOn) return;
+  // A roar that has already ended never plays again.
+  if (!ac || f.roarOn || off >= PRE + 53) return;
   f.roarOn = true;
   const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
-  const t = ac.currentTime + lead, L = Math.max(4, PRE + 56 - off), k = f.k.flame;
+  const t = ac.currentTime + lead, L = PRE + 56 - off, k = f.k.flame;
   const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
+  // A resume starts at the level the full curve has reached by then.
+  const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
   const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
   // Swell over 2 s, hold, then fade with distance until cut-off.
   const swell = Math.max(0.05, 2 - off);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(lvl, t + swell);
-  g.gain.setTargetAtTime(lvl * 0.25, t + swell + 4, 18);
+  g.gain.exponentialRampToValueAtTime(lvl * fade, t + swell);
+  g.gain.setTargetAtTime(lvl * 0.25, t + swell + Math.max(0, 4 - off), 18);
   g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
-  lp.frequency.setValueAtTime(4000 * Math.exp(-off / 20), t);
+  lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
   lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
   s.connect(lp).connect(g).connect(kit.out);
   // The sub: a low drone with a slow wobble.
@@ -1757,12 +1785,26 @@ function makeDof() {
     uniforms: {
       tDiffuse: { value: null }, tDepth: { value: null },
       uNear: { value: camera.near }, uFar: { value: camera.far }, uFocus: { value: 2000 }, uK: { value: 72 }, uCap: { value: 14 }, uHunt: { value: 0 },
+      uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uFringe: { value: 0 },
+      uDonut: { value: 0 }, uStar: { value: 0 }, uScatter: { value: 0 }, uGrainB: { value: 0 }, uSwirl: { value: 0 }, uSeedB: { value: 0 },
       uRes: { value: new THREE.Vector2(1, 1) }, uLampW: { value: 30 }, uLampT: { value: 0.25 },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse, tDepth;
     uniform float uNear, uFar, uFocus, uK, uCap, uHunt, uLampW, uLampT;
+    uniform float uBlades, uOval, uRim, uCat, uFringe, uDonut, uStar, uScatter, uGrainB, uSwirl, uSeedB;
+    float bh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float bn(vec2 p) {
+      vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(bh(i), bh(i + vec2(1, 0)), u.x), mix(bh(i + vec2(0, 1)), bh(i + vec2(1, 1)), u.x), u.y);
+    }
+    // Aperture blades turn the disc into a polygon; under three keeps it round.
+    float blade(float a) {
+      if (uBlades < 2.5) return 1.0;
+      float s = 6.2832 / uBlades;
+      return cos(0.5 * s) / cos(mod(a, s) - 0.5 * s);
+    }
     uniform vec2 uRes;
     varying vec2 vUv;
     // Distance in metres from the depth buffer.
@@ -1783,12 +1825,36 @@ function makeDof() {
       float wsum = 1.0;
       for (int k = 0; k < 28; k++) {
         float rk = sqrt((float(k) + 0.5) / 28.0), a = float(k) * 2.39996 + rot;
-        vec2 uv = vUv + vec2(cos(a), sin(a)) * rk * r / uRes;
+        vec2 dir = vec2(cos(a), sin(a)) * rk * blade(a);
+        // Star: four points, pinched between them.
+        if (uStar > 0.5) dir *= 0.42 + 0.58 * pow(abs(cos(2.0 * a)), 3.0);
+        // Oval squeezes the disc sideways, as an anamorphic lens does.
+        dir.x *= uOval;
+        // Swirl: discs stretch round the frame's centre, as an old portrait lens does.
+        if (uSwirl > 0.0) {
+          vec2 cc = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+          float L = length(cc);
+          vec2 tg = L > 1e-3 ? vec2(-cc.y, cc.x) / L : vec2(0.0);
+          dir += tg * dot(dir, tg) * uSwirl * L * 2.0;
+        }
+        vec2 uv = vUv + dir * r / uRes;
         vec3 col = texture2D(tDiffuse, uv).rgb;
+        // Fringe: the disc's edge leans magenta outside, green inside.
+        col *= mix(vec3(1.0), mix(vec3(0.94, 1.06, 0.96), vec3(1.1, 0.92, 1.08), smoothstep(0.55, 1.0, rk)), uFringe);
         // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
         float reach = smoothstep(0.0, 1.0, coc(dist(uv)) - rk * r + 1.0);
         float hot = max(max(col.r, max(col.g, col.b)) - uLampT, 0.0);
         float w = (1.0 + hot * hot * uLampW) * reach;
+        // Donut: a mirror lens blocks the disc's centre.
+        if (uDonut > 0.5) w *= smoothstep(0.4, 0.55, rk);
+        // Scatter: dust and onion rings break each disc into flecks.
+        if (uScatter > 0.0) w *= mix(1.0, 0.1 + 1.6 * smoothstep(0.45, 0.7, bn(dir * 7.0 + 3.1)) + 0.4 * sin(rk * 18.0), uScatter);
+        // Grain: each tap flickers, so discs fizz like film.
+        if (uGrainB > 0.0) w *= mix(1.0, 0.25 + 1.5 * bh(gl_FragCoord.xy * 0.37 + float(k) * 7.13 + uSeedB), uGrainB);
+        // Rim: the outer taps weigh more, so each disc shows a bright ring.
+        if (uRim > 0.0) w *= mix(1.0, 0.1 + 3.0 * smoothstep(0.6, 1.0, rk), uRim);
+        // Cat's eye: a second circle clips discs toward the frame's edge.
+        if (uCat > 0.0) w *= step(length(dir + (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * uCat), 1.0);
         acc += col * w;
         wsum += w;
       }
@@ -1808,6 +1874,20 @@ rt.depthTexture.type = THREE.UnsignedIntType;
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 const dofPass = makeDof();
+// Blur scale in pixels; the focus in dioptres, so a rack eases evenly.
+let dofK = 72, dofCap = 14, focusD = 1 / 2000, focusTo = 1 / 2000;
+// Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
+const fwdA = new THREE.Vector3();
+function autofocus(dt) {
+  let d = DIST[ui.setting('distance').value] ?? DIST.mid;
+  if (flight && simT - flight.start > PRE - 0.5) d = camera.position.distanceTo(tmpF.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z));
+  else {
+    camera.getWorldDirection(fwdA);
+    if (fwdA.y < -0.03) d = THREE.MathUtils.clamp(EYE / -fwdA.y, 8, d);
+  }
+  focusTo = 1 / d;
+  focusD += (focusTo - focusD) * (1 - Math.exp(-dt * (reduced() ? 20 : 2.5)));
+}
 composer.addPass(dofPass);
 const orbPass = makeOrbs();
 composer.addPass(orbPass);
@@ -1871,14 +1951,15 @@ function resize() {
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
+  composer.setPixelRatio(size.dpr);
   composer.setSize(w, h);
   const m = rung >= 2 ? 0.35 : quality() === 'high' ? 0.75 : 0.5;
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   dofPass.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   birdMesh.material.uniforms.uPx.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
-  dofPass.uniforms.uK.value = 72 * h * size.dpr / 800;
-  dofPass.uniforms.uCap.value = 14 * h * size.dpr / 800;
+  dofK = 72 * h * size.dpr / 800;
+  dofCap = 14 * h * size.dpr / 800;
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
@@ -1888,31 +1969,42 @@ function resize() {
 }
 // A page that loads hidden may get no visibility event before input.
 let visible = !document.hidden;
+let compiled = false;
 function draw() {
-  if (!visible) return;
+  // Nothing draws before the shaders compile behind the intro.
+  if (!visible || !compiled) return;
   commitStars();
   commitPuffs();
   renderMirror();
   placeOrbs(orbPass, orbList());
   // Focus rides on the pad: the flight's distance, else the setting's.
-  dofPass.uniforms.uFocus.value = flight ? flight.D : DIST[ui.setting('distance').value] ?? DIST.mid;
+  dofPass.uniforms.uFocus.value = 1 / focusD;
   dofPass.uniforms.uHunt.value = flight && !reduced() ? flight.hunt * dofPass.uniforms.uCap.value * 0.6 : 0;
+  // A longer lens has a shallower field: the blur grows with the square of the zoom.
+  const zk = 1 / Math.pow(flight && !reduced() ? flight.zoom : 1, 2);
+  dofPass.uniforms.uK.value = dofK * zk;
+  dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk);
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
+  dofPass.uniforms.uSeedB.value = grade.uniforms.uSeed.value;
   composer.render();
 }
 
 /* Frame loop: 24 fps, idle or not; it sleeps 60 s after the last input. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+// One film frame in ms; nap holds a drifting wait.
+const FRAME = 1000 / 24;
+let nap = 0;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || !!flight || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!flight || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
   const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
   // Ambient sway eases out over 2 s once idle; reduced motion holds it still.
-  const awake = !reduced() && now - lastInput < SLEEP;
+  // A flight in the air keeps the scene awake.
+  const awake = !reduced() && (!!flight || now - lastInput < SLEEP);
   pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
   const lively = busy();
   try {
@@ -1922,21 +2014,27 @@ function tick(now) {
     if (flight) flyTo(flight);
     aimFollow(dt);
     easeLook(dt);
+    autofocus(dt);
     // The film runs at 24 frames a second, idle or not.
-    if (now - lastDraw >= 41) {
+    if (now - lastDraw >= FRAME - 2) {
       frame();
       draw();
       watch(now, lively);
-      lastDraw = now;
+      // Step the clock by whole film frames, so 60 Hz screens average 24.
+      lastDraw = now - lastDraw > FRAME * 3 ? now : lastDraw + FRAME;
     }
   } finally {
     soundBed();
-    if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
+    if (visible && lively) raf = requestAnimationFrame(tick);
+    // While drifting, wait for the next film frame before asking for one.
+    else if (visible && pace > 0) { raf = -1; nap = setTimeout(() => { nap = 0; raf = requestAnimationFrame(tick); }, Math.max(0, lastDraw + FRAME - 18 - performance.now())); }
     else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
   }
 }
 function wake() {
   lastInput = performance.now();
+  // Input cuts a drifting wait short.
+  if (nap) { clearTimeout(nap); nap = 0; raf = 0; }
   if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
 }
 /* Performance ladder: slow frames step quality down a rung, never back up. */
@@ -1949,14 +2047,19 @@ function watch(now, lively) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  // Frames come every 41 ms by design; only gaps past 50 ms count as slow.
-  if (watchSum / watchN > (lively ? 1000 / 20 : 1000 / 16) && rung < 3) { rung++; resize(); }
+  // Frames come every 42 ms by design; a 60 Hz screen gives 50; past 62 is slow.
+  if (watchSum / watchN > (lively ? 62 : 90) && rung < 3) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
   visible = vis;
   // A hidden tab cancels pending sounds; on return the roar picks up from the timeline.
-  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; stopAll(); return; }
+  if (!vis) {
+    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0; stopAll();
+    if (bed) bed.g.gain.value = 0;
+    kit.ac?.suspend()?.catch(() => {});
+    return;
+  }
   if (flight) roar(flight, Math.max(0, simT - flight.start - delayOf(flight)));
   draw();
   wake();
@@ -2002,8 +2105,32 @@ document.addEventListener('keydown', e => {
   if (flight) { follow = !follow; wake(); } else act.launch();
 });
 
-function setDistance(v) { buildShore(DIST[v] ?? DIST.mid); draw(); }
+// A flight keeps its pad; the new shore waits until it ends.
+let shoreDue = 0;
+function setDistance(v) {
+  const D = DIST[v] ?? DIST.mid;
+  if (flight) { shoreDue = D; return; }
+  buildShore(D); draw();
+}
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
+// Shapes: blades, oval, donut, star.
+const SHAPE = { round: [0, 1, 0, 0], hex: [6, 1, 0, 0], oval: [0, 0.55, 0, 0], donut: [0, 1, 1, 0], star: [0, 1, 0, 1] };
+// Textures: rim, cat's eye, fringe, scatter, grain, swirl.
+const TEXTURE = {
+  clean: [0, 0, 0, 0, 0, 0],
+  scatter: [0.2, 0, 0.3, 1, 0, 0],
+  grain: [0.1, 0, 0.2, 0, 1, 0],
+  bubble: [0.85, 0, 0.6, 0, 0, 0],
+  swirl: [0.35, 0.9, 0.5, 0, 0, 1],
+};
+function setLens() {
+  const u = dofPass.uniforms;
+  const [b, o, d, st] = SHAPE[ui.setting('shape').value] ?? SHAPE.round;
+  const [r, c, f, sc, g, sw] = TEXTURE[ui.setting('texture').value] ?? TEXTURE.clean;
+  u.uBlades.value = b; u.uOval.value = o; u.uDonut.value = d; u.uStar.value = st;
+  u.uRim.value = r; u.uCat.value = c; u.uFringe.value = f; u.uScatter.value = sc; u.uGrainB.value = g; u.uSwirl.value = sw;
+  draw();
+}
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
@@ -2011,13 +2138,15 @@ dawn(9 - 8 * opts.dawn);
 buildBanks();
 buildShore(DIST[ui.setting('distance').value] ?? DIST.mid);
 setBox(ui.setting('letterbox').value);
+setLens();
 resize();
 renderer.compileAsync(scene, camera).then(() => {
+  compiled = true;
   draw();
   canvas.classList.add('on');
   markReady();
   wake();
-}, () => { canvas.classList.add('on'); markReady(); });
+}, () => { compiled = true; draw(); canvas.classList.add('on'); markReady(); });
 </script>
 </body>
 </html>
