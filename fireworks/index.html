@@ -829,7 +829,7 @@ const crowdMat = new THREE.ShaderMaterial({
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`attribute vec2 aS; attribute float aF; uniform float uDpr; uniform float uTime; uniform float uCrowd;
-  varying vec3 vCol; varying vec3 vP;
+  varying vec3 vCol; varying vec3 vP; varying float vFl;
   void main() {
     // A phone goes up once excitement passes its threshold, and comes down after.
     float up = smoothstep(aS.x, aS.x + 0.12, uCrowd);
@@ -838,14 +838,18 @@ const crowdMat = new THREE.ShaderMaterial({
     // A camera flash: a 60 ms white pop, gone in a third of a second.
     float age = uTime - aF;
     float fl = age >= 0.0 && age < 0.33 ? exp(-age / 0.06) : 0.0;
-    vCol = vec3(0.5, 0.68, 1.0) * up * 1.0 + vec3(1.0, 0.97, 0.92) * fl * 4.0;
+    // A phone LED flash: cool blue-white.
+    vCol = vec3(0.5, 0.68, 1.0) * up * 1.0 + vec3(0.72, 0.84, 1.0) * fl * 4.0;
+    vFl = fl;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-    gl_PointSize = (up > 0.01 || fl > 0.01) ? (1.8 + 5.0 * fl) * uDpr : 0.0;
+    gl_PointSize = (up > 0.01 || fl > 0.01) ? (1.8 + 12.0 * fl) * uDpr : 0.0;
   }`,
-  fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP; ${HEAD}
+  fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP; varying float vFl; ${HEAD}
   void main() {
     vec2 q = gl_PointCoord - 0.5;
-    gl_FragColor = vec4(vCol * exp(-dot(q, q) * 18.0) * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+    // A flash is a tiny core with a thin horizontal streak; a phone is a soft dot.
+    float k = vFl > 0.01 ? exp(-dot(q, q) * 160.0) + 0.5 * exp(-q.y * q.y * 900.0) * exp(-abs(q.x) * 7.0) : exp(-dot(q, q) * 18.0);
+    gl_FragColor = vec4(vCol * k * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
   }`,
 });
 const crowdPts = new THREE.Points(crowdGeo, crowdMat);
@@ -2337,6 +2341,9 @@ function soundImpact(pos, wait) {
 /* ---------- end tear ---------- */
 function launch(ndc, cal) {
   const type = opts.shell === 'mix' ? pick(MIX) : opts.shell;
+  // Mortars are not exact: the burst lands a little off the tap.
+  const g = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+  ndc = new THREE.Vector2(ndc.x + 0.03 * g(), ndc.y + 0.025 * g());
   if (type === 'barrage') {
     // Sixteen small shells fan out across the sky, 0.11 s apart.
     for (let i = 0; i < 16; i++) {

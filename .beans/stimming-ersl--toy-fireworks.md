@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T08:49:10Z
+updated_at: 2026-11-09T08:50:33Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -110,3 +110,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Seven zany shells (Smiley, Rainbow, Butterfly, Star, Cube, Jellyfish, Swarm); smaller barges; small shells launch from the beach
 
 - [x] Charge ring removed; the seed light pulses at each calibre step instead
+
+- [x] Aim scatter on each launch; phone flashes as blue LED pops with a tiny anamorphic streak
