@@ -854,7 +854,8 @@ vec3 stormGlow(vec3 d) {
     if (l.z <= 0.0) continue;
     vec3 fd = normalize(vec3(l.x - uCam.x, 5.0 - H, l.y - uCam.y));
     float m = max(dot(d, fd), 0.0);
-    g += l.z * (0.08 + 0.5 * m * m * m * m + 1.5 * pow(m, 40.0));
+    // A broad soft swell round the flash bearing, never a hard point.
+    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0));
   }
   return air + vec3(0.75, 0.77, 1.0) * g * 0.02 * max(uStorm, uFog);
 }
@@ -1255,7 +1256,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // Lightning: a hot core round the flash.
         // A wide glow fills the tower.
         float fd = length(p - pf);
-        S += vec3(0.75, 0.77, 1.0) * f.w * (2.0 * exp(-fd / 1.3) + 0.35 * exp(-fd / 5.0)) * (1.0 - 0.5 * clamp(open, 0.0, 1.0));
+        // The flash is a soft ball of light inside the cloud, brightest deep in.
+        S += vec3(0.75, 0.77, 1.0) * f.w * (1.6 * exp(-fd * fd / 5.0) + 0.45 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0));
         // Below the deck top, the deck in front hides the tower.
         float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(DECK_HI, DECK_HI - 1.2, p.y));
         col += Tc * S * al;
