@@ -36,7 +36,7 @@ Pick the lightest one that does the job. Move up a tier only for a feature the l
 2. Does it need a perspective camera moving through several objects, lights or shadows? Use **three.js**.
 3. Is it a few hundred moving shapes with no shading? Use **Canvas 2D**.
 4. Is it a handful of crisp objects or text? Use **DOM or SVG**.
-5. Does it need compute shaders or very large particle counts? Ask Tom about **WebGPU**; today only Galaxy, Fire and Ink Water use it, each with a fallback line.
+5. **Offer WebGPU wherever it helps performance** (Tom, 2026-11-09). three.js `WebGPURenderer` falls back to WebGL2 by itself, so a three.js toy can switch with one renderer change. Shader toys move where compute pays off: particles, fluids, cellular sims. Galaxy, Fire and Ink Water already run it. The short list lives in the epic bean `stimming-2s6y`.
 
 ### Why it matters
 
@@ -86,3 +86,16 @@ Real scenes with cameras, many meshes, lights or loaded geometry: Frietkot, Broo
 3. A three.js toy imports only what it uses (`import { WebGLRenderer, ... } from 'three'`) and disposes its geometry, materials and renderer on leave.
 4. Every tier holds 30 fps or better, does no per-frame work when idle, and respects `prefers-reduced-motion`.
 5. Port an existing toy only when Tom picks it, one toy at a time, with before and after numbers: first frame time and steady fps at 1280 px and on a phone.
+
+## WebGPU short list (epic `stimming-2s6y`, not started)
+
+| Toy | Why WebGPU |
+|---|---|
+| Murmuration | Boids on compute: tens of thousands of birds |
+| Slime | Agents and a trail map, a classic compute job |
+| Marbling, Ink Water | One fluid solver on compute, shared |
+| Zen sand | Falling-sand cells on compute |
+| Fireworks, Coast and meteor | Particle bursts and trails on compute |
+| Cloud chamber | Thousands of short-lived tracks |
+| Frietkot, Night viaduct, Lit motorway, Train ride, Broodautomaat | Renderer swap with the WebGL2 fallback; keep where frame time drops |
+| Bubble wand, Lava lamp | Test compute fields against the fragment shaders |

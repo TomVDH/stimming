@@ -73,7 +73,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 
 - Dark only. Colours are OKLCH tokens. The font is Gabarito; menu toy labels use the self-hosted Iosevka Term Slab in caps.
 - Libraries: Tom picked one set. Add no other library without Tom.
-  Renderers: use the lightest tier that draws the idea: DOM/SVG, Canvas 2D, raw WebGL2 (GLSL), then three.js for real 3D scenes. Guide, costs and the audit of every toy: `docs/stack.md`.
+  Renderers: use the lightest tier that draws the idea: DOM/SVG, Canvas 2D, raw WebGL2 (GLSL), then three.js for real 3D scenes. Offer WebGPU wherever it helps performance (three.js `WebGPURenderer` falls back to WebGL2); short list in epic `stimming-2s6y`. Guide, costs and the audit of every toy: `docs/stack.md`.
 
   | Role | Library |
   |---|---|
