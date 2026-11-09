@@ -49,7 +49,7 @@ float walker(vec2 p, float ph, float gait, float hold, float smoke, float build,
   float dance = (pose > 9.5 && pose < 10.5) ? 1.0 : 0.0;
   float sitting = (pose > 10.5 && pose < 11.5) ? 1.0 : 0.0;
   float lean = 0.1 * run + ((pose > 14.5) ? 0.12 : 0.0) + ((pose > 13.5 && pose < 14.5) ? 0.06 : 0.0);
-  float bob = 0.022 * abs(sin(ph)) * gait + dance * 0.05 * abs(sin(t * 6.6 + seed * 3.0)) - sitting * 0.33;
+  float bob = 0.012 * abs(sin(ph)) * gait + dance * 0.05 * abs(sin(t * 6.6 + seed * 3.0)) - sitting * 0.33;
   vec2 hip = vec2(0.0, 0.93 + bob), sh = vec2(0.04 + stoop + lean, 1.42 + bob + idle);
   vec2 head = vec2(0.07 + stoop * 1.3 + lean * 1.3, 1.63 + bob + idle);
   float d = length((q - head) / vec2(0.92, 1.08)) - 0.1;
@@ -60,8 +60,8 @@ float walker(vec2 p, float ph, float gait, float hold, float smoke, float build,
   vec2 tip;
   for (int i = 0; i < 2; i++) {
     float qh = ph + float(i) * PI;
-    float th = (0.42 + 0.25 * run) * sin(qh) * gait;
-    float bend = (0.8 + 0.5 * run) * smoothstep(0.0, 1.0, cos(qh)) * gait + 0.04;
+    float th = (0.3 + 0.37 * run) * sin(qh) * gait;
+    float bend = (0.5 + 0.8 * run) * smoothstep(0.0, 1.0, cos(qh)) * gait + 0.04;
     // Sitting: thighs forward, shins hanging. Kicking: one leg swings hard.
     if (sitting > 0.5) { th = 1.45 + 0.08 * sin(t * 1.7 + float(i) * 2.0 + seed); bend = 1.45 - 0.15 * float(i); }
     if (i == 0 && pose > 11.5 && pose < 12.5) { float kk = pow(max(0.0, sin(t * 3.0 + seed * 5.0)), 4.0); th = -0.3 + 1.5 * kk; bend = 0.6 * (1.0 - kk); }
@@ -73,7 +73,7 @@ float walker(vec2 p, float ph, float gait, float hold, float smoke, float build,
   vec2 handQ = vec2(0.27, 1.1);
   for (int i = 0; i < 2; i++) {
     float qh = ph + float(i) * PI;
-    float ua = -0.34 * sin(qh) * gait, fa = ua + 0.22 + 0.18 * gait, l2 = 0.27;
+    float ua = -0.2 * sin(qh) * gait, fa = ua + 0.2 + 0.08 * gait, l2 = 0.27;
     if (pose > 0.5 && pose < 1.5) { ua = 0.06; fa = -0.15; l2 = 0.17; }
     // Crossed: the forearm folds back across the chest.
     if (pose > 1.5 && pose < 2.5) { ua = 0.12; fa = 1.95; l2 = 0.2; }
@@ -94,7 +94,7 @@ float walker(vec2 p, float ph, float gait, float hold, float smoke, float build,
     }
     // Dancers throw both arms up and down; runners pump them.
     if (dance > 0.5) { ua = 2.4 + 0.5 * sin(t * 6.6 + float(i) * PI + seed); fa = ua + 0.3; }
-    if (run > 0.0 && pose < 0.5) { ua *= 1.6; fa = ua + 1.2; }
+    if (run > 0.0 && pose < 0.5) { ua *= 2.7; fa = ua + 1.2; }
     if (i == 1 && pose > 14.5) { ua = 1.3; fa = 1.45; }
     if (i == 1 && pose > 13.5 && pose < 14.5) { ua = 1.2; fa = 2.1; }
     d = smin(d, limb(q, sh + vec2(-0.02, -0.04), ua, 0.29, fa, l2, 0.048, 0.04, tip), 0.03);
