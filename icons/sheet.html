@@ -128,6 +128,7 @@ const SPIKES = [
   [31, ['launch']],
   [32, ['launch']],
   [33, ['launch']],
+  [35, ['rain', 'ink']],
 ];
 const ORDER = SPIKES.flatMap(([, ids]) => ids);
 const COLS = ['Current', 'A', 'B', 'C', 'D', 'E'];
@@ -139,7 +140,7 @@ const FRAME_CSS = `
 html, body { background: transparent !important; }
 body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
 .wrap, #out, main { max-width: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
-h1, .lede, .dir > header, .dir > .tag, .idea, .pick, .size { display: none !important; }
+h1, .lede, .dir > header, .dir > .tag, .idea, .pick, .size, .dir > .big { display: none !important; }
 /* Transition shows the luminance emblem, white on glass, in the icon's place. */
 .emb, .embs { display: none !important; }
 body.trans .icons, body.trans .flash, body.both .flash { display: none !important; }
@@ -412,10 +413,12 @@ async function mount(src, title) {
       const l = card.querySelector('b')?.textContent.trim();
       const tile = card.querySelector('.t128, .s128');
       if (!COLS.includes(l) || !tile) continue;
-      if (gone.has(`${toy}-${l.toLowerCase()}`)) { card.remove(); continue; }
+      // A round tag keeps a new round's letters apart from older cuts.
+      const key = `${toy}${sec.dataset.round || ''}-${l.toLowerCase()}`;
+      if (gone.has(key)) { card.remove(); continue; }
       card.dataset.col = String(COLS.indexOf(l));
       sec.dataset.toy = toy;
-      cells.push({ key: `${toy}-${l.toLowerCase()}`, toy, l, card, tile, win, frame, empty: card.classList.contains('empty') });
+      cells.push({ key, toy, l, card, tile, win, frame, empty: card.classList.contains('empty') });
     }
   }
   // Cells sort into toy order, then column order.
