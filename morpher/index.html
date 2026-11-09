@@ -22,34 +22,8 @@
 .stage canvas.on { opacity: 1; }
 /* Once the shader runs, the pip stands in for the cursor. */
 .stage--morpher.live { cursor: none; }
-/* The picker is one pill: back, the current shape, forward. */
-.picker {
-  display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
-  transition: border-color 0.2s ease;
-}
-.picker.on { border-color: var(--fg); }
-.picker .step {
-  display: grid; place-items: center; width: 30px; height: 30px; padding: 0; cursor: pointer;
-  color: var(--muted); background: none; border: 0; border-radius: 999px; -webkit-tap-highlight-color: transparent;
-  transition: color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.picker .step:hover { color: var(--fg); }
-.picker .step:active { transform: scale(0.84); transition-duration: 0.08s; }
-.picker svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.picker .now {
-  display: inline-flex; align-items: center; gap: 7px; min-width: 6.6em; padding: 0 2px;
-  font-size: 13px; color: var(--muted); transition: color 0.2s ease;
-}
-.picker.on .now { color: var(--fg); }
-/* A new shape pops into the picker. */
-.picker .now.pop svg { animation: pick-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes pick-pop { from { transform: scale(0.4) rotate(-30deg); } }
 .vignette figure canvas { aspect-ratio: 21 / 13; border-radius: 14px; background: var(--stage); }
-@media (pointer: coarse) { .picker .step { width: 40px; height: 38px; } }
-@media (prefers-reduced-motion: reduce) {
-  .stage canvas, .picker, .picker .step, .picker .now { transition: none; }
-  .picker .now.pop svg { animation: none; }
-}
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
@@ -58,31 +32,10 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape that melts from one form into the next. Click to drop a blob, drag to throw one, drag the shape to stretch it. Arrow keys move the aim, Space drops a blob there, C clears the blobs.">
+    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape that melts from one form into the next. Shape picks a form, or Auto to roam. Click to drop a blob, drag to throw one, drag the shape to stretch it. Arrow keys move the aim, Space drops a blob there, C clears the blobs.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Morpher needs WebGL, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices">
-        <div class="picker on" id="picker" role="group" aria-label="Shape">
-          <button class="step" id="prev" type="button" aria-label="Previous shape"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-          <span class="now" id="now" aria-live="polite"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg><span>Circle</span></span>
-          <button class="step" id="next" type="button" aria-label="Next shape"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button>
-        </div>
-        <button class="chip" id="auto" type="button" aria-pressed="true">Auto</button>
-      </div>
-      <label class="slider"><span>Blend</span><input type="range" id="blend" min="0.02" max="0.3" step="0.01" value="0.14"></label>
-      <div class="actions">
-        <button class="chip" id="clear" type="button" aria-keyshortcuts="C" aria-disabled="true">Clear</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
-        <div><dt>Drag</dt><dd>throw</dd></div>
-        <div><dt>Drag the shape</dt><dd>stretch</dd></div>
-        <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -107,14 +60,11 @@
 } }
 </script>
 <script type="module">
-import { initPage, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });// Morpher is silent, so the header hides the sound toggle.
-initPage({ id: 'morpher', silent: true });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const D2R = Math.PI / 180;
@@ -150,7 +100,7 @@ function lab([L, C, h]) {
 }
 
 /* ---------- shapes ---------- */
-// The picker offers twelve forms, each with a name and icon.
+// The Shape choice offers twelve forms, each with a name and icon.
 const PICK = [
   ['Circle', '<circle cx="8" cy="8" r="6"/>'],
   ['Triangle', '<path d="M8 2l6.5 11.5h-13z"/>'],
@@ -165,7 +115,7 @@ const PICK = [
   ['Ring', '<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.6"/>'],
   ['Diamond', '<path d="M8 1.5l5 6.5-5 6.5-5-6.5z"/>'],
 ];
-// Auto roams eight more forms that the picker never shows.
+// Auto roams eight more forms that the Shape choice never shows.
 // Gear, burst, clover, bean, bolt, drop, wobble, smiley.
 const AUTO = [12, 13, 14, 15, 16, 17, 18, 19];
 const NPICK = PICK.length, NS = NPICK + AUTO.length;
@@ -194,6 +144,19 @@ const PAL = [
 ].map(([a, b]) => [lab(a), lab(b)]);
 // Blobs take candy colours in turn; the pip wears the next one.
 const CANDY = [[0.74, 0.19, 28], [0.82, 0.17, 62], [0.9, 0.17, 102], [0.84, 0.16, 162], [0.78, 0.14, 232], [0.68, 0.2, 298], [0.78, 0.17, 350]].map(lab);
+
+/* ---------- the bar: Bar v2 corners ---------- */
+// The Shape choice opens with Auto, then the twelve forms.
+const SHAPES = [{ value: 'auto', label: 'Auto' }, ...PICK.map(([label, svg], i) => ({ value: String(i), label, icon: `<svg viewBox="0 0 16 16">${svg}</svg>` }))];
+// Morpher is silent, so the shell hides the sound toggle.
+const ui = initPage({ id: 'morpher', silent: true, bar: {
+  choice: { label: 'Shape', display: 'stepper', value: 'auto', options: SHAPES, onPick: choose },
+  slider: { label: 'Blend', min: 0.02, max: 0.3, step: 0.01, value: 0.14, onInput: v => { if (U) U.uK.value = v; wakeToy(); } },
+  actions: [{ verb: 'clear', key: 'C', onPress: clear }],
+  quality: true,
+  keys: [['click', 'drop'], ['drag', 'throw'], ['drag the shape', 'stretch'], ['arrows + space', 'aim and drop']],
+} });
+ui.action('clear').disabled = true;
 
 /* ---------- the signed-distance shader ---------- */
 const FRAG = /* glsl */ `
@@ -440,10 +403,12 @@ const OM = 8, ZETA = 0.62;
 let THREE = null, renderer = null, scene = null, cam = null, U = null, bl = null, bc = null, uw = null;
 let ready = false, auto = true, down = null, rect = null, kbd = false;
 let clock = 0, nextId = 1, lowDpr = false, slow = 0, nextC = 0;
-// tgt: the form the weights seek; pick: the picker's form.
-let tgt = 0, pick = 0, twSign = 1, autoT = 2.4, bag = [];
+// tgt: the form the weights seek.
+let tgt = 0, twSign = 1, autoT = 2.4, bag = [];
 const W = new Float64Array(NS), V = new Float64Array(NS);
 W[0] = 1;
+// Reduced motion starts on the circle, picked, with no roaming.
+if (reduce) { auto = false; ui.choice.set('0'); }
 // The jelly spring squashes the shape on each change and each gulp.
 const jel = { s: 0, v: 0 };
 const ptr = { x: 0, y: 0, vx: 0, vy: 0, t: 0, on: false, w: 0 };
@@ -469,7 +434,6 @@ function setTarget(i) {
   tgt = i;
   twSign = -twSign;
   kick(0.9);
-  showPicker(false);
   wakeToy();
 }
 // Auto draws forms from a shuffled bag, without back-to-back repeats.
@@ -483,51 +447,19 @@ function nextAuto() {
 }
 
 /* ---------- controls ---------- */
-const autoB = document.getElementById('auto'), clearB = document.getElementById('clear'), blendI = document.getElementById('blend');
-const picker = document.getElementById('picker'), nowEl = document.getElementById('now');
-// The picker lights while the stage shows its form.
-function showPicker(fresh) {
-  picker.classList.toggle('on', tgt < NPICK);
-  if (!fresh) return;
-  nowEl.querySelector('svg').innerHTML = PICK[pick][1];
-  nowEl.querySelector('span').textContent = PICK[pick][0];
-  nowEl.classList.remove('pop');
-  if (!reduce) { void nowEl.offsetWidth; nowEl.classList.add('pop'); }
-}
-function stepPick(d) {
-  pick = (pick + d + NPICK) % NPICK;
-  auto = false;
-  showAuto();
-  showPicker(true);
-  setTarget(pick);
-}
-document.getElementById('prev').addEventListener('click', () => stepPick(-1));
-document.getElementById('next').addEventListener('click', () => stepPick(1));
-picker.addEventListener('keydown', e => {
-  const d = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
-  if (!d) return;
-  e.preventDefault();
-  e.stopPropagation();
-  stepPick(d);
-});
-// Reduced motion stops the cycle, so Auto rests unpressed.
-function showAuto() {
-  autoB.setAttribute('aria-pressed', String(auto && !reduce));
-  if (reduce) autoB.setAttribute('aria-disabled', 'true');
-  else autoB.removeAttribute('aria-disabled');
-}
-// Auto off pauses on the current form; Auto on moves on soon.
-autoB.addEventListener('click', () => {
-  if (reduce) return;
-  auto = !auto;
-  if (auto) autoT = 0.25;
-  showAuto();
+// A picked form holds; Auto roams the hidden forms.
+// Under reduced motion, Auto morphs once to a roaming form and rests.
+function choose(v) {
+  auto = v === 'auto';
+  if (!auto) setTarget(+v);
+  else if (reduce) setTarget(nextAuto());
+  else autoT = 0.25;
   wakeToy();
-});
+}
 let clearOn = false;
 function showClear() {
   const on = drops.length > 0;
-  if (on !== clearOn) { clearOn = on; clearB.setAttribute('aria-disabled', String(!on)); }
+  if (on !== clearOn) { clearOn = on; ui.action('clear').disabled = !on; }
 }
 function clear() {
   if (!drops.length) return;
@@ -536,16 +468,12 @@ function clear() {
   showClear();
   wakeToy();
 }
-clearB.addEventListener('click', clear);
-blendI.addEventListener('input', () => { if (U) U.uK.value = +blendI.value; wakeToy(); });
 onReducedChange(v => {
   reduce = v;
-  showAuto();
   wakeToy();
   drawFig();
   wake();
 });
-showAuto();
 
 /* ---------- input: the pip follows the pointer ---------- */
 // A scroll under a still cursor may skip pointerleave, so the pip hides until the next move.
@@ -624,12 +552,13 @@ function aim() {
 stage.addEventListener('focus', () => { if (stage.matches(':focus-visible')) aim(); });
 stage.addEventListener('blur', () => { if (kbd) { kbd = false; ptr.on = false; wakeToy(); } });
 const ARROWS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+// The shell binds C to Clear.
+// Space and the arrows scroll the page while the stage is out of view.
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !toyOn) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const k = e.key;
-  if (k === 'c' || k === 'C') { if (!e.repeat) clear(); }
-  else if (k === ' ') {
+  if (k === ' ') {
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
     if (e.repeat || !ready) return;
@@ -903,7 +832,9 @@ function fitRenderer(renderer, panel, cap, onSize, budget = Infinity) {
   onQuality(() => { lowDpr = false; slow = 0; apply(); });
   apply();
 }
+// A page that cannot draw keeps only the back block and the name.
 function failed() {
+  ui.hideControls();
   canvas.hidden = true;
   stage.querySelector('.fail').hidden = false;
 }
@@ -925,7 +856,7 @@ async function start() {
   uw = Array.from({ length: 5 }, () => new THREE.Vector4());
   U = {
     uRes: { value: new THREE.Vector2(1, 1) }, uVel: { value: new THREE.Vector2() }, uSq: { value: new THREE.Vector2(1, 1) },
-    uTime: { value: 0 }, uK: { value: +blendI.value }, uTw: { value: 0 },
+    uTime: { value: 0 }, uK: { value: ui.slider.value }, uTw: { value: 0 },
     uPip: { value: new THREE.Vector4(0, 0, PIP, 0) }, uPull: { value: new THREE.Vector4() }, uPC: { value: new THREE.Vector3() },
     uSA: { value: new THREE.Vector3() }, uSB: { value: new THREE.Vector3() }, uW: { value: uw },
     uBl: { value: bl }, uBc: { value: bc }, uN: { value: 0 },
