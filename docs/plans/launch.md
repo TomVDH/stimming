@@ -214,3 +214,7 @@ Icon spike 28 (`icons/spike-28.html`, sheet entry `[28, ['launch']]`): Current (
 Round 1's symbols on a dusk box resembled the landscape tiles. Round 2 follows what Tom picked elsewhere (Fireworks A, Dijkstra A, Vortex D, Ink, Oil slick, Foil, Sonar): a live miniature of the toy's own phenomenon, drawn by code, steered by the pointer. No horizon box, no ring.
 A Twilight plume: 46 puffs along a bent path, cold below the shadow line, gold and rose above it; pointer y is the Dawn slider. B Reed bed: 120 seeded stalks with plume wedges; a speck flashes, a beat later a wave leans every reed away. C Late shadow: the kit's own block; the face flashes, ten ticks count, the hard shadow kicks loose and judders back. D Ground cloud: 36 billows blast out along the ground from a hot core, lit from within, then darken; pointer x is the wind.
 GSAP cannot tween `oklch()` strings (ticks turned teal), so colours are set, never tweened; the flash is a white sheet whose opacity tweens.
+
+## Menu tile: Twilight plume (15:05, Tom's pick: spike 29 A)
+
+The Lab tile is spike 29 A, drawn by the menu script from the same seeded stream as the spike: 46 puffs, a cold and a lit body each, the shadow line on pointer y, a sweeping dawn on focus or the play loop. Emblem copied to `shared/emblems/launch.svg` and set in `toys.json`. `icons/picks.json` records the pick and that spike 28 was cut.
