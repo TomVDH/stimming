@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T15:00:00Z
-updated_at: 2026-11-09T07:51:10Z
+updated_at: 2026-11-09T07:57:44Z
 ---
 
 Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-light phosphor console. It starts in the Lab.
@@ -19,7 +19,7 @@ Build Sonar from docs/toy-dev-plan.md, section 2. Military realism: a red low-li
 - [x] Menu Lab entry with icon and hook; toys.json entry (Dutch name is a draft)
 - [x] Icon round (spike 18): five sonogram directions, all pointer-driven
 - [x] Icon round 2: emblem-first redraws (porthole, stencil plate, bolder marks)
-- [ ] Tom picks a Sonar icon; the pick goes on the menu
+- [x] Tom picks a Sonar icon; the pick goes on the menu (A, the porthole waterfall, with no ear notch; D kept for later)
 - [x] QA: 1280 and 375 px, clean console, reduced motion, idle stop
 - [x] Oscilloscope CRT stack, kept red; near-flat face that fills the stage; 30 Hz refresh
 - [x] Cyrillic boot with a loading bar; Tom's recorded ping (higher for a beam ping)

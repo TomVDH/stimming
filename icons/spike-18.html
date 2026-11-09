@@ -145,37 +145,6 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   const DIRS = [];
 
-  /* ================= Current ================= */
-
-  DIRS.push({
-    toy: 'sonar', l: 'Current', name: 'Menu icon', box: [18, 18, 92, 92], emblemUrl: '../shared/emblems/sonar.svg',
-    art(svg) {
-      svg.innerHTML = `
-        <circle cx="64" cy="64" r="46" fill="oklch(0.13 0.025 25)"/>
-        <g fill="none" stroke="oklch(0.6 0.22 27)">
-          <circle cx="64" cy="64" r="31" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>
-          <circle cx="64" cy="64" r="16" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>
-          <circle class="ring" cx="64" cy="64" r="4" stroke-width="2.5" opacity="0"/>
-          <circle cx="64" cy="64" r="46" stroke-width="2.5"/>
-        </g>
-        <circle class="blip" cx="88" cy="44" r="3.5" fill="oklch(0.74 0.2 32)" opacity="0.35"/>
-        <path d="M60 64H68M64 60V68" stroke="oklch(0.7 0.2 30)" stroke-width="1.5"/>`;
-      const ring = svg.querySelector('.ring'), blip = svg.querySelector('.blip');
-      let tl = null;
-      const play = () => gsap.timeline({ repeat: -1, repeatDelay: 0.5 })
-        .fromTo(ring, { attr: { r: 4 }, opacity: 1 }, { attr: { r: 46 }, opacity: 0.15, duration: 1.6, ease: 'none' })
-        .fromTo(blip, { opacity: 0.35 }, { opacity: 1, duration: 0.08, yoyo: true, repeat: 1, repeatDelay: 0.5 }, 1.1);
-      return {
-        enter() { if (!tl) tl = play(); }, move() {},
-        leave() {
-          tl?.kill(); tl = null;
-          gsap.to(ring, { attr: { r: 4 }, opacity: 0, duration: 0.3 });
-          gsap.to(blip, { opacity: 0.35, duration: 0.3 });
-        },
-      };
-    },
-  });
-
   /* ================= A · Shaded object ================= */
 
   // A porthole screen: the live waterfall behind round glass.
@@ -205,6 +174,8 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
           <circle cx="${C[0]}" cy="${C[1]}" r="${R}" fill="none" stroke="${RED}" stroke-width="2"/>
           <path class="ear" fill="none" stroke="${HOTR}" stroke-width="2.6" stroke-linecap="square"/>`;
         const defs = el('defs', {}, svg), ras = svg.querySelector('.ras'), ear = svg.querySelector('.ear');
+        // The menu icon has no ear notch; the waterfall alone shows the bearing.
+        if (this.noEar) ear.remove();
         const s = sono(G, NS, REST), paintRas = raster(defs, ras, id, X0, Y0, 2 * R, 2 * R, G, NS);
         const paintEar = () => ear.setAttribute('d', notch(s.ex));
         const paint = () => { paintRas(s.rows); paintEar(); };
@@ -227,6 +198,11 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       `),
     });
   }
+
+  /* ================= Current ================= */
+
+  // The menu icon is A without the ear notch.
+  DIRS.unshift({ ...DIRS.find(d => d.l === 'A'), l: 'Current', name: 'Menu icon', emblem: undefined, emblemUrl: '../shared/emblems/sonar.svg', noEar: true });
 
   /* ================= B · Stencil cut-out ================= */
 

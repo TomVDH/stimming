@@ -840,16 +840,21 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
         <li>
           <a class="toy" id="sonar" href="sonar/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <circle cx="64" cy="64" r="46" fill="oklch(0.13 0.025 25)"/>
-                <g fill="none" stroke="oklch(0.6 0.22 27)">
-                  <circle cx="64" cy="64" r="31" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>
-                  <circle cx="64" cy="64" r="16" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>
-                  <circle id="sonar-ring" cx="64" cy="64" r="4" stroke-width="2.5" opacity="0"/>
-                  <circle cx="64" cy="64" r="46" stroke-width="2.5"/>
+              <svg class="art" viewBox="0 0 128 128" data-box="12 12 106 106" aria-hidden="true">
+                <defs>
+                  <clipPath id="sonar-clip"><circle cx="62" cy="62" r="44"/></clipPath>
+                  <radialGradient id="sonar-glass" cx="0.35" cy="0.25" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></radialGradient>
+                  <linearGradient id="sonar-bezel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.36 0.03 25)"/><stop offset="1" stop-color="oklch(0.16 0.02 25)"/></linearGradient>
+                </defs>
+                <!-- A porthole on the Listen waterfall: a ship line, its harmonic, a whale's glide. -->
+                <circle cx="68" cy="68" r="50" fill="oklch(0.07 0.01 260)"/>
+                <circle cx="62" cy="62" r="50" fill="url(#sonar-bezel)"/>
+                <g clip-path="url(#sonar-clip)">
+                  <rect x="18" y="18" width="88" height="88" fill="oklch(0.08 0.02 25)"/>
+                  <g id="sonar-fall"></g>
+                  <circle cx="62" cy="62" r="44" fill="url(#sonar-glass)"/>
                 </g>
-                <circle id="sonar-blip" cx="88" cy="44" r="3.5" fill="oklch(0.74 0.2 32)" opacity="0.35"/>
-                <path d="M60 64H68M64 60V68" stroke="oklch(0.7 0.2 30)" stroke-width="1.5"/>
+                <circle cx="62" cy="62" r="44" fill="none" stroke="oklch(0.62 0.22 27)" stroke-width="2"/>
               </svg>
             </span>
             <span class="name">Sonar<span class="beta"><i>(</i>Beta<i>)</i></span></span>
@@ -2489,17 +2494,68 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     rest() { gsap.to(tArcs, { rotation: 0, svgOrigin: '64 52', duration: 0.5, overwrite: true }); },
   };
 
-  // A ping ring sweeps out; the blip flares as the ring reaches it.
-  const sRing = $('sonar-ring'), sBlip = $('sonar-blip');
-  toys.sonar = {
-    play: () => loop({ repeatDelay: 0.5 })
-      .fromTo(sRing, { attr: { r: 4 }, opacity: 1 }, { attr: { r: 46 }, opacity: 0.15, duration: 1.6, ease: 'none' })
-      .fromTo(sBlip, { opacity: 0.35 }, { opacity: 1, duration: 0.08, yoyo: true, repeat: 1, repeatDelay: 0.5 }, 1.1),
-    rest() {
-      gsap.to(sRing, { attr: { r: 4 }, opacity: 0, duration: 0.3, overwrite: true });
-      gsap.to(sBlip, { opacity: 0.35, duration: 0.3, overwrite: true });
-    },
-  };
+  // A porthole on the Listen waterfall; new rows hear the bearing under the pointer.
+  {
+    const fall = $('sonar-fall'), defs = fall.ownerSVGElement.querySelector('defs');
+    const G = 30, BINS = 34, X0 = 18, W = 88, REST = 0.72, DT = 0.11;
+    const f = n => +n.toFixed(3), clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    // The night-red phosphor, from dim floor to hot line.
+    const phos = i => `oklch(${f(0.1 + 0.8 * i)} ${f(0.04 + 0.18 * Math.min(1, i * 1.6))} ${f(24 + 22 * i * i)})`;
+    // One sea: a ship line and its harmonic, a gliding whale, a school's hiss.
+    const spec = (x, t, n) => {
+      const line = (c, w, a) => a * Math.exp(-(((x - c) / w) ** 2));
+      const wx = 0.62 + 0.1 * Math.sin(t * 0.9), song = Math.max(0, Math.sin(t * 1.7));
+      return Math.min(1, 0.1 + 0.12 * n() + line(0.18, 0.016, 0.95) + line(0.36, 0.016, 0.55)
+        + line(wx, 0.018, 0.95 * song) + line(0.86, 0.06, 0.55 * n()));
+    };
+    // The ear passes its beam and muffles the rest.
+    const beam = (x, ex) => 0.38 + 0.62 * Math.exp(-(((x - ex) / 0.11) ** 2));
+    let seed = 7;
+    const n = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    // Each bin keeps the peak of four samples.
+    const rowAt = (ex, t) => Array.from({ length: BINS }, (_, k) => {
+      let m = 0;
+      for (let q = 0; q < 4; q++) { const x = (k + q / 4 + 0.125) / BINS; m = Math.max(m, spec(x, t, n) * beam(x, ex)); }
+      return m;
+    });
+    // One rect per row; one gradient stop per bin.
+    const stops = [];
+    for (let g = 0; g < G; g++) {
+      const gr = document.createElementNS(NS, 'linearGradient');
+      gr.id = `sonar-r${g}`;
+      defs.append(gr);
+      stops.push(Array.from({ length: BINS }, (_, k) => {
+        const st = document.createElementNS(NS, 'stop');
+        st.setAttribute('offset', f(k / (BINS - 1)));
+        return gr.appendChild(st);
+      }));
+      const r = document.createElementNS(NS, 'rect');
+      Object.entries({ x: X0, y: f(X0 + (g * W) / G), width: W, height: f(W / G + 0.15), fill: `url(#sonar-r${g})` }).forEach(([k, v]) => r.setAttribute(k, v));
+      fall.append(r);
+    }
+    const sea = { t: 0, ex: REST, rows: [] };
+    for (let g = 0; g < G; g++) { sea.t += DT; sea.rows.unshift(rowAt(REST, sea.t)); }
+    const paint = () => sea.rows.forEach((r, g) => r.forEach((v, k) => stops[g][k].setAttribute('stop-color', phos(v))));
+    paint();
+    // Rows fall only while the pointer stays.
+    let dc = null, demo = null;
+    const tick = () => { sea.t += DT; sea.rows.unshift(rowAt(sea.ex, sea.t)); sea.rows.length = G; paint(); dc = gsap.delayedCall(0.07, tick); };
+    const aim = p => gsap.to(sea, { ex: clamp((p[0] - X0) / W, 0.1, 0.9), duration: 0.25, ease: 'power2.out', overwrite: 'auto' });
+    toys.sonar = {
+      // With no pointer, the ear sweeps across the waterfall.
+      enter(p) {
+        if (!dc) tick();
+        if (p) { aim(p); return; }
+        const d = { t: 0 };
+        demo = gsap.to(d, { t: 1, duration: 4, repeat: -1, ease: 'none', onUpdate: () => aim([X0 + W * (0.5 + 0.38 * Math.sin(d.t * Math.PI * 2))]) });
+      },
+      move(p) { if (p && !demo) aim(p); },
+      leave() { dc?.kill(); dc = null; demo?.kill(); demo = null; gsap.to(sea, { ex: REST, duration: 0.6, overwrite: 'auto' }); },
+      // The Lab plays the sweep on hover and lets go on leave.
+      play() { toys.sonar.enter(null); return { kill() {} }; },
+      rest() { toys.sonar.leave(); },
+    };
+  }
 
   // Tracks burst from the source, then fade like condensation.
   const cTracks = $('chamber-tracks').querySelectorAll('path');
