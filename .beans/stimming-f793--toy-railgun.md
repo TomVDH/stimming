@@ -18,8 +18,8 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - [x] Task 2: approach and hold; charge: chase, cells, arcs, dust, sky dim, push-in, shake; `__qa.charge`, `__qa.jump`
 - [x] Task 2: checkpoint: the draw. Tom (13:29, 13:33): daytime or dusk; the gun is stone with nothing glowing; keep the escalating charge chaos; the rock far out so the bolt takes seconds
 - [x] Task 3: shot: slug, muzzle flash, bolt, Mach ring, recoil, hit, shards, burst, flash, respawn; `__qa.shoot`
-- [ ] Task 3: checkpoint: the slug
-- [ ] Task 4: sound: wind, hum, clicks, slug, shot at the Mach delay, rumble; Q9
+- [x] Task 3: checkpoint: the slug (stills sent 13:45)
+- [x] Task 4: sound: wind, hum, clicks, slug, crack at the Mach arrival, rumble; Q9 (context runs on hold, hum stops on release and on mute, pending drains, suspended after settle)
 - [ ] Task 5: persistence, reduced motion, Q1 to Q10 at three sizes, fps in the bean, `tests/bar-v2.html`, PR
 - [ ] Tom sets the Dutch name (proposal: Spoorkanon) and IPA
 - [ ] Record the session cost

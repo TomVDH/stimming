@@ -1099,6 +1099,7 @@ act.release = () => {
   if (!charge) return;
   const c = charge.c;
   charge = null;
+  humStop(kit.live());
   fire(c);
 };
 // Placeholder until Task 3: the shot.
@@ -1112,6 +1113,8 @@ function stepCharge(dt) {
     const c = charge.c;
     charge.chase = (charge.chase + dt / CHASE_T(c)) % 1;
     U.uCharge.value = c;
+    const ac = kit.live();
+    if (ac) { humStart(ac); humUpdate(ac); }
     U.uChase.value = charge.chase;
     U.uChaseW.value = THREE.MathUtils.lerp(0.25, 0.08, c);
     // Arcs: a few a second at first, a storm after a long hold.
@@ -1346,6 +1349,7 @@ fire = c => {
   }
   boltMat.uniforms.uCore.value = 3 * (0.6 + c);
   boltMat.uniforms.uGain.value = 5 + 3 * c;
+  { const ac = kit.live(); if (ac) chirp(ac, c); }
   wake();
 };
 function shatter(c) {
@@ -1372,6 +1376,7 @@ function shatter(c) {
   }
   hitFlash = 1;
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
+  rumble(c);
 }
 function respawn() {
   ast.shape = (ast.shape + 1) % ROCKS.length;
@@ -1407,7 +1412,6 @@ function stepShot(dt) {
     flare(headFlare, MUZZLE, 1, 0);
   }
 }
-// Sounds arrive in Task 4.
 let crack = () => {};
 // The ribbon, the head and the flares, each drawn frame.
 function updateBolt() {
@@ -1476,6 +1480,7 @@ function tick(now) {
       lastDraw = now - lastDraw > FRAME * 3 ? now : lastDraw + FRAME;
     }
   } finally {
+    soundBed();
     if (visible && lively) raf = requestAnimationFrame(tick);
     else if (visible && pace > 0) { raf = -1; nap = setTimeout(() => { nap = 0; raf = requestAnimationFrame(tick); }, Math.max(0, lastDraw + FRAME - 18 - performance.now())); }
     else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
@@ -1503,7 +1508,8 @@ function watch(now, lively) {
 whenVisible(stage, vis => {
   visible = vis;
   if (!vis) {
-    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0; stopAll();
+    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0; stopAll(); humStop(kit.ac);
+    if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
   }
@@ -1520,12 +1526,162 @@ const pend = new Set();
 function track(end, ...nodes) { pend.add({ end, nodes }); }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const pending = () => { prune(); return pend.size > 0; };
-// Arc clicks arrive in Task 4.
 let click = () => {};
 function stopAll() {
   for (const h of pend) for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
   pend.clear();
 }
+const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
+function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+function hiss(ac, t, dur, rate = 1) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start(t, Math.random() * 0.9); s.stop(t + dur);
+  return s;
+}
+/* ---------- the wind bed ---------- */
+// Low wind over the plain, and a whistle through the cradles. It dips under a charge.
+let bed = null;
+function windBed(ac) {
+  if (bed) return;
+  const src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 400), g = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.5;
+  g.gain.value = 0;
+  src.connect(lp).connect(g).connect(kit.out);
+  const bp = filt(ac, 'bandpass', 900, 2), g2 = ac.createGain();
+  g2.gain.value = 0;
+  src.connect(bp).connect(g2).connect(kit.out);
+  // A slow swell moves the wind's cutoff.
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  lfo.frequency.value = 0.1; lg.gain.value = 150;
+  lfo.connect(lg).connect(lp.frequency);
+  src.start(); lfo.start();
+  bed = { src, g, g2, lfo };
+}
+function soundBed() {
+  const ac = kit.live();
+  if (!ac) { if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  windBed(ac);
+  const k = pace * (1 - 0.4 * chaos);
+  bed.g.gain.setTargetAtTime(0.02 * k, ac.currentTime, 0.3);
+  bed.g2.gain.setTargetAtTime(0.006 * k, ac.currentTime, 0.3);
+}
+/* ---------- the charge hum ---------- */
+// Two saws a few cents apart, a sub, and a tremor that runs with the chase.
+let hum = null;
+function humStart(ac) {
+  if (hum) return;
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator(), sub = ac.createOscillator();
+  o1.type = o2.type = 'sawtooth';
+  o1.detune.value = -3; o2.detune.value = 3;
+  sub.frequency.value = 36;
+  const lp = filt(ac, 'lowpass', 200, 1.2), g = ac.createGain(), sg = ac.createGain(), trem = ac.createGain();
+  g.gain.value = 0; sg.gain.value = 0; trem.gain.value = 1;
+  o1.connect(lp); o2.connect(lp); lp.connect(trem).connect(g).connect(kit.out);
+  sub.connect(sg).connect(kit.out);
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  lfo.frequency.value = 0.5; lg.gain.value = 0.5;
+  lfo.connect(lg).connect(trem.gain);
+  o1.start(); o2.start(); sub.start(); lfo.start();
+  hum = { o1, o2, sub, lp, g, sg, lfo, lg };
+}
+function humUpdate(ac) {
+  if (!hum || !charge) return;
+  const c = charge.c, t = ac.currentTime, f = 55 * Math.pow(2, 2.5 * c);
+  hum.o1.frequency.setTargetAtTime(f, t, 0.05);
+  hum.o2.frequency.setTargetAtTime(f, t, 0.05);
+  hum.lp.frequency.setTargetAtTime(200 * Math.pow(2, 3.6 * c), t, 0.05);
+  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos), t, 0.05);
+  hum.sg.gain.setTargetAtTime(0.14 * c * c, t, 0.05);
+  hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c), t, 0.05);
+  hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c, t, 0.05);
+}
+function humStop(ac) {
+  if (!hum) return;
+  const h = hum, t = ac ? ac.currentTime : 0;
+  hum = null;
+  if (!ac) { for (const n of [h.o1, h.o2, h.sub, h.lfo]) { try { n.stop(); } catch { /* not started */ } } return; }
+  h.g.gain.setTargetAtTime(0, t, 0.03); h.sg.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.o1, h.o2, h.sub, h.lfo]) n.stop(t + 0.4);
+  track(t + 0.5, h.o1, h.o2, h.sub, h.lfo);
+}
+/* ---------- arcs, slug, crack, rumble ---------- */
+// Every hit jitters in pitch, time and level.
+let lastClick = 0;
+const panV = new THREE.Vector3();
+click = arc => {
+  const ac = kit.live();
+  if (!ac || ac.currentTime - lastClick < 0.05) return;
+  lastClick = ac.currentTime;
+  const t = ac.currentTime, dur = 0.012 + Math.random() * 0.018;
+  const s = hiss(ac, t, dur + 0.02, 1.2), bp = filt(ac, 'bandpass', 2500 + Math.random() * 3500, 3), g = ac.createGain(), pan = ac.createStereoPanner();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime((0.03 + 0.03 * chaos) * jit(0.3), t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  pan.pan.value = clamp(panV.copy(arc.a).project(camera).x, -0.8, 0.8);
+  s.connect(bp).connect(g).connect(pan).connect(kit.out);
+  track(t + dur + 0.05, s);
+};
+// The slug: a chirp that rises as it runs the rails, left to right.
+function chirp(ac, c) {
+  const t = ac.currentTime;
+  const o = ac.createOscillator(), g = ac.createGain(), pan = ac.createStereoPanner();
+  o.frequency.setValueAtTime(300 * jit(0.1), t); o.frequency.exponentialRampToValueAtTime(2400, t + 0.3);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.15 * c, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+  pan.pan.setValueAtTime(-0.5, t); pan.pan.linearRampToValueAtTime(0.4, t + 0.3);
+  o.connect(g).connect(pan).connect(kit.out);
+  o.start(t); o.stop(t + 0.35);
+  track(t + 0.4, o);
+}
+// The crack: it plays when the Mach ring reaches the eye, seconds after the flash.
+crack = sh => {
+  const ac = kit.live();
+  if (!ac) return;
+  const c = sh.c, t = ac.currentTime;
+  const sub = ac.createOscillator(), subG = ac.createGain();
+  sub.frequency.setValueAtTime(60 * jit(0.08), t); sub.frequency.exponentialRampToValueAtTime(28, t + 0.35);
+  subG.gain.setValueAtTime(0.0001, t); subG.gain.exponentialRampToValueAtTime(0.5 * c, t + 0.01); subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  sub.connect(subG).connect(kit.out); sub.start(t); sub.stop(t + 0.55);
+  const cr = hiss(ac, t, 0.06), hp = filt(ac, 'highpass', 1500), crG = ac.createGain();
+  crG.gain.setValueAtTime(0.35 * c * jit(0.15), t); crG.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+  cr.connect(hp).connect(crG).connect(kit.out);
+  const wh = hiss(ac, t, 0.3, 0.7), bp = filt(ac, 'bandpass', 300 * jit(0.1), 1.2), whG = ac.createGain();
+  whG.gain.setValueAtTime(0.0001, t); whG.gain.exponentialRampToValueAtTime(0.3 * c, t + 0.015); whG.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+  wh.connect(bp).connect(whG).connect(kit.out);
+  const tail = hiss(ac, t, 2.0, 0.9), lp = filt(ac, 'lowpass', 1200), tG = ac.createGain();
+  tG.gain.setValueAtTime(0.1 * c, t); tG.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+  tail.connect(lp).connect(tG).connect(kit.out);
+  // Stone rings low and dull.
+  for (const f of [180, 270]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = f * jit(0.03);
+    g.gain.setValueAtTime(0.03 * c, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    o.connect(g).connect(kit.out); o.start(t); o.stop(t + 1.6);
+    track(t + 1.7, o);
+  }
+  track(t + 2.1, sub, cr, wh, tail);
+};
+// The rumble: forty kilometres of air, compressed eight times, so it lands fifteen seconds after the flash.
+function rumble(c) {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble;
+  const s = hiss(ac, t, 7, 0.3), lp = filt(ac, 'lowpass', 180), g = ac.createGain();
+  const lvl = 0.25 * (0.5 + 0.5 * c) * k * jit(0.1);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.6); g.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
+  s.connect(lp).connect(g).connect(kit.out);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.value = 30 * jit(0.05);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 0.6); og.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
+  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
+  track(t + 7.5, s, o);
+}
+// Sound on mid-charge starts the hum where the hold is; off stops everything.
+sound.onChange(on => {
+  if (!on) { stopAll(); humStop(kit.ac); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
+});
+
 
 /* Pointer: a press charges; a drag past 8 px also looks around; any release fires. */
 let press = null;
@@ -1593,6 +1749,7 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; astSize(); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size }),
   shoot(c) { fire(c); frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive } : null),
 };
