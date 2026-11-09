@@ -218,3 +218,7 @@ GSAP cannot tween `oklch()` strings (ticks turned teal), so colours are set, nev
 ## Menu tile: Twilight plume (15:05, Tom's pick: spike 29 A)
 
 The Lab tile is spike 29 A, drawn by the menu script from the same seeded stream as the spike: 46 puffs, a cold and a lit body each, the shadow line on pointer y, a sweeping dawn on focus or the play loop. Emblem copied to `shared/emblems/launch.svg` and set in `toys.json`. `icons/picks.json` records the pick and that spike 28 was cut.
+
+## Icon spike 31 (15:20, Tom: more stylised before settling)
+
+The twilight plume (spike 29 A, now the tile) in five print styles, each with pointer y as the Dawn slider: B Stencil (a three-ink cut-out: cream plume on ink blue, gold over it above the line, a rose bleed at the line), C Line (one-weight scalloped contour, dashed rule, gold hatching above it), D Isometric block (a marsh slab with a stack of discs that turn gold), E Abstract mark (a slanted bar and a slit), F Halftone (a dot grid sized by plume coverage, gold above the line, as the Vortex F3 emblem is). Emblems `launch31-b..f.svg`.
