@@ -193,6 +193,7 @@ const FX_ROWS = [
   ]],
   ['Night', [
     ['ambient', 'Ambient', 1, 0, 3, 0.01], ['haze', 'Haze', 0.45, 0, 2, 0.01],
+    ['bolt', 'Lightning', 1, 0, 4, 0.01], ['boltRate', 'Lightning rate', 1, 0, 4, 0.01],
   ]],
   ['Grade', [
     ['vignette', 'Vignette', 0.5, 0, 1, 0.01], ['grain', 'Grain', 0.03, 0, 0.12, 0.001], ['lift', 'Lift', 1, 0, 4, 0.01],
@@ -1780,7 +1781,10 @@ function updateLights() {
     live.push({ pos: press.seed, col: SEED, I: (0.02 + 0.1 * press.charge) * (over > 0 ? 0.6 + 0.9 * rnd() * Math.min(1, over / 2) + Math.min(1, over / 2) : 1), eye: 1, st: 0, gh: 0 });
   }
   // The open seam lights the deck, the bay and the hills in ember red.
-  if (tear && tear.glow > 0.01) live.push({ pos: tear.at, col: TEAR_COL, I: 0.22 * tear.glow, eye: 1, st: 0, gh: 0 });
+  if (tear && tear.glow > 0.01) live.push({ pos: tear.at, col: TEAR_COL, I: 0.22 * tear.glow, eye: 1, st: 0, gh: 0, wide: true });
+  // Heat lightning: a far cloud flickers; wide lights get no orb.
+  const bI = boltI();
+  if (bI > 0.01) live.push({ pos: bolt.pos, col: BOLT_COL, I: bI, eye: 1, st: 0, gh: 0, wide: true });
   live.sort((a, b) => b.I - a.I);
   const n = Math.min(LN, live.length);
   for (let i = 0; i < n; i++) {
@@ -2003,7 +2007,7 @@ function finale() {
 }
 /* ---------- end finale ---------- */
 function orbList() {
-  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye * FX.orbs }));
+  const list = live.filter(L => !L.wide).slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye * FX.orbs }));
   for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
   return list;
 }
@@ -2053,7 +2057,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2207,9 +2211,46 @@ function applyCover() {
   U.uCloud.value.w = on ? 1 : 0;
   cloud.visible = on;
 }
+/* Heat lightning: silent flickers deep in far cloud, only under a thick deck. */
+const BOLT_COL = linFit(0.9, 0.06, 285);
+let bolt = null, boltNext = 0;
+// A flash is two to five pulses: each strikes fast and decays in 60 ms.
+function strike() {
+  const C = U.uCloud.value, p = new THREE.Vector3();
+  // Try a few far spots; the flash needs cloud to live in.
+  for (let k = 0; k < 10; k++) {
+    const a = (Math.random() - 0.5) * 1.3, d = 4500 + Math.random() * 4500;
+    p.set(camera.position.x + Math.sin(a) * d, C.x + 40 + Math.random() * C.y * 0.6, camera.position.z - Math.cos(a) * d);
+    if (cloudD(p.x, p.z) > 0.45) break;
+    if (k === 9) return;
+  }
+  const n = 2 + Math.floor(Math.random() * 4), pulses = [];
+  let t = 0;
+  for (let i = 0; i < n; i++) { pulses.push([t, (i ? 0.4 + Math.random() * 0.6 : 1) * (0.7 + Math.random() * 0.3)]); t += 0.06 + Math.random() * 0.18; }
+  bolt = { pos: p, t0: simT, pulses, end: t + 0.4 };
+}
+function boltI() {
+  if (!bolt) return 0;
+  const a = simT - bolt.t0;
+  if (a > bolt.end) { bolt = null; return 0; }
+  let I = 0;
+  for (const [t, amp] of bolt.pulses) if (a >= t) I += amp * Math.min(1, (a - t) / 0.012) * Math.exp(-(a - t) / 0.06);
+  return I * 20 * FX.bolt;
+}
 function weatherTick(now) {
   const dt = wx.last ? Math.min(1, (now - wx.last) / 1000) : 0;
   wx.last = now;
+  // Lightning needs a heavy deck: cover past 0.47.
+  const C = U.uCloud.value;
+  if (C.w > 0.5 && C.z > 0.47 && FX.boltRate > 0 && !reduced()) {
+    if (!boltNext) boltNext = now + 3000 + Math.random() * 9000;
+    if (now > boltNext && !bolt) {
+      strike();
+      // Heavier cloud flashes more often: every 3 to 14 s at full cover.
+      const heavy = Math.min(1, (C.z - 0.47) / 0.1);
+      boltNext = now + ((3 + Math.random() * 11) * 1000) / (FX.boltRate * (0.4 + 0.6 * heavy));
+    }
+  } else boltNext = 0;
   if (opts.sky !== 'drift') return;
   // Every one to three minutes the sky turns toward another state.
   if (now > wx.next) {
@@ -2280,7 +2321,7 @@ function devPanel() {
   box.className = 'fxdev';
   box.setAttribute('aria-label', 'Look knobs');
   box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
-    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="tear">Tear</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="tear">Tear</button><button data-a="bolt">Bolt</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
     ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
       `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
   document.body.append(box);
@@ -2311,6 +2352,7 @@ function devPanel() {
     if (a === 'close') box.hidden = true;
     if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
     if (a === 'finale') finale();
+    if (a === 'bolt') { strike(); wake(); }
     if (a === 'tear' && !tear) overcharge(new THREE.Vector2((rnd() - 0.5) * 0.6, horizonNdc + 0.6 * (0.92 - horizonNdc)));
     if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(changed(), null, 2));
     if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
