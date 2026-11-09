@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Series menu lab</title>
+<meta name="color-scheme" content="dark">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+html, body { margin: 0; background: oklch(0.16 0.012 275); }
+/* The lab switch picks one of three menu layouts. */
+.lab-pick { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 12px 16px; background: color-mix(in oklch, oklch(0.16 0.012 275) 92%, transparent); backdrop-filter: blur(8px); }
+.lab-pick button { font: 500 13px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.6 0.02 275); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+.lab-pick button[aria-pressed="true"] { color: oklch(0.16 0.012 275); background: oklch(0.95 0.008 275); border-color: oklch(0.95 0.008 275); }
+.lab-pick button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
+/* Every category badge, side by side. */
+.legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 22px; max-width: 980px; margin: 4px auto 0; padding: 0 16px 12px; }
+.legend figure { margin: 0; display: grid; justify-items: center; gap: 6px; width: 86px; text-align: center; }
+.legend img { height: 34px; width: auto; }
+.legend figcaption { font: 500 11px/1.25 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.95 0.008 275); }
+.legend small { display: block; color: oklch(0.6 0.02 275); text-transform: none; letter-spacing: 0; }
+/* The real menu runs in the frame, so every icon and hover still works. */
+iframe { display: block; width: 100%; border: 0; }
+</style>
+<body>
+<div class="lab-pick" role="group" aria-label="Layout">
+  <button type="button" data-v="A">A · Sections</button>
+  <button type="button" data-v="B">B · Filter chips</button>
+  <button type="button" data-v="C">C · Badges only</button>
+</div>
+<div id="root"></div>
+<script type="module">
+// Proposed categories: three new ones, plus the five series that exist.
+const NEW = {
+  poke: { name: 'Poke & pop', nl: 'Prutsen', badge: 'serieslab/badges/poke.svg', color: 'oklch(0.8 0.09 230)' },
+  light: { name: 'Light & glass', nl: 'Licht', badge: 'serieslab/badges/light.svg', color: 'oklch(0.86 0.1 200)' },
+  odd: { name: 'Odd one out', nl: 'Raar', badge: 'serieslab/badges/odd.svg', color: 'oklch(0.84 0.16 330)' },
+};
+// Every main shelf toy sits in exactly one category.
+const MAP = {
+  poke: ['pop', 'fidget', 'pins', 'eyes', 'domino', 'magnet', 'soap', 'balloons'],
+  goo: ['putty', 'ferro', 'lava', 'ink', 'morpher', 'bubbles'],
+  light: ['prism', 'kaleido', 'glass', 'rain', 'neon', 'fire', 'pool'],
+  science: ['chladni', 'pendulum', 'scope', 'chamber', 'vortex', 'walker'],
+  dark: ['galaxy', 'trails', 'sonar', 'window', 'windmap', 'tvtree'],
+  odd: ['shadyos'],
+};
+const ORDER = ['poke', 'goo', 'light', 'science', 'dark', 'odd', 'belgian', 'maths'];
+const series = await fetch('../series.json').then(r => r.json());
+const cats = { ...series, ...NEW };
+const catOf = id => ORDER.find(k => MAP[k]?.includes(id)) || 'odd';
+
+// The legend shows every badge with its Flemish name and shelf count.
+const legend = document.createElement('div');
+legend.className = 'legend';
+for (const k of ORDER) {
+  const c = cats[k], n = (MAP[k] || []).length;
+  legend.insertAdjacentHTML('beforeend', `<figure><img src="../${c.badge}" alt=""><figcaption>${c.name}<small>${c.nl} · ${n ? n + ' on the shelf' : 'Lab only'}</small></figcaption></figure>`);
+}
+const frame = Object.assign(document.createElement('iframe'), { src: '../index.html', title: 'Menu' });
+document.getElementById('root').append(legend, frame);
+await new Promise(r => frame.addEventListener('load', r, { once: true }));
+const d = frame.contentDocument;
+const style = d.createElement('style');
+style.textContent = `
+.shelf > li { opacity: 1 !important; transform: none !important; }
+.sec { width: 100%; max-width: calc(6 * 150px + 5 * 28px); display: grid; gap: 18px; justify-self: center; }
+.sec + .sec { margin-top: clamp(20px, 4vw, 40px); }
+.sec h2 { display: flex; align-items: center; gap: 10px; margin: 0; font: 500 13px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--series); }
+.sec h2 img { height: 22px; width: auto; }
+.sec h2 span { color: var(--muted); letter-spacing: 0.06em; }
+.sec h2::after { content: ""; flex: 1; height: 1px; background: color-mix(in oklch, var(--series) 35%, transparent); }
+.sec .shelf { max-width: none; margin: 0; }
+.cats { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 980px; padding: 0 16px; }
+.cats button { display: inline-flex; align-items: center; gap: 8px; font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.8 0.02 275); background: oklch(0.2 0.012 275); border: 1px solid oklch(0.3 0.02 275); border-radius: 999px; padding: 6px 12px 6px 7px; cursor: pointer; transition: color 0.2s, border-color 0.2s, background 0.2s; }
+.cats button img { height: 20px; width: auto; }
+.cats button:hover { color: var(--fg); border-color: var(--series, var(--muted)); }
+.cats button[aria-pressed="true"] { color: var(--bg); background: var(--series, var(--fg)); border-color: var(--series, var(--fg)); }
+.cats button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.shelf > li.out { display: none; }`;
+d.head.append(style);
+const main = d.querySelector('main'), shelf = main.querySelector(':scope > .shelf');
+const tiles = [...shelf.children];
+const idOf = li => li.querySelector('a.toy')?.id;
+tiles.forEach(li => (li.dataset.cat = catOf(idOf(li))));
+const fit = () => { frame.style.height = d.documentElement.scrollHeight + 'px'; };
+
+function render(v) {
+  // Put the menu back as it was before each layout.
+  d.querySelectorAll('.sec, .cats, .obj .series.lab-badge').forEach(el => el.remove());
+  shelf.hidden = false;
+  shelf.append(...tiles);
+  tiles.forEach(li => li.classList.remove('out'));
+  if (v === 'A') {
+    shelf.hidden = true;
+    for (const k of ORDER) {
+      const mine = tiles.filter(li => li.dataset.cat === k);
+      if (!mine.length) continue;
+      const sec = d.createElement('section');
+      sec.className = 'sec';
+      sec.style.setProperty('--series', cats[k].color);
+      sec.innerHTML = `<h2><img src="${cats[k].badge}" alt="">${cats[k].name}<span>${cats[k].nl}</span></h2>`;
+      const ul = Object.assign(d.createElement('ul'), { className: 'shelf' });
+      ul.append(...mine);
+      sec.append(ul);
+      shelf.before(sec);
+    }
+  }
+  if (v === 'B') {
+    const bar = d.createElement('div');
+    bar.className = 'cats';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Categories');
+    const chip = (k, label, img) => {
+      const b = d.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', k === 'all');
+      if (k !== 'all') b.style.setProperty('--series', cats[k].color);
+      b.innerHTML = (img ? `<img src="${img}" alt="">` : '') + label;
+      b.addEventListener('click', () => {
+        bar.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+        tiles.forEach(li => li.classList.toggle('out', k !== 'all' && li.dataset.cat !== k));
+        fit();
+      });
+      return b;
+    };
+    bar.append(chip('all', 'All'));
+    for (const k of ORDER) if (MAP[k]?.length) bar.append(chip(k, cats[k].name, cats[k].badge));
+    shelf.before(bar);
+  }
+  if (v === 'C') for (const li of tiles) {
+    const obj = li.querySelector('.obj'), c = cats[li.dataset.cat];
+    if (obj) obj.append(Object.assign(d.createElement('img'), { className: 'series lab-badge', src: c.badge, alt: '', title: c.name }));
+  }
+  document.querySelectorAll('.lab-pick button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  try { localStorage.setItem('stimming.serieslab.menu', v); } catch (e) {}
+  requestAnimationFrame(fit);
+}
+document.querySelectorAll('.lab-pick button').forEach(b => b.addEventListener('click', () => render(b.dataset.v)));
+let saved = 'B';
+try { saved = localStorage.getItem('stimming.serieslab.menu') || 'B'; } catch (e) {}
+render(new URLSearchParams(location.search).get('v') || saved);
+new ResizeObserver(fit).observe(d.documentElement);
+</script>aset.cat !== k));
+        });
+        return b;
+      };
+      bar.append(chip('all', 'All'));
+      for (const k of ORDER) if (MAP[k]?.length) bar.append(chip(k, cats[k].name, cats[k].badge));
+      main.append(bar);
+    }
+    main.append(ul);
+  }
+  root.append(main, legend());
+  document.querySelectorAll('.lab-pick button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  try { localStorage.setItem('stimming.serieslab.menu', v); } catch (e) {}
+}
+document.querySelectorAll('.lab-pick button').forEach(b => b.addEventListener('click', () => render(b.dataset.v)));
+let saved = 'B';
+try { saved = localStorage.getItem('stimming.serieslab.menu') || 'B'; } catch (e) {}
+render(new URLSearchParams(location.search).get('v') || saved);
+</script>
+</body>
+</html>
