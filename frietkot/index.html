@@ -23,6 +23,17 @@
 .stage--frietkot { cursor: grab; }
 .stage--frietkot.held { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--frietkot canvas { transition: none; } }
+/* The establishing title: a camcorder caption typed over the square. */
+.establish { position: absolute; left: 6%; top: 58%; z-index: 2; pointer-events: none; color: oklch(0.96 0.02 90);
+  font-family: "Iosevka Term Slab", ui-monospace, monospace; font-weight: 500; letter-spacing: 0.04em;
+  text-shadow: 0 0 6px oklch(0.9 0.08 80 / 0.55), 1px 1px 0 oklch(0.1 0.02 262 / 0.8); transition: opacity 1.2s ease; }
+.establish p { margin: 0; white-space: pre; }
+.establish .e1 { font-size: clamp(20px, 3.4vw, 40px); }
+.establish .e2 { font-size: clamp(13px, 1.7vw, 20px); margin-top: 0.35em; opacity: 0.85; }
+.establish .cur { display: inline-block; width: 0.6em; animation: blink 0.9s steps(1) infinite; }
+.establish.out { opacity: 0; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (max-width: 640px) { .establish { left: 7%; top: 30%; } }
 </style>
 </head>
 <body>
@@ -32,7 +43,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows and a neon strip hums on the roof. Tap the shack to drop fries, hold to shake the basket.">
+    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows and a neon strip hums on the roof. Tap the shack to order a cone of fries, hold to shake the basket.">
       <p class="fail" hidden>Frietkot needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -68,7 +79,7 @@ import { FIG_GLSL } from './figures.js';
 
 const stage = document.getElementById('stage');
 // Handlers bind once the scene exists.
-const act = { sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
+const act = { order() {}, sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
 const QS = new URLSearchParams(location.search);
 
 /* ---------- sauces and neon ---------- */
@@ -85,39 +96,64 @@ const SAUCES = [
 const NEON = { red: [0.66, 0.24, 28], blue: [0.62, 0.17, 255], green: [0.8, 0.2, 145] };
 
 const ui = initPage({ id: 'frietkot', bar: {
-  choice: { label: 'Sauce', display: 'stepper', value: 'mayo', onPick: v => act.sauce(v),
-    options: SAUCES.map(s => ({ value: s.value, label: s.label, dot: `oklch(${s.lch.join(' ')})` })) },
-  slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.3, onInput: v => act.wind(v) },
-  actions: [
-    { verb: 'drop', key: 'F', onPress: () => act.drop() },
-    { verb: 'shake', key: 'S', onPress: () => act.shake() },
-    { verb: 'fill', key: 'C', onPress: () => act.fill() },
-  ],
+  // A diorama: one verb. An order runs the double fry and fills a cone.
+  actions: [{ verb: 'order', key: 'O', onPress: () => act.order() }],
   settings: [
+    { type: 'choice', id: 'weather', label: 'Weather', value: 'shift', persist: true, onPick: v => act.weather(v),
+      options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
+    { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.3, persist: true, onInput: v => act.wind(v) },
     { type: 'choice', id: 'neon', label: 'Neon', value: 'red', persist: true, onPick: v => act.neon(v),
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
-    { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
-    { type: 'choice', id: 'weather', label: 'Weather', value: 'shift', persist: true, onPick: v => act.weather(v),
-      options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
-    { type: 'choice', id: 'people', label: 'People', value: 'ink', persist: true, onPick: v => act.people(v),
-      options: [{ value: 'ink', label: 'Ink' }, { value: 'line', label: 'Line' }, { value: 'haze', label: 'Haze' }] },
     { type: 'toggle', id: 'moths', label: 'Moths', value: true, persist: true, onToggle: on => act.moths(on) },
+    { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'drop fries'], ['hold', 'shake'], ['drag', 'look round'], ['scroll', 'zoom']],
+  keys: [['click', 'order'], ['hold', 'shake'], ['drag', 'look round'], ['scroll', 'zoom']],
 } });
 
 // Seeded random keeps the square the same on every load.
 let seed = 4021;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
+// The establishing title types on once the intro has gone, holds, then fades.
+const ESTABLISH = ['Vrijdagavond', "Op 't kerkplein"];
+function establish() {
+  const box = document.createElement('div');
+  box.className = 'establish';
+  box.setAttribute('aria-hidden', 'true');
+  const lines = ESTABLISH.map((t, i) => { const p = document.createElement('p'); p.className = 'e' + (i + 1); box.append(p); return p; });
+  stage.append(box);
+  const cur = document.createElement('span');
+  cur.className = 'cur';
+  cur.textContent = '\u2588';
+  const fade = () => setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 1400); }, 3800);
+  if (reduced()) { lines.forEach((p, i) => (p.textContent = ESTABLISH[i])); fade(); return; }
+  let li = 0, ci = 0;
+  const type = () => {
+    const p = lines[li];
+    p.textContent = ESTABLISH[li].slice(0, ++ci);
+    p.append(cur);
+    if (ci < ESTABLISH[li].length) return setTimeout(type, 70 + Math.random() * 50);
+    if (++li < lines.length) { ci = 0; return setTimeout(type, 520); }
+    setTimeout(() => cur.remove(), 1600);
+    fade();
+  };
+  type();
+}
+function whenIntroGone(fn) {
+  if (!document.querySelector('.intro')) return setTimeout(fn, 900);
+  const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); setTimeout(fn, 900); } });
+  mo.observe(document.body, { childList: true, subtree: true });
+}
+
 let markReady;
 const sceneReady = new Promise(r => { markReady = r; });
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+sceneReady.then(() => whenIntroGone(establish));
 
 let renderer;
 try {
@@ -3092,7 +3128,7 @@ const end = e => {
   wake();
 };
 stage.addEventListener('pointerup', e => {
-  if (press && e.pointerId === press.id && press.hit && !press.drag && !press.hold) act.drop();
+  if (press && e.pointerId === press.id && press.hit && !press.drag && !press.hold) act.order();
   end(e);
 });
 stage.addEventListener('pointercancel', end);
@@ -3103,7 +3139,7 @@ stage.addEventListener('lostpointercapture', end);
 // The kit sleeps when the toy settles.
 // Beds: neon hum, fryer, road, rain, wind and the party.
 // Each vehicle carries its own engine voice.
-const kit = audioKit({ keys: new Set(['f', 'F', 's', 'S', 'c', 'C', ' ']) });
+const kit = audioKit({ keys: new Set(['o', 'O', ' ']) });
 let SND = null;
 const sndVoices = new Set();
 let sndPend = 0;
@@ -3331,15 +3367,12 @@ function sndHush() {
 }
 
 /* ---------- bar ---------- */
-// Drop needs a free basket: empty, or holding blanched fries.
-// Fill needs golden fries on the hook.
+// Order is free while a basket is empty and no order runs.
 function syncActions() {
-  ui.action('drop').disabled = !wells.some(w => !w.inOil && (w.fry === -1 || w.fry === 1));
-  ui.action('fill').disabled = !wells.some(w => !w.inOil && w.fry === 2);
+  ui.action('order').disabled = !!orderRun || !wells.some(w => !w.inOil && w.fry === -1);
 }
-act.drop = () => {
-  const w = wells.find(o => !o.inOil && o.fry === 1) ?? wells.find(o => !o.inOil && o.fry === -1);
-  if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
+// Into the oil: raw fries for the blanch, blanched ones for the second fry.
+function dropWell(w) {
   if (w.fry === -1) w.fry = 0;
   w.stage = w.fry;
   w.inOil = true;
@@ -3353,6 +3386,11 @@ act.drop = () => {
   flare = 1;
   syncActions();
   wake();
+}
+act.drop = () => {
+  const w = wells.find(o => !o.inOil && o.fry === 1) ?? wells.find(o => !o.inOil && o.fry === -1);
+  if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
+  dropWell(w);
 };
 act.shake = () => {
   lastShake = performance.now();
@@ -3366,21 +3404,50 @@ act.shake = () => {
   emitWell(w, reduced() ? 12 : (w.inOil ? 46 : 18), { speed: 0.7, size: 0.16, life: 7.5, out: w.inOil ? 0.5 : 0.25 });
   wake();
 };
-act.fill = () => {
-  const w = wells.find(o => !o.inOil && o.fry === 2);
-  if (!w) return;
+// Golden fries go into a cone under the sauce.
+function fillWell(w, sauce) {
   w.fry = -1;
   w.shake = 0.5;
   emitWell(w, 6, { speed: 0.4, size: 0.1 });
-  fillCone(ui.choice?.value ?? 'mayo');
+  setDollop(sauce);
+  fillCone(sauce);
   sfxCone();
   syncActions();
   wake();
+}
+act.fill = () => {
+  const w = wells.find(o => !o.inOil && o.fry === 2);
+  if (w) fillWell(w, SAUCES[Math.floor(Math.random() * SAUCES.length)].value);
 };
+// One order: blanch, rest, second fry with a shake, then a cone.
+let orderRun = null;
+act.order = () => {
+  if (orderRun) { act.shake(); return; }
+  const w = wells.find(o => !o.inOil && o.fry === -1);
+  if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
+  const sauce = SAUCES[Math.floor(Math.random() * SAUCES.length)].value;
+  orderRun = { w, sauce, rest: 0, shook: false };
+  dropWell(w);
+  orderRun.tick = setInterval(stepOrder, 200);
+};
+function stepOrder() {
+  const o = orderRun;
+  if (!o) return;
+  const w = o.w;
+  // The blanched fries rest a moment on the hook, then go back in.
+  if (!w.inOil && w.fry === 1 && (o.rest += 0.2) > 1.4) { o.rest = 0; dropWell(w); }
+  if (w.inOil && w.stage === 1 && !o.shook && w.t > FRY[1].cook * 0.5) { o.shook = true; act.shake(); }
+  if (!w.inOil && w.fry === 2 && (o.rest += 0.2) > 0.8) { endOrder(); fillWell(w, o.sauce); }
+}
+function endOrder() {
+  if (orderRun) clearInterval(orderRun.tick);
+  orderRun = null;
+  syncActions();
+}
 act.sauce = v => { setDollop(v); wake(); };
 // The neon dollop takes the colour of the sauce picked.
 function setDollop(v) { const sc = SAUCES.find(o => o.value === v) ?? SAUCES[0]; const d = FRY_SIGN.find(o => o.role === 'dollop'); if (d) d.m.uniforms.uCol.value.set(...linFit(...sc.lch)).multiplyScalar(1.2); }
-setDollop(ui.choice?.value ?? 'mayo');
+setDollop('mayo');
 act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
@@ -3389,11 +3456,11 @@ act.traffic = on => { traffic = on; wake(); };
 act.camcorder = on => { camcorder = on; grade.uniforms.uDV.value = on ? 1 : 0; frame(); draw(); };
 act.weather = v => { setWeather(v); wake(); draw(); };
 setWeather(DAY ? 'dry' : ui.setting('weather')?.value ?? 'shift');
-// Three looks for the people, for Tom to pick from.
+// The people are ink; ?people=line or haze shows the other looks.
 const LOOKS = { ink: 0, line: 1, haze: 2 };
 act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
 
-act.people(QS.get('people') ?? ui.setting('people')?.value ?? 'ink');
+act.people(QS.get('people') ?? 'ink');
 act.moths = on => { mothsOn = on; mothMesh.visible = on; wake(); };
 act.moths(ui.setting('moths')?.value ?? true);
 act.reset = () => {
@@ -3402,14 +3469,14 @@ act.reset = () => {
   coneG.visible = false; coneState.t = -1; coneState.taker = null;
   // The view returns to the opening frame.
   look.ty = look.tp = 0; zoomT = 1;
-  wind = 0.3; ui.slider.set(0.3); ui.choice.set('mayo');
+  endOrder();
   setDollop('mayo');
   syncActions();
   wake();
 };
 syncActions();
-wind = ui.slider?.value ?? 0.3;
-tiltK = ui.setting('tilt')?.value ?? 0.6;
+wind = ui.setting('wind')?.value ?? 0.3;
+tiltK = ui.setting('tilt')?.value ?? 0.4;
 setNeon(ui.setting('neon')?.value ?? 'red');
 traffic = ui.setting('traffic')?.value ?? true;
 act.camcorder(ui.setting('camcorder')?.value ?? true);
