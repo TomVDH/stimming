@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:15:21Z
+updated_at: 2026-11-09T08:21:37Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -61,3 +61,11 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Puffs march two short shadow steps toward each light. A Henyey-Greenstein phase (g 0.72) and a powder term make backlit rims glow: the dawn horizon below the shadow line, the sun above it, the flame always.
 - Mesas: three ranges at 7, 16 and 42 km in real metres (mesas, buttes, benches). Air melts them into the low sky; tops above the shadow line take alpenglow.
 - Camera: a tiny handheld wobble while awake. At liftoff a documentary push-in (to 0.68 of the lens in 1.1 s, a correction to 0.74, out again from T+12). The horizon holds its place during the zoom.
+
+## Orbiter, scale and film (2026-11-09)
+
+- Orbiter path: straight up, a slow lean from T+14, never levels out. Altitude maps by a square root: near true scale at liftoff, 120 km half a distance up.
+- A rocket body (Heavy: three cores; the side cores drop at T+18), scaled with the altitude map. The flame is a long white-hot cone that cools to red and balloons wide in thin air.
+- Smoke noise lives in world space, so overlapping puffs make one billow field. Ground clouds squat flat on the ground. Fill light is low: smoke turned from the dawn stays dark; rims and backlight carry it.
+- Reed banks: clumps and plume tips instead of flat crests.
+- Film: 24 fps always, moving grain (0.075), a small exposure flicker, a shakier hand with jitter, a shake at ignition and liftoff, and a push-in that overshoots and corrects twice.
