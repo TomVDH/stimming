@@ -1,11 +1,11 @@
 ---
 # stimming-b3ri
 title: 'Glass: Bar v2'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:09:19Z
-updated_at: 2026-11-09T09:18:45Z
+updated_at: 2026-11-09T09:19:32Z
 parent: stimming-x6ef
 ---
 
@@ -26,5 +26,16 @@ Move glass/index.html to Bar v2. Brief: docs/plans/bar-v2-migration.md. Epic: st
 - [x] Port to one bar spec, delete header, .bar, dl.how, tray CSS and JS
 - [x] Fix first-tap stall while audio starts
 - [x] Check in pane at 1280 and 375, console, keys, Escape, reload
-- [ ] Commit and push, tick glass in stimming-80dc
-- [ ] Diegetic verdict with a still
+- [x] Commit and push, tick glass in stimming-80dc
+- [x] Diegetic verdict with a still
+
+## Summary of Changes
+
+- Glass is the top-left stepper (bottom left on phones). Rewind is the action, key R. The tool is a persisted Settings row, keys 1 2 3. Quality sits in Settings. The key strip click and hold verbs follow the tool and glass.
+- First-tap stall: compileAsync warmed the screen variant, but the scene draws into the composer target. Shaders now warm per target, then one hidden draw takes the first-use cost. First shot: 125-139 ms frame before, no long frame after. Sound off showed the same stall, so audio was not the cause.
+- A wake during a frame no longer starts a second rAF loop.
+- The frame clears the top corner row; tall stages centre it.
+
+## Diegetic proposal (awaits Tom)
+
+Hammer, gun and brick lie on the floor under the frame; click one to pick it up. It replaces the Tool row in Settings and restores one-tap tool switching on phones. Still: side-session-notes/glass-diegetic-tools.jpg.
