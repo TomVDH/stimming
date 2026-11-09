@@ -5,18 +5,18 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T08:59:04Z
+updated_at: 2026-11-09T09:08:30Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
 
 - [x] Task 1: K2 lift from Fireworks; facades, quay, bridge, belfry, sky, haze, mirror water
-- [ ] Task 1: Q1, Q2, stills at three Dusk values in Dry at 1280 and 375 px; checkpoint with Tom
-- [ ] Task 2: lamp picking, sodium warm-up, pools on wet cobbles, windows and TV flicker
+- [x] Task 1: Q1, Q2, stills at three Dusk values in Dry at 1280 and 375 px; checkpoint with Tom
+- [x] Task 2: lamp picking, sodium warm-up, pools on wet cobbles, windows and TV flicker
 - [ ] Task 3: rain lit only by light, ripple rings, chip easing, paper boat
 - [ ] Task 4: sound: rain bed, lamp relay and buzz, carillon, wind; Q9
 - [ ] Task 5: bar, Settings, persistence; Q1 to Q10
-- [ ] toys.json entry and menu Lab entry with an icon and a GSAP hook
+- [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name (draft: Vaart bij valavond)
 - [ ] Record the session cost
 
@@ -42,3 +42,6 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Tom (2026-11-09): real per-lamp light, on three.js 0.170 and WebGL 2 (no renderer change). The streetlights are static, so they pack once into a float texture (position, mark, colour, reach) and a 250 x 250 grid of 12 m cells, each listing its eight nearest lamps. Every lit fragment, also in the mirror pass, sums those lamps: windowed inverse-square falloff, a downward cone, Lambert diffuse, and a Blinn gloss on wet asphalt and glass. The painted pool texture is gone. Frame cost on a real device is not measured yet; the hidden-pane timing is not reliable.
 
 - Tom (2026-11-09): AO and TAA. GTAOPass (three 0.170 addon) after the render pass, blend 0.85; reach 7 m from the sky, 1.2 m on the towpath; 8 samples on Standard, 16 on High; off at ladder rung 2. Sky eye moves the near plane to 2 m for depth precision. A small TAA pass: Halton (2,3) sub-pixel jitter via setViewOffset, history blend 0.12 with a 3 x 3 neighbourhood clamp; it resets on a new view, size, Dusk or weather; on sleep one full jitter cycle settles the frame.
+
+- Tom signed off the blockout (2026-11-09, Go to Task 2).
+- Task 2: every streetlight (1,871, with the ten canal lamps moved to stand between the towpath camera and the bridge) can be tapped. A third texture row per lamp holds a forced state and the tap time; lampState() in the shaders gives level and colour. Sodium warms from oklch(0.5 0.12 10) to sodium orange over 3 s with an ease-out from 15 %; LED takes 0.3 s; off fades in 0.4 s. The photocell switch-on shares the pink-to-orange shift. pickAt(x, y) takes the nearest head within 28 px; inside the church tower box the church wins unless a head is within 10 px; the church tap lifts uBell, which fades over about 6 s. Canal-lamp head undersides glow with their state. One lit window in fifteen is a television. Window taps and ripples are left for Task 3.
