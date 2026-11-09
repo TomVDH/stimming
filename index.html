@@ -1819,8 +1819,7 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
                 <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 60)"/>
                 <rect x="16" y="16" width="92" height="92" fill="oklch(0.62 0.07 70)"/>
                 <g id="lichtenberg-char" fill="none" stroke="oklch(0.16 0.02 50)" stroke-linecap="square"><path d="M60 64L54 57L50 47L43 39L36 34" stroke-width="2.6"/><path d="M60 64L70 58L78 49L88 44" stroke-width="2.6"/><path d="M60 64L63 75L58 84L52 92" stroke-width="2.6"/><path d="M50 47L44 49L36 47" stroke-width="1.5"/><path d="M78 49L80 38L86 30" stroke-width="1.5"/><path d="M63 75L72 80L80 90" stroke-width="1.5"/><path d="M58 84L48 86L40 82" stroke-width="1.5"/><path d="M70 58L76 64L86 66" stroke-width="1.5"/><path d="M54 57L44 60L34 62" stroke-width="1.5"/></g>
-                <g id="lichtenberg-spark" fill="none" stroke="oklch(0.97 0.05 265)" stroke-linecap="square" opacity="0"><path d="M60 64L54 57L50 47L43 39L36 34" pathLength="1" stroke-width="2.2"/><path d="M60 64L70 58L78 49L88 44" pathLength="1" stroke-width="2.2"/><path d="M60 64L63 75L58 84L52 92" pathLength="1" stroke-width="2.2"/><path d="M50 47L44 49L36 47" pathLength="1" stroke-width="1.3"/><path d="M78 49L80 38L86 30" pathLength="1" stroke-width="1.3"/><path d="M63 75L72 80L80 90" pathLength="1" stroke-width="1.3"/><path d="M58 84L48 86L40 82" pathLength="1" stroke-width="1.3"/><path d="M70 58L76 64L86 66" pathLength="1" stroke-width="1.3"/><path d="M54 57L44 60L34 62" pathLength="1" stroke-width="1.3"/></g>
-                <rect id="lichtenberg-root" x="57" y="61" width="6" height="6" fill="oklch(0.98 0.03 265)" opacity="0"/>
+                <g id="lichtenberg-live" fill="none" stroke-linecap="round"><g id="lichtenberg-glow" stroke="#5f6cff" opacity="0.5"></g><g id="lichtenberg-core" stroke="#f3f6ff"></g></g>
               </svg>
             </span>
             <span class="name">Lichtenberg burn</span>
@@ -2841,24 +2840,101 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
     };
   }
 
-  // A spark tree crawls out from the root, then cools to char.
+  // A spark tree grows where the pointer enters, then reaches for it.
+  // Lab icons get only play and rest, so this icon tracks the pointer itself.
   {
-    const ch = $('lichtenberg-char'), sp = $('lichtenberg-spark'), root = $('lichtenberg-root');
-    const arms = [...sp.querySelectorAll('path')];
+    const el = $('lichtenberg'), ch = $('lichtenberg-char'), live = $('lichtenberg-live');
+    // Glow and core sit in two groups, so the glow blends once, not per joint.
+    const glow = $('lichtenberg-glow'), core = $('lichtenberg-core');
+    const NS = 'http://www.w3.org/2000/svg';
+    const GLOW = '#5f6cff', CORE = '#f3f6ff', HOT = '#ff8a2a', WARM = '#ffd49a';
+    const inBoard = q => q[0] > 19 && q[0] < 105 && q[1] > 19 && q[1] < 105;
+    const clampIn = q => [Math.max(32, Math.min(92, q[0])), Math.max(32, Math.min(92, q[1]))];
+    let nodes = [], at = null, on = false, tl = null, flick = null, reachAt = 0;
+    const pt = e => {
+      const svg = el.querySelector('svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+    };
+    // One stroke: a blue glow under a white-hot core.
+    const stroke = (a, b, w) => {
+      const d = `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+      const out = [[glow, w + 2.6], [core, w]].map(([g, sw]) => {
+        const p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('stroke-width', sw.toFixed(1));
+        p.setAttribute('pathLength', '1');
+        g.append(p);
+        return p;
+      });
+      nodes.push(b);
+      return out;
+    };
+    const wipe = () => { glow.replaceChildren(); core.replaceChildren(); };
+    // A small random tree: steps of 5 to 9 units; about a third of steps fork.
+    const tree = root => {
+      const segs = [], todo = [], arms = 3 + Math.floor(Math.random() * 2), a0 = Math.random() * 6.28;
+      for (let i = 0; i < arms; i++) todo.push({ p: root, a: a0 + (i * 6.28) / arms + (Math.random() - 0.5) * 0.8, d: 0, w: 2.2 });
+      while (todo.length && segs.length < 46) {
+        const s = todo.shift(), a = s.a + (Math.random() - 0.5) * 0.9, len = 5 + Math.random() * 4;
+        const q = [s.p[0] + Math.cos(a) * len, s.p[1] + Math.sin(a) * len];
+        if (!inBoard(q)) continue;
+        segs.push({ a: s.p, b: q, d: s.d, w: s.w });
+        if (s.d >= 5) continue;
+        todo.push({ p: q, a, d: s.d + 1, w: Math.max(0.9, s.w * 0.8) });
+        if (Math.random() < 0.38) todo.push({ p: q, a: a + (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5), d: s.d + 1, w: Math.max(0.9, s.w * 0.6) });
+      }
+      return segs;
+    };
+    const grow = root => {
+      tl?.kill();
+      flick?.kill();
+      gsap.killTweensOf(live);
+      wipe();
+      glow.setAttribute('stroke', GLOW);
+      core.setAttribute('stroke', CORE);
+      gsap.set(live, { opacity: 1 });
+      nodes = [root];
+      gsap.to(ch, { opacity: 0.2, duration: 0.2, overwrite: true });
+      tl = gsap.timeline();
+      for (const s of tree(root)) {
+        tl.fromTo(stroke(s.a, s.b, s.w), { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.07, ease: 'none' }, s.d * 0.08 + Math.random() * 0.04);
+      }
+      // The live spark flickers until the pointer leaves.
+      flick = gsap.to(live, { opacity: 0.72, duration: 0.05, repeat: -1, yoyo: true, ease: 'steps(1)', repeatDelay: 0.03 });
+    };
+    // A jagged reach from the nearest node toward the pointer.
+    const reach = p => {
+      const now = performance.now();
+      if (now - reachAt < 90 || core.children.length > 110 || !inBoard(p)) return;
+      let n = nodes[0], best = Infinity;
+      for (const q of nodes) { const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < best) { best = d; n = q; } }
+      if (best < 9) return;
+      reachAt = now;
+      let a = n;
+      for (let i = 0; i < 3; i++) {
+        const ang = Math.atan2(p[1] - a[1], p[0] - a[0]) + (Math.random() - 0.5) * 1.1, len = Math.min(best / 3 + 1, 7);
+        const b = [a[0] + Math.cos(ang) * len, a[1] + Math.sin(ang) * len];
+        if (!inBoard(b)) break;
+        gsap.fromTo(stroke(a, b, 1.2), { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.05, ease: 'none', delay: i * 0.05 });
+        a = b;
+      }
+    };
+    // Release: the spark dies to an orange channel, which fades back to char.
+    const cool = () => {
+      tl?.kill();
+      flick?.kill();
+      glow.setAttribute('stroke', HOT);
+      core.setAttribute('stroke', WARM);
+      gsap.set(live.querySelectorAll('path'), { strokeDashoffset: 0 });
+      gsap.set(live, { opacity: 1 });
+      gsap.to(live, { opacity: 0, duration: 0.9, delay: 0.25, ease: 'power2.in', overwrite: true, onComplete: wipe });
+      gsap.to(ch, { opacity: 1, duration: 0.6, delay: 0.5, overwrite: true });
+    };
+    el.addEventListener('pointerenter', e => { at = clampIn(pt(e)); });
+    el.addEventListener('pointermove', e => { if (on) reach(pt(e)); });
     toys.lichtenberg = {
-      play: () => loop({ repeatDelay: 0.5 })
-        .set(sp, { opacity: 1 })
-        .set(arms, { strokeDasharray: 1, strokeDashoffset: 1 })
-        .to(ch, { opacity: 0.25, duration: 0.2 }, 0)
-        .fromTo(root, { opacity: 1 }, { opacity: 0.6, duration: 0.1, repeat: 5, yoyo: true }, 0)
-        .to(arms.slice(0, 3), { strokeDashoffset: 0, duration: 0.55, ease: 'power1.in', stagger: 0.06 }, 0.05)
-        .to(arms.slice(3), { strokeDashoffset: 0, duration: 0.3, ease: 'power1.in', stagger: 0.05 }, 0.35)
-        .to([sp, root], { opacity: 0, duration: 0.5, ease: 'power2.out' }, 1.0)
-        .to(ch, { opacity: 1, duration: 0.6 }, 1.0),
-      rest() {
-        gsap.to([sp, root], { opacity: 0, duration: 0.25, overwrite: true });
-        gsap.to(ch, { opacity: 1, duration: 0.3, overwrite: true });
-      },
+      play() { on = true; grow(at || [62, 62]); at = null; return { kill() {} }; },
+      rest() { if (!on) return; on = false; cool(); },
     };
   }
   // A smoke ring flies at the pointer and flares green as it crosses the sheet.

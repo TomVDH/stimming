@@ -505,7 +505,17 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   if (acts.length > 3) console.warn(`Bar v2 (${id}): ${acts.length} actions; the limit is three.`);
   if (acts.some(a => a.verb === 'clear') && acts.some(a => a.verb === 'reset')) console.warn(`Bar v2 (${id}): Reset belongs in Settings when Clear shows.`);
 
-  /* top left: back block, then the toy name */
+  /* entrance: the corners slide in once the intro has gone */
+  // A safety timer frees the corners if the intro never leaves.
+  if (document.querySelector('.intro')) {
+    layer.dataset.wait = '';
+    const go = () => { mo.disconnect(); clearTimeout(cap); delete layer.dataset.wait; };
+    const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) go(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    const cap = setTimeout(go, 12000);
+  }
+
+  /* top left: the logo, unboxed, then the toy name */
   const letters = MARK.map(([ch, c, w, r, y], i) => `<span style="--i: ${i}; --c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
   const back = make('a', 's2-back', `<span class="s2-arrow" aria-hidden="true">‹</span><span class="mark" aria-hidden="true">${letters}</span>`);
   back.href = home;
