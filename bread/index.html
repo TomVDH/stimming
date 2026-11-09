@@ -66,6 +66,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -967,6 +968,130 @@ function stepCars(dt, awake) {
 // The car counts as lively while it is near the eye or the machine.
 const carNear = () => car.on && Math.min(Math.abs(car.z - camera.position.z), Math.abs(car.z - STOP.position.z)) < 160;
 
+/* ---------- rain ---------- */
+// Rain turns the road into a black mirror; every light lays a long streak on it.
+// The drops show only where a light falls on them.
+const rain = { amt: 0, goal: 0 };
+// The mirror renders the scene from below the road at half size.
+const wetShader = {
+  name: 'WetRoad',
+  uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 } },
+  vertexShader: /* glsl */`
+  uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vW;
+  void main() {
+    vUv = textureMatrix * vec4(position, 1.0);
+    vW = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform float uAmt, uTime; varying vec4 vUv; varying vec3 vW;
+  float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+  float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+  void main() {
+    vec2 uv = vUv.xy / vUv.w;
+    // The asphalt's grain and the falling drops wobble the mirror sideways.
+    float g = vn(vW.xz * vec2(4.0, 0.7));
+    uv.x += (g - 0.5) * 0.006 + sin(vW.z * 9.0 + uTime * 7.0 + g * 6.0) * 0.0012;
+    // Wet asphalt stretches each light into a vertical streak.
+    vec3 acc = vec3(0.0); float ws = 0.0;
+    for (int i = 0; i < 14; i++) {
+      float f = float(i) / 13.0, o = (f - 0.35) * 0.09;
+      float w = exp(-abs(f - 0.35) * 3.0);
+      acc += texture2D(tDiffuse, uv + vec2(0.0, o)).rgb * w; ws += w;
+    }
+    vec3 c = acc / ws;
+    // Puddles shine more than the crown of the road.
+    float pud = 0.45 + 0.55 * smoothstep(0.35, 0.7, vn(vW.xz * 0.18 + 3.1));
+    gl_FragColor = vec4(c * pud * uAmt * 0.85, 1.0);
+  }`,
+};
+const wet = new Reflector(new THREE.PlaneGeometry(ROAD.x1 - ROAD.x0, ROAD.len), { shader: wetShader, textureWidth: 512, textureHeight: 512, clipBias: 0.002, multisample: 0 });
+wet.material.transparent = true;
+wet.material.blending = THREE.AdditiveBlending;
+wet.material.depthWrite = false;
+wet.rotation.x = -Math.PI / 2;
+wet.position.set(0, 0.006, -ROAD.len / 2 + 30);
+scene.add(wet);
+// The drops: short streaks in a box round the machine.
+const DROPS = 4000;
+const dropGeo = new THREE.BufferGeometry();
+{
+  const seed = new Float32Array(DROPS * 6), end = new Float32Array(DROPS * 2);
+  for (let i = 0; i < DROPS; i++) {
+    const a = [Math.random(), Math.random(), Math.random()];
+    seed.set(a, i * 6); seed.set(a, i * 6 + 3);
+    end[i * 2] = 0; end[i * 2 + 1] = 1;
+  }
+  dropGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DROPS * 6), 3));
+  dropGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+  dropGeo.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+}
+const dropMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: {
+    uTime: { value: 0 }, uAmt: { value: 0 }, uBoxO: { value: new THREE.Vector3() }, uBoxS: { value: new THREE.Vector3(16, 8, 16) },
+    uTube: { value: new THREE.Vector3() }, uTubeK: { value: 1 }, uTubeC: { value: TUBE },
+    uHood: { value: new THREE.Vector3() }, uHoodC: { value: lin(0.86, 0.17, 88) },
+    uLamp: { value: new THREE.Vector3() }, uLampK: { value: 0 }, uLampC: { value: lin(0.8, 0.16, 58) },
+    uCarP: { value: new THREE.Vector3() }, uCarD: { value: new THREE.Vector3(0, 0, 1) }, uCarK: { value: 0 }, uCarC: { value: lin(0.96, 0.03, 85) },
+  },
+  vertexShader: /* glsl */`
+  attribute vec3 aSeed; attribute float aEnd;
+  uniform float uTime, uAmt, uTubeK, uLampK, uCarK;
+  uniform vec3 uBoxO, uBoxS, uTube, uTubeC, uHood, uHoodC, uLamp, uLampC, uCarP, uCarD, uCarC;
+  varying vec3 vCol;
+  void main() {
+    // Drops fall at 9 m/s with a slant from the wind; the box wraps them.
+    vec3 vel = vec3(1.4, -9.0, 0.8);
+    vec3 p = fract(aSeed + vel * uTime / uBoxS) * uBoxS + uBoxO;
+    // A 1/40 s exposure draws each drop as a streak.
+    p -= vel * 0.025 * aEnd;
+    vec3 d = p - uTube, c = uTubeC * uTubeK * 1.4 / (1.0 + dot(d, d) * 2.0) * smoothstep(6.0, 2.0, length(d));
+    d = p - uHood; c += uHoodC * 0.5 / (1.0 + dot(d, d) * 1.8);
+    d = p - uLamp; c += uLampC * uLampK * 1.6 / (1.0 + dot(d, d) * 0.1);
+    vec3 v = p - uCarP; float al = dot(v, uCarD);
+    // Dipped beams: a narrow cone, aimed down, cut off above 2.5 m.
+    if (al > 0.0) c += uCarC * uCarK * 1.4 * smoothstep(0.95, 0.99, al / max(length(v), 1e-3)) * exp(-al / 25.0) * smoothstep(2.5, 0.6, p.y);
+    vCol = c * uAmt * mix(1.0, 0.15, aEnd);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol; void main() { gl_FragColor = vec4(vCol * 0.45, 1.0); }`,
+});
+const drops = new THREE.LineSegments(dropGeo, dropMat);
+drops.frustumCulled = false;
+scene.add(drops);
+const ROAD_DRY = { rough: road.material.roughness, col: road.material.color.clone() };
+const FOG_DRY = scene.fog.density, MOON_DRY = moon.intensity;
+function stepRain(dt, t) {
+  rain.amt += (rain.goal - rain.amt) * (1 - Math.exp(-dt * 1.4));
+  if (Math.abs(rain.amt - rain.goal) < 0.002) rain.amt = rain.goal;
+  const a = rain.amt;
+  wet.visible = drops.visible = a > 0.005;
+  // Wet asphalt goes darker and glossier; the haze thickens.
+  road.material.roughness = ROAD_DRY.rough + (0.32 - ROAD_DRY.rough) * a;
+  // The mirror carries the reflections; the moon's own highlight dims.
+  moon.intensity = MOON_DRY * (1 - 0.65 * a);
+  road.material.color.copy(ROAD_DRY.col).multiplyScalar(1 - 0.4 * a);
+  scene.fog.density = FOG_DRY * (1 + 0.8 * a);
+  if (!drops.visible) return;
+  wet.material.uniforms.uAmt.value = a;
+  wet.material.uniforms.uTime.value = t;
+  const U = dropMat.uniforms;
+  U.uAmt.value = a;
+  U.uTime.value = t;
+  // The box of rain sits round the machine, a little toward the eye.
+  U.uBoxO.value.copy(STOP.position).add(new THREE.Vector3(-8, 0, -6));
+  U.uTube.value.copy(STOP.localToWorld(TUBE_POS.clone()));
+  U.uTubeK.value = tubeState.level;
+  U.uHood.value.copy(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + 0.15, M.front)));
+  U.uLamp.value.copy(sodiumLight.position);
+  U.uLampK.value = view === 'edge' ? 1 : 0;
+  U.uCarK.value = car.on ? 1 : 0;
+  if (car.on) { U.uCarP.value.copy(carSpot.position); U.uCarD.value.set(0, -0.06, car.dir).normalize(); }
+}
+const rainBusy = () => Math.abs(rain.amt - rain.goal) > 0.002;
+
 /* ---------- beacons ---------- */
 // The turbines' red beacons flash together, one second on, one off.
 function stepBeacons(t) {
@@ -1166,6 +1291,9 @@ function resize() {
   const W = w * size.dpr, H = h * size.dpr;
   grade.uniforms.uRes.value.set(W, H);
   tilt.uniforms.uRes.value.set(W, H);
+  // The mirror runs at half size; rung 2 of the ladder halves it again.
+  const mk = rung >= 2 ? 0.25 : 0.5;
+  wet.getRenderTarget().setSize(Math.max(1, Math.round(W * mk)), Math.max(1, Math.round(H * mk)));
   stage.style.setProperty('--box', `${Math.max(0, (h - w / 2.39) / 2)}px`);
   frame();
   draw();
@@ -1212,7 +1340,8 @@ function tick(now) {
     stepMoths(dt, simT);
     stepCars(dt, awake);
     stepBeacons(simT);
-    lively = anims.size > 0 || steam.on > 0.001 || lookBusy() || carNear();
+    stepRain(dt, simT);
+    lively = anims.size > 0 || steam.on > 0.001 || lookBusy() || carNear() || rainBusy();
     if (lively || now - lastDraw >= 31) { frame(); draw(); lastDraw = now; }
     keep = lively || awake || car.on || !mothsSettled();
   } finally {
@@ -1512,6 +1641,9 @@ act.tilt = v => { tilt.uniforms.uAmt.value = v; draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
 act.view = v => { setView(v); frame(); draw(); };
 setView(QS.get('view') || ui.setting('view')?.value || 'road');
+act.rain = on => { rain.goal = on ? 1 : 0; wake(); };
+// The stored choice applies at once, with no fade on load.
+rain.goal = rain.amt = ui.setting('rain')?.value ? 1 : 0;
 act.tilt(ui.setting('tilt')?.value ?? 0.6);
 act.letterbox(!!ui.setting('letterbox')?.value);
 stock();
@@ -1519,7 +1651,9 @@ stock();
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
 resize();
+wet.visible = drops.visible = true;
 renderer.compileAsync(scene, camera).then(() => {
+  stepRain(0, 0);
   draw();
   wake();
   canvas.classList.add('on');

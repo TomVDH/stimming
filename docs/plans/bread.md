@@ -191,7 +191,7 @@ Four visible controls.
 
 ### Task 4: Rain
 
-- [ ] Wet road mirror and streaks, rain lit only in the light.
+- [x] Wet road mirror and streaks, rain lit only in the light.
 - [ ] Commit: `Broodautomaat: rain on the road`.
 
 ### Task 5: Sound
