@@ -69,7 +69,7 @@ import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
 // The weather chips and Dusk drive the look; set() binds once the scene exists.
-const act = { weather() {}, dusk() {}, letterbox() {} };
+const act = { weather() {}, dusk() {}, letterbox() {}, view() {} };
 const QS = new URLSearchParams(location.search);
 const ui = initPage({ id: 'canal', bar: {
   choice: { label: 'Weather', value: 'dry', options: [
@@ -77,9 +77,13 @@ const ui = initPage({ id: 'canal', bar: {
     { value: 'rain', label: 'Rain' }, { value: 'downpour', label: 'Downpour' },
   ], onPick: v => act.weather(v) },
   slider: { label: 'Dusk', min: 0, max: 1, step: 0.01, value: QS.has('dusk') ? +QS.get('dusk') : 0.35, onInput: v => act.dusk(v) },
-  settings: [{ type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => act.letterbox(on) }],
+  settings: [
+    { type: 'choice', id: 'view', label: 'View', value: 'sky', persist: true, onPick: v => act.view(v),
+      options: [{ value: 'sky', label: 'Sky eye' }, { value: 'path', label: 'Towpath' }] },
+    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => act.letterbox(on) },
+  ],
   quality: true,
-  keys: [['drag', 'look along']],
+  keys: [['drag', 'look round']],
 } });
 
 // Seeded random keeps the street the same on every load.
@@ -115,8 +119,9 @@ const CANAL_X = 12;
 let rung = 0;
 
 /* ---------- lamps ---------- */
-// Ten towpath lamps; every lit shader reads this array.
-const LN = 10;
+// Ten tappable lamps, then six fixed lights at the frietkot, staminee, station and church.
+// Every lit shader reads this one array.
+const LN = 16, TAPS = 10;
 const U = {
   uLamp: { value: Array.from({ length: LN }, () => new THREE.Vector4()) },
   uLampC: { value: Array.from({ length: LN }, () => new THREE.Vector3()) },
@@ -130,29 +135,44 @@ const U = {
   uHaze: { value: 0.0042 },
   uHazeH: { value: 18 },
   uTime: { value: 0 },
-  // The belfry shows through the haze while the bells ring.
+  // The church tower brightens while the bells ring.
   uBell: { value: 0 },
 };
 const LAMPS_GLSL = /* glsl */`
 uniform vec4 uLamp[${LN}];
 uniform vec3 uLampC[${LN}];
-// Light from every lit lamp on a surface with normal N.
+// Light from every lit lamp on a surface with normal N; a soft wrap reaches grazing walls.
 vec3 lampLit(vec3 P, vec3 N) {
   vec3 s = vec3(0.0);
   for (int i = 0; i < ${LN}; i++) {
     if (uLamp[i].w <= 0.0) continue;
     vec3 d = uLamp[i].xyz - P;
     float dd = dot(d, d);
-    s += uLampC[i] * uLamp[i].w * max(dot(N, d * inversesqrt(dd)), 0.0) * 30.0 / (dd + 1.0);
+    s += uLampC[i] * uLamp[i].w * (0.3 + 0.7 * max(dot(N, d * inversesqrt(dd)), 0.0)) * 30.0 / (dd + 1.0);
   }
   return s;
 }`;
-// Head positions: six on the near towpath, four on the far one.
+// The main road crosses the canal here; the village sits round the crossing.
+const ROAD_Z = -160;
+// Lamp heads: five each side of the bridge on both towpaths.
 const LAMP_POS = [
-  ...[-4, -34, -64, -94, -124, -154].map(z => new THREE.Vector3(-CANAL_X - 2.4, QUAY + 7.5, z)),
-  ...[-19, -49, -79, -109].map(z => new THREE.Vector3(CANAL_X + 2.4, QUAY + 7.5, z)),
+  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(-CANAL_X - 2.4, QUAY + 7.5, z)),
+  ...[-80, -105, -130, -190, -215].map(z => new THREE.Vector3(CANAL_X + 2.4, QUAY + 7.5, z)),
 ];
 LAMP_POS.forEach((p, i) => U.uLamp.value[i].set(p.x, p.y, p.z, 0));
+// Fixed lights: position, colour as OKLCH, and full strength.
+const VENUES = [
+  { p: [25, 2.5, -144], c: [0.9, 0.08, 80], k: 3 },
+  { p: [50, 3, -166], c: [0.75, 0.14, 60], k: 2.5 },
+  { p: [-87, 6, -142], c: [0.9, 0.05, 230], k: 2.2 },
+  { p: [-87, 6, -114], c: [0.9, 0.05, 230], k: 2.2 },
+  { p: [44, 1.5, -206], c: [0.85, 0.1, 70], k: 9 },
+  { p: [56, 1.5, -194], c: [0.85, 0.1, 70], k: 9 },
+];
+VENUES.forEach((v, i) => {
+  U.uLamp.value[TAPS + i].set(v.p[0], QUAY + v.p[1], v.p[2], 0);
+  U.uLampC.value[TAPS + i].set(...linFit(...v.c));
+});
 /* ---------- end lamps ---------- */
 
 /* ---------- K2: noise ---------- */
@@ -239,6 +259,9 @@ function setDusk(d) {
   // The afterglow fades before the sky goes dark.
   U.uGlowC.value.set(...lerp3(a.glow, b.glow, f).map(x => x * 0.35 * (1 - d) ** 1.5));
   U.uStars.value = Math.max(0, (d - 0.55) / 0.45);
+  // The frietkot, staminee, station and church lights come on as it darkens.
+  const on = Math.min(1, Math.max(0, (d - 0.1) / 0.3));
+  VENUES.forEach((v, i) => { U.uLamp.value[TAPS + i].w = v.k * on * on * (3 - 2 * on); });
 }
 U.uWin.value.set(...linFit(0.8, 0.12, 70).map(x => x * 2.6));
 /* ---------- end dusk ---------- */
@@ -254,11 +277,12 @@ scene.add(sky);
 
 /* ---------- buildings ---------- */
 // Surface kinds in aInfo.w.
-const BRICK = 0, RENDER = 1, CONCRETE = 2, STEEL = 3, BELFRY = 4, METAL = 5, TREE = 6;
+const BRICK = 0, RENDER = 1, CONCRETE = 2, STEEL = 3, CHURCH = 4, METAL = 5, TREE = 6, FRIT = 7, SIGN = 8, STAM = 9;
 const fr = x => x - Math.floor(x);
 const v2 = ps => new THREE.Shape(ps.map(([x, y]) => new THREE.Vector2(x, y)));
+const UP = new THREE.Vector3(0, 1, 0);
 // One building: u runs across the front, v up, z back; b is the eaves height.
-// The roof ridge runs along the front; a gable house turns its gable to the canal.
+// The roof ridge runs along the front; a gable house turns its gable to the street.
 function house(w, b, d, rh, seed, kind, { win = true, gable = false } = {}) {
   const info = [win ? w : 0, b, seed, kind];
   if (gable) {
@@ -287,81 +311,81 @@ function tag(geo, info, face = false) {
   geo.setAttribute('aInfo', new THREE.BufferAttribute(inf, 4));
   return geo;
 }
-// Local frame of a plot on the far side: u runs toward -z, the front faces -x.
-const plot = (x, z) => new THREE.Matrix4().makeBasis(
-  new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)).setPosition(x, QUAY, z);
+const parts = [];
+// Place local geometry at a plot: the front faces away from back.
+function place(geos, x, z, back) {
+  const b = new THREE.Vector3(...back), u = new THREE.Vector3().crossVectors(UP, b);
+  const m = new THREE.Matrix4().makeBasis(u, UP, b).setPosition(x, QUAY, z);
+  for (const g of geos) { g.applyMatrix4(m); parts.push(g); }
+}
 const brickKind = () => (rnd() < 0.22 ? RENDER : BRICK);
 // A round tree on a short trunk.
 function tree(x, z, r) {
-  return [
+  parts.push(
     tag(new THREE.CylinderGeometry(0.2, 0.3, 3, 5).translate(x, QUAY + 1.5, z), [0, 0, 0, TREE]),
     tag(new THREE.SphereGeometry(r, 10, 7).scale(1, 1.15, 1).translate(x, QUAY + 2.4 + r, z), [0, 0, rnd() * 100, TREE]),
-  ];
+  );
 }
-// The far bank: a ribbon of ordinary plots along the road, with gaps.
-function ribbon(z0, z1) {
-  const parts = [];
-  const put = (geos, x, z) => { const m = plot(x, z); for (const g of geos) { g.applyMatrix4(m); parts.push(g); } };
-  let z = z0;
-  while (z > z1) {
-    const t = rnd(), x = 27 + 8 * rnd() ** 2, s = rnd() * 100;
-    let w;
-    if (t < 0.24) {
-      // A short terrace of two to four houses; the end walls stay blank.
-      const n = 2 + Math.floor(rnd() * 3), b = 5.8 + 0.8 * rnd(), k = brickKind();
-      w = 0;
-      for (let i = 0; i < n; i++) {
-        const hw = 5.4 + rnd();
-        put(house(hw, b, 10, 4, s + i, rnd() < 0.3 ? brickKind() : k), x, z - w);
-        w += hw;
-      }
-    } else if (t < 0.38) {
-      // A lone tall house with blank side walls, waiting for neighbours.
-      w = 5.8 + rnd();
-      put(house(w, 6.4 + rnd(), 11, 4.2, s, BRICK), x, z);
-    } else if (t < 0.53) {
-      // A low farmhouse under a steep roof.
-      w = 11 + 4 * rnd();
-      put(house(w, 3, 9, 5.5, s, rnd() < 0.55 ? RENDER : BRICK), x, z);
-    } else if (t < 0.68) {
-      // A wide bungalow under a low roof.
-      w = 11 + 3 * rnd();
-      put(house(w, 3.2, 10, 2.4, s, BRICK), x, z);
-    } else if (t < 0.79) {
-      // A gable house turned to the road.
-      w = 7 + rnd();
-      put(house(w, 6, 12, 4.8, s, brickKind(), { gable: true }), x, z);
-    } else if (t < 0.87) {
-      // A metal shed, blank and wide.
-      w = 24 + 14 * rnd();
-      put(house(w, 7, 20, 1.6, s, METAL, { win: false }), x + 6, z);
-    } else {
-      // An empty lot, now and then with a tree or two.
-      w = 10 + 22 * rnd();
-      const nt = rnd() < 0.5 ? Math.floor(1 + rnd() * 3) : 0;
-      for (let i = 0; i < nt; i++) parts.push(...tree(x + 4 + rnd() * 20, z - rnd() * w, 2.8 + rnd() * 2));
+// One ordinary plot; returns its frontage and its geometry, or trees for an empty lot.
+function plotGeos() {
+  const t = rnd(), s = rnd() * 100;
+  if (t < 0.24) {
+    // A short terrace of two to four houses; the end walls stay blank.
+    const n = 2 + Math.floor(rnd() * 3), b = 5.8 + 0.8 * rnd(), k = brickKind(), geos = [];
+    let w = 0;
+    for (let i = 0; i < n; i++) {
+      const hw = 5.4 + rnd();
+      geos.push(...house(hw, b, 10, 4, s + i, rnd() < 0.3 ? brickKind() : k).map(g => g.translate(w, 0, 0)));
+      w += hw;
     }
-    z -= w + 2 + 6 * rnd();
+    return { w, geos };
   }
-  return parts;
+  // A lone tall house with blank side walls, waiting for neighbours.
+  if (t < 0.38) { const w = 5.8 + rnd(); return { w, geos: house(w, 6.4 + rnd(), 11, 4.2, s, BRICK) }; }
+  // A low farmhouse under a steep roof.
+  if (t < 0.53) { const w = 11 + 4 * rnd(); return { w, geos: house(w, 3, 9, 5.5, s, rnd() < 0.55 ? RENDER : BRICK) }; }
+  // A wide bungalow under a low roof.
+  if (t < 0.68) { const w = 11 + 3 * rnd(); return { w, geos: house(w, 3.2, 10, 2.4, s, BRICK) }; }
+  // A gable house turned to the street.
+  if (t < 0.79) { const w = 7 + rnd(); return { w, geos: house(w, 6, 12, 4.8, s, brickKind(), { gable: true }) }; }
+  // A metal shed, blank and wide, set further back.
+  if (t < 0.87) { const w = 24 + 14 * rnd(); return { w, geos: house(w, 7, 20, 1.6, s, METAL, { win: false }).map(g => g.translate(0, 0, 6)) }; }
+  return { w: 10 + 22 * rnd(), geos: null };
 }
-// Poplars stand in a row along the near bank.
+// A ribbon of plots along a street; dir runs along it, back points away from it.
+// Spans in skip stay empty.
+function ribbon(x0, z0, dir, back, len, skip = []) {
+  const D = new THREE.Vector3(...dir), B = new THREE.Vector3(...back);
+  const flip = new THREE.Vector3().crossVectors(UP, B).dot(D) < 0;
+  for (let a = 0; a < len;) {
+    const { w, geos } = plotGeos();
+    if (skip.some(([s0, s1]) => a + w > s0 && a < s1)) { a += 6; continue; }
+    const set = 2 + 8 * rnd() ** 2;
+    const at = flip ? a + w : a;
+    const x = x0 + D.x * at + B.x * set, z = z0 + D.z * at + B.z * set;
+    if (geos) place(geos, x, z, back);
+    else if (rnd() < 0.5) for (let i = 0, n = 1 + Math.floor(rnd() * 3); i < n; i++) {
+      const q = a + rnd() * w, r = 6 + rnd() * 18;
+      tree(x0 + D.x * q + B.x * r, z0 + D.z * q + B.z * r, 2.8 + rnd() * 2);
+    }
+    a += w + 2 + 6 * rnd();
+  }
+}
+// Poplars stand in a row along the near bank, broken where the road crosses.
 function poplars(z0, z1) {
-  const parts = [];
   for (let z = z0; z > z1; z -= 7 + 2 * rnd()) {
+    if (Math.abs(z - ROAD_Z) < 9) continue;
     // Columns: narrow, tall, with a short bare trunk.
     const x = -22 + rnd(), h = 19 + 7 * rnd(), r = 1.1 + 0.35 * rnd();
     parts.push(tag(new THREE.CylinderGeometry(0.16, 0.26, 3.5, 5).translate(x, QUAY + 1.75, z), [0, 0, 0, TREE]));
     parts.push(tag(new THREE.SphereGeometry(1, 10, 9).scale(r, h * 0.45, r).translate(x, QUAY + 2.6 + h * 0.45, z), [0, 0, rnd() * 100, TREE]));
   }
-  return parts;
 }
-// A far tree line: a strip whose top wanders; the haze takes most of it.
+// A far tree line: a strip with a soft top; the haze takes most of it.
 function treeLine(ax, az, bx, bz, h) {
   const N = 160, pos = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const t = i / N, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-    // Low, soft crowns of a tree line.
     const top = h * (0.7 + 0.15 * Math.sin(i * 0.9) + 0.1 * Math.sin(i * 2.3 + 1.0) + 0.1 * rnd());
     pos.push(x, QUAY, z, x, QUAY + top, z);
   }
@@ -370,50 +394,85 @@ function treeLine(ax, az, bx, bz, h) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  return tag(g, [0, 0, 1.1, TREE]);
+  parts.push(tag(g, [0, 0, 1.1, TREE]));
 }
 /* ---------- end buildings ---------- */
 
-/* ---------- bridge, church, quay walls and lamp posts ---------- */
-const BRIDGE_Z = -160;
-// A plain concrete road bridge: ramps on each bank and a shallow arch over the water.
-function bridge() {
-  const Q = QUAY, top = x => Q + 0.6 + 4.9 * smooth(40, 14, Math.abs(x));
-  const pts = [[-40, Q], [-12.5, Q], [-12.5, 0], [-12, 0]];
-  for (let k = 0; k <= 16; k++) { const x = -12 + (24 * k) / 16; pts.push([x, 2.4 + 2.4 * (1 - (x / 12) ** 2)]); }
-  pts.push([12, 0], [12.5, 0], [12.5, Q], [40, Q]);
-  for (let k = 0; k <= 32; k++) { const x = 40 - (80 * k) / 32; pts.push([x, top(x)]); }
-  const geo = new THREE.ExtrudeGeometry(v2(pts), { depth: 9, bevelEnabled: false, curveSegments: 1 });
-  geo.translate(0, 0, BRIDGE_Z - 4.5);
-  return tag(geo, [0, 0, 7.7, CONCRETE]);
+/* ---------- the village centre ---------- */
+// The church: a nave under a slate roof, a square tower and a spire.
+function church() {
+  place(house(30, 11, 13, 7, 41.3, CHURCH, { win: false }), 92, -199, [0, 0, -1]);
+  const at = (g, y) => parts.push(tag(g.translate(56, QUAY + y, -205.5), [0, 0, 41.3, CHURCH]));
+  at(new THREE.BoxGeometry(9, 32, 9), 16);
+  at(new THREE.ConeGeometry(6.3, 24, 4).rotateY(Math.PI / 4), 44);
 }
+// The staminee: a corner café on the square, its ground floor lit and a sign over the door.
+function staminee() {
+  place(house(9, 6, 11, 4, 17.7, STAM), 51, -167, [0, 0, -1]);
+  parts.push(tag(new THREE.BoxGeometry(1.6, 0.5, 0.2).translate(46.5, QUAY + 3.3, -166.8), [0, 0, 1, SIGN]));
+}
+// The frietkot: a flat shack by the crossing, all counter and light, a sign on the roof.
+function frietkot() {
+  place([tag(new THREE.BoxGeometry(8, 3.2, 5).translate(4, 1.6, 2.5), [8, 3.2, 3.3, FRIT], true)], 27, -140, [1, 0, 0]);
+  parts.push(tag(new THREE.BoxGeometry(0.3, 1, 3.6).translate(29.5, QUAY + 3.7, -144), [0, 0, 2, SIGN]));
+}
+// The station: a low brick building, a platform and a row of platform lights.
+function station() {
+  place(house(26, 4.2, 8, 3.2, 63.1, BRICK), -98, -150, [-1, 0, 0]);
+  parts.push(tag(new THREE.BoxGeometry(4, 0.8, 46).translate(-88, QUAY + 0.4, -128), [0, 0, 0, CONCRETE]));
+  for (let z = -148; z <= -106; z += 14) {
+    parts.push(tag(new THREE.CylinderGeometry(0.06, 0.06, 4.4, 5).translate(-87, QUAY + 3, z), [0, 0, 0, STEEL]));
+    parts.push(tag(new THREE.BoxGeometry(0.3, 0.12, 1.2).translate(-87, QUAY + 5.2, z), [0, 0, 3, SIGN]));
+  }
+}
+/* ---------- end village centre ---------- */
+
+/* ---------- bridge, quay walls and lamp posts ---------- */
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-// The church tower of the next village, far over the fields.
-function belfry() {
-  const at = (g, y) => g.translate(-150, QUAY + y, -950);
-  return [
-    at(new THREE.BoxGeometry(11, 38, 11), 19),
-    at(new THREE.ConeGeometry(6.4, 30, 8).rotateY(Math.PI / 8), 53),
-  ].map(g => tag(g, [0, 0, 3.1, BELFRY]));
+// A flat road bridge: a thin deck on short ramps, a flat soffit over the water.
+function bridge() {
+  const Q = QUAY, deck = Q + 3.4, top = x => Q + (deck - Q + 0.9) * smooth(44, 15, Math.abs(x));
+  const pts = [[-44, Q], [-12.6, Q], [-12.6, 0], [-12, 0], [-12, deck - 0.9], [12, deck - 0.9], [12, 0], [12.6, 0], [12.6, Q], [44, Q]];
+  for (let k = 0; k <= 22; k++) { const x = 44 - (88 * k) / 22; pts.push([x, top(x)]); }
+  const geo = new THREE.ExtrudeGeometry(v2(pts), { depth: 9, bevelEnabled: false, curveSegments: 1 });
+  parts.push(tag(geo.translate(0, 0, ROAD_Z - 4.5), [0, 0, 7.7, CONCRETE]));
+  // A plain steel rail each side of the deck.
+  for (const s of [-1, 1]) parts.push(tag(new THREE.BoxGeometry(30, 0.1, 0.1).translate(0, deck + 1, ROAD_Z + s * 4.3), [0, 0, 0, STEEL]));
 }
 // Concrete quay walls face the water.
 function walls() {
-  const near = new THREE.PlaneGeometry(1110, QUAY).rotateY(Math.PI / 2).translate(-CANAL_X, QUAY / 2, -545);
-  const far = new THREE.PlaneGeometry(1110, QUAY).rotateY(-Math.PI / 2).translate(CANAL_X, QUAY / 2, -545);
-  return [near, far].map(g => tag(g, [0, 0, 5.5, CONCRETE]));
+  for (const s of [-1, 1]) parts.push(tag(new THREE.PlaneGeometry(1600, QUAY).rotateY(-s * Math.PI / 2).translate(s * CANAL_X, QUAY / 2, -300), [0, 0, 5.5, CONCRETE]));
 }
 // Road lamps: a steel pole and an arm that hangs the head over the towpath.
 function posts() {
-  return LAMP_POS.flatMap(p => {
+  for (const p of LAMP_POS) {
     const px = p.x + Math.sign(p.x) * 1.6;
-    return [
+    parts.push(
       tag(new THREE.CylinderGeometry(0.07, 0.11, p.y - QUAY, 6).translate(px, (p.y + QUAY) / 2, p.z), [0, 0, 0, STEEL]),
       tag(new THREE.BoxGeometry(1.7, 0.08, 0.08).translate((px + p.x) / 2, p.y + 0.1, p.z), [0, 0, 0, STEEL]),
       tag(new THREE.BoxGeometry(0.75, 0.16, 0.34).translate(p.x, p.y, p.z), [0, 0, 0, STEEL]),
-    ];
-  });
+    );
+  }
 }
-/* ---------- end bridge, church, quay walls and lamp posts ---------- */
+/* ---------- end bridge, quay walls and lamp posts ---------- */
+
+/* ---------- layout ---------- */
+// Ribbons line the canal road and the main road; the centre keeps its own pieces.
+ribbon(26, 400, [0, 0, -1], [1, 0, 0], 1300, [[530, 600]]);
+ribbon(36, ROAD_Z + 6, [1, 0, 0], [0, 0, 1], 460);
+ribbon(108, ROAD_Z - 6, [1, 0, 0], [0, 0, -1], 400);
+ribbon(-28, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 40);
+ribbon(-28, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 40);
+ribbon(-112, ROAD_Z + 6, [-1, 0, 0], [0, 0, 1], 360);
+ribbon(-112, ROAD_Z - 6, [-1, 0, 0], [0, 0, -1], 360);
+// Houses round the square.
+ribbon(42, -236, [1, 0, 0], [0, 0, -1], 60);
+poplars(400, -700);
+treeLine(-2200, -1100, 2200, -1100, 12);
+treeLine(560, 500, 560, -1100, 10);
+treeLine(-520, 500, -520, -1100, 11);
+church(); staminee(); frietkot(); station(); bridge(); walls(); posts();
+/* ---------- end layout ---------- */
 
 /* ---------- solids: one material for every built surface ---------- */
 const solidMat = new THREE.ShaderMaterial({
@@ -438,6 +497,7 @@ const solidMat = new THREE.ShaderMaterial({
     vec3 c = base * (0.88 + 0.24 * k2hash(id + vInfo.z));
     return mix(base * 1.2 + 0.025, c, m);
   }
+  bool is(float k, float v) { return abs(k - v) < 0.5; }
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(vP - cameraPosition);
@@ -447,88 +507,93 @@ const solidMat = new THREE.ShaderMaterial({
     float hv = k2hash(vec2(sd, 1.3));
     vec3 base;
     // Brick: red-orange, yellow-brown or purple-brown.
-    if (kind < 0.5) base = hv < 0.45 ? vec3(0.22, 0.08, 0.042) : hv < 0.75 ? vec3(0.25, 0.16, 0.075) : vec3(0.12, 0.06, 0.05);
+    if (is(kind, 0.0) || is(kind, 9.0)) base = hv < 0.45 ? vec3(0.22, 0.08, 0.042) : hv < 0.75 ? vec3(0.25, 0.16, 0.075) : vec3(0.12, 0.06, 0.05);
     // Render: white or cream.
-    else if (kind < 1.5) base = hv < 0.6 ? vec3(0.6, 0.58, 0.53) : vec3(0.55, 0.5, 0.4);
-    else if (kind < 2.5) base = vec3(0.2, 0.2, 0.19) * (0.85 + 0.3 * k2noise(vP.xy * vec2(0.4, 0.15)));
-    else if (kind < 3.5) base = vec3(0.04, 0.042, 0.045);
-    else if (kind < 4.5) base = vec3(0.07, 0.07, 0.075);
+    else if (is(kind, 1.0) || is(kind, 7.0)) base = hv < 0.6 ? vec3(0.6, 0.58, 0.53) : vec3(0.55, 0.5, 0.4);
+    else if (is(kind, 2.0)) base = vec3(0.2, 0.2, 0.19) * (0.85 + 0.3 * k2noise(vP.xy * vec2(0.4, 0.15)));
+    else if (is(kind, 3.0)) base = vec3(0.04, 0.042, 0.045);
+    // The church is grey stone.
+    else if (is(kind, 4.0)) base = vec3(0.17, 0.165, 0.155) * (0.9 + 0.2 * k2noise(vP.xy * vec2(0.5, 1.5)));
     // Sheds: grey or green metal in vertical ribs.
-    else if (kind < 5.5) base = (hv < 0.6 ? vec3(0.15, 0.16, 0.16) : vec3(0.07, 0.11, 0.09)) * (0.92 + 0.08 * sin((abs(N.x) > 0.5 ? vP.z : vP.x) * 25.0) * (1.0 - smoothstep(0.3, 1.0, fwidth(vP.z * 25.0 + vP.x * 25.0))));
-    else base = vec3(0.012, 0.018, 0.01) * (0.6 + 0.8 * k2noise(vec2(vP.x + vP.z, vP.y) * 0.9));
-    vec3 alb = kind < 0.5 ? brick(vP, N, base) : base;
-    // Roofs: grey concrete tile, red-brown tile or black glaze.
-    float roof = kind < 1.5 && N.y > 0.25 && N.y < 0.98 ? 1.0 : 0.0;
+    else if (is(kind, 5.0)) base = (hv < 0.6 ? vec3(0.15, 0.16, 0.16) : vec3(0.07, 0.11, 0.09)) * (0.92 + 0.08 * sin((abs(N.x) > 0.5 ? vP.z : vP.x) * 25.0) * (1.0 - smoothstep(0.3, 1.0, fwidth(vP.z * 25.0 + vP.x * 25.0))));
+    else if (is(kind, 6.0)) base = vec3(0.012, 0.018, 0.01) * (0.6 + 0.8 * k2noise(vec2(vP.x + vP.z, vP.y) * 0.9));
+    else base = vec3(0.02);
+    vec3 alb = is(kind, 0.0) || is(kind, 9.0) ? brick(vP, N, base) : base;
+    // Roofs: grey concrete tile, red-brown tile or black glaze; the church has slate.
+    float roof = (kind < 1.5 || is(kind, 4.0) || is(kind, 9.0)) && N.y > 0.25 && N.y < 0.98 ? 1.0 : 0.0;
     float rk = k2hash(vec2(sd, 2.0));
-    if (roof > 0.5) alb = rk < 0.45 ? vec3(0.03, 0.03, 0.032) : rk < 0.8 ? vec3(0.075, 0.03, 0.02) : vec3(0.012);
+    if (roof > 0.5) alb = is(kind, 4.0) ? vec3(0.03, 0.035, 0.045) : rk < 0.45 ? vec3(0.03, 0.03, 0.032) : rk < 0.8 ? vec3(0.075, 0.03, 0.02) : vec3(0.012);
     // Rendered walls stand on a tarred black plinth.
-    if (roof < 0.5 && kind > 0.5 && kind < 1.5 && vUV.y < 0.6) alb = vec3(0.012);
+    if (roof < 0.5 && is(kind, 1.0) && vUV.y < 0.6) alb = vec3(0.012);
     vec3 emit = vec3(0.0);
     float glass = 0.0;
-    // Windows: only on a house front, in a grid from width and height.
+    float lit = smoothstep(0.1, 0.35, uDusk);
+    // Signs glow: frietkot yellow, staminee red, platform white.
+    if (is(kind, 8.0)) emit = (sd < 1.5 ? vec3(1.0, 0.12, 0.08) : sd < 2.5 ? vec3(1.0, 0.7, 0.15) : vec3(0.75, 0.88, 1.0)) * mix(0.4, 4.0, lit);
+    // Windows sit only on fronts and backs, where u runs along the wall.
     float w = vInfo.x, h = vInfo.y;
-    if (w > 0.0 && roof < 0.5 && abs(N.x) > 0.5) {
+    bool face = length(vec2(dFdx(vUV.x), dFdy(vUV.x))) > 1e-5 && abs(N.y) < 0.3;
+    if (w > 0.0 && roof < 0.5 && face) {
       float u = vUV.x, v = vUV.y;
-      float n = max(1.0, floor(w / 1.9)), cw = w / n;
-      float ci = floor(u / cw), cu = (fract(u / cw) - 0.5) * cw;
-      float fh = h / max(1.0, floor(h / 2.6));
-      float ri = floor(v / fh), rv = v - ri * fh;
-      vec2 hw = vec2(cw * 0.27, fh * 0.27), c = vec2(0.0, fh * 0.52);
-      // A gable holds one window in its middle.
-      if (v > h) { ci = 99.0; ri = 0.0; cu = u - w * 0.5; rv = v - h; hw = vec2(0.4, 0.5); c = vec2(0.0, 1.1); }
-      vec2 d = abs(vec2(cu, rv) - c) - hw;
-      float id = k2hash(vec2(sd * 3.7 + ci, ri * 1.9 + 0.3));
-      // About four windows in ten light up as Dusk passes their mark.
-      float mark = id < 0.42 ? -0.05 + id / 0.42 * 0.95 : 9.0;
-      float on = smoothstep(mark, mark + 0.03, uDusk);
-      if (max(d.x, d.y) < 0.0) {
-        vec2 l = vec2(cu, rv) - c;
-        // Frames are white or dark; a roller shutter hangs part way down.
-        float fw = min(-d.x, -d.y);
-        float sh = k2hash(vec2(id, 5.5)), drop = sh < 0.45 ? 0.0 : (sh - 0.45) / 0.55 * 0.85;
-        vec3 frame = k2hash(vec2(id, 6.6)) < 0.6 ? vec3(0.42, 0.42, 0.4) : vec3(0.03);
-        if (fw < 0.06 || abs(l.x) < 0.03 && k2hash(vec2(id, 7.7)) < 0.4) alb = frame;
-        else if (l.y > hw.y - 2.0 * hw.y * drop) {
-          // Slats leak a thread of the light behind them.
-          float slat = smoothstep(0.75, 0.95, fract(l.y * 18.0));
-          alb = vec3(0.16, 0.15, 0.13);
-          emit = uWin * on * 0.15 * slat * (1.0 - smoothstep(0.3, 1.0, fwidth(l.y * 18.0)));
-        } else {
-          glass = 1.0;
-          // Curtains: soft folds and a warm or pale tint per window.
-          float fold = 0.7 + 0.3 * sin(l.x * 18.0 + id * 40.0);
-          float tint = k2hash(vec2(id, 9.1));
-          vec3 wc = uWin * mix(vec3(1.0, 0.82, 0.62), vec3(1.0, 1.05, 1.1), tint) * (0.55 + 0.9 * k2hash(vec2(id, 4.4)));
-          emit = wc * fold * on;
-          alb = vec3(0.0);
-        }
+      // The frietkot is one long counter window.
+      if (is(kind, 7.0)) {
+        if (v > 0.9 && v < 2.5 && u > 0.6 && u < w - 0.6) { emit = vec3(1.0, 0.86, 0.62) * mix(0.6, 4.5, lit); alb = vec3(0.0); }
       } else {
-        // A lit window spills a little warm light on the wall round it.
-        float dd = length(max(d, 0.0));
-        emit = uWin * on * 0.06 * exp(-dd * 4.0) * alb;
+        float n = max(1.0, floor(w / 1.9)), cw = w / n;
+        float ci = floor(u / cw), cu = (fract(u / cw) - 0.5) * cw;
+        float fh = h / max(1.0, floor(h / 2.6));
+        float ri = floor(v / fh), rv = v - ri * fh;
+        vec2 hw = vec2(cw * 0.27, fh * 0.27), c = vec2(0.0, fh * 0.52);
+        // A gable holds one window in its middle.
+        if (v > h) { ci = 99.0; ri = 0.0; cu = u - w * 0.5; rv = v - h; hw = vec2(0.4, 0.5); c = vec2(0.0, 1.1); }
+        vec2 d = abs(vec2(cu, rv) - c) - hw;
+        float id = k2hash(vec2(sd * 3.7 + ci, ri * 1.9 + 0.3));
+        // About four windows in ten light up as Dusk passes their mark.
+        float mark = id < 0.42 ? -0.05 + id / 0.42 * 0.95 : 9.0;
+        float on = smoothstep(mark, mark + 0.03, uDusk);
+        // The staminee's ground floor is always lit, amber.
+        bool cafe = is(kind, 9.0) && ri < 0.5;
+        if (cafe) on = mix(0.5, 1.4, lit);
+        if (max(d.x, d.y) < 0.0) {
+          vec2 l = vec2(cu, rv) - c;
+          // Frames are white or dark; a roller shutter hangs part way down.
+          float fw = min(-d.x, -d.y);
+          float sh = cafe ? 0.0 : k2hash(vec2(id, 5.5)), drop = sh < 0.45 ? 0.0 : (sh - 0.45) / 0.55 * 0.85;
+          vec3 frame = k2hash(vec2(id, 6.6)) < 0.6 ? vec3(0.42, 0.42, 0.4) : vec3(0.03);
+          if (fw < 0.06 || abs(l.x) < 0.03 && k2hash(vec2(id, 7.7)) < 0.4) alb = frame;
+          else if (l.y > hw.y - 2.0 * hw.y * drop) {
+            // Slats leak a thread of the light behind them.
+            float slat = smoothstep(0.75, 0.95, fract(l.y * 18.0));
+            alb = vec3(0.16, 0.15, 0.13);
+            emit = uWin * on * 0.15 * slat * (1.0 - smoothstep(0.3, 1.0, fwidth(l.y * 18.0)));
+          } else {
+            glass = 1.0;
+            // Curtains: soft folds and a warm or pale tint per window.
+            float fold = 0.7 + 0.3 * sin(l.x * 18.0 + id * 40.0);
+            float tint = k2hash(vec2(id, 9.1));
+            vec3 wc = uWin * mix(vec3(1.0, 0.82, 0.62), vec3(1.0, 1.05, 1.1), tint) * (0.55 + 0.9 * k2hash(vec2(id, 4.4)));
+            if (cafe) wc = uWin * vec3(1.2, 0.75, 0.4);
+            emit = wc * fold * on;
+            alb = vec3(0.0);
+          }
+        } else {
+          // A lit window spills a little warm light on the wall round it.
+          float dd = length(max(d, 0.0));
+          emit = uWin * on * 0.06 * exp(-dd * 4.0) * alb;
+        }
       }
     }
     vec3 col = alb * skyAmb(N);
     // Walls darken toward the ground, where less sky reaches.
     col *= 0.6 + 0.4 * smoothstep(0.0, 3.0, vP.y - ${QUAY.toFixed(2)});
-    col += alb * lampLit(vP, N);
+    col += alb * lampLit(vP, N) * (is(kind, 4.0) ? 1.0 + 2.0 * uBell : 1.0);
     // Dark glass holds a dim copy of the sky.
     col += (glass * 0.25 + roof * 0.06) * k2sky(reflect(V, N)) + emit;
-    col = k2haze(col, vP);
-    // The church stays a shade darker than the sky until the bells ring.
-    if (kind > 3.5 && kind < 4.5) col = mix(col, k2sky(V) * 0.8, 0.75 * (1.0 - uBell));
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
 solidMat.extensions = { derivatives: true };
-const solids = new THREE.Mesh(mergeGeometries([
-  ...ribbon(30, -1000),
-  ...poplars(20, -700),
-  treeLine(-2200, -1100, 2200, -1100, 12),
-  treeLine(260, 60, 260, -1100, 10),
-  treeLine(-380, 60, -380, -1100, 11),
-  bridge(), ...belfry(), ...walls(), ...posts(),
-]), solidMat);
+const solids = new THREE.Mesh(mergeGeometries(parts), solidMat);
 solids.layers.enable(LIGHT);
 scene.add(solids);
 /* ---------- end solids ---------- */
@@ -564,7 +629,7 @@ function renderMirror() {
 /* ---------- water ---------- */
 // Wind ripple and smear follow the weather; Dry is near still.
 const W = { uWind: { value: 0.1 }, uSmear: { value: 0.3 } };
-const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL_X * 2, 1160).rotateX(-Math.PI / 2).translate(0, 0, -520), new THREE.ShaderMaterial({
+const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL_X * 2, 1600).rotateX(-Math.PI / 2).translate(0, 0, -300), new THREE.ShaderMaterial({
   uniforms: { ...U, ...W, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
@@ -603,39 +668,64 @@ const water = new THREE.Mesh(new THREE.PlaneGeometry(CANAL_X * 2, 1160).rotateX(
 scene.add(water);
 /* ---------- end water ---------- */
 
-/* ---------- ground: towpaths, road, verges and fields ---------- */
+/* ---------- ground: towpaths, roads, the square, the railway and fields ---------- */
 const groundMat = new THREE.ShaderMaterial({
   uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform mat4 uTexM; varying vec3 vP; ${HEAD}
+  float band(float x, float a, float b) { return step(a, x) * (1.0 - step(b, x)); }
   void main() {
     vec3 V = normalize(vP - cameraPosition);
-    float ax = abs(vP.x);
-    // Asphalt on both towpaths and on the far road.
-    float tar = max(1.0 - step(${CANAL_X + 4}.0, ax), step(18.5, vP.x) * (1.0 - step(24.0, vP.x)));
-    float field = smoothstep(60.0, 80.0, ax);
+    float x = vP.x, z = vP.z, ax = abs(x);
+    // Asphalt: both towpaths, the canal road and the main road.
+    float tar = max(max(1.0 - step(${CANAL_X + 4}.0, ax), band(x, 18.5, 24.0)), 1.0 - step(4.0, abs(z - ${ROAD_Z}.0)));
+    // The square: pale paving.
+    float sq = band(x, 42.0, 102.0) * band(z, -234.0, -164.0) * (1.0 - tar);
+    // The railway: a gravel bed with two tracks.
+    float rail = band(x, -86.0, -74.0) * (1.0 - tar);
+    float dRoad = min(min(abs(x - 21.0), abs(z - ${ROAD_Z}.0)), ax - 12.0);
+    float field = smoothstep(45.0, 70.0, dRoad);
+    // Fields: parcels of grass, ploughland and stubble, each with its own furrows.
+    vec2 pc = floor(vec2(x / 90.0, z / 140.0 + 0.5 * floor(x / 90.0)));
+    float ph = k2hash(pc + 4.0);
+    vec3 parcel = ph < 0.45 ? vec3(0.03, 0.045, 0.02) : ph < 0.75 ? vec3(0.045, 0.034, 0.024) : vec3(0.06, 0.055, 0.035);
+    float fu = (k2hash(pc + 9.0) < 0.5 ? x : z) * 1.6;
+    float fw = fwidth(fu);
+    parcel *= 0.85 + 0.15 * sin(fu * 6.283) * (1.0 - smoothstep(0.3, 0.8, fw));
+    // Parcel edges are darker ditches.
+    vec2 pf = fract(vec2(x / 90.0, z / 140.0 + 0.5 * floor(x / 90.0)));
+    parcel *= 0.55 + 0.45 * smoothstep(0.0, 0.02, min(min(pf.x, 1.0 - pf.x), min(pf.y, 1.0 - pf.y)) );
     float n = k2noise(vP.xz * 0.7), n2 = k2fbm(vP.xz * 0.04);
-    vec3 grass = mix(vec3(0.026, 0.038, 0.017), vec3(0.04, 0.034, 0.024), field) * (0.75 + 0.5 * n2);
-    vec3 asph = vec3(0.032, 0.032, 0.034) * (0.9 + 0.2 * n);
-    vec3 alb = mix(grass, asph, tar);
-    // Puddles lie where the noise runs high.
+    vec3 grass = vec3(0.026, 0.038, 0.017) * (0.75 + 0.5 * n2);
+    vec3 alb = mix(grass, parcel, field);
+    alb = mix(alb, vec3(0.032, 0.032, 0.034) * (0.9 + 0.2 * n), tar);
+    alb = mix(alb, vec3(0.07, 0.068, 0.064) * (0.9 + 0.2 * n), sq);
+    float steel = 0.0;
+    if (rail > 0.5) {
+      float r = abs(abs(x + 80.0) - 2.6) - 0.72;
+      float aa = fwidth(x);
+      steel = 1.0 - smoothstep(0.04, 0.04 + aa * 1.5, abs(r));
+      alb = mix(vec3(0.05, 0.047, 0.045) * (0.7 + 0.6 * n), vec3(0.09), steel);
+    }
+    // Puddles lie on the asphalt where the noise runs high.
     float pud = tar * smoothstep(0.55, 0.61, k2fbm(vP.xz * 0.13 + 3.0));
-    float wet = tar * max(pud, 0.5);
+    float wet = max(tar, sq) * max(pud, 0.5);
     alb *= 1.0 - 0.4 * wet;
     vec3 N = vec3(0.0, 1.0, 0.0);
     vec3 col = alb * (skyAmb(N) + lampLit(vP, N));
-    // Wet asphalt and puddles mirror the sky and the bank.
+    // Wet ground, puddles and rails mirror the sky and the bank.
     vec3 R = reflect(V, N);
     float fres = 0.03 + 0.97 * pow(1.0 - max(dot(-V, N), 0.0), 5.0);
     vec4 M = uTexM * vec4(vP.x, 0.0, vP.z, 1.0);
     vec4 m = texture2D(tMirror, M.xy / M.w);
     vec3 refl = mix(k2sky(R), m.rgb, clamp(m.a, 0.0, 1.0) * pud);
-    col += refl * fres * (tar * mix(0.3, 0.9, wet) + (1.0 - tar) * 0.06);
+    col += refl * fres * (max(tar, sq) * mix(0.3, 0.9, wet) + steel * 0.8 + 0.05);
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
+groundMat.extensions = { derivatives: true };
 for (const s of [-1, 1]) {
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2160).rotateX(-Math.PI / 2).translate(s * (CANAL_X + 1200), QUAY, -1020), groundMat);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2600).rotateX(-Math.PI / 2).translate(s * (CANAL_X + 1200), QUAY, -800), groundMat);
   scene.add(ground);
 }
 /* ---------- end ground ---------- */
@@ -708,10 +798,25 @@ composer.addPass(new OutputPass());
 let size = { w: 1, h: 1, dpr: 1 };
 // Look offsets from a drag; they ease toward the target.
 const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
+// Sky eye circles the crossing from high up; drag turns it round a little.
+const SKY_T = new THREE.Vector3(0, 0, -175);
+let view = 'sky';
 function frame() {
   const portrait = size.w < size.h;
-  camera.fov = portrait ? 62 : 44;
   camera.aspect = size.w / size.h;
+  if (view === 'sky') {
+    camera.fov = portrait ? 46 : 34;
+    const dist = portrait ? 360 : 330, el = (portrait ? 0.86 : 0.42) - look.pitch * 2, az = -0.5 + look.yaw * 2;
+    camera.position.set(SKY_T.x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), SKY_T.z + dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(SKY_T);
+    // From the air the ground gets less sky; the exposure opens up.
+    renderer.toneMappingExposure = 1.7;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    return;
+  }
+  camera.fov = portrait ? 62 : 44;
+  renderer.toneMappingExposure = 1.25;
   // A low eye on the near towpath, turned a little toward the far bank.
   // Phones stand at the edge, so the water fills the foreground.
   camera.position.set(portrait ? -12.6 : -14.6, QUAY + 1.6, 14);
@@ -835,6 +940,8 @@ const WEATHER = { dry: [0.1, 0.3], drizzle: [0.5, 0.6], rain: [0.8, 0.8], downpo
 act.weather = v => { [W.uWind.value, W.uSmear.value] = WEATHER[v]; wake(); draw(); };
 act.dusk = v => { setDusk(v); wake(); draw(); };
 act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
+act.view = v => { view = v; look.yaw = look.ty = look.pitch = look.tp = 0; frame(); wake(); draw(); };
+view = ui.setting('view')?.value === 'path' ? 'path' : 'sky';
 setDusk(ui.slider?.value ?? 0.35);
 act.letterbox(!!ui.setting('letterbox')?.value);
 
