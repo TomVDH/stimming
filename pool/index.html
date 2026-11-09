@@ -23,104 +23,23 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* The picker is one pill: back, the current tool, forward. */
-.picker {
-  display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
-  transition: border-color 0.2s ease;
-}
-.picker.on { border-color: var(--fg); }
-/* On the bright water the pill takes the same dark backing as the chips. */
-.stage + .bar:not(.bar--below) .picker {
-  background-color: oklch(0.15 0.012 275 / 0.84);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-}
-.picker .step {
-  display: grid; place-items: center; width: 30px; height: 30px; padding: 0; cursor: pointer;
-  color: var(--muted); background: none; border: 0; border-radius: 999px; -webkit-tap-highlight-color: transparent;
-  transition: color 0.2s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.picker .step:hover { color: var(--fg); }
-.picker .step:active { transform: scale(0.84); transition-duration: 0.08s; }
-.picker .step svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.picker .now {
-  display: inline-flex; align-items: center; gap: 7px; min-width: 7.4em; padding: 0 2px;
-  font-size: 13px; color: var(--fg);
-}
-/* Each tool shows as a small solid stencil. */
-.picker .now svg { width: 15px; height: 15px; flex: none; fill: currentColor; }
-/* A new tool pops into the picker. */
-.picker .now.pop svg { animation: pick-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes pick-pop { from { transform: scale(0.4) rotate(-30deg); } }
-@media (pointer: coarse) { .picker .step { width: 40px; height: 38px; } }
-/* Settings sits at the right edge, just left of the (i). */
-.bar > .adder { position: relative; margin-left: auto; }
-.bar > .adder + .how-tip { margin-left: -18px; }
-/* Settings opens a tray above the bar, flush with its right edge. */
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group > span { white-space: nowrap; }
-.sets .group .choices { flex-wrap: nowrap; gap: 4px; }
-.sets .group .chip { padding: 4px 9px; }
+/* Each tool icon is a solid stencil. */
+.stim-ui svg.solid { fill: currentColor; stroke: none; }
 /* Cut mode aims with a crosshair. */
 :root[data-mode="cut"] .stage { cursor: crosshair; }
-@media (prefers-reduced-motion: reduce) {
-  .stage canvas, .picker, .picker .step, .add { transition: none; }
-  .picker .now.pop svg { animation: none; }
-}
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pool.svg)"></span><span class="intro-name">Caustic pool</span><span class="intro-sub">Stimming No. 17</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pool.svg)"></span><span class="intro-name">Caustic pool</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. In Throw, tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. In Cut, press and drag to dig a trench through the water. Drag the deck to turn the view. Space tosses one in, P picks the next pool, N switches day and night, R toggles rain and C clears the pool.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
-    </div>
-    <div class="bar">
-      <div class="choices">
-        <div class="picker on" id="picker" role="group" aria-label="What a press does">
-          <button class="step" id="prev" type="button" aria-label="Previous tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
-          <span class="now" id="now" aria-live="polite"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"></svg><span>Ball</span></span>
-          <button class="step" id="next" type="button" aria-label="Next tool"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="chip" id="clear" type="button" aria-keyshortcuts="C" aria-disabled="true">Clear</button>
-      </div>
-      <div class="adder" id="setter">
-        <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-        <div class="add sets" id="sets" role="group" aria-label="Settings">
-          <div class="group"><span>Pool</span><div class="choices" id="pools" role="group" aria-label="Pool" aria-keyshortcuts="P">
-            <button class="chip" type="button" data-value="lane" aria-pressed="true">Lap</button>
-            <button class="chip" type="button" data-value="plunge" aria-pressed="false">Round</button>
-            <button class="chip" type="button" data-value="lagoon" aria-pressed="false">Bean</button>
-          </div></div>
-          <div class="group"><span>Time</span><div class="choices" id="times" role="group" aria-label="Time" aria-keyshortcuts="N">
-            <button class="chip" type="button" data-value="day" aria-pressed="true">Day</button>
-            <button class="chip" type="button" data-value="night" aria-pressed="false">Night</button>
-          </div></div>
-        </div>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop</dd></div>
-        <div><dt><span class="fine">Drag</span><span class="touch">Flick</span></dt><dd>throw, or cut</dd></div>
-        <div><dt><span class="fine">Drag</span><span class="touch">Drag</span> the deck</dt><dd>turn</dd></div>
-        <div class="fine"><dt><kbd>R</kbd></dt><dd>rain</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Caustic pool</h1><div class="vignette" hidden></div></section>
@@ -139,21 +58,45 @@
 }
 </script>
 <script type="module">
-import { initPage, sound, audioKit, linFit, choices, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'pool' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+import { initPage, sound, audioKit, linFit, onQuality, pixelRatio } from '../shared/stim.js';
+// Each tool shows as a small solid stencil.
+const stencil = d => `<svg class="solid" viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
+// The three things to throw come first, then Cut.
+const TOOLS = [
+  { value: 'ball', label: 'Ball', key: '1', icon: stencil('<path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/>') },
+  { value: 'anvil', label: 'Anvil', key: '2', icon: stencil('<path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/>') },
+  { value: 'bell', label: 'Kettlebell', key: '3', icon: stencil('<path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/>') },
+  { value: 'cut', label: 'Cut', key: 'X', icon: stencil('<path d="M1 6.5h4.6L8 11.2l2.4-4.7H15V14H1Z"/><path d="M7.2 1.5h1.6v6.2L8 9.3l-.8-1.6Z"/>') },
+];
+const POOL_OPTS = [{ value: 'lane', label: 'Lap' }, { value: 'plunge', label: 'Round' }, { value: 'lagoon', label: 'Bean' }];
+const TIME_OPTS = [{ value: 'day', label: 'Day' }, { value: 'night', label: 'Night' }];
+const THING_KEY = 'stimming.pool.thing', MODE_KEY = 'stimming.pool.mode';
+// Storage is optional; private windows can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
+};
+const savedThing = ['ball', 'anvil', 'bell'].includes(store.get(THING_KEY)) ? store.get(THING_KEY) : 'ball';
+const savedTool = store.get(MODE_KEY) === 'cut' ? 'cut' : savedThing;
+// Handlers bind once the pool exists.
+const act = { tool() {}, clear() {}, rain() {}, pool() {}, time() {} };
+const ui = initPage({ id: 'pool', bar: {
+  choice: { label: 'Tool', value: savedTool, options: TOOLS, onPick: v => act.tool(v) },
+  actions: [
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+    { verb: 'rain', key: 'R', onPress: () => act.rain() },
+  ],
+  settings: [
+    { type: 'choice', id: 'pool', label: 'Pool', value: 'lane', options: POOL_OPTS, persist: true, onPick: v => act.pool(v) },
+    { type: 'choice', id: 'time', label: 'Time', value: 'day', options: TIME_OPTS, persist: true, onPick: v => act.time(v) },
+  ],
+  quality: true,
+  keys: [['click', 'drop'], ['drag', 'throw or cut'], ['drag the deck', 'turn'], ['space', 'toss one in']],
+} });
+// Rain is a switch: its chip stays pressed while it rains.
+const rainB = document.querySelector('.stim-ui [aria-keyshortcuts="R"]');
+rainB?.setAttribute('aria-pressed', 'false');
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const clearB = document.getElementById('clear');
-// Settings holds the pool shape and the time of day.
-const poolPick = choices(document.getElementById('pools'), v => nextPool(v));
-const timePick = choices(document.getElementById('times'), v => setNight(v === 'night'));
-// Settings opens a tray; a press outside or Escape closes it.
-const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
-const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
-setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
-document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
@@ -170,11 +113,6 @@ const rng = s => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const norm3 = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
-// Storage is optional; private windows can refuse it.
-const store = {
-  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
-};
 
 /* ---------- colour: OKLCH in, linear sRGB out, fitted by culori ---------- */
 const mul = (c, k) => c.map(v => v * k);
@@ -250,8 +188,8 @@ const POOLS = {
   plunge: { shape: 1, depth: 0.7, ar: 1, tiles: [[0.93, 0.015, 95], [0.3, 0.05, 265]], grout: [0.52, 0.03, 260], deck: [0.7, 0.045, 68], cope: [0.88, 0.022, 82], joint: [0.58, 0.04, 66] },
   lagoon: { shape: 2, depth: 0.38, ar: 0.72, tiles: [[0.86, 0.09, 165], [0.56, 0.12, 178]], grout: [0.32, 0.06, 185], deck: [0.54, 0.1, 138], cope: [0.84, 0.03, 80], joint: [0.64, 0.03, 76] },
 };
-const POOL_IDS = Object.keys(POOLS), POOL_KEY = 'stimming.pool.pool';
-let poolId = POOLS[store.get(POOL_KEY)] ? store.get(POOL_KEY) : 'lane', shape = POOLS[poolId].shape;
+const POOL_IDS = Object.keys(POOLS);
+let poolId = ui.setting('pool').value, shape = POOLS[poolId].shape;
 DEPTH = POOLS[poolId].depth;
 const smin2 = (a, b, k) => { const h = clamp(0.5 + (0.5 * (b - a)) / k); return lerp(b, a, h) - k * h * (1 - h); };
 // Signed distance to the pool edge on the water plane: negative inside.
@@ -336,8 +274,10 @@ function fitCam(A, pz, yaw = cam.yaw) {
   return { w: xm, h: (y1 - y0) / 2 };
 }
 // The front view sets the distance; a turn keeps it, so the view stays close.
+// A tall stage views the bean from its side, so it fills the height.
+let baseYaw = 0;
 function frameCam(A) {
-  fitCam(A, PZ, 0);
+  fitCam(A, PZ, baseYaw);
   place(A, cam.dist * cam.zoom, cam.tz, cam.yaw);
 }
 const petals = [], objs = [];
@@ -369,6 +309,9 @@ function layoutPool(A) {
     return [Math.cos(a) * r, Math.sin(a) * r];
   });
   lampZ = [-edgeAlong(0, -1, 0), edgeAlong(0, 1, 0)];
+  const yaw0 = shape === 2 && A < 0.8 ? Math.PI / 2 : 0;
+  cam.yaw += yaw0 - baseYaw;
+  baseYaw = yaw0;
   frameCam(A);
   for (const p of petals) {
     p.z = (p.z * PZ) / oz;
@@ -1963,18 +1906,17 @@ function stepSpin(dt) {
 }
 function setRain(v) {
   raining = v;
+  rainB?.setAttribute('aria-pressed', String(v));
   if (v) wake();
 }
 
 /* ---------- day and night ---------- */
-const TIME_KEY = 'stimming.pool.time';
-let nightT = store.get(TIME_KEY) === 'night' ? 1 : 0, nightK = nightT;
+let nightT = ui.setting('time').value === 'night' ? 1 : 0, nightK = nightT;
 function setNight(v) {
   nightT = v ? 1 : 0;
   // Reduced motion switches at once.
   if (reduce) nightK = nightT;
-  store.set(TIME_KEY, v ? 'night' : 'day');
-  timePick.set(v ? 'night' : 'day');
+  ui.setting('time').set(v ? 'night' : 'day');
   document.documentElement.dataset.time = v ? 'night' : 'day';
   wake();
 }
@@ -1987,37 +1929,16 @@ const KIND = {
   anvil: { type: 1, size: 1.15, bound: 0.16, rho: 7.8, vol: 1.0e-3, lo: 0.056, hi: 0.048, foot: 0.12, float: false },
   bell: { type: 2, size: 1.15, bound: 0.1, rho: 7.2, vol: 5.4e-4, lo: 0.04, hi: 0.092, foot: 0.058, float: false },
 };
-const THING_KEY = 'stimming.pool.thing', MODE_KEY = 'stimming.pool.mode';
-// The picker steps through the three things, then Cut.
-const TOOLS = [
-  ['ball', 'Ball', '<path fill-rule="evenodd" d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm-.7 1.6C5.6 4.4 4.8 6.1 4.8 8s.8 3.6 2.5 4.9h1.4C7 11.6 6.2 9.9 6.2 8S7 4.4 8.7 3.1Z"/>'],
-  ['anvil', 'Anvil', '<path d="M.8 3.6h9.6c2.3 0 4 .5 4.8 1.4-1.3.6-2.9 1-4.6 1.2L9.6 8v1.6h2.2v2.8H3.6V9.6h2.2V8C3.6 7.4 1.8 5.9.8 3.6Z"/>'],
-  ['bell', 'Kettlebell', '<path fill-rule="evenodd" d="M5.2 1.6h5.6a2.2 2.2 0 0 1 2.2 2.2v2.6a5.6 5.6 0 0 1-1.2 7.8H4.2A5.6 5.6 0 0 1 3 6.4V3.8a2.2 2.2 0 0 1 2.2-2.2Zm.3 1.7v2a5.6 5.6 0 0 1 5 0v-2Z"/>'],
-  ['cut', 'Cut', '<path d="M1 6.5h4.6L8 11.2l2.4-4.7H15V14H1Z"/><path d="M7.2 1.5h1.6v6.2L8 9.3l-.8-1.6Z"/>'],
-];
-let thing = KIND[store.get(THING_KEY)] ? store.get(THING_KEY) : 'ball', objMoving = false;
-let mode = store.get(MODE_KEY) === 'cut' ? 'cut' : 'throw';
-const nowEl = document.getElementById('now');
+let thing = savedThing, mode = 'throw', objMoving = false;
 // Picks a thing to throw, or 'cut'.
-function setTool(v, pop = true) {
+function setTool(v) {
   mode = v === 'cut' ? 'cut' : 'throw';
   if (mode === 'throw') { thing = v; store.set(THING_KEY, v); }
   store.set(MODE_KEY, mode);
   document.documentElement.dataset.mode = mode;
-  const [, name, svg] = TOOLS.find(t => t[0] === v);
-  nowEl.querySelector('svg').innerHTML = svg;
-  nowEl.querySelector('span').textContent = name;
-  nowEl.classList.remove('pop');
-  if (pop && !reduce) { void nowEl.offsetWidth; nowEl.classList.add('pop'); }
+  ui.choice.set(v);
 }
-const toolNow = () => (mode === 'cut' ? 'cut' : thing);
-function stepTool(d) {
-  const i = TOOLS.findIndex(t => t[0] === toolNow());
-  setTool(TOOLS[(i + d + TOOLS.length) % TOOLS.length][0]);
-}
-document.getElementById('prev').addEventListener('click', () => stepTool(-1));
-document.getElementById('next').addEventListener('click', () => stepTool(1));
-setTool(toolNow(), false);
+setTool(savedTool);
 
 /* quaternions: [w, x, y, z] */
 const qmul = (a, b) => [
@@ -2585,10 +2506,9 @@ function clearPool() {
 function nextPool(id = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length]) {
   if (id === poolId || !POOLS[id]) return;
   poolId = id;
-  store.set(POOL_KEY, poolId);
   shape = POOLS[poolId].shape;
   DEPTH = POOLS[poolId].depth;
-  poolPick.set(poolId);
+  ui.setting('pool').set(poolId);
   if (!ready) return;
   objs.length = parts.length = later.length = 0;
   holds.clear();
@@ -2599,24 +2519,24 @@ function nextPool(id = POOL_IDS[(POOL_IDS.indexOf(poolId) + 1) % POOL_IDS.length
   plop(0, 0.5);
   wake();
 }
-poolPick.set(poolId);
-clearB.addEventListener('click', () => { if (clearB.getAttribute('aria-disabled') !== 'true') clearPool(); });
+act.tool = setTool;
+act.clear = clearPool;
+act.rain = () => setRain(!raining);
+act.pool = nextPool;
+act.time = v => setNight(v === 'night');
 // Clear lights only while something is in the pool.
-let clearOn = false;
+let clearOn = true;
 function syncClear() {
   const on = objs.some(o => !o.dying);
-  if (on !== clearOn) { clearOn = on; clearB.setAttribute('aria-disabled', String(!on)); }
+  if (on !== clearOn) { clearOn = on; ui.action('clear').disabled = !on; }
 }
-const KEYS = { 1: 'ball', 2: 'anvil', 3: 'bell' };
+syncClear();
+// The shell binds C, R and the tool keys; the pool keeps the rest.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const k = e.key;
-  if (k === 'r' || k === 'R') { if (!e.repeat) setRain(!raining); }
-  else if (k === 'n' || k === 'N') { if (!e.repeat) setNight(!nightT); }
-  else if (k === 'c' || k === 'C') { if (!e.repeat) clearPool(); }
-  else if (KEYS[k]) setTool(KEYS[k]);
-  else if (k === 'x' || k === 'X') setTool('cut');
+  if (k === 'n' || k === 'N') { if (!e.repeat) setNight(!nightT); }
   else if (k === 'p' || k === 'P') { if (!e.repeat) nextPool(); }
   else if (k === ' ') {
     // Buttons and links keep Space for themselves.
@@ -2641,7 +2561,8 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  document.querySelectorAll('.bar button').forEach(b => { b.disabled = true; });
+  ui.choice.disabled = true;
+  ['clear', 'rain'].forEach(v => { ui.action(v).disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; fence = null; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
