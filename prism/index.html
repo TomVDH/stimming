@@ -1470,11 +1470,57 @@ function drawSource(p) {
 }
 // Pictures stack from the top left corner, under the shell's top row.
 const pipR = () => clamp(0.12 * S, 54, 92);
+// The picture rides behind its pad, where no light lands.
+// A tap on the picture enlarges it.
+// It sits outside the selection ring, on the spot that covers the least light.
+// The back of the pad wins a tie.
+const PIP_SIDES = [-Math.PI / 2, -Math.PI / 4, (-3 * Math.PI) / 4, 0, Math.PI, Math.PI / 4, (3 * Math.PI) / 4, Math.PI / 2];
+let pipStamp = 0;
+function litNear(x, y, r) {
+  let sum = 0;
+  for (let i = 0; i < nSeg; i++) {
+    const o = i * SG, I = SEG[o + 5];
+    if (I < 0.05) continue;
+    const ax = SEG[o], ay = SEG[o + 1], dx = SEG[o + 2] - ax, dy = SEG[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+    const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll);
+    if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < r) sum += I;
+  }
+  return sum;
+}
 function pipAt(p) {
-  const rp = pipR(), gap = 2 * rp + 30, top = Math.max(24, safeT + 14);
-  const rows = Math.max(1, Math.floor((H - safeB - top) / gap));
-  const n = pieces.filter(q => q.kind === 'sensor' && q.pc).indexOf(p), k = Math.max(0, n);
-  return [rp + 24 + Math.floor(k / rows) * gap, rp + top + (k % rows) * gap, rp];
+  if (p.pipAt && p.pipStamp === pipStamp) return p.pipAt;
+  const rp0 = pipR() * clamp(p.k, 0.75, 1.4), rp = p.big ? Math.max(rp0, Math.min(rp0 * 2.2, 0.3 * S)) : rp0, d0 = ringR(p) + rp + 8, m = rp + 10;
+  const top = Math.max(m, safeT + m), bot = Math.max(top, H - safeB - m);
+  let best = null, cost = Infinity;
+  for (const f of [1, 1.6]) {
+    PIP_SIDES.forEach((a, j) => {
+      const t = p.rot + a, d = d0 * f;
+      const x = clamp(p.x + Math.cos(t) * d, m, Math.max(m, W - m)), y = clamp(p.y + Math.sin(t) * d, top, bot);
+      // A spot over the pad's ring costs most, then light it hides.
+      const c = (Math.hypot(x - p.x, y - p.y) < d0 - 2 ? 100 : 0) + litNear(x, y, rp + 4) * 10 + j * 0.01 + (f - 1) * 0.5;
+      if (c < cost) { cost = c; best = [x, y, rp]; }
+    });
+  }
+  p.pipAt = best;
+  p.pipStamp = pipStamp;
+  return best;
+}
+// The readout names the band of light that lands on the pad.
+function pipBand(p) {
+  const i = pieces.indexOf(p), w = new Float32Array(NK);
+  let white = 0, top = 0;
+  for (let h = 0; h < nSH; h++) {
+    const o = h * SHK;
+    if (SH[o] !== i) continue;
+    if (SH[o + 2] < 0) white += SH[o + 3]; else w[SH[o + 2]] += SH[o + 3];
+  }
+  for (let k = 0; k < NK; k++) top = Math.max(top, w[k]);
+  if (white > top * 3 && white > 0.02) return 'WHITE';
+  if (top < 0.01) return '';
+  let lo = -1, hi = -1;
+  for (let k = 0; k < NK; k++) if (w[k] > top * 0.15) { if (lo < 0) lo = k; hi = k; }
+  const nm = k => Math.round(LAM[k] * 1000);
+  return lo === hi ? `${nm(lo)} NM` : `${nm(lo)}–${nm(hi)} NM`;
 }
 function drawPip(p) {
   if (!p.pc) return;
@@ -1538,6 +1584,23 @@ function drawPip(p) {
     c.arc(x, y, rp + 2, a + cut, a + Math.PI / 2 - cut);
     c.stroke();
   }
+  const band = pipBand(p);
+  if (!band) return;
+  c.font = `600 ${p.big ? 12 : 10}px "Iosevka Term Slab", ui-monospace, monospace`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillStyle = TONE.sens;
+  c.fillText(band, x, y + rp * 0.82);
+}
+// The picture under the pointer, if any.
+function pipHit(x, y) {
+  for (let i = pieces.length - 1; i > 0; i--) {
+    const q = pieces[i];
+    if (q.kind !== 'sensor' || !q.pc || q.dying) continue;
+    const [px, py, rp] = pipAt(q);
+    if (Math.hypot(x - px, y - py) < rp + 4) return q;
+  }
+  return null;
 }
 const ringR = p => p.r + Math.max(12, 0.045 * S);
 const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
@@ -1653,6 +1716,7 @@ function dotGrid(c) {
 }
 let geomDirty = true, cost = 0, slowN = 0;
 function render() {
+  pipStamp++;
   const t0 = performance.now();
   if (geomDirty) {
     pieces.forEach(build);
@@ -2230,6 +2294,9 @@ panel.addEventListener('pointerdown', e => {
   const gp = sel > 0 ? gripAt(pieces[sel]) : null;
   if (gp && ringA > 0.3 && Math.hypot(x - gp[0], y - gp[1]) < (coarse ? 22 : 12)) { startSize(sel, x, y, e.pointerId); return; }
   if (sel >= 0 && onRing(pieces[sel], x, y, coarse ? 20 : 10)) { startDrag(sel, x, y, e.pointerId, true, false); return; }
+  const pq = pipHit(x, y);
+  // An enlarged picture lets go of its pad, so the ring does not sit under it.
+  if (pq) { tapDown = null; pq.big = !pq.big; if (pq.big && pieces[sel] === pq) select(-1); tick(x, pq.big ? 1.2 : 0.9); geomDirty = true; wake(); return; }
   const i = pick(x, y, pad);
   if (i < 0) { tapDown = { x, y }; return; }
   tapDown = null;
@@ -2243,6 +2310,8 @@ panel.addEventListener('pointermove', e => {
     if (e.pointerType !== 'mouse' || !ready || e.target === dropB || dropB.contains(e.target)) return;
     const [x, y] = at(e), gp = sel > 0 ? gripAt(pieces[sel]) : null;
     if (gp && Math.hypot(x - gp[0], y - gp[1]) < 12) { panel.style.cursor = 'nwse-resize'; return; }
+    const pq = pipHit(x, y);
+    if (pq) { panel.style.cursor = pq.big ? 'zoom-out' : 'zoom-in'; return; }
     const hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
     panel.style.cursor = hot ? 'grab' : '';
     return;
