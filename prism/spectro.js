@@ -26,6 +26,7 @@ const SALTS = [
     lines: [[553.5, 1], [455.4, 0.2], [493.4, 0.2], [487, 0.3, 5], [513, 0.5, 6], [524, 0.55, 6], [534, 0.45, 6]] },
 ];
 const NA = SALTS.findIndex(s => s.id === 'na');
+const SYM = { li: 'Li', na: 'Na', k: 'K', cu: 'Cu', sr: 'Sr', ca: 'Ca', ba: 'Ba' };
 const MAXL = 48;
 // Settings options: one dot and one number key per element.
 export const ELEMENTS = SALTS.map((s, i) => ({ value: s.id, label: s.label, dot: css(s.col), key: String(i + 1) }));
@@ -304,6 +305,24 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+/* ---------- stage controls ---------- */
+// Element chips sit under the lamp; the readout rides the loupe.
+const CSS = `
+.spec-ui { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 0.5s ease;
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase; }
+.spec-ui.on { opacity: 1; }
+.spec-els { position: absolute; left: 0; top: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; pointer-events: auto; }
+.spec-ui:not(.on) .spec-els { pointer-events: none; }
+.spec-els .s2-chip { padding: 0 8px; gap: 5px; text-transform: none; letter-spacing: 0.02em; }
+.spec-els .s2-chip i { width: 7px; height: 7px; background: var(--c); flex: none; }
+.spec-els .s2-chip[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); box-shadow: var(--shadow); }
+.spec-els .spec-back { margin-left: 8px; }
+.spec-nm { position: absolute; left: 0; top: 0; padding: 4px 7px; color: var(--fg); background: var(--glass); border: 1px solid var(--line);
+  white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; letter-spacing: 0.04em; text-transform: none; }
+.spec-nm b { font-weight: 700; margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .spec-ui { transition: none; } }
+`;
+
 /* ---------- the view ---------- */
 // One view per page; it builds its canvas and GL on first open.
 // opts: stage, kit (the page's audio kit), ui, onExit.
@@ -423,6 +442,80 @@ export function spectroscope({ stage, kit, ui, onExit }) {
     const ey = 0.2 * r;
     G.outP = [G.wedge[0] + r - (-ey + r / k) / k, by + ey];
     if (P) alloc();
+    placeHud();
+  }
+
+  // The chip row hangs under the lamp and stays inside the stage.
+  let hud = null;
+  function placeHud() {
+    if (!hud) return;
+    const d = G.dpr, cssH = canvas.height / d, cssW = canvas.width / d, w = hud.els.offsetWidth, h = hud.els.offsetHeight;
+    // A narrow stage wraps the row and centres it.
+    hud.els.style.maxWidth = `${Math.round(cssW - 24)}px`;
+    const lx = G.lamp[0] / d, low = Math.min(G.lamp[1] - G.lamp[3], G.wedge[1] - G.wedge[2]), lb = cssH - low / d;
+    const x = clamp(lx - w / 2, 12, Math.max(12, cssW - w - 12)), y = Math.min(lb + 0.03 * G.S / d + 12, cssH - h - 12);
+    hud.els.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+  function buildHud() {
+    if (!document.getElementById('spec-css')) {
+      const st = document.createElement('style');
+      st.id = 'spec-css';
+      st.textContent = CSS;
+      document.head.append(st);
+    }
+    const el = document.createElement('div'), els = document.createElement('div'), nm = document.createElement('div');
+    el.className = 'spec-ui';
+    els.className = 'spec-els';
+    // The table under the view must not take these presses.
+    els.addEventListener('pointerdown', e => e.stopPropagation());
+    els.setAttribute('role', 'group');
+    els.setAttribute('aria-label', 'Element');
+    nm.className = 'spec-nm';
+    nm.setAttribute('aria-live', 'polite');
+    const chips = SALTS.map((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 's2-chip';
+      b.style.setProperty('--c', css(s.col));
+      b.innerHTML = `<i aria-hidden="true"></i>${SYM[s.id]}`;
+      b.title = `${s.label} (${i + 1})`;
+      b.setAttribute('aria-label', s.label);
+      b.addEventListener('click', () => ui.setting('element')?.set(s.id, true));
+      return b;
+    });
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 's2-chip spec-back';
+    back.textContent = '‹ Table';
+    back.title = 'Back to the table (Esc)';
+    back.addEventListener('click', () => onExit?.());
+    els.append(...chips, back);
+    el.append(els, nm);
+    stage.append(el);
+    hud = { el, els, nm, chips };
+  }
+  function syncHud() {
+    hud?.chips.forEach((b, i) => b.setAttribute('aria-pressed', String(i === salt)));
+  }
+  // The readout names the wavelength under the loupe and the line there.
+  let nmText = '';
+  function readout() {
+    if (!hud) return;
+    const a = loupe.v;
+    hud.nm.style.opacity = a > 0.02 ? String(a) : '0';
+    if (a <= 0.02) return;
+    const d = G.dpr, [x0, , x1] = G.plate, t = clamp((x1 - loupe.x) / (x1 - x0));
+    const lam = lerp(lerp(1 / Math.sqrt(A + t * (B - A)), 780 - 390 * t, 0.5), 780 - 390 * t, grating);
+    let best = null, bd = 1.2;
+    SALTS.forEach((s, i) => {
+      if (level(i) < 0.05) return;
+      s.lines.forEach(l => { const dd = Math.abs(l[0] - lam); if (dd < Math.max(bd, (l[2] || 0) / 2) && (!best || dd < Math.abs(best[1] - lam))) best = [SYM[s.id], l[0]]; });
+    });
+    const text = best ? `${best[1].toFixed(1)} nm<b>${best[0]}</b>` : `${lam.toFixed(1)} nm`;
+    if (text !== nmText) { hud.nm.innerHTML = text; nmText = text; }
+    const r = loupe.r * (0.7 + 0.3 * a);
+    hud.nm.style.left = `${(loupe.x / d).toFixed(1)}px`;
+    hud.nm.style.top = `${((canvas.height - loupe.y - r) / d - 8).toFixed(1)}px`;
   }
 
   /* ---------- lines ---------- */
@@ -681,7 +774,7 @@ export function spectroscope({ stage, kit, ui, onExit }) {
       // The shimmer eases to a stop over the last 2 s before sleep.
       const flow = clamp((SLEEP + EASE - idle) / EASE) * (reduced() ? 0.25 : 1);
       time += dt * (lively ? Math.max(flow, reduced() ? 0.25 : 1) : flow);
-      if (lively || now - lastDraw >= 31) { render(); lastDraw = now; }
+      if (lively || now - lastDraw >= 31) { render(); readout(); lastDraw = now; }
     } finally {
       if (on && visible && (lively || idle < SLEEP + EASE)) raf = requestAnimationFrame(frame);
       // Once the chord has rung out, the audio context sleeps.
@@ -757,6 +850,7 @@ export function spectroscope({ stage, kit, ui, onExit }) {
     const i = SALTS.findIndex(s => s.id === id);
     if (i < 0) return;
     salt = i;
+    syncHud();
     if (on) strike();
   }
   // Keys 1 to 7 pick the element; Space strikes; Escape leaves.
@@ -804,6 +898,7 @@ export function spectroscope({ stage, kit, ui, onExit }) {
       canvas.remove();
       throw err;
     }
+    buildHud();
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerleave', () => { if (!ptr) unaim(); });
@@ -833,6 +928,9 @@ export function spectroscope({ stage, kit, ui, onExit }) {
     render();
     canvas.classList.add('on');
     canvas.style.pointerEvents = '';
+    hud.el.classList.add('on');
+    syncHud();
+    placeHud();
     saved = readKeys();
     swapKeys(KEYS);
     ui.keys.show();
@@ -848,6 +946,8 @@ export function spectroscope({ stage, kit, ui, onExit }) {
     loupe.v = loupe.to = 0;
     canvas.classList.remove('on');
     canvas.style.pointerEvents = 'none';
+    hud.el.classList.remove('on');
+    hud.nm.style.opacity = '0';
     canvas.style.cursor = '';
     // The chord fades out with the view.
     if (bus) for (const v of bus.tones.values()) v.g.gain.setTargetAtTime(0, bus.ac.currentTime, 0.08);
