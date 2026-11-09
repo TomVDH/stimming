@@ -276,7 +276,8 @@ const flareMat = new THREE.ShaderMaterial({
     vec2 c = gl_PointCoord - 0.5;
     float a = max(exp(-dot(c, c) * 22.0) - 0.0041, 0.0);
     a = mix(a, exp(-dot(c, c) * 60.0), vPin);
-    gl_FragColor = vec4(vC * a * (1.0 - k2hazeAmount(vP) * 0.7) * uFlareK, 1.0);
+    // Lamps live in the base layer only.
+    gl_FragColor = vec4(vC * a * (1.0 - k2hazeAmount(vP) * 0.7) * uFlareK * uBaseOn, 1.0);
   }`,
 });
 const flares = { pos: [], col: [], size: [], pin: [] };
@@ -504,6 +505,44 @@ if (steelParts.length) scene.add(new THREE.Mesh(mergeGeometries(steelParts), ste
 }
 /* ---------- end span ---------- */
 
+/* Peaks: two sawtooth rows of wedges behind the far shed. */
+{
+  // A wedge: a long ramp up to a crest, then a steep cliff down.
+  // dir 1 rises to the right; both planes lean back from the foot.
+  const tri = [];
+  function wedge(x0, z, ramp, cliff, yLow, yCrest, yNext, dir, foot) {
+    const dz = 420, X = x => x0 + dir * x;
+    const L = [X(0), yLow, z], C = [X(ramp), yCrest, z], N = [X(ramp + cliff), yNext, z];
+    const fL = [X(-80), foot, z + dz], fC = [X(ramp + 60), foot, z + dz], fN = [X(ramp + cliff + 160), foot, z + dz];
+    tri.push(L, C, fC, L, fC, fL, C, N, fN, C, fN, fC);
+  }
+  function row(x0, x1, z, crest, width, dirs) {
+    let x = x0, i = 0, yLow = crest * 0.62;
+    while (x < x1) {
+      // Wedges near the line of view are narrower, so the rhythm reads.
+      const dir = dirs[i % dirs.length], ramp = width * (0.55 + rnd() * 0.9), cliff = width * (0.12 + rnd() * 0.12);
+      const yC = crest * (0.8 + rnd() * 0.35), yN = crest * (0.55 + rnd() * 0.15), zz = z - (i % 3) * 60;
+      if (dir > 0) wedge(x, zz, ramp, cliff, yLow, yC, yN, 1, 60);
+      else wedge(x + ramp + cliff, zz, ramp, cliff, yN, yC, yLow, -1, 60);
+      x += ramp + cliff - width * 0.15; yLow = yN; i++;
+    }
+  }
+  // Three rows: low and close, then higher and further back.
+  row(-3600, 1800, -2300, 470, 210, [1, 1, -1, 1, -1, 1, 1, -1]);
+  row(-4600, 2600, -3000, 720, 300, [1, -1, 1, 1, -1, 1]);
+  row(-5600, 3400, -3900, 1020, 420, [1, 1, -1, 1, 1, -1]);
+  // The wedges wind both ways; the shader picks the face that looks out.
+  const pos = new Float32Array(tri.length * 3);
+  tri.forEach((v, i) => pos.set(v, i * 3));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  const n = g.attributes.normal;
+  for (let i = 0; i < n.count; i++) if (n.getY(i) < 0) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+  const m = new THREE.Mesh(g, rock);
+  scene.add(m);
+}
+
 /* Sky: the storm ceiling, drawn on a far sphere. */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(30000, 48, 24), new THREE.ShaderMaterial({
   uniforms: { ...k2 },
@@ -540,13 +579,100 @@ function frame(w, h, pr) {
 }
 uploadLights();
 
+/* ---------- bake: a matte painting of everything that holds still ---------- */
+// The still layer bakes twice: base light, then moonlight alone.
+// The comp pass adds the moon layer through the drifting gaps.
+const statics = new THREE.Group(), live = new THREE.Group(), skyG = new THREE.Group();
+for (const o of [...scene.children]) (o.userData.live ? live : o.userData.sky ? skyG : statics).add(o);
+scene.add(statics, live, skyG);
+// Additive light adds colour but keeps the bake's coverage alpha.
+statics.traverse(o => {
+  for (const m of [].concat(o.material || [])) {
+    if (m.blending !== THREE.AdditiveBlending) continue;
+    m.blending = THREE.CustomBlending;
+    m.blendEquation = THREE.AddEquation;
+    m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneFactor;
+    m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
+  }
+});
+const rtOpt = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+const baseRT = new THREE.WebGLRenderTarget(1, 1, { ...rtOpt, depthTexture: new THREE.DepthTexture(1, 1) });
+const moonRT = new THREE.WebGLRenderTarget(1, 1, rtOpt);
+const invVP = new THREE.Matrix4();
+const comp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { ...k2, tBase: { value: baseRT.texture }, tMoon: { value: moonRT.texture }, tDepth: { value: baseRT.depthTexture }, uInvVP: { value: invVP } },
+  depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tBase, tMoon, tDepth;
+  uniform mat4 uInvVP;
+  varying vec2 vUv;
+  ${HEAD}
+  void main() {
+    vec4 base = texture2D(tBase, vUv);
+    float z = texture2D(tDepth, vUv).r;
+    vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
+    vec3 P = wp.xyz / wp.w;
+    vec3 col = base.rgb;
+    // The moon reaches the still layer only through the gaps.
+    if (base.a > 0.001) col += texture2D(tMoon, vUv).rgb * k2gap(P);
+    if (base.a < 0.999) {
+      vec4 fp = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+      col += k2sky(normalize(fp.xyz / fp.w - cameraPosition)) * (1.0 - base.a);
+    }
+    gl_FragColor = vec4(col, 1.0);
+    gl_FragDepthEXT = z;
+  }`,
+}));
+comp.frustumCulled = false;
+comp.renderOrder = -100;
+scene.add(comp);
+const clearC = new THREE.Color();
+let bakes = 0;
+function bake(renderer) {
+  const { w, h, pr } = view;
+  // The still layer bakes at up to twice the pixels, for smooth edges.
+  const ss = Math.min(2, 4096 / (w * pr), 4096 / (h * pr));
+  const bw = Math.round(w * pr * ss), bh = Math.round(h * pr * ss);
+  baseRT.setSize(bw, bh); moonRT.setSize(bw, bh);
+  const prevT = renderer.getRenderTarget(), prevA = renderer.getClearAlpha();
+  renderer.getClearColor(clearC);
+  camera.updateMatrixWorld();
+  statics.visible = true; live.visible = false; skyG.visible = false; comp.visible = false;
+  renderer.setClearColor(0x000000, 0);
+  k2.uGapIn.value = 0;
+  k2.uBaseOn.value = 1; k2.uMoonOn.value = 0;
+  renderer.setRenderTarget(baseRT); renderer.clear(); renderer.render(scene, camera);
+  k2.uBaseOn.value = 0; k2.uMoonOn.value = 1;
+  renderer.setRenderTarget(moonRT); renderer.clear(); renderer.render(scene, camera);
+  // Live parts take moon through the gaps themselves.
+  k2.uGapIn.value = 1; k2.uBaseOn.value = 1;
+  renderer.setRenderTarget(prevT);
+  renderer.setClearColor(clearC, prevA);
+  statics.visible = false; live.visible = true; comp.visible = true;
+  invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+  bakes++;
+}
+/* ---------- end bake ---------- */
+
+/* Motion: one clock drives the wind and the cloud gaps. */
+let time = 0;
+function update(dt, pace) {
+  time += dt * pace;
+  k2.uTime.value = time;
+}
+const lively = () => false;
+function lower() {}
+
 // Dispose frees every geometry, material and texture this scene made.
 function dispose() {
+  baseRT.dispose(); moonRT.dispose();
+  statics.visible = skyG.visible = true;
   scene.traverse(o => {
     o.geometry?.dispose();
     for (const m of [].concat(o.material || [])) m.dispose();
   });
 }
 
-return { scene, camera, frame, dispose, orbs, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
+return { scene, camera, frame, bake, dispose, orbs, update, lively, lower, get bakes() { return bakes; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
 }
