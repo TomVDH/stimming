@@ -178,3 +178,12 @@ Five visible controls or fewer: Air, Switch, Rush, Zoom.
   - **Thermal:** roads as a heat map of traffic and jams, black through purple and orange to white.
 - **Scrub the map.** Drag grabs the ground and pans; scroll and pinch zoom toward the pointer. The pan stays within 40 km of the country.
 - **Slip roads.** 1,433 km of motorway and trunk ramps from OpenStreetMap, so interchanges draw as real cloverleafs. roads.json is now 684 KB raw, 252 KB gzipped.
+
+## Round 4 (Tom, 2026-11-09): the ridiculousness, and the trains
+
+- **Queue bars.** Each of the 15 jam points stands a red bar on the map, as tall as its queue, labelled with the road and the km (`R1 KENNEDY 39 KM`). Bars that would collide step up. From orbit only the five worst show. Jams pulse with a heartbeat that runs back up the queue.
+- **Day-run readout.** Under the clock and the total: a deadpan comparison that turns every two toy hours and changes language every 40 minutes (the coast, Manneken Pis, chips, Atomiums laid flat, Brussels to Paris), a sparkline of the day's jam curve with the rush hours shaded and the day's high dashed, lost hours (about 120 cars per queued km), a `RECORD!` flash when a rush passes 250 km, and the rail ticker.
+- **Trains.** 6,030 km of main-line track from OpenStreetMap (`railway=rail`, `usage=main`), baked into roads.json. Trains run the lines with lit windows; now and then one sticks at a signal, blinks, and its delay climbs. Late trains blush red.
+- **Station boards.** Brussel-Zuid, Antwerpen-C, Gent-Sint-Pieters, Luik-Guillemins, Leuven and Mechelen carry small dot-matrix boards from a middle height: three departures, delays creeping up, the odd cancellation, and a scrolling excuse in Dutch, French or German (late provision of rolling stock, leaves on the track, copper theft, a strike, a delay caused by an earlier delay).
+- **No brand.** The rail operator's name and logo stay off the stage, by the house rule; the boards say `TREIN · TRAIN · ZUG`.
+- roads.json is now 773 KB raw, 289 KB gzipped.

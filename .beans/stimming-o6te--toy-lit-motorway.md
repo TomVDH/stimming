@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:39Z
-updated_at: 2026-11-09T10:53:45Z
+updated_at: 2026-11-09T11:06:26Z
 ---
 
 Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzing sodium lamp over a motorway overpass; the zoom pulls out through the dark until the whole Belgian motorway network glows as orange ribbons. Sections strike up pink then orange; traffic streams; haze and fog catch the light.
@@ -31,3 +31,6 @@ Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzin
 - [ ] Task 5: Settings, frame loop, sleep, ladder; browser-pane checks
 - [ ] Tom sets the Dutch name and IPA
 - [ ] Record the session cost
+
+- [x] Round 4: queue bars, jam heartbeat, sparkline, comparisons, lost hours, record flash
+- [x] Trains on the main rail lines with delays; station boards and an excuse ticker in NL/FR/DE

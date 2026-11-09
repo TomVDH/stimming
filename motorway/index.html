@@ -52,11 +52,51 @@
 .mk-hud.on { opacity: 1; }
 .mk-hud .time { font-size: clamp(26px, 3.4vw, 40px); font-weight: 700; letter-spacing: 0.08em; }
 .mk-hud .jam b { font-weight: 700; }
-.mk-hud .day { position: relative; width: 100%; height: 6px; border: 1px solid var(--flag); opacity: 0.85; }
-/* Rush hours shade the day bar: 07 to 09 and 16 to 18.5, on a 04-to-04 day. */
-.mk-hud .day::before, .mk-hud .day::after { content: ''; position: absolute; top: 0; bottom: 0; background: oklch(0.62 0.2 28 / 0.55); }
-.mk-hud .day::before { left: 12.5%; width: 8.3%; }
-.mk-hud .day::after { left: 50%; width: 10.4%; }
+.mk-hud .day { position: relative; width: 100%; height: 38px; border-bottom: 1px solid var(--flag); }
+.mk-hud .day canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mk-hud .cmp { font-size: 13px; letter-spacing: 0.12em; }
+.mk-hud .lost { font-size: 9px; opacity: 0.8; }
+.mk-hud .rec {
+  position: absolute; top: 100%; margin-top: 8px; font-size: 22px; font-weight: 700; color: oklch(0.7 0.23 28);
+  text-shadow: 0 0 14px oklch(0.6 0.25 28); opacity: 0; transform: scale(0.8);
+}
+.mk-hud .rec.on { animation: rec 1.6s ease-out; }
+@keyframes rec { 0% { opacity: 0; transform: scale(1.6); } 12% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(1); } }
+/* Station boards: small dot-matrix panels, delays in red. */
+.sb {
+  position: absolute; left: 0; top: 0; opacity: 0; margin: -10px 0 0 16px; padding: 6px 8px 5px; width: 236px;
+  background: oklch(0.1 0.01 260 / 0.84); border: 1px solid oklch(0.85 0.14 80 / 0.45);
+  box-shadow: 0 0 18px oklch(0.6 0.15 70 / 0.22), 4px 4px 0 oklch(0.05 0.01 260);
+  color: oklch(0.88 0.15 85); font: 600 10px/1.4 var(--slab, ui-monospace, monospace); letter-spacing: 0.05em; will-change: transform, opacity;
+}
+.sb::before { content: ''; position: absolute; left: -19px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: oklch(0.88 0.15 85); box-shadow: 0 0 10px oklch(0.7 0.17 70); }
+.sb b { display: block; font-size: 8.5px; letter-spacing: 0.12em; opacity: 0.8; margin-bottom: 3px; white-space: nowrap; overflow: hidden; }
+.sb ol { list-style: none; margin: 0; padding: 0; }
+.sb li { display: grid; grid-template-columns: 34px 20px 1fr auto; column-gap: 6px; white-space: nowrap; }
+.sb li span:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }
+.sb em { font-style: normal; color: oklch(0.72 0.22 28); text-shadow: 0 0 8px oklch(0.6 0.24 28); }
+.sb i { font-style: normal; color: oklch(0.82 0.16 145); }
+.sb marquee-x, .mk-hud .tick { display: block; overflow: hidden; white-space: nowrap; color: oklch(0.72 0.22 28); }
+.sb marquee-x { margin-top: 3px; font-size: 9px; }
+.sb marquee-x span, .mk-hud .tick span { display: inline-block; padding-left: 100%; animation: sbm 11s linear infinite; }
+@keyframes sbm { to { transform: translateX(-100%); } }
+.mk-hud .tick { width: 100%; font-size: 10px; }
+@media (prefers-reduced-motion: reduce) { .sb marquee-x span, .mk-hud .tick span { animation: none; padding-left: 0; } }
+/* Queue labels: a red bar per jam point, as tall as its queue. */
+.jq { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; --h: 40px; }
+.jq .stem {
+  position: absolute; left: -3px; bottom: 0; width: 6px; height: var(--h);
+  background: linear-gradient(to bottom, oklch(0.72 0.22 28), oklch(0.6 0.22 28 / 0.15));
+  box-shadow: 0 0 14px oklch(0.6 0.24 28 / 0.8); animation: jqp 1.2s ease-in-out infinite;
+}
+@keyframes jqp { 50% { filter: brightness(1.5); } }
+.jq .tag {
+  position: absolute; left: 0; bottom: calc(var(--h) + 6px); transform: translateX(-50%); display: grid; justify-items: center; row-gap: 2px;
+  white-space: nowrap; color: oklch(0.82 0.16 35); font: 700 18px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.08em;
+  text-shadow: 0 0 10px oklch(0.6 0.24 28 / 0.9);
+}
+.jq .tag small { font-size: 9px; font-weight: 500; letter-spacing: 0.14em; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce) { .jq .stem { animation: none; } .mk-hud .rec.on { animation: none; opacity: 1; } }
 .mk-hud .day i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--flag); box-shadow: 0 0 8px var(--glow); left: 0; }
 @media (prefers-reduced-motion: reduce) { .mk-hud { transition: none; } }
 /* The map credit stays small and quiet. */
@@ -295,11 +335,12 @@ const hash = (k, r, side) => { const v = Math.sin(k * 12.9898 + r * 78.233 + sid
 // Each hotspot: lon, lat, radius in km, severity, and the city it feeds.
 const FEEDS = { bxl: [4.36, 50.85], ant: [4.41, 51.21], gnt: [3.72, 51.05], lie: [5.57, 50.63], crl: [4.44, 50.41], kor: [3.26, 50.83] };
 const HOT = [
-  [4.27, 50.87, 8, 1.0, 'bxl'], [4.43, 50.91, 7, 1.0, 'bxl'], [4.55, 50.865, 8, 0.8, 'bxl'], [4.46, 50.97, 9, 0.9, 'bxl'],
-  [4.12, 50.9, 12, 0.9, 'bxl'], [4.55, 50.75, 8, 0.7, 'bxl'], [4.4, 51.2, 7, 1.0, 'ant'], [4.3, 51.2, 7, 0.85, 'ant'],
-  [4.65, 51.19, 9, 0.7, 'ant'], [4.45, 51.13, 6, 0.7, 'ant'], [4.37, 51.08, 6, 0.5, 'ant'], [3.7, 51.02, 7, 0.8, 'gnt'],
-  [5.48, 50.67, 7, 0.6, 'lie'], [4.44, 50.43, 6, 0.4, 'crl'], [3.27, 50.82, 5, 0.4, 'kor'],
-].map(([lo, la, r, sev, f]) => { const [x, z] = geo(lo, la), [fx, fz] = geo(...FEEDS[f]); return { x, z, r: r * 1000, sev, fx, fz }; });
+  [4.27, 50.87, 8, 1.0, 'bxl', 'R0 GROOT-BIJGAARDEN'], [4.43, 50.91, 7, 1.0, 'bxl', 'R0 MACHELEN'], [4.55, 50.865, 8, 0.8, 'bxl', 'E40 KRAAINEM'],
+  [4.46, 50.97, 9, 0.9, 'bxl', 'E19 MECHELEN'], [4.12, 50.9, 12, 0.9, 'bxl', 'E40 AALST'], [4.55, 50.75, 8, 0.7, 'bxl', 'E411 OVERIJSE'],
+  [4.4, 51.2, 7, 1.0, 'ant', 'R1 KENNEDY'], [4.3, 51.2, 7, 0.85, 'ant', 'E17 ZWIJNDRECHT'], [4.65, 51.19, 9, 0.7, 'ant', 'E313 RANST'],
+  [4.45, 51.13, 6, 0.7, 'ant', 'E19 KONTICH'], [4.37, 51.08, 6, 0.5, 'ant', 'A12 BOOM'], [3.7, 51.02, 7, 0.8, 'gnt', 'E40 ZWIJNAARDE'],
+  [5.48, 50.67, 7, 0.6, 'lie', 'E40 LONCIN'], [4.44, 50.43, 6, 0.4, 'crl', 'R3 CHARLEROI'], [3.27, 50.82, 5, 0.4, 'kor', 'E17 KORTRIJK'],
+].map(([lo, la, r, sev, f, name]) => { const [x, z] = geo(lo, la), [fx, fz] = geo(...FEEDS[f]); return { x, z, r: r * 1000, sev, fx, fz, name }; });
 // The start looks along whichever hero carriageway jams in the evening: the outbound one.
 const JAM = (() => {
   let best = 0, hb = null;
@@ -311,7 +352,7 @@ const JAM = (() => {
 
 /* ---------- shared GLSL ---------- */
 const COMMON = /* glsl */`
-uniform float uNow, uSwT, uOffT, uOn, uHot, uRipV, uRush, uHour, uInstant, uStyle;
+uniform float uNow, uSwT, uOffT, uOn, uHot, uRipV, uRush, uHour, uInstant, uStyle, uBootK;
 uniform vec2 uRip;
 uniform vec3 uSod, uPink, uSalmon;
 uniform float uFogD, uFogH;
@@ -478,9 +519,10 @@ const land = new THREE.Mesh(new THREE.PlaneGeometry(1.4e6, 1.4e6).rotateX(-Math.
       col = mix(col, mix(vec3(0.0006, 0.0009, 0.002), vec3(0.012, 0.018, 0.028), uSun), sea);
       // Towns: a soft dome and a speckle of streets.
       vec3 glow = vec3(0.0);
-      // Street lights as fine specks; they blur to a flat glow before they alias.
-      float sp = smoothstep(0.72, 0.9, vnoise(p / 26.0)) * (0.4 + vnoise(p / 300.0));
-      sp = mix(sp, 0.1, smoothstep(5.0, 24.0, fw));
+      // Street lights as point specks, one in some 30 m cells; they blur to a flat glow before they alias.
+      vec2 cell = floor(p / 30.0), fq = fract(p / 30.0) - 0.5 - (vec2(h21(cell), h21(cell + 17.0)) - 0.5) * 0.7;
+      float sp = smoothstep(0.1, 0.02, length(fq)) * step(0.45, h21(cell + 5.0)) * (0.5 + vnoise(p / 300.0)) * 3.0;
+      sp = mix(sp, 0.1, smoothstep(3.0, 12.0, fw));
       for (int i = 0; i < NT; i++) {
         vec4 t = uTown[i];
         float r = length(p - t.xy) / t.z;
@@ -582,7 +624,7 @@ const ribMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: /* glsl */`
     ${COMMON}
-    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol, uBootK;
+    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol;
     uniform vec3 uTac;
     uniform vec3 uJamC;
     varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam;
@@ -678,7 +720,7 @@ const ribMat = new THREE.ShaderMaterial({
           float per = max(240.0, fs * 18.0);
           float d = fract((vS - uNow * 90.0 * (1.0 - 0.85 * jam)) / per);
           float dash = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.3, 0.38, d));
-          c = mix(uTac, uJamC * 1.6, jam) * (0.35 + 0.65 * cw) * (0.55 + 0.9 * dash * uVol);
+          c = mix(uTac, uJamC * 1.6 * (0.7 + 0.4 * sin(uNow * 5.0 + vS * 0.004)), jam) * (0.35 + 0.65 * cw) * (0.55 + 0.9 * dash * uVol);
         } else {
           // Thermal: heat by traffic and jam, black through purple and orange to white.
           float h = clamp(0.12 + 0.55 * uVol * cw + 0.7 * jam, 0.0, 1.0);
@@ -693,7 +735,9 @@ const ribMat = new THREE.ShaderMaterial({
         return;
       }
       // From altitude a jammed stretch reads red, like a briefing map.
-      col = mix(col, uJamC * dot(col, vec3(0.3, 0.6, 0.1)) * 2.2, clamp(vJam * 2.2, 0.0, 1.0) * uJamK);
+      // A jam's heartbeat runs back up the queue.
+      float beat = 0.75 + 0.35 * sin(uNow * 5.0 + vS * 0.004);
+      col = mix(col, uJamC * dot(col, vec3(0.3, 0.6, 0.1)) * 2.2 * beat, clamp(vJam * 2.2, 0.0, 1.0) * uJamK);
       gl_FragColor = vec4(col * fogT(vW), 1.0);
     }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -1010,19 +1054,27 @@ const hourly = (T, h) => { const i = Math.floor(h) % 24, f = h - Math.floor(h); 
 // One toy hour lasts 6 s, so a day loops in 2 min 24 s.
 // The default hour is the evening rush; the day run starts at 04:00 and lasts 72 s.
 const clock = { h: 17.2, rate: 1 / 3, day: false };
-let jamKm = 0, jamAt = 0;
-// Total jam length: every fast-road stretch slowed past half.
+let jamKm = 0, jamAt = 0, lostH = 0, dayMax = 0;
+// Queue length per jam point, in km.
+const jamBy = new Float32Array(15);
+// The day's jam curve, for the sparkline: [hour, km].
+const jamLog = [];
+// Total jam length: every fast-road stretch slowed past half, also split by jam point.
 function measureJams() {
   const am = hourly(AM, clock.h), pm = hourly(PM, clock.h);
   let m = 0;
+  jamBy.fill(0);
   TW.forEach((W, r) => {
     if (!W) return;
-    const S = dense[r].s, I = TI[r], two = !ROADS[r].o;
+    const S = dense[r].s, I = TI[r], H = TH[r], two = !ROADS[r].o;
     for (let i = 0; i < W.length - 1; i++) {
       if (W[i] < 0.3) continue;
       const len = S[i + 1] - S[i];
-      if (W[i] * (I[i] ? am : pm) > 0.45) m += len;
-      if (two && W[i] * (I[i] ? pm : am) > 0.45) m += len;
+      let q = 0;
+      if (W[i] * (I[i] ? am : pm) > 0.45) q += len;
+      if (two && W[i] * (I[i] ? pm : am) > 0.45) q += len;
+      m += q;
+      if (H[i] >= 0) jamBy[H[i]] += q / 1000;
     }
   });
   jamKm = m / 1000;
@@ -1030,23 +1082,23 @@ function measureJams() {
 const VMAX = [33, 25];
 
 // Per sample of each fast road: jam weight, and whether forward travel heads into town.
-const TW = [], TI = [];
+const TW = [], TI = [], TH = [];
 dense.forEach((d, r) => {
   if (ROADS[r].c > 1) return;
-  const n = d.p.length, W = new Float32Array(n), I = new Uint8Array(n);
+  const n = d.p.length, W = new Float32Array(n), I = new Uint8Array(n), H = new Int8Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
     const [x, z] = d.p[i];
     let best = 0, hb = null;
-    for (const h of HOT) {
+    HOT.forEach((h, j) => {
       const q = Math.hypot(x - h.x, z - h.z) / h.r;
-      if (q > 2.5) continue;
+      if (q > 2.5) return;
       const w = h.sev * Math.exp(-q * q);
-      if (w > best) { best = w; hb = h; }
-    }
+      if (w > best) { best = w; hb = h; H[i] = j; }
+    });
     W[i] = best;
     if (hb) { const [tx, tz] = tangent(d.p, i); I[i] = tx * (hb.fx - x) + tz * (hb.fz - z) > 0 ? 1 : 0; }
   }
-  TW[r] = W; TI[r] = I;
+  TW[r] = W; TI[r] = I; TH[r] = H;
 });
 const congAt = (r, k, dir, am, pm) => TW[r][k] * ((TI[r][k] ^ (dir < 0 ? 1 : 0)) ? am : pm);
 
@@ -1214,6 +1266,7 @@ const cars = (() => {
 })();
 scene.add(cars);
 stepTraffic(0);
+measureJams();
 
 /* ---------- city markers ---------- */
 // Big cities, plus Mechelen and Bonheiden; they fade in as the camera nears them.
@@ -1233,9 +1286,41 @@ stage.append(markLayer);
 // The day run's readout: the hour, the jam length, and a bar across the day.
 const hud = document.createElement('div');
 hud.className = 'mk-hud';
-hud.innerHTML = '<span class="time">04:00</span><span class="jam">FILE · BOUCHON · STAU <b>0 KM</b></span><span class="day"><i></i></span>';
+hud.innerHTML = '<span class="time">04:00</span><span class="jam">FILE · BOUCHON · STAU <b>0 KM</b></span>'
+  + '<span class="cmp">≈</span><span class="day"><canvas></canvas><i></i></span>'
+  + '<span class="lost">VERLOREN UREN · HEURES PERDUES · VERLORENE STUNDEN <b>0</b></span><span class="tick"></span><span class="rec">RECORD! · RECORD ! · REKORD!</span>';
 markLayer.append(hud);
 const hudTime = hud.querySelector('.time'), hudJam = hud.querySelector('.jam b'), hudCur = hud.querySelector('.day i');
+const hudCmp = hud.querySelector('.cmp'), hudLost = hud.querySelector('.lost b'), hudRec = hud.querySelector('.rec'), hudTick = hud.querySelector('.tick');
+let tickAt = 0;
+const spark = hud.querySelector('.day canvas'), sparkG = spark.getContext('2d');
+const fmt = (n, d = 0) => n.toLocaleString('nl-BE', { maximumFractionDigits: d, minimumFractionDigits: d });
+// Deadpan comparisons for the jam length, in Dutch, French and German.
+const CMP = [
+  km => [`${fmt(km / 67, 1)} × DE KUST`, `${fmt(km / 67, 1)} × LA CÔTE`, `${fmt(km / 67, 1)} × DIE KÜSTE`],
+  km => [`${fmt(km / 0.000555)} MANNEKEN PISSEN`, `${fmt(km / 0.000555)} MANNEKEN-PIS`, `${fmt(km / 0.000555)} MANNEKEN PIS`],
+  km => [`${fmt(km / 0.00007)} FRIETEN`, `${fmt(km / 0.00007)} FRITES`, `${fmt(km / 0.00007)} POMMES`],
+  km => [`${fmt(km / 0.102)} ATOMIUMS, PLAT`, `${fmt(km / 0.102)} ATOMIUMS À PLAT`, `${fmt(km / 0.102)} ATOMIEN, LIEGEND`],
+  km => [`${fmt((km / 264) * 100)} % BRUSSEL → PARIJS`, `${fmt((km / 264) * 100)} % BRUXELLES → PARIS`, `${fmt((km / 264) * 100)} % BRÜSSEL → PARIS`],
+];
+// The sparkline: the day's jam curve, the rush hours shaded, the record line dashed.
+function drawSpark() {
+  const w = spark.clientWidth, h = spark.clientHeight, pr = Math.min(2, devicePixelRatio || 1);
+  if (spark.width !== Math.round(w * pr)) { spark.width = Math.round(w * pr); spark.height = Math.round(h * pr); }
+  const g = sparkG, X = hr => ((hr - 4) / 24) * spark.width, Y = km => spark.height * (1 - Math.min(1, km / 420));
+  g.clearRect(0, 0, spark.width, spark.height);
+  g.fillStyle = 'oklch(0.62 0.2 28 / 0.22)';
+  g.fillRect(X(7), 0, X(9) - X(7), spark.height); g.fillRect(X(16), 0, X(18.5) - X(16), spark.height);
+  if (jamLog.length < 2) return;
+  g.beginPath(); g.moveTo(X(jamLog[0][0]), spark.height);
+  jamLog.forEach(([hr, km]) => g.lineTo(X(hr), Y(km)));
+  g.lineTo(X(jamLog[jamLog.length - 1][0]), spark.height); g.closePath();
+  g.fillStyle = 'oklch(0.62 0.21 28 / 0.35)'; g.fill();
+  g.beginPath(); jamLog.forEach(([hr, km], i) => (i ? g.lineTo(X(hr), Y(km)) : g.moveTo(X(hr), Y(km))));
+  g.strokeStyle = look_.flag; g.lineWidth = 1.5 * pr; g.stroke();
+  g.setLineDash([3 * pr, 3 * pr]); g.beginPath(); g.moveTo(0, Y(dayMax)); g.lineTo(spark.width, Y(dayMax));
+  g.strokeStyle = 'oklch(0.7 0.2 28 / 0.7)'; g.lineWidth = pr; g.stroke(); g.setLineDash([]);
+}
 const marks = MARKS.map(([names, lo, la]) => {
   const el = document.createElement('div');
   el.className = 'mk';
@@ -1248,8 +1333,41 @@ const marks = MARKS.map(([names, lo, la]) => {
   const lift = { MECHELEN: 0.75, BONHEIDEN: 1.45, LEUVEN: 1.2, BRUSSEL: 1.1 }[name] ?? 1;
   return { el, v: new THREE.Vector3(x, 0, z), o: 0, shown: -1, lift };
 });
+const queues = HOT.map(h => {
+  const el = document.createElement('div');
+  el.className = 'jq';
+  el.innerHTML = `<i class="stem"></i><div class="tag"><small>${h.name}</small><b>0 KM</b></div>`;
+  markLayer.append(el);
+  return { el, km: el.querySelector('b'), v: new THREE.Vector3(h.x, 0, h.z), o: 0, shown: -1 };
+});
 const mv = new THREE.Vector3();
 function placeMarks(dt) {
+  // Queue bars: each as tall as its jam; from orbit only the five worst show.
+  const order = [...jamBy].map((k, i) => [k, i]).sort((a, b) => b[0] - a[0]), top = order.slice(0, 5).map(x => x[1]);
+  // Labels that would collide step up: the longest queue keeps its place.
+  const boxes = [];
+  order.forEach(([, i]) => {
+    const q = queues[i];
+    const km = jamBy[i];
+    mv.copy(q.v).project(camera);
+    let want = ss(1, 3, km) * ss(0.38, 0.5, z) * (z > 0.85 && !top.includes(i) ? 0 : 1);
+    if (mv.z > 1 || Math.abs(mv.x) > 1.05 || Math.abs(mv.y) > 1.05) want = 0;
+    q.o += (want - q.o) * (1 - Math.exp(-dt * 3));
+    if (q.o < 0.01 && q.shown === 0) return;
+    const o = q.o < 0.01 ? 0 : q.o;
+    const py = (0.5 - mv.y * 0.5) * size.h;
+    q.el.style.opacity = o.toFixed(3);
+    q.el.style.transform = `translate(${((mv.x * 0.5 + 0.5) * size.w).toFixed(1)}px, ${py.toFixed(1)}px)`;
+    const px = (mv.x * 0.5 + 0.5) * size.w;
+    let hh = Math.min(Math.max(16, py - 70), 14 + km * 5);
+    if (o > 0.05) {
+      for (let tries = 0; tries < 12 && boxes.some(([bx, by]) => Math.abs(bx - px) < 130 && Math.abs(by - (py - hh)) < 36); tries++) hh += 36;
+      boxes.push([px, py - hh]);
+    }
+    q.el.style.setProperty('--h', `${hh.toFixed(0)}px`);
+    q.km.textContent = `${fmt(km, km < 10 ? 1 : 0)} KM`;
+    q.shown = o > 0 ? 1 : 0;
+  });
   marks.forEach(m => {
     mv.copy(m.v).project(camera);
     const dist = camera.position.distanceTo(m.v);
@@ -1275,7 +1393,231 @@ function placeMarks(dt) {
     hudTime.textContent = `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
     hudJam.textContent = `${Math.round(jamKm)} KM`;
     hudCur.style.left = `${(((clock.h - 4) / 24) * 100).toFixed(2)}%`;
+    hudLost.textContent = fmt(lostH);
+    // A new comparison every two toy hours; the language turns every 40 minutes.
+    const ci = Math.floor(clock.h / 2) % CMP.length, li = Math.floor(clock.h * 1.5) % 3;
+    hudCmp.textContent = jamKm > 2 ? `≈ ${CMP[ci](jamKm)[li]}` : '≈ 0';
+    drawSpark();
+    // The rail ticker: the worst train of the moment and an excuse, every 11 s.
+    if (TRAINS.length && performance.now() - tickAt > 11000) {
+      tickAt = performance.now();
+      const worst = TRAINS.reduce((a, t) => (t.delay > a.delay ? t : a), TRAINS[0]), ex = pick(EXCUSES), lg = (Math.random() * 3) | 0;
+      hudTick.innerHTML = `<span>${['TREIN', 'TRAIN', 'ZUG'][lg]} → ${pick(DESTS)} +${Math.round(worst.delay)}' — ${ex[lg]}</span>`;
+    }
   }
+}
+
+
+/* ---------- rail ---------- */
+// Main rail lines from roads.json; trains run them and collect delays.
+const RAIL = (DATA.rail ?? []).map(a => {
+  const p = sample(shift(decode(a)), 120), s = [0];
+  for (let i = 1; i < p.length; i++) s.push(s[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  return { p, s };
+});
+// The rail lines: thin cool strips, kept visible from orbit.
+const railLines = (() => {
+  let nv = 0;
+  RAIL.forEach(d => { nv += d.p.length * 2; });
+  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), idx = [];
+  let v = 0;
+  RAIL.forEach(({ p }) => {
+    const base = v;
+    p.forEach((q, i) => {
+      const [tx, tz] = tangent(p, i);
+      for (const side of [-1, 1]) { aC[v * 3] = q[0]; aC[v * 3 + 2] = q[1]; aN[v * 2] = -tz; aN[v * 2 + 1] = tx; aSide[v] = side; v++; }
+      if (i > 0) { const w = base + i * 2; idx.push(w - 2, w - 1, w, w - 1, w + 1, w); }
+    });
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(aC, 3));
+  g.setAttribute('aN', new THREE.BufferAttribute(aN, 2));
+  g.setAttribute('aSide', new THREE.BufferAttribute(aSide, 1));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uRailC: { value: new THREE.Vector3(...linFit(0.75, 0.06, 170)) }, uRailK: { value: 0.03 } },
+    vertexShader: /* glsl */`
+      attribute vec2 aN; attribute float aSide;
+      uniform float uPxK;
+      varying float vA, vK;
+      varying vec3 vW;
+      void main() {
+        float d = distance(cameraPosition, position), h = max(3.0, 0.9 * d * uPxK);
+        vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * h;
+        w.y = 0.06;
+        vA = aSide; vK = 3.0 / h; vW = w;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      ${COMMON}
+      uniform vec3 uRailC;
+      uniform float uRailK;
+      varying float vA, vK;
+      varying vec3 vW;
+      void main() {
+        float f = 1.0 - abs(vA);
+        gl_FragColor = vec4(uRailC * f * f * uRailK * mix(1.0, 6.0, 1.0 - vK) * uBootK * fogT(vW), 1.0);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 1;
+  return m;
+})();
+scene.add(railLines);
+
+// Trains: one per 12 km of line; each can get stuck and gather minutes of delay.
+const TRAINS = (() => {
+  const T = [];
+  RAIL.forEach((d, r) => {
+    const L = d.s[d.s.length - 1];
+    if (L < 4000) return;
+    const n = Math.max(1, Math.round(L / 12000));
+    for (let i = 0; i < n; i++) T.push({ r, s: Math.random() * L, dir: Math.random() < 0.5 ? 1 : -1, v: 30 + Math.random() * 14, delay: Math.floor(Math.random() * 6), stuck: 0, k: 0 });
+  });
+  return T;
+})();
+const trA = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, TRAINS.length) * 4), 4).setUsage(THREE.DynamicDrawUsage);
+const trB = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, TRAINS.length) * 4), 4).setUsage(THREE.DynamicDrawUsage);
+function stepTrains(dt) {
+  const A = trA.array, B = trB.array;
+  TRAINS.forEach((t, i) => {
+    const { p, s: S } = RAIL[t.r], n = S.length, L = S[n - 1];
+    // A train sticks at a signal now and then; minutes pile up while it waits.
+    if (t.stuck > 0) { t.stuck -= dt; t.delay += dt * 2.5; }
+    else {
+      if (Math.random() < dt * 0.012) t.stuck = 3 + Math.random() * 7;
+      t.s += t.dir * t.v * dt * traffic;
+      if (t.s > L || t.s < 0) { t.dir = -t.dir; t.s = Math.min(L, Math.max(0, t.s)); t.delay = Math.max(0, t.delay * 0.6 + Math.random() * 4); }
+    }
+    let k = t.k;
+    while (k < n - 2 && S[k + 1] < t.s) k++;
+    while (k > 0 && S[k] > t.s) k--;
+    t.k = k;
+    const a = p[k], b = p[k + 1], seg = (S[k + 1] - S[k]) || 1, f = Math.min(1, Math.max(0, (t.s - S[k]) / seg));
+    A[i * 4] = a[0] + (b[0] - a[0]) * f; A[i * 4 + 1] = a[1] + (b[1] - a[1]) * f;
+    A[i * 4 + 2] = ((b[0] - a[0]) / seg) * t.dir; A[i * 4 + 3] = ((b[1] - a[1]) / seg) * t.dir;
+    B[i * 4] = t.delay; B[i * 4 + 1] = t.stuck > 0 ? 1 : 0;
+  });
+  trA.needsUpdate = trB.needsUpdate = true;
+}
+const trainMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uTrainK: { value: 1 }, uFar: { value: 1 }, uWin: { value: new THREE.Vector3(...linFit(0.93, 0.04, 220)) }, uLate: { value: new THREE.Vector3(...linFit(0.65, 0.22, 30)) } },
+  vertexShader: /* glsl */`
+    attribute vec4 aA, aB;
+    uniform float uPxK;
+    varying vec2 vQ;
+    varying float vGain, vDelay, vStuck;
+    varying vec3 vW;
+    void main() {
+      vec3 head = vec3(aA.x, 4.0, aA.y), t = vec3(aA.z, 0.0, aA.w);
+      float mpp = distance(cameraPosition, head) * uPxK;
+      float len = 160.0, L = max(len, 3.0 * mpp), wid = 3.2, w = max(wid, 1.8 * mpp);
+      vGain = (wid * len) / (w * L);
+      vec3 side = normalize(cross(t, normalize(cameraPosition - head)) + vec3(1e-4));
+      vec3 p = head - t * (1.0 - position.x) * L + side * position.y * w * 0.5;
+      vQ = position.xy; vDelay = aB.x; vStuck = aB.y; vW = p;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    uniform float uTrainK, uFar;
+    uniform vec3 uWin, uLate;
+    varying vec2 vQ;
+    varying float vGain, vDelay, vStuck;
+    varying vec3 vW;
+    void main() {
+      // Lit windows; late trains blush red; a stuck one blinks.
+      float late = smoothstep(4.0, 20.0, vDelay);
+      float blink = vStuck > 0.5 ? 0.35 + 0.65 * step(0.5, fract(uNow * 1.6)) : 1.0;
+      vec3 c = mix(uWin, uLate * 1.6, late) * blink;
+      float across = exp(-vQ.y * vQ.y * 2.5), ends = smoothstep(0.0, 0.06, vQ.x) * smoothstep(1.0, 0.94, vQ.x);
+      float g = mix(pow(vGain, 0.6) * uFar, 1.0, step(0.999, vGain));
+      gl_FragColor = vec4(c * across * ends * g * uTrainK * uBootK * fogT(vW), 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const trains = (() => {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.setAttribute('aA', trA);
+  g.setAttribute('aB', trB);
+  g.instanceCount = TRAINS.length;
+  const m = new THREE.Mesh(g, trainMat);
+  m.frustumCulled = false;
+  m.renderOrder = 3;
+  return m;
+})();
+scene.add(trains);
+stepTrains(0);
+
+// The classic excuses, in Dutch, French and German.
+const EXCUSES = [
+  ['LAATTIJDIGE TERBESCHIKKINGSTELLING VAN HET MATERIEEL', 'MISE À DISPOSITION TARDIVE DU MATÉRIEL', 'VERSPÄTETE BEREITSTELLUNG DES ZUGES'],
+  ['BLADEREN OP DE SPOREN', 'FEUILLES MORTES SUR LES VOIES', 'LAUB AUF DEN GLEISEN'],
+  ['SEINPANNE', 'PANNE DE SIGNALISATION', 'SIGNALSTÖRUNG'],
+  ['KOPERDIEFSTAL', 'VOL DE CÂBLES', 'KABELDIEBSTAHL'],
+  ['DEFECTE WISSEL', 'AIGUILLAGE DÉFECTUEUX', 'DEFEKTE WEICHE'],
+  ['VERTRAGING DOOR EEN VORIGE VERTRAGING', 'RETARD DÛ À UN RETARD PRÉCÉDENT', 'VERSPÄTUNG WEGEN EINER FRÜHEREN VERSPÄTUNG'],
+  ['STAKINGSDAG', 'JOUR DE GRÈVE', 'STREIKTAG'],
+  ['GLADDE SPOREN', 'RAILS GLISSANTS', 'GLATTE SCHIENEN'],
+  ['TE WARM VOOR DE BOVENLEIDING', 'TROP CHAUD POUR LA CATÉNAIRE', 'ZU WARM FÜR DIE OBERLEITUNG'],
+  ['DE TREIN IS ER NOG NIET', "LE TRAIN N'EST PAS ENCORE LÀ", 'DER ZUG IST NOCH NICHT DA'],
+];
+const DESTS = ['OOSTENDE', 'ANTWERPEN-C', 'BRUSSEL-ZUID', 'GENT-ST-PIETERS', 'LUIK-GUILLEMINS', 'NAMEN', 'HASSELT', 'KNOKKE', 'BLANKENBERGE',
+  'GENK', 'DE PANNE', 'EUPEN', 'ARLON', 'CHARLEROI-C', 'MONS', 'LILLE-FLANDRES', 'TURNHOUT', 'KORTRIJK', 'LEUVEN', 'MECHELEN'];
+// Station boards at the big stations: three departures each, delays growing.
+const STATIONS = [['BRUSSEL-ZUID · BRUXELLES-MIDI', 4.336, 50.8357], ['ANTWERPEN-C · ANVERS-C', 4.4211, 51.2172],
+  ['GENT-ST-PIETERS · GAND-ST-PIERRE', 3.7106, 51.0357], ['LUIK · LIÈGE-GUILLEMINS', 5.5668, 50.6245],
+  ['LEUVEN · LOUVAIN', 4.7161, 50.8814], ['MECHELEN · MALINES', 4.4828, 51.0175]];
+const pick = a => a[(Math.random() * a.length) | 0];
+const boards = STATIONS.map(([name, lo, la]) => {
+  const el = document.createElement('div');
+  el.className = 'sb';
+  el.innerHTML = `<b>${name}</b><ol></ol><marquee-x></marquee-x>`;
+  markLayer.append(el);
+  const [x, z] = geo(lo, la);
+  const rows = Array.from({ length: 3 }, (_, i) => ({ type: pick(['IC', 'IC', 'L', 'P', 'S']), to: pick(DESTS), at: 6 + i * 9, delay: Math.floor(Math.random() * 9), gone: false }));
+  return { el, list: el.querySelector('ol'), line: el.querySelector('marquee-x'), v: new THREE.Vector3(x, 0, z), o: 0, shown: -1, rows, ex: pick(EXCUSES), lang: 0, next: 0 };
+});
+// Each tick a board's delays creep up; now and then a train is cancelled.
+function stepBoards(now) {
+  boards.forEach(b => {
+    if (now < b.next) return;
+    b.next = now + 2200 + Math.random() * 1800;
+    b.rows.forEach(r => {
+      if (r.gone) return;
+      if (Math.random() < 0.55) r.delay += 1 + Math.floor(Math.random() * (r.delay > 10 ? 6 : 3));
+      if (r.delay > 25 && Math.random() < 0.18) r.gone = true;
+    });
+    // A departed or cancelled train makes way for a new one.
+    if (Math.random() < 0.25) { b.rows.shift(); b.rows.push({ type: pick(['IC', 'L', 'P', 'S']), to: pick(DESTS), at: b.rows[b.rows.length - 1].at + 9, delay: Math.floor(Math.random() * 5), gone: false }); }
+    if (Math.random() < 0.3) b.ex = pick(EXCUSES);
+    b.lang = (b.lang + 1) % 3;
+    const base = clock.h;
+    b.list.innerHTML = b.rows.map(r => {
+      const t = (base + r.at / 60) % 24, hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
+      const late = r.gone ? `<em>${['AFGESCHAFT', 'SUPPRIMÉ', 'ENTFÄLLT'][b.lang]}</em>` : r.delay > 0 ? `<em>+${r.delay}'</em>` : '<i>OK</i>';
+      return `<li><span>${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}</span><span>${r.type}</span><span>${r.to}</span>${late}</li>`;
+    }).join('');
+    b.line.innerHTML = `<span>${b.ex[b.lang]}</span>`;
+  });
+}
+// Boards show from a middle height, near their station.
+function placeBoards(dt) {
+  boards.forEach(b => {
+    mv.copy(b.v).project(camera);
+    const dist = camera.position.distanceTo(b.v);
+    let want = ss(40000, 18000, dist) * ss(600, 2000, dist) * ss(0.2, 0.32, z);
+    if (mv.z > 1 || Math.abs(mv.x) > 1.05 || Math.abs(mv.y) > 1.05) want = 0;
+    b.o += (want - b.o) * (1 - Math.exp(-dt * 3));
+    if (b.o < 0.01 && b.shown === 0) return;
+    const o = b.o < 0.01 ? 0 : b.o;
+    b.el.style.opacity = o.toFixed(3);
+    b.el.style.transform = `translate(${((mv.x * 0.5 + 0.5) * size.w).toFixed(1)}px, ${((0.5 - mv.y * 0.5) * size.h).toFixed(1)}px)`;
+    b.shown = o > 0 ? 1 : 0;
+  });
 }
 
 /* ---------- camera path ---------- */
@@ -1489,6 +1831,10 @@ function draw() {
   ribMat.uniforms.uPm.value = hourly(PM, clock.h);
   ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z);
   placeMarks(frameDt);
+  placeBoards(frameDt);
+  trainMat.uniforms.uFar.value = 1 + 10 * ss(0.35, 1, z);
+  // Rail lines read clearer from altitude.
+  railLines.material.uniforms.uRailK.value = (0.03 + 0.05 * ss(0.4, 1, z)) * (1 + U.uSun.value);
   grade.uniforms.uSeed.value = (t * 7.31) % 1;
   sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   composer.render();
@@ -1519,9 +1865,9 @@ const STYLES = {
     fog: [0.005, 0.006, 0.012], zen: [0.12, 0.03, 262], line: [0.8, 0.04, 245, 1], flag: 'oklch(0.9 0.12 72)', glow: 'oklch(0.7 0.18 58 / 0.8)' },
   led: { lamp: [0.86, 0.03, 240], instant: 1, sprites: true, cars: true, scan: 0,
     fog: [0.006, 0.007, 0.013], zen: [0.12, 0.03, 255], line: [0.8, 0.04, 245, 1], flag: 'oklch(0.95 0.03 240)', glow: 'oklch(0.78 0.07 240 / 0.8)' },
-  tactical: { lamp: [0.85, 0.13, 195], instant: 1, sprites: false, cars: true, scan: 1,
+  tactical: { lamp: [0.85, 0.13, 195], instant: 1, sprites: false, cars: true, scan: 1, rail: [0.85, 0.15, 85],
     fog: [0.002, 0.008, 0.01], zen: [0.1, 0.03, 210], line: [0.85, 0.13, 195, 2.5], flag: 'oklch(0.9 0.12 190)', glow: 'oklch(0.72 0.14 200 / 0.85)' },
-  thermal: { lamp: [0.8, 0.17, 55], instant: 1, sprites: false, cars: false, scan: 0,
+  thermal: { lamp: [0.8, 0.17, 55], instant: 1, sprites: false, cars: false, scan: 0, rail: [0.7, 0.12, 290],
     fog: [0.006, 0.002, 0.01], zen: [0.08, 0.04, 310], line: [0.6, 0.2, 330, 1.6], flag: 'oklch(0.93 0.13 95)', glow: 'oklch(0.68 0.2 40 / 0.8)' },
 };
 let look_ = STYLES.sodium;
@@ -1536,6 +1882,7 @@ act.style = v => {
   sky.material.uniforms.uZen.value.set(...linFit(...look_.zen));
   borderLine.material.uniforms.uLineC.value.set(...linFit(...look_.line.slice(0, 3))).multiplyScalar(look_.line[3]);
   grade.uniforms.uScan.value = look_.scan;
+  railLines.material.uniforms.uRailC.value.set(...linFit(...(look_.rail ?? [0.75, 0.06, 170])));
   markLayer.style.setProperty('--flag', look_.flag);
   markLayer.style.setProperty('--glow', look_.glow);
   try { localStorage.setItem('stimming.motorway.style', v); } catch {}
@@ -1579,12 +1926,25 @@ function tick(now) {
     lastDraw = now;
     // The day run moves the clock; it ends back at the evening rush.
     if (clock.day) {
-      clock.h += clock.rate * frameDt;
-      if (now - jamAt > 250) { jamAt = now; measureJams(); }
+      const dh = clock.rate * frameDt;
+      clock.h += dh;
+      if (now - jamAt > 250) {
+        jamAt = now; measureJams();
+        jamLog.push([clock.h, jamKm]);
+        // A new daily high above 250 km earns a record flash, once per rush.
+        if (jamKm > dayMax + 2 && jamKm > 250 && !recFlash[clock.h < 12 ? 0 : 1]) {
+          recFlash[clock.h < 12 ? 0 : 1] = true;
+          hudRec.classList.remove('on'); void hudRec.offsetWidth; hudRec.classList.add('on');
+        }
+        dayMax = Math.max(dayMax, jamKm);
+      }
+      // Lost hours: about 120 cars per km of queue, each losing most of its time.
+      lostH += jamKm * 120 * 0.7 * dh;
       if (clock.h >= 28) endDay();
     }
     localFade = 1 - ss(0.22, 0.4, z);
-    if (traffic > 0 || clock.day) stepTraffic(frameDt, z > 0.5 ? 4 : 1);
+    if (traffic > 0 || clock.day) { stepTraffic(frameDt, z > 0.5 ? 4 : 1); stepTrains(frameDt); }
+    stepBoards(now);
     draw();
     watch(now, lively);
   } finally {
@@ -1736,12 +2096,15 @@ act.sw = () => {
 // Rush runs one whole day from 04:00; pressed again, it stops.
 function endDay() {
   clock.day = false; clock.h = 17.2;
+  measureJams();
   U.uRush.value = 0;
   hud.classList.remove('on');
 }
+const recFlash = [false, false];
 act.rush = () => {
   if (clock.day) { endDay(); wake(); return; }
   clock.day = true; clock.h = 4;
+  jamLog.length = 0; lostH = 0; dayMax = 0; recFlash[0] = recFlash[1] = false;
   U.uRush.value = 1;
   measureJams();
   hud.classList.add('on');
