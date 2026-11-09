@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Washing line</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Washing line: plain sheets on one line against a wide sky. */
+:root { --stage: oklch(0.72 0.05 235); }
+.stage--washline { touch-action: none; }
+.stage--washline canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage--washline canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--washline canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Washing line</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--washline" id="stage" tabindex="0" role="application" aria-label="Plain sheets hang on one line and snap in the wind against the sky. Move the Sun slider behind the line and the sheets glow like stained glass. Pick Breeze, Gusty or Gale for the wind.">
+      <p class="fail" hidden>Washing line needs WebGL 2, which this browser doesn't have.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Washing line</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createNoise3D } from 'simplex-noise';
+import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+/* ---------- the bar ---------- */
+// Handlers bind once the scene exists.
+const act = { wind() {}, sun() {} };
+const ui = initPage({ id: 'washline', silent: true, bar: {
+  choice: { label: 'Wind', value: 'gusty',
+    options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }],
+    onPick: v => act.wind(v) },
+  slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.86, onInput: v => act.sun(v) },
+  quality: true,
+} });
+
+const stage = document.getElementById('stage');
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
+
+/* ---------- K4: Verlet rope ---------- */
+// Lifted from balloons/ (physics: verlet strings); Pull chain is not built yet.
+// This copy adds a z array, so ropes move in 3D.
+// It adds cloth: a grid of Verlet points pinned to a rope at its pegs.
+const K4 = {
+  // A rope is a chain of points with one rest length per segment.
+  makeRope(n, x0, y0, x1, y1, len, mass) {
+    const r = {
+      n, seg: len / (n - 1), mass,
+      x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n),
+      px: new Float32Array(n), py: new Float32Array(n), pz: new Float32Array(n),
+      fx: new Float32Array(n), fy: new Float32Array(n), fz: new Float32Array(n),
+      pin: new Uint8Array(n),
+    };
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      r.x[i] = r.px[i] = lerp(x0, x1, t);
+      r.y[i] = r.py[i] = lerp(y0, y1, t);
+    }
+    r.pin[0] = r.pin[n - 1] = 1;
+    return r;
+  },
+  // Gravity and the loads in fx, fy, fz move each free point.
+  stepRope(r, h, damp) {
+    const h2 = h * h, im = 1 / r.mass;
+    for (let i = 0; i < r.n; i++) {
+      if (r.pin[i]) continue;
+      const vx = (r.x[i] - r.px[i]) * damp, vy = (r.y[i] - r.py[i]) * damp, vz = (r.z[i] - r.pz[i]) * damp;
+      r.px[i] = r.x[i]; r.py[i] = r.y[i]; r.pz[i] = r.z[i];
+      r.x[i] += vx + r.fx[i] * im * h2;
+      r.y[i] += vy + (r.fy[i] * im - 9.8) * h2;
+      r.z[i] += vz + r.fz[i] * im * h2;
+    }
+  },
+  // One pass pulls each segment back to its rest length.
+  solveRope(r) {
+    const x = r.x, y = r.y, z = r.z, pin = r.pin;
+    for (let i = 0; i < r.n - 1; i++) {
+      const dx = x[i + 1] - x[i], dy = y[i + 1] - y[i], dz = z[i + 1] - z[i];
+      const d = Math.hypot(dx, dy, dz) || 1e-9;
+      const wa = pin[i] ? 0 : 1, wb = pin[i + 1] ? 0 : 1, ws = wa + wb;
+      if (!ws) continue;
+      const k = (d - r.seg) / (d * ws);
+      x[i] += dx * k * wa; y[i] += dy * k * wa; z[i] += dz * k * wa;
+      x[i + 1] -= dx * k * wb; y[i + 1] -= dy * k * wb; z[i + 1] -= dz * k * wb;
+    }
+  },
+  // A cloth is a grid of points with structural, shear and bend links.
+  makeCloth(w, h, cols, rows, x0, y0, z0) {
+    const n = cols * rows, dx = w / (cols - 1), dy = h / (rows - 1);
+    const c = {
+      w, h, cols, rows, n,
+      x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n),
+      px: new Float32Array(n), py: new Float32Array(n), pz: new Float32Array(n),
+      ax: new Float32Array(n), ay: new Float32Array(n), az: new Float32Array(n),
+      inv: new Float32Array(n).fill(1),
+    };
+    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+      const p = i * cols + j;
+      c.x[p] = c.px[p] = x0 + j * dx;
+      c.y[p] = c.py[p] = y0 - i * dy;
+      c.z[p] = c.pz[p] = z0 + 0.002 * Math.sin(j * 1.7 + i * 0.9);
+    }
+    const A = [], B = [], R = [], K = [];
+    const link = (a, b, k) => { A.push(a); B.push(b); R.push(Math.hypot(c.x[a] - c.x[b], c.y[a] - c.y[b])); K.push(k); };
+    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+      const p = i * cols + j;
+      if (j < cols - 1) link(p, p + 1, 1);
+      if (i < rows - 1) link(p, p + cols, 1);
+      if (i < rows - 1 && j < cols - 1) { link(p, p + cols + 1, 0.9); link(p + 1, p + cols, 0.9); }
+      // Bend links span two points; their stiffness is the fabric's.
+      if (j < cols - 2) link(p, p + 2, -1);
+      if (i < rows - 2) link(p, p + 2 * cols, -1);
+    }
+    c.a = Int32Array.from(A); c.b = Int32Array.from(B); c.rest = Float32Array.from(R); c.k = Float32Array.from(K);
+    const T = [];
+    for (let i = 0; i < rows - 1; i++) for (let j = 0; j < cols - 1; j++) {
+      const p = i * cols + j;
+      T.push(p, p + cols, p + 1, p + 1, p + cols, p + cols + 1);
+    }
+    c.tris = Uint16Array.from(T);
+    return c;
+  },
+  // Gravity and the accelerations in ax, ay, az move each free point.
+  // Each step moves a point 0.05 units at most, so a yank cannot blow up.
+  stepCloth(c, h, damp) {
+    const h2 = h * h, MAX = 0.05;
+    for (let p = 0; p < c.n; p++) {
+      if (!c.inv[p]) continue;
+      let sx = (c.x[p] - c.px[p]) * damp + c.ax[p] * h2;
+      let sy = (c.y[p] - c.py[p]) * damp + (c.ay[p] - 9.8) * h2;
+      let sz = (c.z[p] - c.pz[p]) * damp + c.az[p] * h2;
+      const s = Math.hypot(sx, sy, sz);
+      if (s > MAX) { const f = MAX / s; sx *= f; sy *= f; sz *= f; }
+      c.px[p] = c.x[p]; c.py[p] = c.y[p]; c.pz[p] = c.z[p];
+      c.x[p] += sx; c.y[p] += sy; c.z[p] += sz;
+    }
+  },
+  // One pass over every link; bend links take the fabric's stiffness.
+  solveCloth(c, bend) {
+    const x = c.x, y = c.y, z = c.z, inv = c.inv, A = c.a, B = c.b, R = c.rest, K = c.k;
+    for (let i = 0, m = A.length; i < m; i++) {
+      const a = A[i], b = B[i], wa = inv[a], wb = inv[b], ws = wa + wb;
+      if (!ws) continue;
+      const dx = x[b] - x[a], dy = y[b] - y[a], dz = z[b] - z[a];
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+      const k = ((d - R[i]) / (d * ws)) * (K[i] < 0 ? bend : K[i]);
+      x[a] += dx * k * wa; y[a] += dy * k * wa; z[a] += dz * k * wa;
+      x[b] -= dx * k * wb; y[b] -= dy * k * wb; z[b] -= dz * k * wb;
+    }
+  },
+};
+/* ---------- end K4 ---------- */
+
+/* ---------- wind ---------- */
+// Gusts are noise that scrolls downwind, so they travel along the line.
+const noise3D = createNoise3D(() => 0.4127);
+const WIND = {
+  breeze: { u: 1.1, gust: 0.45, turb: 0.35 },
+  gusty: { u: 1.9, gust: 0.9, turb: 0.5 },
+  gale: { u: 4.2, gust: 0.6, turb: 0.7 },
+};
+const DIR_X = 0.55, DIR_Z = 0.835;
+const RHO_C = 1.2 * 0.8;
+const st = { wind: 'gusty', sun: 0.86, windScale: 1, scroll: 0, drift: 0, t: 0, lastInput: performance.now() };
+const windOut = [0, 0, 0];
+function windAt(x, y, t) {
+  const w = WIND[st.wind], U = w.u * st.windScale * (reduce ? 0.3 : 1);
+  const s = x * 0.2 - st.scroll;
+  const k = Math.max(0.05, 1 + w.gust * noise3D(s, y * 0.15, t * 0.07));
+  const tw = noise3D(s * 3.1 + 11, y * 0.9, t * 0.6) * w.turb;
+  windOut[0] = U * (k * DIR_X + tw * 0.4);
+  windOut[1] = U * tw * 0.3;
+  windOut[2] = U * (k * DIR_Z + tw * 0.3);
+  return windOut;
+}
+
+/* ---------- the line and its sheets ---------- */
+// Five quiet colours: albedo for front light, transmission for back light.
+const lin = (L, C, h) => oklchLinear(L, C, h).map(v => Math.max(0, v));
+const CLOTH = [
+  { alb: [0.93, 0.012, 90], tr: [0.9, 0.05, 85] },
+  { alb: [0.66, 0.11, 38], tr: [0.72, 0.17, 42] },
+  { alb: [0.74, 0.06, 150], tr: [0.8, 0.11, 145] },
+  { alb: [0.66, 0.07, 245], tr: [0.74, 0.12, 240] },
+  { alb: [0.8, 0.11, 82], tr: [0.85, 0.16, 80] },
+];
+const SHEETS = [
+  { w: 1.3, h: 1.05, col: 0 },
+  { w: 1.75, h: 1.35, col: 1, mid: true },
+  { w: 1.0, h: 1.2, col: 2 },
+  { w: 1.5, h: 1.1, col: 3 },
+  { w: 1.2, h: 0.95, col: 4 },
+];
+// Cotton for the blockout; Settings adds Linen and Silk later.
+const FABRIC = { bend: 0.25, damp: 0.992, kgm2: 0.2, tau: 0.62 };
+const LINE_Y = 2.0, ROPE_N = 80, ROPE_KG = 0.05, ITER = 8, H = 1 / 120;
+const sim = { rope: null, sheets: [], pegs: [], narrow: false, span: 9.4 };
+
+function build(narrow) {
+  sim.narrow = narrow;
+  sim.span = narrow ? 5.0 : 9.4;
+  // A phone shows three sheets, larger.
+  const sc = narrow ? 1.2 : 1;
+  const half = sim.span / 2 + 0.7;
+  sim.rope = K4.makeRope(ROPE_N, -half, LINE_Y, half, LINE_Y, half * 2 * 1.012, ROPE_KG);
+  const seg = (half * 2) / (ROPE_N - 1);
+  const pick = narrow ? [0, 2, 4] : [0, 1, 2, 3, 4];
+  const gap = narrow ? 0.24 : 0.32;
+  const total = pick.reduce((s, i) => s + SHEETS[i].w * sc, 0) + gap * (pick.length - 1);
+  let x = -total / 2;
+  sim.sheets = [];
+  sim.pegs = [];
+  for (const i of pick) {
+    const S = SHEETS[i];
+    // Each sheet edge sits on a rope point.
+    const r0 = Math.round((x + half) / seg), r1 = Math.round((x + S.w * sc + half) / seg);
+    const x0 = -half + r0 * seg, w = (r1 - r0) * seg;
+    const c = K4.makeCloth(w, S.h * sc, 24, 18, x0, LINE_Y - 0.015, 0);
+    c.mass = w * S.h * sc * FABRIC.kgm2;
+    c.col = S.col;
+    c.pegs = [];
+    const peg = (col, ri) => { c.inv[col] = 0; const pg = { cloth: c, p: col, ri }; c.pegs.push(pg); sim.pegs.push(pg); };
+    peg(0, r0);
+    peg(c.cols - 1, r1);
+    if (S.mid) peg(c.cols >> 1, Math.round((r0 + r1) / 2));
+    sim.sheets.push(c);
+    x += S.w * sc + gap;
+  }
+  makeMeshes();
+}
+
+/* ---------- one simulation step ---------- */
+function windForces(c, t) {
+  const cols = c.cols, rows = c.rows, x = c.x, y = c.y, z = c.z, px = c.px, py = c.py, pz = c.pz;
+  const ax = c.ax, ay = c.ay, az = c.az, im3 = c.n / (c.mass * 3), ih = 1 / H;
+  ax.fill(0); ay.fill(0); az.fill(0);
+  // Wind samples one point per column in three bands.
+  const ws = c.ws || (c.ws = new Float32Array(cols * 9));
+  for (let b = 0; b < 3; b++) {
+    const row = Math.min(rows - 1, Math.round((b + 0.5) * rows / 3));
+    for (let j = 0; j < cols; j++) {
+      const p = row * cols + j, w = windAt(x[p], y[p], t), o = (b * cols + j) * 3;
+      ws[o] = w[0]; ws[o + 1] = w[1]; ws[o + 2] = w[2];
+    }
+  }
+  let fx = 0, fy = 0, fz = 0;
+  const T = c.tris;
+  for (let q = 0; q < T.length; q += 3) {
+    const a = T[q], b = T[q + 1], d = T[q + 2];
+    const e1x = x[b] - x[a], e1y = y[b] - y[a], e1z = z[b] - z[a];
+    const e2x = x[d] - x[a], e2y = y[d] - y[a], e2z = z[d] - z[a];
+    // N is the cross product; its length is twice the area.
+    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (nl < 1e-9) continue;
+    const o = (Math.min(2, Math.floor(((a / cols) | 0) * 3 / rows)) * cols + (a % cols)) * 3;
+    const vx = ws[o] - ((x[a] - px[a]) + (x[b] - px[b]) + (x[d] - px[d])) * ih / 3;
+    const vy = ws[o + 1] - ((y[a] - py[a]) + (y[b] - py[b]) + (y[d] - py[d])) * ih / 3;
+    const vz = ws[o + 2] - ((z[a] - pz[a]) + (z[b] - pz[b]) + (z[d] - pz[d])) * ih / 3;
+    // F = 0.5 rho C (v.n)|v.n| n area, with n and area from N.
+    const vn = vx * nx + vy * ny + vz * nz;
+    const s = (0.25 * RHO_C * vn * Math.abs(vn)) / (nl * nl);
+    const Fx = s * nx, Fy = s * ny, Fz = s * nz;
+    fx += Fx; fy += Fy; fz += Fz;
+    const gx = Fx * im3, gy = Fy * im3, gz = Fz * im3;
+    ax[a] += gx; ay[a] += gy; az[a] += gz;
+    ax[b] += gx; ay[b] += gy; az[b] += gz;
+    ax[d] += gx; ay[d] += gy; az[d] += gz;
+  }
+  // The pegs carry the sheet's weight and wind load into the line.
+  const r = sim.rope, k = 1 / c.pegs.length;
+  for (const pg of c.pegs) {
+    r.fx[pg.ri] += fx * k;
+    r.fy[pg.ri] += (fy - c.mass * 9.8) * k;
+    r.fz[pg.ri] += fz * k;
+  }
+}
+function step(t) {
+  const r = sim.rope;
+  r.fx.fill(0); r.fy.fill(0); r.fz.fill(0);
+  for (const c of sim.sheets) windForces(c, t);
+  K4.stepRope(r, H, 0.995);
+  for (const c of sim.sheets) K4.stepCloth(c, H, FABRIC.damp);
+  for (let it = 0; it < ITER; it++) {
+    K4.solveRope(r);
+    K4.solveRope(r);
+    for (const pg of sim.pegs) {
+      const c = pg.cloth;
+      c.x[pg.p] = r.x[pg.ri]; c.y[pg.p] = r.y[pg.ri] - 0.015; c.z[pg.p] = r.z[pg.ri];
+    }
+    for (const c of sim.sheets) K4.solveCloth(c, FABRIC.bend);
+  }
+}
+
+/* ---------- renderer ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+} catch {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw new Error('no WebGL 2');
+}
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.5, 1.5);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ---------- light ---------- */
+// The slider moves the sun over the top, from behind the viewer to behind the line.
+const SUN = { dir: new THREE.Vector3(), col: new THREE.Vector3(), b: 0 };
+const v3 = a => new THREE.Vector3(...a);
+const SKY = {
+  zen: v3(lin(0.6, 0.11, 248)), hor: v3(lin(0.9, 0.035, 230)), ground: v3(lin(0.62, 0.025, 220)),
+  warm: v3(lin(0.93, 0.08, 62)), white: v3(lin(0.98, 0.02, 85)),
+};
+function setSun(s) {
+  st.sun = s;
+  const th = Math.PI * s, el = lerp(0.3, 0.05, s) + 1.3 * Math.sin(th) ** 4;
+  SUN.dir.set(lerp(0.4, -0.13, s), Math.tan(Math.min(el, 1.45)), Math.cos(th)).normalize();
+  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(2.6);
+  SUN.b = smooth(0.4, 0.9, s);
+}
+
+/* ---------- sky ---------- */
+const skyU = {
+  uInv: { value: new THREE.Matrix4() }, uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 },
+  uZen: { value: SKY.zen }, uHor: { value: SKY.hor }, uGround: { value: SKY.ground }, uDrift: { value: new THREE.Vector2() },
+};
+const sky = new THREE.Mesh(
+  new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
+  new THREE.ShaderMaterial({ uniforms: skyU, depthTest: false, depthWrite: false,
+    vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: /* glsl */ `
+      varying vec2 vP;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor, uGround; uniform float uB; uniform vec2 uDrift;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
+      }
+      float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+      void main() {
+        vec4 w = uInv * vec4(vP, 1.0, 1.0);
+        vec3 ray = normalize(w.xyz / w.w - cameraPosition);
+        float e = ray.y, cs = max(dot(ray, uSun), 0.0);
+        vec3 col = mix(uHor, uZen, pow(clamp(e, 0.0, 1.0), 0.5));
+        // Clouds lie on a flat deck; the sun lines their thin edges.
+        if (e > 0.0) {
+          vec2 cp = ray.xz / (e + 0.06) * 0.55 + uDrift;
+          float d = smoothstep(0.55, 0.85, fbm(cp)) * smoothstep(0.0, 0.1, e);
+          vec3 lit = mix(uHor * 1.06, vec3(1.0), 0.45) * (1.0 - 0.35 * uB);
+          lit += uSunCol * pow(cs, 10.0) * (1.0 - d) * 2.2 * uB;
+          col = mix(col, lit, d * 0.8);
+        }
+        // Below the horizon a band of ground haze.
+        col = mix(col, mix(uHor * 0.95, uGround, smoothstep(0.0, 0.22, -e)), smoothstep(0.0, -0.015, e));
+        col += uSunCol * (0.1 * pow(cs, 8.0) + 0.5 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.9998, cs));
+        gl_FragColor = vec4(col, 1.0);
+      }` }));
+sky.frustumCulled = false;
+sky.renderOrder = -10;
+scene.add(sky);
+
+/* ---------- cloth materials ---------- */
+// Three passes, each free of draw order:
+// 1. Max lifts the sky behind a sheet to the sun's diffuse light through it.
+// 2. Multiply tints that light with the cloth, so overlaps make a third colour.
+// 3. Add puts front light and sky light on the face we see.
+const clothVS = /* glsl */ `
+  varying vec3 vW, vN;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vW = w.xyz; vN = normal;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`;
+const clothHead = /* glsl */ `
+  varying vec3 vW, vN;
+  uniform vec3 uSun, uSunCol, uT, uAlb; uniform float uB, uTau;
+  vec3 faceN(out vec3 v) {
+    v = normalize(cameraPosition - vW);
+    vec3 n = normalize(vN);
+    return dot(n, v) < 0.0 ? -n : n;
+  }`;
+const PASS = {
+  max: `void main() { vec3 v; vec3 n = faceN(v);
+    float through = 0.4 + 0.6 * max(dot(-n, uSun), 0.0);
+    float fwd = 1.0 + 0.8 * pow(max(dot(-v, uSun), 0.0), 8.0);
+    gl_FragColor = vec4(uSunCol * uB * uTau * 0.55 * through * fwd, 1.0); }`,
+  mul: `void main() { vec3 v; vec3 n = faceN(v);
+    float c = max(abs(dot(n, v)), 0.3);
+    vec3 T = pow(uT, vec3(1.0 / c));
+    gl_FragColor = vec4(mix(vec3(0.05), T, uB * uTau + (1.0 - uB) * 0.04), 1.0); }`,
+  add: `void main() { vec3 v; vec3 n = faceN(v);
+    float sun = max(dot(n, uSun), 0.0);
+    vec3 amb = mix(vec3(0.42, 0.46, 0.55), vec3(0.75, 0.8, 0.92), 0.5 + 0.5 * n.y) * (0.75 - 0.4 * uB);
+    gl_FragColor = vec4(uAlb * (uSunCol * sun * 0.6 + amb), 1.0); }`,
+};
+const shared = { uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 }, uTau: { value: FABRIC.tau } };
+function clothMat(kind, alb, tr) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: { ...shared, uAlb: { value: v3(lin(...alb)) }, uT: { value: v3(lin(...tr)) } },
+    vertexShader: clothVS, fragmentShader: clothHead + PASS[kind],
+    side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
+  });
+  m.blendEquation = kind === 'max' ? THREE.MaxEquation : THREE.AddEquation;
+  m.blendSrc = kind === 'mul' ? THREE.DstColorFactor : THREE.OneFactor;
+  m.blendDst = kind === 'mul' ? THREE.ZeroFactor : THREE.OneFactor;
+  return m;
+}
+const ORDER = { max: 10, mul: 11, add: 12 };
+
+/* ---------- line and pegs ---------- */
+const lineGeo = new THREE.BufferGeometry();
+const linePos = new Float32Array(ROPE_N * 2 * 3);
+lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+{
+  const idx = [];
+  for (let i = 0; i < ROPE_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  lineGeo.setIndex(idx);
+}
+const lineU = { uCol: { value: new THREE.Vector3() } };
+const line = new THREE.Mesh(lineGeo, new THREE.ShaderMaterial({ uniforms: lineU, side: THREE.DoubleSide,
+  vertexShader: `void main() { gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform vec3 uCol; void main() { gl_FragColor = vec4(uCol, 1.0); }` }));
+line.frustumCulled = false;
+scene.add(line);
+
+const PEG_MAX = 24;
+const pegMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.085, 0.03),
+  new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.62, 0.07, 65)), roughness: 0.8 }), PEG_MAX);
+pegMesh.frustumCulled = false;
+scene.add(pegMesh);
+const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
+const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x8a8f96, 0.9);
+scene.add(sunLight, sunLight.target, hemi);
+
+let clothMeshes = [];
+function makeMeshes() {
+  for (const m of clothMeshes) { scene.remove(m); m.material.dispose(); }
+  clothMeshes = [];
+  for (const c of sim.sheets) {
+    c.geo?.dispose();
+    const g = new THREE.BufferGeometry();
+    c.pos = new Float32Array(c.n * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3));
+    g.setIndex(new THREE.BufferAttribute(c.tris, 1));
+    c.geo = g;
+    const pal = CLOTH[c.col];
+    for (const kind of ['max', 'mul', 'add']) {
+      const m = new THREE.Mesh(g, clothMat(kind, pal.alb, pal.tr));
+      m.renderOrder = ORDER[kind];
+      m.frustumCulled = false;
+      scene.add(m);
+      clothMeshes.push(m);
+    }
+  }
+}
+
+/* ---------- draw ---------- */
+const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), zAxis = new THREE.Vector3(0, 0, 1), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3();
+function syncScene() {
+  for (const c of sim.sheets) {
+    const pos = c.pos;
+    for (let p = 0; p < c.n; p++) { pos[p * 3] = c.x[p]; pos[p * 3 + 1] = c.y[p]; pos[p * 3 + 2] = c.z[p]; }
+    c.geo.attributes.position.needsUpdate = true;
+    c.geo.computeVertexNormals();
+  }
+  // The line is a ribbon that faces the camera.
+  const r = sim.rope, cp = camera.position, hw = 0.011;
+  for (let i = 0; i < ROPE_N; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(ROPE_N - 1, i + 1);
+    const tx = r.x[b] - r.x[a], ty = r.y[b] - r.y[a], tz = r.z[b] - r.z[a];
+    const vx = cp.x - r.x[i], vy = cp.y - r.y[i], vz = cp.z - r.z[i];
+    let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx;
+    const sl = Math.hypot(sx, sy, sz) || 1;
+    sx *= hw / sl; sy *= hw / sl; sz *= hw / sl;
+    linePos.set([r.x[i] + sx, r.y[i] + sy, r.z[i] + sz, r.x[i] - sx, r.y[i] - sy, r.z[i] - sz], i * 6);
+  }
+  lineGeo.attributes.position.needsUpdate = true;
+  sim.pegs.forEach((pg, k) => {
+    const i = pg.ri, a = Math.max(0, i - 1), b = Math.min(ROPE_N - 1, i + 1);
+    q.setFromAxisAngle(zAxis, Math.atan2(r.y[b] - r.y[a], r.x[b] - r.x[a]));
+    at.set(r.x[i], r.y[i] - 0.012, r.z[i] + 0.004);
+    pegMesh.setMatrixAt(k, mtx.compose(at, q, one));
+  });
+  pegMesh.count = Math.min(PEG_MAX, sim.pegs.length);
+  pegMesh.instanceMatrix.needsUpdate = true;
+}
+function syncLight() {
+  shared.uB.value = skyU.uB.value = SUN.b;
+  renderer.toneMappingExposure = lerp(1, 0.8, SUN.b);
+  sunLight.position.copy(SUN.dir).multiplyScalar(10);
+  sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
+  // The line is pale in front light and a dark thread against the sun.
+  lineU.uCol.value.set(0.62, 0.62, 0.6).lerp(new THREE.Vector3(0.05, 0.05, 0.06), SUN.b);
+  camera.updateMatrixWorld();
+  skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
+  skyU.uDrift.value.set(st.drift, st.drift * 0.25);
+}
+function draw() {
+  syncScene();
+  syncLight();
+  composer.render();
+  if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
+}
+
+/* ---------- size ---------- */
+const view = { w: 1, h: 1 };
+function frameCamera() {
+  const a = view.w / view.h, t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), pitch = sim.narrow ? 0.19 : 0.11;
+  // The line spans the frame; on a phone it spans the short side.
+  const dist = sim.span / 2 / (t * a);
+  const ndcY = sim.narrow ? 0.3 : 0.42;
+  const cy = LINE_Y - dist * (pitch + ndcY * t);
+  camera.aspect = a;
+  camera.position.set(0, cy, dist);
+  camera.lookAt(0, cy + dist * pitch, 0);
+  camera.updateProjectionMatrix();
+}
+function resize() {
+  const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
+  view.w = w; view.h = h;
+  const dpr = pixelRatio(w, h, { maxDpr: 2 });
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  const narrow = w < 640;
+  if (narrow !== sim.narrow || !sim.rope) { build(narrow); settle(2.5); }
+  frameCamera();
+  kick();
+}
+// The first frame shows sheets already moving in the wind.
+function settle(sec) {
+  for (let i = 0, n = Math.round(sec / H); i < n; i++) { st.t += H; advance(H); step(st.t); }
+}
+function advance(dt) {
+  const U = WIND[st.wind].u * st.windScale;
+  st.scroll += U * DIR_X * 0.2 * 0.8 * dt;
+  st.drift += U * 0.004 * dt;
+}
+
+/* ---------- frame loop ---------- */
+// Lively after input: every frame; drifting in the wind: 30 fps.
+// 60 s after the last input the wind eases to calm over 3 s; then the loop sleeps.
+let raf = 0, visible = true, lastT = 0, lastDraw = 0, accum = 0, still = 0;
+function kick() { if (!raf && visible) raf = requestAnimationFrame(frame); }
+function wake() { st.lastInput = performance.now(); still = 0; kick(); }
+function frame(now) {
+  raf = 0;
+  let busy = true;
+  try {
+    const idle = now - st.lastInput;
+    const lively = idle < 1500;
+    if (!lively && now - lastDraw < 31) return;
+    const dt = lastT ? Math.min(1 / 15, (now - lastT) / 1000) : 1 / 60;
+    lastT = now;
+    st.windScale = 1 - smooth(60000, 63000, idle);
+    advance(dt);
+    accum += dt;
+    while (accum >= H) { accum -= H; st.t += H; step(st.t); }
+    draw();
+    lastDraw = now;
+    // Calm air and still cloth for one second put the loop to sleep.
+    if (st.windScale === 0) { still += dt; busy = still < 1; } else still = 0;
+  } finally {
+    if (busy) kick(); else { lastT = 0; accum = 0; }
+  }
+}
+whenVisible(stage, v => { visible = v; if (v) kick(); else { cancelAnimationFrame(raf); raf = 0; lastT = 0; accum = 0; } });
+
+/* ---------- controls ---------- */
+act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
+act.sun = v => { setSun(v); wake(); };
+setSun(st.sun);
+stage.addEventListener('pointerdown', wake);
+
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+resize();
+syncScene();
+syncLight();
+await renderer.compileAsync(scene, camera);
+draw();
+</script>
+</body>
+</html>
