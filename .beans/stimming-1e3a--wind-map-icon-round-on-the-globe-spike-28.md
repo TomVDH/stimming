@@ -13,5 +13,5 @@ Tom wants the Wind map icon (toy bean stimming-5qae) redone to the bar of the re
 - [x] Build icons/spike-windmap-2.html: Current plus A to E globes, shaded and interactive
 - [x] Emblems windmap28-a..e and the sheet row
 - [x] Send Tom stills at rest and mid-interaction, 128 and 64
-- [ ] Tom picks a direction
-- [ ] Install the pick on the menu, emblem and icons/picks.json
+- [x] Tom picks a direction (A2, gloss globe with axis)
+- [x] Install the pick on the menu, emblem and icons/picks.json
