@@ -142,6 +142,8 @@ const S = {
   strip: [0, 2.0, 1.42],         // warm tube under the awning
   vent: [1.1, 3.5, -0.7],
 };
+// The oil sits at a working height above the shack floor.
+const OIL_Y = 1.12, WELL_Z = 0.3, WELLS = [-0.72, 0.72];
 
 /* ---------- light ---------- */
 // One uniform set feeds every surface, the shaft and the steam.
@@ -361,8 +363,8 @@ const M = {
   plinth: surface({ alb: lin(0.18, 0.01, 260) }),
   steelOut: surface({ alb: lin(0.6, 0.01, 250), gloss: 0.5 }),
   awning: surface({ alb: lin(0.55, 0.12, 25) }),
-  inWall: surface({ alb: lin(0.8, 0.03, 85), inside: 1, tiles: 1 }),
-  inPlain: surface({ alb: lin(0.7, 0.04, 75), inside: 1 }),
+  inWall: surface({ alb: lin(0.4, 0.06, 195), inside: 1, tiles: 1 }),
+  inPlain: surface({ alb: lin(0.36, 0.04, 200), inside: 1 }),
   steel: surface({ alb: lin(0.62, 0.01, 250), inside: 1 }),
   dark: surface({ alb: lin(0.14, 0.01, 260), inside: 1 }),
   gable: surface({ alb: lin(0.2, 0.012, 260) }),
@@ -395,11 +397,16 @@ function box(x0, x1, y0, y1, z0, z1, mat, parent = shack) {
   box(-hw + t, -hw + t + 0.01, S.floor, S.top, -hd + t, Z - t, M.inPlain);
   box(hw - t - 0.01, hw - t, S.floor, S.top, -hd + t, Z - t, M.inPlain);
   box(-hw + t, hw - t, S.top - 0.01, S.top, -hd + t, Z - t, M.inPlain);
-  // The fryer counter along the back, its hood above.
+  // The prep counter along the back, its hood above.
   box(-1.5, 1.5, S.floor, 0.95, -hd + t, -0.5, M.steel);
   box(-1.5, 1.5, 1.95, 2.3, -hd + t, -0.55, M.steel);
-  // Basket handles stand up from the two wells.
-  for (const x of [-0.75, 0.75]) box(x - 0.02, x + 0.02, 0.95, 1.25, -0.62, -0.58, M.dark);
+  // The fryer stands just inside the window, so the queue sees it boil.
+  box(-1.5, 1.5, S.floor, OIL_Y - 0.005, WELL_Z - 0.26, WELL_Z + 0.26, M.steel);
+  // A raised rim round each well.
+  for (const x of WELLS) {
+    box(x - 0.45, x + 0.45, OIL_Y - 0.01, OIL_Y + 0.03, WELL_Z + 0.2, WELL_Z + 0.24, M.steel);
+    box(x - 0.45, x + 0.45, OIL_Y - 0.01, OIL_Y + 0.03, WELL_Z - 0.24, WELL_Z - 0.2, M.steel);
+  }
   // The serving shelf inside, and the ledge outside.
   box(-hw + t, hw - t, 1.0, 1.05, 0.85, Z - t, M.steel);
   box(ax0 - 0.1, ax1 + 0.1, 1.02, 1.07, Z, Z + 0.28, M.steelOut);
@@ -420,29 +427,252 @@ function box(x0, x1, y0, y1, z0, z1, mat, parent = shack) {
   shack.add(flap);
 }
 
-/* ---------- oil ---------- */
-// Two wells of hot oil. Boil drives the foam; Task 2 animates it.
+/* ---------- fryer ---------- */
+// Belgian fries cook twice: a blanch near 150 °C, then a crisp near 180 °C.
+// r0: peak boil; tau: how fast the fry surface dries; cook: seconds in the oil.
+const FRY = [{ r0: 1.0, tau: 2.5, cook: 6.0 }, { r0: 1.2, tau: 1.5, cook: 4.5 }];
+// Raw, blanched and golden.
+const FRIES_COL = [linFit(0.9, 0.035, 95), linFit(0.87, 0.075, 92), linFit(0.74, 0.14, 72)];
+// The basket hangs this high above the oil, or sinks this low into it.
+const UP = 0.3, IN = -0.04, LIFT = 0.1;
+// Simmer: hot oil with nothing in it still beads a little.
+const SIMMER = 0.04;
+
+// Oil, seen only at glancing angles through the window.
 const oilMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uBoil: { value: 0 } },
+  uniforms: U,
   vertexShader: VS,
   fragmentShader: /* glsl */`
-  ${NOISE}
-  uniform float uBoil, uTime;
   uniform vec3 uLampCol;
   varying vec3 vP, vN;
+  void main() { gl_FragColor = vec4(vec3(0.32, 0.17, 0.03) * uLampCol * 0.06, 1.0); }`,
+});
+
+// The foam crown: a dome of bubbles that rises with the boil.
+const VOR = /* glsl */`
+// F1 and F2 distances to the nearest bubble centres.
+vec2 vor(vec2 p) {
+  vec2 i = floor(p), f = fract(p), d = vec2(8.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(x, y), o = vec2(hash12(i + g), hash12(i + g + 19.7));
+    float r = length(g + o - f);
+    if (r < d.x) d = vec2(r, d.x); else if (r < d.y) d.y = r;
+  }
+  return d;
+}`;
+function foamMat(seed) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...U, uFoam: { value: 0 }, uSeed: { value: seed } },
+    transparent: true, depthWrite: false,
+    vertexShader: /* glsl */`
+    uniform float uTime, uFoam, uSeed;
+    varying vec3 vP, vN;
+    // Lumps that roll over the crown as it boils.
+    float wob(vec3 p) {
+      return sin(p.x * 7.0 + uTime * 5.0 + uSeed) * sin(p.z * 9.0 - uTime * 4.0)
+           + 0.5 * sin(p.x * 15.0 - uTime * 7.0 + uSeed * 2.0) * sin(p.z * 13.0 + uTime * 6.0);
+    }
+    void main() {
+      vec3 p = position;
+      p.xz *= 1.0 + 0.1 * wob(p) * p.y;
+      p.y *= 1.0 + 0.35 * wob(p.zyx + 3.0);
+      vec4 w = modelMatrix * vec4(p, 1.0);
+      vP = w.xyz;
+      vN = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    ${NOISE}
+    ${VOR}
+    uniform vec3 uLampCol;
+    uniform float uFoam, uTime, uSeed;
+    varying vec3 vP, vN;
+    void main() {
+      vec3 n = normalize(vN), v = normalize(cameraPosition - vP);
+      // Bubbles shrink as the fries dry, so the cells get finer as foam falls.
+      float scale = mix(70.0, 34.0, uFoam);
+      vec2 uv = vec2(vP.x + vP.z * 0.6, vP.y - ${OIL_Y.toFixed(3)}) * scale;
+      uv.y -= uTime * (2.0 + 6.0 * uFoam) + uSeed * 9.0;
+      vec2 d = vor(uv);
+      float rim = 1.0 - smoothstep(0.0, 0.12, d.y - d.x);
+      // A glint where a bubble wall faces the lamp.
+      float glint = pow(1.0 - d.x, 8.0) * step(0.82, hash12(floor(uv) + uSeed));
+      vec3 cream = vec3(1.0, 0.9, 0.68);
+      // Lit from the ceiling tube: bright on top, shaded low down.
+      float top = 0.55 + 0.45 * max(n.y, 0.0);
+      vec3 c = cream * uLampCol * 0.16 * top * (0.7 + 0.3 * rim) + uLampCol * glint * 0.35 * uFoam;
+      // The crown's edge breaks up into loose bubbles.
+      float edge = smoothstep(0.05, 0.45, abs(dot(n, v)));
+      float a = edge * mix(0.8, 1.0, rim) * smoothstep(0.0, 0.08, uFoam);
+      gl_FragColor = vec4(c, a);
+    }`,
+  });
+}
+
+// Wire baskets read as dark see-through boxes at this distance.
+const wireMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x0b0c0f), transparent: true, opacity: 0.55, depthWrite: false });
+const gripMat = M.dark;
+const wells = WELLS.map((x, i) => {
+  const oil = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.4).rotateX(-Math.PI / 2), oilMat);
+  oil.position.set(x, OIL_Y, WELL_Z);
+  shack.add(oil);
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), foamMat(i * 3.7 + 1));
+  crown.position.set(x, OIL_Y, WELL_Z);
+  crown.scale.set(0.44, 0.01, 0.2);
+  crown.renderOrder = 1;
+  crown.visible = false;
+  shack.add(crown);
+  // The basket: wire box, fries inside, a long handle to the front.
+  const g = new THREE.Group();
+  g.position.set(x, OIL_Y, WELL_Z);
+  const friesMat = surface({ alb: FRIES_COL[0], inside: 1 });
+  const fries = new THREE.Group();
+  fries.add(box(-0.15, 0.15, -0.06, 0.04, -0.12, 0.12, friesMat, fries));
+  // Loose sticks poke up out of the heap.
+  for (let k = 0; k < 14; k++) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.1), friesMat);
+    st.position.set((rnd() - 0.5) * 0.26, 0.05 + rnd() * 0.02, (rnd() - 0.5) * 0.18);
+    st.rotation.set((rnd() - 0.5) * 1.2, rnd() * Math.PI, (rnd() - 0.5) * 0.8);
+    fries.add(st);
+  }
+  fries.visible = false;
+  g.add(fries);
+  box(-0.17, 0.17, -0.08, 0.08, -0.14, 0.14, wireMat, g).renderOrder = 2;
+  const handle = new THREE.Group();
+  // The handle points back, to the cook.
+  handle.position.set(0, 0.07, -0.14);
+  handle.rotation.x = 0.5;
+  box(-0.012, 0.012, -0.012, 0.012, -0.32, 0, M.steel, handle);
+  box(-0.02, 0.02, -0.02, 0.02, -0.34, -0.22, gripMat, handle);
+  g.add(handle);
+  shack.add(g);
+  return {
+    x, crown, g, fries, friesMat,
+    boil: SIMMER, foam: SIMMER,
+    // fry: -1 empty, 0 raw, 1 blanched, 2 golden. stage: the fry under way.
+    fry: -1, stage: 0, inOil: false, t: 0,
+    y: UP, vy: 0, shake: 0, dip: 0,
+  };
+});
+
+/* ---------- spatter ---------- */
+// Droplets of oil jump from the boil and glint in the lamp light.
+const DROPS = 160;
+const drops = Array.from({ length: DROPS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), live: false }));
+const dropGeo = new THREE.BufferGeometry();
+const dropPos = new THREE.BufferAttribute(new Float32Array(DROPS * 3), 3);
+dropGeo.setAttribute('position', dropPos);
+const dropMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uPx: { value: 400 } },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+  uniform float uPx;
   void main() {
-    vec2 g = vP.xz * 22.0;
-    float b = smoothstep(0.55, 0.9, fbm(g + uTime * 0.3));
-    vec3 oil = vec3(0.32, 0.17, 0.03);
-    vec3 foam = vec3(0.95, 0.88, 0.7);
-    vec3 c = mix(oil, foam, b * (0.15 + 0.85 * uBoil)) * uLampCol * 0.09;
-    gl_FragColor = vec4(c, 1.0);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
+    // A 6 mm droplet, never under 1.5 px.
+    gl_PointSize = max(1.5, 0.006 * uPx / -mv.z);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uLampCol;
+  void main() {
+    float r = length(gl_PointCoord - 0.5) * 2.0;
+    gl_FragColor = vec4(uLampCol * 0.6 * smoothstep(1.0, 0.0, r), 1.0);
   }`,
 });
-for (const x of [-0.75, 0.75]) {
-  const o = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.42).rotateX(-Math.PI / 2), oilMat);
-  o.position.set(x, 0.951, -0.82);
-  shack.add(o);
+const spatter = new THREE.Points(dropGeo, dropMat);
+spatter.frustumCulled = false;
+spatter.renderOrder = 3;
+scene.add(spatter);
+let dropsLive = 0, spatAcc = 0;
+function spit(w, n) {
+  for (const d of drops) {
+    if (n <= 0) break;
+    if (d.live) continue;
+    d.live = true; n--;
+    d.p.set(w.x + (rnd() - 0.5) * 0.7, OIL_Y + 0.02, WELL_Z + (rnd() - 0.5) * 0.3);
+    // A jump of 5 to 30 cm.
+    d.v.set((rnd() - 0.5) * 0.6, Math.sqrt(2 * 9.8 * (0.05 + rnd() * 0.25)), (rnd() - 0.5) * 0.5);
+  }
+}
+function stepSpatter(dt) {
+  dropsLive = 0;
+  const P = dropPos.array;
+  drops.forEach((d, i) => {
+    if (d.live) {
+      d.v.y -= 9.8 * dt;
+      d.p.addScaledVector(d.v, dt);
+      if (d.p.y < OIL_Y && d.v.y < 0) d.live = false;
+      else dropsLive++;
+    }
+    if (d.live) P.set([d.p.x, d.p.y, d.p.z], i * 3);
+    else P.set([0, -10, 0], i * 3);
+  });
+  dropPos.needsUpdate = true;
+}
+
+/* ---------- the boil ---------- */
+const smooth01 = x => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
+function stepFryer(dt, now) {
+  for (const w of wells) {
+    if (w.inOil) {
+      w.t += dt;
+      const F = FRY[w.stage];
+      // Water at the fry surface flashes to steam, then dries off.
+      const surge = 1 - Math.exp(-w.t / 0.12);
+      const target = SIMMER + F.r0 * surge * Math.exp(-w.t / F.tau) + w.dip;
+      w.boil += (target - w.boil) * (1 - Math.exp(-dt / 0.05));
+      // The fries colour while they cook.
+      const k = smooth01(w.t / F.cook);
+      w.friesMat.uniforms.uAlb.value.set(...FRIES_COL[w.stage].map((c, j) => c + (FRIES_COL[w.stage + 1][j] - c) * k));
+      if (w.t > F.cook) lift(w);
+    } else {
+      w.boil += (SIMMER - w.boil) * (1 - Math.exp(-dt / 0.3));
+    }
+    w.dip *= Math.exp(-dt / 0.5);
+    // Foam lags the boil a little.
+    w.foam += (w.boil - w.foam) * (1 - Math.exp(-dt / 0.25));
+    // Bubbles spit oil; more as the boil grows.
+    spatAcc += dt * (reduced() ? 30 : 90) * Math.max(0, w.boil - 0.15) ** 2;
+    while (spatAcc >= 1) { spatAcc -= 1; spit(w, 1); }
+    // The basket rides a stiff spring between the hook and the oil.
+    const ty = w.inOil ? (w.shake > 0.05 ? IN + LIFT : IN) : UP;
+    w.vy += (160 * (ty - w.y) - 16 * w.vy) * dt;
+    w.y += w.vy * dt;
+    w.shake = Math.max(0, w.shake - dt / 0.9);
+  }
+  stepSpatter(dt);
+}
+function poseFryer(time) {
+  for (const w of wells) {
+    const h = 0.015 + 0.5 * w.foam;
+    // The crown roils: its height jitters with the boil.
+    const roil = 1 + 0.18 * w.foam * Math.sin(time * 13 + w.x * 5) * Math.sin(time * 7.3 + w.x);
+    w.crown.scale.y = h * roil;
+    w.crown.visible = w.foam > 0.05;
+    w.crown.material.uniforms.uFoam.value = Math.min(1, w.foam);
+    const a = (reduced() ? 0.4 : 1) * w.shake;
+    const s = Math.sin(time * 50 + w.x);
+    w.g.position.set(w.x + s * 0.03 * a, OIL_Y + w.y + Math.abs(s) * 0.025 * a, WELL_Z);
+    // A hanging basket tips forward on its hook.
+    w.g.rotation.x = smooth01((w.y - IN) / (UP - IN)) * 0.35;
+    w.g.rotation.z = s * 0.08 * a;
+    w.fries.visible = w.fry >= 0;
+  }
+  // The foam's glare flares the window.
+  const glare = wells.reduce((m, w) => m + Math.max(0, w.foam - SIMMER), 0);
+  return Math.min(1, glare * 0.55);
+}
+function fryerBusy() {
+  return dropsLive > 0 || wells.some(w => w.inOil || w.boil > SIMMER + 0.01 || w.foam > 0.06 || w.shake > 0 || Math.abs(w.vy) > 1e-3 || Math.abs(w.y - (w.inOil ? IN : UP)) > 1e-3);
+}
+// Out of the oil: a fry that ran most of its time counts.
+function lift(w) {
+  if (!w.inOil) return;
+  w.inOil = false;
+  if (w.t > FRY[w.stage].cook * 0.6) w.fry = w.stage + 1;
+  w.shake = Math.max(w.shake, 0.6);
+  syncActions();
 }
 
 /* ---------- neon ---------- */
@@ -820,6 +1050,8 @@ function frame() {
     p.uniforms.uRamp.value = portrait ? 0.35 : 0.3;
     p.uniforms.uMax.value = 18 * size.dpr * tiltK;
   }
+  // Droplet size in pixels per metre at unit depth.
+  dropMat.uniforms.uPx.value = size.h * size.dpr * camera.projectionMatrix.elements[5] / 2;
 }
 function resize() {
   const r = stage.getBoundingClientRect();
@@ -846,8 +1078,8 @@ function draw() {
 /* Frame loop: full rate while something moves, then sleep. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +QS.get('sleep') || 60000;
-let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0;
-const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0, flare = 0, lastShake = 0;
+const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy();
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -857,7 +1089,11 @@ function tick(now) {
   try {
     simT += dt;
     U.uTime.value = simT;
-    U.uFlare.value *= Math.exp(-dt / 0.35);
+    // A hold on the shack keeps the basket shaking.
+    if (press?.hold && now - lastShake > 700) act.shake();
+    stepFryer(dt);
+    flare *= Math.exp(-dt / 0.35);
+    U.uFlare.value = Math.max(flare, poseFryer(simT));
     setLight();
     const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
     look.yaw += (look.ty - look.yaw) * k;
@@ -951,25 +1187,65 @@ stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
 
 /* ---------- bar ---------- */
-// Task 1 stubs: a drop and a shake flare the window; the fryer comes in Task 2.
-let fries = 0;
-act.drop = () => { U.uFlare.value = 1; fries++; ui.action('fill').disabled = fries < 2; wake(); };
-act.shake = () => { U.uFlare.value = Math.max(U.uFlare.value, 0.5); wake(); };
-act.fill = () => { if (fries < 2) return; fries = 0; ui.action('fill').disabled = true; wake(); };
+// Drop needs a free basket: empty, or holding blanched fries.
+// Fill needs golden fries on the hook.
+function syncActions() {
+  ui.action('drop').disabled = !wells.some(w => !w.inOil && (w.fry === -1 || w.fry === 1));
+  ui.action('fill').disabled = !wells.some(w => !w.inOil && w.fry === 2);
+}
+act.drop = () => {
+  const w = wells.find(o => !o.inOil && o.fry === 1) ?? wells.find(o => !o.inOil && o.fry === -1);
+  if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
+  if (w.fry === -1) w.fry = 0;
+  w.stage = w.fry;
+  w.inOil = true;
+  w.t = 0;
+  w.vy = -1.5;
+  w.friesMat.uniforms.uAlb.value.set(...FRIES_COL[w.stage]);
+  spit(w, reduced() ? 8 : 26);
+  flare = 1;
+  syncActions();
+  wake();
+};
+act.shake = () => {
+  lastShake = performance.now();
+  // In the oil: lift a little, shake, drop back; the boil kicks up again.
+  const w = wells.filter(o => o.inOil).sort((a, b) => a.t - b.t)[0] ?? wells.find(o => o.fry >= 0);
+  if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
+  w.shake = 1;
+  if (w.inOil) { w.dip = 0.35; spit(w, reduced() ? 4 : 12); }
+  wake();
+};
+act.fill = () => {
+  const w = wells.find(o => !o.inOil && o.fry === 2);
+  if (!w) return;
+  w.fry = -1;
+  w.shake = 0.5;
+  syncActions();
+  wake();
+};
 act.sauce = () => wake();
 act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
 act.traffic = () => {};
 act.moths = () => {};
-act.reset = () => { fries = 0; ui.action('fill').disabled = true; wind = 0.3; ui.slider.set(0.3); ui.choice.set('mayo'); draw(); };
-ui.action('fill').disabled = true;
+act.reset = () => {
+  for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
+  for (const d of drops) d.live = false;
+  wind = 0.3; ui.slider.set(0.3); ui.choice.set('mayo');
+  syncActions();
+  wake();
+};
+syncActions();
 wind = ui.slider?.value ?? 0.3;
 tiltK = ui.setting('tilt')?.value ?? 0.6;
 setNeon(ui.setting('neon')?.value ?? 'red');
 setLight();
 // The vent plume starts 6 s old, so the first frame is a picture.
 for (let i = 0; i < 180; i++) stepSteam(1 / 30);
+stepSpatter(0);
+poseFryer(0);
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.

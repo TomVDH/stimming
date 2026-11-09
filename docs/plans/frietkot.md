@@ -100,7 +100,7 @@ Five visible controls: Sauce, three actions, Wind.
 **Scene.**
 - Square: one plane with a canvas-made cobble map (colour, roughness, normal). Roughness is low on the tops and high in the joints.
 - Shack: a box body, a roof box with a light box on top, a service window opening, an awning flap hinged up at 28°, and a counter ledge. One dark painted-metal material.
-- Interior: one emissive back wall in warm white, and the fryer: two oil wells with a basket each.
+- Interior: teal tiles, so the cream foam and the fries stand out. The fryer stands just inside the window: two oil wells at 1.12 m with a basket each. From the low lens only what rises above the sill reads: the foam crowns, the spatter and the baskets.
 - Window light: a `RectAreaLight`, 2.4 × 0.9 m, at the window, facing out. A second, dim one fills the interior from the ceiling.
 - Neon: tubes built from `TubeGeometry` with an unlit emissive material at bloom strength, plus three `PointLight`s along the strip for the wall and the ground.
 - Far gables: a row of extruded gable shapes, near black, with a few emissive windows.
@@ -114,8 +114,10 @@ Five visible controls: Sauce, three actions, Wind.
 - The shader takes an fbm alpha, the condensation fade-in, and the scatter terms for the window and the neon.
 
 **Oil.**
-- A disc in each well with a shader: a dark gold base, a bubble field (cellular noise moved by time), foam by the boil rate, and a glow term.
-- `boil` per well is the uniform. The CPU sets it from the drop clock.
+- `boil` per well comes from the drop clock; `foam` lags it by 0.25 s.
+- The foam crown is a dome per well. Its height follows `foam`; its vertices roll in lumps. Cellular bubbles rise over it and get finer as the boil falls.
+- Spatter: up to 160 droplets jump 5 to 30 cm and glint. The rate grows with the boil squared.
+- A basket rides a stiff spring between its hook and the oil. It lifts by itself when the fry time runs out.
 
 **Post.**
 1. RenderPass on a half-float target.
@@ -172,8 +174,8 @@ Five visible controls: Sauce, three actions, Wind.
 
 ### Task 2: The fryer
 
-- [ ] Oil shader, boil clock per well, double fry, basket drop and lift.
-- [ ] Window flare on a drop.
+- [x] Oil shader, boil clock per well, double fry, basket drop and lift.
+- [x] Window flare on a drop.
 - [ ] Commit: `Frietkot: the fryer boils, twice`.
 
 ### Task 3: Steam
