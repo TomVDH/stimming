@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T08:44:54Z
+updated_at: 2026-11-09T09:08:49Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -56,3 +56,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - [x] Summer: floating lawn slab with soil strata, 30k to 70k wind-blown grass blades, daisies, two posts with hooks, wicker basket, cotton cord line, wooden pegs with steel springs.
   Physical cloth (sheen, weave normal maps: plain, twill, jersey, terry), per-piece canvas textures with seams, topstitching, collar rib, belt loops and hems, real sun shadows, back light darkened by pieces in front, 4x MSAA, tilt-shift, orbit by dragging the sky.
 - [ ] Riviera, Monsoon, Snow, Dusk, Night, Desert dioramas, after Tom signs off Summer.
+
+- Summer v2 (Tom: static, anchors off camera): fixed camera; the line runs from a rendered house wall (eye bolt, brick plinth, sash window, downpipe, gravel strip) to a tall drying pole, both running off frame. Lawn with mowing stripes to a leafy hedge; trees in distance haze; the painted sky behind.
