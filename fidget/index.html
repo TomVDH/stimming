@@ -26,7 +26,9 @@
   --gap: clamp(6px, 1.8cqmin, 16px);
   --pad: calc(var(--gap) * 1.5);
   --gi: calc(var(--gap) * 1.6);
-  padding: clamp(12px, 4cqmin, 48px); column-gap: clamp(16px, 5cqw, 72px); row-gap: var(--gap);
+  /* The top row clears the corner chips; the bottom row clears the key strip too. */
+  --edge: clamp(12px, 4cqmin, 48px);
+  padding: max(var(--edge), calc(var(--chip, 26px) + 22px)) var(--edge) max(var(--edge), calc(var(--chip, 26px) + 56px)); column-gap: clamp(16px, 5cqw, 72px); row-gap: var(--gap);
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.57fr) minmax(0, 0.43fr);
   grid-template-rows: minmax(0, 3fr) minmax(0, 2.2fr) minmax(0, 1.4fr);
   grid-template-areas:
@@ -96,22 +98,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--fidget" role="group" aria-label="Fidget board">
       <div class="board" id="board"></div>
-    </div>
-    <div class="bar bar--below">
-      <div class="actions">
-        <button class="chip" id="shuffle" type="button">Shuffle</button>
-        <button class="chip" id="reset" type="button">Reset</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>switches and keys</dd></div>
-        <div><dt>Drag</dt><dd>the dial and the slider</dd></div>
-        <div><dt>Flick</dt><dd>the dial spins</dd></div>
-        <div><dt>Push the stick</dt><dd>the light moves</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -123,12 +112,25 @@
 <script type="module">
 import { initPage } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { snd, reduce } from './kit.js';
+import { snd, reduce, board } from './kit.js';
 import PARTS from './parts/index.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
-initPage({ id: 'fidget' });
+// The sweeps bind once the parts have mounted.
+// The stick's nub is the Shuffle button; S is its key.
+const act = { shuffle() {}, reset() {} };
+initPage({ id: 'fidget', bar: {
+  actions: [{ verb: 'reset', key: 'R', onPress: () => act.reset() }],
+  keys: [['click', 'flip and press'], ['drag', 'turn, slide, flick'], ['click stick', 'shuffle'], ['s', 'shuffle']],
+} });
+// S follows the shell's key rules: no modifiers, no text fields, no sheets.
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 's' || e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  e.preventDefault();
+  act.shuffle();
+});
 
 /* ---------- the board: one cell per part ---------- */
 // The registry in parts/ holds every part; the board mounts these five.
@@ -156,19 +158,24 @@ for (const id of BOARD) {
 const allMoves = () => mounted.flatMap(m => m.moves);
 
 /* ---------- shuffle and reset ---------- */
-// Each move fires in a wave from left to right across the board.
+// Reset runs in a wave from left to right across the board.
+// Shuffle runs outward from the stick.
 let wave = [];
-function sweep(kind) {
+const centre = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+function sweep(kind, from) {
   wave.forEach(clearTimeout);
+  const o = from && centre(from);
   const list = allMoves().filter(m => m[kind]).map(m => {
-    const r = m.el.getBoundingClientRect();
-    return { m, at: r.left + r.width / 2 + 0.35 * (r.top + r.height / 2) };
+    const [x, y] = centre(m.el);
+    return { m, at: o ? Math.hypot(x - o[0], y - o[1]) : x + 0.35 * y };
   }).sort((a, b) => a.at - b.at);
   const gap = reduce ? 25 : 55;
   wave = list.map(({ m }, i) => setTimeout(() => m[kind](), i * gap));
 }
-document.getElementById('shuffle').addEventListener('click', () => sweep('shuffle'));
-document.getElementById('reset').addEventListener('click', () => sweep('reset'));
+const stick = document.getElementById('joy');
+act.shuffle = () => sweep('shuffle', stick);
+act.reset = () => sweep('reset');
+board.shuffle = act.shuffle;
 
 // Hidden, the loop pauses, so any scrape stops with it.
 document.addEventListener('visibilitychange', () => { if (document.hidden) snd.hush(); });

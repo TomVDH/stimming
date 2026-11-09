@@ -29,8 +29,6 @@
 :root { --stage: oklch(0.13 0.02 30); }
 .stage--lava { cursor: grab; }
 .stage--lava.held { cursor: grabbing; }
-/* Each swatch shows the wax over its liquid. */
-.sw { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--w) 0 50%, var(--l) 50% 100%); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -41,31 +39,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/lava.svg)"></span><span class="intro-name">Lava lamp</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/lava.svg)"></span><span class="intro-name">Lava lamp</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid or the base to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it.">
+    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid or the base to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it, the arrow keys rock it, and 1, 2 and 3 pick the colours.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Lava lamp needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Colours">
-        <button class="chip" type="button" data-value="classic" aria-pressed="true"><span class="sw" style="--w: oklch(0.82 0.16 70); --l: oklch(0.5 0.2 25)" aria-hidden="true"></span>Classic</button>
-        <button class="chip" type="button" data-value="violet" aria-pressed="false"><span class="sw" style="--w: oklch(0.8 0.15 350); --l: oklch(0.45 0.2 305)" aria-hidden="true"></span>Violet</button>
-        <button class="chip" type="button" data-value="sea" aria-pressed="false"><span class="sw" style="--w: oklch(0.82 0.13 182); --l: oklch(0.38 0.15 260)" aria-hidden="true"></span>Sea</button>
-      </div>
-      <div class="actions">
-        <button class="chip" id="flip" type="button" aria-keyshortcuts="F">Flip</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag a blob</dt><dd>pull it apart</dd></div>
-        <div><dt>Hold the liquid or base</dt><dd>warm it</dd></div>
-        <div><dt>Drag the metal</dt><dd>lift, shake</dd></div>
-        <div><dt>Drag beside it</dt><dd>tip it</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Lava lamp</h1><div class="vignette" hidden></div></section>
@@ -73,10 +54,32 @@
 
 <script type="module">
 import { gsap } from 'gsap';
-import { initPage, sound, audioKit, choices, reduced, onReducedChange, linFit, qualitySetting, onQuality, pixelRatio, quality } from '../shared/stim.js';
-initPage({ id: 'lava' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, sound, audioKit, reduced, onReducedChange, linFit, onQuality, pixelRatio, quality } from '../shared/stim.js';
+// Each dot shows the wax over its liquid.
+const dot = (w, l) => `linear-gradient(135deg, oklch(${w}) 0 50%, oklch(${l}) 50% 100%)`;
+const COLOURS = [
+  { value: 'classic', label: 'Classic', key: '1', dot: dot('0.82 0.16 70', '0.5 0.2 25') },
+  { value: 'violet', label: 'Violet', key: '2', dot: dot('0.8 0.15 350', '0.45 0.2 305') },
+  { value: 'sea', label: 'Sea', key: '3', dot: dot('0.82 0.13 182', '0.38 0.15 260') },
+];
+const COLOUR_KEY = 'stimming.lava.colour';
+// Storage is optional; private windows can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (err) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
+};
+const savedColour = COLOURS.some(o => o.value === store.get(COLOUR_KEY)) ? store.get(COLOUR_KEY) : 'classic';
+// Handlers bind once the lamp exists.
+const act = { colour() {}, flip() {}, shake() {}, still() {} };
+const ui = initPage({ id: 'lava', bar: {
+  choice: { label: 'Colour', value: savedColour, options: COLOURS, onPick: v => act.colour(v) },
+  actions: [
+    { verb: 'flip', key: 'F', onPress: () => act.flip() },
+    { verb: 'shake', key: 'Space', hold: true, onDown: () => act.shake(), onUp: () => act.still() },
+  ],
+  quality: true,
+  keys: [['drag a blob', 'pull apart'], ['hold the base', 'warm'], ['drag the metal', 'lift'], ['drag beside', 'tip']],
+} });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 let reduce = reduced();
 onReducedChange(v => { reduce = v; wake(); });
@@ -101,8 +104,8 @@ const PALS = {
   violet: palette([0.82, 0.15, 352], [0.62, 0.22, 356], [0.42, 0.2, 304], [0.56, 0.2, 302]),
   sea: palette([0.86, 0.15, 172], [0.68, 0.14, 190], [0.38, 0.15, 258], [0.52, 0.15, 254]),
 };
-let palName = 'classic';
-const pal = Float32Array.from(PALS.classic);
+let palName = savedColour;
+const pal = Float32Array.from(PALS[palName]);
 
 /* ---------- the lamp: units are lamp heights, y runs up the lamp ---------- */
 // The glass runs from Y0 to Y1; TH is its wall.
@@ -123,7 +126,7 @@ const norm3 = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const CZ = norm3(sub3(CAM.at, CAM.pos)), CX = norm3(cross3(CZ, [0, 1, 0])), CY = cross3(CX, CZ);
 const CAMD = Math.hypot(...sub3(CAM.pos, CAM.at));
-let tanF = 0.23;
+let tanF = 0.23, lens = 0;
 // The key light comes from the upper left, in front.
 const KEY = norm3([-0.5, 0.72, 0.6]);
 
@@ -859,7 +862,7 @@ function local(e) {
 }
 // The camera ray through a stage point, in CSS pixels.
 function rayAt(px, py) {
-  const u = (px - W / 2) / (H / 2), v = (H / 2 - py) / (H / 2);
+  const u = (px - W / 2) / (H / 2), v = (H / 2 - py) / (H / 2) - lens;
   return norm3([0, 1, 2].map(i => CZ[i] + (u * CX[i] + v * CY[i]) * tanF));
 }
 // Where a ray meets the plane at depth z, in world space.
@@ -911,7 +914,7 @@ precision highp float;
 uniform vec2 uRes, uRot;
 uniform vec3 uRo, uCx, uCy, uCz, uPool, uKey, uOff;
 uniform vec4 uFoot;
-uniform float uTan, uPix, uTime, uLight, uHeat, uLift;
+uniform float uTan, uShift, uPix, uTime, uLight, uHeat, uLift;
 uniform int uN, uNN, uNH;
 uniform vec4 uB[${MAXB}];
 uniform vec4 uE[${MAXB}];
@@ -1248,7 +1251,8 @@ vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59
 vec3 srgb(vec3 c) { return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
-  vec3 rw = normalize(uCz + uTan * (uv.x * uCx + uv.y * uCy));
+  // The lens shifts up or down, so the lamp clears the controls.
+  vec3 rw = normalize(uCz + uTan * (uv.x * uCx + (uv.y - uShift) * uCy));
   vec3 col = room(uRo, rw);
   vec3 ro = toLamp(uRo), rd = turn(rw);
   vec2 tb = cyl(ro, rd, 0.226, -0.005, 1.005);
@@ -1282,7 +1286,7 @@ layout(location = 0) in vec4 aP;
 layout(location = 1) in float aT;
 uniform vec2 uRes, uRot;
 uniform vec3 uRo, uCx, uCy, uCz, uOff, uCamL, uHot, uCool, uAbs;
-uniform float uTan, uLight;
+uniform float uTan, uShift, uLight;
 uniform int uN;
 uniform vec4 uB[${MAXB}];
 uniform vec4 uE[${MAXB}];
@@ -1301,7 +1305,7 @@ void main() {
   vec3 v = w - uRo;
   float z = dot(v, uCz);
   vec2 uv = vec2(dot(v, uCx), dot(v, uCy)) / (z * uTan);
-  gl_Position = vec4(uv.x * uRes.y / uRes.x, uv.y, 0.0, 1.0);
+  gl_Position = vec4(uv.x * uRes.y / uRes.x, uv.y + uShift, 0.0, 1.0);
   vR = aP.w / (z * uTan) * 0.5 * uRes.y;
   // A boblet fades as a big blob passes in front of it.
   vec3 d = p - uCamL;
@@ -1347,9 +1351,9 @@ void main() {
 let gl = null, prog = null, bprog = null, U = {}, UB2 = {}, vao = null, bvao = null, bbuf = null, ready = false;
 const UB = new Float32Array(4 * MAXB), UE = new Float32Array(4 * MAXB);
 const UNA = new Float32Array(4 * MAXG), UNB = new Float32Array(4 * MAXG), UH = new Float32Array(4 * MAXG), UEM = new Float32Array(12);
-const UNIFORMS = ['uRes', 'uRot', 'uFoot', 'uLift', 'uRo', 'uCx', 'uCy', 'uCz', 'uPool', 'uKey', 'uOff', 'uTan', 'uPix', 'uTime', 'uLight', 'uHeat',
+const UNIFORMS = ['uRes', 'uRot', 'uFoot', 'uLift', 'uRo', 'uCx', 'uCy', 'uCz', 'uPool', 'uKey', 'uOff', 'uTan', 'uShift', 'uPix', 'uTime', 'uLight', 'uHeat',
   'uN', 'uNN', 'uNH', 'uB', 'uE', 'uNa', 'uNb', 'uH', 'uEm', 'uHot', 'uCool', 'uLiq', 'uAbs', 'uGlow'];
-const BOB_UNIFORMS = ['uRes', 'uRot', 'uRo', 'uCx', 'uCy', 'uCz', 'uOff', 'uCamL', 'uHot', 'uCool', 'uAbs', 'uTan', 'uLight', 'uN', 'uB', 'uE'];
+const BOB_UNIFORMS = ['uRes', 'uRot', 'uRo', 'uCx', 'uCy', 'uCz', 'uOff', 'uCamL', 'uHot', 'uCool', 'uAbs', 'uTan', 'uShift', 'uLight', 'uN', 'uB', 'uE'];
 async function link(vs, fs, par) {
   const sh = (type, src) => {
     const s = gl.createShader(type);
@@ -1398,14 +1402,39 @@ async function initGL() {
 // Render scale steps down on slow machines.
 const SCALES = [1, 0.8, 0.66, 0.5];
 let scaleI = 0, light = 1;
+// Shell controls that may sit over the lamp.
+const shellParts = () => [...document.querySelectorAll('.stim-ui > .s2-tl, .stim-ui > .s2-tr, .stim-ui > .s2-bl, .stim-ui > .s2-br, .stim-ui > .s2-keys')];
+// The lamp fills the band between the controls over its column.
+// Narrow stages pull the camera back to fit the width.
+function frameLamp(w, h) {
+  const pr = panel.getBoundingClientRect();
+  let t = Math.max(0.58, 0.42 / (w / h)) / CAMD, top = 24, bot = 24;
+  for (let pass = 0; pass < 2; pass++) {
+    const col = (0.24 / (t * CAMD)) * (h / 2);
+    top = bot = 24;
+    for (const el of shellParts()) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !el.childElementCount) continue;
+      // A short stage lets the fading key strip cross the base.
+      if (el.classList.contains('s2-keys') && h < 560) continue;
+      if (r.right - pr.left < w / 2 - col || r.left - pr.left > w / 2 + col) continue;
+      if (r.top + r.bottom < pr.top * 2 + h) top = Math.max(top, r.bottom - pr.top + 10);
+      else bot = Math.max(bot, pr.bottom - r.top + 10);
+    }
+    const band = 2 - (2 * (top + bot)) / h;
+    t = Math.max(1.09 / (CAMD * Math.max(band, 0.5)), 0.42 / (w / h) / CAMD);
+  }
+  tanF = t;
+  // The lamp runs from -0.03 to 1.06, room for a flipped base.
+  lens = (bot - top) / h - (0.515 - CAM.at[1]) / (t * CAMD);
+}
 function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   W = w;
   H = h;
   rect = null;
-  // The lamp fills the height; narrow stages pull the camera back.
-  tanF = Math.max(0.58, 0.42 / (w / h)) / CAMD;
+  frameLamp(w, h);
   // High renders at full resolution until slow frames step it down.
   // Its first step is Standard; later steps follow the scale table.
   const high = quality() === 'high';
@@ -1461,6 +1490,7 @@ function render() {
   gl.uniform3f(U.uKey, c * KEY[0] + s * KEY[1], -s * KEY[0] + c * KEY[1], KEY[2]);
   gl.uniform3f(U.uPool, pn[0], pn[1], poolY * pn[1]);
   gl.uniform1f(U.uTan, tanF);
+  gl.uniform1f(U.uShift, lens);
   gl.uniform1f(U.uPix, (2 * tanF) / ch);
   gl.uniform1f(U.uTime, simT % 1000);
   gl.uniform1f(U.uLight, light);
@@ -1493,6 +1523,7 @@ function render() {
   gl.uniform3fv(UB2.uCool, pal.subarray(3, 6));
   gl.uniform3fv(UB2.uAbs, pal.subarray(9, 12));
   gl.uniform1f(UB2.uTan, tanF);
+  gl.uniform1f(UB2.uShift, lens);
   gl.uniform1f(UB2.uLight, light);
   gl.uniform1i(UB2.uN, n);
   gl.uniform4fv(UB2.uB, UB);
@@ -1519,6 +1550,8 @@ function frame(now) {
     if (slow > 30) { scaleI++; slow = 0; fit(); }
   }
   idleT += dt;
+  // A held Shake chip or Space keeps the shake going.
+  if (shakeHeld) lamp.shakeT = Math.max(lamp.shakeT, 0.4);
   // GSAP drives the angle during a flip; its rate feeds the slosh.
   if (lamp.tw) lamp.w = dt > 0 ? (lamp.th - lamp.prev) / dt : 0;
   lamp.prev = lamp.th;
@@ -1724,31 +1757,34 @@ function flip() {
     onComplete: () => { lamp.tw = null; lamp.w = 0; },
   });
 }
-document.getElementById('flip').addEventListener('click', flip);
+act.flip = flip;
+// A held Shake keeps the lamp shaking; a tap gives one shake.
+let shakeHeld = false;
+act.shake = () => {
+  if (!ready) return;
+  wake();
+  shakeHeld = true;
+  if (lamp.shakeT <= 0) lamp.shakeAge = 0;
+  lamp.shakeT = Math.max(lamp.shakeT, 0.95);
+};
+act.still = () => { shakeHeld = false; };
 
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    // Chip groups keep their own arrows.
-    if (e.target.closest?.('.choices')) return;
-    e.preventDefault();
-    wake();
-    if (!lamp.tw) lamp.w += e.key === 'ArrowLeft' ? 2.4 : -2.4;
-  } else if (e.key === 'f' || e.key === 'F') {
-    if (!e.repeat) flip();
-  } else if (e.key === ' ') {
-    // Buttons and links keep Space for themselves.
-    if (e.target.closest?.('button, a')) return;
-    e.preventDefault();
-    wake();
-    // Holding Space keeps the shake going.
-    if (lamp.shakeT <= 0) lamp.shakeAge = 0;
-    lamp.shakeT = Math.max(lamp.shakeT, e.repeat ? 0.4 : 0.95);
-  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  // Controls and the sheets keep their own arrows.
+  if (e.target.closest?.('.stim-ui')) return;
+  e.preventDefault();
+  wake();
+  if (!lamp.tw) lamp.w += e.key === 'ArrowLeft' ? 2.4 : -2.4;
 });
 
-choices(document.querySelector('.choices'), v => { palName = v; wake(); });
+act.colour = v => {
+  palName = v;
+  store.set(COLOUR_KEY, v);
+  wake();
+};
 sound.onChange(on => { if (on) wake(); });
 
 /* ---------- start: the shaders link while the wax is seeded ---------- */
@@ -1757,7 +1793,9 @@ function failed() {
   sync();
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  document.querySelectorAll('.bar .chip').forEach(c => { c.disabled = true; });
+  ui.choice.disabled = true;
+  ui.action('flip').disabled = true;
+  ui.action('shake').disabled = true;
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
@@ -1780,7 +1818,10 @@ async function boot() {
   try { await gate; } catch (err) { console.error(err); failed(); return; }
   ready = true;
   fit();
-  new ResizeObserver(fit).observe(panel);
+  const ro = new ResizeObserver(fit);
+  ro.observe(panel);
+  // The corners change size as the shell lays them out.
+  shellParts().forEach(el => ro.observe(el));
   // A new quality setting clears the slow-frame steps.
   onQuality(() => { scaleI = 0; slow = 0; fit(); });
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);

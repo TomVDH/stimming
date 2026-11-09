@@ -291,3 +291,199 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 @keyframes snd-nudge { 0%, 100% { transform: none; } 15%, 45%, 75% { transform: scale(1.35); } 30%, 60% { transform: scale(1); } }
 #snd.is-nudge { animation: snd-nudge 2.2s steps(22, jump-end); color: var(--fg); }
 @media (prefers-reduced-motion: reduce) { #snd.is-nudge { animation: none; outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 6px; } }
+
+/* ---------- bar v2: the Corners shell ---------- */
+/* Spec: docs/plans/bar-v2.md. Only pages that pass bar get .stim2. */
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
+.stim2 {
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --glass: oklch(0.13 0.012 275 / 0.86);
+  --shadow: 3px 3px 0 oklch(0.07 0.01 275);
+  --hard: 5px 5px 0 oklch(0.05 0.01 275);
+  --lift: 2px 2px 0 oklch(0.05 0.01 275);
+  /* A dark halo keeps bare text legible on bright stages. */
+  --halo: 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9);
+  --chip: 26px;
+}
+/* Coarse pointers get 36 px chips, so joined blocks keep 34 px targets. */
+@media (pointer: coarse) { .stim2 { --chip: 36px; } .stim2 .stim-ui { font-size: 12px; } .stim2 :is(.s2-tag, .s2-lab) { font-size: 10px; } }
+/* With no bar under the stage, the page bottom matches the fit margin. */
+.stim2 .wrap { padding-bottom: 20px; }
+
+/* The frame holds the stage; the layer lies over it. */
+.stim-frame { position: relative; min-width: 0; container: stim / inline-size; }
+.stim-ui {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase;
+}
+.stim-ui > div { position: absolute; display: flex; align-items: center; gap: 6px; }
+/* Corners size to their content, so the shell can measure collisions. */
+.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br) { width: max-content; }
+.stim-ui > * > * { pointer-events: auto; }
+.s2-tl { top: 12px; left: 12px; }
+.s2-tr { top: 12px; right: 12px; }
+.s2-bl { bottom: 12px; left: 12px; }
+.s2-br { bottom: 12px; right: 12px; }
+.stim-ui > :empty { display: none; }
+/* A toy that cannot run keeps only the back block and the name. */
+.stim-ui[data-bare] > :not(.s2-tl), .stim-ui[data-bare] .s2-tl > :not(.s2-back, .s2-name) { display: none; }
+
+/* Chips: square slabs on dark glass. A box always means a control. */
+.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .stim-ui .ver--build {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--chip); min-width: var(--chip); margin: 0; padding: 0 10px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; white-space: nowrap; text-decoration: none;
+  color: var(--muted); background: var(--glass); border: 1px solid var(--line); border-radius: 2px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+/* Hover lifts a control onto a hard shadow; a pick inverts it. */
+/* Touch screens get no hover state, so a tap never leaves a lift behind. */
+@media (hover: hover) {
+  :is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .s2-seg, .s2-step):hover {
+    color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift);
+  }
+}
+/* The pick outranks hover, so a hovered pick keeps its ink. */
+.stim-ui :is(.s2-chip[aria-pressed="true"], .s2-set[aria-expanded="true"], .s2-tray[aria-expanded="true"]) {
+  color: var(--bg); background: var(--fg); border-color: var(--fg); box-shadow: var(--shadow);
+}
+/* A held chip takes the whole gesture: no scroll, no select, no callout. */
+.stim-ui .s2-chip[data-hold] { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.stim-ui .s2-chip[data-hold][aria-pressed="true"] { transform: translate(1px, 1px); box-shadow: none; }
+:is(.s2-chip, .s2-seg, .s2-step, .s2-tray)[aria-disabled="true"]:hover { transform: none; box-shadow: none; }
+.s2-chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.stim-ui .s2-icon { width: var(--chip); padding: 0; text-transform: none; }
+.stim-ui svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.s2-info { font-weight: 700; }
+
+/* The logo: the colour mark, unboxed, at the far left. Hover shows the way back. */
+.s2-back {
+  display: inline-flex; align-items: center; height: var(--chip); padding: 0 2px; color: var(--fg);
+  text-decoration: none; -webkit-tap-highlight-color: transparent;
+  filter: drop-shadow(0 0 3px oklch(0.05 0.01 275)) drop-shadow(0 1px 2px oklch(0.05 0.01 275 / 0.9));
+}
+.s2-arrow { display: inline-block; width: 0; overflow: hidden; font: 700 16px/1 var(--slab); opacity: 0; transition: width 0.18s ease, opacity 0.18s ease; }
+.s2-back:is(:hover, :focus-visible) .s2-arrow { width: 0.75em; opacity: 1; }
+.s2-back .mark { font: 800 calc(var(--chip) * 0.7)/1 var(--sans); letter-spacing: -0.02em; text-transform: none; }
+/* The mark rests white; hover, focus or a tap waves it into colour. */
+.s2-back .mark span { color: var(--fg); transition: color 0.2s ease; }
+.s2-back:is(:hover, :focus-visible, :active) .mark span {
+  color: var(--c); animation: stim-wave 0.9s steps(1, end) backwards; animation-delay: calc(var(--i) * 33.333ms);
+}
+/* The name follows the logo as a breadcrumb, unboxed. */
+.s2-name {
+  display: inline-flex; align-items: center; gap: 8px; height: var(--chip); margin-right: 6px;
+  color: var(--fg); font-weight: 700; letter-spacing: 0.1em; white-space: nowrap; cursor: default;
+  text-shadow: var(--halo);
+}
+.s2-name::before { content: "/"; color: var(--muted); font-weight: 500; }
+.s2-tag { font-size: 9px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); padding: 2px 4px; border: 1px solid var(--line); border-radius: 2px; text-shadow: none; }
+.stim-ui .ver--build { font-weight: 700; background-color: var(--glass); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stim-ui *, .stim-ui *::before, .stim-ui *::after { transition: none !important; animation: none !important; }
+}
+
+/* Choice: one joined block with hairlines; the pick is the flash box. */
+.s2-seg, .s2-step { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 2px; transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
+/* A joined chip is never narrower than it is tall, so touch targets hold. */
+:is(.s2-seg, .s2-step) .s2-chip, :is(.s2-seg, .s2-step) .s2-chip:hover { height: calc(var(--chip) - 2px); min-width: calc(var(--chip) - 2px); justify-content: center; background: none; border: 0; border-radius: 0; box-shadow: none; transform: none; }
+.s2-seg .s2-chip + .s2-chip { border-left: 1px solid var(--line); }
+.s2-seg .s2-chip[aria-pressed="true"] { background: var(--fg); box-shadow: none; }
+:is(.s2-seg, .s2-step)[aria-disabled="true"], .s2-tray[aria-disabled="true"] { opacity: 0.4; }
+:is(.s2-seg, .s2-step)[aria-disabled="true"] .s2-chip { cursor: default; }
+.s2-step .s2-icon { color: var(--fg); font-size: 14px; }
+.s2-ico { display: inline-flex; }
+.s2-step-now { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 96px; padding: 0 4px; color: var(--fg); }
+.s2-dot { width: 8px; height: 8px; flex: none; }
+
+/* Sheets drop below a corner, with a hard shadow. */
+.stim-ui > .s2-sheet {
+  top: calc(12px + var(--chip) + 8px); z-index: 2; pointer-events: auto;
+  display: grid; align-items: stretch; gap: 0; box-sizing: border-box; width: 280px; max-width: calc(100% - 20px);
+  color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); box-shadow: var(--hard);
+  /* A short stage scrolls the sheet inside its own box. */
+  max-height: calc(100% - 2 * 12px - var(--chip) - 8px); overflow-y: auto; overscroll-behavior: contain;
+}
+.stim-ui > .s2-sheet--left { left: 12px; }
+.stim-ui > .s2-sheet--right { right: 12px; }
+/* On a narrow stage the tray chip sits bottom left, so its sheet rises. */
+.stim-frame[data-narrow] > .stim-ui > .s2-sheet--left { top: auto; bottom: calc(12px + var(--chip) + 8px); }
+.s2-hd { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--line); font-weight: 700; letter-spacing: 0.14em; }
+/* Every keycap shares one look: slab caps in a hairline box. */
+.s2-hd em, .s2-kbd, .s2-keys kbd { font: 700 9px/1 var(--slab); letter-spacing: 0.06em; padding: 2px 4px; border: 1px solid currentColor; border-radius: 2px; }
+.s2-hd em { font-style: normal; color: var(--muted); }
+.s2-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--chip)); gap: 6px; padding: 10px 12px 12px; }
+.s2-grid .s2-chip svg .solid { fill: currentColor; stroke: none; }
+
+/* Actions carry their key on mouse screens only. */
+.s2-kbd { color: inherit; opacity: 0.6; }
+@media (hover: none), (pointer: coarse) { .s2-kbd { display: none; } }
+.s2-chip svg .solid { fill: currentColor; stroke: none; }
+
+/* Slider: a 2 px track with a bar thumb. */
+.s2-slider {
+  box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px; height: var(--chip); padding: 0 10px;
+  color: var(--muted); background: var(--glass); border: 1px solid var(--line); border-radius: 2px;
+}
+.s2-slider input {
+  -webkit-appearance: none; appearance: none; width: 96px; height: 14px; margin: 0; cursor: pointer; background:
+    linear-gradient(var(--fg), var(--fg)) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(var(--line), var(--line)) 0 50% / 100% 2px no-repeat;
+}
+.s2-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 12px; background: var(--fg); border: 0; border-radius: 0; }
+.s2-slider input::-moz-range-thumb { width: 6px; height: 12px; background: var(--fg); border: 0; border-radius: 0; }
+.s2-slider input:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.s2-slider[data-disabled] { opacity: 0.4; }
+
+/* Settings: sections of rows, then the Reset footer. */
+.s2-sec { display: grid; gap: 10px; padding: 10px 12px 12px; }
+.s2-sec + .s2-sec { border-top: 1px solid var(--line); }
+.s2-lab { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted); opacity: 0.75; }
+.s2-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--fg); letter-spacing: 0.06em; }
+.s2-row.s2-slider { height: auto; padding: 0; background: none; border: 0; }
+.s2-row.s2-slider input { width: 110px; }
+.s2-row .s2-chip { font-size: 10px; padding: 0 8px; }
+.s2-ft { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.s2-ft .s2-chip { flex: 1; }
+
+/* Key strip: keycaps and verbs, no backing, bottom centre. */
+.stim-ui > .s2-keys {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 1;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 14px; margin: 0; pointer-events: none;
+  width: max-content; max-width: calc(100% - 24px);
+  font-size: 10px; letter-spacing: 0.08em; color: oklch(0.94 0.008 275 / 0.62);
+  transition: opacity 0.6s ease;
+}
+.stim-ui:has(> .s2-bl:not(:empty), > .s2-br:not(:empty)) > .s2-keys { bottom: calc(12px + var(--chip) + 14px); }
+/* A stacked narrow stage lifts the bottom right one row. */
+.stim-frame[data-stack] > .stim-ui > .s2-br { bottom: calc(12px + var(--chip) + 8px); }
+.stim-frame[data-stack] > .stim-ui > .s2-keys { bottom: calc(12px + 2 * var(--chip) + 22px); }
+.s2-keys, .s2-keys * { pointer-events: none; }
+.s2-keys > div { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.s2-keys dt, .s2-keys dd { margin: 0; }
+.s2-keys dd { text-transform: none; }
+/* A dark halo and glass keycaps keep the strip legible on bright stages. */
+.stim-ui > .s2-keys { text-shadow: var(--halo); }
+.s2-keys kbd { font-size: 10px; padding: 3px 5px; color: oklch(0.94 0.008 275 / 0.92); background: var(--glass); border-color: oklch(0.94 0.008 275 / 0.45); text-shadow: none; }
+.s2-keys.is-faded { opacity: 0; }
+
+/* Narrow stages: an empty toy section hides; the name goes below 360 px. */
+.s2-sec:not(:has(.s2-row)) { display: none; }
+/* A crowded top row drops the name; the shell measures it. */
+.stim-frame[data-tight] .s2-name { display: none; }
+@container stim (width < 300px) { .s2-back .mark span:not(:first-child) { display: none; } }
+
+/* Entrance: the corners wait out the intro, then slide in from their edges. */
+.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br) { transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s ease; }
+.stim-ui > .s2-tr { transition-delay: 60ms; }
+.stim-ui > .s2-bl { transition-delay: 120ms; }
+.stim-ui > .s2-br { transition-delay: 180ms; }
+.stim-ui[data-wait] > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys) { opacity: 0; }
+.stim-ui[data-wait] > .s2-tl { transform: translate(-6px, -6px); }
+.stim-ui[data-wait] > .s2-tr { transform: translate(6px, -6px); }
+.stim-ui[data-wait] > .s2-bl { transform: translate(-6px, 6px); }
+.stim-ui[data-wait] > .s2-br { transform: translate(6px, 6px); }
+.stim-ui[data-wait] > * > * { pointer-events: none; }

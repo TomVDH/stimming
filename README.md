@@ -50,6 +50,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Balloon letters | [balloons/](balloons/) | live, with sound |
 | TV tree | [tvtree/](tvtree/) | live, with sound; 155 channels, contact sheet at [tvtree/channels.html](tvtree/channels.html) |
 | Orbits | [orbits/](orbits/) | live, with sound |
+| Star trails | [trails/](trails/) | done; signed off by Tom. Raw WebGL2 long exposure: hold to open the shutter |
 
 ## Run locally
 

@@ -155,23 +155,611 @@ function fitStage() {
   fit();
 }
 
-export function initPage({ id, silent = false, home = '../index.html' } = {}) {
+export function initPage({ id, silent = false, home = '../index.html', bar = null } = {}) {
+  const stage = bar && document.querySelector('.stage');
+  const ui = stage ? buildBar(stage, bar, { id, home }) : null;
   const shell = document.querySelector('header[data-shell]');
-  if (shell && !shell.children.length) shell.innerHTML = headerHTML(home);
+  if (!ui && shell && !shell.children.length) shell.innerHTML = headerHTML(home);
   soundKey = `stimming.${id}.sound`;
   soundOn = store.get(soundKey) === '1';
-  soundBtn = document.getElementById('snd');
+  soundBtn = ui ? ui.soundButton : document.getElementById('snd');
   if (soundBtn) {
     soundBtn.hidden = silent;
     soundBtn.setAttribute('aria-pressed', String(soundOn));
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
-  legacyLink();
-  mouseKeys();
-  howTip();
+  if (ui) {
+    // toys.json gives the name, the tags and the legacy flag.
+    fetch(new URL('../toys.json', import.meta.url))
+      .then(r => r.json())
+      .then(toys => ui.applyToy(toys[id]))
+      .catch(() => ui.applyToy(null));
+  } else {
+    legacyLink();
+    mouseKeys();
+    howTip();
+  }
   fitStage();
-  return { sound };
+  return ui ? { sound, ...ui } : { sound };
+}
+
+/* ---------- bar v2: the Corners shell ---------- */
+// The shell lays its controls in the four corners of the stage.
+// Spec: docs/plans/bar-v2.md.
+const make = (tag, cls = '', html = '') => {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (html) el.innerHTML = html;
+  return el;
+};
+let barCount = 0;
+const iconButton = (cls, html, label) => {
+  const b = make('button', `${cls} s2-icon`, html);
+  b.type = 'button';
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  return b;
+};
+
+/* sheets: one open at a time, opened only by a click */
+let openSheet = null;
+const FOCUSABLE = 'button:not([hidden]):not([disabled]), input:not([disabled]), a[href]';
+document.addEventListener('keydown', e => {
+  if (!openSheet) return;
+  if (e.key === 'Escape') { e.preventDefault(); openSheet.open(false, true); return; }
+  if (e.key !== 'Tab') return;
+  // Tab stays inside the open sheet.
+  const items = [...openSheet.el.querySelectorAll(FOCUSABLE)].filter(el => el.checkVisibility());
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+document.addEventListener('pointerdown', e => {
+  if (openSheet && !openSheet.el.contains(e.target) && !openSheet.anchor.contains(e.target)) openSheet.open(false);
+});
+function makeSheet(layer, { title, anchor, align = 'right', focusPressed = false }) {
+  const el = make('div', `s2-sheet s2-sheet--${align}`, `<div class="s2-hd"><span>${title}</span><em aria-hidden="true">esc</em></div>`);
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', title);
+  layer.append(el);
+  anchor.setAttribute('aria-expanded', 'false');
+  const sheet = {
+    el, anchor,
+    get isOpen() { return !el.hidden; },
+    // Closing by key or button returns focus to the button.
+    open(on, refocus = false) {
+      if (on === sheet.isOpen) return;
+      if (on && openSheet) openSheet.open(false);
+      el.hidden = !on;
+      anchor.setAttribute('aria-expanded', String(on));
+      openSheet = on ? sheet : null;
+      if (on) ((focusPressed && el.querySelector('[aria-pressed="true"]')) || el.querySelector(FOCUSABLE))?.focus({ preventScroll: true });
+      else if (refocus || el.contains(document.activeElement)) anchor.focus({ preventScroll: true });
+    },
+  };
+  // A disabled anchor never opens its sheet.
+  anchor.addEventListener('click', () => {
+    if (!sheet.isOpen && anchor.getAttribute('aria-disabled') === 'true') return;
+    sheet.open(!sheet.isOpen, true);
+  });
+  return sheet;
+}
+
+/* shortcut keys: one listener per bar */
+// Keys skip modified presses, text fields and open sheets.
+// A key name reads like e.key in lower case.
+const keyName = k => { k = String(k).toLowerCase(); return k === 'space' || k === 'spacebar' ? ' ' : k; };
+function keyBinder() {
+  const map = new Map();
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+    const fn = map.get(e.key.toLowerCase());
+    if (!fn) return;
+    e.preventDefault();
+    fn();
+  });
+  // A held key lets go on its keyup, wherever focus went.
+  const ups = new Map();
+  document.addEventListener('keyup', e => ups.get(e.key.toLowerCase())?.());
+  return (key, fn, up) => {
+    map.set(keyName(key), fn);
+    if (up) ups.set(keyName(key), up);
+  };
+}
+
+/* choice: segments, stepper or tray */
+const dot = o => (o.dot ? `<span class="s2-dot" style="background: ${o.dot}"></span>` : '');
+// An option icon leads its label in segments and the stepper.
+const ico = o => (o.icon ? `<span class="s2-ico" aria-hidden="true">${o.icon}</span>` : '');
+function makeChoice(spec, display, state, pick, layer) {
+  const { options, label } = spec;
+  const find = v => options.find(o => o.value === v);
+  const step = d => {
+    const i = options.findIndex(o => o.value === state.value);
+    pick(options[(i + d + options.length) % options.length].value, true, true);
+  };
+  const arrows = (box, onStep) => box.addEventListener('keydown', e => {
+    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onStep(d);
+  });
+  if (display === 'segments') {
+    const el = make('div', 's2-seg');
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', label);
+    const chips = options.map(o => {
+      const b = make('button', 's2-chip', `${dot(o)}${ico(o)}${o.label}`);
+      b.type = 'button';
+      b.dataset.value = o.value;
+      b.addEventListener('click', () => pick(o.value, true, true));
+      return b;
+    });
+    el.append(...chips);
+    arrows(el, d => { step(d); chips.find(b => b.dataset.value === state.value)?.focus(); });
+    return { el, sync() {
+      chips.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === state.value)));
+      el.setAttribute('aria-disabled', String(state.disabled));
+    } };
+  }
+  if (display === 'stepper') {
+    const el = make('div', 's2-step');
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', label);
+    const prev = iconButton('s2-chip s2-step-prev', '‹', `Previous ${label}`);
+    const next = iconButton('s2-chip s2-step-next', '›', `Next ${label}`);
+    const now = make('span', 's2-step-now');
+    now.setAttribute('aria-live', 'polite');
+    prev.addEventListener('click', () => step(-1));
+    next.addEventListener('click', () => step(1));
+    el.append(prev, now, next);
+    arrows(el, step);
+    return { el, sync() {
+      const o = find(state.value);
+      now.innerHTML = o ? `${dot(o)}${ico(o)}${o.label}` : '';
+      el.setAttribute('aria-disabled', String(state.disabled));
+    } };
+  }
+  // The tray chip opens a grid sheet below the top-left corner.
+  const el = make('button', 's2-chip s2-tray');
+  el.type = 'button';
+  const sheet = makeSheet(layer, { title: label, anchor: el, align: 'left', focusPressed: true });
+  const grid = make('div', 's2-grid');
+  grid.setAttribute('role', 'group');
+  grid.setAttribute('aria-label', label);
+  const cells = options.map(o => {
+    const b = iconButton('s2-chip', o.icon || o.label.slice(0, 1), o.label);
+    b.dataset.value = o.value;
+    // The sheet closes first, so the toy's onPick can take focus.
+    b.addEventListener('click', () => { sheet.open(false, true); pick(o.value, true, true); });
+    return b;
+  });
+  grid.append(...cells);
+  sheet.el.append(grid);
+  return { el, sheet, sync() {
+    el.textContent = `+ ${find(state.value)?.label ?? ''}`;
+    el.setAttribute('aria-disabled', String(state.disabled));
+    cells.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === state.value)));
+  } };
+}
+
+/* slider: a word label, a bar thumb, no number */
+function makeSlider({ label, min = 0, max = 1, step = 0.01, value = min, onInput }) {
+  const el = make('label', 's2-slider', `<span>${label}</span>`);
+  const input = make('input');
+  Object.assign(input, { type: 'range', min, max, step });
+  input.value = String(value);
+  el.append(input);
+  const fill = () => el.style.setProperty('--v', `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
+  input.addEventListener('input', () => { fill(); onInput?.(Number(input.value)); });
+  fill();
+  const handle = {
+    get value() { return Number(input.value); },
+    set(v, fire = false) { input.value = String(v); fill(); if (fire) onInput?.(Number(input.value)); },
+    get disabled() { return input.disabled; },
+    set disabled(d) { input.disabled = !!d; el.toggleAttribute('data-disabled', !!d); },
+  };
+  return { el, input, handle };
+}
+
+/* actions: shared verbs keep one label each */
+const DIE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1"/><circle class="solid" cx="5.5" cy="5.5" r="1"/><circle class="solid" cx="10.5" cy="10.5" r="1"/><circle class="solid" cx="8" cy="8" r="1"/></svg>';
+const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+function actionLabel(a) {
+  if (a.label) return a.label;
+  if (a.verb === 'add') return `+ ${a.noun ?? 'One'}`;
+  return cap(a.verb);
+}
+function makeAction(a, bindKey) {
+  const b = make('button', 's2-chip', `${a.verb === 'shuffle' ? DIE : ''}<span class="s2-label">${actionLabel(a)}</span>`);
+  b.type = 'button';
+  let disabled = false, held = false;
+  const press = () => { if (!disabled) a.onPress?.(); };
+  // A held action runs onDown on press and onUp on release.
+  const down = () => {
+    if (disabled || held) return;
+    held = true;
+    b.setAttribute('aria-pressed', 'true');
+    a.onDown?.();
+  };
+  const up = () => {
+    if (!held) return;
+    held = false;
+    b.setAttribute('aria-pressed', 'false');
+    a.onUp?.();
+  };
+  if (a.hold) {
+    b.dataset.hold = '';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      try { b.setPointerCapture(e.pointerId); } catch {}
+      down();
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => b.addEventListener(t, up));
+    // Touch long-press must not open a menu.
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    // Enter and Space hold the focused chip.
+    b.addEventListener('keydown', e => {
+      if (e.key !== ' ' && e.key !== 'Enter') return;
+      e.preventDefault();
+      if (!e.repeat) down();
+    });
+    b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') up(); });
+    b.addEventListener('blur', up);
+    addEventListener('blur', up);
+  } else b.addEventListener('click', press);
+  if (a.key) {
+    b.append(make('kbd', 's2-kbd', a.key));
+    b.setAttribute('aria-keyshortcuts', a.key);
+    if (a.hold) bindKey(a.key, down, up);
+    else bindKey(a.key, press);
+  }
+  const handle = {
+    get value() { return a.verb; },
+    set(v, fire = false) { if (fire) press(); },
+    get held() { return held; },
+    get disabled() { return disabled; },
+    set disabled(d) { disabled = !!d; b.setAttribute('aria-disabled', String(disabled)); if (disabled) up(); },
+  };
+  return { el: b, handle };
+}
+
+/* settings rows: slider, choice or toggle */
+// A stored value restores only when it is valid for its row.
+function restore(row, key) {
+  const raw = row.persist ? store.get(key) : null;
+  if (raw == null || raw === '') return row.value;
+  if (row.type === 'slider') {
+    const n = Number(raw), min = row.min ?? 0, max = row.max ?? 1;
+    return Number.isFinite(n) && n >= min && n <= max ? n : row.value;
+  }
+  if (row.type === 'toggle') return raw === '1' ? true : raw === '0' ? false : row.value;
+  return row.options.some(o => o.value === raw) ? raw : row.value;
+}
+function makeRow(row, key, layer) {
+  const save = v => { if (row.persist) store.set(key, row.type === 'toggle' ? (v ? '1' : '0') : String(v)); };
+  // A link row opens another page; it holds no value.
+  if (row.type === 'link') {
+    const el = make('div', 's2-row', `<span>${row.label}</span>`);
+    const a = make('a', 's2-chip', row.text ?? 'Open');
+    a.href = row.href;
+    if (row.title) a.title = row.title;
+    el.append(a);
+    return { el, handle: { value: row.href, set() {}, get disabled() { return false; }, set disabled(d) {} } };
+  }
+  const value = restore(row, key);
+  if (row.type === 'slider') {
+    const sl = makeSlider({ ...row, value, onInput: v => { save(v); row.onInput?.(v); } });
+    sl.el.classList.add('s2-row');
+    const set = sl.handle.set;
+    sl.handle.set = (v, fire = false) => { set(v, fire); save(v); };
+    return { el: sl.el, handle: sl.handle };
+  }
+  // A toggle is an Off/On pair of segments.
+  const toggle = row.type === 'toggle';
+  const options = toggle ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : row.options;
+  const out = v => (toggle ? v === 'on' : v);
+  const state = { value: toggle ? (value ? 'on' : 'off') : value, disabled: false };
+  let ctl = null;
+  const pick = (v, fire, user = false) => {
+    if (user && state.disabled) return;
+    if (!options.some(o => o.value === v)) return;
+    state.value = v;
+    ctl.sync();
+    save(out(v));
+    if (fire) (toggle ? row.onToggle : row.onPick)?.(out(v));
+  };
+  // More than five options step one at a time.
+  const display = toggle ? 'segments' : row.display === 'stepper' || options.length > 5 ? 'stepper' : 'segments';
+  ctl = makeChoice({ label: row.label, options }, display, state, pick, layer);
+  ctl.sync();
+  const el = make('div', 's2-row', `<span>${row.label}</span>`);
+  el.append(ctl.el);
+  const handle = {
+    get value() { return out(state.value); },
+    set(v, fire = false) { pick(toggle ? (v ? 'on' : 'off') : v, fire); },
+    get disabled() { return state.disabled; },
+    set disabled(d) { state.disabled = !!d; ctl.sync(); },
+  };
+  return { el, handle };
+}
+
+/* key strip: printed keycaps, gone after a few gestures */
+const TOUCH_WORD = { 'right-drag': 'two-finger drag', 'right-click': 'long-press', 'double-click': 'double-tap', click: 'tap', scroll: 'pinch' };
+// Mouse words swap to touch words on a touch screen.
+export function keyWord(word, touch) {
+  const w = touch ? word.replace(/right-drag|right-click|double-click|click|scroll/gi, m => TOUCH_WORD[m.toLowerCase()]) : word;
+  return w.toUpperCase();
+}
+const COARSE = matchMedia('(pointer: coarse)');
+// A word that starts with a pointer verb stays on touch.
+// Every other word is a keyboard key.
+const POINTER_WORD = /^(right-drag|right-click|two-finger|long-press|double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe)\b/i;
+// A pointer word keeps its row on a touch screen.
+export const onTouch = word => POINTER_WORD.test(word);
+function makeKeys(entries, stage, info, delay) {
+  const el = make('dl', 's2-keys');
+  el.setAttribute('aria-label', 'How to play');
+  const rows = entries.map(([word, verb]) => {
+    const row = make('div'), kbd = make('kbd');
+    row.append(make('dt'), make('dd'));
+    row.firstChild.append(kbd);
+    row.lastChild.textContent = verb;
+    return { row, kbd, word };
+  });
+  el.append(...rows.map(r => r.row));
+  // Keyboard keys show on fine pointers only.
+  const words = () => rows.forEach(r => {
+    r.kbd.textContent = keyWord(r.word, COARSE.matches);
+    r.row.style.display = COARSE.matches && !onTouch(r.word) ? 'none' : '';
+  });
+  words();
+  COARSE.addEventListener?.('change', words);
+  // The strip fades by opacity only, so screen readers keep it.
+  let count = 0, timer = 0, wheelAt = 0;
+  const show = on => {
+    el.classList.toggle('is-faded', !on);
+    info?.setAttribute('aria-expanded', String(on));
+    clearTimeout(timer);
+    count = 0;
+    if (on) arm();
+  };
+  // The timer starts once the intro has gone.
+  const arm = () => {
+    if (document.querySelector('.intro')) {
+      const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); arm(); } });
+      mo.observe(document.body, { childList: true, subtree: true });
+      return;
+    }
+    timer = setTimeout(() => show(false), delay);
+  };
+  const gesture = () => { if (!el.classList.contains('is-faded') && ++count >= 3) show(false); };
+  stage.addEventListener('pointerdown', gesture);
+  // One scroll burst counts as one gesture.
+  stage.addEventListener('wheel', () => { const now = performance.now(); if (now - wheelAt > 400) gesture(); wheelAt = now; }, { passive: true });
+  info?.addEventListener('click', () => show(el.classList.contains('is-faded')));
+  show(true);
+  return { el, handle: { show: () => show(true), hide: () => show(false), get shown() { return !el.classList.contains('is-faded'); } } };
+}
+
+export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDelay = 8000 } = {}) {
+  document.documentElement.classList.add('stim2');
+  // The frame holds the stage and the layer, so control events skip the stage.
+  const frame = make('div', 'stim-frame'), layer = make('div', 'stim-ui');
+  stage.before(frame);
+  frame.append(stage, layer);
+  const slot = name => layer.appendChild(make('div', `s2-${name}`));
+  const tl = slot('tl'), tr = slot('tr'), bl = slot('bl'), br = slot('br');
+  // Limits warn the author; the shell still draws every control.
+  const acts = spec.actions || [];
+  if (acts.length > 3) console.warn(`Bar v2 (${id}): ${acts.length} actions; the limit is three.`);
+  if (acts.some(a => a.verb === 'clear') && acts.some(a => a.verb === 'reset')) console.warn(`Bar v2 (${id}): Reset belongs in Settings when Clear shows.`);
+
+  /* entrance: the corners slide in once the intro has gone */
+  // A safety timer frees the corners if the intro never leaves.
+  if (document.querySelector('.intro')) {
+    layer.dataset.wait = '';
+    const go = () => { mo.disconnect(); clearTimeout(cap); delete layer.dataset.wait; };
+    const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) go(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    const cap = setTimeout(go, 12000);
+  }
+
+  /* top left: the logo, unboxed, then the toy name */
+  const letters = MARK.map(([ch, c, w, r, y], i) => `<span style="--i: ${i}; --c: oklch(${c}); --w: ${w}; --r: ${r}deg; --y: ${y}em">${ch}</span>`).join('');
+  const back = make('a', 's2-back', `<span class="s2-arrow" aria-hidden="true">‹</span><span class="mark" aria-hidden="true">${letters}</span>`);
+  back.href = home;
+  back.setAttribute('aria-label', 'Back to Stimming');
+  const name = make('span', 's2-name');
+  name.append(document.querySelector('.intro-name')?.textContent.trim() || id);
+  tl.append(back, name);
+  const bindKey = keyBinder();
+
+  /* the choice: one group, after the name */
+  let choice = null, choiceCtl = null, choiceShow = null;
+  if (spec.choice?.options?.length) {
+    const c = spec.choice;
+    const state = { value: c.value ?? c.options[0].value, disabled: false };
+    // The shell calls onPick only for user input, or for set(v, true).
+    const pick = (v, fire, user = false) => {
+      if (user && state.disabled) return;
+      if (!c.options.some(o => o.value === v)) return;
+      state.value = v;
+      choiceCtl.sync();
+      if (fire) c.onPick?.(v);
+    };
+    // A rebuild swaps the display and keeps the state.
+    let shownAs = null;
+    choiceShow = display => {
+      if (display === shownAs) return;
+      choiceCtl?.el.remove();
+      choiceCtl?.sheet?.el.remove();
+      choiceCtl = makeChoice(c, display, state, pick, layer);
+      choiceCtl.sync();
+      shownAs = display;
+    };
+    choiceShow(c.display || (c.options.length > 5 ? 'stepper' : 'segments'));
+    tl.append(choiceCtl.el);
+    c.options.forEach(o => { if (o.key) bindKey(o.key, () => pick(o.value, true, true)); });
+    choice = {
+      get value() { return state.value; },
+      set(v, fire = false) { pick(v, fire); },
+      get disabled() { return state.disabled; },
+      set disabled(d) { state.disabled = !!d; choiceCtl.sync(); },
+    };
+  }
+
+  /* bottom corners: actions left, the main slider right */
+  const actions = new Map();
+  acts.forEach(a => { const { el, handle } = makeAction(a, bindKey); bl.append(el); actions.set(a.verb, handle); });
+  const slider = spec.slider ? makeSlider(spec.slider) : null;
+  if (slider) br.append(slider.el);
+  const actionEls = [...bl.children];
+
+  /* top right: legacy link, sound, Settings, (i) */
+  const snd = iconButton('snd', SOUND_SVG, 'Sound');
+  if (!document.getElementById('snd')) snd.id = 'snd';
+  snd.setAttribute('aria-pressed', 'false');
+  const set = iconButton('s2-set', SLIDERS, 'Settings');
+  set.setAttribute('aria-expanded', 'false');
+  const rowsOrSite = !!(spec.settings?.length || spec.quality);
+  set.hidden = !rowsOrSite;
+  tr.append(snd, set);
+
+  /* the Settings sheet: toy rows, site rows, the build link, then Reset */
+  const settings = new Map();
+  let toyLab = null, toySec = null, sheet = null, ft = null;
+  // The sheet builds on first need, so a late Classic link can join it.
+  const ensureSheet = () => {
+    if (sheet) return sheet;
+    sheet = makeSheet(layer, { title: 'Settings', anchor: set });
+    if (spec.reset) {
+      ft = make('div', 's2-ft');
+      const b = make('button', 's2-chip', 'Reset');
+      b.type = 'button';
+      b.addEventListener('click', () => { spec.reset(); sheet.open(false, true); });
+      ft.append(b);
+      sheet.el.append(ft);
+    }
+    return sheet;
+  };
+  // Sections sit above the Reset footer.
+  const addSec = sec => (ft ? ft.before(sec) : ensureSheet().el.append(sec));
+  // A narrow stage moves the slider in here, so a slider also builds the sheet.
+  if (rowsOrSite || slider) {
+    ensureSheet();
+    if (spec.settings?.length || slider) {
+      const sec = toySec = make('div', 's2-sec');
+      toyLab = make('span', 's2-lab', name.firstChild.textContent);
+      sec.append(toyLab);
+      (spec.settings || []).forEach(row => {
+        const r = makeRow(row, `stimming.${id}.${row.id}`, layer);
+        settings.set(row.id, r.handle);
+        sec.append(r.el);
+      });
+      addSec(sec);
+    }
+    if (spec.quality) {
+      const sec = make('div', 's2-sec', '<span class="s2-lab">Site</span>');
+      const q = makeRow({ type: 'choice', id: 'quality', label: 'Quality', value: quality(), onPick: v => setQuality(v),
+        options: [{ value: 'standard', label: 'Standard' }, { value: 'high', label: 'High' }] }, QUALITY_KEY, layer);
+      onQuality(v => q.handle.set(v));
+      sec.append(q.el);
+      addSec(sec);
+    }
+  }
+  let keys = null;
+  if (Array.isArray(spec.keys) && spec.keys.length) {
+    if (spec.keys.length > 4) console.warn(`Bar v2 (${id}): ${spec.keys.length} key entries; the limit is four.`);
+    const info = iconButton('s2-info', 'i', 'How to play');
+    tr.append(info);
+    keys = makeKeys(spec.keys, stage, info, keyDelay);
+    info.setAttribute('aria-controls', keys.el.id = `s2-keys-${id}-${++barCount}`);
+    layer.append(keys.el);
+  }
+
+  let legacy = null;
+  /* narrow stages: corners stay, controls move down */
+  // Below 640 px the choice drops to bottom left as a stepper.
+  const place = narrow => {
+    frame.toggleAttribute('data-narrow', narrow);
+    if (sheet?.isOpen) sheet.open(false);
+    if (choiceCtl?.sheet?.isOpen) choiceCtl.sheet.open(false);
+    if (choiceShow) {
+      const c = spec.choice;
+      choiceShow(c.display === 'tray' ? 'tray' : narrow ? 'stepper' : c.display || (c.options.length > 5 ? 'stepper' : 'segments'));
+      if (narrow) bl.prepend(choiceCtl.el); else tl.append(choiceCtl.el);
+    }
+    const down = narrow && !!choiceShow;
+    (down ? br : bl).append(...actionEls);
+    if (!slider) return;
+    // The slider joins Settings only when actions hold the bottom right.
+    const inSheet = down && actionEls.length > 0;
+    slider.el.classList.toggle('s2-row', inSheet);
+    if (inSheet) toyLab.after(slider.el); else br.append(slider.el);
+    set.hidden = !(rowsOrSite || inSheet || legacy);
+  };
+  /* fit: measure the corners, never trust a breakpoint alone */
+  // Both top corners plus their insets and a gap.
+  const span = () => tl.getBoundingClientRect().width + tr.getBoundingClientRect().width + 32;
+  let narrowNow = frame.getBoundingClientRect().width < 640;
+  const fit = () => {
+    const w = frame.getBoundingClientRect().width;
+    if ((w < 640) !== narrowNow) place(narrowNow = w < 640);
+    // A crowded top row sends the choice down, as on a phone.
+    if (!narrowNow && span() > w) place(narrowNow = true);
+    // A top row that still collides drops the toy name.
+    frame.removeAttribute('data-tight');
+    frame.toggleAttribute('data-tight', span() > w);
+    // Bottom corners that collide stack in two rows.
+    frame.removeAttribute('data-stack');
+    if (narrowNow && bl.childElementCount && br.childElementCount)
+      frame.toggleAttribute('data-stack', bl.getBoundingClientRect().right + 8 > br.getBoundingClientRect().left);
+  };
+  // The first layout runs at once, so a phone never shows the wide one.
+  place(narrowNow);
+  fit();
+  document.fonts?.ready.then(fit);
+  new ResizeObserver(fit).observe(frame);
+
+  const ui = {
+    choice,
+    slider: slider?.handle ?? null,
+    action: verb => actions.get(verb) ?? null,
+    setting: sid => settings.get(sid) ?? null,
+    keys: keys?.handle ?? { show() {}, hide() {}, shown: false },
+    soundButton: snd,
+    // A missing toy keeps the fallback name and shows no tags.
+    applyToy(info) {
+      if (info?.name) { name.firstChild.textContent = info.name; if (toyLab) toyLab.textContent = info.name; }
+      name.querySelectorAll('.s2-tag').forEach(t => t.remove());
+      if (info?.sub) name.append(make('span', 's2-tag', 'LAB'));
+      if (info?.tier) name.append(make('span', 's2-tag', String(info.tier).toUpperCase()));
+      fit();
+      const onLegacy = /\/legacy\.html$/.test(location.pathname);
+      if (legacy || !(onLegacy || info?.legacy)) return;
+      // The Classic or Fresh link sits in Settings, under its own label.
+      legacy = make('a', 's2-chip', onLegacy ? 'Fresh' : 'Classic');
+      legacy.href = onLegacy ? 'index.html' : 'legacy.html';
+      legacy.title = onLegacy ? 'Back to the fresh version' : 'The classic build of this toy';
+      if (onLegacy) document.documentElement.dataset.legacy = '';
+      const sec = make('div', 's2-sec', '<span class="s2-lab">Build</span>');
+      const row = make('div', 's2-row', '<span>Version</span>');
+      row.append(legacy);
+      sec.append(row);
+      addSec(sec);
+      set.hidden = false;
+    },
+    // Only the back block and the name stay, for a toy that cannot run.
+    hideControls() { layer.dataset.bare = ''; },
+  };
+  return ui;
 }
 
 /* ---------- audio kit ---------- */
@@ -231,7 +819,8 @@ export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs =
   async function tone() {
     if (!ac) return null;
     toneMod ||= import(TONE_URL).then(T => {
-      T.setContext(new T.Context({ context: ac, lookAhead: 0, latencyHint: 'interactive' }));
+      // Tone makes a spare context on import; true disposes it.
+      T.setContext(new T.Context({ context: ac, lookAhead: 0, latencyHint: 'interactive' }), true);
       return T;
     });
     return toneMod;

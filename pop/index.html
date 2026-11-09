@@ -15,7 +15,6 @@
 <style>
 /* Pop field: a honeycomb of bubbles laid straight on the page. */
 :root { --stage: var(--bg); }
-@media (max-width: 640px) { .field { aspect-ratio: 3 / 4; } }
 .field canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: pointer;
   -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
@@ -25,7 +24,7 @@
 /* The WebGL canvas only draws; the 2D canvas above takes input. */
 .field canvas.gl { pointer-events: none; }
 /* The die is a solid face with its pips cut out. */
-.chip svg.die { width: 16px; height: 16px; flex: none; fill: currentColor; stroke: none; }
+.stim-ui svg.die { fill: currentColor; stroke: none; }
 </style>
 </head>
 <body>
@@ -34,22 +33,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--pop field" id="field">
       <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it. Hold Space on a big bubble to burst it."></canvas>
-    </div>
-    <div class="bar bar--below">
-      <div class="actions">
-        <button class="chip" id="roll" type="button" title="Shuffle: a new sheet"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg>Shuffle</button>
-        <button class="chip" id="reset" type="button">Reset</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>pop</dd></div>
-        <div><dt>Drag</dt><dd>sweep</dd></div>
-        <div><dt>Hold</dt><dd>burst a big one</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd> <kbd>Space</kbd></dt><dd>choose, pop</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -81,14 +67,26 @@ import { converter } from 'culori';
 const toRgbC = converter('rgb');
 import { gsap } from 'gsap';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
-initPage({ id: 'pop' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+// Shuffle, Reset and the material pick bind once the sheet exists.
+const act = { roll() {}, reset() {}, mat() {} };
+const MAT_NAMES = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
+const ui = initPage({ id: 'pop', bar: {
+  // The material sets the light, the burst, the sound and the feel.
+  choice: { label: 'Material', display: 'stepper', value: 'gloss',
+    options: MAT_NAMES.map(m => ({ value: m, label: m[0].toUpperCase() + m.slice(1) })),
+    onPick: v => act.mat(v) },
+  actions: [
+    { verb: 'shuffle', key: 'S', onPress: () => act.roll() },
+    { verb: 'reset', key: 'R', onPress: () => act.reset() },
+  ],
+  quality: true,
+  keys: [['click', 'pop'], ['drag', 'sweep'], ['hold', 'burst a big one'], ['arrows + space', 'choose, pop']],
+} });
 
 const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, SQ3 = Math.sqrt(3);
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -193,13 +191,13 @@ function paintCells() {
 }
 // A recipe sets the whole sheet: paint, material, size, jumbos and gap.
 // The material brings its own light, popped look, burst, sound and feel.
-const MATS = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
+const MATS = MAT_NAMES;
 const DENS = [18, 22, 27, 33, 40, 48], JUMS = [0, 2, 3, 5, 8, 12], GAPS = [0.05, 0.075, 0.11];
 const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; while (a.length > 1 && v === not); return v; };
 let rec = { kind: 'arc', h: 165, field: meshOf([MINT, CYAN, BLUE], true), mat: 'gloss', den: 22, jum: null, gap: 0.075 };
 // A ?mat= query starts the sheet in that material.
 const qs = new URLSearchParams(location.search), qMat = qs.get('mat'), qKind = qs.get('kind');
-if (MATS.includes(qMat)) rec.mat = qMat;
+if (MATS.includes(qMat)) { rec.mat = qMat; ui.choice.set(qMat); }
 // A ?kind= query starts the sheet in that colour mode.
 if (KINDS.includes(qKind)) { rec.kind = qKind; rec.field = fieldOf(qKind, rec.h); }
 // Each roll changes the material, at least.
@@ -751,9 +749,20 @@ function merge() {
   }
 }
 // Cells sit centred; colour follows the field's diagonal.
+// The sheet lies between the top and bottom rows of controls.
+let bandT = 0, bandH = 0;
+function bands(h) {
+  const f = field.getBoundingClientRect(), layer = field.parentElement.querySelector('.stim-ui');
+  let t = 0, b = 0;
+  for (const el of layer?.querySelectorAll('.s2-tl, .s2-tr') || []) { const r = el.getBoundingClientRect(); if (r.height) t = Math.max(t, r.bottom - f.top); }
+  // The key strip counts too, so its words never sit on the bubbles.
+  for (const el of layer?.querySelectorAll('.s2-bl, .s2-br, .s2-keys') || []) { const r = el.getBoundingClientRect(); if (r.height) b = Math.max(b, f.bottom - r.top); }
+  bandT = t && t + 4;
+  bandH = Math.max(h * 0.5, h - bandT - (b && b + 4));
+}
 function place() {
   const x0 = (W - SQ3 * R * (cols + 0.5)) / 2 + (SQ3 * R) / 2;
-  const y0 = (H - (2 * R + 1.5 * R * (rows - 1))) / 2 + R;
+  const y0 = bandT + (bandH - (2 * R + 1.5 * R * (rows - 1))) / 2 + R;
   for (const c of cells) {
     c.x = x0 + SQ3 * R * (c.col + (c.row & 1) * 0.5);
     c.y = y0 + 1.5 * R * c.row;
@@ -771,12 +780,13 @@ function layout(force) {
   W = w; H = h; dpr = d;
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
   glSize(w, h, d);
+  bands(h);
   // Cell size follows width; rows fill what height is left.
   // The recipe sets about how many cells span a wide sheet.
   const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 10, 60), pad = R0 * 0.22;
   const nc = Math.max(3, Math.round((w - 2 * pad) / (SQ3 * R0) - 0.5));
   R = (w - 2 * pad) / (SQ3 * (nc + 0.5));
-  const nr = Math.max(2, Math.floor((h - 2 * pad - 2 * R) / (1.5 * R)) + 1);
+  const nr = Math.max(2, Math.floor((bandH - 2 * pad - 2 * R) / (1.5 * R)) + 1);
   const fresh = force || nc !== cols || nr !== rows;
   if (fresh) {
     for (const c of units) c.creak?.();
@@ -825,8 +835,8 @@ function hit(x, y) {
 const LEAD = 0.004;
 // A held squeeze charges fully in this many seconds.
 const HOLD = 0.45, HOLD_J = 1.1;
-// Space and Enter pop, so they count as gestures; arrow keys do not.
-const kit = audioKit({ keys: new Set([' ', 'Enter']) });
+// Space, Enter, S and R make sound, so they count as gestures.
+const kit = audioKit({ keys: new Set([' ', 'Enter', 's', 'S', 'r', 'R']) });
 let V = null, T = null, toneLoad = null, popNext = 0, bloopNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Bigger cells sound slightly lower.
@@ -1449,8 +1459,12 @@ function drawBits() {
   }
 }
 
-/* ---------- the die: a whole new sheet sweeps in from the bar ---------- */
-const die = document.getElementById('roll'), dieSvg = die.querySelector('svg'), diePath = dieSvg.querySelector('path');
+/* ---------- the die: a whole new sheet sweeps in from the control ---------- */
+// The Shuffle chip swaps the shell's die for one that rolls.
+const die = [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => b.getAttribute('aria-keyshortcuts') === 'S');
+die.querySelector('svg')?.remove();
+die.insertAdjacentHTML('afterbegin', '<svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg>');
+const dieSvg = die.querySelector('svg'), diePath = dieSvg.querySelector('path');
 const P0 = 4.6, P1 = 8, P2 = 11.4;
 const FACES = [
   [[P1, P1]],
@@ -1482,31 +1496,51 @@ function rattle() {
 const snap = document.createElement('canvas');
 let wipe = null;
 const WIPE_S = 0.9;
-function roll() {
-  if (!cells.length || !sR) return;
+// The centre of a control, in field coordinates, clamped to the field.
+function originOf(el) {
+  const f = field.getBoundingClientRect(), b = el.getBoundingClientRect();
+  return [clamp(b.left + b.width / 2 - f.left, 0, W), clamp(b.top + b.height / 2 - f.top, 0, H)];
+}
+// A new recipe lays a whole new sheet, grown out from the control.
+function newSheet(next, from) {
+  if (!cells.length || !sR) return false;
   const now = nowS();
   // The snapshot takes the GL cells and the 2D layer in one task.
   if (!reduce) { draw(); snap.width = cv.width; snap.height = cv.height; const sx = snap.getContext('2d'); sx.drawImage(glc, 0, 0, cv.width, cv.height); sx.drawImage(cv, 0, 0); }
-  rec = freshRecipe(rec);
+  rec = next;
+  ui.choice.set(rec.mat);
   tuneVoices();
   layout(true);
   clearTimeout(spriteTimer);
   buildSprites();
   bits.length = 0; rings.length = 0;
+  if (reduce) { draw(); return true; }
+  const [x, y] = originOf(from), far = Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y)) || 1;
+  wipe = { t0: now, far, x, y, col: paints[NB >> 1]?.light || focusC };
+  for (const c of units) { c.hid = true; events.push({ at: now + (WIPE_S * Math.hypot(c.x - x, c.y - y)) / far, c, born: 1 }); }
+  draw();
+  wake();
+  return true;
+}
+let matT = 0;
+act.roll = () => {
+  clearTimeout(matT);
+  if (!newSheet(freshRecipe(rec), die)) return;
   let n = face;
   while (n === face) n = (Math.random() * 6) | 0;
   showFace(n);
   rattle();
-  if (reduce) { draw(); return; }
-  gsap.fromTo(dieSvg, { rotation: -280, scale: 0.5 }, { rotation: 0, scale: 1, duration: 0.52, ease: 'back.out(2.2)', transformOrigin: '50% 50%', overwrite: true });
-  // The new sheet grows out from the die's corner, bottom left.
-  const far = Math.hypot(W, H) || 1;
-  wipe = { t0: now, far, col: paints[NB >> 1]?.light || focusC };
-  for (const c of units) { c.hid = true; events.push({ at: now + (WIPE_S * Math.hypot(c.x, H - c.y)) / far, c, born: 1 }); }
-  draw();
-  wake();
-}
-die.addEventListener('click', roll);
+  if (!reduce) gsap.fromTo(dieSvg, { rotation: -280, scale: 0.5 }, { rotation: 0, scale: 1, duration: 0.52, ease: 'back.out(2.2)', transformOrigin: '50% 50%', overwrite: true });
+};
+// A new material keeps the paint, the size and the gap.
+// Quick steps lay one sheet, for the last material only.
+act.mat = m => {
+  clearTimeout(matT);
+  matT = setTimeout(() => {
+    const step = document.querySelector('.stim-ui .s2-step');
+    if (m !== rec.mat && !newSheet({ ...rec, mat: m }, step || die)) ui.choice.set(rec.mat);
+  }, 140);
+};
 
 /* ---------- drawing: three.js lights the domes; a 2D canvas draws the rest ---------- */
 // The WebGL canvas sits under the 2D one, which keeps the input.
@@ -1867,7 +1901,7 @@ function draw() {
   if (wf) {
     const p = new Path2D();
     p.rect(0, 0, cv.width, cv.height);
-    p.arc(0, dpr * H, dpr * wf, 0, TAU);
+    p.arc(dpr * wipe.x, dpr * wipe.y, dpr * wf, 0, TAU);
     ctx.save(); ctx.clip(p, 'evenodd'); ctx.drawImage(snap, 0, 0); ctx.restore();
   }
   drawBits();
@@ -1875,7 +1909,7 @@ function draw() {
   if (wf) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
-    ctx.beginPath(); ctx.arc(0, H, wf, 0, TAU);
+    ctx.beginPath(); ctx.arc(wipe.x, wipe.y, wf, 0, TAU);
     ctx.lineWidth = Math.max(3, R * 0.18); ctx.strokeStyle = wipe.col; ctx.stroke();
   }
   const c = ring && own(cells[fi]);
@@ -1995,7 +2029,7 @@ cv.addEventListener('keydown', e => {
 cv.addEventListener('keyup', e => {
   if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6 + 0.9 * kPress.q); kPress = null; wake(); }
 });
-document.getElementById('reset').addEventListener('click', () => refill(nowS()));
+act.reset = () => { if (cells.length) refill(nowS()); };
 
 /* ---------- theme and size ---------- */
 function retheme() { tokens(); if (sR) buildSprites(); draw(); }

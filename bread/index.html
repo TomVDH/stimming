@@ -1,0 +1,1664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.015 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Broodautomaat</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Broodautomaat: a bread machine glows alone by a dark village road. */
+:root { --stage: oklch(0.08 0.015 265); }
+.stage--bread canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--bread canvas.on { opacity: 1; }
+.stage--bread { cursor: grab; }
+.stage--bread.held { cursor: grabbing; }
+/* Letterbox bars clip the canvas to 2.39 to 1. */
+.stage--bread[data-letterbox] canvas { clip-path: inset(var(--box, 0px) 0); }
+@media (prefers-reduced-motion: reduce) { .stage--bread canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Broodautomaat</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--bread" id="stage" tabindex="0" role="application" aria-label="A bread vending machine glows alone by a dark village road at night. Drop a coin to buy a loaf.">
+      <p class="fail" hidden>Broodautomaat needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Broodautomaat</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+// The bar handlers bind once the scene exists.
+const act = { coin() {}, car() {}, tube() {}, rain() {}, tilt() {}, moths() {}, letterbox() {}, reset() {}, view() {} };
+const QS = new URLSearchParams(location.search);
+const ui = initPage({ id: 'bread', silent: true, bar: {
+  slider: { label: 'Tube', min: 0, max: 1, step: 0.01, value: 0.25, onInput: v => act.tube(v) },
+  actions: [
+    { verb: 'coin', label: 'Coin', key: 'C', onPress: () => act.coin() },
+    { verb: 'add', noun: 'Car', key: 'V', onPress: () => act.car() },
+  ],
+  settings: [
+    { type: 'choice', id: 'view', label: 'View', value: 'road', persist: true, onPick: v => act.view(v),
+      options: [{ value: 'road', label: 'Road' }, { value: 'edge', label: 'Village edge' }] },
+    { type: 'toggle', id: 'rain', label: 'Rain', value: false, persist: true, onToggle: on => act.rain(on) },
+    { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
+    { type: 'slider', id: 'moths', label: 'Moths', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => act.moths(v) },
+    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => act.letterbox(on) },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['click', 'the machine: buy'], ['click', 'open hatch: take'], ['space', 'coin'], ['drag', 'look']],
+} });
+
+// Seeded random keeps the land the same on every load.
+let seed = 4021;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+let markReady;
+const sceneReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false; ui.hideControls?.(); markReady();
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+RectAreaLightUniformsLib.init();
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 3600);
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+// Linear RGB from OKLCH, scaled by a power.
+const lin = (L, C, h, k = 1) => new THREE.Color(...linFit(L, C, h).map(c => c * k));
+
+/* ---------- colours ---------- */
+// The tube is cool white with a green cast; the bread light is warm.
+const TUBE = lin(0.97, 0.035, 160);
+const WARM = lin(0.84, 0.13, 62);
+const SKYGLOW = lin(0.42, 0.08, 52);
+const NIGHT = lin(0.12, 0.03, 265);
+scene.fog = new THREE.FogExp2(lin(0.15, 0.03, 40).getHex(), 0.0026);
+
+/* ---------- sky ---------- */
+// One sphere: deep blue overhead, a sodium skyglow low on the horizon.
+// A thin cloud band catches the town glow from below.
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 48, 24), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uGlow: { value: SKYGLOW }, uNight: { value: NIGHT } },
+  vertexShader: /* glsl */`varying vec3 vDir; void main() { vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uGlow, uNight; varying vec3 vDir;
+  float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+  float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+  float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * vn(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
+  void main() {
+    vec3 d = normalize(vDir);
+    float el = d.y, az = atan(d.x, -d.z);
+    // The town glow sits right of centre, behind the machine.
+    float town = exp(-pow((az - 0.35) / 0.9, 2.0));
+    vec3 c = uNight * (0.35 + 0.65 * smoothstep(0.6, 0.0, el));
+    c += uGlow * exp(-max(el, 0.0) * 14.0) * (0.25 + 0.75 * town) * 0.55;
+    // Low cloud: a band of fbm, lit from below by the same glow.
+    float band = smoothstep(0.02, 0.07, el) * smoothstep(0.24, 0.1, el);
+    float cl = smoothstep(0.42, 0.75, fbm(vec2(az * 3.2, el * 22.0)));
+    c = mix(c, uGlow * (0.06 + 0.16 * town) + uNight * 0.2, cl * band * 0.85);
+    // Stars: sparse hashed points, hidden behind cloud and glow.
+    vec2 sp = vec2(az * 520.0, el * 520.0);
+    float s = h21(floor(sp));
+    float star = step(0.9988, s) * smoothstep(0.3, 0.0, length(fract(sp) - 0.5)) * smoothstep(0.1, 0.3, el) * (1.0 - cl * band);
+    c += vec3(0.75, 0.8, 1.0) * star * (0.4 + 1.2 * h21(floor(sp) + 3.1));
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+/* ---------- land ---------- */
+// A value-noise texture breaks up the fields and the asphalt.
+function noiseTex(n, k) {
+  const d = new Uint8Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    const v = 1 - k + k * rnd();
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = Math.round(v * 255); d[i * 4 + 3] = 255;
+  }
+  const t = new THREE.DataTexture(d, n, n);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
+}
+const fieldTex = noiseTex(128, 0.6); fieldTex.repeat.set(220, 220);
+const field = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: lin(0.26, 0.03, 120), map: fieldTex, roughness: 1 }));
+field.position.y = -0.03;
+field.receiveShadow = true;
+scene.add(field);
+
+// The road runs straight away from the eye, along -z, to the horizon.
+const ROAD = { x0: -3.0, x1: 3.0, len: 1800 };
+const asphaltTex = noiseTex(256, 0.35); asphaltTex.repeat.set(4, 240);
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD.x1 - ROAD.x0, ROAD.len).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: lin(0.24, 0.006, 260), map: asphaltTex, roughness: 0.55 }));
+road.position.z = -ROAD.len / 2 + 30;
+road.receiveShadow = true;
+scene.add(road);
+// Worn white edge lines and a dashed centre line catch the light, and later the rain.
+const lineMat = new THREE.MeshStandardMaterial({ color: lin(0.78, 0.01, 90), roughness: 0.7 });
+{
+  const parts = [];
+  for (const x of [ROAD.x0 + 0.25, ROAD.x1 - 0.25]) parts.push(new THREE.PlaneGeometry(0.12, ROAD.len).rotateX(-Math.PI / 2).translate(x, 0, -ROAD.len / 2 + 30));
+  // Dashes of 3 m with 9 m gaps, as on Flemish country roads.
+  for (let z = 20; z > -600; z -= 12) parts.push(new THREE.PlaneGeometry(0.1, 3).rotateX(-Math.PI / 2).translate(0, 0, z));
+  const l = new THREE.Mesh(mergeGeometries(parts), lineMat);
+  l.position.y = 0.004;
+  l.receiveShadow = true;
+  scene.add(l);
+}
+
+/* ---------- far land ---------- */
+// Silhouettes against the skyglow: poplars, hedges and a Flemish village.
+const inkMat = new THREE.MeshBasicMaterial({ color: lin(0.07, 0.012, 265), fog: false });
+// The village sits deeper in the haze, so its ink is a shade lighter.
+const villMat = new THREE.MeshBasicMaterial({ color: lin(0.1, 0.018, 35), fog: false });
+// A roof prism: a triangle of width w and height rh, extruded to depth d.
+// Gable-front roofs face the eye; eave-front roofs run along the street.
+function roof(w, rh, d, gable) {
+  const s = new THREE.Shape();
+  const a = gable ? w : d;
+  s.moveTo(-a / 2, 0); s.lineTo(a / 2, 0); s.lineTo(0, rh); s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: gable ? d : w, bevelEnabled: false });
+  return gable ? g.translate(0, 0, -d / 2) : g.rotateY(Math.PI / 2).translate(-w / 2, 0, 0);
+}
+const VZ = -1100;
+const windows = [];
+{
+  const parts = [];
+  // A row of poplars crosses the fields left of the road.
+  for (let i = 0; i < 9; i++) {
+    const x = -58 - i * 12 - rnd() * 3, z = -440 - i * 2, h = 16 + rnd() * 5;
+    parts.push(new THREE.SphereGeometry(1, 12, 12).scale(1.6 + rnd() * 0.6, h / 2, 1.6).translate(x, h / 2 + 1, z));
+  }
+  // Low hedges and tree clumps along the horizon, clear of the village.
+  for (let i = 0; i < 18; i++) {
+    const a = -1.2 + i * 0.16 + rnd() * 0.05, r = 700 + rnd() * 300, h = 8 + rnd() * 10;
+    if (Math.abs(a) < 0.16) continue;
+    parts.push(new THREE.SphereGeometry(1, 20, 8).scale(10 + rnd() * 18, h * 0.8, 8).translate(Math.sin(a) * r, 0, -Math.cos(a) * r));
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), inkMat));
+}
+{
+  // The village: brick rows with steep roofs where the road ends.
+  const parts = [];
+  for (const [row, z0, n] of [[0, VZ, 18], [1, VZ - 30, 12]]) {
+    let x = -96 + rnd() * 6;
+    for (let i = 0; i < n; i++) {
+      const w = 6 + rnd() * 3.5, h = (row ? 6 : 5) + rnd() * 3, d = 10, gable = rnd() < 0.45;
+      const rh = gable ? w * 0.75 : d * 0.55;
+      // The road runs on through the village; no house stands on it.
+      if (Math.abs(x + w / 2) < 6) x += 12;
+      const cx = x + w / 2, cz = z0 + rnd() * 6;
+      parts.push(new THREE.BoxGeometry(w, h, d).translate(cx, h / 2, cz));
+      parts.push(roof(w, rh, d, gable).translate(cx, h, cz));
+      // A few windows are lit; one in eight glows television blue.
+      if (!row) for (const wy of [1.6, h - 1.8]) {
+        if (rnd() < 0.42) windows.push([cx + (rnd() - 0.5) * (w - 2.4), wy, cz + d / 2 + 0.05, rnd() < 0.12]);
+      }
+      x += w + (rnd() < 0.25 ? 3 + rnd() * 6 : 0.1);
+    }
+  }
+  // The church: a brick tower with corner pinnacles, a needle spire and a long nave.
+  const cx = -24, cz = VZ - 22;
+  parts.push(new THREE.BoxGeometry(10, 40, 10).translate(cx, 20, cz));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(new THREE.ConeGeometry(0.9, 6, 4).translate(cx + sx * 4.4, 43, cz + sz * 4.4));
+  parts.push(new THREE.ConeGeometry(5.2, 32, 4).rotateY(Math.PI / 4).translate(cx, 56, cz));
+  parts.push(new THREE.BoxGeometry(16, 17, 40).translate(cx, 8.5, cz - 25));
+  parts.push(roof(16, 11, 40, true).translate(cx, 17, cz - 25));
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), villMat));
+  // The church clock is lit, a pale disc high on the tower.
+  const clock = new THREE.Mesh(new THREE.CircleGeometry(1.4, 24), new THREE.MeshBasicMaterial({ color: lin(0.9, 0.05, 85, 1.5), fog: false }));
+  clock.position.set(cx, 32, cz + 5.05);
+  scene.add(clock);
+}
+/* ---------- the horizon ---------- */
+// The Flemish horizon is never empty: farms, willow lines, pylons and turbines.
+const beacons = [];
+{
+  const parts = [];
+  // Rows of pollard willows and alders mark the field edges.
+  for (const [x0, x1, z] of [[-420, -150, -300], [60, 380, -360], [-260, -40, -640], [140, 520, -700], [-700, -300, -980], [300, 760, -1250]]) {
+    for (let x = x0; x < x1; x += 4 + rnd() * 5) {
+      const h = 2.6 + rnd() * 2.2;
+      parts.push(new THREE.SphereGeometry(1, 10, 6).scale(2.4 + rnd() * 1.6, h, 2.4).translate(x, h * 0.8, z + rnd() * 4));
+    }
+  }
+  // Farms: a long barn, a house and a few trees; most have a lit window.
+  for (const [x, z, flip] of [[-250, -560, 1], [190, -470, -1], [430, -820, 1], [-520, -880, -1], [120, -1600, 1], [-330, -1450, 1]]) {
+    parts.push(new THREE.BoxGeometry(26, 8, 12).translate(x, 4, z));
+    parts.push(roof(12, 7, 26, false).rotateY(Math.PI / 2).translate(x, 8, z));
+    parts.push(new THREE.BoxGeometry(9, 6, 9).translate(x + flip * 20, 3, z + 4));
+    parts.push(roof(9, 6, 9, true).translate(x + flip * 20, 6, z + 4));
+    for (let t = 0; t < 3; t++) {
+      const h = 10 + rnd() * 6;
+      parts.push(new THREE.SphereGeometry(1, 10, 8).scale(5 + rnd() * 3, h / 2, 5).translate(x - flip * (18 + t * 7), h / 2, z - 6 + rnd() * 8));
+    }
+    if (rnd() < 0.8) windows.push([x + flip * 20 + 1.5, 2.6, z + 8.6, false]);
+  }
+  // The next village over, far left: one spire and a low row.
+  parts.push(new THREE.BoxGeometry(8, 30, 8).translate(-760, 15, -2300));
+  parts.push(new THREE.ConeGeometry(4.5, 26, 4).rotateY(Math.PI / 4).translate(-760, 43, -2300));
+  parts.push(new THREE.BoxGeometry(120, 8, 20).translate(-720, 4, -2280));
+  // A high-voltage line crosses the land on lattice pylons.
+  const wire = [];
+  const PYL = [[-900, -820], [-560, -900], [-220, -980], [700, -1150], [1040, -1230]];
+  const tips = PYL.map(([x, z]) => {
+    parts.push(new THREE.CylinderGeometry(1.2, 4.5, 44, 4).rotateY(Math.PI / 4).translate(x, 22, z));
+    parts.push(new THREE.BoxGeometry(20, 1.2, 1.2).translate(x, 32, z));
+    parts.push(new THREE.BoxGeometry(14, 1.2, 1.2).translate(x, 39, z));
+    parts.push(new THREE.ConeGeometry(1.4, 6, 4).translate(x, 47, z));
+    return [[x - 10, 32, z], [x + 10, 32, z], [x - 7, 39, z], [x + 7, 39, z]];
+  });
+  // Each span sags as a catenary, here a parabola in twelve steps.
+  for (let i = 0; i < tips.length - 1; i++) {
+    if (PYL[i + 1][0] - PYL[i][0] > 500) continue;
+    for (let k = 0; k < 4; k++) {
+      const a = tips[i][k], b = tips[i + 1][k];
+      for (let s = 0; s < 12; s++) {
+        const p = t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 9 * 4 * t * (1 - t), a[2] + (b[2] - a[2]) * t];
+        wire.push(...p(s / 12), ...p((s + 1) / 12));
+      }
+    }
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+  scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: inkMat.color, fog: false })));
+  // Wind turbines stand far off on the right, each with a red beacon.
+  for (const [x, z, a] of [[520, -2500, 0.3], [700, -2700, 1.4], [880, -2450, 2.2], [1100, -2600, 0.9]]) {
+    parts.push(new THREE.CylinderGeometry(1.4, 2.6, 92, 10).translate(x, 46, z));
+    parts.push(new THREE.BoxGeometry(4, 4, 9).translate(x, 93, z));
+    for (let b = 0; b < 3; b++) {
+      const ang = a + (b * Math.PI * 2) / 3;
+      parts.push(new THREE.BoxGeometry(1.6, 46, 0.6).translate(0, 23, 0).rotateZ(ang).translate(x, 93, z + 4.6));
+    }
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 6), new THREE.MeshBasicMaterial({ color: lin(0.62, 0.24, 28, 8), fog: false }));
+    beacon.position.set(x, 96, z);
+    scene.add(beacon);
+    beacons.push(beacon);
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g))), inkMat));
+}
+
+// Lit windows: tiny warm squares; bloom makes them points of light.
+const farMat = new THREE.MeshBasicMaterial({ color: WARM.clone().multiplyScalar(5), fog: false });
+const tvMat = new THREE.MeshBasicMaterial({ color: lin(0.7, 0.12, 250, 4), fog: false });
+for (const [x, y, z, tv] of windows) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.3), tv ? tvMat : farMat);
+  m.position.set(x, y, z);
+  scene.add(m);
+}
+// Sodium lamps run down the road and into the village.
+const sodiumMat = new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 14), fog: false });
+for (const [x, z, r] of [[ROAD.x1 + 1.2, -420, 0.3], [ROAD.x1 + 1.2, -900, 0.5], [ROAD.x0 - 1.2, VZ + 30, 0.6], [ROAD.x1 + 1.2, VZ - 20, 0.6]]) {
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), sodiumMat);
+  lamp.position.set(x, 6, z);
+  scene.add(lamp);
+}
+
+/* ---------- the stop ---------- */
+// The machine stands alone on a small concrete pad on the far verge.
+const STOP = new THREE.Group();
+// setView() places it; on the road it faces the road three-quarter on.
+scene.add(STOP);
+const concrete = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.008, 80), map: noiseTex(64, 0.25), roughness: 0.92 });
+const enamel = new THREE.MeshStandardMaterial({ color: lin(0.86, 0.02, 95), roughness: 0.4, metalness: 0.05 });
+const steel = new THREE.MeshStandardMaterial({ color: lin(0.72, 0.008, 250), roughness: 0.3, metalness: 0.8 });
+const trim = new THREE.MeshStandardMaterial({ color: lin(0.24, 0.01, 260), roughness: 0.5, metalness: 0.4 });
+const cast = m => { m.castShadow = true; m.receiveShadow = true; return m; };
+const box = (w, h, d, mat, x, y, z, r = 0, parent = STOP) => {
+  const g = r ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d);
+  const m = cast(new THREE.Mesh(g, mat));
+  m.position.set(x, y, z);
+  parent.add(m);
+  return m;
+};
+box(1.6, 0.12, 1.4, concrete, 0, 0.06, 0.2);
+
+/* the cabinet */
+// A tall narrow cabinet; a column of small doors sits left of centre.
+// Each door opens on one tier of the carousel behind it.
+const M = { w: 0.86, h: 1.92, d: 0.72, front: 0.36, y0: 0.12 };
+const TIERS = 8, TIER_H = 0.17;
+const COL = { x0: -0.37, x1: -0.03, y0: 0.4 };
+COL.y1 = COL.y0 + TIERS * TIER_H;
+{
+  const { w, h, d, y0 } = M, cz = M.front - d / 2, fz = M.front - 0.02;
+  // Back, sides and top as one shell, open at the door column.
+  box(w, h, 0.04, enamel, 0, y0 + h / 2, cz - d / 2 + 0.02);
+  box(0.04, h, d, enamel, -w / 2 + 0.02, y0 + h / 2, cz, 0.015);
+  box(0.04, h, d, enamel, w / 2 - 0.02, y0 + h / 2, cz, 0.015);
+  box(w, 0.04, d, enamel, 0, y0 + h - 0.02, cz);
+  // The front panel, built round the door column.
+  box(COL.x0 + w / 2, h, 0.04, enamel, (-w / 2 + COL.x0) / 2, y0 + h / 2, fz);
+  box(w / 2 - COL.x1, h, 0.04, enamel, (COL.x1 + w / 2) / 2, y0 + h / 2, fz);
+  box(COL.x1 - COL.x0, COL.y0 - y0, 0.04, enamel, (COL.x0 + COL.x1) / 2, (y0 + COL.y0) / 2, fz);
+  box(COL.x1 - COL.x0, y0 + h - COL.y1, 0.04, enamel, (COL.x0 + COL.x1) / 2, (COL.y1 + y0 + h) / 2, fz);
+  // A dark plinth keeps the cabinet off the wet concrete.
+  box(w - 0.04, 0.1, d - 0.04, trim, 0, y0 + 0.05, cz);
+}
+
+/* coin unit */
+// Right of the doors: a price window, a coin slot, a green ready lamp and a return cup.
+const COIN = { x: 0.2, y: 1.18 };
+const glowPlate = (w, h, col, k, x, y, z = M.front + 0.025) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(k) }));
+  m.position.set(x, y, z);
+  STOP.add(m);
+  return m;
+};
+box(0.24, 0.5, 0.04, steel, COIN.x, COIN.y, M.front + 0.0, 0.01);
+glowPlate(0.14, 0.05, lin(0.8, 0.17, 60), 3, COIN.x, COIN.y + 0.16);
+const readyLamp = glowPlate(0.024, 0.024, lin(0.82, 0.2, 145), 5, COIN.x - 0.06, COIN.y + 0.05);
+box(0.06, 0.1, 0.03, trim, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.025, 0.006);
+glowPlate(0.008, 0.06, lin(0.6, 0.02, 250), 0.8, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.042);
+box(0.1, 0.06, 0.05, trim, COIN.x, COIN.y - 0.16, M.front + 0.03, 0.01);
+// One small lit button sits beside each door.
+const buttons = [];
+for (let t = 0; t < TIERS; t++) {
+  buttons.push(glowPlate(0.03, 0.03, lin(0.9, 0.02, 230), 1.4, COL.x1 + 0.04, COL.y0 + (t + 0.5) * TIER_H));
+}
+
+/* ---------- the carousel ---------- */
+// Eight tiers of eight compartments turn on one vertical axis behind the doors.
+// One loaf sits in each compartment.
+const DRUM = { sectors: 8, r: 0.27, x: (COL.x0 + COL.x1) / 2, z: M.front - 0.32 };
+const drum = new THREE.Group();
+drum.position.set(DRUM.x, COL.y0, DRUM.z);
+STOP.add(drum);
+const shelfMat = new THREE.MeshStandardMaterial({ color: lin(0.78, 0.01, 230), roughness: 0.3, metalness: 0.7 });
+const cellMat = new THREE.MeshStandardMaterial({ color: lin(0.5, 0.01, 230), emissive: lin(0.9, 0.02, 230), emissiveIntensity: 0.06, roughness: 0.7 });
+const crust = new THREE.MeshStandardMaterial({ color: lin(0.55, 0.12, 60), emissive: WARM, emissiveIntensity: 0.1, roughness: 0.6 });
+const cells = [];
+{
+  const { sectors, r } = DRUM, step = (Math.PI * 2) / sectors;
+  for (let t = 0; t <= TIERS; t++) {
+    const disc = cast(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.012, 32), shelfMat));
+    disc.position.y = t * TIER_H;
+    drum.add(disc);
+  }
+  for (let t = 0; t < TIERS; t++) {
+    const y = t * TIER_H;
+    for (let s = 0; s < sectors; s++) {
+      const cell = new THREE.Group();
+      cell.rotation.y = s * step;
+      drum.add(cell);
+      // Dividers between compartments; the back glows faint cool white.
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.006, TIER_H - 0.012, r - 0.06), shelfMat);
+      wall.position.set(0, y + TIER_H / 2, (r + 0.06) / 2);
+      wall.rotation.y = step / 2;
+      cell.add(wall);
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(0.1, TIER_H - 0.012), cellMat);
+      back.position.set(0, y + TIER_H / 2, 0.07);
+      cell.add(back);
+      // The loaf: a squashed capsule lying across the compartment.
+      const loaf = cast(new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.08, 6, 12), crust));
+      loaf.rotation.z = Math.PI / 2;
+      loaf.scale.set(0.95, 1, 0.9);
+      loaf.position.set(0, y + 0.055, r * 0.6);
+      cell.add(loaf);
+      cells.push({ tier: t, sector: s, loaf, full: true });
+    }
+  }
+  const core = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, TIERS * TIER_H, 12), steel));
+  core.position.y = (TIERS * TIER_H) / 2;
+  drum.add(core);
+}
+
+/* the doors */
+// One small door per tier: a steel frame round a glass pane, hinged on the left.
+const glassMat = new THREE.MeshStandardMaterial({ color: lin(0.4, 0.01, 220), roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.18, depthWrite: false });
+const doors = [];
+{
+  const w = COL.x1 - COL.x0, h = TIER_H - 0.012, f = 0.022;
+  const frameGeo = mergeGeometries([
+    new THREE.BoxGeometry(w, f, 0.016).translate(w / 2, (h - f) / 2, 0),
+    new THREE.BoxGeometry(w, f, 0.016).translate(w / 2, -(h - f) / 2, 0),
+    new THREE.BoxGeometry(f, h, 0.016).translate(f / 2, 0, 0),
+    new THREE.BoxGeometry(f, h, 0.016).translate(w - f / 2, 0, 0),
+    // The pull: a short bar near the free edge.
+    new THREE.BoxGeometry(0.012, h * 0.5, 0.02).translate(w - 0.04, 0, 0.016),
+  ]);
+  for (let t = 0; t < TIERS; t++) {
+    const pivot = new THREE.Group();
+    pivot.position.set(COL.x0, COL.y0 + (t + 0.5) * TIER_H, M.front);
+    STOP.add(pivot);
+    pivot.add(cast(new THREE.Mesh(frameGeo, steel)));
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(w - f * 2, h - f * 2), glassMat);
+    pane.position.x = w / 2;
+    pivot.add(pane);
+    doors.push({ tier: t, pivot, open: 0 });
+  }
+}
+
+/* ---------- the hood ---------- */
+// A curved yellow lightbox crowns the cabinet and carries the plain word.
+const HOOD = { R: 0.3, over: 0.12, w: M.w + 0.06 };
+HOOD.y = M.y0 + M.h;
+HOOD.cz = M.front + HOOD.over - HOOD.R;
+const hoodTex = (() => {
+  // The canvas runs round the arc in x and along the hood in y.
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 1024;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 256, 0);
+  grad.addColorStop(0, '#ff9f00'); grad.addColorStop(0.5, '#ffc400'); grad.addColorStop(1, '#e08a00');
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 1024);
+  g.save();
+  g.translate(96, 512);
+  g.rotate(Math.PI / 2);
+  g.fillStyle = '#1e1204';
+  g.font = '900 84px Gabarito, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('BROODAUTOMAAT', 0, 0);
+  g.restore();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+})();
+const hoodMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: hoodTex, emissiveIntensity: 0.75, roughness: 0.3, side: THREE.DoubleSide });
+const hoodCap = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: lin(0.86, 0.17, 88), emissiveIntensity: 0.6, roughness: 0.3 });
+{
+  const { R, w, y, cz } = HOOD;
+  // The arc runs from the front lip up to the crown.
+  const arc = new THREE.Mesh(new THREE.CylinderGeometry(R, R, w, 40, 1, true, 0, Math.PI / 2).rotateZ(Math.PI / 2), hoodMat);
+  arc.position.set(0, y, cz);
+  STOP.add(arc);
+  // A flat crown runs back from the arc to the rear of the cabinet.
+  const back = cz - (M.front - M.d);
+  const crown = new THREE.Mesh(new THREE.PlaneGeometry(w, back).rotateX(-Math.PI / 2), hoodCap);
+  crown.position.set(0, y + R, cz - back / 2);
+  STOP.add(crown);
+  // Two end caps close the hood.
+  const s = new THREE.Shape();
+  s.moveTo(-back, 0); s.lineTo(R, 0); s.absarc(0, 0, R, 0, Math.PI / 2, false); s.lineTo(-back, R); s.closePath();
+  for (const side of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.ShapeGeometry(s, 12).rotateY(-Math.PI / 2), hoodCap);
+    cap.position.set(side * w / 2, y, cz);
+    cap.material.side = THREE.DoubleSide;
+    STOP.add(cap);
+  }
+}
+
+/* ---------- the tube ---------- */
+// One bare fluorescent tube under the hood's front lip.
+const TUBE_POS = new THREE.Vector3(0, HOOD.y - 0.03, M.front + 0.1);
+const tubeMat = new THREE.MeshBasicMaterial({ color: TUBE.clone().multiplyScalar(9) });
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.76, 12).rotateZ(Math.PI / 2), tubeMat);
+tube.position.copy(TUBE_POS);
+STOP.add(tube);
+// The end caps stay dark grey; a dying tube glows orange there.
+const capMats = [];
+for (const s of [-1, 1]) {
+  const cm = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  capMats.push(cm);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.04, 10).rotateZ(Math.PI / 2), cm);
+  c.position.set(TUBE_POS.x + s * 0.4, TUBE_POS.y, TUBE_POS.z);
+  STOP.add(c);
+}
+// The area light: long and thin, aimed down the doors and out over the pad.
+const tubeLight = new THREE.RectAreaLight(TUBE, 26, 0.76, 0.06);
+tubeLight.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.02, 0));
+STOP.add(tubeLight);
+tubeLight.lookAt(STOP.localToWorld(new THREE.Vector3(0, 0, 1.8)));
+// The hood throws a warm yellow wash forward and down.
+const hoodLight = new THREE.RectAreaLight(lin(0.86, 0.17, 88), 7, HOOD.w, 0.24);
+hoodLight.position.set(0, HOOD.y + 0.12, M.front + HOOD.over + 0.02);
+STOP.add(hoodLight);
+hoodLight.lookAt(STOP.localToWorld(new THREE.Vector3(0, 0.3, 3)));
+// Inside the carousel, a cool white lamp lights the loaves.
+const drumLight = new THREE.PointLight(lin(0.95, 0.02, 230), 0.9, 1.4, 2);
+drumLight.position.set(DRUM.x, COL.y1 - 0.05, DRUM.z + 0.05);
+STOP.add(drumLight);
+// A short point light fills the cabinet and pad, and casts the machine's shadow.
+const tubeFill = new THREE.PointLight(TUBE, 2.2, 7, 2);
+tubeFill.position.copy(TUBE_POS).add(new THREE.Vector3(0, -0.05, 0.12));
+tubeFill.castShadow = true;
+tubeFill.shadow.mapSize.set(512, 512);
+tubeFill.shadow.bias = -0.002;
+tubeFill.shadow.radius = 6;
+STOP.add(tubeFill);
+// The moon: a faint blue sky light over everything.
+scene.add(new THREE.HemisphereLight(lin(0.45, 0.04, 255), lin(0.12, 0.02, 120), 0.3));
+// A low moon behind the camera rims the road with cold light.
+// It hangs low down the road, so the asphalt shines toward the eye.
+const moon = new THREE.DirectionalLight(lin(0.7, 0.04, 250), 0.22);
+moon.position.set(-20, 18, -200);
+scene.add(moon);
+
+/* ---------- village edge ---------- */
+// The second view: the machine stands against the blind gable of the last house.
+// The terrace runs along the road; the fields open out beyond its end wall.
+const EDGE = { x0: 4.6, x1: 13.6, z: -40, n: 4, w: 7.5, h: 6.4, rh: 4.6 };
+const edgeSet = new THREE.Group();
+edgeSet.visible = false;
+scene.add(edgeSet);
+// Brick: a running bond of warm red-brown bricks in grey mortar.
+const brickCanvas = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6d665c'; g.fillRect(0, 0, 512, 512);
+  const bw = 64, bh = 24;
+  for (let r = 0; r < 512 / bh; r++) {
+    for (let k = -1; k < 512 / bw + 1; k++) {
+      const x = k * bw + (r % 2) * (bw / 2), l = 30 + rnd() * 12, hue = 18 + rnd() * 14;
+      g.fillStyle = `hsl(${hue} ${42 + rnd() * 18}% ${l}%)`;
+      g.fillRect(x + 2, r * bh + 2, bw - 4, bh - 4);
+    }
+  }
+  return c;
+})();
+const brickTex = (rx, ry) => {
+  const t = new THREE.CanvasTexture(brickCanvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = 4;
+  return t;
+};
+// A 512 px tile holds eight bricks across (1.76 m) and 21 courses (1.6 m).
+const brickBox = new THREE.MeshStandardMaterial({ map: brickTex(5.1, 4), roughness: 0.92 });
+const brickMetre = new THREE.MeshStandardMaterial({ map: brickTex(1 / 1.76, 1 / 1.6), roughness: 0.92 });
+const tiles = new THREE.MeshStandardMaterial({ color: lin(0.24, 0.03, 30), roughness: 0.7 });
+{
+  const { x0, x1, z, n, w, h, rh } = EDGE, cx = (x0 + x1) / 2, d = x1 - x0;
+  for (let i = 0; i < n; i++) {
+    const hz = z - w / 2 - i * w, hh = h + (i % 2) * 0.5;
+    const house = cast(new THREE.Mesh(new THREE.BoxGeometry(d, hh, w), brickBox));
+    house.position.set(cx, hh / 2, hz);
+    edgeSet.add(house);
+    // The ridge runs along the street; the roof overhangs the walls a little.
+    const r = cast(new THREE.Mesh(roof(d + 0.5, rh, w + 0.05, true), tiles));
+    r.position.set(cx, hh, hz);
+    edgeSet.add(r);
+  }
+  // The blind gable: a brick triangle on the end wall, under the roof.
+  const s = new THREE.Shape();
+  // It keeps the roof's slope and sits just in front of the roof's end face.
+  const gh = rh * (d / (d + 0.5));
+  s.moveTo(-d / 2, 0); s.lineTo(d / 2, 0); s.lineTo(0, gh); s.closePath();
+  const gableGeo = new THREE.ShapeGeometry(s);
+  const gable = cast(new THREE.Mesh(gableGeo, brickMetre));
+  gable.position.set(cx, h, z + 0.04);
+  edgeSet.add(gable);
+  // A concrete apron before the wall, and a pavement along the terrace.
+  const apron = cast(new THREE.Mesh(new THREE.BoxGeometry(d + 1.6, 0.1, 4.5), concrete));
+  apron.position.set(cx - 0.8, 0.05, z + 2.25);
+  edgeSet.add(apron);
+  const pave = cast(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 40), concrete));
+  pave.position.set(x0 - 0.8, 0.06, z - 14);
+  edgeSet.add(pave);
+  // A garden hedge runs from the back corner out into the field.
+  const hedge = cast(new THREE.Mesh(new THREE.BoxGeometry(18, 1.5, 1.1), new THREE.MeshStandardMaterial({ color: lin(0.2, 0.04, 140), roughness: 1 })));
+  hedge.position.set(x1 + 9, 0.75, z - 0.6);
+  edgeSet.add(hedge);
+}
+// One sodium street lamp on the pavement, left of the machine.
+const LAMP = new THREE.Vector3(EDGE.x0 - 1.0, 7.2, EDGE.z + 2.6);
+{
+  const pole = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, LAMP.y, 8), trim));
+  pole.position.set(LAMP.x, LAMP.y / 2, LAMP.z);
+  edgeSet.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.08), trim);
+  arm.position.set(LAMP.x - 0.6, LAMP.y, LAMP.z);
+  edgeSet.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.26), trim);
+  head.position.set(LAMP.x - 1.2, LAMP.y - 0.04, LAMP.z);
+  edgeSet.add(head);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.2).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: lin(0.8, 0.16, 58, 12), side: THREE.DoubleSide }));
+  glow.position.set(LAMP.x - 1.2, LAMP.y - 0.11, LAMP.z);
+  edgeSet.add(glow);
+}
+// The sodium light rakes the wall from the left; the machine throws its shadow right.
+const sodiumLight = new THREE.SpotLight(lin(0.78, 0.16, 58), 220, 30, 1.05, 0.6, 2);
+sodiumLight.position.set(LAMP.x - 1.2, LAMP.y - 0.15, LAMP.z);
+sodiumLight.target.position.set(EDGE.x0 + 3.5, 0, EDGE.z + 1);
+sodiumLight.castShadow = true;
+sodiumLight.shadow.mapSize.set(1024, 1024);
+sodiumLight.shadow.bias = -0.0015;
+sodiumLight.shadow.radius = 3;
+edgeSet.add(sodiumLight, sodiumLight.target);
+// The hood washes the brick above it with yellow light.
+const wallWash = new THREE.PointLight(lin(0.86, 0.17, 88), 3, 5, 2);
+edgeSet.add(wallWash);
+
+/* ---------- views ---------- */
+// Road: the machine alone on the verge. Edge: against the blind gable.
+const VIEWS = {
+  road: { at: [ROAD.x1 + 2.3, 0, -36], rot: -0.45 },
+  edge: { at: [(EDGE.x0 + EDGE.x1) / 2, 0, EDGE.z + 0.38], rot: 0 },
+};
+let view = 'road';
+function setView(v) {
+  view = VIEWS[v] ? v : 'road';
+  const V = VIEWS[view];
+  STOP.position.set(...V.at);
+  STOP.rotation.y = V.rot;
+  STOP.updateMatrixWorld(true);
+  edgeSet.visible = view === 'edge';
+  wallWash.position.copy(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + 0.5, -0.2)));
+}
+setView('road');
+
+/* ---------- easing ---------- */
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const inOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const inQuad = k => k * k;
+
+/* ---------- moths ---------- */
+// Each moth keeps a fixed angle to the light, so it circles the tube.
+// Now and then one dives in and ticks the glass; a scatter throws them wide.
+// On sleep they land on the lit cabinet; any input lifts them again.
+const MOTHS = 24, TAU = Math.PI * 2;
+const ORBIT = TUBE_POS.clone().add(new THREE.Vector3(0, 0.12, 0.22));
+const mothList = Array.from({ length: MOTHS }, () => ({
+  th: rnd() * TAU, w: (1.2 + rnd() * 1.6) * (rnd() < 0.5 ? -1 : 1), r0: 0.22 + rnd() * 0.5,
+  tilt: 0.3 + rnd() * 1.1, ph: rnd() * 100, kick: 0, perch: 0,
+  // A landing spot on the upper front panel, near the light.
+  at: new THREE.Vector3((rnd() - 0.5) * (M.w - 0.12), M.y0 + M.h - 0.08 - rnd() * 0.55, M.front + 0.03),
+}));
+const mothGeo = new THREE.BufferGeometry();
+mothGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MOTHS * 3), 3));
+mothGeo.setAttribute('aFlap', new THREE.BufferAttribute(new Float32Array(MOTHS), 1));
+const mothMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uCol: { value: TUBE.clone().multiplyScalar(3.2) }, uPx: { value: 1 }, uLit: { value: 1 } },
+  vertexShader: /* glsl */`
+  attribute float aFlap; uniform float uPx; varying float vFlap;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // Beating wings change the size; a landed moth folds them.
+    gl_PointSize = uPx * 0.035 * (0.55 + 0.45 * aFlap) / -mv.z;
+    gl_Position = projectionMatrix * mv;
+    vFlap = aFlap;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uCol; uniform float uLit; varying float vFlap;
+  void main() {
+    vec2 q = gl_PointCoord - 0.5;
+    float d = length(q * vec2(1.0, 1.4 + 0.8 * (1.0 - vFlap)));
+    gl_FragColor = vec4(uCol * uLit * smoothstep(0.5, 0.1, d), 1.0);
+  }`,
+});
+const moths = new THREE.Points(mothGeo, mothMat);
+moths.frustumCulled = false;
+STOP.add(moths);
+let mothCount = MOTHS;
+const mp = new THREE.Vector3();
+// perchGoal: 1 lands every moth, 0 sends them flying.
+let perchGoal = 0;
+function stepMoths(dt, t) {
+  const pos = mothGeo.attributes.position.array, flap = mothGeo.attributes.aFlap.array;
+  for (let i = 0; i < mothCount; i++) {
+    const m = mothList[i];
+    m.perch += (perchGoal - m.perch) * (1 - Math.exp(-dt * (perchGoal ? 1.6 : 2.4)));
+    m.kick *= Math.exp(-dt / 1.3);
+    const flying = 1 - m.perch;
+    m.th += m.w * dt * (1 + 0.6 * Math.sin(t * 1.3 + m.ph)) * flying;
+    // The radius breathes; a rare dive takes the moth to the glass.
+    let r = m.r0 * (1 + 0.35 * Math.sin(t * 0.7 + m.ph)) + m.kick;
+    r *= 1 - 0.8 * Math.pow(Math.max(0, Math.sin(t * 0.37 + m.ph * 1.7)), 24);
+    const s = Math.sin(m.th), c = Math.cos(m.th);
+    mp.set(ORBIT.x + r * c * 1.6, ORBIT.y + r * s * Math.sin(m.tilt), ORBIT.z + r * s * Math.cos(m.tilt) * 0.7);
+    // Erratic flutter on top of the orbit.
+    mp.x += 0.03 * Math.sin(t * 13 + m.ph);
+    mp.y += 0.03 * Math.sin(t * 11 + m.ph * 2);
+    mp.z = Math.max(M.front + 0.05, mp.z + 0.03 * Math.sin(t * 9 + m.ph * 3));
+    const k = inOut(clamp01(m.perch));
+    mp.lerp(m.at, k);
+    pos[i * 3] = mp.x; pos[i * 3 + 1] = mp.y; pos[i * 3 + 2] = mp.z;
+    flap[i] = flying * Math.abs(Math.sin(t * 34 + m.ph));
+  }
+  mothGeo.attributes.position.needsUpdate = true;
+  mothGeo.attributes.aFlap.needsUpdate = true;
+}
+function scatter(a = 1) {
+  for (const m of mothList) m.kick += (0.4 + rnd() * 0.9) * a;
+}
+const mothsSettled = () => mothList.slice(0, mothCount).every(m => Math.abs(m.perch - perchGoal) < 0.002);
+
+/* ---------- tube life ---------- */
+// The tube's level and its end glow drive every tube-lit thing.
+// A dying tube glows orange-pink at its ends; the starter ticks before each try.
+const TUBE_K = { mat: 9, light: 26, fill: 2.2, flare: 0.14 };
+const CAP_DARK = lin(0.25, 0.01, 260), CAP_HOT = lin(0.72, 0.17, 30, 6);
+const tubeState = { level: 1, ends: 0, age: 0.25, next: 8, play: null };
+function applyTube() {
+  const l = tubeState.level;
+  tubeMat.color.copy(TUBE).multiplyScalar(TUBE_K.mat * l + 0.03);
+  tubeLight.intensity = TUBE_K.light * l;
+  tubeFill.intensity = TUBE_K.fill * l;
+  if (typeof flare !== 'undefined') flare.uniforms.uGain.value = TUBE_K.flare * l;
+  mothMat.uniforms.uLit.value = 0.2 + 0.8 * l;
+  for (const c of capMats) c.color.copy(CAP_DARK).lerp(CAP_HOT, tubeState.ends);
+}
+// Plays [time, level, ends] keys; levels step, as a real tube snaps.
+function playTube(keys) {
+  if (tubeState.play) return false;
+  const dur = keys[keys.length - 1][0] || 0.2;
+  tubeState.play = anim(dur, k => {
+    const now = k * dur;
+    let cur = keys[0];
+    for (const kf of keys) if (kf[0] <= now) cur = kf;
+    tubeState.level = cur[1];
+    tubeState.ends = cur[2];
+    applyTube();
+  }, () => { tubeState.play = null; tubeState.level = 1; tubeState.ends = 0; applyTube(); });
+  return true;
+}
+// A strike: the tube dies, its ends warm, the starter tries, then it catches.
+function strike() {
+  if (reduced()) { if (playTube([[0, 0.4, 0], [0.3, 1, 0]])) scatter(0.4); return; }
+  const keys = [[0, 0, 0.25]];
+  let t = 0;
+  const tries = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < tries; i++) {
+    t += 0.3 + Math.random() * 0.45;
+    keys.push([t, 0, 1]);
+    t += 0.04;
+    keys.push([t, 0.45 + Math.random() * 0.55, 0.7]);
+    t += 0.04 + Math.random() * 0.07;
+    keys.push([t, 0, 0.85]);
+  }
+  t += 0.28;
+  keys.push([t, 1, 0.35], [t + 0.05, 0.35, 0.25], [t + 0.1, 1, 0.12], [t + 0.7, 1, 0]);
+  if (playTube(keys)) scatter(1);
+}
+// A blink: one to three quick dips while the tube stays lit.
+function blink() {
+  const keys = [[0, 1, 0]];
+  let t = 0;
+  for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
+    t += 0.05 + Math.random() * 0.25;
+    keys.push([t, 0.15 + Math.random() * 0.35, 0.15]);
+    t += 0.03 + Math.random() * 0.08;
+    keys.push([t, 1, 0]);
+  }
+  keys.push([t + 0.05, 1, 0]);
+  if (playTube(keys)) scatter(0.25);
+}
+// The Tube slider sets the age: steady at 0, dying at 1.
+function stepTube(dt, awake) {
+  if (!awake || reduced() || tubeState.age < 0.02 || tubeState.play) return;
+  tubeState.next -= dt;
+  if (tubeState.next > 0) return;
+  if (Math.random() < tubeState.age * 0.4) strike(); else blink();
+  tubeState.next = (16 - 13 * tubeState.age) * (0.4 + Math.random());
+}
+
+/* ---------- passing cars ---------- */
+// One car runs the road at a time; its dipped beams sweep the land.
+// The beams throw the machine's shadow across the fields as it passes.
+const carSpot = new THREE.SpotLight(lin(0.96, 0.03, 85), 0, 150, 0.4, 0.6, 1.6);
+carSpot.castShadow = true;
+carSpot.shadow.mapSize.set(1024, 1024);
+carSpot.shadow.bias = -0.0008;
+carSpot.shadow.camera.near = 0.5;
+carSpot.shadow.camera.far = 150;
+scene.add(carSpot, carSpot.target);
+const carGroup = new THREE.Group();
+carGroup.visible = false;
+scene.add(carGroup);
+{
+  const paint = new THREE.MeshStandardMaterial({ color: lin(0.16, 0.01, 260), roughness: 0.35, metalness: 0.6 });
+  const glass = new THREE.MeshStandardMaterial({ color: lin(0.08, 0.01, 260), roughness: 0.1, metalness: 0.4 });
+  const body = new THREE.Mesh(new RoundedBoxGeometry(1.8, 0.7, 4.3, 2, 0.12), paint);
+  body.position.y = 0.55;
+  const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.6, 0.55, 2.2, 2, 0.15), glass);
+  cabin.position.set(0, 1.12, -0.25);
+  carGroup.add(body, cabin);
+}
+// Lamps are sprites: they glow toward the eye and bloom into points far off.
+const glowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, '#fff'); gr.addColorStop(0.25, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const lampSprite = (col, k, x, y, z) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col.clone().multiplyScalar(k), blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  s.position.set(x, y, z);
+  carGroup.add(s);
+  return s;
+};
+const heads = [-0.62, 0.62].map(x => lampSprite(lin(0.97, 0.03, 85), 10, x, 0.62, 2.18));
+const tails = [-0.66, 0.66].map(x => lampSprite(lin(0.55, 0.22, 28), 6, x, 0.7, -2.18));
+// The beams: open cones in the haze, faint near the lamp's own axis.
+const beamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uAmt: { value: 0 }, uCol: { value: lin(0.95, 0.03, 85) } },
+  vertexShader: /* glsl */`
+  varying float vAlong; varying vec3 vN, vV;
+  void main() {
+    vAlong = uv.y;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * normal);
+    vV = normalize(cameraPosition - wp.xyz);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uAmt; uniform vec3 uCol; varying float vAlong; varying vec3 vN, vV;
+  void main() {
+    // The cone is thickest where its wall faces the eye; light fades with reach.
+    // Guards keep a degenerate apex normal from writing NaN into the bloom.
+    float thick = abs(dot(normalize(vN + vec3(1e-5)), normalize(vV + vec3(1e-5))));
+    float a = pow(clamp(vAlong, 0.0, 1.0), 1.8) * (0.2 + 0.8 * thick) * uAmt * 0.07;
+    if (!(a >= 0.0)) a = 0.0;
+    gl_FragColor = vec4(uCol * min(a, 1.0), 1.0);
+  }`,
+});
+const BEAM_L = 34;
+const beamGeo = new THREE.ConeGeometry(5.5, BEAM_L, 24, 1, true).translate(0, -BEAM_L / 2, 0).rotateX(-Math.PI / 2);
+const beams = [-0.62, 0.62].map(x => {
+  const b = new THREE.Mesh(beamGeo, beamMat);
+  b.position.set(x, 0.62, 2.2);
+  // Dipped beams aim a little down.
+  b.rotation.x = 0.05;
+  b.frustumCulled = false;
+  carGroup.add(b);
+  return b;
+});
+// Belgium drives on the right: toward the eye in the left lane, away in the right.
+const car = { on: false, z: 0, dir: 1, speed: 24, timer: 9 };
+const fwd = new THREE.Vector3(), toEye = new THREE.Vector3();
+function addCar(dir = Math.random() < 0.5 ? 1 : -1) {
+  if (car.on) return false;
+  car.on = true;
+  car.dir = dir;
+  car.speed = 21 + Math.random() * 7;
+  car.z = dir > 0 ? -760 : 70;
+  carGroup.position.set(dir > 0 ? -1.5 : 1.5, 0, car.z);
+  carGroup.rotation.y = dir > 0 ? 0 : Math.PI;
+  carGroup.visible = true;
+  carSpot.intensity = 260;
+  kick();
+  return true;
+}
+function stepCars(dt, awake) {
+  if (!car.on) {
+    if (!awake || reduced()) return;
+    car.timer -= dt;
+    if (car.timer <= 0) { addCar(); car.timer = 25 + Math.random() * 35; }
+    return;
+  }
+  car.z += car.dir * car.speed * dt;
+  carGroup.position.z = car.z;
+  carGroup.updateMatrixWorld();
+  fwd.set(0, 0, car.dir);
+  // The spot sits between the lamps and aims 25 m ahead, down on the road.
+  carSpot.position.set(carGroup.position.x, 0.65, car.z + car.dir * 2.2);
+  carSpot.target.position.set(carGroup.position.x + 0.4 * car.dir, 0, car.z + car.dir * 27);
+  carSpot.target.updateMatrixWorld();
+  toEye.subVectors(camera.position, carGroup.position).normalize();
+  const facing = fwd.dot(toEye), dist = camera.position.distanceTo(carGroup.position);
+  // Far lamps grow a little, so they still read as points on the horizon.
+  const grow = 1 + Math.min(4, dist / 120);
+  for (const s of heads) { s.material.opacity = clamp01((facing + 0.2) / 0.8); s.scale.setScalar(0.32 * grow); }
+  for (const s of tails) { s.material.opacity = clamp01((-facing + 0.2) / 0.8); s.scale.setScalar(0.2 * grow); }
+  // Looking down the beam shows the glare, not the cone.
+  beamMat.uniforms.uAmt.value = 1 - clamp01((facing - 0.35) / 0.5);
+  const end = car.dir > 0 ? car.z > 60 : car.z < -760;
+  if (end) { car.on = false; carGroup.visible = false; carSpot.intensity = 0; }
+}
+// The car counts as lively while it is near the eye or the machine.
+const carNear = () => car.on && Math.min(Math.abs(car.z - camera.position.z), Math.abs(car.z - STOP.position.z)) < 160;
+
+/* ---------- rain ---------- */
+// Rain turns the road into a black mirror; every light lays a long streak on it.
+// The drops show only where a light falls on them.
+const rain = { amt: 0, goal: 0 };
+// The mirror renders the scene from below the road at half size.
+const wetShader = {
+  name: 'WetRoad',
+  uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 } },
+  vertexShader: /* glsl */`
+  uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vW;
+  void main() {
+    vUv = textureMatrix * vec4(position, 1.0);
+    vW = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform float uAmt, uTime; varying vec4 vUv; varying vec3 vW;
+  float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+  float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+  void main() {
+    vec2 uv = vUv.xy / vUv.w;
+    // The asphalt's grain and the falling drops wobble the mirror sideways.
+    float g = vn(vW.xz * vec2(4.0, 0.7));
+    uv.x += (g - 0.5) * 0.006 + sin(vW.z * 9.0 + uTime * 7.0 + g * 6.0) * 0.0012;
+    // Wet asphalt stretches each light into a vertical streak.
+    vec3 acc = vec3(0.0); float ws = 0.0;
+    for (int i = 0; i < 14; i++) {
+      float f = float(i) / 13.0, o = (f - 0.35) * 0.09;
+      float w = exp(-abs(f - 0.35) * 3.0);
+      acc += texture2D(tDiffuse, uv + vec2(0.0, o)).rgb * w; ws += w;
+    }
+    vec3 c = acc / ws;
+    // Puddles shine more than the crown of the road.
+    float pud = 0.45 + 0.55 * smoothstep(0.35, 0.7, vn(vW.xz * 0.18 + 3.1));
+    gl_FragColor = vec4(c * pud * uAmt * 0.85, 1.0);
+  }`,
+};
+const wet = new Reflector(new THREE.PlaneGeometry(ROAD.x1 - ROAD.x0, ROAD.len), { shader: wetShader, textureWidth: 512, textureHeight: 512, clipBias: 0.002, multisample: 0 });
+wet.material.transparent = true;
+wet.material.blending = THREE.AdditiveBlending;
+wet.material.depthWrite = false;
+wet.rotation.x = -Math.PI / 2;
+wet.position.set(0, 0.006, -ROAD.len / 2 + 30);
+scene.add(wet);
+// The drops: short streaks in a box round the machine.
+const DROPS = 4000;
+const dropGeo = new THREE.BufferGeometry();
+{
+  const seed = new Float32Array(DROPS * 6), end = new Float32Array(DROPS * 2);
+  for (let i = 0; i < DROPS; i++) {
+    const a = [Math.random(), Math.random(), Math.random()];
+    seed.set(a, i * 6); seed.set(a, i * 6 + 3);
+    end[i * 2] = 0; end[i * 2 + 1] = 1;
+  }
+  dropGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DROPS * 6), 3));
+  dropGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+  dropGeo.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+}
+const dropMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: {
+    uTime: { value: 0 }, uAmt: { value: 0 }, uBoxO: { value: new THREE.Vector3() }, uBoxS: { value: new THREE.Vector3(16, 8, 16) },
+    uTube: { value: new THREE.Vector3() }, uTubeK: { value: 1 }, uTubeC: { value: TUBE },
+    uHood: { value: new THREE.Vector3() }, uHoodC: { value: lin(0.86, 0.17, 88) },
+    uLamp: { value: new THREE.Vector3() }, uLampK: { value: 0 }, uLampC: { value: lin(0.8, 0.16, 58) },
+    uCarP: { value: new THREE.Vector3() }, uCarD: { value: new THREE.Vector3(0, 0, 1) }, uCarK: { value: 0 }, uCarC: { value: lin(0.96, 0.03, 85) },
+  },
+  vertexShader: /* glsl */`
+  attribute vec3 aSeed; attribute float aEnd;
+  uniform float uTime, uAmt, uTubeK, uLampK, uCarK;
+  uniform vec3 uBoxO, uBoxS, uTube, uTubeC, uHood, uHoodC, uLamp, uLampC, uCarP, uCarD, uCarC;
+  varying vec3 vCol;
+  void main() {
+    // Drops fall at 9 m/s with a slant from the wind; the box wraps them.
+    vec3 vel = vec3(1.4, -9.0, 0.8);
+    vec3 p = fract(aSeed + vel * uTime / uBoxS) * uBoxS + uBoxO;
+    // A 1/40 s exposure draws each drop as a streak.
+    p -= vel * 0.025 * aEnd;
+    vec3 d = p - uTube, c = uTubeC * uTubeK * 1.4 / (1.0 + dot(d, d) * 2.0) * smoothstep(6.0, 2.0, length(d));
+    d = p - uHood; c += uHoodC * 0.5 / (1.0 + dot(d, d) * 1.8);
+    d = p - uLamp; c += uLampC * uLampK * 1.6 / (1.0 + dot(d, d) * 0.1);
+    vec3 v = p - uCarP; float al = dot(v, uCarD);
+    // Dipped beams: a narrow cone, aimed down, cut off above 2.5 m.
+    if (al > 0.0) c += uCarC * uCarK * 1.4 * smoothstep(0.95, 0.99, al / max(length(v), 1e-3)) * exp(-al / 25.0) * smoothstep(2.5, 0.6, p.y);
+    vCol = c * uAmt * mix(1.0, 0.15, aEnd);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol; void main() { gl_FragColor = vec4(vCol * 0.45, 1.0); }`,
+});
+const drops = new THREE.LineSegments(dropGeo, dropMat);
+drops.frustumCulled = false;
+scene.add(drops);
+const ROAD_DRY = { rough: road.material.roughness, col: road.material.color.clone() };
+const FOG_DRY = scene.fog.density, MOON_DRY = moon.intensity;
+function stepRain(dt, t) {
+  rain.amt += (rain.goal - rain.amt) * (1 - Math.exp(-dt * 1.4));
+  if (Math.abs(rain.amt - rain.goal) < 0.002) rain.amt = rain.goal;
+  const a = rain.amt;
+  wet.visible = drops.visible = a > 0.005;
+  // Wet asphalt goes darker and glossier; the haze thickens.
+  road.material.roughness = ROAD_DRY.rough + (0.32 - ROAD_DRY.rough) * a;
+  // The mirror carries the reflections; the moon's own highlight dims.
+  moon.intensity = MOON_DRY * (1 - 0.65 * a);
+  road.material.color.copy(ROAD_DRY.col).multiplyScalar(1 - 0.4 * a);
+  scene.fog.density = FOG_DRY * (1 + 0.8 * a);
+  if (!drops.visible) return;
+  wet.material.uniforms.uAmt.value = a;
+  wet.material.uniforms.uTime.value = t;
+  const U = dropMat.uniforms;
+  U.uAmt.value = a;
+  U.uTime.value = t;
+  // The box of rain sits round the machine, a little toward the eye.
+  U.uBoxO.value.copy(STOP.position).add(new THREE.Vector3(-8, 0, -6));
+  U.uTube.value.copy(STOP.localToWorld(TUBE_POS.clone()));
+  U.uTubeK.value = tubeState.level;
+  U.uHood.value.copy(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + 0.15, M.front)));
+  U.uLamp.value.copy(sodiumLight.position);
+  U.uLampK.value = view === 'edge' ? 1 : 0;
+  U.uCarK.value = car.on ? 1 : 0;
+  if (car.on) { U.uCarP.value.copy(carSpot.position); U.uCarD.value.set(0, -0.06, car.dir).normalize(); }
+}
+const rainBusy = () => Math.abs(rain.amt - rain.goal) > 0.002;
+
+/* ---------- beacons ---------- */
+// The turbines' red beacons flash together, one second on, one off.
+function stepBeacons(t) {
+  const on = (t % 2) < 1;
+  for (const b of beacons) b.visible = on;
+}
+
+/* ---------- K2: bloom ---------- */
+// Lifted from Canal at dusk: bloom on a float target; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  const full = bloom.setSize.bind(bloom);
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  // A sigma of radius / 2.5 gives each blur layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
+  return bloom;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: grade ---------- */
+// Lifted from Canal at dusk: linear grade before tone mapping, vignette, fixed grain.
+function makeGrade({ tint, vig, vigIn, grain }) {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uTint: { value: new THREE.Vector3(...tint) },
+      uVig: { value: vig },
+      uVigIn: { value: vigIn },
+      uGrain: { value: grain },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uRes;
+    uniform vec3 uTint;
+    uniform float uVig, uVigIn, uGrain;
+    varying vec2 vUv;
+    // An integer hash per pixel; float hashes draw faint stripes here.
+    float h(vec2 p) {
+      uvec2 q = uvec2(p);
+      uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+      n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+      return float(n) / 4294967295.0;
+    }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+      vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+      c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+      gl_FragColor = vec4(max(c, 0.0), 1.0);
+    }`,
+  });
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- tilt-shift ---------- */
+// A sharp band through the machine; blur grows above and below it.
+// Bright taps weigh more, so out-of-focus lights open into discs.
+const tilt = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uRes: { value: new THREE.Vector2(1, 1) },
+    uFocus: { value: 0.35 },
+    uBand: { value: 0.12 },
+    uAmt: { value: 0.6 },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uFocus, uBand, uAmt; varying vec2 vUv;
+  void main() {
+    float d = abs(vUv.y - uFocus);
+    // The radius in pixels; it scales with the canvas height.
+    float r = uAmt * smoothstep(uBand, uBand + 0.4, d) * uRes.y * 0.012;
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    if (r < 0.4) { gl_FragColor = vec4(c, 1.0); return; }
+    vec3 acc = c; float wsum = 1.0;
+    // A per-pixel turn of the spiral trades the tap pattern for fine noise.
+    float j = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+    // A golden-angle spiral of 20 taps fills a disc evenly.
+    for (int i = 1; i <= 20; i++) {
+      float fi = float(i), a = fi * 2.39996 + j, rr = sqrt(fi / 20.0) * r;
+      vec3 s = texture2D(tDiffuse, vUv + vec2(cos(a), sin(a)) * rr / uRes).rgb;
+      float w = 1.0 + 2.5 * smoothstep(0.6, 3.0, dot(s, vec3(0.2126, 0.7152, 0.0722)));
+      acc += s * w; wsum += w;
+    }
+    gl_FragColor = vec4(acc / wsum, 1.0);
+  }`,
+});
+
+/* ---------- flare ---------- */
+// The flare follows Buoy Business: veil, orb, anamorphic streak and ghosts.
+// It is lifted from Beach walker's POST_FS, without the depth test.
+const flare = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uSun: { value: new THREE.Vector2(0.5, 0.5) },
+    uAspect: { value: 1 },
+    uCol: { value: new THREE.Vector3(...TUBE.toArray()) },
+    uGain: { value: 0.14 },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uAspect, uGain; uniform vec3 uCol; varying vec2 vUv;
+  void main() {
+    vec3 base = texture2D(tDiffuse, vUv).rgb;
+    vec2 d = vUv - uSun;
+    float ax = d.x * uAspect, ay = d.y;
+    // A wide veil and a soft orb, squashed sideways.
+    float r = length(vec2(ax * 0.6, ay));
+    vec3 add = uCol * (0.02 * exp(-r * 1.5) + 0.06 * exp(-r * 5.0) + 0.3 * exp(-r * 22.0));
+    // Three nested bands: a soft core, a wide sheath and a broad haze.
+    float line = 0.4 * exp(-abs(ay) * 130.0) + 0.12 * exp(-abs(ay) * 20.0) + 0.03 * exp(-abs(ay) * 4.0);
+    add += mix(uCol, vec3(0.55, 0.72, 1.0), 0.45) * line * exp(-abs(ax) / 1.1);
+    // Ghosts sit on the line from the source through the frame centre.
+    vec2 toC = vec2(0.5) - uSun;
+    vec3 gs[4];
+    gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
+    for (int i = 0; i < 4; i++) {
+      vec2 g = (vUv - (uSun + toC * gs[i].x)) * vec2(uAspect, 1.0);
+      float gr = length(g) / gs[i].y;
+      add += mix(uCol, uCol * vec3(1.0, 0.5, 0.2), 0.4) * exp(-gr * gr) * gs[i].z * 0.1;
+    }
+    add *= uGain;
+    // Screen blend on the bright end: the flare washes, never clips.
+    gl_FragColor = vec4(base + add * (1.0 - clamp(base, 0.0, 1.0)), 1.0);
+  }`,
+});
+
+/* ---------- post chain ---------- */
+const POST = { bloom: [0.3, 0.45, 1.1], tint: [0.0006, 0.0007, 0.0012], vig: 0.6, vigIn: 0.35, grain: 0.035 };
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(tilt);
+composer.addPass(makeBloom(...POST.bloom));
+composer.addPass(flare);
+const grade = makeGrade(POST);
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- camera and size ---------- */
+let size = { w: 1, h: 1, dpr: 1 };
+// A dead-level eye on the road; a shifted lens drops the horizon low.
+// A long lens flattens the land, as in Beach walker.
+const SHOT = {
+  road: {
+    wide: { pos: [0.9, 1.15, 0], yaw: -0.06, vfov: 12.5, horizon: 0.64 },
+    tall: { pos: [4.0, 1.15, -12], yaw: -0.012, vfov: 22, horizon: 0.58 },
+  },
+  // Dead frontal on the blind gable, centred: a deadpan frame.
+  edge: {
+    wide: { pos: [9.1, 1.2, -16], yaw: 0, vfov: 36, horizon: 0.79 },
+    tall: { pos: [9.1, 1.2, -12], yaw: 0, vfov: 46, horizon: 0.72 },
+  },
+};
+// Look offsets from a drag; they ease toward the target.
+const look = { yaw: 0, pitch: 0, ty: 0, tp: 0 };
+const TUBE_W = new THREE.Vector3(), probe = new THREE.Vector3();
+let focal = 1;
+function frame() {
+  const portrait = size.w < size.h, S = SHOT[view][portrait ? 'tall' : 'wide'];
+  const w = size.w, h = size.h;
+  const hy = h * S.horizon + look.pitch * h;
+  focal = h / (2 * Math.tan((S.vfov * Math.PI) / 360));
+  const half = Math.max(hy, h - hy);
+  camera.fov = (2 * Math.atan(half / focal) * 180) / Math.PI;
+  camera.aspect = w / (2 * half);
+  camera.setViewOffset(w, 2 * half, 0, half - hy, w, h);
+  camera.position.set(...S.pos);
+  camera.rotation.set(0, S.yaw + look.yaw, 0, 'YXZ');
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  mothMat.uniforms.uPx.value = focal * size.dpr;
+  steamMat.uniforms.uPx.value = focal * size.dpr;
+  // The sharp band follows the machine's centre on screen.
+  probe.copy(STOP.localToWorld(new THREE.Vector3(0, 1.2, M.front))).project(camera);
+  tilt.uniforms.uFocus.value = probe.y * 0.5 + 0.5;
+  tilt.uniforms.uBand.value = portrait ? 0.07 : 0.1;
+  // The flare sits on the tube.
+  TUBE_W.copy(STOP.localToWorld(TUBE_POS.clone())).project(camera);
+  flare.uniforms.uSun.value.set(TUBE_W.x * 0.5 + 0.5, TUBE_W.y * 0.5 + 0.5);
+  flare.uniforms.uAspect.value = w / h;
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.8e6, low: rung >= 1 }) };
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  const W = w * size.dpr, H = h * size.dpr;
+  grade.uniforms.uRes.value.set(W, H);
+  tilt.uniforms.uRes.value.set(W, H);
+  // The mirror runs at half size; rung 2 of the ladder halves it again.
+  const mk = rung >= 2 ? 0.25 : 0.5;
+  wet.getRenderTarget().setSize(Math.max(1, Math.round(W * mk)), Math.max(1, Math.round(H * mk)));
+  stage.style.setProperty('--box', `${Math.max(0, (h - w / 2.39) / 2)}px`);
+  frame();
+  draw();
+}
+/* ---------- frame loop ---------- */
+// Lively (input, a sale, a car near, a flicker): full rate.
+// Drifting (moths, beacons, the tube's own flicker): 30 fps.
+// Asleep: 60 s after the last input the moths land, then the loop stops.
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +QS.get('sleep') || 60000;
+let visible = !document.hidden, raf = 0, lastT = 0, lastDraw = 0, simT = 0, lastInput = performance.now();
+const anims = new Set();
+// One tween: fn gets progress 0 to 1; done runs once at the end.
+function anim(dur, fn, done) {
+  const a = { t: 0, dur: Math.max(0.001, dur), fn, done };
+  anims.add(a);
+  kick();
+  return a;
+}
+const after = (s, fn) => anim(s, () => {}, fn);
+function draw() {
+  if (!visible) return;
+  composer.render();
+}
+function tick(now) {
+  raf = 0;
+  if (!visible || document.hidden) { lastT = 0; return; }
+  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+  lastT = now;
+  try {
+    for (const a of [...anims]) {
+      a.t += dt;
+      const k = Math.min(1, a.t / a.dur);
+      a.fn(k);
+      if (k >= 1) { anims.delete(a); a.done?.(); }
+    }
+    simT += dt;
+    // Reduced motion: no ambient drift, so the moths stay landed.
+    const awake = !reduced() && now - lastInput < SLEEP;
+    perchGoal = awake ? 0 : 1;
+    stepSteam(dt);
+    stepLook(dt);
+    stepTube(dt, awake);
+    stepMoths(dt, simT);
+    stepCars(dt, awake);
+    stepBeacons(simT);
+    stepRain(dt, simT);
+    lively = anims.size > 0 || steam.on > 0.001 || lookBusy() || carNear() || rainBusy();
+    if (lively || now - lastDraw >= 31) { frame(); draw(); lastDraw = now; }
+    keep = lively || awake || car.on || !mothsSettled();
+  } finally {
+    if (visible && keep) raf = requestAnimationFrame(tick);
+    else { lastT = 0; frame(); draw(); }
+  }
+}
+let lively = false, keep = true;
+// kick runs the loop; wake also counts as input and resets the sleep clock.
+function kick() {
+  keep = true;
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
+function wake() {
+  lastInput = performance.now();
+  kick();
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw();
+  wake();
+});
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+onReducedChange(() => wake());
+
+/* ---------- easing ---------- */
+// A motor stop: an eased turn that runs 2 % past and settles back.
+const motor = k => (reduced() ? inOut(k) : inOut(clamp01(k / 0.82)) + 0.02 * Math.sin(Math.PI * clamp01((k - 0.62) / 0.38)));
+// A sprung swing: it overshoots once and settles.
+const spring = k => (reduced() ? inOut(k) : 1 - Math.exp(-6 * k) * Math.cos(9 * k) * (1 - k));
+
+/* ---------- the hatch glow and steam ---------- */
+// A warm lamp waits at the open door; zero intensity keeps the shader count fixed.
+const hotLight = new THREE.PointLight(WARM, 0, 2.6, 2);
+STOP.add(hotLight);
+// The hot loaf swaps to its own glowing crust.
+const hotCrust = crust.clone();
+hotCrust.emissiveIntensity = 0.1;
+// Steam: soft puffs rise from the open compartment and curl as they cool.
+const STEAM_N = 48;
+const steamGeo = new THREE.BufferGeometry();
+{
+  const seed = new Float32Array(STEAM_N);
+  for (let i = 0; i < STEAM_N; i++) seed[i] = i / STEAM_N + rnd() * 0.02;
+  steamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STEAM_N * 3), 3));
+  steamGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+}
+const steamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 }, uAmt: { value: 0 }, uOrigin: { value: new THREE.Vector3() }, uPx: { value: 1 }, uWarm: { value: WARM }, uCool: { value: TUBE } },
+  vertexShader: /* glsl */`
+  attribute float aSeed; uniform float uTime, uAmt, uPx; uniform vec3 uOrigin;
+  varying float vLife, vA;
+  void main() {
+    // Each puff lives 2.4 s; the seed staggers them.
+    float life = fract(uTime / 2.4 + aSeed);
+    float s = aSeed * 61.0;
+    vec3 p = uOrigin + vec3(sin(s + life * 4.0) * 0.05 * life, life * 0.55, 0.05 + life * 0.08 + cos(s * 1.3 + life * 3.0) * 0.03 * life);
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uPx * (0.03 + 0.11 * life) / -mv.z;
+    vLife = life;
+    vA = uAmt * smoothstep(0.0, 0.12, life) * (1.0 - life);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uWarm, uCool; varying float vLife, vA;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.0, d) * vA;
+    // Warm at the hatch, cool white higher up in the tube light.
+    gl_FragColor = vec4(mix(uWarm * 1.4, uCool, smoothstep(0.1, 0.6, vLife)) * a * 0.34, 1.0);
+  }`,
+});
+const steamPts = new THREE.Points(steamGeo, steamMat);
+steamPts.frustumCulled = false;
+STOP.add(steamPts);
+const steam = { on: 0, goal: 0, t: 0 };
+function stepSteam(dt) {
+  steam.on += (steam.goal - steam.on) * (1 - Math.exp(-dt * 2.2));
+  if (steam.on < 0.001 && !steam.goal) return;
+  steam.t += dt * (reduced() ? 0.4 : 1);
+  steamMat.uniforms.uTime.value = steam.t;
+  steamMat.uniforms.uAmt.value = steam.on;
+}
+
+/* ---------- coin, carousel and hatch ---------- */
+// One loaf per sale: coin, turn, unlock, swing. The buyer takes it, the door shuts.
+const STEP = (Math.PI * 2) / DRUM.sectors;
+const machine = { state: 'idle', cell: null, door: null };
+const coinAction = () => ui.action('coin');
+const greenLamp = readyLamp.material.color.clone(), redLamp = lin(0.6, 0.22, 28, 5);
+// The ready lamp turns red when the drum is empty.
+function stock() {
+  const left = cells.some(c => c.full);
+  readyLamp.material.color.copy(left ? greenLamp : redLamp);
+  const a = coinAction();
+  if (a) a.disabled = !left || machine.state !== 'idle';
+  return left;
+}
+// The coin glint: a bright fleck at the slot; bloom turns it into a spark.
+const glint = glowPlate(0.02, 0.02, lin(0.95, 0.08, 85), 30, COIN.x + 0.03, COIN.y + 0.04, M.front + 0.05);
+glint.visible = false;
+const priceWin = STOP.children.find(m => m.isMesh && m.geometry.parameters?.width === 0.14);
+function coin() {
+  if (machine.state !== 'idle' || !stock()) return;
+  const full = cells.filter(c => c.full);
+  const cell = full[Math.floor(Math.random() * full.length)];
+  machine.state = 'busy';
+  stock();
+  // The coin drops: a glint, then the price window blinks twice.
+  glint.visible = true;
+  anim(0.3, k => { glint.scale.setScalar(1 + 2 * Math.sin(Math.PI * k)); glint.position.y = COIN.y + 0.04 - 0.05 * k; }, () => { glint.visible = false; });
+  if (priceWin) anim(0.6, k => { priceWin.visible = Math.floor(k * 4) % 2 === 0; }, () => { priceWin.visible = true; });
+  // The motor turns the whole stack the short way round, always forward.
+  after(0.45, () => {
+    const from = drum.rotation.y, target = -cell.sector * STEP;
+    let delta = (((target - from) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (delta < 0.2) delta += Math.PI * 2;
+    anim(0.7 + delta * 0.45, k => {
+      drum.rotation.y = from + delta * motor(k);
+      readyLamp.visible = Math.floor(k * 10) % 2 === 0;
+    }, () => {
+      drum.rotation.y = target;
+      readyLamp.visible = true;
+      openDoor(cell);
+    });
+  });
+}
+function openDoor(cell) {
+  const door = doors[cell.tier];
+  machine.cell = cell;
+  machine.door = door;
+  // The tier's button lights; the latch lets go; the door swings out.
+  buttons[cell.tier].material.color.multiplyScalar(4);
+  cell.loaf.material = hotCrust;
+  hotLight.position.set(DRUM.x, COL.y0 + (cell.tier + 0.5) * TIER_H, M.front + 0.12);
+  steamMat.uniforms.uOrigin.value.set(DRUM.x, COL.y0 + cell.tier * TIER_H + 0.1, M.front + 0.02);
+  after(0.15, () => {
+    anim(1.1, k => {
+      door.pivot.rotation.y = -1.85 * spring(k);
+      hotLight.intensity = 3.2 * clamp01(k * 2);
+      hotCrust.emissiveIntensity = 0.1 + 1.6 * clamp01(k * 1.5);
+    }, () => { machine.state = 'open'; });
+    steam.goal = 1;
+  });
+}
+function take() {
+  if (machine.state !== 'open') return;
+  const { cell, door } = machine;
+  machine.state = 'busy';
+  // The loaf slides out toward the buyer and is gone.
+  const z0 = cell.loaf.position.z;
+  anim(0.4, k => { cell.loaf.position.z = z0 + 0.35 * inQuad(k); cell.loaf.scale.setScalar(1 - inQuad(k)); }, () => {
+    cell.loaf.visible = false;
+    cell.loaf.position.z = z0;
+    cell.loaf.scale.set(0.95, 1, 0.9);
+    cell.loaf.material = crust;
+    cell.full = false;
+  });
+  steam.goal = 0;
+  // The door swings shut and bounces once on its latch.
+  after(0.45, () => {
+    const from = door.pivot.rotation.y;
+    anim(0.38, k => { door.pivot.rotation.y = from * (1 - inQuad(k)); hotLight.intensity = 3.2 * (1 - k); }, () => {
+      anim(0.18, k => { door.pivot.rotation.y = -0.06 * Math.sin(Math.PI * k); }, () => {
+        door.pivot.rotation.y = 0;
+        buttons[cell.tier].material.color.multiplyScalar(0.25);
+        hotCrust.emissiveIntensity = 0.1;
+        machine.state = 'idle';
+        machine.cell = machine.door = null;
+        stock();
+      });
+    });
+  });
+}
+// Reset closes any open door and restocks the drum, one tier at a time.
+function restock() {
+  if (machine.state === 'busy') return;
+  if (machine.state === 'open') {
+    machine.door.pivot.rotation.y = 0;
+    buttons[machine.cell.tier].material.color.multiplyScalar(0.25);
+    machine.cell.loaf.material = crust;
+    hotLight.intensity = 0;
+    steam.goal = 0;
+    machine.state = 'idle';
+    machine.cell = machine.door = null;
+  }
+  for (let t = 0; t < TIERS; t++) {
+    after(0.08 * t, () => {
+      for (const c of cells) if (c.tier === t && !c.full) { c.full = true; c.loaf.visible = true; }
+      buttons[t].material.color.multiplyScalar(3);
+      after(0.12, () => buttons[t].material.color.multiplyScalar(1 / 3));
+    });
+  }
+  after(0.08 * TIERS + 0.2, stock);
+}
+drum.rotation.y = 0;
+
+/* ---------- picking ---------- */
+// A tap on the machine buys a loaf, or takes the one in the open hatch.
+// The machine is small in the long lens, so a tap near it counts too.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), box3 = new THREE.Box3(), corner = new THREE.Vector3();
+const cabinet = STOP.children.filter(m => m.isMesh);
+function nearMachine(px, py, r) {
+  box3.setFromCenterAndSize(new THREE.Vector3(0, M.y0 + (M.h + HOOD.R) / 2, M.front - M.d / 2), new THREE.Vector3(M.w, M.h + HOOD.R, M.d));
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box3.max.x : box3.min.x, i & 2 ? box3.max.y : box3.min.y, i & 4 ? box3.max.z : box3.min.z);
+    STOP.localToWorld(corner).project(camera);
+    const sx = (corner.x * 0.5 + 0.5) * r.width, sy = (0.5 - corner.y * 0.5) * r.height;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  const pad = Math.max(18, (x1 - x0) * 0.25);
+  return px > x0 - pad && px < x1 + pad && py > y0 - pad && py < y1 + pad;
+}
+const sp = (v, r) => { v.project(camera); return [(v.x * 0.5 + 0.5) * r.width, (0.5 - v.y * 0.5) * r.height]; };
+function nearTube(px, py, r) {
+  const [ax, ay] = sp(STOP.localToWorld(new THREE.Vector3(-0.45, TUBE_POS.y, TUBE_POS.z)), r);
+  const [bx, by] = sp(STOP.localToWorld(new THREE.Vector3(0.45, TUBE_POS.y, TUBE_POS.z)), r);
+  const [, ty] = sp(STOP.localToWorld(new THREE.Vector3(0, HOOD.y + HOOD.R, M.front)), r);
+  const pad = 16;
+  return px > Math.min(ax, bx) - pad && px < Math.max(ax, bx) + pad && py > ty - pad && py < Math.max(ay, by) + pad;
+}
+function tapAt(cx, cy) {
+  const r = stage.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+  ndc.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  wake();
+  // The tube and the hood: a tap there strikes the tube and scatters the moths.
+  if (nearTube(px, py, r)) { strike(); return; }
+  const hit = ray.intersectObject(STOP, true).length > 0 || nearMachine(px, py, r);
+  if (!hit) return;
+  if (machine.state === 'open') take(); else coin();
+}
+
+/* ---------- pointer ---------- */
+// A press turns into a drag after 8 px, or a hold after 260 ms.
+let press = null;
+const lookBusy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4;
+function stepLook(dt) {
+  const k = 1 - Math.exp(-dt * (reduced() ? 6 : 10));
+  look.yaw += (look.ty - look.yaw) * k;
+  look.pitch += (look.tp - look.pitch) * k;
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  // Capture can fail for a pointer the browser no longer tracks.
+  try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, yaw: look.ty, pitch: look.tp };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (!press.drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.drag = true; stage.classList.add('held'); }
+  if (!press.drag) return;
+  // A drag looks round a little; the long lens makes small turns big.
+  const s = 0.12 / Math.max(size.w, size.h);
+  look.ty = Math.max(-0.08, Math.min(0.08, press.yaw - (e.clientX - press.x) * s));
+  look.tp = Math.max(-0.12, Math.min(0.12, press.pitch + ((e.clientY - press.y) / size.h) * 0.25));
+  wake();
+});
+const endPress = e => {
+  if (!press || e.pointerId !== press.id) return;
+  press = null;
+  stage.classList.remove('held');
+  wake();
+};
+stage.addEventListener('pointerup', e => {
+  if (press && e.pointerId === press.id && !press.drag && performance.now() - press.at < 260) tapAt(e.clientX, e.clientY);
+  endPress(e);
+});
+stage.addEventListener('pointercancel', endPress);
+stage.addEventListener('lostpointercapture', endPress);
+// Space buys a loaf, or takes the one waiting, when the stage has focus.
+stage.addEventListener('keydown', e => {
+  if (e.key !== ' ' || e.repeat) return;
+  e.preventDefault();
+  if (machine.state === 'open') take(); else coin();
+});
+
+/* ---------- bar ---------- */
+act.coin = () => { wake(); return machine.state === 'open' ? take() : coin(); };
+act.car = () => { wake(); addCar(); };
+act.tube = v => { tubeState.age = v; tubeState.next = Math.min(tubeState.next, 2); wake(); };
+act.moths = v => {
+  mothCount = Math.round(v * MOTHS);
+  mothGeo.setDrawRange(0, mothCount);
+  wake();
+};
+act.tube(ui.slider?.value ?? 0.25);
+act.moths(ui.setting('moths')?.value ?? 0.5);
+applyTube();
+act.reset = () => { wake(); restock(); };
+act.tilt = v => { tilt.uniforms.uAmt.value = v; draw(); };
+act.letterbox = on => { stage.toggleAttribute('data-letterbox', on); };
+act.view = v => { setView(v); frame(); draw(); };
+setView(QS.get('view') || ui.setting('view')?.value || 'road');
+act.rain = on => { rain.goal = on ? 1 : 0; wake(); };
+// The stored choice applies at once, with no fade on load.
+rain.goal = rain.amt = ui.setting('rain')?.value ? 1 : 0;
+act.tilt(ui.setting('tilt')?.value ?? 0.6);
+act.letterbox(!!ui.setting('letterbox')?.value);
+stock();
+
+/* ---------- ready ---------- */
+// The intro holds until shaders compile and the first frame draws.
+resize();
+wet.visible = drops.visible = true;
+renderer.compileAsync(scene, camera).then(() => {
+  stepRain(0, 0);
+  draw();
+  wake();
+  canvas.classList.add('on');
+  markReady();
+}, () => { canvas.classList.add('on'); markReady(); });
+</script>
+</body>
+</html>

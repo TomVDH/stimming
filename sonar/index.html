@@ -53,14 +53,13 @@
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active mode, tap a bearing to ping it, or press Space to ping all round; drag around the centre to steer. In Sonogram mode the sea scrolls past as a waterfall; tap to knock the hull and drag to tune the cursor.">
+    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active, tap a bearing to ping it, hold to charge a power ping and drag to turn the boat. In Listen, drag to aim the ear; the waterfall and the sound follow that bearing. Tap to knock the hull. Double-tap to lock a target; the ear follows it.">
       <p class="fail" hidden>Sonar needs WebGL2, which this browser has turned off.</p>
     </div>
     <div class="bar">
       <div class="choices" id="mode" role="group" aria-label="Display">
         <button class="chip" type="button" data-value="active" aria-pressed="true">Active</button>
-        <button class="chip" type="button" data-value="sono" aria-pressed="false">Sonogram</button>
-        <button class="chip" type="button" data-value="btr" aria-pressed="false">Bearing</button>
+        <button class="chip" type="button" data-value="sono" aria-pressed="false">Listen</button>
       </div>
       <label class="slider"><span id="sliderLab">Range</span><input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" aria-label="Range"></label>
       <div class="actions">
@@ -85,12 +84,6 @@
             </div></div>
           </div>
         </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>ping that bearing; knock on the sonogram</dd></div>
-          <div><dt>Hold</dt><dd>charge a power ping</dd></div>
-          <div><dt>Drag</dt><dd>steer; tune on the sonogram</dd></div>
-          <div><dt><span class="fine">Double-click</span><span class="touch">Double-tap</span></dt><dd>track a contact</dd></div>
-        </dl>
       </div>
     </div>
   </main>
@@ -141,8 +134,7 @@ const saved = k => { try { return localStorage.getItem(`stimming.sonar.${k}`); }
 const save = (k, v) => { try { localStorage.setItem(`stimming.sonar.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v == null || isNaN(+v) ? d : +v; };
 const opts = {
-  mode: ['active', 'sono', 'btr', ...(SOUNDER ? ['sounder'] : [])].includes(saved('mode')) ? saved('mode') : 'active',
-  gain: num('gain', 0.5),
+  mode: saved('mode') === 'btr' ? 'sono' : ['active', 'sono', ...(SOUNDER ? ['sounder'] : [])].includes(saved('mode')) ? saved('mode') : 'active',
   depth: num('depth', 0.45),
   range: num('range', 0.55),
   span: num('span', 0.33),
@@ -156,10 +148,9 @@ onReducedChange(v => { reduce = v; hudDirty = true; });
 // The slider maps to metres in Active and to hertz in Sonogram.
 const rangeM = () => 500 * Math.pow(8, opts.range);
 const spanHz = () => 500 * Math.pow(8, opts.span);
-const btrGain = () => 0.5 + 1.5 * opts.gain;
 const depthMax = () => 60 * Math.pow(6, opts.depth);
-// The bearing display: 720 bins of half a degree, five rows a second.
-const NBB = 720, BROW = 300, BROW_HZ = 5;
+// The ear hears a beam this wide; outside it, a faint sidelobe.
+const EAR_W = 14 * D2R, SIDE = 0.06;
 // The sounder: 600 columns of 320 depth bins, six pings a second.
 const SCOL = 600, SDEP = 320, SND_HZ = 6;
 // Our keel sits at 40 m; the thermocline lies at 72 m.
@@ -305,8 +296,8 @@ void main() {
 // The frame holds the raw light of the current display.
 const FRAME = `#version 300 es
 precision highp float;
-uniform sampler2D uAcc, uFall, uBtr, uSnd;
-uniform float uBHead, uSHead, uGain;
+uniform sampler2D uAcc, uFall, uSnd;
+uniform float uSHead;
 uniform int uMode;
 uniform vec2 uCenter; uniform vec4 uBox;
 uniform float uRad, uFront, uBeam, uHalf, uDpr, uHead, uSpan, uRowsVis, uShow;
@@ -355,12 +346,6 @@ void main() {
       // Age one starts below the newest row, so the top never blends.
       float row = uHead - (1.0 - uv.y) * uRowsVis - 1.0;
       b = texture(uFall, vec2(uv.x * uSpan / ${FMAX.toFixed(1)}, (row + 0.5) / ${NROW.toFixed(1)})).r;
-    } else if (uMode == 2) {
-      // Bearing-time: true bearing across, the newest row on top.
-      float row = uBHead - (1.0 - uv.y) * ${(BROW - 2).toFixed(1)} - 1.0;
-      b = min(1.0, texture(uBtr, vec2(uv.x, (row + 0.5) / ${BROW.toFixed(1)})).r * uGain);
-      // The bearing display uses a gentler curve, so far traces still show.
-      b = pow(b, 0.72);
     } else {
       // Sounder: the newest ping on the right, depth down from the top.
       float col = uSHead - (1.0 - uv.x) * ${(SCOL - 2).toFixed(1)} - 1.0;
@@ -582,7 +567,7 @@ function ringTex(w, h) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   return t;
 }
-const btrTex = ringTex(NBB, BROW), sndTex = ringTex(SCOL, SDEP);
+const sndTex = ringTex(SCOL, SDEP);
 // The graticule and readouts draw in grey on a 2D canvas.
 const hud = document.createElement('canvas'), hctx = hud.getContext('2d');
 const hudTex = gl.createTexture();
@@ -665,9 +650,12 @@ function shuffle() {
     const h = sea.head;
     C.push({ kind: 1, pos: [Math.sin(h) * along, Math.cos(h) * along], a: rnd(30, 50), b: rnd(20, 30), orient: Math.random() * PI, str: 0.9, str0: 0.9, vel: [0, 0], depth: rnd(25, 55), life: rnd(120, 180), id: Math.random() * 99 });
   }
-  marks.length = 0; btrSel = null; bCursor = -1; dCursor = -1;
+  marks.length = 0; tgt = null; earFollow = false; dCursor = -1;
   sea.contacts = C;
-  tracks.length = 0; later.length = 0; strobe.a = 0;
+  // The ear opens on the loudest source, so Listen starts alive.
+  const loud = passiveSources().sort((a, b) => b.lvl - a.lvl)[0];
+  ear = loud ? wrapA(loud.brg) : sea.head;
+  heard.length = 0; later.length = 0; strobe.a = 0;
   sea.oddNext = 2 + Math.floor(Math.random() * 4);
   song.bout = false; song.boutT = rnd(2, 8);
   readouts.length = 0;
@@ -826,35 +814,15 @@ function refreshFans() {
   pasT = clock;
 }
 
-/* ---------- the bearing-time rows ---------- */
-const btrRow = new Float32Array(NBB), btrB = new Uint8Array(NBB);
-let bHead = 0, bClock = 0, bFrac = 0, btrSel = null, bCursor = -1;
-function btrAdd(brg, amp, width) {
-  const c = wrapA(brg) / TAU * NBB, w = width / TAU * NBB;
-  for (let i = Math.floor(c - w * 3); i <= Math.ceil(c + w * 3); i++) {
-    const g = (i - c) / w;
-    btrRow[((i % NBB) + NBB) % NBB] += amp * Math.exp(-g * g);
-  }
-}
-function makeBtrRow(tt) {
-  for (let i = 0; i < NBB; i++) btrRow[i] = 0.1 * Math.min(3, -Math.log(Math.random() + 1e-6));
-  for (const s of passiveSources()) {
-    // Ships beat with their blades, so their traces pulse.
-    const beat = s.c?.ton ? 1 + 0.3 * Math.sin(tt * s.c.ton.f1 / 6 + (s.c.id || 0)) : 1;
-    btrAdd(s.brg + rnd(-0.004, 0.004), s.lvl * beat, Math.max(0.02, s.spread * 0.45));
-  }
-  // The baffles astern: our own noise floods them.
-  const stern = sea.head + PI;
-  for (let i = 0; i < NBB; i++) {
-    if (angDiff(i / NBB * TAU, stern) < 0.44) btrRow[i] = btrRow[i] * 0.2 + 0.16 * Math.random();
-  }
-  const ka = tt - knockAt;
-  if (ka >= 0 && ka < 0.3) for (let i = 0; i < NBB; i++) btrRow[i] += 0.9 * (1 - ka / 0.3);
-  for (let i = 0; i < NBB; i++) btrB[i] = Math.min(255, btrRow[i] * 0.9 * 255);
-  bHead = (bHead + 1) % BROW;
-  gl.bindTexture(gl.TEXTURE_2D, btrTex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, bHead, NBB, 1, gl.RED, gl.UNSIGNED_BYTE, btrB);
-}
+/* ---------- the ear ---------- */
+// The ear bearing; it follows a locked target until a drag moves it.
+let ear = 0, earFollow = false;
+// One locked contact links both displays.
+let tgt = null;
+// How much of a bearing the ear hears.
+const beamAt = b => SIDE + (1 - SIDE) * Math.exp(-((angDiff(b, ear) / EAR_W) ** 2));
+const beamG = c => beamAt(bearingTo(c));
+function aim(b) { ear = wrapA(b); earFollow = false; press('tune'); hudDirty = true; wake(); }
 
 /* ---------- the sounder columns ---------- */
 const sndCol = new Float32Array(SDEP), sndB = new Uint8Array(SDEP);
@@ -956,7 +924,7 @@ function addLine(f, amp, width) {
 function makeRow(tt) {
   // Ships thrash broadband noise around 900 Hz, beating with their blades.
   let cav = 0;
-  for (const c of sea.contacts) if (c.kind === 5) cav += tonalAmp(c) * 0.08 * (1 + 0.45 * Math.sin(TAU * c.ton.f1 / 9 * tt + (c.id || 0)));
+  for (const c of sea.contacts) if (c.kind === 5) cav += tonalAmp(c) * beamG(c) * 0.08 * (1 + 0.45 * Math.sin(TAU * c.ton.f1 / 9 * tt + (c.id || 0)));
   for (let i = 0; i < NBIN; i++) {
     const f = i * BIN_HZ;
     // Sea noise is louder low down; each bin speckles like real data.
@@ -965,7 +933,7 @@ function makeRow(tt) {
   }
   // Our own machinery hums at a few fixed lines.
   addLine(60, 0.1, 0.7); addLine(180, 0.05, 0.7); addLine(400, 0.04, 0.8);
-  const wh = sea.contacts.find(c => c.kind === 2), wa = wh ? song.amp * whaleGate() * hearF(wh) : 0;
+  const wh = sea.contacts.find(c => c.kind === 2), wa = wh ? song.amp * whaleGate() * hearF(wh) * beamG(wh) : 0;
   // A fast glide smears across the bins it swept since the last row.
   const f0 = makeRow.wf ?? song.f;
   makeRow.wf = song.f;
@@ -976,14 +944,14 @@ function makeRow(tt) {
   // Dolphins: click trains speckle the high band; whistles sweep through it.
   for (const c of sea.contacts) {
     if (c.kind !== 7) continue;
-    const a = 1 / (1 + (Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]) / 1200) ** 2);
+    const a = beamG(c) / (1 + (Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]) / 1200) ** 2);
     if (c.click) for (let i = 0; i < 40; i++) rowF[Math.floor((1500 + Math.random() * 2500) / BIN_HZ)] += a * 0.9 * Math.random();
     if (c.wh) { const f = lerp(c.wh.f0, c.wh.f1, c.wh.t / c.wh.dur); addLine(f, a * 0.9, 1.2); addLine(f * 2, a * 0.35, 1.2); }
   }
   // Each ship, sub and Auntie paints its own lines, shifted by its Doppler.
   for (const c of sea.contacts) {
     if (!c.ton) continue;
-    const a = tonalAmp(c), dp = doppler(c);
+    const a = tonalAmp(c) * beamG(c), dp = doppler(c);
     if (a < 0.02) continue;
     for (let k = 1; k <= 16; k++) addLine(k * c.ton.f1 * dp * (1 + 0.0015 * Math.sin(tt * 0.3 + k + (c.id || 0))), a * (k % c.ton.blades === 0 ? 2.5 : 1.1) / Math.pow(k, 0.35), 0.8);
     // A submarine hums with its motors and a coolant pump.
@@ -994,6 +962,16 @@ function makeRow(tt) {
       const g = auntieGroan(tt, c);
       for (let h = 1; h <= 3; h++) addLine(g * h, a * 0.9 / h, 1.2);
     }
+  }
+  // A ping is a short tone with a faint broadband edge.
+  for (const ev of heard) {
+    const age = tt - ev.at;
+    if (age < 0 || age > 0.9) continue;
+    // Our own pings ring the hull; a foreign ping is loudest in the beam.
+    const k = ev.own ? ev.amp : ev.amp * Math.max(0.35, beamAt(ev.brg));
+    addLine(ev.f, k * 1.6 * Math.exp(-age / 0.3), 1.4);
+    const edge = Math.exp(-age / 0.05) * 0.6 * k;
+    if (edge > 0.02) for (let i = 0; i < NBIN; i++) rowF[i] += edge * Math.random();
   }
   // A hull knock is broadband for an instant, then the hull rings.
   const ka = tt - knockAt;
@@ -1024,7 +1002,7 @@ function voices() {
 function buildVoices() {
   const out = kit.out;
   pingBytes.then(b => (b ? kit.ac.decodeAudioData(b.slice(0)) : null)).then(buf => { if (buf) pingBuf = buf; }).catch(() => {});
-  const rev = new T.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.42 }).connect(out);
+  const rev = new T.Reverb({ decay: 2.5, preDelay: 0.03, wet: 0.25 }).connect(out);
   // Echoes of the recorded ping come back muffled through the reverb.
   const echoIn = new T.Filter({ type: 'lowpass', frequency: 3400, Q: 0.5 }).connect(rev);
   // Boot beeps and the alarm: a small square tone.
@@ -1078,32 +1056,34 @@ function buildVoices() {
   return { rev, echoIn, beep, chargeG, charge, ping, echo, verb, bedG, whaleG, w1, w2, propG, beat, p1, thump, clank, auntG, aun1, aun2, click, whG, wh, tick };
 }
 // Continuous voices follow the shared model each frame.
+// A contact you listen to stays audible, even when it is far.
+const upFront = x => 0.35 + 0.65 * Math.min(1, x);
 function steerVoices(dt = 0) {
   const v = voices();
   if (!v) return;
-  // Passive displays listen harder; the scope and sounder keep the sea low.
-  const listen = opts.mode === 'sono' || opts.mode === 'btr';
-  v.bedG.gain.rampTo(listen ? 0.09 : 0.04, 0.3);
+  // Listen plays what the ear's beam hears; Active plays only pings.
+  const listen = opts.mode === 'sono';
+  v.bedG.gain.rampTo(listen ? 0.045 : 0.025, 0.3);
   v.w1.frequency.rampTo(song.f, 0.05);
   v.w2.frequency.rampTo(song.f * 2, 0.05);
+  // The whale plays in the beam, or when it answers a ping.
   const wh = sea.contacts.find(c => c.kind === 2);
-  v.whaleG.gain.rampTo(song.amp * whaleGate() * (wh ? hearF(wh) : 0) * (listen ? 0.07 : clock < song.loud ? 0.05 : 0.02), 0.06);
-  // The loudest propeller in the water drives the prop voice.
-  let src = { f1: 37, blades: 4, amp: 0 };
-  for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c); if (a > src.amp) src = { f1: c.ton.f1, blades: c.ton.blades, amp: a }; }
-  v.propG.gain.rampTo(Math.min(1, src.amp) * (listen ? 0.07 : 0.02), 0.3);
-  v.p1.frequency.rampTo(src.f1 * 2, 0.5);
-  v.beat.frequency.rampTo(clamp(src.f1 * src.blades / 40, 2, 6), 0.5);
-  const au = sea.contacts.find(c => c.kind === 6), aa = au ? tonalAmp(au) : 0;
-  v.auntG.gain.rampTo(Math.min(1, aa) * (listen ? 0.08 : 0.03), 0.4);
+  const wl = !wh ? 0 : listen ? 0.07 * beamG(wh) * upFront(hearF(wh)) : clock < song.loud ? 0.04 * hearF(wh) : 0;
+  v.whaleG.gain.rampTo(song.amp * whaleGate() * wl, 0.06);
+  // The loudest ship or sub in the beam drives the prop voice.
+  let ship = null, sa = 0;
+  if (listen) for (const c of sea.contacts) if (c.ton && c.kind !== 6) { const a = tonalAmp(c) * beamG(c); if (a > sa) { sa = a; ship = c; } }
+  v.propG.gain.rampTo(ship ? 0.08 * beamG(ship) * upFront(tonalAmp(ship)) : 0, 0.3);
+  if (ship) { v.p1.frequency.rampTo(ship.ton.f1 * 2, 0.5); v.beat.frequency.rampTo(clamp(ship.ton.f1 * ship.ton.blades / 40, 2, 6), 0.5); }
+  const au = listen ? sea.contacts.find(c => c.kind === 6) : null;
+  v.auntG.gain.rampTo(au ? 0.08 * beamG(au) * upFront(tonalAmp(au)) : 0, 0.4);
   if (au) { const g = auntieGroan(clock, au); v.aun1.frequency.rampTo(g, 0.2); v.aun2.frequency.rampTo(g * 1.5, 0.2); }
-  // The nearest dolphin pod clicks in trains and whistles now and then.
-  let pod = null, pd = 1e9;
-  for (const c of sea.contacts) if (c.kind === 7) { const d = Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]); if (d < pd) { pd = d; pod = c; } }
-  const pa = pod ? 1 / (1 + (pd / 1200) ** 2) : 0;
-  if (pod?.click && Math.random() < dt * 22) v.click.triggerAttackRelease(0.004, T.now() + 0.005, pa * (listen ? 1 : 0.35));
+  // The pod nearest the ear clicks in trains and whistles now and then.
+  let pod = null, pa = 0;
+  if (listen) for (const c of sea.contacts) if (c.kind === 7) { const a = beamG(c) * upFront(1 / (1 + (Math.hypot(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]) / 1200) ** 2)); if (a > pa) { pa = a; pod = c; } }
+  if (pod?.click && Math.random() < dt * 22) v.click.triggerAttackRelease(0.004, T.now() + 0.005, pa);
   if (pod?.wh) v.wh.frequency.rampTo(lerp(pod.wh.f0, pod.wh.f1, pod.wh.t / pod.wh.dur), 0.03);
-  v.whG.gain.rampTo(pod?.wh ? pa * (listen ? 0.03 : 0.01) : 0, 0.05);
+  v.whG.gain.rampTo(pod?.wh ? pa * 0.03 : 0, 0.05);
 }
 
 // One shot of the recorded ping: rate sets the pitch; dry or through the echo path.
@@ -1138,7 +1118,7 @@ function ping(brg = null, power = 0) {
   if (boot.phase !== 'run') { endBoot(); return; }
   const omni = brg == null;
   ring.on = true; ring.t = 0; ring.front = 0; ring.power = power;
-  press(power > 0 ? 'hold' : 'ping');
+  press(power > 0 ? 'hold' : omni ? 'omni' : 'ping');
   ring.beam = omni ? 0 : brg; ring.half = omni ? PI + 1 : 17 * D2R;
   maybeOdd();
   const R = rangeM();
@@ -1162,11 +1142,12 @@ function ping(brg = null, power = 0) {
     if (e.c.kind === 6 && !e.c.alerted) { e.c.alerted = 'soon'; later.push({ at: clock + e.at + 1.1, fn: () => auntieWakes(e.c) }); }
   }
   if (power > 0) say(`POWER PING   ${'▮'.repeat(1 + Math.round(power * 4))}`);
+  // A beam ping is higher and shorter; a power ping is lower and louder.
+  const rate = omni ? 1 - 0.18 * power : 1.32;
+  hear(omni ? null : brg, 1480 * rate, 1 + power, true);
   const v = voices();
   if (v) {
     const now = T.now() + 0.02;
-    // A beam ping is higher and shorter; a power ping is lower and louder.
-    const rate = omni ? 1 - 0.18 * power : 1.32;
     if (!playSample(v, { rate, gain: (omni ? 0.85 : 0.7) * (1 + 0.4 * power), at: now, dur: omni ? 6 : 3.2 })) {
       const f = 1480 * rate;
       v.ping.triggerAttackRelease(f, 0.5, now);
@@ -1174,7 +1155,9 @@ function ping(brg = null, power = 0) {
       v.ping.frequency.exponentialRampToValueAtTime(f * 0.973, now + 0.9);
     }
     v.verb.triggerAttackRelease(RING_T, now + 0.05, (omni ? 0.6 : 0.35) * (1 + power));
-    for (const e of pending) echoVoice(v, e, now + e.at, rate, power);
+    // Only the eight strongest echoes sound.
+    const loud = e => e.c.str / (1 + (e.d / R) ** 2 * 1.4);
+    for (const e of [...pending].sort((a, b) => loud(b) - loud(a)).slice(0, 8)) echoVoice(v, e, now + e.at, rate, power);
   }
   wake();
 }
@@ -1187,7 +1170,7 @@ function echoVoice(v, e, at, rate, power) {
   if (pingBuf) {
     const g = 0.5 * k + 0.06;
     if (kind === 0) { playSample(v, { rate: r, gain: g, at, dur: 1.3, wet: true }); playSample(v, { rate: r * 1.004, gain: g * 0.4, at: at + 0.035, dur: 0.8, wet: true }); }
-    else if (kind === 1) for (let i = 0; i < 5; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
+    else if (kind === 1) for (let i = 0; i < 3; i++) playSample(v, { rate: r * rnd(0.99, 1.01), gain: g * 0.45, at: at + i * rnd(0.02, 0.05), dur: 0.14, wet: true });
     else if (kind === 2) playSample(v, { rate: r, gain: g * 0.8, at, dur: 0.6, wet: true });
     else if (kind === 4) for (let i = 0; i < 2; i++) playSample(v, { rate: r * 2.1, gain: g * 0.7, at: at + i * 0.09, dur: 0.1, wet: true });
     else if (kind === 5) { playSample(v, { rate: r, gain: g, at, dur: 1.1, wet: true }); playSample(v, { rate: r * 0.997, gain: g * 0.7, at: at + 0.06, dur: 0.9, wet: true }); playSample(v, { rate: r * 0.9, gain: g * 0.3, at: at + 0.12, dur: 1.2, wet: true }); }
@@ -1216,6 +1199,7 @@ function counterPing(c) {
   c.alerted = true;
   const b = Math.atan2(c.pos[0] - sea.own[0], c.pos[1] - sea.own[1]);
   strobe.b = b; strobe.a = 1;
+  hear(b, 1150, 1.4);
   say(`ВНИМАНИЕ!   ОБЛУЧЕНИЕ   ${pad3(wrapA(b) / D2R)}`, true);
   say(`WARNING   ACTIVE SONAR   BRG ${pad3(wrapA(b) / D2R)}`, true);
   // It turns away, runs and goes quiet.
@@ -1226,7 +1210,7 @@ function counterPing(c) {
   if (v) {
     const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
     if (!playSample(v, { rate: 0.78, gain: 0.6, at: now, dur: 4, pan })) v.ping.triggerAttackRelease(1150, 0.5, now);
-    for (let i = 0; i < 4; i++) v.beep.triggerAttackRelease(i % 2 ? 660 : 880, 0.12, now + 0.9 + i * 0.22);
+    v.beep.triggerAttackRelease(880, 0.15, now + 0.9);
   }
   wake();
 }
@@ -1236,6 +1220,7 @@ function auntieWakes(c) {
   c.alerted = true;
   const b = bearingTo(c);
   strobe.b = b; strobe.a = 1;
+  hear(b, 740, 2);
   say('ВНИМАНИЕ!   «СВАРЛИВАЯ ТЁТУШКА»', true);
   say(`CRANKY AUNTIE   SUPERWEAPON CLASS   BRG ${pad3(wrapA(b) / D2R)}`, true);
   later.push({ at: clock + 0.5, fn: () => { if (!reduce) powerT0 = clock - 0.9 * 0.3; } });
@@ -1245,7 +1230,7 @@ function auntieWakes(c) {
   if (v) {
     const now = T.now() + 0.02, pan = clamp(Math.sin(b), -0.9, 0.9);
     if (!playSample(v, { rate: 0.5, gain: 1, at: now, dur: 7, pan })) v.ping.triggerAttackRelease(740, 1.5, now);
-    for (let i = 0; i < 8; i++) v.beep.triggerAttackRelease(i % 2 ? 440 : 587, 0.2, now + 0.6 + i * 0.26);
+    v.beep.triggerAttackRelease(440, 0.3, now + 0.6);
   }
   wake();
 }
@@ -1263,14 +1248,19 @@ function chargeSound(on) {
 }
 const chargeLevel = () => clamp((clock - charge.t0) / 1.6, 0.2, 1);
 
-/* ---------- tracks ---------- */
-const tracks = [];
+/* ---------- the target ---------- */
 function toScreen(c) {
   const R = rangeM(), x = (c.pos[0] - sea.own[0]) / R * scope.rad, y = (c.pos[1] - sea.own[1]) / R * scope.rad;
   return Math.hypot(x, y) < scope.rad ? [scope.cx + x, scope.cy + y] : null;
 }
-// Only a contact the sonar has heard can be tracked.
-function toggleTrack(x, y) {
+// Listen locks the loudest source in the beam; the scope locks a blip.
+function pickAt(x, y) {
+  if (opts.mode === 'sono') {
+    let best = null, bv = 0;
+    for (const s of passiveSources()) { const g = beamAt(s.brg); if (g > 0.5 && s.lvl * g > bv) { bv = s.lvl * g; best = s.c; } }
+    return best;
+  }
+  // The scope only offers contacts that a ping has found.
   let best = null, bd = 30 * dpr;
   for (const c of sea.contacts) {
     if (!c.seen) continue;
@@ -1279,20 +1269,26 @@ function toggleTrack(x, y) {
     const d = Math.hypot(p[0] - x, p[1] - y);
     if (d < bd) { bd = d; best = c; }
   }
-  if (!best) return false;
-  const i = tracks.findIndex(t => t.c === best);
-  press('track');
-  if (i >= 0) { say(`TRACK T${tracks[i].n}   DROPPED`); tracks.splice(i, 1); }
-  else {
-    const n = [1, 2, 3, 4, 5].find(k => !tracks.some(t => t.n === k));
-    if (!n) return true;
-    tracks.push({ c: best, n });
-    say(`TRACK T${n}   ${kindOf(best)}`);
-  }
+  return best;
+}
+// The name a display gives the target.
+const tgtName = c => (c.ton || c.kind === 2 || c.kind === 7 ? passName(c) : kindOf(c));
+// A lock on the target drops it; a lock on another contact moves to it.
+function lockTarget(c) {
+  if (!c) return false;
+  press('lock');
+  tgt = tgt === c ? null : c;
+  earFollow = !!tgt;
+  say(tgt ? `TARGET   ${pad3(wrapA(bearingTo(c)) / D2R)}   ${tgtName(c)}` : 'TARGET   DROPPED');
   hudDirty = true;
   wake();
   return true;
 }
+
+/* ---------- heard events ---------- */
+// Pings and enemy pings mark the waterfall; brg null means all round.
+const heard = [];
+const hear = (brg, f, amp, own = false) => { heard.push({ at: clock, brg, f, amp, own }); while (heard.length > 8) heard.shift(); };
 
 /* ---------- boot ---------- */
 // The console boots in Russian: self-tests, then a loading bar.
@@ -1359,7 +1355,7 @@ function drawBoot(c, Y) {
   if (e >= BAR_T0 + BAR_T) {
     c.fillStyle = grey(0.9);
     const blink = Math.floor(clock * 2.5) % 2 ? '' : ' ▌';
-    c.fillText(`РЕЖИМ: ${{ active: 'АКТИВНЫЙ', sono: 'ПАССИВНЫЙ', btr: 'ПЕЛЕНГ', sounder: 'ЭХОЛОТ' }[opts.mode]}${blink}`, x0, y + lh * 1.3);
+    c.fillText(`РЕЖИМ: ${{ active: 'АКТИВНЫЙ', sono: 'ПАССИВНЫЙ', sounder: 'ЭХОЛОТ' }[opts.mode]}${blink}`, x0, y + lh * 1.3);
   }
 }
 
@@ -1398,15 +1394,14 @@ function measure() {
   scope.cx = W / 2;
   scope.cy = safe + keys + 10 * dpr + availH / 2;
   box.x0 = Math.min(64 * dpr, W * 0.12); box.x1 = W - 22 * dpr;
-  // Narrow screens stack the classifier, so the box starts lower.
-  box.y0 = safe + keysH() * dpr + 38 * dpr; box.y1 = H - (W < 620 * dpr ? 64 : 34) * dpr;
+  // The bearing strip sits between the title and the waterfall.
+  box.y0 = safe + keysH() * dpr + 38 * dpr; box.y1 = H - (opts.mode === 'sono' ? 90 : W < 620 * dpr ? 64 : 34) * dpr;
 }
 
 /* ---------- HUD ---------- */
 let hudDirty = true, hudFade = false;
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const grey = v => `rgb(${Math.round(v * 255)} ${Math.round(v * 255)} ${Math.round(v * 255)})`;
-let cursorF = -1;
 // The controls show on the console itself, as lit keycaps.
 // A keycap lights up for a moment when its gesture is used.
 const KEYS_H = 30;
@@ -1417,18 +1412,10 @@ const keyLit = {};
 const press = k => { keyLit[k] = clock; hudDirty = true; };
 function keyList() {
   const touch = matchMedia('(pointer: coarse)').matches;
-  if (opts.mode === 'active') return touch
-    ? [['TAP', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['DRAG', 'STEER', 'steer'], ['2× TAP', 'TRACK', 'track']]
-    : [['SPACE', 'PING', 'ping'], ['HOLD', 'POWER', 'hold'], ['← →', 'STEER', 'steer'], ['2× CLICK', 'TRACK', 'track']];
-  if (opts.mode === 'btr') return touch
-    ? [['TAP', 'SELECT', 'select'], ['DRAG', 'BEARING', 'tune']]
-    : [['CLICK', 'SELECT', 'select'], ['DRAG', 'BEARING', 'tune'], ['SPACE', 'KNOCK', 'knock']];
-  if (opts.mode === 'sounder') return touch
-    ? [['TAP', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune']]
-    : [['SPACE', 'MARK', 'mark'], ['DRAG', 'DEPTH', 'tune'], ['↑ ↓', 'DEPTH', 'tune']];
-  return touch
-    ? [['TAP', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune']]
-    : [['SPACE', 'KNOCK', 'knock'], ['DRAG', 'TUNE', 'tune'], ['← →', 'CURSOR', 'tune']];
+  const tap = touch ? 'TAP' : 'CLICK', two = touch ? '2× TAP' : '2× CLICK', drag = touch ? 'DRAG' : 'DRAG / ← →';
+  if (opts.mode === 'active') return [[tap, 'PING THAT WAY', 'ping'], ['HOLD', 'POWER PING', 'hold'], [drag, 'TURN', 'steer'], [two, 'LOCK TARGET', 'lock']];
+  if (opts.mode === 'sounder') return [[tap, 'MARK', 'mark'], [touch ? 'DRAG' : 'DRAG / ↑ ↓', 'DEPTH', 'tune']];
+  return [[drag, 'AIM THE EAR', 'tune'], [tap, 'KNOCK HULL', 'knock'], [two, 'LOCK TARGET', 'lock']];
 }
 function drawKeys(c) {
   const list = keyList();
@@ -1461,71 +1448,12 @@ function drawKeys(c) {
   }
   return lit;
 }
-// The classifier names what it hears; narrow screens stack it under the title.
-function drawClassifier(c, Y, top) {
-  const cls = [];
-  for (const s of sources()) cls.push(s);
-  const wh = sea.contacts.find(k => k.kind === 2);
-  if (wh && song.bout && whaleGate() * hearF(wh) > 0.2) cls.push(`BIO   WHALE   ${pad3(wrapA(bearingTo(wh)) / D2R)}`);
-  if (sea.contacts.some(k => k.kind === 7 && k.click)) cls.push('BIO   DOLPHINS   CLICKS');
-  const narrow = W < 620 * dpr;
-  cls.length = Math.min(cls.length, narrow ? 2 : 4);
-  c.fillStyle = grey(0.8);
-  c.textAlign = narrow ? 'left' : 'right';
-  cls.forEach((s, i) => c.fillText(s, narrow ? 14 * dpr : W - 14 * dpr, Y(top - (narrow ? i + 1 : i) * 14 * dpr)));
-}
 // What passive listening calls a contact.
 const passName = c => (c.kind === 5 ? `MECH  SURFACE  ${c.ton.blades} BLADE` : c.sub ? `MECH  SUBMERGED  ${c.ton.blades} BLADE` : c.kind === 6 ? '!!  CRANKY AUNTIE' : c.kind === 2 ? 'BIO  WHALE' : c.kind === 7 ? 'BIO  DOLPHINS' : 'UNKNOWN');
 function dashed(c, x0, y0, x1, y1, on = 3, off = 4) {
   c.setLineDash([on * dpr, off * dpr]); c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.setLineDash([]);
 }
 // Bearing-time: true bearing across, sixty seconds down.
-function drawBtr(c, Y, top) {
-  const { x0, y0, x1, y1 } = box, bx = b => x0 + (wrapA(b) / TAU) * (x1 - x0);
-  c.strokeStyle = grey(0.42);
-  c.strokeRect(x0, Y(y1), x1 - x0, y1 - y0);
-  c.fillStyle = grey(0.6); c.strokeStyle = grey(0.5); c.textAlign = 'center';
-  for (let d = 0; d <= 360; d += 10) {
-    const x = x0 + d / 360 * (x1 - x0), maj = d % 30 === 0;
-    c.beginPath(); c.moveTo(x, Y(y0)); c.lineTo(x, Y(y0) + (maj ? 7 : 4) * dpr); c.stroke();
-    if (maj && d < 360 && (W > 520 * dpr || d % 90 === 0)) c.fillText(pad3(d), x, Y(y0) + 16 * dpr);
-  }
-  const secs = BROW / BROW_HZ;
-  c.textAlign = 'right';
-  for (let t = 0; t <= secs; t += 10) {
-    const y = y1 - (t / secs) * (y1 - y0);
-    c.beginPath(); c.moveTo(x0, Y(y)); c.lineTo(x0 - 5 * dpr, Y(y)); c.stroke();
-    c.fillText(t ? `-${t}s` : '0', x0 - 8 * dpr, Y(y));
-  }
-  // Our heading sits above the top edge; the baffles bracket the stern.
-  const hx = bx(sea.head), ty = Y(y1) - 3 * dpr, q = 5 * dpr;
-  c.fillStyle = grey(0.9);
-  c.beginPath(); c.moveTo(hx, ty); c.lineTo(hx - q, ty - q * 1.4); c.lineTo(hx + q, ty - q * 1.4); c.fill();
-  c.strokeStyle = grey(0.55);
-  const a0 = bx(sea.head + PI - 0.44), a1 = bx(sea.head + PI + 0.44), by = Y(y1) - 6 * dpr;
-  if (a0 < a1) dashed(c, a0, by, a1, by); else { dashed(c, a0, by, x1, by); dashed(c, x0, by, a1, by); }
-  c.fillStyle = grey(0.5); c.textAlign = 'center';
-  c.fillText('BAFFLES', a0 < a1 ? (a0 + a1) / 2 : (a1 - x0 > x1 - a0 ? (x0 + a1) / 2 : (a0 + x1) / 2), Y(y1) + 13 * dpr);
-  // A selected trace keeps a caret, a faint line and its name.
-  if (btrSel && !sea.contacts.includes(btrSel)) btrSel = null;
-  if (btrSel) {
-    const b = bearingTo(btrSel), x = bx(b);
-    c.strokeStyle = grey(0.4); dashed(c, x, Y(y1), x, Y(y0), 2, 6);
-    c.fillStyle = grey(1);
-    c.beginPath(); c.moveTo(x, Y(y1) + 2 * dpr); c.lineTo(x - q, Y(y1) + 2 * dpr + q * 1.4); c.lineTo(x + q, Y(y1) + 2 * dpr + q * 1.4); c.fill();
-    c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
-    c.fillText(`${pad3(wrapA(b) / D2R)}   ${passName(btrSel)}`, x + (x > (x0 + x1) / 2 ? -9 : 9) * dpr, Y(y1) + 14 * dpr);
-  }
-  if (bCursor >= 0) {
-    const x = x0 + bCursor / TAU * (x1 - x0);
-    c.strokeStyle = grey(0.5); dashed(c, x, Y(y1), x, Y(y0));
-    c.fillStyle = grey(0.85); c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
-    c.fillText(`BRG ${pad3(bCursor / D2R)}`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y0) - 10 * dpr);
-  }
-  c.textAlign = 'left'; c.fillStyle = grey(0.9);
-  c.fillText(`PASSIVE   BEARING-TIME   ${secs} S`, 14 * dpr, Y(top));
-  drawClassifier(c, Y, top);
-}
 // The sounder: depth down the left, time running in from the right.
 function drawSnd(c, Y, top) {
   const { x0, y0, x1, y1 } = box, maxD = depthMax();
@@ -1565,17 +1493,7 @@ function drawSnd(c, Y, top) {
   c.textAlign = 'left'; c.fillStyle = grey(0.9);
   c.fillText(`SOUNDER   ЭХОЛОТ   DEPTH ${Math.round(bottomNow)} M   LAYER ${LAYER} M`, 14 * dpr, Y(top));
 }
-function bearTune(x) { bCursor = clamp((x - box.x0) / (box.x1 - box.x0)) * TAU; press('tune'); wake(); }
 function depthTune(y) { dCursor = clamp((box.y1 - y) / (box.y1 - box.y0)) * depthMax(); press('tune'); wake(); }
-function selectTrace(x) {
-  const b = clamp((x - box.x0) / (box.x1 - box.x0)) * TAU;
-  let best = null, bd = 6 * D2R;
-  for (const s of passiveSources()) { if (!s.c || s.lvl < 0.04) continue; const d = angDiff(s.brg, b); if (d < bd) { bd = d; best = s.c; } }
-  btrSel = best && best !== btrSel ? best : null;
-  press('select');
-  hudDirty = true;
-  wake();
-}
 function mark() {
   if (boot.phase !== 'run') { endBoot(); return; }
   marks.push({ col: sHead + sFrac, n: (marks.at(-1)?.n || 0) + 1 });
@@ -1584,32 +1502,55 @@ function mark() {
   hudDirty = true;
   wake();
 }
-// Loud enough tonal sources, as the classifier names them.
-function sources() {
-  const out = [];
-  for (const c of sea.contacts) {
-    if (!c.ton || tonalAmp(c) < 0.12) continue;
-    const b = pad3(wrapA(bearingTo(c)) / D2R);
-    if (c.kind === 6) out.unshift(`!!   CRANKY AUNTIE   ${b}`);
-    else if (c.kind === 5) out.push(`MECH   SURFACE   ${c.ton.blades} BLADE   ${b}`);
-    else out.push(`MECH   SUBMERGED   ${c.ton.blades} BLADE   ${b}`);
+// The short name a beam tag shows.
+const shortName = c => (c.kind === 5 ? 'SURFACE' : c.sub ? 'SUB' : c.kind === 6 ? 'AUNTIE' : c.kind === 2 ? 'WHALE' : c.kind === 7 ? 'DOLPHINS' : kindOf(c));
+// The bearing strip: what the arrays hear now, all round, with the ear on it.
+function drawStrip(c, Y) {
+  const { x0, x1, y1 } = box, sb = Y(y1 + 12 * dpr), st = Y(y1 + 44 * dpr), sh = sb - st;
+  const bx = b => x0 + (wrapA(b) / TAU) * (x1 - x0);
+  c.strokeStyle = grey(0.42);
+  c.strokeRect(x0, st, x1 - x0, sh);
+  c.fillStyle = grey(0.55);
+  c.textAlign = 'center';
+  for (let d = 0; d < 360; d += 30) if (W > 520 * dpr || d % 90 === 0) c.fillText(pad3(d), x0 + d / 360 * (x1 - x0), st - 8 * dpr);
+  // The level curve: each source is a hump on its bearing.
+  const src = passiveSources(), n = Math.round((x1 - x0) / (2 * dpr));
+  c.fillStyle = grey(0.75);
+  c.beginPath(); c.moveTo(x0, sb);
+  for (let i = 0; i <= n; i++) {
+    const b = i / n * TAU;
+    let v = 0;
+    for (const p of src) { const a = angDiff(b, p.brg) / Math.max(0.03, p.spread); v += p.lvl * Math.exp(-a * a); }
+    if (angDiff(b, sea.head + PI) < 0.44) v *= 0.15;
+    c.lineTo(x0 + i / n * (x1 - x0), sb - Math.min(1, v * 1.6) * (sh - 2 * dpr));
   }
-  return out;
+  c.lineTo(x1, sb); c.closePath(); c.fill();
+  // The baffles astern hear only our own noise.
+  c.strokeStyle = grey(0.5);
+  const a0 = bx(sea.head + PI - 0.44), a1 = bx(sea.head + PI + 0.44), my = sb - 2 * dpr;
+  if (a0 < a1) dashed(c, a0, my, a1, my); else { dashed(c, a0, my, x1, my); dashed(c, x0, my, a1, my); }
+  // The heading caret sits on the strip's top edge.
+  const hx = bx(sea.head), q = 4 * dpr;
+  c.fillStyle = grey(0.9);
+  c.beginPath(); c.moveTo(hx, st + q * 1.4); c.lineTo(hx - q, st); c.lineTo(hx + q, st); c.fill();
+  // The ear: two bright brackets at the edges of its beam.
+  c.strokeStyle = grey(1);
+  c.lineWidth = 2 * dpr;
+  for (const e of [ear - EAR_W, ear + EAR_W]) { const x = bx(e); c.beginPath(); c.moveTo(x, st - 3 * dpr); c.lineTo(x, sb + 3 * dpr); c.stroke(); }
+  c.lineWidth = Math.max(1, dpr);
+  // A locked target shows as a caret under the strip.
+  if (tgt) {
+    const x = bx(bearingTo(tgt));
+    c.fillStyle = grey(1);
+    c.beginPath(); c.moveTo(x, sb + 2 * dpr); c.lineTo(x - q, sb + 2 * dpr + q * 1.4); c.lineTo(x + q, sb + 2 * dpr + q * 1.4); c.fill();
+  }
 }
-// The cursor snaps to a known line and names it.
-function identify(f) {
-  const tol = spanHz() * 0.012;
-  const cand = [[60, 'OWN SHIP'], [180, 'OWN SHIP'], [400, 'OWN SHIP  PUMP']];
-  if (song.amp * whaleGate() > 0.1) for (let h = 1; h <= 4; h++) cand.push([song.f * h, h === 1 ? 'BIO  WHALE' : `BIO  WHALE  H${h}`]);
-  for (const c of sea.contacts) {
-    if (!c.ton || tonalAmp(c) < 0.08) continue;
-    const who = `${c.kind === 5 ? 'SURFACE' : c.kind === 6 ? 'AUNTIE' : 'SUB'} ${pad3(wrapA(bearingTo(c)) / D2R)}`, dp = doppler(c);
-    for (let k = 1; k <= 16; k++) cand.push([k * c.ton.f1 * dp, k % c.ton.blades === 0 ? `${who}  BLADE  x${k / c.ton.blades}` : `${who}  SHAFT  x${k}`]);
-    if (c.sub) cand.push([50 * dp, `${who}  MOTOR`], [100 * dp, `${who}  MOTOR  x2`], [c.ton.pump * dp, `${who}  PUMP`]);
-  }
-  let best = null, bd = tol;
-  for (const [cf, name] of cand) { const d = Math.abs(cf - f); if (d < bd) { bd = d; best = [cf, name]; } }
-  return best;
+// The line a contact shows best: blades, song or whistle.
+function lineF(c) {
+  if (c.ton) return c.ton.f1 * c.ton.blades * doppler(c);
+  if (c.kind === 2 && song.amp * whaleGate() > 0.1) return song.f;
+  if (c.kind === 7 && c.wh) return lerp(c.wh.f0, c.wh.f1, c.wh.t / c.wh.dur);
+  return -1;
 }
 function drawHud() {
   hudDirty = false;
@@ -1667,20 +1608,30 @@ function drawHud() {
     c.fill();
     c.strokeStyle = grey(0.6);
     c.beginPath(); c.moveTo(cx - 4 * dpr, Y(cy)); c.lineTo(cx + 4 * dpr, Y(cy)); c.moveTo(cx, Y(cy) - 4 * dpr); c.lineTo(cx, Y(cy) + 4 * dpr); c.stroke();
-    // Track brackets follow their contacts.
-    for (let i = tracks.length - 1; i >= 0; i--) if (!sea.contacts.includes(tracks[i].c)) tracks.splice(i, 1);
-    c.strokeStyle = grey(0.85); c.fillStyle = grey(0.85);
+    // The ear shows as a bright arc on the rim.
+    c.strokeStyle = grey(0.8);
+    c.lineWidth = 3 * dpr;
+    c.beginPath(); c.arc(cx, Y(cy), rad + 3 * dpr, ear - EAR_W - PI / 2, ear + EAR_W - PI / 2); c.stroke();
+    c.lineWidth = Math.max(1, dpr);
+    // The target bracket follows its contact; off the scope, a rim caret points to it.
+    const tp = tgt && toScreen(tgt);
+    c.strokeStyle = grey(0.95); c.fillStyle = grey(0.95);
     c.textAlign = 'left';
-    for (const t of tracks) {
-      const p = toScreen(t.c);
-      if (!p) continue;
-      const bx = p[0], by = Y(p[1]), q = 9 * dpr, l = 4 * dpr;
+    if (tp) {
+      const bx = tp[0], by = Y(tp[1]), q = 9 * dpr, l = 4 * dpr;
       c.beginPath();
       for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
         c.moveTo(bx + sx * q, by + sy * q - sy * l); c.lineTo(bx + sx * q, by + sy * q); c.lineTo(bx + sx * q - sx * l, by + sy * q);
       }
       c.stroke();
-      c.fillText(`T${t.n}`, bx + q + 3 * dpr, by - q);
+      c.fillText(`TGT  ${tgtName(tgt)}`, bx + q + 3 * dpr, by - q);
+    } else if (tgt) {
+      const b = bearingTo(tgt), ox = cx + Math.sin(b) * (rad - 4 * dpr), oy = cy + Math.cos(b) * (rad - 4 * dpr), s2 = 5 * dpr;
+      c.beginPath();
+      c.moveTo(ox, Y(oy));
+      c.lineTo(ox - Math.sin(b) * s2 * 2 + Math.cos(b) * s2, Y(oy - Math.cos(b) * s2 * 2 - Math.sin(b) * s2));
+      c.lineTo(ox - Math.sin(b) * s2 * 2 - Math.cos(b) * s2, Y(oy - Math.cos(b) * s2 * 2 + Math.sin(b) * s2));
+      c.fill();
     }
     if (charge.on) {
       const cells = Math.round(chargeLevel() * 12);
@@ -1715,36 +1666,25 @@ function drawHud() {
       c.beginPath(); c.moveTo(x0, Y(y)); c.lineTo(x0 - 5 * dpr, Y(y)); c.stroke();
       c.fillText(s ? `-${s}s` : '0', x0 - 8 * dpr, Y(y));
     }
-    // Each heard contact tags its blade line with its bearing, as on the scope.
-    const tags = sea.contacts.filter(k => k.ton && tonalAmp(k) >= 0.12)
-      .map(k => [k.ton.f1 * k.ton.blades * doppler(k), k]).filter(([f]) => f <= span).sort((p, q) => p[0] - q[0]);
+    // Each source in the beam tags its line with its name.
+    const tags = sea.contacts.filter(k => beamG(k) > 0.35 && (!k.ton || tonalAmp(k) >= 0.05))
+      .map(k => [lineF(k), k]).filter(([f]) => f > 0 && f <= span).sort((p, q) => p[0] - q[0]);
     let lastX = -1e9;
     c.textAlign = 'center';
     for (const [f, k] of tags) {
       const x = x0 + (f / span) * (x1 - x0), ty = Y(y1) + 3 * dpr;
-      if (x - lastX < 30 * dpr) continue;
+      const label = `${k === tgt ? 'TGT ' : ''}${shortName(k)}`;
+      if (x - lastX < (c.measureText(label).width + 10 * dpr)) continue;
       lastX = x;
-      c.fillStyle = grey(k.kind === 6 ? 1 : 0.8);
+      c.fillStyle = grey(k === tgt || k.kind === 6 ? 1 : 0.8);
       c.beginPath(); c.moveTo(x, ty + 6 * dpr); c.lineTo(x - 4 * dpr, ty); c.lineTo(x + 4 * dpr, ty); c.fill();
-      c.fillText(`${k.kind === 6 ? '!!' : ''}${pad3(wrapA(bearingTo(k)) / D2R)}`, x, ty + 15 * dpr);
+      c.fillText(label, x, ty + 15 * dpr);
     }
-    if (cursorF >= 0 && cursorF <= span) {
-      const id = identify(cursorF), cf = id ? id[0] : cursorF;
-      const x = x0 + (clamp(cf / span)) * (x1 - x0);
-      c.strokeStyle = grey(0.5);
-      c.setLineDash([3 * dpr, 4 * dpr]);
-      c.beginPath(); c.moveTo(x, Y(y1)); c.lineTo(x, Y(y0)); c.stroke();
-      c.setLineDash([]);
-      c.fillStyle = grey(0.75);
-      c.textAlign = x > (x0 + x1) / 2 ? 'right' : 'left';
-      c.fillText(id ? `${Math.round(cf)} HZ   ${id[1]}` : `${Math.round(cf)} HZ`, x + (x > (x0 + x1) / 2 ? -6 : 6) * dpr, Y(y1) + 12 * dpr);
-    }
+    drawStrip(c, Y);
     c.textAlign = 'left';
     c.fillStyle = grey(0.9);
-    c.fillText(`PASSIVE   LOFAR   0-${Math.round(span)} HZ`, 14 * dpr, Y(top));
-    drawClassifier(c, Y, top);
-  } else if (opts.mode === 'btr') drawBtr(c, Y, top);
-  else drawSnd(c, Y, top);
+    c.fillText(`LISTEN   EAR ${pad3(ear / D2R)}${tgt ? `   TGT ${shortName(tgt)}` : ''}`, 14 * dpr, Y(top));
+  } else drawSnd(c, Y, top);
   // Contact reports fade out after a few seconds.
   hudFade = boot.phase === 'run' && drawKeys(c);
   c.textAlign = 'left';
@@ -1827,11 +1767,8 @@ function render() {
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fallTex);
   gl.uniform1i(u.uFall, 1);
   gl.uniform1i(u.uMode, MODES.indexOf(opts.mode));
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, btrTex); gl.uniform1i(u.uBtr, 2);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, sndTex); gl.uniform1i(u.uSnd, 3);
-  gl.uniform1f(u.uBHead, bHead + (reduce ? 0 : bFrac));
   gl.uniform1f(u.uSHead, sHead + (reduce ? 0 : sFrac));
-  gl.uniform1f(u.uGain, btrGain());
   gl.uniform4fv(u['uPas[0]'], pasBuf);
   gl.uniform1i(u.uPasN, opts.mode === 'active' ? pasN : 0);
   gl.uniform1f(u.uPasT, pasT);
@@ -1913,14 +1850,14 @@ function step(dt) {
   stepSea(dt); stepSong(dt);
   steerVoices(dt);
   if (opts.mode === 'active' && clock - pasT > 1 / 3) refreshFans();
-  if (opts.mode === 'btr') {
-    bClock += dt;
-    let n = 0;
-    while (bClock >= 1 / BROW_HZ && n++ < 4) { bClock -= 1 / BROW_HZ; makeBtrRow(clock); if (btrSel || bCursor >= 0) hudDirty = true; }
-    bFrac = bClock * BROW_HZ;
-    const sig = sources().join() + (song.bout && whaleGate() > 0.2);
-    if (sig !== step.bsig) { step.bsig = sig; hudDirty = true; }
-  }
+  if (tgt && !sea.contacts.includes(tgt)) { tgt = null; hudDirty = true; }
+  // The ear swings onto a locked target.
+  if (tgt && earFollow) ear = wrapA(ear + (wrapA(bearingTo(tgt) - ear + PI) - PI) * Math.min(1, dt * 4));
+  // The waterfall records all the time, so a switch shows the past.
+  rowClock += dt;
+  let rn = 0;
+  while (rowClock >= 1 / ROW_HZ && rn++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
+  rowFrac = rowClock * ROW_HZ;
   if (opts.mode === 'sounder') {
     sClock += dt;
     let n = 0;
@@ -1932,9 +1869,9 @@ function step(dt) {
   strobe.a = Math.max(0, strobe.a - dt / 3);
   if (boot.phase === 'text') { hudDirty = true; if (clock - boot.t0 > bootLen()) endBoot(); }
   if (charge.on) hudDirty = true;
-  // Track brackets and the cursor label follow at four frames a second.
+  // The bearing strip and the target marks redraw four times a second.
   const tick4 = Math.floor(clock * 4) !== Math.floor((clock - dt) * 4);
-  if (tick4 && ((tracks.length && opts.mode === 'active') || (cursorF >= 0 && opts.mode === 'sono'))) hudDirty = true;
+  if (tick4 && (opts.mode === 'sono' || tgt)) hudDirty = true;
   decayPass(dt);
   if (ring.on) {
     ring.t += dt;
@@ -1950,15 +1887,6 @@ function step(dt) {
     }
     if (ring.t >= RING_T) { ring.on = false; ring.front = 0; }
   }
-  if (opts.mode === 'sono') {
-    rowClock += dt;
-    let n = 0;
-    while (rowClock >= 1 / ROW_HZ && n++ < 6) { rowClock -= 1 / ROW_HZ; makeRow(clock); }
-    rowFrac = rowClock * ROW_HZ;
-    // The classifier lines change with what the sea is doing.
-    const sig = `${song.bout}|${sources().join()}`;
-    if (sig !== step.sig) { step.sig = sig; hudDirty = true; }
-  }
   if (hudFade && Math.floor(clock * 10) !== Math.floor((clock - dt) * 10)) hudDirty = true;
 }
 
@@ -1966,11 +1894,10 @@ function step(dt) {
 const sliderEl = document.getElementById('slider'), sliderLab = document.getElementById('sliderLab');
 const pingBtn = document.getElementById('ping');
 // Each display names its slider and its action.
-const MODES = ['active', 'sono', 'btr', 'sounder'];
+const MODES = ['active', 'sono', 'sounder'];
 const MODE = {
   active: { label: 'Range', aria: 'Range', key: 'range', btn: 'Ping' },
   sono: { label: 'Span', aria: 'Frequency span', key: 'span', btn: 'Knock' },
-  btr: { label: 'Gain', aria: 'Display gain', key: 'gain', btn: 'Knock' },
   sounder: { label: 'Depth', aria: 'Depth range', key: 'depth', btn: 'Mark' },
 };
 function syncSlider() {
@@ -1984,6 +1911,8 @@ const act = () => (opts.mode === 'active' ? ping() : opts.mode === 'sounder' ? m
 function applyMode(m) {
   opts.mode = m;
   syncSlider();
+  // Listen makes room for the bearing strip.
+  if (ready) measure();
   hudDirty = true;
 }
 // A switch re-opens the raster from a line, as the tube resyncs.
@@ -2028,11 +1957,6 @@ function glXY(e) {
   return [(x * f / as + 0.5) * W, (y * f + 0.5) * H];
 }
 const angleAt = (x, y) => Math.atan2(x - scope.cx, y - scope.cy);
-function tune(x) {
-  cursorF = clamp((x - box.x0) / (box.x1 - box.x0)) * spanHz();
-  press('tune');
-  wake();
-}
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture?.(e.pointerId);
@@ -2063,8 +1987,7 @@ stage.addEventListener('pointermove', e => {
     pt.a = a;
     hudDirty = true;
     wake();
-  } else if (opts.mode === 'sono') tune(x);
-  else if (opts.mode === 'btr') bearTune(x);
+  } else if (opts.mode === 'sono') aim(clamp((x - box.x0) / (box.x1 - box.x0)) * TAU);
   else depthTune(y);
 });
 function release(e) {
@@ -2082,17 +2005,16 @@ function release(e) {
   }
   if (pt.drag) return;
   if (boot.phase !== 'run') { endBoot(); return; }
-  if (opts.mode === 'sono') { knock(); return; }
-  if (opts.mode === 'btr') { selectTrace(glXY(e)[0]); return; }
   if (opts.mode === 'sounder') { mark(); return; }
   const [x, y] = glXY(e);
-  // A second tap on the same spot marks or drops a track.
+  // A second tap on the same spot locks or drops the target.
   const nowMs = performance.now();
   if (nowMs - lastTap.t < 350 && Math.hypot(x - lastTap.x, y - lastTap.y) < 24 * dpr) {
     lastTap.t = -1e9;
-    if (toggleTrack(x, y)) return;
+    if (lockTarget(pickAt(x, y))) return;
   }
   lastTap = { t: nowMs, x, y };
+  if (opts.mode !== 'active') { knock(); return; }
   // A tap near the centre pings all round; elsewhere it pings that bearing.
   const r = Math.hypot(x - scope.cx, y - scope.cy);
   ping(r < scope.rad * 0.12 ? null : angleAt(x, y));
@@ -2109,10 +2031,9 @@ stage.addEventListener('keydown', e => {
   const d = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: 1, ArrowDown: -1 }[e.key];
   if (!d) return;
   e.preventDefault();
-  if (opts.mode === 'btr') { bCursor = wrapA((bCursor < 0 ? sea.head : bCursor) + d * D2R); press('tune'); hudDirty = true; wake(); return; }
   if (opts.mode === 'sounder') { dCursor = clamp((dCursor < 0 ? depthMax() / 2 : dCursor) - d * depthMax() / 50, 0, depthMax()); press('tune'); hudDirty = true; wake(); return; }
   if (opts.mode === 'active') { sea.head = wrapA(sea.head + d * 5 * D2R); press('steer'); wake(); }
-  else { const f = cursorF < 0 ? spanHz() / 2 : cursorF; cursorF = clamp(f + d * spanHz() / 100, 0, spanHz()); press('tune'); wake(); }
+  else aim(ear + d * 2 * D2R);
 });
 
 /* ---------- bar ---------- */
@@ -2132,7 +2053,6 @@ sliderEl.addEventListener('input', () => {
   opts[key] = +sliderEl.value;
   save(key, opts[key]);
   if (key === 'range') { clearAcc(); ring.on = false; }
-  if (key === 'span' && cursorF > spanHz()) cursorF = -1;
   hudDirty = true; render(); wake();
 });
 pingBtn.addEventListener('click', act);
@@ -2148,8 +2068,6 @@ onQuality(() => resize());
 resize();
 // Prime the waterfall so the sonogram opens full.
 for (let i = 0; i < NROW; i++) { const tt = -NROW / ROW_HZ + i / ROW_HZ; stepSong(1 / ROW_HZ); makeRow(tt); }
-// The bearing display opens with a minute of history.
-for (let i = 0; i < BROW; i++) makeBtrRow(-BROW / BROW_HZ + i / BROW_HZ);
 // The sounder opens with the track just sailed, drawn behind the boat.
 if (SOUNDER) {
   const own = [...sea.own], back = sea.speed / SND_HZ;

@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The new tags read each toy's commit history.
+          fetch-depth: 0
       - name: Assemble the site
         run: |
           mkdir -p _site
@@ -31,7 +34,8 @@ jobs:
             mkdir -p "_site/$d"
             find "$d" -type f ! -name '*.md' -exec cp --parents {} _site/ \;
           done
-          cp toys.json .nojekyll _site/
+          cp toys.json series.json .nojekyll _site/
+          python3 tools/updates.py > _site/updates.json
           # The menu is an Artifact body fragment: a doctype and a viewport make it a full page.
           # Its own charset, title and styles stay in the head; the first element opens the body.
           { printf '<!doctype html>\n<html lang="en">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'; cat index.html; } > _site/index.html

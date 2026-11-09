@@ -24,32 +24,8 @@
 .stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
-/* The add chips sit together as one strip. */
-/* Add opens a tray of pieces above the bar. */
-.adder { position: relative; }
-#addBtn { display: inline-flex; align-items: center; gap: 6px; }
-#addBtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
-.add {
-  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.add .chip.icon svg .solid { fill: currentColor; stroke: none; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-/* Settings opens a column of tweaks, held to the right edge. */
-.add.sets { left: auto; right: 0; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-.sets > .chip { justify-content: center; }
-#setBtn svg { stroke-linecap: round; }
-/* On a phone the four lights keep to one row. */
-@media (max-width: 420px) { #light { gap: 5px; } #light .chip { padding-inline: 10px; } }
+/* The four lights fit the sheet's width. */
+.s2-row .s2-seg:has(.s2-dot) .s2-chip { padding: 0 5px; gap: 4px; }
 /* The remove button is a solid disc with a cut cross. */
 .drop {
   position: absolute; left: -13px; top: -13px; z-index: 1; width: 26px; height: 26px; padding: 0;
@@ -79,57 +55,15 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <canvas class="halo" aria-hidden="true"></canvas>
-    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the bar. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
+    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the Piece tray. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
       <canvas aria-hidden="true"></canvas>
       <canvas class="light" aria-hidden="true"></canvas>
       <canvas class="over" aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
       <div class="pips" aria-hidden="true"></div>
       <p class="fail" hidden>Prism needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="light" role="group" aria-label="Light">
-        <button class="chip" type="button" data-value="-1" aria-pressed="true" title="White light"><span class="dot" style="--c: oklch(0.97 0.01 90)"></span>White</button>
-        <button class="chip" type="button" data-value="20" aria-pressed="false" title="Red laser"><span class="dot" style="--c: oklch(0.64 0.24 28)"></span>Red</button>
-        <button class="chip" type="button" data-value="10" aria-pressed="false" title="Green laser"><span class="dot" style="--c: oklch(0.82 0.24 142)"></span>Green</button>
-        <button class="chip" type="button" data-value="1" aria-pressed="false" title="Violet laser"><span class="dot" style="--c: oklch(0.58 0.24 300)"></span>Violet</button>
-      </div>
-      <div class="actions">
-        <div class="adder">
-        <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add" aria-label="Add a piece"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Piece</button>
-        <div class="add" id="add" role="group" aria-label="Add a piece">
-          <button class="chip icon" type="button" data-kind="prism" aria-label="Add a prism" title="Prism"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="lens" aria-label="Add a convex lens" title="Convex lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="dlens" aria-label="Add a concave lens" title="Concave lens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 1.8h6.8c-2 2.6-2 9.8 0 12.4h-6.8c2-2.6 2-9.8 0-12.4z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="mirror" aria-label="Add a flat mirror" title="Mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="6.9" y="1.5" width="2.2" height="13" rx="0.5" transform="rotate(35 8 8)"/></svg></button>
-          <button class="chip icon" type="button" data-kind="convex" aria-label="Add a convex mirror" title="Convex mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="concave" aria-label="Add a concave mirror" title="Concave mirror"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg></button>
-          <button class="chip icon" type="button" data-kind="sensor" aria-label="Add a sensor pad" title="Sensor pad"><svg viewBox="0 0 16 16" aria-hidden="true"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg></button>
-        </div>
-        </div>
-        <button class="chip" id="clear" type="button" aria-disabled="true">Clear</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Style</span><div class="choices" id="look" role="group" aria-label="Style">
-              <button class="chip" type="button" data-value="solid" aria-pressed="true">Solid</button>
-              <button class="chip" type="button" data-value="wire" aria-pressed="false">Wireframe</button>
-            </div></div>
-            <button class="chip" id="reset" type="button" aria-disabled="true">Reset</button>
-          </div>
-        </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>move</dd></div>
-        <div><dt><span class="fine"><kbd>Shift</kbd> drag</span><span class="touch">Two fingers</span></dt><dd>rotate</dd></div>
-        <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>resize</dd></div>
-        <div><dt><span class="fine"><kbd>Delete</kbd></span><span class="touch">Tap ×</span></dt><dd>remove</dd></div>
-      </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
@@ -149,23 +83,47 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, choices, oklchRgb, css as okCss, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
-initPage({ id: 'prism' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
-const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
+// Each pick in the Piece tray adds one piece.
+const KINDS = [
+  { value: 'prism', label: 'Prism', icon: '<svg viewBox="0 0 16 16"><path d="M8 2.2l6.2 11H1.8z"/></svg>' },
+  { value: 'lens', label: 'Convex lens', icon: '<svg viewBox="0 0 16 16"><path d="M8 1.8c2.4 2.2 2.4 10.2 0 12.4c-2.4-2.2-2.4-10.2 0-12.4z"/></svg>' },
+  { value: 'dlens', label: 'Concave lens', icon: '<svg viewBox="0 0 16 16"><path d="M4.6 1.8h6.8c-2 2.6-2 9.8 0 12.4h-6.8c2-2.6 2-9.8 0-12.4z"/></svg>' },
+  { value: 'mirror', label: 'Mirror', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="6.9" y="1.5" width="2.2" height="13" rx="0.5" transform="rotate(35 8 8)"/></svg>' },
+  { value: 'convex', label: 'Convex mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg>' },
+  { value: 'concave', label: 'Concave mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg>' },
+  { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
+];
 // The lamp shines white light or one laser line.
-// Each laser is one wavelength bin, so it never splits.
-// Each light chip holds its bin; -1 is the full spectrum.
-let lightBin = -1, wire = false;
-try { wire = localStorage.getItem('stimming.prism.wire') === '1'; } catch (err) {}
-const addG = document.getElementById('add'), addBs = [...addG.querySelectorAll('.chip')];
-const dropB = panel.querySelector('.drop'), barEl = document.querySelector('.bar');
+// Each value is one wavelength bin; -1 is the full spectrum.
+const LIGHTS = [
+  { value: '-1', label: 'White', dot: 'oklch(0.97 0.01 90)' },
+  { value: '20', label: 'Red', dot: 'oklch(0.64 0.24 28)' },
+  { value: '10', label: 'Green', dot: 'oklch(0.82 0.24 142)' },
+  { value: '1', label: 'Violet', dot: 'oklch(0.58 0.24 300)' },
+];
+const ui = initPage({ id: 'prism', bar: {
+  choice: { label: 'Piece', display: 'tray', value: 'prism', options: KINDS,
+    onPick: v => { addPiece(v); panel.focus({ preventScroll: true }); } },
+  actions: [{ verb: 'clear', key: 'C', onPress: () => clearAll() }],
+  settings: [
+    { type: 'choice', id: 'light', label: 'Light', value: '-1', options: LIGHTS,
+      onPick: v => { lightBin = +v; geomDirty = true; wake(); } },
+    // The toggle keeps the old stored key, stimming.prism.wire.
+    { type: 'toggle', id: 'wire', label: 'Wireframe', value: false, persist: true, onToggle: on => { wire = on; wake(); } },
+  ],
+  reset: () => reset(),
+  quality: true,
+  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'resize'], ['delete', 'remove']],
+} });
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+// A laser is one wavelength bin, so it never splits.
+let lightBin = -1, wire = ui.setting('wire').value;
+const dropB = panel.querySelector('.drop');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
@@ -259,7 +217,7 @@ const make = (kind, extra = {}) => ({
   kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, k: 1, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
 });
 let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
-let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeB = 0;
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0;
 
 function corners(p, hw, hh) {
   const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
@@ -828,7 +786,9 @@ function placeHalo() {
   const r = panel.getBoundingClientRect(), vw = document.documentElement.clientWidth;
   const l = Math.floor(clamp(r.left, 0, HM)), rr = Math.floor(clamp(vw - r.right, 0, HM));
   const w = W + l + rr, h = H + 2 * HM;
-  halo.style.transform = `translate(${panel.offsetLeft - l}px, ${panel.offsetTop - HM}px)`;
+  // The shell's frame sits between main and the stage, so offsets come from rects.
+  const o = halo.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  halo.style.transform = `translate(${r.left - o.left - l}px, ${r.top - o.top - HM}px)`;
   const cw2 = Math.ceil(w * HQ), ch2 = Math.ceil(h * HQ);
   if (halo.width === cw2 && halo.height === ch2 && l === hl && rr === hr) return;
   hl = l;
@@ -1456,12 +1416,13 @@ function drawSource(p) {
   }
   c.globalAlpha = 1;
 }
-// Pictures stack from the top left corner.
+// Pictures stack from the top left corner, under the shell's top row.
 const pipR = () => clamp(0.12 * S, 54, 92);
 function pipAt(p) {
-  const rp = pipR(), gap = 2 * rp + 30, rows = Math.max(1, Math.floor((H - safeB - 24) / gap));
+  const rp = pipR(), gap = 2 * rp + 30, top = Math.max(24, safeT + 14);
+  const rows = Math.max(1, Math.floor((H - safeB - top) / gap));
   const n = pieces.filter(q => q.kind === 'sensor' && q.pc).indexOf(p), k = Math.max(0, n);
-  return [rp + 24 + Math.floor(k / rows) * gap, rp + 24 + (k % rows) * gap, rp];
+  return [rp + 24 + Math.floor(k / rows) * gap, rp + top + (k % rows) * gap, rp];
 }
 function drawPip(p) {
   if (!p.pc) return;
@@ -1759,7 +1720,7 @@ function tick(x, pitch = 1) {
 // The spectrum leaves to the right.
 function composition() {
   const phi = 0, R = (BASE_SIDE * S) / Math.sqrt(3);
-  const cx = W * 0.5, cy = (H - safeB) * 0.5;
+  const cx = W * 0.5, cy = (safeT + H - safeB) * 0.5;
   const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = 0.36 * W;
   const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
   const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
@@ -1779,9 +1740,8 @@ function applyLayout() {
 }
 function sync() {
   const n = liveAdded();
-  resetB.setAttribute('aria-disabled', String(pristine() && !tween));
-  clearB.setAttribute('aria-disabled', String(!n));
-  addBs.forEach(b => b.setAttribute('aria-disabled', String(n >= MAXADD)));
+  ui.action('clear').disabled = !n;
+  ui.choice.disabled = n >= MAXADD;
 }
 const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
 // A new piece drops into the light, turned to meet it.
@@ -1789,9 +1749,10 @@ function spot(kind) {
   const tmp = make(kind);
   tmp.u = tmp.v = 0.5;
   build(tmp);
-  const rr = tmp.r, m = rr + 0.03 * S, cx = W / 2, cy = (H - safeB) / 2;
-  const free = (x, y) => x > m && x < W - m && y > m && y < H - safeB - rr * 0.5
-    && pieces.every(q => q.dying || Math.hypot(q.x - x, q.y - y) > q.r + rr + 0.04 * S);
+  const rr = tmp.r, m = rr + 0.03 * S, cx = W / 2, cy = (safeT + H - safeB) / 2;
+  // A piece still growing in counts at its full size.
+  const clear = (x, y) => pieces.reduce((g, q) => (q.dying ? g : Math.min(g, Math.hypot(q.x - x, q.y - y) - q.r / Math.max(0.02, q.z) - rr)), Infinity);
+  const free = (x, y) => x > m && x < W - m && y > safeT + m && y < H - safeB - rr * 0.5 && clear(x, y) > 0.04 * S;
   const cands = [];
   // The lamp's own beam stays clear while it feeds a piece.
   for (let i = SEG[9] < 1000 ? 1 : 0; i < nSeg; i++) {
@@ -1811,11 +1772,15 @@ function spot(kind) {
     }
   }
   const R = rng((Math.random() * 1e9) | 0);
+  // A full table takes the roomiest of the tries, never the centre.
+  let best = [cx, cy, 0], room = -Infinity;
   for (let n = 0; n < 60; n++) {
-    const x = m + R() * (W - 2 * m), y = m + R() * Math.max(1, H - safeB - 2 * m);
-    if (free(x, y)) return [x, y, R() * TAU];
+    const x = m + R() * (W - 2 * m), y = safeT + m + R() * Math.max(1, H - safeT - safeB - 2 * m), a = R() * TAU;
+    if (free(x, y)) return [x, y, a];
+    const g = clear(x, y);
+    if (g > room) { room = g; best = [x, y, a]; }
   }
-  return [cx, cy, 0];
+  return best;
 }
 // Each kind turns so its output heads toward the open table.
 function aim(kind, th, x, y, cx, cy) {
@@ -1837,6 +1802,8 @@ function addPiece(kind) {
   p.rot = rot;
   p.z = reduce ? 1 : 0.02;
   p.zp = reduce ? 1 : 0;
+  // The next add in this frame sees this piece's place.
+  build(p);
   pieces.push(p);
   select(pieces.length - 1);
   geomDirty = true;
@@ -2167,44 +2134,22 @@ addEventListener('keydown', e => {
     moveTo(p, p.x + arrow[0] * st, p.y + arrow[1] * st);
   } else setRot(p, p.rot + (k === 'e' ? 1 : -1) * (e.shiftKey ? 15 : 3) * D2R);
 });
-choices(document.getElementById('light'), v => {
-  lightBin = +v;
-  geomDirty = true;
-  wake();
-});
-const look = choices(document.getElementById('look'), v => {
-  wire = v === 'wire';
-  try { localStorage.setItem('stimming.prism.wire', wire ? '1' : '0'); } catch (err) {}
-  wake();
-});
-look.set(wire ? 'wire' : 'solid');
-// Each tray opens on hover or tap and closes on a press elsewhere or Escape.
-function popover(box, btn) {
-  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
-  return open;
-}
-// The piece tray also closes after a pick.
-const openTray = popover(document.querySelector('.adder'), document.getElementById('addBtn'));
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-addBs.forEach(b => b.addEventListener('click', () => {
-  if (b.getAttribute('aria-disabled') === 'true') return;
-  addPiece(b.dataset.kind);
-  openTray(false);
-  panel.focus({ preventScroll: true });
-}));
-clearB.addEventListener('click', clearAll);
-resetB.addEventListener('click', reset);
 // The kit wakes and sleeps the context; a mute also stops the hum.
 sound.onChange(on => { if (!on) hush(); });
 
 /* ---------- size and start ---------- */
-// safeB is the strip of stage the inset bar covers.
+// safeT and safeB are the stage strips the shell's corner rows cover.
 function measureBar() {
-  const first = barEl?.firstElementChild;
-  safeB = first ? clamp(panel.getBoundingClientRect().bottom - first.getBoundingClientRect().top, 0, H * 0.4) : 0;
+  const r = panel.getBoundingClientRect();
+  let t = 0, b = 0;
+  for (const el of document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
+    if (!el.offsetParent) continue;
+    const e = el.getBoundingClientRect();
+    if (e.top - r.top < r.height / 2) t = Math.max(t, e.bottom - r.top);
+    else b = Math.max(b, r.bottom - e.top);
+  }
+  safeT = clamp(t, 0, H * 0.3);
+  safeB = clamp(b, 0, H * 0.3);
 }
 function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;
@@ -2233,7 +2178,7 @@ function fit(force) {
 function failed() {
   panel.querySelector('.fail').hidden = false;
   panel.querySelectorAll('canvas').forEach(c => { c.hidden = true; });
-  [resetB, clearB, ...addBs].forEach(b => b.setAttribute('aria-disabled', 'true'));
+  ui.hideControls();
 }
 function boot() {
   if (!ctx || !ctx.createRadialGradient || !initGL()) return failed();

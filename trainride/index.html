@@ -1,0 +1,1840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.01 260); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Train Ride</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Train Ride: a mountain valley through one carriage window. */
+:root { --stage: oklch(0.1 0.01 260); }
+.stage--trainride { cursor: grab; touch-action: none; }
+.stage--trainride.dragging { cursor: grabbing; }
+.stage--trainride canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--trainride canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--trainride canvas { transition: none; } }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 260 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Train Ride</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A mountain valley by night or by day, seen through a carriage window on a high viaduct. Rain runs back along the glass as the train goes. Drag to lean and peer along the valley; scroll or pinch to lean against the glass.">
+      <p class="fail" hidden>Train Ride needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="mode" role="group" aria-label="Weather">
+        <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
+        <button class="chip" type="button" data-value="rain" aria-pressed="true">Rain</button>
+        <button class="chip" type="button" data-value="fogged" aria-pressed="false">Fogged</button>
+      </div>
+      <div class="choices" id="time" role="group" aria-label="Time of day">
+        <button class="chip" type="button" data-value="night" aria-pressed="true">Night</button>
+        <button class="chip" type="button" data-value="day" aria-pressed="false">Day</button>
+      </div>
+      <label class="slider"><span>Speed</span><input type="range" id="speed" min="0" max="1" step="0.01" value="0.6" aria-label="Speed: standing to fast"></label>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt>Drag</dt><dd>lean and peer</dd></div>
+          <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>lean to the glass</dd></div>
+          <div class="fine"><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>weather</dd></div>
+          <div class="fine"><dt><kbd>T</kbd></dt><dd>day or night</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Train Ride</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { initPage, choices, whenVisible, reduced, onReducedChange, quality, pixelRatio, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+initPage({ id: 'trainride' });
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.trainride.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.trainride.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = {
+  mode: saved('mode') || 'rain',
+  speed: saved('speed') != null ? +saved('speed') : 0.6,
+  time: saved('time') || 'night',
+};
+// QA can open a look with ?time=, ?mode= and ?x=; these are not saved.
+const qs = new URLSearchParams(location.search);
+if (qs.get('time')) opts.time = qs.get('time');
+if (qs.get('mode')) opts.mode = qs.get('mode');
+// The Speed slider maps to cruise speed in metres per second.
+const cruise = v => v * 45;
+
+/* ---------- scene ---------- */
+// Train Ride: a mountain valley seen through one carriage window on a high viaduct.
+// The outside renders to a target; one glass shader frames, fogs and wets it.
+function build({ THREE }) {
+let seed = 4242;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const range = (a, b) => a + (b - a) * rnd();
+
+/* ---------- outside: the valley ---------- */
+const out = new THREE.Scene();
+const outCam = new THREE.PerspectiveCamera(50, 1, 1, 40000);
+const outRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const NG = 16, NL = 6, LAMP_GAP = 28;
+const { L: TILE, NT, b: TB } = ROUTE.meta;
+const S0 = name => ROUTE.meta.stations.find(st => st[0] === name)[1];
+// Three stretches: Lake Zurich, the Linth plain, the Walensee.
+// Each weight is 0 to 1; the three always sum to 1.
+const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+const SEG = [S0('Pfäffikon SZ'), S0('Altendorf') + 600, S0('Ziegelbrücke'), S0('Weesen') + 800];
+const seg = x => {
+  const s = ((x % TILE) + TILE) % TILE;
+  const z = 1 - sstep(SEG[0], SEG[1], s) + sstep(TILE - 3000, TILE, s);
+  const w = sstep(SEG[2], SEG[3], s) * (1 - sstep(TILE - 3000, TILE, s));
+  return { z, l: Math.max(0, 1 - z - w), w };
+};
+// Route map rows: t runs left of the line, denser near it.
+const jOf = t => (-8 + Math.sqrt(64 + 4 * TB * (Math.min(Math.max(t, -400), 18400) + 400))) / (2 * TB);
+const townAt = (x, t) => {
+  const i = Math.floor((((x % TILE) + TILE) % TILE) / TILE * ROUTE.w) % ROUTE.w, j = Math.round(jOf(t));
+  return ROUTE.f[(j * ROUTE.w + i) * 2 + 1] / 250;
+};
+const f8 = v => v.toFixed(8);
+const TAU = Math.PI * 2;
+
+const NOISE = /* glsl */`
+float hash1(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2 hash2(vec2 p) { return vec2(hash1(p), hash1(p + 17.17)); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash1(i), hash1(i + vec2(1, 0)), u.x), mix(hash1(i + vec2(0, 1)), hash1(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
+// Gradient noise, about -0.6 to 0.6, with no grid lines.
+float gnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 ga = hash2(i) * 2.0 - 1.0, gb = hash2(i + vec2(1.0, 0.0)) * 2.0 - 1.0;
+  vec2 gc = hash2(i + vec2(0.0, 1.0)) * 2.0 - 1.0, gd = hash2(i + vec2(1.0, 1.0)) * 2.0 - 1.0;
+  return mix(mix(dot(ga, f), dot(gb, f - vec2(1.0, 0.0)), u.x), mix(dot(gc, f - vec2(0.0, 1.0)), dot(gd, f - vec2(1.0, 1.0)), u.x), u.y);
+}
+// Ridged noise: sharp crests and eroded flanks.
+float ridged(vec2 p, int oct) {
+  float s = 0.0, a = 0.5, w = 1.0;
+  for (int i = 0; i < 7; i++) {
+    if (i >= oct) break;
+    float n = max(1.0 - abs(gnoise(p) * 1.8), 0.0);
+    n *= n;
+    s += a * n * w;
+    w = clamp(n * 1.6, 0.0, 1.0);
+    p = mat2(1.6, -1.2, 1.2, 1.6) * p + 7.3;
+    a *= 0.5;
+  }
+  return s;
+}`;
+
+// Real ground from the route map: heights relative to the eye, a lake flag, town density.
+const LAND = /* glsl */`
+uniform sampler2D tH, tF;
+vec2 rt(vec2 xz) {
+  float t = clamp(-xz.y, -400.0, 18400.0);
+  float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
+  return vec2(xz.x / ${f8(TILE)}, (j + 0.5) / ${NT}.0);
+}
+vec3 seg(float x) {
+  float s = mod(x, ${f8(TILE)});
+  float z = 1.0 - smoothstep(${f8(SEG[0])}, ${f8(SEG[1])}, s) + smoothstep(${f8(TILE - 3000)}, ${f8(TILE)}, s);
+  float w = smoothstep(${f8(SEG[2])}, ${f8(SEG[3])}, s) * (1.0 - smoothstep(${f8(TILE - 3000)}, ${f8(TILE)}, s));
+  return vec3(z, clamp(1.0 - z - w, 0.0, 1.0), w);
+}
+float wet(vec2 xz) { return textureLod(tF, rt(xz), 0.0).r; }
+float town(vec2 xz) { return textureLod(tF, rt(xz), 0.0).g; }
+// Distance outside the water, roughly in metres; negative on the water.
+float shore(vec2 xz) { return (0.5 - wet(xz)) * 30.0; }
+// oct above 4 adds relief finer than the 13 m elevation grid.
+float landO(vec2 xz, int oct) {
+  vec2 uv = rt(xz);
+  float h = textureLod(tH, uv, 0.0).r;
+  if (oct > 4) {
+    float d = (1.0 - textureLod(tF, uv, 0.0).r) * smoothstep(20.0, 80.0, -xz.y);
+    h += (gnoise(xz * 0.03) * 2.0 + gnoise(xz * 0.11) * 0.6) * d;
+  }
+  return h;
+}
+float land(vec2 xz) { return landO(xz, 7); }`;
+
+// The route map: half-float heights, and a lake flag with town density.
+const tH = new THREE.DataTexture(ROUTE.h, ROUTE.w, ROUTE.ht, THREE.RedFormat, THREE.HalfFloatType);
+const tF = new THREE.DataTexture(ROUTE.f, ROUTE.w, ROUTE.ht, THREE.RGFormat, THREE.UnsignedByteType);
+for (const t of [tH, tF]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+const OUTU = {
+  tH: { value: tH },
+  tF: { value: tF },
+  uTime: { value: 0 },
+  uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
+  uSun: { value: new THREE.Vector3(-0.55, 0.5, 0.67).normalize() },
+  uDay: { value: 0 },
+  uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
+  uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
+  uLP: { value: Array.from({ length: NL }, () => new THREE.Vector4()) },
+  uCamX: { value: 0 },
+  uScale: { value: 1 },
+  uSmear: { value: 0 },
+  uRain: { value: 1 },
+  uSpeed: { value: 0 },
+  uView: { value: new THREE.Vector2(1, 1) },
+  // x is the nearest platform's centre; y is its half length, 0 when none is near.
+  uStn: { value: new THREE.Vector2() },
+  tSign: { value: null },
+};
+
+// Light, sky and haze for night and day; uDay blends the two.
+const HAZE = /* glsl */`
+uniform vec3 uMoon, uSun;
+uniform float uDay, uRain;
+uniform vec4 uGP[${NG}];
+uniform vec4 uGC[${NG}];
+// Day light: the sun and the blue sky; rain greys both.
+vec3 sunC() { return vec3(1.0, 0.95, 0.86) * 3.2 * (1.0 - 0.85 * uRain); }
+vec3 skyA(float ny) { return mix(vec3(0.25, 0.4, 0.75) * 0.55, vec3(0.45, 0.48, 0.52) * 0.75, uRain) * (0.55 + 0.45 * ny); }
+vec3 skyCol(vec3 d) {
+  float up = max(d.y, 0.0);
+  // Night: deep blue, a glow round the moon, a far town low on the left.
+  vec3 n = vec3(0.004, 0.006, 0.013) + vec3(0.02, 0.03, 0.05) * exp(-up * 9.0);
+  float m = max(dot(d, uMoon), 0.0);
+  n += vec3(0.25, 0.3, 0.38) * (pow(m, 200.0) * 0.4 + pow(m, 10.0) * 0.05);
+  n += vec3(0.5, 0.22, 0.07) * 0.05 * exp(-up * 22.0) * pow(max(dot(normalize(d.xz + 1e-4), normalize(vec2(-0.7, -1.0))), 0.0), 6.0);
+  // Day: pale at the horizon, deep blue overhead, bright round the sun.
+  float s = max(dot(d, uSun), 0.0);
+  vec3 dc = mix(vec3(0.55, 0.68, 0.88), vec3(0.08, 0.22, 0.6), pow(up, 0.4)) * 1.1;
+  dc += vec3(1.0, 0.88, 0.7) * (pow(s, 6.0) * 0.18 + pow(s, 60.0) * 0.5);
+  dc = mix(dc, vec3(0.42, 0.45, 0.5) * (0.75 + 0.35 * up), uRain * 0.85);
+  return mix(n, dc, uDay);
+}
+float hazeAmt(vec3 P) {
+  float dist = length(P - cameraPosition);
+  // Night: valley haze with a 90 m scale height, and mist on the water.
+  float k = 1.0 / 90.0, h0 = cameraPosition.y + 50.0, h1 = max(P.y + 50.0, 0.0), dh = h1 - h0;
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  float mist = smoothstep(0.0, -38.0, P.y) * smoothstep(100.0, 500.0, dist) * 0.1;
+  float night = clamp(1.0 - exp(-dist * 0.0004 * avg - dist * (0.00001 + 0.00003 * uRain)) + mist, 0.0, 1.0);
+  // Day: thin blue air with a 1.5 km scale height; rain thickens it.
+  float kd = 1.0 / 1500.0, g0 = cameraPosition.y + 40.0, g1 = max(P.y + 40.0, 0.0), dg = g1 - g0;
+  float avd = abs(dg) < 1.0 ? exp(-g0 * kd) : (exp(-g0 * kd) - exp(-g1 * kd)) / (dg * kd);
+  float day = 1.0 - exp(-dist * (0.00005 + 0.00016 * uRain) * avd);
+  return mix(night, day, uDay);
+}
+// Haze takes the horizon colour: warmed over each town at night, lit by the sun by day.
+vec3 hazeCol(vec3 d, vec3 P) {
+  vec3 hz = skyCol(normalize(vec3(d.x, max(d.y, 0.0) * 0.4 + 0.02, d.z)));
+  vec3 n = hz * 0.7;
+  if (uDay < 0.99) for (int i = 0; i < ${NG}; i++) n += uGC[i].rgb * uGP[i].w * 0.3 * exp(-length(P.xz - uGP[i].xz) / 110.0);
+  vec3 dy = hz * 0.92 + vec3(1.0, 0.9, 0.75) * pow(max(dot(d, uSun), 0.0), 8.0) * 0.25 * (1.0 - uRain);
+  return mix(n, dy, uDay);
+}`;
+
+/* Sky dome: stars and moonlit cloud by night, cumulus by day. */
+// The dome follows the camera, so a long ride never leaves it.
+const sky = (() => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
+    uniforms: OUTU, side: THREE.BackSide, depthWrite: false,
+    vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    uniform float uTime;
+    ${NOISE}
+    ${HAZE}
+    // Cloud density from a warped field on a flat sky plane.
+    float cloud(vec2 p) { return fbm(p * 0.5 + fbm(p * 1.1) * 0.7); }
+    void main() {
+      vec3 d = normalize(vP - cameraPosition);
+      vec3 c = skyCol(d);
+      float night = 1.0 - uDay, m = dot(d, uMoon);
+      // Stars: one in a few hundred cells of a sphere grid.
+      if (night > 0.0 && d.y > 0.0) {
+        vec3 sp = d * 260.0, ci = floor(sp), cf = fract(sp) - 0.5;
+        float hs = hash1(ci.xy + ci.z * 7.31);
+        float st = smoothstep(0.986, 1.0, hs) * exp(-dot(cf, cf) * 40.0);
+        c += vec3(0.8, 0.86, 1.0) * st * night * (1.0 - 0.95 * uRain) * smoothstep(0.03, 0.25, d.y) * (0.8 + 0.2 * sin(uTime * 2.0 + hs * 90.0));
+      }
+      // The moon: a soft disc.
+      c += vec3(0.9, 0.92, 1.0) * smoothstep(0.99982, 0.9999, m) * 1.1 * night;
+      if (d.y > 0.0) {
+        vec2 p = d.xz / (d.y + 0.06) * 2.2 + vec2(uTime * 0.006, 0.0);
+        float base = cloud(p);
+        // Rain closes the sky; day has more cloud than night.
+        float cov = mix(mix(0.56, 0.47, uDay), 0.24, uRain);
+        float cl = smoothstep(cov, cov + 0.2, base);
+        // Day: tops lit toward the sun, grey bellies.
+        vec2 ps = p + normalize(uSun.xz + 1e-4) * 0.12;
+        float lit = clamp(0.55 + (base - cloud(ps)) * 5.0, 0.0, 1.0);
+        vec3 dayC = mix(vec3(0.42, 0.48, 0.6), vec3(1.3, 1.26, 1.18), lit);
+        dayC = mix(dayC, vec3(0.36, 0.38, 0.42), uRain * 0.8);
+        // Night: dark cloud with a silver edge near the moon.
+        float lm = pow(max(m, 0.0), 7.0);
+        vec3 nightC = vec3(0.008, 0.01, 0.017) + vec3(0.5, 0.54, 0.65) * lm * (0.4 + 0.8 * (1.0 - cl));
+        // Far cloud sinks into the haze at the horizon.
+        c = mix(c, mix(nightC, dayC, uDay), cl * 0.95 * smoothstep(0.0, 0.12, d.y));
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  }));
+  m.renderOrder = -1;
+  m.frustumCulled = false;
+  out.add(m);
+  return m;
+})();
+
+/* Terrain: rows widen and thin with distance, out to 18 km. */
+// Each row snaps to its own spacing, so the land never swims.
+const terrain = (() => {
+  const N = 420, M = 360, Z0 = 2, Z1 = 18000;
+  const pos = new Float32Array((N + 1) * (M + 1) * 3);
+  let k = 0;
+  for (let j = 0; j <= M; j++) {
+    const t = j / M, z = -(Z0 + 380 * t + (Z1 - Z0 - 380) * t ** 3);
+    const dx = 2 * (150 - z * 1.7) / N;
+    // position holds the column index, the row's z and the row's spacing.
+    for (let i = 0; i <= N; i++) { pos[k++] = i - N / 2; pos[k++] = z; pos[k++] = dx; }
+  }
+  const idx = new Uint32Array(N * M * 6);
+  k = 0;
+  for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) {
+    const a = j * (N + 1) + i, b = a + N + 1;
+    idx.set([a, a + 1, b, a + 1, b + 1, b], k);
+    k += 6;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  return g;
+})();
+const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
+  uniforms: OUTU,
+  vertexShader: /* glsl */`
+  uniform float uCamX, uDay;
+  uniform vec3 uSun;
+  varying vec3 vP, vN;
+  varying float vSh;
+  ${NOISE}
+  ${LAND}
+  void main() {
+    float dx = position.z;
+    vec3 w = vec3((floor(uCamX / dx) + position.x) * dx, 0.0, position.y);
+    w.y = land(w.xz);
+    float e = max(dx * 0.5, 1.0);
+    vN = normalize(vec3(w.y - land(w.xz + vec2(e, 0.0)), e, w.y - land(w.xz + vec2(0.0, e))));
+    // By day a short march toward the sun gives soft terrain shadows.
+    vSh = 1.0;
+    if (uDay > 0.01) {
+      float t = 20.0;
+      for (int i = 0; i < 11; i++) {
+        vec3 q = w + uSun * t;
+        vSh = min(vSh, clamp(6.0 * (q.y - landO(q.xz, 4)) / t + 0.5, 0.0, 1.0));
+        t *= 1.75;
+      }
+    }
+    vP = w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP, vN;
+  varying float vSh;
+  uniform float uTime;
+  ${NOISE}
+  ${LAND}
+  ${HAZE}
+  void main() {
+    vec3 V = normalize(cameraPosition - vP);
+    float dist = length(cameraPosition - vP);
+    float wd = shore(vP.xz);
+    vec3 sg = seg(vP.x);
+    // Height above the lakes, near enough.
+    float hh = vP.y + 20.0;
+    vec3 N = normalize(vN);
+    // Close land gets fine relief from noise.
+    float near = smoothstep(1400.0, 250.0, dist);
+    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.07), 0.0, gnoise(vP.xz * 0.07 + 9.0)) * 0.5 * near);
+    float slope = 1.0 - N.y;
+    float n1 = fbm(vP.xz * 0.002);
+    // Meadow: lush in the valley, browner up high.
+    vec3 alb = mix(vec3(0.07, 0.15, 0.03), vec3(0.13, 0.16, 0.045), fbm(vP.xz * 0.0017 + 3.0));
+    alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
+    // Grass texture close by; it fades before it can shimmer.
+    float grain = vnoise(vP.xz * 0.9) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.9))));
+    alb *= (0.8 + 0.4 * vnoise(vP.xz * 0.05)) * (0.85 + 0.3 * grain);
+    // Farms: a patchwork of fields on the flat floor.
+    float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
+    if (flatL > 0.0) {
+      // Strips in staggered rows, so the fields never form a grid.
+      vec2 fp = mat2(0.94, 0.34, -0.34, 0.94) * vP.xz / vec2(85.0, 36.0);
+      fp.x += floor(fp.y) * 0.37;
+      float fh = hash1(floor(fp));
+      vec3 fc = fh < 0.6 ? alb * (0.75 + 0.6 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.16, 0.15, 0.06) : vec3(0.09, 0.07, 0.045);
+      alb = mix(alb, fc, flatL * 0.6);
+    }
+    // Vineyards on the sunny slopes above Lake Zurich.
+    float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
+    vine *= step(0.72, hash1(floor(vP.xz / vec2(55.0, 30.0) + vec2(floor(vP.z / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd);
+    if (vine > 0.0) {
+      float row = abs(fract(vP.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x / 2.2)));
+      alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
+    }
+    // Towns from the map, densest on the Lake Zurich shore.
+    // Each roof has a pale wall toward the train.
+    float vm = min(town(vP.xz) * 1.2, 1.0), house = 0.0;
+    for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
+    if (vm > 0.0 && wd > 6.0) {
+      vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
+      float hs = hash1(floor(g) + 31.0);
+      // Roofs show from 200 m out; closer they would read as flat tiles.
+      if (hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
+        house = 1.0;
+        alb = f.y > 0.2 ? vec3(0.5, 0.47, 0.42) : hs < 0.25 ? vec3(0.13, 0.045, 0.025) : hs < 0.5 ? vec3(0.075, 0.048, 0.032) : vec3(0.085, 0.085, 0.09);
+      }
+    }
+    // Forest: patches on the slopes, thick on the near bank, none above the treeline.
+    // A fine noise frays the edges of each wood.
+    float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
+    float forest = smoothstep(0.5, 0.6, fm);
+    forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
+    // Crowns show up close; the pattern fades before it can shimmer.
+    float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
+    // Dark spruce mixes with brighter beech.
+    vec3 wood = mix(vec3(0.012, 0.028, 0.012), vec3(0.03, 0.055, 0.018), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
+    alb = mix(alb, wood * (0.6 + 0.8 * crown), forest);
+    // Rock on steep faces and high crags; snow above the snow line.
+    float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
+    // Limestone: pale grey with bedding lines and dark water streaks.
+    float strata = vnoise(vec2(vP.x * 0.004, vP.y * 0.12));
+    float streak = vnoise(vec2(vP.x * 0.05, vP.y * 0.01)) * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x * 0.12)));
+    vec3 lime = mix(vec3(0.11, 0.105, 0.1), vec3(0.2, 0.19, 0.17), sg.z) * (0.75 + 0.35 * strata) * (0.8 + 0.3 * streak);
+    alb = mix(alb, lime, rock);
+    // Spring snow lingers near the summits.
+    float sl = mix(1450.0, 1080.0, sg.z);
+    float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
+    alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
+    // Day: sun with soft terrain shadows, and sky light.
+    vec3 day = sunC() * max(dot(N, uSun), 0.0) * mix(vSh, 1.0, uRain * 0.7) + skyA(N.y);
+    // Night: the moon behind the peaks, and a faint sky.
+    vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * max(dot(N, uMoon), 0.0) + vec3(0.012, 0.016, 0.026);
+    vec3 c = alb * mix(night, day, uDay);
+    // Town glow pools: each bright source lights the ground round it.
+    if (uDay < 0.99) {
+      vec3 pool = vec3(0.0);
+      for (int i = 0; i < ${NG}; i++) {
+        float d = length(uGP[i].xyz - vP);
+        pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0);
+      }
+      c += alb * pool * (1.0 - uDay);
+    }
+    // Water: rippled on the river, calm on the lakes.
+    float water = smoothstep(2.0, -2.0, wd);
+    if (water > 0.0) {
+      // Ripples fade with distance, so far water lies still.
+      float calm = mix(0.15, 0.06, smoothstep(200.0, 1500.0, dist));
+      float r0 = vnoise(vec2(vP.x * 0.08, vP.z * 0.5 + uTime * 0.6));
+      // Fine ripples fade out before they can alias.
+      float r1 = 0.5 + (vnoise(vec2(vP.x * 0.3, vP.z * 1.6 - uTime * 0.8)) - 0.5) * (1.0 - smoothstep(0.2, 0.6, length(fwidth(vP.xz * vec2(0.3, 1.6)))));
+      vec3 Nw = normalize(vec3(((r0 - 0.5) * 0.08 + (r1 - 0.5) * 0.08) * calm, 1.0, ((vnoise(vec2(vP.x * 0.08 + 3.0, vP.z * 0.5)) - 0.5) * 0.2 + (r1 - 0.5) * 0.3) * calm));
+      vec3 R = reflect(-V, Nw);
+      R.y = max(R.y, 0.005);
+      float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nw, V), 0.0), 5.0);
+      vec3 refl = skyCol(R);
+      // The reflected ray climbs to the far slopes; a coarse march finds them.
+      float t = 20.0;
+      for (int i = 0; i < 32; i++) {
+        vec3 q = vP + R * t;
+        float hq = landO(q.xz, 3);
+        if (hq > q.y) {
+          float qh = hq + 20.0;
+          vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
+          a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sg.z), mix(1650.0, 1280.0, sg.z), qh));
+          vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
+          refl = mix(a * lit, hazeCol(R, q), hazeAmt(q));
+          break;
+        }
+        t *= 1.25;
+      }
+      // Lake Zurich is blue-green; the Walensee is emerald.
+      vec3 wc = mix(vec3(0.0, 0.003, 0.005), mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z), uDay) * (1.0 - F) + refl * max(F, 0.08);
+      // Lights and the moon lay broken columns on the water at night.
+      if (uDay < 0.99) {
+        vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
+        vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
+        float tilt = (vnoise(vec2(vP.x * 0.05, vP.z * 0.6 + uTime * 0.5)) - 0.5) * 0.4 * calm;
+        vec3 cols = vec3(0.0);
+        for (int i = 0; i < ${NG}; i++) {
+          vec3 L = uGP[i].xyz - vP;
+          float dl = length(L);
+          vec3 err = R0 - L / dl;
+          float ex = dot(err, right), ey = err.y;
+          float mm = exp(-pow((tilt - ey * 0.5) / 0.03, 2.0));
+          float fall = ey > 0.0 ? exp(-ey / 0.25) : exp(-pow(ey / 0.02, 2.0));
+          float sx = max(0.003, 3.0 / dl);
+          cols += uGC[i].rgb * uGP[i].w * mm * fall * exp(-ex * ex / (sx * sx)) * 0.9;
+        }
+        vec3 errM = R0 - uMoon;
+        cols += vec3(0.7, 0.75, 0.85) * exp(-pow((tilt - errM.y * 0.5) / 0.03, 2.0)) * exp(-pow(dot(errM, right) / 0.02, 2.0)) * 0.7;
+        wc += cols * (1.0 - uDay);
+      }
+      c = mix(c, wc, water);
+    }
+    gl_FragColor = vec4(mix(c, hazeCol(-V, vP), hazeAmt(vP)), 1.0);
+  }`,
+}));
+land.frustumCulled = false;
+out.add(land);
+
+/* Town lights: a fixed tile of sources, wrapped round the camera on the GPU. */
+const glints = [];
+{
+  const pos = [], col = [], size = [];
+  const SOD = [1.0, 0.55, 0.2], WARM = [1.0, 0.75, 0.45], WHITE = [0.85, 0.92, 1.0];
+  const light = (x, z, c, k, sz) => { pos.push(x, 3 + rnd() * 6, z); col.push(...c.map(q => q * k)); size.push(sz); };
+  const pick = () => rnd() < 0.6 ? WARM : rnd() < 0.7 ? SOD : WHITE;
+  // Each real town and village gets a cluster; the map spreads the rest.
+  const KIND = { c: [1400, 1400, 1.4], t: [420, 650, 1.2], s: [220, 400, 0.9], v: [110, 260, 0.8] };
+  for (const [ps, pt, kind] of ROUTE.meta.places) {
+    const [n, r, k] = KIND[kind];
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * TAU, d = r * Math.sqrt(rnd()), t = pt + Math.sin(a) * d * 0.6;
+      if (t > 40) light(ps + Math.cos(a) * d, -t, pick(), range(1.4, 3.2), range(24, 50));
+    }
+    if (kind !== 's') glints.push({ x: ps, z: -pt, col: WARM, k });
+  }
+  for (let i = 0; i < 60000 && pos.length < 3 * 16000; i++) {
+    const x = rnd() * TILE, t = 60 + 7000 * rnd() ** 1.4;
+    if (rnd() < townAt(x, t) * 0.9) light(x, -t, pick(), range(1.2, 3), range(22, 40));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.Float32BufferAttribute(size, 1));
+  const p = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    attribute vec3 color;
+    attribute float size;
+    uniform float uScale, uCamX, uTime, uDay;
+    varying vec3 vC;
+    varying vec3 vP;
+    ${NOISE}
+    ${LAND}
+    void main() {
+      vec3 w = position;
+      w.x = uCamX + mod(w.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+      // Lights go out by day, and none stand in the water.
+      if (uDay > 0.995 || shore(w.xz) < 6.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vC = vec3(0.0); vP = w; return; }
+      // Far lights lift a little, so the coarse far mesh never hides them.
+      w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.008;
+      vP = w;
+      // Distant lights shimmer a little in the valley air.
+      vC = color * (1.0 - uDay) * (0.85 + 0.15 * sin(uTime * 3.0 + position.x * 0.37 + position.z * 0.11));
+      vec4 mv = viewMatrix * vec4(w, 1.0);
+      gl_PointSize = clamp(abs(size) * 7.0 * uScale / -mv.z, 2.5, 28.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vC;
+    varying vec3 vP;
+    ${HAZE}
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float a = exp(-dot(c, c) * 22.0);
+      // A cap keeps tight clusters from blowing the bloom into blocks.
+      gl_FragColor = vec4(min(vC * a * (1.0 - hazeAmt(vP) * 0.6), vec3(4.0)), 1.0);
+    }`,
+  }));
+  p.frustumCulled = false;
+  p.renderOrder = 2;
+  out.add(p);
+}
+
+// The carriage's lit panes throw warm light out onto the rain and the parapet.
+// They fade by day.
+const TRAIN = /* glsl */`
+uniform float uCamX;
+const vec3 LAMPC = vec3(1.0, 0.8, 0.58);
+float trainLight(vec3 P) {
+  // Panes repeat every 2.4 m along the train; each is 1.5 m wide.
+  float f = abs(fract((P.x - uCamX) / 2.4 + 0.5) - 0.5) * 2.4;
+  float d = max(-P.z, 0.0);
+  // With distance the pane edges blur into a band.
+  float pane = mix(smoothstep(0.85, 0.65, f), 0.62, smoothstep(0.0, 9.0, d) * 0.7);
+  float band = smoothstep(0.6 + d * 0.7, 0.3 + d * 0.4, abs(P.y - 0.05));
+  return pane * band / (1.0 + d * d * 0.3);
+}`;
+
+/* The viaduct: a concrete parapet below the window. */
+const parapet = new THREE.Mesh(new THREE.BoxGeometry(400, 1.0, 0.4).translate(0, -2.1, -4.0), new THREE.ShaderMaterial({
+  uniforms: OUTU,
+  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; vN = normal; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  uniform vec4 uLP[${NL}];
+  uniform float uSmear;
+  ${NOISE}
+  ${TRAIN}
+  ${HAZE}
+  uniform vec2 uStn;
+  void main() {
+    // The parapet gives way to the platform at a station.
+    if (abs(vP.x - uStn.x) < uStn.y) discard;
+    vec3 N = normalize(vN);
+    // Night: dark concrete, lit by the panes and pooled under each lamp.
+    vec3 c = vec3(0.004, 0.005, 0.007) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.05;
+    for (int i = 0; i < ${NL}; i++) {
+      vec3 L = uLP[i].xyz - vP;
+      float d = length(L);
+      c += LAMPC * uLP[i].w * 1.6 / (d * d + 1.0) * max(dot(N, L / d) * 0.8 + 0.2, 0.0);
+    }
+    c *= 0.35;
+    // Day: weathered concrete; the joints every 3 m blur with the smear.
+    float j = (0.5 - abs(fract(vP.x / 3.0) - 0.5)) * 3.0;
+    float joint = (1.0 - smoothstep(0.0, 0.02 + uSmear * 0.5, j)) * 0.04 / (0.04 + uSmear);
+    vec3 alb = vec3(0.3, 0.29, 0.27) * (0.85 + 0.3 * vnoise(vec2(vP.x * 0.4, vP.y * 9.0))) * (1.0 - 0.6 * joint);
+    gl_FragColor = vec4(mix(c, alb * (sunC() * max(dot(N, uSun), 0.0) + skyA(N.y)), uDay), 1.0);
+  }`,
+}));
+parapet.frustumCulled = false;
+out.add(parapet);
+
+/* Lamp posts every 28 m: a steel post, a slim head, an LED bar and its beam. */
+// Each part is a quad that the shader smears by the train speed.
+// uSmear is the travel in metres during one frame's shutter.
+const LAMPS = 9;
+const lampX = new Float32Array(LAMPS), lampK = new Float32Array(LAMPS).fill(1);
+const lampAttrs = [];
+const QF = /* glsl */`
+uniform float uSmear;
+varying vec2 vL;
+varying vec3 vW;
+varying float vK;
+${TRAIN}
+${HAZE}`;
+function strip(geo, w, cy, add, order, frag) {
+  const g = new THREE.InstancedBufferGeometry().copy(geo);
+  g.instanceCount = LAMPS;
+  for (const [name, arr] of [['aX', lampX], ['aK', lampK]]) {
+    const a = new THREE.InstancedBufferAttribute(arr, 1).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute(name, a);
+    lampAttrs.push(a);
+  }
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
+    vertexShader: /* glsl */`
+    attribute float aX, aK;
+    uniform float uSmear;
+    varying vec2 vL;
+    varying vec3 vW;
+    varying float vK;
+    void main() {
+      vec3 p = position;
+      // The local quad is 1 m wide; it stretches by the smear.
+      p.x *= ${w.toFixed(3)} + uSmear;
+      vL = vec2(p.x, p.y - ${cy.toFixed(3)});
+      vK = aK;
+      vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
+      vW = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: QF + frag,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = order;
+  out.add(m);
+}
+// A box shape convolved with the motion box: a trapezoid of cover.
+const COVER = w => /* glsl */`clamp((${w} + uSmear + 0.001 - abs(vL.x) * 2.0) / (2.0 * uSmear + 0.002), 0.0, 1.0) * min(1.0, ${w} / (uSmear + 0.001))`;
+strip(new THREE.PlaneGeometry(1, 5.8).translate(0, 0.3, -4.3), 0.14, 0.3, false, 3, /* glsl */`
+void main() {
+  float cov = ${COVER('0.14')};
+  // Night: dark steel; the lamp lights the post just under its head.
+  vec3 cn = vec3(0.003, 0.003, 0.004) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.03;
+  cn += LAMPC * vK * 0.06 * exp(-max(0.47 - vW.y, 0.0) * 1.5) * step(vW.y, 0.6);
+  // Day: grey steel; the left edge catches the sun.
+  vec3 N = normalize(vec3(clamp(vL.x / (0.07 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
+  vec3 cd = vec3(0.09, 0.095, 0.1) * (sunC() * max(dot(N, uSun), 0.0) + skyA(0.0));
+  gl_FragColor = vec4(mix(cn, cd, uDay), cov * 0.97);
+}`);
+strip(new THREE.PlaneGeometry(1, 0.16).translate(0, 0.53, -4.02), 0.5, 0.53, false, 3, /* glsl */`
+void main() {
+  float cov = ${COVER('0.5')} * (1.0 - smoothstep(0.034, 0.044, abs(vL.y)));
+  // The lower lip catches its own glow; by day the top catches the sun.
+  vec3 cn = vec3(0.004) + LAMPC * vK * 0.03 * smoothstep(0.0, -0.04, vL.y);
+  vec3 cd = vec3(0.08, 0.085, 0.09) * (sunC() * uSun.y * smoothstep(-0.02, 0.03, vL.y) + skyA(0.5));
+  gl_FragColor = vec4(mix(cn, cd, uDay), cov);
+}`);
+strip(new THREE.PlaneGeometry(1, 2.2).translate(0, -0.63, -3.98), 3.2, -0.63, true, 4, /* glsl */`
+void main() {
+  // The beam falls and widens below the bar; rain makes it visible.
+  float y = 0.47 - vW.y;
+  float spread = 0.2 + y * 0.42, sx2 = spread * spread + uSmear * uSmear * 0.12;
+  float beam = exp(-vL.x * vL.x / sx2) * spread / sqrt(sx2);
+  beam *= smoothstep(0.0, 0.08, y) / (1.0 + y * y * 0.6) * smoothstep(2.15, 1.7, y);
+  beam *= smoothstep(1.6 + uSmear * 0.5, 1.1 + uSmear * 0.5, abs(vL.x));
+  gl_FragColor = vec4(LAMPC * vK * (1.0 - uDay) * beam * (0.04 + 0.5 * uRain) * 0.5, 1.0);
+}`);
+strip(new THREE.PlaneGeometry(1, 1.0).translate(0, 0.47, -3.97), 1.6, 0.47, true, 4, /* glsl */`
+void main() {
+  // The LED bar under the head: a thin hot line with a soft halo.
+  float dx = max(abs(vL.x) - 0.22 - uSmear * 0.5, 0.0), dy = vL.y;
+  float core = exp(-dx * dx / 0.0003 - dy * dy / 0.0001);
+  float r2 = dx * dx + dy * dy;
+  float halo = (exp(-r2 / 0.02) * 0.12 + exp(-r2 / 0.12) * 0.02) * smoothstep(0.5, 0.35, abs(dy)) * smoothstep(0.8, 0.6, dx);
+  // The light spreads over its smear, so a fast lamp dims.
+  float k = 0.44 / (0.44 + uSmear);
+  gl_FragColor = vec4(LAMPC * vK * (1.0 - uDay) * (core * 14.0 + halo * 1.2) * k, 1.0);
+}`);
+
+/* Station platforms: a slab, a rail at the back, and blue name signs. */
+// One platform moves to whichever station is nearest.
+const PL = 320, SIGNS = 7;
+const platMat = (rail) => new THREE.ShaderMaterial({
+  uniforms: OUTU,
+  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; vN = normal; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP;
+  varying vec3 vN;
+  uniform vec4 uLP[${NL}];
+  uniform float uSmear;
+  ${NOISE}
+  ${TRAIN}
+  ${HAZE}
+  void main() {
+    vec3 N = normalize(vN);
+    // Asphalt with slab joints every 5 m; the joints blur with the smear.
+    float j = (0.5 - abs(fract(vP.x / 5.0) - 0.5)) * 5.0;
+    float joint = (1.0 - smoothstep(0.0, 0.02 + uSmear * 0.5, j)) * 0.04 / (0.04 + uSmear);
+    vec3 alb = ${rail ? 'vec3(0.09, 0.095, 0.1)' : 'vec3(0.11, 0.11, 0.115) * (0.9 + 0.2 * vnoise(vec2(vP.x * 0.3, vP.z * 3.0))) * (1.0 - 0.5 * joint)'};
+    vec3 night = vec3(0.01, 0.011, 0.014) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.06;
+    for (int i = 0; i < ${NL}; i++) {
+      vec3 L = uLP[i].xyz - vP;
+      float d = length(L);
+      night += LAMPC * uLP[i].w * 3.0 / (d * d + 1.0) * max(dot(N, L / d) * 0.8 + 0.2, 0.0);
+    }
+    vec3 day = sunC() * max(dot(N, uSun), 0.0) + skyA(N.y);
+    gl_FragColor = vec4(alb * mix(night, day, uDay), 1.0);
+  }`,
+});
+const platform = new THREE.Group();
+platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.2, -6.2), platMat(false)));
+for (const y of [-0.95, -1.4]) platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.05, 0.05).translate(0, y, -10.9), platMat(true)));
+platform.children.forEach(m => { m.frustumCulled = false; });
+out.add(platform);
+// The sign: the SBB blue panel with the white rule and the name.
+const signC = Object.assign(document.createElement('canvas'), { width: 1024, height: 178 });
+const tSign = new THREE.CanvasTexture(signC);
+tSign.colorSpace = THREE.SRGBColorSpace;
+tSign.anisotropy = 8;
+OUTU.tSign.value = tSign;
+let signName = '';
+function drawSign(name) {
+  if (name === signName) return;
+  signName = name;
+  const c = signC.getContext('2d');
+  c.fillStyle = '#2d327d';
+  c.fillRect(0, 0, 1024, 178);
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = 5;
+  c.strokeRect(14, 14, 996, 150);
+  c.fillStyle = '#ffffff';
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  let fs = 96;
+  do c.font = `700 ${fs}px Gabarito, sans-serif`; while (c.measureText(name).width > 900 && (fs -= 4) > 40);
+  c.fillText(name, 512, 94);
+  tSign.needsUpdate = true;
+}
+document.fonts?.ready.then(() => { const n = signName; signName = ''; if (n) drawSign(n); });
+{
+  // Each sign stands on two posts; the quad holds both, and blurs with the smear.
+  const g = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1.9).translate(0, -0.95, -6.0));
+  g.instanceCount = SIGNS;
+  g.setAttribute('aX', new THREE.InstancedBufferAttribute(new Float32Array(Array.from({ length: SIGNS }, (_, i) => (i - (SIGNS - 1) / 2) * 45)), 1));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true, depthWrite: false,
+    vertexShader: /* glsl */`
+    attribute float aX;
+    uniform float uSmear;
+    varying vec2 vL;
+    varying vec3 vW;
+    void main() {
+      vec3 p = position;
+      p.x *= 2.6 + uSmear;
+      vL = vec2(p.x, p.y + 0.95);
+      vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
+      vW = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tSign;
+    uniform float uSmear;
+    uniform vec4 uLP[${NL}];
+    varying vec2 vL;
+    varying vec3 vW;
+    ${TRAIN}
+    ${HAZE}
+    void main() {
+      // Eight taps across the smear blur the sign along the track.
+      vec3 c = vec3(0.0);
+      float a = 0.0;
+      for (int i = 0; i < 8; i++) {
+        float x = vL.x + ((float(i) + 0.5) / 8.0 - 0.5) * uSmear;
+        // The panel spans the top 0.45 m; two posts hold it.
+        if (abs(x) < 1.3 && vL.y > 0.5) { c += texture2D(tSign, vec2(x / 2.6 + 0.5, (vL.y - 0.5) / 0.45)).rgb; a += 1.0; }
+        else if (abs(abs(x) - 0.95) < 0.03 && vL.y <= 0.5) { c += vec3(0.05); a += 1.0; }
+      }
+      if (a < 0.5) discard;
+      c /= a;
+      // Lamps and the panes light it at night; sun and sky by day.
+      vec3 night = vec3(0.02) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.2;
+      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - vW; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
+      vec3 day = sunC() * max(uSun.z, 0.0) + skyA(0.0);
+      gl_FragColor = vec4(c * mix(night, day, uDay), a / 8.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 3;
+  platform.add(m);
+}
+
+/* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
+{
+  const n = 3600, a = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) a.set([range(-60, 60), range(-14, 10), range(-30, -2.0), rnd()], i * 4);
+  const g = new THREE.InstancedBufferGeometry();
+  // One quad per drop: x runs head to tail, y runs across.
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 0, 1, 0, 1, 1, 0], 3));
+  g.setIndex([0, 1, 2, 2, 1, 3]);
+  g.setAttribute('aDrop', new THREE.InstancedBufferAttribute(a, 4));
+  g.instanceCount = n;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+    attribute vec4 aDrop;
+    uniform float uScale, uTime, uRain, uSpeed, uDay;
+    uniform vec2 uView;
+    uniform vec4 uLP[${NL}];
+    varying vec3 vC;
+    varying vec2 vQ;
+    ${TRAIN}
+    void main() {
+      vec3 p = aDrop.xyz;
+      float fall = 8.0 + 3.0 * aDrop.w;
+      p.y = mod(p.y - uTime * fall + 14.0, 24.0) - 14.0;
+      p.x = uCamX + mod(p.x - uCamX + 60.0, 120.0) - 60.0;
+      // Seen from the train, the rain moves back and down.
+      // The tail is where the drop was one shutter ago.
+      vec3 q = p - vec3(-uSpeed, -fall, 0.0) * 0.022;
+      vec4 ca = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      vec4 cb = projectionMatrix * viewMatrix * vec4(q, 1.0);
+      vQ = position.xy;
+      if (ca.w < 0.4 || cb.w < 0.4) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vC = vec3(0.0); return; }
+      vec2 h = uView * 0.5;
+      vec2 pa = ca.xy / ca.w * h, pb = cb.xy / cb.w * h;
+      vec2 dir = pb - pa;
+      float len = length(dir);
+      dir = len > 0.001 ? dir / len : vec2(0.0, 1.0);
+      // A drop is about 2 mm wide; it never draws thinner than a pixel.
+      float wpx = clamp(0.002 * uScale * 400.0 / ca.w, 1.0, 5.0);
+      vec2 s = mix(pa, pb, position.x) + dir * (position.x * 2.0 - 1.0) * wpx + vec2(-dir.y, dir.x) * position.y * wpx;
+      gl_Position = vec4(s / h, mix(ca.z / ca.w, cb.z / cb.w, position.x), 1.0);
+      vec3 c = vec3(0.012, 0.014, 0.019) + vec3(1.0, 0.66, 0.36) * trainLight(p) * 1.6;
+      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - p; c += LAMPC * uLP[i].w * 6.0 / (dot(L, L) + 2.0); }
+      // By day the drops only catch the grey sky.
+      c = mix(c, vec3(0.045, 0.05, 0.056), uDay);
+      // One drop's light spreads over its streak, so long streaks dim.
+      vC = c * uRain * wpx / (wpx + len * 0.35);
+      // Streaks right by the eye would smear into bands, so they fade out.
+      vC *= smoothstep(0.8, 2.2, ca.w);
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vC;
+    varying vec2 vQ;
+    void main() {
+      float a = exp(-vQ.y * vQ.y * 3.0) * smoothstep(0.0, 0.15, vQ.x) * smoothstep(1.0, 0.6, vQ.x);
+      gl_FragColor = vec4(vC * a, 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 5;
+  out.add(m);
+}
+
+/* ---------- inside: the window, its frame and the glass ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const W = {
+  tOut: { value: outRT.texture },
+  uRes: { value: new THREE.Vector2(1, 1) },
+  uTime: { value: 0 },
+  uTan: { value: new THREE.Vector2(1, 1) },
+  uYaw: { value: 0 },
+  uEye: { value: new THREE.Vector3(0, 0, 1) },
+  uC0: { value: new THREE.Vector2(0, 0.035) },
+  uHalf: { value: new THREE.Vector2(0.6, 0.33) },
+  uRad: { value: 0.08 },
+  uRain: { value: 1 },
+  uFog: { value: 0 },
+  uPatch: { value: 0 },
+  uDay: { value: 0 },
+  tRoom: { value: null },
+  uSpeed: { value: 0 },
+  uFlow: { value: 0 },
+  uLamp: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
+  tPid: { value: null },
+};
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: W, depthTest: false, depthWrite: false,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tOut;
+  uniform vec2 uRes;
+  uniform float uTime, uRad, uRain, uFog, uSpeed, uFlow, uPatch, uDay;
+  uniform samplerCube tRoom;
+  uniform vec2 uTan, uC0;
+  uniform float uYaw;
+  uniform vec3 uEye;
+  uniform vec2 uHalf;
+  uniform vec3 uLamp[3];
+  uniform sampler2D tPid;
+  varying vec2 vUv;
+  // The glass sits back in a reveal; a rubber seal holds it.
+  const float REVEAL = 0.07, SEAL = 0.006;
+  ${NOISE}
+  float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+  // Still beads: one per cell.
+  // xy is the disc position, z the radius on screen, w the hit.
+  vec4 beads(vec2 p, float sc, float dens) {
+    vec2 g = p * sc, i = floor(g), f = fract(g);
+    if (hash1(i + 9.0) > dens) return vec4(0.0);
+    vec2 o = 0.25 + 0.5 * hash2(i);
+    float r = 0.05 + 0.12 * hash1(i + 3.0);
+    vec2 dv = (f - o) / r;
+    if (dot(dv, dv) > 1.0) return vec4(0.0);
+    return vec4(dv, r / sc, 1.0);
+  }
+  // Running drops: columns along the run direction m, heads with thin trails.
+  // The return has the same layout as beads; trail is the clear thread.
+  vec4 runs(vec2 p, vec2 m, out float trail) {
+    trail = 0.0;
+    vec2 ax = vec2(-m.y, m.x);
+    float u = dot(p, ax), v = dot(p, m);
+    float Wc = 0.05;
+    float col = floor(u / Wc);
+    float h = hash1(vec2(col, 3.0));
+    if (h < 0.3) return vec4(0.0);
+    float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 37.0 + h * 40.0) * 0.003 + (h - 0.65) * 0.02;
+    float sp = 0.35 + 0.7 * hash1(vec2(col, 7.0));
+    float head = mod(uFlow * sp + h * 17.0, 2.4) - 1.2;
+    float dv = v - head;
+    float hr = 0.004 + 0.0032 * h;
+    vec2 q = vec2(fu / hr, dv / (hr * 1.5));
+    if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
+    // The trail is a thin water thread behind the head; speed draws it out.
+    float tl = (0.22 + 0.2 * h) * (1.0 + uSpeed / 18.0);
+    // The head wipes a track through fog; the track fogs over behind it.
+    if (dv < 0.0 && dv > -tl * 2.0) trail = smoothstep(1.0, 0.55, abs(fu) / hr) * (1.0 + dv / (tl * 2.0));
+    if (dv < 0.0 && dv > -tl) {
+      float age = -dv / tl;
+      float cell = v * 70.0 + h * 9.0;
+      vec2 tb = vec2(fu / 0.0015, (fract(cell) - 0.5) * 2.6);
+      if (hash1(vec2(col, floor(cell))) > 0.6 && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, 0.0015, 0.6);
+      // The thread thins toward its tail and acts as a narrow cylinder lens.
+      float tw = 0.0018 * (1.0 - 0.6 * age);
+      if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
+    }
+    return vec4(0.0);
+  }
+  // A water lens: a dome that flips and shrinks the view behind it.
+  // The edge bends light most, so the rim reads dark.
+  void lens(vec4 b, float k, inout vec2 off, inout float cover, inout float rim, inout float spec) {
+    if (b.w <= 0.0) return;
+    k *= b.w;
+    float dd = dot(b.xy, b.xy), h = sqrt(max(1.0 - dd, 0.0));
+    off -= b.xy / max(h, 0.2) * b.z * 4.0 * k;
+    cover = max(cover, k * (1.0 - dd));
+    rim = max(rim, k * smoothstep(0.5, 0.98, dd));
+    // The carriage light above makes one small warm highlight.
+    vec3 N = normalize(vec3(b.xy, h * 1.4));
+    spec = max(spec, k * pow(max(dot(N, vec3(0.28, 0.5, 0.82)), 0.0), 80.0));
+  }
+  void main() {
+    vec2 px = gl_FragCoord.xy / uRes;
+    float asp = uRes.x / uRes.y;
+    // The head leans inside the cabin; the window stays fixed in the wall.
+    // Each pixel's ray meets the wall plane; p is the point it hits.
+    // uEye holds the head offset and its distance to the wall.
+    vec3 dir = vec3((px * 2.0 - 1.0) * uTan, -1.0);
+    float cy = cos(uYaw), sy = sin(uYaw);
+    dir = vec3(cy * dir.x + sy * dir.z, dir.y, -sy * dir.x + cy * dir.z);
+    // p is where the ray meets the wall face; pg is where it meets the glass.
+    float k0 = 1.0 / max(-dir.z, 0.05);
+    vec2 p = (uEye.xy + dir.xy * uEye.z * k0) / (2.0 * uTan.y);
+    vec2 pg = (uEye.xy + dir.xy * (uEye.z + REVEAL) * k0) / (2.0 * uTan.y);
+    float dW = sdRR(p - uC0, uHalf, uRad);
+    vec2 q = pg - uC0;
+    float d = sdRR(q, uHalf, uRad);
+    float e = 0.0015;
+    vec2 g = normalize(vec2(sdRR(q + vec2(e, 0.0), uHalf, uRad) - sdRR(q - vec2(e, 0.0), uHalf, uRad), sdRR(q + vec2(0.0, e), uHalf, uRad) - sdRR(q - vec2(0.0, e), uHalf, uRad)) + 1e-6);
+    // The carriage glow: a warm source above and behind the viewer.
+    vec3 warm = vec3(1.0, 0.62, 0.32);
+    float roomG = 0.35 + 0.65 * smoothstep(-0.6, 0.6, p.y + 0.3 * p.x);
+    vec3 col;
+    if (dW < 0.0 && d < -SEAL) {
+      /* ---- glass ---- */
+      // Drops and fog live on the glass, so they use its plane.
+      p = pg;
+      // Drops run straight down at rest; the head wind sweeps them back.
+      vec2 m = normalize(vec2(-uSpeed / 7.0, -1.0));
+      vec2 off = vec2(0.0);
+      float cover = 0.0, rim = 0.0, spec = 0.0, clear = 0.0;
+      if (uRain > 0.001) {
+        // The wind strips some beads off the pane at speed.
+        float strip = 1.0 - 0.35 * smoothstep(5.0, 40.0, uSpeed);
+        float t1, t2;
+        lens(beads(p, 24.0, 0.32 * uRain * strip), uRain, off, cover, rim, spec);
+        lens(beads(p + 3.7, 60.0, 0.3 * uRain * strip), uRain, off, cover, rim, spec);
+        lens(beads(p + 7.1, 110.0, 0.26 * uRain), uRain, off, cover, rim, spec);
+        lens(runs(p, m, t1), uRain, off, cover, rim, spec);
+        vec4 r2 = runs(p * 0.7 + 1.3, m, t2);
+        r2.z /= 0.7;
+        lens(r2, uRain, off, cover, rim, spec);
+        clear = max(t1, t2) * uRain;
+      }
+      // Fog: the mode base and a cold rim near the frame.
+      float fog = uFog * (0.8 + 0.35 * fbm(p * 6.0));
+      fog += 0.22 * smoothstep(-0.07, -SEAL, d) * (0.6 + 0.6 * vnoise(p * 30.0));
+      // Long rain fogs the pane in patches.
+      // They start at the cold frame and the low pane, then spread.
+      if (uPatch > 0.001) {
+        float field = fbm(p * 3.2 + 11.0) * 0.75 + fbm(p * 9.0 + 3.0) * 0.25;
+        field += 0.42 * smoothstep(-0.16, 0.0, d) + 0.22 * smoothstep(0.0, -0.32, q.y);
+        float thr = mix(1.3, 0.6, uPatch) + (vnoise(p * 46.0) - 0.5) * 0.06;
+        fog += 0.8 * smoothstep(thr, thr + 0.16, field) * (0.85 + 0.3 * vnoise(p * 18.0));
+      }
+      fog = clamp(fog * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
+      // Close to the glass, each drop covers more of the view.
+      vec2 uv = px + off / vec2(asp, 1.0) / uEye.z;
+      vec3 sharp = texture2D(tOut, uv).rgb;
+      vec3 blur = sharp;
+      if (fog > 0.02) {
+        blur = vec3(0.0);
+        float R = (0.004 + 0.022 * fog) / uEye.z;
+        // A per-pixel turn of the spiral hides the tap pattern as grain.
+        float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        for (int i = 0; i < 24; i++) {
+          float a = float(i) * 2.39996 + rot, r = sqrt((float(i) + 0.5) / 24.0) * R;
+          blur += texture2D(tOut, uv + vec2(cos(a), sin(a)) * r / vec2(asp, 1.0)).rgb;
+        }
+        blur /= 24.0;
+      }
+      col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
+      // Train glass is faintly green and passes about four fifths of the light.
+      col *= vec3(0.8, 0.84, 0.81);
+      // Fog scatters light into a milky veil, warm from the room.
+      // The carriage reflects in the pane; R points back into the cabin.
+      vec3 V = normalize(dir);
+      vec3 R = vec3(V.xy, -V.z);
+      float F = 0.04 + 0.96 * pow(1.0 - max(-V.z, 0.0), 5.0);
+      vec3 room = textureLod(tRoom, R, 1.0).rgb;
+      // Fog scatters the room light, so its reflection blurs and grows.
+      vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb;
+      vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
+      col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
+      col += room * F * 0.5 * (1.0 - fog);
+      // The glass reflects the lit carriage as a soft warm gradient.
+      float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
+      col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
+      // Drops: a dark rim and a warm highlight from the room.
+      col *= 1.0 - 0.7 * rim;
+      // By day the bright far windows of the cabin make the highlight.
+      col += mix(warm * 0.35 * roomG, vec3(0.6, 0.63, 0.66), uDay) * spec;
+      // Dried tracks of old rain: grime that only a lamp shows.
+      vec2 m0 = normalize(vec2(-3.0, -1.0));
+      float grime = smoothstep(0.52, 0.8, fbm(vec2(dot(p, vec2(-m0.y, m0.x)) * 70.0, dot(p, m0) * 3.0)));
+      grime = max(grime * 0.7, smoothstep(0.62, 0.9, fbm(p * 22.0 + 4.0)) * 0.5);
+      col += warm * 0.003 * grime * roomG * (1.0 - uDay);
+      // By day the outside light backlights the grime.
+      col += blur * grime * 0.06 * uDay;
+      for (int i = 0; i < 3; i++) {
+        float k = uLamp[i].z;
+        if (k <= 0.0) continue;
+        // A passing lamp lights the fog, the drops and the grime on the pane.
+        float near = length(p - uLamp[i].xy);
+        col += vec3(1.0, 0.75, 0.45) * k * fog * 0.6 * exp(-near * 5.0);
+        col += vec3(1.0, 0.8, 0.55) * k * (cover * 0.5 + rim * 0.9) * exp(-near * 7.0);
+        col += vec3(1.0, 0.78, 0.5) * k * grime * 0.02 * exp(-near * 4.0);
+      }
+    } else if (dW < 0.0) {
+      /* ---- seal and reveal ---- */
+      vec3 lit = vec3(0.0);
+      if (d < 0.0) {
+        // The rubber seal: near black, with a soft sheen on its round edge.
+        float r = 1.0 - abs(d / SEAL * 2.0 + 1.0);
+        col = mix(vec3(0.006), vec3(0.02), uDay) + mix(warm * 0.012 * roomG, vec3(0.05), uDay) * r * r;
+      } else {
+        // The ray strikes the reveal between the wall face and the glass.
+        float a = 0.0, b = 1.0;
+        for (int i = 0; i < 6; i++) { float m = 0.5 * (a + b); if (sdRR(mix(p, pg, m) - uC0, uHalf, uRad) < 0.0) a = m; else b = m; }
+        float f = 0.5 * (a + b);
+        vec2 h2 = mix(p, pg, f) - uC0;
+        vec2 n2 = -normalize(vec2(sdRR(h2 + vec2(e, 0.0), uHalf, uRad) - sdRR(h2 - vec2(e, 0.0), uHalf, uRad), sdRR(h2 + vec2(0.0, e), uHalf, uRad) - sdRR(h2 - vec2(0.0, e), uHalf, uRad)) + 1e-6);
+        // A cream lining; the sill at the bottom is oiled wood.
+        vec3 wood = mix(vec3(0.26, 0.13, 0.055), vec3(0.4, 0.22, 0.1), vnoise(vec2((h2.x + uC0.x) * 9.0, f * 2.0 + (h2.x + uC0.x) * 0.6) + vec2(0.0, vnoise(vec2(h2.x * 60.0, 0.0)) * 0.5)));
+        vec3 alb = mix(vec3(0.6, 0.55, 0.47), wood, smoothstep(0.6, 0.8, n2.y));
+        // Night: the cabin light falls from above, so the sill is brightest.
+        vec3 night = vec3(1.0, 0.76, 0.5) * 0.06 * (0.35 + 0.65 * max(n2.y, 0.0)) * (1.0 - 0.5 * f);
+        // Day: light through the glass; the reveal brightens toward it.
+        vec3 day = vec3(1.0, 0.95, 0.88) * 0.55 * (0.45 + 0.4 * max(n2.y, 0.0) + 0.15 * max(-n2.y, 0.0)) * (0.55 + 0.6 * f);
+        col = alb * mix(night, day, uDay);
+        for (int i = 0; i < 3; i++) {
+          float k = uLamp[i].z;
+          if (k <= 0.0) continue;
+          vec2 Lp = uLamp[i].xy - (h2 + uC0);
+          col += alb * vec3(1.0, 0.76, 0.48) * k * 0.5 * (0.3 + 0.7 * max(dot(n2, normalize(Lp)), 0.0)) / (1.0 + dot(Lp, Lp) * 25.0) * (0.4 + 0.6 * f);
+        }
+      }
+    } else {
+      /* ---- wall and passenger display ---- */
+      // Warm cream panels, lit by the cabin at night and the windows by day.
+      vec3 alb = vec3(0.62, 0.55, 0.45) * (0.97 + 0.06 * vnoise(p * 60.0));
+      vec3 light = mix(vec3(1.0, 0.76, 0.5) * 0.055 * (0.35 + 0.85 * smoothstep(-0.7, 0.8, p.y)), vec3(1.0, 0.95, 0.88) * 0.2 * (0.6 + 0.4 * smoothstep(-0.7, 0.8, p.y)), uDay);
+      // Panel joints beside and under the window.
+      float jx = abs(abs(p.x - uC0.x) - uHalf.x - 0.15), jy = abs(p.y - uC0.y + uHalf.y + 0.1);
+      alb *= 1.0 - 0.35 * smoothstep(0.003, 0.0, min(jx, jy));
+      // A groove where the lining meets the wall, and a soft shadow round it.
+      alb *= 1.0 - 0.45 * smoothstep(0.005, 0.0, abs(dW - 0.004));
+      alb *= 0.8 + 0.2 * smoothstep(0.0, 0.05, dW);
+      // A wooden ledge runs under the window, with a lit top edge.
+      float ly = uC0.y - uHalf.y - p.y;
+      if (ly > 0.004 && ly < 0.045 && abs(p.x - uC0.x) < uHalf.x + 0.06) {
+        alb = mix(vec3(0.24, 0.12, 0.05), vec3(0.38, 0.2, 0.09), vnoise(vec2(p.x * 9.0, ly * 30.0 + vnoise(vec2(p.x * 70.0, 0.0)) * 0.5)));
+        alb *= 1.0 + 0.8 * smoothstep(0.012, 0.004, ly) - 0.4 * smoothstep(0.03, 0.045, ly);
+      }
+      col = alb * light;
+      // Spill: a little lamp light reaches the wall beside the window.
+      for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
+      // The passenger display hangs over the window.
+      float top = uC0.y + uHalf.y;
+      vec2 ph = vec2(min(uHalf.x * 0.55, 0.32), 0.033), pc = vec2(uC0.x, top + 0.026 + ph.y);
+      float db = sdRR(p - pc, ph + 0.007, 0.008);
+      col *= 0.75 + 0.25 * smoothstep(0.0, 0.02, db + 0.004 * sign(pc.y - p.y));
+      if (db < 0.0) {
+        col = mix(vec3(0.012, 0.013, 0.015), vec3(0.03, 0.032, 0.035), uDay);
+        vec2 su = (p - pc) / ph * 0.5 + 0.5;
+        if (sdRR(p - pc, ph, 0.003) < 0.0) {
+          vec3 scr = texture2D(tPid, su).rgb;
+          col = scr * mix(0.5, 1.0, uDay) + mix(warm * 0.006, vec3(0.012), uDay) * (1.0 - su.y);
+        }
+      }
+    }
+    gl_FragColor = vec4(col, 1.0);
+  }`,
+}));
+glass.frustumCulled = false;
+
+/* Passenger display: the next stop, the line ahead and the clock. */
+const pid = Object.assign(document.createElement('canvas'), { width: 1280, height: 132 });
+const pc2 = pid.getContext('2d');
+const tPid = new THREE.CanvasTexture(pid);
+tPid.colorSpace = THREE.SRGBColorSpace;
+tPid.anisotropy = 4;
+W.tPid.value = tPid;
+// Station distances come from the rail graph; they scale onto the map length.
+const STN = ROUTE.meta.stations.map(([n, d]) => [n.replace('Zürich Hauptbahnhof', 'Zürich HB'), d * TILE / ROUTE.meta.stations.at(-1)[1]]);
+let pidKey = '';
+document.fonts?.ready.then(() => { pidKey = ''; });
+function drawPid(s) {
+  const n = STN.length, i = STN.findIndex(st => st[1] > s);
+  const next = i < 0 ? 0 : i, prev = (next - 1 + n) % n;
+  const sN = i < 0 ? TILE : STN[next][1], sP = STN[prev][1];
+  const f = Math.min(1, Math.max(0, (s - sP) / (sN - sP)));
+  const now = new Date(), clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const key = `${next}|${Math.round(f * 300)}|${clock}`;
+  if (key === pidKey) return;
+  pidKey = key;
+  const c = pc2;
+  c.fillStyle = '#0a0e13';
+  c.fillRect(0, 0, 1280, 132);
+  c.textAlign = 'left';
+  c.fillStyle = '#8193a6';
+  c.font = '500 26px Gabarito, sans-serif';
+  c.fillText('Nächster Halt', 30, 44);
+  c.fillStyle = '#ffffff';
+  c.font = '700 50px Gabarito, sans-serif';
+  c.fillText(STN[next][0], 30, 100);
+  c.textAlign = 'right';
+  c.font = '600 50px Gabarito, sans-serif';
+  c.fillText(clock, 1250, 86);
+  // The line: the last stop, then the next three; the red dot is the train.
+  const xs = [520, 690, 860, 1030], y = 56, mx = xs[0] + (xs[1] - xs[0]) * f;
+  c.lineWidth = 5;
+  c.strokeStyle = '#4a5664';
+  c.beginPath(); c.moveTo(xs[0], y); c.lineTo(mx, y); c.stroke();
+  c.strokeStyle = '#ffffff';
+  c.beginPath(); c.moveTo(mx, y); c.lineTo(xs[3] + 45, y); c.stroke();
+  c.textAlign = 'center';
+  c.font = '600 24px Gabarito, sans-serif';
+  xs.forEach((x, k) => {
+    const st = STN[(prev + k) % n];
+    c.fillStyle = k === 0 ? '#4a5664' : '#0a0e13';
+    c.strokeStyle = k === 0 ? '#4a5664' : '#ffffff';
+    c.beginPath(); c.arc(x, y, 9, 0, TAU); c.fill(); c.stroke();
+    c.fillStyle = k === 0 ? '#6b7988' : '#e3e8ee';
+    c.fillText(st[0].replace(' SBB', '').replace(' SZ', ''), x, 104);
+  });
+  c.fillStyle = '#eb0000';
+  c.beginPath(); c.arc(mx, y, 11, 0, TAU); c.fill();
+  tPid.needsUpdate = true;
+}
+scene.add(glass);
+
+/* ---------- the carriage, seen only in its reflection ---------- */
+// The cabin bakes once into a cube map; the glass samples it.
+// The window wall is at z = -1; the far wall at z = 1.8.
+const room = new THREE.Scene();
+const roomRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
+W.tRoom.value = roomRT.texture;
+{
+  const flat = c => new THREE.MeshBasicMaterial({ color: new THREE.Color(...c) });
+  // The shell is warm and lit from the ceiling strip.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 2.3, 2.8).translate(0, 0.05, 0.4), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: /* glsl */`varying vec3 vP; void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    void main() {
+      float lit = 0.04 + 0.16 * smoothstep(-1.1, 1.2, vP.y) * exp(-abs(vP.z - 0.4) * 0.5);
+      // The rack light washes the far wall below it.
+      lit += 0.25 * smoothstep(1.2, 1.79, vP.z) * exp(-abs(vP.y - 0.5) * 3.0);
+      gl_FragColor = vec4(vec3(1.0, 0.7, 0.45) * lit, 1.0);
+    }`,
+  })));
+  // One long light strip runs down the ceiling.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.04, 0.24).translate(0, 1.18, 0.4), flat([3.2, 2.4, 1.5])));
+  // A lamp strip under the far luggage rack: the glass sees this one.
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.03, 0.1).translate(0, 0.62, 1.72), flat([1.8, 1.3, 0.8])));
+  // The far wall holds dark panes; the seat backs stand in rows.
+  const pane = new THREE.PlaneGeometry(1.5, 0.62).rotateY(Math.PI);
+  const seat = new THREE.BoxGeometry(0.12, 0.78, 0.95);
+  for (let x = -24; x <= 24; x += 2.4) {
+    const m = new THREE.Mesh(pane, flat([0.004, 0.005, 0.009]));
+    m.position.set(x, 0.05, 1.79);
+    room.add(m);
+  }
+  for (let x = -24.3; x <= 24; x += 0.95) for (const z of [-0.45, 1.25]) {
+    const m = new THREE.Mesh(seat, flat([0.014, 0.01, 0.008]));
+    m.position.set(x, -0.2, z);
+    room.add(m);
+  }
+}
+let baked = false;
+
+/* ---------- framing ---------- */
+// The head: x and y lean along the wall, z is the distance to the glass.
+const eye = new THREE.Vector3(0, 0, 1), eyeT = eye.clone();
+const REACH = { x: 0.26, y: 0.1, near: 0.3, far: 1 };
+const asp = { v: 1.6 };
+function frame(w, h, pr) {
+  asp.v = w / h;
+  outCam.aspect = w / h;
+  outCam.fov = w >= h ? 48 : 66;
+  outCam.updateProjectionMatrix();
+  const tanY = Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2);
+  W.uTan.value.set(tanY * asp.v, tanY);
+  outRT.setSize(Math.max(1, Math.round(w * pr)), Math.max(1, Math.round(h * pr)));
+  W.uRes.value.set(w * pr, h * pr);
+  OUTU.uView.value.set(w * pr, h * pr);
+  // One big window: wide in landscape, tall in portrait.
+  if (w >= h) { W.uHalf.value.set(Math.min(asp.v * 0.5 - 0.1, 0.82), 0.34); W.uRad.value = 0.045; }
+  else { W.uHalf.value.set(asp.v * 0.5 - 0.06, 0.4); W.uRad.value = 0.04; }
+  OUTU.uScale.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2)) / 400;
+}
+
+/* ---------- motion ---------- */
+// QA can start at a point on the route with ?x=.
+let time = 0, flow = 0, camX = +(qs.get('x') || 13000), speed = 0, target = 27;
+const MODES = { clear: { rain: 0, fog: 0 }, rain: { rain: 1, fog: 0 }, fogged: { rain: 0.45, fog: 0.85 } };
+let mode = MODES.rain, mk = 0, rainT = 0, dayT = 0, dayV = 0;
+const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+let drag = false;
+// Each wheelset kicks the carriage as it crosses a rail joint.
+// The pairs sit 2.6 m apart; the far bogie kicks softer.
+const JOINT = 25, KICK = [[0, 1], [2.6, 1], [16, 0.45], [18.6, 0.45]];
+function jolt() {
+  if (speed < 0.5) return 0;
+  let y = 0;
+  for (const [b, w] of KICK) {
+    const t = ((((camX - b) % JOINT) + JOINT) % JOINT) / speed;
+    y += w * Math.exp(-t / 0.09) * Math.sin(t * 55);
+  }
+  return y * Math.min(1, speed / 25);
+}
+const proj = new THREE.Vector3();
+function place() {
+  // The carriage bumps on each joint and rolls a little on the curve.
+  const k = Math.min(1, speed / 25), j = jolt();
+  // The head aims partly back at the window as it leans.
+  const yaw = Math.atan2(eye.x, eye.z) * 0.55;
+  W.uYaw.value = yaw;
+  W.uEye.value.copy(eye);
+  // The wall sits 1 m out; the jolt and the roll move only the world outside.
+  outCam.position.set(camX + eye.x, eye.y + j * 0.006, eye.z - 1);
+  // Under the Churfirsten the eye lifts to the summits.
+  const sg = seg(camX);
+  outCam.rotation.set(-0.08 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
+  parapet.position.x = camX;
+  // The nearest station within a kilometre gets the platform.
+  let sx = 0, sd = Infinity, sn = '';
+  for (const [n, sv] of STN) {
+    const x = camX + ((((sv - camX + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2;
+    if (Math.abs(x - camX) < sd) { sd = Math.abs(x - camX); sx = x; sn = n; }
+  }
+  platform.visible = sd < 1000;
+  platform.position.x = sx;
+  OUTU.uStn.value.set(sx, platform.visible ? PL / 2 + 2 : 0);
+  if (platform.visible) drawSign(sn);
+  sky.position.copy(outCam.position);
+  outCam.updateMatrixWorld();
+  OUTU.uCamX.value = camX;
+  // Lamps sit every 28 m; the window sees the few round the camera.
+  // One lamp in twenty is dead and one in twenty-five flickers.
+  const base = Math.floor(camX / LAMP_GAP) * LAMP_GAP;
+  for (let i = 0; i < LAMPS; i++) {
+    lampX[i] = base + (i - 4) * LAMP_GAP;
+    const n = Math.round(lampX[i] / LAMP_GAP), h = hashN(n);
+    lampK[i] = h < 0.05 ? 0 : h < 0.09 ? (Math.sin(time * 37 + n) > -0.3 ? 1 : 0.15) * (Math.sin(time * 5.3 + n * 3) > -0.8 ? 1 : 0.2) : 1;
+  }
+  for (const a of lampAttrs) a.needsUpdate = true;
+  const night = 1 - dayV;
+  for (let i = 0; i < NL; i++) OUTU.uLP.value[i].set(lampX[i + 1], 0.47, -4.0, lampK[i + 1] * night);
+  // The sixteen nearest towns light the haze, the ground and the water.
+  glints.map(g => {
+    const x = camX + ((((g.x - camX + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2;
+    return [Math.abs(x - camX), x, g];
+  }).sort((a, b) => a[0] - b[0]).slice(0, NG).forEach(([, x, g], i) => {
+    OUTU.uGP.value[i].set(x, -20, g.z, g.k);
+    OUTU.uGC.value[i].set(...g.col, 0);
+  });
+  // The three lamps nearest the window light the frame and the fog.
+  const hits = [];
+  // Each lamp's image goes into wall coordinates, as the shader's p.
+  const [tx, ty] = W.uTan.value.toArray(), cy = Math.cos(yaw), sy0 = Math.sin(yaw);
+  for (let i = 0; i < LAMPS; i++) {
+    proj.set(lampX[i], 0.47, -3.97).project(outCam);
+    if (proj.z > 1) continue;
+    const dx = proj.x * tx, dy = proj.y * ty;
+    const rx = cy * dx - sy0, rz = -sy0 * dx - cy;
+    const t = eye.z / Math.max(-rz, 0.05);
+    const sx = (eye.x + rx * t) / (2 * ty), sy = (eye.y + dy * t) / (2 * ty);
+    const k = Math.exp(-Math.max(0, Math.abs(sx) - W.uHalf.value.x) * 3) * (Math.abs(sx) < 2.5 ? 1 : 0);
+    hits.push([sx, sy, k * lampK[i] * night]);
+  }
+  hits.sort((a, b) => b[2] - a[2]);
+  for (let i = 0; i < 3; i++) W.uLamp.value[i].set(...(hits[i] || [0, 0, 0]));
+  drawPid(((camX % TILE) + TILE) % TILE);
+  OUTU.uDay.value = dayV;
+  W.uDay.value = dayV;
+  OUTU.uSmear.value = speed / 40;
+  OUTU.uSpeed.value = speed;
+  W.uSpeed.value = speed;
+}
+// The train stops at every station: it brakes in, waits, then pulls away.
+// The stop point puts the middle name sign in the window.
+const A_UP = 1.0, A_DN = 0.9, DWELL = 18;
+let stopX = null, dwell = 0, arrive = () => {};
+function nextStop(x) {
+  let best = Infinity;
+  for (const [, sv] of STN) {
+    let d = ((((sv - 1 - x) % TILE) + TILE) % TILE);
+    if (d < 2) d += TILE;
+    best = Math.min(best, d);
+  }
+  return x + best;
+}
+function update(dt, pace) {
+  // The train rolls at speed while awake and slows to a stop when idle.
+  let cap = target * pace;
+  if (stopX === null || stopX < camX - 2) stopX = nextStop(camX);
+  if (dwell > 0) {
+    cap = 0;
+    dwell -= dt * (pace > 0 ? 1 : 0);
+    if (dwell <= 0) stopX = nextStop(camX + 3);
+  } else {
+    // The braking curve: the fastest speed that still stops on the mark.
+    const d = stopX - camX;
+    cap = Math.min(cap, Math.sqrt(2 * A_DN * Math.max(d, 0)));
+    if (d <= 0.3 && pace > 0) { camX = stopX; speed = 0; dwell = DWELL; arrive(); }
+  }
+  speed = cap > speed ? Math.min(cap, speed + A_UP * dt) : Math.max(cap, speed - 2 * A_DN * dt);
+  if (pace === 0 && speed < 0.05) speed = 0;
+  camX += speed * dt;
+  time += dt;
+  flow += dt * (0.25 + speed / 14);
+  OUTU.uTime.value = time;
+  W.uTime.value = time;
+  W.uFlow.value = flow;
+  mk = Math.min(1, mk + dt * 0.8);
+  // Patches show after about 30 s of rain; other weather dries them.
+  rainT = mode === MODES.rain ? rainT + dt : Math.max(0, rainT - dt * 4);
+  W.uPatch.value = THREE.MathUtils.smoothstep(rainT, 18, 75);
+  W.uRain.value += (mode.rain - W.uRain.value) * Math.min(1, dt * 2);
+  W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 1.2);
+  // Night and day cross over in about two seconds.
+  dayV += (dayT - dayV) * Math.min(1, dt * 1.6);
+  if (Math.abs(dayT - dayV) < 0.002) dayV = dayT;
+  OUTU.uRain.value = W.uRain.value;
+  eye.lerp(eyeT, Math.min(1, dt * 7));
+  place();
+}
+place();
+return {
+  scene, camera, frame, update,
+  get speed() { return speed; },
+  get camX() { return camX; },
+  get rain() { return W.uRain.value; },
+  get day() { return dayV; },
+  setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
+  setSpeed(v) { target = v; },
+  set onArrive(f) { arrive = f; },
+  outside: [out, outCam],
+  before(r) {
+    if (!baked) { roomCam.update(r, room); baked = true; }
+    r.setRenderTarget(outRT);
+    r.render(out, outCam);
+    r.setRenderTarget(null);
+  },
+  // A drag leans the head; the window follows the finger.
+  drag(dx, dy, on) {
+    drag = on;
+    if (!on) return;
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x - dx * 0.5 * eyeT.z, -REACH.x, REACH.x);
+    eyeT.y = THREE.MathUtils.clamp(eyeT.y + dy * 0.3 * eyeT.z, -REACH.y, REACH.y);
+  },
+  // Lean toward the glass or back; k above 1 comes closer.
+  lean(k) { eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far); },
+  // A moving train draws at full rate; the sleep still stops it.
+  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT,
+  setMode(v, now) { mode = MODES[v] || MODES.rain; mk = now ? 1 : 0; if (now) { W.uRain.value = mode.rain; W.uFog.value = mode.fog; OUTU.uRain.value = mode.rain; } },
+  post: { bloom: [0.7, 0.55, 0.8], tint: [0.0008, 0.0007, 0.0009], vig: 0.45, vigIn: 0.45, grain: 0.03 },
+};
+}
+
+/* ---------- end scene ---------- */
+
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  markReady();
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+/* ---------- route ---------- */
+// The line from Zurich HB to Walenstadt, traced on OpenStreetMap rails.
+// Heights come from the Terrarium tiles (Mapzen, AWS Open Data).
+// route.png: R and G hold the height in decimetres plus 500 m.
+// B is 255 on a lake, else town density up to 250.
+async function loadRoute() {
+  const [meta, img] = await Promise.all([
+    fetch('route.json').then(r => r.json()),
+    new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
+  ]);
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  const n = c.width * c.height, h = new Uint16Array(n), f = new Uint8Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    h[i] = THREE.DataUtils.toHalfFloat((px[i * 4] * 256 + px[i * 4 + 1]) / 10 - 500);
+    const b = px[i * 4 + 2];
+    f[i * 2] = b === 255 ? 255 : 0;
+    f[i * 2 + 1] = b === 255 ? 0 : b;
+  }
+  return { meta, w: c.width, ht: c.height, h, f };
+}
+const ROUTE = await loadRoute();
+const S = build({ THREE });
+
+/* Post chain: render, half-resolution bloom, grade, output. */
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(S.scene, S.camera));
+const [bS, bR, bT] = S.post.bloom;
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), bS, bR, bT);
+// The bloom runs at half resolution.
+const bloomSize = bloom.setSize.bind(bloom);
+bloom.setSize = (w, h) => bloomSize(Math.max(1, w / 2), Math.max(1, h / 2));
+composer.addPass(bloom);
+
+// The grade adds a tint, a vignette and fixed grain.
+const grade = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    uRes: { value: new THREE.Vector2(1, 1) },
+    uTint: { value: new THREE.Vector3(...S.post.tint) },
+    uVig: { value: S.post.vig },
+    uVigIn: { value: S.post.vigIn },
+    uGrain: { value: S.post.grain },
+    uExp: { value: 1 },
+    uSat: { value: 1 },
+    uCon: { value: 1 },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse;
+  uniform vec2 uRes;
+  uniform vec3 uTint;
+  uniform float uVig, uVigIn, uGrain, uExp, uSat, uCon;
+  varying vec2 vUv;
+  // Interleaved gradient noise: fine grain with no banding.
+  float h(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb * uExp + uTint;
+    // Saturation, then contrast round middle grey, before the ACES curve.
+    c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uSat);
+    c = 0.18 * pow(max(c, 0.0) / 0.18, vec3(uCon));
+    float asp = uRes.x / uRes.y;
+    vec2 q = (vUv - 0.5) * vec2(asp, 1.0);
+    c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= 1.0 + (h(vUv * uRes) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+    gl_FragColor = vec4(max(c, 0.0), 1.0);
+  }`,
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- size ---------- */
+// Slow frames step down one rung: High to Standard, Standard to 1x.
+let rung = 0, size = { w: 1, h: 1, dpr: 1 };
+function resize(force = false) {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.6e6, low: rung > 0 });
+  if (!force && w === size.w && h === size.h && dpr === size.dpr) return;
+  size = { w, h, dpr };
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  grade.uniforms.uRes.value.set(w * dpr, h * dpr);
+  S.frame(w, h, dpr);
+  if (ready) draw();
+}
+let runT = 0, avg = 1 / 60, slowT = 0;
+function watchdog(dt) {
+  if (!dt || rung) return;
+  runT += dt;
+  avg += (dt - avg) * 0.1;
+  if (runT < 4) return;
+  slowT = avg > 1 / 38 ? slowT + dt : 0;
+  if (slowT > 2) { rung = 1; resize(true); }
+}
+
+/* ---------- sound ---------- */
+// Rain hisses on the glass, the bogies rumble, and each rail joint clacks.
+const kit = audioKit({ gain: 0.6, noiseSeconds: 2 });
+const JOINT = 25, BOGIE = [0, 2.6, 16, 18.6];
+let V = null, joint = null, dropBudget = 0;
+function loopNoise(ac, type, f, q) {
+  const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
+  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+  const g = ac.createGain(); g.gain.value = 0;
+  src.connect(fl).connect(g).connect(kit.out);
+  src.start(0, Math.random() * kit.noise.duration);
+  return { fl, g };
+}
+function voices() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return null;
+  V ||= { rain: loopNoise(ac, 'bandpass', 4200, 0.5), rumble: loopNoise(ac, 'lowpass', 150, 0.7) };
+  return V;
+}
+function burst(ac, at, { f, q, dur, level, type = 'bandpass' }) {
+  const src = ac.createBufferSource(); src.buffer = kit.noise;
+  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
+  src.connect(fl).connect(g).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.05), dur + 0.02);
+}
+// One wheel on one joint: a click of steel and a low thump.
+function clack(ac, at, level) {
+  burst(ac, at, { f: 1100 + Math.random() * 500, q: 1.4, dur: 0.035, level: level * 0.35 });
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(95, at); o.frequency.exponentialRampToValueAtTime(48, at + 0.09);
+  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(level * 0.5, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0005, at + 0.12);
+  o.connect(g).connect(kit.out);
+  o.start(at); o.stop(at + 0.14);
+}
+function voice(dt) {
+  const v = voices();
+  if (!v) return;
+  const ac = kit.ac, now = ac.currentTime, sp = S.speed, k = Math.min(1, sp / 30);
+  v.rain.g.gain.setTargetAtTime(0.05 * S.rain, now, 0.2);
+  v.rumble.g.gain.setTargetAtTime(0.32 * Math.pow(k, 0.8), now, 0.2);
+  v.rumble.fl.frequency.setTargetAtTime(110 + 90 * k, now, 0.3);
+  // Single drops tick on the pane at a rate set by the rain.
+  dropBudget = Math.min(4, dropBudget + dt * 9 * S.rain);
+  while (dropBudget >= 1) {
+    dropBudget--;
+    if (Math.random() < 0.6) burst(ac, now + Math.random() * 0.05, { f: 2400 + Math.random() * 4000, q: 2, dur: 0.008 + Math.random() * 0.01, level: 0.05 + 0.06 * Math.random() });
+  }
+  // Each bogie wheel crosses the joint in turn; the gap shrinks with speed.
+  const j = Math.floor(S.camX / JOINT);
+  if (joint !== null && j !== joint && sp > 2) for (const b of BOGIE) clack(ac, now + b / sp, 0.25 + 0.5 * k);
+  joint = j;
+}
+// The arrival chime: two soft falling notes.
+function chime() {
+  const ac = kit.live();
+  if (!ac) return;
+  const now = ac.currentTime;
+  [[659.3, 0], [523.3, 0.42]].forEach(([f, t]) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0, now + t);
+    g.gain.linearRampToValueAtTime(0.12, now + t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0005, now + t + 1.3);
+    o.connect(g).connect(kit.out);
+    o.start(now + t);
+    o.stop(now + t + 1.4);
+  });
+}
+S.onArrive = chime;
+function hush() {
+  if (!V || !kit.ac) return;
+  const now = kit.ac.currentTime;
+  V.rain.g.gain.setTargetAtTime(0, now, 0.15);
+  V.rumble.g.gain.setTargetAtTime(0, now, 0.15);
+}
+
+/* ---------- loop ---------- */
+// Full rate in an event, 30 fps while drifting, then sleep.
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, visible = true, ready = false;
+// Day wants a tight bloom and a punchier grade than night.
+const lerp = (a, b, t) => a + (b - a) * t;
+function look() {
+  const d = S.day, u = grade.uniforms;
+  bloom.strength = lerp(bS, 0.2, d);
+  bloom.radius = lerp(bR, 0.4, d);
+  bloom.threshold = lerp(bT, 2.4, d);
+  u.uExp.value = lerp(1, 1, d);
+  u.uSat.value = lerp(1, 1.12, d);
+  u.uCon.value = lerp(1, 1.1, d);
+}
+function draw() {
+  look();
+  S.before(renderer);
+  composer.render();
+}
+function loop(now) {
+  raf = 0;
+  if (!visible) return;
+  const dt = Math.min(0.05, (now - (lastT || now)) / 1000);
+  lastT = now;
+  // Ambient motion eases out over 2 s once idle; reduced motion keeps it off.
+  const awake = !reduced() && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = S.lively();
+  if (!lively && pace === 0) { S.update(0, 0); draw(); hush(); kit.rest(() => !raf); return; }
+  if (lively || now - lastDraw >= 31) {
+    // A drift frame covers the gap since the last draw, never more than 0.1 s.
+    const step = lively ? dt : Math.min(0.1, Math.max(dt, (now - lastDraw) / 1000));
+    S.update(step, pace);
+    voice(step);
+    draw();
+    if (lively) watchdog(dt);
+    lastDraw = now;
+  }
+  raf = requestAnimationFrame(loop);
+}
+function wake() {
+  lastInput = performance.now();
+  if (ready && visible && !raf) { lastT = lastDraw = performance.now(); raf = requestAnimationFrame(loop); }
+}
+
+/* ---------- input ---------- */
+// One finger leans the head; two fingers pinch it toward the glass.
+const touches = new Map();
+let press = null, pinch = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) { pinch = spread(); if (press?.moved) S.drag(0, 0, false); press = null; }
+  else if (touches.size === 1) press = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2 && pinch) {
+    const d = spread();
+    S.lean(d / pinch);
+    pinch = d;
+    wake();
+    return;
+  }
+  if (!press || e.pointerId !== press.id) return;
+  if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.moved = true; stage.classList.add('dragging'); }
+  if (press.moved) { S.drag((e.clientX - press.lx) / size.w, (e.clientY - press.ly) / size.h, true); wake(); }
+  press.lx = e.clientX; press.ly = e.clientY;
+});
+function endPress(e) {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = 0;
+  if (!press || e.pointerId !== press.id) return;
+  if (press.moved) S.drag(0, 0, false);
+  stage.classList.remove('dragging');
+  press = null;
+  wake();
+}
+stage.addEventListener('pointerup', endPress);
+stage.addEventListener('pointercancel', endPress);
+// Scroll up leans toward the glass; scroll down sits back.
+stage.addEventListener('wheel', e => { e.preventDefault(); S.lean(Math.exp(-e.deltaY * 0.0015)); wake(); }, { passive: false });
+
+/* ---------- bar ---------- */
+function popover(box, btn) {
+  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
+onQuality(() => { rung = 0; resize(true); wake(); });
+
+// The scene eases to the new weather.
+const modes = choices(document.getElementById('mode'), v => { opts.mode = v; save('mode', v); S.setMode(v); wake(); });
+modes.set(opts.mode);
+S.setMode(opts.mode, true);
+const speedEl = document.getElementById('speed');
+speedEl.value = String(opts.speed);
+S.setSpeed(cruise(opts.speed));
+speedEl.addEventListener('input', () => { opts.speed = +speedEl.value; save('speed', opts.speed); S.setSpeed(cruise(opts.speed)); wake(); });
+const times = choices(document.getElementById('time'), v => { opts.time = v; save('time', v); S.setTime(v); wake(); });
+times.set(opts.time);
+S.setTime(opts.time, true);
+const KEYS = { Digit1: 'clear', Digit2: 'rain', Digit3: 'fogged' };
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (KEYS[e.code]) { modes.set(KEYS[e.code], true); return; }
+  if (e.code === 'KeyT') times.set(opts.time === 'day' ? 'night' : 'day', true);
+});
+
+/* ---------- start ---------- */
+onReducedChange(() => wake());
+whenVisible(stage, v => {
+  visible = v;
+  if (v) { if (ready) draw(); wake(); } else { cancelAnimationFrame(raf); raf = 0; lastT = 0; hush(); }
+});
+new ResizeObserver(() => resize()).observe(stage);
+// Compile first, then draw the first composed frame inside the intro.
+(async () => {
+  resize(true);
+  // Both scenes compile in parallel where the driver allows it.
+  // A hidden tab never polls the compile, so a timeout caps the wait.
+  if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+    await Promise.race([Promise.all([renderer.compileAsync(...S.outside), renderer.compileAsync(S.scene, S.camera)]), wait(4000)]);
+  } else { renderer.compile(...S.outside); renderer.compile(S.scene, S.camera); }
+  draw();
+  // One finished frame folds the shader work into the intro.
+  renderer.getContext().finish();
+  ready = true;
+  markReady();
+  requestAnimationFrame(() => canvas.classList.add('on'));
+  wake();
+})().catch(err => { console.error(err); stage.querySelector('.fail').hidden = false; markReady(); });
+</script>
+</body>
+</html>

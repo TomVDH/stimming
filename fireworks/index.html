@@ -21,6 +21,58 @@
 }
 .stage--fireworks canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fireworks canvas { transition: none; } }
+/* Shell is one stepper pill: an arrow each side of the name. */
+.stepper {
+  display: inline-flex; align-items: center; color: var(--fg); font-size: 13px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background-color: oklch(0.15 0.012 275 / 0.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+/* The arrows drop their own ring and backing, so the pill matches a chip's height. */
+#shell .chip { border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+#shell .chip svg { stroke-width: 1.8; stroke-linecap: round; }
+/* The longest name sets the width, so the arrows never move. */
+.stepper { position: relative; }
+.stepper .name { display: flex; align-items: center; gap: 6px; padding: 0 2px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.stepper .ico svg { display: block; width: 22px; height: 22px; }
+.stepper .lbl { display: grid; text-align: center; white-space: nowrap; }
+.stepper .lbl > * { grid-area: 1 / 1; }
+/* The name opens a grid of every shell, each with a small drawing. */
+.shells {
+  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: grid; grid-template-columns: repeat(5, 66px); gap: 4px; padding: 10px;
+  max-height: min(62vh, 460px); overflow: auto;
+  background: oklch(0.17 0.012 275 / 0.95); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.stepper.is-open .shells { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.shells button {
+  display: grid; justify-items: center; gap: 4px; padding: 7px 2px 6px; border: 1px solid transparent; border-radius: 10px;
+  background: none; color: var(--muted); font: 500 10.5px/1.1 inherit; font-family: inherit; cursor: pointer;
+}
+.shells button svg { width: 36px; height: 36px; transition: transform 0.15s ease; }
+.shells button:hover { color: var(--fg); }
+.shells button:hover svg { transform: scale(1.12); }
+.shells button[aria-pressed="true"] { color: var(--fg); border-color: var(--line); background: oklch(1 0 0 / 0.06); }
+@media (max-width: 560px) { .shells { grid-template-columns: repeat(4, 64px); } }
+@media (prefers-reduced-motion: reduce) { .shells, .shells button svg { transition: none; } }
+.stepper .sizer { visibility: hidden; }
+.stepper output.from-next { animation: name-in 0.22s ease-out; --from: 8px; }
+.stepper output.from-prev { animation: name-in 0.22s ease-out; --from: -8px; }
+@keyframes name-in { from { opacity: 0; transform: translateX(var(--from)); } }
+@media (prefers-reduced-motion: reduce) { .stepper output { animation: none !important; } }
+/* The bill: a cheeky running cost of the show, top right of the stage. */
+.bill {
+  position: absolute; top: 12px; right: 14px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 999px;
+  font: 700 15px/1 inherit; font-family: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+  color: oklch(0.74 0.19 25); background: oklch(0.14 0.012 275 / 0.62);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: pointer;
+}
+.bill[hidden] { display: none; }
+.bill.ka { animation: bill-ka 0.32s ease-out; }
+@keyframes bill-ka { 30% { transform: scale(1.14); color: oklch(0.86 0.17 30); } }
+@media (prefers-reduced-motion: reduce) { .bill.ka { animation: none; } }
 /* Settings opens a column of tweaks at the right edge. */
 .adder { position: relative; }
 .add {
@@ -53,16 +105,15 @@
       <p class="fail" hidden>Fireworks needs WebGL 2, which this browser has turned off.</p>
     </div>
     <div class="bar">
-      <div class="choices" id="shell" role="group" aria-label="Shell">
-        <button class="chip" type="button" data-value="peony" aria-pressed="true">Peony</button>
-        <button class="chip" type="button" data-value="willow" aria-pressed="false">Willow</button>
-        <button class="chip" type="button" data-value="crossette" aria-pressed="false">Crossette</button>
-        <button class="chip" type="button" data-value="ring" aria-pressed="false">Ring</button>
-        <button class="chip" type="button" data-value="strobe" aria-pressed="false">Strobe</button>
+      <div class="stepper" id="shell" role="group" aria-label="Shell" tabindex="-1">
+        <button class="chip icon" type="button" data-step="-1" aria-label="Previous shell" title="Previous shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+        <button class="name" id="shellBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="shells" title="All shells"><span class="ico" aria-hidden="true"></span><span class="lbl"><output aria-live="polite">Mix</output><span class="sizer" aria-hidden="true">Chrysanthemum</span></span></button>
+        <div class="shells" id="shells" role="group" aria-label="All shells"></div>
+        <button class="chip icon" type="button" data-step="1" aria-label="Next shell" title="Next shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
       </div>
       <label class="slider"><span>Distance</span><input type="range" id="dist" min="0" max="1" step="0.01" value="0.5" aria-label="Distance: 300 to 1,500 metres"></label>
       <div class="actions">
-        <button class="chip" id="finale" type="button">+ Finale</button>
+        <button class="chip" id="finale" type="button">Showtime</button>
       </div>
       <div class="edge">
         <div class="adder" id="setter">
@@ -71,6 +122,20 @@
             <div class="group"><span>Smoke</span><div class="choices" id="smoke" role="group" aria-label="Smoke">
               <button class="chip" type="button" data-value="thin" aria-pressed="true">Thin</button>
               <button class="chip" type="button" data-value="thick" aria-pressed="false">Thick</button>
+            </div></div>
+            <div class="group"><span>Scene</span><div class="choices" id="scenes" role="group" aria-label="Scene">
+              <button class="chip" type="button" data-value="bay" aria-pressed="true">Bay</button>
+              <button class="chip" type="button" data-value="island" aria-pressed="false">Island</button>
+              <button class="chip" type="button" data-value="city" aria-pressed="false">City</button>
+            </div></div>
+            <div class="group"><span>Bill</span><div class="choices" id="billSet" role="group" aria-label="Bill">
+              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
+            </div></div>
+            <div class="group"><span>Sky</span><div class="choices" id="sky" role="group" aria-label="Sky">
+              <button class="chip" type="button" data-value="drift" aria-pressed="true">Drift</button>
+              <button class="chip" type="button" data-value="clear" aria-pressed="false">Clear</button>
+              <button class="chip" type="button" data-value="cloud" aria-pressed="false">Cloud</button>
             </div></div>
             <div class="group"><span>Water</span><div class="choices" id="water" role="group" aria-label="Water">
               <button class="chip" type="button" data-value="calm" aria-pressed="true">Calm</button>
@@ -111,8 +176,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'simplex-noise';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting, linFit, reduced, onReducedChange, quality, setQuality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'fireworks' });
@@ -123,10 +189,19 @@ const stage = document.getElementById('stage');
 let seed = 4242;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
+// The scene: the festival bay, a lonesome winter island, or a harbour city.
+// A new scene reloads the page; the intro plays only on a fresh visit.
+const SCENES = ['bay', 'island', 'city'];
+// ?scene= picks one for this load only, without saving it.
+const SCENE = (() => { const q = new URLSearchParams(location.search).get('scene'); if (SCENES.includes(q)) return q; try { const v = localStorage.getItem('stimming.fireworks.scene'); return SCENES.includes(v) ? v : 'bay'; } catch { return 'bay'; } })();
+const SC_ID = SCENES.indexOf(SCENE);
+const rescene = (() => { try { const v = sessionStorage.getItem('stimming.fireworks.rescene') === '1'; sessionStorage.removeItem('stimming.fireworks.rescene'); return v; } catch { return false; } })();
+
 let markReady;
 const sceneReady = new Promise(r => { markReady = r; });
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+if (rescene) document.querySelector('.intro')?.remove();
+else playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
 
 let renderer;
 try {
@@ -148,6 +223,42 @@ const LIGHT = 1;
 const SHORE_Z = -1500;
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = 0;
+/* ---------- look knobs ---------- */
+// Every tunable look value; the dev panel (?dev) edits them live.
+// Each row: key, label, default, min, max, step.
+const FX_ROWS = [
+  ['Bloom', [
+    ['bloom', 'Strength', 0.9, 0, 3, 0.01], ['bloomRadius', 'Radius', 0.5, 0, 1, 0.01],
+    ['bloomThreshold', 'Threshold', 0.9, 0, 4, 0.01], ['bloomScale', 'Resolution', 1, 0.25, 1, 0.05],
+    ['orbs', 'Orbs', 1, 0, 3, 0.01],
+  ]],
+  ['Flare streak', [
+    ['flare', 'Streak', 1, 0, 3, 0.01], ['flareLength', 'Length', 0.35, 0.02, 1.5, 0.01],
+    ['flareThin', 'Thinness', 160, 20, 600, 1], ['flareWarmth', 'Warmth', 0.2, -1, 1, 0.01],
+    ['streakFade', 'Fade (s)', 0.12, 0.02, 1, 0.005], ['streakTail', 'Tail share', 0.15, 0, 1, 0.01],
+    ['streakTailFade', 'Tail fade (s)', 0.6, 0.05, 4, 0.01],
+  ]],
+  ['Flare ghosts', [
+    ['ghosts', 'Ghosts', 1, 0, 3, 0.01], ['ghostSpread', 'Spread', 1, 0.3, 2, 0.01],
+    ['ghostFade', 'Fade (s)', 0.25, 0.02, 2, 0.005],
+  ]],
+  ['Clouds', [
+    ['cloudCover', 'Cloudy cover', 0.52, 0.3, 0.8, 0.005], ['cloudBase', 'Base (m)', 260, 120, 600, 5],
+    ['cloudDepth', 'Depth (m)', 300, 50, 600, 5], ['cloudGlow', 'Glow', 0.38, 0, 1.5, 0.01],
+  ]],
+  ['Night', [
+    ['ambient', 'Ambient', 1, 0, 3, 0.01], ['haze', 'Haze', 0.45, 0, 2, 0.01],
+    ['bolt', 'Lightning', 1, 0, 4, 0.01], ['boltRate', 'Lightning rate', 1, 0, 4, 0.01],
+  ]],
+  ['Grade', [
+    ['vignette', 'Vignette', 0.5, 0, 1, 0.01], ['grain', 'Grain', 0.03, 0, 0.12, 0.001], ['lift', 'Lift', 1, 0, 4, 0.01],
+  ]],
+];
+const FX_DEF = Object.fromEntries(FX_ROWS.flatMap(([, rows]) => rows.map(r => [r[0], r[2]])));
+const DEV = new URLSearchParams(location.search).has('dev');
+// Saved tweaks load only in dev mode, so the shipped look never drifts.
+const FX = { ...FX_DEF, ...(DEV ? (() => { try { return JSON.parse(localStorage.getItem('stimming.fireworks.fx')) || {}; } catch { return {}; } })() : {}) };
+/* ---------- end look knobs ---------- */
 
 /* ---------- burst lights ---------- */
 // Eight burst lights; every lit shader reads this array.
@@ -156,11 +267,20 @@ const U = {
   uL: { value: Array.from({ length: LN }, () => new THREE.Vector4()) },
   uLC: { value: Array.from({ length: LN }, () => new THREE.Vector3()) },
   uLN: { value: 0 },
-  uCool: { value: new THREE.Vector3(0.35, 0.45, 0.62) },
+  uCool: { value: new THREE.Vector3(0.47, 0.6, 0.83) },
   uHaze: { value: 0.00045 },
   uHazeH: { value: 140 },
   uTime: { value: 0 },
+  // Cloud deck: base, depth, cover, on; the offset carries the wind.
+  uCloud: { value: new THREE.Vector4(260, 300, 0.52, 1) },
+  uCloudO: { value: new THREE.Vector2() },
+  // The torn sky: opening, rim glow, eye, age; then the seam and the eye.
+  uTear: { value: new THREE.Vector4() },
+  uTP: { value: Array.from({ length: 8 }, () => new THREE.Vector2()) },
+  uEye: { value: new THREE.Vector3() },
 };
+// The island's night is colder and brighter: moonlight on snow.
+if (SCENE === 'island') U.uCool.value.multiply(new THREE.Vector3(0.95, 1.12, 1.45));
 const LIGHTS_GLSL = /* glsl */`
 uniform vec4 uL[${LN}];
 uniform vec3 uLC[${LN}];
@@ -214,8 +334,12 @@ float k2fbm(vec2 p) {
 // Port's cloud ceiling and amber dome are cut here.
 const K2_SKY = /* glsl */`
 uniform vec3 uCool;
-float k2stars(vec3 dir) {
-  vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
+uniform vec4 uTear;
+uniform vec2 uTP[8];
+uniform vec3 uEye;
+// Stars on the sky grid; q is azimuth and height, as for the seam.
+float k2starsQ(vec2 q) {
+  q *= 260.0;
   vec2 i = floor(q), f = fract(q) - 0.5;
   float h = k2hash(i);
   // About one cell in two hundred holds a star.
@@ -223,10 +347,69 @@ float k2stars(vec3 dir) {
   vec2 o = vec2(k2hash(i + 7.1), k2hash(i + 3.3)) - 0.5;
   return on * exp(-dot(f - o * 0.6, f - o * 0.6) * 60.0) * (0.02 + 0.05 * k2hash(i + 1.7));
 }
+// Nearest point on the seam: distance, side, place along it, normal.
+float tearAt(vec2 q, out float side, out float along, out vec2 nrm) {
+  float best = 1e9;
+  side = 1.0; along = 0.0; nrm = vec2(0.0, 1.0);
+  for (int i = 0; i < 7; i++) {
+    vec2 a = uTP[i], ab = uTP[i + 1] - a;
+    float t = clamp(dot(q - a, ab) / dot(ab, ab), 0.0, 1.0);
+    vec2 pq = q - a - ab * t;
+    float d = length(pq);
+    if (d < best) {
+      best = d; along = (float(i) + t) / 7.0;
+      nrm = normalize(vec2(-ab.y, ab.x));
+      side = dot(pq, nrm) < 0.0 ? -1.0 : 1.0;
+    }
+  }
+  return best;
+}
+// Behind the seam: a red-black void with slow currents and an eye.
+vec3 tearVoid(vec2 q) {
+  float t = uTear.w * 0.15;
+  float n = k2fbm(q * 30.0 + vec2(t, -t * 0.7));
+  vec3 c = vec3(0.004, 0.0, 0.002) + vec3(0.09, 0.006, 0.012) * pow(n, 3.0);
+  // Strange stars, red and cold, deeper than ours.
+  c += vec3(1.0, 0.25, 0.3) * k2starsQ(q * 1.7 + 3.1) * 4.0;
+  if (uTear.z > 0.001) {
+    vec2 e = (q - uEye.xy) / uEye.z;
+    float r = length(e);
+    // The lids open with uTear.z; outside them the void stays dark.
+    float lid = uTear.z * sqrt(max(1.0 - e.x * e.x, 0.0)) * 0.62;
+    if (abs(e.y) < lid && r < 1.0) {
+      float a = atan(e.y, e.x);
+      float fib = 0.6 + 0.4 * k2noise(vec2(a * 9.0, r * 3.0));
+      vec3 iris = mix(vec3(0.5, 0.05, 0.0), vec3(1.0, 0.55, 0.05), smoothstep(0.85, 0.35, r)) * fib;
+      // A slit pupil, wide at the centre, sharp at the ends.
+      float slit = smoothstep(0.02, 0.0, abs(e.x) - 0.11 * (1.0 - e.y * e.y));
+      iris *= 1.0 - slit;
+      iris += vec3(1.0, 0.9, 0.8) * exp(-dot(e - vec2(-0.25, 0.22), e - vec2(-0.25, 0.22)) * 220.0) * 2.0;
+      c = mix(c, iris * 0.9, smoothstep(lid, lid - 0.05, abs(e.y)) * smoothstep(1.0, 0.94, r));
+    }
+  }
+  return c;
+}
 vec3 k2sky(vec3 dir) {
   float up = max(dir.y, 0.0);
   vec3 col = vec3(0.0016, 0.0021, 0.0045) + uCool * 0.016 * exp(-up * 9.0);
-  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y);
+  vec2 q = vec2(atan(dir.x, -dir.z), dir.y);
+  float sk = smoothstep(0.03, 0.25, dir.y);
+  if (uTear.x > 0.0005) {
+    float side, along;
+    vec2 nrm;
+    float d = tearAt(q, side, along, nrm);
+    // Each lip tears on its own ragged line.
+    float rag = k2noise(vec2(along * 70.0, side * 4.0 + 1.0)) * 0.7 + k2noise(vec2(along * 190.0, side * 9.0)) * 0.3;
+    float hw = 0.5 * uTear.x * pow(max(sin(3.14159 * along), 0.0), 0.7) * (0.35 + 1.3 * rag);
+    // The sky slides apart: nearby stars shift away from the seam.
+    float pull = hw * exp(-max(d - hw, 0.0) / 0.12);
+    if (d < hw) col = tearVoid(q);
+    else col += vec3(0.85, 0.9, 1.0) * k2starsQ(q - side * nrm * pull) * sk;
+    // The rim burns white-hot, then orange, then a wide magenta bruise.
+    float e = abs(d - hw);
+    col += (vec3(1.0, 0.8, 0.6) * exp(-e * e / 8e-7) * 1.4 + vec3(1.0, 0.32, 0.08) * exp(-e / 0.0025) * 0.28
+      + vec3(0.5, 0.04, 0.2) * exp(-e / 0.04) * 0.035) * uTear.y * smoothstep(0.0, 0.08, sin(3.14159 * along));
+  } else col += vec3(0.85, 0.9, 1.0) * k2starsQ(q) * sk;
   return col + burstGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
@@ -251,7 +434,65 @@ vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
 /* ---------- end K2 ---------- */
-const HEAD = `${LIGHTS_GLSL}\n${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}`;
+
+/* ---------- cloud deck ---------- */
+// A broken deck of low cloud; bursts inside it light it from within.
+const CLOUD_SIGMA = 0.024;
+// Coverage noise scale across and along the bay.
+const CLOUD_F = [0.0017, 0.0029];
+const CLOUD_GLSL = /* glsl */`
+uniform vec4 uCloud;
+uniform vec2 uCloudO;
+// Cloud cover over the ground at xz: 0 is clear, 1 is full.
+float cloudD(vec2 xz) {
+  float n = k2fbm((xz + uCloudO) * vec2(${CLOUD_F[0]}, ${CLOUD_F[1]}) + vec2(3.7, 1.9));
+  return smoothstep(1.0 - uCloud.z, 1.16 - uCloud.z, n);
+}
+// A column's floor and roof: dense parts hang lower and pile higher.
+vec2 cloudCol(float D) { return vec2(uCloud.x + 110.0 * (1.0 - D), uCloud.x + uCloud.y * D); }
+// The part of a point's light that comes through the deck to the eye.
+float cloudVeil(vec3 P) {
+  if (uCloud.w < 0.5 || P.y <= uCloud.x) return 1.0;
+  vec3 v = P - cameraPosition;
+  if (v.y < 1.0) return 1.0;
+  float mid = 0.5 * (uCloud.x + min(P.y, uCloud.x + uCloud.y));
+  vec3 X = cameraPosition + v * ((mid - cameraPosition.y) / v.y);
+  float D = cloudD(X.xz);
+  vec2 c = cloudCol(D);
+  return exp(-D * max(min(P.y, c.y) - c.x, 0.0) * length(v) / v.y * ${CLOUD_SIGMA});
+}`;
+// The same density on the CPU, in float32 steps, for lights and orbs.
+const f32 = Math.fround, fr = x => x - Math.floor(x);
+function chash(x, y) {
+  x = fr(f32(x * 123.34)); y = fr(f32(y * 456.21));
+  const d = f32(x * (x + 45.32) + y * (y + 45.32));
+  return fr(f32((x + d) * (y + d)));
+}
+function cnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = chash(ix, iy), b = chash(ix + 1, iy), c = chash(ix, iy + 1), d = chash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a + (a - b + d - c) * ux) * uy;
+}
+function cloudD(x, z) {
+  const C = U.uCloud.value, O = U.uCloudO.value;
+  let px = (x + O.x) * CLOUD_F[0] + 3.7, py = (z + O.y) * CLOUD_F[1] + 1.9, s = 0, a = 0.5;
+  for (let i = 0; i < 5; i++) { s += a * cnoise(px, py); px = px * 2.03 + 17.1; py = py * 2.03 + 9.2; a *= 0.5; }
+  const t = Math.min(1, Math.max(0, (s - (1 - C.z)) / 0.16));
+  return t * t * (3 - 2 * t);
+}
+// Light through the deck: to the ground (from above) or to the eye.
+function cloudT(P, eye) {
+  const C = U.uCloud.value;
+  if (C.w < 0.5 || P.y <= C.x) return 1;
+  const depth = D => Math.max(Math.min(P.y, C.x + C.y * D) - (C.x + 110 * (1 - D)), 0);
+  if (!eye) { const D = cloudD(P.x, P.z); return 0.3 + 0.7 * Math.exp(-D * depth(D) * CLOUD_SIGMA); }
+  const o = camera.position, vy = P.y - o.y, t = (0.5 * (C.x + Math.min(P.y, C.x + C.y)) - o.y) / vy;
+  const D = cloudD(o.x + (P.x - o.x) * t, o.z + (P.z - o.z) * t);
+  return Math.exp(-D * depth(D) * P.distanceTo(o) / vy * CLOUD_SIGMA);
+}
+/* ---------- end cloud deck ---------- */
+const HEAD = `${LIGHTS_GLSL}\n${K2_NOISE}\n${CLOUD_GLSL}\n${K2_SKY}\n${K2_HAZE}`;
 
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.ShaderMaterial({
@@ -262,13 +503,69 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.Sh
 sky.renderOrder = -1;
 scene.add(sky);
 
+// The deck: four stacked sheets; a sheet shows where its column reaches it.
+const CU = { uLR: { value: new Array(LN).fill(0) }, uWarm: { value: new THREE.Vector3() }, uGlow: { value: 0.38 } };
+const SHEETS = [500, 420, 345, 275];
+const cloudGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(30000, 16000).rotateX(Math.PI / 2).translate(0, 0, -7000));
+// Top sheet first, so each lower sheet draws over the one above.
+cloudGeo.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array(SHEETS), 1));
+cloudGeo.instanceCount = SHEETS.length;
+const cloud = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...CU }, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+  // Premultiplied, like the smoke; the alpha channel stays the mirror's land mask.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
+  void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH * 0.01; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying float vK; uniform float uLR[${LN}]; uniform vec3 uWarm; uniform float uGlow; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    if (v.y < 1.0) discard;
+    vec3 V = normalize(v);
+    float fade = 1.0 - smoothstep(4000.0, 11000.0, length(v.xz));
+    float D = cloudD(vP.xz);
+    if (D * fade < 0.01) discard;
+    vec2 c = cloudCol(D);
+    float inside = smoothstep(c.x - 30.0, c.x + 30.0, vP.y) * (1.0 - smoothstep(c.y - 50.0, c.y + 10.0, vP.y));
+    // Billows break each sheet into lumps; each sheet has its own.
+    vec2 q = (vP.xz + uCloudO) * vec2(0.006, 0.009);
+    float b = k2noise(q + vK * 3.1) * 0.5 + k2noise(q * 2.7 - vK * 1.7) * 0.3 + k2noise(q * 7.3 + vK) * 0.2;
+    float dens = D * inside * smoothstep(0.35, 0.65, b + 0.3 * D - 0.1);
+    float a = (1.0 - exp(-dens * min(75.0 / V.y, 700.0) * ${CLOUD_SIGMA})) * fade;
+    if (a < 0.003) discard;
+    vec3 lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 d = uL[i].xyz - vP;
+      float fall = uLR[i] / (1.0 + dot(d, d) / 78400.0);
+      // Cloud between this point and the burst shades it.
+      float Ly = uL[i].y;
+      float dc = Ly < vP.y ? min(vP.y - c.x, vP.y - Ly) : max(min(c.y, Ly) - vP.y, 0.0);
+      float sh = exp(-max(dc, 0.0) * D * 0.018);
+      // A burst behind the cloud makes its thin parts glow.
+      float ph = pow(max(dot(V, normalize(d)), 0.0), 6.0) * (1.0 - a);
+      lit += uLC[i] * fall * (0.1 + 0.9 * sh) * (1.0 + 2.0 * ph);
+    }
+    // The festival's fires tint the underside above the beach.
+    float shore = smoothstep(-3400.0, -1800.0, vP.z) * (1.0 - smoothstep(-1500.0, -400.0, vP.z));
+    vec3 col = lit * uGlow + uCool * 0.005 + uWarm * 0.006 * shore;
+    col = mix(col, k2hazeColor(V), k2hazeAmount(vP));
+    // Lit air in front of the deck still glows.
+    gl_FragColor = vec4((col + burstGlow(V) * 0.3) * a, a);
+  }`,
+}));
+cloud.renderOrder = 0.5;
+cloud.frustumCulled = false;
+cloud.layers.enable(LIGHT);
+scene.add(cloud);
+
 /* ---------- land: beach, hills and the far range ---------- */
 // A height field behind a wandering waterline; normals give the relief.
 const noise = createNoise2D(rnd);
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const shoreZ = x => SHORE_Z + 120 * noise(x * 0.0004, 7.7);
-// Height at x, b metres inland from the waterline.
-function landH(x, b) {
+// Height at x, b metres inland from the waterline: the festival bay.
+function bayH(x, b) {
   if (b < 0) return -2 + b * 0.05;
   const beach = 1.2 + 1.5 * smooth(0, 90, b);
   // Three ridged octaves cut spurs and gullies into the range.
@@ -278,8 +575,62 @@ function landH(x, b) {
   const m = 45 + 170 * r1 * r1 * (0.6 + 0.4 * noise(x * 0.0001, 1.7)) + 60 * r2 * r2 * r1 + 18 * r3 * r2 + 5 * noise(x * 0.012, b * 0.014);
   return beach + smooth(70, 650, b) * Math.max(0, m);
 }
+// The harbour city: a quay 3 m up, then low hills behind the towers.
+function cityH(x, b) {
+  if (b < 0) return -2 + b * 0.05;
+  const r1 = 1 - Math.abs(noise(x * 0.0004, b * 0.0006 + 3.3));
+  return 3 + smooth(700, 1500, b) * (40 + 140 * r1 * r1);
+}
+const landH = SCENE === 'city' ? cityH : bayH;
+// The winter island: one snowy hill out on open water, a white range far off.
+const ISLE = { x: 150, z: -1250 };
+const isleR = a => 320 + 70 * noise(Math.cos(a) * 0.9, Math.sin(a) * 0.9 + 4.2);
+function islandH(x, z) {
+  const dx = x - ISLE.x, dz = (z - ISLE.z) * 1.15, r = Math.hypot(dx, dz), R = isleR(Math.atan2(dz, dx)), u = 1 - r / R;
+  let h = -6;
+  // A low dome with two humps and rough ground.
+  if (u > 0) {
+    const k1 = Math.exp(-((dx + 70) ** 2 + dz * dz) / 16200), k2 = Math.exp(-((dx - 130) ** 2 + (dz + 40) ** 2) / 9800);
+    h = 2 + 26 * Math.pow(u, 0.9) + (62 * k1 + 34 * k2) * Math.min(1, u * 3) + 5 * noise(x * 0.02, z * 0.02) + 2 * noise(x * 0.08, z * 0.08);
+  }
+  else if (u > -0.1) h = 2 + 80 * u;
+  // The far range stands about 7 km off.
+  const far = smooth(-6200, -7600, z);
+  if (far > 0) { const r1 = 1 - Math.abs(noise(x * 0.00025, 3.1)); h = Math.max(h, far * (120 + 520 * r1 * r1 + 60 * noise(x * 0.002, 1.3))); }
+  return h;
+}
+// A point on the island: angle round it (pi/2 faces the shore), share of its radius, lift.
+const isleAt = (a, f, y = 0) => {
+  const r = isleR(a) * f, x = ISLE.x + Math.cos(a) * r, z = ISLE.z + (Math.sin(a) * r) / 1.15;
+  return new THREE.Vector3(x, islandH(x, z) + y, z);
+};
+// Height at any point, for every scene.
+const sceneH = (x, z) => (SCENE === 'island' ? islandH(x, z) : landH(x, shoreZ(x) - z));
 // A point on the land: x across, b inland, lifted by y.
 const landAt = (x, b, y = 0) => new THREE.Vector3(x, landH(x, b) + y, shoreZ(x) - b);
+// The island scene's land: one grid, finest round the island.
+function gridGeometry() {
+  const NX = 480, NZ = 220, pos = [], bb = [], idx = [];
+  for (let j = 0; j <= NZ; j++) {
+    const z = -200 - 9300 * Math.pow(j / NZ, 1.8);
+    for (let i = 0; i <= NX; i++) {
+      const u = (i / NX) * 2 - 1, x = Math.sign(u) * 9000 * Math.pow(Math.abs(u), 2.2) + ISLE.x * (1 - Math.abs(u));
+      const h = islandH(x, z);
+      pos.push(x, h, z);
+      bb.push(h);
+    }
+  }
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    const a = j * (NX + 1) + i, c = a + NX + 1;
+    idx.push(a, a + 1, c, a + 1, c + 1, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aB', new THREE.Float32BufferAttribute(bb, 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
 function landGeometry() {
   const NX = 760, NB = 96, pos = [], bb = [], idx = [];
   for (let j = 0; j <= NB; j++) {
@@ -306,10 +657,15 @@ function landGeometry() {
 /* ---------- festival: campfires and light dots on the beach ---------- */
 const FN = 16;
 const FIRE = linFit(0.74, 0.17, 52);
+CU.uWarm.value.set(...FIRE);
 const fires = [];
-for (const [cx, n] of [[-700, 4], [-330, 2], [90, 3], [520, 4], [880, 2], [-1050, 1]]) {
+if (SCENE === 'bay') for (const [cx, n] of [[-700, 4], [-330, 2], [90, 3], [520, 4], [880, 2], [-1050, 1]]) {
   for (let i = 0; i < n && fires.length < FN; i++) fires.push(landAt(cx + (rnd() - 0.5) * 140, 18 + rnd() * 50, 1));
 }
+// The island has one fire by the cabin; the city has none.
+if (SCENE === 'island') fires.push(isleAt(1.75, 0.82, 1));
+// Empty slots sit far below the world, so they light nothing.
+const fireSlots = Array.from({ length: FN }, (_, i) => fires[i] || new THREE.Vector3(0, -1e5, 0));
 // Fire flicker, shared by the flames and the light they cast.
 const FIRE_GLSL = /* glsl */`
 uniform vec4 uF[${FN}];
@@ -332,26 +688,28 @@ vec3 fireLit(vec3 P, vec3 N) {
   return s * uFireCol;
 }`;
 const FU = {
-  uF: { value: fires.map((f, i) => new THREE.Vector4(f.x, f.y, f.z, i * 1.37)) },
+  uF: { value: fireSlots.map((f, i) => new THREE.Vector4(f.x, f.y, f.z, i * 1.37)) },
   uFireCol: { value: new THREE.Vector3(...FIRE) },
   uPace: { value: 1 },
 };
 
 // The land's height on a regular grid; shaders march it for shadows.
-const HB = { x0: -4500, z0: -3400, w: 9000, d: 2000, nx: 768, nz: 192 };
+const HB = SCENE === 'island' ? { x0: -900, z0: -1800, w: 2100, d: 1100, nx: 512, nz: 256 } : { x0: -4500, z0: -3400, w: 9000, d: 2000, nx: 768, nz: 192 };
 function heightTexture() {
   const data = new Uint16Array(HB.nx * HB.nz);
   for (let j = 0; j < HB.nz; j++) for (let i = 0; i < HB.nx; i++) {
     const x = HB.x0 + HB.w * (i / (HB.nx - 1)), z = HB.z0 + HB.d * (j / (HB.nz - 1));
-    data[j * HB.nx + i] = THREE.DataUtils.toHalfFloat(landH(x, shoreZ(x) - z));
+    data[j * HB.nx + i] = THREE.DataUtils.toHalfFloat(sceneH(x, z));
   }
   const t = new THREE.DataTexture(data, HB.nx, HB.nz, THREE.RedFormat, THREE.HalfFloatType);
   t.minFilter = t.magFilter = THREE.LinearFilter;
   t.needsUpdate = true;
   return t;
 }
-const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FU, tHeight: { value: heightTexture() }, uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) } },
+// One uniform set serves the full land and its cheap mirror copy.
+const LU = { ...U, ...FU, tHeight: { value: heightTexture() }, uHB: { value: new THREE.Vector4(HB.x0, HB.z0, 1 / HB.w, 1 / HB.d) } };
+const landMat = mirror => new THREE.ShaderMaterial({
+  uniforms: LU, defines: mirror ? { MIRROR: 1, SCENE: SC_ID } : { SCENE: SC_ID },
   vertexShader: /* glsl */`attribute float aB; varying vec3 vP; varying vec3 vN; varying float vB;
   void main() { vB = aB; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying float vB; ${HEAD} ${FIRE_GLSL}
@@ -365,8 +723,8 @@ const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
   float shade(vec3 P, vec3 Lp) {
     vec3 d = Lp - P;
     float len = length(d), s = 1.0;
-    for (int k = 1; k <= 14; k++) {
-      float t = float(k) / 14.0;
+    for (int k = 1; k <= 10; k++) {
+      float t = float(k) / 10.0;
       t = t * t * 0.5;
       vec3 q = P + d * t;
       s = min(s, clamp((q.y - landY(q.xz)) / (t * len * 0.025 + 1.0), 0.0, 1.0));
@@ -375,62 +733,163 @@ const land = new THREE.Mesh(landGeometry(), new THREE.ShaderMaterial({
   }
   void main() {
     vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+    #if SCENE == 1
+    // Snow on gentle slopes, dark rock on steep ones, wet stone at the waterline.
+    float snow = smoothstep(0.55, 0.8, N.y) * smoothstep(1.0, 3.5, vB);
+    vec3 alb = mix(vec3(0.045, 0.048, 0.055), vec3(0.62, 0.66, 0.74), snow);
+    #elif SCENE == 2
+    // A pale stone quay, then dark scrub on the hills behind.
+    float quay = 1.0 - smoothstep(60.0, 160.0, vB);
+    vec3 alb = mix(vec3(0.06, 0.06, 0.058), vec3(0.15, 0.145, 0.14), quay);
+    alb *= 1.0 - 0.5 * smoothstep(0.2, 0.6, 1.0 - N.y);
+    #else
     // Pale sand on the beach; dark scrub, then darker rock on steep slopes.
     float sand = 1.0 - smoothstep(40.0, 140.0, vB);
-    vec3 alb = mix(vec3(0.07, 0.066, 0.06), vec3(0.24, 0.21, 0.17), sand);
+    vec3 alb = mix(vec3(0.07, 0.066, 0.06), vec3(0.19, 0.17, 0.14), sand);
     alb *= 1.0 - 0.55 * smoothstep(0.2, 0.6, 1.0 - N.y);
-    // Each burst lights the slopes that face it; the rest stay dark.
-    vec3 lit = vec3(0.0);
+    #endif
+    // Each burst lights the slopes that face it; wrap lets light creep round a ridge.
+    vec3 lit = vec3(0.0), fill = vec3(0.0);
     for (int i = 0; i < ${LN}; i++) {
       if (i >= uLN) break;
       vec3 L = uL[i].xyz - vP;
       float d2 = dot(L, L);
       L *= inversesqrt(d2);
-      float ndl = max(dot(N, L), 0.0);
+      float ndl = max(dot(N, L), 0.0), wrap = max((dot(N, L) + 0.3) / 1.3, 0.0);
+      // The lit haze above throws a soft, wide fill; upward faces take most.
+      fill += uLC[i] * uL[i].w * (0.45 + 0.55 * N.y) / (1.0 + d2 / 1.2e7);
       // Slopes that graze the light catch a bright rim.
-      float rim = pow(1.0 - max(dot(N, V), 0.0), 2.0) * smoothstep(0.0, 0.4, ndl);
-      // The three brightest lights cast shadows over the ridges.
-      float sh = i < 3 && ndl > 0.0 ? shade(vP + N * 2.0, uL[i].xyz) : 1.0;
-      lit += uLC[i] * uL[i].w * (ndl + 0.8 * rim) * sh / (1.0 + d2 / 1.4e6);
+      // Flat sand skips it: seen edge-on, it reads as a hard bright line.
+      float rim = pow(1.0 - max(dot(N, V), 0.0), 2.0) * smoothstep(0.0, 0.4, ndl) * smoothstep(0.08, 0.35, 1.0 - N.y);
+      // The two brightest lights cast shadows over the ridges.
+      float sh = 1.0;
+      #ifndef MIRROR
+      if (i < 2 && ndl > 0.0 && uL[i].w > 0.05) sh = shade(vP + N * 2.0, uL[i].xyz);
+      #endif
+      lit += uLC[i] * uL[i].w * (wrap + 0.8 * rim) * sh / (1.0 + d2 / 2.2e6);
     }
-    // Faint sky light from above keeps the shapes readable.
+    // Faint sky light from above keeps the shapes readable; snow holds moonlight.
     vec3 amb = uCool * 0.006 * (0.3 + 0.7 * N.y);
-    vec3 c = alb * (amb + lit * 1.7 + fireLit(vP, N) * 1.2);
+    #if SCENE == 1
+    amb *= 1.0 + 6.0 * snow;
+    #endif
+    // Campfires reach only the beach; the mirror skips them.
+    vec3 fl = vec3(0.0);
+    #ifndef MIRROR
+    if (SCENE == 1 || vB < 300.0) fl = fireLit(vP, N) * 1.2;
+    #endif
+    vec3 c = alb * (amb + lit * 2.0 + fill * 0.3 + fl);
+    #if SCENE == 1
+    // Snow glints: a soft sheen toward each burst.
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 L = normalize(uL[i].xyz - vP);
+      c += uLC[i] * uL[i].w * snow * 0.05 * pow(max(dot(reflect(-L, N), V), 0.0), 16.0);
+    }
+    #endif
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
   }`,
-}));
-land.layers.enable(LIGHT);
-scene.add(land);
+});
+// The main camera sees the full land; the mirror sees the cheap copy.
+const land = new THREE.Mesh(SCENE === 'island' ? gridGeometry() : landGeometry(), landMat(false));
+const landMirror = new THREE.Mesh(land.geometry, landMat(true));
+landMirror.layers.set(LIGHT);
+scene.add(land, landMirror);
 
 // Light dots: string lights, lanterns, torches and a few homes up the hill.
-const dots = { pos: [], col: [], k: [] };
+const dots = { pos: [], col: [], k: [], str: [] };
 const WARM = linFit(0.86, 0.09, 75), AMBER = linFit(0.78, 0.15, 60), COOLW = linFit(0.9, 0.04, 240);
 const PARTY = [linFit(0.7, 0.2, 25), linFit(0.78, 0.18, 145), linFit(0.65, 0.17, 260), linFit(0.82, 0.15, 85), linFit(0.7, 0.2, 330)];
-function dot(p, col, k, size, tw) { dots.pos.push(p.x, p.y, p.z); dots.col.push(...col); dots.k.push(k, size, tw, rnd() * 100); }
-// String lights sag between poles near the fires.
-for (let s = 0; s < 9; s++) {
-  const x0 = (rnd() - 0.5) * 2200, len = 60 + rnd() * 120, b0 = 10 + rnd() * 60, n = Math.round(len / 5), party = rnd() < 0.45;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, x = x0 + len * t, sag = 2.2 * 4 * t * (1 - t);
-    dot(landAt(x, b0 + 8 * Math.sin(t * 3 + s), 5 - sag), party ? PARTY[i % 5] : WARM, 0.45, 2.0, party ? 0.2 : 0.05);
+function dot(p, col, k, size, tw, str = -1) { dots.pos.push(p.x, p.y, p.z); dots.col.push(...col); dots.k.push(k, size, tw, rnd() * 100); dots.str.push(str); }
+if (SCENE === 'bay') {
+  // String lights sag between poles near the fires.
+  for (let s = 0; s < 7; s++) {
+    const x0 = (rnd() - 0.5) * 2200, len = 60 + rnd() * 120, b0 = 10 + rnd() * 60, n = Math.round(len / 5), party = rnd() < 0.45;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = x0 + len * t, sag = 2.2 * 4 * t * (1 - t);
+      dot(landAt(x, b0 + 8 * Math.sin(t * 3 + s), 5 - sag), party ? PARTY[i % 5] : WARM, 0.45, 2.0, party ? 0.2 : 0.05, s);
+    }
+  }
+  // Lanterns, torches and phones scattered over the beach.
+  for (let i = 0; i < 240; i++) {
+    const r = rnd(), col = r < 0.45 ? AMBER : r < 0.75 ? WARM : r < 0.9 ? COOLW : PARTY[i % 5];
+    dot(landAt((rnd() - 0.5) * 2600, 4 + rnd() * 200, 1 + rnd() * 1.5), col, 0.4 + rnd() * 0.8, 1.6 + rnd() * 1.2, rnd() < 0.3 ? 0.6 : 0.08);
+  }
+  // A few homes and a winding path of lamps up the hill.
+  for (let i = 0; i < 105; i++) dot(landAt((rnd() - 0.5) * 3600, 160 + rnd() * 700, 2), rnd() < 0.7 ? AMBER : WARM, 0.25 + rnd() * 0.4, 1.6, 0.02);
+  // Boats at anchor on the bay, each a small cluster of lamps.
+  for (let i = 0; i < 11; i++) {
+    const z = -350 - rnd() * 1050, x = (rnd() - 0.5) * 1.1 * -z, n = 2 + Math.floor(rnd() * 4);
+    for (let j = 0; j < n; j++) dot(new THREE.Vector3(x + (rnd() - 0.5) * 8, 1 + rnd() * (j ? 3 : 7), z + (rnd() - 0.5) * 4), j ? AMBER : WARM, 0.6 + rnd() * 0.5, 2.2, 0.03);
+  }
+  // Paper lanterns afloat on the water, in loose drifts.
+  for (let i = 0; i < 85; i++) {
+    const z = -250 - Math.pow(rnd(), 0.7) * 1150, x = (rnd() - 0.5) * 1.05 * -z;
+    dot(new THREE.Vector3(x, 0.4, z), rnd() < 0.85 ? AMBER : PARTY[i % 5], 0.35 + rnd() * 0.35, 1.8, 0.25);
   }
 }
-// Lanterns, torches and phones scattered over the beach.
-for (let i = 0; i < 320; i++) {
-  const r = rnd(), col = r < 0.45 ? AMBER : r < 0.75 ? WARM : r < 0.9 ? COOLW : PARTY[i % 5];
-  dot(landAt((rnd() - 0.5) * 2600, 4 + rnd() * 200, 1 + rnd() * 1.5), col, 0.4 + rnd() * 0.8, 1.6 + rnd() * 1.2, rnd() < 0.3 ? 0.6 : 0.08);
+if (SCENE === 'island') {
+  // A cabin window and a lamp by its door, a beacon on the point, and nothing else.
+  dot(isleAt(1.8, 0.7, 3), AMBER, 0.9, 2.4, 0.03); dot(isleAt(1.83, 0.7, 2.6), AMBER, 0.7, 2.0, 0.03);
+  dot(isleAt(1.7, 0.78, 2.2), WARM, 0.8, 2.2, 0.05);
+  dot(isleAt(0.35, 0.93, 9), COOLW, 1.6, 3.2, 0.9);
 }
-// A few homes and a winding path of lamps up the hill.
-for (let i = 0; i < 140; i++) dot(landAt((rnd() - 0.5) * 3600, 160 + rnd() * 700, 2), rnd() < 0.7 ? AMBER : WARM, 0.25 + rnd() * 0.4, 1.6, 0.02);
-// Boats at anchor on the bay, each a small cluster of lamps.
-for (let i = 0; i < 14; i++) {
-  const z = -350 - rnd() * 1050, x = (rnd() - 0.5) * 1.1 * -z, n = 2 + Math.floor(rnd() * 4);
-  for (let j = 0; j < n; j++) dot(new THREE.Vector3(x + (rnd() - 0.5) * 8, 1 + rnd() * (j ? 3 : 7), z + (rnd() - 0.5) * 4), j ? AMBER : WARM, 0.6 + rnd() * 0.5, 2.2, 0.03);
+if (SCENE === 'city') {
+  // Street lamps along the quay, and a few boats in the harbour.
+  for (let x = -2600; x <= 2600; x += 24) dot(landAt(x + (rnd() - 0.5) * 6, 14, 7), rnd() < 0.8 ? AMBER : WARM, 0.55, 1.8, 0.02);
+  for (let i = 0; i < 6; i++) {
+    const z = -400 - rnd() * 800, x = (rnd() - 0.5) * 1.1 * -z;
+    for (let j = 0; j < 3; j++) dot(new THREE.Vector3(x + (rnd() - 0.5) * 10, 1.5 + rnd() * 5, z), j ? AMBER : COOLW, 0.7, 2.2, 0.03);
+  }
 }
-// Paper lanterns afloat on the water, in loose drifts.
-for (let i = 0; i < 110; i++) {
-  const z = -250 - Math.pow(rnd(), 0.7) * 1150, x = (rnd() - 0.5) * 1.05 * -z;
-  dot(new THREE.Vector3(x, 0.4, z), rnd() < 0.85 ? AMBER : PARTY[i % 5], 0.35 + rnd() * 0.35, 1.8, 0.25);
+if (SCENE === 'city') {
+  // The skyline: two rows of towers along the quay, tallest in the middle.
+  const parts = [];
+  let id = 0;
+  const RED_A = linFit(0.6, 0.22, 25);
+  for (const [b0, b1, tall] of [[70, 200, 1], [260, 480, 1.25]]) {
+    for (let x = -2800; x < 2800;) {
+      const w = 26 + rnd() * 48, d = 22 + rnd() * 26, c = Math.exp(-(x * x) / (1200 * 1200));
+      const h = (28 + rnd() * 60 + c * (110 + rnd() * 210)) * tall;
+      const base = landAt(x + w / 2, b0 + rnd() * (b1 - b0), 0);
+      const g = new THREE.BoxGeometry(w, h, d).translate(base.x, base.y + h / 2, base.z);
+      g.setAttribute('aId', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(id++), 1));
+      parts.push(g);
+      // Red aviation lights blink slowly on the tall towers.
+      if (h > 230) dot(new THREE.Vector3(base.x, base.y + h + 2, base.z + d / 2), RED_A, 1.2, 2.6, 0.9);
+      x += w + 4 + rnd() * 20;
+    }
+  }
+  const towers = new THREE.Mesh(mergeGeometries(parts), new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */`attribute float aId; varying vec3 vP; varying vec3 vN; varying float vId;
+    void main() { vId = aId; vN = normal; vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; varying float vId; uniform float uTime; ${HEAD}
+    void main() {
+      vec3 N = normalize(vN);
+      // Facade metres, then a grid of windows 3.6 m by 3.4 m.
+      vec2 f = abs(N.z) > 0.5 ? vP.xy : vP.zy;
+      vec2 cell = floor(f / vec2(3.6, 3.4)), fr = fract(f / vec2(3.6, 3.4));
+      float win = step(0.18, fr.x) * step(fr.x, 0.82) * step(0.25, fr.y) * step(fr.y, 0.8);
+      // Windows below a pixel blur to their average, so far towers do not shimmer.
+      win = mix(win, 0.3, clamp(fwidth(f.x) / 1.5, 0.0, 1.0));
+      float hs = k2hash(cell + vId * 13.1);
+      // About two in five windows are lit; now and then one switches.
+      float on = step(0.6, hs) * step(0.5, 1.0 - N.y) * step(0.06, fract(hs * 7.3 + floor(uTime / 23.0 + hs * 5.0) * 0.37));
+      vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.72, 0.84, 1.0), step(0.82, fract(hs * 13.7)));
+      vec3 lit = vec3(0.0);
+      for (int i = 0; i < ${LN}; i++) {
+        if (i >= uLN) break;
+        vec3 L = uL[i].xyz - vP;
+        float d2 = dot(L, L);
+        lit += uLC[i] * uL[i].w * max((dot(N, L * inversesqrt(d2)) + 0.25) / 1.25, 0.0) / (1.0 + d2 / 2.2e6);
+      }
+      vec3 c = vec3(0.05, 0.052, 0.058) * (uCool * 0.006 + lit * 2.0) + wc * win * on * 0.22;
+      gl_FragColor = vec4(k2haze(c, vP), 1.0);
+    }`,
+  }));
+  towers.layers.enable(LIGHT);
+  scene.add(towers);
 }
 // The flames: one tall sprite per fire.
 for (const [i, f] of fires.entries()) { dot(f.clone().setY(f.y + 0.6), FIRE, 2.2, 6.5, -1 - i * 1.37); }
@@ -438,12 +897,15 @@ const dotGeo = new THREE.BufferGeometry();
 dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(dots.pos, 3));
 dotGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(dots.col, 3));
 dotGeo.setAttribute('aK', new THREE.Float32BufferAttribute(dots.k, 4));
+dotGeo.setAttribute('aStr', new THREE.Float32BufferAttribute(dots.str, 1));
 const dotMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FU, uDpr: { value: 1 } },
+  uniforms: { ...U, ...FU, uDpr: { value: 1 }, uBrown: { value: new THREE.Vector2(-1, 0) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`attribute vec3 aCol; attribute vec4 aK; uniform float uDpr; uniform float uTime; uniform float uPace;
+  vertexShader: /* glsl */`attribute vec3 aCol; attribute vec4 aK; attribute float aStr; uniform float uDpr; uniform float uTime; uniform float uPace;
+  // A brown-out: string index and how far it dims.
+  uniform vec2 uBrown;
   varying vec3 vCol; varying float vFire; varying vec3 vP;
   void main() {
     vP = position;
@@ -453,6 +915,7 @@ const dotMat = new THREE.ShaderMaterial({
     float f = aK.z < 0.0
       ? 0.8 + 0.2 * (sin(t * 7.3 - aK.z * 11.0) * 0.5 + sin(t * 13.1 - aK.z * 5.0) * 0.3 + sin(t * 23.7 - aK.z * 3.0) * 0.2) * uPace
       : 1.0 - aK.z * uPace * (0.5 + 0.5 * sin(t * (1.5 + fract(aK.w) * 3.0) + aK.w));
+    if (abs(aStr - uBrown.x) < 0.5) f *= 1.0 - uBrown.y;
     vCol = aCol * aK.x * f;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = aK.y * uDpr;
@@ -462,12 +925,203 @@ const dotMat = new THREE.ShaderMaterial({
     vec2 q = gl_PointCoord - 0.5;
     // Flames stand taller than they are wide.
     float a = vFire > 0.5 ? exp(-(q.x * q.x * 40.0 + q.y * q.y * 9.0)) : exp(-dot(q, q) * 18.0);
-    gl_FragColor = vec4(vCol * 2.4 * a * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+    gl_FragColor = vec4(vCol * 1.7 * a * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
   }`,
 });
 const dotPts = new THREE.Points(dotGeo, dotMat);
 dotPts.layers.enable(LIGHT);
 scene.add(dotPts);
+
+/* ---------- snowfall (island) ---------- */
+// Flakes drift down near the camera; burst light catches each one.
+if (SCENE === 'island') {
+  const N = 6000, P = new Float32Array(N * 3), A = new Float32Array(N);
+  for (let i = 0; i < N; i++) { P[i * 3] = (rnd() - 0.5) * 900; P[i * 3 + 1] = rnd() * 220; P[i * 3 + 2] = -30 - rnd() * 700; A[i] = rnd(); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aS', new THREE.BufferAttribute(A, 1));
+  const flakes = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uDpr: dotMat.uniforms.uDpr },
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`attribute float aS; uniform float uDpr; uniform float uTime; varying vec3 vCol; varying vec3 vP; ${LIGHTS_GLSL}
+    uniform vec3 uCool;
+    void main() {
+      // Each flake falls at its own pace, sways, and drifts on a light wind.
+      vec3 p = position;
+      p.y = mod(p.y - uTime * (0.9 + aS * 0.9), 220.0);
+      p.x = mod(p.x + 450.0 + uTime * 1.4 + sin(uTime * 0.7 + aS * 40.0) * 1.5, 900.0) - 450.0;
+      vP = p;
+      float d = length(p - cameraPosition);
+      vCol = uCool * 0.05 + burstLit(p, 420.0) * 0.16;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      gl_PointSize = clamp(320.0 / d, 1.2, 5.0) * uDpr;
+    }`,
+    fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP;
+    void main() { vec2 q = gl_PointCoord - 0.5; gl_FragColor = vec4(vCol * exp(-dot(q, q) * 16.0), 0.0); }`,
+  }));
+  flakes.frustumCulled = false;
+  scene.add(flakes);
+}
+/* ---------- end snowfall ---------- */
+
+/* ---------- barges ---------- */
+// Seven small firing floats at anchor, a little in front of where the shells burst.
+// They carry no lamps; bursts and their own muzzle flashes light them.
+// The Distance setting moves the line; every shell leaves from the nearest one.
+const BARGE_X = (SCENE === 'island' ? [-260, 560] : [-1050, -700, -350, 0, 350, 700, 1050]).map(x => x + (rnd() - 0.5) * 80);
+const bargeMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; varying vec3 vN;
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; varying vec3 vN; ${HEAD}
+  void main() {
+    vec3 N = normalize(vN), lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 L = uL[i].xyz - vP;
+      float d2 = dot(L, L);
+      lit += uLC[i] * uL[i].w * max(dot(N, L * inversesqrt(d2)), 0.0) / (1.0 + d2 / 1.4e6);
+    }
+    vec3 c = vec3(0.07, 0.065, 0.06) * (uCool * 0.006 * (0.4 + 0.6 * N.y) + lit * 1.7);
+    gl_FragColor = vec4(k2haze(c, vP), 1.0);
+  }`,
+});
+const barges = new THREE.Group();
+{
+  const parts = [];
+  const box = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
+  for (const bx of BARGE_X) {
+    // A low pontoon with two mortar racks.
+    box(26, 1.4, 9, bx, 0.3, 0);
+    box(6, 1.3, 3, bx - 5, 1.6, 0.5);
+    box(6, 1.3, 3, bx + 5, 1.6, -0.5);
+  }
+  const hull = new THREE.Mesh(mergeGeometries(parts), bargeMat);
+  hull.layers.enable(LIGHT);
+  barges.add(hull);
+}
+scene.add(barges);
+// The island's pines: dark cones on the gentler slopes.
+if (SCENE === 'island') {
+  const cones = [];
+  for (let k = 0, n = 0; k < 600 && n < 70; k++) {
+    const p = isleAt(rnd() * Math.PI * 2, 0.15 + rnd() * 0.75);
+    if (p.y < 4 || p.y > 70) continue;
+    const h = 12 + rnd() * 10;
+    cones.push(new THREE.ConeGeometry(h * 0.28, h, 7).translate(p.x, p.y + h / 2 - 0.5, p.z));
+    n++;
+  }
+  const pines = new THREE.Mesh(mergeGeometries(cones), bargeMat);
+  pines.layers.enable(LIGHT);
+  scene.add(pines);
+}
+// The line sits 150 m in front of the burst plane, so the hulls read.
+const placeBarges = () => { barges.position.z = -shellDist() + 150; barges.updateMatrixWorld(); };
+// The nearest barge's deck, with a little scatter between its racks.
+function bargeBase(x, out) {
+  let best = BARGE_X[0];
+  for (const bx of BARGE_X) if (Math.abs(bx - x) < Math.abs(best - x)) best = bx;
+  return out.set(best + (rnd() - 0.5) * 12, 2, barges.position.z + (rnd() - 0.5) * 3);
+}
+// A spot on the beach near the waterline, for the small shells.
+const beachBase = (x, out) => out.copy(SCENE === 'island' ? isleAt(Math.PI / 2 + (rnd() - 0.5) * 1.8, 0.9 + rnd() * 0.06, 0.5) : landAt(x + (rnd() - 0.5) * 60, 12 + rnd() * 30, 0.5));
+// Mid and big shells and the showpieces leave the barges; small ones leave the beach.
+const BARGE_ONLY = new Set(['supernova', 'galaxy', 'cascade', 'saturn', 'smiley', 'rainbow', 'butterfly', 'star', 'cube', 'jelly', 'swarm', 'heart']);
+const fromBeach = (type, cal) => cal < 1.35 && !BARGE_ONLY.has(type);
+// Beach shells burst over the shore, just behind the waterline.
+const beachDist = () => (SCENE === 'island' ? -ISLE.z : -SHORE_Z - 40);
+/* ---------- end barges ---------- */
+
+/* ---------- the crowd ---------- */
+// Excitement rises with the burst light and falls back over about 9 s.
+// It raises phones over the crowd and sets off camera flashes.
+const CROWD_N = SCENE === 'island' ? 1 : 420;
+const crowdPos = [], crowdSeed = [];
+for (let i = 0; i < CROWD_N; i++) {
+  const p = SCENE === 'island' ? new THREE.Vector3(0, -1e4, 0) : landAt((rnd() - 0.5) * 2600, SCENE === 'city' ? 8 + rnd() * 70 : 6 + Math.pow(rnd(), 1.5) * 160, 1.6);
+  crowdPos.push(p.x, p.y, p.z);
+  // Threshold for this phone, and a seed.
+  crowdSeed.push(0.08 + rnd() * 0.85, rnd());
+}
+const crowdGeo = new THREE.BufferGeometry();
+crowdGeo.setAttribute('position', new THREE.Float32BufferAttribute(crowdPos, 3));
+crowdGeo.setAttribute('aS', new THREE.Float32BufferAttribute(crowdSeed, 2));
+const flashAt = new THREE.Float32BufferAttribute(new Float32Array(CROWD_N).fill(-1e4), 1);
+flashAt.setUsage(THREE.DynamicDrawUsage);
+crowdGeo.setAttribute('aF', flashAt);
+const CU2 = { uCrowd: { value: 0 } };
+const crowdMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...CU2, uDpr: dotMat.uniforms.uDpr },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute vec2 aS; attribute float aF; uniform float uDpr; uniform float uTime; uniform float uCrowd;
+  varying vec3 vCol; varying vec3 vP; varying float vFl;
+  void main() {
+    // A phone goes up once excitement passes its threshold, and comes down after.
+    float up = smoothstep(aS.x, aS.x + 0.12, uCrowd);
+    vec3 p = position + vec3(0.0, 0.7 * up, 0.0);
+    vP = p;
+    // A camera flash: a 60 ms white pop, gone in a third of a second.
+    float age = uTime - aF;
+    float fl = age >= 0.0 && age < 0.33 ? exp(-age / 0.06) : 0.0;
+    // A phone LED flash: cool blue-white.
+    vCol = vec3(0.5, 0.68, 1.0) * up * 1.0 + vec3(0.72, 0.84, 1.0) * fl * 4.0;
+    vFl = fl;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    gl_PointSize = (up > 0.01 || fl > 0.01) ? (1.8 + 12.0 * fl) * uDpr : 0.0;
+  }`,
+  fragmentShader: /* glsl */`varying vec3 vCol; varying vec3 vP; varying float vFl; ${HEAD}
+  void main() {
+    vec2 q = gl_PointCoord - 0.5;
+    // A flash is a tiny core with a thin horizontal streak; a phone is a soft dot.
+    float k = vFl > 0.01 ? exp(-dot(q, q) * 160.0) + 0.5 * exp(-q.y * q.y * 900.0) * exp(-abs(q.x) * 7.0) : exp(-dot(q, q) * 18.0);
+    gl_FragColor = vec4(vCol * k * (1.0 - k2hazeAmount(vP) * 0.6), 0.0);
+  }`,
+});
+const crowdPts = new THREE.Points(crowdGeo, crowdMat);
+crowdPts.frustumCulled = false;
+crowdPts.layers.enable(LIGHT);
+scene.add(crowdPts);
+const crowd = { E: 0, last: 0 };
+// Called once per drawn frame from updateLights.
+function crowdTick() {
+  const dt = Math.min(0.25, Math.max(0, simT - crowd.last));
+  crowd.last = simT;
+  let raw = 0;
+  for (const L of live) if (!L.wide && L.st !== undefined && L.I > 0.05 && L.col !== SEED) raw += L.I;
+  const target = 1 - Math.exp(-raw / 1.6);
+  // Fast to rise, slow to settle.
+  const tau = target > crowd.E ? 0.6 : 9;
+  crowd.E += (target - crowd.E) * (1 - Math.exp(-dt / tau));
+  if (crowd.E < 0.002) crowd.E = 0;
+  CU2.uCrowd.value = crowd.E;
+  // Flashes per second: about 3 after one shell, about 40 at Showtime's peak.
+  if (reduced() || crowd.E < 0.04) return;
+  const rate = 1 + 40 * crowd.E * crowd.E;
+  let n = 0;
+  for (let k = rate * dt; k > 0; k--) if (Math.random() < Math.min(1, k)) {
+    flashAt.setX(Math.floor(Math.random() * CROWD_N), simT + Math.random() * dt);
+    n++;
+  }
+  if (n) flashAt.needsUpdate = true;
+}
+// Now and then one string of lights browns out for a moment.
+const brown = { s: -1, t0: 0, next: 30 + Math.random() * 40 };
+function brownTick() {
+  const u = dotMat.uniforms.uBrown.value;
+  if (reduced()) { u.set(-1, 0); return; }
+  if (brown.s < 0 && simT > brown.next) { brown.s = Math.floor(Math.random() * 7); brown.t0 = simT; }
+  if (brown.s < 0) return;
+  const a = simT - brown.t0;
+  // A stutter down, a dim hold, a stutter back up.
+  const dip = a < 0.5 ? (Math.sin(a * 60) > 0 ? 0.7 : 0.25) : a < 1.6 ? 0.7 : a < 2.0 ? (Math.sin(a * 50) > 0 ? 0.5 : 0.1) : 0;
+  u.set(brown.s, dip);
+  if (a > 2.0) { brown.s = -1; brown.next = simT + 25 + Math.random() * 50; u.set(-1, 0); }
+}
+/* ---------- end crowd ---------- */
 
 /* ---------- K6: burst particles ---------- */
 // A ring buffer of star slots on one instanced streak quad.
@@ -480,12 +1134,17 @@ const RAMPS = [
   linFit(0.6, 0.15, 255), // copper blue, dim on purpose
   linFit(0.82, 0.16, 80), // sodium gold
   linFit(0.97, 0.02, 90), // magnesium white
+  linFit(0.58, 0.2, 310), // strontium and copper purple
+  linFit(0.74, 0.18, 55), // calcium orange
+  linFit(0.8, 0.13, 195), // aqua
+  linFit(0.72, 0.19, 350), // pink
 ];
 const EMBER = linFit(0.5, 0.17, 35);
 const starGeo = new THREE.InstancedBufferGeometry();
-// x runs tail (0) to head (1); y runs across the streak.
-starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
-starGeo.setIndex([0, 1, 2, 0, 2, 3]);
+// Three columns, tail (0), middle (1) and head (2), so a trail can bend.
+// y runs across the streak.
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
+starGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
 const slot = name => {
   const a = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
   a.setUsage(THREE.DynamicDrawUsage);
@@ -498,6 +1157,7 @@ const starMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
     uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+    uCloud: U.uCloud, uCloudO: U.uCloudO,
   },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -506,53 +1166,90 @@ const starMat = new THREE.ShaderMaterial({
   attribute vec4 aA, aB, aC, aD;
   uniform float uTime, uDpr, uSteady;
   uniform vec2 uRes;
-  uniform vec3 uG, uRamp[5], uEmber;
-  varying vec3 vCol;
-  varying vec2 vQ;
+  uniform vec3 uG, uRamp[9], uEmber;
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
+  ${K2_NOISE}
+  ${CLOUD_GLSL}
   // Linear drag, a = G - k v, in closed form: no stored state.
   vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
     vec3 vt = uG / k;
     return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
   }
   float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
+  // Fish stars swim off in wriggles a few metres wide.
+  vec3 wig(float a, float sd) { return vec3(sin(a * 9.0 + sd), cos(a * 7.0 + sd * 1.3), sin(a * 8.0 + sd * 0.7)) * 3.0 * smoothstep(0.1, 0.4, a); }
+  vec3 path(float t) {
+    vec3 p = starPos(aA.xyz, aB.xyz, aB.w, t);
+    if (abs(aD.x - 4.0) < 0.5) p += wig(t, aD.y);
+    return p;
+  }
+  // Screen position in pixels, and the clip position for output.
+  vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
   void main() {
     float age = uTime - aA.w, life = aC.y;
     if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    float f = age / life;
-    vec3 head = starPos(aA.xyz, aB.xyz, aB.w, age);
-    vec3 tail = starPos(aA.xyz, aB.xyz, aB.w, max(age - aC.z, 0.0));
-    vec4 ch = projectionMatrix * viewMatrix * vec4(head, 1.0);
-    vec4 ct = projectionMatrix * viewMatrix * vec4(tail, 1.0);
-    vec2 d = (ch.xy / ch.w - ct.xy / ct.w) * uRes;
-    float len = length(d);
-    vec2 dir = len > 1e-3 ? d / len : vec2(0.0, 1.0);
-    float w = aC.w * uDpr * (1.0 - 0.5 * f);
-    vec4 c = position.x > 0.5 ? ch : ct;
-    // Caps extend past both ends by the half-width.
-    vec2 off = vec2(-dir.y, dir.x) * position.y * w + dir * (position.x * 2.0 - 1.0) * w;
-    c.xy += off * 2.0 / uRes * c.w;
+    float f = age / life, tr = min(aC.z, age);
+    // Three points on the true path, so the trail follows the fall.
+    vec4 c0, c1, c2;
+    vec3 ph = path(age);
+    vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(ph, c2);
+    float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
+    // The core is w wide; the quad is wider to hold the head's halo.
+    float w = aC.w * uDpr * (1.0 - 0.5 * f), W = w * 2.4;
+    int col = int(position.x + 0.5);
+    vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
+    vec2 dir = col == 0 ? s1 - s0 : col == 1 ? s2 - s0 : s2 - s1;
+    dir = length(dir) > 1e-3 ? normalize(dir) : vec2(0.0, 1.0);
+    float s = col == 0 ? -W : col == 1 ? L01 : len + W;
+    vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
+    c.xy += off / (0.5 * uRes) * c.w;
     gl_Position = c;
-    vQ = vec2(position.x, position.y);
-    // aD: x kind (1 strobe, 2 willow, 3 comet), y seed, w gain.
+    vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vSeed = aD.y;
+    // aD: x kind (1 strobe, 2 willow, 3 comet, 4 fish, 5 glitter), y seed, z second colour + 1, w gain.
     vec3 chem = uRamp[int(aC.x + 0.5)];
-    vec3 col = chem * 0.8;
+    if (aD.z > 0.5) chem = mix(chem, uRamp[int(aD.z - 0.5)], smoothstep(0.4, 0.55, f));
+    vec3 col3 = chem * 0.8;
     float b = 1.0 - smoothstep(0.75, 1.0, f);
     if (aD.x < 2.5) {
       // White-hot first, then the chemical colour, then an ember red.
-      col = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
-      col = mix(col, uEmber * 0.5, smoothstep(0.6, 1.0, f));
+      col3 = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
+      col3 = mix(col3, uEmber * 0.5, smoothstep(0.6, 1.0, f));
     }
     // Strobe stars blink at 12 Hz; reduced motion holds them steady.
     if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
     if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
-    vCol = col * 4.0 * aD.w * b;
+    if (abs(aD.x - 5.0) < 0.5) b *= mix(0.3 + 1.2 * step(0.6, hash11(aD.y + floor(age * 25.0))), 0.7, uSteady);
+    // Stars above the deck shine through it, dimmed by its depth.
+    b *= cloudVeil(ph);
+    vCol = col3 * 4.0 * aD.w * b;
+    // The tail is spent fuel: cooler and redder than the head.
+    vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
+    // Willow, comet and glitter tails sparkle; the rest shimmer a little.
+    vSpark = (abs(aD.x - 2.0) < 0.5 || abs(aD.x - 3.0) < 0.5 || abs(aD.x - 5.0) < 0.5) ? 0.8 : 0.25;
   }`,
   fragmentShader: /* glsl */`
-  varying vec3 vCol;
-  varying vec2 vQ;
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
   void main() {
-    float a = exp(-vQ.y * vQ.y * 3.5) * (0.08 + 0.92 * vQ.x * vQ.x * vQ.x);
-    gl_FragColor = vec4(vCol * a, 0.0);
+    float len = vLWH.x, W = vLWH.z;
+    // A core thinner than a pixel aliases; widen it and dim it to match.
+    float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
+    // Distance from the tail-to-head path: a capsule with round ends.
+    float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
+    float d2 = (out_ * out_ + vY * vY) / (w * w);
+    float core = max(exp(-d2 * 1.8) - 0.01, 0.0);
+    // Brightness falls off exponentially from the head down the trail.
+    float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
+    float trail = 0.05 + 0.95 * exp(-3.0 * (1.0 - u));
+    // Glints every few pixels along the tail; they move as the star moves.
+    float g = step(0.55, fract(sin(floor(vS / 3.0) * 12.9898 + vSeed) * 43758.5453));
+    float sp = mix(1.0, 0.4 + 1.4 * g, vSpark * (1.0 - u));
+    // The head carries a soft halo, wider than the core.
+    float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
+    float halo = 0.22 * exp(-dh2 * 3.0);
+    vec3 c = mix(vColT, vCol, u) * core * trail * sp + vCol * halo;
+    gl_FragColor = vec4(c * dim, 0.0);
   }`,
 });
 const stars = new THREE.Mesh(starGeo, starMat);
@@ -561,7 +1258,7 @@ stars.layers.enable(LIGHT);
 scene.add(stars);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
-function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
+function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
   const i = head;
   head = (head + 1) % CAP;
   if (dirtyFrom < 0) dirtyFrom = i;
@@ -569,16 +1266,16 @@ function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1) {
   aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, ramp, life, trail, size);
-  aD.setXYZW(i, kind, rnd() * 100, 0, gain);
+  aD.setXYZW(i, kind, rnd() * 100, ramp2 + 1, gain);
   starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
 }
 // Upload only the slots a launch wrote; a wrap gives two ranges.
+// Ranges add up until the next render, which uploads and clears them.
 function commitStars() {
   if (dirtyFrom < 0) return;
   const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
   for (const at of [aA, aB, aC, aD]) {
-    at.clearUpdateRanges();
     at.addUpdateRange(a * 4, run * 4);
     if (n > run) at.addUpdateRange(0, (n - run) * 4);
     at.needsUpdate = true;
@@ -604,29 +1301,535 @@ function climb(h, k) {
 }
 /* ---------- end K6 ---------- */
 
+/* ---------- smoke: lit puffs that drift away on the wind ---------- */
+// A ring buffer of billboard puffs; every burst light lights each puff.
+const SCAP = 640;
+const WIND = new THREE.Vector3(2.2, 0.3, -0.8);
+const smokeGeo = new THREE.InstancedBufferGeometry();
+smokeGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+smokeGeo.setIndex([0, 1, 2, 0, 2, 3]);
+const sslot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(SCAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  smokeGeo.setAttribute(name, a);
+  return a;
+};
+const sA = sslot('sA'), sB = sslot('sB'), sC = sslot('sC');
+smokeGeo.instanceCount = 0;
+let sHead = 0, sFrom = -1, sN = 0, smokeEnd = 0;
+const SU = { uSmokeK: { value: 1 }, uWind: { value: WIND }, uDrift: { value: reduced() ? 0.5 : 1 } };
+const smokeMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...SU },
+  transparent: true, depthWrite: false,
+  // Premultiplied smoke; the alpha channel stays the mirror's land mask.
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 sA, sB, sC;
+  uniform float uTime, uDrift;
+  uniform vec3 uWind;
+  varying vec2 vUv;
+  varying vec3 vP;
+  varying float vHaze;
+  varying float vA, vSeed, vAge, vS;
+  ${HEAD}
+  void main() {
+    // sA: birth point, birth time. sB: push, start size. sC: growth, life, seed, density.
+    float age = uTime - sA.w, life = sC.y;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float ad = age * uDrift;
+    // The puff slows from the burst's push, then rides the wind.
+    // Higher air moves faster, so the cloud shears as it drifts.
+    vec3 c = sA.xyz + sB.xyz * (1.0 - exp(-ad * 2.0)) / 2.0 + uWind * ad * (0.6 + 0.002 * sA.y);
+    // Diffusion: the puff spreads like the square root of time, plus a slow creep.
+    float size = sB.w * sqrt(1.0 + ad / 2.5) + sC.x * ad;
+    // Over many seconds it leans a little long and wide; its seed sets when and how far.
+    float st = smoothstep(3.0 + 4.0 * fract(sC.z * 3.1), 30.0, ad);
+    st = st * st * (3.0 - 2.0 * st);
+    float ang = mix((sC.z - 0.5) * 1.2, (sC.z - 0.5) * 0.3, smoothstep(0.0, 20.0, ad));
+    // The quad has room round the puff, so the warp below never clips.
+    vec2 corner = position.xy * size * 1.3 * vec2(1.0 + (0.5 + 0.7 * fract(sC.z * 7.3)) * st, 1.0 + 0.15 * st);
+    vec4 mv = viewMatrix * vec4(c, 1.0);
+    vec2 off = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * corner;
+    mv.xy += off;
+    // World position of this corner, for per-pixel light.
+    vP = c + vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]) * off.x + vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]) * off.y;
+    gl_Position = projectionMatrix * mv;
+    vUv = position.xy; vSeed = sC.z; vAge = ad; vS = st;
+    // Dissipation: the same smoke over a larger area grows thinner.
+    float dil = pow(sB.w / size, 0.7);
+    vA = sC.w * smoothstep(0.0, 1.2, age) * dil * (1.0 - smoothstep(life * 0.4, life, age));
+    vHaze = 1.0 - k2hazeAmount(c) * 0.7;
+    vA *= cloudVeil(c);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uSmokeK;
+  uniform vec3 uCool;
+  varying vec2 vUv;
+  varying vec3 vP;
+  varying float vHaze;
+  varying float vA, vSeed, vAge, vS;
+  ${K2_NOISE}
+  ${LIGHTS_GLSL}
+  void main() {
+    vec2 uv = vUv * 1.3;
+    // Shear: the top of the wisp runs ahead on the wind; a slow meander bends it.
+    uv.x -= uv.y * 0.12 * vS;
+    uv.y += sin(uv.x * 1.7 + vSeed * 6.0 + vAge * 0.08) * 0.06 * vS;
+    // A noise warp frays the outline, so no puff keeps a clean ellipse.
+    vec2 w = vec2(k2noise(uv * 1.1 + vSeed * 13.0 + vAge * 0.03), k2noise(uv * 1.1 + vSeed * 7.0 - vAge * 0.02)) - 0.5;
+    uv += w * (0.35 + 0.15 * vS);
+    // The strands lean level only a little as they age.
+    vec2 p = vec2(uv.x * (1.3 - 0.15 * vS), uv.y * (1.3 + 0.25 * vS)) + vec2(vSeed * 17.0, vSeed * 9.0) + vec2(vAge * 0.04, -vAge * 0.01);
+    float n = k2noise(p * 2.0) * 0.6 + k2noise(p * 4.3 + 3.0) * 0.3 + k2noise(p * 9.1 + 7.0) * 0.1;
+    float edge = smoothstep(1.05, 0.2, length(uv)) * smoothstep(1.0, 0.85, length(vUv));
+    float d = edge * smoothstep(0.25, 0.85, n) * vA * uSmokeK;
+    if (d < 0.002) discard;
+    // Relief from the density slope: a normal in the billboard's plane.
+    vec2 g = vec2(dFdx(n), dFdy(n)) / max(length(fwidth(vUv)), 1e-4);
+    vec3 Nb = normalize(vec3(-g * 0.3, 1.0));
+    vec3 Rt = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 Up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    vec3 Bk = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+    vec3 N = normalize(Rt * Nb.x + Up * Nb.y + Bk * Nb.z);
+    vec3 V = normalize(vP - cameraPosition), lit = vec3(0.0);
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 L = uL[i].xyz - vP;
+      float d2 = dot(L, L);
+      L *= inversesqrt(d2);
+      // A tight reach, so a burst lights only the near part of a long wisp.
+      float fall = uL[i].w / (1.0 + d2 / 28900.0);
+      // Sides that face the burst catch it; dense cores shade themselves.
+      float lam = (0.25 + 0.75 * max(dot(N, L), 0.0)) * (1.0 - 0.35 * d);
+      // A burst behind the smoke makes its thin edges glow.
+      float ph = pow(max(dot(V, L), 0.0), 4.0) * (0.5 + 1.5 * (1.0 - d));
+      lit += uLC[i] * fall * (lam + 1.4 * ph);
+    }
+    vec3 col = (lit * 0.75 + uCool * 0.004) * vHaze;
+    gl_FragColor = vec4(col * d, d * 0.55);
+  }`,
+});
+const smoke = new THREE.Mesh(smokeGeo, smokeMat);
+smoke.frustumCulled = false;
+// Smoke draws over the beach lights and under the stars.
+smoke.renderOrder = 1;
+stars.renderOrder = 2;
+smoke.layers.enable(LIGHT);
+scene.add(smoke);
+function writePuff(p0, t0, v0, size, grow, life, dens) {
+  const i = sHead;
+  sHead = (sHead + 1) % SCAP;
+  if (sFrom < 0) sFrom = i;
+  sN = Math.min(SCAP, sN + 1);
+  sA.setXYZW(i, p0.x, p0.y, p0.z, t0);
+  sB.setXYZW(i, v0.x, v0.y, v0.z, size);
+  sC.setXYZW(i, grow, life, rnd(), dens);
+  smokeGeo.instanceCount = Math.max(smokeGeo.instanceCount, i + 1);
+  smokeEnd = Math.max(smokeEnd, t0 + life);
+}
+function commitSmoke() {
+  if (sFrom < 0) return;
+  const a = sFrom, n = sN, run = Math.min(n, SCAP - a);
+  for (const at of [sA, sB, sC]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  sFrom = -1; sN = 0;
+}
+const thick = () => opts.smoke === 'thick';
+// A burst leaves a ragged shell of puffs where its stars burned.
+function smokeBurst(pos, t0, cal, s) {
+  const n = Math.round((7 + 4 * cal) * (thick() ? 1.6 : 1)), R = 45 * cal * s, pp = new THREE.Vector3(), pv = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    sphereDir(i, n, pv);
+    pp.copy(pos).addScaledVector(pv, R * (0.2 + rnd() * 0.5));
+    writePuff(pp, t0 + 0.2 + rnd() * 0.6, pv.multiplyScalar(R * 0.6), R * (0.35 + rnd() * 0.25), 0.8 + rnd() * 0.7, 16 + rnd() * 6, 0.32 + rnd() * 0.2);
+  }
+}
+// The climb leaves a thin trail of smoke.
+function smokeTrail(base, up, k, t0, T) {
+  const pp = new THREE.Vector3(), zero = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    const ts = T * (0.08 + 0.11 * i);
+    posAt(base, up, k, ts, pp);
+    writePuff(pp, t0 + ts, zero, 3 + rnd() * 2, 1.6, 6 + rnd() * 2, 0.3);
+  }
+}
+/* ---------- end smoke ---------- */
+
+/* ---------- sound: light first, the boom after ---------- */
+// Every voice runs on the audio clock, delayed by distance / 343 m/s.
+// Each scheduled node is kept, so mute and a hidden tab stop them all.
+const kit = audioKit({ keys: new Set([' ']) });
+const pend = new Set();
+const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
+const dB = v => Math.pow(10, v / 20);
+let rvb = null, bed = null, crackBufs = null;
+// ZzFX (MIT, Tom's pick) renders the voices into buffers on this kit's context.
+// Until it loads, the synth voices below play instead.
+// Measured in the browser: boom body near 500 Hz over 2 s; whistle 1.35 to 2.7 kHz.
+// Crackle stays on the click bank: the ZzFX take was a hiss, not pops.
+const ZZ_URL = 'https://cdn.jsdelivr.net/npm/zzfx@1.3.2/ZzFX.js';
+// volume, randomness, frequency, attack, sustain, release, shape, curve, slide, deltaSlide,
+// pitchJump, jumpTime, repeat, noise, modulation, bitCrush, delay, sustainVol, decay, tremolo, filter
+const ZZ = {
+  boom: [1, .2, 30, .005, .15, 1.6, 4, .6, -.2, 0, 0, 0, 0, 1.2, 0, 0, 0, .7, .25, 0, -250],
+  crack: [1, .3, 900, 0, .01, .06, 4, 1, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, .02, 0, 2500],
+  thump: [1, .1, 85, .002, .02, .25, 0, 1, -8, 0, 0, 0, 0, .3, 0, 0, 0, 1, .05, 0, 0],
+  whistle: [.6, .05, 1250, .08, 1.3, .3, 0, 1, 1.9, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+  sizzle: [.5, .2, 3000, .2, 1.8, .8, 4, 1, 0, 0, 0, 0, 0, 6, 0, 0, 0, .6, .5, .3, 3500],
+};
+let zzBufs = null, zzLoad = null;
+function loadZz(ac) {
+  zzLoad ||= import(ZZ_URL).then(({ ZZFX }) => {
+    // The module opens its own context; this toy plays on the kit's.
+    ZZFX.audioContext?.close?.().catch(() => {});
+    const bufs = {};
+    for (const [k, p] of Object.entries(ZZ)) {
+      // Three takes per voice, each normalised; ZzFX randomises every build.
+      bufs[k] = [0, 1, 2].map(() => {
+        const smp = ZZFX.buildSamples(...p);
+        let pk = 1e-6;
+        for (const v of smp) pk = Math.max(pk, Math.abs(v));
+        const b = ac.createBuffer(1, smp.length, ZZFX.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < smp.length; i++) d[i] = smp[i] / pk;
+        return b;
+      });
+    }
+    zzBufs = bufs;
+  }).catch(() => {});
+}
+// One take of a ZzFX voice at time t, through out, at a jittered rate.
+function zz(ac, name, t, out, gain, rate = jit(0.08)) {
+  const s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = zzBufs[name][Math.floor(Math.random() * 3)];
+  s.playbackRate.value = rate;
+  g.gain.value = gain;
+  s.connect(g).connect(out);
+  s.start(t);
+  return [s, g];
+}
+// Recorded takes, cut from Tom's picks; until they load, ZzFX and the synth play.
+// Cuts placed by spectrogram: clean booms, crackling shells, whistles, pops.
+const SFX = { boom: ['boom-1', 'boom-2', 'boom-3', 'boom-4', 'boom-5'], crackshell: ['crackshell-1', 'crackshell-2'], whistle: ['whistle-1', 'whistle-2', 'whistle-3'] };
+// Gain per take: the first half second of each sits near -16 dB.
+const SFX_GAIN = {
+  'boom-1': 0.59, 'boom-2': 0.72, 'boom-3': 1.39, 'boom-4': 1.55, 'boom-5': 1.46, 'crackshell-1': 1.55, 'crackshell-2': 1.46,
+  crackle: 2.0, pops: 1.34, sparkle: 1.29, 'whistle-1': 0.56, 'whistle-2': 0.7, 'whistle-3': 0.6, report: 0.85, cake: 0.61,
+};
+let sfx = null, sfxLoad = null;
+// Each take loads on its own, four at a time, with two retries.
+// They decode at page load on an offline context, so the first shell is recorded.
+// A failed take is skipped; the synth covers its role.
+function loadSfx() {
+  if (sfxLoad) return;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC) return;
+  const dec = new OAC(1, 1, 44100), got = {}, names = Object.keys(SFX_GAIN);
+  const one = (n, tries = 3) => fetch(`sfx/${n}.mp3`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(b => dec.decodeAudioData(b))
+    .then(buf => { got[n] = buf; sfx = got; })
+    .catch(() => tries > 1 && new Promise(r => setTimeout(r, 500)).then(() => one(n, tries - 1)));
+  let i = 0;
+  const next = () => (i < names.length ? one(names[i++]).then(next) : null);
+  sfxLoad = Promise.all([next(), next(), next(), next()]);
+}
+loadSfx();
+const has = n => !!sfx?.[n];
+// The synth's distance cut runs 6 kHz to 900 Hz; recordings get 12 kHz to 2.5 kHz.
+const recLp = lp => 12000 * Math.pow(lp / 6000, 0.55);
+// A loaded take from a set, or null.
+const take = k => { const l = SFX[k].filter(has); return l.length ? l[Math.floor(Math.random() * l.length)] : null; };
+// One recorded take at time t, through out, at a set rate.
+let lastTake = '';
+function smp(ac, name, t, out, gain, rate = 1) {
+  lastTake = name;
+  const s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = sfx[name];
+  s.playbackRate.value = rate;
+  g.gain.value = gain * SFX_GAIN[name];
+  s.connect(g).connect(out);
+  s.start(t);
+  return [s, g];
+}
+function track(end, kind, ...nodes) { pend.add({ end, kind, nodes }); }
+function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
+const count = kind => { let n = 0; for (const h of pend) if (h.kind === kind) n++; return n; };
+const pending = () => { prune(); return pend.size > 0; };
+function stopAll() {
+  for (const h of pend) for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+  pend.clear();
+}
+// Shared bus: a 3.5 s reverb, a crackle bank, and the water bed.
+function bus(ac) {
+  loadZz(ac);
+  if (rvb) return;
+  const len = Math.round(ac.sampleRate * 3.5), ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  const conv = ac.createConvolver(), back = ac.createGain();
+  conv.buffer = ir;
+  back.gain.value = 0.55;
+  conv.connect(back).connect(kit.out);
+  rvb = conv;
+  // Three crackle takes: 30 to 80 clicks of 2 ms over 1.2 s.
+  crackBufs = [0, 1, 2].map(() => {
+    const b = ac.createBuffer(1, Math.round(ac.sampleRate * 1.4), ac.sampleRate), d = b.getChannelData(0);
+    const n = 30 + Math.floor(Math.random() * 50), cl = Math.round(ac.sampleRate * 0.002);
+    for (let k = 0; k < n; k++) {
+      const at = Math.floor(Math.random() * ac.sampleRate * 1.2), amp = 0.3 + Math.random() * 0.7;
+      for (let i = 0; i < cl && at + i < d.length; i++) d[at + i] += (Math.random() * 2 - 1) * amp * (1 - i / cl);
+    }
+    return b;
+  });
+  // The bed: low noise under 300 Hz with a slow swell, the water lapping.
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.35;
+  lp.type = 'lowpass'; lp.frequency.value = 300;
+  g.gain.value = 0;
+  lfo.frequency.value = 0.13; lg.gain.value = dB(-40);
+  lfo.connect(lg).connect(g.gain);
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start(); lfo.start();
+  bed = g;
+}
+function hiss(ac, t, dur, rate = 1) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start(t, Math.random() * 0.9); s.stop(t + dur);
+  return s;
+}
+function filt(ac, type, f, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+// A gain that opens at t over a, then decays to silence over d.
+function env(ac, t, peak, a, d) {
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+  return g;
+}
+// The lift: a mortar thump, a rising whoosh, and one shell in six whistles.
+function lift(ac, t, T, out, lvl) {
+  if (has('report')) {
+    // The mortar: the report slowed to a deep thud, cut short.
+    const lp = filt(ac, 'lowpass', 520), g = env(ac, t, 1, 0.003, 0.65);
+    g.connect(lp).connect(out);
+    const nodes = [smp(ac, 'report', t, g, lvl * 1.1, 0.42 * jit(0.06))[0]];
+    // One launch in three whistles on a recorded take, stretched to the climb.
+    // Long climbs always whistle; the rest whistle one time in three.
+    const sw = (T > 4.5 || Math.random() < 1 / 3) && count('whistle') < 2 ? take('whistle') : null;
+    if (sw) nodes.push(smp(ac, sw, t + 0.05, out, lvl * 0.55, Math.min(1.25, Math.max(0.5, sfx[sw].duration / (T * 0.95))))[0]);
+    track(t + T, sw ? 'whistle' : 'lift', ...nodes);
+    return;
+  }
+  const sw = null;
+  if (zzBufs) {
+    const [th] = zz(ac, 'thump', t, out, lvl * 0.7);
+    const nodes = [th];
+    if (!sw && Math.random() < 1 / 6) nodes.push(zz(ac, 'whistle', t + 0.05, out, lvl * 0.08, jit(0.04) * Math.min(1.4, T / 1.6))[0]);
+    track(t + T, 'lift', ...nodes);
+    return;
+  }
+  const o = ac.createOscillator();
+  o.frequency.setValueAtTime(75 * jit(), t); o.frequency.exponentialRampToValueAtTime(38, t + 0.16);
+  const og = env(ac, t, lvl * 0.7, 0.004, 0.22);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.3);
+  const n = hiss(ac, t, T * 0.7), bp = filt(ac, 'bandpass', 300, 1.4), ng = env(ac, t, lvl * 0.12, T * 0.25, T * 0.4);
+  bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(1800, t + T * 0.6);
+  n.connect(bp).connect(ng).connect(out);
+  const nodes = [o, n];
+  if (!sw && Math.random() < 1 / 6) {
+    const w = ac.createOscillator(), vib = ac.createOscillator(), vg = ac.createGain();
+    w.frequency.setValueAtTime(1200 * jit(0.05), t + 0.05); w.frequency.exponentialRampToValueAtTime(2600 * jit(0.05), t + T * 0.85);
+    vib.frequency.value = 7; vg.gain.value = 40;
+    vib.connect(vg).connect(w.frequency);
+    const wg = env(ac, t + 0.05, lvl * 0.06, 0.1, T * 0.75);
+    w.connect(wg).connect(out); w.start(t + 0.05); vib.start(t + 0.05); w.stop(t + T * 0.9); vib.stop(t + T * 0.9);
+    nodes.push(w, vib);
+  }
+  track(t + T, 'lift', ...nodes);
+}
+// The boom: a crack, a body through the distance low-pass, a sub, reverb and a slap off the shore.
+function boom(ac, t, out, lvl, lp, cal, set = 'boom') {
+  if (count('boom') >= 6) return;
+  const nm = sfx && (take(set) || take('boom'));
+  if (nm) {
+    // A recorded boom; big shells play slower and deeper.
+    // Recordings carry their own distance, so the filter only trims far ones.
+    const bl = filt(ac, 'lowpass', recLp(lp));
+    bl.connect(out);
+    const [b, bg] = smp(ac, nm, t, bl, lvl * 2.1, jit(0.06) * (1.08 - 0.08 * cal));
+    const send = ac.createGain(); send.gain.value = 0.25;
+    bg.connect(send).connect(rvb);
+    const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
+    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.15;
+    bg.connect(dl).connect(dlp).connect(dg).connect(out);
+    track(t + 3.5, 'boom', b, send, dl);
+    return;
+  }
+  if (zzBufs) {
+    const bl = filt(ac, 'lowpass', lp * jit(0.15));
+    bl.connect(out);
+    const [c] = zz(ac, 'crack', t, bl, lvl * 0.8, jit(0.15));
+    const [b, bg] = zz(ac, 'boom', t, bl, lvl * (0.8 + 0.2 * cal), jit(0.1) * (1.1 - 0.1 * cal));
+    // The synth sub keeps the weight under the ZzFX body.
+    const s = ac.createOscillator();
+    s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
+    const sg = env(ac, t, lvl * (0.5 + 0.2 * cal), 0.008, 0.9);
+    s.connect(sg).connect(out); s.start(t); s.stop(t + 1.1);
+    const send = ac.createGain(); send.gain.value = 0.5;
+    bg.connect(send).connect(rvb);
+    const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
+    dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.28;
+    bg.connect(dl).connect(dlp).connect(dg).connect(out);
+    track(t + 3, 'boom', c, b, s, send, dl);
+    return;
+  }
+  const c = hiss(ac, t, 0.03), ch = filt(ac, 'highpass', 2000), cg = env(ac, t, lvl * 0.8, 0.001, 0.012);
+  c.connect(ch).connect(cg).connect(out);
+  const b = hiss(ac, t, 2.4, 0.5 * jit()), bl = filt(ac, 'lowpass', lp * jit(0.15)), bg = env(ac, t, lvl, 0.006, 1.1 + 0.35 * cal);
+  b.connect(bl).connect(bg).connect(out);
+  const s = ac.createOscillator();
+  s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
+  const sg = env(ac, t, lvl * (0.7 + 0.25 * cal), 0.008, 0.9);
+  s.connect(sg).connect(out); s.start(t); s.stop(t + 1.1);
+  const send = ac.createGain(); send.gain.value = 0.5;
+  bg.connect(send).connect(rvb);
+  const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 1400), dg = ac.createGain();
+  dl.delayTime.value = 0.45 * jit(0.08); dg.gain.value = 0.28;
+  bg.connect(dl).connect(dlp).connect(dg).connect(out);
+  track(t + 3, 'boom', c, b, s, send, dl);
+}
+function crackle(ac, t, out, lvl) {
+  if (count('crackle') >= 2) return;
+  if (has('crackle')) {
+    // A recorded crackle, with its low thump cut away.
+    const hp = filt(ac, 'highpass', 900);
+    hp.connect(out);
+    const [s, g] = smp(ac, 'crackle', t, hp, lvl * 0.9, jit(0.1));
+    const send = ac.createGain(); send.gain.value = 0.2; g.connect(send).connect(rvb);
+    track(t + 4.2, 'crackle', s, send);
+    return;
+  }
+  const s = ac.createBufferSource(), bp = filt(ac, 'bandpass', 4500 * jit(0.2), 1.1), g = ac.createGain();
+  s.buffer = crackBufs[Math.floor(Math.random() * 3)]; s.playbackRate.value = jit(0.15);
+  g.gain.value = lvl * 0.9;
+  s.connect(bp).connect(g).connect(out);
+  const send = ac.createGain(); send.gain.value = 0.25; g.connect(send).connect(rvb);
+  s.start(t);
+  track(t + 1.5, 'crackle', s, send);
+}
+function sizzle(ac, t, out, lvl, dur) {
+  if (has('sparkle')) { track(t + 1.6, 'sizzle', smp(ac, 'sparkle', t, out, lvl * 0.45, jit(0.08))[0]); return; }
+  if (zzBufs) { track(t + 3, 'sizzle', zz(ac, 'sizzle', t, out, lvl * 0.16, jit(0.1))[0]); return; }
+  const n = hiss(ac, t, dur + 0.3), hp = filt(ac, 'highpass', 4000), g = env(ac, t, lvl * 0.14, 0.25, dur);
+  n.connect(hp).connect(g).connect(out);
+  track(t + dur + 0.3, 'sizzle', n);
+}
+const CRACKLY = new Set(['strobe', 'crackle', 'crossette', 'supernova']), SIZZLY = new Set(['willow', 'kamuro', 'palm', 'jelly', 'swarm']);
+// Called by fire(): wait is the launch delay, T the climb, on the sim clock.
+function soundShell(pos, wait, T, type, style, cal) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  prune();
+  const d = pos.distanceTo(camera.position), delay = d / 343, far = (d - 300) / 1200;
+  const t0 = ac.currentTime + 0.02 + wait + delay, tb = t0 + T;
+  const pan = ac.createStereoPanner();
+  pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
+  pan.connect(kit.out);
+  // Far shells are quieter and duller: -6 to -20 dB, 6 kHz to 900 Hz.
+  const f = THREE.MathUtils.clamp(far, 0, 1), lvl = dB(-6 - 14 * f) * jit(0.12), lp = 6000 * Math.pow(900 / 6000, f);
+  lift(ac, t0, T, pan, lvl);
+  const crackly = CRACKLY.has(type) || style === 'crackle';
+  // Crackling shells play a recorded boom that rattles into pops.
+  boom(ac, tb, pan, lvl * (type === 'supernova' ? 1.4 : 1), lp, cal, sfx && crackly ? 'crackshell' : 'boom');
+  if (sfx) {
+    const bl = filt(ac, 'lowpass', recLp(lp));
+    bl.connect(pan);
+    // A supernova cracks deep; one other shell in five cracks sharp.
+    if (type === 'supernova' && has('report') && count('report') < 2) track(tb + 3, 'report', smp(ac, 'report', tb, bl, lvl * 0.8, 0.6)[0]);
+    else if (has('report') && Math.random() < 0.2 && count('report') < 2) track(tb + 1.9, 'report', smp(ac, 'report', tb, bl, lvl * 0.45, jit(0.1) * 0.8)[0]);
+    // Splitting stars pop a moment after the burst.
+    if (type === 'crossette' && has('pops') && count('pops') < 2) track(tb + 1.6, 'pops', smp(ac, 'pops', tb + 0.35, bl, lvl * 0.8, jit(0.06))[0]);
+    if (type === 'crackle') crackle(ac, tb + 0.5 + Math.random() * 0.3, pan, lvl * 0.7);
+  } else if (crackly) crackle(ac, tb + 0.6 + Math.random() * 0.4, pan, lvl);
+  if (SIZZLY.has(type)) sizzle(ac, tb + 0.2, pan, lvl, 2.5);
+}
+// The bed swells while a show runs and falls away after.
+function soundBed(lively) {
+  const ac = kit.ac;
+  if (!bed || !ac || ac.state !== 'running') return;
+  bed.gain.setTargetAtTime(lively && sound.on ? dB(-32) : 0, ac.currentTime, 0.8);
+}
+sound.onChange(on => { if (!on) stopAll(); });
+/* ---------- end sound ---------- */
+
 /* ---------- water ---------- */
 // Mirror: a camera under y = 0 sees only the LIGHT layer.
 const mirrorCam = new THREE.PerspectiveCamera();
 mirrorCam.layers.set(LIGHT);
 const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
 const texM = new THREE.Matrix4();
-const water = new THREE.Mesh(new THREE.PlaneGeometry(18000, 2600).rotateX(-Math.PI / 2).translate(0, 0, -1290), new THREE.ShaderMaterial({
-  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, uRipple: { value: 1 } },
+const water = new THREE.Mesh(new THREE.PlaneGeometry(20000, 12000).rotateX(-Math.PI / 2).translate(0, 0, -5990), new THREE.ShaderMaterial({
+  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM }, uRipple: { value: 1 }, uGlit: { value: 1.3 } },
   vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; varying vec3 vP; varying vec4 vM; ${HEAD}
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uRipple; uniform float uTime; uniform float uGlit; varying vec3 vP; varying vec4 vM; ${HEAD}
   void main() {
     vec3 v = normalize(vP - cameraPosition);
-    // Slow swell bends the mirror; far water bends less on screen.
-    float n = k2noise(vP.xz * vec2(0.04, 0.11)) + 0.5 * k2noise(vP.xz * vec2(0.13, 0.4) + 3.1) - 0.75;
-    vec3 nrm = normalize(vec3(n * 0.06 * uRipple, 1.0, n * 0.03 * uRipple));
+    float dist = length(vP.xz - cameraPosition.xz);
+    // A long swell, a chop and a fine ripple, stretched across the view.
+    // The waves move only while the loop runs.
+    float t = uTime * 0.6;
+    vec2 p = vP.xz;
+    float w1 = k2noise(p * vec2(0.02, 0.06) + vec2(t * 0.15, t * 0.4));
+    float w2 = k2noise(p * vec2(0.07, 0.2) + vec2(-t * 0.3, t * 0.9) + 5.0);
+    float w3 = k2noise(p * vec2(0.25, 0.6) + vec2(t * 0.8, -t * 1.3) + 11.0);
+    float n = (w1 - 0.5) + 0.5 * (w2 - 0.5) + 0.25 * (w3 - 0.5);
+    // Near water bends the mirror more on screen than far water.
+    float near = 1.0 / (1.0 + dist / 300.0), far = smoothstep(120.0, 1400.0, dist);
+    vec3 nrm = normalize(vec3(n * 0.08 * uRipple, 1.0, n * 0.05 * uRipple));
     vec3 r = reflect(v, nrm);
     float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
-    vec2 uv = vM.xy / vM.w + vec2(n * 0.004, n * 0.01) * uRipple;
-    // Five taps smear each light into a vertical streak.
+    // Wave rows: world waves up close; far off, rows a few pixels high, so they never alias.
+    float span = 6.0 + dist * 0.05;
+    float rA = k2noise(vec2(p.x / span + t * 0.1, gl_FragCoord.y * 0.32 + t * 1.6));
+    float rB = k2noise(vec2(p.x / (span * 0.4) - t * 0.2, gl_FragCoord.y * 0.85 - t * 2.4) + 9.0);
+    float slope = mix((w2 - 0.5) * 1.4 + (w3 - 0.5) * 0.9, (rA - 0.5) * 1.5 + (rB - 0.5) * 0.9, far);
+    float side = mix(w3 - 0.5, rB - 0.5, far);
+    vec2 uv0 = vM.xy / vM.w;
+    // The calm image: a small wobble, stretched where the view grazes.
+    vec2 uvC = uv0 + vec2(side * 0.008, slope * 0.016) * uRipple * (0.4 + near);
+    float len = (0.0015 + 0.005 * far) * uRipple;
     vec4 m = vec4(0.0);
-    for (int i = -2; i <= 2; i++) m += texture2D(tMirror, uv + vec2(0.0, float(i) * 0.01 * uRipple)) * (1.0 - abs(float(i)) * 0.3);
-    m /= 3.4;
+    float ws = 0.0;
+    for (int i = -3; i <= 3; i++) {
+      float fi = float(i), w = exp(-fi * fi / 4.5);
+      m += texture2D(tMirror, uvC + vec2(0.0, fi * len)) * w;
+      ws += w;
+    }
+    m /= ws;
+    // Glitter: for each burst, the wave tilt that bounces it into the eye,
+    // weighed by how likely that tilt is; this draws a column under every light.
+    // Slopes spread 0.06 across the view and 0.16 along it, so the columns run tall.
+    vec3 glit = vec3(0.0), E = -v;
+    for (int i = 0; i < ${LN}; i++) {
+      if (i >= uLN) break;
+      vec3 H = normalize(normalize(uL[i].xyz - vP) + E);
+      float tx = H.x / H.y, tz = H.z / H.y;
+      // A soft power keeps the column while the stars burn, not just at the flash.
+      glit += uLC[i] * sqrt(uL[i].w) * exp(-(tx * tx / 0.0036 + tz * tz / 0.0256));
+    }
+    // The wave rows switch each patch on and off, so the column breaks into dashes.
+    float sparkle = smoothstep(0.5, 0.8, mix(w3, rB, far)) * smoothstep(0.3, 0.6, mix(w2, rA, far));
+    m.rgb = m.rgb * mix(0.9, 0.5, far);
+    m.rgb += glit * sparkle * uGlit * (0.4 + 1.6 * far);
     vec3 skyR = k2sky(r) * (1.0 - clamp(m.a, 0.0, 1.0));
     vec3 c = vec3(0.0004, 0.0006, 0.001) + (skyR + m.rgb * 1.4) * fres;
     gl_FragColor = vec4(k2haze(c, vP), 1.0);
@@ -661,7 +1864,35 @@ function renderMirror() {
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
-  bloom.setSize = (w, h) => { const d = rung >= 2 ? 2 : 1; full(Math.max(1, w / d), Math.max(1, h / d)); };
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = (rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7) * FX.bloomScale; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
+  // A sigma of radius / 2.5 gives each layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
+  // Bilinear upsampling of the small mips draws square feathers.
+  // A cubic B-spline read of each mip keeps the glow round.
+  const cm = bloom.compositeMaterial;
+  cm.fragmentShader = cm.fragmentShader
+    .replace('void main() {', /* glsl */`vec4 bsw(float v) {
+      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
+      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+      return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+    }
+    vec4 bic(sampler2D t, vec2 uv) {
+      vec2 ts = vec2(textureSize(t, 0)), p = uv * ts - 0.5, fp = fract(p);
+      p -= fp;
+      vec4 xc = bsw(fp.x), yc = bsw(fp.y);
+      vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy, w = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+      vec4 o = (c + vec4(xc.yw, yc.yw) / w) / ts.xxyy;
+      float sx = w.x / (w.x + w.y), sy = w.z / (w.z + w.w);
+      return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
+    }
+    void main() {`)
+    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
+  cm.needsUpdate = true;
   return bloom;
 }
 /* ---------- end K2 ---------- */
@@ -695,8 +1926,10 @@ function makeOrbs() {
         // A tight core and a wide skirt; z holds the orb size.
         c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
       }
-      // A cap on the brightest pixels keeps bloom free of square tiles.
-      gl_FragColor = vec4(min(c, vec3(6.0)), 1.0);
+      // A soft roll-off above 2 keeps bloom free of square tiles.
+      float m = max(max(c.r, c.g), c.b);
+      c *= m > 2.0 ? (2.0 + log(m - 1.0)) / m : 1.0;
+      gl_FragColor = vec4(c, 1.0);
     }`,
   });
 }
@@ -756,21 +1989,96 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 }
 /* ---------- end K2 ---------- */
 
+/* ---------- flares ---------- */
+// A fresh burst flares the lens: a horizontal streak and ghosts.
+// The pass runs before bloom, so the streak's core glows.
+// Ghosts sit on the line from the burst through the frame centre.
+const FL_N = 3;
+function makeFlares() {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uFP: { value: Array.from({ length: FL_N }, () => new THREE.Vector4()) },
+      uFC: { value: Array.from({ length: FL_N }, () => new THREE.Vector3()) },
+      uN: { value: 0 },
+      uAsp: { value: 1 },
+      // Streak gain, length, thinness, warmth; ghost gain, spread.
+      uSt: { value: new THREE.Vector4() },
+      uGh: { value: new THREE.Vector2() },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec4 uFP[${FL_N}];
+    uniform vec3 uFC[${FL_N}];
+    uniform int uN;
+    uniform float uAsp;
+    uniform vec4 uSt;
+    uniform vec2 uGh;
+    varying vec2 vUv;
+    // Blue never exceeds green; green never exceeds red.
+    vec3 warm(vec3 c) { float g = min(c.g, c.r); return vec3(c.r, g, min(c.b, g)); }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      for (int i = 0; i < ${FL_N}; i++) {
+        if (i >= uN) break;
+        vec2 p = uFP[i].xy;
+        // Warmth pulls the colour toward deep orange, or toward cream below 0.
+        vec3 tint = mix(uFC[i], uSt.w > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(uSt.w), 0.0, 1.0));
+        vec3 col = warm(max(tint, 0.0));
+        vec2 d = vUv - p;
+        float ax = d.x * uAsp, ay = abs(d.y);
+        // A thin bright line in a softer sheath; length sets the taper.
+        float line = exp(-ay * uSt.z) + 0.3 * exp(-ay * uSt.z * 0.08);
+        c += col * line * exp(-abs(ax) / uSt.y) * uSt.x * uFP[i].z;
+        // Ghosts: soft blobs on the line from the burst through the centre.
+        vec2 tc = (vec2(0.5) - p) * uGh.y;
+        vec2 g0 = (vUv - p - tc * 0.7) * vec2(uAsp, 1.0);
+        vec2 g1 = (vUv - p - tc * 1.4) * vec2(uAsp, 1.0);
+        vec2 g2 = (vUv - p - tc * 2.2) * vec2(uAsp, 1.0);
+        float gs = 0.9 * exp(-dot(g0, g0) / 0.0025) + 0.6 * exp(-dot(g1, g1) / 0.0081) + 0.4 * exp(-dot(g2, g2) / 0.0225);
+        c += col * gs * uGh.x * 0.06 * uFP[i].w;
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+// The strongest fresh bursts that the camera sees take the flare slots.
+function placeFlares(pass) {
+  let n = 0;
+  if (!reduced()) for (const L of live) {
+    if (n >= FL_N) break;
+    if (L.st < 0.01 && L.gh < 0.01) continue;
+    tmpV.copy(L.pos).project(camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.05 || Math.abs(tmpV.y) > 1.05) continue;
+    pass.uniforms.uFP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, L.st, L.gh);
+    pass.uniforms.uFC.value[n].set(L.col[0], L.col[1], L.col[2]);
+    n++;
+  }
+  pass.uniforms.uN.value = n;
+  pass.uniforms.uAsp.value = size.w / size.h;
+}
+/* ---------- end flares ---------- */
+
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.7, 0.6, 0.9], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
+const POST = { bloom: [0.9, 0.5, 0.9], tint: [0.0012, 0.0012, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.03 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 const orbPass = makeOrbs();
 composer.addPass(orbPass);
-composer.addPass(makeBloom(...POST.bloom));
+const flarePass = makeFlares();
+composer.addPass(flarePass);
+const bloomPass = makeBloom(...POST.bloom);
+composer.addPass(bloomPass);
 const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
 
 /* ---------- shells ---------- */
-const RED = 0, GREEN = 1, BLUE = 2, GOLD = 3, WHITE = 4;
-const STROBE = 1, WILLOW = 2, COMET = 3;
+const RED = 0, GREEN = 1, BLUE = 2, GOLD = 3, WHITE = 4, PURPLE = 5, ORANGE = 6, AQUA = 7, PINK = 8;
+const COLOURS = [RED, GREEN, BLUE, GOLD, WHITE, PURPLE, ORANGE, AQUA, PINK];
+const STROBE = 1, WILLOW = 2, COMET = 3, FISH = 4, GLITTER = 5;
 const pick = list => list[Math.floor(rnd() * list.length)];
 const v = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Vector3();
 // The i-th of n directions spread evenly over the sphere.
@@ -783,20 +2091,48 @@ function basis(a) {
   const u = new THREE.Vector3(Math.abs(a.y) < 0.9 ? 0 : 1, Math.abs(a.y) < 0.9 ? 1 : 0, 0).cross(a).normalize();
   return [u, a.clone().cross(u).normalize()];
 }
+// A plane that faces the shore, with a random tilt.
+const facing = (tilt = 1.6) => basis(new THREE.Vector3((rnd() - 0.5) * tilt, (rnd() - 0.5) * tilt, 1).normalize());
+// A full sphere of stars at one speed, with a little jitter.
+// Less drag lets burnt stars fall; a wide life spread makes them die out at random.
+function sphere(pos, t0, n, speed, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
+  for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * 0.8 * (0.94 + rnd() * 0.12)), k * 0.78, ramp, life * 1.35 * (0.55 + rnd() * 0.9), trail, size * (0.85 + rnd() * 0.3), kind, gain, ramp2);
+}
+const blueish = r => (r === BLUE ? 0.7 : r === WHITE ? 0.8 : 1);
 // Each shell writes its stars and returns its light: [ramp, gain].
 const SHELLS = {
   peony(pos, t0, cal, s) {
-    const ramp = pick([RED, GREEN, BLUE, GOLD]), n = Math.round(100 + 70 * cal), speed = (70 + 45 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.94 + rnd() * 0.12)), 1.6, ramp, 1.6 + rnd() * 0.5, 0.22, 1.3 + rnd() * 0.5);
-    return [ramp, ramp === BLUE ? 0.7 : 1];
+    const r = pick([RED, GREEN, BLUE, GOLD, PURPLE, ORANGE, PINK]);
+    sphere(pos, t0, Math.round(100 + 70 * cal), (70 + 45 * cal) * s, 1.6, r, 1.85, 0.22, 1.5);
+    return [r, blueish(r)];
+  },
+  chrysanthemum(pos, t0, cal, s) {
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(110 + 70 * cal), (75 + 45 * cal) * s, 1.3, a, 2.3, 0.55, 1.2, 0, 1, b);
+    return [a, blueish(a)];
   },
   willow(pos, t0, cal, s) {
-    const n = Math.round(70 + 50 * cal), speed = (55 + 35 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.9 + rnd() * 0.2)), 2.2, GOLD, 4.2 + rnd() * 0.6, 1.2, 1.0 + rnd() * 0.3, WILLOW, 0.8);
+    sphere(pos, t0, Math.round(70 + 50 * cal), (55 + 35 * cal) * s, 2.2, GOLD, 4.5, 1.2, 1.15, WILLOW, 0.8);
+    return [GOLD, 0.9];
+  },
+  palm(pos, t0, cal, s) {
+    // A few heavy comets fan out and droop like fronds.
+    const n = Math.round(7 + 2 * cal);
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2 + rnd() * 0.3;
+      v.set(Math.cos(th), 0.35 + rnd() * 0.5, Math.sin(th) * 0.6).normalize().multiplyScalar((60 + 30 * cal) * s);
+      writeStar(pos, t0, v, 0.9, GOLD, 2.8 + rnd() * 0.5, 0.9, 3.2, WILLOW, 1.1);
+    }
+    sphere(pos, t0, 40, 25 * s, 2.5, GOLD, 1.5, 0.3, 1.0, GLITTER, 0.6);
+    return [GOLD, 0.8];
+  },
+  kamuro(pos, t0, cal, s) {
+    // Dense gold glitter that hangs like a crown.
+    sphere(pos, t0, Math.round(160 + 70 * cal), (60 + 40 * cal) * s, 2.6, GOLD, 4.0, 0.9, 1.1, GLITTER, 0.7);
     return [GOLD, 0.9];
   },
   crossette(pos, t0, cal, s) {
-    const ramp = pick([GREEN, RED, WHITE]), n = Math.round(14 + 6 * cal), speed = (60 + 35 * cal) * s;
+    const ramp = pick([GREEN, RED, WHITE, AQUA]), n = Math.round(14 + 6 * cal), speed = (60 + 35 * cal) * s;
     let splitAt = 0;
     for (let i = 0; i < n; i++) {
       const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.95 + rnd() * 0.1));
@@ -809,68 +2145,276 @@ const SHELLS = {
       // Four children leave the split at right angles to the parent.
       const [u, w] = basis(q.clone().normalize());
       for (const d of [u, w, u.clone().negate(), w.clone().negate()]) {
-        writeStar(p, t0 + split, v.copy(q).multiplyScalar(0.4).addScaledVector(d, 45 * s), 1.8, ramp, 0.9 + rnd() * 0.4, 0.18, 1.2);
+        writeStar(p, t0 + split, v.copy(q).multiplyScalar(0.4).addScaledVector(d, 40 * s), 1.4, ramp, 1.2 + rnd() * 0.7, 0.18, 1.2);
       }
     }
     addLight(pos, ramp, t0 + splitAt, 0.5 * lightK(cal));
     return [GOLD, 0.6];
   },
   ring(pos, t0, cal, s) {
-    const ramp = pick([RED, GREEN, BLUE, GOLD, WHITE]), n = Math.round(60 + 30 * cal), speed = (70 + 45 * cal) * s;
-    // The ring's plane faces the shore, with a random tilt.
-    const [u, w] = basis(new THREE.Vector3((rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6, 1).normalize());
-    for (let i = 0; i < n; i++) {
-      const th = (i / n) * Math.PI * 2;
-      v.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th)).multiplyScalar(speed * (0.97 + rnd() * 0.06));
-      writeStar(pos, t0, v, 1.6, ramp, 1.7 + rnd() * 0.4, 0.2, 1.5);
-    }
-    return [ramp, ramp === BLUE ? 0.6 : 0.8];
+    const r = pick(COLOURS);
+    ring(pos, t0, Math.round(60 + 30 * cal), (70 + 45 * cal) * s, r, facing());
+    return [r, blueish(r) * 0.8];
+  },
+  saturn(pos, t0, cal, s) {
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(80 + 30 * cal), (50 + 30 * cal) * s, 1.6, a, 1.8, 0.2, 1.4);
+    ring(pos, t0, Math.round(70 + 30 * cal), (90 + 55 * cal) * s, b, facing(1.2));
+    return [a, blueish(a)];
+  },
+  pistil(pos, t0, cal, s) {
+    // A core of one colour inside a shell of another.
+    const a = pick(COLOURS), b = pick(COLOURS.filter(c => c !== a));
+    sphere(pos, t0, Math.round(50 + 20 * cal), (30 + 18 * cal) * s, 1.6, a, 1.6, 0.15, 1.6);
+    sphere(pos, t0, Math.round(110 + 60 * cal), (75 + 45 * cal) * s, 1.6, b, 1.9, 0.25, 1.4);
+    return [b, blueish(b)];
   },
   strobe(pos, t0, cal, s) {
-    const n = Math.round(70 + 40 * cal), speed = (60 + 40 * cal) * s;
-    for (let i = 0; i < n; i++) writeStar(pos, t0, sphereDir(i, n, v).multiplyScalar(speed * (0.85 + rnd() * 0.3)), 2.0, WHITE, 2.4 + rnd() * 0.6, 0.06, 1.7, STROBE);
+    sphere(pos, t0, Math.round(70 + 40 * cal), (60 + 40 * cal) * s, 2.0, WHITE, 2.7, 0.06, 1.7, STROBE);
     return [WHITE, 0.8];
   },
+  crackle(pos, t0, cal, s) {
+    // Gold stars burn out, then each pops in a few white cracks.
+    const n = Math.round(60 + 25 * cal), speed = (55 + 35 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.9 + rnd() * 0.2));
+      writeStar(pos, t0, v0, 1.6, GOLD, 0.9, 0.25, 1.2);
+      for (let j = 0; j < 4; j++) {
+        const tp = 0.9 + rnd() * 0.7;
+        posAt(pos, v0, 1.6, tp, p);
+        writeStar(p, t0 + tp, q.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(20), 3, WHITE, 0.07 + rnd() * 0.06, 0.02, 2.4, 0, 1.4);
+      }
+    }
+    addLight(pos, WHITE, t0 + 1.2, 0.35 * lightK(cal));
+    return [GOLD, 0.7];
+  },
+  fish(pos, t0, cal, s) {
+    // Stars that swim off in wriggles.
+    sphere(pos, t0, Math.round(50 + 25 * cal), (45 + 25 * cal) * s, 1.5, pick([WHITE, GOLD, AQUA]), 2.6, 0.4, 1.3, FISH);
+    return [WHITE, 0.6];
+  },
+  heart(pos, t0, cal, s) {
+    const r = pick([PINK, RED]), n = Math.round(80 + 30 * cal), speed = (55 + 30 * cal) * s;
+    const u = new THREE.Vector3(1, 0, 0), w = new THREE.Vector3(0, 1, 0).applyAxisAngle(u, (rnd() - 0.5) * 0.4);
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const hx = Math.pow(Math.sin(t), 3), hy = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16;
+      v.copy(u).multiplyScalar(hx).addScaledVector(w, hy).multiplyScalar(speed);
+      writeStar(pos, t0, v.multiplyScalar(0.8), 1.25, r, 2.7 * (0.7 + rnd() * 0.6), 0.15, 1.6);
+    }
+    return [r, 1];
+  },
+  galaxy(pos, t0, cal, s) {
+    // Three spiral arms that spin out from a white core.
+    const [u, w] = facing(0.9), n = Math.round(200 + 80 * cal), speed = (85 + 50 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const arm = i % 3, r = Math.pow(rnd(), 0.6), ang = (arm * Math.PI * 2) / 3 + r * 3.4 + (rnd() - 0.5) * 0.35;
+      const c = Math.cos(ang), sn = Math.sin(ang);
+      v.copy(u).multiplyScalar(c).addScaledVector(w, sn).multiplyScalar(speed * r)
+        .addScaledVector(u, -sn * speed * 0.35 * r).addScaledVector(w, c * speed * 0.35 * r);
+      writeStar(pos, t0, v.multiplyScalar(0.8), 1.2, r < 0.25 ? WHITE : AQUA, 3.2 * (0.6 + rnd() * 0.8), 0.25, 1.3, 0, 1, r < 0.25 ? -1 : PURPLE);
+    }
+    return [AQUA, 1];
+  },
+  cascade(pos, t0, cal, s) {
+    // Three breaks, each wider and a new colour.
+    const cols = [pick(COLOURS), pick(COLOURS), pick(COLOURS)];
+    cols.forEach((c, i) => {
+      sphere(pos, t0 + i * 0.55, Math.round(70 + 30 * cal), (45 + 30 * cal) * s * (1 + i * 0.45), 1.6, c, 1.7, 0.2, 1.3);
+      if (i) addLight(pos, c, t0 + i * 0.55, 0.7 * lightK(cal));
+    });
+    return [cols[0], 0.8];
+  },
+  // Pattern shells: points on a flat figure that faces the shore.
+  smiley(pos, t0, cal, s) {
+    const sp = (60 + 30 * cal) * s, pts = [];
+    for (let i = 0; i < 64; i++) { const a = (i / 64) * Math.PI * 2; pts.push([Math.cos(a), Math.sin(a), GOLD]); }
+    for (const ex of [-0.36, 0.36]) for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; pts.push([ex + 0.09 * Math.cos(a), 0.3 + 0.12 * Math.sin(a), AQUA]); }
+    for (let i = 0; i <= 22; i++) { const a = Math.PI * (1.15 + 0.7 * (i / 22)); pts.push([0.58 * Math.cos(a), -0.02 + 0.58 * Math.sin(a), PINK]); }
+    figure(pos, t0, pts, sp, 2.6);
+    return [GOLD, 0.9];
+  },
+  rainbow(pos, t0, cal, s) {
+    const sp = (70 + 35 * cal) * s, pts = [], cols = [RED, ORANGE, GOLD, GREEN, BLUE, PURPLE];
+    cols.forEach((c, k) => { const r = 1 - k * 0.075; for (let i = 0; i <= 34; i++) { const a = Math.PI * (i / 34); pts.push([r * Math.cos(a), r * Math.sin(a) - 0.35, c]); } });
+    figure(pos, t0, pts, sp, 2.8);
+    return [GOLD, 1];
+  },
+  butterfly(pos, t0, cal, s) {
+    // Two big upper wings, two small lower ones, a body and antennae.
+    const sp = (60 + 30 * cal) * s, pts = [];
+    const lobe = (cx, cy, rx, ry, tilt, c, n) => {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, x = rx * Math.cos(a), y = ry * Math.sin(a);
+        pts.push([cx + x * Math.cos(tilt) - y * Math.sin(tilt), cy + x * Math.sin(tilt) + y * Math.cos(tilt), c]);
+      }
+    };
+    for (const sd of [-1, 1]) {
+      lobe(sd * 0.48, 0.24, 0.44, 0.34, sd * 0.5, PINK, 34);
+      lobe(sd * 0.34, -0.34, 0.26, 0.22, -sd * 0.6, PURPLE, 22);
+      for (let i = 0; i <= 5; i++) pts.push([sd * (0.04 + i * 0.05), 0.5 + i * 0.07, GOLD]);
+    }
+    for (let i = 0; i <= 10; i++) pts.push([0, -0.5 + i * 0.1, GOLD]);
+    figure(pos, t0, pts, sp, 2.6);
+    return [PINK, 1];
+  },
+  star(pos, t0, cal, s) {
+    const sp = (65 + 35 * cal) * s, pts = [], c = pick([GOLD, WHITE, AQUA]);
+    const V = Array.from({ length: 10 }, (_, k) => { const a = Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 0.42 : 1; return [r * Math.cos(a), r * Math.sin(a)]; });
+    for (let k = 0; k < 10; k++) for (let i = 0; i < 9; i++) {
+      const [ax, ay] = V[k], [bx, by] = V[(k + 1) % 10], f = i / 9;
+      pts.push([ax + (bx - ax) * f, ay + (by - ay) * f, c]);
+    }
+    figure(pos, t0, pts, sp, 2.5);
+    sphere(pos, t0, 30, 14 * s, 1.8, WHITE, 1.4, 0.15, 1.4);
+    return [c, blueish(c)];
+  },
+  cube(pos, t0, cal, s) {
+    // Stars along the twelve edges of a cube, turned at random.
+    const sp = (55 + 30 * cal) * s, c = pick([WHITE, AQUA, GREEN]);
+    const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4 + rnd() * 0.5, 0.5 + rnd() * 0.6, rnd() * 0.4));
+    for (let e = 0; e < 12; e++) {
+      const ax = e >> 2, a = (e & 1) * 2 - 1, b = (e & 2) - 1;
+      for (let i = 0; i <= 10; i++) {
+        const t = (i / 10) * 2 - 1, p3 = ax === 0 ? [t, a, b] : ax === 1 ? [a, t, b] : [a, b, t];
+        v.set(...p3).multiplyScalar(0.62).applyQuaternion(rot).multiplyScalar(sp);
+        writeStar(pos, t0, v, 1.25, c, 2.6 * (0.8 + rnd() * 0.4), 0.15, 1.5);
+      }
+    }
+    return [c, blueish(c)];
+  },
+  jelly(pos, t0, cal, s) {
+    // A glowing dome; tentacles drip from points on its rim as it spreads.
+    const sp = (55 + 30 * cal) * s, n = Math.round(120 + 40 * cal), rim = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      sphereDir(i, n, v);
+      if (v.y < 0.05) continue;
+      writeStar(pos, t0, v.multiplyScalar(sp * 0.8), 1.4, i % 3 ? AQUA : PURPLE, 2.2 * (0.7 + rnd() * 0.6), 0.2, 1.4, 0, 1, PINK);
+    }
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      rim.set(Math.cos(a), 0.08, Math.sin(a) * 0.6).normalize().multiplyScalar(sp * 0.8);
+      for (let j = 0; j < 16; j++) {
+        const tj = 0.15 + j * 0.1;
+        posAt(pos, rim, 1.4, tj, p);
+        writeStar(p, t0 + tj, q.set((rnd() - 0.5) * 2, -6 - rnd() * 3, (rnd() - 0.5) * 2), 0.6, PINK, 2.8 + rnd() * 0.8, 1.1, 1.0, GLITTER, 0.7);
+      }
+    }
+    return [AQUA, 1];
+  },
+  swarm(pos, t0, cal, s) {
+    // A cloud of gold bees that wriggle off in every direction.
+    sphere(pos, t0, Math.round(90 + 40 * cal), (35 + 20 * cal) * s, 1.3, GOLD, 3.2, 0.25, 1.1, FISH, 0.9);
+    sphere(pos, t0, 30, 12 * s, 2.0, ORANGE, 1.2, 0.1, 1.4);
+    return [GOLD, 0.7];
+  },
+  supernova(pos, t0, cal, s) {
+    // A huge white flash; every star splits into three colours, then glitter hangs.
+    const n = Math.round(150 + 60 * cal), speed = (120 + 60 * cal) * s;
+    for (let i = 0; i < n; i++) {
+      const v0 = sphereDir(i, n, new THREE.Vector3()).multiplyScalar(speed * (0.9 + rnd() * 0.2));
+      const split = 0.8 + rnd() * 0.3;
+      writeStar(pos, t0, v0, 1.3, WHITE, split, 0.35, 2.0, 0, 1.3);
+      posAt(pos, v0, 1.3, split, p);
+      velAt(v0, 1.3, split, q);
+      for (let j = 0; j < 3; j++) {
+        writeStar(p, t0 + split, v.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(55 * s).addScaledVector(q, 0.5), 1.35, pick(COLOURS), 1.6 + rnd() * 1.4, 0.25, 1.3);
+      }
+    }
+    sphere(pos, t0 + 0.4, 220, speed * 0.5, 2.4, GOLD, 4.2, 0.8, 1.0, GLITTER, 0.6);
+    addLight(pos, pick(COLOURS), t0 + 0.95, 1.5 * lightK(cal));
+    return [WHITE, 4];
+  },
 };
+// A flat figure facing the shore: each point is x, y and a colour ramp.
+// Drag slows the stars, so the figure holds its shape before it droops.
+function figure(pos, t0, pts, speed, life) {
+  const u = new THREE.Vector3(1, 0, 0), w = new THREE.Vector3(0, 1, 0).applyAxisAngle(u, (rnd() - 0.5) * 0.3);
+  for (const [x, y, c] of pts) {
+    v.copy(u).multiplyScalar(x).addScaledVector(w, y).multiplyScalar(speed * 0.8 * (0.97 + rnd() * 0.06));
+    writeStar(pos, t0, v, 1.25, c, life * (0.75 + rnd() * 0.5), 0.15, 1.55);
+  }
+}
+// A ring of stars in the plane of u and w.
+function ring(pos, t0, n, speed, r, [u, w]) {
+  for (let i = 0; i < n; i++) {
+    const th = (i / n) * Math.PI * 2;
+    v.copy(u).multiplyScalar(Math.cos(th)).addScaledVector(w, Math.sin(th)).multiplyScalar(speed * 0.8 * (0.97 + rnd() * 0.06));
+    writeStar(pos, t0, v, 1.25, r, 2.4 * (0.6 + rnd() * 0.8), 0.2, 1.5);
+  }
+}
+// The stepper's list; Barrage fires a fan of small shells.
+const SHELL_LIST = [['mix', 'Mix'], ['peony', 'Peony'], ['chrysanthemum', 'Chrysanthemum'], ['willow', 'Willow'], ['palm', 'Palm'],
+  ['kamuro', 'Kamuro'], ['crossette', 'Crossette'], ['ring', 'Ring'], ['saturn', 'Saturn'], ['pistil', 'Pistil'], ['strobe', 'Strobe'],
+  ['crackle', 'Crackle'], ['fish', 'Fish'], ['heart', 'Heart'], ['galaxy', 'Galaxy'], ['cascade', 'Cascade'], ['barrage', 'Barrage'], ['supernova', 'Supernova'],
+  ['smiley', 'Smiley'], ['rainbow', 'Rainbow'], ['butterfly', 'Butterfly'], ['star', 'Star'], ['cube', 'Cube'], ['jelly', 'Jellyfish'], ['swarm', 'Swarm']];
+// Mix picks the classics often and the wild ones now and then.
+const MIX = ['peony', 'peony', 'chrysanthemum', 'chrysanthemum', 'willow', 'palm', 'kamuro', 'crossette', 'ring', 'saturn', 'pistil',
+  'strobe', 'crackle', 'fish', 'heart', 'galaxy', 'cascade', 'barrage', 'supernova', 'smiley', 'rainbow', 'butterfly', 'star', 'cube', 'jelly', 'swarm'];
 
 /* ---------- burst lights over time ---------- */
 const lights = [], live = [];
 const SEED = linFit(0.95, 0.04, 80);
 const lightK = cal => 2.1 * cal;
 // White carries most luminance, so it lights the haze at half gain.
-function addLight(pos, ramp, t0, k) { lights.push({ pos: pos.clone(), col: RAMPS[ramp], t0, k: ramp === WHITE ? k * 0.5 : k }); }
+function addLight(pos, ramp, t0, k, flick = false) { lights.push({ pos: pos.clone(), col: RAMPS[ramp], t0, k: ramp === WHITE ? k * 0.5 : k, flick, seed: Math.random() * 100 }); }
+const HOT = [1.0, 0.92, 0.8], hash1 = x => { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); };
 // The eight brightest lights win the uniform slots.
 function updateLights() {
   live.length = 0;
   const rise = reduced() ? 0.15 : 0.03;
   for (let i = lights.length - 1; i >= 0; i--) {
-    const L = lights[i], age = simT - L.t0, I = flash(age, rise) * L.k;
+    const L = lights[i], age = simT - L.t0;
+    let I = flash(age, rise) * L.k;
     if (age > 1 && I < 0.003) { lights.splice(i, 1); continue; }
-    if (I > 0.002) live.push({ pos: L.pos, col: L.col, I });
+    // Strobe and crackle light flickers at 14 Hz for 3 s; reduced motion holds it.
+    if (L.flick && age < 3 && !reduced()) I *= 0.5 + 0.5 * hash1(L.seed + Math.floor(age * 14));
+    // The flash is white-hot, then takes the burst's colour over 0.15 s.
+    const h = Math.min(1, Math.max(0, age / 0.15)), col = [0, 1, 2].map(c => HOT[c] + (L.col[c] - HOT[c]) * h);
+    if (I > 0.002) {
+      const eye = L.pos.y > U.uCloud.value.x ? cloudT(L.pos, true) : 1;
+      // Streak and ghosts each fade on their own envelope; the streak keeps a tail.
+      const on = age < 0 ? 0 : Math.min(1, age / rise) * Math.min(1.5, L.k * 0.5) * eye;
+      const st = on * ((1 - FX.streakTail) * Math.exp(-age / FX.streakFade) + FX.streakTail * Math.exp(-age / FX.streakTailFade));
+      const gh = on * Math.exp(-age / FX.ghostFade);
+      live.push({ pos: L.pos, col, I, eye, st, gh });
+    }
   }
-  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge });
+  if (press?.seed) {
+    const over = (performance.now() - press.at) / 1000 - 4;
+    live.push({ pos: press.seed, col: SEED, I: seedPulse() * (0.02 + 0.1 * press.charge) * (over > 0 ? 0.6 + 0.9 * rnd() * Math.min(1, over / 2) + Math.min(1, over / 2) : 1), eye: 1, st: 0, gh: 0 });
+  }
+  // The open seam lights the deck, the bay and the hills in ember red.
+  if (tear && tear.glow > 0.01) live.push({ pos: tear.at, col: TEAR_COL, I: 0.22 * tear.glow, eye: 1, st: 0, gh: 0, wide: true });
+  // Heat lightning: a far cloud flickers; wide lights get no orb.
+  const bI = boltI();
+  if (bI > 0.01) live.push({ pos: bolt.pos, col: BOLT_COL, I: bI, eye: 1, st: 0, gh: 0, wide: true });
   live.sort((a, b) => b.I - a.I);
   const n = Math.min(LN, live.length);
   for (let i = 0; i < n; i++) {
     const L = live[i];
-    U.uL.value[i].set(L.pos.x, L.pos.y, L.pos.z, L.I);
+    // The deck shields the ground from bursts above it; the cloud sees them whole.
+    U.uL.value[i].set(L.pos.x, L.pos.y, L.pos.z, L.I * cloudT(L.pos, false));
+    CU.uLR.value[i] = L.I;
     U.uLC.value[i].set(L.col[0], L.col[1], L.col[2]);
   }
   U.uLN.value = n;
+  crowdTick();
+  brownTick();
 }
 
 /* ---------- launch ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.fireworks.${k}`); } catch { return null; } };
 const save = (k, val) => { try { localStorage.setItem(`stimming.fireworks.${k}`, String(val)); } catch { /* storage is optional */ } };
-const opts = { shell: SHELLS[saved('shell')] ? saved('shell') : 'peony', dist: saved('dist') != null ? +saved('dist') : 0.5 };
+const opts = { shell: SHELL_LIST.some(([id]) => id === saved('shell')) ? saved('shell') : 'mix', dist: saved('dist') != null ? +saved('dist') : 0.5, smoke: saved('smoke') === 'thick' ? 'thick' : 'thin', sky: ['clear', 'cloud'].includes(saved('weather')) ? saved('weather') : 'drift' };
 let simT = 0, horizonNdc = -0.28;
 // The slider maps 0 to 1 onto 300 to 1,500 m; far shells are larger.
 const shellDist = () => 300 + 1200 * opts.dist;
 const shellScale = () => 0.6 + 0.6 * opts.dist;
 const ray = new THREE.Raycaster(), ndcV = new THREE.Vector2();
 // Map a screen point onto the altitude band that keeps the burst in view.
-function burstPoint(ndc, cal, out = new THREE.Vector3()) {
-  const d = shellDist(), R = 50 * cal * shellScale();
+function burstPoint(ndc, cal, out = new THREE.Vector3(), dist = shellDist()) {
+  const d = dist, R = 50 * cal * shellScale();
   const at = y => {
     ray.setFromCamera(ndcV.set(ndc.x, y), camera);
     const t = (-d - camera.position.z) / ray.ray.direction.z;
@@ -881,26 +2425,315 @@ function burstPoint(ndc, cal, out = new THREE.Vector3()) {
   const pt = at(Math.max(ndc.y, horizonNdc + 0.02));
   return out.set(pt.x, lo + (hi - lo) * u, -d);
 }
+// Comet styles; dark comets climb unseen and carry bigger shells.
+const COMETS = ['gold', 'gold', 'glitter', 'colour', 'dark', 'spin', 'crackle'];
 // A comet climbs from the water and the shell bursts at its apex.
-function launch(ndc, cal) {
+/* ---------- the bill ---------- */
+// What each shell would cost at a pro display, in dollars, at calibre 1.
+// Size scales it steeply; beach shells cost half; a dark-comet salute costs more.
+const PRICE = {
+  peony: 28, chrysanthemum: 34, willow: 46, palm: 52, kamuro: 70, crossette: 44, ring: 38, saturn: 64, pistil: 40,
+  strobe: 30, crackle: 30, fish: 36, heart: 85, galaxy: 160, cascade: 110, supernova: 480,
+  smiley: 140, rainbow: 180, butterfly: 150, star: 120, cube: 160, jelly: 170, swarm: 60,
+};
+const priceOf = (type, cal, style, site) => Math.round((PRICE[type] || 40) * Math.pow(cal, 2.6) * (site === 'beach' ? 0.5 : 1) * (style === 'dark' ? 1.2 : 1));
+const billEl = document.createElement('button');
+billEl.type = 'button';
+billEl.className = 'bill';
+billEl.title = 'Tear up the bill';
+billEl.hidden = true;
+stage.append(billEl);
+let spent = +(saved('spent') || 0), shown = spent, billAnim = 0;
+const money = n => `-$${Math.round(n).toLocaleString('en-US')}`;
+billEl.textContent = money(spent);
+// Each launch adds its price; the figure counts up and kicks.
+function bill(n) {
+  spent += n;
+  save('spent', spent);
+  if (billEl.hidden) { shown = spent; billEl.textContent = money(spent); return; }
+  billEl.classList.toggle('ka', false);
+  void billEl.offsetWidth;
+  billEl.classList.toggle('ka', true);
+  const from = shown, t0 = performance.now();
+  cancelAnimationFrame(billAnim);
+  const step = now => {
+    const k = Math.min(1, (now - t0) / 420);
+    shown = from + (spent - from) * (1 - Math.pow(1 - k, 3));
+    billEl.textContent = money(shown);
+    if (k < 1) billAnim = requestAnimationFrame(step);
+  };
+  billAnim = requestAnimationFrame(step);
+}
+billEl.addEventListener('click', () => { spent = shown = 0; save('spent', 0); billEl.textContent = money(0); });
+/* ---------- end bill ---------- */
+// Ultra shells climb slowly on a heavy comet, about 5 to 6 s, to build the wait.
+const ULTRA = new Set(['supernova', 'galaxy', 'cascade', 'kamuro']);
+function fire(pos, t0, type, cal, style = pick(COMETS), site = 'barge') {
+  bill(priceOf(type, cal, style, site));
+  const ultra = site === 'barge' && (ULTRA.has(type) || cal >= 1.95);
+  if (ultra && style === 'dark') style = 'gold';
   // Strong drag: the comet leaves fast and slows near the apex, about 3 s up.
-  const pos = burstPoint(ndc, cal), s = shellScale(), k = 1.2;
-  const { v0, T } = climb(pos.y - 1, k), base = new THREE.Vector3(pos.x, 1, pos.z), up = new THREE.Vector3(0, v0, 0), t0 = simT;
-  writeStar(base, t0, up, k, GOLD, T, 0.35, 1.2, COMET, 0.5);
-  // The comet sheds a few sparks as it climbs.
-  for (let i = 0; i < 10; i++) {
-    const ts = T * (0.05 + 0.9 * rnd());
-    posAt(base, up, k, ts, p);
-    writeStar(p, t0 + ts, q.set((rnd() - 0.5) * 8, (rnd() - 0.3) * 6, (rnd() - 0.5) * 8), 1.5, GOLD, 0.4 + rnd() * 0.4, 0.1, 0.8, COMET, 0.35);
+  // Ultra shells take light drag: a slower, longer climb.
+  const s = shellScale(), k = ultra ? 0.4 : 1.2;
+  if (style === 'dark') cal *= 1.3;
+  // The shell leaves the nearest barge or the beach; a mortar leans at most about 27 degrees.
+  const base = site === 'beach' ? beachBase(pos.x, new THREE.Vector3()) : bargeBase(pos.x, new THREE.Vector3());
+  pos.x = base.x + THREE.MathUtils.clamp(pos.x - base.x, -0.5 * pos.y, 0.5 * pos.y);
+  const { v0, T } = climb(pos.y - base.y, k), e = (1 - Math.exp(-k * T)) / k;
+  const up = new THREE.Vector3((pos.x - base.x) / e, v0, (pos.z - base.z) / e);
+  // The mortar's muzzle flash lights the barge and the water.
+  addLight(v.copy(base).setY(base.y + 5), ORANGE, t0, (site === 'beach' ? 0.1 : 0.2) * lightK(cal));
+  for (let i = 0; i < 3; i++) writePuff(q.copy(base).add(v.set((rnd() - 0.5) * 8, 2 + rnd() * 4, (rnd() - 0.5) * 6)), t0 + rnd() * 0.1, v.set((rnd() - 0.5) * 3, 5 + rnd() * 4, (rnd() - 0.5) * 3), 6 + rnd() * 4, 1.6, 7 + rnd() * 3, 0.35);
+  const col = pick(COLOURS);
+  // The tail is a stream of embers shed along the climb, not one rigid streak.
+  // Each ember cools white, then to its colour, then to red, and fades.
+  const pv = new THREE.Vector3();
+  const embers = (n, ramp, kind, gain, life, size) => {
+    for (let i = 0; i < n; i++) {
+      // Most embers come early, where the comet runs fastest.
+      const ts = T * Math.pow((i + rnd()) / n, 1.4);
+      posAt(base, up, k, ts, p);
+      velAt(up, k, ts, pv);
+      q.copy(pv).multiplyScalar(0.06).add(v.set((rnd() - 0.5) * 4, -1 - rnd() * 3, (rnd() - 0.5) * 4));
+      writeStar(p, t0 + ts, q, 2.0, ramp, life * (0.6 + rnd() * 0.8), 0.14, size * (0.6 + rnd() * 0.6), kind, gain);
+    }
+  };
+  // The head: short, bright, and it dims as the comet slows at the top.
+  const head = (ramp, kind, gain, size) => writeStar(base, t0, up, k, ramp, T, 0.07, size, kind, gain);
+  if (style === 'gold') { head(GOLD, COMET, 1.3, 2.0); embers(130, GOLD, 0, 0.35, 0.9, 1.3); }
+  if (style === 'glitter') { head(WHITE, COMET, 1.1, 1.8); embers(140, WHITE, GLITTER, 0.5, 1.0, 1.1); }
+  if (style === 'colour') { head(col, COMET, 1.4, 2.2); embers(110, col, 0, 0.4, 0.6, 1.4); }
+  if (style === 'dark') { head(ORANGE, COMET, 0.12, 1.0); embers(20, ORANGE, 0, 0.08, 0.4, 1.0); }
+  if (style === 'spin') { const c = pick([WHITE, GOLD, AQUA]); head(c, FISH, 1.2, 2.0); embers(90, c, 0, 0.35, 0.6, 1.2); }
+  if (style === 'crackle') {
+    head(GOLD, COMET, 1.1, 1.8);
+    embers(80, GOLD, 0, 0.3, 0.6, 1.2);
+    embers(40, WHITE, 0, 1.2, 0.09, 2.0);
   }
-  const [ramp, gain] = SHELLS[opts.shell](pos, t0 + T, cal, s);
-  addLight(pos, ramp, t0 + T, gain * lightK(cal));
+  // The ultra comet: a big white-gold head, a thick ember trail, a sputter of glitter.
+  if (ultra) {
+    writeStar(base, t0, up, k, WHITE, T, 0.3, 3.0, COMET, 1.6);
+    embers(170, GOLD, 0, 0.45, 1.1, 1.5);
+    embers(70, GOLD, GLITTER, 0.6, 0.7, 1.4);
+  }
+  smokeTrail(base, up, k, t0, T);
+  soundShell(pos, t0 - simT, T, type, style, cal);
+  const [ramp, gain] = SHELLS[type](pos, t0 + T, cal, s);
+  // A dark comet ends in a huge flash.
+  addLight(pos, ramp, t0 + T, gain * lightK(cal) * (style === 'dark' ? 1.7 : 1), type === 'strobe' || type === 'crackle');
+  smokeBurst(pos, t0 + T, cal, s);
+}
+/* ---------- the tear ---------- */
+// An overcharged shell cracks the sky; meteors pour from the seam into the bay.
+const TEAR_COL = linFit(0.66, 0.2, 35);
+let tear = null;
+const dirOf = (u, h, out) => { const c = Math.sqrt(Math.max(0, 1 - h * h)); return out.set(c * Math.sin(u), h, -c * Math.cos(u)); };
+// A point on the seam polyline, 0 at one end and 1 at the other.
+function seamAt(P, a) {
+  const x = Math.min(6.999, Math.max(0, a * 7)), i = Math.floor(x), t = x - i;
+  return [P[i][0] + (P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t];
+}
+function overcharge(ndc) {
+  const pos = burstPoint(ndc, 2);
+  fire(pos, simT, 'peony', 2.4, 'glitter');
+  const { T } = climb(pos.y - 1, 1.2);
+  startTear(pos, simT + T);
+  commitStars(); commitSmoke(); wake();
+}
+function startTear(pos, t0) {
+  const d = v.copy(pos).sub(camera.position).normalize();
+  let u0 = Math.atan2(d.x, -d.z), h0 = d.y;
+  // A long diagonal crack through the burst, jagged, with still ends.
+  const th = (rnd() < 0.5 ? -1 : 1) * (0.35 + rnd() * 0.5), L = 0.8;
+  const du = Math.cos(th), dh = Math.sin(th) * 0.8;
+  const P = Array.from({ length: 8 }, (_, i) => {
+    const s = i / 7 - 0.5, j = i && i < 7 ? (rnd() - 0.5) * 0.05 : 0;
+    return [u0 + du * s * L - dh * j, h0 + dh * s * L + du * j];
+  });
+  // Keep the whole seam above the hills.
+  const lo = Math.min(...P.map(p => p[1]));
+  if (lo < 0.09) P.forEach(p => { p[1] += 0.09 - lo; });
+  P.forEach((p, i) => U.uTP.value[i].set(p[0], p[1]));
+  const mid = seamAt(P, 0.5);
+  U.uEye.value.set(mid[0], mid[1], 0.055);
+  tear = { t0, P, open: 0, glow: 0, at: dirOf(mid[0], mid[1], new THREE.Vector3()).multiplyScalar(2600).add(camera.position) };
+  meteors(P, t0);
+  soundTear(tear.at, t0 - simT);
+}
+// Twenty-four meteors fall over five seconds; each ends in a splash and steam.
+function meteors(P, t0) {
+  const p = new THREE.Vector3(), q = new THREE.Vector3(), w = new THREE.Vector3(), dir = new THREE.Vector3();
+  for (let m = 0; m < 24; m++) {
+    const ts = t0 + 1.0 + 5.5 * Math.pow(m / 23, 1.3) + rnd() * 0.2;
+    const [u, h] = seamAt(P, 0.12 + rnd() * 0.76);
+    const H = 650 + rnd() * 450, D = Math.min(6000, (H - camera.position.y) / Math.max(h, 0.06));
+    p.copy(camera.position).addScaledVector(dirOf(u, h, dir), D);
+    const v0 = new THREE.Vector3((rnd() - 0.5) * 260, -380 - rnd() * 160, 40 + rnd() * 80);
+    // Find the splash: step the closed form down to the water.
+    let ti = 0;
+    while (ti < 20 && posAt(p, v0, 0.03, ti, q).y > 0) ti += 0.02;
+    const hit = q.clone().setY(0);
+    const ramp = rnd() < 0.6 ? ORANGE : rnd() < 0.5 ? WHITE : GOLD;
+    writeStar(p, ts, v0, 0.03, ramp, ti, 0.9, 2.2, COMET, 1.1);
+    // A tail of sparks shed along the fall.
+    for (let i = 0; i < 16; i++) {
+      const tt = ti * (i + rnd()) / 16;
+      posAt(p, v0, 0.03, tt, q);
+      writeStar(q, ts + tt, w.set((rnd() - 0.5) * 6, -2 - rnd() * 4, (rnd() - 0.5) * 6), 1.5, ramp, 0.5 + rnd() * 0.6, 0.1, 1.2, 0, 0.5);
+    }
+    const tHit = ts + ti;
+    addLight(hit.clone().setY(8), ORANGE, tHit, 0.6 * lightK(1.4));
+    // The splash: white water thrown up, then falling back.
+    for (let i = 0; i < 22; i++) writeStar(hit, tHit, w.set((rnd() - 0.5) * 30, 25 + rnd() * 45, (rnd() - 0.5) * 30), 0.6, rnd() < 0.5 ? WHITE : AQUA, 1.4 + rnd() * 0.8, 0.12, 1.5, 0, 0.8);
+    // Steam rises from the strike.
+    for (let i = 0; i < 6; i++) writePuff(q.copy(hit).add(w.set((rnd() - 0.5) * 20, 4 + rnd() * 10, (rnd() - 0.5) * 20)), tHit + 0.1 + rnd() * 0.4, w.set((rnd() - 0.5) * 4, 8 + rnd() * 8, (rnd() - 0.5) * 4), 14 + rnd() * 12, 1.4, 12 + rnd() * 6, 0.4);
+    soundImpact(hit, tHit - simT);
+  }
+}
+// Open fast, hold while the meteors fall, then heal.
+function tearTick() {
+  if (!tear) return;
+  const a = simT - tear.t0;
+  const ease = x => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+  tear.open = a < 0 ? 0 : a < 7.5 ? ease(a / 1.2) * (1 + 0.04 * Math.sin(a * 2.3)) : 1 - ease((a - 7.5) / 3);
+  tear.glow = a < 0 ? 0 : tear.open * (1 + 1.5 * Math.exp(-a / 0.35));
+  // The eye opens at 2.5 s, holds, and blinks shut at 5 s.
+  const eye = a < 2.5 ? 0 : a < 3.3 ? ease((a - 2.5) / 0.8) : a < 5 ? 1 - 0.85 * Math.exp(-Math.pow((a - 4.1) / 0.06, 2)) : Math.max(0, 1 - (a - 5) / 0.25);
+  U.uTear.value.set(0.075 * tear.open, tear.glow, eye, a);
+  if (a > 10.6) { tear = null; U.uTear.value.set(0, 0, 0, 0); }
+}
+// The cake take rattles under a barrage, timed to its first bursts.
+function soundCake(pos) {
+  const ac = kit.live();
+  if (!ac || !has('cake')) return;
+  const d = pos.distanceTo(camera.position), t = ac.currentTime + 0.9 + d / 343;
+  const pan = ac.createStereoPanner(), bl = filt(ac, 'lowpass', 6000 * Math.pow(900 / 6000, THREE.MathUtils.clamp((d - 300) / 1200, 0, 1)));
+  pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
+  bl.connect(pan).connect(kit.out);
+  const [s, g] = smp(ac, 'cake', t, bl, dB(-8));
+  const send = ac.createGain(); send.gain.value = 0.25; g.connect(send).connect(rvb);
+  track(t + 6, 'cake', s, send);
+}
+function soundTear(pos, wait) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  const t = ac.currentTime + 0.02 + Math.max(0, wait);
+  const pan = ac.createStereoPanner();
+  pan.connect(kit.out);
+  // A deep double crack, then a long low rumble.
+  if (has('report')) track(t + 2.6, 'report', smp(ac, 'report', t, pan, dB(-1), 0.5)[0]);
+  boom(ac, t, pan, dB(-2), 500, 2.5);
+  boom(ac, t + 0.25, pan, dB(-6), 260, 2.5);
+  boom(ac, t + 1.1, pan, dB(-10), 180, 2.5);
+}
+function soundImpact(pos, wait) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  const d = pos.distanceTo(camera.position), t = ac.currentTime + 0.02 + Math.max(0, wait) + d / 343;
+  const pan = ac.createStereoPanner();
+  pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
+  pan.connect(kit.out);
+  boom(ac, t, pan, dB(-12) * jit(0.2), 900, 1.4);
+}
+/* ---------- end tear ---------- */
+function launch(ndc, cal) {
+  const type = opts.shell === 'mix' ? pick(MIX) : opts.shell;
+  // Mortars are not exact: the burst lands a little off the tap.
+  const g = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+  ndc = new THREE.Vector2(ndc.x + 0.03 * g(), ndc.y + 0.025 * g());
+  if (type === 'barrage') {
+    // Sixteen small shells fan out across the sky, 0.11 s apart.
+    for (let i = 0; i < 16; i++) {
+      const at = new THREE.Vector2(ndc.x + (i / 15 - 0.5) * 0.9, ndc.y - 0.12 + rnd() * 0.24);
+      fire(burstPoint(at, 0.7, undefined, beachDist()), simT + i * 0.11, pick(['peony', 'ring', 'strobe', 'crackle', 'pistil']), 0.7 * cal, pick(['gold', 'colour', 'glitter']), 'beach');
+    }
+    soundCake(burstPoint(ndc, 0.7, undefined, beachDist()));
+  } else if (fromBeach(type, cal)) fire(burstPoint(ndc, cal, undefined, beachDist()), simT, type, cal, undefined, 'beach');
+  else fire(burstPoint(ndc, cal), simT, type, cal);
   commitStars();
+  commitSmoke();
   wake();
 }
+/* ---------- showtime ---------- */
+// The show as cues: [burst time, x, y, shell, calibre, comet, site], x and y as for a tap.
+// About a minute: five acts with quiet breaths between, a hush, then a finale that rattles.
+// Each run jitters a little, so no two shows match.
+function buildShow() {
+  const S = [], j = () => (Math.random() - 0.5) * 0.04, R = Math.random;
+  // Only the salutes ride dark comets; their white flash would wash out a pattern.
+  const lit = () => pick(['gold', 'glitter', 'colour', 'spin', 'crackle']);
+  const add = (t, x, y, type, cal, style = lit(), site = 'barge') => S.push([t, x + j(), y + j(), type, cal, style, site]);
+  // 0 to 5 s, the opening: three salutes, then a cake sweeps the beach.
+  [-0.5, 0, 0.5].forEach((x, i) => add(i * 0.3, x, 0.58, 'strobe', 1.3, 'dark'));
+  for (let i = 0; i < 14; i++) add(1.2 + i * 0.14, -0.85 + (1.7 * i) / 13, 0.26 + 0.06 * (i % 2), i % 2 ? 'ring' : 'peony', 0.85, 'gold', 'beach');
+  // 5 to 7.5 s, a breath: one gold willow hangs alone.
+  add(5.2, 0, 0.72, 'willow', 1.7, 'gold');
+  // 8 to 17 s, the classics: mirrored pairs that climb, then three showpieces.
+  ['peony', 'chrysanthemum', 'ring', 'pistil', 'saturn', 'crossette'].forEach((type, k) => {
+    for (const sd of [-1, 1]) add(8 + k * 1.1 + (sd > 0 ? 0.14 : 0), sd * (0.22 + 0.08 * k), 0.42 + 0.05 * k, type, 1.4);
+  });
+  add(15.0, 0, 0.74, 'galaxy', 1.7); add(15.9, -0.45, 0.55, 'cascade', 1.5); add(16.1, 0.45, 0.55, 'palm', 1.5);
+  // 19 to 21 s, a breath: two low kamuro crowns drift down.
+  add(19.0, -0.3, 0.42, 'kamuro', 1.3, 'gold'); add(19.6, 0.3, 0.4, 'kamuro', 1.3, 'gold');
+  // 22 to 32 s, the zany act.
+  add(22.0, 0, 0.6, 'smiley', 1.6);
+  add(23.6, -0.5, 0.58, 'butterfly', 1.5); add(23.8, 0.5, 0.58, 'star', 1.5);
+  add(25.4, 0, 0.8, 'rainbow', 1.8);
+  add(27.0, -0.4, 0.6, 'jelly', 1.5); add(27.2, 0.4, 0.55, 'cube', 1.5);
+  add(28.7, 0, 0.48, 'heart', 1.5);
+  add(30.0, -0.6, 0.42, 'swarm', 1.3); add(30.2, 0.6, 0.42, 'swarm', 1.3); add(30.6, 0, 0.32, 'fish', 1.0, 'spin', 'beach');
+  // 32 to 35 s, a breath: a lone white strobe, then nothing.
+  add(32.8, 0.1, 0.65, 'strobe', 1.2, 'glitter');
+  // 35 to 45 s, the build: comets left and right, faster and higher, a crown, a wall.
+  for (let i = 0; i < 26; i++) {
+    const t = 35 + 7.2 * Math.pow(i / 25, 0.8);
+    add(t, (i % 2 ? -1 : 1) * (0.12 + 0.03 * i), 0.32 + 0.016 * i, ['strobe', 'crackle', 'peony', 'chrysanthemum'][i % 4], 1.05 + 0.02 * i, i % 4 === 1 ? 'crackle' : 'gold', i % 2 ? 'beach' : 'barge');
+  }
+  add(40.5, 0, 0.8, 'kamuro', 1.9, 'gold'); add(41.2, -0.55, 0.55, 'crossette', 1.5); add(41.3, 0.55, 0.55, 'crossette', 1.5);
+  for (let i = 0; i < 11; i++) add(43.0 + i * 0.06, -0.85 + (1.7 * i) / 10, 0.5 + 0.05 * (i % 2), i % 2 ? 'crackle' : 'strobe', 1.35, i % 2 ? 'crackle' : 'glitter');
+  // 44.5 to 46 s: the hush. Nothing launches; the smoke hangs.
+  // 46 to 58 s, the finale.
+  for (let i = 0; i < 13; i++) add(46.0 + i * 0.055, -0.88 + (1.76 * i) / 12, 0.5 + 0.16 * Math.abs(Math.sin(i * 1.3)), 'chrysanthemum', 1.55);
+  for (let i = 0; i < 44; i++) add(46.6 + i * 0.085, (R() - 0.5) * 1.7, 0.22 + R() * 0.14, i % 3 ? 'crackle' : 'strobe', 0.8, i % 3 ? 'crackle' : 'glitter', 'beach');
+  for (let i = 0; i < 34; i++) add(47.2 + i * 0.15, (R() - 0.5) * 1.6, 0.4 + 0.012 * i + R() * 0.12, pick(['peony', 'crackle', 'strobe', 'chrysanthemum', 'pistil', 'ring']), 1.3 + 0.012 * i);
+  [-0.6, -0.2, 0.2, 0.6].forEach((x, i) => add(51.0 + i * 0.08, x, 0.84, i % 2 ? 'kamuro' : 'willow', 2.0, 'gold'));
+  add(52.6, -0.5, 0.7, 'galaxy', 1.8); add(52.7, 0.5, 0.7, 'galaxy', 1.8); add(52.9, 0, 0.76, 'supernova', 2.2);
+  // The rattle: a chain of salutes, faster and faster, then everything at once.
+  // One salute in three flashes white; a whole chain of them blows the frame out.
+  for (let i = 0; i < 16; i++) add(55.4 + 2.6 * Math.pow(i / 15, 0.7), (R() - 0.5) * 1.5, 0.5 + R() * 0.25, i % 3 ? 'crackle' : 'strobe', 1.4, i % 3 ? 'crackle' : 'dark');
+  for (let i = 0; i < 9; i++) add(58.2 + i * 0.03, -0.8 + (1.6 * i) / 8, 0.62 + 0.1 * (i % 2), i === 4 ? 'supernova' : 'strobe', i === 4 ? 2.3 : 1.5, i === 4 ? 'gold' : 'dark');
+  return S.sort((p, q) => p[0] - q[0]);
+}
+let show = null;
+// Cues fire about 0.6 s before they are due, so the ring buffer holds one act, not the show.
+// A cue marks the burst; the shell leaves early by its climb time.
+const climbLead = ([, , , type, cal, , site]) => (site === 'beach' ? 2.6 : ULTRA.has(type) || cal >= 1.95 ? 5.6 : 3.3);
+function showtime() {
+  if (show) return;
+  // Launch times sorted; the show's clock starts after the longest climb.
+  const cues = buildShow().map(c => [c[0] - climbLead(c), ...c.slice(1)]).sort((p, q) => p[0] - q[0]);
+  show = { t0: simT + 5.6, cues, i: 0 };
+  wake();
+}
+function showTick() {
+  if (!show) return;
+  let n = 0;
+  while (show.i < show.cues.length && show.t0 + show.cues[show.i][0] <= simT + 0.6) {
+    const [t, x, y, type, cal, style, site] = show.cues[show.i++];
+    const ndc = new THREE.Vector2(x, horizonNdc + y * (0.92 - horizonNdc));
+    const pos = site === 'beach' ? burstPoint(ndc, cal, undefined, beachDist()) : burstPoint(ndc, cal);
+    fire(pos, Math.max(simT, show.t0 + t), type, cal, style, site);
+    n++;
+  }
+  if (n) { commitStars(); commitSmoke(); }
+  if (show.i >= show.cues.length && simT > show.t0 + show.cues[show.cues.length - 1][0] + 1) show = null;
+}
+/* ---------- end showtime ---------- */
 function orbList() {
-  const list = live.slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 }));
-  for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.12, color: FIRE, k: 0.01 });
+  const list = live.filter(L => !L.wide).slice(0, 3).map(L => ({ pos: L.pos, size: 1.4, color: L.col, k: L.I * 0.12 * L.eye * FX.orbs }));
+  for (const f of fires.slice(0, 6)) list.push({ pos: f, size: 0.1, color: FIRE, k: 0.006 });
   return list;
 }
 
@@ -913,7 +2746,8 @@ function frame() {
   camera.aspect = size.w / size.h;
   const hf = portrait ? 0.72 : 0.64;
   horizonNdc = 1 - 2 * hf;
-  camera.rotation.set(Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), 0, 0);
+  camRx = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  camera.rotation.set(camRx, 0, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
@@ -925,8 +2759,8 @@ function resize() {
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  // The mirror runs at full size on High, three quarters on Standard.
-  const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.75;
+  // The mirror runs at full size on High, 0.6 on Standard.
+  const m = rung >= 2 ? 0.4 : quality() === 'high' ? 1 : 0.6;
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
@@ -941,6 +2775,7 @@ function draw() {
   if (!visible) return;
   renderMirror();
   placeOrbs(orbPass, orbList());
+  placeFlares(flarePass);
   composer.render();
 }
 
@@ -948,7 +2783,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || lights.length > 0;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear || !!bolt || !!show || simT - kickAt < 0.6;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -963,10 +2798,20 @@ function tick(now) {
   try {
     simT += dt;
     U.uTime.value = simT;
+    // The deck drifts on a wind of about 6 m/s.
+    U.uCloudO.value.set(-5.5 * simT, 2.0 * simT);
     if (press) {
       press.charge = Math.min(1, (performance.now() - press.at) / 1500);
       press.seed = burstPoint(press.ndc, 1 + press.charge, press.seed || new THREE.Vector3());
+      // Past 4 s the seed strains and trembles.
+      const over = (performance.now() - press.at) / 1000 - 4;
+      if (over > 0 && !reduced()) press.seed.add(v.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(Math.min(over, 2) * 3));
     }
+    tearTick();
+    weatherTick(now);
+    showTick();
+    chargeTick();
+    kickTick();
     if (lively || now - lastDraw >= 31) {
       updateLights();
       draw();
@@ -974,8 +2819,9 @@ function tick(now) {
       lastDraw = now;
     }
   } finally {
+    soundBed(lively);
     if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
-    else { lastT = 0; updateLights(); draw(); }
+    else { lastT = 0; updateLights(); draw(); kit.rest(() => !busy() && !pending()); }
   }
 }
 function wake() {
@@ -997,13 +2843,72 @@ function watch(now, lively) {
 }
 whenVisible(stage, vis => {
   visible = vis;
-  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  // A hidden tab cancels pending sounds; the show resumes silent.
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; stopAll(); return; }
   draw();
   wake();
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; SU.uDrift.value = on ? 0.5 : 1; wake(); });
+
+/* ---------- launch feel ---------- */
+// A held press hisses like a fuse; the seed light pulses at each calibre step.
+// Release buzzes once and kicks the view a touch.
+const STEPS = [0.26, 0.75, 1.5];
+let camRx = 0, kickAt = -9, kickK = 0, fuse = null;
+const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not allowed */ } };
+function chargeStart() {
+  press.step = 0; press.pulse = -9;
+  // The fuse: noise through a band that climbs as the charge builds.
+  const ac = kit.live();
+  if (ac) {
+    bus(ac);
+    const n = ac.createBufferSource(), bp = filt(ac, 'bandpass', 900, 2.2), g = ac.createGain();
+    n.buffer = kit.noise; n.loop = true; n.start();
+    g.gain.setValueAtTime(0.0001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.12);
+    n.connect(bp).connect(g).connect(kit.out);
+    fuse = { n, bp, g };
+  }
+}
+function chargeTick() {
+  if (!press) return;
+  const held = (performance.now() - press.at) / 1000, f = Math.min(1, held / 1.5);
+  while (press.step < STEPS.length && held >= STEPS[press.step]) {
+    press.step++;
+    press.pulse = simT;
+    buzz(10);
+    const ac = kit.live();
+    if (ac) {
+      const o = ac.createOscillator(), g = env(ac, ac.currentTime, 0.08, 0.002, 0.05);
+      o.frequency.value = 900 + 300 * press.step;
+      o.connect(g).connect(kit.out); o.start(); o.stop(ac.currentTime + 0.08);
+    }
+  }
+  if (fuse) fuse.bp.frequency.value = 900 + 2600 * f + (held > 4 ? 1500 * Math.random() : 0);
+}
+// The seed's pulse: a step flares it to about three times, gone in 0.2 s.
+const seedPulse = () => (press ? 1 + 2 * Math.exp(-Math.max(0, simT - press.pulse) / 0.07) : 1);
+function chargeEnd(fired, cal = 1) {
+  if (fuse) {
+    const ac = kit.ac, t = ac.currentTime;
+    fuse.g.gain.cancelScheduledValues(t);
+    fuse.g.gain.setValueAtTime(Math.max(fuse.g.gain.value, 0.0002), t);
+    fuse.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    fuse.n.stop(t + 0.1);
+    fuse = null;
+  }
+  if (!fired) return;
+  buzz(cal > 1.5 ? 28 : 16);
+  if (!reduced()) { kickAt = simT; kickK = 0.0025 * cal; }
+}
+// The recoil: the view dips a hair and settles in about 0.15 s.
+function kickTick() {
+  const a = simT - kickAt;
+  camera.rotation.x = camRx - (a >= 0 && a < 0.6 ? kickK * Math.exp(-a / 0.12) * Math.cos(a * 30) : 0);
+}
+/* ---------- end launch feel ---------- */
 
 /* Pointer: press grows a seed light; release launches; hold sets the calibre. */
 let press = null;
@@ -1015,6 +2920,7 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: ndcOf(e), charge: 0, seed: null, moved: false };
+  chargeStart();
   wake();
 });
 stage.addEventListener('pointermove', e => {
@@ -1027,10 +2933,14 @@ stage.addEventListener('pointerup', e => {
   if (!press || e.pointerId !== press.id) return;
   const held = (performance.now() - press.at) / 1000, ndc = press.ndc;
   press = null;
+  // Held past 6 s, the shell bursts too hard and tears the sky.
+  if (held >= 6 && !tear) { chargeEnd(true, 2.5); overcharge(ndc); return; }
   // A tap is calibre 1; a hold reaches calibre 2 at 1.5 s.
-  launch(ndc, held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5));
+  const cal = held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5);
+  chargeEnd(true, cal);
+  launch(ndc, cal);
 });
-const cancel = e => { if (press && e.pointerId === press.id) { press = null; wake(); } };
+const cancel = e => { if (press && e.pointerId === press.id) { press = null; chargeEnd(false); wake(); } };
 stage.addEventListener('pointercancel', cancel);
 stage.addEventListener('lostpointercapture', cancel);
 // Space launches a shell at a random point in the sky.
@@ -1041,6 +2951,50 @@ stage.addEventListener('keydown', e => {
 });
 
 /* ---------- bar ---------- */
+/* ---------- shell drawings ---------- */
+// A small drawing per shell for the stepper and the grid: dots and strokes on a dark disc.
+const IC = { G: 'oklch(0.86 0.15 82)', R: 'oklch(0.68 0.22 25)', P: 'oklch(0.76 0.17 350)', A: 'oklch(0.84 0.12 200)', N: 'oklch(0.82 0.18 145)',
+  B: 'oklch(0.68 0.15 255)', U: 'oklch(0.66 0.19 310)', W: 'oklch(0.97 0.02 90)', O: 'oklch(0.78 0.16 55)' };
+const f1 = n => +n.toFixed(1);
+const dt = (x, y, r, c) => `<circle cx="${f1(x)}" cy="${f1(y)}" r="${r}" fill="${c}"/>`;
+const ln = (x1, y1, x2, y2, c, w = 1.2) => `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+const ringD = (n, r, c, d = 1.3, cx = 0, cy = 0, sy = 1, rot = 0) => Array.from({ length: n }, (_, i) => {
+  const a = (i / n) * Math.PI * 2, x = r * Math.cos(a), y = r * Math.sin(a) * sy;
+  return dt(cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot), d, c);
+}).join('');
+const rays = (n, r0, r1, c, w = 1.2, cx = 0, cy = 0) => Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2; return ln(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a), cx + r1 * Math.cos(a), cy + r1 * Math.sin(a), c, w); }).join('');
+const burstI = (cx, cy, r, c) => rays(8, r * 0.3, r, c, 1, cx, cy) + dt(cx, cy, 1.2, IC.W);
+const DRAW = {
+  mix: () => burstI(-6, -5, 7, IC.R) + burstI(6, -3, 6, IC.N) + burstI(0, 7, 6, IC.G),
+  peony: () => ringD(14, 11, IC.R, 1.5) + ringD(8, 6, IC.R, 1.1),
+  chrysanthemum: () => rays(14, 3, 13, IC.A, 1),
+  willow: () => [-1, 1].flatMap(sd => [3, 7, 11].map(k => `<path d="M0 -2Q${sd * k} -14 ${sd * (k + 2)} 12" fill="none" stroke="${IC.G}" stroke-width="1.1" stroke-linecap="round"/>`)).join(''),
+  palm: () => [-2, -1, 0, 1, 2].map(k => `<path d="M0 0Q${k * 5} -14 ${k * 6.5} -4" fill="none" stroke="${IC.G}" stroke-width="2" stroke-linecap="round"/>`).join('') + ln(0, 0, 0, 14, IC.O, 1.4),
+  kamuro: () => [[5, 7], [8.5, 11], [12, 15]].map(([r, n]) => Array.from({ length: n }, (_, i) => { const a = Math.PI * (1.08 + 0.84 * (i / (n - 1))); return dt(r * Math.cos(a), r * Math.sin(a) + 3, 0.95, IC.G); }).join('')).join('') + [-9, -4, 4, 9].map(x => `<path d="M${x} 2q${x > 0 ? 1.5 : -1.5} 5 ${x > 0 ? 1 : -1} 10" fill="none" stroke="${IC.G}" stroke-width="0.9" stroke-dasharray="0.1 2" stroke-linecap="round"/>`).join(''),
+  crossette: () => [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + Math.PI / 4, x = 7 * Math.cos(a), y = 7 * Math.sin(a); return ln(0, 0, x, y, IC.G) + ln(x - 3, y, x + 3, y, IC.N) + ln(x, y - 3, x, y + 3, IC.N); }).join(''),
+  ring: () => ringD(18, 11, IC.A, 1.4),
+  saturn: () => ringD(10, 4.5, IC.O, 1.3) + ringD(20, 13, IC.U, 1.1, 0, 0, 0.32, -0.35),
+  pistil: () => ringD(7, 4, IC.W, 1.4) + ringD(16, 11, IC.N, 1.4),
+  strobe: () => [[-7, -6], [6, -8], [9, 3], [-2, 8], [-9, 4], [2, -1]].map(([x, y]) => ln(x - 2.5, y, x + 2.5, y, IC.W, 0.9) + ln(x, y - 2.5, x, y + 2.5, IC.W, 0.9) + dt(x, y, 1.3, IC.W)).join(''),
+  crackle: () => ringD(10, 10, IC.G, 1.3) + [[-5, -4], [5, 3], [-3, 6], [6, -6], [0, 0]].map(([x, y]) => ln(x - 1.6, y - 1.6, x + 1.6, y + 1.6, IC.W, 0.8) + ln(x - 1.6, y + 1.6, x + 1.6, y - 1.6, IC.W, 0.8)).join(''),
+  fish: () => [0, 1, 2, 3, 4, 5].map(k => { const a = k * Math.PI / 3; const x = 11 * Math.cos(a), y = 11 * Math.sin(a), nx = -Math.sin(a) * 2, ny = Math.cos(a) * 2; return `<path d="M${f1(x * 0.3)} ${f1(y * 0.3)}Q${f1(x * 0.5 + nx)} ${f1(y * 0.5 + ny)} ${f1(x * 0.65)} ${f1(y * 0.65)}T${f1(x)} ${f1(y)}" fill="none" stroke="${IC.A}" stroke-width="1.2" stroke-linecap="round"/>`; }).join(''),
+  heart: () => Array.from({ length: 22 }, (_, i) => { const t = (i / 22) * Math.PI * 2; return dt(11 * Math.pow(Math.sin(t), 3), -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * 0.72 - 1, 1.3, IC.P); }).join(''),
+  galaxy: () => Array.from({ length: 36 }, (_, i) => { const arm = i % 3, r = (Math.floor(i / 3) + 1) * 1.1, a = arm * 2.094 + r * 0.28; return dt(r * Math.cos(a), r * Math.sin(a) * 0.8, r < 4 ? 1.2 : 0.95, r < 4 ? IC.W : IC.A); }).join(''),
+  cascade: () => ringD(8, 4, IC.R, 1.1) + ringD(13, 8, IC.N, 1.1) + ringD(18, 12, IC.B, 1.1),
+  barrage: () => [-10, -5, 0, 5, 10].map((x, i) => ln(x * 0.3, 14, x, -2 - (i % 2) * 4, 'oklch(0.7 0.06 80)', 0.7) + burstI(x, -2 - (i % 2) * 4, 3.4, [IC.R, IC.G, IC.A, IC.P, IC.N][i])).join(''),
+  supernova: () => rays(16, 2, 14, IC.W, 1.1) + ringD(8, 14, IC.P, 1.3) + ringD(8, 9, IC.A, 1.1) + dt(0, 0, 2.6, IC.W),
+  smiley: () => ringD(18, 12, IC.G, 1.2) + dt(-4, -3, 1.6, IC.A) + dt(4, -3, 1.6, IC.A) + Array.from({ length: 7 }, (_, i) => { const a = Math.PI * (0.15 + 0.7 * i / 6); return dt(7 * Math.cos(a), 1 + 6 * Math.sin(a) - 1, 1.1, IC.P); }).join(''),
+  rainbow: () => [IC.R, IC.O, IC.G, IC.N, IC.B, IC.U].map((c, k) => `<path d="M${-13 + k * 1.6} 6A${13 - k * 1.6} ${13 - k * 1.6} 0 0 1 ${13 - k * 1.6} 6" fill="none" stroke="${c}" stroke-width="1.4"/>`).join(''),
+  butterfly: () => [-1, 1].map(sd => `<ellipse cx="${sd * 6}" cy="-3.5" rx="6" ry="5" transform="rotate(${sd * 25} ${sd * 6} -3.5)" fill="none" stroke="${IC.P}" stroke-width="1.4" stroke-dasharray="0.1 2.4" stroke-linecap="round"/><ellipse cx="${sd * 4.5}" cy="6" rx="3.6" ry="3.2" fill="none" stroke="${IC.U}" stroke-width="1.4" stroke-dasharray="0.1 2.3" stroke-linecap="round"/>` + ln(sd * 0.8, -9, sd * 3.5, -13, IC.G, 0.9)).join('') + ln(0, -8, 0, 9, IC.G, 1.3),
+  star: () => { const V = Array.from({ length: 10 }, (_, k) => { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 5.2 : 13; return [r * Math.cos(a), r * Math.sin(a)]; }); return `<path d="M${V.map(p => p.map(f1).join(' ')).join('L')}Z" fill="none" stroke="${IC.W}" stroke-width="1.5" stroke-dasharray="0.1 2.4" stroke-linecap="round" stroke-linejoin="round"/>` + dt(0, 0, 1.6, IC.W); },
+  cube: () => { const a = [[-7, -4], [5, -8], [10, -1], [-2, 3]], b = a.map(([x, y]) => [x, y + 11]); const e = (p, q) => ln(p[0], p[1], q[0], q[1], IC.W, 1.1); return [0, 1, 2, 3].map(i => e(a[i], a[(i + 1) % 4]) + e(b[i], b[(i + 1) % 4]) + e(a[i], b[i])).join(''); },
+  jelly: () => `<path d="M-11 0A11 10 0 0 1 11 0" fill="none" stroke="${IC.A}" stroke-width="1.5" stroke-dasharray="0.1 2.3" stroke-linecap="round"/>` + [-8, -4, 0, 4, 8].map(x => `<path d="M${x} 1q2 3 0 6t0 6" fill="none" stroke="${IC.P}" stroke-width="1.1" stroke-linecap="round"/>`).join(''),
+  swarm: () => [[-8, -6], [6, -8], [10, 2], [-3, 9], [-10, 5], [2, -1], [7, 9], [-5, 0]].map(([x, y], i) => dt(x, y, 1.4, IC.G) + `<path d="M${x} ${y}q${i % 2 ? 2 : -2} 2 0 4" fill="none" stroke="${IC.O}" stroke-width="0.8"/>`).join(''),
+};
+// The disc behind each drawing is the night sky.
+const shellIcon = id => `<svg viewBox="-17 -17 34 34" aria-hidden="true"><circle r="16.5" fill="oklch(0.14 0.03 275)" stroke="oklch(1 0 0 / 0.08)"/>${(DRAW[id] || DRAW.mix)()}</svg>`;
+/* ---------- end shell drawings ---------- */
+
 function popover(box, btn) {
   const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
   btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
@@ -1048,11 +3002,126 @@ function popover(box, btn) {
   addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
-choices(document.getElementById('shell'), val => { opts.shell = val; save('shell', val); }).set(opts.shell);
+document.getElementById('finale').addEventListener('click', showtime);
+// The stepper walks the shell list and wraps at each end.
+const shellBox = document.getElementById('shell'), shellName = shellBox.querySelector('output');
+let shellAt = Math.max(0, SHELL_LIST.findIndex(([id]) => id === opts.shell));
+// The grid: one button per shell; picking one closes it.
+const shellGrid = document.getElementById('shells');
+shellGrid.innerHTML = SHELL_LIST.map(([id, name]) => `<button type="button" data-shell="${id}" aria-pressed="false">${shellIcon(id)}<span>${name}</span></button>`).join('');
+popover(shellBox, document.getElementById('shellBtn'));
+shellGrid.addEventListener('click', e => {
+  const b = e.target.closest('[data-shell]');
+  if (!b) return;
+  const i = SHELL_LIST.findIndex(([id]) => id === b.dataset.shell);
+  stepShell(i - shellAt);
+  shellBox.classList.remove('is-open');
+  document.getElementById('shellBtn').setAttribute('aria-expanded', 'false');
+});
+function stepShell(d) {
+  shellAt = (shellAt + d + SHELL_LIST.length) % SHELL_LIST.length;
+  const [id, name] = SHELL_LIST[shellAt];
+  opts.shell = id; save('shell', id);
+  shellName.textContent = name;
+  shellBox.querySelector('.ico').innerHTML = shellIcon(id);
+  shellGrid.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.shell === id)));
+  if (!d) return;
+  // The name slides in from the side of the pressed arrow.
+  shellName.classList.remove('from-next', 'from-prev');
+  void shellName.offsetWidth;
+  shellName.classList.add(d > 0 ? 'from-next' : 'from-prev');
+}
+stepShell(0);
+shellBox.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => stepShell(+b.dataset.step)));
+// Left and right arrows step while the stepper has focus.
+shellBox.addEventListener('keydown', e => {
+  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (!d) return;
+  e.preventDefault(); e.stopPropagation(); stepShell(d);
+});
 const distEl = document.getElementById('dist');
 distEl.value = String(opts.dist);
-distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); });
-choices(document.getElementById('smoke'), () => {});
+distEl.addEventListener('input', () => { opts.dist = +distEl.value; save('dist', opts.dist); placeBarges(); draw(); });
+placeBarges();
+choices(document.getElementById('smoke'), val => { opts.smoke = val; save('smoke', val); SU.uSmokeK.value = val === 'thick' ? 1.15 : 0.75; }).set(opts.smoke);
+SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
+/* ---------- weather ---------- */
+// On Drift the deck comes and goes on its own.
+// A reload starts clear, broken, cloudy or overcast at random.
+const WX = [0, 0.35, 0.8, 1];
+const wx = { w: WX[Math.floor(Math.random() * WX.length)], to: 0, next: 0, last: 0 };
+wx.to = wx.w;
+wx.next = performance.now() + (40 + Math.random() * 80) * 1000;
+// Cover from the weather: 0 is clear, 0.8 is the tuned deck, 1 is overcast.
+function applyCover() {
+  const w = opts.sky === 'clear' ? 0 : opts.sky === 'cloud' ? 0.8 : wx.w;
+  const cover = 0.36 + ((FX.cloudCover - 0.36) * w) / 0.8, on = cover > 0.37;
+  U.uCloud.value.z = cover;
+  U.uCloud.value.w = on ? 1 : 0;
+  cloud.visible = on;
+}
+/* Heat lightning: silent flickers deep in far cloud, only under a thick deck. */
+const BOLT_COL = linFit(0.9, 0.06, 285);
+let bolt = null, boltNext = 0;
+// A flash is two to five pulses: each strikes fast and decays in 60 ms.
+function strike() {
+  const C = U.uCloud.value, p = new THREE.Vector3();
+  // Try a few far spots; the flash needs cloud to live in.
+  for (let k = 0; k < 10; k++) {
+    const a = (Math.random() - 0.5) * 1.3, d = 4500 + Math.random() * 4500;
+    p.set(camera.position.x + Math.sin(a) * d, C.x + 40 + Math.random() * C.y * 0.6, camera.position.z - Math.cos(a) * d);
+    if (cloudD(p.x, p.z) > 0.45) break;
+    if (k === 9) return;
+  }
+  const n = 2 + Math.floor(Math.random() * 4), pulses = [];
+  let t = 0;
+  for (let i = 0; i < n; i++) { pulses.push([t, (i ? 0.4 + Math.random() * 0.6 : 1) * (0.7 + Math.random() * 0.3)]); t += 0.06 + Math.random() * 0.18; }
+  bolt = { pos: p, t0: simT, pulses, end: t + 0.4 };
+}
+function boltI() {
+  if (!bolt) return 0;
+  const a = simT - bolt.t0;
+  if (a > bolt.end) { bolt = null; return 0; }
+  let I = 0;
+  for (const [t, amp] of bolt.pulses) if (a >= t) I += amp * Math.min(1, (a - t) / 0.012) * Math.exp(-(a - t) / 0.06);
+  return I * 14 * FX.bolt;
+}
+function weatherTick(now) {
+  const dt = wx.last ? Math.min(1, (now - wx.last) / 1000) : 0;
+  wx.last = now;
+  // Lightning needs a heavy deck: cover past 0.5, cloudy or overcast.
+  const C = U.uCloud.value;
+  if (SCENE !== 'island' && C.w > 0.5 && C.z > 0.5 && FX.boltRate > 0 && !reduced()) {
+    if (!boltNext) boltNext = now + 8000 + Math.random() * 15000;
+    if (now > boltNext && !bolt) {
+      strike();
+      // Heavier cloud flashes more often: every 8 to 30 s when overcast.
+      const heavy = Math.min(1, (C.z - 0.5) / 0.06);
+      boltNext = now + ((8 + Math.random() * 22) * 1000) / (FX.boltRate * (0.5 + 0.5 * heavy));
+    }
+  } else boltNext = 0;
+  if (opts.sky !== 'drift') return;
+  // Every one to three minutes the sky turns toward another state.
+  if (now > wx.next) {
+    const other = WX.filter(x => Math.abs(x - wx.w) > 0.2);
+    wx.to = other[Math.floor(Math.random() * other.length)];
+    wx.next = now + (60 + Math.random() * 120) * 1000;
+  }
+  // A full change takes about 90 s.
+  if (wx.w !== wx.to) { wx.w += Math.max(-dt / 90, Math.min(dt / 90, wx.to - wx.w)); applyCover(); }
+}
+const setSky = v => { opts.sky = v; applyCover(); };
+choices(document.getElementById('billSet'), v => { save('bill', v); billEl.hidden = v !== 'on'; shown = spent; billEl.textContent = money(spent); }).set(saved('bill') === 'on' ? 'on' : 'off');
+billEl.hidden = saved('bill') !== 'on';
+// A new scene saves and reloads; the intro stays away on that reload.
+choices(document.getElementById('scenes'), v => {
+  if (v === SCENE) return;
+  try { localStorage.setItem('stimming.fireworks.scene', v); sessionStorage.setItem('stimming.fireworks.rescene', '1'); } catch { /* storage is optional */ }
+  location.reload();
+}).set(SCENE);
+choices(document.getElementById('sky'), v => { setSky(v); save('weather', v); updateLights(); draw(); }).set(opts.sky);
+setSky(opts.sky);
+/* ---------- end weather ---------- */
 choices(document.getElementById('water'), v => { water.material.uniforms.uRipple.value = v === 'ripple' ? 2 : 1; draw(); });
 
 /* ---------- ready ---------- */
@@ -1064,6 +3133,109 @@ renderer.compileAsync(scene, camera).then(() => {
   markReady();
   wake();
 }, () => { canvas.classList.add('on'); markReady(); });
+
+/* ---------- dev panel ---------- */
+// ?dev opens a panel of look knobs; the backquote key toggles it.
+const COOL = U.uCool.value.clone();
+function applyFX() {
+  bloomPass.strength = FX.bloom; bloomPass.radius = FX.bloomRadius; bloomPass.threshold = FX.bloomThreshold;
+  flarePass.uniforms.uSt.value.set(FX.flare, FX.flareLength, FX.flareThin, FX.flareWarmth);
+  flarePass.uniforms.uGh.value.set(FX.ghosts, FX.ghostSpread);
+  U.uCloud.value.x = FX.cloudBase; U.uCloud.value.y = FX.cloudDepth;
+  applyCover();
+  CU.uGlow.value = FX.cloudGlow;
+  U.uCool.value.copy(COOL).multiplyScalar(FX.ambient);
+  U.uHaze.value = FX.haze * 0.001;
+  grade.uniforms.uVig.value = FX.vignette;
+  grade.uniforms.uGrain.value = FX.grain;
+  grade.uniforms.uTint.value.set(...POST.tint.map(v => v * FX.lift));
+}
+applyFX();
+let devBox = null, devFrames = 0;
+const devRender = composer.render.bind(composer);
+composer.render = (...a) => { devFrames++; devRender(...a); };
+function devPanel() {
+  const css = document.createElement('style');
+  css.textContent = `
+  .fxdev { position: fixed; top: 12px; right: 12px; z-index: 50; width: 300px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto;
+    padding: 10px 12px 12px; border-radius: 10px; background: oklch(0.14 0.012 275 / 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    color: oklch(0.92 0.01 275); font: 500 12px/1.3 Gabarito, system-ui, sans-serif; box-shadow: 0 8px 30px oklch(0 0 0 / 0.5); }
+  .fxdev[hidden] { display: none; }
+  .fxdev header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .fxdev header b { flex: 1; font-size: 13px; letter-spacing: 0.04em; }
+  .fxdev header output { color: oklch(0.65 0.02 275); font-variant-numeric: tabular-nums; }
+  .fxdev button { font: inherit; color: inherit; background: oklch(0.24 0.015 275); border: 0; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  .fxdev button:hover { background: oklch(0.3 0.02 275); }
+  .fxdev button[aria-pressed="true"] { background: oklch(0.82 0.13 80); color: oklch(0.16 0.012 275); }
+  .fxdev .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .fxdev h3 { margin: 10px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(0.65 0.02 275); }
+  .fxdev .snd { margin: 0 0 4px; color: oklch(0.65 0.02 275); }
+  .fxdev .takes button { padding: 3px 6px; font-size: 11px; }
+  .fxdev label { display: grid; grid-template-columns: 82px 1fr 46px; align-items: center; gap: 8px; padding: 1px 0; }
+  .fxdev label.mod span { color: oklch(0.84 0.13 80); }
+  .fxdev input[type=range] { width: 100%; accent-color: oklch(0.82 0.13 80); }
+  .fxdev input[type=number] { width: 46px; font: inherit; color: inherit; background: transparent; border: 0; text-align: right; font-variant-numeric: tabular-nums; }`;
+  document.head.append(css);
+  const box = document.createElement('aside');
+  box.className = 'fxdev';
+  box.setAttribute('aria-label', 'Look knobs');
+  box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
+    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Showtime</button><button data-a="tear">Tear</button><button data-a="bolt">Bolt</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    <h3>Sounds</h3><p class="snd"><output></output></p><div class="acts takes">${Object.keys(SFX_GAIN).map(n => `<button data-take="${n}">${n}</button>`).join('')}</div>
+    ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
+      `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
+  document.body.append(box);
+  const fps = box.querySelector('header output');
+  const show = () => {
+    box.querySelectorAll('label[data-k]').forEach(l => {
+      const k = l.dataset.k, [r, n] = l.querySelectorAll('input');
+      r.value = n.value = FX[k];
+      l.classList.toggle('mod', FX[k] !== FX_DEF[k]);
+    });
+    box.querySelectorAll('[data-q]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.q === quality())));
+  };
+  const store = () => { try { localStorage.setItem('stimming.fireworks.fx', JSON.stringify(changed())); } catch { /* storage is optional */ } };
+  const changed = () => Object.fromEntries(Object.entries(FX).filter(([k, v]) => v !== FX_DEF[k]));
+  const set = (k, v) => {
+    FX[k] = v;
+    applyFX();
+    if (k === 'bloomScale') resize();
+    updateLights(); draw(); store(); show();
+  };
+  box.addEventListener('input', e => {
+    const l = e.target.closest('label[data-k]');
+    if (l && e.target.value !== '') set(l.dataset.k, +e.target.value);
+  });
+  box.addEventListener('click', e => {
+    const q = e.target.dataset.q, a = e.target.dataset.a, tk = e.target.dataset.take;
+    // A take button plays that recording dry, straight to the output.
+    if (tk) {
+      const ac = kit.wake();
+      if (ac) { bus(ac); if (has(tk)) smp(ac, tk, ac.currentTime + 0.02, kit.out, 0.6); }
+    }
+    if (q) { setQuality(q); show(); }
+    if (a === 'close') box.hidden = true;
+    if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
+    if (a === 'finale') showtime();
+    if (a === 'bolt') { strike(); wake(); }
+    if (a === 'tear' && !tear) overcharge(new THREE.Vector2((rnd() - 0.5) * 0.6, horizonNdc + 0.6 * (0.92 - horizonNdc)));
+    if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(changed(), null, 2));
+    if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
+  });
+  // Frames drawn per second; the loop sleeps when idle, so 0 is normal.
+  setInterval(() => { if (!box.hidden) {
+      fps.textContent = `${devFrames * 2} fps · r${rung} · sky ${wx.w.toFixed(2)}→${wx.to} · crowd ${crowd.E.toFixed(2)}`;
+      box.querySelector('.snd output').textContent = `${Object.keys(sfx || {}).length}/${Object.keys(SFX_GAIN).length} takes loaded · sound ${kit.ac?.state || 'off'} · last ${lastTake || 'none'}`;
+    } devFrames = 0; }, 500);
+  show();
+  return box;
+}
+if (DEV) devBox = devPanel();
+addEventListener('keydown', e => {
+  if (e.key !== '`' || e.target.closest?.('input, textarea')) return;
+  if (!devBox) devBox = devPanel(); else devBox.hidden = !devBox.hidden;
+});
+/* ---------- end dev panel ---------- */
 </script>
 </body>
 </html>

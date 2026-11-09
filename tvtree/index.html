@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* TV tree: the night stage at full width under the shared header. */
+/* TV tree: the night stage under the Bar v2 corners. */
 :root { --stage: oklch(0.15 0.03 285); }
 .stage--tvtree canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -22,62 +22,18 @@
 .stage--tvtree canvas.on { opacity: 1; }
 .stage--tvtree.grab { cursor: grab; }
 .stage--tvtree.held { cursor: grabbing; }
-/* Settings sits at the right edge, just before the (i). */
-.bar > .adder { position: relative; margin-left: auto; }
-.bar > .adder + .how-tip { margin-left: -18px; }
-/* Its tray opens above the bar; a bridge keeps hover across the gap. */
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; flex-direction: column; align-items: stretch;
-  gap: 8px; min-width: 9em; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.add::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 10px; }
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .chip { justify-content: center; }
-@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
-/* Phones keep one row: tighter gaps and chip sides. */
-@media (max-width: 420px) {
-  .stage + .bar { column-gap: 12px; }
-  .bar .actions .chip { padding-inline: 12px; }
-  .bar > .adder + .how-tip { margin-left: -4px; }
-}
 @media (prefers-reduced-motion: reduce) { .stage--tvtree canvas { transition: none; } }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/tvtree.svg)"></span><span class="intro-name">TV tree</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/tvtree.svg)"></span><span class="intro-name">TV tree</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--tvtree" id="stage" tabindex="0" role="application" aria-label="A tree hung with little TVs. Tap a TV to change its channel, drag it to swing, hold it to switch it off, and drag the trunk to shake the tree. Arrow keys pick a TV, Enter changes its channel, holding Enter switches it off, Shift with an arrow swings it, and Space shakes the tree.">
       <p class="fail" hidden>TV tree needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="act-shuffle" type="button" aria-keyshortcuts="S" aria-label="Shuffle the lineup of channels"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="8" r="1.7" fill="currentColor"/><circle cx="16" cy="8" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="8" cy="16" r="1.7" fill="currentColor"/><circle cx="16" cy="16" r="1.7" fill="currentColor"/></svg>Shuffle</button>
-        <button class="chip" id="act-tune" type="button" aria-keyshortcuts="T">Tune</button>
-        <button class="chip" id="act-eyes" type="button" aria-keyshortcuts="E">Eyes</button>
-      </div>
-      <div class="adder" id="setter">
-        <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-        <div class="add sets" id="sets" role="group" aria-label="Settings">
-          <button class="chip" id="act-power" type="button" aria-pressed="true" aria-keyshortcuts="P">Power</button>
-          <button class="chip" id="act-lantern" type="button" aria-pressed="false" aria-keyshortcuts="L">Lantern</button>
-        </div>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span> a TV</dt><dd>change channel</dd></div>
-        <div><dt>Drag a TV</dt><dd>swing</dd></div>
-        <div><dt>Hold</dt><dd>power off</dd></div>
-        <div><dt><span class="fine">Scroll</span><span class="touch">Pinch</span></dt><dd>zoom</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">TV tree</h1><div class="vignette" hidden></div></section>
@@ -90,15 +46,29 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF } from './channels.js';
-initPage({ id: 'tvtree' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
-// A header pill opens the contact sheet of every channel.
-const sheetLink = Object.assign(document.createElement('a'), { className: 'ver', href: 'channels.html', textContent: 'Channels', title: 'Every channel on one sheet' });
-document.querySelector('header[data-shell] .tools')?.prepend(sheetLink);
+import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF, NCH } from './channels.js';
+// Each action runs only once the tree is ready.
+const run = k => () => { if (ready) { ACTS[k](); wake(); } };
+const ui = initPage({ id: 'tvtree', bar: {
+  actions: [
+    { verb: 'shuffle', key: 'S', onPress: run('shuffle') },
+    { verb: 'tune', key: 'T', onPress: run('tune') },
+    { verb: 'eyes', key: 'E', onPress: run('eyes') },
+  ],
+  // Power follows the sets; Lantern comes back on the next visit.
+  settings: [
+    { type: 'toggle', id: 'power', label: 'Power', value: true, onToggle: on => { if (ready) { powerAll(on); wake(); } else ui.setting('power').set(true); } },
+    { type: 'toggle', id: 'lantern', label: 'Lantern', value: false, persist: true, onToggle: on => { if (lantern.on !== on) toggleLantern(); } },
+    // The contact sheet shows every channel at once.
+    { type: 'link', id: 'channels', label: 'Channels', text: `All ${NCH - 1}`, href: 'channels.html', title: 'Every channel on one sheet' },
+  ],
+  quality: true,
+  keys: [['click', 'change channel'], ['drag', 'swing'], ['hold', 'power off'], ['scroll', 'zoom']],
+} });
 const panel = document.getElementById('stage');
+// The shell layer lies over the stage; its corners hold the controls.
+const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; wake(); });
@@ -1366,7 +1336,8 @@ function changeChannel(s, to = -1, hand = true) {
 function powerSet(s, on) {
   if (s.power === on) return;
   s.power = on;
-  document.getElementById('act-power').setAttribute('aria-pressed', String(sets.some(t => t.power)));
+  ui.setting('power').set(sets.some(t => t.power));
+  syncActs();
   s.syncOn = false;
   if (on) {
     s.flash = 1;
@@ -1553,7 +1524,7 @@ function strike() {
 }
 function toggleLantern() {
   lantern.on = !lantern.on;
-  document.getElementById('act-lantern').setAttribute('aria-pressed', String(lantern.on));
+  ui.setting('lantern').set(lantern.on);
   if (lantern.on) strike();
   wake();
 }
@@ -1884,6 +1855,7 @@ function step(dt, now) {
   if (stepZoom(dt)) act = true;
   if (stepLantern(dt)) busy = true;
   if (stepWatch(dt)) act = true;
+  syncActs();
   if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
     busy = true;
     if (now - pointerAt < 1500) act = true;
@@ -1916,16 +1888,23 @@ function draw() {
   renderer.setRenderTarget(null);
   composer.render();
 }
-// The share of the stage height under controls that cross its middle.
-function barInset() {
-  const st = panel.getBoundingClientRect(), mid = st.left + st.width / 2, half = st.width * 0.14;
-  let top = st.bottom;
-  document.querySelectorAll('.bar .chip, .bar .how-btn').forEach(c => {
-    if (c.closest('.add')) return;
-    const r = c.getBoundingClientRect();
-    if (r.height && r.right > mid - half && r.left < mid + half) top = Math.min(top, r.top);
-  });
-  return st.height ? clamp((st.bottom - top) / st.height, 0, 0.3) : 0;
+// The top and foot bands hold the corners and the key strip.
+// Each band is a share of the stage height.
+// Offsets ignore the corners' slide-in transform.
+function bands() {
+  const h = panel.clientHeight;
+  if (!layer || !h) return [0, 0];
+  let top = 0, foot = 0;
+  for (const el of layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
+    if (!el.offsetHeight || !el.childElementCount) continue;
+    const y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
+    if (y1 < h / 2) top = Math.max(top, y1);
+    else foot = Math.max(foot, h - y0);
+  }
+  // The keycaps reach about 6 px above the strip's own box.
+  const keys = layer.querySelector(':scope > .s2-keys');
+  if (keys?.offsetHeight) foot = Math.max(foot, h - keys.offsetTop + 6);
+  return [clamp(top / h, 0, 0.2), clamp(foot / h, 0, 0.3)];
 }
 // The camera frames the whole tree, wide or tall.
 function fit(w, h) {
@@ -1935,9 +1914,9 @@ function fit(w, h) {
   if (kx !== KX || ky !== KY || !built) { KX = kx; KY = ky; build(); }
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
   // The tree stands back in the dark with room around it.
-  // Controls across the middle lift the foot clear; their padding is its margin.
-  const u = barInset(), m = (y1 - y0) * 0.08, lo = u > 0 ? y0 : y0 - m, hi = y1 + m;
-  const halfH = Math.max((hi - lo) / 2 / (1 - u), (((x1 - x0) / 2) * (portrait ? 1.06 : 1.14)) / A), cy = (lo + hi) / 2 - halfH * u;
+  // It sits between the bands; a band's own padding is its margin.
+  const [a, b] = bands(), m = (y1 - y0) * 0.08, lo = b > 0 ? y0 : y0 - m, hi = a > 0 ? y1 + m * 0.5 : y1 + m;
+  const halfH = Math.max((hi - lo) / 2 / (1 - a - b), (((x1 - x0) / 2) * (portrait ? 1.06 : 1.14)) / A), cy = (lo + hi) / 2 - halfH * (b - a);
   camera.aspect = A;
   camera.updateProjectionMatrix();
   baseCam.cy = cy;
@@ -2195,7 +2174,7 @@ function nudge(s, dir) {
 const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const k = e.key;
   if (k === ' ') {
     if (e.target.closest?.('button, a')) return;
@@ -2255,22 +2234,28 @@ const ACTS = {
   eyes: () => startWatch(),
   lantern: toggleLantern,
   // With any set lit, all go dark; with all dark, all come on.
-  power() {
-    const on = !sets.some(s => s.power);
-    for (const s of sets) setTimeout(() => powerSet(s, on), waveDelay(s, 140));
-  },
+  power: () => powerAll(!sets.some(s => s.power)),
 };
-for (const k of Object.keys(ACTS)) document.getElementById('act-' + k)?.addEventListener('click', () => { if (ready) { ACTS[k](); wake(); } });
-// Settings opens a tray; a press outside or Escape closes it.
-const setter = document.getElementById('setter'), setBtn = document.getElementById('setBtn');
-const openSets = on => { setter.classList.toggle('is-open', on); setBtn.setAttribute('aria-expanded', String(on)); };
-setBtn.addEventListener('click', () => openSets(!setter.classList.contains('is-open')));
-document.addEventListener('pointerdown', e => { if (!setter.contains(e.target)) openSets(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') openSets(false); });
-const ACT_KEYS = { s: 'shuffle', t: 'tune', e: 'eyes', p: 'power', l: 'lantern' };
+// The power wave starts at the trunk.
+function powerAll(on) {
+  for (const s of sets) setTimeout(() => powerSet(s, on), waveDelay(s, 140));
+}
+// Tune and Eyes are disabled while they would do nothing.
+let actState = '';
+function syncActs() {
+  const calm = party.phase === 'idle' && !watch.on;
+  const tune = calm && sets.some(s => s.power), eyes = calm && sets.filter(s => s.power && s.lost === 0).length >= 3;
+  const st = `${+tune}${+eyes}`;
+  if (st === actState) return;
+  actState = st;
+  ui.action('tune').disabled = !tune;
+  ui.action('eyes').disabled = !eyes;
+}
+// The shell binds S, T and E; Settings rows have no keys, so P and L bind here.
+const ACT_KEYS = { p: 'power', l: 'lantern' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ready || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const a = ACT_KEYS[e.key.toLowerCase()];
   if (a) { e.preventDefault(); ACTS[a](); wake(); }
   // Plus and minus zoom about the current view.
@@ -2455,8 +2440,18 @@ async function start() {
   const fin = new ShaderPass({ uniforms: { tDiffuse: { value: null } }, vertexShader: FINAL_VS, fragmentShader: FINAL_FS });
   composer.addPass(fin);
 
+  // The stored Lantern choice lights the lantern at once, without the match.
+  lantern.on = ui.setting('lantern').value;
+  lantern.fade = lantern.on ? 1 : 0;
   panel.prepend(canvas);
   fitRenderer(renderer, panel, 2, onSize, 1.4e6);
+  // Corners that move, resize or stack refit the tree.
+  if (layer) {
+    const refit = () => { if (sized && panel.clientWidth && panel.clientHeight) onSize(panel.clientWidth, panel.clientHeight); };
+    const ro = new ResizeObserver(refit);
+    layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys)').forEach(el => ro.observe(el));
+    new MutationObserver(refit).observe(layer.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
+  }
   // A panel with no size yet still gets a frame.
   if (!sized) onSize(16, 9);
   quiet = false;

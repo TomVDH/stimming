@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-08T10:52:02Z
+updated_at: 2026-11-09T09:28:54Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -17,12 +17,20 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Blockout: the still bay and one frozen peony, stills at 1280 and 375 px
 - [x] Tom signs off the blockout (2026-11-08)
 - [ ] D1: Tom names what broke in Night viaduct; fix it in this copy of K2
-- [ ] Task 1: the bay at night, K2 lifted and marked
+- [x] Task 1: the bay at night, K2 lifted and marked
 - [x] Task 2: five shells on closed-form GPU stars (K6): ring buffer with range uploads, comets with sparks, hold to charge, burst lights, sleep when idle
 - [x] Q4 for Task 2: the loop stops when the show ends (0 frames for 13 s)
-- [ ] Task 3: lit smoke, water reflections, finale
-- [ ] Task 4: sound, with delayed boom
-- [ ] Task 5: bar, menu Lab entry, toys.json, QA
+- [x] Task 3: lit smoke, water reflections, finale (24 shells in 6 s to a strobe-and-crackle wall, then three gold willows)
+- [x] Task 4: sound, with delayed boom: lift thump, whoosh and 1-in-6 whistle; crack, body, sub, 3.5 s reverb and shore slap; crackle and sizzle; water bed; caps 6 booms, 2 crackles; mute and hidden stop all
+- [x] Q9: the context suspends after the show (checked in QA)
+- [x] Task 5 (part): menu Lab entry with icon and hover hook; toys.json entry; Tom keeps nl Vuurwerk (2026-11-08)
+- [x] Task 5: QA in the pane, 2026-11-08
+  - Q1 module and menu scripts parse; Q2 clean console through stepper, Settings, Smoke, Water, finale
+  - Q4 0 idle frames after the drift sleep; Q7 3 controls, 3 how rows; Q8 Space launches, arrows step the shell
+  - Q9 audio runs during a show and is suspended after the smoke clears (about 40 s)
+  - 375 px: a calibre-2 shell at the top stays in frame; the bar starts 42 px under the shoreline
+  - Ready in 0.2 s with warm shaders (height texture 30 ms, land 30 ms, compile 12 ms)
+- [ ] Not checked here: reduced motion (the pane cannot emulate it), fps on a real device
 - [ ] Record the session cost
 
 ## K2 fixes in this copy
@@ -36,5 +44,85 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Land: beach, ridged hills and range as a lit height field; burst shadows from a baked height texture
 - [x] Festival: 16 campfires that light the sand, string lights, lanterns, boats, floating lanterns, homes up the hill
 - [x] Drift tier: fires flicker at 30 fps, then sleep after 60 s
-- [ ] Reflections
-- [ ] Wide shell variety, with insane ones
+- [x] Reflections: moving swell, chop and ripple; nine-tap streaks that lengthen on far water; crest glints near; two shells in one frame keep both uploads
+- [x] Wide shell variety on a stepper: Mix and 17 shells (Chrysanthemum, Palm, Kamuro, Saturn, Pistil, Crackle, Fish, Heart, Galaxy, Cascade, Barrage, Supernova and the five first)
+- [x] Square bloom: the stock blur has sigma = radius (a near box); weights now use sigma = radius / 2.5
+
+## Tom's batch 2, 2026-11-08
+
+- [x] Performance: cheap land copy in the mirror, shadows from 2 lights, fires only near the beach, bloom 0.7 and mirror 0.6 on Standard
+- [x] Comets: six styles (gold, glitter, colour, dark, spin, crackle), bold trails and spark sprays, a lean up to about 9 degrees; dark comets carry bigger shells and a huge flash
+- [x] Smoke: lit puffs that drift on the wind, layered; later bursts light earlier smoke; Thin and Thick
+- [ ] fps on a real device (the pane stays hidden here)
+
+## Tom's batch 3, 2026-11-08
+
+- [x] Smoke ages into level, sheared strands (slierten) instead of textured blobs
+- [x] Beach lights glow less and are about a quarter fewer
+
+- [x] Comet tail: a short bright head plus a stream of shed embers that cool and fade (no rigid streak)
+- [x] Wisps: slower, subtler change; longer, thicker, live 15 to 20 s
+
+- [x] Wisp morph: seeded, eased stretch (long, wide, a little taller), shear, meander and a noise-frayed outline
+- [x] Smoke light per pixel: a tight reach per burst, relief from the density slope, self-shade in dense cores, glowing edges when lit from behind
+
+- [x] Smoke dissipates: diffusion growth, density thins with spread, a much slower lean; Thin and Thick lighter
+- [x] Stars last about a third longer, die out at random, and fall more as they burn
+
+- [x] ZzFX 1.3.2 (MIT, Tom's pick 2026-11-08) renders thump, whistle, crack, boom body and sizzle into buffers on the kit's context; synth voices play until it loads; crackle stays on the click bank
+
+- [x] Star fidelity: three-point curved trails on the true path, hot heads with a halo, exponential tail falloff, tails cool toward ember, glints along glitter, willow and comet tails, sub-pixel cores widened and dimmed
+- [x] Burst light flashes white-hot, then takes its colour over 0.15 s; Strobe and Crackle light flickers at 14 Hz
+
+- [x] Emblem: shared/emblems/fireworks.svg (burst, 12 rays, star dots, rising trail), set in toys.json
+
+- [x] Low cloud deck: four stacked sheets lit by bursts above, inside and under it; stars and smoke above it shine through; Sky setting (Clear, Cloud)
+
+- [x] Lighter, sparser cloud deck; night ambient up a third
+- [x] Lens flare on fresh bursts: anamorphic streak and centre-mirrored ghosts
+
+- [x] Icon round: spike-17 with A to E pointer-driven directions and emblems
+
+- [x] Round bloom at every size (cubic mip reads); softer flares before bloom; no bright beach line
+
+- [x] Dev panel (?dev, backquote): bloom, flare, cloud, night and grade knobs; Buoy Business flare model
+
+- [x] Easter egg: hold a shell past 6 s; the sky tears, an eye looks through, meteors fall into the bay (dev: Tear)
+
+- [x] Weather drift: Sky defaults to Drift; random start; slow clear-cloud changes every 1 to 3 min
+
+- [x] Heat lightning: silent flickers in far cloud under a heavy deck (dev: Bolt, Lightning, Lightning rate)
+
+- [x] Recorded sound: ten cut takes in fireworks/sfx (booms, burst, crackles, report, cake); ZzFX stays as fallback
+
+- [x] Recut by spectrogram: 15 takes (clean booms, crackling shells, whistles, pops, sparkle); robust loader (4 at a time, retries)
+
+- [x] Sound: recordings mixed open (12 to 4 kHz, no synth sub), load on first touch; dev panel Sounds row with dry audition and load status
+
+- [x] Crowd: excitement from burst light raises phones and sets off camera flashes (about 3 to 40 per second); sporadic string brown-outs; lightning only under cloudy or overcast, every 8 to 30 s
+
+- [x] Sound measured on the output: takes decode at page load; first shell recorded; launches all recorded (slowed report as mortar, whistles 1 in 3); booms +4 dB
+
+- [x] Barges: seven firing barges on the bay; shells leave the nearest one with a muzzle flash and smoke
+
+- [x] Launch feel: charge ring (fill, steps, overcharge strain), fuse hiss, step ticks and haptics, release pop and recoil
+
+- [x] Seven zany shells (Smiley, Rainbow, Butterfly, Star, Cube, Jellyfish, Swarm); smaller barges; small shells launch from the beach
+
+- [x] Charge ring removed; the seed light pulses at each calibre step instead
+
+- [x] Aim scatter on each launch; phone flashes as blue LED pops with a tiny anamorphic streak
+
+- [x] Shell menu: a drawing per shell in the stepper, and a grid of all 25 behind the name
+
+- [x] Showtime replaces + Finale: a five-act show of about 34 s, scheduled cue by cue
+
+- [x] Barges become small unlit floats; water rebuilt: calm wobble near, analytic glitter columns under every burst, broken into dashes
+
+- [x] Ultra shells (supernova, galaxy, cascade, kamuro, full holds, the tear) climb slowly on a heavy comet with a whistle
+
+- [x] Hills: wrap light, longer reach, sky fill
+- [x] Scenes: Bay, Island (snowy island, pines, cabin, beacon, snowfall, far range) and City (skyline with windows, quay lamps, aviation lights); Settings > Scene, ?scene= for one load
+
+- [x] Showtime runs about a minute: acts with breaths, a hush, a finale that rattles; cues mark bursts
+- [x] Bill toggle: a running -$ cost of every shell, top right; tap to tear it up

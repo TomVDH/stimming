@@ -1,0 +1,1855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.15 0.012 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wind map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Wind map: a chart with no land, and the wind drawn in silk. */
+:root { --stage: oklch(0.17 0.015 250); }
+.stage--windmap { cursor: crosshair; }
+.stage--windmap canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--windmap canvas.on { opacity: 1; }
+/* The chart layer draws over the wind and lets the pointer through. */
+.stage--windmap canvas.chart { pointer-events: none; }
+/* While + Cyclone is armed, the pointer reads as a placing tool. */
+.stage--windmap.placing { cursor: cell; }
+@media (prefers-reduced-motion: reduce) { .stage--windmap canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/windmap.svg)"></span><span class="intro-name">Wind map</span><span class="intro-sub">Stimming No. 34</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--windmap" id="stage" tabindex="0" role="application" aria-label="A wind chart with no land. Silk lines trace the wind. Circle to spin up a storm; tap for a gust.">
+      <p class="fail" hidden>Wind map needs WebGL2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Wind map</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, css, quality, onQuality } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const TAU = Math.PI * 2;
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.windmap.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.windmap.${k}`, String(v)); } catch { /* storage is optional */ } };
+const opts = {
+  look: saved('look') || 'silk',
+  wind: saved('wind') != null ? +saved('wind') : 0.5,
+  count: saved('count') || 'some',
+  trail: saved('trail') || 'long',
+  hemi: saved('hemi') || 'north',
+  iso: saved('iso') === '1',
+  chart: saved('chart') === '1',
+  marks: saved('marks') === '1',
+  // The globe is the standard view; Flat is the old chart.
+  proj: saved('proj') === 'chart' ? 'chart' : 'globe',
+};
+const GLOBE = () => opts.proj === 'globe';
+const COUNT_OPTS = [{ value: 'few', label: 'Few' }, { value: 'some', label: 'Some' }, { value: 'many', label: 'Many' }];
+// The shell builds the bar; settings rows persist under stimming.windmap.<id>.
+// Icons for the view choice: a globe with its axis, and a flat chart.
+const ICON_GLOBE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><ellipse cx="8" cy="8" rx="2.4" ry="5.5"/><path d="M2.5 8h11M8 0.8v2.2M8 13v2.2"/></svg>';
+const ICON_FLAT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9"/><path d="M1.5 8h13M6 3.5v9M10.5 3.5v9"/></svg>';
+const ui = initPage({ id: 'windmap', bar: {
+  choice: { label: 'View', value: opts.proj, options: [
+    { value: 'globe', label: 'Globe', icon: ICON_GLOBE },
+    { value: 'chart', label: 'Flat', icon: ICON_FLAT },
+  ], onPick: v => setProj(v) },
+  slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: opts.wind, onInput: v => setWind(v) },
+  // Isobars and Fronts are quick toggles; their chips stay pressed while on.
+  actions: [
+    { verb: 'add', noun: 'Cyclone', onPress: () => setPlacing(!placing) },
+    { verb: 'isobars', onPress: () => setIso(!opts.iso) },
+    { verb: 'fronts', onPress: () => setFronts(!opts.chart) },
+  ],
+  reset: () => clearAll(),
+  settings: [
+    { type: 'choice', id: 'look', label: 'Look', value: opts.look, options: [
+      { value: 'silk', label: 'Silk', dot: 'oklch(0.95 0.01 250)' },
+      { value: 'heat', label: 'Heat', dot: 'oklch(0.8 0.15 110)' },
+      { value: 'dye', label: 'Dye', dot: 'conic-gradient(oklch(0.78 0.13 20), oklch(0.78 0.13 140), oklch(0.78 0.13 260), oklch(0.78 0.13 20))' },
+    ], persist: true, onPick: v => setLook(v) },
+    { type: 'choice', id: 'count', label: 'Particles', value: opts.count, options: COUNT_OPTS, persist: true, onPick: v => setCount(v) },
+    { type: 'choice', id: 'trail', label: 'Trails', value: opts.trail, options: [{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }], persist: true, onPick: v => { opts.trail = v; wake(); } },
+    { type: 'choice', id: 'hemi', label: 'Hemisphere', value: opts.hemi, options: [{ value: 'north', label: 'North' }, { value: 'south', label: 'South' }], persist: true, onPick: v => { opts.hemi = v; wake(); } },
+    { type: 'toggle', id: 'marks', label: 'H and L marks', value: opts.marks, persist: true, onToggle: on => { opts.marks = on; render(); wake(); } },
+  ],
+  quality: true,
+  keys: [['drag', 'circle to spin a storm'], ['click', 'gust'], ['hold', 'high'], ['space', 'cyclone']],
+} });
+let reduce = reduced();
+onReducedChange(v => { reduce = v; wake(); });
+
+// State texture sizes per Particles setting.
+const COUNTS = { few: [128, 128], some: [256, 128], many: [256, 256] };
+// Trail decay times in seconds.
+const TRAILS = { short: 0.6, long: 2.5 };
+// Reduced motion keeps trails long and slows particles to 40 %.
+const tau = () => (reduce ? TRAILS.long : TRAILS[opts.trail]);
+const pace = () => (reduce ? 0.4 : 1);
+// The base wind in world units per second.
+const windU = () => lerp(0.025, 0.16, opts.wind);
+// Speed at the top of the colour ramp, in world units per second.
+const VREF = 0.3;
+// Particles live 2 to 6 s; Dye lives 6 to 14 s, so the mixing shows.
+const lifeSpan = () => (opts.look === 'dye' ? [6, 8] : [2, 4]);
+// Twelve storms live at once; four more slots let the weakest fade out.
+const MAXV = 16, MAXLIVE = 12, MAXG = 4, MAXJ = 4;
+// A high's top circulation, and its outflow per unit of circulation.
+const HIGH_G = 0.08, HIGH_Q = 1.33;
+// Jet core speed in world units per second, and its half-width.
+const JET_V = 0.35, JET_W = 0.04;
+
+/* ---------- WebGL2 ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls?.(); markReady(); throw new Error('no webgl2'); };
+if (!gl) fail();
+// Float targets hold particle state and smooth trails.
+const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
+// Without them, a smaller swarm moves on the CPU over a velocity grid.
+const CPU = !FLOAT;
+
+const QUAD_VS = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* ---------- K1: accumulation and decay ---------- */
+// Copied from Star trails; Kelvin dropper can copy SEG_TEX_VS from here.
+// Two float targets ping-pong; each frame fades the plate by exp(-dt/tau).
+const DECAY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform float uK, uEps; in vec2 vUv; out vec4 o;
+void main() { vec4 c = texture(uSrc, vUv) * uK; o = max(c - uEps, 0.0); }`;
+// A segment draws as a soft line with ramped ends.
+// Adjacent segments overlap their ramps, so joins add up to one.
+const SEG_VS = `#version 300 es
+in vec2 aCorner; in vec4 aSeg; in vec4 aCol;
+uniform vec2 uRes;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
+void main() {
+  vec2 a = aSeg.xy, b = aSeg.zw; float w = aCol.a;
+  vec2 d = b - a; float L = length(d);
+  vec2 t = L > 1e-3 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = w * 3.0 + 1.0;
+  vec2 p = mix(a, b, aCorner.x * 0.5 + 0.5) + t * aCorner.x * r + n * aCorner.y * r;
+  vP = p; vSeg = aSeg; vCol = aCol;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+// GPU particles: point a is the old state, point b the new state.
+// Each instance reads its own texel; a respawn draws nothing.
+const SEG_TEX_VS = `#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 aCorner;
+uniform sampler2D uA, uB, uRamp;
+uniform int uTW; uniform vec2 uRes; uniform float uScale, uW, uGain, uDt, uVRef, uDye, uPass;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vCol;
+void main() {
+  ivec2 ij = ivec2(gl_InstanceID % uTW, gl_InstanceID / uTW);
+  vec4 sa = texelFetch(uA, ij, 0), sb = texelFetch(uB, ij, 0);
+  // A respawn resets the age, so the new age is below the old one.
+  if (sb.z <= sa.z || uDt <= 0.0) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
+  // A step across the globe's seam unwraps beside the old point.
+  // The second pass draws the same step again beside the new point.
+  vec2 wa = sa.xy, wb = sb.xy;
+  float jump = wb.x - wa.x, crosses = step(1.0, abs(jump));
+  wb.x -= 2.0 * sign(jump) * crosses;
+  if (uPass > 0.5) {
+    if (crosses < 0.5) { gl_Position = vec4(-2.0, -2.0, 0.0, 1.0); return; }
+    wa.x += 2.0 * sign(jump); wb.x += 2.0 * sign(jump);
+  }
+  vec2 a = wa * uScale, b = wb * uScale; float w = uW;
+  float life = mod(sb.w, 16.0), dye = floor(sb.w / 16.0) / 255.0;
+  float sp = clamp(length(wb - wa) / uDt / uVRef, 0.0, 1.0);
+  // The ramp row holds colour by speed; Dye reads it by spawn hue.
+  vec3 rgb = texture(uRamp, vec2(mix(sp, dye, uDye), 0.5)).rgb * mix(1.0, 0.25 + 0.75 * sqrt(sp), uDye);
+  float env = smoothstep(0.0, 0.5, sb.z) * smoothstep(life, life - 0.8, sb.z);
+  // A few bright threads stand out over many faint ones.
+  float h = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+  env *= 0.12 + 3.0 * h * h * h * h * h * h;
+  vec2 d = b - a; float L = length(d);
+  // Short segments overlap, so they carry less energy each.
+  // A still particle draws nothing, so stagnant air stays dark.
+  float e = uGain * env * clamp(L / (2.0 * w), 0.0, 1.0);
+  vec2 t = L > 1e-3 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = w * 3.0 + 1.0;
+  vec2 p = mix(a, b, aCorner.x * 0.5 + 0.5) + t * aCorner.x * r + n * aCorner.y * r;
+  vP = p; vSeg = vec4(a, b); vCol = vec4(rgb * e, w);
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const SEG_FS = `#version 300 es
+precision highp float;
+in vec2 vP; flat in vec4 vSeg; flat in vec4 vCol; out vec4 o;
+void main() {
+  vec2 a = vSeg.xy, b = vSeg.zw; float w = vCol.a;
+  vec2 d = b - a; float L = length(d);
+  float k;
+  if (L < 0.05) { float r = length(vP - a) / w; k = exp(-r * r); }
+  else {
+    vec2 t = d / L; float s = dot(vP - a, t); float q = dot(vP - a, vec2(-t.y, t.x)) / w;
+    float h = w * 1.2;
+    k = exp(-q * q) * clamp((s + h) / (2.0 * h), 0.0, 1.0) * clamp((L + h - s) / (2.0 * h), 0.0, 1.0);
+  }
+  o = vec4(vCol.rgb * k, 1.0);
+}`;
+
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  // Array uniforms answer to their bare name.
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
+  return { p, u };
+}
+
+const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Segment data: a.xy, b.xy in pixels, then rgb energy and width.
+// The CPU path fills it; the GPU path reads textures instead.
+const MAXSEG = 8000;
+const inst = new Float32Array(MAXSEG * 8);
+const segVao = gl.createVertexArray();
+gl.bindVertexArray(segVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+gl.vertexAttribDivisor(1, 1);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+gl.vertexAttribDivisor(2, 1);
+gl.bindVertexArray(null);
+
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (FLOAT) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb, w, h };
+}
+const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
+let acc = [], ai = 0;
+const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
+
+function decayPass(dt) {
+  const src = acc[ai], dst = acc[1 - ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.decay.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(P.decay.u.uSrc, 0);
+  gl.uniform1f(P.decay.u.uK, Math.exp(-dt / tau()));
+  gl.uniform1f(P.decay.u.uEps, FLOAT ? 0.0004 * dt : 0.6 / 255);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ai = 1 - ai;
+}
+function segPass(dst, count) {
+  if (!count) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.seg.p); gl.bindVertexArray(segVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, count * 8);
+  gl.uniform2f(P.seg.u.uRes, dst.w, dst.h);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  gl.disable(gl.BLEND);
+}
+/* ---------- end K1 ---------- */
+
+/* ---------- the field ---------- */
+// Simplex noise 3D: Ian McEwan, Ashima Arts, and Stefan Gustavson.
+// Copyright (C) 2011 Ashima Arts. MIT License.
+// https://github.com/ashima/webgl-noise and https://github.com/stegu/webgl-noise
+const SNOISE = `
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+float snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x), p1 = vec3(a0.zw, h.y), p2 = vec3(a1.xy, h.z), p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}`;
+// The base stream function is noise in two octaves.
+// Velocity is its curl, so the flow has no divergence.
+// Each vortex is Lamb-Oseen, with a small inflow near the eye.
+const FIELD = `
+const float HIGH_G = ${HIGH_G.toFixed(4)}, HIGH_Q = ${HIGH_Q.toFixed(4)}, JET_V = ${JET_V.toFixed(4)}, JET_W = ${JET_W.toFixed(4)};
+uniform float uU, uA, uT, uWrap;
+uniform vec4 uVort[${MAXV}]; uniform int uNV;
+uniform vec4 uGust[${MAXG}]; uniform int uNG;
+uniform vec4 uJet[${MAXJ * 8}]; uniform int uNJ;
+${SNOISE}
+// On the globe x wraps at 2, so offsets take the short way round.
+vec2 wd(vec2 d) { if (uWrap > 0.5) d.x -= 2.0 * floor(d.x * 0.5 + 0.5); return d; }
+// Nearest segment of jet j: distance, unit tangent, signed normal distance,
+// and how far the point lies beyond the jet's ends.
+void jetAt(vec2 p, int j, out float best, out vec2 tb, out float sd, out float over) {
+  best = 1e9; tb = vec2(1.0, 0.0); sd = 0.0; over = 0.0;
+  for (int i = 0; i < 7; i++) {
+    vec2 a = uJet[j * 8 + i].xy, ab = uJet[j * 8 + i + 1].xy - a, pa = wd(p - a);
+    float la = max(length(ab), 1e-6), hr = dot(pa, ab) / (la * la), h = clamp(hr, 0.0, 1.0);
+    vec2 dd = pa - ab * h; float dl = length(dd);
+    if (dl < best) {
+      best = dl; tb = ab / la;
+      // The along-line offset, not the endpoint distance, sets the side.
+      sd = dot(pa - ab * hr, vec2(-tb.y, tb.x));
+      over = i == 0 ? max(0.0, -hr) * la : (i == 6 ? max(0.0, hr - 1.0) * la : 0.0);
+    }
+  }
+}
+// On the globe the noise sits on a cylinder, so x wraps with no seam.
+float psiN(vec2 p) {
+  if (uWrap > 0.5) {
+    float a = 3.14159265 * p.x;
+    return snoise(vec3(cos(a) * ${(1.6 / Math.PI).toFixed(5)}, sin(a) * ${(1.6 / Math.PI).toFixed(5)}, p.y * 1.6 + uT * 0.03))
+      + 0.3 * snoise(vec3(cos(a) * ${(3.9 / Math.PI).toFixed(5)} + 7.3, sin(a) * ${(3.9 / Math.PI).toFixed(5)}, p.y * 3.9 + uT * 0.05 + 3.1));
+  }
+  return snoise(vec3(p * 1.6, uT * 0.03)) + 0.3 * snoise(vec3(p * 3.9 + 7.3, uT * 0.05 + 3.1));
+}
+vec2 vel(vec2 p) {
+  const float e = 0.004;
+  float dx = psiN(p + vec2(e, 0.0)) - psiN(p - vec2(e, 0.0));
+  float dy = psiN(p + vec2(0.0, e)) - psiN(p - vec2(0.0, e));
+  vec2 v = vec2(uU + uA * dy / (2.0 * e), -uA * dx / (2.0 * e));
+  // A high calms the wind in its core, so its centre goes dark.
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    if (q.w < 0.0) { vec2 d = wd(p - q.xy); v *= 1.0 - 0.85 * clamp(abs(q.z) / HIGH_G, 0.0, 1.0) * exp(-dot(d, d) / (q.w * q.w)); }
+  }
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    // A negative core radius marks a high.
+    float rc = abs(q.w);
+    vec2 d = wd(p - q.xy); float r2 = dot(d, d) + 1e-7, r = sqrt(r2), core = 1.0 - exp(-r2 / (rc * rc));
+    float vt = q.z / (6.2831853 * r) * core;
+    v += vec2(-d.y, d.x) / r * vt;
+    // Air converges into a low's eye, which turns the arms into spirals.
+    if (q.w > 0.0) v -= d / r * 0.25 * abs(vt) * (1.0 - smoothstep(rc, 2.0 * rc, r));
+    // A high pushes air out from a calm centre.
+    else v += d / r * abs(q.z) * HIGH_Q / (6.2831853 * r) * core;
+  }
+  for (int j = 0; j < ${MAXJ}; j++) {
+    if (j >= uNJ) break;
+    float best, sd, over; vec2 tb;
+    jetAt(p, j, best, tb, sd, over);
+    v += tb * JET_V * uJet[j * 8].z * exp(-best * best / (JET_W * JET_W));
+  }
+  for (int k = 0; k < ${MAXG}; k++) {
+    if (k >= uNG) break;
+    vec4 g = uGust[k];
+    vec2 d = wd(p - g.xy); float r2 = dot(d, d) + 1e-7, r = sqrt(r2);
+    v += d / r * g.z / (6.2831853 * r) * (1.0 - exp(-r2 / (g.w * g.w)));
+  }
+  return v;
+}
+// The stream function: isobars follow it, as the wind does.
+// Each storm uses a Kaufmann core, close to Lamb-Oseen outside it.
+float psi(vec2 p) {
+  float s = uU * p.y + uA * psiN(p);
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    vec2 d = wd(p - q.xy);
+    s -= q.z / 12.566371 * log(dot(d, d) + q.w * q.w);
+  }
+  // A jet's along-flow speed integrates to a smooth step across it.
+  for (int j = 0; j < ${MAXJ}; j++) {
+    if (j >= uNJ) break;
+    float best, sd, over; vec2 tb;
+    jetAt(p, j, best, tb, sd, over);
+    // The step fades past the jet's ends, so isobars close round it.
+    s += JET_V * uJet[j * 8].z * JET_W * 0.886 * tanh(1.13 * sd / JET_W) * exp(-pow(over / (2.0 * JET_W), 2.0));
+  }
+  return s;
+}`;
+// One RK2 step per particle; the dead respawn at a hashed point.
+const UPDATE_FS = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+uniform sampler2D uState; uniform float uDt; uniform vec2 uWorld, uLife; uniform uint uFrame;
+out vec4 o;
+${FIELD}
+uvec3 pcg3d(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v;
+}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec4 s = texelFetch(uState, ij, 0);
+  vec2 p = s.xy; float age = s.z + uDt, lw = s.w;
+  vec2 pm = p + vel(p) * uDt * 0.5;
+  p += vel(pm) * uDt;
+  if (uWrap > 0.5) p.x = mod(p.x, uWorld.x);
+  bool dead = age > mod(lw, 16.0) || any(lessThan(p, vec2(-0.02))) || any(greaterThan(p, uWorld + 0.02));
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    if (uVort[k].w > 0.0 && abs(uVort[k].z) > 0.02 && length(wd(p - uVort[k].xy)) < 0.45 * uVort[k].w) dead = true;
+  }
+  if (dead) {
+    vec3 h = vec3(pcg3d(uvec3(uvec2(ij), uFrame))) * (1.0 / 4294967296.0);
+    p = h.xy * uWorld;
+    age = 0.0;
+    // Life sits below 16; the spawn hue rides above it in steps of 16.
+    float hue = clamp(p.y / uWorld.y * 0.82 + 0.06 * sin(p.x * 3.0), 0.0, 1.0);
+    lw = uLife.x + uLife.y * h.z + 16.0 * floor(hue * 255.0);
+  }
+  o = vec4(p, age, lw);
+}`;
+// Light fades fast inside each eye, so a moving eye stays clear.
+// It draws with a multiply blend after the decay pass.
+const EYE_FS = `#version 300 es
+precision highp float;
+uniform vec4 uVort[${MAXV}]; uniform int uNV; uniform float uScale, uK, uWrap;
+out vec4 o;
+void main() {
+  vec2 p = gl_FragCoord.xy / uScale;
+  float m = 1.0;
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    if (q.w <= 0.0) continue;
+    float s = clamp(abs(q.z) / 0.08, 0.0, 1.0);
+    vec2 d = p - q.xy;
+    if (uWrap > 0.5) d.x -= 2.0 * floor(d.x * 0.5 + 0.5);
+    float eye = 1.0 - smoothstep(0.3 * q.w, 0.85 * q.w, length(d));
+    m *= mix(1.0, uK, eye * s);
+  }
+  o = vec4(m);
+}`;
+// The chart: slate, a graticule every 15 degrees, then the plate.
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uRes; uniform float uTime, uExpo, uScale, uIso, uTick;
+uniform vec3 uBg, uGrid, uIsoCol, uGlowCol, uGustCol, uRimCol;
+uniform vec4 uFlash[8]; uniform int uNF;
+// The globe: an orthographic sphere of radius uDisc px, turned by yaw and pitch.
+uniform float uGlobe, uDisc, uYaw, uPitch;
+in vec2 vUv; out vec4 o;
+${FIELD}
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+// Grid coverage: x major lines, y minor lines, z edge ticks.
+// The short side spans 90 degrees: major every 15, minor every 5.
+vec3 grid(vec2 px, vec2 res) {
+  float s = min(res.x, res.y);
+  vec2 g = (px - res * 0.5) / s * 6.0, fw = fwidth(g);
+  vec2 dM = abs(fract(g + 0.5) - 0.5) / fw;
+  float major = 1.0 - min(min(dM.x, dM.y), 1.0);
+  vec2 g3 = g * 3.0, dm = abs(fract(g3 + 0.5) - 0.5) / (fw * 3.0);
+  // Minor lines fade where they come closer than 6 px.
+  float minor = (1.0 - min(min(dm.x, dm.y), 1.0)) * smoothstep(6.0, 10.0, s / 18.0 / uTick * 6.0);
+  float tick = max((1.0 - min(dM.y, 1.0)) * step(min(px.x, res.x - px.x), uTick),
+                   (1.0 - min(dM.x, 1.0)) * step(min(px.y, res.y - px.y), uTick));
+  return vec3(major, minor * (1.0 - major), tick);
+}
+// Graticule on the globe: major every 15 degrees, minor every 5.
+vec3 gridW(vec2 wp) {
+  vec2 g = wp * 12.0, fw = fwidth(g);
+  vec2 dM = abs(fract(g + 0.5) - 0.5) / fw;
+  float major = 1.0 - min(min(dM.x, dM.y), 1.0);
+  vec2 dm = abs(fract(g * 3.0 + 0.5) - 0.5) / (fw * 3.0);
+  // Minor lines fade where they crowd toward the poles and the limb.
+  float minor = (1.0 - min(min(dm.x, dm.y), 1.0)) * (1.0 - smoothstep(0.12, 0.3, max(fw.x, fw.y) * 3.0));
+  return vec3(major, minor * (1.0 - major), 0.0);
+}
+void main() {
+  vec2 px = vUv * uRes;
+  vec3 c = uBg;
+  vec2 wp = px / uScale, uv = vUv;
+  float rim = 0.0;
+  if (uGlobe > 0.5) {
+    vec2 sc = (px - uRes * 0.5) / uDisc;
+    float r2 = dot(sc, sc);
+    // Off the disc: slate and a faint halo of atmosphere.
+    if (r2 > 1.0) { o = vec4(c + uRimCol * 0.18 * exp(-(sqrt(r2) - 1.0) * 28.0), 1.0); return; }
+    vec3 n = vec3(sc, sqrt(1.0 - r2));
+    float cp = cos(uPitch), sp = sin(uPitch), cy = cos(uYaw), sy = sin(uYaw);
+    vec3 q = vec3(n.x, cp * n.y + sp * n.z, -sp * n.y + cp * n.z);
+    vec3 w = vec3(cy * q.x + sy * q.z, q.y, -sy * q.x + cy * q.z);
+    wp = vec2(mod(atan(w.x, w.z) / 3.14159265, 2.0), asin(clamp(w.y, -1.0, 1.0)) / 3.14159265 + 0.5);
+    uv = vec2(wp.x * 0.5, wp.y);
+    rim = pow(1.0 - n.z, 3.0);
+  }
+  // Isobars: contours of the stream function, faded where they crowd.
+  if (uIso > 0.0) {
+    float k = psi(wp) / 0.008, fw = fwidth(k);
+    float d = abs(fract(k + 0.5) - 0.5) / max(fw, 1e-5);
+    float iso = (1.0 - smoothstep(0.4, 1.4, d)) * (1.0 - smoothstep(0.25, 0.6, fw));
+    c = mix(c, uIsoCol, iso * 0.55 * uIso);
+  }
+  // The curve works on the brightest channel, so colours keep their hue.
+  vec3 acc = texture(uSrc, uv).rgb;
+  float L = max(max(acc.r, acc.g), acc.b), m = 1.0 - exp(-L * uExpo);
+  vec3 lit = acc * (m / max(L, 1e-5));
+  // Very bright light bleeds toward white, as film does.
+  c += mix(lit, vec3(m), 0.35 * smoothstep(1.0, 4.0, L * uExpo));
+  // Each eye wears a soft ring of light that breathes with its strength.
+  for (int k = 0; k < ${MAXV}; k++) {
+    if (k >= uNV) break;
+    vec4 q = uVort[k];
+    if (q.w <= 0.0) continue;
+    float r = length(wd(wp - q.xy)), ring = exp(-pow((r - 1.5 * q.w) / (0.5 * q.w), 2.0));
+    c += uGlowCol * ring * 0.12 * clamp(abs(q.z) / 0.2, 0.0, 1.0) * (0.85 + 0.15 * sin(uTime * 1.7 + float(k)));
+  }
+  // Flashes: a gust lights its point; a merge sends out a ring.
+  for (int k = 0; k < 8; k++) {
+    if (k >= uNF) break;
+    vec4 f = uFlash[k];
+    float r = length(wd(wp - f.xy)), a = f.z;
+    if (f.w < 0.5) c += uGustCol * 0.6 * exp(-a / 0.12) * exp(-pow(r / (0.02 + 0.15 * a), 2.0));
+    else c += uGlowCol * 0.8 * exp(-a / 0.25) * exp(-pow((r - 0.42 * a) / 0.012, 2.0));
+  }
+  // The chart grid draws over the wind, so bright arms do not hide it.
+  vec3 gr = uGlobe > 0.5 ? gridW(wp) : grid(px, uRes);
+  c = mix(c, uGrid, gr.x * 0.14 + gr.y * 0.05 + gr.z * 0.22);
+  // The limb glows thinly, as a planet's air does.
+  c += uRimCol * rim * 0.25;
+  o = vec4(c, 1.0);
+}`;
+// Bloom input: bright parts only, above a threshold.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb;
+  o = vec4(c * smoothstep(0.45, 0.9, max(c.r, max(c.g, c.b))), 1.0);
+}`;
+// A nine-tap Gaussian in five reads, along one axis.
+const BLUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform vec2 uDir; in vec2 vUv; out vec4 o;
+void main() {
+  vec3 s = texture(uSrc, vUv).rgb * 0.227027;
+  s += (texture(uSrc, vUv + uDir * 1.384615).rgb + texture(uSrc, vUv - uDir * 1.384615).rgb) * 0.316216;
+  s += (texture(uSrc, vUv + uDir * 3.230769).rgb + texture(uSrc, vUv - uDir * 3.230769).rgb) * 0.070270;
+  o = vec4(s, 1.0);
+}`;
+// The final pass: bloom, vignette, output curve and grain.
+const FINAL_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uB1, uB2; uniform vec2 uRes; uniform float uTime;
+in vec2 vUv; out vec4 o;
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb + texture(uB1, vUv).rgb * 0.28 + texture(uB2, vUv).rgb * 0.18;
+  vec2 q = vUv - 0.5, px = vUv * uRes;
+  c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.7;
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  float lum = dot(c, vec3(0.3, 0.55, 0.15));
+  c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * mix(0.02, 0.008, clamp(lum * 3.0, 0.0, 1.0));
+  o = vec4(c, 1.0);
+}`;
+
+const P = {
+  decay: program(QUAD_VS, DECAY, ['aPos']),
+  seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
+  segTex: program(SEG_TEX_VS, SEG_FS, ['aCorner']),
+  update: program(QUAD_VS, UPDATE_FS, ['aPos']),
+  eye: program(QUAD_VS, EYE_FS, ['aPos']),
+  out: program(QUAD_VS, OUT_FS, ['aPos']),
+  bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
+  blur: program(QUAD_VS, BLUR_FS, ['aPos']),
+  final: program(QUAD_VS, FINAL_FS, ['aPos']),
+};
+const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.62, 0.02, 245), ISO_COL = linFit(0.62, 0.05, 75);
+const GLOW_COL = linFit(0.92, 0.04, 80), GUST_COL = linFit(0.95, 0.03, 230), RIM_COL = linFit(0.75, 0.08, 235);
+
+/* ---------- colour ramps ---------- */
+// One 256 by 1 row per look, in linear light.
+const ramp = gl.createTexture();
+const RAMPS = {
+  silk: u => linFit(lerp(0.55, 0.99, Math.sqrt(u)), 0.012, 250).map(v => v * lerp(0.05, 1, u * u)),
+  // Heat runs slow blue, through green, to fast amber; slow air is dimmer.
+  heat: u => (u < 0.5
+    ? [0, 1, 2].map(i => lerp(HEAT[0][i], HEAT[1][i], u * 2))
+    : [0, 1, 2].map(i => lerp(HEAT[1][i], HEAT[2][i], u * 2 - 1))).map(v => v * lerp(0.3, 1, u)),
+  dye: u => linFit(0.78, 0.15, 20 + 330 * u),
+};
+const HEAT = [linFit(0.45, 0.08, 250), linFit(0.75, 0.14, 150), linFit(0.85, 0.17, 70)];
+// The CPU path reads the same row from here.
+const rampRGB = new Float32Array(256 * 3);
+function bakeRamp() {
+  const px = new Uint8Array(256 * 4), f = RAMPS[opts.look];
+  for (let i = 0; i < 256; i++) {
+    const c = f(i / 255);
+    rampRGB.set(c, i * 3);
+    px.set([c[0] * 255, c[1] * 255, c[2] * 255, 255], i * 4);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, ramp);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
+}
+
+/* ---------- particle state ---------- */
+// RGBA32F texels hold (x, y, age, life plus spawn hue).
+function stateTarget(w, h, data) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST));
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h };
+}
+let stA = null, stB = null, TW = 1, TH = 1, seeded = false;
+function seedState() {
+  if (CPU) return seedCpu();
+  [TW, TH] = COUNTS[opts.count];
+  const d = new Float32Array(TW * TH * 4);
+  for (let i = 0; i < TW * TH; i++) {
+    const [l0, ls] = lifeSpan(), x = Math.random() * AX, y = Math.random() * AY, life = l0 + ls * Math.random();
+    const hue = clamp(y / AY * 0.82 + 0.06 * Math.sin(x * 3));
+    d.set([x, y, Math.random() * life, life + 16 * Math.floor(hue * 255)], i * 4);
+  }
+  if (stA) { drop(stA); drop(stB); }
+  stA = stateTarget(TW, TH, d);
+  stB = stateTarget(TW, TH, null);
+}
+
+/* ---------- CPU particles ---------- */
+// The CPU path moves up to 8,000 particles over a grid of base wind.
+// The grid rebuilds every 0.5 s; storms and gusts add exactly per particle.
+const CPU_COUNTS = { few: 4000, some: 6000, many: 8000 };
+const cpu = { n: 0, x: null, y: null, age: null, life: null, hue: null, lum: null, grid: null, gx: 0, gy: 0, at: -1 };
+function seedCpu() {
+  const n = cpu.n = CPU_COUNTS[opts.count], [l0, ls] = lifeSpan();
+  ['x', 'y', 'age', 'life', 'hue', 'lum'].forEach(k => { cpu[k] = new Float32Array(n); });
+  for (let i = 0; i < n; i++) {
+    cpu.life[i] = l0 + ls * Math.random();
+    respawnCpu(i);
+    cpu.age[i] = Math.random() * cpu.life[i];
+    // A few bright threads stand out over many faint ones.
+    cpu.lum[i] = 0.12 + 3 * Math.random() ** 6;
+  }
+  cpu.at = -1;
+}
+function respawnCpu(i) {
+  const [l0, ls] = lifeSpan(), x = Math.random() * AX, y = Math.random() * AY;
+  cpu.x[i] = x; cpu.y[i] = y; cpu.age[i] = 0; cpu.life[i] = l0 + ls * Math.random();
+  cpu.hue[i] = clamp(y / AY * 0.82 + 0.06 * Math.sin(x * 3));
+}
+function buildGrid() {
+  const gx = cpu.gx = AX >= AY ? 128 : 72, gy = cpu.gy = AX >= AY ? 72 : 128;
+  if (!cpu.grid || cpu.grid.length !== gx * gy * 2) cpu.grid = new Float32Array(gx * gy * 2);
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+    baseVel(i / (gx - 1) * AX, j / (gy - 1) * AY, bv);
+    cpu.grid[(j * gx + i) * 2] = bv[0]; cpu.grid[(j * gx + i) * 2 + 1] = bv[1];
+  }
+  cpu.at = t;
+}
+// Velocity at (x, y): grid wind, then storms with inflow, then gusts.
+function cpuVel(x, y, out) {
+  const { gx, gy, grid } = cpu;
+  const fx = clamp(wrapX(x) / AX, 0, 1) * (gx - 1), fy = clamp(y / AY, 0, 1) * (gy - 1);
+  const i = Math.min(gx - 2, fx | 0), j = Math.min(gy - 2, fy | 0), u = fx - i, w = fy - j;
+  const a = (j * gx + i) * 2, b = a + gx * 2;
+  out[0] = lerp(lerp(grid[a], grid[a + 2], u), lerp(grid[b], grid[b + 2], u), w);
+  out[1] = lerp(lerp(grid[a + 1], grid[a + 3], u), lerp(grid[b + 1], grid[b + 3], u), w);
+  for (const v of vortices) {
+    if (v.kind !== 'high') continue;
+    const d2 = wdx(x - v.x) ** 2 + (y - v.y) ** 2, calm = 1 - 0.85 * clamp(Math.abs(v.g * v.amp) / HIGH_G) * Math.exp(-d2 / (v.rc * v.rc));
+    out[0] *= calm; out[1] *= calm;
+  }
+  for (const v of vortices) {
+    const dx = wdx(x - v.x), dy = y - v.y, r = Math.hypot(dx, dy) + 1e-4;
+    const vt = vTheta(v.g * v.amp, v.rc, r);
+    // Lows draw air in near the eye; highs push it out.
+    const radial = v.kind === 'high' ? -outflow(v, r) : 0.25 * Math.abs(vt) * (1 - clamp((r - v.rc) / v.rc));
+    out[0] += (-dy * vt - dx * radial) / r; out[1] += (dx * vt - dy * radial) / r;
+  }
+  jetVel(x, y, out);
+  for (const g of gusts) {
+    const dx = wdx(x - g.x), dy = y - g.y, r2 = dx * dx + dy * dy + 1e-7, r = Math.sqrt(r2);
+    const q = g.q / (2 * Math.PI * r) * (1 - Math.exp(-r2 / (g.r * g.r)));
+    out[0] += dx / r * q; out[1] += dy / r * q;
+  }
+  return out;
+}
+const cv = [0, 0];
+const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+function cpuStep(dt) {
+  if (cpu.at < 0 || t - cpu.at > 0.5) buildGrid();
+  if (!dt) return;
+  const n = Math.ceil(cpu.n * areaK * countK()), w = GLOBE() ? 1.1 : 0.75 * dpr, dye = opts.look === 'dye';
+  const gain = 0.045 * Math.sqrt(65536 / (cpu.n * countK()));
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const x0 = cpu.x[i], y0 = cpu.y[i];
+    cpuVel(x0, y0, cv);
+    const mx = x0 + cv[0] * dt / 2, my = y0 + cv[1] * dt / 2;
+    cpuVel(mx, my, cv);
+    const x1 = wrapX(x0 + cv[0] * dt), y1 = y0 + cv[1] * dt;
+    const age = cpu.age[i] += dt;
+    let dead = age > cpu.life[i] || y1 < -0.02 || y1 > AY + 0.02 || (!GLOBE() && (x1 < -0.02 || x1 > AX + 0.02));
+    for (const v of vortices) if (v.kind === 'low' && Math.abs(v.g * v.amp) > 0.02 && Math.hypot(wdx(x1 - v.x), y1 - v.y) < 0.45 * v.rc) dead = true;
+    if (dead) { respawnCpu(i); continue; }
+    cpu.x[i] = x1; cpu.y[i] = y1;
+    // A step across the seam draws twice, once beside each end.
+    const jump = x1 - x0, cross = Math.abs(jump) > 1, xa = x0, xb = cross ? x1 - 2 * Math.sign(jump) : x1;
+    // Colour and light follow SEG_TEX_VS.
+    const sp = clamp(Math.hypot(xb - xa, y1 - y0) / dt / VREF);
+    const k = Math.round((dye ? cpu.hue[i] : sp) * 255) * 3;
+    const env = smooth(0, 0.5, age) * (1 - smooth(cpu.life[i] - 0.8, cpu.life[i], age)) * cpu.lum[i];
+    const L = Math.hypot(xb - xa, y1 - y0) * PS;
+    const e = gain * (GLOBE() ? 0.6 : 1) * env * clamp(L / (2 * w)) * (dye ? 0.25 + 0.75 * Math.sqrt(sp) : 1);
+    for (const shift of cross ? [0, 2 * Math.sign(jump)] : [0]) {
+      inst.set([(xa + shift) * PS, y0 * PS, (xb + shift) * PS, y1 * PS, rampRGB[k] * e, rampRGB[k + 1] * e, rampRGB[k + 2] * e, w], m * 8);
+      if (++m >= MAXSEG) { segPass(acc[ai], m); m = 0; }
+    }
+  }
+  segPass(acc[ai], m);
+}
+
+/* ---------- the field on the CPU ---------- */
+// The same simplex noise as SNOISE, so storms ride the flow the particles see.
+const mod289 = x => x - Math.floor(x / 289) * 289;
+const permute = x => mod289((x * 34 + 1) * x);
+function snoise3(x, y, z) {
+  const s = (x + y + z) / 3;
+  let ix = Math.floor(x + s), iy = Math.floor(y + s), iz = Math.floor(z + s);
+  const t0 = (ix + iy + iz) / 6;
+  const x0 = x - ix + t0, y0 = y - iy + t0, z0 = z - iz + t0;
+  const gx = x0 >= y0 ? 1 : 0, gy = y0 >= z0 ? 1 : 0, gz = z0 >= x0 ? 1 : 0;
+  const i1 = [Math.min(gx, 1 - gz), Math.min(gy, 1 - gx), Math.min(gz, 1 - gy)];
+  const i2 = [Math.max(gx, 1 - gz), Math.max(gy, 1 - gx), Math.max(gz, 1 - gy)];
+  ix = mod289(ix); iy = mod289(iy); iz = mod289(iz);
+  const off = [[0, 0, 0], i1, i2, [1, 1, 1]], cs = [0, 1 / 6, 1 / 3, 0.5];
+  let sum = 0;
+  for (let c = 0; c < 4; c++) {
+    const o = off[c];
+    const px = x0 - o[0] + cs[c], py = y0 - o[1] + cs[c], pz = z0 - o[2] + cs[c];
+    const p = permute(permute(permute(iz + o[2]) + iy + o[1]) + ix + o[0]);
+    const j = p - 49 * Math.floor(p / 49);
+    const xq = Math.floor(j / 7), yq = Math.floor(j - 7 * xq);
+    const xx = xq * (2 / 7) + (0.5 / 7 - 1), yy = yq * (2 / 7) + (0.5 / 7 - 1);
+    const h = 1 - Math.abs(xx) - Math.abs(yy), sh = h <= 0 ? -1 : 0;
+    const ax = xx + (Math.floor(xx) * 2 + 1) * sh, ay = yy + (Math.floor(yy) * 2 + 1) * sh;
+    const n = 1.79284291400159 - 0.85373472095314 * (ax * ax + ay * ay + h * h);
+    let m = Math.max(0.6 - (px * px + py * py + pz * pz), 0); m *= m;
+    sum += m * m * n * (ax * px + ay * py + h * pz);
+  }
+  return 42 * sum;
+}
+const NOISE_A = 0.009;
+const R1 = 1.6 / Math.PI, R2 = 3.9 / Math.PI;
+// The same field as the GLSL psiN, on a cylinder when the globe is on.
+const psiN = (x, y) => {
+  if (GLOBE()) {
+    const a = Math.PI * x, c = Math.cos(a), s = Math.sin(a);
+    return snoise3(c * R1, s * R1, y * 1.6 + t * 0.03) + 0.3 * snoise3(c * R2 + 7.3, s * R2, y * 3.9 + t * 0.05 + 3.1);
+  }
+  return snoise3(x * 1.6, y * 1.6, t * 0.03) + 0.3 * snoise3(x * 3.9 + 7.3, y * 3.9 + 7.3, t * 0.05 + 3.1);
+};
+// On the globe x wraps at 2; offsets take the short way round.
+const wdx = dx => (GLOBE() ? dx - 2 * Math.floor(dx / 2 + 0.5) : dx);
+const wrapX = x => (GLOBE() ? x - 2 * Math.floor(x / 2) : x);
+function baseVel(x, y, out) {
+  const e = 0.004;
+  out[0] = windU() + NOISE_A * (psiN(x, y + e) - psiN(x, y - e)) / (2 * e);
+  out[1] = -NOISE_A * (psiN(x + e, y) - psiN(x - e, y)) / (2 * e);
+  return out;
+}
+
+/* ---------- storms ---------- */
+// Each vortex is { x, y, g, rc, amp }: centre, circulation, core radius, fade.
+// A held vortex follows the pointer; a dying one fades to make room.
+const vortices = [];
+const gusts = [];
+const spin = () => (opts.hemi === 'south' ? -1 : 1);
+const vortData = new Float32Array(MAXV * 4), gustData = new Float32Array(MAXG * 4);
+const G_MAX = 0.3, RC_MAX = 0.12;
+// Lamb-Oseen tangential speed at distance r.
+const vTheta = (g, rc, r) => g / (2 * Math.PI * r) * (1 - Math.exp(-(r * r) / (rc * rc)));
+const live = () => vortices.filter(v => !v.dying);
+// A high's outward speed at distance r.
+const outflow = (v, r) => Math.abs(v.g * v.amp) * HIGH_Q / (2 * Math.PI * r) * (1 - Math.exp(-(r * r) / (v.rc * v.rc)));
+// A high grows while held: up to HIGH_G, over 3 s.
+const HIGH_RC = 0.08;
+function spawnHigh(x, y) {
+  const v = spawnCyclone(x, y, -spin() * 0.01, HIGH_RC, true);
+  v.kind = 'high';
+  return v;
+}
+function spawnCyclone(x, y, g, rc = 0.05, held = false) {
+  const alive = live();
+  // The weakest storm fades out to make room, so nothing pops.
+  if (alive.length >= MAXLIVE) alive.reduce((a, b) => (Math.abs(a.g) < Math.abs(b.g) ? a : b)).dying = true;
+  if (vortices.length >= MAXV) {
+    const k = vortices.findIndex(v => v.dying);
+    vortices.splice(k < 0 ? 0 : k, 1);
+  }
+  const v = { x, y, g, rc, amp: held ? 1 : 0, held, dying: false, kind: 'low', vx: 0, vy: 0, born: t };
+  vortices.push(v);
+  return v;
+}
+function gust(x, y) {
+  if (gusts.length >= MAXG) gusts.shift();
+  gusts.push({ x, y, q: reduce ? 0.05 : 0.13, r: 0.03 });
+  whoosh(x);
+  flash(x, y, 'gust');
+}
+// Storms ride the flow, feel each other, drift poleward and weaken.
+const bv = [0, 0];
+// Velocity each storm induces on the others, at positions px, py.
+function induced(px, py, vx, vy) {
+  const n = vortices.length;
+  for (let i = 0; i < n; i++) {
+    const a = vortices[i];
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const o = vortices[j], ge = o.g * o.amp;
+      const dx = wdx(px[i] - px[j]), dy = py[i] - py[j], r = Math.hypot(dx, dy) + 1e-6;
+      const vt = vTheta(ge, o.rc, r);
+      vx[i] += -dy / r * vt; vy[i] += dx / r * vt;
+      if (o.kind === 'high') {
+        // A high's outflow and a short-range push keep lows away.
+        const push = outflow(o, r) + (a.kind === 'low' ? 0.04 * Math.max(0, 1 - r / (3 * o.rc)) : 0);
+        vx[i] += dx / r * push; vy[i] += dy / r * push;
+        continue;
+      }
+      // Same-sign lows pull in as they orbit, so the pair merges.
+      if (a.kind === 'low' && ge * a.g > 0 && r < 0.4) { const pull = 0.05 * Math.abs(vt); vx[i] -= dx / r * pull; vy[i] -= dy / r * pull; }
+    }
+  }
+}
+function stepStorms(dt) {
+  if (!dt) return;
+  const n = vortices.length, ux = new Float32Array(n), uy = new Float32Array(n);
+  const pole = spin();
+  for (let i = 0; i < n; i++) {
+    const a = vortices[i];
+    // Storms steer at a third of the wind, as real ones lag the jet.
+    baseVel(a.x, a.y, bv);
+    ux[i] = bv[0] * 0.35; uy[i] = bv[1] * 0.35;
+    // Beta drift carries a storm toward the pole and west.
+    const b = 0.045 * Math.abs(a.g * a.amp);
+    ux[i] -= b * 0.35; uy[i] += b * pole;
+  }
+  // Close pairs orbit fast, so the pair motion runs in 10 ms RK2 steps.
+  const steps = Math.ceil(dt / 0.01), h = dt / steps;
+  const px = new Float32Array(n), py = new Float32Array(n), vx = new Float32Array(n), vy = new Float32Array(n);
+  for (let s = 0; s < steps; s++) {
+    for (let i = 0; i < n; i++) { px[i] = vortices[i].x; py[i] = vortices[i].y; vx[i] = ux[i]; vy[i] = uy[i]; }
+    induced(px, py, vx, vy);
+    for (let i = 0; i < n; i++) { px[i] += vx[i] * h / 2; py[i] += vy[i] * h / 2; vx[i] = ux[i]; vy[i] = uy[i]; }
+    induced(px, py, vx, vy);
+    for (let i = 0; i < n; i++) if (!vortices[i].held) { vortices[i].x += vx[i] * h; vortices[i].y += vy[i] * h; }
+  }
+  // A thrown storm carries the pointer's velocity, slowing with tau 2 s.
+  const carry = Math.exp(-dt / 2);
+  for (const a of vortices) {
+    if (a.held) continue;
+    a.x += a.vx * dt; a.y += a.vy * dt;
+    a.vx *= carry; a.vy *= carry;
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    const a = vortices[i];
+    a.x = wrapX(a.x);
+    const out = a.y < -0.05 || a.y > AY + 0.05 || (!GLOBE() && (a.x < -0.05 || a.x > AX + 0.05));
+    if (a.kind === 'high') {
+      // A held high grows; a free one fades over about 8 s.
+      if (a.held) a.g = -spin() * Math.min(HIGH_G, Math.abs(a.g) + HIGH_G * dt / 3);
+      else a.amp = Math.max(0, a.amp - dt / (a.dying || out ? 0.6 : 8));
+    } else {
+      if (!a.held) a.g *= Math.exp(-dt / 45);
+      if (a.dying || out) a.amp = Math.max(0, a.amp - dt / 0.6);
+      else a.amp = Math.min(1, a.amp + dt / 1.2);
+    }
+    if (!a.held && (a.amp <= 0 || Math.abs(a.g) < 0.004)) vortices.splice(i, 1);
+  }
+  mergeStorms();
+  stepJets(dt);
+  for (let k = gusts.length - 1; k >= 0; k--) {
+    gusts[k].q *= Math.exp(-dt / 0.3);
+    if (Math.abs(gusts[k].q) < 0.002) gusts.splice(k, 1);
+  }
+}
+// Same-sign cores closer than 0.6 times their summed radii become one.
+function mergeStorms() {
+  for (let i = 0; i < vortices.length; i++) {
+    for (let j = i + 1; j < vortices.length; j++) {
+      const a = vortices[i], b = vortices[j];
+      if (a.dying || b.dying || a.kind !== b.kind || a.g * b.g <= 0) continue;
+      if (Math.hypot(wdx(a.x - b.x), a.y - b.y) > 0.6 * (a.rc + b.rc)) continue;
+      // The held storm, else the stronger one, absorbs the other.
+      const [k, o] = b.held || (!a.held && Math.abs(b.g * b.amp) > Math.abs(a.g * a.amp)) ? [b, a] : [a, b];
+      const gk = Math.abs(k.g * k.amp), go = Math.abs(o.g * o.amp), w = go / (gk + go + 1e-6);
+      if (!k.held) { k.x = wrapX(k.x + wdx(o.x - k.x) * w); k.y = lerp(k.y, o.y, w); }
+      k.g = clamp(k.g * k.amp + o.g * o.amp, -G_MAX, G_MAX); k.amp = 1;
+      k.rc = Math.min(RC_MAX, Math.hypot(k.rc, o.rc));
+      vortices.splice(vortices.indexOf(o), 1);
+      onMerge(k);
+      return mergeStorms();
+    }
+  }
+}
+/* ---------- jets ---------- */
+// A jet is a ribbon of strong wind along 8 points; it meanders and fades.
+const jets = [], jetData = new Float32Array(MAXJ * 8 * 4);
+function addJet(path) {
+  // A path across the seam unwraps, so its points stay continuous.
+  path = path.map(p => p.slice());
+  for (let i = 1; i < path.length; i++) path[i][0] = path[i - 1][0] + wdx(path[i][0] - path[i - 1][0]);
+  // Resample the drawn path to 8 evenly spaced points.
+  const L = [0];
+  for (let i = 1; i < path.length; i++) L.push(L[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+  const pts = [];
+  for (let k = 0, i = 0; k < 8; k++) {
+    const s = (L[L.length - 1] * k) / 7;
+    while (i < L.length - 2 && L[i + 1] < s) i++;
+    const u = clamp((s - L[i]) / Math.max(1e-6, L[i + 1] - L[i]));
+    pts.push([lerp(path[i][0], path[i + 1][0], u), lerp(path[i][1], path[i + 1][1], u)]);
+  }
+  if (jets.length >= MAXJ) jets.shift();
+  jets.push({ pts, amp: 0, age: 0 });
+}
+// Jets fade in over 0.5 s, then out with tau 20 s; their points drift.
+function stepJets(dt) {
+  for (let k = jets.length - 1; k >= 0; k--) {
+    const j = jets[k];
+    j.age += dt;
+    j.amp = j.age < 0.5 ? j.age / 0.5 : Math.exp(-(j.age - 0.5) / 20);
+    if (j.age > 0.5 && j.amp < 0.01) { jets.splice(k, 1); continue; }
+    for (const p of j.pts) { baseVel(p[0], p[1], bv); p[0] += bv[0] * 0.5 * dt; p[1] += bv[1] * 0.5 * dt; }
+  }
+}
+// Jet velocity on the CPU, as the GLSL jetAt sum.
+function jetVel(x, y, out) {
+  for (const j of jets) {
+    let best = 1e9, tx = 1, ty = 0;
+    for (let i = 0; i < 7; i++) {
+      const [ax, ay] = j.pts[i], bx = j.pts[i + 1][0] - ax, by = j.pts[i + 1][1] - ay, ll = bx * bx + by * by;
+      const px = wdx(x - ax), py = y - ay, h = clamp((px * bx + py * by) / Math.max(ll, 1e-8));
+      const d = Math.hypot(px - bx * h, py - by * h);
+      if (d < best) { best = d; const l = Math.sqrt(ll) || 1; tx = bx / l; ty = by / l; }
+    }
+    const k = JET_V * j.amp * Math.exp(-(best * best) / (JET_W * JET_W));
+    out[0] += tx * k; out[1] += ty * k;
+  }
+  return out;
+}
+// A merge thumps low, panned to where it happens.
+function onMerge(k) { whomp(k.x); flash(k.x, k.y, 'merge'); }
+
+/* ---------- state ---------- */
+// One world unit spans the short side, so portrait recomposes the chart.
+let W = 1, H = 1, dpr = 1, S = 1, AX = 1, AY = 1, t = 0, frameNo = 1;
+// The plate: chart mode matches the screen; the globe uses a 2 to 1 map.
+// PS is plate pixels per world unit.
+let PW = 1, PH = 1, PS = 1;
+// Drawn particles scale with stage area, so line spacing holds on a phone.
+let areaK = 1;
+
+function setField(u) {
+  gl.uniform1f(u.uU, windU());
+  gl.uniform1f(u.uA, NOISE_A);
+  gl.uniform1f(u.uT, t);
+  gl.uniform1f(u.uWrap, GLOBE() ? 1 : 0);
+  packVorts();
+  gusts.forEach((g, k) => gustData.set([g.x, g.y, g.q, g.r], k * 4));
+  jets.forEach((j, k) => j.pts.forEach((p, i) => jetData.set([p[0], p[1], j.amp, 0], (k * 8 + i) * 4)));
+  gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
+  gl.uniform4fv(u.uGust, gustData); gl.uniform1i(u.uNG, gusts.length);
+  gl.uniform4fv(u.uJet, jetData); gl.uniform1i(u.uNJ, jets.length);
+}
+// Shaders read a high as a negative core radius.
+function packVorts() {
+  vortices.forEach((v, k) => vortData.set([v.x, v.y, v.g * v.amp, v.kind === 'high' ? -v.rc : v.rc], k * 4));
+}
+function updatePass(dt) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, stB.fb); gl.viewport(0, 0, TW, TH);
+  gl.useProgram(P.update.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, stA.tex);
+  const u = P.update.u;
+  gl.uniform1i(u.uState, 0);
+  gl.uniform1f(u.uDt, dt);
+  gl.uniform2f(u.uWorld, AX, AY);
+  gl.uniform2fv(u.uLife, lifeSpan());
+  gl.uniform1ui(u.uFrame, frameNo++);
+  setField(u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function segTexPass(dt) {
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.segTex.p); gl.bindVertexArray(quadVao);
+  [stA, stB].forEach((s, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, s.tex); });
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, ramp);
+  const u = P.segTex.u;
+  gl.uniform1i(u.uA, 0); gl.uniform1i(u.uB, 1); gl.uniform1i(u.uRamp, 2);
+  gl.uniform1i(u.uTW, TW);
+  gl.uniform2f(u.uRes, dst.w, dst.h);
+  gl.uniform1f(u.uScale, PS);
+  // Plate pixels shrink on the globe, so lines draw a little wider there.
+  gl.uniform1f(u.uW, GLOBE() ? 1.1 : 0.75 * dpr);
+  // Fewer particles each carry more light, so the chart reads the same.
+  // The globe packs more trails per screen pixel, so each carries less light.
+  gl.uniform1f(u.uGain, 0.045 * Math.sqrt(65536 / (TW * TH * countK())) * (GLOBE() ? 0.6 : 1));
+  gl.uniform1f(u.uDt, dt);
+  gl.uniform1f(u.uVRef, VREF);
+  gl.uniform1f(u.uDye, opts.look === 'dye' ? 1 : 0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.uniform1f(u.uPass, 0);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.ceil(TW * TH * areaK * countK()));
+  if (GLOBE()) { gl.uniform1f(u.uPass, 1); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.ceil(TW * TH * areaK * countK())); }
+  gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE0);
+}
+function eyePass(dt) {
+  if (!vortices.length) return;
+  const dst = acc[ai];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(P.eye.p); gl.bindVertexArray(quadVao);
+  const u = P.eye.u;
+  packVorts();
+  gl.uniform4fv(u.uVort, vortData); gl.uniform1i(u.uNV, vortices.length);
+  gl.uniform1f(u.uScale, PS);
+  gl.uniform1f(u.uWrap, GLOBE() ? 1 : 0);
+  gl.uniform1f(u.uK, Math.exp(-dt / 0.12));
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.disable(gl.BLEND);
+}
+// One sim step: fade the plate, move the particles, draw their segments.
+// The preroll holds the storms still, so the first frame keeps its framing.
+let holdStorms = false;
+function simStep(dt) {
+  t += dt;
+  ageFlashes(dt);
+  decayPass(dt);
+  const adv = dt * pace();
+  if (!holdStorms) { stepStorms(adv); stepTracks(); }
+  eyePass(dt);
+  if (CPU) { cpuStep(adv); return; }
+  updatePass(adv);
+  segTexPass(adv);
+  [stA, stB] = [stB, stA];
+}
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, frame.fb); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.out.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ai].tex);
+  const u = P.out.u;
+  gl.uniform1i(u.uSrc, 0);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uTime, t);
+  gl.uniform1f(u.uExpo, 1.5);
+  gl.uniform3fv(u.uBg, BG); gl.uniform3fv(u.uGrid, GRID);
+  gl.uniform1f(u.uScale, S);
+  // Edge ticks run 6 CSS px.
+  gl.uniform1f(u.uTick, 6 * dpr);
+  gl.uniform1f(u.uIso, opts.iso ? 1 : 0);
+  gl.uniform3fv(u.uIsoCol, ISO_COL);
+  gl.uniform3fv(u.uGlowCol, GLOW_COL); gl.uniform3fv(u.uGustCol, GUST_COL); gl.uniform3fv(u.uRimCol, RIM_COL);
+  gl.uniform1f(u.uGlobe, GLOBE() ? 1 : 0); gl.uniform1f(u.uDisc, discR());
+  gl.uniform1f(u.uYaw, globe.yaw); gl.uniform1f(u.uPitch, globe.pitch);
+  flashes.forEach((f, k) => flashData.set([f.x, f.y, f.age, f.kind === 'merge' ? 1 : 0], k * 4));
+  gl.uniform4fv(u.uFlash, flashData); gl.uniform1i(u.uNF, flashes.length);
+  setField(u);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  bloomPass();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P.final.p);
+  [frame, bloom[0], bloom[3]].forEach((b, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, b.tex); });
+  gl.uniform1i(P.final.u.uSrc, 0); gl.uniform1i(P.final.u.uB1, 1); gl.uniform1i(P.final.u.uB2, 2);
+  gl.uniform2f(P.final.u.uRes, W, H);
+  gl.uniform1f(P.final.u.uTime, t);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
+  drawChart();
+}
+// Bloom: a bright pass at half size, then blurs at half and quarter size.
+// bloom[0] holds the near glow; bloom[3] holds the wide halo.
+let frame = null, bloom = [];
+function quadInto(dst, prog, src) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h);
+  gl.useProgram(prog.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+  gl.uniform1i(prog.u.uSrc, 0);
+}
+function blur(dst, src, dx, dy) {
+  quadInto(dst, P.blur, src);
+  gl.uniform2f(P.blur.u.uDir, dx / dst.w, dy / dst.h);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function bloomPass() {
+  const [h1, h2, q1, q2] = bloom;
+  gl.bindVertexArray(quadVao);
+  quadInto(h1, P.bright, frame);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  blur(h2, h1, 1, 0); blur(h1, h2, 0, 1);
+  blur(q1, h1, 1, 0); blur(q2, q1, 0, 1);
+}
+// Watchdog rung 2 halves the bloom buffers.
+function makeBloom() {
+  bloom.forEach(drop);
+  const sh = rung >= 2 ? 2 : 1;
+  const hw = Math.max(1, W >> sh), hh = Math.max(1, H >> sh), qw = Math.max(1, W >> (sh + 1)), qh = Math.max(1, H >> (sh + 1));
+  bloom = [target(hw, hh), target(hw, hh), target(qw, qh), target(qw, qh)];
+}
+
+/* ---------- globe ---------- */
+// An orthographic globe turned by yaw (about the pole) and pitch.
+const globe = { yaw: 0.6, pitch: 0.25, vy: 0, vp: 0 };
+// The globe sits a little inside the stage, so its axis and limb have room.
+const discR = () => 0.4 * Math.min(W, H);
+const TURN = (3 * Math.PI) / 180;
+// View point on the unit disc to world (x, y); the shader does the same.
+function viewToWorld(nx, ny) {
+  const r2 = nx * nx + ny * ny;
+  if (r2 > 1) return null;
+  const nz = Math.sqrt(1 - r2), cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch), cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw);
+  const qx = nx, qy = cp * ny + sp * nz, qz = -sp * ny + cp * nz;
+  const wx = cy * qx + sy * qz, wy = qy, wz = -sy * qx + cy * qz;
+  return [wrapX(Math.atan2(wx, wz) / Math.PI), Math.asin(clamp(wy, -1, 1)) / Math.PI + 0.5];
+}
+// World (x, y) to view (nx, ny, nz); nz below 0 is the far side.
+function worldToView(x, y) {
+  const lon = x * Math.PI, lat = (y - 0.5) * Math.PI;
+  const wx = Math.cos(lat) * Math.sin(lon), wy = Math.sin(lat), wz = Math.cos(lat) * Math.cos(lon);
+  const cy = Math.cos(globe.yaw), sy = Math.sin(globe.yaw), cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch);
+  const qx = cy * wx - sy * wz, qy = wy, qz = sy * wx + cy * wz;
+  return [qx, cp * qy - sp * qz, sp * qy + cp * qz];
+}
+// Device pixel (top-down) to world; null off the disc.
+function pxToWorld(px, py) {
+  if (!GLOBE()) return [px / S, (H - py) / S];
+  return viewToWorld((px - W / 2) / discR(), (H / 2 - py) / discR());
+}
+// The globe turns slowly while drifting; a drag off the disc turns it by hand.
+function turnGlobe(dt, ease) {
+  if (!GLOBE() || press?.mode === 'turn') return;
+  const fling = Math.exp(-dt / 1.5);
+  globe.yaw += (globe.vy + (reduce ? 0 : TURN * ease)) * dt;
+  globe.pitch = clamp(globe.pitch + globe.vp * dt, -Math.PI / 3, Math.PI / 3);
+  globe.vy *= fling; globe.vp *= fling;
+}
+// Chart and Globe swap the world under every system, so the toy re-seeds.
+function setProj(v) {
+  if (v === opts.proj) return;
+  save('proj', v);
+  endPress(false);
+  // Storms keep their place on screen where the new view allows it.
+  const spots = vortices.map(o => { const s = toScreen(o.x, o.y); return s && [s[0] / W, s[1] / H]; });
+  opts.proj = v;
+  jets.length = 0; gusts.length = 0; flashes.length = 0;
+  resize(true, true);
+  vortices.forEach((o, k) => {
+    const f = spots[k] || [0.5, 0.5];
+    let w = pxToWorld(f[0] * W, f[1] * H);
+    // Off the disc, a storm moves in toward the centre.
+    for (let s = 0.9; !w && s > 0; s -= 0.1) w = pxToWorld(W / 2 + (f[0] - 0.5) * W * s * 0.5, H / 2 + (f[1] - 0.5) * H * s * 0.5);
+    if (w) { o.x = w[0]; o.y = w[1]; }
+    o.track = [];
+  });
+  seedState(); clearAcc(); preroll(1); render(); wake();
+}
+
+/* ---------- chart layer ---------- */
+// A 2D canvas over the wind holds tracks, fronts and pressure marks.
+const chart = { canvas: document.createElement('canvas') };
+chart.canvas.className = 'chart on';
+chart.canvas.setAttribute('aria-hidden', 'true');
+canvas.after(chart.canvas);
+chart.ctx = chart.canvas.getContext('2d');
+const INK = [0.82, 0.02, 80];
+// World point to chart pixels; the y axis points up in the world.
+// Null means the far side of the globe.
+function toScreen(x, y) {
+  if (!GLOBE()) return [x * S, H - y * S];
+  const [nx, ny, nz] = worldToView(x, y);
+  return nz < 0.02 ? null : [W / 2 + nx * discR(), H / 2 - ny * discR()];
+}
+// Each low drops a track dot every 1.5 s, at most 40.
+function stepTracks() {
+  for (const v of vortices) {
+    if (v.kind !== 'low') continue;
+    v.track ||= [];
+    const lastT = v.track.length ? v.track[v.track.length - 1].t : -1e9;
+    if (t - lastT >= 1.5) {
+      v.track.push({ x: v.x, y: v.y, g: Math.abs(v.g * v.amp), t });
+      if (v.track.length > 40) v.track.shift();
+    }
+  }
+}
+function drawChart() {
+  const c = chart.ctx;
+  c.clearRect(0, 0, W, H);
+  if (GLOBE()) drawAxis(c);
+  if (!opts.chart) return;
+  // Dots grow with strength and fade over 30 s.
+  for (const v of vortices) {
+    for (const d of v.track || []) {
+      const sp = toScreen(d.x, d.y), a = 0.6 * Math.exp(-(t - d.t) / 30) * v.amp;
+      if (!sp) continue;
+      const [px, py] = sp;
+      c.fillStyle = css(INK, a);
+      c.beginPath(); c.arc(px, py, (1 + 4 * clamp(d.g / 0.3)) * dpr, 0, TAU); c.fill();
+    }
+  }
+  drawFronts(c);
+  if (!opts.marks) return;
+  // L at each low and H at each high, in the slab face.
+  c.font = `600 ${14 * dpr}px "Iosevka Term Slab", ui-monospace, monospace`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const v of live()) {
+    if (Math.abs(v.g * v.amp) < 0.01) continue;
+    const sp = toScreen(v.x, v.y);
+    if (!sp) continue;
+    const [px, py] = sp;
+    c.fillStyle = css(INK, 0.9 * v.amp);
+    c.fillText(v.kind === 'high' ? 'H' : 'L', px, py);
+  }
+}
+// The pole axis pierces the globe: bright outside, faint and dashed inside.
+function drawAxis(c) {
+  const cp = Math.cos(globe.pitch), sp = Math.sin(globe.pitch), R = discR();
+  const at = k => [W / 2, H / 2 - cp * k * R];
+  // Outside the sphere a point hides only behind the disc's far side.
+  const shown = k => Math.abs(k) > 1 && !(sp * k < 0 && Math.abs(cp * k) < 1);
+  c.lineCap = 'round';
+  for (const k0 of [-1.24, 1]) {
+    const pts = [];
+    for (let i = 0; i <= 24; i++) { const k = k0 + (i / 24) * 0.24; if (shown(k)) pts.push(at(k)); }
+    if (pts.length < 2) continue;
+    c.strokeStyle = css([0.82, 0.03, 240], 0.75); c.lineWidth = 1.6 * dpr; c.setLineDash([]);
+    c.beginPath(); c.moveTo(...pts[0]); c.lineTo(...pts[pts.length - 1]); c.stroke();
+  }
+  c.strokeStyle = css([0.82, 0.03, 240], 0.2); c.lineWidth = 1 * dpr; c.setLineDash([4 * dpr, 4 * dpr]);
+  c.beginPath(); c.moveTo(...at(-1)); c.lineTo(...at(1)); c.stroke();
+  c.setLineDash([]);
+  // A pole that faces the viewer gets a small cap.
+  for (const k of [1, -1]) if (sp * k >= 0) { c.fillStyle = css([0.9, 0.03, 240], 0.8); c.beginPath(); c.arc(...at(k), 2.2 * dpr, 0, TAU); c.fill(); }
+}
+
+/* ---------- fronts ---------- */
+// Each low older than 3 s trails a warm front and a cold front.
+// They start at 1.5 rc on a bearing that turns with the storm's age.
+const WARM = [0.62, 0.12, 25], COLD = [0.62, 0.1, 250], OCCL = [0.6, 0.1, 310];
+const fv = [0, 0];
+function traceFront(v, bearing, len) {
+  const sg = Math.sign(v.g) || 1, pts = [];
+  let x = v.x + 1.5 * v.rc * Math.cos(bearing), y = v.y + 1.5 * v.rc * Math.sin(bearing), l = 0;
+  pts.push([x, y]);
+  // Each step blends outward from the eye with the local flow.
+  const dir = (px, py) => {
+    cpuVel(px, py, fv);
+    const rx = wdx(px - v.x), ry = py - v.y, rl = Math.hypot(rx, ry) || 1, fl = Math.hypot(fv[0], fv[1]) || 1;
+    const dx = 0.6 * rx / rl + 0.4 * fv[0] / fl, dy = 0.6 * ry / rl + 0.4 * fv[1] / fl, dl = Math.hypot(dx, dy) || 1;
+    return [dx / dl, dy / dl];
+  };
+  while (l < len) {
+    const [ax, ay] = dir(x, y), [bx, by] = dir(x + ax * 0.002, y + ay * 0.002);
+    x += bx * 0.004; y += by * 0.004; l += 0.004;
+    pts.push([x, y]);
+  }
+  return { pts, sg };
+}
+function frontsFor(v) {
+  const age = t - v.born;
+  if (v.kind !== 'low' || age < 3 || Math.abs(v.g * v.amp) < 0.03) return [];
+  const turn = age * 0.15 * (Math.sign(v.g) || 1), len = Math.min(6 * v.rc, (age - 3) * 0.02 + 0.01);
+  const warm = traceFront(v, (60 * Math.PI) / 180 + turn, len), cold = traceFront(v, (200 * Math.PI) / 180 + turn, len);
+  // From 25 s the cold front catches the warm one, from the eye outward.
+  const f = clamp((age - 25) / 15), cut = p => Math.max(1, Math.round(p.length * f));
+  const out = [];
+  if (f > 0) out.push({ kind: 'occluded', pts: warm.pts.slice(0, cut(warm.pts) + 1), sg: warm.sg });
+  out.push({ kind: 'warm', pts: warm.pts.slice(f > 0 ? cut(warm.pts) : 0), sg: warm.sg });
+  out.push({ kind: 'cold', pts: cold.pts.slice(f > 0 ? cut(cold.pts) : 0), sg: cold.sg });
+  return out.filter(fr => fr.pts.length > 1);
+}
+// Symbols sit every 14 CSS px on the side the front moves toward.
+function drawFront(c, fr, alpha) {
+  // The far side of the globe and screen jumps break the front into runs.
+  const runs = [[]];
+  let prev = null;
+  for (const [x, y] of fr.pts) {
+    const p = toScreen(x, y);
+    if (!p || (prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 40 * dpr)) { if (runs[runs.length - 1].length) runs.push([]); prev = p; if (!p) continue; }
+    runs[runs.length - 1].push(p); prev = p;
+  }
+  for (const px of runs) if (px.length > 1) drawRun(c, fr, alpha, px);
+}
+function drawRun(c, fr, alpha, px) {
+  const ink = fr.kind === 'warm' ? WARM : fr.kind === 'cold' ? COLD : OCCL;
+  c.strokeStyle = c.fillStyle = css(ink, alpha);
+  c.lineWidth = 1.25 * dpr;
+  c.beginPath(); px.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke();
+  const r = 3.5 * dpr, step = 14 * dpr;
+  let acc = step / 2, k = 0;
+  for (let i = 1; i < px.length; i++) {
+    const [ax, ay] = px[i - 1], [bx, by] = px[i], seg = Math.hypot(bx - ax, by - ay);
+    while (acc <= seg) {
+      const u = acc / seg, x = ax + (bx - ax) * u, y = ay + (by - ay) * u;
+      const tx = (bx - ax) / seg, ty = (by - ay) / seg, nx = -ty * fr.sg, ny = tx * fr.sg;
+      const half = fr.kind === 'warm' || (fr.kind === 'occluded' && k % 2 === 0);
+      c.beginPath();
+      if (half) c.arc(x, y, r, Math.atan2(ny, nx) - Math.PI / 2, Math.atan2(ny, nx) + Math.PI / 2);
+      else { c.moveTo(x - tx * r, y - ty * r); c.lineTo(x + nx * r * 1.4, y + ny * r * 1.4); c.lineTo(x + tx * r, y + ty * r); }
+      c.closePath(); c.fill();
+      acc += step; k++;
+    }
+    acc -= seg;
+  }
+}
+function drawFronts(c) {
+  if (cpu.at < 0 || t - cpu.at > 0.5) buildGrid();
+  for (const v of vortices) for (const fr of frontsFor(v)) drawFront(c, fr, 0.9 * v.amp);
+}
+
+/* ---------- flashes ---------- */
+// A gust lights its point for 0.3 s; a merge ring runs 0.6 s.
+const flashes = [], flashData = new Float32Array(8 * 4);
+function flash(x, y, kind) {
+  if (flashes.length >= 8) flashes.shift();
+  flashes.push({ x, y, age: 0, kind });
+}
+function ageFlashes(dt) {
+  for (let k = flashes.length - 1; k >= 0; k--) {
+    flashes[k].age += dt;
+    if (flashes[k].age > (flashes[k].kind === 'merge' ? 0.8 : 0.5)) flashes.splice(k, 1);
+  }
+}
+// The first frame shows a plate already exposed: run the flow a while.
+function preroll(seconds) {
+  const n = Math.ceil(seconds * 30);
+  holdStorms = true;
+  for (let i = 0; i < n; i++) simStep(1 / 30);
+  holdStorms = false;
+}
+function seedCyclone() {
+  vortices.length = 0;
+  // The first storm sits a little right of centre, on the chart or the globe.
+  const at = pxToWorld(W * 0.54, H * 0.5) || [AX * 0.54, AY * 0.5];
+  spawnCyclone(at[0], at[1], 0.16 * spin(), 0.055).amp = 1;
+}
+
+/* ---------- sound ---------- */
+// Space adds a cyclone, so it counts as a gesture.
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 2000 });
+let V = null, T = null, toneLoad = null;
+// The first live call loads Tone; voices answer once it lands.
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (m && !V) { T = m; V = buildVoices(); }
+  });
+  return null;
+}
+function buildVoices() {
+  // Wind bed: pink noise through a band that opens with the wind.
+  const bedGain = new T.Gain(0).connect(kit.out);
+  const bedF = new T.Filter({ type: 'bandpass', frequency: 500, Q: 0.7 }).connect(bedGain);
+  const bed = new T.Noise('pink').connect(bedF).start();
+  // Storm howl: one noise feeds three resonant bands, one per strong storm.
+  const howlSrc = new T.Noise('white').start();
+  const howl = [0, 1, 2].map(() => {
+    const g = new T.Gain(0).connect(kit.out);
+    const p = new T.Panner(0).connect(g);
+    const f = new T.Filter({ type: 'bandpass', frequency: 300, Q: 9 }).connect(p);
+    howlSrc.connect(f);
+    return { g, p, f };
+  });
+  // Gust: a short noise burst through a sweeping band.
+  const gustP = new T.Panner(0).connect(kit.out);
+  const gustF = new T.Filter({ type: 'bandpass', frequency: 600, Q: 1.4 }).connect(gustP);
+  const gust = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.04, decay: 0.55, sustain: 0, release: 0.1 }, volume: -6 }).connect(gustF);
+  // Merge: a low membrane thump under low-passed brown noise.
+  const mergeP = new T.Panner(0).connect(kit.out);
+  const thump = new T.MembraneSynth({ pitchDecay: 0.09, octaves: 3, envelope: { attack: 0.003, decay: 0.7, sustain: 0, release: 0.2 }, volume: -4 }).connect(mergeP);
+  const rumbleF = new T.Filter({ type: 'lowpass', frequency: 260, Q: 0.6 }).connect(mergeP);
+  const rumble = new T.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.02, decay: 1.1, sustain: 0, release: 0.3 }, volume: -2 }).connect(rumbleF);
+  // High: a low sine drone that swells while the high is held.
+  const droneGain = new T.Gain(0).connect(kit.out);
+  const droneF = new T.Filter({ type: 'lowpass', frequency: 180, Q: 0.7 }).connect(droneGain);
+  const drone = new T.Oscillator({ frequency: 60, type: 'sine' }).connect(droneF).start();
+  // Jet: a noise band that rises along the drawn path.
+  const jetP = new T.Panner(0).connect(kit.out);
+  const jetF = new T.Filter({ type: 'bandpass', frequency: 300, Q: 2 }).connect(jetP);
+  const jet = new T.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.7, release: 0.5 }, volume: -8 }).connect(jetF);
+  return { bedGain, bedF, bed, howlSrc, howl, gustP, gustF, gust, mergeP, thump, rumble, droneGain, drone, jetP, jetF, jet };
+}
+// Pitch, time and level jitter, so no hit repeats exactly.
+const jit = (a = 0.08) => 1 + (Math.random() * 2 - 1) * a;
+const panX = x => clamp(x / AX * 2 - 1, -1, 1) * 0.8;
+// The bed follows the mean wind; each strong storm howls where it is.
+function soundFrame(level) {
+  const v = voices(); if (!v) return;
+  const now = kit.ac.currentTime;
+  const storms = live().filter(s => s.kind === 'low').map(s => ({ s, a: Math.abs(s.g * s.amp) })).sort((a, b) => b.a - a.a);
+  const mean = windU() + 0.6 * storms.reduce((m, o) => m + o.a, 0);
+  v.bedGain.gain.setTargetAtTime(level * clamp(0.03 + mean * 0.6, 0, 0.22), now, 0.2);
+  v.bedF.frequency.setTargetAtTime(400 + 800 * clamp(mean / 0.4), now, 0.3);
+  v.howl.forEach((h, k) => {
+    const o = storms[k];
+    h.g.gain.setTargetAtTime(o ? level * clamp(o.a / 0.3) * 2.2 : 0, now, 0.3);
+    if (!o) return;
+    // A slow waver keeps the howl from sounding like a held tone.
+    h.f.frequency.setTargetAtTime((200 + 600 * o.a) * (1 + 0.03 * Math.sin(t * 1.3 + k * 2.1)), now, 0.2);
+    h.p.pan.setTargetAtTime(panX(o.s.x), now, 0.2);
+  });
+  // The drone follows the held high's strength.
+  const held = press?.mode === 'high' ? Math.abs(press.v.g) / HIGH_G : 0;
+  v.droneGain.gain.setTargetAtTime(level * held * 0.35, now, held ? 0.3 : 0.15);
+  v.drone.frequency.setTargetAtTime(55 + 15 * held, now, 0.4);
+}
+// The drone starts with a jittered pitch; release lets it fade.
+function highDrone(on) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => { if (on) v.drone.frequency.setValueAtTime(55 * jit(0.05), kit.ac.currentTime); });
+}
+// A jet sweeps its band from 300 to 1,400 Hz, panned start to end.
+function jetSweep(path) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => {
+    const t0 = kit.ac.currentTime + 0.005, d = 0.5 * jit(0.2), f = jit(0.1);
+    v.jetP.pan.setValueAtTime(panX(path[0][0]), t0);
+    v.jetP.pan.linearRampToValueAtTime(panX(path[path.length - 1][0]), t0 + d);
+    v.jetF.frequency.cancelScheduledValues(t0);
+    v.jetF.frequency.setValueAtTime(300 * f, t0);
+    v.jetF.frequency.exponentialRampToValueAtTime(1400 * f, t0 + d);
+    v.jet.triggerAttackRelease(d, t0, 0.8 * jit(0.15));
+  });
+}
+// The bed and howl fade, then the context sleeps.
+function hush() {
+  if (V) {
+    const now = kit.ac.currentTime;
+    V.bedGain.gain.setTargetAtTime(0, now, 0.1);
+    V.howl.forEach(h => h.g.gain.setTargetAtTime(0, now, 0.1));
+    V.droneGain.gain.setTargetAtTime(0, now, 0.1);
+  }
+  kit.rest(() => !raf || !visible);
+}
+// One-shots wait for a waking context, so Tone never plays into a suspended one.
+function whenRunning(fn) {
+  if (kit.ac.state === 'running') fn();
+  else kit.ac.resume().then(() => { if (kit.live()) fn(); }).catch(() => {});
+}
+// band raises the sweep: 1 for a gust, higher for a thrown storm.
+function whoosh(x, band = 1) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => whooshNow(v, x, band));
+}
+function whooshNow(v, x, band) {
+  const t0 = kit.ac.currentTime + 0.005, f = jit(0.15) * band;
+  v.gustP.pan.setValueAtTime(panX(x), t0);
+  v.gustF.frequency.cancelScheduledValues(t0);
+  v.gustF.frequency.setValueAtTime(350 * f, t0);
+  v.gustF.frequency.exponentialRampToValueAtTime(1800 * f, t0 + 0.12 * jit());
+  v.gustF.frequency.exponentialRampToValueAtTime(500 * f, t0 + 0.6);
+  v.gust.triggerAttackRelease(0.5 * jit(), t0, 0.7 * jit(0.15));
+}
+function whomp(x) {
+  const v = voices(); if (!v) return;
+  whenRunning(() => whompNow(v, x));
+}
+function whompNow(v, x) {
+  const t0 = kit.ac.currentTime + 0.005;
+  v.mergeP.pan.setValueAtTime(panX(x), t0);
+  v.thump.triggerAttackRelease(38 * jit(0.12), 0.6, t0, 0.9 * jit(0.1));
+  v.rumble.triggerAttackRelease(1.0 * jit(), t0 + 0.01, 0.8 * jit(0.15));
+}
+
+/* ---------- loop ---------- */
+// Drifting runs at 30 fps; 60 s after the last input it eases to sleep.
+const SLEEP_AFTER = 60000, EASE_OUT = 2000;
+let raf = 0, last = 0, visible = true, ready = false, lastInput = performance.now();
+function frameFn(now) {
+  raf = 0;
+  const quiet = now - lastInput;
+  if (quiet > SLEEP_AFTER + EASE_OUT) { hush(); return; }
+  // Drifting frames hold to 30 fps; input and gusts run at full rate.
+  checkHold(now);
+  const lively = press || quiet < 1500 || gusts.length || flashes.length || jets.length || vortices.some(v => Math.abs(v.vx) + Math.abs(v.vy) > 0.01);
+  if (!lively && last && now - last < 31) { raf = requestAnimationFrame(frameFn); return; }
+  const raw = last ? (now - last) / 1000 : 0, dt = last ? Math.min(0.05, raw) : 1 / 60;
+  last = now;
+  // Only full-rate frames are timed; drifting frames hold to 30 fps on purpose.
+  if (lively && raw) watchdog(raw);
+  const ease = quiet > SLEEP_AFTER ? 1 - (quiet - SLEEP_AFTER) / EASE_OUT : 1;
+  try {
+    turnGlobe(dt, clamp(ease));
+    simStep(dt * clamp(ease) ** 2);
+    render();
+    soundFrame(clamp(ease));
+  } finally {
+    if (visible) raf = requestAnimationFrame(frameFn);
+  }
+}
+function resume() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+function wake() { lastInput = performance.now(); resume(); }
+
+/* ---------- performance ---------- */
+// After 4 s, slow frames for 2 s step quality down one rung, never back up.
+// Rung 1 lowers the pixel ratio; rung 2 halves bloom; rung 3 halves particles.
+let runT = 0, avg = 1 / 60, slowT = 0, rung = 0;
+const countK = () => (rung >= 3 ? 0.5 : 1);
+function watchdog(raw) {
+  if (rung >= 3) return;
+  runT += raw;
+  avg = lerp(avg, raw, 0.1);
+  if (runT < 4) return;
+  slowT = avg > 1 / 38 ? slowT + raw : 0;
+  if (slowT > 2) { rung++; slowT = 0; avg = 1 / 60; if (rung === 1) resize(true); if (rung === 2) makeBloom(); }
+}
+
+/* ---------- size ---------- */
+// On High the first rung falls back to Standard, not to 1x.
+function fitStage() {
+  if (!rung) return fitCanvas(canvas, { budget: 2.2e6 });
+  return quality() === 'high' ? fitCanvas(canvas, { budget: 2.2e6, quality: 'standard' }) : fitCanvas(canvas, { budget: 2.2e6, maxDpr: 1 });
+}
+// keep skips the storm rescale; a projection switch places storms itself.
+function resize(force = false, keep = false) {
+  const fit = fitStage();
+  if (fit.W === W && fit.H === H && acc.length && !force) return;
+  W = fit.W; H = fit.H; dpr = fit.dpr;
+  const wx = AX, wy = AY;
+  S = Math.min(W, H);
+  if (GLOBE()) {
+    // The globe's plate is a 2 to 1 map; watchdog rung 1 halves it.
+    AX = 2; AY = 1; PW = rung >= 1 ? 1024 : 2048; PH = PW / 2; PS = PW / 2;
+  } else { AX = W / S; AY = H / S; PW = W; PH = H; PS = S; }
+  areaK = clamp((W / dpr) * (H / dpr) / (1250 * 680), 0.15, 1);
+  acc.forEach(drop);
+  acc = [target(PW, PH), target(PW, PH)]; ai = 0;
+  // The globe's plate wraps east to west, so the seam samples clean.
+  acc.forEach(a => { gl.bindTexture(gl.TEXTURE_2D, a.tex); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, GLOBE() ? gl.REPEAT : gl.CLAMP_TO_EDGE); });
+  if (frame) drop(frame);
+  frame = target(W, H);
+  chart.canvas.width = W; chart.canvas.height = H;
+  makeBloom();
+  // Storms keep their place relative to the frame width.
+  if (!keep && !GLOBE()) vortices.forEach(v => { v.x *= AX / wx; v.y *= AY / wy; });
+  cpu.at = -1;
+  if (!seeded) { seedState(); seedCyclone(); seeded = true; }
+  preroll(ready ? 1 : 3);
+  if (ready) { render(); wake(); }
+}
+
+/* ---------- bar ---------- */
+function setLook(v) { opts.look = v; save('look', v); bakeRamp(); wake(); }
+// Quick toggles keep their chip pressed while on, and persist.
+const chipFor = re => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => re.test(b.textContent));
+function setIso(on) { opts.iso = on; save('iso', on ? '1' : '0'); chipFor(/isobars/i)?.setAttribute('aria-pressed', String(on)); render(); wake(); }
+function setFronts(on) { opts.chart = on; save('chart', on ? '1' : '0'); chipFor(/fronts/i)?.setAttribute('aria-pressed', String(on)); render(); wake(); }
+// The chips show their saved state from the first frame.
+chipFor(/isobars/i)?.setAttribute('aria-pressed', String(opts.iso));
+chipFor(/fronts/i)?.setAttribute('aria-pressed', String(opts.chart));
+function setWind(v) { opts.wind = v; save('wind', v); wake(); }
+function setCount(v) { opts.count = v; seedState(); clearAcc(); preroll(1); render(); wake(); }
+function clearAll() { vortices.forEach(v => { v.dying = true; v.held = false; }); gusts.length = 0; jets.length = 0; clearAcc(); wake(); }
+// + Cyclone arms placement: each tap on the map drops a storm there.
+// It stays armed until + Cyclone is pressed again or Escape.
+let placing = false, hoverW = null;
+const addChip = () => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => /cyclone/i.test(b.textContent));
+function setPlacing(on) {
+  placing = on;
+  addChip()?.setAttribute('aria-pressed', String(on));
+  stage.classList.toggle('placing', on);
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && placing) setPlacing(false); });
+// A placed storm spins the hemisphere's way; a ring marks the spot at once.
+function placeCyclone(w) {
+  spawnCyclone(w[0], w[1], (0.12 + 0.05 * Math.random()) * spin(), 0.045 + 0.015 * Math.random());
+  flash(w[0], w[1], 'merge');
+  wake();
+}
+// Space with no pointer on the map finds open air instead.
+function addCyclone() {
+  let best = null, room = -1;
+  for (let k = 0; k < 12; k++) {
+    // Candidates come from the visible stage, so the globe's far side is skipped.
+    const w = pxToWorld(W * (0.2 + 0.6 * Math.random()), H * (0.2 + 0.6 * Math.random()));
+    if (!w) continue;
+    const d = live().reduce((m, v) => Math.min(m, Math.hypot(wdx(v.x - w[0]), v.y - w[1])), 9);
+    if (d > room) { room = d; best = w; }
+  }
+  if (!best) return;
+  spawnCyclone(best[0], best[1], (0.12 + 0.05 * Math.random()) * spin(), 0.045 + 0.015 * Math.random());
+  wake();
+}
+
+/* ---------- input ---------- */
+// The press start sorts the gesture: a core is grabbed, open air waits.
+// Open air: 8 px of travel spins a storm; 260 ms still builds a high.
+// A spin that ends straight and long becomes a jet; a bare release is a gust.
+let press = null;
+// Pointer to world; null off the globe's disc.
+function toWorld(e) {
+  const r = canvas.getBoundingClientRect();
+  return pxToWorld((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+}
+// Device pixels per CSS pixel, for the globe's hand turn.
+const devPx = () => W / Math.max(1, canvas.getBoundingClientRect().width);
+const HOLD_MS = 260;
+function startSpin() {
+  const p = press;
+  p.mode = 'spin';
+  p.v = spawnCyclone(p.w0[0], p.w0[1], 0, 0.045, true);
+  p.c = [p.v.x, p.v.y]; p.r = 0.05; p.wl = p.w0; p.tl = performance.now();
+  p.path = [p.w0];
+}
+function startHigh() {
+  const p = press;
+  p.mode = 'high';
+  p.v = spawnHigh(p.w0[0], p.w0[1]);
+  highDrone(true);
+}
+// Each move adds the angle the pointer swept around the seed.
+function feed(w, now) {
+  const p = press, v = p.v;
+  const rx = wdx(p.wl[0] - v.x), ry = p.wl[1] - v.y, r2 = rx * rx + ry * ry;
+  const dx = wdx(w[0] - p.wl[0]), dy = w[1] - p.wl[1];
+  if (r2 > 0.015 * 0.015) {
+    const dth = (rx * dy - ry * dx) / r2;
+    v.g = clamp(v.g + 0.013 * dth, -G_MAX, G_MAX);
+  }
+  // The centre eases toward the middle of the drawn path.
+  const k = 1 - Math.exp(-(now - p.tl) / 1500);
+  p.c[0] = wrapX(p.c[0] + wdx(w[0] - p.c[0]) * k); p.c[1] += (w[1] - p.c[1]) * k;
+  v.x = wrapX(v.x + wdx(p.c[0] - v.x) * 0.5); v.y += (p.c[1] - v.y) * 0.5;
+  // Tight circles make a tight core.
+  p.r += (Math.sqrt(r2) - p.r) * Math.min(1, k * 2);
+  v.rc = clamp(p.r * 0.7, 0.04, 0.1);
+  p.wl = w; p.tl = now;
+  // The path stays continuous across the seam.
+  const last = p.path[p.path.length - 1];
+  p.path.push([last[0] + wdx(w[0] - last[0]), w[1]]);
+}
+// A grabbed storm or high follows the pointer; its speed is smoothed over 0.1 s.
+function drag(w, now) {
+  const p = press, v = p.v, dt = Math.max(1e-3, (now - p.tl) / 1000);
+  if (p.mode === 'grab') {
+    const k = 1 - Math.exp(-dt / 0.1);
+    p.vel[0] += (wdx(w[0] - p.wl[0]) / dt - p.vel[0]) * k;
+    p.vel[1] += ((w[1] - p.wl[1]) / dt - p.vel[1]) * k;
+  }
+  v.x = wrapX(w[0] + p.off[0]); v.y = w[1] + p.off[1];
+  p.wl = w; p.tl = now;
+}
+// Straight, long and spin-free: the drag paints a jet.
+function isJet(p) {
+  const P = p.path;
+  if (P.length < 3 || Math.abs(p.v.g) >= 0.03) return false;
+  let len = 0;
+  for (let i = 1; i < P.length; i++) len += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+  const chord = Math.hypot(P[P.length - 1][0] - P[0][0], P[P.length - 1][1] - P[0][1]);
+  return len >= 0.25 && chord / len >= 0.85;
+}
+function endPress(tap) {
+  const p = press;
+  if (!p) return;
+  press = null;
+  if (p.mode === 'spin') {
+    if (tap && isJet(p)) {
+      vortices.splice(vortices.indexOf(p.v), 1);
+      addJet(p.path);
+      jetSweep(p.path);
+    } else p.v.held = false;
+  } else if (p.mode === 'grab') {
+    p.v.held = false;
+    // A throw caps at 0.5 world/s, so a storm stays on the chart.
+    // A hand that rests 80 ms before release places the storm, not throws it.
+    if (performance.now() - p.tl >= 80) p.vel = [0, 0];
+    const sp = Math.hypot(...p.vel), k = sp > 0.5 ? 0.5 / sp : 1;
+    if (tap) { p.v.vx = p.vel[0] * k; p.v.vy = p.vel[1] * k; if (sp > 0.15) whoosh(p.v.x, 1.6); }
+  } else if (p.mode === 'high') {
+    p.v.held = false;
+    highDrone(false);
+  } else if (p.mode === 'turn') {
+    // A release carries the turn on, slowing with tau 1.5 s.
+    // A hand that rests 80 ms before release throws nothing.
+    const fresh = performance.now() - p.tl < 80, cap = v => clamp(v, -1.5, 1.5);
+    if (tap && fresh) { globe.vy = cap(p.tv[0]); globe.vp = cap(p.tv[1]); }
+  } else if (tap) {
+    if (placing) placeCyclone(p.w0); else gust(p.w0[0], p.w0[1]);
+  }
+  wake();
+}
+// The hold timer runs on frame time, so it stays in step with the sim.
+function checkHold(now) {
+  if (press?.mode === 'press' && now - press.t0 >= HOLD_MS) startHigh();
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0 || press) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
+  const w = toWorld(e), now = performance.now();
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hx: e.clientX, hy: e.clientY, w0: w, wl: w, tl: now, t0: now, mode: 'press' };
+  // Off the globe's disc, a drag turns the globe.
+  if (!w) { Object.assign(press, { mode: 'turn', xl: e.clientX, yl: e.clientY, tv: [0, 0] }); globe.vy = globe.vp = 0; wake(); return; }
+  // A press inside a storm's core, or a high's calm centre, grabs it.
+  const core = live().find(v => Math.hypot(wdx(v.x - w[0]), v.y - w[1]) < Math.max(0.03, 1.5 * v.rc));
+  if (core) {
+    Object.assign(press, { mode: 'grab', v: core, off: [core.x - w[0], core.y - w[1]], vel: [0, 0] });
+    core.held = true; core.vx = core.vy = 0;
+  }
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  // Space drops a storm under a hovering pointer.
+  if (e.pointerType === 'mouse') hoverW = toWorld(e);
+  if (!press || e.pointerId !== press.id) return;
+  const now = performance.now();
+  if (press.mode === 'turn') {
+    // The surface follows the hand: a drag left brings the east into view.
+    const dt = Math.max(1e-3, (now - press.tl) / 1000), r = discR() / devPx();
+    const dyaw = -(e.clientX - press.xl) / r, dpitch = (e.clientY - press.yl) / r;
+    globe.yaw += dyaw; globe.pitch = clamp(globe.pitch + dpitch, -Math.PI / 3, Math.PI / 3);
+    // The throw speed is smoothed over about 0.1 s.
+    const k = 1 - Math.exp(-dt / 0.1);
+    press.tv = [press.tv[0] + (dyaw / dt - press.tv[0]) * k, press.tv[1] + (dpitch / dt - press.tv[1]) * k];
+    press.xl = e.clientX; press.yl = e.clientY; press.tl = now;
+    wake(); return;
+  }
+  let w = toWorld(e);
+  // A drag that slips off the disc keeps its last point on the globe.
+  if (!w) w = press.wl;
+  if (press.mode === 'press') {
+    // Only a still press builds a high: 3 px of travel restarts the hold.
+    if (Math.hypot(e.clientX - press.hx, e.clientY - press.hy) > 3) { press.t0 = now; press.hx = e.clientX; press.hy = e.clientY; }
+    checkHold(now);
+    if (press.mode === 'press' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) startSpin();
+  }
+  if (press.mode === 'spin') feed(w, now);
+  else if (press.mode === 'grab') drag(w, now);
+  else if (press.mode === 'high') { press.off ||= [0, 0]; drag(w, now); }
+  wake();
+});
+stage.addEventListener('pointerup', e => { if (press && e.pointerId === press.id) endPress(true); });
+stage.addEventListener('pointercancel', () => endPress(false));
+stage.addEventListener('pointerleave', () => { hoverW = null; });
+stage.addEventListener('lostpointercapture', () => endPress(false));
+stage.addEventListener('keydown', e => {
+  wake();
+  if (e.key !== ' ') return;
+  e.preventDefault();
+  if (!e.repeat) { if (hoverW) placeCyclone(hoverW); else addCyclone(); }
+});
+
+/* ---------- start ---------- */
+bakeRamp();
+new ResizeObserver(() => resize()).observe(stage);
+// A new quality choice clears the ladder.
+onQuality(() => { rung = 0; runT = 0; resize(true); });
+resize();
+render();
+gl.finish();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) resume(); else hush(); });
+wake();
+</script>
+</body>
+</html>

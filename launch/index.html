@@ -1,0 +1,2558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.014 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marsh launch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Marsh launch: a reed marsh before dawn. */
+:root { --stage: oklch(0.12 0.03 265); }
+.stage--launch canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--launch canvas.on { opacity: 1; }
+.stage--launch.held canvas { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--launch canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Marsh launch</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--launch" id="stage" tabindex="0" role="application" aria-label="A reed marsh before dawn. A rocket waits on the far shore. Drag to look around.">
+      <p class="fail" hidden>Marsh launch needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Marsh launch</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createNoise2D } from 'simplex-noise';
+import { gsap } from 'gsap';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+/* ---------- settings ---------- */
+const store = {
+  get(k) { try { return localStorage.getItem(`stimming.launch.${k}`); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(`stimming.launch.${k}`, String(v)); } catch { /* storage off */ } },
+};
+// Distance to the pad in metres; the roar delay follows it.
+const DIST = { near: 1200, mid: 2000, far: 3400 };
+// The pad stands at the far distance; the roar takes ten seconds to arrive.
+const PAD = DIST.far;
+const opts = {
+  kind: ['small', 'medium', 'heavy'].includes(store.get('kind')) ? store.get('kind') : 'medium',
+  dawn: Number.isFinite(+store.get('dawn')) && store.get('dawn') !== null ? Math.min(1, Math.max(0, +store.get('dawn'))) : 0.4,
+};
+
+/* ---------- bar ---------- */
+const act = { launch() {} };
+const ui = initPage({ id: 'launch', bar: {
+  choice: {
+    label: 'Rocket', value: opts.kind,
+    options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }],
+    onPick: v => { opts.kind = v; store.set('kind', v); },
+  },
+  // Dawn moves the sun from 9 to 1 degrees under the horizon.
+  slider: { label: 'Dawn', min: 0, max: 1, step: 0.005, value: opts.dawn, onInput: v => { opts.dawn = v; store.set('dawn', v); setDawn(); } },
+  actions: [{ verb: 'launch', label: 'Launch', onPress: () => act.launch() }],
+  settings: [
+    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+    // Bokeh, after Buoy Business and Wind farm: a disc shape and a texture.
+    { type: 'choice', id: 'shape', label: 'Bokeh', value: 'round', persist: true,
+      options: [{ value: 'round', label: 'Round' }, { value: 'hex', label: 'Hex' }, { value: 'oval', label: 'Oval' }, { value: 'donut', label: 'Donut' }, { value: 'star', label: 'Star' }],
+      onPick: () => setLens() },
+    { type: 'choice', id: 'texture', label: 'Texture', value: 'clean', persist: true,
+      options: [{ value: 'clean', label: 'Clean' }, { value: 'scatter', label: 'Scatter' }, { value: 'grain', label: 'Grain' }, { value: 'bubble', label: 'Bubble' }, { value: 'swirl', label: 'Swirl' }],
+      onPick: () => setLens() },
+    // Fine control for the near reeds: blur size, focus (far left is auto), highlight discs.
+    { type: 'slider', id: 'aperture', label: 'Aperture', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: () => draw() },
+    { type: 'slider', id: 'focus', label: 'Focus', min: 0, max: 1, step: 0.01, value: 0, persist: true, onInput: () => wake() },
+    { type: 'slider', id: 'glow', label: 'Highlights', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => draw() },
+  ],
+  quality: true,
+  keys: [['click', 'launch'], ['click', 'zoom in or out'], ['drag', 'look around']],
+} });
+
+const stage = document.getElementById('stage');
+let markReady;
+const sceneReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+
+// Seeded random keeps the marsh the same on every load.
+let seed = 5511;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false; ui.hideControls(); markReady();
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 80000);
+// The eye stands on a low dike above the reeds.
+const EYE = 5.5;
+camera.position.set(0, EYE, 0);
+camera.rotation.order = 'YXZ';
+// Layer 1 holds what the water mirrors.
+const MIRROR = 1;
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+
+/* ---------- uniforms ---------- */
+const U = {
+  uTime: { value: 0 },
+  uSun: { value: new THREE.Vector3(0, -0.1, -1) },
+  uDawn: { value: 0.5 },
+  uAmb: { value: new THREE.Vector3() },
+  uGlowC: { value: new THREE.Vector3() },
+  uHaze: { value: 0.0005 },
+  uHazeH: { value: 22 },
+  uSway: { value: 1 },
+  uShore: { value: -2000 },
+  // The flame: world position and strength; its colour.
+  uFlame: { value: new THREE.Vector4(0, 0, -2000, 0) },
+  uFlameC: { value: new THREE.Vector3(1, 0.5, 0.18) },
+  // The Earth's shadow line in km of real altitude.
+  uShadowH: { value: 35 },
+  // The sound front: pad x, pad z, radius, strength.
+  uFront: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // Thick air round a low flame glows; thin air high up does not.
+  uAir: { value: 1 },
+  // Night: 0 at 9° of depression, 1 at 18°; the flame carries the light.
+  uNight: { value: 0 },
+  // Wisps: a random offset per load, and how much sky they cover.
+  uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.3 + Math.random() * 0.7) },
+};
+
+/* ---------- dawn: sky, sun and the Earth's shadow line ---------- */
+// The sun sits ahead and to the left; the climb bends right, into dark sky.
+const SUN_AZ = new THREE.Vector2(-0.4, -0.92).normalize();
+// Sky colours, shared by the GPU sky and the CPU ambient.
+const SKY = {
+  zen: [0.018, 0.04, 0.13], low: [0.05, 0.055, 0.085], rose: [0.24, 0.075, 0.09],
+  amber: [1.5, 0.34, 0.03], ember: [0.9, 0.16, 0.02], belt: [0.18, 0.08, 0.12],
+};
+const v3 = a => `vec3(${a.map(x => x.toFixed(4)).join(', ')})`;
+// Air above this height (km) is sunlit with the sun δ degrees down.
+const R_EARTH = 6371;
+function shadowH(deg) { return R_EARTH * (1 / Math.cos(THREE.MathUtils.degToRad(deg)) - 1); }
+let depression = 6;
+// Brightness of the whole sky, 0 at δ = 9 and 1 at δ = 1.
+const skyB = t => 0.06 + 0.94 * t * t;
+function dawn(deg) {
+  depression = deg;
+  const t = THREE.MathUtils.clamp((9 - deg) / 8, 0, 1);
+  // Past 9° the dawn is gone: the sky and the ambient fall toward night.
+  const n = THREE.MathUtils.clamp((deg - 9) / 9, 0, 1);
+  const r = THREE.MathUtils.degToRad(deg);
+  U.uSun.value.set(SUN_AZ.x * Math.cos(r), -Math.sin(r), SUN_AZ.y * Math.cos(r));
+  U.uDawn.value = t;
+  U.uNight.value = n;
+  // Ambient: the zenith and the low band; glow: the sun-side horizon.
+  const B = skyB(t) * (1 - 0.8 * n);
+  U.uAmb.value.set(...SKY.zen.map((z, i) => B * (z * (0.6 + 0.6 * t) + SKY.low[i] * 0.45)));
+  const glow = SKY.amber.map((a, i) => a + (SKY.ember[i] - a) * (1 - t));
+  U.uGlowC.value.set(...glow.map(g => B * g * 0.35 * (1 - 0.7 * n)));
+  // The eye opens up in the dark; the grade still keeps it a dawn.
+  renderer.toneMappingExposure = 2.1 - 1.25 * t + 0.3 * n;
+  U.uShadowH.value = shadowH(deg);
+  return U.uShadowH.value;
+}
+// The slider runs from full night (18° down) to the last of the dawn (1°).
+const dawnDeg = v => 1 + 17 * Math.pow(1 - v, 1.3);
+const setDawn = () => { dawn(dawnDeg(opts.dawn)); draw(); };
+
+/* ---------- K2: noise ---------- */
+// Lifted from Fireworks, which lifted it from Night viaduct's Port.
+const K2_NOISE = /* glsl */`
+float k2hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float k2noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(k2hash(i), k2hash(i + vec2(1, 0)), u.x), mix(k2hash(i + vec2(0, 1)), k2hash(i + vec2(1, 1)), u.x), u.y);
+}
+float k2fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * k2noise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: sky ---------- */
+// The night sky becomes a dawn sky here: a sun below the horizon.
+// Kept from Fireworks: k2stars. New: the glow, the rose band and the Earth's shadow.
+const K2_SKY = /* glsl */`
+uniform vec3 uSun;
+uniform float uDawn;
+uniform vec4 uFlame;
+uniform vec3 uFlameC;
+uniform float uAir;
+uniform float uNight;
+uniform vec3 uWisp;
+// Wisps: thin streaks of high cloud on a sheet 7 km up.
+// Unlit they are grey shapes; near dawn their undersides catch the glow.
+vec3 wisps(vec3 dir, vec3 col, float t, float cs) {
+  if (dir.y < 0.015 || uWisp.z < 0.01) return col;
+  vec2 p = dir.xz / dir.y * 7.0;
+  float n = k2noise(vec2(p.x * 0.045, p.y * 0.3) + uWisp.xy) * 0.6 + k2noise(vec2(p.x * 0.16, p.y * 1.3) + uWisp.yx) * 0.4;
+  float d = smoothstep(0.78 - 0.08 * uWisp.z, 0.95, n) * smoothstep(0.015, 0.07, dir.y) * (1.0 - smoothstep(0.25, 0.45, dir.y));
+  if (d < 0.002) return col;
+  vec3 glowC = mix(vec3(0.55, 0.3, 0.32), vec3(1.0, 0.55, 0.35), pow(max(cs, 0.0), 3.0));
+  vec3 cloud = mix(col * 0.85 + vec3(0.002, 0.002, 0.004), glowC * (0.05 + 0.5 * t * t), smoothstep(0.2, 0.9, t) * (0.35 + 0.65 * max(cs, 0.0)));
+  return mix(col, cloud, d * 0.5);
+}
+// Air round the flame glows; a view ray collects it.
+vec3 flameGlow(vec3 dir) {
+  if (uFlame.w < 0.001) return vec3(0.0);
+  vec3 v = uFlame.xyz - cameraPosition;
+  float c = dot(dir, normalize(v)) - 1.0;
+  float low = exp(-max(dir.y, 0.0) * 9.0);
+  return uFlameC * uFlame.w * uAir * (1.0 + 0.4 * uNight) * (0.06 * exp(c * 900.0) + 0.02 * exp(c * 60.0) + 0.012 * exp(c * 6.0) * low);
+}
+float k2stars(vec3 dir) {
+  vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
+  vec2 i = floor(q), f = fract(q) - 0.5;
+  float h = k2hash(i);
+  // About one cell in two hundred holds a star.
+  float on = step(0.995, h);
+  vec2 o = vec2(k2hash(i + 7.1), k2hash(i + 3.3)) - 0.5;
+  return on * exp(-dot(f - o * 0.6, f - o * 0.6) * 60.0) * (0.02 + 0.05 * k2hash(i + 1.7));
+}
+vec3 k2sky(vec3 dir) {
+  float t = uDawn, up = max(dir.y, 0.0);
+  vec2 sh = normalize(uSun.xz), dh = normalize(dir.xz + vec2(1e-5));
+  float cs = dot(dh, sh);
+  // A broad lobe toward the sun, and a tight one round its azimuth.
+  float near = pow(cs * 0.5 + 0.5, 4.0), tight = pow(max(cs, 0.0), 8.0);
+  vec3 col = ${v3(SKY.zen)} * (0.6 + 0.6 * t);
+  col += ${v3(SKY.low)} * exp(-up * 5.0);
+  col += ${v3(SKY.rose)} * near * exp(-up * 6.0) * (0.4 + 0.6 * t);
+  // The dark sky keeps a thin ember line; a bright one a wide amber glow.
+  vec3 glow = mix(${v3(SKY.ember)}, ${v3(SKY.amber)}, t);
+  col += glow * (0.3 * near + 0.9 * tight) * exp(-up * (30.0 - 16.0 * t));
+  // Opposite the sun: the Earth's shadow, with the pink belt above it.
+  float anti = pow(max(-cs, 0.0), 2.0);
+  col *= 1.0 - 0.35 * anti * exp(-up * 12.0) * t;
+  col += ${v3(SKY.belt)} * anti * exp(-pow((up - 0.12) / 0.07, 2.0)) * t;
+  col *= 0.06 + 0.94 * t * t;
+  // Night: the ember line goes out, the sky falls to near black, the stars come up.
+  col *= 1.0 - 0.8 * uNight;
+  float dark = (1.0 - t) * (1.0 - t) * (1.0 + 2.0 * uNight);
+  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y) * dark * 1.5;
+  return wisps(dir, col, t, cs) + flameGlow(dir);
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: haze ---------- */
+// Height haze along the view ray; its colour is the low sky ahead.
+// Fireworks' burst glow is cut here.
+const K2_HAZE = /* glsl */`
+uniform float uHaze;
+uniform float uHazeH;
+float k2hazeAmount(vec3 P) {
+  vec3 v = P - cameraPosition;
+  float dist = length(v);
+  float k = 1.0 / uHazeH;
+  float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
+  // Exponential height fog integrated along the ray.
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+}
+vec3 k2hazeColor(vec3 dir) { return k2sky(normalize(vec3(dir.x, 0.015, dir.z))) * 0.9; }
+vec3 k2haze(vec3 c, vec3 P) {
+  return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
+}`;
+/* ---------- end K2 ---------- */
+
+/* ---------- marsh map: the pool and the channels ---------- */
+// The same water map runs on the CPU (placement) and the GPU (shading).
+// Each channel: centre z, amplitude, frequency, phase, half width.
+const CH = [[-125, 8, 0.011, 0.5, 8], [-300, 14, 0.006, 2.1, 14], [-480, 18, 0.004, 1.2, 16], [-720, 24, 0.0032, 4.0, 26], [-1100, 30, 0.0025, 2.6, 34]];
+const POOL = [4, -38, 34, 20];
+const chZ = (c, x) => c[0] + c[1] * Math.sin(x * c[2] + c[3]) + 0.4 * c[1] * Math.sin(x * c[2] * 2.3 + c[3] * 1.7);
+const chW = (c, x) => c[4] * (1 + 0.3 * Math.sin(x * c[2] * 3 + c[3]));
+const poolR = th => 1 + 0.16 * Math.sin(3 * th + 1) + 0.09 * Math.sin(5 * th + 2);
+// Signed distance to open water in metres; below zero is water.
+function wet(x, z) {
+  const dx = (x - POOL[0]) / POOL[2], dz = (z - POOL[1]) / POOL[3];
+  let d = (Math.hypot(dx, dz) - poolR(Math.atan2(dz, dx))) * POOL[3];
+  for (const c of CH) d = Math.min(d, Math.abs(z - chZ(c, x)) - chW(c, x));
+  return d;
+}
+const f4 = x => x.toFixed(4);
+const MAP_GLSL = /* glsl */`
+uniform float uShore;
+float wet(vec2 p) {
+  vec2 q = (p - vec2(${POOL[0]}.0, ${POOL[1]}.0)) / vec2(${POOL[2]}.0, ${POOL[3]}.0);
+  float th = atan(q.y, q.x);
+  float d = (length(q) - (1.0 + 0.16 * sin(3.0 * th + 1.0) + 0.09 * sin(5.0 * th + 2.0))) * ${POOL[3]}.0;
+  ${CH.map(c => `d = min(d, abs(p.y - (${f4(c[0])} + ${f4(c[1])} * sin(p.x * ${f4(c[2])} + ${f4(c[3])}) + ${f4(0.4 * c[1])} * sin(p.x * ${f4(c[2] * 2.3)} + ${f4(c[3] * 1.7)}))) - ${f4(c[4])} * (1.0 + 0.3 * sin(p.x * ${f4(c[2] * 3)} + ${f4(c[3])})));`).join('\n  ')}
+  return d;
+}`;
+/* ---------- end marsh map ---------- */
+const HEAD = `${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}\n${MAP_GLSL}`;
+
+/* ---------- sky dome ---------- */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(20000, 48, 24), new THREE.ShaderMaterial({
+  uniforms: U, side: THREE.BackSide, depthWrite: false,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} void main() { gl_FragColor = vec4(k2sky(normalize(vP - cameraPosition)), 1.0); }`,
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+/* ---------- ground: water, mud and the far flats ---------- */
+// Mirror: a camera under y = 0 sees only the MIRROR layer.
+const mirrorCam = new THREE.PerspectiveCamera();
+mirrorCam.layers.set(MIRROR);
+const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const texM = new THREE.Matrix4();
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200000, 120000).rotateX(-Math.PI / 2).translate(0, 0, -59000), new THREE.ShaderMaterial({
+  uniforms: { ...U, tMirror: { value: mirrorRT.texture }, uTexM: { value: texM } },
+  vertexShader: /* glsl */`uniform mat4 uTexM; varying vec3 vP; varying vec4 vM;
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vM = uTexM * vec4(vP, 1.0); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tMirror; uniform float uTime; uniform vec3 uAmb, uGlowC; varying vec3 vP; varying vec4 vM; ${HEAD}
+  void main() {
+    vec3 v = normalize(vP - cameraPosition);
+    vec2 p = vP.xz;
+    float dist = length(p - cameraPosition.xz);
+    // Past the last channel the reeds stop: flats of mud and shallow pools.
+    float flats = smoothstep(-790.0, -840.0, p.y);
+    float pools = smoothstep(0.48, 0.56, k2fbm(p * vec2(0.004, 0.012) + 3.1));
+    // A lagoon lies in front of the far shore.
+    float lagoon = smoothstep(uShore + 140.0, uShore + 110.0, p.y) * step(uShore, p.y);
+    float d = wet(p);
+    float aa = max(fwidth(d), 0.05);
+    float water = max(1.0 - smoothstep(-aa, aa, d), flats * max(pools, lagoon));
+    if (p.y < uShore) water = 0.0;
+    // Still water: a faint breath of ripple only.
+    float n = k2noise(p * vec2(0.08, 0.25) + uTime * vec2(0.02, 0.05)) - 0.5;
+    vec3 nrm = normalize(vec3(n * 0.006, 1.0, n * 0.004));
+    vec3 r = reflect(v, nrm);
+    float fres = 0.02 + 0.98 * pow(1.0 - max(dot(-v, nrm), 0.0), 5.0);
+    // Nine taps smear each light into a streak, longer where the view grazes.
+    vec2 uv = vM.xy / vM.w + vec2(n * 0.002, n * 0.004);
+    float len = 0.0008 + 0.004 * smoothstep(60.0, 1500.0, dist);
+    vec4 m = vec4(0.0);
+    float ws = 0.0;
+    for (int i = -4; i <= 4; i++) {
+      float fi = float(i), w = exp(-fi * fi / 8.0);
+      m += texture2D(tMirror, uv + vec2(0.0, fi * len)) * w;
+      ws += w;
+    }
+    m /= ws;
+    vec3 wcol = vec3(0.003, 0.004, 0.005) * uAmb * 10.0 + (k2sky(r) * (1.0 - m.a) + m.rgb) * fres;
+    // Mud and reed litter: dark, with a little sky on the wet bits.
+    float grain = k2noise(p * 0.6) * 0.5 + k2noise(p * 3.1) * 0.5;
+    vec3 mud = uAmb * (0.12 + 0.08 * grain) + uGlowC * 0.02 * flats;
+    vec3 c = mix(mud, wcol, water);
+    gl_FragColor = vec4(k2haze(c, vP), 1.0);
+  }`,
+}));
+scene.add(ground);
+const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+const tgt = new THREE.Vector3(), fwd = new THREE.Vector3();
+function renderMirror() {
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(fwd);
+  tgt.copy(camera.position).add(fwd);
+  mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
+  mirrorCam.up.set(0, -1, 0);
+  mirrorCam.lookAt(tgt.x, -tgt.y, tgt.z);
+  mirrorCam.fov = camera.fov; mirrorCam.aspect = camera.aspect;
+  mirrorCam.near = camera.near; mirrorCam.far = camera.far;
+  mirrorCam.updateProjectionMatrix();
+  mirrorCam.updateMatrixWorld();
+  texM.copy(bias).multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
+  renderer.setRenderTarget(mirrorRT);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(scene, mirrorCam);
+  renderer.setRenderTarget(null);
+}
+
+/* ---------- reed shading ---------- */
+// Dark stems take the sky's ambient and glow at the edges toward the sun.
+const REED_GLSL = /* glsl */`
+uniform vec3 uAmb, uGlowC;
+uniform float uSway;
+uniform vec4 uFront;
+// The sound front pushes reeds away from the pad as it passes.
+vec2 frontPush(vec2 p) {
+  if (uFront.w < 0.001) return vec2(0.0);
+  vec2 d = p - uFront.xy;
+  float L = length(d), e = L - uFront.z;
+  return d / max(L, 1.0) * exp(-e * e / 1800.0) * uFront.w;
+}
+// A gust field: long rolling waves with a little noise on top.
+vec2 gust(vec2 p, float t) {
+  float w = sin(p.x * 0.05 + p.y * 0.02 - t * 0.7) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.2) * 0.3;
+  w += (k2noise(p * 0.04 + vec2(t * 0.2, 0.0)) - 0.5) * 0.8;
+  return vec2(0.4, 0.15) * w * uSway;
+}
+vec3 reedLight(vec3 P, float head, float tone, float edge) {
+  vec3 V = normalize(P - cameraPosition);
+  float toward = pow(max(dot(normalize(V.xz), normalize(uSun.xz)), 0.0), 3.0);
+  // Stems and leaves stay near-black; plumes are pale straw.
+  vec3 alb = mix(mix(vec3(0.09, 0.075, 0.055), vec3(0.14, 0.11, 0.075), tone), vec3(0.32, 0.26, 0.19), head);
+  vec3 c = alb * uAmb * 1.3;
+  // Backlight: thin edges and plume hairs glow toward the dawn.
+  c += uGlowC * toward * (0.003 + head * (0.01 + 0.05 * edge * edge));
+  // The flame rims the stems and plumes that stand against it.
+  vec3 F = normalize(uFlame.xyz - P);
+  float face = pow(max(dot(V, F), 0.0), 5.0);
+  // At night the flame is the only key: it rims the reeds three times as hard.
+  c += uFlameC * uFlame.w * (0.0003 + face * (0.0015 + head * (0.003 + 0.012 * edge * edge)) * (1.0 + 1.5 * uNight)) * (0.3 + 0.7 * uAir);
+  return k2haze(c, P);
+}`;
+/* ---------- end reed shading ---------- */
+
+/* ---------- reeds: instanced stalks with plumes and leaves ---------- */
+// One instance is a stalk, three leaves and a plume, each a camera-facing ribbon.
+// aG: x = t along the piece, y = side, z = piece (0 stalk, 1 to 3 leaves, 4 plume).
+// The light form, for far beds, keeps only the stalk and the plume.
+function reedGeometry(lite = false) {
+  const g = [], idx = [];
+  const piece = (k, n) => {
+    const base = g.length / 3;
+    for (let i = 0; i <= n; i++) for (const s of [-1, 1]) g.push(i / n, s, k);
+    for (let i = 0; i < n; i++) { const a = base + i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  };
+  // Near reeds: 24 segments a reed; far reeds: 10.
+  if (lite) { piece(0, 4); piece(4, 6); } else { piece(0, 6); piece(1, 4); piece(2, 4); piece(3, 4); piece(4, 6); }
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.setAttribute('aG', new THREE.Float32BufferAttribute(g, 3));
+  geo.setIndex(idx);
+  return geo;
+}
+const REED_MAX = 12000;
+const reedGeo = reedGeometry();
+// aI: x, z, height, heading; aJ: lean, phase, tone, plume size.
+const aI = new THREE.InstancedBufferAttribute(new Float32Array(REED_MAX * 4), 4);
+const aJ = new THREE.InstancedBufferAttribute(new Float32Array(REED_MAX * 4), 4);
+reedGeo.setAttribute('aI', aI);
+reedGeo.setAttribute('aJ', aJ);
+const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
+  // Alpha to coverage softens the plume hairs on the multisampled target.
+  uniforms: U, side: THREE.DoubleSide, alphaToCoverage: true,
+  vertexShader: /* glsl */`
+  attribute vec3 aG; attribute vec4 aI, aJ;
+  uniform float uTime;
+  varying vec3 vP; varying float vHead, vTone, vSide, vT, vSeed;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    float t = aG.x, H = aI.z;
+    float piece = aG.z;
+    // The wind combs every plume the same way, give or take 25 degrees.
+    vec2 wd = normalize(vec2(0.94, 0.34));
+    float ja = (fract(aJ.y * 1.73) - 0.5) * 0.9;
+    vec2 hd = vec2(wd.x * cos(ja) - wd.y * sin(ja), wd.x * sin(ja) + wd.y * cos(ja));
+    vec3 hd3 = vec3(hd.x, 0.0, hd.y);
+    vec3 root = vec3(aI.x, 0.0, aI.y);
+    vec3 c, tan_;
+    float w;
+    vHead = 0.0;
+    // The stalk top, where the plume hangs from.
+    float lean = aJ.x;
+    vec3 top = root + vec3(0.0, 0.96 * H, 0.0) + hd3 * lean * H * 0.92;
+    if (piece < 0.5) {
+      // A slim stalk that leans downwind, thinner toward the top.
+      float tt = t * 0.96;
+      c = root + vec3(0.0, tt * H, 0.0) + hd3 * lean * H * tt * tt;
+      tan_ = vec3(hd.x * 2.0 * lean * tt, 1.0, hd.y * 2.0 * lean * tt);
+      w = 0.007 * (1.0 - 0.55 * t);
+    } else if (piece > 3.5) {
+      // The plume arcs out from the top, then hangs downwind.
+      float Lp = H * 0.014 * aJ.w;
+      // A feather that nods about thirty degrees off upright.
+      c = top + hd3 * (t * Lp * 0.4 + t * t * Lp * 0.15) + vec3(0.0, t * Lp * 0.85 - t * t * Lp * 0.3, 0.0);
+      tan_ = hd3 * (0.4 + 0.3 * t) + vec3(0.0, 0.85 - 0.6 * t, 0.0);
+      w = Lp * 0.13 * sin(3.1416 * pow(t, 0.7)) + 0.003;
+      vHead = 1.0;
+    } else {
+      // A long leaf leaves the stalk, rises a little, then arcs over.
+      float k = piece - 1.0;
+      float t0 = 0.2 + 0.2 * k + 0.08 * fract(aJ.y * (3.1 + k));
+      float sd = mod(k, 2.0) < 0.5 ? 1.0 : -1.0;
+      vec2 own = vec2(cos(aI.w + k * 2.1), sin(aI.w + k * 2.1));
+      vec2 ld = normalize(mix(own, hd, 0.55) + vec2(-hd.y, hd.x) * sd * 0.3);
+      float L = (0.34 - 0.06 * k) * H;
+      c = root + vec3(0.0, t0 * H, 0.0) + vec3(ld.x, 0.0, ld.y) * t * L * 0.8 + vec3(0.0, t * L * 0.45 - t * t * L * 0.72, 0.0);
+      tan_ = vec3(ld.x * 0.8, 0.45 - 1.44 * t, ld.y * 0.8);
+      w = 0.012 * sin(3.1416 * min(t * 1.1, 1.0)) + 0.0006;
+    }
+    // Wind bends the top more than the base.
+    float hy = c.y / max(H, 0.1);
+    vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.14 * H;
+    c.xz += g + vec2(sin(uTime * 1.6 + aJ.y * 6.0), cos(uTime * 1.2 + aJ.y * 4.0)) * 0.01 * hy * uSway;
+    c.xz += frontPush(root.xz) * hy * hy * 0.35 * H;
+    // The ribbon turns to face the eye round its own axis.
+    vec3 V = normalize(cameraPosition - c);
+    vec3 side3 = normalize(cross(normalize(tan_), V));
+    // Thin ribbons never fall under half a pixel; far ones widen.
+    float px = length(cameraPosition - c) * 0.0012;
+    vec3 P = c + side3 * aG.y * max(w, px);
+    vP = P; vTone = aJ.z; vSide = aG.y; vT = t; vSeed = aJ.y;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP; varying float vHead, vTone, vSide, vT, vSeed;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    float a = 1.0, e = abs(vSide);
+    if (vHead > 0.5) {
+      // Plume hairs: streaks along its length, soft and loose at the edge.
+      float hair = k2noise(vec2(vT * 9.0 + vSeed * 13.0, vSide * 7.0)) * 0.6 + k2noise(vec2(vT * 3.0, vSide * 19.0 + vSeed)) * 0.4;
+      a = (1.0 - smoothstep(0.25, 1.0, e + (hair - 0.5) * 0.9)) * smoothstep(0.0, 0.06, vT);
+      if (a < 0.06) discard;
+    }
+    gl_FragColor = vec4(reedLight(vP, vHead, vTone, e), a);
+  }`,
+}));
+reeds.frustumCulled = false;
+reeds.layers.enable(MIRROR);
+scene.add(reeds);
+// Far beds: many more stalks at a third of the vertices each.
+const FAR_MAX = 18000;
+const farGeo = reedGeometry(true);
+const aIF = new THREE.InstancedBufferAttribute(new Float32Array(FAR_MAX * 4), 4);
+const aJF = new THREE.InstancedBufferAttribute(new Float32Array(FAR_MAX * 4), 4);
+farGeo.setAttribute('aI', aIF);
+farGeo.setAttribute('aJ', aJF);
+const reedsFar = new THREE.Mesh(farGeo, reeds.material);
+reedsFar.frustumCulled = false;
+reedsFar.layers.enable(MIRROR);
+scene.add(reedsFar);
+// Place the stalks in clumps on dry ground; most sit near the eye.
+const noise = createNoise2D(rnd);
+U.uSway.value = reduced() ? 0 : 1;
+function plantReeds(count) {
+  // A fixed seed plants the same marsh after every resize.
+  seed = 5511;
+  // The gap in the reeds lines up with the pad: x over depth, as seen from the eye.
+  const gapDir = padX() / PAD;
+  let n = 0, tries = 0;
+  while (n < count && tries++ < count * 40) {
+    // A square bias puts most stalks in the near fringe.
+    const u = rnd();
+    const z = -7 - 30 * u * u;
+    const half = 1.3 * -z + 6;
+    const x = (rnd() * 2 - 1) * half;
+    if (wet(x, z) < 0.6 + rnd() * 1.5) continue;
+    // Clumps: dense beds with thin gaps between them.
+    const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
+    if (clump < -0.25 + rnd() * 0.5) continue;
+    // Reeds fill the frame; only a small gap toward the pad stays open.
+    const side = z > -40 ? THREE.MathUtils.smoothstep(Math.abs(x / -z - gapDir), 0.05, 0.16) : 1;
+    if (rnd() > 0.15 + 0.85 * side) continue;
+    // Hero stalks rise past the horizon everywhere but the gap.
+    const tall = z > -16 && side > 0.8 && rnd() < 0.1;
+    const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
+    aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
+    aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
+    n++;
+  }
+  reedGeo.instanceCount = n;
+  aI.needsUpdate = aJ.needsUpdate = true;
+}
+// Far beds fill the banks out to the first channel.
+function plantFar(count) {
+  seed = 9137;
+  let n = 0, tries = 0;
+  while (n < count && tries++ < count * 30) {
+    const z = -16 - 260 * rnd();
+    const x = (rnd() * 2 - 1) * (1.3 * -z + 6);
+    if (wet(x, z) < 0.4 + rnd()) continue;
+    const clump = noise(x * 0.05, z * 0.05) * 0.7 + noise(x * 0.25, z * 0.25) * 0.3;
+    if (clump < -0.35 + rnd() * 0.4) continue;
+    aIF.setXYZW(n, x, z, 1.6 + rnd() * 1.4 + Math.max(0, clump) * 0.5, rnd() * Math.PI * 2);
+    aJF.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
+    n++;
+  }
+  farGeo.instanceCount = n;
+  aIF.needsUpdate = aJF.needsUpdate = true;
+}
+
+/* ---------- reed banks: far beds as feathered ribbons ---------- */
+// Beyond the pool, each channel bank is one long wall of reeds.
+// Its crest is noise in metres, so it feathers like plumes.
+const bankMat = new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, side: THREE.DoubleSide,
+  vertexShader: /* glsl */`
+  attribute vec2 aB;
+  uniform float uTime;
+  varying vec3 vP; varying vec2 vB;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    vec3 P = position;
+    // The crest sways with the same gusts as the near stalks.
+    P.xz += gust(P.xz, uTime) * aB.y * 0.12 + frontPush(P.xz) * aB.y * 0.8;
+    vP = P; vB = aB;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP; varying vec2 vB;
+  uniform float uTime;
+  ${HEAD}
+  ${REED_GLSL}
+  void main() {
+    // vB.x runs along the bank in metres; vB.y climbs from 0 to 1.
+    float s = vB.x;
+    // Clumps, then single plume tips: a reed edge, never a flat ledge.
+    float crest = 0.45 + 0.1 * k2noise(vec2(s * 0.05, 1.3)) + 0.3 * pow(k2noise(vec2(s * 0.9, 4.1)), 2.0) + 0.25 * pow(k2noise(vec2(s * 7.0, 9.3)), 3.0);
+    // Fine plumes and gaps along the top edge.
+    crest += 0.12 * (k2noise(vec2(s * 3.1, 7.7)) - 0.5) + 0.06 * (k2noise(vec2(s * 9.0 + uTime * 0.2, 2.2)) - 0.5);
+    float e = vB.y - crest;
+    float aa = max(fwidth(e), 0.004);
+    float a = 1.0 - smoothstep(-aa, aa, e);
+    if (a < 0.01) discard;
+    float head = smoothstep(crest - 0.25, crest, vB.y);
+    gl_FragColor = vec4(reedLight(vP, head, 0.4, 0.8), a);
+  }`,
+});
+const banks = new THREE.Group();
+scene.add(banks);
+// One wall along z(x), height 3.2 m, with a step every two metres or less.
+function bankWall(zOf, x0, x1, H, order) {
+  const n = Math.ceil((x1 - x0) / Math.min(4, (x1 - x0) / 400));
+  const pos = [], b = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (x1 - x0) * i / n, z = zOf(x);
+    pos.push(x, 0, z, x, H, z);
+    b.push(x, 0, x, 1);
+    if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aB', new THREE.Float32BufferAttribute(b, 2));
+  geo.setIndex(idx);
+  const m = new THREE.Mesh(geo, bankMat);
+  m.renderOrder = order;
+  m.frustumCulled = false;
+  m.layers.enable(MIRROR);
+  return m;
+}
+// The far edge of the pool, or a line at 52 m where the pool is not.
+function poolFar(x) {
+  let far = null;
+  for (let z = -18; z > -75; z -= 0.5) if (wet(x, z) < 0) far = z;
+  return far === null ? -52 - 4 * Math.sin(x * 0.05) : Math.min(far - 1.5, -52 - 4 * Math.sin(x * 0.05));
+}
+function buildBanks() {
+  banks.clear();
+  // Draw far walls first, so near ones blend over them.
+  const walls = [[poolFar, -140, 140, 2.5, 52]];
+  CH.forEach(c => {
+    const span = -c[0] * 1.6 + 200;
+    // Near bank, then far bank; each sits a metre back from the water.
+    walls.push([x => chZ(c, x) + chW(c, x) + 1, -span, span, 2.3, -c[0] - c[4]]);
+    walls.push([x => chZ(c, x) - chW(c, x) - 1, -span, span, 2.2, -c[0] + c[4]]);
+    // A second wall inside each bed thickens the mass behind the edge.
+    walls.push([x => chZ(c, x) - chW(c, x) - 18 - 8 * Math.sin(x * 0.01), -span, span, 2.4, -c[0] + c[4] + 18]);
+  });
+  walls.sort((a, b) => b[4] - a[4]);
+  walls.forEach(([zOf, x0, x1, H], i) => banks.add(bankWall(zOf, x0, x1, H, 1 + i * 0.01)));
+}
+
+/* ---------- far shore: one dark line of land and trees ---------- */
+const shoreMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb; varying vec3 vP; ${HEAD}
+  void main() { gl_FragColor = vec4(k2haze(uAmb * 0.05, vP), 1.0); }`,
+});
+const shore = new THREE.Group();
+scene.add(shore);
+function buildShore(D) {
+  shore.children.forEach(m => m.geometry.dispose());
+  shore.clear();
+  const pos = [], idx = [], n = 1500, X = 7000;
+  let s = 9001;
+  const sn = createNoise2D(() => (s = (s * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i <= n; i++) {
+    const x = -X + 2 * X * i / n;
+    // One clean dark line: a low bank with the faintest roll.
+    const top = 1.0 + Math.max(0, sn(x * 0.004, 2.5)) * 0.8;
+    const z = -D - 30 * sn(x * 0.0008, 4.4);
+    pos.push(x, 0, z, x, top, z, x, 0.6, z - 2500);
+    if (i < n) {
+      const a = i * 3;
+      idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4, a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  const m = new THREE.Mesh(geo, shoreMat);
+  m.frustumCulled = false;
+  m.layers.enable(MIRROR);
+  shore.add(m);
+  U.uShore.value = -D;
+}
+
+/* ---------- mesas: a giant, quiet landscape far behind the shore ---------- */
+// Three ranges of flat-topped mesas at 7, 16 and 35 km, in real metres.
+// Air fades each range toward the sky; the highest tops catch first light.
+const mesaMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; uniform float uShadowH; varying vec3 vP; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    float dist = length(v.xz);
+    vec3 dir = normalize(v);
+    // Faces toward the dawn take a little of its glow.
+    float side = 0.5 + 0.5 * dot(normalize(v.xz), normalize(uSun.xz));
+    vec3 rock = uAmb * (0.08 + 0.06 * side) + uGlowC * 0.012 * side;
+    // Alpenglow: tops above the Earth's shadow line glow pink.
+    float lit = smoothstep(uShadowH * 1000.0 - 80.0, uShadowH * 1000.0 + 40.0, vP.y);
+    rock += vec3(1.0, 0.45, 0.35) * uGlowC * 1.4 * lit;
+    // Aerial perspective: far ranges melt into the low sky; low parts more.
+    float air = (1.0 - exp(-dist / 11000.0)) * (1.0 - 0.15 * smoothstep(0.0, 1400.0, vP.y));
+    vec3 skyC = k2sky(normalize(vec3(dir.x, max(dir.y, 0.004), dir.z)));
+    gl_FragColor = vec4(mix(rock, skyC * 0.97, air), 1.0);
+  }`,
+});
+const mesas = new THREE.Group();
+scene.add(mesas);
+function buildMesas() {
+  let ms = 777;
+  const mr = () => (ms = (ms * 16807) % 2147483647) / 2147483647;
+  const sn = createNoise2D(mr);
+  // Distance, count, lowest and highest top, in metres.
+  for (const [dist, count, h0, h1] of [[9000, 6, 60, 220], [20000, 12, 200, 600], [45000, 16, 500, 1400]]) {
+    const span = dist * 2.2, list = [];
+    for (let i = 0; i < count; i++) {
+      // Wide mesas, narrow buttes, and some with a lower bench.
+      const butte = mr() < 0.3;
+      list.push({ c: (mr() * 2 - 1) * span * 0.8, w: dist * (butte ? 0.006 + 0.012 * mr() : 0.025 + 0.09 * mr()), h: h0 + (h1 - h0) * mr(), bench: !butte && mr() < 0.45 });
+    }
+    const n = 1400, pos = [], idx = [];
+    for (let i = 0; i <= n; i++) {
+      const x = -span + 2 * span * i / n;
+      // Low rolling ground ties the mesas together.
+      let y = h0 * 0.12 * (0.6 + 0.4 * sn(x / dist * 3, dist));
+      for (const m of list) {
+        const d = Math.abs(x - m.c), w = m.w, h = m.h;
+        // A worn cap rock: a near-flat top with a ragged edge.
+        let yy = h * (1 - 0.05 * Math.abs(sn(x / w * 3, m.c)) - 0.02 * Math.abs(sn(x / w * 11, m.c + 3)));
+        if (d > w) {
+          // The cliff drops to a bench or to the talus; the talus flares out.
+          const bw = m.bench ? w * 0.4 : w * 0.05, bh = m.bench ? 0.55 : 0.6;
+          const talus = Math.max(0, 1 - (d - w - bw) / (w * 0.75 + 0.2 * h * 4));
+          yy = d < w + bw ? h * bh * (1 - 0.04 * Math.abs(sn(x / w * 7, m.c))) : h * bh * Math.pow(talus, 1.3);
+        }
+        y = Math.max(y, yy);
+      }
+      const z = -dist - (x * x) / (2 * dist) * 0.25;
+      pos.push(x, -40, z, x, y, z);
+      if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    const m = new THREE.Mesh(geo, mesaMat);
+    m.frustumCulled = false;
+    m.renderOrder = -0.5;
+    m.layers.enable(MIRROR);
+    mesas.add(m);
+  }
+}
+buildMesas();
+
+
+/* ---------- launch installation: a faint gantry beside the pad ---------- */
+// One quad on the far shore; the shader draws a lattice tower and a low block.
+// Haze takes most of it, so it is a hint on the horizon, not a landmark.
+const gantry = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, depthWrite: false,
+  vertexShader: /* glsl */`varying vec2 vQ; varying vec3 vP; void main() { vQ = position.xy + vec2(0.5, 0.0); vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb; varying vec2 vQ; varying vec3 vP; ${HEAD}
+  void main() {
+    vec2 q = vQ;
+    float px = max(fwidth(q.x), 0.004), py = max(fwidth(q.y), 0.004);
+    // One slim rod, a little wider at the foot, with a small head.
+    float rod = step(abs(q.x - 0.6), 0.03 + px) * step(q.y, 0.94);
+    float head = step(abs(q.x - 0.6), 0.07 + px) * step(0.88, q.y) * step(q.y, 0.96);
+    float foot = step(abs(q.x - 0.6), 0.09) * step(q.y, 0.06);
+    float a = min(1.0, rod + head + foot);
+    if (a < 0.05) discard;
+    vec3 c = uAmb * 0.04;
+    gl_FragColor = vec4(k2haze(c, vP) * a, a);
+  }`,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+}));
+gantry.frustumCulled = false;
+gantry.renderOrder = 0.6;
+gantry.layers.enable(MIRROR);
+scene.add(gantry);
+// The quad is 30 m wide and 45 m tall; the rod stands just right of the pad.
+function placeGantry(x) {
+  gantry.position.set(x + 10, 0, -PAD - 8);
+  gantry.scale.set(30, 45, 1);
+}
+
+/* ---------- mist: low sheets over the far flats ---------- */
+const mistMat = new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`attribute float aH; varying vec3 vP; varying float vK;
+  void main() { vP = position + vec3(0.0, aH, 0.0); vK = aH; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform float uTime; uniform vec3 uAmb, uGlowC; varying vec3 vP; varying float vK; ${HEAD}
+  void main() {
+    vec3 v = vP - cameraPosition;
+    float dist = length(v.xz);
+    vec2 q = vP.xz * vec2(0.0025, 0.009) + vec2(uTime * 0.004, 0.0) + vK * 1.7;
+    float d = smoothstep(0.38, 0.7, k2fbm(q)) * smoothstep(150.0, 400.0, dist) * (1.0 - smoothstep(uShore - 600.0, uShore - 1800.0, vP.z));
+    // A sheet seen edge-on holds more mist.
+    float a = d * (1.0 - exp(-0.03 / max(abs(normalize(v).y), 0.002))) * 0.8;
+    if (a < 0.003) discard;
+    vec3 V = normalize(v);
+    vec3 col = k2hazeColor(V) * 1.1 + uAmb * 0.2;
+    // Mist near the pad lights orange on the flame side.
+    vec3 fd = uFlame.xyz - vP;
+    col += uFlameC * uFlame.w * 0.25 * (1.0 + uNight) / (1.0 + dot(fd, fd) / 360000.0);
+    gl_FragColor = vec4(col * a, a);
+  }`,
+});
+const mistGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(14000, 6000).rotateX(-Math.PI / 2).translate(0, 0, -3100));
+mistGeo.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array([7, 3.5, 1.2]), 1));
+mistGeo.instanceCount = 3;
+const mist = new THREE.Mesh(mistGeo, mistMat);
+mist.frustumCulled = false;
+mist.renderOrder = 5;
+scene.add(mist);
+
+/* ---------- K6: burst particles ---------- */
+// Lifted from Fireworks; the launch's sparks and boosters use it.
+// The cloud deck veil is cut: this sky has no deck.
+const CAP = 8000;
+const G = new THREE.Vector3(0, -9.8, 0);
+const RAMPS = [
+  linFit(0.82, 0.16, 80), // sodium gold
+  linFit(0.97, 0.02, 90), // magnesium white
+  linFit(0.74, 0.18, 55), // calcium orange
+];
+const EMBER = linFit(0.5, 0.17, 35);
+const starGeo = new THREE.InstancedBufferGeometry();
+// Three columns, tail (0), middle (1) and head (2), so a trail can bend.
+// y runs across the streak.
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
+starGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
+const slot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  starGeo.setAttribute(name, a);
+  return a;
+};
+const aA = slot('aA'), aBs = slot('aB'), aC = slot('aC'), aD = slot('aD');
+starGeo.instanceCount = 0;
+const starMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
+    uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aA, aB, aC, aD;
+  uniform float uTime, uDpr, uSteady;
+  uniform vec2 uRes;
+  uniform vec3 uG, uRamp[${RAMPS.length}], uEmber;
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
+  // Linear drag, a = G - k v, in closed form: no stored state.
+  vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
+    vec3 vt = uG / k;
+    return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
+  }
+  float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
+  vec3 path(float t) { return starPos(aA.xyz, aB.xyz, aB.w, t); }
+  // Screen position in pixels, and the clip position for output.
+  vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
+  void main() {
+    float age = uTime - aA.w, life = aC.y;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float f = age / life, tr = min(aC.z, age);
+    // Three points on the true path, so the trail follows the fall.
+    vec4 c0, c1, c2;
+    vec3 ph = path(age);
+    vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(ph, c2);
+    float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
+    // The core is w wide; the quad is wider to hold the head's halo.
+    float w = aC.w * uDpr * (1.0 - 0.5 * f), W = w * 2.4;
+    int col = int(position.x + 0.5);
+    vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
+    vec2 dir = col == 0 ? s1 - s0 : col == 1 ? s2 - s0 : s2 - s1;
+    dir = length(dir) > 1e-3 ? normalize(dir) : vec2(0.0, 1.0);
+    float s = col == 0 ? -W : col == 1 ? L01 : len + W;
+    vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
+    c.xy += off / (0.5 * uRes) * c.w;
+    gl_Position = c;
+    vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vSeed = aD.y;
+    // aD: x kind (1 strobe, 2 flicker), y seed, z second colour + 1, w gain.
+    vec3 chem = uRamp[int(aC.x + 0.5)];
+    if (aD.z > 0.5) chem = mix(chem, uRamp[int(aD.z - 0.5)], smoothstep(0.4, 0.55, f));
+    float b = 1.0 - smoothstep(0.75, 1.0, f);
+    // White-hot first, then the chemical colour, then an ember red.
+    vec3 col3 = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
+    col3 = mix(col3, uEmber * 0.5, smoothstep(0.6, 1.0, f));
+    if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
+    if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
+    vCol = col3 * 4.0 * aD.w * b;
+    // The tail is spent fuel: cooler and redder than the head.
+    vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
+    vSpark = abs(aD.x - 2.0) < 0.5 ? 0.8 : 0.25;
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vCol, vColT, vLWH;
+  varying float vS, vY, vSpark, vSeed;
+  void main() {
+    float len = vLWH.x, W = vLWH.z;
+    // A core thinner than a pixel aliases; widen it and dim it to match.
+    float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
+    // Distance from the tail-to-head path: a capsule with round ends.
+    float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
+    float d2 = (out_ * out_ + vY * vY) / (w * w);
+    float core = max(exp(-d2 * 1.8) - 0.01, 0.0);
+    // Brightness falls off exponentially from the head down the trail.
+    float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
+    float trail = 0.05 + 0.95 * exp(-3.0 * (1.0 - u));
+    // Glints every few pixels along the tail; they move as the star moves.
+    float g = step(0.55, fract(sin(floor(vS / 3.0) * 12.9898 + vSeed) * 43758.5453));
+    float sp = mix(1.0, 0.4 + 1.4 * g, vSpark * (1.0 - u));
+    // The head carries a soft halo, wider than the core.
+    float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
+    float halo = 0.22 * exp(-dh2 * 3.0);
+    vec3 c = mix(vColT, vCol, u) * core * trail * sp + vCol * halo;
+    gl_FragColor = vec4(c * dim, 0.0);
+  }`,
+});
+const stars = new THREE.Mesh(starGeo, starMat);
+stars.frustumCulled = false;
+stars.layers.enable(MIRROR);
+scene.add(stars);
+let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
+// Write one star into the next slot; the oldest slot gives way.
+function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
+  const i = head;
+  head = (head + 1) % CAP;
+  if (dirtyFrom < 0) dirtyFrom = i;
+  dirtyN = Math.min(CAP, dirtyN + 1);
+  aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
+  aBs.setXYZW(i, v0.x, v0.y, v0.z, k);
+  aC.setXYZW(i, ramp, life, trail, size);
+  aD.setXYZW(i, kind, rnd() * 100, ramp2 + 1, gain);
+  starGeo.instanceCount = Math.max(starGeo.instanceCount, i + 1);
+  lastDeath = Math.max(lastDeath, t0 + life);
+}
+// Upload only the slots a launch wrote; a wrap gives two ranges.
+function commitStars() {
+  if (dirtyFrom < 0) return;
+  const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
+  for (const at of [aA, aBs, aC, aD]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  dirtyFrom = -1; dirtyN = 0;
+}
+/* ---------- end K6 ---------- */
+
+/* ---------- trajectory: an orbiter's climb, compressed to fit the sky ---------- */
+// Real altitude (km) maps to world height by a square root.
+// The first metres stay near true scale; 120 km sits half a distance up.
+const KINDS = {
+  // Climb rate, flame size, plume density, boosters.
+  small: { climb: 1.25, flame: 0.7, plume: 0.7, boosters: false },
+  medium: { climb: 1, flame: 1, plume: 1, boosters: false },
+  heavy: { climb: 0.9, flame: 1.45, plume: 1.4, boosters: true },
+};
+// Seconds after liftoff to real altitude in km; the first seconds hang.
+// The climb rate eases after the turn: the orbiter gains speed, not height.
+const altKm = (t, k) => (t <= 0 ? 0 : 0.06 * k.climb * t * t * THREE.MathUtils.smoothstep(t, 0, 2.5) / (1 + (t / 45) * (t / 45)));
+const worldY = (h, D) => D * 0.5 * Math.sqrt(Math.max(h, 0) / 120);
+// An orbiter rises straight, then leans downrange from T+14, into the dark sky.
+// It never levels out; it leaves the frame still climbing.
+function rocketAt(f, t, out) {
+  const D = f.D, h = altKm(t, f.k);
+  // Side on: the arc runs across the frame, a little away from the eye.
+  const s = Math.pow(THREE.MathUtils.smoothstep(t, 14, 115), 1.3);
+  return out.set(f.x + D * 1.1 * s, 2 + worldY(h, D), f.z - D * 0.14 * s);
+}
+// World metres per real metre at altitude h: the scale of the body and flame.
+const scaleAt = (h, D) => Math.min(1, (worldY(h + 0.02, D) - worldY(h, D)) / 20);
+
+/* ---------- K2: orbs ---------- */
+// Soft glows round the brightest lights, squashed sideways, so light bleeds into haze.
+const ORB_N = 4;
+function makeOrbs() {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
+      uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+      uN: { value: 0 },
+      uAsp: { value: 1 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec3 uOP[${ORB_N}];
+    uniform vec4 uOC[${ORB_N}];
+    uniform int uN;
+    uniform float uAsp;
+    varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      for (int i = 0; i < ${ORB_N}; i++) {
+        if (i >= uN) break;
+        vec2 d = vUv - uOP[i].xy;
+        float r = length(vec2(d.x * uAsp * 0.6, d.y));
+        // A tight core and a wide skirt; z holds the orb size.
+        c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+      }
+      // A soft roll-off above 2 keeps bloom free of square tiles.
+      float m = max(max(c.r, c.g), c.b);
+      c *= m > 2.0 ? (2.0 + log(m - 1.0)) / m : 1.0;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+const tmpV = new THREE.Vector3();
+function placeOrbs(pass, list) {
+  camera.updateMatrixWorld();
+  let n = 0;
+  for (const o of list) {
+    if (n >= ORB_N) break;
+    tmpV.copy(o.pos).project(camera);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
+    pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
+    pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    n++;
+  }
+  pass.uniforms.uN.value = n;
+  pass.uniforms.uAsp.value = size.w / size.h;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- flame: the engine, a hot core with an exhaust tail ---------- */
+const FU = { uAxis: { value: new THREE.Vector3(0, -1, 0) }, uSize: { value: 10 }, uFlick: { value: 1 }, uSpread: { value: 0 } };
+const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  uniform vec4 uFlame; uniform vec3 uAxis; uniform float uSize, uSpread;
+  varying vec2 vQ;
+  void main() {
+    vec3 V = normalize(cameraPosition - uFlame.xyz);
+    // The tail points down the exhaust, turned to face the eye.
+    vec3 ax = normalize(uAxis - dot(uAxis, V) * V + vec3(0.0, 1e-4, 0.0));
+    vec3 sd = normalize(cross(ax, V));
+    vQ = position.xy;
+    // A long exhaust tail; thin air lets it balloon wide.
+    float along = position.y < 0.0 ? 0.5 : 6.0;
+    vec3 P = uFlame.xyz + sd * position.x * uSize * (0.7 + 2.2 * uSpread) + ax * position.y * uSize * along;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread;
+  varying vec2 vQ;
+  void main() {
+    // y below 0 is the nozzle; y above 0 runs down the tail.
+    float x = vQ.x, y = max(vQ.y, 0.0);
+    float wide = mix(1.0, 3.0, uSpread);
+    float core = exp(-(x * x * 40.0 * wide * wide + vQ.y * vQ.y * (vQ.y < 0.0 ? 80.0 : 22.0)));
+    // The tail is a narrow white-hot cone that cools to orange, then red.
+    float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
+    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.08) * exp(-y * mix(2.4, 1.3, uSpread)) * step(-0.15, vQ.y);
+    vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
+    hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
+    vec3 c = vec3(1.0, 0.96, 0.9) * core * 16.0 + hot * tail * 6.0 * uFlick;
+    gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
+  }`,
+}));
+flame.frustumCulled = false;
+flame.visible = false;
+flame.renderOrder = 7;
+flame.layers.enable(MIRROR);
+scene.add(flame);
+
+/* ---------- the rocket: a slim body, lit from below by its own flame ---------- */
+// Unit height along y from the nozzle; Heavy adds two side cores.
+const bodyMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: /* glsl */`varying vec3 vN, vP; void main() { vN = normalize(mat3(modelMatrix) * normal); vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; varying vec3 vN, vP; ${HEAD}
+  void main() {
+    vec3 F = normalize(uFlame.xyz - vP);
+    float fl = max(dot(vN, F), 0.0) * 0.6 + 0.15;
+    float rim = pow(1.0 - abs(dot(vN, normalize(cameraPosition - vP))), 3.0);
+    vec3 c = vec3(0.75, 0.75, 0.72) * (uAmb * 2.0 + uFlameC * uFlame.w * fl * 0.08) + uGlowC * rim * 0.5;
+    gl_FragColor = vec4(k2haze(c, vP), 1.0);
+  }`,
+});
+const body = new THREE.Group();
+const bodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1).translate(0, 0.5, 0);
+const noseGeo = new THREE.ConeGeometry(0.5, 0.12, 10).translate(0, 1.06, 0);
+const core = new THREE.Group();
+core.add(new THREE.Mesh(bodyGeo, bodyMat), new THREE.Mesh(noseGeo, bodyMat));
+const boosters = [-1, 1].map(sd => {
+  const b = new THREE.Group();
+  b.add(new THREE.Mesh(bodyGeo, bodyMat), new THREE.Mesh(noseGeo, bodyMat));
+  b.position.x = sd * 1.0;
+  b.scale.set(1, 0.92, 1);
+  core.add(b);
+  return b;
+});
+body.add(core);
+body.visible = false;
+body.layers.enable(MIRROR);
+body.traverse(o => o.layers.enable(MIRROR));
+scene.add(body);
+const BODY = { small: [32, 2.2], medium: [55, 3.7], heavy: [62, 3.7] };
+const yUp = new THREE.Vector3(0, 1, 0);
+
+/* ---------- plume: exhaust and steam on a ring of billboards ---------- */
+// Each puff is written once at birth; the shader moves and lights it.
+// aQ: birth x, y, z, time. aR: velocity x, y, z, drag.
+// aS: real altitude (km), seed, full radius, kind (0 exhaust, 1 steam).
+const PCAP = 3200;
+const puffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+const pslot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(PCAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  puffGeo.setAttribute(name, a);
+  return a;
+};
+const aQ = pslot('aQ'), aR = pslot('aR'), aS = pslot('aS'), aT = pslot('aT');
+puffGeo.instanceCount = 0;
+const PU = { uShear: { value: reduced() ? 0 : 1 }, uScale: { value: 2000 } };
+const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...PU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aQ, aR, aS, aT;
+  uniform float uTime, uShear, uScale;
+  varying vec3 vC, vW;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
+  void main() {
+    float age = uTime - aQ.w, life = aT.x;
+    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    float h = aS.x, k = aR.w;
+    vec3 P = aQ.xyz + aR.xyz * (1.0 - exp(-k * age)) / k;
+    // The upper wind turns with height, so the trail shears into a zigzag.
+    float wind = uScale * 0.00012 * (0.1 + h / 20.0);
+    P.x += wind * age * sin(h * 0.22 + 0.8) * uShear;
+    P.z += wind * age * 0.4 * cos(h * 0.17) * uShear;
+    // Steam rises once its push is spent.
+    P.y += aT.y * age;
+    float r = aS.z * (0.3 + 0.7 * (1.0 - exp(-age / aT.z)));
+    // The quad covers the sphere; the fragment marches through it.
+    vec3 V = normalize(cameraPosition - P);
+    vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
+    vec3 up = cross(V, rt);
+    vec3 W = P + (rt * position.x + up * position.y) * r * 1.02 + V * r;
+    vC = P; vW = W; vR = r; vH = h; vSeed = aS.y; vKind = aS.w;
+    // The puff thins as it spreads; it fades in fast and out slowly.
+    vA = aT.w * smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(life * 0.55, life, age)) * pow(aS.z * 0.3 / r, 0.6);
+    vNear = 1.0 - smoothstep(0.0, 6.0, age);
+    vAge = age;
+    vSpread = 1.0 - exp(-age / aT.z);
+    gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform float uShadowH, uScale, uTime;
+  uniform vec3 uAmb, uGlowC;
+  varying vec3 vC, vW;
+  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
+  ${HEAD}
+  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float n3(vec3 p) {
+    vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), u.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), u.x), u.y),
+               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), u.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+  }
+  // Billows: three octaves, the fine ones ride on the coarse.
+  float billow(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.13 + 3.1) + 0.15 * n3(p * 4.37 + 7.7); }
+  // Henyey-Greenstein: g above 0 throws light forward.
+  float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+  // Puff density at a sphere-local point; the cheap form skips fine octaves.
+  float puffDens(vec3 q, float fq, vec3 drift, bool cheap) {
+    // Ground clouds squat: their spheres are flattened and cut at the ground.
+    vec3 qe = vKind > 0.5 ? vec3(q.x, q.y * 1.8, q.z) : q;
+    float r2 = dot(qe, qe);
+    if (r2 > 1.0) return 0.0;
+    vec3 w = vC + q * vR;
+    if (vKind > 0.5 && w.y < 0.0) return 0.0;
+    // Noise in world space: overlapping puffs share one billow field.
+    vec3 wp = w / (uScale * mix(0.014, 0.05, vKind)) + drift;
+    float n = cheap ? n3(wp) * 0.85 + 0.075 : billow(wp);
+    // Ground clouds: ridged noise piles them into hard cauliflower lumps.
+    // Big slow lumps carry small ridged ones, so no two look alike.
+    if (vKind > 0.5) n = n3(wp * 0.45 + 5.0) * 0.3 + n * 0.35 + 0.35 * (1.0 - abs(2.0 * (cheap ? n3(wp * 2.3 + 11.0) : n3(wp * 2.3 + 11.0) * 0.7 + n3(wp * 5.1 + 3.0) * 0.3) - 1.0));
+    // Ground clouds are densest low down, where they drag along the ground.
+    float env = exp(-r2 * mix(2.4, 3.2, vKind)) * (vKind > 0.5 ? 1.0 + 0.8 * clamp(-q.y * 2.0 + 0.3, 0.0, 1.0) : 1.0);
+    // A high cut and a steep slope give a defined edge, not fuzz.
+    if (vKind > 0.5) return smoothstep(0.42, 0.6, n * env * 1.25) * 1.4;
+    return clamp(env * (n * 1.7 - 0.35 + 0.3 * (1.0 - vSpread)), 0.0, 1.0);
+  }
+  void main() {
+    // March the view ray through this puff's sphere.
+    vec3 rd = normalize(vW - cameraPosition), oc = cameraPosition - vC;
+    float b = dot(oc, rd), c = dot(oc, oc) - vR * vR, disc = b * b - c;
+    if (disc < 0.0) discard;
+    disc = sqrt(disc);
+    float t0 = max(-b - disc, 0.0), t1 = -b + disc;
+    if (t1 <= t0) discard;
+    const int N = 10;
+    float dt = (t1 - t0) / float(N);
+    // Little jitter: a steady march keeps hard edges hard.
+    float jit = 0.3 + 0.4 * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    // Sunlight above the shadow line; below it, the dawn glow and the flame.
+    // The line is soft: the sun comes up over a third of the shadow height, and eases in.
+    float band = max(6.0, uShadowH * 0.35);
+    float sun = smoothstep(uShadowH - band * 0.3, uShadowH + band, vH) * (1.0 - vKind);
+    sun *= sun;
+    // The key light: the sun when sunlit, else the bright horizon toward the sun.
+    vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
+    vec3 Ld = normalize(mix(Lg, L, sun));
+    vec3 Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
+    // Sunlit exhaust is silver with a faint warm core, pale blue at the edges.
+    vec3 gold = vec3(1.0, 0.86, 0.74), blue = vec3(0.62, 0.74, 1.0);
+    vec3 fdv = uFlame.xyz - vC;
+    float reach = uScale * (vKind > 0.5 ? 0.06 : 0.012);
+    // Ground clouds lose the flame's light as it climbs away.
+    vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind) * (1.0 + 2.0 * uNight);
+    // Little fill: smoke turned from the dawn stays a dark shape.
+    // Sky fill gives a cool grey body; smoke turned from the dawn stays dim.
+    vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
+    // Phase: light that passes the smoke toward the eye scatters most.
+    float pd = 0.75 * hg(dot(rd, Ld), 0.72) + 0.25 * hg(dot(rd, Ld), -0.2);
+    float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
+    // The dawn key is the horizon's own colour, soft, never a flat orange.
+    vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
+    vec3 keyC = mix(mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, mix(blue * 0.5, gold * 1.2, 0.55) * 1.15, sun);
+    vec3 drift = vec3(0.0, -uTime * 0.03, uTime * 0.01);
+    float fq = mix(1.6, 2.0, vKind);
+    float T = 1.0;
+    vec3 col = vec3(0.0);
+    for (int i = 0; i < N; i++) {
+      vec3 q = (cameraPosition + rd * (t0 + (float(i) + jit) * dt) - vC) / vR;
+      float dens = puffDens(q, fq, drift, false);
+      if (dens <= 0.0) continue;
+      float od = dens * (dt / vR) * 3.2 * vA;
+      // Two short steps toward each light give the self-shadow.
+      float sk = puffDens(q + Ld * 0.3, fq, drift, true) + puffDens(q + Ld * 0.65, fq, drift, true);
+      float sf = puffDens(q + Fd * 0.3, fq, drift, true) + puffDens(q + Fd * 0.65, fq, drift, true);
+      // Ground clouds shade softer, so their cores stay grey, not black holes.
+      float tk = exp(-sk * mix(2.6, 2.4, vKind) * vA), tf = exp(-sf * mix(2.0, 1.4, vKind) * vA);
+      // Powder: thin rims glow when backlit; thick cores stay dark.
+      float pw = 1.0 - exp(-dens * 4.0);
+      // Dense cores scatter gold in sunlight; thin rims scatter blue.
+      vec3 key = keyC * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, dot(q, q))), sun);
+      // Below the shadow line the key lights only thin edges: a rim, not a glow.
+      float thin = mix(1.0 - smoothstep(0.15, 0.6, dens), 1.0, sun);
+      // Ground clouds take an even fill, so no puff shows a dark core and a bright ring.
+      // Ground clouds: the sky lights their tops; their undersides fall into shadow.
+      float topLit = 0.5 + 0.5 * q.y;
+      vec3 Li = key * tk * pd * pw * mix(2.2 * thin, 1.2, vKind) + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 0.1 + 1.5 * topLit * tk * tk, vKind);
+      float ab = 1.0 - exp(-od);
+      // Fire: exhaust just out of the nozzle still burns, hottest where densest.
+      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens);
+      vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-vAge / 0.5)) * burn * 22.0;
+      col += T * ab * (Li + fire);
+      T *= 1.0 - ab;
+      if (T < 0.02) break;
+    }
+    float a = 1.0 - T;
+    if (a < 0.003) discard;
+    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, 0.3 * k2hazeAmount(vC)) : col;
+    gl_FragColor = vec4(col, a);
+  }`,
+}));
+puffs.frustumCulled = false;
+puffs.renderOrder = 6;
+puffs.layers.enable(MIRROR);
+scene.add(puffs);
+let phead = 0, pdirtyFrom = -1, pdirtyN = 0;
+/* ---------- fluids: the ground cloud and the exhaust trail, side on ---------- */
+// Two 2D grid fluids, as Fire's K3 is but in two dimensions: the view is side on,
+// so one slab across the pad carries the ground cloud and one slab over the sky
+// carries the trail. Each frame: advect velocity, forces, Jacobi pressure, advect density.
+// Mode 0 is the ground: a jet onto the pad, heavy smoke that creeps. Mode 1 is the
+// trail: smoke poured in at the rocket, spreading wide where the air is thin.
+const fluidScene = new THREE.Scene(), fluidCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const fluidQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), null);
+fluidScene.add(fluidQuad);
+function makeFluid(W, H) {
+  const t = () => new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false });
+  return { W, H, texel: new THREE.Vector2(1 / W, 1 / H), velA: t(), velB: t(), denA: t(), denB: t(), prsA: t(), prsB: t(), divT: t(), live: false, seed: 0 };
+}
+const gFluid = makeFluid(512, 160);
+const FQ_VS = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const fMat = (frag, uniforms) => new THREE.ShaderMaterial({ uniforms: { uTexel: { value: new THREE.Vector2() }, ...uniforms }, vertexShader: FQ_VS, fragmentShader: /* glsl */`precision highp float; varying vec2 vUv; uniform vec2 uTexel; ${frag}`, depthTest: false, depthWrite: false });
+// Advect a field by the velocity; the ground stops anything from going under.
+const advectMat = fMat(/* glsl */`
+uniform sampler2D tVel, tSrc; uniform float uDt, uDiss;
+void main() {
+  vec2 v = texture2D(tVel, vUv).xy;
+  vec2 p = vUv - v * uDt;
+  p.y = max(p.y, uTexel.y * 0.5);
+  gl_FragColor = texture2D(tSrc, p) * uDiss;
+}`, { tVel: { value: null }, tSrc: { value: null }, uDt: { value: 0 }, uDiss: { value: 1 } });
+// Forces, by mode.
+const forceMat = fMat(/* glsl */`
+uniform sampler2D tVel, tDen; uniform float uDt, uPush, uTime, uSeed, uMode, uWind, uSrcR; uniform vec2 uSrc;
+${K2_NOISE}
+void main() {
+  vec2 v = texture2D(tVel, vUv).xy;
+  vec4 dd = texture2D(tDen, vUv);
+  float d = dd.r, age = dd.g;
+  vec2 q = vUv * vec2(11.0, 30.0) + vec2(uSeed, uTime * 0.25);
+  float e = 0.01;
+  float nx = k2noise(q + vec2(0.0, e)) - k2noise(q - vec2(0.0, e));
+  float ny = k2noise(q + vec2(e, 0.0)) - k2noise(q - vec2(e, 0.0));
+  if (uMode < 0.5) {
+    // The exhaust is a jet straight down onto the pad; the ground turns it sideways.
+    vec2 dp = vUv - vec2(0.5, 0.0);
+    float col = exp(-dp.x * dp.x * 5000.0) * smoothstep(0.0, 0.015, vUv.y) * (1.0 - smoothstep(0.16, 0.3, vUv.y));
+    float jet = 0.02 * (0.8 + 0.4 * k2noise(vec2(uTime * 9.0, vUv.y * 30.0)));
+    v += vec2((k2noise(vec2(uTime * 5.0, 3.0)) - 0.5) * 0.02, -jet) * col * uPush * uDt;
+    // The deflected jet drives two ground sheets, left and right, hard and far.
+    float sheet = (1.0 - smoothstep(0.0, 0.12, vUv.y)) * smoothstep(0.0, 0.06, abs(dp.x)) * (1.0 - smoothstep(0.2, 0.45, abs(dp.x)));
+    v.x += sign(dp.x) * 0.02 * uPush * sheet * uDt;
+    // Heavy smoke: a breath of lift while fresh, then it settles and creeps.
+    // Columns billow up a few hundred metres, then settle and drift.
+    v.y += (min(d, 3.0) * 0.02 * exp(-age / 6.0) - smoothstep(0.15, 0.6, vUv.y) * min(d, 2.0) * 0.025) * uDt;
+    v.x += (k2noise(vec2(vUv.x * 6.0 + uSeed, uTime * 0.4)) - 0.5) * 0.02 * uDt * smoothstep(0.0, 0.2, d);
+    v += vec2(nx, -ny) * 0.06 * uDt * smoothstep(0.0, 0.3, d);
+    // A light wind carries the old cloud off downrange.
+    v.x += uWind * uDt * smoothstep(6.0, 20.0, age);
+    // Heavy: strong drag, and a lid that damps climbing.
+    v *= 1.0 - 0.6 * uDt;
+    v.y *= 1.0 - smoothstep(0.35, 0.8, vUv.y) * 3.0 * uDt;
+  } else {
+    // The rocket pours smoke in at uSrc; thin air lets it bloom outward: the jellyfish.
+    vec2 dp = vUv - uSrc;
+    float g = exp(-dot(dp, dp) / (uSrcR * uSrcR));
+    v += normalize(dp + vec2(1e-5, 0.0)) * g * uPush * uDt;
+    // Upper wind shears the trail; it turns with height.
+    v.x += uWind * (vUv.y - 0.25) * uDt * smoothstep(0.0, 0.1, d);
+    v += vec2(nx, -ny) * 0.03 * uDt * smoothstep(0.0, 0.3, d);
+    v *= 1.0 - 0.5 * uDt;
+  }
+  if (vUv.y < uTexel.y * 1.5) v.y = max(v.y, 0.0);
+  gl_FragColor = vec4(v, 0.0, 1.0);
+}`, { tVel: { value: null }, tDen: { value: null }, uDt: { value: 0 }, uPush: { value: 0 }, uTime: { value: 0 }, uSeed: { value: 0 }, uMode: { value: 0 }, uWind: { value: 0 }, uSrc: { value: new THREE.Vector2(0.5, 0) }, uSrcR: { value: 0.01 } });
+const divMat = fMat(/* glsl */`
+uniform sampler2D tVel;
+void main() {
+  float l = texture2D(tVel, vUv - vec2(uTexel.x, 0.0)).x, r = texture2D(tVel, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture2D(tVel, vUv - vec2(0.0, uTexel.y)).y, t = texture2D(tVel, vUv + vec2(0.0, uTexel.y)).y;
+  if (vUv.y < uTexel.y) b = -texture2D(tVel, vUv).y;
+  gl_FragColor = vec4(0.5 * (r - l + t - b), 0.0, 0.0, 1.0);
+}`, { tVel: { value: null } });
+const jacobiMat = fMat(/* glsl */`
+uniform sampler2D tPrs, tDiv;
+void main() {
+  float l = texture2D(tPrs, vUv - vec2(uTexel.x, 0.0)).x, r = texture2D(tPrs, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture2D(tPrs, vUv - vec2(0.0, uTexel.y)).x, t = texture2D(tPrs, vUv + vec2(0.0, uTexel.y)).x;
+  gl_FragColor = vec4((l + r + b + t - texture2D(tDiv, vUv).x) * 0.25, 0.0, 0.0, 1.0);
+}`, { tPrs: { value: null }, tDiv: { value: null } });
+const gradMat = fMat(/* glsl */`
+uniform sampler2D tVel, tPrs;
+void main() {
+  float l = texture2D(tPrs, vUv - vec2(uTexel.x, 0.0)).x, r = texture2D(tPrs, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture2D(tPrs, vUv - vec2(0.0, uTexel.y)).x, t = texture2D(tPrs, vUv + vec2(0.0, uTexel.y)).x;
+  vec2 v = texture2D(tVel, vUv).xy - 0.5 * vec2(r - l, t - b);
+  gl_FragColor = vec4(v, 0.0, 1.0);
+}`, { tVel: { value: null }, tPrs: { value: null } });
+// Density: smoke pours in; g holds the smoke's age, b the altitude it was born at.
+const injectMat = fMat(/* glsl */`
+uniform sampler2D tDen; uniform float uDt, uRate, uTime, uMode, uSrcR, uAlt; uniform vec2 uSrc;
+${K2_NOISE}
+void main() {
+  vec4 d = texture2D(tDen, vUv);
+  float g;
+  if (uMode < 0.5) {
+    vec2 dp = vUv - vec2(0.5, 0.0);
+    g = exp(-dp.x * dp.x * 2500.0) * smoothstep(0.0, 0.008, vUv.y) * (1.0 - smoothstep(0.02, 0.06, vUv.y));
+  } else {
+    vec2 dp = vUv - uSrc;
+    g = exp(-dot(dp, dp) / (uSrcR * uSrcR));
+  }
+  float puff = 0.7 + 0.6 * k2noise(vec2(uTime * 9.0, vUv.y * 40.0 + vUv.x * 7.0));
+  float add = uRate * g * puff * uDt;
+  d.b = (d.b * d.r + uAlt * add) / max(d.r + add, 1e-4);
+  d.r += add;
+  d.g += uDt * step(0.02, d.r);
+  gl_FragColor = d;
+}`, { tDen: { value: null }, uDt: { value: 0 }, uRate: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uSrcR: { value: 0.01 }, uAlt: { value: 0 }, uSrc: { value: new THREE.Vector2(0.5, 0) } });
+const clearMat = fMat(/* glsl */`void main() { gl_FragColor = vec4(0.0); }`, {});
+function fluidPass(F, mat, target) {
+  mat.uniforms.uTexel.value.copy(F.texel);
+  fluidQuad.material = mat;
+  renderer.setRenderTarget(target);
+  renderer.render(fluidScene, fluidCam);
+}
+function fluidReset(F) {
+  for (const t of [F.velA, F.velB, F.denA, F.denB, F.prsA, F.prsB, F.divT]) fluidPass(F, clearMat, t);
+  renderer.setRenderTarget(null);
+  F.seed = Math.random() * 100;
+  F.live = true;
+}
+// One sim step. p: mode, push, rate, src, srcR, wind, alt, diss.
+function fluidStep(F, dt, p) {
+  const sdt = Math.min(dt, 0.05);
+  const u = (m, o) => Object.assign(m.uniforms, Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { value: v }])));
+  u(advectMat, { tVel: F.velA.texture, tSrc: F.velA.texture, uDt: sdt, uDiss: 0.999 });
+  fluidPass(F, advectMat, F.velB);
+  u(forceMat, { tVel: F.velB.texture, tDen: F.denA.texture, uDt: sdt, uPush: p.push, uTime: simT, uSeed: F.seed, uMode: p.mode, uWind: p.wind, uSrcR: p.srcR });
+  forceMat.uniforms.uSrc.value.set(p.src[0], p.src[1]);
+  fluidPass(F, forceMat, F.velA);
+  u(divMat, { tVel: F.velA.texture });
+  fluidPass(F, divMat, F.divT);
+  fluidPass(F, clearMat, F.prsA);
+  const iters = quality() === 'high' ? 18 : 12;
+  for (let i = 0; i < iters; i++) {
+    u(jacobiMat, { tPrs: F.prsA.texture, tDiv: F.divT.texture });
+    fluidPass(F, jacobiMat, F.prsB);
+    [F.prsA, F.prsB] = [F.prsB, F.prsA];
+  }
+  u(gradMat, { tVel: F.velA.texture, tPrs: F.prsA.texture });
+  fluidPass(F, gradMat, F.velB);
+  [F.velA, F.velB] = [F.velB, F.velA];
+  u(advectMat, { tVel: F.velA.texture, tSrc: F.denA.texture, uDt: sdt, uDiss: p.diss });
+  fluidPass(F, advectMat, F.denB);
+  u(injectMat, { tDen: F.denB.texture, uDt: sdt, uRate: p.rate, uTime: simT, uMode: p.mode, uSrcR: p.srcR, uAlt: p.alt });
+  injectMat.uniforms.uSrc.value.set(p.src[0], p.src[1]);
+  fluidPass(F, injectMat, F.denA);
+  renderer.setRenderTarget(null);
+}
+// The slabs: one quad each, lit from the density's slope.
+// uMode 0 shades the heavy ground cloud; 1 the trail, sunlit above the shadow line.
+function makeSlab(F, mode) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { ...U, tDen: { value: null }, uTexel: { value: F.texel }, uScale: PU.uScale, uMode: { value: mode }, uSlabH: { value: 1 } },
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vP; void main() { vUv = vec2(position.x + 0.5, position.y); vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDen; uniform vec2 uTexel; uniform vec3 uAmb; uniform float uScale, uTime, uMode, uSlabH, uShadowH;
+    varying vec2 vUv; varying vec3 vP;
+    ${HEAD}
+    float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+    void main() {
+      // Two scales of noise warp the lookup: the smooth grid breaks into billows.
+      float ws = uMode < 0.5 ? 1.0 : 0.6;
+      vec2 w1 = vec2(k2fbm(vUv * vec2(9.0, 24.0) + vec2(3.1, -uTime * 0.03)), k2fbm(vUv * vec2(9.0, 24.0) + vec2(-uTime * 0.02, 7.7))) - 0.5;
+      vec2 w2 = vec2(k2noise(vUv * vec2(40.0, 100.0) + uTime * 0.1), k2noise(vUv * vec2(40.0, 100.0) + 11.0)) - 0.5;
+      vec2 uvw = vUv + (w1 * 0.035 + w2 * 0.008) * ws;
+      vec4 s = texture2D(tDen, uvw);
+      float d = s.r, age = s.g;
+      float lump = k2fbm(uvw * vec2(28.0, 70.0) + vec2(0.0, -uTime * 0.02) + age * 0.3);
+      d *= 0.6 + 0.8 * lump;
+      // Fresh smoke is dense; as it drifts and ages it thins to a veil.
+      float kx = uMode < 0.5 ? 3.0 * (0.1 + 0.9 * exp(-age / 18.0)) : 0.55;
+      float a = 1.0 - exp(-d * kx);
+      if (uMode < 0.5) a *= 0.9 - 0.7 * smoothstep(4.0, 50.0, age);
+      a *= smoothstep(0.0, 0.03, vUv.x) * smoothstep(1.0, 0.97, vUv.x) * smoothstep(1.0, 0.96, vUv.y);
+      if (a < 0.004) discard;
+      vec2 e = uTexel * 2.0;
+      float dl = texture2D(tDen, uvw - vec2(e.x, 0.0)).r, dr = texture2D(tDen, uvw + vec2(e.x, 0.0)).r;
+      float db = texture2D(tDen, uvw - vec2(0.0, e.y)).r, dt = texture2D(tDen, uvw + vec2(0.0, e.y)).r;
+      vec3 n = normalize(vec3(-(dr - dl) * 1.4, -(dt - db) * 0.6, 0.35));
+      vec3 V = normalize(vP - cameraPosition);
+      vec3 Lg = normalize(vec3(uSun.x, 0.1, uSun.z));
+      vec3 right = normalize(vec3(-V.z, 0.0, V.x));
+      vec3 L2 = normalize(vec3(dot(Lg, right), Lg.y, 0.6));
+      float key = max(dot(n, L2), 0.0);
+      vec2 sd = vec2(sign(dot(Lg, right)), 0.6) * uTexel * 3.0;
+      float sh = exp(-(texture2D(tDen, uvw + sd).r + texture2D(tDen, uvw + sd * 2.0).r + texture2D(tDen, uvw + sd * 3.5).r) * 0.9);
+      float top = exp(-(texture2D(tDen, uvw + vec2(0.0, e.y * 2.0)).r + texture2D(tDen, uvw + vec2(0.0, e.y * 4.5)).r) * 1.1);
+      vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
+      vec3 keyC = mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.3) * 2.0;
+      vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.5);
+      float pd = 0.75 * hg(dot(V, Lg), 0.72) + 0.25 * hg(dot(V, Lg), -0.2);
+      float pw = 1.0 - exp(-d * 3.0);
+      vec3 c = keyC * key * sh * pw * 0.9 + keyC * pd * sh * 0.5 * (1.0 - pw) + amb * (0.3 + 1.6 * top * max(n.y * 0.5 + 0.5, 0.0));
+      if (uMode > 0.5) {
+        // Above the Earth's shadow line the trail stands in sunlight: silver and pale blue, the jellyfish.
+        float h = 120.0 * pow(max(vP.y, 0.0) / (0.5 * uScale), 2.0);
+        float sun = smoothstep(uShadowH - 3.0, uShadowH + 3.0, h);
+        // A translucent bell: pale blue where thin, a soft warm core where dense.
+        float core = pw * pw * pw;
+        vec3 lit = mix(vec3(0.4, 0.58, 1.0) * 0.3, vec3(1.0, 0.9, 0.8) * 0.6, core) * (0.5 + 0.6 * max(dot(n, normalize(vec3(dot(normalize(uSun), right), 0.5, 0.6))), 0.0));
+        c = mix(c, lit, sun);
+        a *= mix(1.0, 0.45, sun);
+        // Fresh exhaust still burns near the engine.
+        c += vec3(1.0, 0.4, 0.1) * exp(-age / 1.2) * pw * 6.0 * min(uFlame.w, 1.0);
+      }
+      vec3 fdv = uFlame.xyz - vP;
+      float reach = uScale * 0.05;
+      c += uFlameC * uFlame.w * uAir * 1.2 * (1.0 + 2.5 * uNight) / (1.0 + dot(fdv, fdv) / (reach * reach)) * (0.3 + 0.7 * max(dot(n, normalize(fdv)), 0.0)) * pw;
+      c = mix(c, k2hazeColor(V), 0.3 * k2hazeAmount(vP));
+      gl_FragColor = vec4(c * a, a);
+    }`,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), mat);
+  m.frustumCulled = false;
+  m.renderOrder = 5.5 + mode * 0.1;
+  m.visible = false;
+  m.layers.enable(MIRROR);
+  scene.add(m);
+  return m;
+}
+const groundCloud = makeSlab(gFluid, 0);
+// Slab sizes in units of the pad distance; the trail slab covers the whole arc.
+const G_W = 0.7, G_H = G_W * 160 / 512;
+// Run both sims and place both slabs; called once per drawn frame.
+let fluidX = 0;
+function updateGround(dt) {
+  const D = PU.uScale.value, f = flight;
+  const te = f ? simT - f.start : 99;
+  if (gFluid.live) {
+    // Push and pour follow the engine: hardest in the seconds round liftoff.
+    const burn = f ? THREE.MathUtils.clamp((te + 0.3) / 1.2, 0, 1) * (1 - THREE.MathUtils.smoothstep(te, PRE + 3, PRE + 9)) : 0;
+    fluidStep(gFluid, dt, { mode: 0, push: burn, rate: burn * 50, src: [0.5, 0], srcR: 0.01, wind: 0.004, alt: 0, diss: te > PRE + 40 ? 0.998 : 0.9996 });
+    groundCloud.visible = true;
+    groundCloud.material.uniforms.tDen.value = gFluid.denA.texture;
+    groundCloud.position.set(fluidX, 0, -D - 6);
+    groundCloud.scale.set(D * G_W, D * G_H, 1);
+    if (te > PRE + 110) { gFluid.live = false; groundCloud.visible = false; }
+  }
+
+}
+
+// Write one puff into the next slot; the oldest gives way.
+function writePuff(p, t0, v, k, h, radius, kind, life, rise, grow, alpha) {
+  const i = phead;
+  phead = (phead + 1) % PCAP;
+  if (pdirtyFrom < 0) pdirtyFrom = i;
+  pdirtyN = Math.min(PCAP, pdirtyN + 1);
+  aQ.setXYZW(i, p.x, p.y, p.z, t0);
+  aR.setXYZW(i, v.x, v.y, v.z, k);
+  aS.setXYZW(i, h, rnd(), radius, kind);
+  aT.setXYZW(i, life, rise, grow, alpha);
+  puffGeo.instanceCount = Math.max(puffGeo.instanceCount, i + 1);
+}
+function commitPuffs() {
+  if (pdirtyFrom < 0) return;
+  const a = pdirtyFrom, n = pdirtyN, run = Math.min(n, PCAP - a);
+  for (const at of [aQ, aR, aS, aT]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  pdirtyFrom = -1; pdirtyN = 0;
+}
+
+/* ---------- launch: one flight on the sim clock ---------- */
+// The ignition runs 3 s before liftoff; the plume is gone by T+80.
+const PRE = 3, END = 128;
+let flight = null;
+const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+// launch(kind) builds the flight and returns its paused GSAP timeline.
+function launch(kind, padX) {
+  const D = PAD;
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1 };
+  PU.uScale.value = D;
+  boosters.forEach(b => { b.visible = kind === 'heavy'; });
+  // Fresh fluids for every launch, centred on the pad.
+  fluidReset(gFluid);
+  fluidX = padX;
+  f.tl = gsap.timeline({ paused: true })
+    // Ignition: a flash, then the engines burn on the pad.
+    .to(f, { flash: 1, duration: 0.06, ease: 'none' }, 0)
+    .to(f, { flash: 0, duration: 1.8, ease: 'power2.out' }, 0.06)
+    .to(f, { engine: 0.6, duration: 0.5 }, 0)
+    .to(f, { engine: 1, duration: 1.2 }, PRE - 0.6)
+    // Main engine cut-off at T+40; the spent stage falls away and the second stage lights.
+    .to(f, { engine: 0, duration: 0.4, ease: 'power2.in' }, PRE + 40)
+    .call(() => stageSep(f), null, PRE + 41.2)
+    .to(f, { engine: 0.55, duration: 0.8, ease: 'power2.out' }, PRE + 41.6)
+    // Second engine cut-off, near the edge of the frame.
+    .to(f, { engine: 0, duration: 5, ease: 'power1.in' }, PRE + 112)
+    // Shake: a jolt at ignition, a rumble through liftoff.
+    .to(f, { shake: 1, duration: 0.08 }, 0)
+    .to(f, { shake: 0.35, duration: 2.5, ease: 'power2.out' }, 0.1)
+    .to(f, { shake: 0.8, duration: 0.3 }, PRE)
+    .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
+  if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
+  f.tl.set(f, { done: true }, END);
+  // The roar reaches the eye: the camera takes a second jolt.
+  const dl = delayOf(f);
+  f.tl.to(f, { shake: 0.9, duration: 0.25 }, dl).to(f, { shake: 0.15, duration: 4, ease: 'power2.out' }, dl + 0.25);
+  seedBirds(f);
+  roar(f);
+  return f;
+}
+// Staging: the first stage tumbles away as a dim spark; the upper stage is short.
+function stageSep(f) {
+  f.stage = 2;
+  rocketAt(f, 41.2, rp);
+  rocketAt(f, 41.0, rq);
+  rv.subVectors(rp, rq).multiplyScalar(0.6 / 0.2).add(tmpA.set(0, -f.D * 0.004, 0));
+  writeStar(rp, simT, rv, 0.12, 2, 14, 3, 2.6, 2, 0.7);
+  thud(f);
+}
+// Two spent boosters fall away as sparks with short trails.
+function separate(f) {
+  boosters.forEach(b => { b.visible = false; });
+  rocketAt(f, 18, rp);
+  for (const s of [-1, 1]) {
+    rv.set(s * f.D * 0.004, -f.D * 0.002, (rnd() - 0.5) * f.D * 0.002);
+    writeStar(rp, simT, rv, 0.25, 2, 9, 2.4, 2.2, 2, 0.9);
+  }
+}
+// Advance the flight to its own time and emit what it sheds.
+function flyTo(f) {
+  const te = simT - f.start;
+  f.tl.time(Math.min(te, END));
+  const t = te - PRE, k = f.k, D = f.D;
+  rocketAt(f, t, rp);
+  rocketAt(f, t - 0.05, rq);
+  const eng = f.engine, h = altKm(t, k);
+  // The flame dims to a star as it climbs away.
+  const w = eng * (1 - 0.55 * THREE.MathUtils.smoothstep(h, 10, 60)) * (f.stage > 1 ? 0.7 : 1) + f.flash * (reduced() ? 1.2 : 3);
+  U.uFlame.value.set(rp.x, rp.y, rp.z, w);
+  U.uAir.value = 1 - 0.85 * THREE.MathUtils.smoothstep(h, 1, 20);
+  FU.uAxis.value.copy(rq).sub(rp);
+  if (FU.uAxis.value.lengthSq() < 1e-6) FU.uAxis.value.set(0, -1, 0);
+  FU.uAxis.value.normalize();
+  FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
+  flame.visible = eng > 0.01;
+  // Body and flame shrink as the altitude scale compresses.
+  const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
+  body.visible = te < END - 6;
+  body.position.copy(rp);
+  body.quaternion.setFromUnitVectors(yUp, tmpA.copy(FU.uAxis.value).negate());
+  // After staging only the upper stage flies, with a smaller engine.
+  const up = f.stage > 1 ? 0.36 : 1;
+  core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1), bl * sk * up, bw * sk * (f.stage > 1 ? 0.85 : 1));
+  FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
+  FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
+  // Exhaust: walk the path since the last puff and drop one each spacing.
+  const q = quality() === 'high' ? 1 : 2.3;
+  if (t > 0 && eng > 0.05) {
+    let tt = f.emitT;
+    tmpB.copy(rocketAt(f, tt, tmpA));
+    while (tt < t) {
+      tt = Math.min(t, tt + 0.02);
+      rocketAt(f, tt, tmpA);
+      f.acc += tmpA.distanceTo(tmpB);
+      tmpB.copy(tmpA);
+      const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
+      // One puff each part-radius: the trail stays one continuous column.
+      // The upper stage burns thin in vacuum: a faint, wide, sparse trail.
+      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3) * (f.stage > 1 ? 1.3 : 1);
+      if (f.acc < R * 0.2 * Math.sqrt(q)) continue;
+      f.acc = 0;
+      rocketAt(f, tt - 0.05, rq);
+      const back = rq.sub(tmpA).normalize();
+      {
+        rv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).addScaledVector(back, -rv.dot(back)).normalize();
+        // High up the thin air lets the exhaust spread into a wide glowing fan.
+        rv.multiplyScalar(D * (0.0003 + 0.0025 * hi) * (0.5 + 0.5 * rnd())).addScaledVector(back, D * 0.001 * (1 + hi * 2));
+        const r = R * (0.85 + 0.3 * rnd());
+        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6)) * (f.stage > 1 ? 0.5 : 1);
+        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, (0.9 - 0.45 * hi) * (f.stage > 1 ? 0.3 : 1));
+      }
+    }
+    f.emitT = tt;
+  }
+  // Sparks shed from the base for the first 4 s.
+  if (t > -0.5 && t < 4) {
+    const due = Math.floor((t + 0.5) * 50);
+    while (f.sparkT < due) {
+      f.sparkT++;
+      rv.set((rnd() - 0.5) * 40, -10 - rnd() * 30, (rnd() - 0.5) * 40);
+      writeStar(rp, simT - rnd() * 0.03, rv, 1.2, rnd() < 0.5 ? 0 : 2, 0.5 + rnd() * 0.7, 0.12, 1.2, 2, 0.6);
+    }
+  }
+  // The front: strong while it crosses the marsh, gone past the eye.
+  const R = frontR(f);
+  U.uFront.value.set(f.x, f.z, R, reduced() ? 0 : 1.2 * (1 - THREE.MathUtils.smoothstep(R, f.D * 1.2, f.D * 1.6)));
+  flyBirds(f, Math.min(0.1, simT - (f.lastSim ?? simT)));
+  f.lastSim = simT;
+  uploadBirds();
+  if (f.done) endFlight();
+}
+function endFlight() {
+  flight.tl.kill();
+  if (zoomed) snapZoom(false);
+
+  body.visible = false;
+  U.uFront.value.w = 0;
+  birds.forEach(b => { b.a = 0; b.up = false; });
+  uploadBirds();
+  flight = null;
+  follow = false;
+  U.uFlame.value.w = 0;
+  flame.visible = false;
+  ui.action('launch').disabled = false;
+}
+// The pad stands where the shot puts it: small, left of centre, easy to miss.
+// The climb then crosses the frame to the right, into the dark sky.
+function padX() {
+  const portrait = size.w < size.h;
+  const tanH = Math.tan(THREE.MathUtils.degToRad((portrait ? 66 : 50) / 2)) * size.w / size.h;
+  return -PAD * (portrait ? 0.3 : 0.2) * tanH;
+}
+function start() {
+  // Every start is a gesture: it may wake the sound.
+  if (sound.on) kit.wake();
+  // In flight a click snaps the zoom in, or back out to the landscape.
+  if (flight) { snapZoom(!zoomed); return; }
+  flight = launch(opts.kind, padX());
+  // The camera holds the wide shot until the viewer clicks.
+  if (zoomed) snapZoom(false);
+  ui.action('launch').disabled = true;
+  wake();
+}
+act.launch = () => start();
+let follow = false;
+const auto = { pitch: 0, yaw: 0 };
+// The snap zoom, BSG style: a fast push past the mark, two corrections, a focus hunt.
+// It runs the same way out, back to the wide landscape.
+const cam = { zoom: 1, hunt: 0 };
+let zoomed = false, zoomTl = null;
+function snapZoom(on) {
+  zoomed = on;
+  follow = on;
+  zoomTl?.kill();
+  const z = on ? 0.5 : 1, k = reduced() ? 0 : 1;
+  zoomTl = gsap.timeline()
+    .to(cam, { zoom: on ? 0.42 : 1.1, duration: 0.45 * k, ease: 'power3.out' }, 0)
+    .to(cam, { zoom: on ? 0.56 : 0.96, duration: 0.3 * k, ease: 'power2.inOut' }, 0.5 * k)
+    .to(cam, { zoom: z, duration: 0.3 * k, ease: 'power2.inOut' }, 0.85 * k)
+    .to(cam, { hunt: k, duration: 0.2 }, 0.05).to(cam, { hunt: 0.3 * k, duration: 0.3 }, 0.3).to(cam, { hunt: 0.6 * k, duration: 0.2 }, 0.65).to(cam, { hunt: 0, duration: 0.4 }, 0.9);
+  wake();
+}
+
+/* ---------- sound front: the roar's ring crosses the marsh ---------- */
+// It spreads at 343 m/s from the pad; reeds lean as it passes.
+const C_SOUND = 343;
+const frontR = f => C_SOUND * Math.max(0, simT - f.start);
+// Seconds from ignition until the front reaches the eye.
+const delayOf = f => Math.hypot(f.x - camera.position.x, f.z - camera.position.z) / C_SOUND;
+
+/* ---------- birds: they lift when the front reaches their bed ---------- */
+// Sixty birds in five reed beds between the eye and the pad.
+const BIRDS = 60;
+const birdGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+const aBP = new THREE.InstancedBufferAttribute(new Float32Array(BIRDS * 4), 4);
+const aBV = new THREE.InstancedBufferAttribute(new Float32Array(BIRDS * 4), 4);
+aBP.setUsage(THREE.DynamicDrawUsage); aBV.setUsage(THREE.DynamicDrawUsage);
+birdGeo.setAttribute('aBP', aBP);
+birdGeo.setAttribute('aBV', aBV);
+birdGeo.instanceCount = BIRDS;
+const birdMesh = new THREE.Mesh(birdGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, uPx: { value: 0.001 } }, transparent: true, depthWrite: false,
+  vertexShader: /* glsl */`
+  attribute vec4 aBP, aBV;
+  uniform float uPx;
+  varying vec2 vQ; varying float vA, vFlap;
+  void main() {
+    vA = aBV.w;
+    if (vA < 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    vec3 P = aBP.xyz;
+    vec3 V = normalize(cameraPosition - P);
+    vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
+    // A bird spans 1.1 m, never less than five pixels.
+    float s = max(0.55, length(cameraPosition - P) * uPx * 2.5);
+    vQ = position.xy;
+    // Mirror the shape when the bird flies left on screen.
+    float dir = sign(dot(aBV.xyz, rt) + 1e-4);
+    vQ.x *= dir;
+    vFlap = aBP.w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P + (rt * position.x + vec3(0.0, 1.0, 0.0) * position.y * 0.6) * s, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uAmb;
+  varying vec2 vQ; varying float vA, vFlap;
+  // Distance from p to the segment a-b.
+  float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+  void main() {
+    // Two frames: wings up in a V, wings down in a shallow arch.
+    float up = step(0.5, fract(vFlap));
+    vec2 tip = vec2(0.95, up > 0.5 ? 0.55 : -0.35), mid = vec2(0.45, up > 0.5 ? 0.25 : 0.05);
+    vec2 q = vec2(abs(vQ.x), vQ.y);
+    float d = min(seg(q, vec2(0.0), mid), seg(q, mid, tip));
+    d = min(d, length(vQ - vec2(0.15, 0.0)) - 0.08);
+    float a = (1.0 - smoothstep(0.05, 0.13, d)) * vA;
+    if (a < 0.02) discard;
+    gl_FragColor = vec4(uAmb * 0.15 * a, a);
+  }`,
+}));
+birdMesh.frustumCulled = false;
+birdMesh.renderOrder = 8;
+birdMesh.layers.enable(MIRROR);
+scene.add(birdMesh);
+const birds = Array.from({ length: BIRDS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), bed: 0, up: false, t: 0, ph: Math.random(), a: 0 }));
+let beds = [];
+// Each launch seeds the beds and settles every bird into the reeds.
+function seedBirds(f) {
+  beds = [0.08, 0.2, 0.38, 0.6, 0.82].map(u => {
+    const z = -120 - (f.D - 220) * u, x = f.x * u * 0.8 + (Math.random() - 0.5) * -z * 0.35;
+    return { x, z, d: Math.hypot(x - f.x, z - f.z), lifted: false };
+  });
+  birds.forEach((b, i) => {
+    const bed = beds[i % beds.length];
+    b.bed = i % beds.length;
+    b.p.set(bed.x + (Math.random() - 0.5) * 40, 1.2, bed.z + (Math.random() - 0.5) * 30);
+    b.v.set(0, 0, 0); b.up = false; b.t = 0; b.a = 0;
+    // Each bird waits its own moment after the front, and picks its own way.
+    b.wait = Math.pow(Math.random(), 1.6) * 3.2;
+    b.turn = (Math.random() - 0.5) * 2.6;
+    b.goalX = (Math.random() - 0.5) * 600;
+  });
+}
+// Flee from the pad and climb; then flock toward a far point to the left.
+const away = new THREE.Vector3(), tmpF = new THREE.Vector3(), aliV = new THREE.Vector3(), cohV = new THREE.Vector3();
+function flyBirds(f, dt) {
+  const R = frontR(f);
+  beds.forEach((bed, i) => {
+    if (bed.lifted || R < bed.d) return;
+    bed.lifted = true;
+    wings(f, bed);
+    birds.forEach(b => { if (b.bed === i) b.armed = simT + b.wait; });
+  });
+  // Birds take off one by one, each in its own direction, some back over the marsh.
+  for (const b of birds) {
+    if (b.up || !b.armed || simT < b.armed) continue;
+    b.up = true; b.armed = 0;
+    away.set(b.p.x - f.x, 0, b.p.z - f.z).normalize();
+    const c = Math.cos(b.turn), sn = Math.sin(b.turn);
+    const dx = away.x * c - away.z * sn, dz = away.x * sn + away.z * c;
+    const sp = 3 + Math.random() * 5;
+    b.v.set(dx * sp, 4 + Math.random() * 6, dz * sp);
+  }
+  const goal = tmpF.set(f.x - f.D * 0.45, 70, -f.D * 0.3);
+  const calm = reduced();
+  for (const b of birds) {
+    if (!b.up) continue;
+    b.t += dt;
+    b.ph += dt * (5.5 + 2.5 * Math.min(1, 4 / (b.t + 1)) + 1.5 * Math.sin(b.goalX));
+    // Fade in at take-off; fade out after 30 s.
+    b.a = Math.min(1, b.t * 3) * (1 - THREE.MathUtils.smoothstep(b.t, 22, 30));
+    if (calm) { b.p.y += dt * 6; continue; }
+    aliV.set(0, 0, 0); cohV.set(0, 0, 0);
+    let n = 0;
+    for (const o of birds) {
+      if (o === b || !o.up) continue;
+      const d2 = b.p.distanceToSquared(o.p);
+      if (d2 > 900) continue;
+      // Separation within 3 m; alignment and cohesion within 30 m.
+      if (d2 < 9) b.v.addScaledVector(tmpA.subVectors(b.p, o.p), 0.6 * dt / Math.max(d2, 0.5));
+      aliV.add(o.v); cohV.add(o.p); n++;
+    }
+    if (n) {
+      b.v.addScaledVector(aliV.divideScalar(n).sub(b.v), 0.35 * dt);
+      b.v.addScaledVector(cohV.divideScalar(n).sub(b.p), 0.08 * dt);
+    }
+    // A loose pull toward the far point, each bird's own, after a few seconds of panic.
+    const pull = 1.8 * THREE.MathUtils.smoothstep(b.t, 2, 7);
+    b.v.addScaledVector(tmpA.set(goal.x + b.goalX, goal.y, goal.z).sub(b.p).normalize(), pull * dt);
+    // A flutter: the path bobs with the wingbeat.
+    b.v.y += Math.sin(b.ph * 0.5) * 2.5 * dt;
+    const sp = b.v.length();
+    if (sp > 14) b.v.multiplyScalar(14 / sp);
+    b.p.addScaledVector(b.v, dt);
+    b.p.y = Math.max(b.p.y, 1);
+  }
+}
+function uploadBirds() {
+  birds.forEach((b, i) => {
+    aBP.setXYZW(i, b.p.x, b.p.y, b.p.z, b.ph);
+    aBV.setXYZW(i, b.v.x, b.v.y, b.v.z, b.a);
+  });
+  aBP.needsUpdate = aBV.needsUpdate = true;
+}
+
+/* ---------- sound: the marsh, then a roar that arrives late ---------- */
+// Every voice runs on the audio clock; each scheduled node is kept.
+// Mute and a hidden tab stop them all; the birds still lift.
+const kit = audioKit({ keys: new Set([' ']) });
+const pend = new Set();
+const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
+function track(end, ...nodes) { pend.add({ end, nodes }); }
+function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
+const pending = () => { prune(); return pend.size > 0; };
+function stopAll() {
+  for (const h of pend) for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+  pend.clear();
+  if (flight) flight.roarOn = false;
+}
+function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+function hiss(ac, t, dur, rate = 1) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start(t, Math.random() * 0.9); s.stop(t + dur);
+  return s;
+}
+// The marsh bed: a reed rustle that follows the sway, and bird chirps.
+let bed = null, nextChirp = 0, hushUntil = 0;
+function marsh(ac) {
+  if (bed) return;
+  const src = ac.createBufferSource(), hp = filt(ac, 'highpass', 2600), lp = filt(ac, 'lowpass', 7000), g = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.8;
+  g.gain.value = 0;
+  src.connect(hp).connect(lp).connect(g).connect(kit.out);
+  src.start();
+  bed = { src, g };
+}
+// A short FM chirp: a bird two to three kilohertz high.
+function chirp(ac, t) {
+  const o = ac.createOscillator(), m = ac.createOscillator(), mg = ac.createGain(), g = ac.createGain(), pan = ac.createStereoPanner();
+  const f0 = 2200 * jit(0.2);
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.5, t + 0.08);
+  m.frequency.value = 40 * jit(0.3); mg.gain.value = 300;
+  m.connect(mg).connect(o.frequency);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.03, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  pan.pan.value = Math.random() * 1.6 - 0.8;
+  o.connect(g).connect(pan).connect(kit.out);
+  // Some calls repeat once or twice.
+  const reps = Math.random() < 0.5 ? 1 : 2;
+  o.start(t); m.start(t); o.stop(t + 0.14 * reps + 0.05); m.stop(t + 0.14 * reps + 0.05);
+  if (reps > 1) {
+    g.gain.setValueAtTime(0.0001, t + 0.14);
+    g.gain.exponentialRampToValueAtTime(0.025, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  }
+  track(t + 0.4, o, m);
+}
+// Keep the bed in step with the scene; called each tick.
+function soundBed() {
+  const ac = kit.live();
+  if (!ac) return;
+  marsh(ac);
+  const now = ac.currentTime;
+  bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
+  // A roar that could not start (asleep, interrupted) starts when it can.
+  if (flight && !flight.roarOn) roar(flight, Math.max(0, simT - flight.start - delayOf(flight)));
+  if (pace > 0.2 && simT > hushUntil && now > nextChirp) {
+    if (nextChirp > 0) chirp(ac, now + 0.05);
+    nextChirp = now + 6 + Math.random() * 6;
+  }
+}
+// Wings: amplitude-modulated noise from the bed that lifts, heard after its delay.
+function wings(f, bed0) {
+  hushUntil = simT + 10;
+  const ac = kit.live();
+  if (!ac) return;
+  const d = Math.hypot(bed0.x - camera.position.x, bed0.z - camera.position.z), t = ac.currentTime + d / C_SOUND;
+  const s = hiss(ac, t, 2.2, 1.3), bp = filt(ac, 'bandpass', 1300 * jit(0.2), 0.9), am = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain();
+  lfo.frequency.value = 16 * jit(0.2); lg.gain.value = 0.5; am.gain.value = 0.5;
+  lfo.connect(lg).connect(am.gain);
+  const lvl = 0.12 * Math.min(1, 300 / d);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(lvl, t + 0.15);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.1);
+  s.connect(bp).connect(am).connect(g).connect(kit.out);
+  lfo.start(t); lfo.stop(t + 2.2);
+  track(t + 2.3, s, lfo);
+}
+// The roar: a broad band, a sub under 40 Hz, and crackle; the low-pass falls as it climbs.
+// off says how far into the roar to begin, so a resume picks up mid-roar.
+function roar(f, off = 0) {
+  const ac = kit.live();
+  // A roar that has already ended never plays again.
+  if (!ac || f.roarOn || off >= PRE + 53) return;
+  f.roarOn = true;
+  const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
+  const t = ac.currentTime + lead, L = PRE + 56 - off, k = f.k.flame;
+  const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
+  // A resume starts at the level the full curve has reached by then.
+  const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
+  const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // Swell over 2 s, hold, then fade with distance until cut-off.
+  const swell = Math.max(0.05, 2 - off);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(lvl * fade, t + swell);
+  g.gain.setTargetAtTime(lvl * 0.25, t + swell + Math.max(0, 4 - off), 18);
+  g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
+  lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
+  lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
+  s.connect(lp).connect(g).connect(kit.out);
+  // The sub: a low drone with a slow wobble.
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.value = 33 * jit(0.05);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(lvl * 0.9, t + swell);
+  og.gain.setTargetAtTime(0.0001, t + swell + 6, 8);
+  o.connect(og).connect(kit.out);
+  o.start(t); o.stop(t + L);
+  // Crackle: random clicks, the signature of rocket noise.
+  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.0015);
+  for (let n = 0; n < 220; n++) {
+    const at = Math.floor(Math.random() * (cd.length - cl)), amp = Math.pow(Math.random(), 2);
+    for (let i = 0; i < cl; i++) cd[at + i] += (Math.random() * 2 - 1) * amp * (1 - i / cl);
+  }
+  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
+  c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(lvl * 0.7, t + swell);
+  cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
+  c.connect(cbp).connect(cg).connect(kit.out);
+  c.start(t); c.stop(t + L);
+  track(t + L + 1, s, o, c);
+}
+// Booster separation: a faint double thud, heard after its delay.
+function thud(f) {
+  const ac = kit.live();
+  if (!ac) return;
+  // The thud comes from wherever the rocket is now, after its compressed delay.
+  const t = ac.currentTime + tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z).distanceTo(camera.position) / C_SOUND / 6;
+  for (const dt of [0, 0.18 * jit(0.2)]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(70 * jit(0.1), t + dt); o.frequency.exponentialRampToValueAtTime(35, t + dt + 0.25);
+    g.gain.setValueAtTime(0.0001, t + dt);
+    g.gain.exponentialRampToValueAtTime(0.06, t + dt + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.4);
+    o.connect(g).connect(kit.out);
+    o.start(t + dt); o.stop(t + dt + 0.45);
+    track(t + dt + 0.5, o);
+  }
+}
+// Sound on mid-flight picks the roar up where the timeline is.
+sound.onChange(on => {
+  if (!on) { stopAll(); return; }
+  if (flight) setTimeout(() => { if (flight) roar(flight, Math.max(0, simT - flight.start - delayOf(flight))); }, 60);
+});
+
+/* ---------- K2: bloom ---------- */
+// Bloom on a float target; only bright sources cross the threshold.
+function makeBloom(strength, radius, threshold) {
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  const full = bloom.setSize.bind(bloom);
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
+  // A sigma of radius / 2.5 gives each layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
+  // Bilinear upsampling of the small mips draws square feathers.
+  // A cubic B-spline read of each mip keeps the glow round.
+  const cm = bloom.compositeMaterial;
+  cm.fragmentShader = cm.fragmentShader
+    .replace('void main() {', /* glsl */`vec4 bsw(float v) {
+      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
+      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+      return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+    }
+    vec4 bic(sampler2D t, vec2 uv) {
+      vec2 ts = vec2(textureSize(t, 0)), p = uv * ts - 0.5, fp = fract(p);
+      p -= fp;
+      vec4 xc = bsw(fp.x), yc = bsw(fp.y);
+      vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy, w = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+      vec4 o = (c + vec4(xc.yw, yc.yw) / w) / ts.xxyy;
+      float sx = w.x / (w.x + w.y), sy = w.z / (w.z + w.w);
+      return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
+    }
+    void main() {`)
+    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
+  cm.needsUpdate = true;
+  return bloom;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: grade ---------- */
+// Linear grade before tone mapping: haze lift, vignette, fixed grain.
+// New here: uBox draws letterbox bars at 2.39 to 1.
+function makeGrade({ tint, vig, vigIn, grain }) {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uTint: { value: new THREE.Vector3(...tint) },
+      uVig: { value: vig },
+      uVigIn: { value: vigIn },
+      uGrain: { value: grain },
+      uSeed: { value: 0 },
+      uBox: { value: 0 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uRes;
+    uniform vec3 uTint;
+    uniform float uVig, uVigIn, uGrain, uBox, uSeed;
+    varying vec2 vUv;
+    // An integer hash per pixel; float hashes draw faint stripes here.
+    float h(vec2 p) {
+      uvec2 q = uvec2(p);
+      uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+      n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+      return float(n) / 4294967295.0;
+    }
+    void main() {
+      // A faint colour fringe toward the frame edge, as a real lens has.
+      vec2 cq = vUv - 0.5;
+      float ca = dot(cq, cq) * 0.006;
+      vec3 c = vec3(texture2D(tDiffuse, vUv + cq * ca).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - cq * ca).b) + uTint;
+      // Split tone: cool shadows, warm highlights.
+      float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
+      vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+      c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      // Film grain moves every frame; the exposure flickers a little.
+      vec2 gp = gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0);
+      c *= 1.0 + (h(gp) - 0.5) * uGrain * (1.2 - 0.6 * smoothstep(0.0, 0.3, lum)) * 2.0;
+      c *= 1.0 + 0.012 * (fract(sin(uSeed * 12.9898) * 43758.5453) - 0.5) * step(0.5, uSeed);
+      // Bars cover what lies outside a 2.39 frame; tall stages get none.
+      float bar = max(0.0, 0.5 - 0.5 * (uRes.x / uRes.y) / 2.39);
+      if (uBox > 0.5 && (vUv.y < bar || vUv.y > 1.0 - bar)) c = vec3(0.0);
+      gl_FragColor = vec4(max(c, 0.0), 1.0);
+    }`,
+  });
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- bokeh: depth of field, after Wind farm and Buoy Business ---------- */
+// Focus sits on the pad; near reeds and far sky open into soft discs.
+// 28 golden-angle disc taps, turned per pixel, so the taps blend into grain.
+// Hot pixels weigh more, so the flame and sparks open into discs.
+function makeDof() {
+  const pass = new ShaderPass({
+    uniforms: {
+      tScene: { value: null }, tDepth: { value: null },
+      uNear: { value: camera.near }, uFar: { value: camera.far }, uFocus: { value: 2000 }, uK: { value: 72 }, uCap: { value: 14 }, uHunt: { value: 0 },
+      uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uFringe: { value: 0 },
+      uDonut: { value: 0 }, uStar: { value: 0 }, uScatter: { value: 0 }, uGrainB: { value: 0 }, uSwirl: { value: 0 }, uSeedB: { value: 0 },
+      uRes: { value: new THREE.Vector2(1, 1) }, uLampW: { value: 30 }, uLampT: { value: 0.25 },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tScene, tDepth;
+    uniform float uNear, uFar, uFocus, uK, uCap, uHunt, uLampW, uLampT;
+    uniform float uBlades, uOval, uRim, uCat, uFringe, uDonut, uStar, uScatter, uGrainB, uSwirl, uSeedB;
+    float bh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float bn(vec2 p) {
+      vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(bh(i), bh(i + vec2(1, 0)), u.x), mix(bh(i + vec2(0, 1)), bh(i + vec2(1, 1)), u.x), u.y);
+    }
+    // Aperture blades turn the disc into a polygon; under three keeps it round.
+    float blade(float a) {
+      if (uBlades < 2.5) return 1.0;
+      float s = 6.2832 / uBlades;
+      return cos(0.5 * s) / cos(mod(a, s) - 0.5 * s);
+    }
+    uniform vec2 uRes;
+    varying vec2 vUv;
+    // Distance in metres from the depth buffer.
+    float dist(vec2 uv) {
+      float z = texture2D(tDepth, uv).r * 2.0 - 1.0;
+      return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
+    }
+    // The blur radius in pixels: a wide lens, so only the near reeds go soft.
+    // A focus hunt adds blur everywhere, so the flame opens into a disc.
+    // Only what lies nearer than the focus blurs; the distance stays sharp.
+    float coc(float d) { return min(uK * max(1.0 / max(d, 0.5) - 1.0 / uFocus, 0.0) + uHunt, uCap); }
+    void main() {
+      vec3 c0 = texture2D(tScene, vUv).rgb;
+      // Interleaved gradient noise turns the disc per pixel.
+      float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      // A near reed bleeds over the sky behind it: the gather radius is the widest blur nearby.
+      // Eight depth probes find it; a sharp pixel with sharp neighbours returns at once.
+      float r = coc(dist(vUv));
+      for (int j = 0; j < 8; j++) {
+        float a = float(j) * 0.7854 + rot, rj = (j < 4) ? 1.0 : 0.5;
+        r = max(r, coc(dist(vUv + vec2(cos(a), sin(a)) * rj * uCap / uRes)));
+      }
+      if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
+      vec3 acc = c0;
+      float wsum = 1.0;
+      for (int k = 0; k < 22; k++) {
+        float rk = sqrt((float(k) + 0.5) / 22.0), a = float(k) * 2.39996 + rot;
+        vec2 dir = vec2(cos(a), sin(a)) * rk * blade(a);
+        // Star: four points, pinched between them.
+        if (uStar > 0.5) dir *= 0.42 + 0.58 * pow(abs(cos(2.0 * a)), 3.0);
+        // Oval squeezes the disc sideways, as an anamorphic lens does.
+        dir.x *= uOval;
+        // Swirl: discs stretch round the frame's centre, as an old portrait lens does.
+        if (uSwirl > 0.0) {
+          vec2 cc = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+          float L = length(cc);
+          vec2 tg = L > 1e-3 ? vec2(-cc.y, cc.x) / L : vec2(0.0);
+          dir += tg * dot(dir, tg) * uSwirl * L * 2.0;
+        }
+        vec2 uv = vUv + dir * r / uRes;
+        vec3 col = texture2D(tScene, uv).rgb;
+        // Fringe: the disc's edge leans magenta outside, green inside.
+        col *= mix(vec3(1.0), mix(vec3(0.94, 1.06, 0.96), vec3(1.1, 0.92, 1.08), smoothstep(0.55, 1.0, rk)), uFringe);
+        // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
+        float reach = smoothstep(0.0, 1.0, coc(dist(uv)) - rk * r + 1.0);
+        float hot = max(max(col.r, max(col.g, col.b)) - uLampT, 0.0);
+        float w = (1.0 + hot * hot * uLampW) * reach;
+        // Donut: a mirror lens blocks the disc's centre.
+        if (uDonut > 0.5) w *= smoothstep(0.4, 0.55, rk);
+        // Scatter: dust and onion rings break each disc into flecks.
+        if (uScatter > 0.0) w *= mix(1.0, 0.1 + 1.6 * smoothstep(0.45, 0.7, bn(dir * 7.0 + 3.1)) + 0.4 * sin(rk * 18.0), uScatter);
+        // Grain: each tap flickers, so discs fizz like film.
+        if (uGrainB > 0.0) w *= mix(1.0, 0.25 + 1.5 * bh(gl_FragCoord.xy * 0.37 + float(k) * 7.13 + uSeedB), uGrainB);
+        // Rim: the outer taps weigh more, so each disc shows a bright ring.
+        if (uRim > 0.0) w *= mix(1.0, 0.1 + 3.0 * smoothstep(0.6, 1.0, rk), uRim);
+        // Cat's eye: a second circle clips discs toward the frame's edge.
+        if (uCat > 0.0) w *= step(length(dir + (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * uCat), 1.0);
+        acc += col * w;
+        wsum += w;
+      }
+      gl_FragColor = vec4(acc / wsum, 1.0);
+    }`,
+  });
+  // The pass reads the scene and its depth from sceneRT, not from the composer's buffers.
+  pass.textureID = 'tUnused';
+  pass.material.depthTest = false;
+  pass.material.depthWrite = false;
+  const render = pass.render.bind(pass);
+  pass.render = (r, wb, rb, dt, mask) => { pass.uniforms.tScene.value = sceneRT.texture; pass.uniforms.tDepth.value = sceneRT.depthTexture; render(r, wb, rb, dt, mask); };
+  return pass;
+}
+
+/* ---------- post chain ---------- */
+const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.075 };
+// The scene renders into its own target with depth, as Wind farm does.
+// A depth texture keeps its first size, so a resize builds a fresh target.
+let sceneRT = null;
+function makeSceneRT(w, h) {
+  sceneRT?.depthTexture?.dispose();
+  sceneRT?.dispose();
+  sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(w, h) });
+}
+makeSceneRT(2, 2);
+const composer = new EffectComposer(renderer);
+const dofPass = makeDof();
+// Blur scale in pixels; the focus in dioptres, so a rack eases evenly.
+let dofK = 130, dofCap = 18, focusD = 1 / 2000, focusTo = 1 / 2000;
+// Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
+const fwdA = new THREE.Vector3();
+function autofocus(dt) {
+  // Focus sits at the pad: the near edge of the pool and the reeds in front of it blur.
+  let d = PAD;
+  // The Focus slider overrides: 5 m at its first step, the pad at its end.
+  const mf = ui.setting('focus').value;
+  if (mf > 0.005) d = 5 * Math.pow(PAD / 5, mf);
+  focusTo = 1 / d;
+  focusD += (focusTo - focusD) * (1 - Math.exp(-dt * (reduced() ? 20 : 2.5)));
+}
+composer.addPass(dofPass);
+const orbPass = makeOrbs();
+composer.addPass(orbPass);
+const bloomPass = makeBloom(...POST.bloom);
+composer.addPass(bloomPass);
+const grade = makeGrade(POST);
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- frame and draw ---------- */
+let size = { w: 1, h: 1, dpr: 1 };
+// The look offset from a drag, in radians.
+const look = { yaw: 0, pitch: 0 };
+// The drag sets a target; the view eases to it, as on a fluid head.
+const lookTo = { yaw: 0, pitch: 0 };
+function easeLook(dt) {
+  const e = 1 - Math.exp(-dt * (reduced() ? 30 : 7));
+  look.yaw += (lookTo.yaw - look.yaw) * e;
+  look.pitch += (lookTo.pitch - look.pitch) * e;
+}
+let baseUp = 0;
+// The follow view keeps the rocket a third down from the top.
+function aimFollow(dt) {
+  let tp = 0, ty = 0;
+  if (follow && flight) {
+    const p = U.uFlame.value, dx = p.x - camera.position.x, dz = p.z - camera.position.z;
+    const elev = Math.atan2(p.y - EYE, Math.hypot(dx, dz));
+    tp = THREE.MathUtils.clamp(elev - baseUp - Math.atan(0.3 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) - look.pitch, 0, 1.0);
+    ty = -Math.atan2(dx, -dz) * 0.6;
+  }
+  const e = 1 - Math.exp(-dt * (reduced() ? 6 : 2.6));
+  auto.pitch += (tp - auto.pitch) * e;
+  auto.yaw += (ty - auto.yaw) * e;
+}
+// The flame's glow goes in the post pass as an orb.
+const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value) }] : []);
+// The horizon sits low: the climb needs a tall sky.
+function frame() {
+  const portrait = size.w < size.h;
+  placeGantry(padX());
+  // A wide lens takes in the whole sweep of the marsh; the horizon sits on the lower third.
+  const fov = portrait ? 66 : 50;
+  camera.aspect = size.w / size.h;
+  const hf = portrait ? 0.76 : 0.7;
+  // The launch zoom narrows the lens; the horizon holds its place in the frame.
+  camera.fov = fov * cam.zoom;
+  baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  // A hand on the camera: a slow, tiny wobble while the scene is awake.
+  // The launch adds a shake that dies away as the rocket climbs.
+  const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 2.2), t = simT;
+  const jit = () => (Math.random() - 0.5) * 0.0005;
+  const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
+  const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1) + jit());
+  const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
+  camera.rotation.set(baseUp + look.pitch + auto.pitch + wp, look.yaw + auto.yaw + wy, wr);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the mirror.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(size.dpr);
+  composer.setSize(w, h);
+  makeSceneRT(Math.round(w * size.dpr), Math.round(h * size.dpr));
+  const m = rung >= 2 ? 0.35 : quality() === 'high' ? 0.75 : 0.5;
+  mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
+  grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  dofPass.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  birdMesh.material.uniforms.uPx.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
+  dofK = 130 * h * size.dpr / 800;
+  dofCap = 18 * h * size.dpr / 800;
+  starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  starMat.uniforms.uDpr.value = size.dpr;
+  // Rung 3 thins the reeds.
+  plantReeds(rung >= 3 ? 3000 : quality() === 'high' ? 6000 : 4500);
+  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? 12000 : 9000);
+  frame();
+  draw();
+}
+// A page that loads hidden may get no visibility event before input.
+let visible = !document.hidden;
+let compiled = false, lastSimDraw = 0;
+function draw() {
+  // Nothing draws before the shaders compile behind the intro.
+  if (!visible || !compiled) return;
+  commitStars();
+  commitPuffs();
+  updateGround(Math.min(0.1, simT - lastSimDraw));
+  lastSimDraw = simT;
+  renderMirror();
+  // The scene, with depth, into sceneRT; the post chain starts from there.
+  renderer.setRenderTarget(sceneRT);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  placeOrbs(orbPass, orbList());
+  // Focus rides on the pad: the flight's distance, else the setting's.
+  dofPass.uniforms.uFocus.value = 1 / focusD;
+  dofPass.uniforms.uHunt.value = cam.hunt * dofPass.uniforms.uCap.value * 0.6;
+  // A longer lens has a shallower field: the blur grows with the square of the zoom.
+  const zk = 1 / Math.pow(cam.zoom, 2);
+  const ap = ui.setting('aperture').value;
+  dofPass.uniforms.uK.value = dofK * zk * ap;
+  dofPass.uniforms.uCap.value = dofCap * Math.sqrt(zk) * Math.max(0.2, Math.sqrt(ap));
+  dofPass.uniforms.uLampW.value = 30 * ui.setting('glow').value;
+  if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
+  dofPass.uniforms.uSeedB.value = grade.uniforms.uSeed.value;
+  composer.render();
+}
+
+/* Frame loop: 24 fps, idle or not; it sleeps 60 s after the last input. */
+// QA can shorten the sleep with ?sleep=<ms>.
+const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+// One film frame in ms; nap holds a drifting wait.
+const FRAME = 1000 / 24;
+let nap = 0;
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
+const busy = () => !!press || !!flight || gFluid.live || gsap.isTweening(cam) || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+function tick(now) {
+  raf = 0;
+  if (!visible || document.hidden) { lastT = 0; return; }
+  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+  lastT = now;
+  // Ambient sway eases out over 2 s once idle; reduced motion holds it still.
+  // A flight in the air keeps the scene awake.
+  const awake = !reduced() && (!!flight || now - lastInput < SLEEP);
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const lively = busy();
+  try {
+    simT += dt;
+    U.uTime.value = simT;
+    U.uSway.value = pace;
+    if (flight) flyTo(flight);
+    aimFollow(dt);
+    easeLook(dt);
+    autofocus(dt);
+    // The film runs at 24 frames a second, idle or not.
+    if (now - lastDraw >= FRAME - 2) {
+      frame();
+      draw();
+      watch(now, lively);
+      // Step the clock by whole film frames, so 60 Hz screens average 24.
+      lastDraw = now - lastDraw > FRAME * 3 ? now : lastDraw + FRAME;
+    }
+  } finally {
+    soundBed();
+    if (visible && lively) raf = requestAnimationFrame(tick);
+    // While drifting, wait for the next film frame before asking for one.
+    else if (visible && pace > 0) { raf = -1; nap = setTimeout(() => { nap = 0; raf = requestAnimationFrame(tick); }, Math.max(0, lastDraw + FRAME - 18 - performance.now())); }
+    else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  // Input cuts a drifting wait short.
+  if (nap) { clearTimeout(nap); nap = 0; raf = 0; }
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
+/* Performance ladder: slow frames step quality down a rung, never back up. */
+let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
+function watch(now, lively) {
+  const gap = now - prevDraw;
+  prevDraw = now;
+  if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
+  if (!watchFrom) watchFrom = now;
+  if (now - watchFrom < 4000) return;
+  watchN++; watchSum += gap;
+  if (watchN < 2 || now - watchFrom < 6000) return;
+  // Frames come every 42 ms by design; a 60 Hz screen gives 50; past 62 is slow.
+  if (watchSum / watchN > (lively ? 62 : 90) && rung < 3) { rung++; resize(); }
+  watchFrom = now - 4000; watchN = watchSum = 0;
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  // A hidden tab cancels pending sounds; on return the roar picks up from the timeline.
+  if (!vis) {
+    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0; stopAll();
+    if (bed) bed.g.gain.value = 0;
+    kit.ac?.suspend()?.catch(() => {});
+    return;
+  }
+  if (flight) roar(flight, Math.max(0, simT - flight.start - delayOf(flight)));
+  draw();
+  wake();
+});
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; PU.uShear.value = on ? 0 : 1; wake(); });
+
+/* Pointer: a press turns into a look drag after 8 px; a short release is a tap. */
+let press = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture(e.pointerId);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: lookTo.yaw, pitch: lookTo.pitch, at: performance.now(), drag: false };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const dx = e.clientX - press.x, dy = e.clientY - press.y;
+  if (!press.drag && Math.hypot(dx, dy) > 8) { press.drag = true; stage.classList.add('held'); }
+  if (!press.drag) return;
+  // One stage height of travel turns the view by the lens angle.
+  const k = THREE.MathUtils.degToRad(camera.fov) / size.h;
+  lookTo.yaw = THREE.MathUtils.clamp(press.yaw + dx * k, -0.32, 0.32);
+  lookTo.pitch = THREE.MathUtils.clamp(press.pitch + dy * k, -0.2, 0.5);
+});
+const end = e => {
+  if (!press || e.pointerId !== press.id) return;
+  const tap = e.type === 'pointerup' && !press.drag && performance.now() - press.at < 260;
+  press = null;
+  stage.classList.remove('held');
+  if (tap) start();
+  wake();
+};
+stage.addEventListener('pointerup', end);
+stage.addEventListener('pointercancel', end);
+stage.addEventListener('lostpointercapture', end);
+// Space launches; the shell ignores it while a sheet has focus.
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
+  e.preventDefault();
+  if (flight) snapZoom(!zoomed); else act.launch();
+});
+
+function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
+// Shapes: blades, oval, donut, star.
+const SHAPE = { round: [0, 1, 0, 0], hex: [6, 1, 0, 0], oval: [0, 0.55, 0, 0], donut: [0, 1, 1, 0], star: [0, 1, 0, 1] };
+// Textures: rim, cat's eye, fringe, scatter, grain, swirl.
+const TEXTURE = {
+  clean: [0, 0, 0, 0, 0, 0],
+  scatter: [0.2, 0, 0.3, 1, 0, 0],
+  grain: [0.1, 0, 0.2, 0, 1, 0],
+  bubble: [0.85, 0, 0.6, 0, 0, 0],
+  swirl: [0.35, 0.9, 0.5, 0, 0, 1],
+};
+function setLens() {
+  const u = dofPass.uniforms;
+  const [b, o, d, st] = SHAPE[ui.setting('shape').value] ?? SHAPE.round;
+  const [r, c, f, sc, g, sw] = TEXTURE[ui.setting('texture').value] ?? TEXTURE.clean;
+  u.uBlades.value = b; u.uOval.value = o; u.uDonut.value = d; u.uStar.value = st;
+  u.uRim.value = r; u.uCat.value = c; u.uFringe.value = f; u.uScatter.value = sc; u.uGrainB.value = g; u.uSwirl.value = sw;
+  draw();
+}
+
+/* ---------- ready ---------- */
+// The intro holds until shaders compile and the first frame draws.
+dawn(dawnDeg(opts.dawn));
+buildBanks();
+buildShore(PAD);
+setBox(ui.setting('letterbox').value);
+setLens();
+resize();
+renderer.compileAsync(scene, camera).then(() => {
+  compiled = true;
+  draw();
+  canvas.classList.add('on');
+  markReady();
+  wake();
+}, () => { compiled = true; draw(); canvas.classList.add('on'); markReady(); });
+</script>
+</body>
+</html>

@@ -25,25 +25,10 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--putty" id="stage" tabindex="0" role="application" aria-label="A bar of heat-sensitive putty. Drag to push and smear it; the warm trail changes colour and cools back slowly. Hold still to press a handprint. The chips change the putty's colours.">
+    <div class="stage stage--putty" id="stage" tabindex="0" role="application" aria-label="A bar of heat-sensitive putty. Drag to push and smear it; the warm trail changes colour and cools back slowly. Hold still to press a handprint. Keys 1 to 3 change the putty; C clears it.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>Heat putty needs WebGL 2 with float textures, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Putty">
-        <button class="chip" type="button" data-value="0" aria-pressed="true">Violet</button>
-        <button class="chip" type="button" data-value="1" aria-pressed="false">Teal</button>
-        <button class="chip" type="button" data-value="2" aria-pressed="false">Noir</button>
-      </div>
-      <div class="actions">
-        <button class="chip" id="clear" type="button">Clear</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd>smear</dd></div>
-        <div><dt>Hold</dt><dd>print</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Heat putty</h1><div class="vignette" hidden></div></section>
@@ -68,15 +53,36 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
 </script>
 <script type="module">
-import { initPage, audioKit, choices, whenVisible, reduced, fitCanvas, linFit, qualitySetting, onQuality } from '../shared/stim.js';
-initPage({ id: 'putty' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, audioKit, whenVisible, reduced, fitCanvas, linFit, onQuality } from '../shared/stim.js';
+
+/* ---------- palettes ---------- */
+// Each putty is a bold duotone: dyed cold, base pigment hot.
+// Values are OKLCH: lightness, chroma, hue.
+const PUTTY = [
+  { name: 'Violet', cold: [0.4, 0.19, 298], hot: [0.74, 0.19, 356], hue: 300 },
+  { name: 'Teal', cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], hue: 215 },
+  { name: 'Noir', cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], hue: 280 },
+];
+const PICK_KEY = 'stimming.putty.putty';
+const saved = (() => { try { return localStorage.getItem(PICK_KEY); } catch { return null; } })();
+const first = PUTTY[+saved] ? String(+saved) : '0';
+// Each dot shows the cold dye over the hot base, split on the diagonal.
+const lch = c => `oklch(${c[0]} ${c[1]} ${c[2]})`;
+const OPTS = PUTTY.map((P, i) => ({ value: String(i), label: P.name, key: String(i + 1),
+  dot: `linear-gradient(135deg, ${lch(P.cold)} 50%, ${lch(P.hot)} 50%)` }));
+// Handlers bind once the slab exists.
+const act = { pick() {}, clear() {} };
+const ui = initPage({ id: 'putty', bar: {
+  choice: { label: 'Putty', value: first, options: OPTS, onPick: v => act.pick(v) },
+  actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
+  quality: true,
+  keys: [['drag', 'smear'], ['hold', 'handprint'], ['1 2 3', 'putty'], ['c', 'clear']],
+} });
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
-const bar = document.querySelector('.bar');
+const layer = document.querySelector('.stim-ui');
 const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
-const fail = () => { stage.querySelector('.fail').hidden = false; throw new Error('no webgl2'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); throw new Error('no webgl2'); };
 if (!gl || !gl.getExtension('EXT_color_buffer_float')) fail();
 // Full floats need linear filtering; half floats always have it.
 const FMT = gl.getExtension('OES_texture_float_linear') ? [gl.RGBA32F, gl.FLOAT] : [gl.RGBA16F, gl.HALF_FLOAT];
@@ -324,14 +330,7 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), g
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-/* ---------- palettes ---------- */
-// Each putty is a bold duotone: dyed cold, base pigment hot.
-// Values are OKLCH: lightness, chroma, hue.
-const PUTTY = [
-  { cold: [0.4, 0.19, 298], hot: [0.74, 0.19, 356], hue: 300 },
-  { cold: [0.48, 0.1, 210], hot: [0.9, 0.19, 115], hue: 215 },
-  { cold: [0.22, 0.012, 280], hot: [0.74, 0.17, 55], hue: 280 },
-];
+/* ---------- palette ---------- */
 let pal = null;
 function setPutty(i) {
   const P = PUTTY[i];
@@ -339,7 +338,7 @@ function setPutty(i) {
   // The stage behind the canvas takes the same table colour.
   stage.style.setProperty('--stage', `oklch(0.19 0.035 ${P.hue})`);
 }
-setPutty(0);
+setPutty(+first);
 
 /* ---------- targets ---------- */
 let GW = 0, GH = 0, targets = null, flip = 0;
@@ -377,18 +376,21 @@ function grid(w, h) {
 }
 
 /* ---------- layout ---------- */
-// The slab sits inset on the stage, clear of the control bar.
+// The slab sits inset on the stage, clear of the corner controls.
 let slab = { x: 0, y: 0, w: 1, h: 1 }, css = { w: 1, h: 1 }, dev = { W: 1, H: 1 }, dpr = 1;
 function fit() {
   const f = fitCanvas(canvas, { budget: 2.2e6 });
   css = { w: f.w, h: f.h }; dev = { W: f.W, H: f.H }; dpr = f.W / f.w;
   const m = Math.round(Math.min(40, Math.max(14, Math.min(f.w, f.h) * 0.04)));
-  // The slab stops a small gap above the highest control on the stage.
-  const sr = stage.getBoundingClientRect();
-  const top = Math.min(...[...bar.children].map(el => el.getBoundingClientRect().top));
-  const below = Math.max(m, Math.round(sr.bottom - top) + 12);
-  const sh = f.h - m - below >= 160 ? f.h - m - below : f.h - 2 * m;
-  slab = { x: m, y: m, w: f.w - 2 * m, h: sh };
+  // The slab keeps a gap from the top and bottom corner rows.
+  // Offsets ignore the entrance slide, so the slab never jumps.
+  const rows = [...layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')].filter(el => el.offsetParent);
+  const top = Math.max(0, ...rows.filter(el => el.offsetTop < f.h / 2).map(el => el.offsetTop + el.offsetHeight));
+  const foot = Math.min(f.h, ...rows.filter(el => el.offsetTop >= f.h / 2).map(el => el.offsetTop));
+  const above = Math.max(m, top + 10), below = Math.max(m, f.h - foot + 10);
+  // A stage too short for the gaps lets the slab run under the corners.
+  const sh = f.h - above - below >= 160 ? f.h - above - below : f.h - 2 * m;
+  slab = { x: m, y: sh === f.h - 2 * m ? m : above, w: f.w - 2 * m, h: sh };
   // The grid keeps about one texel per 1.5 CSS pixels, 720 at most.
   const tc = Math.max(1.5, Math.max(slab.w, slab.h) / 720);
   const w = Math.round(slab.w / tc), h = Math.round(slab.h / tc);
@@ -547,6 +549,7 @@ function at(e) {
 }
 canvas.addEventListener('pointerdown', e => {
   if (F.down) return;
+  ui.action('clear').disabled = false;
   canvas.setPointerCapture(e.pointerId);
   const p = at(e);
   Object.assign(F, { down: true, id: e.pointerId, pos: p, at: p, last: p, vel: [0, 0], t: performance.now(), anchor: [e.clientX, e.clientY], still: performance.now(), touch: e.pointerType !== 'mouse' });
@@ -580,11 +583,17 @@ const lift = e => {
 canvas.addEventListener('pointerup', lift);
 canvas.addEventListener('pointercancel', lift);
 
-choices(document.querySelector('.choices'), v => { setPutty(+v); render(); });
-document.getElementById('clear').addEventListener('click', () => { knead(); hb = 0; render(); });
+act.pick = v => {
+  setPutty(+v); render();
+  try { localStorage.setItem(PICK_KEY, v); } catch {}
+};
+// Clear kneads a fresh, cold slab; it rests until the next touch.
+act.clear = () => { knead(); hb = 0; render(); ui.action('clear').disabled = true; };
+ui.action('clear').disabled = true;
 
 new ResizeObserver(fit).observe(stage);
-new ResizeObserver(fit).observe(bar);
+// The corners change size when the shell moves controls on a phone.
+layer.querySelectorAll(':scope > div').forEach(el => new ResizeObserver(fit).observe(el));
 onQuality(fit);
 fit();
 </script>

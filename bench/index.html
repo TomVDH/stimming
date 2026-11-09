@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.14 0.012 260); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Bench: one backlit beaker on a dark lab bench. */
+:root { --stage: oklch(0.14 0.012 260); }
+.stage--bench canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--bench canvas.on { opacity: 1; }
+.stage--bench { cursor: pointer; }
+.stage--bench.stir { cursor: grabbing; }
+.stage--bench.full { cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .stage--bench canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Bench</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--bench" id="stage" tabindex="0" role="application" aria-label="A glass beaker, lit from behind. Electrolysis: hold to switch the current on; drag to stir. Clock: hold to pour the second liquid; drag to stir.">
+      <p class="fail" hidden>Bench needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Bench</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, keyWord, whenVisible, fitCanvas, onQuality, quality, oklchLinear, reduced, audioKit, sound } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------- experiments ---------- */
+// Each experiment keeps its own slider value and liquid level.
+const EXP = {
+  electro: { slider: 'Current', value: 0.6, level: 0.8,
+    keys: [['hold', 'current on'], ['click', 'pulse'], ['drag', 'stir'], ['space', 'hold']] },
+  clock: { slider: 'Delay', value: 0.35, level: 0.45,
+    keys: [['hold', 'pour'], ['drag', 'stir'], ['space', 'hold']] },
+};
+let mode = 'electro';
+// The handlers bind once the GL exists.
+const act = { mode() {}, stir() {}, reset() {}, indicator() {} };
+const ui = initPage({ id: 'bench', bar: {
+  choice: { label: 'Experiment', value: 'electro', options: [
+    { value: 'electro', label: 'Electrolysis' }, { value: 'clock', label: 'Clock' },
+  ], onPick: v => act.mode(v) },
+  slider: { label: 'Current', min: 0, max: 1, step: 0.01, value: EXP.electro.value, onInput: v => { EXP[mode].value = v; } },
+  actions: [{ verb: 'stir', key: 'S', onPress: () => act.stir() }, { verb: 'reset', key: 'R', onPress: () => act.reset() }],
+  settings: [
+    { type: 'choice', id: 'indicator', label: 'Indicator', value: 'universal', persist: true,
+      options: [{ value: 'universal', label: 'Universal' }, { value: 'cabbage', label: 'Cabbage' }], onPick: v => act.indicator(v) },
+    { type: 'choice', id: 'bubbles', label: 'Bubbles', value: 'fine', persist: true,
+      options: [{ value: 'fine', label: 'Fine' }, { value: 'coarse', label: 'Coarse' }], onPick: v => { bubbleSize = v; } },
+  ],
+  quality: true,
+  keys: EXP.electro.keys,
+} });
+let bubbleSize = ui.setting('bubbles')?.value ?? 'fine';
+
+const COARSE = matchMedia('(pointer: coarse)');
+// The shell has no relabel call, so the toy edits its own slider and key strip.
+function relabel() {
+  const e = EXP[mode], frame = stage.parentElement;
+  const lab = frame.querySelector('.s2-slider > span');
+  if (lab) lab.textContent = e.slider;
+  frame.querySelector('.s2-slider input')?.setAttribute('aria-label', e.slider);
+  ui.slider.set(e.value);
+  // Touch screens have no Space key, so its entry drops.
+  const keys = e.keys.filter(k => k[0] !== 'space' || !COARSE.matches);
+  const rows = [...frame.querySelectorAll('.s2-keys > div')];
+  rows.forEach((row, i) => {
+    const k = keys[i];
+    row.hidden = !k;
+    if (!k) return;
+    row.querySelector('kbd').textContent = keyWord(k[0], COARSE.matches);
+    row.querySelector('dd').textContent = k[1];
+  });
+}
+
+let markReady;
+const glReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+
+/* ---------- indicators ---------- */
+// Six stops each, from pH 3 to pH 11, as OKLCH.
+const PH = [3, 5, 6, 7, 9, 11];
+const INDICATOR = {
+  universal: [[0.6, 0.2, 25], [0.72, 0.17, 55], [0.85, 0.16, 95], [0.68, 0.15, 150], [0.55, 0.15, 255], [0.45, 0.17, 300]],
+  cabbage: [[0.65, 0.17, 350], [0.55, 0.14, 330], [0.45, 0.13, 310], [0.45, 0.1, 295], [0.55, 0.1, 245], [0.7, 0.14, 140]],
+};
+// The shader blends stops in OKLab, so hues pass through clean.
+const oklab = ([L, C, h]) => [L, C * Math.cos(h * Math.PI / 180), C * Math.sin(h * Math.PI / 180)];
+let indicator = ui.setting('indicator')?.value ?? 'universal';
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, FMT = null, triVao = null, bubVao = null, bubBuf = null;
+const MAXB = 600;
+let vel = null, pres = null, div = null, scal = null;
+// The fluid fills the beaker's inside, a 2:3 portrait box.
+const TA = 2 / 3;
+let SW = 0, SH = 0;
+// The performance ladder: slow frames first drop the pixel ratio, then the grid.
+// A new quality choice clears the pixel-ratio step; the grid step stays.
+let lowDpr = false, lowGrid = false, probeT = null, probeBuf = null;
+const MAXS = 12, JACOBI = 24;
+
+const TRI = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* ---------- K5: 2D fluid ---------- */
+// Lifted from Marbling's simStep(): force, advect, divergence, Jacobi, gradient.
+// The beaker is the box; the liquid surface is a lid at uTop.
+const HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 o;
+`;
+// Splats push the water: stir strokes, bubble lift and the pour jet.
+const FORCE_FS = HEAD + `
+uniform sampler2D uVel;
+uniform float uA;
+uniform int uN;
+uniform vec4 uSp[${MAXS}];
+uniform vec4 uSpV[${MAXS}];
+void main() {
+  vec2 v = texture(uVel, vUv).xy, p = vUv * vec2(uA, 1.0);
+  for (int i = 0; i < ${MAXS}; i++) {
+    if (i >= uN) break;
+    vec2 d = (p - uSp[i].xy) / uSp[i].z;
+    v += uSpV[i].xy * exp(-dot(d, d));
+  }
+  o = vec4(v, 0.0, 1.0);
+}`;
+// Water: velocity carries itself, spreads a little and dies away.
+const ADV_FS = HEAD + `
+uniform sampler2D uVel;
+uniform vec2 uTex;
+uniform float uA, uDt, uDamp, uVisc;
+uniform int uTop;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uVel, 0);
+  if (c.x == 0 || c.y == 0 || c.x == s.x - 1 || c.y >= uTop) { o = vec4(0.0); return; }
+  vec2 v = texture(uVel, vUv).xy, b = vUv - uDt * v / vec2(uA, 1.0);
+  vec2 n = texture(uVel, b).xy;
+  vec2 avg = 0.25 * (texture(uVel, b + vec2(uTex.x, 0.0)).xy + texture(uVel, b - vec2(uTex.x, 0.0)).xy
+    + texture(uVel, b + vec2(0.0, uTex.y)).xy + texture(uVel, b - vec2(0.0, uTex.y)).xy);
+  o = vec4(mix(n, avg, uVisc) * uDamp, 0.0, 1.0);
+}`;
+const DIV_FS = HEAD + `
+uniform sampler2D uVel;
+uniform vec2 uH;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uVel, 0) - 1;
+  float L = texelFetch(uVel, clamp(c - ivec2(1, 0), ivec2(0), s), 0).x;
+  float R = texelFetch(uVel, clamp(c + ivec2(1, 0), ivec2(0), s), 0).x;
+  float B = texelFetch(uVel, clamp(c - ivec2(0, 1), ivec2(0), s), 0).y;
+  float T = texelFetch(uVel, clamp(c + ivec2(0, 1), ivec2(0), s), 0).y;
+  o = vec4(0.5 * ((R - L) / uH.x + (T - B) / uH.y), 0.0, 0.0, 1.0);
+}`;
+// One Jacobi sweep; clamped reads keep the walls and the lid closed.
+const JAC_FS = HEAD + `
+uniform sampler2D uP, uDiv;
+uniform vec2 uH;
+uniform float uKeep;
+uniform int uTop;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uP, 0) - 1;
+  s.y = min(s.y, uTop - 1);
+  if (c.y > s.y) { o = vec4(0.0); return; }
+  float L = texelFetch(uP, clamp(c - ivec2(1, 0), ivec2(0), s), 0).x;
+  float R = texelFetch(uP, clamp(c + ivec2(1, 0), ivec2(0), s), 0).x;
+  float B = texelFetch(uP, clamp(c - ivec2(0, 1), ivec2(0), s), 0).x;
+  float T = texelFetch(uP, clamp(c + ivec2(0, 1), ivec2(0), s), 0).x;
+  vec2 k = 1.0 / (uH * uH);
+  float p = (((L + R) * k.x + (B + T) * k.y) * uKeep - texelFetch(uDiv, c, 0).x) / (2.0 * (k.x + k.y));
+  o = vec4(p, 0.0, 0.0, 1.0);
+}`;
+const GRAD_FS = HEAD + `
+uniform sampler2D uP, uVel;
+uniform vec2 uH;
+uniform int uTop;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy), s = textureSize(uP, 0) - 1;
+  if (c.x == 0 || c.y == 0 || c.x == s.x || c.y >= uTop - 1) { o = vec4(0.0); return; }
+  float L = texelFetch(uP, c - ivec2(1, 0), 0).x, R = texelFetch(uP, c + ivec2(1, 0), 0).x;
+  float B = texelFetch(uP, c - ivec2(0, 1), 0).x, T = texelFetch(uP, c + ivec2(0, 1), 0).x;
+  o = vec4(texelFetch(uVel, c, 0).xy - 0.5 * vec2((R - L) / uH.x, (T - B) / uH.y), 0.0, 1.0);
+}`;
+// Scalars ride the same flow, blur a little, and take splats.
+const SCAL_FS = HEAD + `
+uniform sampler2D uVel, uSrc;
+uniform vec2 uTex;
+uniform float uA, uDt, uDiff, uLevel, uClock, uDelay, uSnap;
+uniform vec4 uAbove;
+uniform int uN;
+uniform vec4 uSc[${MAXS}];
+uniform vec4 uScV[${MAXS}];
+// Reads stay below the surface, so the air above never leaks in.
+vec4 at(vec2 q) { return texture(uSrc, vec2(q.x, min(q.y, uLevel - 0.5 * uTex.y))); }
+void main() {
+  // Above the surface waits what the level will cover next.
+  if (vUv.y > uLevel) { o = uAbove; return; }
+  vec2 v = texture(uVel, vUv).xy, b = vUv - uDt * v / vec2(uA, 1.0);
+  vec4 n = at(b);
+  vec4 avg = 0.25 * (at(vUv + vec2(uTex.x, 0.0)) + at(vUv - vec2(uTex.x, 0.0))
+    + at(vUv + vec2(0.0, uTex.y)) + at(vUv - vec2(0.0, uTex.y)));
+  vec4 s = mix(n, avg, uDiff);
+  vec2 p = vUv * vec2(uA, 1.0);
+  for (int i = 0; i < ${MAXS}; i++) {
+    if (i >= uN) break;
+    vec2 d = (p - uSc[i].xy) / uSc[i].z;
+    s += uScV[i] * exp(-dot(d, d));
+  }
+  if (uClock > 0.5) {
+    // g: mix fraction. b: progress, fastest where the two liquids mix evenly.
+    float m = clamp(s.g, 0.0, 1.0);
+    s.g = m;
+    s.b += uDt * 4.0 * m * (1.0 - m) / uDelay;
+    // a: the starch complex. It forms past p = 1 and spreads as a front.
+    float nb = max(max(at(vUv + vec2(uTex.x, 0.0)).a, at(vUv - vec2(uTex.x, 0.0)).a),
+      max(at(vUv + vec2(0.0, uTex.y)).a, at(vUv - vec2(0.0, uTex.y)).a));
+    float go = max(step(1.0, s.b), step(0.82, s.b) * step(0.35, nb));
+    s.a = clamp(s.a + uDt * uSnap * go, 0.0, 1.0);
+  }
+  o = s;
+}`;
+/* ---------- end K5 ---------- */
+
+// The probe: one texel per 16 x 16 block, set where the clock still moves.
+// It reads 16 texels per block, one in each 4 x 4 cell, to stay cheap.
+// r: a reaction still pending. g: the complex has begun.
+const PROBE_FS = HEAD + `
+uniform sampler2D uSrc;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy) * 16, top = textureSize(uSrc, 0) - 1;
+  float pend = 0.0, front = 0.0;
+  for (int k = 0; k < 16; k++) {
+    ivec2 q = min(c + ivec2(k % 4, k / 4) * 4 + 2, top);
+    vec4 s = texelFetch(uSrc, q, 0);
+    float m = clamp(s.g, 0.0, 1.0);
+    if ((s.b < 1.0 && 4.0 * m * (1.0 - m) > 0.15) || (s.a > 0.001 && s.a < 0.999)) pend = 1.0;
+    if (s.a > 0.05) front = 1.0;
+  }
+  o = vec4(pend, front, 0.0, 1.0);
+}`;
+const COPY_FS = HEAD + `
+uniform sampler2D uSrc;
+void main() { o = texture(uSrc, vUv); }`;
+// The first frame: the rainbow already formed, acid left, base right.
+const SEED_FS = HEAD + `
+void main() {
+  float u = vUv.x * 2.0 - 1.0;
+  float w = 0.07 * sin(vUv.y * 9.0 + 1.3) + 0.05 * sin(vUv.y * 17.0 - u * 5.0);
+  o = vec4(-1.6 * tanh((u + w) * 1.5), 0.0, 0.0, 1.0);
+}`;
+// Bubbles: dark rims and bright cores, as light bends through them.
+const BUB_VS = `#version 300 es
+in vec3 aB;
+uniform vec4 uMap;
+uniform vec2 uRes;
+uniform float uA;
+out float vS;
+void main() {
+  vec2 px = vec2(uMap.x + (aB.x / uA * 2.0 - 1.0) * uMap.z, uMap.y + aB.y * uMap.w);
+  gl_Position = vec4(px / uRes * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = max(2.0, aB.z * uMap.w * 2.0 + 1.0);
+  vS = gl_PointSize;
+}`;
+const BUB_FS = `#version 300 es
+precision highp float;
+in float vS;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float d = length(c);
+  if (d > 1.0) discard;
+  float aa = clamp((1.0 - d) * vS * 0.5, 0.0, 1.0);
+  float rim = smoothstep(0.45, 0.95, d);
+  vec3 col = mix(vec3(1.0), vec3(0.05, 0.06, 0.07), rim);
+  vec2 h = c - vec2(-0.3, -0.35);
+  col = mix(col, vec3(1.0), exp(-dot(h, h) * 14.0));
+  float a = mix(0.3, 0.85, rim) * aa;
+  o = vec4(col * a, a);
+}`;
+
+// The beaker: lab light, liquid, rods and glass, in one pass.
+const BEAKER_FS = HEAD + `
+uniform vec2 uRes;
+uniform vec3 uIn;        // inside: centre x, bottom y, half width (px)
+uniform float uIH;       // inside height (px)
+uniform vec2 uWall;      // wall and base thickness (px)
+uniform float uLevel;    // liquid level, 0 to 1 of the inside
+uniform float uRods;     // 1 shows the graphite rods
+uniform float uClear;    // 1 for a clear liquid
+uniform float uTime;
+uniform vec3 uAmber, uInk;
+uniform vec4 uJet;       // pour stream: u, half width (px), on
+uniform vec3 uPanel, uRoom;
+uniform vec3 uLab[6];
+uniform float uPH[6];
+uniform sampler2D uScal;
+
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 oklabLin(vec3 c) {
+  float l = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
+  float m = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
+  float s = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
+  l = l * l * l; m = m * m * m; s = s * s * s;
+  return max(vec3(0.0), vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s));
+}
+// The indicator colour for one pH, blended between stops.
+vec3 ramp(float ph) {
+  vec3 c = uLab[0];
+  for (int i = 0; i < 5; i++) {
+    float t = clamp((ph - uPH[i]) / (uPH[i + 1] - uPH[i]), 0.0, 1.0);
+    if (ph > uPH[i]) c = mix(uLab[i], uLab[i + 1], t);
+  }
+  return oklabLin(c);
+}
+// The lab panel glows behind the beaker, brightest at the top.
+vec3 panel(vec2 p) {
+  vec2 c = vec2(uIn.x, uIn.y + uIH * 0.5), h = vec2(uIn.z * 1.55, uIH * 0.6);
+  vec2 q = abs(p - c) - h;
+  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+  float soft = uIn.z * 0.75;
+  float lit = exp(-pow(max(d, 0.0) / soft, 2.0));
+  float grade = mix(0.72, 1.06, clamp((p.y - (c.y - h.y)) / (2.0 * h.y), 0.0, 1.0));
+  return mix(uRoom, uPanel * grade, lit);
+}
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+
+void main() {
+  vec2 p = gl_FragCoord.xy;
+  vec3 bg = panel(p);
+  vec3 col = bg;
+  float hw = uIn.z, x0 = uIn.x, y0 = uIn.y, yT = y0 + uIH;
+  // u runs -1 to 1 across the inside; e is the cylinder's depth there.
+  float u = (p.x - x0) / hw, e = sqrt(max(0.0, 1.0 - u * u));
+  float ry = hw * 0.11;
+  float uo = (p.x - x0) / (hw + uWall.x), eo = sqrt(max(0.0, 1.0 - uo * uo));
+  float yBot = y0 - ry * e, yBotO = y0 - uWall.y - ry * 1.05 * eo;
+  float yL = y0 + uIH * uLevel, yFront = yL - ry * e, yBack = yL + ry * e;
+  float px = 1.0;
+  vec2 q = vec2((u + 1.0) * 0.5, clamp((p.y - y0) / uIH, 0.0, 1.0));
+
+  // The liquid colour: an indicator, or a clear liquid.
+  vec4 sc = texture(uScal, q);
+  vec3 tint = clamp(ramp(7.0 - 4.0 * tanh(sc.x)) / uPanel, 0.004, 1.0);
+  float shl = 0.0;
+  if (uClear > 0.5) {
+    // Clear liquids; an amber edge leads the blue-black complex.
+    float a = sc.a, amb = smoothstep(0.03, 0.3, a) * (1.0 - smoothstep(0.35, 0.85, a));
+    tint = mix(vec3(0.955, 0.972, 0.965), uAmber, amb * 0.85);
+    tint = mix(tint, uInk, smoothstep(0.25, 1.0, a));
+    // Where the two clear liquids meet, the light bends: faint schlieren.
+    vec2 tx = 1.0 / vec2(textureSize(uScal, 0));
+    vec2 gm = vec2(texture(uScal, q + vec2(tx.x, 0.0)).g - texture(uScal, q - vec2(tx.x, 0.0)).g,
+      texture(uScal, q + vec2(0.0, tx.y)).g - texture(uScal, q - vec2(0.0, tx.y)).g);
+    shl = min(0.22, length(gm) * 0.9) * (1.0 - smoothstep(0.2, 0.6, a));
+  }
+
+  bool inside = abs(u) < 1.0 && p.y > yBot && p.y < yT + ry * e;
+  bool shell = abs(uo) < 1.0 && p.y > yBotO && p.y < yT + ry * eo && !inside;
+  float depth = mix(0.22, 1.18, e);
+
+  if (inside) {
+    // Air above the liquid: two glass walls dim the light a little.
+    col = bg * vec3(0.93, 0.95, 0.95);
+    if (p.y < yFront) {
+      // Beer-Lambert through the cylinder: thickest down the middle.
+      col = bg * pow(tint, vec3(depth)) + bg * tint * 0.03;
+      col *= 1.0 - shl;
+    } else if (p.y < yBack) {
+      // The surface, seen a little from above, catches the lab light.
+      float s = (p.y - yFront) / max(yBack - yFront, 1.0);
+      col = bg * pow(tint, vec3(depth * 0.55)) * (1.04 + 0.08 * s);
+    }
+    // The meniscus: a bright front line over a thin dark band.
+    float dl = p.y - yFront;
+    col *= 1.0 - 0.28 * exp(-pow((dl + 3.0 * px) / (2.2 * px), 2.0));
+    col += vec3(0.5) * exp(-pow(dl / (1.1 * px), 2.0)) * (0.5 + 0.5 * e);
+    col += vec3(0.18) * exp(-pow((p.y - yBack) / (1.0 * px), 2.0)) * e;
+  }
+
+  // The pour: a clear stream from above the frame into the surface.
+  if (uJet.z > 0.5) {
+    float jx = x0 + uJet.x * hw, n = (p.x - jx) / uJet.y;
+    float ys = yL - ry * sqrt(max(0.0, 1.0 - uJet.x * uJet.x));
+    if (abs(n) < 1.0 && p.y > ys) {
+      float nz = sqrt(1.0 - n * n);
+      vec3 j = bg * (0.62 + 0.4 * nz) + vec3(0.25) * exp(-pow((n + 0.4) / 0.18, 2.0));
+      col = mix(col, j, smoothstep(1.0, 0.8, abs(n)));
+    }
+    // Where it lands, the surface churns white.
+    vec2 d = vec2((p.x - jx) / (uJet.y * 3.0), (p.y - ys) / (uJet.y * 1.2));
+    col += vec3(0.2) * exp(-dot(d, d)) * (0.6 + 0.4 * sin(uTime * 40.0 + p.x * 0.3));
+  }
+
+  // Graphite rods dip into the liquid from above the frame.
+  if (uRods > 0.5) {
+    float rw = 0.07, rb = y0 + uIH * 0.1;
+    for (int i = 0; i < 2; i++) {
+      float rc = i == 0 ? -0.4 : 0.4;
+      float n = (u - rc) / rw;
+      float yb = rb - rw * hw * 0.35 * sqrt(max(0.0, 1.0 - n * n));
+      if (abs(n) < 1.0 && p.y > yb) {
+        float nz = sqrt(1.0 - n * n);
+        vec3 g = vec3(0.028, 0.03, 0.034) * (0.45 + 0.55 * nz);
+        g += vec3(0.16, 0.17, 0.19) * exp(-pow((n + 0.48) / 0.16, 2.0));
+        g += vec3(0.05) * exp(-pow((n - 0.62) / 0.1, 2.0));
+        float aa = smoothstep(1.0, 1.0 - 2.0 * px / (rw * hw), abs(n));
+        // Below the surface, the front half of the liquid tints the rod.
+        if (p.y < yL - ry * e * 0.2) g *= pow(tint, vec3(depth * 0.5));
+        col = mix(col, g, aa);
+      }
+    }
+  }
+
+  if (shell) {
+    // Glass seen edge-on bends the light away: dark edges, a bright core.
+    float w = abs(uo) >= 1.0 ? 1.0 : 0.0;
+    float side = clamp((abs(p.x - x0) - hw) / uWall.x, 0.0, 1.0);
+    float bot = clamp((yBot - p.y) / max(yBot - yBotO, 1.0), 0.0, 1.0);
+    float t = p.y < yBot ? bot : side;
+    col = bg * vec3(0.86, 0.92, 0.92) * mix(1.0, 0.42, smoothstep(0.55, 1.0, t));
+    col += vec3(0.3) * exp(-pow((t - 0.32) / 0.12, 2.0)) * 0.6;
+    col *= 1.0 - 0.35 * exp(-pow(t / 0.12, 2.0));
+  }
+
+  // The rim: front and back edges of the glass lip.
+  if (abs(uo) < 1.0) {
+    float rf = yT - ry * eo, rbk = yT + ry * eo;
+    float lip = exp(-pow((p.y - rf) / (1.6 * px), 2.0)) + 0.55 * exp(-pow((p.y - rbk) / (1.3 * px), 2.0));
+    col = mix(col, col * 0.55, 0.6 * exp(-pow((p.y - rf + 2.5 * px) / (1.8 * px), 2.0)));
+    col += vec3(0.42) * lip;
+  }
+
+  // Two reflections run down the front glass: a soft strip and a thin line.
+  if (abs(u) < 1.0 && p.y > yBot - uWall.y && p.y < yT - ry * e) {
+    float a = exp(-pow((u + 0.74) / 0.07, 2.0)), b = exp(-pow((u - 0.66) / 0.018, 2.0));
+    float dark = exp(-pow((u + 0.6) / 0.03, 2.0));
+    col = col * (1.0 - 0.18 * dark) + vec3(0.22) * a + vec3(0.34) * b;
+  }
+
+  // A vignette and fine grain finish the frame.
+  vec2 v = (p / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.45 * smoothstep(0.35, 1.15, length(v));
+  vec3 outc = srgb(col);
+  outc += (hash(p + fract(uTime) * 91.0) - 0.5) * 0.014;
+  o = vec4(outc, 1.0);
+}`;
+
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+// Every active uniform gets its location, arrays by their first element.
+function locate(prog) {
+  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog.p, i).name;
+    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
+  }
+}
+function renderable(fmt) {
+  const t = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, 4, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(t);
+  return ok;
+}
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('float targets unavailable');
+  if (!renderable(gl.RGBA16F)) throw new Error('RGBA16F is not renderable');
+  FMT = { four: gl.RGBA16F, vel: renderable(gl.RG16F) ? gl.RG16F : gl.RGBA16F, one: renderable(gl.R16F) ? gl.R16F : gl.RGBA16F };
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = {
+    force: compile(TRI, FORCE_FS), adv: compile(TRI, ADV_FS), div: compile(TRI, DIV_FS), jac: compile(TRI, JAC_FS),
+    grad: compile(TRI, GRAD_FS), scal: compile(TRI, SCAL_FS), beaker: compile(TRI, BEAKER_FS),
+    seed: compile(TRI, SEED_FS), bub: compile(BUB_VS, BUB_FS), copy: compile(TRI, COPY_FS), probe: compile(TRI, PROBE_FS),
+  };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+    locate(q);
+  }
+  P = progs;
+  triVao = gl.createVertexArray();
+  // Bubbles have their own vertex array: x, y and radius each.
+  bubVao = gl.createVertexArray();
+  gl.bindVertexArray(bubVao);
+  bubBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAXB * 12, gl.DYNAMIC_DRAW);
+  const loc = gl.getAttribLocation(P.bub.p, 'aB');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(triVao);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.beaker.p);
+  gl.uniform3fv(P.beaker.u.uPanel, oklchLinear(0.92, 0.01, 240));
+  gl.uniform3fv(P.beaker.u.uRoom, oklchLinear(0.14, 0.012, 260));
+  gl.uniform1fv(P.beaker.u.uPH, PH);
+  // Clock colours as transmittance against the panel.
+  const pan = oklchLinear(0.92, 0.01, 240), tr = c => oklchLinear(...c).map((v, i) => clamp(v / pan[i], 0.003, 1));
+  gl.uniform3fv(P.beaker.u.uAmber, tr([0.7, 0.13, 70]));
+  gl.uniform3fv(P.beaker.u.uInk, tr([0.18, 0.06, 270]));
+  setIndicator(indicator);
+}
+function setIndicator(v) {
+  indicator = INDICATOR[v] ? v : 'universal';
+  gl.useProgram(P.beaker.p);
+  gl.uniform3fv(P.beaker.u.uLab, INDICATOR[indicator].flatMap(oklab));
+}
+function target(w, h, fmt) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const t = { tex, fb, w, h };
+  wipe(t);
+  return t;
+}
+function pair(w, h, fmt) {
+  return { r: target(w, h, fmt), w: target(w, h, fmt), swap() { [this.r, this.w] = [this.w, this.r]; } };
+}
+function free(t) {
+  if (!t) return;
+  if (t.r) { free(t.r); free(t.w); return; }
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fb);
+}
+function wipe(t) {
+  if (t.r) { wipe(t.r); wipe(t.w); return; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function bind(prog, name, unit, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.uniform1i(prog.u[name], unit);
+}
+function copy(src, dst) {
+  gl.useProgram(P.copy.p);
+  bind(P.copy, 'uSrc', 0, src);
+  draw(dst);
+}
+function draw(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// The grid is 128 by 192; the ladder's lower rung drops it to 96 by 144.
+// A regrid copies the flow and the scalars across, so nothing jumps.
+function alloc() {
+  const sw = lowGrid ? 96 : 128, sh = Math.round(sw / TA);
+  if (sw === SW && sh === SH) return;
+  const nv = pair(sw, sh, FMT.vel), ns = pair(sw, sh, FMT.four);
+  if (vel) { copy(vel.r, nv.r); copy(scal.r, ns.r); }
+  [vel, pres, div, scal].forEach(free);
+  vel = nv;
+  scal = ns;
+  pres = pair(sw, sh, FMT.one);
+  div = target(sw, sh, FMT.one);
+  SW = sw;
+  SH = sh;
+  // The probe target: bytes, so readPixels works everywhere.
+  if (probeT) { gl.deleteTexture(probeT.tex); gl.deleteFramebuffer(probeT.fb); }
+  probeT = target(Math.ceil(sw / 16), Math.ceil(sh / 16), gl.RGBA8);
+  probeBuf = new Uint8Array(probeT.w * probeT.h * 4);
+}
+
+/* ---------- forces and scalar splats ---------- */
+// Positions are in fluid units: x from 0 to TA, y from 0 to 1.
+const sp = new Float32Array(MAXS * 4), spV = new Float32Array(MAXS * 4);
+const sc = new Float32Array(MAXS * 4), scV = new Float32Array(MAXS * 4);
+let nSp = 0, nSc = 0;
+function splat(x, y, vx, vy, r) {
+  if (nSp >= MAXS) return;
+  sp.set([x, y, r, 0], nSp * 4);
+  spV.set([vx, vy, 0, 0], nSp * 4);
+  nSp++;
+}
+function scalarSplat(x, y, r, a, b = 0, c = 0) {
+  if (nSc >= MAXS) return;
+  sc.set([x, y, r, 0], nSc * 4);
+  scV.set([a, b, c, 0], nSc * 4);
+  nSc++;
+}
+
+/* ---------- one frame of fluid ---------- */
+let level = EXP.electro.level;
+const top = () => clamp(Math.ceil(level * SH), 2, SH);
+function simStep(dt) {
+  const hx = TA / SW, hy = 1 / SH, T = top();
+  if (nSp) {
+    const f = P.force;
+    gl.useProgram(f.p);
+    bind(f, 'uVel', 0, vel.r);
+    gl.uniform1f(f.u.uA, TA);
+    gl.uniform1i(f.u.uN, nSp);
+    gl.uniform4fv(f.u.uSp, sp);
+    gl.uniform4fv(f.u.uSpV, spV);
+    draw(vel.w);
+    vel.swap();
+    nSp = 0;
+  }
+  // Convection rolls live long: the flow decays over 1.5 s.
+  const a = P.adv;
+  gl.useProgram(a.p);
+  bind(a, 'uVel', 0, vel.r);
+  gl.uniform2f(a.u.uTex, 1 / SW, 1 / SH);
+  gl.uniform1f(a.u.uA, TA);
+  gl.uniform1f(a.u.uDt, dt);
+  gl.uniform1f(a.u.uDamp, Math.exp(-dt / 1.5));
+  gl.uniform1f(a.u.uVisc, 1 - Math.exp(-dt * 2));
+  gl.uniform1i(a.u.uTop, T);
+  draw(vel.w);
+  vel.swap();
+  gl.useProgram(P.div.p);
+  bind(P.div, 'uVel', 0, vel.r);
+  gl.uniform2f(P.div.u.uH, hx, hy);
+  draw(div);
+  const j = P.jac;
+  gl.useProgram(j.p);
+  bind(j, 'uDiv', 1, div);
+  gl.uniform2f(j.u.uH, hx, hy);
+  gl.uniform1i(j.u.uTop, T);
+  for (let i = 0; i < JACOBI; i++) {
+    bind(j, 'uP', 0, pres.r);
+    gl.uniform1f(j.u.uKeep, i ? 1 : 0.8);
+    draw(pres.w);
+    pres.swap();
+  }
+  const g = P.grad;
+  gl.useProgram(g.p);
+  bind(g, 'uP', 0, pres.r);
+  bind(g, 'uVel', 1, vel.r);
+  gl.uniform2f(g.u.uH, hx, hy);
+  gl.uniform1i(g.u.uTop, T);
+  draw(vel.w);
+  vel.swap();
+  advectScalar(scal, dt);
+}
+// Scalars move with the flow and blur a little each step.
+function advectScalar(tex, dt) {
+  const s = P.scal;
+  gl.useProgram(s.p);
+  bind(s, 'uVel', 0, vel.r);
+  bind(s, 'uSrc', 1, tex.r);
+  gl.uniform2f(s.u.uTex, 1 / SW, 1 / SH);
+  gl.uniform1f(s.u.uA, TA);
+  gl.uniform1f(s.u.uDt, dt);
+  gl.uniform1f(s.u.uDiff, 1 - Math.exp(-dt * 0.6));
+  gl.uniform1f(s.u.uLevel, level);
+  const clk = mode === 'clock';
+  gl.uniform1f(s.u.uClock, clk ? 1 : 0);
+  gl.uniform4f(s.u.uAbove, 0, clk ? 1 : 0, 0, 0);
+  gl.uniform1f(s.u.uDelay, delay());
+  // The snap takes 0.15 s; reduced motion fades it over 0.6 s.
+  gl.uniform1f(s.u.uSnap, reduced() ? 1 / 0.6 : 1 / 0.15);
+  gl.uniform1i(s.u.uN, nSc);
+  gl.uniform4fv(s.u.uSc, sc);
+  gl.uniform4fv(s.u.uScV, scV);
+  draw(tex.w);
+  tex.swap();
+  nSc = 0;
+}
+
+/* ---------- the beaker ---------- */
+// Layout in device pixels, from the bottom left as GL counts.
+const box = { x: 0, y: 0, hw: 0, ih: 0, wall: 0, base: 0 };
+let dpr = 1, time = 0;
+function layout() {
+  // On High the first step falls back to Standard, not to 1x.
+  const { W, H, dpr: d } = fitCanvas(canvas, !lowDpr ? { maxDpr: 2 } : quality() === 'high' ? { maxDpr: 2, quality: 'standard' } : { maxDpr: 1 });
+  dpr = d;
+  let ih = H * 0.6, iw = ih * TA;
+  if (iw > W * 0.56) { iw = W * 0.56; ih = iw / TA; }
+  box.hw = iw / 2;
+  box.ih = ih;
+  box.x = W / 2;
+  box.y = Math.max(H * 0.2, 84 * dpr);
+  box.wall = Math.max(3 * dpr, iw * 0.024);
+  box.base = Math.max(6 * dpr, ih * 0.04);
+}
+function beaker() {
+  const b = P.beaker;
+  gl.useProgram(b.p);
+  bind(b, 'uScal', 0, scal.r);
+  gl.uniform2f(b.u.uRes, canvas.width, canvas.height);
+  gl.uniform3f(b.u.uIn, box.x, box.y, box.hw);
+  gl.uniform1f(b.u.uIH, box.ih);
+  gl.uniform2f(b.u.uWall, box.wall, box.base);
+  gl.uniform1f(b.u.uLevel, level);
+  gl.uniform1f(b.u.uRods, mode === 'electro' ? 1 : 0);
+  gl.uniform1f(b.u.uClear, mode === 'clock' ? 1 : 0);
+  gl.uniform4f(b.u.uJet, pourU(), Math.max(2 * dpr, box.hw * 0.035), pourOn() ? 1 : 0, 0);
+  gl.uniform1f(b.u.uTime, time);
+  draw(null);
+}
+// Canvas pixels to fluid units.
+function toFluid(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const px = (cx - r.left) * (canvas.width / r.width), py = (r.bottom - cy) * (canvas.height / r.height);
+  return { x: ((px - box.x) / box.hw + 1) * 0.5 * TA, y: (py - box.y) / box.ih };
+}
+
+/* ---------- electrolysis ---------- */
+// The anode (+) sits left and makes acid; the cathode (-) sits right and makes base.
+// Rod geometry matches the shader: centres at u = -0.4 and 0.4, half width 0.07.
+const ROD_U = [-0.4, 0.4], ROD_B = 0.1;
+const rodX = i => (ROD_U[i] + 1) * 0.5 * TA, ROD_R = 0.07 * 0.5 * TA;
+let power = false, pulseUntil = 0;
+// Current from the slider; it never drops to nothing.
+const amps = () => (mode === 'electro' && (power || performance.now() < pulseUntil) ? 0.15 + 0.85 * EXP.electro.value : 0);
+// Seeded random keeps the nucleation sites the same on every load.
+let seed = 4021;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const sites = [], bubbles = [], bubData = new Float32Array(MAXB * 3);
+// Each rod gets 6 to 10 sites; the first sits at the tip.
+function buildSites() {
+  sites.length = 0;
+  seed = 4021;
+  for (let i = 0; i < 2; i++) {
+    const n = 6 + Math.floor(rnd() * 5);
+    for (let k = 0; k < n; k++) {
+      const tip = k === 0;
+      sites.push({ rod: i, tip, side: rnd() < 0.5 ? -1 : 1, rate: lerp(0.5, 1.5, rnd()), ph: rnd(),
+        y: tip ? ROD_B - 0.008 : lerp(ROD_B + 0.03, level - 0.1, rnd()) });
+    }
+  }
+}
+function spawn(s) {
+  const coarse = bubbleSize === 'coarse';
+  const r = coarse ? lerp(0.008, 0.015, rnd()) : lerp(0.004, 0.0078, rnd());
+  const x = s.tip ? rodX(s.rod) + (rnd() - 0.5) * ROD_R : rodX(s.rod) + s.side * (ROD_R + r * 0.6);
+  bubbles.push({ rod: s.rod, x0: x, x, y: s.y, y0: s.y, r0: r, r,
+    v: 0.22 + r * 26, vx: (s.tip ? (rnd() - 0.5) : s.side) * lerp(0.004, 0.018, rnd()),
+    w: rnd() * TAU, f: lerp(7, 13, rnd()), a: r * lerp(0.3, 0.8, rnd()) });
+}
+// Bubbles rise by size, wobble, grow a little and pop at the surface.
+const band = new Float32Array(6), bandX = new Float32Array(6);
+function electroStep(dt) {
+  const I = amps(), rm = reduced();
+  if (I > 0) {
+    const per = bubbleSize === 'coarse' ? 2.6 : 6.5;
+    for (const s of sites) {
+      // The cathode makes twice the gas: two volumes of hydrogen to one of oxygen.
+      s.ph += dt * I * per * s.rate * (s.rod === 1 ? 2 : 1);
+      while (s.ph >= 1) { s.ph -= 1; if (bubbles.length < MAXB) { spawn(s); fizz[s.rod]++; } }
+    }
+    // Acid and base form at the rods; their sum cancels on its own.
+    const h = (level - ROD_B) / 3;
+    for (let i = 0; i < 2; i++) for (let k = 0; k < 3; k++) {
+      scalarSplat(rodX(i), ROD_B + h * (k + 0.5), 0.045, (i ? -1 : 1) * 0.55 * I * dt);
+    }
+  }
+  band.fill(0);
+  bandX.fill(0);
+  const sp = rm ? 0.5 : 1, wob = rm ? 0.3 : 1, h = (level - ROD_B) / 3;
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.y += b.v * sp * dt;
+    b.x0 += b.vx * dt;
+    b.w += b.f * dt;
+    b.r = b.r0 * (1 + 0.6 * (b.y - b.y0));
+    b.x = b.x0 + Math.sin(b.w) * b.a * wob;
+    if (b.y > level - b.r * 0.5) { pops.push([b.rod, b.r]); bubbles.splice(i, 1); continue; }
+    const k = b.rod * 3 + clamp(Math.floor((b.y - ROD_B) / h), 0, 2);
+    band[k]++;
+    bandX[k] += b.x;
+  }
+  // Each band of rising bubbles lifts the water beside its rod.
+  for (let k = 0; k < 6; k++) {
+    if (!band[k]) continue;
+    splat(bandX[k] / band[k], ROD_B + h * ((k % 3) + 0.5), 0, Math.min(0.16, band[k] * 0.003) * dt, 0.05);
+  }
+}
+function drawBubbles() {
+  const n = bubbles.length;
+  if (!n) return;
+  for (let i = 0; i < n; i++) {
+    const b = bubbles[i];
+    bubData[i * 3] = b.x;
+    bubData[i * 3 + 1] = b.y;
+    bubData[i * 3 + 2] = b.r;
+  }
+  const q = P.bub;
+  gl.useProgram(q.p);
+  gl.uniform4f(q.u.uMap, box.x, box.y, box.hw, box.ih);
+  gl.uniform2f(q.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(q.u.uA, TA);
+  gl.bindVertexArray(bubVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, bubData, 0, n * 3);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.drawArrays(gl.POINTS, 0, n);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(triVao);
+}
+// The rainbow, pre-exposed: a seeded field, then 2 s of current.
+function seedRainbow() {
+  gl.useProgram(P.seed.p);
+  draw(scal.r);
+  power = true;
+  for (let i = 0; i < 60; i++) { electroStep(1 / 30); simStep(1 / 30); }
+  power = false;
+  bubbles.length = 0;
+  fizz[0] = fizz[1] = 0;
+  pops.length = 0;
+}
+
+/* ---------- sound ---------- */
+// Plain Web Audio on the kit's context: mute, gesture start and sleep come with it.
+const kit = audioKit({ keys: new Set([' ', 's', 'S', 'r', 'R']) });
+const jit = (k = 0.06) => 1 + (Math.random() * 2 - 1) * k;
+const pans = [];
+// Each rod has its own place in the stereo field.
+function panTo(ac, x) {
+  const p = ac.createStereoPanner();
+  p.pan.value = clamp(x, -1, 1);
+  p.connect(kit.out);
+  return p;
+}
+function rodBus(ac, i) { return (pans[i] ||= panTo(ac, i ? 0.4 : -0.4)); }
+const sfx = {
+  // Fizz: a tick of high noise as a bubble leaves its site.
+  click(rod, t) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = kit.noise;
+    f.type = 'highpass';
+    f.frequency.value = 3800 * jit(0.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03 * jit(0.5), t + 0.0008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.006 * jit(0.3));
+    src.connect(f).connect(g).connect(rodBus(ac, rod));
+    src.start(t, Math.random() * 0.9, 0.012);
+  },
+  // A pop chirps up; small bubbles ring higher.
+  pop(rod, r, t) {
+    const ac = kit.live();
+    if (!ac) return;
+    const o = ac.createOscillator(), g = ac.createGain(), f0 = clamp(13 / r, 700, 3800) * jit(0.12);
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 1.7, t + 0.03);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03 * jit(0.4), t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+    o.connect(g).connect(rodBus(ac, rod));
+    o.start(t);
+    o.stop(t + 0.05);
+  },
+  // A glass rod strikes the beaker: three inharmonic partials.
+  clink(x = 0) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.005, f = 2600 * jit(0.18), out = panTo(ac, x * 0.6);
+    [[1, 0.045, 0.32], [2.76, 0.02, 0.16], [5.4, 0.01, 0.08]].forEach(([k, a, d]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f * k * jit(0.01);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(a * jit(0.3), t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d * jit(0.2));
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + d + 0.05);
+    });
+  },
+  // The snap: a soft low whomp and one glassy chime.
+  snap() {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.01, o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(64 * jit(0.05), t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.7);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    o.connect(g).connect(kit.out);
+    o.start(t);
+    o.stop(t + 1.2);
+    const c = 1568 * jit(0.03);
+    [[1, 0.05, 2.6], [2.76, 0.018, 1.2], [4.1, 0.008, 0.6]].forEach(([k, a, d]) => {
+      const p = ac.createOscillator(), h = ac.createGain();
+      p.frequency.value = c * k;
+      h.gain.setValueAtTime(0.0001, t + 0.04);
+      h.gain.linearRampToValueAtTime(a, t + 0.045);
+      h.gain.exponentialRampToValueAtTime(0.0001, t + 0.04 + d);
+      p.connect(h).connect(kit.out);
+      p.start(t + 0.04);
+      p.stop(t + d + 0.1);
+    });
+  },
+};
+// Two held voices: the supply's hum and the pour.
+let hum = null, pourV = null;
+function humTo(level) {
+  const ac = kit.live();
+  if (!ac || (!hum && level <= 0)) return;
+  if (!hum) {
+    const g = ac.createGain();
+    g.gain.value = 0;
+    g.connect(kit.out);
+    const o = [[100, 1], [200, 0.35], [300, 0.12]].map(([f, a]) => {
+      const x = ac.createOscillator(), y = ac.createGain();
+      x.frequency.value = f;
+      y.gain.value = a;
+      x.connect(y).connect(g);
+      x.start();
+      return x;
+    });
+    hum = { g, o, level: 0 };
+  }
+  if (Math.abs(level - hum.level) < 0.01 && level > 0) return;
+  hum.level = level;
+  hum.g.gain.setTargetAtTime(level * 0.05, ac.currentTime, 0.06);
+  if (level <= 0) {
+    const h = hum;
+    hum = null;
+    h.o.forEach(x => x.stop(ac.currentTime + 0.4));
+  }
+}
+// The pour: bandpassed noise with a wandering gurgle, panned with the stream.
+function pourTo(on, x = 0) {
+  const ac = kit.live();
+  if (!ac || (!pourV && !on)) return;
+  if (!pourV && on) {
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+    src.buffer = kit.noise;
+    src.loop = true;
+    bp.type = 'bandpass';
+    bp.frequency.value = 650;
+    bp.Q.value = 1.6;
+    lfo.frequency.value = 7;
+    depth.gain.value = 260;
+    lfo.connect(depth).connect(bp.frequency);
+    const pan = panTo(ac, x * 0.6);
+    g.gain.value = 0;
+    src.connect(bp).connect(g).connect(pan);
+    src.start();
+    lfo.start();
+    g.gain.setTargetAtTime(0.16, ac.currentTime, 0.04);
+    pourV = { src, lfo, g, pan };
+  }
+  if (!pourV) return;
+  if (on) {
+    pourV.pan.pan.setTargetAtTime(x * 0.6, ac.currentTime, 0.05);
+    if (Math.random() < 0.08) pourV.lfo.frequency.setTargetAtTime(5 + Math.random() * 6, ac.currentTime, 0.1);
+    return;
+  }
+  const v = pourV;
+  pourV = null;
+  v.g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+  v.src.stop(ac.currentTime + 0.3);
+  v.lfo.stop(ac.currentTime + 0.3);
+}
+// Held voices stop on mute and on a hidden tab.
+function hushLoops() {
+  const ac = kit.ac;
+  if (hum && ac) { hum.o.forEach(x => x.stop()); hum = null; }
+  if (pourV && ac) { pourV.src.stop(); pourV.lfo.stop(); pourV = null; }
+}
+sound.onChange(on => { if (!on) hushLoops(); });
+// Per frame: fizz and pops spread across the frame, so no tick lands on the grid.
+const fizz = [0, 0], pops = [];
+function soundFrame(dt) {
+  const ac = kit.live();
+  humTo(amps());
+  pourTo(pourOn(), pourU());
+  if (ac) {
+    const t0 = ac.currentTime + 0.01;
+    fizz.forEach((n, rod) => {
+      for (let i = 0; i < Math.min(n, 5); i++) sfx.click(rod, t0 + Math.random() * dt);
+    });
+    pops.slice(0, 4).forEach(([rod, r]) => sfx.pop(rod, r, t0 + Math.random() * dt));
+  }
+  fizz[0] = fizz[1] = 0;
+  pops.length = 0;
+}
+
+/* ---------- clock ---------- */
+// Liquid A fills 45 %; pouring B raises the level to 85 % at most.
+const CLK = { A: 0.45, MAX: 0.85, RATE: 0.075 };
+const delay = () => 4 + 16 * EXP.clock.value;
+let pouring = false, splashUntil = 0, pourX = TA / 2, clockAge = 0, probeN = 0, clockPending = false, snapped = false;
+const pourOn = () => mode === 'clock' && (pouring || performance.now() < splashUntil) && level < CLK.MAX;
+const pourU = () => (pourX / TA) * 2 - 1;
+function aimPour(cx, cy) {
+  pourX = clamp(toFluid(cx, cy).x, TA * 0.12, TA * 0.88);
+}
+function clockStep(dt) {
+  if (mode !== 'clock') return;
+  if (pourOn()) {
+    level = Math.min(CLK.MAX, level + CLK.RATE * dt);
+    // The jet drives down into the surface and carries liquid B.
+    splat(pourX, level - 0.03, 0, -9.6 * dt, 0.035);
+    clockPending = true;
+    scalarSplat(pourX, level - 0.02, 0.03, 0, 8 * dt);
+    if (level >= CLK.MAX) stage.classList.add('full');
+  }
+  if (level <= CLK.A + 0.001) return;
+  clockAge += dt;
+  // Every tenth frame, a small readback says if the reaction still moves.
+  if (++probeN % 10) return;
+  gl.useProgram(P.probe.p);
+  bind(P.probe, 'uSrc', 0, scal.r);
+  draw(probeT);
+  gl.readPixels(0, 0, probeT.w, probeT.h, gl.RGBA, gl.UNSIGNED_BYTE, probeBuf);
+  let pend = false, front = false;
+  for (let i = 0; i < probeBuf.length; i += 4) { pend ||= probeBuf[i] > 127; front ||= probeBuf[i + 1] > 127; }
+  clockPending = pend;
+  // The snap sounds as the first blue-black appears.
+  if (front && !snapped) { snapped = true; sfx.snap(); }
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, visible = true, liveUntil = 0, stirT = -1, stirHalf = 0, clinkAt = 0;
+const live = (ms = 5000) => { liveUntil = Math.max(liveUntil, performance.now() + ms); wake(); };
+function wake() {
+  if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// After 4 s of run time, 2 s of frames slower than 1/38 s step down one rung.
+let runT = 0, slowT = 0, avgDt = 1 / 60;
+function watchdog(real) {
+  runT += real;
+  avgDt += (Math.min(real, 0.25) - avgDt) * 0.1;
+  if (runT < 4 || lowGrid) return;
+  slowT = avgDt > 1 / 38 ? slowT + real : 0;
+  if (slowT < 2) return;
+  slowT = 0;
+  avgDt = 1 / 60;
+  if (!lowDpr) { lowDpr = true; layout(); } else { lowGrid = true; alloc(); }
+}
+function frame(now) {
+  raf = 0;
+  const real = (now - last) / 1000, dt = Math.min(0.033, real);
+  last = now;
+  watchdog(real);
+  try {
+    time += dt;
+    stirStep(dt);
+    electroStep(dt);
+    clockStep(dt);
+    simStep(reduced() ? dt * 0.8 : dt);
+    beaker();
+    drawBubbles();
+    soundFrame(dt);
+  } finally {
+    if (busy(now)) raf = requestAnimationFrame(frame);
+    else { humTo(0); pourTo(false); kit.rest(() => !raf && !hum && !pourV); }
+  }
+}
+// The loop sleeps once the current is off, the bubbles are gone and the flow settles.
+const busy = (now = performance.now()) => visible && (now < liveUntil || stirT >= 0 || amps() > 0 || bubbles.length > 0
+  || pourOn() || (mode === 'clock' && clockPending && clockAge < 6 * delay() + 2));
+function still() { if (P) { beaker(); drawBubbles(); } }
+
+/* ---------- stirring ---------- */
+// Stir sweeps a glass rod round the beaker for one second.
+function stirStep(dt) {
+  if (stirT < 0) return;
+  stirT += dt;
+  const k = reduced() ? 0.5 : 1, a = stirT * TAU * 1.4;
+  const cx = TA / 2 + Math.cos(a) * TA * 0.24, cy = level * 0.5 + Math.sin(a) * level * 0.26;
+  const f = 1.4 * k * dt * 60;
+  splat(cx, cy, -Math.sin(a) * f, Math.cos(a) * f * 0.9, 0.09);
+  // The rod meets the glass twice a lap.
+  const half = Math.floor(a / Math.PI);
+  if (half !== stirHalf) { stirHalf = half; sfx.clink(Math.cos(a)); }
+  if (stirT > 1) stirT = -1;
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms.
+// A release that is neither is a tap.
+let ptr = null, holdTo = 0;
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: performance.now(), mode: 'press' };
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'hold'; aimPour(ptr.x, ptr.y); hold(true); } }, 260);
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const now = performance.now(), dt = Math.max(0.008, (now - ptr.t) / 1000);
+  if (ptr.mode === 'press' && Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > 8) {
+    clearTimeout(holdTo);
+    ptr.mode = 'drag';
+    stage.classList.add('stir');
+  }
+  if (ptr.mode === 'drag') {
+    const a = toFluid(ptr.x, ptr.y), b = toFluid(e.clientX, e.clientY);
+    const k = reduced() ? 0.5 : 1;
+    let vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
+    const m = Math.hypot(vx, vy), cap = 2.5;
+    if (m > cap) { vx *= cap / m; vy *= cap / m; }
+    if (b.y < level) splat(b.x, b.y, vx * 0.6 * k, vy * 0.6 * k, 0.06);
+    // A fast stroke near the wall clinks the glass.
+    const wall = Math.min(b.x, TA - b.x) < TA * 0.1;
+    if (wall && b.y < level && Math.hypot(vx, vy) > 0.8 && now - clinkAt > 140) { clinkAt = now; sfx.clink((b.x / TA) * 2 - 1); }
+    live();
+  }
+  if (ptr.mode === 'hold') aimPour(e.clientX, e.clientY);
+  ptr.x = e.clientX;
+  ptr.y = e.clientY;
+  ptr.t = now;
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  const m = ptr.mode;
+  ptr = null;
+  stage.classList.remove('stir');
+  if (m === 'press' && e?.type === 'pointerup') { aimPour(e.clientX, e.clientY); tap(); }
+  if (m === 'hold') hold(false);
+}
+// Electrolysis: hold switches the current on; a tap gives a 0.4 s pulse.
+// Clock: hold pours; a tap gives a small splash.
+function hold(on) {
+  if (mode === 'electro') power = on;
+  else pouring = on;
+  live();
+}
+function tap() {
+  if (mode === 'electro') pulseUntil = performance.now() + 400;
+  else splashUntil = performance.now() + 150;
+  live();
+}
+
+/* ---------- state ---------- */
+// Reset gives fresh indicator; opening Electrolysis shows the formed rainbow.
+function resetBeaker(rainbow = false) {
+  stirT = -1;
+  power = pouring = false;
+  pulseUntil = splashUntil = 0;
+  clockAge = 0;
+  clockPending = false;
+  snapped = false;
+  stage.classList.remove('full');
+  level = EXP[mode].level;
+  bubbles.length = 0;
+  buildSites();
+  if (!P) return;
+  wipe(vel);
+  wipe(pres);
+  wipe(scal);
+  nSp = nSc = 0;
+  if (rainbow && mode === 'electro') seedRainbow();
+  still();
+}
+act.mode = v => {
+  if (ptr) up();
+  mode = v;
+  relabel();
+  resetBeaker(true);
+};
+act.stir = () => { stirT = 0; stirHalf = -1; live(); };
+act.reset = () => resetBeaker();
+act.indicator = v => { if (!P) { indicator = v; return; } setIndicator(v); still(); };
+
+/* ---------- boot ---------- */
+try {
+  await initGL();
+  layout();
+  alloc();
+  resetBeaker(true);
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  markReady();
+  throw err;
+}
+markReady();
+relabel();
+COARSE.addEventListener?.('change', relabel);
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// Space holds, on keyboards only.
+let spaceHeld = false;
+// Repeats must not scroll the page either.
+stage.addEventListener('keydown', e => {
+  if (e.code !== 'Space') return;
+  e.preventDefault();
+  if (e.repeat || spaceHeld) return;
+  spaceHeld = true;
+  hold(true);
+});
+const spaceUp = () => {
+  if (!spaceHeld) return;
+  spaceHeld = false;
+  hold(false);
+};
+stage.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
+// The keyup goes elsewhere once focus leaves, so a blur ends the hold.
+stage.addEventListener('blur', spaceUp);
+addEventListener('blur', spaceUp);
+
+new ResizeObserver(() => { layout(); still(); }).observe(stage);
+onQuality(() => { lowDpr = false; layout(); still(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; hushLoops(); kit.rest(() => !visible); return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wind farm</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Wind farm: offshore turbines in night fog, on a long lens. */
+:root { --stage: oklch(0.2 0.03 255); }
+.stage--windfarm { cursor: grab; }
+.stage--windfarm.held { cursor: grabbing; }
+.stage--windfarm canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--windfarm canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--windfarm canvas { transition: none; } }
+/* Letterbox: two black bars crop the stage to 2.39 : 1. */
+.stage--windfarm::before, .stage--windfarm::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 0; background: #000; z-index: 2; pointer-events: none;
+  transition: height 0.5s ease;
+}
+.stage--windfarm::before { top: 0; }
+.stage--windfarm::after { bottom: 0; }
+.stage--windfarm.letterbox::before, .stage--windfarm.letterbox::after { height: var(--lb, 0px); }
+/* Settings opens a column of tweaks at the right edge. */
+.adder { position: relative; }
+.add {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
+  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
+.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
+.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
+.sets .group .chip { padding: 4px 9px; }
+#setBtn svg { stroke-linecap: round; }
+/* Settings and the (i) sit together at the right edge. */
+.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Wind farm</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <header data-shell></header>
+  <main>
+    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; hold for a storm; drag to look around.">
+      <p class="fail" hidden>Wind farm needs WebGL2, which this browser has turned off.</p>
+    </div>
+    <div class="bar">
+      <div class="choices" id="view" role="group" aria-label="View">
+        <button class="chip" type="button" data-value="Rows" aria-pressed="true">Rows</button>
+        <button class="chip" type="button" data-value="Across" aria-pressed="false">Across</button>
+      </div>
+      <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="30" step="0.1" value="9" aria-label="Wind"></label>
+      <div class="actions">
+        <button class="chip" id="gust" type="button">Gust</button>
+      </div>
+      <div class="edge">
+        <div class="adder" id="setter">
+          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+          <div class="add sets" id="sets" role="group" aria-label="Settings">
+            <div class="group"><span>Fog</span><div class="choices" id="fog" role="group" aria-label="Fog">
+              <button class="chip" type="button" data-value="light" aria-pressed="false">Light</button>
+              <button class="chip" type="button" data-value="thick" aria-pressed="true">Thick</button>
+            </div></div>
+            <div class="group"><span>Letterbox</span><div class="choices" id="lbox" role="group" aria-label="Letterbox">
+              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
+              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
+            </div></div>
+          </div>
+        </div>
+        <dl class="how" aria-label="How to play">
+          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a gust down the rows</dd></div>
+          <div><dt>Hold</dt><dd>a storm builds; let go to calm it</dd></div>
+          <div><dt>Drag</dt><dd>look around</dd></div>
+          <div class="fine"><dt>Space</dt><dd>a gust; hold for a storm</dd></div>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Wind farm</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let markReady;
+const firstFrame = new Promise(r => (markReady = r));
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(8000)])]) });
+initPage({ id: 'windfarm' });
+// Settings holds the site-wide Quality choice.
+qualitySetting(document.getElementById('sets'));
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+/* ---------- settings ---------- */
+// Settings persist per browser; storage is optional.
+const saved = k => { try { return localStorage.getItem(`stimming.windfarm.${k}`); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.windfarm.${k}`, String(v)); } catch { /* storage is optional */ } };
+const VIEWS = ['Rows', 'Foot', 'Above', 'Across', 'Hub', 'Grid'];
+// The bar offers Rows and Across; the other views wait, parked.
+const PICKS = ['Rows', 'Across'];
+const opts = {
+  // The toy always opens on Rows.
+  view: 0,
+  wind: (() => { const v = +saved('wind'); return saved('wind') == null || isNaN(v) ? 9 : clamp(v, 0, 30); })(),
+  fog: saved('fog') === 'light' ? 'light' : 'thick',
+  lbox: saved('lbox') === 'on' ? 'on' : 'off',
+};
+let reduce = reduced();
+// Scene tuning: each value scales one part of the look; ?tune opens a panel.
+const TUNE0 = { focus: 1, aperture: 1, blades: 0, oval: 1, rim: 0, cat: 0, lampW: 30, lampT: 0.25, strikes: 1, strikeR: 1, bloom: 0.45, streaks: 1, exposure: 1, grain: 1, fog: 1, wakes: 1 };
+const TUNING = new URLSearchParams(location.search).has('tune');
+const TUNE = { ...TUNE0, ...(TUNING ? (() => { try { return JSON.parse(saved('tune')) || {}; } catch { return {}; } })() : {}) };
+
+/* ---------- look ---------- */
+// Colours are linear light: a cold, murky night.
+const LOOK = {
+  zen: [0.012, 0.02, 0.036], hor: [0.02, 0.03, 0.045],
+  fog: [0.024, 0.036, 0.055], sun: [0.05, 0.075, 0.11],
+  deep: [0.001, 0.003, 0.006], paint: [0.3, 0.34, 0.4],
+  red: [1, 0.012, 0],
+};
+
+/* ---------- farm ---------- */
+// A loose scatter of turbines, composed for the Rows lens.
+// Each one takes a place across the Rows frame and a depth; its spot at sea follows.
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+// Rotors face the wind; it blows from the sea camera's side into the farm.
+const YAW = -0.35;
+const WIND_DIR = [-Math.sin(YAW), -Math.cos(YAW)];
+// The Rows frame spans this much sideways per metre of depth.
+const SPAN = 1 / 5.9;
+const N_TURB = 22, MIN_GAP = 520, NEAR_D = 1700, FAR_D = 13000;
+// Two turbines are placed by hand: one looms on the left, one stands mid-frame.
+const PLACED = [[0.13, NEAR_D], [0.63, 2700]];
+const farm = [];
+function addTurbine(fx, d, k) {
+  const x = (fx - 0.5) * SPAN * d, z = -d;
+  farm.push({
+    x, z,
+    // Distance downwind, for gust fronts.
+    s: x * WIND_DIR[0] + z * WIND_DIR[1],
+    ang: rand(k + 7) * 2.094, omega: 0, pitch: 0.06, feathered: false,
+    // No two rotors share a speed, a gust phase or a stopping angle.
+    jit: 0.96 + 0.08 * rand(k + 13), ph: rand(k + 17) * 9,
+    // Each machine cuts out at its own speed near 25 m/s, so they stop one by one.
+    cut: 25 + (rand(k + 19) - 0.5) * 3.2,
+  });
+}
+PLACED.forEach(([fx, d], i) => addTurbine(fx, d, 900 + i));
+for (let k = 1; farm.length < N_TURB && k < 4000; k++) {
+  // Depths spread evenly on a log scale, so each step back holds the same count.
+  const d = NEAR_D * 1.25 * Math.pow(FAR_D / (NEAR_D * 1.25), rand(k * 3 + 1));
+  // A golden-ratio step spreads them evenly across the frame, with no gap.
+  const fx = 0.02 + 0.98 * Math.pow((k * 0.6180339887 + 0.37) % 1, 1.3), x = (fx - 0.5) * SPAN * d;
+  if (farm.some(t => Math.hypot(t.x - x, t.z + d) < MIN_GAP)) continue;
+  // No two towers stack on one line of sight at a similar depth.
+  if (farm.some(t => Math.abs(t.x / -t.z - x / d) < 0.012 && Math.abs(Math.log(-t.z / d)) < 0.3)) continue;
+  addTurbine(fx, d, k);
+}
+// A turbine in the wake of another, close upwind, gets 8 % less wind.
+for (const t of farm) {
+  t.wake = farm.some(u => u !== t && u.s < t.s && t.s - u.s < 2500 &&
+    Math.abs((t.x - u.x) * WIND_DIR[1] - (t.z - u.z) * WIND_DIR[0]) < 160);
+}
+const NEAR = farm[0];
+const CENTRE = [farm.reduce((a, t) => a + t.x, 0) / farm.length, farm.reduce((a, t) => a + t.z, 0) / farm.length];
+const S_MAX = Math.max(...farm.map(t => t.s));
+
+/* ---------- wind ---------- */
+// Cut-in 3 m/s, rated 12 m/s, cut-out 25 m/s; restart below 22 m/s.
+const CUT_IN = 3, RATED = 12, CUT_OUT = 25, RESTART = 22;
+// Rated rotor speed: about twelve turns a minute.
+const OMAX = 1.3;
+// Hold: a storm builds toward 30 m/s over 7 s; on release it calms over 5 s.
+const storm = { on: false, k: 0 };
+const windNow = () => opts.wind + (30 - opts.wind) * smooth(0, 1, storm.k);
+function powerCurve(w) {
+  if (w < CUT_IN) return 0.04;
+  if (w < RATED) return OMAX * lerp(0.15, 1, (w - CUT_IN) / (RATED - CUT_IN));
+  return OMAX;
+}
+// Gust fronts run downwind as lines across the farm, faster than life.
+const FRONT_SPEED = 260, FRONT_W = 700, FRONT_AMP = 7;
+const fronts = [];
+function gustNoise(t) { return 0.8 * Math.sin(t * 0.21) + 0.5 * Math.sin(t * 0.37 + 1.3) + 0.3 * Math.sin(t * 0.83 + 4.1); }
+// Wind at one turbine: the slider, slow gusts, fronts and the wake of the turbine upwind.
+function windAt(t, clock) {
+  let w = windNow() * (1 + 0.06 * gustNoise(clock + t.ph));
+  for (const f of fronts) w += f.amp * Math.exp(-(((t.s - f.s) / FRONT_W) ** 2));
+  if (t.wake) w *= 0.92;
+  return clamp(w, 0, 30);
+}
+function stepWind(dt, clock, calm) {
+  for (let i = fronts.length - 1; i >= 0; i--) {
+    fronts[i].s += FRONT_SPEED * dt * calm;
+    if (fronts[i].s > S_MAX + 3 * FRONT_W) fronts.splice(i, 1);
+  }
+  let moving = false;
+  const slow = reduce ? 0.3 : 1;
+  for (const t of farm) {
+    const w = windAt(t, clock);
+    // Hysteresis: a storm stops the rotor at 25 m/s; it restarts below 22 m/s.
+    if (!t.feathered && w > t.cut) t.feathered = true;
+    else if (t.feathered && w < t.cut - (CUT_OUT - RESTART)) t.feathered = false;
+    const target = (t.feathered ? 0 : powerCurve(w) * t.jit) * calm;
+    // Spin-up has a 4 s lag, braking a 2 s lag.
+    // While the page goes to sleep, braking has a 1 s lag.
+    const tau = target > t.omega ? 4 : calm < 1 ? 1 : 2;
+    t.omega += (target - t.omega) * (1 - Math.exp(-dt / tau));
+    if (Math.abs(target - t.omega) > 0.02) moving = true;
+    // Blades pitch out of the wind above rated speed, and turn edge-on to feather.
+    const pt = t.feathered ? 1.45 : 0.06 + 0.4 * smooth(RATED, CUT_OUT, w);
+    t.pitch += (pt - t.pitch) * (1 - Math.exp(-dt / 1.5));
+    t.ang = (t.ang + t.omega * dt * slow) % (Math.PI * 2);
+  }
+  return moving;
+}
+
+/* ---------- shared uniforms ---------- */
+const U = {
+  uFocal: { value: 1 }, uTime: { value: 0 }, uWind: { value: opts.wind }, uRes: { value: new THREE.Vector2(1, 1) }, uClear: { value: new THREE.Vector2() },
+  uFlash: { value: 0 }, uRain: { value: 0 }, uFlashDir: { value: new THREE.Vector3(0, 0.1, -1).normalize() },
+  uDrift: { value: new THREE.Vector2() }, uFogK: { value: 1 }, uSteps: { value: 16 },
+  uFront: { value: new THREE.Vector4(-1e9, -1e9, -1e9, -1e9) }, uFrontK: { value: new THREE.Vector4() },
+  uWindDir: { value: new THREE.Vector2(...WIND_DIR) }, uBlink: { value: 1 },
+  uSD: { value: new THREE.Vector3(0.05, 0.01, -1).normalize() },
+  uZen: { value: new THREE.Vector3(...LOOK.zen) }, uHorC: { value: new THREE.Vector3(...LOOK.hor) },
+  uFog: { value: new THREE.Vector3(...LOOK.fog) }, uSun: { value: new THREE.Vector3(...LOOK.sun) },
+  uDeep: { value: new THREE.Vector3(...LOOK.deep) }, uPaint: { value: new THREE.Vector3(...LOOK.paint) },
+  uRed: { value: new THREE.Vector3(...LOOK.red) },
+  uCamWorld: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() },
+};
+
+/* ---------- fog ---------- */
+// Fog is a short ray march through height layers and drifting banks.
+// Up to sixteen steps, spaced wider with distance, jittered per pixel.
+// The jitter shows as grain, which the look wants.
+const FOG = `
+uniform vec3 uSD, uFog, uSun;
+uniform vec2 uDrift, uClear;
+uniform float uFogK, uSteps, uWind, uFlash, uRain;
+uniform vec3 uFlashDir;
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm3(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 7.1) + 0.2 * vnoise(p * 4.1 + 3.3); }
+// Extinction per metre at a world point.
+float fogSigma(vec3 p) {
+  float y = max(p.y, 0.0);
+  // The fog drifts downwind; the lane test stays fixed to the farm.
+  vec2 q = p.xz - uDrift;
+  // A base layer that hugs the sea, broken into banks a few km wide.
+  float bank = 0.25 + 1.5 * smoothstep(0.3, 0.7, fbm3(q / 2200.0));
+  float s = exp(-y / 45.0) * bank / 2000.0;
+  // Thin sheets at five heights, each torn into its own banks.
+  s += exp(-pow((y - 16.0) / 7.0, 2.0)) * smoothstep(0.4, 0.66, fbm3(q / 700.0 + 3.0 + vec2(y, -y) * 0.02)) / 800.0;
+  s += exp(-pow((y - 35.0) / 10.0, 2.0)) * smoothstep(0.45, 0.68, fbm3(q / 900.0 + 11.0 + vec2(-y, y) * 0.015)) / 850.0;
+  s += exp(-pow((y - 52.0) / 7.0, 2.0)) * smoothstep(0.5, 0.7, fbm3(q / 1100.0 + 17.0 + vec2(y, y) * 0.02)) / 900.0;
+  // The deck at 72 m; the hubs stand clear of it.
+  s += exp(-pow((y - 72.0) / 12.0, 2.0)) * smoothstep(0.45, 0.72, fbm3(q / 1400.0 + 23.0)) / 420.0;
+  s += exp(-pow((y - 96.0) / 8.0, 2.0)) * smoothstep(0.55, 0.75, fbm3(q / 1600.0 + 31.0)) / 1500.0;
+  // Mist lies on the water, so every tower foot fades into it.
+  s += exp(-y / 7.0) * (0.6 + 0.8 * fbm3(q / 500.0 + 41.0)) / 600.0;
+  // Dense low banks drift between the turbines; none sits on the camera.
+  s += smoothstep(0.55, 0.78, fbm3(q / 1700.0 + 5.0)) * exp(-y / 55.0) * smoothstep(1200.0, 2600.0, length(p.xz - uClear)) / 180.0;
+  // Rain curtains: columns of falling water drift downwind as soft vertical veils.
+  s += uRain * smoothstep(0.45, 0.8, fbm3((p.xz - uDrift * 2.0) / 220.0 + 51.0)) * smoothstep(320.0, 120.0, y) / 2600.0;
+  // Spray: in a gale the wind tears the crests into a low, fast-moving veil.
+  s += smoothstep(19.0, 28.0, uWind) * exp(-y / 4.0) * smoothstep(0.5, 0.8, fbm3((p.xz - uDrift * 3.0) / 60.0)) / 140.0;
+  return s * uFogK;
+}
+// Light the fog sends toward the eye: murk plus a cold glow low in the sky.
+vec3 fogLight(vec3 d) {
+  float a = acos(clamp(dot(d, uSD), -1.0, 1.0));
+  vec3 L = uFog + uSun * (0.5 * exp(-a / 0.12) + 0.3 * exp(-a / 0.5));
+  // Lightning lights the fog from inside, brightest toward the bolt.
+  float b = acos(clamp(dot(d, uFlashDir), -1.0, 1.0));
+  return L + uFlash * vec3(0.5, 0.58, 0.78) * (0.2 + 1.4 * exp(-b / 0.35));
+}
+// March from ro along d to tMax. Returns inscatter in rgb, transmittance in a.
+vec4 fogMarch(vec3 ro, vec3 d, float tMax, float jitter) {
+  // The fog ends at 320 m: rays start where they enter it and stop where they leave.
+  float tS = 0.0;
+  if (ro.y > 320.0) { if (d.y >= 0.0) return vec4(0.0, 0.0, 0.0, 1.0); tS = (ro.y - 320.0) / -d.y; }
+  if (d.y > 0.0) tMax = min(tMax, max(320.0 - ro.y, 0.0) / d.y);
+  if (tMax <= tS) return vec4(0.0, 0.0, 0.0, 1.0);
+  vec3 o = ro + d * tS;
+  float len = tMax - tS, T = 1.0, t0 = 0.0, tMin = 12.0, N = uSteps;
+  vec3 L = fogLight(d), S = vec3(0.0);
+  for (int i = 1; i <= 16; i++) {
+    if (float(i) > N) break;
+    float t1 = len <= tMin ? len * float(i) / N : tMin * pow(len / tMin, (float(i) - 1.0 + jitter) / (N - 1.0));
+    t1 = min(t1, len);
+    float dt = t1 - t0;
+    if (dt <= 0.0) continue;
+    float a = exp(-fogSigma(o + d * (t0 + dt * 0.5)) * dt);
+    S += T * (1.0 - a) * L;
+    T *= a;
+    t0 = t1;
+  }
+  return vec4(S, T);
+}
+`;
+
+/* ---------- sky and sea ---------- */
+// This pass renders at half size into its own target; fog is soft, so nothing is lost.
+const BACK_FS = FOG + `
+uniform mat4 uCamWorld, uInvProj;
+uniform vec3 uZen, uDeep, uCamPos;
+uniform float uTime;
+uniform vec4 uFront, uFrontK;
+uniform vec2 uWindDir;
+varying vec2 vUv;
+// Sky: a dark overcast with a slow cloud base at 600 m; the horizon takes the colour of deep fog.
+vec3 sky(vec3 d) {
+  float e = max(d.y, 0.0);
+  vec2 P = d.xz / (e + 0.03) * 600.0 - uDrift * 0.6;
+  float cl = fbm3(P / 2600.0) * 0.7 + fbm3(P / 900.0 + 9.0) * 0.3;
+  vec3 over = uZen * (0.55 + 0.95 * smoothstep(0.25, 0.8, cl));
+  // A bolt lights the cloud base from below; thick cloud glows most.
+  over += uFlash * vec3(0.5, 0.58, 0.8) * (0.3 + cl) * exp(-acos(clamp(dot(d, uFlashDir), -1.0, 1.0)) / 0.5) * 1.6;
+  return mix(fogLight(d), over, smoothstep(0.0, 0.9, e));
+}
+// Swell: five long waves that build with the wind.
+// Each wave fades once a pixel spans its length. Returns slope in xy, height in z.
+vec3 swell(vec2 p, float fp, float amp) {
+  vec3 g = vec3(0.0);
+  const vec3 W[5] = vec3[5](vec3(0.9, 0.42, 0.05), vec3(-0.5, 0.86, 0.08), vec3(0.2, 0.98, 0.13), vec3(0.95, -0.3, 0.21), vec3(-0.75, 0.66, 0.34));
+  for (int i = 0; i < 5; i++) {
+    vec2 dd = normalize(W[i].xy); float k = W[i].z;
+    float ph = dot(p, dd) * k - sqrt(9.81 * k) * uTime + float(i) * 1.7;
+    float a = amp / (1.0 + float(i) * 0.3) * clamp(1.0 - fp * k / 2.1, 0.0, 1.0);
+    g.xy += dd * cos(ph) * a;
+    g.z += sin(ph) * a / k;
+  }
+  return g;
+}
+void main() {
+  vec4 v = uInvProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 d = normalize((uCamWorld * vec4(v.xyz / v.w, 0.0)).xyz);
+  vec3 ro = uCamPos;
+  vec3 c; float tMax = 30000.0;
+  if (d.y >= 0.0) c = sky(d);
+  else {
+    float t = ro.y / -d.y;
+    tMax = t;
+    vec3 p = ro + d * t;
+    // A gust front darkens and roughens the water as it passes: a cat's paw.
+    float sAlong = dot(p.xz, uWindDir), paw = 0.0;
+    for (int i = 0; i < 4; i++) paw += uFrontK[i] * exp(-pow((sAlong - uFront[i]) / 350.0, 2.0));
+    paw = min(paw, 1.5);
+    float fp = t / max(-d.y, 0.02) / 1500.0;
+    float amp = 0.012 + 0.0022 * uWind;
+    vec3 g = swell(p.xz, fp, amp * (1.0 + 1.6 * paw));
+    vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+    vec3 r = reflect(d, n); r.y = abs(r.y);
+    float fr = 0.02 + 0.98 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
+    vec4 fr4 = fogMarch(p, r, 4000.0, 0.5);
+    c = mix(uDeep, sky(r) * fr4.a + fr4.rgb, fr * 0.8);
+    c *= 1.0 - 0.3 * min(paw, 1.0);
+    // Whitecaps: foam on steep crests once the wind passes 8 m/s.
+    float foam = smoothstep(8.0, 20.0, uWind) * smoothstep(0.55, 0.85, vnoise(p.xz * 0.08 + uTime * 0.3) + g.z * 1.5);
+    c += fogLight(vec3(0.0, 1.0, 0.0)) * 1.2 * foam * clamp(1.0 - fp * 0.15, 0.0, 1.0);
+  }
+  vec4 f = fogMarch(ro, d, tMax, hash12(gl_FragCoord.xy));
+  gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
+}`;
+
+/* ---------- turbines ---------- */
+// Parts: 0 tower, 1 nacelle, 2 blade.
+const TURB_VS = `
+attribute float aPart;
+attribute float aBlade;
+attribute float aAngle;
+attribute float aPitch;
+varying vec3 vW;
+varying vec3 vN;
+varying vec3 vBase;
+varying vec3 vLamp;
+varying float vRad;
+// The rotor turns about the hub axis, which runs along local z.
+const vec2 HUB = vec2(0.0, 112.0);
+uniform float uYaw;
+vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+void main() {
+  vec3 p = position, n = normal;
+  vRad = -1.0;
+  if (aPart > 1.5) {
+    // Pitch turns each blade about its own long axis.
+    float ba = aBlade * 2.0943951;
+    vec2 tdir = vec2(cos(ba), sin(ba)), rdir = vec2(-sin(ba), cos(ba));
+    vec2 q = p.xy - HUB;
+    float chord = dot(q, tdir), radial = dot(q, rdir);
+    vRad = radial / 80.0;
+    // e is the offset across the blade's thickness, out of the rotor plane.
+    float e = p.z - 6.6;
+    float cp = cos(aPitch), sp = sin(aPitch);
+    q = rdir * radial + tdir * (chord * cp - e * sp);
+    p.z = 6.6 + chord * sp + e * cp;
+    // The airfoil normal turns with the blade: chord and face parts mix.
+    float na = dot(n.xy, tdir), nr = dot(n.xy, rdir), nb = n.z;
+    n = vec3(tdir * (na * cp - nb * sp) + rdir * nr, na * sp + nb * cp);
+    // Then the whole rotor turns by the instance angle.
+    float c = cos(aAngle), s = sin(aAngle);
+    p.xy = HUB + mat2(c, s, -s, c) * q;
+    n.xy = mat2(c, s, -s, c) * n.xy;
+  }
+  p = yaw(p); n = yaw(n);
+  mat4 m = modelMatrix * instanceMatrix;
+  vec4 w = m * vec4(p, 1.0);
+  vW = w.xyz; vN = n;
+  vBase = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  // The flashing lamp sits on the nacelle roof, toward the rear.
+  vLamp = vBase + yaw(vec3(0.0, 115.6, -5.0));
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const TURB_FS = FOG + `
+uniform vec3 uPaint, uZen, uHorC, uDeep, uRed;
+uniform float uBlink;
+varying vec3 vW;
+varying vec3 vN;
+varying vec3 vBase;
+varying vec3 vLamp;
+varying float vRad;
+void main() {
+  vec3 d = normalize(vW - cameraPosition);
+  float t = length(vW - cameraPosition);
+  vec3 n = normalize(vN);
+  if (dot(n, d) > 0.0) n = -n;
+  // Blade tips carry a dark red band; the tower foot is a muted yellow.
+  vec3 paint = uPaint;
+  if (vRad > 0.86) paint = vec3(0.32, 0.05, 0.04);
+  else if (vRad < -0.5 && vW.y < 16.0) paint = vec3(0.36, 0.3, 0.08);
+  // Dark shapes against the fog: overcast light from above, the dark sea below.
+  float up = n.y * 0.5 + 0.5;
+  vec3 amb = mix(uFog * 0.35, uFog * 0.8 + uZen * 1.2, up) + uFlash * vec3(0.5, 0.58, 0.78) * 0.25 * up;
+  vec3 c = paint * (amb + uSun * 0.35 * max(dot(n, uSD), 0.0));
+  // A soft sheen where the paint faces the low glow.
+  vec3 h = normalize(uSD - d);
+  c += uSun * 0.25 * pow(max(dot(n, h), 0.0), 24.0);
+  // The flashing lamp reddens the nacelle roof and the hub.
+  vec3 toL = vLamp - vW;
+  float dl2 = dot(toL, toL);
+  c += uRed * uBlink * 6.0 * max(dot(n, normalize(toL)), 0.15) / (dl2 + 6.0);
+  // The steady tower lamps light a red band round the tower at 62 m.
+  float dy = vW.y - 62.0, rr = length(vW.xz - vBase.xz) - 3.3;
+  c += uRed * 0.5 / (dy * dy + rr * rr * 4.0 + 2.5);
+  vec4 f = fogMarch(cameraPosition, d, t, hash12(gl_FragCoord.xy));
+  gl_FragColor = vec4(c * f.a + f.rgb, 1.0);
+}`;
+
+// One turbine in metres: tower 110 m, rotor radius 80 m.
+function turbineGeometry() {
+  const P = [], N = [], K = [], B = [];
+  // Each vertex may carry its own normal, so curved parts shade smooth.
+  const tri = (a, b, c, n, k, bl = -1) => {
+    P.push(...a, ...b, ...c);
+    const ns = Array.isArray(n[0]) ? n : [n, n, n];
+    for (let i = 0; i < 3; i++) { N.push(...ns[i]); K.push(k); B.push(bl); }
+  };
+  const quad = (a, b, c, d, n, k) => {
+    const ns = Array.isArray(n[0]) ? n : [n, n, n, n];
+    tri(a, b, c, [ns[0], ns[1], ns[2]], k); tri(a, c, d, [ns[0], ns[2], ns[3]], k);
+  };
+  // Tower: a smooth tapered tube with 24 sides.
+  const S = 24, R0 = 3.6, R1 = 2.2, H = 110;
+  for (let i = 0; i < S; i++) {
+    const a0 = i / S * Math.PI * 2, a1 = (i + 1) / S * Math.PI * 2;
+    const n0 = [Math.cos(a0), 0.012, Math.sin(a0)], n1 = [Math.cos(a1), 0.012, Math.sin(a1)];
+    quad([Math.cos(a0) * R0, 0, Math.sin(a0) * R0], [Math.cos(a0) * R1, H, Math.sin(a0) * R1],
+      [Math.cos(a1) * R1, H, Math.sin(a1) * R1], [Math.cos(a1) * R0, 0, Math.sin(a1) * R0], [n0, n0, n1, n1], 0);
+  }
+  // Nacelle: a box from the tower top to the hub.
+  const box = (x0, x1, y0, y1, z0, z1, k) => {
+    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1], k);
+    quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1], k);
+    quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0], k);
+    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], k);
+    quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], k);
+    quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], k);
+  };
+  box(-2.4, 2.4, 109, 115, -9, 5, 1);
+  box(-1.6, 1.6, 110.4, 113.6, 5, 7.5, 1);
+  // Spinner: a blunt cone on the hub, facing the wind.
+  for (let i = 0; i < 16; i++) {
+    const a0 = i / 16 * Math.PI * 2, a1 = (i + 1) / 16 * Math.PI * 2, r = 1.9;
+    const v0 = [Math.cos(a0) * r, 112 + Math.sin(a0) * r, 7.2], v1 = [Math.cos(a1) * r, 112 + Math.sin(a1) * r, 7.2];
+    const n0 = [Math.cos(a0) * 0.8, Math.sin(a0) * 0.8, 0.6], n1 = [Math.cos(a1) * 0.8, Math.sin(a1) * 0.8, 0.6];
+    tri(v0, v1, [0, 112, 10.4], [n0, n1, [0, 0, 1]], 1);
+  }
+  // Blades: swept airfoils with real thickness, so a feathered blade still shows.
+  // Each blade is a front face, a back face and two rounded edges.
+  const L = 80;
+  for (let b = 0; b < 3; b++) {
+    const a = b * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a);
+    // r runs along the blade, c across the chord, e across the thickness.
+    const at3 = (r, c, e = 0) => [ca * c - sa * r, 112 + sa * c + ca * r, 6.6 + e];
+    const nm = (u, side) => { const l = Math.hypot(0.7 * u, 1); return [ca * 0.7 * u / l, sa * 0.7 * u / l, side / l]; };
+    const tdir = [ca, sa, 0];
+    // Stations from root to tip: radius, leading chord, trailing chord, thickness.
+    const ST = [[1.5, 1.6, -1.6, 1.9], [L * 0.22, 3.4, -1.36, 1.1], [L * 0.6, 2.2, -0.7, 0.55], [L, 2.3, 1.3, 0.22]];
+    for (let k = 0; k < ST.length - 1; k++) {
+      const [r0, l0, t0, h0] = ST[k], [r1, l1, t1, h1] = ST[k + 1];
+      for (const side of [1, -1]) {
+        const A = at3(r0, t0, side * h0 / 2), B = at3(r0, l0, side * h0 / 2), C = at3(r1, l1, side * h1 / 2), D = at3(r1, t1, side * h1 / 2);
+        const nA = nm(-1, side), nB = nm(1, side);
+        if (side > 0) { tri(A, B, C, [nA, nB, nB], 2, b); tri(A, C, D, [nA, nB, nA], 2, b); }
+        else { tri(A, C, B, [nA, nB, nB], 2, b); tri(A, D, C, [nA, nA, nB], 2, b); }
+      }
+      // Leading and trailing edges close the section.
+      for (const [c0, c1, dir] of [[l0, l1, 1], [t0, t1, -1]]) {
+        const P0 = at3(r0, c0, h0 / 2), P1 = at3(r0, c0, -h0 / 2), P2 = at3(r1, c1, -h1 / 2), P3 = at3(r1, c1, h1 / 2);
+        const n = [tdir[0] * dir, tdir[1] * dir, 0];
+        tri(P0, P1, P2, n, 2, b); tri(P0, P2, P3, n, 2, b);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(K, 1));
+  g.setAttribute('aBlade', new THREE.Float32BufferAttribute(B, 1));
+  return g;
+}
+
+/* ---------- aviation lights ---------- */
+// Each turbine carries one flashing light on the nacelle and three steady ones round the tower.
+// A core sprite holds the lamp; a halo sprite grows with the fog in front.
+const LIGHT_VS = FOG + `
+attribute float aKind;
+uniform float uFocal, uHalo, uBlink;
+varying float vT;
+varying float vTau;
+varying float vOn;
+varying float vSig;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  float t = -mv.z;
+  // Halos sit in front of their own turbine, so its tower and blades never cut them.
+  // Turbines stand at least 520 m apart, so nearer turbines still hide them.
+  float lift = uHalo > 0.5 ? min(120.0, t * 0.5) : 0.0;
+  vec4 mvs = vec4(mv.xyz * (1.0 - lift / t), 1.0);
+  // The lift runs along the view ray, so the sprite stays on the lamp.
+  gl_Position = projectionMatrix * mvs;
+  vec3 d = normalize(position - cameraPosition);
+  vec4 f = fogMarch(cameraPosition, d, length(position - cameraPosition), 0.5);
+  vT = f.a; vTau = -log(max(f.a, 1e-4));
+  // The nacelle lamps flash together; the tower lamps burn steady.
+  vOn = aKind > 0.5 ? 0.7 : uBlink;
+  float lamp = aKind > 0.5 ? 1.2 : 2.2;
+  float core = max(1.6, lamp * uFocal / t);
+  // The glow: the lamp lights the fog round it, about 60 m out.
+  vSig = fogSigma(position) * 900.0;
+  if (uHalo > 1.5) gl_PointSize = clamp(60.0 * uFocal / t, 6.0, 360.0);
+  else gl_PointSize = uHalo > 0.5 ? min(core * (3.0 + 6.0 * min(vTau, 2.5)), 160.0) : core * 2.0;
+}`;
+const LIGHT_FS = `
+uniform vec3 uRed;
+uniform float uHalo, uRain, uTime;
+varying float vT;
+varying float vTau;
+varying float vOn;
+varying float vSig;
+// Rain in the lamp's light: short falling glints, slanted by the wind.
+float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float glints(vec2 q) {
+  vec2 g = vec2((q.x + q.y * 0.15) * 26.0, q.y * 2.2 - uTime * 5.0);
+  vec2 id = floor(g), f = fract(g);
+  float h = h21(id), x = 0.2 + 0.6 * fract(h * 7.3);
+  return step(0.55, h) * smoothstep(0.12, 0.0, abs(f.x - x)) * smoothstep(0.0, 0.5, f.y) * smoothstep(1.0, 0.5, f.y);
+}
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0 || vOn < 0.002) discard;
+  // Both sprites fall to zero at the rim, so no edge shows.
+  float edge = (1.0 - r2) * (1.0 - r2);
+  float k = uHalo > 1.5
+    ? exp(-r2 * 3.0) * edge * 0.6 * clamp(0.3 + vSig, 0.0, 2.5) * vT * (1.0 + uRain * 1.8 * glints(q))
+    : uHalo > 0.5
+    ? exp(-r2 * 2.5) * edge * 0.9 * min(vTau, 2.5) * vT
+    : exp(-r2 * 9.0) * edge * 12.0 * vT;
+  gl_FragColor = vec4(uRed * k * vOn, 1.0);
+}`;
+function lightGeometry() {
+  const P = [], K = [];
+  const c = Math.cos(YAW), s = Math.sin(YAW);
+  for (const { x, z } of farm) {
+    // Nacelle top, toward the rear.
+    const lz = -5;
+    P.push(x + s * lz, 115.6, z + c * lz); K.push(0);
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.094 + 0.4;
+      P.push(x + Math.cos(a) * 3.3, 62, z + Math.sin(a) * 3.3); K.push(1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aKind', new THREE.Float32BufferAttribute(K, 1));
+  return g;
+}
+
+/* ---------- renderer ---------- */
+const stage = document.getElementById('stage');
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+catch { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); }
+// The grade pass does the curve and gamma, so targets hold linear light.
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(10, 1, 5, 40000);
+camera.rotation.order = 'YXZ';
+
+// Sky, sea and fog render at half size, then stretch under the farm.
+const bgRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: false });
+const bgScene = new THREE.Scene(), bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const QUAD_VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+const bgMat = new THREE.ShaderMaterial({ uniforms: { ...U, uCamPos: { value: new THREE.Vector3() } }, vertexShader: QUAD_VS, fragmentShader: BACK_FS, depthTest: false, depthWrite: false });
+const bgQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+bgQuad.frustumCulled = false;
+bgScene.add(bgQuad);
+const back = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { tBg: { value: bgRT.texture } }, depthTest: false, depthWrite: false,
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 1.0, 1.0); }',
+  fragmentShader: 'uniform sampler2D tBg; varying vec2 vUv; void main() { gl_FragColor = texture2D(tBg, vUv); }',
+}));
+back.frustumCulled = false; back.renderOrder = -10;
+scene.add(back);
+
+const turbines = new THREE.InstancedMesh(turbineGeometry(), new THREE.ShaderMaterial({
+  uniforms: { ...U, uYaw: { value: YAW } }, vertexShader: TURB_VS, fragmentShader: TURB_FS, side: THREE.DoubleSide,
+}), farm.length);
+const angAttr = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+const pitchAttr = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+angAttr.setUsage(THREE.DynamicDrawUsage); pitchAttr.setUsage(THREE.DynamicDrawUsage);
+turbines.geometry.setAttribute('aAngle', angAttr);
+turbines.geometry.setAttribute('aPitch', pitchAttr);
+{
+  const m = new THREE.Matrix4();
+  farm.forEach((t, i) => { m.makeTranslation(t.x, 0, t.z); turbines.setMatrixAt(i, m); });
+}
+turbines.frustumCulled = false;
+scene.add(turbines);
+/* ---------- fog wakes ---------- */
+// In moderate wind each rotor sheds three helices of condensed fog downwind.
+// Each helix is a torn, wandering band; it widens and fades downwind.
+const WAKE_L = 700, WAKE_SEG = 120;
+const WAKE_VS = FOG + `
+attribute vec2 aUv;
+attribute float aHelix;
+attribute vec3 aBase;
+attribute float aSpin;
+attribute float aOn;
+attribute float aOm;
+uniform float uYaw, uTime, uConv, uAdv;
+varying vec2 vUv2;
+varying float vK;
+varying vec3 vL;
+varying float vRed;
+varying vec2 vSeed;
+vec3 yaw(vec3 v) { float c = cos(uYaw), s = sin(uYaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+void main() {
+  float s = aUv.x, w = aUv.y;
+  // Each rotor and each helix gets its own noise seed.
+  float seed = fract(aBase.x * 0.0137 + aBase.z * 0.0071) * 50.0 + aHelix * 3.7;
+  float tt = uTime * 0.04;
+  // m moves downwind with the air, so the turbulence travels with the coil.
+  float m = s - uAdv;
+  // Turbulence bends the coil: the radius swells and shrinks downwind.
+  float wob = fbm3(vec2(m * 3.0 + seed, tt)) - 0.5;
+  float r = 78.0 * (1.0 + 0.55 * s) * (1.0 + 0.7 * s * wob);
+  // Each helix leaves a blade tip; downwind it holds the angle that blade had earlier.
+  float th = aSpin + 1.5707963 + aHelix * 2.0943951 - aOm * s * ${WAKE_L}.0 / uConv + 2.4 * s * (fbm3(vec2(m * 2.0 + seed + 9.0, tt)) - 0.5);
+  vec3 p = vec3(r * cos(th), 112.0 + r * sin(th) * (1.0 - 0.25 * s), -12.0 - s * ${WAKE_L}.0);
+  // The wake centre meanders away from the rotor axis.
+  p.xy += vec2(fbm3(vec2(m * 1.5 + seed, tt)) - 0.5, 0.6 * (fbm3(vec2(m * 1.5 + seed + 5.0, tt)) - 0.5)) * 220.0 * s;
+  // The band spans out and along, so end-on it reads as a smear, not a line.
+  p.xy += vec2(cos(th), sin(th)) * (w - 0.5) * (18.0 + 70.0 * s);
+  p.z += (w - 0.5) * (10.0 + 30.0 * s);
+  // It sags a little and drifts with the fog.
+  p.y -= s * s * 18.0;
+  vec3 wp = aBase + yaw(p);
+  vec4 mv = viewMatrix * vec4(wp, 1.0);
+  gl_Position = projectionMatrix * mv;
+  vec3 d = normalize(wp - cameraPosition);
+  vec4 f = fogMarch(cameraPosition, d, length(wp - cameraPosition), 0.5);
+  vK = aOn * f.a;
+  vL = fogLight(d);
+  // Near the hub the coil passes the lamp and takes its red.
+  vRed = exp(-s * 10.0);
+  vUv2 = vec2(s, w);
+  vSeed = vec2(seed, aHelix);
+}`;
+const WAKE_FS = FOG + `
+uniform float uTime, uWakes, uAdv;
+uniform vec3 uRed;
+uniform float uBlink;
+varying vec2 vUv2;
+varying float vK;
+varying vec3 vL;
+varying float vRed;
+varying vec2 vSeed;
+void main() {
+  float s = vUv2.x, w = vUv2.y;
+  // Soft across the band, faded in near the rotor and out downwind.
+  float across = smoothstep(0.0, 0.35, w) * smoothstep(1.0, 0.65, w);
+  float along = smoothstep(0.0, 0.06, s) * (1.0 - smoothstep(0.35, 1.0, s));
+  // The coil breaks into puffs that drift downwind.
+  // Puffs and tears ride the air at the coil's own speed.
+  float m = s - uAdv;
+  float n = fbm3(vec2(m * 14.0 + vSeed.x, w * 2.0 + s * 3.0 + vSeed.y * 3.1));
+  float puff = smoothstep(0.45, 0.85, n) * (0.6 + 0.4 * fbm3(vec2(m * 5.0 + vSeed.x, w + uTime * 0.1)));
+  // Long tears leave only shreds of each turn.
+  puff *= smoothstep(0.42, 0.66, fbm3(vec2(m * 9.0 + vSeed.x * 1.3, uTime * 0.08 + vSeed.y)));
+  float a = across * along * puff * vK * uWakes;
+  if (a < 0.002) discard;
+  vec3 c = vL * 2.6 + uRed * vRed * 0.15 * (0.4 + 0.6 * uBlink);
+  gl_FragColor = vec4(c * a, 1.0);
+}`;
+const wakes = (() => {
+  // One helix is a strip of quads; three helices make one wake.
+  const P = [], UV = [], HX = [], I = [];
+  for (let h = 0; h < 3; h++) {
+    const o = P.length / 3;
+    for (let i = 0; i <= WAKE_SEG; i++) for (let j = 0; j < 2; j++) { P.push(0, 0, 0); UV.push(i / WAKE_SEG, j); HX.push(h); }
+    for (let i = 0; i < WAKE_SEG; i++) { const a = o + i * 2; I.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aUv', new THREE.Float32BufferAttribute(UV, 2));
+  g.setAttribute('aHelix', new THREE.Float32BufferAttribute(HX, 1));
+  g.setIndex(I);
+  g.instanceCount = farm.length;
+  g.setAttribute('aBase', new THREE.InstancedBufferAttribute(new Float32Array(farm.flatMap(t => [t.x, 0, t.z])), 3));
+  const spin = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1), on = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+  const om = new THREE.InstancedBufferAttribute(new Float32Array(farm.length), 1);
+  spin.setUsage(THREE.DynamicDrawUsage); on.setUsage(THREE.DynamicDrawUsage); om.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('aSpin', spin); g.setAttribute('aOn', on); g.setAttribute('aOm', om);
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: { ...U, uYaw: { value: YAW }, uWakes: { value: 0 }, uConv: { value: 27 }, uAdv: { value: 0 } }, vertexShader: WAKE_VS, fragmentShader: WAKE_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  }));
+  m.frustumCulled = false; m.renderOrder = 3;
+  scene.add(m);
+  return { m, spin, on, om, adv: 0 };
+})();
+
+// The coil travels downwind three times faster than the wind, for a readable pitch.
+const wakeConv = () => 3 * Math.max(windNow(), 3);
+function pushRotors() {
+  farm.forEach((t, i) => {
+    angAttr.array[i] = t.ang; pitchAttr.array[i] = t.pitch;
+    // The coil turns with its rotor and fades as the rotor slows or stops.
+    wakes.spin.array[i] = t.ang;
+    wakes.on.array[i] = clamp(t.omega / OMAX) * (t.feathered ? 0 : 1);
+    wakes.om.array[i] = t.omega * (reduce ? 0.3 : 1);
+  });
+  angAttr.needsUpdate = true; pitchAttr.needsUpdate = true;
+  wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true; wakes.om.needsUpdate = true;
+  wakes.m.material.uniforms.uConv.value = wakeConv();
+  wakes.m.material.uniforms.uAdv.value = wakes.adv;
+  // Wakes form in moderate wind only, in fog; strong wind tears them apart.
+  const w = windNow();
+  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.15 : 1) * TUNE.wakes;
+}
+
+const lightGeo = lightGeometry();
+// Three sprites per lamp: core, halo and the glow it casts into the fog.
+for (const halo of [0, 1, 2]) {
+  const pts = new THREE.Points(lightGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uHalo: { value: halo } }, vertexShader: LIGHT_VS, fragmentShader: LIGHT_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    // The glow is lit fog, so no solid shape cuts it.
+    depthTest: halo < 2,
+  }));
+  pts.frustumCulled = false; pts.renderOrder = 5 + halo;
+  scene.add(pts);
+}
+
+// Each lamp lays a broken red streak on the water below it.
+// A screen quad sits on the lamp's mirror point and stretches with the waves.
+const REFL_VS = FOG + `
+attribute vec2 aCorner;
+attribute float aKind;
+uniform float uFocal, uBlink, uTime;
+uniform vec2 uRes;
+varying vec2 vC;
+varying float vK;
+varying float vSeed;
+void main() {
+  vec3 L = position, M = vec3(L.x, -L.y, L.z);
+  vec4 clip = projectionMatrix * viewMatrix * vec4(M, 1.0);
+  float t = clip.w;
+  vec3 sea = vec3(L.x, 0.0, L.z);
+  vec4 f = fogMarch(cameraPosition, normalize(sea - cameraPosition), length(sea - cameraPosition), 0.5);
+  vec4 fl = fogMarch(sea, normalize(L - sea), L.y, 0.5);
+  vK = f.a * sqrt(fl.a) * (aKind > 0.5 ? 0.6 : uBlink);
+  // The streak is as wide as the lamp, and longer in a rough sea.
+  float lamp = max(1.4, (aKind > 0.5 ? 1.2 : 2.2) * uFocal / max(t, 1.0));
+  float halfH = L.y * uFocal / max(t, 1.0) * (0.18 + 0.025 * uWind);
+  clip.xy += aCorner * vec2(lamp * 1.8, halfH) * 2.0 / uRes * clip.w;
+  gl_Position = t < 1.0 ? vec4(2.0, 2.0, 2.0, 1.0) : clip;
+  vC = aCorner;
+  vSeed = fract(L.x * 0.0137 + L.z * 0.0071) * 40.0;
+}`;
+const REFL_FS = FOG + `
+uniform vec3 uRed;
+uniform float uTime;
+varying vec2 vC;
+varying float vK;
+varying float vSeed;
+void main() {
+  float x = vC.x, y = vC.y;
+  float core = exp(-x * x * 5.0) * (1.0 - y * y);
+  // Ripples break the streak into flickering bars.
+  float bars = smoothstep(0.35, 0.85, vnoise(vec2(y * 16.0 + vSeed, uTime * 1.3 + vSeed)));
+  float k = core * (0.25 + 0.75 * bars) * 1.6 * vK;
+  if (k < 0.0005) discard;
+  gl_FragColor = vec4(uRed * k, 1.0);
+}`;
+{
+  const src = lightGeo.attributes.position.array, kinds = lightGeo.attributes.aKind.array, n = kinds.length;
+  const P = new Float32Array(n * 12), C = new Float32Array(n * 8), Kd = new Float32Array(n * 4), I = [];
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  for (let i = 0; i < n; i++) for (let v = 0; v < 4; v++) {
+    const o = i * 4 + v;
+    P.set(src.slice(i * 3, i * 3 + 3), o * 3);
+    C.set(corners[v], o * 2);
+    Kd[o] = kinds[i];
+    if (v === 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aCorner', new THREE.BufferAttribute(C, 2));
+  g.setAttribute('aKind', new THREE.BufferAttribute(Kd, 1));
+  g.setIndex(I);
+  const refl = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: U, vertexShader: REFL_VS, fragmentShader: REFL_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  refl.frustumCulled = false; refl.renderOrder = 4;
+  scene.add(refl);
+}
+
+
+/* ---------- post ---------- */
+// Bloom runs on its own small mips; the grade adds ACES, a cool balance, vignette and grain.
+// The farm renders into its own target with depth, so the bokeh pass knows each pixel's distance.
+// A depth texture keeps its first size, so a resize builds a fresh target.
+let sceneRT = null;
+function makeSceneRT(w, h) {
+  sceneRT?.depthTexture?.dispose();
+  sceneRT?.dispose();
+  sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(w, h) });
+}
+makeSceneRT(2, 2);
+const composer = new EffectComposer(renderer);
+// Bokeh, after Buoy Business: a real depth of field on the long lens.
+// 28 golden-angle disc taps, turned per pixel, so the taps blend into grain.
+// Hot pixels weigh more, so out-of-focus lamps open into discs.
+const dofPass = new ShaderPass({
+  uniforms: {
+    tScene: { value: null }, tDepth: { value: null },
+    uNear: { value: 5 }, uFar: { value: 40000 }, uFocus: { value: 1700 }, uAperture: { value: 12 }, uRes: { value: new THREE.Vector2(1, 1) },
+    uHits: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0.1, 0)) },
+    uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uLampW: { value: 30 }, uLampT: { value: 0.25 },
+  },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+uniform sampler2D tScene, tDepth;
+uniform float uNear, uFar, uFocus, uAperture;
+uniform float uBlades, uOval, uRim, uCat, uLampW, uLampT;
+uniform vec2 uRes;
+uniform vec4 uHits[8];
+// Aperture blades turn the disc into a polygon; under three keeps it round.
+float blade(float a) {
+  if (uBlades < 2.5) return 1.0;
+  float s = 6.2832 / uBlades;
+  return cos(0.5 * s) / cos(mod(a, s) - 0.5 * s);
+}
+varying vec2 vUv;
+// Rain strikes on the lens: x, y in uv, radius in heights, strength.
+float pulse(vec2 uv) {
+  float p = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 h = uHits[i];
+    vec2 d = (uv - h.xy) * vec2(uRes.x / uRes.y, 1.0);
+    p += h.w * exp(-dot(d, d) / (h.z * h.z));
+  }
+  return min(p, 1.0);
+}
+// Distance in metres from the depth buffer.
+float dist(vec2 uv) {
+  float z = texture2D(tDepth, uv).r * 2.0 - 1.0;
+  return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
+}
+// The blur radius in pixels: zero at the focus, the full aperture at infinity.
+float coc(float d) { return min(uAperture * abs(1.0 - uFocus / max(d, 1.0)), uAperture * 1.6); }
+float P;
+// A strike swells the blur nearby, so the discs there open and pulse.
+float cocP(float d) { return coc(d) * (1.0 + 1.8 * P) + P * uAperture * 0.35; }
+void main() {
+  vec3 c0 = texture2D(tScene, vUv).rgb;
+  P = pulse(vUv);
+  float r = cocP(dist(vUv));
+  if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
+  // Interleaved gradient noise turns the disc per pixel.
+  float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  vec3 acc = c0; float wsum = 1.0;
+  for (int k = 0; k < 28; k++) {
+    float rk = sqrt((float(k) + 0.5) / 28.0), a = float(k) * 2.39996 + rot;
+    vec2 dir = vec2(cos(a), sin(a)) * rk;
+    dir *= blade(a);
+    // Oval squeezes the disc sideways, as an anamorphic lens does.
+    dir.x *= uOval;
+    vec2 o = dir * r / uRes;
+    vec2 uv = vUv + o;
+    vec3 col = texture2D(tScene, uv).rgb;
+    // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
+    float reach = smoothstep(0.0, 1.0, cocP(dist(uv)) - rk * r + 1.0);
+    float hot = max(max(col.r, max(col.g, col.b)) - uLampT, 0.0);
+    float w = (1.0 + hot * hot * uLampW * (1.0 + P)) * reach;
+    // Rim: the outer taps weigh more, so each disc shows a bright ring.
+    if (uRim > 0.0) w *= mix(1.0, 0.1 + 3.0 * smoothstep(0.6, 1.0, rk), uRim);
+    // Cat's eye: a second circle clips discs toward the frame's edge.
+    if (uCat > 0.0) w *= step(length(dir + (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * uCat), 1.0);
+    acc += col * w; wsum += w;
+  }
+  gl_FragColor = vec4(acc / wsum * (1.0 + 0.18 * P), 1.0);
+}`,
+}, 'tUnused');
+composer.addPass(dofPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
+composer.addPass(bloom);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 }, uStreakK: { value: 1 }, uGrainK: { value: 1 }, uRain: { value: 0 }, uTimeR: { value: 0 } },
+  vertexShader: QUAD_VS,
+  fragmentShader: `
+uniform sampler2D tDiffuse;
+uniform vec2 uRes;
+uniform float uExp, uCut, uGrain, uStreak, uStreakK, uGrainK, uRain, uTimeR;
+uniform vec3 uFogC;
+varying vec2 vUv;
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+// ACES: the fitted RRT and ODT, with its input and output matrices.
+const mat3 ACES_IN = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+const mat3 ACES_OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+vec3 rrtOdt(vec3 v) { return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081); }
+void main() {
+  vec2 cuv = vUv - 0.5;
+  float asp = uRes.x / uRes.y;
+  vec2 uv = vUv;
+  // Lens fringing: red and blue part a little toward the edges.
+  vec2 fu = uv - 0.5;
+  float f2 = dot(fu, fu);
+  vec3 c = vec3(texture2D(tDiffuse, uv - fu * 0.012 * f2).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv + fu * 0.012 * f2).b);
+  // Anamorphic streaks: bright lamps smear sideways in a thin line.
+  if (uStreak > 0.5) {
+    vec3 st = vec3(0.0);
+    for (int i = 1; i <= 16; i++) {
+      float o = float(i) / 16.0 * 0.2, w = exp(-float(i) * 0.2);
+      st += (max(texture2D(tDiffuse, vUv + vec2(o, 0.0)).rgb - 0.22, 0.0) + max(texture2D(tDiffuse, vUv - vec2(o, 0.0)).rgb - 0.22, 0.0)) * w;
+    }
+    c += st * 0.05 * uStreakK * vec3(1.0, 0.75, 1.3);
+  }
+  if (uRain > 0.001) {
+    vec2 p = cuv * vec2(asp, 1.0);
+    // A light fog on the glass: a soft blur and a milky veil.
+    vec3 soft = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.785398;
+      soft += texture2D(tDiffuse, vUv + vec2(cos(a), sin(a)) * 0.006 / vec2(asp, 1.0)).rgb;
+    }
+    soft /= 8.0;
+    float mist = uRain * 0.3 * (0.7 + 0.3 * smoothstep(0.2, 0.8, length(p)));
+    c = mix(c, soft + uFogC * 0.25, mist);
+  }
+  // A view change passes through a wall of fog.
+  c = mix(c, uFogC * 1.6, uCut);
+  c *= uExp;
+  // A cool white balance pushes the murk toward blue.
+  c *= vec3(0.86, 0.98, 1.18);
+  c = clamp(ACES_OUT * rrtOdt(ACES_IN * c), 0.0, 1.0);
+  vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - 0.4 * dot(q, q);
+  c = pow(c, vec3(1.0 / 2.2));
+  // Split tone: shadows lean blue, a little contrast in the mids.
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c += vec3(-0.012, 0.0, 0.03) * (1.0 - smoothstep(0.0, 0.5, l));
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
+  // Film grain, strongest in the mid tones; it moves each frame.
+  vec2 gp = gl_FragCoord.xy + uGrain * vec2(37.0, 17.0);
+  float g = hash12(gp) + hash12(gp + 71.3) - 1.0;
+  c += g * 0.06 * uGrainK * (0.4 + c * (1.0 - c) * 2.4);
+  gl_FragColor = vec4(c, 1.0);
+}`,
+});
+composer.addPass(grade);
+
+/* ---------- views ---------- */
+// Yaw that turns the camera from pos toward a ground point.
+const aim = (pos, [x, z]) => Math.atan2(-(x - pos[0]), -(z - pos[2]));
+// Each view returns its position, yaw, pitch, focal length in pixels and exposure.
+const SHOTS = {
+  // Rows: a long telephoto down one row; the near rotors loom.
+  Rows: (W, H, tall) => {
+    const f = W * 5.9 * (1 - tall) + H * 5.2 * tall;
+    const hor = 0.74 - 0.12 * tall;
+    return { pos: [0, 10, 0], yaw: -0.012 * tall, pitch: Math.atan((hor - 0.5) * H / f), f, exp: 1.8 };
+  },
+  // Foot: on the water in front of one rotor, looking up into it.
+  Foot: (W, H, tall) => {
+    const { x, z } = NEAR, pos = [x - 25, 6, z + 125];
+    const f = H * (0.72 - 0.22 * tall);
+    return { pos, yaw: aim(pos, [x, z]) - 0.32 * (1 - tall) - 0.1, pitch: 0.5, f, exp: 2.6 };
+  },
+  // Above: high and oblique over the farm; fog banks lie between the rows.
+  Above: (W, H, tall) => {
+    const pos = [1400, 420, -600];
+    const f = W * 2.0 * (1 - tall) + H * 1.5 * tall;
+    return { pos, yaw: aim(pos, CENTRE), pitch: -0.2, f, exp: 3.4 };
+  },
+  // Across: a boat off the farm's right side, looking left across it.
+  Across: (W, H, tall) => {
+    const pos = [950, 9, -3600];
+    const f = W * 1.7 * (1 - tall) + H * 2.6 * tall;
+    return { pos, yaw: aim(pos, [-900, -8200]), pitch: Math.atan((0.2 - 0.12 * tall) * H / f), f, exp: 2.2 };
+  },
+  // Hub: on top of the near nacelle, looking out at eye level with the lamps.
+  Hub: (W, H, tall) => {
+    const { x, z } = NEAR, pos = [x + 40, 119, z - 10];
+    const f = W * 4.2 * (1 - tall) + H * 3.4 * tall;
+    return { pos, yaw: aim(pos, [x + 300, z - 6000]), pitch: -0.012, f, exp: 1.8 };
+  },
+  // Grid: off the farm's side, looking through it on a long lens.
+  Grid: (W, H, tall) => {
+    const pos = [2600, 22, -5200];
+    const f = W * 3.2 * (1 - tall) + H * 2.8 * tall;
+    return { pos, yaw: aim(pos, [-1600, -7600]), pitch: Math.atan(0.2 * H / f), f, exp: 2 };
+  },
+};
+
+/* ---------- size and quality ---------- */
+let W = 1, H = 1, shot = null, low = false;
+// Drag looks around a little; the offset eases back on a view change.
+const look = { yaw: 0, pitch: 0, toYaw: 0, toPitch: 0 };
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  const dpr = pixelRatio(w, h, { budget: 1.6e6, low });
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  W = Math.round(w * dpr); H = Math.round(h * dpr);
+  // The fog pass runs at half size, or a quarter on the lowest rung.
+  const k = rung >= 2 ? 0.25 : 0.5;
+  bgRT.setSize(Math.max(2, Math.round(W * k)), Math.max(2, Math.round(H * k)));
+  if (sceneRT.width !== W || sceneRT.height !== H) makeSceneRT(W, H);
+  dofPass.uniforms.tScene.value = sceneRT.texture;
+  dofPass.uniforms.tDepth.value = sceneRT.depthTexture;
+  dofPass.uniforms.uRes.value.set(W, H);
+  grade.uniforms.uRes.value.set(W, H);
+  U.uRes.value.set(W, H);
+  // Letterbox bars crop the stage to 2.39 : 1.
+  stage.style.setProperty('--lb', `${Math.max(0, (h - w / 2.39) / 2)}px`);
+  aimCamera();
+  draw();
+}
+function aimCamera(breath = 0, shake = [0, 0], bob = [0, 0, 0]) {
+  const tall = clamp((H / W - 0.8) / 1.4);
+  shot = SHOTS[VIEWS[opts.view]](W, H, tall);
+  camera.aspect = W / H;
+  camera.fov = 2 * Math.atan(H / 2 / shot.f) * 180 / Math.PI;
+  camera.position.set(...shot.pos);
+  camera.position.y += breath * 0.6 + bob[0];
+  camera.rotation.set(shot.pitch + look.pitch + breath * 0.0006 + shake[1] + bob[1], shot.yaw + look.yaw + shake[0], bob[2]);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  U.uFocal.value = shot.f;
+  U.uCamWorld.value.copy(camera.matrixWorld);
+  U.uInvProj.value.copy(camera.projectionMatrixInverse);
+  bgMat.uniforms.uCamPos.value.copy(camera.position);
+  U.uClear.value.set(shot.pos[0], shot.pos[2]);
+  grade.uniforms.uExp.value = shot.exp * TUNE.exposure;
+  // Focus sits on the nearest turbine in view; the lens opens wider on a taller frame.
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const half = Math.atan(W / 2 / shot.f) * 0.9;
+  let focus = Infinity;
+  for (const t of farm) {
+    const dx = t.x - camera.position.x, dz = t.z - camera.position.z, d = Math.hypot(dx, dz);
+    const cos = (dx * fwd.x + dz * fwd.z) / (d * Math.hypot(fwd.x, fwd.z) + 1e-6);
+    if (Math.acos(clamp(cos, -1, 1)) < half) focus = Math.min(focus, d);
+  }
+  dofPass.uniforms.uFocus.value = (Number.isFinite(focus) ? focus : 1700) * TUNE.focus;
+  dofPass.uniforms.uAperture.value = H * 0.016 * TUNE.aperture;
+}
+
+// Performance ladder: after 4 s, slow frames step quality down one rung.
+// Rung 1: pixel ratio 1. Rung 2: no bloom, quarter-size fog. Rung 3: fewer fog steps.
+let rung = 0, runT = 0, slowT = 0, avgDt = 1 / 60;
+function watchdog(dt) {
+  runT += dt;
+  avgDt += (dt - avgDt) * 0.1;
+  if (runT < 4 || rung >= 3) return;
+  slowT = avgDt > 1 / 38 ? slowT + dt : 0;
+  if (slowT < 2) return;
+  slowT = 0; runT = 2; rung++;
+  if (rung === 1) low = true;
+  if (rung === 2) { bloom.enabled = false; grade.uniforms.uStreak.value = 0; dofPass.enabled = false; }
+  if (rung === 3) U.uSteps.value = 10;
+  resize();
+}
+
+/* ---------- frame ---------- */
+let clock = 0, simT = 0, calm = 1, grainT = 0;
+const cut = { t: -1, next: -1 };
+function setFog() {
+  // Wind thins the fog; Light halves it.
+  U.uFogK.value = (opts.fog === 'light' ? 0.5 : 1) * (1 - 0.55 * smooth(4, 18, windNow())) * TUNE.fog;
+}
+function syncUniforms() {
+  U.uTime.value = simT;
+  U.uWind.value = windNow();
+  const fv = U.uFront.value, fk = U.uFrontK.value;
+  for (let i = 0; i < 4; i++) {
+    const f = fronts[fronts.length - 1 - i];
+    fv.setComponent(i, f ? f.s : -1e9);
+    // Reduced motion: the gust shows as a soft brightening, with no ripple on the water.
+    fk.setComponent(i, f && !reduce ? f.amp / FRONT_AMP : 0);
+  }
+  grade.uniforms.uGrain.value = grainT;
+  grade.uniforms.uRain.value = smooth(0.25, 0.9, storm.k);
+  U.uRain.value = grade.uniforms.uRain.value;
+  grade.uniforms.uTimeR.value = clock;
+  U.uFlash.value = flash.k * (reduce ? 0.35 : 1);
+  // Each strike flares in 50 ms, then fades over about half a second.
+  const hv = dofPass.uniforms.uHits.value;
+  for (let i = 0; i < 8; i++) {
+    const h = hits[i];
+    if (!h) { hv[i].w = 0; continue; }
+    const t = clock - h.t0;
+    const env = t < 0.05 ? t / 0.05 : Math.exp(-(t - 0.05) / 0.5);
+    hv[i].set(h.x, h.y, h.R * TUNE.strikeR * (0.7 + 0.3 * Math.min(t / 0.3, 1)), h.s * env);
+  }
+  setFog();
+}
+function draw() {
+  syncUniforms();
+  pushRotors();
+  renderer.setRenderTarget(bgRT);
+  renderer.render(bgScene, bgCam);
+  renderer.setRenderTarget(sceneRT);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  composer.render();
+}
+
+/* ---------- loop ---------- */
+// Lively: full rate. Drifting: 30 fps. Asleep 60 s after the last input. Hidden: stopped.
+let raf = 0, timer = 0, last = 0, lastDraw = 0, visible = true, ready = false, lastInput = 0, rotorsMoving = true;
+// Ambient motion starts to stop at 52 s; the loop ends before 62 s.
+const SLEEP_MS = 52000;
+// A front runs full rate only near the camera; far rows drift at 30 fps.
+const NEAR_S = 3000;
+function lively(now) { return now - lastInput < 1500 || storm.on || storm.k > 0 || fronts.some(f => f.s < NEAR_S) || cut.t >= 0 || look.yaw !== look.toYaw || look.pitch !== look.toPitch; }
+function frameFn(now) {
+  raf = 0;
+  const t0 = performance.now();
+  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+  last = now;
+  let live = true;
+  try {
+    live = lively(now);
+    // Asleep: ambient motion eases to a stop over 2 s, then the loop ends.
+    const asleep = now - lastInput > SLEEP_MS;
+    calm = asleep ? Math.max(0, calm - dt / 2) : Math.min(1, calm + dt);
+    if (live || now - lastDraw >= 31) {
+      const step = live ? dt : Math.min(0.1, (now - lastDraw) / 1000);
+      if (lastDraw) tick(step, now);
+      lastDraw = now;
+      draw();
+      if (live) watchdog(dt);
+    }
+  } finally {
+    if (!visible || (calm === 0 && !lively(now) && !rotorsMoving)) kit.rest(() => true);
+    else if (live) raf = requestAnimationFrame(frameFn);
+    // Drifting: ask for the next frame 28 ms after this one began, so 30 fps.
+    else { raf = -1; timer = setTimeout(() => { raf = requestAnimationFrame(frameFn); }, Math.max(0, t0 + 28 - performance.now())); }
+  }
+}
+function tick(dt, now) {
+  clock += dt;
+  const drift = reduce ? 0 : calm;
+  simT += dt * (reduce ? 0.3 : 1) * calm;
+  grainT = (grainT + 1) % 64;
+  rotorsMoving = stepWind(dt, clock, calm);
+  // The wake's air moves downwind, in wake lengths.
+  wakes.adv += wakeConv() * dt * (reduce ? 0.3 : 1) * calm / WAKE_L;
+  // The fog drifts downwind, faster in a strong wind.
+  U.uDrift.value.x += WIND_DIR[0] * (3 + windNow() * 2.5) * dt * drift;
+  U.uDrift.value.y += WIND_DIR[1] * (3 + windNow() * 2.5) * dt * drift;
+  // The nacelle lamps flash together: one second on, one second off, soft edges.
+  const ph = clock % 2;
+  U.uBlink.value = calm === 0 ? 1 : smooth(0, 0.12, ph) * (1 - smooth(1, 1.12, ph));
+  // A view change dips into fog and out again.
+  if (cut.t >= 0) {
+    cut.t += dt;
+    const half = reduce ? 0.15 : 0.35;
+    if (cut.next >= 0 && cut.t >= half) { opts.view = cut.next; cut.next = -1; look.yaw = look.toYaw = 0; look.pitch = look.toPitch = 0; }
+    grade.uniforms.uCut.value = cut.t < half ? smooth(0, half, cut.t) : 1 - smooth(half, half * 2.2, cut.t);
+    if (cut.t >= half * 2.2) { cut.t = -1; grade.uniforms.uCut.value = 0; }
+  }
+  look.yaw += (look.toYaw - look.yaw) * (1 - Math.exp(-dt / 0.12));
+  look.pitch += (look.toPitch - look.pitch) * (1 - Math.exp(-dt / 0.12));
+  if (Math.abs(look.yaw - look.toYaw) < 1e-5) look.yaw = look.toYaw;
+  if (Math.abs(look.pitch - look.toPitch) < 1e-5) look.pitch = look.toPitch;
+  // The camera breathes a little on its mount.
+  const breath = reduce ? 0 : Math.sin(clock * 0.4) * calm;
+  // The storm builds while held and calms on release.
+  storm.k = clamp(storm.k + (storm.on ? dt / 7 : -dt / 5));
+  // Lightning: bolts strike every few seconds once the storm is strong.
+  if (storm.k > 0.45 && clock > flash.next) bolt();
+  // Rain strikes the lens more often as the storm builds.
+  const rainK = reduce ? 0 : smooth(0.25, 0.9, storm.k);
+  if (Math.random() < dt * rainK * 4 * TUNE.strikes) lensHit();
+  while (hits.length && clock - hits[0].t0 > 2.5) hits.shift();
+  if (flash.t0 >= 0) {
+    const t = clock - flash.t0;
+    // A bolt flickers: a main stroke, then two weaker return strokes.
+    flash.k = reduce ? Math.exp(-t / 0.4) * 0.6
+      : Math.exp(-t / 0.05) + (t > 0.11 ? 0.7 * Math.exp(-(t - 0.11) / 0.07) : 0) + (t > 0.28 ? 0.45 * Math.exp(-(t - 0.28) / 0.16) : 0);
+    flash.k *= flash.amp;
+    if (t > 2) { flash.t0 = -1; flash.k = 0; }
+  }
+  // In a storm, fronts arrive on their own every few seconds.
+  if (storm.k > 0.3 && Math.random() < dt * storm.k / 2.2) gust(Math.random() * 2 - 1, true);
+  // The mount shakes in the storm, a fraction of a pixel per m/s.
+  const sk = reduce ? 0 : smooth(0.3, 1, storm.k) * 0.00045;
+  const shake = [sk * (Math.sin(clock * 7.3) + Math.sin(clock * 12.9 + 1.1)), sk * (Math.sin(clock * 9.1 + 2.3) + Math.sin(clock * 15.7))];
+  // The camera rides a boat: it heaves, pitches and rolls on the swell.
+  // The sea builds with the wind, so the motion grows in a storm.
+  const sea = reduce ? 0 : (0.3 + windNow() / 30) * calm, bt = clock;
+  const bob = [
+    sea * 0.8 * (Math.sin(bt * 0.98) + 0.4 * Math.sin(bt * 1.71 + 0.6)),
+    sea * 0.0011 * (Math.sin(bt * 0.86 + 1.2) + 0.5 * Math.sin(bt * 1.53 + 2.1)),
+    sea * 0.0055 * (Math.sin(bt * 0.69 + 0.3) + 0.35 * Math.sin(bt * 1.37 + 1.7)),
+  ];
+  aimCamera(breath, shake, bob);
+  voicesStep(dt);
+}
+function wake() {
+  lastInput = performance.now();
+  if (!visible || !ready) return;
+  // Input cuts a drift wait short.
+  if (raf === -1) { clearTimeout(timer); raf = requestAnimationFrame(frameFn); }
+  else if (!raf) { last = 0; lastDraw = 0; raf = requestAnimationFrame(frameFn); }
+}
+
+/* ---------- sound ---------- */
+// Wind bed, blade swish, sea wash, gust whoosh and a cut-out hum, all synthesized.
+const kit = audioKit({ keys: new Set([' ', 'Enter', 'ArrowLeft', 'ArrowRight']), sleepMs: 2500 });
+let V = null, T = null, toneLoad = null, nearWasRunning = true;
+function voices() {
+  if (!kit.live()) return null;
+  if (V) return V;
+  toneLoad ||= kit.tone().then(m => {
+    toneLoad = null;
+    if (!m || V) return;
+    T = m; V = buildVoices();
+  });
+  return null;
+}
+function buildVoices() {
+  const out = kit.out;
+  // Wind bed: pink noise through a band that rises with the wind.
+  const windF = new T.Filter({ type: 'bandpass', frequency: 400, Q: 0.7 });
+  const windG = new T.Gain(0).connect(out);
+  new T.Noise('pink').connect(windF).start();
+  windF.connect(windG);
+  // Blade swish: brown noise, pulsed three times per turn of the near rotor.
+  const swishF = new T.Filter({ type: 'lowpass', frequency: 700, Q: 0.4 });
+  const swishG = new T.Gain(0).connect(out);
+  new T.Noise('brown').connect(swishF).start();
+  swishF.connect(swishG);
+  // Sea wash: a low rush that swells and ebbs.
+  const seaF = new T.Filter({ type: 'lowpass', frequency: 500, Q: 0.3 });
+  const seaG = new T.Gain(0).connect(out);
+  new T.Noise('pink').connect(seaF).start();
+  seaF.connect(seaG);
+  // Gust: a whoosh that sweeps up and pans with the tap.
+  const gustPan = new T.Panner(0).connect(out);
+  const gustG = new T.Gain(0).connect(gustPan);
+  const gustF = new T.Filter({ type: 'bandpass', frequency: 300, Q: 1.2 }).connect(gustG);
+  new T.Noise('white').connect(gustF).start();
+  // Cut-out: a low mechanical hum that winds down as the near rotor brakes.
+  const humG = new T.Gain(0).connect(out);
+  const humF = new T.Filter({ type: 'lowpass', frequency: 260 }).connect(humG);
+  const hum = new T.Oscillator(58, 'sawtooth').connect(humF).start();
+  // Rain hiss: bright noise that follows the storm.
+  const rainG = new T.Gain(0).connect(out);
+  const rainF = new T.Filter({ type: 'bandpass', frequency: 5200, Q: 0.4 }).connect(rainG);
+  new T.Noise('white').connect(rainF).start();
+  // Thunder: a low rumble with a crack at the front.
+  const thPan = new T.Panner(0).connect(out);
+  const thG = new T.Gain(0).connect(thPan);
+  const thF = new T.Filter({ type: 'lowpass', frequency: 300, Q: 0.4 }).connect(thG);
+  new T.Noise('brown').connect(thF).start();
+  return { windF, windG, swishG, swishF, seaF, seaG, gustPan, gustG, gustF, humG, hum, rainG, thPan, thG, thF };
+}
+// The rotor nearest the camera sets the swish.
+function nearTurbine() {
+  let best = farm[0], bd = Infinity;
+  for (const t of farm) {
+    const d = Math.hypot(t.x - camera.position.x, t.z - camera.position.z);
+    if (d < bd) { bd = d; best = t; }
+  }
+  return { t: best, d: bd };
+}
+let swishPh = 0;
+function voicesStep(dt) {
+  const v = voices();
+  if (!v) return;
+  const now = kit.ac.currentTime, w = windNow() * calm;
+  v.windF.frequency.setTargetAtTime(250 + w * 55, now, 0.3);
+  v.windG.gain.setTargetAtTime((0.04 + 0.3 * smooth(0, 25, w)) * (0.85 + 0.15 * gustNoise(clock)), now, 0.3);
+  const { t, d } = nearTurbine();
+  // Each blade passing the tower makes one whoom.
+  swishPh += t.omega * dt * 3;
+  const near = clamp(400 / Math.max(d, 100)) ** 1.5;
+  const sw = 0.5 + 0.5 * Math.cos(swishPh);
+  v.swishG.gain.setTargetAtTime(near * (t.omega / OMAX) * 0.35 * sw * sw, now, 0.04);
+  v.swishF.frequency.setTargetAtTime(400 + 600 * (t.omega / OMAX), now, 0.2);
+  const waves = 0.3 + w / 30;
+  v.seaG.gain.setTargetAtTime((0.05 + 0.1 * waves) * (0.7 + 0.3 * Math.sin(clock * 0.7)) * calm, now, 0.4);
+  v.seaF.frequency.setTargetAtTime(350 + 700 * waves, now, 0.5);
+  v.rainG.gain.setTargetAtTime(0.14 * smooth(0.25, 0.9, storm.k) * calm, now, 0.5);
+  // The hum winds down when the near rotor feathers in a storm.
+  const running = !t.feathered;
+  if (nearWasRunning && !running) {
+    v.humG.gain.cancelScheduledValues(now);
+    v.humG.gain.setValueAtTime(0.12 * near + 0.03, now);
+    v.humG.gain.linearRampToValueAtTime(0, now + 6);
+    v.hum.frequency.setValueAtTime(58, now);
+    v.hum.frequency.exponentialRampToValueAtTime(22, now + 6);
+  }
+  nearWasRunning = running;
+}
+function gustSound(pan) {
+  const v = voices();
+  if (!v) return;
+  const now = kit.ac.currentTime;
+  // No two gusts sound the same.
+  const peak = 1400 + Math.random() * 900, len = 2.6 + Math.random() * 0.8;
+  v.gustPan.pan.cancelScheduledValues(now);
+  v.gustPan.pan.setValueAtTime(clamp(pan * 0.9, -1, 1), now);
+  v.gustPan.pan.linearRampToValueAtTime(clamp(-pan * 0.4, -1, 1), now + len);
+  v.gustF.frequency.cancelScheduledValues(now);
+  v.gustF.frequency.setValueAtTime(260, now);
+  v.gustF.frequency.exponentialRampToValueAtTime(peak, now + len * 0.4);
+  v.gustF.frequency.exponentialRampToValueAtTime(320, now + len);
+  v.gustG.gain.cancelScheduledValues(now);
+  v.gustG.gain.setValueAtTime(0, now);
+  v.gustG.gain.linearRampToValueAtTime(0.32 + Math.random() * 0.08, now + len * 0.35);
+  v.gustG.gain.linearRampToValueAtTime(0, now + len);
+}
+
+// Thunder arrives late, on the audio clock: light first, sound after.
+// The farther the bolt, the later, softer and duller the rumble.
+function thunder(delay, dist, pan) {
+  const v = voices();
+  if (!v) return;
+  const t0 = kit.ac.currentTime + delay, near = clamp(1600 / dist, 0.3, 1);
+  v.thPan.pan.setValueAtTime(clamp(pan * 1.2, -1, 1), t0);
+  v.thF.frequency.cancelScheduledValues(t0);
+  v.thF.frequency.setValueAtTime(220 + 500 * near, t0);
+  v.thF.frequency.exponentialRampToValueAtTime(70, t0 + 3.5);
+  v.thG.gain.cancelScheduledValues(t0);
+  v.thG.gain.setValueAtTime(0, t0);
+  v.thG.gain.linearRampToValueAtTime(0.55 * near, t0 + 0.06);
+  v.thG.gain.setTargetAtTime(0.25 * near, t0 + 0.1, 0.4);
+  v.thG.gain.setTargetAtTime(0, t0 + 1.2, 1.1 + Math.random() * 0.6);
+}
+
+/* ---------- gestures ---------- */
+// A front starts upwind, just behind the camera, and runs down the farm.
+const flash = { t0: -1, k: 0, amp: 1, next: 0 };
+// Raindrops that strike the lens in a storm.
+const hits = [];
+const hitV = new THREE.Vector3();
+function lensHit() {
+  if (hits.length >= 8) hits.shift();
+  let x = 0.08 + Math.random() * 0.84, y = 0.12 + Math.random() * 0.8;
+  // Most strikes land on a lamp, so its disc swells and pulses.
+  if (Math.random() < 0.7) {
+    const t = farm[Math.floor(Math.random() * farm.length)];
+    hitV.set(t.x, Math.random() < 0.5 ? 62 : 116, t.z).project(camera);
+    if (Math.abs(hitV.x) < 1 && Math.abs(hitV.y) < 1 && hitV.z < 1) {
+      x = hitV.x * 0.5 + 0.5 + (Math.random() - 0.5) * 0.04;
+      y = hitV.y * 0.5 + 0.5 + (Math.random() - 0.5) * 0.04;
+    }
+  }
+  hits.push({ x, y, t0: clock, s: 0.6 + Math.random() * 0.5, R: 0.06 + Math.random() * 0.1 });
+}
+// A bolt in front, somewhere over the farm; its thunder comes late for the distance.
+function bolt() {
+  const az = (Math.random() - 0.5) * 0.9, el = 0.04 + Math.random() * 0.16;
+  const yaw = camera.rotation.y + az;
+  U.uFlashDir.value.set(-Math.sin(yaw) * Math.cos(el), Math.sin(el), -Math.cos(yaw) * Math.cos(el)).normalize();
+  flash.t0 = clock; flash.amp = 0.6 + Math.random() * 0.6;
+  flash.next = clock + 3 + Math.random() * 6;
+  const dist = 1000 + Math.random() * 2400;
+  thunder(dist / 343, dist, Math.sin(az));
+}
+function gust(pan = 0, auto = false) {
+  const start = Math.min(0, ...farm.map(t => t.s)) - FRONT_W * 1.5;
+  fronts.push({ s: start, amp: FRONT_AMP * (0.85 + Math.random() * 0.3) });
+  if (fronts.length > 6) fronts.shift();
+  gustSound(pan);
+  if (!auto) wake();
+}
+const viewChips = [...document.querySelectorAll('#view .chip')];
+function setView(i) {
+  if (i === (cut.next >= 0 ? cut.next : opts.view)) return;
+  viewChips.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === VIEWS[i])));
+  if (!ready) { opts.view = i; aimCamera(); return; }
+  cut.next = i; cut.t = 0;
+  look.toYaw = 0; look.toPitch = 0;
+  wake();
+}
+viewChips.forEach(b => b.addEventListener('click', () => setView(VIEWS.indexOf(b.dataset.value))));
+
+// Pointer: a press turns into a drag after 8 px, or a hold after 260 ms; else it is a tap.
+const pt = { down: false, drag: false, x: 0, y: 0, yaw0: 0, pitch0: 0, t0: 0, id: -1, timer: 0 };
+function endStorm() { clearTimeout(pt.timer); if (storm.on) { storm.on = false; wake(); } }
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0 || e.target !== canvas) return;
+  stage.setPointerCapture?.(e.pointerId);
+  Object.assign(pt, { down: true, drag: false, x: e.clientX, y: e.clientY, yaw0: look.toYaw, pitch0: look.toPitch, t0: performance.now(), id: e.pointerId });
+  clearTimeout(pt.timer);
+  // Holding still starts the storm.
+  pt.timer = setTimeout(() => { if (pt.down && !pt.drag) { storm.on = true; wake(); } }, 260);
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!pt.down || e.pointerId !== pt.id) return;
+  const dx = e.clientX - pt.x, dy = e.clientY - pt.y;
+  if (storm.on) { wake(); return; }
+  if (!pt.drag && Math.hypot(dx, dy) > 8) { pt.drag = true; clearTimeout(pt.timer); stage.classList.add('held'); }
+  if (!pt.drag) return;
+  // The look follows the finger; it stays within a quarter of the frame.
+  const css = shot.f / (W / stage.clientWidth);
+  const hf = Math.atan(stage.clientWidth / 2 / css), vf = Math.atan(stage.clientHeight / 2 / css);
+  look.toYaw = clamp(pt.yaw0 + dx / css, -hf * 0.5, hf * 0.5);
+  look.toPitch = clamp(pt.pitch0 + dy / css, -vf * 0.5, vf * 0.5);
+  wake();
+});
+function release(e) {
+  if (!pt.down || (e && e.pointerId !== pt.id)) return;
+  pt.down = false;
+  stage.classList.remove('held');
+  const held = storm.on;
+  endStorm();
+  if (held || pt.drag || performance.now() - pt.t0 > 260) return;
+  // A tap sends a gust; its sound pans from the side that was tapped.
+  const r = stage.getBoundingClientRect();
+  gust(((e.clientX - r.left) / r.width) * 2 - 1);
+}
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', () => { pt.down = false; endStorm(); stage.classList.remove('held'); });
+stage.addEventListener('lostpointercapture', () => { pt.down = false; endStorm(); stage.classList.remove('held'); });
+// Space: a tap sends a gust; holding it brings the storm.
+let spaceT = 0, spaceDown = false;
+stage.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (e.repeat || spaceDown) return;
+    spaceDown = true;
+    clearTimeout(pt.timer);
+    pt.timer = setTimeout(() => { if (spaceDown) { storm.on = true; wake(); } }, 260);
+    spaceT = performance.now();
+    wake();
+    return;
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const cur = PICKS.indexOf(VIEWS[cut.next >= 0 ? cut.next : opts.view]);
+    const d = e.key === 'ArrowLeft' ? -1 : 1;
+    setView(VIEWS.indexOf(PICKS[(cur + d + PICKS.length) % PICKS.length]));
+  }
+});
+
+stage.addEventListener('keyup', e => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  spaceDown = false;
+  const held = storm.on;
+  endStorm();
+  if (!held && performance.now() - spaceT < 260) gust(0);
+});
+stage.addEventListener('blur', () => { spaceDown = false; if (!pt.down) endStorm(); });
+
+/* ---------- bar ---------- */
+function popover(boxEl, btn) {
+  const set = on => { boxEl.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', () => set(!boxEl.classList.contains('is-open')));
+  document.addEventListener('pointerdown', e => { if (!boxEl.contains(e.target)) set(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+}
+popover(document.getElementById('setter'), document.getElementById('setBtn'));
+function chipGroup(el, value, onPick) {
+  const btns = [...el.querySelectorAll('button')];
+  const set = v => btns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === v)));
+  btns.forEach(b => b.addEventListener('click', () => { set(b.dataset.value); onPick(b.dataset.value); }));
+  set(value);
+}
+chipGroup(document.getElementById('fog'), opts.fog, v => { opts.fog = v; save('fog', v); wake(); });
+chipGroup(document.getElementById('lbox'), opts.lbox, v => { opts.lbox = v; save('lbox', v); stage.classList.toggle('letterbox', v === 'on'); });
+stage.classList.toggle('letterbox', opts.lbox === 'on');
+const windEl = document.getElementById('wind');
+windEl.value = opts.wind;
+windEl.addEventListener('input', () => { opts.wind = +windEl.value; save('wind', opts.wind); wake(); });
+document.getElementById('gust').addEventListener('click', () => gust(0));
+onReducedChange(v => { reduce = v; wake(); });
+sound.onChange(on => { if (on) wake(); });
+
+/* ---------- tune ---------- */
+// Tuning values reach the passes here; the camera reads the rest each frame.
+function applyTune() {
+  const d = dofPass.uniforms;
+  d.uBlades.value = TUNE.blades; d.uOval.value = TUNE.oval; d.uRim.value = TUNE.rim; d.uCat.value = TUNE.cat;
+  d.uLampW.value = TUNE.lampW; d.uLampT.value = TUNE.lampT;
+  bloom.strength = TUNE.bloom;
+  grade.uniforms.uStreakK.value = TUNE.streaks;
+  grade.uniforms.uGrainK.value = TUNE.grain;
+}
+applyTune();
+if (TUNING) tunePanel();
+function tunePanel() {
+  // Each row: key, label, min, max, step.
+  const ROWS = [
+    ['Lens'], ['focus', 'Focus', 0.3, 3, 0.01], ['aperture', 'Aperture', 0, 4, 0.01],
+    ['blades', 'Blades', 0, 9, 1], ['oval', 'Oval', 0.3, 1.5, 0.01], ['rim', 'Rim', 0, 1, 0.01], ['cat', "Cat's eye", 0, 1.5, 0.01],
+    ['lampW', 'Lamp weight', 0, 120, 1], ['lampT', 'Lamp level', 0, 1, 0.01],
+    ['Storm'], ['strikes', 'Strikes', 0, 4, 0.05], ['strikeR', 'Strike size', 0.3, 3, 0.01],
+    ['Light'], ['bloom', 'Bloom', 0, 2, 0.01], ['streaks', 'Streaks', 0, 4, 0.05], ['exposure', 'Exposure', 0.3, 3, 0.01], ['grain', 'Grain', 0, 3, 0.05],
+    ['Air'], ['fog', 'Fog', 0, 2, 0.01], ['wakes', 'Wakes', 0, 3, 0.05],
+  ];
+  const css = document.createElement('style');
+  css.textContent = `
+.tune { position: fixed; top: 12px; right: 12px; z-index: 50; width: 250px; max-height: calc(100dvh - 24px); overflow: auto;
+  padding: 10px 12px; font: 12px/1.3 Gabarito, system-ui, sans-serif; color: var(--muted);
+  background: oklch(0.17 0.012 275 / 0.92); border: 1px solid var(--line); border-radius: 12px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.tune h3 { margin: 10px 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #fff); }
+.tune h3:first-of-type { margin-top: 2px; }
+.tune label { display: grid; grid-template-columns: 76px 1fr 38px; align-items: center; gap: 6px; }
+.tune input { width: 100%; accent-color: oklch(0.7 0.15 25); }
+.tune output { text-align: right; font-variant-numeric: tabular-nums; }
+.tune .row { display: flex; gap: 6px; margin-top: 10px; }
+.tune .row button { flex: 1; padding: 5px 0; font: inherit; color: inherit; background: oklch(0.24 0.014 275); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.tune .row button[aria-pressed="true"] { background: oklch(0.42 0.13 25); color: #fff; }
+@media (max-width: 600px) { .tune { top: auto; bottom: 8px; right: 8px; left: 8px; width: auto; max-height: 45dvh; } }`;
+  document.head.append(css);
+  const box = document.createElement('div');
+  box.className = 'tune';
+  box.setAttribute('aria-label', 'Tune');
+  const inputs = {};
+  const fmt = (k, v) => k === 'blades' ? (v < 3 ? 'round' : String(v)) : String(+v.toFixed(2));
+  const keep = () => save('tune', JSON.stringify(TUNE));
+  for (const [k, label, min, max, step] of ROWS) {
+    if (!label) { const h = document.createElement('h3'); h.textContent = k; box.append(h); continue; }
+    const row = document.createElement('label');
+    row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+    const inp = row.querySelector('input'), out = row.querySelector('output');
+    inp.value = TUNE[k]; out.textContent = fmt(k, TUNE[k]);
+    inp.addEventListener('input', () => { TUNE[k] = +inp.value; out.textContent = fmt(k, TUNE[k]); applyTune(); keep(); wake(); });
+    // A double click returns one value to its default.
+    inp.addEventListener('dblclick', () => { TUNE[k] = TUNE0[k]; inp.value = TUNE[k]; out.textContent = fmt(k, TUNE[k]); applyTune(); keep(); wake(); });
+    inputs[k] = [inp, out];
+    box.append(row);
+  }
+  const bar = document.createElement('div');
+  bar.className = 'row';
+  bar.innerHTML = '<button type="button" data-a="storm" aria-pressed="false">Storm</button><button type="button" data-a="copy">Copy</button><button type="button" data-a="reset">Reset</button>';
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.a === 'storm') { storm.on = !storm.on; b.setAttribute('aria-pressed', String(storm.on)); }
+    if (b.dataset.a === 'copy') {
+      // Copy holds only the values that differ from the defaults.
+      const diff = Object.fromEntries(Object.entries(TUNE).filter(([k, v]) => v !== TUNE0[k]));
+      navigator.clipboard?.writeText(JSON.stringify(diff)).then(() => { b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 1200); }, () => {});
+    }
+    if (b.dataset.a === 'reset') {
+      Object.assign(TUNE, TUNE0);
+      for (const k in inputs) { inputs[k][0].value = TUNE[k]; inputs[k][1].textContent = fmt(k, TUNE[k]); }
+      applyTune(); keep();
+    }
+    wake();
+  });
+  box.append(bar);
+  document.body.append(box);
+}
+
+/* ---------- start ---------- */
+// Rotors open already turning, so the first frame is a picture.
+for (const t of farm) { t.omega = t.feathered ? 0 : powerCurve(windAt(t, 0)) * t.jit; }
+resize();
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+try { await renderer.compileAsync(scene, camera); await renderer.compileAsync(bgScene, bgCam); } catch { /* compile on first draw */ }
+draw();
+ready = true;
+markReady();
+requestAnimationFrame(() => canvas.classList.add('on'));
+whenVisible(stage, v => { visible = v; if (v) wake(); else { cancelAnimationFrame(raf); clearTimeout(timer); raf = 0; kit.rest(() => true); } });
+wake();
+</script>
+</body>
+</html>

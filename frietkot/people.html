@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frietkot people sheet</title>
+<style>
+/* A sheet of every figure the frietkot square uses, animated, for picking. */
+:root { --bg: oklch(0.12 0.015 262); --fg: oklch(0.92 0.01 90); --dim: oklch(0.6 0.01 90); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 500 11px/1.2 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+#sheet { position: fixed; inset: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.labels { position: absolute; inset: 0; display: grid; pointer-events: none; }
+.labels span { padding: 8px 10px; color: var(--dim); border: 1px solid oklch(0.25 0.01 262 / 0.6); }
+.bar { position: fixed; top: 10px; right: 10px; display: flex; gap: 4px; z-index: 2; }
+.bar button { font: inherit; color: var(--fg); background: oklch(0.13 0.012 275 / 0.9); border: 1px solid oklch(0.4 0.01 262); padding: 6px 10px; cursor: pointer; }
+.bar button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+</style>
+</head>
+<body>
+<div id="sheet">
+  <canvas id="c" aria-label="An animated sheet of the people, bikes and dogs on the frietkot square."></canvas>
+  <div class="labels" id="labels"></div>
+</div>
+<div class="bar" role="group" aria-label="Look">
+  <button type="button" data-style="0" aria-pressed="true">Ink</button>
+  <button type="button" data-style="1" aria-pressed="false">Line</button>
+  <button type="button" data-style="2" aria-pressed="false">Haze</button>
+</div>
+<script type="module">
+import { FIG_GLSL } from './figures.js';
+
+// kind, build, pose, gait | hold, smoke cycle, dog look, speed
+const CELLS = [
+  ['Walk', 0, 0, 0, 1, 0, 0, 0, 1],
+  ['Hands in pockets', 0, 0, 1, 1, 0, 0, 0, 0.9],
+  ['Tall and thin', 0, 1, 0, 1, 0, 0, 0, 1.1],
+  ['Broad, arms crossed', 0, 2, 2, 0, 0, 0, 0, 0],
+  ['Old, with a stick', 0, 4, 0, 0.6, 0, 0, 0, 0.5],
+  ['Child, waving', 0, 3, 5, 0, 0, 0, 0, 0],
+  ['Hood, phone of 1999', 0, 6, 3, 0, 0, 0, 0, 0],
+  ['Cap, a can', 0, 7, 4, 0, 0, 0, 0, 0],
+  ['Long hair, points at the menu', 0, 8, 6, 0, 0, 0, 0, 0],
+  ['Eats from the cone', 0, 0, 7, 0, 1, 0, 0, 0],
+  ['Smoker', 4, 0, 0, 0, 0, 1, 0, 0],
+  ['Umbrella', 0, 0, 0, 1, 2, 0, 0, 1],
+  ['Coat and hat: the deal', 10, 5, 0, 0, 1, 0, 0, 0],
+  ['The hooded buyer', 10, 6, 1, 1, 0, 0, 0, 1.4],
+  ['Staff: scooping', 3, 9, 8, 0, 0, 0, 0, 0],
+  ['Staff: handing over', 3, 9, 9, 0, 0, 0, 0, 0],
+  ['Waving', 0, 0, 5, 0, 0, 0, 0, 0],
+  ['Cyclist', 1, 0, 0, 1, 0, 0, 0, 1],
+  ['Parked bike', 2, 0, 0, 0, 0, 0, 0, 0],
+  ['Motorbike', 6, 0, 0, 0, 0, 0, 0, 0],
+  ['Mongrel, trotting', 5, 0, 0, 1, 0, 0, 3, 1.4],
+  ['Mongrel, sitting', 5, 0, 0, 0, 0, 0, 3, 0],
+  ['Dancing', 0, 7, 10, 0, 0, 0, 0, 0],
+  ['Sitting on the rack', 0, 6, 11, 0, 1, 0, 0, 0],
+  ['Kicking a can', 0, 0, 12, 1, 0, 0, 0, 0.7],
+  ['Kick-starting a brommer', 0, 6, 13, 0, 0, 0, 0, 0],
+  ['An embrace', 0, 8, 14, 0, 0, 0, 0, 0],
+  ['Pushing a trolley, running', 0, 7, 15, 2, 0, 0, 0, 1.6],
+  ['Brommer', 6, 0, 0, 0, 0, 0, 0, 0],
+  ['Brommer, wheelie', 6, 0, 0, 0, 1, 0, 0, 0],
+];
+const COLS = 6, ROWS = 5;
+
+const labels = document.getElementById('labels');
+labels.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+labels.style.gridTemplateRows = `repeat(${ROWS}, 1fr)`;
+for (const c of CELLS) { const s = document.createElement('span'); s.textContent = c[0]; labels.append(s); }
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false });
+const VS = `#version 300 es
+in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime, uStyle;
+uniform vec4 uA[${CELLS.length}], uB[${CELLS.length}];
+out vec4 o;
+${FIG_GLSL}
+void main() {
+  vec2 cs = uRes / vec2(${COLS}.0, ${ROWS}.0);
+  vec2 cid = floor(gl_FragCoord.xy / cs);
+  int idx = int(cid.x + (${ROWS}.0 - 1.0 - cid.y) * ${COLS}.0);
+  vec2 f = (gl_FragCoord.xy - cid * cs) / cs.y;
+  // Two metres across a cell's height, feet a little above the floor line.
+  vec2 p = (f - vec2(cs.x / cs.y * 0.5, 0.1)) * 2.65;
+  vec4 A = uA[idx], B = uB[idx];
+  int k = int(A.x + 0.5);
+  float build = A.y, pose = A.z, gait = A.w, hold = B.x, speed = B.w;
+  float ph = uTime * 5.0 * speed;
+  vec2 hand = vec2(0.27, 1.1);
+  float smoke = B.y > 0.5 ? smoothstep(0.0, 0.2, fract(uTime / 5.0)) * smoothstep(0.45, 0.25, fract(uTime / 5.0)) : -1.0;
+  float d = 1e3, glass = 0.0;
+  if (k == 0 || k == 3 || k == 4 || k == 10) d = uStyle > 1.5 ? pillar(p, ph, gait) : walker(p, ph, gait, k == 10 ? 0.0 : hold, k == 4 ? smoke : -1.0, build, pose, uTime, float(idx) * 0.37, hand);
+  if (hold > 1.5 && k == 0) d = min(d, umbrella(p, hand, 0.1 + 0.12 * gait));
+  if (k == 1 || k == 2) d = bike(p);
+  if (k == 1) d = min(d, rider(p, uTime * 4.0, hand));
+  if (k == 5) d = mutt(p, ph, gait);
+  if (k == 6) d = min(moto(p), motoRider(p));
+  float cone = (k == 0 && hold > 0.5 && hold < 1.5) ? taper(p, hand + vec2(0.01, -0.02), hand + vec2(0.05, 0.15), 0.012, 0.055) : 1e3;
+  float pack = (k == 10 && hold > 0.5) ? rbox(p, hand + vec2(0.05, 0.03), vec2(0.1, 0.07), 0.02) : 1e3;
+  d = min(d, min(cone, pack));
+  // The backdrop: a lit window behind each figure, as on the square.
+  vec2 q = f - vec2(cs.x / cs.y * 0.5, 0.62);
+  vec3 bg = vec3(0.012, 0.014, 0.02) + vec3(1.0, 0.72, 0.4) * 0.22 * exp(-dot(q, q) * 4.0);
+  float aa = max(fwidth(d), 0.004);
+  vec3 back = vec3(1.0, 0.78, 0.5) * 1.6, front = vec3(0.3, 0.9, 0.35) * 0.25;
+  float a; vec3 c;
+  if (uStyle < 0.5) {
+    a = smoothstep(aa + 0.012, -aa - 0.012, d);
+    float rim = smoothstep(-0.05, 0.0, d);
+    c = vec3(0.006) + front * (0.05 + 0.2 * rim) + back * rim * 0.12;
+  } else if (uStyle < 1.5) {
+    float line = smoothstep(aa * 1.5, 0.0, abs(d) - 0.011);
+    a = max(line, smoothstep(aa, -aa, d) * 0.35);
+    c = mix(vec3(0.006), back * 0.3 + front * 0.6, line / max(a, 1e-3));
+  } else {
+    a = smoothstep(0.14, -0.1, d) * 0.95;
+    float edge = smoothstep(-0.2, 0.1, d);
+    c = vec3(0.006) + back * edge * 0.18 + front * 0.1;
+  }
+  if (pack < 0.0) c = vec3(0.8, 0.62, 0.35);
+  if (cone < 0.0) c = vec3(0.9, 0.86, 0.75);
+  // The ember, the bike lamps, the deal glint.
+  float ember = k == 4 ? exp(-dot(p - hand, p - hand) / 0.0008) : 0.0;
+  c += vec3(1.0, 0.35, 0.08) * ember * (1.5 + 8.0 * max(smoke, 0.0));
+  if (k == 10) c += vec3(1.0) * exp(-dot(p - vec2(0.13, 1.645), p - vec2(0.13, 1.645)) / 0.0004) * 2.0;
+  if (k == 1 || k == 6) c += vec3(1.0, 0.95, 0.85) * exp(-dot(p - vec2(k == 1 ? 0.5 : 0.82, 0.88), p - vec2(k == 1 ? 0.5 : 0.82, 0.88)) / 0.0015) * 3.0;
+  o = vec4(mix(bg, c, a) + max(ember, 0.0) * 0.5, 1.0);
+}`;
+function sh(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+const U = n => gl.getUniformLocation(prog, n);
+gl.uniform4fv(U('uA'), CELLS.flatMap(c => [c[1], c[2], c[3], c[4]]));
+gl.uniform4fv(U('uB'), CELLS.flatMap(c => [c[5], c[6], c[7], c[8]]));
+let style = 0;
+document.querySelectorAll('.bar button').forEach(b => b.addEventListener('click', () => {
+  style = +b.dataset.style;
+  document.querySelectorAll('.bar button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+function size() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round(canvas.clientHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+new ResizeObserver(size).observe(canvas);
+size();
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const t0 = performance.now();
+function loop(now) {
+  gl.uniform2f(U('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(U('uTime'), reduce.matches ? 1.3 : (now - t0) / 1000);
+  gl.uniform1f(U('uStyle'), style);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (!document.hidden) requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) requestAnimationFrame(loop); });
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

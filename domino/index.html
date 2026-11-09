@@ -15,8 +15,6 @@
 <style>
 /* Domino Day: lacquered tiles on a dark table. */
 :root { --stage: oklch(0.245 0.014 275); }
-/* A height cap keeps the bar on screen. */
-.stage--domino { max-height: max(320px, calc(100svh - 190px)); -webkit-touch-callout: none; }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair;
   opacity: 0; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
@@ -24,42 +22,13 @@
 .stage canvas.on { opacity: 1; }
 .stage canvas.tip { cursor: pointer; }
 .stage canvas.turn { cursor: grabbing; }
-/* The add, picture and Settings trays open above the bar. */
-.adder { position: relative; }
-.add {
-  position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20; display: flex; gap: 6px; padding: 8px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-#addBtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
-.add .chip.icon svg { stroke-linecap: round; }
-.add .chip.icon svg .solid { fill: currentColor; stroke: none; }
-/* Tools sit four to a row. */
-#add { display: grid; grid-template-columns: repeat(4, auto); }
-.add.col { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px; }
-.pick .choices { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
-#picBtn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
-.chip .cube { width: 14px; height: 14px; flex: none; fill: currentColor; }
-.chip .cube .cut { fill: none; stroke: var(--bg); stroke-width: 1.4; }
-/* Settings and the (i) close the bar on the right. */
-.bar-end { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.bar-end .how-tip { margin-left: 0; }
-/* The Settings tray hangs from the right edge. */
-#sets { left: auto; right: 0; }
-#setBtn svg { stroke-linecap: round; }
-/* Narrow bars put Iso and Settings on one row, the actions under it. */
-@media (max-width: 520px) { .bar-end { order: 1; } .bar .actions { order: 2; } }
-@media (prefers-reduced-motion: reduce) { .add { transition: none; } }
-.hint {
-  position: absolute; left: 16px; bottom: 14px; margin: 0; pointer-events: none;
-  font-size: 13px; color: var(--muted); transition: opacity 0.6s ease;
-}
-.hint.gone { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .hint, .stage canvas { transition: none; } }
+/* The Iso chip carries a cube; its cuts take the chip's own backing. */
+.s2-chip .cube { margin-right: 6px; vertical-align: -2px; fill: currentColor; stroke: none; }
+.s2-chip .cube .cut { fill: none; stroke: var(--glass); stroke-width: 1.4; }
+.s2-chip[aria-pressed="true"] .cube .cut { stroke: var(--fg); }
+/* A dragged picture lights the table edge. */
+.stage--domino.drop { box-shadow: inset 0 0 0 2px var(--fg); }
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
@@ -68,62 +37,12 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay what the add tray picks: a line, rows, a picture field, a spiral, a star, a tower or a steel ball; a long line ends at a tower. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. R stands the tiles back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay what Add picks: a line, rows, a picture field, a spiral, a star, a tower or a steel ball; a long line ends at a tower. Drop an image on the table to make it the field picture. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. Space tips the first tile, C clears, R stands the tiles back up.">
       <canvas></canvas>
       <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
     </div>
-    <div class="bar">
-      <div class="choices">
-        <button class="chip" id="iso" type="button" aria-pressed="false" aria-keyshortcuts="I" aria-label="Isometric view"><svg class="cube" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1l6 3.5v5L7 13 1 9.5v-5z"/><path class="cut" d="M7 7l6-3.5M7 7L1 3.5M7 7v6"/></svg>Iso</button>
-      </div>
-      <div class="actions">
-        <div class="adder" id="adder">
-          <button class="chip" id="addBtn" type="button" aria-expanded="false" aria-controls="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span id="addName">Line</span></button>
-          <div class="add" id="add" role="group" aria-label="What a drag makes">
-            <button class="chip icon" type="button" data-tool="line" aria-pressed="true" aria-label="Line" title="Line"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4v8M6 4v8M9.5 4v8M13 4v8"/></svg></button>
-            <button class="chip icon" type="button" data-tool="rows3" aria-pressed="false" aria-label="Three rows" title="Three rows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" stroke-dasharray="1.4 1.6"/></svg></button>
-            <button class="chip icon" type="button" data-tool="rows5" aria-pressed="false" aria-label="Five rows" title="Five rows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M2 5h12M2 8h12M2 11h12M2 14h12" stroke-dasharray="1.4 1.6"/></svg></button>
-            <button class="chip icon" type="button" data-tool="field" aria-pressed="false" aria-label="Picture field" title="Picture field"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M1.5 2.5h3.4v2.6H1.5zM6.3 2.5h3.4v2.6H6.3zM11.1 2.5h3.4v2.6h-3.4zM3.9 6.7h3.4v2.6H3.9zM8.7 6.7h3.4v2.6H8.7zM1.5 10.9h3.4v2.6H1.5zM6.3 10.9h3.4v2.6H6.3zM11.1 10.9h3.4v2.6h-3.4z"/></svg></button>
-            <button class="chip icon" type="button" data-tool="spiral" aria-pressed="false" aria-label="Spiral" title="Spiral"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.6 8.4c.6-.7 0-1.8-.9-1.7-1.3.1-1.8 1.7-1.1 2.7 1 1.5 3.3 1.3 4.1-.3 1-2-.4-4.4-2.6-4.7-2.7-.4-5 2-4.6 4.7.4 3 3.6 4.8 6.4 3.9 2.2-.7 3.6-2.8 3.6-5"/></svg></button>
-            <button class="chip icon" type="button" data-tool="star" aria-pressed="false" aria-label="Star" title="Star"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v4.2M8 10.3v4.2M1.5 8h4.2M10.3 8h4.2M3.4 3.4l3 3M9.6 9.6l3 3M12.6 3.4l-3 3M6.4 9.6l-3 3" stroke-dasharray="1.3 1.1"/></svg></button>
-            <button class="chip icon" type="button" data-tool="tower" aria-pressed="false" aria-label="Tower" title="Tower"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 14.5V9.6M12 14.5V9.6M4 7V2.6M12 7V2.6"/><path class="solid" d="M2.6 7.2h10.8v1.6H2.6zM2.6 1h10.8v1.6H2.6z"/></svg></button>
-            <button class="chip icon" type="button" data-tool="ball" aria-pressed="false" aria-label="Steel ball" title="Steel ball"><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="solid" cx="10.4" cy="8" r="3.8"/><path d="M1.5 5.6h3.4M1 8h3M1.5 10.4h3.4"/></svg></button>
-          </div>
-        </div>
-        <div class="adder" id="picker">
-          <button class="chip" id="picBtn" type="button" aria-expanded="false" aria-controls="pictures" title="Field picture"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2"/><path d="M2.4 11.6l3.6-4 3 3 2-2 2.8 3"/><circle cx="11" cy="6" r="1.1"/></svg>Picture</button>
-          <div class="add col pick" id="pictures" role="group" aria-label="Field picture">
-            <div class="choices" id="pics" role="group" aria-label="Picture">
-              <button class="chip" type="button" data-value="mix" aria-pressed="true">Mix</button>
-              <button class="chip" type="button" data-value="grin" aria-pressed="false">Grin</button>
-              <button class="chip" type="button" data-value="sun" aria-pressed="false">Sun</button>
-              <button class="chip" type="button" data-value="heart" aria-pressed="false">Heart</button>
-              <button class="chip" type="button" data-value="rings" aria-pressed="false">Rings</button>
-              <button class="chip" type="button" data-value="own" aria-pressed="false">Yours</button>
-            </div>
-            <button class="chip" id="upload" type="button">Use your own picture</button>
-            <input type="file" id="file" accept="image/*" hidden>
-          </div>
-        </div>
-        <button class="chip" id="clear" type="button" disabled>Clear</button>
-      </div>
-      <div class="bar-end">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add col" id="sets" role="group" aria-label="Settings">
-            <button class="chip" id="reset" type="button" aria-keyshortcuts="R" disabled>Reset</button>
-          </div>
-        </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag</dt><dd id="drag-how">lay tiles</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>tip a tile</dd></div>
-        <div><dt><span class="fine">Right-drag</span><span class="touch">Two fingers</span></dt><dd>turn the table</dd></div>
-        <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
-      </dl>
-      </div>
-    </div>
+    <input type="file" id="file" accept="image/*" hidden>
   </main>
   <section class="about" aria-labelledby="toy-name">
     <h1 class="display" id="toy-name">Domino Day</h1>
@@ -138,14 +57,49 @@
 } }
 </script>
 <script type="module">
-import { initPage, audioKit, choices, reduced, onReducedChange, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, reduced, onReducedChange, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
-initPage({ id: 'domino' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+// The Add choice: what a drag on the table makes.
+const TOOL_OPTS = [
+  { value: 'line', label: 'Line', icon: '<svg viewBox="0 0 16 16"><path d="M2.5 4v8M6 4v8M9.5 4v8M13 4v8"/></svg>' },
+  { value: 'rows3', label: 'Three rows', icon: '<svg viewBox="0 0 16 16"><path d="M2 3.5h12M2 8h12M2 12.5h12" stroke-dasharray="1.4 1.6"/></svg>' },
+  { value: 'rows5', label: 'Five rows', icon: '<svg viewBox="0 0 16 16"><path d="M2 2h12M2 5h12M2 8h12M2 11h12M2 14h12" stroke-dasharray="1.4 1.6"/></svg>' },
+  { value: 'field', label: 'Picture field', icon: '<svg viewBox="0 0 16 16"><path class="solid" d="M1.5 2.5h3.4v2.6H1.5zM6.3 2.5h3.4v2.6H6.3zM11.1 2.5h3.4v2.6h-3.4zM3.9 6.7h3.4v2.6H3.9zM8.7 6.7h3.4v2.6H8.7zM1.5 10.9h3.4v2.6H1.5zM6.3 10.9h3.4v2.6H6.3zM11.1 10.9h3.4v2.6h-3.4z"/></svg>' },
+  { value: 'spiral', label: 'Spiral', icon: '<svg viewBox="0 0 16 16"><path d="M8.6 8.4c.6-.7 0-1.8-.9-1.7-1.3.1-1.8 1.7-1.1 2.7 1 1.5 3.3 1.3 4.1-.3 1-2-.4-4.4-2.6-4.7-2.7-.4-5 2-4.6 4.7.4 3 3.6 4.8 6.4 3.9 2.2-.7 3.6-2.8 3.6-5"/></svg>' },
+  { value: 'star', label: 'Star', icon: '<svg viewBox="0 0 16 16"><path d="M8 1.5v4.2M8 10.3v4.2M1.5 8h4.2M10.3 8h4.2M3.4 3.4l3 3M9.6 9.6l3 3M12.6 3.4l-3 3M6.4 9.6l-3 3" stroke-dasharray="1.3 1.1"/></svg>' },
+  { value: 'tower', label: 'Tower', icon: '<svg viewBox="0 0 16 16"><path d="M4 14.5V9.6M12 14.5V9.6M4 7V2.6M12 7V2.6"/><path class="solid" d="M2.6 7.2h10.8v1.6H2.6zM2.6 1h10.8v1.6H2.6z"/></svg>' },
+  { value: 'ball', label: 'Steel ball', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="10.4" cy="8" r="3.8"/><path d="M1.5 5.6h3.4M1 8h3M1.5 10.4h3.4"/></svg>' },
+];
+// The field picture: a motif, a mix of them, or the visitor's own.
+const PICS = [
+  { value: 'mix', label: 'Mix' }, { value: 'grin', label: 'Grin' }, { value: 'sun', label: 'Sun' },
+  { value: 'heart', label: 'Heart' }, { value: 'rings', label: 'Rings' },
+];
+const CUBE = '<svg class="cube" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1l6 3.5v5L7 13 1 9.5v-5z"/><path class="cut" d="M7 7l6-3.5M7 7L1 3.5M7 7v6"/></svg>';
+let savedTool = 'line';
+try { savedTool = localStorage.getItem('stimming.domino.tool') || 'line'; } catch (err) { /* storage is optional */ }
+if (!TOOL_OPTS.some(o => o.value === savedTool)) savedTool = 'line';
+// Handlers bind once the table exists.
+const act = { tool() {}, picture() {}, own() {}, iso() {}, clear() {}, reset() {} };
+const ui = initPage({ id: 'domino', bar: {
+  choice: { label: 'Add', display: 'tray', value: savedTool, options: TOOL_OPTS, onPick: v => act.tool(v) },
+  actions: [
+    { verb: 'iso', label: `${CUBE}Iso`, key: 'I', onPress: () => act.iso() },
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+  ],
+  settings: [
+    { type: 'choice', id: 'picture', label: 'Picture', value: 'mix', options: PICS, onPick: v => act.picture(v) },
+    { type: 'toggle', id: 'own', label: 'Yours', value: false, onToggle: on => act.own(on) },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'lay tiles'], ['click', 'tip a tile'], ['right-drag', 'turn the table'], ['i', 'iso view']],
+} });
+const isoB = document.querySelector('.stim-ui [aria-keyshortcuts="I"]');
+isoB.setAttribute('aria-pressed', 'false');
 
 let reduce = reduced();
 onReducedChange(on => { reduce = on; if (reduce) { intro = 0; wake(); } });
@@ -192,8 +146,6 @@ function rainbow(u) {
 
 /* ---------- page ---------- */
 const panel = document.getElementById('table'), canvas = panel.querySelector('canvas');
-const hint = panel.querySelector('.hint'), resetB = document.getElementById('reset'), clearB = document.getElementById('clear');
-const isoB = document.getElementById('iso'), dragHow = document.getElementById('drag-how');
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
 // The kit wakes on the first gesture (Space or Enter from the keyboard) and follows the header toggle.
@@ -615,10 +567,7 @@ function finishClear() {
   syncChips();
 }
 function syncChips() {
-  let down = towers.some(tw => tw.st === 1);
-  for (let i = 0; i < n && !down; i++) if (ST[i] !== 0) down = true;
-  resetB.disabled = !ready || !down || !!clearing;
-  clearB.disabled = !ready || (!n && !towers.length && !marbles.length) || !!clearing;
+  ui.action('clear').disabled = !ready || (!n && !towers.length && !marbles.length) || !!clearing;
 }
 
 /* ---------- laying tiles ---------- */
@@ -969,6 +918,27 @@ function preset(t0) {
   for (let a = PI; a > 0; a -= 0.03) add(-R + R * Math.cos(a), -R * Math.sin(a));
   for (let a = PI; a <= 2 * PI + 1e-9; a += 0.03) add(R + R * Math.cos(a), -R * Math.sin(a));
   for (let s = 0.05; s <= 1 + 1e-9; s += 0.05) add(2 * R + tail * s, 0);
+  // The run shrinks until the resting view holds it and the crown tower.
+  const top = LEVELS * (H + T) + 0.3;
+  const fit = () => {
+    const [x1, z1] = pts[pts.length - 1], [x0, z0] = pts[pts.length - 2];
+    const d = Math.hypot(x1 - x0, z1 - z0) || 1, ux = (x1 - x0) / d, uz = (z1 - z0) / d;
+    const tx = x1 + ux * TGAP, tz = z1 + uz * TGAP, probe = [];
+    for (const [x, z] of pts) probe.push([x, 0, z], [x, H, z]);
+    for (const a of [-TA, TA]) for (const c of [-TC, TC]) for (const y of [0, top]) probe.push([tx + ux * a - uz * c, y, tz + uz * a + ux * c]);
+    let m = 0;
+    for (const [x, y, z] of probe) {
+      vtmp.set(x, y, z).project(camera);
+      m = Math.max(m, Math.abs(vtmp.x) / 0.9, Math.abs(vtmp.y) / 0.8);
+    }
+    return m;
+  };
+  // The tower keeps its size, so the shrink repeats a few times.
+  atRest({ pitch: lensTo ? ISO : PITCH0, yaw: goal.yaw, lens: lensTo }, () => {
+    for (let it = 0, k = fit(); it < 5 && k > 1.005; it++, k = fit()) {
+      for (const q of pts) { q[0] = cx + (q[0] - cx) / k; q[1] = cz + (q[1] - cz) / k; }
+    }
+  });
   const p = { preset: true, t0, dt: reduce ? 0 : 0.022, count: 0, tile: -1, q: { x: pts[0][0], z: pts[0][1] } };
   if (reduce) p.t0 = -1e9;
   begin(p);
@@ -2064,7 +2034,6 @@ addEventListener('keydown', e => {
   if (e.target instanceof Element && e.target.closest('button, a, input, select, textarea')) return;
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat) tipFirst(); }
   else if (e.key === 'r' || e.key === 'R') { if (!e.repeat) reset(); }
-  else if (e.key === 'i' || e.key === 'I') { if (!e.repeat) setView(!lensTo); }
   // Arrows turn the table only while the page itself has focus.
   else if (e.key.startsWith('Arrow') && [document.body, panel].includes(document.activeElement)) {
     e.preventDefault();
@@ -2074,55 +2043,32 @@ addEventListener('keydown', e => {
     wake();
   }
 });
-isoB.addEventListener('click', () => setView(!lensTo));
-/* ---------- trays ---------- */
-// The add tray picks what a drag makes.
-const TOOLS = {
-  line: { rows: 1, how: 'lay tiles' }, rows3: { rows: 3, how: 'lay three rows' }, rows5: { rows: 5, how: 'lay five rows' },
-  field: { how: 'fill a picture field' }, spiral: { how: 'lay a spiral' }, star: { how: 'lay a star' },
-  tower: { how: 'place a tower' }, ball: { how: 'throw a ball' },
-};
+/* ---------- controls ---------- */
+// Add picks what a drag makes; line tools lay this many rows.
+const TOOLS = { line: { rows: 1 }, rows3: { rows: 3 }, rows5: { rows: 5 }, field: {}, spiral: {}, star: {}, tower: {}, ball: {} };
 let tool = 'line';
 const save = (k, v) => { try { localStorage.setItem(`stimming.domino.${k}`, v); } catch (err) { /* storage is optional */ } };
 const load = k => { try { return localStorage.getItem(`stimming.domino.${k}`); } catch (err) { return null; } };
-// A tray opens on hover or tap, and closes on a click elsewhere or Escape.
-function popover(box, btn) {
-  const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
-  return open;
-}
-const toolBs = [...document.querySelectorAll('#add .chip')], addName = document.getElementById('addName');
-const openTray = popover(document.getElementById('adder'), document.getElementById('addBtn'));
-const openPics = popover(document.getElementById('picker'), document.getElementById('picBtn'));
-const openSets = popover(document.getElementById('setter'), document.getElementById('setBtn'));
-// Reset lives in Settings; the tray closes once it runs.
-resetB.addEventListener('click', () => { reset(); openSets(false); });
 function setTool(t) {
   tool = TOOLS[t] ? t : 'line';
   rows = TOOLS[tool].rows || 1;
-  const b = toolBs.find(o => o.dataset.tool === tool);
-  toolBs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
-  addName.textContent = b.title;
-  dragHow.textContent = TOOLS[tool].how;
 }
-toolBs.forEach(b => b.addEventListener('click', () => {
-  setTool(b.dataset.tool);
-  save('tool', tool);
-  openTray(false);
-  panel.focus({ preventScroll: true });
-}));
-setTool(load('tool'));
-// The picture tray picks a field's image; Yours asks for one the first time.
-const fileIn = document.getElementById('file');
-const pics = choices(document.getElementById('pics'), v => {
-  if (v === 'own' && !own) { fileIn.click(); return; }
-  picture = v;
-  save('picture', v);
-});
-document.getElementById('upload').addEventListener('click', () => fileIn.click());
-fileIn.addEventListener('cancel', () => pics.set(picture));
+act.tool = t => { setTool(t); save('tool', tool); panel.focus({ preventScroll: true }); };
+setTool(savedTool);
+act.iso = () => setView(!lensTo);
+act.clear = () => clearAll();
+act.reset = () => reset();
+// A motif turns Yours off; Yours asks for a file when none is loaded, or when picked again.
+const fileIn = document.getElementById('file'), picRow = ui.setting('picture'), ownRow = ui.setting('own');
+let motif = 'mix';
+act.picture = v => { motif = picture = v; save('picture', v); ownRow.set(false); };
+act.own = on => {
+  if (!on) { picture = motif; save('picture', motif); return; }
+  if (!own || picture === 'own') { fileIn.click(); ownRow.set(picture === 'own'); return; }
+  picture = 'own';
+  save('picture', 'own');
+};
+fileIn.addEventListener('cancel', () => ownRow.set(picture === 'own'));
 // An image shrinks to 48 pixels on its long side: one pixel per tile or more.
 function loadOwn(src, pickIt, keep) {
   const img = new Image();
@@ -2134,10 +2080,10 @@ function loadOwn(src, pickIt, keep) {
     g.drawImage(img, 0, 0, w, h);
     own = { data: g.getImageData(0, 0, w, h).data, w, h };
     if (keep) save('own', cv.toDataURL('image/png'));
-    if (pickIt) { picture = 'own'; pics.set('own'); save('picture', 'own'); openPics(false); }
+    if (pickIt) { picture = 'own'; ownRow.set(true); save('picture', 'own'); }
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
   };
-  img.onerror = () => pics.set(picture);
+  img.onerror = () => ownRow.set(picture === 'own');
   img.src = src;
 }
 fileIn.addEventListener('change', () => {
@@ -2148,9 +2094,23 @@ fileIn.addEventListener('change', () => {
 {
   const o = load('own'), v = load('picture');
   if (o) loadOwn(o, false, false);
-  if (v && (v === 'mix' || v === 'own' || MOTIFS[v])) { picture = v; pics.set(v); }
+  if (v === 'own' && o) { picture = 'own'; ownRow.set(true); }
+  else if (v === 'mix' || MOTIFS[v]) { motif = picture = v; picRow.set(v); }
 }
-clearB.addEventListener('click', clearAll);
+// An image dropped on the table becomes the picture, and Add turns to the field.
+const isImage = e => [...(e.dataTransfer?.items || [])].some(it => it.kind === 'file' && it.type.startsWith('image/'));
+panel.addEventListener('dragover', e => { if (!isImage(e)) return; e.preventDefault(); panel.classList.add('drop'); });
+panel.addEventListener('dragleave', () => panel.classList.remove('drop'));
+panel.addEventListener('drop', e => {
+  panel.classList.remove('drop');
+  const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/'));
+  if (!f) return;
+  e.preventDefault();
+  loadOwn(URL.createObjectURL(f), true, true);
+  setTool('field');
+  save('tool', tool);
+  ui.choice.set('field');
+});
 
 /* ---------- tile finish ---------- */
 // Broad faces carry full colour; the narrow edges sit a shade deeper.
@@ -2181,7 +2141,7 @@ function carve(mat) {
 function failed() {
   panel.querySelector('.fail').hidden = false;
   canvas.hidden = true;
-  if (hint) hint.hidden = true;
+  ui.hideControls();
 }
 // WebGL setup runs in idle slices, so loading never stalls.
 async function init() {
