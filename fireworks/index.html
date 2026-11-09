@@ -217,6 +217,10 @@ const U = {
   // Cloud deck: base, depth, cover, on; the offset carries the wind.
   uCloud: { value: new THREE.Vector4(260, 300, 0.52, 1) },
   uCloudO: { value: new THREE.Vector2() },
+  // The torn sky: opening, rim glow, eye, age; then the seam and the eye.
+  uTear: { value: new THREE.Vector4() },
+  uTP: { value: Array.from({ length: 8 }, () => new THREE.Vector2()) },
+  uEye: { value: new THREE.Vector3() },
 };
 const LIGHTS_GLSL = /* glsl */`
 uniform vec4 uL[${LN}];
@@ -271,8 +275,12 @@ float k2fbm(vec2 p) {
 // Port's cloud ceiling and amber dome are cut here.
 const K2_SKY = /* glsl */`
 uniform vec3 uCool;
-float k2stars(vec3 dir) {
-  vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
+uniform vec4 uTear;
+uniform vec2 uTP[8];
+uniform vec3 uEye;
+// Stars on the sky grid; q is azimuth and height, as for the seam.
+float k2starsQ(vec2 q) {
+  q *= 260.0;
   vec2 i = floor(q), f = fract(q) - 0.5;
   float h = k2hash(i);
   // About one cell in two hundred holds a star.
@@ -280,10 +288,69 @@ float k2stars(vec3 dir) {
   vec2 o = vec2(k2hash(i + 7.1), k2hash(i + 3.3)) - 0.5;
   return on * exp(-dot(f - o * 0.6, f - o * 0.6) * 60.0) * (0.02 + 0.05 * k2hash(i + 1.7));
 }
+// Nearest point on the seam: distance, side, place along it, normal.
+float tearAt(vec2 q, out float side, out float along, out vec2 nrm) {
+  float best = 1e9;
+  side = 1.0; along = 0.0; nrm = vec2(0.0, 1.0);
+  for (int i = 0; i < 7; i++) {
+    vec2 a = uTP[i], ab = uTP[i + 1] - a;
+    float t = clamp(dot(q - a, ab) / dot(ab, ab), 0.0, 1.0);
+    vec2 pq = q - a - ab * t;
+    float d = length(pq);
+    if (d < best) {
+      best = d; along = (float(i) + t) / 7.0;
+      nrm = normalize(vec2(-ab.y, ab.x));
+      side = dot(pq, nrm) < 0.0 ? -1.0 : 1.0;
+    }
+  }
+  return best;
+}
+// Behind the seam: a red-black void with slow currents and an eye.
+vec3 tearVoid(vec2 q) {
+  float t = uTear.w * 0.15;
+  float n = k2fbm(q * 30.0 + vec2(t, -t * 0.7));
+  vec3 c = vec3(0.004, 0.0, 0.002) + vec3(0.09, 0.006, 0.012) * pow(n, 3.0);
+  // Strange stars, red and cold, deeper than ours.
+  c += vec3(1.0, 0.25, 0.3) * k2starsQ(q * 1.7 + 3.1) * 4.0;
+  if (uTear.z > 0.001) {
+    vec2 e = (q - uEye.xy) / uEye.z;
+    float r = length(e);
+    // The lids open with uTear.z; outside them the void stays dark.
+    float lid = uTear.z * sqrt(max(1.0 - e.x * e.x, 0.0)) * 0.62;
+    if (abs(e.y) < lid && r < 1.0) {
+      float a = atan(e.y, e.x);
+      float fib = 0.6 + 0.4 * k2noise(vec2(a * 9.0, r * 3.0));
+      vec3 iris = mix(vec3(0.5, 0.05, 0.0), vec3(1.0, 0.55, 0.05), smoothstep(0.85, 0.35, r)) * fib;
+      // A slit pupil, wide at the centre, sharp at the ends.
+      float slit = smoothstep(0.02, 0.0, abs(e.x) - 0.11 * (1.0 - e.y * e.y));
+      iris *= 1.0 - slit;
+      iris += vec3(1.0, 0.9, 0.8) * exp(-dot(e - vec2(-0.25, 0.22), e - vec2(-0.25, 0.22)) * 220.0) * 2.0;
+      c = mix(c, iris * 0.9, smoothstep(lid, lid - 0.05, abs(e.y)) * smoothstep(1.0, 0.94, r));
+    }
+  }
+  return c;
+}
 vec3 k2sky(vec3 dir) {
   float up = max(dir.y, 0.0);
   vec3 col = vec3(0.0016, 0.0021, 0.0045) + uCool * 0.016 * exp(-up * 9.0);
-  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * smoothstep(0.03, 0.25, dir.y);
+  vec2 q = vec2(atan(dir.x, -dir.z), dir.y);
+  float sk = smoothstep(0.03, 0.25, dir.y);
+  if (uTear.x > 0.0005) {
+    float side, along;
+    vec2 nrm;
+    float d = tearAt(q, side, along, nrm);
+    // Each lip tears on its own ragged line.
+    float rag = k2noise(vec2(along * 70.0, side * 4.0 + 1.0)) * 0.7 + k2noise(vec2(along * 190.0, side * 9.0)) * 0.3;
+    float hw = 0.5 * uTear.x * pow(max(sin(3.14159 * along), 0.0), 0.7) * (0.35 + 1.3 * rag);
+    // The sky slides apart: nearby stars shift away from the seam.
+    float pull = hw * exp(-max(d - hw, 0.0) / 0.12);
+    if (d < hw) col = tearVoid(q);
+    else col += vec3(0.85, 0.9, 1.0) * k2starsQ(q - side * nrm * pull) * sk;
+    // The rim burns white-hot, then orange, then a wide magenta bruise.
+    float e = abs(d - hw);
+    col += (vec3(1.0, 0.8, 0.6) * exp(-e * e / 8e-7) * 1.4 + vec3(1.0, 0.32, 0.08) * exp(-e / 0.0025) * 0.28
+      + vec3(0.5, 0.04, 0.2) * exp(-e / 0.04) * 0.035) * uTear.y * smoothstep(0.0, 0.08, sin(3.14159 * along));
+  } else col += vec3(0.85, 0.9, 1.0) * k2starsQ(q) * sk;
   return col + burstGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
@@ -1707,7 +1774,12 @@ function updateLights() {
       live.push({ pos: L.pos, col, I, eye, st, gh });
     }
   }
-  if (press?.seed) live.push({ pos: press.seed, col: SEED, I: 0.02 + 0.1 * press.charge, eye: 1, st: 0, gh: 0 });
+  if (press?.seed) {
+    const over = (performance.now() - press.at) / 1000 - 4;
+    live.push({ pos: press.seed, col: SEED, I: (0.02 + 0.1 * press.charge) * (over > 0 ? 0.6 + 0.9 * rnd() * Math.min(1, over / 2) + Math.min(1, over / 2) : 1), eye: 1, st: 0, gh: 0 });
+  }
+  // The open seam lights the deck, the bay and the hills in ember red.
+  if (tear && tear.glow > 0.01) live.push({ pos: tear.at, col: TEAR_COL, I: 0.22 * tear.glow, eye: 1, st: 0, gh: 0 });
   live.sort((a, b) => b.I - a.I);
   const n = Math.min(LN, live.length);
   for (let i = 0; i < n; i++) {
@@ -1786,6 +1858,108 @@ function fire(pos, t0, type, cal, style = pick(COMETS)) {
   addLight(pos, ramp, t0 + T, gain * lightK(cal) * (style === 'dark' ? 1.7 : 1), type === 'strobe' || type === 'crackle');
   smokeBurst(pos, t0 + T, cal, s);
 }
+/* ---------- the tear ---------- */
+// An overcharged shell cracks the sky; meteors pour from the seam into the bay.
+const TEAR_COL = linFit(0.66, 0.2, 35);
+let tear = null;
+const dirOf = (u, h, out) => { const c = Math.sqrt(Math.max(0, 1 - h * h)); return out.set(c * Math.sin(u), h, -c * Math.cos(u)); };
+// A point on the seam polyline, 0 at one end and 1 at the other.
+function seamAt(P, a) {
+  const x = Math.min(6.999, Math.max(0, a * 7)), i = Math.floor(x), t = x - i;
+  return [P[i][0] + (P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t];
+}
+function overcharge(ndc) {
+  const pos = burstPoint(ndc, 2);
+  fire(pos, simT, 'peony', 2.4, 'glitter');
+  const { T } = climb(pos.y - 1, 1.2);
+  startTear(pos, simT + T);
+  commitStars(); commitSmoke(); wake();
+}
+function startTear(pos, t0) {
+  const d = v.copy(pos).sub(camera.position).normalize();
+  let u0 = Math.atan2(d.x, -d.z), h0 = d.y;
+  // A long diagonal crack through the burst, jagged, with still ends.
+  const th = (rnd() < 0.5 ? -1 : 1) * (0.35 + rnd() * 0.5), L = 0.8;
+  const du = Math.cos(th), dh = Math.sin(th) * 0.8;
+  const P = Array.from({ length: 8 }, (_, i) => {
+    const s = i / 7 - 0.5, j = i && i < 7 ? (rnd() - 0.5) * 0.05 : 0;
+    return [u0 + du * s * L - dh * j, h0 + dh * s * L + du * j];
+  });
+  // Keep the whole seam above the hills.
+  const lo = Math.min(...P.map(p => p[1]));
+  if (lo < 0.09) P.forEach(p => { p[1] += 0.09 - lo; });
+  P.forEach((p, i) => U.uTP.value[i].set(p[0], p[1]));
+  const mid = seamAt(P, 0.5);
+  U.uEye.value.set(mid[0], mid[1], 0.055);
+  tear = { t0, P, open: 0, glow: 0, at: dirOf(mid[0], mid[1], new THREE.Vector3()).multiplyScalar(2600).add(camera.position) };
+  meteors(P, t0);
+  soundTear(tear.at, t0 - simT);
+}
+// Twenty-four meteors fall over five seconds; each ends in a splash and steam.
+function meteors(P, t0) {
+  const p = new THREE.Vector3(), q = new THREE.Vector3(), w = new THREE.Vector3(), dir = new THREE.Vector3();
+  for (let m = 0; m < 24; m++) {
+    const ts = t0 + 1.0 + 5.5 * Math.pow(m / 23, 1.3) + rnd() * 0.2;
+    const [u, h] = seamAt(P, 0.12 + rnd() * 0.76);
+    const H = 650 + rnd() * 450, D = Math.min(6000, (H - camera.position.y) / Math.max(h, 0.06));
+    p.copy(camera.position).addScaledVector(dirOf(u, h, dir), D);
+    const v0 = new THREE.Vector3((rnd() - 0.5) * 260, -380 - rnd() * 160, 40 + rnd() * 80);
+    // Find the splash: step the closed form down to the water.
+    let ti = 0;
+    while (ti < 20 && posAt(p, v0, 0.03, ti, q).y > 0) ti += 0.02;
+    const hit = q.clone().setY(0);
+    const ramp = rnd() < 0.6 ? ORANGE : rnd() < 0.5 ? WHITE : GOLD;
+    writeStar(p, ts, v0, 0.03, ramp, ti, 0.9, 2.2, COMET, 1.1);
+    // A tail of sparks shed along the fall.
+    for (let i = 0; i < 16; i++) {
+      const tt = ti * (i + rnd()) / 16;
+      posAt(p, v0, 0.03, tt, q);
+      writeStar(q, ts + tt, w.set((rnd() - 0.5) * 6, -2 - rnd() * 4, (rnd() - 0.5) * 6), 1.5, ramp, 0.5 + rnd() * 0.6, 0.1, 1.2, 0, 0.5);
+    }
+    const tHit = ts + ti;
+    addLight(hit.clone().setY(8), ORANGE, tHit, 0.6 * lightK(1.4));
+    // The splash: white water thrown up, then falling back.
+    for (let i = 0; i < 22; i++) writeStar(hit, tHit, w.set((rnd() - 0.5) * 30, 25 + rnd() * 45, (rnd() - 0.5) * 30), 0.6, rnd() < 0.5 ? WHITE : AQUA, 1.4 + rnd() * 0.8, 0.12, 1.5, 0, 0.8);
+    // Steam rises from the strike.
+    for (let i = 0; i < 6; i++) writePuff(q.copy(hit).add(w.set((rnd() - 0.5) * 20, 4 + rnd() * 10, (rnd() - 0.5) * 20)), tHit + 0.1 + rnd() * 0.4, w.set((rnd() - 0.5) * 4, 8 + rnd() * 8, (rnd() - 0.5) * 4), 14 + rnd() * 12, 1.4, 12 + rnd() * 6, 0.4);
+    soundImpact(hit, tHit - simT);
+  }
+}
+// Open fast, hold while the meteors fall, then heal.
+function tearTick() {
+  if (!tear) return;
+  const a = simT - tear.t0;
+  const ease = x => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+  tear.open = a < 0 ? 0 : a < 7.5 ? ease(a / 1.2) * (1 + 0.04 * Math.sin(a * 2.3)) : 1 - ease((a - 7.5) / 3);
+  tear.glow = a < 0 ? 0 : tear.open * (1 + 1.5 * Math.exp(-a / 0.35));
+  // The eye opens at 2.5 s, holds, and blinks shut at 5 s.
+  const eye = a < 2.5 ? 0 : a < 3.3 ? ease((a - 2.5) / 0.8) : a < 5 ? 1 - 0.85 * Math.exp(-Math.pow((a - 4.1) / 0.06, 2)) : Math.max(0, 1 - (a - 5) / 0.25);
+  U.uTear.value.set(0.075 * tear.open, tear.glow, eye, a);
+  if (a > 10.6) { tear = null; U.uTear.value.set(0, 0, 0, 0); }
+}
+function soundTear(pos, wait) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  const t = ac.currentTime + 0.02 + Math.max(0, wait);
+  const pan = ac.createStereoPanner();
+  pan.connect(kit.out);
+  // A deep double crack, then a long low rumble.
+  boom(ac, t, pan, dB(-2), 500, 2.5);
+  boom(ac, t + 0.25, pan, dB(-6), 260, 2.5);
+  boom(ac, t + 1.1, pan, dB(-10), 180, 2.5);
+}
+function soundImpact(pos, wait) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  const d = pos.distanceTo(camera.position), t = ac.currentTime + 0.02 + Math.max(0, wait) + d / 343;
+  const pan = ac.createStereoPanner();
+  pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
+  pan.connect(kit.out);
+  boom(ac, t, pan, dB(-12) * jit(0.2), 900, 1.4);
+}
+/* ---------- end tear ---------- */
 function launch(ndc, cal) {
   const type = opts.shell === 'mix' ? pick(MIX) : opts.shell;
   if (type === 'barrage') {
@@ -1878,7 +2052,7 @@ function draw() {
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1;
-const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0;
+const busy = () => !!press || simT < lastDeath || simT < smokeEnd || lights.length > 0 || !!tear;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -1898,7 +2072,11 @@ function tick(now) {
     if (press) {
       press.charge = Math.min(1, (performance.now() - press.at) / 1500);
       press.seed = burstPoint(press.ndc, 1 + press.charge, press.seed || new THREE.Vector3());
+      // Past 4 s the seed strains and trembles.
+      const over = (performance.now() - press.at) / 1000 - 4;
+      if (over > 0 && !reduced()) press.seed.add(v.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(Math.min(over, 2) * 3));
     }
+    tearTick();
     if (lively || now - lastDraw >= 31) {
       updateLights();
       draw();
@@ -1961,6 +2139,8 @@ stage.addEventListener('pointerup', e => {
   if (!press || e.pointerId !== press.id) return;
   const held = (performance.now() - press.at) / 1000, ndc = press.ndc;
   press = null;
+  // Held past 6 s, the shell bursts too hard and tears the sky.
+  if (held >= 6 && !tear) { overcharge(ndc); return; }
   // A tap is calibre 1; a hold reaches calibre 2 at 1.5 s.
   launch(ndc, held < 0.26 ? 1 : 1 + Math.min(1, held / 1.5));
 });
@@ -2068,7 +2248,7 @@ function devPanel() {
   box.className = 'fxdev';
   box.setAttribute('aria-label', 'Look knobs');
   box.innerHTML = `<header><b>Look</b><output></output><button data-a="close" aria-label="Close">×</button></header>
-    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
+    <div class="acts"><button data-q="standard">Standard</button><button data-q="high">High</button><button data-a="fire">Fire</button><button data-a="finale">Finale</button><button data-a="tear">Tear</button><button data-a="copy">Copy</button><button data-a="reset">Reset</button></div>
     ${FX_ROWS.map(([name, rows]) => `<h3>${name}</h3>` + rows.map(([k, label, , min, max, step]) =>
       `<label data-k="${k}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" min="${min}" max="${max}" step="${step}"></label>`).join('')).join('')}`;
   document.body.append(box);
@@ -2099,6 +2279,7 @@ function devPanel() {
     if (a === 'close') box.hidden = true;
     if (a === 'fire') launch(new THREE.Vector2((rnd() - 0.5) * 1.2, horizonNdc + (0.3 + rnd() * 0.55) * (0.92 - horizonNdc)), 1 + rnd() * 0.6);
     if (a === 'finale') finale();
+    if (a === 'tear' && !tear) overcharge(new THREE.Vector2((rnd() - 0.5) * 0.6, horizonNdc + 0.6 * (0.92 - horizonNdc)));
     if (a === 'copy') navigator.clipboard?.writeText(JSON.stringify(changed(), null, 2));
     if (a === 'reset') { Object.assign(FX, FX_DEF); applyFX(); resize(); try { localStorage.removeItem('stimming.fireworks.fx'); } catch { /* storage is optional */ } show(); }
   });
