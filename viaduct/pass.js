@@ -36,6 +36,8 @@ uniform float uTime, uCloudY, uHaze, uHazeH, uMoonK, uMoonAir, uGapLo, uGapHi, u
 uniform float uBaseOn, uMoonOn, uGapIn, uStarK, uLightK, uFlareK, uConeK;
 uniform vec2 uWind, uCloudOff;
 uniform float uCurtK;
+// Wind direction; still air falls back to +x, so nothing divides by zero.
+vec2 k2wind() { return length(uWind) > 1e-3 ? normalize(uWind) : vec2(1.0, 0.0); }
 // Gap mask at a point on the cloud plane: 1 in a gap, 0 under cloud.
 float k2gapAt(vec2 q) {
   // The cloud moves by the wind's sum, so gusts never make it jump.
@@ -195,7 +197,7 @@ const precast = new THREE.ShaderMaterial({
     float n1 = k2noise(vP.xz * 0.35 + vP.y * 0.2);
     float up = smoothstep(0.55, 0.85, N.y) * (0.7 + 0.3 * n1);
     // Wind plasters snow on the faces it hits.
-    float face = smoothstep(0.1, 0.7, dot(N.xz, -normalize(uWind))) * (1.0 - abs(N.y));
+    float face = smoothstep(0.1, 0.7, dot(N.xz, -k2wind())) * (1.0 - abs(N.y));
     float wind = face * smoothstep(0.3, 0.7, k2noise(vec2((vP.x + vP.z) * 0.09, vP.y * 0.22)));
     albedo = mix(albedo, uSnowC, clamp(up + wind * 0.8, 0.0, 1.0));
     gl_FragColor = vec4(k2lit(albedo, vP, N), 1.0);
@@ -351,14 +353,16 @@ function ground0(x, z) {
 }
 // Track samples, for the cut through each hill.
 const TS = [];
-for (let s = CUT_A - 40; s <= CUT_B + 40; s += 4) { const c = atX(s); TS.push([s, c.x, c.z]); }
+for (let s = CUT_A - 70; s <= CUT_B + 70; s += 4) { const c = atX(s); TS.push([s, c.x, c.z]); }
 function ground(x, z) {
   const y = ground0(x, z);
   let best = 1e9, bs = 0;
   for (const [s, tx, tz] of TS) { const d = (x - tx) ** 2 + (z - tz) ** 2; if (d < best) { best = d; bs = s; } }
-  // The cut stays open from shed back to shed back.
-  if (bs < CUT_A || bs > CUT_B) return y;
-  return Math.min(y, DECK - 0.4 + Math.max(0, Math.sqrt(best) - 7) * 0.9);
+  // The cut runs one grid cell past each portal, then climbs into the hill.
+  const e = Math.max(0, CUT_A - bs, bs - CUT_B);
+  if (e > 60) return y;
+  // The flat floor spans the widest grid cell, so no cell bridges the track.
+  return Math.min(y, DECK - 0.4 + Math.max(0, e - 26) * 1.2 + Math.max(0, Math.sqrt(best) - 34) * 0.9);
 }
 {
   // Grid lines close together near the span and wide apart far out.
@@ -489,9 +493,10 @@ for (const [s0, s1, mouth] of [[CUT_A, SHED_A, SHED_A], [SHED_B, CUT_B, SHED_B]]
 // Tunnel portals close each cut; the track runs on into the hill.
 for (const [s, k] of [[CUT_A, -1], [CUT_B, 1]]) {
   const s0 = k > 0 ? s : s - 4, s1 = k > 0 ? s + 4 : s;
-  slab(s0, s1, -14, -3.2, DECK - 2, DECK + 18);
-  slab(s0, s1, 3.2, 14, DECK - 2, DECK + 18);
-  slab(s0, s1, -3.2, 3.2, DECK + 7.5, DECK + 18);
+  // The face is wide and tall enough to hide the trench behind it.
+  slab(s0, s1, -24, -3.2, DECK - 2, DECK + 24);
+  slab(s0, s1, 3.2, 24, DECK - 2, DECK + 24);
+  slab(s0, s1, -3.2, 3.2, DECK + 7.5, DECK + 24);
 }
 
 if (castParts.length) scene.add(new THREE.Mesh(mergeGeometries(castParts), precast));
@@ -636,7 +641,7 @@ const train = (() => {
       float n = k2noise(vL.zx * vec2(0.7, 1.9) + vec2(vKind * 5.0, 0.0));
       float roof = vTop * smoothstep(0.2, 0.7, n) * 0.85;
       // Wind packs snow on the low windward flank.
-      float face = side * smoothstep(0.1, 0.7, dot(N.xz, -normalize(uWind)));
+      float face = side * smoothstep(0.1, 0.7, dot(N.xz, -k2wind()));
       float flank = face * smoothstep(0.4, 0.7, k2noise(vL.zy * vec2(0.5, 1.6))) * smoothstep(3.2, 1.6, vL.y);
       albedo = mix(albedo, uSnowC, max(roof, flank * 0.85));
       vec3 c = k2lit(albedo, vP, N);
@@ -665,7 +670,8 @@ const train = (() => {
   const lamps = new THREE.Points(lampG, flareMat);
   lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
-  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.6, size: 1.3, train: true });
+  const orb = { pos: head, color: [1, 0.95, 0.85], k: 0.6, size: 1.3, train: true };
+  orbs.push(orb);
   // The headlight is a spot in the light list, aimed down the track.
   const headL = lights.length, HEAD_P = 14;
   addLight(new THREE.Vector3(), new THREE.Vector3(1, 0.95, 0.85), HEAD_P, 60, new THREE.Vector3(0, 0, -1), Math.cos(0.3));
@@ -682,6 +688,8 @@ const train = (() => {
     dir3.set(ahead.x - h.x, -5.5, ahead.z - h.z).normalize();
     lights[headL].pos.copy(head); lights[headL].dir.copy(dir3);
     lights[headL].power = on ? HEAD_P : 0;
+    // The post chain draws orbs with no depth test; a nose in the hill gets none.
+    orb.k = on && s > CUT_A && s < CUT_B ? 0.6 : 0;
     beam.position.copy(head);
     beam.quaternion.setFromUnitVectors(Y, dir3);
     const pos = lampG.attributes.position;
@@ -696,7 +704,7 @@ const train = (() => {
     pos.needsUpdate = true;
   }
   let on = true;
-  function show(v) { on = v; for (const c of cars) c.visible = v; lamps.visible = beam.visible = v; lights[headL].power = v ? HEAD_P : 0; }
+  function show(v) { on = v; for (const c of cars) c.visible = v; lamps.visible = beam.visible = v; lights[headL].power = v ? HEAD_P : 0; if (!v) orb.k = 0; }
   return { place, show, SPAN, headL, head, dir: dir3, get on() { return on; } };
 })();
 /* ---------- end train ---------- */
@@ -768,7 +776,7 @@ function snowLayer({ n, box, center, size, streak, kind, seedK }) {
 #else
       // Spindrift: thin plumes streaming downwind off each crest.
       float age = fract(uTime * 0.12 + aSeed.x);
-      vec3 w = normalize(vec3(uWind.x, 0.0, uWind.y));
+      vec3 w = vec3(k2wind().x, 0.0, k2wind().y);
       p = position + w * age * (160.0 + 120.0 * aSeed.y) + vec3(0.0, 30.0 * age * aSeed.z - 10.0 * age, 0.0) + vec3(aSeed.z - 0.5, 0.0, aSeed.w - 0.5) * 18.0 * age;
       a = (1.0 - age) * smoothstep(0.0, 0.1, age) * uDriftK * smoothstep(0.2, 0.7, k2gap(position));
 #endif
@@ -978,8 +986,8 @@ function bake(renderer) {
 // t counts seconds since the train left its end; 99 means at cruise.
 const run = { s: 120, dir: 1, v: 13, wait: 0, gone: false, user: false, t: 99 };
 let runPause = 8;
-// The tail hides 30 m into the hill past each cut.
-const END = CUT_B + 30, START = CUT_A - 30;
+// The tail hides 60 m past each portal, deep in the hill.
+const END = CUT_B + 60, START = CUT_A - 60;
 let time = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
 const speed = () => (parked ? 0 : run.v);
@@ -1018,6 +1026,8 @@ function update(dt, pace) {
   snowU.uHP.value.copy(train.head); snowU.uHD.value.copy(train.dir); snowU.uHOn.value = train.on ? 1 : 0;
   snowU.uPlough.value.copy(train.head).setY(DECK + 0.9);
   snowU.uFwd.value.copy(train.dir).setY(0).normalize();
+  // Spray runs on the ambient clock; reduced motion hides it.
+  spray.visible = pace > 0;
   snowU.uSpeedK.value = train.on ? Math.min(1, (run.vNow || 0) / Math.max(1, run.v)) : 0;
   uploadLights();
   headU.uTP.value.copy(lightU.uLP.value[train.headL]);
@@ -1055,11 +1065,12 @@ function dispose() {
 // Each knob: group, key, label, range, step, default, and what it sets.
 // bake: true knobs change the matte painting, so the page re-bakes.
 const U = k2, S = snowU;
-const col3 = (v3) => ({ get: () => '#' + new THREE.Color(v3.x * 4, v3.y * 4, v3.z * 4).getHexString(), set: hex => { const c = new THREE.Color(hex); v3.set(c.r / 4, c.g / 4, c.b / 4); } });
+// Dark colours show at four times their value; snow shows as it is.
+const col3 = (v3, k = 4) => ({ get: () => '#' + new THREE.Color(v3.x * k, v3.y * k, v3.z * k).getHexString(), set: hex => { const c = new THREE.Color(hex); v3.set(c.r / k, c.g / k, c.b / k); } });
 const uni = (u) => ({ get: () => u.value, set: v => { u.value = v; } });
 const TUNE = [];
 function knob(group, key, label, min, max, step, io, bake = false) { TUNE.push({ group, key, label, min, max, step, bake, def: io.get(), ...io }); }
-function colour(group, key, label, v3, bake = false) { const io = col3(v3); TUNE.push({ group, key, label, type: 'color', bake, def: io.get(), ...io }); }
+function colour(group, key, label, v3, bake = false, k = 4) { const io = col3(v3, k); TUNE.push({ group, key, label, type: 'color', bake, def: io.get(), ...io }); }
 // Sky.
 knob('Sky', 'moonK', 'Moonlight', 0, 3, 0.01, uni(U.uMoonK), true);
 knob('Sky', 'moonAir', 'Moonlit air', 0, 0.3, 0.001, uni(U.uMoonAir), true);
@@ -1070,8 +1081,8 @@ colour('Sky', 'zen', 'Clear sky', U.uZen.value);
 knob('Cloud', 'gapLo', 'Gaps open from', 0, 1, 0.01, uni(U.uGapLo));
 knob('Cloud', 'gapHi', 'Gaps open to', 0, 1, 0.01, uni(U.uGapHi));
 knob('Cloud', 'gapScale', 'Gap size', 0.0003, 0.004, 0.0001, uni(U.uGapScale));
-knob('Cloud', 'windX', 'Wind across', -60, 60, 0.5, { get: () => wind.x, set: v => { wind.x = v; } });
-knob('Cloud', 'windZ', 'Wind toward', -60, 60, 0.5, { get: () => wind.z, set: v => { wind.z = v; } });
+knob('Cloud', 'windX', 'Wind across', -60, 60, 0.5, { get: () => wind.x, set: v => { wind.x = v; k2.uWind.value.x = v; } }, true);
+knob('Cloud', 'windZ', 'Wind toward', -60, 60, 0.5, { get: () => wind.z, set: v => { wind.z = v; k2.uWind.value.y = v; } }, true);
 knob('Cloud', 'cloudY', 'Cloud height', 400, 3000, 10, uni(U.uCloudY));
 // Snow.
 knob('Snow', 'snowK', 'Snowfall', 0, 3, 0.01, uni(S.uSnowK));
@@ -1080,7 +1091,7 @@ knob('Snow', 'sprayK', 'Plough spray', 0, 3, 0.01, uni(S.uSprayK));
 knob('Snow', 'driftK', 'Spindrift', 0, 3, 0.01, uni(S.uDriftK));
 knob('Snow', 'haze', 'Snowy air', 0, 0.006, 0.00005, uni(U.uHaze), true);
 knob('Snow', 'hazeH', 'Air height', 20, 600, 1, uni(U.uHazeH), true);
-colour('Snow', 'snowC', 'Snow colour', U.uSnowC.value, true);
+colour('Snow', 'snowC', 'Snow colour', U.uSnowC.value, true, 1);
 // Span.
 colour('Span', 'amb', 'Storm light', U.uAmb.value, true);
 knob('Span', 'lightK', 'Lamp power', 0, 4, 0.01, uni(U.uLightK), true);
@@ -1088,7 +1099,7 @@ knob('Span', 'lightK', 'Lamp power', 0, 4, 0.01, uni(U.uLightK), true);
 knob('Train', 'speed', 'Train speed', 2, 40, 0.5, { get: () => run.v, set: v => { run.v = v; } });
 knob('Train', 'pause', 'Pause between trains', 0, 30, 0.5, { get: () => runPause, set: v => { runPause = v; } });
 knob('Train', 'coneK', 'Headlight beam', 0, 4, 0.01, uni(U.uConeK));
-knob('Train', 'flareK', 'Lamp flares', 0, 4, 0.01, uni(U.uFlareK));
+knob('Train', 'flareK', 'Lamp flares', 0, 4, 0.01, uni(U.uFlareK), true);
 // Lens: the camera, per orientation.
 for (const [o, name] of [['w', 'Lens (wide)'], ['p', 'Lens (portrait)']]) {
   const c = CAM[o];
@@ -1113,5 +1124,8 @@ const parkAt = new URLSearchParams(location.search).get('train');
 if (parkAt !== null) { parked = true; run.s = +parkAt; }
 train.place(run.s, run.dir);
 
-return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, lively, lower, get bakes() { return bakes; }, get run() { return run; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
+// QA reads these from node checks.
+const qa = { LEN, SHED_A, SHED_B, CUT_A, CUT_B, DECK, atX, k2 };
+
+return { qa, scene, camera, frame, bake, tune, dispose, orbs, update, tap, lively, lower, get bakes() { return bakes; }, get run() { return run; }, post: { expo: 1.0, bloom: [0.7, 0.5, 1.4], orbK: 1, orbSize: 1, tint: '#0a0d14', vig: 0.35, vigIn: 0.45, grain: 0.05 } };
 }
