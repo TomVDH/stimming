@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-09T09:09:55Z
-updated_at: 2026-11-09T09:12:25Z
+updated_at: 2026-11-09T09:23:59Z
 parent: stimming-80dc
 ---
 
@@ -40,3 +40,7 @@ One bar spec replaces the header, the bar and the how-to. Shuffle deals a new cl
 ## Open
 
 The key strip has no backing and cannot be read over the white eyes. Sent to the shell owner.
+
+## Mobile and compliance (2026-11-09)
+
+Checked at 1280 px, 375 x 812 (mobile) and 812 x 375: no overlaps, the sheet fits, no page scroll, 34 px targets on touch, Escape closes the sheet, clean console. An eye's centre now stays out of the corner rows, so no eye hides under a control.

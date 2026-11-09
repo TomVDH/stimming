@@ -315,7 +315,29 @@ function walls() {
   for (const e of eyes) {
     e.x = clamp(e.x, e.R + m, Math.max(e.R + m, W - e.R - m));
     e.y = clamp(e.y, e.R + m, Math.max(e.R + m, H - e.R - m));
+    if (!e.held) for (const c of corners) clearCorner(e, c);
   }
+}
+// The shell's corner rows, in stage pixels.
+let corners = [];
+// An eye's centre stays out of a corner row, so half of it always shows.
+// The eye leaves by the row's inner edge, the one nearest its centre.
+function clearCorner(e, c) {
+  const g = e.R * 0.5, x0 = c.x0 - g, x1 = c.x1 + g, y0 = c.y0 - g, y1 = c.y1 + g;
+  if (e.x <= x0 || e.x >= x1 || e.y <= y0 || e.y >= y1) return;
+  const out = [c.x0 > 1 ? e.x - x0 : Infinity, c.x1 < W - 1 ? x1 - e.x : Infinity, c.y0 > 1 ? e.y - y0 : Infinity, c.y1 < H - 1 ? y1 - e.y : Infinity];
+  const k = out.indexOf(Math.min(...out));
+  if (k === 0) e.x = x0; else if (k === 1) e.x = x1; else if (k === 2) e.y = y0; else if (k === 3) e.y = y1;
+}
+// Offsets ignore the corners' slide-in transform.
+function measureCorners() {
+  const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
+  if (!layer || !W) return;
+  const lr = layer.getBoundingClientRect(), pr0 = panel.getBoundingClientRect(), ox = lr.left - pr0.left, oy = lr.top - pr0.top;
+  corners = [...layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')]
+    .filter(el => el.offsetWidth && el.offsetHeight)
+    .map(el => ({ x0: ox + el.offsetLeft, y0: oy + el.offsetTop, x1: ox + el.offsetLeft + el.offsetWidth, y1: oy + el.offsetTop + el.offsetHeight }));
+  if (ready) wake();
 }
 // Close neighbours pair up, so partners always face each other.
 function partners() {
@@ -1363,6 +1385,15 @@ async function boot() {
   draw();
   requestAnimationFrame(() => canvas.classList.add('on'));
   new ResizeObserver(fit).observe(panel);
+  // Corner rows that move or resize push the eyes out again.
+  const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
+  if (layer) {
+    const ro = new ResizeObserver(measureCorners);
+    layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)').forEach(el => ro.observe(el));
+    ro.observe(layer);
+    new MutationObserver(measureCorners).observe(panel.parentElement, { attributes: true, subtree: true, attributeFilter: ['data-narrow', 'data-stack', 'data-wait'] });
+  }
+  measureCorners();
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
   // A new quality choice clears the slow-frame step and refits.
   onQuality(() => { lowDpr = false; slow = 0; fit(); });
