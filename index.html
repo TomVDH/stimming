@@ -132,6 +132,9 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 /* A toy still in alpha or beta wears a quiet tag; its brackets fade further. */
 .name .beta, .name .alpha { margin-left: 0.5em; color: var(--muted); }
 .name .beta i, .name .alpha i { font-style: normal; opacity: 0.4; }
+/* A toy changed in the last 72 hours wears a quiet green dot and the word new. */
+.name .new { margin-left: 0.55em; font-size: 0.85em; letter-spacing: 0.08em; color: oklch(0.8 0.13 150); white-space: nowrap; }
+.name .new::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 0.4em; vertical-align: 0.15em; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
 .toy:not(a) .name { color: var(--muted); }
 /* A toy in a series wears the series badge at the tile's top right. */
 .obj .series { position: absolute; top: 2%; right: 4%; width: 21%; height: auto; pointer-events: auto; transform-origin: 50% 20%; rotate: 8deg; transition: rotate 0.35s cubic-bezier(0.3, 1.6, 0.5, 1), scale 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
@@ -1123,6 +1126,20 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           document.querySelectorAll('.lab .shelf').forEach(shelf => constellation(shelf, series));
         } catch { /* The menu works without badges. */ }
       })();
+      // The Pages build writes updates.json: each toy's last own commit.
+      // Main shelf toys changed in the last 72 hours get a new tag.
+      fetch('updates.json').then(r => (r.ok ? r.json() : {})).then(u => {
+        const now = Date.now() / 1000;
+        for (const [id, t] of Object.entries(u)) {
+          if (now - t > 72 * 3600) continue;
+          const name = document.querySelector(`main > .shelf a.toy#${CSS.escape(id)} .name`);
+          if (!name) continue;
+          const h = Math.max(1, Math.round((now - t) / 3600));
+          const tag = Object.assign(document.createElement('span'), { className: 'new', textContent: 'new' });
+          tag.title = h < 24 ? `Updated ${h} h ago` : `Updated ${Math.round(h / 24)} d ago`;
+          name.append(tag);
+        }
+      }).catch(() => { /* The menu works without tags. */ });
       // Hover or focus on a series tile lights its siblings and draws their links.
       function constellation(shelf, series) {
         if (!shelf.querySelector(':scope > li[data-series]')) return;
