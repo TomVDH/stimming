@@ -146,7 +146,7 @@ const ui = initPage({ id: 'motorway', bar: {
       options: [{ value: 'clear', label: 'Clear' }, { value: 'haze', label: 'Haze' }, { value: 'fog', label: 'Fog' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'near', label: 'Neighbours', value: true, persist: true, onToggle: on => act.near(on) },
-    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.8, persist: true, onInput: v => act.glow(v) },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.6, persist: true, onInput: v => act.glow(v) },
     { type: 'choice', id: 'detail', label: 'Bloom detail', value: 'full', persist: true, onPick: v => act.detail(v),
       options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] },
     { type: 'toggle', id: 'atlas', label: 'Atlas', value: false, persist: true, onToggle: on => act.atlas(on) },
@@ -400,7 +400,7 @@ const U = {
   uRush: { value: 0 }, uHour: { value: 17.2 }, uInstant: { value: 0 }, uSun: { value: 0 }, uStyle: { value: 0 },
   uTac: { value: new THREE.Vector3(...linFit(0.85, 0.13, 195)) }, uVol: { value: 0.9 }, uBootK: { value: 0 },
   uRipV: { value: 2000 }, uRip: { value: new THREE.Vector2() },
-  uCutT: { value: -100 }, uCutV: { value: 30000 }, uCut: { value: new THREE.Vector2() },
+  uCutT: { value: -100 }, uCutV: { value: 45000 }, uCut: { value: new THREE.Vector2() },
   uSod: { value: new THREE.Vector3(...SOD) }, uPink: { value: new THREE.Vector3(...PINK) }, uSalmon: { value: new THREE.Vector3(...SALMON) },
   uFogD: { value: 0.00015 }, uFogH: { value: 300 }, uFogC: { value: new THREE.Vector3() },
   // Metres per CSS pixel, per metre of view depth.
@@ -592,7 +592,7 @@ const ribMat = new THREE.ShaderMaterial({
   uniforms: {
     ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 },
     uAm: { value: 0 }, uPm: { value: 0 }, uJamK: { value: 0 }, uJamC: { value: new THREE.Vector3(...linFit(0.6, 0.23, 25)) },
-    uWet: { value: 0.6 },
+    uWet: { value: 0.6 }, uRushK: { value: 0 },
   },
   vertexShader: /* glsl */`
     attribute vec2 aN; attribute float aSide, aS, aEnd; attribute vec4 aInfo; attribute vec2 aJam;
@@ -618,7 +618,7 @@ const ribMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: /* glsl */`
     ${COMMON}
-    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol;
+    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol, uRushK;
     uniform vec3 uTac;
     uniform vec3 uJamC;
     varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam, vEnd;
@@ -636,8 +636,9 @@ const ribMat = new THREE.ShaderMaterial({
     void main() {
       float a = abs(vLat);
       float fs = fwidth(vS), fl = fwidth(vLat);
-      bool main_ = vCls > 1.5 && vCls < 2.5, link = vCls > 3.5;
-      float gap = main_ || link ? 40.0 : 50.0, lvl = main_ ? 0.55 : link ? 0.8 : 1.0;
+      bool main_ = vCls > 1.5 && vCls < 2.5, link = vCls > 3.5, trunk = vCls > 0.5 && vCls < 1.5;
+      // Motorways carry the light; N-roads and main roads sit well below them.
+      float gap = main_ || link ? 40.0 : 50.0, lvl = main_ ? 0.22 : trunk ? 0.45 : link ? 0.8 : 1.0;
       // The head row hangs at -vHoff across the strip.
       float dl = vLat + vHoff;
       float k0 = floor(vS / gap + 0.5);
@@ -709,7 +710,7 @@ const ribMat = new THREE.ShaderMaterial({
         // The map styles: one glowing line per road, coloured by its traffic.
         float w = vK < 0.999 ? vHalf * 0.6 : max(7.0, fl * 1.5);
         float core = exp(-pow(a / w, 2.0) * 2.5);
-        float jam = clamp(vJam * 2.2, 0.0, 1.0);
+        float jam = clamp(vJam * 2.2, 0.0, 1.0) * uRushK;
         float cw = vCls < 0.5 ? 1.0 : vCls < 1.5 ? 0.8 : vCls > 3.5 ? 0.6 : 0.45;
         vec3 c;
         if (uStyle < 2.5) {
@@ -2142,7 +2143,7 @@ const air = { ...AIR.haze };
 let airTo = AIR.haze;
 
 /* ---------- state ---------- */
-let glowK = ui.setting('glow')?.value ?? 0.8, bloomFull = (ui.setting('detail')?.value ?? 'full') === 'full';
+let glowK = ui.setting('glow')?.value ?? 0.6, bloomFull = (ui.setting('detail')?.value ?? 'full') === 'full';
 let lastD = 1, z = ui.slider?.value ?? 1, zTo = z, tilt = ui.setting('tilt')?.value ?? 0.6;
 const size = { w: 1, h: 1 };
 let rung = 0;
@@ -2204,16 +2205,17 @@ function draw() {
   lights.forEach(L => { L.color.setRGB(...st.c); L.intensity = LIGHT_I * st.l; });
   // From orbit thin lines would alias in a wide blur; the tilt eases off.
   // A smaller disc keeps the blur smooth; wide discs break into blocks.
-  tilt0.uniforms.uMax.value = tilt * (6 + 3 * z) * (1 - 0.65 * ss(0.55, 1, z));
+  tilt0.uniforms.uMax.value = tilt * (6 + 4 * z) * (1 - 0.35 * ss(0.55, 1, z));
   // The bloom spreads wider and softer from orbit, so thin lines glow round.
   // Only true light sources bloom; a low radius keeps the coarse levels out.
   bloom.radius = 0.15 + 0.3 * ss(0.4, 1, z);
-  bloom.strength = glowK * (0.75 - 0.2 * ss(0.4, 1, z));
-  bloom.threshold = 0.95 - 0.2 * ss(0.4, 1, z);
+  bloom.strength = glowK * 1.4;
+  // From altitude the arteries are dim, so the threshold drops to catch them.
+  bloom.threshold = 0.6 - 0.4 * ss(0.3, 1, z);
   tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
   // From orbit the ribbons need a lift to read.
   // A phone draws the country smaller, so its strips need more lift.
-  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 34 : 20) * ss(0.35, 1, z) + 8 * ss(0.9, 1, z);
+  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 40 : 28) * ss(0.35, 1, z) + 12 * ss(0.9, 1, z);
   padMat.uniforms.uFar.value = 1 + 40 * ss(0.3, 0.9, z);
   // The border line shows only once the climb is high.
   // At boot the outline draws in bright, then settles as the roads light.
@@ -2221,7 +2223,7 @@ function draw() {
   borderLine.material.uniforms.uLine.value = (0.06 * ss(0.35, 0.85, z) + 0.12 * (1 - ss(3, 9, bt))) * ss(0, 1.4, bt);
   // Traffic lights up behind the lamps.
   // By day car lamps barely show; the map styles keep their traffic.
-  // During the opening, high views show only the lit arteries; traffic joins after.
+  // High views show only the lit arteries; Rush brings the traffic streaks in.
   carMat.uniforms.uBoot.value = ss(4, 9, bt) * (look_.cars ? 1 : 0) * (1 - 0.85 * U.uSun.value) * (1 - (1 - reveal) * ss(0.25, 0.7, z));
   U.uBootK.value = ss(1.4, 7, bt);
   U.uVol.value = hourly(VOL, clock.h);
@@ -2242,8 +2244,9 @@ function draw() {
   carMat.uniforms.uHeadAt.value = 0.55 + 0.4 * ss(0.4, 1, z);
   ribMat.uniforms.uAm.value = hourly(AM, clock.h);
   ribMat.uniforms.uPm.value = hourly(PM, clock.h);
-  // Jams show only once the opening has settled.
+  // Jams show only while Rush runs.
   ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z) * reveal;
+  ribMat.uniforms.uRushK.value = reveal;
   placeMarks(frameDt);
   trainMat.uniforms.uFar.value = 1 + 10 * ss(0.35, 1, z);
   // Rail stays a faint hint under the roads.
@@ -2308,6 +2311,11 @@ act.style = v => {
   grade.uniforms.uScan.value = look_.scan;
   railLines.material.uniforms.uRailC.value.set(...linFit(...(look_.rail ?? [0.75, 0.06, 170])));
   markLayer.style.setProperty('--flag', look_.flag);
+  // The city flags take the style's own colour.
+  {
+    const m = look_.flag.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/);
+    if (m) { FLAG_C.setRGB(...linFit(+m[1], +m[2], +m[3])); marks.forEach(k => { k.label.material.color.copy(FLAG_C); k.stem.material.color.copy(FLAG_C); }); }
+  }
   markLayer.style.setProperty('--glow', look_.glow);
   try { localStorage.setItem('stimming.motorway.style', v); } catch {}
   wake(); draw();
@@ -2330,7 +2338,7 @@ act.cut = () => {
   cut.on = true;
   thump();
   // The country sits dark for a few seconds before the grid returns.
-  cut.timer = setTimeout(relight, (cut.dur + 4) * 1000);
+  cut.timer = setTimeout(relight, (cut.dur + 2.5) * 1000);
   busyUntil = performance.now() + (cut.dur + 22) * 1000;
   wake();
 };
@@ -2410,7 +2418,7 @@ const boot = { t0: null };
 U.uOn.value = 1; U.uHot.value = 0; U.uSwT.value = 1e6;
 // The opening holds on the signs, then pulls slowly out to the whole country.
 const pull = { t0: -1, dur: 32, hold: 3.5 };
-// Traffic and jam red fade in once the pull has finished, over about 6 s.
+// Jam red and high traffic streaks show only while Rush runs, fading over about 3 s.
 let reveal = 0;
 const stopPull = () => { pull.t0 = -1; };
 function bootUp() {
@@ -2441,8 +2449,8 @@ function tick(now) {
       moving = true;
       if (k >= 1) stopPull();
     }
-    const revealTo = pull.t0 >= 0 || boot.t0 === null ? 0 : 1;
-    if (reveal !== revealTo) { reveal = reduced() ? revealTo : Math.min(1, Math.max(0, reveal + Math.sign(revealTo - reveal) * dt / 6)); moving = true; }
+    const revealTo = clock.day && pull.t0 < 0 ? 1 : 0;
+    if (reveal !== revealTo) { reveal = reduced() ? revealTo : Math.min(1, Math.max(0, reveal + Math.sign(revealTo - reveal) * dt / 3)); moving = true; }
     if (Math.abs(zTo - z) > 1e-4) { z = reduced() ? zTo : z + (zTo - z) * (1 - Math.exp(-dt * 4)); moving = true; } else z = zTo;
     holdAnchor();
     for (const k of ['d', 'h', 'size', 'halo', 'glow', 'wide', 'stars']) {
@@ -2661,6 +2669,9 @@ act.reset = () => {
   pan.set(0, 0, 0); panTo.set(0, 0, 0);
   ui.setting('air')?.set('haze'); airTo = AIR.haze;
   ui.setting('tilt')?.set(0.6); tilt = 0.6;
+  ui.setting('glow')?.set(0.6); glowK = 0.6;
+  ui.setting('detail')?.set('full'); bloomFull = true; resize();
+  ui.setting('near')?.set(true); act.near(true);
   look.yaw = look.pitch = 0;
   if (!U.uOn.value) act.sw();
   setZoom(1);
