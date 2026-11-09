@@ -95,6 +95,8 @@ let rnd = mulberry(7193);
 const CELL = 4;
 let GW = 0, GH = 0;
 let old = null;      // 1 where an earlier burn charred the cell
+let oldId = null;    // index into burns for old char, or -1
+const burns = [];    // finished burns: first segment and count
 let dOld = null;     // cell distance to the nearest old char
 let owner = null;    // index of the live burn's cell, or -1
 let candAt = null;   // index of the candidate on this cell, or -1
@@ -104,6 +106,8 @@ function grid() {
   GH = Math.max(40, Math.round(r.height / CELL));
   const n = GW * GH;
   old = new Uint8Array(n);
+  oldId = new Int16Array(n).fill(-1);
+  burns.length = 0;
   dOld = new Float32Array(n).fill(1e4);
   owner = new Int32Array(n).fill(-1);
   candAt = new Int32Array(n).fill(-1);
@@ -245,8 +249,16 @@ function step() {
   // The board edge and old char close the circuit.
   const far = Math.hypot(gx - B.rx, gy - B.ry) > 4;
   if (gx === 0 || gy === 0 || gx === GW - 1 || gy === GH - 1) return finish('edge');
-  if (far && dOld[gy * GW + gx] <= 1.5) return finish('arc');
+  if (far && dOld[gy * GW + gx] <= 1.5) { B.hit = touched(gx, gy); return finish('arc'); }
   if (B.n >= MAXC || nSeg >= MAXSEG) finish('full');
+}
+// The nearest old burn within two cells of the contact.
+function touched(gx, gy) {
+  for (let r = 1; r <= 2; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const x = gx + dx, y = gy + dy;
+    if (x >= 0 && y >= 0 && x < GW && y < GH && oldId[y * GW + x] >= 0) return oldId[y * GW + x];
+  }
+  return -1;
 }
 // The burn stops: its cells join the old char.
 function finish(why) {
@@ -262,8 +274,11 @@ function finish(why) {
       if (s >= 0) seg[s * STRIDE + 6] = seg[s * STRIDE + 6] | PATH;
     }
     arcT = simT;
+    arcOld = B.hit >= 0 ? burns[B.hit] : null;
   }
-  for (let k = 0; k < B.n; k++) old[B.cy[k] * GW + B.cx[k]] = 1;
+  const id = burns.length;
+  burns.push({ seg0: B.seg0, n: Math.min(B.n, nSeg - B.seg0) });
+  for (let k = 0; k < B.n; k++) { const i = B.cy[k] * GW + B.cx[k]; old[i] = 1; oldId[i] = id; }
   for (let c = 0; c < B.kx.length; c++) candAt[B.ky[c] * GW + B.kx[c]] = -1;
   for (let k = 0; k < B.n; k++) owner[B.cy[k] * GW + B.cx[k]] = -1;
   B.kx.length = B.ky.length = B.kphi.length = B.kpar.length = 0;
@@ -271,6 +286,8 @@ function finish(why) {
   hotUntil = Math.max(hotUntil, simT + 45);
   // A user burn takes its last cells into the char at once.
   if (B.user) { upload(B.seg0, B.n); stamp(B.seg0, B.n, 1); }
+  // The arc runs through the old tree, so it heats up again.
+  if (B.user && arcOld) stamp(arcOld.seg0, arcOld.n, 0.6);
 }
 
 /* ---------- shaders ---------- */
@@ -354,7 +371,7 @@ void main() {
 }`;
 // The spark: a white-hot core and a blue halo, flashing as each step lands.
 const SPARK_FS = HEAD + SEGD + `
-uniform float uNow, uLive, uArc, uFrame, uPx, uFlick;
+uniform float uNow, uLive, uArc, uArcAll, uFrame, uPx, uFlick;
 float hash(float n) { return fract(sin(n * 0.3183 + uFrame * 1.731) * 43758.5453); }
 void main() {
   float d = segD(), w = vInfo.x * 0.5;
@@ -369,8 +386,11 @@ void main() {
   I += (branch ? 3.0 : 1.4) * exp(-age / 0.07) + 0.7 * exp(-age / 0.35);
   I *= mix(1.0, 0.45 + 1.1 * hash(vId), uFlick);
   I *= uLive;
-  if (path) I += uArc * (6.0 + 2.0 * clamp(vInfo.x, 0.0, 1.5));
-  vec3 c = vec3(0.72, 0.82, 1.0) * core * I * 1.2 + vec3(0.22, 0.28, 1.0) * halo * I * 0.18;
+  if (path || uArcAll > 0.5) I += uArc * (6.0 + 2.0 * clamp(vInfo.x, 0.0, 1.5));
+  // The core clips near white; the halo carries the blue into the bloom.
+  // A touched old tree flashes as a thin line, with no halo.
+  if (uArcAll > 0.5) halo = 0.0;
+  vec3 c = vec3(0.8, 0.87, 1.0) * core * min(I, 1.5) * 1.2 + vec3(0.15, 0.22, 1.0) * halo * I * 0.5;
   o = vec4(c, 1.0);
 }`;
 // Board space: the fragment's cell, from the cover-fit mapping.
@@ -404,13 +424,15 @@ void main() { o = texture(uSrc, vUv) * uK; }`;
 const EMBER_FS = HEAD + BOARD + `
 out vec4 o;
 uniform sampler2D uHeatT, uCharT;
-uniform float uTime, uFlick, uAcrylic, uGlint;
+uniform float uTime, uFlick, uAcrylic, uGlint, uSweep;
 vec3 ember(float T) {
   vec3 c = mix(vec3(0.55, 0.04, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.05, 0.45, T));
   return mix(c, vec3(1.0, 0.78, 0.45), smoothstep(0.6, 1.0, T));
 }
 void main() {
   vec2 b = boardAt(gl_FragCoord.xy), uv = texAt(b);
+  // Behind the sanding sweep the board is fresh.
+  if (b.x < uSweep) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
   vec4 h = texture(uHeatT, uv);
   vec4 ch = texture(uCharT, uv);
   float T = h.g, S = h.b;
@@ -419,10 +441,14 @@ void main() {
     c = vec3(0.25, 0.5, 1.0) * T * T * 1.6;
   } else {
     c = ember(T) * T * T * 2.4 * (0.35 + 0.65 * ch.r);
-    // Glints: rare hot points along the char, breathing slowly.
-    float n = vnoise(b * 0.55 + vec2(3.1, uTime * 0.07 * uFlick));
-    float g = smoothstep(0.78, 0.96, n) * (0.75 + 0.25 * sin(uTime * 2.3 * uFlick + n * 40.0));
-    c += vec3(1.0, 0.36, 0.06) * g * S * ch.r * 3.0 * uGlint;
+    // Glints: one point per 3-cell patch; three in ten can light.
+    vec2 g = floor(b / 3.0);
+    float hg = hash(g + 7.3);
+    vec2 gp = (g + 0.2 + 0.6 * vec2(hash(g + 1.7), hash(g + 4.1))) * 3.0;
+    float dd = length(b - gp);
+    float pulse = 0.55 + 0.45 * sin(uTime * (0.8 + 2.2 * hg) * uFlick + hg * 40.0);
+    float gl = exp(-dd * dd / 0.9) * step(hg, 0.3) * pulse;
+    c += vec3(1.0, 0.42, 0.08) * gl * S * ch.r * 6.0 * uGlint;
   }
   o = vec4(c, 1.0);
 }`;
@@ -465,13 +491,13 @@ const FINAL_FS = HEAD + BOARD + `
 out vec4 o;
 uniform sampler2D uCharT, uEmit, uBloom, uWide;
 uniform vec3 uWoodA, uWoodB, uKey;
-uniform float uTime, uGlow, uAcrylic;
+uniform float uTime, uGlow, uAcrylic, uFlash, uSweep;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
   vec2 frag = gl_FragCoord.xy, b = boardAt(frag), uv = texAt(b);
   vec2 sp = frag / uRes;
-  vec4 ch = texture(uCharT, uv);
+  vec4 ch = b.x < uSweep ? vec4(0.0) : texture(uCharT, uv);
   vec3 emit = texture(uEmit, sp).rgb, bloom = texture(uBloom, sp).rgb, wide = texture(uWide, sp).rgb;
   // The key light pools at the upper left and falls off to the corners.
   vec2 kc = (vec2(sp.x, 1.0 - sp.y) - vec2(0.3, 0.22)) * vec2(uRes.x / uRes.y, 1.0);
@@ -482,7 +508,7 @@ void main() {
     float edge = exp(-b.x / (uGrid.x * 0.55));
     vec3 glass = vec3(0.006, 0.008, 0.014) + vec3(0.02, 0.035, 0.06) * edge;
     vec3 lit = vec3(0.55, 0.75, 1.0) * (0.25 + 1.6 * edge);
-    col = glass + lit * (ch.r * 0.9 + ch.g * 0.12) + wide * 0.3;
+    col = glass + lit * (ch.r * 0.9 + ch.g * 0.12) * (1.0 + uFlash * 3.0) + wide * 0.3;
   } else {
     // Birch: long grain along x, warped a little, with fine fibres.
     float w = fbm(vec2(b.x * 0.012, b.y * 0.09));
@@ -492,8 +518,12 @@ void main() {
     // Char: a caramel halo, then a black core.
     alb *= mix(vec3(1.0), vec3(0.42, 0.26, 0.15), clamp(ch.g, 0.0, 1.0) * 0.75);
     alb *= 1.0 - 0.96 * ch.r;
-    col = alb * (uKey * key + wide * 2.2 + bloom * 0.6);
+    // An arc-over lights the whole board blue for a moment.
+    col = alb * (uKey * key + wide * 2.2 + bloom * 0.6 + vec3(0.45, 0.55, 1.0) * uFlash);
   }
+  // The sanding edge: a warm streak of fresh dust.
+  float edge = exp(-pow((b.x - uSweep) / 2.5, 2.0));
+  col += uKey * key * edge * 0.5 * (1.0 - uAcrylic) + vec3(0.3, 0.4, 0.6) * edge * 0.15 * uAcrylic;
   col += emit + bloom * uGlow * 0.6;
   // A vignette and fine grain finish the frame.
   vec2 v = (sp - 0.5) * vec2(uRes.x / uRes.y, 1.0);
@@ -644,7 +674,10 @@ function toBoard(cx, cy) {
 }
 
 /* ---------- drawing ---------- */
-let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0;
+let simT = 0, frameNo = 0, arcT = -10, hotUntil = 0, sparkLive = 0, arcOld = null;
+// Clear's sweep runs 0 to 1; -1 means no sweep.
+let sweep = -1;
+const sweepX = () => (sweep < 0 ? -1e4 : (1 - (1 - sweep) ** 2) * (GW + 6) - 3);
 function segRange(s0, n) {
   gl.bindVertexArray(segVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, segBuf);
@@ -722,9 +755,11 @@ function render(dt) {
   gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
   gl.uniform1f(q.u.uAcrylic, acrylic);
   gl.uniform1f(q.u.uGlint, 1);
+  gl.uniform1f(q.u.uSweep, sweepX());
   tri(emit);
   const arc = Math.max(0, 1 - (simT - arcT) / 0.45);
-  if (B && (sparkLive > 0 || arc > 0)) {
+  const oldArc = arc > 0 && arcOld;
+  if ((B && (sparkLive > 0 || arc > 0)) || oldArc) {
     q = P.spark;
     gl.useProgram(q.p);
     gl.uniform4f(q.u.uMap, 2 * view.s / canvas.width, -2 * view.s / canvas.height, 2 * view.ox / canvas.width - 1, 1 - 2 * view.oy / canvas.height);
@@ -736,10 +771,18 @@ function render(dt) {
     gl.uniform1f(q.u.uLive, sparkLive);
     gl.uniform1f(q.u.uArc, (rm ? 0.5 : 1) * arc * arc);
     gl.uniform1f(q.u.uFlick, rm ? 0 : 1);
+    gl.uniform1f(q.u.uArcAll, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     to(emit);
-    segRange(B.seg0, Math.min(liveN, nSeg - B.seg0));
+    if (B) segRange(B.seg0, Math.min(liveN, nSeg - B.seg0));
+    // The touched tree flashes too, at a lower level.
+    if (oldArc) {
+      gl.uniform1f(q.u.uLive, 0);
+      gl.uniform1f(q.u.uArcAll, 1);
+      gl.uniform1f(q.u.uArc, (rm ? 0.08 : 0.16) * arc * arc);
+      segRange(arcOld.seg0, arcOld.n);
+    }
     gl.disable(gl.BLEND);
   }
   bloomPass();
@@ -753,6 +796,8 @@ function render(dt) {
   gl.uniform1f(q.u.uTime, simT);
   gl.uniform1f(q.u.uGlow, 1);
   gl.uniform1f(q.u.uAcrylic, acrylic);
+  gl.uniform1f(q.u.uFlash, (rm ? 0.08 : 0.2) * arc * arc * arc);
+  gl.uniform1f(q.u.uSweep, sweepX());
   tri(null);
   frameNo++;
 }
@@ -799,6 +844,7 @@ function grow(dt) {
   }
 }
 function press(bx, by) {
+  if (sweep >= 0) { sweep = -1; clearBoard(); }
   if (burn && !burn.done) finish('freeze');
   rnd = Math.random;
   newBurn(clamp(bx, 0.01, GW - 0.01), clamp(by, 0.01, GH - 0.01), etaFor()).user = true;
@@ -832,6 +878,9 @@ function preburn() {
     stamp(burn.seg0, burn.n, k === spots.length - 1 ? 0.55 : 0, 1e6);
   });
   burn = null;
+  // Seeded arcs stay silent on the first frame.
+  arcT = -10;
+  arcOld = null;
   hotUntil = 40;
 }
 
@@ -842,7 +891,7 @@ function wake() {
   if (!raf && visible && P) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 // Lively while a spark runs; drifting at 30 fps while embers glow.
-const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5;
+const lively = () => (burn && !burn.done) || sparkLive > 0 || simT - arcT < 0.5 || sweep >= 0;
 const busy = (now = performance.now()) => visible && (lively() || (simT < hotUntil && now - inputAt < 60000));
 function frame(now) {
   raf = 0;
@@ -854,7 +903,8 @@ function frame(now) {
       simT += dt;
       grow(dt);
       if (burn && burn.done) sparkLive = Math.max(0, sparkLive - dt / 0.2);
-      render(dt);
+      if (sweep >= 0) sweep += dt / 0.7;
+      if (sweep >= 1) { sweep = -1; clearBoard(); } else render(dt);
     }
   } finally {
     if (busy(now)) raf = requestAnimationFrame(frame);
@@ -884,6 +934,7 @@ function up(e) {
 function clearBoard() {
   if (ptr) up();
   burn = null;
+  arcOld = null;
   nSeg = 0;
   sparkLive = 0;
   grid();
@@ -891,7 +942,15 @@ function clearBoard() {
   layout();
   still();
 }
-act.clear = () => { clearBoard(); live(); };
+// Clear sands from left to right; reduced motion clears at once.
+act.clear = () => {
+  if (ptr) up();
+  if (burn && !burn.done) finish('freeze');
+  burn = null;
+  sparkLive = 0;
+  if (reduced()) clearBoard(); else sweep = 0;
+  live();
+};
 act.board = v => { board = v; still(); live(); };
 
 /* ---------- boot ---------- */

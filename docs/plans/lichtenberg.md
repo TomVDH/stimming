@@ -138,14 +138,14 @@ Touch: hold to burn, tap to zap. The choice moves bottom left as a stepper, Clea
 - [x] Grid, DBM growth, strokes, char and heat stamps, decay, emission, bloom, wood final pass.
 - [x] Hold to grow, release to freeze, tap to zap. Bar v2 shell with the choice, Voltage and Clear wired.
 - [x] First frame: three seeded burns.
-- [ ] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
-- [ ] Commit: `Lichtenberg burn: blockout, a DBM tree on a birch board`.
+- [x] Syntax check, clean console, stills at 1280 and 375 px. **Checkpoint with Tom.**
+- [x] Commit: `Lichtenberg burn: blockout, a DBM tree on a birch board`.
 
 ### Task 2: Finesse and arc-over
 
-- [ ] Branch flash, crackle jitter, trunk width growth, ember glints, the blue board light.
-- [ ] Char attraction and arc-over: the path flash, the old tree re-glow, the stop.
-- [ ] Clear's sanding sweep. Stills of the crawl, the freeze and an arc-over.
+- [x] Branch flash, crackle jitter, trunk width growth, ember glints, the blue board light.
+- [x] Char attraction and arc-over: the path flash, the old tree re-glow, the stop.
+- [x] Clear's sanding sweep. Stills of the crawl, the freeze and an arc-over.
 - [ ] Commit: `Lichtenberg burn: branch flash, embers and arc-over`.
 
 ### Task 3: Acrylic
