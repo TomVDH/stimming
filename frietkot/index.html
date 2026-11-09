@@ -43,7 +43,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows and a neon strip hums on the roof. Tap the shack to order a cone of fries, hold to shake the basket.">
+    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows; the staff fry and serve on their own. Drag to look round.">
       <p class="fail" hidden>Frietkot needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -96,13 +96,11 @@ const SAUCES = [
 const NEON = { red: [0.66, 0.24, 28], blue: [0.62, 0.17, 255], green: [0.8, 0.2, 145] };
 
 const ui = initPage({ id: 'frietkot', bar: {
-  // A diorama: one verb. An order runs the double fry and fills a cone.
-  actions: [{ verb: 'order', key: 'O', onPress: () => act.order() }],
   settings: [
     // The night first, then the place, then the lens.
     { type: 'choice', id: 'weather', label: 'Weather', display: 'stepper', value: 'shift', persist: true, onPick: v => act.weather(v),
       options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
-    { type: 'choice', id: 'sign', label: 'Sign', display: 'stepper', value: 'neon', persist: true, onPick: v => act.sign(v),
+    { type: 'choice', id: 'sign', label: 'Sign', display: 'stepper', value: 'board', persist: true, onPick: v => act.sign(v),
       options: [{ value: 'neon', label: 'Neon' }, { value: 'board', label: 'Lit board' }, { value: 'box', label: 'Lightbox' }] },
     { type: 'choice', id: 'neon', label: 'Neon', display: 'stepper', value: 'red', persist: true, onPick: v => act.neon(v),
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
@@ -112,7 +110,7 @@ const ui = initPage({ id: 'frietkot', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'order'], ['hold', 'shake'], ['drag', 'look round'], ['scroll', 'zoom']],
+  keys: [['drag', 'look round'], ['scroll', 'zoom']],
 } });
 
 // Seeded random keeps the square the same on every load.
@@ -2596,7 +2594,16 @@ const staff = [
   person({ kind: 3, x: 0.6, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work', build: 9 }),
 ];
 let breakIn = 40;
+// The staff work through orders on their own: one when someone waits, now and then besides.
+let autoIn = 4;
+function stepOrders(dt) {
+  if ((autoIn -= dt) > 0 || orderRun) return;
+  const waiting = QUEUE.some(q => q.who && q.who.state === 'wait');
+  autoIn = waiting ? 6 + rnd() * 6 : 18 + rnd() * 20;
+  act.order();
+}
 function stepPeople(dt) {
+  stepOrders(dt);
   if (traffic) {
     spawnIn -= dt;
     // Arrivals bunch and thin out, never on a beat.
@@ -3430,7 +3437,6 @@ stage.addEventListener('pointerdown', e => {
   const hit = onShack(e.clientX, e.clientY);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, hold: false, hit, yaw: look.ty, pitch: look.tp };
   // A hold on the shack shakes the basket.
-  if (hit) press.timer = setTimeout(() => { if (press && !press.drag) { press.hold = true; act.shake(); } }, 260);
   wake();
 });
 stage.addEventListener('pointermove', e => {
@@ -3453,7 +3459,6 @@ const end = e => {
   wake();
 };
 stage.addEventListener('pointerup', e => {
-  if (press && e.pointerId === press.id && press.hit && !press.drag && !press.hold) act.order();
   end(e);
 });
 stage.addEventListener('pointercancel', end);
@@ -3464,7 +3469,7 @@ stage.addEventListener('lostpointercapture', end);
 // The kit sleeps when the toy settles.
 // Beds: neon hum, fryer, road, rain, wind and the party.
 // Each vehicle carries its own engine voice.
-const kit = audioKit({ keys: new Set(['o', 'O', ' ']) });
+const kit = audioKit({ keys: new Set([' ']) });
 let SND = null;
 const sndVoices = new Set();
 let sndPend = 0;
@@ -3694,7 +3699,7 @@ function sndHush() {
 /* ---------- bar ---------- */
 // Order is free while a basket is empty and no order runs.
 function syncActions() {
-  ui.action('order').disabled = !!orderRun || !wells.some(w => !w.inOil && w.fry === -1);
+  // The diorama has no order button; the fryer runs itself.
 }
 // Into the oil: raw fries for the blanch, blanched ones for the second fry.
 function dropWell(w) {
@@ -3805,7 +3810,7 @@ wind = 0.2;
 tiltK = ui.setting('tilt')?.value ?? 0.4;
 setNeon(ui.setting('neon')?.value ?? 'red');
 act.sign = v => { setSign(v); draw(); };
-setSign(QS.get('sign') ?? ui.setting('sign')?.value ?? 'neon');
+setSign(QS.get('sign') ?? ui.setting('sign')?.value ?? 'board');
 traffic = ui.setting('traffic')?.value ?? true;
 act.camcorder(ui.setting('camcorder')?.value ?? true);
 setLight();
