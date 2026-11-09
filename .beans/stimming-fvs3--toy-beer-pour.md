@@ -101,3 +101,10 @@ Known, not fixed:
   - Gaps showed between the tilted beer, the head and the wall: both meshes took their edge radius at the wrong height. `wallHit()` now finds where the tilted plane meets the wall, so the beer's top is one flat plane edge to edge and the head sits on it.
   - Swirl: the wave is driven at 55% and capped at a slope of 0.45; more damping. The head is stiff: its top follows only 35% of the swirl, so it no longer slides about as a rigid wedge.
   - Exposure down from 0.95 to 0.78.
+
+- Stream rebuilt in three.js (2026-11-09, Tom: the stream looks weird, the pour is slow, no smoke):
+  - The neck's fog is gone (shader, mesh and state).
+  - The jet is a real mesh now: 64 rings of 16 vertices swept along the parabola each frame, with `MeshPhysicalMaterial` (transmission 1, ior 1.33, thickness, attenuation in the beer's colour, a PMREM environment of the scene's three lights, a small emissive for scatter). It starts inside the neck, leaves the lip flat and wide, rounds off, thins as it speeds up and flares where it lands. The hand-written stream shaders are deleted.
+  - The middle layer and the final layer take four samples, so edges no longer stair-step.
+  - Speed: flow is 75 x head^1.5 (was 34); lift, tip, return and the glass's tilt are about 1.6 times quicker. A Duvel pours in about 6 s (was about 15 s).
+  - The jet leaves the lip at 60% of the old speed, so it falls steeply instead of shooting across.

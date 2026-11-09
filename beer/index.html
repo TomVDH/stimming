@@ -390,129 +390,6 @@ void main() {
   gl_FragColor = vec4(c, uAlpha);
 }`;
 
-/* The vapour: cold CO2 fog from the bottle's neck. */
-// A ray-marched volume after Fire's smoke: Henyey-Greenstein forward scatter,
-// a short self-shadow march with Beer-Lambert, powder and multi-scatter terms.
-// Density is procedural: drifting 3D noise in a cone off the neck.
-const VAPOR_VS = `
-varying vec3 vW;
-void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
-const VAPOR_FS = NOISE + ROOM + `
-uniform vec3 uO, uA, uBoxMin, uBoxMax;
-uniform float uAmt, uAge;
-varying vec3 vW;
-float dens(vec3 x) {
-  vec3 rel = x - uO;
-  float s = dot(rel, uA);
-  if (s < -0.2) return 0.0;
-  // Cold CO2 is heavy: the plume leaves along the neck, then sags.
-  vec3 q = rel - uA * s;
-  q.y += 0.12 * s * s;
-  float rad = 0.2 + 0.25 * s + 0.35 * min(uAge, 2.0);
-  float core = smoothstep(rad, 0.0, length(q)) * exp(-s / (1.2 + 1.5 * min(uAge, 2.0)));
-  float n = fbm3(rel * 1.1 - uA * (uAge * 2.0 + uTime * 0.4) + vec3(0.0, uTime * 0.15, 0.0));
-  // Fade at the box's walls, as Fire fades at its volume's edge.
-  vec3 e = min(x - uBoxMin, uBoxMax - x);
-  float edge = smoothstep(0.0, 1.2, min(e.x, min(e.y, e.z)));
-  return core * smoothstep(0.3, 0.8, n) * uAmt * 0.7 * edge;
-}
-void main() {
-  vec3 ro = cameraPosition, rd = normalize(vW - ro);
-  vec3 t0 = (uBoxMin - ro) / rd, t1 = (uBoxMax - ro) / rd;
-  vec3 tn = min(t0, t1), tf = max(t0, t1);
-  float a = max(max(tn.x, tn.y), max(tn.z, 0.0)), b = min(min(tf.x, tf.y), tf.z);
-  if (b <= a) discard;
-  const int N = 28;
-  float dt = (b - a) / float(N);
-  float t = a + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0);
-  vec3 lamp = vec3(LAMP.x * 0.4, LAMP.y + 4.0, BACK_Z);
-  vec3 col = vec3(0.0); float T = 1.0;
-  for (int i = 0; i < N; i++) {
-    vec3 x = ro + rd * t;
-    float d = dens(x);
-    if (d > 0.002) {
-      vec3 xw = toW(x);
-      vec3 L = normalize(lamp - xw), V = normalize(dirW(-rd));
-      // Two steps toward the lamp for the self-shadow.
-      vec3 Lg = transpose(mat3(uG2W)) * L;
-      float tau = (dens(x + Lg * 0.3) + dens(x + Lg * 0.9)) * 0.6 * 1.8;
-      float beer = exp(-tau), multi = exp(-tau * 0.25) * 0.5;
-      float powder = 1.0 - exp(-tau * 2.0);
-      float lt = clamp(mix(beer + multi, (beer + multi) * powder, 0.4) + 0.08, 0.0, 1.0);
-      // Backlit: the lamp's light scatters forward through the fog toward the eye.
-      float ph = hgPhase(-dot(V, L), 0.55) * 12.566;
-      vec3 sc = uLamp * ph * lt * 0.22 + vec3(0.015, 0.016, 0.018);
-      float ext = d * 1.8 * dt;
-      col += T * sc * (1.0 - exp(-ext));
-      T *= exp(-ext);
-      if (T < 0.02) break;
-    }
-    t += dt;
-  }
-  gl_FragColor = vec4(safe(col), 1.0 - T);
-}`;
-
-/* The stream: a round tube on the jet's parabola. */
-// It thins as it speeds up; ripples run down it and it beads near the end.
-// The shader bends the room behind through the tube, as the beer does.
-const STREAM_VS = `
-attribute float aS, aA;
-uniform vec3 uP0, uV0, uGv;
-uniform float uT, uW0, uTime;
-varying vec3 vP, vN;
-varying float vS, vR;
-void main() {
-  float t = aS * uT;
-  vec3 c = uP0 + uV0 * t + uGv * 490.5 * t * t;
-  vec3 v = uV0 + uGv * 981.0 * t;
-  float r = 0.5 * uW0 * sqrt(max(length(uV0), 1.0) / max(length(v), 1.0));
-  // Ripples travel with the flow; the Rayleigh-Plateau beads grow toward the end.
-  float bead = smoothstep(0.4, 1.0, aS);
-  float ph = aS * 30.0 - uTime * 22.0;
-  r *= 1.0 + 0.1 * sin(ph + aA * 2.0) * (1.0 - bead) + 0.4 * bead * sin(aS * 34.0 - uTime * 26.0);
-  r = max(r, 0.015);
-  vec3 T = normalize(v);
-  vec3 up = abs(T.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
-  vec3 N = normalize(cross(T, up)), B = cross(T, N);
-  vec3 n = cos(aA) * N + sin(aA) * B;
-  vP = c + n * r; vN = n; vS = aS; vR = r;
-  gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
-}`;
-const STREAM_FS = NOISE + ROOM + PROF + `
-uniform float uLevel;
-uniform sampler2D uBehind;
-uniform vec2 uRes;
-uniform vec3 uSigma, uKey;
-uniform float uFlow;
-varying vec3 vP, vN;
-varying float vS, vR;
-void main() {
-  // Below the beer's surface the jet is gone into the beer.
-  if (vP.y < LEV(vP.xz) && length(vP.xz) < gp(vP.y).y) discard;
-  vec3 n = normalize(vN), v = normalize(cameraPosition - vP);
-  if (dot(n, v) < 0.0) n = -n;
-  float c = max(dot(n, v), 0.0);
-  // A liquid cylinder is a strong lens: the room behind flips and squeezes.
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec2 nv = (viewMatrix * vec4(n, 0.0)).xy;
-  vec3 behind = texture2D(uBehind, clamp(uv + nv * 0.05, 0.001, 0.999)).rgb;
-  // The path through the tube: longest at its centre.
-  float path = 2.0 * vR * c;
-  // Clear gold: the room behind shows through, tinted by the beer.
-  vec3 Tg = exp(-uSigma * (0.5 + path * 2.2));
-  vec3 col = behind * mix(vec3(1.0), Tg, 0.85) * 1.1;
-  // Light scattered inside, and the lamp piped along the jet as a core line.
-  col += uLamp * Tg * (0.05 + 0.1 * c);
-  col += uLamp * Tg * 0.45 * pow(c, 12.0);
-  // Reflections add light; they never darken the edge.
-  vec3 rw = normalize(dirW(reflect(-v, n)));
-  col += uKey * 0.9 * pow(max(dot(rw, normalize(KEY_DIR)), 0.0), 50.0);
-  col += uLamp * 0.12 * pow(1.0 - c, 3.0);
-  // The silhouette fades out, so the jet has no hard outline.
-  float a = smoothstep(0.0, 0.03, vS) * uFlow * smoothstep(0.0, 0.45, c) * 0.8;
-  gl_FragColor = vec4(safe(col) * a, a);
-}`;
-
 /* ---------- the beer ---------- */
 // The beer is a lathe of the glass's inner wall, from the floor to the level, closed on top.
 // Each pixel follows its ray through the beer: refract in, cross the beer, refract out.
@@ -610,7 +487,7 @@ void main() {
   float Rw = max(wb.x, 0.5), t0 = max(uTop - uLevel, 0.0);
   // A young head is a mound where the jet lands; it spreads as it grows.
   // Foam is stiff: its top follows a swirl far less than the beer under it.
-  #define TH(q) max(t0 * mix(1.0, 2.6 * exp(-dot((q) - uHit.xy, (q) - uHit.xy) / (Rw * Rw * 0.3)), uMound) - 0.65 * dot(uSwirl, (q)), 0.02)
+  #define TH(q) max(t0 * mix(1.0, 1.8 * exp(-dot((q) - uHit.xy, (q) - uHit.xy) / (Rw * Rw * 0.55)), uMound) - 0.65 * dot(uSwirl, (q)), 0.02)
   float thw = TH(dir * wb.x);
   vec3 pos;
   if (aTS.x > 0.999) {
@@ -970,8 +847,8 @@ let glassBack = null, glassMask = null;
 // Material flags: draw only inside the glass's silhouette.
 const INSIDE = { stencilWrite: true, stencilWriteMask: 0, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc,
   stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp };
-let bottleTop = null, streamTop = null;
-let gTex = null, glassMesh = null, beerMesh = null, foamMesh = null, bottleMesh = null, fizzMesh = null, labTex = null, streamMesh = null, vaporMesh = null;
+let bottleTop = null, streamTop = null, liquid = null, liquidTop = null;
+let gTex = null, glassMesh = null, beerMesh = null, foamMesh = null, bottleMesh = null, fizzMesh = null, labTex = null, streamMesh = null;
 const quadGeo = new THREE.PlaneGeometry(2, 2);
 function fullQuad(mat, order) {
   const m = new THREE.Mesh(quadGeo, mat);
@@ -1018,6 +895,68 @@ function bodyGeometry(rows = 72, cols = 128, caps = 24) {
   g.setAttribute('aTS', new THREE.Float32BufferAttribute(ts, 2));
   g.setIndex(idx);
   return g;
+}
+
+/* ---------- the stream ---------- */
+// SN rings of SR vertices; positions and normals are rewritten each frame.
+const SN = 64, SR = 16;
+function streamGeometry() {
+  const g = new THREE.BufferGeometry(), idx = [], n = (SN + 1) * (SR + 1);
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  for (let i = 0; i < SN; i++) for (let j = 0; j < SR; j++) { const k = i * (SR + 1) + j, k2 = k + SR + 1; idx.push(k, k + 1, k2, k + 1, k2 + 1, k2); }
+  g.setIndex(idx);
+  return g;
+}
+// The lights the liquid reflects: the key softbox, the lamp behind, the warm strip.
+function buildEnv() {
+  const sc = new THREE.Scene();
+  sc.background = new THREE.Color(0.012, 0.009, 0.007);
+  const panel = (w, h, col, pos) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(...col), side: THREE.DoubleSide }));
+    m.position.set(...pos); m.lookAt(0, 0, 0); sc.add(m);
+  };
+  panel(4, 11, [5, 4.7, 4.3], [-5, 5, 7.2]);
+  panel(9, 6, [2.2, 1.5, 0.75], [-2, 2, -10]);
+  panel(1.2, 12, [1.6, 1.1, 0.6], [9.2, 1.2, 2.5]);
+  const pm = new THREE.PMREMGenerator(renderer), tex = pm.fromScene(sc, 0.01).texture;
+  pm.dispose();
+  return tex;
+}
+// Sweep the tube along the jet: straight inside the neck, then a parabola to the beer.
+// The jet thins as it speeds up; it leaves the lip flat and wide, then rounds off.
+const _p0 = new THREE.Vector3(), _v0 = new THREE.Vector3();
+function updateStream() {
+  const g = streamMesh.geometry, P = g.attributes.position.array, Nn = g.attributes.normal.array;
+  _p0.copy(bot.jet).applyMatrix4(W2G);
+  _v0.copy(bot.v0).applyMatrix3(R_W2G);
+  const gx = GRAV.x * G, gy = GRAV.y * G, sp0 = Math.max(_v0.length(), 1), r0 = bot.w0 * 0.5;
+  const tBack = -0.7 / sp0, T = Math.max(bot.T, 0.02);
+  let k = 0;
+  for (let i = 0; i <= SN; i++) {
+    const u = i / SN, t = tBack + (T - tBack) * u, tf = Math.max(t, 0);
+    const cx = _p0.x + _v0.x * t + 0.5 * gx * tf * tf, cy = _p0.y + _v0.y * t + 0.5 * gy * tf * tf, cz = _p0.z;
+    const vx = _v0.x + gx * tf, vy = _v0.y + gy * tf, sp = Math.max(Math.hypot(vx, vy), 1);
+    const tx = vx / sp, ty = vy / sp;
+    // The frame: B is the lip's width (z); N is across the jet in its plane.
+    const nx = -ty, ny = tx;
+    let r = Math.max(1.25 * r0 * Math.sqrt(sp0 / sp), 0.05);
+    // Where it lands it spreads a little into the head.
+    const f = smooth(0.88, 1, u); r *= 1 + 0.7 * f * f;
+    // Flat at the lip; then a slow twist, as a falling stream has.
+    const e = 0.45 * Math.exp(-tf * 45) + 0.16 * Math.exp(-tf * 7) * Math.sin(tf * 75 + 0.5 * Math.sin(time * 5));
+    const a = r * (1 + e), b = r / (1 + e);
+    for (let j = 0; j <= SR; j++) {
+      const th = j / SR * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th);
+      P[k] = cx + nx * c * b; P[k + 1] = cy + ny * c * b; P[k + 2] = cz + sn * a;
+      let mx = nx * c / b, my = ny * c / b, mz = sn / a;
+      const ml = Math.hypot(mx, my, mz) || 1;
+      Nn[k] = mx / ml; Nn[k + 1] = my / ml; Nn[k + 2] = mz / ml;
+      k += 3;
+    }
+  }
+  g.attributes.position.needsUpdate = true;
+  g.attributes.normal.needsUpdate = true;
 }
 
 /* ---------- fizz sprites ---------- */
@@ -1176,7 +1115,7 @@ function build() {
   const rtOpt = { type: THREE.HalfFloatType, depthBuffer: true };
   rtBehind = new THREE.WebGLRenderTarget(4, 4, rtOpt);
   // The middle layer keeps a stencil: the glass's silhouette clips what is inside it.
-  rtScene = new THREE.WebGLRenderTarget(4, 4, { ...rtOpt, stencilBuffer: true });
+  rtScene = new THREE.WebGLRenderTarget(4, 4, { ...rtOpt, stencilBuffer: true, samples: 4 });
   rtBlur = new THREE.WebGLRenderTarget(4, 4, rtOpt);
   blurMat = new THREE.ShaderMaterial({ vertexShader: FULL_VS, fragmentShader: BLUR_FS, depthTest: false, depthWrite: false, uniforms: { t: { value: null }, uStep: { value: new THREE.Vector2() } } });
   blurScene = new THREE.Scene();
@@ -1231,25 +1170,16 @@ function build() {
   }));
   glassBack.frustumCulled = false;
   glassBack.renderOrder = 0;
-  // The stream: a tube of 96 rings of 12 vertices.
-  const sg = new THREE.BufferGeometry(), sS = [], sA = [], sIdx = [], RING = 12;
-  for (let i = 0; i <= 96; i++) for (let j = 0; j <= RING; j++) {
-    sS.push(i / 96); sA.push(j / RING * Math.PI * 2);
-    if (i < 96 && j < RING) { const k = i * (RING + 1) + j, k2 = k + RING + 1; sIdx.push(k, k2, k + 1, k + 1, k2, k2 + 1); }
-  }
-  sg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(sS.length * 3), 3));
-  sg.setAttribute('aS', new THREE.Float32BufferAttribute(sS, 1));
-  sg.setAttribute('aA', new THREE.Float32BufferAttribute(sA, 1));
-  sg.setIndex(sIdx);
-  streamMesh = new THREE.Mesh(sg, new THREE.ShaderMaterial({
-    vertexShader: STREAM_VS, fragmentShader: STREAM_FS, transparent: true, depthWrite: false, depthTest: true, side: THREE.FrontSide,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    uniforms: { ...U, uBehind: { value: null }, uP0: { value: new THREE.Vector3() }, uV0: { value: new THREE.Vector3() }, uGv: { value: new THREE.Vector3(0, -1, 0) }, uT: { value: 0.1 }, uW0: { value: 1 }, uFlow: { value: 0 } },
-  }));
+  // The stream: a tube mesh with three's physical material.
+  // Transmission bends the scene behind it; absorption colours it like the beer.
+  liquid = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, roughness: 0.03, metalness: 0, transmission: 1, ior: 1.33, thickness: 1.3,
+    attenuationColor: new THREE.Color(1, 0.7, 0.2), attenuationDistance: 0.7,
+    envMap: buildEnv(), envMapIntensity: 1.3, side: THREE.FrontSide,
+  });
+  streamMesh = new THREE.Mesh(streamGeometry(), liquid);
   streamMesh.frustumCulled = false;
-  streamMesh.material.uniforms.uBehind.value = rtBehind.texture;
   streamMesh.renderOrder = 4;
-  streamMesh.visible = false;
   // The glass's silhouette writes 1 to the stencil; inside things test for it.
   glassMask = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
     colorWrite: false, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
@@ -1257,15 +1187,7 @@ function build() {
   }));
   glassMask.frustumCulled = false;
   glassMask.renderOrder = -5;
-  vaporMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
-    vertexShader: VAPOR_VS, fragmentShader: VAPOR_FS, transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    uniforms: { ...U, uO: { value: new THREE.Vector3() }, uA: { value: new THREE.Vector3(0, 1, 0) }, uBoxMin: { value: new THREE.Vector3() }, uBoxMax: { value: new THREE.Vector3() }, uAmt: { value: 0 }, uAge: { value: 0 } },
-  }));
-  vaporMesh.frustumCulled = false;
-  vaporMesh.renderOrder = 6;
-  vaporMesh.visible = false;
-  mid.add(glassMask, glassBack, beerMesh, fizzMesh, foamMesh, streamMesh, vaporMesh);
+  mid.add(glassMask, glassBack, beerMesh, fizzMesh, foamMesh, streamMesh);
 
   // Top: the middle as seen, and the glass over it.
   top.add(fullQuad(showTex(rtScene.texture), -10));
@@ -1280,12 +1202,15 @@ function build() {
   bottleTop.matrixAutoUpdate = false;
   bottleTop.frustumCulled = false;
   bottleTop.renderOrder = 5;
-  streamTop = new THREE.Mesh(streamMesh.geometry, streamMesh.material);
+  // Drawn again after the glass: it shows wherever no glass is in front of it.
+  liquidTop = liquid.clone();
+  streamTop = new THREE.Mesh(streamMesh.geometry, liquidTop);
   streamTop.frustumCulled = false;
   streamTop.renderOrder = 6;
   top.add(bottleTop, streamTop);
 
-  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
+  // Four samples smooth the edges of the glass, the bottle and the jet.
+  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
   composer.addPass(new StagePass());
   bloom = new UnrealBloomPass(new THREE.Vector2(16, 9), 0.3, 0.65, 1.08);
   composer.addPass(bloom);
@@ -1374,7 +1299,7 @@ function poseStep(dt) {
   const pouring = bot.lift > 0.3 && (pour.on || pour.auto > 0);
   const frac = (fill.vol + fill.foam) / Math.max(fill.cap, 1);
   const target = pouring ? ritual * clamp(1 - frac / 0.55) : 0;
-  pose.tilt += (target - pose.tilt) * ease(dt, 0.5);
+  pose.tilt += (target - pose.tilt) * ease(dt, 0.3);
   if (Math.abs(pose.tilt) < 1e-4) pose.tilt = 0;
   updatePose();
 }
@@ -1440,7 +1365,7 @@ function bottleFromSizes(b) {
 }
 
 /* ---------- beer ---------- */
-const look = { sigma: [0, 0, 0], foam: [1, 1, 1] };
+const look = { sigma: [0, 0, 0], foam: [1, 1, 1], tint: [1, 0.8, 0.4] };
 function setBeer(id) {
   beer = BEERS.find(b => b.id === id) || BEERS[0];
   // Five beers have no measured outline yet; their sizes give a stand-in shape.
@@ -1463,6 +1388,10 @@ function setBeer(id) {
   glassMesh.geometry = glassGeometry(G.outline, glass.prof);
   glassBack.geometry = glassMesh.geometry;
   glassMask.geometry = glassMesh.geometry;
+  // A finger of this beer, as light sees it.
+  look.tint = look.sigma.map(x => Math.exp(-x * 3.5));
+  liquid.attenuationColor.setRGB(...look.tint);
+  liquidTop.attenuationColor.setRGB(...look.tint);
   bottleMesh.geometry.dispose();
   bottleMesh.geometry = bottleTop.geometry = new THREE.LatheGeometry(B.outline.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y)), 96);
   const bu = bottleMesh.material.uniforms;
@@ -1494,9 +1423,8 @@ const G = 981, TH0 = 0.95, _aw = new THREE.Vector3(), _rw = new THREE.Vector3();
 const pour = { on: false, auto: 0, flow: 0, gain: 0, hx: 0, hy: 0 };
 // lift: 0 at rest, 1 over the glass. th: tip (rad). Lw: beer level in bottle frame (cm).
 const bot = { lift: 0, th: 0, vol: 0, cap: 330, Lw: 0, head: -9, q: 0, focus: 0,
-  pos: new THREE.Vector3(), tpos: new THREE.Vector3(), vel: new THREE.Vector3(), aimG: new THREE.Vector3(), mouthW: new THREE.Vector3(), axisW: new THREE.Vector3(0, 1, 0), opened: false, mouth: new THREE.Vector3(), lip: new THREE.Vector3(), v0: new THREE.Vector3(), T: 0.1, w0: 0.8 };
-const vap = { puff: 0, age: 0 };
-function fillBottle() { bot.cap = beer.bottle.cl * 10; bot.vol = bot.cap; bot.opened = false; }
+  pos: new THREE.Vector3(), tpos: new THREE.Vector3(), vel: new THREE.Vector3(), aimG: new THREE.Vector3(), jet: new THREE.Vector3(), mouth: new THREE.Vector3(), lip: new THREE.Vector3(), v0: new THREE.Vector3(), T: 0.1, w0: 0.8 };
+function fillBottle() { bot.cap = beer.bottle.cl * 10; bot.vol = bot.cap; }
 // Volume below height L (measured along gravity) in vessel V tipped by th.
 // Each slice is a disc; the part below the plane is a circular segment.
 function tiltVolBelow(V, L, th) {
@@ -1531,19 +1459,19 @@ function bottleStep(dt) {
     if (full || bot.vol < bot.cap * keep || pour.auto > 30) { pour.auto = 0; fill.post = 1; }
   }
   if (engaged) {
-    bot.lift = Math.min(1, bot.lift + dt * 1.1);
+    bot.lift = Math.min(1, bot.lift + dt * 1.8);
     // It tips only once it is over the glass.
     if (bot.lift < 1) bot.th += (smooth(0.1, 0.55, bot.lift) * TH0 - bot.th) * ease(dt, 0.1);
     else {
       // Aim for a head over the lip; the drag sets it. A full glass tips back.
-      const target = full ? -0.6 : clamp(0.85 + pour.gain, 0.1, 1.8);
+      const target = full ? -0.6 : clamp(0.85 + pour.gain, 0.1, 1.4);
       // Damped: the tip slows as the beer nears the lip.
       const err = target - bot.head;
-      bot.th += clamp(err * (err > 0 ? 0.5 : 1.4), -1.2, err > 0 && bot.head > -0.6 ? 0.25 : 0.8) * dt;
+      bot.th += clamp(err * (err > 0 ? 1.2 : 2.0), -1.6, err > 0 && bot.head > -0.4 ? 0.55 : 1.4) * dt;
     }
   } else {
-    bot.th = Math.max(0, bot.th - dt * 1.7);
-    if (bot.th < TH0 * smooth(0.1, 0.55, bot.lift) + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.0);
+    bot.th = Math.max(0, bot.th - dt * 2.6);
+    if (bot.th < TH0 * smooth(0.1, 0.55, bot.lift) + 0.02) bot.lift = Math.max(0, bot.lift - dt * 1.6);
   }
   bot.th = clamp(bot.th, 0, 2.55);
   const th = bot.th, c = Math.cos(th), sn = Math.sin(th), h = bottleV.h;
@@ -1552,16 +1480,15 @@ function bottleStep(dt) {
   const lipY = -rm * sn + h * c;
   bot.head = bot.vol > 0.5 ? bot.Lw - lipY : -9;
   // Flow over a weir: Q grows as head^1.5.
-  const q = bot.head > 0 ? 34 * Math.pow(Math.min(bot.head, 2.2), 1.5) : 0;
+  const q = bot.head > 0 ? 75 * Math.pow(Math.min(bot.head, 1.5), 1.5) : 0;
   const dv = Math.min(q * dt, bot.vol);
   bot.vol -= dv;
   bot.q += ((dt > 0 ? dv / dt : 0) - bot.q) * ease(dt, 0.07);
   // The jet leaves the lip along the bottle's axis.
-  const sp = Math.sqrt(2 * G * Math.max(bot.head, 0.05));
+  // Beer runs over the lip slowly, so the jet falls steeply.
+  const sp = 0.6 * Math.sqrt(2 * G * Math.max(bot.head, 0.05));
   bot.v0.set(-sn * sp, c * sp, 0);
-  bot.w0 = clamp(2 * Math.sqrt(Math.max(bot.q, 0.5) / (Math.PI * sp)), 0.12, 1.6);
-  // At the mouth the jet still fills most of the neck.
-  bot.w0 = Math.max(bot.w0, 1.2 * clamp(bot.q / 15));
+  bot.w0 = clamp(2 * Math.sqrt(Math.max(bot.q, 0.3) / (Math.PI * sp)), 0.1, 1.7);
   // Aim, in the glass frame: the low inner wall while canted, the surface once upright.
   const rimR = glass.ri(glass.h - 0.3);
   const tl = clamp(pose.tilt / 0.45);
@@ -1593,19 +1520,14 @@ function bottleStep(dt) {
   bot.tpos.set(lerp(rest.x, px, smooth(0.45, 0.95, L)), ty, lerp(rest.z, pz, smooth(0.1, 0.5, L)));
   // A critically damped spring smooths every move.
   if (dt > 0) {
-    const w = 9;
+    const w = 13;
     bot.vel.addScaledVector(_aw.copy(bot.tpos).sub(bot.pos).multiplyScalar(w * w).addScaledVector(bot.vel, -2 * w), dt);
     bot.pos.addScaledVector(bot.vel, dt);
   } else { bot.pos.copy(bot.tpos); bot.vel.set(0, 0, 0); }
   bot.lip.set(bot.pos.x + lipX, bot.pos.y + lipYw, bot.pos.z);
   bot.focus = smooth(0.25, 0.75, bot.lift);
-  // The neck's mouth and axis, in the room.
-  bot.mouthW.set(bot.pos.x - h * sn, bot.pos.y + h * c, bot.pos.z);
-  bot.axisW.set(-sn, c, 0);
-  // A fresh bottle breathes out cold CO2 fog as it lifts; it thins over two seconds.
-  if (!bot.opened && bot.lift > 0.12) { bot.opened = true; vap.puff = 1; vap.age = 0; }
-  vap.age += dt;
-  vap.puff *= Math.exp(-dt / 1.8);
+  // The jet rests on the lower lip: its centre is one radius in from it.
+  bot.jet.set(bot.lip.x + c * bot.w0 * 0.42, bot.lip.y + sn * bot.w0 * 0.42, bot.lip.z);
   // The glass takes what the jet brings; a long drop whips up more head.
   if (dv > 0) {
     const drop = Math.max(bot.lip.y - yT, 0);
@@ -1762,29 +1684,12 @@ function render() {
   tb.matrixWorldNeedsUpdate = true;
   U.uSlope.value.set(fill.slope + swirl.sx, swirl.sz);
   bottleMesh.material.uniforms.uBLevel.value = bot.vol > 0.5 ? bot.pos.y + bot.Lw : -99;
-  // The vapour box follows the neck; it draws only while there is fog.
-  const amt = vap.puff + 0.05 * clamp(bot.q / 20);
-  vaporMesh.visible = amt > 0.01 && !reduced();
-  if (vaporMesh.visible) {
-    const vu = vaporMesh.material.uniforms;
-    vu.uO.value.copy(bot.mouthW).applyMatrix4(W2G);
-    vu.uA.value.copy(bot.axisW).applyMatrix3(R_W2G).normalize();
-    vu.uAmt.value = amt;
-    vu.uAge.value = Math.min(vap.age, 3);
-    const cen = _t.copy(vu.uA.value).multiplyScalar(2.5).add(vu.uO.value);
-    vu.uBoxMin.value.copy(cen).subScalar(4.5);
-    vu.uBoxMax.value.copy(cen).addScalar(4.5);
-    vaporMesh.position.copy(cen);
-    vaporMesh.scale.setScalar(9);
+  streamMesh.visible = streamTop.visible = bot.q > 0.4;
+  if (streamMesh.visible) {
+    updateStream();
+    // Lamp light scattered inside the jet: a soft glow in the beer's colour.
+    for (const m of [liquid, liquidTop]) m.emissive.setRGB(lamp[0] * look.tint[0] * 0.2, lamp[1] * look.tint[1] * 0.2, lamp[2] * look.tint[2] * 0.2);
   }
-  const su = streamMesh.material.uniforms, sf = clamp(bot.q / 6);
-  streamMesh.visible = streamTop.visible = sf > 0.01;
-  su.uFlow.value = sf;
-  su.uP0.value.copy(bot.lip).applyMatrix4(W2G);
-  su.uV0.value.copy(bot.v0).applyMatrix3(R_W2G);
-  su.uGv.value.copy(GRAV);
-  su.uT.value = bot.T;
-  su.uW0.value = bot.w0;
   finalPass.uniforms.uTime.value = time;
   composer.render();
 }
@@ -1795,7 +1700,7 @@ function render() {
 let raf = 0, last = 0, lastDraw = 0, visible = true, lastInput = performance.now(), pace = 1, ready = false;
 const live = () => { lastInput = performance.now(); wake(); };
 function wake() { if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); } }
-const lively = () => vap.puff > 0.01 || pose.tilt > 1e-3 || swirlLively() || sip.beer > 0.05 || pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
+const lively = () => pose.tilt > 1e-3 || swirlLively() || sip.beer > 0.05 || pour.on || pour.auto > 0 || pour.flow > 0.01 || fill.post > 0.02 || bot.lift > 0.001;
 function frame(now) {
   raf = 0;
   let again = true;
@@ -1871,9 +1776,11 @@ try {
   build();
   resize();
   setBeer(beer.id);
+  streamMesh.visible = streamTop.visible = true;
   await renderer.compileAsync(back, camera);
   await renderer.compileAsync(mid, camera);
   await renderer.compileAsync(top, camera);
+  streamMesh.visible = streamTop.visible = false;
   render();
   canvas.classList.add('on');
   ready = true;

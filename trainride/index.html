@@ -204,6 +204,14 @@ float landO(vec2 xz, int oct) {
   return h;
 }
 float land(vec2 xz) { return landO(xz, 7); }`;
+// The road wanders beside the line; land, trees and poles all read it.
+const ROAD = /* glsl */`
+float roadZ(float x) { return -(68.0 + 24.0 * sin(x * 0.0011) + 9.0 * sin(x * 0.0047 + 1.3)); }
+// The road runs in some 1300 m stretches; it narrows to nothing at each end.
+float roadW(float x) {
+  float f = fract(x / 1300.0);
+  return step(0.45, hash1(vec2(floor(x / 1300.0), 3.0))) * smoothstep(0.0, 0.04, f) * smoothstep(1.0, 0.96, f);
+}`;
 
 // The route map: half-float heights, and a lake flag with town density.
 const tH = new THREE.DataTexture(ROUTE.h, ROUTE.w, ROUTE.ht, THREE.RedFormat, THREE.HalfFloatType);
@@ -388,6 +396,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   uniform float uTime;
   ${NOISE}
   ${LAND}
+  ${ROAD}
   ${HAZE}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
@@ -495,6 +504,15 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float sl = mix(1450.0, 1080.0, sg.z);
     float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
     alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
+    // The country road: grey asphalt with pale verges, on dry and gentle ground.
+    float rw = roadW(vP.x) * step(4.0, wd) * smoothstep(0.22, 0.12, slope);
+    if (rw > 0.0) {
+      float rd = abs(vP.z - roadZ(vP.x)), fr = fwidth(rd) + 0.05;
+      float verge = 1.0 - smoothstep(3.2 - fr, 3.2 + fr, rd);
+      float road = 1.0 - smoothstep(2.5 - fr, 2.5 + fr, rd);
+      alb = mix(alb, vec3(0.3, 0.29, 0.25), verge * rw * (1.0 - snow));
+      alb = mix(alb, vec3(0.17, 0.17, 0.17), road * rw * (1.0 - snow));
+    }
     // Day: sun with soft terrain shadows, and sky light.
     // Hedges and tree lines edge the fields.
     if (flatL > 0.0) {
@@ -727,6 +745,443 @@ const glints = [];
   p.frustumCulled = false;
   p.renderOrder = 2;
   out.add(p);
+}
+
+/* Props: trees, Swiss houses, fences, bales, poles and a country road. */
+// A placement pass per kind decides on the GPU where each one stands.
+// Each texel holds one instance: its base point and size, or zero for none.
+const PROPG = /* glsl */`
+uniform float uCamX;
+uniform vec2 uStn;
+${ROAD}
+// Wraps a patch x round the camera; y counts the wraps, so each pass differs.
+vec2 wrapP(float x, float P) { float wx = uCamX + mod(x - uCamX + P * 0.5, P) - P * 0.5; return vec2(wx, floor((wx - x) / P + 0.5)); }
+float slopeAt(vec2 xz, float e) { float h = land(xz); return 1.0 - normalize(vec3(h - land(xz + vec2(e, 0.0)), e, h - land(xz + vec2(0.0, e)))).y; }
+bool atStation(vec2 xz, float m) { return uStn.y > 0.0 && abs(xz.x - uStn.x) < uStn.y + m && xz.y > -45.0; }
+bool onRoad(vec2 xz, float m) { return roadW(xz.x) > 0.0 && abs(xz.y - roadZ(xz.x)) < m; }
+// The same woods the land paints: fbm on the slopes, none on flat floors.
+float forestAt(vec2 xz, float slope) {
+  float fm = fbm(xz * 0.0035 + 4.0) + slope * 0.9 + (vnoise(xz * 0.04) - 0.5) * 0.1;
+  fm -= 0.3 * smoothstep(0.08, 0.02, slope);
+  return smoothstep(0.5, 0.7, fm);
+}`;
+// Lit like the land: wrapped sun, sky fill, moon by night, town glow, haze.
+const PROPL = /* glsl */`
+vec3 propLit(vec3 P, vec3 N, vec3 alb, float ao, float trans) {
+  vec3 V = normalize(cameraPosition - P);
+  float w = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
+  vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * w * w + skyA(N.y) * 1.7 * ao + sunC() * vec3(0.05, 0.065, 0.04) * (1.0 - w);
+  // Leaves glow when the sun stands behind them.
+  day += sunC() * trans * pow(max(dot(-V, uSun), 0.0), 4.0) * 0.3 * vec3(0.9, 1.0, 0.6) * (1.0 - uRain);
+  vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
+  vec3 c = alb * mix(night, day, uDay) * mix(0.7, 1.0, ao);
+  if (uDay < 0.99) {
+    vec3 pool = vec3(0.0);
+    for (int i = 0; i < ${NG}; i++) { float d = length(uGP[i].xyz - P); pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0); }
+    c += alb * pool * (1.0 - uDay);
+  }
+  return c;
+}`;
+const placers = [];
+const PW = 128;
+function placer(data, body) {
+  const n = data.length / 4, h = Math.ceil(n / PW), buf = new Float32Array(PW * h * 4);
+  buf.set(data);
+  const tIn = new THREE.DataTexture(buf, PW, h, THREE.RGBAFormat, THREE.FloatType);
+  tIn.needsUpdate = true;
+  const rt = new THREE.WebGLRenderTarget(PW, h, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+  const q = new FullScreenQuad(new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tIn: { value: tIn } }),
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: /* glsl */`
+    uniform sampler2D tIn;
+    ${NOISE}
+    ${LAND}
+    ${PROPG}
+    ${body}
+    void main() { gl_FragColor = place(texelFetch(tIn, ivec2(gl_FragCoord.xy), 0)); }`,
+  }));
+  const p = { n, tex: rt.texture, run(r) { r.setRenderTarget(rt); q.render(r); } };
+  placers.push(p);
+  return p;
+}
+// Joins parts into one flat geometry; each vertex keeps its part number.
+function joinParts(list, soft) {
+  const P = [], N = [], T = [];
+  for (const [g0, part, c] of list) {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    const p = g.attributes.position.array, nn = g.attributes.normal.array;
+    for (let i = 0; i < p.length; i += 3) {
+      P.push(p[i], p[i + 1], p[i + 2]);
+      let n = [nn[i], nn[i + 1], nn[i + 2]];
+      // A soft crown: leaf clumps share one rounded normal, as in a clay model.
+      if (c) {
+        const d = [p[i] - c[0], p[i + 1] - c[1], p[i + 2] - c[2]], l = Math.hypot(...d) || 1;
+        n = n.map((v, k) => v * (1 - soft) + d[k] / l * soft);
+      }
+      N.push(...n);
+      T.push(part);
+    }
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  return g;
+}
+function propMesh(geo, pl, vs, fs, opts = {}) {
+  geo.instanceCount = pl.n;
+  const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tPl: { value: pl.tex } }),
+    side: opts.side ?? THREE.FrontSide,
+    transparent: !!opts.transparent, depthWrite: !opts.transparent,
+    vertexShader: /* glsl */`
+    uniform sampler2D tPl;
+    attribute float part;
+    varying vec3 vP, vN;
+    varying float vPart;
+    ${NOISE}
+    ${LAND}
+    vec4 inst() { return texelFetch(tPl, ivec2(gl_InstanceID % ${PW}, gl_InstanceID / ${PW}), 0); }
+    ${vs}`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP, vN;
+    varying float vPart;
+    uniform float uTime;
+    ${NOISE}
+    ${HAZE}
+    ${PROPL}
+    ${fs}`,
+  }));
+  m.frustumCulled = false;
+  if (opts.order) m.renderOrder = opts.order;
+  out.add(m);
+  return m;
+}
+const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
+{
+  // Trees: a 2.4 km patch of candidates, none past 1 km; far woods are painted.
+  const TP = 2400, n = PW * 128, d = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) d.set([rnd() * TP, -(16 + 1000 * rnd() ** 1.35), rnd() * 1000, 0], i * 4);
+  const trees = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${TP}.0), xz = vec2(wk.x, a.y);
+    float k = wk.y, h = hash1(vec2(a.z * 0.0371, k + 0.5));
+    if (atStation(xz, 30.0) || shore(xz) < 3.0 || onRoad(xz, 7.0)) return vec4(0.0);
+    float s = slopeAt(xz, 6.0), y = land(xz);
+    if (s > 0.6 || y + 20.0 > 1350.0 + (hash1(vec2(k, a.z)) - 0.5) * 300.0) return vec4(0.0);
+    float f = forestAt(xz, s), tw = town(xz);
+    // Woods stand thick; the open meadow keeps a few lone trees.
+    if (h > f * 0.92 + 0.02 * (1.0 - f) - tw * 0.7) return vec4(0.0);
+    // Spruce holds the high, steep ground; broadleaf the low.
+    float sp = clamp((smoothstep(250.0, 900.0, y + 20.0) + s * 1.5) * 0.7 + 0.2, 0.1, 0.95);
+    float kind = hash1(vec2(a.z * 0.133, k + 4.0)) < sp ? 1.0 : 0.0;
+    return vec4(xz.x, y, xz.y, 0.7 + 0.6 * hash1(vec2(a.z, k + 9.0)) + kind * 10.0);
+  }`);
+  // Shrubs: a low fringe along the line, beyond the second track.
+  const SP = 900, ns = PW * 32, ds = new Float32Array(ns * 4);
+  for (let i = 0; i < ns; i++) ds.set([rnd() * SP, -(11 + 60 * rnd() ** 1.3), rnd() * 1000, 0], i * 4);
+  const shrubs = placer(ds, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${SP}.0), xz = vec2(wk.x, a.y);
+    float h = hash1(vec2(a.z * 0.0291, wk.y + 0.5));
+    if (atStation(xz, 20.0) || shore(xz) < 2.0 || onRoad(xz, 4.0)) return vec4(0.0);
+    if (h > 0.08 - town(xz) * 0.8) return vec4(0.0);
+    return vec4(xz.x, land(xz), xz.y, 0.18 + 0.18 * hash1(vec2(a.z, wk.y + 9.0)));
+  }`);
+  const crown = [[2.6, 0, 4.7, 0], [2.0, 1.3, 4.0, 0.6], [1.9, -1.1, 4.2, -0.7], [1.6, 0.2, 6.2, 0.2]];
+  const leafy = joinParts([
+    [new THREE.CylinderGeometry(0.18, 0.28, 3.4, 6).translate(0, 1.5, 0), 0],
+    ...crown.map(([r, x, y, z]) => [new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), 1, [0, 4.8, 0]]),
+  ], 0.55);
+  const spruce = joinParts([
+    [new THREE.CylinderGeometry(0.15, 0.25, 2.2, 6).translate(0, 1.0, 0), 0],
+    ...[[2.3, 4.2, 3.3], [1.8, 3.6, 5.6], [1.25, 3.2, 7.7], [0.7, 2.4, 9.4]].map(([r, hh, y]) => [new THREE.ConeGeometry(r, hh, 9).translate(0, y, 0), 1, [0, 5.5, 0]]),
+  ], 0.35);
+  const treeVS = (kind, shrub) => /* glsl */`
+  varying float vTint, vY;
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float kind = floor(q.w / 10.0), sc = q.w - kind * 10.0;
+    ${shrub ? '' : `if (kind != ${kind}.0) { ${HIDE} }`}
+    float yaw = hash1(q.xz * 0.013) * 6.283, c = cos(yaw), s = sin(yaw);
+    mat2 R = mat2(c, -s, s, c);
+    vec3 p = position * sc;
+    // Shrubs grow wide and low.
+    ${shrub ? 'p.xz *= 1.5;' : ''}
+    p.xz = R * p.xz;
+    vec3 n = normal;
+    n.xz = R * n.xz;
+    vP = q.xyz + p - vec3(0.0, 0.4 * sc, 0.0);
+    vN = n;
+    vPart = part;
+    vTint = hash1(q.xz * 0.071);
+    vY = position.y / 10.0;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`;
+  const treeFS = (kind) => /* glsl */`
+  varying float vTint, vY;
+  void main() {
+    vec3 N = normalize(vN);
+    vec3 alb = vec3(0.12, 0.085, 0.055);
+    if (vPart > 0.5) {
+      alb = ${kind === 1 ? 'mix(vec3(0.035, 0.07, 0.04), vec3(0.055, 0.095, 0.045), vTint)' : 'mix(vec3(0.07, 0.125, 0.04), vec3(0.12, 0.16, 0.05), vTint)'};
+      // Clumps of leaves, faded before they can shimmer.
+      float cl = vnoise(vP.xz * 1.3 + vP.y * 0.9);
+      alb *= 0.9 + 0.2 * mix(cl, 0.5, smoothstep(0.3, 0.9, length(fwidth(vP.xz * 1.3))));
+    }
+    // The lower crown and the trunk see less sky.
+    float ao = smoothstep(0.0, 0.8, vY);
+    vec3 c = propLit(vP, N, alb, ao, vPart * 0.6);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`;
+  propMesh(leafy, trees, treeVS(0, false), treeFS(0));
+  propMesh(spruce, trees, treeVS(1, false), treeFS(1));
+  propMesh(joinParts([...crown.map(([r, x, y, z]) => [new THREE.IcosahedronGeometry(r, 1).translate(x, y - 1.2, z), 1, [0, 3.6, 0]])], 0.6), shrubs, treeVS(0, true), treeFS(0));
+}
+{
+  // Houses: chalets in the villages, barns on the farms, plaster blocks in Zurich.
+  const HP = 3000, n = PW * 48, d = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) d.set([rnd() * HP, -(24 + 1500 * rnd() ** 1.4), rnd() * 1000, 0], i * 4);
+  const houses = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${HP}.0), xz = vec2(wk.x, a.y);
+    float k = wk.y, h = hash1(vec2(a.z * 0.0517, k + 0.5));
+    if (atStation(xz, 20.0) || shore(xz) < 10.0 || onRoad(xz, 9.0)) return vec4(0.0);
+    float s = slopeAt(xz, 8.0), y = land(xz);
+    if (s > 0.3 || y + 20.0 > 1100.0) return vec4(0.0);
+    float tw = town(xz), f = forestAt(xz, s);
+    // Villages follow the map; lone farms dot the open meadow.
+    float p = tw * 0.55 + 0.014 * (1.0 - f) * smoothstep(0.12, 0.03, s);
+    if (f > 0.6 || h > p) return vec4(0.0);
+    float rx = mod(xz.x, ${f8(TILE)});
+    float kind = (rx < 4500.0 && tw > 0.45) ? 2.0 : (tw < 0.15 && hash1(vec2(a.z, k + 3.0)) < 0.45) ? 1.0 : 0.0;
+    return vec4(xz.x, y, xz.y, 1.0 + kind * 10.0 + 0.9 * hash1(vec2(a.z, k + 7.0)));
+  }`);
+  // A unit gable roof: ridge along z, so each gable faces the train and the lake.
+  const roof = (() => {
+    const v = { L0: [-0.5, 0, -0.5], R0: [0.5, 0, -0.5], T0: [0, 1, -0.5], L1: [-0.5, 0, 0.5], R1: [0.5, 0, 0.5], T1: [0, 1, 0.5] };
+    const tri = (...k) => k.flatMap(n => v[n]);
+    const mk = a => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); g.computeVertexNormals(); return g; };
+    return {
+      slopes: mk([...tri('L0', 'L1', 'T1'), ...tri('L0', 'T1', 'T0'), ...tri('R0', 'T0', 'T1'), ...tri('R0', 'T1', 'R1'), ...tri('L0', 'R0', 'R1'), ...tri('L0', 'R1', 'L1')]),
+      gables: mk([...tri('L0', 'T0', 'R0'), ...tri('L1', 'R1', 'T1')]),
+    };
+  })();
+  const geo = joinParts([[new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0], [roof.slopes, 1], [roof.gables, 2]]);
+  propMesh(geo, houses, /* glsl */`
+  varying vec3 vL, vS;
+  varying float vK, vV;
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float kind = floor(q.w / 10.0), v = q.w - kind * 10.0 - 1.0;
+    float h2 = hash1(q.xz * 0.37), h3 = hash1(q.xz * 0.53 + 2.0);
+    vec3 S;
+    float rh;
+    if (kind < 0.5) { S = vec3(9.0 + 5.0 * v, 5.5 + 2.5 * h2, 8.0 + 3.0 * h3); rh = 0.3 * S.x; }
+    else if (kind < 1.5) { S = vec3(14.0 + 6.0 * v, 5.0 + 2.0 * h2, 16.0 + 7.0 * h3); rh = 0.42 * S.x; }
+    else { S = vec3(16.0 + 14.0 * v, 12.0 + 12.0 * h2, 12.0 + 4.0 * h3); rh = 0.06 * S.x; }
+    vec3 p = position, l;
+    // Walls reach 4 m into the ground, so a slope never shows a gap.
+    if (part < 0.5) l = vec3(p.x * S.x, p.y < 0.01 ? -4.0 : S.y, p.z * S.z);
+    // The roof overhangs the walls and the gables.
+    else if (part < 1.5) l = vec3(p.x * S.x * 1.14, S.y + 0.1 + p.y * rh, p.z * S.z * 1.12);
+    else l = vec3(p.x * S.x, S.y + p.y * rh, p.z * S.z);
+    float yaw = (hash1(q.xz * 0.19) - 0.5) * (kind > 1.5 ? 0.3 : 0.7), c = cos(yaw), s = sin(yaw);
+    vec3 w = vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z);
+    vP = q.xyz + w;
+    vN = vec3(0.0, 1.0, 0.0);
+    vL = l; vS = S; vK = kind; vV = hash1(q.xz * 0.77);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying vec3 vL, vS;
+  varying float vK, vV;
+  void main() {
+    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
+    if (dot(N, cameraPosition - vP) < 0.0) N = -N;
+    vec3 alb, glow = vec3(0.0);
+    if (vPart > 0.5 && vPart < 1.5) {
+      // Roofs: brown tile, dark timber shingle or grey slate; flat tops in town.
+      alb = vV < 0.5 ? vec3(0.2, 0.1, 0.065) : vV < 0.8 ? vec3(0.14, 0.09, 0.06) : vec3(0.17, 0.17, 0.19);
+      if (vK > 1.5) alb = vec3(0.24, 0.24, 0.25);
+      // The eaves' underside sits in shade.
+      if (N.y < -0.2) alb *= 0.4;
+    } else {
+      vec3 plaster = mix(vec3(0.78, 0.75, 0.68), vec3(0.86, 0.83, 0.76), vV);
+      vec3 wood = mix(vec3(0.28, 0.16, 0.08), vec3(0.36, 0.22, 0.12), fract(vV * 7.0));
+      // A chalet: a plaster ground floor, timber above and in the gable.
+      alb = vL.y < 2.9 && vPart < 1.5 ? plaster : wood;
+      if (vK > 0.5 && vK < 1.5) alb = vL.y < 0.8 ? plaster * 0.8 : mix(vec3(0.3, 0.22, 0.15), vec3(0.36, 0.27, 0.18), vV);
+      if (vK > 1.5) alb = mix(vec3(0.8, 0.77, 0.7), vec3(0.82, 0.78, 0.6), step(0.6, vV));
+      // Windows with shutters, on rows of 2.8 m; barns have none.
+      bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
+      float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
+      float gap = vK > 1.5 ? 3.0 : 2.6, ww = vK > 1.5 ? 0.75 : 0.5;
+      float cu = fract(u / gap) - 0.5, row = floor((vL.y - 0.9) / 2.8), cv = vL.y - 0.9 - row * 2.8;
+      float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
+      if (vK < 0.5 || vK > 1.5) if (row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && cv < 1.3 && vPart < 1.5) {
+        float ax = abs(cu) * gap;
+        float lit = step(0.5, hash1(vec2(floor(u / gap), row) + vV * 31.0));
+        if (ax < ww) {
+          alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
+          glow = vec3(1.0, 0.72, 0.42) * 1.4 * lit * (1.0 - uDay) * fade;
+        } else if (vK < 0.5 && ax < ww + 0.42) {
+          // Shutters: green, red or grey, one colour per house.
+          vec3 sh = vV < 0.4 ? vec3(0.08, 0.2, 0.1) : vV < 0.7 ? vec3(0.3, 0.07, 0.05) : vec3(0.5, 0.5, 0.48);
+          alb = mix(alb, sh, fade);
+        }
+      }
+    }
+    float ao = smoothstep(-0.5, 2.0, vL.y);
+    vec3 c = propLit(vP, N, alb, ao, 0.0) + glow;
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`, { side: THREE.DoubleSide });
+}
+{
+  // Fences: runs of 4 m timber segments, most along the line, some leading away.
+  const FP = 1600, n = PW * 32, d = new Float32Array(n * 4);
+  for (let i = 0; i < n;) {
+    const x0 = rnd() * FP, z0 = -(13 + 420 * rnd() ** 1.6), along = rnd() < 0.7;
+    const a = along ? (rnd() - 0.5) * 0.12 : -Math.PI / 2 + (rnd() - 0.5) * 0.3, len = 5 + Math.floor(rnd() * 22), id = rnd() * 1000;
+    for (let k = 0; k < len && i < n; k++, i++) d.set([x0 + k * 4 * Math.cos(a), z0 + k * 4 * Math.sin(a), a, id], i * 4);
+  }
+  const fences = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${FP}.0), xz = vec2(wk.x, a.y);
+    if (xz.y > -12.0 || atStation(xz, 40.0) || shore(xz) < 2.0 || onRoad(xz, 3.0)) return vec4(0.0);
+    if (hash1(vec2(a.w * 0.0173, wk.y + 0.5)) > 0.55 * (1.0 - town(xz))) return vec4(0.0);
+    float s = slopeAt(xz, 4.0);
+    if (s > 0.35 || forestAt(xz, s) > 0.45) return vec4(0.0);
+    return vec4(xz.x, 0.0, xz.y, a.z + 10.0);
+  }`);
+  const geo = joinParts([
+    [new THREE.BoxGeometry(0.12, 1.2, 0.12).translate(0, 0.5, 0), 0],
+    [new THREE.BoxGeometry(4.0, 0.08, 0.05).translate(2, 0.45, 0), 1],
+    [new THREE.BoxGeometry(4.0, 0.08, 0.05).translate(2, 0.92, 0), 1],
+  ]);
+  propMesh(geo, fences, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vec2 xz = q.xz + vec2(c * position.x - s * position.z, s * position.x + c * position.z);
+    // Each vertex sits on the ground below it, so the fence follows the land.
+    vP = vec3(xz.x, land(xz) + position.y - 0.05, xz.y);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 c = propLit(vP, normalize(vN), vec3(0.3, 0.26, 0.21), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+}
+{
+  // Round bales in white wrap, in loose groups on the flat meadow.
+  const BP = 2000, n = PW * 16, d = new Float32Array(n * 4);
+  for (let i = 0; i < n;) {
+    const cx = rnd() * BP, cz = -(18 + 520 * rnd() ** 1.4), m = 3 + Math.floor(rnd() * 7), id = rnd() * 1000, row = rnd() < 0.5;
+    for (let k = 0; k < m && i < n; k++, i++) d.set(row ? [cx + k * 2.1, cz + (rnd() - 0.5) * 0.4, id, rnd() * 0.3] : [cx + (rnd() - 0.5) * 18, cz + (rnd() - 0.5) * 12, id, rnd() * 3.14], i * 4);
+  }
+  const bales = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${BP}.0), xz = vec2(wk.x, a.y);
+    if (atStation(xz, 40.0) || shore(xz) < 8.0 || onRoad(xz, 4.0) || town(xz) > 0.2) return vec4(0.0);
+    if (hash1(vec2(a.z * 0.0123, wk.y + 0.5)) > 0.3) return vec4(0.0);
+    float s = slopeAt(xz, 5.0);
+    if (s > 0.07 || forestAt(xz, s) > 0.15) return vec4(0.0);
+    return vec4(xz.x, land(xz), xz.y, a.w + 10.0);
+  }`);
+  const geo = joinParts([[new THREE.CylinderGeometry(0.66, 0.66, 1.25, 16).rotateZ(Math.PI / 2).translate(0, 0.6, 0), 0]]);
+  propMesh(geo, bales, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vP = q.xyz + vec3(c * position.x - s * position.z, position.y - 0.08, s * position.x + c * position.z);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = hash1(q.xz);
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+    vec3 alb = vPart < 0.8 ? vec3(0.8, 0.82, 0.8) : vec3(0.45, 0.6, 0.42);
+    vec3 c = propLit(vP, N, alb, 1.0, 0.0);
+    // The plastic wrap has a soft sheen.
+    c += sunC() * uDay * 0.08 * pow(max(dot(reflect(-uSun, N), V), 0.0), 20.0);
+    gl_FragColor = vec4(mix(c, hazeCol(-V, vP), hazeAmt(vP)), 1.0);
+  }`);
+}
+{
+  // Timber power poles along the road, every 42 m, with three sagging wires.
+  const GAP = 42, NP = 64, d = new Float32Array(NP * 4);
+  for (let i = 0; i < NP; i++) d.set([i * GAP, 0, i, 0], i * 4);
+  const poles = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${GAP * NP}.0);
+    float x = wk.x, z = roadZ(x) + 4.5;
+    vec2 xz = vec2(x, z);
+    if (roadW(x) <= 0.0 || atStation(xz, 30.0) || shore(xz) < 3.0) return vec4(0.0);
+    // w carries the road's heading for the cross arm.
+    return vec4(x, land(xz), z, atan(roadZ(x + 1.0) - roadZ(x)) + 10.0);
+  }`);
+  const geo = joinParts([
+    [new THREE.CylinderGeometry(0.11, 0.15, 9.6, 6).translate(0, 4.6, 0), 0],
+    [new THREE.BoxGeometry(0.14, 0.12, 1.9).translate(0, 8.7, 0), 0],
+  ]);
+  propMesh(geo, poles, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vP = q.xyz + vec3(c * position.x - s * position.z, position.y, s * position.x + c * position.z);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 c = propLit(vP, normalize(vN), vec3(0.2, 0.15, 0.11), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+  // Wires: ribbons that face the eye and never thin below a pixel; coverage sets alpha.
+  const SEGS = 16, P = [], N = [], T = [];
+  for (let wi = 0; wi < 3; wi++) for (let k = 0; k < SEGS; k++) {
+    const t0 = k / SEGS, t1 = (k + 1) / SEGS;
+    for (const [t, sd] of [[t0, -1], [t1, -1], [t1, 1], [t0, -1], [t1, 1], [t0, 1]]) { P.push(t, sd, wi); N.push(0, 1, 0); T.push(0); }
+  }
+  const wg = new THREE.InstancedBufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  wg.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  wg.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  propMesh(wg, poles, /* glsl */`
+  varying float vA;
+  void main() {
+    vec4 q0 = inst();
+    int j = (gl_InstanceID + 1) % ${NP};
+    vec4 q1 = texelFetch(tPl, ivec2(j % ${PW}, j / ${PW}), 0);
+    if (q0.w <= 0.0 || q1.w <= 0.0 || abs(q1.x - q0.x - ${GAP}.0) > 1.0) { ${HIDE} }
+    vec3 d = normalize(q1.xyz - q0.xyz);
+    vec3 across = normalize(vec3(-d.z, 0.0, d.x));
+    float wi = position.z, t = position.x;
+    vec3 off = across * (wi - 1.0) * 0.8 + vec3(0.0, wi == 1.0 ? 9.35 : 8.78, 0.0);
+    vec3 p = mix(q0.xyz, q1.xyz, t) + off - vec3(0.0, 0.9 * 4.0 * t * (1.0 - t), 0.0);
+    float dist = length(p - cameraPosition);
+    float wd = max(0.022, dist * 0.0011);
+    vec3 side = normalize(cross(d, p - cameraPosition));
+    vP = p + side * position.y * wd * 0.5;
+    vN = vec3(0.0, 1.0, 0.0);
+    vPart = 0.0;
+    vA = 0.022 / wd;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying float vA;
+  void main() {
+    vec3 c = propLit(vP, vec3(0.0, 1.0, 0.0), vec3(0.04), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), clamp(vA, 0.0, 1.0) * 0.9);
+  }`, { transparent: true, order: 1 });
 }
 
 // The carriage's lit panes throw warm light out onto the rain and the parapet.
@@ -2263,6 +2718,7 @@ return {
   before(r) {
     // Rebake the cabin when day and night have moved on.
     if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomCam.update(r, room); baked = true; bakedDay = dayV; }
+    for (const p of placers) p.run(r);
     r.setRenderTarget(outRT);
     r.render(out, outCam);
     // The bokeh pass runs only while the pane holds fog.
