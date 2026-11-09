@@ -187,3 +187,6 @@ Open from the critics:
 - [x] Catenary masts: wider, darker, less smear fade, so they flick past the window
 - [x] Pane rain calmer: shared grBeads takes a dens factor (Train Ride 0.4); runs stick and slip below 18 m/s (grRuns stick); Window seat calls unchanged
 - [x] Dev: window.__train.S.hold(x) parks the train at a route metre
+- [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
+- [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
+- [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
