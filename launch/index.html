@@ -62,7 +62,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 /* ---------- settings ---------- */
@@ -79,7 +79,7 @@ const opts = {
 
 /* ---------- bar ---------- */
 const act = { launch() {} };
-const ui = initPage({ id: 'launch', silent: true, bar: {
+const ui = initPage({ id: 'launch', bar: {
   choice: {
     label: 'Rocket', value: opts.kind,
     options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }],
@@ -147,6 +147,8 @@ const U = {
   uFlameC: { value: new THREE.Vector3(1, 0.5, 0.18) },
   // The Earth's shadow line in km of real altitude.
   uShadowH: { value: 35 },
+  // The sound front: pad x, pad z, radius, strength.
+  uFront: { value: new THREE.Vector4(0, 0, 0, 0) },
   // Thick air round a low flame glows; thin air high up does not.
   uAir: { value: 1 },
 };
@@ -380,6 +382,14 @@ function renderMirror() {
 const REED_GLSL = /* glsl */`
 uniform vec3 uAmb, uGlowC;
 uniform float uSway;
+uniform vec4 uFront;
+// The sound front pushes reeds away from the pad as it passes.
+vec2 frontPush(vec2 p) {
+  if (uFront.w < 0.001) return vec2(0.0);
+  vec2 d = p - uFront.xy;
+  float L = length(d), e = L - uFront.z;
+  return d / max(L, 1.0) * exp(-e * e / 1800.0) * uFront.w;
+}
 // A gust field: long rolling waves with a little noise on top.
 vec2 gust(vec2 p, float t) {
   float w = sin(p.x * 0.05 + p.y * 0.02 - t * 1.1) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.9) * 0.3;
@@ -479,6 +489,7 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     float hy = c.y / max(H, 0.1);
     vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.3 * H;
     c.xz += g + vec2(sin(uTime * 2.3 + aJ.y * 6.0), cos(uTime * 1.7 + aJ.y * 4.0)) * 0.025 * hy * uSway;
+    c.xz += frontPush(root.xz) * hy * hy * 0.35 * H;
     // The ribbon turns to face the eye round its own axis.
     vec3 V = normalize(cameraPosition - c);
     vec3 side3 = normalize(cross(normalize(tan_), V));
@@ -551,7 +562,7 @@ const bankMat = new THREE.ShaderMaterial({
   void main() {
     vec3 P = position;
     // The crest sways with the same gusts as the near stalks.
-    P.xz += gust(P.xz, uTime) * aB.y * 0.25;
+    P.xz += gust(P.xz, uTime) * aB.y * 0.25 + frontPush(P.xz) * aB.y * 0.8;
     vP = P; vB = aB;
     gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
   }`,
@@ -1215,7 +1226,7 @@ const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
   const D = DIST[ui.setting('distance').value] ?? DIST.mid;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0 };
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, zoom: 1, shake: 0, hunt: 0, roarOn: false };
   PU.uScale.value = D;
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
   f.tl = gsap.timeline({ paused: true })
@@ -1243,7 +1254,12 @@ function launch(kind, padX) {
     .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
     .to(f, { zoom: 1, duration: 7, ease: 'sine.inOut' }, PRE + 12)
     .set(f, { done: true }, END);
-  if (f.k.boosters) f.tl.call(() => separate(f), null, PRE + 18);
+  if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
+  // The roar reaches the eye: the camera takes a second jolt.
+  const dl = delayOf(f);
+  f.tl.to(f, { shake: 0.9, duration: 0.25 }, dl).to(f, { shake: 0.15, duration: 4, ease: 'power2.out' }, dl + 0.25);
+  seedBirds(f);
+  roar(f);
   return f;
 }
 // Two spent boosters fall away as sparks with short trails.
@@ -1325,10 +1341,19 @@ function flyTo(f) {
       writeStar(rp, simT - rnd() * 0.03, rv, 1.2, rnd() < 0.5 ? 0 : 2, 0.5 + rnd() * 0.7, 0.12, 1.2, 2, 0.6);
     }
   }
+  // The front: strong while it crosses the marsh, gone past the eye.
+  const R = frontR(f);
+  U.uFront.value.set(f.x, f.z, R, reduced() ? 0 : 1.2 * (1 - THREE.MathUtils.smoothstep(R, f.D * 1.2, f.D * 1.6)));
+  flyBirds(f, Math.min(0.1, simT - (f.lastSim ?? simT)));
+  f.lastSim = simT;
+  uploadBirds();
   if (f.done) endFlight();
 }
 function endFlight() {
   body.visible = false;
+  U.uFront.value.w = 0;
+  birds.forEach(b => { b.a = 0; b.up = false; });
+  uploadBirds();
   flight = null;
   follow = false;
   U.uFlame.value.w = 0;
@@ -1356,6 +1381,281 @@ function start(ndcX) {
 act.launch = () => start(size.w < size.h ? -0.3 : -0.12);
 let follow = false;
 const auto = { pitch: 0, yaw: 0 };
+
+/* ---------- sound front: the roar's ring crosses the marsh ---------- */
+// It spreads at 343 m/s from the pad; reeds lean as it passes.
+const C_SOUND = 343;
+const frontR = f => C_SOUND * Math.max(0, simT - f.start);
+// Seconds from ignition until the front reaches the eye.
+const delayOf = f => Math.hypot(f.x - camera.position.x, f.z - camera.position.z) / C_SOUND;
+
+/* ---------- birds: they lift when the front reaches their bed ---------- */
+// Sixty birds in five reed beds between the eye and the pad.
+const BIRDS = 60;
+const birdGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+const aBP = new THREE.InstancedBufferAttribute(new Float32Array(BIRDS * 4), 4);
+const aBV = new THREE.InstancedBufferAttribute(new Float32Array(BIRDS * 4), 4);
+aBP.setUsage(THREE.DynamicDrawUsage); aBV.setUsage(THREE.DynamicDrawUsage);
+birdGeo.setAttribute('aBP', aBP);
+birdGeo.setAttribute('aBV', aBV);
+birdGeo.instanceCount = BIRDS;
+const birdMesh = new THREE.Mesh(birdGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, uPx: { value: 0.001 } }, transparent: true, depthWrite: false,
+  vertexShader: /* glsl */`
+  attribute vec4 aBP, aBV;
+  uniform float uPx;
+  varying vec2 vQ; varying float vA, vFlap;
+  void main() {
+    vA = aBV.w;
+    if (vA < 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    vec3 P = aBP.xyz;
+    vec3 V = normalize(cameraPosition - P);
+    vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
+    // A heron spans 1.6 m, never less than seven pixels.
+    float s = max(0.8, length(cameraPosition - P) * uPx * 3.5);
+    vQ = position.xy;
+    // Mirror the shape when the bird flies left on screen.
+    float dir = sign(dot(aBV.xyz, rt) + 1e-4);
+    vQ.x *= dir;
+    vFlap = aBP.w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P + (rt * position.x + vec3(0.0, 1.0, 0.0) * position.y * 0.6) * s, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uAmb;
+  varying vec2 vQ; varying float vA, vFlap;
+  // Distance from p to the segment a-b.
+  float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+  void main() {
+    // Two frames: wings up in a V, wings down in a shallow arch.
+    float up = step(0.5, fract(vFlap));
+    vec2 tip = vec2(0.95, up > 0.5 ? 0.55 : -0.35), mid = vec2(0.45, up > 0.5 ? 0.25 : 0.05);
+    vec2 q = vec2(abs(vQ.x), vQ.y);
+    float d = min(seg(q, vec2(0.0), mid), seg(q, mid, tip));
+    d = min(d, length(vQ - vec2(0.15, 0.0)) - 0.08);
+    float a = (1.0 - smoothstep(0.07, 0.16, d)) * vA;
+    if (a < 0.02) discard;
+    gl_FragColor = vec4(uAmb * 0.15 * a, a);
+  }`,
+}));
+birdMesh.frustumCulled = false;
+birdMesh.renderOrder = 8;
+birdMesh.layers.enable(MIRROR);
+scene.add(birdMesh);
+const birds = Array.from({ length: BIRDS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), bed: 0, up: false, t: 0, ph: Math.random(), a: 0 }));
+let beds = [];
+// Each launch seeds the beds and settles every bird into the reeds.
+function seedBirds(f) {
+  beds = [0.08, 0.2, 0.38, 0.6, 0.82].map(u => {
+    const z = -120 - (f.D - 220) * u, x = f.x * u * 0.8 + (Math.random() - 0.5) * -z * 0.35;
+    return { x, z, d: Math.hypot(x - f.x, z - f.z), lifted: false };
+  });
+  birds.forEach((b, i) => {
+    const bed = beds[i % beds.length];
+    b.bed = i % beds.length;
+    b.p.set(bed.x + (Math.random() - 0.5) * 40, 1.2, bed.z + (Math.random() - 0.5) * 30);
+    b.v.set(0, 0, 0); b.up = false; b.t = 0; b.a = 0;
+  });
+}
+// Flee from the pad and climb; then flock toward a far point to the left.
+const away = new THREE.Vector3(), tmpF = new THREE.Vector3(), aliV = new THREE.Vector3(), cohV = new THREE.Vector3();
+function flyBirds(f, dt) {
+  const R = frontR(f);
+  beds.forEach((bed, i) => {
+    if (bed.lifted || R < bed.d) return;
+    bed.lifted = true;
+    wings(f, bed);
+    birds.forEach(b => {
+      if (b.bed !== i) return;
+      b.up = true;
+      away.set(b.p.x - f.x, 0, b.p.z - f.z).normalize();
+      b.v.set(away.x * 6 + (Math.random() - 0.5) * 4, 7 + Math.random() * 4, away.z * 6 + (Math.random() - 0.5) * 4);
+    });
+  });
+  const goal = tmpF.set(f.x - f.D * 0.5, 90, -f.D * 0.35);
+  const calm = reduced();
+  for (const b of birds) {
+    if (!b.up) continue;
+    b.t += dt;
+    b.ph += dt * (7 + 3 * Math.min(1, 4 / (b.t + 1)));
+    // Fade in at take-off; fade out after 30 s.
+    b.a = Math.min(1, b.t * 3) * (1 - THREE.MathUtils.smoothstep(b.t, 26, 32));
+    if (calm) { b.p.y += dt * 6; continue; }
+    aliV.set(0, 0, 0); cohV.set(0, 0, 0);
+    let n = 0;
+    for (const o of birds) {
+      if (o === b || !o.up) continue;
+      const d2 = b.p.distanceToSquared(o.p);
+      if (d2 > 900) continue;
+      // Separation within 3 m; alignment and cohesion within 30 m.
+      if (d2 < 9) b.v.addScaledVector(tmpA.subVectors(b.p, o.p), 0.6 * dt / Math.max(d2, 0.5));
+      aliV.add(o.v); cohV.add(o.p); n++;
+    }
+    if (n) {
+      b.v.addScaledVector(aliV.divideScalar(n).sub(b.v), 0.8 * dt);
+      b.v.addScaledVector(cohV.divideScalar(n).sub(b.p), 0.25 * dt);
+    }
+    b.v.addScaledVector(tmpA.subVectors(goal, b.p).normalize(), 3 * dt);
+    const sp = b.v.length();
+    if (sp > 14) b.v.multiplyScalar(14 / sp);
+    b.p.addScaledVector(b.v, dt);
+    b.p.y = Math.max(b.p.y, 1);
+  }
+}
+function uploadBirds() {
+  birds.forEach((b, i) => {
+    aBP.setXYZW(i, b.p.x, b.p.y, b.p.z, b.ph);
+    aBV.setXYZW(i, b.v.x, b.v.y, b.v.z, b.a);
+  });
+  aBP.needsUpdate = aBV.needsUpdate = true;
+}
+
+/* ---------- sound: the marsh, then a roar that arrives late ---------- */
+// Every voice runs on the audio clock; each scheduled node is kept.
+// Mute and a hidden tab stop them all; the birds still lift.
+const kit = audioKit({ keys: new Set([' ']) });
+const pend = new Set();
+const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
+function track(end, ...nodes) { pend.add({ end, nodes }); }
+function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
+const pending = () => { prune(); return pend.size > 0; };
+function stopAll() {
+  for (const h of pend) for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+  pend.clear();
+  if (flight) flight.roarOn = false;
+}
+function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+function hiss(ac, t, dur, rate = 1) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start(t, Math.random() * 0.9); s.stop(t + dur);
+  return s;
+}
+// The marsh bed: a reed rustle that follows the sway, and bird chirps.
+let bed = null, nextChirp = 0, hushUntil = 0;
+function marsh(ac) {
+  if (bed) return;
+  const src = ac.createBufferSource(), hp = filt(ac, 'highpass', 2600), lp = filt(ac, 'lowpass', 7000), g = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.8;
+  g.gain.value = 0;
+  src.connect(hp).connect(lp).connect(g).connect(kit.out);
+  src.start();
+  bed = { src, g };
+}
+// A short FM chirp: a bird two to three kilohertz high.
+function chirp(ac, t) {
+  const o = ac.createOscillator(), m = ac.createOscillator(), mg = ac.createGain(), g = ac.createGain(), pan = ac.createStereoPanner();
+  const f0 = 2200 * jit(0.2);
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.5, t + 0.08);
+  m.frequency.value = 40 * jit(0.3); mg.gain.value = 300;
+  m.connect(mg).connect(o.frequency);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.03, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  pan.pan.value = Math.random() * 1.6 - 0.8;
+  o.connect(g).connect(pan).connect(kit.out);
+  // Some calls repeat once or twice.
+  const reps = Math.random() < 0.5 ? 1 : 2;
+  o.start(t); m.start(t); o.stop(t + 0.14 * reps + 0.05); m.stop(t + 0.14 * reps + 0.05);
+  if (reps > 1) {
+    g.gain.setValueAtTime(0.0001, t + 0.14);
+    g.gain.exponentialRampToValueAtTime(0.025, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  }
+  track(t + 0.4, o, m);
+}
+// Keep the bed in step with the scene; called each tick.
+function soundBed() {
+  const ac = kit.live();
+  if (!ac) return;
+  marsh(ac);
+  const now = ac.currentTime;
+  bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
+  if (pace > 0.2 && simT > hushUntil && now > nextChirp) {
+    if (nextChirp > 0) chirp(ac, now + 0.05);
+    nextChirp = now + 6 + Math.random() * 6;
+  }
+}
+// Wings: amplitude-modulated noise from the bed that lifts, heard after its delay.
+function wings(f, bed0) {
+  hushUntil = simT + 10;
+  const ac = kit.live();
+  if (!ac) return;
+  const d = Math.hypot(bed0.x - camera.position.x, bed0.z - camera.position.z), t = ac.currentTime + d / C_SOUND;
+  const s = hiss(ac, t, 2.2, 1.3), bp = filt(ac, 'bandpass', 1300 * jit(0.2), 0.9), am = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain();
+  lfo.frequency.value = 16 * jit(0.2); lg.gain.value = 0.5; am.gain.value = 0.5;
+  lfo.connect(lg).connect(am.gain);
+  const lvl = 0.12 * Math.min(1, 300 / d);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(lvl, t + 0.15);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.1);
+  s.connect(bp).connect(am).connect(g).connect(kit.out);
+  lfo.start(t); lfo.stop(t + 2.2);
+  track(t + 2.3, s, lfo);
+}
+// The roar: a broad band, a sub under 40 Hz, and crackle; the low-pass falls as it climbs.
+// off says how far into the roar to begin, so a resume picks up mid-roar.
+function roar(f, off = 0) {
+  const ac = kit.live();
+  if (!ac || f.roarOn) return;
+  f.roarOn = true;
+  const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
+  const t = ac.currentTime + lead, L = Math.max(4, PRE + 56 - off), k = f.k.flame;
+  const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
+  const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // Swell over 2 s, hold, then fade with distance until cut-off.
+  const swell = Math.max(0.05, 2 - off);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(lvl, t + swell);
+  g.gain.setTargetAtTime(lvl * 0.25, t + swell + 4, 18);
+  g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
+  lp.frequency.setValueAtTime(4000 * Math.exp(-off / 20), t);
+  lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
+  s.connect(lp).connect(g).connect(kit.out);
+  // The sub: a low drone with a slow wobble.
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.value = 33 * jit(0.05);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(lvl * 0.9, t + swell);
+  og.gain.setTargetAtTime(0.0001, t + swell + 6, 8);
+  o.connect(og).connect(kit.out);
+  o.start(t); o.stop(t + L);
+  // Crackle: random clicks, the signature of rocket noise.
+  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.0015);
+  for (let n = 0; n < 220; n++) {
+    const at = Math.floor(Math.random() * (cd.length - cl)), amp = Math.pow(Math.random(), 2);
+    for (let i = 0; i < cl; i++) cd[at + i] += (Math.random() * 2 - 1) * amp * (1 - i / cl);
+  }
+  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
+  c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(lvl * 0.7, t + swell);
+  cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
+  c.connect(cbp).connect(cg).connect(kit.out);
+  c.start(t); c.stop(t + L);
+  track(t + L + 1, s, o, c);
+}
+// Booster separation: a faint double thud, heard after its delay.
+function thud(f) {
+  const ac = kit.live();
+  if (!ac) return;
+  rocketAt(f, 18, rp);
+  const t = ac.currentTime + rp.distanceTo(camera.position) / C_SOUND / 6;
+  for (const dt of [0, 0.18 * jit(0.2)]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(70 * jit(0.1), t + dt); o.frequency.exponentialRampToValueAtTime(35, t + dt + 0.25);
+    g.gain.setValueAtTime(0.0001, t + dt);
+    g.gain.exponentialRampToValueAtTime(0.06, t + dt + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.4);
+    o.connect(g).connect(kit.out);
+    o.start(t + dt); o.stop(t + dt + 0.45);
+    track(t + dt + 0.5, o);
+  }
+}
+// Sound on mid-flight picks the roar up where the timeline is.
+sound.onChange(on => {
+  if (!on) { stopAll(); return; }
+  if (flight) setTimeout(() => { if (flight) roar(flight, Math.max(0, simT - flight.start - delayOf(flight))); }, 60);
+});
 
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
@@ -1576,6 +1876,7 @@ function resize() {
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   dofPass.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  birdMesh.material.uniforms.uPx.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
   dofPass.uniforms.uK.value = 72 * h * size.dpr / 800;
   dofPass.uniforms.uCap.value = 14 * h * size.dpr / 800;
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
@@ -1600,11 +1901,11 @@ function draw() {
   composer.render();
 }
 
-/* Frame loop: the reeds drift at 30 fps, then sleep 60 s after input. */
+/* Frame loop: 24 fps, idle or not; it sleeps 60 s after the last input. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || !!flight || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!flight || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -1629,8 +1930,9 @@ function tick(now) {
       lastDraw = now;
     }
   } finally {
+    soundBed();
     if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
-    else { lastT = 0; draw(); }
+    else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
   }
 }
 function wake() {
@@ -1647,12 +1949,15 @@ function watch(now, lively) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 3) { rung++; resize(); }
+  // Frames come every 41 ms by design; only gaps past 50 ms count as slow.
+  if (watchSum / watchN > (lively ? 1000 / 20 : 1000 / 16) && rung < 3) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
   visible = vis;
-  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  // A hidden tab cancels pending sounds; on return the roar picks up from the timeline.
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; stopAll(); return; }
+  if (flight) roar(flight, Math.max(0, simT - flight.start - delayOf(flight)));
   draw();
   wake();
 });

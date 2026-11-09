@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T08:24:37Z
+updated_at: 2026-11-09T08:30:42Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -18,9 +18,10 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Task 1: Bar v2 spec, toys.json entry, low-fi Lab menu icon (pointer x sets the pad; the plume turns gold up high)
 - [x] Task 1: stills at three Dawn values, 1280 and 375 px; checkpoint with Tom (blockout): signed off 2026-11-09
 - [x] Task 2: the launch: flame, steam, trajectory, plume with shadow-line light, reed rim, channel streaks, boosters
-- [ ] Task 2: checkpoint with Tom (twilight bell)
-- [ ] Task 3: sound front and birds
-- [ ] Task 4: sound with delays; Q9 and the mute test
+- [x] Task 2: checkpoint with Tom: look signed off 2026-11-09
+- [x] Task 3: sound front and birds
+- [x] Task 4: sound with delays; mute test (the context suspends; birds still lift)
+- [ ] Task 4: Q9 full run to sleep, and the hidden-tab resume, by ear
 - [ ] Task 5: bar polish, Settings persistence, menu hook; Q1 to Q10
 - [ ] Tom sets the Dutch name (proposal: Moeraslancering)
 - [ ] Record the session cost
@@ -75,3 +76,12 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Wind farm's pass, ported: 28 golden-angle taps turned per pixel, a reach test so sharp things keep their edges, and hot pixels weighted so bright lights open into discs.
 - Wide-lens circle of confusion: K · |1/d − 1/focus|, focus on the pad; only the near reeds go soft.
 - A focus hunt at liftoff: soft, past sharp, then sharp. The flame opens into a disc for half a second.
+
+## Sound front, birds and sound (2026-11-09)
+
+- The front spreads at 343 m/s from the pad. Reeds and reed banks lean away from the pad as it passes.
+- Sixty birds in five beds between the eye and the pad. The front lifts the far beds first; they flock away to the left and fade after 30 s.
+- The roar arrives D / 343 s after ignition: a broad band whose low-pass falls from 4 kHz to 600 Hz, a 33 Hz sub, and crackle. The camera jolts as it arrives.
+- Wing flutter per bed, after its own delay; chirps stop for 10 s. Heavy adds a faint double thud at separation.
+- Mute stops every scheduled node; a hidden tab stops them and the roar resumes from the timeline.
+- The performance ladder now judges 24 fps frames (gaps past 50 ms count as slow).
