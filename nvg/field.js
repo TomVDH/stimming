@@ -1,23 +1,12 @@
-// Night scene: a moonless field, a treeline, a shed, a road and a sky.
-// Radiance is in tube units: one unit is one photoelectron per cell per frame.
+// Field: a moonless meadow, a treeline, a shed, a road and ground fog.
 // Albedo values are near-infrared reflectance, so foliage reads bright.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'simplex-noise';
+import { rng, lerp, smooth, makeAir, fogify, buildSky, buildStars, Emitters, lambert } from './atmos.js';
 
-// A seeded random source keeps the scene the same on every load.
-function rng(seed) {
-  return () => {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 const R = rng(20261109);
 const n2 = createNoise2D(rng(7));
-const lerp = (a, b, t) => a + (b - a) * t;
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // The road runs out of the forest through a gap, at the viewer, then right.
 const ROAD = new THREE.CatmullRomCurve3([
@@ -41,148 +30,6 @@ export function height(x, z) {
   const rd = roadDist(x, z);
   if (rd < 9) h = lerp(h, h * 0.4, smooth(9, 3, rd));
   return h;
-}
-
-/* ---------- emitters: point sources drawn in HDR ---------- */
-// One additive point cloud holds every lamp, strobe and eye.
-class Emitters {
-  constructor(max) {
-    this.max = max;
-    this.pos = new Float32Array(max * 3);
-    this.val = new Float32Array(max * 2);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aVal', new THREE.BufferAttribute(this.val, 2).setUsage(THREE.DynamicDrawUsage));
-    g.setDrawRange(0, 0);
-    this.mat = new THREE.ShaderMaterial({
-      uniforms: { uPx: { value: 1 } },
-      vertexShader: /* glsl */`
-        attribute vec2 aVal;
-        uniform float uPx;
-        varying float vI;
-        void main() {
-          vI = aVal.x;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_Position = projectionMatrix * mv;
-          gl_PointSize = max(1.5, aVal.y * uPx);
-        }`,
-      fragmentShader: /* glsl */`
-        varying float vI;
-        void main() {
-          vec2 d = gl_PointCoord * 2.0 - 1.0;
-          float r2 = dot(d, d);
-          if (r2 > 1.0) discard;
-          gl_FragColor = vec4(vec3(vI * exp(-r2 * 4.0)), 1.0);
-        }`,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    });
-    this.points = new THREE.Points(g, this.mat);
-    this.points.frustumCulled = false;
-    this.points.renderOrder = 2;
-    this.n = 0;
-  }
-  begin() { this.n = 0; }
-  // Size is in CSS pixels; intensity is peak radiance.
-  add(p, intensity, size = 2.2) {
-    if (this.n >= this.max || intensity <= 0) return;
-    const i = this.n++;
-    this.pos[i * 3] = p.x; this.pos[i * 3 + 1] = p.y; this.pos[i * 3 + 2] = p.z;
-    this.val[i * 2] = intensity; this.val[i * 2 + 1] = size;
-  }
-  end() {
-    const g = this.points.geometry;
-    g.attributes.position.needsUpdate = true;
-    g.attributes.aVal.needsUpdate = true;
-    g.setDrawRange(0, this.n);
-  }
-}
-
-/* ---------- builders ---------- */
-function lambert(albedo, opts = {}) {
-  return new THREE.MeshLambertMaterial({ color: new THREE.Color(albedo, albedo, albedo), ...opts });
-}
-
-function buildSky() {
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 } },
-    vertexShader: /* glsl */`
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_Position = p.xyww;
-      }`,
-    fragmentShader: /* glsl */`
-      varying vec3 vDir;
-      float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float vn(vec2 p) {
-        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
-      }
-      float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vn(p); p *= 2.03; a *= 0.5; } return s; }
-      void main() {
-        vec3 d = normalize(vDir);
-        float el = max(d.y, -0.05);
-        float az = atan(d.x, -d.z);
-        // Airglow is bright in the near infrared and peaks low.
-        float sky = mix(4.4, 0.75, pow(smoothstep(-0.02, 0.9, el), 0.55));
-        // A town glows faintly behind the left treeline.
-        sky += 3.2 * exp(-pow((az + 0.9) / 0.42, 2.0)) * exp(-el * 9.0);
-        // The Milky Way crosses as a tilted, mottled band.
-        vec3 mw = normalize(vec3(0.42, 0.55, 0.72));
-        float band = exp(-pow(dot(d, mw) / 0.2, 2.0));
-        float mott = fbm(vec2(az * 3.2, el * 6.0)) * fbm(vec2(az * 9.0 + 3.0, el * 14.0));
-        sky += band * (0.35 + 1.6 * mott) * smoothstep(0.0, 0.25, el);
-        gl_FragColor = vec4(vec3(sky), 1.0);
-      }`,
-    side: THREE.BackSide, depthWrite: false,
-  });
-  const m = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), mat);
-  m.renderOrder = -1;
-  m.frustumCulled = false;
-  return m;
-}
-
-function buildStars() {
-  const N = 9000, pos = new Float32Array(N * 3), val = new Float32Array(N * 2);
-  for (let i = 0; i < N; i++) {
-    // Uniform on the upper sphere, a little below the horizon too.
-    const y = lerp(-0.08, 1, R()), a = R() * Math.PI * 2, r = Math.sqrt(1 - y * y);
-    pos.set([Math.cos(a) * r * 1500, y * 1500, Math.sin(a) * r * 1500], i * 3);
-    // Faint stars far outnumber bright ones.
-    const u = Math.max(R(), 1e-4);
-    val[i * 2] = Math.min(3000, 4.5 * Math.pow(u, -1.2));
-    val[i * 2 + 1] = R() * 6.283;
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('aVal', new THREE.BufferAttribute(val, 2));
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { uPx: { value: 1 }, uTime: { value: 0 } },
-    vertexShader: /* glsl */`
-      attribute vec2 aVal;
-      uniform float uPx, uTime;
-      varying float vI;
-      void main() {
-        // Low stars twinkle harder through more air.
-        float el = normalize(position).y;
-        float tw = 1.0 + (0.12 + 0.4 * (1.0 - smoothstep(0.0, 0.5, el))) * sin(uTime * (7.0 + aVal.y) + aVal.y * 13.0);
-        vI = aVal.x * tw * smoothstep(-0.02, 0.08, el);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 1.9 * uPx;
-      }`,
-    fragmentShader: /* glsl */`
-      varying float vI;
-      void main() {
-        vec2 d = gl_PointCoord * 2.0 - 1.0;
-        gl_FragColor = vec4(vec3(vI * exp(-dot(d, d) * 3.5)), 1.0);
-      }`,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const p = new THREE.Points(g, mat);
-  p.frustumCulled = false;
-  p.renderOrder = 1;
-  return p;
 }
 
 function buildGround() {
@@ -492,17 +339,23 @@ function buildDeer() {
 }
 
 /* ---------- scene ---------- */
-export function buildScene({ grass = 60000 } = {}) {
+export function buildField({ grass = 60000 } = {}) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 3000);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 6000);
+  // A thin ground fog pools in hollows; a faint haze greys the ridge.
+  const air = makeAir();
+  air.uFog.value.set(0.016, 0.55, 0.00035, 1 / 700);
+  air.uFogCol.value.setScalar(3.4);
+  air.uFogGlow.value.set(-0.9, 0.5, 0.6);
+  air.uSky.value.set(4.4, 0.75, 3.2, 0);
   const uTime = { value: 0 };
   const lights = {};
 
   // Starlight and airglow come from the whole sky.
   scene.add(new THREE.HemisphereLight(new THREE.Color(1, 1, 1), new THREE.Color(0.22, 0.22, 0.22), 17.5));
 
-  const sky = buildSky();
-  const stars = buildStars();
+  const sky = buildSky(air);
+  const stars = buildStars(air, R);
   scene.add(sky, stars, buildGround(), buildRoad());
   const grassMesh = buildGrass(grass, uTime);
   scene.add(grassMesh);
@@ -538,7 +391,7 @@ export function buildScene({ grass = 60000 } = {}) {
   const torch = new THREE.SpotLight(0xffffff, 0, 0, 0.3, 0.6, 2);
   scene.add(torch, torch.target);
 
-  const emit = new Emitters(64);
+  const emit = new Emitters(64, air);
   scene.add(emit.points);
 
   const eye = new THREE.Vector3(0, height(0, 0) + 1.7, 0);
@@ -556,7 +409,7 @@ export function buildScene({ grass = 60000 } = {}) {
 
   function update(t, dt, { irOn, look }) {
     uTime.value = t;
-    stars.material.uniforms.uTime.value = t;
+    air.uFogTime.value = t;
     emit.begin();
 
     // The car loops: a drive along the road, then a quiet spell.
@@ -664,5 +517,6 @@ export function buildScene({ grass = 60000 } = {}) {
     stars.material.uniforms.uPx.value = px;
   }
 
-  return { scene, camera, eye, update, setPx, car };
+  fogify(scene, air);
+  return { scene, camera, eye, update, setPx, car, air, look: { yaw: [-1.3, 1.3], pitch: [-0.3, 0.6] }, expo: 1 };
 }

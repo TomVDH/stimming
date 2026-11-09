@@ -15,3 +15,6 @@ New Lab toy: night vision goggles as a shader showcase. 3D night scene by defaul
 - [x] toys.json and Lab tile
 - [x] QA stills at 1280, 375x812, 812x375
 - [x] PR (#34)
+- [x] Fidelity pass: height fog, lamp fog glow, depth of field, wide glare, rim blur
+- [x] Harbour at 3 a.m. as the default place; field kept
+- [x] Easter eggs: IR laser, freighter IR strobe

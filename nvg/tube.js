@@ -41,8 +41,8 @@ function fsTri() {
 function mat(frag, uniforms) {
   return new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: 'out highp vec4 outColor;\n' + frag, uniforms, depthTest: false, depthWrite: false });
 }
-function rt(w, h, { filter = THREE.LinearFilter, depth = false, samples = 0 } = {}) {
-  return new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: filter, magFilter: filter, depthBuffer: depth, samples });
+function rt(w, h, { filter = THREE.LinearFilter, depth = false, samples = 0, depthTexture = null } = {}) {
+  return new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: filter, magFilter: filter, depthBuffer: depth, samples, depthTexture });
 }
 
 export class Tube {
@@ -85,9 +85,9 @@ export class Tube {
     // MCP halo: a flat disc of fixed size round every bright point.
     // Veiling glare adds a wide soft skirt.
     this.mHalo = mat(/* glsl */`
-      uniform sampler2D tHalf, tWide;
-      uniform vec2 uDisc, uWideTexel;
-      uniform float uHalo, uGlow, uFrame;
+      uniform sampler2D tHalf, tWide, tWider;
+      uniform vec2 uDisc, uWideTexel, uWiderTexel;
+      uniform float uHalo, uGlow, uGlow2, uFrame;
       in vec2 vUv;
       void main() {
         float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uFrame * 5.588238, vec2(0.06711056, 0.00583715))));
@@ -105,10 +105,60 @@ export class Tube {
           g += texture(tWide, vUv + vec2(x, y) * uWideTexel * 1.5).g * w;
         }
         g /= 8.6;
-        outColor = vec4(uHalo * s + uGlow * g, 0.0, 0.0, 1.0);
+        // Scatter in the optics spreads a faint skirt across the tube.
+        float g2 = 0.0;
+        for (int y = -3; y <= 3; y++) for (int x = -3; x <= 3; x++) {
+          float w = exp(-float(x * x + y * y) * 0.16);
+          g2 += texture(tWider, vUv + vec2(x, y) * uWiderTexel * 1.6).g * w;
+        }
+        g2 /= 19.0;
+        outColor = vec4(uHalo * s + uGlow * g + uGlow2 * g2, 0.0, 0.0, 1.0);
       }`, {
-      tHalf: { value: null }, tWide: { value: null }, uDisc: { value: new THREE.Vector2() }, uWideTexel: { value: new THREE.Vector2() },
-      uHalo: { value: 0.25 }, uGlow: { value: 0.03 }, uFrame: { value: 0 },
+      tHalf: { value: null }, tWide: { value: null }, tWider: { value: null },
+      uDisc: { value: new THREE.Vector2() }, uWideTexel: { value: new THREE.Vector2() }, uWiderTexel: { value: new THREE.Vector2() },
+      uHalo: { value: 0.25 }, uGlow: { value: 0.03 }, uGlow2: { value: 0.012 }, uFrame: { value: 0 },
+    });
+
+    // Objective lens: depth of field from the scene depth buffer.
+    // Out-of-focus light spreads over a disc and thins out.
+    this.mDof = mat(/* glsl */`
+      uniform sampler2D tColor, tDepth;
+      uniform vec2 uTexel;
+      uniform float uNear, uFar, uFocusInv, uAper, uMaxR, uFrame;
+      uniform vec3 uW;
+      in vec2 vUv;
+      float dist(vec2 uv) {
+        float z = texture(tDepth, uv).x;
+        return uNear * uFar / (uFar - z * (uFar - uNear));
+      }
+      float coc(float d) { return min(uMaxR, uAper * abs(uFocusInv - 1.0 / d)); }
+      float sig(vec2 uv) { return dot(max(texture(tColor, uv).rgb, 0.0), uW); }
+      void main() {
+        float d0 = dist(vUv), r0 = coc(d0);
+        float s0 = sig(vUv);
+        float w0 = 1.0 / max(r0 * r0, 1.0);
+        float sum = s0 * w0, wsum = w0;
+        if (uMaxR > 0.5) {
+          float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          const int N = 40;
+          for (int i = 0; i < N; i++) {
+            float f = (float(i) + 0.5) / float(N);
+            float r = sqrt(f) * uMaxR;
+            float a = float(i) * 2.39996323 + ign * 6.2831853;
+            vec2 uv = vUv + vec2(cos(a), sin(a)) * r * uTexel;
+            float d = dist(uv), cr = coc(d);
+            // Near blur spills over; far blur stops at sharper near edges.
+            float reach = d < d0 ? cr : min(cr, r0);
+            float w = clamp(reach - r + 1.0, 0.0, 1.0) / max(cr * cr, 1.0);
+            sum += sig(uv) * w; wsum += w;
+          }
+        }
+        float s = sum / wsum;
+        outColor = vec4(s, s, s, d0);
+      }`, {
+      tColor: { value: null }, tDepth: { value: null }, uTexel: { value: new THREE.Vector2() },
+      uNear: { value: 0.1 }, uFar: { value: 6000 }, uFocusInv: { value: 0 }, uAper: { value: 20 }, uMaxR: { value: 14 }, uFrame: { value: 0 },
+      uW: { value: new THREE.Vector3(1 / 3, 1 / 3, 1 / 3) },
     });
 
     // Automatic brightness control, one texel per tube.
@@ -256,10 +306,16 @@ export class Tube {
       uniform float uPhos, uTime, uFrame, uFlick;
       in vec2 vUv;
 
-      float lum(vec2 uv) {
-        vec2 o = uCellTexel * 0.75;
-        return 0.36 * texture(tTube, uv).r + 0.16 * (texture(tTube, uv + vec2(o.x, o.y)).r + texture(tTube, uv - vec2(o.x, o.y)).r
-             + texture(tTube, uv + vec2(o.x, -o.y)).r + texture(tTube, uv + vec2(-o.x, o.y)).r);
+      float lum(vec2 uv, float d) {
+        // The eyepiece softens toward the rim.
+        // Eight taps on a ring keep the blur round at every radius.
+        vec2 o = uCellTexel * (0.6 + 1.6 * d * d * d * d);
+        float s = 0.3 * texture(tTube, uv).r;
+        for (int k = 0; k < 8; k++) {
+          float a = float(k) * 0.785398 + 0.39;
+          s += 0.0875 * texture(tTube, uv + vec2(cos(a), sin(a)) * o).r;
+        }
+        return s;
       }
       vec3 phos(float L) {
         // P43 green: deep green blacks, yellow-green mids, near white peaks.
@@ -286,9 +342,9 @@ export class Tube {
           float ca = 0.006 * d * d;
           vec2 c = T.xy / uScreen;
           vec2 uv = vUv;
-          float Lr = lum(c + (uv - c) * (1.0 + ca));
-          float Lg = lum(uv);
-          float Lb = lum(c + (uv - c) * (1.0 - ca));
+          float Lr = lum(c + (uv - c) * (1.0 + ca), d);
+          float Lg = lum(uv, d);
+          float Lb = lum(c + (uv - c) * (1.0 - ca), d);
           float over = texelFetch(tGain, ivec2(i, 0), 0).g;
           float fl = 1.0 - uFlick * smoothstep(2.5, 6.0, over) * (0.25 + 0.25 * sin(uTime * 37.0 + float(i)));
           vec3 L = 1.0 - exp(-vec3(Lr, Lg, Lb) * fl);
@@ -323,8 +379,14 @@ export class Tube {
   // Sizes: css is the stage, sceneScale and cellPx set the internal grids.
   resize(cssW, cssH, sceneScale, cellPx, samples) {
     const sw = Math.max(8, Math.round(cssW * sceneScale)), sh = Math.max(8, Math.round(cssH * sceneScale));
+    this.sceneRT?.depthTexture?.dispose();
     this.sceneRT?.dispose();
-    this.sceneRT = rt(sw, sh, { depth: true, samples });
+    this.dofRT?.dispose();
+    const dt = new THREE.DepthTexture(sw, sh);
+    dt.type = THREE.FloatType;
+    this.sceneRT = rt(sw, sh, { depth: true, samples, depthTexture: dt });
+    this.dofRT = rt(sw, sh);
+    this.sceneScale = sceneScale;
     const hw = Math.ceil(sw / 2), hh = Math.ceil(sh / 2);
     const w8 = Math.ceil(hw / 4), h8 = Math.ceil(hh / 4), w32 = Math.ceil(w8 / 4), h32 = Math.ceil(h8 / 4);
     [this.half, this.d8, this.d32, this.halo].forEach(t => t?.dispose());
@@ -335,7 +397,7 @@ export class Tube {
     this.u.screenU.value.set(cssW, cssH);
     this.mTube.uniforms.uCells.value.set(cw, ch);
     this.mOut.uniforms.uCellTexel.value.set(1 / cw, 1 / ch);
-    this.sigU.tScene.value = this.sceneRT.texture;
+    this.sigU.tScene.value = this.dofRT.texture;
     this.cssW = cssW; this.cssH = cssH;
   }
 
@@ -345,6 +407,31 @@ export class Tube {
     // The halo disc is a fixed fraction of the tube.
     const r = list[0].r * 0.055;
     this.mHalo.uniforms.uDisc.value.set(r / this.cssW, r / this.cssH);
+  }
+
+  // Focus at a distance in metres; Infinity is the far stop.
+  // The aperture is 21.7 mm; blur radius is aperture times dioptre error.
+  setFocus(dist, focalPx) {
+    const u = this.mDof.uniforms;
+    u.uFocusInv.value = Number.isFinite(dist) ? 1 / dist : 0;
+    u.uAper.value = 0.0217 * focalPx * this.sceneScale * 0.5;
+    u.uMaxR.value = 16 * this.sceneScale;
+  }
+
+  // Scene distance under a CSS point, from the depth of field target.
+  depthAt(x, y) {
+    const b = new Uint16Array(4);
+    const px = Math.floor(x / this.cssW * this.dofRT.width), py = Math.floor((1 - y / this.cssH) * this.dofRT.height);
+    this.r.readRenderTargetPixels(this.dofRT, px, py, 1, 1, b);
+    return THREE.DataUtils.fromHalfFloat(b[3]);
+  }
+
+  // Signal and distance under a CSS point, for QA.
+  probe(x, y) {
+    const b = new Uint16Array(4);
+    const px = Math.floor(x / this.cssW * this.dofRT.width), py = Math.floor((1 - y / this.cssH) * this.dofRT.height);
+    this.r.readRenderTargetPixels(this.dofRT, px, py, 1, 1, b);
+    return [THREE.DataUtils.fromHalfFloat(b[0]), THREE.DataUtils.fromHalfFloat(b[3])].map(v => +v.toFixed(2));
   }
 
   // Cold tubes: clear decay and gain state.
@@ -361,14 +448,20 @@ export class Tube {
   }
 
   // One frame: scene, then the tube chain, then the eyepiece to screen.
-  render(world, camera, dt, t) {
+  render(world, camera, dt, t, pre) {
     const r = this.r;
     this.frame++;
     if (!this.sigU.uCam.value) {
+      pre?.(r, camera, this.sceneRT);
       r.setRenderTarget(this.sceneRT);
       r.setClearColor(0x000000, 1);
       r.clear();
       r.render(world, camera);
+      const du = this.mDof.uniforms;
+      du.tColor.value = this.sceneRT.texture; du.tDepth.value = this.sceneRT.depthTexture;
+      du.uTexel.value.set(1 / this.sceneRT.width, 1 / this.sceneRT.height);
+      du.uNear.value = camera.near; du.uFar.value = camera.far;
+      this.pass(this.mDof, this.dofRT);
     }
     this.pass(this.mHalf, this.half);
     const dn = this.mDown.uniforms;
@@ -380,6 +473,8 @@ export class Tube {
     const hu = this.mHalo.uniforms;
     hu.tHalf.value = this.half.texture; hu.tWide.value = this.d8.texture;
     hu.uWideTexel.value.set(1 / this.d8.width, 1 / this.d8.height);
+    hu.tWider.value = this.d32.texture;
+    hu.uWiderTexel.value.set(1 / this.d32.width, 1 / this.d32.height);
     hu.uFrame.value = this.frame % 64;
     this.pass(this.mHalo, this.halo);
 

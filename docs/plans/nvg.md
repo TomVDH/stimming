@@ -8,15 +8,20 @@ Bean: `stimming-5bjs`. Branch: `feature/stimming-5bjs`.
 | File | Holds |
 |---|---|
 | `nvg/index.html` | Shell, Bar v2 spec, layout, look, webcam, sound, loop |
-| `nvg/scene.js` | three.js night scene in tube units (NIR albedo) |
-| `nvg/tube.js` | The tube: six fullscreen passes |
+| `nvg/atmos.js` | Shared air: two-layer height fog, sky with cloud, stars, emitters with fog glow |
+| `nvg/harbour.js` | Harbour at 3 a.m. (default place) |
+| `nvg/field.js` | Moonless field with ground fog |
+| `nvg/tube.js` | The tube: depth of field, then six fullscreen passes |
 | `shared/emblems/nvg.svg` | Intro emblem (placeholder) |
 
 ## Tube pipeline
 
 ```mermaid
 flowchart LR
-  S[Scene or webcam] --> H[Half: signal + above-threshold]
+  S0[Scene + depth] --> DOF[Objective depth of field]
+  DOF --> S[Signal]
+  W[Webcam] --> S
+  S --> H[Half: signal + above-threshold]
   H --> D8[d8] --> D32[d32]
   H --> HA[Halo disc + glare]
   D8 --> HA
@@ -32,11 +37,28 @@ flowchart LR
 - ABC reads every d32 texel in each tube: mean plus peak energy. It drops fast, recovers slowly.
 - The phosphor rises fast and decays with the Afterglow time.
 
+## Places
+
+- **Harbour** (default): quay, ten yachts with rocking masts, a fishing boat, breakwaters with green and red lights, channel buoys, a far town, a lighthouse sweeping through sea haze, a freighter at anchor, gulls, low cloud, a low moon with a glitter path.
+  Water is a mirror pass of the whole world at half size; wave slopes stretch reflections into columns.
+- **Field**: meadow, treeline, shed, road with a car, walker, deer, ground fog in the hollows.
+- Every built-in material gets the height fog through `fogify`. Lamps lose core light to fog and gain a soft glow.
+- Easter eggs: an IR laser swept from the breakwater (10 s in 80), an IR strobe on the freighter's mast, the field's IR marker strobe.
+
+## Blur layers
+
+1. Objective depth of field: 26 mm f/1.2, blur radius from dioptre error. Focus at infinity blurs the near grass and water.
+2. MCP halo disc, fixed in tube space.
+3. Glare: a narrow skirt from d8, a wide one from d32.
+4. Phosphor afterglow.
+5. Eyepiece: an eight-tap ring blur that grows toward the rim.
+
 ## Controls
 
 - Choice: Mono, Dual, Quad. A tall stage stacks the tubes in a column.
 - Actions: IR (illuminator, drives eyeshine on the deer), Camera (webcam through the same tube).
-- Slider: Gain. Settings: Phosphor, Afterglow, Grain, Quality.
+- Slider: Gain. Settings: Place, Focus, Phosphor, Afterglow, Grain, Quality.
+- Double-click focuses on the point under the pointer.
 
 ## Open
 
