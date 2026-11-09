@@ -21,6 +21,7 @@
 }
 .stage--bismuth canvas.on { opacity: 1; }
 .stage--bismuth { cursor: grab; }
+.stage--bismuth.grab { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--bismuth canvas { transition: none; } }
 </style>
 </head>
@@ -243,7 +244,7 @@ layout(location = 2) in vec4 aC;
 layout(location = 3) in vec4 aH;
 layout(location = 4) in vec4 aF;
 uniform mat4 uVP;
-uniform mat4 uPose[16];
+uniform mat4 uPose[32];
 uniform float uTime;
 uniform float uMirror;
 uniform float uSnap;
@@ -252,6 +253,7 @@ out vec3 vN;
 out vec4 vF;
 out vec2 vEdge;
 out float vAge;
+out float vMelt;
 void main() {
   float age = uTime - aH.w;
   float t = clamp(age / 0.18, 0.0, 1.0);
@@ -260,6 +262,9 @@ void main() {
   grow = age < 0.0 ? 0.0 : grow;
   vec3 local = aC.xyz + aPos * aH.xyz * grow;
   mat4 P = uPose[int(aC.w)];
+  // The spare slot of the first column carries the melt glow.
+  vMelt = P[0].w;
+  P[0].w = 0.0;
   vec4 w = P * vec4(local, 1.0);
   vW = w.xyz;
   vN = mat3(P) * aNor;
@@ -280,6 +285,7 @@ in vec3 vN;
 in vec4 vF;
 in vec2 vEdge;
 in float vAge;
+in float vMelt;
 uniform vec3 uEye;
 uniform float uMirror;
 uniform float uTau;
@@ -308,6 +314,8 @@ void main() {
   col *= mix(0.55, 1.0, smoothstep(0.0, 0.008, e));
   // The meniscus brightens the waterline.
   col += vec3(0.05, 0.04, 0.04) * exp(-vW.y / 0.012) * (0.5 + uHeat);
+  // A melting crystal glows hot at the waterline.
+  col += vec3(1.0, 0.42, 0.12) * vMelt * (3.0 * exp(-max(vW.y, 0.0) / 0.07) + 0.25);
   o = vec4(col, 1.0);
 }`;
 
@@ -423,7 +431,7 @@ const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 let gl = null, P = null, cubeVao = null, instBuf = null, triVao = null;
 let scene = null, msaa = null, refl = null, b1 = null, b1t = null, b2 = null, b2t = null;
-const MAXI = 2048, STRIDE = 12, MAXP = 16;
+const MAXI = 2048, STRIDE = 12, MAXP = 32;
 const inst = new Float32Array(MAXI * STRIDE);
 let nInst = 0, instDirty = true;
 const poses = new Float32Array(MAXP * 16);
@@ -601,14 +609,14 @@ function layout() {
 
 /* ---------- crystals ---------- */
 // Crystal units: a terrace steps out by STEP and up by RISE.
-const STEP = 0.085, RISE = 0.07, CORE = 0.12;
+const STEP = 0.085, RISE = 0.07, CORE = 0.12, MAXSTEPS = 14;
 const crystals = [];
-let time = 0;
+let time = 0, made = 0, dirty = true;
 // A seeded random, so the first frame is the same each load.
 let seedState = 7;
 const rnd = () => ((seedState = (seedState * 16807) % 2147483647) / 2147483647);
 
-// Edge e of terrace q: a box along one side of the square.
+// Edge e of terrace q: one box along one side of the square.
 function edgeBox(c, q, e, birth, k) {
   const w = CORE + q * STEP, t = STEP * 1.3;
   const top = (q + 1) * RISE + RISE, bot = top - RISE * 3.2;
@@ -620,59 +628,130 @@ function edgeBox(c, q, e, birth, k) {
   const half = [along ? w : t / 2, hy, along ? t / 2 : w];
   // Inner terraces end with a thicker film than outer ones.
   const dEnd = Math.max(52, 214 - 13.5 * k) + (rnd() - 0.5) * 16;
-  push(side[0], cy, side[1], c.pose, half, birth, dEnd, rnd(), 0.72 + 0.28 * Math.min(1, k / 4));
+  c.boxes.push([side[0], cy, side[1], 0, ...half, birth, dEnd, rnd(), 0.72 + 0.28 * Math.min(1, k / 4), 0]);
 }
-function push(x, y, z, p, h, birth, d, s, ao) {
-  if (nInst >= MAXI) return;
-  const o = nInst++ * STRIDE;
-  inst.set([x, y, z, p, h[0], h[1], h[2], birth, d, s, ao, 0], o);
-  instDirty = true;
-}
-// Adds terraces to a crystal; each one appears `gap` seconds after the last.
+// Adds terraces; each one appears `gap` seconds after the last.
+// It returns how many terraces it added.
 function grow(c, steps, start = time, gap = 0.09) {
-  for (let i = 0; i < steps; i++) {
+  let added = 0;
+  for (let i = 0; i < steps && c.n < MAXSTEPS; i++, added++) {
     const k = c.n++;
     const birth = start + i * gap;
-    if (k === 0) push(0, RISE * 0.6, 0, c.pose, [CORE, RISE * 1.4, CORE], birth, 230, rnd(), 0.6);
+    if (k === 0) c.boxes.push([0, RISE * 0.6, 0, 0, CORE, RISE * 1.4, CORE, birth, 230, rnd(), 0.6, 0]);
     for (let e = 0; e < 4; e++) {
       const q = c.habit === 'spiral' ? k + e / 4 : k;
       edgeBox(c, q, e, birth + (c.habit === 'spiral' ? e * gap / 4 : 0), k);
     }
   }
+  if (added) dirty = true;
+  return added;
+}
+// Crystals take pose slots in order; parents come before their kids.
+function rebuild() {
+  nInst = 0;
+  crystals.forEach((c, i) => {
+    c.pose = i;
+    for (const b of c.boxes) {
+      if (nInst >= MAXI) break;
+      b[3] = i;
+      inst.set(b, nInst++ * STRIDE);
+    }
+  });
+  instDirty = true;
+  dirty = false;
 }
 function makeCrystal({ x, z, size, habit: h, yaw = rnd() * TAU, steps = 8, start = time, gap = 0.09 }) {
   if (crystals.length >= MAXP) return null;
-  const c = { x, z, size, habit: h, yaw, ta: (rnd() - 0.5) * 0.12, tb: (rnd() - 0.5) * 0.12, n: 0, pose: crystals.length, phase: rnd() * TAU, kids: [] };
+  const c = { x, z, size, habit: h, yaw, ta: (rnd() - 0.5) * 0.12, tb: (rnd() - 0.5) * 0.12, n: 0, boxes: [], kids: [],
+    phase: rnd() * TAU, lift: 0, liftV: 0, spin: 0, melt: 0, melting: false, held: false, order: made++ };
   crystals.push(c);
   grow(c, steps, start, gap);
-  // A cluster grows small crystals out of its rim, at angles.
-  if (h === 'cluster') {
-    const kids = 2 + Math.floor(rnd() * 3);
-    for (let i = 0; i < kids && crystals.length < MAXP; i++) {
-      const a = c.yaw + (i / kids) * TAU + rnd() * 0.6;
-      const reach = (CORE + steps * STEP) * size * 0.95;
-      const k = { x: x + Math.cos(a) * reach, z: z + Math.sin(a) * reach, size: size * (0.35 + rnd() * 0.2), habit: 'hopper', yaw: rnd() * TAU,
-        ta: (rnd() - 0.5) * 1.1, tb: (rnd() - 0.5) * 1.1, n: 0, pose: crystals.length, phase: c.phase, lift: 0.18 * size, parent: c };
-      crystals.push(k);
-      c.kids.push(k);
-      grow(k, 3 + Math.floor(rnd() * 3), start + steps * gap * 0.6, gap);
-    }
-  }
+  // A grown cluster gets its side crystals at once.
+  if (h === 'cluster' && steps >= 6) for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) addKid(c, start + steps * gap * 0.6, gap);
   return c;
 }
-// Poses follow the float: each crystal bobs and turns on the melt.
+// A cluster grows a small hopper out of its rim, leaning outward.
+function addKid(c, start = time, gap = 0.09) {
+  if (crystals.length >= MAXP) return;
+  const a = c.kids.length * 2.4 + rnd() * 0.8;
+  const w = (CORE + (c.n - 1) * STEP) * 0.92, ly = (c.n - 2) * RISE;
+  const lean = 0.5 + rnd() * 0.4;
+  const k = { parent: c, habit: 'hopper', n: 0, boxes: [], kids: [],
+    local: pose(Math.cos(a) * w, ly, Math.sin(a) * w, rnd() * TAU, Math.sin(a) * lean, -Math.cos(a) * lean, 0.34 + rnd() * 0.18) };
+  // Kids sit right after their parent's other kids.
+  const at = crystals.indexOf(c) + 1 + c.kids.length;
+  crystals.splice(at, 0, k);
+  c.kids.push(k);
+  grow(k, 3 + Math.floor(rnd() * 3), start, gap);
+}
+// One terrace while a hand pulls; a cluster sprouts at steps 6 and 10.
+function growStep(c) {
+  if (!grow(c, 1, time, 0.06)) return false;
+  if (c.habit === 'cluster' && (c.n === 6 || c.n === 10)) addKid(c);
+  return true;
+}
+const topLevel = () => crystals.filter(c => !c.parent);
+// Too many crystals: the oldest one not in hand goes back into the melt.
+function makeRoom() {
+  const live = topLevel().filter(c => !c.melting).sort((p, q) => p.order - q.order);
+  const over = Math.max(live.length - (portrait ? 4 : 7), crystals.length > MAXP - 6 ? 1 : 0);
+  live.filter(c => !c.held).slice(0, over).forEach(c => { c.melting = true; c.melt = 0; });
+}
+// Poses follow the float: each crystal bobs, turns and sinks when it melts.
 function setPoses() {
   const rm = reduced();
   for (const c of crystals) {
-    const bob = rm ? 0 : Math.sin(time * 0.7 + c.phase) * 0.012;
-    const y = -0.1 * c.size + bob + (c.lift ?? 0);
-    poses.set(pose(c.x, y, c.z, c.yaw, c.ta, c.tb, c.size), c.pose * 16);
+    let m;
+    if (c.parent) m = mul(c.parent.mat, c.local);
+    else {
+      const bob = rm ? 0 : Math.sin(time * 0.7 + c.phase) * 0.012;
+      const mt = c.melting ? clamp(c.melt) : 0;
+      const sink = -mt * mt * ((c.n + 2) * RISE + 0.1) * c.size;
+      m = pose(c.x, -0.1 * c.size + bob + c.lift + sink, c.z, c.yaw, c.ta, c.tb, c.size);
+    }
+    c.mat = m;
+    poses.set(m, c.pose * 16);
+    // The pose's spare slot carries the melt glow to the shader.
+    const top = c.parent ?? c;
+    poses[c.pose * 16 + 3] = top.melting ? clamp(top.melt) : 0;
   }
 }
-// The first frame: three grown crystals with their films part way bloomed.
+// Springs, spin and melting, once per frame.
+function step(dt) {
+  const rm = reduced();
+  for (const c of crystals) {
+    if (c.parent) continue;
+    // A released crystal drops back and bobs to rest on the melt.
+    if (!c.held) {
+      c.liftV += (-26 * c.lift - (rm ? 10 : 5.5) * c.liftV) * dt;
+      c.lift += c.liftV * dt;
+    }
+    c.spin *= Math.exp(-dt * 1.2);
+    c.yaw += (c.spin + (turn && !rm ? 0.05 : 0)) * dt;
+    if (c.melting) c.melt += dt / 1.8;
+  }
+  // Floating crystals that touch drift apart on the melt.
+  const tops = topLevel().filter(c => !c.melting);
+  for (let i = 0; i < tops.length; i++) for (let j = i + 1; j < tops.length; j++) {
+    const a = tops[i], b = tops[j];
+    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 1e-3;
+    const r = ((CORE + a.n * STEP) * a.size + (CORE + b.n * STEP) * b.size) * 1.25;
+    if (d >= r) continue;
+    const push = Math.min(r - d, 0.6) * dt * 2.2 / d;
+    const wa = a.held ? 0 : b.held ? 1 : 0.5, wb = 1 - wa;
+    a.x -= dx * push * wa; a.z -= dz * push * wa;
+    b.x += dx * push * wb; b.z += dz * push * wb;
+  }
+  const gone = crystals.filter(c => (c.parent ?? c).melting && (c.parent ?? c).melt >= 1);
+  if (gone.length) {
+    for (const g of gone) crystals.splice(crystals.indexOf(g), 1);
+    dirty = true;
+  }
+  if (dirty) rebuild();
+}
+// The first frame: grown crystals with their films part way bloomed.
 function firstScene() {
   crystals.length = 0;
-  nInst = 0;
   seedState = 7;
   time = 40;
   const layoutSet = portrait
@@ -682,6 +761,7 @@ function firstScene() {
       { x: 0.75, z: 2.35, size: 0.34, habit: 'spiral', yaw: 1.15, steps: 6 }];
   // Older crystals started earlier; terraces spread over 30 s.
   layoutSet.forEach((s, i) => makeCrystal({ ...s, start: time - 34 + i * 3, gap: 2.6 }));
+  rebuild();
 }
 
 /* ---------- draw ---------- */
@@ -712,6 +792,7 @@ function drawCrystals(mirror) {
   gl.disable(gl.DEPTH_TEST);
 }
 function render() {
+  if (dirty) rebuild();
   setPoses();
   // 1. The reflection: the crystals flipped under the surface.
   gl.bindFramebuffer(gl.FRAMEBUFFER, refl.fb);
@@ -785,7 +866,8 @@ function frame(now) {
       const dt = Math.min(0.05, (now - lastDraw) / 1000);
       lastDraw = now;
       time += dt;
-      for (const c of crystals) if (turn && !c.parent && !reduced()) c.yaw += dt * 0.05;
+      handStep(dt, now);
+      step(dt);
       render();
     }
   } finally {
@@ -794,16 +876,142 @@ function frame(now) {
 }
 function still() { if (P) render(); }
 
-/* ---------- stubs until Task 2 ---------- */
+/* ---------- pointer ---------- */
+// Screen point to a ray, and the ray to the pool's surface.
+function ray(x, y) {
+  const r = canvas.getBoundingClientRect();
+  const nx = ((x - r.left) / r.width) * 2 - 1, ny = 1 - ((y - r.top) / r.height) * 2;
+  const m = cam.inv;
+  const w = m[3] * nx + m[7] * ny + m[11] + m[15];
+  const p = [0, 1, 2].map(i => (m[i] * nx + m[4 + i] * ny + m[8 + i] + m[12 + i]) / w);
+  const d = p.map((v, i) => v - cam.eye[i]), l = Math.hypot(...d);
+  return d.map(v => v / l);
+}
+function poolAt(x, y) {
+  const d = ray(x, y);
+  if (d[1] > -0.02) return null;
+  const t = -cam.eye[1] / d[1];
+  return [cam.eye[0] + d[0] * t, cam.eye[2] + d[2] * t];
+}
+// World point to CSS pixels, with its depth.
+function project(p) {
+  const m = cam.vp, r = canvas.getBoundingClientRect();
+  const cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+  const cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+  const cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+  return [r.left + (cx / cw * 0.5 + 0.5) * r.width, r.top + (0.5 - cy / cw * 0.5) * r.height, cw];
+}
+// The nearest crystal whose body covers the point.
+function pick(x, y) {
+  let best = null, bz = Infinity;
+  for (const c of topLevel()) {
+    if (c.melting || !c.mat) continue;
+    const m = c.mat, h = (c.n + 1) * RISE * 0.6;
+    const ctr = [m[4] * h + m[12], m[5] * h + m[13], m[6] * h + m[14]];
+    const rad = (CORE + c.n * STEP) * c.size * 1.15;
+    const a = project(ctr), b = project([ctr[0] + rad, ctr[1], ctr[2]]);
+    const pr = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 18);
+    if (Math.hypot(x - a[0], y - a[1]) < pr && a[2] < bz) { best = c; bz = a[2]; }
+  }
+  return best;
+}
+// A press is a drag after 8 px, a hold after 260 ms, else a tap.
+const hand = { id: null, mode: '', kind: '', c: null, x0: 0, y0: 0, t0: 0, cx: 0, wpp: 0.01, up: 0, acc: 0, lastLift: 0, lastT: 0 };
+function down(e) {
+  if (hand.id !== null || !P || e.button > 0) return;
+  poke();
+  let c = pick(e.clientX, e.clientY), kind = 'crystal';
+  const p = poolAt(e.clientX, e.clientY);
+  if (!c) {
+    if (!p) return;
+    makeRoom();
+    // A seed breaks the surface at once.
+    c = makeCrystal({ x: p[0], z: p[1], size: (portrait ? 0.46 : 0.42) + rnd() * 0.12, habit, steps: 1, gap: 0.05 });
+    if (!c) return;
+    kind = 'pool';
+  }
+  // Capture can fail for a pointer that already lifted.
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* the press still works */ }
+  const q = p ?? [c.x, c.z], q1 = poolAt(e.clientX + 1, e.clientY) ?? q;
+  Object.assign(hand, { id: e.pointerId, mode: 'press', kind, c, x0: e.clientX, y0: e.clientY, t0: performance.now(),
+    cx: c.x, lift0: c.lift, wpp: Math.max(0.002, Math.hypot(q1[0] - q[0], q1[1] - q[1])), up: 0, acc: 0, lastLift: c.lift, lastT: performance.now() });
+  c.held = true;
+  c.liftV = 0;
+  stage.classList.add('grab');
+}
+function move(e) {
+  if (e.pointerId !== hand.id) return;
+  poke();
+  const dx = e.clientX - hand.x0, dy = e.clientY - hand.y0;
+  if (hand.mode !== 'drag' && Math.hypot(dx, dy) > 8) hand.mode = 'drag';
+  if (hand.mode !== 'drag') return;
+  const c = hand.c, up = Math.max(0, -dy);
+  // Lift follows the hand up; the crystal slides with it sideways.
+  const lift = Math.min(portrait ? 2.6 : 2.0, hand.lift0 + up * hand.wpp * 1.1);
+  const now = performance.now();
+  const v = (lift - hand.lastLift) / Math.max(0.008, (now - hand.lastT) / 1000);
+  c.liftV = lerp(c.liftV, v, 0.5);
+  hand.lastLift = lift;
+  hand.lastT = now;
+  c.lift = lift;
+  c.x = hand.cx + dx * hand.wpp;
+  // New height pulls new terraces: one per 26 px of fresh climb.
+  if (up > hand.up) { hand.acc += (up - hand.up) / 26; hand.up = up; }
+}
+function up(e) {
+  if (e.pointerId !== hand.id) return;
+  const c = hand.c;
+  if (hand.mode === 'press') {
+    // A tap on the pool seeds a small crystal; a tap on a crystal spins it.
+    if (hand.kind === 'pool') grow(c, 2 + Math.floor(rnd() * 2), time + 0.05, 0.07);
+    else c.spin += (rnd() > 0.5 ? 1 : -1) * 1.8;
+  }
+  c.held = false;
+  c.liftV = clamp(c.liftV, -3, 4);
+  hand.id = null;
+  hand.c = null;
+  stage.classList.remove('grab');
+  poke();
+}
+// Hold grows in place; a drag also grows slowly while it rests.
+function handStep(dt, now) {
+  const c = hand.c;
+  if (!c) return;
+  if (hand.mode === 'press' && now - hand.t0 > 260) hand.mode = 'hold';
+  if (hand.kind === 'pool' && hand.mode === 'hold') hand.acc += dt * 1.6;
+  if (hand.mode === 'drag' && c.lift > 0.15) hand.acc += dt * 0.5;
+  while (hand.acc >= 1) {
+    hand.acc -= 1;
+    if (!growStep(c)) { hand.acc = 0; break; }
+  }
+  if (hand.c) poke();
+}
+
+/* ---------- actions ---------- */
+// + Crystal pulls one out at a free spot, as if by hand.
 act.add = () => {
-  const lim = portrait ? 5 : 8;
-  if (crystals.filter(c => !c.parent).length >= lim) return;
-  const a = rnd() * TAU, r = 1 + rnd() * 2.2;
-  makeCrystal({ x: Math.cos(a) * r, z: Math.sin(a) * r * 0.7, size: 0.35 + rnd() * 0.3, habit, steps: 5 + Math.floor(rnd() * 5) });
+  makeRoom();
+  let best = null, bd = -1;
+  for (let i = 0; i < 10; i++) {
+    const x = (rnd() - 0.5) * (portrait ? 2.2 : 5.4), z = (rnd() - 0.5) * (portrait ? 3.2 : 3.6) + 0.3;
+    const d = Math.min(9, ...topLevel().filter(c => !c.melting).map(c => Math.hypot(c.x - x, c.z - z)));
+    if (d > bd) { bd = d; best = [x, z]; }
+  }
+  const c = makeCrystal({ x: best[0], z: best[1], size: 0.38 + rnd() * 0.16, habit, steps: 6 + Math.floor(rnd() * 4), gap: 0.1 });
+  if (c) c.liftV = reduced() ? 1.2 : 3.4;
   poke();
 };
-act.clear = () => { crystals.length = 0; nInst = 0; instDirty = true; poke(); still(); };
-act.reset = () => { firstScene(); poke(); still(); };
+// Clear sends every crystal back into the melt, one after another.
+act.clear = () => {
+  topLevel().filter(c => !c.melting && !c.held).forEach((c, i) => { c.melting = true; c.melt = -i * 0.06; });
+  poke();
+};
+act.reset = () => {
+  if (hand.c) { hand.c.held = false; hand.id = null; hand.c = null; }
+  firstScene();
+  poke();
+  still();
+};
 
 /* ---------- boot ---------- */
 try {
@@ -822,7 +1030,11 @@ try {
 markReady();
 wake();
 
-canvas.addEventListener('pointerdown', poke);
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
 let wasPortrait = portrait;
 new ResizeObserver(() => {
   layout();
