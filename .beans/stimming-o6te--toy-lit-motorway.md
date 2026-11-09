@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:16:39Z
-updated_at: 2026-11-09T11:21:25Z
+updated_at: 2026-11-09T12:10:00Z
 ---
 
 Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzing sodium lamp over a motorway overpass; the zoom pulls out through the dark until the whole Belgian motorway network glows as orange ribbons. Sections strike up pink then orange; traffic streams; haze and fog catch the light.
@@ -27,7 +27,7 @@ Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzin
 - [x] Styles: Sodium, LED, Tactical, Thermal; Air in Settings
 - [x] Drag pans the map; scroll and pinch zoom toward the pointer
 - [ ] Task 3: Traffic setting in Settings
-- [ ] Task 4: sound: buzz, strike tick, road hiss, altitude wind
+- [x] Task 4: sound: buzz, strike tick, road hiss, altitude wind, blackout thump
 - [ ] Task 5: Settings, frame loop, sleep, ladder; browser-pane checks
 - [ ] Tom sets the Dutch name and IPA
 - [ ] Record the session cost
@@ -38,3 +38,10 @@ Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzin
 - [x] Round 5: the dashboard becomes a study: panel with chart, scrub, ranked bars, rail share; proportional circles with hover curves
 
 - [x] Round 6: printed-map overlays: atlas city names, hairline jam circles with leader labels, study as type on the map with a bare day line
+
+- [x] Overhaul 1 (Tom's picks, 2026-11-09): Atlas setting, off by default, holds city names, jam circles, study and trains
+- [x] Overhaul 2: zooming in always lands on the jam shot; embankments, poplar rows, an E19 sign gantry, overpass traffic
+- [x] Overhaul 3: Blackout action; a ragged dark front from a random fault, then Brussels relights it, lamps restriking salmon
+- [x] Overhaul 4: 375 px checked in the pane; coast line runs off screen
+- [ ] Load time: the intro holds about 25 s in the browser pane while shaders compile; check on a real machine
+
