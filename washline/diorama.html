@@ -1684,7 +1684,7 @@ function buildHarbour(grp) {
   themeTick(0);
 }
 
-// Strangereal: a tower roof over a vast city at blue hour; dogfights rage far off.
+// Strangereal: a tower roof over a vast city at blue hour; furballs turn far off.
 const roofTex = new THREE.CanvasTexture(tex2D(512, 512, (g, w, h) => {
   g.fillStyle = '#8d8a86'; g.fillRect(0, 0, w, h);
   for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '40,38,36' : '210,205,198'},${rnd(0.03, 0.09)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(1, 4)); }
@@ -1701,14 +1701,6 @@ const softTex = (stops) => new THREE.CanvasTexture(tex2D(64, 64, (g) => {
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
 }));
 const flashTex = softTex([[0, 'rgba(255,255,240,1)'], [0.25, 'rgba(255,190,110,0.85)'], [1, 'rgba(255,100,30,0)']]);
-const puffTex = new THREE.CanvasTexture(tex2D(128, 128, (g) => {
-  for (let i = 0; i < 40; i++) {
-    const a = rnd(0, TAU), r = rnd(0, 30), x = 64 + Math.cos(a) * r, y = 64 + Math.sin(a) * r, rr = rnd(14, 30);
-    const gr = g.createRadialGradient(x, y, 0, x, y, rr);
-    gr.addColorStop(0, 'rgba(255,255,255,0.22)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.fillRect(x - rr, y - rr, 2 * rr, 2 * rr);
-  }
-}));
 const hash1 = (n, k) => { const x = Math.sin(n * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
 function buildStrangereal(grp) {
   const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
@@ -1777,7 +1769,8 @@ function buildStrangereal(grp) {
   contact(grp, 6.6, 1.8, 0.65, 0.35, 0.6, -0.4);
   add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.3, 20), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.06, 250)), roughness: 0.4 }))).position.set(-2.3, 0.15, 0.9);
   // The street grid glows far below, sodium orange, fading into haze.
-  const hazeC = v3(lin(0.5, 0.06, 250));
+  // City haze takes the sky's horizon colour, so skyline and sky meet.
+  const hazeC = SKY.hor;
   const groundMat = new THREE.ShaderMaterial({ uniforms: { uHaze: { value: hazeC }, uRoad: { value: v3(lin(0.72, 0.13, 65)) }, uDark: { value: v3(lin(0.12, 0.03, 265)) } },
     vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */ `
@@ -1794,7 +1787,7 @@ function buildStrangereal(grp) {
         vec2 a2 = smoothstep(0.49 - f5, 0.49 + f5, e5);
         float art = mix(max(a2.x, a2.y), 0.04, smoothstep(0.03, 0.08, max(f5.x, f5.y)));
         vec3 col = uDark + uRoad * (road * 0.55 + art * 1.4);
-        col = mix(col, uHaze, smoothstep(600.0, 9000.0, d) * 0.92);
+        col = mix(col, uHaze, 1.0 - exp(-max(d - 400.0, 0.0) / 3600.0));
         gl_FragColor = vec4(col, 1.0);
       }` });
   const street = new THREE.Mesh(new THREE.PlaneGeometry(26000, 26000).rotateX(-Math.PI / 2), groundMat);
@@ -1802,7 +1795,7 @@ function buildStrangereal(grp) {
   street.userData.isoHide = true;
   grp.add(street);
   // The city: blocks to the horizon and three tower districts; lit windows.
-  const cityU = { uBody: { value: v3(lin(0.22, 0.03, 262)) }, uHaze: { value: hazeC }, uWarm: { value: v3(lin(0.84, 0.11, 78)) }, uCool: { value: v3(lin(0.86, 0.04, 225)) } };
+  const cityU = { uBody: { value: v3(lin(0.2, 0.03, 262)) }, uHaze: { value: v3(lin(0.48, 0.07, 246)) }, uHazeHi: { value: v3(lin(0.3, 0.09, 262)) }, uWarm: { value: v3(lin(0.84, 0.11, 78)) }, uCool: { value: v3(lin(0.86, 0.04, 225)) } };
   const cityMat = new THREE.ShaderMaterial({ uniforms: cityU,
     vertexShader: /* glsl */ `
       varying vec3 vW, vN; varying float vSeed;
@@ -1814,7 +1807,7 @@ function buildStrangereal(grp) {
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uBody, uHaze, uWarm, uCool; varying vec3 vW, vN; varying float vSeed;
+      uniform vec3 uBody, uHaze, uHazeHi, uWarm, uCool; varying vec3 vW, vN; varying float vSeed;
       float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       void main() {
         float d = length(vW - cameraPosition);
@@ -1829,18 +1822,20 @@ function buildStrangereal(grp) {
           float lit = win * step(0.62 - vSeed * 0.18, h);
           vec3 lc = mix(uWarm, uCool, step(0.78, h2(cell * 1.7 + 3.0))) * (0.55 + 0.6 * h);
           // Far windows shrink below a pixel; their mean light stands in.
-          float far = smoothstep(0.25, 0.7, max(fw.x, fw.y));
-          glow = mix(lit, 0.13, far);
-          col = mix(col * mix(1.0, 0.7, win * (1.0 - lit) * (1.0 - far)), lc, glow);
+          float far = smoothstep(0.2, 0.6, max(fw.x, fw.y));
+          glow = mix(lit, 0.07, far);
+          col = mix(col * mix(1.0, 0.7, win * (1.0 - lit) * (1.0 - far)), mix(lc, uWarm, far), glow);
         } else col *= 0.65;
         // Lights hold through the haze longer than walls do.
-        float hz = smoothstep(500.0, 9000.0, d);
-        col = mix(col, uHaze + uWarm * glow * 0.25, hz * mix(0.92, 0.6, glow));
+        // Haze darkens with height, as the sky does behind the towers.
+        float hz = 1.0 - exp(-max(d - 300.0, 0.0) / 6500.0);
+        vec3 haze = mix(uHaze, uHazeHi, smoothstep(0.0, 450.0, vW.y + 140.0));
+        col = mix(col, haze + uWarm * glow * 0.15, hz * mix(1.0, 0.5, glow));
         gl_FragColor = vec4(col, 1.0);
       }` });
   const N = 5200, blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), cityMat, N);
   const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
-  const tops = [], DIST = [[-900, -2200, 500], [1300, -3600, 700], [-2600, -5600, 900]];
+  const tops = [], DIST = [[-520, -1600, 420], [950, -2500, 560], [-2300, -4300, 800], [2700, -5300, 700]];
   let k = 0;
   for (let i = 0; i < N * 4 && k < N; i++) {
     const d = 420 * Math.pow(18, Math.random()), az = rnd(-1.05, 1.05);
@@ -1848,9 +1843,9 @@ function buildStrangereal(grp) {
     let tower = 0;
     for (const [cx, cz, r] of DIST) tower = Math.max(tower, Math.exp(-(((x - cx) ** 2 + (z - cz) ** 2) / (r * r))));
     const sz = 1 + d / 2500;
-    const h = tower > 0.3 && Math.random() < 0.7 ? rnd(70, 140 + 180 * tower) : rnd(9, 40) * (Math.random() < 0.06 ? 2.2 : 1);
+    const h = tower > 0.3 && Math.random() < 0.6 ? rnd(110, 200 + 280 * tower) : rnd(9, 40) * (Math.random() < 0.06 ? 2.2 : 1);
     blocks.setMatrixAt(k++, m.compose(p.set(x, -TOWER, z), qq.setFromAxisAngle(up, Math.round(rnd(-0.5, 0.5)) * 0.08), s.set(rnd(14, 34) * sz, h, rnd(14, 34) * sz)));
-    if (h > 150) tops.push(x, h - TOWER + 2, z);
+    if (h > 330) tops.push(x, h - TOWER + 2, z);
   }
   blocks.count = k;
   blocks.frustumCulled = false;
@@ -1868,9 +1863,18 @@ function buildStrangereal(grp) {
     rp.setY(i, top ? hgt - TOWER : -TOWER - 50);
   }
   ridgeG.computeVertexNormals();
-  const ridges = new THREE.Mesh(ridgeG, new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...lin(0.4, 0.05, 255)), side: THREE.BackSide, fog: false }));
+  const ridges = new THREE.Mesh(ridgeG, new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.06, 245)), side: THREE.BackSide, fog: false }));
   ridges.userData.isoHide = true;
   grp.add(ridges);
+  // City light pollutes the low sky: a warm band that fades upward.
+  const glowBand = new THREE.Mesh(new THREE.CylinderGeometry(10500, 10500, 1400, 120, 1, true), new THREE.ShaderMaterial({
+    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uC: { value: v3(lin(0.6, 0.07, 55)) } },
+    vertexShader: `varying float vY; void main() { vY = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 uC; varying float vY; void main() { gl_FragColor = vec4(uC * 0.22 * pow(1.0 - vY, 3.0), 1.0); }` }));
+  glowBand.position.y = -TOWER + 700;
+  glowBand.userData.isoHide = true;
+  grp.add(glowBand);
   // A few stars hold high up.
   const starP = [];
   for (let i = 0; i < 260; i++) {
@@ -1889,7 +1893,7 @@ function buildStrangereal(grp) {
   ].map(g => (g.index ? g.toNonIndexed() : g)).map(g => { g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); return g; }));
   jetG.scale(2.4, 2.4, 2.4);
   const jetMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...lin(0.2, 0.02, 260)), side: THREE.DoubleSide, fog: false });
-  const BALLS = [{ c: new THREE.Vector3(-700, 1050, -6200), n: 4 }, { c: new THREE.Vector3(2100, 780, -4700), n: 4 }];
+  const BALLS = [{ c: new THREE.Vector3(-700, 1050, -6200), n: 6 }, { c: new THREE.Vector3(2100, 780, -4700), n: 5 }, { c: new THREE.Vector3(5200, 1400, -8200), n: 3 }];
   const jets = [];
   for (const B of BALLS) for (let pi = 0; pi < B.n; pi++) {
     const P = { c: B.c, ax: rnd(700, 1200), ay: rnd(180, 420), az: rnd(500, 900), wx: rnd(0.11, 0.2), wy: rnd(0.15, 0.32), wz: rnd(0.2, 0.34), px: rnd(0, TAU), py: rnd(0, TAU), pz: rnd(0, TAU) };
@@ -1909,26 +1913,28 @@ function buildStrangereal(grp) {
     const P = j.P, u = t * TS - j.lag;
     return out.set(P.c.x + P.ax * Math.sin(P.wx * u + P.px), P.c.y + P.ay * Math.sin(P.wy * u + P.py), P.c.z + P.az * Math.sin(P.wz * u + P.pz)).add(j.off);
   };
-  // Missiles: one leaves a jet every 1.6 s for the nearest foe, then bursts.
-  const EVERY = 1.6, LIFE = 13, FLY = 3.4, EV = Math.ceil(LIFE / EVERY) + 1, DEB = 4, FLR = 8;
+  // Missiles: one leaves a jet every 1.3 s, misses, and burns out.
+  const EVERY = 1.3, LIFE = 12, FLY = 3.4, EV = Math.ceil(LIFE / EVERY) + 1, FLR = 8;
   const evAt = (n) => {
-    const a = Math.floor(hash1(n, 1) * jets.length), b = (a + 2 + Math.floor(hash1(n, 2) * 3) * 2) % jets.length;
-    return { a, b: jets[b].P.c === jets[a].P.c ? b : (a ^ 1), t0: n * EVERY, hit: hash1(n, 3) < 0.55, n };
+    const a = Math.floor(hash1(n, 1) * jets.length);
+    let b = (a + 2 + Math.floor(hash1(n, 2) * 3) * 2) % jets.length;
+    if (jets[b].P.c !== jets[a].P.c) b = a ^ 1;
+    return { a, b, t0: n * EVERY, n };
   };
   const mA = new THREE.Vector3(), mB = new THREE.Vector3(), mC = new THREE.Vector3(), mT = new THREE.Vector3();
   const missile = (e, t, out) => {
     const u = clamp((t - e.t0) / FLY), ja = jets[e.a], jb = jets[e.b];
     path(ja, e.t0, mA); path(ja, e.t0 + 0.05, mT); mT.sub(mA).normalize();
-    path(jb, e.t0 + FLY, mB);
-    if (!e.hit) mB.add(mC.set(hash1(e.n, 4) - 0.5, hash1(e.n, 5) - 0.5, hash1(e.n, 6) - 0.5).multiplyScalar(500));
+    // The aim point lies off the target: every shot goes wide.
+    path(jb, e.t0 + FLY, mB).add(mC.set(hash1(e.n, 4) - 0.5, hash1(e.n, 5) - 0.5, hash1(e.n, 6) - 0.5).normalize().multiplyScalar(260));
     mC.copy(mA).addScaledVector(mT, mA.distanceTo(mB) * 0.6);
     const iu = 1 - u;
     out.set(0, 0, 0).addScaledVector(mA, iu * iu).addScaledVector(mC, 2 * iu * u).addScaledVector(mB, u * u);
     // A small corkscrew wobbles the smoke.
     return out.add(mT.set(Math.sin(u * 23 + e.n), Math.cos(u * 19 + e.n), Math.sin(u * 17)).multiplyScalar(14 * u));
   };
-  // One ribbon buffer holds every trail: contrails, missile smoke, debris smoke.
-  const SN = 60, SLOTS = jets.length + EV + EV * DEB;
+  // One ribbon buffer holds every trail: contrails and missile smoke.
+  const SN = 60, SLOTS = jets.length + EV;
   const VN = SLOTS * SN * 2;
   const rPos = new Float32Array(VN * 3), rA = new Float32Array(VN), rSide = new Float32Array(VN), rCol = new Float32Array(VN * 3), rIdx = [];
   for (let sl = 0; sl < SLOTS; sl++) for (let i = 0; i < SN; i++) {
@@ -1953,7 +1959,7 @@ function buildStrangereal(grp) {
   ribbons.frustumCulled = false;
   ribbons.userData.isoHide = true;
   grp.add(ribbons);
-  const C_TRAIL = lin(0.82, 0.025, 245), C_SMOKE = lin(0.7, 0.008, 250), C_DEB = lin(0.38, 0.01, 260);
+  const C_TRAIL = lin(0.82, 0.025, 245), C_SMOKE = lin(0.72, 0.008, 250);
   const tp = Array.from({ length: SN }, () => new THREE.Vector3()), ta = new Float32Array(SN), tw = new Float32Array(SN);
   const tg = new THREE.Vector3(), sd = new THREE.Vector3(), toC = new THREE.Vector3();
   const writeSlot = (sl, n, col) => {
@@ -1972,21 +1978,15 @@ function buildStrangereal(grp) {
       rCol.set(col, o * 3); rCol.set(col, o * 3 + 3);
     }
   };
-  // Explosions: a flash, a fireball, a smoke puff; burning debris falls.
-  const blasts = [];
-  for (let i = 0; i < EV; i++) {
-    const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, color: new THREE.Color().setRGB(3, 1.8, 0.9) }));
-    const puff = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, depthWrite: false, fog: false, color: new THREE.Color().setRGB(...lin(0.3, 0.01, 260)) }));
-    for (const o of [puff, flash]) { o.visible = false; o.userData.isoHide = true; grp.add(o); }
-    blasts.push({ flash, puff });
-  }
-  const sparkP = new Float32Array(EV * (DEB + FLR) * 3);
+  // Points: each missile's motor while it burns, and the target's flares.
+  const PN = EV * (1 + FLR), sparkP = new Float32Array(PN * 3);
   const sparks = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(sparkP, 3)),
-    new THREE.PointsMaterial({ color: new THREE.Color().setRGB(3, 2.2, 1.4), size: 2.6, sizeAttenuation: false, fog: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    new THREE.PointsMaterial({ color: new THREE.Color().setRGB(3, 2.2, 1.4), size: 2.4, sizeAttenuation: false, fog: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
   sparks.frustumCulled = false;
   sparks.userData.isoHide = true;
   grp.add(sparks);
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), hitP = new THREE.Vector3(), dv = new THREE.Vector3();
+  const OFF = [0, -99999, 0];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fp = new THREE.Vector3(), dv = new THREE.Vector3();
   themeTick = t => {
     const tt = t * (reduce ? 0.3 : 1);
     fanB.rotation.z = -t * 9;
@@ -2008,67 +2008,33 @@ function buildStrangereal(grp) {
       }
       writeSlot(j, SN, C_TRAIL);
     }
-    // Live events: missiles in flight, then bursts that drift and fade.
+    // Live missiles: smoke from launch to burnout, older smoke fading.
     const nNow = Math.floor(tt / EVERY);
     let sp = 0;
     for (let k = 0; k < EV; k++) {
-      const n = nNow - k, e = evAt(n), el = tt - e.t0, bl = blasts[((n % EV) + EV) % EV];
-      const mSlot = jets.length + (((n % EV) + EV) % EV), dSlot0 = jets.length + EV + (((n % EV) + EV) % EV) * DEB;
+      const n = nNow - k, e = evAt(n), el = tt - e.t0, slot = jets.length + (((n % EV) + EV) % EV);
       if (n < 1 || el < 0 || el > LIFE) {
-        writeSlot(mSlot, 0, C_SMOKE);
-        for (let d = 0; d < DEB; d++) writeSlot(dSlot0 + d, 0, C_DEB);
-        bl.flash.visible = bl.puff.visible = false;
+        writeSlot(slot, 0, C_SMOKE);
+        for (let f = 0; f <= FLR; f++) sparkP.set(OFF, (sp++) * 3);
         continue;
       }
-      // Missile smoke: samples from launch to the warhead, older ones fading.
-      const head = Math.min(el, FLY), cnt = SN;
-      for (let i = 0; i < cnt; i++) {
-        const ts = e.t0 + head * (1 - i / (cnt - 1));
-        missile(e, ts, tp[i]).add(dv.set(9, -1.5, 3).multiplyScalar(el - (ts - e.t0)));
-        const age = el - (ts - e.t0);
-        ta[i] = clamp(1 - age / (LIFE - 2)) * 0.7 * smooth(0, 2, i);
+      const head = Math.min(el, FLY);
+      for (let i = 0; i < SN; i++) {
+        const ts = e.t0 + head * (1 - i / (SN - 1)), age = el - (ts - e.t0);
+        missile(e, ts, tp[i]).add(dv.set(9, -1.5, 3).multiplyScalar(age));
+        ta[i] = clamp(1 - age / (LIFE - 1.5)) * 0.65 * smooth(0, 2, i);
         tw[i] = 2 + age * 3;
       }
-      writeSlot(mSlot, cnt, C_SMOKE);
+      writeSlot(slot, SN, C_SMOKE);
+      sparkP.set(el < FLY ? [tp[0].x, tp[0].y, tp[0].z] : OFF, (sp++) * 3);
       // Flares spray from the target as the missile closes.
       const fl = el - 0.9;
-      path(jets[e.b], e.t0 + 0.9, hitP);
-      for (let f = 0; f < FLR; f++, sp++) {
-        const on = fl > 0 && fl < 3.2;
-        const ang = (f / FLR) * Math.PI + hash1(n, 10 + f), sp0 = 70;
-        sparkP.set(on ? [hitP.x + Math.cos(ang) * sp0 * fl, hitP.y + Math.sin(ang) * sp0 * 0.4 * fl - 30 * fl * fl, hitP.z + Math.sin(ang * 1.7) * sp0 * fl] : [0, -9999, 0], sp * 3);
-      }
-      // The burst: at the target on a hit, in empty sky on a miss.
-      const bt = el - FLY;
-      missile(e, e.t0 + FLY, hitP);
-      bl.flash.visible = bt > 0 && bt < 1.2;
-      if (bl.flash.visible) {
-        bl.flash.position.copy(hitP);
-        bl.flash.scale.setScalar((e.hit ? 220 : 120) * (0.4 + bt) * (1.2 - bt));
-      }
-      bl.puff.visible = bt > 0.15;
-      if (bl.puff.visible) {
-        bl.puff.position.copy(hitP).add(dv.set(9, -1.5, 3).multiplyScalar(bt));
-        bl.puff.scale.setScalar((e.hit ? 160 : 90) + bt * 26);
-        bl.puff.material.opacity = clamp(0.85 - bt / (LIFE - FLY)) * (e.hit ? 1 : 0.6);
-      }
-      // A hit throws burning debris that trails smoke as it falls.
-      for (let d = 0; d < DEB; d++, sp++) {
-        const live = e.hit && bt > 0;
-        const vx = (hash1(n, 20 + d) - 0.5) * 160, vy = hash1(n, 30 + d) * 90, vz = (hash1(n, 40 + d) - 0.5) * 160;
-        if (!live) { writeSlot(dSlot0 + d, 0, C_DEB); sparkP.set([0, -9999, 0], sp * 3); continue; }
-        const span = Math.min(bt, 3.5);
-        for (let i = 0; i < SN; i++) {
-          const tau = Math.max(0, span * (1 - i / (SN - 1)));
-          tp[i].set(hitP.x + vx * tau, hitP.y + vy * tau - 20 * tau * tau, hitP.z + vz * tau).add(dv.set(9, -1.5, 3).multiplyScalar(bt - tau));
-          ta[i] = clamp(1 - (bt - tau) / 4) * 0.5;
-          tw[i] = 1.5 + (bt - tau) * 2.5;
-        }
-        writeSlot(dSlot0 + d, SN, C_DEB);
-        sparkP.set(bt < 3.5 ? [tp[0].x, tp[0].y, tp[0].z] : [0, -9999, 0], sp * 3);
+      path(jets[e.b], e.t0 + 0.9, fp);
+      for (let f = 0; f < FLR; f++) {
+        const ang = (f / FLR) * Math.PI + hash1(n, 10 + f);
+        sparkP.set(fl > 0 && fl < 3.2 ? [fp.x + Math.cos(ang) * 70 * fl, fp.y + Math.sin(ang) * 28 * fl - 30 * fl * fl, fp.z + Math.sin(ang * 1.7) * 70 * fl] : OFF, (sp++) * 3);
       }
     }
-    for (; sp < EV * (DEB + FLR); sp++) sparkP.set([0, -9999, 0], sp * 3);
     sparks.geometry.attributes.position.needsUpdate = true;
     for (const k of ['position', 'aA', 'aCol']) ribG.attributes[k].needsUpdate = true;
   };
