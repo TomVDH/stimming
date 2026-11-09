@@ -56,7 +56,6 @@
 <script type="module">
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -418,9 +417,9 @@ vec2 frontPush(vec2 p) {
 }
 // A gust field: long rolling waves with a little noise on top.
 vec2 gust(vec2 p, float t) {
-  float w = sin(p.x * 0.05 + p.y * 0.02 - t * 1.1) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.9) * 0.3;
-  w += (k2noise(p * 0.04 + vec2(t * 0.3, 0.0)) - 0.5) * 0.8;
-  return vec2(0.9, 0.35) * w * uSway;
+  float w = sin(p.x * 0.05 + p.y * 0.02 - t * 0.7) * 0.6 + sin(p.x * 0.13 - p.y * 0.07 - t * 1.2) * 0.3;
+  w += (k2noise(p * 0.04 + vec2(t * 0.2, 0.0)) - 0.5) * 0.8;
+  return vec2(0.4, 0.15) * w * uSway;
 }
 vec3 reedLight(vec3 P, float head, float tone, float edge) {
   vec3 V = normalize(P - cameraPosition);
@@ -514,8 +513,8 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     }
     // Wind bends the top more than the base.
     float hy = c.y / max(H, 0.1);
-    vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.3 * H;
-    c.xz += g + vec2(sin(uTime * 2.3 + aJ.y * 6.0), cos(uTime * 1.7 + aJ.y * 4.0)) * 0.025 * hy * uSway;
+    vec2 g = gust(root.xz, uTime + aJ.y * 0.3) * hy * hy * 0.14 * H;
+    c.xz += g + vec2(sin(uTime * 1.6 + aJ.y * 6.0), cos(uTime * 1.2 + aJ.y * 4.0)) * 0.01 * hy * uSway;
     c.xz += frontPush(root.xz) * hy * hy * 0.35 * H;
     // The ribbon turns to face the eye round its own axis.
     vec3 V = normalize(cameraPosition - c);
@@ -619,7 +618,7 @@ const bankMat = new THREE.ShaderMaterial({
   void main() {
     vec3 P = position;
     // The crest sways with the same gusts as the near stalks.
-    P.xz += gust(P.xz, uTime) * aB.y * 0.25 + frontPush(P.xz) * aB.y * 0.8;
+    P.xz += gust(P.xz, uTime) * aB.y * 0.12 + frontPush(P.xz) * aB.y * 0.8;
     vP = P; vB = aB;
     gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
   }`,
@@ -1349,20 +1348,21 @@ void main() {
     // The exhaust is a jet straight down onto the pad; the ground turns it sideways.
     vec2 dp = vUv - vec2(0.5, 0.0);
     float col = exp(-dp.x * dp.x * 5000.0) * smoothstep(0.0, 0.015, vUv.y) * (1.0 - smoothstep(0.16, 0.3, vUv.y));
-    float jet = 0.03 * (0.8 + 0.4 * k2noise(vec2(uTime * 9.0, vUv.y * 30.0)));
+    float jet = 0.02 * (0.8 + 0.4 * k2noise(vec2(uTime * 9.0, vUv.y * 30.0)));
     v += vec2((k2noise(vec2(uTime * 5.0, 3.0)) - 0.5) * 0.02, -jet) * col * uPush * uDt;
     // The deflected jet drives two ground sheets, left and right, hard and far.
     float sheet = (1.0 - smoothstep(0.0, 0.12, vUv.y)) * smoothstep(0.0, 0.06, abs(dp.x)) * (1.0 - smoothstep(0.2, 0.45, abs(dp.x)));
-    v.x += sign(dp.x) * 0.09 * uPush * sheet * uDt;
+    v.x += sign(dp.x) * 0.02 * uPush * sheet * uDt;
     // Heavy smoke: a breath of lift while fresh, then it settles and creeps.
-    v.y += (min(d, 3.0) * 0.012 * exp(-age / 4.0) - smoothstep(0.06, 0.35, vUv.y) * min(d, 2.0) * 0.03) * uDt;
+    // Columns billow up a few hundred metres, then settle and drift.
+    v.y += (min(d, 3.0) * 0.02 * exp(-age / 6.0) - smoothstep(0.15, 0.6, vUv.y) * min(d, 2.0) * 0.025) * uDt;
     v.x += (k2noise(vec2(vUv.x * 6.0 + uSeed, uTime * 0.4)) - 0.5) * 0.02 * uDt * smoothstep(0.0, 0.2, d);
     v += vec2(nx, -ny) * 0.06 * uDt * smoothstep(0.0, 0.3, d);
     // A light wind carries the old cloud off downrange.
     v.x += uWind * uDt * smoothstep(6.0, 20.0, age);
     // Heavy: strong drag, and a lid that damps climbing.
-    v *= 1.0 - 0.45 * uDt;
-    v.y *= 1.0 - smoothstep(0.16, 0.5, vUv.y) * 3.0 * uDt;
+    v *= 1.0 - 0.6 * uDt;
+    v.y *= 1.0 - smoothstep(0.35, 0.8, vUv.y) * 3.0 * uDt;
   } else {
     // The rocket pours smoke in at uSrc; thin air lets it bloom outward: the jellyfish.
     vec2 dp = vUv - uSrc;
@@ -1534,7 +1534,7 @@ function makeSlab(F, mode) {
 }
 const groundCloud = makeSlab(gFluid, 0);
 // Slab sizes in units of the pad distance; the trail slab covers the whole arc.
-const G_W = 1.5, G_H = G_W * 160 / 512;
+const G_W = 0.7, G_H = G_W * 160 / 512;
 // Run both sims and place both slabs; called once per drawn frame.
 let fluidX = 0;
 function updateGround(dt) {
@@ -1543,7 +1543,7 @@ function updateGround(dt) {
   if (gFluid.live) {
     // Push and pour follow the engine: hardest in the seconds round liftoff.
     const burn = f ? THREE.MathUtils.clamp((te + 0.3) / 1.2, 0, 1) * (1 - THREE.MathUtils.smoothstep(te, PRE + 3, PRE + 9)) : 0;
-    fluidStep(gFluid, dt, { mode: 0, push: burn, rate: burn * 80, src: [0.5, 0], srcR: 0.01, wind: 0.004, alt: 0, diss: te > PRE + 40 ? 0.998 : 0.9996 });
+    fluidStep(gFluid, dt, { mode: 0, push: burn, rate: burn * 50, src: [0.5, 0], srcR: 0.01, wind: 0.004, alt: 0, diss: te > PRE + 40 ? 0.998 : 0.9996 });
     groundCloud.visible = true;
     groundCloud.material.uniforms.tDen.value = gFluid.denA.texture;
     groundCloud.position.set(fluidX, 0, -D - 6);
@@ -2150,7 +2150,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 function makeDof() {
   const pass = new ShaderPass({
     uniforms: {
-      tDiffuse: { value: null }, tDepth: { value: null },
+      tScene: { value: null }, tDepth: { value: null },
       uNear: { value: camera.near }, uFar: { value: camera.far }, uFocus: { value: 2000 }, uK: { value: 72 }, uCap: { value: 14 }, uHunt: { value: 0 },
       uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uFringe: { value: 0 },
       uDonut: { value: 0 }, uStar: { value: 0 }, uScatter: { value: 0 }, uGrainB: { value: 0 }, uSwirl: { value: 0 }, uSeedB: { value: 0 },
@@ -2158,7 +2158,7 @@ function makeDof() {
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse, tDepth;
+    uniform sampler2D tScene, tDepth;
     uniform float uNear, uFar, uFocus, uK, uCap, uHunt, uLampW, uLampT;
     uniform float uBlades, uOval, uRim, uCat, uFringe, uDonut, uStar, uScatter, uGrainB, uSwirl, uSeedB;
     float bh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -2184,11 +2184,17 @@ function makeDof() {
     // Only what lies nearer than the focus blurs; the distance stays sharp.
     float coc(float d) { return min(uK * max(1.0 / max(d, 0.5) - 1.0 / uFocus, 0.0) + uHunt, uCap); }
     void main() {
-      vec3 c0 = texture2D(tDiffuse, vUv).rgb;
-      float r = coc(dist(vUv));
-      if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
+      vec3 c0 = texture2D(tScene, vUv).rgb;
       // Interleaved gradient noise turns the disc per pixel.
       float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      // A near reed bleeds over the sky behind it: the gather radius is the widest blur nearby.
+      // Eight depth probes find it; a sharp pixel with sharp neighbours returns at once.
+      float r = coc(dist(vUv));
+      for (int j = 0; j < 8; j++) {
+        float a = float(j) * 0.7854 + rot, rj = (j < 4) ? 1.0 : 0.5;
+        r = max(r, coc(dist(vUv + vec2(cos(a), sin(a)) * rj * uCap / uRes)));
+      }
+      if (r < 0.6) { gl_FragColor = vec4(c0, 1.0); return; }
       vec3 acc = c0;
       float wsum = 1.0;
       for (int k = 0; k < 22; k++) {
@@ -2206,7 +2212,7 @@ function makeDof() {
           dir += tg * dot(dir, tg) * uSwirl * L * 2.0;
         }
         vec2 uv = vUv + dir * r / uRes;
-        vec3 col = texture2D(tDiffuse, uv).rgb;
+        vec3 col = texture2D(tScene, uv).rgb;
         // Fringe: the disc's edge leans magenta outside, green inside.
         col *= mix(vec3(1.0), mix(vec3(0.94, 1.06, 0.96), vec3(1.1, 0.92, 1.08), smoothstep(0.55, 1.0, rk)), uFringe);
         // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
@@ -2229,21 +2235,30 @@ function makeDof() {
       gl_FragColor = vec4(acc / wsum, 1.0);
     }`,
   });
-  // The pass reads the scene's depth from the buffer it blurs.
+  // The pass reads the scene and its depth from sceneRT, not from the composer's buffers.
+  pass.textureID = 'tUnused';
+  pass.material.depthTest = false;
+  pass.material.depthWrite = false;
   const render = pass.render.bind(pass);
-  pass.render = (r, wb, rb, dt, mask) => { pass.uniforms.tDepth.value = rb.depthTexture; render(r, wb, rb, dt, mask); };
+  pass.render = (r, wb, rb, dt, mask) => { pass.uniforms.tScene.value = sceneRT.texture; pass.uniforms.tDepth.value = sceneRT.depthTexture; render(r, wb, rb, dt, mask); };
   return pass;
 }
 
 /* ---------- post chain ---------- */
 const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.075 };
-const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
-rt.depthTexture.type = THREE.UnsignedIntType;
-const composer = new EffectComposer(renderer, rt);
-composer.addPass(new RenderPass(scene, camera));
+// The scene renders into its own target with depth, as Wind farm does.
+// A depth texture keeps its first size, so a resize builds a fresh target.
+let sceneRT = null;
+function makeSceneRT(w, h) {
+  sceneRT?.depthTexture?.dispose();
+  sceneRT?.dispose();
+  sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(w, h) });
+}
+makeSceneRT(2, 2);
+const composer = new EffectComposer(renderer);
 const dofPass = makeDof();
 // Blur scale in pixels; the focus in dioptres, so a rack eases evenly.
-let dofK = 72, dofCap = 14, focusD = 1 / 2000, focusTo = 1 / 2000;
+let dofK = 130, dofCap = 18, focusD = 1 / 2000, focusTo = 1 / 2000;
 // Autofocus: the rocket in flight; else wherever the frame's centre meets the ground.
 const fwdA = new THREE.Vector3();
 function autofocus(dt) {
@@ -2322,13 +2337,14 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setPixelRatio(size.dpr);
   composer.setSize(w, h);
+  makeSceneRT(Math.round(w * size.dpr), Math.round(h * size.dpr));
   const m = rung >= 2 ? 0.35 : quality() === 'high' ? 0.75 : 0.5;
   mirrorRT.setSize(Math.max(1, Math.round(w * size.dpr * m)), Math.max(1, Math.round(h * size.dpr * m)));
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   dofPass.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   birdMesh.material.uniforms.uPx.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
-  dofK = 72 * h * size.dpr / 800;
-  dofCap = 14 * h * size.dpr / 800;
+  dofK = 130 * h * size.dpr / 800;
+  dofCap = 18 * h * size.dpr / 800;
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
@@ -2348,6 +2364,12 @@ function draw() {
   updateGround(Math.min(0.1, simT - lastSimDraw));
   lastSimDraw = simT;
   renderMirror();
+  // The scene, with depth, into sceneRT; the post chain starts from there.
+  renderer.setRenderTarget(sceneRT);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
   placeOrbs(orbPass, orbList());
   // Focus rides on the pad: the flight's distance, else the setting's.
   dofPass.uniforms.uFocus.value = 1 / focusD;

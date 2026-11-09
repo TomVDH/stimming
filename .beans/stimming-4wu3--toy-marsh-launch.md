@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T10:00:30Z
+updated_at: 2026-11-09T10:19:28Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -158,3 +158,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Base: the deflected jet drives two ground sheets, left and right, far along the ground; lower drag; more smoke; a little lift while fresh.
 - Reeds fill the whole frame; a small gap stays open toward the pad (gapDir = padX / PAD). Two more channels at 480 and 1100 m; light far reeds out to 280 m.
 - Vetted on stills at T+3, 8, 15, 30, 45 before the commit.
+
+## Bokeh fix (03:20)
+
+Cause: the DOF pass read depth 0 everywhere. The composer target's DepthTexture kept its first 1x1 size, and both composer buffers shared it (a feedback loop).
+Fix: the scene renders into its own sceneRT (HalfFloat, 4 samples, DepthTexture at full size), rebuilt on resize; the DOF pass reads tScene and tDepth from it. The gather radius is now the widest blur among eight depth probes, so near reeds bleed over the sky; the distance stays sharp. Blur scale 130 / cap 18 per 800 px.
+Also in this commit: calmer reed sway, narrower two-sided base cloud (G_W 0.7), unused RenderPass import removed.
