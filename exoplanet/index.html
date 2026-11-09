@@ -31,6 +31,13 @@
   font-variant-numeric: tabular-nums;
 }
 .stage--exoplanet .read.lock { color: oklch(0.85 0.08 200 / 0.9); }
+/* Species tags under the transmission panel, in their own colours. */
+.stage--exoplanet .tags { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.stage--exoplanet .tags span {
+  position: absolute; transform: translateX(-50%);
+  font: 700 10px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em;
+  text-shadow: 0 0 6px currentColor; white-space: nowrap;
+}
 /* Under 900 px the readout drops under the top corners, right-aligned. */
 @media (max-width: 900px) { .stage--exoplanet .read { top: 50px; left: auto; right: 14px; transform: none; font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .stage--exoplanet canvas { transition: none; } }
@@ -46,6 +53,7 @@
     <div class="stage stage--exoplanet" id="stage" tabindex="0" role="application" aria-label="One star through three instruments. Drag left or right to fold the exposures by a trial period; hold to integrate; the tray picks Transit, Spectrograph or Coronagraph.">
       <p class="fail" hidden>Exoplanet needs WebGL 2, which this browser does not give.</p>
       <span class="read" id="read" aria-live="off">P — · K — · δ —</span>
+      <div class="tags" id="tags" aria-hidden="true"></div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -67,7 +75,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced, audioKit } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, css, reduced, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage'), readEl = document.getElementById('read');
@@ -93,6 +101,8 @@ const TYPES = ['F3', 'F6', 'G0', 'G2', 'K0', 'K3', 'K5', 'M1', 'M2'];
 // The disc's tint by spectral class, linear light, kept muted.
 const TINT = { F: [1.0, 0.96, 0.9], G: [1.0, 0.9, 0.74], K: [1.0, 0.76, 0.5], M: [1.0, 0.58, 0.36] };
 const tintOf = t => TINT[t.type[0]] || TINT.G;
+// Effective temperature by class, for the Planck curve.
+const TEMP = { F3: 6700, F6: 6400, G0: 6000, G2: 5800, K0: 5200, K3: 4800, K5: 4400, M1: 3700, M2: 3500 };
 // A random target. One in four is wrong.
 function shuffled(seed) {
   const r = mulberry(seed);
@@ -118,7 +128,9 @@ function mulberry(a) {
 const seedOf = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
 
 /* ---------- state ---------- */
-const N = 256, TW = 4096, WIN = 12;
+const N = 256, TW = 4096, WIN = 400, L0 = 380;
+// Wavelength of a template pixel, in nm.
+const lam = x => L0 + WIN * x / TW;
 let target = TARGETS[0], shuffleSeed = 7;
 let exposure = 0.33, tell = 1, cosmic = 1, logStretch = 0;
 // Trial period P in days; 0 means time order. lock holds while folded true.
@@ -169,56 +181,130 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
 
 /* ---------- templates ---------- */
-// The stellar template: one continuum with Gaussian lines, broadened by rotation.
-// Units are template pixels; the window is WIN nm across TW pixels.
-const star = new Float32Array(TW), tellu = new Float32Array(TW), work = new Float32Array(TW);
-// Line cores: where the strongest lines sit, for the Rossiter bump and the cut.
+// The stellar template: the continuum with real absorption lines.
+// Units are template pixels; the window is WIN nm from L0.
+const star = new Float32Array(TW), tellu = new Float32Array(TW), colLUT = new Float32Array(TW * 4);
 let lineCores = [], cols = [0.3, 0.7];
+const pxPerNm = TW / WIN;
+// One line: a Gaussian core with a Lorentz share for the strong ones.
+function absorb(arr, nm, depth, sigNm, lor = 0) {
+  if (depth <= 0) return;
+  const c = (nm - L0) * pxPerNm, sig = Math.max(0.6, sigNm * pxPerNm);
+  const lo = Math.max(0, Math.floor(c - sig * 6)), hi = Math.min(TW - 1, Math.ceil(c + sig * 6));
+  for (let x = lo; x <= hi; x++) {
+    const z = (x - c) / sig;
+    const prof = (1 - lor) * Math.exp(-z * z * 0.5) + lor / (1 + z * z);
+    arr[x] *= 1 - depth * prof;
+  }
+}
+// A molecular band: a sharp head that fades to the red.
+function band(arr, head, width, depth) {
+  const x0 = Math.floor((head - L0) * pxPerNm), x1 = Math.min(TW - 1, Math.ceil((head + width - L0) * pxPerNm));
+  for (let x = Math.max(0, x0); x <= x1; x++) arr[x] *= 1 - depth * (1 - (x - x0) / (x1 - x0)) * (0.7 + 0.3 * Math.sin(x * 0.9));
+}
+// Fraunhofer lines in nm: Ca H and K, the Balmer series, the G band, Mg b, Na D, iron.
 function template(t) {
   const r = mulberry(t.seed ?? seedOf(t.name));
   star.fill(1);
   lineCores = [];
   cols = [0.1 + r() * 0.8, 0.1 + r() * 0.8];
-  const pxPerNm = TW / WIN;
-  for (let i = 0; i < t.lines; i++) {
-    const c = r() * TW;
-    const strong = r() < 0.12;
-    const d = (strong ? 0.75 + r() * 0.25 : Math.pow(r(), 0.8) * 0.8) * t.depth;
-    const sig = (strong ? 0.014 + r() * 0.01 : 0.005 + r() * 0.01) * pxPerNm;
-    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
-    for (let x = lo; x <= hi; x++) {
-      const z = (x - c) / sig;
-      // Strong lines keep Lorentz wings; weak ones are Gaussian.
-      const prof = strong ? 0.7 * Math.exp(-z * z * 0.5) + 0.3 / (1 + z * z) : Math.exp(-z * z * 0.5);
-      star[x] *= 1 - d * prof;
-    }
-    if (d > 0.45 * t.depth) lineCores.push(c / TW);
+  const cls = t.type[0], temp = TEMP[t.type] || 5800;
+  // Hot stars show hydrogen; cool stars show metals and molecules.
+  const bal = { F: 1.0, G: 0.6, K: 0.3, M: 0.15 }[cls] || 0.6;
+  const met = { F: 0.45, G: 0.8, K: 1.0, M: 0.95 }[cls] || 0.8;
+  const broad = 1 + 0.12 * t.vsini;
+  const L = (nm, d, sg, lor = 0) => { absorb(star, nm, d, sg * broad, lor); if (d > 0.5) lineCores.push((nm - L0) / WIN); };
+  L(393.37, 0.95 * met, 1.4, 0.4); L(396.85, 0.9 * met, 1.3, 0.4);
+  L(410.17, 0.5 * bal, 1.0, 0.3); L(434.05, 0.55 * bal, 1.0, 0.3); L(486.13, 0.6 * bal, 1.0, 0.3); L(656.28, 0.78 * bal, 1.1, 0.35);
+  L(430.8, 0.45 * met, 1.8); L(422.67, 0.6 * met, 0.5);
+  L(404.58, 0.45 * met, 0.3); L(438.35, 0.5 * met, 0.3); L(527.04, 0.45 * met, 0.3); L(532.8, 0.3 * met, 0.3);
+  L(516.73, 0.6 * met, 0.35); L(517.27, 0.55 * met, 0.35); L(518.36, 0.65 * met, 0.35);
+  L(588.995, 0.85 * met, 0.4, 0.3); L(589.592, 0.75 * met, 0.4, 0.3);
+  L(766.49, 0.5 * met, 0.4); L(769.9, 0.4 * met, 0.4);
+  // The iron forest: many weak lines, denser toward the blue.
+  const n = Math.round(t.lines * 3);
+  for (let i = 0; i < n; i++) {
+    const nm = L0 + Math.pow(r(), 1.4) * 330 + 5;
+    absorb(star, nm, (0.06 + r() * 0.3) * met * t.depth, (0.25 + r() * 0.35) * broad);
   }
-  // Rotation: a half-ellipse kernel, its half-width from vsini.
-  const hw = Math.max(1, Math.round(0.004 * t.vsini * pxPerNm));
-  if (hw > 1) {
-    const k = [];
-    let sum = 0;
-    for (let i = -hw; i <= hw; i++) { const v = Math.sqrt(Math.max(0, 1 - (i / hw) ** 2)); k.push(v); sum += v; }
-    work.set(star);
-    for (let x = 0; x < TW; x++) {
-      let acc = 0;
-      for (let i = -hw; i <= hw; i++) acc += work[clamp(x + i, 0, TW - 1)] * k[i + hw];
-      star[x] = acc / sum;
-    }
-  }
+  // Titanium oxide bands on the coolest stars.
+  if (cls === 'M') { band(star, 705.5, 12, 0.5); band(star, 758.5, 14, 0.45); band(star, 615.5, 10, 0.35); band(star, 655.5, 8, 0.3); }
+  if (cls === 'K' && temp < 4600) { band(star, 705.5, 10, 0.15); }
+  colorLUT(temp);
 }
-// Earth's air: a few narrow fixed lines, mostly in the right half of the window.
+// Earth's air: the oxygen A and B bands, water vapour, all fixed on the detector.
 function telluric() {
   const r = mulberry(0x5eed);
   tellu.fill(1);
-  const pxPerNm = TW / WIN;
-  for (let i = 0; i < 11; i++) {
-    const c = (0.35 + r() * 0.62) * TW, d = 0.12 + r() * 0.42, sig = (0.003 + r() * 0.003) * pxPerNm;
-    const lo = Math.max(0, Math.floor(c - sig * 5)), hi = Math.min(TW - 1, Math.ceil(c + sig * 5));
-    for (let x = lo; x <= hi; x++) { const z = (x - c) / sig; tellu[x] *= 1 - d * Math.exp(-z * z * 0.5); }
-  }
+  for (let i = 0; i < 14; i++) absorb(tellu, 759.6 + i * 0.22, 0.55 + 0.3 * r(), 0.09);
+  for (let i = 0; i < 8; i++) absorb(tellu, 686.8 + i * 0.22, 0.3 + 0.25 * r(), 0.08);
+  for (let i = 0; i < 40; i++) absorb(tellu, 714 + r() * 22, 0.06 + 0.25 * r(), 0.08);
+  for (let i = 0; i < 12; i++) absorb(tellu, 589 + r() * 12, 0.03 + 0.08 * r(), 0.07);
+  for (let i = 0; i < 10; i++) absorb(tellu, 628 + r() * 8, 0.04 + 0.1 * r(), 0.07);
 }
+// Wavelength to linear sRGB: the Wyman, Sloan and Shirley fit of the CIE 1931 observer.
+function cieXYZ(l) {
+  const g = (mu, s1, s2) => { const sg = l < mu ? s1 : s2, z = (l - mu) / sg; return Math.exp(-0.5 * z * z); };
+  const x = 1.056 * g(599.8, 37.9, 31.0) + 0.362 * g(442.0, 16.0, 26.7) - 0.065 * g(501.1, 20.4, 26.2);
+  const y = 0.821 * g(568.8, 46.9, 40.5) + 0.286 * g(530.9, 16.3, 31.1);
+  const z = 1.217 * g(437.0, 11.8, 36.0) + 0.681 * g(459.0, 26.0, 13.8);
+  return [x, y, z];
+}
+// The colour LUT: each wavelength's colour under the star's own Planck curve.
+function colorLUT(temp) {
+  const planck = l => { const lm = l * 1e-9; return 1 / (lm ** 5 * (Math.exp(0.014387769 / (lm * temp)) - 1)); };
+  const pk = planck(550);
+  let mx = 1e-9;
+  for (let x = 0; x < TW; x++) {
+    const l = lam(x), [X, Y, Z] = cieXYZ(l), B = planck(l) / pk;
+    let r = 3.2406 * X - 1.5372 * Y - 0.4986 * Z, g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z, b = 0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+    // The detector still sees the ends the eye loses, as a faint grey.
+    const floor = 0.05;
+    r = (Math.max(0, r) + floor) * B; g = (Math.max(0, g) + floor) * B; b = (Math.max(0, b) + floor) * B;
+    colLUT[x * 4] = r; colLUT[x * 4 + 1] = g; colLUT[x * 4 + 2] = b; colLUT[x * 4 + 3] = 1;
+    mx = Math.max(mx, r, g, b);
+  }
+  for (let i = 0; i < TW * 4; i += 4) { colLUT[i] /= mx; colLUT[i + 1] /= mx; colLUT[i + 2] /= mx; }
+}
+
+/* ---------- the atmosphere ---------- */
+// What the planet's air takes from the starlight in transit, by wavelength.
+// amp is the extra transit depth at the feature, as a share of the depth.
+const SPECIES = {
+  Na: { nm: 589.3, sig: 5, tag: 'Na', col: [0.85, 0.17, 85] },
+  K: { nm: 768.2, sig: 6, tag: 'K', col: [0.66, 0.2, 25] },
+  H2O: { nm: 722, sig: 13, tag: 'H₂O', col: [0.8, 0.1, 225] },
+  TiO: { nm: 660, sig: 45, tag: 'TiO', col: [0.72, 0.14, 335] },
+  CH4: { nm: 727, sig: 7, tag: 'CH₄', col: [0.8, 0.15, 150] },
+  haze: { nm: 420, sig: 70, tag: 'haze', col: [0.75, 0.03, 230] },
+};
+let atmo = [];
+function atmosphere(t) {
+  atmo = [];
+  if (t.kind !== 'planet') return;
+  const r = mulberry((t.seed ?? seedOf(t.name)) ^ 0xa7a0);
+  const hot = t.P < 4, big = t.dip > 0.22;
+  const add = (k, amp) => atmo.push({ ...SPECIES[k], key: k, amp });
+  if (r() < (hot ? 0.9 : 0.5)) add('Na', 0.28 + 0.2 * r());
+  if (r() < (hot ? 0.7 : 0.4)) add('K', 0.18 + 0.15 * r());
+  if (r() < 0.75) add('H2O', 0.14 + 0.12 * r());
+  if (hot && big && r() < 0.6) add('TiO', 0.08 + 0.06 * r());
+  if (!hot && r() < 0.6) add('CH4', 0.1 + 0.1 * r());
+  if (r() < 0.6) add('haze', 0.12 + 0.18 * r());
+}
+// The model transit depth at wavelength nm, relative to the flat depth.
+function depthAt(nm) {
+  let d = 0;
+  for (const f of atmo) {
+    if (f.key === 'haze') { d += f.amp * (Math.pow(450 / nm, 4) - 0.35); continue; }
+    const z = (nm - f.nm) / f.sig;
+    d += f.amp * Math.exp(-z * z * 0.5);
+  }
+  return d;
+}
+// Rows in transit: the fold must be locked before they can be told apart.
+let nIn = 0;
+function countIn() { nIn = 0; for (let i = 0; i < N; i++) if (E.transit[i] >= 0 && E.gap[i] < 0.5) nIn++; }
 
 /* ---------- exposures ---------- */
 // Parallel arrays, one record per exposure. Index 0 is the oldest.
@@ -312,6 +398,7 @@ function reorder() {
     order.sort((a, b) => E.t[b] - E.t[a]);
   }
   for (let k = 0; k < N; k++) { rank[order[k]] = k; E.yTo[order[k]] = k; }
+  countIn();
 }
 let periodogramDirty = false;
 
@@ -389,7 +476,7 @@ function pull(dt, strength) {
   setPeriod(P + (target.P - P) * k);
   if (Math.abs(P / target.P - 1) < 1e-4) setPeriod(target.P);
 }
-let lockAt = -1e9;
+let lockAt = -1e9, lastTags = '';
 function onLock() { lockAt = performance.now(); }
 
 /* ---------- shaders ---------- */
@@ -422,6 +509,7 @@ flat in vec4 vA;
 flat in vec4 vB;
 uniform sampler2D uStar;
 uniform sampler2D uTell;
+uniform sampler2D uCol;
 uniform vec2 uRes;
 uniform vec4 uBox;
 uniform float uDpr;
@@ -452,8 +540,8 @@ void main() {
     float sh = texture(uStar, vec2(u - rvN - off, 0.5)).r;
     f += (1.0 - sh) * 0.3 * tl;
   }
-  // The blaze: an order is brightest at its centre.
-  f *= mix(0.42, 1.0, pow(cos((u - 0.5) * 3.14159), 1.4));
+  // The instrument's response falls off toward both ends.
+  f *= mix(0.6, 1.0, pow(cos((u - 0.5) * 3.14159), 0.8));
   f *= vA.z;
   // One hot column and one dead column, fixed on the detector.
   float colPx = 0.5 * uDpr / widthPx;
@@ -482,7 +570,8 @@ void main() {
   v += g * 0.025;
   vec2 q = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
   v *= 1.0 - 0.35 * dot(q, q) * dot(q, q);
-  vec3 c = uBg + uGrey * max(v, 0.0);
+  vec3 col = texture(uCol, vec2(u, 0.5)).rgb;
+  vec3 c = uBg + col * max(v, 0.0) * 1.15;
   o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 }`;
 // The stage behind the strips: the bg colour with the vignette.
@@ -649,7 +738,7 @@ void main() {
 /* ---------- WebGL ---------- */
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
-let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null, markVao = null, markBuf = null;
+let gl = null, Pg = null, quadVao = null, stripVao = null, instBuf = null, starTex = null, tellTex = null, colTex = null, markVao = null, markBuf = null;
 const inst = new Float32Array(N * 8);
 // Marks: the light-curve dots, the periodogram bars, the cursor and the cut.
 const MAXM = N + NPG + 520;
@@ -686,6 +775,21 @@ function tex1d(data) {
 function upload(t, data) {
   gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TW, 1, gl.RED, gl.FLOAT, data);
+}
+// The colour LUT, RGBA16F, linear.
+function tex1dRGBA(data) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, TW, 1, 0, gl.RGBA, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function uploadRGBA(t, data) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TW, 1, gl.RGBA, gl.FLOAT, data);
 }
 async function initGL() {
   gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
@@ -742,11 +846,12 @@ async function initGL() {
   gl.bindVertexArray(null);
   starTex = tex1d(star);
   tellTex = tex1d(tellu);
+  colTex = tex1dRGBA(colLUT);
 }
 
 /* ---------- layout ---------- */
 // Device pixels, from the bottom left as GL counts. box is x0, y0, x1, y1.
-const G = { box: [0, 0, 1, 1], lc: [0, 0, 1, 1], pg: [0, 0, 1, 1], disc: [0, 0, 1, 1], curve: [0, 0, 1, 1], field: [0, 0, 1, 1], rowH: 1, dpr: 1, W: 1, H: 1, w: 1, h: 1 };
+const G = { box: [0, 0, 1, 1], lc: [0, 0, 1, 1], pg: [0, 0, 1, 1], trans: [0, 0, 1, 1], disc: [0, 0, 1, 1], curve: [0, 0, 1, 1], field: [0, 0, 1, 1], rowH: 1, dpr: 1, W: 1, H: 1, w: 1, h: 1 };
 let rung = 0;
 function layout() {
   const { w, h, W, H, dpr } = fitCanvas(canvas, { maxDpr: 2, low: rung >= 1 });
@@ -758,10 +863,14 @@ function layout() {
   const pgH = 22 * dpr, pgGap = 10 * dpr;
   const x0 = lcW + gapX, x1 = W - 14 * dpr;
   const yTop = H - top, yBot = bottom + pgH + pgGap;
-  G.box = [x0, yBot, x1, yTop];
-  G.lc = [10 * dpr, yBot, lcW - 2 * dpr, yTop];
+  // The transmission panel takes the top of the band; the waterfall the rest.
+  const tH = Math.round((yTop - yBot) * 0.26), tGap = 12 * dpr;
+  G.trans = [x0, yTop - tH, x1, yTop];
+  const wTop = yTop - tH - tGap;
+  G.box = [x0, yBot, x1, wTop];
+  G.lc = [10 * dpr, yBot, lcW - 2 * dpr, wTop];
   G.pg = [x0, bottom, x1, bottom + pgH];
-  G.rowH = (yTop - yBot) / N;
+  G.rowH = (wTop - yBot) / N;
   // Transit: the disc left and the curve right; stacked when narrow.
   const fx0 = 14 * dpr, fx1 = W - 14 * dpr, band = yTop - yBot;
   if (narrow) {
@@ -788,6 +897,7 @@ function render() {
   gl.uniform2f(Pg.bg.u.uRes, G.W, G.H);
   gl.uniform3fv(Pg.bg.u.uBg, BG);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  tagEl.hidden = mode !== 'spectro';
   if (mode === 'transit') { drawStar(); drawMarks(); return; }
   if (mode === 'coro') { drawCoro(); drawMarks(); return; }
   // Strips, oldest slot first; order does not matter without blending.
@@ -807,6 +917,9 @@ function render() {
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, tellTex);
   gl.uniform1i(u.uTell, 1);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, colTex);
+  gl.uniform1i(u.uCol, 2);
   gl.uniform2f(u.uRes, G.W, G.H);
   gl.uniform4fv(u.uBox, G.box);
   gl.uniform1f(u.uRowH, G.rowH);
@@ -816,7 +929,7 @@ function render() {
   gl.uniform1f(u.uLog, logStretch);
   // Noise falls with exposure: short is loud, long is clean.
   gl.uniform1f(u.uNoise, 0.025 + 0.16 * Math.pow(1 - exposure, 2.2));
-  gl.uniform1f(u.uRm, 0.004 * target.vsini * (G.box[2] - G.box[0]) / WIN * 1.6);
+  gl.uniform1f(u.uRm, 0.004 * target.vsini * (G.box[2] - G.box[0]) / 12 * 1.6);
   gl.uniform1f(u.uTime, time);
   gl.uniform3fv(u.uGrey, GREY);
   gl.uniform3fv(u.uBg, BG);
@@ -887,6 +1000,57 @@ function mark(x0, y0, x1, y1, c, a) {
   marks[o] = x0; marks[o + 1] = y0; marks[o + 2] = x1; marks[o + 3] = y1;
   marks[o + 4] = c[0]; marks[o + 5] = c[1]; marks[o + 6] = c[2]; marks[o + 7] = a;
 }
+// The transmission spectrum: the planet's size by colour, out of the transit rows.
+// Noise falls with the rows the fold can tell apart; a hold integrates faster.
+const TB = 96, tagEl = document.getElementById('tags');
+let tagsShown = '';
+function nEff() {
+  if (target.kind === 'wrong') return 1 + 14 * integ;
+  return 1 + (locked ? nIn * (1 + 8 * integ) : 0.3 * (1 + 2 * integ));
+}
+function drawTransmission() {
+  const d = G.dpr, [x0, y0, x1, y1] = G.trans, w = x1 - x0, h = y1 - y0;
+  const n = nEff(), sig = 0.9 / Math.sqrt(n), conf = clamp((n - 1) / 10);
+  const base = y0 + h * 0.3, k = h * 0.55 / 0.45;
+  const frame = Math.floor(time * 3);
+  // Baseline: the flat transit depth.
+  mark(x0, base - 0.5 * d, x1, base + 0.5 * d, GREY, 0.08);
+  const wrong = target.kind === 'wrong';
+  let shown = [];
+  for (let b = 0; b < TB; b++) {
+    const u = (b + 0.5) / TB, nm = L0 + WIN * u, x = x0 + u * w;
+    const model = wrong ? 0.04 * (450 / nm) - 0.03 : depthAt(nm);
+    const g = hash32(b * 7919 + frame * 104729) + hash32(b * 31 + frame * 7 + 3) - 1;
+    const y = base + (model + g * sig) * k;
+    // The error bar and the point.
+    mark(x - 0.5 * d, base + (model - sig) * k, x + 0.5 * d, base + (model + sig) * k, GREY, 0.06 + 0.06 * conf);
+    mark(x - d, y - d, x + d, y + d, wrong ? GREY : CYAN, 0.25 + 0.5 * conf);
+    // The model comes up as the noise falls.
+    if (conf > 0.05) mark(x - w / TB * 0.5, base + model * k - 0.6 * d, x + w / TB * 0.5 + 0.5, base + model * k + 0.6 * d, wrong ? GREY : CYAN, 0.6 * conf);
+  }
+  // Tags where a species stands above the noise.
+  if (!wrong) for (const f of atmo) if (f.amp / sig > 3) shown.push(f);
+  if (wrong && conf > 0.5) shown.push({ key: 'dust', tag: 'dust', nm: 580, col: [0.72, 0.01, 230] });
+  const key = shown.map(f => f.key).join(',');
+  if (key !== tagsShown) {
+    tagsShown = key;
+    tagEl.replaceChildren(...shown.map(f => {
+      const el = document.createElement('span');
+      el.textContent = f.tag;
+      el.style.color = css(f.col, 0.9);
+      el.dataset.nm = f.nm;
+      return el;
+    }));
+  }
+  for (const el of tagEl.children) {
+    const u = (+el.dataset.nm - L0) / WIN;
+    el.style.left = `${(x0 + u * w) / d}px`;
+    el.style.top = `${(G.H - y0) / d + 3}px`;
+  }
+  tagEl.hidden = mode !== 'spectro';
+}
+// A float hash in 0..1 from one integer.
+function hash32(i) { let x = (i | 0) ^ 0x9e3779b9; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return ((x ^ (x >>> 16)) >>> 0) / 4294967296; }
 // The cut trace: the row's own spectrum, sampled from the templates.
 const CUTN = 512;
 function drawCut() {
@@ -959,7 +1123,7 @@ function drawMarks() {
     const x = px0 + pgPos(P) * (px1 - px0);
     mark(x - d * 0.5, py0 - 2 * d, x + d * 0.5, py1 + 2 * d, CYAN, locked ? 0.9 : 0.45);
   }
-  if (mode === 'spectro') drawCut();
+  if (mode === 'spectro') { drawCut(); drawTransmission(); }
   gl.useProgram(Pg.mark.p);
   gl.bindVertexArray(markVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, markBuf);
@@ -990,7 +1154,7 @@ function step(dt) {
   const f = fluxShown();
   dispFlux += (f - dispFlux) * (1 - Math.exp(-dt / (locked ? 0.08 : 0.5)));
   pull(dt, press?.fold ? 0.25 : 1);
-  if (locked && performance.now() - lockAt < 800) readout();
+  if (locked && (performance.now() - lockAt < 800 || tagsShown !== lastTags)) { lastTags = tagsShown; readout(); }
 }
 const moving = () => { for (let i = 0; i < N; i++) if (E.y[i] !== E.yTo[i] || E.age[i] < 1) return true; return false; };
 const settling = () => !!press || moving() || cutRow >= 0 || integ > 0 || performance.now() - lockAt < 800 || performance.now() - lastInput < 4000 || (P > 0 && !locked && target.kind === 'planet' && Math.abs(P / target.P - 1) < 0.015);
@@ -1028,7 +1192,8 @@ function setTarget(t) {
   onTargetT = 0;
   growlT = 0;
   template(t);
-  if (gl) upload(starTex, star);
+  atmosphere(t);
+  if (gl) { upload(starTex, star); uploadRGBA(colTex, colLUT); }
   P = 0; locked = false;
   restack(true);
   readout();
@@ -1041,7 +1206,8 @@ function readout() {
   const age = (performance.now() - lockAt) / 1000, j = Math.max(0, 1 - age / 0.7) ** 2;
   const w = () => (Math.random() - 0.5) * 2 * j;
   const Pd = target.P * (1 + 0.004 * w()), K = target.K * 31 * (1 + 0.25 * w()), dip = target.dip / 25 * 100 * (1 + 0.3 * w());
-  readEl.textContent = `P ${Pd.toFixed(4)} d · K ${Math.round(K)} m/s · δ ${dip.toFixed(2)} %`;
+  const comp = tagsShown ? ' · ' + tagsShown.split(',').map(k => (SPECIES[k] || { tag: k }).tag).join(' ') : '';
+  readEl.textContent = `P ${Pd.toFixed(4)} d · K ${Math.round(K)} m/s · δ ${dip.toFixed(2)} %${comp}`;
 }
 
 /* ---------- sound ---------- */
@@ -1202,6 +1368,7 @@ function frame(now) {
 try {
   telluric();
   template(target);
+  atmosphere(target);
   await initGL();
   layout();
   // The first frame is a full stack in time order, no sweep.

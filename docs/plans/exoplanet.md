@@ -233,3 +233,7 @@ Tom's read of Rev 1: it is an instrument readout, not a telescope, and it looks 
 **Tech.** Two more fragment programs on the quad VAO: `STAR_FS` (disc, spikes, halo, scintillation, silhouette from the cursor's phase and the target's transit duration) and `CORO_FS` (mask, leak ring, speckle field from hashed octaves rotating with the sky, planet PSF at the orbit position, integration as `1 / sqrt(1 + 40 · integ)` speckle contrast). `integ` rises over 4 s while held and falls over 8 s. The light curve in Transit mode uses the marks program at full width, 3 px dots. The exposure clock, the fold, the periodogram and the sound run under every mode.
 
 **Opening shot.** Transit, target 1, time order: the star breathes, the curve scrolls, one dip is already in it.
+
+## Rev 3: the spectrograph reads the atmosphere (Tom, 2026-11-09)
+
+The Spectrograph becomes the composition instrument, in true colour. The window is 380 to 780 nm. Each row is the star's dispersed spectrum in the colours a CCD would record under the star's own Planck curve, with real Fraunhofer lines and the telluric oxygen and water bands. Above the waterfall sits the transmission spectrum: the planet's size by wavelength, measured from the transit rows. It is noise until the fold locks; then sodium, potassium, water, titanium oxide, methane and a haze slope come up where the planet's air absorbs, each tagged in its own colour once it stands three sigma above the noise. A hold integrates faster. A wrong star brings up a flat grey line: dust, not an atmosphere.
