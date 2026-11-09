@@ -31,22 +31,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--coil" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow stretches it, and R resets it.">
+    <div class="stage stage--coil" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow plucks the top end, and R resets it.">
       <p class="fail" hidden>Coil needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="nudge" type="button" aria-keyshortcuts="Space">Nudge</button>
-        <button class="chip" id="reset" type="button" aria-keyshortcuts="R">Reset</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag an end</dt><dd>stretch</dd></div>
-        <div><dt>Drop it over the edge</dt><dd>walk</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>nudge</dd></div>
-        <div class="fine"><dt><kbd>R</kbd></dt><dd>reset</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Coil</h1><div class="vignette" hidden></div></section>
@@ -59,87 +46,57 @@
 } }
 </script>
 <script type="module">
-import { initPage, sound, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'coil' });
-// Settings holds the site-wide Quality choice.
-qualitySetting();
+import { initPage, audioKit, reduced, onReducedChange, onQuality, pixelRatio } from '../shared/stim.js';
+initPage({ id: 'coil', bar: {
+  actions: [
+    { verb: 'nudge', key: 'Space', onPress: () => nudge() },
+    { verb: 'reset', key: 'R', onPress: () => resetCoil0() },
+  ],
+  quality: true,
+  keys: [['drag an end', 'stretch'], ['drag over the edge', 'walk'], ['↑', 'pluck']],
+} });
 const panel = document.getElementById('stage');
-const RM = matchMedia('(prefers-reduced-motion: reduce)');
-let reduce = RM.matches;
-RM.addEventListener?.('change', e => { reduce = e.matches; });
+let reduce = reduced();
+onReducedChange(v => { reduce = v; });
 const D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- sound: synthesised, started by the first gesture ---------- */
+// The kit owns the context, the compressor, the noise and sleep.
+const kit = audioKit({ gain: 0.6, keys: new Set(['r', 'R', ' ', 'ArrowUp', 'Enter']) });
 const MAXV = 18, LEAD = 0.004;
-let ac = null, out = null, noise = null, askedAt = -1e9, voices = 0, restT = 0, shim = null;
-let clackNext = 0, knockNext = 0;
+let voices = 0, shim = null, clackNext = 0, knockNext = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Busy moments soften each voice; the compressor catches the rest.
 const level = () => 1 / (1 + 0.07 * voices);
-
-function audio() {
-  if (!ac) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (err) { return; }
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.002; comp.release.value = 0.12;
-    out = ac.createGain();
-    out.gain.value = 0.6;
-    out.connect(comp);
-    comp.connect(ac.destination);
-    // One second of white noise feeds every burst.
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    shimmer();
-  }
-  if (ac.state !== 'running') { askedAt = performance.now(); ac.resume()?.catch(() => {}); }
-}
-// A context still waking queues sounds for a moment.
+// The shimmer joins the graph on the first live sound.
 function live() {
-  if (!sound.on || !ac || ac.state === 'closed') return null;
-  return ac.state === 'running' || performance.now() - askedAt < 250 ? ac : null;
+  const a = kit.live();
+  if (a && !shim) shimmer(a);
+  return a;
 }
 function track(src, ...tails) {
   voices++;
   src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
 }
-// Once the coil settles, the context sleeps until the next gesture.
+// Once the coil settles, the shimmer fades and the context sleeps.
 function rest() {
-  clearTimeout(restT);
-  if (shim && ac) shim.g.gain.setTargetAtTime(0, ac.currentTime, 0.05);
-  if (!ac || ac.state !== 'running') return;
-  restT = setTimeout(() => {
-    if (!raf && ac.state === 'running') ac.suspend()?.catch(() => {});
-  }, 1500);
+  if (shim && kit.ac) shim.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.05);
+  kit.rest(() => !raf);
 }
-const GESTURE_KEYS = new Set(['r', 'R', ' ', 'ArrowUp', 'Enter']);
-function unlock(e) {
-  if (!sound.on || (e.type === 'keydown' && !GESTURE_KEYS.has(e.key))) return;
-  // The sound toggle wakes or sleeps the context itself.
-  if (e.target instanceof Element && e.target.closest('#snd')) return;
-  // A touch counts as a gesture only once the finger lifts.
-  if (!ac && e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
-  audio();
-}
-// Touchend is the gesture iOS needs.
-['pointerdown', 'pointerup', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
 
 // Each voice pans with its place on the stairs.
 function bus(a, x) {
   const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
   if (p.pan) p.pan.value = clamp(x, -1, 1) * 0.55;
-  p.connect(out);
+  p.connect(kit.out);
   return p;
 }
 // A noise burst through one filter; it tidies itself up.
 function burst(a, dst, t, type, f, q, g, tau, len) {
   const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
-  src.buffer = noise;
+  src.buffer = kit.noise;
   fl.type = type;
   fl.frequency.value = f;
   fl.Q.value = q;
@@ -190,7 +147,7 @@ function knock(v, x) {
 }
 // The shimmer: soft high partials that ring while the coil stretches.
 const SHIM = [1, 1.5, 2.02, 3.01], SHIM_G = [0.5, 0.26, 0.17, 0.08];
-function shimmer() {
+function shimmer(ac) {
   const g = ac.createGain(), bp = ac.createBiquadFilter(), lfo = ac.createOscillator(), lg = ac.createGain();
   g.gain.value = 0;
   bp.type = 'bandpass';
@@ -210,7 +167,7 @@ function shimmer() {
     return o;
   });
   lfo.start();
-  bp.connect(g).connect(out);
+  bp.connect(g).connect(kit.out);
   shim = { g, bp, oscs };
 }
 // Pitch follows the stretch; loudness follows how fast it changes.
@@ -232,7 +189,7 @@ const MASS = 0.00051, INER = (MASS * ((RMID - BAND / 2) ** 2 + ROUT ** 2)) / 4;
 const IM = 1 / MASS, II = 1 / INER, GRAV = 9.81;
 const P = { ks: 5.17, cs: 0.0006, ksh: 600, csh: 0.0036, kb: 0.00011, cb: 0.000004, mu: 0.43, rest: 0.06, air: 0.00012, kg: 300, cg: 1.2, stiff: 40, subs: 10 };
 // Three treads step down to the right; the floor lies beyond.
-const TREAD = 0.088, RISE = 0.079, BACK = -0.6;
+const TREAD = 0.088, RISE = 0.079, BACK = -1.5;
 const NOSE = [0, TREAD, 2 * TREAD], LEVEL = [3 * RISE, 2 * RISE, RISE, 0];
 const CORNERS = [[NOSE[0], LEVEL[0]], [NOSE[1], LEVEL[1]], [NOSE[2], LEVEL[2]], [BACK, LEVEL[0]]];
 const X = new Float64Array(N), Y = new Float64Array(N), TH = new Float64Array(N);
@@ -778,36 +735,63 @@ function fitRenderer(cap, budget) {
     fit(w / h);
     if (ready) { draw(); wake(); }
   };
-  new ResizeObserver(apply).observe(panel);
+  const ro = new ResizeObserver(apply);
+  ro.observe(panel);
+  // The corners change size as the shell lays them out.
+  shellParts().forEach(el => ro.observe(el));
   addEventListener('perf-low', apply);
   // A new quality setting clears the slow-frame step and re-fits the renderer.
   onQuality(() => { lowDpr = false; slow = 0; apply(); });
   apply();
 }
+// Shell corners and the key strip that sit over the stage.
+const shellParts = () => [...document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys)')];
+// The top and foot bands, in parts of the stage height.
+// Offsets ignore the corners' slide-in transform.
+function bands(h) {
+  let top = 0, foot = 0;
+  for (const el of shellParts()) {
+    if (!el.offsetHeight || !el.childElementCount) continue;
+    // A short stage lets the fading key strip cross the floor.
+    if (el.classList.contains('s2-keys') && h < 560) continue;
+    const y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
+    if (y1 < h / 2) top = Math.max(top, y1);
+    else foot = Math.max(foot, h - y0);
+  }
+  return [clamp(top / h, 0, 0.25), clamp(foot / h, 0, 0.3)];
+}
 // The camera looks in from the front right and a little above.
-// It backs off until the whole box of action fits.
+// It backs off until the whole box of action fits between the bands.
 function fit(A) {
   camera.aspect = A;
-  camera.updateProjectionMatrix();
+  camera.clearViewOffset();
+  const [a, b] = bands(panel.clientHeight), yHi = 0.92 - 2 * a, yLo = -0.92 + 2 * b;
   const az = A < 1.1 ? 0.22 : 0.3, el = 0.21;
   const cx = (BOX.x0 + BOX.x1) / 2, cy = (BOX.y0 + BOX.y1) / 2 - 0.01;
   const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
-  let lo = 0.2, hi = 4;
-  for (let it = 0; it < 30; it++) {
-    const d = (lo + hi) / 2;
+  let lo = 0.2, hi = 4, mid = 0;
+  const span = d => {
     camera.position.set(cx + dir.x * d, cy + dir.y * d, dir.z * d);
     camera.lookAt(cx, cy, 0);
     camera.updateMatrixWorld();
-    let ok = true;
-    for (const x of [BOX.x0, BOX.x1]) for (const y of [BOX.y0, BOX.y1]) for (const z of [-0.05, 0.05]) {
-      tmpV.set(x, y, z).project(camera);
-      if (Math.abs(tmpV.x) > 0.94 || Math.abs(tmpV.y) > 0.92) ok = false;
+    let x = 0, y0 = Infinity, y1 = -Infinity;
+    for (const px of [BOX.x0, BOX.x1]) for (const py of [BOX.y0, BOX.y1]) for (const pz of [-0.05, 0.05]) {
+      tmpV.set(px, py, pz).project(camera);
+      x = Math.max(x, Math.abs(tmpV.x));
+      y0 = Math.min(y0, tmpV.y);
+      y1 = Math.max(y1, tmpV.y);
     }
-    if (ok) hi = d; else lo = d;
+    mid = (y0 + y1) / 2;
+    return x <= 0.94 && y1 - y0 <= yHi - yLo;
+  };
+  for (let it = 0; it < 30; it++) {
+    const d = (lo + hi) / 2;
+    if (span(d)) hi = d; else lo = d;
   }
-  camera.position.set(cx + dir.x * hi, cy + dir.y * hi, dir.z * hi);
-  camera.lookAt(cx, cy, 0);
-  camera.updateMatrixWorld();
+  span(hi);
+  // A view offset centres the box in the band between the corners.
+  const h = panel.clientHeight, w = panel.clientWidth;
+  camera.setViewOffset(w, h, 0, (((yHi + yLo) / 2 - mid) * h) / 2, w, h);
 }
 function upload() {
   for (let i = 0; i < N; i++) {
@@ -963,26 +947,14 @@ const lift = e => {
   wake();
 };
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
+// The shell binds Space and R; the up arrow plucks.
+// Below the stage, the up arrow scrolls the page.
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  const k = e.key;
-  if (k === 'r' || k === 'R') { if (!e.repeat) resetCoil0(); }
-  else if (k === ' ') {
-    if (e.target.closest?.('button, a')) return;
-    e.preventDefault();
-    if (!e.repeat) nudge();
-  } else if (k === 'ArrowUp') {
-    if (e.target !== panel) return;
-    e.preventDefault();
-    if (!e.repeat) pluck();
-  }
-});
-document.getElementById('nudge').addEventListener('click', nudge);
-document.getElementById('reset').addEventListener('click', resetCoil0);
-sound.onChange(on => {
-  if (on) audio();
-  else if (ac) ac.suspend()?.catch(() => {});
+  if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  if (e.target === document.body ? scrollY > 80 : !e.target.closest?.('.stim-frame')) return;
+  e.preventDefault();
+  if (!e.repeat) pluck();
 });
 new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
