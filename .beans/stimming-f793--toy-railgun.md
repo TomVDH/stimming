@@ -53,3 +53,11 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - Q7 two visible controls. Q8 Space charges and fires. Q9 see Task 4. Q10 hold 30 fps, shot 30 fps (the 30 fps film cadence is the cap).
 - `tests/bar-v2.html`: DONE 98/98.
 - Tom checks fps, sound by ear and the hold on a real device.
+
+## Review (2026-11-09, fresh reviewer on the branch)
+
+- Fixed: a hidden tab left the hold alive and the sound dead on return. The hidden branch now cancels the hold and stops the hum at once; the visible branch resumes the context when sound is on.
+- Fixed: window blur fired the gun; it now cancels the hold. A second pointer is ignored while one holds. Space and the pointer own their holds; only the owner releases.
+- Fixed: a NaN in the dust alpha (3.1416 > pi), the dust buffer (400 to 640), the Asteroid chip restoring the plume mid-shatter, reduced motion (shards do not spin, flashes halve), the QA charge hook clamp, a dead GSAP import, stale comments, the Alpha tag on the tile, a second rest ask after a pending rumble.
+- Deferred (minor): a faint seam where the 30 km ground meets the sky dome at the horizon, unverified; depth precision at 40 km with near 0.5 and far 300000 is two steps of margin on the plume, unverified.
+- Ruling: the wind bed's source and LFO are not tracked; they are a continuous bed gated by gain and die with the context. Cost if wrong: two idle nodes.

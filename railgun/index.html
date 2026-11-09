@@ -62,7 +62,6 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D } from 'simplex-noise';
-import { gsap } from 'gsap';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -363,7 +362,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(30000, 30000).rotateX(-Mat
 }));
 scene.add(ground);
 
-/* ---------- the gun: two rails, a breech, nine cradles ---------- */
+/* ---------- the gun: two rails, a breech, four cradles ---------- */
 // Every piece is a chipped box; one merged mesh, one draw call.
 // aPart: station along the barrel, rail flag, inner-face flag, seed.
 const noise3 = createNoise3D(rnd);
@@ -444,7 +443,6 @@ const gunMat = new THREE.ShaderMaterial({
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
-gunMat.extensions = { derivatives: true };
 const gun = new THREE.Mesh(buildGun(), gunMat);
 gun.frustumCulled = false;
 scene.add(gun);
@@ -515,7 +513,7 @@ function astSize() {
   ast.th = rad(k.th0) / (1 - 0.9 * ast.s);
   ast.R = DA * Math.tan(ast.th / 2);
   astMesh.scale.setScalar(ast.R);
-  astMat.uniforms.uBurn.value = 0.3 + 0.7 * ast.s;
+  if (ast.state !== 'shatter') astMat.uniforms.uBurn.value = 0.3 + 0.7 * ast.s;
 }
 function placeAst() {
   ast.pos.copy(A0).addScaledVector(ast.dir, DA);
@@ -525,7 +523,7 @@ function placeAst() {
 function retune() { astSize(); draw(); }
 
 /* ---------- plume: fire that streams away from the planet ---------- */
-// Lifted from Coast and meteor, then fixed in place.
+// After Coast and meteor's plume, fixed in place.
 // Billboards sit behind the rock.
 const QN = 48;
 const plumeGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
@@ -581,7 +579,7 @@ scene.add(plume);
 /* ---------- dust: puffs that lift off the plain ---------- */
 // Alpha-blended billboards lit by the sun and the sky.
 // A ring buffer holds the puffs.
-const DUST_N = 400;
+const DUST_N = 640;
 const dustGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
 const dustSlot = (name, n) => {
   const a = new THREE.InstancedBufferAttribute(new Float32Array(DUST_N * n), n);
@@ -619,7 +617,7 @@ const dust = new THREE.Mesh(dustGeo, new THREE.ShaderMaterial({
   void main() {
     float d = length(vUv);
     float n = k2fbm(vUv * 1.8 + vSeed + vec2(uTime * 0.05, -uTime * 0.03));
-    float a = smoothstep(1.0, 0.25, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.7, d) * 0.7 * pow(sin(3.1416 * vF), 0.7);
+    float a = smoothstep(1.0, 0.25, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.7, d) * 0.7 * pow(max(sin(3.14159 * vF), 0.0), 0.7);
     if (a < 0.003) discard;
     vec3 col = uDustC * (0.7 + 0.6 * n) * (ambient(vec3(0.0, 1.0, 0.0)) + sunLight(vec3(0.0, 0.6, 0.0)) * 0.7);
     col = mix(col, k2hazeColor(normalize(vC - cameraPosition)), k2hazeAmount(vC));
@@ -1112,20 +1110,32 @@ const levelOf = held => 0.12 + 0.88 * (1 - Math.exp(-held / 2.5));
 // Chaos keeps growing after the power has saturated.
 let chaos = 0;
 const chaosOf = held => 1 - Math.exp(-held / 4);
-act.press = () => {
+// A hold belongs to the pointer or to Space.
+// Only its owner releases it.
+act.press = (by = 'pointer') => {
   if (charge) return;
-  charge = { t0: simT, c: 0.12, chase: 0, dust: 0 };
-  // The seams light on this very frame.
+  charge = { t0: simT, c: 0.12, chase: 0, dust: 0, by };
+  // The shake starts on this very frame.
   U.uCharge.value = 0.12;
 };
-act.release = () => {
-  if (!charge) return;
+act.release = (by = 'pointer') => {
+  if (!charge || charge.by !== by) return;
   const c = charge.c;
   charge = null;
   humStop(kit.live());
   fire(c);
 };
-// Placeholder until Task 3: the shot.
+// A lost window or a hidden tab cancels the hold.
+// No shot.
+function cancelHold() {
+  charge = null;
+  spaceDown = false;
+  if (press) { try { stage.releasePointerCapture(press.id); } catch { /* gone */ } }
+  press = null;
+  stage.classList.remove('held');
+  humStop(kit.live());
+}
+// The shot assigns this below.
 let fire = () => {};
 const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
 function stepCharge(dt) {
@@ -1138,8 +1148,6 @@ function stepCharge(dt) {
     U.uCharge.value = c;
     const ac = kit.live();
     if (ac) { humStart(ac); humUpdate(ac); }
-    U.uChase.value = charge.chase;
-    U.uChaseW.value = THREE.MathUtils.lerp(0.25, 0.08, c);
     // Arcs: a few a second at first, then a storm.
     if (chaos > 0.1 && !reduced()) {
       const rate = THREE.MathUtils.lerp(1, 24, chaos);
@@ -1200,6 +1208,8 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
 function flare(m, pos, size, gain) {
+  // Reduced motion halves every flash.
+  if (reduced()) gain *= 0.5;
   m.visible = gain > 0.002;
   m.material.uniforms.uF.value.set(pos.x, pos.y, pos.z, size);
   m.material.uniforms.uGain.value = gain;
@@ -1294,11 +1304,11 @@ const shardSlot = (name, n) => {
 const sPos = shardSlot('aPos', 3), sVel = shardSlot('aVel', 4), sSeed = shardSlot('aSeed', 4);
 shardGeo.instanceCount = 0;
 const shardMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uRock: astMat.uniforms.uRock, uWhite: astMat.uniforms.uWhite, uEmber: astMat.uniforms.uEmber },
+  uniforms: { ...U, uRock: astMat.uniforms.uRock, uWhite: astMat.uniforms.uWhite, uEmber: astMat.uniforms.uEmber, uSpin: { value: reduced() ? 0 : 1 } },
   vertexShader: /* glsl */`
   attribute vec3 aPos;
   attribute vec4 aVel, aSeed;
-  uniform float uTime;
+  uniform float uTime, uSpin;
   varying vec3 vP, vN, vO;
   varying float vHeat, vSeed;
   mat3 rot(vec3 a, float t) {
@@ -1316,7 +1326,7 @@ const shardMat = new THREE.ShaderMaterial({
     vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, 0.25 * age * age, 0.0);
     float sc = aSeed.y * (1.0 - smoothstep(7.0, 9.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
-    mat3 R = rot(axis, aVel.w * age + aSeed.x);
+    mat3 R = rot(axis, aVel.w * age * uSpin + aSeed.x);
     vP = c + R * (position * sc); vN = R * normal; vO = position;
     vHeat = exp(-age / aSeed.w); vSeed = aSeed.x;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
@@ -1513,8 +1523,16 @@ function tick(now) {
     soundBed();
     if (visible && lively) raf = requestAnimationFrame(tick);
     else if (visible && pace > 0) { raf = -1; nap = setTimeout(() => { nap = 0; raf = requestAnimationFrame(tick); }, Math.max(0, lastDraw + FRAME - 18 - performance.now())); }
-    else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
+    else { lastT = 0; draw(); restSoon(); }
   }
+}
+// The kit asks once.
+// A pending rumble needs a second ask after it lands.
+let restT = 0;
+function restSoon() {
+  kit.rest(() => !busy() && !pending());
+  clearTimeout(restT);
+  if (pending()) restT = setTimeout(() => { if (!raf && !nap) kit.rest(() => !busy() && !pending()); }, 22000);
 }
 function wake() {
   lastInput = performance.now();
@@ -1538,17 +1556,23 @@ function watch(now, lively) {
 whenVisible(stage, vis => {
   visible = vis;
   if (!vis) {
-    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0; stopAll(); humStop(kit.ac);
+    cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0;
+    // A hidden tab drops the hold.
+    // No finger is on it when it returns.
+    cancelHold();
+    stopAll(); humStop(kit.ac, true);
     if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
   }
+  // The page had its gesture before; the context may resume on return.
+  if (sound.on) kit.ac?.resume()?.catch(() => {});
   draw();
   wake();
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; wake(); });
+onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.uniforms.uSpin.value = on ? 0 : 1; wake(); });
 
 /* ---------- sound scaffolding ---------- */
 const kit = audioKit({ keys: new Set([' ']) });
@@ -1628,11 +1652,11 @@ function humUpdate(ac) {
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c), t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c, t, 0.05);
 }
-function humStop(ac) {
+function humStop(ac, now = false) {
   if (!hum) return;
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
-  if (!ac) { for (const n of [h.o1, h.o2, h.sub, h.lfo]) { try { n.stop(); } catch { /* not started */ } } return; }
+  if (!ac || now) { for (const n of [h.o1, h.o2, h.sub, h.lfo]) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
   h.g.gain.setTargetAtTime(0, t, 0.03); h.sg.gain.setTargetAtTime(0, t, 0.03);
   for (const n of [h.o1, h.o2, h.sub, h.lfo]) n.stop(t + 0.4);
   track(t + 0.5, h.o1, h.o2, h.sub, h.lfo);
@@ -1720,9 +1744,10 @@ sound.onChange(on => {
 
 
 /* Pointer: a press charges; a drag past 8 px also looks around; any release fires. */
-let press = null;
+let press = null, spaceDown = false;
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0) return;
+  // One finger at a time: a second pointer changes nothing.
+  if (e.button > 0 || press) return;
   stage.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: lookTo.yaw, pitch: lookTo.pitch, at: performance.now(), drag: false };
   if (sound.on) kit.wake();
@@ -1742,7 +1767,7 @@ const end = e => {
   if (!press || e.pointerId !== press.id) return;
   press = null;
   stage.classList.remove('held');
-  act.release();
+  act.release('pointer');
   wake();
 };
 stage.addEventListener('pointerup', end);
@@ -1750,22 +1775,21 @@ stage.addEventListener('pointercancel', end);
 stage.addEventListener('lostpointercapture', end);
 // Space holds the charge.
 // The shell ignores it while a sheet has focus.
-let spaceDown = false;
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
   e.preventDefault();
   spaceDown = true;
   if (sound.on) kit.wake();
-  act.press();
+  act.press('space');
   wake();
 });
 document.addEventListener('keyup', e => {
   if (e.code !== 'Space' || !spaceDown) return;
   spaceDown = false;
-  act.release();
+  act.release('space');
   wake();
 });
-addEventListener('blur', () => { if (spaceDown) { spaceDown = false; act.release(); } });
+addEventListener('blur', () => { if (charge || press) { cancelHold(); wake(); } });
 
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
 function setGrain() { grade.uniforms.uGrain.value = POST.grain * ui.setting('grain').value; draw(); }
@@ -1779,8 +1803,8 @@ window.__qa = {
   size: v => { opts.size = v; retune(); },
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th) }),
   // Hold at a level: the charge starts as if held for c.
-  charge(c) { act.press(); charge.t0 = simT + 1.6 * Math.log(1 - (c - 0.12) / 0.88); stepCharge(0); frame(); draw(); },
-  release() { act.release(); },
+  charge(c) { c = clamp(c, 0.12, 0.999); act.press('pointer'); charge.t0 = simT + 2.5 * Math.log(1 - (c - 0.12) / 0.88); stepCharge(0); frame(); draw(); },
+  release() { act.release('pointer'); },
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
   jump(t) { simT += t; U.uTime.value = simT; stepAst(t); stepCharge(Math.min(t, 0.1)); frame(); draw(); },
