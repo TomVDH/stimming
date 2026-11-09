@@ -5,7 +5,7 @@ status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T10:04:47Z
+updated_at: 2026-11-09T10:31:40Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -75,3 +75,12 @@ Open for a real device: frame rate (Q4 drifting, Q10), reduced motion in a brows
 - Roads carry a detail texture: edge and centre lines, kerbs, a zebra at the square, red cycle paths.
 - Wet asphalt shows grain, gutters and a stretched glint under each lamp.
 - The horizon holds nine far villages with spires and lights, and four wind turbines with red lights.
+
+## Notes: Beernem from OpenStreetMap
+
+- `canal/beernem.json` is a bake of OpenStreetMap (ODbL) round the Parkstraat bridge, 3 x 3 km. `canal/bake/beernem.py` makes it from API tiles.
+- The frame: origin on the canal under the bridge; -z runs down the canal toward Brugge.
+- Buildings stand on their own footprints; the front faces the nearest road. Roads, land use, ponds, hedges, tracks and platforms come from the map.
+- Sint-Amandus and Maria Moeder Gods stand on their footprints. The kerkplein is a cleared square beside Sint-Amandus; the kermis moves there by one matrix.
+- Shops, cafés and frituren on the map light their ground floors.
+- The page credits OpenStreetMap at the foot of the stage.
