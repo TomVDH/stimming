@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T09:40:30Z
+updated_at: 2026-11-09T09:54:20Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -143,3 +143,11 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - The pad is fixed at Far (3.4 km); the roar takes ten seconds. The Distance setting is gone for good.
 - The installation is one slim rod, 45 m. Mesas at 9, 20 and 45 km. Wisps sparser and larger.
 - The fluid cloud checked through the page's own loop (probe tickN): it shows in the real page; Tom's tab was stale.
+
+## Two fluids: heavy ground cloud, fluid trail with the jellyfish (2026-11-09)
+
+- The fluid engine is generic (makeFluid, fluidStep with a mode). Ground: 384 x 144; trail: 512 x 256 on a slab 1.9 D wide over the sky.
+- Ground mode: heavier (drag 0.7, lift only while fresh, strong settle), a light downrange wind carries old smoke off, dissipation picks up after T+40, gone by T+110.
+- Trail mode: smoke poured in at the rocket; the pour widens and pushes outward where the air is thin (the jellyfish); upper wind shears it; it lingers 40 s past the flight. Above the shadow line the slab shades it as a translucent sunlit bell, pale blue with a warm core; fresh exhaust burns orange.
+- The puff trail is retired (puffs hidden, no emission); K6 sparks and boosters stay.
+- Default lens 50 degrees (66 tall); tower is one rod; mesas at 9, 20, 45 km; wisps sparser.
