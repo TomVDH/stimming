@@ -258,3 +258,7 @@ Four directions in the toy's night palette, each with its own intro emblem: A Lo
 
 The Strata emblem is redrawn as line work: the band edges as six fine lines that tighten toward the horizon, four shorter water lines, a 2 px hairline to a small dot, a dashed mirror of it, and two reed pairs with a halo.
 It is live as `shared/emblems/launch.svg`. The menu tile still shows spike 33 A; the Strata tile is the next step.
+
+## Menu tile is Strata (2026-11-09)
+
+The menu tile now shows spike 34 C. The bands, water and reeds are static markup in `index.html`; the script only moves the hairline, its dot and mirror, and the warm overlay. Checked headless in the Lab at 1280: rest and hover, no script errors. `icons/picks.json` records the pick.

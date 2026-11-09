@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T23:05:47Z
+updated_at: 2026-11-09T23:09:19Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -36,7 +36,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Emblem redrawn for the intro (2026-11-09): bent reeds on a bank, a white plume, a spark; no ground slab
 - [ ] Tom checks the new emblem in the intro
 - [x] Tom picked C Strata from icon spike 34 (2026-11-09); its emblem is redrawn as fine line work and is live in the intro
-- [ ] Menu tile follows Strata (it still shows spike 33 A)
+- [x] Menu tile is Strata, spike 34 C (2026-11-09)
 - [ ] Record the session cost
 
 ## Blockout notes (2026-11-09)
