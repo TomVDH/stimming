@@ -55,7 +55,7 @@
 }
 </script>
 <script type="module">
-import { initPage, audioKit, whenVisible, fitCanvas, onQuality, reduced } from '../shared/stim.js';
+import { initPage, audioKit, whenVisible, fitCanvas, onQuality, quality, reduced } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -217,8 +217,8 @@ vec3 env(vec3 r, float studio) {
   c += vec3(0.07, 0.035, 0.02) * (0.4 + uHeat) * exp(-r.y * r.y / 0.02);
   // The key strip, sharp, with a soft halo.
   float ends = smoothstep(0.3, 0.04, abs(along)) * step(0.0, face);
-  float core = exp(-across * across / 0.00005) * 26.0 * uGlint * mix(0.3, 1.0, studio);
-  c += vec3(1.0, 0.96, 0.9) * ends * (core + exp(-across * across / 0.003) * mix(0.1, 0.7, studio));
+  float core = exp(-across * across / 0.00005) * 26.0 * uGlint * mix(0.07, 1.0, studio);
+  c += vec3(1.0, 0.96, 0.9) * ends * (core + exp(-across * across / 0.003) * mix(0.015, 0.7, studio));
   // Below the horizon the scene sees the pool.
   vec3 melt = mix(vec3(0.03, 0.028, 0.032), vec3(0.1, 0.09, 0.09), studio) + vec3(0.1, 0.035, 0.01) * uHeat * (1.0 + studio);
   c = mix(c, melt, smoothstep(0.0, -0.08, r.y));
@@ -396,6 +396,9 @@ float rings(vec2 p) {
 uniform float uFilm;
 // Crystal footprints: x, z, half width, height above the melt.
 uniform vec4 uFoot[16];
+// The waterline radius of each crystal, for its meniscus.
+uniform float uWet[16];
+uniform vec2 uScreen;
 out vec4 o;
 float swell(vec2 p) {
   float t = uTime * uSwell;
@@ -436,7 +439,7 @@ void main() {
   float skin = smoothstep(0.6, 0.85, sk) * uFilm;
   F = mix(F, film(18.0 + 60.0 * sk, cosI), skin * 0.3);
   vec3 refl = env(R, 0.0);
-  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uRefl, 0)) * 0.5 + N.xz * vec2(0.09, -0.09);
+  vec2 uv = gl_FragCoord.xy / uScreen + N.xz * vec2(0.09, -0.09);
   vec4 cr = texture(uRefl, uv);
   // The melt's skin dulls the mirror image a little.
   refl = mix(refl, cr.rgb * 0.85, cr.a);
@@ -451,6 +454,12 @@ void main() {
     occ = max(occ, smoothstep(1.7, 0.6, q) * exp(-uFoot[i].w * 2.5));
   }
   col *= 1.0 - 0.55 * occ;
+  // A bright meniscus rings each crystal where it meets the melt.
+  for (int i = 0; i < 16; i++) {
+    if (uWet[i] <= 0.0) continue;
+    float q = length(P.xz - uFoot[i].xy) - uWet[i];
+    col += F * vec3(0.75, 0.72, 0.7) * exp(-q * q / 0.0012) * exp(-uFoot[i].w * 10.0) * 0.6;
+  }
   // The ember: heat deep in the melt, under the mirror.
   float em = exp(-r * r / 9.0) * (0.55 + 0.45 * vnoise(P.xz * 0.8 + uTime * 0.05));
   col += vec3(1.0, 0.36, 0.09) * 0.09 * uHeat * em * (1.0 - F.g);
@@ -464,6 +473,7 @@ const BRIGHT_FS = HEAD + `
 in vec2 vUv;
 uniform sampler2D uSrc;
 uniform vec2 uTexel;
+uniform float uKnee;
 out vec4 o;
 void main() {
   vec3 c = vec3(0.0);
@@ -473,7 +483,7 @@ void main() {
   c += texture(uSrc, vUv + uTexel * vec2(1, 1)).rgb;
   c *= 0.25;
   float l = max(c.r, max(c.g, c.b));
-  o = vec4(c * max(l - 0.9, 0.0) / max(l, 1e-4), 1.0);
+  o = vec4(c * max(l - uKnee, 0.0) / max(l, 1e-4), 1.0);
 }`;
 const BLUR_FS = HEAD + `
 in vec2 vUv;
@@ -486,11 +496,29 @@ void main() {
   c += (texture(uSrc, vUv + uDir * 3.2308).rgb + texture(uSrc, vUv - uDir * 3.2308).rgb) * 0.0703;
   o = vec4(c, 1.0);
 }`;
+// Star glints: the sharpest highlights smear along two crossed lines.
+const STAR_FS = HEAD + `
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+out vec4 o;
+void main() {
+  vec3 c = vec3(0.0);
+  vec2 a = vec2(0.94, 0.34) * uTexel * 1.6, b = vec2(-0.34, 0.94) * uTexel * 1.6;
+  float w = 1.0;
+  for (int k = 1; k <= 14; k++) {
+    w *= 0.84;
+    float f = float(k);
+    c += (texture(uSrc, vUv + a * f).rgb + texture(uSrc, vUv - a * f).rgb + texture(uSrc, vUv + b * f).rgb + texture(uSrc, vUv - b * f).rgb) * w;
+  }
+  o = vec4(c * 0.22, 1.0);
+}`;
 const FINAL_FS = HEAD + `
 in vec2 vUv;
 uniform sampler2D uScene;
 uniform sampler2D uB1;
 uniform sampler2D uB2;
+uniform sampler2D uStar;
 uniform float uTime;
 uniform vec2 uRes;
 out vec4 o;
@@ -499,7 +527,7 @@ vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59
 vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
   vec3 c = texture(uScene, vUv).rgb;
-  c += texture(uB1, vUv).rgb * 0.5 + texture(uB2, vUv).rgb * 0.8;
+  c += texture(uB1, vUv).rgb * 0.5 + texture(uB2, vUv).rgb * 0.8 + texture(uStar, vUv).rgb;
   c = aces(c * 1.5);
   vec2 v = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   c *= 1.0 - 0.5 * smoothstep(0.4, 1.2, length(v));
@@ -512,7 +540,7 @@ void main() {
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 let gl = null, P = null, cubeVao = null, instBuf = null, triVao = null;
-let scene = null, msaa = null, refl = null, b1 = null, b1t = null, b2 = null, b2t = null;
+let scene = null, msaa = null, refl = null, b1 = null, b1t = null, b2 = null, b2t = null, sp = null, spS = null;
 const MAXI = 2048, STRIDE = 12, MAXP = 32;
 const inst = new Float32Array(MAXI * STRIDE);
 let nInst = 0, instDirty = true;
@@ -566,7 +594,7 @@ async function initGL() {
   const par = gl.getExtension('KHR_parallel_shader_compile');
   const progs = {
     crystal: compile(CRYSTAL_VS, CRYSTAL_FS), pool: compile(TRI_VS, POOL_FS),
-    bright: compile(TRI_VS, BRIGHT_FS), blur: compile(TRI_VS, BLUR_FS), final: compile(TRI_VS, FINAL_FS),
+    bright: compile(TRI_VS, BRIGHT_FS), blur: compile(TRI_VS, BLUR_FS), star: compile(TRI_VS, STAR_FS), final: compile(TRI_VS, FINAL_FS),
   };
   // Polling lets the driver link off the main thread.
   const all = Object.values(progs);
@@ -691,13 +719,16 @@ function layout() {
   portrait = asp < 0.9;
   aim();
   if (!P) return;
-  [scene, msaa, refl, b1, b1t, b2, b2t].forEach(free);
+  [scene, msaa, refl, b1, b1t, b2, b2t, sp, spS].forEach(free);
   scene = target(W, H, true);
   const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
   msaa = samples > 1 ? msTarget(W, H, samples) : null;
   if (msaa && !msaa.ok) { free(msaa); msaa = null; }
   const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1);
-  refl = target(hw, hh, true);
+  // High quality mirrors the crystals at full size; Standard at half.
+  refl = quality() === 'high' && !rung ? target(W, H, true) : target(hw, hh, true);
+  sp = target(hw, hh);
+  spS = target(hw, hh);
   // A narrow stage runs its bloom at quarter size.
   const bs = portrait ? 2 : 1;
   b1 = target(Math.max(1, hw >> (bs - 1)), Math.max(1, hh >> (bs - 1)));
@@ -979,13 +1010,16 @@ function ripple(x, z, a = 1, t0 = time, r0 = 0) {
   if (rips.length > 8) rips.shift();
 }
 // Footprints of the floating crystals, for their soft shadows on the melt.
-const footBuf = new Float32Array(64);
+const footBuf = new Float32Array(64), wetBuf = new Float32Array(16);
 function footData() {
   footBuf.fill(0);
+  wetBuf.fill(0);
   let i = 0;
   for (const c of crystals) {
     if (c.parent || c.melting || i >= 16) continue;
     const y = c.stacked ? c.stackY + c.lift : c.lift;
+    // The base of an inverted step pyramid is about two terraces wide.
+    wetBuf[i] = (CORE + Math.min(c.n, 2) * STEP) * c.size * c.scale;
     footBuf.set([c.x, c.z, edge(c), Math.max(0, y)], i++ * 4);
   }
   return footBuf;
@@ -1054,6 +1088,8 @@ function render() {
   gl.uniform4fv(p.u.uRip, ripData());
   gl.uniform4fv(p.u.uBump, bump);
   gl.uniform4fv(p.u.uFoot, footData());
+  gl.uniform1fv(p.u.uWet, wetBuf);
+  gl.uniform2f(p.u.uScreen, W, H);
   bind(p, 'uRefl', 0, refl);
   gl.bindVertexArray(triVao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1068,7 +1104,16 @@ function render() {
   gl.useProgram(br.p);
   bind(br, 'uSrc', 0, scene);
   gl.uniform2f(br.u.uTexel, 1 / W, 1 / H);
+  gl.uniform1f(br.u.uKnee, 0.9);
   full(b1);
+  // Only the hottest glints feed the star.
+  gl.uniform1f(br.u.uKnee, 1.8);
+  full(sp);
+  const st = P.star;
+  gl.useProgram(st.p);
+  bind(st, 'uSrc', 0, sp);
+  gl.uniform2f(st.u.uTexel, 1 / sp.w, 1 / sp.h);
+  full(spS);
   gl.useProgram(bl.p);
   const blur = (a, t) => {
     bind(bl, 'uSrc', 0, a); gl.uniform2f(bl.u.uDir, 1 / a.w, 0); full(t);
@@ -1085,6 +1130,7 @@ function render() {
   bind(fi, 'uScene', 0, scene);
   bind(fi, 'uB1', 1, b1);
   bind(fi, 'uB2', 2, b2);
+  bind(fi, 'uStar', 3, spS);
   gl.uniform1f(fi.u.uTime, time);
   gl.uniform2f(fi.u.uRes, W, H);
   full(null);
