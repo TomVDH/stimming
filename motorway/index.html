@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.015 262); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lit motorway</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Lit motorway: one sodium lamp, then the whole lit network from above. */
+:root { --stage: oklch(0.08 0.012 262); }
+.stage--motorway { touch-action: none; cursor: grab; }
+.stage--motorway.held { cursor: grabbing; }
+.stage--motorway canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+.stage--motorway canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--motorway canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Lit motorway</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--motorway" id="stage" tabindex="0" role="application" aria-label="A sodium lamp over a motorway at night. Zoom out to see the whole lit motorway network of the country.">
+      <p class="fail" hidden>Lit motorway needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Lit motorway</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+// Bar handlers bind once the scene exists.
+const act = { air() {}, zoom() {}, sw() {}, tilt() {}, near() {}, reset() {} };
+const QS = new URLSearchParams(location.search);
+const T0 = performance.now();
+const nowS = () => (performance.now() - T0) / 1000;
+const ui = initPage({ id: 'motorway', bar: {
+  choice: { label: 'Air', value: 'haze', options: [
+    { value: 'clear', label: 'Clear' }, { value: 'haze', label: 'Haze' }, { value: 'fog', label: 'Fog' },
+  ], onPick: v => act.air(v) },
+  slider: { label: 'Zoom', min: 0, max: 1, step: 0.001, value: QS.has('z') ? +QS.get('z') : 0, onInput: v => act.zoom(v) },
+  actions: [
+    { verb: 'switch', key: 'S', onPress: () => act.sw() },
+    { verb: 'rush', key: 'R', onPress: () => {} },
+  ],
+  settings: [
+    { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
+    { type: 'toggle', id: 'near', label: 'Neighbours', value: true, persist: true, onToggle: on => act.near(on) },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['scroll', 'zoom'], ['drag', 'look']],
+} });
+// Traffic comes in Task 3.
+if (ui.action('rush')) ui.action('rush').disabled = true;
+
+let markReady;
+const sceneReady = new Promise(r => { markReady = r; });
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  if (!renderer.capabilities.isWebGL2) throw new Error('no WebGL 2');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false; ui.hideControls?.(); markReady();
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+/* ---------- geography ---------- */
+// Equirectangular projection around 50.6 N, 4.5 E, in metres.
+// x runs east and z runs south.
+const LAT0 = 50.6, LON0 = 4.5;
+const KX = 111320 * Math.cos(LAT0 * Math.PI / 180), KY = 110570;
+const geoRaw = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
+
+// The country outline, hand-drawn. Lamps stand only inside it.
+const BORDER = [
+  [2.54, 51.09], [3.37, 51.37], [3.6, 51.29], [3.85, 51.21], [4.24, 51.36], [4.43, 51.47], [4.75, 51.5],
+  [4.93, 51.44], [5.05, 51.47], [5.12, 51.42], [5.22, 51.36], [5.27, 51.31], [5.5, 51.3], [5.84, 51.16], [5.64, 50.86], [5.69, 50.76], [6.02, 50.75],
+  [6.27, 50.62], [6.4, 50.33], [6.13, 50.13], [5.98, 50.08], [5.82, 49.93], [5.74, 49.83], [5.87, 49.72], [5.9, 49.65], [5.82, 49.55], [5.47, 49.5], [5.1, 49.77],
+  [4.85, 49.8], [4.87, 50.15], [4.82, 49.95], [4.43, 49.94], [4.15, 50.0], [4.15, 50.14], [4.03, 50.35],
+  [3.73, 50.35], [3.67, 50.44], [3.6, 50.5], [3.42, 50.51], [3.28, 50.54], [3.25, 50.62], [3.17, 50.7],
+  [3.1, 50.78], [2.94, 50.77], [2.86, 50.7], [2.62, 50.82],
+];
+// The coast, west to north-east. The sea lies to its left.
+const COAST = [[1.2, 50.85], [2.0, 51.0], [2.54, 51.09], [3.37, 51.37], [3.6, 51.5], [3.9, 51.7], [4.1, 52.0], [4.6, 52.6]];
+
+// Every Belgian motorway, as lon, lat waypoints; Catmull-Rom smooths them.
+// A ring closes on itself. Roads past the border carry on unlit.
+const R = (n, p, ring = false) => ({ n, p, ring });
+const ROADS = [
+  // A10/E40: Ostend, Bruges, Ghent, Brussels. Straight through the hero point.
+  R('E40', [[2.93, 51.21], [2.98, 51.2], [3.09, 51.18], [3.21, 51.165], [3.33, 51.13], [3.5, 51.07], [3.62, 51.035], [3.7, 51.02], [3.78, 51.0], [3.88, 50.98], [3.95, 50.95529], [3.98, 50.94471], [4.05, 50.92], [4.12, 50.9], [4.17, 50.876], [4.27, 50.868], [4.31, 50.865]]),
+  // A18/E40: Jabbeke, Veurne, Dunkirk, Calais.
+  R('A18', [[3.09, 51.18], [2.97, 51.16], [2.85, 51.13], [2.74, 51.09], [2.67, 51.07], [2.6, 51.06], [2.54, 51.05], [2.4, 51.02], [2.2, 50.97], [1.9, 50.95]]),
+  // A3/E40: Brussels, Leuven, Liege, Aachen, Cologne.
+  R('E40', [[4.4, 50.853], [4.44, 50.865], [4.475, 50.87], [4.55, 50.866], [4.62, 50.865], [4.7, 50.86], [4.78, 50.83], [4.86, 50.81], [4.93, 50.79], [5.03, 50.76], [5.14, 50.73], [5.25, 50.7], [5.36, 50.685], [5.47, 50.672], [5.55, 50.675], [5.64, 50.672], [5.73, 50.655], [5.82, 50.645], [5.92, 50.66], [5.98, 50.675], [6.06, 50.7], [6.13, 50.75], [6.3, 50.8], [6.5, 50.86], [6.95, 50.94]]),
+  // R0: the Brussels ring.
+  R('R0', [[4.27, 50.868], [4.3, 50.905], [4.37, 50.917], [4.44, 50.906], [4.475, 50.87], [4.48, 50.84], [4.455, 50.797], [4.42, 50.765], [4.37, 50.75], [4.31, 50.78], [4.26, 50.8], [4.25, 50.84]], true),
+  // A12: Brussels, Boom, Antwerp, Bergen op Zoom.
+  R('A12', [[4.37, 50.917], [4.35, 50.95], [4.33, 51.03], [4.36, 51.09], [4.385, 51.15], [4.39, 51.183]]),
+  R('A12', [[4.41, 51.25], [4.38, 51.3], [4.36, 51.34], [4.33, 51.38], [4.31, 51.42], [4.3, 51.49], [4.33, 51.6], [4.35, 51.75]]),
+  // A1/E19: Brussels, Mechelen, Antwerp; then Breda and Rotterdam.
+  R('A1', [[4.4, 50.875], [4.42, 50.89], [4.44, 50.906], [4.46, 50.97], [4.48, 51.0], [4.47, 51.06], [4.455, 51.13], [4.43, 51.178]]),
+  R('A1', [[4.455, 51.245], [4.5, 51.27], [4.55, 51.3], [4.62, 51.35], [4.73, 51.45], [4.76, 51.48], [4.78, 51.58], [4.68, 51.68], [4.6, 51.75], [4.48, 51.92]]),
+  // R1: the Antwerp ring, still open on its north side.
+  R('R1', [[4.35, 51.218], [4.375, 51.205], [4.385, 51.185], [4.41, 51.176], [4.44, 51.183], [4.46, 51.2], [4.465, 51.222], [4.455, 51.245], [4.43, 51.255], [4.41, 51.25]]),
+  // R2: round the port, through the Liefkenshoek tunnel.
+  R('R2', [[4.455, 51.245], [4.43, 51.28], [4.37, 51.3], [4.3, 51.29], [4.27, 51.26], [4.25, 51.222]]),
+  // A13/E313: Antwerp, Herentals, Hasselt, Liege.
+  R('A13', [[4.465, 51.21], [4.55, 51.195], [4.65, 51.19], [4.75, 51.17], [4.82, 51.15], [4.92, 51.12], [5.0, 51.1], [5.12, 51.04], [5.22, 50.98], [5.28, 50.95], [5.34, 50.91], [5.38, 50.84], [5.43, 50.77], [5.46, 50.72], [5.47, 50.672]]),
+  // A21/E34: Ranst, Turnhout, Eindhoven, Venlo.
+  R('A21', [[4.55, 51.195], [4.62, 51.22], [4.7, 51.25], [4.85, 51.3], [4.95, 51.305], [5.1, 51.31], [5.2, 51.35], [5.32, 51.39], [5.45, 51.42], [5.7, 51.45], [6.0, 51.38]]),
+  // A2/E314: Leuven, Genk, Maasmechelen, Heerlen, Aachen.
+  R('A2', [[4.72, 50.866], [4.78, 50.91], [4.85, 50.95], [4.97, 50.955], [5.13, 50.97], [5.22, 50.98], [5.38, 50.99], [5.5, 50.97], [5.6, 50.965], [5.68, 50.96], [5.73, 50.95], [5.85, 50.95], [5.95, 50.9], [6.08, 50.8]]),
+  // A14/E17: Antwerp, Sint-Niklaas, Ghent, Kortrijk, Lille, Paris.
+  R('A14', [[4.35, 51.218], [4.31, 51.2], [4.25, 51.18], [4.13, 51.15], [4.04, 51.12], [3.95, 51.09], [3.8, 51.06], [3.76, 51.04], [3.7, 51.02], [3.65, 50.98], [3.6, 50.94], [3.5, 50.9], [3.42, 50.87], [3.32, 50.83], [3.25, 50.8], [3.22, 50.775], [3.14, 50.76], [3.08, 50.68], [2.95, 50.5], [2.8, 50.3]]),
+  // A11/E34: Antwerp, Beveren, Zelzate, Eeklo, Zeebrugge.
+  R('A11', [[4.25, 51.222], [4.12, 51.22], [3.95, 51.2], [3.82, 51.19], [3.7, 51.19], [3.56, 51.2], [3.45, 51.22], [3.35, 51.26], [3.28, 51.29], [3.205, 51.31]]),
+  // N31: Bruges to Zeebrugge.
+  R('N31', [[3.21, 51.165], [3.245, 51.2], [3.24, 51.25], [3.205, 51.31]]),
+  // R4: the Ghent ring.
+  R('R4', [[3.7, 51.02], [3.78, 51.025], [3.81, 51.06], [3.79, 51.1], [3.73, 51.125], [3.67, 51.1], [3.645, 51.06]], true),
+  // A17/E403: Bruges, Roeselare, Kortrijk, Tournai.
+  R('A17', [[3.21, 51.165], [3.15, 51.1], [3.13, 51.03], [3.12, 50.95], [3.17, 50.88], [3.23, 50.835], [3.27, 50.78], [3.33, 50.71], [3.37, 50.64], [3.4, 50.6]]),
+  // R8: the Kortrijk ring.
+  R('R8', [[3.23, 50.835], [3.28, 50.845], [3.31, 50.825], [3.29, 50.8], [3.24, 50.805]], true),
+  // A19: Kortrijk to Ypres.
+  R('A19', [[3.23, 50.835], [3.12, 50.84], [3.0, 50.85], [2.9, 50.86]]),
+  // A8/E429: Brussels, Halle, Enghien, Ath, Tournai, Lille.
+  R('A8', [[4.26, 50.8], [4.22, 50.73], [4.12, 50.7], [4.03, 50.69], [3.88, 50.66], [3.78, 50.64], [3.6, 50.62], [3.42, 50.6], [3.35, 50.62], [3.24, 50.64], [3.1, 50.64]]),
+  // A16 and A15/E42: Tournai, Mons, Charleroi, Namur, Liege.
+  R('E42', [[3.4, 50.6], [3.5, 50.55], [3.6, 50.52], [3.72, 50.48], [3.83, 50.46], [3.95, 50.47], [4.04, 50.48], [4.12, 50.485], [4.2, 50.47], [4.3, 50.46], [4.38, 50.45], [4.44, 50.452], [4.56, 50.47], [4.7, 50.5], [4.8, 50.52], [4.89, 50.53], [5.05, 50.56], [5.15, 50.59], [5.25, 50.61], [5.36, 50.64], [5.45, 50.665], [5.47, 50.672]]),
+  // A27/E42: Battice, Verviers, Malmedy, St Vith, Prum.
+  R('A27', [[5.82, 50.645], [5.87, 50.6], [5.9, 50.53], [5.95, 50.45], [6.03, 50.41], [6.08, 50.35], [6.12, 50.29], [6.19, 50.24], [6.42, 50.21]]),
+  // A7/E19: Brussels, Nivelles, Houdeng.
+  R('A7', [[4.31, 50.78], [4.32, 50.73], [4.33, 50.68], [4.33, 50.62], [4.31, 50.58], [4.22, 50.53], [4.12, 50.485]]),
+  // A7/E19: Saint-Ghislain to Valenciennes and Paris.
+  R('A7', [[3.83, 50.46], [3.76, 50.44], [3.7, 50.43], [3.66, 50.41], [3.52, 50.36], [3.3, 50.2]]),
+  // A54: Nivelles to Charleroi.
+  R('A54', [[4.31, 50.58], [4.36, 50.53], [4.4, 50.49], [4.44, 50.452]]),
+  // R3: the Charleroi ring.
+  R('R3', [[4.44, 50.452], [4.52, 50.44], [4.55, 50.4], [4.5, 50.36], [4.42, 50.355], [4.36, 50.38], [4.37, 50.43]], true),
+  // A4/E411: Brussels, Wavre, Namur, Neufchateau, Arlon, Luxembourg, Metz.
+  R('A4', [[4.4, 50.815], [4.43, 50.803], [4.455, 50.797], [4.52, 50.77], [4.6, 50.71], [4.68, 50.62], [4.78, 50.57], [4.89, 50.53], [4.92, 50.47], [4.98, 50.4], [5.04, 50.32], [5.1, 50.25], [5.18, 50.17], [5.27, 50.05], [5.36, 49.93], [5.43, 49.85], [5.55, 49.78], [5.65, 49.73], [5.75, 49.69], [5.81, 49.67], [5.93, 49.64], [6.13, 49.61], [6.17, 49.4], [6.17, 49.12]]),
+  // A26/E25: Liege, Sprimont, Bastogne, Neufchateau.
+  R('A26', [[5.62, 50.61], [5.65, 50.55], [5.67, 50.51], [5.71, 50.47], [5.72, 50.38], [5.73, 50.25], [5.78, 50.13], [5.74, 50.03], [5.68, 49.97], [5.55, 49.9], [5.43, 49.85]]),
+  // A28: Aubange to the French border.
+  R('A28', [[5.81, 49.67], [5.84, 49.6], [5.85, 49.55], [5.9, 49.5]]),
+  // A25/E25: Liege, Vise, Maastricht, Eindhoven.
+  R('A25', [[5.6, 50.655], [5.63, 50.68], [5.7, 50.74], [5.7, 50.77], [5.7, 50.85], [5.78, 51.0], [5.88, 51.15], [5.6, 51.35], [5.45, 51.42]]),
+  // A602: through Liege, from Loncin to Chenee.
+  R('A602', [[5.47, 50.672], [5.52, 50.66], [5.55, 50.64], [5.57, 50.62], [5.6, 50.61], [5.62, 50.61]]),
+  // A601: Vottem to Herstal.
+  R('A601', [[5.57, 50.672], [5.6, 50.665], [5.6, 50.655]]),
+  // France: Lille to Dunkirk; Valenciennes to Lille.
+  R('A25F', [[3.08, 50.68], [2.9, 50.68], [2.72, 50.74], [2.5, 50.92], [2.4, 51.02]]),
+  R('A23F', [[3.08, 50.64], [3.25, 50.5], [3.52, 50.36]]),
+  // The Netherlands: Breda to Eindhoven; Bergen op Zoom to the north.
+  R('A58', [[4.3, 51.49], [4.55, 51.53], [4.78, 51.58], [5.05, 51.56], [5.3, 51.5], [5.45, 51.42]]),
+  // Germany: Aachen to Dusseldorf.
+  R('A44', [[6.13, 50.75], [6.25, 50.9], [6.45, 51.05], [6.7, 51.2]]),
+];
+// Towns: lon, lat, radius in km, level. Inside the border they glow warm.
+const TOWNS = [
+  [4.36, 50.85, 9, 1], [4.41, 51.22, 7, 0.9], [3.72, 51.05, 5, 0.7], [5.57, 50.63, 6, 0.75], [4.44, 50.41, 6, 0.7],
+  [3.22, 51.21, 3.5, 0.5], [4.87, 50.47, 3.5, 0.45], [4.7, 50.88, 3, 0.45], [3.95, 50.45, 3, 0.4], [4.48, 51.03, 3, 0.4],
+  [5.34, 50.93, 3, 0.4], [3.26, 50.83, 3.5, 0.45], [2.92, 51.22, 3, 0.45], [4.04, 50.94, 2.5, 0.35], [5.5, 50.96, 3, 0.35],
+  [3.39, 50.61, 2.5, 0.3], [5.86, 50.59, 2.5, 0.3], [5.82, 49.68, 2, 0.25], [4.3, 51.28, 6, 0.5],
+  [4.14, 51.165, 2.5, 0.35], [3.12, 50.945, 2.2, 0.3], [4.95, 51.32, 2.2, 0.3], [4.19, 50.48, 3, 0.4], [4.32, 50.6, 2, 0.25],
+  [4.61, 50.715, 2, 0.25], [5.24, 50.52, 1.8, 0.22], [5.19, 50.815, 2, 0.25], [2.88, 50.85, 2, 0.25], [4.1, 51.03, 2, 0.25],
+  [4.48, 50.9, 2, 0.35], [3.8, 51.11, 3.5, 0.35], [5.0, 51.16, 2, 0.25], [4.93, 50.8, 1.8, 0.2],
+  [3.06, 50.63, 10, 0.8], [5.69, 50.85, 4, 0.45], [6.08, 50.78, 6, 0.6], [5.47, 51.44, 6, 0.6], [4.78, 51.59, 5, 0.5],
+  [6.13, 49.61, 5, 0.5], [3.52, 50.36, 4, 0.4], [2.37, 51.03, 5, 0.5], [4.48, 51.92, 10, 0.8], [6.95, 50.94, 12, 0.9],
+  [3.83, 51.33, 3, 0.3], [4.3, 51.49, 3, 0.35], [6.17, 49.12, 6, 0.5],
+];
+const HERO_LL = [3.965, 50.95];
+
+const BORDER_M = BORDER.map(([lo, la]) => geoRaw(lo, la));
+// Point in polygon, by ray crossing.
+function inBelgium(x, z) {
+  let c = false;
+  for (let i = 0, j = BORDER_M.length - 1; i < BORDER_M.length; j = i++) {
+    const [xi, zi] = BORDER_M[i], [xj, zj] = BORDER_M[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+  }
+  return c;
+}
+
+/* ---------- network ---------- */
+// Lamps stand every 50 m; the ribbon samples every 40 m.
+const LAMP_GAP = 50, STEP = 40, HEAD_H = 12, HEAD_OFF = 4;
+const dense = ROADS.map(({ p: pts, ring }) => {
+  const curve = new THREE.CatmullRomCurve3(pts.map(([lo, la]) => { const [x, z] = geoRaw(lo, la); return new THREE.Vector3(x, 0, z); }), ring, 'centripetal');
+  const len = curve.getLength();
+  curve.arcLengthDivisions = Math.max(200, Math.ceil(len / 200));
+  curve.updateArcLengths();
+  const n = Math.max(2, Math.ceil(curve.getLength() / STEP));
+  const p = curve.getSpacedPoints(n);
+  const s = [0];
+  for (let i = 1; i < p.length; i++) s.push(s[i - 1] + p[i].distanceTo(p[i - 1]));
+  return { p, s };
+});
+// The hero point: the E40 sample nearest the hero lon, lat.
+const [hx, hz] = geoRaw(...HERO_LL);
+let heroI = 0;
+dense[0].p.forEach((q, i) => { if (Math.hypot(q.x - hx, q.z - hz) < Math.hypot(dense[0].p[heroI].x - hx, dense[0].p[heroI].z - hz)) heroI = i; });
+const ORIGIN = dense[0].p[heroI].clone();
+const HERO_S = dense[0].s[heroI];
+// Every coordinate is relative to the hero lamp, so the close shot keeps precision.
+dense.forEach(d => d.p.forEach(q => q.sub(ORIGIN)));
+const geo = (lon, lat) => { const [x, z] = geoRaw(lon, lat); return [x - ORIGIN.x, z - ORIGIN.z]; };
+BORDER_M.forEach(q => { q[0] -= ORIGIN.x; q[1] -= ORIGIN.z; });
+const HT = dense[0].p[heroI + 1].clone().sub(dense[0].p[heroI - 1]).normalize();
+// n is the right-hand side of travel along T.
+const HN = new THREE.Vector3(-HT.z, 0, HT.x);
+// Lamp phase per road; the E40 puts a lamp on the hero point.
+const PHASE = ROADS.map((_, r) => (r === 0 ? HERO_S % LAMP_GAP : 0));
+
+// A lamp's random seed; the ribbon shader hashes the same way.
+const hash = (k, r, side) => { const v = Math.sin(k * 12.9898 + r * 78.233 + side * 37.719) * 43758.5453; return v - Math.floor(v); };
+
+/* ---------- shared GLSL ---------- */
+const COMMON = /* glsl */`
+uniform float uNow, uSwT, uOffT, uOn, uHot, uRipV;
+uniform vec2 uRip;
+uniform vec3 uSod, uPink, uSalmon;
+uniform float uFogD, uFogH;
+uniform vec3 uFogC;
+float hash3(float k, float r, float side) { return fract(sin(k * 12.9898 + r * 78.233 + side * 37.719) * 43758.5453); }
+// A lamp's colour and level from its switch time.
+vec4 lampState(vec2 xz, float rnd) {
+  if (uOn < 0.5) {
+    float k = 1.0 - clamp((uNow - uOffT) / 0.35, 0.0, 1.0);
+    return vec4(uSod, k * k);
+  }
+  float t = uNow - uSwT - rnd * 1.4 - length(xz - uRip) / uRipV;
+  if (t < 0.0) return vec4(uPink, 0.0);
+  // A cold lamp starts on neon, pink-red; sodium takes over as it warms.
+  float w = uHot + (1.0 - uHot) * (1.0 - pow(1.0 - clamp(t / 6.0, 0.0, 1.0), 3.0));
+  vec3 c = w < 0.45 ? mix(uPink, uSalmon, smoothstep(0.0, 0.45, w)) : mix(uSalmon, uSod, smoothstep(0.45, 0.9, w));
+  return vec4(c, 0.1 + 0.9 * w * w);
+}
+// Transmittance through exponential height fog, camera to w.
+float fogT(vec3 w) {
+  vec3 r = w - cameraPosition;
+  float L = length(r);
+  float h0 = max(cameraPosition.y, 0.0), h1 = max(w.y, 0.0), dh = h1 - h0;
+  float tau = abs(dh) < 1.0 ? uFogD * L * exp(-h0 / uFogH)
+    : uFogD * L * uFogH / dh * (exp(-h0 / uFogH) - exp(-h1 / uFogH));
+  return exp(-tau);
+}
+`;
+
+/* ---------- scene ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.3, 60000);
+const SOD = linFit(0.72, 0.17, 62), PINK = linFit(0.5, 0.17, 12), SALMON = linFit(0.62, 0.15, 35);
+const U = {
+  uNow: { value: 0 }, uSwT: { value: -100 }, uOffT: { value: -100 }, uOn: { value: 1 }, uHot: { value: 1 },
+  uRipV: { value: 2000 }, uRip: { value: new THREE.Vector2() },
+  uSod: { value: new THREE.Vector3(...SOD) }, uPink: { value: new THREE.Vector3(...PINK) }, uSalmon: { value: new THREE.Vector3(...SALMON) },
+  uFogD: { value: 0.00015 }, uFogH: { value: 300 }, uFogC: { value: new THREE.Vector3() },
+  // Metres per CSS pixel, per metre of view depth.
+  uPxK: { value: 0.001 },
+};
+
+/* sky: a full-screen triangle behind everything */
+const sky = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
+  uniforms: { ...U, uInvVP: { value: new THREE.Matrix4() }, uZen: { value: new THREE.Vector3(...linFit(0.12, 0.03, 262)) }, uStars: { value: 1 } },
+  vertexShader: /* glsl */`
+    varying vec2 vNdc;
+    void main() { vNdc = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    uniform mat4 uInvVP; uniform vec3 uZen; uniform float uStars;
+    varying vec2 vNdc;
+    void main() {
+      vec4 a = uInvVP * vec4(vNdc, -1.0, 1.0), b = uInvVP * vec4(vNdc, 1.0, 1.0);
+      vec3 d = normalize(b.xyz / b.w - a.xyz / a.w);
+      float e = max(d.y, 0.0);
+      vec3 c = mix(uFogC, uZen, smoothstep(0.0, 0.35, pow(e, 0.6)));
+      // Faint stars where the sky is clear.
+      vec2 g = floor(vec2(atan(d.z, d.x) * 300.0, asin(clamp(d.y, -1.0, 1.0)) * 300.0));
+      float h = fract(sin(dot(g, vec2(12.9898, 78.233))) * 43758.5453);
+      c += step(0.9975, h) * smoothstep(0.05, 0.4, e) * uStars * 0.04;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  depthWrite: false, depthTest: false,
+}));
+sky.geometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+sky.frustumCulled = false;
+sky.renderOrder = -2;
+scene.add(sky);
+
+/* land: one dark plane with towns and the sea */
+const coastM = COAST.map(([lo, la]) => new THREE.Vector2(...geo(lo, la)));
+const townsIn = TOWNS.map(([lo, la, r, l]) => { const [x, z] = geo(lo, la); return { v: new THREE.Vector4(x, z, r * 1000, l), home: inBelgium(x, z) }; });
+const land = new THREE.Mesh(new THREE.PlaneGeometry(1.4e6, 1.4e6).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+  uniforms: {
+    ...U,
+    uTown: { value: townsIn.map(t => t.v) },
+    uHome: { value: townsIn.map(t => (t.home ? 1 : 0)) },
+    uCoast: { value: coastM },
+    uWarm: { value: new THREE.Vector3(...linFit(0.78, 0.12, 64)) },
+    uCool: { value: new THREE.Vector3(...linFit(0.86, 0.03, 250)) },
+    uNear: { value: 1 },
+    uTownK: { value: 0.03 },
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vW;
+    void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    #define NT ${TOWNS.length}
+    #define NC ${COAST.length}
+    uniform vec4 uTown[NT];
+    uniform float uHome[NT];
+    uniform vec2 uCoast[NC];
+    uniform vec3 uWarm, uCool;
+    uniform float uNear, uTownK;
+    varying vec3 vW;
+    float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + 1.0), f.x), f.y);
+    }
+    // Signed distance to the coast; negative on the sea side.
+    float coast(vec2 p) {
+      float best = 1e9, sgn = 1.0;
+      for (int i = 0; i < NC - 1; i++) {
+        vec2 a = uCoast[i], b = uCoast[i + 1], ab = b - a;
+        float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+        float d = length(p - a - ab * t);
+        if (d < best) { best = d; sgn = sign(ab.x * (p.y - a.y) - ab.y * (p.x - a.x)); }
+      }
+      return best * sgn;
+    }
+    void main() {
+      vec2 p = vW.xz;
+      float fw = max(fwidth(p.x), fwidth(p.y));
+      // Fields and woods, faint, fading to flat where they alias.
+      float n = vnoise(p / 900.0) * 0.6 + vnoise(p / 230.0) * 0.4;
+      n = mix(n, 0.5, smoothstep(60.0, 300.0, fw));
+      vec3 col = vec3(0.005, 0.0065, 0.01) * (0.45 + 1.1 * n);
+      float sea = smoothstep(max(40.0, fw), -max(40.0, fw), coast(p));
+      col = mix(col, vec3(0.0006, 0.0009, 0.002), sea);
+      // Towns: a soft dome and a speckle of streets.
+      vec3 glow = vec3(0.0);
+      float sp = smoothstep(0.62, 0.86, vnoise(p / 55.0)) * (0.5 + vnoise(p / 400.0));
+      sp = mix(sp, 0.16, smoothstep(12.0, 80.0, fw));
+      for (int i = 0; i < NT; i++) {
+        vec4 t = uTown[i];
+        float r = length(p - t.xy) / t.z;
+        if (r > 3.0) continue;
+        float home = uHome[i];
+        float g = (exp(-r * r * 1.6) * 0.8 + exp(-r * 2.2) * 0.2) * t.w * mix(uNear * 0.55, 1.0, home);
+        glow += mix(uCool, uWarm, home) * g * (0.25 + 2.2 * sp);
+      }
+      col += glow * uTownK * (1.0 - sea);
+      float T = fogT(vW);
+      gl_FragColor = vec4(col * T + uFogC * (1.0 - T), 1.0);
+    }`,
+  depthWrite: false,
+}));
+land.renderOrder = -1;
+scene.add(land);
+
+/* ribbon: every road as one strip, widened to stay visible from orbit */
+const RIB = (() => {
+  let nv = 0;
+  dense.forEach(d => { nv += d.p.length * 2; });
+  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), aS = new Float32Array(nv), aInfo = new Float32Array(nv * 2);
+  const idx = [];
+  let v = 0;
+  dense.forEach((d, r) => {
+    const { p, s } = d, base = v;
+    for (let i = 0; i < p.length; i++) {
+      const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)];
+      let tx = b.x - a.x, tz = b.z - a.z;
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const lit = inBelgium(p[i].x, p[i].z) ? 1 : 0;
+      for (const side of [-1, 1]) {
+        aC.set([p[i].x, 0, p[i].z], v * 3);
+        aN.set([-tz, tx], v * 2);
+        aSide[v] = side;
+        aS[v] = s[i] - PHASE[r];
+        aInfo.set([lit, r], v * 2);
+        v++;
+      }
+      if (i > 0) { const q = base + i * 2; idx.push(q - 2, q - 1, q, q - 1, q + 1, q); }
+    }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(aC, 3));
+  g.setAttribute('aN', new THREE.BufferAttribute(aN, 2));
+  g.setAttribute('aSide', new THREE.BufferAttribute(aSide, 1));
+  g.setAttribute('aS', new THREE.BufferAttribute(aS, 1));
+  g.setAttribute('aInfo', new THREE.BufferAttribute(aInfo, 2));
+  g.setIndex(idx);
+  return g;
+})();
+const ribMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 } },
+  vertexShader: /* glsl */`
+    attribute vec2 aN; attribute float aSide, aS; attribute vec2 aInfo;
+    uniform float uPxK, uHalf;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf;
+    varying vec3 vW;
+    void main() {
+      float d = distance(cameraPosition, position);
+      float half_ = max(uHalf, 2.6 * d * uPxK);
+      vK = uHalf / half_;
+      vHalf = half_;
+      vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
+      w.y = 0.04;
+      vLat = aSide * half_; vS = aS; vLit = aInfo.x; vRoad = aInfo.y; vW = w;
+      gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    uniform float uLampE, uFar, uGlow, uWide;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf;
+    varying vec3 vW;
+    // Ground light under one head, 1 directly below; the optic throws it along the road.
+    float pool(float ds, float dl) { float q = ds * ds * 0.35 + dl * dl + 144.0; return 1728.0 / (q * sqrt(q)); }
+    float band(float a, float c, float w) { return 1.0 - smoothstep(w * 0.5, w * 0.5 + max(fwidth(a), 0.01), abs(a - c)); }
+    void main() {
+      float a = abs(vLat);
+      float fs = fwidth(vS), fl = fwidth(vLat);
+      float k0 = floor(vS / 50.0 + 0.5);
+      vec3 E = vec3(0.0), Eavg = vec3(0.0);
+      for (int j = -1; j <= 1; j++) {
+        float k = k0 + float(j), ds = vS - k * 50.0;
+        for (int sd = 0; sd < 2; sd++) {
+          float side = sd == 0 ? -1.0 : 1.0;
+          vec4 st = lampState(vW.xz, hash3(k, vRoad, side));
+          float dl = vLat - side * 4.0;
+          E += st.rgb * st.a * pool(ds, dl);
+          if (j == 0) Eavg += st.rgb * st.a * 116.8 / (dl * dl + 144.0);
+        }
+      }
+      // Pools blur to their average once they alias.
+      E = mix(E, Eavg, smoothstep(6.0, 25.0, fs));
+      // Asphalt, the concrete reserve, the lines and the verge.
+      float alb = a < 2.0 ? 0.16 : (a < 15.8 ? 0.055 : 0.07 * exp(-(a - 15.8) / 18.0));
+      float dash = step(mod(vS, 12.0), 3.0);
+      float m = band(a, 2.3, 0.15) + band(a, 12.8, 0.15) + (band(a, 5.8, 0.12) + band(a, 9.3, 0.12)) * dash;
+      alb += m * 0.3 * (1.0 - smoothstep(0.15, 1.0, fl));
+      vec3 col = alb * E * uLampE;
+      // Light caught in the low air over the road.
+      col += Eavg * uGlow * exp(-a / uWide);
+      // Unresolved, the strip carries its mean light, kept legible from orbit.
+      vec3 farC = Eavg * uLampE * 0.045 + Eavg * uGlow * 0.4;
+      // A soft lateral falloff draws the far strip as a glowing tube.
+      float tube = 3.0 * pow(1.0 - min(1.0, a / vHalf), 2.0);
+      col = mix(farC * pow(vK, 0.62) * uFar * tube, col, smoothstep(0.35, 0.9, vK));
+      col *= vLit;
+      gl_FragColor = vec4(col * fogT(vW), 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const ribbon = new THREE.Mesh(RIB, ribMat);
+ribbon.frustumCulled = false;
+ribbon.renderOrder = 1;
+scene.add(ribbon);
+
+/* lamps: one sprite per head */
+const LAMPS = [];
+dense.forEach((d, r) => {
+  const { p, s } = d;
+  let i = 0;
+  for (let k = Math.ceil((s[0] - PHASE[r]) / LAMP_GAP); ; k++) {
+    const t = PHASE[r] + k * LAMP_GAP;
+    if (t > s[s.length - 1]) break;
+    while (s[i + 1] < t) i++;
+    const f = (t - s[i]) / (s[i + 1] - s[i] || 1);
+    const x = p[i].x + (p[i + 1].x - p[i].x) * f, z = p[i].z + (p[i + 1].z - p[i].z) * f;
+    if (!inBelgium(x, z)) continue;
+    let tx = p[i + 1].x - p[i].x, tz = p[i + 1].z - p[i].z;
+    const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    LAMPS.push({ x, z, tx, tz, r, k });
+  }
+});
+/* interchanges: where two roads meet inside the border */
+// High masts ring each knot; a wide pool lights its loops.
+const JUNCS = (() => {
+  const cell = 600, grid = new Map(), key = (a, b) => `${a},${b}`;
+  dense.forEach((d, r) => d.p.forEach((q, i) => {
+    if (i % 2) return;
+    const k = key(Math.floor(q.x / cell), Math.floor(q.z / cell));
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push([q.x, q.z, r]);
+  }));
+  const out = [];
+  dense.forEach((d, r) => d.p.forEach((q, i) => {
+    if (i % 3) return;
+    const cx = Math.floor(q.x / cell), cz = Math.floor(q.z / cell);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [x, z, r2] of grid.get(key(cx + a, cz + b)) ?? []) {
+      if (r2 === r || Math.hypot(x - q.x, z - q.z) > 160) continue;
+      const jx = (x + q.x) / 2, jz = (z + q.z) / 2;
+      if (!inBelgium(jx, jz) || out.some(j => Math.hypot(j.x - jx, j.z - jz) < 2500)) continue;
+      // The hero overpass is no interchange.
+      if (Math.hypot(jx, jz) < 3000) continue;
+      out.push({ x: jx, z: jz });
+    }
+  }));
+  return out;
+})();
+const HEADS_ALL = [];
+LAMPS.forEach(l => [-1, 1].forEach(side => HEADS_ALL.push([l.x - l.tz * side * HEAD_OFF, HEAD_H - 0.15, l.z + l.tx * side * HEAD_OFF, l.r, l.k, side])));
+// Six high masts, 30 m tall, round each knot.
+JUNCS.forEach((j, n) => { for (let m = 0; m < 6; m++) { const a = (m / 6) * Math.PI * 2 + n; HEADS_ALL.push([j.x + Math.cos(a) * 170, 30, j.z + Math.sin(a) * 170, 100 + n, m, 0]); } });
+const SPR = (() => {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  const n = HEADS_ALL.length, aP = new Float32Array(n * 3), aI = new Float32Array(n * 4);
+  HEADS_ALL.forEach(([x, y, z, r, k, side], q) => { aP.set([x, y, z], q * 3); aI.set([r, k, side, 0], q * 4); });
+  g.setAttribute('aP', new THREE.InstancedBufferAttribute(aP, 3));
+  g.setAttribute('aI', new THREE.InstancedBufferAttribute(aI, 4));
+  g.instanceCount = n;
+  return g;
+})();
+const sprMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uSize: { value: 9 }, uCore: { value: 0.05 }, uCoreI: { value: 3 }, uHaloI: { value: 0.35 }, uPxMin: { value: 1.5 } },
+  vertexShader: /* glsl */`
+    attribute vec3 aP; attribute vec4 aI;
+    uniform float uPxK, uSize, uPxMin;
+    varying vec2 vQ;
+    varying float vGain;
+    varying vec4 vSt;
+    varying vec3 vW;
+    ${COMMON}
+    void main() {
+      vec4 mv = viewMatrix * vec4(aP, 1.0);
+      float d = max(-mv.z, 0.01);
+      float mpp = d * uPxK;
+      float px = uSize / mpp, pe = max(px, uPxMin);
+      vGain = (px * px) / (pe * pe);
+      vSt = lampState(aP.xz, hash3(aI.y, aI.x, aI.z));
+      vQ = position.xy;
+      vW = aP;
+      // Pull the sprite toward the eye, so its own housing does not cut it.
+      mv.xyz *= 1.0 - min(0.8, 0.08 * d) / d;
+      mv.xy += position.xy * pe * mpp;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform float uCore, uCoreI, uHaloI;
+    uniform float uFogD, uFogH;
+    varying vec2 vQ;
+    varying float vGain;
+    varying vec4 vSt;
+    varying vec3 vW;
+    float fogT(vec3 w) {
+      vec3 r = w - cameraPosition;
+      float L = length(r);
+      float h0 = max(cameraPosition.y, 0.0), h1 = max(w.y, 0.0), dh = h1 - h0;
+      float tau = abs(dh) < 1.0 ? uFogD * L * exp(-h0 / uFogH) : uFogD * L * uFogH / dh * (exp(-h0 / uFogH) - exp(-h1 / uFogH));
+      return exp(-tau);
+    }
+    void main() {
+      float r = length(vQ);
+      if (r > 1.0) discard;
+      float core = exp(-r * r / (uCore * uCore)) * uCoreI;
+      float halo = pow(1.0 - r, 3.0) * uHaloI;
+      gl_FragColor = vec4(vSt.rgb * vSt.a * (core + halo) * vGain * fogT(vW), 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const sprites = new THREE.Mesh(SPR, sprMat);
+sprites.frustumCulled = false;
+sprites.renderOrder = 2;
+scene.add(sprites);
+// The knots' ground pools, one quad each, kept visible from orbit.
+const padMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uR: { value: 330 }, uPadI: { value: 0.07 }, uFar: { value: 1 } },
+  vertexShader: /* glsl */`
+    attribute vec3 aJ;
+    uniform float uPxK, uR;
+    varying vec2 vQ;
+    varying float vGain;
+    varying vec4 vSt;
+    varying vec3 vW;
+    ${COMMON}
+    void main() {
+      vec3 c = vec3(aJ.x, 0.05, aJ.y);
+      float mpp = distance(cameraPosition, c) * uPxK;
+      float px = uR / mpp, pe = max(px, 2.0);
+      vGain = (px * px) / (pe * pe);
+      vSt = lampState(c.xz, aJ.z);
+      vQ = position.xy;
+      vW = c + vec3(position.x, 0.0, position.y) * pe * mpp;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    uniform float uPadI, uFar;
+    varying vec2 vQ;
+    varying float vGain;
+    varying vec4 vSt;
+    varying vec3 vW;
+    void main() {
+      float r2 = dot(vQ, vQ);
+      if (r2 > 1.0) discard;
+      float f = exp(-r2 * 3.5) * (1.0 - r2);
+      // Unresolved, a knot keeps a lifted share of its light, like the ribbons.
+      float g = mix(pow(vGain, 0.62) * uFar, 1.0, step(0.999, vGain));
+      gl_FragColor = vec4(vSt.rgb * vSt.a * f * uPadI * g * fogT(vW), 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const pads = (() => {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+  g.setIndex([0, 2, 1, 0, 3, 2]);
+  g.setAttribute('aJ', new THREE.InstancedBufferAttribute(new Float32Array(JUNCS.flatMap((j, n) => [j.x, j.z, hash(n, 7, 1)])), 3));
+  g.instanceCount = JUNCS.length;
+  const m = new THREE.Mesh(g, padMat);
+  m.frustumCulled = false;
+  m.renderOrder = 1;
+  return m;
+})();
+scene.add(pads);
+
+/* ---------- the close set ---------- */
+// Local frame at the hero lamp: x along the road, z to the right side, y up.
+const set = new THREE.Group();
+set.rotation.y = -Math.atan2(HT.z, HT.x);
+scene.add(set);
+const concrete = new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.92 });
+const steel = new THREE.MeshStandardMaterial({ color: 0x6d7076, roughness: 0.55, metalness: 0.4 });
+const box = (w, h, d, x, y, z, m = concrete) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); set.add(b); return b; };
+// The overpass crosses at x = 13.3; the camera stands on its deck.
+const OVER = 13.3;
+box(12, 1.4, 74, OVER, 6.8, 0);
+box(0.3, 1.1, 74, OVER - 5.85, 8.05, 0);
+box(0.3, 1.1, 74, OVER + 5.85, 8.05, 0);
+box(1.6, 6.1, 1.0, OVER, 3.05, 0);
+for (const z of [-19, 19]) box(1.2, 6.1, 1.2, OVER, 3.05, z);
+for (const z of [-31, 31]) box(13, 7.5, 12, OVER, 3.75, z, new THREE.MeshStandardMaterial({ color: 0x3a3f36, roughness: 1 }));
+
+// Poles, arms and housings for the lamps near the hero, as instances.
+const NEAR = LAMPS.filter(l => l.r === 0 && Math.hypot(l.x, l.z) < 1500);
+const poleGeo = mergeGeometries([
+  new THREE.CylinderGeometry(0.09, 0.14, HEAD_H + 0.3, 8).translate(0, (HEAD_H + 0.3) / 2, 0),
+  ...[-1, 1].map(sd => new THREE.BoxGeometry(0.08, 0.08, HEAD_OFF).rotateX(sd * 0.08).translate(0, HEAD_H + 0.3, sd * HEAD_OFF / 2)),
+  ...[-1, 1].map(sd => new THREE.BoxGeometry(0.42, 0.22, 1.25).translate(0, HEAD_H + 0.08, sd * (HEAD_OFF - 0.2))),
+]);
+const refrGeo = mergeGeometries([-1, 1].map(sd => new THREE.PlaneGeometry(0.32, 1.05).rotateX(Math.PI / 2).translate(0, HEAD_H - 0.04, sd * (HEAD_OFF - 0.2))));
+const poles = new THREE.InstancedMesh(poleGeo, steel, NEAR.length);
+const refrMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...SOD).multiplyScalar(5), side: THREE.DoubleSide });
+const refrs = new THREE.InstancedMesh(refrGeo, refrMat, NEAR.length);
+const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
+NEAR.forEach((l, i) => {
+  q4.setFromAxisAngle(yAx, -Math.atan2(l.tz, l.tx));
+  m4.compose(new THREE.Vector3(l.x, 0, l.z), q4, new THREE.Vector3(1, 1, 1));
+  poles.setMatrixAt(i, m4);
+  refrs.setMatrixAt(i, m4);
+});
+scene.add(poles, refrs);
+// The central barrier, in 40 m pieces near the hero.
+{
+  const near = [];
+  const { p } = dense[0];
+  for (let i = 1; i < p.length; i++) if (Math.hypot(p[i].x, p[i].z) < 900) near.push(i);
+  const bar = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.9, 0.6).translate(0, 0.45, 0), concrete, near.length);
+  near.forEach((i, j) => {
+    const a = p[i - 1], b = p[i];
+    q4.setFromAxisAngle(yAx, -Math.atan2(b.z - a.z, b.x - a.x));
+    m4.compose(new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2), q4, new THREE.Vector3(a.distanceTo(b), 1, 1));
+    bar.setMatrixAt(j, m4);
+  });
+  scene.add(bar);
+}
+// Point lights at the eight heads nearest the hero light the solids.
+const HEADS = [];
+NEAR.forEach(l => [-1, 1].forEach(sd => HEADS.push(new THREE.Vector3(l.x - l.tz * sd * HEAD_OFF, HEAD_H - 0.2, l.z + l.tx * sd * HEAD_OFF))));
+HEADS.sort((a, b) => a.lengthSq() - b.lengthSq());
+const LIGHT_I = 1.6 * 144 * Math.PI;
+const lights = HEADS.slice(0, 8).map(h => {
+  const L = new THREE.PointLight(new THREE.Color(...SOD), LIGHT_I, 0, 2);
+  L.position.copy(h);
+  scene.add(L);
+  return L;
+});
+scene.add(new THREE.HemisphereLight(new THREE.Color(...linFit(0.3, 0.05, 262)), 0x000000, 0.06));
+
+/* ---------- camera path ---------- */
+// The hero head the camera looks at, on the right-hand carriageway side.
+const HEAD = HN.clone().multiplyScalar(HEAD_OFF).setY(HEAD_H);
+// Look back along -T, turned 25 degrees toward the reserve.
+const yawFrom = turn => { const f = HT.clone().multiplyScalar(-Math.cos(turn)).addScaledVector(HN, -Math.sin(turn)); return Math.atan2(f.z, f.x); };
+// Portrait hangs over the road, facing the overpass; the lamp row runs up the frame.
+const YAW0 = yawFrom(0.436), YAW0P = yawFrom(Math.PI - 0.12);
+// The country's centre and its long axis, Ostend to Arlon.
+const CENTRE = (() => { const [x, z] = geo(4.42, 50.66); return new THREE.Vector3(x, 0, z); })();
+const AXIS = (() => { const [x0, z0] = geo(5.82, 49.68), [x1, z1] = geo(2.92, 51.21); return Math.atan2(z1 - z0, x1 - x0); })();
+const D0 = 15;
+let Dfar = 4.4e5, yawFar = -Math.PI / 2;
+const PITCH = [[0, 0.2], [0.1, 0.06], [0.25, -0.36], [0.5, -0.85], [0.75, -1.1], [1, -1.22]];
+const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const table = (T, z) => {
+  for (let i = 1; i < T.length; i++) if (z <= T[i][0]) return T[i - 1][1] + (T[i][1] - T[i - 1][1]) * ss(T[i - 1][0], T[i][0], z);
+  return T[T.length - 1][1];
+};
+const angLerp = (a, b, t) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; };
+const look = { yaw: 0, pitch: 0 };
+const tgt = new THREE.Vector3();
+function place(z) {
+  const portrait = camera.aspect < 0.8, near = 1 - ss(0, 0.25, z);
+  // Portrait hangs higher over the road and looks down along it.
+  const d0 = portrait ? D0 * 3 : D0;
+  const D = d0 * Math.pow(Dfar / d0, z);
+  const pitch = table(PITCH, z) + look.pitch * (1 - z) - (portrait ? 0.4 * near : 0);
+  // A small orbit in the middle of the climb gives parallax.
+  const yaw = angLerp((portrait ? YAW0P : YAW0) + 0.3 * Math.sin(Math.PI * Math.min(1, z / 0.55)), yawFar, ss(0.5, 1, z)) + look.yaw;
+  tgt.lerpVectors(HEAD, CENTRE, ss(0.42, 0.97, z));
+  // Portrait aims below the head, so the head sits in the upper third.
+  if (portrait) tgt.y -= 3 * near;
+  const f = new THREE.Vector3(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw));
+  camera.position.copy(tgt).addScaledVector(f, -D);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(tgt);
+  camera.near = Math.max(0.3, D * 0.03);
+  camera.far = Math.max(60000, D * 5);
+  camera.updateProjectionMatrix();
+  return D;
+}
+// Fit the far shot to the border, in the camera's ground frame.
+function fitFar() {
+  const portrait = camera.aspect < 0.8;
+  yawFar = portrait ? AXIS : -Math.PI / 2;
+  const fx = Math.cos(yawFar), fz = Math.sin(yawFar);
+  let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+  BORDER_M.forEach(([x, z]) => {
+    const dx = x - CENTRE.x, dz = z - CENTRE.z, u = dx * fx + dz * fz, v = -dx * fz + dz * fx;
+    u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+  });
+  const tv = Math.tan((camera.fov * Math.PI) / 360);
+  const hu = Math.max(Math.abs(u0), Math.abs(u1)) * Math.sin(1.22), hv = Math.max(Math.abs(v0), Math.abs(v1));
+  Dfar = Math.max(hu / tv, hv / (tv * camera.aspect)) * (portrait ? 0.92 : 0.94);
+}
+
+/* ---------- post ---------- */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+// Tilt-shift: a round disc blur grows away from a sharp band through the centre.
+const tilt0 = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uPx: { value: new THREE.Vector2() }, uMax: { value: 6 }, uBand: { value: 0.1 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uPx; uniform float uMax, uBand;
+    varying vec2 vUv;
+    void main() {
+      float r = uMax * smoothstep(uBand, uBand + 0.42, abs(vUv.y - 0.5));
+      // A clamp keeps hot cores from blowing the bloom into boxes.
+      vec4 c = min(texture2D(tDiffuse, vUv), vec4(5.0));
+      if (r < 0.3) { gl_FragColor = c; return; }
+      vec4 acc = c; float wsum = 1.0;
+      // A Vogel spiral of 28 taps gives round bokeh.
+      for (int i = 1; i < 28; i++) {
+        float fi = float(i), rr = sqrt(fi / 28.0), a = fi * 2.39996;
+        acc += min(texture2D(tDiffuse, vUv + vec2(cos(a), sin(a)) * rr * r * uPx), vec4(5.0));
+        wsum += 1.0;
+      }
+      gl_FragColor = acc / wsum;
+    }`,
+});
+composer.addPass(tilt0);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.4, 0.7);
+composer.addPass(bloom);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uSeed: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform float uSeed;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 q = vUv - 0.5;
+      c.rgb *= 1.0 - dot(q, q) * 0.9;
+      float g = fract(sin(dot(vUv * 913.0 + uSeed, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+      c.rgb += g * 0.004;
+      gl_FragColor = c;
+    }`,
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- air ---------- */
+// Density per metre, scale height, sprite size, halo level, ribbon glow.
+const AIR = {
+  clear: { d: 0.00003, h: 500, size: 4, halo: 0.02, glow: 0.03, wide: 18, stars: 1 },
+  haze: { d: 0.00016, h: 300, size: 7, halo: 0.1, glow: 0.07, wide: 28, stars: 0.4 },
+  fog: { d: 0.0011, h: 90, size: 16, halo: 0.22, glow: 0.18, wide: 60, stars: 0 },
+};
+const air = { ...AIR.haze };
+let airTo = AIR.haze;
+
+/* ---------- state ---------- */
+let z = ui.slider?.value ?? 0, zTo = z, tilt = ui.setting('tilt')?.value ?? 0.6;
+const size = { w: 1, h: 1 };
+let rung = 0;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  size.w = Math.max(1, Math.round(r.width)); size.h = Math.max(1, Math.round(r.height));
+  const pr = pixelRatio(size.w, size.h, { maxDpr: 2, budget: 1.8e6, low: rung > 0 });
+  renderer.setPixelRatio(pr);
+  renderer.setSize(size.w, size.h, false);
+  composer.setPixelRatio(pr);
+  composer.setSize(size.w, size.h);
+  const b = rung > 1 ? 0.35 : 0.5;
+  bloom.resolution.set(size.w * pr * b, size.h * pr * b);
+  camera.aspect = size.w / size.h;
+  camera.fov = camera.aspect < 0.8 ? 58 : 40;
+  U.uPxK.value = (2 * Math.tan((camera.fov * Math.PI) / 360)) / size.h;
+  tilt0.uniforms.uPx.value.set(1 / size.w, 1 / size.h);
+  fitFar();
+  draw();
+}
+
+// Exposure by zoom: the country needs more than the close lamp.
+const EXPO = [[0, 0.9], [0.3, 1.1], [0.6, 1.6], [1, 2.1]];
+function draw() {
+  const t = nowS();
+  U.uNow.value = t;
+  const D = place(z);
+  // Air eases toward the chip.
+  ribMat.uniforms.uHalf.value = 60 + air.wide * 2;
+  ribMat.uniforms.uGlow.value = air.glow;
+  ribMat.uniforms.uWide.value = air.wide;
+  sprMat.uniforms.uSize.value = air.size;
+  sprMat.uniforms.uHaloI.value = air.halo;
+  sprMat.uniforms.uCore.value = 0.35 / air.size;
+  U.uFogD.value = air.d; U.uFogH.value = air.h;
+  // The fog colour: night blue, lit orange where the air is thick.
+  const lvl = U.uOn.value ? 1 : 0;
+  const glow = Math.min(1, air.d / 0.0011) * (1 - z * 0.7) * lvl;
+  // Sky glow over a lit country never goes fully dark.
+  const sg = 0.012 * lvl + 0.06 * glow;
+  U.uFogC.value.set(0.005 + SOD[0] * sg, 0.006 + SOD[1] * sg, 0.012 + SOD[2] * sg);
+  sky.material.uniforms.uStars.value = air.stars;
+  renderer.toneMappingExposure = table(EXPO, z);
+  // Ripple speed grows with altitude, so the country lights in seconds.
+  U.uRipV.value = Math.max(500, D * 0.25);
+  // The near heads follow the global switch.
+  const st = jsLamp(t);
+  refrMat.color.setRGB(...st.c).multiplyScalar(5 * st.l);
+  lights.forEach(L => { L.color.setRGB(...st.c); L.intensity = LIGHT_I * st.l; });
+  tilt0.uniforms.uMax.value = tilt * (9 + 5 * z);
+  tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
+  // From orbit the ribbons need a lift to read.
+  // A phone draws the country smaller, so its strips need more lift.
+  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 170 : 100) * ss(0.3, 0.9, z);
+  padMat.uniforms.uFar.value = 1 + 40 * ss(0.3, 0.9, z);
+  grade.uniforms.uSeed.value = (t * 7.31) % 1;
+  sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+  composer.render();
+}
+// The JS twin of lampState, for the near heads.
+function jsLamp(t) {
+  if (!U.uOn.value) { const k = 1 - Math.min(1, Math.max(0, (t - U.uOffT.value) / 0.35)); return { c: SOD, l: k * k }; }
+  const tt = t - U.uSwT.value - 0.3;
+  if (tt < 0) return { c: PINK, l: 0 };
+  const h = U.uHot.value, w = h + (1 - h) * (1 - (1 - Math.min(1, tt / 6)) ** 3);
+  const mix = (a, b, f) => a.map((v, i) => v + (b[i] - v) * f);
+  const c = w < 0.45 ? mix(PINK, SALMON, ss(0, 0.45, w)) : mix(SALMON, SOD, ss(0.45, 0.9, w));
+  return { c, l: 0.1 + 0.9 * w * w };
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, lastT = 0, visible = true, lastInput = performance.now(), busyUntil = 0;
+function tick(now) {
+  raf = 0;
+  const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0.016;
+  lastT = now;
+  let moving = false;
+  try {
+    if (Math.abs(zTo - z) > 1e-4) { z = reduced() ? zTo : z + (zTo - z) * (1 - Math.exp(-dt * 4)); moving = true; } else z = zTo;
+    for (const k of ['d', 'h', 'size', 'halo', 'glow', 'wide', 'stars']) {
+      const d = airTo[k] - air[k];
+      if (Math.abs(d) > Math.abs(airTo[k]) * 1e-3) { air[k] += d * (1 - Math.exp(-dt * 2.5)); moving = true; } else air[k] = airTo[k];
+    }
+    draw();
+    watch(now);
+  } finally {
+    if (visible && !document.hidden && (moving || press || performance.now() < busyUntil)) raf = requestAnimationFrame(tick);
+    else lastT = 0;
+  }
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible && !document.hidden) raf = requestAnimationFrame(tick);
+}
+/* Performance ladder: slow frames step quality down a rung, never back up. */
+let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
+function watch(now) {
+  const gap = now - prevDraw;
+  prevDraw = now;
+  if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
+  if (!watchFrom) watchFrom = now;
+  if (now - watchFrom < 4000) return;
+  watchN++; watchSum += gap;
+  if (watchN < 2 || now - watchFrom < 6000) return;
+  if (watchSum / watchN > 1000 / 38 && rung < 2) { rung++; resize(); }
+  watchFrom = now - 4000; watchN = watchSum = 0;
+}
+whenVisible(stage, vis => {
+  visible = vis;
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  draw();
+  wake();
+});
+new ResizeObserver(() => resize()).observe(stage);
+onQuality(() => resize());
+onReducedChange(() => wake());
+
+/* ---------- input ---------- */
+const setZoom = (v, fromSlider = false) => {
+  zTo = Math.min(1, Math.max(0, v));
+  if (!fromSlider) ui.slider?.set(zTo);
+  wake();
+};
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  const k = e.deltaMode === 1 ? 0.02 : 0.0006;
+  setZoom(zTo + e.deltaY * k);
+}, { passive: false });
+// A press turns into a drag after 8 px; two fingers pinch the zoom.
+let press = null;
+const pts = new Map();
+let pinch = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  stage.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: zTo };
+    press = null;
+  } else press = { id: e.pointerId, x: e.clientX, y: e.clientY, drag: false, yaw: look.yaw, pitch: look.pitch };
+  wake();
+});
+stage.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pinch && pts.size >= 2) {
+    const [a, b] = [...pts.values()];
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    setZoom(pinch.z - Math.log(d / pinch.d) * 0.22);
+    return;
+  }
+  if (!press || e.pointerId !== press.id) return;
+  if (!press.drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { press.drag = true; stage.classList.add('held'); }
+  if (!press.drag) return;
+  const s = 1.6 / Math.max(size.w, size.h);
+  look.yaw = Math.max(-0.5, Math.min(0.5, press.yaw - (e.clientX - press.x) * s));
+  look.pitch = Math.max(-0.2, Math.min(0.2, press.pitch + (e.clientY - press.y) * s * 0.5));
+  wake();
+});
+const end = e => {
+  pts.delete(e.pointerId);
+  if (pts.size < 2) pinch = null;
+  if (press && e.pointerId === press.id) { press = null; stage.classList.remove('held'); }
+  wake();
+};
+stage.addEventListener('pointerup', end);
+stage.addEventListener('pointercancel', end);
+stage.addEventListener('lostpointercapture', end);
+stage.addEventListener('keydown', e => {
+  if (e.key === '+' || e.key === '=' || e.key === 'ArrowUp') { setZoom(zTo + 0.05); e.preventDefault(); }
+  if (e.key === '-' || e.key === 'ArrowDown') { setZoom(zTo - 0.05); e.preventDefault(); }
+});
+
+/* ---------- bar ---------- */
+act.zoom = v => setZoom(v, true);
+act.air = v => { airTo = AIR[v] ?? AIR.haze; wake(); };
+act.tilt = v => { tilt = v; draw(); };
+act.near = on => { land.material.uniforms.uNear.value = on ? 1 : 0; draw(); };
+// Switch: all lamps die, or strike again in a ripple from the view centre.
+act.sw = () => {
+  const t = nowS();
+  if (U.uOn.value) { U.uOn.value = 0; U.uOffT.value = t; busyUntil = performance.now() + 600; }
+  else {
+    // A lamp that went out moments ago is still hot and restrikes orange.
+    U.uHot.value = Math.exp(-(t - U.uOffT.value) / 20);
+    U.uOn.value = 1; U.uSwT.value = t; U.uRip.value.set(tgt.x, tgt.z);
+    busyUntil = performance.now() + 1000 * (8 + 300000 / U.uRipV.value);
+  }
+  wake();
+};
+act.reset = () => {
+  ui.choice?.set('haze'); airTo = AIR.haze;
+  ui.setting('tilt')?.set(0.6); tilt = 0.6;
+  look.yaw = look.pitch = 0;
+  if (!U.uOn.value) act.sw();
+  setZoom(0);
+};
+act.air(ui.choice?.value ?? 'haze');
+Object.assign(air, airTo);
+act.near(ui.setting('near')?.value ?? true);
+
+/* ---------- ready ---------- */
+// The intro holds until shaders compile and the first frame draws.
+resize();
+renderer.compileAsync(scene, camera).then(() => {
+  draw();
+  canvas.classList.add('on');
+  markReady();
+}, () => { canvas.classList.add('on'); markReady(); });
+</script>
+</body>
+</html>

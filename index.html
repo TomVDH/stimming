@@ -1054,6 +1054,24 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       <a class="lab-back" href="./"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>Toys</a>
       <ul class="shelf" aria-label="Lab">
         <li>
+          <a class="toy" id="motorway" href="motorway/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 260)"/>
+                <rect x="16" y="16" width="92" height="92" fill="oklch(0.17 0.03 262)"/>
+                <path d="M16 96L52 74L108 50" fill="none" stroke="oklch(0.11 0.015 260)" stroke-width="9"/>
+                <path id="motorway-glow" d="M16 96L52 74L108 50" fill="none" stroke="#ff8a2a" stroke-width="3" opacity="0.15"/>
+                <g id="motorway-lamps" fill="#2a3040">
+                  <rect x="22" y="83" width="5" height="3"/><rect x="34" y="76" width="5" height="3"/><rect x="46" y="68" width="5" height="3"/>
+                  <rect x="58" y="63" width="5" height="3"/><rect x="70" y="57" width="5" height="3"/><rect x="82" y="52" width="5" height="3"/>
+                  <rect x="94" y="47" width="5" height="3"/>
+                </g>
+              </svg>
+            </span>
+            <span class="name">Lit motorway</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="bread" href="bread/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -2873,6 +2891,32 @@ a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
       const r = svg.getBoundingClientRect();
       toys.chocolate.move([((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128]);
     });
+  }
+
+  // Lamps left of the pointer strike up, neon pink then sodium; the rest go dark.
+  {
+    const lamps = [...document.querySelectorAll('#motorway-lamps rect')], glow = $('motorway-glow');
+    const X = lamps.map(l => +l.getAttribute('x') + 2.5), lit = lamps.map(() => false);
+    const edge = x => {
+      let n = 0;
+      lamps.forEach((l, i) => {
+        const on = X[i] <= x;
+        n += on;
+        if (on === lit[i]) return;
+        lit[i] = on;
+        if (on) gsap.fromTo(l, { attr: { fill: '#c0506e' } }, { attr: { fill: '#ffae4a' }, duration: 0.9, ease: 'power3.in', overwrite: true });
+        else gsap.to(l, { attr: { fill: '#2a3040' }, duration: 0.25, overwrite: true });
+      });
+      gsap.to(glow, { opacity: 0.15 + 0.7 * (n / lamps.length), duration: 0.6, overwrite: true });
+    };
+    let sweep = null;
+    toys.motorway = {
+      enter(p) { edge(p ? p[0] : 128); },
+      move(p) { if (p) edge(p[0]); },
+      leave() { edge(-1); },
+      play() { const st = { x: 0 }; sweep = gsap.to(st, { x: 128, duration: 1.6, ease: 'none', onUpdate: () => edge(st.x) }); return sweep; },
+      rest() { sweep?.kill(); edge(-1); },
+    };
   }
 
   // A streetlight warms from pink-red to sodium orange; its pool and glint follow.
