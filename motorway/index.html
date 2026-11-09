@@ -560,7 +560,7 @@ const sphereOf = (pos, pad) => { const g = new THREE.BufferGeometry(); g.setAttr
 const ribbonGeo = list => {
   let nv = 0;
   list.forEach(r => { nv += dense[r].p.length * 2; });
-  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), aS = new Float32Array(nv), aInfo = new Float32Array(nv * 4);
+  const aC = new Float32Array(nv * 3), aN = new Float32Array(nv * 2), aSide = new Float32Array(nv), aS = new Float32Array(nv), aInfo = new Float32Array(nv * 4), aEnd = new Float32Array(nv);
   const idx = new Uint32Array((nv - 2 * list.length) * 3);
   let v = 0, q = 0;
   list.forEach(r => {
@@ -575,6 +575,7 @@ const ribbonGeo = list => {
         aN[v * 2] = -tz; aN[v * 2 + 1] = tx;
         aSide[v] = side;
         aS[v] = s[i] - ph;
+        aEnd[v] = Math.min(s[i] - s[0], s[n - 1] - s[i]);
         aInfo[v * 4] = l; aInfo[v * 4 + 1] = r; aInfo[v * 4 + 2] = c; aInfo[v * 4 + 3] = ho;
         v++;
       }
@@ -587,6 +588,7 @@ const ribbonGeo = list => {
   g.setAttribute('aSide', new THREE.BufferAttribute(aSide, 1));
   g.setAttribute('aS', new THREE.BufferAttribute(aS, 1));
   g.setAttribute('aInfo', new THREE.BufferAttribute(aInfo, 4));
+  g.setAttribute('aEnd', new THREE.BufferAttribute(aEnd, 1));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.boundingSphere = sphereOf(aC, 3000);
   g.userData.list = list;
@@ -599,9 +601,9 @@ const ribMat = new THREE.ShaderMaterial({
     uWet: { value: 0.6 },
   },
   vertexShader: /* glsl */`
-    attribute vec2 aN; attribute float aSide, aS; attribute vec4 aInfo; attribute vec2 aJam;
+    attribute vec2 aN; attribute float aSide, aS, aEnd; attribute vec4 aInfo; attribute vec2 aJam;
     uniform float uPxK, uHalf, uAm, uPm;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam, vEnd;
     varying vec3 vW;
     varying vec2 vN;
     void main() {
@@ -615,7 +617,7 @@ const ribMat = new THREE.ShaderMaterial({
       vHalf = half_;
       vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
       w.y = 0.04 + 0.01 * aInfo.z;
-      vLat = aSide * half_; vS = aS; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
+      vLat = aSide * half_; vS = aS; vEnd = aEnd; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
       // Town-bound lanes jam in the morning, outbound lanes in the evening.
       vJam = aJam.x * (aJam.y > 1.5 ? max(uAm, uPm) * 0.7 : (aJam.y > 0.5 ? uAm : uPm));
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
@@ -625,7 +627,7 @@ const ribMat = new THREE.ShaderMaterial({
     uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol;
     uniform vec3 uTac;
     uniform vec3 uJamC;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam, vEnd;
     varying vec3 vW;
     varying vec2 vN;
     float h2(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
@@ -700,6 +702,9 @@ const ribMat = new THREE.ShaderMaterial({
       col += Eavg * uGlow * exp(-abs(dl) / uWide);
       // By day the asphalt shows grey under an overcast sky.
       col += alb * uSun * 0.5;
+      // The apron fades to nothing at its edge and near a road's end.
+      // Crossing roads then blend, with no hard seams.
+      if (!asph) col *= (1.0 - smoothstep(0.45, 1.0, a / vHalf)) * smoothstep(0.0, 1.0, vEnd / max(a, 1.0));
       // Unresolved, the strip carries its mean light, kept legible from orbit.
       vec3 farC = Eavg * uLampE * 0.045 + Eavg * uGlow * 0.4 + vec3(0.0007, 0.0008, 0.0009) * uSun;
       // A soft lateral falloff draws the far strip as a glowing tube.
@@ -736,7 +741,8 @@ const ribMat = new THREE.ShaderMaterial({
       col = mix(col, uJamC * dot(col, vec3(0.3, 0.6, 0.1)) * 2.2, clamp(vJam * 2.2, 0.0, 1.0) * uJamK);
       gl_FragColor = vec4(col * fogT(vW), 1.0);
     }`,
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  // Both faces draw, so a strip folded on a tight curve leaves no hole.
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 });
 // Each tile holds the roads whose middle lies in it.
 const ribbons = new THREE.Group();
