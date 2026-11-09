@@ -77,3 +77,20 @@ Ten questions answered; see docs/plans/beer.md, Overhaul brief. three.js rebuild
 - Head volume: the head is lit as a volume too (Fire's smoke model): a five-step march toward the lamp through bubble-cell density sets how much backlight soaks through; thin crowns and edges glow, deep foam stays creamy. Kept subtle (0.18).
 - Pour motion (Tom: "eclipses through glass", "pour from one position", "smoother"): the lifted bottle and the jet draw a second time after the glass, depth-tested, so whatever is in front of the glass shows in front of it. The bottle rests clear of the glass's outline, rises, comes forward beside the glass, slides over the rim and only then tips; a critically damped spring (w = 9) eases every move; lift and return take about a second. While holding, a drag moves the pour: sideways along the rim, up for a longer drop and a bigger head; the jet still lands inside.
 - Soft shading (Tom: soft, Pixar-like, close to now): finer grain, gentler S-curve, wider softer bloom, a warm rim light on the bowl, calmer caustic shimmer in the beer, smoother foam with a warm-to-cool gradient.
+
+## QA pass (2026-11-09, internal browser)
+
+Checked at 800 x 600, 375 x 812 and 812 x 375: Pour, hold and drag, swirl, Sip, Clear, the three lights, the beer stepper. Console clean. 50 frames/s during a pour at 1024 x 768, dpr 1 (hidden pane; not a device number).
+
+Fixed:
+- Five beers had no measured outline (Omer, Averbode, Kriek Boon, Kwak glasses; the Westvleteren bottle): picking one threw and left the name and the scene out of step. They now get a stand-in shape from their sizes; a bottle without a label draws none.
+- The bottle crossed in front of the bowl as it came in: it now tips while it rises beside the glass, then brings its mouth over the rim.
+- On phones the tilted glass slid left and its foot left the frame: the tipped glass now draws back, so the bowl stays put.
+- The neck's fog read as gritty specks: larger, smoother puffs.
+- The head blew out to flat white on phones: lower exposure, rounder falloff, bloom on true highlights only.
+
+Known, not fixed:
+- [ ] The glass shader's stem streak and foot ring are tuned to Duvel; stand-in glasses show a bright blob at the bowl's floor. For Overhaul 5.
+- [ ] Kwak's stand-in is a straight tumbler, not the coachman bulb; no stand.
+- [ ] Spill visuals; sips leave no lacing yet.
+- [ ] Not checked: a real phone, real touch, reduced motion, the Fizz slider's range, Foam time Real.
