@@ -151,6 +151,7 @@ const ui = initPage({ id: 'motorway', bar: {
       options: [{ value: 'clear', label: 'Clear' }, { value: 'haze', label: 'Haze' }, { value: 'fog', label: 'Fog' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'near', label: 'Neighbours', value: true, persist: true, onToggle: on => act.near(on) },
+    { type: 'toggle', id: 'atlas', label: 'Atlas', value: false, persist: true, onToggle: on => act.atlas(on) },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -1278,7 +1279,10 @@ const marks = MARKS.map(([names, lo, la]) => {
   return { el, v: new THREE.Vector3(x, 0, z), o: 0, shown: -1, lift };
 });
 const mv = new THREE.Vector3();
+// The Atlas setting holds the city names, jam circles, study and trains.
+let atlas = false;
 function placeMarks(dt) {
+  if (!atlas) return;
   marks.forEach(m => {
     mv.copy(m.v).project(camera);
     const dist = camera.position.distanceTo(m.v);
@@ -1911,7 +1915,7 @@ function tick(now) {
       if (now - jamAt > 200) { jamAt = now; measureJams(); }
     }
     localFade = 1 - ss(0.22, 0.4, z);
-    if (traffic > 0 || clock.day) { stepTraffic(frameDt, z > 0.5 ? 4 : 1); stepTrains(frameDt); }
+    if (traffic > 0 || clock.day) { stepTraffic(frameDt, z > 0.5 ? 4 : 1); if (atlas) stepTrains(frameDt); }
     draw();
     watch(now, lively);
   } finally {
@@ -2079,9 +2083,14 @@ act.rush = () => {
   clock.day = true; clock.h = 4; study.on = true; study.playing = true; playBtn.textContent = 'Pause';
   U.uRush.value = 1;
   measureJams();
-  panel.classList.add('on'); strip.classList.add('on');
-  buildChart();
+  if (atlas) { panel.classList.add('on'); strip.classList.add('on'); buildChart(); }
   wake();
+};
+act.atlas = on => {
+  atlas = on; markLayer.hidden = !on; trains.visible = on;
+  panel.classList.toggle('on', on && clock.day); strip.classList.toggle('on', on && clock.day);
+  if (on && clock.day) buildChart();
+  draw(); wake();
 };
 act.reset = () => {
   if (clock.day) endDay();
@@ -2103,6 +2112,7 @@ act.air(ui.setting('air')?.value ?? 'haze');
 }
 Object.assign(air, airTo);
 act.near(ui.setting('near')?.value ?? true);
+act.atlas(ui.setting('atlas')?.value ?? false);
 
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
