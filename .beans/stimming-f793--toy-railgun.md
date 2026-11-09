@@ -21,7 +21,12 @@ Railgun (`railgun`). One colossal planetside railgun on megalithic cradles; hold
 - [x] Task 3: checkpoint: the slug (stills sent 13:45)
 - [x] Task 4: sound: wind, hum, clicks, slug, crack at the Mach arrival, rumble; Q9 (context runs on hold, hum stops on release and on mute, pending drains, suspended after settle)
 - [x] Task 5: persistence, reduced motion, Q1 to Q10 at three sizes, `tests/bar-v2.html` 98/98; fps below
-- [ ] Task 5: fresh-eyes review of the branch, then the PR
+- [x] Task 5: fresh-eyes review of the branch, then the PR (PR 32)
+- [x] Task 6: Tom's TLC pass (2026-11-09): one artillery piece, not a ramp; straight hard-surface blocks; no standing stones
+- [x] Task 6: an old gun on a fixed terraced mount; aged concrete shading; a sun depth map; a raking sun
+- [x] Task 6: the barrel lowers 14° after the shot and climbs back to 26° for the next rock
+- [x] Task 6: dust and strikes land on the plain outside the terraces; the portrait eye stands 3 km back
+- [x] Task 6: QA again at 1280 × 800, 375 × 812, 812 × 375: no console errors; hold 30 fps, shot 30 fps; sleep and hidden draw 0 frames; Space charges and fires
 - [ ] Tom sets the Dutch name (proposal: Spoorkanon) and IPA
 - [ ] Record the session cost
 

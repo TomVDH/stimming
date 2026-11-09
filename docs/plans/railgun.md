@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task, in its feature worktree. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** A colossal stone railgun stands on a dusty plain under a low sun, seen from three kilometres in one locked-off shot. Far beyond its muzzle a burning asteroid hangs in the sky and slowly closes in. Hold to charge: lightning crackles over the gap, dust lifts, the ground shakes, and it all grows the longer you hold. Release: the slug runs the rails, a bolt crosses the sky for seconds, the rock shatters, a fresh one approaches.
+**Goal:** A colossal old railgun emplacement of pale concrete stands on a dusty plain under a low sun, seen from 2.6 km in one locked-off shot. Far beyond its muzzle a burning asteroid hangs in the sky and slowly closes in. Hold to charge: lightning crackles over the barrel, dust lifts, the ground shakes, and it all grows the longer you hold. Release: the slug runs the rails, a bolt crosses the sky for seconds, the rock shatters, a fresh one approaches.
 
-**Architecture:** three.js 0.170 on the K2 noise and haze and the K6 burst particles lifted from `launch/index.html`; the night sky is replaced by a sunlit dusk sky. The gun is one merged mesh of chipped boxes with flat facets from screen derivatives. The shot is a hand-rolled state keyed to the sim clock. The composer renders into a multisampled half-float target, then bloom, grade and output.
+**Architecture:** three.js 0.170 on the K2 noise and haze and the K6 burst particles lifted from `launch/index.html`; the night sky is replaced by a sunlit dusk sky. The gun is one merged mesh of straight boxes, wedges and drums with flat facets from screen derivatives; the barrel turns about its trunnion in the vertex shader. The shot is a hand-rolled state keyed to the sim clock. The composer renders into a multisampled half-float target, then bloom, grade and output.
 
 **Tech stack:** three.js 0.170 (EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, OutputPass, BufferGeometryUtils), simplex-noise, raw Web Audio through `audioKit()`.
 
-**Spec:** Tom, 2026-11-09, in chat. Decisions: hold to charge and release to fire; one massive gun, not a ring; a far, static, Villeneuve-like shot; a day or dusk scene; the gun is stone with nothing glowing, inspired by Stonehenge; the rock far out so the bolt takes seconds; the charge-up chaos grows with the hold; no fail state yet (the rock holds at its largest size).
+**Spec:** Tom, 2026-11-09, in chat. Decisions: hold to charge and release to fire; one massive gun, not a ring; a far, static, Villeneuve-like shot; a day or dusk scene; the gun is one massive artillery piece, not a ramp: straight hard-surface architecture, old and fixed, with nothing glowing; the barrel elevates on the fixed mount; the rock far out so the bolt takes seconds; the charge-up chaos grows with the hold; no fail state yet (the rock holds at its largest size).
 
 | | |
 |---|---|
@@ -18,9 +18,11 @@
 
 ## The shot
 
-One unit is one metre. The breech sits at the origin. The barrel climbs at 15° toward negative z, 1,400 m long: two stone rails 22 m wide and 34 m tall with a 28 m gap, a breech block, and four trilithon cradles that grow with the barrel.
-A flat dusty plain. The sun sits ahead and to the left, one to fifteen degrees up, so the gun stands against its glow in the haze.
-The eye stands 70 m up, 1.5 km right of the axis and 1.8 km behind the breech, with a 32° lens aimed 18° left of the barrel. The horizon sits on the lower third. The gun fills the left half; the rock hangs upper right.
+One unit is one metre. The trunnion sits 215 m over the origin. The barrel climbs at 26° toward negative z, 900 m long: two stepped rail slabs over a graphite spine, collars at each step, cooling fins, a breech block and two recuperators.
+The mount is fixed: three terraces with a recoil well, two cheek walls that carry the trunnion, a rest wall under the barrel and one ramp.
+A flat dusty plain. The sun sits low on the right, three to sixteen degrees up; it lights the near flank and rakes shadows to the left.
+The eye stands 30 m up, 1.7 km right of the axis and 2 km behind the trunnion, with a 38° lens aimed 24.5° left of the barrel. The horizon sits low. The gun sits lower left; the rock hangs upper right.
+Portrait: the eye stands 3 km back and 0.8 km right with a 56° lens.
 The rock sits 40 km out along the axis. Its plume streams up and to the right across the sky.
 
 ## Hero moments
@@ -42,6 +44,8 @@ The rock sits 40 km out along the axis. Its plume streams up and to the right ac
 | 0.3 s | Muzzle flash; the bolt leaves along the axis |
 | 0.3 + eye / 343 | The Mach ring reaches the eye: a jolt, and the crack |
 | T = 9 → 6 s | Hit: shards, K6 embers, flash, the sky warms |
+| 1.5 → 8.5 s | The barrel lowers 14° onto its rest wall |
+| hit + 3.5 → 9.5 s | The barrel climbs back to 26° for the next rock |
 | hit + 14.6 s | Rumble: 40 km compressed eight times |
 | hit + 10 s | Shards gone; a fresh rock at s = 0, a little to one side |
 
@@ -65,12 +69,13 @@ One shot at a time; a release during a live shot fades out. Changing Asteroid mi
 
 ## Tech
 
-- **Gun.** Chipped `BoxGeometry` pieces merged into one mesh. Offsets come from position-only noise, so shared corners stay joined. Facets from `dFdx`/`dFdy`. Nothing on it emits light.
+- **Gun.** Straight boxes, wedges and drums merged into one mesh. `aPart` holds the station, a barrel flag, a seed and a tone. Facets from `dFdx`/`dFdy`. The shader adds pour lines, plate seams, port rows, streaks and dust at the foot. Nothing on it emits light.
+- **Elevation.** `aim(p, f)` applies the recoil and then turns barrel vertices about the trunnion by `uDrop`. `aimAt(d)` keeps `barrelPt` and the shadow map in step.
 - **Sky.** `k2skyS(dir, sunK)`: zenith to horizon, a dust band, the sun's glow and disc. The haze samples it at the horizon without the disc. Uniforms `uSun, uSunC, uZenC, uHorC` come from `sun(deg)`.
-- **Light.** No shadow maps. A sky hemisphere, the sun, a rim from behind, the rock's glow faintly.
+- **Light.** One sun depth map, 2048 × 1024, four-tap PCF; it redraws only when the barrel or the sun moves. A sky hemisphere, the sun, a rim from behind, the rock's glow faintly.
 - **Rock.** `IcosahedronGeometry(1, 5)` with merged vertices, displaced once per shape; three shapes baked at load. The hot face looks at the planet. Ember cracks from a 3D noise band.
 - **Plume.** 48 instanced billboards fixed behind the rock, angled across the sky; fire that cools to smoke lit by the sun.
-- **Arcs.** Six camera-facing ribbons of thirteen segments, rewritten each frame with two octaves of jitter; gap arcs, crown arcs and flank arcs.
+- **Arcs.** Six camera-facing ribbons of thirteen segments, rewritten each frame with two octaves of jitter; gap arcs, crown arcs, flank arcs and strikes down to the plain past the terraces.
 - **Dust.** 400 alpha-blended billboards in a ring buffer, lit by sun and sky, swelling as they rise.
 - **Shot.** State keyed to the sim clock; bolt as one screen-space ribbon with three brightness pulses; flares as billboards; Mach ring in the ground shader.
 - **Shards.** One `InstancedMesh`, pose in closed form from birth time; no transparency sorting.
@@ -78,7 +83,7 @@ One shot at a time; a release during a live shot fades out. Changing Asteroid mi
 
 ## Sound
 
-Wind bed with a whistle through the cradles, dipping under a charge. A hum of two saws and a sub that climbs with power and tremors with the chase. Arc clicks panned to their place on screen. A slug chirp left to right. The crack when the Mach ring reaches the eye. A rumble fifteen seconds after the hit, scheduled on the audio clock. Everything through `track()`; mute and a hidden tab stop it all.
+Wind bed with a whistle past the cheek walls, dipping under a charge. A hum of two saws and a sub that climbs with power and tremors with the chase. Arc clicks panned to their place on screen. A slug chirp left to right. The crack when the Mach ring reaches the eye. A rumble fifteen seconds after the hit, scheduled on the audio clock. Everything through `track()`; mute and a hidden tab stop it all.
 
 ## Finesse
 
@@ -121,12 +126,20 @@ Wind bed with a whistle through the cradles, dipping under a charge. A hum of tw
 
 ### Task 4: Sound
 
-- [ ] Wind, hum, clicks, slug, crack at arrival, rumble. Q9. Commit: `Railgun: a crack, then a far rumble`.
+- [x] Wind, hum, clicks, slug, crack at arrival, rumble. Q9. Commit: `Railgun: a crack, then a far rumble`.
 
 ### Task 5: Settings, QA, PR
 
-- [ ] Persistence, reduced motion, Q1 to Q10 at three sizes, fps in the bean, `tests/bar-v2.html`. Push the branch, open the PR.
+- [x] Persistence, reduced motion, Q1 to Q10 at three sizes, fps in the bean, `tests/bar-v2.html`. Push the branch, open the PR.
+
+### Task 6: The artillery piece (Tom's TLC pass)
+
+- [x] One artillery piece on a fixed terraced mount; straight hard-surface blocks; no standing stones.
+- [x] Aged concrete shading, a sun depth map, a raking sun.
+- [x] The barrel lowers after the shot and climbs for the next rock.
+- [x] Dust and strikes land on the plain outside the terraces; the portrait eye moves back.
+- [x] Q1 to Q10 again at three sizes. Commit: `Railgun: an old gun on a fixed mount`.
 
 ## Kit handoff
 
-The chipped-box builder with flat facets, the day sky `k2skyS`, and the dust ring buffer, marked. Any daylight diorama can copy them.
+The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS`, and the dust ring buffer, marked. Any daylight diorama can copy them.
