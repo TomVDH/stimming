@@ -149,6 +149,10 @@ const opts = {
   lbox: saved('lbox') === 'on' ? 'on' : 'off',
 };
 let reduce = reduced();
+// Scene tuning: each value scales one part of the look; ?tune opens a panel.
+const TUNE0 = { focus: 1, aperture: 1, blades: 0, oval: 1, rim: 0, cat: 0, lampW: 30, lampT: 0.25, strikes: 1, strikeR: 1, bloom: 0.45, streaks: 1, exposure: 1, grain: 1, fog: 1, wakes: 1 };
+const TUNING = new URLSearchParams(location.search).has('tune');
+const TUNE = { ...TUNE0, ...(TUNING ? (() => { try { return JSON.parse(saved('tune')) || {}; } catch { return {}; } })() : {}) };
 
 /* ---------- look ---------- */
 // Colours are linear light: a cold, murky night.
@@ -792,7 +796,7 @@ function pushRotors() {
   wakes.spin.needsUpdate = true; wakes.on.needsUpdate = true;
   // Wakes form in moderate wind only, in fog; strong wind tears them apart.
   const w = windNow();
-  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.15 : 1);
+  wakes.m.material.uniforms.uWakes.value = 0.9 * smooth(4, 7, w) * (1 - smooth(12, 16, w)) * U.uFogK.value * (opts.fog === 'light' ? 1.15 : 1) * TUNE.wakes;
 }
 
 const lightGeo = lightGeometry();
@@ -894,13 +898,21 @@ const dofPass = new ShaderPass({
     tScene: { value: null }, tDepth: { value: null },
     uNear: { value: 5 }, uFar: { value: 40000 }, uFocus: { value: 1700 }, uAperture: { value: 12 }, uRes: { value: new THREE.Vector2(1, 1) },
     uHits: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0.1, 0)) },
+    uBlades: { value: 0 }, uOval: { value: 1 }, uRim: { value: 0 }, uCat: { value: 0 }, uLampW: { value: 30 }, uLampT: { value: 0.25 },
   },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: `
 uniform sampler2D tScene, tDepth;
 uniform float uNear, uFar, uFocus, uAperture;
+uniform float uBlades, uOval, uRim, uCat, uLampW, uLampT;
 uniform vec2 uRes;
 uniform vec4 uHits[8];
+// Aperture blades turn the disc into a polygon; under three keeps it round.
+float blade(float a) {
+  if (uBlades < 2.5) return 1.0;
+  float s = 6.2832 / uBlades;
+  return cos(0.5 * s) / cos(mod(a, s) - 0.5 * s);
+}
 varying vec2 vUv;
 // Rain strikes on the lens: x, y in uv, radius in heights, strength.
 float pulse(vec2 uv) {
@@ -932,13 +944,21 @@ void main() {
   vec3 acc = c0; float wsum = 1.0;
   for (int k = 0; k < 28; k++) {
     float rk = sqrt((float(k) + 0.5) / 28.0), a = float(k) * 2.39996 + rot;
-    vec2 o = vec2(cos(a), sin(a)) * rk * r / uRes;
+    vec2 dir = vec2(cos(a), sin(a)) * rk;
+    dir *= blade(a);
+    // Oval squeezes the disc sideways, as an anamorphic lens does.
+    dir.x *= uOval;
+    vec2 o = dir * r / uRes;
     vec2 uv = vUv + o;
     vec3 col = texture2D(tScene, uv).rgb;
     // A sharp object in front keeps its edge: a tap counts only if its own blur reaches here.
     float reach = smoothstep(0.0, 1.0, cocP(dist(uv)) - rk * r + 1.0);
-    float hot = max(max(col.r, max(col.g, col.b)) - 0.25, 0.0);
-    float w = (1.0 + hot * hot * 30.0 * (1.0 + P)) * reach;
+    float hot = max(max(col.r, max(col.g, col.b)) - uLampT, 0.0);
+    float w = (1.0 + hot * hot * uLampW * (1.0 + P)) * reach;
+    // Rim: the outer taps weigh more, so each disc shows a bright ring.
+    if (uRim > 0.0) w *= mix(1.0, 0.1 + 3.0 * smoothstep(0.6, 1.0, rk), uRim);
+    // Cat's eye: a second circle clips discs toward the frame's edge.
+    if (uCat > 0.0) w *= step(length(dir + (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * uCat), 1.0);
     acc += col * w; wsum += w;
   }
   gl_FragColor = vec4(acc / wsum * (1.0 + 0.18 * P), 1.0);
@@ -948,12 +968,12 @@ composer.addPass(dofPass);
 const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.85, 1.2);
 composer.addPass(bloom);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 }, uRain: { value: 0 }, uTimeR: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uExp: { value: 1.8 }, uCut: { value: 0 }, uFogC: { value: new THREE.Vector3(...LOOK.fog) }, uGrain: { value: 0 }, uStreak: { value: 1 }, uStreakK: { value: 1 }, uGrainK: { value: 1 }, uRain: { value: 0 }, uTimeR: { value: 0 } },
   vertexShader: QUAD_VS,
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform vec2 uRes;
-uniform float uExp, uCut, uGrain, uStreak, uRain, uTimeR;
+uniform float uExp, uCut, uGrain, uStreak, uStreakK, uGrainK, uRain, uTimeR;
 uniform vec3 uFogC;
 varying vec2 vUv;
 float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -976,7 +996,7 @@ void main() {
       float o = float(i) / 16.0 * 0.2, w = exp(-float(i) * 0.2);
       st += (max(texture2D(tDiffuse, vUv + vec2(o, 0.0)).rgb - 0.22, 0.0) + max(texture2D(tDiffuse, vUv - vec2(o, 0.0)).rgb - 0.22, 0.0)) * w;
     }
-    c += st * 0.05 * vec3(1.0, 0.75, 1.3);
+    c += st * 0.05 * uStreakK * vec3(1.0, 0.75, 1.3);
   }
   if (uRain > 0.001) {
     vec2 p = cuv * vec2(asp, 1.0);
@@ -1006,7 +1026,7 @@ void main() {
   // Film grain, strongest in the mid tones; it moves each frame.
   vec2 gp = gl_FragCoord.xy + uGrain * vec2(37.0, 17.0);
   float g = hash12(gp) + hash12(gp + 71.3) - 1.0;
-  c += g * 0.06 * (0.4 + c * (1.0 - c) * 2.4);
+  c += g * 0.06 * uGrainK * (0.4 + c * (1.0 - c) * 2.4);
   gl_FragColor = vec4(c, 1.0);
 }`,
 });
@@ -1096,7 +1116,7 @@ function aimCamera(breath = 0, shake = [0, 0], bob = [0, 0, 0]) {
   U.uInvProj.value.copy(camera.projectionMatrixInverse);
   bgMat.uniforms.uCamPos.value.copy(camera.position);
   U.uClear.value.set(shot.pos[0], shot.pos[2]);
-  grade.uniforms.uExp.value = shot.exp;
+  grade.uniforms.uExp.value = shot.exp * TUNE.exposure;
   // Focus sits on the nearest turbine in view; the lens opens wider on a taller frame.
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
   const half = Math.atan(W / 2 / shot.f) * 0.9;
@@ -1106,8 +1126,8 @@ function aimCamera(breath = 0, shake = [0, 0], bob = [0, 0, 0]) {
     const cos = (dx * fwd.x + dz * fwd.z) / (d * Math.hypot(fwd.x, fwd.z) + 1e-6);
     if (Math.acos(clamp(cos, -1, 1)) < half) focus = Math.min(focus, d);
   }
-  dofPass.uniforms.uFocus.value = Number.isFinite(focus) ? focus : 1700;
-  dofPass.uniforms.uAperture.value = H * 0.016;
+  dofPass.uniforms.uFocus.value = (Number.isFinite(focus) ? focus : 1700) * TUNE.focus;
+  dofPass.uniforms.uAperture.value = H * 0.016 * TUNE.aperture;
 }
 
 // Performance ladder: after 4 s, slow frames step quality down one rung.
@@ -1131,7 +1151,7 @@ let clock = 0, simT = 0, calm = 1, grainT = 0;
 const cut = { t: -1, next: -1 };
 function setFog() {
   // Wind thins the fog; Light halves it.
-  U.uFogK.value = (opts.fog === 'light' ? 0.5 : 1) * (1 - 0.55 * smooth(4, 18, windNow()));
+  U.uFogK.value = (opts.fog === 'light' ? 0.5 : 1) * (1 - 0.55 * smooth(4, 18, windNow())) * TUNE.fog;
 }
 function syncUniforms() {
   U.uTime.value = simT;
@@ -1155,7 +1175,7 @@ function syncUniforms() {
     if (!h) { hv[i].w = 0; continue; }
     const t = clock - h.t0;
     const env = t < 0.05 ? t / 0.05 : Math.exp(-(t - 0.05) / 0.5);
-    hv[i].set(h.x, h.y, h.R * (0.7 + 0.3 * Math.min(t / 0.3, 1)), h.s * env);
+    hv[i].set(h.x, h.y, h.R * TUNE.strikeR * (0.7 + 0.3 * Math.min(t / 0.3, 1)), h.s * env);
   }
   setFog();
 }
@@ -1235,7 +1255,7 @@ function tick(dt, now) {
   if (storm.k > 0.45 && clock > flash.next) bolt();
   // Rain strikes the lens more often as the storm builds.
   const rainK = reduce ? 0 : smooth(0.25, 0.9, storm.k);
-  if (Math.random() < dt * rainK * 4) lensHit();
+  if (Math.random() < dt * rainK * 4 * TUNE.strikes) lensHit();
   while (hits.length && clock - hits[0].t0 > 2.5) hits.shift();
   if (flash.t0 >= 0) {
     const t = clock - flash.t0;
@@ -1534,6 +1554,85 @@ windEl.addEventListener('input', () => { opts.wind = +windEl.value; save('wind',
 document.getElementById('gust').addEventListener('click', () => gust(0));
 onReducedChange(v => { reduce = v; wake(); });
 sound.onChange(on => { if (on) wake(); });
+
+/* ---------- tune ---------- */
+// Tuning values reach the passes here; the camera reads the rest each frame.
+function applyTune() {
+  const d = dofPass.uniforms;
+  d.uBlades.value = TUNE.blades; d.uOval.value = TUNE.oval; d.uRim.value = TUNE.rim; d.uCat.value = TUNE.cat;
+  d.uLampW.value = TUNE.lampW; d.uLampT.value = TUNE.lampT;
+  bloom.strength = TUNE.bloom;
+  grade.uniforms.uStreakK.value = TUNE.streaks;
+  grade.uniforms.uGrainK.value = TUNE.grain;
+}
+applyTune();
+if (TUNING) tunePanel();
+function tunePanel() {
+  // Each row: key, label, min, max, step.
+  const ROWS = [
+    ['Lens'], ['focus', 'Focus', 0.3, 3, 0.01], ['aperture', 'Aperture', 0, 4, 0.01],
+    ['blades', 'Blades', 0, 9, 1], ['oval', 'Oval', 0.3, 1.5, 0.01], ['rim', 'Rim', 0, 1, 0.01], ['cat', "Cat's eye", 0, 1.5, 0.01],
+    ['lampW', 'Lamp weight', 0, 120, 1], ['lampT', 'Lamp level', 0, 1, 0.01],
+    ['Storm'], ['strikes', 'Strikes', 0, 4, 0.05], ['strikeR', 'Strike size', 0.3, 3, 0.01],
+    ['Light'], ['bloom', 'Bloom', 0, 2, 0.01], ['streaks', 'Streaks', 0, 4, 0.05], ['exposure', 'Exposure', 0.3, 3, 0.01], ['grain', 'Grain', 0, 3, 0.05],
+    ['Air'], ['fog', 'Fog', 0, 2, 0.01], ['wakes', 'Wakes', 0, 3, 0.05],
+  ];
+  const css = document.createElement('style');
+  css.textContent = `
+.tune { position: fixed; top: 12px; right: 12px; z-index: 50; width: 250px; max-height: calc(100dvh - 24px); overflow: auto;
+  padding: 10px 12px; font: 12px/1.3 Gabarito, system-ui, sans-serif; color: var(--muted);
+  background: oklch(0.17 0.012 275 / 0.92); border: 1px solid var(--line); border-radius: 12px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.tune h3 { margin: 10px 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #fff); }
+.tune h3:first-of-type { margin-top: 2px; }
+.tune label { display: grid; grid-template-columns: 76px 1fr 38px; align-items: center; gap: 6px; }
+.tune input { width: 100%; accent-color: oklch(0.7 0.15 25); }
+.tune output { text-align: right; font-variant-numeric: tabular-nums; }
+.tune .row { display: flex; gap: 6px; margin-top: 10px; }
+.tune .row button { flex: 1; padding: 5px 0; font: inherit; color: inherit; background: oklch(0.24 0.014 275); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.tune .row button[aria-pressed="true"] { background: oklch(0.42 0.13 25); color: #fff; }
+@media (max-width: 600px) { .tune { top: auto; bottom: 8px; right: 8px; left: 8px; width: auto; max-height: 45dvh; } }`;
+  document.head.append(css);
+  const box = document.createElement('div');
+  box.className = 'tune';
+  box.setAttribute('aria-label', 'Tune');
+  const inputs = {};
+  const fmt = (k, v) => k === 'blades' ? (v < 3 ? 'round' : String(v)) : String(+v.toFixed(2));
+  const keep = () => save('tune', JSON.stringify(TUNE));
+  for (const [k, label, min, max, step] of ROWS) {
+    if (!label) { const h = document.createElement('h3'); h.textContent = k; box.append(h); continue; }
+    const row = document.createElement('label');
+    row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+    const inp = row.querySelector('input'), out = row.querySelector('output');
+    inp.value = TUNE[k]; out.textContent = fmt(k, TUNE[k]);
+    inp.addEventListener('input', () => { TUNE[k] = +inp.value; out.textContent = fmt(k, TUNE[k]); applyTune(); keep(); wake(); });
+    // A double click returns one value to its default.
+    inp.addEventListener('dblclick', () => { TUNE[k] = TUNE0[k]; inp.value = TUNE[k]; out.textContent = fmt(k, TUNE[k]); applyTune(); keep(); wake(); });
+    inputs[k] = [inp, out];
+    box.append(row);
+  }
+  const bar = document.createElement('div');
+  bar.className = 'row';
+  bar.innerHTML = '<button type="button" data-a="storm" aria-pressed="false">Storm</button><button type="button" data-a="copy">Copy</button><button type="button" data-a="reset">Reset</button>';
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.a === 'storm') { storm.on = !storm.on; b.setAttribute('aria-pressed', String(storm.on)); }
+    if (b.dataset.a === 'copy') {
+      // Copy holds only the values that differ from the defaults.
+      const diff = Object.fromEntries(Object.entries(TUNE).filter(([k, v]) => v !== TUNE0[k]));
+      navigator.clipboard?.writeText(JSON.stringify(diff)).then(() => { b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 1200); }, () => {});
+    }
+    if (b.dataset.a === 'reset') {
+      Object.assign(TUNE, TUNE0);
+      for (const k in inputs) { inputs[k][0].value = TUNE[k]; inputs[k][1].textContent = fmt(k, TUNE[k]); }
+      applyTune(); keep();
+    }
+    wake();
+  });
+  box.append(bar);
+  document.body.append(box);
+}
 
 /* ---------- start ---------- */
 // Rotors open already turning, so the first frame is a picture.

@@ -48,3 +48,8 @@ D1 (Tom, 2026-11-08): Night viaduct broke on performance; K2 needs no look fix. 
 - Wakes torn (2026-11-08): the coils wander, swell and tear into shreds, so end-on they no longer read as rings.
 
 - QA fixes (2026-11-08): the loop drifts at 30 rAF/s and sleeps before 62 s; far gust fronts no longer hold full rate; Tone's spare context closes; DOF uniforms no longer warn; portrait framing lifts the horizon above the bar; Across wakes tear more.
+
+- Tune panel (2026-11-09): `?tune` opens a scene configurator. Lens: focus, aperture, blades, oval, rim, cat's eye, lamp weight and level. Storm: strike rate and size. Light: bloom, streaks, exposure, grain. Air: fog, wakes. Values persist under `?tune` only; Copy gives the changed values as JSON. Defaults leave the stills as they were (1 to 3 px at 1/255).
+
+- [ ] Tom picks bokeh and scene values in `?tune`; bake them in as the defaults
+- [ ] QA: the reduced-motion storm still flakes now and then (4 px at 4/255 between runs)
