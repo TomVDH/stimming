@@ -1292,18 +1292,18 @@ const partyMat = new THREE.ShaderMaterial({
   void main() {
     float i = floor(vX / 3.0);
     float beat = fract(uTime * uBeat);
-    // Each window takes its own colour; all of them punch on the beat.
-    vec3 c = hue(fract(uTime * 0.11 + i * 0.23 + floor(uTime * uBeat / 8.0) * 0.37));
-    float pulse = 0.3 + 0.7 * exp(-beat * 6.0);
+    // Each window takes its own muted colour, washed toward warm light; the beat only nods.
+    vec3 c = mix(vec3(1.0, 0.7, 0.45), hue(fract(uTime * 0.05 + i * 0.23 + floor(uTime * uBeat / 16.0) * 0.37)), 0.45);
+    float pulse = 0.7 + 0.3 * exp(-beat * 4.0);
     // Mirror-ball specks drift across the glass.
     vec2 g = vec2(vUv.x * 7.0 + uTime * 0.35, vUv.y * 12.0 - uTime * 0.1);
-    float speck = step(0.9, hash(floor(g) + i)) * smoothstep(0.45, 0.1, length(fract(g) - 0.5));
+    float speck = step(0.96, hash(floor(g) + i)) * smoothstep(0.45, 0.1, length(fract(g) - 0.5));
     // Glazing bars and dancers, soft dark shapes bobbing against the light.
     float bars = step(0.06, abs(fract(vUv.x * 2.0) - 0.5) * 2.0 - 0.0) * step(0.04, abs(vUv.y - 0.55));
     float bob = sin(uTime * uBeat * 3.1416 + i * 1.7);
     float dancers = smoothstep(0.32, 0.18, length((vUv - vec2(0.3 + 0.1 * sin(uTime * 0.7 + i), 0.18 + 0.03 * bob)) / vec2(0.9, 1.6)))
                   + smoothstep(0.28, 0.15, length((vUv - vec2(0.72, 0.15 - 0.03 * bob)) / vec2(0.9, 1.7)));
-    vec3 col = (c * 0.7 * pulse + vec3(1.0, 0.95, 0.9) * speck * 0.8) * bars * (1.0 - 0.75 * clamp(dancers, 0.0, 1.0));
+    vec3 col = (c * 0.32 * pulse + vec3(1.0, 0.95, 0.9) * speck * 0.2) * bars * (1.0 - 0.75 * clamp(dancers, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
   }`,
 });
@@ -1352,10 +1352,10 @@ for (let i = 0; i < HALL.wins; i++) {
 // The colour the hall throws onto the square, on the beat.
 const partyCol = new THREE.Color();
 function stepParty(t) {
-  const i = Math.floor(t * HALL.beat / 8);
-  partyCol.setHSL((t * 0.11 + i * 0.37) % 1, 1, 0.5);
-  const pulse = 0.3 + 0.7 * Math.exp(-((t * HALL.beat) % 1) * 6);
-  U.uPartyCol.value.set(partyCol.r, partyCol.g, partyCol.b).multiplyScalar(2.2 * pulse);
+  const i = Math.floor(t * HALL.beat / 16);
+  partyCol.setHSL((t * 0.05 + i * 0.37) % 1, 0.4, 0.55);
+  const pulse = 0.7 + 0.3 * Math.exp(-((t * HALL.beat) % 1) * 4);
+  U.uPartyCol.value.set(partyCol.r, partyCol.g, partyCol.b).multiplyScalar(0.7 * pulse);
 }
 
 // The seating room: up to five come in by the far door, sit, eat, talk, get up and go.
@@ -1907,9 +1907,11 @@ const figMat = new THREE.ShaderMaterial({
     // Upright billboards: they turn to the lens round the vertical only.
     vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
     vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y, 0.0);
-    // Two passes: staff before the steam, everyone outside after it.
+    // Three passes: staff, then those behind the window line, before the light and steam.
+    // Everyone nearer than the window line draws after them.
     bool staff = aPose.x > 2.5 && aPose.x < 3.5;
-    bool mine = uPass < 0.5 ? staff : !staff;
+    bool back = aPos.z < 1.5;
+    bool mine = uPass < 0.5 ? staff : uPass > 1.5 ? !staff && back : !staff && !back;
     gl_Position = aPos.w > 0.001 && mine ? projectionMatrix * viewMatrix * vec4(vP, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
   }`,
   fragmentShader: /* glsl */`
@@ -2068,6 +2070,16 @@ const figsIn = new THREE.Mesh(figGeo, new THREE.ShaderMaterial({
 figsIn.frustumCulled = false;
 figsIn.renderOrder = 2;
 scene.add(figsIn);
+// The back pass: the hall's smokers and far walkers sit under the window's light and haze.
+const figsBack = new THREE.Mesh(figGeo, new THREE.ShaderMaterial({
+  uniforms: { ...figMat.uniforms, uPass: { value: 2 } },
+  vertexShader: figMat.vertexShader, fragmentShader: figMat.fragmentShader,
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+}));
+figsBack.frustumCulled = false;
+figsBack.renderOrder = 1.5;
+scene.add(figsBack);
 
 // Long shadows: the window light throws each figure out across the cobbles.
 const shQuad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
@@ -2191,6 +2203,7 @@ function spawn() {
   if (left.length && rnd() < 0.08 + left.length * 0.03) return collect(left[Math.floor(rnd() * left.length)], side);
   if (r < 0.07) return spawnGroup(side);
   if (r < 0.15) return spawnDog(side);
+  if (r > 0.84) return spawnNear(side);
   // Walkers 34 %, bikes 26 %, motorbikes 12 %, cars 13 %.
   const vk = r < 0.27 ? 6 : r < 0.4 ? 8 : r < 0.66 ? 1 : 0;
   const lane = side > 0 ? LANES[1] : LANES[0];
@@ -2219,6 +2232,13 @@ function spawn() {
   spot.who = f;
   // Cars and motorbikes come along the road, then turn in to their place.
   go(f, vk === 1 ? [[pk.x + side * 2, pk.z + 1.5], [pk.x, pk.z]] : [[pk.x + side * 3, vz], [pk.x, pk.z]], 'park');
+}
+// Close to the lens: someone walks, cycles or scoots past on the near pavement.
+function spawnNear(side) {
+  const r = rnd(), vk = r < 0.55 ? 0 : r < 0.85 ? 1 : 6;
+  const z = 11.6 + rnd() * 1.4, sx = side * 9 - 1;
+  const f = person({ kind: vk, x: sx, z, alpha: 1, speed: (vk ? SPEED[vk] * 0.6 : WALK) * (0.8 + rnd() * 0.4), ...dress() });
+  go(f, [[-side * 10 - 1, z + (rnd() - 0.5) * 0.4]], vk ? 'pass' : 'out');
 }
 // A group of young people: they gather round the standing table, then go on together.
 function spawnGroup(side) {
@@ -2418,7 +2438,9 @@ function stepPeople(dt) {
         const k = f.smk ?? (lightUp(f), f.smk);
         k.clock += dt;
         const cyc = (k.clock / k.period + k.ph0) % 1, was = f.ember;
-        f.ember = cyc < k.draw ? Math.sin(cyc / k.draw * Math.PI) : 0;
+        // Stop-motion: the arm jumps between four held poses, six times a second.
+        const tick = Math.floor(k.clock * 6);
+        if (tick !== k.tick) { k.tick = tick; f.ember = cyc < k.draw ? Math.round(Math.min(1, Math.sin(cyc / k.draw * Math.PI) * 1.4) * 3) / 3 : 0; }
         if (was > 0.3 && f.ember <= 0.3) k.exhaleIn = 0.5 + rnd() * 0.9;
         if (k.exhaleIn > 0 && (k.exhaleIn -= dt) <= 0) {
           k.exhaleIn = -1;
@@ -2559,7 +2581,9 @@ function writePeople() {
   P.fill(0); SB.fill(0);
   const L = S.lamp, echoes = reduced() ? 1 : ECHO;
   const ts = Math.floor(simT * STEP) / STEP;
-  people.slice(0, FIGS).forEach((f, i) => {
+  // Far figures draw first, near ones last, so each covers what stands behind it.
+  const cp = camera.position, far = f => (f.x - cp.x) ** 2 + (f.z - cp.z) ** 2;
+  people.slice(0, FIGS).sort((a, b) => far(b) - far(a)).forEach((f, i) => {
     const m0 = { ...sampleAt(f, ts) };
     // A puppet never lands quite where it should.
     const jh = Math.sin((ts * 97.1 + i * 13.7) * 12.9898) * 43758.5453;
@@ -2570,12 +2594,13 @@ function writePeople() {
       const e = k === 0 ? m0 : sampleAt(f, ts - k * SHUTTER / ECHO);
       // Echoes fade along the shutter; still figures leave no smear.
       const moved = k === 0 ? 1 : Math.min(1, Math.hypot(e.x - m0.x, e.z - m0.z) * 4);
-      const j = (i * ECHO + k) * 4;
+      // The oldest echo draws first; the figure itself draws last, on top.
+      const n = i * ECHO + (ECHO - 1 - k), j = n * 4;
       P.set([e.x, f.y, e.z, f.alpha * (k === 0 ? 1 : 0.5 * (1 - k / ECHO) ** 1.6 * moved)], j);
       Q.set([kv, e.ph, e.face, f.kind === 4 ? f.ember : f.kind === 6 ? (f.wh ?? 0) : f.kind === 13 ? f.thing : f.hold], j);
-      G[i * ECHO + k] = f.gait ?? 0;
-      Z[i * ECHO + k] = f.scale ?? SCALE[f.kind] ?? 1;
-      V.set([f.build ?? 0, poseOf(f), f.seed ?? 0], (i * ECHO + k) * 3);
+      G[n] = f.gait ?? 0;
+      Z[n] = f.scale ?? SCALE[f.kind] ?? 1;
+      V.set([f.build ?? 0, poseOf(f), f.seed ?? 0], n * 3);
     }
     // The shadow runs from the feet away from the lamp, as far as the top's.
     const m = f.kind === 3 ? 0 : apMaskJS(m0.x, 1.0, m0.z);
@@ -2595,7 +2620,7 @@ function writePeople() {
 /* ---------- moths ---------- */
 // Moths hold a light at a fixed angle, so they spiral round it instead of flying straight in.
 // Each one loops its lamp, darts in now and then, and drifts to another light after a while.
-const MOTHS = 16;
+const MOTHS = 5;
 const MOTH_LIGHTS = [
   [-1.8, S.neonA[1], 1.45], [0.2, S.neonA[1], 1.45], [2.1, S.neonA[1], 1.45],
   [0.95, S.top + 1.4, 1.2], [S.lamp[0], S.strip[1] + 0.05, 1.5], [(A.x0 + A.x1) / 2, A.topL + 0.32, 1.2],
@@ -2626,11 +2651,11 @@ const mothMat = new THREE.ShaderMaterial({
     // Moths are tiny: 7 cm across, drawn a little larger so they read.
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-    vec3 w = aM.xyz + (right * position.x + up * position.y) * 0.1;
+    vec3 w = aM.xyz + (right * position.x + up * position.y) * 0.07;
     // Lit by what they circle: the neon, the strip, the window.
     vec3 Ln = neonPt(aM.xyz) - aM.xyz;
     vec3 L = uLamp - aM.xyz;
-    vC = uNeonCol * 0.5 / (dot(Ln, Ln) + 0.02) + uLampCol * apMask(aM.xyz) * uOut * 0.05 / (dot(L, L) + 0.3)
+    vC = uNeonCol * 0.25 / (dot(Ln, Ln) + 0.04) + uLampCol * apMask(aM.xyz) * uOut * 0.05 / (dot(L, L) + 0.3)
        + uStripCol * 0.3 / (dot(uStrip - aM.xyz, uStrip - aM.xyz) + 0.05) + vec3(0.02);
     gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
   }`,
@@ -2875,7 +2900,7 @@ const tiltPass = d => {
 };
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.55, 0.32, 0.9], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.07 };
+const POST = { bloom: [0.36, 0.75, 0.88], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.07 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
