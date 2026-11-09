@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-09T07:46:46Z
+updated_at: 2026-11-09T07:49:58Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -57,3 +57,5 @@ Sights round 3: rocket launches 140-200 km out and heads away on a flatter climb
 Seen in the pane: fireball path centred and starts just above the window (16-19 deg); rocket staging puff softened; impact moved to 25-60 km forward so it sits mid-window; dome churns in large billows, cools to orange by 8 s, sits on the ground and fades by 32 s. Open: the plume reads as a pillar, it needs a mushroom cap.
 
 Impact fireball rebuilt: one opaque sphere that rises, cools to smoke and flattens into the mushroom cap (capAt); the deck hides its base; a narrow dim stem rises under it. Seen in the pane at 12 s and 62 s.
+
+Impact fireball: traced as a displaced surface (large Worley lobes), fire in the folds by a heat ramp, smoke on the bumps; ejecta as thin streaks with tails. Seen at 14 s.

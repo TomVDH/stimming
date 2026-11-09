@@ -774,6 +774,19 @@ float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
 }
 // The wing is painted grey; its top mirrors the sky at a grazing angle.
 // uv.x runs leading to trailing edge; uv.y runs root to tip.
+// The fireball's billows, as a share of its radius, from the noise volume.
+// The pattern rides on the direction, so the billows grow with the ball.
+float ballBump(vec3 p, vec3 sq) {
+  vec3 u = normalize(p * sq);
+  // Large Worley lobes, with a middle octave rolling over them.
+  vec3 w = u * 0.45 + vec3(0.0, -uTime * 0.004, 0.0);
+  float n1 = textureLod(uNoise, w, 0.0).g, n2 = textureLod(uNoise, w * 1.9 + 0.3, 0.0).b;
+  return 0.18 * (n1 - 0.5) + 0.07 * (n2 - 0.5);
+}
+// Fire colour by heat, 0 to 1: dull red, orange, yellow, white.
+vec3 fireRamp(float x) {
+  return vec3(1.0, 0.3, 0.06) * smoothstep(0.0, 0.4, x) + vec3(0.0, 0.42, 0.18) * smoothstep(0.3, 0.75, x) + vec3(0.0, 0.2, 0.6) * smoothstep(0.7, 1.0, x);
+}
 vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   // The upper skin curves over the airfoil: it faces forward near the leading edge, aft near the trailing edge.
   n = normalize(n + uChord * (uv.x - 0.35) * 0.45);
@@ -839,37 +852,58 @@ void main() {
   vec3 c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
   float tg = hitLayer(d, 0.0);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
-  // The impact's fireball: a sphere that rises, cools to smoke and flattens into the cap.
+  // The impact's fireball: a billowing ball that rises, cools to smoke and flattens into the cap.
   if (uBallS.y > 0.0) {
-    // The cap squashes in height, so the test runs in a stretched space.
     vec3 sq = vec3(1.0, 1.0 / uBallS.x, 1.0);
-    vec3 oc = -uBall.xyz * sq, ds = d * sq;
-    float a2 = dot(ds, ds), bb = dot(oc, ds), cc = dot(oc, oc) - uBall.w * uBall.w, hh = bb * bb - a2 * cc;
-    float q = length(oc - ds * bb / a2);
     vec3 glowC = uBallC.rgb * uBallC.w;
-    if (hh > 0.0 && (-bb - sqrt(hh)) / a2 > 0.0) {
-      float tb = (-bb - sqrt(hh)) / a2;
-      vec3 p = d * tb - uBall.xyz, nn = normalize((p * sq) / uBall.w * sq);
-      float limb = max(dot(nn, -d), 0.0);
-      float churn = cn(p * 0.22 + vec3(0.0, uTime * 0.08, 0.0), 4.0, 0.0).r;
-      float churn2 = cn(p * 0.6 - vec3(0.0, uTime * 0.15, 0.0), 4.0, 0.0).g;
-      // Dark lanes of smoke break the hot surface into cells.
-      float cells = smoothstep(0.3, 0.7, churn) * (0.5 + 0.5 * churn2);
-      // Smoke: lit by the sky above and by the crater's fire below.
-      vec3 smoke = uAmb * 0.03 * (0.4 + 0.6 * max(nn.y, 0.0)) * (0.6 + 0.6 * churn2);
-      smoke += vec3(1.0, 0.45, 0.15) * (uBoomL.y * 0.35 + uBallC.w * 0.2) * max(-nn.y, 0.0) * (0.5 + churn);
-      smoke += uSunL * 0.01 * max(dot(nn, uSun), 0.0);
-      vec3 col = smoke + glowC * (0.1 + 1.3 * cells) * (0.35 + 0.65 * sqrt(limb));
-      // The rim billows: noise eats into the edge, so it is never a hard disc.
-      float op = smoothstep(0.02, 0.3, limb - 0.2 * (churn - 0.5) - 0.3 * (churn2 - 0.5)) * uBallS.y;
-      // The cloud deck hides the part below its tops.
-      float up = (d * tb).y + H + dot((d * tb).xz, (d * tb).xz) / 12742.0;
-      op *= mix(gDeckT, 1.0, smoothstep(3.2, 4.2, up));
-      c = mix(c, col, op);
-      skyA *= 1.0 - op;
+    // A bound 25 % wider than the ball limits the march.
+    vec3 oc = -uBall.xyz * sq, ds = d * sq;
+    float Rb = uBall.w * 1.25;
+    float a2 = dot(ds, ds), bb = dot(oc, ds), cc = dot(oc, oc) - Rb * Rb, hh = bb * bb - a2 * cc;
+    float q = length(oc - ds * bb / a2);
+    if (hh > 0.0 && (-bb + sqrt(hh)) / a2 > 0.0) {
+      float t = max((-bb - sqrt(hh)) / a2, 0.0), t1 = (-bb + sqrt(hh)) / a2;
+      float bump = 0.0;
+      bool hit = false;
+      for (int i = 0; i < 28; i++) {
+        bump = ballBump(d * t - uBall.xyz, sq);
+        vec3 qp = (d * t - uBall.xyz) * sq;
+        float sd = length(qp) - uBall.w * (1.0 + bump);
+        if (sd < uBall.w * 0.004) { hit = true; break; }
+        t += sd * 0.6;
+        if (t > t1) break;
+      }
+      if (hit) {
+        vec3 p = d * t - uBall.xyz;
+        // The normal from the bumpy surface, by small steps.
+        float e = uBall.w * 0.02;
+        vec3 g = vec3(
+          length((p + vec3(e, 0, 0)) * sq) - uBall.w * (1.0 + ballBump(p + vec3(e, 0, 0), sq)),
+          length((p + vec3(0, e, 0)) * sq) - uBall.w * (1.0 + ballBump(p + vec3(0, e, 0), sq)),
+          length((p + vec3(0, 0, e)) * sq) - uBall.w * (1.0 + ballBump(p + vec3(0, 0, e), sq)));
+        vec3 nn = normalize(g - (length(p * sq) - uBall.w * (1.0 + bump)));
+        float limb = max(dot(nn, -d), 0.0);
+        // Fire shows in the folds; the bumps crust over with smoke as it cools.
+        float heat = clamp(uBallC.w / 0.9, 0.0, 1.0);
+        float fold = clamp(0.5 - bump * 3.5, 0.0, 1.0);
+        float fine = textureLod(uNoise, p / uBall.w * 0.6 + vec3(0.0, uTime * 0.01, 0.0), 0.0).b;
+        float T = clamp(heat * (0.25 + 1.1 * fold) + 0.25 * heat * (fine - 0.5), 0.0, 1.0);
+        vec3 fire = fireRamp(T) * (0.15 + 2.2 * T * T) * (0.05 + uBallC.w);
+        // Smoke: lit by the sky above and by the fire below.
+        vec3 smoke = uAmb * 0.03 * (0.4 + 0.6 * max(nn.y, 0.0)) * (0.6 + 0.6 * fine);
+        smoke += vec3(1.0, 0.4, 0.12) * (uBoomL.y * 0.3 + uBallC.w * 0.15) * max(-nn.y, 0.0);
+        smoke += uSunL * 0.01 * max(dot(nn, uSun), 0.0);
+        vec3 col = mix(smoke, fire + smoke * 0.3, smoothstep(0.05, 0.35, T));
+        float op = smoothstep(0.0, 0.15, limb) * uBallS.y;
+        // The cloud deck hides the part below its tops.
+        float up = (d * t).y + H + dot((d * t).xz, (d * t).xz) / 12742.0;
+        op *= mix(gDeckT, 1.0, smoothstep(3.2, 4.2, up));
+        c = mix(c, col, op);
+        skyA *= 1.0 - op;
+      }
     }
     // Its glow spills into the air round it.
-    c += glowC * 0.25 * exp(-max(q - uBall.w, 0.0) / (uBall.w * 0.7 + 1.0));
+    c += glowC * 0.2 * exp(-max(q - uBall.w, 0.0) / (uBall.w * 0.7 + 1.0));
   }
   // The passing jet: a small moonlit body of fuselage, wing and fin.
   if (uJetOn > 0.0) {
