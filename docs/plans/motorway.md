@@ -187,3 +187,13 @@ Five visible controls or fewer: Air, Switch, Rush, Zoom.
 - **Station boards.** Brussel-Zuid, Antwerpen-C, Gent-Sint-Pieters, Luik-Guillemins, Leuven and Mechelen carry small dot-matrix boards from a middle height: three departures, delays creeping up, the odd cancellation, and a scrolling excuse in Dutch, French or German (late provision of rolling stock, leaves on the track, copper theft, a strike, a delay caused by an earlier delay).
 - **No brand.** The rail operator's name and logo stay off the stage, by the house rule; the boards say `TREIN · TRAIN · ZUG`.
 - roads.json is now 773 KB raw, 289 KB gzipped.
+
+## Round 5 (Tom, 2026-11-09): a study, not a show
+
+Round 4's dashboard read as try-hard. It is gone: the glowing HUD, the comparisons and lost hours, the record flash, the ticker, the pulsing queue bars, the dot-matrix boards and the jam heartbeat. In its place, a data-journalism study:
+
+- **Panel** (left column; a top sheet on phones). Kicker, headline ("Belgium's motorways seize up twice a day"), the hour and the total queue in large tabular figures, a 24-hour area chart (04:00 to 04:00, km axis, rush hours shaded, both peaks annotated with time and km, a cursor at the hour), ranked bars of the six worst stretches now, the share of trains 5 min or more late, and a source line. Gabarito for text, slab caps for labels, hairline rules, one accent. No glow.
+- **Scrub.** Drag across the chart to set the hour; play and pause; left and right arrows step 15 minutes. The day loops while the study is open. Rush opens and closes it.
+- **Map.** Proportional circles at the 15 jam points, area following the queue; the three worst carry a plain label with the km. Hovering a circle shows its own day curve, the queue now, and its peak.
+- **Trains.** Hold-ups follow the traffic, and a moving train claws time back, so lateness peaks in the rush (about 20 %).
+- The day's curves are precomputed once, on first open (97 steps).
