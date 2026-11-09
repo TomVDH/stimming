@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T10:19:28Z
+updated_at: 2026-11-09T10:30:25Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -164,3 +164,7 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 Cause: the DOF pass read depth 0 everywhere. The composer target's DepthTexture kept its first 1x1 size, and both composer buffers shared it (a feedback loop).
 Fix: the scene renders into its own sceneRT (HalfFloat, 4 samples, DepthTexture at full size), rebuilt on resize; the DOF pass reads tScene and tDepth from it. The gather radius is now the widest blur among eight depth probes, so near reeds bleed over the sky; the distance stays sharp. Blur scale 130 / cap 18 per 800 px.
 Also in this commit: calmer reed sway, narrower two-sided base cloud (G_W 0.7), unused RenderPass import removed.
+
+## Thinner old smoke, cheaper reeds (03:35)
+
+The ground cloud's extinction falls with age (4.0 to 0.6 over ~30 s) and its alpha drops 65% by 70 s, so the drift is a veil. Near reeds drop from 76 to 48 triangles each; counts 6000/4500 near (was 8500/6500), 12000/9000 far (was 18000/13000). Checked at 1280x800: idle, T+12, T+45, T+80, GL error 0.

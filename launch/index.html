@@ -448,7 +448,8 @@ function reedGeometry(lite = false) {
     for (let i = 0; i <= n; i++) for (const s of [-1, 1]) g.push(i / n, s, k);
     for (let i = 0; i < n; i++) { const a = base + i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   };
-  if (lite) { piece(0, 4); piece(4, 6); } else { piece(0, 10); piece(1, 6); piece(2, 6); piece(3, 6); piece(4, 10); }
+  // Near reeds: 24 segments a reed; far reeds: 10.
+  if (lite) { piece(0, 4); piece(4, 6); } else { piece(0, 6); piece(1, 4); piece(2, 4); piece(3, 4); piece(4, 6); }
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute('aG', new THREE.Float32BufferAttribute(g, 3));
   geo.setIndex(idx);
@@ -1484,7 +1485,10 @@ function makeSlab(F, mode) {
       float d = s.r, age = s.g;
       float lump = k2fbm(uvw * vec2(28.0, 70.0) + vec2(0.0, -uTime * 0.02) + age * 0.3);
       d *= 0.6 + 0.8 * lump;
-      float a = 1.0 - exp(-d * (uMode < 0.5 ? 4.0 : 0.55));
+      // Fresh smoke is dense; as it drifts and ages it thins to a veil.
+      float kx = uMode < 0.5 ? 4.0 * (0.15 + 0.85 * exp(-age / 28.0)) : 0.55;
+      float a = 1.0 - exp(-d * kx);
+      if (uMode < 0.5) a *= 1.0 - 0.65 * smoothstep(6.0, 70.0, age);
       a *= smoothstep(0.0, 0.03, vUv.x) * smoothstep(1.0, 0.97, vUv.x) * smoothstep(1.0, 0.96, vUv.y);
       if (a < 0.004) discard;
       vec2 e = uTexel * 2.0;
@@ -2348,8 +2352,8 @@ function resize() {
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
-  plantReeds(rung >= 3 ? 3500 : quality() === 'high' ? 8500 : 6500);
-  plantFar(rung >= 3 ? 5000 : quality() === 'high' ? FAR_MAX : 13000);
+  plantReeds(rung >= 3 ? 3000 : quality() === 'high' ? 6000 : 4500);
+  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? 12000 : 9000);
   frame();
   draw();
 }
