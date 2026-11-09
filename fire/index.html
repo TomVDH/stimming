@@ -31,7 +31,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns on a dark floor. Drag the fire to move it, drag through the air to blow on it, and click or press Space to make it flare. Type a word to burn it in an iron plate; Backspace trims it and Escape clears it. Fuel picks the chemical that burns and Intensity sets its size. Settings hold motion, temperature, turbulence and quality.">
+    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns on a dark floor. Click the air or press Enter to flick a pinch of salt into it; the salt colours the flames, then burns off. Hold to keep feeding salt. Drag through the air to blow on it, drag the fire to move it, and click the fire or press Space to make it flare. Type a word to burn it in an iron plate; Backspace trims it and Escape clears it. Salt picks the chemical you flick and Intensity sets the fire's size. Settings hold the base fuel, motion, temperature, turbulence and quality.">
       <p class="fail" hidden>Fire needs WebGPU, which this browser doesn't have.</p>
     </div>
   </main>
@@ -127,6 +127,18 @@ function whump() {
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55, t + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
   src.connect(lp).connect(g).connect(kit.out); src.start(t, Math.random(), 0.9);
 }
+// Salt hitting the fire fizzes: a bright hiss, then crackles.
+function fizz(amt) {
+  const ac = kit.live(); if (!ac || !kit.noise) return;
+  const t = ac.currentTime, src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  bp.type = 'bandpass'; bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(5200, t); bp.frequency.exponentialRampToValueAtTime(2600, t + 0.4);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * amt, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  src.connect(bp).connect(g).connect(kit.out); src.start(t, Math.random(), 0.5);
+  const n = 3 + Math.floor(Math.random() * 5 * amt);
+  for (let i = 0; i < n; i++) crackle(ac, t + Math.random() * 0.35, 0.5 + 0.5 * amt);
+}
 
 /* ---------- chemicals: OKLCH ramps and behaviour ---------- */
 // Ramps run hottest first: start, mid and end, then the smoke tint.
@@ -171,7 +183,13 @@ const saved = k => { try { return localStorage.getItem(`stimming.fire.${k}`); } 
 const save = (k, v) => { try { localStorage.setItem(`stimming.fire.${k}`, String(v)); } catch { /* storage is optional */ } };
 const unit = (k, d) => { const v = saved(k); return v !== null && Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : d; };
 const MOTIONS = ['steady', 'gusts', 'twister', 'pulse'];
-let fuel = CHEMS[saved('fuel')] ? saved('fuel') : 'wood';
+// Base is the fuel that burns; salt is what a flick throws in.
+const BASES = ['wood', 'methanol', 'magnesium'];
+const SALT_IDS = ['strontium', 'lithium', 'calcium', 'sodium', 'barium', 'boron', 'copper', 'cesium', 'potassium'];
+// An old Fuel pick becomes the base or the salt.
+const oldFuel = saved('fuel');
+let fuel = BASES.includes(saved('base')) ? saved('base') : BASES.includes(oldFuel) ? oldFuel : 'wood';
+let salt = SALT_IDS.includes(saved('salt')) ? saved('salt') : SALT_IDS.includes(oldFuel) ? oldFuel : 'strontium';
 let intensity = unit('intensity', 0.6), temp = unit('temp', 0.5), chaos = unit('chaos', 0.4);
 let motion = MOTIONS.includes(saved('motion')) ? saved('motion') : 'steady';
 // The fire burns on bare floor; 'block' shows the iron box.
@@ -196,14 +214,13 @@ let quality = ownQuality === 'low' || ownQuality === 'medium' ? ownQuality : sit
 let qualityAuto = !ownQuality && quality !== 'high';
 
 /* ---------- the bar ---------- */
-// Fuels run round the spectrum, then white.
-// Each dot is the fuel's mid colour.
+// Salts run round the spectrum.
+// Each dot is the salt's mid colour.
 const cap = w => w[0].toUpperCase() + w.slice(1);
-const FUELS = ['strontium', 'lithium', 'calcium', 'wood', 'sodium', 'barium', 'boron', 'copper', 'methanol', 'cesium', 'potassium', 'magnesium']
-  .map(v => ({ value: v, label: cap(v), dot: `oklch(${CHEMS[v].ramp[1].join(' ')})` }));
+const SALTS = SALT_IDS.map(v => ({ value: v, label: cap(v), dot: `oklch(${CHEMS[v].ramp[1].join(' ')})` }));
 // The sim binds these hooks when it is ready.
 // Until then a control only sets the state the sim starts from.
-const sim = { fuel() {}, tune() {}, changed() {}, quality(q) { quality = q; }, reset() {} };
+const sim = { fuel() {}, salt() {}, tune() {}, changed() {}, quality(q) { quality = q; }, reset() {} };
 // Low and Medium are Fire's own steps.
 // Standard and High set the site choice.
 function pickQuality(v) {
@@ -215,12 +232,14 @@ function pickQuality(v) {
 }
 // Letters burn a word, so no action takes a letter key.
 const ui = initPage({ id: 'fire', bar: {
-  choice: { label: 'Fuel', display: 'stepper', value: fuel, options: FUELS,
-    onPick: v => { fuel = v; save('fuel', v); sim.fuel(); } },
+  choice: { label: 'Salt', display: 'stepper', value: salt, options: SALTS,
+    onPick: v => { salt = v; save('salt', v); sim.salt(); } },
   slider: { label: 'Intensity', min: 0, max: 1, step: 0.01, value: intensity,
     onInput: v => { intensity = v; save('intensity', v); sim.tune(); } },
   actions: [{ verb: 'reset', onPress: () => sim.reset() }],
   settings: [
+    { type: 'choice', id: 'base', label: 'Base', value: fuel, options: BASES.map(v => ({ value: v, label: cap(v) })),
+      onPick: v => { fuel = v; save('base', v); sim.fuel(); } },
     { type: 'choice', id: 'motion', label: 'Motion', value: motion, options: MOTIONS.map(v => ({ value: v, label: cap(v) })),
       onPick: v => { motion = v; save('motion', v); sim.changed(); } },
     { type: 'slider', id: 'temp', label: 'Temperature', min: 0, max: 1, step: 0.01, value: temp,
@@ -230,7 +249,7 @@ const ui = initPage({ id: 'fire', bar: {
     { type: 'choice', id: 'quality', label: 'Quality', value: quality, onPick: pickQuality,
       options: ['low', 'medium', 'standard', 'high'].map(v => ({ value: v, label: cap(v) })) },
   ],
-  keys: [['drag fire', 'move'], ['drag air', 'blow'], ['click', 'flare'], ['type', 'burn a word']],
+  keys: [['click', 'flick salt'], ['hold', 'feed'], ['drag air', 'blow'], ['type', 'burn a word']],
 } });
 // Reset waits for the sim.
 ui.action('reset').disabled = true;
@@ -360,6 +379,18 @@ async function start() {
   const uFireMidColor = uniform(new THREE.Color());
   const uFireEndColor = uniform(new THREE.Color());
   const uSmokeTint = uniform(new THREE.Color());
+  // Salt colours the flame wherever the dye carries it.
+  const uSaltStartColor = uniform(new THREE.Color());
+  const uSaltMidColor = uniform(new THREE.Color());
+  const uSaltEndColor = uniform(new THREE.Color());
+  // Feed is the salt the block gives off now, from 0 up.
+  const uSaltFeed = uniform(0.0);
+  // Spot is where the grains land, in block space.
+  const uSaltSpot = uniform(new THREE.Vector2());
+  // Salt burns off faster than smoke clears.
+  const uSaltFade = uniform(0.35);
+  // Glow is the salt share of the fire light.
+  const uSaltGlow = uniform(0.0);
   const uBlockAngle = uniform(0.0);
   // Rays is 1 for the slotted block and 0 for a word.
   const uRays = uniform(1.0);
@@ -652,7 +683,9 @@ async function start() {
     const age = dyeTexNode.sample(nearestUVW).level(0).b.add(uDt).toVar();
     temperature.assign(temperature.clamp(0, 12));
     If(density.lessThanEqual(0.01), () => { age.assign(0.0); });
-    textureStore(dyeTexWriteNode, coord, vec4(density, temperature, age, 1.0)).toWriteOnly();
+    // Alpha carries salt; it clears with the smoke and burns off.
+    const saltDye = dye.a.mul(max(float(1).sub(uDissipation.add(uSaltFade).mul(uDt)), 0));
+    textureStore(dyeTexWriteNode, coord, vec4(density, temperature, age, saltDye)).toWriteOnly();
   })().compute(CELL_COUNT);
 
   // Emits density and heat from every emitter point.
@@ -676,7 +709,11 @@ async function start() {
         const newDensity = currentDye.r.add(densityVal);
         const newTemp = currentDye.g.add(tempVal).clamp(0.0, 12.0);
         const newAge = mix(currentDye.b, float(0.0), densityVal.div(max(newDensity, 0.001)));
-        textureStore(dyeTexWriteNode, coord, vec4(newDensity, newTemp, newAge, 1.0)).toWriteOnly();
+        // Salt rises in streaks, strongest near the landing spot.
+        const near = float(1.0).sub(smoothstep(0.1, 0.8, vertexPos.xz.distance(uSaltSpot)));
+        const streak = smoothstep(0.36, 0.62, mx_noise_float(vertexPos.mul(vec3(4.0, 1.5, 4.0)).add(vec3(uTime.mul(0.6), uTime.mul(-2.2), 0.0))).mul(0.5).add(0.5));
+        const saltVal = densityVal.mul(uSaltFeed).mul(near.mul(0.9).add(0.1)).mul(streak).mul(4.5);
+        textureStore(dyeTexWriteNode, coord, vec4(newDensity, newTemp, newAge, currentDye.a.add(saltVal))).toWriteOnly();
       });
     });
   })().compute(EMIT_MAX);
@@ -713,6 +750,15 @@ async function start() {
     return color;
   });
 
+  // The salt ramp uses the same stops as the fire ramp.
+  const saltRamp = Fn(([t]) => {
+    const color = vec3(0).toVar();
+    color.assign(mix(vec3(0.0, 0.0, 0.0), uSaltEndColor, smoothstep(0.05, 0.35, t)));
+    color.assign(mix(color, uSaltMidColor, smoothstep(0.35, 0.65, t)));
+    color.assign(mix(color, uSaltStartColor, smoothstep(0.65, 1.0, t)));
+    return color;
+  });
+
   const henyeyGreenstein = Fn(([cosTheta, g]) => {
     const g2 = g.mul(g);
     const denom = float(1.0).add(g2).sub(float(2.0).mul(g).mul(cosTheta));
@@ -725,6 +771,8 @@ async function start() {
     const noiseDistortion = texture3D(velTexA, uvw, 0).xyz.div(uVolumeWorldSize).mul(0.15);
     const distortedUVW = uvw.add(noiseDistortion).clamp(0.0, 1.0).toVar();
     const sample = dyeTexNode.sample(distortedUVW).level(0);
+    // Salt is a share of the smoke, so thin smoke keeps its colour.
+    const salt = sample.a.div(max(sample.r, 0.03)).clamp(0.0, 2.0).toVar();
     const density = sample.r;
     const age = sample.b;
     const temperature = sample.g;
@@ -733,7 +781,7 @@ async function start() {
     density.mulAssign(detailNoise.mul(0.35).add(0.85));
     const edge = min(distortedUVW, vec3(1).sub(distortedUVW));
     density.mulAssign(smoothstep(0.0, 0.06, min(edge.x, min(edge.y, edge.z))));
-    return { density, temperature, age, distortedUVW };
+    return { density, temperature, age, salt, distortedUVW };
   };
 
   // Smoke takes key light through a short self-shadow march.
@@ -764,9 +812,12 @@ async function start() {
 
   // Fire is emission tinted by temperature.
   volumetricMaterial.scatteringEmissiveNode = Fn(({ positionRay }) => {
-    const { density, temperature } = getVolumeSample({ positionRay });
+    const { density, temperature, salt } = getVolumeSample({ positionRay });
     const firePower = float(6.0).sub(uFireGlowSpread);
-    const fire = fireRamp(temperature.clamp(0, 1)).mul(temperature.pow(firePower)).mul(uFireIntensity);
+    const t = temperature.clamp(0, 1);
+    // The salt colour takes over the mantle; the hottest core stays pale.
+    const w = smoothstep(0.03, 0.4, salt).mul(float(1.0).sub(smoothstep(0.9, 1.0, t).mul(0.35)));
+    const fire = mix(fireRamp(t), saltRamp(t), w).mul(temperature.pow(firePower)).mul(uFireIntensity);
     const distance = positionRay.sub(uKeyLightPos).length();
     const attenuation = float(400.0).div(distance.pow(2.0));
     return fire.mul(density.add(0.15)).mul(attenuation);
@@ -896,7 +947,7 @@ async function start() {
     const attenuationCorrection = isVolume.equal(1.0).select(softAttenuation.div(defaultAttenuation), float(1.0));
     const currentIntensity = isVolume.equal(1.0).select(uPointLightVolumeIntensity, uPointLightSurfaceIntensity);
     const colorT = uEmitTemperature.div(8.34).mul(0.5).add(0.20).add(uColorNoise).clamp(0.0, 1.0);
-    const finalFireColor = saturation(fireRamp(colorT), uSaturation);
+    const finalFireColor = saturation(mix(fireRamp(colorT), saltRamp(colorT), uSaltGlow), uSaturation);
     // Glow carries temperature and density, as in the example.
     const fadeIn = smoothstep(0.0, 3.0, uTime);
     const baseColor = finalFireColor.mul(uGlow).mul(0.12).mul(uFireIntensity).mul(currentIntensity).mul(uFlicker).mul(fadeIn);
@@ -1039,6 +1090,17 @@ async function start() {
   sparks.count = SPARKS;
   sparks.frustumCulled = false;
   scene.add(sparks);
+
+  /* ---------- salt grains: a flicked pinch in flight ---------- */
+  const GRAINS = 64;
+  const grainMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.045, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), GRAINS);
+  grainMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  grainMesh.frustumCulled = false;
+  grainMesh.count = 0;
+  scene.add(grainMesh);
+  // Each grain flies a fixed arc; t runs from 0 to its flight time.
+  const grains = [];
+  const grainM = new THREE.Matrix4(), grainQ = new THREE.Quaternion(), grainS = new THREE.Vector3(), grainE = new THREE.Euler();
 
   // Blurred volume is composed over the scene, then bloomed.
   const blurredVolumetricPass = gaussianBlur(volumetricPass, denoiseStrength, 1);
@@ -1191,6 +1253,26 @@ async function start() {
     });
   }
 
+  // The salt ramp follows the picked salt and the Temperature.
+  const saltTarget = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
+  const saltNow = [uSaltStartColor.value, uSaltMidColor.value, uSaltEndColor.value];
+  const sparkBase = new THREE.Color(), sparkSalt = new THREE.Color(), grainColor = new THREE.Color();
+  function setSaltRamp(snap) {
+    CHEMS[salt].ramp.slice(0, 3).forEach(([L0, C, h], i) => {
+      // A salt never burns darker than wood, so the flame keeps its size.
+      const L = Math.max(L0, CHEMS.wood.ramp[i][0]);
+      const w = [1, 0.5, 0.25][i];
+      const dL = (temp - 0.5) * 0.16 * w, kC = 1 - Math.max(0, temp - 0.5) * 1.2 * w;
+      okColor(Math.min(1, Math.max(0, L + dL)), C * kC, h, saltTarget[i]);
+      if (snap) saltNow[i].copy(saltTarget[i]);
+    });
+    okColor(...CHEMS[salt].spark, sparkSalt);
+    // A grain is a pale crystal with a hint of its flame.
+    const [, , h] = CHEMS[salt].ramp[1];
+    okColor(0.93, 0.03, h, grainColor);
+    grainMesh.material.color.copy(grainColor);
+  }
+
   /* ---------- smart sync ---------- */
   // Intensity, Temperature, Chaos and the chemical set every hidden parameter.
   const live = { emit: 1, smoke: 1, crackle: 1, sparks: 0, sputter: 0, flick: 1, sway: 1, height: 3.5, tone: 1 };
@@ -1244,6 +1326,10 @@ async function start() {
   // Heat runs from 0 to 1.
   // A tap spikes the flare, which fades in half a second.
   let heat = 1, flare = 0, drive = 0, driveWas = 0;
+  // Salt feed rises with each landed grain and burns down.
+  // Burst adds sparks when grains land.
+  let saltFeed = 0, saltGlow = 0, burst = 0;
+  const spotGoal = new THREE.Vector2();
   const blockVel = new THREE.Vector3();
   const air = { vel: new THREE.Vector3(), pos: new THREE.Vector3(0, -100, 0), prev: new THREE.Vector3(), prevT: 0, on: false };
 
@@ -1310,6 +1396,9 @@ async function start() {
     uBlockPosition.value.copy(block.position);
     uBlockSpeed.value = 0; uBlockVelocity.value.set(0, 0, 0); uAirVelocity.value.set(0, 0, 0);
     rampNow.forEach((c, i) => c.copy(rampTarget[i]));
+    saltNow.forEach((c, i) => c.copy(saltTarget[i]));
+    uSaltSpot.value.copy(spotGoal);
+    uSaltGlow.value = Math.min(1, saltFeed);
     for (let i = 0; i < steps; i++) { tick(); simulate((1 / 120) * SIM_SPEED); }
     flare = 0; feed(0);
     frames = 2; draw();
@@ -1327,7 +1416,7 @@ async function start() {
     r.g.gain.setTargetAtTime(level, t, 0.06);
     r.lp.frequency.setTargetAtTime((150 + 160 * temp) * live.tone + 1100 * drive + 900 * flare + 6 * swirlNow, t, 0.08);
     // Crackles fall as a Poisson stream; drag and flare raise the rate.
-    const rate = 0.4 + heat * (3 * live.crackle * boost + 24 * drive + 40 * flare);
+    const rate = 0.4 + heat * (3 * live.crackle * boost + 24 * drive + 40 * flare) + 14 * saltGlow * CHEMS[salt].crackle + 30 * burst;
     if (nextCrackle < t) nextCrackle = t + (-Math.log(1 - Math.random()) / rate);
     while (nextCrackle < t + delta + 0.03) {
       const amt = 0.35 + 0.5 * heat + 0.4 * drive;
@@ -1363,8 +1452,10 @@ async function start() {
   // With no sparks for four seconds, every ember is dead: skip the pass.
   let lastSpark = 0;
   function sparkStep(delta) {
-    const rate = live.sparks * heat * boost * (1 + 12 * flare);
+    const rate = live.sparks * heat * boost * (1 + 12 * flare) + (40 + CHEMS[salt].sparks) * (0.6 * saltGlow + 4 * burst);
     const now = performance.now();
+    // Sparks take the salt's colour while it burns.
+    uSparkColor.value.copy(sparkBase).lerp(sparkSalt, Math.min(1, saltGlow * 1.3));
     if (rate > 0.5) lastSpark = now;
     sparks.visible = now - lastSpark < 4000;
     if (!sparks.visible) return;
@@ -1372,6 +1463,68 @@ async function start() {
     uSparkDt.value = delta * SIM_SPEED;
     uSeed.value = frameSeed = (frameSeed + 1) % 100000;
     renderer.compute(sparkPass);
+  }
+
+  /* ---------- salt: grains, feed and burn-off ---------- */
+  const tmpV = new THREE.Vector3(), GRAVITY = 9;
+  // A flick throws a pinch from the pointer toward a spot on the fire.
+  function flick(from, n, spread) {
+    const cx = (Math.random() * 2 - 1) * INNER * 0.7, cz = (Math.random() * 2 - 1) * INNER * 0.7;
+    for (let i = 0; i < n && grains.length < GRAINS; i++) {
+      const lx = cx + (Math.random() - 0.5) * spread, lz = cz + (Math.random() - 0.5) * spread;
+      const dest = block.localToWorld(new THREE.Vector3(lx, BH + 0.05, lz));
+      const T = 0.42 + Math.random() * 0.14;
+      const start = from.clone().add(tmpV.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2));
+      const v = dest.clone().sub(start).multiplyScalar(1 / T);
+      v.y += 0.5 * GRAVITY * T;
+      grains.push({ p: start, v, t: 0, T, spot: new THREE.Vector2(lx, lz), spin: Math.random() * 6 });
+    }
+  }
+  // A grain lands: the feed rises, sparks burst, the fire fizzes.
+  let lastFizz = 0;
+  function land(g) {
+    saltFeed = Math.min(1.6, saltFeed + 0.16);
+    spotGoal.lerp(g.spot, 0.5);
+    burst = Math.min(1, burst + 0.12);
+    const now = performance.now();
+    if (now - lastFizz > 90) { fizz(Math.min(1, 0.4 + saltFeed * 0.5)); lastFizz = now; }
+  }
+  function saltStep(delta) {
+    // Grains fly their arcs, then land in the fire.
+    let n = 0;
+    for (let i = grains.length - 1; i >= 0; i--) {
+      const g = grains[i];
+      g.t += delta;
+      if (g.t >= g.T) { land(g); grains.splice(i, 1); continue; }
+      g.v.y -= GRAVITY * delta;
+      g.p.addScaledVector(g.v, delta);
+    }
+    for (const g of grains) {
+      grainE.set(g.spin * g.t * 3, g.spin * g.t * 2, 0);
+      grainQ.setFromEuler(grainE);
+      grainS.setScalar(0.7 + 0.6 * (g.t / g.T));
+      grainMesh.setMatrixAt(n++, grainM.compose(g.p, grainQ, grainS));
+    }
+    grainMesh.count = n;
+    if (n) grainMesh.instanceMatrix.needsUpdate = true;
+    // Feed and burst burn down; glow trails the feed.
+    saltFeed *= Math.exp(-delta / 1.6);
+    if (saltFeed < 0.002) saltFeed = 0;
+    burst *= Math.exp(-delta / 0.25);
+    const goal = Math.min(1, saltFeed * 1.2);
+    saltGlow += (goal - saltGlow) * (1 - Math.exp(-delta / (goal > saltGlow ? 0.25 : 1.1)));
+    uSaltFeed.value = saltFeed;
+    uSaltGlow.value = saltGlow;
+    uSaltSpot.value.lerp(spotGoal, 1 - Math.exp(-delta / 0.15));
+    saltNow.forEach((c, i) => c.lerp(saltTarget[i], 1 - Math.exp(-delta / 0.25)));
+  }
+  // Holding still feeds a steady trickle of grains.
+  let feeding = null, feedAcc = 0;
+  function feedStep(delta) {
+    if (!feeding) return;
+    feedAcc += delta;
+    while (feedAcc > 0.07) { feedAcc -= 0.07; flick(feeding, 1, 0.35); }
+    lastInput = performance.now();
   }
 
   /* ---------- animation loop ---------- */
@@ -1408,6 +1561,8 @@ async function start() {
     const near = Math.max(0, 1 - Math.hypot(air.pos.x - currentPos.x, air.pos.z - currentPos.z) / 3);
     const gust = near * Math.min(1, gustSpeed / 12);
     motionStep(delta);
+    feedStep(delta);
+    saltStep(delta);
     feed(gust);
 
     const target = Math.min(1, Math.max(uBlockSpeed.value / 10, gustSpeed / 14));
@@ -1489,18 +1644,35 @@ async function start() {
     if (reduced()) { prevBlockPos.copy(block.position); uBlockPosition.value.copy(block.position); still(90); }
   });
 
-  let press = null;
+  let press = null, holdT = 0;
+  // Reduced motion lands a flick at once and shows one still.
+  function flickNow(from, n) {
+    wake();
+    flick(from, n, 0.3);
+    if (reduced()) { while (grains.length) land(grains.pop()); still(90); kit.rest(() => !running); }
+  }
+  // A flick from the keyboard comes from the camera side.
+  function flickKey() {
+    const from = block.position.clone().add(tmpV.set(1.6, 2.6, -2.4));
+    flickNow(from, 7);
+  }
   canvas.addEventListener('pointerdown', e => {
     wake();
     aim(e);
     const onBlock = raycaster.intersectObject(block, true).length > 0;
-    press = { x: e.clientX, y: e.clientY, t: performance.now(), onBlock, moved: false };
-    if (!onBlock && airPoint(e, air.prev)) { air.prevT = performance.now(); air.on = true; }
+    press = { x: e.clientX, y: e.clientY, t: performance.now(), onBlock, moved: false, at: new THREE.Vector3() };
+    if (!onBlock && airPoint(e, air.prev)) {
+      air.prevT = performance.now(); air.on = true;
+      press.at.copy(air.prev);
+      // A still hold turns into a steady feed.
+      clearTimeout(holdT);
+      if (!reduced()) holdT = setTimeout(() => { if (press && !press.moved) { feeding = press.at; feedAcc = 0.07; } }, 260);
+    }
   });
   canvas.addEventListener('pointermove', e => {
     wake();
     if (!press) return;
-    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) press.moved = true;
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) { press.moved = true; feeding = null; }
     if (!air.on || reduced()) return;
     const p = new THREE.Vector3();
     if (!airPoint(e, p)) return;
@@ -1512,12 +1684,16 @@ async function start() {
     air.pos.copy(p);
     air.prev.copy(p); air.prevT = now;
   });
+  // A tap on the fire flares it; a tap in the air flicks salt.
   const lift = () => {
-    if (press && !press.moved && performance.now() - press.t < 350) flareUp();
-    press = null; air.on = false;
+    clearTimeout(holdT);
+    if (press && !press.moved && !feeding && performance.now() - press.t < 350) {
+      if (press.onBlock) flareUp(); else flickNow(press.at, 7);
+    }
+    press = null; air.on = false; feeding = null;
   };
   canvas.addEventListener('pointerup', lift);
-  canvas.addEventListener('pointercancel', () => { press = null; air.on = false; });
+  canvas.addEventListener('pointercancel', () => { clearTimeout(holdT); press = null; air.on = false; feeding = null; });
   // Typing burns a word; Backspace trims it; Escape clears it.
   addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || (e.repeat && e.key !== 'Backspace')) return;
@@ -1538,16 +1714,19 @@ async function start() {
       if (reduced()) { still(120); kit.rest(() => !running); }
     });
   });
+  // Space flares the fire; Enter flicks salt.
   panel.addEventListener('keydown', e => {
-    if (e.key !== ' ' || e.target !== panel) return;
+    if ((e.key !== ' ' && e.key !== 'Enter') || e.target !== panel) return;
     e.preventDefault();
-    flareUp();
+    if (e.key === ' ') flareUp(); else flickKey();
   });
 
   /* ---------- controls ---------- */
   function applyFuel(snap) {
-    okColor(...CHEMS[fuel].spark, uSparkColor.value);
+    okColor(...CHEMS[fuel].spark, sparkBase);
+    uSparkColor.value.copy(sparkBase);
     setRamp(snap);
+    setSaltRamp(snap);
     tune();
   }
   // Any change rekindles the fire; reduced motion redraws one still.
@@ -1555,10 +1734,12 @@ async function start() {
   // A slider redraws its still once the drag rests.
   let settleT = 0;
   sim.tune = () => {
-    setRamp(reduced()); tune(); wake();
+    setRamp(reduced()); setSaltRamp(reduced()); tune(); wake();
     if (reduced()) { clearTimeout(settleT); settleT = setTimeout(() => still(120), 180); }
   };
   sim.fuel = () => { applyFuel(reduced()); changed(); };
+  // A new salt shows at once with a pinch.
+  sim.salt = () => { setSaltRamp(reduced()); flickKey(); };
   sim.changed = changed;
   sim.quality = setQuality;
   sim.reset = () => {
@@ -1566,6 +1747,7 @@ async function start() {
     prevBlockPos.copy(block.position);
     renderer.compute(clearPass);
     simulationTime = 0; heat = 0; flare = 0; air.vel.set(0, 0, 0);
+    saltFeed = 0; saltGlow = 0; burst = 0; grains.length = 0; grainMesh.count = 0; feeding = null;
     wake();
     if (reduced()) still(360);
   };
