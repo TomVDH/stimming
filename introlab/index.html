@@ -9,15 +9,16 @@
 <title>Intro lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=31">
+<link rel="stylesheet" href="../shared/intro.css?v=32">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
   --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.62 0.02 275);
   --line: oklch(0.3 0.015 275); --sans: "Gabarito", system-ui, sans-serif;
+  --mono: "Iosevka Term Slab Nerd Font", ui-monospace, monospace; --tuned: oklch(0.86 0.15 128);
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans); }
+body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--fg); font: 500 13px/1.3 var(--sans); }
 /* A busy backdrop shows what the glass blurs. */
 .backdrop {
   position: fixed; inset: 0; z-index: 0;
@@ -29,35 +30,40 @@ body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--fg); f
 }
 .panel {
   position: fixed; right: 16px; top: 16px; bottom: 16px; z-index: 200; width: min(340px, calc(100vw - 32px));
-  overflow: auto; padding: 16px; display: grid; align-content: start; gap: 12px;
-  background: oklch(0.14 0.012 275 / 0.92); border: 1px solid var(--line); border-radius: 16px;
+  overflow: auto; padding: 14px; display: grid; align-content: start; gap: 10px;
+  background: oklch(0.14 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 10px;
 }
 .panel h1 { margin: 0; font-size: 18px; font-weight: 800; }
 .panel p { margin: 0; color: var(--muted); font-size: 12px; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
-.row label { color: var(--muted); }
-.row output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
-.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--fg); }
+/* One line per knob: label, slider, value. */
+.row { display: grid; grid-template-columns: 7.6em minmax(0, 1fr) auto; gap: 0 8px; align-items: center; min-height: 22px; }
+.row label { grid-column: 1; grid-row: 1; color: var(--muted); font-size: 12px; line-height: 1.15; }
+.row output { grid-column: 3; grid-row: 1; font: 500 11px var(--mono); font-variant-numeric: tabular-nums; min-width: 3.4em; text-align: right; }
+.row input[type=range] { grid-column: 2; grid-row: 1; width: 100%; height: 14px; margin: 0; accent-color: var(--fg); }
+.row select { grid-column: 2 / -1; grid-row: 1; min-width: 0; width: 100%; }
+.row input:disabled { opacity: 0.35; }
 select, button {
-  font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px;
+  font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
 }
 button { cursor: pointer; }
 button:hover { border-color: var(--fg); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.check { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
 .pauses { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 #go { border-color: var(--fg); font-weight: 700; }
 .vrow { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; }
 .vrow select { min-width: 0; }
-.step { width: 32px; padding: 7px 0; }
+.step { width: 28px; padding: 5px 0; }
 .group { border-top: 1px solid var(--line); padding-top: 8px; }
-.group summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; }
+.group summary { cursor: pointer; font: 700 11px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; list-style: none; display: flex; justify-content: space-between; }
+/* A group with a tuned knob marks its heading. */
+.group:has(.is-tuned) summary { color: var(--tuned); }
 .group summary::-webkit-details-marker { display: none; }
 .group summary::after { content: "+"; color: var(--muted); }
 .group[open] summary::after { content: "–"; }
-.group .rows { display: grid; gap: 10px; padding-top: 10px; }
+.group .rows { display: grid; gap: 5px; padding-top: 8px; }
 /* A tuned knob shows a dot; double-click its label to reset it. */
-.row.is-tuned label::after { content: " •"; color: oklch(0.86 0.15 128); }
+.row.is-tuned label::after { content: " •"; color: var(--tuned); }
 .row label { cursor: default; user-select: none; }
 .row.is-idle { opacity: 0.4; }
 /* The timeline: one block per beat, sized by its share of the run. */
@@ -68,7 +74,6 @@ button:hover { border-color: var(--fg); }
 .tl-keys { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .tl-keys span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; background: var(--c); }
 .tl-total { font-size: 12px; font-variant-numeric: tabular-nums; }
-.row select { max-width: 190px; }
 .spk { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; margin-left: auto; color: var(--muted); }
 .spk svg { width: 16px; height: 16px; }
 @keyframes snd-nudge { 0%, 100% { transform: none; } 15%, 45%, 75% { transform: scale(1.35); } 30%, 60% { transform: scale(1); } }
@@ -87,6 +92,15 @@ button:hover { border-color: var(--fg); }
   <p id="took">Run time: –</p>
   <div class="tl" id="tl" aria-label="Timeline"><div class="tl-total" id="tl-total"></div><div class="tl-bar" id="tl-bar"></div><div class="tl-keys" id="tl-keys"></div></div>
   <div class="row"><label for="toy">Toy</label><select id="toy"></select></div>
+  <div id="fonts" hidden>
+    <div class="row"><label for="fd">Title font</label><select id="fd"></select></div>
+    <div class="row"><label for="fn">Translation font</label><select id="fn"></select></div>
+    <div class="row"><label for="fs">Subtitle font</label><select id="fs"></select></div>
+    <label class="check"><input type="checkbox" id="fsame"> Subtitle translation in the same font</label>
+    <div class="row"><label for="fsn">Sub. translation font</label><select id="fsn"></select></div>
+  </div>
+  <div id="knobs"></div>
+  <details class="group" id="options"><summary>Options</summary><div class="rows">
   <label class="check"><input type="checkbox" id="static"> Static: hold every line on screen</label>
   <label class="check"><input type="checkbox" id="loop"> Loop</label>
   <label class="check"><input type="checkbox" id="replay"> Replay on change</label>
@@ -109,14 +123,7 @@ button:hover { border-color: var(--fg); }
     <option value="bottom">Bottom of the page</option>
   </select></div>
   <label class="check"><input type="checkbox" id="nudge"> Pulse the speaker after the intro <button type="button" id="snd" aria-pressed="false" aria-label="Sound off" class="spk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6M21 9l-4 6" stroke="currentColor" stroke-width="2"/></svg></button></label>
-  <details class="group" id="fonts" open><summary>Fonts</summary><div class="rows">
-    <div class="row"><label for="fd">Main title</label><select id="fd"></select></div>
-    <div class="row"><label for="fn">Translation</label><select id="fn"></select></div>
-    <div class="row"><label for="fs">Subtitle</label><select id="fs"></select></div>
-    <label class="check"><input type="checkbox" id="fsame"> Subtitle translation in the same font</label>
-    <div class="row"><label for="fsn">Subtitle translation</label><select id="fsn"></select></div>
   </div></details>
-  <div id="knobs"></div>
   <p>Pause at</p>
   <div id="pauses" class="pauses"></div>
   <div class="actions">
@@ -129,32 +136,31 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, fitIntro, popFit, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=31';
+import { intro, fitIntro, popFit, tableOf, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=32';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
-  Sizes: { logoK: [0.5, 2, 0.05, 'x'], nameK: [0.5, 2, 0.05, 'x'], nlK: [0.5, 2, 0.05, 'x'], tagK: [0.5, 2, 0.05, 'x'], tagNlK: [0.5, 2, 0.05, 'x'], sndK: [0.5, 2, 0.05, 'x'], clsK: [0.5, 2, 0.05, 'x'], gapK: [0, 3, 0.05, 'x'] },
-  Flash: { lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], popScale: [1, 5, 0.1, 'x'], flash: [0, 30, 1, 'f'] },
-  Lines: { unfurl: [50, 1500, 10, 'ms'], clsLag: [0, 15, 1, 'f'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'] },
-  'Line Y': { clsY: [-25, 25, 0.25, 'vh'], nameY: [-25, 25, 0.25, 'vh'], nlY: [-25, 25, 0.25, 'vh'], tagY: [-25, 25, 0.25, 'vh'], tagNlY: [-25, 25, 0.25, 'vh'], sndY: [-25, 25, 0.25, 'vh'] },
-  Hold: { readBase: [0, 3000, 50, 'ms'], readPer: [0, 60, 1, 'ms'], readCap: [0, 5000, 50, 'ms'], hold: [500, 6000, 50, 'ms'] },
-  Exit: { wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'] },
+  Layout: { nameY: [-25, 25, 0.25, 'vh'], nlY: [-25, 25, 0.25, 'vh'], tagY: [-25, 25, 0.25, 'vh'], tagNlY: [-25, 25, 0.25, 'vh'], sndY: [-25, 25, 0.25, 'vh'], clsY: [-25, 25, 0.25, 'vh'], gapK: [0, 3, 0.05, 'x'] },
+  Type: { nameK: [0.5, 2, 0.05, 'x'], nlK: [0.5, 2, 0.05, 'x'], tagK: [0.5, 2, 0.05, 'x'], tagNlK: [0.5, 2, 0.05, 'x'], sndK: [0.5, 2, 0.05, 'x'], clsK: [0.5, 2, 0.05, 'x'] },
+  Box: { logoK: [0.5, 2, 0.05, 'x'], padK: [0.3, 2, 0.05, 'x'], popScale: [1, 5, 0.1, 'x'] },
+  Glass: { blur: [0, 80, 1, 'px'], dim: [0.1, 1, 0.01, ''] },
+  Timing: { lead: [0, 20, 1, 'f'], pop: [0, 10, 1, 'f'], flash: [0, 30, 1, 'f'], unfurl: [50, 1500, 10, 'ms'], clsLag: [0, 15, 1, 'f'], nlLag: [0, 15, 1, 'f'], tagLag: [0, 15, 1, 'f'], tagNlLag: [0, 15, 1, 'f'], sndLag: [0, 15, 1, 'f'], subLag: [0, 15, 1, 'f'], readBase: [0, 3000, 50, 'ms'], readPer: [0, 60, 1, 'ms'], readCap: [0, 5000, 50, 'ms'], hold: [500, 6000, 50, 'ms'], wipe: [50, 1500, 10, 'ms'], fade: [50, 2000, 10, 'ms'] },
 };
 // Knobs read in plain words; the lines go by their names.
 const LABEL = {
   lead: 'Lead-in', pop: 'Pop', popScale: 'Pop size', flash: 'Flash hold',
-  logoK: 'Logo', nameK: 'Main title', nlK: 'Translation', tagK: 'Subtitle', tagNlK: 'Subtitle translation', sndK: 'Audio notice', clsK: 'Classic notice', gapK: 'Line spacing',
-  unfurl: 'Line reveal', nlLag: 'Translation delay', tagLag: 'Subtitle delay', tagNlLag: 'Subtitle translation delay',
-  clsY: 'Classic notice Y', nameY: 'Main title Y', nlY: 'Translation Y', tagY: 'Subtitle Y', tagNlY: 'Subtitle translation Y', sndY: 'Audio notice Y',
+  logoK: 'Logo', padK: 'Box padding', blur: 'Blur', dim: 'Brightness', nameK: 'Main title', nlK: 'Translation', tagK: 'Subtitle', tagNlK: 'Sub. translation', sndK: 'Audio notice', clsK: 'Classic notice', gapK: 'Line spacing',
+  unfurl: 'Line reveal', nlLag: 'Translation delay', tagLag: 'Subtitle delay', tagNlLag: 'Sub. translation delay',
+  clsY: 'Classic notice Y', nameY: 'Main title Y', nlY: 'Translation Y', tagY: 'Subtitle Y', tagNlY: 'Sub. translation Y', sndY: 'Audio notice Y',
   sndLag: 'Audio notice delay', clsLag: 'Classic notice delay', subLag: 'Lab tag delay',
-  readBase: 'Read base', readPer: 'Read per character', readCap: 'Read cap', hold: 'Fixed hold', wipe: 'Exit', fade: 'Fade',
+  readBase: 'Read base', readPer: 'Read per char', readCap: 'Read cap', hold: 'Fixed hold', wipe: 'Exit', fade: 'Fade',
 };
 const RANGE = Object.assign({}, ...Object.values(GROUPS));
 const KEY = 'stimming.introlab';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (err) { return {}; } };
 const saved = load();
 // Saved tuning applies only while the shipped tables are unchanged.
-const STAMP = JSON.stringify([TIMING, Object.fromEntries(Object.entries(VARIETIES).map(([k, v]) => [k, v.timing || {}]))]);
+const STAMP = JSON.stringify([TIMING, Object.fromEntries(Object.keys(VARIETIES).map(k => [k, tableOf(k)]))]);
 // tune[variety] holds only the knobs moved away from that variety's own table.
 const tune = saved.stamp === STAMP ? saved.tune || {} : {};
 const pauses = new Set(saved.pauses || []);
@@ -162,7 +168,7 @@ let tlReady = false;
 const save = () => {
   if (tlReady) drawTL();
   try {
-    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, pauses: [...pauses], fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, textFlash: textBox.checked, numAt: numSel.value }));
+    localStorage.setItem(KEY, JSON.stringify({ stamp: STAMP, tune, toy: toySel.value, pauses: [...pauses], fonts: own.fonts, fsame: own.fsame, lock: lockBox.checked, note: noteSel.value, nudge: nudgeBox.checked, variety: varSel.value, replay: replayBox.checked, isStatic: staticBox.checked, loop: loopBox.checked, nameFlash: flashBox.checked, textFlash: textBox.checked, numAt: numSel.value }));
   } catch (err) {}
 };
 
@@ -182,8 +188,12 @@ for (const [k, v] of Object.entries(VARIETIES)) {
 const askV = new URLSearchParams(location.search).get('v');
 varSel.value = VARIETIES[askV] ? askV : VARIETIES[saved.variety] ? saved.variety : DEFAULT_VARIETY;
 const V = () => VARIETIES[varSel.value];
-const base = () => ({ ...TIMING, ...(V().timing || {}) });
-const T = () => ({ ...base(), ...(tune[varSel.value] || {}) });
+const base = () => tableOf(varSel.value);
+// The lock keeps every beat on the variety's own table.
+const lockBox = Object.assign(document.createElement('input'), { type: 'checkbox', id: 'lock', checked: saved.lock ?? true });
+const BEATS = new Set(Object.keys(GROUPS.Timing));
+const tuned = () => Object.fromEntries(Object.entries(tune[varSel.value] || {}).filter(([k]) => !(lockBox.checked && BEATS.has(k))));
+const T = () => ({ ...base(), ...tuned() });
 
 const noteSel = document.getElementById('snote'), nudgeBox = document.getElementById('nudge');
 noteSel.value = saved.note || 'glyph';
@@ -223,7 +233,7 @@ const fmt = (k, v) => {
 for (const [group, list] of Object.entries(GROUPS)) {
   const det = document.createElement('details');
   det.className = 'group';
-  det.open = group === 'Sizes' || (saved.open ?? ['Line Y']).includes(group);
+  det.open = (saved.open ?? ['Layout', 'Type', 'Box', 'Glass']).includes(group);
   det.innerHTML = `<summary>${group}</summary><div class="rows"></div>`;
   det.addEventListener('toggle', () => { saved.open = [...knobs.querySelectorAll('details[open] summary')].map(s => s.textContent); try { localStorage.setItem(KEY, JSON.stringify({ ...load(), open: saved.open })); } catch (err) {} });
   knobs.append(det);
@@ -246,19 +256,28 @@ for (const [group, list] of Object.entries(GROUPS)) {
     rows[k] = row;
   }
 }
+// The font slots sit in the Type group, under the sizes.
+const groupRows = name => [...knobs.querySelectorAll('summary')].find(el => el.textContent === name).nextElementSibling;
+groupRows('Type').append(...document.getElementById('fonts').children);
+document.getElementById('fonts').remove();
+const lockLab = Object.assign(document.createElement('label'), { className: 'check' });
+lockLab.append(lockBox, ' Lock timing to the variety’s table');
+groupRows('Timing').prepend(lockLab);
+lockBox.addEventListener('change', () => { paintAll(); save(); replay(); });
 // Rows the variety does not use stay dim.
 function paint(k) {
   const t = T(), row = rows[k];
   row.querySelector('input').value = t[k];
   row.querySelector('output').textContent = fmt(k, t[k]);
-  row.classList.toggle('is-tuned', k in (tune[varSel.value] || {}));
+  row.classList.toggle('is-tuned', k in tuned());
+  if (BEATS.has(k)) row.querySelector('input').disabled = lockBox.checked;
   const read = !!V().read;
   row.classList.toggle('is-idle', (k === 'hold' && read) || (/^read/.test(k) && !read));
 }
 const paintAll = () => Object.keys(RANGE).forEach(paint);
 paintAll();
 
-const pick = v => { varSel.value = v; paintAll(); save(); run(); };
+const pick = v => { varSel.value = v; paintAll(); lookFonts(); save(); run(); };
 varSel.addEventListener('change', () => pick(varSel.value));
 const ids = Object.keys(VARIETIES);
 const stepV = d => pick(ids[(ids.indexOf(varSel.value) + d + ids.length) % ids.length]);
@@ -332,6 +351,8 @@ for (const sel of Object.values(FSEL)) {
 const sf = saved.fonts || { fd: saved.fd, fn: saved.ft, fs: saved.fd };
 for (const [k, sel] of Object.entries(FSEL)) sel.value = sf[k] && weightsOf[sf[k]] ? sf[k] : 'Gabarito';
 fsame.checked = saved.fsame ?? true;
+// own keeps the user's font picks while a look shows its own fonts.
+const own = { fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked };
 // The Dutch subtitle follows the subtitle font while the box is ticked.
 const applyFonts = () => {
   for (const sel of Object.values(FSEL)) useFont(sel.value, sel.token);
@@ -339,8 +360,19 @@ const applyFonts = () => {
   FSEL.fsn.closest('.row').classList.toggle('is-idle', fsame.checked);
   if (fsame.checked) document.documentElement.style.removeProperty('--intro-tag-nl');
 };
-applyFonts();
-[...Object.values(FSEL), fsame].forEach(el => el.addEventListener('change', () => { applyFonts(); save(); }));
+// A look fills the four slots with its fonts; other varieties get the user's picks back.
+function lookFonts() {
+  const f = V().fonts || own.fonts;
+  for (const [k, sel] of Object.entries(FSEL)) sel.value = f[k];
+  fsame.checked = V().fonts ? false : own.fsame;
+  applyFonts();
+}
+lookFonts();
+[...Object.values(FSEL), fsame].forEach(el => el.addEventListener('change', () => {
+  // A font tried on a look is not saved as the user's pick.
+  if (!V().fonts) Object.assign(own, { fonts: Object.fromEntries(Object.entries(FSEL).map(([k, el]) => [k, el.value])), fsame: fsame.checked });
+  applyFonts(); save(); held ? applyPose() : replay();
+}));
 
 // One toggle per phase; a paused phase waits for Continue.
 const pauseBox = document.getElementById('pauses'), go = document.getElementById('go');
@@ -360,7 +392,7 @@ const gate = ph => pauses.has(ph) ? new Promise(res => {
 go.addEventListener('click', () => resume?.());
 
 // Size and place knobs pose the intro: it holds at their beat and follows the slider.
-const POSE = { popScale: 'pop', logoK: 'lines', nameK: 'lines', nlK: 'lines', tagK: 'lines', tagNlK: 'lines', sndK: 'lines', clsK: 'lines', gapK: 'lines', clsY: 'lines', nameY: 'lines', nlY: 'lines', tagY: 'lines', tagNlY: 'lines', sndY: 'lines' };
+const POSE = { popScale: 'pop', logoK: 'lines', nameK: 'lines', nlK: 'lines', tagK: 'lines', tagNlK: 'lines', sndK: 'lines', clsK: 'lines', gapK: 'lines', padK: 'lines', blur: 'lines', dim: 'lines', clsY: 'lines', nameY: 'lines', nlY: 'lines', tagY: 'lines', tagNlY: 'lines', sndY: 'lines' };
 const LINE_Y = { clsY: '.intro-classic', nameY: '.intro-name', nlY: '.intro-nl', tagY: '.intro-tag:not(.intro-tag--nl)', tagNlY: '.intro-tag--nl', sndY: '.intro-snd' };
 // Static mode runs the beats at once and fills every line.
 const FAST = { lead: 0, pop: 0, flash: 0, unfurl: 50, clsLag: 0, nlLag: 0, subLag: 0, tagLag: 0, tagNlLag: 0, sndLag: 0 };
@@ -433,7 +465,7 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, timing: { ...(tune[varSel.value] || {}), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
+  await intro({ id: toySel.value, timing: { ...tuned(), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;

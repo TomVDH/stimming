@@ -83,7 +83,10 @@ export const TIMING = {
   sndK: 1,        // audio notice size, times the copy size
   clsK: 1,        // classic notice size, times the copy size
   gapK: 1,        // vertical space between the lines, times its responsive size
-  clsY: 0,        // vh the classic notice moves down
+  padK: 1,        // flash box padding, times its responsive size
+  blur: 36,       // px the glass blurs the page
+  dim: 0.45,      // brightness the glass leaves of the page
+  clsY: 0,       // vh the classic notice moves down
   nameY: 0,       // vh the main title moves down
   nlY: 0,         // vh the translation moves down
   tagY: -14,      // vh the subtitle moves down
@@ -105,7 +108,19 @@ export const SOUND_NOTE = { glyph: true, words: 'Best with sound', nudge: false 
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
 // read: true holds for reading time; false holds to T.hold from the start.
 export const DEFAULT_VARIETY = 'classic';
+// Classic's beats; the restyle looks share this one table.
+const CLASSIC = { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 };
+// A look restyles Classic: look names its CSS block, style holds sizes and places.
+// stack keeps the subtitles under the translation; fonts fill the lab's four slots.
+const SLAB = 'Iosevka Term Slab Nerd Font';
+const look = (key, label, style, more = {}) => ({ label, group: 'Restyle', timing: CLASSIC, look: key, style, exit: 'wipe', read: true, ...more });
 export const VARIETIES = {
+  brut: look('brut', 'Brut: one stack, slab caps, hard shadow', { tagY: 0, tagNlY: 0, blur: 18, dim: 0.32 },
+    { stack: true, fonts: { fd: SLAB, fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+  label: look('label', 'Label: lines hang left of the logo box', { nameK: 0.8, padK: 0.6, tagY: 0, tagNlY: 0 },
+    { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  poster: look('poster', 'Poster: the title leads, near-black glass', { nameK: 1.45, logoK: 0.85, padK: 1.35, blur: 48, dim: 0.28 },
+    { fonts: { fd: 'Gabarito', fn: SLAB, fs: SLAB, fsn: SLAB } }),
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
     label: 'Snap', group: 'Earlier', read: true,
@@ -138,7 +153,7 @@ export const VARIETIES = {
   },
   classic: {
     label: 'Classic', group: 'Default',
-    timing: { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 }, exit: 'wipe', read: true,
+    timing: CLASSIC, exit: 'wipe', read: true,
   },
   type: {
     label: 'Type: lines are typed, then erased', group: 'Earlier',
@@ -161,6 +176,15 @@ export const VARIETIES = {
     reveal: 'slit', exit: 'crt', read: true,
   },
 };
+
+// A look's style can never change a beat; these keys are dropped from it.
+const BEAT = /^(lead|pop|flash|unfurl|hold|wipe|fade|read\w+|\w+Lag)$/;
+// A variety's full table: the base, its timing, then its style.
+export function tableOf(variety) {
+  const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
+  const style = Object.fromEntries(Object.entries(V.style || {}).filter(([k]) => !BEAT.test(k)));
+  return { ...TIMING, ...(V.timing || {}), ...style };
+}
 
 // The phases the intro lab can pause on, in order.
 export const PHASES = ['glass', 'pop', 'flash', 'lines', 'hold', 'wipe'];
@@ -256,7 +280,7 @@ export function popFit(root, box, want) {
 }
 
 // The size knobs, as the CSS variables they set.
-const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k' };
+const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k', padK: '--pad-k', blur: '--blur', dim: '--dim' };
 
 // Sets the sizes, then shrinks the copy until every line fits on screen.
 export function fitIntro(root, T) {
@@ -290,8 +314,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
-  const T = { ...TIMING, ...(V.timing || {}), ...timing };
+  const T = { ...tableOf(variety), ...timing };
   root.classList.add('is-live');
+  if (V.look) root.dataset.look = V.look;
   if (V.layout) root.dataset.layout = V.layout;
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
@@ -373,7 +398,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (!V.layout) {
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
     const foot = make('div', 'intro-foot'), notes = make('div', 'intro-notes'), left = make('span', 'intro-notes-l');
-    foot.append(...text.querySelectorAll('.intro-tag'));
+    // A stacked look keeps the subtitles in the column.
+    if (!V.stack) foot.append(...text.querySelectorAll('.intro-tag'));
     if (num) left.append(num);
     notes.append(left, ...(snd ? [snd] : []));
     foot.append(notes);
