@@ -134,75 +134,165 @@ vec3 aurora(vec3 d, float soft) {
 // Sky light along a ray, from the baked table, with the aurora.
 vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
 
-// Towns: one site per 16 km cell, with a size and a street angle.
-// x: town density, y: street angle of the strongest site.
-// z: the town light spread wide, as the haze scatters it.
-// ang2 and mixW give the second town's street angle and its share,
-// so the street grids blend where two towns meet.
-vec3 towns(vec2 w, out float ang2, out float mixW) {
-  vec2 g = w / 16.0, i = floor(g);
-  float T = 0.0, best = 0.0, ang = 0.0, wide = 0.0, second = 0.0;
-  ang2 = 0.0;
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 c = i + vec2(x, y);
-    vec2 site = (c + 0.15 + 0.7 * hash22(c)) * 16.0;
-    float sz = pow(hash12(c + 11.3), 2.6) * uTowns;
-    float r = 1.0 + 6.5 * sz;
-    vec2 q = w - site;
-    // Each field falls to zero inside 15 km, so the 3 by 3 lookup holds it whole.
-    float win = smoothstep(15.0, 8.0, length(q));
-    float v = (0.3 + sz) * exp(-dot(q, q) / (r * r)) * win;
-    T += v;
-    wide += (0.15 + sz) * sz * exp(-dot(q, q) / (r * r * 4.0)) * win;
-    float a = hash12(c + 2.7) * 3.1416;
-    if (v > best) { second = best; ang2 = ang; best = v; ang = a; }
-    else if (v > second) { second = v; ang2 = a; }
-  }
-  mixW = second / max(best + second, 1e-5);
-  // Ragged edges: towns spill along valleys, not in discs.
-  T *= 0.45 + 1.1 * fbm(w / 2.2, 3);
-  return vec3(T, ang, wide);
+// Towns: one site per 16 km cell, with a size from 0 to uTowns.
+// Small sites are hamlets; large ones are cities with a core.
+vec3 townSite(vec2 c) {
+  vec2 h = hash22(c);
+  float z = fract(h.x * 17.31 + h.y * 5.13);
+  return vec3((c + 0.15 + 0.7 * h) * 16.0, z * sqrt(z) * uTowns);
 }
-vec3 towns(vec2 w) { float a, m; return towns(w, a, m); }
-
-// One lamp per cell, at a random spot, lit with chance p.
-float lamps(vec2 w, float s, float p, float fw, float seed, out float hue) {
-  vec2 gp = w / s, id = floor(gp), f = fract(gp);
-  hue = hash12(id + seed + 9.3);
-  float on = step(hash12(id + seed), p);
-  vec2 at = 0.2 + 0.6 * hash22(id + seed + 3.1);
-  float r = max(0.02, fw / s * 0.7);
-  vec2 q = f - at;
-  float b = 0.012 / (r * r) * exp(-dot(q, q) / (r * r)) * on * (0.5 + hash12(id + seed + 5.5));
-  // Far away, lamps blend into their average glow.
-  return mix(p * 0.04, b, smoothstep(0.9, 0.25, fw / s));
+// A slow warp bends towns and roads alike, as valleys and rivers do.
+// Nested sines cost less than noise and never repeat at this scale.
+vec2 townWarp(vec2 w) {
+  return w + 1.2 * vec2(sin(w.y * 0.091 + 1.7 * sin(w.x * 0.063)), sin(w.x * 0.083 + 1.7 * sin(w.y * 0.057)));
+}
+// Town light under the deck, spread wide as the cloud scatters it.
+// It grows with town size; each falls to zero inside 15 km.
+float townDome(vec2 w) {
+  vec2 i = floor(w / 16.0);
+  float g = 0.0;
+  for (int k = 0; k < 9; k++) {
+    vec3 s = townSite(i + vec2(k % 3 - 1, k / 3 - 1));
+    vec2 q = w - s.xy;
+    float rd = 2.5 + 9.0 * min(s.z, 1.4);
+    g += s.z * sqrt(s.z) * exp(-dot(q, q) / (rd * rd)) * smoothstep(15.0, 9.0, length(q));
+  }
+  // The scale keeps the deck's mean glow at its approved level.
+  return g * 0.83;
 }
 
-// Town lights: a few avenues as lines of lamps, turned to the town's own angle,
-// and scattered house and yard lights between them, clustered by noise.
-float streets(vec2 w, float ang, float s, float p, float fw, out float hue) {
-  vec2 cs = vec2(cos(ang), sin(ang));
-  vec2 q = vec2(dot(w, cs), dot(w, vec2(-cs.y, cs.x))) / s;
-  hue = hash12(floor(q / 9.0) + 9.3);
-  float r = clamp(fw / s * 0.7, 0.035, 0.07);
-  float b = 0.0;
-  for (int k = 0; k < 2; k++) {
-    vec2 a = k == 0 ? q : q.yx;
-    float line = floor(a.y + 0.5), lamp = floor(a.x * 4.0 + 0.5);
-    // Only some streets are lit avenues; each runs a stretch, then stops.
-    float avenue = step(0.86, hash12(vec2(line, float(k) + 5.1))) * step(0.35, vnoise(vec2(a.x / 7.0, line + float(k) * 3.0)));
-    vec2 dd = vec2(a.x - lamp / 4.0, a.y - line);
-    float on = avenue * step(hash12(vec2(lamp, line) + float(k) * 13.7), 0.85);
-    b += on * 0.004 / (r * r) * exp(-dot(dd, dd) / (r * r));
+// The town field at one ground point.
+// dens: built-up density; dome: haze light; road: distance to the nearest road;
+// along: km along that road; rank: its size class; seed: its own number.
+// core: nearness to a big town's centre; fade: the road's own fade.
+// len, sp, pe: the road's length, and the point's offset across and past it.
+// wq: the warped point.
+struct Town { float dens, dome, road, along, rank, seed, core, fade, len, sp, pe; vec2 wq; };
+// A road from site a to site b; some links are missing.
+void roadSeg(inout Town t, vec2 p, vec3 a, vec3 b, float id) {
+  if (fract(id * 7.13) > 0.68) return;
+  vec2 ab = b.xy - a.xy, ap = p - a.xy;
+  float h = clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0);
+  float d = length(ap - ab * h);
+  if (d < t.road) {
+    float L = length(ab), u = dot(ap, ab) / L;
+    t.road = d; t.along = h * L; t.len = L; t.sp = (ap.x * ab.y - ap.y * ab.x) / L; t.pe = u - clamp(u, 0.0, L);
+    t.rank = min(a.z, b.z) + 0.3 * max(a.z, b.z); t.seed = id; t.fade = 1.0;
   }
-  // Houses: one jittered light per small cell, lit in clusters.
-  vec2 hq = w / 0.05, id = floor(hq), f = fract(hq) - 0.3 - 0.4 * hash22(id + 2.3);
-  float hr = max(0.12, fw / 0.05 * 0.6);
-  float lit = step(hash12(id + 7.7), p * (0.35 + 0.9 * vnoise(w / 0.4)));
-  b += lit * 0.0016 / (hr * hr) * exp(-dot(f, f) / (hr * hr));
-  // Far away, lamps blend into their average glow.
-  return mix(p * 0.07, b, smoothstep(0.3, 0.06, fw / s));
 }
+// fw is the pixel's ground footprint; fine detail drops out when it is large.
+Town townAt(vec2 w, float fw) {
+  vec2 wq = townWarp(w), i = floor(wq / 16.0);
+  Town t = Town(0.0, 0.0, 1e3, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, wq);
+  vec3 S[9];
+  vec3 best = vec3(0.0);
+  vec2 bq = vec2(1e3), bc = vec2(0.0);
+  for (int k = 0; k < 9; k++) {
+    vec3 s = townSite(i + vec2(k % 3 - 1, k / 3 - 1));
+    S[k] = s;
+    vec2 q = wq - s.xy;
+    float d = length(q), win = smoothstep(15.0, 9.0, d);
+    // Each town stretches along its own axis, up to twice as long as wide.
+    vec2 ax = fract(s.xy * vec2(3.17, 2.71)) - 0.5;
+    float qa = dot(q, ax), de2 = d * d - 1.5 * qa * qa;
+    // Density falls off fast from the core and slowly through the sprawl.
+    float r = 0.4 + 2.3 * s.z;
+    float v = (0.3 + s.z) * exp(-sqrt(de2 + 0.02) / r) * win;
+    t.dens += v;
+    if (v > best.x) { best = vec3(v, s.z, r); bq = q; bc = i + vec2(k % 3 - 1, k / 3 - 1); }
+    // The dome reuses the falloff, at twice the reach.
+    t.dome += s.z * sqrt(s.z * v);
+  }
+  // Only roads that touch the centre cell come within 2 km of the point.
+  // The site's own random position gives each road its number.
+  vec3 id = fract(vec3(S[3].x + S[3].y, S[4].x + S[4].y, S[1].x + S[1].y) * 0.731);
+  roadSeg(t, wq, S[3], S[4], id.x);
+  roadSeg(t, wq, S[4], S[5], id.y);
+  roadSeg(t, wq, S[1], S[4], id.z + 0.31);
+  roadSeg(t, wq, S[4], S[7], id.y + 0.31);
+  // One diagonal per square, on about half the squares.
+  for (int k = 0; k < 4; k++) {
+    int c = k + k / 2;
+    float d = fract((S[c].x + S[c].y) * 0.731);
+    if (d < 0.25) roadSeg(t, wq, S[c], S[c + 4], d + 0.53);
+    else if (d < 0.5) roadSeg(t, wq, S[c + 1], S[c + 3], d + 0.53);
+  }
+  // The nearest road wanders from side to side, but meets each town square on.
+  if (t.road < 3.0) {
+    float x = t.along / 1.8 + t.seed * 37.0, xf = fract(x);
+    float o = mix(hash12(vec2(floor(x), 3.1)), hash12(vec2(floor(x) + 1.0, 3.1)), xf * xf * (3.0 - 2.0 * xf)) - 0.5;
+    o *= 0.7 * smoothstep(0.0, 1.5, t.along) * smoothstep(0.0, 1.5, t.len - t.along);
+    t.road = length(vec2(t.pe, t.sp - o));
+  }
+  t.core = best.y * exp(-length(bq) / best.z);
+  // Towns spill out along their roads.
+  t.dens += exp(-t.road / 0.2) * min(t.dens, 0.7) * 0.9;
+  // Villages string along the roads between towns.
+  if (t.road < 1.2) t.dens += smoothstep(0.62, 0.88, vnoise(vec2(t.along / 0.9, t.seed * 61.0))) * 0.35 * exp(-t.road / 0.3);
+  // Bigger towns add their own radial avenues and a ring road.
+  // They fade out into the sprawl; t.fade carries that.
+  if (best.y > 0.4 && fw < 0.12) {
+    float d = length(bq), hb = hash12(bc + 5.9);
+    // Each avenue bends as it runs out from the centre.
+    float n = floor(3.0 + 4.0 * hb), a = atan(bq.y, bq.x) + hb * 6.28 + 0.5 * vnoise(vec2(d / 1.6, hb * 40.0));
+    float spoke = abs(fract(a * n / 6.2832) - 0.5) * 6.2832 / n * d;
+    float own = smoothstep(0.45, 0.75, best.x / t.dens) * smoothstep(0.12, 0.07, fw), f = smoothstep(1.7, 0.2, d / best.z) * own;
+    if (spoke < t.road && f > 0.0) { t.road = spoke; t.along = d; t.rank = best.y; t.seed = hb; t.fade = f; }
+    float ring = abs(d - best.z * (0.75 + 0.3 * vnoise(wq / 1.3)));
+    if (best.y > 0.6 && own > 0.0 && ring < t.road) { t.road = ring; t.along = a * d; t.rank = best.y; t.seed = hb + 0.5; t.fade = 0.6 * own; }
+  }
+  return t;
+}
+
+// Distance to the nearest cell edge, from the two nearest jittered points.
+// About a third of the edges stay dark, so blocks merge.
+float streetCells(vec2 p) {
+  vec2 i = floor(p), f = fract(p), c1 = vec2(0.0), c2 = vec2(0.0);
+  float d1 = 9.0, d2 = 9.0;
+  for (int k = 0; k < 9; k++) {
+    vec2 o = vec2(k % 3 - 1, k / 3 - 1);
+    vec2 r = o + 0.1 + 0.8 * hash22(i + o + 31.0) - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; c2 = c1; d1 = d; c1 = i + o; } else if (d < d2) { d2 = d; c2 = i + o; }
+  }
+  return (sqrt(d2) - sqrt(d1)) + step(hash12(c1 + c2 + 0.5), 0.33);
+}
+// Lamps: one jittered point per cell of s km, lit with chance p.
+// h returns the lamp's own random number, for colour and twinkle.
+// Far away, lamps blend into their average glow.
+float lampField(vec2 w, float s, float p, float fw, float seed, out float h, out float nearK) {
+  vec2 id = floor(w / s), f = fract(w / s) - 0.15 - 0.7 * hash22(id + seed);
+  h = hash12(id + seed + 4.1);
+  float lit = step(hash12(id + seed + 7.7), p);
+  float r = max(0.1, fw / s * 0.6);
+  nearK = smoothstep(1.0, 0.3, fw / s);
+  float b = lit * (0.4 + 1.2 * fract(h * 37.0)) / (r * r) * exp(-dot(f, f) / (r * r));
+  return mix(p * PI, b, nearK);
+}
+// Twinkle: air between plane and ground makes each lamp flicker.
+// Far lamps flicker more, through more air.
+float twinkle(float h, float fw) {
+  return 1.0 + 0.35 * smoothstep(0.006, 0.04, fw) * sin(uTime * (7.0 + 11.0 * h) + h * 60.0);
+}
+// Lamp colour: sodium orange, LED white, or a few green-white.
+// led is this district's share of LED lamps.
+vec3 lampCol(float h, float led) {
+  vec3 sodium = vec3(1.0, 0.5, 0.16), cool = vec3(0.8, 0.88, 1.0), warm = vec3(1.0, 0.82, 0.58), green = vec3(0.7, 1.0, 0.76);
+  if (h < 0.07) return green;
+  if (h < 0.07 + led) return fract(h * 13.0) < 0.5 ? cool : warm;
+  return sodium;
+}
+vec3 lampAvg(float led) {
+  return vec3(0.7, 1.0, 0.76) * 0.07 + vec3(0.9, 0.85, 0.79) * led + vec3(1.0, 0.5, 0.16) * (0.93 - led);
+}
+
+// Coloured, twinkling lamp light from one lamp layer.
+vec3 lampLight(vec2 w, float s, float p, float fw, float seed, float led) {
+  float h, nearK;
+  float b = lampField(w, s, p, fw, seed, h, nearK);
+  return mix(lampAvg(led), lampCol(h, led), nearK) * b * mix(1.0, twinkle(h, fw), nearK);
+}
+
 // Orange light from the impact, falling off with distance from the site.
 vec3 boomLight(vec2 w, float reach) {
   if (uBoomL.x <= 0.0 && uBoomL.y <= 0.0) return vec3(0.0);
@@ -210,46 +300,76 @@ vec3 boomLight(vec2 w, float reach) {
   return vec3(1.0, 0.6, 0.32) * uBoomL.x / (1.0 + d2 / (reach * reach));
 }
 vec3 ground(vec2 w, float fw) {
-  vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
   // Fields: a patchwork that catches the sky light.
   vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
   float parcel = 0.45 + 0.9 * hash12(fp);
   vec3 g = uAmb * 0.005 * parcel * (0.7 + 0.6 * fbm(w / 9.0, 3));
   g += uSunL * 0.004 * parcel * max(uSun.y, 0.0);
-  float ang2, mixW;
-  vec3 tw = towns(w, ang2, mixW);
-  float T = tw.x;
   // The impact lights the land round it; the crater glows on for minutes.
   g += boomLight(w, 45.0) * 0.25;
   if (uBoomL.y > 0.0) { vec2 cq = w - uBoom.xy; g += vec3(1.0, 0.4, 0.1) * uBoomL.y * 0.6 * exp(-dot(cq, cq) / 3.0); }
-  // The light dome: haze over each town glows from the streets below.
-  g += vec3(1.0, 0.55, 0.24) * tw.z * 0.009;
-  float dense = smoothstep(0.08, 0.5, T);
-  // The town glow: warm haze over the roofs.
-  g += sodium * T * 0.013;
-  float hue;
-  // Streets run on each town's own grid; parks and yards leave dark gaps.
-  float blocks = smoothstep(0.25, 0.75, vnoise(w / 0.6 + 3.1));
-  float a = 0.0;
-  if (dense > 0.005) {
-    // Streets bend a little; old towns are never a perfect grid.
-    vec2 wq = w + 0.22 * (vec2(vnoise(w / 1.6), vnoise(w / 1.6 + 9.0)) - 0.5);
-    float pl = dense * (0.3 + 0.65 * blocks);
-    a = streets(wq, tw.y, 0.18, pl, fw, hue);
-    // Where two towns meet, their grids cross-fade instead of meeting at a seam.
-    if (mixW > 0.08) { float h2; a = mix(a, streets(wq, ang2, 0.18, pl, fw, h2), smoothstep(0.08, 0.5, mixW)); }
+  Town t = townAt(w, fw);
+  vec2 wq = t.wq;
+  // Districts differ in their share of LED lamps.
+  // Old centres have new LED lamps; the sprawl keeps sodium.
+  float dn = vnoise(wq / 5.0 + 40.0);
+  float led = 0.05 + 0.35 * dn + 0.45 * min(t.core * 2.0, 1.0);
+  vec3 avg = lampAvg(led);
+  // The light dome: haze over each town, wider and brighter for big towns.
+  // It shows through a long, slant path of air, not straight down.
+  g += mix(avg, vec3(1.0, 0.55, 0.24), 0.6) * t.dome * 0.008 * smoothstep(0.015, 0.25, fw);
+  // Built-up land: parks, rivers and fields break it into ragged patches.
+  float lit = 0.0;
+  // The finest octave is smaller than a far pixel, so it fades to its mean there.
+  if (t.dens > 0.03) {
+    vec2 lp = wq / 1.2 + 7.0;
+    float n3 = fw < 0.12 ? mix(0.5, vnoise((lp * 2.03 + 17.1) * 2.03 + 17.1), smoothstep(0.12, 0.07, fw)) : 0.5;
+    lit = smoothstep(0.1, 0.65, t.dens * (0.3 + 1.4 * (fbm(lp, 2) + 0.125 * n3)));
   }
-  // Districts differ: sodium orange, warm white, or cold LED.
-  vec3 lampCol = hue < 0.55 ? sodium : hue < 0.82 ? vec3(1.0, 0.78, 0.5) : led;
-  g += lampCol * a;
-  // Highways: long white lines between towns, with a few lamps out in the dark.
-  vec2 hw = w / 22.0 + 0.9 * vec2(vnoise(w / 30.0), vnoise(w / 30.0 + 7.3));
-  float ridge = abs(vnoise(hw) - 0.5);
-  float hwW = max(0.02, fw * 0.6) / 22.0;
-  float road = exp(-ridge * ridge / (hwW * hwW * 4.0)) * 0.012 / max(0.02, fw * 0.6) * (0.5 + 0.5 * vnoise(w / 3.0));
-  g += mix(led, sodium, 0.5) * road * 0.18;
-  float rural = lamps(w, 0.9, 0.08 * uTowns, fw, 41.0, hue);
-  g += sodium * rural * 0.6;
+  if (lit > 0.002) {
+    // Streets: edges of irregular cells make blocks of every shape.
+    // Lanes: contour lines of noise wander between them.
+    // Far away, only their average share is left.
+    float web = 0.4;
+    if (fw < 0.055) {
+      vec2 sb = mat2(-0.47, -0.88, 0.88, -0.47) * wq / 0.09;
+      float e = max(1.0 - smoothstep(0.0, 0.12, streetCells(wq / 0.2)), 0.6 * (1.0 - smoothstep(0.0, 0.1, abs(vnoise(sb) - 0.5))));
+      web = mix(0.4, e, smoothstep(0.5, 0.15, fw / 0.11));
+    }
+    // Lamps string along the streets; cores burn brighter than the sprawl.
+    float P = lit * (0.4 + 0.6 * web), gain = (0.15 + 1.6 * web) * (0.3 + 0.8 * min(t.dens, 1.2)) * 0.054;
+    // Far away, lamps merge into coarser points, so towns stay grainy.
+    float lv = clamp(log2(fw / 0.02), 0.0, 6.0), l0 = floor(lv), lf = lv - l0;
+    vec3 L = lampLight(wq, 0.035 * exp2(l0), P, fw, 2.3 + l0 * 7.0, led) * (1.0 - lf);
+    if (lf > 0.0) L += lampLight(wq, 0.07 * exp2(l0), P, fw, 9.3 + l0 * 7.0, led) * lf;
+    g += L * gain;
+    // Roofs and the low haze catch some of the street light.
+    g += avg * lit * min(t.dens, 1.3) * 0.01;
+  }
+  // Roads: a faint thread of traffic, lit with lamps through towns and villages.
+  float rw = max(0.012, fw * 0.6);
+  if (t.road < 0.3 + 4.0 * rw) {
+    float line = exp(-t.road * t.road / (rw * rw)) * 0.012 / rw;
+    float town = smoothstep(0.08, 0.4, t.dens);
+    // Near, the line breaks into lamps every 50 m and moving cars.
+    float k = smoothstep(0.6, 0.25, rw / 0.05), dots = line, car = 1.0;
+    if (k > 0.0) {
+      float la = (fract(t.along / 0.05) - 0.5) * 0.05;
+      dots = exp(-(la * la + t.road * t.road) / (rw * rw)) * 0.012 * 0.05 / (1.77 * rw * rw);
+      // Cars: one lane each way, about half the slots full.
+      float slot = t.along / 0.35 + sign(fract(t.seed * 3.0) - 0.5) * uTime * 0.09;
+      float cq = (fract(slot) - 0.5) * 0.35;
+      car = step(0.5, hash12(vec2(floor(slot), t.seed * 97.0))) * exp(-(cq * cq) / (rw * rw)) * 0.35 / (1.77 * rw);
+    }
+    float traffic = 0.03 + 0.6 * min(t.rank * t.rank, 1.0);
+    vec3 rc = mix(vec3(1.0, 0.92, 0.8), avg, town);
+    g += rc * t.fade * (traffic * (1.0 - town) * mix(0.15 * line, 0.1 * line + 0.08 * line * car, k) + town * 0.18 * mix(line, dots, k));
+  }
+  // Farms and hamlets: lone lamps, most of them near a road.
+  // They cluster by the district noise, so the dark between stays dark.
+  float near = exp(-t.road / 0.5);
+  float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn);
+  g += lampLight(w, 0.45, pf, fw, 41.0, led) * 0.0016;
   return g;
 }
 
@@ -345,7 +465,7 @@ vec4 deck(vec3 d) {
   // Plain random jitter: structured jitter ripples on long grazing paths.
   float t = t0 + ds * hash12(gl_FragCoord.xy);
   // Town light under the deck, sampled at both ends of the segment.
-  float ua = towns(uCam + d.xz * t0).z, ub = towns(uCam + d.xz * t1).z;
+  float ua = townDome(uCam + d.xz * t0), ub = townDome(uCam + d.xz * t1);
   float mu = dot(d, uSun);
   float phase = cloudPhase(mu);
   // A low sun reaches only the tops that face it.
@@ -518,11 +638,11 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
   // Ground footprint of one pixel, in km, grows at grazing angles.
   float fw = tg / focal1 / max(-d.y, 0.03);
-  vec3 g = ground(w, fw);
-  vec4 cl = deck(d);
+  vec4 cl = deck(d), ml = midLayer(d);
   gDeckT = cl.a;
+  // Ground under thick cloud never shows, so it costs nothing.
+  vec3 g = cl.a * ml.a > 0.002 ? ground(w, fw) : vec3(0.0);
   g = g * cl.a + cl.rgb;
-  vec4 ml = midLayer(d);
   g = g * ml.a + ml.rgb;
   // The air between: the baked view ray dims the ground and adds its glow.
   return g * T + L + uFloor * 0.5;
