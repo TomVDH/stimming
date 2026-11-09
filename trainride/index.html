@@ -622,7 +622,39 @@ const glints = [];
     col.push(...c.map(q => q * range(1.2, 3)));
     size.push(range(22, 44));
   }
-  for (let i = 0; i < 60000 && pos.length < 3 * 22000; i++) {
+  // Sector by sector: shore strings and hillside houses, from the lake mask in the map.
+  // Zurich and the far Zurichsee shore are dense; the Linth plain sparse; the Walensee nearly dark.
+  {
+    const W = ROUTE.w, tOf = j => -400 + 8 * j + TB * j * j;
+    const sector = x => x < 5000 ? [1.0, WHITE, 0.5] : x < 34000 ? [0.8, WARM, 0.35] : x < 57000 ? [0.22, SOD, 0.15] : [0.1, WARM, 0.012];
+    const lit = (x, tt, c, k, sz, y = 0) => { pos.push(((x % TILE) + TILE) % TILE, 2 + y + rnd() * 4, -tt); col.push(...c.map(q => q * k)); size.push(sz); };
+    for (let i = 0; i < W; i++) {
+      const x = i / W * TILE, [p, c0, hill] = sector(x);
+      // The far shore: the first dry row after the lake, going out from the line.
+      let seen = false, js = -1;
+      for (let j = Math.ceil(jOf(40)); j < NT; j++) {
+        const lake = ROUTE.f[(j * W + i) * 2] === 255;
+        if (lake) seen = true; else if (seen) { js = j; break; }
+      }
+      if (js < 0) continue;
+      const ts = tOf(js);
+      // The shore road: streetlights every column or so, a little back from the water.
+      if (rnd() < p) lit(x + rnd() * 17, ts + 8 + rnd() * 20, rnd() < 0.5 ? c0 : WARM, range(1.4, 2.6), range(26, 40));
+      // Houses climb the slope above the shore.
+      for (let k = 0; k < 3; k++) if (rnd() < hill) lit(x + rnd() * 17, ts + 40 + rnd() ** 1.5 * 320, rnd() < 0.7 ? WARM : WHITE, range(0.9, 2.0), range(20, 32), rnd() * 6);
+    }
+    // The motorway across the Linth plain: a sodium string with a gentle curve.
+    for (let x = 34500; x < 56500; x += 38) {
+      const tt = 330 + 90 * Math.sin(x / 2300) + 40 * Math.sin(x / 700);
+      if (rnd() < 0.9) lit(x + rnd() * 6, tt, SOD, range(1.6, 2.2), range(24, 30), 6);
+    }
+    // Quinten: a few warm lights across the water from Murg, with no road to them.
+    const murg = ROUTE.meta.stations.find(s => s[0] === 'Murg')?.[1] ?? 68500;
+    let jq = -1;
+    { const i = Math.round(murg / TILE * W); let seen = false; for (let j = Math.ceil(jOf(40)); j < NT; j++) { const lake = ROUTE.f[(j * W + i) * 2] === 255; if (lake) seen = true; else if (seen) { jq = j; break; } } }
+    if (jq > 0) for (let k = 0; k < 28; k++) lit(murg + range(-260, 260), tOf(jq) + 10 + rnd() * 90, WARM, range(1.2, 2.4), range(22, 34), rnd() * 10);
+  }
+  for (let i = 0; i < 60000 && pos.length < 3 * 26000; i++) {
     const x = rnd() * TILE, t = 60 + 7000 * rnd() ** 1.4;
     if (rnd() < townAt(x, t) * 0.9) light(x, -t, pick(), range(1.2, 3), range(22, 40));
   }

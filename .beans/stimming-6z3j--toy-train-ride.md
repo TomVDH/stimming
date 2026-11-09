@@ -181,5 +181,5 @@ Open from the critics:
 - [x] Rails glint: anisotropic specular from each lamp, the moon and the sun, stretched along the rail
 - [x] Dev plan page trainride/dev/ (relief, line, stations, baked strip); Tom: the relief map goes into the annex later for background and explanation
 - [x] Oncoming trains now and then: a 150 or 210 m two-unit train every one to two and a half minutes on the second track at 31 m/s; window band and doors blurred by the relative speed; lit windows at night, headlights; its bow wave knocks the carriage; ?opp=seconds calls one for QA
-- [ ] Landscape lights, sector by sector
+- [x] Landscape lights by sector: a streetlight string on the far lake shore from the map's lake mask, houses climbing above it; dense in Zurich and the gold coast, sparse on the Linth plain, nearly dark on the Walensee; a sodium motorway string over the Linth plain; Quinten's few lights across from Murg
 - [ ] Stations rework
