@@ -772,7 +772,7 @@ scene.add(sky);
 // Haze glows where the window light passes: a short ray march in a box.
 const SHAFT = { lo: [-8, 0.0, S.apZ], hi: [8, 2.4, 10] };
 const shaftMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uLo: { value: V3(SHAFT.lo) }, uHi: { value: V3(SHAFT.hi) }, uDens: { value: 0.006 } },
+  uniforms: { ...U, uLo: { value: V3(SHAFT.lo) }, uHi: { value: V3(SHAFT.hi) }, uDens: { value: 0.0022 } },
   side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: true,
   blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
@@ -796,7 +796,7 @@ const shaftMat = new THREE.ShaderMaterial({
       vec3 L = uLamp - p;
       float d2 = dot(L, L);
       // Forward scatter: the haze glows most toward the window.
-      float mu = dot(rd, -L * inversesqrt(d2));
+      float mu = dot(rd, L * inversesqrt(d2));
       float g = 0.45;
       float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5);
       float dens = 0.6 + 0.8 * fbm(p.xz * 0.6 + vec2(uTime * 0.05, p.y * 0.4));
@@ -817,8 +817,8 @@ const shaftMat = new THREE.ShaderMaterial({
 
 /* ---------- steam ---------- */
 // Soft puffs. Each rises by buoyancy, cools, grows, and drifts with the wind.
-const PUFFS = 320;
-const puff = Array.from({ length: PUFFS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), T: 0, age: 1e9, life: 1, size: 0.1, seed: Math.random() }));
+const PUFFS = 400;
+const puff = Array.from({ length: PUFFS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), T: 0, age: 1e9, life: 1, size: 0.1, seed: Math.random(), kind: 0 }));
 const steamGeo = new THREE.InstancedBufferGeometry();
 steamGeo.index = new THREE.PlaneGeometry(1, 1).index;
 steamGeo.setAttribute('position', new THREE.PlaneGeometry(1, 1).getAttribute('position'));
@@ -861,13 +861,19 @@ const steamMat = new THREE.ShaderMaterial({
     // Window light scatters forward through the steam.
     vec3 L = uLamp - vP;
     float d2 = dot(L, L);
-    float mu = dot(-v, -L * inversesqrt(d2));
+    float mu = dot(v, -L * inversesqrt(d2));
     float g = 0.6;
     float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5);
-    vec3 c = uLampCol * uOut * apMask(vP) * ph * 0.08 / (d2 + 0.3);
+    // Inside the shack the tube lights the steam directly.
+    float inside = step(vP.z, uApZ) * step(abs(vP.x), 1.64) * step(vP.y, 2.6) * step(-1.14, vP.z);
+    // A floor on the phase keeps side-lit steam from going grey.
+    vec3 c = uLampCol * mix(uOut * 0.22 * apMask(vP), 0.6, inside) * (0.5 + ph) * 0.12 / (d2 + 0.3);
+    // The tube under the awning lights steam as it rolls out.
+    vec3 Ls = uStrip - vP;
+    c += uStripCol * (1.0 - inside) * 0.25 / (dot(Ls, Ls) + 0.15);
     vec3 Ln = neonPt(vP) - vP;
     float dn2 = dot(Ln, Ln);
-    float mun = dot(-v, -Ln * inversesqrt(dn2));
+    float mun = dot(v, -Ln * inversesqrt(dn2));
     float phn = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mun, 1.5);
     c += uNeonCol * phn * 0.03 / (dn2 + 0.3);
     c += uSky * 4.0 + uHaze * 0.4;
@@ -879,33 +885,69 @@ const steam = new THREE.Mesh(steamGeo, steamMat);
 steam.frustumCulled = false;
 steam.renderOrder = 3;
 scene.add(steam);
-let wind = 0.3, emitAcc = 0;
+let wind = 0.3, emitAcc = 0, fryPuffs = 0, livePuffs = 0, puffCap = PUFFS;
 // Wind grows with height above the square, as in a log profile.
 const windAt = y => wind * 1.6 * Math.log(1 + Math.max(0, y) / 0.3) / Math.log(1 + 10 / 0.3);
-function emit(src, n, { speed = 0.3, spread = 0.06, size = 0.12, life = 6 } = {}) {
+// kind 0: the vent plume; kind 1: fryer steam, denser and hotter.
+function emit(src, n, { speed = 0.3, spread = 0.06, size = 0.12, life = 6, kind = 0, out = 0 } = {}) {
   for (let k = 0; k < n; k++) {
+    if (livePuffs >= puffCap) return;
     const q = puff.find(o => o.age >= o.life);
     if (!q) return;
-    q.p.set(src[0] + (rnd() - 0.5) * spread, src[1], src[2] + (rnd() - 0.5) * spread);
-    q.v.set((rnd() - 0.5) * 0.05, speed * (0.7 + rnd() * 0.6), (rnd() - 0.5) * 0.05);
-    q.T = 1; q.age = 0; q.life = life * (0.7 + rnd() * 0.6); q.size = size; q.seed = rnd();
+    livePuffs++;
+    q.p.set(src[0] + (rnd() - 0.5) * spread, src[1], src[2] + (rnd() - 0.5) * spread * 0.5);
+    q.v.set((rnd() - 0.5) * 0.12, speed * (0.7 + rnd() * 0.6), out * (0.6 + rnd() * 0.8));
+    q.T = 1; q.age = 0; q.life = life * (0.7 + rnd() * 0.6); q.size = size * (0.8 + rnd() * 0.4); q.seed = rnd(); q.kind = kind;
   }
 }
-function stepSteam(dt) {
-  // The vent breathes a thin plume all the time.
-  emitAcc += dt * 9;
+// Steam from one well; out flings it toward the window.
+const emitWell = (w, n, o = {}) => emit([w.x, OIL_Y + 0.06, WELL_Z], n, { speed: 0.5, spread: 0.6, size: 0.1, life: 6.5, kind: 1, ...o });
+const SHACK_X = S.w / 2 - 0.08, ROOF = S.top - 0.1, HEADER = S.ap[3] - 0.05;
+function stepSteam(dt, plume = 1) {
+  // The vent breathes a thin plume while the toy is awake.
+  emitAcc += dt * 9 * plume;
   while (emitAcc >= 1) { emitAcc -= 1; emit([S.vent[0], S.vent[1] + 0.06, S.vent[2]], 1); }
+  // Each well steams with its boil.
+  for (const w of wells) {
+    w.steamAcc = (w.steamAcc ?? 0) + dt * 26 * Math.max(0, w.boil - SIMMER);
+    while (w.steamAcc >= 1) { w.steamAcc -= 1; emitWell(w, 1); }
+  }
+  fryPuffs = livePuffs = 0;
   for (const q of puff) {
     if (q.age >= q.life) continue;
     q.age += dt;
     // Lift follows the excess heat; the puff cools as it mixes.
     q.T *= Math.exp(-dt / 1.4);
     const drag = 0.9 + q.size * 1.5;
-    q.v.y += (0.9 * q.T - drag * q.v.y * 0.5) * dt;
-    q.v.x += (windAt(q.p.y) - q.v.x) * drag * dt * 0.8;
-    q.v.z += (-q.v.z * drag * 0.5 + windAt(q.p.y) * 0.15) * dt;
+    // Warm air keeps a little lift after the steam itself has cooled.
+    q.v.y += (0.9 * q.T + 0.18 - drag * q.v.y * 0.5) * dt;
+    const inside = q.p.z < S.apZ && Math.abs(q.p.x) < SHACK_X && q.p.y < S.top;
+    if (inside) {
+      // Steam pools under the roof and spills toward the window.
+      q.v.x -= q.v.x * dt * 2;
+      if (q.p.y > 1.7) q.v.z += 2.4 * dt;
+      q.v.z -= q.v.z * dt * 0.8;
+      if (q.p.y > ROOF) { q.p.y = ROOF; q.v.y = Math.min(q.v.y, 0); }
+      // The wall above the window holds it back until it sinks below the header.
+      if (q.p.z > S.apZ - 0.1 && q.p.y > HEADER) { q.v.z = Math.min(q.v.z, 0); q.v.y -= 1.2 * dt; }
+      q.p.x = Math.max(-SHACK_X + 0.05, Math.min(SHACK_X - 0.05, q.p.x));
+      q.p.z = Math.max(-1.08, q.p.z);
+      // Crowded steam spreads sideways.
+      q.size += dt * 0.12;
+    } else {
+      // Under the awning, steam slides out along the flap.
+      if (q.p.z > S.apZ && q.p.z < 2.1 && q.p.y > 1.9 && q.p.y < 2.6 && Math.abs(q.p.x) < 1.45) {
+        const lid = 2.08 + (q.p.z - 1.24) * 0.466 - 0.08;
+        if (q.p.y > lid) { q.p.y = lid; q.v.y = Math.min(q.v.y, 0); q.v.z += 1.6 * dt; }
+      }
+      q.v.x += (windAt(q.p.y) - q.v.x) * drag * dt * 0.8;
+      q.v.z += (-q.v.z * drag * 0.4 + windAt(q.p.y) * 0.15) * dt;
+      // In the open, dry night air takes the steam up faster.
+      if (q.kind) q.age += dt * 0.7;
+    }
     q.p.addScaledVector(q.v, dt);
     q.size += dt * (0.08 + 0.18 * (1 - q.T));
+    if (q.age < q.life) { livePuffs++; if (q.kind) fryPuffs++; }
   }
 }
 function writeSteam() {
@@ -914,8 +956,8 @@ function writeSteam() {
     const live = q.age < q.life;
     const u = live ? q.age / q.life : 1;
     P.set([q.p.x, q.p.y, q.p.z, live ? q.size : 0], i * 4);
-    // Clear at the source, white once it condenses, gone as it mixes.
-    F[i * 2] = live ? smooth(0.03, 0.12, u) * (1 - smooth(0.45, 1, u)) * 0.8 : 0;
+    // Clear at the source; white once it condenses, a few cm out; gone as it mixes.
+    F[i * 2] = live ? smooth(0.1, 0.4, q.age) * (1 - smooth(0.45, 1, u)) * (q.kind ? 0.9 : 0.7) : 0;
     F[i * 2 + 1] = q.seed;
   });
   aPos.needsUpdate = aFade.needsUpdate = true;
@@ -1051,6 +1093,7 @@ function frame() {
     p.uniforms.uMax.value = 18 * size.dpr * tiltK;
   }
   // Droplet size in pixels per metre at unit depth.
+  puffCap = portrait ? 260 : PUFFS;
   dropMat.uniforms.uPx.value = size.h * size.dpr * camera.projectionMatrix.elements[5] / 2;
 }
 function resize() {
@@ -1078,17 +1121,22 @@ function draw() {
 /* Frame loop: full rate while something moves, then sleep. */
 // QA can shorten the sleep with ?sleep=<ms>.
 const SLEEP = +QS.get('sleep') || 60000;
-let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0, flare = 0, lastShake = 0;
-const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy();
+let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), simT = 0, flare = 0, lastShake = 0, pace = reduced() ? 0 : 1;
+const busy = () => !!press || Math.abs(look.ty - look.yaw) + Math.abs(look.tp - look.pitch) > 1e-4 || U.uFlare.value > 0.003 || fryerBusy() || fryPuffs > 0;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
   const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
   const lively = busy();
+  // Ambient drift eases out over 2 s once idle, and stays off in reduced motion.
+  const awake = !reduced() && now - lastInput < SLEEP;
+  pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
+  const run = lively ? 1 : pace;
   try {
-    simT += dt;
+    simT += dt * run;
     U.uTime.value = simT;
+    stepSteam(dt * run * (reduced() ? 0.5 : 1), pace);
     // A hold on the shack keeps the basket shaking.
     if (press?.hold && now - lastShake > 700) act.shake();
     stepFryer(dt);
@@ -1105,7 +1153,7 @@ function tick(now) {
       lastDraw = now;
     }
   } finally {
-    if (visible && lively) raf = requestAnimationFrame(tick);
+    if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
     else lastT = 0;
   }
 }
@@ -1203,6 +1251,8 @@ act.drop = () => {
   w.vy = -1.5;
   w.friesMat.uniforms.uAlb.value.set(...FRIES_COL[w.stage]);
   spit(w, reduced() ? 8 : 26);
+  // Wet fries flash a burst of steam.
+  emitWell(w, reduced() ? 8 : 22, { speed: 0.8 });
   flare = 1;
   syncActions();
   wake();
@@ -1214,6 +1264,8 @@ act.shake = () => {
   if (!w) { flare = Math.max(flare, 0.2); wake(); return; }
   w.shake = 1;
   if (w.inOil) { w.dip = 0.35; spit(w, reduced() ? 4 : 12); }
+  // The shake throws a cloud toward the window.
+  emitWell(w, reduced() ? 12 : (w.inOil ? 46 : 18), { speed: 0.7, size: 0.16, life: 7.5, out: w.inOil ? 0.5 : 0.25 });
   wake();
 };
 act.fill = () => {
@@ -1221,6 +1273,7 @@ act.fill = () => {
   if (!w) return;
   w.fry = -1;
   w.shake = 0.5;
+  emitWell(w, 6, { speed: 0.4, size: 0.1 });
   syncActions();
   wake();
 };

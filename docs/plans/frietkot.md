@@ -180,8 +180,9 @@ Five visible controls: Sauce, three actions, Wind.
 
 ### Task 3: Steam
 
-- [ ] Puff pool, buoyancy, cooling, wind shear, condensation gap, scatter.
-- [ ] Shake: the basket rattles and a cloud rolls out.
+- [x] Puff pool, buoyancy, cooling, wind shear, condensation gap, scatter.
+- [x] Shake: the basket rattles and a cloud rolls out.
+- [x] Steam pools under the roof, waits behind the header, spills out under the awning, then drifts grey in the wind. Drifting loop at 30 fps; sleeps 60 s after input.
 - [ ] Commit: `Frietkot: steam through the lamplight`.
 
 ### Task 4: Sauce, cone, moths, traffic
