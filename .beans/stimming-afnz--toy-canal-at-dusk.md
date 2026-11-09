@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:18:19Z
-updated_at: 2026-11-09T09:20:26Z
+updated_at: 2026-11-09T09:24:41Z
 ---
 
 Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish canal at blue hour in the rain: tap the quay lamps to light them; their reflections stretch across the water; a paper boat drifts through the light.
@@ -15,10 +15,10 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - [x] Task 2: lamp picking, sodium warm-up, pools on wet cobbles, windows and TV flicker
 - [x] Task 3: rain lit only by light, ripple rings, chip easing, paper boat
 - [x] Task 4: sound: rain bed, lamp relay and buzz, carillon, wind; Q9
-- [ ] Task 5: bar, Settings, persistence; Q1 to Q10
+- [x] Task 5: bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name (draft: Vaart bij valavond)
-- [ ] Record the session cost
+- [x] Record the session cost
 
 ## Notes
 
@@ -49,3 +49,7 @@ Build Canal at dusk from docs/plans/canal.md. It starts in the Lab. A Flemish ca
 - Task 3: up to 60,000 rain streaks (16,000 on the towpath) wrap through a box that follows the view; each drop sums the lamps in its 12 m cell in the vertex shader, so rain shows only in lamp cones. Raindrop rings on a 0.9 m grid break the canal and the puddles; reduced motion turns rings off. Rain smears lamp reflections into long broken pillars; Dry keeps them crisp. The chips ease wind, smear and rain over 2 to 3 s; haze thickens with rain. A tap on the canal starts a ring. + Boat (Space) floats a paper boat from the bridge to the towpath camera: it rocks harder in rain, trails a V-wake, reflects, and lights up under lit lamps. The GTAO pass hides rain and lamp heads while it draws depth. Window taps are not built.
 
 - Task 4, plain Web Audio on audioKit: a rain hiss and water plinks whose rate follows the eased rain; a breathing low wind bed; a lamp relay click on every toggle and, for sodium, a 100 Hz mains hum that rises through the warm-up and settles; the carillon, an original eight-note minor phrase on five-partial bells (hum 0.5, prime 1, tierce 1.2, quint 1.5, nominal 2), 0.6 s late, low-passed, mostly reverb, panned to the tower; a second tap queues after the phrase. Every hit jitters pitch, time and level. A hidden tab stops all voices. Q9 passed in the pane: the context runs after a real click and suspends once the loop sleeps (checked with ?sleep=3000). A listen-through by Tom is still open.
+
+- Task 5: Weather and Dusk persist under stimming.canal.weather and .dusk (View and Letterbox persist through the shell); a saved weather applies at once on load. The drifting loop now waits out its 31 ms gap before asking for a frame, so rAF requests stay at 30 per second.
+- QA in the browser pane (no Playwright): Q1 node --check passes for the page and the menu. Q2 clean console on the toy and the Lab menu, chips, + Boat, taps. Q3 stills at 1280 and 375 throughout. Q4 settled: 0 rAF calls in 2 s. Q5 hidden: 0 rAF calls in 2 s. Q7 three bar controls (Weather, Dusk, + Boat), three key rows. Q8 Space adds a boat. Q9 context runs after a real click and suspends once settled. Not verified: Q4 drifting rate and Q10 frame times (the hidden pane throttles rAF), and Q6 reduced motion in a browser (checked in code only).
+- Session cost: no dollar figure is available inside the session. The one build session (blockout through Task 5, with the redesigns to a Beernem-like sprawl, per-lamp light, AO and TAA) used about 780,000 tokens of context.
