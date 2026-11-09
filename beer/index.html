@@ -157,6 +157,7 @@ const ui = initPage({ id: 'beer', bar: {
       onPick: v => { light = v; live(); } },
     { type: 'choice', id: 'foamTime', label: 'Foam time', value: 'fast', persist: true,
       options: [{ value: 'fast', label: 'Fast' }, { value: 'real', label: 'Real' }], onPick: v => { foamTime = v; live(); } },
+    { type: 'toggle', id: 'cold', label: 'Cold glass', value: false, persist: true, onToggle: v => { coldGlass = v; live(); } },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -164,6 +165,7 @@ const ui = initPage({ id: 'beer', bar: {
 } });
 let light = ui.setting('light')?.value ?? 'warm';
 let foamTime = ui.setting('foamTime')?.value ?? 'fast';
+let coldGlass = ui.setting('cold')?.value ?? false;
 
 let markReady;
 const glReady = new Promise(r => { markReady = r; });
@@ -368,7 +370,7 @@ void main() {
 }`;
 const BEER_FS = NOISE + ROOM + PROF + `
 uniform sampler2D uBehind;
-uniform vec2 uRes;
+uniform mat4 projectionMatrix;
 uniform vec3 uSigma, uKey;
 uniform float uLevel, uHaze, uSurge;
 varying vec3 vW, vN;
@@ -389,20 +391,22 @@ void main() {
   vec3 nx = X.y <= uGYb + 0.02 ? vec3(0.0, -1.0, 0.0) : normalize(vec3(X.x, -P.w * length(X.xz), X.z));
   vec3 d2 = refract(d, -nx, 1.333);
   if (dot(d2, d2) < 1e-4) d2 = reflect(d, -nx);
-  // The light behind arrives along the exit ray; sample it where that ray lands on screen.
+  // The room behind, seen along the exit ray.
   vec4 clip = projectionMatrix * viewMatrix * vec4(X + d2 * 40.0, 1.0);
   vec2 uv = clamp(clip.xy / clip.w * 0.5 + 0.5, 0.001, 0.999);
   vec3 behind = texture2D(uBehind, uv).rgb;
+  // A broad light panel stands behind the glass, as in a product shot.
+  // Rays the glass bends away from it read dark, so the edges deepen.
+  vec3 Ld = normalize(vec3(LAMP.x * 0.4, LAMP.y + 4.0, BACK_Z) - X);
+  float k = max(dot(normalize(d2), Ld), 0.0);
+  float panel = pow(k, 6.0) * 1.0 + pow(k, 40.0) * 0.9;
+  vec3 light = behind + uLamp * panel;
+  // Beer-Lambert along the true path gives the gold its depth.
   vec3 T = exp(-uSigma * t);
-  // Haze and the surge scatter forward (Henyey-Greenstein, g = 0.65).
-  float ext = (uHaze * 0.6 + uSurge * 0.9) * t;
-  vec3 Ld = normalize(vec3(LAMP, BACK_Z) - vW);
-  float g = 0.65, ct = dot(-v, Ld);
-  float hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * ct, 1.5);
-  vec3 ins = (uLamp * (0.1 + 0.2 * hg) + uKey * 0.05) * exp(-uSigma * (1.0 + t * 0.7));
-  vec3 col = behind * T * exp(-ext) + ins * (1.0 - exp(-ext));
-  // A soft inner glow keeps the beer luminous even off the lamp.
-  col += uLamp * exp(-uSigma * 2.5) * 0.06 * (1.0 - c);
+  vec3 col = light * T;
+  // Haze and the surge scatter a little light forward, tinted by the beer.
+  float ext = (uHaze * 0.5 + uSurge * 0.12) * t;
+  col = col * exp(-ext) + uLamp * 0.45 * exp(-uSigma * (0.8 + 0.6 * t)) * (1.0 - exp(-ext));
   col = col * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -441,19 +445,20 @@ void main() {
   if (dot(n, v) < 0.0) n = -n;
   float sf = clamp((vW.y - uLevel) / max(uTop - uLevel, 0.05), 0.0, 1.0);
   float r = length(vW.xz);
+  // A creamy head: soft key light with wrap, darker toward the sides for its round body.
+  float key = clamp((dot(n, normalize(KEY_DIR)) + 0.5) / 1.5, 0.0, 1.0);
+  float side = vS > 0.999 ? 1.0 : 0.55 + 0.45 * pow(max(dot(normalize(vec3(vW.x, 0.0, vW.z)), v), 0.0), 0.7);
   vec2 q = vS > 0.999 ? vW.xz : vec2(atan(vW.x, vW.z) * max(r, 1.0), vW.y);
-  float cs = uCell * 1.4 * (1.0 + 0.9 * sf) * (1.0 + uCoarse);
-  vec4 F = voro(q / cs + 0.35 * vec2(noise(q / cs * 0.3), noise(q / cs * 0.3 + 4.0)));
-  float film = 1.0 - smoothstep(0.03, 0.12, F.y - F.x);
-  float key = clamp((dot(n, normalize(KEY_DIR)) + 0.4) / 1.4, 0.0, 1.0);
-  // The lamp shines through the head's thin edge: golden near the beer, cream above.
-  float edge = pow(1.0 - abs(dot(n, v)), 2.0);
-  vec3 glow = uLamp * exp(-uSigma * (0.3 + 1.2 * (1.0 - sf))) * (0.06 + 0.45 * edge);
-  vec3 cell = uFoamCol * (0.22 + 0.55 * key) * (0.6 + 0.45 * (1.0 - F.x));
-  cell += uKey * 0.8 * key * exp(-dot(F.zw - vec2(-0.12, 0.16), F.zw - vec2(-0.12, 0.16)) * 26.0);
-  vec3 col = mix(cell, uFoamCol * (0.55 + 0.6 * key), film) + glow;
-  // The wet cream line where the head meets the beer.
-  col = mix(col, uLamp * exp(-uSigma * 2.0) * 0.6 + uFoamCol * 0.25, (1.0 - smoothstep(0.0, 0.18, sf)) * 0.7);
+  // Fine bubbles show only as a faint texture; coarser on top as the head ages.
+  float cs = uCell * (1.0 + 0.8 * sf) * (1.0 + uCoarse);
+  vec4 F = voro(q / cs);
+  float tex = 0.9 + 0.1 * smoothstep(0.0, 0.5, F.y - F.x) + 0.06 * (noise(q * 3.0) - 0.5);
+  vec3 col = uFoamCol * (0.32 + 0.68 * key) * side * tex;
+  // The lamp glows through the head: warm and golden at its foot, cream on top.
+  vec3 glow = uLamp * exp(-uSigma * (1.2 * (1.0 - sf))) * (0.08 + 0.35 * pow(1.0 - abs(dot(n, v)), 2.0));
+  col += glow;
+  // A wet, golden line where the head meets the beer.
+  col = mix(col, uLamp * exp(-uSigma * 3.0) * 0.55 + uFoamCol * 0.15, (1.0 - smoothstep(0.0, 0.12, sf)) * 0.6);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -483,8 +488,9 @@ void main() {
       float y0 = max(aB.y, uGYb + 0.15);
       float A = (uLevel - y0) / (life * life * life);
       c = vec3(aB.x, y0 + A * age * age * age, aB.z);
-      c.xz += 0.03 * age * vec2(sin(age * 13.0 + seed * 40.0), cos(age * 11.0 + seed * 20.0));
-      R = (0.02 + 0.07 * age / life) * (0.7 + 0.5 * uFizz);
+      // Trains rise near straight; the big bubbles at the top sway a little.
+      c.xz += 0.006 * age * age * vec2(sin(age * 9.0 + seed * 40.0), cos(age * 7.0 + seed * 20.0));
+      R = (0.008 + 0.04 * age / life) * (0.8 + 0.4 * uFizz);
       alpha = step(fract(seed * 7.3), 0.25 + 0.75 * uFizz);
     } else if (kind < 1.5) {
       // A wall bubble: grow in place, then rise.
@@ -493,7 +499,7 @@ void main() {
       float ang = aB.x, y = mix(uGYb + 0.4, uLevel - 0.3, aB.y);
       float rmax = aB.z;
       float grow = clamp(tau / (0.7 * P), 0.0, 1.0);
-      R = 0.006 + rmax * grow;
+      R = 0.004 + rmax * 0.55 * grow;
       float rise = max(tau - 0.7 * P, 0.0);
       y += 4.0 * rise * rise + 2.0 * rise;
       float rr = gp(y).y - R * 0.9;
@@ -506,8 +512,8 @@ void main() {
       float ang = aB.x + uTime * (0.25 + 0.35 * (1.0 - aB.z));
       float rr = aB.z * (gp(y).y - 0.15);
       c = vec3(sin(ang) * rr, y, cos(ang) * rr);
-      R = 0.012 + 0.02 * aB.y;
-      alpha = uSurge * smoothstep(0.0, 0.15, f) * smoothstep(1.0, 0.8, f) * step(h1(seed * 9.1), uSurge * 1.2);
+      R = 0.005 + 0.009 * aB.y;
+      alpha = 0.7 * uSurge * smoothstep(0.0, 0.15, f) * smoothstep(1.0, 0.8, f) * step(h1(seed * 9.1), uSurge * 1.2);
     } else {
       // A burst at the top: a sparkle, then droplets thrown up.
       float rate = 0.6 + 1.2 * uFizz;
@@ -544,20 +550,20 @@ varying float vA, vKind, vR;
 void main() {
   float d = length(vQ);
   if (d > 1.0) discard;
-  vec3 lit = uLamp * exp(-uSigma * 2.2) + vec3(0.06, 0.05, 0.04);
+  vec3 lit = uLamp * exp(-uSigma * 2.0);
   vec3 col; float a;
   if (vKind > 2.5 && vKind < 3.5) {
-    // A burst: a small star.
-    float star = exp(-d * d * 10.0) + 0.4 * exp(-abs(vQ.x) * 30.0) * exp(-abs(vQ.y) * 3.0) + 0.4 * exp(-abs(vQ.y) * 30.0) * exp(-abs(vQ.x) * 3.0);
-    col = (uKey * 2.5 + lit) * star; a = 0.0;
+    // A burst: a tiny star.
+    float star = exp(-d * d * 14.0) + 0.3 * exp(-abs(vQ.x) * 34.0) * exp(-abs(vQ.y) * 4.0) + 0.3 * exp(-abs(vQ.y) * 34.0) * exp(-abs(vQ.x) * 4.0);
+    col = (uKey * 1.6 + lit) * star; a = 0.0;
   } else {
-    // A bubble: a luminous core, a bright rim, a glint up left, a soft edge.
-    float rim = smoothstep(0.55, 0.95, d) * smoothstep(1.0, 0.92, d);
-    float core = exp(-dot(vQ - vec2(-0.2, 0.25), vQ - vec2(-0.2, 0.25)) * 5.0);
-    float glint = exp(-dot(vQ - vec2(-0.35, 0.4), vQ - vec2(-0.35, 0.4)) * 60.0);
-    col = lit * (0.4 + 2.4 * core + 1.8 * rim) + uKey * 4.0 * glint;
-    a = 0.25 * smoothstep(1.0, 0.6, d);
-    if (vKind > 3.5) { col = (uKey * 0.8 + lit) * exp(-d * d * 4.0); a = 0.0; }
+    // A bubble: a bright point where it focuses the light, a fine rim, and a key glint.
+    float rim = smoothstep(0.7, 0.95, d) * smoothstep(1.0, 0.94, d);
+    float core = exp(-dot(vQ - vec2(-0.15, 0.2), vQ - vec2(-0.15, 0.2)) * 9.0);
+    float glint = exp(-dot(vQ - vec2(-0.35, 0.4), vQ - vec2(-0.35, 0.4)) * 80.0);
+    col = lit * (1.3 * core + 0.7 * rim) + uKey * 2.2 * glint;
+    a = 0.12 * smoothstep(1.0, 0.7, d);
+    if (vKind > 3.5) { col = (uKey * 0.6 + lit) * exp(-d * d * 5.0); a = 0.0; }
   }
   gl_FragColor = vec4(col * vA, a * vA);
 }`;
@@ -576,81 +582,37 @@ const GLASS_FS = NOISE + ROOM + PROF + `
 uniform sampler2D uScene;
 uniform vec2 uRes;
 uniform vec3 uKey, uSigma;
-uniform float uLevel, uChill, uCold, uMistAge, uHaze;
+uniform float uLevel, uCold, uMistAge;
 varying vec3 vW, vN, vL;
-vec4 bead(vec2 p, float scale, float density) {
-  vec2 q = p * scale, c = floor(q), f = fract(q);
-  if (hash(c + 3.1) > density) return vec4(0.0);
-  vec2 ctr = 0.28 + 0.44 * hash2(c + 1.7);
-  float rr = 0.16 + 0.26 * hash(c + 9.2);
-  vec2 dv = (f - ctr) / rr;
-  if (dot(dv, dv) > 1.0) return vec4(0.0);
-  return vec4(dv, rr / scale, 1.0);
-}
 void main() {
   vec3 n = normalize(vN), v = normalize(cameraPosition - vW);
   if (dot(n, v) < 0.0) n = -n;
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec4 P = gp(vW.y);
-  float r = length(vW.xz);
-  // Solid parts (foot, stem, base) bend the view more than the thin wall.
+  float c = max(dot(n, v), 0.0), edge = 1.0 - c;
+  // The foot, stem and base are solid glass; the bowl is a thin wall.
   float solid = 1.0 - smoothstep(-0.05, 0.05, vW.y - uGYb);
-  vec2 p = vec2(atan(vW.x, vW.z) * max(P.x, 0.5), vW.y);
-  // Mist: the chilled glass, and a denser band where cold beer stands behind it.
-  float below = smoothstep(uLevel + 0.5, uLevel - 0.3, vW.y) * step(uGYb - 0.8, vW.y);
-  // The mist stays light, so the beer and its fizz read through it; beads carry the cold.
-  float fog = clamp(0.55 * uChill * (0.6 + 0.6 * fbm(p * 1.3)) + 0.35 * uCold * below * (0.7 + 0.5 * fbm(p * 2.1 + 5.0)), 0.0, 1.0);
-  fog *= step(0.3, vW.y) * step(vW.y, uGH - 0.2);
-  float dens = clamp((uChill + uCold * below) * (0.3 + 0.6 * uMistAge), 0.0, 0.85);
-  vec4 b1 = bead(p, 6.0, dens * 0.5), b2 = bead(p + 3.7, 15.0, dens * 0.9), b3 = bead(p + 7.1, 34.0, dens);
-  vec4 b = b1.w > 0.0 ? b1 : b2.w > 0.0 ? b2 : b3;
-  // Runs: a big bead slides down and wipes a clear track.
-  float clear = 0.0, colm = floor(p.x * 1.2);
-  if (uMistAge > 0.45 && hash(vec2(colm, 7.0)) < 0.22 * fog) {
-    float head = uGH - mod(uTime * (0.35 + 0.7 * hash(vec2(colm, 3.0))) + hash(vec2(colm, 5.0)) * 23.0, uGH + 5.0);
-    float xc = (colm + 0.5) / 1.2 + 0.06 * sin(p.y * 2.6 + colm * 1.7);
-    float dx = (p.x - xc) / 0.08, dv = p.y - head;
-    if (dv > 0.0 && dv < 5.0 && abs(dx) < 1.0) clear = (1.0 - dv / 5.0) * smoothstep(1.0, 0.4, abs(dx));
-    vec2 hb = vec2(dx, dv / 0.12);
-    if (dot(hb, hb) < 1.0) b = vec4(hb, 0.08, 1.0);
-  }
-  vec3 tu = normalize(cross(vec3(0.0, 1.0, 0.0), n) + 1e-5), tv = cross(n, tu);
-  float cover = 0.0, rim = 0.0;
-  vec3 nb = n;
-  if (b.w > 0.0) {
-    float dd = dot(b.xy, b.xy);
-    cover = 1.0 - dd * 0.35;
-    rim = smoothstep(0.6, 0.98, dd);
-    nb = normalize(n + (tu * b.x + tv * b.y) * 0.85 / max(sqrt(1.0 - dd * 0.97), 0.25));
-  }
-  fog *= (1.0 - cover * 0.94) * (1.0 - clear * 0.9);
-  // The view through: a small bend for the wall, a bigger one in beads and solid glass.
-  vec2 off = (nb.xy - n.xy) * 0.06 + n.xy * (0.004 + 0.02 * solid);
-  vec3 sharp = texture2D(uScene, uv - off).rgb;
-  vec3 blur = sharp;
-  if (fog > 0.02) {
-    blur = vec3(0.0);
-    float R = (0.004 + 0.02 * fog);
-    float rot = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    for (int i = 0; i < 16; i++) {
-      float a = float(i) * 2.39996 + rot, rr = sqrt((float(i) + 0.5) / 16.0) * R;
+  // The thin wall shifts the view a little, most at the silhouette.
+  vec2 off = n.xy * (0.0015 + 0.014 * pow(edge, 3.0) + 0.025 * solid);
+  vec3 through = texture2D(uScene, uv - off).rgb;
+  // Seen edge-on the wall bends light away: a narrow dark band inside the silhouette.
+  through *= 1.0 - 0.6 * smoothstep(0.62, 0.9, edge) * (1.0 - smoothstep(0.95, 1.0, edge));
+  through *= mix(vec3(1.0), vec3(0.82, 0.88, 0.86), solid);
+  // Cold glass (a Settings choice): a soft even frost below the beer, no grit.
+  if (uCold > 0.001) {
+    float below = smoothstep(uLevel + 0.4, uLevel - 0.3, vW.y) * step(uGYb, vW.y);
+    float fog = uCold * below * (0.75 + 0.25 * fbm(vec2(atan(vW.x, vW.z) * 2.0, vW.y * 0.6)));
+    vec3 blur = vec3(0.0);
+    for (int i = 0; i < 12; i++) {
+      float a = float(i) * 2.39996, rr = sqrt((float(i) + 0.5) / 12.0) * 0.018;
       blur += texture2D(uScene, uv - off + vec2(cos(a), sin(a) * uRes.x / uRes.y) * rr).rgb;
     }
-    blur /= 16.0;
+    through = mix(through, blur / 12.0 * 0.85 + uKey * 0.02, fog * 0.8);
   }
-  vec3 col = mix(sharp, blur, smoothstep(0.05, 0.55, fog));
-  col *= mix(vec3(0.94, 0.97, 0.95), vec3(0.75, 0.82, 0.8), solid);
-  // Fog scatters the light behind into a milky veil.
-  vec3 back = lampAt(vec2(vW.x * 1.5 + LAMP.x * 0.3, vW.y * 1.5 - 2.0));
-  vec3 veil = blur * 0.55 + back * (vW.y < uLevel ? exp(-uSigma * 1.4 * P.y) * 0.22 : vec3(0.08)) + uKey * 0.025;
-  col = mix(col, veil, fog * 0.55);
-  // Studio reflections; beads catch the key light and darken at their rims.
-  float c = max(dot(nb, v), 0.0);
-  float F = 0.04 + 0.96 * pow(1.0 - c, 5.0);
-  col += studio(vW, reflect(-v, nb)) * F * (1.0 - fog * 0.6);
-  col *= 1.0 - 0.35 * rim;
-  // The silhouette catches the backlight as a fine bright line.
-  col += uLamp * pow(1.0 - c, 6.0) * 0.5 * (1.0 - fog * 0.5);
+  float F = 0.04 + 0.96 * pow(edge, 5.0);
+  vec3 col = through * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
+  // The silhouette and the lip catch the backlight as fine bright lines.
+  col += uLamp * pow(edge, 9.0) * 0.7;
+  col += uKey * smoothstep(uGH - 0.25, uGH, vL.y) * 0.25 * (0.4 + 0.6 * edge);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -1002,7 +964,7 @@ function setBeer(id) {
   const bv = vesselProfile(B.outline, BMAX, B.kind === 'champ' ? 1.8 : 0.6, ro => (ro < 1.7 ? 0.42 : 0.3));
   bottleV.load(bv);
   // The style runs the colour a little richer than the measured beer.
-  look.sigma = sigmaFor(beer).map(x => x * 1.6);
+  look.sigma = sigmaFor(beer).map(x => x * 1.75);
   look.foam = hexLin(beer.foam);
   gTex.image.data.set(glass.prof);
   gTex.needsUpdate = true;
@@ -1111,7 +1073,7 @@ function render() {
   zu.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / Math.max(U.uRes.value.y, 1);
   const gu = glassMesh.material.uniforms;
   gu.uChill.value = fx.chill;
-  gu.uCold.value = fx.cold * 0.85;
+  gu.uCold.value = coldGlass ? fx.cold * 0.75 : 0;
   gu.uMistAge.value = fx.mistAge;
   // The bottle rests at the right, out of focus; its beer level shows through the glass.
   bottleMesh.position.set(rest.x, 0, rest.z);
