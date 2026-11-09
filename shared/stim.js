@@ -444,6 +444,15 @@ function restore(row, key) {
 }
 function makeRow(row, key, layer) {
   const save = v => { if (row.persist) store.set(key, row.type === 'toggle' ? (v ? '1' : '0') : String(v)); };
+  // A link row opens another page; it holds no value.
+  if (row.type === 'link') {
+    const el = make('div', 's2-row', `<span>${row.label}</span>`);
+    const a = make('a', 's2-chip', row.text ?? 'Open');
+    a.href = row.href;
+    if (row.title) a.title = row.title;
+    el.append(a);
+    return { el, handle: { value: row.href, set() {}, get disabled() { return false; }, set disabled(d) {} } };
+  }
   const value = restore(row, key);
   if (row.type === 'slider') {
     const sl = makeSlider({ ...row, value, onInput: v => { save(v); row.onInput?.(v); } });
