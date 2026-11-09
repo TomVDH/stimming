@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Train ride: plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..700&display=swap">
+<style>
+/* Dev page: the line from above, and the strip the toy renders from. */
+body { margin: 0; background: oklch(0.14 0.01 260); color: oklch(0.92 0.01 260); font: 13px/1.4 Gabarito, system-ui, sans-serif; }
+header { padding: 14px 16px 6px; }
+h1 { font-size: 17px; margin: 0; }
+p { margin: 4px 0 0; color: oklch(0.68 0.015 260); }
+.map { position: relative; margin: 10px 16px; }
+.map img, .map svg { display: block; width: 100%; height: auto; }
+.map svg { position: absolute; inset: 0; }
+canvas { display: block; width: calc(100% - 32px); margin: 6px 16px 24px; image-rendering: pixelated; border-radius: 6px; }
+h2 { font-size: 13px; margin: 18px 16px 0; color: oklch(0.75 0.02 260); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Train ride: the line from above</h1>
+  <p>Relief from the Terrarium tiles, lakes from OSM, the traced track and its stations. <span id="km"></span></p>
+</header>
+<div class="map"><img id="relief" src="plan-relief.jpg" alt="Relief map of the route"><svg id="ov"></svg></div>
+<h2>The strip the toy renders from: distance along the line left to right, distance from the track bottom to top. Height relative to the eye; lakes blue.</h2>
+<canvas id="strip"></canvas>
+<script type="module">
+const plan = await (await fetch('plan.json')).json();
+const ov = document.getElementById('ov');
+ov.setAttribute('viewBox', `0 0 ${plan.w} ${plan.h}`);
+document.getElementById('km').textContent = `Loop length ${plan.km} km.`;
+const ns = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(ns, n); for (const k in a) e.setAttribute(k, a[k]); ov.append(e); return e; };
+el('polyline', { points: plan.track.map(p => p.join(',')).join(' '), fill: 'none', stroke: '#ff4f3a', 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+plan.stations.forEach(([n, x, y], i) => {
+  const tail = n === 'Unterterzen';
+  el('circle', { cx: x, cy: y, r: tail ? 5 : 7, fill: tail ? '#888' : '#fff', stroke: '#111', 'stroke-width': 2 });
+  const tx = el('text', { x: x + 10, y: y + (i % 2 ? 16 : -8), fill: tail ? '#aaa' : '#fff', 'font-size': 20, 'font-family': 'Gabarito, sans-serif', 'paint-order': 'stroke', stroke: '#111', 'stroke-width': 4 });
+  tx.textContent = tail ? `${n} (loop tail)` : `${i + 1} ${n}`;
+});
+// The strip: route.png decoded, coloured by height above or below the eye.
+const meta = await (await fetch('../route.json')).json();
+const img = new Image();
+img.src = '../route.png';
+await img.decode();
+const W = img.width, H = img.height, c = document.getElementById('strip');
+c.width = W; c.height = H;
+const g = c.getContext('2d', { willReadFrequently: true });
+g.drawImage(img, 0, 0);
+const d = g.getImageData(0, 0, W, H), o = g.createImageData(W, H);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  const i = (y * W + x) * 4, j = ((H - 1 - y) * W + x) * 4;
+  const h = (d.data[i] * 256 + d.data[i + 1]) / 10 - 500, lake = d.data[i + 2] === 255;
+  const t = Math.max(0, Math.min(1, (h + 50) / 1200));
+  o.data[j] = lake ? 50 : 60 + 160 * t; o.data[j + 1] = lake ? 100 : 110 + 110 * t; o.data[j + 2] = lake ? 150 : 60 + 170 * t; o.data[j + 3] = 255;
+}
+g.putImageData(o, 0, 0);
+g.fillStyle = '#fff'; g.font = '11px Gabarito';
+for (const [n, s] of meta.stations) { const x = s / meta.L * W; g.fillRect(x, H - 14, 1.5, 14); }
+</script>
+</body>
+</html>
