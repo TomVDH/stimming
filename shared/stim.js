@@ -437,16 +437,18 @@ function makeRow(row, key, layer) {
 }
 
 /* key strip: printed keycaps, gone after a few gestures */
-const TOUCH_WORD = { 'double-click': 'double-tap', click: 'tap', scroll: 'pinch' };
+const TOUCH_WORD = { 'right-drag': 'two-finger drag', 'right-click': 'long-press', 'double-click': 'double-tap', click: 'tap', scroll: 'pinch' };
 // Mouse words swap to touch words on a touch screen.
 export function keyWord(word, touch) {
-  const w = touch ? word.replace(/double-click|click|scroll/gi, m => TOUCH_WORD[m.toLowerCase()]) : word;
+  const w = touch ? word.replace(/right-drag|right-click|double-click|click|scroll/gi, m => TOUCH_WORD[m.toLowerCase()]) : word;
   return w.toUpperCase();
 }
 const COARSE = matchMedia('(pointer: coarse)');
 // A word that starts with a pointer verb stays on touch.
 // Every other word is a keyboard key.
-const POINTER_WORD = /^(double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe)\b/i;
+const POINTER_WORD = /^(right-drag|right-click|two-finger|long-press|double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe)\b/i;
+// A pointer word keeps its row on a touch screen.
+export const onTouch = word => POINTER_WORD.test(word);
 function makeKeys(entries, stage, info, delay) {
   const el = make('dl', 's2-keys');
   el.setAttribute('aria-label', 'How to play');
@@ -461,7 +463,7 @@ function makeKeys(entries, stage, info, delay) {
   // Keyboard keys show on fine pointers only.
   const words = () => rows.forEach(r => {
     r.kbd.textContent = keyWord(r.word, COARSE.matches);
-    r.row.style.display = COARSE.matches && !POINTER_WORD.test(r.word) ? 'none' : '';
+    r.row.style.display = COARSE.matches && !onTouch(r.word) ? 'none' : '';
   });
   words();
   COARSE.addEventListener?.('change', words);
