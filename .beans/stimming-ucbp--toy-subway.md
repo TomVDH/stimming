@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:42:55Z
-updated_at: 2026-11-09T11:23:49Z
+updated_at: 2026-11-09T14:07:58Z
 ---
 
 Subway (`subway`, Lab). A static Dutch-angle shot of a dim subway cabin: floor, benches, poles, windows. Tunnel lamps pass outside; their light sweeps pools and shadows over the floor and seats. Reuses Train Ride's analytic motion blur, lamp streaks, bloom and grain.
@@ -33,3 +33,6 @@ Plan: shadows are exact intervals of lamp x (window minus occluders), convolved 
 
 - [x] Five tight still shots with long lenses: Straps, Seats, Window, Door, Floor (keys 1 to 5); the lamp chips go, Mixed stays
 - [x] Smoother straps, poles and rails; finer moquette for close shots
+
+- [x] Door: reframed, softer pole glare, no-lean stickers, lit door button
+- [x] Floor: low angle across the lit aisle, a left umbrella and a used ticket
