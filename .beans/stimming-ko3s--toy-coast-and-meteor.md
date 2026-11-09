@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:41:23Z
-updated_at: 2026-11-09T08:09:53Z
+updated_at: 2026-11-09T08:40:47Z
 ---
 
 Coast and meteor (`meteor`), plan `docs/plans/meteor.md`. Rank 10. Uses K2 and K6 from `fireworks/index.html`. Bar v2.
@@ -18,8 +18,9 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - [x] Task 1: Q1, Q2, stills at 1280 and 375 px at three Dusk values
 - [x] Task 1: blockout checkpoint with Tom (signed off 2026-11-09)
 - [x] Task 2: Pebble and Fireball: moving light, shadow march, glitter, head, tail, fragments, flash, train
-- [ ] Task 2: checkpoint with Tom (stills sent 2026-11-09, waiting)
-- [ ] Task 3: Impact: flash dome, shock ring, condensation dome, steam, draw-back, return
+- [x] Task 2: checkpoint with Tom (signed off 2026-11-09)
+- [x] Task 3: Impact: flash dome, shock ring, condensation dome, steam, draw-back, return
+- [ ] Task 3: checkpoint with Tom (stills sent 2026-11-09, waiting)
 - [ ] Task 4: Sound
 - [ ] Task 5: Bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry (Dutch name and IPA are drafts)
@@ -45,3 +46,14 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - Queue: one tap waits behind a long event; later taps answer as Pebbles. A Cliff change waits until no event is in flight.
 - Impact still falls as a Fireball until Task 3.
 - Not verified: the live frame loop (rAF counts, sleep) and real pointer taps; the pane stayed hidden, so checks ran through a probe page.
+
+## Task 3 (2026-11-09)
+
+- `impact(d)`: a 48 s timeline. The impactor dives from the tap to the horizon on that bearing (3 s, 60 fragments), then hits 11 km out.
+- Flash: `uImpact` (site, strength) and `uImpCol` drive a horizon dome, a halo and a sky wash in `impactGlow()`; exposure lifts 20 %; `uGlare` dims the stars; the colour runs white, orange, embers over 11 s. The site is also the moving light (`uFireball`), so the headland throws long shadows and the sea carries a glitter path to the site.
+- Condensation dome: a Fresnel hemisphere, grown to 2.6 km and gone in 1.5 s. Ejecta: 90 K6 stars fountain up from the site. Shock ring: `shockAt()` heaps a 2.4 m ridge that crosses 12 km in 6.5 s, ruffles and darkens the water behind its front and tears spray off it.
+- Steam column: 30 fbm billboards stand up over 12 s, lit from below by the flash, from the side by the afterglow; they thin away by the end.
+- Sea level: `level()` reads `uLevel` (drop, trough front, crest, crest height). The trough comes in from the sea and drains the cove 4.6 m (the shoreline recedes about 90 m, reefs bare). The return is a sech squared crest that slows as it shoals and floods the bank to the foot of the camera; foam breaks where the face is steep and churns behind the crest.
+- Wet ground: `uWet` (high-water mark, dryness). Exposed bed stays dark and mirrors the sky; sparse cells glint; it dries over 10 s after the sea returns.
+- Reefs lowered to 1.3 m and broken up: at 2.4 m they read as a wave wall when bared.
+- Not verified live: the pane stayed hidden, so every still came through a probe page.

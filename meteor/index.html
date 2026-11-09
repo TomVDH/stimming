@@ -150,6 +150,15 @@ const U = {
   uFireCol: { value: new THREE.Vector3(1, 1, 1) },
   // Shadow march steps; the ladder halves them.
   uShSteps: { value: 16 },
+  // The impact: site xyz, flash strength; and the flash colour.
+  uImpact: { value: new THREE.Vector4(0, 0, -11000, 0) },
+  uImpCol: { value: new THREE.Vector3(1, 1, 1) },
+  // The shock ring on the sea: radius, width, strength.
+  uShock: { value: new THREE.Vector4(0, 300, 0, 0) },
+  // Glare dims the stars.
+  uGlare: { value: 0 },
+  // Wet ground: the high-water mark, and how dry it is (0 wet, 1 dry).
+  uWet: { value: new THREE.Vector2(0.3, 1) },
 };
 
 /* ---------- K2: noise ---------- */
@@ -173,8 +182,21 @@ float k2fbm(vec2 p) {
 const K2_SKY = /* glsl */`
 uniform vec3 uZen, uMid, uBand, uAnti, uSun;
 uniform float uStars;
-uniform vec4 uFireball;
-uniform vec3 uFireCol;
+uniform vec4 uFireball, uImpact;
+uniform vec3 uFireCol, uImpCol;
+uniform float uGlare;
+// The flash dome over the impact bearing: a dome on the horizon, a halo, a wash.
+vec3 impactGlow(vec3 dir) {
+  if (uImpact.w < 1e-4) return vec3(0.0);
+  vec3 v = uImpact.xyz - cameraPosition;
+  vec2 D = normalize(v.xz);
+  float a = acos(clamp(dot(normalize(dir.xz + vec2(1e-5)), D), -1.0, 1.0));
+  float up = max(dir.y, 0.0);
+  float dome = exp(-a * a * 16.0) * exp(-up * 7.0);
+  float halo = exp(-a * a * 2.2) * exp(-up * 2.5);
+  float wash = 0.02 * exp(-up * 1.2);
+  return uImpCol * uImpact.w * (1.3 * dome + 0.22 * halo + wash);
+}
 // Glow that a view ray collects in the air round the meteor.
 // It replaces Fireworks' burstGlow: one light, not eight.
 vec3 fireGlow(vec3 dir) {
@@ -209,8 +231,8 @@ vec3 duskGlow(vec3 dir) {
 }
 vec3 k2sky(vec3 dir) {
   vec3 col = duskGlow(dir);
-  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * 2.5 * uStars * smoothstep(0.03, 0.25, dir.y);
-  return col + fireGlow(dir);
+  col += vec3(0.85, 0.9, 1.0) * k2stars(dir) * 2.5 * uStars * (1.0 - uGlare) * smoothstep(0.03, 0.25, dir.y);
+  return col + fireGlow(dir) + impactGlow(dir);
 }`;
 /* ---------- end K2 ---------- */
 
@@ -228,7 +250,7 @@ float k2hazeAmount(vec3 P) {
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
   return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
 }
-vec3 k2hazeColor(vec3 dir) { return duskGlow(normalize(vec3(dir.x, 0.04, dir.z))) * 0.9 + fireGlow(dir) * 0.8; }
+vec3 k2hazeColor(vec3 dir) { return duskGlow(normalize(vec3(dir.x, 0.04, dir.z))) * 0.9 + fireGlow(dir) * 0.8 + impactGlow(dir) * 0.7; }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
@@ -241,7 +263,8 @@ const WORLD_GLSL = /* glsl */`
 uniform float uTime;
 uniform vec3 uGround;
 uniform sampler2D tHeight;
-uniform vec4 uHB, uLevel;
+uniform vec4 uHB, uLevel, uShock;
+uniform vec2 uWet;
 vec3 skyLight(vec3 N) {
   vec3 up = uZen * 0.55 + uMid * 0.25 + uAnti * 0.2;
   vec3 amb = mix(uGround, up, 0.5 + 0.5 * N.y);
@@ -276,12 +299,20 @@ vec3 fireLight(vec3 P, vec3 Ng, out vec3 L) {
   float th;
   return uFireCol * uFireball.w * march(P + Ng * 0.4, L, uShSteps, 3.0, th);
 }
-// Mean water level: a trough that runs in from the sea, then a returning crest.
+// Mean water level. s runs seaward from the waterline.
+// The trough front comes in from the sea: water seaward of it has dropped.
+// Behind the returning crest the sea stands at its old level again.
 float level(vec2 xz) {
-  float s = max(-xz.y, 0.0);
-  float drop = uLevel.x * smoothstep(uLevel.y + 150.0, uLevel.y - 150.0, s);
-  float c = cosh((s - uLevel.z) / 70.0);
+  float s = -xz.y;
+  float drop = uLevel.x * smoothstep(uLevel.y - 400.0, uLevel.y + 400.0, s);
+  drop *= 1.0 - smoothstep(uLevel.z - 150.0, uLevel.z + 150.0, s);
+  float c = cosh((s - uLevel.z) / 110.0);
   return -drop + uLevel.w / (c * c);
+}
+// The shock ring on the sea at xz: 1 at the crisp front, trailing off behind.
+float shockAt(vec2 xz) {
+  float rd = length(xz - uImpact.xz) - uShock.x;
+  return uShock.z * smoothstep(0.0, -uShock.y * 0.15, rd) * exp(min(rd, 0.0) / (uShock.y * 1.5));
 }`;
 const HEAD = `${K2_NOISE}\n${K2_SKY}\n${K2_HAZE}\n${WORLD_GLSL}`;
 
@@ -313,7 +344,7 @@ function terrainH(x, z) {
     h = Math.max(-26, -0.05 * Math.min(d, 40) - 0.045 * Math.max(0, d - 40));
     // Reefs of ridged rock on the bed; the draw-back bares them.
     const r = 1 - Math.abs(noise(x * 0.018, z * 0.018));
-    h += 2.4 * sm(0.72, 0.95, r) * sm(10, 40, d) * (1 - sm(260, 420, d));
+    h += 1.3 * sm(0.8, 0.97, r) * (0.5 + 0.5 * noise(x * 0.07, z * 0.07 + 5)) * sm(10, 40, d) * (1 - sm(260, 420, d));
   }
   h += 0.12 * noise(x * 0.05, z * 0.05);
   // The headland: a ridge that runs out to sea and narrows to a tip.
@@ -408,16 +439,26 @@ const land = new THREE.Mesh(terrainGeometry(), new THREE.ShaderMaterial({
     alb = mix(alb, turf, smoothstep(5.0, 14.0, vP.y) * (1.0 - cliff));
     // The swash zone stays wet: darker, and it mirrors the sky.
     float wet = (1.0 - smoothstep(0.25, 0.8, vP.y - level(vP.xz))) * (1.0 - cliff);
+    // Ground the sea has left stays wet below the high-water mark, and dries.
+    float bed = (1.0 - smoothstep(uWet.x, uWet.x + 0.6, vP.y)) * (1.0 - uWet.y) * (1.0 - cliff);
+    wet = max(wet, bed);
     alb *= 1.0 - 0.5 * wet;
     vec3 col = alb * skyLight(N);
     // The meteor lights the land; the headland throws its shadow.
     vec3 L;
     vec3 fl = fireLight(vP, normalize(vN), L);
     col += alb * fl * max(dot(N, L), 0.0);
+    // The headland's rim catches the light: a thin bright edge on the dark mass.
+    float rim = pow(1.0 - abs(dot(N, -V)), 3.0) * max(dot(N, L), 0.0) * cliff;
+    col += fl * rim * 0.5;
     vec3 R = reflect(V, N);
     R.y = abs(R.y);
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, N), 0.0), 5.0);
     col += wet * fres * (duskGlow(R) * 0.8 + fl * 3.0 * pow(max(dot(R, L), 0.0), 80.0));
+    // Wet stones glint: sparse cells catch the afterglow and the light.
+    vec3 Ls = normalize(vec3(uSun.x, 0.14, uSun.z));
+    float glint = step(0.93, k2hash(id * 2.71)) * near * wet;
+    col += glint * (uBand * 2.5 * pow(max(dot(R, Ls), 0.0), 40.0) + fl * 1.5 * pow(max(dot(R, L), 0.0), 30.0));
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 }));
@@ -477,7 +518,9 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     vec3 g = gerstner(xz, uTime, fade, dist, nrm);
     // Swash: each wave runs up the bank and drains back.
     float sw = 0.16 * pow(0.5 + 0.5 * sin(uTime * 0.85 - depth * 1.6 + k2noise(xz * 0.02) * 3.0), 2.0) * (1.0 - smoothstep(0.0, 2.5, depth));
-    p += vec3(g.x, g.y + lv + sw, g.z);
+    // The shock front heaps the surface into a ridge that races to the shore.
+    float ridge = 2.4 * shockAt(xz) * smoothstep(0.0, 3.0, depth);
+    p += vec3(g.x, g.y + lv + sw + ridge, g.z);
     vP = p; vXZ = xz; vFade = fade;
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   }`,
@@ -498,6 +541,10 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     vec2 cq = vXZ * 0.35 + vec2(uTime * 0.12, uTime * 0.3);
     float c0 = k2noise(cq), cf = 0.05 * exp(-dist / 160.0);
     nrm.xz -= vec2(k2noise(cq + vec2(0.15, 0.0)) - c0, k2noise(cq + vec2(0.0, 0.15)) - c0) / 0.15 * cf;
+    // The shock's wind ruffles the surface behind the front.
+    float shock = shockAt(vXZ);
+    vec2 sq = vXZ * 0.6 + vec2(uTime * 3.0, -uTime * 2.0);
+    nrm.xz += shock * 0.5 * (vec2(k2noise(sq), k2noise(sq + 7.0)) - 0.5);
     vec3 N = normalize(vec3(nrm.x, 1.0 + nrm.y, nrm.z));
     vec3 R = reflect(V, N);
     R.y = abs(R.y) + 0.002;
@@ -519,6 +566,15 @@ const sea = new THREE.Mesh(seaGeometry(), new THREE.ShaderMaterial({
     float fn = k2noise(vXZ * vec2(0.9, 1.6) + vec2(0.0, uTime * 0.4)) * 0.6 + k2noise(vXZ * 3.1 - uTime * 0.3) * 0.4;
     float shore = 1.0 - smoothstep(0.0, 0.45, d);
     float foam = smoothstep(0.35, 0.75, fn * (0.4 + shore)) * shore;
+    // The returning sea breaks where its face is steep, and churns behind the crest.
+    float lv0 = level(vXZ), lvN = level(vXZ + vec2(0.0, -6.0));
+    float steep = smoothstep(0.05, 0.22, abs(lvN - lv0) / 6.0);
+    float sC = -vXZ.y;
+    float churn = smoothstep(uLevel.z - 60.0, uLevel.z + 120.0, sC) * (1.0 - smoothstep(uLevel.z + 300.0, uLevel.z + 900.0, sC)) * min(uLevel.w * 0.5, 1.0);
+    foam = max(foam, (steep + 0.7 * churn) * smoothstep(0.25, 0.6, fn));
+    // The shock darkens the water and tears spray off the crests.
+    col = mix(col, deep * 0.4, shock * 0.6);
+    foam = max(foam, shock * smoothstep(0.55, 0.8, k2noise(vXZ * 0.4 + uTime * 2.0)));
     // The meteor lays a path of glints on the waves, broken where the land shades it.
     vec3 L;
     vec3 fl = fireLight(vP, vec3(0.0, 1.0, 0.0), L);
@@ -825,6 +881,90 @@ train.visible = false;
 scene.add(train);
 /* ---------- end persistent train ---------- */
 
+/* ---------- impact: condensation dome and steam column ---------- */
+// The dome: a translucent white hemisphere at the site, Fresnel at its edge.
+const DU = { uDome: { value: 0 } };
+const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...DU }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`varying vec3 vP, vN;
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normal; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uDome; ${HEAD}
+  void main() {
+    vec3 V = normalize(vP - cameraPosition), N = normalize(vN);
+    float fres = pow(1.0 - abs(dot(N, V)), 1.6);
+    float n = k2fbm(vN.xz * 4.0 + vN.y * 3.0 + uTime * 0.2);
+    float a = uDome * (0.12 + 0.88 * fres) * (0.55 + 0.45 * n);
+    // The dome is lit white by the flash inside it, then by the sky.
+    vec3 col = vec3(0.92, 0.94, 0.97) * (skyLight(N) * 2.5 + uImpCol * uImpact.w * 0.35);
+    col = mix(col, k2hazeColor(V), k2hazeAmount(vP) * 0.6);
+    gl_FragColor = vec4(col * a, a);
+  }`,
+}));
+dome.visible = false;
+dome.renderOrder = 2.2;
+scene.add(dome);
+
+// The steam column: billboards with fbm, stacked from the site to its head.
+// The flash lights them from below; then the dusk sky takes over.
+const PN = 30;
+const steamGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+{
+  // aP: offset x, height fraction, offset z, size; aS: seed, spin.
+  const P = new Float32Array(PN * 4), Sd = new Float32Array(PN * 2);
+  for (let i = 0; i < PN; i++) {
+    const h = i / (PN - 1), r = (0.25 + 0.75 * rnd()) * (h > 0.72 ? 2.6 : 1), a = rnd() * Math.PI * 2;
+    P.set([Math.cos(a) * r, h, Math.sin(a) * r, 0.7 + 0.6 * rnd()], i * 4);
+    Sd.set([rnd() * 100, (rnd() - 0.5) * 0.6], i * 2);
+  }
+  steamGeo.setAttribute('aP', new THREE.InstancedBufferAttribute(P, 4));
+  steamGeo.setAttribute('aS', new THREE.InstancedBufferAttribute(Sd, 2));
+  steamGeo.instanceCount = PN;
+}
+// uSteam: height, opacity, spread, growth.
+const PU = { uSteam: { value: new THREE.Vector4(0, 0, 400, 0) } };
+const steam = new THREE.Mesh(steamGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...PU }, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`attribute vec4 aP; attribute vec2 aS; uniform vec4 uSteam, uImpact;
+  varying vec2 vUv; varying vec3 vC; varying float vH, vSeed;
+  void main() {
+    float h = aP.y;
+    // Each puff rises to its station as the column grows; the head spreads.
+    float grow = smoothstep(h * 0.8, min(h * 0.8 + 0.3, 1.0), uSteam.w);
+    vec3 C = uImpact.xyz + vec3(aP.x * uSteam.z * (0.6 + 0.8 * h), 120.0 + h * uSteam.y * grow, aP.z * uSteam.z * (0.6 + 0.8 * h));
+    float size = aP.w * uSteam.z * (0.7 + 0.9 * h) * (0.3 + 0.7 * grow);
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    vec3 P = C + (right * position.x + up * position.y) * size;
+    vUv = position.xy; vC = C; vH = h; vSeed = aS.x;
+    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  }`,
+  fragmentShader: /* glsl */`uniform vec4 uSteam; varying vec2 vUv; varying vec3 vC; varying float vH, vSeed; ${HEAD}
+  void main() {
+    float d = length(vUv);
+    float n = k2fbm(vUv * 2.6 + vSeed + vec2(uTime * 0.03, uTime * 0.05));
+    float a = smoothstep(1.0, 0.25, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.75, d) * uSteam.x;
+    if (a < 0.003) discard;
+    // Lit from below by the flash, from the side by the afterglow, from above by the sky.
+    vec3 Ls = normalize(vec3(uSun.x, 0.2, uSun.z));
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    float sunSide = 0.5 + 0.5 * dot(right, Ls) * vUv.x;
+    vec3 col = skyLight(vec3(0.0, 1.0, 0.0)) * (0.9 + 0.5 * n) * vec3(0.9, 0.92, 0.96);
+    col += uBand * 0.8 * sunSide * (1.0 - vUv.y * 0.3) * (0.4 + 0.6 * vH);
+    col += uImpCol * uImpact.w * 0.4 * (1.0 - vH) * (0.6 - 0.4 * vUv.y);
+    col = mix(col, k2hazeColor(normalize(vC - cameraPosition)), k2hazeAmount(vC) * 0.7);
+    gl_FragColor = vec4(col * a, a);
+  }`,
+}));
+steam.frustumCulled = false;
+steam.visible = false;
+steam.renderOrder = 2.1;
+scene.add(steam);
+/* ---------- end impact meshes ---------- */
+
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
 // This toy runs it at half size; rung 3 of the ladder drops it to a third.
@@ -927,7 +1067,8 @@ function setDusk(v) {
   U.uStars.value = lerp(a.stars, b.stars, t);
   const el = THREE.MathUtils.degToRad(lerp(a.sun, b.sun, t));
   U.uSun.value.set(SUN_AZ * cliffSide, 0, -1).normalize().multiplyScalar(Math.cos(el)).setY(Math.sin(el));
-  renderer.toneMappingExposure = lerp(a.exp, b.exp, t);
+  expBase = lerp(a.exp, b.exp, t);
+  renderer.toneMappingExposure = expBase;
 }
 
 /* ---------- events: each Size is a timeline on the sim clock ---------- */
@@ -1001,9 +1142,9 @@ function fireball(dEnd) {
 }
 // Fragments shed along the last third of the path, each on K6's drag path.
 const tmp3 = new THREE.Vector3(), vel3 = new THREE.Vector3();
-function breakup(ev) {
-  const T = FB_T, D = tmp3.copy(ev.E).sub(ev.S);
-  for (let i = 0; i < 40; i++) {
+function breakup(ev, T = FB_T, count = 40) {
+  const D = tmp3.copy(ev.E).sub(ev.S);
+  for (let i = 0; i < count; i++) {
     const t = T * (0.66 + 0.34 * rnd()), q = t / T;
     const p0 = along(ev, q * q);
     // Path speed is d/dt of (t / T)^2, times the path length.
@@ -1037,10 +1178,108 @@ function trainFrame() {
   TU.uTr.value.set(1.6 * Math.exp(-a / 5) * Math.min(1, a / 0.2), 0.4 * sm(1, 4, a) * (1 - sm(9, 20, a)), 14 + 5 * a, 0);
 }
 
+// An Impact: the impactor dives from the tap to the horizon on that bearing.
+// Beyond the horizon: flash, dome, shock ring, ejecta, steam; then the sea
+// pulls back from the cove, pauses, and returns as one breaking swell.
+const IM_HIT = 3.0, IM_LEN = 48, IM_DIST = 11000;
+const WHITE = [1, 0.97, 0.9], ORANGE = linFit(0.72, 0.17, 50), EMBERS = linFit(0.42, 0.14, 35);
+let expBase = 1;
+function impact(d) {
+  const az = azOf(d), el = clamp(elOf(d), rad(4), rad(60));
+  const site = camera.position.clone().add(dirOf(az, 0).multiplyScalar(IM_DIST));
+  site.y = 0;
+  const E = site.clone().setY(400);
+  const S = camera.position.clone().addScaledVector(dirOf(az + (rnd() - 0.5) * rad(8), el), 5000);
+  const st = { p: 0, g: 0, I: 0, F: 0, cool: 0, drop: 0, front: 6000, crest: 3500, w: 0, ringR: 0, ringS: 0, domeR: 0, domeA: 0, stH: 0, stA: 0, stG: 0, dry: 1, hw: 0.3 };
+  const ev = { kind: 'impact', S, E, site, t0: simT, sd: rnd() * 100, st, long: true, len: IM_LEN };
+  const R = reduced();
+  ev.tl = paused()
+    // The entry: a hard, bright streak, fastest at the end.
+    .to(st, { p: 1, duration: IM_HIT, ease: 'power2.in' }, 0)
+    .to(st, { g: 1, duration: 0.3 }, 0)
+    .to(st, { I: 1.4, duration: IM_HIT, ease: 'power3.in' }, 0)
+    .call(() => breakup(ev, IM_HIT, 60), null, IM_HIT * 0.7)
+    // The flash: up in 0.4 s (200 ms on reduced motion), white to orange to embers.
+    .to(st, { F: 1, duration: R ? 0.2 : 0.4, ease: 'power2.out' }, IM_HIT)
+    .to(st, { F: 0.12, duration: 3.5, ease: 'power2.out' }, IM_HIT + 0.4)
+    .to(st, { F: 0, duration: 30, ease: 'power1.out' }, IM_HIT + 4)
+    .to(st, { cool: 1, duration: 2.5, ease: 'power1.in' }, IM_HIT + 0.3)
+    .to(st, { cool: 2, duration: 8, ease: 'power1.inOut' }, IM_HIT + 3)
+    .call(() => ejecta(ev), null, IM_HIT)
+    // The condensation dome: grown and gone in 1.5 s.
+    .to(st, { domeR: 2600, duration: 1.5, ease: 'power3.out' }, IM_HIT)
+    .to(st, { domeA: 0.9, duration: 0.25 }, IM_HIT)
+    .to(st, { domeA: 0, duration: 1.1, ease: 'power1.in' }, IM_HIT + 0.4)
+    // The shock ring crosses 12 km of sea in 6.5 s, then dies in the cove.
+    .to(st, { ringS: 1, duration: 0.3 }, IM_HIT + 0.2)
+    .to(st, { ringR: IM_DIST + 900, duration: 6.5, ease: 'none' }, IM_HIT + 0.2)
+    .to(st, { ringS: 0, duration: 1.6, ease: 'power1.in' }, IM_HIT + 5.4)
+    // The steam column stands up over 12 s and thins away by the end.
+    .to(st, { stG: 1, duration: 12, ease: 'power1.out' }, IM_HIT + 0.5)
+    .to(st, { stH: 3200, duration: 14, ease: 'power1.out' }, IM_HIT + 0.5)
+    .to(st, { stA: 0.85, duration: 3 }, IM_HIT + 0.5)
+    .to(st, { stA: 0, duration: 12, ease: 'power1.in' }, IM_LEN - 13)
+    // The draw-back: the trough comes in from the sea and drains the cove.
+    .to(st, { drop: 4.6, duration: 4, ease: 'power1.inOut' }, IM_HIT + 2)
+    .to(st, { front: -350, duration: 11, ease: 'power1.inOut' }, IM_HIT + 2)
+    .to(st, { dry: 0, duration: 0.5 }, IM_HIT + 2)
+    .to(st, { dry: 0.45, duration: 9, ease: 'power1.in' }, IM_HIT + 11)
+    // The return: a crest that grows as it shoals, floods the bank, then drains.
+    .to(st, { w: 1.2, duration: 2 }, IM_HIT + 19)
+    .to(st, { crest: -70, duration: 10, ease: 'power1.out' }, IM_HIT + 19)
+    .to(st, { w: 2.6, duration: 8, ease: 'power1.in' }, IM_HIT + 21)
+    .to(st, { dry: 0, duration: 1 }, IM_HIT + 27)
+    .to(st, { hw: 2.3, duration: 1 }, IM_HIT + 27)
+    .to(st, { w: 0, duration: 5, ease: 'power1.out' }, IM_HIT + 29.5)
+    .to(st, { drop: 0, duration: 3 }, IM_HIT + 30)
+    // Wet stones keep a sheen, then dry over 10 s.
+    .to(st, { dry: 1, duration: 10, ease: 'power1.in' }, IM_HIT + 34.5)
+    .to(st, { hw: 0.3, duration: 10 }, IM_HIT + 34.5);
+  ev.frame = age => {
+    // The sea, the ring, the dome and the steam read the state every frame.
+    U.uLevel.value.set(st.drop, st.front, st.crest, st.w);
+    U.uShock.value.set(st.ringR, 320, st.ringS, 0);
+    U.uWet.value.set(st.hw, st.dry);
+    U.uImpact.value.set(site.x, site.y, site.z, 1.3 * st.F);
+    const c = st.cool < 1 ? black.set(...WHITE).lerp(tmp3.set(...ORANGE), st.cool) : black.set(...ORANGE).lerp(tmp3.set(...EMBERS), st.cool - 1);
+    U.uImpCol.value.copy(c);
+    U.uGlare.value = clamp(st.F * 3.0);
+    renderer.toneMappingExposure = expBase * (1 + 0.2 * st.F);
+    dome.visible = st.domeA > 0.002;
+    dome.position.copy(site);
+    dome.scale.setScalar(Math.max(1, st.domeR));
+    DU.uDome.value = st.domeA;
+    steam.visible = st.stA > 0.002;
+    PU.uSteam.value.set(st.stA, st.stH, 420 + 160 * st.stG, st.stG);
+    if (age < IM_HIT) {
+      const f = flick(age, ev.sd), head = along(ev, st.p);
+      return { head, tail: along(ev, Math.max(0, st.p - 0.3)), gain: st.g * (8 + 14 * st.I) * f, width: 3.4,
+        light: { pos: head, I: st.I * f, col: black.set(...WHITE).lerp(tmp3.set(...HEAD_C), 0.5).clone() } };
+    }
+    // After the hit, the fireball at the site is the light; it cools with the flash.
+    return { head: E, tail: E, gain: 0, width: 1,
+      light: { pos: site.clone().setY(900), I: 0.4 * st.F, col: c.clone() } };
+  };
+  // Everything the impact drives returns to rest when it ends.
+  ev.end = () => {
+    U.uLevel.value.set(0, 0, 0, 0); U.uShock.value.set(0, 320, 0, 0); U.uWet.value.set(0.3, 1);
+    U.uImpact.value.w = 0; U.uGlare.value = 0; renderer.toneMappingExposure = expBase;
+    dome.visible = steam.visible = false;
+  };
+  return ev;
+}
+// Ejecta: a fountain of K6 stars thrown up over the horizon from the site.
+function ejecta(ev) {
+  for (let i = 0; i < 90; i++) {
+    const a = rnd() * Math.PI * 2, tilt = rnd() * rnd() * 0.45, sp = 220 + rnd() * 330;
+    vel3.set(Math.cos(a) * Math.sin(tilt), Math.cos(tilt), Math.sin(a) * Math.sin(tilt)).multiplyScalar(sp);
+    writeStar(tmp3.copy(ev.site).setY(150), ev.t0 + IM_HIT + rnd() * 0.6, vel3, 0.12, rnd() < 0.3 ? 2 : 1, 4 + rnd() * 5, 1.0, 1.0 + 0.6 * rnd(), 2, 0.4, 1);
+  }
+}
+
 // Start an event of the picked Size, or queue it behind a long one.
 function start(kind, d) {
-  // Impact arrives in Task 3; until then it falls as a Fireball.
-  const ev = kind === 'pebble' ? pebbleAt(d) : fireball(d);
+  const ev = kind === 'pebble' ? pebbleAt(d) : kind === 'impact' ? impact(d) : fireball(d);
   ev.tl.time(0);
   events.push(ev);
   wake();
@@ -1090,6 +1329,7 @@ function stepEvents() {
     }
     if (f.light && (!best || f.light.I > best.I)) best = f.light;
   }
+  for (const ev of events) if (simT - ev.t0 > ev.len) ev.end?.();
   events = events.filter(ev => simT - ev.t0 <= ev.len);
   metGeo.instanceCount = n;
   aMH.needsUpdate = aMT.needsUpdate = true;
@@ -1099,7 +1339,8 @@ function stepEvents() {
   if (best && best.I > 1e-3) {
     F.set(best.pos.x, best.pos.y, best.pos.z, best.I);
     // The light cools from green-white toward orange as the wake takes over.
-    U.uFireCol.value.set(...HEAD_C).lerp(black.set(...TAIL_C), best.mix);
+    if (best.col) U.uFireCol.value.copy(best.col);
+    else U.uFireCol.value.set(...HEAD_C).lerp(black.set(...TAIL_C), best.mix);
   } else F.w = 0;
   trainFrame();
 }
