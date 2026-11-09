@@ -299,7 +299,7 @@ vec3 k2haze(vec3 c, vec3 P) {
 /* ---------- marsh map: the pool and the channels ---------- */
 // The same water map runs on the CPU (placement) and the GPU (shading).
 // Each channel: centre z, amplitude, frequency, phase, half width.
-const CH = [[-125, 8, 0.011, 0.5, 8], [-300, 14, 0.006, 2.1, 14], [-720, 24, 0.0032, 4.0, 26]];
+const CH = [[-125, 8, 0.011, 0.5, 8], [-300, 14, 0.006, 2.1, 14], [-480, 18, 0.004, 1.2, 16], [-720, 24, 0.0032, 4.0, 26], [-1100, 30, 0.0025, 2.6, 34]];
 const POOL = [4, -38, 34, 20];
 const chZ = (c, x) => c[0] + c[1] * Math.sin(x * c[2] + c[3]) + 0.4 * c[1] * Math.sin(x * c[2] * 2.3 + c[3] * 1.7);
 const chW = (c, x) => c[4] * (1 + 0.3 * Math.sin(x * c[2] * 3 + c[3]));
@@ -561,6 +561,8 @@ U.uSway.value = reduced() ? 0 : 1;
 function plantReeds(count) {
   // A fixed seed plants the same marsh after every resize.
   seed = 5511;
+  // The gap in the reeds lines up with the pad: x over depth, as seen from the eye.
+  const gapDir = padX() / PAD;
   let n = 0, tries = 0;
   while (n < count && tries++ < count * 40) {
     // A square bias puts most stalks in the near fringe.
@@ -572,11 +574,11 @@ function plantReeds(count) {
     // Clumps: dense beds with thin gaps between them.
     const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
     if (clump < -0.25 + rnd() * 0.5) continue;
-    // The near fringe frames the pool: low and thin in the middle, tall at the sides.
-    const side = z > -22 ? THREE.MathUtils.smoothstep(Math.abs(x / z), 0.2, 0.5) : 1;
-    if (rnd() > 0.3 + 0.7 * side) continue;
-    // Hero stalks at the sides rise past the horizon and frame the shot.
-    const tall = z > -13 && side > 0.9 && rnd() < 0.09;
+    // Reeds fill the frame; only a small gap toward the pad stays open.
+    const side = z > -40 ? THREE.MathUtils.smoothstep(Math.abs(x / -z - gapDir), 0.05, 0.16) : 1;
+    if (rnd() > 0.15 + 0.85 * side) continue;
+    // Hero stalks rise past the horizon everywhere but the gap.
+    const tall = z > -16 && side > 0.8 && rnd() < 0.1;
     const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
     aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
     aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
@@ -590,7 +592,7 @@ function plantFar(count) {
   seed = 9137;
   let n = 0, tries = 0;
   while (n < count && tries++ < count * 30) {
-    const z = -16 - 104 * rnd();
+    const z = -16 - 260 * rnd();
     const x = (rnd() * 2 - 1) * (1.3 * -z + 6);
     if (wet(x, z) < 0.4 + rnd()) continue;
     const clump = noise(x * 0.05, z * 0.05) * 0.7 + noise(x * 0.25, z * 0.25) * 0.3;
@@ -1302,7 +1304,6 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
   }`,
 }));
 puffs.frustumCulled = false;
-puffs.visible = false;
 puffs.renderOrder = 6;
 puffs.layers.enable(MIRROR);
 scene.add(puffs);
@@ -1320,7 +1321,7 @@ function makeFluid(W, H) {
   const t = () => new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false });
   return { W, H, texel: new THREE.Vector2(1 / W, 1 / H), velA: t(), velB: t(), denA: t(), denB: t(), prsA: t(), prsB: t(), divT: t(), live: false, seed: 0 };
 }
-const gFluid = makeFluid(384, 144), tFluid = makeFluid(512, 256);
+const gFluid = makeFluid(512, 160);
 const FQ_VS = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const fMat = (frag, uniforms) => new THREE.ShaderMaterial({ uniforms: { uTexel: { value: new THREE.Vector2() }, ...uniforms }, vertexShader: FQ_VS, fragmentShader: /* glsl */`precision highp float; varying vec2 vUv; uniform vec2 uTexel; ${frag}`, depthTest: false, depthWrite: false });
 // Advect a field by the velocity; the ground stops anything from going under.
@@ -1350,15 +1351,18 @@ void main() {
     float col = exp(-dp.x * dp.x * 5000.0) * smoothstep(0.0, 0.015, vUv.y) * (1.0 - smoothstep(0.16, 0.3, vUv.y));
     float jet = 0.03 * (0.8 + 0.4 * k2noise(vec2(uTime * 9.0, vUv.y * 30.0)));
     v += vec2((k2noise(vec2(uTime * 5.0, 3.0)) - 0.5) * 0.02, -jet) * col * uPush * uDt;
+    // The deflected jet drives two ground sheets, left and right, hard and far.
+    float sheet = (1.0 - smoothstep(0.0, 0.12, vUv.y)) * smoothstep(0.0, 0.06, abs(dp.x)) * (1.0 - smoothstep(0.2, 0.45, abs(dp.x)));
+    v.x += sign(dp.x) * 0.09 * uPush * sheet * uDt;
     // Heavy smoke: a breath of lift while fresh, then it settles and creeps.
-    v.y += (min(d, 3.0) * 0.006 * exp(-age / 3.0) - smoothstep(0.03, 0.3, vUv.y) * min(d, 2.0) * 0.03) * uDt;
+    v.y += (min(d, 3.0) * 0.012 * exp(-age / 4.0) - smoothstep(0.06, 0.35, vUv.y) * min(d, 2.0) * 0.03) * uDt;
     v.x += (k2noise(vec2(vUv.x * 6.0 + uSeed, uTime * 0.4)) - 0.5) * 0.02 * uDt * smoothstep(0.0, 0.2, d);
     v += vec2(nx, -ny) * 0.06 * uDt * smoothstep(0.0, 0.3, d);
     // A light wind carries the old cloud off downrange.
     v.x += uWind * uDt * smoothstep(6.0, 20.0, age);
     // Heavy: strong drag, and a lid that damps climbing.
-    v *= 1.0 - 0.7 * uDt;
-    v.y *= 1.0 - smoothstep(0.08, 0.4, vUv.y) * 3.0 * uDt;
+    v *= 1.0 - 0.45 * uDt;
+    v.y *= 1.0 - smoothstep(0.16, 0.5, vUv.y) * 3.0 * uDt;
   } else {
     // The rocket pours smoke in at uSrc; thin air lets it bloom outward: the jellyfish.
     vec2 dp = vUv - uSrc;
@@ -1528,9 +1532,9 @@ function makeSlab(F, mode) {
   scene.add(m);
   return m;
 }
-const groundCloud = makeSlab(gFluid, 0), trailCloud = makeSlab(tFluid, 1);
+const groundCloud = makeSlab(gFluid, 0);
 // Slab sizes in units of the pad distance; the trail slab covers the whole arc.
-const G_W = 1.1, G_H = G_W * 144 / 384, T_W = 1.9, T_H = T_W * 256 / 512;
+const G_W = 1.5, G_H = G_W * 160 / 512;
 // Run both sims and place both slabs; called once per drawn frame.
 let fluidX = 0;
 function updateGround(dt) {
@@ -1539,32 +1543,14 @@ function updateGround(dt) {
   if (gFluid.live) {
     // Push and pour follow the engine: hardest in the seconds round liftoff.
     const burn = f ? THREE.MathUtils.clamp((te + 0.3) / 1.2, 0, 1) * (1 - THREE.MathUtils.smoothstep(te, PRE + 3, PRE + 9)) : 0;
-    fluidStep(gFluid, dt, { mode: 0, push: burn, rate: burn * 60, src: [0.5, 0], srcR: 0.01, wind: 0.004, alt: 0, diss: te > PRE + 40 ? 0.998 : 0.9996 });
+    fluidStep(gFluid, dt, { mode: 0, push: burn, rate: burn * 80, src: [0.5, 0], srcR: 0.01, wind: 0.004, alt: 0, diss: te > PRE + 40 ? 0.998 : 0.9996 });
     groundCloud.visible = true;
     groundCloud.material.uniforms.tDen.value = gFluid.denA.texture;
     groundCloud.position.set(fluidX, 0, -D - 6);
     groundCloud.scale.set(D * G_W, D * G_H, 1);
     if (te > PRE + 110) { gFluid.live = false; groundCloud.visible = false; }
   }
-  if (tFluid.live) {
-    // The rocket's place on the trail slab; thin air widens the pour and pushes it out.
-    const cx = fluidX + 0.5 * D, w = D * T_W, hgt = D * T_H;
-    let src = [0.5, 0], srcR = 0.004, push = 0, rate = 0, alt = 0;
-    if (f && te > PRE) {
-      const t = te - PRE, h = altKm(t, f.k), hi = THREE.MathUtils.smoothstep(h, 25, 90), eng = f.engine;
-      src = [(U.uFlame.value.x - (cx - w / 2)) / w, U.uFlame.value.y / hgt];
-      srcR = 0.004 + 0.045 * hi;
-      push = eng > 0.05 ? 0.004 + 0.06 * hi : 0;
-      rate = eng * (f.stage > 1 ? 3 : 10) * (1 - 0.7 * hi);
-      alt = h;
-    }
-    fluidStep(tFluid, dt, { mode: 1, push, rate, src, srcR, wind: 0.0035, alt, diss: 0.9993 });
-    trailCloud.visible = true;
-    trailCloud.material.uniforms.tDen.value = tFluid.denA.texture;
-    trailCloud.position.set(cx, 0, -D - 0.07 * D);
-    trailCloud.scale.set(w, hgt, 1);
-    if (te > END + 40) { tFluid.live = false; trailCloud.visible = false; }
-  }
+
 }
 
 // Write one puff into the next slot; the oldest gives way.
@@ -1603,7 +1589,6 @@ function launch(kind, padX) {
   boosters.forEach(b => { b.visible = kind === 'heavy'; });
   // Fresh fluids for every launch, centred on the pad.
   fluidReset(gFluid);
-  fluidReset(tFluid);
   fluidX = padX;
   f.tl = gsap.timeline({ paused: true })
     // Ignition: a flash, then the engines burn on the pad.
@@ -1676,7 +1661,35 @@ function flyTo(f) {
   core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1), bl * sk * up, bw * sk * (f.stage > 1 ? 0.85 : 1));
   FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
-  // The exhaust trail lives in the trail fluid; see updateGround.
+  // Exhaust: walk the path since the last puff and drop one each spacing.
+  const q = quality() === 'high' ? 1 : 2.3;
+  if (t > 0 && eng > 0.05) {
+    let tt = f.emitT;
+    tmpB.copy(rocketAt(f, tt, tmpA));
+    while (tt < t) {
+      tt = Math.min(t, tt + 0.02);
+      rocketAt(f, tt, tmpA);
+      f.acc += tmpA.distanceTo(tmpB);
+      tmpB.copy(tmpA);
+      const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
+      // One puff each part-radius: the trail stays one continuous column.
+      // The upper stage burns thin in vacuum: a faint, wide, sparse trail.
+      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3) * (f.stage > 1 ? 1.3 : 1);
+      if (f.acc < R * 0.2 * Math.sqrt(q)) continue;
+      f.acc = 0;
+      rocketAt(f, tt - 0.05, rq);
+      const back = rq.sub(tmpA).normalize();
+      {
+        rv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).addScaledVector(back, -rv.dot(back)).normalize();
+        // High up the thin air lets the exhaust spread into a wide glowing fan.
+        rv.multiplyScalar(D * (0.0003 + 0.0025 * hi) * (0.5 + 0.5 * rnd())).addScaledVector(back, D * 0.001 * (1 + hi * 2));
+        const r = R * (0.85 + 0.3 * rnd());
+        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6)) * (f.stage > 1 ? 0.5 : 1);
+        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, (0.9 - 0.45 * hi) * (f.stage > 1 ? 0.3 : 1));
+      }
+    }
+    f.emitT = tt;
+  }
   // Sparks shed from the base for the first 4 s.
   if (t > -0.5 && t < 4) {
     const due = Math.floor((t + 0.5) * 50);
@@ -2319,8 +2332,8 @@ function resize() {
   starMat.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   starMat.uniforms.uDpr.value = size.dpr;
   // Rung 3 thins the reeds.
-  plantReeds(rung >= 3 ? 3000 : quality() === 'high' ? 7000 : 4800);
-  plantFar(rung >= 3 ? 4000 : quality() === 'high' ? 14000 : 9000);
+  plantReeds(rung >= 3 ? 3500 : quality() === 'high' ? 8500 : 6500);
+  plantFar(rung >= 3 ? 5000 : quality() === 'high' ? FAR_MAX : 13000);
   frame();
   draw();
 }
@@ -2357,7 +2370,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 24;
 let nap = 0;
 let raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now(), pace = reduced() ? 0 : 1, simT = 0;
-const busy = () => !!press || !!flight || gFluid.live || tFluid.live || gsap.isTweening(cam) || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!flight || gFluid.live || gsap.isTweening(cam) || Math.abs(focusTo - focusD) > 2e-5 || birds.some(b => b.up && b.a > 0.01) || simT < lastDeath || Math.abs(auto.pitch) + Math.abs(auto.yaw) > 1e-3 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }

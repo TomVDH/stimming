@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T09:54:20Z
+updated_at: 2026-11-09T10:00:30Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -151,3 +151,10 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - Trail mode: smoke poured in at the rocket; the pour widens and pushes outward where the air is thin (the jellyfish); upper wind shears it; it lingers 40 s past the flight. Above the shadow line the slab shades it as a translucent sunlit bell, pale blue with a warm core; fresh exhaust burns orange.
 - The puff trail is retired (puffs hidden, no emission); K6 sparks and boosters stay.
 - Default lens 50 degrees (66 tall); tower is one rod; mesas at 9, 20, 45 km; wisps sparser.
+
+## Reeds fill the frame; trail back to puffs (2026-11-09, Tom: the fluid trail was a regression)
+
+- The raymarched puff trail is restored as it was in d1bd199; the trail fluid is gone. The fluid stays for the base only (512 x 160, slab 1.5 D wide).
+- Base: the deflected jet drives two ground sheets, left and right, far along the ground; lower drag; more smoke; a little lift while fresh.
+- Reeds fill the whole frame; a small gap stays open toward the pad (gapDir = padX / PAD). Two more channels at 480 and 1100 m; light far reeds out to 280 m.
+- Vetted on stills at T+3, 8, 15, 30, 45 before the commit.
