@@ -816,6 +816,107 @@ function jetUniforms(u) {
     gl.uniform4fv(u.uBallS, [cap.sq, cap.life, 0, 0]);
   } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); gl.uniform4fv(u.uBallS, [1, 0, 0, 0]); }
 }
+/* ---------- airports ---------- */
+// One airport site per 60 km cell, by an integer hash, so each stays put.
+// Planes land into one steady wind, heading toward the cabin side.
+const AP_CELL = 60, AP_N = 8, APP_N = 12, LAND = [-0.3, -0.954];
+const ihash = (x, y, s) => {
+  let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 1442695041)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  n ^= n >>> 16;
+  return (n >>> 0) / 4294967296;
+};
+// The shader's hash12, vnoise and seaField, so no airport lands in the sea.
+const fract = x => x - Math.floor(x);
+function hash12(px, py) {
+  let x = fract(px * 0.1031), y = fract(py * 0.1031), z = x;
+  const d = x * (y + 33.33) + y * (z + 33.33) + z * (x + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+function vnoise2(px, py) {
+  const ix = Math.floor(px), iy = Math.floor(py);
+  let fx = px - ix, fy = py - iy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hash12(ix, iy), b = hash12(ix + 1, iy), c = hash12(ix, iy + 1), e = hash12(ix + 1, iy + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
+}
+const SEA = 0.3;
+const seaField = (x, z) => vnoise2(x / 260 + 3.7, z / 260 + 3.7) * 0.65 + vnoise2((0.8 * x + 0.6 * z) / 95 + 1.3, (-0.6 * x + 0.8 * z) / 95 + 1.3) * 0.35;
+const apCache = new Map();
+function airportIn(i, j) {
+  const key = `${i},${j}`;
+  if (apCache.has(key)) return apCache.get(key);
+  let a = null;
+  if (ihash(i, j, 11) < 0.5) {
+    const x = (i + 0.2 + 0.6 * ihash(i, j, 12)) * AP_CELL, z = (j + 0.2 + 0.6 * ihash(i, j, 13)) * AP_CELL;
+    if (seaField(x, z) > SEA + 0.08) {
+      const th = ihash(i, j, 14) * PI, big = ihash(i, j, 15);
+      // The runway end that faces the wind takes the landings.
+      const s = Math.cos(th) * LAND[0] + Math.sin(th) * LAND[1] < 0 ? -1 : 1;
+      a = { x, z, c: Math.cos(th) * s, s: Math.sin(th) * s, half: 1.4 + 0.9 * big, twin: big > 0.6 ? 1.1 : 0,
+        seed: ihash(i, j, 16), apron: 0.6 + 0.9 * big, planes: big > 0.7 ? 3 : big > 0.3 ? 2 : 1 };
+    }
+  }
+  apCache.set(key, a);
+  return a;
+}
+// The nearest airports on the window's side, out to the horizon.
+const apList = [];
+function nearAirports() {
+  apList.length = 0;
+  const i0 = Math.floor((cam.x - 120) / AP_CELL), i1 = Math.floor((cam.x + 380) / AP_CELL);
+  const j0 = Math.floor((cam.z - 40) / AP_CELL), j1 = Math.floor((cam.z + 380) / AP_CELL);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const a = airportIn(i, j);
+    if (!a || a.z < cam.z - 30) continue;
+    a.dist = Math.hypot(a.x - cam.x, a.z - cam.z);
+    if (a.dist < 380) apList.push(a);
+  }
+  apList.sort((p, q) => p.dist - q.dist);
+  apList.length = Math.min(apList.length, AP_N);
+}
+// Planes ride a 3 degree glide path, land, and roll out.
+const apA = new Float32Array(AP_N * 4), apB = new Float32Array(AP_N * 4);
+const appA = new Float32Array(APP_N * 4), appC = new Float32Array(APP_N * 4);
+const GLIDE = Math.tan(3 * D2R), FINAL = 34, VAPP = 0.075;
+function airportUniforms(u) {
+  nearAirports();
+  apA.fill(0); apB.fill(0);
+  apList.forEach((a, i) => { apA.set([a.x, a.z, a.c, a.s], i * 4); apB.set([a.half, a.twin, a.seed, a.apron], i * 4); });
+  gl.uniform4fv(u['uAp[0]'], apA); gl.uniform4fv(u['uApB[0]'], apB);
+  gl.uniform1f(u.uBlink, reduce ? 0 : 1);
+  const planes = [];
+  for (const a of apList) for (let k = 0; k < a.planes; k++) {
+    // s: km before the threshold; under zero, the rollout.
+    const s = 30 - ((t * VAPP + a.seed * FINAL + k * FINAL / a.planes) % FINAL);
+    const tx = a.x - a.c * a.half, tz = a.z - a.s * a.half;
+    let along = -s, h = GLIDE * s + 0.015, land = 1;
+    if (s < 0) {
+      const v = clamp(-s / 4);
+      along = 0.3 + 1.8 * (1 - (1 - v) ** 2); h = 0.004;
+      land = 1 - clamp((v - 0.5) / 0.4);
+    }
+    const p = rel(tx + a.c * along, h, tz + a.s * along);
+    const dist = Math.hypot(...p);
+    planes.push({ p, dist, a, k, land: land * clamp((30 - s) / 3) });
+  }
+  planes.sort((p, q) => p.dist - q.dist);
+  appA.fill(0); appC.fill(0);
+  planes.slice(0, APP_N).forEach((q, i) => {
+    const { p, dist, a, k } = q;
+    // Landing lights shine ahead; seen from the side they fade.
+    const f = -(p[0] * a.c - p[1] * 0.05 + p[2] * a.s) / dist;
+    const lamp = q.land * (0.15 + 2.5 * Math.max(f, 0) ** 4);
+    const ph = t + a.seed * 7 + k * 0.37;
+    const beacon = !reduce && (ph % 1) < 0.08 ? 1.4 : 0;
+    const sp = (ph * 0.83) % 1.2, strobe = reduce ? 0 : Math.exp(-sp / 0.03) + (sp > 0.12 ? Math.exp(-(sp - 0.12) / 0.03) : 0);
+    const kd = 300 / Math.max(dist, 8) ** 2;
+    appA.set([...p, 1], i * 4);
+    appC.set([(lamp + strobe * 1.5 + beacon) * kd, (lamp * 0.95 + strobe * 1.5 + beacon * 0.1) * kd, (lamp * 0.85 + strobe * 1.6 + beacon * 0.05) * kd, 0], i * 4);
+  });
+  gl.uniform4fv(u['uApp[0]'], appA); gl.uniform4fv(u['uAppC[0]'], appC);
+}
 // Both passes share the view, the bank and the sky table.
 function shared(u) {
   gl.uniform2f(u.uRes, W, H);
@@ -890,6 +991,7 @@ function render() {
   gl.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
   gl.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
   jetUniforms(u);
+  airportUniforms(u);
   const nTr = trailUniforms();
   // Both rows go up as one 128 by 2 float texture.
   trailData.set(trA, 0); trailData.set(trB, TRAIL_N * 4);
@@ -1172,7 +1274,7 @@ dimBtn.addEventListener('click', () => { opts.dim = (opts.dim + 1) % 5; save('di
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
 for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(12, 40); c.s = 1; cells.push(c); }
-window.__ws = { cells, flashes, EV, newMeteor, cam };
+window.__ws = { cells, flashes, EV, newMeteor, cam, apList };
 buildSky();
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);

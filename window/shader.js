@@ -54,6 +54,13 @@ uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uFocal, uCover, uFlash,
 uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid, uAurora;
 uniform highp sampler3D uNoise;
 uniform vec2 uCam;
+// Airports: map site xz, then the landing heading's cos and sin.
+// uApB: runway half length, twin runway offset, seed, apron size.
+uniform vec4 uAp[8], uApB[8];
+// Planes on final: point relative to the eye in km, on flag; colour.
+uniform vec4 uApp[12], uAppC[12];
+// Flashing airport lights: 1, or 0 for reduced motion.
+uniform float uBlink;
 uniform vec3 uF, uR, uU;
 uniform vec3 uAmb, uSun, uSunL, uFloor;
 // The wing: six stations of leading and trailing edge, five panel normals.
@@ -134,6 +141,188 @@ vec3 aurora(vec3 d, float soft) {
 // Sky light along a ray, from the baked table, with the aurora.
 vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
 
+/* ---------- the land: relief, cover, water and airports ---------- */
+// Value noise with its gradient, for hill shading.
+vec3 vnoiseD(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+  float a = hash12(i), b = hash12(i + vec2(1, 0)), c = hash12(i + vec2(0, 1)), e = hash12(i + vec2(1, 1));
+  float k1 = b - a, k2 = c - a, k3 = a - b - c + e;
+  return vec3(a + k1 * u.x + k2 * u.y + k3 * u.x * u.y, du * vec2(k1 + k3 * u.y, k2 + k3 * u.x));
+}
+// A ridge: 1 on the crest, with its gradient.
+vec3 ridge(vec3 n) { return vec3(1.0 - abs(2.0 * n.x - 1.0), -2.0 * sign(n.x - 0.5) * n.yz); }
+// Pixel coverage of a band rw either side of a line.
+float band(float x, float rw, float fw) { return clamp((min(x + fw * 0.5, rw) - max(x - fw * 0.5, -rw)) / fw, 0.0, 1.0); }
+// Detail at scale sc fades to its mean once a pixel spans it.
+float fd(float sc, float fw) { return smoothstep(sc * 0.6, sc * 0.2, fw); }
+// The sea: a broad field, open water below SEA. index.html mirrors it.
+const float SEA = 0.3;
+float seaField(vec2 w) { return vnoise(w / 260.0 + 3.7) * 0.65 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 95.0 + 1.3) * 0.35; }
+
+// Set by landBase for landCover: the water share, the open sea share.
+float gWater = 0.0, gSea = 0.0;
+// The nearest airport, and the pixel in its runway frame.
+int gAp = -1; vec2 gApQ = vec2(1e3);
+
+// The bare land under the lights: fields, woods, hills and snow.
+vec3 landBase(vec2 w, float fw) {
+  float apD = 1e3;
+  gAp = -1;
+  for (int i = 0; i < 8; i++) {
+    if (uApB[i].x <= 0.0) continue;
+    vec4 a = uAp[i];
+    vec2 q = w - a.xy;
+    float d2 = dot(q, q);
+    if (d2 < apD * apD) { apD = sqrt(d2); gAp = i; gApQ = vec2(dot(q, a.zw), dot(q, vec2(-a.w, a.z))); }
+  }
+  vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
+  // Regions over tens of km: hill country, wooded belts, wet lowland.
+  float relief = smoothstep(0.4, 0.8, vnoise(w / 85.0 + 7.1));
+  float woods = vnoise(wr / 55.0 + 2.3), wet = vnoise(w / 70.0 - 4.4);
+  // The coast: the broad sea field, frayed into bays and spits.
+  float sf = seaField(w) + 0.06 * (vnoise(wr / 9.0) - 0.5) + 0.03 * (vnoise(w / 2.6 + 4.0) - 0.5) * fd(2.6, fw);
+  float sa = 0.002 + fw * 0.008;
+  gSea = smoothstep(SEA + sa, SEA - sa, sf);
+  // The land rises from the shore, never straight out of the sea.
+  relief *= smoothstep(SEA, SEA + 0.12, sf);
+  // Rivers: contour lines of a warped field, wider in wet country.
+  vec2 wq = w + 16.0 * vec2(vnoise(w / 21.0), vnoise(w / 21.0 + 8.3));
+  vec3 rv = vnoiseD(wq / 34.0), rt = vnoiseD(wq / 11.0 + 3.0);
+  float rd = abs(rv.x - 0.5) * 34.0 / max(length(rv.yz), 0.05);
+  float rdt = abs(rt.x - 0.5) * 11.0 / max(length(rt.yz), 0.05);
+  float river = max(band(rd, 0.12 * smoothstep(0.3, 0.7, wet), fw), band(rdt, 0.035 * smoothstep(0.45, 0.8, wet), fw));
+  // Lakes gather in wet lowland.
+  float lk = vnoise(wr / 5.0 + 3.3) * 0.75 + mix(0.5, vnoise(w / 1.4 + 1.1), fd(1.4, fw)) * 0.25;
+  float lv = 0.12 + 0.16 * smoothstep(0.35, 0.75, wet) - 0.1 * relief;
+  float la = 0.004 + fw * 0.08;
+  float lake = smoothstep(lv + la, lv - la, lk);
+  // Airports keep their ground dry and flat.
+  float calm = smoothstep(4.0, 7.0, apD);
+  gWater = max(gSea, max(lake, river) * calm);
+  // Hills: two ridge octaves and a low roll; rivers carve the valleys.
+  vec3 h1 = ridge(vnoiseD(wr / 13.0 + 1.9)), h2 = ridge(vnoiseD(w / 4.1 + 6.2)), h3 = vnoiseD(wr / 1.3 + 2.8);
+  float k2 = fd(4.1, fw) * 0.35, k3 = fd(1.3, fw) * 0.06;
+  float valley = 0.3 + 0.7 * smoothstep(0.0, 3.0, rd);
+  float hgt = (relief * (h1.x + k2 * h2.x) + k3 * h3.x) * valley;
+  vec2 gr = (relief * (h1.yz / 13.0 + k2 * h2.yz / 4.1) + k3 * h3.yz / 1.3) * valley * calm;
+  // Woods grow in belts, thickest on the hills.
+  float fn = vnoise(wr / 2.7 + 1.7) * 0.7 + mix(0.5, vnoise(w / 0.55 + 4.4), fd(0.55, fw)) * 0.3;
+  float fth = 0.78 - 0.4 * woods - 0.3 * relief, fa = 0.03 + fw * 0.15;
+  float forest = smoothstep(fth - fa, fth + fa, fn);
+  // Fields: a patchwork of pale stubble and dark ploughland.
+  vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
+  float parcel = mix(0.5 + 1.1 * hash12(fp), 1.05, smoothstep(0.15, 0.5, fw));
+  float alb = mix(parcel, 0.15, forest);
+  // Snow lies on the high ridges.
+  alb += 2.2 * smoothstep(0.8, 1.15, hgt);
+  if (gAp >= 0) {
+    // Inside the fence: mown grass, dark runways, a pale apron.
+    vec4 b = uApB[gAp]; vec2 q = gApQ;
+    float fence = smoothstep(0.08, 0.0, max(abs(q.x) - b.x - 0.4, max(-0.85 - q.y, q.y - 0.3 - b.y)));
+    alb = mix(alb, 1.0, fence);
+    float run = band(abs(q.y), 0.03, fw) * step(abs(q.x), b.x);
+    if (b.y > 0.0) run = max(run, band(abs(q.y - b.y), 0.03, fw) * step(abs(q.x - 0.5), b.x * 0.75));
+    alb = mix(alb, 0.3, run);
+    alb = mix(alb, 1.7, band(abs(q.y + 0.5), 0.16, fw) * band(abs(q.x - 0.2 * b.x), 0.55 * b.w, fw));
+  }
+  // Shading triples the slopes, so relief reads from 11 km.
+  vec3 n = normalize(vec3(-3.0 * gr.x, 1.0, -3.0 * gr.y));
+  // Steep ground sees less sky; slopes toward the bright side see more.
+  vec2 lz = normalize(uSun.xz + 1e-5);
+  float skyK = clamp(1.0 - 3.0 * length(gr), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
+  vec3 g = uAmb * 0.03 * alb * skyK;
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0);
+  return g;
+}
+
+// The pixel's ground footprint: view heading xy, then along and across radii.
+// Each light spreads over this footprint and keeps one pixel's energy.
+float foot(vec2 dq, vec4 F) {
+  float a = dot(dq, F.xy), c = dot(dq, vec2(-F.y, F.x));
+  return exp(-(a * a / (F.z * F.z) + c * c / (F.w * F.w))) / (PI * F.z * F.w);
+}
+// A row of lights from a0 to a1 along q.x, sp apart, each of energy E.
+// Lights closer than a pixel merge into one even line.
+float row(vec2 q, float a0, float a1, float sp, float E, vec4 F) {
+  vec2 f2 = F.zw * F.zw;
+  float rx = sqrt(f2.x * F.x * F.x + f2.y * F.y * F.y), ry = sqrt(f2.x * F.y * F.y + f2.y * F.x * F.x);
+  if (abs(q.y) > 3.0 * ry || q.x < a0 - 3.0 * rx || q.x > a1 + 3.0 * rx) return 0.0;
+  vec2 dq = vec2(q.x - clamp(floor(q.x / sp + 0.5) * sp, a0, a1), q.y);
+  float line = exp(-q.y * q.y / (ry * ry)) / (1.7725 * ry * sp) * clamp((min(q.x + rx, a1) - max(q.x - rx, a0)) / (2.0 * rx), 0.0, 1.0);
+  return mix(foot(dq, F), line, smoothstep(0.5, 1.2, rx / sp)) * E;
+}
+// Airport lights, in the runway frame: x along the landing heading, y across.
+vec3 airport(vec2 q, vec4 b, vec4 F) {
+  if (abs(q.x) > b.x + 1.3 || q.y < -1.0 || q.y > b.y + 0.5) return vec3(0.0);
+  vec3 white = vec3(1.0, 0.9, 0.75), green = vec3(0.2, 1.0, 0.45), red = vec3(1.0, 0.1, 0.05), blue = vec3(0.2, 0.35, 1.0);
+  vec3 c = vec3(0.0);
+  for (int k = 0; k < 2; k++) {
+    if (k == 1 && b.y <= 0.0) break;
+    vec2 p = k == 0 ? q : vec2(q.x - 0.5, q.y - b.y);
+    float L = k == 0 ? b.x : b.x * 0.75;
+    // Edge lights; the last 600 m glow amber.
+    float e = row(vec2(p.x, abs(p.y) - 0.023), -L, L, 0.06, 1e-3, F);
+    c += mix(white, vec3(1.0, 0.7, 0.2), step(L - 0.6, p.x)) * e;
+    // The centre line turns red over the last 300 m.
+    c += mix(white, red, step(L - 0.3, p.x)) * row(p, -L, L, 0.03, 3e-4, F);
+    // Green across the landing end, red across the far end.
+    c += green * row(vec2(p.y, p.x + L), -0.03, 0.03, 0.006, 6e-4, F.yxzw);
+    c += red * row(vec2(p.y, p.x - L), -0.03, 0.03, 0.006, 2e-4, F.yxzw);
+    // The approach lights: a bar every 30 m out to 900 m, and a cross bar.
+    float ax = -L - p.x;
+    if (ax > -0.05 && ax < 0.95) {
+      c += white * row(vec2(ax, p.y), 0.03, 0.9, 0.03, 1.6e-3, F);
+      c += white * row(vec2(p.y, ax - 0.3), -0.03, 0.03, 0.006, 4e-4, F.yxzw);
+      // The rabbit: one flash runs toward the runway twice a second.
+      float ph = fract(uTime * 2.0 + b.z + float(k) * 0.37) * 21.0, kf = floor(ph);
+      c += vec3(0.85, 0.9, 1.0) * 0.02 * foot(vec2(ax - 0.9 + kf * 0.03, p.y), F) * exp(-fract(ph) * 3.0) * uBlink;
+    }
+  }
+  // The taxiway: blue edges, a green centre line.
+  vec2 tq = vec2(q.x, q.y + 0.2);
+  c += blue * row(vec2(tq.x, abs(tq.y) - 0.012), -b.x, b.x, 0.06, 4e-4, F);
+  c += green * row(tq, -b.x, b.x, 0.03, 0.8e-4, F);
+  // The apron: floodlit concrete under high masts, the terminal behind.
+  vec2 aq = vec2(q.x - 0.2 * b.x, q.y + 0.5);
+  float hw = 0.55 * b.w;
+  float apron = band(abs(aq.x), hw, F.w * 1.6) * band(abs(aq.y), 0.16, F.z * 1.6);
+  c += vec3(1.0, 0.82, 0.6) * apron * 0.025;
+  vec2 mq = vec2(aq.x - clamp(floor(aq.x / 0.15 + 0.5) * 0.15, -hw, hw), aq.y - 0.13);
+  c += vec3(1.0, 0.85, 0.65) * 6e-4 * foot(mq, F);
+  c += vec3(1.0, 0.7, 0.4) * row(vec2(aq.x, aq.y + 0.2), -hw, hw, 0.02, 1.2e-4, F);
+  // The beacon flashes green, then white, every two seconds.
+  float bp = fract(uTime * 0.5 + b.z);
+  c += (bp < 0.5 ? green : white) * 4e-3 * foot(vec2(aq.x + hw + 0.05, aq.y + 0.2), F) * exp(-fract(bp * 2.0) * 12.0) * uBlink;
+  return c;
+}
+
+// Water over the land, then airport lights.
+// up is the local vertical at the ground point.
+vec3 landCover(vec3 g, float fw, vec3 d, vec3 up) {
+  if (gWater > 0.0) {
+    vec3 r = reflect(d, up);
+    float nv = max(dot(-d, up), 0.05);
+    float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+    vec3 wc = (skyL(r) + aurora(r, 1.0) * 0.5) * fres + uAmb * 0.0008 * vec3(0.5, 0.8, 1.0);
+    // Ripples spread the light into a glitter path: Beckmann slopes.
+    if (dot(uSunL, vec3(1.0)) > 1e-4) {
+      vec3 hv = normalize(uSun - d);
+      float hz = max(dot(hv, up), 1e-3), m2 = mix(0.004, 0.018, gSea);
+      float D = exp(-(1.0 - hz * hz) / (hz * hz * m2)) / (PI * m2 * hz * hz * hz * hz);
+      wc += uSunL * 0.014 * fres * D / (4.0 * nv);
+    }
+    g = mix(g, wc, gWater);
+  }
+  if (gAp >= 0) {
+    vec4 a = uAp[gAp];
+    vec2 v = normalize(d.xz + 1e-6);
+    float sd = max(-d.y, 0.03);
+    g += airport(gApQ, uApB[gAp], vec4(dot(v, a.zw), dot(v, vec2(-a.w, a.z)), max(0.6 * fw, 0.004), max(0.6 * fw * sd, 0.004)));
+  }
+  return g;
+}
+
 // Towns: one site per 16 km cell, with a size and a street angle.
 // x: town density, y: street angle of the strongest site.
 // z: the town light spread wide, as the haze scatters it.
@@ -211,11 +400,8 @@ vec3 boomLight(vec2 w, float reach) {
 }
 vec3 ground(vec2 w, float fw) {
   vec3 sodium = vec3(1.0, 0.5, 0.16), led = vec3(0.8, 0.88, 1.0);
-  // Fields: a patchwork that catches the sky light.
-  vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
-  float parcel = 0.45 + 0.9 * hash12(fp);
-  vec3 g = uAmb * 0.005 * parcel * (0.7 + 0.6 * fbm(w / 9.0, 3));
-  g += uSunL * 0.004 * parcel * max(uSun.y, 0.0);
+  // The land under the lights: fields, woods, hills.
+  vec3 g = landBase(w, fw);
   float ang2, mixW;
   vec3 tw = towns(w, ang2, mixW);
   float T = tw.x;
@@ -515,10 +701,11 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
     return sk;
   }
   skyA = 0.0;
-  vec2 w = uCam + (vec3(0.0, R + H, 0.0) + d * tg).xz;
+  vec3 P = vec3(0.0, R + H, 0.0) + d * tg;
+  vec2 w = uCam + P.xz;
   // Ground footprint of one pixel, in km, grows at grazing angles.
   float fw = tg / focal1 / max(-d.y, 0.03);
-  vec3 g = ground(w, fw);
+  vec3 g = landCover(ground(w, fw), fw, d, normalize(P));
   vec4 cl = deck(d);
   gDeckT = cl.a;
   g = g * cl.a + cl.rgb;
@@ -751,6 +938,21 @@ vec3 trails(vec3 d, float tEnd) {
   return e;
 }
 
+// Planes on final: their lights as points, under the deck.
+vec3 approach(vec3 d, float tEnd) {
+  vec3 e = vec3(0.0);
+  float px = 1.0 / gFocal1;
+  for (int i = 0; i < 12; i++) {
+    vec4 a = uApp[i];
+    if (a.w <= 0.0) continue;
+    float s = dot(d, a.xyz);
+    if (s <= 0.0 || s > tEnd + 1.0) continue;
+    float q = length(d * s - a.xyz) / (s * px);
+    if (q < 3.0) e += uAppC[i].rgb * exp(-q * q * 1.4);
+  }
+  return e * gDeckT;
+}
+
 // A ray hits a flat convex quad: the wing or its winglet.
 // Returns the hit distance, or -1; uv gives chord and span from 0 to 1.
 float quad(vec3 d, vec3 v[4], vec3 n, out vec2 uv) {
@@ -956,6 +1158,7 @@ void main() {
     if (tj < 1e8 && (tg < 0.0 || tj < tg)) { c = paint(d, nj, 0.004, 1.0) * 1.2; skyA = 0.0; }
   }
   if (uTrN > 1) c += trails(d, tg > 0.0 ? tg : 1e4);
+  c += approach(d, tg > 0.0 ? tg : 1e4);
   float tNear = tw;
   // The engine nacelle hangs under the wing; its inlet shows ahead of the leading edge.
   float tn = capsule(d, uNacA, uNacB, uNacR);
