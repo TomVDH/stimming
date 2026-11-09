@@ -283,6 +283,9 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 
 ### Task 6: Settings, 375 px, QA
 
-- [ ] Settings rows and persistence. Reset.
-- [ ] Browser-pane checks at 1280 and 375 px; reduced motion; idle sleep.
-- [ ] Tick the bean and record the cost. Commit.
+- [x] Settings rows and persistence. Reset also clears the cone and the view.
+- [x] Browser-pane checks at 1280, 375 x 812 and 812 x 375; Bar v2 test 96/96.
+- [x] Reduced motion: no ambient loop, no handheld sway, one echo. Idle sleep holds.
+- [x] Phones aim lower, so the shack sits near mid-height.
+- [x] Rain under MSAA: the fade clamps its UV, so thin drops never darken.
+- [ ] Record the cost. Commit.

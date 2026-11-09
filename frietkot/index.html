@@ -1693,7 +1693,9 @@ const rainMat = new THREE.ShaderMaterial({
   varying vec3 vC;
   varying vec2 vUv;
   void main() {
-    float a = (1.0 - abs(vUv.x * 2.0 - 1.0)) * smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.6, vUv.y);
+    // MSAA samples a thin quad outside its edge; a negative fade then darkens.
+    vec2 uv = clamp(vUv, 0.0, 1.0);
+    float a = (1.0 - abs(uv.x * 2.0 - 1.0)) * smoothstep(0.0, 0.3, uv.y) * (1.0 - smoothstep(0.6, 1.0, uv.y));
     // A bad light value must not reach the half-float target.
     vec3 c = clamp(vC, 0.0, 3.0);
     if (c != c) c = vec3(0.0);
@@ -2804,7 +2806,8 @@ function frame() {
   // Phones step in, centre the shack, and keep sky above for the plume.
   // A still, wide frame on thirds: the horizon on the lower third, the frituur
   // on the right-hand third, the church on the left, two thirds of night sky.
-  const T = portrait ? new THREE.Vector3(1.4, 4.4, 0) : new THREE.Vector3(-2.75, 3.7, 0);
+  // A phone holds the shack near mid-height, with cobbles below for reflections.
+  const T = portrait ? new THREE.Vector3(1.5, 2.5, 0) : new THREE.Vector3(-2.75, 3.7, 0);
   const P = portrait ? new THREE.Vector3(1.2, 0.95, 16) : new THREE.Vector3(-0.6, 1.05, 16.5);
   // A wide lens; scroll or pinch zooms in a little; the zoom ring breathes slowly.
   const hh = camcorder && !reduced() ? 1 : 0;
@@ -3328,7 +3331,11 @@ act.moths(ui.setting('moths')?.value ?? true);
 act.reset = () => {
   for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
   for (const d of drops) d.live = false;
+  coneG.visible = false; coneState.t = -1; coneState.taker = null;
+  // The view returns to the opening frame.
+  look.ty = look.tp = 0; zoomT = 1;
   wind = 0.3; ui.slider.set(0.3); ui.choice.set('mayo');
+  setDollop('mayo');
   syncActions();
   wake();
 };
