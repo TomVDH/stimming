@@ -1113,15 +1113,31 @@ function zz(ac, name, t, out, gain, rate = jit(0.08)) {
   return [s, g];
 }
 // Recorded takes, cut from Tom's picks; until they load, ZzFX and the synth play.
-const SFX = { boom: ['boom-1', 'boom-2', 'boom-3', 'boom-4', 'boom-5'], crackle: ['crackle-1', 'crackle-2'] };
-// Gain per take: the first half second of each boom sits near -16 dB.
-const SFX_GAIN = { 'boom-1': 1.64, 'boom-2': 1.53, 'boom-3': 0.69, 'boom-4': 0.79, 'boom-5': 1.45, burst: 0.73, 'crackle-1': 1.6, 'crackle-2': 0.55, report: 0.9, cake: 0.6 };
+// Cuts placed by spectrogram: clean booms, crackling shells, whistles, pops.
+const SFX = { boom: ['boom-1', 'boom-2', 'boom-3', 'boom-4', 'boom-5'], crackshell: ['crackshell-1', 'crackshell-2'], whistle: ['whistle-1', 'whistle-2', 'whistle-3'] };
+// Gain per take: the first half second of each sits near -16 dB.
+const SFX_GAIN = {
+  'boom-1': 0.59, 'boom-2': 0.72, 'boom-3': 1.39, 'boom-4': 1.55, 'boom-5': 1.46, 'crackshell-1': 1.55, 'crackshell-2': 1.46,
+  crackle: 2.0, pops: 1.34, sparkle: 1.29, 'whistle-1': 0.56, 'whistle-2': 0.7, 'whistle-3': 0.6, report: 0.85, cake: 0.61,
+};
 let sfx = null, sfxLoad = null;
+// Each take loads on its own, four at a time, with two retries.
+// A failed take is skipped; the synth covers its role.
 function loadSfx(ac) {
-  sfxLoad ||= Promise.all(Object.keys(SFX_GAIN).map(n => fetch(`sfx/${n}.mp3`).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => [n, buf])))
-    .then(list => { sfx = Object.fromEntries(list); }).catch(() => {});
+  if (sfxLoad) return;
+  const got = {}, names = Object.keys(SFX_GAIN);
+  const one = (n, tries = 3) => fetch(`sfx/${n}.mp3`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(b => ac.decodeAudioData(b))
+    .then(buf => { got[n] = buf; sfx = got; })
+    .catch(() => tries > 1 && new Promise(r => setTimeout(r, 500)).then(() => one(n, tries - 1)));
+  let i = 0;
+  const next = () => (i < names.length ? one(names[i++]).then(next) : null);
+  sfxLoad = Promise.all([next(), next(), next(), next()]);
 }
-const take = k => SFX[k][Math.floor(Math.random() * SFX[k].length)];
+const has = n => !!sfx?.[n];
+// A loaded take from a set, or null.
+const take = k => { const l = SFX[k].filter(has); return l.length ? l[Math.floor(Math.random() * l.length)] : null; };
 // One recorded take at time t, through out, at a set rate.
 function smp(ac, name, t, out, gain, rate = 1) {
   const s = ac.createBufferSource(), g = ac.createGain();
@@ -1193,10 +1209,16 @@ function env(ac, t, peak, a, d) {
 }
 // The lift: a mortar thump, a rising whoosh, and one shell in six whistles.
 function lift(ac, t, T, out, lvl) {
+  // One launch in four whistles on a recorded take, stretched to the climb.
+  const sw = sfx && Math.random() < 0.25 && count('whistle') < 2 ? take('whistle') : null;
+  if (sw) {
+    const name = sw, rate = Math.min(1.25, Math.max(0.85, sfx[name].duration / (T * 0.95)));
+    track(t + T, 'whistle', smp(ac, name, t, out, lvl * 0.5, rate)[0]);
+  }
   if (zzBufs) {
     const [th] = zz(ac, 'thump', t, out, lvl * 0.7);
     const nodes = [th];
-    if (Math.random() < 1 / 6) nodes.push(zz(ac, 'whistle', t + 0.05, out, lvl * 0.08, jit(0.04) * Math.min(1.4, T / 1.6))[0]);
+    if (!sw && Math.random() < 1 / 6) nodes.push(zz(ac, 'whistle', t + 0.05, out, lvl * 0.08, jit(0.04) * Math.min(1.4, T / 1.6))[0]);
     track(t + T, 'lift', ...nodes);
     return;
   }
@@ -1208,7 +1230,7 @@ function lift(ac, t, T, out, lvl) {
   bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(1800, t + T * 0.6);
   n.connect(bp).connect(ng).connect(out);
   const nodes = [o, n];
-  if (Math.random() < 1 / 6) {
+  if (!sw && Math.random() < 1 / 6) {
     const w = ac.createOscillator(), vib = ac.createOscillator(), vg = ac.createGain();
     w.frequency.setValueAtTime(1200 * jit(0.05), t + 0.05); w.frequency.exponentialRampToValueAtTime(2600 * jit(0.05), t + T * 0.85);
     vib.frequency.value = 7; vg.gain.value = 40;
@@ -1220,13 +1242,14 @@ function lift(ac, t, T, out, lvl) {
   track(t + T, 'lift', ...nodes);
 }
 // The boom: a crack, a body through the distance low-pass, a sub, reverb and a slap off the shore.
-function boom(ac, t, out, lvl, lp, cal) {
+function boom(ac, t, out, lvl, lp, cal, set = 'boom') {
   if (count('boom') >= 6) return;
-  if (sfx) {
+  const nm = sfx && (take(set) || take('boom'));
+  if (nm) {
     // A recorded boom; big shells play slower and deeper.
     const bl = filt(ac, 'lowpass', lp * jit(0.15));
     bl.connect(out);
-    const [b, bg] = smp(ac, take('boom'), t, bl, lvl, jit(0.06) * (1.08 - 0.08 * cal));
+    const [b, bg] = smp(ac, nm, t, bl, lvl, jit(0.06) * (1.08 - 0.08 * cal));
     // A soft synth sub keeps the weight on small speakers.
     const s = ac.createOscillator();
     s.frequency.setValueAtTime(58 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(31, t + 0.5);
@@ -1275,11 +1298,11 @@ function boom(ac, t, out, lvl, lp, cal) {
 }
 function crackle(ac, t, out, lvl) {
   if (count('crackle') >= 2) return;
-  if (sfx) {
+  if (has('crackle')) {
     // A recorded crackle, with its low thump cut away.
     const hp = filt(ac, 'highpass', 900);
     hp.connect(out);
-    const [s, g] = smp(ac, take('crackle'), t, hp, lvl * 0.9, jit(0.1));
+    const [s, g] = smp(ac, 'crackle', t, hp, lvl * 0.9, jit(0.1));
     const send = ac.createGain(); send.gain.value = 0.2; g.connect(send).connect(rvb);
     track(t + 4.2, 'crackle', s, send);
     return;
@@ -1293,6 +1316,7 @@ function crackle(ac, t, out, lvl) {
   track(t + 1.5, 'crackle', s, send);
 }
 function sizzle(ac, t, out, lvl, dur) {
+  if (has('sparkle')) { track(t + 1.6, 'sizzle', smp(ac, 'sparkle', t, out, lvl * 0.45, jit(0.08))[0]); return; }
   if (zzBufs) { track(t + 3, 'sizzle', zz(ac, 'sizzle', t, out, lvl * 0.16, jit(0.1))[0]); return; }
   const n = hiss(ac, t, dur + 0.3), hp = filt(ac, 'highpass', 4000), g = env(ac, t, lvl * 0.14, 0.25, dur);
   n.connect(hp).connect(g).connect(out);
@@ -1313,15 +1337,19 @@ function soundShell(pos, wait, T, type, style, cal) {
   // Far shells are quieter and duller: -6 to -20 dB, 6 kHz to 900 Hz.
   const f = THREE.MathUtils.clamp(far, 0, 1), lvl = dB(-6 - 14 * f) * jit(0.12), lp = 6000 * Math.pow(900 / 6000, f);
   lift(ac, t0, T, pan, lvl);
-  boom(ac, tb, pan, lvl * (type === 'supernova' ? 1.4 : 1), lp, cal);
+  const crackly = CRACKLY.has(type) || style === 'crackle';
+  // Crackling shells play a recorded boom that rattles into pops.
+  boom(ac, tb, pan, lvl * (type === 'supernova' ? 1.4 : 1), lp, cal, sfx && crackly ? 'crackshell' : 'boom');
   if (sfx) {
     const bl = filt(ac, 'lowpass', lp);
     bl.connect(pan);
-    // Big shells add a bright, fizzing burst; one shell in five cracks sharp.
-    if ((type === 'supernova' || cal > 1.6) && count('burst') < 2) track(tb + 3.4, 'burst', smp(ac, 'burst', tb + 0.02, bl, lvl * 0.7, jit(0.05))[0]);
-    else if (Math.random() < 0.2 && count('report') < 2) track(tb + 1.3, 'report', smp(ac, 'report', tb, bl, lvl * 0.45, jit(0.1) * 0.8)[0]);
-  }
-  if (CRACKLY.has(type) || style === 'crackle') crackle(ac, tb + 0.6 + Math.random() * 0.4, pan, lvl);
+    // A supernova cracks deep; one other shell in five cracks sharp.
+    if (type === 'supernova' && has('report') && count('report') < 2) track(tb + 3, 'report', smp(ac, 'report', tb, bl, lvl * 0.8, 0.6)[0]);
+    else if (has('report') && Math.random() < 0.2 && count('report') < 2) track(tb + 1.9, 'report', smp(ac, 'report', tb, bl, lvl * 0.45, jit(0.1) * 0.8)[0]);
+    // Splitting stars pop a moment after the burst.
+    if (type === 'crossette' && has('pops') && count('pops') < 2) track(tb + 1.6, 'pops', smp(ac, 'pops', tb + 0.35, bl, lvl * 0.8, jit(0.06))[0]);
+    if (type === 'crackle') crackle(ac, tb + 0.5 + Math.random() * 0.3, pan, lvl * 0.7);
+  } else if (crackly) crackle(ac, tb + 0.6 + Math.random() * 0.4, pan, lvl);
   if (SIZZLY.has(type)) sizzle(ac, tb + 0.2, pan, lvl, 2.5);
 }
 // The bed swells while a show runs and falls away after.
@@ -2000,7 +2028,7 @@ function tearTick() {
 // The cake take rattles under a barrage, timed to its first bursts.
 function soundCake(pos) {
   const ac = kit.live();
-  if (!ac || !sfx) return;
+  if (!ac || !has('cake')) return;
   const d = pos.distanceTo(camera.position), t = ac.currentTime + 0.9 + d / 343;
   const pan = ac.createStereoPanner(), bl = filt(ac, 'lowpass', 6000 * Math.pow(900 / 6000, THREE.MathUtils.clamp((d - 300) / 1200, 0, 1)));
   pan.pan.value = THREE.MathUtils.clamp(pos.x / (d * 0.55), -0.9, 0.9);
@@ -2017,7 +2045,7 @@ function soundTear(pos, wait) {
   const pan = ac.createStereoPanner();
   pan.connect(kit.out);
   // A deep double crack, then a long low rumble.
-  if (sfx) track(t + 2.6, 'report', smp(ac, 'report', t, pan, dB(-1), 0.5)[0]);
+  if (has('report')) track(t + 2.6, 'report', smp(ac, 'report', t, pan, dB(-1), 0.5)[0]);
   boom(ac, t, pan, dB(-2), 500, 2.5);
   boom(ac, t + 0.25, pan, dB(-6), 260, 2.5);
   boom(ac, t + 1.1, pan, dB(-10), 180, 2.5);

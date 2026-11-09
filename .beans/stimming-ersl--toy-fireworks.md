@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T10:06:54Z
-updated_at: 2026-11-09T08:24:05Z
+updated_at: 2026-11-09T08:29:27Z
 ---
 
 Fireworks (`fireworks`, idea S2). Shells burst over dark water at night; each burst lights its smoke, the low sky and the water; the boom arrives late.
@@ -94,3 +94,5 @@ Plan: `docs/plans/fireworks.md`. Rendering: three.js 0.170 (Tom, 2026-11-08). Li
 - [x] Heat lightning: silent flickers in far cloud under a heavy deck (dev: Bolt, Lightning, Lightning rate)
 
 - [x] Recorded sound: ten cut takes in fireworks/sfx (booms, burst, crackles, report, cake); ZzFX stays as fallback
+
+- [x] Recut by spectrogram: 15 takes (clean booms, crackling shells, whistles, pops, sparkle); robust loader (4 at a time, retries)
