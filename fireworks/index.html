@@ -1085,7 +1085,7 @@ const crowdPts = new THREE.Points(crowdGeo, crowdMat);
 crowdPts.frustumCulled = false;
 crowdPts.layers.enable(LIGHT);
 scene.add(crowdPts);
-const crowd = { E: 0, last: 0 };
+const crowd = { E: 0, F: 0, last: 0 };
 // Called once per drawn frame from updateLights.
 function crowdTick() {
   const dt = Math.min(0.25, Math.max(0, simT - crowd.last));
@@ -1098,9 +1098,12 @@ function crowdTick() {
   crowd.E += (target - crowd.E) * (1 - Math.exp(-dt / tau));
   if (crowd.E < 0.002) crowd.E = 0;
   CU2.uCrowd.value = crowd.E;
+  // Flashes follow the burst light and fade within about 2 s of the last burst.
+  const lit = raw > 0.05 ? 1 : 0;
+  crowd.F += (lit - crowd.F) * (1 - Math.exp(-dt / (lit ? 0.3 : 1.2)));
   // Flashes per second: about 3 after one shell, about 40 at Showtime's peak.
-  if (reduced() || crowd.E < 0.04) return;
-  const rate = 1 + 40 * crowd.E * crowd.E;
+  if (reduced() || crowd.E < 0.04 || crowd.F < 0.02) return;
+  const rate = (1 + 40 * crowd.E * crowd.E) * crowd.F;
   let n = 0;
   for (let k = rate * dt; k > 0; k--) if (Math.random() < Math.min(1, k)) {
     flashAt.setX(Math.floor(Math.random() * CROWD_N), simT + Math.random() * dt);
@@ -2854,7 +2857,7 @@ onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; SU.uDrift.v
 
 /* ---------- launch feel ---------- */
 // A held press hisses like a fuse; the seed light pulses at each calibre step.
-// Release buzzes once and kicks the view a touch.
+// Release buzzes once; only a full charge kicks the view.
 const STEPS = [0.26, 0.75, 1.5];
 let camRx = 0, kickAt = -9, kickK = 0, fuse = null;
 const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not allowed */ } };
@@ -2901,7 +2904,7 @@ function chargeEnd(fired, cal = 1) {
   }
   if (!fired) return;
   buzz(cal > 1.5 ? 28 : 16);
-  if (!reduced()) { kickAt = simT; kickK = 0.0025 * cal; }
+  if (!reduced() && cal >= 1.95) { kickAt = simT; kickK = 0.0025 * cal; }
 }
 // The recoil: the view dips a hair and settles in about 0.15 s.
 function kickTick() {
