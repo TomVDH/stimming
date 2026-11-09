@@ -63,7 +63,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -1227,6 +1227,210 @@ function setDusk(v) {
   renderer.toneMappingExposure = expBase;
 }
 
+/* ---------- sound: the light first, the sound after ---------- */
+// Every voice is Web Audio, on the kit's context, cued from the event timelines.
+// A cue runs on the sim clock, so a hidden tab holds it and plays it on return.
+// Each scheduled node is kept, so mute and a hidden tab stop them all.
+const kit = audioKit({ keys: new Set([' ']) });
+const pend = new Set();
+const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
+const dB = v => Math.pow(10, v / 20);
+let rvb = null, bed = null, wash = null;
+function track(end, kind, ...nodes) { pend.add({ end, kind, nodes }); }
+function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
+const pending = () => { prune(); return pend.size > 0; };
+function stopAll() {
+  for (const h of pend) for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+  pend.clear();
+}
+// Shared bus: a 4 s reverb and the surf bed.
+function bus(ac) {
+  if (rvb) return;
+  const len = Math.round(ac.sampleRate * 4), ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+  }
+  const conv = ac.createConvolver(), back = ac.createGain();
+  conv.buffer = ir;
+  back.gain.value = 0.5;
+  conv.connect(back).connect(kit.out);
+  rvb = conv;
+  // The bed: low surf under 400 Hz that swells with the sets, and a wash of higher foam.
+  const src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 400), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.4;
+  g.gain.value = 0;
+  lfo.frequency.value = 0.09; lg.gain.value = dB(-38);
+  lfo.connect(lg).connect(g.gain);
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start(); lfo.start();
+  bed = g;
+  const ws = ac.createBufferSource(), bp = filt(ac, 'bandpass', 1400, 0.8), wg = ac.createGain(), wl = ac.createOscillator(), wlg = ac.createGain();
+  ws.buffer = kit.noise; ws.loop = true; ws.playbackRate.value = 0.9;
+  wg.gain.value = 0;
+  wl.frequency.value = 0.07; wlg.gain.value = dB(-46);
+  wl.connect(wlg).connect(wg.gain);
+  ws.connect(bp).connect(wg).connect(kit.out);
+  ws.start(0, 0.4); wl.start();
+  wash = wg;
+}
+function hiss(ac, t, dur, rate = 1) {
+  const s = ac.createBufferSource();
+  s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
+  s.start(t, Math.random() * 0.9); s.stop(t + dur);
+  return s;
+}
+function filt(ac, type, f, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+// A gain that opens at t over a, then decays to silence over d.
+function env(ac, t, peak, a, d) {
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+  return g;
+}
+// A panner that places a world point left or right of the view.
+const camQ = new THREE.Quaternion(), relV = new THREE.Vector3();
+function panTo(ac, pos) {
+  const pan = ac.createStereoPanner();
+  relV.copy(pos).sub(camera.position).applyQuaternion(camQ.copy(camera.quaternion).invert());
+  pan.pan.value = clamp(relV.x / Math.max(relV.length(), 1) * 1.3, -0.9, 0.9);
+  pan.connect(kit.out);
+  return pan;
+}
+// A cue: runs fn with the context and a start time, if sound is on and awake.
+function cue(fn) {
+  const ac = kit.live();
+  if (!ac) return;
+  bus(ac);
+  prune();
+  fn(ac, ac.currentTime + 0.03);
+}
+// The entry sizzle: a faint, bright hiss at the instant of the light. It is electrophonic.
+function sizzle(pos, dur, lvl) {
+  cue((ac, t) => {
+    const out = panTo(ac, pos);
+    const n = hiss(ac, t, dur + 0.4), hp = filt(ac, 'highpass', 3200), bp = filt(ac, 'bandpass', 6000 * jit(0.15), 0.6), g = env(ac, t, lvl * 0.12, dur * 0.35, dur * 0.65);
+    n.connect(hp).connect(bp).connect(g).connect(out);
+    track(t + dur + 0.5, 'sizzle', n, out);
+  });
+}
+// The asteroid's roar: a low rush that climbs with the body over the whole entry.
+function roar(pos, dur, lvl) {
+  cue((ac, t) => {
+    const out = panTo(ac, pos);
+    const n = hiss(ac, t, dur + 1, 0.6), lp = filt(ac, 'lowpass', 180, 0.9), g = env(ac, t, lvl * 0.5, dur * 0.85, dur * 0.2);
+    lp.frequency.setValueAtTime(180, t); lp.frequency.exponentialRampToValueAtTime(1400, t + dur);
+    n.connect(lp).connect(g).connect(out);
+    const send = ac.createGain(); send.gain.value = 0.3; g.connect(send).connect(rvb);
+    track(t + dur + 1, 'roar', n, out, send);
+  });
+}
+// The sonic boom: two cracks 0.15 s apart, the N-wave, then a rumble that rolls round the cove.
+function doubleBoom(pos, lvl, cal = 1) {
+  cue((ac, t) => {
+    const out = panTo(ac, pos);
+    const nodes = [out];
+    for (const dt of [0, 0.15 * jit(0.1)]) {
+      const c = hiss(ac, t + dt, 0.06), ch = filt(ac, 'highpass', 1200), cg = env(ac, t + dt, lvl * 0.9, 0.002, 0.04);
+      c.connect(ch).connect(cg).connect(out);
+      const k = hiss(ac, t + dt, 0.4, 0.5), kl = filt(ac, 'lowpass', 500 * jit(0.1)), kg = env(ac, t + dt, lvl * 1.1, 0.004, 0.25);
+      k.connect(kl).connect(kg).connect(out);
+      nodes.push(c, k);
+    }
+    // The rumble: low noise and a sub that sinks, with the reverb tail and a slap off the headland.
+    const r = hiss(ac, t + 0.1, 3.5 * cal, 0.4), rl = filt(ac, 'lowpass', 140 * jit(0.1)), rg = env(ac, t + 0.1, lvl * 0.9, 0.08, 2.6 * cal);
+    r.connect(rl).connect(rg).connect(out);
+    const s = ac.createOscillator();
+    s.frequency.setValueAtTime(52 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(27, t + 0.9 * cal);
+    const sg = env(ac, t, lvl * (0.6 + 0.3 * cal), 0.01, 1.2 * cal);
+    s.connect(sg).connect(out); s.start(t); s.stop(t + 1.5 * cal);
+    const send = ac.createGain(); send.gain.value = 0.55; rg.connect(send).connect(rvb); sg.connect(send);
+    const dl = ac.createDelay(1), dlp = filt(ac, 'lowpass', 900), dg = ac.createGain();
+    dl.delayTime.value = 0.5 * jit(0.1); dg.gain.value = 0.3;
+    rg.connect(dl).connect(dlp).connect(dg).connect(out);
+    nodes.push(r, s, send, dl);
+    track(t + 4.5 * cal, 'boom', ...nodes);
+  });
+}
+// The impact's sub rumble: under 40 Hz, swelling over 6 s, then rolling away.
+function groundRumble(lvl) {
+  cue((ac, t) => {
+    const s = ac.createOscillator(), s2 = ac.createOscillator();
+    s.frequency.setValueAtTime(38, t); s.frequency.exponentialRampToValueAtTime(22, t + 14);
+    s2.frequency.setValueAtTime(31 * jit(0.03), t); s2.frequency.exponentialRampToValueAtTime(19, t + 14);
+    const g = env(ac, t, lvl * 0.9, 6, 9);
+    s.connect(g); s2.connect(g); g.connect(kit.out);
+    s.start(t); s2.start(t); s.stop(t + 16); s2.stop(t + 16);
+    // A grind of low noise rides on it, so small speakers hear something too.
+    const n = hiss(ac, t, 16, 0.3), lp = filt(ac, 'lowpass', 110), ng = env(ac, t, lvl * 0.5, 6, 9);
+    n.connect(lp).connect(ng).connect(kit.out);
+    const send = ac.createGain(); send.gain.value = 0.4; ng.connect(send).connect(rvb);
+    track(t + 16, 'rumble', s, s2, n, send);
+  });
+}
+// The draw-back: a long hiss of water leaving the stones, and a gurgle under it.
+function drawHiss(dur, lvl) {
+  cue((ac, t) => {
+    const n = hiss(ac, t, dur + 1), bp = filt(ac, 'bandpass', 2600, 0.9), g = env(ac, t, lvl * 0.35, dur * 0.3, dur * 0.7);
+    bp.frequency.setValueAtTime(1800, t); bp.frequency.exponentialRampToValueAtTime(3600, t + dur);
+    n.connect(bp).connect(g).connect(kit.out);
+    // The gurgle: low noise chopped by two slow, unequal wobbles.
+    const u = hiss(ac, t, dur + 1, 0.5), lp = filt(ac, 'lowpass', 420, 1.2), ug = env(ac, t, lvl * 0.3, dur * 0.4, dur * 0.6), ch = ac.createGain();
+    const l1 = ac.createOscillator(), l2 = ac.createOscillator(), lg1 = ac.createGain(), lg2 = ac.createGain();
+    l1.frequency.value = 5.3; l2.frequency.value = 3.1; lg1.gain.value = 0.4; lg2.gain.value = 0.35;
+    ch.gain.value = 0.5;
+    l1.connect(lg1).connect(ch.gain); l2.connect(lg2).connect(ch.gain);
+    u.connect(lp).connect(ch).connect(ug).connect(kit.out);
+    l1.start(t); l2.start(t); l1.stop(t + dur + 1); l2.stop(t + dur + 1);
+    track(t + dur + 1, 'draw', n, u, l1, l2);
+  });
+}
+// The return: a roar that rises as the wall comes in.
+function seaRoar(dur, lvl) {
+  cue((ac, t) => {
+    const n = hiss(ac, t, dur + 2, 0.7), lp = filt(ac, 'lowpass', 220, 0.8), g = env(ac, t, lvl * 0.8, dur, 2);
+    lp.frequency.setValueAtTime(220, t); lp.frequency.exponentialRampToValueAtTime(1600, t + dur);
+    n.connect(lp).connect(g).connect(kit.out);
+    const send = ac.createGain(); send.gain.value = 0.35; g.connect(send).connect(rvb);
+    track(t + dur + 2, 'roar', n, send);
+  });
+}
+// The crash: the wall breaks. A wide burst that falls from bright to a deep wash, with a thump under it.
+function crash(lvl, big = 1) {
+  cue((ac, t) => {
+    const n = hiss(ac, t, 4 * big), lp = filt(ac, 'lowpass', 3500), g = env(ac, t, lvl * 1.1, 0.25 * big, 3.2 * big);
+    lp.frequency.setValueAtTime(3500, t); lp.frequency.exponentialRampToValueAtTime(350, t + 3 * big);
+    n.connect(lp).connect(g).connect(kit.out);
+    const s = ac.createOscillator();
+    s.frequency.setValueAtTime(70 * jit(0.08), t); s.frequency.exponentialRampToValueAtTime(30, t + 1.2 * big);
+    const sg = env(ac, t, lvl * 0.7 * big, 0.08, 1.6 * big);
+    s.connect(sg).connect(kit.out); s.start(t); s.stop(t + 2 * big);
+    const send = ac.createGain(); send.gain.value = 0.5; g.connect(send).connect(rvb);
+    track(t + 4.5 * big, 'crash', n, s, send);
+  });
+}
+// The fizz: foam over the stones, a bright hiss that dies away.
+function fizz(dur, lvl) {
+  cue((ac, t) => {
+    const n = hiss(ac, t, dur + 0.5), hp = filt(ac, 'highpass', 3800), g = env(ac, t, lvl * 0.3, 0.6, dur);
+    n.connect(hp).connect(g).connect(kit.out);
+    track(t + dur + 0.5, 'fizz', n);
+  });
+}
+// The bed follows the sea: up with the returning wall, down while the cove stands empty.
+function soundBed(awake) {
+  const ac = kit.ac;
+  if (!bed || !ac || ac.state !== 'running') return;
+  const L = U.uLevel.value;
+  const sea = (1 + 0.5 * Math.min(L.w, 4) / 4) * (1 - 0.75 * clamp(L.x / 4));
+  const on = awake && sound.on;
+  bed.gain.setTargetAtTime(on ? dB(-30) * sea : 0, ac.currentTime, 1.2);
+  wash.gain.setTargetAtTime(on ? dB(-36) * sea : 0, ac.currentTime, 1.2);
+}
+sound.onChange(on => { if (!on) stopAll(); });
+/* ---------- end sound ---------- */
+
 /* ---------- events: each Size is a timeline on the sim clock ---------- */
 // gsap.timeline({ paused: true }) runs only through tl.time(simT - t0).
 // Each timeline leaves the global timeline, so GSAP's ticker stays idle.
@@ -1246,7 +1450,7 @@ const along = (ev, p, out = new THREE.Vector3()) => out.copy(ev.S).lerp(ev.E, p)
 function pebble(S, E) {
   const ev = { kind: 'pebble', S, E, t0: simT, sd: rnd() * 100, st: { p: 0, g: 0 }, long: false };
   const T = 0.6 + rnd() * 0.5;
-  ev.tl = paused();
+  ev.tl = paused().call(() => sizzle(along(ev, 0.5), T, 0.5), null, 0);
   // Reduced motion: the streak only fades in place.
   if (reduced()) ev.st.p = 0.85;
   else ev.tl.to(ev.st, { p: 1, duration: T, ease: 'none' }, 0);
@@ -1282,7 +1486,9 @@ function fireball(dEnd) {
     .to(ev.st, { I: 0.35, duration: T * 0.66, ease: 'power2.in' }, 0)
     .to(ev.st, { I: 0.8, duration: T * 0.34, ease: 'power1.in' }, T * 0.66)
     .call(() => breakup(ev), null, T * 0.66)
-    .call(() => makeTrain(ev), null, T);
+    .call(() => makeTrain(ev), null, T)
+    .call(() => sizzle(along(ev, 0.5), T, 1), null, 0)
+    .call(() => doubleBoom(ev.E, dB(-4) * jit(0.15), 1), null, T + 3 + rnd() * 3);
   ev.frame = age => {
     if (age < T) {
       const f = flick(age, ev.sd), head = along(ev, ev.st.p);
@@ -1371,6 +1577,14 @@ function impact(d) {
     .to(st, { cool: 1, duration: 2.5, ease: 'power1.in' }, T + 0.3)
     .to(st, { cool: 2, duration: 8, ease: 'power1.inOut' }, T + 3)
     .call(() => ejecta(ev), null, T)
+    .call(() => { roar(along(ev, 0.5), T, 1); sizzle(along(ev, 0.5), T, 1.2); }, null, 0)
+    // The boom arrives 4.5 s after the flash; the ground rumble under it swells from 5 s.
+    .call(() => doubleBoom(site, dB(-1), 2), null, T + 4.5)
+    .call(() => groundRumble(dB(-2)), null, T + 5)
+    .call(() => drawHiss(16, 1), null, T + 6)
+    .call(() => seaRoar(24, 1), null, T + 30)
+    .call(() => { crash(1, 1.4); fizz(14, 1); }, null, T + 52)
+    .call(() => { crash(0.7, 1); fizz(12, 0.8); }, null, T + 64)
     // The condensation dome: grown and gone in 1.5 s.
     .to(st, { domeR: 2600, duration: 1.5, ease: 'power3.out' }, T)
     .to(st, { domeA: 0.9, duration: 0.25 }, T)
@@ -1598,8 +1812,9 @@ function tick(now) {
       lastDraw = now;
     }
   } finally {
+    soundBed(lively || pace > 0);
     if (visible && (lively || pace > 0)) raf = requestAnimationFrame(tick);
-    else { lastT = 0; draw(); }
+    else { lastT = 0; draw(); kit.rest(() => !busy() && !pending()); }
   }
 }
 function wake() {
@@ -1621,7 +1836,8 @@ function watch(now, lively) {
 }
 whenVisible(stage, vis => {
   visible = vis;
-  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
+  // A hidden tab cancels pending sounds; the timelines cue them again on return.
+  if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; stopAll(); return; }
   draw();
   wake();
 });

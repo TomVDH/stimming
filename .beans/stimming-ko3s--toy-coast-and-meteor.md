@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:41:23Z
-updated_at: 2026-11-09T08:49:46Z
+updated_at: 2026-11-09T08:54:17Z
 ---
 
 Coast and meteor (`meteor`), plan `docs/plans/meteor.md`. Rank 10. Uses K2 and K6 from `fireworks/index.html`. Bar v2.
@@ -20,8 +20,9 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - [x] Task 2: Pebble and Fireball: moving light, shadow march, glitter, head, tail, fragments, flash, train
 - [x] Task 2: checkpoint with Tom (signed off 2026-11-09)
 - [x] Task 3: Impact: flash dome, shock ring, condensation dome, steam, draw-back, return
-- [ ] Task 3: checkpoint with Tom (stills sent 2026-11-09, waiting)
-- [ ] Task 4: Sound
+- [x] Task 3: checkpoint with Tom (signed off 2026-11-09, after the all-out round)
+- [x] Task 4: Sound (synth voices, cued from the timelines)
+- [ ] Task 4: Q9 and the hidden-tab test, live
 - [ ] Task 5: Bar, Settings, persistence; Q1 to Q10
 - [x] toys.json entry (Dutch name and IPA are drafts)
 - [x] Menu Lab entry with its toys.meteor hook
@@ -65,3 +66,12 @@ Not Window seat (`stimming-w1nd`): that toy looks down from 11 km at night, thro
 - Tsunami: the swell looms from 7 km over 30 s (`power2.out`, so it slows as it shoals) and grows to 16 m at 170 m with a 120 m width and a steeper shoreward face (`uWave.y`). It breaks over 7 s into white water (`uWave.x`: a white lip, spray on the face, a foam sheet behind), falls to a 3.6 m bore, runs up the bank to 1.6 m at the camera, and drains. The face is dark water that stands against the afterglow.
 - Draw-back now takes 17 s; the stones dry over 10 s at the end.
 - Still not verified live (hidden pane). Tom should check the wall's scale on a real screen: it sits about 30 px above the horizon at 1280 px when it breaks.
+
+## Task 4 (2026-11-09)
+
+- Web Audio synth only, no library and no recordings. `audioKit` with Space as a wake key; nodes connect to `kit.out`.
+- Cues sit in the GSAP timelines as `.call()`, so they run on the sim clock. A hidden tab stops every pending node (`stopAll`) and the timeline cues them again when it reaches them on return; nothing is pre-scheduled far ahead on the audio clock.
+- Voices: `sizzle` (the electrophonic hiss at the instant of the light), `roar` (the asteroid's rising rush), `doubleBoom` (two cracks 0.15 s apart, a rumble, reverb, a slap off the headland), `groundRumble` (two subs under 40 Hz swelling 6 s), `drawHiss` (hiss and a gurgle chopped by two wobbles), `seaRoar` (rising over 24 s as the wall comes in), `crash` (bright to deep over 3 s with a thump), `fizz` (foam). Every voice pans to its source and jitters pitch and level.
+- Delays: Fireball boom 3 to 6 s after the burst; Impact boom 4.5 s and the rumble 5 s after the flash.
+- Bed: low surf and a foam wash on slow LFOs; the level rises with the returning wall and falls while the cove stands empty. `kit.rest` waits for pending sounds.
+- Checked in the probe with the context running: every cue fires with a clean console. Not checked: audible balance, Q9 suspend timing, hidden-tab replay.
