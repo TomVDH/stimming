@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:10:04Z
-updated_at: 2026-11-09T10:50:10Z
+updated_at: 2026-11-09T18:55:00Z
 ---
 
 Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a node: light floods a Voronoi web in Dijkstra order; drag a target: the shortest path snaps on and re-routes. Raw WebGL2, Bar v2.
@@ -23,7 +23,11 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - [x] Round 4: rename to Dijkstra; six searches; pins, long press, walls; Shuffle and Remap; shaded ground for all maps
 - [ ] Round 4: cache 120 or more 2200 m grabs (fetch running)
 - [ ] Round 4: checkpoint with Tom
-- [ ] Task 2: scouts, sparks, queue shimmer, path snap; mud brush
+- [x] Round 5: Districts (a seventh search: up to five sources, each claims its streets)
+- [x] Round 5: Tree (after the flood, the shortest-path tree gathers; trunks widen by flow; Settings toggle, key T)
+- [x] Round 5: Jam replaces mud (drag slows streets x3, a second stroke x8, a third walls them; brake lights crawl)
+- [ ] Round 5: checkpoint with Tom
+- [ ] Task 2: scouts, sparks, queue shimmer, path snap
 - [ ] Task 3: Seek (A*) and Race
 - [ ] Task 4: sound: pops, lock chord, blips; Q9
 - [ ] Task 5: Settings, frame loop, watchdog; Q1 to Q10
@@ -42,3 +46,7 @@ Build Dijkstra flood from docs/plans/dijkstra.md. It starts in the Lab. Tap a no
 - Round 2 (Tom, 2026-11-09): "different aesthetics: city grids, network / PCBs, natural networks", then "way too flashy; demure and elegant". Each web has its own generator, OKLCH ramp, ground and stroke style. Edges and the path use MAX blending, so joints do not bead. Pixel budget 4.2 M for hairlines.
 
 - Round 3 (Tom, 2026-11-09): "realistic streets based on random OpenStreetMap grabs; cache at least 120" and "much better shading". Overpass (overpass-api.de) is at capacity, so the fetch runs about 45 s per city with backoff. Data is ODbL; the page credits OpenStreetMap.
+
+- Round 5 (Tom, 2026-11-09): "more neat, more special and more distinct abilities to play with the algo", then picked Districts, Tree and Jam. three.js is not needed: the map is flat, top-down and already shaded in raw WebGL2.
+  Districts: tap adds a source (the sixth replaces the oldest), tap a pin drops it, drag a pin moves it. Edges colour by owner; borders keep a lit seam.
+  Tree: flow counts the nodes routed through each node. It gathers far to near over the tail, so it also shows after A*, BFS and the rest.

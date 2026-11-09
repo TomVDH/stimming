@@ -68,13 +68,14 @@ const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 // The handlers bind once the GL exists.
-const act = { algo() {}, web() {}, shuffle() {}, remap() {}, clear() {}, reset() {}, still() {} };
-let speedK = 1, glow = 0.5;
+const act = { algo() {}, web() {}, shuffle() {}, remap() {}, clear() {}, reset() {}, still() {}, tree() {} };
+let speedK = 1, glow = 0.5, treeOn = true;
 const KINDS = ['cells', 'streets', 'circuit', 'roots'];
-// Six searches; the top-left choice picks one and persists by hand.
+// Seven searches; the top-left choice picks one and persists by hand.
+// Districts floods from several sources; each claims the streets it reaches first.
 const ALGOS = [
-  { value: 'dijkstra', label: 'Dijkstra' }, { value: 'astar', label: 'A*' }, { value: 'greedy', label: 'Greedy' },
-  { value: 'bfs', label: 'BFS' }, { value: 'dfs', label: 'DFS' }, { value: 'bidi', label: 'Two-way' },
+  { value: 'dijkstra', label: 'Dijkstra' }, { value: 'districts', label: 'Districts' }, { value: 'astar', label: 'A*' },
+  { value: 'greedy', label: 'Greedy' }, { value: 'bfs', label: 'BFS' }, { value: 'dfs', label: 'DFS' }, { value: 'bidi', label: 'Two-way' },
 ];
 const ALGO_KEY = 'stimming.dijkstra.algo';
 let algo = 'dijkstra', kind = 'streets';
@@ -92,13 +93,15 @@ const ui = initPage({ id: 'dijkstra', bar: {
       { value: 'streets', label: 'Streets' }, { value: 'cells', label: 'Cells' },
       { value: 'circuit', label: 'Circuit' }, { value: 'roots', label: 'Roots' },
     ], onPick: v => act.web(v) },
+    { type: 'toggle', id: 'tree', label: 'Tree', value: true, persist: true, onToggle: v => act.tree(v) },
     { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.5, persist: true, onInput: v => { glow = v; act.still(); } },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'source'], ['hold', 'destination'], ['drag', 'pin or wall'], ['space', 'replay']],
+  keys: [['click', 'source'], ['hold', 'destination'], ['drag', 'pin or jam'], ['space', 'replay']],
 } });
 glow = ui.setting('glow')?.value ?? glow;
+treeOn = ui.setting('tree')?.value ?? treeOn;
 kind = ui.setting('web')?.value ?? kind;
 if (!KINDS.includes(kind)) kind = 'streets';
 // Clear has nothing to wipe until a wall exists.
@@ -495,6 +498,8 @@ function finish(g, W, H) {
   return {
     W, H, N, E, X, Y, ea, eb, len, w, row: deg, nb, ne, kind, unit, minM: Number.isFinite(minM) ? minM : 1,
     areas: g.areas || { s: 1, b: [], w: [], g: [], r: [] }, cut: new Uint8Array(E),
+    w0: Float32Array.from(w), jam: new Uint8Array(E), jamStroke: new Int32Array(E).fill(-1),
+    own: new Int8Array(N).fill(-1), flow: new Float32Array(N), reached: 1,
     hA: mkHeap(2 * E + 16), hB: mkHeap(2 * E + 16), pathList: null, lockAt: Infinity,
     width: g.width ? Float32Array.from(g.width) : new Float32Array(E).fill(1),
     dist: new Float32Array(N), par: new Int32Array(N), tEnter: new Float32Array(N),
@@ -542,26 +547,39 @@ function mkHeap(cap) {
 // Times are distance units, so one wave clock serves every search.
 function search(alg, s, t) {
   const g = web, N = g.N, { dist, par, tEnter, tent0, tImp } = g;
-  dist.fill(Infinity); tEnter.fill(Infinity); tent0.fill(Infinity); tImp.fill(-1); par.fill(-1);
+  dist.fill(Infinity); tEnter.fill(Infinity); tent0.fill(Infinity); tImp.fill(-1); par.fill(-1); g.own.fill(-1);
   g.pathList = null;
   g.lockAt = Infinity;
-  if (s < 0) { g.maxD = 1; return; }
+  const many = alg === 'districts';
+  if (many ? !srcs.length : s < 0) { g.maxD = 1; treeFlow(g); return; }
   const done = new Uint8Array(N);
-  if (alg === 'bidi' && t >= 0 && t !== s) bidi(g, s, t, done);
+  if (many) bestFirst(g, 'dijkstra', srcs, -1, done);
+  else if (alg === 'bidi' && t >= 0 && t !== s) bidi(g, s, t, done);
   else if (alg === 'bfs' || alg === 'dfs') walk(g, alg, s, t, done);
   else bestFirst(g, alg === 'bidi' ? 'dijkstra' : alg, s, t, done);
   let maxD = 1;
   for (let i = 0; i < N; i++) if (dist[i] < Infinity && dist[i] > maxD) maxD = dist[i];
   // Long walks squeeze into the time a flood of the whole map takes.
   const cap = 2.2 * Math.hypot(g.W, g.H);
-  if (alg !== 'dijkstra' && maxD > cap) {
+  if (alg !== 'dijkstra' && !many && maxD > cap) {
     const f = cap / maxD;
     for (let i = 0; i < N; i++) { dist[i] *= f; tEnter[i] *= f; tent0[i] *= f; if (tImp[i] > 0) tImp[i] *= f; }
     g.lockAt *= f;
     maxD = cap;
   }
   g.maxD = maxD;
-  if (!g.pathList) pathFor(t);
+  if (!g.pathList) pathFor(many ? -1 : t);
+  treeFlow(g);
+}
+// Tree: each node's flow counts the nodes whose route runs through it.
+// Far nodes hand their count to their parent, so trunks carry the most.
+function treeFlow(g) {
+  const { dist, par, flow, N } = g, ids = [];
+  flow.fill(0);
+  for (let i = 0; i < N; i++) if (dist[i] < Infinity) { flow[i] = 1; ids.push(i); }
+  ids.sort((a, b) => dist[b] - dist[a]);
+  for (const v of ids) if (par[v] >= 0) flow[par[v]] += flow[v];
+  g.reached = Math.max(ids.length, 2);
 }
 // The path walks tree parents back from the target.
 function pathFor(t) {
@@ -572,16 +590,22 @@ function pathFor(t) {
   g.lockAt = g.dist[t];
 }
 // Dijkstra floods the whole map; A* and Greedy stop at the target.
+// Districts passes a list of sources; each node takes its first claimant.
 function bestFirst(g, alg, s, t, done) {
-  const { dist, par, tEnter, tent0, tImp, cut } = g, H = g.hA, gc = new Float32Array(g.N).fill(Infinity);
+  const { dist, par, tEnter, tent0, tImp, cut, own } = g, H = g.hA, gc = new Float32Array(g.N).fill(Infinity);
+  const multi = Array.isArray(s), seeds = multi ? s : [s];
+  if (multi) s = s[0];
   const h = v => (t < 0 ? 0 : Math.hypot(g.X[v] - g.X[t], g.Y[v] - g.Y[t]) * g.minM);
   const key = alg === 'dijkstra' ? c => c : alg === 'astar' ? (c, v) => c + h(v) : (c, v) => h(v);
   // A* starts its clock at zero, not at the source's estimate.
   const k0 = alg === 'astar' ? h(s) : 0;
   let clock = 0;
   H.n = 0;
-  gc[s] = 0; tEnter[s] = 0; tent0[s] = 0;
-  H.push(s, key(0, s));
+  seeds.forEach((q, k) => {
+    gc[q] = 0; tEnter[q] = 0; tent0[q] = 0;
+    if (multi) own[q] = k;
+    H.push(q, key(0, q));
+  });
   while (H.n) {
     const u = H.pop(), ku = H.key;
     if (done[u]) continue;
@@ -597,7 +621,7 @@ function bestFirst(g, alg, s, t, done) {
       if (tEnter[v] === Infinity) { tEnter[v] = tu; tent0[v] = alg === 'greedy' ? tu + g.unit : key(c, v) - k0; }
       if (c < gc[v]) {
         if (gc[v] !== Infinity && alg !== 'greedy') tImp[v] = tu;
-        gc[v] = c; par[v] = u;
+        gc[v] = c; par[v] = u; own[v] = own[u];
         H.push(v, key(c, v));
       }
     }
@@ -738,16 +762,28 @@ uniform float uW, uMax, uBand, uPx, uTime, uFlick, uStyle;
 uniform vec3 uCold;
 float hash2(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 vec3 lut(float t) { return texture(uLut, vec2(clamp(t / uMax, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5)).rgb; }
+// Districts: the owner's hue at the ramp's own brightness.
+uniform vec3 uOwn[5];
+vec3 ownCol(float own) { int k = int(own + 0.5); return k == 0 ? uOwn[0] : k == 1 ? uOwn[1] : k == 2 ? uOwn[2] : k == 3 ? uOwn[3] : uOwn[4]; }
+vec3 heat(float t, float own) {
+  vec3 h = lut(t);
+  if (own < -0.5) return h;
+  vec3 oc = ownCol(own);
+  const vec3 Y = vec3(0.2126, 0.7152, 0.0722);
+  return oc * (dot(h, Y) / max(dot(oc, Y), 1e-3));
+}
 `;
 // Capsule quads for edges and the path, in stage CSS px.
 const CAPSULE_VS = `#version 300 es
 layout(location = 0) in vec4 aAB;
 layout(location = 1) in vec4 aD;
+layout(location = 2) in vec4 aX;
 uniform vec4 uMap;
 uniform float uR;
 out vec2 vP;
 flat out vec4 vAB;
 flat out vec4 vD;
+flat out vec4 vX;
 void main() {
   vec2 a = aAB.xy, b = aAB.zw, d = b - a;
   float L = length(d);
@@ -756,11 +792,12 @@ void main() {
   int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
   float s = (k & 1) == 0 ? -1.0 : 1.0, q = k < 2 ? -1.0 : 1.0;
   // Wide edges get a wider quad; the path passes no width.
-  float R = uR * max(1.0, aD.w);
+  float R = uR * max(1.0, abs(aD.w));
   vec2 p = (s < 0.0 ? a - t * R : b + t * R) + n * R * q;
   vP = p;
   vAB = aAB;
   vD = aD;
+  vX = aX;
   gl_Position = vec4(p * uMap.xy + uMap.zw, 0.0, 1.0);
 }`;
 // Edges: light runs along each edge at its cost; scouts and meeting sparks ride on it.
@@ -768,19 +805,29 @@ const EDGE_FS = HEAD + LUT + `
 in vec2 vP;
 flat in vec4 vAB;
 flat in vec4 vD;
+flat in vec4 vX;
 out vec4 o;
-uniform float uScout;
+uniform float uScout, uTreeG, uFlowN;
 void main() {
   vec2 a = vAB.xy, b = vAB.zw, ab = b - a;
   float L2 = max(dot(ab, ab), 1e-6), L = sqrt(L2);
   float s = clamp(dot(vP - a, ab) / L2, 0.0, 1.0);
-  float d = length(vP - a - ab * s);
+  vec2 ap = vP - a;
+  float d = length(ap - ab * s);
   float dA = vD.x, dB = vD.y, w = vD.z;
-  float t = min(dA + s * w, dB + (1.0 - s) * w);
+  float tA = dA + s * w, tB = dB + (1.0 - s) * w, t = min(tA, tB);
   float age = uW - t;
+  // Each half of the edge belongs to the district whose light came first.
+  float own = tA <= tB ? vX.x : vX.y;
   // Hairlines: about one device pixel, wider only for avenues, rails and trunks.
   float fwT = max(fwidth(t), 1e-3);
   float wd = abs(vD.w), cw = max(0.42, uPx * 0.75) * wd;
+  // Tree: the far streets settle first, then the tree gathers to the source.
+  float tn = clamp(t / uMax, 0.0, 1.0);
+  float te = clamp(uTreeG * 2.0 - (1.0 - tn), 0.0, 1.0);
+  te = te * te * (3.0 - 2.0 * te);
+  float fl = abs(vX.z), trunk = fl > 0.5 ? log2(fl + 1.0) / uFlowN : 0.0;
+  cw *= 1.0 + 1.8 * trunk * trunk * te;
   float core = exp(-d * d / (cw * cw));
   // A wall: a rust dash; light never crosses it.
   if (vD.w < 0.0) {
@@ -791,11 +838,30 @@ void main() {
   // Circuit traces have hard edges, as etched copper does.
   if (uStyle > 1.5 && uStyle < 2.5) core = 1.0 - smoothstep(cw * 0.75, cw * 0.75 + uPx, d);
   float halo = exp(-d / (1.4 * sqrt(wd))) * 0.06;
-  vec3 h = lut(t);
+  vec3 h = heat(t, own);
   float lit = clamp(age / fwT + 0.5, 0.0, 1.0);
   float head = exp(-max(age, 0.0) / (uBand * 0.4));
   vec3 on = h * (core * 0.6 + halo) + mix(h, vec3(1.0), 0.25) * head * (core * 0.9 + halo * 2.0);
+  // Tree edges brighten by the routes they carry; loop edges fade back.
+  if (fl > 0.5) {
+    on *= 1.0 + 0.5 * trunk * te;
+    // Slow ticks drain down the tree toward the source.
+    float ph = fract(t / 46.0 + uTime * 0.55);
+    on += mix(h, vec3(1.0), 0.3) * core * pow(ph, 14.0) * 0.5 * te * uFlick;
+  } else on *= 1.0 - 0.82 * te;
   vec3 c = mix(uCold * core, on, lit);
+  // Jam: slow brake lights crawl both ways, on two lanes.
+  float jam = vX.w;
+  if (jam > 0.5) {
+    float sd = (ab.x * ap.y - ab.y * ap.x) / L;
+    float lane = sd > 0.0 ? 1.0 : -1.0, off = abs(sd) - 1.1;
+    float gap = 6.0 + 3.0 / jam, ph = fract(s * L * lane / gap - uTime * 0.18 / jam);
+    float car = exp(-pow((ph - 0.5) * gap, 2.0) / 1.4) * exp(-off * off / 0.7);
+    // Jammed light turns to brake red; a faint haze marks it before the flood.
+    vec3 brake = vec3(0.85, 0.09, 0.03);
+    c = mix(c, c * vec3(1.0, 0.32, 0.18), min(0.3 * jam, 0.6)) * (1.0 - 0.15 * jam);
+    c += brake * (core * 0.12 * jam + car * (0.45 + 0.3 * jam));
+  }
   // Relax scouts: a faint tick from the settled end to the queued end.
   vec3 sc = mix(h, vec3(1.0), 0.3) * core * 0.45 * uFlick;
   float pa = (uW - dA) / (uScout * w);
@@ -806,7 +872,13 @@ void main() {
   float sm = (dB - dA + w) / (2.0 * w);
   if (sm > 0.06 && sm < 0.94) {
     float am = uW - (dA + dB + w) * 0.5;
-    if (am > 0.0) { vec2 m = a + ab * sm - vP; c += mix(h, vec3(1.0), 0.4) * exp(-am / (uBand * 0.6)) * exp(-dot(m, m) / 1.5) * 0.6; }
+    vec2 m = a + ab * sm - vP;
+    if (am > 0.0) c += mix(h, vec3(1.0), 0.4) * exp(-am / (uBand * 0.6)) * exp(-dot(m, m) / 1.5) * 0.6;
+    // A border between two districts keeps a small lit seam.
+    if (am > 0.0 && vX.x > -0.5 && abs(vX.x - vX.y) > 0.5) {
+      vec3 mc = mix(ownCol(vX.x), ownCol(vX.y), 0.5);
+      c += mix(mc, vec3(1.0), 0.35) * exp(-dot(m, m) / 3.0) * 0.55 * min(am / uBand, 1.0);
+    }
   }
   o = vec4(c, 1.0);
 }`;
@@ -814,11 +886,13 @@ void main() {
 const NODE_VS = `#version 300 es
 layout(location = 0) in vec4 aN0;
 layout(location = 1) in vec4 aN1;
+layout(location = 2) in vec4 aN2;
 uniform vec4 uMap;
 uniform float uR;
 out vec2 vQ;
 flat out vec4 vN0;
 flat out vec4 vN1;
+flat out vec4 vN2;
 void main() {
   int v = gl_VertexID;
   int k = v == 0 ? 0 : v == 1 || v == 4 ? 1 : v == 2 || v == 3 ? 2 : 3;
@@ -826,13 +900,16 @@ void main() {
   vQ = q;
   vN0 = aN0;
   vN1 = aN1;
+  vN2 = aN2;
   gl_Position = vec4((aN0.xy + q) * uMap.xy + uMap.zw, 0.0, 1.0);
 }`;
 const NODE_FS = HEAD + LUT + `
 in vec2 vQ;
 flat in vec4 vN0;
 flat in vec4 vN1;
+flat in vec4 vN2;
 out vec4 o;
+vec3 lutO(float t) { return heat(t, vN2.x); }
 void main() {
   float r = length(vQ);
   float dist = vN0.z, tEnter = vN0.w, tent0 = vN1.x, tImp = vN1.y, id = vN1.z, kind = vN1.w;
@@ -844,7 +921,7 @@ void main() {
     vec3 c = uCold * lp * 0.4;
     if (age >= 0.0) {
       float ig = min(exp(-age / (uBand * 0.6)), 1.0);
-      c = mix(lut(dist), vec3(1.0, 0.9, 0.72), 0.45) * lp * (0.9 + 0.6 * ig);
+      c = mix(lutO(dist), vec3(1.0, 0.9, 0.72), 0.45) * lp * (0.9 + 0.6 * ig);
     }
     o = vec4(c, 1.0);
     return;
@@ -854,14 +931,14 @@ void main() {
   if (age >= 0.0) {
     // Ignition: a soft brightening as the node pops, then its heat colour.
     float ig = min(exp(-age / (uBand * 0.6)), 1.0);
-    c = lut(dist) * pt * 1.1 + mix(lut(dist), vec3(1.0), 0.4) * ig * exp(-r * r / 3.0) * 1.1;
+    c = lutO(dist) * pt * 1.1 + mix(lutO(dist), vec3(1.0), 0.4) * ig * exp(-r * r / 3.0) * 1.1;
   } else if (uW >= tEnter) {
     // In the queue: a hairline ring tinted by the tentative distance.
     float tent = uW < tImp ? tent0 : dist;
     float rr = 2.8 + 2.4 * clamp((tent - uW) / (uBand * 4.0), 0.0, 1.0);
     float ring = exp(-pow(r - rr, 2.0) / 0.22);
     float br = mix(1.0, 0.8 + 0.2 * sin(uTime * 4.0 + id * 2.399), uFlick);
-    c += lut(tent) * ring * 0.55 * br;
+    c += lutO(tent) * ring * 0.55 * br;
   }
   o = vec4(c, 1.0);
 }`;
@@ -901,8 +978,10 @@ void main() {
   float kind = vN0.z, on = vN0.w;
   vec3 c;
   // Pins are larger than nodes, so a finger can find them.
+  // A district source takes its district's hue.
+  vec3 hot = vN1.x > -0.5 ? mix(ownCol(vN1.x) * 1.6, vec3(1.0), 0.2) : uHot;
   if (kind < 0.5) {
-    c = uHot * (exp(-r * r / 4.0) * 1.7 + exp(-pow(r - 8.0, 2.0) / 0.35) * 0.75);
+    c = hot * (exp(-r * r / 4.0) * 1.7 + exp(-pow(r - 8.0, 2.0) / 0.35) * 0.75);
   } else {
     float ring = exp(-pow(r - 8.0, 2.0) / 0.35) + exp(-pow(r - 13.0, 2.0) / 0.25) * 0.35;
     c = mix(vec3(0.75, 0.8, 0.9), uHot, on) * ring * (0.6 + 0.4 * on) + uHot * on * exp(-r * r / 2.0) * 1.2;
@@ -1083,8 +1162,8 @@ async function initGL() {
   }
   P = progs;
   triVao = gl.createVertexArray();
-  vao('edge', [4, 4], true);
-  vao('node', [4, 4], true);
+  vao('edge', [4, 4, 4], true);
+  vao('node', [4, 4, 4], true);
   vao('path', [4, 4], true);
   vao('mark', [4, 4], true);
   vao('area', [3], false);
@@ -1165,6 +1244,9 @@ let view = { w: 1, h: 1, dpr: 1 };
 
 // Pins are kept as fractions, so a new web keeps them in place.
 let srcAt = null, tgtAt = null;
+// Districts: up to five sources, kept as fractions too.
+const MAXD = 5;
+let srcs = [], srcsAt = [];
 function nearest(x, y) {
   const g = web;
   let best = -1, bd = Infinity;
@@ -1193,11 +1275,35 @@ function randomPins() {
   }
   return [s, t];
 }
+// Districts spread out: each new source takes the farthest of a few tries.
+function spreadPins(n, keep = []) {
+  const g = web, pool = [];
+  for (let i = 0; i < g.N; i++) {
+    if (g.kind[i] < 0.5) continue;
+    const fx = g.X[i] / g.W, fy = g.Y[i] / g.H;
+    if (fx > 0.1 && fx < 0.9 && fy > 0.14 && fy < 0.86) pool.push(i);
+  }
+  const out = keep.slice();
+  while (pool.length && out.length < n) {
+    let best = -1, bd = -1;
+    for (let k = 0; k < 60; k++) {
+      const c = pool[Math.floor(Math.random() * pool.length)];
+      const d = out.length ? Math.min(...out.map(q => Math.hypot(g.X[c] - g.X[q], g.Y[c] - g.Y[q]))) : Math.random();
+      if (d > bd) { bd = d; best = c; }
+    }
+    out.push(best);
+  }
+  return out;
+}
+function setSrcs(list) {
+  srcs = list.filter(i => i >= 0);
+  srcsAt = srcs.map(i => [web.X[i] / web.W, web.Y[i] / web.H]);
+}
 // Light runs along each edge over its time span.
 // Dijkstra and Two-way use true costs; other searches use the gap in their own clock.
 function spanOf(e, a, b) {
   const g = web;
-  if (algo === 'dijkstra' || algo === 'bidi') return g.w[e];
+  if (algo === 'dijkstra' || algo === 'bidi' || algo === 'districts') return g.w[e];
   const A = g.dist[a], B = g.dist[b];
   if (A === Infinity || B === Infinity) return 1e9;
   if (g.par[b] === a || g.par[a] === b) return Math.max(Math.abs(B - A), 1);
@@ -1206,17 +1312,20 @@ function spanOf(e, a, b) {
 // Arrival times change per search, so every buffer refills.
 function upload() {
   const g = web, D = i => (g.dist[i] === Infinity ? 1e9 : g.dist[i]);
-  const ed = new Float32Array(g.E * 8);
+  const ed = new Float32Array(g.E * 12);
   for (let e = 0; e < g.E; e++) {
     const a = g.ea[e], b = g.eb[e];
-    ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), spanOf(e, a, b), g.cut[e] ? -g.width[e] : g.width[e]], e * 8);
+    // A tree edge carries its child's flow; others carry none.
+    const fl = g.par[b] === a ? g.flow[b] : g.par[a] === b ? g.flow[a] : 0;
+    ed.set([g.X[a], g.Y[a], g.X[b], g.Y[b], D(a), D(b), spanOf(e, a, b), g.cut[e] ? -g.width[e] : g.width[e],
+      g.own[a], g.own[b], fl, g.cut[e] ? 0 : g.jam[e]], e * 12);
   }
   fillVbo('edge', ed, g.E);
-  const nd = new Float32Array(g.N * 8);
+  const nd = new Float32Array(g.N * 12);
   for (let i = 0; i < g.N; i++) {
     const te = g.tEnter[i] === Infinity ? 1e9 : g.tEnter[i];
     const t0 = g.tent0[i] === Infinity ? 1e9 : g.tent0[i];
-    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, g.kind[i]], i * 8);
+    nd.set([g.X[i], g.Y[i], D(i), te, t0, g.tImp[i], i, g.kind[i], g.own[i], 0, 0, 0], i * 12);
   }
   fillVbo('node', nd, g.N);
 }
@@ -1240,8 +1349,11 @@ function route() {
 }
 function marks() {
   const g = web, m = [];
-  if (src >= 0) m.push(g.X[src], g.Y[src], 0, 1, 0, 0, 0, 0);
-  if (tgt >= 0) m.push(g.X[tgt], g.Y[tgt], 1, lockT >= 0 ? 1 : 0, 0, 0, 0, 0);
+  if (algo === 'districts') srcs.forEach((q, k) => m.push(g.X[q], g.Y[q], 0, 1, k, 0, 0, 0));
+  else {
+    if (src >= 0) m.push(g.X[src], g.Y[src], 0, 1, -1, 0, 0, 0);
+    if (tgt >= 0) m.push(g.X[tgt], g.Y[tgt], 1, lockT >= 0 ? 1 : 0, -1, 0, 0, 0);
+  }
   fillVbo('mark', new Float32Array(m), m.length / 8);
 }
 function pin(which, i) {
@@ -1271,7 +1383,7 @@ function settle() {
 }
 // The destination moves; Dijkstra reads the finished field, others search again.
 function aim(i, flash) {
-  if (i < 0 || i === tgt || i === src) return;
+  if (algo === 'districts' || i < 0 || i === tgt || i === src) return;
   pin('tgt', i);
   if (algo === 'dijkstra') { pathFor(tgt); route(); checkLock(!flash); marks(); }
   else if (W >= web.maxD + TAIL) settle();
@@ -1284,16 +1396,23 @@ function checkLock(quiet = false) {
   if (!reached && lockT >= 0) { lockT = -1; marks(); }
 }
 const done = () => !web || W >= web.maxD + TAIL;
-// The wall brush cuts every edge it touches.
+// The jam brush slows every street it touches, once per stroke.
+// A second stroke jams it harder; a third closes it with a wall.
+const JAM = [1, 3, 8];
+let strokeNo = 0;
 function brush(x, y) {
   const g = web, r = COARSE.matches ? 14 : 10;
   let hit = false;
   for (let e = 0; e < g.E; e++) {
-    if (g.cut[e]) continue;
+    if (g.cut[e] || g.jamStroke[e] === strokeNo) continue;
     const ax = g.X[g.ea[e]], ay = g.Y[g.ea[e]], bx = g.X[g.eb[e]], by = g.Y[g.eb[e]];
     const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
     const f = clamp(((x - ax) * dx + (y - ay) * dy) / L2);
-    if (Math.hypot(ax + dx * f - x, ay + dy * f - y) < r) { g.cut[e] = 1; hit = true; }
+    if (Math.hypot(ax + dx * f - x, ay + dy * f - y) >= r) continue;
+    g.jamStroke[e] = strokeNo;
+    if (++g.jam[e] >= JAM.length) g.cut[e] = 1;
+    else g.w[e] = g.w0[e] * JAM[g.jam[e]];
+    hit = true;
   }
   if (!hit) return;
   if (clearBtn) clearBtn.disabled = false;
@@ -1385,7 +1504,11 @@ function common(q) {
   gl.uniform1f(q.u.uFlick, reduced() ? 0 : 1);
   gl.uniform1f(q.u.uStyle, look.i);
   if (q.u.uCold) gl.uniform3fv(q.u.uCold, COLD);
+  if (q.u.uOwn) gl.uniform3fv(q.u.uOwn, OWN);
 }
+// Five district hues, muted, spaced round the wheel.
+const OWN = new Float32Array([[0.8, 0.09, 75], [0.78, 0.08, 195], [0.74, 0.1, 15], [0.76, 0.08, 290], [0.8, 0.09, 140]]
+  .flatMap(c => linFit(c[0], c[1], c[2])));
 let COLD, SOIL, ROOF, HOT, AMB, look = STYLES.streets;
 // A map kind brings its colours, ground and heat ramp.
 function applyLook() {
@@ -1419,6 +1542,9 @@ function render() {
   q = P.edge;
   gl.useProgram(q.p);
   gl.uniform1f(q.u.uScout, 0.35);
+  // The tree grows over the tail, once the light has run out.
+  gl.uniform1f(q.u.uTreeG, treeOn ? clamp((W - web.maxD) / TAIL) : 0);
+  gl.uniform1f(q.u.uFlowN, Math.log2(web.reached + 1));
   instanced('edge', q, 4);
   gl.blendEquation(gl.FUNC_ADD);
   instanced('node', P.node, 8);
@@ -1552,10 +1678,13 @@ async function makeWeb(w, h, finished, fresh = false) {
   if (fresh) {
     const [s, t] = randomPins();
     pin('src', s); pin('tgt', t);
+    if (algo === 'districts') setSrcs(spreadPins(srcs.length || 3));
   } else {
     const d = defaults(w, h), s = srcAt || d.s, t = tgtAt || d.t;
     pin('src', nearest(s[0] * w, s[1] * h));
     pin('tgt', nearest(t[0] * w, t[1] * h));
+    setSrcs(srcsAt.map(f => nearest(f[0] * w, f[1] * h)));
+    if (algo === 'districts' && !srcs.length) setSrcs(spreadPins(3, [src]));
   }
   if (finished) settle(); else replay();
   still();
@@ -1597,6 +1726,11 @@ let ptr = null, drag = false;
 const local = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 function pinAt(x, y) {
   const g = web, d = i => (i < 0 ? Infinity : Math.hypot(g.X[i] - x, g.Y[i] - y));
+  if (algo === 'districts') {
+    let k = -1, bd = COARSE.matches ? 26 : 16;
+    srcs.forEach((q, j) => { if (d(q) < bd) { bd = d(q); k = j; } });
+    return k < 0 ? null : `d${k}`;
+  }
   const ds = d(src), dt = d(tgt);
   if (Math.min(ds, dt) > (COARSE.matches ? 26 : 16)) return null;
   return dt <= ds ? 'tgt' : 'src';
@@ -1605,13 +1739,13 @@ function down(e) {
   if (ptr || e.button > 0 || !web) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   const [x, y] = local(e);
-  ptr = { id: e.pointerId, x0: x, y0: y, lx: x, ly: y, mode: pinAt(x, y) || 'press' };
+  ptr = { id: e.pointerId, x0: x, y0: y, lx: x, ly: y, mode: pinAt(x, y) || 'press', moved: false };
   drag = ptr.mode !== 'press';
   if (drag) canvas.style.cursor = 'grabbing';
   // A long press sets the destination where the finger rests.
   if (ptr.mode === 'press') {
     ptr.timer = setTimeout(() => {
-      if (!ptr || ptr.mode !== 'press') return;
+      if (!ptr || ptr.mode !== 'press' || algo === 'districts') return;
       ptr.mode = 'tgt';
       drag = true;
       aim(nearest(x, y), true);
@@ -1628,9 +1762,15 @@ function move(e) {
   if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 8) {
     clearTimeout(ptr.timer);
     ptr.mode = 'wall';
+    strokeNo++;
     drag = true;
   }
-  if (ptr.mode === 'src') { const i = nearest(x, y); if (i >= 0 && i !== src && i !== tgt) { pin('src', i); settle(); } }
+  if (Math.hypot(x - ptr.x0, y - ptr.y0) > 4) ptr.moved = true;
+  // A district pin moves to any free node.
+  if (ptr.mode[0] === 'd') {
+    const k = +ptr.mode.slice(1), i = nearest(x, y);
+    if (i >= 0 && !srcs.includes(i)) { srcs[k] = i; setSrcs(srcs); settle(); }
+  } else if (ptr.mode === 'src') { const i = nearest(x, y); if (i >= 0 && i !== src && i !== tgt) { pin('src', i); settle(); } }
   else if (ptr.mode === 'tgt') aim(nearest(x, y), false);
   else if (ptr.mode === 'wall') {
     // Steps along the stroke, so a fast drag leaves no gaps.
@@ -1643,12 +1783,23 @@ function move(e) {
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
   clearTimeout(ptr.timer);
-  const m = ptr.mode, tap = m === 'press' && e?.type === 'pointerup', x0 = ptr.x0, y0 = ptr.y0;
+  const m = ptr.mode, tap = m === 'press' && e?.type === 'pointerup', x0 = ptr.x0, y0 = ptr.y0, wasMoved = ptr.moved;
   ptr = null;
   drag = false;
   canvas.style.cursor = '';
+  if (algo === 'districts') {
+    // A tap on open ground adds a district; the sixth replaces the oldest.
+    if (tap) {
+      const i = nearest(x0, y0);
+      if (i >= 0 && !srcs.includes(i)) { setSrcs([...srcs, i].slice(-MAXD)); replay(); }
+    } else if (m[0] === 'd' && !wasMoved) {
+      // A tap on a district pin removes it; one always stays.
+      if (srcs.length > 1) { srcs.splice(+m.slice(1), 1); setSrcs(srcs); }
+      replay();
+    } else if (m[0] === 'd' || m === 'wall') replay();
+  }
   // A tap moves the source and plays the search again.
-  if (tap) { const i = nearest(x0, y0); if (i >= 0 && i !== tgt) { pin('src', i); replay(); } }
+  else if (tap) { const i = nearest(x0, y0); if (i >= 0 && i !== tgt) { pin('src', i); replay(); } }
   else if (m === 'src' || m === 'wall') replay();
   live();
 }
@@ -1661,6 +1812,7 @@ act.shuffle = () => {
   if (!web) return;
   const [s, t] = randomPins();
   pin('src', s); pin('tgt', t);
+  if (algo === 'districts') setSrcs(spreadPins(Math.max(3, srcs.length)));
   replay();
   live();
 };
@@ -1672,6 +1824,8 @@ act.remap = () => {
 act.clear = () => {
   if (!web) return;
   web.cut.fill(0);
+  web.jam.fill(0);
+  web.w.set(web.w0);
   if (clearBtn) clearBtn.disabled = true;
   replay();
   live();
@@ -1679,11 +1833,23 @@ act.clear = () => {
 act.algo = v => {
   algo = v;
   try { localStorage.setItem(ALGO_KEY, v); } catch { /* Storage can be blocked. */ }
+  keyWords();
+  // Districts starts from the source plus two more, spread out.
+  if (web && v === 'districts' && srcs.length < 2) setSrcs(spreadPins(3, [src]));
   if (web) { replay(); live(); }
 };
+// Districts has no destination, so two key words change.
+function keyWords() {
+  const dd = stage.parentElement.querySelectorAll('.s2-keys dd'), many = algo === 'districts';
+  if (dd[0]) dd[0].textContent = many ? 'add district' : 'source';
+  if (dd[1]) dd[1].parentElement.hidden = many;
+  if (dd[2]) dd[2].textContent = many ? 'move, drop or jam' : 'pin or jam';
+}
+act.tree = v => { treeOn = v; still(); live(); };
 act.reset = () => {
   seed = 4242;
   srcAt = tgtAt = null;
+  srcs = []; srcsAt = [];
   ui.choice?.set('dijkstra');
   act.algo('dijkstra');
   makeWeb(view.w, view.h, false).then(live);
@@ -1724,6 +1890,12 @@ canvas.addEventListener('pointermove', move);
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
+keyWords();
+// T shows or hides the tree.
+document.addEventListener('keydown', e => {
+  if (e.code !== 'KeyT' || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea, .s2-sheet')) return;
+  ui.setting('tree')?.set(!treeOn, true);
+});
 // Space plays the search again.
 stage.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.repeat) return;
