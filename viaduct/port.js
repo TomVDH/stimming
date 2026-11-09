@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
+import { makeTrain } from './train.js';
 
 export function build() {
 // Seeded random keeps the scene the same on every load.
@@ -105,6 +106,7 @@ float k2fogDensity(vec3 p) {
 }
 // A short march sums the fog along the view ray inside the volume.
 float k2portFog(vec3 P) {
+  if (uPortFog <= 0.0) return 0.0;
   vec3 ro = cameraPosition, rd = P - ro;
   float L = length(rd);
   vec3 dir = rd / max(L, 1e-3);
@@ -173,6 +175,8 @@ const NL = 24;
 const lights = [];
 function addLight(pos, col, power, range, dir = null, cos = -2) {
   lights.push({ pos, col, power, range, dir: dir || new THREE.Vector3(0, -1, 0), cos });
+  // Lights past the cap never reach the shaders.
+  if (lights.length === NL + 1) console.warn(`port: more than ${NL} lights; the extra lights drop`);
 }
 
 // Glint list: the strongest sources throw a column of dashes on the sea.
@@ -286,7 +290,7 @@ const precast = new THREE.ShaderMaterial({
     float tone = 0.8 + 0.32 * k2hash(vec2(floor(vSU.x / 4.0), 3.0 + pier * 4.0));
     // Joints: a dark groove each 4 m, faded out where it would alias.
     float dj = abs(fract(vSU.x / 4.0 + 0.5) - 0.5) * 4.0, aa = fwidth(vSU.x);
-    float joint = mix(mix(0.3, 1.0, smoothstep(0.05, 0.05 + 1.5 * aa, dj)), 1.0, max(pier, smoothstep(0.4, 1.4, aa)));
+    float joint = mix(mix(0.3, 1.0, smoothstep(0.05, 0.05 + 1.5 * aa, dj)), 1.0, max(pier, smoothstep(0.2, 0.8, aa)));
     // Rain streaks run down every wall.
     float vert = 1.0 - abs(N.y);
     float along = mix(vSU.x, vP.x + vP.z, pier);
@@ -408,19 +412,38 @@ const flameMat = new THREE.ShaderMaterial({
 });
 
 // Rails: dark steel that throws back each lamp as a sharp glint.
-const steel = new THREE.ShaderMaterial({
-  uniforms: { ...k2, ...lightU },
-  vertexShader: WORLD_VS,
+// A rail under one pixel wide widens to 1.5 px.
+// Its light dims to match the true width.
+const railMat = new THREE.ShaderMaterial({
+  uniforms: { ...k2, ...lightU, ...projU },
+  vertexShader: /* glsl */`
+  attribute vec3 aAcross;
+  uniform float uScale;
+  varying vec3 vP;
+  varying vec3 vN;
+  varying float vCover;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    // World size of one pixel at this vertex.
+    float px = length(cameraPosition - w.xyz) / (uScale * 400.0);
+    float widen = max(1.0, 1.5 * px / 0.14);
+    w.xyz += aAcross * (widen - 1.0);
+    vP = w.xyz;
+    vN = normalize(mat3(modelMatrix) * normal);
+    vCover = 1.0 / widen;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   varying vec3 vN;
+  varying float vCover;
   ${HEAD}
   ${LIGHTS_GLSL}
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(cameraPosition - vP);
     vec3 c = vec3(0.02) * k2lights(vP, N) + k2spec(vP, N, V, 9.0) * 8.0 + k2sky(reflect(-V, N)) * 1.4;
-    gl_FragColor = vec4(k2haze(c, vP, 1.0), 1.0);
+    gl_FragColor = vec4(k2haze(c * vCover, vP, 1.0), 1.0);
   }`,
 });
 
@@ -450,11 +473,14 @@ const flareMat = new THREE.ShaderMaterial({
   vertexShader: /* glsl */`
   attribute vec3 color;
   attribute float size;
+  attribute float aPin;
   uniform float uScale;
   uniform float uTime;
   varying vec3 vC;
   varying vec3 vP;
+  varying float vPin;
   void main() {
+    vPin = aPin;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vP = w.xyz; vC = color;
     // Pure red lamps are warning lights: each blinks on its own beat.
@@ -464,17 +490,23 @@ const flareMat = new THREE.ShaderMaterial({
     float on = smoothstep(0.0, 0.06, b) * (1.0 - smoothstep(0.45, 0.55, b));
     vC *= mix(1.0, 0.12 + 0.88 * on, red);
     vec4 mv = viewMatrix * w;
-    gl_PointSize = clamp(size * uScale / -mv.z, 2.0, 48.0);
+    // A pin keeps its colour dim, under the bloom threshold.
+    float lum = dot(vC, vec3(0.2126, 0.7152, 0.0722));
+    vC *= mix(1.0, min(1.0, 0.69 / max(lum, 1e-4)), aPin);
+    gl_PointSize = mix(clamp(size * uScale / -mv.z, 2.0, 48.0), clamp(size * uScale / -mv.z, 1.0, 3.0), aPin);
     gl_Position = projectionMatrix * mv;
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vC;
   varying vec3 vP;
+  varying float vPin;
   ${HEAD}
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     // The glow reaches zero inside the sprite, so no square edge shows.
     float a = max(exp(-dot(c, c) * 22.0) - 0.0041, 0.0);
+    // A pin draws the core only.
+    a = mix(a, exp(-dot(c, c) * 60.0), vPin);
     float f = k2hazeAmount(vP) * 0.65;
     gl_FragColor = vec4(vC * a * (1.0 - f) * uFlareK, 1.0);
   }`,
@@ -572,6 +604,20 @@ function box(x, y, z, w, h, d, ry = 0, list = parts, col = null) {
   if (col) paint(g, col);
   list.push(g.toNonIndexed());
 }
+// A rail box carries each vertex's offset across the rail.
+// The pixel widening uses this offset.
+function rail(x, y, z, ry) {
+  const g = new THREE.BoxGeometry(0.14, 0.22, 10.05);
+  const pos = g.attributes.position, across = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) across[i * 3] = Math.sign(pos.getX(i)) * 0.07;
+  g.setAttribute('aAcross', new THREE.BufferAttribute(across, 3));
+  const m = new THREE.Matrix4().makeRotationY(ry);
+  g.applyMatrix4(m);
+  const a = g.attributes.aAcross, v = new THREE.Vector3();
+  for (let i = 0; i < a.count; i++) a.setXYZ(i, ...v.fromBufferAttribute(a, i).transformDirection(m).multiplyScalar(0.07).toArray());
+  g.translate(x, y + 0.11, z);
+  railParts.push(g.toNonIndexed());
+}
 // A facade box carries its window strength as a vertex attribute.
 function fbox(x, y, z, w, h, d, win) {
   const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
@@ -602,8 +648,10 @@ function paint(g, c) {
   for (let i = 0; i < n; i++) { a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; }
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
 }
-const flares = { pos: [], col: [], size: [] };
-function flare(p, c, size) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(size); }
+const flares = { pos: [], col: [], size: [], pin: [] };
+function flare(p, c, size) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(size); flares.pin.push(0); }
+// A pin is a bare core: no halo, no bloom.
+function pin(p, c) { flares.pos.push(p.x, p.y, p.z); flares.col.push(...c); flares.size.push(14); flares.pin.push(1); }
 const plumes = { pos: [], size: [], lit: [] };
 
 const SODIUM = [1.0, 0.52, 0.18], WHITE = [0.86, 0.93, 1.0], RED = [1.0, 0.03, 0.02], FLUO = [0.7, 0.88, 1.0], WARM = [1.0, 0.72, 0.42];
@@ -693,14 +741,14 @@ function prism(s, lo, hi, y0, y1) {
 const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2, -t / 2 + k], [w / 2, t / 2 - k], [w / 2 - k, t / 2], [-w / 2 + k, t / 2], [-w / 2, t / 2 - k], [-w / 2, -t / 2 + k]];
 {
   // Precast box girder: a thin deck slab over a deep trapezoid spine.
-  sweep([[-HW, 0], [HW, 0], [HW, -0.7], [5.2, -1.0], [3.6, -3.6], [-3.6, -3.6], [-5.2, -1.0], [-HW, -0.7]], S0, LEN, 2);
+  sweep([[-HW, 0], [HW, 0], [HW, -0.7], [5.2, -1.0], [3.6, -3.6], [-3.6, -3.6], [-5.2, -1.0], [-HW, -0.7]], S0, LEN + 10, 2);
   // Solid parapets, flush with the slab edge, sloped on the inside.
-  for (const k of [-1, 1]) sweep([[k * 6.85, 0], [k * HW, 0], [k * HW, 1.25], [k * 7.15, 1.25]], S0, LEN, 2);
+  for (const k of [-1, 1]) sweep([[k * 6.85, 0], [k * HW, 0], [k * HW, 1.25], [k * 7.15, 1.25]], S0, LEN + 10, 2);
   // Twin rails: thin steel bars on the track line.
-  for (let s = S0; s < LEN; s += 10) {
+  for (let s = S0; s < LEN + 10; s += 10) {
     for (const side of [-0.75, 0.75]) {
       const r = atX(s + 5, side + TRACK);
-      box(r.x, DECK, r.z, 0.14, 0.22, 10.05, r.yaw, railParts);
+      rail(r.x, DECK, r.z, r.yaw);
     }
   }
   // Blade piers: a pile cap at the waterline, a slim shaft, a flared head.
@@ -710,14 +758,13 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
     prism(s, chamfer(5.6, 2.4, 0.5), chamfer(5.6, 2.4, 0.5), 1.4, yHead);
     prism(s, chamfer(5.6, 2.4, 0.5), chamfer(7.6, 2.8, 0.5), yHead, DECK - 3.6);
   }
-  // Catenary masts in rhythm, with a small light at each top.
+  // Catenary masts in rhythm, with no lamp.
   const wire = [];
   for (let s = 8; s < LEN; s += 48) {
     const m = at(s, HW - 1.6), arm = at(s, -1.6);
     box(m.x, DECK, m.z, 0.45, 8.6, 0.45, m.yaw);
     const mid = at(s, (HW - 1.6 - 1.6) / 2 - 0.8);
     box(mid.x, DECK + 8.0, mid.z, HW - 1.6 + 1.6 + 1.2, 0.3, 0.3, mid.yaw + Math.PI / 2);
-    flare(new THREE.Vector3(m.x, DECK + 8.9, m.z), scale(FLUO, 2.6), 60);
   }
   for (let s = 0; s <= LEN; s += 6) { const w = at(s, -1.6); wire.push(new THREE.Vector3(w.x, DECK + 6.9, w.z)); }
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(wire), new THREE.LineBasicMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), transparent: true, opacity: 0.8 }));
@@ -732,6 +779,39 @@ const chamfer = (w, t, k) => [[-w / 2 + k, -t / 2], [w / 2 - k, -t / 2], [w / 2,
     if (s < 360) addLight(head, new THREE.Vector3(...SODIUM), 0.45, 9);
   }
 }
+// Terminal portal: the deck lands on an embankment.
+// The track then enters a lit block.
+const PORTAL_S = LEN + 10;
+// A box on the straight track past LEN.
+// Across 99 marks a part with no joints.
+function slab(s0, s1, u0, u1, y0, y1) {
+  const sm = (s0 + s1) / 2, c = atX(sm, (u0 + u1) / 2);
+  const g = new THREE.BoxGeometry(u1 - u0, y1 - y0, s1 - s0);
+  g.rotateY(atX(LEN).yaw);
+  g.translate(c.x, (y0 + y1) / 2, c.z);
+  const h = g.toNonIndexed();
+  h.deleteAttribute('uv'); h.clearGroups();
+  h.setAttribute('aSU', new THREE.Float32BufferAttribute(new Float32Array(h.attributes.position.count * 2).map((_, i) => (i % 2 ? 99 : sm)), 2));
+  castParts.push(h);
+}
+{
+  // The embankment slopes from the deck down to the sea.
+  sweep([[-10, -3.6], [10, -3.6], [13, -30], [-13, -30]], LEN - 40, PORTAL_S, 4);
+  // The block is 60 m wide.
+  // The block is 80 m deep.
+  // The block is 42 m tall.
+  // The mouth is 9 m wide.
+  slab(PORTAL_S, PORTAL_S + 80, -30, -4.5, 0, 42);
+  slab(PORTAL_S, PORTAL_S + 80, 4.5, 30, 0, 42);
+  slab(PORTAL_S, PORTAL_S + 80, -4.5, 4.5, 32, 42);
+  slab(PORTAL_S, PORTAL_S + 80, -4.5, 4.5, 0, DECK);
+  // A warm plane lights the far end of the mouth.
+  const inner = atX(PORTAL_S + 30), warm = [1.2, 0.86, 0.5];
+  box(inner.x, DECK, inner.z, 9, 8, 0.2, inner.yaw, glowParts, warm);
+  const mouth = atX(PORTAL_S + 1), back = new THREE.Vector3(-mouth.tan.x, 0, -mouth.tan.y);
+  addLight(new THREE.Vector3(mouth.x, DECK + 4, mouth.z), new THREE.Vector3(1, 0.72, 0.42), 3, 30, back, Math.cos(1.0));
+  cone(new THREE.Vector3(mouth.x, DECK + 4, mouth.z), back, 60, 0.35, new THREE.Vector3(1, 0.72, 0.42), 0.25);
+}
 /* ---------- end causeway ---------- */
 
 /* ---------- train: runs the causeway out to the port and back ---------- */
@@ -743,43 +823,10 @@ function atX(s, side = 0) {
 }
 const train = (() => {
   // A raked locomotive and three long wagons: one heavy, monolithic machine.
-  const LOCO = 20, CAR = 24, GAP = 1.0, N = 4;
-  const lens = [LOCO, CAR, CAR, CAR], offs = [];
-  for (let i = 0, o = 0; i < N; o += lens[i] + GAP, i++) offs.push(o + lens[i] / 2);
-  const SPAN = offs[N - 1] + lens[N - 1] / 2;
-  const attrs = (g, col, kind) => {
-    g = g.index ? g.toNonIndexed() : g;
-    g.deleteAttribute('uv'); g.clearGroups();
-    paint(g, col);
-    g.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(kind), 1));
-    return g;
-  };
-  // Hull section: a chamfered box on the bogies, built along +z.
-  function hull(len, loco) {
-    const h = loco ? 3.4 : 3.7, ch = loco ? 0.55 : 0.8, x = 1.65, y0 = 1.1, y1 = y0 + h;
-    const shape = new THREE.Shape([[-x + 0.2, y0], [x - 0.2, y0], [x, y0 + 0.2], [x, y1 - ch], [x - ch, y1], [-x + ch, y1], [-x, y1 - ch], [-x, y0 + 0.2]].map(([a, b]) => new THREE.Vector2(a, b)));
-    let g = new THREE.ExtrudeGeometry(shape, { depth: len, steps: loco ? 24 : 1, bevelEnabled: false });
-    g.translate(0, 0, -len / 2);
-    if (loco) {
-      // The nose rakes down to a wedge over its last 6.5 m.
-      const p = g.attributes.position, zN = len / 2 - 6.5;
-      for (let i = 0; i < p.count; i++) {
-        const z = p.getZ(i);
-        if (z <= zN) continue;
-        const t = (z - zN) / 6.5, y = p.getY(i);
-        if (y > 2.2) p.setY(i, 2.2 + (y - 2.2) * (1 - 0.72 * t));
-        p.setX(i, p.getX(i) * (1 - 0.08 * t));
-      }
-      g.computeVertexNormals();
-    }
-    const DARK = [0.025, 0.025, 0.027], BODY = [0.15, 0.15, 0.155];
-    const bits = [attrs(g, BODY, loco ? 1 : 0)];
-    for (const z of [-len / 2 + 3.6, len / 2 - 3.6]) bits.push(attrs(new THREE.BoxGeometry(2.7, 1.0, 3.2).translate(0, 0.55, z), DARK, 0));
-    // A low roof block breaks the long top line.
-    const rl = len * (loco ? 0.45 : 0.8);
-    bits.push(attrs(new THREE.BoxGeometry(2.0, 0.35, rl).translate(0, y1 + 0.17, loco ? -len * 0.18 : 0), DARK, 0));
-    return mergeGeometries(bits);
-  }
+  const shape = makeTrain({ consist: ['loco', 'car', 'car', 'car'] });
+  const N = shape.parts.length, SPAN = shape.span;
+  // Port's path takes a side offset from the track line.
+  const path = (s, side = 0) => atX(s, TRACK + side);
   // Hull: dark wet paint with panel seams, a cab slit and flank markers.
   const hullMat = new THREE.ShaderMaterial({
     uniforms: { ...k2, ...lightU },
@@ -833,10 +880,9 @@ const train = (() => {
       gl_FragColor = vec4(col + em * (1.0 - 0.7 * f), 1.0);
     }`,
   });
-  const locoG = hull(LOCO, true), carG0 = hull(CAR, false);
   const cars = [];
   for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(i ? carG0 : locoG, hullMat);
+    const m = new THREE.Mesh(shape.parts[i].geo, hullMat);
     m.userData.live = true;
     scene.add(m);
     cars.push(m);
@@ -847,10 +893,12 @@ const train = (() => {
   // The tail is orange-red, so the warning-light blink skips it.
   lampG.setAttribute('color', new THREE.Float32BufferAttribute([...scale([1, 0.2, 0.1], 6), ...scale([1, 0.2, 0.1], 6), ...scale(WHITE, 9), ...scale(WHITE, 9)], 3));
   lampG.setAttribute('size', new THREE.Float32BufferAttribute([70, 70, 120, 120], 1));
+  // The train lamps are flares, not pins.
+  lampG.setAttribute('aPin', new THREE.Float32BufferAttribute(new Float32Array(4), 1));
   const lamps = new THREE.Points(lampG, flareMat);
   lamps.renderOrder = 3; lamps.frustumCulled = false; lamps.userData.live = true; scene.add(lamps);
   const head = new THREE.Vector3();
-  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2 });
+  orbs.push({ pos: head, color: [1, 0.95, 0.85], k: 0.5, size: 1.2, train: true });
   // Light list slots: one cold flank light per car, then the headlight.
   const COLD = [0.7, 0.85, 1.0];
   const carL = [], carGl = [];
@@ -862,27 +910,25 @@ const train = (() => {
   const Y = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3(), p = new THREE.Vector3();
   // Place the train: s is the nose's place on the track, dir its heading.
   function place(s, dir, sea) {
-    for (let i = 0; i < N; i++) {
-      const c = atX(s - dir * offs[i], TRACK);
-      cars[i].position.set(c.x, DECK, c.z);
-      // Each car faces the way the train runs.
-      cars[i].rotation.y = c.yaw + (dir < 0 ? Math.PI : 0);
-      p.set(c.x, DECK + 1.7, c.z);
+    shape.lay(s, dir, path, (i, x, z, yaw) => {
+      cars[i].position.set(x, DECK, z);
+      cars[i].rotation.y = yaw;
+      p.set(x, DECK + 1.7, z);
       lights[carL[i]].pos.copy(p);
-      if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, 0.6);
-    }
-    const h = atX(s + dir * 0.2, TRACK), ahead = atX(s + dir * 80, TRACK);
+      // A hidden train throws no glint.
+      if (sea) sea.material.uniforms.uGP.value[carGl[i]].set(p.x, p.y, p.z, on ? 0.6 : 0);
+    });
+    const L = shape.lamps(s, dir, path), h = L.head, ahead = path(s + dir * 80);
     head.set(h.x, DECK + 2.0, h.z);
     d.set(ahead.x - h.x, -2.5, ahead.z - h.z).normalize();
     lights[headL].pos.copy(head); lights[headL].dir.copy(d);
-    if (sea) sea.material.uniforms.uGP.value[headG].set(head.x, head.y, head.z, 3.0);
+    if (sea) sea.material.uniforms.uGP.value[headG].set(head.x, head.y, head.z, on ? 3.0 : 0);
     beam.position.copy(head);
     beam.quaternion.setFromUnitVectors(Y, d);
     const pos = lampG.attributes.position;
-    for (const [k, side] of [[0, -0.9], [1, 0.9]]) {
-      const t = atX(s - dir * (SPAN + 0.1), TRACK + side), f = atX(s + dir * 0.15, TRACK + side);
-      pos.setXYZ(k, t.x, DECK + 1.6, t.z);
-      pos.setXYZ(k + 2, f.x, DECK + 1.75, f.z);
+    for (const k of [0, 1]) {
+      pos.setXYZ(k, L.tails[k].x, DECK + 1.6, L.tails[k].z);
+      pos.setXYZ(k + 2, L.heads[k].x, DECK + 1.75, L.heads[k].z);
     }
     pos.needsUpdate = true;
   }
@@ -913,7 +959,7 @@ const buildings = [];
     buildings.push({ x, z, top: y, w, d });
     // Roof plant: small boxes and a vent or two.
     for (let k = 0; k < 2 + (rnd() * 3 | 0); k++) box(x + range(-0.4, 0.4) * w, y, z + range(-0.4, 0.4) * d, range(3, 8), range(2, 5), range(3, 8));
-    if (rnd() < 0.6) flare(new THREE.Vector3(x + range(-0.5, 0.5) * w, y + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.2), 60);
+    if (rnd() < 0.6) pin(new THREE.Vector3(x + range(-0.5, 0.5) * w, y + 1, z + d / 2), scale(rnd() < 0.8 ? SODIUM : WHITE, 3.2));
   }
   // Slim towers break the skyline.
   for (let i = 0; i < 10; i++) {
@@ -928,14 +974,14 @@ const buildings = [];
     box(x0 + L / 2, y, z, L, 1.0, 7);
     for (const dy of [1.4, 2.6]) box(x0 + L / 2, y + dy, z + range(-2, 2), L, 0.9, 0.9);
     for (let px = x0; px <= x0 + L; px += 12) { box(px, 0, z - 3, 0.8, y, 0.8); box(px, 0, z + 3, 0.8, y, 0.8); }
-    for (let px = x0 + 10; px < x0 + L; px += 30) flare(new THREE.Vector3(px, y + 4, z + 4), scale(SODIUM, 2.6), 40);
+    for (let px = x0 + 10; px < x0 + L; px += 30) pin(new THREE.Vector3(px, y + 4, z + 4), scale(SODIUM, 2.6));
   }
   // Conveyor gantries climb from the quay onto block roofs.
   for (let i = 0; i < 7; i++) {
     const t = buildings[(rnd() * buildings.length) | 0];
     const a = new THREE.Vector3(t.x + range(-120, 120), 2, QUAY - range(10, 40)), b = new THREE.Vector3(t.x, t.top, t.z);
     beam(a, b, 4, 3.2);
-    for (let k = 1; k < 4; k++) flare(a.clone().lerp(b, k / 4).add(new THREE.Vector3(0, 2.4, 0)), scale(WHITE, 2.2), 36);
+    for (let k = 1; k < 4; k++) pin(a.clone().lerp(b, k / 4).add(new THREE.Vector3(0, 2.4, 0)), scale(WHITE, 2.2));
   }
   // Distillation columns with lit platforms and ladder lights.
   for (let i = 0; i < 9; i++) {
@@ -943,16 +989,16 @@ const buildings = [];
     cyl(x, 0, z, r, h, 16);
     for (let y = 14; y < h - 4; y += 14) {
       cyl(x, y, z, r + 1.8, 0.5, 16);
-      for (const ang of [-0.9, 0, 0.9]) flare(new THREE.Vector3(x + Math.sin(ang) * (r + 1.8), y + 1.2, z + Math.cos(ang) * (r + 1.8)), scale(WHITE, 2.4), 34);
+      for (const ang of [-0.9, 0, 0.9]) pin(new THREE.Vector3(x + Math.sin(ang) * (r + 1.8), y + 1.2, z + Math.cos(ang) * (r + 1.8)), scale(WHITE, 2.4));
     }
-    for (let y = 6; y < h; y += 5) flare(new THREE.Vector3(x + r * 0.7, y, z + r + 0.6), scale(SODIUM, 1.6), 22);
+    for (let y = 6; y < h; y += 5) pin(new THREE.Vector3(x + r * 0.7, y, z + r + 0.6), scale(SODIUM, 1.6));
     tops.push(new THREE.Vector3(x, h + 2, z));
   }
   // Tank farm with ring lights round each roof.
   for (let i = 0; i < 16; i++) {
     const r = range(12, 22), h = range(14, 26), x = CX + range(-1000, 1000), z = QUAY - range(80, 300);
     cyl(x, 0, z, r, h); dome(x, h, z, r);
-    for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2; flare(new THREE.Vector3(x + Math.cos(ang) * r, h + 0.8, z + Math.sin(ang) * r), scale(SODIUM, 2.2), 34); }
+    for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2; pin(new THREE.Vector3(x + Math.cos(ang) * r, h + 0.8, z + Math.sin(ang) * r), scale(SODIUM, 2.2)); }
   }
   // Two cooling towers with lit plumes.
   for (const [x, z] of [[CX - 700, QUAY - 150], [CX - 590, QUAY - 230]]) {
@@ -961,7 +1007,7 @@ const buildings = [];
     const g = new THREE.LatheGeometry(pts, 48);
     g.translate(x, 0, z);
     parts.push(g.toNonIndexed());
-    for (let k = 0; k < 4; k++) flare(new THREE.Vector3(x + (k - 1.5) * 14, 121, z + 25), scale(RED, 5), 120);
+    for (let k = 0; k < 4; k++) { const rp = new THREE.Vector3(x + (k - 1.5) * 14, 121, z + 25); if (k % 2 === 0) flare(rp, scale(RED, 5), 120); else pin(rp, scale(RED, 5)); }
     // A low spot washes the shell so it reads through the fog.
     addLight(new THREE.Vector3(x + 30, 15, z + 90), new THREE.Vector3(1, 0.6, 0.3), 3.5, 90, new THREE.Vector3(-0.3, 0.45, -1).normalize(), Math.cos(0.5));
     for (let k = 0; k < 8; k++) {
@@ -1001,13 +1047,24 @@ const buildings = [];
       plumes.lit.push(3.2 - k * 0.45);
     }
   }
+  // The terminal block footprint, as a test on a world point.
+  const blockC = atX(PORTAL_S + 40);
+  const inBlock = (x, z) => {
+    const dx = x - blockC.x, dz = z - blockC.z;
+    const a = dx * blockC.tan.x + dz * blockC.tan.y, b = dz * blockC.tan.x - dx * blockC.tan.y;
+    return Math.abs(a) < 43 && Math.abs(b) < 33;
+  };
   // Gantry cranes along the quay, booms over the water, lights along the booms.
   for (let i = 0; i < 7; i++) {
-    const x = CX + (i / 6 - 0.5) * 1500 + range(-40, 40), z = QUAY - 20, h = range(60, 85);
+    let x = CX + (i / 6 - 0.5) * 1500 + range(-40, 40);
+    const z = QUAY - 20, h = range(60, 85);
+    // A crane leg in the block moves the crane away from it.
+    const away = Math.sign(x - blockC.x) || 1;
+    while ([-20, 20].some(dx => inBlock(x + dx, z) || inBlock(x + dx, z - 22))) x += away * 4;
     for (const dx of [-20, 20]) for (const dz of [0, -22]) box(x + dx, 0, z + dz, 2.6, h, 2.6);
     box(x, h, z - 11, 46, 5, 28);
     box(x, h + 2, z + 34, 5, 3.5, 92);
-    for (let k = 0; k < 6; k++) flare(new THREE.Vector3(x, h + 1, z + 70 - k * 18), scale(WHITE, 3), 60);
+    for (let k = 0; k < 6; k++) pin(new THREE.Vector3(x, h + 1, z + 70 - k * 18), scale(WHITE, 3));
     addGlint(new THREE.Vector3(x, h + 1, z + 60), WHITE, 1.5, 0.18);
     tops.push(new THREE.Vector3(x, h + 8, z - 11));
   }
@@ -1024,7 +1081,11 @@ const buildings = [];
     if (i % 2 === 0) addLight(head, new THREE.Vector3(1, 0.72, 0.42), 2.5, 50, dir, Math.cos(0.6));
   }
   // Red blinkers on every tall top.
-  tops.forEach((t, i) => { flare(t, scale(RED, 7), 200); if (i % 2 === 0) addGlint(t, RED, 1.5, 0.15); });
+  // Even tops flare and throw a glint; odd tops are pins.
+  tops.forEach((t, i) => {
+    if (i % 2) pin(t, scale(RED, 7));
+    else { flare(t, scale(RED, 7), 200); addGlint(t, RED, 1.5, 0.15); }
+  });
   // Window fields: a few warm and cool sources stand in for lit facades.
   for (let i = 0; i < 14; i++) addGlint(new THREE.Vector3(CX + range(-950, 950), range(12, 40), QUAY - range(80, 260)), i % 3 ? SODIUM : FLUO, 1.0, 0.12);
 }
@@ -1054,10 +1115,18 @@ const search = (() => {
   return { aim, src };
 })();
 
+// Keep the train head orb and the 5 strongest static orbs.
+{
+  const keep = orbs.filter(o => !o.train).sort((a, b) => b.k * b.size - a.k * a.size).slice(0, 5);
+  const train = orbs.filter(o => o.train);
+  orbs.length = 0;
+  orbs.push(...train, ...keep);
+}
+
 // Bake static geometry into a few draw calls.
 if (parts.length) scene.add(new THREE.Mesh(mergeGeometries(parts), concrete));
 if (castParts.length) scene.add(new THREE.Mesh(mergeGeometries(castParts), precast));
-if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), steel));
+if (railParts.length) scene.add(new THREE.Mesh(mergeGeometries(railParts), railMat));
 if (facadeParts.length) scene.add(new THREE.Mesh(mergeGeometries(facadeParts), facade));
 if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowMat));
 {
@@ -1065,6 +1134,7 @@ if (glowParts.length) scene.add(new THREE.Mesh(mergeGeometries(glowParts), glowM
   g.setAttribute('position', new THREE.Float32BufferAttribute(flares.pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(flares.col, 3));
   g.setAttribute('size', new THREE.Float32BufferAttribute(flares.size, 1));
+  g.setAttribute('aPin', new THREE.Float32BufferAttribute(flares.pin, 1));
   const p = new THREE.Points(g, flareMat); p.renderOrder = 3; p.frustumCulled = false; p.userData.live = true; scene.add(p);
   const h = new THREE.BufferGeometry();
   h.setAttribute('position', new THREE.Float32BufferAttribute(plumes.pos, 3));
@@ -1235,6 +1305,10 @@ sea.updateMatrixWorld();
 // The bake calls the mirror once; the sea mesh never draws itself.
 const mirror = sea.onBeforeRender;
 sea.onBeforeRender = () => {};
+// Rides render the mirror on every second call.
+// The sea keeps the last mirror between calls.
+let mirrorTick = 0;
+const mirrorHalf = function (...a) { if ((mirrorTick++ & 1) === 0) mirror.apply(this, a); };
 
 /* ---------- K2: precipitation ---------- */
 // Light rain around the camera; drops brighten where light falls on them.
@@ -1562,18 +1636,46 @@ function bake(renderer) {
   statics.visible = false; live.visible = true; comp.visible = true;
   invVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   uploadLights();
-  if (chase.mode) setLive(true);
+  if (chase.mode) {
+    setLive(true);
+    // The next live frame draws a fresh mirror.
+    mirrorTick = 0;
+    // The bake used the wide pose.
+    // A ride goes back to its last shot.
+    if (!chase.fresh) {
+      camera.position.copy(shotP);
+      camera.lookAt(shotA);
+      lens(chase.fov);
+    }
+  }
 }
 /* ---------- end bake ---------- */
 
   /* Motion: one clock drives the ambient life; trains run out and back. */
 train.place(175, 1, sea);
-const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false };
+// t counts seconds since the train left its end.
+// A t of 99 means the train is at cruise.
+const run = { s: 175, dir: 1, v: 20, wait: 0, gone: false, user: false, t: 99 };
 let runPause = 6;
-const END = LEN + 160, START = -160;
+// END sits 2 m behind the warm plane in the mouth.
+// The tail hides there, out of view.
+const END = PORTAL_S + 32, START = -160;
 let time = 0, rt = 0, paceNow = 1, parked = false;
 // A parked train (QA) holds still at any speed setting.
 const speed = () => (parked ? 0 : run.v);
+const smoother = x => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (6 * x - 15) + 10); };
+// The train eases out over 6 s.
+// It brakes over its last 220 m.
+// The stop point is the hide point.
+function trainSpeed(s, dir, t) {
+  const cruise = speed();
+  if (cruise <= 0) return 0;
+  const d = dir > 0 ? END + train.SPAN - s : s - (START - train.SPAN);
+  if (d <= 0) return 0;
+  // A quarter-circle brake starts smoothly and arrives in finite time.
+  const x = Math.min(1, d / 220), brake = Math.sqrt(1 - (1 - x) ** 2);
+  return Math.min(cruise, Math.max(0.05, cruise * Math.min(smoother(t / 6), brake)));
+}
 // The searchlight: auto sweep, or the pointer's aim while steering.
 const aimNow = new THREE.Vector2(-0.5, 0.55), aimTo = new THREE.Vector2();
 let steering = false, steerEase = 0;
@@ -1601,11 +1703,12 @@ function update(dt, pace) {
   const k = run.user ? 1 : pace;
   if (run.gone) {
     run.wait -= dt * k;
-    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; train.show(true); }
+    if (run.wait <= 0) { run.gone = false; run.dir = -run.dir; run.s = run.dir > 0 ? START : END; run.t = 0; train.show(true); }
   } else {
-    run.s += run.dir * speed() * dt * k;
+    run.t += dt * k;
+    run.s += run.dir * trainSpeed(run.s, run.dir, run.t) * dt * k;
     // Past the far end the train is lost in the port fog; then it returns.
-    if (run.s > END + train.SPAN || run.s < START - train.SPAN) { train.show(false); run.gone = true; run.wait = runPause; run.user = false; }
+    if (run.s >= END + train.SPAN || run.s <= START - train.SPAN) { train.show(false); run.gone = true; run.wait = Math.max(1, runPause); run.user = false; }
   }
   train.place(run.s, run.dir, sea);
   updateChase(dt);
@@ -1628,7 +1731,9 @@ function sendTrain() {
 // A tap on the water drops a ripple; a tap on the sky sends a train.
 function tap(ndc) {
   if (!ndc) return sendTrain();
-  // During a ride, any tap returns to the wide shot.
+  // A tap during the ease back does nothing.
+  if (chase.mode === 2) return;
+  // A tap during a ride ends it.
   if (chase.mode === 1) return endChase();
   if (!chase.mode && train.on && hitTrain(ndc)) return startChase();
   ray.setFromCamera(ndc, camera);
@@ -1653,17 +1758,35 @@ function release() { steering = false; }
 
 /* ---------- chase: a tap on the train rides a low camera beside it ---------- */
 // Mode 0 is the wide shot, 1 rides, 2 eases back to the wide shot.
-const chase = { mode: 0, t: 0, s: 0 };
+const chase = { mode: 0, t: 0, s: 0, k0: 1, fresh: false };
 // The camera rides this far off the track, on this side, this far ahead.
-const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 1.4, OUT = 1.8, FOV = 30;
+const SIDE = 1, OFF = 16, LEAD = 45, REL = 16, IN = 2.2, OUT = 2.6, FOV = 30;
 let bakeWith = null;
-const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3(), aimT = new THREE.Vector3();
-const smooth = t => t * t * (3 - 2 * t);
+const camP = new THREE.Vector3(), lookT = new THREE.Vector3(), wideP = new THREE.Vector3(), wideT = new THREE.Vector3();
+const smooth = smoother;
+// The ride camera stops this far short of the block face.
+const RIDE_END = PORTAL_S - 30;
+// The ride camera follows springs.
+// The springs keep their own state, so a resize cannot move them.
+const springP = new THREE.Vector3(), springPV = new THREE.Vector3(), springA = new THREE.Vector3(), springAV = new THREE.Vector3();
+const goalP = new THREE.Vector3(), goalA = new THREE.Vector3();
+// The shot holds the last camera pose and aim.
+const shotP = new THREE.Vector3(), shotA = new THREE.Vector3();
+// A critically damped spring has omega = 2 / tau.
+// The step is exact.
+function spring(cur, vel, goal, dt, tau = 0.35) {
+  const w = 2 / tau, e = Math.exp(-w * dt);
+  for (const a of ['x', 'y', 'z']) {
+    const x = cur[a] - goal[a], t = vel[a] + w * x;
+    cur[a] = goal[a] + (x + t * dt) * e;
+    vel[a] = (vel[a] - w * t * dt) * e;
+  }
+}
 // A moving camera cannot use the bake, so the still parts draw live.
 function setLive(on) {
   statics.visible = skyG.visible = on;
   comp.visible = !on;
-  sea.onBeforeRender = on ? mirror : () => {};
+  sea.onBeforeRender = on ? mirrorHalf : () => {};
   if (on) scene.add(sea); else scene.remove(sea);
 }
 function lens(fov) {
@@ -1676,17 +1799,23 @@ function lens(fov) {
 function startChase() {
   chase.mode = 1; chase.t = 0;
   chase.s = run.s + run.dir * LEAD;
-  // A ride keeps the train at full speed.
+  chase.fresh = true;
+  // A ride stops the idle slowdown.
+  // The train still brakes at the ends.
   run.user = true;
   setLive(true);
 }
-function endChase() { if (chase.mode === 1) { chase.mode = 2; chase.t = 0; } }
+// The ease back starts from the ride's current blend.
+function endChase() { if (chase.mode === 1) { chase.k0 = smooth(Math.min(1, chase.t / IN)); chase.mode = 2; chase.t = 0; } }
 function updateChase(dt) {
   if (!chase.mode) return;
   chase.t += dt;
   const dir = run.dir;
   // The camera rolls a little slower than the train, so the train slides past.
-  chase.s += dir * Math.max(0, speed() - REL) * dt;
+  chase.s += dir * Math.max(0, trainSpeed(run.s, run.dir, run.t) - REL) * dt;
+  // Outbound, the camera stops short of the block.
+  const stop = dir > 0 && chase.s >= RIDE_END;
+  if (stop) chase.s = RIDE_END;
   const c = atX(chase.s, TRACK + SIDE * OFF);
   camP.set(c.x, DECK + 3.2, c.z);
   // Aim at the part of the train just behind the camera, nose to tail.
@@ -1694,14 +1823,30 @@ function updateChase(dt) {
   const ls = THREE.MathUtils.clamp(chase.s - dir * 10, Math.min(head, tail), Math.max(head, tail));
   const l = atX(ls, TRACK);
   lookT.set(l.x, DECK + 2.4, l.z);
-  // The ride ends 60 m after the tail passes, or when the train leaves.
-  if (chase.mode === 1 && (dir * (tail - chase.s) > 60 || !train.on)) endChase();
+  // The ride ends 60 m after the tail passes.
+  // It also ends at the camera stop.
+  // It also ends as the head enters the mouth.
+  const out = stop || (dir > 0 && head >= PORTAL_S);
+  if (chase.mode === 1 && (dir * (tail - chase.s) > 60 || !train.on || out)) endChase();
   const cw = view.w >= view.h ? CAM.w : CAM.p;
   wideP.set(cw.px, cw.py, cw.pz); wideT.set(cw.tx, cw.ty, cw.tz);
-  const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : 1 - smooth(Math.min(1, chase.t / OUT));
-  camera.position.lerpVectors(wideP, camP, k);
-  camera.lookAt(aimT.lerpVectors(wideT, lookT, k));
-  lens(cw.fov + (FOV - cw.fov) * k);
+  const k = chase.mode === 1 ? smooth(Math.min(1, chase.t / IN)) : chase.k0 * (1 - smooth(Math.min(1, chase.t / OUT)));
+  goalP.lerpVectors(wideP, camP, k);
+  goalP.y += 12 * Math.sin(Math.PI * k);
+  goalA.lerpVectors(wideT, lookT, k);
+  // The springs start at the wide pose.
+  if (chase.fresh) { chase.fresh = false; springP.copy(wideP); springA.copy(wideT); springPV.set(0, 0, 0); springAV.set(0, 0, 0); }
+  spring(springP, springPV, goalP, dt);
+  spring(springA, springAV, goalA, dt);
+  // The ease back blends the springs into the goal.
+  // The camera then lands on the wide pose at rest.
+  const b = chase.mode === 2 ? smooth(Math.min(1, chase.t / OUT)) : 0;
+  shotP.lerpVectors(springP, goalP, b);
+  shotA.lerpVectors(springA, goalA, b);
+  camera.position.copy(shotP);
+  camera.lookAt(shotA);
+  chase.fov = cw.fov + (FOV - cw.fov) * k;
+  lens(chase.fov);
   if (chase.mode === 2 && chase.t >= OUT) {
     // Back on the wide shot: the bake takes over again, with a fresh mirror.
     chase.mode = 0;
@@ -1711,9 +1856,12 @@ function updateChase(dt) {
   }
 }
 // A tap within 40 px of the train starts a ride.
+// Only the cars short of the mouth count.
 function hitTrain(ndc) {
   for (let d = 0; d <= train.SPAN; d += 6) {
-    const c = atX(run.s - run.dir * d, TRACK);
+    const ts = run.s - run.dir * d;
+    if (ts >= PORTAL_S) continue;
+    const c = atX(ts, TRACK);
     gv.set(c.x, DECK + 2.5, c.z).project(camera);
     if (gv.z < 1 && Math.hypot((gv.x - ndc.x) * view.w / 2, (gv.y - ndc.y) * view.h / 2) < 40) return true;
   }
@@ -1722,9 +1870,10 @@ function hitTrain(ndc) {
 /* ---------- end chase ---------- */
 // A moving train runs at full rate, so it never steps.
 const lively = () => run.user || steering || steerEase > 0 || rips.some(r => rt - r.z < 7) || (train.on && paceNow > 0) || chase.mode > 0;
-// Lower steps quality down one rung: 1 drops the mirror, 2 the rain.
+// Lower applies the quality rung, down or back up.
+// Rung 2 and up hide the rain.
 function lower(rung) {
-  if (rung >= 2) rain.visible = false;
+  rain.visible = rung < 2;
 }
 
 // Dispose frees every geometry, material and texture this scene made.
@@ -1829,5 +1978,5 @@ const tune = {
 };
 /* ---------- end tune ---------- */
 
-return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { expo: 0.61, bloom: [1.68, 1.18, 0.8], orbK: 0.88, orbSize: 1.19, tint: '#150f09', vig: 0.01, vigIn: 0.35, grain: 0.094 } };
+return { scene, camera, frame, bake, tune, dispose, orbs, update, tap, steer, release, lively, lower, post: { expo: 0.61, bloom: [0.9, 0.6, 1.6], orbK: 0.88, orbSize: 1.19, tint: '#150f09', vig: 0.01, vigIn: 0.35, grain: 0.094 } };
 }

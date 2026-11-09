@@ -64,9 +64,10 @@
         <button class="chip" id="train" type="button" title="Send a train">+ Train</button>
       </div>
       <dl class="how" aria-label="How to play">
-        <div data-moves><dt><span class="fine">Click</span><span class="touch">Tap</span> water</dt><dd>ripple</dd></div>
-        <div data-moves><dt><span class="fine">Click</span><span class="touch">Tap</span> sky</dt><dd>train</dd></div>
-        <div data-moves><dt>Drag</dt><dd>searchlight</dd></div>
+        <div data-moves data-scene="port"><dt><span class="fine">Click</span><span class="touch">Tap</span> water</dt><dd>ripple</dd></div>
+        <div data-moves data-scene="port"><dt><span class="fine">Click</span><span class="touch">Tap</span> sky</dt><dd>train</dd></div>
+        <div data-moves data-scene="pass"><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>train</dd></div>
+        <div data-moves data-scene="port"><dt>Drag</dt><dd>searchlight</dd></div>
         <div class="fine" data-moves><dt><kbd>Space</kbd></dt><dd>train</dd></div>
       </dl>
     </div>
@@ -96,7 +97,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { initPage, choices, whenVisible, pixelRatio, onQuality, qualitySetting } from '../shared/stim.js';
+import { initPage, choices, whenVisible, pixelRatio, quality, onQuality, qualitySetting } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 initPage({ id: 'viaduct' });
@@ -226,11 +227,15 @@ let rung = 0, bloomPass = null;
 // Page-level look knobs: exposure and lamp orbs.
 const look = { orbK: 1, orbSize: 1 };
 let cur = null, composer = null, grade = null, orbPass = null, size = { w: 1, h: 1, dpr: 1 }, loading = 0;
+// High with no slow-frame step takes four MSAA samples.
+// Other cases take two; rung 3 takes none.
+const samples = () => (rung >= 3 ? 0 : quality() === 'high' && rung === 0 ? 4 : 2);
+const target = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: samples() });
+// Only a scene switch builds the chain; the old passes dispose.
 function chain(s) {
-  composer?.renderTarget1.dispose(); composer?.renderTarget2.dispose();
-  // Two MSAA samples on Standard; the ladder drops them when frames run slow.
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: rung >= 3 ? 0 : 2 });
-  composer = new EffectComposer(renderer, rt);
+  for (const p of composer?.passes || []) p.dispose?.();
+  composer?.dispose();
+  composer = new EffectComposer(renderer, target());
   composer.addPass(new RenderPass(s.scene, s.camera));
   orbPass = makeOrbs();
   composer.addPass(orbPass);
@@ -240,15 +245,21 @@ function chain(s) {
   composer.addPass(grade);
   composer.addPass(new OutputPass());
 }
+// A new sample count swaps the targets.
+// The passes and their tuned values stay.
+function retarget() {
+  if (composer && composer.renderTarget1.samples !== samples()) composer.reset(target());
+}
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
   // The site-wide quality sets the pixel ratio; Standard keeps the budget.
-  // The ladder's first rung caps the pixel ratio at 1.
-  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: rung >= 1 ? 1 : 1.5, budget: 1.6e6, low: rung >= 1 }) };
+  // From rung 1, High falls back to Standard and Standard to 1x.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(size.w, size.h, false);
   if (!cur) return;
+  composer.setPixelRatio(size.dpr);
   composer.setSize(size.w, size.h);
   grade.uniforms.uRes.value.set(size.w * size.dpr, size.h * size.dpr);
   cur.frame(size.w, size.h, size.dpr);
@@ -301,7 +312,7 @@ function watch(now, lively) {
   if (watchSum / watchN > want && rung < 3) {
     rung++;
     cur.lower?.(rung);
-    if (rung === 3) chain(cur);
+    retarget();
     resize();
   }
   watchFrom = now - 4000; watchN = watchSum = 0;
@@ -361,13 +372,16 @@ async function show(id) {
   renderer.toneMappingExposure = cur.post.expo ?? 1;
   look.orbK = cur.post.orbK ?? 1; look.orbSize = cur.post.orbSize ?? 1;
   chain(cur);
+  // The new scene takes the current quality rung.
+  cur.lower?.(rung);
   tuneScene(id);
   resize();
   store.set('stimming.viaduct.scene', id);
   stage.dataset.scene = id;
   canvas.classList.add('on');
   // Only scenes that move show the motion controls.
-  for (const el of document.querySelectorAll('[data-moves]')) el.hidden = !cur.update;
+  // Entries marked for one scene show only on that scene.
+  for (const el of document.querySelectorAll('[data-moves]')) el.hidden = !cur.update || (!!el.dataset.scene && el.dataset.scene !== id);
   markReady();
   wake();
 }
@@ -455,7 +469,8 @@ const first = new URLSearchParams(location.search).get('scene') || store.get('st
 const start = SCENES[first] ? first : 'port';
 pick.set(start);
 new ResizeObserver(resize).observe(stage);
-onQuality(() => resize());
+// A new quality choice clears the slow-frame steps.
+onQuality(() => { rung = 0; cur?.lower?.(0); retarget(); resize(); });
 addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea')) return;
   const id = { Digit1: 'pass', Digit2: 'port' }[e.code];

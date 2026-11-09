@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T13:00:00Z
-updated_at: 2026-11-04T22:35:00Z
+updated_at: 2026-11-08T12:00:00Z
 ---
 
 Night viaduct, restyled from an empty file. One toy; each viaduct is a scene chosen by a chip.
@@ -34,13 +34,18 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - [ ] Tom: real-device fps check of the Port on Standard and High
 - [x] Tom: tune the Port in `?tune`, then send the Copy JSON; bake those values in as defaults
 - [ ] Checkpoint 1: Tom approves the Port framing
-- [ ] Death Stranding pass: precast girder causeway, monolithic train, train light on the baked deck, full rate while the train shows
-- [ ] Chase cam: tap the train to ride beside it; the scene renders live during the ride
+- [x] Death Stranding pass: precast girder causeway, monolithic train, train light on the baked deck, full rate while the train shows
+- [x] Chase cam: tap the train to ride beside it; the scene renders live during the ride
+- [x] Polish pass: glow, terminal portal, smoothness (branch feature/stimming-3cmz)
+- [ ] Port sub-project 2: live fog layer, tune desk by layer, player Settings tray
+- [ ] Port sub-project 3: lights wave, lightning, Fog slider
 - [ ] Lens flare (havoc `src/view/lensflare.js`) and the rack focus as hero moments
 - [ ] Bar: Settings tray holds Quality (pass it to `qualitySetting(tray)`) plus Port options; (i) vignette
 - [ ] Sound
 - [ ] Checkpoint 2: Tom reviews motion and sound
 - [ ] Pass: parked by Tom 2026-11-04; Port first
+- [x] Pass snowbound, sub-project 1: shared `train.js`, span, storm and moon gaps, long freight with plough (spec `docs/plans/viaduct-pass-snowbound.md`)
+- [ ] Pass snowbound, sub-project 2: avalanche on tap
 - [ ] Prototypes: Tom picks any to grow (all six final in the gallery)
 - [ ] Menu Lab entry: icon and `toys.viaduct` hook kept as they are
 - [ ] QA Q1 to Q10 (docs/plans/README.md)
@@ -58,4 +63,8 @@ Night viaduct, restyled from an empty file. One toy; each viaduct is a scene cho
 - K2 lives in marked sections. Shared in `index.html`: bloom, grade. Per scene: sky, haze, precipitation (Pass: snow, Port: rain). Unify them before Fireworks lifts K2.
 - Headless SwiftShader is slow (about 1 s per Port frame), so it cannot judge fps. A real-device check is still needed.
 - The bake hides static parts each frame; tune knobs marked bake re-render the still layer 150 ms after the last move.
+- Polish pass not yet seen in a visible pane; frame times not measured.
+- Pass snowbound: stills from a hidden-tab probe at 1280 and 375 px, and one real-page look with the tune desk.
+- Pass frame times on Tom's Mac (rAF median, page at 834 x 899, dpr 2): 8.4 ms at first load; 24.9 ms after a Pass, Port, Pass switch, before the comp lost two gap samples per pixel. Not measured since; the pane went hidden.
+- Pass open: peak wedges show a few thin slivers; snow and gap levels want Tom's eye in `?tune`.
 - havoc (`TomVDH/havoc`) holds the lens flare, disc blur and box-fog shaders used as models; it is WebGPU/TSL, so ports are rewrites in GLSL.
