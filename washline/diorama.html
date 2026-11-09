@@ -1559,10 +1559,10 @@ function buildHarbour(grp) {
   const deck = add(new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.22, deckD), new THREE.MeshStandardMaterial({ map: dt, roughness: 0.9 })));
   deck.position.set((D[0] + D[1]) / 2, -0.11, (D[2] + D[3]) / 2);
   const pileMat = new THREE.MeshStandardMaterial({ map: logTex, color: 0xa39a8c, roughness: 0.95 });
-  const piles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.18, 3.2, 12), pileMat, 90);
+  const piles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.18, 3.2, 12), pileMat, 160);
   let k = 0;
-  for (let x = D[0] + 0.3; x < D[1]; x += 1.9) for (const z of [D[2] + 0.2, D[3] - 0.2]) if (k < 90) piles.setMatrixAt(k++, m.compose(p.set(x, -1.6, z), q.identity(), sc.set(1, 1, 1)));
-  for (let z = D[2] + 2; z < D[3] - 1; z += 2.2) if (k < 90) piles.setMatrixAt(k++, m.compose(p.set(D[1] - 0.2, -1.6, z), q.identity(), sc.set(1, 1, 1)));
+  for (let x = D[0] + 0.3; x < D[1]; x += 1.9) for (const z of [D[2] + 0.2, D[3] - 0.2]) if (k < 160) piles.setMatrixAt(k++, m.compose(p.set(x, -1.6, z), q.identity(), sc.set(1, 1, 1)));
+  for (let z = D[2] + 2; z < D[3] - 1; z += 2.2) if (k < 160) piles.setMatrixAt(k++, m.compose(p.set(D[1] - 0.2, -1.6, z), q.identity(), sc.set(1, 1, 1)));
   piles.count = k;
   add(piles);
   // Two pilings carry the line down the pier, rope wrapped where it ties.
@@ -1627,6 +1627,20 @@ function buildHarbour(grp) {
   boom.position.set(-1.4, 2.6, 0);
   boat.add(hull, house, glass, cab, mast, boom);
   boat.traverse(o => { o.castShadow = o.receiveShadow = true; });
+  // Iso shows only the pier; the boat's mast would clip the corner.
+  boat.userData.isoHide = true;
+  // In iso, a mist veil thickens away from the pier, so the pier floats in grey.
+  const veilA = document.createElement('canvas');
+  veilA.width = 4; veilA.height = 1024;
+  const vg = veilA.getContext('2d'), vgr = vg.createLinearGradient(0, 0, 0, 1024);
+  for (const [z, a] of [[-200, 1], [-4.2, 1], [-1.4, 0], [1.4, 0], [4.2, 1], [200, 1]]) vgr.addColorStop((z + 200) / 400, a ? '#fff' : '#000');
+  vg.fillStyle = vgr; vg.fillRect(0, 0, 4, 1024);
+  const veil = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+    color: new THREE.Color().setRGB(...lin(0.8, 0.006, 225)), alphaMap: new THREE.CanvasTexture(veilA), transparent: true, opacity: 0.94, depthWrite: false, fog: false,
+  }));
+  veil.position.set(0, SEA + 0.35, 0);
+  veil.userData.isoOnly = true;
+  grp.add(veil);
   // Moored alongside the pier, bow out to sea.
   boat.position.set(9.0, SEA + 0.25, -5.2);
   boat.rotation.y = 0.04;
@@ -1999,7 +2013,7 @@ function frameCamera() {
   // Iso stands far off; thin the fog so the model stays clear.
   if (scene.fog?.isFogExp2) scene.fog.density = T.fogExp * (viewMode === 'iso' ? 0.3 : 1);
   renderPass.camera = camera;
-  setGroup?.traverse(o => { if (o.userData.isoHide) o.visible = viewMode !== 'iso'; });
+  setGroup?.traverse(o => { if (o.userData.isoHide) o.visible = viewMode !== 'iso'; if (o.userData.isoOnly) o.visible = viewMode === 'iso'; });
   // Iso reads as a model: a soft tilt-shift band through the line.
   tiltH.enabled = tiltV.enabled = viewMode === 'iso';
   camera.updateProjectionMatrix();
@@ -2208,9 +2222,9 @@ const THEMES = {
     fog: [[0.8, 0.006, 225], 0, 0], fogExp: 0.017, hemi: [[0.85, 0.006, 225], [0.5, 0.008, 225], 1.25],
     ground: 'none', grass: { n: 0, h: [0.1, 0.2], cols: [[0.5, 0.05, 120], [0.5, 0.05, 120], [0.5, 0.05, 120]] },
     wind: 'breeze', sun: 0.35, stiff: 1.2, frost: 0, snow: 0, daisies: 0,
-    deck: [-16, 44, -1.6, 1.6],
-    // Low over the water by the pier's landward end; the pier runs on into the fog.
-    cam: { pos: [-9.2, 0.75, 5.4], look: [4.5, 1.7, -3.2], lookN: [2.5, 1.8, -2.4], fov: 52, fovN: 70 }, iso: { yaw: Math.PI * 0.75, at: [0.5, 0.6, -1.0] },
+    deck: [-16, 90, -1.6, 1.6],
+    // Just over the deck, by the landward end; the horizon sits low, the sky is vast.
+    cam: { pos: [-9.8, 0.3, 5.6], look: [4.5, 1.75, -3.2], lookN: [2.5, 2.3, -2.4], fov: 58, fovN: 74 }, iso: { yaw: Math.PI * 0.75, at: [0.5, 0.6, -1.0] },
     mix: ['slicker', 'sheet', 'sheet', 'breton', 'sock', 'towel', 'sheet'], build: buildHarbour,
   },
 };
