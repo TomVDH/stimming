@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task, in its feature worktree. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** A colossal old railgun stands on a pylon over a dusty plain under a low sun, seen from 2.6 km in one locked-off shot. Mesas and two ranges close the horizon; long cirrus hangs over them. Far beyond the muzzle a burning asteroid crests the horizon and slowly closes in. Hold to charge: lightning crackles over the barrel, dust lifts, the ground shakes, and it all grows the longer you hold. Release: the slug runs the rails, a bolt crosses the sky for seconds, the rock shatters, a fresh one approaches.
+**Goal:** A colossal old railgun stands on a pylon over a dusty plain under a low sun, seen from 2.6 km in one locked-off shot. The flats run open to the horizon with a few far mesas; long cirrus hangs over them. Far beyond the muzzle a burning asteroid crests the horizon and slowly closes in. Hold to charge: lightning crackles over the barrel, dust lifts, the ground shakes, and it all grows the longer you hold. Release: the slug runs the rails, a bolt crosses the sky for seconds, the rock shatters, a fresh one approaches.
 
 **Architecture:** three.js 0.170 on the K2 noise and haze and the K6 burst particles lifted from `launch/index.html`; the night sky is replaced by a sunlit dusk sky. The gun is one merged mesh of straight boxes, beams, tubes and drums with flat facets from screen derivatives; the barrel turns about its trunnion in the vertex shader. The shot is a hand-rolled state keyed to the sim clock. The composer renders into a multisampled half-float target, then bloom, grade and output.
 
 **Tech stack:** three.js 0.170 (EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, OutputPass, BufferGeometryUtils), simplex-noise, raw Web Audio through `audioKit()`.
 
-**Spec:** Tom, 2026-11-09, in chat. Decisions: hold to charge and release to fire; one massive gun, not a ring; a far, static, Villeneuve-like shot; a day or dusk scene; the gun is one massive artillery piece, not a ramp: straight hard-surface architecture, old and fixed, with nothing glowing; the barrel elevates on the fixed mount; the gun follows Tom's reference still (a slender banded barrel on a braced pylon, sibling guns far off); the rock low over the horizon; faraway mesas; long wispy clouds; the rock far out so the bolt takes seconds; the charge-up chaos grows with the hold; no fail state yet (the rock holds at its largest size).
+**Spec:** Tom, 2026-11-09, in chat. Decisions: hold to charge and release to fire; one massive gun, not a ring; a far, static, Villeneuve-like shot; a day or dusk scene; the gun is one massive artillery piece, not a ramp: straight hard-surface architecture, old and fixed, with nothing glowing; the barrel elevates on the fixed mount; the gun follows Tom's reference still (a slender banded barrel on a braced pylon, sibling guns far off); the rock low over the horizon; wide open flats with only a few faraway mesas; long wispy clouds; the rock far out so the bolt takes seconds; the charge-up chaos grows with the hold; no fail state yet (the rock holds at its largest size).
 
 | | |
 |---|---|
@@ -21,7 +21,7 @@
 One unit is one metre. The trunnion sits 215 m over the origin. The barrel climbs at 6° toward negative z, 900 m long: a ribbed breech housing, a boxy cradle with three collars, a round barrel in two diameters with four painted yellow bands, a thin second tube under it, and three booms off the back.
 The mount is fixed: a footing, one thick pylon with a yoke, two braced struts from the ground behind and one forward leg.
 Two sibling guns stand 6 km and 13 km down the barrel's line.
-A flat dusty plain. Twelve mesas and buttes stand 9 to 21 km out; a foothill range runs at 18.5 km and a main range at 25.5 km. Long cirrus streaks cross the sky on one wind line.
+A flat dusty plain, open to the horizon. Three mesas and one pair of buttes stand 14 to 31 km out, far apart. Long cirrus streaks cross the sky on one wind line.
 The sun sits low on the right, three to sixteen degrees up; it lights the near flank and rakes shadows to the left.
 The eye stands 30 m up, 1.7 km right of the axis and 2 km behind the trunnion, with a 38° lens aimed 24.5° left of the barrel. The horizon sits low. The gun sits lower left; the rock hangs low on the right, 6° over the horizon.
 Portrait: the eye stands 3 km back and 0.8 km right with a 56° lens.
@@ -74,7 +74,7 @@ One shot at a time; a release during a live shot fades out. Changing Asteroid mi
 - **Gun.** Straight boxes, beams, tubes and drums merged into one mesh. `aPart` holds the station, a barrel flag, a seed and a tone (shell, graphite, yellow paint). Facets from `dFdx`/`dFdy`. The shader adds pour lines, plate seams, streaks and dust at the foot. Nothing on it emits light. The two sibling guns reuse the geometry with a cloned material and an offset.
 - **Elevation.** `aim(p, f)` applies the recoil and then turns barrel vertices about the trunnion by `uDrop`. `aimAt(d)` keeps `barrelPt` and the shadow map in step.
 - **Sky.** `k2skyS(dir, sunK)`: zenith to horizon, a dust band, the sun's glow and disc, then `wisps`: cirrus from three noise fields on a flat layer, stretched along one wind line. The haze samples the sky at the horizon without the disc and without the clouds. Uniforms `uSun, uSunC, uZenC, uHorC` come from `sun(deg)`.
-- **Far country.** `buildFar()` writes one unindexed mesh from a fixed seed: mesas as a talus skirt, a cliff and a cap; ranges as four-point columns. Positions are polar about the landscape eye. Facet normals, level beds on the cliffs, K2 haze; no shadow map.
+- **Far country.** `buildFar()` writes one unindexed mesh from a fixed seed: each mesa is a talus skirt, a cliff and a cap. Positions are polar about the landscape eye. Facet normals, level beds on the cliffs, K2 haze; no shadow map.
 - **Light.** One sun depth map, 2048 × 1024, four-tap PCF; it redraws only when the barrel or the sun moves. A sky hemisphere, the sun, a rim from behind, the rock's glow faintly.
 - **Rock.** `IcosahedronGeometry(1, 5)` with merged vertices, displaced once per shape; three shapes baked at load. The hot face looks at the planet. Ember cracks from a 3D noise band.
 - **Plume.** 48 instanced billboards fixed behind the rock, angled across the sky; fire that cools to smoke lit by the sun.
@@ -147,7 +147,7 @@ Wind bed with a whistle past the pylon, dipping under a charge. A hum of two saw
 
 - [x] The gun follows Tom's reference still: a banded round barrel, a breech housing, booms, a pylon with braced struts; two sibling guns far off.
 - [x] The aim drops to 6°; the rock sits low over the horizon; the barrel lowers 4° after the shot.
-- [x] Faraway mesas, buttes and two ranges.
+- [x] Open flats with a few faraway mesas; no ranges (Tom: the ranges enclosed the scene).
 - [x] Long cirrus streaks.
 - [x] Q1 to Q10 again at three sizes. Commit: `Railgun: the reference gun, mesas and cirrus`.
 
