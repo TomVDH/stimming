@@ -87,18 +87,20 @@ export function createBolts() {
       let best = null;
       for (const f of flashes) {
         if (!f.cell || f.level < 0.02) continue;
+        const dx = f.x - camXZ[0], dz = f.z - camXZ[1];
+        if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
+        // Only a flash that shows a bolt gets lines; the rest light the cloud alone.
+        if (!f.bolt) continue;
         let b = live.get(f);
         if (!b) { b = build(f, H, cover); live.set(f, b); }
         seen.add(f);
         // World positions: relative to the eye, dropped by the ground's curve at the flash.
-        const dx = f.x - camXZ[0], dz = f.z - camXZ[1];
         b.group.position.set(-camXZ[0], -H - (dx * dx + dz * dz) / R_EARTH2, -camXZ[1]);
         b.group.children.forEach(l => {
           const k = l.material.userData.glow * Math.min(f.level, 2.5) * (b.ground ? 1 - 0.85 * cover : 1);
           l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 1.5 * (1 - haze) * day);
           l.material.resolution.set(outW, outH);
         });
-        if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
       }
       // Bolts whose flash has gone are dropped.
       for (const [f, b] of live) if (!seen.has(f)) {
