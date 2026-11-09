@@ -62,7 +62,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 </head>
 <body>
 <h1>Icon spike 22</h1>
-<p class="lede">Smoke ring cannon: the current icon and five directions. Point at a height; rings fire toward it and flare in the laser blade.</p>
+<p class="lede">Smoke ring cannon: the current icon and five directions. Slide the pointer across: the ring moves through the laser sheet, and the slice glows where they meet.</p>
 <div id="out"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
 <script>
@@ -102,228 +102,225 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= Smoke ring cannon kit ================= */
 
-  // Tile geometry: the face and its hard shadow, as the menu draws them.
-  const T0 = 16, SHADOW = 'oklch(0.07 0.01 265)';
-  const tileBack = (svg, fill) => {
-    el('rect', { x: 22, y: 22, width: 92, height: 92, fill: SHADOW }, svg);
-    return el('rect', { x: T0, y: T0, width: 92, height: 92, fill }, svg);
+  // The hero frame: a smoke torus crossing the laser sheet.
+  // The pointer slides the ring along its axis through the sheet; the slice glows where they meet.
+  const SHADOW = 'oklch(0.07 0.01 265)', GREEN = 'oklch(0.88 0.27 142)', SMOKE = 'oklch(0.9 0.02 245)';
+  const R = 23, A = 8.5;
+  // A three-quarter view: yaw about the vertical, a touch of pitch.
+  const YAW = 0.62, CY = Math.cos(YAW), SY = Math.sin(YAW);
+  const proj = (x, y, z, c = [64, 60]) => [c[0] + x * CY - z * SY, c[1] - y, x * SY + z * CY];
+  // A seeded torus cloud; its core is a rolled sheet, as in the toy.
+  const cloud = (n, seed) => {
+    let s = seed;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const phi = rnd() * TAU, turn = rnd(), psi = turn * TAU * 2, rho = A * (0.25 + 0.75 * turn) + (rnd() - 0.5) * 1.6;
+      pts.push({ lx: rho * Math.sin(psi), r: R + rho * Math.cos(psi), phi, b: 0.55 + 0.45 * rnd() });
+    }
+    return pts;
   };
-  // The muzzle sits low left; the laser blade stands at x 64 and fans down from the top.
-  const MUZ = [26, 74], BLADE = 64, END = 104;
-  // Rings stay inside the tile face.
-  const clipTile = (svg, id) => {
-    const cp = el('clipPath', { id: `${id}t` }, el('defs', {}, svg));
-    el('rect', { x: T0, y: T0, width: 92, height: 92 }, cp);
-    return `url(#${id}t)`;
+  // The slice of a torus by the plane at axial offset u: two circles, or none.
+  const slice = u => (Math.abs(u) < A ? [R - Math.sqrt(A * A - u * u), R + Math.sqrt(A * A - u * u)] : []);
+  // Pointer x is the ring's place along its axis; the sheet stands at 0.
+  const scrub = p => clamp((p[0] - 64) / 38, -1, 1) * (A + 7);
+  // A control: aim from the pointer, a sweep demo on focus, ease back to the slice at rest.
+  const scrubCtl = update => {
+    const st = { u: 0 };
+    const draw = () => update(st.u);
+    draw();
+    return ctl(
+      p => gsap.to(st, { u: scrub(p), duration: 0.35, ease: 'power2.out', overwrite: 'auto', onUpdate: draw }),
+      () => gsap.to(st, { u: 0, duration: 0.8, ease: 'power3.out', overwrite: 'auto', onUpdate: draw }),
+      () => gsap.fromTo(st, { u: -(A + 7) }, { u: A + 7, duration: 1.8, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: draw }),
+    );
   };
-  const FAN = 'M60 16H68L80 108H48Z';
-  const GREEN = 'oklch(0.86 0.27 142)';
-
-  // The cannon: each ring flies from the muzzle toward the pointer.
-  // A ring flares as it crosses the blade; while the pointer stays, it fires again.
-  // ring(layer) builds one ring and returns { g, flare(v) }.
-  // rest is a ring parked in the blade, shown while nothing flies.
-  // muzzle, end and blade set the path; span limits the aim.
-  const cannon = ({ layer, ring, rest, flash, aimY = 62, muzzle = MUZ, end = END, blade = BLADE, span = [32, 96] }) => {
-    const pool = [];
-    let rate = null, demo = null;
-    const fire = () => {
-      let r = pool.find(q => !q.busy);
-      if (!r && pool.length < 4) { r = ring(layer); r.g.setAttribute('opacity', 0); pool.push(r); }
-      if (!r) return;
-      r.busy = true;
-      const st = { t: 0 }, ty = aimY;
-      if (rest) gsap.to(rest, { opacity: 0, duration: 0.15, overwrite: 'auto' });
-      gsap.to(st, {
-        t: 1, duration: 1.25, ease: 'power1.out',
-        onUpdate() {
-          const x = muzzle[0] + (end - muzzle[0]) * st.t, y = muzzle[1] + (ty - muzzle[1]) * st.t, k = 0.65 + 0.55 * st.t;
-          r.g.setAttribute('transform', `translate(${f(x)} ${f(y)}) scale(${f(k)})`);
-          r.g.setAttribute('opacity', f(Math.min(1, st.t * 10) * (1 - Math.max(0, st.t - 0.7) / 0.3)));
-          const fl = Math.max(0, 1 - Math.abs(x - blade) / 7);
-          r.flare(fl);
-          flash?.(fl);
-        },
-        onComplete() { r.busy = false; r.g.setAttribute('opacity', 0); },
-      });
-    };
-    const aim = p => { aimY = clamp(p[1], span[0], span[1]); };
-    const start = () => { if (!rate) { fire(); rate = every(0.8, fire); rate.start(); } };
-    const stop = () => {
-      rate?.stop(); rate = null; demo?.kill(); demo = null;
-      if (rest) gsap.to(rest, { opacity: 1, duration: 0.5, delay: 0.9, overwrite: 'auto' });
-    };
-    return {
-      enter(p) {
-        if (p) aim(p);
-        else { const d = { t: 0 }, mid = (span[0] + span[1]) / 2, amp = (span[1] - span[0]) / 2; demo = gsap.to(d, { t: 1, duration: 3.2, repeat: -1, ease: 'none', onUpdate: () => aim([0, mid + amp * Math.sin(d.t * TAU)]) }); }
-        start();
-      },
-      move(p) { if (p && !demo) aim(p); },
-      leave: stop,
-    };
+  // The sheet's fan, seen at the view angle: apex above, base on the floor.
+  const fanPath = (half = 30, top = 70, floor = -44, c) => {
+    const ap = proj(0, top, 0, c), b0 = proj(0, floor, -half, c), b1 = proj(0, floor, half, c);
+    return `M${f(ap[0])} ${f(ap[1])}L${f(b0[0])} ${f(b0[1])}L${f(b1[0])} ${f(b1[1])}Z`;
   };
-  // A ring seen three-quarter on: a tall ellipse.
-  const RX = 5.5, RY = 13;
+  const lineD = (a, b) => `M${f(a[0])} ${f(a[1])}L${f(b[0])} ${f(b[1])}`;
+  // A circle of radius r in the plane x = x0, as a projected path.
+  const ringPath = (x0, r, c, n = 40) => {
+    let d = '';
+    for (let i = 0; i <= n; i++) { const t = (i / n) * TAU, q = proj(x0, r * Math.cos(t), r * Math.sin(t), c); d += `${i ? 'L' : 'M'}${f(q[0])} ${f(q[1])}`; }
+    return d + 'Z';
+  };
+  const lin = (defs, id, x2, y2, stops) => { const g = el('linearGradient', { id, x1: 0, y1: 0, x2, y2 }, defs); stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g)); };
+  const glowF = (defs, id, sd = 1.6) => {
+    const g = el('filter', { id, x: -0.5, y: -0.5, width: 2, height: 2 }, defs);
+    el('feGaussianBlur', { stdDeviation: sd, result: 'b' }, g);
+    const m = el('feMerge', {}, g);
+    el('feMergeNode', { in: 'b' }, m);
+    el('feMergeNode', { in: 'SourceGraphic' }, m);
+  };
+  // The menu tile: a hard shadow and a rounded face.
+  const face = (svg, fill, rx = 7) => {
+    el('rect', { x: 20, y: 20, width: 100, height: 100, rx, fill: SHADOW }, svg);
+    return el('rect', { x: 14, y: 14, width: 100, height: 100, rx, fill }, svg);
+  };
+  const clipFace = (defs, id, rx = 7) => { const c = el('clipPath', { id }, defs); el('rect', { x: 14, y: 14, width: 100, height: 100, rx }, c); return `url(#${id})`; };
 
   const DIRS = [
     {
       toy: 'vortex', l: 'Current', name: 'Ring and blade',
-      // The menu icon: a grey ring flies through a green blade and flares.
-      art(svg, id) {
-        tileBack(svg, 'oklch(0.15 0.012 265)');
+      // The menu icon today.
+      art(svg) {
+        el('rect', { x: 22, y: 22, width: 92, height: 92, fill: SHADOW }, svg);
+        el('rect', { x: 16, y: 16, width: 92, height: 92, fill: 'oklch(0.15 0.012 265)' }, svg);
         el('path', { d: 'M64 16H69L78 108H55Z', fill: 'oklch(0.72 0.2 142)', opacity: 0.22 }, svg);
         el('path', { d: 'M65.6 16H67.4L67.6 108H65.4Z', fill: GREEN, opacity: 0.7 }, svg);
-        const layer = el('g', { 'clip-path': clipTile(svg, id) }, svg);
-        const ring = parent => {
-          const g = el('g', {}, parent);
-          el('ellipse', { rx: 5, ry: 12, fill: 'none', stroke: 'oklch(0.84 0.02 250)', 'stroke-width': 3.4 }, g);
-          const fl = el('ellipse', { rx: 5, ry: 12, fill: 'none', stroke: 'oklch(0.92 0.25 142)', 'stroke-width': 3.8, opacity: 0 }, g);
-          return { g, flare: v => fl.setAttribute('opacity', f(v)) };
-        };
-        const rest = ring(svg);
-        rest.g.setAttribute('transform', 'translate(66 62) scale(0.95)');
-        rest.flare(1);
-        return cannon({ layer, ring, rest: rest.g });
+        el('ellipse', { cx: 66, cy: 62, rx: 5, ry: 12, fill: 'none', stroke: 'oklch(0.92 0.25 142)', 'stroke-width': 3.8 }, svg);
+        return ctl(() => {}, () => {}, () => null);
       },
     },
     {
       toy: 'vortex', l: 'A', name: 'Shaded object',
-      // Haze in a dark room: a soft green fan, a floor line, rings of soft smoke with a rolled core.
+      // A fat smoke torus, lit from behind, crosses the green fan; the slice burns bright where they meet.
+      // Turbulence frays its edge; while the pointer stays, the smoke churns.
       art(svg, id) {
         const defs = el('defs', {}, svg);
-        const fan = el('linearGradient', { id: `${id}f`, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
-        [[0, 'oklch(0.86 0.27 142)', 0.85], [0.5, 'oklch(0.6 0.2 142)', 0.35], [1, 'oklch(0.4 0.14 142)', 0.08]].forEach(([o, c, a]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, fan));
-        const room = el('radialGradient', { id: `${id}r`, cx: 0.3, cy: 0.2, r: 0.9 }, defs);
-        [[0, 'oklch(0.3 0.014 250)'], [1, 'oklch(0.12 0.012 265)']].forEach(([o, c]) => el('stop', { offset: o, 'stop-color': c }, room));
-        const soft = el('filter', { id: `${id}s`, x: -1, y: -1, width: 3, height: 3 }, defs);
-        el('feGaussianBlur', { stdDeviation: 1.1 }, soft);
-        const glow = el('filter', { id: `${id}g`, x: -1, y: -1, width: 3, height: 3 }, defs);
-        el('feGaussianBlur', { stdDeviation: 2.2, result: 'b' }, glow);
-        const mg = el('feMerge', {}, glow);
-        el('feMergeNode', { in: 'b' }, mg);
-        el('feMergeNode', { in: 'SourceGraphic' }, mg);
-        const cp = el('clipPath', { id: `${id}c` }, defs);
-        el('rect', { x: T0, y: T0, width: 92, height: 92 }, cp);
-        tileBack(svg, `url(#${id}r)`);
-        const inner = el('g', { 'clip-path': `url(#${id}c)` }, svg);
-        el('path', { d: FAN, fill: `url(#${id}f)` }, inner);
-        el('path', { d: 'M40 108L80 92', stroke: GREEN, 'stroke-width': 2.2, 'stroke-linecap': 'round', opacity: 0.8 }, inner);
-        const sheen = el('path', { d: 'M63 16H65L65.6 108H62.4Z', fill: 'oklch(0.95 0.2 142)', opacity: 0.55 }, inner);
-        const layer = el('g', {}, inner);
-        const ring = parent => {
-          const g = el('g', {}, parent);
-          el('ellipse', { rx: RX, ry: RY, fill: 'none', stroke: 'oklch(0.86 0.02 245)', 'stroke-width': 4.2, opacity: 0.7, filter: `url(#${id}s)` }, g);
-          el('ellipse', { rx: RX, ry: RY, fill: 'none', stroke: 'oklch(0.97 0.01 245)', 'stroke-width': 1.2, opacity: 0.8 }, g);
-          const fl = el('ellipse', { rx: RX, ry: RY, fill: 'none', stroke: 'oklch(0.92 0.26 142)', 'stroke-width': 2.4, opacity: 0, filter: `url(#${id}g)` }, g);
-          return { g, flare: v => fl.setAttribute('opacity', f(v)) };
+        const room = el('radialGradient', { id: `${id}r`, cx: 0.3, cy: 0.15, r: 1 }, defs);
+        [[0, 'oklch(0.32 0.02 250)'], [0.5, 'oklch(0.16 0.014 262)'], [1, 'oklch(0.09 0.012 268)']].forEach(([o, c]) => el('stop', { offset: o, 'stop-color': c }, room));
+        lin(defs, `${id}f`, 0, 1, [[0, 'oklch(0.92 0.24 142)', 0.85], [0.5, 'oklch(0.7 0.2 142)', 0.3], [1, 'oklch(0.5 0.15 142)', 0.05]]);
+        lin(defs, `${id}t`, 0.3, 1, [[0, 'oklch(0.98 0.01 240)'], [0.45, 'oklch(0.8 0.02 245)'], [1, 'oklch(0.42 0.02 255)']]);
+        lin(defs, `${id}lit`, 1, 1, [[0, '#fff', 0.14], [0.5, '#fff', 0], [1, '#000', 0.25]]);
+        // Smoke: fractal noise displaces the edge, then a soft blur.
+        const sm = el('filter', { id: `${id}s`, x: -0.3, y: -0.3, width: 1.6, height: 1.6 }, defs);
+        const turb = el('feTurbulence', { type: 'fractalNoise', baseFrequency: 0.07, numOctaves: 3, seed: 3, result: 'n' }, sm);
+        const off = el('feOffset', { in: 'n', dx: 0, dy: 0, result: 'm' }, sm);
+        el('feDisplacementMap', { in: 'SourceGraphic', in2: 'm', scale: 7, xChannelSelector: 'R', yChannelSelector: 'G', result: 'd' }, sm);
+        el('feGaussianBlur', { in: 'd', stdDeviation: 0.7 }, sm);
+        glowF(defs, `${id}g`, 1.8);
+        face(svg, `url(#${id}r)`);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`) }, svg);
+        const ringG = el('g', {}, inner);
+        // The tube: a dark under-stroke for its shadow side, the lit stroke over it.
+        const under = el('ellipse', { rx: 19, ry: 30, fill: 'none', stroke: 'oklch(0.3 0.02 258)', 'stroke-width': 17, filter: `url(#${id}s)` }, ringG);
+        const tube = el('ellipse', { rx: 19, ry: 30, fill: 'none', stroke: `url(#${id}t)`, 'stroke-width': 13, filter: `url(#${id}s)`, transform: 'translate(-1.5 -1.5)' }, ringG);
+        el('path', { d: 'M62 2L80 2L96 126L46 126Z', fill: `url(#${id}f)` }, inner);
+        el('path', { d: 'M38 112L98 100', stroke: GREEN, 'stroke-width': 2, 'stroke-linecap': 'round', opacity: 0.8 }, inner);
+        const sl = [0, 1].map(() => el('ellipse', { fill: 'none', stroke: GREEN, 'stroke-width': 2.4, filter: `url(#${id}g)` }, inner));
+        el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 7, fill: `url(#${id}lit)` }, svg);
+        el('rect', { x: 14.5, y: 14.5, width: 99, height: 99, rx: 6.5, fill: 'none', stroke: 'oklch(0.38 0.03 255)', 'stroke-width': 1 }, svg);
+        // The ring's centre slides along its axis; the slice sits fixed in the sheet at x 70.
+        let churn = null;
+        const c = scrubCtl(u => {
+          const k = 1 + u * 0.012;
+          ringG.setAttribute('transform', `translate(${f(70 + u * 1.5)} ${f(60 - u * 0.25)}) scale(${f(k)})`);
+          const s = slice(u);
+          sl.forEach((e, i) => {
+            if (!s.length) { e.setAttribute('opacity', 0); return; }
+            const r = s[i] * (30 / R);
+            e.setAttribute('cx', 70); e.setAttribute('cy', 60);
+            e.setAttribute('rx', f(r * 19 / 30)); e.setAttribute('ry', f(r));
+            e.setAttribute('opacity', f(1 - Math.abs(u) / A * 0.6));
+          });
+        });
+        return {
+          enter(p) { c.enter(p); if (!churn) { const o = { v: 0 }; churn = gsap.to(o, { v: 60, duration: 6, repeat: -1, ease: 'none', onUpdate: () => off.setAttribute('dx', f(o.v)) }); } },
+          move: c.move,
+          leave() { c.leave(); churn?.kill(); churn = null; },
         };
-        const rest = ring(inner);
-        rest.g.setAttribute('transform', 'translate(64 60)');
-        rest.flare(1);
-        // The blade brightens while a ring sits in it.
-        return cannon({ layer, ring, rest: rest.g, flash: v => sheen.setAttribute('opacity', f(0.55 + 0.4 * v)) });
       },
     },
     {
       toy: 'vortex', l: 'B', name: 'Stencil cut-out',
-      // A pale tile with the fan cut through to green; rings are holes punched in the tile.
+      // Two tones: a pale smoke ring with a frayed edge on the green fan; the slice cuts it in dark green.
       art(svg, id) {
         const defs = el('defs', {}, svg);
-        const m = el('mask', { id: `${id}m` }, defs);
-        el('rect', { x: T0, y: T0, width: 92, height: 92, fill: '#fff' }, m);
-        el('path', { d: FAN, fill: '#000' }, m);
-        const holes = el('g', {}, m);
-        el('rect', { x: 22, y: 22, width: 92, height: 92, fill: SHADOW }, svg);
-        el('rect', { x: T0, y: T0, width: 92, height: 92, fill: 'oklch(0.2 0.02 265)' }, svg);
-        el('path', { d: FAN, fill: 'oklch(0.72 0.22 142)' }, svg);
-        const lit = el('g', {}, svg);
-        el('rect', { x: T0, y: T0, width: 92, height: 92, fill: 'oklch(0.9 0.02 245)', mask: `url(#${id}m)` }, svg);
-        // Each ring is a hole in the mask, plus a green ring over the fan.
-        const ring = () => {
-          const g = el('g', {}, holes);
-          el('ellipse', { rx: RX, ry: RY, fill: 'none', stroke: '#000', 'stroke-width': 3.6 }, g);
-          const fl = el('ellipse', { rx: RX, ry: RY, fill: 'none', stroke: 'oklch(0.97 0.2 142)', 'stroke-width': 3.6, opacity: 0 }, lit);
-          const sync = () => fl.setAttribute('transform', g.getAttribute('transform') || '');
-          return { g, fl, flare: v => { sync(); fl.setAttribute('opacity', f(v)); } };
-        };
-        // The parked ring is a hole and a green ring; both hide while rings fly.
-        const rest = ring();
-        rest.g.setAttribute('transform', 'translate(64 60)');
-        rest.flare(1);
-        const parked = el('g', {}, lit);
-        parked.append(rest.fl);
-        return cannon({ layer: holes, ring, rest: [rest.g, parked] });
+        const sm = el('filter', { id: `${id}s`, x: -0.3, y: -0.3, width: 1.6, height: 1.6 }, defs);
+        el('feTurbulence', { type: 'fractalNoise', baseFrequency: 0.09, numOctaves: 2, seed: 8, result: 'n' }, sm);
+        el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: 6, xChannelSelector: 'R', yChannelSelector: 'G' }, sm);
+        face(svg, 'oklch(0.2 0.03 265)', 4);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`, 4) }, svg);
+        el('path', { d: 'M60 0L82 0L102 128L40 128Z', fill: 'oklch(0.72 0.21 142)' }, inner);
+        const ringG = el('g', {}, inner);
+        el('ellipse', { rx: 19, ry: 30, fill: 'none', stroke: 'oklch(0.95 0.02 245)', 'stroke-width': 14, filter: `url(#${id}s)` }, ringG);
+        const sl = [0, 1].map(() => el('ellipse', { fill: 'none', stroke: 'oklch(0.3 0.12 150)', 'stroke-width': 3.2 }, inner));
+        return scrubCtl(u => {
+          ringG.setAttribute('transform', `translate(${f(70 + u * 1.5)} ${f(60 - u * 0.25)})`);
+          const s = slice(u);
+          sl.forEach((e, i) => {
+            if (!s.length) { e.setAttribute('opacity', 0); return; }
+            const r = s[i] * (30 / R);
+            e.setAttribute('cx', 70); e.setAttribute('cy', 60); e.setAttribute('rx', f(r * 19 / 30)); e.setAttribute('ry', f(r)); e.setAttribute('opacity', 1);
+          });
+        });
       },
     },
     {
       toy: 'vortex', l: 'C', name: 'Single-weight line',
-      // One line weight: the fan's two edges, the floor line, rings as ellipses that turn green in the blade.
+      // One line weight: the ring as five stacked contours, like its rolled-up sheet; the slice in green.
       art(svg, id) {
-        tileBack(svg, 'oklch(0.19 0.02 265)');
-        const ink = { fill: 'none', stroke: 'oklch(0.92 0.02 245)', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
-        const fan = el('g', {}, svg);
-        el('path', { d: 'M64 22L50 104M64 22L78 104', ...ink, stroke: GREEN, opacity: 0.8 }, fan);
-        el('path', { d: 'M30 104H98', ...ink, opacity: 0.5 }, svg);
-        el('path', { d: 'M20 74H30', ...ink }, svg);
-        const layer = el('g', { 'clip-path': clipTile(svg, id) }, svg);
-        const ring = parent => {
-          const g = el('g', {}, parent);
-          const e = el('ellipse', { rx: RX, ry: RY, ...ink }, g);
-          return { g, flare: v => e.setAttribute('stroke', v > 0.3 ? GREEN : 'oklch(0.92 0.02 245)') };
-        };
-        const rest = ring(svg);
-        rest.g.setAttribute('transform', 'translate(64 60)');
-        rest.flare(1);
-        return cannon({ layer, ring, rest: rest.g });
+        const defs = el('defs', {}, svg);
+        face(svg, 'oklch(0.16 0.02 265)');
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`) }, svg);
+        const ink = { fill: 'none', stroke: 'oklch(0.93 0.02 245)', 'stroke-width': 1.7 };
+        el('path', { d: 'M71 6L58 122M71 6L84 122', ...ink, stroke: GREEN, opacity: 0.75 }, inner);
+        const ringG = el('g', {}, inner);
+        // Contours step inward and outward from the core, so the ring reads as layered smoke.
+        [-1, -0.5, 0, 0.5, 1].forEach(k => el('ellipse', { rx: f(19 + k * 6), ry: f(30 + k * 6), ...ink, opacity: f(1 - Math.abs(k) * 0.45) }, ringG));
+        const sl = [0, 1].map(() => el('ellipse', { ...ink, stroke: GREEN, 'stroke-width': 2.4 }, inner));
+        return scrubCtl(u => {
+          ringG.setAttribute('transform', `translate(${f(70 + u * 1.5)} ${f(60 - u * 0.25)})`);
+          const s = slice(u);
+          sl.forEach((e, i) => {
+            if (!s.length) { e.setAttribute('opacity', 0); return; }
+            const r = s[i] * (30 / R);
+            e.setAttribute('cx', 70); e.setAttribute('cy', 60); e.setAttribute('rx', f(r * 19 / 30)); e.setAttribute('ry', f(r)); e.setAttribute('opacity', 1);
+          });
+        });
       },
     },
     {
       toy: 'vortex', l: 'D', name: 'Isometric block',
-      // A block of haze; the laser sheet stands inside it as a green slab; rings cross its top face.
-      art(svg) {
-        const L = [16, 58], Tp = [64, 34], B = [64, 82], R = [112, 58], DEP = 20;
+      // The room as an isometric block; the sheet stands in it; the motes glow where it cuts the ring.
+      art(svg, id) {
+        const iso = (x, y, z) => [64 + (x - z) * 0.87, 70 + (x + z) * 0.5 - y];
         const P = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
-        const dn = p => [p[0], p[1] + DEP];
-        el('path', { d: P([L, B, R, dn(R), dn(B), dn(L)].map(p => [p[0] + 6, p[1] + 6])), fill: SHADOW }, svg);
-        el('path', { d: P([L, B, dn(B), dn(L)]), fill: 'oklch(0.24 0.014 265)' }, svg);
-        el('path', { d: P([B, R, dn(R), dn(B)]), fill: 'oklch(0.17 0.012 265)' }, svg);
-        el('path', { d: P([L, Tp, R, B]), fill: 'oklch(0.3 0.016 255)' }, svg);
-        // The sheet: a vertical slab across the block's middle.
-        const m0 = [40, 46], m1 = [88, 70];
-        el('path', { d: P([m0, m1, [m1[0], m1[1] - 40], [m0[0], m0[1] - 40]]), fill: GREEN, opacity: 0.22 }, svg);
-        el('path', { d: `M${m0[0]} ${m0[1]}L${m1[0]} ${m1[1]}`, stroke: GREEN, 'stroke-width': 2.4 }, svg);
-        const layer = el('g', {}, svg);
-        // Rings travel from the left corner to the right, square to the sheet.
-        const ring = parent => {
-          const g = el('g', {}, parent);
-          el('ellipse', { rx: 4.5, ry: 11, fill: 'none', stroke: 'oklch(0.9 0.02 245)', 'stroke-width': 3, transform: 'rotate(-27)' }, g);
-          const fl = el('ellipse', { rx: 4.5, ry: 11, fill: 'none', stroke: 'oklch(0.94 0.25 142)', 'stroke-width': 3.4, opacity: 0, transform: 'rotate(-27)' }, g);
-          return { g, flare: v => fl.setAttribute('opacity', f(v)) };
-        };
-        // The parked ring sits where the path crosses the slab.
-        const rest = ring(svg);
-        rest.g.setAttribute('transform', 'translate(70 52)');
-        rest.flare(1);
-        return cannon({ layer, ring, rest: rest.g, muzzle: [36, 66], end: 96, blade: 70, aimY: 40, span: [32, 48] });
+        const B = 38, F = -26;
+        const defs = el('defs', {}, svg);
+        glowF(defs, `${id}g`, 1.2);
+        el('path', { d: P([iso(-B, F, B), iso(B, F, B), iso(B, F, -B), iso(B, F - 14, -B), iso(B, F - 14, B), iso(-B, F - 14, B)].map(p => [p[0] + 5, p[1] + 5])), fill: SHADOW }, svg);
+        el('path', { d: P([iso(-B, F, B), iso(B, F, B), iso(B, F - 14, B), iso(-B, F - 14, B)]), fill: 'oklch(0.24 0.016 262)' }, svg);
+        el('path', { d: P([iso(B, F, B), iso(B, F, -B), iso(B, F - 14, -B), iso(B, F - 14, B)]), fill: 'oklch(0.17 0.014 265)' }, svg);
+        el('path', { d: P([iso(-B, F, -B), iso(B, F, -B), iso(B, F, B), iso(-B, F, B)]), fill: 'oklch(0.3 0.02 255)' }, svg);
+        // The sheet: a green slab standing across the block at x = 0.
+        el('path', { d: P([iso(0, F, -B), iso(0, F, B), iso(0, 44, B), iso(0, 44, -B)]), fill: 'oklch(0.75 0.2 142)', opacity: 0.18 }, svg);
+        el('path', { d: lineD(iso(0, F, -B), iso(0, F, B)), stroke: GREEN, 'stroke-width': 2 }, svg);
+        const pts = cloud(300, 11);
+        const grey = el('g', {}, svg), lit = el('g', { filter: `url(#${id}g)` }, svg);
+        const dots = pts.map(() => [el('circle', { r: 0.95, fill: SMOKE }, grey), el('circle', { r: 1.05, fill: GREEN }, lit)]);
+        return scrubCtl(u => pts.forEach((q, i) => {
+          const x = q.lx + u, p = iso(x, 12 + q.r * Math.cos(q.phi), q.r * Math.sin(q.phi)), s = Math.exp(-(x * x) / 1.2);
+          for (const c of dots[i]) { c.setAttribute('cx', f(p[0])); c.setAttribute('cy', f(p[1])); }
+          dots[i][0].setAttribute('opacity', f(q.b * 0.7 * (1 - 0.8 * s)));
+          dots[i][1].setAttribute('opacity', f(s));
+        }));
       },
     },
     {
       toy: 'vortex', l: 'E', name: 'Abstract mark',
-      // A heavy ring and one green bar; the ring punches through and the bar flares.
+      // A bold pale ring and one thin laser line; where the line cuts the ring, it burns green.
       art(svg, id) {
-        tileBack(svg, 'oklch(0.88 0.03 245)');
-        const ink = 'oklch(0.18 0.02 265)';
-        const bar = el('rect', { x: 60, y: 22, width: 8, height: 80, fill: 'oklch(0.66 0.22 142)' }, svg);
-        const layer = el('g', { 'clip-path': clipTile(svg, id) }, svg);
-        const ring = parent => {
-          const g = el('g', {}, parent);
-          el('ellipse', { rx: 7, ry: 15, fill: 'none', stroke: ink, 'stroke-width': 6.5 }, g);
-          return { g, flare: () => {} };
-        };
-        const rest = ring(svg);
-        rest.g.setAttribute('transform', 'translate(48 62)');
-        return cannon({ layer, ring, rest: rest.g, flash: v => bar.setAttribute('fill', v > 0.2 ? 'oklch(0.86 0.27 142)' : 'oklch(0.66 0.22 142)') });
+        const defs = el('defs', {}, svg);
+        glowF(defs, `${id}g`, 2);
+        face(svg, 'oklch(0.14 0.015 265)', 3);
+        const inner = el('g', { 'clip-path': clipFace(defs, `${id}c`, 3) }, svg);
+        el('rect', { x: 66, y: 14, width: 3, height: 100, fill: GREEN, opacity: 0.85 }, inner);
+        const ring = el('path', { fill: 'oklch(0.93 0.02 245)', 'fill-rule': 'evenodd' }, inner);
+        const bc = el('clipPath', { id: `${id}b` }, defs);
+        el('rect', { x: 62, y: 14, width: 11, height: 100 }, bc);
+        const hot = el('path', { fill: GREEN, 'fill-rule': 'evenodd', 'clip-path': `url(#${id}b)`, filter: `url(#${id}g)` }, inner);
+        const oval = (cx, cy, rx, ry) => { let d = ''; for (let i = 0; i <= 40; i++) { const t = (i / 40) * TAU; d += `${i ? 'L' : 'M'}${f(cx + rx * Math.cos(t))} ${f(cy + ry * Math.sin(t))}`; } return d + 'Z'; };
+        return scrubCtl(u => {
+          const cx = 67.5 + u * 2;
+          const d = oval(cx, 62, 30, 40) + oval(cx, 62, 15, 25);
+          ring.setAttribute('d', d);
+          hot.setAttribute('d', d);
+        });
       },
     },
   ];
