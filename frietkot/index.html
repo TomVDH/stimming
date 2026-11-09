@@ -222,6 +222,10 @@ const U = {
   uRefCone: { value: new THREE.Vector3() },
   uRefBox: { value: new THREE.Vector3(1.0, 0.7, 0.45).multiplyScalar(0.55) },
   uVeh1: { value: new THREE.Vector4() },
+  // The bus's lit cabin: x, z, half length, strength.
+  uBus: { value: new THREE.Vector4() },
+  // The shelter's ad panel: x, z, strength.
+  uAd: { value: new THREE.Vector3() },
   uWet: { value: 0 },
   uRipple: { value: 0 },
   uAnnexP: { value: new THREE.Vector3((A.x0 + A.x1) / 2, 1.45, A.z1 - 0.1) },
@@ -253,7 +257,16 @@ const LIGHT = /* glsl */`
 uniform vec3 uLamp, uLampCol, uWin, uStrip, uStripCol, uNeonA, uNeonB, uNeonCol, uSky, uGround, uHaze, uAnnexP, uAnnexCol;
 uniform vec4 uAp;
 uniform float uApZ, uHazeK, uOut;
-uniform vec4 uVeh0, uVeh1;
+uniform vec4 uVeh0, uVeh1, uBus;
+uniform vec3 uAd;
+// A light along a segment on the x axis: the bus's row of windows.
+vec3 busLight(vec3 p, vec3 n) {
+  if (uBus.w <= 0.0) return vec3(0.0);
+  vec3 q = vec3(clamp(p.x, uBus.x - uBus.z, uBus.x + uBus.z), 1.9, uBus.y);
+  vec3 L = q - p;
+  float d2 = dot(L, L);
+  return vec3(1.0, 0.82, 0.58) * uBus.w * max(dot(n, L * inversesqrt(d2)), 0.0) / (d2 + 1.5);
+}
 uniform vec3 uPartyP, uPartyCol, uRefSign, uRefCone, uRefBox, uSodium;
 uniform vec3 uStreet[4];
 // A vehicle's headlights: x, z, heading, power.
@@ -332,6 +345,10 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
   // The party's coloured light spills out of the hall.
   vec3 Lp = uPartyP - p;
   c += alb * uPartyCol * (1.0 - inside) * max(dot(n, normalize(Lp)), 0.0) / (dot(Lp, Lp) + 3.0);
+  // The passing bus and the shelter's ad panel throw soft light around them.
+  c += alb * busLight(p, n) * (1.0 - inside);
+  vec3 Lad = vec3(uAd.x, 1.1, uAd.y) - p;
+  c += alb * vec3(0.85, 0.9, 1.0) * uAd.z * max(dot(n, normalize(Lad)), 0.0) / (dot(Lad, Lad) + 0.6) * (1.0 - inside);
   // Sky and ground bounce.
   c += alb * mix(uGround, uSky, 0.5 + 0.5 * n.y);
   if (gloss > 0.0) {
@@ -460,6 +477,78 @@ for (const z of [ROAD[0] - 0.15, ROAD[1] + 0.15]) {
   const c = new THREE.Mesh(new THREE.BoxGeometry(160, 0.13, 0.3), curbMat);
   c.position.set(0, 0.065, z);
   scene.add(c);
+}
+
+/* ---------- the bus stop and the bins ---------- */
+// A glass shelter on the square's edge, open to the road, with a lit ad panel at its end.
+const SHELTER = { x: -5.6, z: 8.2 };
+const BIN_SPOTS = [[3.25, 1.55], [SHELTER.x + 3.0, SHELTER.z - 0.5]];
+{
+  const frame = surface({ alb: linFit(0.3, 0.01, 250), gloss: 0.3, rim: 0.5 });
+  const g = new THREE.Group();
+  g.position.set(SHELTER.x, 0, SHELTER.z);
+  const bar = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frame); m.position.set(x, y, z); g.add(m); };
+  // Four posts, a thin roof, a bench.
+  for (const x of [-1.9, 1.9]) for (const z of [-1.3, -0.05]) bar(0.07, 2.4, 0.07, x, 1.2, z);
+  bar(4.1, 0.08, 1.5, 0, 2.44, -0.65);
+  bar(2.6, 0.06, 0.38, 0.3, 0.46, -1.0);
+  bar(0.06, 0.44, 0.3, -0.9, 0.22, -1.0);
+  bar(0.06, 0.44, 0.3, 1.5, 0.22, -1.0);
+  // Glass: back and one end, faint and cool.
+  const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.05, 0.07, 0.08), transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 2.1), glass);
+  back.position.set(0, 1.25, -1.3);
+  g.add(back);
+  const end = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 2.1).rotateY(Math.PI / 2), glass);
+  end.position.set(1.9, 1.25, -0.68);
+  g.add(end);
+  // The ad panel: a light box facing the lens, a soft out-of-focus picture in it.
+  const ad = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.75), new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform float uTime;
+    varying vec2 vUv;
+    void main() {
+      vec2 q = vUv;
+      // A pale sky, a warm blur of a face, a band of colour: an ad too far off to read.
+      vec3 c = mix(vec3(0.75, 0.82, 0.9), vec3(0.95, 0.85, 0.75), q.y);
+      c = mix(c, vec3(0.85, 0.55, 0.45), smoothstep(0.32, 0.12, length((q - vec2(0.5, 0.62)) / vec2(0.8, 1.0))));
+      c = mix(c, vec3(0.2, 0.35, 0.6), smoothstep(0.24, 0.2, q.y) * smoothstep(0.08, 0.12, q.y));
+      // The tube behind flickers now and then.
+      float fl = 0.92 + 0.08 * step(0.97, fract(sin(floor(uTime * 8.0) * 12.9898) * 43758.5));
+      float frame = step(0.04, q.x) * step(q.x, 0.96) * step(0.03, q.y) * step(q.y, 0.97);
+      gl_FragColor = vec4(mix(vec3(0.02), c * 0.85 * fl, frame), 1.0);
+    }`,
+  }));
+  ad.position.set(2.0, 1.2, -0.62);
+  g.add(ad);
+  bar(1.32, 1.9, 0.12, 2.0, 1.2, -0.7);
+  // The stop's sign on a pole: a yellow disc over a white plate, unlettered.
+  bar(0.06, 2.9, 0.06, -2.4, 1.45, 0.35);
+  // Reflective film: it catches what light there is.
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.82, 0.16, 95).map(v => v * 0.12)) }));
+  disc.position.set(-2.4, 2.75, 0.39);
+  g.add(disc);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.06, 0.06, 0.06) }));
+  plate.position.set(-2.4, 2.32, 0.39);
+  g.add(plate);
+  scene.add(g);
+  U.uAd.value.set(SHELTER.x + 2.0, SHELTER.z - 0.3, 0.9);
+  // Municipal bins: a dark green drum on a post, a lid with a slot.
+  const binMat = surface({ alb: linFit(0.32, 0.05, 160), gloss: 0.2, rim: 0.6 });
+  for (const [x, z] of BIN_SPOTS) {
+    const b = new THREE.Group();
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.24, 0.62, 16), binMat);
+    drum.position.y = 0.62;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.06, 16), binMat);
+    lid.position.y = 0.96;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.06), binMat);
+    post.position.y = 0.16;
+    b.add(drum, lid, post);
+    b.position.set(x, 0, z);
+    scene.add(b);
+  }
 }
 
 /* ---------- surfaces ---------- */
@@ -2035,7 +2124,7 @@ const figMat = new THREE.ShaderMaterial({
     vec3 back = uLampCol * mix(apMask(vP) * uOut, 1.0, inside) / (dot(L, L) + 0.3);
     vec3 Ln = neonPt(vP) - vP;
     vec3 front = (uNeonCol / (dot(Ln, Ln) + 0.1) + uStripCol * 0.4 / (dot(uStrip - vP, uStrip - vP) + 0.2)) * (1.0 - inside);
-    front += veh(vP, uVeh0) * 0.3 + veh(vP, uVeh1) * 0.3;
+    front += veh(vP, uVeh0) * 0.3 + veh(vP, uVeh1) * 0.3 + busLight(vP, vec3(0.0, 0.0, 1.0)) * 0.4;
     float fall = smoothstep(0.6, 1.7, p.y);
     float a;
     vec3 c;
@@ -2084,13 +2173,14 @@ const figMat = new THREE.ShaderMaterial({
     if (k == 11) {
       float inB = step(d, 0.0) * step(0.3, p.y);
       vec3 liv = p.y < 1.35 ? vec3(0.9, 0.7, 0.05) : vec3(0.85, 0.85, 0.8);
-      c = mix(c, liv * (0.02 + front * 0.25 + uSky * 6.0), inB * (1.0 - busWin));
+      c = mix(c, liv * (0.07 + front * 0.3 + uSky * 8.0), inB * (1.0 - busWin));
       float bay = fract((p.x + 5.5) / 1.45);
       float pax = step(0.6, fract(sin(floor((p.x + 5.5) / 1.45) * 12.9 + seed * 7.0) * 437.5))
                 * smoothstep(0.2, 0.14, length(vec2(bay * 1.45 - 0.7, p.y - 1.75) / vec2(0.9, 1.2)));
-      c = mix(c, vec3(1.0, 0.86, 0.62) * 0.35 * (1.0 - 0.85 * pax), busWin);
+      c = mix(c, vec3(1.0, 0.86, 0.62) * 0.26 * (1.0 - 0.85 * pax), busWin);
       c += vec3(1.0, 0.55, 0.1) * 1.6 * busSign;
-      a = max(a, step(d, 0.0));
+      // The glass is half clear: the square shows through the cabin.
+      a = max(a, step(d, 0.0)) * mix(1.0, 0.55, busWin);
     }
     // A car's glass holds a little sky.
     c += (uSky * 14.0 + back * 0.02) * glass;
@@ -2192,7 +2282,7 @@ const QUEUE = [-1.6, -0.55, 0.45].map(x => ({ x, z: 2.0, who: null }));
 const LINE = [[-2.35, 2.7], [-2.85, 3.35], [-3.3, 4.0], [-3.7, 4.65], [-4.05, 5.3], [-4.35, 5.95]];
 const line = [];
 // Parking: bikes at the rack, a motorbike by the seating room, a car out on the square.
-const PARK = { 6: { x: 3.6, z: 4.6, park: 7 }, 8: { x: -8.6, z: 8.1, park: 9 } };
+const PARK = { 6: { x: 3.6, z: 4.6, park: 7 }, 8: { x: -11.5, z: 8.1, park: 9 } };
 // The road across the front of the square: one lane each way.
 const LANES = [9.3, 10.4];
 // Footpaths: people cross the square at many depths.
@@ -2289,10 +2379,12 @@ function spawn() {
   go(f, vk === 1 ? [[pk.x + side * 2, pk.z + 1.5], [pk.x, pk.z]] : [[pk.x + side * 3, vz], [pk.x, pk.z]], 'park');
 }
 // The bus keeps to its lane and does not stop here.
+// Coming from the left it keeps the square's lane and stops at the shelter; from the right it passes.
 function spawnBus() {
   const side = rnd() < 0.5 ? -1 : 1, lane = side > 0 ? LANES[1] : LANES[0];
   const f = person({ kind: 11, x: side * (EDGE + 8) - 1, z: lane, speed: 7.5, alpha: 1 });
-  go(f, [[-side * (EDGE + 9) - 1, lane]], 'pass');
+  if (side < 0) go(f, [[SHELTER.x - 3.2, lane]], 'busStop');
+  else go(f, [[-side * (EDGE + 9) - 1, lane]], 'pass');
 }
 // Close to the lens: someone walks, cycles or scoots past on the near pavement.
 function spawnNear(side) {
@@ -2483,7 +2575,7 @@ function stepPeople(dt) {
       if (f.accel) f.speed = Math.min(f.vmax ?? SPEED[f.kind], f.speed + dt * f.accel);
       // Runners run: the stride opens into a run.
       if (f.run) f.gait = Math.min(2, f.gait + dt * 3);
-      const brake = f.state === 'park' && f.kind !== 0 ? Math.max(0.2, Math.min(1, d / 5)) : 1;
+      const brake = (f.state === 'park' || f.state === 'busStop') && f.kind !== 0 ? Math.max(0.12, Math.min(1, d / (f.kind === 11 ? 14 : 5))) : 1;
       const step = f.speed * brake * dt;
       if (Math.abs(dx) > 0.01) f.face = Math.sign(dx);
       f.ph += step * (f.kind === 1 ? 2.2 : f.kind === 6 || f.kind === 8 || f.kind === 11 ? 0 : 5.8);
@@ -2533,6 +2625,7 @@ function stepPeople(dt) {
         if (f.state === 'wait') served(f);
         else if (f.staffer) { f.staffer.state = 'work'; f.gone = true; }
         else if (f.state === 'kick') { f.started = true; f.state = 'toRide'; arrive(f); }
+        else if (f.state === 'busWait') { f.speed = 0.5; f.accel = 2.5; f.vmax = 7.5; go(f, [[EDGE + 9, f.z]], 'pass'); }
         else if (f.gang && f.state === 'loiter') { f.kind = 0; f.smk = null; go(f, [[f.parked.x + 0.6, f.parked.z]], 'toRide'); }
         else if (f.state === 'eat' || f.state === 'smoke' || f.state === 'loiter') leave(f);
       }
@@ -2562,6 +2655,12 @@ function arrive(f) {
     f.kind = 0; f.speed = WALK;
     f.z += f.ride === 8 ? 0.9 : 0.3;
     go(f, [[f.spot.x, f.spot.z + 1.0], [f.spot.x, f.spot.z]], 'order');
+    return;
+  }
+  if (f.state === 'busStop') {
+    // Doors open: one gets off now and then, then the bus pulls away.
+    f.state = 'busWait'; f.t = 2.2 + rnd() * 1.3;
+    if (rnd() < 0.6) { const w = person({ kind: 0, x: f.x + 1.5, z: SHELTER.z + 0.3, alpha: 1, speed: WALK * 0.8, ...dress() }); if (rnd() < 0.5 || !queueUp(w)) go(w, [[SHELTER.x - 4, SHELTER.z - 1.5], [-EDGE - 1, footZ()]], 'out'); }
     return;
   }
   if (f.state === 'order') { f.state = 'wait'; f.t = 4 + rnd() * 5; f.face = 1; f.standPose = [6, 3, 1, 2, 1, 6][Math.floor(rnd() * 6)]; return; }
@@ -2674,6 +2773,9 @@ function writePeople() {
       SB[i * 2] = 0.8 * m * f.alpha;
     }
   });
+  // The bus lights the street round it.
+  const bus = people.find(f => f.kind === 11 && f.sx != null);
+  U.uBus.value.set(bus?.sx ?? 0, bus?.sz ?? 0, 5.4, bus ? 1.6 * bus.alpha : 0);
   // The two strongest lamps on the move light the square.
   const lamps = people.filter(f => NOSE[f.kind] && f.sx != null).map(f => ({ x: f.sx + f.face * NOSE[f.kind][0], z: f.sz, dir: f.face, w: NOSE[f.kind][1] })).sort((a, b) => b.w - a.w);
   for (const [n, u] of [[0, U.uVeh0], [1, U.uVeh1]]) { const v = lamps[n]; u.value.set(v?.x ?? 0, v?.z ?? 0, v?.dir ?? 1, v?.w ?? 0); }
