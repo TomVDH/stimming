@@ -370,14 +370,20 @@ uniform vec4 uJet[${MAXJ * 8}]; uniform int uNJ;
 ${SNOISE}
 // On the globe x wraps at 2, so offsets take the short way round.
 vec2 wd(vec2 d) { if (uWrap > 0.5) d.x -= 2.0 * floor(d.x * 0.5 + 0.5); return d; }
-// Nearest segment of jet j: distance, unit tangent, signed normal distance.
-void jetAt(vec2 p, int j, out float best, out vec2 tb, out float sd) {
-  best = 1e9; tb = vec2(1.0, 0.0); sd = 0.0;
+// Nearest segment of jet j: distance, unit tangent, signed normal distance,
+// and how far the point lies beyond the jet's ends.
+void jetAt(vec2 p, int j, out float best, out vec2 tb, out float sd, out float over) {
+  best = 1e9; tb = vec2(1.0, 0.0); sd = 0.0; over = 0.0;
   for (int i = 0; i < 7; i++) {
     vec2 a = uJet[j * 8 + i].xy, ab = uJet[j * 8 + i + 1].xy - a, pa = wd(p - a);
-    float h = clamp(dot(pa, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    float la = max(length(ab), 1e-6), hr = dot(pa, ab) / (la * la), h = clamp(hr, 0.0, 1.0);
     vec2 dd = pa - ab * h; float dl = length(dd);
-    if (dl < best) { best = dl; tb = ab / max(length(ab), 1e-6); sd = dot(dd, vec2(-tb.y, tb.x)); }
+    if (dl < best) {
+      best = dl; tb = ab / la;
+      // The along-line offset, not the endpoint distance, sets the side.
+      sd = dot(pa - ab * hr, vec2(-tb.y, tb.x));
+      over = i == 0 ? max(0.0, -hr) * la : (i == 6 ? max(0.0, hr - 1.0) * la : 0.0);
+    }
   }
 }
 // On the globe the noise sits on a cylinder, so x wraps with no seam.
@@ -415,8 +421,8 @@ vec2 vel(vec2 p) {
   }
   for (int j = 0; j < ${MAXJ}; j++) {
     if (j >= uNJ) break;
-    float best, sd; vec2 tb;
-    jetAt(p, j, best, tb, sd);
+    float best, sd, over; vec2 tb;
+    jetAt(p, j, best, tb, sd, over);
     v += tb * JET_V * uJet[j * 8].z * exp(-best * best / (JET_W * JET_W));
   }
   for (int k = 0; k < ${MAXG}; k++) {
@@ -440,9 +446,10 @@ float psi(vec2 p) {
   // A jet's along-flow speed integrates to a smooth step across it.
   for (int j = 0; j < ${MAXJ}; j++) {
     if (j >= uNJ) break;
-    float best, sd; vec2 tb;
-    jetAt(p, j, best, tb, sd);
-    s += JET_V * uJet[j * 8].z * JET_W * 0.886 * tanh(1.13 * sd / JET_W);
+    float best, sd, over; vec2 tb;
+    jetAt(p, j, best, tb, sd, over);
+    // The step fades past the jet's ends, so isobars close round it.
+    s += JET_V * uJet[j * 8].z * JET_W * 0.886 * tanh(1.13 * sd / JET_W) * exp(-pow(over / (2.0 * JET_W), 2.0));
   }
   return s;
 }`;
@@ -1693,6 +1700,8 @@ function endPress(tap) {
   } else if (p.mode === 'grab') {
     p.v.held = false;
     // A throw caps at 0.5 world/s, so a storm stays on the chart.
+    // A hand that rests 80 ms before release places the storm, not throws it.
+    if (performance.now() - p.tl >= 80) p.vel = [0, 0];
     const sp = Math.hypot(...p.vel), k = sp > 0.5 ? 0.5 / sp : 1;
     if (tap) { p.v.vx = p.vel[0] * k; p.v.vy = p.vel[1] * k; if (sp > 0.15) whoosh(p.v.x, 1.6); }
   } else if (p.mode === 'high') {
@@ -1714,7 +1723,7 @@ stage.addEventListener('pointerdown', e => {
   if (e.button > 0 || press) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
   const w = toWorld(e), now = performance.now();
-  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, w0: w, wl: w, tl: now, t0: now, mode: 'press' };
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, hx: e.clientX, hy: e.clientY, w0: w, wl: w, tl: now, t0: now, mode: 'press' };
   // Off the globe's disc, a drag turns the globe.
   if (!w) { Object.assign(press, { mode: 'turn', xl: e.clientX, yl: e.clientY, tv: [0, 0] }); globe.vy = globe.vp = 0; wake(); return; }
   // A press inside a storm's core, or a high's calm centre, grabs it.
@@ -1731,7 +1740,7 @@ stage.addEventListener('pointermove', e => {
   if (press.mode === 'turn') {
     // The surface follows the hand: a drag left brings the east into view.
     const dt = Math.max(1e-3, (now - press.tl) / 1000), r = discR() / devPx();
-    const dyaw = -(e.clientX - press.xl) / r, dpitch = -(e.clientY - press.yl) / r;
+    const dyaw = -(e.clientX - press.xl) / r, dpitch = (e.clientY - press.yl) / r;
     globe.yaw += dyaw; globe.pitch = clamp(globe.pitch + dpitch, -Math.PI / 3, Math.PI / 3);
     // The throw speed is smoothed over about 0.1 s.
     const k = 1 - Math.exp(-dt / 0.1);
@@ -1743,6 +1752,8 @@ stage.addEventListener('pointermove', e => {
   // A drag that slips off the disc keeps its last point on the globe.
   if (!w) w = press.wl;
   if (press.mode === 'press') {
+    // Only a still press builds a high: 3 px of travel restarts the hold.
+    if (Math.hypot(e.clientX - press.hx, e.clientY - press.hy) > 3) { press.t0 = now; press.hx = e.clientX; press.hy = e.clientY; }
     checkHold(now);
     if (press.mode === 'press' && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > 8) startSpin();
   }
