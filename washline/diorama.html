@@ -632,7 +632,7 @@ scene.add(sunLight, sunLight.target, hemi);
 function setSun(s) {
   st.sun = s;
   // Behind the line the sun stands high enough to clear the roof.
-  const th = Math.PI * s, el = lerp(0.5, 0.2, s) + 0.7 * Math.sin(th) ** 3;
+  const th = Math.PI * s, el = lerp(0.5, 0.2, s) + 0.7 * (T ? T.elK ?? 1 : 1) * Math.sin(th) ** 3;
   SUN.dir.set(lerp(0.65, -0.45, s), Math.tan(Math.min(el, 1.4)), Math.cos(th)).normalize();
   SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(T ? T.sunK : 3);
   SUN.b = smooth(0.45, 0.9, s);
@@ -1021,7 +1021,13 @@ function contact(grp, x, z, rx, rz, k = 1, rot = 0) {
   m.renderOrder = 1;
   grp.add(m);
 }
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 1 }));
+const snowNormal = normalTile(256, (u, v) => {
+  let h = 0.5 * Math.sin((u * 3 + 0.4 * Math.sin(v * TAU * 2)) * TAU) + 0.25 * Math.sin((u * 7 + v * 2) * TAU);
+  for (let k = 0; k < 3; k++) { const f = 8 << k; h += hashN(Math.floor(u * f), Math.floor(v * f)) * 0.12 / (k + 1); }
+  return h;
+}, 2.4);
+snowNormal.repeat.set(10, 10);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 1, normalScale: new THREE.Vector2(0.7, 0.7) }));
 cloudShadows(ground.material, 'ground');
 ground.receiveShadow = true;
 scene.add(ground);
@@ -1112,40 +1118,95 @@ function buildPrairie(grp) {
   contact(grp, -2.3, 1.0, 0.42, 0.42, 0.7);
 }
 
-// Winter: a red snow fence, poles along a buried road, a bare tree, an elevator in the whiteout.
+// A bare tree as one merged mesh: limbs split and taper.
+function treeGeometry(len, rad, depth, roots = 1) {
+  const geos = [];
+  const rec = (m, l, r, d, n0) => {
+    geos.push(new THREE.CylinderGeometry(r * 0.62, r, l, 6).translate(0, l / 2, 0).applyMatrix4(m));
+    if (!d) return;
+    const n = n0 || (d > 2 ? 3 : 2 + (Math.random() < 0.5 ? 1 : 0));
+    for (let i = 0; i < n; i++) {
+      const sg = () => (Math.random() < 0.5 ? -1 : 1);
+      const child = m.clone()
+        .multiply(new THREE.Matrix4().makeTranslation(0, l * (n0 ? rnd(0.85, 1) : rnd(0.55, 0.95)), 0))
+        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rnd(0.3, 0.75) * sg(), rnd(0, TAU), rnd(0.3, 0.75) * sg())));
+      rec(child, l * rnd(0.55, 0.78), r * 0.6, d - 1, 0);
+    }
+  };
+  rec(new THREE.Matrix4(), len, rad, depth, roots);
+  return mergeGeometries(geos);
+}
+const barkTex = new THREE.CanvasTexture(tex2D(128, 256, (g, w, h) => {
+  g.fillStyle = '#6b625a'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 70; i++) {
+    g.strokeStyle = `rgba(${Math.random() < 0.6 ? '30,26,22' : '170,160,150'},${rnd(0.2, 0.55)})`; g.lineWidth = rnd(1, 4);
+    const x = rnd(0, w); g.beginPath(); g.moveTo(x, 0);
+    for (let y = 0; y <= h; y += 16) g.lineTo(x + rnd(-6, 6), y);
+    g.stroke();
+  }
+}));
+barkTex.colorSpace = THREE.SRGBColorSpace;
+barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping;
+barkTex.repeat.set(1, 3);
+
+// Winter: a clear cold afternoon. The line runs from a farmhouse corner to a cottonwood.
+// Far off: a shelterbelt of bare trees, a small red barn, telephone poles.
 function buildWinter(grp) {
   const add = (o, cast = true) => { o.castShadow = cast; o.receiveShadow = true; grp.add(o); return o; };
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
-  // The snow fence slants away; drifts pile up along its foot.
-  const a = new THREE.Vector2(-34, -8), b = new THREE.Vector2(44, -19), dir = b.clone().sub(a), len = dir.length();
-  dir.normalize();
-  const yaw = -Math.atan2(dir.y, dir.x);
-  const slatN = Math.floor(len / 0.1);
-  const slats = new THREE.InstancedMesh(new THREE.BoxGeometry(0.038, 1.2, 0.012), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.5, 0.13, 32)), roughness: 0.9 }), slatN);
-  for (let k = 0; k < slatN; k++) {
-    const t = k * 0.1 + rnd(-0.01, 0.01);
-    q.setFromEuler(new THREE.Euler(rnd(-0.04, 0.04), yaw, rnd(-0.05, 0.05)));
-    slats.setMatrixAt(k, m.compose(p.set(a.x + dir.x * t, 0.5 + rnd(-0.03, 0.03), a.y + dir.y * t), q, sc.set(1, rnd(0.9, 1.05), 1)));
+  const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.85 });
+  // The farmhouse: white clapboard, a lit window, snow on the sill and the roof edge.
+  const clap = new THREE.MeshStandardMaterial({ map: clapTex, roughness: 0.85 });
+  const house = add(new THREE.Mesh(new THREE.BoxGeometry(9, 7, 9), clap));
+  house.position.set(-POST_X - 0.1 - 4.5, 3.5, 1.2);
+  const trim = new THREE.MeshStandardMaterial({ color: 0xf1eee6, roughness: 0.6 });
+  const corner = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 7, 0.18), trim));
+  corner.position.set(-POST_X - 0.07, 3.5, 5.62);
+  const glow = new THREE.MeshStandardMaterial({ color: 0x2a1a10, emissive: new THREE.Color().setRGB(3.2, 1.9, 0.8), roughness: 0.3 });
+  const win = add(new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.35).rotateY(Math.PI / 2), glow), false);
+  win.position.set(-POST_X - 0.095, 1.75, 2.6);
+  for (const [w, h, y, z] of [[0.07, 1.5, 1.75, 2.0], [0.07, 1.5, 1.75, 3.2], [0.07, 0.07, 2.47, 2.6], [0.07, 0.07, 1.75, 2.6], [0.07, 1.4, 1.75, 2.6]]) {
+    const b = add(new THREE.Mesh(new THREE.BoxGeometry(0.07, h, w === 0.07 && h < 1 ? 1.25 : 0.07), trim));
+    b.position.set(-POST_X - 0.07, y, z);
   }
-  add(slats);
-  const stakeN = Math.floor(len / 2.4);
-  const stakes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 1.45, 0.07), new THREE.MeshStandardMaterial({ color: 0x4a3e33, roughness: 0.9 }), stakeN);
-  for (let k = 0; k < stakeN; k++) stakes.setMatrixAt(k, m.compose(p.set(a.x + dir.x * k * 2.4, 0.6, a.y + dir.y * k * 2.4 - 0.05), q.setFromEuler(new THREE.Euler(0, yaw, rnd(-0.04, 0.04))), sc.set(1, 1, 1)));
-  add(stakes);
-  const snowMat = new THREE.MeshStandardMaterial({ color: 0xf2f5f9, roughness: 0.95 });
-  const driftN = Math.floor(len / 1.6);
-  const drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
-  for (let k = 0; k < driftN; k++) drifts.setMatrixAt(k, m.compose(p.set(a.x + dir.x * k * 1.6, 0, a.y + dir.y * k * 1.6 + 0.6), q.setFromEuler(new THREE.Euler(0, yaw, 0)), sc.set(rnd(1.2, 2), rnd(0.25, 0.45), rnd(0.7, 1.1))));
-  add(drifts, false);
-  // A buried road runs off to the left, telephone poles along it.
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(5, 140).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xc9cfd8, roughness: 1 }));
-  road.position.set(-15, 0.004, -40);
-  road.rotation.y = 0.08;
-  add(road, false);
+  const sill = add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 1.4), trim));
+  sill.position.set(-POST_X - 0.02, 1.03, 2.6);
+  const sillSnow = add(new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 1.36), snowMat), false);
+  sillSnow.position.set(-POST_X - 0.02, 1.08, 2.6);
+  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
+  ring.position.set(-POST_X - 0.06, LINE_Y, 0);
+  const bank = add(new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12), snowMat), false);
+  bank.scale.set(0.8, 0.4, 5.5);
+  bank.position.set(-POST_X - 0.1, 0, 1.2);
+  contact(grp, -POST_X - 0.3, 1.2, 0.5, 5, 0.5);
+  // The cottonwood: a barked trunk, four main limbs, its crown out of the frame.
+  const bark = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.95 });
+  const tree = add(new THREE.Mesh(treeGeometry(3.6, 0.26, 4, 4), bark));
+  tree.position.set(POST_X + 0.24, 0, 0);
+  const band = add(new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.008, 6, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 })));
+  band.position.set(POST_X + 0.24, LINE_Y, 0);
+  contact(grp, POST_X + 0.24, 0, 0.6, 0.6, 0.6);
+  // A shelterbelt of bare trees lines the horizon, grey lace in the haze.
+  const belt = new THREE.InstancedMesh(treeGeometry(4, 0.18, 5), new THREE.MeshStandardMaterial({ color: 0x4a4542, roughness: 1 }), 70);
+  for (let k = 0; k < 70; k++) belt.setMatrixAt(k, m.compose(p.set(-110 + k * 3.2 + rnd(-1, 1), 0, -78 + rnd(-3, 3)), q.setFromEuler(new THREE.Euler(0, rnd(0, TAU), 0)), sc.setScalar(rnd(1.6, 2.4))));
+  grp.add(belt);
+  // A small red barn sits out on the plain.
+  const barn = new THREE.Group();
+  const red = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.42, 0.13, 28)), roughness: 0.9 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 7), red); body.position.y = 3;
+  const roofShape = new THREE.Shape([new THREE.Vector2(-3.9, 0), new THREE.Vector2(3.9, 0), new THREE.Vector2(0, 3.6)]);
+  const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: 10.6, bevelEnabled: false }).translate(0, 0, -5.3).rotateY(Math.PI / 2), snowMat);
+  roof.position.y = 6;
+  barn.add(body, roof);
+  barn.position.set(16, 0, -30);
+  barn.rotation.y = -0.5;
+  barn.traverse(o => { o.castShadow = o.receiveShadow = true; });
+  grp.add(barn);
+  // Telephone poles march off along a snowed-in road.
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x3f3730, roughness: 0.9 });
   const tops = [];
   for (let k = 0; k < 9; k++) {
-    const z = 6 - k * 13, x = -18.5 + z * 0.08;
+    const z = 4 - k * 13, x = 14 - z * 0.12;
     const pole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 9, 10), poleMat));
     pole.position.set(x, 4.5, z);
     const arm = add(new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.12), poleMat));
@@ -1158,105 +1219,27 @@ function buildWinter(grp) {
     for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector3(lerp(x0, x1, t) + off, 8.45 - 0.5 * Math.sin(Math.PI * t), lerp(z0, z1, t))); }
     grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
   }
-  // A bare tree: branches split and taper, three levels deep.
-  const bark = new THREE.MeshStandardMaterial({ color: 0x3a332e, roughness: 0.95 });
-  const tree = new THREE.Group();
-  const branch = (parent, len, rad, depth) => {
-    const g = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.65, rad, len, 7).translate(0, len / 2, 0), bark);
-    g.castShadow = true;
-    parent.add(g);
-    if (depth === 0) return;
-    const n = depth > 2 ? 3 : 2 + (Math.random() < 0.5 ? 1 : 0);
-    for (let i = 0; i < n; i++) {
-      const j = new THREE.Group();
-      j.position.y = len * rnd(0.55, 0.95);
-      j.rotation.set(rnd(0.35, 0.8) * (Math.random() < 0.5 ? -1 : 1), rnd(0, TAU), rnd(0.35, 0.8) * (Math.random() < 0.5 ? -1 : 1));
-      g.add(j);
-      branch(j, len * rnd(0.55, 0.75), rad * 0.6, depth - 1);
-    }
-  };
-  // The line's far end: an old cottonwood, its crown out of the frame.
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 3.4, 14).translate(0, 1.7, 0), bark);
-  trunk.castShadow = trunk.receiveShadow = true;
-  tree.add(trunk);
-  for (let i = 0; i < 4; i++) {
-    const j = new THREE.Group();
-    j.position.y = rnd(2.6, 3.3);
-    j.rotation.set(rnd(0.3, 0.7) * (i % 2 ? 1 : -1), (i / 4) * TAU + rnd(-0.4, 0.4), rnd(0.3, 0.7) * (i < 2 ? 1 : -1));
-    tree.add(j);
-    branch(j, rnd(2.2, 3), 0.14, 4);
-  }
-  tree.position.set(POST_X + 0.24, 0, 0);
-  grp.add(tree);
-  const band = add(new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.008, 6, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 })));
-  band.position.set(POST_X + 0.24, LINE_Y, 0);
-  // The near end: a red barn, board and batten, its wall and roof out of the frame.
-  const barnTex = new THREE.CanvasTexture(tex2D(256, 256, (g, w, h) => {
-    g.fillStyle = '#7e2a22'; g.fillRect(0, 0, w, h);
-    for (let x = 0; x < w; x += 32) {
-      g.fillStyle = `rgba(0,0,0,${rnd(0.05, 0.2)})`; g.fillRect(x, 0, 32, h);
-      g.fillStyle = '#93362b'; g.fillRect(x + 27, 0, 6, h);
-      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x + 33, 0, 2, h);
-    }
-    for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(210,190,170,${rnd(0.03, 0.1)})`; g.fillRect(rnd(0, w), 0, rnd(1, 3), rnd(40, h)); }
-  }));
-  barnTex.colorSpace = THREE.SRGBColorSpace;
-  barnTex.wrapS = barnTex.wrapT = THREE.RepeatWrapping;
-  barnTex.repeat.set(4, 2.5);
-  const barn = add(new THREE.Mesh(new THREE.BoxGeometry(10, 9, 14), new THREE.MeshStandardMaterial({ map: barnTex, roughness: 0.9 })));
-  barn.position.set(-POST_X - 0.1 - 5, 4.5, -1);
-  // A gable roof under snow; the eave overhangs the wall.
-  const slope = 0.62, half = 5.4;
-  const roof = add(new THREE.Mesh(new THREE.BoxGeometry(half / Math.cos(slope) + 0.4, 0.22, 14.8), new THREE.MeshStandardMaterial({ color: 0x3b3b3e, roughness: 0.8 })));
-  roof.position.set(-POST_X - 0.1 - half / 2 + 0.2, 9 + Math.tan(slope) * half / 2, -1);
-  roof.rotation.z = -slope;
-  const roofSnow = add(new THREE.Mesh(new THREE.BoxGeometry(half / Math.cos(slope) + 0.3, 0.12, 14.7), snowMat), false);
-  roofSnow.position.copy(roof.position).add(new THREE.Vector3(Math.sin(slope) * 0.15, Math.cos(slope) * 0.15, 0));
-  roofSnow.rotation.z = -slope;
-  const trim = new THREE.MeshStandardMaterial({ color: 0xece8de, roughness: 0.7 });
-  // White corner boards and a big door framed with an X.
-  const corner = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 9, 0.22), trim));
-  corner.position.set(-POST_X - 0.07, 4.5, 5.9);
-  const doorX = -POST_X - 0.08;
-  for (const [w, h, y, z, r] of [[0.06, 3.2, 1.6, -3.4, 0], [0.06, 3.2, 1.6, -0.6, 0], [0.06, 0.12, 3.2, -2, 0], [0.06, 0.12, 0.06, -2, 0], [0.06, 0.1, 1.6, -2, 0.85], [0.06, 0.1, 1.6, -2, -0.85]]) {
-    const b = add(new THREE.Mesh(new THREE.BoxGeometry(w, r ? 0.1 : h, r ? 3.6 : (h > 1 ? 0.14 : 2.9)), trim));
-    b.position.set(doorX, y, z);
-    if (r) b.rotation.x = r;
-  }
-  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 8, 18).rotateY(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3c3a38, metalness: 0.8, roughness: 0.6 })));
-  ring.position.set(-POST_X - 0.06, LINE_Y, 0);
-  // A drift banks against the barn wall.
-  const bank = add(new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), snowMat), false);
-  bank.scale.set(0.7, 0.35, 7);
-  bank.position.set(-POST_X - 0.1, 0, 0.5);
-  // A grain elevator and its silos, pale in the whiteout.
-  const conc = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.9 });
-  const elev = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(6, 24, 8), conc); shaft.position.y = 12;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 5), conc); head.position.y = 26.5;
-  elev.add(shaft, head);
-  for (const x of [5.5, 9.5, 13.5]) { const silo = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 18, 20), conc); silo.position.set(x, 9, 0); elev.add(silo); }
-  elev.position.set(-46, 0, -88);
-  grp.add(elev);
-  // A galvanised tub waits by the barn.
+  // Wind-carved drifts ripple across the yard.
+  const driftN = 40, drifts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 20, 10), snowMat, driftN);
+  for (let k = 0; k < driftN; k++) drifts.setMatrixAt(k, m.compose(p.set(rnd(-16, 22), 0, rnd(-30, -3)), q.setFromEuler(new THREE.Euler(0, rnd(-0.4, 0.4), 0)), sc.set(rnd(3, 7), rnd(0.08, 0.22), rnd(0.8, 1.6))));
+  add(drifts);
+  // A galvanised tub by the house, half full of snow.
   const tub = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.3, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xa9adb2, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide })));
   tub.position.set(-2.4, 0.15, 1.6);
-  contact(grp, -2.4, 1.6, 0.45, 0.45, 0.6);
-  contact(grp, POST_X + 0.24, 0, 0.6, 0.6, 0.7);
-  contact(grp, -POST_X - 0.3, -1, 0.5, 7.5, 0.55);
   const tubSnow = add(new THREE.Mesh(new THREE.CircleGeometry(0.29, 24).rotateX(-Math.PI / 2), snowMat), false);
   tubSnow.position.set(-2.4, 0.27, 1.6);
+  contact(grp, -2.4, 1.6, 0.45, 0.45, 0.6);
   // Footprints lead from the lens out to the line.
   const printTex = new THREE.CanvasTexture(tex2D(64, 128, (g) => {
-    g.fillStyle = 'rgba(70,85,110,0.55)';
+    g.fillStyle = 'rgba(90,110,150,0.6)';
     g.beginPath(); g.ellipse(32, 44, 18, 30, 0, 0, TAU); g.fill();
     g.beginPath(); g.ellipse(32, 100, 14, 20, 0, 0, TAU); g.fill();
   }));
   printTex.colorSpace = THREE.SRGBColorSpace;
   const steps = 26, prints = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.26).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false }), steps);
   for (let k = 0; k < steps; k++) {
-    const t = k / (steps - 1), x = lerp(-0.4, 2.2, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 8, t);
-    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, -0.3 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
+    const t = k / (steps - 1), x = lerp(-0.4, 1.8, t) + (k % 2 ? 0.13 : -0.13), z = lerp(0.6, 8, t);
+    prints.setMatrixAt(k, m.compose(p.set(x, 0.004, z), q.setFromEuler(new THREE.Euler(0, -0.27 + rnd(-0.08, 0.08), 0)), sc.set(1, 1, 1)));
   }
   grp.add(prints);
 }
@@ -1777,14 +1760,14 @@ const THEMES = {
     mix: ['sheet', 'tee', 'trousers', 'towel', 'dress', 'tee', 'sock', 'towel', 'cloth', 'sock'], build: buildPrairie,
   },
   winter: {
-    sky: { zen: [0.79, 0.02, 255], mid: [0.86, 0.012, 250], hor: [0.93, 0.006, 250], haze: [0.92, 0.006, 250], cloud: [0.9, 0.01, 250], shade: [0.85, 0.012, 252] },
-    warm: [0.95, 0.02, 250], white: [0.97, 0.01, 250], sunK: 1.8, glow: 0.12, exp: 0.97, shadow: 0.6,
-    line: [0.28, 0.025, 50], grade: { con: 1.14, sat: 0.92, vig: 0.2, lift: [0.0, 0.005, 0.02] }, clouds: 0,
-    fog: [[0.93, 0.006, 250], 8, 80], hemi: [[0.95, 0.01, 250], [0.9, 0.012, 250], 1.15],
-    ground: 'snow', grass: { n: 0.022, h: [0.15, 0.5], cols: [[0.55, 0.05, 70], [0.62, 0.06, 80], [0.45, 0.04, 60]] },
-    wind: 'breeze', sun: 0.35, stiff: 3, frost: 1, snow: 1, daisies: 0,
-    // Low, from the tree side, looking a little up toward the barn.
-    cam: { pos: [2.8, 0.85, 6.4], look: [-1.1, 1.8, -0.6], lookN: [-0.5, 1.8, -0.6], fov: 50, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [-0.3, 1.0, 0] },
+    sky: { zen: [0.6, 0.085, 246], mid: [0.76, 0.055, 240], hor: [0.9, 0.045, 62], haze: [0.9, 0.02, 250], cloud: [0.97, 0.02, 40], shade: [0.8, 0.03, 265] },
+    warm: [0.9, 0.08, 58], white: [0.97, 0.03, 70], sunK: 3.4, glow: 1, exp: 0.95, shadow: 0.85, elK: 0.18,
+    line: [0.26, 0.025, 50], grade: { con: 1.12, sat: 1.02, vig: 0.24, lift: [0.0, 0.005, 0.025] }, clouds: 0,
+    fog: [[0.9, 0.02, 250], 28, 170], hemi: [[0.72, 0.07, 245], [0.94, 0.01, 250], 0.75],
+    ground: 'snow', grass: { n: 0.01, h: [0.1, 0.32], cols: [[0.74, 0.06, 80], [0.8, 0.05, 85], [0.62, 0.05, 70]] },
+    wind: 'breeze', sun: 0.72, stiff: 3, frost: 1, snow: 0, daisies: 0,
+    // From the tree side at eye height, into a low sun, toward the farmhouse.
+    cam: { pos: [2.6, 1.4, 6.8], look: [-0.9, 1.5, -0.4], lookN: [-0.4, 1.6, -0.4], fov: 52, fovN: 70 }, iso: { yaw: Math.PI / 4, at: [-0.3, 1.0, 0] },
     mix: ['longjohns', 'sheet', 'flannel', 'sock', 'sock', 'towel', 'flannel', 'sheet'], build: buildWinter,
   },
 };
@@ -1815,6 +1798,9 @@ function applyTheme(id) {
   cloudU.uCloudK.value = T.clouds ? 0.45 : 0;
   ground.material.map?.dispose();
   ground.material.map = groundTex(T.ground);
+  // Snow gets wind-carved relief; other grounds stay flat under their grass.
+  ground.material.normalMap = T.ground === 'snow' ? snowNormal : null;
+  ground.material.roughness = T.ground === 'snow' ? 0.8 : 1;
   ground.material.needsUpdate = true;
   if (setGroup) { if (basketObj) setGroup.remove(basketObj); scene.remove(setGroup); disposeTree(setGroup); }
   fan = null;

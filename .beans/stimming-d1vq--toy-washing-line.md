@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T09:46:19Z
+updated_at: 2026-11-09T09:52:39Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -73,3 +73,5 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Tom: each diorama needs its own camera angle and distinctly different anchors and backgrounds. Themes now carry cam (wide) and iso (yaw) settings. Prairie: T-posts, level wide shot from the left. Winter: red barn wall (gable roof, X door, ring) to a bare cottonwood, low camera from the tree side looking up; iso turned the other way.
 
 - Fidelity pass (Tom: shadows, shading, contrast; the line must always contrast): dark cord tinted per theme with a 1.7 px minimum screen width; stronger sun, lower fill; cloth fold darkening; contact shadows; drifting cloud shadows on ground and grass; a per-theme grade (S-curve, saturation, lift, vignette).
+
+- Winter v3 (Tom: winter is not good): clear cold afternoon with a low sun and long blue shadows; line from a white clapboard farmhouse corner (warm lit window, snow on the sill) to a barked cottonwood; shelterbelt of bare trees on the horizon, a small red barn, telephone poles; wind-carved snow relief (normal map) and low drifts; camera at eye height from the tree side into the sun.
