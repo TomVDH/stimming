@@ -874,7 +874,7 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   if (uStorm <= 0.0 && uFog <= 0.0) return c;
   vec3 air = stormGlow(d);
   // Haze: the far land fades out; the sky itself turns milky.
-  float hz = uStorm * (t > 5e3 ? 0.4 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
+  float hz = uStorm * (t > 5e3 ? 0.7 : 1.0 - exp(-t / mix(500.0, 110.0, uStorm)));
   c = mix(c * (1.0 - 0.35 * uStorm), air, hz);
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
@@ -1166,6 +1166,9 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
   float ce = cos(uHorEl + 0.06), se = sin(uHorEl + 0.06);
   vec3 twi = skyL(vec3(sH.x * ce, se, sH.y * ce));
   vec3 dome = skyL(vec3(0.0, 1.0, 0.0)) * 0.5 + twi * 0.25 + skyL(vec3(-sH.x * ce, se, -sH.y * ce)) * 0.25;
+  // In a storm the murk, not the clear sky, lights the towers.
+  dome = mix(dome, stormGlow(vec3(0.0, 1.0, 0.0)) * 0.7, uStorm);
+  twi *= 1.0 - 0.7 * uStorm;
   for (int i = 0; i < ${MAXCELL}; i++) {
     if (i >= uNTw) break;
     vec4 a = uTw[i], b = uTwB[i], f = uTwC[i];
@@ -1230,7 +1233,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         float Tl = exp(-3.0 * od), Tm = 0.3 * exp(-0.6 * od);
         // Powder: thin edges that face away from the light stay dark.
         float powder = mix(1.0, 1.0 - exp(-5.0 * dn), 0.5 * (1.0 - max(mu, 0.0)));
-        vec3 S = uSunL * 0.1 * sunK * (Tl * phase + Tm * 0.7) * powder;
+        // Storm haze veils the sun or moon, so the silver lining fades.
+        vec3 S = uSunL * 0.1 * sunK * (1.0 - 0.85 * uStorm) * (Tl * phase + Tm * 0.7) * powder;
         // Sky light falls from above; folds and the base see little.
         // Creases sit deep in the base shape.
         // Lump crowns stand out of it.
@@ -1241,6 +1245,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         vec2 rad = normalize(p.xz - gAx * gLean * h01 + 1e-4);
         if (hi) open *= 1.0 - 0.75 * towerLightDens(p + vec3(rad.x * 0.4, 0.3, rad.y * 0.4), lod + 1.0);
         float sky = (0.2 + 0.8 * h01) * (0.25 + 0.75 * open);
+        // Murk light is flat: edges and folds see about the same.
+        sky = mix(sky, 0.45 * (0.4 + 0.6 * h01), 0.6 * uStorm);
         S += (dome * 1.5 + uAmb * 0.015) * sky;
         // The glow round the sun lights the side that faces it.
         S += twi * 0.3 * Tl * (0.3 + 0.25 * phase) * open;
@@ -1259,8 +1265,14 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       }
     }
     if (tIn < 0.0) continue;
-    float fog = (1.0 - exp(-tIn / 160.0)) * (boom ? 0.35 : 1.0);
-    col = col * (1.0 - fog) + haze * (1.0 - Tc) * fog;
+    // In a storm the haze thickens and takes the storm's grey.
+    // Towers stand nearer than the sky's haze: they keep more of their own shade.
+    float fog = (1.0 - exp(-tIn / mix(160.0, 260.0, uStorm))) * (boom ? 0.35 : 1.0);
+    vec3 hzC = mix(haze, stormGlow(d), uStorm);
+    col = col * (1.0 - fog) + hzC * (1.0 - Tc) * fog;
+    // Close fog banks hide the tower too.
+    float fb = fogAt(d, tIn);
+    col = col * (1.0 - fb) + stormGlow(d) * 1.25 * (1.0 - Tc) * fb;
     c = c * Tc + col;
     skyA *= Tc;
   }
@@ -1531,6 +1543,8 @@ void main() {
   bool blind = fogAt(d, 60.0) > 0.995;
   if (!blind) {
   c = outside(d, uFocal * uOutRes.x / uRes.x, skyA);
+  // Storm air hazes the background first; each tower takes its own haze.
+  c = stormAir(c, d, tg > 0.0 ? tg : 1e4, skyA);
   c = towers(d, tg > 0.0 ? tg : 1e4, c, skyA);
   if (tg < 0.0 && uSpr[0].z + uSpr[1].z > 0.0) c += sprites(d) * skyA;
   // The impact's fireball: a billowing ball that rises, cools to smoke and flattens into the cap.
@@ -1598,9 +1612,15 @@ void main() {
     if (t3 > 0.0 && t3 < tj) { tj = t3; nj = vec3(0.0, 0.0, -1.0); }
     if (tj < 1e8 && (tg < 0.0 || tj < tg)) { c = paint(d, nj, 0.004, 1.0) * 1.2; skyA = 0.0; }
   }
-  if (uTrN > 1) c += trails(d, tg > 0.0 ? tg : 1e4);
-  c += approach(d, tg > 0.0 ? tg : 1e4);
-  c = stormAir(c, d, tg > 0.0 ? tg : 1e4, skyA);
+  // Trails and approach lights add light; storm air dims it by distance.
+  vec3 add = approach(d, tg > 0.0 ? tg : 1e4);
+  if (uTrN > 1) add += trails(d, tg > 0.0 ? tg : 1e4);
+  if (uStorm > 0.0 || uFog > 0.0) {
+    float tt = tg > 0.0 ? tg : 1e4;
+    float hzA = uStorm * (tt > 5e3 ? 0.7 : 1.0 - exp(-tt / mix(500.0, 110.0, uStorm)));
+    add *= (1.0 - 0.35 * uStorm) * (1.0 - hzA) * (1.0 - fogAt(d, tt));
+  }
+  c += add;
   float tNear = tw;
   float skyN = 0.0;
   // The engine nacelle hangs under the wing; its inlet shows ahead of the leading edge.

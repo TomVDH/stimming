@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
-updated_at: 2026-11-09T08:11:55Z
+updated_at: 2026-11-09T09:15:18Z
 ---
 
 Window seat (idea 56). Tom, 2026-11-04: S tier, diegetic. Airliner first; an orbit seat may follow. Full window frame (bezel, shade).
@@ -61,3 +61,5 @@ Impact fireball rebuilt: one opaque sphere that rises, cools to smoke and flatte
 Impact fireball: traced as a displaced surface (large Worley lobes), fire in the folds by a heat ramp, smoke on the bumps; ejecta as thin streaks with tails. Seen at 14 s.
 
 Performance: the wing early-out skips the outside where it covers the view; High traces the outside at 0.75 scale; High deck 26 steps, light 4, towers 56. Frame on High, 1816x1752: 50 ms before, 8-17 ms after. Rain on the window: Settings Rain Off, Light or Heavy (beads in three sizes, runs blown aft), after the train ride.
+
+Storm blend fix: storm air hazes the background before the towers; towers haze by their own distance in storm grey; murk lights them, the moon's silver lining fades with Storm; trails and approach lights dim by distance. Sights now come on their own every 4 to 10 minutes (first after 1 to 3); Tom plans a new trigger menu later.
