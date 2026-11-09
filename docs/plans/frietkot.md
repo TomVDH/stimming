@@ -247,7 +247,7 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 
 - [x] Wet reflections see a calmer normal, widen with distance, smear upward, fade along their length, and wobble with a fine unevenness. No hard edge, no tiles.
 - [x] The script line uses Courgette, plain and readable.
-- [x] Framing on thirds: a wider lens (53°, 68° on phones), panned right, the horizon on the lower third, two thirds of night sky. Zoom stays.
+- [x] Framing on thirds: a wider lens (53°, 68° on phones), the horizon on the lower third, two thirds of night sky; the frituur on the right-hand third, the church tower on the left third. Zoom stays.
 
 ### Task 4: Sauce, cone, moths, traffic
 
