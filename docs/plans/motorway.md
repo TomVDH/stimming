@@ -1,0 +1,154 @@
+# Lit motorway (`motorway`) implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
+
+**Goal:** One buzzing sodium lamp over a motorway overpass. Pull the zoom and the camera climbs out through the dark until the whole country's motorway network glows as orange ribbons.
+
+**Architecture:** three.js 0.170. World units are metres, with the origin at the hero lamp, so the close shot keeps full float precision. The country is a hand-drawn graph of about 30 motorways, each a smoothed polyline. Three layers draw it at every scale: a ribbon mesh (asphalt, verge and lamp pools), one instanced sprite per lamp head, and a dark land plane. One zoom value drives the camera on a log path, the exposure, the haze and the tilt-shift.
+
+**Tech stack:** three.js 0.170 (EffectComposer, UnrealBloomPass, ShaderPass, OutputPass), Tone.js through `kit.tone()`.
+
+**Spec:** the Belgian night series (Broodautomaat, Frietkot, Lit motorway, Beer pour, Chocolate tempering); batch rules in [README.md](README.md); the bar in [bar-v2.md](bar-v2.md).
+
+| | |
+|---|---|
+| Size, estimate | M to L · $30 to $50 |
+| Kits | none; the sodium warm-up idea comes from Canal at dusk, copied, not imported |
+| Before the build | nothing. No geodata file ships: the graph is about 120 hand-placed points in the page. |
+
+## The shot
+
+Night. One lamp head hangs above you, close enough to see the long glowing bar under its housing. You stand on an overpass deck. Below, the motorway runs off in both directions, a double row of orange lamps that shrinks into haze.
+Pull the zoom. The camera rises and tips down. The overpass becomes a dot, the road a thread, the junctions small knots. Then the whole country shows at once: orange ribbons on black, cities as warm smudges, the sea as true black.
+Across the border the roads go dark. Only the towns of the neighbours glow, white and dim.
+
+## Hero moments
+
+1. **The pull-out.** One continuous zoom over five orders of magnitude, from 9 m to 400 km. The lamp row turns into a ribbon without a seam.
+2. **Strike-up.** Tap a section. Its lamps catch one by one in a ripple: first a dim red-pink neon glow, then a slow warm-up to full sodium orange.
+3. **Switch the country.** The Switch action darkens the whole network, then strikes it again, section by section, so the country draws itself in light.
+4. **Traffic.** White headlight streams on one carriageway, red taillight streams on the other. From altitude they shimmer inside the ribbons.
+5. **Fog.** The Fog chip thickens the low air. Every lamp grows a halo and the ribbons swell into a glowing mist; the close shot turns to an orange room.
+
+## The physics
+
+| Detail | In the toy |
+|---|---|
+| Low-pressure sodium (SOX) emits almost one wavelength: the sodium D lines at 589.0 and 589.6 nm. | All lamp light is one orange (OKLCH 0.72 0.17 62). Surfaces it lights lose their hue: the shader uses albedo luminance only. Only traffic lights keep colour. |
+| A cold SOX lamp starts on its neon-argon starting gas. Neon glows red-pink. | Strike-up starts at OKLCH 0.5 0.17 12, at 10 % level. |
+| The sodium then vaporises and takes over over several minutes. | Toy time: 6 s, ease-out, through a salmon midpoint, to full orange and full level. |
+| A hot SOX lamp restrikes at once. | Each section keeps a temperature that cools over 20 s. A warm section comes back orange in under 1 s. |
+| Mains at 50 Hz gives a 100 Hz ballast hum. | The lamp buzz is 100 Hz plus odd harmonics, louder close up. |
+| Old lamps cycle at end of life: on, pink, out, again. | One lamp near the hero cycles slowly. |
+| Motorway lamps stand on the central reserve, twin arms, about 12 m high, about 50 m apart. | Twin heads every 50 m; the pools are long ellipses along the road. |
+| From orbit the network is visible because it is lit end to end; the neighbours' motorways are mostly unlit. | Roads past the border keep their asphalt but no lamps. |
+
+## Loop
+
+- Zoom (slider, scroll, pinch): the camera climbs or falls along the path.
+- Tap a ribbon or a lamp: that section switches off, or strikes up.
+- Drag: look a little left and right; at altitude it turns the map a little.
+- The chip sets the air: Clear, Haze, Fog.
+- Untouched, traffic flows and the lamp buzzes. The loop drifts at 30 fps, then sleeps.
+
+## Bar (v2)
+
+| Slot | Control |
+|---|---|
+| Top left | Choice `Air`: Clear, Haze, Fog (segments) |
+| Bottom left | Actions: `Switch` (all lamps off, then a strike-up wave), `Rush` (a surge of traffic) |
+| Bottom right | Slider `Zoom`, 0 to 1, starts at 0 |
+| Key strip | `[SCROLL] zoom` · `[CLICK] switch a section` · `[DRAG] look` |
+| Settings | Traffic (slider, persist) · Tilt-shift (slider, persist) · Neighbours (toggle: their towns glow, persist) · Quality (shared) · Reset in the footer |
+
+Five visible controls or fewer: Air, Switch, Rush, Zoom.
+
+## 375 px recompose
+
+- The close shot: a wider vertical lens. The lamp head sits in the upper third; the road runs down the frame toward you.
+- The far shot: the country turns about 60°, so its long axis (coast to the south-east corner) runs up the screen. The camera fits that bounding box.
+- The slider moves into Settings (Bar v2 phone rule). Pinch is the zoom; the key strip says `[PINCH] zoom`.
+- Sprite minimum size is 1.5 px on phones too, so the ribbons stay solid.
+
+## Tech
+
+**Units and path.** Metres; the hero lamp stands at the origin. The zoom `z` maps to a camera distance `D = 9 · (4.4e5 / 9)^z`. Pitch eases from +6° (looking up at the head) to −72°. The target slides from the lamp head to the country's centre between `z` 0.45 and 0.95. Yaw turns from the hero road's heading to north-up (or the portrait angle) between `z` 0.5 and 1. Near and far planes follow `D`.
+
+**Network.** About 30 motorways as lon, lat waypoints, projected equirectangular around 50.6° N, 4.5° E. Catmull-Rom resampling at 50 m with a little noise gives an organic hand-drawn line. The hero stretch (E40 between Ghent and Brussels) is straight for 4 km around the origin. Each road splits into sections of about 25 km. Roads past the border are flagged unlit.
+
+**Ribbon.** One mesh for all roads. Each vertex carries arc length `s`, lateral side, section id and lit flag. The vertex shader widens it to at least 1.2 px, so roads read from orbit. The fragment shader draws asphalt, the central reserve, lane dashes, verge, and the lamp pools: periodic in `s` with 50 m spacing, an ellipse along the road. When `fwidth(s)` passes the spacing, the pools fade to their average.
+
+**Lamps.** One `InstancedBufferGeometry` sprite per head, with position, section and phase. Screen size is `max(world size, 1.5 px)`; the level falls by the area ratio when clamped, so a row of lamps sums to the right brightness. A wider halo sprite grows with the air's density. The section state lives in a small data texture: on/off, switch time, temperature.
+
+**Land.** One plane, 900 km across, drawn after the solids without depth write. Dark fields with faint value noise, the sea mask from a coastline polyline, and town glows from about 25 towns (warm inside the country, cool and dim outside).
+
+**Close set.** The overpass (deck, parapets, two piers), the hero pole with its twin arms and housings, crash barrier and central reserve. MeshStandardMaterial lit by point lights at the nearest eight lamps, plus a monochrome sodium grade.
+
+**Air.** Exponential height fog, analytic along the view ray. Clear, Haze and Fog set density and scale height. The fog colour is the lamp orange, scaled by how much network the ray passes near (a cheap glow term), on a deep blue-black base.
+
+**Post.** Render, then tilt-shift (two passes, blur radius by distance from a focus band; the band follows the hero at close zoom and the centre at far zoom), then bloom with a threshold, then a grade (vignette, grain) and output.
+
+**Traffic.** Instanced streak quads along each lit road, two lanes each way. White heads one way, red tails the other. Streak length is speed times an exposure that grows with zoom, so from orbit they draw lines.
+
+## Sound
+
+- **Lamp buzz:** 100 Hz plus odd harmonics through a soft bandpass, with slow amplitude wobble. Level falls with zoom; it is off past `z` 0.3.
+- **Neon tick:** a small click when a near lamp strikes, then a rising hum as it warms.
+- **Road hiss:** pink noise through a band at 1 to 3 kHz. Level follows traffic, peaks at mid zoom, and passes swish by with a little pan.
+- **Altitude:** a low wind bed that rises with zoom.
+- All nodes connect to `kit.out`; muted by default.
+
+## Finesse
+
+- No seam in the pull-out: the lamp row, the ribbon and the country glow cross-fade by size, not by a switch.
+- The first frame is a picture: the hero lamp is lit, the road lit both ways, traffic already in flight.
+- Under sodium nothing has colour except the traffic lights.
+- The strike-up ripple runs outward from the tap point, about 2 km per second, with a little jitter per lamp.
+- A warm section restrikes orange at once; a cold one goes through pink.
+- The border: lit ribbons end and the neighbours' roads carry on dark.
+
+## Reduced motion and idle
+
+- **Reduced motion:** the zoom eases in one step per scroll tick, without glide. Traffic moves at 30 % speed. Strike-up keeps its colour path but no ripple.
+- **Idle:** traffic and buzz drift at 30 fps; after 60 s the traffic eases to a stop and the loop sleeps.
+
+## Review focus
+
+1. **Depth range:** at `z` 0 the far plane must reach the horizon. Keep near at `D / 30` or more and check for z-fighting on the overpass.
+2. **Sprite flicker:** sub-pixel sprites must not shimmer as the camera moves. The 1.5 px floor and area-scaled level hold them.
+3. **Exposure:** the ribbons must not blow out at mid zoom, where the most lamps fit on screen. The exposure curve is a table by `z`.
+4. **Picking:** a tap picks the nearest section in screen space within 24 px.
+5. **375 px portrait:** the turned map fits; no control covers the hero lamp.
+
+## Tasks
+
+### Task 1: Blockout (checkpoint)
+
+**Files:** Create `motorway/index.html`, the bean, the `toys.json` entry and the Lab menu entry.
+
+**Produces:** `ROADS`, `build()` (ribbon, lamps), `pathAt(z)`, the land and close set, post.
+
+- [ ] Network graph, ribbon, lamp sprites, land, close set, sky, fog, post with tilt-shift and bloom.
+- [ ] Zoom by slider, scroll and pinch. Air chips.
+- [ ] Stills at 1280 and 375 px: close, mid and far. Checkpoint with Tom.
+- [ ] Commit: `Lit motorway: blockout of the zoom from one lamp to the country`.
+
+### Task 2: Strike-up
+
+- [ ] Section texture, tap picking, ripple, pink-to-orange warm-up, hot restrike, Switch action, the end-of-life lamp.
+- [ ] Commit: `Lit motorway: sections strike up like sodium lamps`.
+
+### Task 3: Traffic
+
+- [ ] Streak instances, exposure by zoom, Rush, Traffic setting.
+- [ ] Commit: `Lit motorway: headlight and taillight streams`.
+
+### Task 4: Sound
+
+- [ ] Buzz, strike tick, road hiss, altitude wind.
+- [ ] Commit: `Lit motorway: lamp buzz and road hiss`.
+
+### Task 5: Settings, loop and QA
+
+- [ ] Settings rows and persistence, frame loop, sleep, ladder, reduced motion.
+- [ ] Browser-pane checks at 1280 and 375 px. Tick the bean. Commit.
