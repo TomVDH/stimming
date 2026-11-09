@@ -27,7 +27,9 @@ Across the border the roads go dark. Only the towns of the neighbours glow, whit
 1. **The pull-out.** One continuous zoom over five orders of magnitude, from 9 m to 400 km. The lamp row turns into a ribbon without a seam.
 2. **Strike-up.** Tap a section. Its lamps catch one by one in a ripple: first a dim red-pink neon glow, then a slow warm-up to full sodium orange.
 3. **Switch the country.** The Switch action darkens the whole network, then strikes it again, section by section, so the country draws itself in light.
-4. **Traffic.** White headlight streams on one carriageway, red taillight streams on the other. From altitude they shimmer inside the ribbons.
+4. **Traffic (Tom, 2026-11-09).** A typical weekday, baked into the page and looped: 15 Belgian jam points (the R0, the E40 either side of Brussels, the E19 to Mechelen, the Antwerp ring and Kennedy tunnel, the E313, Zwijnaarde, Loncin and more) with hourly shapes. Town-bound lanes jam at 8, outbound lanes at 17; volume follows the hour. One toy hour lasts 6 s. About 41,000 cars run on the CPU (1.2 ms a step; 0.5 ms from altitude, where a quarter steps each frame). Speed falls with the jam, and stop-and-go waves run upstream, so cars bunch where it is bad. White heads, red tails, brake glow when slow; streaks lengthen with altitude. From altitude, jammed stretches of the ribbon tint red, like a briefing map. Rush runs the clock to the next peak; a small clock shows the hour.
+
+**City markers (Tom, 2026-11-09).** Big cities only, plus Mechelen and Bonheiden: Brussel, Antwerpen, Gent, Charleroi, Liège, Brugge, Namur, Leuven, Mons, Mechelen, Bonheiden. Thin cool corner brackets, slab caps and coordinates. Each fades in between 120 and 45 km and out again inside 5 km.
 5. **Fog.** The Fog chip thickens the low air. Every lamp grows a halo and the ribbons swell into a glowing mist; the close shot turns to an orange room.
 
 ## The physics

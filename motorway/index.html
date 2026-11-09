@@ -23,6 +23,23 @@
 }
 .stage--motorway canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--motorway canvas { transition: none; } }
+/* City markers and the clock: thin, cool, briefing-map lines. */
+.mk-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.mk {
+  position: absolute; left: 0; top: 0; opacity: 0; margin: -8px 0 0 -8px;
+  display: grid; grid-template-columns: 16px auto; column-gap: 6px; align-items: center;
+  color: oklch(0.88 0.04 225); font: 500 10px/1.25 var(--slab, ui-monospace, monospace);
+  letter-spacing: 0.14em; white-space: nowrap; will-change: transform, opacity;
+  text-shadow: 0 0 6px oklch(0.1 0.02 250);
+}
+.mk svg { width: 16px; height: 16px; grid-row: span 2; fill: none; stroke: currentColor; stroke-width: 1.2; }
+.mk svg circle { fill: currentColor; stroke: none; }
+.mk b { font-weight: 600; }
+.mk small { font-size: 8px; opacity: 0.6; letter-spacing: 0.08em; }
+.mk-clock {
+  position: absolute; left: 50%; top: 54px; transform: translateX(-50%);
+  color: oklch(0.88 0.04 225 / 0.7); font: 600 11px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.16em;
+}
 /* The map credit stays small and quiet. */
 .about .credit { font-size: 12px; opacity: 0.55; margin: 0.4em 0 0; }
 .about .credit a { color: inherit; }
@@ -71,7 +88,7 @@ import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
 // Bar handlers bind once the scene exists.
-const act = { air() {}, zoom() {}, sw() {}, tilt() {}, near() {}, reset() {} };
+const act = { air() {}, zoom() {}, sw() {}, rush() {}, tilt() {}, near() {}, reset() {} };
 const QS = new URLSearchParams(location.search);
 const T0 = performance.now();
 const nowS = () => (performance.now() - T0) / 1000;
@@ -82,7 +99,7 @@ const ui = initPage({ id: 'motorway', bar: {
   slider: { label: 'Zoom', min: 0, max: 1, step: 0.001, value: QS.has('z') ? +QS.get('z') : 0, onInput: v => act.zoom(v) },
   actions: [
     { verb: 'switch', key: 'S', onPress: () => act.sw() },
-    { verb: 'rush', key: 'R', onPress: () => {} },
+    { verb: 'rush', key: 'R', onPress: () => act.rush() },
   ],
   settings: [
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
@@ -92,8 +109,6 @@ const ui = initPage({ id: 'motorway', bar: {
   quality: true,
   keys: [['scroll', 'zoom'], ['drag', 'look']],
 } });
-// Traffic comes in Task 3.
-if (ui.action('rush')) ui.action('rush').disabled = true;
 
 let markReady;
 const sceneReady = new Promise(r => { markReady = r; });
@@ -439,14 +454,18 @@ const ribbonGeo = list => {
   g.setAttribute('aInfo', new THREE.BufferAttribute(aInfo, 4));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.boundingSphere = sphereOf(aC, 3000);
+  g.userData.list = list;
   return g;
 };
 const ribMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 } },
+  uniforms: {
+    ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 },
+    uAm: { value: 0 }, uPm: { value: 0 }, uJamK: { value: 0 }, uJamC: { value: new THREE.Vector3(...linFit(0.6, 0.23, 25)) },
+  },
   vertexShader: /* glsl */`
-    attribute vec2 aN; attribute float aSide, aS; attribute vec4 aInfo;
-    uniform float uPxK, uHalf;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff;
+    attribute vec2 aN; attribute float aSide, aS; attribute vec4 aInfo; attribute vec2 aJam;
+    uniform float uPxK, uHalf, uAm, uPm;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam;
     varying vec3 vW;
     void main() {
       float d = distance(cameraPosition, position);
@@ -459,12 +478,15 @@ const ribMat = new THREE.ShaderMaterial({
       vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
       w.y = 0.04 + 0.01 * aInfo.z;
       vLat = aSide * half_; vS = aS; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
+      // Town-bound lanes jam in the morning, outbound lanes in the evening.
+      vJam = aJam.x * (aJam.y > 1.5 ? max(uAm, uPm) * 0.7 : (aJam.y > 0.5 ? uAm : uPm));
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
   fragmentShader: /* glsl */`
     ${COMMON}
-    uniform float uLampE, uFar, uGlow, uWide;
-    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff;
+    uniform float uLampE, uFar, uGlow, uWide, uJamK;
+    uniform vec3 uJamC;
+    varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam;
     varying vec3 vW;
     // Ground light under one head, 1 directly below; the optic throws it along the road.
     float pool(float ds, float dl) { float q = ds * ds * 0.35 + dl * dl + 144.0; return 1728.0 / (q * sqrt(q)); }
@@ -506,6 +528,8 @@ const ribMat = new THREE.ShaderMaterial({
       float tube = 3.0 * pow(1.0 - min(1.0, a / vHalf), 2.0);
       col = mix(farC * pow(vK, 0.62) * uFar * tube, col, smoothstep(0.35, 0.9, vK));
       col *= vLit;
+      // From altitude a jammed stretch reads red, like a briefing map.
+      col = mix(col, uJamC * dot(col, vec3(0.3, 0.6, 0.1)) * 2.2, clamp(vJam * 2.2, 0.0, 1.0) * uJamK);
       gl_FragColor = vec4(col * fogT(vW), 1.0);
     }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -780,6 +804,235 @@ const lights = HEADS.slice(0, 8).map(h => {
 });
 scene.add(new THREE.HemisphereLight(new THREE.Color(...linFit(0.3, 0.05, 262)), 0x000000, 0.06));
 
+/* ---------- traffic ---------- */
+// A typical weekday, baked: the usual Belgian jam points and rush-hour shapes.
+// Each hotspot: lon, lat, radius in km, severity, and the city it feeds.
+const FEEDS = { bxl: [4.36, 50.85], ant: [4.41, 51.21], gnt: [3.72, 51.05], lie: [5.57, 50.63], crl: [4.44, 50.41], kor: [3.26, 50.83] };
+const HOT = [
+  [4.27, 50.87, 8, 1.0, 'bxl'], [4.43, 50.91, 7, 1.0, 'bxl'], [4.55, 50.865, 8, 0.8, 'bxl'], [4.46, 50.97, 9, 0.9, 'bxl'],
+  [4.12, 50.9, 12, 0.9, 'bxl'], [4.55, 50.75, 8, 0.7, 'bxl'], [4.4, 51.2, 7, 1.0, 'ant'], [4.3, 51.2, 7, 0.85, 'ant'],
+  [4.65, 51.19, 9, 0.7, 'ant'], [4.45, 51.13, 6, 0.7, 'ant'], [4.37, 51.08, 6, 0.5, 'ant'], [3.7, 51.02, 7, 0.8, 'gnt'],
+  [5.48, 50.67, 7, 0.6, 'lie'], [4.44, 50.43, 6, 0.4, 'crl'], [3.27, 50.82, 5, 0.4, 'kor'],
+].map(([lo, la, r, sev, f]) => { const [x, z] = geo(lo, la), [fx, fz] = geo(...FEEDS[f]); return { x, z, r: r * 1000, sev, fx, fz }; });
+// Hourly shapes from 0 h to 23 h: jams into town peak at 8, out of town at 17.
+const AM = [0, 0, 0, 0, 0, 0.05, 0.35, 0.85, 1, 0.6, 0.3, 0.25, 0.25, 0.25, 0.3, 0.35, 0.45, 0.5, 0.4, 0.2, 0.1, 0.05, 0, 0];
+const PM = [0, 0, 0, 0, 0, 0, 0.1, 0.3, 0.4, 0.25, 0.2, 0.2, 0.25, 0.3, 0.4, 0.6, 0.9, 1, 0.75, 0.35, 0.15, 0.05, 0, 0];
+// The share of cars on the road, by hour.
+const VOL = [0.08, 0.05, 0.04, 0.04, 0.06, 0.15, 0.45, 0.85, 0.95, 0.75, 0.6, 0.6, 0.62, 0.62, 0.66, 0.75, 0.9, 0.95, 0.8, 0.55, 0.4, 0.3, 0.2, 0.12];
+const hourly = (T, h) => { const i = Math.floor(h) % 24, f = h - Math.floor(h); return T[i] + (T[(i + 1) % 24] - T[i]) * f; };
+// One toy hour lasts 6 s, so a day loops in 2 min 24 s.
+const clock = { h: 16.5, rate: 1 / 6, to: -1 };
+const VMAX = [33, 25];
+
+// Per sample of each fast road: jam weight, and whether forward travel heads into town.
+const TW = [], TI = [];
+dense.forEach((d, r) => {
+  if (ROADS[r].c > 1) return;
+  const n = d.p.length, W = new Float32Array(n), I = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const [x, z] = d.p[i];
+    let best = 0, hb = null;
+    for (const h of HOT) {
+      const q = Math.hypot(x - h.x, z - h.z) / h.r;
+      if (q > 2.5) continue;
+      const w = h.sev * Math.exp(-q * q);
+      if (w > best) { best = w; hb = h; }
+    }
+    W[i] = best;
+    if (hb) { const [tx, tz] = tangent(d.p, i); I[i] = tx * (hb.fx - x) + tz * (hb.fz - z) > 0 ? 1 : 0; }
+  }
+  TW[r] = W; TI[r] = I;
+});
+const congAt = (r, k, dir, am, pm) => TW[r][k] * ((TI[r][k] ^ (dir < 0 ? 1 : 0)) ? am : pm);
+
+// Cars: ten per km on each carriageway, three per km each way on trunk roads.
+const CARS = (() => {
+  const own = [];
+  dense.forEach((d, r) => {
+    const R = ROADS[r];
+    if (R.c > 1) return;
+    const L = d.s[d.s.length - 1], per = R.c === 0 ? 10 : 3;
+    const n = Math.max(1, Math.round((L / 1000) * per * (R.o ? 1 : 2)));
+    for (let i = 0; i < n; i++) own.push([r, R.o ? 1 : (i % 2 ? -1 : 1), i, n]);
+  });
+  const N = own.length;
+  const C = {
+    N, r: new Int32Array(N), s: new Float64Array(N), dir: new Int8Array(N), lane: new Float32Array(N),
+    f: new Float32Array(N), rank: new Float32Array(N), type: new Float32Array(N), k: new Int32Array(N),
+  };
+  const am = hourly(AM, clock.h), pm = hourly(PM, clock.h);
+  // Cars start spread by travel time, so the jams are already full.
+  const cum = new Map();
+  const tt = (r, dir) => {
+    const key = r * 2 + (dir > 0 ? 1 : 0);
+    if (cum.has(key)) return cum.get(key);
+    const { s } = dense[r], c = ROADS[r].c, a = new Float64Array(s.length);
+    for (let i = 1; i < s.length; i++) a[i] = a[i - 1] + (s[i] - s[i - 1]) / (VMAX[c] * (1 - 0.9 * congAt(r, i - 1, dir, am, pm)));
+    cum.set(key, a);
+    return a;
+  };
+  own.forEach(([r, dir, i, n], j) => {
+    const a = tt(r, dir), u = ((i + Math.random()) / n) * a[a.length - 1];
+    let lo = 0, hi = a.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (a[m] < u) lo = m; else hi = m; }
+    const S = dense[r].s, f = (u - a[lo]) / ((a[hi] - a[lo]) || 1);
+    C.r[j] = r; C.dir[j] = dir; C.k[j] = lo; C.s[j] = S[lo] + (S[hi] - S[lo]) * f;
+    const truck = Math.random() < 0.18;
+    C.type[j] = truck ? 1 : 0;
+    // Three lanes one way; trucks keep right. Two-way roads drive on the right.
+    C.lane[j] = ROADS[r].o ? (truck ? 3.5 : [-3.5, 0, 0, 3.5][(Math.random() * 4) | 0]) : 1.75;
+    C.f[j] = truck ? 0.72 + Math.random() * 0.06 : 0.85 + Math.random() * 0.25;
+    C.rank[j] = Math.random();
+  });
+  return C;
+})();
+// Jam weight and town-bound flag per ribbon vertex; the clock lights them red from altitude.
+ribbons.children.forEach(m => {
+  const g = m.geometry, J = new Float32Array(g.attributes.aS.count * 2);
+  let v = 0;
+  g.userData.list.forEach(r => {
+    const n = dense[r].p.length, W = TW[r], I = TI[r], two = !ROADS[r].o;
+    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++, v++) { J[v * 2] = W ? W[i] : 0; J[v * 2 + 1] = W ? (two ? 2 : I[i]) : 0; }
+  });
+  g.setAttribute('aJam', new THREE.BufferAttribute(J, 2));
+});
+const carA = new THREE.InstancedBufferAttribute(new Float32Array(CARS.N * 4), 4).setUsage(THREE.DynamicDrawUsage);
+const carB = new THREE.InstancedBufferAttribute(new Float32Array(CARS.N * 4), 4).setUsage(THREE.DynamicDrawUsage);
+let simT = 0, traffic = 1;
+// One step of every car: speed from the jam, the stop-and-go wave, and the lane.
+// From high up a car moves less than a pixel a frame, so a quarter steps each frame.
+let carPass = 0;
+function stepTraffic(dt, part = 1) {
+  const am = hourly(AM, clock.h), pm = hourly(PM, clock.h), vol = hourly(VOL, clock.h);
+  const A = carA.array, B = carB.array, C = CARS, slow = (reduced() ? 0.3 : 1) * traffic;
+  simT += dt * slow;
+  carPass = (carPass + 1) % part;
+  dt *= part;
+  for (let i = carPass; i < C.N; i += part) {
+    const r = C.r[i], { p, s: S } = dense[r], n = S.length, dir = C.dir[i], L = S[n - 1];
+    let k = C.k[i], s = C.s[i];
+    while (k < n - 2 && S[k + 1] < s) k++;
+    while (k > 0 && S[k] > s) k--;
+    const cong = congAt(r, k, dir, am, pm);
+    // Stop-and-go waves run upstream through a jam.
+    const wave = 1 - 0.6 * cong * (0.5 + 0.5 * Math.sin(dir * s * 0.01 + simT * 0.7));
+    const v = VMAX[ROADS[r].c] * C.f[i] * (1 - 0.9 * cong) * wave;
+    s += dir * v * dt * slow;
+    if (s > L) s -= L; else if (s < 0) s += L;
+    C.s[i] = s; C.k[i] = k;
+    const a = p[k], b = p[k + 1], seg = (S[k + 1] - S[k]) || 1, f = Math.min(1, Math.max(0, (s - S[k]) / seg));
+    const tx = ((b[0] - a[0]) / seg) * dir, tz = ((b[1] - a[1]) / seg) * dir, ln = C.lane[i];
+    A[i * 4] = a[0] + (b[0] - a[0]) * f - tz * ln;
+    A[i * 4 + 1] = a[1] + (b[1] - a[1]) * f + tx * ln;
+    A[i * 4 + 2] = tx; A[i * 4 + 3] = tz;
+    B[i * 4] = v;
+    // The hour sets how many cars are out; road ends fade them in and out.
+    B[i * 4 + 1] = Math.min(1, Math.max(0, (vol - C.rank[i]) * 20)) * Math.min(1, s / 80, (L - s) / 80);
+    B[i * 4 + 2] = C.type[i];
+  }
+  carA.needsUpdate = carB.needsUpdate = true;
+}
+const carMat = new THREE.ShaderMaterial({
+  uniforms: {
+    ...U, uExpo: { value: 0.04 }, uFar: { value: 1 }, uHeadK: { value: 2.2 }, uHeadAt: { value: 0.55 },
+    uHead: { value: new THREE.Vector3(...linFit(0.97, 0.02, 250)) }, uTail: { value: new THREE.Vector3(...linFit(0.55, 0.22, 27)) },
+  },
+  vertexShader: /* glsl */`
+    attribute vec4 aA, aB;
+    uniform float uPxK, uExpo;
+    varying vec2 vQ;
+    varying float vGain, vFront, vBack, vBrake, vOn;
+    varying vec3 vW;
+    void main() {
+      vec3 head = vec3(aA.x, 0.7, aA.y), t = vec3(aA.z, 0.0, aA.w);
+      float mpp = distance(cameraPosition, head) * uPxK;
+      // A long exposure: the streak grows with speed and with altitude.
+      float len = 4.2 + aB.x * uExpo, L = max(len, 1.5 * mpp);
+      float wid = 1.8, w = max(wid, 1.3 * mpp);
+      vGain = (wid * len) / (w * L);
+      vec3 toCam = normalize(cameraPosition - head);
+      vec3 side = normalize(cross(t, toCam) + vec3(1e-4));
+      vec3 p = head - t * (1.0 - position.x) * L + side * position.y * w * 0.5;
+      float face = dot(t, toCam);
+      vFront = 0.3 + 0.7 * max(0.0, face);
+      vBack = 0.3 + 0.7 * max(0.0, -face);
+      vBrake = 1.0 + 1.6 * (1.0 - smoothstep(4.0, 16.0, aB.x));
+      vOn = aB.y;
+      vQ = position.xy;
+      vW = p;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    ${COMMON}
+    uniform float uFar, uHeadK, uHeadAt;
+    uniform vec3 uHead, uTail;
+    varying vec2 vQ;
+    varying float vGain, vFront, vBack, vBrake, vOn;
+    varying vec3 vW;
+    void main() {
+      if (vOn < 0.01) discard;
+      float across = exp(-vQ.y * vQ.y * 3.0);
+      // White heads at the front, red tails behind; brakes glow in jams.
+      vec3 c = uHead * smoothstep(uHeadAt, 1.0, vQ.x) * vFront * uHeadK + uTail * (0.35 + 0.65 * (1.0 - vQ.x)) * vBack * vBrake * 1.2;
+      float g = mix(pow(vGain, 0.62) * uFar, 1.0, step(0.999, vGain));
+      gl_FragColor = vec4(c * across * g * vOn * fogT(vW), 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const cars = (() => {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.setAttribute('aA', carA);
+  g.setAttribute('aB', carB);
+  g.instanceCount = CARS.N;
+  const m = new THREE.Mesh(g, carMat);
+  m.frustumCulled = false;
+  m.renderOrder = 3;
+  return m;
+})();
+scene.add(cars);
+stepTraffic(0);
+
+/* ---------- city markers ---------- */
+// Big cities, plus Mechelen and Bonheiden; they fade in as the camera nears them.
+const MARKS = [['BRUSSEL', 4.352, 50.847], ['ANTWERPEN', 4.402, 51.219], ['GENT', 3.725, 51.054], ['CHARLEROI', 4.444, 50.411],
+  ['LIÈGE', 5.571, 50.633], ['BRUGGE', 3.225, 51.209], ['NAMUR', 4.867, 50.465], ['LEUVEN', 4.701, 50.879], ['MONS', 3.952, 50.454],
+  ['MECHELEN', 4.477, 51.028], ['BONHEIDEN', 4.54, 51.023]];
+const markLayer = document.createElement('div');
+markLayer.className = 'mk-layer';
+markLayer.setAttribute('aria-hidden', 'true');
+stage.append(markLayer);
+const clockEl = document.createElement('div');
+clockEl.className = 'mk-clock';
+markLayer.append(clockEl);
+const marks = MARKS.map(([name, lo, la]) => {
+  const el = document.createElement('div');
+  el.className = 'mk';
+  el.innerHTML = `<svg viewBox="0 0 16 16"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/><circle cx="8" cy="8" r="1.4"/></svg><b>${name}</b><small>${la.toFixed(3)}N ${lo.toFixed(3)}E</small>`;
+  markLayer.append(el);
+  const [x, z] = geo(lo, la);
+  return { el, v: new THREE.Vector3(x, 0, z), o: 0, shown: -1 };
+});
+const mv = new THREE.Vector3();
+function placeMarks(dt) {
+  marks.forEach(m => {
+    mv.copy(m.v).project(camera);
+    const dist = camera.position.distanceTo(m.v);
+    // A band of distance: hidden from orbit and from the street, gentle between.
+    let want = ss(120000, 45000, dist) * ss(1500, 5000, dist);
+    if (mv.z > 1 || Math.abs(mv.x) > 1.1 || Math.abs(mv.y) > 1.1) want = 0;
+    m.o += (want - m.o) * (1 - Math.exp(-dt * 2.5));
+    if (m.o < 0.01 && m.shown === 0) return;
+    const o = m.o < 0.01 ? 0 : m.o;
+    m.el.style.opacity = o.toFixed(3);
+    m.el.style.transform = `translate(${((mv.x * 0.5 + 0.5) * size.w).toFixed(1)}px, ${((0.5 - mv.y * 0.5) * size.h).toFixed(1)}px)`;
+    m.shown = o > 0 ? 1 : 0;
+  });
+  const h = Math.floor(clock.h), mi = Math.floor((clock.h - h) * 60);
+  clockEl.textContent = `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+}
+
 /* ---------- camera path ---------- */
 // The hero head the camera looks at, on the right-hand carriageway side.
 const HEAD = HN.clone().multiplyScalar(HEAD_OFF).setY(HEAD_H);
@@ -957,6 +1210,16 @@ function draw() {
     const reach = Math.max(6000, D * 3);
     sprites.children.forEach(m => { const b = m.geometry.boundingSphere; m.visible = camera.position.distanceTo(b.center) - b.radius < reach; });
   }
+  // Streaks lengthen with altitude, like a longer exposure.
+  carMat.uniforms.uExpo.value = 0.04 * Math.pow(500, z);
+  // From orbit the cars stay a faint shimmer; jams show as red brake light.
+  carMat.uniforms.uFar.value = 1 + 14 * ss(0.35, 1, z);
+  carMat.uniforms.uHeadK.value = 2.2 - 1.7 * ss(0.4, 1, z);
+  carMat.uniforms.uHeadAt.value = 0.55 + 0.4 * ss(0.4, 1, z);
+  ribMat.uniforms.uAm.value = hourly(AM, clock.h);
+  ribMat.uniforms.uPm.value = hourly(PM, clock.h);
+  ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z);
+  placeMarks(frameDt);
   grade.uniforms.uSeed.value = (t * 7.31) % 1;
   sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   composer.render();
@@ -973,7 +1236,9 @@ function jsLamp(t) {
 }
 
 /* ---------- frame loop ---------- */
-let raf = 0, lastT = 0, visible = true, lastInput = performance.now(), busyUntil = 0;
+let raf = 0, lastT = 0, visible = true, lastInput = performance.now(), busyUntil = 0, frameDt = 0.016, lastDraw = 0;
+// Traffic drifts for 60 s after the last input, then eases to a stop over 2 s.
+const awake = now => now - lastInput < 62000;
 function tick(now) {
   raf = 0;
   const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0.016;
@@ -985,10 +1250,25 @@ function tick(now) {
       const d = airTo[k] - air[k];
       if (Math.abs(d) > Math.abs(airTo[k]) * 1e-3) { air[k] += d * (1 - Math.exp(-dt * 2.5)); moving = true; } else air[k] = airTo[k];
     }
+    traffic = 1 - ss(60000, 62000, now - lastInput);
+    const lively = moving || press || now < busyUntil || clock.to >= 0;
+    // Drifting traffic draws at 30 fps.
+    if (!lively && now - lastDraw < 31) return;
+    frameDt = lastDraw ? Math.min(0.1, (now - lastDraw) / 1000) : dt;
+    lastDraw = now;
+    if (traffic > 0) {
+      // Rush runs the clock fast to the next peak.
+      if (clock.to >= 0) {
+        const step = 3 * frameDt, gap = (clock.to - clock.h + 24) % 24;
+        if (gap <= step) { clock.h = clock.to; clock.to = -1; } else clock.h = (clock.h + step) % 24;
+      } else clock.h = (clock.h + clock.rate * frameDt * traffic) % 24;
+      stepTraffic(frameDt, z > 0.5 ? 4 : 1);
+    }
     draw();
-    watch(now);
+    watch(now, lively);
   } finally {
-    if (visible && !document.hidden && (moving || press || performance.now() < busyUntil)) raf = requestAnimationFrame(tick);
+    const t = performance.now();
+    if (visible && !document.hidden && (moving || press || t < busyUntil || awake(t) || clock.to >= 0)) raf = requestAnimationFrame(tick);
     else lastT = 0;
   }
 }
@@ -998,7 +1278,7 @@ function wake() {
 }
 /* Performance ladder: slow frames step quality down a rung, never back up. */
 let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
-function watch(now) {
+function watch(now, lively) {
   const gap = now - prevDraw;
   prevDraw = now;
   if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
@@ -1006,7 +1286,7 @@ function watch(now) {
   if (now - watchFrom < 4000) return;
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
-  if (watchSum / watchN > 1000 / 38 && rung < 2) { rung++; resize(); }
+  if (watchSum / watchN > (lively ? 1000 / 38 : 1000 / 22) && rung < 2) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
@@ -1093,7 +1373,14 @@ act.sw = () => {
   }
   wake();
 };
+// Rush runs the clock to the next peak: 08:15 or 17:30.
+act.rush = () => {
+  const ahead = p => (p - clock.h + 24) % 24;
+  clock.to = [8.25, 17.5].filter(p => ahead(p) > 0.3).sort((a, b) => ahead(a) - ahead(b))[0] ?? 8.25;
+  wake();
+};
 act.reset = () => {
+  clock.h = 16.5; clock.to = -1;
   ui.choice?.set('haze'); airTo = AIR.haze;
   ui.setting('tilt')?.set(0.6); tilt = 0.6;
   look.yaw = look.pitch = 0;
@@ -1111,6 +1398,7 @@ renderer.compileAsync(scene, camera).then(() => {
   draw();
   canvas.classList.add('on');
   markReady();
+  wake();
 }, () => { canvas.classList.add('on'); markReady(); });
 </script>
 </body>
