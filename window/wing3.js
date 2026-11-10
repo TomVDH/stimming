@@ -252,7 +252,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -286,7 +286,10 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
       // Lambert divides by pi; the shader's sun term is 0.012 on grey paint.
       const s = V(...sky.sun).normalize(), sl = sky.sunL, m = Math.max(...sl, 1e-6);
       sun.color.setRGB(sl[0] / m, sl[1] / m, sl[2] / m);
-      sun.intensity = m * 0.012 * Math.PI / 0.34;
+      // Towers, storm murk and fog veil the sun, so its glint and shadows fade.
+      sun.intensity = m * 0.012 * Math.PI / 0.34 * veil;
+      // Storm murk also dulls the sky the paint mirrors.
+      scene.environmentIntensity = 1 - 0.6 * storm;
       const c = V(3, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
