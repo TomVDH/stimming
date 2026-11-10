@@ -74,6 +74,8 @@ uniform vec4 uWL; uniform vec2 uWT;
 // uFairA: the nose and its radius; uFairB: the tail and its radius.
 uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFairA[3], uFairB[3];
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
+// Each cell's type: anvil size, lean, turret spread, decay.
+uniform vec4 uTwD[${MAXCELL}];
 uniform vec4 uFl[${MAXFL}];
 // Trail points live in a 128 by 2 float texture: row 0 point and radius, row 1 colour and shell.
 uniform highp sampler2D uTrail; uniform int uTrN;
@@ -639,8 +641,23 @@ void deckStorm(vec2 w) {
   gWeave = weave(w + vec2(uTime * 0.012, 0.0));
   gSkirt = towerSkirt(w);
 }
+// Deck billows: round lumps at three sizes, as on the towers.
+// The lumps rise slowly, so the tops boil.
+float deckBillow(vec2 w, float y, float lod) {
+  vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, y - uTime * 0.008, w.x * 0.6 + w.y * 0.8), 2.6, lod);
+  return m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48;
+}
+// Small lumps on the big ones, at an odd scale and angle.
+float deckBillowFine(vec2 w, float y, float lod) {
+  vec4 m = cn(vec3(w.x * 0.47 + w.y * 0.88, y * 1.1 - uTime * 0.014, w.y * 0.47 - w.x * 0.88) + 3.7, 0.8, lod);
+  return m.g * 0.6 + m.b * 0.4 - 0.48;
+}
+// The last main sample's shape terms, for the crease light.
+// gDeckSh: depth inside the smooth dome. gDeckA: lump size. gDeckFb: depth with lumps.
+float gDeckSh = 0.0, gDeckA = 1.0, gDeckFb = 0.0;
 // Deck density at p = (map x, height, map z) in km, from 0 to 1.
-// fine adds the Worley erosion that frays the edges.
+// Each cell is a dome with a flat base; billows break its surface, as on the towers.
+// fine adds the small lumps; light taps go without them.
 float deckDens(vec3 p, float lod, bool fine) {
   vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
   float cv = coverAt(w, 70.0, 0.13), lift = 0.0;
@@ -652,16 +669,21 @@ float deckDens(vec3 p, float lod, bool fine) {
   }
   float c = smoothstep(uCover - 0.1, uCover + 0.14, cv);
   if (c <= 0.0) return 0.0;
-  float base = 1.55, top = base + 0.7 + 1.5 * c + lift;
-  float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c - 0.5 * lift, p.y);
-  if (hgt <= 0.0) return 0.0;
-  float d = clamp((cn(vec3(w.x, p.y * 1.6, w.y), 7.0, lod).r * hgt - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
-  if (fine && d > 0.0) {
-    vec4 e = cn(vec3(w.x, p.y * 1.3, w.y) + vec3(0.0, uTime * 0.003, 0.0), 1.4, lod);
-    // Erosion bites the thin edges hardest.
-    d = clamp(d - (1.0 - d) * (e.g * 0.625 + e.b * 0.25 + e.a * 0.125) * 0.6, 0.0, 1.0);
-  }
-  return d;
+  const float base = 1.55;
+  // The cell map sets each dome's height; more cover makes bigger, closer cells.
+  float cell = cn(vec3(w.x, 3.1, w.y), 7.0, lod).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  float top = base - 0.1 + (0.6 + 1.4 * c) * sqrt(loc) + lift;
+  // Depth inside, in km: the dome above, the flat base below.
+  float sh = min(top - p.y, (p.y - base) * 1.5);
+  float A = 0.16 + 0.34 * loc + 0.4 * lift / (lift + 1.0);
+  // Even the biggest lump cannot reach this point.
+  if (sh < -A * 0.55) return 0.0;
+  float fb = sh + A * deckBillow(w, p.y, lod);
+  if (fine) fb += A * 0.4 * deckBillowFine(w, p.y, lod);
+  gDeckSh = sh; gDeckA = A; gDeckFb = fb;
+  // The edge is crisp near; far off it softens with the footprint.
+  return smoothstep(0.0, 0.1 + 0.08 * lod, fb);
 }
 // Optical depth toward the light, in growing steps.
 float deckLight(vec3 p, float lod) {
@@ -704,9 +726,10 @@ vec4 deck(vec3 d) {
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
-  // In a storm the deck takes the towers' murk light.
+  // In a storm the deck takes the towers' murk light and their dimmed sun.
   // So deck and towers read as one.
-  vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 0.75 * uStorm : vec3(0.0);
+  vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 1.05 : vec3(0.0);
+  float sunStorm = 1.0 - 0.85 * uStorm;
   vec3 col = vec3(0.0), last = vec3(0.0);
   float Tc = 1.0, lastD = 0.0;
   for (int i = 0; i < 40; i++) {
@@ -716,6 +739,8 @@ vec4 deck(vec3 d) {
     float lod = lodAt(t, 7.0);
     deckStorm(w);
     float dn = deckDens(p, lod, lod < 3.0);
+    // Light taps overwrite the shape terms, so keep this sample's.
+    float dSh = gDeckSh, dA = gDeckA, dFb = gDeckFb;
     if (dn > 0.002) {
       float h01 = clamp((p.y - 1.55) / 2.0, 0.0, 1.0);
       vec3 S = vec3(0.0);
@@ -725,11 +750,17 @@ vec4 deck(vec3 d) {
         float Tl = max(exp(-SIG * od), 0.5 * exp(-SIG * od * 0.2));
         // Powder: thin edges facing away from the light look dark.
         float powder = 1.0 - exp(-SIG * dn * 0.6);
-        S += uSunL * 0.05 * sunK * Tl * phase * mix(1.0, powder, 0.55);
+        S += uSunL * 0.05 * sunK * sunStorm * Tl * phase * mix(1.0, powder, 0.55);
       }
       // Sky light from above; the base sees less of it.
-      S += uAmb * 0.026 * (0.3 + 0.7 * h01);
-      if (uStorm > 0.0) S += murk * (0.25 + 0.75 * clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0));
+      // Lump crowns catch the sky; creases deep in the dome do not.
+      float crease = clamp(0.7 - 1.4 * dSh / max(dA, 0.05), 0.15, 1.2);
+      float open = exp(-3.0 * max(dFb, 0.0)) * crease;
+      float sky = (0.3 + 0.7 * h01) * (0.3 + 0.9 * open);
+      // Murk light is flat, as on the towers: folds and crowns see about the same.
+      float hk = clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0);
+      sky = mix(sky, 0.45 * (0.4 + 0.6 * hk), 0.6 * uStorm);
+      S += mix(uAmb * 0.026, murk, uStorm) * sky;
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
@@ -1045,26 +1076,33 @@ float sdUnevenCapsule(vec2 p, float r1, float r2, float h) {
 // gAmp: billow size. gTile: billow noise tile.
 // gGrow: density as the cell forms.
 // gAnv: how far the anvil has spread.
+// gSpread: how far the side turrets stand out. gDecay: how far the column has thinned.
+// gRain: the rain shaft's strength.
 vec2 gAx; vec3 gSeed;
 float gRc, gBase, gTop, gLen, gR1, gR2, gLean, gOver, gAmp, gTile, gGrow, gAnv;
+float gHasAnv, gSpread, gDecay, gRain;
 vec4 gTur[4];
 
-void setTower(vec4 a, vec4 b) {
+void setTower(vec4 a, vec4 b, vec4 v) {
   float s = b.y;
   gGrow = smoothstep(0.0, 0.3, s);
   gRc = a.z * 0.36;
   gBase = 2.3;
+  // A towering cumulus has no anvil; a decaying cell keeps a wide one.
+  gHasAnv = step(0.01, v.x);
+  gSpread = v.z; gDecay = v.w;
+  gRain = mix(0.25, 1.0 - 0.5 * v.w, gHasAnv);
   // The top climbs first.
   // The anvil spreads once the top meets the tropopause.
   gTop = mix(gBase + 3.5, a.w, smoothstep(0.05, 0.6, s));
-  gAnv = smoothstep(0.3, 0.9, s);
-  gLen = a.z * 1.35 * gAnv + 0.3;
+  gAnv = smoothstep(0.3, 0.9, s) * gHasAnv;
+  gLen = a.z * 1.35 * gAnv * v.x + 0.3;
   gAx = vec2(cos(b.z), sin(b.z));
-  gLean = gRc * 0.4;
+  gLean = gRc * 0.4 * v.y;
   gR1 = gRc * (0.8 + 0.45 * gAnv);
   gR2 = clamp(gRc * 0.7 + gLen * 0.42, gR1 - gLen * 0.8, gR1 + gLen * 0.8);
   // The overshooting top heaves slowly up and down.
-  gOver = gRc * 0.45 * smoothstep(0.5, 1.0, s) * (0.8 + 0.2 * sin(uTime * 0.05 + b.x));
+  gOver = gRc * 0.45 * smoothstep(0.5, 1.0, s) * (0.8 + 0.2 * sin(uTime * 0.05 + b.x)) * gHasAnv * (1.0 - v.w);
   gAmp = gRc * 0.4;
   gTile = clamp(gRc * 1.6, 5.0, 11.0);
   gSeed = vec3(b.x * 0.71, b.x * 0.37, b.x * 0.53);
@@ -1075,9 +1113,12 @@ void setTower(vec4 a, vec4 b) {
   for (int j = 0; j < 4; j++) {
     float fj = float(j);
     vec2 h = hash22(vec2(b.x * 1.37 + fj * 7.1, fj * 3.3 + 1.0));
-    float ang = h.x * 6.2832, off = j == 0 ? 0.0 : gRc * (0.4 + 0.4 * h.y);
+    float ang = h.x * 6.2832, off = j == 0 ? 0.0 : gRc * (0.4 + 0.4 * h.y) * gSpread;
     float rad = j == 0 ? gRc * 0.8 : gRc * (0.4 + 0.22 * hash12(h * 9.1));
-    float top = j == 0 ? gTop - 0.4 : mix(gBase + 1.5, mix(gBase + 3.0, gTop - 3.2, 0.2 + 0.8 * hash12(h + 4.2)), smoothstep(0.0, 0.8, s));
+    float top = mix(gBase + 3.0, gTop - 3.2, 0.2 + 0.8 * hash12(h + 4.2));
+    // In a multicell cluster the side turrets climb nearly as high as the core.
+    top = mix(top, gTop - 0.8 - 1.6 * hash12(h + 8.3), clamp(gSpread - 1.0, 0.0, 1.0));
+    top = j == 0 ? gTop - 0.4 : mix(gBase + 1.5, top, smoothstep(0.0, 0.8, s));
     gTur[j] = vec4(vec2(cos(ang), sin(ang)) * off * wide, rad * wide, top);
   }
 }
@@ -1101,7 +1142,7 @@ float towerShape(vec3 p, out float aw) {
   // It narrows as it climbs, so the column rises out of it.
   // Lobes break its outline from a circle.
   float lobe = 1.0 + 0.28 * sin(3.0 * atan(q.y, q.x) + gSeed.x) + 0.15 * sin(5.0 * atan(q.y, q.x) - gSeed.y);
-  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * gGrow * lobe;
+  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * gGrow * lobe * mix(1.0, gSpread, 0.5);
   col = smax(col, min(fr - length(q), (gBase + 4.5 - y) * 0.8), gRc * 0.5);
   // The base is flat.
   col = smin(col, (y - gBase) * 2.0, 0.3);
@@ -1115,8 +1156,8 @@ float towerShape(vec3 p, out float aw) {
   float top = gTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
   float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (0.4 + 0.6 * gAnv) * (1.0 - 0.85 * ku * ku);
   float an = smin(-sdUnevenCapsule(uv, gR1, gR2, gLen), smin(top - y, y - bot, 0.3), 0.8);
-  // A young cell has no anvil yet.
-  an -= (1.0 - gAnv) * 4.0;
+  // A young cell has no anvil yet; a towering cumulus never grows one.
+  an -= (1.0 - gAnv) * 4.0 + (1.0 - gHasAnv) * 20.0;
   // The overshooting top: a squat dome rooted on the core turret's head.
   float ov = gOver - length(vec3(q.x, (y - gTop + 0.4 + gOver * 0.2) * 1.35, q.y));
   // The overshoot boils like the column, so it takes full billows.
@@ -1178,7 +1219,7 @@ vec4 rainShaft(vec3 d, vec2 dh, float a2, vec2 C, float tEnd, vec3 pf, float fl,
     vec3 q = vec3(rel.x, y, rel.y) - (pf - vec3(Cs.x - C.x, 0.0, Cs.y - C.y));
     col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + vec3(0.75, 0.77, 1.0) * fl * 0.8 * exp(-length(q) / 5.0));
   }
-  float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow;
+  float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow * gRain;
   return vec4(col / max(od, 1e-4) * al, 1.0 - al);
 }
 
@@ -1296,10 +1337,11 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       vec4 r = stem(d, dh, t0, t1, a, b, f, jit, phaseOld, sunK, tIn);
       col = r.rgb; Tc = r.a;
     } else {
-      setTower(a, b);
+      setTower(a, b, uTwD[i]);
       float deckTop = DECK_HI;
-      // The bound: a cylinder round the core and the whole anvil fan.
-      float back = max(gR1, gRc * 2.5) + gLean, fwd = max(gLen + gR2, gRc * 2.5 - gLean);
+      // The bound: a cylinder round the core, the foot and the whole anvil fan.
+      float foot = gRc * 2.5 * max(1.0, gSpread * 0.9);
+      float back = max(gR1, foot) + gLean, fwd = max(gLen + gR2, foot - gLean);
       vec2 Cb = C + gAx * (gLean + 0.5 * (fwd - back));
       float Rb = 0.5 * (fwd + back) + gAmp * 0.5 + 0.6;
       float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
@@ -1328,7 +1370,10 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // The anvil is ice: far out, it frays to a veil.
         float far = aw * smoothstep(0.0, gLen + gR2, dot(p.xz, gAx));
         fb -= far * 0.6;
-        float dn = smoothstep(0.0, 0.3, fb) * gGrow * (1.0 - 0.7 * far);
+        // A decaying column frays and thins below its anvil.
+        float dc = gDecay * (1.0 - aw);
+        fb -= dc * A * 0.5;
+        float dn = smoothstep(0.0, 0.3 + 0.9 * dc, fb) * gGrow * (1.0 - 0.7 * far) * (1.0 - 0.5 * dc);
         if (dn < 0.004) { t += st; continue; }
         if (tIn < 0.0) tIn = t;
         float h01 = clamp((p.y - gBase) / (gTop - gBase), 0.0, 1.0);

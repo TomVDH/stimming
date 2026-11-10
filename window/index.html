@@ -543,40 +543,55 @@ function newCell(ahead) {
     if (near > room) { room = near; best = [ah, sd]; }
   }
   const [a, side] = best;
-  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
-    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
+  return { x: cam.x + a, z: cam.z + side, s: 0, life: rnd(90, 220), age: 0, seed: rnd(0, 100),
+    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2, ...cellKind() };
+}
+// Four kinds of cell, so no two storms look alike.
+// v: anvil size (0 for none), lean, turret spread, decay.
+// flashK: how often the cell flashes.
+function cellKind() {
+  const k = Math.random();
+  // A towering cumulus: no anvil, a crisp cauliflower top at 7 to 10 km.
+  if (k < 0.3) return { kind: 'tcu', r: rnd(5, 11), top: rnd(7, 10), v: [0, rnd(0.1, 0.5), rnd(0.6, 1), 0], flashK: 0.2 };
+  // A multicell cluster: broad, with side turrets nearly as tall as the core.
+  if (k < 0.5) return { kind: 'multi', r: rnd(12, 24), top: rnd(9.5, 12.5), v: [rnd(0.3, 0.8), 0.5, rnd(1.4, 1.9), 0], flashK: 1.2 };
+  // A decaying cell: a wide, old anvil over a frayed, thinning column.
+  if (k < 0.65) return { kind: 'old', r: rnd(12, 22), top: rnd(12, 14), v: [rnd(1.3, 1.9), 1, 1, rnd(0.5, 0.85)], flashK: 0.4 };
+  // A mature cumulonimbus, its anvil and lean varied.
+  return { kind: 'cb', r: rnd(9, 22), top: rnd(11.5, 14.5), v: [rnd(0.7, 1.5), rnd(0.3, 1), 1, 0], flashK: 1 };
 }
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 // The tower's frame without billows, as setTower in the shader builds it.
 // The top climbs first; the anvil spreads once the top arrives.
 function towerGeom(c) {
-  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s);
+  const v = c.v || [1, 1, 1, 0];
+  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s) * (v[0] > 0 ? 1 : 0);
   const top = base + 3.5 + (c.top - base - 3.5) * smooth(0.05, 0.6, c.s);
-  const len = c.r * 1.35 * anv + 0.3, r1 = rc * (0.8 + 0.45 * anv);
+  const len = c.r * 1.35 * anv * v[0] + 0.3, r1 = rc * (0.8 + 0.45 * anv);
   const r2 = clamp(rc * 0.7 + len * 0.42, r1 - len * 0.8, r1 + len * 0.8);
-  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4, ax: [Math.cos(c.shear), Math.sin(c.shear)] };
+  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4 * v[1], ax: [Math.cos(c.shear), Math.sin(c.shear)] };
 }
-// A calmer storm retires its oldest cells; they die back over 15 s.
-// A stronger one adds a cell every few seconds; each towers up over 20 s.
+// A calmer storm retires its oldest cells; they die back over 40 s.
+// A stronger one adds a cell every 6 to 14 s; each towers up over 45 s.
 let cellNext = 0;
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
-    c.s = clamp(Math.min(c.age / 20, (c.life - c.age) / 15));
+    c.s = clamp(Math.min(c.age / 45, (c.life - c.age) / 40));
     if (c.age > c.life || c.x - cam.x < -120) cells.splice(i, 1);
   }
   const live = cells.filter(c => !c.dying);
   live.sort((a, b) => b.age - a.age);
   for (let n = live.length; n > want; n--) {
     const c = live[live.length - n];
-    c.dying = true; c.life = Math.min(c.life, c.age + 15);
+    c.dying = true; c.life = Math.min(c.life, c.age + 40);
   }
   if (live.length < want && t > cellNext) {
     // Half arrive in view, half far ahead.
     cells.push(newCell(Math.random() < 0.5));
-    cellNext = t + rnd(1.5, 4);
+    cellNext = t + rnd(6, 14);
   }
 }
 // A flash is a burst of strokes within about a second.
@@ -607,7 +622,7 @@ function stepFlashes(dt) {
     // A cell recharges between flashes: about one every 10 to 40 s, often a quick second one.
     if (c.next === undefined) c.next = t + rnd(1, 20);
     if (c.s > 0.3 && t > c.next) {
-      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(10, 40) / (0.5 + opts.storm));
+      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(10, 40) / (0.5 + opts.storm) / (c.flashK || 1));
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
@@ -685,7 +700,7 @@ const dimT = v => DIM_K.map(k => Math.exp(-v * k));
 /* ---------- loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
 const spr = new Float32Array(8);
-const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4);
+const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4), twD = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
@@ -714,11 +729,11 @@ function stepTurb(dt) {
   turb.vx += (-60 * turb.x - 7 * turb.vx) * dt; turb.vy += (-60 * turb.y - 7 * turb.vy) * dt;
   turb.x += turb.vx * dt; turb.y += turb.vy * dt;
 }
-// The slider sets a target; the weather eases toward it over about five seconds.
+// The slider sets a target; the weather eases toward it over about half a minute.
 let stormTarget = opts.storm;
 function step(dt) {
   t += dt;
-  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / 5);
+  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / 20);
   if (Math.abs(stormTarget - opts.storm) < 1e-3) opts.storm = stormTarget;
   stepTurb(dt);
   stepAurora(dt);
@@ -1260,7 +1275,7 @@ function render() {
   UG.uniform1i(u.uTowSteps, quality() === 'high' ? 64 : 40);
   UG.uniform1i(u.uTowOct, 3);
   UG.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.5);
-  UG.uniform4fv(u['uTw[0]'], tw); UG.uniform4fv(u['uTwB[0]'], twB); UG.uniform4fv(u['uTwC[0]'], twC);
+  UG.uniform4fv(u['uTw[0]'], tw); UG.uniform4fv(u['uTwB[0]'], twB); UG.uniform4fv(u['uTwC[0]'], twC); UG.uniform4fv(u['uTwD[0]'], twD);
   UG.uniform1i(u.uNTw, n);
   UG.uniform4fv(u['uFl[0]'], fl);
   const b0 = EV.boom;
@@ -1439,6 +1454,7 @@ function towerUniforms() {
   near.forEach(({ c }, i) => {
     tw.set([c.x, c.z, c.r, c.top], i * 4);
     twB.set([c.seed, c.s, c.shear, c.glow * opts.towns * sky.h.lit], i * 4);
+    twD.set(c.v || [1, 1, 1, 0], i * 4);
     // The brightest flash inside this cell lights it from within.
     let best = null;
     for (const f of flashes) if (f.cell === c && (!best || f.level > best.level)) best = f;
@@ -1564,7 +1580,7 @@ onQuality(() => resize(true));
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
-for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
+for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(50, 80); c.s = 1; cells.push(c); }
 buildSky(firstSky);
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);
@@ -1583,8 +1599,11 @@ const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
 function stepBank() {
   if (t > roll.t0 + roll.dur + roll.hold) {
     roll.from = bank / D2R;
-    roll.to = Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
-    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / 2; roll.hold = rnd(12, 45);
+    // About one turn in five is steep: up to 28 degrees, rolled in briskly.
+    // The fast roll throws the ailerons and spoilers hard.
+    const steep = Math.random() < 0.2;
+    roll.to = steep ? (Math.random() < 0.6 ? rnd(20, 28) : rnd(-20, -14)) : Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
+    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / (steep ? 4 : 2); roll.hold = steep ? rnd(8, 18) : rnd(12, 45);
   }
   const k = clamp((t - roll.t0) / roll.dur), e = k * k * k * (k * (k * 6 - 15) + 10);
   // A slow wander rides on top, as the autopilot trims.

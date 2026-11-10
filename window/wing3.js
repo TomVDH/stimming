@@ -264,8 +264,8 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
-      // About 7 degrees of aileron hold a 3 degree-a-second roll.
-      const ail = Math.max(-0.14, Math.min(0.14, -mo.rate * 2.5));
+      // About 7 degrees of aileron hold a 3 degree-a-second roll; 12.6 at most.
+      const ail = Math.max(-0.22, Math.min(0.22, -mo.rate * 2.5));
       // More bank asks for more lift, so the flaps trim down a little.
       const trim = Math.max(-0.035, Math.min(0.035, (bank - 6 * Math.PI / 180) * 0.15));
       hinged.forEach(h => {

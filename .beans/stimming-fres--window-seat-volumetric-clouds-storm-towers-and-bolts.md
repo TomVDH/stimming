@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-08T10:29:43Z
+updated_at: 2026-11-10T08:12:56Z
 parent: stimming-w1nd
 ---
 
@@ -35,3 +35,5 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 - Towns: lamps line each town's own street grid, with avenues and three lamp colours; the glow is softer.
 - Round 4 (Tom: things look weird): smooth cubic fetch of the noise volume ends blocky cloud edges; far deck uses a blurred closing sample and haze, the mid layer fades with distance; towns cross-fade street grids where they meet, streets bend, rural lamps shrink; the aurora gains folds, a wavy lower edge and a soft wing reflection.
 - Round 5: Tom found the clouds had regressed after the tiling fix. Cover reads the noise volume again at two turned, odd scales (no repeat, cumulus clusters kept); the night sky dims alone (skyK). Streets are now lit avenue stretches over scattered house lights. Tom: looks better.
+
+Round 5 (Tom: the deck as the towers; gentler storms; more variety): the deck is now cumulus domes with flat bases. A cell map sets each dome's height. Tower-style billows (three Worley sizes, plus fine lumps near) break the surface; the edge is crisp near and soft far. Crease light: crowns catch the sky, folds do not. In a storm the deck takes the towers' dimmed sun, murk dome and flat murk light, so both read as one. Storm slider eases over about 20 s (was 5). Cells tower up over 45 s, die back over 40 s, arrive every 6 to 14 s. Four cell kinds: towering cumulus (no anvil, 7 to 10 km, little rain and lightning), multicell cluster (side turrets nearly as tall), decaying cell (wide anvil, frayed column), mature Cb (varied anvil and lean). Steep banks: one turn in five rolls briskly to 14 to 28 degrees, so the ailerons and spoilers move more.
