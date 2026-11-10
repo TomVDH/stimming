@@ -163,6 +163,169 @@ Wind bed with a whistle past the pylon, dipping under a charge. A charge synth o
 - [x] Impact fireball, shock shells, blast light on the plain, the gun and the smoke.
 - [x] Q1 to Q10 again at three sizes, rungs 2 and 3. Commit: `Railgun: one gun, a slow fall, blast and shock`.
 
+### Task 10: The gun, the shot and the shatter (design)
+
+Bean `stimming-z9w9`, branch `claude/railgun-shot-99c65f`. Tom, 2026-11-10: "the gun, the muzzle effects and projectile, the incoming threats and the explosion thereof upon destruction".
+Decisions: the Volumetric direction for the shot; the barrel glows after a shot and cools; a main rock with two to four fragments.
+Tom, 02:32, added: "the harmonic wind up should culminate in a thx like chorus right before firing -- we can hold the gun a little longer -- it will really start acting out if we hold it for too long". Then: a hold past the acting-out vents the charge (a soft fail).
+Tom, 02:50, sent two samples: "impact sound direct prelude and explosion boom". `railgun/impact.mp3` (a whoosh into an impact, peak at 1.85 s) lands on the hit flash; `railgun/boom.mp3` plays slow, low and dark (Tom: "longer darker deeper"), and lands after the hit by the distance at sound speed, compressed eight times (Tom: "a delay commensurate with the distance"), about 15 to 17 s. It replaces the synth rumble.
+
+**Fixed.** The smoke train keeps its look: no edit to `trail()`, the march or the `PU.*` uniforms. A change there needs a before/after still for Tom first.
+The sky, the cirrus, the sun and the time of day belong to another session: no edit to `k2skyB`, `wisps`, `sun`, `sunDeg`, `setSun` or the Sun slider.
+`hitFlash`, `hitGlow` (the GLSL sky term) and `uAst.w` keep their names and meaning.
+
+**Before.** Stills at 1280 × 800, full charge: the muzzle flash and the fireball are flat white discs; the shock shells are clean circles square to the lens; the bolt is a short spark and a level lens streak; the gun reads as stacked boxes; the rock is a smooth ball.
+
+#### The gun
+
+- A boxy muzzle brake, about 70 m long, with three pairs of side ports. It replaces the three plates at stations 872 to 896.
+- Cable bundles sag along the barrel from the breech housing to the cradle: tubes on a catenary, tone 2.
+- Recoil: the barrel runs back as now. The cradle pitches up 0.5° and settles as a damped spring over two seconds. The deck sways 0.1°. Dust falls off the ledges.
+- Tracking: a spring and damper on yaw and elevation. The slew speeds up, overshoots a little and settles. The top rate stays 3.2° a second.
+- Heat: one uniform `uHeat`, 1 on the shot, gone in about ten seconds. The rails and the brake take a blackbody ramp, white-yellow to dull red, hottest at the muzzle. White steam wisps rise off the barrel through the dust buffer.
+- At rest the gun stays cold stone; nothing on it glows.
+
+#### The hold
+
+| Held | Stage | What happens |
+|---|---|---|
+| 0 to 10 s | Build | Power climbs on an ease that reaches 1 at 10 s. Chaos and arcs grow as now, slower. |
+| 10 s | Full | The chord locks. One hard shudder. |
+| 10 to 14 s | Ready | Power holds at 1. The chord rings; the gun shivers. The clean shot. |
+| 14 to 24 s | Over-hold | The gun acts out, past today's rage: arcs strike the plain far out; the rails glow red while charging; tone-2 plates rattle; sparks spit from the brake; heavy shake; lens fringe. A release fires an overcharged shot, power up to 1.25, with a bigger blast. |
+| 24 s | Vent | The gun dumps the charge into the plain: one huge strike under the barrel, a dust burst, a shock ring on the ground. No shot; the rock keeps coming. |
+
+- Today's constants move: `levelOf`, `chaosOf`, the rage band, `CHASE_T`, and the 2.5 s constant in `__qa.charge`.
+- `__qa.charge(c)` takes 0.12 to 1.25; above 1 it sets the over-hold.
+- This replaces "no fail state yet": the vent is a soft fail.
+
+#### The chorus
+
+An original swell. It uses no recording, notes, sweep or score of the THX Deep Note.
+- A choir of formant voices (sawtooth through two vowel bandpasses) grows out of the hum. The voices start on the hum's own harmonics.
+- Through the build they climb on their own curves and spread into a beating cluster. Their vowel opens from "oo" to "ah".
+- At full charge they lock into one wide chord of the gun's own: a suspended minor voicing on the hum's root, over five octaves. The ten partials stay as the body under it.
+- In the over-hold the chord sours: the voices drift sharp and flat, beat hard, distort and split into a screaming cluster.
+- The vent cuts the choir to a crash and a falling groan.
+- All of it runs through `kit.out`; mute and a hidden tab stop it at once.
+
+#### Muzzle
+
+- The flat flare disc goes.
+- A plasma plume: a raymarched volume on a short capsule along the bore, 600 m long at full charge. It reads `volRT`. It burns white-blue for 0.2 s, then cools to grey smoke that drifts with the wind and thins out over twelve seconds.
+- Two side jets from the brake ports: glints square to the barrel, 0.15 s.
+- A spiked flare: four soft rays and a short anamorphic streak, 0.1 s.
+- A condensation shell replaces `muzRingA` and `muzRingB`: a thin noisy spherical shell ahead of the muzzle, lit by the sun, gone in under a second.
+- The Mach ring on the ground (`uShock`) stays.
+- The dust front becomes a rolling ring: bigger, darker puffs that roll out and climb from the muzzle's foot.
+
+#### The bolt
+
+- The head: a white-hot slug in a blue sheath; the streak behind it is longer.
+- The ion line: the path from the muzzle to the target stays in the sky. It glows blue-white for half a second after the head passes, then cools to a thin white contrail. The contrail widens, bends in the wind and fades over about 25 seconds. One ribbon with its width in metres, its edges cut by noise.
+- The blast lights the far end of the line.
+
+#### The threats
+
+- One shape per size: Boulder long and thin, Mountain lumpy, Moon wide with craters. The bake adds ridged noise and a few flat cuts, so the outline is craggy.
+- Ablation: glowing bits break off the hot face, fall back into the smoke and burn out. K6 stars, spawned at the head while the rock falls.
+- Fragments: two to four small rocks fall on their own tracks a few kilometres off the main track. One instanced mesh with a hot face. Each has a thin smoke trail: a cheap noise ribbon, not the raymarched train.
+- A shot hits only the main rock. Each fragment breaks into embers when the blast's shock reaches it.
+
+#### The explosion
+
+- A raymarched fireball on a sphere proxy at the hit. Tom, 03:17: "far more slow, dramatic sweeping - MASSIVE scale". It swells from R to about 12R over twelve seconds, white core, orange billows, red, then a soot cloud that rises and hangs for a minute. The shock front sweeps 36 km out toward the eye over half a minute; the Wilson shell grows to 20 km and burns off in about twelve seconds. Shards drift slower and live sixteen seconds. The next rock comes 22 s after the hit.
+- A condensation shell (a Wilson cloud) flashes round the fireball and burns off. It replaces `hitRingA` and `hitRingB`.
+- More shards, craggier; each trails burning smoke through K6 stars.
+- The embers fall in longer arcs through the cloud.
+- A new uniform `uBlast` (vec4: world position, strength) carries the blast light. The gun, the ground and the trail read it; the other session's clouds may read it too.
+
+#### Cost
+
+- The plume, the fireball and the shells draw only while a shot is live.
+- Rungs 2 and 3 cut their march steps, as they do for the train.
+- The target holds: 30 fps at 1280 × 800 on High through charge, shot and hit.
+
+#### Tom's notes, 03:37
+
+- The default lens is a far wider shot (55°, portrait 74°).
+- The gun parks at rest: straight down the causeway, 8° up. A hold traverses it slowly onto the firing solution; after the hit it parks again.
+- The shot sound is Tom's cannon render at the muzzle exit; the synth slug chirp and the Mach crack are gone. The boom lands about 10 s after the flash (14x compressed).
+- A bright white lens flare with ghosts on the impact, in the grade pass.
+- The camera's near plane moves from 0.5 m to 20 m: the rocks z-fought at 40 km.
+- Next mode (not built): a scope view with the projectile in its sights; the sight's display filter is the cake. Little or no interaction.
+- Tom, 03:47: the debris keeps falling and burns up near the ground; the main plume lingers and breaks up into smaller trails behind the big chunks; the soot cloud dissipates sooner through the noise; the next rock waits 50 s after the hit.
+- Reset: the clouds session's runaway spin (on main) is the timelapse; it also runs 22 s after a hit, speeds the sim up to 30x and lands on a new rock with a rolled size.
+- Tom, 03:59 to 04:06: rolled rock sizes (a dev row pins one); a Charge sound row (Hum, Blend, Choir); the cursor leans the lens; a hold pushes in; dunes; mini comet trains on the debris; the tail fades from its tip.
+- Next (not built): the breech ejects a spent shell a little after the shot; it falls with a thump and a dust burst on the desert.
+- Next (not built): a scope mode with the projectile in its sights.
+
+### Task 10: steps
+
+All code stays in `railgun/index.html`. A test here is a probe in the browser pane through `__qa`, plus a still to the local sink. No Playwright.
+`__qa.freeze()` holds the clock; `__qa.run(t)` steps it in frames. Stills go through `snap(name)` at 1280 × 800.
+
+**Global constraints.** three.js 0.170 and the importmap as is; no new library. 30 fps at 1280 × 800 on High. Code comments in ASD-STE100, twelve words or fewer. Commit only through `tools/commit.sh`. Every step ends with a clean console.
+
+**Review focus.**
+1. A release in the same frame as the vent: one outcome only, no shot after the vent.
+2. Mute or a hidden tab mid-chorus or mid-over-hold: the choir stops at once; a hidden tab never vents.
+3. A size change with fragments in the sky: fragments retune and keep off the main track.
+4. Reduced motion: no rattle, no shake; the vent and the volumes still show, at half strength.
+5. A press during a vent or a live shot: it charges, but never fires twice.
+
+**Shared names.** `HOLD = { full: 10, ready: 14, vent: 24 }`. `stageOf(held)` returns `'build' | 'full' | 'ready' | 'over' | 'vent'`. Uniforms in `U`: `uHeat` (float), `uBlast` (vec4, world xyz and strength), `uOver` (float, 0 to 1 through the over-hold). One GLSL chunk `VOLFX` holds the sphere and capsule march that the plume and the fireball share; it reads `volRT`.
+
+#### 10.1 The hold
+
+- [ ] Probe first: `__qa.hold(t)` sets the held time; `__qa.level()`, `__qa.stage()`. Expect `hold(5)` → build, level < 0.9; `hold(10)` → level 1; `hold(12)` → ready; `hold(18)` → over, level about 1.1; `hold(24.1)` → vent, no shot, `charge` null.
+- [ ] `levelOf(held)`: an ease to 1 at `HOLD.full`, then 1 to 1.25 through the over-hold. `chaosOf` and the rage band stretch to the new times. `uOver` tracks the over-hold.
+- [ ] Over-hold acting out: far strikes, red rails while charging (through `uHeat`), tone-2 rattle in `aim()` by `uOver`, brake sparks, heavier shake, lens fringe.
+- [ ] `vent()`: a strike under the barrel, a dust burst, a ground shock ring through `uShock`; the rock keeps coming. Review focus 1 and 5 pass.
+- [ ] `__qa.charge(c)` takes 0.12 to 1.25. Commit: `Railgun: a longer hold, an over-hold, a vent`.
+
+#### 10.2 The chorus
+
+- [ ] Probe first: `__qa.audio()` adds `voices` and `locked`. Expect voices > 0 under a hold with sound on, `locked` true at level 1, voices 0 one second after release, mute or hide.
+- [ ] Formant voices from the hum's harmonics; climb and spread; vowel "oo" to "ah"; lock into a suspended minor chord on the root at full; sour in the over-hold; crash and groan on the vent.
+- [ ] Review focus 2 passes. Tom listens. Commit: `Railgun: a choir that locks at full charge`.
+
+#### 10.3 The gun
+
+- [ ] The muzzle brake with three port pairs; cable bundles. Still at rest: the barrel reads past the boxes.
+- [ ] Spring tracking on yaw and elevation, 3.2° a second top rate. Probe: `aimNow.err` settles to under 0.004 after a respawn, with one small overshoot.
+- [ ] Recoil: cradle pitch 0.5° on a damped spring; deck sway; ledge dust.
+- [ ] `uHeat`: blackbody ramp on rails and brake, hottest at the muzzle, gone in ten seconds; steam wisps. Stills at hit + 0, + 5 s, + 12 s. Commit: `Railgun: a braked muzzle, a hot barrel, a hydraulic slew`.
+
+#### 10.4 The muzzle
+
+- [ ] `VOLFX` and the plume on a capsule along the bore: white-blue 0.2 s, grey smoke for twelve seconds. It draws only while a shot is live; `resize()` cuts its steps on rungs 2 and 3.
+- [ ] Side jets, the spiked flare, the condensation shell in place of `muzRingA` and `muzRingB`; the rolling dust ring.
+- [ ] Stills at 0.36, 0.7, 1.5 and 6 s against the before set. fps through the shot. Commit: `Railgun: a plume, side jets and a shell at the muzzle`.
+
+#### 10.5 The bolt
+
+- [ ] The head and its longer streak.
+- [ ] The ion line: one ribbon from the muzzle to the target, blue-white, then contrail, 25 s, wind bend, lit at its far end by `uBlast`.
+- [ ] Stills at 1.5, 3, hit + 2 and hit + 15 s. Commit: `Railgun: an ion line across the sky`.
+
+#### 10.6 The threats
+
+- [ ] `bakeRock` takes a shape kind: long, lumpy, cratered; ridged noise and flat cuts. Stills of all three sizes at s = 0.5.
+- [ ] Ablation sparks from the hot face while the rock falls.
+- [ ] Fragments: two to four, one instanced mesh, own tracks, ribbon trails; they break into embers when the blast shock reaches them. Review focus 3 passes. Commit: `Railgun: a craggy rock and its fragments`.
+
+#### 10.7 The explosion
+
+- [ ] The fireball on `VOLFX`: R to 6R in four seconds; white, orange, then a soot cloud for 30 s.
+- [ ] The Wilson shell in place of `hitRingA` and `hitRingB`; more, craggier shards with smoke trails; longer ember arcs.
+- [ ] `uBlast` lights the gun, the ground and the trail. `hitFlash`, `hitGlow` and `uAst.w` unchanged. Stills at hit + 0.08, 0.6, 2, 5 and 20 s. Commit: `Railgun: a fireball, a shell and a debris cloud`.
+
+#### 10.8 QA and the PR
+
+- [ ] Clean console; 30 fps through charge, over-hold, shot and hit at 1280 × 800, 375 × 812 and 812 × 375; rungs 2 and 3. Review focus 4 passes.
+- [ ] The before and after sheet to Tom; Tom signs off. Bean checklist current; PR to `main`.
+
 ## Kit handoff
 
 The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS` with its cirrus, the far-country builder, the dust ring buffer, `makeRing` and `makeGlint`, marked. Any daylight diorama can copy them.
