@@ -246,7 +246,9 @@ void palette(float h, out vec3 c, out float t) {
 }
 void agate(vec2 p) {
   // Bands follow the nodule's outline inward, with a wander.
-  vec2 w = p + 0.12 * vec2(fbm(p * 2.0 + uSeed), fbm(p * 2.0 + uSeed + 9.0)) - 0.06;
+  // Low octaves only, so band edges stay smooth.
+  vec2 sw = p * 1.6 + uSeed;
+  vec2 w = p + 0.12 * vec2(noise(sw) + 0.4 * noise(sw * 2.1), noise(sw + 9.0) + 0.4 * noise(sw * 2.1 + 9.0)) / 1.4 - 0.06;
   float D = 1.0 - ovalR(w * 1.02) + 0.06 * (fbm(p * 2.2 + uSeed) - 0.5);
   float u = pow(max(D, 0.0), 1.15) * 16.0 + 1.6 * fbm(p * 2.0 - uSeed);
   float band = floor(u), f = fract(u);
@@ -373,14 +375,6 @@ float ggx(vec3 N, vec3 H, vec3 L, float a) {
   float NH = max(dot(N, H), 0.0), dd = NH * NH * (a - 1.0) + 1.0;
   return a / (3.14159 * dd * dd) * max(dot(N, L), 0.0) / (4.0 * max(N.z, 0.25));
 }
-vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
-// An integer hash per pixel for the grain.
-float ih(vec2 p) {
-  uvec2 q = uvec2(p);
-  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
-  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
-  return float(n) / 4294967295.0;
-}
 void main() {
   vec2 sp = (gl_FragCoord.xy - uCentre) / uScale;
   vec2 p = uRot * sp;
@@ -501,9 +495,59 @@ void main() {
     }
     col = mix(col, stone, inside);
   }
+  // Linear light out; the composite pass grades it.
+  o = vec4(col, 1.0);
+}`;
 
-  // Grade: vignette, tone map, grain.
-  vec2 q = (gl_FragCoord.xy / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+/* ---------- post ---------- */
+// Bloom: a soft threshold at a quarter size, then a separable blur.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+out vec4 o;
+void main() {
+  // Four bilinear taps average a 4 x 4 block of the source.
+  vec3 c = 0.25 * (texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rgb + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb
+    + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb);
+  float l = max(c.r, max(c.g, c.b));
+  // A soft knee keeps the threshold from drawing hard edges.
+  float k = clamp(l - 0.6, 0.0, 0.8);
+  float w = max(k * k / 3.2, l - 1.0) / max(l, 1e-4);
+  o = vec4(c * w, 1.0);
+}`;
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 0.227027;
+  c += (texture(uSrc, vUv + uDir * 1.3846).rgb + texture(uSrc, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uSrc, vUv + uDir * 3.2308).rgb + texture(uSrc, vUv - uDir * 3.2308).rgb) * 0.0702703;
+  o = vec4(c, 1.0);
+}`;
+// The composite: bloom, vignette, tone map, grain.
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK;
+out vec4 o;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+// An integer hash per pixel for the grain.
+float ih(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 col = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   col *= 1.0 - 0.55 * smoothstep(0.35, 1.15, length(q));
   col = pow(aces(col * 1.1), vec3(1.0 / 2.2));
   col += (ih(gl_FragCoord.xy) - 0.5) * 0.022;
@@ -511,6 +555,17 @@ void main() {
 }`;
 
 const bakeP = program(BAKE_FS), rubP = program(RUB_FS), wetP = program(WET_FS), dryP = program(DRY_FS), shadeP = program(SHADE_FS);
+const brightP = program(BRIGHT_FS), blurP = program(BLUR_FS), compP = program(COMP_FS);
+// The frame targets: full-size linear light, and two bloom buffers.
+// Each resize remakes them; texture() makes one of the given size.
+let hdr = null, bloom = null;
+function frameTargets(W, H, div) {
+  for (const t of [hdr, bloom].flat()) if (t) { gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+  const make = (w, h) => { const tex = texture(Math.max(1, w), Math.max(1, h), gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]), w: Math.max(1, w), h: Math.max(1, h) }; };
+  hdr = make(W, H);
+  const bw = Math.round(W / div), bh = Math.round(H / div);
+  bloom = [make(bw, bh), make(bw, bh)];
+}
 
 /* ---------- buffers ---------- */
 // Stone space spans uExt each way; every map covers that box.
@@ -934,10 +989,12 @@ let size = { w: 1, h: 1, dpr: 1 }, sc = 100, centre = [0, 0], upright = false;
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.4e6 });
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 halves the bloom.
+  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.4e6, low: rung >= 1 });
   canvas.width = Math.max(1, Math.round(w * dpr));
   canvas.height = Math.max(1, Math.round(h * dpr));
   size = { w, h, dpr };
+  frameTargets(canvas.width, canvas.height, rung >= 2 ? 8 : 4);
   upright = w / h < 0.9;
   // The scale is CSS pixels per stone unit.
   sc = upright ? Math.min(0.86 * w / 1.44, 0.4 * h) : Math.min(0.4 * w, 0.4 * h / 0.74);
@@ -967,8 +1024,8 @@ function aimLight(q) {
 
 /* ---------- render ---------- */
 function draw() {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, hdr.w, hdr.h);
   gl.useProgram(shadeP);
   setShape(shadeP);
   const d = size.dpr;
@@ -994,6 +1051,43 @@ function draw() {
   gl.uniform1i(shadeP.u('uWet'), 3);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  post();
+}
+// Bloom on the highlights and flashes, then the grade to the screen.
+function post() {
+  const [b0, b1] = bloom;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.useProgram(brightP);
+  gl.uniform1i(brightP.u('uSrc'), 0);
+  gl.uniform2f(brightP.u('uTexel'), 1 / hdr.w, 1 / hdr.h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b0.fb);
+  gl.viewport(0, 0, b0.w, b0.h);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(blurP);
+  gl.uniform1i(blurP.u('uSrc'), 0);
+  // Two rounds, the second wider, give a soft, round falloff.
+  for (const s of [1, 2.5]) {
+    gl.uniform2f(blurP.u('uDir'), s / b0.w, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fb);
+    gl.bindTexture(gl.TEXTURE_2D, b0.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.uniform2f(blurP.u('uDir'), 0, s / b0.h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b0.fb);
+    gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(compP);
+  gl.uniform2f(compP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(compP.u('uBloomK'), 0.35);
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, b0.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.activeTexture(gl.TEXTURE0);
 }
 
@@ -1007,7 +1101,9 @@ function frame(now) {
   raf = 0;
   let again = false;
   try {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const raw = (now - last) / 1000;
+    if (raw > 0 && raw < 0.1) watchdog(raw);
+    const dt = clamp(raw, 0, 0.05);
     last = now;
     time += dt;
     const k = 1 - Math.exp(-dt / 0.12);
@@ -1024,6 +1120,23 @@ function frame(now) {
     if (again && visible) raf = requestAnimationFrame(frame);
     else kit.rest(() => !raf && !ptr);
   }
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
+// Rungs: pixel ratio 1, then the bloom at an eighth size. It never steps back up.
+let rung = 0, runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 2) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  resize();
 }
 
 /* ---------- pointer ---------- */
@@ -1112,7 +1225,8 @@ ready = true;
 mark('first-frame');
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
-onQuality(() => { resize(); if (ready) draw(); });
+// A new quality choice clears the ladder.
+onQuality(() => { rung = 0; runFor = slowFor = 0; resize(); if (ready) draw(); });
 onReducedChange(() => aimLight(Q0));
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
