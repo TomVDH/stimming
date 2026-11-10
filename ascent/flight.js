@@ -1,4 +1,4 @@
-// Act 2 flight: every state is a function of time t in seconds.
+// Ascent flight: every state is a function of time t in seconds.
 // Time zero is the cut from the tripod to the hull cameras.
 // Units are kilometres; the Earth's centre is the origin.
 // The orbit plane is x-y; the pad stands at (0, R, 0) and flies toward +x.

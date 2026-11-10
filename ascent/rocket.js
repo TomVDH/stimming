@@ -1,4 +1,4 @@
-// Act 2 rocket: two stages, a fairing in halves, flames, trail, vapour and ice.
+// Ascent rocket: two stages, a fairing in halves, flames, trail, vapour and ice.
 // Metres along y from the first stage's engine plane; radius 1.85 m.
 // The group lives in a camera-centred world; the page places it each frame.
 import * as THREE from 'three';

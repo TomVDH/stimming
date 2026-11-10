@@ -1,4 +1,4 @@
-// Act 2 probe: a gold bus, a dish, a boom and two folding solar wings.
+// Ascent probe: a gold bus, a dish, a boom and two folding solar wings.
 // Metres; y points forward, as on the rocket. The bus base sits at y 0.
 import * as THREE from 'three';
 

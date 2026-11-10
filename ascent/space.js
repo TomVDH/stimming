@@ -1,4 +1,4 @@
-// Act 2 backdrop: the air, the Earth, the Moon, the Sun, planets and stars.
+// Ascent backdrop: the air, the Earth, the Moon, the Sun, planets and stars.
 // One full-screen pass in kilometres, from the Earth's centre.
 // The air is single scatter on the GPU, so it holds at every height.
 import * as THREE from 'three';

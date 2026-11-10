@@ -1,4 +1,4 @@
-// Act 2 cameras: static hull mounts with a Dutch roll each.
+// Ascent cameras: static hull mounts with a Dutch roll each.
 // A mount is a place on the hull, a view direction and a lens.
 // Places are in the rocket frame: angle around the body, height, radius.
 import * as THREE from 'three';
