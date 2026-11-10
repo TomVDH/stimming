@@ -724,8 +724,13 @@ function frameFn(now) {
 }
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 // Turbulence: in a storm the plane meets bumpy patches, 5 to 20 s long, with calm between.
-// Inside a patch the cabin jolts now and then; a damped spring carries the eye back.
-const turb = { x: 0, y: 0, vx: 0, vy: 0, next: 0, on: false, until: 0, level: 0 };
+// One smooth gust field drives it all: the cabin's jolts, the wing's flex, the rumble.
+// gw: vertical gust in m/s, up positive. gl: sideways gust.
+// Each is a slow swell (2 s) plus a fast chop (0.35 s), as real air turbulence has.
+// vz: the plane's own climb rate, which follows the gust about a second late.
+const turb = { x: 0, y: 0, vx: 0, vy: 0, on: false, until: 0, level: 0, a: [0, 0, 0, 0], gw: 0, gl: 0, vz: 0, vl: 0 };
+// A standard normal sample.
+const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
 function stepTurb(dt) {
   const s = reduce ? 0 : opts.storm;
   if (t > turb.until) {
@@ -735,12 +740,21 @@ function stepTurb(dt) {
   // Inside a thick fog bank the air is rough whatever the storm.
   const inFog = reduce ? 0 : smooth(0.2, 0.8, fog.level) * 0.9;
   turb.level += (Math.max(turb.on ? s : 0, inFog) - turb.level) * Math.min(1, dt / 1.5);
-  if (turb.level > 0.05 && t > turb.next) {
-    turb.vx += rnd(-1, 1) * turb.level * 0.025; turb.vy += rnd(-1, 1) * turb.level * 0.06;
-    turb.next = t + rnd(0.4, 2.5);
-  }
-  turb.vx += (-60 * turb.x - 7 * turb.vx) * dt; turb.vy += (-60 * turb.y - 7 * turb.vy) * dt;
-  turb.x += turb.vx * dt; turb.y += turb.vy * dt;
+  // Gust strength: about 3.5 m/s at full, moderate turbulence.
+  const sig = 3.5 * turb.level, h = Math.min(dt, 0.05);
+  // Four noise bands: slow and fast, vertical and sideways.
+  [[2.0, 1], [0.35, 0.5], [2.4, 0.4], [0.4, 0.2]].forEach(([tau, k], i) => {
+    turb.a[i] += -turb.a[i] / tau * h + sig * k * Math.sqrt(2 * h / tau) * randn();
+  });
+  turb.gw = turb.a[0] + turb.a[1];
+  turb.gl = turb.a[2] + turb.a[3];
+  // The plane lifts with an updraft; its lag is the jolt you feel.
+  const az = (turb.gw - turb.vz) / 1.1, al = (turb.gl - turb.vl) / 1.1;
+  turb.vz += az * h; turb.vl += al * h;
+  // An upward lurch leaves the eye behind: it dips, and the spring brings it back.
+  turb.vy += (-0.16 * az - 60 * turb.y - 7 * turb.vy) * h;
+  turb.vx += (-0.08 * al - 60 * turb.x - 7 * turb.vx) * h;
+  turb.x += turb.vx * h; turb.y += turb.vy * h;
 }
 // The slider sets a target; the weather eases toward it over about half a minute.
 let stormTarget = opts.storm;
@@ -1305,7 +1319,7 @@ function render() {
   renderer.setRenderTarget(outRT);
   renderer.clear();
   // The aircraft goes first; the outside then fills only the uncovered pixels.
-  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
+  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
     veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
     wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce });
   renderer.render(wing3.scene, wing3.cam);

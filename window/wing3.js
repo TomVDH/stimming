@@ -303,7 +303,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, seatDx = 0, nav = [1, 0.1, 0.05] }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05] }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -317,15 +317,14 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       const dt = mo.t === null ? 0 : t - mo.t;
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
-      // Rough air flexes the wing: two damped springs, at 1.1 Hz and 3.2 Hz.
-      // Gusts kick them; a fog bank brings many more.
-      const rough = shake ? Math.min(1, fogLevel * 1.3) + 0.15 * storm : 0;
-      const sd = Math.min(dt, 0.05);
-      [[1.1, 0.07, 0.5], [3.2, 0.1, 0.18]].forEach(([hz, z, kick], j) => {
-        if (Math.random() < sd * 4 * rough) mo.fv[j] += (Math.random() * 2 - 1) * kick * 6 * rough;
+      // The gust's lift bends the wing in its first two modes, 1.1 Hz and 3.2 Hz.
+      // An updraft lifts the tip about 12 cm per m/s; a downdraft drops it.
+      // Slow swells bend it smoothly; sharp chop sets it ringing.
+      const sd = Math.min(dt, 0.05), g = shake ? gust : 0;
+      [[1.1, 0.07, 0.12], [3.2, 0.1, 0.015]].forEach(([hz, z, perMs], j) => {
         const w = 2 * Math.PI * hz;
-        mo.fv[j] += (-w * w * mo.f[j] - 2 * z * w * mo.fv[j]) * sd;
-        mo.f[j] = Math.max(-0.7, Math.min(0.7, mo.f[j] + mo.fv[j] * sd));
+        mo.fv[j] += (w * w * (perMs * g - mo.f[j]) - 2 * z * w * mo.fv[j]) * sd;
+        mo.f[j] = Math.max(-0.9, Math.min(0.9, mo.f[j] + mo.fv[j] * sd));
       });
       FOG_U.uFlex.value.set(mo.f[0], mo.f[1]);
       FOG_U.uUpW.value.set(0, 1, 0).applyAxisAngle(V(1, 0, 0), bank);
