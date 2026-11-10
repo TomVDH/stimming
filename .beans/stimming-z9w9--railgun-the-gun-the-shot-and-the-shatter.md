@@ -27,7 +27,15 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [ ] Tom signs off on the stills
 - [x] PR to main (TomVDH/stimming#37)
 - [ ] Follow-up: orchestral choir rebuild (sections, strings, brass at the apex, hall; foul within 3 s of the over-hold)
-- [ ] Follow-up: the breech ejects a spent shell that thumps into the desert with dust (Tom, 04:06)
-- [ ] Follow-up: scope mode with the projectile in its sights (Tom, 03:37)
+- [x] The breech ejects a spent brass case (PBR) before the gun parks; a clank, a thump and a dust burst in the foreground
+- [x] Sight mode rides the gun's rangefinder; the lens zooms with the bolt; an old thermal tube with bezel and ladder
 - [ ] Follow-up: PBR gun and Pixar-like dunes with fresnel (Tom, 03:26)
 - [ ] Decision for Tom: ship railgun/shot.mp3 (game-audio render; push blocked, kept local)
+
+## 04:20 pass (Tom)
+- [x] Gun dust, shot dust and case dust are raymarched volumes lit like the comet trail; the sprite puffs are gone
+- [x] Debris trails bend along each shard's arc (four train segments per shard)
+- [x] The barrel slams back 60 m; the cradle and housing ride back a third
+- [x] Reset no longer runs on its own: the chip shows and glows right of Sight after a kill
+- [x] The soot cloud lingers to about 40 s; the blast shoves the trail's head aside
+- [x] Heaps drift, thin away and form again on their own clocks
