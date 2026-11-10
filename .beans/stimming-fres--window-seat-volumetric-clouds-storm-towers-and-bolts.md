@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:44:13Z
+updated_at: 2026-11-10T08:49:38Z
 parent: stimming-w1nd
 ---
 
@@ -43,3 +43,5 @@ Fog banks (Tom): the veil's grain is now long sheets along the flight line that 
 Fog round 2 (Tom: still a sphere): the near fog is now curtains: tall, thin sheets parallel to the cabin (136 m along the flight line, 30 m tall, 9 m thick), marched in 16 jittered steps to 32 m. A ray out of the window crosses several, so each veils its own stretch of wing; the wing's materials march the same field. The far veil lost its sphere pattern and thickens to under 1 km in a thick bank, so gaps between curtains stay grey. The wingtip strobe burns up to six times brighter by day.
 
 Arcade ramp (Tom): the storm builds in about 4 s and calms over about 20 s. While it rises, cells arrive every 1 to 3 s in view and boil up in 12 s (30 s when steady). Each cell fires a burst of two or three flashes as it matures. A big push on the slider answers at once with a flash in the nearest cell (or the deck) and a lurch.
+
+Fog round 3 and lightning (Tom): wing-sized fog banks (408 by 80 by 26 m) join the curtains, so the tip can vanish while the root stays. The strobe and nav light scatter in the fog round the tip, in the outside pass and the wing's own fog; their flares swell in a bank. Far flashes light the cabin and the murk by 1/(1+(d/40 km)^2) and 1/(1+(d/50 km)^2), so horizon storms stay on the horizon. In-cloud flashes come every 4 to 15 s per cell; a mature cell sometimes boils over with 6 to 12 quick flashes. Flash colour is one bluer constant; inner flashes are about 35 % brighter; far towers' flashes are boosted through the haze. Bolts branch twice and carry a core, a blue glow and a violet halo. Horizon storms flicker 180 to 320 km out. The rocket launches 45 to 80 km out. The cabin bed passes two 3 kHz low-passes: it removes an 11 kHz whine and dulls clinks.

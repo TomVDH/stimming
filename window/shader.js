@@ -949,7 +949,9 @@ vec3 stormGlow(vec3 d) {
     vec3 fd = normalize(vec3(l.x - uCam.x, 5.0 - H, l.y - uCam.y));
     float m = max(dot(d, fd), 0.0);
     // A broad soft swell round the flash bearing, never a hard point.
-    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0));
+    // Far flashes stay on the horizon: they barely light the murk round us.
+    vec2 fq = (l.xy - uCam) / 50.0;
+    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0)) / (1.0 + dot(fq, fq));
   }
   return air + FLASH_C * g * 0.02 * max(uStorm, uFog);
 }
@@ -998,9 +1000,12 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
 // Fog curtains: tall, thin sheets parallel to the cabin, long along the flight line.
 // A ray out of the window crosses several, so each veils its own stretch of wing.
 // wing3.js repeats this field for the aircraft; keep the two the same.
+// Large banks, about wing-sized, swallow whole stretches: the tip goes, the root stays.
 float wispDens(vec3 p) {
   float n = textureLod(uNoise, p / vec3(136.0, 30.0, 9.0), 0.0).r * 0.78 + textureLod(uNoise, p / vec3(68.0, 10.0, 3.2) + 0.37, 0.0).g * 0.22;
-  return smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n) * smoothstep(0.05, 0.5, uFog);
+  float bank = textureLod(uNoise, p / vec3(408.0, 80.0, 26.0) + 0.71, 0.0).b;
+  float d = max(smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n), smoothstep(0.62 - 0.2 * uFog, 0.76 - 0.2 * uFog, bank) * 0.85);
+  return d * smoothstep(0.05, 0.5, uFog);
 }
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
@@ -1011,9 +1016,9 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   for (int i = 0; i < 16; i++) {
     if (t >= t1) break;
     float dn = wispDens(d * t + uWisp);
-    // The strobe and nav light glow in wisps by the tip.
+    // The strobe and nav light bloom thickly in fog round the tip.
     float ft = length(d * t - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + uNavC * 0.8 * 0.02) * exp(-ft / 5.0);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 3.0 + uNavC * 0.25) * exp(-ft / 6.0);
     float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;

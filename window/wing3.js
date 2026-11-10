@@ -55,6 +55,7 @@ function loft(sections) {
 const FOG_U = {
   uFogN: { value: null }, uFogLvl: { value: 0 }, uFogWisp: { value: V(0, 0, 0) },
   uUpW: { value: V(0, 1, 0) }, uSpanW: { value: V(0, 0, 1) }, uFlex: { value: new THREE.Vector2() },
+  uTipP: { value: V(0, 0, 0) }, uStrobeL: { value: 0 }, uNavL: { value: V(1, 0.1, 0.05) },
 };
 // The wing bends in its first two modes; s runs root to tip.
 const BEND_GLSL = `
@@ -77,23 +78,29 @@ gl_Position = projectionMatrix * mvPosition;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
+uniform vec3 uTipP, uNavL; uniform float uStrobeL;
 varying vec3 vFogW;`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
-  // Fog curtains between the eye and the skin hide stretches of the wing.
+  // Fog curtains and banks between the eye and the skin hide stretches of the wing.
   // The field matches wispDens in shader.js.
+  // The tip lights scatter in the fog they pass through.
+  vec3 glow = vec3(0.0);
   if (uFogLvl > 0.05) {
     float L = length(vFogW), T = 1.0, dt = L / 16.0;
     vec3 dir = vFogW / L;
     for (int i = 0; i < 16; i++) {
-      vec3 p = dir * dt * (float(i) + 0.5) + uFogWisp;
+      vec3 pw = dir * dt * (float(i) + 0.5), p = pw + uFogWisp;
       float n = texture(uFogN, p / vec3(136.0, 30.0, 9.0)).r * 0.78 + texture(uFogN, p / vec3(68.0, 10.0, 3.2) + 0.37).g * 0.22;
-      float dn = smoothstep(0.64 - 0.16 * uFogLvl, 0.78 - 0.14 * uFogLvl, n) * smoothstep(0.05, 0.5, uFogLvl);
-      T *= exp(-0.22 * dn * dt);
+      float bank = texture(uFogN, p / vec3(408.0, 80.0, 26.0) + 0.71).b;
+      float dn = max(smoothstep(0.64 - 0.16 * uFogLvl, 0.78 - 0.14 * uFogLvl, n), smoothstep(0.62 - 0.2 * uFogLvl, 0.76 - 0.2 * uFogLvl, bank) * 0.85) * smoothstep(0.05, 0.5, uFogLvl);
+      float a = 1.0 - exp(-0.22 * dn * dt);
+      glow += T * a * (vec3(0.9, 0.95, 1.0) * uStrobeL * 3.0 + uNavL * 0.25) * exp(-length(pw - uTipP) / 6.0);
+      T *= 1.0 - a;
     }
     fogFactor = max(fogFactor, 1.0 - T);
   }
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor) + glow;
 #endif`);
   };
 }
@@ -378,6 +385,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       const sT = Math.min(1.1, (V(...tip).dot(FOG_U.uSpanW.value) - 1.2) / 24);
       const bend = FOG_U.uUpW.value.clone().multiplyScalar(mo.f[0] * sT * sT + mo.f[1] * sT * sT * (1 - sT) * 4);
       const tw = V(...tip).add(bend);
+      FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
       return [bend.x, bend.y, bend.z];

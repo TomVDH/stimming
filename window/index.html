@@ -852,8 +852,8 @@ function startEvent(want = null) {
   if (!pool.length && !call) return;
   const kind = call ? (call === 'fireball' ? 'meteor' : call) : pool[Math.floor(Math.random() * pool.length)];
   if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
-  // The rocket lifts off 140 to 200 km out and heads away downrange.
-  if (kind === 'rocket') { const x = cam.x + rnd(40, 110), z = cam.z + rnd(140, 200); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
+  // The rocket lifts off 45 to 80 km out, near enough to see through a storm, and heads downrange.
+  if (kind === 'rocket') { const x = cam.x + rnd(20, 60), z = cam.z + rnd(45, 80); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
   // The impact is rare on its own; the Sights button calls it any time.
   // The impactor strikes 110 to 160 km out, close enough to loom over the wing.
   if (kind === 'boom') EV.boom = { x: cam.x + rnd(25, 60), z: cam.z + rnd(110, 160), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU), shake: 0,
@@ -1280,7 +1280,8 @@ function render() {
   setBasis();
   fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
   let sum = 0;
-  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
+  // Near flashes light the cabin; far ones, past about 40 km, barely do.
+  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level / (1 + (Math.hypot(f.x - cam.x, f.z - cam.z) / 40) ** 2); fl.set([f.x, f.z, f.level, f.r], i * 4); });
   // A fireball lights the whole scene for a moment, as lightning does.
   const flash = Math.min(1.6, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0) + (EV.boom ? (EV.boom.flash || 0) * 1.1 : 0));
 
@@ -1501,8 +1502,10 @@ function flareUniforms(u) {
   // The strobe and the nav light on the wingtip.
   const tipW = norm(toWorld(sub([TIP[0] + seatDx, TIP[1], TIP[2]], basis.eye)));
   // Neither wingtip light throws ghosts: a ghost of -1 cancels them.
-  put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, -1);
-  put(3, tipW, 0.08, 0.35, navCol(), 0, 0, -1);
+  // In a fog bank both lights swell into a wide, soft bloom.
+  const fb = fog.level;
+  put(2, tipW, reduce ? 0 : strobe() * 0.8 * (1 + 1.5 * fb), 0.5 + 1.4 * fb, [0.9, 0.95, 1.0], 0, 0.6 * (1 - fb), -1);
+  put(3, tipW, 0.08 * (1 + 3 * fb), 0.35 + 1.2 * fb, navCol(), 0, 0, -1);
   eventFlares(put);
   UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
@@ -1718,9 +1721,12 @@ async function startBed() {
     const buf = await bedLoad;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buf; src.loop = true;
+    // The recording carries an 11 kHz whine and bright clinks above the rumble.
+    // Two low-passes at 3 kHz remove the whine and dull the clinks; the rumble sits below 2 kHz.
+    const lp = [0, 1].map(() => { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; f.Q.value = 0.707; return f; });
     g.gain.setValueAtTime(0, ac.currentTime);
     g.gain.linearRampToValueAtTime(BED, ac.currentTime + 2);
-    src.connect(g).connect(kit.out);
+    src.connect(lp[0]).connect(lp[1]).connect(g).connect(kit.out);
     src.start();
     bed = { src, g };
     startRumble(ac);
