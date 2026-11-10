@@ -121,7 +121,7 @@ Six targets stand down the lane on thin stands. A steel backstop closes the lane
 
 ### Task 5: Sound
 
-- [ ] Machines, charge, fire, hits and echo through `kit.tone()`.
+- [x] Raw Web Audio through `audioKit` (no Tone.js needed): crane motor, magnet clunk and clank, lever ratchet and lock, steam hiss, refusal buzz, rack clinks; charge as diesel chug, tube hum, rising whine and arc crackle; release zap and thump; muzzle crack; a hit per material, low and long in bullet time; the snap rush and a late echo. Not yet heard by Tom.
 
 ### Task 6: Finish and QA
 

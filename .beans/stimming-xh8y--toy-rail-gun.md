@@ -35,3 +35,5 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
   - [x] Light: contact shadows, rim light, a low sun, a cloud sea under the diorama
   - [x] Materials: edge wear, patina, salt glitter
   - [x] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice
+- [x] Sound: machines, charge, fire, hits, snap; muted by default (2026-11-10, not yet heard by Tom)
+- [ ] Phone, reduced motion and fps check
