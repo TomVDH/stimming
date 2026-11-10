@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:40:48Z
+updated_at: 2026-11-10T19:43:36Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -171,9 +171,11 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] No orange night glow on the base or the plain; the rock warms only a pool under it
 - [x] The ridged cumulus near the horizon melts into the haze at its base; the cirrus edge is back as it was
 
-- [ ] Blast light reaches every object at the same moment (no travel delay)
-- [ ] The lingering glow lights the plain and the gun's side that faces the blast
-- [ ] Glow globes smaller and quieter; they light the smoke round them from inside
-- [ ] Trailed debris: wider spread, more speed, falling on the arc the rock came in on
-- [ ] The big tail fades out slowly after the hit, starting sooner; no broken look
-- [ ] The cumulus heaps dissipate when the blast hits; no hard tufts
+- [x] Blast light reaches every object at the same moment (no travel delay)
+- [x] The lingering glow lights the plain and the gun's side that faces the blast
+- [x] Glow globes smaller and quieter; they light the smoke round them from inside
+- [x] Trailed debris: wider spread, more speed, falling on the arc the rock came in on
+- [x] The big tail fades out slowly after the hit, starting sooner; no broken look
+- [x] The cumulus heaps dissipate when the blast hits; no hard tufts
+
+- [x] The storm tower reacts more to the blast; two more towers spread across the sky
