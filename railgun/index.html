@@ -1225,54 +1225,15 @@ function ejectCase() {
   spent = { t0: simT, p, v, w, lt: -1, bounce: 0 };
   caseMesh.position.copy(p); caseMesh.visible = true;
   caseMat.uniforms.uCaseHeat.value = 1;
-  wispPts.length = 0; wispPts.push(p.clone());
 }
 const spinQ = new THREE.Quaternion();
-// A thin smoke wisp follows the case: three mini trains along its arc.
-// The trains build on first use; their kit loads further down.
-let caseWisp = null;
-const wispPts = [], wispJ = Array.from({ length: 4 }, () => new THREE.Vector3()), wispX = [0, 0, 0, 0];
-const WISP_LEN = 300, WISP_R = 14;
-function stepWisp(dt = 0) {
-  if (!caseWisp) {
-    caseWisp = Array.from({ length: 3 }, makeMini);
-    // Pale propellant smoke, not soot.
-    for (const t of caseWisp) { t.pu.uSoot.value.set(...linFit(0.78, 0.01, 70)); t.pu.uAsh.value.set(...linFit(0.85, 0.008, 70)); }
-  }
-  const s = spent, n = wispPts.length;
-  const age = !s || s.lt < 0 ? 0 : simT - s.lt;
-  const on = s ? Math.min(1, (simT - s.t0) / 0.4) * (1 - THREE.MathUtils.smoothstep(age, 0.5, 5)) : 0;
-  if (on < 0.01 || n < 2 || reduced()) { for (const t of caseWisp) t.m.visible = false; return; }
-  // The smoke rises and drifts off the flight line, so the arc shows.
-  // The case flies at the eye, so the drift runs across the view.
-  for (const q of wispPts) { q.y += 14 * dt; q.x += 8 * dt; q.z -= 7 * dt; }
-  // Walk back from the head; set a joint every step metres of arc.
-  const step = WISP_LEN / 3;
-  wispJ[0].copy(wispPts[n - 1]);
-  let k = 1, d = 0;
-  for (let i = n - 2; i >= 0 && k <= 3; i--) {
-    d += wispPts[i].distanceTo(wispPts[i + 1]);
-    while (k <= 3 && d >= k * step) { wispJ[k].copy(wispPts[i]); wispX[k] = k * step; k++; }
-  }
-  for (; k <= 3; k++) { wispJ[k].copy(wispPts[0]); wispX[k] = k * step; }
-  for (let j = 0; j < 3; j++) {
-    const t = caseWisp[j], seg = wispJ[j].distanceTo(wispJ[j + 1]);
-    if (seg < 1) { t.m.visible = false; continue; }
-    bv.subVectors(wispJ[j + 1], wispJ[j]);
-    aimMini(t, wispJ[j], bv, WISP_R, WISP_LEN, on, 0);
-    t.pu.uX0.value = wispX[j]; t.pu.uSeg.value = seg * 1.03;
-    t.pu.uSteps.value = rung >= 2 ? 8 : 12;
-  }
-}
 function stepCase(dt) {
   if (!spent) return;
   const s = spent, u = caseMat.uniforms;
   u.uCaseHeat.value *= Math.exp(-dt / 3);
-  if (s.lt >= 0 && s.bounce >= 2) { stepWisp(dt); return; }
+  if (s.lt >= 0 && s.bounce >= 2) return;
   s.v.y -= CASE_G * dt;
   s.p.addScaledVector(s.v, dt);
-  // The wisp keeps four seconds of the flown arc.
-  if (s.lt < 0) { wispPts.push(s.p.clone()); if (wispPts.length > 120) wispPts.shift(); }
   spinQ.setFromAxisAngle(bq.copy(s.w).normalize(), s.w.length() * dt);
   caseMesh.quaternion.premultiply(spinQ);
   // The case hits the plain: a thump, a burst of dust, one small hop.
@@ -1290,7 +1251,6 @@ function stepCase(dt) {
     }
   }
   caseMesh.position.copy(s.p);
-  stepWisp(dt);
 }
 /* ---------- sun shadows: one depth map along the sun ---------- */
 const shadowRT = new THREE.WebGLRenderTarget(2048, 1024, { depthTexture: new THREE.DepthTexture(2048, 1024, THREE.UnsignedIntType) });
@@ -4117,7 +4077,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; wispPts.length = 0; stepWisp(); shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // The first rock's own track.
   ast.next = 0;
@@ -4649,7 +4609,7 @@ window.__qa = {
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
-  spent: () => (spent ? { y: spent.p.y, bounce: spent.bounce, landed: spent.lt >= 0, r: Math.hypot(spent.p.x, spent.p.z), visible: caseMesh.visible, wisp: caseWisp ? caseWisp.map(t => (t.m.visible ? Math.round(t.pu.uSeg.value) : 0)) : null, pts: wispPts.length } : null),
+  spent: () => (spent ? { y: spent.p.y, bounce: spent.bounce, landed: spent.lt >= 0, r: Math.hypot(spent.p.x, spent.p.z), visible: caseMesh.visible } : null),
   resetReady: () => resetOn,
   dust: () => ({ charge: chargeDust.visible, shot: shotDust.visible, kase: caseDustV.visible }),
   chunkSegs: () => chunks.map(ch => ch.segs.map(t => (t.m.visible ? [t.pu.uX0.value | 0, t.pu.uSeg.value | 0] : null))),

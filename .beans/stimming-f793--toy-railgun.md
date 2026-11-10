@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T18:31:11Z
+updated_at: 2026-11-10T18:37:36Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -92,7 +92,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 ## Final tweaks (2026-11-10)
 
 - [x] Remove the case ejection synth; the landing thump stays
-- [x] A pale smoke wisp follows the case; it rises and drifts across the view
+- [x] Case smoke wisp: built, then removed at Tom's call
 - [x] The soot cloud: lobed billows, a curl warp, rim-first erosion into tufts, gone by 30 s
 - [x] A thin first shock skirt leaves the hit to ten radii in a second
 - [x] The charge dust ring centres on the plinth and never breaks
