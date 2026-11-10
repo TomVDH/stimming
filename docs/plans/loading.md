@@ -172,6 +172,7 @@ Per-toy work beyond the recipe:
 - Fidget: the part modules still load one at a time.
 - Launch and Frietkot: recipe only. First frame stays near 1.3 s and the intro lift near 5.0 s in the harness, before and after.
   The jsDelivr lookup sets both numbers, so the preloads show no gain on a direct cold visit.
+- Railgun, Train ride, Foghorn: recipe only. Foghorn already used `pageReady`; it gains the `libs` mark and the full preload list.
 
 Open:
 
@@ -181,4 +182,7 @@ Open:
 - Direct cold visit in the harness: the jsDelivr DNS lookup takes about 1 s when it starts with the font lookups.
   Main shows the same stall in about half its runs. A visit from the menu never shows it.
   Check a direct link on Pages in a real browser.
+  The cause is the resolver on the test machine: one of three parallel uncached lookups takes 1 to 2 s in a plain `getaddrinfo` test.
+  A page that preloads culori starts that lookup with the font lookups, so it meets the stall on every run here.
+- The local preview server resets connections under parallel requests, on main and on the branch. A reset module request stops the toy.
 - Sound on the first gesture is not exercised by the harness.
