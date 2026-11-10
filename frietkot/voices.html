@@ -721,7 +721,7 @@ async function startRec() {
   if (!window.MediaRecorder) { note('This browser cannot record. Import a file instead.'); return; }
   stop();
   let stream;
-  try { stream = await getMic(); } catch (e) { note('No mic. Allow the microphone and try again.'); return; }
+  try { stream = await getMic(); } catch (e) { note(MIC_OFF, true); return; }
   await Tone.start();
   meterCtx = meterCtx || new AudioContext();
   await meterCtx.resume();
@@ -779,7 +779,7 @@ async function toggleLive() {
   }
   const n = await chain();
   const mic = new Tone.UserMedia();
-  try { await mic.open(); } catch (e) { note('No mic. Allow the microphone and try again.'); return; }
+  try { await mic.open(); } catch (e) { note(MIC_OFF, true); return; }
   mic.connect(n.input);
   n.mic = mic;
   n.gate.gain.cancelScheduledValues(Tone.now());
@@ -936,12 +936,14 @@ function wake() { if (!raf) raf = requestAnimationFrame(loop); }
 
 function $(s) { return document.querySelector(s); }
 let noteTimer = 0;
-function note(s) {
+function note(s, stay = false) {
   const el = $('#note');
   el.textContent = s;
   clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => { el.textContent = NOTE; }, 7000);
+  if (!stay) noteTimer = setTimeout(() => { el.textContent = NOTE; }, 7000);
 }
+// A blocked mic stays on screen until the page reloads.
+const MIC_OFF = 'The mic is blocked here. Allow it, or open this page in Chrome.';
 
 function voiced(p) { return Object.keys(BASE).some((k) => k !== 'ringHz' && p[k] !== BASE[k]); }
 
