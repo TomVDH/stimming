@@ -78,7 +78,9 @@ const SIZES = {
 };
 const opts = {
   size: store.get('size') in SIZES ? store.get('size') : 'mountain',
-  sun: Number.isFinite(+store.get('sun')) && store.get('sun') !== null ? Math.min(1, Math.max(0, +store.get('sun'))) : 0.45,
+  // Time of day, 0 for night to 1 for noon.
+  // It has its own key: the old Sun key had a narrower range.
+  sun: Number.isFinite(+store.get('time')) && store.get('time') !== null ? Math.min(1, Math.max(0, +store.get('time'))) : 0.5,
 };
 
 /* ---------- bar ---------- */
@@ -90,8 +92,8 @@ const ui = initPage({ id: 'railgun', bar: {
     options: [{ value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }],
     onPick: v => { opts.size = v; store.set('size', v); retune(); },
   },
-  // Sun lifts the sun from the horizon to fifteen degrees up.
-  slider: { label: 'Sun', min: 0, max: 1, step: 0.005, value: opts.sun, onInput: v => { opts.sun = v; store.set('sun', v); setSun(); } },
+  // Time runs from a starry night to a high noon sun.
+  slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -167,6 +169,21 @@ const U = {
   uZenC: { value: new THREE.Vector3() },
   uHorC: { value: new THREE.Vector3() },
   uSunE: { value: 0.1 },
+  // uSun is the key light: the sun by day, the moon by night.
+  // uSunD is the true sun; it tints the sky glow.
+  uSunD: { value: new THREE.Vector3(0, 0.1, -1) },
+  uGlowC: { value: new THREE.Vector3() },
+  uMoonD: { value: new THREE.Vector3(-0.58, 0.42, -0.69).normalize() },
+  uMoonK: { value: 0 },
+  uStars: { value: 0 },
+  uStarT: null,
+  // High cloud still holds the sun after it sets.
+  uCloudSun: { value: new THREE.Vector3() },
+  uCloudAmb: { value: new THREE.Vector3(0.22, 0.22, 0.22) },
+  // The plain's light: slope gain and lift; a low sun needs both.
+  uGLift: { value: new THREE.Vector2(4, 0.25) },
+  // The hit: world position and the sim time of the hit.
+  uHitP: { value: new THREE.Vector4(0, 0, 0, -1e6) },
   // Haze: dust per metre, and the height where it thins.
   uHaze: { value: 0.00013 },
   uHazeH: { value: 700 },
@@ -208,26 +225,66 @@ const U = {
   // The strength of the Rayleigh air.
   uAir: { value: 0.7 },
 };
+U.uStarT = U.uTime;
 
 /* ---------- sun: late light over a dusty plain ---------- */
 // The sun sits low on the right, a little ahead of the eye.
 // It lights the near flank; shadows rake away to the left.
 const SUN_AZ = new THREE.Vector2(0.62, -0.78).normalize();
 const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
+const sstep = THREE.MathUtils.smoothstep;
+const lerp = THREE.MathUtils.lerp;
+// The moon: cool and dim, high on the left.
+const MOON_C = [0.09, 0.11, 0.16];
 function sun(deg) {
   const r = rad(deg);
+  U.uSunD.value.set(SUN_AZ.x * Math.cos(r), Math.sin(r), SUN_AZ.y * Math.cos(r));
+  U.uSunE.value = r;
+  // Dusk: the first look, 0 to 15 degrees.
   // low: 0 at the horizon, 1 at fifteen degrees up.
   const low = clamp(deg / 15, 0, 1);
-  U.uSun.value.set(SUN_AZ.x * Math.cos(r), Math.sin(r), SUN_AZ.y * Math.cos(r));
-  U.uSunE.value = r;
-  U.uSunC.value.set(...lerp3([1.6, 0.62, 0.22], [1.9, 1.75, 1.55], low).map(x => x * (0.55 + 0.45 * low)));
-  U.uZenC.value.set(...lerp3([0.10, 0.15, 0.30], [0.16, 0.30, 0.62], low));
-  U.uHorC.value.set(...lerp3([0.78, 0.38, 0.17], [0.72, 0.68, 0.62], low));
-  renderer.toneMappingExposure = 0.9;
+  let sunC = lerp3([1.6, 0.62, 0.22], [1.9, 1.75, 1.55], low).map(x => x * (0.55 + 0.45 * low));
+  let zen = lerp3([0.10, 0.15, 0.30], [0.16, 0.30, 0.62], low);
+  let hor = lerp3([0.78, 0.38, 0.17], [0.72, 0.68, 0.62], low);
+  // Day: 15 to 60 degrees, toward a white noon.
+  const day = sstep(deg, 15, 60);
+  sunC = lerp3(sunC, [2.05, 2.0, 1.9], day);
+  zen = lerp3(zen, [0.05, 0.16, 0.56], day);
+  hor = lerp3(hor, [0.56, 0.65, 0.78], day);
+  // Under the horizon: blue hour to -6, night to -14.
+  const tw = sstep(deg, -6, 0), nt = sstep(deg, -14, -6);
+  zen = lerp3(lerp3([0.004, 0.006, 0.016], [0.035, 0.06, 0.15], nt), zen, tw);
+  hor = lerp3(lerp3([0.012, 0.015, 0.028], [0.2, 0.15, 0.2], nt), hor, tw);
+  // The disc's light goes as it sets; the glow lasts to -10.
+  const kS = sstep(deg, -1.5, 1.5);
+  U.uGlowC.value.set(...sunC.map(x => x * sstep(deg, -10, 0)));
+  // The moon takes the key light below -3 degrees.
+  const mK = 1 - sstep(deg, -10, -3);
+  U.uMoonK.value = mK;
+  U.uStars.value = 1 - sstep(deg, -10, -2);
+  if (deg > -3) U.uSun.value.copy(U.uSunD.value).setY(Math.max(U.uSunD.value.y, 0.02)).normalize();
+  else U.uSun.value.copy(U.uMoonD.value);
+  U.uSunC.value.set(...sunC.map((x, i) => x * kS + MOON_C[i] * mK));
+  U.uZenC.value.set(...zen);
+  U.uHorC.value.set(...hor);
+  // Cloud nine kilometres up sees the sun to -6 degrees.
+  U.uCloudSun.value.set(...sunC.map((x, i) => x * sstep(deg, -6, 1) + MOON_C[i] * mK * 0.3));
+  U.uCloudAmb.value.setScalar(lerp(lerp(0.012, 0.05, nt), 0.22, tw));
+  // A high sun needs no lift on the plain.
+  U.uGLift.value.set(lerp(4, 1.1, day), lerp(0.25, 0.05, day));
+  renderer.toneMappingExposure = lerp(lerp(2.2, 1.35, nt), 0.9, tw);
   fitShadow();
 }
-// The slider lifts the sun from 3 to 16 degrees.
-const sunDeg = v => 3 + 13 * v * v;
+// The slider runs from night to noon.
+// The knots keep dusk mid-slider, where the first look sat.
+const TIME_K = [[0, -14], [0.18, -6], [0.32, 0], [0.5, 5.6], [0.72, 18], [1, 60]];
+function sunDeg(v) {
+  for (let i = 1; i < TIME_K.length; i++) {
+    const [v0, d0] = TIME_K[i - 1], [v1, d1] = TIME_K[i];
+    if (v <= v1) return lerp(d0, d1, (v - v0) / (v1 - v0));
+  }
+  return 60;
+}
 const setSun = () => { sun(sunDeg(opts.sun)); draw(); };
 
 /* ---------- K2: noise ---------- */
@@ -266,6 +323,8 @@ float k3fbm(vec3 p) {
 const K2_SKY = /* glsl */`
 uniform vec3 uSunC, uZenC, uHorC;
 uniform float uSunE;
+uniform vec3 uSunD, uGlowC, uMoonD, uCloudSun, uCloudAmb;
+uniform float uMoonK, uStars, uStarT;
 uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
@@ -273,11 +332,42 @@ uniform vec3 uAstC;
 uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
+uniform vec4 uHitP;
+// The blast on a cloud at P: its light, the shock rim and the push.
+// thin is 1 at a cloud's thin edge, where light shines through.
+// The flash lights near cloud brightest; the shock reaches it first.
+vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
+  rim = 0.0; push = vec3(0.0);
+  float t = uStarT - uHitP.w;
+  if (t < 0.0 || t > 40.0) return vec3(0.0);
+  vec3 d = P - uHitP.xyz;
+  float r = max(length(d), 1.0);
+  vec3 n = d / r;
+  // The flash: white first, then the fireball's amber.
+  vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, t));
+  float I = uHit.w * 5.0 / (1.0 + r * r / 2.0e8);
+  // Light that passes through toward the eye: a silver edge.
+  float fwd = pow(max(dot(n, normalize(cameraPosition - P)), 0.0), 5.0);
+  vec3 L = c * I * (0.45 + 2.2 * fwd * thin);
+  // The shock shell: fast at first, slow at sixty kilometres.
+  float R = 60000.0 * (1.0 - exp(-t / 5.0));
+  float w = 500.0 + 0.06 * R;
+  float fade = exp(-t / 9.0);
+  rim = exp(-(r - R) * (r - R) / (2.0 * w * w)) * fade;
+  // Cloud behind the front is pushed out, then settles.
+  push = n * smoothstep(R + w, R - 2.0 * w, r) * fade * (900.0 + 0.04 * R);
+  return L;
+}
 // Cirrus: long streaks on one wind line, gathered in patches.
 vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (dir.y < 0.008) return col;
-  // A flat layer far overhead; q.x runs along the wind.
+  // A flat layer nine kilometres up; q.x runs along the wind.
   vec2 p = dir.xz / (dir.y + 0.07);
+  // The layer's point in the world, for the blast.
+  vec3 Pc = cameraPosition + vec3(p.x, 0.0, p.y) * 9000.0 + vec3(0.0, 9000.0, 0.0);
+  float rim; vec3 push;
+  vec3 hl = cloudHit(Pc, 0.6, rim, push);
+  p -= push.xz / 9000.0;
   vec2 q = vec2(dot(p, vec2(0.966, -0.259)), dot(p, vec2(0.259, 0.966))) + uWisp.xy;
   // Slow bends keep the streaks from running ruled.
   q.y += 1.6 * k2fbm(q * vec2(0.09, 0.25));
@@ -288,8 +378,10 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   d *= smoothstep(0.015, 0.12, dir.y);
   if (d < 0.002) return col;
   // High ice still holds sunlight; it reads brighter than the dusty air.
-  vec3 cloud = uSunC * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + 0.22;
-  return mix(col, cloud, d * 0.75);
+  vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
+  // The shock rim: compressed air, lit by everything round it.
+  cloud += hl + rim * (uCloudSun * 0.5 + uCloudAmb * 3.0 + hl * 2.0 + 0.05);
+  return mix(col, cloud, min(1.0, d * (0.75 + 0.5 * rim)));
 }
 vec3 astGlow(vec3 dir) {
   float ang = acos(clamp(dot(dir, uAst.xyz), -1.0, 1.0));
@@ -310,7 +402,7 @@ vec3 hitGlow(vec3 dir) {
 // The bare sky: no glow from the rock, the bolt or the hit.
 vec3 k2skyB(vec3 dir, float sunK) {
   float up = max(dir.y, 0.0);
-  float cs = dot(dir, uSun);
+  float cs = dot(dir, uSunD);
   // Zenith to horizon, with a dust band low down.
   vec3 col = mix(uHorC, uZenC, pow(up, 0.45));
   col = mix(col, uHorC * 0.92, exp(-up * 14.0) * 0.55);
@@ -319,7 +411,27 @@ vec3 k2skyB(vec3 dir, float sunK) {
   // The sun: a wide glow, a tight glow and the disc.
   float cp = max(cs, 0.0);
   float glow = pow(cp, 5.0) * 0.22 + pow(cp, 90.0) * 0.7 * sunK + pow(cp, 8000.0) * 14.0 * sunK;
-  col += uSunC * glow * (0.35 + 0.65 * exp(-up * 4.0));
+  col += uGlowC * glow * (0.35 + 0.65 * exp(-up * 4.0));
+  if (sunK > 0.5 && dir.y > 0.0) {
+    // Stars: one in about seventy cells, a few twinkle.
+    if (uStars > 0.01) {
+      vec3 g = dir * 420.0, id = floor(g);
+      float h = k3hash(id);
+      if (h > 0.986) {
+        vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
+        float s = smoothstep(0.3, 0.0, length(fract(g) - 0.5 - o * 0.4));
+        float tw = 0.7 + 0.3 * sin(uStarT * (1.5 + 4.0 * h) + h * 400.0);
+        float m = pow((h - 0.986) / 0.014, 3.0) * 2.5 + 0.15;
+        col += vec3(0.75, 0.82, 1.0) * s * tw * m * uStars * smoothstep(0.0, 0.2, dir.y);
+      }
+    }
+    // The moon: a small disc and a soft halo.
+    if (uMoonK > 0.01) {
+      float a = acos(clamp(dot(dir, uMoonD), -1.0, 1.0));
+      float disc = smoothstep(0.0062, 0.0055, a) * (0.85 + 0.15 * k2noise(dir.xy * 900.0));
+      col += uMoonK * (vec3(1.5, 1.45, 1.35) * disc + vec3(0.05, 0.06, 0.09) * exp(-a / 0.05) + vec3(0.012, 0.016, 0.03) * exp(-a / 0.3));
+    }
+  }
   // The haze colour reads this sky without its clouds.
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
@@ -433,6 +545,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
   uniform vec4 uShock;
   uniform float uRage;
   uniform float uTime;
+  uniform vec2 uGLift;
   ${HEAD}
   void main() {
     // Low swells tilt the plain; the low sun rakes across them.
@@ -448,7 +561,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     // The ground round the mount is scorched: a shade darker.
     alb *= 1.0 - 0.25 * smoothstep(560.0, 240.0, length(vP.xz - vec2(0.0, 90.0)));
     // A flat plain takes little light at four degrees; lift it.
-    float nl = clamp(dot(N, uSun) * 4.0 + 0.25, 0.0, 1.2);
+    float nl = clamp(dot(N, uSun) * uGLift.x + uGLift.y, 0.0, 1.2);
     vec3 col = alb * (ambient(N) + uSunC * nl * sunVis(vP) + keyLight(N) + arcLight(vP, N));
     // The plain trembles in rings round the mount at rage.
     float r0 = length(vP.xz);
@@ -531,6 +644,171 @@ const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
 }));
 far.frustumCulled = false;
 scene.add(far);
+
+/* ---------- clouds: low heaps far out, one storm tower beyond ---------- */
+// Each cloud is one card that turns about the vertical to face the eye.
+// The shader shapes a lumpy body and fakes its normal from a pillow depth.
+// aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
+const CLOUD_U = { uVol: { value: null } };
+const CLOUD_FS = /* glsl */`precision highp sampler3D;
+uniform sampler3D uVol;
+varying vec2 vUv;
+varying vec3 vP, vR, vF;
+varying vec4 vS;
+${HEAD}
+${AIR}
+// Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
+float bil(vec2 p, float sd) { return texture(uVol, vec3(p, sd * 0.37)).r; }
+float cell(vec2 p, float sd) { return texture(uVol, vec3(p, sd * 0.61 + 0.5)).g; }
+float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
+// The body: positive inside, in metres from the edge.
+float body(vec2 X) {
+  float W = vS.x, H = vS.y, sd = vS.w;
+  float x = X.x, y = X.y;
+  float F;
+  if (vS.z < 0.5) {
+    // A heap: five turrets of mixed height on one flat base.
+    // The middle turrets stand tallest.
+    float lump = bil(X / (H * 0.9), sd);
+    float fine = cell(X / (H * 0.3), sd);
+    float top = 0.0;
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i);
+      float c = W * (-0.6 + 0.3 * fi + 0.14 * (hsh(fi, sd) - 0.5));
+      float r = W * (0.24 + 0.16 * hsh(fi + 7.0, sd));
+      float hh = H * (0.5 + 0.5 * hsh(fi + 13.0, sd)) * (1.0 - 0.22 * abs(fi - 2.0));
+      float t = (x - c) / r;
+      top = max(top, hh * sqrt(max(1.0 - t * t, 0.0)));
+    }
+    F = min(top - y + (lump - 0.45) * 0.4 * H + (fine - 0.5) * 0.12 * H, y + 40.0 - 160.0 * bil(X / 2500.0, sd + 3.0));
+    F = min(F, W * 1.18 - abs(x));
+  } else {
+    // A thunderhead: a broad, boiling column under a flat anvil.
+    // The anvil runs downwind to the right and thins at its far end.
+    float k = y / H;
+    float lean = W * 0.08 * k;
+    float cx = x - lean;
+    float lump = bil(X / (W * 0.5), sd);
+    float fine = cell(X / (W * 0.22), sd);
+    // The column widens as it climbs; its sides boil in turrets.
+    float colHalf = W * mix(0.17, 0.36, smoothstep(0.0, 0.7, k));
+    float colF = min(colHalf - abs(cx), H * 0.84 - y);
+    colF = min(colF, y + 150.0) + (lump - 0.45) * W * 0.26 + (fine - 0.5) * W * 0.06;
+    // The overshooting top: a dome above the column's core.
+    float od = (cx + W * 0.04) / (W * 0.24);
+    float domeF = H * (0.8 + 0.2 * sqrt(max(1.0 - od * od, 0.0))) - y + (lump - 0.5) * H * 0.06;
+    domeF = min(min(domeF, y - H * 0.6), W * 0.24 - abs(cx + W * 0.04));
+    // The anvil: a lens under the tropopause, long downwind.
+    // It is thickest over the column and thins toward both ends.
+    float ax = (cx - W * 0.3) / (W * 0.68);
+    float far_ = smoothstep(0.0, W, cx);
+    float envA = sqrt(max(1.0 - ax * ax, 0.0));
+    float thick = H * 0.085 * envA * (1.0 - 0.45 * far_);
+    float mid = H * (0.83 + 0.03 * far_);
+    // The noise only works inside the lens.
+    float anvF = thick - abs(y - mid) + ((lump - 0.5) * H * 0.07 + (fine - 0.5) * H * 0.025) * envA - (1.0 - envA) * H * 0.05;
+    F = max(max(colF, anvF), domeF);
+    // Keep the whole shape inside the card.
+    F = min(F, W * 0.99 - abs(x));
+  }
+  return F;
+}
+void main() {
+  float W = vS.x, H = vS.y;
+  vec2 X = vec2(vUv.x * W, vUv.y * H);
+  // The blast pushes the cloud's pattern outward.
+  float rim; vec3 push;
+  vec3 hl0 = cloudHit(vP, 0.5, rim, push);
+  X -= vec2(dot(push, vR), push.y);
+  float F = body(X);
+  float soft = H * 0.05;
+  float a = smoothstep(0.0, soft, F);
+  if (a < 0.004) discard;
+  // Pillow depth toward the eye gives a normal.
+  float e = H * 0.03;
+  float pd = sqrt(max(F, 0.0) * H) ;
+  float px = sqrt(max(body(X + vec2(e, 0.0)), 0.0) * H);
+  float py = sqrt(max(body(X + vec2(0.0, e)), 0.0) * H);
+  vec3 N = normalize(vR * (pd - px) / e + vec3(0.0, (pd - py) / e, 0.0) - vF * 1.2);
+  vec3 P = vP - vF * pd * 0.3;
+  // Three taps toward the key light give a self shadow.
+  vec2 l2 = vec2(dot(uSun, vR), uSun.y);
+  l2 = length(l2) > 1e-3 ? normalize(l2) : vec2(0.0, 1.0);
+  float occ = max(body(X + l2 * H * 0.12), 0.0) + max(body(X + l2 * H * 0.3), 0.0) + 0.5 * max(body(X + l2 * H * 0.6), 0.0);
+  float sh = exp(-occ / (H * 0.35));
+  // High tops keep the sun after it sets.
+  vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+  float thin = 1.0 - smoothstep(0.0, soft * 4.0, F);
+  vec3 V = normalize(P - cameraPosition);
+  vec3 col = sunC * (max(dot(N, uSun), 0.0) * 0.85 + 0.15) * (0.25 + 0.75 * sh) * 1.25;
+  // Light through the thin edge when the sun stands behind.
+  col += sunC * thin * pow(max(dot(V, uSun), 0.0), 6.0) * 1.6;
+  vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, N.y * 0.5 + 0.5) * 0.9 + uCloudAmb * 0.4;
+  col += amb * (0.55 + 0.45 * smoothstep(0.0, 0.35 * H, X.y));
+  // The tower keeps some body through seventy kilometres of air.
+  col = mix(col, air(col, P), vS.z > 0.5 ? 0.7 : 1.0);
+  // The blast: its light, thin parts brightest, and the shock rim.
+  // It lands after the haze: the flash lights the air on the way too.
+  // Faces turned to the hit take it; the far side stays in shadow.
+  vec3 hl = cloudHit(P, thin, rim, push);
+  vec3 Lh = normalize(uHitP.xyz - P);
+  vec2 h2 = vec2(dot(Lh, vR), Lh.y);
+  h2 = length(h2) > 1e-3 ? normalize(h2) : vec2(0.0, 1.0);
+  float occH = max(body(X + h2 * H * 0.15), 0.0) + max(body(X + h2 * H * 0.4), 0.0);
+  float shH = exp(-occH / (H * 0.3));
+  col += 0.8 * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.35 + amb * 1.5 + hl * 1.2 + 0.04);
+  gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
+}`;
+const CLOUD_VS = /* glsl */`
+attribute vec4 aC, aS;
+varying vec2 vUv;
+varying vec3 vP, vR, vF;
+varying vec4 vS;
+void main() {
+  vec3 f = aC.xyz - cameraPosition;
+  f.y = 0.0;
+  f = normalize(f);
+  vec3 R = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
+  // The card is wider and taller than the body, so nothing clips.
+  vec2 uv = position.xy * vec2(1.2, 1.5);
+  vec3 P = aC.xyz + R * uv.x * aC.w + vec3(0.0, uv.y * aS.x, 0.0);
+  vUv = uv; vP = P; vR = R; vF = f;
+  vS = vec4(aC.w, aS.x, aS.y, aS.z);
+  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+}`;
+// list: [angle in degrees, range m, base m, half width m, height m, kind].
+function cloudLayer(list, order) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  // Far cards draw first.
+  const s = [...list].sort((a, b) => b[1] - a[1]);
+  const aC = new Float32Array(s.length * 4), aS = new Float32Array(s.length * 4);
+  s.forEach((c, i) => {
+    const p = polar(rad(c[0]), c[1]);
+    aC.set([p.x, c[2], p.z, c[3]], i * 4);
+    aS.set([c[4], c[5], 13.7 * i + c[0], 0], i * 4);
+  });
+  g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
+  g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
+  g.instanceCount = s.length;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
+  m.frustumCulled = false;
+  m.renderOrder = order;
+  scene.add(m);
+  return m;
+}
+// Heaps stand in front of the rock's track: they draw after its smoke.
+// Clusters with open sky between; two small ones nearer.
+const heaps = cloudLayer([
+  [-6, 37000, 1550, 3600, 2000, 0], [-1, 33000, 1450, 2000, 1300, 0], [3, 36500, 1600, 2400, 1500, 0],
+  [9, 16000, 1250, 900, 650, 0],
+  [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0],
+  [37, 38000, 1650, 4400, 2600, 0], [43, 32000, 1500, 2300, 1400, 0],
+  [50, 14500, 1200, 800, 600, 0], [58, 35000, 1550, 3000, 1800, 0], [63, 29000, 1450, 1800, 1100, 0],
+], 2.2);
+// The tower stands far behind the gun: it draws before the smoke.
+const tower = cloudLayer([[34, 72000, 1500, 16000, 15000, 1]], 1.5);
 
 /* ---------- the gun: one clean artillery piece ---------- */
 // Every piece is a straight block or drum; one merged mesh, one draw call.
@@ -899,6 +1177,7 @@ const VOL_N = 96;
 const volRT = new THREE.WebGL3DRenderTarget(VOL_N, VOL_N, VOL_N, { depthBuffer: false });
 volRT.texture.minFilter = volRT.texture.magFilter = THREE.LinearFilter;
 volRT.texture.wrapS = volRT.texture.wrapT = volRT.texture.wrapR = THREE.RepeatWrapping;
+CLOUD_U.uVol.value = volRT.texture;
 {
   const bake = new THREE.ShaderMaterial({
     uniforms: { uZ: { value: 0 } }, depthTest: false, depthWrite: false,
@@ -2087,6 +2366,7 @@ function shatter(c) {
   }
   hitFlash = 1; cam.shake += 0.5 * c;
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
+  U.uHitP.value.set(P.x, P.y, P.z, simT);
   rumble(c);
 }
 function respawn() {
@@ -2618,6 +2898,8 @@ window.__qa = {
   audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size }),
   shoot(c) { fire(c); frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive } : null),
+  // Pose the blast on the clouds t seconds after a hit at the rock.
+  blast(t) { hitFlash = Math.exp(-t / 0.28) + 0.22 * Math.exp(-t / 2.4); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); frame(); draw(); },
 };
 
 /* ---------- ready ---------- */
