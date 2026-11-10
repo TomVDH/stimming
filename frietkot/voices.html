@@ -166,11 +166,18 @@ import * as Tone from 'tone';
 
 // --- Voices ------------------------------------------------------------------
 
+const st = (v) => (v > 0 ? '+' : '') + v + ' st';
 const KNOBS = [
-  ['pitch', 'Pitch', -12, 12, 0.5, (v) => (v > 0 ? '+' : '') + v + ' st'],
+  ['pitch', 'Pitch', -12, 12, 0.5, st],
+  ['formant', 'Formant', -8, 8, 0.5, st],
   ['tape', 'Tape', 0.6, 1.6, 0.01, (v) => '×' + v.toFixed(2)],
+  ['double', 'Double', 0, 1, 0.01, pct],
+  ['doubleSt', 'Double at', -12, 12, 1, st],
   ['wobble', 'Wobble', 0, 1, 0.01, pct],
+  ['flange', 'Flange', 0, 1, 0.01, pct],
+  ['metal', 'Metal', 0, 1, 0.01, pct],
   ['robot', 'Robot', 0, 1, 0.01, pct],
+  ['vocoder', 'Vocoder', 0, 1, 0.01, pct],
   ['crunch', 'Crunch', 0, 1, 0.01, pct],
   ['phone', 'Phone', 0, 1, 0.01, pct],
   ['muffle', 'Muffle', 0, 1, 0.01, pct],
@@ -180,49 +187,67 @@ const KNOBS = [
 ];
 function pct(v) { return Math.round(v * 100) + '%'; }
 
-const BASE = { pitch: 0, tape: 1, wobble: 0, robot: 0, ringHz: 50, crunch: 0, phone: 0, muffle: 0, echo: 0, room: 0, sizzle: 0, ends: 'none' };
+const BASE = {
+  pitch: 0, formant: 0, tape: 1, double: 0, doubleSt: -12, wobble: 0, flange: 0, metal: 0, metalHz: 220,
+  robot: 0, ringHz: 50, vocoder: 0, vocType: 'saw', vocHz: 110, crunch: 0, phone: 0, muffle: 0, echo: 0, room: 0, sizzle: 0, ends: 'none',
+};
+// Tuning keys colour a stage, but alone they leave the voice clean.
+const TUNING = new Set(['doubleSt', 'metalHz', 'ringHz', 'vocType', 'vocHz']);
 
 // The people on the square. Each id names the clips the toy plays for them.
 const CAST = [
-  { id: 'bruno', name: 'Bruno', nl: 'Bakt', title: 'Bruno, frituurbaas', voice: { pitch: -3, muffle: 0.08 }, lines: [
+  { id: 'bruno', name: 'Bruno', nl: 'Bakt', title: 'Bruno, frituurbaas', voice: { pitch: -2, formant: -1.5, muffle: 0.08 }, lines: [
     'Volgende!', 'Ze zitten in de pot, nog efkes.', 'Moet er zout op?', 'Pas op, ze zijn heet.', 'Amai, druk vanavond.', 'Anja, nog ne grote!',
   ] },
-  { id: 'anja', name: 'Anja', nl: 'Bedient', title: 'Anja, frituurbazin', voice: { pitch: 4 }, lines: [
+  { id: 'anja', name: 'Anja', nl: 'Bedient', title: 'Anja, frituurbazin', voice: { pitch: 5, formant: 3 }, lines: [
     'Wie is er aan de beurt?', 'Welke saus moet ge hebben?', 'Voor hier of om mee?', "Da's dan zeven euro vijftig.", "Mag 't iets meer zijn?", 'Merci, en smakelijk!',
   ] },
   { id: 'klant', name: 'Customer', nl: 'Klant', title: 'Een klant', voice: {}, lines: [
     'Ne grote friet met stoofvleessaus, alstublieft.', 'Een kleintje met mayonaise.', 'Twee frikandellen speciaal.', 'Een curryworst en een kleine friet.', 'Zonder zout, alstublieft.', 'Merci, nog een schone avond!',
   ] },
-  { id: 'vaste', name: 'Regular', nl: 'Vaste klant', title: 'Vaste klant sinds 1987', voice: { pitch: -2, wobble: 0.35, tape: 0.95 }, lines: [
+  { id: 'vaste', name: 'Regular', nl: 'Vaste klant', title: 'Vaste klant sinds 1987', voice: { pitch: -2, formant: -1, wobble: 0.35, tape: 0.95 }, lines: [
     "Amai, 't regent hier weer.", 'Ge weet hoe ik hem wil.', 'Vroeger was da allemaal beter.', "Bruno! Hoe is 't, jong?",
   ] },
-  { id: 'jeugd', name: 'Youth', nl: 'Jeugd', title: 'Jeugd van tegenwoordig', voice: { pitch: 2, tape: 1.06 }, lines: [
+  { id: 'jeugd', name: 'Youth', nl: 'Jeugd', title: 'Jeugd van tegenwoordig', voice: { pitch: 2, formant: 1.5, tape: 1.06 }, lines: [
     'Allez, komaan!', 'Wie trakteert?', 'Gast, ik heb honger.', 'Haha, zot!', 'Wacht op mij!',
   ] },
-  { id: 'kind', name: 'Kid', nl: 'Kind', title: 'Kleine gast', voice: { pitch: 7, tape: 1.04 }, lines: [
+  { id: 'kind', name: 'Kid', nl: 'Kind', title: 'Kleine gast', voice: { pitch: 7, formant: 5, tape: 1.04 }, lines: [
     'Mama, mag ik een frikandel?', 'Ik wil mayonaise!', 'Kijk, een hond!',
   ] },
-  { id: 'schim', name: 'Shady', nl: 'Schimmig', title: 'Anonieme getuige', voice: { pitch: -5, muffle: 0.15, room: 0.12 }, lines: [
+  { id: 'schim', name: 'Shady', nl: 'Schimmig', title: 'Anonieme getuige', voice: { pitch: -4, formant: -2, muffle: 0.15, room: 0.12 }, lines: [
     'Psst. Gij daar.', 'Niet hier. Achter de kerk.', 'Ik heb niks gezien.', 'Ik kwam gewoon frieten halen.',
   ] },
-  { id: 'hond', name: 'Dog walker', nl: 'Hondenbaasje', title: 'De man met de hond', voice: { pitch: -1 }, lines: [
+  { id: 'hond', name: 'Dog walker', nl: 'Hondenbaasje', title: 'De man met de hond', voice: { pitch: -1, formant: -0.5 }, lines: [
     'Kom hier, Bobby!', 'Zit! Brave hond.', "Nee, da's van die meneer!",
   ] },
 ];
 
 const PRESETS = [
   { id: 'clean', name: 'Clean', nl: 'Gewoon', sub: '', p: {} },
-  { id: 'anon', name: 'Anonymous', nl: 'Anoniem', sub: 'Stem vervormd', p: { pitch: -5, muffle: 0.15, room: 0.12 } },
-  { id: 'deep', name: 'Deep cover', nl: 'Diep', sub: 'Bron binnen de frituur', p: { pitch: -9, crunch: 0.12, muffle: 0.25 } },
-  { id: 'chip', name: 'Chipmunk', nl: 'Eekhoorn', sub: 'Stem vervormd', p: { pitch: 8, tape: 1.08 } },
-  { id: 'helium', name: 'Helium', nl: 'Ballon', sub: 'Na één ballon', p: { pitch: 12, wobble: 0.12 } },
-  { id: 'ogre', name: 'Ogre', nl: 'Reus', sub: 'Stem vervormd', p: { pitch: -12, tape: 0.9, crunch: 0.25 } },
-  { id: 'robot', name: 'Robot', nl: 'Robot', sub: 'Frietrobot 3000', p: { robot: 1, ringHz: 48, pitch: -2 } },
-  { id: 'alien', name: 'Alien', nl: 'Ruimtewezen', sub: 'Landde achter de kerk', p: { robot: 0.65, ringHz: 330, pitch: 5, echo: 0.2 } },
+  { id: 'anon', name: 'Anonymous', nl: 'Anoniem', sub: 'Stem vervormd', p: { pitch: -4, formant: -2, muffle: 0.15, room: 0.12 } },
+  { id: 'deep', name: 'Deep cover', nl: 'Diep', sub: 'Bron binnen de frituur', p: { pitch: -8, formant: -4, crunch: 0.1, muffle: 0.2 } },
+  { id: 'vakarian', name: 'Vakarian', nl: 'Turiaan', sub: 'Is aan het kalibreren', p: { formant: -1, double: 0.55, doubleSt: -12, flange: 0.5, metal: 0.22, metalHz: 190, room: 0.08 } },
+  { id: 'higher', name: 'Higher', nl: 'Hoger', sub: 'Stem vervormd', p: { pitch: 5, formant: 3 } },
+  { id: 'lower', name: 'Lower', nl: 'Lager', sub: 'Stem vervormd', p: { pitch: -4, formant: -3 } },
+  { id: 'kiddo', name: 'Kiddo', nl: 'Kleuter', sub: 'Mag nog niet alleen', p: { pitch: 7, formant: 5, tape: 1.04 } },
+  { id: 'chip', name: 'Chipmunk', nl: 'Eekhoorn', sub: 'Stem vervormd', p: { pitch: 8, formant: 8, tape: 1.08 } },
+  { id: 'helium', name: 'Helium', nl: 'Ballon', sub: 'Na één ballon', p: { pitch: 2, formant: 7, wobble: 0.05 } },
+  { id: 'ogre', name: 'Ogre', nl: 'Reus', sub: 'Stem vervormd', p: { pitch: -9, formant: -6, crunch: 0.2 } },
+  { id: 'demon', name: 'Demon', nl: 'Duivel', sub: 'Uit de frietpot van de hel', p: { pitch: -5, formant: -4, double: 0.6, doubleSt: -12, crunch: 0.2, room: 0.35 } },
+  { id: 'harmony', name: 'Harmony', nl: 'Tweestemmig', sub: 'Het duo van de kermis', p: { double: 0.55, doubleSt: 4, room: 0.15 } },
+  { id: 'robot', name: 'Robot', nl: 'Robot', sub: 'Bliep bloep', p: { robot: 1, ringHz: 48, pitch: -2 } },
+  { id: 'vocoder', name: 'Vocoder', nl: 'Vocoder', sub: 'Frietrobot 3000', p: { vocoder: 1, vocType: 'saw', vocHz: 98 } },
+  { id: 'choir', name: 'Choir', nl: 'Koor', sub: 'Het parochiekoor', p: { vocoder: 0.85, vocType: 'chord', vocHz: 147, room: 0.55 } },
+  { id: 'whisper', name: 'Whisper', nl: 'Fluister', sub: 'Strikt vertrouwelijk', p: { vocoder: 1, vocType: 'noise', muffle: 0.1 } },
+  { id: 'helmet', name: 'Helmet', nl: 'Helm', sub: 'Vanuit de ruimte', p: { metal: 0.55, metalHz: 820, phone: 0.25, room: 0.05 } },
+  { id: 'alien', name: 'Alien', nl: 'Ruimtewezen', sub: 'Landde achter de kerk', p: { robot: 0.5, ringHz: 330, pitch: 5, formant: -3, flange: 0.4, echo: 0.2 } },
   { id: 'phone', name: 'Phone', nl: 'Telefoon', sub: 'Belt vanuit Aalst', p: { phone: 1, crunch: 0.25 } },
+  { id: 'megaphone', name: 'Megaphone', nl: 'Megafoon', sub: 'Betoging op het plein', p: { phone: 0.75, crunch: 0.65, echo: 0.1 } },
   { id: 'station', name: 'Station', nl: 'Omroep', sub: 'Spoor 2', p: { phone: 0.6, echo: 0.35, room: 0.6, ends: 'chime' } },
+  { id: 'gramophone', name: 'Gramophone', nl: 'Grammofoon', sub: 'Opname uit 1958', p: { phone: 0.5, crunch: 0.12, sizzle: 0.25, wobble: 0.08 } },
   { id: 'tipsy', name: 'Tipsy', nl: 'Zat', sub: "2 u 's nachts", p: { wobble: 0.7, tape: 0.92, pitch: -1 } },
-  { id: 'church', name: 'Church', nl: 'Kerk', sub: 'Vanaf de kansel', p: { room: 0.9, echo: 0.25, pitch: -2 } },
+  { id: 'underwater', name: 'Underwater', nl: 'Onder water', sub: 'In de vijver', p: { muffle: 0.85, wobble: 0.35, flange: 0.35 } },
+  { id: 'church', name: 'Church', nl: 'Kerk', sub: 'Vanaf de kansel', p: { room: 0.9, echo: 0.25, pitch: -2, formant: -1 } },
   { id: 'frypot', name: 'Fry pot', nl: 'Frietpot', sub: 'Vanuit de frietpot, 180 °C', p: { muffle: 0.75, sizzle: 0.6, wobble: 0.15 } },
   { id: 'walkie', name: 'Walkie', nl: 'Portofoon', sub: 'Over', p: { phone: 0.9, crunch: 0.5, ends: 'squelch' } },
 ];
@@ -238,6 +263,110 @@ let cast = CAST[0];
 let P = { ...BASE, ...cast.voice };
 let preset = null;
 let sub = 'Stem vervormd';
+
+// --- Pitch and formant (TD-PSOLA) ----------------------------------------------
+
+// Finds the pitch period in samples every 10 ms; zero is unvoiced.
+function track(d, sr) {
+  const k = Math.max(1, Math.round(sr / 12000)), sr2 = sr / k, m = Math.floor(d.length / k);
+  const x = new Float32Array(m);
+  for (let i = 0; i < m; i++) { let s = 0; for (let j = 0; j < k; j++) s += d[i * k + j]; x[i] = s / k; }
+  const hop = Math.round(sr2 * 0.01), win = Math.round(sr2 * 0.03);
+  const minT = Math.floor(sr2 / 450), maxT = Math.ceil(sr2 / 60);
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  const df = new Float32Array(maxT + 1), per = [];
+  for (let c = 0; c + win + maxT < m; c += hop) {
+    let e = 0;
+    for (let i = 0; i < win; i++) e += x[c + i] * x[c + i];
+    if (Math.sqrt(e / win) < peak * 0.04) { per.push(0); continue; }
+    let run = 0, best = 0;
+    for (let t = 1; t <= maxT; t++) {
+      let s = 0;
+      for (let i = 0; i < win; i++) { const q = x[c + i] - x[c + i + t]; s += q * q; }
+      run += s;
+      df[t] = run ? (s * t) / run : 1;
+    }
+    for (let t = minT; t <= maxT; t++) {
+      if (df[t] < 0.2) { while (t < maxT && df[t + 1] < df[t]) t++; best = t; break; }
+    }
+    per.push(best * k);
+  }
+  // A median of five removes octave slips.
+  const out = per.map((v, i) => {
+    const w = per.slice(Math.max(0, i - 2), i + 3).filter(Boolean).sort((a, b) => a - b);
+    return v && w.length ? w[w.length >> 1] : 0;
+  });
+  return { hop: hop * k, per: out };
+}
+
+// Places one mark per period on voiced parts, every 8 ms elsewhere.
+function marks(d, sr, tr) {
+  const out = [], uv = Math.round(sr * 0.008);
+  const perAt = (i) => tr.per[Math.min(tr.per.length - 1, Math.floor(i / tr.hop))] || 0;
+  let t = 0;
+  while (t < d.length) {
+    const P0 = perAt(t);
+    out.push({ t, P: P0 || uv, v: !!P0 });
+    let nt = t + (P0 || uv);
+    if (P0) {
+      // The next mark snaps to the waveform peak near one period on.
+      let bv = -Infinity;
+      const a = Math.max(t + 1, nt - (P0 >> 2)), b = Math.min(d.length, nt + (P0 >> 2));
+      for (let i = a; i < b; i++) if (d[i] > bv) { bv = d[i]; nt = i; }
+    }
+    t = nt;
+  }
+  return out;
+}
+
+// Moves pitch by p and the formants by q; the length stays.
+function psola(d, mk, p, q) {
+  const N = d.length, out = new Float32Array(N), ws = new Float32Array(N);
+  let k = 0, ts = mk.length ? mk[0].t : 0;
+  while (ts < N && mk.length) {
+    while (k + 1 < mk.length && Math.abs(mk[k + 1].t - ts) <= Math.abs(mk[k].t - ts)) k++;
+    const m = mk[k], step = m.v ? m.P / p : m.P;
+    // Voiced grains hold one pulse each; unvoiced grains overlap to stay smooth.
+    const W = m.v ? m.P / q : Math.max(m.P / q, step), c = Math.round(ts);
+    for (let j = -Math.floor(W); j <= W; j++) {
+      const o = c + j;
+      if (o < 0 || o >= N) continue;
+      const src = m.t + j * q, i0 = Math.floor(src);
+      if (i0 < 0 || i0 + 1 >= N) continue;
+      const w = 0.5 + 0.5 * Math.cos((Math.PI * j) / W), fr = src - i0;
+      out[o] += w * (d[i0] * (1 - fr) + d[i0 + 1] * fr);
+      ws[o] += w;
+    }
+    ts += Math.max(1, step);
+  }
+  // Only piled-up grains scale down; gaps between pulses stay silent.
+  let pin = 0, pout = 0;
+  for (let i = 0; i < N; i++) { out[i] /= Math.max(ws[i], 1); pout = Math.max(pout, Math.abs(out[i])); pin = Math.max(pin, Math.abs(d[i])); }
+  if (pout > 0) for (let i = 0; i < N; i++) out[i] *= pin / pout;
+  return out;
+}
+
+// Returns the take shifted in pitch and formant, cached per setting.
+function hq(take, semis, fsemis) {
+  const sr = take.buf.sampleRate;
+  if (!take.src) {
+    const [off, len] = take.trim, a = Math.floor(off * sr);
+    take.src = take.buf.getChannelData(0).slice(a, a + Math.floor(len * sr));
+    take.mk = marks(take.src, sr, track(take.src, sr));
+    take.hq = new Map();
+  }
+  const key = semis + '|' + fsemis;
+  if (!take.hq.has(key)) {
+    const y = semis || fsemis ? psola(take.src, take.mk, 2 ** (semis / 12), 2 ** (fsemis / 12)) : take.src;
+    const b = new AudioBuffer({ length: y.length, numberOfChannels: 1, sampleRate: sr });
+    b.copyToChannel(y, 0);
+    if (take.hq.size > 12) take.hq.delete(take.hq.keys().next().value);
+    take.hq.set(key, b);
+  }
+  return take.hq.get(key);
+}
+const hqKey = (p) => [p.pitch, p.formant, p.double ? p.doubleSt : 'x'].join('|');
 
 // --- Audio chain -------------------------------------------------------------
 
@@ -255,23 +384,78 @@ function wetDry(fx, dryDrop) {
   const input = new Tone.Gain(1), output = new Tone.Gain(1);
   const dry = new Tone.Gain(1), wet = new Tone.Gain(0);
   input.connect(dry); dry.connect(output);
-  input.connect(fx); fx.connect(wet); wet.connect(output);
+  // A stage is a Tone node, or a bank with its own input and output.
+  const tone = fx instanceof Tone.ToneAudioNode;
+  input.connect(tone ? fx : fx.input); (tone ? fx : fx.output).connect(wet); wet.connect(output);
   return { input, output, set(w) { dry.gain.value = 1 - w * dryDrop; wet.gain.value = w; } };
 }
 
+// A bank of tight resonances on a slightly stretched series rings like sheet metal.
+function metalBank(sr) {
+  const input = new Tone.Gain(1), output = new Tone.Gain(7);
+  const ks = [1, 2.02, 3.07, 4.2, 5.4, 6.8];
+  const fs = ks.map((k, i) => {
+    const f = new Tone.Filter({ type: 'bandpass', frequency: 220 * k, Q: 28 });
+    input.chain(f, new Tone.Gain(1 / (1 + i * 0.35)), output);
+    return f;
+  });
+  return { input, output, tune(hz) { fs.forEach((f, i) => { f.frequency.value = Math.min(sr * 0.45, hz * ks[i]); }); } };
+}
+
+// A channel vocoder: the voice's band levels open the same bands of a carrier.
+function vocoderBank() {
+  const input = new Tone.Gain(1), output = new Tone.Gain(16), carrier = new Tone.Gain(1);
+  const saws = [1, 1.26, 1.5].map((k) => new Tone.Oscillator({ type: 'sawtooth', frequency: 110 * k }).start());
+  const sawG = new Tone.Gain(0), chordG = new Tone.Gain(0), noiseG = new Tone.Gain(0);
+  saws[0].connect(sawG);
+  saws.forEach((o) => o.connect(chordG));
+  new Tone.Noise('white').start().connect(noiseG);
+  sawG.connect(carrier); chordG.connect(carrier); noiseG.connect(carrier);
+  const N = 20, lo = 120, hi = 8000, Q = 6;
+  for (let i = 0; i < N; i++) {
+    const f = lo * Math.pow(hi / lo, i / (N - 1));
+    const env = new Tone.Filter({ type: 'lowpass', frequency: 35 });
+    input.chain(new Tone.Filter({ type: 'bandpass', frequency: f, Q }), new Tone.WaveShaper((x) => Math.abs(x), 1024), env);
+    const vca = new Tone.Gain(0);
+    env.connect(vca.gain);
+    carrier.chain(new Tone.Filter({ type: 'bandpass', frequency: f, Q }), vca, output);
+  }
+  return {
+    input, output,
+    set(type, hz) {
+      sawG.gain.value = type === 'saw' ? 1 : 0;
+      chordG.gain.value = type === 'chord' ? 0.55 : 0;
+      noiseG.gain.value = type === 'noise' ? 1.3 : 0;
+      saws.forEach((o, i) => { o.frequency.value = hz * [1, 1.26, 1.5][i]; });
+    },
+  };
+}
+
 // Builds one voice chain in the current Tone context.
+// Live mic and raw takes enter at input; shifted takes enter at hqIn and layerIn.
 function build() {
   const n = {};
   const sr = Tone.getContext().sampleRate;
   n.input = new Tone.Gain(1);
+  n.rtPitch = new Tone.PitchShift({ pitch: 0, windowSize: 0.06 });
+  n.rtLayerOn = new Tone.Gain(0);
+  n.rtLayer = new Tone.PitchShift({ pitch: -12, windowSize: 0.06 });
+  n.hqIn = new Tone.Gain(1);
+  n.layerIn = new Tone.Gain(1);
+  n.layer = new Tone.Gain(0);
+  n.sum = new Tone.Gain(1);
   n.duck = new Tone.Gain(1);
-  n.pitch = new Tone.PitchShift({ pitch: 0, windowSize: 0.08 });
   n.vib = new Tone.Vibrato({ frequency: 4, depth: 0 });
   n.ring = new Tone.Gain(0);
   n.ringOsc = new Tone.Oscillator(50, 'sine').start();
   n.ringOsc.connect(n.ring.gain);
   n.ringMix = wetDry(n.ring, 1);
   n.mid = new Tone.Gain(1);
+  n.flange = new Tone.Chorus({ frequency: 0.22, delayTime: 2.2, depth: 0.8, feedback: 0.5, spread: 0, wet: 0 }).start();
+  n.metal = metalBank(sr);
+  n.metalMix = wetDry(n.metal, 0.6);
+  n.voc = vocoderBank();
+  n.vocMix = wetDry(n.voc, 1);
   n.dist = new Tone.Distortion({ distortion: 0, oversample: '2x' });
   n.hp = new Tone.Filter({ type: 'highpass', frequency: 20, rolloff: -24 });
   n.lp = new Tone.Filter({ type: 'lowpass', frequency: 18000, rolloff: -24 });
@@ -287,21 +471,38 @@ function build() {
   n.noiseGain = new Tone.Gain(0);
   n.gate = new Tone.Gain(0);
 
-  n.input.chain(n.duck, n.pitch, n.vib, n.ringMix.input);
-  n.ringMix.output.chain(n.mid, n.dist, n.hp, n.lp, n.delay, n.verbMix.input);
+  n.input.chain(n.rtPitch, n.sum);
+  n.input.chain(n.rtLayerOn, n.rtLayer, n.layer);
+  n.hqIn.connect(n.sum);
+  n.layerIn.connect(n.layer);
+  n.layer.connect(n.sum);
+  n.sum.chain(n.duck, n.vib, n.ringMix.input);
+  n.ringMix.output.chain(n.mid, n.flange, n.metalMix.input);
+  n.metalMix.output.connect(n.vocMix.input);
+  n.vocMix.output.chain(n.dist, n.hp, n.lp, n.delay, n.verbMix.input);
   n.verbMix.output.chain(n.out, n.limiter);
   n.noise.chain(n.noiseHp, n.trem, n.noiseGain, n.gate, n.out);
   return n;
 }
 
-function apply(n, p) {
-  n.pitch.pitch = p.pitch;
-  n.pitch.wet.value = p.pitch ? 1 : 0;
+// Shifted takes skip the realtime shifters; the live mic uses them.
+function apply(n, p, hqMode = !n.mic) {
+  n.rtPitch.pitch = p.pitch;
+  n.rtPitch.wet.value = !hqMode && p.pitch ? 1 : 0;
+  n.rtLayer.pitch = p.pitch + p.doubleSt;
+  n.rtLayerOn.gain.value = hqMode ? 0 : 1;
+  n.layer.gain.value = p.double * 0.9;
   n.vib.depth.value = p.wobble * 0.6;
   n.vib.frequency.value = 2.5 + p.wobble * 3.5;
   n.vib.wet.value = p.wobble ? 1 : 0;
   n.ringOsc.frequency.value = p.ringHz;
   n.ringMix.set(p.robot);
+  n.flange.wet.value = p.flange * 0.75;
+  n.flange.feedback.value = 0.3 + p.flange * 0.5;
+  n.metal.tune(p.metalHz);
+  n.metalMix.set(p.metal);
+  n.voc.set(p.vocType, p.vocHz);
+  n.vocMix.set(p.vocoder);
   n.dist.distortion = p.crunch * 0.85;
   n.dist.wet.value = p.crunch ? 1 : 0;
   n.hp.frequency.value = 20 * Math.pow(500 / 20, p.phone);
@@ -351,20 +552,24 @@ async function chain() {
 
 // Renders a take through its voice, offline.
 async function render(take, p, channels = 2, rate = take.buf.sampleRate) {
-  const [off, len] = take.trim;
+  const main = hq(take, p.pitch, p.formant);
+  const dbl = p.double ? hq(take, p.pitch + p.doubleSt, p.formant) : null;
   const lead0 = 0.05, leadEnds = bookendLead(p.ends);
-  const voiceLen = len / p.tape;
+  const voiceLen = main.duration / p.tape;
   const tail = 0.15 + p.echo * 2.5 + p.room * 2.8 + (p.ends === 'squelch' ? 0.4 : 0);
   const dur = lead0 + leadEnds + voiceLen + tail;
   const out = await Tone.Offline(() => {
     const n = build();
-    apply(n, p);
+    apply(n, p, true);
     n.limiter.toDestination();
     const t = lead0 + leadEnds;
     bookends(p.ends, n, lead0, t + voiceLen);
-    const pl = new Tone.Player(take.buf).connect(n.input);
-    pl.playbackRate = p.tape;
-    pl.start(t, off, len);
+    for (const [buf, dest] of [[main, n.hqIn], [dbl, n.layerIn]]) {
+      if (!buf) continue;
+      const pl = new Tone.Player(buf).connect(dest);
+      pl.playbackRate = p.tape;
+      pl.start(t);
+    }
     n.gate.gain.setValueAtTime(1, lead0);
     n.gate.gain.setValueAtTime(1, t + voiceLen);
     n.gate.gain.linearRampToValueAtTime(0, t + voiceLen + 0.15);
@@ -551,29 +756,44 @@ async function play() {
   if (!sel) return;
   stop();
   const n = await chain();
-  const take = sel, [off, len] = take.trim;
+  const take = sel, rt = !!n.mic;
+  let main = take.buf, dbl = null, off = 0, len;
+  if (rt) [off, len] = take.trim;
+  else {
+    main = hq(take, P.pitch, P.formant);
+    if (P.double) dbl = hq(take, P.pitch + P.doubleSt, P.formant);
+    len = main.duration;
+  }
+  apply(n, P, !rt);
   const t0 = Tone.now() + 0.05;
   const voiceLen = len / P.tape;
   const lead = bookends(P.ends, n, t0, loopOn ? 0 : t0 + bookendLead(P.ends) + voiceLen);
-  const pl = new Tone.Player(take.buf).connect(n.input);
-  pl.playbackRate = P.tape;
-  if (loopOn) { pl.loop = true; pl.loopStart = off; pl.loopEnd = off + len; pl.start(t0 + lead, off); }
-  else pl.start(t0 + lead, off, len);
+  const players = [];
+  for (const [buf, dest] of [[main, rt ? n.input : n.hqIn], [dbl, n.layerIn]]) {
+    if (!buf) continue;
+    const pl = new Tone.Player(buf).connect(dest);
+    pl.playbackRate = P.tape;
+    if (loopOn) { pl.loop = true; pl.loopStart = off; pl.loopEnd = off + len; pl.start(t0 + lead, off); }
+    else pl.start(t0 + lead, off, len);
+    players.push(pl);
+  }
   n.gate.gain.cancelScheduledValues(t0);
   n.gate.gain.setValueAtTime(1, t0);
-  const me = { player: pl, take };
+  const me = { player: players[0], players, take, key: hqKey(P) };
   playing = me;
-  pl.onstop = () => { if (playing === me) stop(); };
+  players[0].onstop = () => { if (playing === me) stop(); };
   setPlayUi(true);
   wake();
 }
 
 function stop() {
   if (!playing) return;
-  const { player } = playing;
+  const { players } = playing;
   playing = null;
-  try { player.onstop = () => {}; player.stop(); } catch (e) { /* The player already stopped. */ }
-  setTimeout(() => player.dispose(), 400);
+  for (const pl of players) {
+    try { pl.onstop = () => {}; pl.stop(); } catch (e) { /* The player already stopped. */ }
+    setTimeout(() => pl.dispose(), 400);
+  }
   if (live) {
     const t = Tone.now();
     live.gate.gain.cancelScheduledValues(t);
@@ -772,6 +992,8 @@ async function toggleLive() {
     live.mic.disconnect();
     live.mic.close();
     live.mic = null;
+    stop();
+    apply(live, P);
     if (!playing) { live.gate.gain.cancelScheduledValues(Tone.now()); live.gate.gain.value = 0; }
     btn.setAttribute('aria-pressed', 'false');
     sleepSoon();
@@ -780,8 +1002,10 @@ async function toggleLive() {
   const n = await chain();
   const mic = new Tone.UserMedia();
   try { await mic.open(); } catch (e) { note(MIC_OFF, true); return; }
+  stop();
   mic.connect(n.input);
   n.mic = mic;
+  apply(n, P);
   n.gate.gain.cancelScheduledValues(Tone.now());
   n.gate.gain.value = 1;
   btn.setAttribute('aria-pressed', 'true');
@@ -945,7 +1169,7 @@ function note(s, stay = false) {
 // A blocked mic stays on screen until the page reloads.
 const MIC_OFF = 'The mic is blocked here. Allow it, or open this page in Chrome.';
 
-function voiced(p) { return Object.keys(BASE).some((k) => k !== 'ringHz' && p[k] !== BASE[k]); }
+function voiced(p) { return Object.keys(BASE).some((k) => !TUNING.has(k) && p[k] !== BASE[k]); }
 
 function setCaption() {
   $('#chyTitle').textContent = cast.title;
@@ -953,10 +1177,16 @@ function setCaption() {
 }
 
 // A voice change on a chosen take tunes that take.
+// A new pitch, formant or double restarts the take with fresh buffers.
+let replayTimer = 0;
 function voiceChanged() {
   if (sel) { sel.voice = { ...P }; saveTake(sel); }
   if (live) apply(live, P);
-  if (playing) playing.player.playbackRate = P.tape;
+  if (!playing) return;
+  for (const pl of playing.players) pl.playbackRate = P.tape;
+  clearTimeout(replayTimer);
+  if (!playing.player.loop || hqKey(P) === playing.key || (live && live.mic)) return;
+  replayTimer = setTimeout(() => { if (playing) play(); }, 220);
 }
 
 function buttonGrid(box, items, onPick) {
@@ -1061,21 +1291,30 @@ function buildLines() {
 function markLines() { [...$('#lines').children].forEach((b, i) => b.setAttribute('aria-pressed', i === pickedLine)); }
 
 function shuffle() {
-  const r = Math.random;
+  const r = Math.random, some = (c, f) => (r() < c ? +f().toFixed(2) : 0);
   P = {
     ...BASE,
-    pitch: Math.round((r() * 24 - 12) * 2) / 2,
-    tape: +(0.8 + r() * 0.45).toFixed(2),
-    wobble: r() < 0.35 ? +(r() * 0.8).toFixed(2) : 0,
-    robot: r() < 0.25 ? +(0.4 + r() * 0.6).toFixed(2) : 0,
+    pitch: Math.round((r() * 20 - 10) * 2) / 2,
+    formant: Math.round((r() * 12 - 6) * 2) / 2,
+    tape: +(0.85 + r() * 0.35).toFixed(2),
+    double: some(0.25, () => 0.3 + r() * 0.4),
+    doubleSt: [-12, -7, -5, 4, 7, 12][Math.floor(r() * 6)],
+    wobble: some(0.3, () => r() * 0.7),
+    flange: some(0.25, () => r() * 0.7),
+    metal: some(0.2, () => r() * 0.6),
+    metalHz: Math.round(120 + r() * 900),
+    robot: some(0.15, () => 0.4 + r() * 0.6),
     ringHz: Math.round(30 + r() * 370),
-    crunch: r() < 0.35 ? +(r() * 0.6).toFixed(2) : 0,
-    phone: r() < 0.3 ? +(0.5 + r() * 0.5).toFixed(2) : 0,
-    muffle: r() < 0.25 ? +(r() * 0.7).toFixed(2) : 0,
-    echo: r() < 0.3 ? +(r() * 0.5).toFixed(2) : 0,
-    room: r() < 0.4 ? +(r() * 0.7).toFixed(2) : 0,
-    sizzle: r() < 0.15 ? +(r() * 0.6).toFixed(2) : 0,
-    ends: r() < 0.15 ? (r() < 0.5 ? 'chime' : 'squelch') : 'none',
+    vocoder: some(0.12, () => 0.6 + r() * 0.4),
+    vocType: ['saw', 'chord', 'noise'][Math.floor(r() * 3)],
+    vocHz: Math.round(80 + r() * 140),
+    crunch: some(0.3, () => r() * 0.6),
+    phone: some(0.25, () => 0.5 + r() * 0.5),
+    muffle: some(0.2, () => r() * 0.7),
+    echo: some(0.25, () => r() * 0.5),
+    room: some(0.4, () => r() * 0.7),
+    sizzle: some(0.1, () => r() * 0.6),
+    ends: r() < 0.12 ? (r() < 0.5 ? 'chime' : 'squelch') : 'none',
   };
   preset = null;
   sub = SHUFFLE_SUBS[Math.floor(r() * SHUFFLE_SUBS.length)];
