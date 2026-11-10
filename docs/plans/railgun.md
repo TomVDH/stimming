@@ -167,6 +167,7 @@ Wind bed with a whistle past the pylon, dipping under a charge. A charge synth o
 
 Bean `stimming-z9w9`, branch `claude/railgun-shot-99c65f`. Tom, 2026-11-10: "the gun, the muzzle effects and projectile, the incoming threats and the explosion thereof upon destruction".
 Decisions: the Volumetric direction for the shot; the barrel glows after a shot and cools; a main rock with two to four fragments.
+Tom, 02:32, added: "the harmonic wind up should culminate in a thx like chorus right before firing -- we can hold the gun a little longer -- it will really start acting out if we hold it for too long". Then: a hold past the acting-out vents the charge (a soft fail).
 
 **Fixed.** The smoke train keeps its look: no edit to `trail()`, the march or the `PU.*` uniforms. A change there needs a before/after still for Tom first.
 The sky, the cirrus, the sun and the time of day belong to another session: no edit to `k2skyB`, `wisps`, `sun`, `sunDeg`, `setSun` or the Sun slider.
@@ -182,6 +183,30 @@ The sky, the cirrus, the sun and the time of day belong to another session: no e
 - Tracking: a spring and damper on yaw and elevation. The slew speeds up, overshoots a little and settles. The top rate stays 3.2° a second.
 - Heat: one uniform `uHeat`, 1 on the shot, gone in about ten seconds. The rails and the brake take a blackbody ramp, white-yellow to dull red, hottest at the muzzle. White steam wisps rise off the barrel through the dust buffer.
 - At rest the gun stays cold stone; nothing on it glows.
+
+#### The hold
+
+| Held | Stage | What happens |
+|---|---|---|
+| 0 to 10 s | Build | Power climbs on an ease that reaches 1 at 10 s. Chaos and arcs grow as now, slower. |
+| 10 s | Full | The chord locks. One hard shudder. |
+| 10 to 14 s | Ready | Power holds at 1. The chord rings; the gun shivers. The clean shot. |
+| 14 to 24 s | Over-hold | The gun acts out, past today's rage: arcs strike the plain far out; the rails glow red while charging; tone-2 plates rattle; sparks spit from the brake; heavy shake; lens fringe. A release fires an overcharged shot, power up to 1.25, with a bigger blast. |
+| 24 s | Vent | The gun dumps the charge into the plain: one huge strike under the barrel, a dust burst, a shock ring on the ground. No shot; the rock keeps coming. |
+
+- Today's constants move: `levelOf`, `chaosOf`, the rage band, `CHASE_T`, and the 2.5 s constant in `__qa.charge`.
+- `__qa.charge(c)` takes 0.12 to 1.25; above 1 it sets the over-hold.
+- This replaces "no fail state yet": the vent is a soft fail.
+
+#### The chorus
+
+An original swell. It uses no recording, notes, sweep or score of the THX Deep Note.
+- A choir of formant voices (sawtooth through two vowel bandpasses) grows out of the hum. The voices start on the hum's own harmonics.
+- Through the build they climb on their own curves and spread into a beating cluster. Their vowel opens from "oo" to "ah".
+- At full charge they lock into one wide chord of the gun's own: a suspended minor voicing on the hum's root, over five octaves. The ten partials stay as the body under it.
+- In the over-hold the chord sours: the voices drift sharp and flat, beat hard, distort and split into a screaming cluster.
+- The vent cuts the choir to a crash and a falling groan.
+- All of it runs through `kit.out`; mute and a hidden tab stop it at once.
 
 #### Muzzle
 
