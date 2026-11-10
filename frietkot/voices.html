@@ -189,11 +189,11 @@ const KNOBS = [
 function pct(v) { return Math.round(v * 100) + '%'; }
 
 const BASE = {
-  pitch: 0, formant: 0, tape: 1, turian: 0, tSub: 0.45, tDet: 0.5, tMs: 2.4, tFb: 0.55, tWet: 0.55, double: 0, doubleSt: -12, wobble: 0, flange: 0, metal: 0, metalHz: 220,
+  pitch: 0, formant: 0, tape: 1, turian: 0, tSubSt: -5, tSub: 0.35, tDet: 0, tMs: 1.8, tFb: 0.5, tWet: 0.3, tChest: 4, tPres: 3, double: 0, doubleSt: -12, wobble: 0, flange: 0, metal: 0, metalHz: 220,
   robot: 0, ringHz: 50, vocoder: 0, vocType: 'saw', vocHz: 110, crunch: 0, phone: 0, muffle: 0, echo: 0, room: 0, sizzle: 0, ends: 'none',
 };
 // Tuning keys colour a stage, but alone they leave the voice clean.
-const TUNING = new Set(['tSub', 'tDet', 'tMs', 'tFb', 'tWet', 'doubleSt', 'metalHz', 'ringHz', 'vocType', 'vocHz']);
+const TUNING = new Set(['tSubSt', 'tSub', 'tDet', 'tMs', 'tFb', 'tWet', 'tChest', 'tPres', 'doubleSt', 'metalHz', 'ringHz', 'vocType', 'vocHz']);
 
 // The people on the square. Each id names the clips the toy plays for them.
 const CAST = [
@@ -227,9 +227,9 @@ const PRESETS = [
   { id: 'clean', name: 'Clean', nl: 'Gewoon', sub: '', p: {} },
   { id: 'anon', name: 'Anonymous', nl: 'Anoniem', sub: 'Stem vervormd', p: { pitch: -4, formant: -2, muffle: 0.15, room: 0.12 } },
   { id: 'deep', name: 'Deep cover', nl: 'Diep', sub: 'Bron binnen de frituur', p: { pitch: -8, formant: -4, crunch: 0.1, muffle: 0.2 } },
-  { id: 'vakarian', name: 'Vakarian', nl: 'Turiaan A', sub: 'Is aan het kalibreren', p: { formant: -1, turian: 1, tSub: 0.45, tDet: 0.5, tMs: 2.4, tFb: 0.55, tWet: 0.55, room: 0.06 } },
-  { id: 'vakarian-b', name: 'Vakarian B', nl: 'Turiaan, diep', sub: 'Is nog altijd aan het kalibreren', p: { pitch: -1, formant: -2, turian: 1, tSub: 0.7, tDet: 0.3, tMs: 3.2, tFb: 0.45, tWet: 0.4, room: 0.06 } },
-  { id: 'vakarian-c', name: 'Vakarian C', nl: 'Turiaan, metaal', sub: 'Kalibreert de frietpot', p: { formant: -0.5, turian: 1, tSub: 0.3, tDet: 0.65, tMs: 1.7, tFb: 0.7, tWet: 0.65, room: 0.06 } },
+  { id: 'vakarian', name: 'Vakarian', nl: 'Turiaan A', sub: 'Is aan het kalibreren', p: { formant: -0.5, turian: 1, tSubSt: -5, tSub: 0.35, tDet: 0, tMs: 1.8, tFb: 0.5, tWet: 0.3, tChest: 4, tPres: 3, room: 0.05 } },
+  { id: 'vakarian-b', name: 'Vakarian B', nl: 'Turiaan, diep', sub: 'Is nog altijd aan het kalibreren', p: { formant: -1.5, turian: 1, tSubSt: -6, tSub: 0.45, tDet: 0, tMs: 2.4, tFb: 0.45, tWet: 0.25, tChest: 5, tPres: 2.5, room: 0.05 } },
+  { id: 'vakarian-c', name: 'Vakarian C', nl: 'Turiaan, metaal', sub: 'Kalibreert de frietpot', p: { formant: -0.5, turian: 1, tSubSt: -3, tSub: 0.28, tDet: 0.15, tMs: 1.3, tFb: 0.65, tWet: 0.45, tChest: 3.5, tPres: 4, room: 0.05 } },
   { id: 'higher', name: 'Higher', nl: 'Hoger', sub: 'Stem vervormd', p: { pitch: 5, formant: 3 } },
   { id: 'lower', name: 'Lower', nl: 'Lager', sub: 'Stem vervormd', p: { pitch: -4, formant: -3 } },
   { id: 'kiddo', name: 'Kiddo', nl: 'Kleuter', sub: 'Mag nog niet alleen', p: { pitch: 7, formant: 5, tape: 1.04 } },
@@ -369,10 +369,40 @@ function hq(take, semis, fsemis) {
   }
   return take.hq.get(key);
 }
-const turKey = (p) => (p.turian ? [p.turian, p.tSub, p.tDet, p.tMs, p.tFb, p.tWet] : ['x']).join(',');
+const turKey = (p) => (p.turian ? [p.turian, p.tSubSt, p.tSub, p.tDet, p.tMs, p.tFb, p.tWet, p.tChest, p.tPres] : ['x']).join(',');
 const hqKey = (p) => [p.pitch, p.formant, p.double ? p.doubleSt : 'x', turKey(p)].join('|');
 
-// The turian voice: two detuned voices, an octave-down sub, and a damped comb.
+// One RBJ biquad over a buffer: a high-pass or a peaking bell.
+function biquad(x, sr, type, f, q, db = 0) {
+  const w = (2 * Math.PI * f) / sr, cs = Math.cos(w), al = Math.sin(w) / (2 * q), A = Math.pow(10, db / 40);
+  let b0, b1, b2, a0, a1, a2;
+  if (type === 'hp') { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al; }
+  else { b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A; }
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = (b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+  }
+  return y;
+}
+
+// A fast compressor glues the layers: 5 ms attack, 80 ms release, 4:1.
+function glue(x, sr, thrDb = -16, ratio = 4) {
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  const thr = peak * Math.pow(10, thrDb / 20), at = Math.exp(-1 / (sr * 0.005)), re = Math.exp(-1 / (sr * 0.08));
+  const y = new Float32Array(x.length);
+  let env = 0;
+  for (let i = 0; i < x.length; i++) {
+    const a = Math.abs(x[i]);
+    env = a > env ? at * env + (1 - at) * a : re * env + (1 - re) * a;
+    y[i] = x[i] * (env > thr ? Math.pow(env / thr, 1 / ratio - 1) : 1);
+  }
+  return y;
+}
+
+// The turian voice: a lower harmony, a short damped comb, then EQ and glue.
 // It runs on the buffer, so the preview and the clip sound the same.
 function voiceBuf(take, p) {
   const main = hq(take, p.pitch, p.formant);
@@ -380,21 +410,30 @@ function voiceBuf(take, p) {
   const key = 't|' + p.pitch + '|' + p.formant + '|' + turKey(p);
   if (take.hq.has(key)) return take.hq.get(key);
   const sr = main.sampleRate, a = main.getChannelData(0), N = a.length;
-  const sub = hq(take, p.pitch - 12, p.formant - 3).getChannelData(0);
-  const det = hq(take, p.pitch - 0.3, p.formant - 0.5).getChannelData(0);
-  const lag = Math.round(sr * 0.009), y = new Float32Array(N), z = new Float32Array(N), out = new Float32Array(N);
-  for (let i = 0; i < N; i++) y[i] = a[i] + p.tSub * sub[i] + p.tDet * (i >= lag ? det[i - lag] : 0);
-  const D0 = (sr * p.tMs) / 1000;
-  let lp = 0, pin = 0, pout = 0;
+  const sub = hq(take, p.pitch + p.tSubSt, p.formant - 1.5).getChannelData(0);
+  const det = p.tDet ? hq(take, p.pitch - 0.25, p.formant - 0.3).getChannelData(0) : null;
+  const lag = Math.round(sr * 0.009);
+  let y = new Float32Array(N);
+  for (let i = 0; i < N; i++) y[i] = a[i] + p.tSub * sub[i] + (det && i >= lag ? p.tDet * det[i - lag] : 0);
+  // The comb sweeps slowly, so the buzz moves but never whooshes.
+  const z = new Float32Array(N), D0 = (sr * p.tMs) / 1000;
+  let lp = 0;
   for (let i = 0; i < N; i++) {
-    // The comb sweeps slowly, so the ring moves but never whooshes.
-    const j = i - D0 * (1 + 0.18 * Math.sin((2 * Math.PI * 0.15 * i) / sr)), j0 = Math.floor(j), fr = j - j0;
+    const j = i - D0 * (1 + 0.15 * Math.sin((2 * Math.PI * 0.15 * i) / sr)), j0 = Math.floor(j), fr = j - j0;
     const zd = j0 >= 0 ? z[j0] * (1 - fr) + z[j0 + 1] * fr : 0;
-    lp += 0.35 * (zd - lp);
+    lp += 0.45 * (zd - lp);
     z[i] = y[i] + p.tFb * lp;
   }
+  for (let i = 0; i < N; i++) y[i] = (1 - p.tWet) * y[i] + p.tWet * z[i];
+  // Cut mud under 80 Hz, lift the chest at 180 Hz and the grit at 3.2 kHz.
+  y = biquad(y, sr, 'hp', 80, 0.7);
+  y = biquad(y, sr, 'peak', 180, 0.9, p.tChest);
+  y = biquad(y, sr, 'peak', 3200, 0.8, p.tPres);
+  y = glue(y, sr);
+  const out = new Float32Array(N);
+  let pin = 0, pout = 0;
   for (let i = 0; i < N; i++) {
-    out[i] = (1 - p.turian) * a[i] + p.turian * ((1 - p.tWet) * y[i] + p.tWet * z[i]);
+    out[i] = (1 - p.turian) * a[i] + p.turian * y[i];
     pin = Math.max(pin, Math.abs(a[i])); pout = Math.max(pout, Math.abs(out[i]));
   }
   if (pout > 0) for (let i = 0; i < N; i++) out[i] *= pin / pout;
