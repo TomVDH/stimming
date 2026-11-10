@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<style>html { background: oklch(0.14 0.014 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ten seconds: looks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+/* Act 2 look spike: one shot in three looks. */
+:root { --stage: oklch(0.06 0.01 265); }
+.stage--looks canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.stage--looks .shot {
+  position: absolute; right: 20px; bottom: 24px; z-index: 1; margin: 0;
+  font: 700 10px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.14em; text-transform: uppercase;
+  color: oklch(0.94 0.008 275 / 0.7); pointer-events: none; white-space: nowrap;
+}
+/* Phones: the shot tag would sit on the action button. */
+@media (max-width: 640px) { .stage--looks .shot { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <div class="stage stage--looks" id="stage" tabindex="0" role="application" aria-label="A rocket camera in flight, in one of three looks.">
+      <p class="fail" hidden>This page needs WebGL 2, which this browser has turned off.</p>
+      <p class="shot" aria-live="polite"></p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Ten seconds: looks</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FLARE } from '../shared/flare.js';
+import { GRADE } from '../shared/grade.js';
+import { bake, NU, NV } from '../window/sky.js';
+import { initPage, whenVisible, pixelRatio, onQuality, reduced } from '../shared/stim.js';
+
+/* ---------- looks and shots ---------- */
+const LOOKS = ['photo', 'paint', 'cel'];
+const LOOK_NAME = { photo: 'Photoreal', paint: 'Painted anime', cel: 'Full cel' };
+const SHOTS = ['maxq', 'staging', 'mote'];
+const SHOT_NAME = { maxq: 'Max-q · 12 km', staging: 'Staging · 75 km', mote: 'Leaving · 120 000 km' };
+const q = new URLSearchParams(location.search);
+let look = LOOKS.includes(q.get('look')) ? q.get('look') : 'photo';
+let shotI = Math.max(0, SHOTS.indexOf(q.get('shot')));
+
+const ui = initPage({ id: 'launch', silent: true, bar: {
+  choice: {
+    label: 'Look', value: look,
+    options: LOOKS.map((v, i) => ({ value: v, label: LOOK_NAME[v], key: String(i + 1) })),
+    onPick: v => setLook(v),
+  },
+  actions: [{ verb: 'next', label: 'Next shot', onPress: () => setShot((shotI + 1) % SHOTS.length) }],
+  quality: true,
+  keys: [['1 2 3', 'look'], ['click', 'next shot'], ['← →', 'shot']],
+} });
+
+const stage = document.getElementById('stage');
+const shotTag = stage.querySelector('.shot');
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  throw err;
+}
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.insertBefore(renderer.domElement, stage.firstChild);
+
+/* ---------- units ---------- */
+// The foreground is in metres, centred on the camera.
+// The background is in kilometres, from the Earth's centre.
+const R = 6371;
+const SUN_E = 20;
+const D2R = Math.PI / 180;
+const dirOf = (el, az) => new THREE.Vector3(Math.cos(el * D2R) * Math.cos(az * D2R), Math.sin(el * D2R), Math.cos(el * D2R) * Math.sin(az * D2R));
+
+/* ---------- shared GLSL ---------- */
+const NOISE = /* glsl */`
+float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vn3(vec3 x) {
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h31(i), h31(i + vec3(1, 0, 0)), f.x), mix(h31(i + vec3(0, 1, 0)), h31(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h31(i + vec3(0, 0, 1)), h31(i + vec3(1, 0, 1)), f.x), mix(h31(i + vec3(0, 1, 1)), h31(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+// Octaves finer than the pixel footprint fade to their mean.
+float fbm3(vec3 p, float fp, int oct) {
+  float s = 0.0, a = 0.5, f = 1.0;
+  for (int i = 0; i < 9; i++) {
+    if (i >= oct) break;
+    float k = 1.0 - smoothstep(0.25, 0.5, f * fp);
+    s += a * mix(0.5, vn3(p * f), k);
+    f *= 2.03; a *= 0.5;
+  }
+  return s / (1.0 - a * 2.0 + 1e-4) * 1.0;
+}
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn2(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1, 0)), u.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), u.x), u.y);
+}`;
+
+/* ---------- background: sky, Earth, Moon, Sun, stars ---------- */
+const BG = {
+  uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() },
+  uEye: { value: new THREE.Vector3() }, uSun: { value: new THREE.Vector3() },
+  uMoon: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uL: { value: null }, uT: { value: null }, uHor: { value: 0 }, uBake: { value: 1 },
+  uLook: { value: 0 }, uTime: { value: 0 }, uSunE: { value: SUN_E },
+  uPlanet: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+  uMilky: { value: new THREE.Vector3(0.2, 0.9, 0.4).normalize() },
+  uCoast: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uCloud: { value: 0 },
+};
+const bgMat = new THREE.ShaderMaterial({
+  uniforms: BG, depthTest: false, depthWrite: false, toneMapped: false,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+  precision highp float;
+  uniform mat4 uProjInv, uCamWorld;
+  uniform vec3 uEye, uSun, uMilky;
+  uniform vec4 uMoon, uPlanet[3], uCoast;
+  uniform sampler2D uL, uT;
+  uniform float uHor, uBake, uTime, uSunE, uCloud;
+  uniform int uLook;
+  varying vec2 vUv;
+  const float R = 6371.0, PI = 3.14159265;
+  ${NOISE}
+  float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+  // Near hit of a ray on a sphere; -1 for a miss.
+  float hitSphere(vec3 o, vec3 d, vec3 c, float r) {
+    vec3 oc = o - c; float b = dot(oc, d), k = dot(oc, oc) - r * r, h = b * b - k;
+    if (h < 0.0) return -1.0;
+    float t = -b - sqrt(h);
+    return t > 0.0 ? t : -1.0;
+  }
+  // The baked sky: rows crowd near the eye's horizon, as in window/sky.js.
+  float elToV(float el, float hor) {
+    return el >= hor ? 0.5 + 0.5 * sqrt((el - hor) / (PI * 0.5 - hor)) : 0.5 - 0.5 * sqrt((hor - el) / (PI * 0.5 + hor));
+  }
+  vec3 table(sampler2D t, vec3 d) {
+    float el = asin(clamp(d.y, -1.0, 1.0));
+    vec2 dh = normalize(d.xz + vec2(1e-6, 0.0)), sh = normalize(uSun.xz + vec2(1e-6, 0.0));
+    float ph = acos(clamp(dot(dh, sh), -1.0, 1.0));
+    return texture2D(t, vec2(ph / PI, elToV(el, uHor))).rgb;
+  }
+  // Cel and paint looks harden or soften a light term.
+  float shade(float x) {
+    if (uLook == 2) return step(0.04, x) * 0.9 + 0.1 * step(0.3, x);
+    return max(x, 0.0);
+  }
+  // The Earth's surface radiance at P, seen along d.
+  vec3 earth(vec3 P, vec3 d, float fp, vec3 sunC) {
+    vec3 n = normalize(P);
+    float c = fbm3(n * 2.3 + 4.0, fp / R * 2.3, 7);
+    // A shot may lay a coast at a set distance: xyz points inland, w is the distance.
+    float det = fbm3(P / 22.0, fp / 22.0, 8);
+    float lf = uCoast.w > 0.0 ? dot(n, uCoast.xyz) * R / uCoast.w - 1.0 + (c - 0.5) * 2.5 + (det - 0.5) * 2.2 : c - 0.535;
+    float land = uLook == 2 ? step(0.0, lf) : smoothstep(-0.015, 0.015, lf);
+    // Fields and woods: a finer patchwork on the land.
+    float fine = fbm3(P / 2.5, fp / 2.5, 6);
+    vec3 lc = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.12, 0.06), smoothstep(0.4, 0.75, det + (c - 0.55) * 2.0 + (fine - 0.5) * 0.6));
+    vec3 oc = vec3(0.008, 0.028, 0.07);
+    vec3 alb = mix(oc, lc, land);
+    float cl = fbm3(n * 4.0 + vec3(1.7, 0.0, 3.1), fp / R * 4.0, 6) * 0.55 + fbm3(P / 34.0, fp / 34.0, 8) * 0.45;
+    cl -= uCloud;
+    float cov = uLook == 2 ? step(0.57, cl) : smoothstep(0.52, 0.68, cl);
+    float mu = dot(n, uSun);
+    float lam = shade(mu);
+    vec3 col = alb * lam;
+    // The sea takes a glint of the sun.
+    vec3 h = normalize(uSun - d);
+    float gl = pow(max(dot(n, h), 0.0), uLook == 2 ? 60.0 : 300.0) * (1.0 - land) * (1.0 - cov);
+    col += (uLook == 2 ? step(0.5, gl) * 6.0 : gl * 30.0) * step(0.0, mu);
+    // Cloud tops: bright, with a soft self-shade on the sun side.
+    float cs = shade(mu * (0.75 + 0.5 * cl));
+    col = mix(col, vec3(0.92, 0.94, 0.98) * cs, cov);
+    col *= sunC * uSunE / PI;
+    // Towns glow on the night side.
+    float town = step(0.82, vn3(P / 3.0)) * land * (1.0 - cov);
+    town = mix(town, 0.06 * land, smoothstep(1.0, 6.0, fp));
+    col += vec3(1.0, 0.62, 0.3) * town * 0.25 * smoothstep(0.02, -0.12, mu);
+    return col;
+  }
+  vec3 moon(vec3 P, vec3 d, float fp) {
+    vec3 n = normalize(P - uMoon.xyz);
+    float mare = smoothstep(0.48, 0.58, fbm3(n * 2.1 + 9.0, fp / uMoon.w * 2.1, 5));
+    float cr = fbm3(n * 14.0, fp / uMoon.w * 14.0, 6);
+    float alb = mix(0.16, 0.08, mare) * (0.75 + 0.5 * cr);
+    float mu0 = dot(n, uSun), mu = max(dot(n, -d), 1e-3);
+    // Lommel-Seeliger keeps the Moon flat-lit, not a ball.
+    float ls = mu0 > 0.0 ? 2.0 * mu0 / (mu0 + mu) : 0.0;
+    if (uLook == 2) ls = step(0.05, mu0) * 1.0;
+    else if (uLook == 1) ls = smoothstep(0.0, 0.12, mu0) * (0.6 + 0.4 * ls);
+    return vec3(alb * ls * uSunE / PI);
+  }
+  vec3 stars(vec3 d, float px) {
+    vec3 acc = vec3(0.0);
+    for (int l = 0; l < 2; l++) {
+      float K = l == 0 ? 70.0 : 170.0;
+      vec3 g = d * K, c = floor(g), f = fract(g);
+      float h = h31(c + float(l) * 31.7);
+      if (h > 0.93) {
+        vec3 sp = 0.2 + 0.6 * vec3(h31(c + 3.1), h31(c + 5.7), h31(c + 8.3));
+        float dd = length(f - sp) / K;
+        float b = pow(h31(c + 11.0), 6.0) * (l == 0 ? 3.0 : 1.0) + 0.04;
+        float sz = px * (uLook == 2 ? 1.2 : 0.7);
+        float shape = uLook == 2 ? step(dd, sz * (1.0 + b)) : exp(-dd * dd / (sz * sz));
+        vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.85, 0.7), h31(c + 2.0));
+        acc += tint * b * shape * 1.6;
+      }
+    }
+    // The Milky Way: a soft band with dark lanes.
+    float m = exp(-pow(dot(d, uMilky) / 0.2, 2.0));
+    float lane = fbm3(d * 9.0, px * 9.0, 6);
+    if (uLook != 2) acc += vec3(0.5, 0.47, 0.58) * m * (0.3 + 0.7 * smoothstep(0.3, 0.8, lane)) * 0.035 * (1.0 - 0.7 * smoothstep(0.5, 0.65, fbm3(d * 34.0 + 3.0, px * 34.0, 5)));
+    return acc;
+  }
+  void main() {
+    vec4 v = uProjInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+    vec3 d = normalize(mat3(uCamWorld) * (v.xyz / v.w));
+    float px = max(length(fwidth(d)), 1e-5) * 0.7;
+    vec3 col = stars(d, px);
+    // The planets, as points.
+    for (int i = 0; i < 3; i++) {
+      if (uPlanet[i].w <= 0.0) continue;
+      float a = acos(clamp(dot(d, normalize(uPlanet[i].xyz)), -1.0, 1.0));
+      vec3 pc = i == 0 ? vec3(1.0, 0.96, 0.9) : i == 1 ? vec3(1.0, 0.86, 0.66) : vec3(1.0, 0.55, 0.35);
+      float s = px * 1.1;
+      col += pc * uPlanet[i].w * (uLook == 2 ? step(a, s * 1.6) : exp(-a * a / (s * s)));
+    }
+    // The Sun: a disc with a small glow.
+    float sa = acos(clamp(dot(d, uSun), -1.0, 1.0));
+    vec3 sunC = vec3(1.0);
+    if (uBake > 0.5) sunC = table(uT, uSun);
+    float disc = uLook == 2 ? step(sa, 0.0047) : smoothstep(0.0047 + px, 0.0047, sa);
+    col += sunC * uSunE * (disc * 3.0 + (uLook == 2 ? 0.0 : 0.05 * exp(-sa / 0.03)));
+    // The Moon covers what lies behind it.
+    float tm = uMoon.w > 0.0 ? hitSphere(uEye, d, uMoon.xyz, uMoon.w) : -1.0;
+    if (tm > 0.0) col = moon(uEye + d * tm, d, px * tm);
+    // The Earth covers the rest.
+    float te = hitSphere(uEye, d, vec3(0.0), R);
+    if (te > 0.0 && (tm < 0.0 || te < tm)) col = earth(uEye + d * te, d, px * te, sunC);
+    if (uBake > 0.5) {
+      // Inside the air: the baked light and transmittance along the ray.
+      vec3 L = table(uL, d), T = table(uT, d);
+      col = L + T * col;
+    } else {
+      // Far away: a thin lit halo, never thinner than a pixel and a half.
+      float b = -dot(uEye, d);
+      vec3 cpt = uEye + d * max(b, 0.0);
+      float hgt = length(cpt) - R;
+      float w = max(30.0, px * length(uEye) * 1.5);
+      float lit = smoothstep(-0.3, 0.4, dot(normalize(cpt), uSun));
+      float halo = b > 0.0 ? exp(-max(hgt, 0.0) / w) * lit : 0.0;
+      if (uLook == 2) halo = step(0.35, halo) * step(hgt, w * 1.5);
+      col += vec3(0.25, 0.5, 1.0) * halo * 0.8 * (te > 0.0 ? 0.5 : 1.0);
+    }
+    // Look: cel bands keep their hue; paint pushes shadows to violet.
+    float l = luma(col);
+    if (uLook == 2) {
+      float tl = l / (1.0 + l), qn = (floor(tl * 6.0) + 0.6) / 6.0;
+      qn = min(qn, 0.97);
+      col *= (qn / (1.0 - qn)) / max(l, 1e-5) * step(0.004, l);
+      col = mix(vec3(luma(col)), col, 1.25);
+    } else if (uLook == 1) {
+      col = mix(vec3(l), col, 1.3);
+      col = mix(col, col * vec3(0.8, 0.78, 1.25), smoothstep(0.25, 0.0, l));
+    }
+    gl_FragColor = vec4(clamp(col, 0.0, 48.0), 1.0);
+  }`,
+});
+const bgScene = new THREE.Scene();
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quad = (mat) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); m.frustumCulled = false; return m; };
+bgScene.add(quad(bgMat));
+
+// Paint look: a Kuwahara pass turns the backdrop into brush strokes.
+const kuwMat = new THREE.ShaderMaterial({
+  uniforms: { tSrc: { value: null }, uPx: { value: new THREE.Vector2() } },
+  depthTest: false, depthWrite: false, toneMapped: false,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tSrc; uniform vec2 uPx; varying vec2 vUv;
+  // Strokes form on tone-mapped values, so bright spots stay round.
+  vec3 cmp(vec3 x) { return x / (1.0 + x); }
+  void main() {
+    vec3 m[4]; vec3 s[4];
+    for (int k = 0; k < 4; k++) { m[k] = vec3(0.0); s[k] = vec3(0.0); }
+    const int N = 4;
+    for (int j = 0; j <= N; j++) for (int i = 0; i <= N; i++) {
+      vec3 a = cmp(texture2D(tSrc, vUv + vec2(-i, -j) * uPx).rgb);
+      vec3 b = cmp(texture2D(tSrc, vUv + vec2(i, -j) * uPx).rgb);
+      vec3 c = cmp(texture2D(tSrc, vUv + vec2(-i, j) * uPx).rgb);
+      vec3 e = cmp(texture2D(tSrc, vUv + vec2(i, j) * uPx).rgb);
+      m[0] += a; s[0] += a * a; m[1] += b; s[1] += b * b; m[2] += c; s[2] += c * c; m[3] += e; s[3] += e * e;
+    }
+    float n = float((N + 1) * (N + 1)), best = 1e9; vec3 outc = vec3(0.0);
+    for (int k = 0; k < 4; k++) {
+      vec3 mu = m[k] / n, va = abs(s[k] / n - mu * mu);
+      float sv = va.r + va.g + va.b;
+      if (sv < best) { best = sv; outc = mu; }
+    }
+    outc = min(outc, vec3(0.985));
+    gl_FragColor = vec4(outc / (1.0 - outc), 1.0);
+  }`,
+});
+const kuwScene = new THREE.Scene();
+kuwScene.add(quad(kuwMat));
+
+const rtOpts = { type: THREE.HalfFloatType, depthBuffer: false };
+const bgRT = new THREE.WebGLRenderTarget(4, 4, rtOpts);
+const bgRT2 = new THREE.WebGLRenderTarget(4, 4, rtOpts);
+
+/* ---------- foreground scene ---------- */
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 6000);
+scene.add(cam);
+const backdrop = quad(new THREE.ShaderMaterial({
+  uniforms: { tBg: { value: null } }, depthTest: false, depthWrite: false, toneMapped: false,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tBg; varying vec2 vUv; void main() { gl_FragColor = texture2D(tBg, vUv); }`,
+}));
+backdrop.renderOrder = -1000;
+scene.add(backdrop);
+
+const sun = new THREE.DirectionalLight(0xffffff, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 600 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
+scene.add(sun, sun.target);
+const hemi = new THREE.HemisphereLight(0x6688cc, 0x112233, 0.4);
+scene.add(hemi);
+const engineLight = new THREE.PointLight(0xffaa66, 0, 120, 1.6);
+scene.add(engineLight);
+
+/* ---------- hull paint: seams, a roll pattern, small marks ---------- */
+function hullTexture(kind) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 1024;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f2f2ee'; g.fillRect(0, 0, 512, 1024);
+  g.strokeStyle = 'rgba(40,40,50,0.22)'; g.lineWidth = 2;
+  for (let y = 0; y < 1024; y += kind === 'upper' ? 128 : 96) { g.beginPath(); g.moveTo(0, y); g.lineTo(512, y); g.stroke(); }
+  for (let x = 0; x < 512; x += 128) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 1024); g.stroke(); }
+  g.fillStyle = '#16161c';
+  if (kind === 'upper') {
+    // The roll pattern: black and white quarters around the fairing base.
+    for (let i = 0; i < 4; i += 2) g.fillRect(i * 128, 40, 128, 220);
+    for (let i = 1; i < 4; i += 2) g.fillRect(i * 128, 260, 128, 220);
+  } else {
+    // A raceway down one side and two stripes near the top.
+    g.fillRect(100, 0, 14, 1024);
+    g.fillRect(0, 900, 512, 18); g.fillRect(0, 940, 512, 8);
+    g.fillStyle = '#c23a2a'; g.fillRect(300, 760, 60, 60);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+const TEX = { lower: hullTexture('lower'), upper: hullTexture('upper') };
+
+/* ---------- materials per look ---------- */
+function gradientMap(steps, soft) {
+  const n = 64, a = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1);
+    let v = steps[0];
+    for (let k = 1; k < steps.length; k++) {
+      const edge = k / steps.length, t = soft ? Math.min(1, Math.max(0, (x - edge + soft) / (2 * soft))) : (x >= edge ? 1 : 0);
+      v += (steps[k] - steps[k - 1]) * t * t * (3 - 2 * t);
+    }
+    a.set([v * 255, v * 255, v * 255, 255], i * 4);
+  }
+  const t = new THREE.DataTexture(a, n, 1);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.needsUpdate = true;
+  return t;
+}
+const RIM = { uRimC: { value: new THREE.Color(0.6, 0.7, 1.0) }, uRim: { value: 0 }, uRimHard: { value: 0 } };
+// A rim light on toon materials: a fresnel term added to the outgoing light.
+function withRim(m) {
+  m.onBeforeCompile = s => {
+    Object.assign(s.uniforms, RIM);
+    s.fragmentShader = 'uniform vec3 uRimC; uniform float uRim, uRimHard;\n' + s.fragmentShader.replace('#include <opaque_fragment>', `
+      float fr = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+      float rimT = mix(pow(fr, 3.0), step(0.72, fr), uRimHard);
+      outgoingLight += uRimC * rimT * uRim;
+      #include <opaque_fragment>`);
+  };
+  return m;
+}
+const GRAD = { paint: gradientMap([0.18, 0.55, 1.0], 0.06), cel: gradientMap([0.22, 1.0], 0) };
+const MATS = {
+  photo: {
+    lower: new THREE.MeshPhysicalMaterial({ map: TEX.lower, roughness: 0.48, clearcoat: 0.25, clearcoatRoughness: 0.4 }),
+    upper: new THREE.MeshPhysicalMaterial({ map: TEX.upper, roughness: 0.42, clearcoat: 0.3, clearcoatRoughness: 0.35 }),
+    black: new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.62, metalness: 0.15 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0x8a7462, roughness: 0.32, metalness: 0.95, side: THREE.DoubleSide }),
+    fin: new THREE.MeshStandardMaterial({ color: 0x34363c, roughness: 0.5, metalness: 0.5 }),
+  },
+};
+for (const lk of ['paint', 'cel']) {
+  const gm = GRAD[lk], tone = (o) => withRim(new THREE.MeshToonMaterial({ gradientMap: gm, ...o }));
+  MATS[lk] = {
+    lower: tone({ map: TEX.lower, color: lk === 'paint' ? 0xfff6ea : 0xffffff }),
+    upper: tone({ map: TEX.upper, color: lk === 'paint' ? 0xfff6ea : 0xffffff }),
+    black: tone({ color: lk === 'paint' ? 0x2a2438 : 0x1c1c26 }),
+    metal: tone({ color: lk === 'paint' ? 0xb08468 : 0xc08a62, side: THREE.DoubleSide }),
+    fin: tone({ color: lk === 'paint' ? 0x464458 : 0x3c3c4a }),
+  };
+}
+// Ink lines: an inverted hull pushed out by a fixed share of the screen.
+const INK = { uInk: { value: 0.003 }, uInkC: { value: new THREE.Color(0x0b0a12) } };
+const inkMat = new THREE.ShaderMaterial({
+  uniforms: INK, side: THREE.BackSide,
+  vertexShader: /* glsl */`uniform float uInk;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec3 n = normalize(normalMatrix * normal);
+    mv.xyz += n * uInk * max(-mv.z, 0.5);
+    gl_Position = projectionMatrix * mv;
+  }`,
+  fragmentShader: /* glsl */`uniform vec3 uInkC; void main() { gl_FragColor = vec4(uInkC, 1.0); }`,
+});
+
+/* ---------- the rocket: two stages, a wide fairing, five engines ---------- */
+// Metres along y from the engine plane; radius 1.85 m.
+const parts = [];
+function part(geo, kind, parent, ink = true) {
+  const m = new THREE.Mesh(geo, MATS.photo[kind]);
+  m.userData.kind = kind;
+  m.castShadow = m.receiveShadow = true;
+  parent.add(m);
+  parts.push(m);
+  if (ink) { const o = new THREE.Mesh(geo, inkMat); o.userData.ink = true; parent.add(o); parts.push(o); }
+  return m;
+}
+const lathe = (pts, seg = 64) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
+const ring = (r, y0, y1, n = 24) => Array.from({ length: n + 1 }, (_, i) => [r, y0 + (y1 - y0) * i / n]);
+function bell(r0, r1, len) {
+  const pts = [];
+  for (let i = 0; i <= 16; i++) { const t = i / 16; pts.push([r0 + (r1 - r0) * Math.sqrt(t), -len * t]); }
+  return lathe(pts, 32);
+}
+
+const rocket = new THREE.Group();
+scene.add(rocket);
+const lower = new THREE.Group(), upper = new THREE.Group();
+rocket.add(lower, upper);
+// The first stage: tank, skirt, interstage.
+part(lathe([[1.6, 0.0], [1.85, 0.6], ...ring(1.85, 0.6, 37)]), 'lower', lower);
+part(lathe(ring(1.86, 37, 41, 4)), 'black', lower);
+part(new THREE.CircleGeometry(1.6, 32).rotateX(Math.PI / 2), 'black', lower, false);
+for (let i = 0; i < 5; i++) {
+  const b = part(bell(0.32, 0.55, 1.6), 'metal', lower, false);
+  if (i < 4) b.position.set(Math.cos(i * Math.PI / 2 + Math.PI / 4) * 1.05, 0, Math.sin(i * Math.PI / 2 + Math.PI / 4) * 1.05);
+}
+// Four small fins at the base.
+for (let i = 0; i < 4; i++) {
+  const f = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1.5, 0.3), new THREE.Vector2(1.5, 2.1), new THREE.Vector2(0, 4.6)]);
+  const g = new THREE.ExtrudeGeometry(f, { depth: 0.12, bevelEnabled: false }).translate(1.8, 0.6, -0.06);
+  const m = part(g, 'fin', lower);
+  m.rotation.y = i * Math.PI / 2;
+  const o = lower.children[lower.children.length - 1];
+  o.rotation.y = m.rotation.y;
+}
+// The upper stage, its vacuum bell and the fairing.
+part(lathe(ring(1.85, 41, 50, 12)), 'lower', upper);
+const vac = part(bell(0.5, 1.45, 3.4), 'metal', upper, false);
+vac.position.y = 40.8;
+const fairing = new THREE.Group();
+upper.add(fairing);
+const fp = [[1.85, 49.6], [2.45, 50.6], ...ring(2.45, 50.6, 60, 8)];
+for (let i = 1; i <= 14; i++) { const t = i / 14; fp.push([2.45 * Math.sqrt(1 - t * t) + 0.02, 60 + 8 * t]); }
+part(lathe(fp), 'upper', fairing);
+
+/* ---------- flame: the core and tail from Ten seconds ---------- */
+const K2_NOISE = /* glsl */`
+float k2hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float k2noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(k2hash(i), k2hash(i + vec2(1, 0)), u.x), mix(k2hash(i + vec2(0, 1)), k2hash(i + vec2(1, 1)), u.x), u.y);
+}`;
+const FLAME_C = new THREE.Color(1.0, 0.55, 0.22);
+function makeFlame(mode) {
+  const U = {
+    uMode: { value: mode }, uFade: { value: 1 },
+    uFlame: { value: new THREE.Vector4() }, uFlameC: { value: FLAME_C.clone() }, uAxis: { value: new THREE.Vector3(0, -1, 0) },
+    uSize: { value: 9 }, uFlick: { value: 1 }, uSpread: { value: 0 }, uTime: { value: 0 }, uLook: { value: 0 }, uLen: { value: 6 },
+  };
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthWrite: false, toneMapped: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`
+    uniform vec4 uFlame; uniform vec3 uAxis; uniform float uSize, uSpread, uLen, uMode;
+    varying vec2 vQ;
+    void main() {
+      vec3 V = normalize(cameraPosition - uFlame.xyz);
+      if (uMode > 0.5) {
+        // Seen end-on: a round glow just past the nozzle, facing the eye.
+        vQ = position.xy;
+        vec3 c0 = uFlame.xyz + uAxis * uSize * 1.2;
+        vec3 Vc = normalize(cameraPosition - c0);
+        vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0) + uAxis * 0.01, Vc)), up = cross(Vc, rt);
+        float rad = uSize * (1.1 + 2.4 * uSpread);
+        gl_Position = projectionMatrix * viewMatrix * vec4(c0 + (rt * position.x + up * position.y) * rad, 1.0);
+        return;
+      }
+      vec3 ax = normalize(uAxis - dot(uAxis, V) * V + vec3(0.0, 1e-4, 0.0));
+      vec3 sd = normalize(cross(ax, V));
+      vQ = position.xy;
+      float along = position.y < 0.0 ? 0.5 : uLen;
+      vec3 P = uFlame.xyz + sd * position.x * uSize * (0.7 + 2.2 * uSpread) + ax * position.y * uSize * along;
+      gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread, uTime, uMode, uFade; uniform int uLook;
+    varying vec2 vQ;
+    ${K2_NOISE}
+    void main() {
+      float y = max(vQ.y, 0.0), t = uTime;
+      float x = vQ.x + (k2noise(vec2(y * 5.0 - t * 9.0, 1.7)) - 0.5) * 0.3 * y;
+      float wide = mix(1.0, 3.0, uSpread);
+      float core = exp(-(x * x * 40.0 * wide * wide + vQ.y * vQ.y * (vQ.y < 0.0 ? 80.0 : 22.0)));
+      float breath = 1.0 + 0.18 * (k2noise(vec2(t * 11.0, 3.1)) - 0.5);
+      float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
+      float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.2) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
+      float eddy = k2noise(vec2(x * 7.0, y * 16.0 - t * 34.0)) * 0.6 + k2noise(vec2(x * 15.0, y * 31.0 - t * 52.0)) * 0.4;
+      tail *= mix(1.0, 0.45 + 1.1 * eddy, smoothstep(0.05, 0.3, y));
+      float jw = 0.16 + 0.06 * y;
+      float n = (y - 0.03) / 0.5 * 4.0, i = floor(n), u = fract(n) * 2.0 - 1.0;
+      float rhomb = 1.0 - abs(u) - abs(x) / (jw * (1.0 - 0.1 * i));
+      float knots = smoothstep(0.0, 0.45, rhomb) * exp(-i * 0.4) * step(0.0, n) * step(n, 4.0);
+      knots *= (1.0 - uSpread) * (0.8 + 0.4 * k2noise(vec2(t * 23.0, i)));
+      float jet = exp(-x * x / (jw * jw)) * exp(-y * 4.0) * mix(1.0, 0.5 + 0.5 * abs(u), (1.0 - uSpread) * step(0.0, n) * step(n, 4.0));
+      vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
+      hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
+      float win = smoothstep(1.0, 0.55, abs(vQ.x)) * smoothstep(1.0, 0.6, vQ.y) * smoothstep(-1.0, -0.7, vQ.y);
+      vec3 c = vec3(1.0, 0.96, 0.9) * core * 12.0 + hot * tail * 0.7 * uFlick + vec3(1.0, 0.6, 0.3) * jet * 0.5 + vec3(1.0, 0.95, 0.85) * knots * 14.0;
+      c *= win;
+      if (uMode > 0.5) {
+        // End-on: a white core, a Mach ring in thick air, a ragged glow.
+        float r = length(vQ), a = atan(vQ.y, vQ.x);
+        float nz = k2noise(vec2(a * 4.0 + 7.0, r * 6.0 - t * 20.0)) * 0.6 + k2noise(vec2(a * 9.0, r * 14.0 - t * 35.0)) * 0.4;
+        float ring = exp(-pow((r - 0.16) / 0.04, 2.0)) * (1.0 - uSpread) * 4.0;
+        float glow = exp(-r * mix(6.0, 3.0, uSpread)) * (0.4 + 1.0 * nz);
+        vec3 hotc = mix(vec3(1.0, 0.9, 0.7), uFlameC, smoothstep(0.05, 0.5, r));
+        c = vec3(1.0, 0.96, 0.9) * exp(-r * r * 90.0) * 14.0 + hotc * glow * 1.6 + vec3(1.0, 0.92, 0.8) * ring;
+        c *= smoothstep(1.0, 0.65, r);
+      }
+      c *= uFade;
+      if (uLook == 2) {
+        // Cel: three hard fills, white, gold and ember.
+        float e = dot(c, vec3(0.3, 0.5, 0.2));
+        c = e > 2.2 ? vec3(4.0, 3.8, 3.4) : e > 0.55 ? uFlameC * vec3(2.6, 2.2, 1.4) : e > 0.12 ? uFlameC * vec3(1.1, 0.55, 0.3) : vec3(0.0);
+      } else if (uLook == 1) {
+        float e = dot(c, vec3(0.3, 0.5, 0.2));
+        c *= mix(1.0, clamp(floor(e * 3.0 + 0.5) / 3.0 / max(e, 1e-3), 0.0, 2.0), 0.45);
+      }
+      gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 7;
+  m.userData.U = U;
+  scene.add(m);
+  return m;
+}
+const flame1 = makeFlame(0), flame2 = makeFlame(0), disc1 = makeFlame(1), disc2 = makeFlame(1);
+const FLAMES = [[flame1, disc1], [flame2, disc2]];
+// Copies a flame's numbers to its end-on twin; each fades by view angle.
+function flamePair([tail, disc], camPos) {
+  const T = tail.userData.U, D = disc.userData.U;
+  for (const k of ['uFlame', 'uFlameC', 'uAxis']) D[k].value.copy(T[k].value);
+  for (const k of ['uSize', 'uSpread', 'uTime', 'uLook']) D[k].value = T[k].value;
+  const v = tmpV2.set(T.uFlame.value.x, T.uFlame.value.y, T.uFlame.value.z).sub(camPos).normalize();
+  const e = Math.abs(v.dot(T.uAxis.value));
+  T.uFade.value = 1 - THREE.MathUtils.smoothstep(e, 0.8, 0.95);
+  D.uFade.value = THREE.MathUtils.smoothstep(e, 0.7, 0.9);
+  disc.visible = tail.visible;
+}
+const tmpV2 = new THREE.Vector3();
+
+/* ---------- air: vapour on the hull, the trail behind ---------- */
+const AIR = { uTime: { value: 0 }, uLook: { value: 0 }, uLightC: { value: new THREE.Color(1, 1, 1) }, uAmb: { value: new THREE.Color(0.2, 0.25, 0.35) }, uSunW: { value: new THREE.Vector3(0, 1, 0) } };
+function airMat() {
+  return new THREE.ShaderMaterial({
+    uniforms: AIR, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+    vertexShader: /* glsl */`varying vec3 vL, vN, vW; varying vec2 vUv;
+      void main() { vL = position; vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+    uniform float uTime; uniform int uLook; uniform vec3 uLightC, uAmb, uSunW;
+    varying vec3 vL, vN, vW; varying vec2 vUv;
+    ${K2_NOISE}
+    void main() {
+      vec3 V = normalize(cameraPosition - vW);
+      float face = abs(dot(normalize(vN), V));
+      // Vapour: streaks that race down the hull.
+      float ang = atan(vL.z, vL.x);
+      float s = k2noise(vec2(ang * 9.0, vL.y * 0.35 + uTime * 9.0)) * 0.65 + k2noise(vec2(ang * 23.0, vL.y * 0.9 + uTime * 17.0)) * 0.35;
+      float a = smoothstep(0.45, 0.85, s) * smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.6, vUv.y) * pow(face, 0.6) * 0.32;
+      float lit = 0.55 + 0.45 * dot(normalize(vN), uSunW);
+      vec3 c = mix(uAmb, uLightC, lit);
+      if (uLook == 2) { a = step(0.18, a) * 0.85; c = lit > 0.5 ? uLightC : uAmb * 1.4; }
+      else if (uLook == 1) { a = smoothstep(0.08, 0.3, a) * 0.75; }
+      gl_FragColor = vec4(c, a);
+    }`,
+  });
+}
+const vapour = new THREE.Group();
+for (const [r, y0, y1] of [[1.97, 8, 32.5], [2.12, 16, 32.8]]) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.9, y1 - y0, 48, 1, true).translate(0, (y0 + y1) / 2, 0), airMat());
+  m.renderOrder = 5;
+  vapour.add(m);
+}
+lower.add(vapour);
+// The trail: soft puffs down the axis, wider with distance.
+const PUFFS = 70;
+const TR = { uBase: { value: new THREE.Vector3() }, uAxis: { value: new THREE.Vector3() }, uSunW: AIR.uSunW, uLightC: AIR.uLightC, uAmb: AIR.uAmb, uLook: AIR.uLook, uTime: AIR.uTime };
+const trailGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+{
+  const a = new Float32Array(PUFFS * 3);
+  for (let i = 0; i < PUFFS; i++) {
+    const d = 14 * Math.pow(260, i / (PUFFS - 1));
+    a.set([d, 2.2 + d * 0.05, Math.random()], i * 3);
+  }
+  trailGeo.setAttribute('iPuff', new THREE.InstancedBufferAttribute(a, 3));
+  trailGeo.instanceCount = PUFFS;
+}
+const trail = new THREE.Mesh(trailGeo, new THREE.ShaderMaterial({
+  uniforms: TR, transparent: true, depthWrite: false, toneMapped: false,
+  vertexShader: /* glsl */`attribute vec3 iPuff; uniform vec3 uBase, uAxis; varying vec2 vQ; varying vec3 vP; varying float vS, vD;
+    void main() {
+      vec3 c = uBase + uAxis * iPuff.x;
+      vec3 rt = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      vQ = position.xy; vS = iPuff.z; vD = iPuff.x;
+      vP = c + (rt * position.x + up * position.y) * iPuff.y;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+    }`,
+  fragmentShader: /* glsl */`uniform vec3 uSunW, uLightC, uAmb; uniform int uLook; uniform float uTime; varying vec2 vQ; varying vec3 vP; varying float vS, vD;
+    ${K2_NOISE}
+    void main() {
+      float r = length(vQ);
+      float n = k2noise(vQ * 3.0 + vS * 40.0 + vec2(0.0, uTime * 0.3)) * 0.6 + k2noise(vQ * 7.0 + vS * 17.0) * 0.4;
+      float a = smoothstep(1.0, 0.25, r + (n - 0.5) * 0.5) * 0.08;
+      // The sun side of each puff is bright; the far side falls to the sky's blue.
+      float lit = 0.5 + 0.5 * dot(normalize(vec3(vQ, 0.4)), normalize(vec3(0.0, 0.0, 1.0) + uSunW * 0.6));
+      vec3 c = mix(uAmb, uLightC, lit);
+      // Near the nozzle the exhaust still glows.
+      c += vec3(1.0, 0.5, 0.2) * 3.0 * exp(-vD / 22.0);
+      if (uLook == 2) { a = step(0.08, a) * 0.5; c = lit > 0.55 ? uLightC : uAmb * 1.3; }
+      else if (uLook == 1) a = smoothstep(0.03, 0.12, a) * 0.3;
+      gl_FragColor = vec4(c, a);
+    }`,
+}));
+trail.frustumCulled = false;
+trail.renderOrder = 4;
+scene.add(trail);
+
+/* ---------- ice flakes at staging ---------- */
+const FLAKES = 260;
+const flakeGeo = new THREE.BufferGeometry();
+{
+  const p = new Float32Array(FLAKES * 3), v = new Float32Array(FLAKES * 4);
+  for (let i = 0; i < FLAKES; i++) {
+    const a = Math.random() * Math.PI * 2, r = 1.9 + Math.random() * 0.4;
+    p.set([Math.cos(a) * r, 40.5 + Math.random() * 1.5, Math.sin(a) * r], i * 3);
+    v.set([Math.cos(a) * (0.3 + Math.random()), -1.5 - Math.random() * 4, Math.sin(a) * (0.3 + Math.random()), Math.random()], i * 4);
+  }
+  flakeGeo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  flakeGeo.setAttribute('vel', new THREE.BufferAttribute(v, 4));
+}
+const FL = { uT: { value: 0 }, uLook: { value: 0 }, uScale: { value: 400 } };
+const flakes = new THREE.Points(flakeGeo, new THREE.ShaderMaterial({
+  uniforms: FL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+  vertexShader: /* glsl */`attribute vec4 vel; uniform float uT, uScale; varying float vA, vS;
+    void main() {
+      vec3 p = position + vel.xyz * uT;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vS = vel.w;
+      vA = 0.5 + 0.5 * sin(uT * (6.0 + vel.w * 9.0) + vel.w * 40.0);
+      gl_PointSize = clamp(uScale * (0.04 + 0.05 * vel.w) / -mv.z, 1.5, 24.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`uniform int uLook; varying float vA, vS;
+    void main() {
+      vec2 q = gl_PointCoord * 2.0 - 1.0;
+      float d = length(q);
+      float a = uLook == 2 ? step(min(abs(q.x), abs(q.y)), 0.12) * step(d, 1.0) + step(d, 0.35)
+                           : exp(-d * d * 6.0) + 0.6 * exp(-abs(q.x) * 18.0) * exp(-abs(q.y) * 2.0) * vA;
+      gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * a * (0.4 + 1.6 * vA), 1.0);
+    }`,
+}));
+flakes.frustumCulled = false;
+upper.add(flakes);
+
+/* ---------- shots ---------- */
+// Each shot names an altitude or an eye, a camera mount and an aim.
+// mount: place on the hull (angle, height, radius), outward tilt of the view.
+const SHOT = {
+  maxq: { h: 12, coast: [-0.8, 0, 0.6, 22], cloud: 0.07, exp: 0.85, sunEl: 16, sunAz: 105, fov: 64, dutch: -13, aimEl: -22, aimAz: 182, mount: [0.0, 33.5, 2.3, 11], shake: 1, speed: 1 },
+  staging: { h: 75, coast: [-0.9, 0, -0.4, 420], exp: 0.8, sunEl: 9, sunAz: 165, fov: 58, dutch: 11, aimEl: -14, aimAz: 182, mount: [0.0, 49.4, 2.6, 6], shake: 0.25, speed: 0.35 },
+  mote: { exp: 0.75, fov: 46, dutch: 21, mount: [0.0, 46.5, 2.0, 21], shake: 0, speed: 0 },
+};
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3();
+let cur = null, bakeTex = null, t0 = performance.now();
+
+function bakeTextures(h, sunEl) {
+  const { L, T, hor } = bake(h, sunEl * D2R, SUN_E);
+  const mk = a => { const t = new THREE.DataTexture(a, NU, NV, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+  bakeTex?.L.dispose(); bakeTex?.T.dispose();
+  bakeTex = { L: mk(L), T: mk(T), hor, Tarr: T };
+  return bakeTex;
+}
+
+// The camera's pose in the rocket frame, from its mount.
+function mountPose([a, y, r, tilt]) {
+  const rad = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+  const pos = rad.clone().multiplyScalar(r).setY(y);
+  const dir = new THREE.Vector3(0, -Math.cos(tilt * D2R), 0).addScaledVector(rad, Math.sin(tilt * D2R)).normalize();
+  tmpM.lookAt(new THREE.Vector3(), dir, rad);
+  return { pos, q: new THREE.Quaternion().setFromRotationMatrix(tmpM) };
+}
+
+function setShot(i) {
+  shotI = i;
+  const id = SHOTS[i], s = SHOT[id];
+  cur = { id, s, t: 0 };
+  shotTag.textContent = `${SHOT_NAME[id]} · ${LOOK_NAME[look]}`;
+  let sunW, up, aim;
+  if (id === 'mote') {
+    // Far out: the Earth a few pixels wide, the Moon nearer, the Sun off frame.
+    const eye = new THREE.Vector3(0.18, 0.12, 1).normalize().multiplyScalar(1.2e5);
+    const toE = eye.clone().negate().normalize();
+    up = new THREE.Vector3(0, 1, 0);
+    const side = new THREE.Vector3().crossVectors(toE, up).normalize();
+    aim = toE.clone().addScaledVector(side, -0.12).addScaledVector(up, -0.1).normalize();
+    sunW = toE.clone().applyAxisAngle(up, 115 * D2R).addScaledVector(up, 0.35).normalize();
+    const moonAt = eye.clone().addScaledVector(toE.clone().addScaledVector(side, -0.3).addScaledVector(up, 0.12).normalize(), 160000);
+    BG.uEye.value.copy(eye);
+    BG.uMoon.value.set(moonAt.x, moonAt.y, moonAt.z, 1737);
+    BG.uBake.value = 0;
+    BG.uCoast.value.set(0, 0, 0, 0);
+    const pl = (dx, dy, w) => { const v = aim.clone().addScaledVector(side, dx).addScaledVector(up, dy).normalize(); return new THREE.Vector4(v.x, v.y, v.z, w); };
+    BG.uPlanet.value = [pl(0.42, 0.22, 2.2), pl(-0.3, 0.3, 1.1), pl(0.12, -0.28, 0.5)];
+    BG.uMilky.value.set(0.3, 0.8, -0.5).normalize();
+  } else {
+    sunW = dirOf(s.sunEl, s.sunAz);
+    up = new THREE.Vector3(0, 1, 0);
+    aim = dirOf(s.aimEl, s.aimAz);
+    BG.uEye.value.set(0, R + s.h, 0);
+    BG.uMoon.value.set(0, 0, 0, 0);
+    BG.uBake.value = 1;
+    const bt = bakeTextures(s.h, s.sunEl);
+    BG.uL.value = bt.L; BG.uT.value = bt.T; BG.uHor.value = bt.hor;
+    BG.uPlanet.value = [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()];
+    BG.uMilky.value.set(0.2, 0.9, 0.4).normalize();
+    const cv = new THREE.Vector3(s.coast[0], s.coast[1], s.coast[2]).normalize();
+    BG.uCoast.value.set(cv.x, cv.y, cv.z, s.coast[3]);
+  }
+  BG.uSun.value.copy(sunW);
+  BG.uCloud.value = s.cloud ?? 0;
+  // World pose of the camera: aim plus a Dutch roll.
+  tmpM.lookAt(new THREE.Vector3(), aim, up);
+  const qw = new THREE.Quaternion().setFromRotationMatrix(tmpM).multiply(tmpQ.setFromAxisAngle(new THREE.Vector3(0, 0, 1), s.dutch * D2R));
+  // The rocket turns so that its mounted camera holds that pose.
+  const m = mountPose(s.mount);
+  const qr = qw.clone().multiply(m.q.clone().invert());
+  rocket.quaternion.copy(qr);
+  rocket.position.copy(m.pos).applyQuaternion(qr).negate();
+  cur.qw = qw; cur.sunW = sunW; cur.up = up;
+  cam.fov = s.fov;
+  cam.quaternion.copy(qw);
+  cam.position.set(0, 0, 0);
+  // Parts per shot.
+  lower.visible = id !== 'mote';
+  fairing.visible = id === 'maxq';
+  vapour.visible = trail.visible = id === 'maxq';
+  flakes.visible = id === 'staging';
+  // Light and colour of the shot.
+  const tr = id === 'mote' ? [1, 1, 1] : sunTransmit(s.h, s.sunEl);
+  const sunC = new THREE.Color(tr[0], tr[1], tr[2]);
+  cur.sunC = sunC;
+  sun.position.copy(sunW).multiplyScalar(300);
+  sun.target.position.set(0, 0, 0);
+  AIR.uSunW.value.copy(sunW);
+  AIR.uLightC.value.copy(sunC).multiplyScalar(1.3);
+  if (id === 'maxq') { hemi.color.setRGB(0.25, 0.35, 0.6); hemi.groundColor.setRGB(0.05, 0.07, 0.1); AIR.uAmb.value.setRGB(0.12, 0.16, 0.28); }
+  if (id === 'staging') { hemi.color.setRGB(0.02, 0.03, 0.06); hemi.groundColor.setRGB(0.15, 0.3, 0.55); AIR.uAmb.value.setRGB(0.1, 0.15, 0.25); }
+  if (id === 'mote') { hemi.color.setRGB(0.01, 0.01, 0.02); hemi.groundColor.setRGB(0.01, 0.01, 0.02); }
+  hemi.position.copy(cur.up);
+  buildEnv();
+  applyLook();
+  wake();
+}
+
+// Sunlight through the air from height h km at elevation el, per channel.
+function sunTransmit(h, el) {
+  const BR = [5.802e-3, 13.558e-3, 33.1e-3], BME = 4.44e-3, BO = [0.65e-3, 1.881e-3, 0.085e-3];
+  const oy = R + h, dy = Math.sin(el * D2R), dx = Math.cos(el * D2R);
+  const tTop = -oy * dy + Math.sqrt(oy * oy * dy * dy - (oy * oy - 6471 * 6471));
+  const n = 64, ds = tTop / n, out = [0, 0, 0];
+  let dR = 0, dM = 0, dO = 0;
+  for (let i = 0; i < n; i++) {
+    const s = (i + 0.5) * ds, px = dx * s, py = oy + dy * s;
+    const hh = Math.max(0, Math.hypot(px, py) - R);
+    dR += Math.exp(-hh / 8) * ds; dM += Math.exp(-hh / 1.2) * ds; dO += Math.max(0, 1 - Math.abs(hh - 25) / 15) * ds;
+  }
+  for (let c = 0; c < 3; c++) out[c] = Math.exp(-(BR[c] * dR + BME * dM + BO[c] * dO));
+  return out;
+}
+
+// A small sky dome for reflections on metal and clearcoat.
+const pmrem = new THREE.PMREMGenerator(renderer);
+let envRT = null;
+function buildEnv() {
+  const s = new THREE.Scene();
+  const top = cur.id === 'maxq' ? new THREE.Color(0.08, 0.14, 0.32) : new THREE.Color(0.0, 0.0, 0.0);
+  const bot = cur.id === 'maxq' ? new THREE.Color(0.1, 0.1, 0.14) : cur.id === 'staging' ? new THREE.Color(0.1, 0.22, 0.42) : new THREE.Color(0, 0, 0);
+  const hz = cur.id === 'maxq' ? new THREE.Color(0.9, 0.5, 0.3) : new THREE.Color(0.2, 0.4, 0.9);
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide, uniforms: { uUp: { value: cur.up }, uT: { value: top }, uB: { value: bot }, uH: { value: hz } },
+    vertexShader: /* glsl */`varying vec3 vD; void main() { vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`uniform vec3 uUp, uT, uB, uH; varying vec3 vD; void main() { float y = dot(normalize(vD), uUp); vec3 c = mix(uB, uT, smoothstep(-0.15, 0.25, y)); c += uH * exp(-abs(y + 0.05) * 14.0) * 0.6; gl_FragColor = vec4(c, 1.0); }`,
+  })));
+  envRT?.dispose();
+  envRT = pmrem.fromScene(s, 0.02);
+  scene.environment = envRT.texture;
+}
+
+/* ---------- post ---------- */
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
+composer.addPass(new RenderPass(scene, cam));
+const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.4, 0.5, 1.0);
+composer.addPass(bloom);
+const FIN = {
+  tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uLook: { value: 0 }, uTime: { value: 0 },
+  uSunUV: { value: new THREE.Vector2() }, uSunVis: { value: 0 }, uSunC: { value: new THREE.Color() },
+  uVP: { value: new THREE.Vector2(0.5, 0.5) }, uSpeed: { value: 0 }, uShake: { value: new THREE.Vector2() },
+};
+const fin = new ShaderPass({
+  uniforms: FIN,
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse; uniform vec2 uRes, uSunUV, uVP, uShake; uniform vec3 uSunC;
+  uniform float uTime, uSunVis, uSpeed; uniform int uLook;
+  varying vec2 vUv;
+  ${FLARE}
+  ${GRADE}
+  float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+  void main() {
+    vec2 uv = vUv;
+    float asp = uRes.x / uRes.y;
+    // A little chromatic split toward the corners.
+    vec2 off = (uv - 0.5) * (uLook == 2 ? 0.0 : uLook == 1 ? 0.004 : 0.0018);
+    vec3 c = vec3(texture2D(tDiffuse, uv + off).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - off).b);
+    // Speed lines run in toward the point the rocket leaves behind.
+    if (uSpeed > 0.0 && uLook > 0) {
+      vec2 qv = (uv - uVP) * vec2(asp, 1.0);
+      float ang = atan(qv.y, qv.x), r = length(qv);
+      float lanes = uLook == 2 ? 90.0 : 70.0;
+      float id = floor(ang / 6.2831853 * lanes);
+      float hh = h1(id + 3.0);
+      float lane = fract(ang / 6.2831853 * lanes);
+      float w = uLook == 2 ? 0.12 : 0.22;
+      float line = smoothstep(0.5 - w, 0.5, lane) * smoothstep(0.5 + w, 0.5, lane);
+      float seg = fract(r * 0.9 + uTime * (1.2 + hh * 2.0) + hh * 7.0);
+      float dash = smoothstep(0.0, 0.15, seg) * smoothstep(0.75, 0.35, seg);
+      float mask = smoothstep(0.45, 1.05, r) * step(0.45, hh);
+      float sl = line * dash * mask * uSpeed;
+      c = uLook == 2 ? mix(c, vec3(1.6), step(0.3, sl) * 0.9) : c + vec3(1.0, 0.97, 0.92) * sl * 0.5;
+    }
+    // The sun's flare: soft and real, bold in paint, hard-edged in cel.
+    if (uSunVis > 0.0) {
+      vec3 k = uLook == 0 ? vec3(0.6, 0.55, 0.35) : uLook == 1 ? vec3(0.7, 1.3, 0.35) : vec3(0.0, 1.1, 0.0);
+      vec3 add = flFlare(uv, uSunUV, asp, uSunC, 1.0, k);
+      if (uLook == 2) {
+        vec2 d = flOffset(uv, uSunUV, asp, 1.0);
+        float st = step(abs(d.y), 0.004 * exp(-abs(d.x) * 1.2)) * step(abs(d.x), 0.9);
+        float hex = 0.0;
+        vec2 toC = (vec2(0.5) - uSunUV);
+        for (int i = 1; i <= 3; i++) {
+          vec2 g = (uv - (uSunUV + toC * (0.6 * float(i)))) * vec2(asp, 1.0);
+          vec2 a = abs(g); float hx = max(a.x * 0.866 + a.y * 0.5, a.y);
+          hex += step(hx, 0.03 * float(i)) * 0.18;
+        }
+        add = uSunC * (st * 1.4 + hex);
+      }
+      c += add * uSunVis;
+      // Paint: a warm light leak washes in from the sun's side.
+      if (uLook == 1) c += vec3(1.0, 0.55, 0.3) * 0.05 * uSunVis * smoothstep(1.2, 0.0, length((uv - uSunUV) * vec2(asp, 1.0)));
+    }
+    vec2 px = gl_FragCoord.xy + floor(uTime * 24.0) * vec2(37.0, 17.0);
+    if (uLook == 0) c = gdGrade(c, uv, asp, px, vec3(0.002, 0.002, 0.004), 0.35, 0.5, 0.05);
+    else if (uLook == 1) {
+      c = gdGrade(c, uv, asp, px, vec3(0.006, 0.004, 0.012), 0.45, 0.45, 0.08);
+      // Paper: a slow, coarse tooth over the frame.
+      float paper = gdHash(floor(gl_FragCoord.xy / 3.0)) * 0.5 + gdHash(floor(gl_FragCoord.xy / 9.0)) * 0.5;
+      c *= 0.95 + 0.1 * paper;
+    } else {
+      c = gdGrade(c, uv, asp, gl_FragCoord.xy, vec3(0.0), 0.25, 0.6, 0.0);
+      // Screen tone: a dot grid in the dark mid tones.
+      float lum = gdLuma(c);
+      vec2 cell = fract(gl_FragCoord.xy / 5.0) - 0.5;
+      float dotR = smoothstep(0.02, 0.12, lum) * smoothstep(0.35, 0.12, lum) * 0.42;
+      c *= 1.0 - 0.45 * step(length(cell), dotR);
+    }
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
+composer.addPass(fin);
+composer.addPass(new OutputPass());
+
+/* ---------- looks ---------- */
+function setLook(v) {
+  look = v;
+  if (ui.choice && ui.choice.value !== v) ui.choice.set(v);
+  shotTag.textContent = `${SHOT_NAME[SHOTS[shotI]]} · ${LOOK_NAME[look]}`;
+  applyLook();
+  wake();
+}
+function applyLook() {
+  const li = LOOKS.indexOf(look);
+  BG.uLook.value = li; FIN.uLook.value = li; AIR.uLook.value = li; FL.uLook.value = li;
+  for (const f of [flame1, flame2, disc1, disc2]) f.userData.U.uLook.value = li;
+  for (const m of parts) {
+    if (m.userData.ink) { m.visible = look !== 'photo'; continue; }
+    m.material = MATS[look][m.userData.kind];
+  }
+  INK.uInk.value = look === 'cel' ? 0.0045 : 0.0022;
+  INK.uInkC.value.set(look === 'cel' ? 0x07060c : 0x1a1426);
+  RIM.uRim.value = look === 'photo' ? 0 : look === 'paint' ? 0.55 : 0.9;
+  RIM.uRimHard.value = look === 'cel' ? 1 : 0;
+  RIM.uRimC.value.set(cur?.id === 'maxq' ? 0xffb07a : 0x8fb8ff);
+  renderer.toneMapping = look === 'cel' ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = (look === 'paint' ? 1.15 : 1.0) * (cur?.s.exp ?? 1);
+  bloom.strength = look === 'photo' ? 0.35 : look === 'paint' ? 0.55 : 0.2;
+  bloom.radius = look === 'paint' ? 0.35 : 0.4;
+  bloom.threshold = look === 'cel' ? 1.6 : look === 'paint' ? 1.3 : 1.0;
+  // Light strengths: toon looks want a plain key and a flat fill.
+  const sc = cur?.sunC ?? new THREE.Color(1, 1, 1);
+  sun.color.copy(sc);
+  sun.intensity = look === 'photo' ? 5.5 : 3.2;
+  hemi.intensity = look === 'photo' ? 1.2 : 2.2;
+  if (look === 'cel' && cur?.id !== 'mote') hemi.intensity = 2.8;
+}
+
+/* ---------- size ---------- */
+let W = 1, H = 1;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  const dpr = pixelRatio(W, H, { maxDpr: 2, budget: 2.2e6 });
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(W, H, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(W, H);
+  const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+  bgRT.setSize(bw, bh); bgRT2.setSize(bw, bh);
+  kuwMat.uniforms.uPx.value.set(2 / bw, 2 / bh);
+  FIN.uRes.value.set(bw, bh);
+  cam.aspect = W / H;
+  cam.updateProjectionMatrix();
+  wake();
+}
+new ResizeObserver(resize).observe(stage);
+onQuality(() => resize());
+
+/* ---------- frame ---------- */
+const sunNdc = new THREE.Vector3(), vpW = new THREE.Vector3();
+const shakeQ = new THREE.Quaternion(), eul = new THREE.Euler();
+function frame(now) {
+  const still = reduced();
+  let t = still ? 4.0 : (now - t0) / 1000;
+  // Cel animates on twos: twelve drawings a second.
+  if (look === 'cel') t = Math.floor(t * 12) / 12;
+  const id = cur.id, s = cur.s;
+  // Hull shake, strongest at max-q.
+  const sh = s.shake * (still ? 0 : 1);
+  eul.set(Math.sin(t * 37.0) * 0.0012 * sh + Math.sin(t * 61.0) * 0.0008 * sh, Math.sin(t * 43.0 + 1.0) * 0.0012 * sh, 0);
+  cam.quaternion.copy(cur.qw).multiply(shakeQ.setFromEuler(eul));
+  cam.updateMatrixWorld();
+  // Flames: the first stage at max-q, the vacuum engine at staging.
+  const axis = tmpV.set(0, -1, 0).applyQuaternion(rocket.quaternion);
+  const F1 = flame1.userData.U, F2 = flame2.userData.U;
+  flame1.visible = id === 'maxq';
+  flame2.visible = id === 'staging';
+  if (id === 'maxq') {
+    const p = new THREE.Vector3(0, -0.6, 0).applyMatrix4(lower.matrixWorld);
+    F1.uFlame.value.set(p.x, p.y, p.z, 1.0); F1.uAxis.value.copy(axis); F1.uSize.value = 8; F1.uSpread.value = 0.3; F1.uLen.value = 7;
+    engineLight.position.copy(p); engineLight.intensity = look === 'photo' ? 900 : 500;
+    TR.uBase.value.copy(p); TR.uAxis.value.copy(axis);
+  }
+  // Staging: the spent stage falls back and turns; the vacuum engine lights.
+  let sep = 0;
+  if (id === 'staging') {
+    const lt = still ? 6 : t % 12;
+    sep = 3 + lt * lt * 0.35;
+    lower.visible = true;
+    lower.position.set(0.3 * lt, -sep, 0.15 * lt);
+    lower.rotation.set(0.012 * lt * lt, 0, 0.02 * lt);
+    const ign = THREE.MathUtils.smoothstep(lt, 2.5, 4.0);
+    const p = new THREE.Vector3(0, 37.3, 0).applyMatrix4(upper.matrixWorld);
+    F2.uFlame.value.set(p.x, p.y, p.z, ign * 0.12 * (0.9 + 0.1 * Math.sin(t * 40.0))); F2.uAxis.value.copy(axis);
+    F2.uSize.value = 2.0; F2.uSpread.value = 0.55; F2.uLen.value = 4;
+    F2.uFlameC.value.setRGB(0.55, 0.62, 1.0).lerp(FLAME_C, 0.35);
+    engineLight.position.copy(p); engineLight.intensity = ign * (look === 'photo' ? 500 : 300);
+    FL.uT.value = lt;
+  }
+  if (id === 'mote') engineLight.intensity = 0;
+  rocket.updateMatrixWorld(true);
+  F1.uTime.value = F2.uTime.value = t;
+  FLAMES.forEach(p => flamePair(p, cam.position));
+  AIR.uTime.value = t;
+  // Shadow box follows the rocket's middle.
+  const mid = new THREE.Vector3(0, 30, 0).applyMatrix4(rocket.matrixWorld);
+  sun.target.position.copy(mid);
+  sun.position.copy(mid).addScaledVector(cur.sunW, 300);
+  // The background camera shares the view, in kilometres.
+  BG.uProjInv.value.copy(cam.projectionMatrixInverse);
+  BG.uCamWorld.value.copy(cam.matrixWorld);
+  BG.uTime.value = t;
+  // Sun on screen, for the flare.
+  sunNdc.copy(cur.sunW).multiplyScalar(1000).project(cam);
+  const inFront = cur.sunW.dot(tmpV.set(0, 0, -1).applyQuaternion(cam.quaternion)) > 0;
+  FIN.uSunUV.value.set(sunNdc.x * 0.5 + 0.5, sunNdc.y * 0.5 + 0.5);
+  const edge = Math.max(Math.abs(sunNdc.x), Math.abs(sunNdc.y));
+  FIN.uSunVis.value = inFront ? 1 - THREE.MathUtils.smoothstep(edge, 0.95, 1.15) : 0;
+  FIN.uSunC.value.copy(cur.sunC).multiplyScalar(1.2);
+  // The vanishing point the rocket leaves behind.
+  vpW.copy(axis).multiplyScalar(1000).project(cam);
+  FIN.uVP.value.set(vpW.x * 0.5 + 0.5, vpW.y * 0.5 + 0.5);
+  FIN.uSpeed.value = s.speed;
+  FIN.uTime.value = t;
+  // Draw: backdrop, then the paint pass on it, then the scene.
+  renderer.setRenderTarget(bgRT);
+  renderer.render(bgScene, quadCam);
+  let bgTex = bgRT.texture;
+  if (look === 'paint') {
+    kuwMat.uniforms.tSrc.value = bgRT.texture;
+    renderer.setRenderTarget(bgRT2);
+    renderer.render(kuwScene, quadCam);
+    bgTex = bgRT2.texture;
+  }
+  renderer.setRenderTarget(null);
+  backdrop.material.uniforms.tBg.value = bgTex;
+  composer.render();
+}
+
+/* ---------- loop ---------- */
+let raf = 0, visible = true;
+function loop(now) {
+  raf = 0;
+  if (!visible) return;
+  frame(now);
+  if (!reduced()) raf = requestAnimationFrame(loop);
+}
+function wake() { if (!raf && visible && cur) raf = requestAnimationFrame(loop); }
+whenVisible(stage, on => { visible = on; if (on) wake(); });
+
+stage.addEventListener('click', e => {
+  if (e.target.closest('.stim-ui button, .stim-ui input, .s2-sheet')) return;
+  setShot((shotI + 1) % SHOTS.length);
+});
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input, textarea')) return;
+  if (e.key === 'ArrowRight') setShot((shotI + 1) % SHOTS.length);
+  if (e.key === 'ArrowLeft') setShot((shotI + SHOTS.length - 1) % SHOTS.length);
+});
+
+resize();
+setShot(shotI);
+if (q.has('debug')) window.__lk = { renderer, BG, FIN, bgRT, composer, scene, cam, rocket, frame, still(sh, lk, t = 4000) { setLook(lk); setShot(SHOTS.indexOf(sh)); t0 = performance.now() - t; frame(performance.now()); return renderer.domElement; }, async show(sh, lk, t = 2000) { setLook(lk); setShot(SHOTS.indexOf(sh)); t0 = performance.now() - t; frame(performance.now()); const u = renderer.domElement.toDataURL('image/jpeg', 0.9); await fetch(`http://127.0.0.1:${q.get('sink') || 8771}/?n=${sh}-${lk}.jpg`, { method: 'POST', body: u }); return 'ok'; } };
+</script>
+</body>
+</html>
