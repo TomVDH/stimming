@@ -5254,8 +5254,8 @@ renderer.compileAsync(scene, camera).then(async () => {
   // The first charge, shot and hit then link no programs and upload no buffers.
   const hidden = [];
   scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
-  await renderer.compileAsync(scene, camera);
-  composer.render();
+  // A failed warm-up falls through to the normal start; the first shot then warms itself.
+  try { await renderer.compileAsync(scene, camera); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.
   later(() => Object.values(SAMPLES).forEach(f => fetch(f)));
