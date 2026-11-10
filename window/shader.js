@@ -953,8 +953,10 @@ vec3 stormGlow(vec3 d) {
 // Wisps rush aft past the window as the plane flies through them.
 float fogAt(vec3 d, float t) {
   if (uFog <= 0.0) return 0.0;
-  vec3 q = vec3(uCam.x, uTime * 0.02, uCam.y);
-  float w = textureLod(uNoise, (d * 0.09 + q) / 0.7, 0.0).r * 0.6 + textureLod(uNoise, (d * 0.3 + q) / 1.9, 0.0).r * 0.4;
+  // The bank's grain lies in long sheets along the flight line and streams aft.
+  // Two depths, 25 m and 90 m out, give it parallax.
+  vec3 p1 = d * 25.0 + uWisp, p2 = d * 90.0 + uWisp;
+  float w = textureLod(uNoise, p1 / vec3(136.0, 9.0, 30.0), 0.0).r * 0.6 + textureLod(uNoise, p2 / vec3(272.0, 24.0, 63.0) + 0.21, 0.0).r * 0.4;
   // Visibility falls from 120 km to 40 m as the bank thickens.
   float vis = 120.0 * exp(-8.0 * pow(uFog, 1.6)) / (0.35 + 1.3 * w);
   return (1.0 - exp(-min(t, 60.0) / vis)) * smoothstep(0.0, 0.12, uFog);

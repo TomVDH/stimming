@@ -50,7 +50,55 @@ function loft(sections) {
   return g;
 }
 
-export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
+// Fog streaks and wing flex, shared by every aircraft material.
+// The streak field is the outside pass's near fog, so the two meet seamlessly.
+const FOG_U = {
+  uFogN: { value: null }, uFogLvl: { value: 0 }, uFogWisp: { value: V(0, 0, 0) },
+  uUpW: { value: V(0, 1, 0) }, uSpanW: { value: V(0, 0, 1) }, uFlex: { value: new THREE.Vector2() },
+};
+// The wing bends in its first two modes; s runs root to tip.
+const BEND_GLSL = `
+float bendAt(float span) {
+  float s = clamp((span - 1.2) / 24.0, 0.0, 1.1);
+  return uFlex.x * s * s + uFlex.y * s * s * (1.0 - s) * 4.0;
+}`;
+function fogFlex(m) {
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, FOG_U);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+uniform vec3 uUpW, uSpanW; uniform vec2 uFlex;
+varying vec3 vFogW;${BEND_GLSL}`)
+      .replace('#include <project_vertex>', `vec4 wpos = modelMatrix * vec4(transformed, 1.0);
+wpos.xyz += uUpW * bendAt(dot(wpos.xyz, uSpanW));
+vFogW = wpos.xyz;
+vec4 mvPosition = viewMatrix * wpos;
+gl_Position = projectionMatrix * mvPosition;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
+varying vec3 vFogW;`)
+      .replace('#include <fog_fragment>', `#ifdef USE_FOG
+  float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+  // Streaks of cloud between the eye and the skin hide stretches of the wing.
+  if (uFogLvl > 0.05) {
+    float L = length(vFogW), T = 1.0;
+    vec3 dir = vFogW / L;
+    for (int i = 0; i < 8; i++) {
+      vec3 p = dir * L * (float(i) + 0.5) / 8.0 + uFogWisp;
+      float n = texture(uFogN, p / vec3(136.0, 7.0, 21.0)).r * 0.7 + texture(uFogN, p / vec3(48.0, 3.0, 9.0) + 0.37).g * 0.3;
+      float dn = smoothstep(0.62 - 0.35 * uFogLvl, 0.9 - 0.3 * uFogLvl, n) * smoothstep(0.05, 0.5, uFogLvl);
+      T *= exp(-0.2 * dn * L / 8.0);
+    }
+    fogFactor = max(fogFactor, 1.0 - T);
+  }
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+#endif`);
+  };
+}
+
+export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex }) {
+  FOG_U.uFogN.value = noiseTex;
 
   // Planform: leading and trailing edge x at span z.
   const edge = (z, col) => {
@@ -111,10 +159,13 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
   const seam = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), roughness: 0.8 });
   // Every material writes alpha 0: the cabin pass reads it as no sky.
   // The shadow pass draws front faces, as the mesh mirror flips them.
-  [paint, flapPaint, dark, metal, seam].forEach(m => Object.assign(m, {
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor,
-    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.ZeroFactor, shadowSide: THREE.FrontSide,
-  }));
+  [paint, flapPaint, dark, metal, seam].forEach(m => {
+    Object.assign(m, {
+      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.ZeroFactor, shadowSide: THREE.FrontSide,
+    });
+    fogFlex(m);
+  });
   // The view's axes are left-handed, so the camera matrix mirrors.
   // Each mesh mirrors its geometry and its scale: the world stays put.
   // The negative scale tells three.js to flip the front face.
@@ -219,7 +270,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
   scene.add(strobeL, navL);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0 };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0] };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -252,7 +303,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -263,6 +314,21 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
       const dt = mo.t === null ? 0 : t - mo.t;
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
+      // Rough air flexes the wing: two damped springs, at 1.1 Hz and 3.2 Hz.
+      // Gusts kick them; a fog bank brings many more.
+      const rough = shake ? Math.min(1, fogLevel * 1.3) + 0.15 * storm : 0;
+      const sd = Math.min(dt, 0.05);
+      [[1.1, 0.07, 0.5], [3.2, 0.1, 0.18]].forEach(([hz, z, kick], j) => {
+        if (Math.random() < sd * 4 * rough) mo.fv[j] += (Math.random() * 2 - 1) * kick * 6 * rough;
+        const w = 2 * Math.PI * hz;
+        mo.fv[j] += (-w * w * mo.f[j] - 2 * z * w * mo.fv[j]) * sd;
+        mo.f[j] = Math.max(-0.7, Math.min(0.7, mo.f[j] + mo.fv[j] * sd));
+      });
+      FOG_U.uFlex.value.set(mo.f[0], mo.f[1]);
+      FOG_U.uUpW.value.set(0, 1, 0).applyAxisAngle(V(1, 0, 0), bank);
+      FOG_U.uSpanW.value.set(0, 0, 1).applyAxisAngle(V(1, 0, 0), bank);
+      FOG_U.uFogLvl.value = fogLevel;
+      FOG_U.uFogWisp.value.set(...wisp);
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
       // About 7 degrees of aileron hold a 3 degree-a-second roll; 12.6 at most.
       const ail = Math.max(-0.22, Math.min(0.22, -mo.rate * 2.5));
@@ -300,10 +366,18 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
       // The bank's sight range, as the shader's fogAt sets it: 120 km to 40 m.
       const vis = 120000 * Math.exp(-8 * Math.pow(fogLevel, 1.6));
       scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;
-      scene.fog.color.setRGB(...sky.amb.map(v => v * 0.03 * (1 + flash * 3)));
-      const tw = V(...tip);
+      // The fog takes the outside pass's murk colour, so the wing sinks into the same grey.
+      const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
+      const hc = hz.map((v, i) => 0.5 * (v + zc[i]) + sky.h.floor[i]), gy = 0.3 * hc[0] + 0.5 * hc[1] + 0.2 * hc[2];
+      const k = (0.55 - 0.25 * storm) * 1.3;
+      scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
+      // The tip lights ride the bent tip.
+      const sT = Math.min(1.1, (V(...tip).dot(FOG_U.uSpanW.value) - 1.2) / 24);
+      const bend = FOG_U.uUpW.value.clone().multiplyScalar(mo.f[0] * sT * sT + mo.f[1] * sT * sT * (1 - sT) * 4);
+      const tw = V(...tip).add(bend);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
+      return [bend.x, bend.y, bend.z];
     },
   };
 }
