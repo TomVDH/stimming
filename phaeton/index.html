@@ -211,19 +211,51 @@ const draw = () => { grade.uniforms.uTime.value = performance.now() / 1000; comp
 const SUN = new THREE.Vector3(-0.7, 0.05, -0.7).normalize();
 const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { uHor: { value: HORIZON }, uZen: { value: ZENITH }, uGlow: { value: GLOW }, uVoid: { value: VOID }, uSun: { value: SUN } },
+  uniforms: { uHor: { value: HORIZON }, uZen: { value: ZENITH }, uGlow: { value: GLOW }, uVoid: { value: VOID }, uSun: { value: SUN },
+    uLit: { value: col(0.86, 0.13, 48) }, uShade: { value: col(0.46, 0.09, 320) }, uDisc: { value: col(0.97, 0.08, 75).multiplyScalar(14) } },
   vertexShader: /* glsl */`
     varying vec3 vDir;
     void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }`,
   fragmentShader: /* glsl */`
-    uniform vec3 uHor, uZen, uGlow, uVoid, uSun;
+    uniform vec3 uHor, uZen, uGlow, uVoid, uSun, uLit, uShade, uDisc;
     varying vec3 vDir;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+    }
+    float fbm(vec2 p) {
+      float a = 0.5, v = 0.0;
+      for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; }
+      return v;
+    }
     void main() {
       float y = vDir.y;
       vec3 c = mix(uHor, uZen, pow(smoothstep(0.0, 0.55, max(y, 0.0)), 0.6));
       c = mix(c, uVoid, smoothstep(0.0, -0.35, y));
       float s = max(dot(normalize(vec3(vDir.x, 0.0, vDir.z)), normalize(vec3(uSun.x, 0.0, uSun.z))), 0.0);
       c += uGlow * pow(s, 5.0) * exp(-abs(y) * 8.0) * 0.8;
+      // Cirrus: streaks on a plane overhead, thick near the horizon, gone up high.
+      if (y > 0.0) {
+        vec2 q = vDir.xz / (y + 0.05);
+        float n = fbm(q * vec2(0.22, 1.1) + vec2(2.0, 5.0));
+        float band = smoothstep(0.0, 0.03, y) * (1.0 - smoothstep(0.25, 0.6, y));
+        float cl = smoothstep(0.38, 0.7, n) * band;
+        c = mix(c, mix(uShade, uLit, pow(s, 2.0)) * (0.75 + 0.6 * s), cl * 0.9);
+      }
+      // Below the horizon the diorama floats over a sea of cloud, lit gold on the sun side.
+      if (y < 0.0) {
+        vec2 q = vDir.xz / (-y + 0.03);
+        float n = fbm(q * 0.45 + vec2(11.0, 3.0)) * 0.65 + fbm(q * 1.6 + 4.0) * 0.35;
+        float cl = smoothstep(0.42, 0.68, n);
+        float haze = smoothstep(0.0, -0.06, y) * (1.0 - smoothstep(-0.35, -0.75, y) * 0.6);
+        vec3 deck = mix(uShade * 0.6, uLit * 1.2, clamp(smoothstep(0.45, 0.85, n) * 0.8 + pow(s, 2.0) * 0.4, 0.0, 1.0));
+        c = mix(c, deck, cl * haze * 0.85);
+      }
+      // The sun sits low with a tight halo.
+      float sd = max(dot(vDir, normalize(uSun)), 0.0);
+      c += uDisc * smoothstep(0.99935, 0.9997, sd) + uGlow * pow(sd, 400.0) * 1.5;
       gl_FragColor = vec4(c, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -251,6 +283,9 @@ Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 14, bottom: -14, n
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
+const rim = new THREE.DirectionalLight(col(0.84, 0.13, 45), 1.7);
+rim.position.copy(SUN).multiplyScalar(60).setY(9);
+scene.add(rim);
 // The muzzle flash lights the slab and the targets for a moment.
 const flash = new THREE.PointLight(col(0.9, 0.08, 230), 0, 30, 1.6);
 flash.position.set(MUZZLE + 0.8, BORE + 0.5, 0.8);
@@ -349,6 +384,22 @@ const cylX = (r, len, seg = 20) => new THREE.CylinderGeometry(r, r, len, seg).ro
 // A ring round the x axis.
 const ringX = (r, tube) => new THREE.TorusGeometry(r, tube, 10, 40).rotateY(Math.PI / 2);
 // A lathe along x from a list of [x, radius] points.
+const blobTex = canvasTex(128, 128, (g, N) => {
+  const r = g.createRadialGradient(N / 2, N / 2, 0, N / 2, N / 2, N / 2);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.45, 'rgba(255,255,255,0.55)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, N, N);
+});
+const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const BLOB = col(0.22, 0.05, 285);
+// One blob: a soft violet shadow on the salt, sx by sz metres.
+function blob(parent, x, z, sx, sz, op = 0.5) {
+  const m = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({ color: BLOB, alphaMap: blobTex, transparent: true, opacity: op, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  m.position.set(x, 0.006, z);
+  m.scale.set(sx, 1, sz);
+  m.renderOrder = -1;
+  parent.add(m);
+  return m;
+}
 const latheX = pts => new THREE.LatheGeometry(pts.map(([x, r]) => new THREE.Vector2(r, x)), 48).rotateZ(-Math.PI / 2);
 // Hazard stripes for crane beams and the backstop band.
 const hazardTex = canvasTex(256, 64, (g, w, h) => {
@@ -453,6 +504,7 @@ function makeSlug() {
 }
 const rack = new THREE.Group();
 scene.add(rack);
+blob(scene, RACK_X, 0, 1.5, 1.5, 0.55);
 for (const z of [-0.34, 0.34]) add(rack, bx(0.12, 2.3, 0.12, 0.05), cream, RACK_X, 1.15, z);
 add(rack, bx(0.95, 0.12, 0.95, 0.05), cherry, RACK_X, 0.06, 0);
 add(rack, bx(0.3, 0.12, 0.85, 0.05), cherry, RACK_X, 2.3, 0);
@@ -516,6 +568,14 @@ add(scene, cylX(0.03, 4.4, 10), copper, -9.2, 1.7, -1.7);
 add(scene, new THREE.CylinderGeometry(0.03, 0.03, 1.2, 10).rotateX(Math.PI / 2), copper, -8.5, 1.7, -1.1);
 const CAP_OFF = col(0.3, 0.05, 50), CAP_ON = col(0.86, 0.17, 58).multiplyScalar(2.8);
 // A diesel generator behind the rack: flywheel and exhaust stack.
+blob(scene, -9.2, -1.7, 5.4, 1.4, 0.5);
+blob(scene, -9.4, -1.0, 0.5, 0.5, 0.45);
+for (const x of [-16.1, -11.3]) blob(scene, x, -1.0, 0.8, 0.8, 0.45);
+blob(scene, NOSE + 1.1, 0, 1.0, 1.8, 0.55);
+blob(scene, MUZZLE - 1.5, 0, 1.0, 1.8, 0.55);
+blob(scene, TRAY_X - 0.35, 0, 2.2, 1.1, 0.35);
+blob(scene, -14.1, -2.3, 2.2, 1.5, 0.55);
+blob(scene, BACK_X + 0.4, 0, 1.6, 3.6, 0.6);
 const engine = new THREE.Group();
 engine.position.set(-14.1, 0, -2.3);
 scene.add(engine);
@@ -582,6 +642,8 @@ function sign(w, h, draw, x, z, mat = cream) {
   scene.add(g);
   return g;
 }
+blob(scene, -16.2, 2.7, 1.3, 0.35, 0.4);
+blob(scene, -12.6, 2.9, 1.0, 0.35, 0.4);
 sign(1.3, 0.62, (g, w, h) => {
   g.fillStyle = '#5fb3a6'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#f1e9d6'; g.fillRect(10, 10, w - 20, h - 20);
@@ -777,7 +839,8 @@ function makeTarget(kind, x, yaw = -0.75) {
   g.position.set(x, 0, 0);
   scene.add(g);
   const face = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  return { kind, T, g, body, x, face, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
+  const sh = blob(g, 0, 0, 0.9, 0.9, 0.5);
+  return { kind, T, g, body, x, face, blob: sh, blobOp: 0.5, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
 }
 // Extras are mode props that go at the refill: frames, rulers, flags.
 const extras = [];
@@ -843,6 +906,7 @@ const flags = { last: flag(col(0.6, 0.2, 28)), best: flag(col(0.85, 0.16, 90)) }
 function depthRow(drop) {
   const L = DEPTH.n * DEPTH.pitch;
   const frame = extra(new THREE.Group());
+  blob(frame, DEPTH.x0 + L / 2, 0, L + 1.0, 1.9, 0.55);
   add(frame, bx(L + 0.3, 0.1, 1.4, 0.02), steel, DEPTH.x0 + L / 2 - 0.05, BORE - 0.65, 0);
   for (const x of [DEPTH.x0 - 0.15, DEPTH.x0 + L + 0.05]) for (const z of [-0.6, 0.6]) add(frame, bx(0.08, BORE - 0.7, 0.08), steel, x, (BORE - 0.7) / 2, z);
   const ruler = add(frame, new THREE.PlaneGeometry(2.8, 0.09).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: rulerTex, roughness: 0.8 }), DEPTH.x0 + 1.4, 0.004, 0.95, false);
@@ -885,9 +949,10 @@ function tankRow(drop) {
   g.add(body);
   add(g, bx(L + 0.2, 0.08, TANK.d + 0.2), paint, cx, BORE - 0.69, 0);
   for (let x = TANK.x0; x <= TANK.x1 + 0.01; x += L / 5) for (const z of [-0.5, 0.5]) add(g, bx(0.08, BORE - 0.73, 0.08), paint, x, (BORE - 0.73) / 2, z);
+  const sh = blob(g, cx, 0, L + 1.2, 1.8, 0.5);
   scene.add(g);
   TANK.burst = false;
-  row.push({ kind: 'tank', T: { res: 0, h: TANK.h }, g, body, x: TANK.x0, state: 'stand', drop: drop ? 0 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
+  row.push({ kind: 'tank', T: { res: 0, h: TANK.h }, g, body, x: TANK.x0, blob: sh, blobOp: 0.5, state: 'stand', drop: drop ? 0 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
 }
 
 /* ---------- debris ---------- */
@@ -1678,6 +1743,7 @@ function step(dt) {
       // A falling ease with one small bounce.
       const y = q < 0.75 ? 1 - (q / 0.75) ** 2 : 0.06 * Math.sin((q - 0.75) / 0.25 * Math.PI);
       t.g.position.y = y * 6;
+      if (t.blob) { t.blob.position.y = 0.006 - t.g.position.y; t.blob.material.opacity = t.blobOp * (1 - y); }
       dropping = true;
     }
   }

@@ -27,6 +27,7 @@ Zany, 1950s atomic age, dieselpunk. An original proving ground, no names or symb
 | Machines | A diesel generator with a cherry flywheel and an exhaust stack; six glass vacuum tubes; a Bakelite console with a numbered dial and jewel lamps; a gantry with hazard stripes and a horseshoe magnet |
 | Props | A PROVING GROUND 7 sign with an atom, a DANGER HIGH VOLTAGE sign |
 | Lens | Bloom on hot parts only, a tilt-shift blur that sells the miniature, a warm print grade, vignette, grain |
+| Light | A low sun with a halo, a warm rim light from the sun side, soft violet contact shadows; the diorama floats over a sunset cloud sea (the camera looks down, so the backdrop is below the horizon) |
 
 ## The shot
 
