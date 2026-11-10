@@ -257,6 +257,8 @@ const U = {
   uSootS: { value: new THREE.Vector4() }, uSootK: { value: 0 },
   // The soot's shadow light: a steered way, so its shadow crosses the seen plain.
   uSootL: { value: new THREE.Vector3(0, 1, 0) },
+  // The blast eats the tail's end: centre and radius; it stays after the soot.
+  uEat: { value: new THREE.Vector4() },
 };
 U.uStarT = U.uTime;
 
@@ -412,6 +414,7 @@ uniform float uBk;
 uniform vec4 uSootS;
 uniform float uSootK;
 uniform vec3 uSootL;
+uniform vec4 uEat;
 uniform float uHitR;
 // The blast on a cloud at P: its light, the shock rim and the push.
 // thin is 1 at a cloud's thin edge, where light shines through.
@@ -438,7 +441,7 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
     // Little flat wash: thin edges and the far side take the light.
     L = c * I * (0.12 + 2.4 * fwd * thin);
     // The light front: a bright rim runs ahead of the glow.
-    L += vec3(1.0, 0.92, 0.82) * uBk * exp(-tl * tl / 0.02) * (0.6 + 1.6 * thin) * 4.0 / (1.0 + r * r / 1.2e9);
+    L += vec3(1.0, 0.92, 0.82) * uBk * exp(-tl * tl / 0.01) * (0.3 + 1.7 * thin) * 1.6 / (1.0 + r * r / 1.2e9);
   }
   // The fast rim rides the drawn shell, so the two meet.
   float Rr = 1.4 * uHitR + 36000.0 * (1.0 - exp(-t / 9.0));
@@ -1613,6 +1616,8 @@ function makeTrain(pu) {
     float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * (1.0 - smoothstep(0.55, 1.0, x / uLen));
     // After the hit: the tail goes from its tip back, the head end softens.
     cov *= 1.0 - smoothstep(uCut - 0.25 * uLen, uCut, x);
+    // The tail's end dissolves into the impact cloud.
+    if (uEat.w > 0.0) cov *= smoothstep(0.2, 1.35, length(uAstP + q - uEat.xyz) / uEat.w);
     cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
     if (cov < 0.002) return 0.0;
     // A skew along u hides the tile repeat.
@@ -1696,7 +1701,8 @@ function makeTrain(pu) {
         float bsh = 0.35 + 0.65 * exp(-2.0 * d);
         Lf += uAstC * uHit.w * 60.0 * R * R / (dot(q, q) + 9.0 * R * R) * bsh;
         // The afterglow reaches far up the tail.
-        float tb = uStarT - uHitP.w - length(uAstP + q - uHitP.xyz) / 60000.0;
+        // The tail takes the light all at once; a sweep up it reads as a crawl.
+        float tb = uStarT - uHitP.w;
         if (tb > 0.0 && tb < 18.0) {
           float gl = uBk * (1.6 * exp(-tb / 0.6) + 0.8 * exp(-tb / 5.0)) * (1.0 - smoothstep(9.0, 18.0, tb)) * bsh;
           vec3 qh = uAstP + q - uHitP.xyz;
@@ -3767,6 +3773,8 @@ function updateBlast() {
   u.uR.value = Rb * 1.6;
   // The soot ball others fade behind: thick early, thin as it erodes.
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
+  // The tail's eaten end grows with the cloud and keeps its last size.
+  U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.8));
   U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 4, 22)) * (1 - THREE.MathUtils.smoothstep(ha, 20, 30));
   // Soot needs fewer steps than fire.
   const soot = ha > 3;
@@ -4239,7 +4247,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; U.uBk.value = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // The first rock's own track.
   ast.next = 0;
