@@ -1414,14 +1414,16 @@ caseMesh.visible = false;
 scene.add(caseMesh);
 // p, v: place and speed. w: spin axis times rate. lt: landing time.
 let spent = null;
-const CASE_G = 30;
+// Real gravity: at this size a true fall reads as weight.
+const CASE_G = 9.81;
 function ejectCase() {
   if (reduced()) return;
   // The case leaves the housing's flank, back and up, toward the eye's side.
+  // A heavy case leaves slowly and turns slowly: a shove, not a flick.
   const p = barrelPt(-150, 64, 20, new THREE.Vector3());
   const side = new THREE.Vector3(CY, 0, -SY), back = AX.clone().negate();
-  const v = side.multiplyScalar(150 + 15 * rnd()).addScaledVector(back, 120 + 12 * rnd()).addScaledVector(AX_UP, 50);
-  const w = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(2.2 + rnd());
+  const v = side.multiplyScalar(42 + 6 * rnd()).addScaledVector(back, 28 + 4 * rnd()).addScaledVector(AX_UP, 20);
+  const w = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(0.45 + 0.25 * rnd());
   caseMesh.quaternion.setFromUnitVectors(yUp, AX).multiply(new THREE.Quaternion().setFromAxisAngle(yUp, rnd() * 6));
   spent = { t0: simT, p, v, w, lt: -1, bounce: 0 };
   caseMesh.position.copy(p); caseMesh.visible = true;
@@ -1437,13 +1439,14 @@ function stepCase(dt) {
   s.p.addScaledVector(s.v, dt);
   spinQ.setFromAxisAngle(bq.copy(s.w).normalize(), s.w.length() * dt);
   caseMesh.quaternion.premultiply(spinQ);
-  // The case hits the plain: a burst of dust, one small hop, no jolt.
+  // The case hits the plain: a burst of dust, a low, dead hop, no jolt.
+  // A heavy case keeps little of its speed and almost no spin.
   if (s.p.y < 13.5) {
     s.p.y = 13.5;
     if (s.lt < 0) { s.lt = simT; caseDust = { t0: simT, P: s.p.clone() }; }
     s.bounce++;
-    s.v.multiplyScalar(0.25); s.v.y = s.bounce < 2 ? 9 : 0;
-    s.w.multiplyScalar(0.3);
+    s.v.multiplyScalar(0.18); s.v.y = s.bounce < 2 ? 3.5 : 0;
+    s.w.multiplyScalar(0.15);
     // At rest it lies on its side.
     if (s.bounce >= 2) {
       const ax = bq.set(0, 1, 0).applyQuaternion(caseMesh.quaternion);

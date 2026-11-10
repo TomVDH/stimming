@@ -1,10 +1,11 @@
 ---
 # stimming-uc3j
 title: 'Railgun: a real impact fireball, after Window Seat'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-10T23:10:20Z
-updated_at: 2026-11-10T23:10:20Z
+updated_at: 2026-11-10T23:30:16Z
 parent: stimming-f793
 ---
 
