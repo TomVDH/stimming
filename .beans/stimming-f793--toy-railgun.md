@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:13:08Z
+updated_at: 2026-11-10T19:15:19Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -111,7 +111,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 
 - [x] 4. The sky answers the blast: the light sweeps out at 60 km/s, a 15 s amber afterglow, a slow heave bows and clears the cirrus, the plain takes the blast light
 - [x] 1. Light shafts: the fireball throws shafts through the soot for about 20 s; the gun's shadow cuts the dust (the sun stays behind the camera, so no sun shafts in frame)
-- [ ] 2. Smoke shadows
+- [x] 2. Smoke shadows (see the queue)
 - [ ] 3. Air, distance and dust
 - [ ] 6. Lens: anamorphic streak, halation, dirty lens
 - [ ] 7. Debris lights the plain
@@ -137,7 +137,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 ## Queue from Tom (2026-11-10), in order
 
 - [x] Night flash: the foreground stays a stark silhouette against the lit sky
-- [ ] 2. Smoke shadows (in progress)
+- [x] 2. Smoke shadows: the soot ball's shadow, steered so it falls on the seen plain and the gun; the trail's real shadow lands out of frame, so it is left out
 - [ ] Remove the light shafts altogether
 - [ ] Light the comet's main smoke column properly again under the blast
 - [ ] Remove the small ejecta that have no full trail

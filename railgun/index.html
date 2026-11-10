@@ -256,6 +256,8 @@ const U = {
   uBk: { value: 0 },
   // The soot ball: centre and radius, and its density.
   uSootS: { value: new THREE.Vector4() }, uSootK: { value: 0 },
+  // The soot's shadow light: a steered way, so its shadow crosses the seen plain.
+  uSootL: { value: new THREE.Vector3(0, 1, 0) },
 };
 U.uStarT = U.uTime;
 
@@ -410,6 +412,7 @@ uniform vec4 uBlast;
 uniform float uBk;
 uniform vec4 uSootS;
 uniform float uSootK;
+uniform vec3 uSootL;
 uniform float uHitR;
 // The blast on a cloud at P: its light, the shock rim and the push.
 // thin is 1 at a cloud's thin edge, where light shines through.
@@ -595,6 +598,17 @@ float sootT(vec3 P) {
   float ch = max(min(-b + h, L) - max(-b - h, 0.0), 0.0) / uSootS.w;
   return exp(-uSootK * ch);
 }
+// Sunlight at P after the soot ball: 1 clear.
+// The shadow way is steered, so the shadow sweeps the plain in view.
+float smokeShade(vec3 P) {
+  if (uSootK < 0.001) return 1.0;
+  vec3 oc = P - uSootS.xyz;
+  float b = dot(oc, uSootL), h = b * b - dot(oc, oc) + uSootS.w * uSootS.w;
+  if (h <= 0.0) return 1.0;
+  h = sqrt(h);
+  float T = exp(-uSootK * max(-b + h - max(-b - h, 0.0), 0.0) / uSootS.w);
+  return mix(1.0, T, 0.75);
+}
 // The light lands late: it sweeps out at sixty kilometres a second.
 float blastAt(vec3 P) {
   float tl = uStarT - uHitP.w - length(uBlast.xyz - P) / 60000.0;
@@ -689,7 +703,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     alb *= 1.0 - 0.25 * smoothstep(560.0, 240.0, length(vP.xz - vec2(0.0, 90.0)));
     // A flat plain takes little light at four degrees; lift it.
     float nl = clamp(dot(N, uSun) * uGLift.x + uGLift.y, 0.0, 1.2);
-    float sv = sunVis(vP);
+    float sv = sunVis(vP) * smokeShade(vP);
     // At night the rock only warms the plain; it does not flood it.
     vec3 col = alb * (ambient(N) + uSunC * nl * sv + keyLight(N) * mix(1.0, 0.22, nightK()) + arcLight(vP, N));
     // The blast lights the plain once its light arrives.
@@ -1202,7 +1216,7 @@ const gunMat = new THREE.ShaderMaterial({
     float occ = mix(0.55, 1.0, smoothstep(0.0, 120.0, vO.y)) * mix(0.5, 1.0, smoothstep(-0.6, 0.2, N.y));
     vec3 amb = mix(uGroundC * uSunC * 0.3, mix(uHorC, uZenC, 0.75) * 0.6, N.y * 0.5 + 0.5) * occ;
     float nl = max(dot(N, uSun), 0.0);
-    float vis = nl > 0.0 ? sunVis(vP) : 1.0;
+    float vis = nl > 0.0 ? sunVis(vP) * smokeShade(vP) : 1.0;
     // A soft fill from the eye's side and a thin rim; both faint at night.
     float day = 1.0 - 0.75 * nightK();
     vec3 V0 = normalize(cameraPosition - vP);
@@ -2721,7 +2735,17 @@ function updateShafts() {
   su.uSeed.value = reduced() ? 0 : (su.uSeed.value + 0.37) % 13;
   grade.uniforms.uShK.value = su.uL0.value.z + su.uL1.value.z > 0.001 ? 1 : 0;
 }
+// Steer the soot's shadow: it lands far out, then sweeps in over the gun.
+const sootFar = new THREE.Vector3(), sootTo = new THREE.Vector3();
+function updateSootShade() {
+  if (!blastFx) return;
+  const ha = simT - blastFx.t0, s = THREE.MathUtils.smoothstep(ha, 2, 24);
+  sootFar.set(blastFx.P.x, 0, blastFx.P.z).sub(camera.position).setY(0).setLength(14000).add(camera.position).setY(0);
+  sootTo.set(-1200, 0, -900).lerp(sootFar, 1 - s);
+  U.uSootL.value.copy(U.uSootS.value).sub(sootTo).normalize();
+}
 function updateWarp() {
+  updateSootShade();
   updateShafts();
   const g = grade.uniforms;
   warpFront(warpM, g.uShk0.value, 0.012);
