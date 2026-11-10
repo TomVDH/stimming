@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T07:35:25Z
+updated_at: 2026-11-10T07:45:45Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -233,4 +233,4 @@ Open from the critics:
 - [ ] Train horn: no source gives the pitch; candidate clip freesound 20065 (Swiss train whistle, licence unchecked). Tom to supply a clip and say when it sounds
 - [x] Land tiles (Tom chose runtime tiles, all land): landMat() holds all land colour, the per-pixel normal, sky cover and shore distance. Five tiles (0.125, 0.5, 2, 8, 32 m texels; 2048 columns) scroll with the train; only columns that come into reach are baked, two targets each (colour as square root in 8 bit; normal, cover and shore in half float), mipped, 8x anisotropic. The land shader samples two textures and lights them. The eye's distance in the bake is the offset from the line times 1.08. GPU time per frame at 1586 x 1798 px, timer query, before to after: Bäch day 66 to 18 ms, lake day 93 to 22, plain day 59 to 16, Zurich night 61 to 16
 - [x] Fields and pastures in clusters, in the bake: Voronoi clusters some 480 m across; two in five stay pasture; each of the rest has one heading (along or across the valley), one tiling (long strips, short strips or staggered blocks), a lean to a few crops (ley, maize, wheat, stubble, earth), drill lines, grass baulks, a meadow belt, and for half a hedge on the rim. Same strength rule as before: muted, fading in from 300 m
-- [ ] Tom to look at the fields and say if they should show more
+- [x] Stronger fields (Tom): strength 0.85, in view from 110 to 300 m out, clearer wheat, stubble and maize, stronger drill lines and hedges
