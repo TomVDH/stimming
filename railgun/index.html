@@ -119,6 +119,11 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
     { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
+    // Tone: the curve, then exposure, contrast and colour on top of the grade.
+    { type: 'choice', id: 'tone', label: 'Tone map', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }], onPick: v => { gfx.tone = v; setTone(); } },
+    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.exp = v; draw(); } },
+    { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.22, persist: true, onInput: v => { gfx.con = v; setTone(); } },
+    { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 0.82, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
@@ -167,7 +172,7 @@ camera.rotation.order = 'YXZ';
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
 // Graphics settings: resolution share, smoke step factor, bloom gain, FXAA mode.
 const DETAIL = { low: 0.6, mid: 1, high: 1.4 };
-const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto' };
+const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'agx', exp: 1, con: 0.22, sat: 0.82 };
 // The share of the quality's resolution per rung.
 const RES_STEP = [1, 0.82, 0.68, 0.55];
 
@@ -2465,6 +2470,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
       // The focus pull: 0 sharp, 1 soft.
       uSoft: { value: 0 },
+      // Contrast power and saturation, from the settings.
+      uCon: { value: 0.22 }, uSat: { value: 0.82 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
@@ -2484,7 +2491,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2;
-    uniform float uSoft;
+    uniform float uSoft, uCon, uSat;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2586,10 +2593,10 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       // Contrast: shadows sink and highs lift round a mid grey.
       float lc = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
-      c *= pow(lc / 0.18, 0.22);
+      c *= pow(lc / 0.18, uCon);
       lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
       // A restrained palette: colour pulled back, shadows cool, highs warm.
-      c = max(mix(vec3(lc), c, 0.82), 0.0);
+      c = max(mix(vec3(lc), c, uSat), 0.0);
       c *= mix(vec3(0.94, 0.98, 1.06), vec3(1.04, 1.0, 0.95), smoothstep(0.02, 0.6, lc));
       // A soft matte floor: the deepest blacks lift a touch.
       c += vec3(0.004, 0.0045, 0.006) * (1.0 - smoothstep(0.0, 0.05, lc));
@@ -2797,7 +2804,7 @@ function draw() {
   const ha = simT - U.uHitP.value.w, hk = blastFx ? 1 : U.uBk.value > 0 ? 0.6 : 0;
   const ma = muzzleFx ? simT - muzzleFx.t0 : 99;
   const dip = (reduced() ? 0.5 : 1) * (hk * 0.42 * (1 - Math.exp(-ha / 0.2)) * Math.exp(-ha / 3.5) * (ha > 0 ? 1 : 0) + 0.15 * (1 - Math.exp(-ma / 0.1)) * Math.exp(-ma / 1.5));
-  renderer.toneMappingExposure = baseExp * (1 - dip);
+  renderer.toneMappingExposure = baseExp * gfx.exp * (1 - dip);
   // The lens softens on the hit and finds focus again.
   grade.uniforms.uSoft.value = reduced() ? 0 : hk * 0.8 * (1 - Math.exp(-Math.max(ha, 0) / 0.08)) * Math.exp(-Math.max(ha, 0) / 0.6) * (ha > 0 && ha < 6 ? 1 : 0);
   drawShadow();
@@ -3625,9 +3632,9 @@ float dens(vec3 p, out vec3 em) {
   float n = dustN(w);
   // Billows ride on a thin floor, so the ring never breaks.
   float d = clamp((n - (1.0 - cov)) * 2.2, 0.0, 1.0) * 0.8 + 0.3 * cov;
-  // Fine cells carve wisps into it.
-  d *= 0.55 + 0.45 * texture(uVol, w * 3.1).g;
-  return d * 0.045;
+  // Fine cells carve soft wisps into it.
+  d *= 0.7 + 0.3 * texture(uVol, w * 3.1).g;
+  return d * 0.03;
 }
 // The sun's path through the dust: density times the layer's height, longer when the sun is low.
 float vshade(vec3 p, float d) { return clamp(d * uDu.z * 0.8 / max(uSun.y, 0.15), 0.0, 4.0); }
@@ -3677,11 +3684,13 @@ function updateChargeDust(dt) {
   u.uPn.value = pn;
   if (blow && simT - blow.t0 > 10) blow = null;
   u.uDf.value.set(dIn, devil, blow ? simT - blow.t0 : -1, blow ? 0.8 * blow.k : 0);
-  u.uDu.value.set(cdust, 150 + 650 * cdust, 25 + 100 * cdust + 90 * rage, simT);
+  // A tighter, lower ring: the gun stays the subject.
+  u.uDu.value.set(cdust, 120 + 380 * cdust, 18 + 60 * cdust + 50 * rage, simT);
   const sp = u.uDu.value.y;
   u.uC.value.set(0, 0, 0); u.uR.value = 470 + 1.15 * sp + (blow ? 420 : 0) + 40;
   // Fewer steps than shot dust: the ring is thick and soft.
-  u.uVSteps.value = Math.round(dustSteps() * 0.65);
+  // More steps over a smaller ring: less grain at the same cost.
+  u.uVSteps.value = Math.round(dustSteps() * 0.85);
   // The slab holds the march near the ground; devils and beats raise it.
   u.uLs.value = 10 + 0.12 * u.uDu.value.z; u.uSlab.value = Math.max(4.5 * u.uDu.value.z, 500 * devil + 40, 3 * ph);
   chargeDust.visible = !reduced() && (cdust > 0.02 || ph > 0 || devil > 0.02);
@@ -5197,6 +5206,12 @@ addEventListener('blur', () => { if (charge || press) { cancelHold(); wake(); } 
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
 function setGrain() { grade.uniforms.uGrain.value = POST.grain * ui.setting('grain').value; draw(); }
 function setBloom() { bloomPass.strength = POST.bloom[0] * gfx.bloom; draw(); }
+const TONES = { agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, neutral: THREE.NeutralToneMapping };
+function setTone() {
+  renderer.toneMapping = TONES[gfx.tone] || THREE.AgXToneMapping;
+  grade.uniforms.uCon.value = gfx.con; grade.uniforms.uSat.value = gfx.sat;
+  draw();
+}
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
@@ -5265,7 +5280,8 @@ stepAim(0, true);
 setBox(ui.setting('letterbox').value);
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
-setBloom();
+gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
+setBloom(); setTone();
 setGrain();
 resize();
 renderer.compileAsync(scene, camera).then(async () => {
