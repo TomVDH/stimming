@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T09:44:16Z
+updated_at: 2026-11-10T09:46:23Z
 parent: stimming-f793
 ---
 
@@ -22,7 +22,7 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [ ] The incoming threats: the rock and its approach
 - [ ] The explosion: fireball, shells, shards, embers, hitFlash
 - [x] The hold: build to 10 s, ready, over-hold, vent at 24 s
-- [ ] The chorus: an original choir swell that locks into one chord at full charge
+- [x] The chorus: an original choir swell that locks into one chord at full charge (Tom to listen)
 - [ ] QA in the browser pane: clean console, 30 fps through charge and shot
 - [ ] Tom signs off on the stills
 - [ ] PR to main

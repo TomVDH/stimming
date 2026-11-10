@@ -1739,7 +1739,7 @@ function cancelHold() {
 function vent() {
   charge = null;
   ventT = simT;
-  humStop(kit.live());
+  humGroan(kit.live());
   cam.shake += reduced() ? 0 : 2.4;
   U.uHeat.value = Math.max(U.uHeat.value, 0.8);
   // The strike throws the plain up under the barrel.
@@ -2504,6 +2504,13 @@ const PARTIALS = [
   [1, 'sawtooth', 0, 1], [1.5, 'triangle', 0.1, 0.7], [2, 'sawtooth', 0.22, 0.6], [3, 'triangle', 0.34, 0.6], [4, 'sawtooth', 0.46, 0.4],
   [5, 'sine', 0.56, 0.5], [6, 'sine', 0.66, 0.45], [8, 'sine', 0.74, 0.4], [12, 'sine', 0.82, 0.3], [16, 'sine', 0.88, 0.25],
 ];
+// The choir: voices grow out of the hum and lock into one chord.
+// The chord is the gun's own: a minor eleventh with no third, on the root.
+// Each voice: [target semitones, start harmonic, arrival curve, sour sign, pan].
+const CHORD = [0, 0, 7, 12, 14, 17, 19, 22, 24, 26, 29, 31, 34, 36, 38, 41, 43, 48];
+const VOICES = CHORD.map((tgt, i) => [tgt, 1 + (i % 8), 0.7 + 1.5 * Math.random(), Math.random() < 0.5 ? -1 : 1, (i % 2 ? 1 : -1) * Math.min(0.85, 0.05 * i)]);
+// Vowel formants in hertz: oo, ah, and a bright scream.
+const VOWEL = { oo: [300, 870], ah: [730, 1090], scream: [900, 2500] };
 let hum = null;
 function humStart(ac) {
   if (hum) return;
@@ -2538,7 +2545,33 @@ function humStart(ac) {
   const nz = ac.createBufferSource(), nb = filt(ac, 'bandpass', 1200, 0.8), ng = ac.createGain();
   nz.buffer = kit.noise; nz.loop = true; ng.gain.value = 0;
   nz.connect(nb).connect(ng).connect(kit.out); nz.start(); src.push(nz);
-  hum = { layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng };
+  // The choir runs through its own soft clip; the over-hold drives it.
+  const cpre = ac.createGain(), cshape = ac.createWaveShaper(), cg = ac.createGain();
+  cshape.curve = curve; cshape.oversample = '2x';
+  cpre.gain.value = 0.6; cg.gain.value = 0;
+  cpre.connect(cshape).connect(cg).connect(kit.out);
+  const voices = VOICES.map(([tgt, harm, k, sour, pn], i) => {
+    const o = ac.createOscillator(), f1 = filt(ac, 'bandpass', VOWEL.oo[0], 6), f2 = filt(ac, 'bandpass', VOWEL.oo[1], 8), vg = ac.createGain(), pan = ac.createStereoPanner();
+    o.type = 'sawtooth'; o.frequency.value = 55 * harm;
+    vg.gain.value = 0; pan.pan.value = pn;
+    o.connect(f1).connect(vg); o.connect(f2).connect(vg);
+    vg.connect(pan).connect(cpre);
+    o.start(); src.push(o);
+    return { o, f1, f2, vg, tgt, start: 12 * Math.log2(harm), k, sour, ph: Math.random() * 6.28, enter: 0.6 * i / VOICES.length };
+  });
+  hum = { layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, locked: false, lockAt: -1e9, sour: 0 };
+}
+// Semitones from the hum's root for a voice at power c.
+function voicePitch(v, c, t) {
+  const u = clamp((c - 0.12) / 0.88, 0, 1);
+  const lock = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
+  // Each voice climbs on its own curve.
+  let p = v.start + (v.tgt - v.start) * Math.pow(u, v.k);
+  // Before the lock the voices wander and beat.
+  p += (1 - lock) * u * 1.4 * Math.sin(t * (0.7 + v.k) + v.ph);
+  // The over-hold pulls each voice sharp or flat.
+  p += over * v.sour * (0.5 + 1.4 * v.k / 2.2) + over * 0.6 * Math.sin(t * 7.0 + v.ph);
+  return p;
 }
 function humUpdate(ac) {
   if (!hum || !charge) return;
@@ -2555,14 +2588,44 @@ function humUpdate(ac) {
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c + 0.35 * rage, t, 0.05);
   hum.nb.frequency.setTargetAtTime(1200 + 2500 * rage, t, 0.08);
-  hum.ng.gain.setTargetAtTime(0.05 * rage, t, 0.08);
+  hum.ng.gain.setTargetAtTime(0.05 * rage + 0.07 * over, t, 0.08);
+  // The choir: the root stays at the full-power pitch once locked.
+  const root = 55 * Math.pow(2, Math.min(c, 1) * 7 / 12);
+  const u = clamp((c - 0.12) / 0.88, 0, 1);
+  const locked = c >= 0.999 && over < 0.15;
+  if (locked && !hum.locked) hum.lockAt = t;
+  hum.locked = locked; hum.sour = over;
+  // The vowel opens from oo to ah, then screams in the over-hold.
+  const vo = THREE.MathUtils.smoothstep(u, 0.3, 0.95);
+  const F1 = THREE.MathUtils.lerp(THREE.MathUtils.lerp(VOWEL.oo[0], VOWEL.ah[0], vo), VOWEL.scream[0], over);
+  const F2 = THREE.MathUtils.lerp(THREE.MathUtils.lerp(VOWEL.oo[1], VOWEL.ah[1], vo), VOWEL.scream[1], over);
+  for (const v of hum.voices) {
+    v.o.frequency.setTargetAtTime(root * Math.pow(2, voicePitch(v, c, t) / 12), t, 0.06);
+    v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1);
+    v.vg.gain.setTargetAtTime(0.5 * THREE.MathUtils.smoothstep(u, v.enter, v.enter + 0.25), t, 0.1);
+  }
+  // A swell at the lock, then a held chord.
+  const accent = Math.exp(-(t - hum.lockAt) / 1.2);
+  hum.cg.gain.setTargetAtTime(0.11 * THREE.MathUtils.smoothstep(u, 0.15, 0.9) * (1 + 0.5 * accent) * (1 + 0.3 * over), t, 0.08);
+  hum.cpre.gain.setTargetAtTime(0.6 + 4 * over, t, 0.08);
+}
+// The vent: the choir groans down two octaves and dies.
+function humGroan(ac) {
+  if (!hum || !ac) { humStop(ac, true); return; }
+  const h = hum, t = ac.currentTime;
+  hum = null;
+  for (const v of h.voices) v.o.frequency.setTargetAtTime(v.o.frequency.value / 4, t, 0.5);
+  h.cg.gain.setTargetAtTime(0, t + 0.3, 0.5);
+  for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.05);
+  for (const n of h.src) n.stop(t + 2.6);
+  track(t + 2.7, ...h.src);
 }
 function humStop(ac, now = false) {
   if (!hum) return;
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
   if (!ac || now) { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
-  for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.g, h.sg, h.ng, h.cg]) n.gain.setTargetAtTime(0, t, 0.03);
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
 }
@@ -2623,6 +2686,20 @@ crack = sh => {
     track(t + 1.7, o);
   }
   track(t + 2.1, sub, cr, wh, tail);
+};
+// The vent: a crash and a boom under the barrel.
+ventSound = () => {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime;
+  const cr = hiss(ac, t, 1.6, 0.8), bp = filt(ac, 'bandpass', 900, 0.7), crG = ac.createGain();
+  crG.gain.setValueAtTime(0.5, t); crG.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+  cr.connect(bp).connect(crG).connect(kit.out);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(24, t + 1.2);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.6, t + 0.02); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 1.5);
+  track(t + 1.7, cr, o);
 };
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
@@ -2721,7 +2798,8 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  mute(on) { sound.set(!on); },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
   freeze(on = true) { qaFreeze = on; },
