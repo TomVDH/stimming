@@ -41,6 +41,22 @@ One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 
 `glasslab/` stays the page that tunes the pane-rain variants against each other.
 
+## First adopter: Train Ride
+
+Tom picked Train Ride (2026-11-10). Its own chat does the move; the library chat does not edit `trainride/`.
+
+| Step | Swap | Look |
+|---|---|---|
+| 1 | Its drops, runs and fog lines for `wgPane()` (`shared/wetglass.js`) | Same: the lab checks these exact lines, within 1 / 255 |
+| 2 | `runFlow` for `wetGlassMotion()` | Same formula |
+| 3 | `rung` and `watchdog` for `detail()` (`shared/detail.js`) | Same numbers |
+| 4 | The grade's vignette and grain lines for `gdVignette()` and `gdGrain(gdIgn(...))` | Same math |
+| 5 | River and lake waves for `wtWavesN()`, rain rings for `wtRingsN()` | Changes the water: Tom decides |
+| 6 | A lens flare on the sun or station lamps | New: Tom decides |
+| 7 | Sky and haze | Its own look; it stays unless Tom wants the common sky |
+
+Every module compiles together in a three.js `ShaderMaterial`: the lab's check shaders now carry all of them.
+
 ## Built
 
 | Module | Date | Proof | Adopted by |

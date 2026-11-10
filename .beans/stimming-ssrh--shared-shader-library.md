@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T10:18:18Z
+updated_at: 2026-11-10T10:22:00Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -32,6 +32,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] `shared/weather.js`: one value drives glass and water; Weather slider in `fxlab/`
 - [x] Bundles follow the site quality setting: `shared/detail.js`, `waterDetail`, `wetGlassDetail`, a Quality row in `fxlab/`
 - [x] Night sky and haze: `shared/sky.js` with `skyAt(hour)`, a card in `fxlab/`, three copy checks
+- [x] Tom picks the first adopter: Train Ride. Brief handed to the Train Ride chat
+- [ ] Train Ride adopts swaps 1 to 4 (its own chat)
 - [ ] Tom picks the next bundle (output, water extras, clouds)
 
 ## Rules
@@ -59,3 +61,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: `shared/sky.js` built (Tom: "Night sky and haze"). The kit stars, Coast and meteor sky and the kit haze match exactly. `skyAt(hour)` drives the palette; night, blue hour and last light are Coast and meteor palettes; day and dawn are a first proposal. The lab scene now takes its sky, stars and haze from the module.
 
 - 2026-11-10: `shared/detail.js` built (Tom: "Quality setting"). One level from the site quality and a slow-frame watch (Subway numbers). Water takes an octave and ring-layer budget; the wet pane a bokeh target scale. About twenty toys carry that watch by hand and could adopt it.
+
+- 2026-11-10: Tom picked Train Ride as the first adopter. The brief is in the plan (First adopter) and in the shared notes folder (`trainride-adoption.md`). Four swaps keep the picture; water, flare and sky change the look and wait for Tom. The lab check shaders now include every module, so all compile together in three.js.
