@@ -94,7 +94,14 @@ const opts = {
 // 'random' rolls each new rock's size; a dev pick pins it.
 let devSize = 'random';
 // The charge sound's mix: 'hum', 'blend', 'choir', 'vast' or 'titan'.
-let chargeMix = (() => { try { return localStorage.getItem('stimming.railgun.chargemix') || 'blend'; } catch { return 'blend'; } })();
+// Expanse is the default; an old Blend default moves to it once.
+let chargeMix = (() => {
+  try {
+    const K = 'stimming.railgun.chargemix';
+    if (!localStorage.getItem(K + '.v2')) { if (localStorage.getItem(K) === 'blend') localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v2', '1'); }
+    return localStorage.getItem(K) || 'vast';
+  } catch { return 'vast'; }
+})();
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -103,7 +110,7 @@ const ui = initPage({ id: 'railgun', bar: {
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // The charge: the hum, the choir, a blend, or a blend on the plain.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', value: 'blend', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock (dev)', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -4423,7 +4430,7 @@ function plainVerb(ac) {
 let hum = null;
 function humStart(ac) {
   if (hum) return;
-  const P = MIX[chargeMix] || MIX.blend;
+  const P = MIX[chargeMix] || MIX.vast;
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
