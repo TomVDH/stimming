@@ -43,6 +43,7 @@ A session builds a proposal only on Tom's yes. Tom sets the verdict here; the to
 | Cloud chamber | The view is the mist itself; the lamp and the magnet sit outside the frame. | | | | none fits | `stimming-c7hm` |
 | Sonar | The console is already the control: a tap pings, a drag turns the boat, and the screen prints its own legend. | | | | none fits | `stimming-80dc` |
 | Ink Water | The tank is already the control: a tap drops, a hold pipettes, a drag stirs. A pipette prop at the rim would only repeat the tap. | | | | none fits | `stimming-x4qk` |
+| ShadyOS | The desktop is already the control: drag a window, double-click a title to fold it, tap the shelf to bring it back. The menu strip now holds the shell's own top row. | | | | none fits | `stimming-80dc` |
 
 ## Not yet proposed
 
