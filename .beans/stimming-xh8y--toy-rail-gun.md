@@ -36,4 +36,6 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
   - [x] Materials: edge wear, patina, salt glitter
   - [x] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice
 - [x] Sound: machines, charge, fire, hits, snap; muted by default (2026-11-10, not yet heard by Tom)
-- [ ] Phone, reduced motion and fps check
+- [x] Phone: portrait looks down the lane at three-quarters; landscape keeps the side view; bar fits at 375 x 812 and 812 x 375
+- [x] Slow-frame ladder: lower pixel ratio, then no tilt blur and 1024 shadows; throttled frames do not count
+- [ ] Real fps: the hidden browser pane throttles the GPU, so its numbers are not valid; measure with the pane visible or on a device
