@@ -105,7 +105,7 @@ varying vec3 vFogW;`)
   };
 }
 
-export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex }) {
+export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT }) {
   FOG_U.uFogN.value = noiseTex;
 
   // Planform: leading and trailing edge x at span z.
@@ -276,6 +276,18 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
   // The tip strobe and the nav light light the skin near the tip.
   const strobeL = new THREE.PointLight(0xffffff, 0, 30, 2), navL = new THREE.PointLight(0xff2010, 0.4, 14, 2);
   scene.add(strobeL, navL);
+  // The wing light: a fuselage lamp ahead of the root lights the leading edge.
+  // Crews use it to check the edge for ice at night.
+  // It sits on the aircraft, so it banks and moves with the seat.
+  const wingL = new THREE.SpotLight(0xfff2dc, 0, 60, 0.36, 0.45, 2);
+  wingL.position.set(...WING_LIGHT.p); wingL.target.position.set(...WING_LIGHT.aim);
+  // Its shadow keeps the beam off the parts under the wing.
+  // The map redraws with the sun's, five times a second.
+  wingL.castShadow = true;
+  wingL.shadow.mapSize.set(1024, 1024);
+  wingL.shadow.camera.near = 1; wingL.shadow.camera.far = 60;
+  wingL.shadow.bias = -0.0005; wingL.shadow.normalBias = 0.03;
+  air.add(wingL, wingL.target);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
   const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0] };
@@ -311,7 +323,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05] }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -388,6 +400,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
+      wingL.intensity = beam * WING_LIGHT.k;
       return [bend.x, bend.y, bend.z];
     },
   };

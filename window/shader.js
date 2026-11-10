@@ -614,6 +614,26 @@ float coverAt(vec2 w, float sc, float z) {
 // Two Henyey-Greenstein lobes: a strong forward one and a soft back one.
 float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
 float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
+// The glory: coloured rings round the point opposite the light, on cloud tops.
+// th is the angle from that point, in radians; red rings sit outside blue.
+// It tints the cloud's colour, so it still reads on a bright white deck.
+vec3 glory(float th) {
+  float a = th * 57.2958;
+  // Small droplets make a wide glory; these rings suit 6 micron drops.
+  vec3 r1 = vec3(4.3, 3.7, 3.2), r2 = vec3(7.6, 6.6, 5.7);
+  vec3 g = 0.72 + 0.6 * exp(-pow((a - r1) / 0.55, vec3(2.0))) + 0.32 * exp(-pow((a - r2) / 0.75, vec3(2.0)));
+  g += 0.7 * exp(-a * a / 2.0);
+  return mix(vec3(1.0), g, smoothstep(10.5, 8.5, a));
+}
+// The plane's own shadow at the glory's heart, t km below along the ray.
+// u runs along the flight line, v across it, in radians from the centre.
+float planeShadow(vec2 uv, float t) {
+  vec2 q = abs(uv * t * 1000.0);
+  // Fuselage and wings, in metres.
+  float body = step(q.x, 30.0) * step(q.y, 3.0);
+  float wing = step(q.y, 30.0) * step(abs(uv.x * t * 1000.0 + 3.0 + q.y * 0.5), 3.5);
+  return max(body, wing);
+}
 
 /* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
 const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
@@ -727,6 +747,10 @@ vec4 deck(vec3 d) {
   float ua = townDome(uCam + d.xz * t0), ub = townDome(uCam + d.xz * t1);
   float mu = dot(d, uSun);
   float phase = cloudPhase(mu);
+  // The glory and the plane's shadow ride the point opposite the light.
+  float gTh = acos(clamp(-mu, -1.0, 1.0));
+  vec3 gF = normalize(vec3(1.0, 0.0, 0.0) - uSun * uSun.x), gS = cross(-uSun, gF);
+  vec2 gUV = vec2(dot(d, gF), dot(d, gS));
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
@@ -791,6 +815,11 @@ vec4 deck(vec3 d) {
     float a = 1.0 - exp(-SIG * 0.35 * far * (t1 - t));
     col += Tc * last * a;
     Tc *= 1.0 - a;
+  }
+  // The glory rings the plane's small shadow on the tops below.
+  if (gTh < 0.19 && lit) {
+    col *= glory(gTh);
+    if (gTh < 0.01) col *= 1.0 - 0.7 * planeShadow(gUV, t0);
   }
   return vec4(col, Tc);
 }
@@ -1861,6 +1890,8 @@ uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 // Extra ghost strength per flare; 0 keeps the old ghosts.
 uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
+// The wing light: lamp point and level; beam axis and the fog level.
+uniform vec4 uBeamL, uBeamA;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
@@ -1976,8 +2007,9 @@ vec3 meteor(vec3 d) {
 
 // Rain in the air outside: streaks that race aft past the window.
 // Three layers: near ones are longer, wider and faster.
-float rainStreaks(vec2 px) {
-  if (uStorm <= 0.05) return 0.0;
+// amt sets how many drops fall.
+float rainStreaks(vec2 px, float amt) {
+  if (amt <= 0.05) return 0.0;
   vec2 q = px / uDpr;
   float s = 0.0;
   for (int l = 0; l < 3; l++) {
@@ -1987,7 +2019,7 @@ float rainStreaks(vec2 px) {
     vec2 g = vec2((q.x - q.y * 0.1) + uTime * 2600.0 * k, q.y) / vec2(220.0 * k, row);
     vec2 id = floor(g), f = fract(g);
     vec2 h = hash22(id + fl * 31.7);
-    if (h.x > uStorm * 0.18) continue;
+    if (h.x > amt * 0.18) continue;
     float len = 0.25 + 0.5 * h.y;
     float across = abs(f.y - 0.5) * row;
     s += smoothstep(0.45 * k, 0.0, across) * smoothstep(0.0, 0.05, f.x) * smoothstep(len, len - 0.15, f.x) * hash12(id + 7.1) * 0.6;
@@ -2074,6 +2106,41 @@ float sheen(vec3 n, vec3 v, vec3 l) {
   float F = 0.04 + 0.96 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
   return a2 / (PI * dd * dd) * F * nl / (4.0 * max(nl, nv));
 }
+// Mist streams aft through the beam: noise stretched along the flight line.
+float beamMist(vec2 px) {
+  vec2 q = px / uDpr;
+  float n = vnoise(vec2(q.x * 0.005 + uTime * 7.0, q.y * 0.04)) * 0.6 + vnoise(vec2(q.x * 0.012 + uTime * 13.0, q.y * 0.1) + 4.0) * 0.4;
+  return 0.35 + 1.3 * n * n;
+}
+// Drops and crystals in the beam: short, bright dashes racing aft.
+// amt sets the share of cells that hold one.
+float beamMotes(vec2 px, float amt) {
+  vec2 q = px / uDpr;
+  float s = 0.0;
+  for (int l = 0; l < 2; l++) {
+    float k = 1.0 + float(l) * 1.4;
+    vec2 g = vec2(q.x - q.y * 0.12 + uTime * 1500.0 * k, q.y + float(l) * 5.0) / vec2(70.0 * k, 16.0);
+    vec2 id = floor(g), f = fract(g);
+    vec2 h = hash22(id + float(l) * 13.1);
+    if (h.x > amt * 0.3) continue;
+    float y0 = 0.2 + 0.6 * h.y, len = 0.25 + 0.3 * hash12(id + 2.7);
+    float across = abs(f.y - y0) * 16.0 / k;
+    s += smoothstep(0.9, 0.0, across) * smoothstep(0.0, 0.08, f.x) * smoothstep(len, len - 0.12, f.x) * (0.3 + hash12(id + 9.3));
+  }
+  return s;
+}
+// The wing light's beam along cabin ray da: 1 on its axis, 0 outside the cone.
+// s returns the distance from the lamp along the beam, in metres.
+float beamAt(vec3 da, out float s) {
+  vec3 a = uBeamA.xyz, w0 = uEye - uBeamL.xyz;
+  float b = dot(da, a), dd = dot(da, w0), e = dot(a, w0), den = max(1.0 - b * b, 1e-4);
+  // The nearest points of the view ray and the beam axis.
+  float tr = (b * e - dd) / den;
+  s = (e - b * dd) / den;
+  if (tr < 0.3 || s < 0.3) return 0.0;
+  float dist = length(w0 + da * tr - a * s), r = s * 0.36;
+  return smoothstep(r, r * 0.15, dist) * smoothstep(0.3, 2.5, s) * smoothstep(45.0, 12.0, s);
+}
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
   vec3 view = out1.rgb;
@@ -2092,8 +2159,21 @@ vec3 glass(vec3 da, vec2 px) {
   view += uNavC * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
   // Rain streaks catch the sky glow, the strobe and the lightning.
-  float rs = rainStreaks(px);
+  float rs = rainStreaks(px, uStorm);
   if (rs > 0.0) view += rs * (uGlow * 0.012 + vec3(0.8, 0.85, 1.0) * (uFlash * 0.012 + uStrobe * 0.012 * exp(-ang / 150.0)));
+  // The wing light's beam glows in fog and lights what falls through it.
+  if (uBeamL.w > 0.001) {
+    float bs, bk = beamAt(da, bs) * uBeamL.w;
+    if (bk > 0.0) {
+      // Light falls off with the square of the distance from the lamp.
+      float fall = 60.0 / (bs * bs + 20.0);
+      // Cloud, rain or storm fills the beam with streaming drops and crystals.
+      float wet = max(max(uStorm, uRain * 0.8), uBeamA.w);
+      vec3 BEAM = vec3(1.0, 0.95, 0.86);
+      // The haze is brightest where the eye looks down the beam.
+      view += BEAM * bk * fall * (beamMotes(px, 0.1 + 0.5 * wet) * (0.04 + 0.08 * wet) + 0.0015 + 0.06 * wet * bk * beamMist(px));
+    }
+  }
   return view;
 }
 
