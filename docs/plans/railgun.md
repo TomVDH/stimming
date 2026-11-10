@@ -163,6 +163,63 @@ Wind bed with a whistle past the pylon, dipping under a charge. A charge synth o
 - [x] Impact fireball, shock shells, blast light on the plain, the gun and the smoke.
 - [x] Q1 to Q10 again at three sizes, rungs 2 and 3. Commit: `Railgun: one gun, a slow fall, blast and shock`.
 
+### Task 10: The gun, the shot and the shatter (design)
+
+Bean `stimming-z9w9`, branch `claude/railgun-shot-99c65f`. Tom, 2026-11-10: "the gun, the muzzle effects and projectile, the incoming threats and the explosion thereof upon destruction".
+Decisions: the Volumetric direction for the shot; the barrel glows after a shot and cools; a main rock with two to four fragments.
+
+**Fixed.** The smoke train keeps its look: no edit to `trail()`, the march or the `PU.*` uniforms. A change there needs a before/after still for Tom first.
+The sky, the cirrus, the sun and the time of day belong to another session: no edit to `k2skyB`, `wisps`, `sun`, `sunDeg`, `setSun` or the Sun slider.
+`hitFlash`, `hitGlow` (the GLSL sky term) and `uAst.w` keep their names and meaning.
+
+**Before.** Stills at 1280 × 800, full charge: the muzzle flash and the fireball are flat white discs; the shock shells are clean circles square to the lens; the bolt is a short spark and a level lens streak; the gun reads as stacked boxes; the rock is a smooth ball.
+
+#### The gun
+
+- A boxy muzzle brake, about 70 m long, with three pairs of side ports. It replaces the three plates at stations 872 to 896.
+- Cable bundles sag along the barrel from the breech housing to the cradle: tubes on a catenary, tone 2.
+- Recoil: the barrel runs back as now. The cradle pitches up 0.5° and settles as a damped spring over two seconds. The deck sways 0.1°. Dust falls off the ledges.
+- Tracking: a spring and damper on yaw and elevation. The slew speeds up, overshoots a little and settles. The top rate stays 3.2° a second.
+- Heat: one uniform `uHeat`, 1 on the shot, gone in about ten seconds. The rails and the brake take a blackbody ramp, white-yellow to dull red, hottest at the muzzle. White steam wisps rise off the barrel through the dust buffer.
+- At rest the gun stays cold stone; nothing on it glows.
+
+#### Muzzle
+
+- The flat flare disc goes.
+- A plasma plume: a raymarched volume on a short capsule along the bore, 600 m long at full charge. It reads `volRT`. It burns white-blue for 0.2 s, then cools to grey smoke that drifts with the wind and thins out over twelve seconds.
+- Two side jets from the brake ports: glints square to the barrel, 0.15 s.
+- A spiked flare: four soft rays and a short anamorphic streak, 0.1 s.
+- A condensation shell replaces `muzRingA` and `muzRingB`: a thin noisy spherical shell ahead of the muzzle, lit by the sun, gone in under a second.
+- The Mach ring on the ground (`uShock`) stays.
+- The dust front becomes a rolling ring: bigger, darker puffs that roll out and climb from the muzzle's foot.
+
+#### The bolt
+
+- The head: a white-hot slug in a blue sheath; the streak behind it is longer.
+- The ion line: the path from the muzzle to the target stays in the sky. It glows blue-white for half a second after the head passes, then cools to a thin white contrail. The contrail widens, bends in the wind and fades over about 25 seconds. One ribbon with its width in metres, its edges cut by noise.
+- The blast lights the far end of the line.
+
+#### The threats
+
+- One shape per size: Boulder long and thin, Mountain lumpy, Moon wide with craters. The bake adds ridged noise and a few flat cuts, so the outline is craggy.
+- Ablation: glowing bits break off the hot face, fall back into the smoke and burn out. K6 stars, spawned at the head while the rock falls.
+- Fragments: two to four small rocks fall on their own tracks a few kilometres off the main track. One instanced mesh with a hot face. Each has a thin smoke trail: a cheap noise ribbon, not the raymarched train.
+- A shot hits only the main rock. Each fragment breaks into embers when the blast's shock reaches it.
+
+#### The explosion
+
+- A raymarched fireball on a sphere proxy at the hit: radius R to about 6R in four seconds. It runs white core, orange billows, then a dark cloud of soot and debris. The cloud drifts, is lit by the sun from outside and stays about 30 seconds.
+- A condensation shell (a Wilson cloud) flashes round the fireball and burns off. It replaces `hitRingA` and `hitRingB`.
+- More shards, craggier; each trails burning smoke through K6 stars.
+- The embers fall in longer arcs through the cloud.
+- A new uniform `uBlast` (vec4: world position, strength) carries the blast light. The gun, the ground and the trail read it; the other session's clouds may read it too.
+
+#### Cost
+
+- The plume, the fireball and the shells draw only while a shot is live.
+- Rungs 2 and 3 cut their march steps, as they do for the train.
+- The target holds: 30 fps at 1280 × 800 on High through charge, shot and hit.
+
 ## Kit handoff
 
 The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS` with its cirrus, the far-country builder, the dust ring buffer, `makeRing` and `makeGlint`, marked. Any daylight diorama can copy them.
