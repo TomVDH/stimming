@@ -1,10 +1,11 @@
 ---
 # stimming-mn96
 title: 'Train Ride: lived-in night windows, street lamps and better headlights'
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-10T10:51:43Z
-updated_at: 2026-11-10T10:51:43Z
+updated_at: 2026-11-10T16:14:02Z
 ---
 
 Tom, 2026-11-10: a subsession on the procedural buildings, their night windows, street lights and headlights. Belongs to Train Ride (stimming-6z3j). Branch claude/trainride-buildings-34be8d; PR to main.
@@ -16,7 +17,7 @@ Tom, 2026-11-10: a subsession on the procedural buildings, their night windows, 
 - [x] Headlights: beams on the road and walls, no pop at path ends, spacing, day cars decided
 - [x] Building form in Zürich: modern blocks with a flat roof and ribbon windows
 - [x] After stills and frame time
-- [ ] PR to main merged (Tom)
+- [x] PR to main merged (Tom)
 
 ## Summary of Changes
 - Windows: each house has a share of lit rooms; one in eight sleeps. Panes differ in lamp colour and cover. A few switch over 20 to 90 s. Blocks have stairwells, shop fronts with sign bands, and offices. The seed stays flat and quantised; houses still go dark past 600 m.
