@@ -2145,7 +2145,8 @@ float ice(vec2 pO, float edge) {
 // Lens flare, after Buoy Business (see Beach walker): haze, orb,
 // an anamorphic streak and warm ghosts on the line through the centre.
 // uFlr: source xy in pixels, gain times cover, size. uFlrC: colour.
-vec3 flare(vec2 px, vec3 base) {
+// glassK: 1 where the pixel looks through the skin opening, 0 on the frame.
+vec3 flare(vec2 px, vec3 base, float glassK) {
   const vec3 ORANGE = vec3(1.0, 0.42, 0.1);
   vec2 uv = px / uRes;
   float aspect = uRes.x / uRes.y;
@@ -2172,6 +2173,8 @@ vec3 flare(vec2 px, vec3 base) {
       float gr = length(g) / (gs.y * f.w);
       a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak) * (1.0 + uFlrG[i]);
     }
+    // The wingtip lights glow only in the glass: their halo stops at the frame.
+    if (i == 2 || i == 3) a *= glassK;
     add += a * f.z;
   }
   // Screen blend: the flare washes the frame instead of clipping it.
@@ -2235,6 +2238,7 @@ void main() {
   wall += alb * cabin * 0.6 * smoothstep(0.0018, 0.0, abs(sSeam - 0.0022)) * (0.2 + faceUp);
   vec3 c = wall;
 
+  float glassK = 0.0;
   if (da.z > 0.0 && sOut < 0.01) {
     // March the recess from the rim to the pane.
     float z0 = 0.0, hit = -1.0;
@@ -2299,6 +2303,7 @@ void main() {
       vec2 pG = at(da, DEPTH), pI = at(da, Z_IN), pO = at(da, Z_OUT);
       float sSk = sdBox(pO, SKIN, RSK);
       float aaO = fwidth(sSk) * 1.2;
+      glassK = smoothstep(aaO, -aaO, sSk);
       float sI = sdBox(pI, SKIN + 0.007, RSK + 0.007), aaI = fwidth(sI) * 1.5;
       vec3 view = vec3(0.0);
       if (sSk < aaO) {
@@ -2363,11 +2368,12 @@ void main() {
     // Soften the step from wall to rim over about a pixel.
     float aa = fwidth(sOut) * 1.2;
     c = mix(wall, inner, smoothstep(aa, -aa, sOut));
+    glassK *= smoothstep(aa, -aa, sOut);
   }
   // Each hour carries a small colour grade.
   c *= uTint;
   c = 1.0 - exp(-c * 3.2);
-  c = flare(px, c);
+  c = flare(px, c, glassK);
   c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.006;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
   // A soft S-curve for contrast, as in Beach walker's grade.
