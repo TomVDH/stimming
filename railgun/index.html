@@ -1857,7 +1857,8 @@ function stepCharge(dt) {
 }
 
 /* ---------- flares: soft discs of light at the muzzle, the head and the hit ---------- */
-function makeFlare(color) {
+// shape: GLSL that sets float a from vUv; the default is a soft disc.
+function makeFlare(color, shape = '') {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: { uF: { value: new THREE.Vector4(0, 0, 0, 1) }, uC: { value: new THREE.Vector3(...color) }, uGain: { value: 0 } },
     transparent: true, depthWrite: false, depthTest: false,
@@ -1873,8 +1874,7 @@ function makeFlare(color) {
     }`,
     fragmentShader: /* glsl */`uniform vec3 uC; uniform float uGain; varying vec2 vUv;
     void main() {
-      float d = length(vUv);
-      float a = exp(-d * d * 4.0) * (1.0 - smoothstep(0.6, 1.0, d)) + 0.4 * exp(-d * d * 24.0);
+      ${shape || 'float d = length(vUv); float a = exp(-d * d * 4.0) * (1.0 - smoothstep(0.6, 1.0, d)) + 0.4 * exp(-d * d * 24.0);'}
       gl_FragColor = vec4(uC * uGain * a, 0.0);
     }`,
   }));
@@ -1934,8 +1934,6 @@ function ring(m, c, a, b, r, w, gain) {
 }
 const hitRingA = makeRing(linFit(0.96, 0.05, 75)), hitRingB = makeRing(linFit(0.92, 0.04, 60));
 const hr = new THREE.Vector3(), hu = new THREE.Vector3();
-const muzRingA = makeRing(linFit(0.95, 0.04, 230));
-const muzRingB = makeRing(linFit(0.95, 0.04, 230));
 
 /* ---------- the bolt: one ribbon from the breech to the rock ---------- */
 // Forty-eight segments.
@@ -2053,6 +2051,165 @@ function glint(m, pos, dir, len, wid, gain) {
 const headGlint = makeGlint(linFit(0.9, 0.07, 228));
 const headStreak = makeGlint(linFit(0.82, 0.1, 235));
 
+/* ---------- VOLFX: raymarched volumes for the plume and the fireball ---------- */
+// A sphere proxy bounds each volume; the march runs from entry to exit.
+// Each material declares dens, alb and vlight before this chunk.
+const VOLFX = /* glsl */`
+vec2 sphHit(vec3 ro, vec3 rd, vec3 c, float r) {
+  vec3 oc = ro - c;
+  float b = dot(oc, rd), h = b * b - dot(oc, oc) + r * r;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+float vhg(float c, float k) { return (1.0 - k * k) / pow(1.0 + k * k - 2.0 * k * c, 1.5); }
+void main() {
+  vec3 rd = normalize(vP - cameraPosition);
+  vec2 h = sphHit(cameraPosition, rd, uC, uR);
+  if (h.y <= 0.0) discard;
+  float t0 = max(h.x, 0.0), dt = (h.y - t0) / float(uVSteps);
+  // Each pixel starts its march at its own offset.
+  float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float cs = dot(rd, uSun), ph = 0.5 * vhg(cs, 0.55) + 0.5 * vhg(cs, -0.2);
+  float T = 1.0, wsum = 0.0, tsum = 0.0;
+  vec3 col = vec3(0.0);
+  for (int i = 0; i < 48; i++) {
+    if (i >= uVSteps || T < 0.02) break;
+    vec3 p = cameraPosition + rd * t, em;
+    float d = dens(p, em);
+    if (d > 0.0) {
+      // One probe toward the sun finds the self-shadow.
+      vec3 e2;
+      float ls = 0.15 * uR, sh = exp(-dens(p + uSun * ls, e2) * ls * 0.8);
+      vec3 L = sunAt(p.y) * (sh * 0.85 + 0.15) * ph * 1.2 + ambient(vec3(0.0, 1.0, 0.0)) * 0.9 + vlight(p);
+      float a = 1.0 - exp(-d * dt);
+      col += T * alb(p) * L * a;
+      wsum += T * a; tsum += T * a * t;
+      T *= 1.0 - a;
+    }
+    // Emission is radiance per metre.
+    col += T * em * dt;
+    t += dt;
+  }
+  float al = 1.0 - T;
+  if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
+  // The air acts once, at the volume's mean depth.
+  vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + h.y));
+  vec3 Ta = airT(Pm) * (1.0 - 0.6 * k2hazeAmount(Pm));
+  col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
+  gl_FragColor = vec4(col, al);
+}`;
+// Rungs 2 and 3 march in fewer steps.
+const volSteps = () => (rung >= 3 ? 10 : rung >= 2 ? 16 : 24);
+function makeVol(decl, extra) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), new THREE.ShaderMaterial({
+    uniforms: { ...U, uVol: { value: volRT.texture }, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uVSteps: { value: volSteps() }, ...extra },
+    side: THREE.BackSide, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; varying vec3 vP;
+    void main() { vP = uC + position * uR * 1.08; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+    fragmentShader: /* glsl */`precision highp sampler3D;
+    varying vec3 vP;
+    uniform sampler3D uVol;
+    uniform vec3 uC; uniform float uR; uniform int uVSteps;
+    ${HEAD}
+    ${AIR}
+    ${decl}
+    ${VOLFX}`,
+  }));
+  m.frustumCulled = false; m.renderOrder = 2.2; m.visible = false;
+  scene.add(m);
+  return m;
+}
+
+/* ---------- the muzzle: a plume, side jets, a spiked flare, a shell ---------- */
+// The plume: white-blue fire for a fifth of a second, then grey smoke.
+// uPl: age, power, jet length, fire strength.
+const plume = makeVol(/* glsl */`
+uniform vec3 uMz, uMx, uDrift, uHotC, uSmokeC;
+uniform vec4 uPl;
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  vec3 q = p - uMz - uDrift;
+  float x = dot(q, uMx), age = uPl.x;
+  float rr = length(q - uMx * x);
+  float R = 16.0 + 0.18 * max(x, 0.0) + 75.0 * sqrt(age);
+  // A soft rim: coverage thins toward the edge.
+  float cov = pow(smoothstep(1.0, 0.0, rr / R), 1.5) * smoothstep(-30.0 - 0.5 * R, 10.0, x) * smoothstep(uPl.z * 1.25, uPl.z * 0.3, x);
+  if (cov < 0.002) return 0.0;
+  vec3 w = q * 0.006 + vec3(age * 0.04, 0.0, -age * 0.03);
+  float d = clamp((texture(uVol, w).r - (1.0 - cov)) * 2.0, 0.0, 1.0);
+  // Fine cells carve the rim into small lobes.
+  if (d > 0.0) d = clamp((d - (1.0 - texture(uVol, w * 3.1).g) * 0.4) * 1.7, 0.0, 1.0);
+  em = uHotC * uPl.w * d * exp(-rr / (0.35 * R)) * 0.1;
+  return d * mix(0.05, 0.005, smoothstep(0.0, 4.0, age)) * (1.0 - smoothstep(5.0, 12.0, age));
+}
+vec3 alb(vec3 p) { return uSmokeC; }
+// The blast's light reaches into the smoke.
+vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e4 / (dot(m, m) + 6.0e4); }`, {
+  uMz: { value: new THREE.Vector3() }, uMx: { value: new THREE.Vector3(0, 0, -1) }, uDrift: { value: new THREE.Vector3() }, uPl: { value: new THREE.Vector4() },
+  uHotC: { value: new THREE.Vector3(...linFit(0.95, 0.05, 230)) }, uSmokeC: { value: new THREE.Vector3(...linFit(0.74, 0.012, 70)) },
+});
+// The spike: a hot core, four rays and a level streak.
+const spike = makeFlare(linFit(0.95, 0.05, 230), /* glsl */`
+      float d = length(vUv), x = abs(vUv.x), y = abs(vUv.y);
+      float rays = exp(-y * 40.0 - x * 2.5) + exp(-x * 40.0 - y * 2.5);
+      float a = (0.7 * rays + 0.6 * exp(-y * 90.0 - x * 1.2) + exp(-d * d * 30.0)) * (1.0 - smoothstep(0.8, 1.0, max(x, y)));`);
+// Side jets blow out of the brake's ports, square to the barrel.
+const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linFit(0.92, 0.07, 230)));
+// The shell: a thin skin of condensed air ahead of the muzzle.
+const shellMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
+  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: 0 } },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; varying vec3 vP, vN;
+  void main() { vN = position; vP = uC + position * uR; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; ${HEAD}
+  void main() {
+    vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
+    float f = 1.0 - abs(dot(N, V));
+    // The skin shows at its rim and breaks up into patches.
+    float n = k3fbm(N * 3.2 + uSeed);
+    float a = pow(f, 3.5) * smoothstep(0.32, 0.62, n) * uGain;
+    vec3 col = vec3(0.95) * (ambient(N) + uSunC * (0.4 + 0.6 * max(dot(N, uSun), 0.0)));
+    gl_FragColor = vec4(k2haze(col, vP) * a, a);
+  }`,
+}));
+shellMesh.frustumCulled = false; shellMesh.renderOrder = 2.3; shellMesh.visible = false;
+scene.add(shellMesh);
+const jp = new THREE.Vector3();
+// ma: seconds since the slug left. c: power. m0: the muzzle at the shot.
+function updateMuzzle(ma, c, m0) {
+  const on = ma > 0, cc = Math.min(c, 1.25);
+  // The plume drifts with the wind and coasts on along the bore.
+  const pu = plume.material.uniforms, age = Math.max(ma, 0), Lj = 900 * cc * (1 - Math.exp(-age / 0.05));
+  pu.uMz.value.copy(m0); pu.uMx.value.copy(shot.ax);
+  pu.uDrift.value.set(6 * age, 2.5 * age, 0).addScaledVector(shot.ax, 120 * (1 - Math.exp(-age / 1.5)));
+  pu.uPl.value.set(age, cc, Lj, 6 * cc * Math.exp(-age / 0.15));
+  const Rm = 16 + 0.23 * Lj + 75 * Math.sqrt(age);
+  pu.uC.value.copy(m0).add(pu.uDrift.value).addScaledVector(shot.ax, 0.45 * Lj);
+  pu.uR.value = 0.8 * Lj + Rm;
+  pu.uVSteps.value = volSteps();
+  plume.visible = on && age < 12;
+  // Six jets for 0.15 s.
+  const jg = on ? 3.5 * cc * Math.exp(-ma / 0.06) : 0;
+  jets.forEach((j, i) => {
+    const sd = i % 2 ? 1 : -1, a = BRAKE_PORTS[i >> 1];
+    barrelPt(a, sd * 24, 0, jp);
+    bv.copy(shot.side).multiplyScalar(sd);
+    glint(j, jp, bv, 160 * cc, 16, jg > 0.02 ? jg : 0);
+  });
+  flare(spike, m0, 900 * (0.6 + cc), on ? 2.2 * cc * Math.exp(-ma / 0.05) : 0);
+  // The shell runs out ahead of the muzzle and burns off in a second.
+  const sg = on ? 2.2 * cc * Math.exp(-ma / 0.25) : 0, su = shellMesh.material.uniforms;
+  su.uR.value = 30 + 650 * (1 - Math.exp(-ma / 0.3));
+  su.uC.value.copy(m0).addScaledVector(shot.ax, 0.6 * su.uR.value);
+  su.uGain.value = reduced() ? sg * 0.5 : sg;
+  shellMesh.visible = sg > 0.01;
+}
+
 /* ---------- shards: the rock in pieces ---------- */
 // One instanced mesh.
 // Each shard's pose comes from its birth time in closed form.
@@ -2152,7 +2309,7 @@ fire = c => {
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
   // The blast rings stand square to the barrel.
   shot.ax = AX.clone(); shot.bk = (0.75 + 0.5 * c) * SIZES[opts.size].rumble; shot.up = AX_UP.clone(); shot.side = new THREE.Vector3().crossVectors(AX, AX_UP);
-  muzRingA.material.uniforms.uSeed.value = rnd() * 60; muzRingB.material.uniforms.uSeed.value = rnd() * 60;
+  shellMesh.material.uniforms.uSeed.value = rnd() * 60;
   U.uFire.value = 1;
   cam.shake = 1.3 * c; cam.kickP = rad(0.6) * c; cam.kickY = -rad(0.3) * c;
   U.uShock.value.set(MUZZLE.x, MUZZLE.z, 0, 0);
@@ -2341,6 +2498,13 @@ function blast(sh) {
     dustV.set(sx * v, 6 + rnd() * 14, cz * v);
     puff(dustP, dustV, 6 + rnd() * 6, 70 + rnd() * 110);
   }
+  // A rolling ring of dust runs out and climbs from the muzzle's foot.
+  for (let i = 0; i < 90; i++) {
+    const th = rnd() * Math.PI * 2, r = 60 + rnd() * 60, v = 30 + rnd() * 25, sx = Math.sin(th), cz = Math.cos(th);
+    dustP.set(sh.muzzle.x + sx * r, 4 + rnd() * 10, sh.muzzle.z + cz * r);
+    dustV.set(sx * v, 8 + rnd() * 10, cz * v);
+    puff(dustP, dustV, 8 + rnd() * 4, 110 + rnd() * 70);
+  }
 }
 // The ribbon, the head and the flares, each drawn frame.
 function updateBolt() {
@@ -2349,7 +2513,8 @@ function updateBolt() {
     // A corona spits at the muzzle at rage.
     const cg = charge && !reduced() ? rage * (0.5 + 0.5 * Math.abs(Math.sin(simT * 71) * Math.sin(simT * 13.7))) : 0;
     flare(muzzleFlare, MUZZLE, 50 + 70 * cg, 1.6 * cg); flare(muzzleGlow, MUZZLE, 1, 0);
-    ring(muzRingA, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0); ring(muzRingB, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0);
+    plume.visible = false; spike.visible = false; shellMesh.visible = false;
+    for (const j of jets) j.visible = false;
     U.uMuzL.value.set(MUZZLE.x, MUZZLE.y, MUZZLE.z, 1.2 * cg); flashNow = 0;
     // The vent's strike lights the gun and the plain.
     const va = simT - ventT;
@@ -2406,16 +2571,13 @@ function updateBolt() {
   // The muzzle flash: a burst as the slug leaves.
   const ma = age - 0.3;
   const on = ma > 0 ? 1 : 0, m0 = shot.muzzle;
-  flare(muzzleFlare, m0, 520 * (0.6 + c), on * c * (12 * Math.exp(-ma / 0.16) + 1.5 * Math.exp(-ma / 0.9)));
-  flare(muzzleGlow, m0, 2600 * (0.6 + c), on * 0.5 * c * Math.exp(-ma / 0.3));
+  // A small hot core; the plume carries the rest.
+  flare(muzzleFlare, m0, 110 * (0.6 + c), on * c * 9 * Math.exp(-ma / 0.06));
+  flare(muzzleGlow, m0, 1400 * (0.6 + c), on * 0.12 * c * Math.exp(-ma / 0.25));
   // The blast lights the plain and the gun.
   U.uMuzL.value.set(m0.x, m0.y, m0.z, on * 9 * c * Math.exp(-ma / 0.18));
-  flashNow = on * 0.6 * c * Math.exp(-ma / 0.09);
-  // One ring opens at the muzzle; a Mach disc runs out ahead.
-  bq.copy(m0).addScaledVector(shot.ax, 120 * ma);
-  ring(muzRingA, bq, shot.side, shot.up, 40 + 700 * (1 - Math.exp(-ma / 0.45)), 0.08, on * 2.5 * c * Math.exp(-ma / 0.7));
-  bq.copy(m0).addScaledVector(shot.ax, 900 * (1 - Math.exp(-ma / 0.5)));
-  ring(muzRingB, bq, shot.side, shot.up, 20 + 260 * (1 - Math.exp(-ma / 0.35)), 0.12, on * 1.8 * c * Math.exp(-ma / 0.45));
+  flashNow = on * 0.35 * c * Math.exp(-ma / 0.09);
+  updateMuzzle(ma, c, m0);
   // The blast: a white core, a wide warm glow, two shock shells.
   const ha = age - shot.hitT, hk = shot.hit && shot.canHit ? shot.bk : 0, R = ast.R;
   flare(hitFlare, shot.target, R * (4 + 5 * (1 - Math.exp(-ha / 0.8))), hk * (16 * Math.exp(-ha / 0.22) + 2.2 * Math.exp(-ha / 1.5)));
@@ -2770,10 +2932,15 @@ const IMPACT_AT = 1.85;
 const sampleP = {};
 let boomOK = false;
 const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name]).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).catch(() => null));
-function playSample(ac, buf, when, gain, rate) {
+// dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
+function playSample(ac, buf, when, gain, rate, dark = 0) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
-  src.connect(g).connect(kit.out);
+  if (dark) {
+    const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
+    sh.gain.value = 6;
+    src.connect(lp).connect(sh).connect(g).connect(kit.out);
+  } else src.connect(g).connect(kit.out);
   src.start(when);
   track(when + buf.duration / rate + 0.1, src);
 }
@@ -2785,7 +2952,8 @@ function hitSounds(ac, sh) {
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (shot !== sh || !kit.live()) return;
     if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04)); }
-    if (boom) { boomOK = true; sh.sfx.boom = hit + 0.12; playSample(ac, boom, sh.sfx.boom, 0.7 * k * jit(0.1), jit(0.05)); }
+    // The boom plays slow, low and dark: about 33 s long.
+    if (boom) { boomOK = true; sh.sfx.boom = hit + 0.12; playSample(ac, boom, sh.sfx.boom, 0.9 * k * jit(0.1), 0.68 * jit(0.04), 900); }
   });
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
@@ -2880,6 +3048,7 @@ window.__qa = {
   holding: () => !!charge,
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
+  muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
   release() { act.release('pointer'); },
   // Jump the clock by t seconds.
