@@ -161,7 +161,7 @@ float ridged(vec2 p, int oct) {
 
 // Real ground from the route map: heights relative to the eye, a lake flag, town density.
 const LAND = /* glsl */`
-uniform sampler2D tH, tF, tS, tLk, tR, tN;
+uniform sampler2D tH, tF, tS, tLk, tR, tN, tFd;
 vec2 rt(vec2 xz) {
   float t = clamp(-xz.y, -400.0, 18400.0);
   float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
@@ -247,6 +247,57 @@ float roadW(float x) {
 // Light and view change none of these, so the tiles bake them once per texel; no frame runs this.
 const LANDMAT = /* glsl */`
 uniform vec2 uBG[${NG}];
+// Farm parcels from the federal map (tools/fields.py), 4 km out on the lake side.
+// It paints the parcel's crop into alb and returns the map's cover.
+float fieldMap(vec2 xz, float dist, inout vec3 alb) {
+  ${ROUTE.fd ? '' : 'return 0.0;'}
+  float t = -xz.y;
+  if (t < 0.0 || t > 4090.0) return 0.0;
+  vec2 sz = vec2(${ROUTE.fw || 1}.0, 512.0), uv = vec2(xz.x / ${f8(TILE)}, t / 4096.0);
+  // Edge distance, bilinear: zero on a parcel's outline, 8 m and more inside.
+  float d = textureLod(tFd, uv, 0.0).g * 63.75;
+  // Near an edge the lookup steps inward, so the parcel's outline stays smooth.
+  vec2 lu = uv;
+  if (d < 6.0) {
+    vec2 dx = vec2(1.0 / sz.x, 0.0), dy = vec2(0.0, 1.0 / sz.y);
+    vec2 g = vec2((textureLod(tFd, uv + dx, 0.0).g - textureLod(tFd, uv - dx, 0.0).g) / ${f8(2 * TILE / 8192)},
+                  (textureLod(tFd, uv + dy, 0.0).g - textureLod(tFd, uv - dy, 0.0).g) / 16.0);
+    if (dot(g, g) > 1e-8) lu += normalize(g) * (6.0 - d) / vec2(${f8(TILE)}, 4096.0);
+  }
+  vec3 px = texelFetch(tFd, ivec2(mod(floor(lu.x * sz.x), sz.x), clamp(int(lu.y * sz.y), 0, 511)), 0).rgb * 255.0 + 0.5;
+  float cls = floor(px.r / 16.0), sd = mod(floor(px.r), 16.0) / 16.0, a = floor(px.b) / 256.0 * 3.14159;
+  float k = 1.0 - smoothstep(3600.0, 4000.0, t);
+  if (cls < 0.5) return k;
+  // The parcel's frame: q.x runs along its long side, q.y across it.
+  vec2 dr = vec2(cos(a), -sin(a)), q = vec2(dot(xz, dr), dot(xz, vec2(dr.y, -dr.x)));
+  // Rows fade before they reach a texel's width.
+  float fr = 1.0 - smoothstep(0.25, 0.7, fwidth(q.y / 3.0));
+  float row = abs(fract(q.y / 3.0) - 0.5) * 2.0;
+  vec3 earth = vec3(0.13, 0.1, 0.065), c = alb;
+  if (cls < 1.5) c = sd < 0.25 ? vec3(0.19, 0.2, 0.095) * (1.0 - 0.06 * row * fr) : alb * (0.88 + 0.36 * sd);
+  else if (cls < 2.5) c = mix(alb, vec3(0.19, 0.185, 0.09), 0.45 + 0.3 * sd);
+  else if (cls < 3.5) c = alb * (0.84 + 0.12 * sd) * (0.94 + 0.12 * vnoise(xz * 0.06));
+  else if (cls < 4.5) c = vec3(0.2, 0.165, 0.09) * (0.9 + 0.2 * sd);
+  else if (cls < 5.5) c = vec3(0.065, 0.16, 0.035) * (1.0 - 0.12 * row * fr);
+  else if (cls < 6.5) c = (sd < 0.55 ? vec3(0.25, 0.23, 0.09) : sd < 0.85 ? vec3(0.13, 0.17, 0.06) : vec3(0.21, 0.18, 0.095)) * (1.0 - 0.12 * row * fr);
+  else if (cls < 7.5) c = sd < 0.3 ? vec3(0.3, 0.27, 0.05) : vec3(0.17, 0.19, 0.06);
+  else if (cls < 8.5) c = mix(earth, vec3(0.08, 0.14, 0.04), (0.3 + 0.4 * sd) * mix(0.5, row, fr));
+  else if (cls < 9.5) c = mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), mix(0.6, 0.4 + row * 0.4, fr));
+  else if (cls < 10.5) {
+    // Orchard trees stand in rows on grass.
+    vec2 o = abs(fract(q / vec2(9.0, 8.0)) - 0.5) * 2.0;
+    float tf = 1.0 - smoothstep(0.2, 0.6, length(fwidth(q / vec2(9.0, 8.0))));
+    c = mix(alb, vec3(0.05, 0.08, 0.03), mix(0.3, step(length(o), 0.55), tf));
+  }
+  else if (cls < 11.5) c = mix(earth, vec3(0.07, 0.1, 0.04), mix(0.5, row, fr));
+  else if (cls < 12.5) c = vec3(0.42, 0.43, 0.42) * (0.85 + 0.15 * mix(0.5, row, fr));
+  else c = vec3(0.05, 0.085, 0.03);
+  // A narrow grass margin parts neighbouring parcels.
+  float fw = fwidth(t);
+  c = mix(alb * 0.92, c, smoothstep(0.3, 1.6 + fw, d));
+  alb = mix(alb, c, k * 0.85 * smoothstep(110.0, 300.0, dist));
+  return k;
+}
 void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO, out float wdO) {
   float hY = land(xz);
   // The eye's distance when the point passes nearest: its offset from the line, and a little more.
@@ -272,8 +323,10 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
   // Grass texture close by; it fades before it can shimmer.
   alb *= 0.95 + 0.1 * vnoise(xz * 0.02);
+  // Mapped parcels first; the invented farms fill in only past the map.
+  float fk = wd >= 4.0 ? fieldMap(xz, dist, alb) : 0.0;
   // Farms on the flat floor, in hives: each cluster of fields shares a heading, a tiling and its crops.
-  float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
+  float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd) * (1.0 - fk);
   float rimH = 0.0;
   if (flatL > 0.0) {
     // Clusters: jittered cells some 480 m across. The nearest seed owns the point; the next one sets the rim.
@@ -316,7 +369,7 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   }
   // Vineyards on the sunny slopes above Lake Zurich.
   float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
-  vine *= step(0.72, hash1(floor(xz / vec2(55.0, 30.0) + vec2(floor(xz.y / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd);
+  vine *= step(0.72, hash1(floor(xz / vec2(55.0, 30.0) + vec2(floor(xz.y / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd) * (1.0 - fk);
   if (vine > 0.0) {
     float row = abs(fract(xz.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(xz.x / 2.2)));
     alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
@@ -400,7 +453,9 @@ const tN = new THREE.DataTexture(ROUTE.nr || new Uint16Array(1), ROUTE.nr ? ROUT
 // Mapped roads beside the line: a distance map; 255 means no road near.
 const tR = new THREE.DataTexture(ROUTE.rd || new Uint8Array([255]), ROUTE.rd ? ROUTE.rw : 1, ROUTE.rd ? ROUTE.rd.length / ROUTE.rw : 1, THREE.RedFormat, THREE.UnsignedByteType);
 const tLk = new THREE.DataTexture(ROUTE.lk, ROUTE.w, 1, THREE.RedFormat, THREE.HalfFloatType);
-for (const t of [tH, tF, tS, tLk, tR, tN]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+// Farm parcels: class and seed, edge distance, heading.
+const tFd = new THREE.DataTexture(ROUTE.fd || new Uint8Array(4), ROUTE.fd ? ROUTE.fw : 1, ROUTE.fd ? ROUTE.fd.length / 4 / ROUTE.fw : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+for (const t of [tH, tF, tS, tLk, tR, tN, tFd]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
 const OUTU = {
   tH: { value: tH },
   tF: { value: tF },
@@ -408,6 +463,7 @@ const OUTU = {
   tLk: { value: tLk },
   tR: { value: tR },
   tN: { value: tN },
+  tFd: { value: tFd },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   // The sun stands beyond the window, low on the left, so it shines into the cabin.
@@ -2534,6 +2590,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec2 uPh;
   varying vec2 vUv;
   const vec3 STNC = vec3(0.84, 0.92, 1.0);
+  // The cabin's night light: warm and low, like a dimmed reading lamp.
+  const vec3 CABN = vec3(1.0, 0.82, 0.62);
   // The glass sits back in a reveal; a rubber seal holds it.
   // The carriage wall is 13 cm deep, so the sun's slant shows on the reveal.
   const float REVEAL = 0.13, SEAL = 0.004, BAR = 0.0095;
@@ -2617,7 +2675,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     float e = 0.0015;
     vec2 g = normalize(vec2(sdRR(q + vec2(e, 0.0), uHalf, uRad) - sdRR(q - vec2(e, 0.0), uHalf, uRad), sdRR(q + vec2(0.0, e), uHalf, uRad) - sdRR(q - vec2(0.0, e), uHalf, uRad)) + 1e-6);
     // The carriage glow: a warm source above and behind the viewer.
-    vec3 warm = vec3(1.0, 0.88, 0.76);
+    vec3 warm = mix(vec3(1.0, 0.84, 0.68), vec3(1.0, 0.88, 0.76), uDay);
     float roomG = 0.35 + 0.65 * smoothstep(-0.6, 0.6, p.y + 0.3 * p.x);
     vec3 col;
     // A roller-blind cassette spans the top of the opening; its pull tab hangs in the middle.
@@ -2646,7 +2704,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float by = (q.y - yb) / BAR;
       float edge = smoothstep(1.0, 1.0 + SEAL / BAR, abs(by));
       vec3 alb = vec3(0.62, 0.63, 0.65) * (0.96 + 0.04 * vnoise(vec2(q.x * 500.0, by)));
-      vec3 nightB = vec3(1.0, 0.88, 0.74) * 0.12 * (0.45 + 0.55 * smoothstep(-1.0, 1.0, by));
+      vec3 nightB = CABN * 0.1 * (0.55 + 0.45 * smoothstep(-1.0, 1.0, by));
       // Backlit: the bright view sits behind it, so its cabin face is in its own shadow.
       // Light wraps round its top and bottom edges from the glass; the sun lights the top lip.
       float wrapE = smoothstep(0.55, 0.98, abs(by));
@@ -2703,10 +2761,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       R = G + Rs * min(min(rb.x, rb.y), rb.z);
       // Near its edges the pane mirrors the reveal, not the cabin.
       float rv = smoothstep(0.0, 0.006, sdRR(q + Rs.xy / max(Rs.z, 0.05) * REVEAL / (2.0 * uTan.y), uHalf, uRad));
-      // The cabin shows only faintly; the reveal's image always lies over it.
-      vec3 room = textureLod(tRoom, R, 0.6).rgb * 0.18 * (1.0 - rv);
+      // The cabin shows only faintly and out of focus; the reveal's image stays sharp and always lies over it.
+      vec3 room = textureLod(tRoom, R, 3.2).rgb * 0.18 * (1.0 - rv);
       // Fog scatters the room light, so its reflection blurs and grows.
-      vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb * (1.0 - rv);
+      vec3 roomSoft = textureLod(tRoom, R, 4.5).rgb * (1.0 - rv);
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
       // By day the sunlit cabin shows a little more in the pane.
@@ -2715,9 +2773,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float darkV = 1.0 - smoothstep(0.0, 0.08, dot(col, vec3(0.2126, 0.7152, 0.0722)));
       col += room * 0.09 * darkV * (1.0 - uDay) * (1.0 - fog);
       // The reveal's pale lining, as the pane mirrors it: faint, strongest at a slant.
-      col += vec3(0.82, 0.81, 0.78) * mix(vec3(1.0, 0.88, 0.74) * 0.1, vec3(0.16), uDay) * rv * (F + 0.03) * (1.0 - fog);
+      col += vec3(0.82, 0.81, 0.78) * mix(CABN * 0.085, vec3(0.16), uDay) * rv * (F + 0.03) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
-      col += textureLod(tRoom, R + vec3(0.03, -0.045, 0.0), 1.5).rgb * F * 0.05 * (1.0 - fog) * (1.0 - rv);
+      col += textureLod(tRoom, R + vec3(0.03, -0.045, 0.0), 3.6).rgb * F * 0.05 * (1.0 - fog) * (1.0 - rv);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
@@ -2784,7 +2842,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // A dark joint where the lining meets the frame.
         alb *= 1.0 - 0.45 * smoothstep(0.02, 0.0, abs(f - 0.71));
         // Night: the cabin light falls from above, so the sill is brightest.
-        vec3 night = vec3(1.0, 0.88, 0.74) * 0.12 * (0.7 + 0.3 * n2.y) * (1.0 - 0.3 * f);
+        vec3 night = CABN * 0.1 * (0.78 + 0.22 * n2.y) * (1.0 - 0.3 * f);
         // The lamp sits above the middle of the window, so the reveal dims toward the sides.
         night *= 0.55 + 0.45 * exp(-pow((h2.x) * 0.9, 2.0));
         // The rounded outer edge of the lining catches a soft line of light.
@@ -2805,7 +2863,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         day += vec3(1.0, 0.9, 0.74) * 2.6 * face * through * sunAt(h2.x + uC0.x);
         col = alb * mix(night, day, uDay);
         // A rounded bevel where the recess turns onto the wall catches a thin line of light.
-        col += alb * mix(vec3(1.0, 0.9, 0.78) * 0.07, vec3(0.12), uDay) * smoothstep(0.05, 0.0, f) * (0.5 + 0.5 * max(n2.y, 0.0));
+        col += alb * mix(CABN * 0.05, vec3(0.12), uDay) * smoothstep(0.05, 0.0, f) * (0.5 + 0.5 * max(n2.y, 0.0));
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
         col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
@@ -2823,10 +2881,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // A bright, clean wall: one smooth pale panel, so the eye goes to the window.
       vec3 alb = vec3(0.9, 0.89, 0.86) * (0.992 + 0.016 * vnoise(p * 40.0));
       float up = smoothstep(-0.8, 0.8, p.y);
-      // Night: one ceiling lamp above the window; its pool fades softly down and out.
+      // Night: one dimmed lamp above the window; its pool is wide and shallow, with no hard spot.
       vec2 lp = (p - vec2(uC0.x, 0.78)) * vec2(0.45, 1.0);
-      float pool = 0.22 + 0.95 * exp(-dot(lp, lp) * 2.2);
-      vec3 light = mix(vec3(1.0, 0.88, 0.74) * 0.16 * pool, vec3(1.0, 0.98, 0.95) * 0.05 * (0.8 + 0.25 * up), uDay);
+      float pool = 0.5 + 0.55 * exp(-dot(lp, lp) * 1.2);
+      vec3 light = mix(CABN * 0.115 * pool, vec3(1.0, 0.98, 0.95) * 0.05 * (0.8 + 0.25 * up), uDay);
 
       // A groove where the lining meets the wall, and a soft shadow round it.
       alb *= 1.0 - 0.3 * smoothstep(0.005, 0.0, abs(dW - 0.004));
@@ -2964,7 +3022,7 @@ void main() { gl_FragColor = vec4(bokeh(tSrc, vUv, uRad, 0.0, 0.015, 500.0, 0.3)
 const room = new THREE.Scene();
 // The baked cabin follows the time of day and the sun.
 const ROOMU = { uD: { value: 0 }, uS: { value: OUTU.uSun.value } };
-let bakedDay = -1;
+let bakedDay = -1, roomLamps = () => {};
 const roomRT = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
 const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
 W.tRoom.value = roomRT.texture;
@@ -2983,7 +3041,7 @@ W.tRoom.value = roomRT.texture;
       float lit = 0.04 + 0.16 * smoothstep(-1.1, 1.2, vP.y) * exp(-abs(vP.z - 0.4) * 0.5);
       // The rack light washes the far wall below it.
       lit += 0.25 * smoothstep(1.2, 1.79, vP.z) * exp(-abs(vP.y - 0.5) * 3.0);
-      vec3 c = vec3(1.0, 0.9, 0.78) * lit * 1.4;
+      vec3 c = vec3(1.0, 0.84, 0.66) * lit * 1.15;
       // Day: trace to the sun through our window wall (z = -1); window panes let it through.
       vec3 sd = normalize(uS);
       float tt = (-1.0 - vP.z) / min(sd.z, -0.05);
@@ -2996,9 +3054,12 @@ W.tRoom.value = roomRT.texture;
     }`,
   })));
   // One long light strip runs down the ceiling.
-  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.04, 0.24).translate(0, 1.18, 0.4), flat([3.2, 3.0, 2.6])));
+  // At night both lamps are dimmed and warm; by day they keep their full white.
+  const lampM = [[flat([3.2, 3.0, 2.6]), [1.5, 1.2, 0.85], [3.2, 3.0, 2.6]], [flat([1.8, 1.65, 1.4]), [0.9, 0.72, 0.5], [1.8, 1.65, 1.4]]];
+  roomLamps = d => { for (const [m, n, dd] of lampM) m.color.setRGB(n[0] + (dd[0] - n[0]) * d, n[1] + (dd[1] - n[1]) * d, n[2] + (dd[2] - n[2]) * d); };
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.04, 0.24).translate(0, 1.18, 0.4), lampM[0][0]));
   // A lamp strip under the far luggage rack: the glass sees this one.
-  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.03, 0.1).translate(0, 0.62, 1.72), flat([1.8, 1.65, 1.4])));
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.03, 0.1).translate(0, 0.62, 1.72), lampM[1][0]));
   // The far wall holds dark panes; the seat backs stand in rows.
   const pane = new THREE.PlaneGeometry(1.5, 0.62).rotateY(Math.PI);
   const seat = new THREE.BoxGeometry(0.12, 0.78, 0.95);
@@ -3348,7 +3409,7 @@ return {
   outside: [out, outCam],
   before(r) {
     // Rebake the cabin when day and night have moved on.
-    if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomCam.update(r, room); baked = true; bakedDay = dayV; }
+    if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomLamps(dayV); roomCam.update(r, room); baked = true; bakedDay = dayV; }
     outCam.updateMatrixWorld();
     // Dev: the top camera hangs over the line and looks straight down.
     const cam = topCam || outCam;
@@ -3421,7 +3482,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -3433,6 +3494,9 @@ async function loadRoute() {
     // Fine heights beside the line (tools/near.py); without it the coarse map serves.
     // Dev: ?nonear leaves them out, to compare.
     qs.has('nonear') ? null : opt('near.png'),
+    // Farm parcels beside the line (tools/fields.py); without them the invented farms serve.
+    // Dev: ?nofields leaves them out, to compare.
+    qs.has('nofields') ? null : opt('fields.png'),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -3506,7 +3570,17 @@ async function loadRoute() {
     nr = new Uint16Array(nw * nimg.height);
     for (let i = 0; i < nr.length; i++) nr[i] = THREE.DataUtils.toHalfFloat((np[i * 4] * 256 + np[i * 4 + 1]) / 10 - 500);
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  // The parcel map keeps its RGBA bytes; a GPU with small textures goes without it.
+  let fd = null, fw = 0;
+  if (fimg && fimg.width <= maxW) {
+    const c4 = document.createElement('canvas');
+    c4.width = fimg.width; c4.height = fimg.height;
+    const g4 = c4.getContext('2d', { willReadFrequently: true });
+    g4.drawImage(fimg, 0, 0);
+    fd = new Uint8Array(g4.getImageData(0, 0, fimg.width, fimg.height).data.buffer);
+    fw = fimg.width;
+  }
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
