@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T20:00:58Z
+updated_at: 2026-11-10T20:01:50Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -115,7 +115,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] 3. Air, distance and dust: the plain and mesas take the Rayleigh air; each shot loads the low air with dust that hazes and reddens it, settling over a minute
 - [ ] 6. Lens: anamorphic streak, halation, dirty lens
 - [ ] 7. Debris lights the plain
-- [ ] 5. The plain answers the shock
+- [x] 5. The plain answers the shock: sand ripples trail the Mach front; three thin devils wake on the plain ahead as the front reaches them
 - [ ] 8. The gun breathes
 - [ ] 10. Exposure and focus
 - [ ] 9. A slow sun drift

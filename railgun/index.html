@@ -761,6 +761,9 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     // Dust stands up in the front and catches the sun.
     // The air behind it is swept clean.
     col *= 1.0 - min(0.6, 0.3 * uShock.w) * inside * (1.0 - shock);
+    // Sand ripples trail the front and settle.
+    float behind = max(uShock.z - r, 0.0);
+    col *= 1.0 + 0.1 * min(uShock.w, 1.0) * sin(behind * 0.07) * exp(-behind / 400.0) * inside;
     col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * uShock.w;
     // Far plain goes blue and flat in the air.
     gl_FragColor = vec4(air(col, vP), 1.0);
@@ -3572,6 +3575,8 @@ function updateChargeDust(dt) {
 const shotDust = makeVol(/* glsl */`
 uniform vec4 uBd;
 uniform vec2 uFwd;
+// Plain devils: place (x, z), birth age, strength.
+uniform vec4 uDv[3];
 uniform vec3 uDustC;
 float dens(vec3 p, out vec3 em) {
   em = vec3(0.0);
@@ -3589,6 +3594,15 @@ float dens(vec3 p, out vec3 em) {
   float skirt = exp(-pow(r / (220.0 + 160.0 * min(age, 3.0)), 2.0)) * exp(-age / 3.0);
   float hw = 30.0 + 70.0 * min(age, 4.0), hs = 60.0 + 110.0 * min(age, 4.0);
   float cov = (max(wall, pall) * exp(-p.y / hw) + skirt * exp(-p.y / hs)) * uBd.w;
+  // Thin devils climb where the front passed, then die down.
+  for (int i = 0; i < 3; i++) {
+    float da = age - uDv[i].z;
+    if (da < 0.0 || da > 10.0) continue;
+    vec2 o = p.xz - uDv[i].xy - vec2(0.12, 0.05) * p.y;
+    float cr = 14.0 + 0.09 * p.y;
+    float life = smoothstep(0.0, 1.5, da) * (1.0 - smoothstep(6.0, 10.0, da));
+    cov = max(cov, smoothstep(cr, 0.25 * cr, length(o)) * (1.0 - smoothstep(0.0, 320.0, p.y)) * life * uDv[i].w);
+  }
   if (cov < 0.004) return 0.0;
   // The dust rolls outward and climbs.
   vec2 dir = q / max(r, 1.0);
@@ -3600,7 +3614,7 @@ float dens(vec3 p, out vec3 em) {
 }
 vec3 alb(vec3 p) { return uDustC; }
 // The blast's light reaches the dust strongly; the moon lights it through Ls.
-vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e5 / (dot(m, m) + 6.0e5) + blastLight(p) * 2.5; }`, { uBd: { value: new THREE.Vector4() }, uFwd: { value: new THREE.Vector2(0, -1) }, uDustC: { value: new THREE.Vector3(...linFit(0.46, 0.035, 60)) } });
+vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e5 / (dot(m, m) + 6.0e5) + blastLight(p) * 2.5; }`, { uBd: { value: new THREE.Vector4() }, uFwd: { value: new THREE.Vector2(0, -1) }, uDv: { value: Array.from({ length: 3 }, () => new THREE.Vector4()) }, uDustC: { value: new THREE.Vector3(...linFit(0.46, 0.035, 60)) } });
 // sa: seconds since the blast left the muzzle. c: power.
 function updateShotDust(sa, c, foot) {
   const u = shotDust.material.uniforms, on = !reduced() && sa >= 0 && sa < 16;
@@ -4077,6 +4091,12 @@ fire = c => {
   // The blast and the Mach wall raise one dust volume.
   dustShot = { t0: simT, c, foot: new THREE.Vector3(MUZZLE.x, 0, MUZZLE.z) };
   shotDust.material.uniforms.uFwd.value.set(AX.x, AX.z).normalize();
+  // Three devils wait on the plain ahead; each wakes as the front reaches it.
+  { const fw = shotDust.material.uniforms.uFwd.value, base = Math.atan2(fw.y, fw.x);
+    shotDust.material.uniforms.uDv.value.forEach(v => {
+      const a = base + (rnd() - 0.5) * 2.0, d = 1800 + 1700 * rnd();
+      v.set(MUZZLE.x + Math.cos(a) * d, MUZZLE.z + Math.sin(a) * d, d / 340 + 0.3, reduced() ? 0 : 0.6 + 0.3 * rnd());
+    }); }
   // The kick shakes dust off the gun's ledges.
   for (let i = 0; i < 40; i++) {
     barrelPt(-200 + rnd() * 1050, (rnd() - 0.5) * 40, 30 + rnd() * 20, dustP);
