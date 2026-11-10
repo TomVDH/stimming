@@ -1004,18 +1004,40 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
 {
   // Houses from OSM footprints (tools/buildings.py): Zurich's blocks, the shore villages, the farms.
   // Each has its real place, footprint and heading; a share survive, so the land leads.
-  const B = ROUTE.bld, n = B.length / 8, d = new Float32Array(n * 4), at = new Float32Array(PW * Math.ceil(n / PW) * 4);
-  for (let i = 0; i < n; i++) {
+  const B = ROUTE.bld, n0 = B.length / 8, places = ROUTE.meta.places.filter(p => p[2] !== 'c');
+  const n = n0 + places.length, d = new Float32Array(n * 4), at = new Float32Array(PW * Math.ceil(n / PW) * 4);
+  for (let i = 0; i < n0; i++) {
     const o = i * 8, s = (B[o] | B[o + 1] << 8) * 1.2, t = (B[o + 2] | B[o + 3] << 8) / 10;
-    const w = B[o + 4] / 4, l = B[o + 5] / 4, h = B[o + 6] / 4, yaw = B[o + 7] / 256 * Math.PI, area = w * l;
+    let w = B[o + 4] / 4, l = B[o + 5] / 4, yaw = B[o + 7] / 256 * Math.PI;
+    const h = B[o + 6] / 4, area = w * l;
     // Kind 2 is a city block, 1 a barn or hall, 0 a house.
     const kind = (s < 5500 && (area > 160 || h > 11)) || h > 14 ? 2 : area > 450 && (h === 0 || h < 10) ? 1 : 0;
     // H is the eaves height. A mapped height counts the roof, so a house loses it.
     // Unknown heights: blocks three to five floors; houses one and a half or two.
     const H = h ? (kind === 2 ? h * 0.8 : Math.max(3.4, h * 0.8 - 2.5))
       : kind === 2 ? 2.9 * (3 + Math.floor(rnd() * 3)) + 0.6 : kind === 1 ? 4.6 + rnd() * 1.6 : area > 220 ? 7.0 : rnd() < 0.4 ? 3.4 + rnd() * 0.5 : 5.1 + rnd() * 0.5;
+    // A third of the houses turn their ridge across, so eaves and gables both face the line.
+    if (kind < 2 && rnd() < 0.33) { [w, l] = [l, w]; yaw += Math.PI / 2; }
     d.set([s, -t, kind, rnd()], i * 4);
     at.set([Math.min(w, 40), Math.min(H, 34), Math.min(l, 80), yaw], i * 4);
+  }
+  // Churches: each village's house nearest its centre becomes a nave (kind 3).
+  // Its tower (kind 4) shares the nave's point and size, so both stand or fall together.
+  let nc = 0;
+  for (const [ps, pt] of places) {
+    let best = -1, bd = 350 * 350;
+    for (let i = 0; i < n0; i++) {
+      if (d[i * 4 + 2] !== 0) continue;
+      const ds = d[i * 4] - ps, dt = -d[i * 4 + 1] - pt, dd = ds * ds + dt * dt;
+      if (dd < bd) { bd = dd; best = i; }
+    }
+    if (best < 0) continue;
+    const yaw = at[best * 4 + 3], r = rnd();
+    d[best * 4 + 2] = 3;
+    at.set([9.5 + 3 * r, 7.5 + 2 * rnd(), 20 + 9 * r, yaw], best * 4);
+    const k = n0 + nc++;
+    d.set([d[best * 4], d[best * 4 + 1], 4, rnd()], k * 4);
+    at.set(at.subarray(best * 4, best * 4 + 4), k * 4);
   }
   const tAt = new THREE.DataTexture(at, PW, at.length / 4 / PW, THREE.RGBAFormat, THREE.FloatType);
   tAt.needsUpdate = true;
@@ -1024,13 +1046,14 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     float x = uCamX + mod(a.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
     vec2 xz = vec2(x, a.y);
     // No house within 40 m of the line, nor within 75 m of a platform: nothing cuts the station.
-    if (a.y > -40.0 || abs(x - uCamX) > 6000.0 || shore(xz) < 4.0 || inYard(xz, 25.0)) return vec4(0.0);
+    if (a.w <= 0.0 || a.y > -40.0 || abs(x - uCamX) > 6000.0 || shore(xz) < 4.0 || inYard(xz, 25.0)) return vec4(0.0);
     if (uStn.y > 0.0 && abs(x - uStn.x) < uStn.y + 45.0 && a.y > -75.0) return vec4(0.0);
     // Steep ground would leave a wall floating or buried.
     if (slopeAt(xz, 6.0) > 0.32) return vec4(0.0);
     return vec4(x, land(xz), a.y, 1.0 + a.z * 10.0 + 0.9 * a.w);
   }`, 60);
-  // A unit gable roof: ridge along z, so each gable faces the train and the lake.
+  // One unit roof for every form: two slopes, an eaves plane and two end faces.
+  // The ridge runs along z; the vertex shader shortens it, so a gable turns into a hip, a tent or a spire.
   const roof = (() => {
     const v = { L0: [-0.5, 0, -0.5], R0: [0.5, 0, -0.5], T0: [0, 1, -0.5], L1: [-0.5, 0, 0.5], R1: [0.5, 0, 0.5], T1: [0, 1, 0.5] };
     const tri = (...k) => k.flatMap(n => v[n]);
@@ -1053,19 +1076,46 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     float kind = floor(q.w / 10.0), v = floor((q.w - kind * 10.0 - 1.0) * 283.0 + 0.5) / 283.0;
     vec4 A = texelFetch(tAt, ivec2(GID % ${PW}, GID / ${PW}), 0);
     vec3 S = A.xyz;
-    // Roofs: a gentle pitch on houses, steeper on barns, flat on wide or some city blocks.
-    float rh = kind < 0.5 ? min(0.26 * S.x, 3.6) : kind < 1.5 ? min(0.3 * S.x, 5.0) : (S.x > 22.0 || v < 0.3 ? 0.4 : min(0.2 * S.x, 3.6));
+    float zOff = 0.0, v2 = fract(v * 17.0);
+    // A tower takes its size from its nave and stands at the nave's end.
+    if (kind > 3.5) {
+      float tw = max(4.4, S.x * 0.44);
+      zOff = -(S.z * 0.5 + tw * 0.5 - 1.2);
+      S = vec3(tw, S.y * 2.1 + 5.0 + 4.0 * v2, tw);
+    }
+    // rh is the roof's height; rk shortens the ridge: 1 a gable, less a hip, 0 a tent or a spire.
+    float rh, rk = 1.0;
+    if (kind < 0.5) {
+      rh = min(0.26 * S.x, 3.6);
+      rk = v2 < 0.55 ? 1.0 : v2 < 0.8 ? 0.78 : v2 < 0.93 ? 0.45 : 0.0;
+      // A tent roof suits only a near-square house.
+      if (rk < 0.1 && abs(S.x - S.z) > 0.35 * S.x) rk = 0.6;
+      if (v2 > 0.3 && v2 < 0.42) rh = min(0.4 * S.x, 5.0);
+    } else if (kind < 1.5) { rh = min(0.3 * S.x, 5.0); rk = v2 < 0.7 ? 1.0 : 0.8; }
+    else if (kind < 2.5) {
+      // City blocks: flat, hipped or mansard-like.
+      bool flatR = S.x > 22.0 || v < 0.3;
+      rh = flatR ? 0.4 : min(0.2 * S.x, 3.6);
+      rk = flatR ? 1.0 : v2 < 0.5 ? 0.82 : 1.0;
+    } else if (kind < 3.5) rh = min(0.5 * S.x, 6.5);
+    // Towers: a saddle roof, a tall spire or a low tent.
+    else if (v < 0.4) rh = 0.95 * S.x;
+    else if (v < 0.85) { rh = 2.6 * S.x; rk = 0.0; }
+    else { rh = 1.1 * S.x; rk = 0.0; }
     vec3 p = position, l;
+    if (p.y > 0.5 && part > 0.5) p.z *= rk;
     // Walls reach 4 m into the ground, so a slope never shows a gap.
     if (part < 0.5) l = vec3(p.x * S.x, p.y < 0.01 ? -4.0 : S.y, p.z * S.z);
-    // The roof overhangs the walls and the gables.
-    else if (part < 1.5) l = vec3(p.x * S.x * 1.14, S.y + 0.1 + p.y * rh, p.z * S.z * 1.12);
+    // The roof overhangs the walls; a hipped end face keeps to the roof's edge.
+    else if (part < 1.5 || rk < 0.99) l = vec3(p.x * S.x * 1.14, S.y + 0.1 + p.y * rh, p.z * S.z * 1.12);
     else l = vec3(p.x * S.x, S.y + p.y * rh, p.z * S.z);
+    vL = l;
+    l.z += zOff;
     float yaw = A.w, c = cos(yaw), s = sin(yaw);
     vec3 w = vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z);
     vP = q.xyz + w;
     vN = vec3(0.0, 1.0, 0.0);
-    vL = l; vS = S; vK = kind; vV = v;
+    vS = S; vK = kind; vV = v;
     vPart = part;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`, /* glsl */`
@@ -1076,50 +1126,79 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
     if (dot(N, cameraPosition - vP) < 0.0) N = -N;
     vec3 alb, glow = vec3(0.0);
-    if (vPart > 0.5 && vPart < 1.5) {
-      // Roofs: brown tile, dark timber shingle or grey slate; flat tops in town.
-      alb = vV < 0.5 ? vec3(0.2, 0.1, 0.065) : vV < 0.8 ? vec3(0.14, 0.09, 0.06) : vec3(0.17, 0.17, 0.19);
-      if (vK > 1.5) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
+    bool city = vK > 1.5 && vK < 2.5, church = vK > 2.5 && vK < 3.5, tower = vK > 3.5;
+    // An end face is wall on a gable and roof on a hip.
+    if (vPart > 0.5 && (vPart < 1.5 || abs(N.y) > 0.15)) {
+      // Roofs: brown or red tile, dark shingle, slate or anthracite; flat tops in town.
+      float rc = fract(vV * 23.0);
+      alb = rc < 0.3 ? vec3(0.2, 0.1, 0.065) : rc < 0.5 ? vec3(0.3, 0.11, 0.07) : rc < 0.68 ? vec3(0.14, 0.09, 0.06) : rc < 0.86 ? vec3(0.17, 0.17, 0.19) : vec3(0.09, 0.095, 0.1);
+      if (city) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
+      if (church) alb = rc < 0.6 ? vec3(0.26, 0.11, 0.07) : vec3(0.15, 0.15, 0.17);
+      // Spires: green copper or dark slate; a saddle roof keeps its tile.
+      if (tower) alb = vV < 0.4 ? vec3(0.26, 0.11, 0.07) : rc < 0.55 ? vec3(0.2, 0.36, 0.3) : vec3(0.12, 0.12, 0.14);
       // The eaves' underside sits in shade.
       if (N.y < -0.2) alb *= 0.4;
     } else {
-      vec3 plaster = mix(vec3(0.78, 0.75, 0.68), vec3(0.86, 0.83, 0.76), vV);
+      // Plaster in six tints, one per house; timber in two.
+      float pc = fract(vV * 29.0);
+      vec3 plaster = pc < 0.3 ? vec3(0.84, 0.81, 0.74) : pc < 0.5 ? vec3(0.8, 0.76, 0.66) : pc < 0.64 ? vec3(0.82, 0.74, 0.56) : pc < 0.76 ? vec3(0.8, 0.66, 0.58) : pc < 0.9 ? vec3(0.7, 0.71, 0.7) : vec3(0.68, 0.74, 0.64);
       vec3 wood = mix(vec3(0.28, 0.16, 0.08), vec3(0.36, 0.22, 0.12), fract(vV * 7.0));
       // A chalet: a plaster ground floor, timber above and in the gable.
       alb = (vL.y < 2.6 && vPart < 1.5) || fract(vV * 13.0) > 0.35 ? plaster : wood;
       if (vK > 0.5 && vK < 1.5) alb = vL.y < 0.8 ? plaster * 0.8 : mix(vec3(0.3, 0.22, 0.15), vec3(0.36, 0.27, 0.18), vV);
       // City plaster: cream, ochre, salmon, pale grey or sage, one per block.
-      if (vK > 1.5) {
-        float pc = fract(vV * 5.3);
-        alb = pc < 0.3 ? vec3(0.8, 0.76, 0.66) : pc < 0.5 ? vec3(0.78, 0.62, 0.38) : pc < 0.65 ? vec3(0.8, 0.6, 0.5) : pc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
+      if (city) {
+        float cc = fract(vV * 5.3);
+        alb = cc < 0.3 ? vec3(0.8, 0.76, 0.66) : cc < 0.5 ? vec3(0.78, 0.62, 0.38) : cc < 0.65 ? vec3(0.8, 0.6, 0.5) : cc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
         // A darker ground floor: shops and doors.
         if (vL.y < 3.1 && fract(vV * 3.1) < 0.5) alb *= 0.55;
       }
-      // Windows with shutters, on rows of 2.5 m; barns have none.
+      // Churches are white or pale stone; every wall stands on a darker plinth.
+      if (church || tower) alb = mix(vec3(0.86, 0.85, 0.81), vec3(0.72, 0.7, 0.66), step(0.7, fract(vV * 11.0)));
+      if (vL.y < 0.45 && vPart < 0.5) alb *= 0.72;
       bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
       float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
-      bool city = vK > 1.5;
-      float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : 2.6, ww = city ? 0.45 : 0.5, fh = city ? 2.9 : 2.5, wh = city ? 1.4 : 1.15;
-      float y0 = city ? 3.6 : 0.8;
-      float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
       float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
-      // Far or at a slant the panes merge: the wall keeps their mean glow, so none vanish.
       vec3 lamp = vec3(1.0, 0.72, 0.42) * 1.4 * (1.0 - uDay);
-      bool zone = (vK < 0.5 || city) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-      if (zone) glow = lamp * 0.5 * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade);
-      if (zone && cv < wh) {
-        float ax = abs(cu) * gap;
-        float lit = step(0.5, hash1(vec2(floor(u / gap), row) + floor(vV * 283.0 + 0.5) * 0.37));
-        // City windows sit in a pale frame.
-        if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
-        else if (ax < ww) {
-          alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
-          glow += lamp * lit * fade;
-        } else if (vK < 0.5 && ax < ww + 0.42) {
-          // Shutters: green, red or grey, one colour per house.
-          vec3 sh = vV < 0.4 ? vec3(0.08, 0.2, 0.1) : vV < 0.7 ? vec3(0.3, 0.07, 0.05) : vec3(0.5, 0.5, 0.48);
-          alb = mix(alb, sh, fade);
+      if (tower) {
+        // A clock on each face, lit at night, over two dark belfry slots.
+        float cy = vS.y - 0.75 * vS.x, r = length(vec2(u, vL.y - cy)) / (0.3 * vS.x);
+        if (r < 1.0) {
+          alb = mix(alb, r > 0.82 ? vec3(0.1) : vec3(0.8, 0.78, 0.7), fade);
+          glow = vec3(1.0, 0.86, 0.6) * 0.5 * step(r, 0.82) * (1.0 - uDay) * fade;
         }
+        float by = vL.y - (vS.y - 1.75 * vS.x);
+        if (abs(abs(u) - 0.2 * vS.x) < 0.11 * vS.x && by > 0.0 && by < 0.55 * vS.x) alb = mix(alb, vec3(0.05, 0.05, 0.06), fade);
+      } else {
+        // Windows in rows; houses differ in spacing, and two in three have shutters. Barns have none.
+        float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : church ? 4.2 : 2.3 + 0.9 * fract(vV * 9.7);
+        float ww = city ? 0.45 : church ? 0.6 : 0.42 + 0.14 * fract(vV * 3.3), fh = city ? 2.9 : church ? 30.0 : 2.5, wh = city ? 1.4 : church ? min(4.2, vS.y - 3.2) : 1.15;
+        float y0 = city ? 3.6 : church ? 2.0 : 0.8;
+        float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
+        // Far or at a slant the panes merge: the wall keeps their mean glow, so none vanish.
+        // A church is lit as a whole, or not at all.
+        float litC = step(0.7, fract(vV * 3.7)) * 0.45;
+        bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
+        if (zone) glow = lamp * (church ? litC : 0.5) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade);
+        if (zone && cv < wh) {
+          float ax = abs(cu) * gap;
+          float lit = church ? litC : step(0.5, hash1(vec2(floor(u / gap), row) + floor(vV * 283.0 + 0.5) * 0.37));
+          // A church window ends in a round arch.
+          bool pane = ax < ww && !(church && cv > wh - ww && length(vec2(ax, cv - (wh - ww))) > ww);
+          // City windows sit in a pale frame.
+          if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
+          else if (pane) {
+            alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
+            glow += lamp * lit * fade;
+          } else if (vK < 0.5 && ax < ww + 0.42 && fract(vV * 5.1) < 0.66) {
+            // Shutters: green, red, grey, blue or brown, one colour per house.
+            float sc = fract(vV * 41.0);
+            vec3 sh = sc < 0.3 ? vec3(0.08, 0.2, 0.1) : sc < 0.5 ? vec3(0.3, 0.07, 0.05) : sc < 0.7 ? vec3(0.5, 0.5, 0.48) : sc < 0.85 ? vec3(0.1, 0.16, 0.28) : vec3(0.2, 0.12, 0.07);
+            alb = mix(alb, sh, fade);
+          }
+        }
+        // A barn has one tall door in a long side.
+        if (vK > 0.5 && vK < 1.5 && xface && abs(u) < 1.7 && vL.y < 3.3 && vL.y > 0.0) alb = mix(alb, vec3(0.16, 0.1, 0.06), fade);
       }
     }
     float ao = smoothstep(-0.5, 2.0, vL.y);
@@ -2458,7 +2537,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Near its edges the pane mirrors the reveal, not the cabin.
       float rv = smoothstep(0.0, 0.006, sdRR(q + Rs.xy / max(Rs.z, 0.05) * REVEAL / (2.0 * uTan.y), uHalf, uRad));
       // The cabin shows only faintly; the reveal's image always lies over it.
-      vec3 room = textureLod(tRoom, R, 0.6).rgb * 0.3 * (1.0 - rv);
+      vec3 room = textureLod(tRoom, R, 0.6).rgb * 0.18 * (1.0 - rv);
       // Fog scatters the room light, so its reflection blurs and grows.
       vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb * (1.0 - rv);
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);

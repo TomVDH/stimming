@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T06:31:20Z
+updated_at: 2026-11-10T06:39:26Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -220,3 +220,12 @@ Open from the critics:
 - [x] Dev: top view of the built scene (?dev, tick Top view, or ?top=<m>)
 - [ ] Sound: Tom to listen (whine level, door muffle, thud)
 - [ ] Frame and cross bar wireframes: Tom to pick
+
+## Round 23: churches, variety, shore, roads, fields (Tom, 2026-11-09)
+
+- [x] Churches: in each village the house nearest the centre becomes a white nave with arched windows; its tower stands at the nave's end with a lit clock, belfry slots and a saddle roof, spire or tent. Same mesh and shader as the houses
+- [x] Variety at the same polygon count: one roof mesh makes gable, half-hip, hip, tent and spire; a third of the houses turn their ridge; six plaster tints, five roof colours, five shutter colours, some houses without shutters; window spacing per house; plinths; barn doors
+- [ ] Near shore of both lakes at higher resolution (far shore stays)
+- [ ] Light OSM road data
+- [ ] Fields and pastures: realistic tilings in clusters, deterministic, all baked
+- [ ] Train horn of the current Swiss stock
