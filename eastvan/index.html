@@ -12,7 +12,12 @@
 html, body { margin: 0; height: 100%; background: oklch(0.14 0.02 280); overflow: hidden; }
 body { font: 500 13px/1 "Gabarito", system-ui, sans-serif; color: oklch(0.92 0.01 280); }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.name { position: fixed; left: 14px; top: calc(14px + env(safe-area-inset-top, 0px)); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.top { position: fixed; left: 14px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 10px; align-items: center; }
+.name { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: oklch(0.18 0.02 280 / 0.72); backdrop-filter: blur(8px); }
+.seg button { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; border-radius: 999px; padding: 9px 13px; min-height: 34px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: oklch(0.93 0.02 90); color: oklch(0.2 0.03 280); }
+.seg button:focus-visible { outline: 2px solid oklch(0.85 0.12 85); outline-offset: 1px; }
 .foot {
   position: fixed; left: 14px; right: 14px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex; justify-content: space-between; gap: 12px; pointer-events: none; opacity: 0.78;
@@ -37,17 +42,26 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 </head>
 <body>
 <canvas id="c" aria-label="East Van house lot"></canvas>
-<span class="name">East Van</span>
+<div class="top">
+  <span class="name">East Van</span>
+  <div class="seg" id="stops" role="group" aria-label="Place">
+    <button type="button" data-v="house">House</button>
+    <button type="button" data-v="alley">Alley</button>
+  </div>
+</div>
 <div class="foot">
   <span class="read" id="read"></span>
-  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom</span>
+  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1 2</kbd> place</span>
 </div>
 <script type="module">
 // East Van: the Toy-town house lot. town.js builds it; lens.js draws it.
 // This page owns the camera, the pointer and the frame loop.
 import * as THREE from 'three';
 import { pixelRatio, whenVisible, css } from '../shared/stim.js';
-import { buildTown, poke, POKES } from './town.js';
+import { buildTown } from './town.js';
+import * as lot from './lot.js';
+import * as alley from './alley.js';
+import { buildLife } from './life.js';
 import { createLens } from './lens.js';
 
 const canvas = document.getElementById('c'), read = document.getElementById('read');
@@ -76,10 +90,24 @@ function skyTexture(v0, v1) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-const town = buildTown(skyTexture(0.2, 0.8)), lens = createLens(renderer);
+// One diorama for now: the house lot with the alley behind it.
+const town = buildTown(skyTexture(0.2, 0.8), [lot, alley], buildLife), lens = createLens(renderer);
 const cam = new THREE.PerspectiveCamera(22, 1, 5, 160);
 const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 };
-const TARGET = new THREE.Vector3(0, 2.6, 0);
+// A stop is a place the camera rests on: a target and a side to look from.
+const STOPS = { house: { at: [0, 2.6, 0], yaw: 0.5 }, alley: { at: [0, 2.2, -20.5], yaw: Math.PI + 0.55 } };
+const TARGET = new THREE.Vector3(0, 2.6, 0), goal = new THREE.Vector3(0, 2.6, 0);
+function setStop(name, snap) {
+  const s = STOPS[name];
+  goal.set(...s.at);
+  // Turn the short way round to the stop's side.
+  view.ty += Math.atan2(Math.sin(s.yaw - view.ty), Math.cos(s.yaw - view.ty));
+  view.tp = 0.3; view.tz = 1;
+  // The first stop has no travel: the page opens on it.
+  if (snap) { view.yaw = view.ty; TARGET.copy(goal); }
+  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(b.dataset.v === name));
+  wake();
+}
 function resize() {
   const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight);
   renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 2 }));
@@ -93,10 +121,11 @@ function resize() {
 }
 function aim() {
   view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
+  TARGET.lerp(goal, 0.1);
   const d = view.fit * view.zoom, cp = Math.cos(view.pitch);
-  cam.position.set(Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, Math.cos(view.yaw) * cp * d);
+  cam.position.set(TARGET.x + Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, TARGET.z + Math.cos(view.yaw) * cp * d);
   cam.lookAt(TARGET);
-  cam.near = Math.max(3, d - 32); cam.far = d + 45;
+  cam.near = Math.max(3, d - 45); cam.far = d + 60;
   cam.updateProjectionMatrix();
   cam.updateMatrixWorld();
   return d;
@@ -107,12 +136,12 @@ const v = new THREE.Vector3();
 function pokeAt(x, y) {
   const r = canvas.getBoundingClientRect();
   let best = null, bestD = Infinity;
-  for (const q of POKES) {
-    v.copy(town.at(q)).applyMatrix4(cam.matrixWorldInverse);
+  for (const q of town.pokes) {
+    v.copy(q.pos).applyMatrix4(cam.matrixWorldInverse);
     const reach = q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
     v.applyMatrix4(cam.projectionMatrix);
     const d = Math.hypot((v.x * 0.5 + 0.5) * r.width - (x - r.left), (0.5 - v.y * 0.5) * r.height - (y - r.top));
-    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = q.id; bestD = d; }
+    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = q; bestD = d; }
   }
   return best;
 }
@@ -129,15 +158,20 @@ canvas.addEventListener('pointermove', e => {
   drag.x = e.clientX; drag.y = e.clientY;
   if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
   if (!drag.moved) return;
-  view.ty = clamp(view.ty - dx * 0.006, -1.5, 1.5);
+  view.ty -= dx * 0.006;
   view.tp = clamp(view.tp + dy * 0.005, 0.06, 0.95);
 });
 canvas.addEventListener('pointerup', e => {
-  if (drag && !drag.moved && performance.now() - drag.t < 500) { const id = pokeAt(e.clientX, e.clientY); if (id) poke(id); }
+  if (drag && !drag.moved && performance.now() - drag.t < 500) { const q = pokeAt(e.clientX, e.clientY); if (q) q.fire(); }
   drag = null;
 });
 canvas.addEventListener('pointercancel', () => { drag = null; });
-canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, 1.25); wake(); }, { passive: false });
+canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, 1.9); wake(); }, { passive: false });
+document.getElementById('stops').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setStop(b.dataset.v); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === '1') setStop('house'); else if (e.key === '2') setStop('alley');
+});
 
 /* ---------- frame loop ---------- */
 let raf = 0, visible = true, lastInput = performance.now(), last = 0, fps = 60, readAt = 0;
@@ -147,8 +181,8 @@ function frame(now) {
   last = now;
   fps = lerp(fps, 1 / dt, 0.08);
   const d = aim();
-  town.update(now / 1000);
-  lens.render(town.scene, cam, d);
+  town.update(now / 1000, dt);
+  lens.render(town.scene, cam, d, town.noInk);
   if (now - readAt > 300) {
     readAt = now;
     read.textContent = `${Math.round(fps)} fps · ${renderer.info.render.calls} calls · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris`;
@@ -164,7 +198,7 @@ whenVisible(canvas, on => { visible = on; if (on) wake(); });
 // The pane can open at zero size, so the canvas itself reports its size.
 new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
 resize();
-wake();
+setStop(new URLSearchParams(location.search).get('at') === 'alley' ? 'alley' : 'house', true);
 </script>
 </body>
 </html>

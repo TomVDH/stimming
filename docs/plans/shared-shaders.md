@@ -12,7 +12,37 @@ Tom, 2026-11-10: "we will use bundled shaders to quickly pump out responsive and
 - **Reactive.** Each bundle has a JS driver, so an environment follows one value. `shared/weather.js` maps dry-to-storm onto the glass and the water.
 - **Responsive.** `shared/detail.js` joins the site quality (`shared/stim.js`) with a slow-frame watch into one level: High, Standard or Low.
   It gives the pixel ratio, and each bundle maps the level to its budget (`waterDetail`, `wetGlassDetail`). Low trims shader work; Standard and High differ in resolution only.
-- **Fast to use.** A new toy pastes the bundles, calls the driver, and has an environment. `fxlab/`'s pane pass is the worked example.
+- **Fast to use.** `shared/environment.js` is the runner. A new raw WebGL2 toy gives one GLSL function for its scene and gets the whole frame.
+  `fxlab/` runs on it: the harbour is one scene, and Open sea is a second one in thirty lines.
+
+## The runner
+
+`shared/environment.js` wires every bundle into one frame, for raw WebGL2.
+
+```js
+const env = environment(canvas, { scene: `vec3 envScene(vec2 uv) { ... }` });
+env.state.hour = 19.5;        // any value in ENV_DEFAULTS
+env.state.on.glass = false;   // switch a bundle off
+env.weather(0.7);             // dry (0) to storm (1)
+env.touch();                  // after a change
+```
+
+| Pass | What runs | Bundles |
+|---|---|---|
+| Scene | The toy's `envScene()`, then rain or snow in the air | `sky.js`, `water.js`, `glow.js` orbs, `precip.js` |
+| Bokeh | Two box steps down, then the disc gather; only with the pane on | `bokeh.js` |
+| Pane | The wet glass, then the lens flare on the key light | `wetglass.js`, `flare.js` |
+| Bloom | The chain; only with glow on | `glow.js` |
+| Last | Bloom add, grade, output | `grade.js`, `output.js` |
+
+- The scene reads `ENV_UNIFORMS` (frame size, time, key light, sky palette, sun, haze, water and detail budgets) and can call every bundle.
+- `state.light` is the key light on the frame: it flares, and it lights the rain and the drops.
+- The runner owns the loop: it runs only while something moves and the tab shows, and it respects reduced motion.
+- `detail.js` sets the pixel ratio and each bundle's budget; `skyAt(hour)` and `weather(k)` drive the values.
+- Proof: the lab drew the same eight frozen frames, bit for bit, before and after it moved onto the runner.
+- Limits: raw WebGL2 only; one key light; the scene is one full-screen pass. A three.js toy uses the bundles one by one.
+- First toy on it: Fog horn (`foghorn/`, bean `stimming-vmu3`), a Lab toy. Its page is the scene, the ship's path, the sound and the bar; the runner does the rest.
+- `state.frame = false` takes away the pane's foggy rim, for a view with no window frame in it.
 
 ## The contract
 
@@ -30,7 +60,8 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 
 One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 
-- **All effects** (the page opens here): one window scene with every shared shader stacked on it.
+- **All effects** (the page opens here): one window scene with every shared shader stacked on it, run by `shared/environment.js`.
+  The Scene buttons swap the place (Harbour, Open sea); the bundles and the controls stay.
   Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Rain and snow in the air, Sky and haze, Lens flare, Glow, Grade, Output.
   Glass effects stay one group (Tom, 2026-11-10): drops, running drops, fog and scatter go together.
   Look buttons set a whole combination (Everything, Clear, Harbour, Dawn, Drizzle, Storm, Snow, Fogged up). The light is draggable.
@@ -66,6 +97,7 @@ Every module compiles together in a three.js `ShaderMaterial`: the lab's check s
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
 | `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
 | `shared/weather.js` (one value drives glass, water, air, clouds and haze) | 2026-11-10 | The lab's Weather slider | None yet |
+| `shared/environment.js` (the runner: every bundle in one frame) | 2026-11-10 | The lab runs on it; eight frozen frames equal the frames before the move; a second scene in thirty lines | None yet |
 | `shared/glow.js` (light orbs; a bloom chain for raw WebGL2) | 2026-11-10 | The kit's orb matches exactly (0 / 255). The bloom chain is Lichtenberg's and Dijkstra's lines; it has no pixel check | None yet |
 | `shared/precip.js` (rain and snow in the air, on the frame) | 2026-11-10 | Seen in the lab. A new common version: no copy check | None yet |
 | Cloud deck in `shared/sky.js` (`skClouds`) | 2026-11-10 | Seen in the lab at dusk and by day. A new common version: no copy check | None yet |

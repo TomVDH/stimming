@@ -98,6 +98,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
   ],
+  // Reset runs the days faster and faster, then cuts back to the start.
+  actions: [{ verb: 'reset', key: 'R', onPress: () => resetToy() }],
   quality: true,
   keys: [['hold', 'charge'], ['release', 'fire'], ['drag', 'look around'], ['space', 'charge']],
 } });
@@ -236,10 +238,49 @@ const sstep = THREE.MathUtils.smoothstep;
 const lerp = THREE.MathUtils.lerp;
 // The moon: cool and dim, high on the left.
 const MOON_C = [0.09, 0.11, 0.16];
-function sun(deg) {
+
+/* ---------- sky: one turn a day about a tilted pole ---------- */
+// Latitude thirty degrees: the equinox sun stands sixty degrees up at noon.
+// The sun rises ahead and right, crosses the sky ahead and left, sets behind.
+const PHI = rad(30);
+const SKY = { E: new THREE.Vector3(SUN_AZ.x, 0, SUN_AZ.y).normalize(), S: new THREE.Vector3(), P: new THREE.Vector3() };
+const skyFrame = () => {
+  SKY.S.crossVectors(yUp, SKY.E);
+  SKY.P.copy(yUp).multiplyScalar(Math.sin(PHI)).addScaledVector(SKY.S, -Math.cos(PHI));
+};
+// A direction on the sky at hour angle H and declination d.
+function skyDir(H, d, out) {
+  const cd = Math.cos(d), sd = Math.sin(d), cP = Math.cos(PHI), sP = Math.sin(PHI);
+  out.copy(SKY.E).multiplyScalar(-Math.sin(H) * cd);
+  out.addScaledVector(yUp, Math.cos(H) * cd * cP + sd * sP);
+  return out.addScaledVector(SKY.S, Math.cos(H) * cd * sP - sd * cP);
+}
+// The morning hour angle where the sun stands deg degrees up.
+const hourOf = deg => -Math.acos(clamp(Math.sin(rad(deg)) / Math.cos(PHI), -1, 1));
+// Turn the frame so the dusk sun lands on the first look's bearing.
+skyFrame();
+{
+  const d = skyDir(hourOf(5.6), 0, new THREE.Vector3());
+  SKY.E.applyAxisAngle(yUp, Math.atan2(SKY.E.x, SKY.E.z) - Math.atan2(d.x, d.z));
+  skyFrame();
+}
+// The moon runs six hours behind the sun, low in the south.
+// At night on the slider it stands high on the left.
+const MOON_H = rad(93.5), MOON_DEC = rad(-33.7);
+const skyRot = new THREE.Matrix4();
+U.uSkyRot = { value: new THREE.Matrix3() };
+let skyH = 0;
+function sun(deg) { skyAt(hourOf(deg)); }
+function skyAt(H) {
+  skyH = H;
+  skyDir(H, 0, U.uSunD.value);
+  const deg = THREE.MathUtils.radToDeg(Math.asin(clamp(U.uSunD.value.y, -1, 1)));
   const r = rad(deg);
-  U.uSunD.value.set(SUN_AZ.x * Math.cos(r), Math.sin(r), SUN_AZ.y * Math.cos(r));
   U.uSunE.value = r;
+  skyDir(H + MOON_H, MOON_DEC, U.uMoonD.value);
+  const moonUp = sstep(U.uMoonD.value.y, -0.02, 0.1);
+  // The stars turn with the sky.
+  U.uSkyRot.value.setFromMatrix4(skyRot.makeRotationAxis(SKY.P, -H));
   // Dusk: the first look, 0 to 15 degrees.
   // low: 0 at the horizon, 1 at fifteen degrees up.
   const low = clamp(deg / 15, 0, 1);
@@ -259,11 +300,11 @@ function sun(deg) {
   const kS = sstep(deg, -1.5, 1.5);
   U.uGlowC.value.set(...sunC.map(x => x * sstep(deg, -10, 0)));
   // The moon takes the key light below -3 degrees.
-  const mK = 1 - sstep(deg, -10, -3);
+  const mK = (1 - sstep(deg, -10, -3)) * moonUp;
   U.uMoonK.value = mK;
   U.uStars.value = 1 - sstep(deg, -10, -2);
-  if (deg > -3) U.uSun.value.copy(U.uSunD.value).setY(Math.max(U.uSunD.value.y, 0.02)).normalize();
-  else U.uSun.value.copy(U.uMoonD.value);
+  U.uSun.value.copy(deg > -3 ? U.uSunD.value : U.uMoonD.value);
+  U.uSun.value.setY(Math.max(U.uSun.value.y, 0.02)).normalize();
   U.uSunC.value.set(...sunC.map((x, i) => x * kS + MOON_C[i] * mK));
   U.uZenC.value.set(...zen);
   U.uHorC.value.set(...hor);
@@ -325,6 +366,7 @@ uniform vec3 uSunC, uZenC, uHorC;
 uniform float uSunE;
 uniform vec3 uSunD, uGlowC, uMoonD, uCloudSun, uCloudAmb;
 uniform float uMoonK, uStars, uStarT;
+uniform mat3 uSkyRot;
 uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
@@ -415,7 +457,7 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5 && dir.y > 0.0) {
     // Stars: one in about seventy cells, a few twinkle.
     if (uStars > 0.01) {
-      vec3 g = dir * 420.0, id = floor(g);
+      vec3 g = (uSkyRot * dir) * 420.0, id = floor(g);
       float h = k3hash(id);
       if (h > 0.986) {
         vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
@@ -649,7 +691,7 @@ scene.add(far);
 // Each cloud is one card that turns about the vertical to face the eye.
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
-const CLOUD_U = { uVol: { value: null } };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 } };
 const CLOUD_FS = /* glsl */`precision highp sampler3D;
 uniform sampler3D uVol;
 varying vec2 vUv;
@@ -658,8 +700,10 @@ varying vec4 vS;
 ${HEAD}
 ${AIR}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
-float bil(vec2 p, float sd) { return texture(uVol, vec3(p, sd * 0.37)).r; }
-float cell(vec2 p, float sd) { return texture(uVol, vec3(p, sd * 0.61 + 0.5)).g; }
+// uCloudT runs only in the reset timelapse: the clouds drift and boil.
+uniform float uCloudT;
+float bil(vec2 p, float sd) { return texture(uVol, vec3(p + vec2(uCloudT * 0.4, 0.0), sd * 0.37 + uCloudT * 0.06)).r; }
+float cell(vec2 p, float sd) { return texture(uVol, vec3(p + vec2(uCloudT * 0.4, 0.0), sd * 0.61 + 0.5 + uCloudT * 0.06)).g; }
 float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
 // The body: positive inside, in metres from the edge.
 float body(vec2 X) {
@@ -1919,7 +1963,7 @@ function draw() {
   updateArcs();
   updateBolt();
   grade.uniforms.uRage.value = reduced() ? 0 : rage * (0.5 + 0.5 * Math.random());
-  grade.uniforms.uFlash.value = reduced() ? 0.3 * flashNow : flashNow;
+  grade.uniforms.uFlash.value = (reduced() ? 0.3 * flashNow : flashNow) + cutFlash;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   drawShadow();
   composer.render();
@@ -2550,11 +2594,62 @@ function updateBolt() {
   if (hk > 0) flashNow += hk * (0.9 * Math.exp(-ha / 0.14) + 0.12 * Math.exp(-ha / 1.2));
 }
 
+/* ---------- reset: a timelapse that runs away, then a cut ---------- */
+// The sky turns a day in four seconds, then faster and faster.
+// After eight seconds it is a strobe; a white cut lands the toy at its start.
+const SPIN_T = 8;
+let spin = null, cutFlash = 0;
+const wisp0 = U.uWisp.value.clone();
+function resetToy() {
+  if (spin) return;
+  cancelHold();
+  wake();
+  if (reduced()) { cutFlash = 0.6; landReset(); return; }
+  spin = { t: 0, H: skyH };
+  whoosh();
+}
+function stepSpin(dt) {
+  cutFlash *= Math.exp(-dt / 0.5);
+  if (!spin) return;
+  spin.t += dt;
+  // The rate grows e-fold every 2.2 s: about ten days a second at the end.
+  const w = (Math.PI * 2 / 4) * Math.exp(spin.t / 2.2);
+  spin.H += w * dt;
+  skyAt(spin.H);
+  U.uWisp.value.x += w * dt * 0.5;
+  CLOUD_U.uCloudT.value += w * dt * 0.05;
+  if (spin.t >= SPIN_T) { spin = null; cutFlash = 1.4; landReset(); }
+}
+// Back to the start: the chosen time, still clouds, a fresh rock high up.
+function landReset() {
+  U.uWisp.value.copy(wisp0);
+  CLOUD_U.uCloudT.value = 0;
+  setSun();
+  shot = null; hitFlash = 0; flashNow = 0;
+  // The first rock's own track.
+  ast.next = 0;
+  respawn();
+  ast.s = 0.25;
+  PU.uTrail.value = 1;
+  placeAst();
+  stepAim(0, true);
+}
+// A rising rush of air under the spin; it cuts with the flash.
+function whoosh() {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime, s = hiss(ac, t, SPIN_T + 0.3), bp = filt(ac, 'bandpass', 160, 1.2), g = ac.createGain();
+  bp.frequency.setValueAtTime(160, t); bp.frequency.exponentialRampToValueAtTime(4200, t + SPIN_T);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + SPIN_T - 0.05); g.gain.setValueAtTime(0.0001, t + SPIN_T);
+  s.connect(bp).connect(g).connect(kit.out);
+  track(t + SPIN_T + 0.4, s);
+}
+
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
-const busy = () => !!press || !!charge || !!shot || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2566,6 +2661,7 @@ function tick(now) {
   try {
     simT += dt;
     U.uTime.value = simT;
+    stepSpin(dt);
     stepAst(dt);
     stepAim(dt);
     stepCharge(dt);

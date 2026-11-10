@@ -17,6 +17,26 @@
 :root { --stage: oklch(0.1 0.01 260); }
 .stage--trainride { cursor: grab; touch-action: none; }
 .stage--trainride.dragging { cursor: grabbing; }
+/* The line: a slim strip that shows the route and scrubs along it. */
+.tr-line {
+  position: absolute; left: 50%; bottom: 58px; z-index: 6; transform: translateX(-50%);
+  width: min(620px, calc(100% - 32px)); padding: 8px 14px 10px; border-radius: 12px;
+  background: oklch(0.16 0.01 260 / 0.82); backdrop-filter: blur(10px);
+  color: oklch(0.92 0.01 260); font: 500 12px/1.3 Gabarito, system-ui, sans-serif;
+  cursor: default; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.tr-line[hidden] { display: none; }
+.tr-line-top { display: flex; justify-content: space-between; gap: 12px; }
+.tr-line-top b { font-weight: 600; }
+.tr-line-top span { opacity: 0.7; font-variant-numeric: tabular-nums; }
+.tr-line-track { position: relative; height: 26px; margin-top: 4px; cursor: ew-resize; }
+.tr-line-track::before { content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 2px; border-radius: 1px; background: oklch(0.55 0.01 260); }
+.tr-line-track i { position: absolute; top: 9px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: oklch(0.7 0.01 260); }
+.tr-line-track i[data-k="1"] { top: 6px; height: 14px; background: oklch(0.92 0.01 260); }
+.tr-line-track i[data-k="2"] { top: 10px; height: 6px; background: oklch(0.55 0.01 260); }
+.tr-line-track u { position: absolute; top: 5px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: oklch(0.86 0.13 85); box-shadow: 0 0 0 3px oklch(0.16 0.01 260); }
+.tr-line-dev { display: flex; align-items: center; gap: 8px; margin-top: 6px; opacity: 0.85; }
+.tr-line-dev input[type="range"] { flex: 1; }
 .stage--trainride canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.8s ease;
@@ -27,7 +47,7 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Train Ride</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Train Ride</span><span class="intro-sub">Stimming No. 41</span></div></div>
 </div>
 
 <div class="wrap">
@@ -214,6 +234,9 @@ float landO(vec2 xz, int oct) {
   // It fades in over the first 10 m and out from 690 m; the mirror's coarse march (oct 3) skips it.
   ${ROUTE.nr ? `float tn = -xz.y, kn = oct > 3 ? smoothstep(0.0, 10.0, tn) * (1.0 - smoothstep(690.0, 760.0, tn)) : 0.0;
   if (kn > 0.0) h = mix(h, hCubicT(tN, vec2(xz.x / ${f8(TILE)}, tn / 768.0), vec2(${ROUTE.nw}.0, ${ROUTE.nr.length / ROUTE.nw}.0)), kn);` : ''}
+  // Zurich HB's track field: the land keeps below the deck, then climbs away behind it.
+  float dY = mod(xz.x + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+  if (dY > -300.0 && dY < 2120.0) h = min(h, -3.2 + max(-xz.y - 90.0 + 62.0 * smoothstep(950.0, 2050.0, dY), 0.0) * 0.6);
   // Near shore: the lake lies flat inside its outline, and the bank rises gently from it.
   // The mirror's coarse march (oct 3) skips this.
   float k = oct > 3 ? shoreK(-xz.y) : 0.0;
@@ -494,6 +517,9 @@ const OUTU = {
   tSect: { value: null },
   // uHall is 1 under the Zurich HB hall; uIsl is 1 where an island platform stands behind.
   uHall: { value: 0 },
+  uPz: { value: 0 },
+  // The station clock's hands, in radians: hours, minutes, seconds.
+  uClock: { value: new THREE.Vector3() },
   // The platform in use: canopy half length, slab half length, mast spacing, mast phase.
   uPlat: { value: new THREE.Vector4(70, 160, 24, 0.5) },
   uIsl: { value: 0 },
@@ -2540,6 +2566,9 @@ const PL = 320, CAN = 70, SIGNS = 7;
 const STNL = /* glsl */`
 uniform vec2 uStn;
 uniform float uHall, uIsl, uYard;
+// The platform's place across the line: its parts keep their own z, and stand uPz further out.
+uniform float uPz;
+uniform vec3 uClock;
 uniform vec4 uPlat;
 const vec3 STNC = vec3(0.84, 0.92, 1.0);
 const vec3 HALLC = vec3(1.0, 0.9, 0.76);
@@ -2552,12 +2581,12 @@ vec3 stnLight(vec3 P, vec3 N) {
   // Under the hall roof, a field of lamps gives even, warm light.
   if (uHall > 0.5) return HALLC * 0.8 * (0.3 + 0.7 * max(N.y, 0.0)) * smoothstep(215.0, 190.0, abs(x)) * (1.0 - uDay);
   vec3 c = vec3(0.0);
+  // From here on, z is the platform's own.
+  P.z -= uPz;
   // The canopy strips run along z = -3.6 and z = -8.4, under the roof.
-  // An island platform adds two more strips behind.
   float inC = canopyAt(x);
-  for (int i = 0; i < 4; i++) {
-    if (i > 1 && uIsl < 0.5) break;
-    vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : i == 1 ? -8.4 : i == 2 ? -16.6 : -20.6) - P.z);
+  for (int i = 0; i < 2; i++) {
+    vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : -8.4) - P.z);
     float d2 = dot(L, L);
     c += STNC * 3.5 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
@@ -2619,8 +2648,11 @@ const solid = body => new THREE.ShaderMaterial({
 });
 const platform = new THREE.Group();
 out.add(platform);
+// A platform part: its body reads the platform's own z, wherever the platform stands.
+const plat = body => solid(body.replace(/vP\.z/g, '(vP.z - uPz)'));
+const noCull = o => { o.traverse(m => { m.frustumCulled = false; }); return o; };
 // The slab: coping, a white safety line, a tactile strip, then wet asphalt.
-platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.2, -6.2), solid(/* glsl */`
+platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.2, -6.2), plat(/* glsl */`
   float dz = -1.3 - vP.z;
   float wet = uRain;
   if (N.y > 0.5) {
@@ -2651,13 +2683,13 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
       // The mirror finds the canopy strips and the mast lamps.
       vec3 h = vP + R * ((1.32 - vP.y) / R.y);
       float hx = h.x - uStn.x;
-      float s = (exp(-pow(h.z + 3.6, 2.0) / 0.01) + exp(-pow(h.z + 8.4, 2.0) / 0.01)) * canopyAt(hx) * (1.0 - uHall);
+      float s = (exp(-pow(h.z - uPz + 3.6, 2.0) / 0.01) + exp(-pow(h.z - uPz + 8.4, 2.0) / 0.01)) * canopyAt(hx) * (1.0 - uHall);
       vec3 refl = STNC * s * 3.0;
       float mx = (floor(x / uPlat.z - uPlat.w + 0.5) + uPlat.w) * uPlat.z;
       for (int i = -1; i <= 1; i++) {
         float lx = mx + float(i) * uPlat.z;
         if (abs(lx) < uPlat.x || abs(lx) > uPlat.y) continue;
-        vec3 Ld = normalize(vec3(lx + uStn.x, 2.3, -6.0) - vP);
+        vec3 Ld = normalize(vec3(lx + uStn.x, 2.3, -6.0 + uPz) - vP);
         refl += MASTC * 6.0 * pow(max(dot(R, Ld), 0.0), 900.0);
       }
       glow += refl * F * gloss * (1.0 - uDay);
@@ -2696,9 +2728,30 @@ function ramps(group, half, za, zb, mat) {
 const slab = platform.children[platform.children.length - 1];
 slab.material.side = THREE.DoubleSide;
 const slabRamps = ramps(platform, PL / 2, -1.3, -11.1, slab.material);
-function slabHalf(half) {
-  slab.scale.x = half / (PL / 2);
-  for (const m of slabRamps) m.position.x = -m.userData.sx * (PL / 2 - half);
+// The ground the platform stands on: a gravel apron over the embankment, with grassed banks at its ends and its back.
+const apron = (() => {
+  const X = PL / 2 + 14, g0 = new THREE.BoxGeometry(2 * X, 4.5, 13.8).translate(0, -4.72, -8.1).toNonIndexed(), p = g0.attributes.position;
+  // The bottom spreads out, so the ends and the back are banks, not walls.
+  for (let i = 0; i < p.count; i++) if (p.getY(i) < -4) { p.setX(i, p.getX(i) + Math.sign(p.getX(i)) * 12); if (p.getZ(i) < -8) p.setZ(i, p.getZ(i) - 7); }
+  g0.computeVertexNormals();
+  const m = new THREE.Mesh(g0, plat(/* glsl */`
+    // Gravel on top, a ballast shoulder toward the track, grass on the banks.
+    alb = N.y > 0.9 ? mix(vec3(0.15, 0.135, 0.115), vec3(0.16, 0.15, 0.13), smoothstep(-1.4, -2.6, vP.z)) * (0.85 + 0.3 * vnoise(vec2(x, vP.z) * 1.7))
+      : vec3(0.1, 0.16, 0.06) * (0.85 + 0.3 * vnoise(vec2(x, vP.y) * 0.8));
+  `));
+  m.frustumCulled = false;
+  platform.add(m);
+  return m;
+})();
+// A halt's platform is short and narrow: slab, ramps and apron shrink toward the platform edge.
+const HALT_W = 0.55;
+function slabHalf(half, halt) {
+  const kz = halt ? HALT_W : 1;
+  slab.scale.set(half / (PL / 2), 1, kz);
+  slab.position.z = -1.3 * (1 - kz);
+  for (const m of slabRamps) { m.position.x = -m.userData.sx * (PL / 2 - half); m.scale.z = kz; m.position.z = -1.3 * (1 - kz); }
+  apron.scale.set((half + 14) / (PL / 2 + 14), 1, halt ? 0.6 : 1);
+  apron.position.z = -1.2 * (1 - (halt ? 0.6 : 1));
 }
 // The canopy roof: a dark fascia toward the track, a ribbed soffit with two LED strips.
 const canopyBody = (z1, z2) => /* glsl */`
@@ -2716,7 +2769,7 @@ const canopyBody = (z1, z2) => /* glsl */`
     glow = STNC * 0.4 * smoothstep(1.36, 1.33, vP.y) * (1.0 - uDay);
   } else alb = vec3(0.14);
 `;
-const canopy = new THREE.Mesh(new THREE.BoxGeometry(CAN * 2, 0.26, 8.4).translate(0, 1.45, -6.2), solid(canopyBody('-3.6', '-8.4')));
+const canopy = new THREE.Mesh(new THREE.BoxGeometry(CAN * 2, 0.26, 8.4).translate(0, 1.45, -6.2), plat(canopyBody('-3.6', '-8.4')));
 platform.add(canopy);
 platform.children.forEach(m => { m.frustumCulled = false; });
 
@@ -2835,50 +2888,143 @@ void main() {
   gl_FragColor = vec4(MASTC * (1.0 - uDay) * (core * 12.0 + halo * (1.0 + 2.0 * uRain)) * k, 1.0);
 }`)];
 openParts.push(...mastSet(MASTX));
-// A rural halt: no canopy, five warm masts 36 m apart, and a timber waiting hut.
+// A rural halt: a short, narrow platform with five warm masts, a glass shelter and a clock on a post.
 const HALF_HALT = 85, HUTX = 14;
 const haltParts = mastSet([-76, -40, -4, 32, 68]);
 {
   const hut = new THREE.Group();
-  // The hut body sets its colours by place: boards, a lit inside, a tiled roof.
-  const mat = solid(/* glsl */`
+  const mat = plat(/* glsl */`
+    float lx = x - ${HUTX}.0;
     if (dot(N, V) > 0.0) N = -N;
-    vec3 wood = vec3(0.3, 0.19, 0.11) * (0.82 + 0.18 * step(0.12, fract(vP.y * 6.0)));
-    alb = wood;
-    // Inside: pale boards under one warm lamp.
-    bool inside = vP.z < -8.15 && vP.z > -10.3 && abs(x - ${HUTX}.0) < 2.9 && vP.y < 0.5;
-    if (inside) {
-      alb = vec3(0.5, 0.42, 0.3) * (0.88 + 0.12 * step(0.1, fract(x * 4.0)));
-      // The lamp hangs under the ridge; its light falls off across the boards.
-      vec3 dl = vP - vec3(uStn.x + ${HUTX}.0, 0.35, -9.2);
-      glow = vec3(1.0, 0.72, 0.42) * 0.5 * alb * (1.0 - uDay) / (1.0 + dot(dl, dl) * 0.9);
-      shade = 0.25;
+    if (vP.y > 0.44) {
+      // The roof: dark on top; underneath, a pale soffit with one light strip.
+      alb = N.y < -0.5 ? vec3(0.5, 0.5, 0.48) : vec3(0.1, 0.105, 0.11);
+      if (N.y < -0.5) { glow = vec3(1.0, 0.9, 0.74) * 1.3 * smoothstep(0.07, 0.04, abs(vP.z + 5.5)) * step(abs(lx), 2.6) * (1.0 - uDay); shade = 0.0; }
+    } else if (vP.z > -6.41 && vP.z < -6.3 && abs(lx - 1.9) < 0.52 && vP.y > -1.3) {
+      // The departures board: yellow, with rows of small type.
+      alb = vec3(0.9, 0.7, 0.07) * (1.0 - 0.55 * step(0.55, fract(vP.y * 9.0)) * step(abs(lx - 1.9), 0.4) * step(0.3, fract(lx * 2.5 + floor(vP.y * 9.0) * 0.37)));
+      glow = alb * vec3(1.0, 0.9, 0.74) * 0.25 * (1.0 - uDay);
+    } else if (vP.y < -1.4 && vP.z > -6.45) {
+      // The bench: slats of pale wood.
+      alb = vec3(0.42, 0.3, 0.18) * (0.8 + 0.2 * step(0.2, fract(vP.z * 9.0)));
+    } else {
+      // Walls of glass in a steel frame; a frosted band runs along the lower part.
+      float frame = max(step(2.93, abs(lx)), max(step(0.3, vP.y), step(vP.y, -1.82)));
+      frame = max(frame, step(abs(fract(lx / 1.5) - 0.5), 0.02) * step(abs(vP.z + 6.5), 0.06));
+      vec3 R = reflect(V, N);
+      vec3 glassC = vec3(0.07, 0.09, 0.1);
+      glow = skyCol(vec3(R.x, abs(R.y), R.z)) * 0.22 * uDay * (1.0 - frame) + vec3(1.0, 0.88, 0.7) * 0.05 * (1.0 - frame) * (1.0 - uDay);
+      alb = mix(mix(glassC, vec3(0.55, 0.57, 0.58), smoothstep(-0.95, -1.0, vP.y) * 0.8), vec3(0.3, 0.31, 0.32), frame);
     }
-    // The bench is dark; the roof is brown tile.
-    if (vP.y < -1.36 && vP.y > -1.5 && vP.z > -10.3) alb = vec3(0.12, 0.08, 0.05);
-    if (vP.y > 0.52) alb = N.y < -0.1 ? vec3(0.2, 0.14, 0.09) : vec3(0.2, 0.1, 0.065) * (0.85 + 0.15 * step(0.2, fract(x * 3.0)));
   `);
   mat.side = THREE.DoubleSide;
   const box = (w, h, d, x, y, z) => hut.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(HUTX + x, y, z), mat));
-  // Back wall, two side walls, a bench; the front stays open to the track.
-  box(6, 2.4, 0.12, 0, -0.7, -10.34);
-  box(0.12, 2.4, 2.3, -2.94, -0.7, -9.2);
-  box(0.12, 2.4, 2.3, 2.94, -0.7, -9.2);
-  box(4.8, 0.08, 0.45, 0, -1.42, -10.0);
-  // A gable roof with its ridge along the track, and both gable ends.
-  const x0 = HUTX - 3.4, x1 = HUTX + 3.4, zf = -7.6, zb = -10.7, zr = -9.15, ye = 0.5, yr = 1.25;
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute([
-    x0, ye, zf, x1, ye, zf, x1, yr, zr, x0, ye, zf, x1, yr, zr, x0, yr, zr,
-    x1, ye, zb, x0, ye, zb, x0, yr, zr, x1, ye, zb, x0, yr, zr, x1, yr, zr,
-    x0, ye, zf, x0, yr, zr, x0, ye, zb, x1, ye, zf, x1, ye, zb, x1, yr, zr,
-  ], 3));
-  g.computeVertexNormals();
-  hut.add(new THREE.Mesh(g, mat));
-  hut.children.forEach(m => { m.frustumCulled = false; });
-  platform.add(hut);
+  // Back wall, two side walls, two front posts, a roof and a bench; the front stays open to the track.
+  box(6, 2.3, 0.06, 0, -0.75, -6.5);
+  box(0.06, 2.3, 1.5, -2.97, -0.75, -5.75);
+  box(0.06, 2.3, 1.5, 2.97, -0.75, -5.75);
+  box(0.08, 2.3, 0.08, -2.96, -0.75, -4.7);
+  box(0.08, 2.3, 0.08, 2.96, -0.75, -4.7);
+  box(6.7, 0.1, 2.6, 0, 0.5, -5.45);
+  box(3.4, 0.07, 0.42, -0.9, -1.45, -6.2);
+  box(1.0, 1.3, 0.05, 1.9, -0.62, -6.4);
+  platform.add(noCull(hut));
   haltParts.push(hut);
 }
+// The station clock: a white face, black hands and a red seconds hand that waits at the top for the minute.
+// It hangs under the canopy's edge; at a halt it stands on a post.
+const clocks = [[-9, 0.78, -2.3, false], [-9, 0.78, -5.9, true]].map(([cx, cy, cz, post]) => {
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.86).translate(cx, cy, cz), new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    transparent: true,
+    vertexShader: /* glsl */`varying vec2 vU; varying vec3 vP; void main() { vU = uv * 2.0 - 1.0; vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+    varying vec2 vU;
+    varying vec3 vP;
+    uniform vec3 uClock;
+    ${NOISE}
+    ${HAZE}
+    // A hand: p turns by the hand's angle; the hand runs from tail to len along +y.
+    float hand(vec2 p, float a, float len, float tail, float w) {
+      float c = cos(a), s = sin(a);
+      vec2 q = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+      return step(abs(q.x), w) * step(-tail, q.y) * step(q.y, len);
+    }
+    void main() {
+      float r = length(vU), aa = fwidth(r);
+      if (r > 1.0) discard;
+      float ang = atan(vU.x, vU.y);
+      vec3 c = vec3(0.93, 0.93, 0.9);
+      // Twelve bold marks and the minute marks between them.
+      float hr = step(abs(fract(ang * 12.0 / 6.28318 + 0.5) - 0.5), 0.07 / 0.52) * step(0.6, r) * step(r, 0.86);
+      float mn = step(abs(fract(ang * 60.0 / 6.28318 + 0.5) - 0.5), 0.22) * step(0.78, r) * step(r, 0.86);
+      c = mix(c, vec3(0.03), max(hr, mn));
+      c = mix(c, vec3(0.03), max(hand(vU, uClock.x, 0.5, 0.14, 0.06), hand(vU, uClock.y, 0.8, 0.18, 0.045)));
+      // The seconds hand: red, thin, with a disc near its tip.
+      float sh = hand(vU, uClock.z, 0.62, 0.2, 0.014);
+      float cs = cos(uClock.z), sn = sin(uClock.z);
+      sh = max(sh, step(length(vU - vec2(sn, cs) * 0.56), 0.085));
+      c = mix(c, vec3(0.78, 0.05, 0.04), sh);
+      // A dark rim holds the face.
+      c = mix(c, vec3(0.06), smoothstep(0.9, 0.93, r));
+      // By day the face takes the daylight; at night it is lit from within.
+      vec3 lit = mix(vec3(1.0, 0.95, 0.85) * 0.75, sunC() * 0.35 + skyA(0.3) * 1.1, uDay);
+      gl_FragColor = vec4(c * lit, 1.0 - smoothstep(1.0 - aa * 1.5, 1.0, r));
+    }`,
+  }));
+  face.renderOrder = 4;
+  g.add(face);
+  const dark = plat(/* glsl */`alb = vec3(0.1, 0.105, 0.11);`);
+  // The case behind the face; then a rod up to the canopy, or a post down to the slab.
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.12, 20).rotateX(Math.PI / 2).translate(cx, cy, cz - 0.07), dark));
+  g.add(post ? new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.3, 0.1).translate(cx, cy - 0.45 - 1.15, cz - 0.07), dark)
+    : new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05).translate(cx, cy + 0.53, cz - 0.07), dark));
+  platform.add(noCull(g));
+  return g;
+});
+// A town station has its station house behind the platform: two floors of plaster under a hipped roof.
+const house = (() => {
+  const g = new THREE.Group();
+  const roof = new THREE.BoxGeometry(35.6, 3.2, 9.6).translate(0, 6.8, -15.6).toNonIndexed(), p = roof.attributes.position;
+  // The roof's top draws in to a ridge.
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > 7) { p.setX(i, p.getX(i) * 0.7); p.setZ(i, -15.6); }
+  roof.computeVertexNormals();
+  const mat = plat(/* glsl */`
+    float fy = vP.y + 1.9;
+    if (vP.y > 5.21) {
+      // Brown tile, in courses.
+      alb = vec3(0.21, 0.1, 0.065) * (0.85 + 0.15 * step(0.25, fract(vP.y * 3.0)));
+    } else {
+      // Warm plaster on a stone base, with a pale band between the floors.
+      alb = vec3(0.8, 0.69, 0.49) * (0.94 + 0.06 * vnoise(vec2(x, vP.y) * 0.6));
+      alb = mix(alb, vec3(0.5, 0.49, 0.46), step(fy, 0.7));
+      alb = mix(alb, vec3(0.86, 0.84, 0.78), step(abs(fy - 4.1), 0.14));
+      bool front = N.z > 0.5;
+      float u = front ? x : vP.z + 15.6, gap = front ? 4.25 : 4.0, cu = (fract(u / gap + 0.5) - 0.5) * gap, id = floor(u / gap + 0.5);
+      if (abs(N.y) < 0.5 && abs(u) < (front ? 16.0 : 3.6)) {
+        // Ground floor: tall arched openings; the middle three are doors. Upper floor: windows with green shutters.
+        bool door = front && abs(id) < 1.5;
+        float y0 = door ? 0.0 : 1.1, top = 3.0;
+        float arch = fy > top ? length(vec2(cu, fy - top)) : abs(cu);
+        float g0 = step(arch, 0.8) * step(y0, fy) * step(fy, top + 0.8);
+        float g1 = step(abs(cu), 0.55) * step(abs(fy - 5.6), 0.75);
+        float sh = step(abs(abs(cu) - 0.85), 0.28) * step(abs(fy - 5.6), 0.75);
+        float lit0 = step(0.25, hash1(vec2(id, 3.0) + uStn.x)), lit1 = step(0.6, hash1(vec2(id, 7.0) + uStn.x));
+        alb = mix(alb, vec3(0.1, 0.24, 0.13), sh);
+        alb = mix(alb, vec3(0.86, 0.84, 0.78), step(arch, 0.95) * step(y0, fy) * step(fy, top + 0.95) * (1.0 - g0));
+        alb = mix(alb, vec3(0.05, 0.06, 0.07), max(g0, g1));
+        // Glazing bars cross each ground floor opening.
+        alb = mix(alb, vec3(0.8, 0.78, 0.72), g0 * max(step(abs(cu), 0.035), step(abs(fy - top), 0.035)) * (door ? step(2.2, fy) : 1.0));
+        glow = vec3(1.0, 0.8, 0.52) * (1.1 * g0 * lit0 + 0.9 * g1 * lit1) * (1.0 - uDay);
+        shade = 1.0;
+      }
+    }
+  `);
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(34, 7.7, 8).translate(0, 1.36, -15.6), mat), new THREE.Mesh(roof, mat));
+  platform.add(noCull(g));
+  return g;
+})();
 // The back fence: posts every 2.5 m, two rails and a faint mesh.
 const fence = pstrip(new THREE.PlaneGeometry(1, 1.25).translate(0, -1.3, -10.9), PL, [0], 2, false, /* glsl */`
 void main() {
@@ -2905,6 +3051,7 @@ void main() {
   parts.forEach(([x, y, z, sx, sy, sz], i) => im.setMatrixAt(i, mtx.makeScale(sx, sy, sz).setPosition(x, y, z)));
   im.frustumCulled = false;
   platform.add(im);
+  openParts.push(im);
 }
 /* The track bed: an embankment with the second track, then a slope down to the land. */
 // The bed follows the camera; ballast and sleepers blur with the smear.
@@ -3112,18 +3259,22 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
 
 /* Zurich HB's track field: five tracks under the hall and out to the throat, then merging into the line. */
 // The deck sits at rail level; its far edge drops to the ground as an embankment.
-const yardEdge = d => -76 + 66 * sstep(1400, 2050, d);
+// The five tracks join the line one by one, the outermost first; YZ holds their places under the hall.
+const YZ = [-13.4, -26, -40, -54, -68];
+const yardZ = (k, d) => YZ[k] + (-5.6 - YZ[k]) * sstep(1500 - 150 * k, 2050 - 150 * k, d);
+const yardEdge = d => Math.min(...YZ.map((_, k) => yardZ(k, d))) - 8;
 const yard = (() => {
   const P = [], N = [], seg = 160, a = -260, b = 2100;
   const quad = (p, q, r, s, n) => { P.push(...p, ...q, ...r, ...p, ...r, ...s); for (let k = 0; k < 6; k++) N.push(...n); };
   for (let k = 0; k < seg; k++) {
     const d0 = a + (b - a) * k / seg, d1 = a + (b - a) * (k + 1) / seg, e0 = yardEdge(d0), e1 = yardEdge(d1);
-    quad([d0, -2.5, -9.9], [d1, -2.5, -9.9], [d1, -2.5, e1], [d0, -2.5, e0], [0, 1, 0]);
+    // The deck starts just past the line's second track, a hair above the bed, so a joining track runs right up to it.
+    quad([d0, -2.49, -7.0], [d1, -2.49, -7.0], [d1, -2.49, e1], [d0, -2.49, e0], [0, 1, 0]);
     // The far bank: down 6 m over 9 m.
     quad([d0, -2.5, e0], [d1, -2.5, e1], [d1, -8.5, e1 - 9], [d0, -8.5, e0 - 9], [0, 0.83, -0.55]);
   }
   // The end behind the buffers: a bank down toward the city.
-  quad([a, -2.5, -9.9], [a, -2.5, -76], [a - 9, -8.5, -85], [a - 9, -8.5, -9.9], [-0.55, 0.83, 0]);
+  quad([a, -2.49, -7.0], [a, -2.49, -76], [a - 9, -8.5, -85], [a - 9, -8.5, -7.0], [-0.55, 0.83, 0]);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
@@ -3132,10 +3283,11 @@ const yard = (() => {
   // Ballast, a little mottled; the banks are darker and grassier.
   alb = vec3(0.17, 0.16, 0.145) * (0.88 + 0.24 * vnoise(vP.xz * vec2(0.6, 1.4)));
   if (N.y > 0.95) {
-    float m = smoothstep(1300.0, 2000.0, d);
     float fs = 1.0 - smoothstep(0.25, 0.7, fwidth(d / 0.6));
     for (int k = 0; k < 5; k++) {
       float z0 = k == 0 ? -13.4 : k == 1 ? -26.0 : k == 2 ? -40.0 : k == 3 ? -54.0 : -68.0;
+      // Each track swings over to the line on its own stretch, the outermost first.
+      float m = smoothstep(1500.0 - float(k) * 150.0, 2050.0 - float(k) * 150.0, d);
       float dz = vP.z - mix(z0, -5.6, m);
       if (abs(dz) > 1.4) continue;
       // Concrete sleepers every 0.6 m, faded before they shimmer.
@@ -3153,20 +3305,42 @@ const yard = (() => {
 `));
   m.frustumCulled = false;
   out.add(m);
+  // Trains stand in the yard beyond the hall, dark and empty; one unit shunts slowly on the near track.
+  // Each is [track, metres from the hall's middle, length, saloon light, shunts].
+  for (const [k, x0, len, lit, moves] of [[1, 300, 200, 0, 0], [1, 590, 150, 0, 0], [2, 380, 300, 0.12, 0], [3, 270, 100, 0, 0], [3, 480, 250, 0, 0], [4, 330, 400, 0, 0], [0, 430, 75, 0.7, 1]]) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(len, 4.0).translate(x0 + len / 2, -0.4, YZ[k] + 1.45), new THREE.ShaderMaterial({
+      uniforms: OUTU,
+      vertexShader: /* glsl */`
+      uniform float uTime;
+      varying vec3 vW;
+      varying float vU;
+      void main() {
+        vU = uv.x * ${len}.0;
+        vec3 p = position;
+        // The shunter creeps out and back along 420 m.
+        p.x += ${moves ? '210.0 * (1.0 - cos(uTime * 0.014))' : '0.0'};
+        vec4 w = modelMatrix * vec4(p, 1.0);
+        vW = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+      fragmentShader: /* glsl */`
+      uniform vec4 uLP[${NL}];
+      varying vec3 vW;
+      varying float vU;
+      ${TRAIN}
+      ${HAZE}
+      ${TSIDE}
+      void main() {
+        vec4 r = trainSide(vW, vU, ${len}.0, 0.0, ${lit.toFixed(2)}, 1.0);
+        if (r.a < 0.5) discard;
+        gl_FragColor = vec4(r.rgb, 1.0);
+      }`,
+    }));
+    t.frustumCulled = false;
+    m.add(t);
+  }
   return m;
 })();
-// Bigger stations get an island platform behind, with its own canopy.
-const island = new THREE.Group();
-platform.add(island);
-island.add(new THREE.Mesh(new THREE.BoxGeometry(PL * 0.8, 0.6, 7.6).translate(0, -2.2, -18.6), solid(/* glsl */`
-  alb = vec3(0.1, 0.102, 0.108) * (0.8 + 0.4 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (1.0 - 0.3 * uRain);
-  // White safety lines run along both edges.
-  float e = abs(abs(vP.z + 18.6) - 2.6);
-  alb = mix(alb, vec3(0.6), smoothstep(0.08, 0.05, e) * step(0.5, N.y));
-`)));
-island.add(new THREE.Mesh(new THREE.BoxGeometry(CAN * 2, 0.26, 6.4).translate(0, 1.45, -18.6), solid(canopyBody('-16.6', '-20.6'))));
-island.add(colStrip(-18.6));
-island.children.forEach(m => { m.frustumCulled = false; });
 // Zurich HB: one long hall roof with a field of lamps, more platforms, and a train waiting alongside.
 const hall = new THREE.Group();
 platform.add(hall);
@@ -3375,6 +3549,8 @@ const W = {
   // tBok is the outside, gathered into bokeh discs at half resolution.
   tBok: { value: null },
   uStnK: { value: 0 },
+  // The light a passing train's saloon throws into our cabin.
+  uOppL: { value: 0 },
   // uPost: the nearest posts in wall units, with the sun strength in z.
   uPost: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
   uSunW: { value: new THREE.Vector3(-0.6, 0.36, -0.72).normalize() },
@@ -3398,7 +3574,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec2 uHalf;
   uniform vec3 uLamp[3];
   uniform sampler2D tPid, tStamp, tBok;
-  uniform float uStnK;
+  uniform float uStnK, uOppL;
   uniform vec3 uPost[3], uSunW;
   uniform vec2 uPh;
   varying vec2 vUv;
@@ -3681,6 +3857,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
         col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
+        col += alb * vec3(1.0, 0.86, 0.68) * uOppL * 0.2 * (0.4 + 0.6 * f);
         for (int i = 0; i < 3; i++) {
           float k = uLamp[i].z;
           if (k <= 0.0) continue;
@@ -3715,6 +3892,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         col += alb * vec3(1.0, 0.84, 0.6) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
+      // A passing train's lit saloon washes the wall round the window.
+      col += alb * vec3(1.0, 0.86, 0.68) * uOppL * (0.02 + 0.07 * exp(-max(dW, 0.0) * 3.0));
       // Spill: a little lamp light reaches the wall beside the window.
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
       // The stop line: flat type straight on the wall over the window, no screen.
@@ -4032,23 +4211,36 @@ function place() {
   yard.position.x = xHB;
   yard.visible = camX - xHB > -1200 && camX - xHB < 3500;
   OUTU.uYard.value = xHB;
-  // Zurich HB stands under its hall; the larger stations get an island.
   // Four kinds: the HB hall, a town station, a village platform, a rural halt.
-  const hb = sn === 'Zürich HB', isl = !hb && MAJOR.has(sn), halt = HALT.has(sn), half = halt ? HALF_HALT : PL / 2;
+  const hb = sn === 'Zürich HB', town = !hb && MAJOR.has(sn), halt = HALT.has(sn), half = halt ? HALF_HALT : PL / 2;
+  // Outside the hall the platform stands beyond the second track: its edge is 1.65 m past that track's middle.
+  const pz = hb ? 0 : -5.95;
+  platform.position.z = pz;
+  OUTU.uPz.value = pz;
   hall.visible = hb;
-  island.visible = isl;
+  house.visible = town;
   for (const m of openParts) m.visible = !hb && !halt;
   for (const m of haltParts) m.visible = halt;
-  slabHalf(half);
-  fence.visible = !hb;
-  fence.position.z = isl ? -13.6 : 0;
+  apron.visible = !hb;
+  clocks[0].visible = !hb && !halt;
+  clocks[1].visible = halt;
+  slabHalf(half, halt);
+  // A fence closes the back of a village platform and of a halt; a town has its station house there.
+  fence.visible = !hb && !town;
+  fence.position.z = halt ? 10.9 - 1.3 - 9.8 * HALT_W + 0.15 : 0;
   OUTU.uHall.value = hb ? 1 : 0;
-  OUTU.uIsl.value = isl ? 1 : 0;
+  OUTU.uIsl.value = 0;
   // A halt has no canopy: a negative length keeps canopyAt at zero.
   OUTU.uPlat.value.set(halt ? -10 : CAN, half, halt ? 36 : 24, halt ? -4 / 36 : 0.5);
   OUTU.uStn.value.set(sx, platform.visible ? half + 2 : 0);
+  // The clock shows the real time; its seconds hand goes round in 58.5 s, then waits for the minute.
+  { const d = new Date(), sec = d.getSeconds() + d.getMilliseconds() / 1000;
+    OUTU.uClock.value.set((d.getHours() % 12 + d.getMinutes() / 60) * Math.PI / 6, d.getMinutes() * Math.PI / 30, Math.min(sec / 58.5, 1) * 2 * Math.PI); }
   // Inside the platform's reach, its light comes in through the window.
-  W.uStnK.value = (1 - dayV) * (halt ? 0.4 : 1) * THREE.MathUtils.smoothstep(half + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
+  // A passing train's saloon lights reach in while it is alongside; they waver as its windows go by.
+  { const d = opp.x - camX, k = opp.on ? THREE.MathUtils.smoothstep(-d, 0, 8) * THREE.MathUtils.smoothstep(d + opp.len, 0, 8) : 0;
+    W.uOppL.value = k * (1 - 0.8 * dayV) * (0.8 + 0.2 * Math.sin(time * 23)); }
+  W.uStnK.value = (1 - dayV) * (hb ? 1 : halt ? 0.25 : 0.55) * THREE.MathUtils.smoothstep(half + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
   if (platform.visible) drawSign(sn);
   sky.position.copy(outCam.position);
   outCam.updateMatrixWorld();
@@ -4100,7 +4292,7 @@ function place() {
   // Fog on the pane scatters the sun too, so no sharp patches under fog.
   let sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85) * (1 - Math.min(1, W.uFog.value * 1.1));
   // A station canopy or the HB hall roof shades the window.
-  if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 ? dx < 200 : dx < OUTU.uPlat.value.x) sunK *= OUTU.uHall.value > 0.5 ? 0.0 : 0.2; }
+  if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 && dx < 200) sunK = 0; }
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
@@ -4283,6 +4475,9 @@ return {
   // Dev scrub: jump to a point on the line; the next stop is found again.
   seek(x) { camX = x; stopX = null; dwell = 0; place(); },
   get length() { return TILE; },
+  // For the line strip: each station's name and place; its kind is 1 for an end or a town, 2 for a halt, 0 otherwise.
+  get stations() { return STN; },
+  stationKind: n => (n === 'Zürich HB' || MAJOR.has(n) ? 1 : HALT.has(n) ? 2 : 0),
   stationNear(x) { let b = null, bd = Infinity; for (const [n, sv] of STN) { const d0 = Math.abs(sv - x), d = Math.min(d0, TILE - d0); if (d < bd) { bd = d; b = n; } } return [b, bd]; },
   set onArrive(f) { arrive = f; },
   outside: [out, outCam],
@@ -4321,6 +4516,11 @@ return {
   // Lean toward the glass or back; k above 1 comes closer.
   lean(k) {
     eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far);
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
+  },
+  // A click: lean to the glass, or sit back in the seat.
+  zoom() {
+    eyeT.z = eyeT.z > 0.7 ? 0.42 : REACH.far;
     eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
   },
   // A moving train draws at full rate; the sleep still stops it.
@@ -4624,9 +4824,11 @@ function loadClips(ac) {
     }).catch(() => { clipLoad = null; });
   return clipLoad;
 }
-// The recording bus: background level, a trimmed low end and a gentle treble lift.
+// The recording bus: background level and a warm tilt.
 // Last comes the compartment door: shut, it muffles the ride; open, the sound clears and lifts.
 const DOOR_SHUT = 3000, DOOR_OPEN = 16000;
+// The bus level: a little under the first mix.
+const BUS = 0.32;
 let recBus = null, doorF = null, doorG = null, subBus = null;
 // The mix: each layer's level as a multiple of its set level; 1 leaves it as set.
 // door is the muffle's depth: 0 leaves the sound open, 1 is the full muffle.
@@ -4659,17 +4861,18 @@ function applyMix() {
   const ac = kit.ac;
   if (!ac) return;
   for (const [n, g] of Object.entries(chans)) g.gain.setTargetAtTime(mixOf(n), ac.currentTime, 0.05);
-  if (recBus) recBus.gain.setTargetAtTime(0.42 * MIX.master, ac.currentTime, 0.05);
+  if (recBus) recBus.gain.setTargetAtTime(BUS * MIX.master, ac.currentTime, 0.05);
   doorSet(ac, 0.1);
 }
 function bus(ac) {
   if (recBus) return recBus;
-  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
-  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
-  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
+  // More body, less edge: the lows come up, the thin band near 3 kHz comes down, the top rolls off.
+  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 180; lo.gain.value = 4;
+  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 4200; hi.gain.value = -4;
+  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 2800; air.Q.value = 0.9; air.gain.value = -3;
   doorF = ac.createBiquadFilter(); doorF.type = 'lowpass'; doorF.frequency.value = DOOR_OPEN * (DOOR_SHUT / DOOR_OPEN) ** MIX.door; doorF.Q.value = 0.6;
   doorG = ac.createGain();
-  recBus = ac.createGain(); recBus.gain.value = 0.42 * MIX.master;
+  recBus = ac.createGain(); recBus.gain.value = BUS * MIX.master;
   recBus.connect(lo).connect(hi).connect(air).connect(doorF).connect(doorG).connect(kit.out);
   // The sub bus carries only the low thud of a passing train.
   const sub = ac.createBiquadFilter(); sub.type = 'lowpass'; sub.frequency.value = 130; sub.Q.value = 0.7;
@@ -4736,10 +4939,9 @@ function voices() {
     src.connect(g).connect(sub).connect(ls).connect(pk).connect(chan(ac, 'bed'));
     src.start(0, Math.random() * clips.bed.duration);
     V.bed = { src, g, sub, ls, pk };
-    // The whine: a narrow band of the same loop that climbs with the speed, heard under power or brake.
-    // Its level is the one Tom set in the mixer (2.3 times the first try).
+    // The motor band: a low, wide band of the same loop that climbs with the speed, heard under power or brake.
     const wf = ac.createBiquadFilter(), wg = ac.createGain();
-    wf.type = 'bandpass'; wf.frequency.value = 200; wf.Q.value = 7; wg.gain.value = 0;
+    wf.type = 'bandpass'; wf.frequency.value = 140; wf.Q.value = 3.5; wg.gain.value = 0;
     src.connect(wf).connect(wg).connect(chan(ac, 'whine'));
     V.whine = { f: wf, g: wg };
   }
@@ -4807,8 +5009,9 @@ function recorded(v, ac, now, sp, k) {
   v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
   v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
   v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
-  v.whine.f.frequency.setTargetAtTime(170 + 30 * sp, now, 0.3);
-  v.whine.g.gain.setTargetAtTime(3.2 * Math.min(1, Math.abs(drive) / 0.7) * Math.min(1, sp / 5), now, 0.4);
+  v.whine.f.frequency.setTargetAtTime(120 + 14 * sp, now, 0.3);
+  // The band comes through plainly only with the compartment door open; shut, it is a trace.
+  v.whine.g.gain.setTargetAtTime(1.8 * (DOOR.open ? 1 : 0.15) * Math.min(1, Math.abs(drive) / 0.7) * Math.min(1, sp / 5), now, 0.4);
   // Before a start: the air and the doors, the clip's first 3.4 s, timed to end as the train moves.
   const left = S.dwellLeft;
   if (left > 0 && left < 3.3 && !REC.depDone) { REC.dep = cut(ac, clips.away, 0, 3.4, 1.0, 'depart', 0.2, 0.5); REC.depDone = true; }
@@ -4928,6 +5131,8 @@ function endPress(e) {
   if (touches.size < 2) pinch = 0;
   if (!press || e.pointerId !== press.id) return;
   if (press.moved) S.drag(0, 0, false);
+  // A plain click on the view leans to the glass, or sits back.
+  else if (e.type === 'pointerup' && e.target === canvas) S.zoom();
   stage.classList.remove('dragging');
   press = null;
   wake();
@@ -4959,8 +5164,10 @@ const ui = initPage({
       { type: 'toggle', id: 'express', label: 'Express', value: opts.express, onToggle: on => { opts.express = on; save('express', on ? '1' : '0'); S.setExpress(on); wake(); } },
       { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
     ],
+    // The line: a strip that shows where the train is and jumps along the route.
+    actions: [{ verb: 'line', label: 'Line', key: 'L', onPress: () => lineUI.toggle() }],
     quality: true,
-    keys: [['drag', 'lean and peer'], ['scroll', 'lean to the glass'], ['W', 'next weather'], ['E', 'express']],
+    keys: [['click', 'lean in or sit back'], ['drag', 'peer'], ['W', 'next weather'], ['E', 'express']],
   },
 });
 onQuality(() => { rung = 0; resize(true); wake(); });
@@ -4992,8 +5199,55 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
 });
 
-/* ---------- dev scrub (?dev) ---------- */
-// A strip over the stage scrubs the whole line; readouts show km, the nearest station and speed.
+/* ---------- the line ---------- */
+// The Line button opens a strip: the route with a tick per station, and the train on it.
+// A drag along the strip moves the train; ?dev adds the top view to it.
+const lineUI = (() => {
+  const L = S.length, el = document.createElement('div');
+  el.className = 'tr-line';
+  el.hidden = true;
+  el.innerHTML = '<div class="tr-line-top"><b data-s></b><span data-k></span></div><div class="tr-line-track" role="slider" aria-label="Place on the line" tabindex="0"></div>';
+  const track = el.querySelector('.tr-line-track'), name = el.querySelector('[data-s]'), km = el.querySelector('[data-k]');
+  // Ticks: tall for the ends and the towns, short for the halts.
+  for (const [n, sv] of S.stations) {
+    const t = document.createElement('i');
+    t.style.left = `${sv / L * 100}%`;
+    t.dataset.k = S.stationKind(n);
+    track.append(t);
+  }
+  const dot = document.createElement('u');
+  track.append(dot);
+  let held = false;
+  const lap = () => Math.floor(S.camX / L) * L;
+  const seek = e => { const r = track.getBoundingClientRect(); S.seek(lap() + Math.min(0.999, Math.max(0, (e.clientX - r.left) / r.width)) * L); show(); wake(); };
+  // The stage must not take these presses for a lean or a click.
+  for (const t of ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'click']) el.addEventListener(t, e => e.stopPropagation());
+  track.addEventListener('pointerdown', e => { held = true; try { track.setPointerCapture(e.pointerId); } catch { /* capture is optional */ } seek(e); });
+  track.addEventListener('pointermove', e => { if (held) seek(e); });
+  for (const t of ['pointerup', 'pointercancel']) track.addEventListener(t, () => { held = false; });
+  // Arrow keys step half a kilometre.
+  track.addEventListener('keydown', e => {
+    const d = e.key === 'ArrowRight' ? 500 : e.key === 'ArrowLeft' ? -500 : 0;
+    if (!d) return;
+    e.preventDefault(); e.stopPropagation();
+    S.seek(lap() + ((((S.camX + d) % L) + L) % L)); show(); wake();
+  });
+  function show() {
+    if (el.hidden) return;
+    const x = ((S.camX % L) + L) % L, [n, d] = S.stationNear(x);
+    dot.style.left = `${x / L * 100}%`;
+    name.textContent = d < 60 ? n : `${n}, ${(d / 1000).toFixed(1)} km`;
+    km.textContent = `${(x / 1000).toFixed(1)} km · ${Math.round(S.speed * 3.6)} km/h`;
+    track.setAttribute('aria-valuetext', name.textContent);
+  }
+  setInterval(show, 250);
+  stage.append(el);
+  return { el, toggle() { el.hidden = !el.hidden; show(); document.querySelector('.stim-ui .s2-chip[aria-keyshortcuts="L"]')?.setAttribute('aria-pressed', String(!el.hidden)); wake(); } };
+})();
+if (qs.has('line') || qs.has('dev')) lineUI.toggle();
+
+/* ---------- dev (?dev) ---------- */
+// The line strip gains the top view; a mixer sets the sound by ear.
 if (qs.has('dev')) {
   // QA scripts drive the scene through this handle.
   window.__train = { S, wake };
@@ -5013,11 +5267,10 @@ if (qs.has('dev')) {
     }
     return (performance.now() - t0) / n;
   };
-  const L = S.length;
   const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
-  box.innerHTML = '<input type="range" min="0" step="10" style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><span data-k></span><span data-s></span><span data-v></span></div>'
-    + '<label style="display:flex;align-items:center;gap:8px;margin-top:4px"><input type="checkbox" data-top> Top view <input type="range" data-alt min="120" max="4000" value="500" step="20" style="flex:1"> <span data-h>500 m</span></label>';
+  box.className = 'tr-line-dev';
+  box.innerHTML = '<label style="display:flex;align-items:center;gap:6px"><input type="checkbox" data-top> Top view</label><input type="range" data-alt min="120" max="4000" value="500" step="20"><span data-h>500 m</span>';
+  lineUI.el.append(box);
   // The plan view: straight down on the built scene, from a set height.
   const topOn = box.querySelector('[data-top]'), alt = box.querySelector('[data-alt]'), altH = box.querySelector('[data-h]');
   const setTop = () => { S.top(topOn.checked, +alt.value); altH.textContent = `${alt.value} m`; wake(); };
@@ -5070,23 +5323,6 @@ if (qs.has('dev')) {
   });
   const nowT = mx.querySelector('[data-now]');
   setInterval(() => { nowT.textContent = kit.live() ? (clips ? window.__rec || 'waiting for the first frame' : 'loading the clips') : 'Sound is off: turn it on, top right.'; }, 300);
-  const range = box.querySelector('input'), km = box.querySelector('[data-k]'), stn = box.querySelector('[data-s]'), vel = box.querySelector('[data-v]');
-  range.max = String(Math.round(L));
-  document.body.append(box);
-  let held = false;
-  range.addEventListener('pointerdown', () => { held = true; });
-  addEventListener('pointerup', () => { held = false; });
-  range.addEventListener('input', () => { S.seek(+range.value); wake(); });
-  const show = () => {
-    const x = ((S.camX % L) + L) % L;
-    if (!held) range.value = String(Math.round(x));
-    const [n, d] = S.stationNear(x);
-    km.textContent = `${(x / 1000).toFixed(2)} / ${(L / 1000).toFixed(1)} km`;
-    stn.textContent = `${n} ${d < 50 ? '' : `${(d / 1000).toFixed(1)} km`}`;
-    vel.textContent = `${Math.round(S.speed * 3.6)} km/h`;
-  };
-  setInterval(show, 200);
-  show();
 }
 
 /* ---------- start ---------- */

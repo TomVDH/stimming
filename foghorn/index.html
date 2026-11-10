@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.1 0.012 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fog horn</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="../shared/environment.js">
+<style>
+/* Fog horn: a harbour mouth in thick fog. The horn calls a ship out of the grey. */
+:root { --stage: oklch(0.1 0.012 250); }
+.stage--foghorn canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--foghorn canvas.on { opacity: 1; }
+.stage--foghorn { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .stage--foghorn canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Fog horn</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--foghorn" id="stage" tabindex="0" role="application" aria-label="A harbour mouth at night in thick fog, seen through a wet window. Two lights flash on the breakwater. Click, or press H, to sound the fog horn. A ship answers and comes out of the fog, lights first.">
+      <p class="fail" hidden>Fog horn needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Fog horn</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, audioKit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { environment } from '../shared/environment.js';
+import { weather } from '../shared/weather.js';
+import { skyAt } from '../shared/sky.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+const HOURS = { dusk: 19.3, night: 23, dawn: 6.2 };
+// The handlers bind once the scene exists.
+const act = { time() {}, fog() {}, rain() {}, horn() {} };
+const ui = initPage({ id: 'foghorn', bar: {
+  choice: { label: 'Time', value: 'night', options: [
+    { value: 'dusk', label: 'Dusk', key: '1' },
+    { value: 'night', label: 'Night', key: '2' },
+    { value: 'dawn', label: 'Dawn', key: '3' },
+  ], onPick: v => act.time(v) },
+  slider: { label: 'Fog', min: 0, max: 1, step: 0.01, value: 0.55, onInput: v => act.fog(v) },
+  actions: [{ verb: 'horn', key: 'H', onPress: () => act.horn() }],
+  settings: [
+    { type: 'slider', id: 'rain', label: 'Rain', min: 0, max: 1, step: 0.01, value: 0.3, persist: true, onInput: v => act.rain(v) },
+  ],
+  quality: true,
+  keys: [['click', 'sound the horn'], ['h', 'horn']],
+} });
+
+/* ---------- the scene ---------- */
+// The eye stands 7 m over the water and looks out through the harbour mouth.
+// The breakwater lies 600 m off; its two arms leave a 300 m gap.
+const CAMH = 7, FOC = 1.5, HZ = 0.42;
+// The scene is one function for shared/environment.js. Light does the work:
+// the fog hides each shape, and its lamps show first.
+const SCENE = `
+uniform float uThick, uHorn;
+uniform vec3 uFogGlow;
+// The ship: its place on the water (x, z), then its heading.
+uniform vec4 uShipA;
+// Its lamps, 0 to 1; then 1 when its red side faces the eye.
+uniform vec2 uShipK;
+const float HZ = 0.42, FOC = 1.5, CAMH = 7.0, BW = 600.0, GAP = 150.0;
+const vec3 CAM = vec3(0.0, CAMH, 0.0);
+// The fog over the breakwater and over the ship, set once per pixel.
+float gFogBW, gFogShip;
+// The lens: a narrow frame takes a wider one, so both harbour lights stay in view.
+float gFoc;
+
+// The fog's own colour: the low sky that way, plus the harbour's glow at night.
+vec3 fogCol(vec3 dir) { return skDusk(normalize(vec3(dir.x, 0.04, dir.z)), uSunD, uZen, uMid, uBand, uAnti) * 0.9 + uFogGlow; }
+float fogAt(vec3 P) { return skHaze(CAM, P, uHazeD * uThick, 150.0); }
+// The sky behind the fog.
+vec3 skyFog(vec3 d) {
+  vec3 c = vec3(0.012, 0.015, 0.03);
+  if (uSkyOn > 0.5) {
+    c = skSky(d, uSunD, uZen, uMid, uBand, uAnti, uStars, uTime);
+    vec4 cl = skCloudsN(d, uSunD, uTime, uCloud, uCloudLit, uCloudShade, 3);
+    c = mix(c, cl.rgb, cl.a);
+  }
+  return mix(c, fogCol(d), fogAt(CAM + d * 9000.0));
+}
+// One lamp at a world point: a small core, and a halo that the fog widens.
+// Light reaches further through fog than a shape does.
+vec3 lamp(vec2 uv, float asp, vec3 P, vec3 col, float k, float f) {
+  vec2 at = vec2(0.5 + P.x / -P.z * gFoc / asp, HZ + (P.y - CAMH) / -P.z * gFoc);
+  vec2 d = (uv - at) * vec2(asp, 1.0);
+  float s = gFoc / -P.z;
+  float core = exp(-dot(d, d) / (s * s * 2.0 + 3e-6));
+  float halo = gwOrb(uv, at, asp, 0.06 + 0.45 * f) * (0.1 + 0.6 * f) * uOrbs;
+  return col * k * pow(1.0 - f, 0.35) * (core * 6.0 + halo);
+}
+#define ON(u, v) (S0 + vec3(H.x * (u), v, H.y * (u)))
+// Every lamp in the scene. The water mirrors this, tap by tap.
+vec3 lights(vec2 uv, float asp) {
+  // The breakwater lights flash in turn; the horn holds them on.
+  float pa = fract(uTime / 4.0), pb = fract(uTime / 4.0 + 0.5);
+  float a = smoothstep(0.0, 0.03, pa) * smoothstep(0.28, 0.25, pa), b = smoothstep(0.0, 0.03, pb) * smoothstep(0.28, 0.25, pb);
+  vec3 c = lamp(uv, asp, vec3(-GAP - 2.0, 12.5, -BW), vec3(0.1, 1.0, 0.45), max(a, uHorn) * (1.0 + uHorn), gFogBW);
+  c += lamp(uv, asp, vec3(GAP + 2.0, 12.5, -BW), vec3(1.0, 0.12, 0.08), max(b, uHorn) * (1.0 + uHorn), gFogBW);
+  if (uShipK.x > 0.0) {
+    vec2 H = uShipA.zw;
+    vec3 S0 = vec3(uShipA.x, 0.0, uShipA.y), white = vec3(1.0, 0.95, 0.85), warm = vec3(1.0, 0.72, 0.4);
+    float k = uShipK.x, f = gFogShip;
+    // Two masthead lights, the side light, the bridge, the deck and the stern.
+    c += lamp(uv, asp, ON(80.0, 32.0), white, k, f);
+    c += lamp(uv, asp, ON(-76.0, 46.0), white, k, f);
+    c += lamp(uv, asp, ON(-66.0, 34.0), uShipK.y > 0.5 ? vec3(1.0, 0.1, 0.06) : vec3(0.08, 1.0, 0.4), k * 0.8, f);
+    c += lamp(uv, asp, ON(-84.0, 35.5), warm, k * 0.4, f);
+    c += lamp(uv, asp, ON(-70.0, 35.5), warm, k * 0.4, f);
+    c += lamp(uv, asp, ON(-30.0, 27.0), warm, k * 0.22, f);
+    c += lamp(uv, asp, ON(25.0, 27.0), warm, k * 0.22, f);
+    c += lamp(uv, asp, ON(-95.0, 13.0), white, k * 0.3, f);
+  }
+  return c;
+}
+float sbox(vec2 q, vec2 lo, vec2 hi, float w) {
+  vec2 a = smoothstep(-w, w, q - lo) * smoothstep(-w, w, hi - q);
+  return a.x * a.y;
+}
+// The ship's side: q.x is metres toward the bow, q.y metres over the water.
+// w is one pixel in metres, for a soft edge.
+float shipShape(vec2 q, float w) {
+  // The hull, with a raked bow.
+  float m = smoothstep(-w, w, q.x + 95.0 - (11.0 - q.y) * 0.15) * smoothstep(-w, w, 95.0 - (11.0 - q.y) * 0.9 - q.x) * smoothstep(-w, w, 11.0 - q.y);
+  // The bridge, the funnel and the foremast.
+  m = max(m, sbox(q, vec2(-88.0, 10.0), vec2(-64.0, 38.0), w));
+  m = max(m, sbox(q, vec2(-84.0, 37.0), vec2(-77.0, 45.0), w));
+  m = max(m, sbox(q, vec2(79.0, 10.0), vec2(80.2, 31.0), w));
+  // Container stacks: each bay two to five boxes high.
+  float g = (q.x + 58.0) / 13.8, top = 11.0 + 2.6 * floor(2.0 + 3.99 * grH(vec2(floor(g), 3.0)));
+  float stack = step(0.0, g) * step(g, 10.0) * smoothstep(0.04, 0.04 + w / 13.8, fract(g)) * smoothstep(-w, w, top - q.y) * step(10.0, q.y);
+  return max(m, stack);
+}
+// Where the view ray meets the ship's upright plane.
+bool shipHit(vec3 d, out vec2 q, inout float dist) {
+  vec2 H = uShipA.zw;
+  vec3 N = vec3(H.y, 0.0, -H.x);
+  float dn = dot(d, N);
+  if (abs(dn) < 1e-5) return false;
+  float t = dot(vec3(uShipA.x, CAMH, uShipA.y) - CAM, N) / dn;
+  if (t <= 0.0) return false;
+  dist = t;
+  vec3 P = CAM + d * t;
+  q = vec2(dot(P.xz - uShipA.xy, H), P.y);
+  return q.y >= 0.0 && q.y < 48.0 && abs(q.x) < 100.0;
+}
+// The breakwater: two low arms, a short tower at the end of each.
+bool wallHit(vec3 d) {
+  if (d.z > -1e-4) return false;
+  vec3 P = CAM + d * (BW / -d.z);
+  float ax = abs(P.x);
+  return P.y >= 0.0 && ((ax > GAP && P.y < 5.0) || (abs(ax - GAP - 2.0) < 2.0 && P.y < 12.0));
+}
+vec3 envScene(vec2 uv) {
+  float asp = uRes.x / uRes.y;
+  gFoc = FOC * min(1.0, asp / 1.2);
+  vec3 d = normalize(vec3((uv.x - 0.5) * asp, uv.y - HZ, -gFoc));
+  gFogBW = fogAt(vec3(GAP, 6.0, -BW));
+  gFogShip = fogAt(vec3(uShipA.x, 12.0, uShipA.y));
+  vec3 c;
+  if (d.y >= 0.0) c = skyFog(d);
+  else {
+    // water.js: waves tilt the mirror; the fog swallows the far water.
+    float dist = CAMH / -d.y;
+    vec2 p = d.xz * dist;
+    float sig2, foot = wtFoot(dist, -d.y, uRes.y * gFoc);
+    vec2 slope = wtWavesN(p, uTime, foot, uSwell, uChop, uSets, uOct, sig2);
+    slope += wtRingsN(p, uTime, foot, uRings, 0.6, uRingN, sig2);
+    vec3 n = wtNormal(slope);
+    vec3 r = reflect(d, n);
+    r.y = abs(r.y);
+    float F = wtFresnel(d, n), rz = max(-r.z, 0.05);
+    vec2 ur = vec2(0.5 + r.x / rz * gFoc / asp, HZ + r.y / rz * gFoc);
+    // The sky mirrors once; each lamp smears into a tall streak.
+    float len = 2.0 * sqrt(sig2) * gFoc, ws = 0.0;
+    vec3 refl = vec3(0.0);
+    for (int i = -3; i <= 3; i++) {
+      if (abs(i) > uTapN) continue;
+      float fi = float(i) / float(uTapN), w = exp(-fi * fi * 2.0);
+      vec2 at = ur + vec2(0.0, fi * len);
+      at.y = HZ + abs(at.y - HZ);
+      refl += lights(at, asp) * w;
+      ws += w;
+    }
+    refl = refl / ws + skyFog(r);
+    c = mix(mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay), refl, F);
+    c = mix(c, fogCol(d), fogAt(vec3(p.x, 0.0, p.y)));
+  }
+  // The shapes on the water, far to near. Each is one dark tone under the fog.
+  vec3 dark = mix(vec3(0.006, 0.007, 0.009), vec3(0.05, 0.06, 0.07), uDay);
+  vec2 q = vec2(0.0);
+  float dist = 1.0;
+  bool behind = uShipA.y < -BW, hit = uShipK.x > 0.0 && shipHit(d, q, dist);
+  float cover = hit ? shipShape(q, dist / (gFoc * uRes.y) * 1.5) : 0.0;
+  vec3 hull = hit ? mix(dark, fogCol(d), fogAt(CAM + d * dist)) : c;
+  if (behind) c = mix(c, hull, cover);
+  if (wallHit(d)) c = mix(dark, fogCol(d), gFogBW);
+  if (!behind) c = mix(c, hull, cover);
+  return c + lights(uv, asp);
+}`;
+
+/* ---------- state ---------- */
+let fog = 0.55, rain = 0.3, visible = true, simT = 0, hornEnd = -1, hornK = 0, lastHorn = -10;
+// The ship: its place along the path, in waypoints, and when it answers.
+let ship = null;
+const shipA = [0, -3000, -1, 0], shipK = [0, 0];
+// The fog's density gain: 1 is a clear night, 12 is pea soup.
+const thick = () => 1 + 11 * fog * fog;
+
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let env = null;
+try {
+  env = environment(canvas, {
+    scene: SCENE,
+    active: () => visible,
+    onFrame: raw => step(Math.min(raw, 0.05)),
+    uniforms: {
+      uThick: thick,
+      uHorn: () => hornK,
+      // The harbour lights the fog a little at night.
+      uFogGlow: () => { const k = 1 - skyAt(env.state.hour).day; return [0.03 * k, 0.034 * k, 0.042 * k]; },
+      uShipA: () => shipA,
+      uShipK: () => shipK,
+    },
+  });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+const S = env.state;
+// An overcast harbour: calm water, heavy cloud, a strong bloom on every lamp.
+Object.assign(S, { hour: HOURS.night, clouds: 0.85, stars: 0.6, haze: 1, swell: 0.008, chop: 0.12, sets: 0.4, bloom: 0.55, thr: 0.7, orbs: 1, vig: 0.55, grain: 0.05, expo: 1.1, defocus: 0, zoom: 1, flGain: 0, flSize: 0.6 });
+S.lightColor = [0, 0, 0];
+// No window frame shows, so the pane has no cold rim.
+S.frame = false;
+function apply() {
+  // Rain runs down the pane and rings the water; fog also mists the glass.
+  const w = weather(rain);
+  Object.assign(S, { wet: w.rain, wind: w.wind * 0.5, rings: w.rings, air: w.air, fog: 0.1 + 0.35 * fog, patch: 0.2 + 0.4 * fog });
+  S.on.air = rain > 0.05;
+  env.touch();
+}
+
+/* ---------- the ship ---------- */
+// It comes in bow-on from the sea, through the mouth, then turns to port and crosses close in front.
+// At 260 m its 190 m side nearly fills the view.
+const WAY = [[120, -1800], [40, -1100], [30, -640], [80, -400], [20, -290], [-260, -262], [-430, -258]];
+const LAST = WAY.length - 1;
+// A smooth curve through the waypoints: k 0 is x, k 1 is z; d true gives the slope.
+function way(t, k, d = false) {
+  const i = Math.min(LAST - 1, Math.floor(t)), u = t - i;
+  const p0 = WAY[Math.max(0, i - 1)][k], p1 = WAY[i][k], p2 = WAY[i + 1][k], p3 = WAY[Math.min(LAST, i + 2)][k];
+  const a = -p0 + 3 * p1 - 3 * p2 + p3, b = 2 * p0 - 5 * p1 + 4 * p2 - p3, c = p2 - p0;
+  return d ? 0.5 * (3 * a * u * u + 2 * b * u + c) : 0.5 * (a * u * u * u + b * u * u + c * u + 2 * p1);
+}
+function placeShip() {
+  const x = way(ship.t, 0), z = way(ship.t, 1), dx = way(ship.t, 0, true), dz = way(ship.t, 1, true), l = Math.hypot(dx, dz);
+  shipA[0] = x; shipA[1] = z; shipA[2] = dx / l; shipA[3] = dz / l;
+  shipK[0] = 1;
+  // Its port side shows red when that side faces the eye.
+  shipK[1] = -x * shipA[3] + z * shipA[2] > 0 ? 1 : 0;
+  // The forward masthead light is the key light: it flares, and it lights the drops.
+  const mx = x + 80 * shipA[2], mz = z + 80 * shipA[3], asp = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  // The same lens as the scene: wider on a narrow frame.
+  const foc = FOC * Math.min(1, asp / 1.2);
+  S.light[0] = 0.5 + mx / -mz * foc / asp;
+  S.light[1] = HZ + (32 - CAMH) / -mz * foc;
+  const seen = Math.exp(-0.35 * Math.hypot(mx, mz) * S.haze * 0.0008 * thick() * 0.95);
+  S.lightColor = [1.0 * seen, 0.95 * seen, 0.85 * seen];
+  // The flare's streak keeps a cool tint of its own, so its gain follows the light too.
+  // It fades as the light leaves the frame.
+  S.flGain = 0.28 * Math.min(1, seen * 3) * clamp(1 - (Math.abs(S.light[0] - 0.5) - 0.5) / 0.12);
+  return l;
+}
+function dropShip() {
+  ship = null;
+  shipK[0] = 0;
+  S.lightColor = [0, 0, 0];
+  S.flGain = 0;
+}
+function step(dt) {
+  simT += dt;
+  hornK += ((simT < hornEnd ? 1 : 0) - hornK) * (1 - Math.exp(-dt / 0.15));
+  if (!ship) return;
+  if (!ship.answered && simT >= ship.answerAt) { ship.answered = true; shipHorn(clamp(shipA[0] / 400, -1, 1)); }
+  // Far off it closes fast; near the eye it passes slowly.
+  const speed = clamp(-shipA[1] / 22, 16, 60);
+  ship.t += speed * dt / placeShip();
+  // It is gone once its stern leaves the frame.
+  if (ship.t >= LAST) dropShip();
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ keys: new Set(['h', 'H', ' ', 'Enter']), noiseSeconds: 2 });
+let wash = null;
+// The sea: low noise that swells and ebbs.
+function startWash() {
+  const ac = kit.live();
+  if (!ac || wash || !kit.noise) return;
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  lp.type = 'lowpass';
+  lp.frequency.value = 420;
+  g.gain.value = 0;
+  g.gain.setTargetAtTime(0.07, ac.currentTime, 1.5);
+  lfo.frequency.value = 0.13;
+  depth.gain.value = 0.035;
+  lfo.connect(depth).connect(g.gain);
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start();
+  lfo.start();
+  wash = { src, lfo };
+}
+function stopWash() {
+  if (!wash) return;
+  try { wash.src.stop(); wash.lfo.stop(); } catch (err) { /* The context closed first. */ }
+  wash = null;
+}
+// One horn blast: two reeds a little apart, a slow start, and a drop in pitch at the end.
+// The echo comes back off the breakwater.
+function blast(freqs, dur, { cut = 700, gain = 0.5, pan = 0, grunt = 0.76 } = {}) {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime + 0.02, lp = ac.createBiquadFilter(), g = ac.createGain(), pn = ac.createStereoPanner();
+  lp.type = 'lowpass';
+  lp.frequency.value = cut;
+  lp.Q.value = 0.8;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.18);
+  g.gain.setValueAtTime(gain, t + dur - 0.35);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.25);
+  pn.pan.value = pan;
+  for (const f of freqs) for (const det of [-5, 6]) {
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.setValueAtTime(f, t + dur - 0.3);
+    o.frequency.exponentialRampToValueAtTime(f * grunt, t + dur + 0.05);
+    o.detune.value = det;
+    o.connect(lp);
+    o.start(t);
+    o.stop(t + dur + 0.4);
+  }
+  const echo = ac.createDelay(2), back = ac.createGain(), dull = ac.createBiquadFilter();
+  echo.delayTime.value = 0.85;
+  back.gain.value = 0.28;
+  dull.type = 'lowpass';
+  dull.frequency.value = 380;
+  lp.connect(g).connect(pn).connect(kit.out);
+  g.connect(echo).connect(dull).connect(back).connect(pn);
+  back.connect(echo);
+}
+// The ship answers from the fog: lower, longer and dull.
+function shipHorn(pan) { blast([62, 93], 3.4, { cut: 260, gain: 0.42, pan, grunt: 0.9 }); }
+
+/* ---------- the horn ---------- */
+function horn() {
+  // One blast at a time.
+  if (simT - lastHorn < 3 && !reduced()) return;
+  lastHorn = simT;
+  kit.wake();
+  startWash();
+  blast([174, 220], 2.3);
+  hornEnd = simT + 2.4;
+  if (reduced()) {
+    // With motion off, the horn puts the ship in the mouth, or takes it away.
+    if (ship) dropShip();
+    else { ship = { t: 4.6, answered: true, answerAt: 0 }; placeShip(); shipHorn(0); }
+    hornK = 0;
+  } else if (!ship) {
+    ship = { t: 0, answered: false, answerAt: simT + 2.8 };
+    placeShip();
+  } else if (ship.t < LAST - 1) {
+    // A ship already under way answers again.
+    ship.answered = false;
+    ship.answerAt = simT + 2.2;
+  }
+  env.touch();
+}
+act.horn = horn;
+act.time = v => { S.hour = HOURS[v]; env.touch(); };
+act.fog = v => { fog = v; apply(); };
+act.rain = v => { rain = v; apply(); };
+rain = ui.setting('rain')?.value ?? rain;
+apply();
+
+canvas.addEventListener('pointerdown', e => { if (e.button === 0) horn(); });
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage || (e.key !== ' ' && e.key !== 'Enter')) return;
+  e.preventDefault();
+  horn();
+});
+
+/* ---------- start ---------- */
+// QA can start with the ship on its way: ?ship=4.5 puts it at that waypoint.
+const qs = new URLSearchParams(location.search);
+if (qs.has('ship')) { ship = { t: clamp(+qs.get('ship'), 0, LAST - 0.01), answered: true, answerAt: 0 }; placeShip(); }
+env.draw();
+canvas.classList.add('on');
+mark('first-frame');
+// A hidden tab stops the loop, the sea and the clock.
+whenVisible(stage, v => {
+  visible = v;
+  if (v) { env.touch(); return; }
+  stopWash();
+  kit.rest(() => true);
+});
+</script>
+</body>
+</html>

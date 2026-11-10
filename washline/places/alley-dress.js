@@ -55,6 +55,9 @@ export function dress(group, R, { W, LINE_Z, spots, lin }) {
         const dz = (R() < 0.5 ? -1 : 1) * (0.75 + R() * 0.8);
         plant(sp.x + out * 0.13, 1.1 + R() * 1.7, sp.z + dz, 0.85, R() < 0.4);
       }
+    } else if (sp.kind === 'ledge') {
+      // Balcony floors carry a row of pots.
+      for (let i = 0, n = 2 + Math.floor(R() * 3); i < n; i++) plant(sp.x, sp.y, sp.z + (i / Math.max(1, n - 1) - 0.5) * sp.w, 0.9, R() < 0.4);
     } else if (sp.y > 3 && R() < 0.45) {
       // A row of pots stands on the sill.
       const sill = sp.y - sp.h / 2 - 0.02;
@@ -90,7 +93,7 @@ export function dress(group, R, { W, LINE_Z, spots, lin }) {
           shutters.push({ p: [x + out * (0.04 + Math.sin(Math.abs(a)) * lw / 2), sp.y, hz + k * Math.cos(a) * lw / 2], s: [0.035, sp.h, lw], r: [0, a, 0], c: lin(sp.shut) });
         }
       }
-    } else {
+    } else if (sp.kind === 'door') {
       // A painted tile plaque of the town's saint sits beside some doors.
       if (R() < 0.5) plaques.push({ p: [x + out * 0.02, 2.1, sp.z + (R() < 0.5 ? -1 : 1) * 0.95], s: [0.03, 0.42, 0.32], r: [0, sp.side < 0 ? Math.PI / 2 : -Math.PI / 2, 0] });
       // Bougainvillea climbs some door jambs and spills over the top.
