@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:59:40Z
+updated_at: 2026-11-10T20:00:58Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -112,7 +112,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] 4. The sky answers the blast: the light sweeps out at 60 km/s, a 15 s amber afterglow, a slow heave bows and clears the cirrus, the plain takes the blast light
 - [x] 1. Light shafts: the fireball throws shafts through the soot for about 20 s; the gun's shadow cuts the dust (the sun stays behind the camera, so no sun shafts in frame)
 - [x] 2. Smoke shadows (see the queue)
-- [ ] 3. Air, distance and dust
+- [x] 3. Air, distance and dust: the plain and mesas take the Rayleigh air; each shot loads the low air with dust that hazes and reddens it, settling over a minute
 - [ ] 6. Lens: anamorphic streak, halation, dirty lens
 - [ ] 7. Debris lights the plain
 - [ ] 5. The plain answers the shock
@@ -192,3 +192,6 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Muzzle redo: a bright brief flash, a torus shock ring square to the bore, a billowing smoke burst lit by the flash
 - [x] The impact lens flare is a wide orange glow
 - [x] Projectile redo: it lights the clouds and the sky faintly as it races past
+
+- [ ] Muzzle: a cinematic redo (the torus and burst read as perfunctory)
+- [ ] Storm towers: a slow, subtle, massive-scale ripple

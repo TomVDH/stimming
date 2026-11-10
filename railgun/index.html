@@ -218,6 +218,7 @@ const U = {
   uHitR: { value: 1000 },
   // Haze: dust per metre, and the height where it thins.
   uHaze: { value: 0.00013 },
+  uDustLoad: { value: 0 },
   uHazeH: { value: 700 },
   uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.6 + Math.random() * 0.4) },
   // The asteroid: direction from the eye, light strength; its angular radius.
@@ -566,17 +567,19 @@ vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
 const K2_HAZE = /* glsl */`
 uniform float uHaze;
 uniform float uHazeH;
+// uDustLoad: shot dust in the low air, 0 clear to 1 thick.
+uniform float uDustLoad;
 float k2hazeAmount(vec3 P) {
   vec3 v = P - cameraPosition;
   float dist = length(v);
   float k = 1.0 / uHazeH;
   float h0 = max(cameraPosition.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
   float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
-  return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
+  return 1.0 - exp(-dist * uHaze * (1.0 + 1.8 * uDustLoad) * max(avg, 0.0));
 }
 // The haze takes the horizon sky colour without the sun's disc.
 // At night the hit's glow stays out of the near haze, so the plain stays dark.
-vec3 k2hazeColor(vec3 dir) { vec3 d = normalize(vec3(dir.x, 0.02, dir.z)); return max(k2skyS(d, 0.0) - hitGlow(d) * 0.85 * uStars, 0.0) * 0.9; }
+vec3 k2hazeColor(vec3 dir) { vec3 d = normalize(vec3(dir.x, 0.02, dir.z)); return max(k2skyS(d, 0.0) - hitGlow(d) * 0.85 * uStars, 0.0) * 0.9 * mix(vec3(1.0), vec3(1.08, 0.86, 0.66), uDustLoad); }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
@@ -706,6 +709,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
   uniform float uTime;
   uniform vec2 uGLift;
   ${HEAD}
+  ${AIR}
   // Dunes: long rounded crests across the wind, bent by low noise.
   const vec2 WIND = vec2(0.8, 0.6);
   float dune(vec2 p) {
@@ -758,7 +762,8 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     // The air behind it is swept clean.
     col *= 1.0 - min(0.6, 0.3 * uShock.w) * inside * (1.0 - shock);
     col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * uShock.w;
-    gl_FragColor = vec4(k2haze(col, vP), 1.0);
+    // Far plain goes blue and flat in the air.
+    gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
 }));
 scene.add(ground);
@@ -814,6 +819,7 @@ const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
   varying vec3 vP;
   uniform vec3 uGroundC, uRockC;
   ${HEAD}
+  ${AIR}
   void main() {
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
     float wall = smoothstep(0.8, 0.4, N.y);
@@ -822,7 +828,8 @@ const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
     float gully = k2noise(vec2((vP.x + vP.z) * 0.012, vP.y * 0.002));
     vec3 alb = mix(uGroundC * 0.95, uRockC * (0.62 + 0.6 * bed) * (0.85 + 0.3 * gully), wall);
     vec3 col = alb * (ambient(N) + uSunC * 1.6 * max(dot(N, uSun), 0.0) + keyLight(N));
-    gl_FragColor = vec4(k2haze(col, vP), 1.0);
+    // Mesas go blue and flat with distance.
+    gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
 }));
 far.frustumCulled = false;
@@ -4065,6 +4072,8 @@ fire = c => {
   // The muzzle shock throws the ring outward.
   blow = { t0: simT, k: Math.min(c, 1.25) };
   chargeDust.material.uniforms.uFw.value.set(AX.x, AX.z).normalize();
+  // The shot loads the low air with dust; it settles over a minute.
+  U.uDustLoad.value = Math.min(1, U.uDustLoad.value + 0.35 * Math.min(c, 1.25));
   // The blast and the Mach wall raise one dust volume.
   dustShot = { t0: simT, c, foot: new THREE.Vector3(MUZZLE.x, 0, MUZZLE.z) };
   shotDust.material.uniforms.uFwd.value.set(AX.x, AX.z).normalize();
@@ -4209,6 +4218,8 @@ function stepShot(dt) {
   if (blastFx) U.uBk.value = (shot && shot.bk ? shot.bk : blastFx.k) * (reduced() ? 0.5 : 1);
   // The barrel cools in about ten seconds.
   U.uHeat.value *= Math.exp(-dt / 3.5);
+  U.uDustLoad.value *= Math.exp(-dt / 60);
+  if (U.uDustLoad.value < 0.002) U.uDustLoad.value = 0;
   if (U.uHeat.value < 0.003) U.uHeat.value = 0;
   if (ast.state === 'shatter') astMat.uniforms.uBurn.value *= Math.exp(-dt / 0.6);
   // The smoke outlives the fire, then grows back behind the next rock.
