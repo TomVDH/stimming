@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T10:13:37Z
+updated_at: 2026-11-10T10:21:06Z
 parent: stimming-f793
 ---
 
@@ -23,6 +23,6 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [x] The explosion: fireball, shells, shards, embers, hitFlash (VOLFX fireball to 6R, Wilson and shock shells, 1.5x shards with smoke, uBlast)
 - [x] The hold: build to 10 s, ready, over-hold, vent at 24 s
 - [x] The chorus: an original choir swell that locks into one chord at full charge (Tom to listen)
-- [ ] QA in the browser pane: clean console, 30 fps through charge and shot
+- [x] QA in the browser pane: clean console, 30 fps through charge and shot (synchronous frame time, p90 under 24 ms at 1280x800, 375x812, 812x375 and rung 3; 46 probe checks pass; reduced motion checked in code)
 - [ ] Tom signs off on the stills
 - [ ] PR to main
