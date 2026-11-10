@@ -211,7 +211,8 @@ float landO(vec2 xz, int oct) {
     h += (gnoise(xz * 0.03) * 2.0 + gnoise(xz * 0.11) * 0.6) * d;
   }
   // Near shore: the lake lies flat inside its outline, and the bank rises gently from it.
-  float k = shoreK(-xz.y);
+  // The mirror's coarse march (oct 3) skips this.
+  float k = oct > 3 ? shoreK(-xz.y) : 0.0;
   if (k > 0.0) {
     float sd = shoreN(xz);
     if (sd < 14.0) {
@@ -236,6 +237,131 @@ float roadZ(float x) { return -(68.0 + 24.0 * sin(x * 0.0011) + 9.0 * sin(x * 0.
 float roadW(float x) {
   float f = fract(x / 1300.0);
   return step(0.45, hash1(vec2(floor(x / 1300.0), 3.0))) * smoothstep(0.0, 0.04, f) * smoothstep(1.0, 0.96, f);
+}`;
+
+// Land colour, normal, sky cover and shore distance at a ground point.
+// Light and view change none of these, so the tiles bake them once per texel; no frame runs this.
+const LANDMAT = /* glsl */`
+uniform vec2 uBG[${NG}];
+void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO, out float wdO) {
+  float hY = land(xz);
+  // The eye's distance when the point passes nearest: its offset from the line, and a little more.
+  float dist = max(-xz.y, 4.0) * 1.08;
+  float wd = shore(xz);
+  vec3 sg = seg(xz.x);
+  // Height above the lakes, near enough.
+  float hh = hY + 20.0;
+  // Far triangles are wide; their interpolated normals give rock patches triangle edges.
+  // Past 600 m the normal comes from the height map at this pixel instead.
+  // The normal comes from the cubic height map at each pixel, so no triangle shows.
+  float ne = clamp(dist * 0.004, 2.0, 40.0), nh0 = landO(xz, 4);
+  vec3 N = normalize(vec3(nh0 - landO(xz + vec2(ne, 0.0), 4), ne, nh0 - landO(xz + vec2(0.0, ne), 4)));
+  // Close land gets fine relief from noise.
+  float near = smoothstep(1400.0, 250.0, dist);
+  if (near > 0.0) N = normalize(N + vec3(gnoise(xz * 0.04), 0.0, gnoise(xz * 0.04 + 9.0)) * 0.15 * near);
+  float slope = 1.0 - N.y;
+  float n1 = fbm(xz * 0.002);
+  // Meadow: lush in the valley, browner up high.
+  // Pixar-lite: clean, saturated meadow greens in broad soft bands.
+  // Soft sage to warm meadow, in wide calm bands.
+  vec3 alb = mix(vec3(0.1, 0.165, 0.06), vec3(0.16, 0.19, 0.08), smoothstep(0.3, 0.7, fbm(xz * 0.0012 + 3.0)));
+  alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
+  // Grass texture close by; it fades before it can shimmer.
+  alb *= 0.95 + 0.1 * vnoise(xz * 0.02);
+  // Farms: a patchwork of fields on the flat floor.
+  float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
+  if (flatL > 0.0) {
+    // Strips in staggered rows, so the fields never form a grid.
+    vec2 fp = mat2(0.94, 0.34, -0.34, 0.94) * xz / vec2(85.0, 36.0);
+    fp.x += floor(fp.y) * 0.37;
+    float fh = hash1(floor(fp));
+    vec3 fc = fh < 0.6 ? alb * (0.85 + 0.35 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.15, 0.17, 0.06) : vec3(0.11, 0.12, 0.05);
+    // Field edges blend over a few metres, so no hard line crosses the meadow.
+    vec2 fe0 = abs(fract(fp) - 0.5) * vec2(85.0, 36.0);
+    float soft = smoothstep(0.0, 6.0, min(42.5 - fe0.x, 18.0 - fe0.y));
+    // Close fields fill the window as flat slabs; they fade in from 300 m.
+    alb = mix(alb, fc, flatL * 0.4 * soft * smoothstep(250.0, 600.0, dist));
+  }
+  // Vineyards on the sunny slopes above Lake Zurich.
+  float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
+  vine *= step(0.72, hash1(floor(xz / vec2(55.0, 30.0) + vec2(floor(xz.y / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd);
+  if (vine > 0.0) {
+    float row = abs(fract(xz.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(xz.x / 2.2)));
+    alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
+  }
+  // Towns from the map, densest on the Lake Zurich shore.
+  // Each roof has a pale wall toward the train.
+  float vm = min(town(xz) * 1.2, 1.0), house = 0.0;
+  // Dense town ground: paving, yards and small lawns in place of meadow.
+  // Central Zurich only: some paving among the lawns, on flat ground; villages stay green.
+  float urb = smoothstep(0.5, 0.9, vm) * step(4.0, wd) * smoothstep(0.14, 0.06, slope) * smoothstep(5000.0, 3500.0, mod(xz.x, ${f8(TILE)}));
+  if (urb > 0.0) {
+    float lawn = smoothstep(0.4, 0.6, vnoise(xz * 0.025) * 0.7 + vnoise(xz * 0.11) * 0.3);
+    alb = mix(alb, mix(vec3(0.17, 0.17, 0.155), alb, lawn), urb * 0.6);
+  }
+  for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(xz - uBG[i])));
+  if (vm > 0.0 && wd > 6.0) {
+    vec2 g = xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
+    float hs = hash1(floor(g) + 31.0);
+    // Far roofs merge into a soft town tint; single pixels would speckle.
+    float hf = 1.0 - smoothstep(0.12, 0.35, length(fwidth(g)));
+    alb = mix(alb, vec3(0.2, 0.18, 0.15), vm * 0.45 * (1.0 - hf));
+    // Roofs show from 200 m out; closer they would read as flat tiles.
+    if (hf > 0.0 && hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
+      house = 1.0;
+      vec3 hc = f.y > 0.2 ? vec3(0.42, 0.4, 0.36) : hs < 0.25 ? vec3(0.2, 0.1, 0.07) : hs < 0.5 ? vec3(0.14, 0.1, 0.08) : vec3(0.15, 0.15, 0.16);
+      alb = mix(alb, hc, hf);
+    }
+  }
+  // Forest: patches on the slopes, thick on the near bank, none above the treeline.
+  // A fine noise frays the edges of each wood.
+  float fm = fbm(xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(xz * 0.04) - 0.5) * 0.1;
+  // Flat floors stay open; lone woods there read as dark holes.
+  fm -= 0.3 * smoothstep(0.08, 0.02, slope);
+  float forest = smoothstep(0.5, 0.7, fm);
+  forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
+  // Crowns show up close; the pattern fades before it can shimmer.
+  float crown = vnoise(xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(xz * 0.45))));
+  // Dark spruce mixes with brighter beech.
+  // Woods stay rich green, not black: deep spruce and bright beech.
+  vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(xz * 0.003 + 7.0)));
+  alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
+  // Rock on steep faces and high crags; snow above the snow line.
+  float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
+  // Cuttings and banks beside the line are grassed, not bare rock.
+  rock *= smoothstep(40.0, 140.0, -xz.y);
+  // Limestone: pale grey with bedding lines and dark water streaks.
+  float strata = vnoise(vec2(xz.x * 0.004, hY * 0.12));
+  float streak = vnoise(vec2(xz.x * 0.05, hY * 0.01)) * (1.0 - smoothstep(0.3, 0.8, fwidth(xz.x * 0.12)));
+  vec3 lime = mix(vec3(0.11, 0.105, 0.1), vec3(0.2, 0.19, 0.17), sg.z) * (0.75 + 0.35 * strata) * (0.8 + 0.3 * streak);
+  alb = mix(alb, lime, rock);
+  // Spring snow lingers near the summits.
+  float sl = mix(1450.0, 1080.0, sg.z);
+  float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
+  alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
+  // Mapped roads: grey asphalt with pale verges, on dry ground beside the line.
+  float rD = roadD(xz);
+  if (rD < 2.0 && wd > 2.0) {
+    float fr = fwidth(rD) + 0.05, rw = smoothstep(500.0, 430.0, -xz.y) * (1.0 - snow);
+    // The map rounds a narrow lane's middle, so the edge sits a little out.
+    float verge = 1.0 - smoothstep(1.2 - fr, 1.2 + fr, rD);
+    float road = 1.0 - smoothstep(0.5 - fr, 0.5 + fr, rD);
+    alb = mix(alb, vec3(0.3, 0.29, 0.25), verge * rw);
+    alb = mix(alb, vec3(0.17, 0.17, 0.17), road * rw);
+  }
+  // Hedges and tree lines edge the fields.
+  if (flatL > 0.0) {
+    vec2 fp2 = mat2(0.94, 0.34, -0.34, 0.94) * xz / vec2(85.0, 36.0);
+    fp2.x += floor(fp2.y) * 0.37;
+    vec2 fe = abs(fract(fp2) - 0.5);
+    float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.03, 0.08, length(fwidth(fp2))));
+    alb = mix(alb, vec3(0.03, 0.05, 0.02), hedge * flatL * 0.5 * smoothstep(300.0, 700.0, dist));
+  }
+  // Valleys and the feet of slopes see less sky.
+  float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
+  albO = alb; NO = N; aoO = ao; wdO = wd;
+  // How much the ground glows against the sun: grass and leaves do, rock does not.
+  glowO = 0.12 * (1.0 - rock) + 0.2 * forest;
 }`;
 
 // The route map: half-float heights, and a lake flag with town density.
@@ -285,6 +411,35 @@ const OUTU = {
   // x of Zurich HB nearest the eye: the track field before it sits there.
   uYard: { value: 0 },
 };
+
+/* Land tiles: the land's colour and normal, baked into textures that scroll with the train. */
+// Five tiles, each four times coarser and wider than the last: [texel in metres, columns, rows].
+// A tile spans columns * texel along the line, centred on the eye, and rows * texel out from the line.
+// Columns wrap: as the train moves, only the columns that come into reach are baked.
+const CAS = [[0.125, 2048, 512], [0.5, 2048, 512], [2, 2048, 512], [8, 2048, 512], [32, 2048, 576]];
+const tiles = CAS.map(([s, W, H]) => {
+  const mk = type => new THREE.WebGLRenderTarget(W, H, { type, depthBuffer: false, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, anisotropy: 8 });
+  // a: colour as its square root, and the back-light glow. b: normal x and z, sky cover, shore distance.
+  return { s, W, H, lo: 0, hi: 0, a: mk(THREE.UnsignedByteType), b: mk(THREE.HalfFloatType) };
+});
+tiles.forEach((t, k) => { OUTU['tA' + k] = { value: t.a.texture }; OUTU['tB' + k] = { value: t.b.texture }; });
+// The land shader's lookup: the finest tile that holds the point, eased into the next one at its rim.
+const tileTap = (k, v) => { const [s, W, H] = CAS[k], sc = `vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))})`; return `a${v} = textureGrad(tA${k}, p * ${sc}, gx * ${sc}, gy * ${sc}); b${v} = textureGrad(tB${k}, p * ${sc}, gx * ${sc}, gy * ${sc});`; };
+const LANDTILE = /* glsl */`
+${CAS.map((c, k) => `uniform sampler2D tA${k}, tB${k};`).join('\n')}
+void landTile(vec2 xz, out vec4 a, out vec4 b) {
+  // p runs along the line and out from it; its screen gradients set the filter for every tile.
+  vec2 p = vec2(xz.x, -xz.y), gx = dFdx(p), gy = dFdy(p);
+  float ax = abs(xz.x - uCamX), t = -xz.y;
+  vec4 a2, b2;
+  ${CAS.slice(0, -1).map(([s, W, H], k) => { const X = W * s / 2, Z = H * s; return `if (ax < ${f8(X * 0.94)} && t < ${f8(Z * 0.94)}) {
+    ${tileTap(k, '')}
+    float w = max(smoothstep(${f8(X * 0.8)}, ${f8(X * 0.94)}, ax), smoothstep(${f8(Z * 0.8)}, ${f8(Z * 0.94)}, t));
+    if (w > 0.0) { ${tileTap(k + 1, '2')} a = mix(a, a2, w); b = mix(b, b2, w); }
+    return;
+  }`; }).join('\n  ')}
+  ${tileTap(CAS.length - 1, '')}
+}`;
 
 // Light, sky and haze for night and day; uDay blends the two.
 const HAZE = /* glsl */`
@@ -432,11 +587,11 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vN;
-  uniform float uTime;
+  uniform float uTime, uCamX;
   ${NOISE}
   ${LAND}
-  ${ROAD}
   ${HAZE}
+  ${LANDTILE}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
   vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
@@ -460,119 +615,14 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   void main() {
     vec3 V = normalize(cameraPosition - vP);
     float dist = length(cameraPosition - vP);
-    float wd = shore(vP.xz);
     vec3 sg = seg(vP.x);
-    // Height above the lakes, near enough.
-    float hh = vP.y + 20.0;
-    // Far triangles are wide; their interpolated normals give rock patches triangle edges.
-    // Past 600 m the normal comes from the height map at this pixel instead.
-    // The normal comes from the cubic height map at each pixel, so no triangle shows.
-    float ne = clamp(dist * 0.004, 2.0, 40.0), nh0 = landO(vP.xz, 4);
-    vec3 N = normalize(vec3(nh0 - landO(vP.xz + vec2(ne, 0.0), 4), ne, nh0 - landO(vP.xz + vec2(0.0, ne), 4)));
-    // Close land gets fine relief from noise.
-    float near = smoothstep(1400.0, 250.0, dist);
-    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.04), 0.0, gnoise(vP.xz * 0.04 + 9.0)) * 0.15 * near);
-    float slope = 1.0 - N.y;
-    float n1 = fbm(vP.xz * 0.002);
-    // Meadow: lush in the valley, browner up high.
-    // Pixar-lite: clean, saturated meadow greens in broad soft bands.
-    // Soft sage to warm meadow, in wide calm bands.
-    vec3 alb = mix(vec3(0.1, 0.165, 0.06), vec3(0.16, 0.19, 0.08), smoothstep(0.3, 0.7, fbm(vP.xz * 0.0012 + 3.0)));
-    alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
-    // Grass texture close by; it fades before it can shimmer.
-    alb *= 0.95 + 0.1 * vnoise(vP.xz * 0.02);
-    // Farms: a patchwork of fields on the flat floor.
-    float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
-    if (flatL > 0.0) {
-      // Strips in staggered rows, so the fields never form a grid.
-      vec2 fp = mat2(0.94, 0.34, -0.34, 0.94) * vP.xz / vec2(85.0, 36.0);
-      fp.x += floor(fp.y) * 0.37;
-      float fh = hash1(floor(fp));
-      vec3 fc = fh < 0.6 ? alb * (0.85 + 0.35 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.15, 0.17, 0.06) : vec3(0.11, 0.12, 0.05);
-      // Field edges blend over a few metres, so no hard line crosses the meadow.
-      vec2 fe0 = abs(fract(fp) - 0.5) * vec2(85.0, 36.0);
-      float soft = smoothstep(0.0, 6.0, min(42.5 - fe0.x, 18.0 - fe0.y));
-      // Close fields fill the window as flat slabs; they fade in from 300 m.
-      alb = mix(alb, fc, flatL * 0.4 * soft * smoothstep(250.0, 600.0, dist));
-    }
-    // Vineyards on the sunny slopes above Lake Zurich.
-    float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
-    vine *= step(0.72, hash1(floor(vP.xz / vec2(55.0, 30.0) + vec2(floor(vP.z / 30.0) * 0.41, 0.0)) + 11.0)) * step(3.0, wd);
-    if (vine > 0.0) {
-      float row = abs(fract(vP.x / 2.2) - 0.5) * 2.0 * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x / 2.2)));
-      alb = mix(alb, mix(vec3(0.09, 0.125, 0.035), vec3(0.12, 0.1, 0.065), 0.4 + row * 0.4), vine);
-    }
-    // Towns from the map, densest on the Lake Zurich shore.
-    // Each roof has a pale wall toward the train.
-    float vm = min(town(vP.xz) * 1.2, 1.0), house = 0.0;
-    // Dense town ground: paving, yards and small lawns in place of meadow.
-    // Central Zurich only: some paving among the lawns, on flat ground; villages stay green.
-    float urb = smoothstep(0.5, 0.9, vm) * step(4.0, wd) * smoothstep(0.14, 0.06, slope) * smoothstep(5000.0, 3500.0, mod(vP.x, ${f8(TILE)}));
-    if (urb > 0.0) {
-      float lawn = smoothstep(0.4, 0.6, vnoise(vP.xz * 0.025) * 0.7 + vnoise(vP.xz * 0.11) * 0.3);
-      alb = mix(alb, mix(vec3(0.17, 0.17, 0.155), alb, lawn), urb * 0.6);
-    }
-    for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
-    if (vm > 0.0 && wd > 6.0) {
-      vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
-      float hs = hash1(floor(g) + 31.0);
-      // Far roofs merge into a soft town tint; single pixels would speckle.
-      float hf = 1.0 - smoothstep(0.12, 0.35, length(fwidth(g)));
-      alb = mix(alb, vec3(0.2, 0.18, 0.15), vm * 0.45 * (1.0 - hf));
-      // Roofs show from 200 m out; closer they would read as flat tiles.
-      if (hf > 0.0 && hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
-        house = 1.0;
-        vec3 hc = f.y > 0.2 ? vec3(0.42, 0.4, 0.36) : hs < 0.25 ? vec3(0.2, 0.1, 0.07) : hs < 0.5 ? vec3(0.14, 0.1, 0.08) : vec3(0.15, 0.15, 0.16);
-        alb = mix(alb, hc, hf);
-      }
-    }
-    // Forest: patches on the slopes, thick on the near bank, none above the treeline.
-    // A fine noise frays the edges of each wood.
-    float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
-    // Flat floors stay open; lone woods there read as dark holes.
-    fm -= 0.3 * smoothstep(0.08, 0.02, slope);
-    float forest = smoothstep(0.5, 0.7, fm);
-    forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
-    // Crowns show up close; the pattern fades before it can shimmer.
-    float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
-    // Dark spruce mixes with brighter beech.
-    // Woods stay rich green, not black: deep spruce and bright beech.
-    vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
-    alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
-    // Rock on steep faces and high crags; snow above the snow line.
-    float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
-    // Cuttings and banks beside the line are grassed, not bare rock.
-    rock *= smoothstep(40.0, 140.0, -vP.z);
-    // Limestone: pale grey with bedding lines and dark water streaks.
-    float strata = vnoise(vec2(vP.x * 0.004, vP.y * 0.12));
-    float streak = vnoise(vec2(vP.x * 0.05, vP.y * 0.01)) * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x * 0.12)));
-    vec3 lime = mix(vec3(0.11, 0.105, 0.1), vec3(0.2, 0.19, 0.17), sg.z) * (0.75 + 0.35 * strata) * (0.8 + 0.3 * streak);
-    alb = mix(alb, lime, rock);
-    // Spring snow lingers near the summits.
-    float sl = mix(1450.0, 1080.0, sg.z);
-    float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
-    alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
-    // Mapped roads: grey asphalt with pale verges, on dry ground beside the line.
-    float rD = roadD(vP.xz);
-    if (rD < 2.0 && wd > 2.0) {
-      float fr = fwidth(rD) + 0.05, rw = smoothstep(500.0, 430.0, -vP.z) * (1.0 - snow);
-      // The map rounds a narrow lane's middle, so the edge sits a little out.
-      float verge = 1.0 - smoothstep(1.2 - fr, 1.2 + fr, rD);
-      float road = 1.0 - smoothstep(0.5 - fr, 0.5 + fr, rD);
-      alb = mix(alb, vec3(0.3, 0.29, 0.25), verge * rw);
-      alb = mix(alb, vec3(0.17, 0.17, 0.17), road * rw);
-    }
-    // Day: sun with soft terrain shadows, and sky light.
-    // Hedges and tree lines edge the fields.
-    if (flatL > 0.0) {
-      vec2 fp2 = mat2(0.94, 0.34, -0.34, 0.94) * vP.xz / vec2(85.0, 36.0);
-      fp2.x += floor(fp2.y) * 0.37;
-      vec2 fe = abs(fract(fp2) - 0.5);
-      float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.03, 0.08, length(fwidth(fp2))));
-      alb = mix(alb, vec3(0.03, 0.05, 0.02), hedge * flatL * 0.5 * smoothstep(300.0, 700.0, dist));
-    }
-    // Valleys and the feet of slopes see less sky.
-    float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
+    // Colour, normal, sky cover and shore distance come from the baked tiles.
+    vec4 m0, m1;
+    landTile(vP.xz, m0, m1);
+    // The colour is stored as its square root, to keep the dark tones fine.
+    vec3 alb = m0.rgb * m0.rgb;
+    float glowK = m0.a * 0.32, ao = m1.z, wd = m1.w;
+    vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
     // Wrapped key light: the sun bends softly round each hill.
     // Terrain self-shadow stays gentle: the coarse vertex march must never punch black holes.
     // Terrain shadow: a short march toward the sun at each pixel, soft-edged.
@@ -600,7 +650,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     day += sunC() * vec3(1.0, 0.82, 0.55) * rimF * (0.06 + 0.3 * pow(max(dot(-V, uSun), 0.0), 2.0)) * (1.0 - uRain * 0.8);
     // Against the sun, grass and leaves glow at their edges.
     float back = pow(max(dot(-V, uSun), 0.0), 6.0) * (1.0 - uRain);
-    day += sunC() * back * (0.12 * (1.0 - rock) + 0.2 * forest) * vec3(0.9, 1.0, 0.6);
+    day += sunC() * back * glowK * vec3(0.9, 1.0, 0.6);
     // Night: the moon behind the peaks, and a faint sky.
     // Night: moonlight wraps too, and ridges keep a cool moon rim.
     vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
@@ -798,6 +848,55 @@ const glints = [];
   p.frustumCulled = false;
   p.renderOrder = 2;
   out.add(p);
+}
+
+/* The tile bake: one pass per texel that comes into reach. */
+const bakeU = Object.assign({}, OUTU, {
+  // Column offset, texel size in metres, and which target: 0 colour, 1 normal.
+  uCell: { value: new THREE.Vector3() },
+  // The town points nearest the columns in the bake.
+  uBG: { value: Array.from({ length: NG }, () => new THREE.Vector2(1e9, 1e9)) },
+});
+const bakeQ = new FullScreenQuad(new THREE.ShaderMaterial({
+  uniforms: bakeU,
+  vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: /* glsl */`
+  uniform vec3 uCell;
+  ${NOISE}
+  ${LAND}
+  ${LANDMAT}
+  void main() {
+    // Each texel's centre, in metres along the line and out from it.
+    vec2 xz = vec2((floor(gl_FragCoord.x) + uCell.x + 0.5) * uCell.y, -(floor(gl_FragCoord.y) + 0.5) * uCell.y);
+    vec3 alb, N;
+    float ao, glow, wd;
+    landMat(xz, alb, N, ao, glow, wd);
+    gl_FragColor = uCell.z < 0.5 ? vec4(sqrt(alb), glow / 0.32) : vec4(N.x, N.z, ao, wd);
+  }`,
+}));
+// Bakes the columns each tile lacks round the eye; a jump bakes the whole tile.
+function bakeTiles(r, x) {
+  for (const t of tiles) {
+    const c0 = Math.floor(x / t.s) - t.W / 2, c1 = c0 + t.W;
+    const spans = t.hi === t.lo || c0 >= t.hi || c1 <= t.lo ? [[c0, c1]] : [[t.hi, c1], [c0, t.lo]].filter(([a, b]) => b > a);
+    t.lo = c0; t.hi = c1;
+    for (const [a, b] of spans) {
+      const mid = (a + b) / 2 * t.s;
+      glints.map(g => { const gx = mid + ((((g.x - mid + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2; return [Math.abs(gx - mid), gx, g.z]; })
+        .sort((p, q) => p[0] - q[0]).slice(0, NG).forEach(([, gx, gz], i) => bakeU.uBG.value[i].set(gx, gz));
+      // A span that passes the texture's edge splits there.
+      for (let c = a; c < b;) {
+        const tx = ((c % t.W) + t.W) % t.W, n = Math.min(b - c, t.W - tx);
+        for (const [rt, kind] of [[t.a, 0], [t.b, 1]]) {
+          bakeU.uCell.value.set(c - tx, t.s, kind);
+          rt.viewport.set(tx, 0, n, t.H); rt.scissor.set(tx, 0, n, t.H); rt.scissorTest = true;
+          r.setRenderTarget(rt);
+          bakeQ.render(r);
+        }
+        c += n;
+      }
+    }
+  }
 }
 
 /* Props: trees, Swiss houses, fences, bales, poles and a country road. */
@@ -3227,6 +3326,7 @@ return {
       topCam.updateMatrixWorld();
     }
     OUTU.uCullVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse.copy(cam.matrixWorld).invert());
+    bakeTiles(r, camX);
     for (const p of placers) p.run(r);
     r.setRenderTarget(outRT);
     r.render(out, cam);
@@ -3848,6 +3948,20 @@ addEventListener('keydown', e => {
 if (qs.has('dev')) {
   // QA scripts drive the scene through this handle.
   window.__train = { S, wake };
+  // Dev: mean milliseconds per drawn frame, with the GPU forced to finish each one.
+  window.__train.bench = (n = 40) => {
+    const gl = renderer.getContext(), px = new Uint8Array(4);
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) {
+      draw();
+      // The read waits for the GPU; the prop readback's buffer must step aside for it.
+      const pb = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pb);
+    }
+    return (performance.now() - t0) / n;
+  };
   const L = S.length;
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
