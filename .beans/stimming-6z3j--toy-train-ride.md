@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T08:27:08Z
+updated_at: 2026-11-10T08:30:24Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -249,3 +249,6 @@ Open from the critics:
 - [x] Darker night cabin (Tom): the cabin light is 0.6 of its last level on wall, reveal, cross bar and the glass's room terms; the baked cabin and its lamps drop by the same share, so the mirror image matches
 - [x] Pull-away shaped like a real unit, quicker: the pull builds over about a second, holds 1.25 m/s2 to 13 m/s, then falls with speed (27 m/s in about 30 s). Out of Zurich HB: 300 m at 11 m/s, then 800 m at 19 m/s. Into Zurich HB: the last 250 m at 12 m/s. The arrival sound takes its timing from the same model (S.eta)
 - [x] Stops drawn at random each lap: Zurich HB and Murg always; a town 0.4, a village 0.2, a halt 0.12; about seven stops a lap. A simulated two laps gave Thalwil, Lachen, Ziegelbrücke, Murg, HB, then Wiedikon, Enge, Kilchberg, Au, Altendorf, Siebnen-Wangen, Murg, HB
+
+- [x] Dev sound mixer (?dev): each layer plays through its own channel gain (running noise, standstill hum, pull-away, arrival, whine, points, joint, passing train, pass knock, bass thud, door knock), with a level slider, mute and solo; All sound and Door muffle depth; play buttons for the one-shots and the door; a live line of what sounds now; Copy levels gives JSON. Levels save in the browser under stimming.trainride.mix and apply only with ?dev
+- [ ] Tom to set the mix by ear and send the levels; then bake them in as the defaults

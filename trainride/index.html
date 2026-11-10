@@ -3787,14 +3787,48 @@ function loadClips(ac) {
 // Last comes the compartment door: shut, it muffles the ride; open, the sound clears and lifts.
 const DOOR_SHUT = 3000, DOOR_OPEN = 16000;
 let recBus = null, doorF = null, doorG = null, subBus = null;
+// The mix: each layer's level as a multiple of its set level; 1 leaves it as set.
+// door is the muffle's depth: 0 leaves the sound open, 1 is the full muffle.
+const MIX = { master: 1, bed: 1, idle: 1, away: 1, stop: 1, whine: 1, points: 1, joints: 1, pass: 1, knock: 1, thud: 1, latch: 1, door: 1 };
+// Dev (?dev): the mixer saves its levels here, and may mute or solo a layer.
+const MIXKEY = 'stimming.trainride.mix', MUTE = new Set(), SOLO = new Set();
+if (qs.has('dev')) try { Object.assign(MIX, JSON.parse(localStorage.getItem(MIXKEY) || '{}')); } catch { /* storage is optional */ }
+const mixOf = n => (MUTE.has(n) || (SOLO.size && !SOLO.has(n)) ? 0 : MIX[n]);
+// Each layer plays through its own channel gain; the thud's channel feeds the sub bus.
+const chans = {};
+function chan(ac, name) {
+  if (!chans[name]) {
+    bus(ac);
+    const g = ac.createGain();
+    g.gain.value = mixOf(name);
+    g.connect(name === 'thud' ? subBus : recBus);
+    chans[name] = g;
+  }
+  return chans[name];
+}
+// The door filter's place for its state and the muffle's depth.
+function doorSet(ac, tau) {
+  if (!doorF) return;
+  const now = ac.currentTime, shut = DOOR_OPEN * (DOOR_SHUT / DOOR_OPEN) ** MIX.door;
+  doorF.frequency.setTargetAtTime(DOOR.open ? DOOR_OPEN : shut, now, tau);
+  doorG.gain.setTargetAtTime(DOOR.open ? 1 + 0.3 * MIX.door : 1, now, 0.4);
+}
+// Dev: push the mix to the live nodes.
+function applyMix() {
+  const ac = kit.ac;
+  if (!ac) return;
+  for (const [n, g] of Object.entries(chans)) g.gain.setTargetAtTime(mixOf(n), ac.currentTime, 0.05);
+  if (recBus) recBus.gain.setTargetAtTime(0.42 * MIX.master, ac.currentTime, 0.05);
+  doorSet(ac, 0.1);
+}
 function bus(ac) {
   if (recBus) return recBus;
   const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
   const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
   const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
-  doorF = ac.createBiquadFilter(); doorF.type = 'lowpass'; doorF.frequency.value = DOOR_SHUT; doorF.Q.value = 0.6;
+  doorF = ac.createBiquadFilter(); doorF.type = 'lowpass'; doorF.frequency.value = DOOR_OPEN * (DOOR_SHUT / DOOR_OPEN) ** MIX.door; doorF.Q.value = 0.6;
   doorG = ac.createGain();
-  recBus = ac.createGain(); recBus.gain.value = 0.42;
+  recBus = ac.createGain(); recBus.gain.value = 0.42 * MIX.master;
   recBus.connect(lo).connect(hi).connect(air).connect(doorF).connect(doorG).connect(kit.out);
   // The sub bus carries only the low thud of a passing train.
   const sub = ac.createBiquadFilter(); sub.type = 'lowpass'; sub.frequency.value = 130; sub.Q.value = 0.7;
@@ -3803,30 +3837,29 @@ function bus(ac) {
   return recBus;
 }
 // The door slides open or shut; a soft knock marks the latch.
-const DOOR = { open: false, next: 0, until: 0 };
+// hold is the dev mixer's: it keeps the door as set by hand.
+const DOOR = { open: false, next: 0, until: 0, hold: false };
 function door(ac, open) {
   if (DOOR.open === open || !doorF) return;
   DOOR.open = open;
-  const now = ac.currentTime;
-  doorF.frequency.setTargetAtTime(open ? DOOR_OPEN : DOOR_SHUT, now, open ? 0.3 : 0.45);
-  doorG.gain.setTargetAtTime(open ? 1.3 : 1, now, 0.4);
-  if (clips) shot(ac, clips.thump, 0.14, 0, 0.005, 1.8);
+  doorSet(ac, open ? 0.3 : 0.45);
+  if (clips) shot(ac, clips.thump, 0.14, 0, 0.005, 1.8, 'latch');
 }
-// A looping layer with its own gain.
-function loopLayer(ac, buf) {
+// A looping layer with its own gain, on the channel ch.
+function loopLayer(ac, buf, ch) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.loop = true; g.gain.value = 0;
-  src.connect(g).connect(bus(ac));
+  src.connect(g).connect(chan(ac, ch));
   src.start(0, Math.random() * buf.duration);
   return { src, g };
 }
 // A one-shot from offset, with short fades; g fades it, m sets its place in the mix.
-function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1) {
+function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1, ch = 'points') {
   const src = ac.createBufferSource(), g = ac.createGain(), m = ac.createGain(), now = ac.currentTime;
   src.buffer = buf; src.playbackRate.value = rate;
   g.gain.setValueAtTime(0, now);
   g.gain.linearRampToValueAtTime(level, now + fadeIn);
-  src.connect(g).connect(m).connect(bus(ac));
+  src.connect(g).connect(m).connect(chan(ac, ch));
   src.start(now, Math.min(offset, buf.duration - 0.1));
   return { src, g, m, end: now + (buf.duration - offset) / rate };
 }
@@ -3844,11 +3877,11 @@ function voices() {
   V ||= {};
   if (!clips) loadClips(ac);
   else if (!V.bed) {
-    V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle);
+    V.bed = loopLayer(ac, clips.bed, 'bed'); V.idle = loopLayer(ac, clips.idle, 'idle');
     // The whine: a narrow band of the bed that climbs with speed, heard only under power or brake.
     const f = ac.createBiquadFilter(), g = ac.createGain();
     f.type = 'bandpass'; f.frequency.value = 200; f.Q.value = 7; g.gain.value = 0;
-    V.bed.src.connect(f).connect(g).connect(bus(ac));
+    V.bed.src.connect(f).connect(g).connect(chan(ac, 'whine'));
     V.whine = { f, g };
   }
   return V;
@@ -3875,10 +3908,10 @@ function passBy(ac, tMeet, dur) {
   g.gain.setValueAtTime(0.5, end - 0.1);
   g.gain.linearRampToValueAtTime(0.14, end + 0.12);
   g.gain.setTargetAtTime(0, end + 0.12, 0.45);
-  src.connect(g).connect(bus(ac));
+  src.connect(g).connect(chan(ac, 'pass'));
   src.start(now, Math.max(0, 2.5 - tMeet));
   src.stop(end + 3);
-  const knock = (at, level, rate, to = bus(ac)) => {
+  const knock = (at, level, rate, to = chan(ac, 'knock')) => {
     const s = ac.createBufferSource(), k = ac.createGain();
     s.buffer = clips.thump; s.playbackRate.value = rate;
     k.gain.value = level;
@@ -3888,8 +3921,8 @@ function passBy(ac, tMeet, dur) {
   knock(meet, 0.9, 1);
   knock(end, 0.55, 1.12);
   // The bow wave lands as a low thud: the same knock, slowed, through the sub bus.
-  knock(meet, 2.4, 0.5, subBus);
-  knock(end, 1.1, 0.6, subBus);
+  knock(meet, 2.4, 0.5, chan(ac, 'thud'));
+  knock(end, 1.1, 0.6, chan(ac, 'thud'));
 }
 // The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
 const REC = { away: null, stop: null, awayT: 0, stopV: 1, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
@@ -3919,10 +3952,11 @@ function recorded(v, ac, now, sp, k) {
   // At rest the standing carriage hums, at a platform or not.
   v.idle.g.gain.setTargetAtTime(0.65 * (1 - THREE.MathUtils.smoothstep(sp, 0.3, 5)), now, 1.0);
   // Pull away: the doors close and the motors wind up with the train.
-  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5, 0.5); REC.awayT = now; }
+  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5, 0.5, 1, 'away'); REC.awayT = now; }
   // The compartment door: open while the train stands at a platform, and now and then on the way.
   const left = S.dwellLeft;
-  if (left > 0) door(ac, left < 15.5 && left > 4);
+  if (DOOR.hold) { /* the dev mixer holds the door */ }
+  else if (left > 0) door(ac, left < 15.5 && left > 4);
   else if (DOOR.open && now > DOOR.until) { door(ac, false); DOOR.next = now + 50 + Math.random() * 90; }
   else if (!DOOR.open && sp > 10 && S.toStop > 900) {
     if (!DOOR.next) DOOR.next = now + 35 + Math.random() * 60;
@@ -3933,16 +3967,16 @@ function recorded(v, ac, now, sp, k) {
   const tLeft = sp > 0.5 && S.toStop < 1500 ? S.eta : Infinity;
   if (!REC.stop && sp > 3 && tLeft < STOP_AT && S.toStop < 1500) {
     fadeOut(ac, REC.away, 1); REC.away = null;
-    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 3);
+    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 3, 1, 'stop');
     REC.stopV = sp;
   }
   if (REC.stop && now > REC.stop.end) REC.stop = null;
   // Points: a clatter through each station's throat at speed.
   const d = Math.abs(S.stationNear(S.camX)[1]);
-  if (sp > 8 && d < 140 && REC.stn >= 140 && S.toStop > 300) shot(ac, clips.points, 0.8 * k);
+  if (sp > 8 && d < 140 && REC.stn >= 140 && S.toStop > 300) shot(ac, clips.points, 0.8 * k, 0, 0.03, 1, 'points');
   REC.stn = d;
   // A worn joint now and then, louder at speed.
-  if (sp > 12 && S.camX > REC.nextJoint) { shot(ac, clips.joints, 0.55 * k); REC.nextJoint = S.camX + 600 + Math.random() * 1400; }
+  if (sp > 12 && S.camX > REC.nextJoint) { shot(ac, clips.joints, 0.55 * k, 0, 0.03, 1, 'joints'); REC.nextJoint = S.camX + 600 + Math.random() * 1400; }
   if (REC.nextJoint > S.camX + 3000 || REC.nextJoint < S.camX - 3000) REC.nextJoint = S.camX + 800;
   // The oncoming train: a thump as the fronts meet, the roar for exactly its length, a softer thump as the tail goes.
   const o = S.oppAt, vr = sp + S.oppV;
@@ -3950,7 +3984,7 @@ function recorded(v, ac, now, sp, k) {
   if (o !== o) REC.opp = false;
   REC.prevSp = sp;
   // Dev: the layer state, for QA.
-  if (window.__train) window.__rec = `away=${!!REC.away} stop=${REC.stop ? (ac.currentTime - REC.stop.end + REC.stop.src.buffer.duration).toFixed(1) : '-'} bed=${v.bed.g.gain.value.toFixed(2)} idle=${v.idle.g.gain.value.toFixed(2)}`;
+  if (window.__train) window.__rec = `running ${v.bed.g.gain.value.toFixed(2)} · hum ${v.idle.g.gain.value.toFixed(2)} · whine ${v.whine.g.gain.value.toFixed(2)}${REC.away ? ' · pull-away' : ''}${REC.stop ? ' · arrival' : ''} · door ${DOOR.open ? 'open' : 'shut'}`;
 }
 function hush() {
   if (!V || !kit.ac) return;
@@ -4134,6 +4168,50 @@ if (qs.has('dev')) {
   topOn.addEventListener('change', setTop);
   alt.addEventListener('input', setTop);
   if (qs.has('top')) { topOn.checked = true; if (+qs.get('top')) alt.value = qs.get('top'); setTop(); }
+  // The sound mixer: one row per layer, to set each by ear. Levels save in this browser.
+  const NAMES = { master: 'All sound', bed: 'Running noise', idle: 'Standstill hum', away: 'Pull-away clip', stop: 'Arrival clip', whine: 'Whine', points: 'Points clatter', joints: 'Rail joint', pass: 'Passing train', knock: 'Pass knock', thud: 'Bass thud', latch: 'Door knock', door: 'Door muffle' };
+  const mx = document.createElement('div');
+  mx.style.cssText = 'position:fixed;left:16px;bottom:64px;z-index:50;width:min(330px,calc(100vw - 32px));max-height:calc(100vh - 220px);overflow:auto;padding:8px 10px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.9);backdrop-filter:blur(8px);color:oklch(0.92 0.01 260);font:500 12px/1.5 Gabarito,system-ui,sans-serif';
+  const btn = 'font:inherit;color:inherit;background:oklch(0.26 0.01 260);border:0;border-radius:5px;padding:1px 7px;cursor:pointer';
+  mx.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>Sound mix</b><span><button data-fold style="${btn}">Hide</button></span></div><div data-body>`
+    + Object.keys(MIX).map(k => `<div data-row="${k}" style="display:grid;grid-template-columns:104px 1fr 34px auto auto;gap:6px;align-items:center"><span>${NAMES[k]}</span><input type="range" min="0" max="${k === 'door' ? 1 : 2.5}" step="0.05" value="${MIX[k]}"><span data-v>${(+MIX[k]).toFixed(2)}</span>${k === 'master' || k === 'door' ? '<span></span><span></span>' : `<button data-m style="${btn}">M</button><button data-s style="${btn}">S</button>`}</div>`).join('')
+    + `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${[['latch', 'Door knock'], ['doorT', 'Door open/shut'], ['points', 'Points'], ['joints', 'Joint'], ['pass', 'Passing train']].map(([k, n]) => `<button data-play="${k}" style="${btn}">▶ ${n}</button>`).join('')}</div>`
+    + `<div style="display:flex;gap:5px;margin-top:6px"><button data-reset style="${btn}">Reset</button><button data-copy style="${btn}">Copy levels</button></div><div data-now style="margin-top:6px;opacity:0.75"></div><textarea data-out readonly rows="2" style="width:100%;margin-top:4px;font:11px ui-monospace,monospace;background:oklch(0.12 0.01 260);color:inherit;border:0;border-radius:5px;display:none"></textarea></div>`;
+  document.body.append(mx);
+  const body = mx.querySelector('[data-body]'), outT = mx.querySelector('[data-out]');
+  const putMix = () => { try { localStorage.setItem(MIXKEY, JSON.stringify(MIX)); } catch { /* storage is optional */ } applyMix(); };
+  const paint = () => mx.querySelectorAll('[data-row]').forEach(r => {
+    const k = r.dataset.row;
+    r.querySelector('input').value = MIX[k];
+    r.querySelector('[data-v]').textContent = (+MIX[k]).toFixed(2);
+    const m = r.querySelector('[data-m]'), so = r.querySelector('[data-s]');
+    if (m) m.style.background = MUTE.has(k) ? 'oklch(0.55 0.16 25)' : 'oklch(0.26 0.01 260)';
+    if (so) so.style.background = SOLO.has(k) ? 'oklch(0.7 0.14 90)' : 'oklch(0.26 0.01 260)';
+  });
+  mx.addEventListener('input', e => { const r = e.target.closest('[data-row]'); if (!r) return; MIX[r.dataset.row] = +e.target.value; paint(); putMix(); });
+  mx.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const r = b.closest('[data-row]'), k = r?.dataset.row;
+    if (b.dataset.fold !== undefined) { const h = body.style.display === 'none'; body.style.display = h ? '' : 'none'; b.textContent = h ? 'Hide' : 'Show'; return; }
+    if (b.dataset.m !== undefined) { MUTE.has(k) ? MUTE.delete(k) : MUTE.add(k); }
+    if (b.dataset.s !== undefined) { SOLO.has(k) ? SOLO.delete(k) : SOLO.add(k); }
+    if (b.dataset.reset !== undefined) { for (const n of Object.keys(MIX)) MIX[n] = 1; MUTE.clear(); SOLO.clear(); DOOR.hold = false; }
+    if (b.dataset.copy !== undefined) { outT.style.display = ''; outT.value = JSON.stringify(MIX); outT.select(); navigator.clipboard?.writeText(outT.value).catch(() => {}); }
+    // The one-shots play at once; they need the sound on and the clips loaded.
+    const ac = kit.live();
+    if (b.dataset.play && ac && clips) {
+      const p = b.dataset.play;
+      if (p === 'latch') shot(ac, clips.thump, 0.14, 0, 0.005, 1.8, 'latch');
+      if (p === 'doorT') { DOOR.hold = true; door(ac, !DOOR.open); }
+      if (p === 'points') shot(ac, clips.points, 0.8, 0, 0.03, 1, 'points');
+      if (p === 'joints') shot(ac, clips.joints, 0.55, 0, 0.03, 1, 'joints');
+      if (p === 'pass') passBy(ac, 1.2, 3.5);
+    }
+    paint(); putMix(); wake();
+  });
+  const nowT = mx.querySelector('[data-now]');
+  setInterval(() => { nowT.textContent = kit.live() ? (clips ? window.__rec || 'waiting for the first frame' : 'loading the clips') : 'Sound is off: turn it on, top right.'; }, 300);
   const range = box.querySelector('input'), km = box.querySelector('[data-k]'), stn = box.querySelector('[data-s]'), vel = box.querySelector('[data-v]');
   range.max = String(Math.round(L));
   document.body.append(box);
