@@ -255,7 +255,10 @@ An original swell. It uses no recording, notes, sweep or score of the THX Deep N
 - The camera's near plane moves from 0.5 m to 20 m: the rocks z-fought at 40 km.
 - Next mode (not built): a scope view with the projectile in its sights; the sight's display filter is the cake. Little or no interaction.
 - Tom, 03:47: the debris keeps falling and burns up near the ground; the main plume lingers and breaks up into smaller trails behind the big chunks; the soot cloud dissipates sooner through the noise; the next rock waits 50 s after the hit.
-- Next (not built, needs the clouds session's time of day): a dedicated Reset button. It runs a day-and-night timelapse that slowly accelerates until it spins out of control, then lands back at the start.
+- Reset: the clouds session's runaway spin (on main) is the timelapse; it also runs 22 s after a hit, speeds the sim up to 30x and lands on a new rock with a rolled size.
+- Tom, 03:59 to 04:06: rolled rock sizes (a dev row pins one); a Charge sound row (Hum, Blend, Choir); the cursor leans the lens; a hold pushes in; dunes; mini comet trains on the debris; the tail fades from its tip.
+- Next (not built): the breech ejects a spent shell a little after the shot; it falls with a thump and a dust burst on the desert.
+- Next (not built): a scope mode with the projectile in its sights.
 
 ### Task 10: steps
 

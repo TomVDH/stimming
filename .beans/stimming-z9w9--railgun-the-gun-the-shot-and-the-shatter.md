@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T10:33:17Z
+updated_at: 2026-11-10T11:08:20Z
 parent: stimming-f793
 ---
 
@@ -27,5 +27,7 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [ ] Tom signs off on the stills
 - [x] PR to main (TomVDH/stimming#37)
 - [ ] Follow-up: orchestral choir rebuild (sections, strings, brass at the apex, hall; foul within 3 s of the over-hold)
+- [ ] Follow-up: the breech ejects a spent shell that thumps into the desert with dust (Tom, 04:06)
+- [ ] Follow-up: scope mode with the projectile in its sights (Tom, 03:37)
 - [ ] Follow-up: PBR gun and Pixar-like dunes with fresnel (Tom, 03:26)
 - [ ] Decision for Tom: ship railgun/shot.mp3 (game-audio render; push blocked, kept local)
