@@ -9,40 +9,63 @@ import { ropeAt } from './core.js';
 // 2. Multiply tints that light with the cloth, so overlaps mix.
 // 3. Add puts front light and sky light on the face we see.
 const VS = /* glsl */ `
-  varying vec3 vW, vN;
+  varying vec3 vW, vN, vCol;
+  varying vec2 vUv;
   void main() {
     vec4 w = modelMatrix * vec4(position, 1.0);
-    vW = w.xyz; vN = normal;
+    vW = w.xyz; vN = mat3(modelMatrix) * normal; vUv = uv;
+    #ifdef USE_COLOR
+      vCol = color;
+    #else
+      vCol = vec3(1.0);
+    #endif
     gl_Position = projectionMatrix * viewMatrix * w;
   }`;
 const HEAD = /* glsl */ `
-  varying vec3 vW, vN;
-  uniform vec3 uSun, uSunCol, uT, uAlb, uAmbHi, uAmbLo; uniform float uB, uTau;
+  varying vec3 vW, vN, vCol;
+  varying vec2 vUv;
+  uniform vec3 uSun, uSunCol, uT, uAlb, uAmbHi, uAmbLo; uniform float uB, uTau; uniform vec2 uSize;
   vec3 faceN(out vec3 v) {
     v = normalize(cameraPosition - vW);
     vec3 n = normalize(vN);
     return dot(n, v) < 0.0 ? -n : n;
+  }
+  float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p) {
+    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hh(i), hh(i + vec2(1, 0)), f.x), mix(hh(i + vec2(0, 1)), hh(i + 1.0), f.x), f.y);
+  }
+  // Layers of cloth the light passes: two at the hems, a little slub between.
+  float layers() {
+    if (uSize.x <= 0.0) return 1.0;
+    vec2 m = vUv * uSize, e = min(m, uSize - m);
+    float hem = 1.0 - step(0.035, min(e.x, e.y));
+    float slub = 0.12 * (vn(m * 9.0) - 0.5) + 0.06 * (vn(vec2(m.x * 60.0, m.y * 3.0)) - 0.5);
+    return 1.0 + hem + slub;
   }`;
 const PASS = {
+  // The sun's light through the cloth; it brightens toward the sun's disc.
   max: `void main() { vec3 v; vec3 n = faceN(v);
-    float through = 0.4 + 0.6 * max(dot(-n, uSun), 0.0);
-    float fwd = 1.0 + 0.8 * pow(max(dot(-v, uSun), 0.0), 8.0);
-    gl_FragColor = vec4(uSunCol * uB * uTau * 0.55 * through * fwd, 1.0); }`,
+    float through = 0.35 + 0.65 * max(dot(-n, uSun), 0.0);
+    float fwd = 1.0 + 1.1 * pow(max(dot(-v, uSun), 0.0), 8.0);
+    float k = layers();
+    gl_FragColor = vec4(uSunCol * uB * uTau * 0.6 * through * fwd / k, 1.0); }`,
+  // The tint deepens with the path length through the weave.
   mul: `void main() { vec3 v; vec3 n = faceN(v);
     float c = max(abs(dot(n, v)), 0.3);
-    vec3 T = pow(uT, vec3(1.0 / c));
+    vec3 T = pow(uT * vCol, vec3(layers() / c));
     gl_FragColor = vec4(mix(vec3(0.05), T, uB * uTau + (1.0 - uB) * 0.04), 1.0); }`,
   add: `void main() { vec3 v; vec3 n = faceN(v);
     float sun = max(dot(n, uSun), 0.0);
-    vec3 amb = mix(uAmbLo, uAmbHi, 0.5 + 0.5 * n.y) * (0.75 - 0.4 * uB);
-    gl_FragColor = vec4(uAlb * (uSunCol * sun * 0.6 + amb), 1.0); }`,
+    vec3 amb = mix(uAmbLo, uAmbHi, 0.5 + 0.5 * n.y) * (0.75 - 0.45 * uB);
+    gl_FragColor = vec4(uAlb * vCol * (uSunCol * sun * 0.6 + amb), 1.0); }`,
 };
 const ORDER = { max: 10, mul: 11, add: 12 };
 
-function clothMat(shared, kind, alb, tr) {
+function clothMat(shared, kind, alb, tr, size, vcol) {
   const m = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlb: { value: new THREE.Vector3(...alb) }, uT: { value: new THREE.Vector3(...tr) } },
-    vertexShader: VS, fragmentShader: HEAD + PASS[kind],
+    uniforms: { ...shared, uAlb: { value: new THREE.Vector3(...alb) }, uT: { value: new THREE.Vector3(...tr) }, uSize: { value: new THREE.Vector2(...size) } },
+    vertexShader: VS, fragmentShader: HEAD + PASS[kind], vertexColors: vcol,
     side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
   });
   m.blendEquation = kind === 'max' ? THREE.MaxEquation : THREE.AddEquation;
@@ -129,9 +152,13 @@ export function makeLook(scene, line, { cord, peg, amb }) {
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(c.n * 3);
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    // Grid UVs let the shader find the hems.
+    const uv = new Float32Array(c.n * 2);
+    for (let k = 0; k < c.n; k++) { uv[k * 2] = (k % c.cols) / (c.cols - 1); uv[k * 2 + 1] = Math.floor(k / c.cols) / (c.rows - 1); }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(new THREE.BufferAttribute(c.tris, 1));
     const meshes = ['max', 'mul', 'add'].map(kind => {
-      const m = new THREE.Mesh(g, clothMat(shared, kind, pal.alb, pal.tr));
+      const m = new THREE.Mesh(g, clothMat(shared, kind, pal.alb, pal.tr, [c.w, c.h], false));
       m.renderOrder = ORDER[kind];
       m.frustumCulled = false;
       group.add(m);
@@ -180,6 +207,19 @@ export function makeLook(scene, line, { cord, peg, amb }) {
     pegs.count = k;
     pegs.instanceMatrix.needsUpdate = true;
   }
+  // Still cloth elsewhere in the place glows the same way.
+  // size is the piece in metres; 0 skips the hems.
+  function addStatic(geo, pal, { size = [0, 0], vcol = false, at = null, shadow = true } = {}) {
+    const meshes = ['max', 'mul', 'add'].map(kind => {
+      const m = new THREE.Mesh(geo, clothMat(shared, kind, pal.alb, pal.tr, size, vcol));
+      m.renderOrder = ORDER[kind];
+      if (at) m.matrix.copy(at), m.matrixAutoUpdate = false;
+      group.add(m);
+      return m;
+    });
+    meshes[2].castShadow = shadow;
+    return meshes;
+  }
   function setSun(dir, col, b) {
     shared.uSun.value.copy(dir);
     shared.uSunCol.value.copy(col);
@@ -187,5 +227,5 @@ export function makeLook(scene, line, { cord, peg, amb }) {
   }
   function setCord(rgb) { top.u.uCol.value.set(...rgb); back.u.uCol.value.set(...rgb); }
   function dispose() { scene.remove(group); }
-  return { addPiece, removePiece, sync, setSun, setCord, dispose };
+  return { addPiece, removePiece, addStatic, sync, setSun, setCord, dispose };
 }

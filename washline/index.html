@@ -83,7 +83,7 @@ const PLACES = { alley };
 const act = { place() {}, sun() {}, wind() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
   choice: { label: 'Place', value: 'alley', options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
-  slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.85, onInput: v => act.sun(v) },
+  slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.95, onInput: v => act.sun(v) },
   settings: [
     { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
       options: [{ value: 'calm', label: 'Calm' }, { value: 'breeze', label: 'Breeze' }, { value: 'blowy', label: 'Blowy' }] },
@@ -95,7 +95,7 @@ const ui = initPage({ id: 'washline', silent: true, bar: {
 const stage = document.getElementById('stage');
 let reduce = reduced();
 onReducedChange(v => { reduce = v; });
-const st = { wind: ui.settings?.get?.('wind')?.value || 'breeze', sun: 0.85, windScale: 1, t: 0, lastInput: performance.now() };
+const st = { wind: ui.settings?.get?.('wind')?.value || 'breeze', sun: 0.95, windScale: 1, t: 0, lastInput: performance.now() };
 if (!WIND[st.wind]) st.wind = 'breeze';
 
 /* ---------- renderer ---------- */
@@ -126,7 +126,7 @@ composer.addPass(new OutputPass());
 // A gradient by ray height, a sun disc and a soft glow around it.
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
-  uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() },
+  uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uB: { value: 0 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -134,12 +134,15 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB;
       void main() {
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
         float e = max(ray.y, 0.0), cs = max(dot(ray, uSun), 0.0);
         vec3 col = mix(uHor, uZen, pow(e, 0.45));
+        // A low sun warms the sky around it and along the horizon.
+        col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * (1.0 - e));
+        col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e);
         col += uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
         gl_FragColor = vec4(col, 1.0);
       }` }));
@@ -165,7 +168,6 @@ function buildPlace(id) {
   const pl = PLACES[id] || alley;
   if (P.set) { scene.remove(P.set); P.look.dispose(); }
   P.place = pl;
-  P.set = pl.build(scene);
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
   scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), ...(pl.fog || [30, 420]));
@@ -173,6 +175,8 @@ function buildPlace(id) {
   hemi.groundColor.setRGB(...lin(pl.amb.lo));
   P.line = makeLine(pl.anchors.a, pl.anchors.b, { windDir: pl.windDir });
   P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
+  // The set builds after the look, so its still cloth can glow too.
+  P.set = pl.build(scene, P.look);
   // The wardrobe hangs left to right with small gaps.
   let s = pl.hangFrom ?? 0.3;
   for (const it of pl.wash) {
@@ -200,12 +204,14 @@ function syncLight() {
   P.look.setSun(SUN.dir, SUN.col, SUN.b);
   skyU.uSun.value.copy(SUN.dir);
   skyU.uSunCol.value.copy(SUN.col);
+  skyU.uB.value = SUN.b;
+  bloom.strength = 0.3 + 0.12 * SUN.b;
   sunLight.target.position.set(0, 6, -8);
   sunLight.position.copy(sunLight.target.position).addScaledVector(SUN.dir, 60);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
   sunLight.intensity = 3.2;
   hemi.intensity = 1.35 - 0.3 * SUN.b;
-  renderer.toneMappingExposure = 1 - 0.15 * SUN.b;
+  renderer.toneMappingExposure = 1 - 0.3 * SUN.b;
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
 }

@@ -26,7 +26,7 @@ function inst(group, geo, mat, items, shadow = true) {
   return m;
 }
 
-export function dress(group, R, { W, LINE_Z, spots, lin }) {
+export function dress(group, R, { W, LINE_Z, spots, lin, look }) {
   const pick = a => a[Math.floor(R() * a.length)];
   const pots = [], leaves = [], flowers = [];
 
@@ -165,9 +165,8 @@ export function dress(group, R, { W, LINE_Z, spots, lin }) {
   bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   bg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   bg.computeVertexNormals();
-  const flags = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.8 }));
-  flags.castShadow = flags.receiveShadow = true;
-  group.add(flags);
+  // Pennants are thin cloth too, so they glow against the sun.
+  look.addStatic(bg, { alb: [1, 1, 1], tr: [1, 1, 1] }, { vcol: true });
   const sg = new THREE.BufferGeometry();
   sg.setAttribute('position', new THREE.Float32BufferAttribute(strand, 3));
   group.add(new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: 0x2a2622 })));
@@ -256,7 +255,8 @@ export function backdrop(group, R, lin) {
     sh.moveTo(-w / 2, -40);
     for (let i = 0; i <= 160; i++) {
       const x = -w / 2 + (w * i) / 160, u = x / 180;
-      const y = top * (0.55 + 0.25 * Math.sin(u + ph) + 0.12 * Math.sin(u * 2.7 + ph * 2) + 0.06 * Math.sin(u * 7.3 + ph));
+      const valley = 0.3 + 0.7 * Math.min(1, Math.abs(x) / (0.6 * -z));
+      const y = valley * top * (0.55 + 0.25 * Math.sin(u + ph) + 0.12 * Math.sin(u * 2.7 + ph * 2) + 0.06 * Math.sin(u * 7.3 + ph));
       sh.lineTo(x, y);
     }
     sh.lineTo(w / 2, -40);

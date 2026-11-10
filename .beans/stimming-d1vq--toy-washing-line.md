@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-10T10:27:13Z
+updated_at: 2026-11-10T11:35:45Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -136,3 +136,12 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - Honey limestone walls, green shutters, potted geraniums on the walls, iron wall lanterns.
 - Bunting strings cross the street at several depths.
 - Market stalls with striped awnings, fruit crates and ceramics fill the street floor under the line.
+
+
+### R3 glow (2026-11-10)
+
+- Light through the cloth: hems read as two layers, slub varies the weave, a forward-scatter lift toward the sun.
+- Neighbours' washing and the bunting use the same glow, so overlaps mix like stained glass.
+- The sun sets in a valley notch at the end of the street, beside the bell tower; the slider starts there (0.95).
+- A low sun warms the sky; bloom and exposure follow it.
+- Open: Tom's Alley sign-off.
