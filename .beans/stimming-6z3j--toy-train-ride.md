@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T07:45:45Z
+updated_at: 2026-11-10T08:13:14Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -234,3 +234,11 @@ Open from the critics:
 - [x] Land tiles (Tom chose runtime tiles, all land): landMat() holds all land colour, the per-pixel normal, sky cover and shore distance. Five tiles (0.125, 0.5, 2, 8, 32 m texels; 2048 columns) scroll with the train; only columns that come into reach are baked, two targets each (colour as square root in 8 bit; normal, cover and shore in half float), mipped, 8x anisotropic. The land shader samples two textures and lights them. The eye's distance in the bake is the offset from the line times 1.08. GPU time per frame at 1586 x 1798 px, timer query, before to after: Bäch day 66 to 18 ms, lake day 93 to 22, plain day 59 to 16, Zurich night 61 to 16
 - [x] Fields and pastures in clusters, in the bake: Voronoi clusters some 480 m across; two in five stay pasture; each of the rest has one heading (along or across the valley), one tiling (long strips, short strips or staggered blocks), a lean to a few crops (ley, maize, wheat, stubble, earth), drill lines, grass baulks, a meadow belt, and for half a hedge on the rim. Same strength rule as before: muted, fading in from 300 m
 - [x] Stronger fields (Tom): strength 0.85, in view from 110 to 300 m out, clearer wheat, stubble and maize, stronger drill lines and hedges
+
+## Round 24: fine heights, night lights (Tom, 2026-11-10)
+
+- [x] Fine heights beside the line: tools/near.py fetches 146 swissALTI3D tiles (2 m, 112 MB, kept outside the repo) and bakes near.png (8192 x 192, 469 KB) for the 768 m beside the line, 8.7 m by 4 m texels, smoothed 3 m. The band is re-referenced to the real trackbed (our eye rides 3 m above our track) and eases back by its far edge; the sill clamp and the loop blend follow build.py. landO() blends it in with a cubic lookup; frame time unchanged (A/B with ?nonear). Fewer hills block the view: 12.6 % of columns against 17.7 %. Credits in annex.json name swisstopo
+- [x] The catenary mast is solid at rest (its 3 % see-through showed the view as a ghost)
+- [x] Far houses go dark again past 600 m: their mean window glow read as dense strips; the far light points carry the far shore
+- [x] Water lights cleaned: slim soft streaks under each light, each with its own length and strength; ripples dash only the near ones; a narrower, fainter moon path
+- [ ] Tunnels: the real line runs in tunnels in places (Kerenzerberg at 62 to 64 km); the ride shows a hillside there
