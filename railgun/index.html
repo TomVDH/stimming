@@ -498,7 +498,9 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   float hair = k2noise(vec2(q.x * 0.7, q.y * 11.0));
   float bank = k2fbm(q * vec2(0.05, 0.22) + 31.0);
   // Thin streaks run everywhere; the banks gather them thicker.
-  float d = smoothstep(0.53, 0.8, streak + 0.14 * hair) * (0.45 + 0.55 * smoothstep(0.4 - 0.08 * uWisp.z, 0.62, bank));
+  float d = smoothstep(0.5, 0.86, streak + 0.12 * hair) * (0.45 + 0.55 * smoothstep(0.4 - 0.08 * uWisp.z, 0.62, bank));
+  // A soft shoulder: edges feather into the sky.
+  d = d * d * (3.0 - 2.0 * d);
   d *= smoothstep(0.015, 0.12, dir.y);
   // The heave clears the air it pushes; the layer fills back in.
   d *= 1.0 - 0.55 * smoothstep(800.0, 5000.0, length(push));
@@ -514,7 +516,7 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   // The shock rim: compressed air, lit by everything round it.
   // The shock rim: a faint warm ripple, not a white wave.
   cloud += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
-  return mix(col, cloud, min(1.0, d * (0.75 + 0.2 * rim)));
+  return mix(col, cloud, min(1.0, d * (0.68 + 0.2 * rim)));
 }
 vec3 astGlow(vec3 dir) {
   float ang = acos(clamp(dot(dir, uAst.xyz), -1.0, 1.0));
@@ -976,10 +978,13 @@ void main() {
   // Backlit cloud glows through its whole body, its thin rim most.
   float back = max(dot(V, uSun), 0.0);
   col += sunC * (0.22 * back * back + 0.7 * thin * pow(back, 6.0));
+  // Light soaks through the body and silvers the edges: the clouds stand off the sky.
+  col += sunC * (0.16 * thin + 0.28 * pow(1.0 - abs(dot(N, V)), 2.0) * (0.4 + 0.6 * sh));
+  col *= 1.12;
   vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, N.y * 0.5 + 0.5) * 1.05 + uCloudAmb * 0.5;
   col += amb * (0.55 + 0.45 * smoothstep(0.0, 0.35 * H, X.y));
   // The tower keeps some body through seventy kilometres of air.
-  col = mix(col, air(col, P), vS.z > 0.5 ? 0.7 : 1.0);
+  col = mix(col, air(col, P), vS.z > 0.5 ? 0.4 : 0.7);
   // The blast: its light, thin parts brightest, and the shock rim.
   // It lands after the haze: the flash lights the air on the way too.
   // Faces turned to the hit take it; the far side stays in shadow.
