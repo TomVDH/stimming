@@ -294,6 +294,6 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 
 Tom vetted the toy for the main shelf. `toys.json`: `number` 39, `sub` null, the entry sits after Ten seconds. The tile moves from the Lab list to the main shelf in `index.html`. The page's intro fallback shows No. 39. No emblem yet.
 
-## Intro emblem (2026-11-09, Tom: the three-fry cone)
+## Intro emblem (2026-11-09, Tom: the 3D fry cone)
 
-`shared/emblems/frietkot.svg`, a luminance mask: a striped paper cone with three fanned fries. The first draft was the shack scene; Tom rejected it. `toys.json` and the page fallback point to the file.
+`shared/emblems/frietkot.svg`, a luminance mask of the icon spike's cone (`icons/spike-frietkot-4.html`, C1 Stripe, at rest): 24 fries in depth greys, the striped paper, the fork. Two earlier drafts are out: the shack scene and a flat three-fry cone. The menu tile is still the night square; the cone is not installed there.
