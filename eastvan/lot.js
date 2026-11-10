@@ -1,6 +1,6 @@
 // East Van: one 33 ft house lot as plain data.
 // Units are metres. x runs right, y runs up, z runs to the street.
-// Every look draws from this file, so the looks differ only in rendering.
+// town.js builds the 3D scene from this file.
 
 // Colours are OKLCH: [L, C, h].
 export const COL = {
@@ -11,6 +11,7 @@ export const COL = {
   asphalt: [0.36, 0.015, 270], kerb: [0.8, 0.01, 90], earth: [0.3, 0.04, 50],
   trunk: [0.36, 0.04, 40], blossom: [0.85, 0.085, 355], blossom2: [0.77, 0.115, 350],
   wood: [0.42, 0.05, 55], can: [0.62, 0.012, 250], wire: [0.2, 0.02, 270],
+  hall: [0.82, 0.13, 68], tomatoDark: [0.55, 0.18, 30], brass: [0.76, 0.12, 85], soil: [0.25, 0.035, 55], rock: [0.4, 0.02, 270],
   binGreen: [0.5, 0.12, 150], binGrey: [0.34, 0.012, 260], binBlue: [0.52, 0.14, 255], crow: [0.17, 0.02, 280],
 };
 
@@ -28,12 +29,18 @@ const blob = (p, r, c, L, o = {}) => ({ t: 'blob', p, r, c, L, ...o });
 const win = (x, y, w, h, z, L, lit = true) => [
   box([x, y, z], [w + 0.26, h + 0.26, 0.08], 'cream', L, { k: 'frame' }),
   box([x, y, z + 0.04], [w, h, 0.06], lit ? 'glass' : 'glassDark', L, { k: 'pane', lit }),
+  box([x, y - h / 2 + h * 0.62, z + 0.08], [w, 0.06, 0.04], 'cream', L, { k: 'mullion' }),
+  ...(w > 0.6 ? [box([x, y, z + 0.08], [0.06, h, 0.04], 'cream', L, { k: 'mullion' })] : []),
 ];
 // The same window on a side wall. The paper theatre skips it.
 const sideWin = (x, y, z, d, h, lit) => [
   box([x, y, z], [0.08, h + 0.26, d + 0.26], 'cream', HOUSE, { k: 'frame', side: true }),
   box([x + Math.sign(x) * 0.04, y, z], [0.06, h, d], lit ? 'glass' : 'glassDark', HOUSE, { k: 'pane', lit, side: true }),
+  box([x + Math.sign(x) * 0.08, y - h / 2 + h * 0.62, z], [0.04, 0.06, d], 'cream', HOUSE, { k: 'mullion', side: true }),
 ];
+// Tilted boards on a wall: each row throws its own ink line.
+const boards = (face, at, out, a, b, y0, y1, h, c, o = {}) => ({ t: 'boards', face, at, out, a, b, y0, y1, h, c, L: HOUSE, ...o });
+const beam = (a, b, w, c, L) => ({ t: 'beam', a, b, w, c, L });
 const steps = [0, 1, 2, 3, 4].map(i => {
   const top = 1.2 - 0.2 * i;
   return box([1.8, (0.2 + top) / 2, 0.65 + 0.3 * i], [1.7, top - 0.2, 0.3], 'concrete', PORCH, { k: 'step' });
@@ -41,7 +48,7 @@ const steps = [0, 1, 2, 3, 4].map(i => {
 // A wheeled bin: a body and a lid that turns on its back edge.
 const bin = (x, c, id) => [
   box([x, 0.72, 2.9], [0.62, 1, 0.72], c, YARD, { k: 'bin' }),
-  box([x, 1.26, 2.9], [0.7, 0.08, 0.8], c, YARD, { k: 'lid', id, hinge: [x, 1.22, 2.5], poke: id }),
+  box([x, 1.26, 2.9], [0.7, 0.08, 0.8], c, YARD, { k: 'lid', dyn: id, hinge: [x, 1.22, 2.5] }),
 ];
 
 // The porch lamp hangs beside the door, clear of the posts.
@@ -50,9 +57,11 @@ const LAMP = [2.78, 3.45, -1.38];
 export const PARTS = [
   // Ground. The paper theatre draws each slab as a band under its flat.
   // under is the height where a second band starts on the paper.
-  box([0, -0.7, -0.5], [14, 1.3, 21], 'earth', HOUSE, { k: 'plinth', side: true }),
+  box([0, -0.225, -0.5], [14, 0.35, 21], 'soil', HOUSE, { k: 'plinth' }),
+  box([0, -0.7, -0.5], [13.9, 0.6, 20.9], 'earth', HOUSE, { k: 'plinth' }),
+  box([0, -1.175, -0.5], [14, 0.35, 21], 'rock', HOUSE, { k: 'plinth' }),
   box([0, 0.1, -3.5], [14, 0.2, 15], 'grass', HOUSE, { k: 'ground' }),
-  box([0, 0.075, 4.7], [14, 0.15, 1.4], 'concrete', STREET, { k: 'ground' }),
+  ...[-6, -4, -2, 0, 2, 4, 6].map(x => box([x, 0.075, 4.7], [1.96, 0.15, 1.4], 'concrete', STREET, { k: 'ground' })),
   box([0, 0.075, 6.1], [14, 0.15, 1.4], 'verge', STREET, { k: 'ground', under: -0.4 }),
   box([0, 0.075, 6.9], [14, 0.15, 0.2], 'kerb', ROAD, { k: 'ground' }),
   box([0, -0.025, 8.5], [14, 0.05, 3], 'asphalt', ROAD, { k: 'ground', under: -0.05 }),
@@ -61,16 +70,32 @@ export const PARTS = [
   box([0, 0.8, -5.75], [7, 1.2, 8.5], 'found', HOUSE, { k: 'found' }),
   box([0, 2.9, -5.75], [7, 3, 8.5], 'teal', HOUSE, { k: 'wall' }),
   { t: 'prism', p: [0, 4.4, -5.75], s: [7, 2.9, 8.5], c: 'mustard', L: HOUSE, k: 'gable' },
+  boards('z', -1.5, 1, -3.5, 3.5, 1.4, 4.4, 0.25, 'teal'),
+  boards('x', 3.5, 1, -10, -1.5, 1.4, 4.4, 0.25, 'teal'), boards('x', -3.5, -1, -10, -1.5, 1.4, 4.4, 0.25, 'teal'),
+  boards('z', -1.5, 1, -3.5, 3.5, 4.4, 7.3, 0.29, 'mustard', { tri: true }),
   box([-1.9, 6.8, -6.5], [0.7, 2.4, 0.7], 'brick', HOUSE, { k: 'chimney' }),
-  { t: 'roof', p: [0, 4.4, -5.7], s: [7, 2.9, 9.4], over: 0.5, th: 0.22, c: 'roof', L: HOUSE, k: 'roof' },
+  box([-1.9, 8.06, -6.5], [0.92, 0.12, 0.92], 'concrete', HOUSE, { k: 'cap' }),
+  { t: 'roof', p: [0, 4.4, -5.7], s: [7, 2.9, 9.4], over: 0.5, th: 0.22, courses: 8, c: 'roof', L: HOUSE, k: 'roof' },
+  // Barge boards trim the front edge of the roof.
+  { t: 'roof', p: [0, 4.18, -1.02], s: [7, 2.9, 0.1], over: 0.5, th: 0.2, c: 'cream', L: HOUSE, k: 'barge' },
+  box([3.62, 2.3, -1.62], [0.09, 3.9, 0.09], 'cream', HOUSE, { k: 'downspout' }),
   ...win(-1.6, 3, 2.2, 1.5, -1.46, HOUSE),
   ...win(0, 5.45, 1, 1, -1.46, HOUSE, false),
-  box([1.8, 2.5, -1.46], [1.3, 2.3, 0.08], 'cream', HOUSE, { k: 'frame' }),
-  box([1.8, 2.45, -1.42], [1, 2.1, 0.08], 'tomato', HOUSE, { k: 'door' }),
-  box([1.8, 3, -1.37], [0.5, 0.6, 0.04], 'glass', HOUSE, { k: 'pane', lit: true }),
+  // The door frame is three pieces, so the open door shows the hall.
+  box([1.225, 2.5, -1.46], [0.15, 2.3, 0.08], 'cream', HOUSE, { k: 'frame' }),
+  box([2.375, 2.5, -1.46], [0.15, 2.3, 0.08], 'cream', HOUSE, { k: 'frame' }),
+  box([1.8, 3.575, -1.46], [1.3, 0.15, 0.08], 'cream', HOUSE, { k: 'frame' }),
+  box([1.8, 2.45, -1.455], [1, 2.1, 0.04], 'hall', HOUSE, { k: 'pane', lit: true }),
+  ...[
+    box([1.8, 2.45, -1.4], [1, 2.1, 0.06], 'tomato', HOUSE, { k: 'door' }),
+    box([1.8, 3, -1.365], [0.5, 0.6, 0.03], 'glass', HOUSE, { k: 'pane', lit: true }),
+    box([1.8, 1.95, -1.365], [0.7, 0.75, 0.03], 'tomatoDark', HOUSE, { k: 'panel' }),
+    blob([2.2, 2.4, -1.34], 0.05, 'brass', HOUSE, { k: 'knob' }),
+  ].map(q => ({ ...q, dyn: 'door', hinge: [1.3, 2.45, -1.4] })),
+  box([2.78, 2.55, -1.37], [0.32, 0.2, 0.12], 'binGrey', HOUSE, { k: 'mailbox' }),
   box(LAMP, [0.2, 0.28, 0.16], 'lamp', HOUSE, { k: 'lamp', id: 'lamp', poke: 'light' }),
-  ...sideWin(3.5, 3, -4, 1.2, 1.4, true), ...sideWin(3.5, 3, -7.6, 1.2, 1.4, false),
-  ...sideWin(-3.5, 3, -4, 1.2, 1.4, false), ...sideWin(-3.5, 3, -7.6, 1.2, 1.4, true),
+  ...sideWin(3.56, 3, -4, 1.2, 1.4, true), ...sideWin(3.56, 3, -7.6, 1.2, 1.4, false),
+  ...sideWin(-3.56, 3, -4, 1.2, 1.4, false), ...sideWin(-3.56, 3, -7.6, 1.2, 1.4, true),
 
   // Porch: a deck, three posts, a flat roof and five steps.
   box([0, 0.75, 0.47], [7, 1.1, 0.06], 'found', PORCH, { k: 'lattice' }),
@@ -87,6 +112,11 @@ export const PARTS = [
     { t: 'pickets', ax: 'z', a: -1.35, b: 0.15, at: x, y: 1.4, h: 0.9, n: 7, w: 0.07, c: 'cream', L: PORCH, k: 'baluster', side: true },
   ]),
   ...steps,
+  // Stair rails: a sloped rail and a newel post on each side.
+  ...[0.92, 2.68].flatMap(x => [
+    beam([x, 2.3, 0.45], [x, 1.3, 2.05], 0.09, 'cream', PORCH),
+    box([x, 0.75, 2.05], [0.14, 1.1, 0.14], 'cream', PORCH, { k: 'newel' }),
+  ]),
 
   // Yard: shrubs, a picket fence, a path, two bins and a blue box.
   blob([-2.6, 0.85, 1.3], 0.75, 'hedge', YARD), blob([-1.4, 0.7, 1.5], 0.6, 'hedge', YARD),
@@ -134,4 +164,5 @@ export const POKES = [
   { id: 'crow', at: CROW.home, r: 0.7, L: STREET },
   { id: 'lidA', at: [3.95, 1, 2.9], r: 0.55, L: YARD },
   { id: 'lidB', at: [4.75, 1, 2.9], r: 0.55, L: YARD },
+  { id: 'door', at: [1.8, 2.3, -1.4], r: 0.8, L: HOUSE },
 ];

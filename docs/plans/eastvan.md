@@ -97,6 +97,21 @@ The repo has no draw-call budget. East Van sets one.
 - [x] Readout: fps, draw calls, triangles.
 - [x] Checkpoint with Tom: stills at 1280 px and 375 px. Tom picks the look and the layout.
 
+### Toy-town pass 1: lens and house detail (`stimming-84n7`)
+
+- [x] `eastvan/index.html`, `eastvan/town.js`, `eastvan/lens.js`. The lab keeps `eastvan/looks-lot.js`.
+- [x] Lens: ambient occlusion, bloom from a glow mask, ink line, depth blur, grade.
+- [x] Detail: clapboards, shingles, roof courses, mullions, barge boards, stair rails, strata, sidewalk slabs.
+- [x] Poke: the front door.
+
+### Next (Tom picks the order)
+
+- [ ] More pokes on the lot: windows, mailbox, tree (petals), chimney smoke, blue box, fence gate.
+- [ ] More life: garden, cat, bike, a parked car (first CC0 model candidate).
+- [ ] Sound for every poke; a dusk bed.
+- [ ] Lab registration: `toys.json`, menu tile and icon, Bar v2 shell, intro.
+- [ ] The alley, then the Drive at East 4th from city data.
+
 ## Reduced motion and idle
 
 - **Reduced motion:** no sway; the crow hops off and back with no loop; the lid snaps.

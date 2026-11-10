@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>East Van</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+html, body { margin: 0; height: 100%; background: oklch(0.14 0.02 280); overflow: hidden; }
+body { font: 500 13px/1 "Gabarito", system-ui, sans-serif; color: oklch(0.92 0.01 280); }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.name { position: fixed; left: 14px; top: calc(14px + env(safe-area-inset-top, 0px)); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.foot {
+  position: fixed; left: 14px; right: 14px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex; justify-content: space-between; gap: 12px; pointer-events: none; opacity: 0.78;
+  text-shadow: 0 1px 6px oklch(0.1 0.02 280 / 0.7);
+}
+.read { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.keys kbd { font: inherit; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: oklch(0.2 0.02 280 / 0.7); margin-left: 8px; }
+@media (max-width: 640px) { .keys { display: none; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c" aria-label="East Van house lot"></canvas>
+<span class="name">East Van</span>
+<div class="foot">
+  <span class="read" id="read"></span>
+  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom</span>
+</div>
+<script type="module">
+// East Van: the Toy-town house lot. town.js builds it; lens.js draws it.
+// This page owns the camera, the pointer and the frame loop.
+import * as THREE from 'three';
+import { pixelRatio, whenVisible, css } from '../shared/stim.js';
+import { buildTown, poke, POKES } from './town.js';
+import { createLens } from './lens.js';
+
+const canvas = document.getElementById('c'), read = document.getElementById('read');
+const lerp = (a, b, t) => a + (b - a) * t, clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/* ---------- sky: a dusk gradient behind the plinth ---------- */
+const SKY = [[0, [0.9, 0.08, 75]], [0.3, [0.84, 0.1, 48]], [0.42, [0.68, 0.11, -5]], [0.55, [0.5, 0.1, -55]], [0.75, [0.36, 0.08, -95]], [1, [0.28, 0.07, -100]]];
+function skyAt(v) {
+  let i = 1;
+  while (i < SKY.length - 1 && SKY[i][0] < v) i++;
+  const [v0, a] = SKY[i - 1], [v1, b] = SKY[i], t = clamp((v - v0) / (v1 - v0), 0, 1);
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+function skyTexture(v0, v1) {
+  const cv = document.createElement('canvas');
+  cv.width = 4; cv.height = 512;
+  const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 512, 0, 0);
+  for (let i = 0; i <= 24; i++) grad.addColorStop(i / 24, css(skyAt(lerp(v0, v1, i / 24))));
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 512);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* ---------- scene, lens, camera ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const town = buildTown(skyTexture(0.2, 0.8)), lens = createLens(renderer);
+const cam = new THREE.PerspectiveCamera(22, 1, 5, 160);
+const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 };
+const TARGET = new THREE.Vector3(0, 2.6, 0);
+function resize() {
+  const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight);
+  renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 2 }));
+  renderer.setSize(w, h, false);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  lens.resize(size.x, size.y, renderer.getPixelRatio());
+  // The plinth must fit the frame in both directions.
+  const t = Math.tan(cam.fov * Math.PI / 360);
+  view.fit = Math.max(19 / (2 * t), (w < h ? 19 : 27) / (2 * t * (w / h)));
+  cam.aspect = w / h;
+}
+function aim() {
+  view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
+  const d = view.fit * view.zoom, cp = Math.cos(view.pitch);
+  cam.position.set(Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, Math.cos(view.yaw) * cp * d);
+  cam.lookAt(TARGET);
+  cam.near = Math.max(3, d - 32); cam.far = d + 45;
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+  return d;
+}
+
+/* ---------- pokes: the nearest target under the pointer ---------- */
+const v = new THREE.Vector3();
+function pokeAt(x, y) {
+  const r = canvas.getBoundingClientRect();
+  let best = null, bestD = Infinity;
+  for (const q of POKES) {
+    v.copy(town.at(q)).applyMatrix4(cam.matrixWorldInverse);
+    const reach = q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
+    v.applyMatrix4(cam.projectionMatrix);
+    const d = Math.hypot((v.x * 0.5 + 0.5) * r.width - (x - r.left), (0.5 - v.y * 0.5) * r.height - (y - r.top));
+    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = q.id; bestD = d; }
+  }
+  return best;
+}
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), moved: false };
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  wake();
+  if (!drag) { if (e.pointerType === 'mouse') canvas.style.cursor = pokeAt(e.clientX, e.clientY) ? 'pointer' : 'grab'; return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
+  if (!drag.moved) return;
+  view.ty = clamp(view.ty - dx * 0.006, -1.5, 1.5);
+  view.tp = clamp(view.tp + dy * 0.005, 0.06, 0.95);
+});
+canvas.addEventListener('pointerup', e => {
+  if (drag && !drag.moved && performance.now() - drag.t < 500) { const id = pokeAt(e.clientX, e.clientY); if (id) poke(id); }
+  drag = null;
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, 1.25); wake(); }, { passive: false });
+
+/* ---------- frame loop ---------- */
+let raf = 0, visible = true, lastInput = performance.now(), last = 0, fps = 60, readAt = 0;
+function frame(now) {
+  raf = 0;
+  const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
+  last = now;
+  fps = lerp(fps, 1 / dt, 0.08);
+  const d = aim();
+  town.update(now / 1000);
+  lens.render(town.scene, cam, d);
+  if (now - readAt > 300) {
+    readAt = now;
+    read.textContent = `${Math.round(fps)} fps · ${renderer.info.render.calls} calls · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris`;
+  }
+  // The loop sleeps 60 s after the last input.
+  if (visible && now - lastInput < 60000) raf = requestAnimationFrame(frame);
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible) { last = lastInput; raf = requestAnimationFrame(frame); }
+}
+whenVisible(canvas, on => { visible = on; if (on) wake(); });
+// The pane can open at zero size, so the canvas itself reports its size.
+new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
+resize();
+wake();
+</script>
+</body>
+</html>
