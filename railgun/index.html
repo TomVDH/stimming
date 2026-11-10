@@ -756,13 +756,14 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
       if (uPool[i].z < 0.002) continue;
       vec2 pd = vP.xz - uPool[i].xy;
       float d2 = dot(pd, pd), rr = uPool[i].w;
-      col += alb * vec3(1.0, 0.45, 0.16) * uPool[i].z * 1.5 * rr * rr / (d2 + rr * rr);
+      col += alb * vec3(1.0, 0.45, 0.16) * uPool[i].z * 1.5 * exp(-d2 / (rr * rr));
       col += vec3(1.0, 0.32, 0.08) * uPool[i].z * 0.9 * exp(-d2 / (rr * rr * 0.04));
     }
     // The bolt lights the plain faintly as it climbs away.
     if (uBolt.w > 0.001) { vec3 bb = uBolt.xyz - vP; col += alb * uBoltC * uBolt.w * 0.5 * 2.5e7 / (dot(bb, bb) + 2.5e7); }
     // The blast lights the plain once its light arrives.
-    col += alb * blastLight(vP) * (0.35 + 0.65 * max(dot(N, normalize(uBlast.xyz - vP)), 0.0));
+    // By day only: at night the plain stays dark under the blast.
+    col += alb * blastLight(vP) * (0.35 + 0.65 * max(dot(N, normalize(uBlast.xyz - vP)), 0.0)) * (1.0 - nightK());
     // A satin sheen: Fresnel at grazing angles, a soft lobe toward the sun.
     vec3 V = normalize(cameraPosition - vP);
     float fres = pow(1.0 - max(dot(N, V), 0.0), 5.0);
