@@ -57,6 +57,8 @@ uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uLit, uFocal, uCover, u
 uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid, uAurora;
 uniform highp sampler3D uNoise;
 uniform vec2 uCam;
+// Land: 0 the flat country, 1 relief, 2 relief with parallax on peaks.
+uniform float uLand;
 // Airports: map site xz, then the landing heading's cos and sin.
 // uApB: runway half length, twin runway offset, seed, apron size.
 uniform vec4 uAp[8], uApB[8];
@@ -171,15 +173,21 @@ float band(float x, float rw, float fw) { return clamp((min(x + fw * 0.5, rw) - 
 float fd(float sc, float fw) { return smoothstep(sc * 0.6, sc * 0.2, fw); }
 // The sea: a broad field, open water below SEA. index.html mirrors it.
 const float SEA = 0.3;
+// Relief land has more open sea: about a third of the map.
+const float SEAR = 0.42;
 float seaField(vec2 w) { return vnoise(w / 260.0 + 3.7) * 0.65 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 95.0 + 1.3) * 0.35; }
 
 // Set by landBase for landCover: the water share, the open sea share.
 float gWater = 0.0, gSea = 0.0;
 // The nearest airport, and the pixel in its runway frame.
 int gAp = -1; vec2 gApQ = vec2(1e3);
+// Set by landBase: the map point, elevation in km and its gradient.
+// gBelt: the mountain share. gHab: how fit the ground is for towns.
+vec2 gW = vec2(0.0), gEG = vec2(0.0);
+float gE = 0.0, gBelt = 0.0, gHab = 1.0;
 
-// The bare land under the lights: fields, woods, hills and snow.
-vec3 landBase(vec2 w, float fw) {
+// The nearest airport sets gAp and gApQ; it returns the distance.
+float apNear(vec2 w) {
   float apD = 1e3;
   gAp = -1;
   for (int i = 0; i < 8; i++) {
@@ -189,6 +197,22 @@ vec3 landBase(vec2 w, float fw) {
     float d2 = dot(q, q);
     if (d2 < apD * apD) { apD = sqrt(d2); gAp = i; gApQ = vec2(dot(q, a.zw), dot(q, vec2(-a.w, a.z))); }
   }
+  return apD;
+}
+// Airport ground masks: inside the fence, runways, apron.
+vec3 apMasks(float fw) {
+  if (gAp < 0) return vec3(0.0);
+  vec4 b = uApB[gAp]; vec2 q = gApQ;
+  float fence = smoothstep(0.08, 0.0, max(abs(q.x) - b.x - 0.4, max(-0.85 - q.y, q.y - 0.3 - b.y)));
+  float run = band(abs(q.y), 0.03, fw) * step(abs(q.x), b.x);
+  if (b.y > 0.0) run = max(run, band(abs(q.y - b.y), 0.03, fw) * step(abs(q.x - 0.5), b.x * 0.75));
+  float apron = band(abs(q.y + 0.5), 0.16, fw) * band(abs(q.x - 0.2 * b.x), 0.55 * b.w, fw);
+  return vec3(fence, run, apron);
+}
+
+// The bare land under the lights: fields, woods, hills and snow.
+vec3 landFlat(vec2 w, float fw) {
+  float apD = apNear(w);
   vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
   // Regions over tens of km: hill country, wooded belts, wet lowland.
   float relief = smoothstep(0.4, 0.8, vnoise(w / 85.0 + 7.1));
@@ -229,16 +253,9 @@ vec3 landBase(vec2 w, float fw) {
   float alb = mix(parcel, 0.15, forest);
   // Snow lies on the high ridges.
   alb += 2.2 * smoothstep(0.8, 1.15, hgt);
-  if (gAp >= 0) {
-    // Inside the fence: mown grass, dark runways, a pale apron.
-    vec4 b = uApB[gAp]; vec2 q = gApQ;
-    float fence = smoothstep(0.08, 0.0, max(abs(q.x) - b.x - 0.4, max(-0.85 - q.y, q.y - 0.3 - b.y)));
-    alb = mix(alb, 1.0, fence);
-    float run = band(abs(q.y), 0.03, fw) * step(abs(q.x), b.x);
-    if (b.y > 0.0) run = max(run, band(abs(q.y - b.y), 0.03, fw) * step(abs(q.x - 0.5), b.x * 0.75));
-    alb = mix(alb, 0.3, run);
-    alb = mix(alb, 1.7, band(abs(q.y + 0.5), 0.16, fw) * band(abs(q.x - 0.2 * b.x), 0.55 * b.w, fw));
-  }
+  // Inside the fence: mown grass, dark runways, a pale apron.
+  vec3 am = apMasks(fw);
+  alb = mix(mix(mix(alb, 1.0, am.x), 0.3, am.y), 1.7, am.z);
   // Shading triples the slopes, so relief reads from 11 km.
   vec3 n = normalize(vec3(-3.0 * gr.x, 1.0, -3.0 * gr.y));
   // Steep ground sees less sky; slopes toward the bright side see more.
@@ -247,6 +264,171 @@ vec3 landBase(vec2 w, float fw) {
   vec3 g = uAmb * 0.03 * alb * skyK;
   g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0);
   return g;
+}
+
+/* ---------- relief: mountain belts, coasts by height, the open sea ---------- */
+// Mountain belts: long ranges about 50 km wide, broken by passes.
+// index.html mirrors it, so no airport lands on a peak.
+float beltField(vec2 w) {
+  float r = 1.0 - abs(2.0 * vnoise(mat2(0.6, -0.8, 0.8, 0.6) * w / 170.0 + 11.3) - 1.0);
+  return smoothstep(0.55, 0.9, r) * smoothstep(0.25, 0.6, vnoise(w / 75.0 + 2.2));
+}
+// Eroded ridges: height about 0.25 to 0.8, and its gradient per km.
+// Steep coarse octaves damp the finer ones, so valley floors stay smooth.
+// An octave fades to its mean once a pixel spans it.
+vec3 peaks(vec2 w, int n, float fw) {
+  mat2 M = mat2(0.8, 0.6, -0.6, 0.8) / 14.0;
+  float h = 0.0, b = 0.5, sc = 14.0;
+  vec2 g = vec2(0.0), ds = vec2(0.0);
+  for (int i = 0; i < 7; i++) {
+    if (i >= n) break;
+    vec3 v = vnoiseD(M * w + float(i) * 7.31);
+    float r = 1.0 - abs(2.0 * v.x - 1.0);
+    vec2 rg = -2.0 * sign(v.x - 0.5) * v.yz;
+    float k = fd(sc, fw);
+    float e = 1.0 / (1.0 + 0.15 * dot(ds, ds));
+    ds += rg * r * k;
+    h += b * mix(0.2, r * r * e, k);
+    g += b * k * e * 2.0 * r * (transpose(M) * rg);
+    b *= 0.5; sc *= 0.5;
+    M = mat2(1.6, 1.2, -1.2, 1.6) * M;
+  }
+  return vec3(h, g);
+}
+// Ridge scale in km at full belt, and the ridge height at the ramp.
+// Peaks reach about 3 km; valley floors sink about 1 km below the ramp.
+const float MTN = 7.0, PK0 = 0.42;
+// Inland, valley floors stay near the ramp; at the coast they flood.
+float valleyK(float mt, float base) { return mt < 0.0 ? mix(1.0, 0.25, smoothstep(0.1, 0.6, base)) : 1.0; }
+// Elevation from the three broad octaves, for shadows and parallax.
+// The finer octaves add about 0.04 on average.
+float elevLow(vec2 w, float base) {
+  float m = beltField(w);
+  if (m <= 0.0) return base;
+  float mt = m * MTN * (peaks(w, 3, 0.0).x + 0.04 - PK0);
+  return base + mt * valleyK(mt, base);
+}
+// Soft shadow of the ridges: a short march toward the sun or moon.
+float reliefShadow(vec2 w, float base) {
+  float lh = length(uSun.xz);
+  if (uSun.y <= 0.0 || lh < 1e-3) return 1.0;
+  vec2 sd = uSun.xz / lh;
+  // Only ground in a belt, or just short of one, can lie in shadow.
+  if (beltField(w) + beltField(w + sd * 9.0) <= 0.0) return 1.0;
+  float tn = uSun.y / lh, e0 = elevLow(w, base), s = 1.0, t = 0.3;
+  for (int i = 0; i < 8; i++) {
+    float rh = e0 + 0.04 + t * tn;
+    // Above every possible peak, nothing more can block the light.
+    if (rh > base + MTN * 0.4) break;
+    s = min(s, 7.0 * (rh - elevLow(w + sd * t, base)) / t);
+    t *= 1.75;
+  }
+  return smoothstep(0.0, 1.0, s);
+}
+// The ray meets high ground before the sea-level sphere.
+// A short march back toward the eye finds the nearer hit.
+vec2 reliefParallax(vec2 w, vec3 d, vec3 up) {
+  float sd = max(-dot(d, up), 0.12);
+  vec2 hd = normalize(d.xz + 1e-6) * sqrt(1.0 - sd * sd) / sd;
+  float base = 2.5 * (seaField(w) - SEAR), top = max(base + MTN * 0.4, 0.0);
+  if (beltField(w) + beltField(w - hd * top * 0.5) + beltField(w - hd * top) <= 0.0) return w;
+  // From the top of the peaks down to sea level, in even height steps.
+  // Grazing rays cover more ground, so they take more steps.
+  int N = int(mix(10.0, 24.0, smoothstep(2.0, 6.0, length(hd))));
+  float hPrev = top, ePrev = max(elevLow(w - hd * top, base), 0.0);
+  for (int i = 1; i <= 24; i++) {
+    if (i > N) break;
+    float h = top * (1.0 - float(i) / float(N));
+    float e = max(elevLow(w - hd * h, base), 0.0);
+    if (e >= h) {
+      // One secant step between the last two heights.
+      float a = (hPrev - ePrev) / max((hPrev - ePrev) - (h - e), 1e-4);
+      return w - hd * mix(hPrev, h, a);
+    }
+    hPrev = h; ePrev = e;
+  }
+  return w;
+}
+
+// Relief land: one elevation sets the sea, the shore, the snow and the light.
+vec3 landRelief(vec2 w, float fw) {
+  float apD = apNear(w);
+  vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
+  float woods = vnoise(wr / 55.0 + 2.3), wet = vnoise(w / 70.0 - 4.4);
+  float sf = seaField(w) + 0.06 * (vnoise(wr / 9.0) - 0.5) + 0.03 * (vnoise(w / 2.6 + 4.0) - 0.5) * fd(2.6, fw);
+  // Airports keep their ground dry and flat.
+  float calm = smoothstep(4.0, 7.0, apD);
+  float m = beltField(w) * calm;
+  vec3 pk = m > 0.0 ? peaks(w, 7, fw) : vec3(PK0, 0.0, 0.0);
+  // Rivers wind through the lowland; the belts drain by their own valleys.
+  vec2 wq = w + 16.0 * vec2(vnoise(w / 21.0), vnoise(w / 21.0 + 8.3));
+  vec3 rv = vnoiseD(wq / 34.0), rt = vnoiseD(wq / 11.0 + 3.0);
+  float rd = abs(rv.x - 0.5) * 34.0 / max(length(rv.yz), 0.05);
+  float rdt = abs(rt.x - 0.5) * 11.0 / max(length(rt.yz), 0.05);
+  float river = max(band(rd, 0.12 * smoothstep(0.3, 0.7, wet), fw), band(rdt, 0.035 * smoothstep(0.45, 0.8, wet), fw));
+  // Low hills roll over the plain, a few hundred metres high.
+  float relief = smoothstep(0.4, 0.8, vnoise(w / 85.0 + 7.1)) * smoothstep(SEAR, SEAR + 0.12, sf) * (1.0 - m);
+  vec3 h1 = ridge(vnoiseD(wr / 13.0 + 1.9)), h2 = ridge(vnoiseD(w / 4.1 + 6.2)), h3 = vnoiseD(wr / 1.3 + 2.8);
+  float k2 = fd(4.1, fw) * 0.35, k3 = fd(1.3, fw) * 0.06;
+  float valley = 0.3 + 0.7 * smoothstep(0.0, 3.0, rd);
+  float hh = (relief * (h1.x + k2 * h2.x) + k3 * h3.x) * valley;
+  vec2 hg = (relief * (h1.yz / 13.0 + k2 * h2.yz / 4.1) + k3 * h3.yz / 1.3) * valley * calm;
+  // Elevation in km: a coastal ramp, the hills, the ridges round their mean.
+  // Belt valleys sink under the sea at the coast: fjords and headlands.
+  float base = 2.5 * (sf - SEAR);
+  float mt = m * MTN * (pk.x - PK0), vk = valleyK(mt, base);
+  float E = base + 0.3 * hh + mt * vk;
+  vec2 G = 0.3 * hg + m * MTN * vk * pk.yz;
+  float slope = length(G);
+  float sa = 0.002 + 0.6 * fw * (0.03 + slope);
+  gSea = smoothstep(sa, -sa, E);
+  // Lakes gather in wet lowland.
+  float lk = vnoise(wr / 5.0 + 3.3) * 0.75 + mix(0.5, vnoise(w / 1.4 + 1.1), fd(1.4, fw)) * 0.25;
+  float lv = 0.12 + 0.16 * smoothstep(0.35, 0.75, wet) - 0.1 * relief - 0.3 * m;
+  float la = 0.004 + fw * 0.08;
+  float lake = smoothstep(lv + la, lv - la, lk);
+  gWater = max(gSea, max(lake, river * (1.0 - smoothstep(0.0, 0.3, m))) * calm);
+  // Woods grow in belts, up the mountain flanks to the tree line.
+  float fn = vnoise(wr / 2.7 + 1.7) * 0.7 + mix(0.5, vnoise(w / 0.55 + 4.4), fd(0.55, fw)) * 0.3;
+  float fth = 0.78 - 0.4 * woods - 0.3 * relief - 0.25 * m, fa = 0.03 + fw * 0.15;
+  float forest = smoothstep(fth - fa, fth + fa, fn) * smoothstep(1.9, 1.5, E + 0.4 * (fn - 0.5));
+  // Fields: green crops, pale stubble and brown ploughland.
+  vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
+  float ph = hash12(fp);
+  vec3 crop = (ph < 0.4 ? vec3(0.22, 0.32, 0.12) : ph < 0.72 ? vec3(0.55, 0.48, 0.3) : vec3(0.3, 0.23, 0.16)) * (0.9 + 0.75 * hash12(fp + 3.1));
+  vec3 open = mix(crop, vec3(0.43, 0.43, 0.26), smoothstep(0.15, 0.5, fw));
+  // High ground: alpine meadow, then rock; steep faces stay bare.
+  float grit = mix(0.5, vnoise(w / 0.6 + 3.3), fd(0.6, fw));
+  vec3 rock = vec3(0.36, 0.33, 0.3) * (0.7 + 0.6 * grit);
+  open = mix(open, mix(vec3(0.26, 0.3, 0.16), rock, smoothstep(1.3, 2.0, E)), smoothstep(0.7, 1.4, E) * smoothstep(0.0, 0.25, m));
+  open = mix(open, rock, smoothstep(0.6, 1.1, slope) * m);
+  vec3 alb = mix(open, vec3(0.04, 0.075, 0.04), forest);
+  // A thin strip of pale sand on low, gentle shores, about 60 m wide.
+  // The coastal ramp rises about 25 m per km.
+  float beach = (1.0 - smoothstep(0.03, 0.08 + 0.5 * fw, E / (0.025 + slope))) * step(0.0, E) * smoothstep(0.1, 0.03, slope) * (1.0 - m);
+  alb = mix(alb, vec3(0.62, 0.56, 0.42), beach);
+  // Shading lifts the hills, as on the flat land; the belts stand on their own.
+  vec2 Gs = 3.0 * hg + m * MTN * vk * pk.yz;
+  vec3 n = normalize(vec3(-Gs.x, 1.0, -Gs.y));
+  // Snow: a wavy snow line, lower on shaded slopes; steep rock sheds it.
+  float sl = 2.35 + 0.5 * (vnoise(w / 7.0 + 1.7) - 0.5) + 0.35 * dot(n.xz, normalize(uSun.xz + 1e-5));
+  float snow = smoothstep(sl - 0.25, sl + 0.15, E) * smoothstep(1.6, 0.8, slope);
+  alb = mix(alb, vec3(1.7, 1.8, 1.95), snow);
+  vec3 am = apMasks(fw);
+  alb = mix(mix(mix(alb, vec3(0.75, 0.85, 0.55), am.x), vec3(0.3), am.y), vec3(1.7), am.z);
+  vec2 lz = normalize(uSun.xz + 1e-5);
+  float skyK = clamp(1.0 - length(Gs), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
+  float sh = reliefShadow(w, base);
+  vec3 g = uAmb * 0.03 * alb * skyK;
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * sh;
+  gE = E; gEG = G; gBelt = m;
+  // Towns keep to dry, low, gentle ground, and crowd the coasts.
+  gHab = (1.0 - gWater) * smoothstep(1.0, 0.35, slope) * smoothstep(1.5, 0.7, E) * (1.0 + 0.4 * smoothstep(0.1, 0.0, sf - SEAR));
+  return g;
+}
+vec3 landBase(vec2 w, float fw) {
+  gW = w; gHab = 1.0;
+  return uLand < 0.5 ? landFlat(w, fw) : landRelief(w, fw);
 }
 
 // The pixel's ground footprint: view heading xy, then along and across radii.
@@ -312,16 +494,50 @@ vec3 airport(vec2 q, vec4 b, vec4 F) {
 
 // Water over the land, then airport lights.
 // up is the local vertical at the ground point.
+// The open sea's surface: wind sets the roughness, swell tilts the normal.
+// A swell train turns into roughness once a pixel spans its wavelength.
+vec3 seaNormal(vec2 w, vec3 up, float fw, inout float m2) {
+  // Calm slicks mirror the light; rough patches spread it.
+  float wind = vnoise(w / 26.0 + vec2(0.0, uTime * 0.004)) * 0.7 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 6.0) * 0.3;
+  m2 = mix(0.003, 0.032, smoothstep(0.25, 0.75, wind));
+  vec2 s = vec2(0.0);
+  for (int k = 0; k < 3; k++) {
+    float fk = float(k), L = 0.32 * pow(0.55, fk), an = 0.5 + 0.8 * fk;
+    vec2 dir = vec2(cos(an), sin(an));
+    // Deep water: the crests run at sqrt(g L / 2 pi).
+    float c = sqrt(9.81e-3 * L / 6.2832);
+    float ph = 6.2832 * fract(dot(w, dir) / L - uTime * c / L);
+    // Swell comes in groups, so the crests come and go.
+    float a = 0.07 * (0.4 + vnoise(w / (L * 9.0) + fk * 3.1));
+    float vis = fd(L, fw);
+    s += dir * a * sin(ph) * vis;
+    m2 += a * a * 0.5 * (1.0 - vis);
+  }
+  return normalize(up - vec3(s.x, 0.0, s.y));
+}
 vec3 landCover(vec3 g, float fw, vec3 d, vec3 up) {
   if (gWater > 0.0) {
-    vec3 r = reflect(d, up);
-    float nv = max(dot(-d, up), 0.05);
+    float m2 = mix(0.004, 0.018, gSea);
+    vec3 n = up;
+    if (uLand > 0.5 && gSea > 0.0) n = normalize(mix(up, seaNormal(gW, up, fw, m2), gSea));
+    vec3 r = reflect(d, n);
+    float nv = max(dot(-d, n), 0.05);
     float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
     vec3 wc = (skyL(r) + aurora(r, 1.0) * 0.5) * fres + uAmb * 0.0008 * vec3(0.5, 0.8, 1.0);
+    if (uLand > 0.5) {
+      // The water body: navy at depth; over the shelf the sand shows through.
+      vec3 E = uAmb * 0.03 + uSunL * 0.1 * max(uSun.y, 0.0);
+      float shelf = exp(min(gE, 0.0) / 0.025) * gSea;
+      wc += E * mix(vec3(0.004, 0.012, 0.02), vec3(0.14, 0.32, 0.3), shelf) * (1.0 - fres);
+      // Surf: a broken white line just off the shore.
+      float sd = -gE / max(length(gEG), 0.02);
+      float surf = band(sd - 0.03, 0.01, max(fw, 1e-3)) * smoothstep(0.4, 0.75, vnoise(gW / 0.35 + 2.0)) * (1.0 - gBelt);
+      wc += E * 0.9 * surf * gSea;
+    }
     // Ripples spread the light into a glitter path: Beckmann slopes.
     if (dot(uSunL, vec3(1.0)) > 1e-4) {
       vec3 hv = normalize(uSun - d);
-      float hz = max(dot(hv, up), 1e-3), m2 = mix(0.004, 0.018, gSea);
+      float hz = max(dot(hv, n), 1e-3);
       float D = exp(-(1.0 - hz * hz) / (hz * hz * m2)) / (PI * m2 * hz * hz * hz * hz);
       wc += uSunL * 0.014 * fres * D / (4.0 * nv);
     }
@@ -358,6 +574,8 @@ float townDome(vec2 w) {
     float rd = 2.5 + 9.0 * min(s.z, 1.4);
     g += s.z * sqrt(s.z) * exp(-dot(q, q) / (rd * rd)) * smoothstep(15.0, 9.0, length(q));
   }
+  // Relief land: no town glow over open sea; little over the peaks.
+  if (uLand > 0.5) g *= smoothstep(SEAR - 0.06, SEAR + 0.03, seaField(w)) * (1.0 - 0.5 * beltField(w));
   // The scale keeps the deck's mean glow at its approved level.
   return g * 0.83 * uLit;
 }
@@ -509,6 +727,9 @@ vec3 ground(vec2 w, float fw) {
   // Everything added after this point is man-made light.
   vec3 gLand = g;
   Town t = townAt(w, fw);
+  // Relief land: towns fill valleys and coasts, never water or peaks.
+  t.dens *= gHab;
+  t.fade *= min(gHab, 1.0);
   vec2 wq = t.wq;
   // Districts differ in their share of LED lamps.
   // Old centres have new LED lamps; the sprawl keeps sodium.
@@ -568,7 +789,7 @@ vec3 ground(vec2 w, float fw) {
   // Farms and hamlets: lone lamps, most of them near a road.
   // They cluster by the district noise, so the dark between stays dark.
   float near = exp(-t.road / 0.5);
-  float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn);
+  float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn) * min(gHab, 1.0);
   g += lampLight(w, 0.45, pf, fw, 41.0, led) * 0.0016;
   return gLand + (g - gLand) * uLit;
 }
@@ -922,6 +1143,8 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   float fw = tg / focal1 / max(-d.y, 0.03);
   vec4 cl = deck(d), ml = midLayer(d);
   gDeckT = cl.a;
+  // High ground meets the ray before sea level does.
+  if (uLand > 1.5 && cl.a * ml.a > 0.002) w = reliefParallax(w, d, normalize(P));
   // Ground under thick cloud never shows, so it costs nothing.
   vec3 g = cl.a * ml.a > 0.002 ? landCover(ground(w, fw), fw, d, normalize(P)) : vec3(0.0);
   g = g * cl.a + cl.rgb;
