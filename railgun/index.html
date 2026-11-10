@@ -2844,8 +2844,6 @@ function stepCharge(dt) {
     over = overOf(held);
     U.uRage.value = reduced() ? 0 : rage;
     U.uOver.value = reduced() ? 0 : over;
-    // The rails glow red through the over-hold.
-    U.uHeat.value = Math.max(U.uHeat.value, 0.55 * over);
     const c = charge.c;
     // Full power locks with one hard shudder.
     if (!charge.locked && held >= HOLD.full) { charge.locked = true; cam.shake += 0.7; }
@@ -3638,7 +3636,10 @@ function updateMuzzle(ma, c, m0) {
   pu.uC.value.copy(m0).add(pu.uDrift.value).addScaledVector(shot.ax, 0.45 * Lj);
   pu.uR.value = 0.8 * Lj + Rm;
   pu.uVSteps.value = volSteps(); pu.uLSteps.value = volLSteps(); pu.uLs.value = 0.05 * pu.uR.value;
-  plume.visible = on && age < 1.0;
+  // The conical plume is off; the flash, the disc and the brake smoke carry the shot.
+  plume.visible = false;
+  // The barrel glows once the slug has left it.
+  if (on && !shot.heated) { shot.heated = true; U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * cc); }
   // Six jets for 0.15 s.
   const jg = on ? 3.5 * cc * Math.exp(-ma / 0.06) : 0;
   // The brake spits smoke out of its ports once, sideways; it drifts and thins.
@@ -3992,8 +3993,6 @@ fire = c => {
   // The blast and the Mach wall raise one dust volume.
   dustShot = { t0: simT, c, foot: new THREE.Vector3(MUZZLE.x, 0, MUZZLE.z) };
   shotDust.material.uniforms.uFwd.value.set(AX.x, AX.z).normalize();
-  // The barrel goes white-hot; it cools in about ten seconds.
-  U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * Math.min(c, 1));
   // The kick shakes dust off the gun's ledges.
   for (let i = 0; i < 40; i++) {
     barrelPt(-200 + rnd() * 1050, (rnd() - 0.5) * 40, 30 + rnd() * 20, dustP);
