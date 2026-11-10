@@ -26,6 +26,7 @@ Zany, 1950s atomic age, dieselpunk. An original proving ground, no names or symb
 | Gun | A streamlined seafoam nacelle with chrome rings, coil portholes, a cherry tail fin, a flared chrome muzzle; twin copper rails outside on standoffs |
 | Machines | A diesel generator with a cherry flywheel and an exhaust stack; six glass vacuum tubes; a Bakelite console with a numbered dial and jewel lamps; a gantry with hazard stripes and a horseshoe magnet |
 | Props | A PROVING GROUND 7 sign with an atom, a DANGER HIGH VOLTAGE sign |
+| Materials | Enamel chips to bare metal on edges and in patches, with dust near the ground; copper turns verdigris in patches; salt crystals glint where they mirror the sun or the key light |
 | Lens | Bloom on hot parts only, a tilt-shift blur that sells the miniature, a warm print grade, vignette, grain |
 | Light | A low sun with a halo, a warm rim light from the sun side, soft violet contact shadows; the diorama floats over a sunset cloud sea (the camera looks down, so the backdrop is below the horizon) |
 
@@ -120,7 +121,7 @@ Six targets stand down the lane on thin stands. A steel backstop closes the lane
 
 ### Task 5: Sound
 
-- [ ] Machines, charge, fire, hits and echo through `kit.tone()`.
+- [x] Raw Web Audio through `audioKit` (no Tone.js needed): crane motor, magnet clunk and clank, lever ratchet and lock, steam hiss, refusal buzz, rack clinks; charge as diesel chug, tube hum, rising whine and arc crackle; release zap and thump; muzzle crack; a hit per material, low and long in bullet time; the snap rush and a late echo. Not yet heard by Tom.
 
 ### Task 6: Finish and QA
 

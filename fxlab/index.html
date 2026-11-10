@@ -114,7 +114,9 @@ import { WATER, waterDetail } from '../shared/water.js';
 import { detail, LEVELS } from '../shared/detail.js';
 import { quality, setQuality } from '../shared/stim.js';
 import { weather } from '../shared/weather.js';
-import { SKY, skyAt } from '../shared/sky.js';
+import { SKY, skyAt, skyDetail } from '../shared/sky.js';
+import { OUTPUT } from '../shared/output.js';
+import { PRECIP, precipDir, precipDetail } from '../shared/precip.js';
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), view = $('view');
@@ -130,8 +132,9 @@ const KNOBS = {
   tintK: ['Tint', 0, 40, 0.1, 1], vig: ['Vignette', 0, 1, 0.01, 0.5], vigIn: ['Inner edge', 0, 1, 0.01, 0.4], grain: ['Grain', 0, 0.3, 0.001, 0.03],
   seed: ['Grain seed', 0, 20, 1, 0], box: ['Letterbox', 0, 1, 1, 0], flick: ['Flicker', -0.1, 0.1, 0.001, 0],
   starsK: ['Stars', 0, 3, 0.01, 1], sunAz: ['Sun bearing', -3.14, 3.14, 0.01, 0.6], hazeD: ['Haze', 0, 0.003, 0.00005, 0.0006], hazeH: ['Haze height', 20, 400, 1, 120],
+  expo: ['Exposure', 0.2, 3, 0.01, 1],
 };
-const FXS = { flare: 'Lens flare', grade: 'Grade', sky: 'Sky and haze' };
+const FXS = { flare: 'Lens flare', grade: 'Grade', sky: 'Sky and haze', output: 'Output' };
 // The lab's tint at Tint 1: the night-scene toys' haze lift.
 const TINT = [0.0008, 0.0009, 0.0014];
 const uName = k => 'u' + k[0].toUpperCase() + k.slice(1);
@@ -489,6 +492,38 @@ PRESETS.push(
   },
 );
 
+/* ---------- output: the copies ---------- */
+// These sides return screen colour, so the lab adds no curve of its own.
+const OUT_PRE = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }`;
+PRESETS.push(
+  {
+    fx: 'output', id: 'film', name: 'Film curve and sRGB', a: 'Lava lamp', b: 'ouAces(), ouSrgb()', light: 'sun', encoded: true,
+    knobs: { expo: 1.05 }, pre: OUT_PRE,
+    use: 'The same two functions sit in Caustic pool, Vortex, Dijkstra, Lichtenberg, Chocolate, Rubens, Bismuth, Flame test and Beer.',
+    A: `
+  return srgb(aces(base * uExpo));`,
+    B: `
+  return ouSrgb(ouAces(base * uExpo));`,
+  },
+  {
+    fx: 'output', id: 'knee', name: 'Soft knee and dither', a: 'Rain on glass', b: 'ouKnee(), ouDither()', light: 'white', encoded: true,
+    knobs: {}, pre: OUT_PRE,
+    use: 'Also Frost and Chladni. Twenty-odd raw WebGL2 toys end on the same dither line.',
+    A: `
+  return srgb(knee(base)) + (hash(gl_FragCoord.xy + 7.0) - 0.5) / 255.0;`,
+    B: `
+  return ouDither(ouSrgb(ouKnee(base)), gl_FragCoord.xy + 7.0);`,
+  },
+);
+
 /* ---------- shaders ---------- */
 const UNI = `uniform vec2 uSrc, uRes; uniform vec3 uCol, uTint; uniform int uBack; uniform float uAsp;
 uniform float ${Object.keys(KNOBS).map(uName).join(', ')};`;
@@ -515,13 +550,14 @@ vec3 scene(vec2 uv) {
   return c + uCol * 3.0 * smoothstep(0.011, 0.007, length(d));
 }`;
 // Every module goes into every shader, so a name clash shows at once.
-const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${SKY}\n${p.pre || ''}
+const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${SKY}\n${GLASS_RAIN}\n${WET_GLASS}\n${WATER}\n${OUTPUT}\n${PRECIP}\n${p.pre || ''}
 vec3 sideA(vec2 uv, vec3 base) {${p.A}\n}
 vec3 sideB(vec2 uv, vec3 base) {${p.B}\n}`;
-const OUT = side => `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`;
-const rawFS = (p, side) => `#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outC;\n${body(p)}\nvoid main() { outC = ${OUT(side)}; }`;
+// An encoded copy returns screen colour; the rest get the lab's plain gamma.
+const OUT = (side, p) => (p.encoded ? `vec4(side${side}(vUv, scene(vUv)), 1.0)` : `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`);
+const rawFS = (p, side) => `#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outC;\n${body(p)}\nvoid main() { outC = ${OUT(side, p)}; }`;
 // three.js adds the version, the precision and gl_FragColor itself.
-const threeFS = p => `varying vec2 vUv;\n${body(p)}\nvoid main() { gl_FragColor = ${OUT('B')}; }`;
+const threeFS = p => `varying vec2 vUv;\n${body(p)}\nvoid main() { gl_FragColor = ${OUT('B', p)}; }`;
 const TRI_VS = `#version 300 es
 out vec2 vUv;
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
@@ -849,11 +885,16 @@ const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
 const progScene = compile(TRI_VS, ST_HEAD + `
 uniform vec2 uRes, uLamp;
 uniform float uTime, uWaterOn, uSwell, uChop, uSets, uRings, uSkyOn, uStars, uHazeD, uDay;
-uniform int uOct, uRingN, uTapN;
-uniform vec3 uLampCol, uZen, uMid, uBand, uAnti, uSunD;
+uniform int uOct, uRingN, uTapN, uAirN;
+uniform float uAir, uSnow;
+uniform vec2 uFall;
+uniform vec3 uLampCol, uZen, uMid, uBand, uAnti, uSunD, uCloudLit, uCloudShade;
+uniform float uCloud;
+uniform int uCloudOct;
 ${GLASS_RAIN}
 ${WATER}
 ${SKY}
+${PRECIP}
 // The camera stands 3 m over the water; the far shore lies just under the horizon.
 const float HZ = 0.38, SHORE = 0.376, FOC = 1.6, CAMH = 3.0;
 vec3 lightCol(float pick) {
@@ -861,36 +902,50 @@ vec3 lightCol(float pick) {
 }
 // sky.js: the haze takes the colour of the low sky that way.
 vec3 hazeCol(vec3 dir) { return skDusk(normalize(vec3(dir.x, 0.04, dir.z)), uSunD, uZen, uMid, uBand, uAnti) * 0.9; }
-// All that stands above the water. lamp 0 leaves the dragged light out.
-vec3 above(vec2 uv, float lamp) {
+// The far shore lies 2.4 km off; haze covers a share of it.
+float farHaze() { return uSkyOn > 0.5 ? skHaze(vec3(0.0, CAMH, 0.0), vec3(0.0, 30.0, -2400.0), uHazeD, 150.0) : 0.0; }
+float ridge(float qx) { return 0.44 + 0.04 * sin(qx * 3.0) + 0.02 * sin(qx * 9.0); }
+// The sky, the clouds and the ridge. full 0 is the cheap copy for the water's mirror.
+vec3 backdrop(vec2 uv, float full) {
   float asp = uRes.x / uRes.y;
-  vec2 q = vec2(uv.x * asp, uv.y);
   // sky.js: the sky by direction, with stars. Off, the sky is one flat colour.
   vec3 dir = normalize(vec3((uv.x - 0.5) * asp, max(uv.y - HZ, 0.0), -FOC));
-  vec3 c = uSkyOn > 0.5 ? skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars, uTime) : vec3(0.012, 0.015, 0.03);
-  // The far shore lies 2.4 km off; haze covers a share of it.
-  float far = uSkyOn > 0.5 ? skHaze(vec3(0.0, CAMH, 0.0), vec3(0.0, 30.0, -2400.0), uHazeD, 150.0) : 0.0;
+  vec3 c = vec3(0.012, 0.015, 0.03);
+  if (uSkyOn > 0.5) {
+    c = skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars * full, uTime);
+    // sky.js: a cloud deck covers the stars.
+    vec4 cl = skCloudsN(dir, uSunD, uTime, uCloud, uCloudLit, uCloudShade, full > 0.5 ? uCloudOct : 3);
+    c = mix(c, cl.rgb, cl.a);
+  }
+  if (uv.y < ridge(uv.x * asp)) c = mix(mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y), hazeCol(dir), farHaze());
+  return c;
+}
+// The lights: the town, the quay or the street, and the lamp you drag.
+vec3 lights(vec2 uv, float lamp) {
+  float asp = uRes.x / uRes.y;
+  vec2 q = vec2(uv.x * asp, uv.y);
+  vec3 c = vec3(0.0);
   // Town lights go out by day; haze dims them.
-  float lit = (1.0 - smoothstep(0.3, 0.8, uDay)) * (1.0 - 0.6 * far);
-  float hill = 0.44 + 0.04 * sin(q.x * 3.0) + 0.02 * sin(q.x * 9.0);
-  if (uv.y < hill) c = mix(mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y), hazeCol(dir), far);
-  // Small town lights in a band under the ridge.
-  vec2 g = vec2(q.x * 140.0, (uv.y - hill) * 140.0);
-  vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
-  float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
-  vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
-  c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
-  if (uWaterOn > 0.5) {
-    // Quay lights in one row on the shore.
-    float cx = q.x * 14.0, ci = floor(cx);
-    vec2 dq = vec2((fract(cx) - 0.3 - 0.4 * grH(vec2(ci, 7.0))) / 14.0, uv.y - SHORE - 0.006);
-    c += lightCol(grH(vec2(ci, 4.1))) * step(0.35, grH(vec2(ci, 2.0))) * exp(-dot(dq, dq) * 60000.0) * 5.0 * lit;
-  } else {
-    // Street lights on the land below.
-    vec2 g2 = q * 22.0;
-    vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
-    float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
-    c += lightCol(grH(id2 + 4.1)) * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+  float lit = (1.0 - smoothstep(0.3, 0.8, uDay)) * (1.0 - 0.6 * farHaze());
+  if (lit > 0.0) {
+    // Small town lights in a band under the ridge.
+    vec2 g = vec2(q.x * 140.0, (uv.y - ridge(q.x)) * 140.0);
+    vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
+    float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
+    vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
+    c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
+    if (uWaterOn > 0.5) {
+      // Quay lights in one row on the shore.
+      float cx = q.x * 14.0, ci = floor(cx);
+      vec2 dq = vec2((fract(cx) - 0.3 - 0.4 * grH(vec2(ci, 7.0))) / 14.0, uv.y - SHORE - 0.006);
+      c += lightCol(grH(vec2(ci, 4.1))) * step(0.35, grH(vec2(ci, 2.0))) * exp(-dot(dq, dq) * 60000.0) * 5.0 * lit;
+    } else {
+      // Street lights on the land below.
+      vec2 g2 = q * 22.0;
+      vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
+      float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
+      c += lightCol(grH(id2 + 4.1)) * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+    }
   }
   // The near lamp: the light you drag.
   vec2 d = q - vec2(uLamp.x * asp, uLamp.y);
@@ -917,7 +972,8 @@ void main() {
     // The mirrored ray lands back on the frame.
     float rz = max(-r.z, 0.05);
     vec2 ur = vec2(0.5 + r.x / rz * FOC / asp, HZ + r.y / rz * FOC);
-    // Rough water smears each light into a tall streak.
+    // The sky and the ridge mirror once; they are smooth.
+    // Rough water smears each light into a tall streak, so the lights take the taps.
     float len = 2.0 * sqrt(sig2) * FOC;
     vec3 refl = vec3(0.0);
     float ws = 0.0;
@@ -927,11 +983,12 @@ void main() {
       float fi = float(i) / float(uTapN), w = exp(-fi * fi * 2.0);
       vec2 at = ur + vec2(0.0, fi * len);
       at.y = SHORE + abs(at.y - SHORE);
-      refl += above(at, 0.0) * w;
+      refl += lights(at, 0.0) * w;
       ws += w;
     }
+    refl = refl / ws + backdrop(vec2(ur.x, SHORE + abs(ur.y - SHORE)), 0.0);
     vec3 deep = mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay);
-    c = mix(deep, refl / ws, F);
+    c = mix(deep, refl, F);
     // The lamp lays a glitter path on the water.
     if (uLamp.y > HZ) {
       vec3 l = normalize(vec3((uLamp.x - 0.5) * asp, uLamp.y - HZ, -FOC));
@@ -939,7 +996,14 @@ void main() {
     }
     // sky.js: far water fades into the haze, so the horizon has no hard line.
     if (uSkyOn > 0.5) c = mix(c, hazeCol(d), skHaze(vec3(0.0, CAMH, 0.0), vec3(p.x, 0.0, p.y), uHazeD, 150.0));
-  } else c = above(uv, 1.0);
+  } else c = backdrop(uv, 1.0) + lights(uv, 1.0);
+  // precip.js: rain or snow in the air, lit by the sky and by the lamp.
+  if (uAir > 0.0) {
+    float w = uSnow > 0.5 ? ppSnow(uv, asp, uTime, uAir, uFall, uAirN) : ppRain(uv, asp, uTime, uAir, uFall, uAirN);
+    float nearL = length(vec2((uv.x - uLamp.x) * asp, uv.y - uLamp.y));
+    vec3 lit = mix(vec3(0.02, 0.022, 0.03), vec3(0.3, 0.32, 0.36), uDay) + uLampCol * 0.5 * exp(-nearL * 5.0);
+    c += lit * w * (uSnow > 0.5 ? 1.8 : 0.7);
+  }
   outC = vec4(c, 1.0);
 }`);
 const progDown = compile(TRI_VS, ST_HEAD + `
@@ -990,11 +1054,12 @@ uniform sampler2D tScene, tBok;
 uniform vec2 uRes, uM, uLamp;
 uniform vec3 uLampCol, uTint;
 uniform float uDay, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
-uniform float uGlassOn, uFlareOn, uGradeOn;
+uniform float uGlassOn, uFlareOn, uGradeOn, uOutOn, uExpo;
 ${GLASS_RAIN}
 ${WET_GLASS}
 ${FLARE}
 ${GRADE}
+${OUTPUT}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y, day = uDay;
@@ -1016,8 +1081,8 @@ void main() {
   if (uFlareOn > 0.5) col = flScreen(col, flFlare(uv, uLamp, asp, uLampCol, uFlSize, vec3(1.0)) * uFlGain);
   // grade.js: tint, vignette and grain.
   if (uGradeOn > 0.5) col = gdGrade(col, uv, asp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, uVig, 0.4, uGrain);
-  col = clamp((col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14), 0.0, 1.0);
-  outC = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+  // output.js: exposure, the film curve, sRGB and dither. Off, bright light clips.
+  outC = vec4(uOutOn > 0.5 ? ouFilm(col, uExpo, gl_FragCoord.xy) : ouSrgb(clamp(col, 0.0, 1.0)), 1.0);
 }`;
 const progPane = compile(TRI_VS, paneFS(GLASS_MOD)), progPaneHand = compile(TRI_VS, paneFS(GLASS_HAND));
 
@@ -1025,20 +1090,23 @@ const progPane = compile(TRI_VS, paneFS(GLASS_MOD)), progPaneHand = compile(TRI_
 const CARDS = [
   { id: 'glass', name: 'Wet glass', file: 'wetglass.js', knobs: [['wet', 'Rain', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05], ['fog', 'Fog', 0, 1, 0.05], ['patch', 'Fog patches', 0, 1, 0.05], ['defocus', 'Scatter', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05]] },
   { id: 'water', name: 'Water', file: 'water.js', knobs: [['swell', 'Swell', 0, 0.04, 0.001], ['chop', 'Chop', 0, 0.4, 0.01], ['sets', 'Wave sets', 0, 1, 0.05], ['rings', 'Rain rings', 0, 1, 0.05]] },
-  { id: 'sky', name: 'Sky and haze', file: 'sky.js', knobs: [['hour', 'Time', 0, 24, 0.25], ['stars', 'Stars', 0, 2, 0.05], ['haze', 'Haze', 0, 1, 0.05]] },
+  { id: 'air', name: 'Rain and snow in the air', file: 'precip.js', knobs: [['air', 'Amount', 0, 1, 0.05], ['snow', 'Snow', 0, 1, 1]] },
+  { id: 'sky', name: 'Sky and haze', file: 'sky.js', knobs: [['hour', 'Time', 0, 24, 0.25], ['stars', 'Stars', 0, 2, 0.05], ['clouds', 'Clouds', 0, 1, 0.05], ['haze', 'Haze', 0, 1, 0.05]] },
   { id: 'flare', name: 'Lens flare', file: 'flare.js', knobs: [['flGain', 'Gain', 0, 2, 0.01], ['flSize', 'Size', 0.1, 2, 0.01]] },
   { id: 'grade', name: 'Grade', file: 'grade.js', knobs: [['vig', 'Vignette', 0, 1, 0.01], ['grain', 'Grain', 0, 0.3, 0.005], ['tintK', 'Tint', 0, 40, 0.5]] },
+  { id: 'out', name: 'Output', file: 'output.js', knobs: [['expo', 'Exposure', 0.3, 3, 0.01]] },
 ];
 const LOOKS = {
-  Everything: { on: ['glass', 'water', 'sky', 'flare', 'grade'] },
+  Everything: { on: ['glass', 'water', 'air', 'sky', 'flare', 'grade', 'out'] },
   Clear: { on: [] },
-  Harbour: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 19.25 },
-  Dawn: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 6.25, haze: 0.6 },
-  Drizzle: { on: ['glass', 'water', 'sky'], hour: 20, wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
-  Storm: { on: ['glass', 'water', 'sky', 'grade'], hour: 23, haze: 0.8, stars: 0, wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
-  'Fogged up': { on: ['glass', 'sky', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
+  Harbour: { on: ['water', 'sky', 'flare', 'grade', 'out'], rings: 0, hour: 19.25 },
+  Dawn: { on: ['water', 'sky', 'flare', 'grade', 'out'], rings: 0, hour: 6.25, haze: 0.6 },
+  Drizzle: { on: ['glass', 'water', 'air', 'sky', 'out'], air: 0.3, hour: 20, wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
+  Storm: { on: ['glass', 'water', 'air', 'sky', 'grade', 'out'], air: 1, hour: 23, haze: 0.8, stars: 0, clouds: 0.95, wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
+  Snow: { on: ['water', 'air', 'sky', 'flare', 'grade', 'out'], air: 0.8, snow: 1, rings: 0, hour: 22, haze: 0.7, chop: 0.08, clouds: 0.9 },
+  'Fogged up': { on: ['glass', 'sky', 'flare', 'out'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
 };
-const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, rings: 0.6, hour: 21.5, stars: 1, haze: 0.4, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
+const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, rings: 0.6, hour: 21.5, stars: 1, haze: 0.4, expo: 1, air: 0.6, snow: 0, clouds: 0.4, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
 const S = { on: {}, look: 'Everything', ...DEF };
 function buildCards() {
   const host = $('cards');
@@ -1112,7 +1180,7 @@ $('slow').addEventListener('click', () => {
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const motion = wetGlassMotion();
 let looping = false, paused = false, lastT = 0, time = 0, seed = 0, frameN = 0;
-const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water || S.on.sky);
+const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water || S.on.sky || S.on.air);
 function kick() {
   if (looping || !moving()) return;
   looping = true;
@@ -1155,7 +1223,10 @@ function drawStack(fw, fh, prog = progPane) {
   gl.useProgram(progScene.p);
   gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform3fv(u('uLampCol'), lamp);
   gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
+  gl.uniform1f(u('uCloud'), S.clouds); gl.uniform3fv(u('uCloudLit'), sk.cloudLit); gl.uniform3fv(u('uCloudShade'), sk.cloudShade); gl.uniform1i(u('uCloudOct'), skyDetail(D.level).cloudOctaves);
   gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
+  const fall = precipDir(motion.speed, S.snow > 0.5), aq = precipDetail(D.level);
+  gl.uniform1f(u('uAir'), S.on.air ? S.air : 0); gl.uniform1f(u('uSnow'), S.snow); gl.uniform2f(u('uFall'), fall[0], fall[1]); gl.uniform1i(u('uAirN'), S.snow > 0.5 ? aq.snow : aq.rain);
   gl.uniform1i(u('uOct'), wq.octaves); gl.uniform1i(u('uRingN'), wq.ringLayers); gl.uniform1i(u('uTapN'), D.level > 0 ? 3 : 2);
   gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
   gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
@@ -1189,8 +1260,8 @@ function drawStack(fw, fh, prog = progPane) {
   gl.uniform3fv(u('uLampCol'), lamp); gl.uniform3fv(u('uTint'), TINT.map(x => x * S.tintK));
   gl.uniform1f(u('uDay'), day); gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.speed); gl.uniform1f(u('uSeed'), seed);
   gl.uniform1f(u('uScatter'), Math.min(1, S.defocus / 0.15));
-  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
-  for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
+  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain'], ['uExpo', 'expo']]) gl.uniform1f(u(name), S[k]);
+  for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade'], ['uOutOn', 'out']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
   run(prog, null);
 }
 // wetglass.js against Train Ride's own lines, on one frozen frame.
@@ -1223,8 +1294,8 @@ seg('mode', v => { mode = v; $('pStack').hidden = v !== 'stack'; $('pCheck').hid
 $('wx').addEventListener('input', () => {
   const k = +$('wx').value, w = weather(k);
   $('wxOut').textContent = k;
-  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets, haze: w.haze });
-  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets', 'haze']) S[key] = +S[key].toFixed(3);
+  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets, haze: w.haze, air: w.air, clouds: w.clouds });
+  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets', 'haze', 'air', 'clouds']) S[key] = +S[key].toFixed(3);
   for (const b of $('looks').children) b.setAttribute('aria-pressed', 'false');
   buildCards();
   touch();

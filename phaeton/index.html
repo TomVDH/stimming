@@ -55,7 +55,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, linFit, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -204,7 +204,14 @@ const grade = new ShaderPass({
 });
 composer.addPass(grade);
 composer.addPass(new OutputPass());
-const draw = () => { grade.uniforms.uTime.value = performance.now() / 1000; composer.render(); };
+const draw = () => {
+  grade.uniforms.uTime.value = performance.now() / 1000;
+  // The glitter needs the sky sun's direction in view space.
+  camera.updateMatrixWorld();
+  sunView.value.copy(rim.position).normalize().transformDirection(camera.matrixWorldInverse);
+  keyView.value.copy(sun.position).normalize().transformDirection(camera.matrixWorldInverse);
+  composer.render();
+};
 
 /* ---------- sky ---------- */
 // The diorama floats in a dusk sky; below the horizon it fades to violet.
@@ -291,6 +298,87 @@ const flash = new THREE.PointLight(col(0.9, 0.08, 230), 0, 30, 1.6);
 flash.position.set(MUZZLE + 0.8, BORE + 0.5, 0.8);
 scene.add(flash);
 
+/* ---------- shader wear ---------- */
+// World-space value noise, shared by the wear, patina and glitter patches.
+const NOISE_GLSL = `
+float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float n3(vec3 x) {
+  vec3 i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm3(vec3 p) { float a = 0.5, v = 0.0; for (int i = 0; i < 4; i++) { v += a * n3(p); p = p * 2.07 + 3.1; a *= 0.5; } return v; }
+`;
+// Adds vWPos, the world position, to a built-in material's shaders.
+function worldVarying(sh) {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+    .replace('#include <project_vertex>', '#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\n' + NOISE_GLSL);
+}
+// Enamel wear: chips to bare metal on edges and in patches, dust near the ground.
+function wear(mat, amt = 1) {
+  mat.onBeforeCompile = sh => {
+    worldVarying(sh);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      {
+        float edge = clamp(length(fwidth(normal)) * 5.0, 0.0, 1.0);
+        float n = fbm3(vWPos * 9.0);
+        float chip = smoothstep(0.74, 0.77, n + edge * 0.32) * ${amt.toFixed(2)};
+        float grime = (1.0 - smoothstep(0.0, 0.9, vWPos.y)) * 0.28 + (fbm3(vWPos * vec3(2.0, 14.0, 2.0)) - 0.5) * 0.14;
+        diffuseColor.rgb *= 1.0 - grime * ${amt.toFixed(2)};
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.12, 0.11), chip);
+        roughnessFactor = mix(roughnessFactor, 0.55, chip);
+        metalnessFactor = mix(metalnessFactor, 0.85, chip);
+      }`);
+  };
+  mat.customProgramCacheKey = () => 'wear' + amt;
+  return mat;
+}
+// Copper turns verdigris in patches: matte, pale teal, no longer metal.
+function patina(mat) {
+  mat.onBeforeCompile = sh => {
+    worldVarying(sh);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      {
+        float pat = smoothstep(0.52, 0.74, fbm3(vWPos * 5.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.26, 0.52, 0.42), pat * 0.85);
+        roughnessFactor = mix(roughnessFactor, 0.85, pat);
+        metalnessFactor = mix(metalnessFactor, 0.0, pat);
+      }`);
+  };
+  mat.customProgramCacheKey = () => 'patina';
+  return mat;
+}
+// Salt glitter: tiny tilted crystals flash where they mirror the low sun.
+const sunView = { value: new THREE.Vector3() }, keyView = { value: new THREE.Vector3() };
+function glitter(mat) {
+  mat.onBeforeCompile = sh => {
+    worldVarying(sh);
+    sh.uniforms.uSunV = sunView;
+    sh.uniforms.uKeyV = keyView;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSunV, uKeyV;')
+      .replace('#include <opaque_fragment>', `
+      {
+        vec2 cell = floor(vWPos.xz * 55.0);
+        if (h3(vec3(cell, 1.7)) > 0.92) {
+          // Crystals tilt steeply, so they can mirror a sun low on the horizon.
+          vec3 r = vec3(h3(vec3(cell, 3.1)), 0.0, h3(vec3(cell, 5.3))) * 2.0 - 1.0;
+          vec3 nv = normalize((viewMatrix * vec4(normalize(vec3(r.x * 2.6, 1.0, r.z * 2.6)), 0.0)).xyz);
+          vec3 v = normalize(vViewPosition);
+          float g = max(pow(max(dot(nv, normalize(uSunV + v)), 0.0), 260.0), pow(max(dot(nv, normalize(uKeyV + v)), 0.0), 260.0));
+          outgoingLight += vec3(1.0, 0.88, 0.7) * g * 9.0;
+        }
+        outgoingLight *= mix(0.93, 1.05, fbm3(vec3(vWPos.xz * 0.35, 0.0)));
+      }
+      #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey = () => 'glitter';
+  return mat;
+}
+
 /* ---------- textures ---------- */
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
@@ -347,7 +435,7 @@ const crust = crustTile();
 {
   const L = SLAB.x1 - SLAB.x0, D = SLAB.z * 2;
   crust.repeat.set(L / 2.6, D / 2.6);
-  const top = new THREE.MeshStandardMaterial({ color: col(0.95, 0.012, 70), roughness: 0.95, bumpMap: crust, bumpScale: 1.4 });
+  const top = glitter(new THREE.MeshStandardMaterial({ color: col(0.95, 0.012, 70), roughness: 0.95, bumpMap: crust, bumpScale: 1.4 }));
   const side = new THREE.MeshStandardMaterial({ map: strataTex(L), roughness: 1 });
   const end = new THREE.MeshStandardMaterial({ map: strataTex(D), roughness: 1 });
   const dark = new THREE.MeshStandardMaterial({ color: col(0.16, 0.01, 280), roughness: 0.7, metalness: 0.1 });
@@ -369,8 +457,9 @@ const steelLight = new THREE.MeshStandardMaterial({ color: col(0.58, 0.01, 250),
 const chrome = new THREE.MeshStandardMaterial({ color: col(0.92, 0.005, 250), roughness: 0.1, metalness: 1 });
 const paint = enamel(PAL.mustard, 0.4);
 const cream = enamel(PAL.cream), seafoam = enamel(PAL.seafoam), cherry = enamel(PAL.cherry, 0.28), bakelite = enamel(PAL.bakelite, 0.3);
+wear(paint, 1); wear(cream, 0.8); wear(seafoam, 1); wear(cherry, 0.7); wear(bakelite, 0.25);
 const ceramic = new THREE.MeshStandardMaterial({ color: col(0.86, 0.02, 85), roughness: 0.45 });
-const copper = new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) });
+const copper = patina(new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) }));
 const black = new THREE.MeshStandardMaterial({ color: col(0.14, 0.005, 250), roughness: 0.6 });
 const add = (parent, geo, mat, x, y, z, shadow = true) => {
   const m = new THREE.Mesh(geo, mat);
@@ -411,7 +500,7 @@ function hazardMat(len) {
   const t = hazardTex.clone();
   t.needsUpdate = true;
   t.repeat.set(len / 1.2, 1);
-  const m = enamel(new THREE.Color(1, 1, 1), 0.45);
+  const m = wear(enamel(new THREE.Color(1, 1, 1), 0.45), 1);
   m.map = t;
   return m;
 }
@@ -724,6 +813,7 @@ function addDent(y, z) {
   m.position.set(BACK_X - 0.01, y, z);
   scene.add(m);
   glows.push({ m, t: 0 });
+  sfx.hit('back', BACK_X);
   sparks.spray(90, BACK_X - 0.05, y, z, new THREE.Vector3(-1, 0.5, 0), 1.1, 4, 14, [0.3, 1.1]);
   if (glows.length > 60) { const i = glows.findIndex(d => !d.row); if (i >= 0) { const [d] = glows.splice(i, 1); scene.remove(d.m); d.m.material.dispose(); } }
 }
@@ -1272,6 +1362,7 @@ function tankWall(x, e, hy, hz) {
 function tankBurst() {
   if (mode !== 'aquarium' || TANK.burst) return;
   TANK.burst = true;
+  sfx.hit('tank', (TANK.x0 + TANK.x1) / 2);
   const t = row[0];
   t.state = 'gone';
   t.body.visible = false;
@@ -1299,6 +1390,7 @@ const SALT = col(0.95, 0.015, 80), GUNSMOKE = col(0.62, 0.01, 70);
 // Plasma bursts from the muzzle, a shock ring spreads, a smoke ring lingers.
 function muzzleBlast(hy, hz) {
   const x = MUZZLE + 0.05;
+  sfx.crack();
   for (let i = 0; i < K(60); i++) {
     const a = rnd(0, TAU), r = Math.random();
     plasma.add(x, hy, hz, rnd(8, 55) * (1 - r * 0.6), Math.sin(a) * r * 22, Math.cos(a) * r * 22, any(PLASMA),
@@ -1469,6 +1561,212 @@ const HIT = {
   },
 };
 
+/* ---------- sound ---------- */
+// Synthesised in Web Audio; muted by default, started by the first gesture.
+const kit = audioKit({ keys: new Set([' ', 'l', 'L', 'k', 'K', 's', 'S', '1', '2', '3', '4']), noiseSeconds: 2 });
+const panAt = x => clamp((x - CX) / 16, -1, 1);
+// Hits in bullet time play low and long, as if slowed down.
+const slowF = () => (timeScale < 0.99 ? 0.42 : 1);
+function bus(ac, x) {
+  const p = ac.createStereoPanner();
+  p.pan.value = panAt(x);
+  p.connect(kit.out);
+  return p;
+}
+function envelope(g, t, a, d, peak) {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+}
+// A filtered noise burst.
+function nz(ac, dest, t, d, { type = 'bandpass', f = 1000, f1 = 0, q = 1, gain = 0.3, a = 0.003, rate = 1 } = {}) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.playbackRate.value = rate;
+  const fl = ac.createBiquadFilter();
+  fl.type = type; fl.Q.value = q;
+  fl.frequency.setValueAtTime(f, t);
+  if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + a + d);
+  const g = ac.createGain();
+  envelope(g, t, a, d, gain);
+  src.connect(fl).connect(g).connect(dest);
+  const len = (a + d + 0.05) * rate;
+  // Offset and length are in buffer seconds.
+  src.start(t, Math.random() * Math.max(0, kit.noise.duration - len), Math.min(len, kit.noise.duration));
+}
+// A tone with an optional glide.
+function tn(ac, dest, t, { type = 'sine', f = 440, f1 = 0, d = 0.3, gain = 0.2, a = 0.004 } = {}) {
+  const o = ac.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + a + d);
+  const g = ac.createGain();
+  envelope(g, t, a, d, gain);
+  o.connect(g).connect(dest);
+  o.start(t);
+  o.stop(t + a + d + 0.05);
+}
+// Inharmonic partials ring like struck metal.
+function ring(ac, dest, t, freqs, d, gain) {
+  freqs.forEach((f, i) => tn(ac, dest, t, { f: f * (1 + rnd(-0.01, 0.01)), d: d / (1 + i * 0.35), gain: gain / (1 + i * 0.6), a: 0.002 }));
+}
+let chargeV = null;
+const sfx = {
+  ctx(x) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return null;
+    return { ac, t: ac.currentTime + 0.005, o: bus(ac, x) };
+  },
+  // The crane's trolley motor whines up and down.
+  motor(d) {
+    const k = this.ctx(-14); if (!k) return;
+    const { ac, t, o } = k;
+    tn(ac, o, t, { type: 'sawtooth', f: 70, f1: 120, d: d * 0.5, gain: 0.035, a: 0.08 });
+    tn(ac, o, t + d * 0.5, { type: 'sawtooth', f: 120, f1: 70, d: d * 0.5, gain: 0.03, a: 0.02 });
+    nz(ac, o, t, d, { f: 900, q: 2, gain: 0.03, a: 0.08 });
+  },
+  clunk() {
+    const k = this.ctx(-14); if (!k) return;
+    const { ac, t, o } = k;
+    nz(ac, o, t, 0.08, { f: 320, q: 1.5, gain: 0.35 });
+    tn(ac, o, t, { f: 110, f1: 60, d: 0.15, gain: 0.3 });
+  },
+  clank() {
+    const k = this.ctx(-12.4); if (!k) return;
+    const { ac, t, o } = k;
+    ring(ac, o, t, [880, 1370, 2240], 0.35, 0.12);
+    nz(ac, o, t, 0.05, { f: 2500, q: 1, gain: 0.2 });
+  },
+  // The lever ratchets; the block slides home and locks.
+  lock() {
+    const k = this.ctx(-12.4); if (!k) return;
+    const { ac, t, o } = k;
+    for (let i = 0; i < 5; i++) nz(ac, o, t + i * 0.08, 0.012, { type: 'highpass', f: 3500, gain: 0.22 });
+    nz(ac, o, t + 0.1, 0.35, { type: 'lowpass', f: 700, gain: 0.18, a: 0.05 });
+    nz(ac, o, t + 0.5, 0.06, { f: 1400, q: 2, gain: 0.4 });
+    tn(ac, o, t + 0.5, { f: 140, f1: 70, d: 0.12, gain: 0.3 });
+  },
+  vent() {
+    const k = this.ctx(-12.6); if (!k) return;
+    const { ac, t, o } = k;
+    nz(ac, o, t, 1.3, { type: 'highpass', f: 2600, gain: 0.16, a: 0.02 });
+    nz(ac, o, t + 0.1, 0.25, { f: 900, q: 1, gain: 0.2 });
+  },
+  buzz() {
+    const k = this.ctx(-9.4); if (!k) return;
+    const { ac, t, o } = k;
+    for (let i = 0; i < 2; i++) tn(ac, o, t + i * 0.16, { type: 'square', f: 118, d: 0.11, gain: 0.05, a: 0.005 });
+  },
+  clink(i) {
+    const k = this.ctx(RACK_X); if (!k) return;
+    ring(k.ac, k.o, k.t + i * 0.08, [2100 + i * 90, 3300], 0.18, 0.06);
+  },
+  // Charging: a diesel chug, tube hum, a rising whine and arc crackle.
+  chargeStart() {
+    const k = this.ctx(-11); if (!k || chargeV) return;
+    const { ac, t, o } = k;
+    const out = ac.createGain();
+    out.gain.value = 0.0001;
+    out.gain.setTargetAtTime(1, t, 0.06);
+    out.connect(o);
+    const dz = ac.createOscillator(); dz.type = 'sawtooth'; dz.frequency.value = 46;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+    const am = ac.createGain(); am.gain.value = 0.5;
+    const lfo = ac.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 4;
+    const lfoG = ac.createGain(); lfoG.gain.value = 0.5;
+    lfo.connect(lfoG).connect(am.gain);
+    const dzG = ac.createGain(); dzG.gain.value = 0.22;
+    dz.connect(lp).connect(am).connect(dzG).connect(out);
+    const hum = ac.createOscillator(); hum.frequency.value = 100;
+    const hum2 = ac.createOscillator(); hum2.frequency.value = 150;
+    const humG = ac.createGain(); humG.gain.value = 0.02;
+    hum.connect(humG); hum2.connect(humG); humG.connect(out);
+    const wh = ac.createOscillator(); wh.type = 'triangle'; wh.frequency.value = 300;
+    const whG = ac.createGain(); whG.gain.value = 0.01;
+    wh.connect(whG).connect(out);
+    const nodes = [dz, lfo, hum, hum2, wh];
+    nodes.forEach(n => n.start(t));
+    chargeV = { ac, out, lfo, humG, wh, whG, nodes };
+  },
+  chargeUpdate(c) {
+    if (!chargeV) return;
+    const { ac, lfo, humG, wh, whG } = chargeV, t = ac.currentTime;
+    lfo.frequency.setTargetAtTime(4 + 16 * c, t, 0.1);
+    humG.gain.setTargetAtTime(0.02 + 0.06 * c, t, 0.1);
+    // At full charge the whine wobbles: ready.
+    wh.frequency.setTargetAtTime(300 + 2700 * c ** 1.4 + (c >= 1 ? 60 * Math.sin(t * 28) : 0), t, 0.04);
+    whG.gain.setTargetAtTime(0.01 + 0.045 * c, t, 0.1);
+    if (Math.random() < c * 0.45) nz(ac, chargeV.out, t + rnd(0, 0.03), 0.012, { type: 'highpass', f: 3000, gain: 0.12 * c });
+  },
+  chargeStop() {
+    if (!chargeV) return;
+    const { ac, out, nodes } = chargeV, t = ac.currentTime;
+    out.gain.setTargetAtTime(0.0001, t, 0.04);
+    nodes.forEach(n => n.stop(t + 0.3));
+    chargeV = null;
+  },
+  // Release: the capacitors dump with a zap and a deep thump.
+  zap() {
+    const k = this.ctx(-9); if (!k) return;
+    const { ac, t, o } = k;
+    tn(ac, o, t, { type: 'sawtooth', f: 2400, f1: 90, d: 0.18, gain: 0.12 });
+    tn(ac, o, t, { f: 130, f1: 38, d: 0.7, gain: 0.5 });
+    nz(ac, o, t, 0.2, { type: 'lowpass', f: 1800, f1: 200, gain: 0.3 });
+  },
+  // The slug leaves the muzzle: a crack, then a long low roll.
+  crack() {
+    const k = this.ctx(MUZZLE); if (!k) return;
+    const { ac, t, o } = k, f = slowF();
+    nz(ac, o, t, 0.05 / f, { type: 'highpass', f: 1800 * f, gain: 0.55, rate: f });
+    nz(ac, o, t, 0.9 / f, { type: 'lowpass', f: 500 * f, f1: 80, gain: 0.35, a: 0.01, rate: f });
+    tn(ac, o, t, { f: 90 * f, f1: 34, d: 0.9 / f, gain: 0.35 });
+  },
+  // The snap back to real time: a rising rush and a thump.
+  snap() {
+    const k = this.ctx(CX); if (!k) return;
+    const { ac, t, o } = k;
+    nz(ac, o, t, 0.28, { f: 300, f1: 4200, q: 0.8, gain: 0.22, a: 0.2 });
+    tn(ac, o, t + 0.22, { f: 70, f1: 40, d: 0.5, gain: 0.3 });
+    // A late echo comes back off the far side of the range.
+    nz(ac, o, t + 0.6, 1.2, { type: 'lowpass', f: 380, gain: 0.12, a: 0.05 });
+  },
+  hit(kind, x) {
+    const k = this.ctx(x); if (!k) return;
+    const { ac, t, o } = k, f = slowF();
+    if (kind === 'glass' || kind === 'wall') {
+      nz(ac, o, t, 0.25 / f, { type: 'highpass', f: 3500 * f, gain: 0.3, rate: f });
+      for (let i = 0; i < 9; i++) tn(ac, o, t + rnd(0, 0.3) / f, { f: rnd(2500, 6000) * f, d: rnd(0.05, 0.2) / f, gain: 0.05 });
+    } else if (kind === 'ice') {
+      for (let i = 0; i < 5; i++) nz(ac, o, t + i * 0.025 / f, 0.06 / f, { f: rnd(900, 1800) * f, q: 2, gain: 0.22, rate: f });
+      for (let i = 0; i < 4; i++) tn(ac, o, t + rnd(0, 0.2) / f, { f: rnd(1500, 3000) * f, d: 0.1 / f, gain: 0.04 });
+    } else if (kind === 'water') {
+      nz(ac, o, t, 0.6 / f, { type: 'lowpass', f: 3200 * f, f1: 300 * f, gain: 0.4, rate: f });
+      tn(ac, o, t, { f: 320 * f, f1: 110 * f, d: 0.25 / f, gain: 0.15 });
+    } else if (kind === 'melon') {
+      nz(ac, o, t, 0.16 / f, { f: 600 * f, q: 1.2, gain: 0.45, rate: f });
+      tn(ac, o, t, { f: 140 * f, f1: 70 * f, d: 0.2 / f, gain: 0.3 });
+    } else if (kind === 'concrete') {
+      nz(ac, o, t, 0.45 / f, { type: 'lowpass', f: 600 * f, gain: 0.5, rate: f });
+      for (let i = 0; i < 6; i++) nz(ac, o, t + rnd(0.05, 0.5) / f, 0.03 / f, { f: rnd(700, 1600) * f, q: 2, gain: 0.08, rate: f });
+    } else if (kind === 'steel') {
+      ring(ac, o, t, [520 * f, 1340 * f, 2210 * f, 3170 * f], 1.4 / f, 0.18);
+      nz(ac, o, t, 0.05 / f, { f: 2000 * f, gain: 0.35, rate: f });
+    } else if (kind === 'plate') {
+      ring(ac, o, t, [1100 * f, 2650 * f], 0.25 / f, 0.06);
+    } else if (kind === 'back') {
+      ring(ac, o, t, [180 * f, 410 * f, 760 * f, 1180 * f], 2.2 / f, 0.3);
+      nz(ac, o, t, 0.08 / f, { f: 900 * f, gain: 0.4, rate: f });
+    } else if (kind === 'stop') {
+      tn(ac, o, t, { f: 160 * f, f1: 80 * f, d: 0.25 / f, gain: 0.35 });
+      nz(ac, o, t, 0.1 / f, { f: 500 * f, gain: 0.25, rate: f });
+    } else if (kind === 'tank') {
+      nz(ac, o, t, 1.4, { type: 'lowpass', f: 2600, f1: 260, gain: 0.55, a: 0.01 });
+      nz(ac, o, t, 0.4, { type: 'highpass', f: 3000, gain: 0.3 });
+      for (let i = 0; i < 12; i++) tn(ac, o, t + rnd(0, 0.5), { f: rnd(2500, 6000), d: rnd(0.05, 0.2), gain: 0.04 });
+    }
+  },
+};
+
 /* ---------- the gun state ---------- */
 // empty, loading, loaded, locking, locked, charging, fired, venting.
 const gunState = { s: 'empty', charge: 0, held: 0, rack: RACK_N, tray: null, blink: [0, 0, 0], busy: 0 };
@@ -1480,6 +1778,7 @@ const tween = (target, { done, ...vars }) => {
 };
 function refuse(lamp) {
   gunState.blink[lamp] = 0.6;
+  sfx.buzz();
   wake();
 }
 function load() {
@@ -1489,8 +1788,10 @@ function load() {
   const i = gunState.rack - 1;
   const take = rackSlugs[i];
   const tl = gsap.timeline({ onStart: () => { gunState.busy++; wake(); }, onComplete: () => { gunState.busy--; } });
-  tl.to(crane, { x: RACK_X, duration: 0.55, ease: 'power2.inOut' })
+  tl.add(() => sfx.motor(0.55))
+    .to(crane, { x: RACK_X, duration: 0.55, ease: 'power2.inOut' })
     .to(crane, { y: rackY(i) + 0.13, duration: 0.4, ease: 'power2.in' })
+    .add(() => sfx.clunk())
     .to(crane, { magnet: 1, duration: 0.1 })
     .add(() => {
       // The magnet lifts the slug off its cradle.
@@ -1500,8 +1801,10 @@ function load() {
       gunState.rack--;
     })
     .to(crane, { y: 2.85, duration: 0.45, ease: 'power2.out' })
+    .add(() => sfx.motor(0.7))
     .to(crane, { x: TRAY_X, duration: 0.7, ease: 'power2.inOut' })
     .to(crane, { y: BORE + 0.13, duration: 0.45, ease: 'power2.in' })
+    .add(() => sfx.clank())
     .add(() => { gunState.carry = null; gunState.tray = take; take.position.set(TRAY_X, BORE, 0); })
     .to(crane, { magnet: 0, duration: 0.15 })
     .add(() => { gunState.s = 'loaded'; })
@@ -1514,17 +1817,20 @@ function restock() {
   rackSlugs.forEach((s, i) => {
     s.position.set(RACK_X - 1.2, rackY(i), 0);
     rack.add(s);
+    sfx.clink(i);
     tween(s.position, { x: RACK_X, duration: 0.35, delay: i * 0.08, ease: 'back.out(2)' });
   });
 }
 function lock() {
   if (gunState.s !== 'loaded') { refuse(gunState.s === 'empty' ? 0 : 1); return; }
   gunState.s = 'locking';
+  sfx.lock();
   tween(gunState, { lever: 1, duration: 0.55, ease: 'power3.inOut', done: () => { gunState.s = 'locked'; } });
 }
 function unlock() {
   gunState.s = 'venting';
   vent(TRAY_X - 0.5, BORE + 0.2);
+  sfx.vent();
   tween(gunState, { lever: 0, duration: 0.8, ease: 'power2.inOut', done: () => { gunState.s = 'empty'; } });
 }
 gunState.lever = 0;
@@ -1546,12 +1852,15 @@ function startCharge() {
   if (shot.phase === 'after') refill();
   gunState.s = 'charging';
   gunState.held = 0;
+  sfx.chargeStart();
   wake();
 }
 function release() {
   if (gunState.s !== 'charging') return;
+  sfx.chargeStop();
   if (gunState.held < MIN_HOLD) { gunState.s = 'locked'; gunState.charge = 0; wake(); return; }
   fire();
+  sfx.zap();
 }
 function fire() {
   // The slug carries its energy down the lane and spends it in each target.
@@ -1591,11 +1900,14 @@ function hitEvent(ev) {
     // Steel and plates stay standing; everything else breaks apart.
     if (ev.t.kind !== 'steel' && ev.t.kind !== 'plate') { ev.t.state = 'gone'; ev.t.body.visible = false; }
     HIT[ev.t.kind](ev.t, ev.e, hy, hz);
+    sfx.hit(ev.t.kind, ev.x);
   } else if (ev.kind === 'wall') {
     tankWall(ev.x, ev.e, hy, hz);
+    sfx.hit('wall', ev.x);
   } else if (ev.kind === 'sink' || (ev.kind === 'stop' && ev.t.kind === 'plate')) {
     // In water or steel plate, the slug stops and stays.
     stuck(ev.kind === 'sink' ? ev.x : ev.x - 0.05, hy, hz);
+    sfx.hit(ev.kind === 'sink' ? 'water' : 'plate', ev.x);
   } else if (ev.kind === 'stop') {
     // The stopped slug knocks its target off the stand.
     const t = ev.t;
@@ -1603,6 +1915,7 @@ function hitEvent(ev) {
     t.vel.set(rnd(2, 4), rnd(1.5, 3), rnd(-0.6, 0.6));
     t.spin.set(rnd(-2, 2), rnd(-2, 2), rnd(-4, -1));
     knocked.push(t);
+    sfx.hit('stop', t.x);
   } else {
     addDent(hy, hz);
   }
@@ -1646,6 +1959,27 @@ window.__qa = {
   // Set the bullet-time scale without saving it.
   slow(v) { slowmo = v; },
   mode: v => act.mode(v),
+  // Frame cost: n draws, each waited out on the GPU; returns mean ms.
+  bench(n = 20) {
+    const gl = renderer.getContext();
+    draw(); gl.finish();
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) { draw(); gl.finish(); }
+    return +((performance.now() - t0) / n).toFixed(2);
+  },
+  dpr: () => size.dpr,
+  rung: () => rung,
+  prof() {
+    const r = { all: this.bench() };
+    bloom.enabled = false; r.noBloom = this.bench(); bloom.enabled = true;
+    tiltH.enabled = tiltV.enabled = false; r.noTilt = this.bench(); tiltH.enabled = tiltV.enabled = true;
+    renderer.shadowMap.autoUpdate = false; r.noShadowUpdate = this.bench(); renderer.shadowMap.autoUpdate = true;
+    const t = []; scene.traverse(o => { if (o.material?.transmission > 0 && o.visible) { t.push(o); o.visible = false; } });
+    r.noTransmission = this.bench(); t.forEach(o => { o.visible = true; });
+    r.transmissive = t.length;
+    let n = 0, tri = 0; renderer.info.autoReset = true; draw(); r.calls = renderer.info.render.calls; r.tris = renderer.info.render.triangles;
+    return r;
+  },
   // Close-up stills: look at x, y from d metres; a resize resets it.
   view(x, y, d) { fixedLook.set(x, y, 0); fixedPos.set(x, y + d * 0.26, d); placeCamera(); draw(); },
   state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase, mode, row: row.slice(0, 3).map(t => [t.kind, t.state, +t.g.position.y.toFixed(2), t.drop, t.g.parent === scene]) }),
@@ -1682,6 +2016,7 @@ function step(dt) {
     G.charge = clamp(G.charge + dt / CHARGE_TIME);
   }
   const c = G.s === 'charging' ? G.charge : 0;
+  if (c > 0) sfx.chargeUpdate(c);
   for (const r of rails) r.material.emissive.copy(col(0.7, 0.18, 45)).multiplyScalar(c * c * 1.6);
   drawArcs(c);
   const spinning = stepMachines(dt, c);
@@ -1718,7 +2053,7 @@ function step(dt) {
     if (qaAt?.x != null && shot.x >= qaAt.x) { frozen = true; qaAt = null; }
   } else if (shot.phase === 'hold') {
     if (!frozen) shot.hold += dt;
-    if (shot.hold > 0.35) { shot.phase = 'snap'; tankBurst(); }
+    if (shot.hold > 0.35) { shot.phase = 'snap'; sfx.snap(); tankBurst(); }
   } else if (shot.phase === 'snap' && timeScale >= 1) {
     shot.phase = 'after'; shot.after = 0;
     if (G.s === 'fired') unlock();
@@ -1796,8 +2131,8 @@ function step(dt) {
   const blinking = G.blink.some(b => b > 0);
   // The focus band follows the view: the slab, or the slug when tracking.
   for (const p of [tiltH, tiltV]) {
-    p.uniforms.uFocus.value = lerp(narrow ? 0.5 : 0.47, 0.52, camBlend);
-    p.uniforms.uBand.value = lerp(narrow ? 0.06 : 0.09, 0.16, camBlend);
+    p.uniforms.uFocus.value = lerp(narrow ? 0.44 : 0.47, 0.52, camBlend);
+    p.uniforms.uBand.value = lerp(narrow ? 0.15 : 0.09, 0.16, camBlend);
     p.uniforms.uMax.value = (narrow ? 4 : 7) * size.dpr;
   }
   return spinning || heatT > 0 || shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
@@ -1816,8 +2151,14 @@ function frameShot() {
   // The distance fits the whole diorama across the frame.
   const hf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * asp);
   const d = HALF_W / Math.tan(hf);
-  fixedLook.set(CX, narrow ? 0.2 : 0.9, 0);
+  fixedLook.set(CX, 0.9, 0);
   fixedPos.set(CX, fixedLook.y + d * Math.sin(TILT), d * Math.cos(TILT));
+  // Tall screens look down the lane at three-quarters, so the range recedes up the frame.
+  if (narrow) {
+    camera.fov = 40;
+    fixedLook.set(-6.5, 0.4, -0.4);
+    fixedPos.set(-36, 15, 7);
+  }
   camera.far = d + 1000;
   camera.updateProjectionMatrix();
   const scale = size.h * size.dpr / (2 * Math.tan(camera.fov * Math.PI / 360));
@@ -1833,7 +2174,10 @@ function placeCamera() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.2e6 }) };
+  // Rung 1 of the ladder lowers the pixel ratio; rung 2 drops the tilt blur and halves shadows.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.2e6, low: rung >= 1 }) };
+  tiltH.enabled = tiltV.enabled = rung < 2;
+  if (rung >= 2 && sun.shadow.mapSize.x > 1024) { sun.shadow.mapSize.set(1024, 1024); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   frameShot();
   placeCamera();
   renderer.setPixelRatio(size.dpr);
@@ -1841,6 +2185,22 @@ function resize() {
   composer.setPixelRatio(size.dpr);
   composer.setSize(w, h);
   for (const p of [tiltH, tiltV, grade]) p.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of frames, an average above 1/38 s held for 2 s steps down one rung.
+let rung = 0, runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 2) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  resize();
 }
 
 /* ---------- frame loop ---------- */
@@ -1853,12 +2213,16 @@ function frame(now) {
   raf = 0;
   let again = true;
   try {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const raw = (now - last) / 1000;
+    // Throttled frames from a hidden pane do not count as slow.
+    if (raw < 0.1) watchdog(raw);
+    const dt = Math.min(0.05, raw);
     last = now;
     again = step(dt);
     draw();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && gunState.busy === 0);
   }
 }
 
@@ -1917,12 +2281,13 @@ renderer.compileAsync(scene, camera).then(() => {
 }, () => { canvas.classList.add('on'); ready = true; mark('first-frame'); });
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
-onQuality(() => { resize(); if (ready) draw(); });
+// A new quality choice clears the ladder.
+onQuality(() => { rung = 0; runFor = slowFor = 0; resize(); if (ready) draw(); });
 onReducedChange(() => wake());
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; sfx.chargeStop(); kit.rest(() => true); return; }
   wake();
 });
 </script>

@@ -1,0 +1,191 @@
+// Washing line look: cloth passes, line ribbons, pegs and pulley wheels.
+// The physics lives in core.js; this file only draws it.
+import * as THREE from 'three';
+import { ropeAt } from './core.js';
+
+/* ---------- cloth materials ---------- */
+// Three passes, each free of draw order:
+// 1. Max lifts the scene behind a piece to the sun's light through it.
+// 2. Multiply tints that light with the cloth, so overlaps mix.
+// 3. Add puts front light and sky light on the face we see.
+const VS = /* glsl */ `
+  varying vec3 vW, vN;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vW = w.xyz; vN = normal;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`;
+const HEAD = /* glsl */ `
+  varying vec3 vW, vN;
+  uniform vec3 uSun, uSunCol, uT, uAlb, uAmbHi, uAmbLo; uniform float uB, uTau;
+  vec3 faceN(out vec3 v) {
+    v = normalize(cameraPosition - vW);
+    vec3 n = normalize(vN);
+    return dot(n, v) < 0.0 ? -n : n;
+  }`;
+const PASS = {
+  max: `void main() { vec3 v; vec3 n = faceN(v);
+    float through = 0.4 + 0.6 * max(dot(-n, uSun), 0.0);
+    float fwd = 1.0 + 0.8 * pow(max(dot(-v, uSun), 0.0), 8.0);
+    gl_FragColor = vec4(uSunCol * uB * uTau * 0.55 * through * fwd, 1.0); }`,
+  mul: `void main() { vec3 v; vec3 n = faceN(v);
+    float c = max(abs(dot(n, v)), 0.3);
+    vec3 T = pow(uT, vec3(1.0 / c));
+    gl_FragColor = vec4(mix(vec3(0.05), T, uB * uTau + (1.0 - uB) * 0.04), 1.0); }`,
+  add: `void main() { vec3 v; vec3 n = faceN(v);
+    float sun = max(dot(n, uSun), 0.0);
+    vec3 amb = mix(uAmbLo, uAmbHi, 0.5 + 0.5 * n.y) * (0.75 - 0.4 * uB);
+    gl_FragColor = vec4(uAlb * (uSunCol * sun * 0.6 + amb), 1.0); }`,
+};
+const ORDER = { max: 10, mul: 11, add: 12 };
+
+function clothMat(shared, kind, alb, tr) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: { ...shared, uAlb: { value: new THREE.Vector3(...alb) }, uT: { value: new THREE.Vector3(...tr) } },
+    vertexShader: VS, fragmentShader: HEAD + PASS[kind],
+    side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
+  });
+  m.blendEquation = kind === 'max' ? THREE.MaxEquation : THREE.AddEquation;
+  m.blendSrc = kind === 'mul' ? THREE.DstColorFactor : THREE.OneFactor;
+  m.blendDst = kind === 'mul' ? THREE.ZeroFactor : THREE.OneFactor;
+  return m;
+}
+
+/* ---------- ribbons ---------- */
+// A ribbon faces the camera and keeps a minimum width in pixels.
+function ribbon(n, col) {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 6);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const idx = [];
+  for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  g.setIndex(idx);
+  const u = { uCol: { value: new THREE.Vector3(...col) } };
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide,
+    vertexShader: `void main() { gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 uCol; void main() { gl_FragColor = vec4(uCol, 1.0); }` }));
+  m.frustumCulled = false;
+  return { mesh: m, pos, u, n };
+}
+function fillRibbon(rb, X, Y, Z, cam, pxM, minPx, hw) {
+  const cp = cam.position, n = rb.n;
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    const tx = X[b] - X[a], ty = Y[b] - Y[a], tz = Z[b] - Z[a];
+    const vx = cp.x - X[i], vy = cp.y - Y[i], vz = cp.z - Z[i];
+    let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx;
+    const sl = Math.hypot(sx, sy, sz) || 1;
+    // pxM is metres per pixel at one metre from the camera.
+    const w = Math.max(hw, Math.hypot(vx, vy, vz) * pxM * minPx * 0.5);
+    sx *= w / sl; sy *= w / sl; sz *= w / sl;
+    const o = i * 6;
+    rb.pos[o] = X[i] + sx; rb.pos[o + 1] = Y[i] + sy; rb.pos[o + 2] = Z[i] + sz;
+    rb.pos[o + 3] = X[i] - sx; rb.pos[o + 4] = Y[i] - sy; rb.pos[o + 5] = Z[i] - sz;
+  }
+  rb.mesh.geometry.attributes.position.needsUpdate = true;
+}
+
+/* ---------- the look ---------- */
+// It binds one line; a place change builds a new look.
+export function makeLook(scene, line, { cord, peg, amb }) {
+  const shared = {
+    uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3(1, 1, 1) },
+    uB: { value: 0 }, uTau: { value: 0.62 },
+    uAmbHi: { value: new THREE.Vector3(...amb.hi) }, uAmbLo: { value: new THREE.Vector3(...amb.lo) },
+  };
+  const group = new THREE.Group();
+  scene.add(group);
+
+  // The carrying strand follows the rope; the return strand sags less above it.
+  const r = line.rope, n = r.n;
+  const top = ribbon(n, cord), back = ribbon(n, cord);
+  top.mesh.castShadow = true;
+  group.add(top.mesh, back.mesh);
+  const bx = new Float32Array(n), by = new Float32Array(n), bz = new Float32Array(n);
+  const GAP = 0.13;
+
+  // Each pulley is a small wheel at its anchor, in the line's plane.
+  const wheelGeo = new THREE.TorusGeometry(GAP / 2, 0.012, 8, 20);
+  const metal = new THREE.MeshStandardMaterial({ color: 0x3a3c40, roughness: 0.5, metalness: 0.6 });
+  const dir = new THREE.Vector3(...line.b).sub(new THREE.Vector3(...line.a)).normalize();
+  for (const p of [line.a, line.b]) {
+    const w = new THREE.Mesh(wheelGeo, metal);
+    w.position.set(p[0], p[1] + GAP / 2, p[2]);
+    // The wheel's axis is horizontal and normal to the line.
+    w.lookAt(w.position.clone().add(new THREE.Vector3(-dir.z, 0, dir.x)));
+    w.castShadow = true;
+    group.add(w);
+  }
+
+  const PEG_MAX = 32;
+  const pegs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.022, 0.07, 0.022),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...peg), roughness: 0.75 }), PEG_MAX);
+  pegs.frustumCulled = false;
+  pegs.castShadow = true;
+  group.add(pegs);
+
+  const pieces = new Map();
+  function addPiece(c, pal) {
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array(c.n * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(new THREE.BufferAttribute(c.tris, 1));
+    const meshes = ['max', 'mul', 'add'].map(kind => {
+      const m = new THREE.Mesh(g, clothMat(shared, kind, pal.alb, pal.tr));
+      m.renderOrder = ORDER[kind];
+      m.frustumCulled = false;
+      group.add(m);
+      return m;
+    });
+    // Only one pass casts a shadow.
+    meshes[2].castShadow = true;
+    pieces.set(c, { g, pos, meshes });
+  }
+  function removePiece(c) {
+    const p = pieces.get(c);
+    if (!p) return;
+    for (const m of p.meshes) { group.remove(m); m.material.dispose(); }
+    p.g.dispose();
+    pieces.delete(c);
+  }
+
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
+  const at = new THREE.Vector3(), o = [0, 0, 0], o2 = [0, 0, 0];
+  function sync(camera, viewH) {
+    for (const [c, p] of pieces) {
+      for (let k = 0; k < c.n; k++) { p.pos[k * 3] = c.x[k]; p.pos[k * 3 + 1] = c.y[k]; p.pos[k * 3 + 2] = c.z[k]; }
+      p.g.attributes.position.needsUpdate = true;
+      p.g.computeVertexNormals();
+    }
+    const pxM = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / viewH;
+    fillRibbon(top, r.x, r.y, r.z, camera, pxM, 1.7, 0.005);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1), sx = line.a[0] + (line.b[0] - line.a[0]) * t;
+      const sy = line.a[1] + (line.b[1] - line.a[1]) * t, sz = line.a[2] + (line.b[2] - line.a[2]) * t;
+      bx[i] = sx + (r.x[i] - sx) * 0.35;
+      by[i] = sy + (r.y[i] - sy) * 0.35 + GAP;
+      bz[i] = sz + (r.z[i] - sz) * 0.35;
+    }
+    fillRibbon(back, bx, by, bz, camera, pxM, 1.3, 0.004);
+    let k = 0;
+    for (const c of line.pieces) for (const g of c.pegs) {
+      if (k >= PEG_MAX) break;
+      ropeAt(r, g.s - 0.05, o); ropeAt(r, g.s + 0.05, o2);
+      e.set(0, -Math.atan2(o2[2] - o[2], o2[0] - o[0]), Math.atan2(o2[1] - o[1], Math.hypot(o2[0] - o[0], o2[2] - o[2])), 'YZX');
+      q.setFromEuler(e);
+      ropeAt(r, g.s, o);
+      at.set(o[0], o[1] - 0.01, o[2]);
+      pegs.setMatrixAt(k++, mtx.compose(at, q, one));
+    }
+    pegs.count = k;
+    pegs.instanceMatrix.needsUpdate = true;
+  }
+  function setSun(dir, col, b) {
+    shared.uSun.value.copy(dir);
+    shared.uSunCol.value.copy(col);
+    shared.uB.value = b;
+  }
+  function setCord(rgb) { top.u.uCol.value.set(...rgb); back.u.uCol.value.set(...rgb); }
+  function dispose() { scene.remove(group); }
+  return { addPiece, removePiece, sync, setSun, setCord, dispose };
+}
