@@ -281,9 +281,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   scene.add(sun, sun.target);
   const flashL = new THREE.AmbientLight(0xb8bdff, 0);
   scene.add(flashL);
-  // The brightest bolt lights the skin from its own side.
+  // The nearest bright flash lights the skin from its own side.
+  // A flash is a glowing cloud kilometres wide, not a point.
+  // So most of its light is soft fill, which gives no hot spots.
   const boltL = new THREE.DirectionalLight(0xc8ccff, 0);
-  scene.add(boltL, boltL.target);
+  const boltH = new THREE.HemisphereLight(0xc8ccff, 0x0c0d14, 0);
+  scene.add(boltL, boltL.target, boltH);
   // A fog bank swallows the wing; the shader sets the bank's density.
   scene.fog = new THREE.FogExp2(0x000000, 0);
   // The tip strobe and the nav light light the skin near the tip.
@@ -303,7 +306,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   air.add(wingL, wingL.target);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0] };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -396,8 +399,13 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
       flashL.intensity = flash * 0.06;
-      boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.3 : 0;
-      if (bolt) boltL.position.copy(bolt.dir).multiplyScalar(50);
+      // The light swells in about 40 ms and fades over about 200 ms.
+      // So a stroke blooms on the skin instead of a hard pop.
+      const want = bolt ? Math.min(bolt.level, 2.5) : 0;
+      mo.bolt += (want - mo.bolt) * (1 - Math.exp(-dtw / (want > mo.bolt ? 0.04 : 0.2)));
+      boltL.intensity = mo.bolt * 0.06;
+      boltH.intensity = mo.bolt * 0.3;
+      if (bolt) { boltL.position.copy(bolt.dir).multiplyScalar(50); boltH.position.copy(bolt.dir); }
       // The bank's sight range, as the shader's fogAt sets it.
       const vis = 120000 * Math.exp(-11 * Math.pow(fogLevel, 1.3));
       scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;

@@ -92,7 +92,9 @@ export function createBolts() {
       for (const f of flashes) {
         if (!f.cell || f.level < 0.02) continue;
         const dx = f.x - camXZ[0], dz = f.z - camXZ[1];
-        if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
+        // The wing feels only a near flash: the light falls off past about 10 km.
+        const near = f.level / (1 + (dx * dx + dz * dz) / 100);
+        if (!best || near > best.level) best = { level: near, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
         // Only a flash that shows a bolt gets lines; the rest light the cloud alone.
         if (!f.bolt) continue;
         let b = live.get(f);
