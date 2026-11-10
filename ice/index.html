@@ -162,32 +162,166 @@ const table = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), tableMat);
 table.rotation.x = -Math.PI / 2;
 table.receiveShadow = true;
 scene.add(table);
-// Task 3 adds the wet mirror; Dry only roughens the table for now.
+// The wet table mirrors the tray and the cubes: dim copies flipped under it, added after the table.
+// They draw before the real ones, so the real tray and cubes cover them.
+const mirror = new THREE.Group();
+mirror.scale.y = -1;
+scene.add(mirror);
+// A ghost fades with depth below the table, as a wet reflection does, and keeps a rim.
+const ghostMat = (c, k) => new THREE.ShaderMaterial({
+  uniforms: { uCol: { value: c.clone().multiplyScalar(k) } },
+  vertexShader: /* glsl */`
+    varying float vF;
+    varying vec3 vN, vV;
+    void main() {
+      mat4 m = modelMatrix;
+      #ifdef USE_INSTANCING
+        m = modelMatrix * instanceMatrix;
+      #endif
+      vec4 wp = m * vec4(position, 1.0);
+      vF = exp(wp.y * 1.4);
+      vN = normalize(mat3(m) * normal);
+      vV = normalize(cameraPosition - wp.xyz);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uCol;
+    varying float vF;
+    varying vec3 vN, vV;
+    void main() {
+      float rim = pow(1.0 - abs(dot(normalize(vN), vV)), 2.0);
+      gl_FragColor = vec4(uCol * vF * (0.35 + rim), 1.0);
+    }`,
+  depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+});
 function setTable(v) {
   tableMat.roughness = v === 'dry' ? 0.8 : 0.38;
-  tableMat.needsUpdate = true;
+  mirror.visible = v !== 'dry';
 }
-setTable(ui.setting('table')?.value ?? 'wet');
 
 /* ---------- ice ---------- */
-// Transmission ice. Task 3 adds the core, bubbles, frost and cracks.
+// Transmission ice. A short march through each cube draws what lies inside:
+// the cloudy core, bubble trails, the clear-ice air band and a crack sheet.
+// core: core strength. tint: core colour. bubbles: trail strength. band: clear ice's bottom air.
+// glint: caustic strength on the table.
 const ICE = {
-  cloudy: { color: col(0.99, 0.005, 230), att: col(0.95, 0.03, 220), dist: 1.6, rough: 0.12, trans: 1 },
-  clear: { color: col(0.99, 0.005, 220), att: col(0.96, 0.02, 210), dist: 5, rough: 0.02, trans: 1 },
-  juice: { color: col(0.92, 0.08, 55), att: col(0.6, 0.18, 40), dist: 0.9, rough: 0.06, trans: 1 },
+  cloudy: { color: col(0.99, 0.005, 230), att: col(0.95, 0.03, 220), dist: 1.6, rough: 0.1, core: 1, tint: col(0.84, 0.015, 230), bubbles: 1, band: 0, glint: 0.3 },
+  clear: { color: col(0.99, 0.005, 220), att: col(0.96, 0.02, 210), dist: 5, rough: 0.02, core: 0, tint: col(0.95, 0.015, 230), bubbles: 0.25, band: 0.7, glint: 0.65 },
+  juice: { color: col(0.95, 0.07, 62), att: col(0.74, 0.15, 52), dist: 1.6, rough: 0.06, core: 0.85, tint: col(0.66, 0.16, 45), bubbles: 0.5, band: 0, glint: 0.45 },
 };
-const iceMat = new THREE.MeshPhysicalMaterial({ ior: 1.31, thickness: 1.2, metalness: 0, specularIntensity: 1, envMapIntensity: 2.2 });
+let iceKind = ICE.cloudy;
+const iceU = {
+  uTime: { value: 0 }, uCore: { value: 1 }, uTint: { value: new THREE.Color() },
+  uBubbles: { value: 1 }, uBand: { value: 0 }, uFlash: { value: 1 },
+};
+const iceMat = new THREE.MeshPhysicalMaterial({ ior: 1.31, thickness: 1.2, metalness: 0, specularIntensity: 1, envMapIntensity: 2.2, transmission: 1 });
+iceMat.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, iceU);
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+      attribute vec4 aIce;
+      attribute vec4 aCrack;
+      varying vec3 vLoc, vCamLoc;
+      varying vec4 vIce, vCrack;`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+      // The march runs in the cube's own space, so the camera moves into it.
+      mat4 toWorld = modelMatrix;
+      #ifdef USE_INSTANCING
+        toWorld = modelMatrix * instanceMatrix;
+      #endif
+      vLoc = position;
+      vCamLoc = (inverse(toWorld) * vec4(cameraPosition, 1.0)).xyz;
+      vIce = aIce;
+      vCrack = aCrack;`);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      uniform float uTime, uCore, uBubbles, uBand, uFlash;
+      uniform vec3 uTint;
+      varying vec3 vLoc, vCamLoc;
+      varying vec4 vIce, vCrack;
+      float iceHash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+      float iceNoise(vec3 p) {
+        vec3 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float n = dot(i, vec3(1.0, 57.0, 113.0));
+        return mix(mix(mix(iceHash(n), iceHash(n + 1.0), f.x), mix(iceHash(n + 57.0), iceHash(n + 58.0), f.x), f.y),
+                   mix(mix(iceHash(n + 113.0), iceHash(n + 114.0), f.x), mix(iceHash(n + 170.0), iceHash(n + 171.0), f.x), f.y), f.z);
+      }`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      // Ten steps from the surface to the far side of the cube.
+      vec3 rd = normalize(vLoc - vCamLoc);
+      vec3 tq = (sign(rd) * ${(CUBE / 2).toFixed(3)} - vLoc) / rd;
+      float tEx = max(0.0, min(min(tq.x, tq.y), tq.z));
+      float stepL = tEx / 10.0, dens = 0.0, sheet = 0.0, sd = vIce.x;
+      for (int i = 0; i < 10; i++) {
+        vec3 p = vLoc + rd * stepL * (float(i) + 0.5);
+        float nz = iceNoise(p * 7.0 + sd * 13.0);
+        // Water freezes from the outside in and pushes its air to the middle.
+        // The core is a soft column with fine streaks, not a ball.
+        float streak = iceNoise(p * vec3(14.0, 4.0, 14.0) + sd * 7.0);
+        dens += smoothstep(0.34, 0.0, length(p * vec3(1.0, 0.75, 1.0)) + (nz - 0.5) * 0.12 + (streak - 0.5) * 0.18) * uCore;
+        // Ice frozen from one side leaves its air in a band at the bottom.
+        dens += uBand * smoothstep(-0.34, -0.44, p.y) * (0.4 + 0.6 * nz);
+        for (int k = 0; k < 4; k++) {
+          float fk = float(k);
+          vec2 c = vec2(iceHash(sd + fk) - 0.5, iceHash(sd + fk + 7.1) - 0.5) * 0.55;
+          vec3 a = vec3(c.x, 0.38, c.y), ba = vec3(c.x * 0.3, 0.02, c.y * 0.3) - a, pa = p - a;
+          float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+          dens += uBubbles * smoothstep(0.016, 0.004, length(pa - ba * h)) * 3.0;
+        }
+      }
+      // The crack is one plane: find where the view ray meets it inside the cube.
+      if (vCrack.w > -5.0) {
+        float dn = dot(rd, vCrack.xyz);
+        float tc = (vCrack.w - dot(vLoc, vCrack.xyz)) / (abs(dn) > 1e-3 ? dn : 1e-3);
+        if (tc > 0.0 && tc < tEx) {
+          vec3 pc = vLoc + rd * tc;
+          // A sheet seen edge-on looks brighter; its edge frays with noise.
+          float fray = smoothstep(0.35, 0.6, iceNoise(pc * 9.0 + sd));
+          sheet = clamp(0.25 / max(abs(dn), 0.25), 0.0, 1.0) * (0.4 + 0.6 * fray);
+        }
+      }
+      float cloud = 1.0 - exp(-dens * stepL * 6.0);
+      float sheetA = sheet;
+      // A crack flashes once, then stays as a faint white sheet.
+      float flash = vIce.z > -5.0 ? exp(-max(uTime - vIce.z, 0.0) * 10.0) * uFlash : 0.0;
+      // Fresh cubes carry frost on the top face.
+      float frost = 0.55 * vIce.y * smoothstep(0.42, 0.47, vLoc.y) * (0.5 + 0.5 * iceNoise(vLoc * 40.0));
+      float iceCloud = clamp(cloud + sheetA * 0.6 + frost, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, uTint, cloud);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.95), clamp(sheetA * 0.7 + frost, 0.0, 1.0));
+      vec3 iceGlow = uTint * cloud * 0.05 + vec3(0.85, 0.93, 1.0) * sheetA * (0.04 + 5.0 * flash);`)
+    .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(roughnessFactor, 0.75, clamp(frost + cloud * 0.4, 0.0, 1.0));`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += iceGlow;`)
+    .replace('#include <transmission_fragment>', THREE.ShaderChunk.transmission_fragment
+      .replace('material.transmissionAlpha = 1.0;', `material.transmissionAlpha = 1.0;
+      // Cloud, frost and cracks scatter light instead of passing it.
+      material.transmission *= 1.0 - iceCloud * 0.9;`));
+};
 function setIce(v) {
-  const k = ICE[v] || ICE.cloudy;
+  const k = iceKind = ICE[v] || ICE.cloudy;
   iceMat.color.copy(k.color);
   iceMat.attenuationColor.copy(k.att);
   iceMat.attenuationDistance = k.dist;
   iceMat.roughness = k.rough;
-  iceMat.transmission = k.trans;
-  iceMat.needsUpdate = true;
+  iceU.uCore.value = k.core;
+  iceU.uTint.value.copy(k.tint);
+  iceU.uBubbles.value = k.bubbles;
+  iceU.uBand.value = k.band;
 }
 setIce(ui.choice?.value ?? 'cloudy');
+setTable(ui.setting('table')?.value ?? 'wet');
+// Per-cube look: x seed, y frost, z crack time; and the crack plane (normal, offset).
+const MAXCUBES = 32;
 const cubeGeo = new RoundedBoxGeometry(CUBE, CUBE, CUBE, 3, 0.12);
+const aIce = new THREE.InstancedBufferAttribute(new Float32Array(MAXCUBES * 4), 4);
+const aCrack = new THREE.InstancedBufferAttribute(new Float32Array(MAXCUBES * 4), 4);
+aIce.setUsage(THREE.DynamicDrawUsage);
+aCrack.setUsage(THREE.DynamicDrawUsage);
+cubeGeo.setAttribute('aIce', aIce);
+cubeGeo.setAttribute('aCrack', aCrack);
 let cubes = null;
 
 /* ---------- tray mesh ---------- */
@@ -199,7 +333,7 @@ const trayGroup = new THREE.Group(), trayFlip = new THREE.Group(), trayInner = n
 trayGroup.add(trayFlip);
 trayFlip.add(trayInner);
 scene.add(trayGroup);
-let trayMesh = null, basePos = null, baseNrm = null, L = 1, W = 1, rows = 2, cols = 6;
+let trayMesh = null, trayGhost = null, basePos = null, baseNrm = null, L = 1, W = 1, rows = 2, cols = 6;
 function box(w, h, d, x, y, z, segX = 1) {
   const g = new THREE.BoxGeometry(w, h, d, segX, 1, 1);
   g.translate(x, y, z);
@@ -219,8 +353,16 @@ function buildTray() {
   if (trayMesh) { trayInner.remove(trayMesh); trayMesh.geometry.dispose(); }
   trayMesh = new THREE.Mesh(geo, trayMat);
   trayMesh.castShadow = trayMesh.receiveShadow = true;
+  // The real tray draws after its mirror copy, so it covers it.
+  trayMesh.renderOrder = 2;
   trayMesh.frustumCulled = false;
   trayInner.add(trayMesh);
+  if (trayGhost) mirror.remove(trayGhost);
+  trayGhost = new THREE.Mesh(geo, ghostMat(col(0.5, 0.06, 268), 0.06));
+  trayGhost.matrixAutoUpdate = false;
+  trayGhost.frustumCulled = false;
+  trayGhost.renderOrder = 1;
+  mirror.add(trayGhost);
   trayFlip.position.z = W / 2;
   trayInner.position.z = -W / 2;
   basePos = geo.attributes.position.array.slice();
@@ -258,12 +400,14 @@ function layoutCells() {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       // Each cube sits a hair off square, as frozen water does.
-      cells.push({ r, x: (c - (cols - 1) / 2) * P, z: (r - (rows - 1) / 2) * P, yaw: (rnd() - 0.5) * 0.06, full: true, bond: 0.55 + 0.35 * rnd(), over: 0, cracked: false, peak: 0, popAt: 0, grow: 1 });
+      cells.push({ r, x: (c - (cols - 1) / 2) * P, z: (r - (rows - 1) / 2) * P, yaw: (rnd() - 0.5) * 0.06, full: true, bond: 0.55 + 0.35 * rnd(), over: 0, cracked: false, peak: 0, popAt: 0, grow: 1, look: newLook() });
     }
   }
 }
-function makeBody(p, q, v = new THREE.Vector3(), w = new THREE.Vector3()) {
-  return { p, q, v, w, still: 0, asleep: false, held: false, scale: 1 };
+// A fresh cube: its own seed, frost from now, no crack.
+function newLook() { return { seed: rnd() * 100, frostAt: time, crack: null }; }
+function makeBody(p, q, v = new THREE.Vector3(), w = new THREE.Vector3(), look = newLook()) {
+  return { p, q, v, w, still: 0, asleep: false, held: false, scale: 1, look };
 }
 // The first frame: two cubes already out, lying on the table by the tray.
 function firstLoose() {
@@ -273,16 +417,34 @@ function firstLoose() {
     cells[ci].full = false;
     const p = narrow ? new THREE.Vector3(-0.9 + i * 1.7, CUBE / 2, L / 2 + 1.4 + i * 0.4) : new THREE.Vector3(1.2 + i * 1.6, CUBE / 2, W / 2 + 1.3 + i * 0.3);
     const b = makeBody(p, new THREE.Quaternion().setFromAxisAngle(UP, 0.4 + i * 0.9));
+    // These have sat out a while: their frost is gone.
+    b.look.frostAt = -100;
     b.asleep = true;
     bodies.push(b);
   });
 }
 function buildCubes() {
-  if (cubes) { scene.remove(cubes); cubes.dispose(); }
+  if (cubes) { scene.remove(cubes); mirror.remove(cubeGhost); }
   cubes = new THREE.InstancedMesh(cubeGeo, iceMat, cells.length);
   cubes.castShadow = true;
   cubes.frustumCulled = false;
+  cubes.renderOrder = 2;
   scene.add(cubes);
+  // The mirror copy shares the cubes' matrices.
+  cubeGhost = new THREE.InstancedMesh(cubeGeo, ghostMat(col(0.9, 0.02, 225), 0.12), cells.length);
+  cubeGhost.instanceMatrix = cubes.instanceMatrix;
+  cubeGhost.frustumCulled = false;
+  cubeGhost.renderOrder = 1;
+  mirror.add(cubeGhost);
+}
+let cubeGhost = null;
+// Frost fades over about 6 s once a cube is out.
+function writeLook(n, look, inTray) {
+  const frost = inTray ? 1 : Math.exp(-Math.max(0, time - look.frostAt) / 6);
+  const c = look.crack;
+  aIce.setXYZW(n, look.seed, frost, c ? c.at : -9, 0);
+  if (c) aCrack.setXYZW(n, c.n.x, c.n.y, c.n.z, c.off);
+  else aCrack.setXYZW(n, 0, 1, 0, -9);
 }
 // A cell's pose in the world: the tray's twist at its x, then the tray's own frame.
 function cellMatrix(c, out) {
@@ -296,10 +458,21 @@ function cellMatrix(c, out) {
 function placeCubes() {
   trayGroup.updateMatrixWorld();
   let n = 0;
-  for (const c of cells) if (c.full && c.grow > 0.001) cubes.setMatrixAt(n++, cellMatrix(c, M));
-  for (const b of bodies) if (b.scale > 0.001) cubes.setMatrixAt(n++, M.compose(b.p, b.q, S.setScalar(b.scale)));
-  cubes.count = n;
+  for (const c of cells) {
+    if (!c.full || c.grow <= 0.001) continue;
+    writeLook(n, c.look, true);
+    cubes.setMatrixAt(n++, cellMatrix(c, M));
+  }
+  for (const b of bodies) {
+    if (b.scale <= 0.001) continue;
+    writeLook(n, b.look, false);
+    cubes.setMatrixAt(n++, M.compose(b.p, b.q, S.setScalar(b.scale)));
+  }
+  cubes.count = cubeGhost.count = n;
   cubes.instanceMatrix.needsUpdate = true;
+  aIce.needsUpdate = aCrack.needsUpdate = true;
+  trayGhost.matrix.copy(trayInner.matrixWorld);
+  caustics(n);
 }
 
 /* ---------- rigid bodies ---------- */
@@ -446,6 +619,75 @@ function flashAt(p) {
   flashEnd = time + 0.4;
 }
 
+/* ---------- caustics ---------- */
+// Each loose cube focuses the key light into a rippling bright patch on the table.
+// The patch falls on the cube's far side from the light and turns with the cube.
+const causU = { uTime: { value: 0 }, uTint: { value: new THREE.Color() } };
+const causGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const aCaus = new THREE.InstancedBufferAttribute(new Float32Array(MAXCUBES * 2), 2);
+aCaus.setUsage(THREE.DynamicDrawUsage);
+causGeo.setAttribute('aCaus', aCaus);
+const causMat = new THREE.ShaderMaterial({
+  uniforms: causU,
+  vertexShader: /* glsl */`
+    attribute vec2 aCaus;
+    varying vec2 vUv;
+    varying vec2 vC;
+    void main() {
+      vUv = uv;
+      vC = aCaus;
+      gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uTint;
+    varying vec2 vUv;
+    varying vec2 vC;
+    float h2(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float n2(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y);
+    }
+    void main() {
+      // Stretched along the light, with bright folded lines inside a soft ring.
+      vec2 q = (vUv - 0.5) * 2.0;
+      float n = n2(q * 3.0 + vC.x);
+      float r = length(q * vec2(1.0, 1.5));
+      float ring = exp(-pow((r - 0.42 - 0.14 * n) * 5.0, 2.0));
+      float folds = pow(abs(sin(q.x * 6.0 + q.y * 2.0 + n * 5.0)), 16.0) * smoothstep(0.85, 0.2, r);
+      float core = exp(-r * r * 5.0) * 0.3;
+      float a = (ring * 0.55 + folds * 0.5 + core) * smoothstep(1.0, 0.7, r) * vC.y;
+      gl_FragColor = vec4(uTint * a, 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const causMesh = new THREE.InstancedMesh(causGeo, causMat, MAXCUBES);
+causMesh.frustumCulled = false;
+causMesh.renderOrder = 3;
+causMesh.count = 0;
+scene.add(causMesh);
+const KEYXZ = new THREE.Vector2(-1.5, -8);
+const eul = new THREE.Euler();
+function caustics() {
+  let n = 0;
+  causU.uTint.value.copy(iceKind.color).multiplyScalar(1.4);
+  for (const b of bodies) {
+    if (b.scale <= 0.001) continue;
+    // Only a cube near the table throws a patch.
+    const amt = iceKind.glint * clamp((1.6 - b.p.y) / 1.1) * b.scale;
+    if (amt <= 0.01) continue;
+    const away = new THREE.Vector2(b.p.x - KEYXZ.x, b.p.z - KEYXZ.y).normalize().multiplyScalar(0.85);
+    eul.setFromQuaternion(b.q, 'YXZ');
+    V.set(b.p.x + away.x, 0.012, b.p.z + away.y);
+    Q.setFromAxisAngle(UP, Math.atan2(away.x, away.y) + eul.y * 0.5);
+    causMesh.setMatrixAt(n, M.compose(V, Q, S.set(1.3, 1, 1.8)));
+    aCaus.setXY(n, b.look.seed + eul.y * 2.0, amt);
+    n++;
+  }
+  causMesh.count = n;
+  causMesh.instanceMatrix.needsUpdate = aCaus.needsUpdate = true;
+}
+
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
 // Copied from Spark wheel, which lifted it from Fireworks.
@@ -553,6 +795,8 @@ function frameShot() {
   }
   camera.updateProjectionMatrix();
   trayGroup.rotation.y = narrow ? Math.PI / 2 - 0.22 : 0.18;
+  // Seen from above, the top faces catch the key square on; it is softer there.
+  key.intensity = narrow ? 520 : 900;
 }
 // Build or rebuild the tray and its cubes for this shape and count.
 let shapeKey = '';
@@ -588,6 +832,8 @@ function resize() {
 /* ---------- render ---------- */
 function draw() {
   flashMat.uniforms.uTime.value = time;
+  iceU.uTime.value = causU.uTime.value = time;
+  iceU.uFlash.value = reduced() ? 0 : 1;
   composer.render();
 }
 
@@ -605,6 +851,9 @@ function bonds(dt) {
       if (c.over > 0.08) {
         c.cracked = true;
         c.peak = Math.abs(twist.T);
+        // One fracture plane through the cube, at a random tilt.
+        const nrm = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+        c.look.crack = { n: nrm, off: (rnd() - 0.5) * 0.3, at: time };
         if (!reduced()) {
           cellMatrix(c, M).decompose(V, Q, S);
           flashAt(V);
@@ -624,7 +873,8 @@ function pop(c) {
   const out = new THREE.Vector3(0, 0, side).transformDirection(trayInner.matrixWorld).multiplyScalar(3 + 1.5 * rnd());
   const v = out.add(new THREE.Vector3((rnd() - 0.5) * 1.2, 5 + 2 * rnd(), 0));
   const w = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(reduced() ? 0 : 9);
-  bodies.push(makeBody(V.clone(), Q.clone(), v, w));
+  c.look.frostAt = time;
+  bodies.push(makeBody(V.clone(), Q.clone(), v, w, c.look));
 }
 
 /* ---------- dump and refill ---------- */
@@ -652,7 +902,8 @@ function dumpStep(dt) {
       const v = new THREE.Vector3().crossVectors(axis, V.clone().sub(hinge)).multiplyScalar(spin * 0.6)
         .add(new THREE.Vector3((rnd() - 0.5) * 3, rnd() * 1.5, (rnd() - 0.5) * 2));
       c.full = false;
-      bodies.push(makeBody(V.clone(), Q.clone(), v, new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(reduced() ? 0 : 6)));
+      c.look.frostAt = time;
+      bodies.push(makeBody(V.clone(), Q.clone(), v, new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(reduced() ? 0 : 6), c.look));
     }
   }
   if (t >= DUMP_UP + DUMP_HOLD + DUMP_DOWN) { dump.t = 0; trayFlip.rotation.x = 0; }
@@ -664,7 +915,7 @@ function refillStep(dt) {
   for (const b of bodies) b.scale = Math.max(0, 1 - t / 0.6);
   if (t >= 0.6 && bodies.length) {
     bodies = [];
-    for (const c of cells) if (!c.full) { c.full = true; c.cracked = false; c.over = 0; c.popAt = 0; c.grow = 0; c.bond = 0.55 + 0.35 * rnd(); }
+    for (const c of cells) if (!c.full) { c.full = true; c.cracked = false; c.over = 0; c.popAt = 0; c.grow = 0; c.bond = 0.55 + 0.35 * rnd(); c.look = newLook(); }
   }
   if (t >= 0.6) for (const c of cells) c.grow = Math.min(1, Math.max(c.grow, (t - 0.6) / 0.4));
   if (t >= 1.0) { refill.t = 0; cells.forEach(c => { c.grow = 1; }); }
@@ -823,7 +1074,8 @@ act.dump = () => {
       if (!c.full) continue;
       cellMatrix(c, M).decompose(V, Q, S);
       c.full = false;
-      const b = makeBody(V.clone().add(new THREE.Vector3(0, 0, W).transformDirection(trayGroup.matrixWorld).multiplyScalar(W)), Q.clone());
+      c.look.frostAt = time;
+      const b = makeBody(V.clone().add(new THREE.Vector3(0, 0, W).transformDirection(trayGroup.matrixWorld).multiplyScalar(W)), Q.clone(), undefined, undefined, c.look);
       bodies.push(b);
     }
   } else dump.t = 1e-4;
