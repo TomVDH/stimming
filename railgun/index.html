@@ -2154,7 +2154,7 @@ starGeo.instanceCount = 0;
 const starMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
-    uSootS: U.uSootS, uSootK: U.uSootK, uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+    uSootS: U.uSootS, uSootK: U.uSootK, uG: { value: G }, uShedCut: { value: 1e9 }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -2164,6 +2164,8 @@ const starMat = new THREE.ShaderMaterial({
   uniform float uTime, uDpr, uSteady;
   uniform vec2 uRes;
   uniform vec3 uG, uRamp[${RAMPS.length}], uEmber;
+  // The trail's shed embers burn out within two seconds of the hit.
+  uniform float uShedCut;
   uniform vec4 uSootS;
   uniform float uSootK;
   // The light from P to the eye through the soot ball.
@@ -2212,6 +2214,7 @@ const starMat = new THREE.ShaderMaterial({
     vec3 chem = uRamp[int(aC.x + 0.5)];
     if (aD.z > 0.5) chem = mix(chem, uRamp[int(aD.z - 0.5)], smoothstep(0.4, 0.55, f));
     float b = 1.0 - smoothstep(0.75, 1.0, f);
+    if (aB.w < 0.0) b *= 1.0 - smoothstep(0.0, 2.0, uTime - uShedCut);
     vec3 col3 = mix(vec3(1.0, 0.95, 0.85) * 1.6, chem, smoothstep(0.02, 0.12, f));
     col3 = mix(col3, uEmber * 0.5, smoothstep(0.6, 1.0, f));
     if (abs(aD.x - 1.0) < 0.5) b *= mix(step(0.45, hash11(aD.y + floor(age * 12.0))), 0.7, uSteady);
@@ -4191,7 +4194,7 @@ function updateBlast() {
   // The soot ball others fade behind: thick early, thin as it erodes.
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   // The tail's eaten end grows with the cloud and keeps its last size.
-  U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.2));
+  U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.08));
   U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 5, 28)) * (1 - THREE.MathUtils.smoothstep(ha, 26, 38));
   // Soot needs fewer steps than fire.
   // While the fire burns it needs full steps; soot alone needs fewer.
@@ -4363,6 +4366,7 @@ fire = c => {
   wake();
 };
 function shatter(c) {
+  starMat.uniforms.uShedCut.value = simT + 0.3;
   ast.state = 'shatter';
   ast.hitAt = simT;
   // A random side for the blast's shove on the trail.
@@ -4415,7 +4419,17 @@ function shatter(c) {
     bv.multiplyScalar((190 + 900 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.9 + 0.2 * rnd()));
     bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
     // Fast pieces draw long trails; slow ones only a short tail.
-    writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, 10 + rnd() * 12, 0.5 + 3.5 * f * f + 0.5 * rnd(), 1.8 + 3.2 * rnd(), 3, 0.3 + 0.4 * rnd());
+    // About a third burn out in mid-flight.
+    writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, rnd() < 0.35 ? 3 + 4 * rnd() : 10 + rnd() * 12, 0.5 + 3.5 * f * f + 0.5 * rnd(), 1.8 + 3.2 * rnd(), 3, 0.3 + 0.4 * rnd());
+  }
+  // Small burning pips fill the sprays; most fizzle out in mid-flight.
+  for (let i = 0; i < N * 2; i++) {
+    if (rnd() < 0.7) bv.copy(jets[i % 7]).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.55)).normalize();
+    else bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+    const f = rnd();
+    bv.multiplyScalar((150 + 600 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.85 + 0.3 * rnd()));
+    bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
+    writeStar(bq.add(P), simT + rnd() * 0.5, bv, 0.08 + 0.12 * rnd(), 2, 2 + rnd() * 6, 0.4 + 0.8 * rnd(), 0.9 + 0.7 * rnd(), 3, 0.3);
   }
   // A fine, quick spray of sparks under them.
   for (let i = 0; i < N * 6; i++) {
@@ -4539,7 +4553,8 @@ function stepShot(dt) {
     PU.uDrift.value.set(45, 8, 15).multiplyScalar(ha);
     // The density falls by e every 10 s; erosion opens it as it goes.
     PU.uBreak.value = 0.5 * (1 - Math.exp(-s / 30));
-    PU.uSwipe.value.z = 0.45 * (1 - Math.exp(-ha / 2.5));
+    // A small shove only, so the trail still runs into the fireball.
+    PU.uSwipe.value.z = 0.12 * (1 - Math.exp(-ha / 2.5));
     PU.uTrail.value = Math.exp(-s / 10) * (1 - THREE.MathUtils.smoothstep(ha, 60, 90));
   } else if (ast.state !== 'shatter') {
     PU.uCut.value = 1e9; PU.uDrift.value.set(0, 0, 0); PU.uBreak.value = 0; PU.uSwipe.value.z = 0;
@@ -4789,7 +4804,7 @@ function landReset() {
   blastFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // Embers from the old rock go too.
-  starGeo.instanceCount = 0; head = 0; lastDeath = 0;
+  starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
   ast.next = 0;
   respawn();
