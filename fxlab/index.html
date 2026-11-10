@@ -74,6 +74,10 @@ input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; marg
     <div class="seg" style="margin-top:6px"><button id="pause" aria-pressed="false">Pause</button></div>
     <h2>Weather</h2>
     <label class="row"><span>Dry to storm</span><input type="range" id="wx" min="0" max="1" step="0.01" value="0.5"><output id="wxOut">0.5</output></label>
+    <h2>Quality</h2>
+    <div class="seg" id="qual"><button data-v="standard" aria-pressed="false">Standard</button><button data-v="high" aria-pressed="false">High</button></div>
+    <div class="seg" style="margin-top:6px"><button id="slow" aria-pressed="false">Act as a slow device</button></div>
+    <p class="note" id="perf" style="margin-top:6px"></p>
     <h2>Shaders</h2>
     <div id="cards"></div>
   </div>
@@ -105,8 +109,10 @@ import { FLARE } from '../shared/flare.js';
 import { GRADE, gradePass } from '../shared/grade.js';
 import { GLASS_RAIN } from '../shared/glassrain.js';
 import { BOKEH } from '../shared/bokeh.js';
-import { WET_GLASS, wetGlassMotion } from '../shared/wetglass.js';
-import { WATER } from '../shared/water.js';
+import { WET_GLASS, wetGlassMotion, wetGlassDetail } from '../shared/wetglass.js';
+import { WATER, waterDetail } from '../shared/water.js';
+import { detail, LEVELS } from '../shared/detail.js';
+import { quality, setQuality } from '../shared/stim.js';
 import { weather } from '../shared/weather.js';
 import { SKY, skyAt } from '../shared/sky.js';
 
@@ -843,6 +849,7 @@ const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
 const progScene = compile(TRI_VS, ST_HEAD + `
 uniform vec2 uRes, uLamp;
 uniform float uTime, uWaterOn, uSwell, uChop, uSets, uRings, uSkyOn, uStars, uHazeD, uDay;
+uniform int uOct, uRingN, uTapN;
 uniform vec3 uLampCol, uZen, uMid, uBand, uAnti, uSunD;
 ${GLASS_RAIN}
 ${WATER}
@@ -900,9 +907,9 @@ void main() {
     float dist = CAMH / -d.y;
     vec2 p = d.xz * dist;
     float sig2, foot = wtFoot(dist, -d.y, uRes.y * FOC);
-    vec2 slope = wtWaves(p, uTime, foot, uSwell, uChop, uSets, sig2);
+    vec2 slope = wtWavesN(p, uTime, foot, uSwell, uChop, uSets, uOct, sig2);
     // Rain lays rings on the water.
-    slope += wtRings(p, uTime, foot, uRings, 0.6, sig2);
+    slope += wtRingsN(p, uTime, foot, uRings, 0.6, uRingN, sig2);
     vec3 n = wtNormal(slope);
     vec3 r = reflect(d, n);
     r.y = abs(r.y);
@@ -915,7 +922,9 @@ void main() {
     vec3 refl = vec3(0.0);
     float ws = 0.0;
     for (int i = -3; i <= 3; i++) {
-      float fi = float(i) / 3.0, w = exp(-fi * fi * 2.0);
+      // Low detail takes five taps, not seven.
+      if (abs(i) > uTapN) continue;
+      float fi = float(i) / float(uTapN), w = exp(-fi * fi * 2.0);
       vec2 at = ur + vec2(0.0, fi * len);
       at.y = SHORE + abs(at.y - SHORE);
       refl += above(at, 0.0) * w;
@@ -1077,6 +1086,28 @@ for (const name of Object.keys(LOOKS)) {
   $('looks').append(b);
 }
 
+// detail.js: the site quality and the frame time give one level for every bundle.
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => { syncQuality(); touch(); } });
+let perfT = 0, frameW = 1, frameH = 1;
+function syncQuality() {
+  for (const b of $('qual').children) b.setAttribute('aria-pressed', b.dataset.v === quality());
+  $('perf').textContent = `Level: ${LEVELS[D.level]} · ${frameW} × ${frameH} px · ${(D.frameTime * 1000).toFixed(1)} ms a frame`;
+}
+$('qual').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  setQuality(b.dataset.v);
+  // A new choice clears the slow step; the slow-device switch puts it back.
+  if ($('slow').getAttribute('aria-pressed') === 'true') D.drop();
+  syncQuality();
+  touch();
+});
+$('slow').addEventListener('click', () => {
+  const on = $('slow').getAttribute('aria-pressed') !== 'true';
+  $('slow').setAttribute('aria-pressed', on);
+  if (on) D.drop(); else D.reset();
+});
+
 // Motion: the runs flow, the waves roll, the grain moves.
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const motion = wetGlassMotion();
@@ -1090,8 +1121,11 @@ function kick() {
 }
 function loop(t) {
   if (!moving()) { looping = false; touch(); return; }
-  const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0.016);
+  const raw = lastT ? (t - lastT) / 1000 : 0.016, dt = Math.min(0.05, raw);
   lastT = t;
+  // The watch steps the level down after two slow seconds.
+  if ($('slow').getAttribute('aria-pressed') !== 'true') D.frame(raw);
+  if ((perfT += raw) > 0.5) { perfT = 0; syncQuality(); }
   motion.step(dt, S.wind);
   time += dt;
   if (++frameN & 1) seed = seed % 997 + 1;
@@ -1104,10 +1138,13 @@ $('pause').addEventListener('click', () => { paused = !paused; $('pause').setAtt
 function drawStack(fw, fh, prog = progPane) {
   dirty = false;
   if (!looping) motion.step(0, S.wind, true);
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  const w = fw || Math.max(1, Math.round(view.clientWidth * dpr)), h = fh || Math.max(1, Math.round(view.clientHeight * dpr));
+  // detail.js sets the pixel ratio; each bundle maps the level to its budget.
+  const cw = Math.max(1, view.clientWidth), ch = Math.max(1, view.clientHeight), dpr = D.dpr(cw, ch);
+  const wq = waterDetail(D.level), gq = wetGlassDetail(D.level);
+  const w = fw || Math.max(1, Math.round(cw * dpr)), h = fh || Math.max(1, Math.round(ch * dpr));
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
-  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
+  if (!fw) { frameW = w; frameH = h; }
+  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w * gq.bokehScale), Math.ceil(h * gq.bokehScale));
   // sky.js: the hour sets the palette, the sun and the daylight.
   const sk = skyAt(S.hour), day = S.on.sky ? sk.day : 0;
   // By day the light you drag is a pale sun.
@@ -1119,6 +1156,7 @@ function drawStack(fw, fh, prog = progPane) {
   gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform3fv(u('uLampCol'), lamp);
   gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
   gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
+  gl.uniform1i(u('uOct'), wq.octaves); gl.uniform1i(u('uRingN'), wq.ringLayers); gl.uniform1i(u('uTapN'), D.level > 0 ? 3 : 2);
   gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
   gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
   run(progScene, rtScene);
@@ -1205,6 +1243,7 @@ new ResizeObserver(touch).observe(view);
 
 useFx('flare');
 useLook('Everything');
+syncQuality();
 </script>
 </body>
 </html>

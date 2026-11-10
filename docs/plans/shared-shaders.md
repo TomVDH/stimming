@@ -10,7 +10,8 @@ Tom, 2026-11-10: "we will use bundled shaders to quickly pump out responsive and
 
 - **Bundles, not a parts bin.** Effects that belong together ship as one call. `shared/wetglass.js` is the pattern: drops, runs, fog and scatter.
 - **Reactive.** Each bundle has a JS driver, so an environment follows one value. `shared/weather.js` maps dry-to-storm onto the glass and the water.
-- **Responsive.** A bundle must hold 30 fps on Standard quality and follow `quality()` from `shared/stim.js`. Not done yet: no module reads the quality setting.
+- **Responsive.** `shared/detail.js` joins the site quality (`shared/stim.js`) with a slow-frame watch into one level: High, Standard or Low.
+  It gives the pixel ratio, and each bundle maps the level to its budget (`waterDetail`, `wetGlassDetail`). Low trims shader work; Standard and High differ in resolution only.
 - **Fast to use.** A new toy pastes the bundles, calls the driver, and has an environment. `fxlab/`'s pane pass is the worked example.
 
 ## The contract
@@ -49,6 +50,7 @@ One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
 | `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
 | `shared/weather.js` (one value drives glass, water and haze) | 2026-11-10 | The lab's Weather slider | None yet |
+| `shared/detail.js` (quality and slow frames give one level) | 2026-11-10 | The lab's Quality row: High, Standard and Low each seen; the stored site quality was put back | None yet |
 | `shared/sky.js` (sky by direction, stars, height haze, `skyAt(hour)`) | 2026-11-10 | Stars, Coast and meteor's sky and the kit's haze match exactly (0 / 255), raw and three.js | None yet |
 
 Note on the grade in three.js: `viaduct` and `subway` hash `vUv * uRes`, which turns on the last bit of `vUv`.
@@ -74,6 +76,17 @@ No toy's water equals the module, so a move changes that toy's look. Tom decides
 Could adopt: `trainride`, `fireworks`, `launch`, `canal`, `viaduct`, `windfarm`, `meteor`.
 `wtRings()` adds rain rings to the slope (a port of Buoy Business; `canal` has its own).
 Not in this cut: Buoy Business moon glade and wind slicks; the planar mirror pass.
+
+### Detail: how a toy adopts it
+
+About twenty toys carry the same slow-frame watch by hand (`rung`, `slowT`, `watchdog`): `bench`, `chocolate`, `fire`, `flametest`, `foil`, `glow`, `ice`, `ink`, `lichtenberg`, `oilslick`, `rubens`, `sequin`, `spark`, `stone`, `subway`, `sunbeam`, `trainride`, `vortex`, `windfarm`, `windmap`.
+
+| Today | Replace with |
+|---|---|
+| `let rung`, `watchdog(dt)`, `pixelRatio(w, h, { low: rung > 0 })`, `onQuality(() => { rung = 0; ... })` | `const D = detail({ maxDpr, budget, onChange: resize })`, then `D.dpr(w, h)` and `D.frame(dt)` |
+
+The numbers are Subway's: the first four seconds do not count, then two seconds under 38 fps step down once.
+A toy with a different rule keeps its own watch.
 
 ### Sky and haze: how a toy adopts it
 

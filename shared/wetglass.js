@@ -52,6 +52,10 @@ vec3 wgView(WgPane g, vec3 sharp, vec3 bok, float scatter, vec3 glass, vec3 veil
 }
 `;
 
+// The pane's budget at a detail level (shared/detail.js): 0 low, 1 standard, 2 high.
+// bokehScale is the bokeh target's share of the frame size.
+export const wetGlassDetail = level => ({ bokehScale: level > 0 ? 0.5 : 0.25 });
+
 // The motion every wet pane needs: the runs flow, and the air slants them.
 // Call step(dt, speed) each frame. Read flow, m and speed for the shader.
 export function wetGlassMotion() {
