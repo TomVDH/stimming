@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Worry stone</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Worry stone: one rough stone, close up, under one key light. */
+:root { --stage: oklch(0.07 0.008 250); }
+.stage--stone canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--stone canvas.on { opacity: 1; }
+.stage--stone { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--stone canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Worry stone</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--stone" id="stage" tabindex="0" role="application" aria-label="A rough stone, close up. Drag on the stone to rub and polish it. Move the pointer to move the light. Click to splash it with water.">
+      <p class="fail" hidden>Worry stone needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Worry stone</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+let kind = 'labradorite', grit = 1;
+// The handlers bind once the GL state exists.
+const act = { stone() {}, reset() {}, wet() {} };
+const ui = initPage({ id: 'stone', bar: {
+  choice: { label: 'Stone', value: 'labradorite', options: [
+    { value: 'labradorite', label: 'Labradorite', key: '1' },
+    { value: 'agate', label: 'Agate', key: '2' },
+    { value: 'obsidian', label: 'Obsidian', key: '3' },
+  ], onPick: v => { kind = v; act.stone(); } },
+  actions: [
+    { verb: 'wet', key: 'W', onPress: () => act.wet() },
+    { verb: 'add', noun: 'Stone', key: 'N', onPress: () => act.stone() },
+  ],
+  settings: [
+    { type: 'slider', id: 'grit', label: 'Grit', min: 0.3, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { grit = v; } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'rub'], ['move', 'tilt the light'], ['click', 'splash'], ['w', 'wet']],
+} });
+grit = ui.setting('grit')?.value ?? 1;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  mark('first-frame');
+  throw new Error('Worry stone needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, internal, format) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  return fb;
+}
+const vao = gl.createVertexArray();
+
+/* ---------- GLSL ---------- */
+const NOISE = `
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 19.19)); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
+  return s / 0.97;
+}
+`;
+// Stone space: the long half-axis is 1. The shape and the dip are shared.
+const SHAPE = `
+uniform vec4 uShape;
+uniform vec4 uDip;
+uniform vec2 uExt;
+// 0 at the centre, 1 on the rim; the egg term narrows one end.
+float ovalR(vec2 p) {
+  float b = uShape.y * (1.0 - uShape.z * p.x);
+  return length(vec2(p.x / uShape.x, p.y / b));
+}
+// The thumb dip: a shallow, long hollow near the centre.
+float dipMask(vec2 p) {
+  vec2 d = (p - uDip.xy) / vec2(0.42, 0.27);
+  return exp(-dot(d, d) * 1.6);
+}
+float macroH(vec2 p) {
+  float r = min(ovalR(p), 0.997);
+  return uShape.w * pow(1.0 - r * r, 0.55) - uDip.z * dipMask(p);
+}
+`;
+
+/* ---------- stone body ---------- */
+// One bake per stone writes two maps in stone space.
+// Map 0: tone, needles, twin stripe, seam. Map 1: peak wavelength, lamella tilt (x, y), strength.
+const BAKE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uSeed, uBase;
+uniform float uTwin, uNeedle;
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+${NOISE}
+${SHAPE}
+// Voronoi: nearest distance, gap to the second nearest, cell hash.
+vec3 vor(vec2 x) {
+  vec2 n = floor(x), f = fract(x), id = vec2(0);
+  float d1 = 8.0, d2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), r = g + hash2(n + g + uSeed) - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = n + g; } else if (d < d2) d2 = d;
+  }
+  return vec3(sqrt(d1), sqrt(d2) - sqrt(d1), hash(id + uSeed * 1.3));
+}
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uExt;
+  // A warp bends the crystal domains into flowing patches.
+  vec2 w = p + 0.55 * vec2(fbm(p * 1.3 + uSeed), fbm(p * 1.3 + uSeed + 17.0)) - 0.27;
+  vec3 v = vor(w * 1.5);
+  float h = v.z, h2 = hash(vec2(h * 91.7, 3.1)), h3 = hash(vec2(h * 13.3, 7.7)), h4 = hash(vec2(h * 5.1, 11.0));
+  // Albite twins: fine straight stripes flip the lamellae to a second orientation.
+  vec2 sd = vec2(cos(uTwin), sin(uTwin));
+  float s = dot(p, sd) * 55.0 * (0.7 + 0.6 * h2) + fbm(p * 4.0 + uSeed) * 0.8;
+  float twin = step(0.5, fract(s)) * step(0.65, h3);
+  // A twin stripe tilts a little off its patch, so stripes shimmer in turn.
+  vec2 tilt = uBase + (vec2(h2, h4) - 0.5) * 0.11 + twin * 0.06 * vec2(cos(uTwin + 1.3), sin(uTwin + 1.3));
+  // Most patches peak blue; fewer go teal, green or gold.
+  float lam = h < 0.62 ? mix(458.0, 498.0, h / 0.62) : h < 0.85 ? mix(505.0, 548.0, (h - 0.62) / 0.23) : mix(562.0, 598.0, (h - 0.85) / 0.15);
+  lam += (fbm(w * 2.2 + uSeed * 2.0) - 0.5) * 70.0 + (fbm(w * 7.0 - uSeed) - 0.5) * 20.0;
+  float str = (h4 < 0.2 ? 0.12 : mix(0.55, 1.0, h3)) * (1.0 - 0.2 * twin);
+  str *= smoothstep(0.0, 0.09, v.y) * (0.45 + 0.55 * fbm(w * 2.5 + 9.0));
+  // The feldspar mottles; dark magnetite needles run in one direction.
+  float tone = 0.7 * fbm(p * 3.0 + uSeed * 3.0) + 0.3 * fbm(p * 12.0 - uSeed);
+  vec2 np = mat2(cos(uNeedle), sin(uNeedle), -sin(uNeedle), cos(uNeedle)) * p;
+  float nd = noise(np * vec2(3.0, 70.0) + uSeed);
+  float needles = smoothstep(0.93, 0.985, 1.0 - abs(nd * 2.0 - 1.0)) * smoothstep(0.55, 0.75, fbm(p * 2.5 + 5.0 + uSeed));
+  float seam = 1.0 - smoothstep(0.0, 0.015, v.y);
+  o0 = vec4(tone, needles, twin, seam);
+  o1 = vec4((lam - 400.0) / 300.0, tilt, str);
+}`;
+
+/* ---------- polish buffer ---------- */
+// The rub pass stamps a soft capsule from uA to uB, capped at 1, with no decay.
+const RUB_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uPrev;
+uniform vec2 uA, uB;
+uniform float uR, uAmt;
+out vec4 o;
+${SHAPE}
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uExt;
+  vec2 ab = uB - uA;
+  float t = clamp(dot(p - uA, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+  vec2 d = p - uA - ab * t;
+  float k = exp(-dot(d, d) / (uR * uR));
+  // The dip polishes first and deepest.
+  float dip = 1.0 + 0.5 * dipMask(p);
+  float prev = texture(uPrev, vUv).r;
+  o = vec4(min(1.0, prev + uAmt * k * dip * step(ovalR(p), 1.03)), 0.0, 0.0, 1.0);
+}`;
+
+/* ---------- shading ---------- */
+const SHADE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uB0, uB1, uPol;
+uniform vec2 uCentre, uRes;
+uniform float uScale, uMicro;
+uniform mat2 uRot;
+uniform vec3 uL;
+out vec4 o;
+${NOISE}
+${SHAPE}
+// Linear RGB for one wavelength in nm: three soft bumps.
+vec3 spectral(float l) {
+  float r = exp(-pow((l - 610.0) / 45.0, 2.0)) + 0.2 * exp(-pow((l - 430.0) / 25.0, 2.0));
+  float g = exp(-pow((l - 545.0) / 45.0, 2.0));
+  float b = exp(-pow((l - 455.0) / 35.0, 2.0));
+  return vec3(r, g, b);
+}
+// The rough grit: three octaves of small bumps.
+float microH(vec2 p) {
+  return 0.6 * noise(p * 45.0) + 0.3 * noise(p * 110.0 + 4.0) + 0.15 * noise(p * 260.0 + 9.0);
+}
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+// An integer hash per pixel for the grain.
+float ih(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}
+void main() {
+  vec2 sp = (gl_FragCoord.xy - uCentre) / uScale;
+  vec2 p = uRot * sp;
+  vec3 L = uL, V = vec3(0.0, 0.0, 1.0);
+  float r = ovalR(p);
+  float aa = max(fwidth(r), 1e-4);
+  float inside = 1.0 - smoothstep(1.0 - 1.5 * aa, 1.0, r);
+
+  // The ground: a dark sheet, a soft key pool and a contact shadow away from the light.
+  float pool = exp(-dot(sp, sp) * 0.3);
+  float shadow = 1.0 - 0.85 * smoothstep(1.3, 0.78, ovalR(p + L.xy / max(L.z, 0.3) * 0.16));
+  float ao = 1.0 - 0.6 * smoothstep(1.16, 0.99, r);
+  vec3 col = vec3(0.010, 0.011, 0.015) * (0.35 + 1.1 * pool) * shadow * ao;
+
+  if (r < 1.02) {
+    vec2 uv = p / uExt * 0.5 + 0.5;
+    float pol = clamp(texture(uPol, uv).r, 0.0, 1.0);
+    // Gloss rises fast: one stroke already reads as glassy.
+    float g = 1.0 - pow(1.0 - pol, 2.4);
+    float e = 1.0 / uScale, m = uMicro * (1.0 - g);
+    float h0 = macroH(p), hx = macroH(p + vec2(e, 0.0)), hy = macroH(p + vec2(0.0, e));
+    float u0 = microH(p), ux = microH(p + vec2(e, 0.0)), uy = microH(p + vec2(0.0, e));
+    vec3 Nm = normalize(vec3(-(hx - h0) / e, -(hy - h0) / e, 1.0));
+    vec3 N = normalize(vec3(-(hx - h0 + m * (ux - u0)) / e, -(hy - h0 + m * (uy - u0)) / e, 1.0));
+    vec4 b0 = texture(uB0, uv), b1 = texture(uB1, uv);
+    float NL = max(dot(N, L), 0.0), NV = max(N.z, 1e-3);
+    vec3 Hh = normalize(L + V);
+    vec3 Lc = vec3(1.0, 0.97, 0.92) * 2.0;
+
+    // The body: dark grey feldspar. Rough, it hides under pale dust.
+    vec3 feld = mix(vec3(0.010, 0.012, 0.014), vec3(0.042, 0.047, 0.048), b0.r);
+    feld *= (1.0 - 0.6 * b0.g) * (1.0 - 0.12 * b0.a);
+    float pit = smoothstep(0.8, 0.95, noise(p * 170.0 + 3.0));
+    vec3 dust = vec3(0.115, 0.113, 0.107) * (0.55 + 0.75 * b0.r) * (1.0 - 0.5 * pit);
+    dust = mix(dust, feld * 2.0, 0.35);
+    vec3 alb = mix(dust, feld, g);
+    // Rough stone scatters chalky light round its form.
+    float wrap = max(mix((dot(N, L) + 0.15) / 1.15, dot(N, L), g), 0.0);
+    // The low rim sits in the ground's shade.
+    float rimAo = 0.6 + 0.4 * smoothstep(1.0, 0.7, r);
+    vec3 diff = (alb * wrap * Lc + alb * 0.12 * (0.4 + 0.6 * N.z)) * rimAo;
+
+    // The clear coat: GGX, from dull sheen to a sharp key highlight.
+    float a = mix(0.42, 0.035, g); a *= a;
+    float NH = max(dot(N, Hh), 0.0), dd = NH * NH * (a - 1.0) + 1.0;
+    float D = a / (3.14159 * dd * dd);
+    float F = 0.045 + 0.955 * pow(1.0 - max(dot(Hh, V), 0.0), 5.0);
+    vec3 spec = Lc * D * F * NL / (4.0 * max(NV, 0.25));
+    // Polish mirrors the dark room: a softbox at the key and a faint ceiling.
+    vec3 R = reflect(-V, N);
+    float Fv = 0.045 + 0.955 * pow(1.0 - NV, 5.0);
+    float box = exp(-(1.0 - max(dot(R, L), 0.0)) / 0.03);
+    vec3 env = vec3(0.9, 0.88, 0.85) * 0.6 * box + vec3(0.05, 0.055, 0.07) * (0.3 + 0.7 * max(R.z, 0.0));
+    vec3 refl = env * Fv * g;
+
+    // Labradorescence: thin lamellae reflect one band of colour, in a narrow angle window.
+    // Refraction shrinks the inner angles; the dome bends them a little.
+    vec3 Hi = normalize(vec3(Hh.xy / 1.56, Hh.z) + 0.2 * vec3(Nm.xy, 0.0));
+    vec3 nl = normalize(vec3(b1.yz, 1.0));
+    float c = dot(Hi, nl);
+    // Rough grit smears the window wide and dim.
+    float sig = mix(0.03, 0.0035, g);
+    float win = exp(-(1.0 - c) / sig) * pow(0.0035 / sig, 0.55) + 0.012 * exp(-(1.0 - c) / 0.05);
+    float ci = clamp(dot(L, nl), 0.0, 1.0), st = sqrt(1.0 - ci * ci) / 1.56;
+    // A steeper angle shifts the peak toward blue.
+    float lam = mix(400.0, 700.0, b1.x) * sqrt(1.0 - st * st);
+    vec3 sc = spectral(lam);
+    sc = mix(vec3(dot(sc, vec3(0.333))), sc, 0.3 + 0.55 * g);
+    float gate = mix(0.07, 1.0, smoothstep(0.02, 0.6, pol));
+    vec3 flash = sc * b1.w * win * gate * 2.2 * (1.0 - F);
+
+    vec3 stone = diff * (1.0 - F * g) + spec + refl + flash;
+    col = mix(col, stone, inside);
+  }
+
+  // Grade: vignette, tone map, grain.
+  vec2 q = (gl_FragCoord.xy / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.55 * smoothstep(0.35, 1.15, length(q));
+  col = pow(aces(col * 1.1), vec3(1.0 / 2.2));
+  col += (ih(gl_FragCoord.xy) - 0.5) * 0.022;
+  o = vec4(col, 1.0);
+}`;
+
+const bakeP = program(BAKE_FS), rubP = program(RUB_FS), shadeP = program(SHADE_FS);
+
+/* ---------- buffers ---------- */
+// Stone space spans uExt each way; every map covers that box.
+const EXT = [1.04, 0.86];
+const BODY = [1024, 848], POL = [768, 636];
+const body = [texture(...BODY, gl.RGBA16F, gl.RGBA), texture(...BODY, gl.RGBA16F, gl.RGBA)];
+const bodyFb = target(body);
+const pol = [texture(...POL, gl.R16F, gl.RED), texture(...POL, gl.R16F, gl.RED)];
+const polFb = pol.map(t => target([t]));
+let pi = 0;
+
+/* ---------- the stone ---------- */
+// Seeded random keeps the first stone the same on every load.
+let seed = 4021;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const shape = { A: 1, B: 0.7, egg: 0.08, H: 0.38, dip: [0.05, 0.02, 0.06] };
+let first = true, bake = null, bakedUpright = null;
+
+function setShape(p) {
+  gl.uniform4f(p.u('uShape'), shape.A, shape.B, shape.egg, shape.H);
+  gl.uniform4f(p.u('uDip'), ...shape.dip, 0);
+  gl.uniform2f(p.u('uExt'), ...EXT);
+}
+// The default light's inner half vector, as a lamella tilt in stone space.
+function defaultTilt() {
+  const L = lightVec(Q0);
+  const h = [L[0], L[1], L[2] + 1], n = Math.hypot(...h);
+  const hi = [h[0] / n / 1.56, h[1] / n / 1.56, h[2] / n];
+  return [hi[0] / hi[2], hi[1] / hi[2]];
+}
+// Builds the body maps and the shape for one stone of this kind.
+// Agate and Obsidian use the Labradorite body until Task 2.
+function buildStone(k, s) {
+  seed = s;
+  shape.B = 0.64 + 0.08 * rnd();
+  shape.egg = (rnd() < 0.5 ? -1 : 1) * (0.03 + 0.05 * rnd());
+  shape.dip = [(rnd() - 0.5) * 0.14, (rnd() - 0.5) * 0.08, 0.055 + 0.02 * rnd()];
+  // The first stone's lamellae face the default light, so the first stroke flashes.
+  let base;
+  if (first) { base = defaultTilt(); bakedUpright = upright; }
+  else { const a = rnd() * Math.PI * 2, m = 0.06 + 0.16 * rnd(); base = [Math.cos(a) * m, Math.sin(a) * m]; }
+  bake = { seed: [rnd() * 60, rnd() * 60], base, twin: rnd() * Math.PI, needle: rnd() * Math.PI, kind: k };
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bodyFb);
+  gl.viewport(0, 0, ...BODY);
+  gl.useProgram(bakeP);
+  setShape(bakeP);
+  gl.uniform2f(bakeP.u('uSeed'), ...bake.seed);
+  gl.uniform2f(bakeP.u('uBase'), ...bake.base);
+  gl.uniform1f(bakeP.u('uTwin'), bake.twin);
+  gl.uniform1f(bakeP.u('uNeedle'), bake.needle);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function clearPolish() {
+  for (const fb of polFb) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+}
+
+/* ---------- rub ---------- */
+// Stamps wait here until the next frame applies them.
+const stamps = [];
+const BRUSH = 0.085, RATE = 3.6;
+let lastRub = null;
+// One rub at stone point (x, y), at v stone units a second.
+// Polish per unit of stroke grows with speed, the press time and Grit.
+function rub(x, y, v, press = 1) {
+  const from = lastRub || [x, y];
+  lastRub = [x, y];
+  const len = Math.hypot(x - from[0], y - from[1]);
+  if (len < 1e-4) return;
+  const speed = 0.6 + 0.6 * clamp((v - 0.2) / 2.8);
+  stamps.push({ a: from, b: [x, y], amt: RATE * len * speed * press * grit });
+}
+function applyStamps() {
+  if (!stamps.length) return;
+  gl.useProgram(rubP);
+  setShape(rubP);
+  gl.uniform1i(rubP.u('uPrev'), 0);
+  gl.uniform1f(rubP.u('uR'), BRUSH);
+  gl.viewport(0, 0, ...POL);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  for (const s of stamps) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, polFb[1 - pi]);
+    gl.bindTexture(gl.TEXTURE_2D, pol[pi]);
+    gl.uniform2f(rubP.u('uA'), ...s.a);
+    gl.uniform2f(rubP.u('uB'), ...s.b);
+    gl.uniform1f(rubP.u('uAmt'), s.amt);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    pi = 1 - pi;
+  }
+  stamps.length = 0;
+}
+// The first frame: one polished stroke, out and back, through the dip.
+// It starts under the key highlight, so the polish reads as glass.
+function firstStroke() {
+  const [dx, dy] = shape.dip;
+  for (const off of [0, 0.05]) {
+    lastRub = null;
+    for (let i = 0; i <= 24; i++) {
+      const t = off ? 1 - i / 24 : i / 24;
+      rub(-0.62 + 1.2 * t + dx, 0.24 - 0.3 * t - 0.12 * Math.sin(t * Math.PI) + dy - off, 1.6);
+    }
+  }
+  lastRub = null;
+}
+
+/* ---------- layout ---------- */
+// Wide stages lay the stone flat across; tall ones stand it upright.
+let size = { w: 1, h: 1, dpr: 1 }, sc = 100, centre = [0, 0], upright = false;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.4e6 });
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  upright = w / h < 0.9;
+  // The scale is CSS pixels per stone unit.
+  sc = upright ? Math.min(0.86 * w / 1.44, 0.4 * h) : Math.min(0.4 * w, 0.4 * h / 0.74);
+  centre = [w / 2, h * (upright ? 0.47 : 0.5)];
+  // The first stone turns its lamellae to face the default light again.
+  if (first && bake && upright !== bakedUpright) buildStone(kind, 4021);
+}
+// Screen to stone: upright turns the long axis onto the screen's y.
+const toStone = (x, y) => (upright ? [y, -x] : [x, y]);
+// A CSS point on the stage, in screen units of the stone's scale, y up.
+const screenUnits = (cx, cy) => [(cx - centre[0]) / sc, (centre[1] - cy) / sc];
+
+/* ---------- light ---------- */
+// The pointer sets the key light; the light eases after it in 120 ms.
+// Q0 is the rest position: above and a little to the upper left.
+const Q0 = [-0.53, 0.65];
+const lq = [...Q0], tq = [...Q0];
+function lightVec(q) {
+  const s = toStone(clamp(q[0], -1.7, 1.7) * 0.85, clamp(q[1], -1.7, 1.7) * 0.85);
+  const n = Math.hypot(s[0], s[1], 1);
+  return [s[0] / n, s[1] / n, 1 / n];
+}
+function aimLight(q) {
+  if (reduced()) { tq[0] = Q0[0]; tq[1] = Q0[1]; } else { tq[0] = q[0]; tq[1] = q[1]; }
+  wake();
+}
+
+/* ---------- render ---------- */
+function draw() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(shadeP);
+  setShape(shadeP);
+  const d = size.dpr;
+  gl.uniform2f(shadeP.u('uCentre'), centre[0] * d, (size.h - centre[1]) * d);
+  gl.uniform2f(shadeP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(shadeP.u('uScale'), sc * d);
+  gl.uniform1f(shadeP.u('uMicro'), 0.004);
+  // Column-major: upright maps stone x to screen y.
+  gl.uniformMatrix2fv(shadeP.u('uRot'), false, upright ? [0, -1, 1, 0] : [1, 0, 0, 1]);
+  gl.uniform3f(shadeP.u('uL'), ...lightVec(lq));
+  [body[0], body[1], pol[pi]].forEach((t, i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+  });
+  gl.uniform1i(shadeP.u('uB0'), 0);
+  gl.uniform1i(shadeP.u('uB1'), 1);
+  gl.uniform1i(shadeP.u('uPol'), 2);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* ---------- frame loop ---------- */
+// Lively while the light eases or a rub is pending; asleep otherwise.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const k = 1 - Math.exp(-dt / 0.12);
+    lq[0] += (tq[0] - lq[0]) * k;
+    lq[1] += (tq[1] - lq[1]) * k;
+    const easing = Math.hypot(tq[0] - lq[0], tq[1] - lq[1]) > 1e-3;
+    if (!easing) { lq[0] = tq[0]; lq[1] = tq[1]; }
+    applyStamps();
+    draw();
+    again = easing || stamps.length > 0;
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms.
+// A release that is neither is a tap, and a tap splashes.
+let ptr = null, holdTo = 0;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  ptr = { id: e.pointerId, x0: x, y0: y, x, y, t: e.timeStamp, t0: e.timeStamp, mode: 'press', touch: e.pointerType !== 'mouse' };
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press') ptr.mode = 'hold'; }, 260);
+  aimLight(screenUnits(x, y));
+}
+function move(e) {
+  const [x, y] = local(e);
+  if (!ptr) {
+    if (e.pointerType === 'mouse') aimLight(screenUnits(x, y));
+    return;
+  }
+  if (e.pointerId !== ptr.id) return;
+  if (ptr.mode !== 'drag' && Math.hypot(x - ptr.x0, y - ptr.y0) > 8) {
+    clearTimeout(holdTo);
+    ptr.mode = 'drag';
+    lastRub = toStone(...screenUnits(ptr.x0, ptr.y0));
+  }
+  if (ptr.mode === 'drag') {
+    const dt = Math.max(1e-3, (e.timeStamp - ptr.t) / 1000);
+    const v = Math.hypot(x - ptr.x, y - ptr.y) / sc / dt;
+    // A held press bears down: up to half again after 1.2 s.
+    const press = 1 + 0.5 * clamp((e.timeStamp - ptr.t0) / 1200);
+    rub(...toStone(...screenUnits(x, y)), v, press);
+  }
+  ptr.x = x; ptr.y = y; ptr.t = e.timeStamp;
+  aimLight(screenUnits(x, y));
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup';
+  // On touch the light eases back to rest after release.
+  if (ptr.touch) aimLight(Q0);
+  ptr = null;
+  lastRub = null;
+  if (tap) act.wet();
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') aimLight(Q0); });
+
+/* ---------- actions ---------- */
+// A new stone of the same kind: a new pattern, fully rough.
+act.stone = () => {
+  first = false;
+  buildStone(kind, 1 + Math.floor(Math.random() * 2147483000));
+  clearPolish();
+  wake();
+  if (ready) draw();
+};
+act.reset = () => { clearPolish(); if (ready) draw(); };
+// Water arrives in Task 2.
+act.wet = () => {};
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders compile and the first frame draws.
+resize();
+buildStone(kind, 4021);
+clearPolish();
+firstStroke();
+applyStamps();
+draw();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+onQuality(() => { resize(); if (ready) draw(); });
+onReducedChange(() => aimLight(Q0));
+// A hidden tab stops the loop.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>
