@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.3 0.06 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phaeton</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<style>
+/* Phaeton: a rail gun on a salt flat at dusk, fired through a row of targets. */
+:root { --stage: oklch(0.3 0.06 265); }
+.stage--phaeton canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--phaeton canvas.on { opacity: 1; }
+.stage--phaeton { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--phaeton canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Phaeton</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--phaeton" id="stage" tabindex="0" role="application" aria-label="A rail gun on a salt flat at dusk, aimed down a row of six targets. Hold to charge, release to fire. The slug goes through the targets in slow motion. Space charges and fires, S shuffles the row.">
+      <p class="fail" hidden>Phaeton needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Phaeton</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import * as THREE from 'three';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const col = (L, C, h) => new THREE.Color().setRGB(...linFit(L, C, h), THREE.LinearSRGBColorSpace);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- the range ---------- */
+// Units are metres. The lane runs down negative z from the muzzle.
+const BORE = 1.2, MUZZLE = -1.4, BACK_Z = -60;
+const SLOTS = [-7, -13, -20, -28, -37, -47];
+// The slug speed is in sim metres per second.
+const SPEED = 420, CHARGE_TIME = 2.5, MIN_HOLD = 0.15, REFILL = 4;
+
+/* ---------- bar ---------- */
+let camMode = 'ride', dustOn = true, slowmo = 0.35;
+// The handlers bind once the scene exists.
+const act = { down() {}, up() {}, shuffle() {}, reset() {} };
+const ui = initPage({ id: 'phaeton', bar: {
+  actions: [
+    { verb: 'fire', key: 'Space', hold: true, onDown: () => act.down(), onUp: () => act.up() },
+    { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
+  ],
+  // Slow-mo sets the bullet-time scale, from 1/8 to 1/100.
+  slider: { label: 'Slow-mo', min: 0, max: 1, step: 0.01, value: 0.35, persist: true, onInput: v => { slowmo = v; } },
+  settings: [
+    { type: 'choice', id: 'camera', label: 'Camera', value: 'ride', persist: true,
+      options: [{ value: 'ride', label: 'Ride' }, { value: 'fixed', label: 'Fixed' }], onPick: v => { camMode = v; } },
+    { type: 'toggle', id: 'dust', label: 'Dust', value: true, persist: true, onToggle: v => { dustOn = v; } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['hold', 'charge'], ['release', 'fire'], ['S', 'shuffle']],
+} });
+camMode = ui.setting('camera')?.value ?? camMode;
+dustOn = ui.setting('dust')?.value ?? dustOn;
+slowmo = ui.slider?.value ?? slowmo;
+const timeSlow = () => 1 / (8 + 92 * slowmo);
+
+/* ---------- renderer ---------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+const HORIZON = col(0.74, 0.12, 52), ZENITH = col(0.3, 0.09, 268), GLOW = col(0.84, 0.15, 62);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(col(0.7, 0.08, 40), 30, 240);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 900);
+
+/* ---------- sky ---------- */
+// The sun sits just under the horizon, front left of the lane.
+const SUN = new THREE.Vector3(-0.55, -0.035, -1).normalize();
+const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uHor: { value: HORIZON }, uZen: { value: ZENITH }, uGlow: { value: GLOW }, uSun: { value: SUN } },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uHor, uZen, uGlow, uSun;
+    varying vec3 vDir;
+    void main() {
+      float y = max(vDir.y, 0.0);
+      vec3 c = mix(uHor, uZen, pow(smoothstep(0.0, 0.55, y), 0.6));
+      float s = max(dot(normalize(vec3(vDir.x, 0.0, vDir.z)), normalize(vec3(uSun.x, 0.0, uSun.z))), 0.0);
+      c += uGlow * pow(s, 6.0) * exp(-y * 9.0) * 0.9;
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+}));
+scene.add(sky);
+// The sky lights the bare metal by reflection.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new THREE.Scene().add(sky.clone()), 0.02).texture;
+scene.environmentIntensity = 0.6;
+pmrem.dispose();
+
+/* ---------- light ---------- */
+const hemi = new THREE.HemisphereLight(col(0.62, 0.06, 255), col(0.72, 0.05, 50), 1.1);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(col(0.86, 0.11, 58), 1.9);
+sun.position.set(-32, 7, -78);
+sun.target.position.set(0, 0, -24);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 160 });
+sun.shadow.bias = -0.0004;
+scene.add(sun, sun.target);
+// The muzzle flash lights the salt and the targets for a moment.
+const flash = new THREE.PointLight(col(0.9, 0.08, 230), 0, 70, 1.4);
+flash.position.set(0, BORE + 0.6, MUZZLE - 2.5);
+scene.add(flash);
+
+/* ---------- salt ---------- */
+// A periodic Voronoi tile draws the hexagon crust of a salt flat.
+function crustTile(N = 256, cells = 7) {
+  const pts = [];
+  for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) pts.push([(i + rnd(0.2, 0.8)) / cells, (j + rnd(0.2, 0.8)) / cells]);
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    let f1 = 9, f2 = 9;
+    for (const [px, py] of pts) {
+      let dx = Math.abs(u - px), dy = Math.abs(v - py);
+      dx = Math.min(dx, 1 - dx); dy = Math.min(dy, 1 - dy);
+      const d = Math.hypot(dx, dy);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+    }
+    // Ridges rise where two cells meet.
+    const e = (f2 - f1) * cells, ridge = Math.exp(-e * e * 90);
+    const k = (ridge * 255) | 0, o = (y * N + x) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = k; img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(280, 280);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const crust = crustTile();
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.MeshStandardMaterial({
+  color: col(0.95, 0.01, 70), roughness: 0.95, bumpMap: crust, bumpScale: 0.9,
+}));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ---------- the gun ---------- */
+const steelDark = new THREE.MeshStandardMaterial({ color: col(0.3, 0.01, 250), roughness: 0.55, metalness: 0.6 });
+const railMat = new THREE.MeshStandardMaterial({ color: col(0.55, 0.1, 50), roughness: 0.55, metalness: 0.7, emissive: new THREE.Color(0) });
+const gun = new THREE.Group();
+const box = (w, h, d, m, x, y, z) => {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; gun.add(b); return b;
+};
+// The armature holds the rails; the capacitor bank sits at the breech.
+box(0.6, 0.26, 7.2, steelDark, 0, BORE - 0.27, 2.2);
+for (const s of [-1, 1]) box(0.09, 0.26, 7.2, railMat, s * 0.15, BORE, 2.2);
+box(0.36, 0.08, 7.2, steelDark, 0, BORE + 0.17, 2.2);
+box(0.9, 0.7, 1.1, steelDark, 0, 0.45, 5.6);
+for (const z of [0.2, 4.4]) for (const s of [-1, 1]) {
+  const leg = box(0.1, BORE - 0.4, 0.1, steelDark, s * 0.26, (BORE - 0.4) / 2, z);
+  leg.rotation.z = s * 0.18;
+}
+scene.add(gun);
+
+// Arcs crawl between the rails while the gun charges.
+const ARCS = 6, ARC_SEG = 7;
+const arcGeo = new THREE.BufferGeometry();
+arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARCS * ARC_SEG * 2 * 3), 3));
+const arcs = new THREE.LineSegments(arcGeo, new THREE.LineBasicMaterial({ color: col(0.95, 0.12, 240), toneMapped: false, transparent: true }));
+arcs.frustumCulled = false;
+scene.add(arcs);
+function drawArcs(c) {
+  const p = arcGeo.attributes.position.array;
+  let o = 0;
+  for (let a = 0; a < ARCS; a++) {
+    const on = Math.random() < c * 1.3;
+    const z = rnd(-1.2, 5.6);
+    let px = -0.1, py = BORE + rnd(-0.08, 0.08), pz = z;
+    for (let s = 0; s < ARC_SEG; s++) {
+      const t = (s + 1) / ARC_SEG;
+      const nx = lerp(-0.1, 0.1, t), ny = BORE + (s < ARC_SEG - 1 ? rnd(-0.09, 0.09) : rnd(-0.05, 0.05)), nz = z + rnd(-0.06, 0.06);
+      const k = on ? 1 : 0;
+      p[o++] = px * k; p[o++] = py * k; p[o++] = pz * k;
+      p[o++] = nx * k; p[o++] = ny * k; p[o++] = nz * k;
+      px = nx; py = ny; pz = nz;
+    }
+  }
+  arcGeo.attributes.position.needsUpdate = true;
+  arcs.visible = c > 0.02;
+}
+
+/* ---------- the slug ---------- */
+const slug = new THREE.Group();
+const slugBody = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 10).rotateX(Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: col(0.98, 0.04, 80).multiplyScalar(3), toneMapped: false }));
+// A hot trail stretches behind the slug.
+const trail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.003, 1, 8, 1, true).rotateX(-Math.PI / 2).translate(0, 0, 0.5),
+  new THREE.MeshBasicMaterial({ color: col(0.9, 0.12, 60).multiplyScalar(2), toneMapped: false, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+slug.add(slugBody, trail);
+slug.visible = false;
+scene.add(slug);
+
+/* ---------- backstop ---------- */
+// The backstop is weathered plate, lit only by the sky.
+const backstop = new THREE.Mesh(new THREE.BoxGeometry(7, 4.2, 0.8), new THREE.MeshStandardMaterial({ color: col(0.5, 0.03, 45), roughness: 0.8, metalness: 0.3 }));
+backstop.position.set(0, 2.1, BACK_Z - 0.4);
+backstop.castShadow = backstop.receiveShadow = true;
+scene.add(backstop);
+// Each dent glows and cools on the backstop face.
+const dents = [];
+const dentGeo = new THREE.CircleGeometry(0.16, 20);
+function addDent(x, y) {
+  const m = new THREE.Mesh(dentGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false }));
+  m.position.set(x, y, BACK_Z + 0.01);
+  scene.add(m);
+  dents.push({ m, t: 0 });
+  if (dents.length > 24) { const d = dents.shift(); scene.remove(d.m); d.m.material.dispose(); }
+}
+const HOT = col(0.97, 0.06, 90).multiplyScalar(4), COLD = col(0.22, 0.02, 40);
+function coolDents(dt) {
+  let warm = false;
+  for (const d of dents) {
+    d.t += dt;
+    const k = Math.exp(-d.t / 1.6);
+    d.m.material.color.copy(COLD).lerp(HOT, k);
+    if (k > 0.01) warm = true;
+  }
+  return warm;
+}
+
+/* ---------- targets ---------- */
+// Resistance is the slug energy each target takes.
+const glassMat = new THREE.MeshStandardMaterial({ color: col(0.88, 0.04, 210), roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.35 });
+const iceMat = new THREE.MeshStandardMaterial({ color: col(0.9, 0.05, 220), roughness: 0.2, transparent: true, opacity: 0.8 });
+const waterMat = new THREE.MeshStandardMaterial({ color: col(0.62, 0.11, 230), roughness: 0.1, transparent: true, opacity: 0.6 });
+const melonMat = new THREE.MeshStandardMaterial({ color: col(0.5, 0.12, 145), roughness: 0.5 });
+const concreteMat = new THREE.MeshStandardMaterial({ color: col(0.66, 0.01, 70), roughness: 0.95 });
+const plateMat = new THREE.MeshStandardMaterial({ color: col(0.5, 0.01, 250), roughness: 0.35, metalness: 0.85 });
+const TYPES = {
+  glass:    { res: 0.05, h: 1.4, geo: new THREE.BoxGeometry(1.2, 1.4, 0.04), mat: glassMat, n: 46, bits: [col(0.9, 0.04, 210)], size: [0.18, 0.2, 0.012], kick: 1.6 },
+  ice:      { res: 0.12, h: 0.9, geo: new THREE.BoxGeometry(0.9, 0.9, 0.9), mat: iceMat, n: 30, bits: [col(0.92, 0.05, 220), col(0.98, 0.01, 220)], size: [0.16, 0.14, 0.15], kick: 1.2 },
+  water:    { res: 0.15, h: 1.1, geo: new THREE.CylinderGeometry(0.45, 0.45, 1.1, 24), mat: waterMat, n: 70, bits: [col(0.7, 0.1, 230), col(0.85, 0.06, 220)], size: [0.07, 0.07, 0.07], kick: 2.2 },
+  melon:    { res: 0.08, h: 0.7, geo: new THREE.SphereGeometry(0.35, 20, 14), mat: melonMat, n: 40, bits: [col(0.58, 0.19, 25), col(0.5, 0.12, 145), col(0.86, 0.06, 110)], size: [0.09, 0.08, 0.08], kick: 2 },
+  concrete: { res: 0.25, h: 0.8, geo: new THREE.BoxGeometry(0.8, 0.8, 0.5), mat: concreteMat, n: 22, bits: [col(0.66, 0.01, 70), col(0.55, 0.01, 70)], size: [0.2, 0.17, 0.18], kick: 0.8 },
+  steel:    { res: 0.3, h: 1.1, geo: new THREE.BoxGeometry(1.1, 1.1, 0.06), mat: plateMat, n: 12, bits: [col(0.55, 0.01, 250), col(0.9, 0.12, 70)], size: [0.14, 0.14, 0.02], kick: 0.9 },
+};
+const KINDS = Object.keys(TYPES);
+const standGeo = new THREE.CylinderGeometry(0.035, 0.05, 1, 8).translate(0, 0.5, 0);
+const row = [];
+function makeTarget(kind, z) {
+  const T = TYPES[kind];
+  const g = new THREE.Group();
+  const stand = new THREE.Mesh(standGeo, steelDark);
+  stand.scale.y = BORE - T.h / 2;
+  stand.castShadow = true;
+  const body = new THREE.Mesh(T.geo, T.mat);
+  body.position.y = BORE;
+  body.castShadow = body.receiveShadow = true;
+  g.add(stand, body);
+  g.position.set(0, 0, z);
+  scene.add(g);
+  return { kind, T, g, body, z, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
+}
+function clearRow() {
+  for (const t of row) scene.remove(t.g);
+  row.length = 0;
+}
+// A new mix: six kinds, at most two of the heavy ones.
+function newRow(drop = true) {
+  clearRow();
+  let heavy = 0;
+  SLOTS.forEach((z, i) => {
+    let k;
+    do k = KINDS[(Math.random() * KINDS.length) | 0];
+    while ((k === 'steel' || k === 'concrete') && heavy >= 2);
+    if (k === 'steel' || k === 'concrete') heavy++;
+    const t = makeTarget(k, z);
+    // Each target drops in from above, one after the next.
+    t.drop = drop ? -i * 0.07 : 1;
+    row.push(t);
+  });
+}
+
+/* ---------- debris ---------- */
+// One instanced box mesh holds every chunk, shard and drop.
+const MAXBITS = 900;
+const bitMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.2 }), MAXBITS);
+bitMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+bitMesh.castShadow = true;
+bitMesh.count = 0;
+bitMesh.frustumCulled = false;
+scene.add(bitMesh);
+const bits = [];
+const dummy = new THREE.Object3D();
+function burst(t, energy) {
+  const T = t.T;
+  for (let i = 0; i < T.n && bits.length < MAXBITS; i++) {
+    const a = rnd(0, TAU), r = Math.sqrt(Math.random());
+    // Chunks leave down the lane in a cone; a faster slug opens it wider.
+    const v = new THREE.Vector3(Math.cos(a) * r * T.kick * 3, Math.sin(a) * r * T.kick * 3 + rnd(0, 2), -rnd(4, 16) * (0.5 + energy));
+    const s = rnd(0.5, 1.4);
+    bits.push({
+      p: new THREE.Vector3(rnd(-0.3, 0.3), BORE + rnd(-0.3, 0.3), t.z + rnd(-0.1, 0.1)), v,
+      q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU))),
+      w: new THREE.Vector3(rnd(-12, 12), rnd(-12, 12), rnd(-12, 12)),
+      s: new THREE.Vector3(T.size[0] * s, T.size[1] * s, T.size[2] * s),
+      c: T.bits[(Math.random() * T.bits.length) | 0], rest: false, fade: 1,
+    });
+  }
+  bitMesh.count = bits.length;
+  bits.forEach((b, i) => bitMesh.setColorAt(i, b.c));
+  if (bitMesh.instanceColor) bitMesh.instanceColor.needsUpdate = true;
+}
+const tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler();
+function stepBits(h) {
+  let moving = false;
+  for (let i = 0; i < bits.length; i++) {
+    const b = bits[i];
+    if (!b.rest) {
+      b.v.y -= 9.8 * h;
+      b.p.addScaledVector(b.v, h);
+      const floor = b.s.y * 0.5;
+      if (b.p.y < floor) {
+        // A bounce keeps a third of the speed; sliding friction takes the rest.
+        b.p.y = floor;
+        b.v.y = -b.v.y * 0.3;
+        b.v.x *= 0.55; b.v.z *= 0.55; b.w.multiplyScalar(0.5);
+        if (b.v.lengthSq() < 0.15) { b.rest = true; b.v.set(0, 0, 0); }
+      }
+      tmpQ.setFromEuler(tmpE.set(b.w.x * h, b.w.y * h, b.w.z * h));
+      b.q.multiply(tmpQ);
+      moving = true;
+    }
+    dummy.position.copy(b.p);
+    dummy.quaternion.copy(b.q);
+    dummy.scale.copy(b.s).multiplyScalar(b.fade);
+    dummy.updateMatrix();
+    bitMesh.setMatrixAt(i, dummy.matrix);
+  }
+  bitMesh.instanceMatrix.needsUpdate = true;
+  return moving;
+}
+
+/* ---------- the shot ---------- */
+// Phases: idle, charge, flight, hold, snap, after, refill.
+const shot = { phase: 'idle', charge: 0, held: 0, energy: 0, z: MUZZLE, events: [], next: 0, stopZ: BACK_Z, hold: 0, after: 0, aim: new THREE.Vector2() };
+let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false;
+const knocked = [];
+function startCharge() {
+  if (shot.phase === 'after') refill();
+  if (shot.phase !== 'idle' && shot.phase !== 'refill') return;
+  shot.phase = 'charge';
+  shot.held = 0;
+  wake();
+}
+function release() {
+  if (shot.phase !== 'charge') return;
+  if (shot.held < MIN_HOLD) { shot.phase = 'idle'; shot.charge = 0; wake(); return; }
+  fire();
+}
+function fire() {
+  // The slug carries its energy down the lane and spends it in each target.
+  let E = 0.15 + shot.charge * 1.25;
+  shot.energy = E;
+  shot.events = [];
+  shot.stopZ = BACK_Z;
+  for (const t of row) {
+    if (t.state !== 'stand') continue;
+    if (E >= t.T.res) { E -= t.T.res; shot.events.push({ z: t.z, t, kind: 'burst', e: E }); }
+    else { shot.events.push({ z: t.z, t, kind: 'stop', e: 0 }); shot.stopZ = t.z; E = 0; break; }
+  }
+  if (E > 0) shot.events.push({ z: BACK_Z, kind: 'back', e: E });
+  shot.aim.set(rnd(-0.12, 0.12), rnd(-0.1, 0.1));
+  shot.next = 0;
+  shot.z = MUZZLE;
+  shot.phase = 'flight';
+  shot.charge = 0;
+  slug.visible = true;
+  flashT = 0;
+  timeScale = timeSlow();
+  wake();
+}
+function hitEvent(ev) {
+  if (ev.kind === 'burst') {
+    ev.t.state = 'gone';
+    ev.t.body.visible = false;
+    burst(ev.t, ev.e);
+  } else if (ev.kind === 'stop') {
+    // The stopped slug knocks its target off the stand.
+    const t = ev.t;
+    t.state = 'knock';
+    t.vel.set(rnd(-0.6, 0.6), rnd(1.5, 3), -rnd(2, 4));
+    t.spin.set(rnd(-4, -1), rnd(-2, 2), rnd(-2, 2));
+    knocked.push(t);
+  } else {
+    addDent(shot.aim.x, BORE + shot.aim.y);
+  }
+}
+function stepKnocked(h) {
+  let moving = false;
+  for (const t of knocked) {
+    if (t.state !== 'knock') continue;
+    const b = t.body;
+    t.vel.y -= 9.8 * h;
+    b.position.addScaledVector(t.vel, h);
+    b.rotation.x += t.spin.x * h; b.rotation.y += t.spin.y * h; b.rotation.z += t.spin.z * h;
+    const floor = t.T.h * 0.35;
+    if (b.position.y < floor) {
+      b.position.y = floor;
+      t.vel.y = -t.vel.y * 0.25; t.vel.x *= 0.5; t.vel.z *= 0.5; t.spin.multiplyScalar(0.5);
+      if (t.vel.lengthSq() < 0.1) { t.state = 'down'; continue; }
+    }
+    moving = true;
+  }
+  return moving;
+}
+function refill() {
+  shot.phase = 'refill';
+  fadeT = 0;
+  newRow(true);
+  knocked.length = 0;
+  wake();
+}
+// QA: fire at a set charge, and freeze the sim clock for stills.
+window.__qa = {
+  fire(c = 1) { shot.phase = 'charge'; shot.held = 1; shot.charge = c; fire(); },
+  freeze(on = true) { frozen = on; wake(); },
+};
+act.down = startCharge;
+act.up = release;
+act.shuffle = () => { if (shot.phase === 'idle' || shot.phase === 'after' || shot.phase === 'refill') { refill(); bits.length = 0; bitMesh.count = 0; } };
+act.reset = () => {
+  for (const d of dents) { scene.remove(d.m); d.m.material.dispose(); }
+  dents.length = 0;
+  bits.length = 0; bitMesh.count = 0;
+  slug.visible = false; timeScale = 1; camBlend = 0;
+  shot.charge = 0;
+  refill();
+};
+
+/* ---------- step ---------- */
+function step(dt) {
+  // Real time drives the charge, the camera and the flash.
+  if (shot.phase === 'charge') {
+    shot.held += dt;
+    shot.charge = clamp(shot.charge + dt / CHARGE_TIME);
+  }
+  const c = shot.phase === 'charge' ? shot.charge : 0;
+  railMat.emissive.copy(col(0.7, 0.18, 45)).multiplyScalar(c * c * 2.2);
+  drawArcs(c);
+  flashT += dt;
+  flash.intensity = reduced() ? 0 : 160 * Math.exp(-flashT / 0.07);
+
+  // The sim clock runs at the time scale; bullet time is one number.
+  if (shot.phase === 'snap') timeScale = Math.min(1, timeScale + dt / 0.15);
+  const h = frozen ? 0 : dt * timeScale;
+  if (shot.phase === 'flight') {
+    shot.z -= SPEED * h;
+    while (shot.next < shot.events.length && shot.z <= shot.events[shot.next].z) hitEvent(shot.events[shot.next++]);
+    if (shot.z <= shot.stopZ) { shot.z = shot.stopZ; shot.phase = 'hold'; shot.hold = 0; }
+  } else if (shot.phase === 'hold') {
+    if (!frozen) shot.hold += dt;
+    if (shot.hold > 0.35) { shot.phase = 'snap'; slug.visible = false; }
+  } else if (shot.phase === 'snap' && timeScale >= 1) {
+    shot.phase = 'after'; shot.after = 0;
+  } else if (shot.phase === 'after') {
+    shot.after += dt;
+    if (shot.after > REFILL) refill();
+  }
+  slug.position.set(shot.aim.x * clamp((MUZZLE - shot.z) / 40), BORE + shot.aim.y * clamp((MUZZLE - shot.z) / 40), shot.z);
+  trail.scale.z = clamp((MUZZLE - shot.z) / 6, 0.05, 1) * 0.9;
+
+  // The row drops in after a refill.
+  let dropping = false;
+  for (const t of row) {
+    if (t.drop < 1) {
+      t.drop = Math.min(1, t.drop + dt / 0.55);
+      const k = clamp(t.drop);
+      // A falling ease with one small bounce.
+      const y = k < 0.75 ? 1 - (k / 0.75) ** 2 : 0.06 * Math.sin((k - 0.75) / 0.25 * Math.PI);
+      t.g.position.y = y * 6;
+      dropping = true;
+    }
+  }
+  if (shot.phase === 'refill') {
+    // Old debris shrinks away while the new row lands.
+    fadeT += dt;
+    const f = clamp(1 - fadeT / 0.4);
+    for (const b of bits) { b.fade = f; b.rest = false; b.v.set(0, 0, 0); }
+    if (f <= 0) { bits.length = 0; bitMesh.count = 0; }
+    if (!dropping && f <= 0) shot.phase = 'idle';
+  }
+  const moving = stepBits(shot.phase === 'refill' ? 0 : h) && shot.phase !== 'refill';
+  const tumbling = stepKnocked(h);
+  const warm = coolDents(dt);
+
+  // The ride camera follows the slug in bullet time.
+  const ride = camMode === 'ride' && !reduced() && (shot.phase === 'flight' || shot.phase === 'hold');
+  camBlend += ((ride ? 1 : 0) - camBlend) * (1 - Math.exp(-dt / (ride ? 0.18 : 0.35)));
+  if (Math.abs(camBlend - (ride ? 1 : 0)) < 0.002) camBlend = ride ? 1 : 0;
+  placeCamera();
+
+  return shot.phase !== 'idle' || dropping || moving || tumbling || warm || camBlend > 0 || flashT < 0.5;
+}
+
+/* ---------- camera ---------- */
+let size = { w: 1, h: 1, dpr: 1 }, narrow = false;
+const fixedPos = new THREE.Vector3(), fixedLook = new THREE.Vector3();
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+function frameShot() {
+  const asp = size.w / size.h;
+  narrow = asp < 0.9;
+  camera.aspect = asp;
+  camera.fov = narrow ? 58 : 36;
+  if (narrow) { fixedPos.set(1.7, 3.1, 17.5); fixedLook.set(0, -0.6, -26); }
+  else { fixedPos.set(2.5, 2.5, 14.5); fixedLook.set(0, 1.0, -30); }
+  camera.updateProjectionMatrix();
+}
+function placeCamera() {
+  const z = shot.z;
+  camPos.set(lerp(fixedPos.x, 0.75, camBlend), lerp(fixedPos.y, BORE + 0.5, camBlend), lerp(fixedPos.z, z + 3.6, camBlend));
+  camLook.set(lerp(fixedLook.x, 0, camBlend), lerp(fixedLook.y, BORE, camBlend), lerp(fixedLook.z, z - 14, camBlend));
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.2e6 }) };
+  frameShot();
+  placeCamera();
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while anything moves; it sleeps at rest.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    again = step(dt);
+    renderer.render(scene, camera);
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- pointer ---------- */
+let pointerId = null;
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || pointerId !== null) return;
+  pointerId = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  startCharge();
+});
+const up = e => {
+  if (e.pointerId !== pointerId) return;
+  pointerId = null;
+  release();
+};
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- ready ---------- */
+newRow(false);
+resize();
+renderer.compileAsync(scene, camera).then(() => {
+  renderer.render(scene, camera);
+  canvas.classList.add('on');
+  ready = true;
+  mark('first-frame');
+}, () => { canvas.classList.add('on'); ready = true; mark('first-frame'); });
+
+new ResizeObserver(() => { resize(); if (ready) renderer.render(scene, camera); }).observe(stage);
+onQuality(() => { resize(); if (ready) renderer.render(scene, camera); });
+onReducedChange(() => wake());
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>
