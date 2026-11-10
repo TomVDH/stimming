@@ -54,7 +54,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -586,6 +586,7 @@ function buildStone(k, s) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 function clearPolish() {
+  pg.fill(0);
   for (const fb of polFb) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.clearColor(0, 0, 0, 1);
@@ -606,7 +607,9 @@ function rub(x, y, v, press = 1) {
   const len = Math.hypot(x - from[0], y - from[1]);
   if (len < 1e-4) return;
   const speed = 0.6 + 0.6 * clamp((v - 0.2) / 2.8);
-  stamps.push({ a: from, b: [x, y], amt: RATE * len * speed * press * grit });
+  const amt = RATE * len * speed * press * grit;
+  stamps.push({ a: from, b: [x, y], amt });
+  gridStamp(from, [x, y], amt);
 }
 function applyStamps() {
   if (!stamps.length) return;
@@ -664,6 +667,7 @@ function splash(x, y) {
   const r = 0.12 + 0.06 * Math.random();
   drop([x, y], r, 1);
   const n = 3 + Math.floor(Math.random() * 3);
+  splashSound(x, y, n);
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, d = r * (0.3 + 0.8 * Math.random());
     addBead(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.cos(a) * 0.15, Math.sin(a) * 0.15);
@@ -673,6 +677,7 @@ function splash(x, y) {
 // Wet: water over the whole stone, and beads where it pools.
 function wetAll() {
   drop([0, 0], 3, 1);
+  pourSound();
   for (let i = 0; i < MAX_BEADS; i++) {
     let x, y;
     do { x = (Math.random() * 2 - 1) * 0.85; y = (Math.random() * 2 - 1) * 0.6; } while (ovalR(x, y) > 0.85);
@@ -738,6 +743,189 @@ function clearWater() {
   }
   drops.length = beads.length = 0;
   wetEnd = 0;
+}
+
+/* ---------- polish map ---------- */
+// A coarse copy of the polish on the CPU, so the rub sound knows the surface.
+const GW = 96, GH = 80, pg = new Float32Array(GW * GH);
+function gridStamp(a, b, amt) {
+  const R = BRUSH * 2.2;
+  const [ex, ey] = EXT;
+  const i0 = Math.max(0, Math.floor(((Math.min(a[0], b[0]) - R) / ex * 0.5 + 0.5) * GW));
+  const i1 = Math.min(GW - 1, Math.ceil(((Math.max(a[0], b[0]) + R) / ex * 0.5 + 0.5) * GW));
+  const j0 = Math.max(0, Math.floor(((Math.min(a[1], b[1]) - R) / ey * 0.5 + 0.5) * GH));
+  const j1 = Math.min(GH - 1, Math.ceil(((Math.max(a[1], b[1]) + R) / ey * 0.5 + 0.5) * GH));
+  const abx = b[0] - a[0], aby = b[1] - a[1], ab2 = Math.max(abx * abx + aby * aby, 1e-8);
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const x = ((i + 0.5) / GW * 2 - 1) * ex, y = ((j + 0.5) / GH * 2 - 1) * ey;
+      const t = clamp(((x - a[0]) * abx + (y - a[1]) * aby) / ab2);
+      const dx = x - a[0] - abx * t, dy = y - a[1] - aby * t;
+      const k = Math.exp(-(dx * dx + dy * dy) / (BRUSH * BRUSH)) * (1 + 0.5 * dipMask(x, y));
+      if (ovalR(x, y) <= 1.03) pg[j * GW + i] = Math.min(1, pg[j * GW + i] + amt * k);
+    }
+  }
+}
+function polishAt(x, y) {
+  const i = Math.floor(clamp(x / EXT[0] * 0.5 + 0.5, 0, 0.999) * GW), j = Math.floor(clamp(y / EXT[1] * 0.5 + 0.5, 0, 0.999) * GH);
+  return pg[j * GW + i];
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// The pan of a stone point, from its place on the screen.
+const panOf = (x, y) => clamp((upright ? -y : x) * sc / (size.w / 2), -1, 1) * 0.8;
+// A short noise burst through a filter, with a fast attack and an exponential fall.
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A short decaying sine: the body of a knock.
+function blip(ac, at, { f, dur, level, pan = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.value = f * jit(0.06);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(level * jit(0.2), at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// A drop: a small air pocket rings with a rising chirp.
+function plop(ac, at, { f, level, pan = 0, dur = 0.05 }) {
+  const o = ac.createOscillator();
+  const f0 = f * jit(0.15);
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * 2.2, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.25), at + 0.003);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// The rub voice: grainy low noise, a thin high hiss and a faint squeak.
+let rubV = null;
+function rubVoice(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const lo = ac.createBiquadFilter(), lo2 = ac.createBiquadFilter();
+  lo.type = lo2.type = 'lowpass';
+  lo.frequency.value = 650;
+  lo2.frequency.value = 900;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 3200;
+  bp.Q.value = 1.6;
+  const osc = ac.createOscillator(), vib = ac.createOscillator(), vibG = ac.createGain();
+  osc.type = 'triangle';
+  osc.frequency.value = 1400;
+  vib.frequency.value = 7;
+  vibG.gain.value = 30;
+  vib.connect(vibG).connect(osc.frequency);
+  const rough = ac.createGain(), hiss = ac.createGain(), squeak = ac.createGain(), pan = ac.createStereoPanner();
+  rough.gain.value = hiss.gain.value = squeak.gain.value = 0;
+  src.connect(lo).connect(lo2).connect(rough).connect(pan);
+  src.connect(bp).connect(hiss).connect(pan);
+  osc.connect(squeak).connect(pan);
+  pan.connect(kit.out);
+  src.start();
+  osc.start();
+  vib.start();
+  return { rough, hiss, squeak, pan, bp, osc };
+}
+// One rub event: polish p under the pointer, speed v in stone units a second.
+// Rough stone grinds low with crackle; polish turns it higher, quieter, then a squeak.
+function rubSound(x, y, p, v) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  rubV ||= rubVoice(ac);
+  const now = ac.currentTime, lvl = clamp(v / 2.5) * jit(0.1), pan = panOf(x, y);
+  // Each event holds the voice for 90 ms; then it fades unless another comes.
+  const hold = (param, val) => {
+    param.cancelScheduledValues(now);
+    param.setTargetAtTime(val, now, 0.025);
+    param.setTargetAtTime(0, now + 0.09, 0.05);
+  };
+  hold(rubV.rough.gain, lvl * 0.6 * (1 - p) ** 1.5);
+  hold(rubV.hiss.gain, lvl * 0.12 * smooth(0.2, 0.9, p));
+  hold(rubV.squeak.gain, lvl * 0.025 * smooth(0.85, 1, p));
+  rubV.bp.frequency.setTargetAtTime((2200 + 2400 * p + 600 * lvl) * jit(0.05), now, 0.05);
+  rubV.osc.frequency.setTargetAtTime((1200 + 400 * clamp(v / 3)) * jit(0.03), now, 0.05);
+  rubV.pan.pan.setTargetAtTime(pan, now, 0.05);
+  // Crackle: grit breaks under the thumb.
+  if (Math.random() < lvl * (1 - p) * 0.8) {
+    burst(ac, now + Math.random() * 0.03, { f: 1600 + 2800 * Math.random(), q: 2, dur: 0.004 + 0.008 * Math.random(), level: 0.3 * (1 - p), pan });
+  }
+}
+// A splash: one drop, a short spread hiss, and the beads' spatter.
+function splashSound(x, y, beadsN) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x, y);
+  plop(ac, at, { f: 650, level: 0.35, pan, dur: 0.06 });
+  burst(ac, at + 0.008, { f: 4200, type: 'highpass', q: 0.7, dur: 0.22 * jit(0.2), level: 0.1, pan });
+  for (let i = 0; i < beadsN; i++) plop(ac, at + 0.03 + Math.random() * 0.14, { f: 1500 + 900 * Math.random(), level: 0.07, pan: clamp(pan + (Math.random() - 0.5) * 0.2, -1, 1), dur: 0.03 });
+}
+// The pour: a band of water noise sweeps across the stone, with drops.
+function pourSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, dur = 1.3 * jit(0.1);
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(800 * jit(0.1), at);
+  bp.frequency.linearRampToValueAtTime(1600 * jit(0.1), at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.22, at + 0.08);
+  g.gain.setValueAtTime(0.22, at + dur - 0.4);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.setValueAtTime(-0.6, at);
+  pn.pan.linearRampToValueAtTime(0.6, at + dur);
+  src.connect(bp).connect(g).connect(pn).connect(kit.out);
+  src.start(at);
+  src.stop(at + dur + 0.05);
+  for (let i = 0; i < 12; i++) {
+    const t = Math.random() * dur * 0.9;
+    plop(ac, at + t, { f: 700 + 1300 * Math.random(), level: 0.08, pan: -0.6 + 1.2 * t / dur, dur: 0.04 });
+  }
+}
+// A soft knock as a new stone settles, and a smaller second bump.
+function knockSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  blip(ac, at, { f: 140, dur: 0.14, level: 0.4 });
+  burst(ac, at, { f: 600, type: 'lowpass', q: 0.7, dur: 0.03, level: 0.3 });
+  const t2 = at + 0.07 * jit(0.2);
+  blip(ac, t2, { f: 170, dur: 0.08, level: 0.14 });
+  burst(ac, t2, { f: 700, type: 'lowpass', q: 0.7, dur: 0.02, level: 0.1 });
 }
 
 /* ---------- layout ---------- */
@@ -834,6 +1022,7 @@ function frame(now) {
     again = easing || stamps.length > 0 || beads.length > 0 || time < wetEnd;
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !ptr);
   }
 }
 
@@ -867,7 +1056,9 @@ function move(e) {
     const v = Math.hypot(x - ptr.x, y - ptr.y) / sc / dt;
     // A held press bears down: up to half again after 1.2 s.
     const press = 1 + 0.5 * clamp((e.timeStamp - ptr.t0) / 1200);
-    rub(...toStone(...screenUnits(x, y)), v, press);
+    const [sx, sy] = toStone(...screenUnits(x, y));
+    rub(sx, sy, v, press);
+    rubSound(sx, sy, polishAt(sx, sy), v);
   }
   ptr.x = x; ptr.y = y; ptr.t = e.timeStamp;
   aimLight(screenUnits(x, y));
@@ -890,6 +1081,8 @@ canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') aimLight(Q0); });
+// A press anywhere wakes the sound; with the loop asleep, it sleeps again.
+addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !ptr); });
 
 /* ---------- actions ---------- */
 // A stone change clears the polish and the water.
@@ -901,9 +1094,9 @@ function showStone() {
   wake();
 }
 // A new kind opens on its known stone, with one polished stroke.
-act.pick = () => { first = true; buildStone(kind, FIRST[kind]); showStone(); };
+act.pick = () => { first = true; buildStone(kind, FIRST[kind]); showStone(); knockSound(); };
 // A new stone of the same kind: a new pattern, fully rough.
-act.stone = () => { first = false; buildStone(kind, 1 + Math.floor(Math.random() * 2147483000)); showStone(); };
+act.stone = () => { first = false; buildStone(kind, 1 + Math.floor(Math.random() * 2147483000)); showStone(); knockSound(); };
 act.reset = () => { clearPolish(); clearWater(); if (ready) draw(); };
 act.wet = () => wetAll();
 
@@ -924,7 +1117,7 @@ onReducedChange(() => aimLight(Q0));
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>
