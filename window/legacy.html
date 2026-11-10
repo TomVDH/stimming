@@ -5,7 +5,7 @@
 <meta name="color-scheme" content="dark">
 <style>html { background: oklch(0.14 0.01 260); }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Window seat (three.js spike)</title>
+<title>Window seat (classic)</title>
 <meta name="robots" content="noindex">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,13 +61,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
-import { createWing3 } from './wing3.js';
-import { createBolts } from './bolts3.js';
-import * as THREE from 'three';
 
-// A test hook: ?seed fixes the random stream, for benches.
-// The cells reseed it, so three.js object ids do not shift the storm.
-if (new URLSearchParams(location.search).has('seed')) { let a = 1234567; Math.random = () => ((a = (a * 1664525 + 1013904223) >>> 0) / 4294967296); window.__reseed = () => { a = 1234567; }; }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
 const firstFrame = new Promise(r => (markReady = r));
@@ -188,134 +182,74 @@ const stage = document.getElementById('stage');
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
-// three.js owns the context, the targets and the textures.
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
-let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' }); } catch { fail(); }
-const gl = renderer.getContext();
-renderer.autoClear = false;
-renderer.setPixelRatio(1);
-renderer.setClearColor(0x000000, 0);
-renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-renderer.toneMapping = THREE.NoToneMapping;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-// The sun and the bank move slowly: shadows redraw five times a second.
-renderer.shadowMap.autoUpdate = false;
+if (!gl) fail();
 
-// The shaders keep their own version line; three.js adds it again.
-const noVer = src => src.replace(/^\s*#version 300 es\s*\n/, '');
-// Each declared uniform gets a slot with a zero value of its type.
-const ZERO = { float: 1, int: 1, bool: 1, vec2: 2, vec3: 3, vec4: 4, ivec2: 2, ivec3: 3, ivec4: 4 };
-function declared(src) {
-  const out = {};
-  for (const [, type, list] of src.matchAll(/uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+([^;]+);/g)) {
-    for (const raw of list.split(',')) {
-      const m = raw.trim().match(/^(\w+)(?:\[(\w+)\])?$/);
-      if (!m) continue;
-      const k = ZERO[type], n = m[2] ? (+m[2] || 64) : 0;
-      out[m[1]] = { value: type.startsWith('sampler') ? null : n ? new Float32Array(n * k) : k === 1 ? 0 : new Array(k).fill(0) };
-    }
-  }
-  return out;
+function program(vs, fs, attrs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
+    gl.attachShader(p, sh);
+  });
+  attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  return { p, u };
 }
-function passMaterial(fs, behind = false) {
-  const src = noVer(fs);
-  // Behind sits the quad on the far plane: the depth test skips pixels under the wing.
-  const vs = behind ? noVer(QUAD_VS).replace('vec4(aPos, 0.0, 1.0)', 'vec4(aPos, 1.0, 1.0)') : noVer(QUAD_VS);
-  return new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vs, fragmentShader: src, uniforms: declared(src), depthTest: behind, depthWrite: false, depthFunc: THREE.LessEqualDepth });
-}
-// One big triangle covers the screen.
-const quadGeo = new THREE.BufferGeometry();
-quadGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
-quadGeo.setAttribute('aPos', new THREE.Float32BufferAttribute([-1, -1, 3, -1, -1, 3], 2));
-const quadCam = new THREE.Camera();
-const passScene = mat => { const sc = new THREE.Scene(), m = new THREE.Mesh(quadGeo, mat); m.frustumCulled = false; sc.add(m); return sc; };
-// A pass's u maps each uniform name to its material slot.
-const slots = m => new Proxy({}, { get: (_, k) => ({ m, n: String(k).replace('[0]', '') }) });
-const put = (l, v) => { const U = l.m.uniforms; if (U[l.n]) U[l.n].value = v; else U[l.n] = { value: v }; };
-const UG = {
-  uniform1f: put, uniform1i: put, uniform1fv: put, uniform2fv: put, uniform3fv: put, uniform4fv: put,
-  uniform2f: (l, a, b) => put(l, [a, b]), uniform3f: (l, a, b, c) => put(l, [a, b, c]), uniform4f: (l, a, b, c, d) => put(l, [a, b, c, d]),
-  tex: put,
-};
 const MAXCELL = 8, MAXFL = 6;
-// three.js draws the wing, the nacelle and the fairings instead.
-const noWing = s => s
-  .replace('  // The wing is the nearest thing outside', '  tw = 1e5;\n  // The wing is the nearest thing outside')
-  .replace('if (tn > 0.0 && tn < tNear)', 'if (false)')
-  .replace('if (tf > 0.0 && tf < tNear)', 'if (false)')
-  // Each frame moves the march jitter; the resolve pass averages the frames.
-  .replace('uniform int uDeckSteps,', 'uniform vec2 uJit; uniform int uDeckSteps,')
-  .replace('hash12(gl_FragCoord.xy)', 'hash12(gl_FragCoord.xy + uJit)')
-  .replace('hash12(gl_FragCoord.xy + 17.0)', 'hash12(gl_FragCoord.xy + 17.0 + uJit)')
-  .replace('dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))', 'dot(gl_FragCoord.xy + uJit, vec2(0.0671, 0.00584))');
-const M1 = passMaterial(noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL })), true), M2 = passMaterial(cabinFS({ ALT, WIN }));
-const P1 = { u: slots(M1), scene: passScene(M1) }, P2 = { u: slots(M2), scene: passScene(M2) };
+const P1 = program(QUAD_VS, outsideFS({ ALT, WIN, MAXCELL, MAXFL }), ['aPos']);
+const P2 = program(QUAD_VS, cabinFS({ ALT, WIN }), ['aPos']);
 // Pass 1 needs a float target for its bright lamps and discs.
-const floatOK = renderer.extensions.has('EXT_color_buffer_float');
-function dataTex(data, w, h) {
-  const tx = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType);
-  tx.internalFormat = 'RGBA16F';
-  tx.minFilter = tx.magFilter = THREE.LinearFilter;
-  tx.needsUpdate = true;
+const floatOK = !!gl.getExtension('EXT_color_buffer_float');
+function texture(w, h, data = null) {
+  const tx = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tx);
+  if (data || floatOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return tx;
 }
 const skyTex = { L: null, T: null };
 function uploadSky() {
-  for (const k of ['L', 'T']) { if (skyTex[k]) skyTex[k].dispose(); skyTex[k] = dataTex(sky.b[k], NU, NV); }
+  for (const k of ['L', 'T']) { if (skyTex[k]) gl.deleteTexture(skyTex[k]); skyTex[k] = texture(NU, NV, sky.b[k]); }
 }
 // The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
 const NOISE_N = 64;
-const noiseTex = new THREE.Data3DTexture(bakeNoise(NOISE_N), NOISE_N, NOISE_N, NOISE_N);
-Object.assign(noiseTex, {
-  format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: true, unpackAlignment: 1,
-  minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
-  wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, wrapR: THREE.RepeatWrapping,
-});
-noiseTex.needsUpdate = true;
-// The outside target: half size on Standard, three quarters on High.
-// It keeps a depth buffer and 4x MSAA for the aircraft meshes.
-const outBuf = { w: 0, h: 0 };
-let outRT = null;
+const noiseTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, NOISE_N, NOISE_N, NOISE_N, 0, gl.RGBA, gl.UNSIGNED_BYTE, bakeNoise(NOISE_N));
+gl.generateMipmap(gl.TEXTURE_3D);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
+// The outside buffer: half size on Standard, three quarters on High.
+const outBuf = { fb: gl.createFramebuffer(), tex: null, w: 0, h: 0 };
 const outScale = () => (quality() === 'high' ? 0.75 : 0.5);
 function sizeOut() {
   const w = Math.max(1, Math.round(W * outScale())), h = Math.max(1, Math.round(H * outScale()));
   if (w === outBuf.w && h === outBuf.h) return;
-  if (outRT) outRT.dispose();
-  outRT = new THREE.WebGLRenderTarget(w, h, {
-    type: floatOK ? THREE.HalfFloatType : THREE.UnsignedByteType,
-    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true, samples: 4,
-  });
+  if (outBuf.tex) gl.deleteTexture(outBuf.tex);
+  outBuf.tex = texture(w, h);
   outBuf.w = w; outBuf.h = h;
-}
-// Temporal resolve: history clamps to the current 3x3 neighbourhood, so nothing smears.
-// Each new frame adds a quarter; the jittered marches average out.
-const RESOLVE_FS = `#version 300 es
-precision highp float;
-uniform sampler2D uCur, uHist; uniform vec2 uTexel; uniform float uK;
-out vec4 o;
-void main() {
-  vec2 uv = gl_FragCoord.xy * uTexel;
-  vec4 c = texture(uCur, uv), mn = c, mx = c;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-    vec4 s = texture(uCur, uv + vec2(i, j) * uTexel);
-    mn = min(mn, s); mx = max(mx, s);
-  }
-  o = mix(clamp(texture(uHist, uv), mn, mx), c, uK);
-}`;
-const MR = passMaterial(RESOLVE_FS);
-const PR = { u: slots(MR), scene: passScene(MR) };
-const hist = [null, null];
-let histFresh = true, frameN = 0, lastBolt = null;
-function sizeHist() {
-  if (hist[0] && hist[0].width === outBuf.w && hist[0].height === outBuf.h) return;
-  hist.forEach(h => h && h.dispose());
-  for (let i = 0; i < 2; i++) hist[i] = new THREE.WebGLRenderTarget(outBuf.w, outBuf.h, { type: floatOK ? THREE.HalfFloatType : THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-  histFresh = true;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outBuf.fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outBuf.tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 // The recess march takes more steps on High.
 const marchSteps = () => (quality() === 'high' ? 28 : 14);
+const quadVao = gl.createVertexArray();
+gl.bindVertexArray(quadVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 /* ---------- the aircraft ---------- */
 // Aircraft frame: x to the nose, y up, z out of the left window.
@@ -348,8 +282,6 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
   const te = [teAt(z), flex(z), z], k = 1 - 0.18 * j;
   return { a: [te[0] + 2.0 * k, te[1] - 0.33 * k, z, 0.3 * k], b: [te[0] - 1.3 * k, te[1] - 0.46 * k, z, 0.045 * k] };
 });
-const wing3 = createWing3({ renderer, ST, flex, LET, NAC, FAIRS });
-const bolts = createBolts();
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
@@ -528,8 +460,7 @@ const spr = new Float32Array(8);
 const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
-  // A test hook: ?freeze holds the simulation still, for A/B shots.
-  const dt = new URLSearchParams(location.search).has('freeze') ? 0 : last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
   last = now;
   step(dt);
   render();
@@ -704,8 +635,11 @@ function boomCell(b) {
 const TRAIL_N = 128;
 const trA = new Float32Array(TRAIL_N * 4), trB = new Float32Array(TRAIL_N * 4);
 const trailData = new Float32Array(TRAIL_N * 8);
-const trailTex = new THREE.DataTexture(trailData, TRAIL_N, 2, THREE.RGBAFormat, THREE.FloatType);
-trailTex.minFilter = trailTex.magFilter = THREE.NearestFilter;
+const trailTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, trailTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TRAIL_N, 2, 0, gl.RGBA, gl.FLOAT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 function trailUniforms() {
   trA.fill(0); trB.fill(0);
   let n = 0;
@@ -866,26 +800,26 @@ function pointUniforms(u) {
     add(rel(j.x, j.y - 0.004, j.z), bc2 * 2.5, [1.0, 0.08, 0.04]);
     add(rel(j.x + 0.032, j.y + 0.002, j.z), 0.5, [1.0, 1.0, 0.95]);
   }
-  UG.uniform4fv(u['uPt[0]'], ptA); UG.uniform3fv(u['uPtC[0]'], ptC);
+  gl.uniform4fv(u['uPt[0]'], ptA); gl.uniform3fv(u['uPtC[0]'], ptC);
 }
 // The jet's body for the outside pass: fuselage and wing as capsules, relative to the eye.
 function jetUniforms(u) {
   const j = EV.jet;
   const z = [0, 0, 0];
-  UG.uniform3fv(u.uJetF0, j ? rel(j.x - 0.03, j.y, j.z) : z); UG.uniform3fv(u.uJetF1, j ? rel(j.x + 0.03, j.y, j.z) : z);
-  UG.uniform3fv(u.uJetW0, j ? rel(j.x + 0.004, j.y - 0.001, j.z - 0.03) : z); UG.uniform3fv(u.uJetW1, j ? rel(j.x + 0.004, j.y - 0.001, j.z + 0.03) : z);
-  UG.uniform3fv(u.uJetT0, j ? rel(j.x - 0.026, j.y, j.z) : z); UG.uniform3fv(u.uJetT1, j ? rel(j.x - 0.03, j.y + 0.009, j.z) : z);
-  UG.uniform1f(u.uJetOn, j ? 1 : 0);
+  gl.uniform3fv(u.uJetF0, j ? rel(j.x - 0.03, j.y, j.z) : z); gl.uniform3fv(u.uJetF1, j ? rel(j.x + 0.03, j.y, j.z) : z);
+  gl.uniform3fv(u.uJetW0, j ? rel(j.x + 0.004, j.y - 0.001, j.z - 0.03) : z); gl.uniform3fv(u.uJetW1, j ? rel(j.x + 0.004, j.y - 0.001, j.z + 0.03) : z);
+  gl.uniform3fv(u.uJetT0, j ? rel(j.x - 0.026, j.y, j.z) : z); gl.uniform3fv(u.uJetT1, j ? rel(j.x - 0.03, j.y + 0.009, j.z) : z);
+  gl.uniform1f(u.uJetOn, j ? 1 : 0);
   // The impact's fireball rises from the ground and spreads into the cap.
   const bm = EV.boom, uu = bm ? bm.s - BOOM_HIT : -1;
   const cap = bm && uu > 0 ? capAt(bm, uu) : null;
   if (cap) {
     const temp = clamp(uu / 8);
     const col = [1.0, 0.95 - 0.5 * temp, 0.85 - 0.75 * temp];
-    UG.uniform4fv(u.uBall, [...rel(bm.x, cap.y, bm.z), cap.R]);
-    UG.uniform4fv(u.uBallC, [...col, 0.9 * Math.exp(-uu / 8) + 0.12 * Math.exp(-uu / 40)]);
-    UG.uniform4fv(u.uBallS, [cap.sq, cap.life, 0, 0]);
-  } else { UG.uniform4fv(u.uBall, [0, 0, 0, 0]); UG.uniform4fv(u.uBallC, [0, 0, 0, 0]); UG.uniform4fv(u.uBallS, [1, 0, 0, 0]); }
+    gl.uniform4fv(u.uBall, [...rel(bm.x, cap.y, bm.z), cap.R]);
+    gl.uniform4fv(u.uBallC, [...col, 0.9 * Math.exp(-uu / 8) + 0.12 * Math.exp(-uu / 40)]);
+    gl.uniform4fv(u.uBallS, [cap.sq, cap.life, 0, 0]);
+  } else { gl.uniform4fv(u.uBall, [0, 0, 0, 0]); gl.uniform4fv(u.uBallC, [0, 0, 0, 0]); gl.uniform4fv(u.uBallS, [1, 0, 0, 0]); }
 }
 /* ---------- airports ---------- */
 // One airport site per 60 km cell, by an integer hash, so each stays put.
@@ -955,8 +889,8 @@ function airportUniforms(u) {
   nearAirports();
   apA.fill(0); apB.fill(0);
   apList.forEach((a, i) => { apA.set([a.x, a.z, a.c, a.s], i * 4); apB.set([a.half, a.twin, a.seed, a.apron], i * 4); });
-  UG.uniform4fv(u['uAp[0]'], apA); UG.uniform4fv(u['uApB[0]'], apB);
-  UG.uniform1f(u.uBlink, reduce ? 0 : 1);
+  gl.uniform4fv(u['uAp[0]'], apA); gl.uniform4fv(u['uApB[0]'], apB);
+  gl.uniform1f(u.uBlink, reduce ? 0 : 1);
   const planes = [];
   for (const a of apList) for (let k = 0; k < a.planes; k++) {
     // s: km before the threshold; under zero, the rollout.
@@ -986,27 +920,28 @@ function airportUniforms(u) {
     appA.set([...p, 1], i * 4);
     appC.set([(lamp + strobe * 1.5 + beacon) * kd, (lamp * 0.95 + strobe * 1.5 + beacon * 0.1) * kd, (lamp * 0.85 + strobe * 1.6 + beacon * 0.05) * kd, 0], i * 4);
   });
-  UG.uniform4fv(u['uApp[0]'], appA); UG.uniform4fv(u['uAppC[0]'], appC);
+  gl.uniform4fv(u['uApp[0]'], appA); gl.uniform4fv(u['uAppC[0]'], appC);
 }
 // Both passes share the view, the bank and the sky table.
 function shared(u) {
-  UG.uniform2f(u.uRes, W, H);
-  UG.uniform1f(u.uTime, t);
+  gl.uniform2f(u.uRes, W, H);
+  gl.uniform1f(u.uTime, t);
   // The shader takes the cabin axes; it turns outside rays by the bank.
-  UG.uniform3fv(u.uF, basis.Fa); UG.uniform3fv(u.uR, basis.Ra); UG.uniform3fv(u.uU, basis.Ua);
-  UG.uniform3fv(u.uEye, basis.eye);
-  UG.uniform2f(u.uBank, Math.cos(bank), Math.sin(bank));
-  UG.uniform1f(u.uFocal, basis.focal);
-  UG.uniform3fv(u.uSun, sky.sun);
-  UG.uniform2fv(u.uSunAz, sky.sunAz);
-  UG.uniform1f(u.uHorEl, HOR);
-  UG.uniform3fv(u.uTip, toWorld(TIP));
-  UG.uniform1f(u.uStrobe, reduce ? 0 : strobe());
-  UG.tex(u.uSkyL, skyTex.L);
-  UG.tex(u.uSkyT, skyTex.T);
+  gl.uniform3fv(u.uF, basis.Fa); gl.uniform3fv(u.uR, basis.Ra); gl.uniform3fv(u.uU, basis.Ua);
+  gl.uniform3fv(u.uEye, basis.eye);
+  gl.uniform2f(u.uBank, Math.cos(bank), Math.sin(bank));
+  gl.uniform1f(u.uFocal, basis.focal);
+  gl.uniform3fv(u.uSun, sky.sun);
+  gl.uniform2fv(u.uSunAz, sky.sunAz);
+  gl.uniform1f(u.uHorEl, HOR);
+  gl.uniform3fv(u.uTip, toWorld(TIP)); if (u.uNavC) gl.uniform3fv(u.uNavC, [1.0, 0.1, 0.05]);
+  gl.uniform1f(u.uStrobe, reduce ? 0 : strobe());
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, skyTex.L); gl.uniform1i(u.uSkyL, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, skyTex.T); gl.uniform1i(u.uSkyT, 1);
 }
 function render() {
   setBasis();
+  gl.bindVertexArray(quadVao);
   fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
   let sum = 0;
   flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
@@ -1015,116 +950,100 @@ function render() {
 
   // Pass 1: the outside, into its own buffer.
   sizeOut();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outBuf.fb); gl.viewport(0, 0, outBuf.w, outBuf.h);
+  gl.useProgram(P1.p);
   let u = P1.u;
   shared(u);
-  UG.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
-  UG.uniform1f(u.uTowns, opts.towns);
-  UG.uniform1f(u.uLit, sky.h.lit);
-  UG.uniform2f(u.uCam, cam.x, cam.z);
+  gl.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
+  gl.uniform1f(u.uTowns, opts.towns);
+  gl.uniform1f(u.uLit, sky.h.lit);
+  gl.uniform2f(u.uCam, cam.x, cam.z);
   // A storm closes the deck, fills the mid layer, thickens the cirrus.
   const st = opts.storm;
-  UG.uniform1f(u.uCover, opts.cloud + (Math.min(opts.cloud, 0.34) - opts.cloud) * st);
-  UG.uniform1f(u.uStorm, st);
-  UG.uniform1f(u.uFog, fog.level);
+  gl.uniform1f(u.uCover, opts.cloud + (Math.min(opts.cloud, 0.34) - opts.cloud) * st);
+  gl.uniform1f(u.uStorm, st);
+  gl.uniform1f(u.uFog, fog.level);
   // Wisp noise repeats every 3264 m in x, 63 m in z.
-  UG.uniform3f(u.uWisp, (cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63);
+  gl.uniform3f(u.uWisp, (cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63);
   spr.fill(0);
   sprites.forEach((sp, i) => spr.set([sp.x, sp.z, sp.level, sp.seed], i * 4));
-  UG.uniform4fv(u['uSpr[0]'], spr);
+  gl.uniform4fv(u['uSpr[0]'], spr);
   // Cirrus thickens as the deck closes.
-  UG.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1) * (1 - st) + st);
-  // The resolve averages the jittered marches, so steps run finer than the live toy's.
-  // A new march offset each frame, from the R2 sequence.
-  UG.uniform2f(u.uJit, ((frameN * 0.7548777) % 1) * 64, ((frameN * 0.5698403) % 1) * 64);
-  UG.uniform1i(u.uDeckSteps, quality() === 'high' ? 26 : 20);
-  UG.uniform1i(u.uLightSteps, quality() === 'high' ? 4 : 3);
+  gl.uniform1f(u.uCirrus, clamp(1.4 - opts.cloud * 1.5, 0.3, 1) * (1 - st) + st);
+  gl.uniform1i(u.uDeckSteps, quality() === 'high' ? 26 : 18);
+  gl.uniform1i(u.uLightSteps, quality() === 'high' ? 4 : 3);
   // The mid layer fills in as the deck closes.
-  UG.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1) * (1 - st) + st);
-  UG.tex(u.uNoise, noiseTex);
-  UG.uniform1f(u.uFlash, flash);
+  gl.uniform1f(u.uMid, clamp(1.6 - opts.cloud * 2.1, 0.2, 1) * (1 - st) + st);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, noiseTex); gl.uniform1i(u.uNoise, 3);
+  gl.uniform1f(u.uFlash, flash);
   // At midnight the aurora glows over the clouds and tints their tops green.
   // A storm's overcast hides the aurora.
   const aur = auroraOn() * (1 - smooth(0, 0.6, opts.storm));
-  UG.uniform1f(u.uAurora, aur);
-  UG.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); UG.uniform3fv(u.uSunL, sky.sunL); UG.uniform3fv(u.uFloor, sky.h.floor);
+  gl.uniform1f(u.uAurora, aur);
+  gl.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); gl.uniform3fv(u.uSunL, sky.sunL); gl.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
-  UG.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorld)).flat());
-  UG.uniform3fv(u['uWN[0]'], PANELS.map(q => quadNormal(q.map(toWorld))).flat());
-  UG.uniform1fv(u['uWS[0]'], SPAN);
+  gl.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorld)).flat());
+  gl.uniform3fv(u['uWN[0]'], PANELS.map(q => quadNormal(q.map(toWorld))).flat());
+  gl.uniform1fv(u['uWS[0]'], SPAN);
   // Straight reference edges, root to tip, for the panel lines.
   // The trailing edge line runs on from the outboard part, past the kink.
-  UG.uniform4f(u.uWL, ST[0][0], ST[0][2], ST[5][0], ST[5][2]);
-  UG.uniform2f(u.uWT, ST[1][1] - (ST[5][1] - ST[1][1]) / (ST[5][2] - ST[1][2]) * (ST[1][2] - ST[0][2]), ST[5][1]);
+  gl.uniform4f(u.uWL, ST[0][0], ST[0][2], ST[5][0], ST[5][2]);
+  gl.uniform2f(u.uWT, ST[1][1] - (ST[5][1] - ST[1][1]) / (ST[5][2] - ST[1][2]) * (ST[1][2] - ST[0][2]), ST[5][1]);
   const let_ = LET.map(toWorld);
-  UG.uniform3fv(u['uLet[0]'], let_.flat()); UG.uniform3fv(u.uLetN, quadNormal(let_));
+  gl.uniform3fv(u['uLet[0]'], let_.flat()); gl.uniform3fv(u.uLetN, quadNormal(let_));
   // Aircraft axes in the world: chord runs aft, up, and span runs out the window.
-  UG.uniform3fv(u.uChord, toWorld([-1, 0, 0])); UG.uniform3fv(u.uUpA, toWorld([0, 1, 0])); UG.uniform3fv(u.uSpan, toWorld([0, 0, 1]));
-  UG.uniform3fv(u.uNacA, toWorld(NAC.a)); UG.uniform3fv(u.uNacB, toWorld(NAC.b)); UG.uniform1f(u.uNacR, NAC.r);
-  UG.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorld(f.a), f.a[3]]));
-  UG.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorld(f.b), f.b[3]]));
+  gl.uniform3fv(u.uChord, toWorld([-1, 0, 0])); gl.uniform3fv(u.uUpA, toWorld([0, 1, 0])); gl.uniform3fv(u.uSpan, toWorld([0, 0, 1]));
+  gl.uniform3fv(u.uNacA, toWorld(NAC.a)); gl.uniform3fv(u.uNacB, toWorld(NAC.b)); gl.uniform1f(u.uNacR, NAC.r);
+  gl.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorld(f.a), f.a[3]]));
+  gl.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorld(f.b), f.b[3]]));
   const n = towerUniforms();
-  UG.uniform1i(u.uTowSteps, quality() === 'high' ? 64 : 40);
-  UG.uniform1i(u.uTowOct, 3);
-  UG.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.5);
-  UG.uniform4fv(u['uTw[0]'], tw); UG.uniform4fv(u['uTwB[0]'], twB); UG.uniform4fv(u['uTwC[0]'], twC);
-  UG.uniform1i(u.uNTw, n);
-  UG.uniform4fv(u['uFl[0]'], fl);
+  gl.uniform1i(u.uTowSteps, quality() === 'high' ? 56 : 32);
+  gl.uniform1i(u.uTowOct, quality() === 'high' ? 3 : 2);
+  gl.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.6);
+  gl.uniform4fv(u['uTw[0]'], tw); gl.uniform4fv(u['uTwB[0]'], twB); gl.uniform4fv(u['uTwC[0]'], twC);
+  // Every Classic cell is a mature thunderhead.
+  if (u['uTwD[0]']) gl.uniform4fv(u['uTwD[0]'], new Float32Array(MAXCELL * 4).map((_, i) => [1, 1, 1, 0][i % 4]));
+  gl.uniform1i(u.uNTw, n);
+  gl.uniform4fv(u['uFl[0]'], fl);
   const b0 = EV.boom;
-  UG.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
-  UG.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
+  gl.uniform4fv(u.uBoom, b0 ? [b0.x, b0.z, b0.ring || 0, b0.ringK || 0] : [0, 0, 0, 0]);
+  gl.uniform2fv(u.uBoomL, b0 ? [b0.flash || 0, b0.crater || 0] : [0, 0]);
   jetUniforms(u);
   airportUniforms(u);
   const nTr = trailUniforms();
   // Both rows go up as one 128 by 2 float texture.
   trailData.set(trA, 0); trailData.set(trB, TRAIL_N * 4);
-  trailTex.needsUpdate = true;
-  UG.tex(u.uTrail, trailTex); UG.uniform1i(u.uTrN, nTr);
-  renderer.setRenderTarget(outRT);
-  renderer.clear();
-  // The aircraft goes first; the outside then fills only the uncovered pixels.
-  wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level });
-  renderer.render(wing3.scene, wing3.cam);
-  renderer.render(P1.scene, quadCam);
-  // Bolts add their light over the outside; the wing's depth hides them.
-  // A thick bank swallows them.
-  lastBolt = bolts.update({ flashes, camXZ: [cam.x, cam.z], H: ALT, wingCam: wing3.cam, outW: outBuf.w, outH: outBuf.h, cover: opts.cloud, haze: smooth(0.3, 0.9, fog.level) });
-  renderer.render(bolts.scene, bolts.cam);
-  // Resolve into the next history target; the cabin pass reads that.
-  sizeHist();
-  const [prev, next] = frameN % 2 ? [hist[1], hist[0]] : [hist[0], hist[1]];
-  UG.tex(PR.u.uCur, outRT.texture); UG.tex(PR.u.uHist, prev.texture);
-  UG.uniform2f(PR.u.uTexel, 1 / outBuf.w, 1 / outBuf.h);
-  UG.uniform1f(PR.u.uK, histFresh || reduce ? 1 : 0.25);
-  renderer.setRenderTarget(next);
-  renderer.render(PR.scene, quadCam);
-  histFresh = false; frameN++;
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, trailTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TRAIL_N, 2, gl.RGBA, gl.FLOAT, trailData);
+  gl.uniform1i(u.uTrail, 4); gl.uniform1i(u.uTrN, nTr);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
   // Pass 2: the cabin, the frame and the glass, to the screen.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  gl.useProgram(P2.p);
   u = P2.u;
   shared(u);
-  UG.tex(u.uOut, next.texture);
-  UG.uniform1f(u.uDpr, dpr);
-  UG.uniform1f(u.uDimE, dim.edge); UG.uniform1f(u.uDimC, dim.core);
-  UG.uniform1f(u.uFlash, flash);
-  UG.uniform1i(u.uSteps, marchSteps());
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, outBuf.tex); gl.uniform1i(u.uOut, 2);
+  gl.uniform1f(u.uDpr, dpr);
+  gl.uniform1f(u.uDimE, dim.edge); gl.uniform1f(u.uDimC, dim.core);
+  gl.uniform1f(u.uFlash, flash);
+  gl.uniform1i(u.uSteps, marchSteps());
   // The storm brings rain to the window, up to heavy.
-  UG.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
-  UG.uniform1f(u.uStorm, opts.storm);
+  gl.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
+  gl.uniform1f(u.uStorm, opts.storm);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
-  UG.uniform3fv(u.uCabin, sky.cabin);
-  UG.uniform3fv(u.uGlow, sky.glow.map((v, i) => (v + [0.004, 0.05, 0.022][i] * aur) * tg[i])); UG.uniform3fv(u.uDisc, sky.disc); UG.uniform3fv(u.uTint, sky.tint);
-  UG.uniform1f(u.uSunR, sky.sunR); UG.uniform1f(u.uSquash, sky.squash);
-  UG.uniform1f(u.uMoon, sky.h.moon ? 1 : 0); UG.uniform1f(u.uStars, sky.h.stars);
+  gl.uniform3fv(u.uCabin, sky.cabin);
+  gl.uniform3fv(u.uGlow, sky.glow.map((v, i) => (v + [0.004, 0.05, 0.022][i] * aur) * tg[i])); gl.uniform3fv(u.uDisc, sky.disc); gl.uniform3fv(u.uTint, sky.tint);
+  gl.uniform1f(u.uSunR, sky.sunR); gl.uniform1f(u.uSquash, sky.squash);
+  gl.uniform1f(u.uMoon, sky.h.moon ? 1 : 0); gl.uniform1f(u.uStars, sky.h.stars);
   const m = EV.meteor;
-  UG.uniform3fv(u.uMetA, m ? m.A : [0, 0, 1]); UG.uniform3fv(u.uMetB, m ? m.B : [0, 0, 1]);
-  UG.uniform4fv(u.uMet, m ? [m.p, m.tail, m.b, m.train] : [0, 0, 0, 0]);
-  UG.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, m.hue] : [0, 0, 0, 0]);
+  gl.uniform3fv(u.uMetA, m ? m.A : [0, 0, 1]); gl.uniform3fv(u.uMetB, m ? m.B : [0, 0, 1]);
+  gl.uniform4fv(u.uMet, m ? [m.p, m.tail, m.b, m.train] : [0, 0, 0, 0]);
+  gl.uniform4fv(u.uMetF, m ? [m.fire ? 1 : 0, m.seed, m.trainAge, m.hue] : [0, 0, 0, 0]);
   flareUniforms(u);
   pointUniforms(u);
-  renderer.setRenderTarget(null);
-  renderer.setViewport(0, 0, W, H);
-  renderer.render(P2.scene, quadCam);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 /* ---------- lens flare ---------- */
 // A world direction to screen pixels; null when it is behind the camera.
@@ -1226,7 +1145,7 @@ function flareUniforms(u) {
   put(2, tipW, reduce ? 0 : strobe() * 0.5, 0.5, [0.9, 0.95, 1.0], 0, 0.6);
   put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05]);
   eventFlares(put);
-  UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC);
+  gl.uniform4fv(u['uFlr[0]'], flr); gl.uniform4fv(u['uFlrC[0]'], flrC);
 }
 
 // Towers go in far to near, so near ones cover far ones.
@@ -1342,7 +1261,7 @@ const ui = initPage({
     choice: {
       label: 'Time of day', display: 'stepper', value: opts.hour,
       options: Object.keys(HOURS).map(k => ({ value: k, label: HOUR_NAMES[k] })),
-      onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); histFresh = true; render(); },
+      onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); render(); },
     },
     slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { opts.storm = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
@@ -1365,9 +1284,8 @@ onQuality(() => resize(true));
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
-if (window.__reseed) window.__reseed();
 for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
-window.__ws = { cells, flashes, EV, newMeteor, cam, apList, render, gl, flash };
+
 buildSky();
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);

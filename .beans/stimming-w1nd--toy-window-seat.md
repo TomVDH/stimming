@@ -1,7 +1,7 @@
 ---
 # stimming-w1nd
 title: 'Toy: Window seat'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-04T20:00:00Z
@@ -49,9 +49,9 @@ Decisions:
 - [x] Sun at the horizon (Dusk, Dawn) or moon (Midnight); deck lumps and towers lit from it
 - [x] Lens flare ported from Beach walker for sun or moon, lightning, strobe and nav light; each shows only when seen through the glass
 - [ ] Checkpoint 4: Tom tests live
-- [ ] Sound: cabin drone, far thunder after each flash, shade slide
+- [ ] Sound: cabin bed done (recorded loop, cabin.mp3, seam cross-faded in memory, gain 0.2); far thunder after each flash and the shade slide still to do
 - [x] Menu Lab entry: tilted window with horizon, wing and sun; hover glints the sun with a flare streak
-- [ ] Remove the `window.__ws` test hook
+- [x] Remove the `window.__ws` test hook (gone with the three.js swap, 2026-11-09)
 - [ ] QA: 1280 and 375 px, clean console, reduced motion, hidden tab stops the loop
 - [ ] Record the session cost
 
@@ -72,3 +72,18 @@ Performance: the wing early-out skips the outside where it covers the view; High
 Storm blend fix: storm air hazes the background before the towers; towers haze by their own distance in storm grey; murk lights them, the moon's silver lining fades with Storm; trails and approach lights dim by distance. Sights now come on their own every 4 to 10 minutes (first after 1 to 3); Tom plans a new trigger menu later.
 
 Bar v2 port (2026-11-09): time of day is a stepper top left (seven hours: dawn, morning, noon, golden hour, dusk, blue hour, midnight); Storm slider bottom right; Dim action (key D); Settings: Cloud, Towns, Rain, Aurora, Falling and Flying sights, site Quality. The cabin light is the hour's 787 mood plus daylight through the window. Town lights go out by day (uLit). Glass scratches rebuilt: three hairline layers and cleaning swirls catch the cabin light. window/annex.json added; the shell has no annex yet.
+
+- 2026-11-09 (Tom, via toy-trainride): pane rain now uses shared/glassrain.js (grBeads, grRuns). Rain space is the pane in metres times 0.45 / 0.55, as in glasslab/. Strip 0.15 at flight speed; aft direction and flow unchanged.
+
+- 2026-11-09: the three.js build (stimming-glot) is now the toy; the raw WebGL2 build is legacy.html.
+- 2026-11-09 (Tom): the autopilot banks at random (2 to 14 degrees mostly, sometimes -8 to 18; about 2 degrees a second; holds 12 to 45 s). Aileron to 7 degrees, spoilers on the dropping wing, flaps trim with bank. The winglet root sits inside the tip.
+- 2026-11-09 (Tom): strobes are hard double pulses (50 ms, 120 ms apart, no afterglow). The bezel, the pane gasket and the wall near the rim take light from a soft quarter-size copy of the outside, so sunset colour, lightning and strobes wash over the frame.
+- 2026-11-09 (Tom): storm cells spawn at the most open spot of eight tries (bearing and range); scud patches drift between the towers; rain refraction projects through the pane's real geometry; the tip strobe and nav light throw stronger flare ghosts (uFlrG).
+- 2026-11-09 (Tom): less glare (glow threshold 0.85, strength 0.35; thinner, dimmer bolts; bolt light on the wing a third). Each flash lights the murk round it as a soft ball, only through haze, scud and fog. Storm turbulence: random jolts on a damped spring plus a fine tremble shake the view; the outside rolls a touch with each bump.
+- 2026-11-09 (Tom): each cell recharges between flashes (10 to 40 s, sometimes a quick second one; 1 to 5 strokes); deck flashes much rarer. One flash in ten shows a bolt (nearly half when tapped); the rest light the cloud from inside. The aurora comes in rare midnight episodes (1 to 3 min, every 4 to 15 min, 20 s fades); the Settings toggle still forbids it. Turbulence comes in bumpy patches (5 to 20 s, calm 15 to 60 s between), with half the jolt.
+- 2026-11-09 (Tom): the wingtip strobe and the red nav light throw no flare ghosts.
+- 2026-11-09 (Tom): flashes light the tower volume from within (blue-white, 3 km core, 9 km reach) in the march; the haze ball glow is gone (it eclipsed out of the clouds). Turbulence rises with fog-bank thickness, whatever the storm.
+- 2026-11-09 (Tom): the storm slider sets a target; the weather eases to it over about 5 s. Surplus cells retire oldest first and die back over 15 s; new cells arrive one every 1.5 to 4 s, half in view, and tower up over 20 s.
+- 2026-11-09: Tom signed off Window seat. data-done on the intro and the menu tile; stage dropped; v0.9 Vensterplaats. Thunder after flashes and the shade slide stay open for a later pass.
+- 2026-11-09 (Tom): fake GI. The bezel and gasket take light from the far side of the opening (the sill sees the sky), from an outside copy softened to a sixteenth; the sun or moon throws a patch through the opening onto the wall that faces it; the cabin wall gets only a weak spill. This removes the ghost of the scene on the gasket. Scratches dim to a trace and brighten only against a bright view behind.
+- 2026-11-09 (Tom): the pane no longer draws a ghost of the bezel's far rim (a line that traced the porthole over the view).

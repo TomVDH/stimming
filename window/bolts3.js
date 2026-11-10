@@ -38,7 +38,7 @@ export function createBolts() {
     const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const g = f.cell ? f.cell : null;
     // Cloud to ground below a thin deck; otherwise a crawler in the anvil.
-    const ground = f.kind ? f.kind === 'ground' : g && rnd() < 0.55 * (1 - cover);
+    const ground = g && rnd() < 0.55 * (1 - cover);
     const top = g ? g.top : 11, ax = g ? [Math.cos(g.shear), Math.sin(g.shear)] : [1, 0];
     let a, b;
     if (ground) {
@@ -49,22 +49,26 @@ export function createBolts() {
       a = new THREE.Vector3(f.x - ax[0] * len * 0.3, y, f.z - ax[1] * len * 0.3);
       b = new THREE.Vector3(f.x + ax[0] * len, y - 0.4 - rnd(), f.z + ax[1] * len);
     }
-    const main = jag(a, b, 6, 0.32, rnd);
+    const main = jag(a, b, 7, 0.3, rnd);
     const chains = [{ pts: main, w: 1 }];
-    // Forks leave the main channel and die out partway.
-    const forks = 2 + Math.floor(rnd() * 3);
-    for (let i = 0; i < forks; i++) {
-      const at = main[Math.floor((0.15 + rnd() * 0.6) * (main.length - 1))];
-      const dir = b.clone().sub(a).normalize().add(new THREE.Vector3(rnd() - 0.5, -0.3 * rnd(), rnd() - 0.5).multiplyScalar(1.4)).normalize();
-      const end = at.clone().addScaledVector(dir, a.distanceTo(b) * (0.15 + rnd() * 0.25));
-      chains.push({ pts: jag(at, end, 4, 0.35, rnd), w: 0.45 });
-    }
+    // Forks leave the main channel and die out partway; some fork again.
+    const fork = (pts, w, n, reach) => {
+      for (let i = 0; i < n; i++) {
+        const k = Math.floor((0.1 + rnd() * 0.7) * (pts.length - 1)), at = pts[k], nx = pts[Math.min(k + 1, pts.length - 1)];
+        const dir = nx.clone().sub(at).normalize().add(new THREE.Vector3(rnd() - 0.5, -0.35 * rnd(), rnd() - 0.5).multiplyScalar(1.5)).normalize();
+        const end = at.clone().addScaledVector(dir, reach * (0.4 + rnd() * 0.6));
+        const sub = jag(at, end, 4, 0.38, rnd);
+        chains.push({ pts: sub, w });
+        if (w > 0.3 && rnd() < 0.5) fork(sub, w * 0.55, 1 + Math.floor(rnd() * 2), reach * 0.45);
+      }
+    };
+    fork(main, 0.5, 3 + Math.floor(rnd() * 3), a.distanceTo(b) * 0.35);
     const group = new THREE.Group(), lines = [];
     for (const ch of chains) {
       const geo = new LineGeometry();
       geo.setPositions(ch.pts.flatMap(p => [p.x, p.y, p.z]));
-      // A white-violet core inside a wide blue halo.
-      for (const [color, width, glow] of [[0xe4e6ff, 1.1 * ch.w + 0.5, 1], [0x6f78ff, 3.5 * ch.w + 1.5, 0.12]]) {
+      // A white core, a blue inner glow and a wide, faint violet halo.
+      for (const [color, width, glow] of [[0xf2f4ff, 1.0 * ch.w + 0.6, 1], [0x8c96ff, 2.4 * ch.w + 1.2, 0.18], [0x4a58ff, 7 * ch.w + 3, 0.035]]) {
         const l = new Line2(geo, mat(color, width, glow * ch.w));
         l.frustumCulled = false;
         group.add(l); lines.push(l);
@@ -77,7 +81,9 @@ export function createBolts() {
   return {
     scene, cam,
     // Poses the bolts for this frame and reports the brightest, for the wing.
-    update({ flashes, camXZ, H, wingCam, outW, outH, cover, haze }) {
+    update({ flashes, camXZ, H, wingCam, outW, outH, cover, haze, sun = 0 }) {
+      // Daylight washes a bolt out: full sun leaves about a seventh.
+      const day = 1 / (1 + 0.25 * sun);
       cam.matrixWorld.copy(wingCam.matrixWorld);
       cam.matrixWorldInverse.copy(wingCam.matrixWorldInverse);
       cam.fov = wingCam.fov; cam.aspect = wingCam.aspect; cam.updateProjectionMatrix();
@@ -85,18 +91,20 @@ export function createBolts() {
       let best = null;
       for (const f of flashes) {
         if (!f.cell || f.level < 0.02) continue;
+        const dx = f.x - camXZ[0], dz = f.z - camXZ[1];
+        if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
+        // Only a flash that shows a bolt gets lines; the rest light the cloud alone.
+        if (!f.bolt) continue;
         let b = live.get(f);
         if (!b) { b = build(f, H, cover); live.set(f, b); }
         seen.add(f);
         // World positions: relative to the eye, dropped by the ground's curve at the flash.
-        const dx = f.x - camXZ[0], dz = f.z - camXZ[1];
         b.group.position.set(-camXZ[0], -H - (dx * dx + dz * dz) / R_EARTH2, -camXZ[1]);
         b.group.children.forEach(l => {
           const k = l.material.userData.glow * Math.min(f.level, 2.5) * (b.ground ? 1 - 0.85 * cover : 1);
-          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 2.5 * (1 - haze));
+          l.material.color.setHex(l.material.userData.hex).multiplyScalar(k * 1.5 * (1 - haze) * day);
           l.material.resolution.set(outW, outH);
         });
-        if (!best || f.level > best.level) best = { level: f.level, dir: new THREE.Vector3(dx, (f.y ?? 4) - H - (dx * dx + dz * dz) / R_EARTH2, dz).normalize() };
       }
       // Bolts whose flash has gone are dropped.
       for (const [f, b] of live) if (!seen.has(f)) {

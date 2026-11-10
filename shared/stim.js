@@ -12,6 +12,12 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (err) { /* storage is optional */ } },
 };
 
+/* ---------- toys.json ---------- */
+// One request per page; intro.js reads the same promise.
+// It always revalidates, so a cached copy cannot hide new names.
+const toysData = () => (globalThis.__stimToys ||= fetch(new URL('../toys.json', import.meta.url), { cache: 'no-cache' })
+  .then(r => (r.ok ? r.json() : null)).catch(() => null));
+
 /* ---------- motion ---------- */
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 export const reduced = () => RM.matches;
@@ -70,10 +76,7 @@ function legacyLink() {
   if (onLegacy) { add('index.html', 'Fresh', 'Back to the fresh version'); document.documentElement.dataset.legacy = ''; return; }
   // toys.json marks which toys keep a legacy page, so no page probes for one.
   const id = location.pathname.split('/').filter(Boolean).filter(p => !p.endsWith('.html')).pop();
-  fetch(new URL('../toys.json', import.meta.url))
-    .then(r => r.json())
-    .then(toys => { if (toys[id]?.legacy) add('legacy.html', 'Classic', 'The classic build of this toy'); })
-    .catch(() => {});
+  toysData().then(toys => { if (toys?.[id]?.legacy) add('legacy.html', 'Classic', 'The classic build of this toy'); });
 }
 
 // Call once per page, before the toy wires its audio.
@@ -171,10 +174,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
   document.documentElement.dataset.toy = id;
   if (ui) {
     // toys.json gives the name, the tags and the legacy flag.
-    fetch(new URL('../toys.json', import.meta.url))
-      .then(r => r.json())
-      .then(toys => ui.applyToy(toys[id]))
-      .catch(() => ui.applyToy(null));
+    toysData().then(toys => ui.applyToy(toys ? toys[id] : null));
   } else {
     legacyLink();
     mouseKeys();
@@ -955,6 +955,29 @@ export function whenVisible(el, fn) {
   io.observe(el);
   document.addEventListener('visibilitychange', fire);
   return () => { io.disconnect(); document.removeEventListener('visibilitychange', fire); };
+}
+
+/* ---------- staged loading ---------- */
+// A toy page loads in five stages: shell, libs, build, first-frame, extras.
+// stage() marks each one for timing and sets html[data-stage].
+let shown;
+export const firstFrame = new Promise(r => { shown = r; });
+export function stage(name) {
+  performance.mark(`stim:${name}`);
+  document.documentElement.dataset.stage = name;
+  if (name === 'first-frame') shown();
+}
+// Resolves when the main thread is free, so a build step cannot stall the intro.
+export const idle = (timeout = 800) => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout }) : setTimeout(r, 50)));
+// The intro holds for this: page load, fonts and the first frame.
+// The cap keeps a failed toy from holding the intro forever.
+export function pageReady(cap = 6000) {
+  const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+  return Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, new Promise(r => setTimeout(r, cap))])]);
+}
+// Extras load after the first frame, in idle time: samples, spare maps, Tone.
+export function later(fn) {
+  return firstFrame.then(() => idle(2000)).then(() => { stage('extras'); return fn(); });
 }
 
 /* ---------- colour ---------- */

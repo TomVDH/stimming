@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Window seat 3</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Window seat 3</h1>
+<p class="lede">Window seat, round 3: four hours of the toy as it renders them. The tilted pane, the moulded reveal, frost on the lower rim, the slate wing and its red beacon. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  gsap.ticker.fps(60);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
+  // A seeded generator keeps every tile size the same picture.
+  const rng = seed => () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const grad = (defs, id, stops, a = { x1: 0, y1: 0, x2: 0, y2: 1 }, type = 'linearGradient') => {
+    const g = el(type, { id, ...a }, defs);
+    for (const [o, c, op] of stops) el('stop', { offset: o, 'stop-color': c, ...(op != null ? { 'stop-opacity': op } : {}) }, g);
+    return `url(#${id})`;
+  };
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  const SHADOW = 'oklch(0.07 0.01 265)';
+  // The toy tilts its camera; the icon keeps that slant.
+  const TILT = 5;
+  // The pane, in base units: about 27 by 47 cm of glass.
+  const PANE = { x: 39, y: 25, width: 50, height: 78, rx: 24 };
+  // The wing as the seat sees it: winglet up left, the chord runs off right.
+  const WING_D = 'M43.4 55.4L46 54.6L50.6 63.2L104 74.2V112H49.4L46.4 64.8Z';
+  const RED = 'oklch(0.66 0.25 22)';
+
+  // The cabin wall, the moulded reveal and the pane; content clips to the tile.
+  // L: wallA, wallB, rimA, rimB, recessA, recessB, k (zoom), frostY, grain.
+  const cabin = (svg, id, L) => {
+    const defs = el('defs', {}, svg), u = n => `url(#${id}${n})`, k = L.k || 1;
+    el('rect', { x: 20, y: 20, width: 100, height: 100, rx: 4, fill: SHADOW }, svg);
+    el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 4 }, el('clipPath', { id: `${id}c` }, defs));
+    el('rect', PANE, el('clipPath', { id: `${id}p` }, defs));
+    grad(defs, `${id}w`, [[0, L.wallA], [1, L.wallB]], { x1: 0.2, y1: 0, x2: 0.9, y2: 1 });
+    grad(defs, `${id}r`, [[0, L.rimA], [1, L.rimB]], { x1: 0, y1: 0, x2: 1, y2: 0.6 });
+    grad(defs, `${id}e`, [[0, L.recessA], [1, L.recessB]], { x1: 0, y1: 0, x2: 1, y2: 0.4 });
+    grad(defs, `${id}v`, [[0.5, '#000', 0], [1, '#000', 0.6]], { cx: 0.45, cy: 0.42, r: 0.8 }, 'radialGradient');
+    const blur = (n, s) => { el('feGaussianBlur', { stdDeviation: s }, el('filter', { id: `${id}${n}`, x: -0.5, y: -0.5, width: 2, height: 2 }, defs)); return u(n); };
+    const bS = blur('s', 0.5), bM = blur('m', 1.3), bL = blur('l', 3);
+    // Film grain over the whole tile, as the toy's post pass adds it.
+    const gr = el('filter', { id: `${id}n`, x: 0, y: 0, width: 1, height: 1 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: 1.4, numOctaves: 1, seed: 7 }, gr);
+    el('feColorMatrix', { values: `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 ${L.grain || 0.1} 0` }, gr);
+    // Frost: hard stipple that only the lower rim of the pane keeps.
+    const fr = el('filter', { id: `${id}f`, x: -0.1, y: -0.1, width: 1.2, height: 1.2 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: 2.4, numOctaves: 2, seed: 3, result: 'n' }, fr);
+    el('feColorMatrix', { in: 'n', values: '0 0 0 0 0.86  0 0 0 0 0.88  0 0 0 0 0.96  0 0 0 11 -5.4', result: 'd' }, fr);
+    el('feComposite', { in: 'd', in2: 'SourceGraphic', operator: 'in' }, fr);
+    const fy = L.frostY || 70;
+    grad(defs, `${id}fg`, [[0, '#fff', 0], [1, '#fff', 1]], { gradientUnits: 'userSpaceOnUse', x1: 0, y1: fy, x2: 0, y2: fy + 26 });
+    el('rect', { x: 0, y: 0, width: 128, height: 128, fill: u('fg') }, el('mask', { id: `${id}fm`, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: 128, height: 128 }, defs));
+
+    const g = el('g', { 'clip-path': u('c') }, svg);
+    el('rect', { x: 14, y: 14, width: 100, height: 100, fill: u('w') }, g);
+    const win = el('g', { transform: `translate(64 64) rotate(${TILT}) scale(${k}) translate(-64 -64)` }, g);
+    // Wall panel seams and the outer moulding lines.
+    for (const d of ['M9 -20Q3 64 11 150', 'M119 -20Q126 64 117 150']) el('path', { d, fill: 'none', stroke: '#000', 'stroke-width': 0.8, opacity: 0.35 }, win);
+    el('rect', { x: 14, y: -2, width: 100, height: 132, rx: 48, fill: 'none', stroke: L.rimA, 'stroke-width': 0.7, opacity: 0.35 }, win);
+    el('rect', { x: 23, y: 8, width: 82, height: 112, rx: 40, fill: L.rimB, opacity: 0.55 }, win);
+    el('rect', { x: 23, y: 8, width: 82, height: 112, rx: 40, fill: 'none', stroke: L.rimA, 'stroke-width': 0.8, opacity: 0.5 }, win);
+    // The reveal: a soft shadow, the rim, then the recess down to the glass.
+    el('rect', { x: 32, y: 19, width: 66, height: 94, rx: 32, fill: '#000', opacity: 0.5, filter: bM }, win);
+    el('rect', { x: 31, y: 17, width: 66, height: 94, rx: 32, fill: u('r') }, win);
+    el('rect', { x: 35, y: 21, width: 58, height: 86, rx: 28, fill: u('e') }, win);
+    el('rect', { ...PANE, fill: 'oklch(0.08 0.015 280)' }, win);
+    const pane = el('g', { 'clip-path': u('p') }, win);
+    const view = el('g', {}, pane), wing = el('g', {}, pane), glass = el('g', { 'pointer-events': 'none' }, pane);
+    return {
+      defs, g, win, view, wing, glass, u, bS, bM, bL,
+      finish() {
+        // Hairline scratches in the inner pane.
+        const r = rng(11), sc = el('g', { stroke: '#fff', 'stroke-width': 0.22, 'stroke-linecap': 'round', opacity: 0.13 }, glass);
+        for (let i = 0; i < 9; i++) { const x = 42 + r() * 42, y = 34 + r() * 60, a = -0.5 + r() * 1.6, l = 2 + r() * 6; el('line', { x1: f(x), y1: f(y), x2: f(x + Math.cos(a) * l), y2: f(y + Math.sin(a) * l) }, sc); }
+        el('rect', { ...PANE, fill: 'none', stroke: '#fff', 'stroke-width': 9, filter: u('f'), mask: u('fm'), opacity: 0.75 }, glass);
+        // The recess shades the edge of the view.
+        el('rect', { ...PANE, fill: 'none', stroke: '#000', 'stroke-width': 5, filter: bM, opacity: 0.55 }, glass);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, fill: u('v'), 'pointer-events': 'none' }, g);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, filter: u('n'), 'pointer-events': 'none' }, g);
+        return sc;
+      },
+    };
+  };
+
+  // The wing: slate skin, a pale leading edge, the red beacon and its streak.
+  // W: top, low, edge, edgeOp.
+  const drawWing = (T, id, W) => {
+    grad(T.defs, `${id}wg`, [[0, W.top], [0.5, W.low], [1, W.low]], { x1: 0.3, y1: 0, x2: 0.5, y2: 1 });
+    el('path', { d: WING_D, fill: T.u('wg') }, T.wing);
+    el('path', { d: 'M50.6 63.2L104 74.2', fill: 'none', stroke: W.edge, 'stroke-width': 0.9, opacity: W.edgeOp ?? 0.6, 'stroke-linecap': 'round' }, T.wing);
+    el('path', { d: 'M58 71L104 86M54 82L104 100M66 67.5L72 110', fill: 'none', stroke: '#000', 'stroke-width': 0.3, opacity: 0.35 }, T.wing);
+    el('ellipse', { cx: 52.6, cy: 68.6, rx: 1.1, ry: 4.2, transform: 'rotate(-24 52.6 68.6)', fill: RED, filter: T.bS, opacity: 0.95 }, T.wing);
+    const glow = el('circle', { cx: 44.7, cy: 55.2, r: 3.6, fill: RED, filter: T.bM, opacity: 0.55 }, T.wing);
+    el('circle', { cx: 44.7, cy: 55.2, r: 1, fill: 'oklch(0.86 0.14 25)' }, T.wing);
+    const strobe = el('circle', { cx: 44.7, cy: 55.2, r: 6, fill: 'oklch(0.97 0.05 20)', filter: T.bM, opacity: 0 }, T.wing);
+    return { glow, strobe };
+  };
+  // The anticollision strobe: two hard pulses, then a long gap.
+  const strobeLoop = s => gsap.timeline({ repeat: -1, repeatDelay: 1.25, paused: true })
+    .set(s, { opacity: 1 }).set(s, { opacity: 0 }, 0.06).set(s, { opacity: 1 }, 0.13).set(s, { opacity: 0 }, 0.19);
+  // Leaning: the far view slides a little, the wing slides more.
+  const leaner = T => {
+    const st = { x: 0, y: 0 };
+    const draw = () => { set(T.view, { transform: `translate(${f(-st.x * 3)} ${f(-st.y * 2)})` }); set(T.wing, { transform: `translate(${f(-st.x * 6.5)} ${f(-st.y * 3.5)})` }); };
+    let tw;
+    const to = (x, y, d) => { tw?.kill(); tw = gsap.to(st, { x, y, duration: d, ease: 'power2.out', onUpdate: draw }); };
+    return { move(p) { if (p) to(Math.max(-1, Math.min(1, (p[0] - 64) / 50)), Math.max(-1, Math.min(1, (p[1] - 64) / 50)), 0.5); }, rest() { to(0, 0, 0.7); } };
+  };
+  const stars = (T, n, seed, y0, y1, op = 0.8) => { const r = rng(seed), g = el('g', { fill: '#fff' }, T.view); for (let i = 0; i < n; i++) el('circle', { cx: f(34 + r() * 60), cy: f(y0 + r() * (y1 - y0)), r: f(0.18 + r() * 0.22), opacity: f(op * (0.4 + r() * 0.6)) }, g); return g; };
+  // A strip of marks that repeats every 44 units, so a drift loops clean.
+  const strip = (parent, n, seed, make) => {
+    const g = el('g', {}, parent), r = rng(seed), items = Array.from({ length: n }, () => [r(), r(), r(), r()]);
+    for (const off of [-44, 0, 44, 88]) for (const it of items) make(g, 24 + off + it[0] * 44, it);
+    return g;
+  };
+  const drift = (g, d) => gsap.fromTo(g, { x: 0 }, { x: -44, duration: d, ease: 'none', repeat: -1, paused: true });
+  const emb = extra => `${EMB_HEAD}<g transform="translate(64 64) rotate(${TILT}) scale(1.34) translate(-64 -64)"><clipPath id="g"><rect x="41.5" y="27.5" width="45" height="73" rx="21.5"/></clipPath><g clip-path="url(#g)">${extra}<path d="${WING_D}" fill="#fff"/></g><rect x="36.5" y="22.5" width="55" height="83" rx="26.5" fill="none" stroke="#fff" stroke-width="5"/></g></svg>\n`;
+
+  /* ================= Directions ================= */
+  const DIRS = [
+    {
+      l: 'A', name: 'Dusk',
+      idea: 'The toy as it opens: violet sky down to an ember horizon, towns below, the wing in shadow, the red beacon. On hover the towns slide past, the strobe double-flashes and the view leans with the pointer.',
+      art(svg, id) {
+        const T = cabin(svg, id, { wallA: 'oklch(0.27 0.028 38)', wallB: 'oklch(0.15 0.018 40)', rimA: 'oklch(0.36 0.035 32)', rimB: 'oklch(0.2 0.022 38)', recessA: 'oklch(0.13 0.015 40)', recessB: 'oklch(0.24 0.03 30)' });
+        grad(T.defs, `${id}sk`, [[0, 'oklch(0.27 0.07 295)'], [0.5, 'oklch(0.4 0.09 320)'], [0.78, 'oklch(0.6 0.15 30)'], [0.9, 'oklch(0.74 0.17 55)'], [1, 'oklch(0.5 0.17 30)']]);
+        el('rect', { x: 26, y: 12, width: 80, height: 45, fill: T.u('sk') }, T.view);
+        stars(T, 16, 5, 27, 45);
+        el('rect', { x: 26, y: 57, width: 80, height: 60, fill: 'oklch(0.15 0.02 300)' }, T.view);
+        el('rect', { x: 26, y: 56, width: 80, height: 2.4, fill: 'oklch(0.35 0.1 25)', filter: T.bS }, T.view);
+        // Town lights: warm smears, flatter and smaller toward the horizon.
+        const towns = strip(T.view, 34, 21, (g, x, it) => { const d = it[1] * it[1], y = 59 + d * 20; el('ellipse', { cx: f(x), cy: f(y), rx: f(0.5 + d * 2.4 * (0.4 + it[2])), ry: f(0.22 + d * 0.5), fill: it[3] > 0.8 ? 'oklch(0.92 0.06 90)' : 'oklch(0.8 0.13 70)', opacity: f(0.45 + it[2] * 0.5) }, g); });
+        set(towns, { filter: T.bS });
+        const w = drawWing(T, id, { top: 'oklch(0.3 0.025 300)', low: 'oklch(0.17 0.02 295)', edge: 'oklch(0.62 0.06 330)', edgeOp: 0.5 });
+        T.finish();
+        const L = leaner(T), tws = [drift(towns, 5), strobeLoop(w.strobe)];
+        return {
+          enter(p) { tws.forEach(t => t.play()); L.move(p); },
+          move(p) { L.move(p); },
+          leave() { tws.forEach(t => t.pause()); gsap.set(w.strobe, { opacity: 0 }); L.rest(); },
+        };
+      },
+      emblem: () => emb('<rect x="30" y="54" width="70" height="3.4" fill="#9a9a9a"/><circle cx="60" cy="38" r="1.6" fill="#fff"/><circle cx="74" cy="44" r="1.2" fill="#fff"/><circle cx="68" cy="33" r="1" fill="#fff"/>'),
+    },
+    {
+      l: 'B', name: 'Midnight, leaning in',
+      idea: 'Leaned close, so the pane fills the tile: stars, the moon over thin cirrus, its glitter on the cloud deck, moonlight on the wing. On hover the glitter shimmers, the cirrus drifts and the strobe fires.',
+      art(svg, id) {
+        const T = cabin(svg, id, { k: 1.5, frostY: 58, wallA: 'oklch(0.2 0.04 282)', wallB: 'oklch(0.13 0.03 280)', rimA: 'oklch(0.32 0.07 276)', rimB: 'oklch(0.17 0.04 280)', recessA: 'oklch(0.1 0.02 280)', recessB: 'oklch(0.2 0.045 278)' });
+        grad(T.defs, `${id}sk`, [[0, 'oklch(0.15 0.025 270)'], [0.7, 'oklch(0.24 0.035 262)'], [1, 'oklch(0.36 0.04 258)']]);
+        el('rect', { x: 26, y: 12, width: 80, height: 45, fill: T.u('sk') }, T.view);
+        stars(T, 22, 9, 30, 50, 0.9);
+        const cirrus = strip(T.view, 7, 31, (g, x, it) => el('ellipse', { cx: f(x), cy: f(44 + it[1] * 9), rx: f(7 + it[2] * 9), ry: f(0.35 + it[3] * 0.4), fill: 'oklch(0.72 0.03 265)', opacity: f(0.25 + it[2] * 0.3) }, g));
+        set(cirrus, { filter: T.bS });
+        el('circle', { cx: 74, cy: 41, r: 5.5, fill: 'oklch(0.9 0.03 265)', filter: T.bL, opacity: 0.55 }, T.view);
+        el('circle', { cx: 74, cy: 41, r: 1.5, fill: 'oklch(0.99 0.01 95)' }, T.view);
+        el('rect', { x: 26, y: 56, width: 80, height: 60, fill: 'oklch(0.14 0.025 265)' }, T.view);
+        el('rect', { x: 26, y: 55.4, width: 80, height: 1.2, fill: 'oklch(0.7 0.03 262)', filter: T.bS, opacity: 0.8 }, T.view);
+        // The deck: town-lit cloud patches, warm against the blue.
+        const deck = strip(T.view, 9, 44, (g, x, it) => el('ellipse', { cx: f(x), cy: f(59 + it[1] * 9), rx: f(3 + it[2] * 5), ry: f(0.7 + it[1] * 1.2), fill: 'oklch(0.5 0.05 78)', opacity: f(0.4 + it[3] * 0.4) }, g));
+        set(deck, { filter: T.bS });
+        const r = rng(8), glit = Array.from({ length: 7 }, (_, i) => el('ellipse', { cx: f(74 + (r() - 0.5) * 2), cy: f(57.4 + i * 1.5), rx: f(1 + i * 0.45 + r()), ry: 0.42, fill: 'oklch(0.96 0.06 85)', opacity: f(0.9 - i * 0.08) }, T.view));
+        const w = drawWing(T, id, { top: 'oklch(0.26 0.025 280)', low: 'oklch(0.14 0.02 280)', edge: 'oklch(0.8 0.03 265)', edgeOp: 0.75 });
+        el('ellipse', { cx: 76, cy: 69.8, rx: 7, ry: 1.5, transform: 'rotate(11.6 76 69.8)', fill: 'oklch(0.97 0.02 265)', filter: T.bM, opacity: 0.85 }, T.wing);
+        T.finish();
+        const L = leaner(T), tws = [drift(cirrus, 14), drift(deck, 9), strobeLoop(w.strobe), ...glit.map((e, i) => gsap.to(e, { opacity: 0.25, scaleX: 0.5, transformOrigin: '50% 50%', duration: 0.18 + (i % 3) * 0.07, yoyo: true, repeat: -1, ease: 'sine.inOut', delay: i * 0.05, paused: true }))];
+        return {
+          enter(p) { tws.forEach(t => t.play()); L.move(p); },
+          move(p) { L.move(p); },
+          leave() { tws.forEach(t => t.pause()); gsap.set(w.strobe, { opacity: 0 }); L.rest(); },
+        };
+      },
+      box: [14, 14, 100, 100],
+      emblem: () => emb('<circle cx="72" cy="40" r="5.2" fill="#fff"/><rect x="30" y="54.6" width="70" height="2" fill="#8c8c8c"/><path d="M69 59.5h6M67.5 62.5h9" stroke="#c8c8c8" stroke-width="1.6" stroke-linecap="round"/>'),
+    },
+    {
+      l: 'C', name: 'Storm flash',
+      idea: 'Midnight with the storm slider up: rim-lit towers in the dark, beads on the glass, the landing light on the wing. On hover the cells flash from inside, a bolt drops now and then, and the wing and reveal catch the light.',
+      art(svg, id) {
+        const T = cabin(svg, id, { wallA: 'oklch(0.18 0.035 282)', wallB: 'oklch(0.11 0.025 280)', rimA: 'oklch(0.27 0.06 278)', rimB: 'oklch(0.14 0.035 280)', recessA: 'oklch(0.09 0.02 280)', recessB: 'oklch(0.17 0.04 278)', grain: 0.13 });
+        grad(T.defs, `${id}sk`, [[0, 'oklch(0.1 0.02 285)'], [0.75, 'oklch(0.2 0.035 280)'], [1, 'oklch(0.27 0.04 278)']]);
+        el('rect', { x: 26, y: 12, width: 80, height: 52, fill: T.u('sk') }, T.view);
+        stars(T, 9, 14, 28, 40, 0.6);
+        // Three storm cells: a glow inside each, then the dark tower over it.
+        const CELLS = [
+          { d: 'M52 66C51 58 55 54 59 54C59 48 64 45 68 47C70 41 79 40 82 46C87 45 90 50 88 55C92 56 93 61 92 66Z', c: [72, 52], b: null },
+          { d: 'M28 66C28 57 33 52 39 53C40 45 49 43 53 49C58 47 62 51 61 56C65 57 67 61 66 66Z', c: [46, 55], b: 'M48 57L45 62.5L48.5 62.5L44 71' },
+          { d: 'M72 66C72 59 76 55 81 56C82 49 90 47 94 52C99 51 103 55 102 60C105 61 106 64 105 66Z', c: [88, 57], b: 'M87 59L84 64L87.6 64L83.5 71' },
+        ];
+        const cells = CELLS.map(c => {
+          const glow = el('ellipse', { cx: c.c[0], cy: c.c[1], rx: 15, ry: 9, fill: 'oklch(0.86 0.09 290)', filter: T.bL, opacity: 0 }, T.view);
+          // The rim light: a pale edge that the dark tower half covers.
+          el('path', { d: c.d, fill: 'oklch(0.82 0.02 275)', filter: T.bS, opacity: 0.7 }, T.view);
+          el('path', { d: c.d, transform: 'translate(0.5 0.9)', fill: 'oklch(0.14 0.022 285)' }, T.view);
+          const lit = el('path', { d: c.d, fill: 'oklch(0.9 0.06 290)', filter: T.bS, opacity: 0 }, T.view);
+          const bolt = c.b ? el('path', { d: c.b, fill: 'none', stroke: '#fff', 'stroke-width': 0.7, 'stroke-linejoin': 'bevel', opacity: 0 }, T.view) : null;
+          return { glow, lit, bolt };
+        });
+        el('rect', { x: 26, y: 63, width: 80, height: 50, fill: 'oklch(0.1 0.018 285)' }, T.view);
+        const w = drawWing(T, id, { top: 'oklch(0.22 0.02 285)', low: 'oklch(0.12 0.018 285)', edge: 'oklch(0.6 0.02 280)', edgeOp: 0.4 });
+        // The landing light pools on the leading edge.
+        el('ellipse', { cx: 76, cy: 70.2, rx: 5.5, ry: 1.6, transform: 'rotate(11.6 76 70.2)', fill: '#fff', filter: T.bM, opacity: 0.9 }, T.wing);
+        const wingLit = el('path', { d: WING_D, fill: 'oklch(0.75 0.06 290)', opacity: 0 }, T.wing);
+        const r = rng(17), beads = el('g', { fill: 'oklch(0.9 0.02 270)' }, T.glass);
+        for (let i = 0; i < 26; i++) el('circle', { cx: f(41 + r() * 46), cy: f(30 + r() * 70), r: f(0.2 + r() * 0.4), opacity: f(0.25 + r() * 0.4) }, beads);
+        const room = el('rect', { x: 14, y: 14, width: 100, height: 100, fill: 'oklch(0.8 0.08 290)', opacity: 0, 'pointer-events': 'none' }, T.g);
+        T.finish();
+        const L = leaner(T), st = strobeLoop(w.strobe);
+        let on = false, call, tl;
+        const dark = () => gsap.set([...cells.flatMap(c => [c.glow, c.lit, c.bolt]).filter(Boolean), wingLit, room], { opacity: 0 });
+        // One strike: a hard flicker in one cell, sometimes with a bolt.
+        const strike = () => {
+          if (!on) return;
+          const c = cells[Math.floor(Math.random() * cells.length)], k = 0.6 + Math.random() * 0.4, bolt = c.bolt && Math.random() < 0.6;
+          tl = gsap.timeline();
+          for (const [t, v] of [[0, 1], [0.05, 0.25], [0.11, 0.9], [0.19, 0.4]]) {
+            tl.set(c.glow, { opacity: v * k }, t).set(c.lit, { opacity: v * 0.55 * k }, t).set(wingLit, { opacity: v * 0.28 * k }, t).set(room, { opacity: v * 0.1 * k }, t);
+            if (bolt) tl.set(c.bolt, { opacity: t < 0.15 ? v : 0 }, t);
+          }
+          tl.to([c.glow, c.lit, wingLit, room], { opacity: 0, duration: 0.45, ease: 'power2.out' }, 0.24);
+          call = gsap.delayedCall(0.5 + Math.random() * 1.1, strike);
+        };
+        return {
+          enter(p) { on = true; call?.kill(); st.play(); strike(); L.move(p); },
+          move(p) { L.move(p); },
+          leave() { on = false; call?.kill(); tl?.kill(); st.pause(); gsap.set(w.strobe, { opacity: 0 }); dark(); L.rest(); },
+        };
+      },
+      emblem: () => emb('<path d="M30 50C44 48 60 49 74 47S92 46 100 45" fill="none" stroke="#8c8c8c" stroke-width="2.4"/><path d="M71 29L61 45H67.5L60 60L76 41H69Z" fill="#fff"/>'),
+    },
+    {
+      l: 'D', name: 'Golden hour, sat back',
+      idea: 'Sat back in the seat on a bright leg: more wall, the reveal lit warm, blue sky over gold cloud tops, sun glare where the wing leaves the pane. On hover the clouds pass, and a flare crosses the glass and lights its scratches.',
+      art(svg, id) {
+        const T = cabin(svg, id, { k: 0.84, wallA: 'oklch(0.4 0.04 50)', wallB: 'oklch(0.2 0.025 45)', rimA: 'oklch(0.6 0.045 55)', rimB: 'oklch(0.3 0.035 40)', recessA: 'oklch(0.24 0.03 40)', recessB: 'oklch(0.52 0.05 50)', grain: 0.08 });
+        grad(T.defs, `${id}sk`, [[0, 'oklch(0.52 0.09 268)'], [0.55, 'oklch(0.68 0.06 275)'], [0.85, 'oklch(0.84 0.06 75)'], [1, 'oklch(0.86 0.09 70)']]);
+        el('rect', { x: 26, y: 12, width: 80, height: 46, fill: T.u('sk') }, T.view);
+        const cirrus = strip(T.view, 8, 52, (g, x, it) => el('ellipse', { cx: f(x), cy: f(36 + it[1] * 13), rx: f(8 + it[2] * 10), ry: f(0.4 + it[3] * 0.5), fill: it[1] > 0.6 ? 'oklch(0.92 0.04 60)' : 'oklch(0.86 0.04 300)', opacity: f(0.4 + it[2] * 0.4) }, g));
+        set(cirrus, { filter: T.bS });
+        grad(T.defs, `${id}gd`, [[0, 'oklch(0.8 0.08 72)'], [0.25, 'oklch(0.6 0.06 55)'], [1, 'oklch(0.4 0.05 300)']]);
+        el('rect', { x: 26, y: 57, width: 80, height: 60, fill: T.u('gd') }, T.view);
+        // Cloud tops: gold above, a cool shade under each.
+        const puffs = strip(T.view, 12, 63, (g, x, it) => { const d = it[1], y = 59 + d * 13, rx = 2 + d * 5 * (0.5 + it[2]), ry = 0.6 + d * 1.5; el('ellipse', { cx: f(x + 0.6), cy: f(y + ry * 0.7), rx: f(rx), ry: f(ry), fill: 'oklch(0.42 0.05 300)', opacity: 0.5 }, g); el('ellipse', { cx: f(x), cy: f(y), rx: f(rx), ry: f(ry), fill: 'oklch(0.9 0.08 80)', opacity: f(0.7 + it[3] * 0.3) }, g); });
+        set(puffs, { filter: T.bS });
+        const w = drawWing(T, id, { top: 'oklch(0.47 0.03 300)', low: 'oklch(0.3 0.025 295)', edge: 'oklch(0.9 0.05 70)', edgeOp: 0.8 });
+        gsap.set(w.glow, { opacity: 0.3 });
+        el('circle', { cx: 89, cy: 71, r: 9, fill: 'oklch(0.97 0.07 85)', filter: T.bL, opacity: 0.95 }, T.wing);
+        el('circle', { cx: 88.5, cy: 71, r: 2.2, fill: '#fff', filter: T.bS }, T.wing);
+        // The flare: a soft diagonal band that sweeps the pane.
+        const flare = el('rect', { x: 20, y: -6, width: 9, height: 140, transform: 'rotate(24 64 64)', fill: 'oklch(0.98 0.05 85)', filter: T.bL, opacity: 0 }, T.glass);
+        const sc = T.finish();
+        // Light from the window spills on the near wall.
+        el('ellipse', { cx: 96, cy: 96, rx: 22, ry: 34, transform: 'rotate(-14 96 96)', fill: 'oklch(0.8 0.09 60)', filter: T.bL, opacity: 0.16, 'pointer-events': 'none' }, T.g);
+        const L = leaner(T), tws = [drift(cirrus, 16), drift(puffs, 7)];
+        const sweep = gsap.timeline({ repeat: -1, repeatDelay: 0.9, paused: true })
+          .fromTo(flare, { x: 0, opacity: 0 }, { x: 70, opacity: 0.5, duration: 0.9, ease: 'sine.in' })
+          .to(flare, { x: 110, opacity: 0, duration: 0.5, ease: 'sine.out' })
+          .to(sc, { opacity: 0.75, duration: 0.5, yoyo: true, repeat: 1, ease: 'sine.inOut' }, 0.4);
+        return {
+          enter(p) { tws.forEach(t => t.play()); sweep.restart(); L.move(p); },
+          move(p) { L.move(p); },
+          leave() { tws.forEach(t => t.pause()); sweep.pause(); gsap.to(flare, { opacity: 0, duration: 0.3 }); gsap.to(sc, { opacity: 0.13, duration: 0.3 }); L.rest(); },
+        };
+      },
+      emblem: () => emb('<circle cx="76" cy="42" r="6.5" fill="#fff"/><path d="M30 56h70" stroke="#8c8c8c" stroke-width="2.4"/><path d="M52 44h9M56 49.5h12M44 38h7" stroke="#bdbdbd" stroke-width="1.8" stroke-linecap="round"/>'),
+    },
+  ];
+
+  /* ================= Gallery ================= */
+  const NAME = 'Window seat';
+  const fitIcon = (svg, box) => {
+    const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : { x: 14, y: 14, width: 100, height: 100 }, side = Math.max(b.width, b.height);
+    const size = (side * 128) / 110, cx = b.x + b.width / 2 + 3, cy = b.y + b.height / 2 + 3;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-window';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `window3-${D.l.toLowerCase()}`;
+    const url = `spike/emblems/${file}.svg`;
+    window.EMBLEMS[file] = D.emblem();
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      <div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>
+      <p class="idea">${D.idea}</p>`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

@@ -12,6 +12,23 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <style>
 /* Prism: one beam and one prism on a black table, at full width. */
 :root { --stage: oklch(0.1 0.008 272); }
@@ -24,13 +41,34 @@
 .stage canvas.light { mix-blend-mode: plus-lighter; }
 /* The halo spills edge light onto the page around the stage. */
 .halo { position: absolute; left: 0; top: 0; pointer-events: none; }
-/* The spectroscope covers the table while it shows. */
-.stage canvas.spectro { z-index: 2; pointer-events: none; touch-action: none; }
-.stage canvas.spectro.on { pointer-events: auto; }
-.halo { transition: opacity 0.6s ease; }
-html[data-spectro] .halo { opacity: 0; }
-/* The four lights fit the sheet's width. */
-.s2-row .s2-seg:has(.s2-dot) .s2-chip { padding: 0 5px; gap: 4px; }
+/* A drag from the tray carries a piece; the open sheet fades meanwhile. */
+/* The piece palette rises from the + Piece button: one labelled tile per piece. */
+.palette {
+  position: absolute; left: 0; top: 0; z-index: 6; box-sizing: border-box; width: min(372px, calc(100% - 24px));
+  color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); box-shadow: var(--hard);
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase;
+}
+.palette[hidden] { display: none; }
+/* A short stage lays the tiles out in one row. */
+.palette.wide { width: min(664px, calc(100% - 24px)); }
+.palette .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; padding: 10px 12px 12px; }
+.palette .tile {
+  display: grid; justify-items: center; align-content: center; gap: 8px; height: 76px; padding: 8px 4px 7px;
+  font: inherit; letter-spacing: 0.04em; line-height: 1.15; text-align: center; color: var(--muted);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 2px; cursor: grab; touch-action: none;
+  -webkit-tap-highlight-color: transparent; transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.palette .tile svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.palette .tile svg .solid { fill: currentColor; stroke: none; }
+@media (hover: hover) { .palette .tile:hover { color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift); } }
+html[data-carry] .palette { opacity: 0; pointer-events: none; }
+/* The zoom chip shows only while the view is zoomed; a press resets it. */
+.zoomchip {
+  position: absolute; left: 50%; top: 8px; z-index: 1; transform: translateX(-50%);
+  font: 500 11px/1 var(--slab); letter-spacing: 0.07em; text-transform: uppercase; gap: 6px;
+}
+.zoomchip[hidden] { display: none; }
+.zoomchip svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 /* The remove button is a solid disc with a cut cross. */
 .drop {
   position: absolute; left: -13px; top: -13px; z-index: 1; width: 26px; height: 26px; padding: 0;
@@ -74,26 +112,13 @@ html[data-spectro] .halo { opacity: 0; }
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
 import * as THREE from 'three';
-import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
+stage('libs');
 import { intro as playIntro } from '../shared/intro.js';
-import { spectroscope, ELEMENTS } from './spectro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 // Each pick in the Piece tray adds one piece.
 const KINDS = [
   { value: 'prism', label: 'Prism', icon: '<svg viewBox="0 0 16 16"><path d="M8 2.2l6.2 11H1.8z"/></svg>' },
@@ -103,73 +128,83 @@ const KINDS = [
   { value: 'convex', label: 'Convex mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4.5"/><path d="M12 2a10 10 0 0 0 0 12"/><path class="solid" d="M13.6 2.6a10 10 0 0 0 0 10.8h1.4a10 10 0 0 1 0-10.8z"/></svg>' },
   { value: 'concave', label: 'Concave mirror', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 8h3.5"/><path d="M7 2a10 10 0 0 1 0 12"/><path class="solid" d="M9.2 2.6a10 10 0 0 1 0 10.8h1.4a10 10 0 0 0 0-10.8z"/></svg>' },
   { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
-  // The spectroscope is a view, not a piece.
-  { value: 'spectro', label: 'Spectroscope', icon: '<svg viewBox="0 0 16 16"><path d="M1.6 5.2h6.2l-3.1 5.4z"/><path d="M10.2 2v12M12.3 2v12M14.4 2v12"/></svg>' },
+  { value: 'gram', label: 'Spectrogram', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="11.4" width="13" height="2.6" rx="0.5"/><rect x="1.5" y="2" width="13" height="6.5" rx="0.5"/><path d="M4.5 3.4v3.7M7.2 3.4v3.7M8.4 3.4v3.7M12 3.4v3.7"/></svg>' },
 ];
-// The lamp shines white light or one laser line.
-// Each value is one wavelength bin; -1 is the full spectrum.
+// The lamp shines white light, one laser line or one element's lines.
+// A number is one wavelength bin; -1 is the full spectrum.
+// Line data: [nm, strength, band width in nm].
+const SALTS = [
+  { id: 'li', label: 'Lithium', sym: 'Li', col: [0.56, 0.21, 24], lines: [[670.8, 1], [610.4, 0.25], [460.3, 0.08]] },
+  { id: 'na', label: 'Sodium', sym: 'Na', col: [0.82, 0.17, 80], lines: [[589.0, 1], [589.6, 0.5]] },
+  { id: 'k', label: 'Potassium', sym: 'K', col: [0.68, 0.12, 310], lines: [[766.5, 0.8], [769.9, 0.5], [404.4, 0.35], [404.7, 0.2]] },
+  { id: 'cu', label: 'Copper', sym: 'Cu', col: [0.74, 0.15, 170],
+    lines: [[510.5, 0.5], [515.3, 0.6], [521.8, 0.7], [428, 0.35, 6], [435, 0.4, 6], [443, 0.35, 6], [452, 0.3, 6], [488, 0.3, 5], [498, 0.35, 5], [535, 0.4, 14]] },
+  { id: 'sr', label: 'Strontium', sym: 'Sr', col: [0.6, 0.21, 28],
+    lines: [[460.7, 0.3], [606, 0.6, 8], [646, 0.7, 6], [659, 0.8, 5], [668, 0.9, 6], [682, 0.6, 6], [636, 0.4, 5], [674, 0.5, 4]] },
+  { id: 'ca', label: 'Calcium', sym: 'Ca', col: [0.66, 0.17, 45], lines: [[422.7, 0.5], [554, 0.6, 8], [602, 0.5, 6], [622, 1, 7], [646, 0.35, 6]] },
+  { id: 'ba', label: 'Barium', sym: 'Ba', col: [0.86, 0.13, 125],
+    lines: [[553.5, 1], [455.4, 0.2], [493.4, 0.2], [487, 0.3, 5], [513, 0.5, 6], [524, 0.55, 6], [534, 0.45, 6]] },
+];
 const LIGHTS = [
-  { value: '-1', label: 'White', dot: 'oklch(0.97 0.01 90)' },
-  { value: '20', label: 'Red', dot: 'oklch(0.64 0.24 28)' },
-  { value: '10', label: 'Green', dot: 'oklch(0.82 0.24 142)' },
-  { value: '1', label: 'Violet', dot: 'oklch(0.58 0.24 300)' },
+  { value: '-1', label: 'White light', dot: 'oklch(0.97 0.01 90)' },
+  { value: '20', label: 'Red laser', dot: 'oklch(0.64 0.24 28)' },
+  { value: '10', label: 'Green laser', dot: 'oklch(0.82 0.24 142)' },
+  { value: '1', label: 'Violet laser', dot: 'oklch(0.58 0.24 300)' },
+  ...SALTS.map(e => ({ value: e.id, label: `${e.label} lamp`, dot: okCss(e.col) })),
 ];
 const ui = initPage({ id: 'prism', bar: {
-  choice: { label: 'Piece', display: 'tray', value: 'prism', options: KINDS,
-    onPick: v => {
-      if (v === 'spectro') { openSpectro(); return; }
-      if (spec.on) closeSpectro();
-      addPiece(v);
-      panel.focus({ preventScroll: true });
-    } },
-  actions: [{ verb: 'clear', key: 'C', onPress: () => clearAll() }],
+  choice: { label: 'Light', display: 'stepper', value: '-1', options: LIGHTS, onPick: v => setLight(v) },
+  actions: [
+    { verb: 'add', noun: 'Piece', key: 'A', onPress: () => palette.toggle() },
+    { verb: 'clear', key: 'C', onPress: () => clearAll() },
+  ],
   settings: [
-    { type: 'choice', id: 'light', label: 'Light', value: '-1', options: LIGHTS,
-      onPick: v => { lightBin = +v; geomDirty = true; wake(); } },
     // The toggle keeps the old stored key, stimming.prism.wire.
     { type: 'toggle', id: 'wire', label: 'Wireframe', value: false, persist: true, onToggle: on => { wire = on; wake(); } },
-    // These rows show only with the spectroscope.
-    { type: 'choice', id: 'element', label: 'Element', value: 'li', persist: true, display: 'stepper', options: ELEMENTS,
-      onPick: v => spec.setElement(v) },
-    { type: 'choice', id: 'spectro', label: 'Spectrometer', value: 'prism', persist: true,
-      options: [{ value: 'prism', label: 'Prism' }, { value: 'grating', label: 'Grating' }], onPick: v => spec.setGrating(v === 'grating') },
-    { type: 'toggle', id: 'trace', label: 'Trace sodium', value: true, persist: true, onToggle: v => spec.setTrace(v) },
-    { type: 'toggle', id: 'cobalt', label: 'Cobalt glass', value: false, persist: true, onToggle: v => spec.setCobalt(v) },
   ],
   reset: () => reset(),
   quality: true,
-  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'resize'], ['delete', 'remove']],
+  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'size, zoom'], ['delete', 'remove']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-/* ---------- the spectroscope view ---------- */
-// The shell has no row toggle, so rows hide by their label.
-const SPEC_ROWS = ['Element', 'Spectrometer', 'Trace sodium', 'Cobalt glass'], TABLE_ROWS = ['Light', 'Wireframe'];
-const rowsShow = (labels, show) => document.querySelectorAll('.stim-ui .s2-row').forEach(r => {
-  if (labels.includes(r.firstElementChild?.textContent)) r.hidden = !show;
-});
-rowsShow(SPEC_ROWS, false);
-const spec = spectroscope({ stage: panel, kit: { live: () => kit.live(), rest: f => kit.rest(f), get out() { return kit.out; }, get noise() { return kit.noise; } }, ui, onExit: () => closeSpectro() });
-async function openSpectro() {
-  if (spec.on) { spec.strike(); return; }
-  select(-1);
-  try { if (!(await spec.open())) return; } catch (err) { console.warn('Spectroscope:', err.message); ui.choice.set('prism'); return; }
-  document.documentElement.dataset.spectro = '';
-  rowsShow(SPEC_ROWS, true);
-  rowsShow(TABLE_ROWS, false);
-  panel.focus({ preventScroll: true });
-  hush();
-  sync();
-}
-function closeSpectro() {
-  if (!spec.on) return;
-  spec.close();
-  delete document.documentElement.dataset.spectro;
-  rowsShow(SPEC_ROWS, false);
-  rowsShow(TABLE_ROWS, true);
-  ui.choice.set('prism');
-  sync();
-  panel.focus({ preventScroll: true });
-}
+/* ---------- the piece palette ---------- */
+// Tap a tile to drop the piece into the light; drag it to place it.
+const palette = (() => {
+  const el = document.createElement('div');
+  el.className = 'palette';
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Pieces');
+  el.innerHTML = '<div class="s2-hd"><span>Pieces</span><em aria-hidden="true">tap or drag</em></div><div class="grid"></div>';
+  const grid = el.querySelector('.grid');
+  for (const k of KINDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tile';
+    b.dataset.kind = k.value;
+    b.innerHTML = `${k.icon}<span>${k.label}</span>`;
+    b.addEventListener('click', () => { close(); addPiece(k.value); panel.focus({ preventScroll: true }); });
+    grid.append(b);
+  }
+  panel.parentElement.append(el);
+  const btn = () => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => /\+\s*Piece/i.test(b.textContent));
+  // The palette opens above its button and stays inside the stage.
+  function place() {
+    const b = btn(), fr = panel.parentElement.getBoundingClientRect();
+    if (!b) return;
+    const r0 = b.getBoundingClientRect();
+    el.classList.toggle('wide', r0.top - fr.top < 330);
+    const r = r0, w = el.offsetWidth, h = el.offsetHeight;
+    const x = clamp(r.left - fr.left, 12, Math.max(12, fr.width - w - 12)), y = Math.max(12, r.top - fr.top - h - 8);
+    el.style.transform = `translate(${x}px, ${y}px)`;
+  }
+  function open() { el.hidden = false; place(); btn()?.setAttribute('aria-expanded', 'true'); el.querySelector('.tile')?.focus({ preventScroll: true }); }
+  function close() { if (el.hidden) return; el.hidden = true; btn()?.setAttribute('aria-expanded', 'false'); }
+  document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !btn()?.contains(e.target)) close(); }, true);
+  document.addEventListener('keydown', e => { if (!el.hidden && e.key === 'Escape') { e.preventDefault(); close(); panel.focus({ preventScroll: true }); } }, true);
+  addEventListener('resize', () => { if (!el.hidden) place(); });
+  return { open, close, toggle: () => (el.hidden ? open() : close()), get isOpen() { return !el.hidden; } };
+})();
 // A laser is one wavelength bin, so it never splits.
 let lightBin = -1, wire = ui.setting('wire').value;
 const dropB = panel.querySelector('.drop');
@@ -212,7 +247,19 @@ const css = (L, C, h, a = 1) => okCss([L, C, h], a);
 
 /* ---------- light: 24 wavelengths, Cauchy glass ---------- */
 const NK = 24, L0 = 0.405, L1 = 0.69, CA = 1.5, CB = 0.028;
-const LAM = Float64Array.from({ length: NK }, (_, k) => L0 + ((L1 - L0) * k) / (NK - 1));
+// Element lines follow the 24 bins and white in every table.
+// A band is three lines across its width.
+const XL = [];
+for (const e of SALTS) {
+  e.ks = [];
+  const add = (nm, w) => { e.ks.push([NK + 1 + XL.length, 0.3 + 0.7 * w]); XL.push(nm / 1000); };
+  for (const [nm, w, bw] of [...e.lines].sort((a, b) => a[0] - b[0])) {
+    if (bw) for (const d of [-1, 0, 1]) add(nm + (d * bw) / 3, w * 0.7); else add(nm, w);
+  }
+  e.ks.sort((a, b) => XL[a[0] - NK - 1] - XL[b[0] - NK - 1]);
+}
+const NT = NK + 1 + XL.length;
+const LAM = Float64Array.from({ length: NT }, (_, k) => (k < NK ? L0 + ((L1 - L0) * k) / (NK - 1) : k === NK ? 0.55 : XL[k - NK - 1]));
 const NI = LAM.map(l => CA + CB / (l * l));
 const NW = CA + CB / 0.55 ** 2;
 // COL holds one sRGB colour per wavelength.
@@ -223,7 +270,7 @@ const COL = [], CORE = [], LINC = [];
 {
   const g = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
   const raw = [], sum = [0, 0, 0];
-  for (const l of LAM) {
+  for (const l of LAM.subarray(0, NK)) {
     const n = l * 1000;
     const X = 1.056 * g(n, 599.8, 37.9, 31) + 0.362 * g(n, 442, 16, 26.7) - 0.065 * g(n, 501.1, 20.4, 26.2);
     const Y = 0.821 * g(n, 568.8, 46.9, 40.5) + 0.286 * g(n, 530.9, 16.3, 31.1);
@@ -243,9 +290,37 @@ const COL = [], CORE = [], LINC = [];
     COL.push(e.map(v => Math.round((v / hi) * lift * 255)));
   }
   COL.push([255, 255, 255]);
+  LINC.push([1, 1, 1]);
+  // A line keeps its hue; the far ends hold red and violet.
+  const sm = x => x * x * (3 - 2 * x), RED = [1, 0, 0], VIO = [0.55, 0, 1];
+  for (const l of XL) {
+    const n = l * 1000;
+    const X = 1.056 * g(n, 599.8, 37.9, 31) + 0.362 * g(n, 442, 16, 26.7) - 0.065 * g(n, 501.1, 20.4, 26.2);
+    const Y = 0.821 * g(n, 568.8, 46.9, 40.5) + 0.286 * g(n, 530.9, 16.3, 31.1);
+    const Z = 1.217 * g(n, 437, 11.8, 36) + 0.681 * g(n, 459, 26, 13.8);
+    const c = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z].map(v => Math.max(0, v));
+    const pk = Math.max(...c, 1e-5), r = sm(clamp((n - 690) / 30)), v = sm(clamp((415 - n) / 20));
+    const lin = c.map((x, i) => lerp(lerp(x / pk, RED[i], r), VIO[i], v));
+    LINC.push(lin.map(x => x * 0.22));
+    COL.push(lin.map(x => Math.round(enc(x) * 255)));
+  }
+  // Each element lamp has one beam colour, its flame colour.
+  for (const e of SALTS) { e.ci = COL.length; COL.push(rgb(...e.col)); LINC.push(oklchRgb(...e.col).map(x => x ** 2.2)); }
   for (const c of COL) CORE.push(c.map(v => Math.round(lerp(v, 255, 0.4))));
 }
-const WHITE = NK, WLIN = [1, 1, 1];
+const WHITE = NK;
+// The lamp's unsplit beam: its colour, and the lines it splits into.
+const WSPLIT = Array.from({ length: NK }, (_, k) => [k, 1]);
+let WCI = WHITE, WLIN = LINC[WHITE], SPLIT = WSPLIT, elem = null;
+function setLight(v) {
+  elem = SALTS.find(e => e.id === v) || null;
+  lightBin = elem ? -1 : +v;
+  WCI = elem ? elem.ci : WHITE;
+  WLIN = LINC[WCI];
+  SPLIT = elem ? elem.ks : WSPLIT;
+  geomDirty = true;
+  wake();
+}
 
 /* ---------- the pieces ---------- */
 // Sizes are fractions of S, the short side of the table.
@@ -258,15 +333,23 @@ const SPEC = {
   convex: { a: 0.12, rc: 0.34, th: 0.024 },
   concave: { a: 0.12, rc: 0.34, th: 0.024 },
   sensor: { len: 0.2, th: 0.028 },
+  gram: { len: 0.24, th: 0.028 },
 };
-const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad' };
+const NAMES = { prism: 'prism', lens: 'convex lens', dlens: 'concave lens', mirror: 'flat mirror', convex: 'convex mirror', concave: 'concave mirror', sensor: 'sensor pad', gram: 'spectrogram' };
+// Pads catch light on their front face: the sensor pad and the spectrogram.
+const isPad = p => p.kind === 'sensor' || p.kind === 'gram';
 const BASE_SIDE = 0.3, MAXADD = 10, BEAM = 0.028;
 const curved = p => p.kind === 'convex' || p.kind === 'concave';
 const make = (kind, extra = {}) => ({
   kind, ...SPEC[kind], u: 0.5, v: 0.5, rot: 0, k: 1, x: 0, y: 0, r: 0, g: {}, snap: null, z: 1, z0: 1, zp: 1, base: false, dying: false, ...extra,
 });
 let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, base: true })];
-let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0;
+// The view zooms and pans the table: screen = table * VZ + (VX, VY).
+// S0 is the short side at rest; S follows the zoom.
+let VZ = 1, VX = 0, VY = 0, S0 = 1;
+const ZMAX = 3;
+const wu = x => (x - VX) / (VZ * W), wv = y => (y - VY) / (VZ * H);
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0, pipB = 0;
 
 function corners(p, hw, hh) {
   const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
@@ -293,8 +376,8 @@ function normals(v) {
 // Local -y is the front of mirrors and pads.
 // The knob sits on the front.
 function build(p) {
-  p.x = p.u * W;
-  p.y = p.v * H;
+  p.x = p.u * W * VZ + VX;
+  p.y = p.v * H * VZ + VY;
   const g = p.g, c = Math.cos(p.rot), s = Math.sin(p.rot), Sz = S * Math.max(0.02, p.z) * p.k;
   if (p.kind === 'source') {
     g.hw = (p.w * S) / 2;
@@ -366,7 +449,7 @@ function build(p) {
 const EPS = 1e-4, IMIN = 0.012, MAXD = 48, MAXS = 6000, SK = 11, SG = 10, SHK = 7, MAXH = 4000;
 const STK = new Float64Array(SK * 2048), SEG = new Float64Array(MAXS * SG), GLI = new Float32Array(3000 * 5), EDG = new Float32Array(1500 * 5);
 const SH = new Float64Array(MAXH * SHK), GAP = new Float32Array(MAXH);
-const fin = new Float64Array(NK);
+const fin = new Float64Array(NT);
 let sp = 0, nSeg = 0, nGl = 0, nEd = 0, nSH = 0, nFam = 0, spread = 0, hT = 0, hNX = 0, hNY = 0, hI = -1, hS = 0, eSide = 0;
 // A ray's signature hashes every surface event along its path.
 const mix = (s, c) => (Math.imul(s ^ Math.imul(c + 1, 0x9e3779b1), 0x85ebca6b) ^ (s >>> 15)) >>> 0;
@@ -469,12 +552,14 @@ function nearest(ox, oy, dx, dy) {
     } else polyHit(g.v, g.n, i, ox, oy, dx, dy);
   }
 }
+// Light runs to the table's edge, which a zoom can push off screen.
 function toEdge(ox, oy, dx, dy) {
   let t = Infinity;
-  if (dx > 1e-9) { const u = (W - ox) / dx; if (u < t) { t = u; eSide = 1; } }
-  else if (dx < -1e-9) { const u = -ox / dx; if (u < t) { t = u; eSide = 3; } }
-  if (dy > 1e-9) { const u = (H - oy) / dy; if (u < t) { t = u; eSide = 2; } }
-  else if (dy < -1e-9) { const u = -oy / dy; if (u < t) { t = u; eSide = 0; } }
+  const x0 = VX, y0 = VY, x1 = VX + W * VZ, y1 = VY + H * VZ;
+  if (dx > 1e-9) { const u = (x1 - ox) / dx; if (u < t) { t = u; eSide = 1; } }
+  else if (dx < -1e-9) { const u = (x0 - ox) / dx; if (u < t) { t = u; eSide = 3; } }
+  if (dy > 1e-9) { const u = (y1 - oy) / dy; if (u < t) { t = u; eSide = 2; } }
+  else if (dy < -1e-9) { const u = (y0 - oy) / dy; if (u < t) { t = u; eSide = 0; } }
   return Math.max(0, t);
 }
 function fresnel(n1, n2, ci) {
@@ -526,7 +611,7 @@ function trace() {
     seg(ox, oy, hx, hy, k, I, ins, fam, sig, hI * 8 + hS);
     if (nSeg >= MAXS || d >= MAXD) continue;
     if (p.kind === 'source') { glint(hx, hy, k, I * 0.5, hI); continue; }
-    if (p.kind === 'sensor') {
+    if (isPad(p)) {
       // The front face records where light lands.
       // The other faces absorb light.
       if (hS === 0 && nSH < MAXH) {
@@ -561,12 +646,12 @@ function trace() {
       // White light splits into the spectrum at its first glass surface.
       const R = fresnel(enter ? 1 : NW, enter ? NW : 1, ci), f = nFam++;
       if (I * R > IMIN) push(hx, hy, dx + 2 * ci * nx, dy + 2 * ci * ny, -1, I * R, d + 1, ins, 0, -1, 0);
-      for (let j = 0; j < NK; j++) bend(hx, hy, dx, dy, nx, ny, ci, enter, j, I, d, prim, false, f, 0, code);
+      for (const [j, wt] of SPLIT) bend(hx, hy, dx, dy, nx, ny, ci, enter, j, I * wt, d, prim, false, f, 0, code);
       continue;
     }
     bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, true, fam, sig, code);
   }
-  const a = fin[0], b = fin[NK - 1];
+  const a = fin[SPLIT[0][0]], b = fin[SPLIT[SPLIT.length - 1][0]];
   spread = Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.abs(wrapA(a - b));
 }
 
@@ -586,7 +671,7 @@ function expose() {
   GAP.fill(0, 0, nSH);
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK;
-    if (SH[o + 2] < 0) continue;
+    if (SH[o + 2] < 0 || SH[o + 2] >= NK || pieces[SH[o]].kind !== 'sensor') continue;
     const key = `${SH[o]}:${SH[o + 5]}:${SH[o + 6]}`;
     let g = grp.get(key);
     if (!g) grp.set(key, (g = new Int32Array(NK).fill(-1)));
@@ -605,6 +690,7 @@ function expose() {
   // Slant widens the Gaussian and keeps its energy.
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK, p = pieces[SH[o]], k = SH[o + 2], acc = p.acc, s0 = p.g.s0;
+    if (p.kind !== 'sensor') continue;
     const sd = Math.hypot(s0 / Math.max(0.12, SH[o + 4]), GAP[h] * 0.6), amp = (SH[o + 3] * s0) / sd;
     const w = k < 0 ? WLIN : LINC[k], c = (SH[o + 1] + SPAN) / BINW - 0.5, rad = (3 * sd) / BINW, inv = BINW / sd;
     const lo = Math.max(0, Math.ceil(c - rad)), hi = Math.min(NBIN - 1, Math.floor(c + rad));
@@ -670,7 +756,7 @@ const LDX = -0.6, LDY = -0.8;
 // Stencil tones: flat fills, two values per part.
 const TONE = {
   concave: css(0.44, 0.1, 330), convex: css(0.46, 0.08, 200), face: css(0.92, 0.012, 235),
-  pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128),
+  pad: css(0.3, 0.012, 266), padFace: css(0.15, 0.01, 270), sens: css(0.87, 0.18, 128), gram: css(0.8, 0.15, 305),
   pipBg: css(0.09, 0.006, 270), pipCard: css(0.17, 0.01, 268), pipLine: css(0.25, 0.012, 268),
 };
 
@@ -698,7 +784,7 @@ function buildDust() {
   const [t, tx] = mk(), tw = Math.ceil(w / q), th = Math.ceil(h / q);
   t.width = tw;
   t.height = th;
-  const img = tx.createImageData(tw, th), sc = q / (dp * 0.2 * S);
+  const img = tx.createImageData(tw, th), sc = q / (dp * 0.2 * S0);
   for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
     // Warped noise draws slow wisps of smoke.
     const X = x * sc, Y = y * sc;
@@ -776,8 +862,10 @@ function bleed() {
     for (let n = 0; n < nEd; n++) {
       const o = n * 5;
       if (EDG[o + 2] !== s || EDG[o + 4] < 0.01) continue;
+      // A zoom pushes some table edges off screen; their light stays unseen.
+      if (EDG[o] < -1 || EDG[o] > W + 1 || EDG[o + 1] < -1 || EDG[o + 1] > H + 1) continue;
       st.on = true;
-      const k = EDG[o + 3], col = COL[k < 0 ? WHITE : k], w = (k < 0 ? 0.45 : 0.2) * EDG[o + 4] / 255;
+      const k = EDG[o + 3], col = COL[k < 0 ? WCI : k], w = (k < 0 ? 0.45 : 0.2) * EDG[o + 4] / 255;
       const c = (s & 1 ? EDG[o + 1] : EDG[o]) / bw - 0.5;
       // Wider blurs lose some energy, so the bleed stays faint.
       for (let j = 0; j < 3; j++) {
@@ -873,7 +961,7 @@ function pack() {
   for (let i = 0; i < nSeg; i++) {
     const o = i * SG, a = SEG[o + 5] ** 0.8;
     if (a < 0.04) continue;
-    const k = SEG[o + 4], ci = k < 0 ? WHITE : k, col = COL[ci], core = CORE[ci], q = nInst++ * 12;
+    const k = SEG[o + 4], ci = k < 0 ? WCI : k, col = COL[ci], core = CORE[ci], q = nInst++ * 12;
     INST[q] = SEG[o]; INST[q + 1] = SEG[o + 1]; INST[q + 2] = SEG[o + 2]; INST[q + 3] = SEG[o + 3];
     INST[q + 4] = col[0] / 255; INST[q + 5] = col[1] / 255; INST[q + 6] = col[2] / 255; INST[q + 7] = a;
     INST[q + 8] = core[0] / 255; INST[q + 9] = core[1] / 255; INST[q + 10] = core[2] / 255;
@@ -883,7 +971,7 @@ function pack() {
   groups.clear();
   for (let i = 0; i < nSeg; i++) {
     const o = i * SG, k = SEG[o + 4];
-    if (k < 0) continue;
+    if (k < 0 || k >= NK) continue;
     const key = SEG[o + 7] * 4294967296 + SEG[o + 8];
     let g = groups.get(key);
     if (!g) groups.set(key, (g = new Int32Array(NK).fill(-1)));
@@ -1100,6 +1188,12 @@ function sizeGL() {
   G.dust.generateMipmaps = false;
   lightDirty = true;
 }
+// Async compile keeps the shader builds off the main thread.
+async function warmGL() {
+  const jobs = [G.r.compileAsync(G.beams, G.cam)];
+  for (const m of [G.down, G.up, G.comp]) { G.full.material = m; jobs.push(G.r.compileAsync(G.pass, G.cam)); }
+  try { await Promise.all(jobs); } catch (err) { /* first render compiles instead */ }
+}
 function pass(mat, tg) {
   G.full.material = mat;
   G.r.setRenderTarget(tg);
@@ -1192,7 +1286,7 @@ function glassBody(p, i) {
     const a = GLI[o + 3] ** 0.8, k = GLI[o + 2];
     if (a < 0.2) continue;
     c.globalAlpha = a * (k < 0 ? 0.16 : 0.022);
-    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - big, GLI[o + 1] - big, big * 2, big * 2);
+    c.drawImage(SPR[k < 0 ? WCI : k], GLI[o] - big, GLI[o + 1] - big, big * 2, big * 2);
   }
   c.restore();
 }
@@ -1240,7 +1334,7 @@ function padBody(p) {
   c.fill(slab, 'evenodd');
   c.fillStyle = TONE.padFace;
   c.fillRect(-L + cap, -hh, 2 * (L - cap), hh * 0.9);
-  c.fillStyle = TONE.sens;
+  c.fillStyle = p.kind === 'gram' ? TONE.gram : TONE.sens;
   c.fillRect(-L, -hh, cap, 2 * hh);
   c.fillRect(L - cap, -hh, cap, 2 * hh);
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -1267,7 +1361,7 @@ function wireBody(p) {
   c.globalAlpha = 1;
   c.lineWidth = 1.25;
   c.lineJoin = 'miter';
-  c.strokeStyle = p.kind === 'sensor' ? TONE.sens : WIRE;
+  c.strokeStyle = p.kind === 'sensor' ? TONE.sens : p.kind === 'gram' ? TONE.gram : WIRE;
   outline(c, p);
   c.stroke();
   // Lenses and curved mirrors show their axis as a dashed line.
@@ -1300,7 +1394,7 @@ function drawBody(p, i) {
   if (wire) return wireBody(p);
   if (p.kind === 'prism' || p.kind === 'lens' || p.kind === 'dlens') glassBody(p, i);
   else if (p.kind === 'mirror') mirrorBody(p);
-  else if (p.kind === 'sensor') padBody(p);
+  else if (isPad(p)) padBody(p);
   else arcBody(p);
 }
 // Two bright faces and a travelling glint make the chrome read.
@@ -1320,7 +1414,8 @@ function chrome(p, half, path) {
 }
 function rims(p) {
   const c = ctx, g = p.g;
-  if (wire && p.kind !== 'sensor') return;
+  if (wire && !isPad(p)) return;
+  if (p.kind === 'gram') return;
   c.globalCompositeOperation = 'lighter';
   c.globalAlpha = 1;
   c.lineCap = 'round';
@@ -1461,21 +1556,67 @@ function drawSource(p) {
   for (const [r, a] of [[0.045, 0.9], [0.13, 0.22]]) {
     const R = r * S;
     c.globalAlpha = a;
-    c.drawImage(SPR[WHITE], g.ex - R, g.ey - R, R * 2, R * 2);
+    c.drawImage(SPR[WCI], g.ex - R, g.ey - R, R * 2, R * 2);
   }
   c.globalAlpha = 1;
 }
 // Pictures stack from the top left corner, under the shell's top row.
 const pipR = () => clamp(0.12 * S, 54, 92);
+// The picture rides behind its pad, where no light lands.
+// A tap on the picture enlarges it.
+// It sits outside the selection ring, on the spot that covers the least light.
+// The back of the pad wins a tie.
+const PIP_SIDES = [-Math.PI / 2, -Math.PI / 4, (-3 * Math.PI) / 4, 0, Math.PI, Math.PI / 4, (3 * Math.PI) / 4, Math.PI / 2];
+let pipStamp = 0;
+function litNear(x, y, r) {
+  let sum = 0;
+  for (let i = 0; i < nSeg; i++) {
+    const o = i * SG, I = SEG[o + 5];
+    if (I < 0.05) continue;
+    const ax = SEG[o], ay = SEG[o + 1], dx = SEG[o + 2] - ax, dy = SEG[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+    const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll);
+    if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < r) sum += I;
+  }
+  return sum;
+}
 function pipAt(p) {
-  const rp = pipR(), gap = 2 * rp + 30, top = Math.max(24, safeT + 14);
-  const rows = Math.max(1, Math.floor((H - safeB - top) / gap));
-  const n = pieces.filter(q => q.kind === 'sensor' && q.pc).indexOf(p), k = Math.max(0, n);
-  return [rp + 24 + Math.floor(k / rows) * gap, rp + top + (k % rows) * gap, rp];
+  if (p.pipAt && p.pipStamp === pipStamp) return p.pipAt;
+  const rp0 = pipR() * clamp(p.k, 0.75, 1.4), rp = p.big ? Math.max(rp0, Math.min(rp0 * 2.2, 0.3 * S)) : rp0, d0 = ringR(p) + rp + 8, m = rp + 10;
+  const top = Math.max(m, safeT + m), bot = Math.max(top, H - pipB - m);
+  let best = null, cost = Infinity;
+  for (const f of [1, 1.6]) {
+    PIP_SIDES.forEach((a, j) => {
+      const t = p.rot + a, d = d0 * f;
+      const x = clamp(p.x + Math.cos(t) * d, m, Math.max(m, W - m)), y = clamp(p.y + Math.sin(t) * d, top, bot);
+      // A spot over the pad's ring costs most, then light it hides.
+      const c = (Math.hypot(x - p.x, y - p.y) < d0 - 2 ? 100 : 0) + litNear(x, y, rp + 4) * 10 + j * 0.01 + (f - 1) * 0.5;
+      if (c < cost) { cost = c; best = [x, y, rp]; }
+    });
+  }
+  p.pipAt = best;
+  p.pipStamp = pipStamp;
+  return best;
+}
+// The readout names the band of light that lands on the pad.
+function pipBand(p) {
+  const i = pieces.indexOf(p), w = new Float32Array(NT);
+  let white = 0, top = 0;
+  for (let h = 0; h < nSH; h++) {
+    const o = h * SHK;
+    if (SH[o] !== i) continue;
+    if (SH[o + 2] < 0) white += SH[o + 3]; else w[SH[o + 2]] += SH[o + 3];
+  }
+  for (let k = 0; k < NT; k++) top = Math.max(top, w[k]);
+  if (white > top * 3 && white > 0.02) return elem ? elem.label.toUpperCase() : 'WHITE';
+  if (top < 0.01) return '';
+  let lo = Infinity, hi = 0;
+  for (let k = 0; k < NT; k++) if (w[k] > top * 0.15) { lo = Math.min(lo, LAM[k]); hi = Math.max(hi, LAM[k]); }
+  const a = Math.round(lo * 1000), b = Math.round(hi * 1000), tag = elem ? `${elem.sym} ` : '';
+  return a === b ? `${tag}${a} NM` : `${tag}${a}–${b} NM`;
 }
 function drawPip(p) {
   if (!p.pc) return;
-  const c = over, g = p.g, [x, y, rp] = pipAt(p);
+  const c = over, g = p.g, [x, y, rp] = pipAt(p), ink = p.kind === 'gram' ? TONE.gram : TONE.sens;
   if (rp < 4) return;
   c.setTransform(pr, 0, 0, pr, 0, 0);
   c.globalCompositeOperation = 'source-over';
@@ -1483,7 +1624,7 @@ function drawPip(p) {
   // A thin lime lead joins the pad to its picture.
   const dx = x - p.x, dy = y - p.y, d = Math.hypot(dx, dy);
   if (d > rp + g.th) {
-    c.strokeStyle = TONE.sens;
+    c.strokeStyle = ink;
     c.globalAlpha = 0.45;
     c.lineWidth = 1.25;
     c.lineCap = 'butt';
@@ -1509,24 +1650,30 @@ function drawPip(p) {
   c.strokeStyle = TONE.pipLine;
   c.lineWidth = 1;
   c.beginPath();
-  const gap = rp * 0.1;
-  c.moveTo(cx, y); c.lineTo(x - gap, y); c.moveTo(x + gap, y); c.lineTo(cx + 2 * k, y);
-  c.moveTo(x, cy); c.lineTo(x, y - gap); c.moveTo(x, y + gap); c.lineTo(x, cy + 1.44 * k);
-  for (let j = -4; j <= 4; j++) { if (!j) continue; const tx = x + (j / 5) * k; c.moveTo(tx, y - 3); c.lineTo(tx, y + 3); }
+  // The spectrogram draws its own scale instead of the reticle.
+  const gap = p.kind === 'gram' ? Infinity : rp * 0.1;
+  if (gap < Infinity) {
+    c.moveTo(cx, y); c.lineTo(x - gap, y); c.moveTo(x + gap, y); c.lineTo(cx + 2 * k, y);
+    c.moveTo(x, cy); c.lineTo(x, y - gap); c.moveTo(x, y + gap); c.lineTo(x, cy + 1.44 * k);
+    for (let j = -4; j <= 4; j++) { if (!j) continue; const tx = x + (j / 5) * k; c.moveTo(tx, y - 3); c.lineTo(tx, y + 3); }
+  }
   c.stroke();
-  // Exposure adds light.
-  // A wider copy is the scatter off the card.
   c.globalCompositeOperation = 'lighter';
-  c.imageSmoothingEnabled = true;
-  c.imageSmoothingQuality = 'high';
-  c.drawImage(p.pc, x - rp, y - rp, rp * 2, rp * 2);
-  c.globalAlpha = 0.22;
-  c.drawImage(p.pc, x - rp * 1.25, y - rp * 1.25, rp * 2.5, rp * 2.5);
+  if (p.kind === 'gram') gramLines(p, cx, cy, 2 * k, 1.44 * k);
+  else {
+    // Exposure adds light.
+    // A wider copy is the scatter off the card.
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(p.pc, x - rp, y - rp, rp * 2, rp * 2);
+    c.globalAlpha = 0.22;
+    c.drawImage(p.pc, x - rp * 1.25, y - rp * 1.25, rp * 2.5, rp * 2.5);
+  }
   c.restore();
-  // The frame is a lime band with four cuts.
+  // The frame is a band with four cuts, in the pad's ink.
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
-  c.strokeStyle = TONE.sens;
+  c.strokeStyle = ink;
   c.lineWidth = 4;
   const cut = 6 / rp;
   for (let j = 0; j < 4; j++) {
@@ -1535,9 +1682,72 @@ function drawPip(p) {
     c.arc(x, y, rp + 2, a + cut, a + Math.PI / 2 - cut);
     c.stroke();
   }
+  const band = pipBand(p);
+  if (!band) return;
+  c.font = `600 ${p.big ? 12 : 10}px "Iosevka Term Slab", ui-monospace, monospace`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillStyle = ink;
+  c.fillText(band, x, y + rp * 0.82);
+}
+// The spectrogram: one sharp line per wavelength that lands, violet left.
+// Ticks stand every 50 nm.
+function gramLines(p, x0, y0, w, h) {
+  const c = over, i = pieces.indexOf(p), bin = new Float32Array(NT);
+  for (let n = 0; n < nSH; n++) {
+    const o = n * SHK;
+    if (SH[o] !== i) continue;
+    if (SH[o + 2] < 0) for (const [k, wt] of SPLIT) bin[k] += SH[o + 3] * wt; else bin[SH[o + 2]] += SH[o + 3];
+  }
+  // The scale widens for lines past the visible bins.
+  let l0 = LAM[0], l1 = LAM[NK - 1];
+  if (elem) for (const [k] of elem.ks) { l0 = Math.min(l0, LAM[k] - 0.01); l1 = Math.max(l1, LAM[k] + 0.01); }
+  const px = l => x0 + w * 0.06 + (w * 0.88 * (l - l0)) / (l1 - l0);
+  const top = y0 + h * 0.14, bot = y0 + h * 0.72, lw = Math.max(1.2, (w * 0.88) / NK * 0.42);
+  c.lineCap = 'butt';
+  for (let k = 0; k < NT; k++) {
+    const v = 1 - Math.exp(-bin[k] * 5);
+    if (v < 0.01 || k === NK) continue;
+    const [r, gg, b] = COL[k], xk = px(LAM[k]), lk = k > NK ? Math.max(1.2, lw * 0.5) : lw;
+    c.globalAlpha = v;
+    c.strokeStyle = `rgb(${r},${gg},${b})`;
+    c.lineWidth = lk;
+    c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
+    c.globalAlpha = v * 0.35;
+    c.lineWidth = lk * 3.2;
+    c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
+  }
+  c.globalAlpha = 1;
+  c.globalCompositeOperation = 'source-over';
+  c.strokeStyle = TONE.pipLine;
+  c.lineWidth = 1;
+  c.beginPath();
+  for (let l = 0.45; l < l1; l += 0.05) { const xk = px(l); c.moveTo(xk, bot + 2); c.lineTo(xk, bot + 6); }
+  c.moveTo(px(l0), bot + 2); c.lineTo(px(l1), bot + 2);
+  c.stroke();
+}
+// The picture under the pointer, if any.
+function pipHit(x, y) {
+  for (let i = pieces.length - 1; i > 0; i--) {
+    const q = pieces[i];
+    if (!isPad(q) || !q.pc || q.dying) continue;
+    const [px, py, rp] = pipAt(q);
+    if (Math.hypot(x - px, y - py) < rp + 4) return q;
+  }
+  return null;
 }
 const ringR = p => p.r + Math.max(12, 0.045 * S);
 const knobA = p => (p.kind === 'source' ? p.rot + Math.PI : p.rot - Math.PI / 2);
+// The size grip rides the ring opposite the remove button.
+function gripAt(p) {
+  if (p.kind === 'source') return null;
+  const R = ringR(p), ka = knobA(p), from = p.slot ?? 0;
+  for (const j of [3 - from, ...[0, 1, 2, 3].filter(j => j !== from && j !== 3 - from)]) {
+    const a = SLOTS[j], x = p.x + Math.cos(a) * R, y = p.y + Math.sin(a) * R;
+    if (Math.abs(wrapA(a - ka)) > 0.5 && x > 12 && x < W - 12 && y > 12 && y < H - 12) return [x, y, a];
+  }
+  return null;
+}
 function ring(p) {
   const c = over, R = ringR(p), A = ringA;
   c.setTransform(pr, 0, 0, pr, 0, 0);
@@ -1567,6 +1777,22 @@ function ring(p) {
   c.beginPath();
   c.arc(kx, ky, coarse ? 11 : 8.5, 0, TAU);
   c.stroke();
+  // The grip is a square with an outward arrow on each side.
+  const gp = gripAt(p);
+  if (!gp) return;
+  const [gx, gy, ga] = gp, h = coarse ? 6.5 : 5;
+  c.setTransform(pr * Math.cos(ga), pr * Math.sin(ga), -pr * Math.sin(ga), pr * Math.cos(ga), pr * gx, pr * gy);
+  c.fillStyle = FOC(A);
+  c.fillRect(-h, -h, 2 * h, 2 * h);
+  c.strokeStyle = FOC(0.6 * A);
+  c.lineWidth = 1.25;
+  c.beginPath();
+  for (const s of [1, -1]) {
+    const t = s * (h + 4), u = s * (h + 8);
+    c.moveTo(t, -3); c.lineTo(u, 0); c.lineTo(t, 3);
+  }
+  c.stroke();
+  c.setTransform(pr, 0, 0, pr, 0, 0);
 }
 // Edge strips and small glints add onto the table under the light.
 function edgeLight() {
@@ -1587,14 +1813,14 @@ function edgeLight() {
     if (a < 0.2) continue;
     const r = r0 * (0.5 + 0.5 * a);
     c.globalAlpha = a * (k < 0 ? 0.45 : 0.06);
-    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - r, GLI[o + 1] - r, r * 2, r * 2);
+    c.drawImage(SPR[k < 0 ? WCI : k], GLI[o] - r, GLI[o + 1] - r, r * 2, r * 2);
   }
   c.globalAlpha = 1;
 }
 // Each shown picture gets one glass ring.
 const pipsEl = panel.querySelector('.pips'), glass = [];
 function placeGlass() {
-  const shown = pieces.filter(q => q.kind === 'sensor' && q.pc);
+  const shown = pieces.filter(q => isPad(q) && q.pc);
   while (glass.length < shown.length) glass.push(pipsEl.appendChild(document.createElement('i')));
   glass.forEach((el, k) => {
     const q = shown[k];
@@ -1624,12 +1850,13 @@ function dotGrid(c) {
 }
 let geomDirty = true, cost = 0, slowN = 0;
 function render() {
+  pipStamp++;
   const t0 = performance.now();
   if (geomDirty) {
     pieces.forEach(build);
     trace();
     expose();
-    for (const p of pieces) if (p.kind === 'sensor') develop(p);
+    for (const p of pieces) if (p.kind === 'sensor') develop(p); else if (p.kind === 'gram') p.pc ||= true;
     pack();
     bleed();
     geomDirty = false;
@@ -1651,7 +1878,7 @@ function render() {
   over.setTransform(1, 0, 0, 1, 0, 0);
   over.clearRect(0, 0, cw, ch);
   drawSource(pieces[0]);
-  for (let i = 1; i < n; i++) if (pieces[i].kind === 'sensor') drawPip(pieces[i]);
+  for (let i = 1; i < n; i++) if (isPad(pieces[i])) drawPip(pieces[i]);
   placeGlass();
   if (sel >= 0 && ringA > 0) ring(pieces[sel]);
   placeDrop();
@@ -1686,12 +1913,12 @@ function placeDrop() {
 
 /* ---------- sound: Tone.js voices on the shared audio kit ---------- */
 const LEAD = 0.004;
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace', '1', '2', '3', '4', '5', '6', '7']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace']);
 const kit = audioKit({ keys: GESTURE_KEYS });
 let V = null, T = null, toneLoad = null, tickNext = 0, toneT = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Once the table settles, the context sleeps until the next gesture.
-const rest = () => kit.rest(() => !raf && !ptrs.size && !spec.on);
+const rest = () => kit.rest(() => !raf && !ptrs.size);
 // The first live call starts the load; voices answer once it lands.
 function voices() {
   if (!kit.live()) return null;
@@ -1770,12 +1997,12 @@ function tick(x, pitch = 1) {
 // A tall stage turns the scene, so the fan runs down the long side.
 const PHI_TALL = 1.2;
 function composition() {
-  const tall = H > W * 1.15, phi = tall ? PHI_TALL : 0, R = (BASE_SIDE * S) / Math.sqrt(3);
+  const tall = H > W * 1.15, phi = tall ? PHI_TALL : 0, R = (BASE_SIDE * S0) / Math.sqrt(3);
   const cx = W * 0.5, cy = (safeT + H - safeB) * 0.5;
   const dir = Math.PI / 6 - Math.asin(NW * 0.5), dist = tall ? 0.3 * (H - safeT - safeB) : 0.36 * W;
   const mx = (R / 2) * Math.cos((7 * Math.PI) / 6), my = (R / 2) * Math.sin((7 * Math.PI) / 6);
   const sx = mx - Math.cos(dir) * dist, sy = my - Math.sin(dir) * dist, cp = Math.cos(phi), sn = Math.sin(phi);
-  const m = (SPEC.source.w * S) / 2 + 10;
+  const m = (SPEC.source.w * S0) / 2 + 10;
   const X = clamp(cx + sx * cp - sy * sn, m, W - m), Y = clamp(cy + sx * sn + sy * cp, m, H - m);
   return [[X / W, Y / H, dir + phi], [cx / W, cy / H, phi]];
 }
@@ -1791,9 +2018,8 @@ function applyLayout() {
 }
 function sync() {
   const n = liveAdded();
-  // Clear also leaves the spectroscope.
-  ui.action('clear').disabled = !n && !spec.on;
-  ui.choice.disabled = n >= MAXADD;
+  ui.action('clear').disabled = !n;
+  ui.action('add').disabled = n >= MAXADD;
 }
 const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
 // A new piece drops into the light, turned to meet it.
@@ -1810,12 +2036,12 @@ function spot(kind) {
   for (let i = SEG[9] < 1000 ? 1 : 0; i < nSeg; i++) {
     const o = i * SG, I = SEG[o + 5], k = SEG[o + 4], len = Math.hypot(SEG[o + 2] - SEG[o], SEG[o + 3] - SEG[o + 1]);
     if (I < 0.12 || len < 2.2 * rr) continue;
-    const mid = k < 0 ? 1.3 : 1 - Math.abs(k - (NK - 1) / 2) / NK;
+    const mid = k < 0 ? 1.3 : k > NK ? 1 : 1 - Math.abs(k - (NK - 1) / 2) / NK;
     cands.push([len * I * mid * (SEG[o + 9] >= 1000 ? 2 : 1), i]);
   }
   cands.sort((a, b) => b[0] - a[0]);
   // Sensors sit far down the light, so later pieces fit in front.
-  const ts = kind === 'sensor' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
+  const ts = kind === 'sensor' || kind === 'gram' ? [0.72, 0.62, 0.82, 0.5] : [0.45, 0.35, 0.58, 0.28, 0.7];
   // A spot shades a piece when that piece sits further along the same light.
   // A growing piece counts at its full size, since the trace still sees it small.
   const shades = (x, y, ux, uy, len) => pieces.some(q => {
@@ -1823,8 +2049,19 @@ function spot(kind) {
     const rx = q.x - x, ry = q.y - y, along = rx * ux + ry * uy, qr = q.r / Math.max(0.02, q.z);
     return along > 0 && along < len + qr && Math.abs(rx * uy - ry * ux) < qr + rr;
   });
-  // The first pass keeps every lit piece lit; the second allows shade.
-  for (const strict of [true, false]) {
+  // A spot off the light must not cut a beam that feeds a piece.
+  // The lamp's own beam always counts.
+  const cuts = (x, y) => {
+    for (let i = 0; i < nSeg; i++) {
+      const o = i * SG;
+      if (i && (SEG[o + 9] >= 1000 || SEG[o + 5] < 0.05)) continue;
+      const ax = SEG[o], ay = SEG[o + 1], dx = SEG[o + 2] - ax, dy = SEG[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+      const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll);
+      if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < rr + 0.02 * S) return true;
+    }
+    return false;
+  };
+  const inLight = strict => {
     for (const [, i] of cands.slice(0, 40)) {
       const o = i * SG, dx = SEG[o + 2] - SEG[o], dy = SEG[o + 3] - SEG[o + 1], len = Math.hypot(dx, dy);
       for (const t of ts) {
@@ -1833,23 +2070,28 @@ function spot(kind) {
         return [x, y, aim(kind, Math.atan2(dy, dx), x, y, cx, cy)];
       }
     }
-  }
+    return null;
+  };
+  // Order: lit and shading nothing, then dark and cutting nothing, then any.
+  const lit = inLight(true);
+  if (lit) return lit;
   const R = rng((Math.random() * 1e9) | 0);
   // A full table takes the roomiest of the tries, never the centre.
   let best = [cx, cy, 0], room = -Infinity;
-  for (let n = 0; n < 60; n++) {
+  for (let n = 0; n < 80; n++) {
     const x = m + R() * (W - 2 * m), y = safeT + m + R() * Math.max(1, H - safeT - safeB - 2 * m), a = R() * TAU;
-    if (free(x, y)) return [x, y, a];
-    const g = clear(x, y);
+    const cut = cuts(x, y);
+    if (free(x, y) && !cut) return [x, y, a];
+    const g = clear(x, y) - (cut ? S : 0);
     if (g > room) { room = g; best = [x, y, a]; }
   }
-  return best;
+  return inLight(false) ?? best;
 }
 // Each kind turns so its output heads toward the open table.
 function aim(kind, th, x, y, cx, cy) {
   const tx = cx - x, ty = cy - y, toward = a => Math.cos(a) * tx + Math.sin(a) * ty;
   const pickA = (a, b, outA, outB) => (toward(outA) >= toward(outB) ? a : b);
-  if (kind === 'sensor') return th - Math.PI / 2;
+  if (kind === 'sensor' || kind === 'gram') return th - Math.PI / 2;
   if (kind === 'lens' || kind === 'dlens') return th;
   if (kind === 'mirror') return pickA(th + Math.PI / 4, th - Math.PI / 4, th + Math.PI / 2, th - Math.PI / 2);
   if (kind === 'prism') return pickA(th + 0.4, th + Math.PI - 0.4, th + 0.8, th - 0.8);
@@ -1860,8 +2102,8 @@ function addPiece(kind) {
   if (!ready || liveAdded() >= MAXADD) return;
   measureBar();
   const p = make(kind), [x, y, rot] = spot(kind);
-  p.u = x / W;
-  p.v = y / H;
+  p.u = wu(x);
+  p.v = wv(y);
   p.rot = rot;
   p.z = reduce ? 1 : 0.02;
   p.zp = reduce ? 1 : 0;
@@ -1875,6 +2117,79 @@ function addPiece(kind) {
   sync();
   wake();
 }
+/* ---------- carry: drag a piece out of the tray ---------- */
+// A press on a tray cell becomes a carry after 10 px.
+// The piece turns to meet the light it sits in, from a snapshot.
+let carry = null, carryEnd = 0;
+function carryAim(kind, x, y) {
+  const L = carry.seg;
+  let best = Infinity, th = pieces[0].rot;
+  for (let o = 0; o < L.length; o += SG) {
+    if (L[o + 5] < 0.12) continue;
+    const ax = L[o], ay = L[o + 1], dx = L[o + 2] - ax, dy = L[o + 3] - ay, ll = dx * dx + dy * dy || 1;
+    const t = clamp(((x - ax) * dx + (y - ay) * dy) / ll), d = Math.hypot(x - ax - dx * t, y - ay - dy * t);
+    if (d < best) { best = d; th = Math.atan2(dy, dx); }
+  }
+  return aim(kind, th, x, y, W / 2, (safeT + H - safeB) / 2);
+}
+function carryStart(e) {
+  const kind = carry.kind;
+  if (!ready || liveAdded() >= MAXADD) { carry = null; return; }
+  measureBar();
+  carry.seg = SEG.slice(0, nSeg * SG);
+  const [x, y] = at(e), p = make(kind);
+  p.u = wu(x);
+  p.v = wv(y);
+  p.rot = carryAim(kind, x, y);
+  p.z = reduce ? 1 : 0.02;
+  p.zp = reduce ? 1 : 0;
+  build(p);
+  pieces.push(p);
+  carry.p = p;
+  select(pieces.length - 1);
+  document.documentElement.dataset.carry = '';
+  geomDirty = true;
+  moveX = x;
+  tick(x, 0.55);
+  sync();
+  wake();
+}
+function carryEndAt(e, drop) {
+  const c = carry;
+  carry = null;
+  if (!c?.p) return;
+  carryEnd = performance.now();
+  delete document.documentElement.dataset.carry;
+  palette.close();
+  const r = panel.getBoundingClientRect(), inside = drop && e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom;
+  // A drop off the table takes the piece away again.
+  if (!inside) remove(pieces.indexOf(c.p));
+  panel.focus({ preventScroll: true });
+}
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest?.('.palette [data-kind]');
+  if (!b || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  carry = { kind: b.dataset.kind, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
+});
+addEventListener('pointermove', e => {
+  if (!carry || e.pointerId !== carry.id) return;
+  if (!carry.p) {
+    if (Math.hypot(e.clientX - carry.x0, e.clientY - carry.y0) < 10) return;
+    carryStart(e);
+    if (!carry) return;
+  }
+  e.preventDefault();
+  const [x, y] = at(e), p = carry.p;
+  moveTo(p, x, y);
+  const rot = carryAim(p.kind, p.x, p.y);
+  if (rot !== p.rot) { p.rot = rot; p.snap = null; changed(p, 0); }
+});
+addEventListener('pointerup', e => { if (carry && e.pointerId === carry.id) { if (carry.p) carryEndAt(e, true); else carry = null; } });
+addEventListener('pointercancel', e => { if (carry && e.pointerId === carry.id) carryEndAt(e, false); });
+// The release after a carry is not a tap on the tray.
+document.addEventListener('click', e => {
+  if (performance.now() - carryEnd < 400 && e.target.closest?.('.palette')) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 function kill(p) {
   if (p.dying || p.kind === 'source') return;
   p.dying = true;
@@ -1916,7 +2231,6 @@ function sweep() {
   sync();
 }
 function clearAll() {
-  if (spec.on) { closeSpectro(); return; }
   if (!ready || !liveAdded()) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });
@@ -1943,20 +2257,22 @@ function setRot(p, raw) {
   turning();
   changed(p, d);
 }
-// Pieces scale between half and double size; the lamp keeps its size.
+// Pieces scale from 0.4 to 3 times; the lamp keeps its size.
+const KMIN = 0.4, KMAX = 3;
 function setSize(p, k) {
   if (p.kind === 'source') return;
-  const nk = clamp(k, 0.5, 2.2), d = Math.abs(nk - p.k) * 0.2;
+  const nk = clamp(k, KMIN, KMAX), d = Math.abs(nk - p.k) * 0.2;
   if (!d) return;
   p.k = nk;
   changed(p, d);
 }
 function moveTo(p, x, y) {
-  const m = 0.03 * S, nx = clamp(x, m, W - m), ny = clamp(y, m, H - m), d = Math.hypot(nx - p.x, ny - p.y) / S;
+  // Pieces stay on the table, which runs past the screen when zoomed.
+  const m = 0.03 * S, nx = clamp(x, VX + m, VX + W * VZ - m), ny = clamp(y, VY + m, VY + H * VZ - m), d = Math.hypot(nx - p.x, ny - p.y) / S;
   p.x = nx;
   p.y = ny;
-  p.u = nx / W;
-  p.v = ny / H;
+  p.u = wu(nx);
+  p.v = wv(ny);
   changed(p, d);
 }
 let sel = -1, ringA = 0, turnA = 0, turnUntil = 0, tween = null, coarse = matchMedia('(pointer: coarse)').matches;
@@ -1968,8 +2284,41 @@ function select(i) {
   turnA = 0;
   wake();
 }
+/* ---------- view: zoom and pan ---------- */
+// The view never shows past the table's edge.
+let viewTween = null, zoomChip = null;
+function setView(z, x, y, quiet) {
+  VZ = clamp(z, 1, ZMAX);
+  VX = clamp(x, W - W * VZ, 0);
+  VY = clamp(y, H - H * VZ, 0);
+  S = S0 * VZ;
+  geomDirty = true;
+  if (zoomChip) {
+    zoomChip.hidden = VZ < 1.01;
+    zoomChip.firstChild.textContent = `${VZ.toFixed(1)}×`;
+    zoomChip.style.top = `${Math.round(safeT + 8)}px`;
+  }
+  if (!quiet) wake();
+}
+// A zoom keeps the table point under (sx, sy) in place.
+function zoomAt(z, sx, sy) {
+  const nz = clamp(z, 1, ZMAX), wx = (sx - VX) / VZ, wy = (sy - VY) / VZ;
+  viewTween = null;
+  setView(nz, sx - wx * nz, sy - wy * nz);
+}
+function resetView() {
+  if (VZ === 1 && !VX && !VY) return;
+  viewTween = { t: 0, dur: reduce ? 0.01 : 0.35, from: [VZ, VX, VY] };
+  wake();
+}
+function stepView(dt) {
+  viewTween.t = Math.min(1, viewTween.t + dt / viewTween.dur);
+  const e = 1 - (1 - viewTween.t) ** 3, [z, x, y] = viewTween.from;
+  setView(lerp(z, 1, e), lerp(x, 0, e), lerp(y, 0, e), true);
+  if (viewTween.t >= 1) viewTween = null;
+}
 function reset() {
-  closeSpectro();
+  resetView();
   if (!ready || (pristine() && !tween)) return;
   select(-1);
   pieces.forEach(p => { if (!p.base) kill(p); });
@@ -2030,6 +2379,7 @@ function frame(ms) {
   last = ms;
   let busy = false;
   if (tween) { stepTween(dt); busy = true; }
+  if (viewTween) { stepView(dt); busy = true; }
   if (stepPop(dt)) busy = true;
   if (sel >= 0 && ringA < 1) { ringA = reduce ? 1 : Math.min(1, ringA + dt / 0.18); busy = true; }
   const want = performance.now() < turnUntil ? 1 : 0;
@@ -2060,7 +2410,7 @@ function inside(p, x, y, pad) {
     if (d < Math.min(g.R, g.Rb) - e || d > Math.max(g.R, g.Rb) + e) return false;
     return ((x - g.cx) * g.axx + (y - g.cy) * g.axy) / d >= Math.cos(g.al + e / g.R);
   }
-  const n = g.n, v = g.v, extra = p.kind === 'mirror' || p.kind === 'sensor' ? Math.max(0, 9 - g.th / 2) : 0;
+  const n = g.n, v = g.v, extra = p.kind === 'mirror' || isPad(p) ? Math.max(0, 9 - g.th / 2) : 0;
   for (let e = 0; e < v.length / 2; e++) if ((x - v[2 * e]) * n[2 * e] + (y - v[2 * e + 1]) * n[2 * e + 1] > pad + extra) return false;
   return true;
 }
@@ -2073,26 +2423,51 @@ function pick(x, y, pad) {
 }
 const onRing = (p, x, y, band) => Math.abs(Math.hypot(x - p.x, y - p.y) - ringR(p)) < band;
 const ptrs = new Map();
-let drag = null, twist = null, tapDown = null;
+let drag = null, twist = null, tapDown = null, pan = null, lastTap = null;
 function startDrag(i, x, y, id, turn, shift) {
   const p = pieces[i];
   drag = { i, id, turn, shift, ox: p.x - x, oy: p.y - y, raw: p.rot, aPrev: Math.atan2(y - p.y, x - p.x) };
   if (turn) turning();
   panel.style.cursor = 'grabbing';
 }
+// The grip scales the piece by the pointer's distance from its centre.
+function startSize(i, x, y, id) {
+  const p = pieces[i];
+  drag = { i, id, size: true, k0: p.k, d0: Math.max(4, Math.hypot(x - p.x, y - p.y)) };
+  panel.style.cursor = 'nwse-resize';
+}
+// Two fingers on a piece turn and size it; on bare table they zoom and pan.
+let pinch = null;
 function startTwist() {
   const [a, b] = [...ptrs.values()];
-  let i = drag ? drag.i : sel;
+  let i = drag && !drag.size ? drag.i : pick(a.x, a.y, 18);
   if (i < 0) i = pick(b.x, b.y, 18);
   drag = null;
-  if (i < 0) return;
+  pan = null;
+  if (i <= 0) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    pinch = { d0: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), z0: VZ, wx: (mx - VX) / VZ, wy: (my - VY) / VZ };
+    viewTween = null;
+    return;
+  }
   select(i);
   const p = pieces[i];
   twist = { i, raw: p.rot, aPrev: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: p.x, py: p.y, d0: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), k0: p.k };
   turning();
 }
 panel.addEventListener('pointerdown', e => {
-  if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!ready) return;
+  // A right or middle drag pans a zoomed view from anywhere.
+  if (e.pointerType === 'mouse' && e.button !== 0) {
+    if ((e.button === 1 || e.button === 2) && VZ > 1.01 && !ptrs.size) {
+      e.preventDefault();
+      try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+      const [x, y] = at(e);
+      ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
+      pan = { id: e.pointerId, x0: x, y0: y, vx: VX, vy: VY, on: false };
+    }
+    return;
+  }
   try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   const [x, y] = at(e);
   ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
@@ -2100,9 +2475,18 @@ panel.addEventListener('pointerdown', e => {
   if (ptrs.size === 2) { tapDown = null; startTwist(); return; }
   if (ptrs.size > 2) return;
   const pad = coarse ? 14 : 4;
+  const gp = sel > 0 ? gripAt(pieces[sel]) : null;
+  if (gp && ringA > 0.3 && Math.hypot(x - gp[0], y - gp[1]) < (coarse ? 22 : 12)) { startSize(sel, x, y, e.pointerId); return; }
   if (sel >= 0 && onRing(pieces[sel], x, y, coarse ? 20 : 10)) { startDrag(sel, x, y, e.pointerId, true, false); return; }
+  const pq = pipHit(x, y);
+  // An enlarged picture lets go of its pad, so the ring does not sit under it.
+  if (pq) { tapDown = null; pq.big = !pq.big; if (pq.big && pieces[sel] === pq) select(-1); tick(x, pq.big ? 1.2 : 0.9); geomDirty = true; wake(); return; }
   const i = pick(x, y, pad);
-  if (i < 0) { tapDown = { x, y }; return; }
+  if (i < 0) {
+    tapDown = { x, y };
+    if (VZ > 1.01) pan = { id: e.pointerId, x0: x, y0: y, vx: VX, vy: VY, on: false };
+    return;
+  }
   tapDown = null;
   select(i);
   startDrag(i, x, y, e.pointerId, e.shiftKey, e.shiftKey);
@@ -2112,11 +2496,27 @@ panel.addEventListener('pointermove', e => {
   if (!q) {
     // A mouse hover shows what can be grabbed.
     if (e.pointerType !== 'mouse' || !ready || e.target === dropB || dropB.contains(e.target)) return;
-    const [x, y] = at(e), hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
+    const [x, y] = at(e), gp = sel > 0 ? gripAt(pieces[sel]) : null;
+    if (gp && Math.hypot(x - gp[0], y - gp[1]) < 12) { panel.style.cursor = 'nwse-resize'; return; }
+    const pq = pipHit(x, y);
+    if (pq) { panel.style.cursor = pq.big ? 'zoom-out' : 'zoom-in'; return; }
+    const hot = pick(x, y, 4) >= 0 || (sel >= 0 && onRing(pieces[sel], x, y, 10));
     panel.style.cursor = hot ? 'grab' : '';
     return;
   }
   [q.x, q.y] = at(e);
+  if (pinch) {
+    if (ptrs.size < 2) return;
+    const [a, b] = [...ptrs.values()], z = clamp(pinch.z0 * Math.hypot(b.x - a.x, b.y - a.y) / pinch.d0, 1, ZMAX);
+    setView(z, (a.x + b.x) / 2 - pinch.wx * z, (a.y + b.y) / 2 - pinch.wy * z);
+    return;
+  }
+  // A drag on bare table pans a zoomed view.
+  if (pan && pan.id === e.pointerId) {
+    if (!pan.on && Math.hypot(q.x - pan.x0, q.y - pan.y0) > 6) { pan.on = true; panel.style.cursor = 'grabbing'; }
+    if (pan.on) { viewTween = null; setView(VZ, pan.vx + q.x - pan.x0, pan.vy + q.y - pan.y0); }
+    return;
+  }
   if (twist) {
     if (ptrs.size < 2) return;
     const [a, b] = [...ptrs.values()], p = pieces[twist.i], ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -2130,6 +2530,7 @@ panel.addEventListener('pointermove', e => {
   }
   if (!drag || drag.id !== e.pointerId) return;
   const p = pieces[drag.i];
+  if (drag.size) { setSize(p, drag.k0 * Math.hypot(q.x - p.x, q.y - p.y) / drag.d0); return; }
   // Shift held mid-drag swaps between moving and turning.
   if (drag.shift !== e.shiftKey && e.pointerType === 'mouse' && (drag.shift || !drag.turn)) {
     startDrag(drag.i, q.x, q.y, drag.id, e.shiftKey, e.shiftKey);
@@ -2147,9 +2548,16 @@ function lift(e) {
   if (!q) return;
   ptrs.delete(e.pointerId);
   if (twist && ptrs.size < 2) twist = null;
+  if (pinch && ptrs.size < 2) pinch = null;
+  if (pan && pan.id === e.pointerId) { if (pan.on) { tapDown = null; panel.style.cursor = ''; } pan = null; }
   if (drag && drag.id === e.pointerId) { drag = null; panel.style.cursor = e.pointerType === 'mouse' ? 'grab' : ''; }
-  // A tap on bare table clears the selection.
-  if (tapDown && !ptrs.size && Math.hypot(q.x - tapDown.x, q.y - tapDown.y) < 8) select(-1);
+  // A tap on bare table clears the selection; a double tap resets the view.
+  if (tapDown && !ptrs.size && Math.hypot(q.x - tapDown.x, q.y - tapDown.y) < 8) {
+    select(-1);
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(q.x - lastTap.x, q.y - lastTap.y) < 24) { resetView(); lastTap = null; }
+    else lastTap = { t: now, x: q.x, y: q.y };
+  }
   if (!ptrs.size) tapDown = null;
   wake();
 }
@@ -2164,7 +2572,7 @@ dropB.addEventListener('click', e => {
   panel.focus({ preventScroll: true });
 });
 panel.addEventListener('keydown', e => {
-  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready || spec.on) return;
+  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
   // Tab walks the pieces, then lets focus leave the table.
   const n = pieces.length, next = sel < 0 ? (e.shiftKey ? n - 1 : 0) : sel + (e.shiftKey ? -1 : 1);
   if (next < 0 || next >= n) { select(-1); return; }
@@ -2176,21 +2584,28 @@ panel.addEventListener('blur', e => { if (!ptrs.size && !panel.contains(e.relate
 panel.addEventListener('wheel', e => {
   if (!ready) return;
   const [x, y] = at(e), i = pick(x, y, 6);
-  if (i <= 0) return;
+  // The wheel over bare table zooms the view.
+  if (i <= 0) {
+    e.preventDefault();
+    zoomAt(VZ * Math.exp(-clamp(e.deltaY, -60, 60) * (e.ctrlKey ? 0.012 : 0.003)), x, y);
+    return;
+  }
   e.preventDefault();
   if (sel !== i) select(i);
   setSize(pieces[i], pieces[i].k * Math.exp(-clamp(e.deltaY, -60, 60) * 0.004));
 }, { passive: false });
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready || spec.on) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
   const grow = e.key === '+' || e.key === '=' ? 1 : e.key === '-' || e.key === '_' ? -1 : 0;
+  if (e.key === '0') { resetView(); return; }
   if (!arrow && !grow && k !== 'q' && k !== 'e' && e.key !== 'Escape') return;
   if (e.key === 'Escape') { select(-1); return; }
   e.preventDefault();
+  if (grow && sel <= 0) { zoomAt(VZ * (grow > 0 ? 1.15 : 1 / 1.15), W / 2, H / 2); return; }
   if (sel < 0) select(0);
   const p = pieces[sel];
   if (grow) setSize(p, p.k * (grow > 0 ? 1.08 : 1 / 1.08));
@@ -2215,6 +2630,12 @@ function measureBar() {
   }
   safeT = clamp(t, 0, H * 0.3);
   safeB = clamp(b, 0, H * 0.3);
+  // Sensor pictures also stay above the key strip.
+  const ks = document.querySelector('.stim-ui > .s2-keys');
+  const kb = ks && ks.offsetParent ? r.bottom - ks.getBoundingClientRect().top : 0;
+  const was = pipB;
+  pipB = clamp(Math.max(b, kb), 0, H * 0.35);
+  if (pipB !== was) pipStamp++;
 }
 function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;
@@ -2222,7 +2643,7 @@ function fit(force) {
   rect = null;
   const p = pixelRatio(w, h, { budget: 2.2e6, low: lowDpr });
   const nw = Math.floor(w * p), nh = Math.floor(h * p);
-  if (w !== W || h !== H) { W = w; H = h; S = Math.min(w, h); geomDirty = true; }
+  if (w !== W || h !== H) { W = w; H = h; S0 = Math.min(w, h); setView(VZ, VX, VY, true); geomDirty = true; }
   measureBar();
   placeHalo();
   if (pristine() && !tween) applyLayout();
@@ -2245,13 +2666,24 @@ function failed() {
   panel.querySelectorAll('canvas').forEach(c => { c.hidden = true; });
   ui.hideControls();
 }
-function boot() {
+async function boot() {
+  stage('build');
   if (!ctx || !ctx.createRadialGradient || !initGL()) return failed();
+  zoomChip = document.createElement('button');
+  zoomChip.type = 'button';
+  zoomChip.className = 's2-chip zoomchip';
+  zoomChip.hidden = true;
+  zoomChip.title = 'Reset the zoom (0 or double-tap)';
+  zoomChip.innerHTML = '<span>1.0×</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3"/><path d="M3.5 2.5v2.6h2.6"/></svg>';
+  zoomChip.addEventListener('pointerdown', e => e.stopPropagation());
+  zoomChip.addEventListener('click', () => { resetView(); panel.focus({ preventScroll: true }); });
+  panel.append(zoomChip);
   fit();
+  await warmGL();
   ready = true;
   sync();
   render();
-  requestAnimationFrame(() => panel.querySelectorAll('canvas').forEach(c => c.classList.add('on')));
+  requestAnimationFrame(() => { panel.querySelectorAll('canvas').forEach(c => c.classList.add('on')); stage('first-frame'); });
   // Resizes settle before the smoke and dust rebuild.
   let fitT = 0;
   new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 140); }).observe(panel);

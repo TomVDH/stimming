@@ -12,6 +12,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Kaleidoscope: the barrel view in the Bar v2 shell. */
 :root { --stage: #000; }
@@ -81,7 +84,8 @@
 </div>
 
 <script type="module">
-import { initPage, sound, quality, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, quality, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Mirrors 6 and 12 set the sector count; Tri sets it to 0.
 const MIRRORS = { 6: 6, 12: 12, tri: 0 };
 const ui = initPage({ id: 'kaleido', bar: {
@@ -100,7 +104,6 @@ const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
@@ -1330,6 +1333,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
   } catch (err) { console.error(err); failed(); }
 });
 async function boot() {
+  stage('build');
   cell = document.createElement('canvas');
   cell.width = cell.height = 512;
   cx = cell.getContext('2d', { alpha: false });
@@ -1339,10 +1343,11 @@ async function boot() {
   fit();
   const gate = initGL();
   gate.catch(() => {});
-  // Five seconds of settling run in idle slices.
-  for (let k = 0; k < 10 && !asleep; k++) {
-    for (let i = 0; i < 60 && !asleep; i++) step();
-    await idle();
+  await idle();
+  // Five seconds of settling run in idle slices of 12 ms.
+  for (let k = 0, t0 = performance.now(); k < 600 && !asleep; k++) {
+    step();
+    if (performance.now() - t0 > 12) { await idle(); t0 = performance.now(); }
   }
   try { await gate; } catch (err) { console.error(err); failed(); return; }
   // The first view looks down into the heap.
@@ -1355,6 +1360,7 @@ async function boot() {
   cellDirty = true;
   fit();
   render();
+  stage('first-frame');
   requestAnimationFrame(() => canvas.classList.add('on'));
   new ResizeObserver(fit).observe(panel);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
@@ -1367,9 +1373,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

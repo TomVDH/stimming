@@ -8,42 +8,63 @@
 <title>Glass lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..800&display=swap">
 <style>
-/* Glass lab: every pane-rain shader side by side, on one backdrop, with one set of controls. */
-:root { --bg: oklch(0.14 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.68 0.015 260); --line: oklch(0.3 0.015 260); }
+/* Glass lab: pane-rain shaders at full resolution, split A against B, with knobs. */
+:root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 Gabarito, system-ui, sans-serif; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 14px 16px; position: sticky; top: 0; z-index: 2; background: oklch(0.14 0.01 260 / 0.92); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-h1 { font-size: 18px; margin: 0 8px 0 0; }
-label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-input[type=range] { width: 120px; }
-output { min-width: 3.4em; color: var(--ink); font-variant-numeric: tabular-nums; }
-.seg { display: flex; gap: 4px; }
-.seg button { font: inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
+body { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 100%; }
+.view { position: relative; overflow: hidden; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: ew-resize; touch-action: none; }
+.tag { position: absolute; top: 12px; padding: 4px 9px; border-radius: 999px; background: oklch(0.13 0.01 260 / 0.7); font-weight: 600; pointer-events: none; }
+.tag.a { left: 12px; } .tag.b { right: 12px; }
+.split { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: oklch(1 0 0 / 0.55); pointer-events: none; }
+aside { overflow: auto; border-left: 1px solid var(--line); padding: 12px 14px 24px; }
+h1 { font-size: 16px; margin: 0 0 4px; }
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+p.note { color: var(--muted); margin: 0 0 6px; }
+.row { display: grid; grid-template-columns: 78px 1fr 44px; align-items: center; gap: 8px; margin: 4px 0; }
+.row span { color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--acc); }
+select { width: 100%; font: inherit; color: var(--ink); background: oklch(0.18 0.01 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg button, .btn { font: inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .seg button[aria-pressed=true] { color: var(--ink); border-color: var(--ink); }
-main { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; padding: 16px; }
-figure { margin: 0; }
-figure canvas, figure iframe { display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; border-radius: 10px; background: #000; }
-figcaption { padding: 8px 2px 0; }
-figcaption b { display: block; font-size: 15px; }
-figcaption span { color: var(--muted); font-size: 13px; }
+.btn { color: var(--ink); }
+pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: oklch(0.17 0.01 260); padding: 8px; border-radius: 6px; }
+.desc { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 2.6em; }
+@media (max-width: 760px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
 </head>
 <body>
-<header>
+<div class="view" id="view">
+  <canvas id="cv"></canvas>
+  <div class="split" id="split"></div>
+  <div class="tag a" id="tagA"></div>
+  <div class="tag b" id="tagB"></div>
+</div>
+<aside>
   <h1>Glass lab</h1>
-  <label>Speed <input id="speed" type="range" min="0" max="45" step="0.5" value="0"><output id="speedO"></output></label>
-  <label>Wet <input id="wet" type="range" min="0" max="1.4" step="0.05" value="1"><output id="wetO"></output></label>
-  <label>Fog <input id="fog" type="range" min="0" max="1" step="0.05" value="0"><output id="fogO"></output></label>
-  <label>Size <input id="size" type="range" min="0.4" max="2.5" step="0.05" value="1"><output id="sizeO"></output></label>
-  <div class="seg" id="time"><button data-v="0" aria-pressed="true">Night</button><button data-v="1" aria-pressed="false">Day</button></div>
-  <div class="seg" id="ramp"><button data-v="1" aria-pressed="false">Ramp 0 to 40</button></div>
-</header>
-<main id="grid"></main>
+  <p class="note">Full resolution. Drag the view to move the split. Keys 1 to 5 pick A, Shift 1 to 5 pick B, R ramps the speed.</p>
+  <h2>Compare</h2>
+  <div class="row"><span>A (left)</span><select id="selA"></select><i></i></div>
+  <div class="desc" id="descA"></div>
+  <div class="row"><span>B (right)</span><select id="selB"></select><i></i></div>
+  <div class="desc" id="descB"></div>
+  <h2>Scene</h2>
+  <div id="scene"></div>
+  <div class="seg" style="margin-top:6px"><button id="night" aria-pressed="true">Night</button><button id="day" aria-pressed="false">Day</button><button id="ramp" aria-pressed="false">Ramp 0 to 40</button></div>
+  <h2>Tuned (variant 1)</h2>
+  <p class="note">Starts from Window seat. Tune it, then copy the values.</p>
+  <div id="knobs"></div>
+  <div class="seg" style="margin-top:8px"><button class="btn" id="copy">Copy values</button><button class="btn" id="reset">Reset</button></div>
+  <pre id="out"></pre>
+</aside>
 
 <script type="module">
 import { GLASS_RAIN } from '../shared/glassrain.js';
+import { BOKEH } from '../shared/bokeh.js';
 
-// Train Ride's own noise names, used by its older variants.
 const NOISE = `
 float hash1(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 vec2 hash2(vec2 p) { return vec2(hash1(p), hash1(p + 17.17)); }
@@ -52,8 +73,74 @@ float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 *
 float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }`;
 
 /* ---------- variants ---------- */
-// Each fills off, rim, spec, cover and clear for a pane point p.
-// scale: pane units per tile height, as the toy shows them.
+// Tuned: Window seat's beads and lanes with every number on a knob.
+const TUNED = {
+  id: 'tuned', name: 'Tuned', note: 'Window seat drops, every number on a knob. Pane units are metres.',
+  scale: 0.55,
+  pre: `
+  vec4 tBead(vec2 p, float sc, float dens, float seed) {
+    vec2 g = p * sc, i = floor(g), f = fract(g);
+    if (grH(i + seed) > dens) return vec4(0.0);
+    vec2 o = 0.25 + 0.5 * grH2(i + seed * 3.0);
+    float r = (0.06 + 0.14 * grH(i + seed + 5.0)) * kBeadSize;
+    vec2 dv = (f - o) / r;
+    if (dot(dv, dv) > 1.0) return vec4(0.0);
+    return vec4(dv, r / sc, 1.0);
+  }
+  vec4 tRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed, out float trail) {
+    trail = 0.0;
+    vec2 ax = vec2(-m.y, m.x);
+    float u = dot(p, ax), v = dot(p, m);
+    float col = floor(u / Wc);
+    float h = grH(vec2(col, seed));
+    if (h > keep) return vec4(0.0);
+    float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 60.0 + h * 40.0) * 0.0015 * kWander + (h - 0.5) * Wc * 0.4;
+    float sp = 0.6 + 0.8 * grH(vec2(col, seed + 7.0));
+    float head = mod(flow * sp + h * 17.0, 1.6) - 0.8;
+    float dv = v - head;
+    float hr = (0.0016 + 0.0016 * h) * kHead;
+    vec2 q = vec2(fu / hr, dv / (hr * kStretch));
+    if (dot(q, q) < 1.0) return vec4(ax * q.x + m * q.y, hr * 1.2, 1.0);
+    float tl = (0.1 + 0.12 * h) * kTrail * (1.0 + uSpeed * kTrailSpeed / 18.0);
+    if (dv < 0.0 && dv > -tl * 2.0) trail = smoothstep(1.0, 0.5, abs(fu) / hr) * (1.0 + dv / (tl * 2.0));
+    if (dv < 0.0 && dv > -tl) {
+      float age = -dv / tl;
+      float tw0 = 0.0008 * kThread;
+      float cell = v * 260.0 + h * 9.0;
+      vec2 tb = vec2(fu / tw0, (fract(cell) - 0.5) * 2.4);
+      if (grH(vec2(col, floor(cell))) > 1.0 - 0.45 * kBeadlet && dot(tb, tb) < 1.0) return vec4(ax * tb.x + m * tb.y, tw0, 0.7);
+      float tw = tw0 * (1.0 - 0.6 * age);
+      if (abs(fu) < tw) return vec4(ax * (fu / tw), tw, 0.8 * (1.0 - age));
+    }
+    return vec4(0.0);
+  }
+  void tLens(vec4 b, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover) {
+    if (b.w <= 0.0) return;
+    float dd = dot(b.xy, b.xy), h = sqrt(max(1.0 - dd, 0.0));
+    off -= b.xy / max(h, 0.2) * b.z * 4.0 * kLens * b.w;
+    rim = max(rim, b.w * smoothstep(0.45, 0.98, dd));
+    cover = max(cover, b.w * (1.0 - dd));
+    vec3 N = normalize(vec3(b.xy, h * 1.4));
+    spec = max(spec, b.w * pow(max(dot(N, L), 0.0), 60.0));
+  }`,
+  body: `
+    vec3 L = vec3(-0.3, 0.6, 0.74);
+    float strip = 1.0 - kStrip * smoothstep(5.0, 40.0, uSpeed);
+    float bead = uWet * kBead * strip;
+    float t1, t2;
+    tLens(tBead(p + 0.37, 160.0 / kBeadScale, 0.2 * bead, 2.0), L, off, rim, spec, cover);
+    tLens(tBead(p + 0.71, 380.0 / kBeadScale, 0.35 * bead, 3.0), L, off, rim, spec, cover);
+    tLens(tBead(p + 0.13, 70.0 / kBeadScale, 0.15 * bead * kBig, 6.0), L, off, rim, spec, cover);
+    tLens(tRun(p, uM, uFlow, 0.01 * kLane, 0.8 * uWet * kRun, 4.0, t1), L, off, rim, spec, cover);
+    tLens(tRun(p * 1.3 + 0.2, uM, uFlow, 0.01 * kLane, 0.7 * uWet * kRun, 5.0, t2), L, off, rim, spec, cover);
+    clear = max(t1, t2) * uWet;`,
+};
+const KNOBS = [
+  ['kBead', 'Beads', 0, 1.5, 0.12], ['kBig', 'Big beads', 0, 3, 0], ['kBeadScale', 'Bead size', 0.4, 3, 1], ['kBeadSize', 'Bead fill', 0.5, 1.6, 1], ['kStrip', 'Wind strip', 0, 1, 0],
+  ['kRun', 'Runs', 0, 1.25, 1], ['kLane', 'Lane width', 0.4, 4, 1], ['kHead', 'Head size', 0.4, 3, 1], ['kStretch', 'Head stretch', 1, 4, 1.6],
+  ['kTrail', 'Trail length', 0.2, 4, 1], ['kTrailSpeed', 'Trail by speed', 0, 2, 0], ['kThread', 'Thread width', 0.4, 3, 1], ['kBeadlet', 'Beadlets', 0, 2, 1], ['kWander', 'Wander', 0, 3, 1],
+  ['kLens', 'Lens', 0.2, 2.5, 1], ['kRim', 'Rim dark', 0, 1, 0.7], ['kSpec', 'Highlight', 0, 3, 1], ['kSlant', 'Slant gain', 0.2, 3, 1], ['kFlow', 'Run speed', 0.2, 3, 1],
+];
 const VARIANTS = [
   {
     id: 'window', name: 'Window seat', note: 'window/shader.js: few tiny beads, racing thin runs in lanes. Pane units are metres; the pane shows about 0.55 m.',
@@ -173,121 +260,199 @@ const VARIANTS = [
     }`,
   },
 ];
+VARIANTS.unshift(TUNED);
+const KN = Object.fromEntries(KNOBS.map(k => [k[0], k[4]]));
 
-/* ---------- shared shader ---------- */
+/* ---------- shader ---------- */
 const VS = `#version 300 es
 in vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }`;
-const FS = v => `#version 300 es
-precision highp float;
-uniform vec2 uRes, uM;
-uniform float uTime, uSpeed, uWet, uFog, uDay, uFlow, uSize, uDrive;
-uniform vec2 uRD[4], uRV[4], uRO[4];
-out vec4 outC;
-${GLASS_RAIN}
-${NOISE}
-// The backdrop: a night valley or a grey day, lights that slide past, a lamp now and then.
+const BD = `// The backdrop: a late dusk or a grey day, town lights sliding past, a near lamp every 28 m.
 vec3 backdrop(vec2 uv) {
-  float asp = uRes.x / uRes.y;
+  float asp = uSize2.x / uSize2.y;
   vec2 q = vec2(uv.x * asp, uv.y);
-  // Night is a late dusk: a lit band low in the sky, so the drops have light to bend.
   vec3 sky = mix(mix(vec3(0.28, 0.2, 0.2), vec3(0.04, 0.06, 0.12), smoothstep(0.4, 1.0, uv.y)), vec3(0.5, 0.55, 0.62) * (0.6 + 0.6 * uv.y), uDay);
   float hill = 0.42 + 0.06 * sin(q.x * 3.0 + uDrive * 0.002) + 0.03 * sin(q.x * 9.0 + uDrive * 0.005);
   vec3 c = sky;
   if (uv.y < hill) c = mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y);
-  // A row of town lights on the far shore, sliding with the train.
-  float x = q.x * 60.0 + uDrive * 0.05;
-  vec2 g = vec2(x, (uv.y - hill + 0.02) * 260.0);
-  vec2 id = floor(g), f = fract(g) - 0.5;
-  float on = step(0.4, hash1(id)) * step(abs(id.y), 4.0);
-  c += vec3(1.0, 0.75, 0.45) * on * exp(-dot(f, f) * 12.0) * 3.0 * (1.0 - uDay);
-  // A near lamp passes every 28 m of travel.
-  float lx = mod(uDrive, 28.0) / 28.0 * (asp + 1.0) - 0.5;
-  lx = asp - lx;
-  float r2 = dot(q - vec2(lx, 0.62), q - vec2(lx, 0.62));
+  // Round town lights in a band under the ridge, each jittered in its cell.
+  vec2 g = vec2(q.x * 140.0 + uDrive * 0.12, (uv.y - hill) * 140.0);
+  vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * hash2(id + 3.0);
+  float on = step(0.62, hash1(id)) * step(-6.0, id.y) * step(id.y, -1.0);
+  vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, hash1(id + 9.0)));
+  c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * (1.0 - uDay);
+  float r2 = dot(q - uLamp, q - uLamp);
   c += vec3(1.0, 0.8, 0.55) * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12) * (1.0 - uDay);
   return c;
 }
+`;
+const FS = v => `#version 300 es
+precision highp float;
+uniform vec2 uRes, uM, uOrigin, uSize2, uLamp;
+uniform float uTime, uSpeed, uWet, uFog, uDay, uFlow, uSize, uDrive, uPatch;
+uniform vec2 uRD[4], uRV[4], uRO[4];
+uniform float ${KNOBS.map(k => k[0]).join(', ')};
+out vec4 outC;
+${GLASS_RAIN}
+${NOISE}
+uniform sampler2D tScene, tBok;
 ${v.pre || ''}
 void drops(vec2 p, inout vec2 off, inout float rim, inout float spec, inout float cover, inout float clear) {
   ${v.body}
 }
 void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  float asp = uRes.x / uRes.y;
-  // Pane units across the tile, as the toy shows them; Size scales them all.
+  // The view is shared by both halves, so each sees the same scene.
+  vec2 uv = (gl_FragCoord.xy - uOrigin) / uSize2;
+  float asp = uSize2.x / uSize2.y;
   float k = ${v.scale.toFixed(3)} / uSize;
   vec2 p = (uv - 0.5) * vec2(asp, 1.0) * k;
   vec2 off = vec2(0.0);
   float rim = 0.0, spec = 0.0, cover = 0.0, clear = 0.0;
   if (uWet > 0.001) drops(p, off, rim, spec, cover, clear);
-  float fog = clamp(grFog(p / k, uFog, -1.0, 0.0) * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
+  float fog = clamp(grFog(p / k, uFog, -1.0, uPatch) * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
   vec2 su = uv + off / k / vec2(asp, 1.0);
-  vec3 sharp = backdrop(su), blur = vec3(0.0);
-  for (int i = 0; i < 12; i++) { float a = float(i) * 2.4, r = sqrt((float(i) + 0.5) / 12.0) * 0.02 * fog; blur += backdrop(su + vec2(cos(a), sin(a)) * r / vec2(asp, 1.0)); }
-  blur /= 12.0;
-  vec3 col = mix(sharp, blur, smoothstep(0.05, 0.55, fog)) * vec3(0.8, 0.84, 0.81);
+  // The same path as the toy: the sharp scene, and its bokeh where the pane fogs.
+  vec3 sharp = texture(tScene, su).rgb, blur = sharp;
+  if (fog > 0.02) blur = mix(sharp, texture(tBok, su).rgb, smoothstep(0.02, 0.45, fog));
   vec3 warm = vec3(1.0, 0.85, 0.7);
+  // Train glass: faintly green, about four fifths of the light through.
+  vec3 col = mix(sharp, blur, smoothstep(0.05, 0.55, fog)) * vec3(0.8, 0.84, 0.81);
   col = col * (1.0 - 0.8 * fog) + (blur * 1.1 + warm * 0.02 * (1.0 - uDay) + vec3(0.03) * uDay) * fog * 0.9;
-  col *= 1.0 - 0.7 * rim;
-  col += mix(warm * 0.3, vec3(0.6, 0.63, 0.66), uDay) * spec;
-  // Plain ACES and gamma.
+  // The carriage reflects as a soft warm gradient.
+  col += warm * 0.012 * (0.4 + 0.6 * smoothstep(0.9, 0.1, uv.y)) * (1.0 - 0.5 * fog) * (1.0 - uDay);
+  col *= 1.0 - kRim * rim;
+  col += mix(warm * 0.3, vec3(0.6, 0.63, 0.66), uDay) * spec * kSpec;
+  // The near lamp lights the drops and the fog it passes.
+  float near = length(vec2(uv.x * asp, uv.y) - uLamp);
+  col += vec3(1.0, 0.8, 0.55) * (1.0 - uDay) * ((cover * 0.5 + rim * 0.9) * exp(-near * 7.0) + fog * 0.6 * exp(-near * 5.0));
   col = clamp((col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14), 0.0, 1.0);
   outC = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
 }`;
 
-/* ---------- tiles ---------- */
-const grid = document.getElementById('grid');
-const tiles = VARIANTS.map(v => {
-  const fig = document.createElement('figure');
-  fig.innerHTML = `<canvas></canvas><figcaption><b>${v.name}</b><span>${v.note}</span></figcaption>`;
-  grid.append(fig);
-  const cv = fig.querySelector('canvas');
-  const gl = cv.getContext('webgl2', { antialias: false });
-  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(v.id, gl.getShaderInfoLog(o)); return o; };
+/* ---------- one context, one program per variant ---------- */
+const cv = document.getElementById('cv');
+const gl = cv.getContext('webgl2', { antialias: false });
+gl.getExtension('EXT_color_buffer_float');
+// The backdrop pass, the 4x4 box steps and the bokeh gather.
+const HEAD = `#version 300 es
+precision highp float;
+out vec4 outC;`;
+const FS_BG = `${HEAD}
+uniform vec2 uSize2, uLamp;
+uniform float uDay, uDrive;
+${NOISE}
+${BD}
+void main() { outC = vec4(backdrop(gl_FragCoord.xy / uSize2), 1.0); }`;
+const FS_DOWN = `${HEAD}
+uniform sampler2D tSrc;
+uniform vec2 uTx, uDst;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  outC = vec4(0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
+    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb), 1.0);
+}`;
+const FS_BOK = `${HEAD}
+uniform sampler2D tSrc;
+uniform vec2 uRad, uDst;
+uniform float uBlades, uRimB;
+${BOKEH}
+void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, uBlades, 0.015, 500.0, uRimB), 1.0); }`;
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const program = (name, fs) => {
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(name, gl.getShaderInfoLog(o)); return o; };
   const pr = gl.createProgram();
   gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
-  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS(v)));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(pr, 0, 'a');
   gl.linkProgram(pr);
-  gl.useProgram(pr);
-  const b = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, b);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(pr, 'a');
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const U = n => gl.getUniformLocation(pr, n);
-  return { v, cv, gl, U };
-});
-// The Rain toy draws its drops another way: a simulated drop map. It runs live for reference.
-{
-  const fig = document.createElement('figure');
-  fig.innerHTML = `<iframe src="../rain/" title="Rain toy" loading="lazy"></iframe><figcaption><b>Rain (live toy)</b><span>A simulated drop map after Codrops' RainEffect: drops merge and slide. Not a pane shader, so the controls above do not drive it.</span></figcaption>`;
-  grid.append(fig);
-}
+  const cache = {};
+  return { pr, U: n => (n in cache ? cache[n] : (cache[n] = gl.getUniformLocation(pr, n))) };
+};
+const progs = VARIANTS.map(v => ({ v, ...program(v.id, FS(v)) }));
+const pBG = program('bg', FS_BG), pDown = program('down', FS_DOWN), pBok = program('bok', FS_BOK);
+// Half-float targets: the scene at full size, an eighth for the gather source, a half for the bokeh.
+const target = () => {
+  const tex = gl.createTexture(), fb = gl.createFramebuffer();
+  const t = { tex, fb, w: 0, h: 0, size(w, h) {
+    if (t.w === w && t.h === h) return;
+    t.w = w; t.h = h;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  } };
+  return t;
+};
+const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target();
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 /* ---------- controls ---------- */
-const st = { speed: 0, wet: 1, fog: 0, size: 1, day: 0, ramp: false };
-for (const k of ['speed', 'wet', 'fog', 'size']) {
-  const el = document.getElementById(k), o = document.getElementById(k + 'O');
-  const show = () => { st[k] = +el.value; o.textContent = k === 'speed' ? `${st[k]} m/s` : st[k].toFixed(2); };
-  el.addEventListener('input', show); show();
-}
-const seg = (id, f) => document.getElementById(id).addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  if (id === 'time') document.querySelectorAll('#time button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-  f(b);
-});
-seg('time', b => { st.day = +b.dataset.v; });
-seg('ramp', b => { st.ramp = !st.ramp; b.setAttribute('aria-pressed', String(st.ramp)); });
 const qs = new URLSearchParams(location.search);
-if (qs.has('speed')) { st.speed = +qs.get('speed'); document.getElementById('speed').value = st.speed; document.getElementById('speedO').textContent = `${st.speed} m/s`; }
-if (qs.has('fog')) { st.fog = +qs.get('fog'); document.getElementById('fog').value = st.fog; }
-if (qs.has('day')) st.day = 1;
+const st = { a: +(qs.get('a') ?? 0), b: +(qs.get('b') ?? 1), split: 0.5, speed: +(qs.get('speed') ?? 18), wet: 1, fog: +(qs.get('fog') ?? 0), size: 1, patch: 0, blades: 0, rimB: 0.3, day: qs.has('day') ? 1 : 0, ramp: false };
+const selA = document.getElementById('selA'), selB = document.getElementById('selB');
+VARIANTS.forEach((v, i) => { selA.add(new Option(`${i + 1}. ${v.name}`, i)); selB.add(new Option(`${i + 1}. ${v.name}`, i)); });
+const pickAB = () => {
+  selA.value = st.a; selB.value = st.b;
+  document.getElementById('tagA').textContent = VARIANTS[st.a].name;
+  document.getElementById('tagB').textContent = VARIANTS[st.b].name;
+  document.getElementById('descA').textContent = VARIANTS[st.a].note;
+  document.getElementById('descB').textContent = VARIANTS[st.b].note;
+};
+selA.onchange = () => { st.a = +selA.value; pickAB(); };
+selB.onchange = () => { st.b = +selB.value; pickAB(); };
+pickAB();
+const slider = (box, key, label, min, max, stepv, obj, fmt = v => v.toFixed(2)) => {
+  const row = document.createElement('label');
+  row.className = 'row';
+  row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${stepv}"><output></output>`;
+  const inp = row.querySelector('input'), out = row.querySelector('output');
+  inp.value = obj[key];
+  const show = () => { obj[key] = +inp.value; out.textContent = fmt(obj[key]); };
+  inp.oninput = show; show();
+  box.append(row);
+  return () => { inp.value = obj[key]; out.textContent = fmt(obj[key]); };
+};
+const scene = document.getElementById('scene');
+const syncSpeed = slider(scene, 'speed', 'Speed', 0, 45, 0.5, st, v => `${v.toFixed(0)}`);
+slider(scene, 'wet', 'Wet', 0, 1.4, 0.05, st);
+slider(scene, 'fog', 'Fog', 0, 1, 0.05, st);
+slider(scene, 'patch', 'Fog patches', 0, 1, 0.05, st);
+slider(scene, 'size', 'Zoom', 0.4, 3, 0.05, st);
+slider(scene, 'blades', 'Bokeh blades', 0, 8, 1, st, v => (v < 3 ? 'round' : v.toFixed(0)));
+slider(scene, 'rimB', 'Bokeh rim', 0, 1, 0.05, st);
+const segs = { night: () => { st.day = 0; }, day: () => { st.day = 1; } };
+for (const id of ['night', 'day']) document.getElementById(id).onclick = () => { segs[id](); document.getElementById('night').setAttribute('aria-pressed', String(!st.day)); document.getElementById('day').setAttribute('aria-pressed', String(!!st.day)); };
+document.getElementById('night').setAttribute('aria-pressed', String(!st.day)); document.getElementById('day').setAttribute('aria-pressed', String(!!st.day));
+const rampB = document.getElementById('ramp');
+const toggleRamp = () => { st.ramp = !st.ramp; rampB.setAttribute('aria-pressed', String(st.ramp)); };
+rampB.onclick = toggleRamp;
+const knobs = document.getElementById('knobs'), syncs = [];
+const outEl = document.getElementById('out');
+const showOut = () => { outEl.textContent = JSON.stringify(Object.fromEntries(KNOBS.map(k => [k[0], +KN[k[0]].toFixed(3)]))); };
+KNOBS.forEach(([key, label, min, max]) => syncs.push(slider(knobs, key, label, min, max, 0.01, KN)));
+knobs.addEventListener('input', showOut);
+showOut();
+document.getElementById('copy').onclick = () => navigator.clipboard?.writeText(outEl.textContent);
+document.getElementById('reset').onclick = () => { KNOBS.forEach(k => { KN[k[0]] = k[4]; }); syncs.forEach(f => f()); showOut(); };
+// Drag on the view moves the split.
+const view = document.getElementById('view');
+const moveSplit = e => { const r = view.getBoundingClientRect(); st.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+let dragging = false;
+cv.addEventListener('pointerdown', e => { dragging = true; cv.setPointerCapture(e.pointerId); moveSplit(e); });
+cv.addEventListener('pointermove', e => { if (dragging) moveSplit(e); });
+cv.addEventListener('pointerup', () => { dragging = false; });
+addEventListener('keydown', e => {
+  if (e.target.closest('input, select')) return;
+  const n = parseInt(e.code.replace('Digit', ''), 10) - 1;
+  if (n >= 0 && n < VARIANTS.length) { if (e.shiftKey) st.b = n; else st.a = n; pickAB(); }
+  if (e.code === 'KeyR') toggleRamp();
+});
 
-/* ---------- motion: the same for every tile ---------- */
-// Runs lag the head wind by 0.3 s; flow is the run distance.
+/* ---------- motion: the same for every variant ---------- */
 let runS = 0, flow = 0, drive = 0, time = 0, last = 0;
-// Round 8's four classes, as Train Ride ran them.
 const RUN = [
   { lag: 0.5, grip: 3, drag: 0.05, fall: 0.2, lift: 0.08, gust: 0.9 },
   { lag: 1.3, grip: 6, drag: 0.042, fall: 0.15, lift: 0.0, gust: 1.4 },
@@ -296,11 +461,11 @@ const RUN = [
 ].map(r => ({ ...r, s: 0, D: [0, 0], V: [0, -r.fall], O: [0, -r.fall] }));
 const P = 0.07 * 64, ss = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 function step(dt) {
-  if (st.ramp) { st.speed = (st.speed + dt * 2) % 41; document.getElementById('speed').value = st.speed; document.getElementById('speedO').textContent = `${st.speed.toFixed(0)} m/s`; }
+  if (st.ramp) { st.speed = (st.speed + dt * 2) % 41; syncSpeed(); }
   const sp = st.speed;
   time += dt; drive += sp * dt;
   runS += (sp - runS) * (1 - Math.exp(-dt / 0.3));
-  flow += dt * (0.25 + runS / 14);
+  flow += dt * (0.25 + runS / 14) * KN.kFlow;
   RUN.forEach((r, k) => {
     r.s += (sp - r.s) * (1 - Math.exp(-dt / r.lag));
     const wind = r.s * r.drag * ss(r.s, r.grip, r.grip + 14) * (1 + 0.18 * Math.sin(time * r.gust + k * 2.1) * Math.min(1, r.s / 12));
@@ -310,28 +475,61 @@ function step(dt) {
     r.D = [(((r.D[0] + r.V[0] * dt) % P) + P) % P, (((r.D[1] + r.V[1] * dt) % P) + P) % P];
   });
 }
+const split = document.getElementById('split');
 function frame(t) {
   const dt = Math.min(0.05, last ? (t - last) / 1000 : 0.016);
   last = t;
   step(dt);
-  const m = [-runS / 6, -1], ml = Math.hypot(...m);
-  for (const { cv, gl, U } of tiles) {
-    const w = Math.round(cv.clientWidth * Math.min(2, devicePixelRatio)), h = Math.round(cv.clientHeight * Math.min(2, devicePixelRatio));
-    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const dpr = Math.min(3, devicePixelRatio);
+  const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const m = [-runS * KN.kSlant / 6, -1], ml = Math.hypot(...m);
+  const asp = w / h, lx = asp - (drive % 28) / 28 * (asp + 1.0) + 0.5;
+  const sx = Math.round(w * st.split);
+  split.style.left = `${st.split * 100}%`;
+  // Offscreen: the backdrop, two 4x4 box steps to an eighth, then the bokeh at half size.
+  gl.disable(gl.SCISSOR_TEST);
+  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
+  const to = rt => { gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fb); gl.viewport(0, 0, rt.w, rt.h); };
+  to(rtScene); gl.useProgram(pBG.pr);
+  gl.uniform2f(pBG.U('uSize2'), w, h); gl.uniform2f(pBG.U('uLamp'), lx, 0.62); gl.uniform1f(pBG.U('uDay'), st.day); gl.uniform1f(pBG.U('uDrive'), drive);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(pDown.pr); gl.activeTexture(gl.TEXTURE0); gl.uniform1i(pDown.U('tSrc'), 0);
+  to(rt4); gl.bindTexture(gl.TEXTURE_2D, rtScene.tex); gl.uniform2f(pDown.U('uTx'), 1 / w, 1 / h); gl.uniform2f(pDown.U('uDst'), rt4.w, rt4.h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  to(rt8); gl.bindTexture(gl.TEXTURE_2D, rt4.tex); gl.uniform2f(pDown.U('uTx'), 1 / rt4.w, 1 / rt4.h); gl.uniform2f(pDown.U('uDst'), rt8.w, rt8.h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  to(rtBok); gl.useProgram(pBok.pr); gl.bindTexture(gl.TEXTURE_2D, rt8.tex); gl.uniform1i(pBok.U('tSrc'), 0);
+  gl.uniform2f(pBok.U('uRad'), 0.024 * h / w * st.size, 0.024 * st.size); gl.uniform2f(pBok.U('uDst'), rtBok.w, rtBok.h);
+  gl.uniform1f(pBok.U('uBlades'), st.blades); gl.uniform1f(pBok.U('uRimB'), st.rimB);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rtScene.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rtBok.tex);
+  gl.enable(gl.SCISSOR_TEST);
+  for (const [vi, x0, x1] of [[st.a, 0, sx], [st.b, sx, w]]) {
+    if (x1 <= x0) continue;
+    const { pr, U } = progs[vi];
+    gl.useProgram(pr);
     gl.viewport(0, 0, w, h);
+    gl.scissor(x0, 0, x1 - x0, h);
     gl.uniform2f(U('uRes'), w, h);
+    gl.uniform2f(U('uOrigin'), 0, 0);
+    gl.uniform2f(U('uSize2'), w, h);
+    gl.uniform2f(U('uLamp'), lx, 0.62);
     gl.uniform2f(U('uM'), m[0] / ml, m[1] / ml);
     gl.uniform1f(U('uTime'), time);
     gl.uniform1f(U('uSpeed'), st.speed);
     gl.uniform1f(U('uWet'), st.wet);
     gl.uniform1f(U('uFog'), st.fog);
+    gl.uniform1f(U('uPatch'), st.patch);
     gl.uniform1f(U('uDay'), st.day);
     gl.uniform1f(U('uFlow'), flow);
     gl.uniform1f(U('uSize'), st.size);
     gl.uniform1f(U('uDrive'), drive);
+    gl.uniform1i(U('tScene'), 0); gl.uniform1i(U('tBok'), 1);
     gl.uniform2fv(U('uRD'), RUN.flatMap(r => r.D));
     gl.uniform2fv(U('uRV'), RUN.flatMap(r => r.V));
     gl.uniform2fv(U('uRO'), RUN.flatMap(r => r.O));
+    for (const k of KNOBS) gl.uniform1f(U(k[0]), KN[k[0]]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
   requestAnimationFrame(frame);

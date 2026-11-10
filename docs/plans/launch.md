@@ -188,3 +188,86 @@ Fix: `rocketAt` works from the eye: `lensReach()` gives the sky's elevation span
 Wind: one mean direction (`WIND`), a gust strength per point (`gustAt`: an 80 m envelope for lulls and gusts, 16 m fronts, both carried along the wind at 4 m/s). The banks keep `gust()` as a sideways push from the same field.
 Stalk: a length-keeping bend; the tangent turns by th * u^2 (`stalkAt`, `stalkTan`, small-angle series). th = lean + 0.06 H g + sway + the sound front. Sway is a sine at 4.5 / sqrt(H) rad/s (tall stalks swing slower), amplitude 0.03 to 0.12 rad with the gust, plus a smaller cross-wind sine.
 Leaves: three, alternating sides at nodes 0.3, 0.5, 0.7 H, lengths 0.36 to 0.26 H, a 5 to 8 Hz flutter that grows in a gust. Plume: 0.2 H panicle, 35 degrees off upright, nodding 0.5 rad behind the stalk at 1.6 x the amplitude. Taper 8 mm to 3 mm. Named constants head the shader.
+
+## Birds near the eye (13:45, Tom: closer to the POV, spruced up)
+
+Beds sit 30 to 220 m out, left or right of the lane to the pad (`seedBirds`). The three near beds break sideways and low, wheel inside the lens for ten seconds (goal 18 m to their side, 17 m up, 40 m out), then pass the eye on their side; speed cap 9 m/s. Far beds keep the far point.
+The bird is drawn: a continuous wingbeat on the flap phase (wrist leads the tip), tapered wings, body, head, notched tail; 0.9 m span, never under six pixels. Colour has a floor (0.05 linear) so a bird reads against a black sky; the dawn glow warms it.
+QA: `__qa.birds()` lists airborne birds; the headless harness must wait in real time (`--wait`), since a clock jump lifts every bed at once.
+
+## No launch shockwave (13:55, Tom: a shockwave hits the POV and jitters it)
+
+Gone: the camera shake tweens at ignition, liftoff and roar arrival, and the reed push wave (`uFront` stays at zero; the shader path remains for later). The camera keeps only its slow handheld wobble. The birds still lift as the sound front reaches each bed, and the roar still arrives late in the sound.
+
+## Reed plumes trimmed (14:10, Tom: the reeds still look a little weird)
+
+Cause: the panicle ran to 0.26 of the stalk and hung 35 degrees plus the stalk's lean, so each hero reed read as a palm frond blown flat; the near-field blur made blobs of them.
+Fix: panicle 0.08 to 0.14 of the stalk (`PLUME_LEN` 0.11), held 12 degrees off the stalk's top (`PLUME_DROOP` 0.22) with the tip drooping; gust bend 0.035 H and the top angle capped at 0.45 rad; plume lag 1.3 x. Compared against the pre-rewrite build served from `5fb0a40` at Dawn 0.9.
+
+## Rename and icon spike 28 (14:30, Tom: less overt, less literal)
+
+The toy is now Ten seconds (`toys.json`, menu label, page title, intro fallback, h1). Dutch set to Tien tellen /tin ˈtɛlən/ as Tom's draft pick; he confirms. The folder stays `launch`.
+Icon spike 28 (`icons/spike-28.html`, sheet entry `[28, ['launch']]`): Current (the sky box) and three directions with no rocket drawn. A Slant: a gold streak from the corner with a hot square head. B Rim: a hex, a dawn hairline, a dot that brightens the line as it climbs. C Ring: a sound ring from the horizon that leans three brut reeds as it passes. Emblems in `icons/spike/emblems/launch28-a..c.svg`. Tom picks; the menu tile follows in the next commit.
+
+## Icon spike 29 (14:50, Tom: round 1 was clip art, too like the other tiles)
+
+Round 1's symbols on a dusk box resembled the landscape tiles. Round 2 follows what Tom picked elsewhere (Fireworks A, Dijkstra A, Vortex D, Ink, Oil slick, Foil, Sonar): a live miniature of the toy's own phenomenon, drawn by code, steered by the pointer. No horizon box, no ring.
+A Twilight plume: 46 puffs along a bent path, cold below the shadow line, gold and rose above it; pointer y is the Dawn slider. B Reed bed: 120 seeded stalks with plume wedges; a speck flashes, a beat later a wave leans every reed away. C Late shadow: the kit's own block; the face flashes, ten ticks count, the hard shadow kicks loose and judders back. D Ground cloud: 36 billows blast out along the ground from a hot core, lit from within, then darken; pointer x is the wind.
+GSAP cannot tween `oklch()` strings (ticks turned teal), so colours are set, never tweened; the flash is a white sheet whose opacity tweens.
+
+## Menu tile: Twilight plume (15:05, Tom's pick: spike 29 A)
+
+The Lab tile is spike 29 A, drawn by the menu script from the same seeded stream as the spike: 46 puffs, a cold and a lit body each, the shadow line on pointer y, a sweeping dawn on focus or the play loop. Emblem copied to `shared/emblems/launch.svg` and set in `toys.json`. `icons/picks.json` records the pick and that spike 28 was cut.
+
+## Icon spike 31 (15:20, Tom: more stylised before settling)
+
+The twilight plume (spike 29 A, now the tile) in five print styles, each with pointer y as the Dawn slider: B Stencil (a three-ink cut-out: cream plume on ink blue, gold over it above the line, a rose bleed at the line), C Line (one-weight scalloped contour, dashed rule, gold hatching above it), D Isometric block (a marsh slab with a stack of discs that turn gold), E Abstract mark (a slanted bar and a slit), F Halftone (a dot grid sized by plume coverage, gold above the line, as the Vortex F3 emblem is). Emblems `launch31-b..f.svg`.
+
+## Icon spike 32 (15:35, Tom: reeds, trail and spark; bright and iconic)
+
+Rounds 2 and 3 were too oriented on the launch alone. Round 4 is one composition in four print styles: a bold reed fringe across the foot (26 stalks with plume heads, one cut-out), a trail that climbs from behind it and bends right, a spark at its head. Hover launches: the trail draws, the spark rides it; pointer y sets the climb.
+A Poster: four flat bands of sky from ink blue to a gold horizon, cream trail, four-ray star. B Halftone poster: the dawn as a dot gradient, dotted trail, a disc with ray dots. C Line: one weight of white line, gold rule, dashed trail, eight-ray burst. D Riso: two fluorescent inks on cream paper, the orange plate off register, paper grain. Emblems `launch32-a..d.svg`.
+
+## Icon spike 33 (15:50, Tom: less stylised, better fidelity, an ascent plume)
+
+Round 5 keeps round 4's composition (near reed fringe, far reed bed, trail, spark) and replaces the trail with a real exhaust column: 52 puffs along the climb, each a cold body, a lit body and a rim toward the light, softened by a small blur; a dusk gradient sky with a horizon glow and a mist band; a flame and a glowing spark at the head. Hover launches: puffs appear up to the head and grow as they age; pointer y sets the climb.
+A Ascent, dawn (sunlit above the shadow line). B Ascent, night (stars, flame-lit column). C Ascent, first sun (pale sky, all sunlit, violet reeds). One shared emblem: lit puffs white, cold grey, reeds white.
+
+## Menu tile: Ascent, dawn (16:00, Tom's pick: spike 33 A)
+
+The Lab tile is spike 33 A, drawn by the menu script from the same seeded streams as the spike: near and far reeds, 52 puffs with cold, lit and rim bodies, flame, halo and spark. Lab tiles run the play loop on hover, so the plume launches again and again while the pointer stays; the main-shelf wiring would give pointer y as the climb. Emblem `shared/emblems/launch.svg` is the 33 A emblem; `icons/picks.json` records the pick and the cut rounds.
+
+## Emblem redrawn for the intro (16:30, Tom: the icon renders badly on the intro)
+
+The spike 33 emblem read as a white slab with scratches and a blob: a 34 px ground bar, 23 thin reeds, the lower plume in grey behind them, no spark.
+The new emblem is drawn for the mask, not exported from the icon: seven wind-bent reeds on a low bank, each a curved stem with a drooping plume and three with a blade; an all-white exhaust column of 18 puffs that rises through a gap in the bed; a four-point spark ahead of it. A black halo parts the reeds from the plume.
+Checked as the intro draws it: white on dark at 152 px, dark in the white flash box, and at 44 px. `shared/emblems/launch.svg`, `icons/spike/emblems/launch33-a..c.svg` and the `emblem()` in `icons/spike-33.html` hold the same drawing.
+A plate variant (grey dawn sky, white plume, reeds cut out in black) exists as a second option; it is not in the repo.
+Dutch name: Tom rejected Tien tellen. Options put to Tom: Aftellen, Hemelvaart, Rietkraag, Tien seconden. `toys.json` stays as it is until Tom picks.
+
+## Dutch name: Hemelvaart (Tom's pick, 2026-11-09)
+
+Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` holds it; the page fallback carries no Dutch, so nothing else changes.
+
+## Icon spike 34 (2026-11-09, Tom: more abstract yet beautiful; the intro icon must be nice too)
+
+Four directions in the toy's night palette, each with its own intro emblem: A Long exposure (the flight as one line of light, star trails, soft reeds), B Rack focus (reeds sharp and the launch a bokeh disc; hover pulls focus), C Strata (flat dawn bands, one hairline), D Tally (ten reeds as a count; the tenth carries the spark).
+`icons/spike-34.html`; emblems in `icons/spike/emblems/launch34-a..d.svg`, exported with `?dump`. The menu tile and `shared/emblems/launch.svg` stay on spike 33 A until Tom picks.
+
+## Tom picks Strata; emblem refined (2026-11-09, Tom: thinner, like the original)
+
+The Strata emblem is redrawn as line work: the band edges as six fine lines that tighten toward the horizon, four shorter water lines, a 2 px hairline to a small dot, a dashed mirror of it, and two reed pairs with a halo.
+It is live as `shared/emblems/launch.svg`. The menu tile still shows spike 33 A; the Strata tile is the next step.
+
+## Menu tile is Strata (2026-11-09)
+
+The menu tile now shows spike 34 C. The bands, water and reeds are static markup in `index.html`; the script only moves the hairline, its dot and mirror, and the warm overlay. Checked headless in the Lab at 1280: rest and hover, no script errors. `icons/picks.json` records the pick.
+
+## Main shelf as No. 38 (Beta) (2026-11-09, Tom: promote this to main)
+
+Tom vetted the toy for the main shelf. `toys.json`: `number` 38, `sub` null, the entry sits after Fireworks; `stage` stays beta. The Strata tile moves from the Lab list to the main shelf in `index.html`, where the menu passes it the pointer. The page's intro fallback shows the emblem and No. 38.
+Not signed off: the version tag stays v0.9.
+
+## Signed off (2026-11-09, Tom: "its done")
+
+The menu tile and the intro carry `data-done`; the Beta tag goes; `toys.json` drops the stage. The version steps to 0.10, codename Hemelvaart.

@@ -12,6 +12,22 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="preload" as="fetch" crossorigin href="maps/index.json">
 <style>
 /* Dijkstra: search algorithms explore a city as light. */
 :root { --stage: oklch(0.11 0.02 275); }
@@ -48,20 +64,9 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, linFit, reduced, stage as mark, pageReady } from '../shared/stim.js';
+mark('libs');
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -110,10 +115,8 @@ const clearBtn = ui.action('clear');
 if (clearBtn) clearBtn.disabled = true;
 const COARSE = matchMedia('(pointer: coarse)');
 
-let markReady;
-const glReady = new Promise(r => { markReady = r; });
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+playIntro({ ready: pageReady(9000) });
+mark('build');
 // The flood holds still until the intro leaves.
 const introGone = new Promise(r => {
   if (!document.querySelector('.intro')) return r();
@@ -1942,10 +1945,10 @@ try {
 } catch (err) {
   stage.querySelector('.fail').hidden = false;
   ui.hideControls?.();
-  markReady();
+  mark('first-frame');
   throw err;
 }
-markReady();
+mark('first-frame');
 introGone.then(() => { started = true; live(); });
 
 canvas.addEventListener('pointerdown', down);

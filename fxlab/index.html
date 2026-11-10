@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>FX lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..800&display=swap">
+<style>
+/* FX lab: each shared shader effect, a toy's own copy (A) against the shared module (B). */
+:root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); --bad: oklch(0.72 0.17 25); --good: oklch(0.8 0.14 150); }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
+body { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 100%; }
+.view { position: relative; overflow: hidden; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+.tag { position: absolute; top: 12px; padding: 4px 9px; border-radius: 999px; background: oklch(0.13 0.01 260 / 0.7); font-weight: 600; pointer-events: none; }
+.tag.a { left: 12px; } .tag.b { right: 12px; }
+.split { position: absolute; top: 0; bottom: 0; width: 22px; margin-left: -11px; cursor: ew-resize; touch-action: none; }
+.split::after { content: ''; position: absolute; top: 0; bottom: 0; left: 10px; width: 2px; background: oklch(1 0 0 / 0.55); }
+aside { overflow: auto; border-left: 1px solid var(--line); padding: 12px 14px 24px; }
+h1 { font-size: 16px; margin: 0 0 4px; }
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+p.note { color: var(--muted); margin: 0 0 6px; }
+.row { display: grid; grid-template-columns: 78px 1fr 44px; align-items: center; gap: 8px; margin: 4px 0; }
+.row span { color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; }
+.row.wide { grid-template-columns: 78px 1fr; }
+input[type=range] { width: 100%; accent-color: var(--acc); }
+select { width: 100%; font: inherit; color: var(--ink); background: oklch(0.18 0.01 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg button { font: inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.seg button[aria-pressed=true] { color: var(--ink); border-color: var(--ink); }
+pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: oklch(0.17 0.01 260); padding: 8px; border-radius: 6px; margin: 0; }
+.diff { margin-top: 8px; font-variant-numeric: tabular-nums; }
+.diff.ok { color: var(--good); } .diff.off { color: var(--bad); }
+.err { color: var(--bad); white-space: pre-wrap; font-size: 11px; }
+@media (max-width: 760px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<div class="view" id="view">
+  <canvas id="cv"></canvas>
+  <div class="split" id="split"></div>
+  <div class="tag a" id="tagA"></div>
+  <div class="tag b" id="tagB"></div>
+</div>
+<aside>
+  <h1>FX lab</h1>
+  <p class="note">Drag the light. Drag the line to move the split.</p>
+  <h2>Effect</h2>
+  <div class="row wide"><span>Effect</span><select id="fx"></select></div>
+  <div class="row wide"><span>Copy (A)</span><select id="preset"></select></div>
+  <div class="row wide"><span>Side B runs in</span><div class="seg" id="bmode"><button data-v="raw" aria-pressed="true">Raw WebGL2</button><button data-v="three" aria-pressed="false">three.js</button></div></div>
+  <div class="row wide"><span>View</span><div class="seg" id="vmode"><button data-v="0" aria-pressed="true">Split</button><button data-v="1" aria-pressed="false">Difference × 32</button></div></div>
+  <div class="diff" id="diff"></div>
+  <div class="err" id="err"></div>
+  <div class="seg" style="margin-top:8px"><button id="check">Check all copies</button></div>
+  <pre id="checkOut" hidden></pre>
+  <h2>Scene</h2>
+  <div class="row wide"><span>Backdrop</span><select id="back"></select></div>
+  <div class="row wide"><span>Light</span><select id="light"></select></div>
+  <h2>Both sides</h2>
+  <div id="knobs"></div>
+  <h2 id="bOnlyH">Side B only</h2>
+  <div id="knobsB"></div>
+  <h2>Side B source</h2>
+  <pre id="code"></pre>
+</aside>
+
+<script type="module">
+import { FLARE } from '../shared/flare.js';
+import { GRADE, gradePass } from '../shared/grade.js';
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), view = $('view');
+const gl = cv.getContext('webgl2', { antialias: false, alpha: false });
+
+/* ---------- knobs ---------- */
+// Each knob: label, low, high, step, and the value that changes nothing.
+const KNOBS = {
+  gain: ['Gain', 0, 3, 0.01, 1], size: ['Size', 0.1, 2, 0.01, 1], band: ['Band', 0, 1, 0.01, 0], hard: ['Hard', 0, 1, 0.01, 0],
+  streak: ['Streak', 0, 3, 0.01, 1], ghost: ['Ghosts', 0, 3, 0.01, 1], spread: ['Spread', 0.3, 2, 0.01, 1], warm: ['Warmth', -1, 1, 0.01, 0],
+  len: ['Length', 0.05, 1.5, 0.01, 0.35], thin: ['Thinness', 20, 400, 1, 160], extra: ['More ghosts', 0, 3, 0.01, 0],
+  kVeil: ['Veil', 0, 3, 0.01, 1], kStreak: ['Streak', 0, 3, 0.01, 1], kGhost: ['Ghosts', 0, 3, 0.01, 1], bSize: ['Size', 0.1, 2, 0.01, 1],
+  tintK: ['Tint', 0, 40, 0.1, 1], vig: ['Vignette', 0, 1, 0.01, 0.5], vigIn: ['Inner edge', 0, 1, 0.01, 0.4], grain: ['Grain', 0, 0.3, 0.001, 0.03],
+  seed: ['Grain seed', 0, 20, 1, 0], box: ['Letterbox', 0, 1, 1, 0], flick: ['Flicker', -0.1, 0.1, 0.001, 0],
+};
+const FXS = { flare: 'Lens flare', grade: 'Grade' };
+// The lab's tint at Tint 1: the night-scene toys' haze lift.
+const TINT = [0.0008, 0.0009, 0.0014];
+const uName = k => 'u' + k[0].toUpperCase() + k.slice(1);
+const LIGHTS = {
+  sun: ['Low sun', [1.0, 0.72, 0.45]], white: ['White lamp', [1.0, 1.0, 1.0]], burst: ['Red burst', [1.6, 0.35, 0.2]],
+  cyan: ['Cyan', [0.3, 0.9, 1.0]], violet: ['Violet', [0.7, 0.4, 1.0]],
+};
+const BACKS = ['Dusk', 'Night', 'Grey card', 'Day sky'];
+
+/* ---------- lens flare: the copies ---------- */
+// A is the toy's own math, with its uniforms renamed to the lab's.
+// B draws the same flare from shared/flare.js.
+// Left out of both: each toy's cover test, vignette and grade.
+const WALKER_A = `
+  const vec3 ORANGE = vec3(1.0, 0.42, 0.1);
+  vec3 col = uCol;
+  vec2 d = uv - uSrc;
+  float ax = d.x * uAsp, ay = d.y;
+  float r = length(vec2(ax * 0.6, ay));
+  vec3 add = col * (0.025 * exp(-r * 1.5) + 0.08 * exp(-r * 5.0) + 0.4 * exp(-r * 22.0));
+  float tall = 1.0 + 3.0 * uBand;
+  float line = mix(0.9, 0.45, uBand) * exp(-abs(ay) * 34.0 / tall) + 0.3 * exp(-abs(ay) * 9.0 / tall) + mix(0.07, 0.16, uBand) * exp(-abs(ay) * 2.6 / tall);
+  line = mix(line, 1.6 * exp(-abs(ay) * 220.0) + 0.12 * exp(-abs(ay) * 30.0), uHard);
+  vec3 streak = mix(mix(col, vec3(0.85, 0.8, 1.0), 0.25), col, uBand) * line * exp(-abs(ax) / 1.4);
+  vec2 toC = vec2(0.5) - uSrc;
+  vec3 gs[4];
+  gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
+  for (int i = 0; i < 4; i++) {
+    vec2 g = (uv - (uSrc + toC * gs[i].x)) * vec2(uAsp, 1.0);
+    float gr = sqrt(dot(g, g)) / gs[i].y;
+    add += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs[i].z * 0.12 * (1.0 - uHard);
+  }
+  add *= uGain;
+  add += streak * uGain;
+  vec3 c = 1.0 - (1.0 - base) * (1.0 - min(add, 1.0));
+  float lum = clamp(dot(add, vec3(0.3, 0.5, 0.2)) * 2.2, 0.0, 1.0);
+  return mix(c, mix(base, uCol * 0.55, lum), uBand * 0.6);`;
+
+const PRESETS = [
+  {
+    id: 'look', name: 'Look rule, one call', a: 'Beach walker', b: 'flFlare()', light: 'sun',
+    knobs: { gain: 1 }, bOnly: { bSize: 1, kVeil: 1, kStreak: 1, kGhost: 1 },
+    A: WALKER_A,
+    B: `
+  vec3 add = flFlare(uv, uSrc, uAsp, uCol, uBSize, vec3(uKVeil, uKStreak, uKGhost));
+  return flScreen(base, add * uGain);`,
+  },
+  {
+    id: 'walker', name: 'Beach walker', a: 'Beach walker', b: 'Parts', light: 'sun',
+    knobs: { gain: 1, band: 0, hard: 0 },
+    A: WALKER_A,
+    B: `
+  vec2 d = flOffset(uv, uSrc, uAsp, 1.0);
+  float tall = 1.0 + 3.0 * uBand;
+  float soft = flStreak(d, vec3(mix(0.9, 0.45, uBand), 0.3, mix(0.07, 0.16, uBand)), vec3(34.0, 9.0, 2.6) / tall, 1.4);
+  float hard = flStreak(d, vec3(1.6, 0.12, 0.0), vec3(220.0, 30.0, 1.0), 1.4);
+  vec3 add = uCol * flVeil(d, FL_VEIL);
+  add += mix(uCol, uCol * FL_ORANGE, 0.4) * flGhosts(uv, uSrc, uAsp, 1.0, 1.0, 1.0) * 0.12 * (1.0 - uHard);
+  add += mix(mix(uCol, FL_COOL, 0.25), uCol, uBand) * mix(soft, hard, uHard);
+  add *= uGain;
+  vec3 c = flScreen(base, add);
+  // Beach walker's own: deep bands tint the frame.
+  float lum = clamp(dot(add, vec3(0.3, 0.5, 0.2)) * 2.2, 0.0, 1.0);
+  return mix(c, mix(base, uCol * 0.55, lum), uBand * 0.6);`,
+  },
+  {
+    id: 'window', name: 'Window seat', a: 'Window seat', b: 'Parts', light: 'white',
+    knobs: { gain: 1, size: 0.6, streak: 1, extra: 0 },
+    A: `
+  const vec3 ORANGE = vec3(1.0, 0.42, 0.1);
+  float aspect = uAsp;
+  vec3 col = uCol;
+  float streak = uStreak;
+  vec2 sp = uSrc;
+  vec2 d = (uv - sp) / uSize;
+  float ax = d.x * aspect, ay = d.y;
+  float r = length(vec2(ax * 0.6, ay));
+  vec3 a = col * (0.025 * exp(-r * 1.5) + 0.08 * exp(-r * 5.0) + 0.4 * exp(-r * 22.0));
+  float line = 0.9 * exp(-abs(ay) * 40.0) + 0.25 * exp(-abs(ay) * 12.0);
+  a += mix(col, vec3(0.85, 0.8, 1.0), 0.25) * line * exp(-abs(ax) / (0.18 * uSize)) * streak;
+  vec2 toC = vec2(0.5) - sp;
+  for (int k = 0; k < 4; k++) {
+    vec3 gs = k == 0 ? vec3(0.7, 0.05, 0.9) : k == 1 ? vec3(1.4, 0.09, 0.6) : k == 2 ? vec3(2.2, 0.15, 0.4) : vec3(-0.45, 0.03, 0.5);
+    vec2 g = (uv - (sp + toC * gs.x)) * vec2(aspect, 1.0);
+    float gr = length(g) / (gs.y * uSize);
+    a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak) * (1.0 + uExtra);
+  }
+  vec3 add = a * uGain;
+  return 1.0 - (1.0 - base) * (1.0 - min(add, 1.0));`,
+    B: `
+  vec2 d = flOffset(uv, uSrc, uAsp, uSize);
+  vec3 add = uCol * flVeil(d, FL_VEIL);
+  add += mix(uCol, FL_COOL, 0.25) * flStreak(d, vec3(0.9, 0.25, 0.0), vec3(40.0, 12.0, 1.0), 0.18 * uSize) * uStreak;
+  add += mix(uCol, uCol * FL_ORANGE, 0.4) * flGhosts(uv, uSrc, uAsp, uSize, 1.0, 1.0) * 0.12 * (0.3 + 0.7 * uStreak) * (1.0 + uExtra);
+  return flScreen(base, add * uGain);`,
+  },
+  {
+    id: 'bread', name: 'Broodautomaat', a: 'Broodautomaat', b: 'Parts', light: 'white',
+    knobs: { gain: 1 },
+    A: `
+  vec2 d = uv - uSrc;
+  float ax = d.x * uAsp, ay = d.y;
+  float r = length(vec2(ax * 0.6, ay));
+  vec3 add = uCol * (0.02 * exp(-r * 1.5) + 0.06 * exp(-r * 5.0) + 0.3 * exp(-r * 22.0));
+  float line = 0.4 * exp(-abs(ay) * 130.0) + 0.12 * exp(-abs(ay) * 20.0) + 0.03 * exp(-abs(ay) * 4.0);
+  add += mix(uCol, vec3(0.55, 0.72, 1.0), 0.45) * line * exp(-abs(ax) / 1.1);
+  vec2 toC = vec2(0.5) - uSrc;
+  vec3 gs[4];
+  gs[0] = vec3(0.7, 0.05, 0.9); gs[1] = vec3(1.4, 0.09, 0.6); gs[2] = vec3(2.2, 0.15, 0.4); gs[3] = vec3(-0.45, 0.03, 0.5);
+  for (int i = 0; i < 4; i++) {
+    vec2 g = (uv - (uSrc + toC * gs[i].x)) * vec2(uAsp, 1.0);
+    float gr = length(g) / gs[i].y;
+    add += mix(uCol, uCol * vec3(1.0, 0.5, 0.2), 0.4) * exp(-gr * gr) * gs[i].z * 0.1;
+  }
+  add *= uGain;
+  return base + add * (1.0 - clamp(base, 0.0, 1.0));`,
+    B: `
+  vec2 d = flOffset(uv, uSrc, uAsp, 1.0);
+  vec3 add = uCol * flVeil(d, vec3(0.02, 0.06, 0.3));
+  add += mix(uCol, vec3(0.55, 0.72, 1.0), 0.45) * flStreak(d, vec3(0.4, 0.12, 0.03), vec3(130.0, 20.0, 4.0), 1.1);
+  add += mix(uCol, uCol * vec3(1.0, 0.5, 0.2), 0.4) * flGhosts(uv, uSrc, uAsp, 1.0, 1.0, 1.0) * 0.1;
+  add *= uGain;
+  // Broodautomaat's own blend.
+  return base + add * (1.0 - clamp(base, 0.0, 1.0));`,
+  },
+  {
+    id: 'burst', name: 'Fireworks, Coast and meteor', a: 'Fireworks', b: 'Parts', light: 'burst',
+    knobs: { streak: 1, len: 0.35, thin: 160, warm: 0.2, ghost: 1, spread: 1 },
+    pre: `
+// Blue never exceeds green; green never exceeds red.
+vec3 warm(vec3 c) { float g = min(c.g, c.r); return vec3(c.r, g, min(c.b, g)); }`,
+    A: `
+  vec3 c = base;
+  vec2 p = uSrc;
+  vec3 tint = mix(uCol, uWarm > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(uWarm), 0.0, 1.0));
+  vec3 col = warm(max(tint, 0.0));
+  vec2 d = uv - p;
+  float ax = d.x * uAsp, ay = abs(d.y);
+  float line = exp(-ay * uThin) + 0.3 * exp(-ay * uThin * 0.08);
+  c += col * line * exp(-abs(ax) / uLen) * uStreak;
+  vec2 tc = (vec2(0.5) - p) * uSpread;
+  vec2 g0 = (uv - p - tc * 0.7) * vec2(uAsp, 1.0);
+  vec2 g1 = (uv - p - tc * 1.4) * vec2(uAsp, 1.0);
+  vec2 g2 = (uv - p - tc * 2.2) * vec2(uAsp, 1.0);
+  float gs = 0.9 * exp(-dot(g0, g0) / 0.0025) + 0.6 * exp(-dot(g1, g1) / 0.0081) + 0.4 * exp(-dot(g2, g2) / 0.0225);
+  c += col * gs * uGhost * 0.06;
+  return c;`,
+    B: `
+  vec3 col = flWarm(uCol, uWarm);
+  vec2 d = flOffset(uv, uSrc, uAsp, 1.0);
+  vec3 add = col * flStreak(d, vec3(1.0, 0.3, 0.0), vec3(uThin, uThin * 0.08, 1.0), uLen) * uStreak;
+  add += col * flGhosts(uv, uSrc, uAsp, 1.0, uSpread, 0.0) * 0.06 * uGhost;
+  // This flare adds light before bloom; it does not screen.
+  return base + add;`,
+  },
+];
+
+/* ---------- grade: the copies ---------- */
+// A is the toy's own grade pass; the scene function stands in for tDiffuse.
+// B draws the same grade from shared/grade.js.
+// With three.js, a preset with pass runs gradePass() on a render target.
+const H_INT = `
+// An integer hash per pixel; float hashes draw faint stripes here.
+float h(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}`;
+const kitA = at => `
+  vec3 c = base + uTint;
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c *= 1.0 + (h(${at}) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+  return max(c, 0.0);`;
+const kitB = noise => `
+  vec3 c = base + uTint;
+  c *= gdVignette(uv, uRes.x / uRes.y, uVig, uVigIn);
+  c *= gdGrain(${noise}, gdLuma(c), uGrain, vec2(0.6, 1.0));
+  return max(c, 0.0);`;
+const KIT = { tintK: 1, vig: 0.5, vigIn: 0.4, grain: 0.03 };
+PRESETS.push(
+  {
+    fx: 'grade', id: 'kit', name: 'Night scene kit', a: 'Fireworks', b: 'gdGrade()', light: 'sun',
+    knobs: KIT, pass: { noise: 'int' },
+    use: 'Also Canal at dusk, Broodautomaat, Coast and meteor.\nthree.js: new ShaderPass(gradePass({ tint, vig, vigIn, grain }))',
+    pre: H_INT,
+    A: kitA('gl_FragCoord.xy'),
+    B: `
+  return gdGrade(base, uv, uRes.x / uRes.y, gl_FragCoord.xy, uTint, uVig, uVigIn, uGrain);`,
+  },
+  {
+    fx: 'grade', id: 'viaduct', name: 'Night viaduct', a: 'Night viaduct', b: 'Parts', light: 'sun',
+    knobs: KIT, pass: { noise: 'sin' },
+    use: "three.js: new ShaderPass(gradePass({ tint, vig, vigIn, grain, noise: 'sin' }))\nThe sine hash turns on the last bit of vUv. In the lab's three.js run it draws other grain of the same strength.",
+    pre: 'float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
+    A: kitA('uv * uRes'),
+    B: kitB('gdHashSin(uv * uRes)'),
+  },
+  {
+    fx: 'grade', id: 'subway', name: 'Subway', a: 'Subway', b: 'Parts', light: 'white',
+    knobs: KIT, pass: { noise: 'ign' },
+    use: "Train Ride runs the same grain after its own exposure, saturation and contrast.\nthree.js: new ShaderPass(gradePass({ tint, vig, vigIn, grain, noise: 'ign' }))\nIn the lab's three.js run a few pixels differ: the noise wraps on the last bit of vUv.",
+    pre: `
+// Interleaved gradient noise: fine grain with no banding.
+float h(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }`,
+    A: kitA('uv * uRes'),
+    B: kitB('gdIgn(uv * uRes)'),
+  },
+  {
+    fx: 'grade', id: 'launch', name: 'Ten seconds', a: 'Ten seconds', b: 'Parts', light: 'sun',
+    knobs: { tintK: 1, vig: 0.5, vigIn: 0.4, grain: 0.075, seed: 0, box: 0 },
+    pre: H_INT,
+    A: `
+  // A faint colour fringe toward the frame edge, as a real lens has.
+  vec2 cq = uv - 0.5;
+  float ca = dot(cq, cq) * 0.006;
+  vec3 c = vec3(scene(uv + cq * ca).r, scene(uv).g, scene(uv - cq * ca).b) + uTint;
+  // Split tone: cool shadows, warm highlights.
+  float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  // Film grain moves with the seed; the exposure holds steady.
+  vec2 gp = gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0);
+  c *= 1.0 + (h(gp) - 0.5) * uGrain * (1.2 - 0.6 * smoothstep(0.0, 0.3, lum)) * 2.0;
+  // Bars cover what lies outside a 2.39 frame; tall stages get none.
+  float bar = max(0.0, 0.5 - 0.5 * (uRes.x / uRes.y) / 2.39);
+  if (uBox > 0.5 && (uv.y < bar || uv.y > 1.0 - bar)) c = vec3(0.0);
+  return max(c, 0.0);`,
+    B: `
+  // Ten seconds' own: a colour fringe, then a split tone.
+  vec2 cq = uv - 0.5;
+  float ca = dot(cq, cq) * 0.006;
+  vec3 c = vec3(scene(uv + cq * ca).r, scene(uv).g, scene(uv - cq * ca).b) + uTint;
+  c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(gdLuma(c), 0.0))));
+  c *= gdVignette(uv, uRes.x / uRes.y, uVig, uVigIn);
+  // More grain in the shadows than in the lights.
+  c *= gdGrain(gdHash(gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0)), gdLuma(c), uGrain, vec2(1.2, 0.6));
+  // Ten seconds' own: letterbox bars.
+  float bar = max(0.0, 0.5 - 0.5 * (uRes.x / uRes.y) / 2.39);
+  if (uBox > 0.5 && (uv.y < bar || uv.y > 1.0 - bar)) c = vec3(0.0);
+  return max(c, 0.0);`,
+  },
+  {
+    fx: 'grade', id: 'frietkot', name: 'Frietkot', a: 'Frietkot', b: 'Parts', light: 'white',
+    knobs: { tintK: 1, vig: 0.55, vigIn: 0.4, grain: 0.03, seed: 0, flick: 0 },
+    use: 'The tape look (DV) stays off here; it sits before the grade.',
+    pre: `
+// An integer hash per pixel; float hashes draw faint stripes here.
+float h(vec2 p) {
+  // The grain changes every frame, like film.
+  uvec2 q = uvec2(p) + uvec2(uint(uSeed) * 7919u, uint(uSeed) * 104729u);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}`,
+    A: `
+  vec3 c = base;
+  c += uTint;
+  // Split tone: cool teal in the shadows, warm in the lights.
+  float yl = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c *= mix(vec3(0.9, 1.0, 1.08), vec3(1.06, 1.0, 0.92), smoothstep(0.02, 0.5, yl));
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+  // Stop-motion: the exposure flickers a little from step to step.
+  c *= 1.0 + uFlick;
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+  return max(c, 0.0);`,
+    B: `
+  vec3 c = base + uTint;
+  // Frietkot's own: a split tone.
+  c *= mix(vec3(0.9, 1.0, 1.08), vec3(1.06, 1.0, 0.92), smoothstep(0.02, 0.5, gdLuma(c)));
+  c *= gdVignette(uv, uRes.x / uRes.y, uVig, uVigIn);
+  // Frietkot's own: the exposure flickers.
+  c *= 1.0 + uFlick;
+  // The grain changes every frame.
+  uvec2 px = uvec2(gl_FragCoord.xy) + uvec2(uint(uSeed) * 7919u, uint(uSeed) * 104729u);
+  c *= gdGrain(gdHashU(px), gdLuma(c), uGrain, vec2(0.6, 1.0));
+  return max(c, 0.0);`,
+  },
+);
+
+/* ---------- shaders ---------- */
+const UNI = `uniform vec2 uSrc, uRes; uniform vec3 uCol, uTint; uniform int uBack; uniform float uAsp;
+uniform float ${Object.keys(KNOBS).map(uName).join(', ')};`;
+// The backdrop: plain bands of light, so the flare is all that changes.
+const SCENE = `
+vec3 scene(vec2 uv) {
+  vec3 c;
+  float hz = 0.4, up = max(uv.y - hz, 0.0);
+  if (uBack == 0) {
+    vec3 sky = mix(vec3(0.03, 0.06, 0.16), vec3(0.2, 0.16, 0.2), exp(-up * 4.0));
+    sky = mix(sky, vec3(0.75, 0.34, 0.14), exp(-up * 14.0));
+    vec3 sea = mix(vec3(0.012, 0.018, 0.035), vec3(0.16, 0.08, 0.045), exp(-(hz - uv.y) * 9.0));
+    c = uv.y > hz ? sky : sea;
+  } else if (uBack == 1) {
+    c = vec3(0.004, 0.006, 0.012) + vec3(0.02, 0.016, 0.03) * exp(-abs(uv.y - hz) * 12.0);
+    if (uv.y < hz) c *= 0.4;
+  } else if (uBack == 2) {
+    c = vec3(0.18);
+  } else {
+    c = uv.y > hz ? mix(vec3(0.75, 0.82, 0.9), vec3(0.22, 0.42, 0.8), 1.0 - exp(-up * 3.0)) : vec3(0.1, 0.2, 0.3) * (0.5 + uv.y);
+  }
+  // The light itself: a small hot disc.
+  vec2 d = (uv - uSrc) * vec2(uAsp, 1.0);
+  return c + uCol * 3.0 * smoothstep(0.011, 0.007, length(d));
+}`;
+// Every module goes into every shader, so a name clash shows at once.
+const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${p.pre || ''}
+vec3 sideA(vec2 uv, vec3 base) {${p.A}\n}
+vec3 sideB(vec2 uv, vec3 base) {${p.B}\n}`;
+const OUT = side => `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`;
+const rawFS = (p, side) => `#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outC;\n${body(p)}\nvoid main() { outC = ${OUT(side)}; }`;
+// three.js adds the version, the precision and gl_FragColor itself.
+const threeFS = p => `varying vec2 vUv;\n${body(p)}\nvoid main() { gl_FragColor = ${OUT('B')}; }`;
+const TRI_VS = `#version 300 es
+out vec2 vUv;
+void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
+const MIX_FS = `#version 300 es
+precision highp float;
+uniform sampler2D tA, tB; uniform float uSplit; uniform int uMode;
+in vec2 vUv; out vec4 outC;
+void main() {
+  vec3 a = texture(tA, vUv).rgb, b = texture(tB, vUv).rgb;
+  vec3 c = uMode == 1 ? abs(a - b) * 32.0 : uMode == 2 ? abs(a - b) : (vUv.x < uSplit ? a : b);
+  outC = vec4(c, 1.0);
+}`;
+
+function compile(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const locs = new Map();
+  return { p, loc: n => (locs.has(n) ? locs.get(n) : (locs.set(n, gl.getUniformLocation(p, n)), locs.get(n))) };
+}
+
+/* ---------- state ---------- */
+let preset = PRESETS[0], val = {}, back = 0, light = 'sun', bMode = 'raw', vMode = 0, split = 0.5;
+const src = [0.32, 0.52];
+let W = 1, H = 1, progA = null, progB = null, dirty = false, measureT = 0;
+const progMix = compile(TRI_VS, MIX_FS);
+const MW = 480, MH = 270;
+function target() {
+  const tex = gl.createTexture(), fbo = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fbo };
+}
+const tA = target(), tB = target(), tM = target();
+function sizeTarget(t, w, h) {
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+}
+sizeTarget(tM, MW, MH);
+
+/* ---------- side B in three.js ---------- */
+// The same B source runs in a ShaderMaterial; its canvas feeds the B texture.
+let T = null, threeLoad = null;
+function loadThree() {
+  return threeLoad ??= import('three').then(THREE => {
+    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.debug.onShaderError = (g, prog, vs, fs) => { $('err').textContent = 'three.js: ' + g.getShaderInfoLog(fs); };
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    mesh.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(mesh);
+    const rt = [0, 1].map(() => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }));
+    const out = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null } }, depthTest: false, vertexShader: QUAD_VS,
+      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main() { gl_FragColor = vec4(pow(max(texture2D(tDiffuse, vUv).rgb, 0.0), vec3(1.0 / 2.2)), 1.0); }',
+    });
+    T = { THREE, renderer, scene, mesh, cam: new THREE.Camera(), id: '', rt, out, main: null, pass: null };
+    touch();
+  }).catch(e => { $('err').textContent = 'three.js did not load: ' + e.message; });
+}
+const QUAD_VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+const tintNow = () => TINT.map(x => x * (val.tintK ?? 1));
+const knob = k => val[k] ?? KNOBS[k][4];
+function drawThree() {
+  const { THREE } = T;
+  if (T.id !== preset.id) {
+    T.main?.dispose();
+    T.pass?.dispose();
+    const uniforms = {
+      uSrc: { value: new THREE.Vector2() }, uRes: { value: new THREE.Vector2() }, uCol: { value: new THREE.Vector3() },
+      uTint: { value: new THREE.Vector3() }, uBack: { value: 0 }, uAsp: { value: 1 },
+    };
+    for (const k in KNOBS) uniforms[uName(k)] = { value: 0 };
+    // With a pass, the first material draws only the scene.
+    const fs = preset.pass ? `varying vec2 vUv;\n${UNI}\n${SCENE}\nvoid main() { gl_FragColor = vec4(scene(vUv), 1.0); }` : threeFS(preset);
+    T.main = new THREE.ShaderMaterial({ uniforms, depthTest: false, fragmentShader: fs, vertexShader: QUAD_VS });
+    T.pass = preset.pass ? new THREE.ShaderMaterial({ ...gradePass(preset.pass), depthTest: false }) : null;
+    T.id = preset.id;
+  }
+  const u = T.main.uniforms;
+  u.uSrc.value.set(src[0], src[1]);
+  u.uRes.value.set(W, H);
+  u.uCol.value.fromArray(LIGHTS[light][1]);
+  u.uTint.value.fromArray(tintNow());
+  u.uBack.value = back;
+  u.uAsp.value = W / H;
+  for (const k in KNOBS) u[uName(k)].value = knob(k);
+  T.renderer.setSize(W, H, false);
+  const run = (mat, rt) => { T.mesh.material = mat; T.renderer.setRenderTarget(rt); T.renderer.render(T.scene, T.cam); };
+  if (T.pass) {
+    // Scene to a target, gradePass() to a second, then the lab's output curve.
+    for (const rt of T.rt) rt.setSize(W, H);
+    run(T.main, T.rt[0]);
+    const pu = T.pass.uniforms;
+    pu.tDiffuse.value = T.rt[0].texture;
+    pu.uRes.value = [W, H];
+    pu.uTint.value = tintNow();
+    pu.uVig.value = knob('vig'); pu.uVigIn.value = knob('vigIn'); pu.uGrain.value = knob('grain'); pu.uSeed.value = knob('seed');
+    run(T.pass, T.rt[1]);
+    T.out.uniforms.tDiffuse.value = T.rt[1].texture;
+    run(T.out, null);
+  } else run(T.main, null);
+  gl.bindTexture(gl.TEXTURE_2D, tB.tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, T.renderer.domElement);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
+/* ---------- draw ---------- */
+function setU(prog) {
+  gl.useProgram(prog.p);
+  gl.uniform2f(prog.loc('uSrc'), src[0], src[1]);
+  gl.uniform2f(prog.loc('uRes'), W, H);
+  gl.uniform3fv(prog.loc('uCol'), LIGHTS[light][1]);
+  gl.uniform3fv(prog.loc('uTint'), tintNow());
+  gl.uniform1i(prog.loc('uBack'), back);
+  gl.uniform1f(prog.loc('uAsp'), W / H);
+  for (const k in KNOBS) gl.uniform1f(prog.loc(uName(k)), knob(k));
+}
+function pass(prog, fbo, w, h) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, w, h);
+  gl.useProgram(prog.p);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function mix(fbo, w, h, mode) {
+  gl.useProgram(progMix.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tA.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tB.tex);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(progMix.loc('tA'), 0);
+  gl.uniform1i(progMix.loc('tB'), 1);
+  gl.uniform1f(progMix.loc('uSplit'), split);
+  gl.uniform1i(progMix.loc('uMode'), mode);
+  pass(progMix, fbo, w, h);
+}
+// fw and fh force a frame size; the check uses them.
+function draw(fw, fh) {
+  dirty = false;
+  if (!progA || !progB) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = fw || Math.max(1, Math.round(view.clientWidth * dpr)), h = fh || Math.max(1, Math.round(view.clientHeight * dpr));
+  if (w !== W || h !== H) {
+    W = cv.width = w; H = cv.height = h;
+    sizeTarget(tA, W, H); sizeTarget(tB, W, H);
+  }
+  setU(progA); pass(progA, tA.fbo, W, H);
+  if (bMode === 'three' && T) drawThree();
+  else { setU(progB); pass(progB, tB.fbo, W, H); }
+  mix(null, W, H, vMode);
+  clearTimeout(measureT);
+  measureT = setTimeout(measure, 120);
+}
+// The largest gap between A and B, in 8-bit steps.
+function measure() {
+  mix(tM.fbo, MW, MH, 2);
+  const px = new Uint8Array(MW * MH * 4);
+  gl.readPixels(0, 0, MW, MH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let m = 0, over = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const d = Math.max(px[i], px[i + 1], px[i + 2]);
+    if (d > m) m = d;
+    if (d > 1) over++;
+  }
+  // The share of pixels that differ by more than one step.
+  const share = over / (MW * MH) * 100;
+  const el = $('diff');
+  el.textContent = `Largest difference: ${m} / 255` + (m > 1 ? `, in ${pct(share)} of pixels` : '');
+  el.className = 'diff ' + (m <= 1 ? 'ok' : 'off');
+  el.dataset.max = m;
+  el.dataset.share = share;
+  // The measure pass drew to its own target; the canvas keeps the last frame.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { m, share };
+}
+const pct = x => (x < 0.1 ? x.toFixed(3) : x.toFixed(1)) + ' %';
+// Every copy against the module, in both runtimes, over odd knob values.
+// It draws and measures at once, so it also runs in a hidden tab.
+const CASES = [[0, 'sun', null], [1, 'burst', 0.8], [3, 'cyan', 0.55], [2, 'violet', 0.15]];
+async function checkAll() {
+  const keep = { preset, back, light, bMode };
+  await loadThree();
+  const rows = [];
+  for (const p of PRESETS) {
+    usePreset(p);
+    const row = { name: FXS[p.fx || 'flare'] + ', ' + p.name };
+    for (const mode of T ? ['raw', 'three'] : ['raw']) {
+      bMode = mode;
+      row[mode] = 0;
+      row[mode + 'Share'] = 0;
+      for (const [bk, li, f] of CASES) {
+        back = bk; light = li;
+        for (const k in p.knobs) val[k] = f === null ? p.knobs[k] : KNOBS[k][1] + (KNOBS[k][2] - KNOBS[k][1]) * f;
+        draw(1280, 720);
+        const r = measure();
+        row[mode] = Math.max(row[mode], r.m);
+        row[mode + 'Share'] = Math.max(row[mode + 'Share'], r.share);
+      }
+    }
+    rows.push(row);
+  }
+  ({ back, light, bMode } = keep);
+  usePreset(keep.preset);
+  $('preset').value = keep.preset.id;
+  light = keep.light;
+  $('light').value = light;
+  const out = $('checkOut');
+  out.hidden = false;
+  const cell = (r, mode) => r[mode] + (r[mode] > 1 ? ` (${pct(r[mode + 'Share'])} of pixels)` : '');
+  out.textContent = rows.map(r => `${r.name}: raw ${cell(r, 'raw')}` + ('three' in r ? `, three.js ${cell(r, 'three')}` : '')).join('\n') + '\nLargest difference per copy, in steps of 255.';
+  return rows;
+}
+$('check').addEventListener('click', checkAll);
+window.fxlab = { checkAll };
+const touch = () => { if (!dirty) { dirty = true; requestAnimationFrame(() => draw()); } };
+
+/* ---------- panel ---------- */
+function knobRows(host, set) {
+  host.textContent = '';
+  for (const [k, def] of Object.entries(set)) {
+    const [label, lo, hi, step] = KNOBS[k];
+    val[k] = def;
+    const row = document.createElement('label');
+    row.className = 'row';
+    const name = document.createElement('span'), inp = document.createElement('input'), out = document.createElement('output');
+    name.textContent = label;
+    Object.assign(inp, { type: 'range', min: lo, max: hi, step, value: def });
+    out.textContent = def;
+    inp.addEventListener('input', () => { val[k] = +inp.value; out.textContent = inp.value; touch(); });
+    row.append(name, inp, out);
+    host.append(row);
+  }
+}
+function usePreset(p) {
+  preset = p;
+  val = {};
+  $('err').textContent = '';
+  try {
+    progA = compile(TRI_VS, rawFS(p, 'A'));
+    progB = compile(TRI_VS, rawFS(p, 'B'));
+  } catch (e) { progA = progB = null; $('err').textContent = e.message; }
+  knobRows($('knobs'), p.knobs);
+  knobRows($('knobsB'), p.bOnly || {});
+  $('bOnlyH').hidden = !p.bOnly;
+  light = p.light;
+  $('light').value = light;
+  $('code').textContent = p.B.replace(/^\n/, '').replace(/^ {2}/gm, '') + (p.use ? '\n\n' + p.use : '');
+  tags();
+  touch();
+}
+function tags() {
+  $('tagA').textContent = 'A · ' + preset.a;
+  $('tagB').textContent = 'B · ' + (bMode === 'three' ? (preset.pass ? 'gradePass()' : preset.b) + ' · three.js' : preset.b);
+  $('split').style.left = split * 100 + '%';
+  const off = vMode !== 0;
+  $('split').hidden = $('tagA').hidden = $('tagB').hidden = off;
+}
+function seg(id, on) {
+  $(id).addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    for (const x of $(id).children) x.setAttribute('aria-pressed', x === b);
+    on(b.dataset.v);
+    tags();
+    touch();
+  });
+}
+// The effect picks which copies the list shows.
+function useFx(fx) {
+  $('preset').textContent = '';
+  const list = PRESETS.filter(p => (p.fx || 'flare') === fx);
+  for (const p of list) $('preset').add(new Option(p.name, p.id));
+  usePreset(list[0]);
+}
+for (const [k, name] of Object.entries(FXS)) $('fx').add(new Option(name, k));
+$('fx').addEventListener('change', e => useFx(e.target.value));
+for (const [k, [name]] of Object.entries(LIGHTS)) $('light').add(new Option(name, k));
+BACKS.forEach((name, i) => $('back').add(new Option(name, i)));
+$('preset').addEventListener('change', e => usePreset(PRESETS.find(p => p.id === e.target.value)));
+$('light').addEventListener('change', e => { light = e.target.value; touch(); });
+$('back').addEventListener('change', e => { back = +e.target.value; touch(); });
+seg('bmode', v => { bMode = v; if (v === 'three') loadThree(); });
+seg('vmode', v => { vMode = +v; });
+
+/* ---------- pointer ---------- */
+function drag(el, move) {
+  el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); move(e); e.preventDefault(); });
+  el.addEventListener('pointermove', e => { if (el.hasPointerCapture(e.pointerId)) move(e); });
+}
+const at = e => { const r = view.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+drag(cv, e => { const [x, y] = at(e); src[0] = x; src[1] = 1 - y; touch(); });
+drag($('split'), e => { split = Math.min(0.98, Math.max(0.02, at(e)[0])); tags(); touch(); });
+new ResizeObserver(touch).observe(view);
+
+useFx('flare');
+</script>
+</body>
+</html>

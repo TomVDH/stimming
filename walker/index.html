@@ -12,6 +12,20 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/Pass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/CopyShader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/LuminosityHighPassShader.js">
 <style>
 /* Beach walker: a wind-driven linkage walker, backlit on wet sand at sunset. */
 :root { --stage: oklch(0.13 0.04 282); }
@@ -51,20 +65,15 @@
   </section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds for the page, the font and the first frame.
+playIntro({ ready: pageReady() });
 </script>
 <script type="module">
-import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, fitCanvas, oklchRgb, onQuality, pixelRatio, stage as mark } from '../shared/stim.js';
+mark('libs');
 
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas:not(.sky)');
 const skyCanvas = stage.querySelector('canvas.sky');
@@ -75,7 +84,7 @@ const store = {
 };
 const TIME_KEY = 'stimming.walker.time', VIEW_KEY = 'stimming.walker.view';
 const ctx = canvas.getContext('2d');
-if (!ctx) { stage.querySelector('.fail').hidden = false; throw new Error('no canvas'); }
+if (!ctx) { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no canvas'); }
 
 const PI = Math.PI, TAU = PI * 2;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -891,6 +900,7 @@ try {
   THREE = await import('three');
   ({ UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js'));
 } catch (err) { console.warn('three did not load; the flat scene shows instead.', err); }
+mark('build');
 // A rod between two joints, as joint slots and a radius in leg units.
 const LEG_RODS = [[O, B, 1.6], [O, A, 1.5], [B, P1, 1.2], [P1, P2, 1.2], [P2, B, 1.2], [B, P4, 1.2], [P2, P3, 1.2], [P4, P3, 1.2], [P3, F, 1.2], [F, P4, 1.2], [A, P4, 1.1], [A, P1, 1.1]];
 const LEG_JOINTS = [A, B, P1, P2, P3, P4, F];
@@ -1999,6 +2009,7 @@ if (sea) {
   setWide(store.get(VIEW_KEY) !== 'close', false);
   if (ui.setting('cycle')?.value) setCycle(true);
 }
+mark('first-frame');
 // The breeze starts the walk once the page is up.
 wake();
 

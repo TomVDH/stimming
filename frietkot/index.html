@@ -38,12 +38,12 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Frietkot</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/frietkot.svg)"></span><span class="intro-name">Frietkot</span><span class="intro-sub">Stimming No. 39</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows and a neon strip hums on the roof. Tap the shack to order a cone of fries, hold to shake the basket.">
+    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows; the staff fry and serve on their own. Drag to look round.">
       <p class="fail" hidden>Frietkot needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -79,7 +79,7 @@ import { FIG_GLSL } from './figures.js';
 
 const stage = document.getElementById('stage');
 // Handlers bind once the scene exists.
-const act = { order() {}, sauce() {}, wind() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
+const act = { order() {}, sign() {}, sauce() {}, drop() {}, shake() {}, fill() {}, neon() {}, tilt() {}, traffic() {}, moths() {}, people() {}, weather() {}, camcorder() {}, reset() {} };
 const QS = new URLSearchParams(location.search);
 
 /* ---------- sauces and neon ---------- */
@@ -96,22 +96,21 @@ const SAUCES = [
 const NEON = { red: [0.66, 0.24, 28], blue: [0.62, 0.17, 255], green: [0.8, 0.2, 145] };
 
 const ui = initPage({ id: 'frietkot', bar: {
-  // A diorama: one verb. An order runs the double fry and fills a cone.
-  actions: [{ verb: 'order', key: 'O', onPress: () => act.order() }],
   settings: [
-    { type: 'choice', id: 'weather', label: 'Weather', value: 'shift', persist: true, onPick: v => act.weather(v),
+    // The night first, then the place, then the lens.
+    { type: 'choice', id: 'weather', label: 'Weather', display: 'stepper', value: 'shift', persist: true, onPick: v => act.weather(v),
       options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
-    { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.3, persist: true, onInput: v => act.wind(v) },
-    { type: 'choice', id: 'neon', label: 'Neon', value: 'red', persist: true, onPick: v => act.neon(v),
+    { type: 'choice', id: 'sign', label: 'Sign', display: 'stepper', value: 'board', persist: true, onPick: v => act.sign(v),
+      options: [{ value: 'neon', label: 'Neon' }, { value: 'board', label: 'Lit board' }, { value: 'box', label: 'Lightbox' }] },
+    { type: 'choice', id: 'neon', label: 'Neon', display: 'stepper', value: 'red', persist: true, onPick: v => act.neon(v),
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
-    { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
-    { type: 'toggle', id: 'moths', label: 'Moths', value: true, persist: true, onToggle: on => act.moths(on) },
+    { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'order'], ['hold', 'shake'], ['drag', 'look round'], ['scroll', 'zoom']],
+  keys: [['drag', 'look round'], ['scroll', 'zoom']],
 } });
 
 // Seeded random keeps the square the same on every load.
@@ -223,6 +222,10 @@ const U = {
   uRefCone: { value: new THREE.Vector3() },
   uRefBox: { value: new THREE.Vector3(1.0, 0.7, 0.45).multiplyScalar(0.55) },
   uVeh1: { value: new THREE.Vector4() },
+  // The bus's lit cabin: x, z, half length, strength.
+  uBus: { value: new THREE.Vector4() },
+  // The shelter's ad panel: x, z, strength.
+  uAd: { value: new THREE.Vector3() },
   uWet: { value: 0 },
   uRipple: { value: 0 },
   uAnnexP: { value: new THREE.Vector3((A.x0 + A.x1) / 2, 1.45, A.z1 - 0.1) },
@@ -231,7 +234,7 @@ const U = {
 // The window's warm light; a drop flares it for a moment.
 const LAMP = new THREE.Vector3(...oklchLinear(0.9, 0.07, 70));
 function setLight() {
-  const f = 1 + 0.7 * U.uFlare.value;
+  const f = 1 + 0.3 * U.uFlare.value;
   U.uLampCol.value.copy(LAMP).multiplyScalar(7 * f);
   // What the lens sees through the window: the lit back wall and steam.
   U.uWin.value.copy(LAMP).multiplyScalar(1.4 * f);
@@ -246,7 +249,7 @@ function setNeon(k) {
   U.uNeonCol.value.copy(neonLin).multiplyScalar(0.7);
   neonMat.color.setRGB(neonLin.x * 4, neonLin.y * 4, neonLin.z * 4);
   signMat.uniforms.uCol.value.copy(neonLin);
-  U.uRefSign.value.copy(neonLin).multiplyScalar(1.3);
+  if (typeof signKey === 'undefined' || signKey === 'neon') U.uRefSign.value.copy(neonLin).multiplyScalar(1.3);
   for (const m of electrodeMats) m.color.setRGB(neonLin.x * 6, neonLin.y * 6, neonLin.z * 6);
 }
 
@@ -254,7 +257,16 @@ const LIGHT = /* glsl */`
 uniform vec3 uLamp, uLampCol, uWin, uStrip, uStripCol, uNeonA, uNeonB, uNeonCol, uSky, uGround, uHaze, uAnnexP, uAnnexCol;
 uniform vec4 uAp;
 uniform float uApZ, uHazeK, uOut;
-uniform vec4 uVeh0, uVeh1;
+uniform vec4 uVeh0, uVeh1, uBus;
+uniform vec3 uAd;
+// A light along a segment on the x axis: the bus's row of windows.
+vec3 busLight(vec3 p, vec3 n) {
+  if (uBus.w <= 0.0) return vec3(0.0);
+  vec3 q = vec3(clamp(p.x, uBus.x - uBus.z, uBus.x + uBus.z), 1.9, uBus.y);
+  vec3 L = q - p;
+  float d2 = dot(L, L);
+  return vec3(1.0, 0.82, 0.58) * uBus.w * max(dot(n, L * inversesqrt(d2)), 0.0) / (d2 + 1.5);
+}
 uniform vec3 uPartyP, uPartyCol, uRefSign, uRefCone, uRefBox, uSodium;
 uniform vec3 uStreet[4];
 // A vehicle's headlights: x, z, heading, power.
@@ -333,6 +345,10 @@ vec3 shade(vec3 p, vec3 n, vec3 v, vec3 alb, float gloss, float inside) {
   // The party's coloured light spills out of the hall.
   vec3 Lp = uPartyP - p;
   c += alb * uPartyCol * (1.0 - inside) * max(dot(n, normalize(Lp)), 0.0) / (dot(Lp, Lp) + 3.0);
+  // The passing bus and the shelter's ad panel throw soft light around them.
+  c += alb * busLight(p, n) * (1.0 - inside);
+  vec3 Lad = vec3(uAd.x, 1.1, uAd.y) - p;
+  c += alb * vec3(0.85, 0.9, 1.0) * uAd.z * max(dot(n, normalize(Lad)), 0.0) / (dot(Lad, Lad) + 0.6) * (1.0 - inside);
   // Sky and ground bounce.
   c += alb * mix(uGround, uSky, 0.5 + 0.5 * n.y);
   if (gloss > 0.0) {
@@ -392,6 +408,8 @@ void main() {
 
 /* ---------- the square ---------- */
 // Belgian setts in running bond, damp on top, rough in the joints.
+// The road runs between two granite curbs, across the front of the square.
+const ROAD = [8.9, 10.95];
 const groundMat = new THREE.ShaderMaterial({
   uniforms: U,
   vertexShader: VS,
@@ -414,12 +432,18 @@ const groundMat = new THREE.ShaderMaterial({
     float detail = 1.0 - smoothstep(0.015, 0.06, fw);
     float stone = mix(0.8, 1.0 - smoothstep(-0.012, 0.002, sd), detail);
     float r1 = hash12(id), r2 = hash12(id + 7.7);
+    // The road in front of the square: smooth dark asphalt between the two curbs.
+    float road = step(${ROAD[0].toFixed(2)}, g.y) * step(g.y, ${ROAD[1].toFixed(2)});
+    stone = mix(stone, 1.0, road);
     // Each sett is a low dome with its own tilt.
     vec2 grad = (f / (hs * hs) * 0.0012 + (vec2(r1, r2) - 0.5) * vec2(0.02, 0.05)) * stone * detail;
     vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
     vec3 v = normalize(cameraPosition - vP);
     vec3 alb = mix(vec3(0.09, 0.09, 0.1), vec3(0.2, 0.19, 0.17), r1) * (0.85 + 0.3 * fbm(g * 0.7));
     alb = mix(alb * 0.5, alb, stone);
+    alb = mix(alb, vec3(0.055, 0.055, 0.06) * (0.85 + 0.3 * fbm(g * 3.0)), road);
+    grad *= 1.0 - road;
+    n = normalize(vec3(-grad.x, 1.0, -grad.y));
     // Damp patches shine more; joints stay rough.
     float wet = 0.55 + 0.45 * smoothstep(0.35, 0.65, fbm(g * 0.25 + 4.0));
     float gloss = mix(stone * wet * mix(0.55, 0.85, r2), mix(0.75, 0.92, stone), uWet);
@@ -447,18 +471,101 @@ const groundMat = new THREE.ShaderMaterial({
 groundMat.extensions = { derivatives: true };
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), groundMat);
 scene.add(ground);
+// Two granite curbs: the square's edge behind the road, the near pavement in front.
+const curbMat = surface({ alb: linFit(0.4, 0.01, 260) });
+for (const z of [ROAD[0] - 0.15, ROAD[1] + 0.15]) {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(160, 0.13, 0.3), curbMat);
+  c.position.set(0, 0.065, z);
+  scene.add(c);
+}
+
+/* ---------- the bus stop and the bins ---------- */
+// A glass shelter at the back of the square, on the road past the parish hall.
+// The bus runs along that road, far off, in front of the village.
+const BUS_Z = -55.5;
+const CHURCH_X = -50;
+// The stop stands before the church tower, a little toward the hall; the bus halts with its door there.
+const SHELTER = { x: CHURCH_X + 8.5, z: BUS_Z - 1.6 };
+const BIN_SPOTS = [[3.25, 1.55], [SHELTER.x + 3.0, SHELTER.z - 0.5]];
+{
+  const frame = surface({ alb: linFit(0.3, 0.01, 250), gloss: 0.3, rim: 0.5 });
+  const g = new THREE.Group();
+  g.position.set(SHELTER.x, 0, SHELTER.z);
+  const bar = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frame); m.position.set(x, y, z); g.add(m); };
+  // Four posts, a thin roof, a bench.
+  for (const x of [-1.9, 1.9]) for (const z of [-1.3, -0.05]) bar(0.07, 2.4, 0.07, x, 1.2, z);
+  bar(4.1, 0.08, 1.5, 0, 2.44, -0.65);
+  bar(2.6, 0.06, 0.38, 0.3, 0.46, -1.0);
+  bar(0.06, 0.44, 0.3, -0.9, 0.22, -1.0);
+  bar(0.06, 0.44, 0.3, 1.5, 0.22, -1.0);
+  // Glass: back and one end, faint and cool.
+  const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.05, 0.07, 0.08), transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 2.1), glass);
+  back.position.set(0, 1.25, -1.3);
+  g.add(back);
+  const end = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 2.1).rotateY(Math.PI / 2), glass);
+  end.position.set(1.9, 1.25, -0.68);
+  g.add(end);
+  // The ad panel: a light box facing the lens, a soft out-of-focus picture in it.
+  const ad = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.75), new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform float uTime;
+    varying vec2 vUv;
+    void main() {
+      vec2 q = vUv;
+      // A pale sky, a warm blur of a face, a band of colour: an ad too far off to read.
+      vec3 c = mix(vec3(0.75, 0.82, 0.9), vec3(0.95, 0.85, 0.75), q.y);
+      c = mix(c, vec3(0.85, 0.55, 0.45), smoothstep(0.32, 0.12, length((q - vec2(0.5, 0.62)) / vec2(0.8, 1.0))));
+      c = mix(c, vec3(0.2, 0.35, 0.6), smoothstep(0.24, 0.2, q.y) * smoothstep(0.08, 0.12, q.y));
+      // The tube behind flickers now and then.
+      float fl = 0.92 + 0.08 * step(0.97, fract(sin(floor(uTime * 8.0) * 12.9898) * 43758.5));
+      float frame = step(0.04, q.x) * step(q.x, 0.96) * step(0.03, q.y) * step(q.y, 0.97);
+      gl_FragColor = vec4(mix(vec3(0.02), c * 0.85 * fl, frame), 1.0);
+    }`,
+  }));
+  ad.position.set(2.0, 1.2, -0.62);
+  g.add(ad);
+  bar(1.32, 1.9, 0.12, 2.0, 1.2, -0.7);
+  // The stop's sign on a pole: a yellow disc over a white plate, unlettered.
+  bar(0.06, 2.9, 0.06, -2.4, 1.45, 0.35);
+  // Reflective film: it catches what light there is.
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.82, 0.16, 95).map(v => v * 0.12)) }));
+  disc.position.set(-2.4, 2.75, 0.39);
+  g.add(disc);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(0.06, 0.06, 0.06) }));
+  plate.position.set(-2.4, 2.32, 0.39);
+  g.add(plate);
+  scene.add(g);
+  U.uAd.value.set(SHELTER.x + 2.0, SHELTER.z - 0.3, 0.9);
+  // Municipal bins: a dark green drum on a post, a lid with a slot.
+  const binMat = surface({ alb: linFit(0.32, 0.05, 160), gloss: 0.2, rim: 0.6 });
+  for (const [x, z] of BIN_SPOTS) {
+    const b = new THREE.Group();
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.24, 0.62, 16), binMat);
+    drum.position.y = 0.62;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.06, 16), binMat);
+    lid.position.y = 0.96;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.06), binMat);
+    post.position.y = 0.16;
+    b.add(drum, lid, post);
+    b.position.set(x, 0, z);
+    scene.add(b);
+  }
+}
 
 /* ---------- surfaces ---------- */
 // One material maker for every lit box.
 // ribs: corrugation on painted panels; tiles: a grid on the back wall.
-function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
+function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0, rim = 0 }) {
   return new THREE.ShaderMaterial({
-    uniforms: { ...U, uAlb: { value: new THREE.Vector3(...alb) }, uIn: { value: inside }, uGloss: { value: gloss }, uRibs: { value: ribs }, uTiles: { value: tiles } },
+    uniforms: { ...U, uAlb: { value: new THREE.Vector3(...alb) }, uIn: { value: inside }, uGloss: { value: gloss }, uRibs: { value: ribs }, uTiles: { value: tiles }, uRim: { value: rim } },
     vertexShader: VS,
     fragmentShader: /* glsl */`
     ${LIGHT}
     uniform vec3 uAlb;
-    uniform float uIn, uGloss, uRibs, uTiles;
+    uniform float uIn, uGloss, uRibs, uTiles, uRim;
     varying vec3 vP, vN;
     void main() {
       vec3 n = normalize(vN);
@@ -481,6 +588,8 @@ function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
       if (uIn < 0.5) alb *= mix(0.45, 1.0, smoothstep(0.0, 0.9, vP.y));
       vec3 v = normalize(cameraPosition - vP);
       vec3 c = shade(vP, n, v, alb, uGloss, uIn);
+      // A soft rim: the town's glow catches the frituur's edges, lifting it off the square.
+      if (uRim > 0.0) c += uRim * vec3(0.16, 0.11, 0.1) * pow(1.0 - max(dot(n, v), 0.0), 2.5) * smoothstep(0.2, 1.6, vP.y);
       gl_FragColor = vec4(haze(c, vP), 1.0);
     }`,
     extensions: { derivatives: true },
@@ -488,11 +597,11 @@ function surface({ alb, inside = 0, gloss = 0, ribs = 0, tiles = 0 }) {
 }
 const lin = (L, C, h) => linFit(L, C, h);
 const M = {
-  paint: surface({ alb: lin(0.62, 0.03, 85), ribs: 1 }),
-  trim: surface({ alb: lin(0.32, 0.02, 260) }),
+  paint: surface({ alb: lin(0.62, 0.03, 85), ribs: 1, rim: 1 }),
+  trim: surface({ alb: lin(0.32, 0.02, 260), rim: 1 }),
   plinth: surface({ alb: lin(0.18, 0.01, 260) }),
   steelOut: surface({ alb: lin(0.6, 0.01, 250), gloss: 0.5 }),
-  awning: surface({ alb: lin(0.55, 0.12, 25) }),
+  awning: surface({ alb: lin(0.55, 0.12, 25), rim: 1 }),
   inWall: surface({ alb: lin(0.4, 0.06, 195), inside: 1, tiles: 1 }),
   inPlain: surface({ alb: lin(0.36, 0.04, 200), inside: 1 }),
   steel: surface({ alb: lin(0.62, 0.01, 250), inside: 1 }),
@@ -500,6 +609,30 @@ const M = {
   gable: surface({ alb: lin(0.2, 0.012, 260) }),
   cooler: new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(...linFit(0.85, 0.04, 230).map(v => v * 1.6)) }),
 };
+// The village as a painted backdrop: soft brushed tones, deep haze, never sharp.
+M.village = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: VS,
+  fragmentShader: /* glsl */`
+  ${NOISE}
+  uniform vec3 uSky, uHaze, uPartyCol;
+  uniform float uHazeK;
+  varying vec3 vP, vN;
+  void main() {
+    vec3 n = normalize(vN);
+    // Long horizontal strokes, as a loaded brush lays them.
+    float br = fbm(vec2(vP.x * 0.12 + vP.z * 0.05, vP.y * 0.7 + vP.x * 0.02));
+    // Warm street glow at the foot of the walls, cool shadow up top.
+    vec3 c = mix(vec3(0.03, 0.021, 0.016), vec3(0.008, 0.009, 0.016), smoothstep(0.0, 8.0, vP.y));
+    c *= 0.7 + 0.6 * br;
+    // Roofs and ledges that face up hold a little sky.
+    c += uSky * 5.0 * smoothstep(0.3, 1.0, n.y) * (0.8 + 0.4 * br);
+    // Atmosphere: twice the haze of the square, so the village sits back.
+    float d = length(vP - cameraPosition);
+    c = mix(c, uHaze * 1.15, 1.0 - exp(-d * uHazeK * 2.0));
+    gl_FragColor = vec4(c, 1.0);
+  }`,
+});
 // Menu boards: white letters on black, too far off to read.
 M.menu = new THREE.ShaderMaterial({
   uniforms: U,
@@ -1156,7 +1289,7 @@ const FAR_LAMPS = [];
   geos.push(new THREE.ExtrudeGeometry(nave, { depth: 30, bevelEnabled: false }).translate(C.x, 0, C.z - 3.5 - 30));
   // A lit door in the tower: a late rehearsal.
   lateWins.push({ x: C.x, y: 1.6, z: C.z + 3.55, tv: false, on: true, k: 0, tall: true });
-  scene.add(new THREE.Mesh(mergeGeometries(geos.map(g => (g.index ? g.toNonIndexed() : g))), M.gable));
+  scene.add(new THREE.Mesh(mergeGeometries(geos.map(g => (g.index ? g.toNonIndexed() : g))), QS.has('day') ? M.gable : M.village));
 }
 
 // Sodium streetlights in the distance: a pole, an arm, an orange head and its pool on the road.
@@ -1198,16 +1331,16 @@ const winMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.1, 1.5), new T
 const haloMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vUv = uv; vC = instanceColor; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vec2 q = (vUv - 0.5) * 2.0; gl_FragColor = vec4(vC * 0.07 * exp(-dot(q, q) * 2.2), 1.0); }`,
+  fragmentShader: /* glsl */`varying vec2 vUv; varying vec3 vC; void main() { vec2 q = (vUv - 0.5) * 2.0; gl_FragColor = vec4(vC * 0.12 * exp(-dot(q, q) * 2.6), 1.0); }`,
 });
-const haloMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.6, 3.0), haloMat, lateWins.length);
+const haloMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.0, 4.4), haloMat, lateWins.length);
 {
   const m4 = new THREE.Matrix4();
   lateWins.forEach((w, i) => { m4.makeTranslation(w.x, w.y, w.z - 0.01); haloMesh.setMatrixAt(i, m4); haloMesh.setColorAt(i, new THREE.Color(0, 0, 0)); });
   scene.add(haloMesh);
 }
-const WARM = new THREE.Color().setRGB(...linFit(0.82, 0.1, 70).map(v => v * 0.9));
-const SCREEN = new THREE.Color().setRGB(...linFit(0.7, 0.08, 250).map(v => v * 0.8));
+const WARM = new THREE.Color().setRGB(...linFit(0.82, 0.1, 70).map(v => v * 0.45));
+const SCREEN = new THREE.Color().setRGB(...linFit(0.7, 0.08, 250).map(v => v * 0.4));
 const OFF = new THREE.Color().setRGB(0.004, 0.004, 0.006);
 const tmpC = new THREE.Color();
 function paintWins() {
@@ -1684,19 +1817,41 @@ signCanvas.height = 364;
 const signTex = new THREE.CanvasTexture(signCanvas);
 signTex.anisotropy = 4;
 const signMat = new THREE.ShaderMaterial({
-  uniforms: { tSign: { value: signTex }, uCol: { value: new THREE.Vector3(1, 0.2, 0.2) }, uOn: { value: 1 } },
+  uniforms: { tSign: { value: signTex }, uCol: { value: new THREE.Vector3(1, 0.2, 0.2) }, uOn: { value: 1 }, uStyle: { value: 0 }, uTime: U.uTime },
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
   uniform sampler2D tSign;
   uniform vec3 uCol;
-  uniform float uOn;
+  uniform float uOn, uStyle, uTime;
   varying vec2 vUv;
   void main() {
     float core = texture2D(tSign, vUv).r;
-    float g1 = textureLod(tSign, vUv, 3.0).r, g2 = textureLod(tSign, vUv, 5.0).r;
-    // A white-hot core in the tube, the gas colour round it, a halo on the box.
-    vec3 c = uCol * (core * 2.4 + g1 * 1.3 + g2 * 0.9) + vec3(1.0, 0.95, 0.9) * pow(core, 3.0) * 1.4;
+    vec3 c;
+    if (uStyle < 0.5) {
+      float g1 = textureLod(tSign, vUv, 3.0).r, g2 = textureLod(tSign, vUv, 5.0).r;
+      // Neon: a white-hot core in the tube, the gas colour round it, a halo on the box.
+      c = uCol * (core * 2.4 + g1 * 1.3 + g2 * 0.9) + vec3(1.0, 0.95, 0.9) * pow(core, 3.0) * 1.4;
+    } else {
+      // A panel: a frame, a field, painted letters.
+      vec2 q = abs(vUv - 0.5) * 2.0;
+      float field = step(q.x, 0.985) * step(q.y, 0.93);
+      vec3 paint = mix(vec3(0.93, 0.88, 0.76), vec3(0.62, 0.06, 0.04), smoothstep(0.35, 0.6, core));
+      if (uStyle < 1.5) {
+        // Lit board: three gooseneck lamps below throw cones up the face; the top falls dark.
+        float lit = 0.0;
+        for (int i = 0; i < 3; i++) {
+          vec2 d = vec2((vUv.x - (0.17 + 0.33 * float(i))) * 3.5, vUv.y + 0.08);
+          lit += exp(-d.x * d.x / (0.03 + d.y * 0.45)) * 1.4 / (0.2 + d.y * 4.5);
+        }
+        c = paint * field * (lit + 0.02) * vec3(1.0, 0.84, 0.62) * 0.45;
+      } else {
+        // Lightbox: tubes behind the plastic give soft bands; the plastic glows evenly between.
+        float tubes = 0.8 + 0.12 * cos(vUv.y * 6.2832 * 2.0) + 0.04 * step(0.995, fract(sin(floor(uTime * 6.0)) * 437.5));
+        c = mix(vec3(0.98, 0.96, 0.88), vec3(0.7, 0.05, 0.03), smoothstep(0.35, 0.6, core)) * field * tubes * 1.6;
+      }
+      c = mix(vec3(0.015), c, field);
+    }
     gl_FragColor = vec4(c * uOn, 1.0);
   }`,
 });
@@ -1705,6 +1860,33 @@ const signMat = new THREE.ShaderMaterial({
   m.position.set(SIGN.x, SIGN.y, SIGN.z);
   m.renderOrder = 2;
   shack.add(m);
+}
+// The lit board's lamps: three goosenecks on the box's lower lip, heads turned up at the face.
+const signLamps = new THREE.Group();
+{
+  const arm = new THREE.MeshBasicMaterial({ color: 0x0c0d10 });
+  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(4, 3.2, 2.2) });
+  for (let i = 0; i < 3; i++) {
+    const x = SIGN.x - SIGN.w / 2 + SIGN.w * (0.17 + 0.33 * i);
+    const a = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.3), arm);
+    a.position.set(x, SIGN.y - SIGN.h / 2 - 0.04, SIGN.z + 0.15);
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.035, 0.06), head);
+    h.position.set(x, SIGN.y - SIGN.h / 2 - 0.02, SIGN.z + 0.3);
+    signLamps.add(a, h);
+  }
+  signLamps.visible = false;
+  shack.add(signLamps);
+}
+// Three sign designs: tube neon, a painted board lit from below, a backlit lightbox.
+let signKey = 'neon';
+function setSign(k) {
+  signKey = ['neon', 'board', 'box'].includes(k) ? k : 'neon';
+  signMat.uniforms.uStyle.value = { neon: 0, board: 1, box: 2 }[signKey];
+  signLamps.visible = signKey === 'board';
+  drawSign();
+  // The wet square reflects the sign in its own colour.
+  if (signKey === 'neon') U.uRefSign.value.copy(neonLin).multiplyScalar(1.3);
+  else U.uRefSign.value.set(...(signKey === 'board' ? [0.5, 0.4, 0.28] : [1.0, 0.9, 0.75]));
 }
 // The sign's two hands: tube capitals over a plain, readable script.
 const CAPS = ['Tilt Neon', 150], SCRIPT = ['Courgette', 150];
@@ -1720,14 +1902,17 @@ function drawSign() {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   const [cf, cp] = CAPS, [sf, sp] = SCRIPT;
+  // Panels are sign-written: heavy painted capitals instead of thin tube.
+  const panel = typeof signKey !== 'undefined' && signKey !== 'neon';
   fitText(g, SIGN.top, cf, cp, 1500);
+  if (panel) { g.font = '800 170px "Gabarito"'; }
   g.fillText(SIGN.top, 1024, 105);
   fitText(g, SIGN.name, sf, sp, 1900);
   g.fillText(SIGN.name, 1024, 262);
   signTex.needsUpdate = true;
 }
 function loadSign() {
-  return Promise.all([document.fonts.load(`${SCRIPT[1]}px "${SCRIPT[0]}"`), document.fonts.load(`${CAPS[1]}px "${CAPS[0]}"`)]).catch(() => {}).then(() => drawSign());
+  return Promise.all([document.fonts.load(`${SCRIPT[1]}px "${SCRIPT[0]}"`), document.fonts.load(`${CAPS[1]}px "${CAPS[0]}"`), document.fonts.load('800 170px "Gabarito"')]).catch(() => {}).then(() => drawSign());
 }
 
 /* ---------- weather ---------- */
@@ -1797,6 +1982,47 @@ const rain = new THREE.Mesh(rainGeo, rainMat);
 rain.frustumCulled = false;
 rain.renderOrder = 4;
 scene.add(rain);
+// Rain curtains: soft sheets of falling rain at several depths, lit where the lamps reach.
+// Near ones carry fine streaks; far ones only a moving veil. Together they give the rain volume.
+const curtainMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uRainK: { value: 0 }, uFall: rainMat.uniforms.uFall },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: /* glsl */`
+  ${LIGHT}
+  ${NOISE}
+  uniform float uRainK, uFall, uTime;
+  varying vec3 vP;
+  void main() {
+    if (uRainK < 0.01) discard;
+    float dist = length(vP - cameraPosition);
+    // Streaks: thin, long, falling; finer with distance until they blur to a veil.
+    float fine = smoothstep(40.0, 8.0, dist);
+    float st = vnoise(vec2(vP.x * 22.0 + vP.z * 3.0, vP.y * 0.5 + uTime * uFall * 0.5));
+    st = mix(0.35, pow(st, 7.0) * 3.0, fine);
+    // Gusty sheets drift through: the density swells and thins.
+    float sheet = smoothstep(0.3, 0.75, fbm(vec2(vP.x * 0.06 + uTime * 0.08 + vP.z * 0.02, vP.y * 0.05 + uTime * 0.02)));
+    // Light that reaches the curtain: the window, the neon, the sky.
+    vec3 L = uLamp - vP;
+    vec3 li = uLampCol * apMask(vP) * uOut / (dot(L, L) + 0.6);
+    vec3 Ln = neonPt(vP) - vP;
+    li += uNeonCol / (dot(Ln, Ln) + 0.4);
+    vec3 c = (li * 0.012 + uHaze * 0.35 + uSky * 0.6) * st * (0.35 + 0.65 * sheet);
+    // Fade at the top and bottom, and near the lens.
+    c *= smoothstep(0.0, 1.5, vP.y) * smoothstep(14.0, 6.0, vP.y) * smoothstep(1.0, 4.0, dist) * uRainK;
+    gl_FragColor = vec4(clamp(c, 0.0, 0.5), 1.0);
+  }`,
+});
+const curtains = new THREE.Group();
+for (const z of [9.0, 4.5, -2.5, -9.0, -18.0, -32.0, -50.0]) {
+  const w = 30 + (16 - z) * 1.3;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 14), curtainMat);
+  m.position.set(-1, 7, z);
+  m.renderOrder = 4;
+  curtains.add(m);
+}
+curtains.visible = false;
+scene.add(curtains);
 // count, fall speed, wetness, haze, shaft density.
 const WEATHER = {
   dry: { n: 0, fall: 6, wet: 0, haze: 0.009, dens: 0.0022 },
@@ -1838,6 +2064,8 @@ function applyWeather(dt, snap) {
   const wetT = mix(a.wet, b.wet);
   wx.wet = snap ? wetT : wx.wet + (wetT - wx.wet) * Math.min(1, dt / (wetT > wx.wet ? 10 : 90));
   wx.rain = n / RAIN_N;
+  curtainMat.uniforms.uRainK.value = Math.min(1, wx.rain * 1.4);
+  curtains.visible = wx.rain > 0.01;
   U.uWet.value = wx.wet;
   U.uRipple.value = Math.min(1, wx.rain * 2) * wx.wet;
   U.uHazeK.value = mix(a.haze, b.haze);
@@ -1903,10 +2131,12 @@ const figMat = new THREE.ShaderMaterial({
     vGait = aGait;
     vVar = aVar;
     // Mirror the shape to face the way it moves.
-    vQ = vec2(position.x * aScale * aPose.z, position.y);
+    // The bus stands taller than the quad: it stretches up as well.
+    float sy = abs(aPose.x - 11.0) < 0.5 ? 1.55 : 1.0;
+    vQ = vec2(position.x * aScale * aPose.z, position.y * sy);
     // Upright billboards: they turn to the lens round the vertical only.
     vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
-    vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y, 0.0);
+    vP = aPos.xyz + right * position.x * aScale + vec3(0.0, position.y * sy, 0.0);
     // Three passes: staff, then those behind the window line, before the light and steam.
     // Everyone nearer than the window line draws after them.
     bool staff = aPose.x > 2.5 && aPose.x < 3.5;
@@ -1925,12 +2155,14 @@ const figMat = new THREE.ShaderMaterial({
   ${FIG_GLSL}
   void main() {
     if (vA < 0.001) discard;
+    // The sky's glow on outlines, as a neutral grey: no blue cast on the people.
+    vec3 skyN = vec3(dot(uSky, vec3(0.333))) * vec3(1.0, 0.94, 0.88);
     float kind = floor(vPose.x + 0.05);
     float umb = step(0.1, vPose.x - kind);
     int k = int(kind + 0.5);
     float ph = vPose.y, extra = vPose.w, style = uStyle;
     vec2 p = vQ, hand = vec2(0.27, 1.1);
-    float d = 1e3, glass = 0.0;
+    float d = 1e3, glass = 0.0, busWin = 0.0, busSign = 0.0;
     bool smoker = k == 4;
     float build = vVar.x, pose = vVar.y, seed = vVar.z;
     // kind 10: someone up to no good, in a long coat and a hat.
@@ -1983,6 +2215,7 @@ const figMat = new THREE.ShaderMaterial({
       if (k == 6) d = min(d, motoRider(mp));
     }
     if (k == 8 || k == 9) d = car(p, glass);
+    if (k == 11) d = bus(p, busWin, busSign);
     // A paper cone, held out at the hand.
     float cone = (k == 0 && extra > 0.5 && umb < 0.5) ? taper(p, hand + vec2(0.01, -0.02), hand + vec2(0.05, 0.15), 0.012, 0.055) : 1e3;
     float aa = max(fwidth(d), 0.004);
@@ -1992,7 +2225,7 @@ const figMat = new THREE.ShaderMaterial({
     vec3 back = uLampCol * mix(apMask(vP) * uOut, 1.0, inside) / (dot(L, L) + 0.3);
     vec3 Ln = neonPt(vP) - vP;
     vec3 front = (uNeonCol / (dot(Ln, Ln) + 0.1) + uStripCol * 0.4 / (dot(uStrip - vP, uStrip - vP) + 0.2)) * (1.0 - inside);
-    front += veh(vP, uVeh0) * 0.3 + veh(vP, uVeh1) * 0.3;
+    front += veh(vP, uVeh0) * 0.3 + veh(vP, uVeh1) * 0.3 + busLight(vP, vec3(0.0, 0.0, 1.0)) * 0.4;
     float fall = smoothstep(0.6, 1.7, p.y);
     float a;
     vec3 c;
@@ -2003,19 +2236,19 @@ const figMat = new THREE.ShaderMaterial({
       a = smoothstep(aa + soft, -aa - soft, min(d, cone));
       float rim = smoothstep(-0.05, 0.0, d);
       // Away from the lamps, the sky glow still draws the outline.
-      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + uSky * 9.0 * rim, back * (0.02 + 0.06 * fall), inside);
+      c = mix(vec3(0.004) + front * (0.05 + 0.2 * rim) + back * rim * 0.09 + skyN * 9.0 * rim, back * (0.02 + 0.06 * fall), inside);
     } else if (style < 1.5) {
       // Line: one bright contour, as if drawn in light; a faint fill keeps it solid.
       float line = smoothstep(aa * 1.5, 0.0, abs(d) - 0.011);
       float fill = smoothstep(aa, -aa, d) * 0.35;
       a = max(line, fill);
-      vec3 ink = back * mix(0.05, 0.03, inside) + front * 0.25 + uSky * 4.0 + vec3(0.02);
+      vec3 ink = back * mix(0.05, 0.03, inside) + front * 0.25 + skyN * 4.0 + vec3(0.02);
       c = mix(vec3(0.004), ink, line / max(a, 1e-3));
     } else {
       // Haze: an out-of-focus shape; light from behind bleeds round the edge.
       a = smoothstep(0.08, -0.06, d) * 0.95;
       float edge = smoothstep(-0.14, 0.06, d);
-      c = mix(vec3(0.004) + back * edge * 0.14 + front * (0.04 + 0.15 * edge) + uSky * 4.0 * edge, back * (0.02 + 0.05 * fall), inside);
+      c = mix(vec3(0.004) + back * edge * 0.14 + front * (0.04 + 0.15 * edge) + skyN * 4.0 * edge, back * (0.02 + 0.05 * fall), inside);
     }
     if (cone < 0.0) { c = back * 0.05 + front * 0.2 + uSky; a = max(a, smoothstep(aa, -aa, cone)); }
     // Staff: a white apron front catches the lamp.
@@ -2037,17 +2270,26 @@ const figMat = new THREE.ShaderMaterial({
       c += vec3(1.0) * gl * 2.0;
       a = max(a, gl);
     }
+    // The bus keeps the ink look: a dark shape, dim warm windows, a small amber sign.
+    if (k == 11) {
+      float bay = fract((p.x + 5.5) / 1.45);
+      float pax = step(0.6, fract(sin(floor((p.x + 5.5) / 1.45) * 12.9 + seed * 7.0) * 437.5))
+                * smoothstep(0.2, 0.14, length(vec2(bay * 1.45 - 0.7, p.y - 1.75) / vec2(0.9, 1.2)));
+      c = mix(c, vec3(1.0, 0.8, 0.55) * 0.12 * (1.0 - 0.85 * pax) + uSky * 6.0, busWin);
+      c += vec3(1.0, 0.55, 0.1) * 0.6 * busSign;
+      a = max(a, step(d, 0.0)) * mix(1.0, 0.7, busWin);
+    }
     // A car's glass holds a little sky.
     c += (uSky * 14.0 + back * 0.02) * glass;
     // The ember glows hot, brighter on each draw.
     float ember = smoker ? exp(-dot(p - hand, p - hand) / 0.0008) : 0.0;
     c += vec3(1.0, 0.32, 0.06) * ember * (1.5 + 10.0 * extra);
     // Lamps on the move: white at the front, red at the back. Parked ones are dark.
-    bool moving = k == 1 || k == 6 || k == 8;
-    vec2 head = k == 1 ? vec2(0.5, 0.9) : k == 6 ? vec2(0.82, 0.84) : vec2(2.08, 0.66);
-    vec2 tail = k == 6 ? vec2(-0.82, 0.78) : vec2(-2.08, 0.7);
-    float hl = moving ? exp(-dot(p - head, p - head) / (k == 8 ? 0.005 : 0.0015)) : 0.0;
-    float tl = (k == 6 || k == 8) ? exp(-dot(p - tail, p - tail) / 0.0025) : 0.0;
+    bool moving = k == 1 || k == 6 || k == 8 || k == 11;
+    vec2 head = k == 1 ? vec2(0.5, 0.9) : k == 6 ? vec2(0.82, 0.84) : k == 11 ? vec2(5.88, 0.8) : vec2(2.08, 0.66);
+    vec2 tail = k == 6 ? vec2(-0.82, 0.78) : k == 11 ? vec2(-5.88, 0.85) : vec2(-2.08, 0.7);
+    float hl = moving ? exp(-dot(p - head, p - head) / (k == 8 || k == 11 ? 0.005 : 0.0015)) : 0.0;
+    float tl = (k == 6 || k == 8 || k == 11) ? exp(-dot(p - tail, p - tail) / 0.0025) : 0.0;
     c += vec3(1.0, 0.95, 0.85) * hl * 7.0 + vec3(1.0, 0.05, 0.03) * tl * 3.0;
     a = max(a, max(max(ember, hl), tl) * 0.9);
     if (a < 0.002) discard;
@@ -2137,15 +2379,15 @@ const QUEUE = [-1.6, -0.55, 0.45].map(x => ({ x, z: 2.0, who: null }));
 const LINE = [[-2.35, 2.7], [-2.85, 3.35], [-3.3, 4.0], [-3.7, 4.65], [-4.05, 5.3], [-4.35, 5.95]];
 const line = [];
 // Parking: bikes at the rack, a motorbike by the seating room, a car out on the square.
-const PARK = { 6: { x: 3.6, z: 4.6, park: 7 }, 8: { x: -8.6, z: 8.1, park: 9 } };
+const PARK = { 6: { x: 3.6, z: 4.6, park: 7 }, 8: { x: -11.5, z: 8.1, park: 9 } };
 // The road across the front of the square: one lane each way.
 const LANES = [9.3, 10.4];
 // Footpaths: people cross the square at many depths.
-const footZ = () => 3.6 + rnd() * 5.2;
+const footZ = () => 3.6 + rnd() * 4.8;
 const TABLE = { x: 1.9, z: 3.4 };
 const EDGE = 15;
 const people = [];
-let traffic = true, spawnIn = 2;
+let traffic = true, spawnIn = 2, busIn = 25;
 // Time-lapse: everyone moves faster than life.
 const WALK = 1.35 * 1.75, SPEED = { 0: WALK, 1: 5.4, 6: 10.5, 8: 9.5 };
 const wetOut = () => wx.rain > 0.2;
@@ -2232,6 +2474,14 @@ function spawn() {
   spot.who = f;
   // Cars and motorbikes come along the road, then turn in to their place.
   go(f, vk === 1 ? [[pk.x + side * 2, pk.z + 1.5], [pk.x, pk.z]] : [[pk.x + side * 3, vz], [pk.x, pk.z]], 'park');
+}
+// The bus keeps to its lane and does not stop here.
+// Coming from the left it keeps the square's lane and stops at the shelter; from the right it passes.
+function spawnBus() {
+  const side = rnd() < 0.5 ? -1 : 1, lane = BUS_Z + (side > 0 ? -0.8 : 0.8);
+  const f = person({ kind: 11, x: side * 70, z: lane, speed: 7.5, alpha: 1 });
+  if (side < 0) go(f, [[SHELTER.x - 3.2, lane]], 'busStop');
+  else go(f, [[-side * 72, lane]], 'pass');
 }
 // Close to the lens: someone walks, cycles or scoots past on the near pavement.
 function spawnNear(side) {
@@ -2344,11 +2594,22 @@ const staff = [
   person({ kind: 3, x: 0.6, z: -0.3, y: S.floor, alpha: 1, speed: 1.6, state: 'work', build: 9 }),
 ];
 let breakIn = 40;
+// The staff work through orders on their own: one when someone waits, now and then besides.
+let autoIn = 4;
+function stepOrders(dt) {
+  if ((autoIn -= dt) > 0 || orderRun) return;
+  const waiting = QUEUE.some(q => q.who && q.who.state === 'wait');
+  autoIn = waiting ? 6 + rnd() * 6 : 18 + rnd() * 20;
+  act.order();
+}
 function stepPeople(dt) {
+  stepOrders(dt);
   if (traffic) {
     spawnIn -= dt;
     // Arrivals bunch and thin out, never on a beat.
     if (spawnIn <= 0) { spawn(); spawnIn = (1.2 + rnd() * rnd() * 7) * (1 + wx.rain * 0.6); }
+    // The regional bus comes by now and then, on time or nearly.
+    if ((busIn -= dt) <= 0) { spawnBus(); busIn = 70 + rnd() * 60; }
     youthIn -= dt;
     if (youthIn <= 0) { spawnYouth(); youthIn = 18 + rnd() * 22; }
     dealIn -= dt;
@@ -2420,10 +2681,10 @@ function stepPeople(dt) {
       if (f.accel) f.speed = Math.min(f.vmax ?? SPEED[f.kind], f.speed + dt * f.accel);
       // Runners run: the stride opens into a run.
       if (f.run) f.gait = Math.min(2, f.gait + dt * 3);
-      const brake = f.state === 'park' && f.kind !== 0 ? Math.max(0.2, Math.min(1, d / 5)) : 1;
+      const brake = (f.state === 'park' || f.state === 'busStop') && f.kind !== 0 ? Math.max(0.12, Math.min(1, d / (f.kind === 11 ? 14 : 5))) : 1;
       const step = f.speed * brake * dt;
       if (Math.abs(dx) > 0.01) f.face = Math.sign(dx);
-      f.ph += step * (f.kind === 1 ? 2.2 : f.kind === 6 || f.kind === 8 ? 0 : 5.8);
+      f.ph += step * (f.kind === 1 ? 2.2 : f.kind === 6 || f.kind === 8 || f.kind === 11 ? 0 : 5.8);
       f.gait += (1 - f.gait) * Math.min(1, dt * 6);
       if (d <= step) { f.x = q.x; f.z = q.z; f.path.shift(); }
       else { f.x += dx / d * step; f.z += dz / d * step; }
@@ -2470,6 +2731,7 @@ function stepPeople(dt) {
         if (f.state === 'wait') served(f);
         else if (f.staffer) { f.staffer.state = 'work'; f.gone = true; }
         else if (f.state === 'kick') { f.started = true; f.state = 'toRide'; arrive(f); }
+        else if (f.state === 'busWait') { f.speed = 0.5; f.accel = 2.5; f.vmax = 7.5; go(f, [[72, f.z]], 'pass'); }
         else if (f.gang && f.state === 'loiter') { f.kind = 0; f.smk = null; go(f, [[f.parked.x + 0.6, f.parked.z]], 'toRide'); }
         else if (f.state === 'eat' || f.state === 'smoke' || f.state === 'loiter') leave(f);
       }
@@ -2499,6 +2761,12 @@ function arrive(f) {
     f.kind = 0; f.speed = WALK;
     f.z += f.ride === 8 ? 0.9 : 0.3;
     go(f, [[f.spot.x, f.spot.z + 1.0], [f.spot.x, f.spot.z]], 'order');
+    return;
+  }
+  if (f.state === 'busStop') {
+    // Doors open: one gets off now and then, then the bus pulls away.
+    f.state = 'busWait'; f.t = 2.2 + rnd() * 1.3;
+    if (rnd() < 0.6) { const w = person({ kind: 0, x: f.x + 4.5, z: SHELTER.z + 0.2, alpha: 1, speed: WALK * 0.8, ...dress() }); go(w, [[SHELTER.x + (rnd() < 0.5 ? -40 : 40), SHELTER.z - 0.2]], 'out'); }
     return;
   }
   if (f.state === 'order') { f.state = 'wait'; f.t = 4 + rnd() * 5; f.face = 1; f.standPose = [6, 3, 1, 2, 1, 6][Math.floor(rnd() * 6)]; return; }
@@ -2563,9 +2831,9 @@ function leave(f) {
   for (const i of [0, 3]) RACK[i].bike = person({ kind: 2, x: RACK[i].x, z: RACK[i].z, face: i ? -1 : 1, alpha: 1, state: 'parked', left: true });
 }
 // Height of each kind's top, for its shadow; half length of vehicles, for their lamps.
-const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4, 10: 1.85, 13: 0.9 };
-const SCALE = { 6: 1.1, 7: 1.1, 8: 2.4, 9: 2.4 };
-const NOSE = { 1: [0.5, 0.35], 6: [0.82, 1.6], 8: [2.1, 3.2] };
+const TALL = { 2: 0.9, 5: 0.6, 6: 1.5, 7: 1.1, 8: 1.4, 9: 1.4, 10: 1.85, 11: 3.1, 13: 0.9 };
+const SCALE = { 6: 1.1, 7: 1.1, 8: 2.4, 9: 2.4, 11: 6.2 };
+const NOSE = { 1: [0.5, 0.35], 6: [0.82, 1.6], 8: [2.1, 3.2], 11: [5.9, 3.6] };
 // Where a figure was at time t, from its history, in between samples.
 function sampleAt(f, t) {
   const h = f.hist;
@@ -2611,6 +2879,9 @@ function writePeople() {
       SB[i * 2] = 0.8 * m * f.alpha;
     }
   });
+  // The bus lights the street round it.
+  const bus = people.find(f => f.kind === 11 && f.sx != null);
+  U.uBus.value.set(bus?.sx ?? 0, bus?.sz ?? 0, 5.4, bus ? 1.6 * bus.alpha : 0);
   // The two strongest lamps on the move light the square.
   const lamps = people.filter(f => NOSE[f.kind] && f.sx != null).map(f => ({ x: f.sx + f.face * NOSE[f.kind][0], z: f.sz, dir: f.face, w: NOSE[f.kind][1] })).sort((a, b) => b.w - a.w);
   for (const [n, u] of [[0, U.uVeh0], [1, U.uVeh1]]) { const v = lamps[n]; u.value.set(v?.x ?? 0, v?.z ?? 0, v?.dir ?? 1, v?.w ?? 0); }
@@ -2902,8 +3173,41 @@ const tiltPass = d => {
 /* ---------- post chain ---------- */
 const POST = { bloom: [0.36, 0.75, 0.88], tint: [0.0004, 0.0005, 0.0009], vig: 0.55, vigIn: 0.4, grain: 0.07 };
 const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+// Depth for the rim light: near edges against far ground or sky.
+rt.depthTexture = new THREE.DepthTexture(1, 1);
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+// A guard before the bloom: a stray bright or broken pixel must not flash the frame.
+// The same pass draws a soft toon rim where a near object meets the far night behind it.
+const guard = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, uPx: { value: new THREE.Vector2(1, 1) }, uRim: { value: 0.035 } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  uniform sampler2D tDiffuse, tDepth;
+  uniform vec2 uPx;
+  uniform float uRim;
+  varying vec2 vUv;
+  float lin(vec2 uv) { float z = texture2D(tDepth, uv).r * 2.0 - 1.0; return 240.0 / (1200.1 - z * 1199.9); }
+  void main() {
+    vec3 c = texture2D(tDiffuse, vUv).rgb;
+    if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
+    float z = lin(vUv);
+    if (z < 30.0) {
+      // Look a few pixels up and to the sides: a much farther depth there marks a silhouette.
+      float e = 0.0;
+      for (int i = 0; i < 6; i++) {
+        float a = 0.6 + float(i) * 0.38;
+        vec2 o = vec2(cos(a) * 1.6, sin(a)) * uPx * 2.5;
+        e = max(e, smoothstep(1.25, 2.2, lin(vUv + o) / z));
+      }
+      // Flat, faint, warm: a toon edge, not a glow.
+      c += vec3(1.0, 0.86, 0.72) * uRim * step(0.5, e) * smoothstep(30.0, 10.0, z);
+    }
+    gl_FragColor = vec4(min(c, vec3(6.0)), 1.0);
+  }`,
+});
+composer.addPass(guard);
+
 composer.addPass(makeBloom(...POST.bloom));
 const tilts = [tiltPass([1, 0]), tiltPass([0, 1])];
 for (const p of tilts) composer.addPass(p);
@@ -2981,6 +3285,8 @@ function resize() {
   grade.uniforms.uRes.value.set(W, H);
   tilts[0].uniforms.uStep.value.set(1 / W, 0);
   tilts[1].uniforms.uStep.value.set(0, 1 / H);
+  guard.uniforms.uPx.value.set(1 / W, 1 / H);
+  guard.uniforms.tDepth.value = rt.depthTexture;
   frame();
   draw();
 }
@@ -2991,7 +3297,7 @@ function draw() {
   // A new grain each frame; a new exposure each step.
   grade.uniforms.uFrame.value = ++frameN % 100000;
   const st = Math.floor(simT * STEP);
-  grade.uniforms.uFlick.value = camcorder ? (Math.sin(st * 12.9898) * 43758.5453 % 1) * 0.024 : 0;
+  grade.uniforms.uFlick.value = camcorder ? (Math.sin(st * 12.9898) * 43758.5453 % 1) * 0.01 : 0;
   writeSteam();
   writePeople();
   composer.render();
@@ -3025,7 +3331,8 @@ function tick(now) {
     soundTick(dt * run);
     stepSitters(dt * run);
     stepWeather(dt * run);
-    rainMat.uniforms.uDrift.value = wind * gust * 2.5;
+    // A fixed drift: a changing one would jump every drop sideways.
+    rainMat.uniforms.uDrift.value = 0.35;
     if (now - clockAt > 10000) { clockAt = now; setClock(); }
     // A hold on the shack keeps the basket shaking.
     if (press?.hold && now - lastShake > 700) act.shake();
@@ -3130,7 +3437,6 @@ stage.addEventListener('pointerdown', e => {
   const hit = onShack(e.clientX, e.clientY);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), drag: false, hold: false, hit, yaw: look.ty, pitch: look.tp };
   // A hold on the shack shakes the basket.
-  if (hit) press.timer = setTimeout(() => { if (press && !press.drag) { press.hold = true; act.shake(); } }, 260);
   wake();
 });
 stage.addEventListener('pointermove', e => {
@@ -3153,7 +3459,6 @@ const end = e => {
   wake();
 };
 stage.addEventListener('pointerup', e => {
-  if (press && e.pointerId === press.id && press.hit && !press.drag && !press.hold) act.order();
   end(e);
 });
 stage.addEventListener('pointercancel', end);
@@ -3164,7 +3469,7 @@ stage.addEventListener('lostpointercapture', end);
 // The kit sleeps when the toy settles.
 // Beds: neon hum, fryer, road, rain, wind and the party.
 // Each vehicle carries its own engine voice.
-const kit = audioKit({ keys: new Set(['o', 'O', ' ']) });
+const kit = audioKit({ keys: new Set([' ']) });
 let SND = null;
 const sndVoices = new Set();
 let sndPend = 0;
@@ -3262,9 +3567,9 @@ function drip(g, t) {
 function engineFor(g, f) {
   const ac = g.ac, o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), e = ac.createGain(), pn = ac.createStereoPanner();
   const tyre = ac.createBufferSource(), tf = ac.createBiquadFilter(), tg = ac.createGain();
-  const car = f.kind === 8, bike = f.kind === 1;
+  const car = f.kind === 8 || f.kind === 11, bike = f.kind === 1;
   o.type = 'sawtooth'; o2.type = 'square';
-  const base = car ? 42 : f.scale ? 118 : 70;
+  const base = f.kind === 11 ? 31 : car ? 42 : f.scale ? 118 : 70;
   o.frequency.value = base; o2.frequency.value = base * 1.5;
   lp.type = 'lowpass'; lp.frequency.value = car ? 260 : 900;
   e.gain.value = 0;
@@ -3299,7 +3604,7 @@ function soundTick(dt) {
   // Each engine follows its vehicle: level, pan, pitch and Doppler.
   const live = new Set();
   for (const f of people) {
-    if (!(f.kind === 8 || f.kind === 6 || (f.kind === 1 && f.speed > 3))) continue;
+    if (!(f.kind === 8 || f.kind === 11 || f.kind === 6 || (f.kind === 1 && f.speed > 3))) continue;
     live.add(f);
     let v = g.engines.get(f);
     if (!v) { v = engineFor(g, f); g.engines.set(f, v); }
@@ -3394,7 +3699,7 @@ function sndHush() {
 /* ---------- bar ---------- */
 // Order is free while a basket is empty and no order runs.
 function syncActions() {
-  ui.action('order').disabled = !!orderRun || !wells.some(w => !w.inOil && w.fry === -1);
+  // The diorama has no order button; the fryer runs itself.
 }
 // Into the oil: raw fries for the blanch, blanched ones for the second fry.
 function dropWell(w) {
@@ -3473,7 +3778,6 @@ act.sauce = v => { setDollop(v); wake(); };
 // The neon dollop takes the colour of the sauce picked.
 function setDollop(v) { const sc = SAUCES.find(o => o.value === v) ?? SAUCES[0]; const d = FRY_SIGN.find(o => o.role === 'dollop'); if (d) d.m.uniforms.uCol.value.set(...linFit(...sc.lch)).multiplyScalar(1.2); }
 setDollop('mayo');
-act.wind = v => { wind = v; wake(); };
 act.neon = v => { setNeon(v); draw(); };
 act.tilt = v => { tiltK = v; frame(); draw(); };
 act.traffic = on => { traffic = on; wake(); };
@@ -3487,7 +3791,8 @@ act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
 
 act.people(QS.get('people') ?? 'ink');
 act.moths = on => { mothsOn = on; mothMesh.visible = on; wake(); };
-act.moths(ui.setting('moths')?.value ?? true);
+// Moths stay off: Tom found them too busy.
+act.moths(false);
 act.reset = () => {
   for (const w of wells) Object.assign(w, { fry: -1, stage: 0, inOil: false, t: 0, boil: SIMMER, foam: SIMMER, y: UP, vy: 0, shake: 0, dip: 0 });
   for (const d of drops) d.live = false;
@@ -3500,9 +3805,12 @@ act.reset = () => {
   wake();
 };
 syncActions();
-wind = ui.setting('wind')?.value ?? 0.3;
+// A light, steady breeze: steam leans a little; rain falls almost straight.
+wind = 0.2;
 tiltK = ui.setting('tilt')?.value ?? 0.4;
 setNeon(ui.setting('neon')?.value ?? 'red');
+act.sign = v => { setSign(v); draw(); };
+setSign(QS.get('sign') ?? ui.setting('sign')?.value ?? 'board');
 traffic = ui.setting('traffic')?.value ?? true;
 act.camcorder(ui.setting('camcorder')?.value ?? true);
 setLight();

@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: every module downloads in parallel. -->
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Googly eyes: a dark stage at full width under the shared header. */
 :root { --stage: oklch(0.17 0.035 288); }
@@ -39,11 +43,11 @@
 </div>
 
 <script type="module">
-import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, onQuality, pixelRatio, stage, idle, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+stage('libs');
+// The intro holds until the page, its font and the first frame are in.
+const introDone = playIntro({ ready: pageReady() });
 const ui = initPage({ id: 'eyes', bar: {
   actions: [
     { verb: 'shuffle', onPress: () => reshuffle() },
@@ -63,7 +67,6 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const clock = () => performance.now() / 1000;
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const rng = s => () => {
   s = (s + 0x6d2b79f5) | 0;
@@ -1366,6 +1369,7 @@ function reshuffle() {
   wake();
 }
 async function boot() {
+  stage('build');
   await idle();
   fit();
   if (!W) {
@@ -1383,7 +1387,7 @@ async function boot() {
   }
   stepLids(0, clock());
   draw();
-  requestAnimationFrame(() => canvas.classList.add('on'));
+  requestAnimationFrame(() => { canvas.classList.add('on'); stage('first-frame'); });
   new ResizeObserver(fit).observe(panel);
   // Corner rows that move or resize push the eyes out again.
   const layer = panel.parentElement?.querySelector(':scope > .stim-ui');

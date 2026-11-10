@@ -12,6 +12,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="./kit.js">
+<link rel="modulepreload" href="./parts/index.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Fidget board: five controls straight on the stage, no panels.
    The controls are lit from the top left; the JS draws their shading. */
@@ -83,7 +88,6 @@
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 .ctl svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.ctl:focus-visible { outline: 2px solid var(--focus); outline-offset: 5px; }
 .dial { --ar: 1; border-radius: 50%; cursor: grab; }
 .joy { --ar: 1; border-radius: 50%; cursor: grab; }
 .key { --ar: 1; border-radius: 20%; }
@@ -110,13 +114,13 @@
 </div>
 
 <script type="module">
-import { initPage } from '../shared/stim.js';
+import { initPage, stage, pageReady } from '../shared/stim.js';
+stage('libs');
 import { intro as playIntro } from '../shared/intro.js';
 import { snd, reduce, board } from './kit.js';
 import PARTS from './parts/index.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+// The intro holds for the page, the font and the board.
+playIntro({ ready: pageReady() });
 // The sweeps bind once the parts have mounted.
 // The stick's nub is the Shuffle button; S is its key.
 const act = { shuffle() {}, reset() {} };
@@ -139,6 +143,7 @@ const BOARD = ['dial', 'tog', 'joy', 'keys', 'fader'];
 const boardEl = document.getElementById('board');
 const byId = new Map(PARTS.map(p => [p.id, p]));
 const mounted = [];
+stage('build');
 // Modules load one at a time; a small local server drops bursts.
 for (const id of BOARD) {
   const part = (await byId.get(id).load()).default;
@@ -155,6 +160,7 @@ for (const id of BOARD) {
   inst.bodies.forEach(b => b.draw());
   mounted.push(inst);
 }
+stage('first-frame');
 const allMoves = () => mounted.flatMap(m => m.moves);
 
 /* ---------- shuffle and reset ---------- */

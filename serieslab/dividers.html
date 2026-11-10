@@ -25,13 +25,16 @@ iframe { display: block; width: 100%; border: 0; }
   <button type="button" data-r="4">4 · Ticker band</button>
 </div>
 <script type="module">
+import { M, icon, picks, motif, PICKS_KEY } from './icons.js';
 // The categories: key, name, Flemish name, colour, and the toys on the main shelf.
 const CATS = [
   ['poke', 'Poke & pop', 'Prutsen', 'oklch(0.8 0.13 230)', ['pop', 'fidget', 'pins', 'eyes', 'domino', 'magnet', 'soap', 'balloons']],
   ['goo', 'Goo', 'Smurrie', 'oklch(0.84 0.2 135)', ['putty', 'ferro', 'lava', 'ink', 'morpher', 'bubbles']],
   ['light', 'Light & glass', 'Licht', 'oklch(0.87 0.12 195)', ['prism', 'kaleido', 'glass', 'rain', 'neon', 'fire', 'pool']],
-  ['science', 'Science fair', 'Wetenschapsbeurs', 'oklch(0.74 0.15 250)', ['chladni', 'pendulum', 'scope', 'chamber', 'vortex', 'walker']],
-  ['dark', 'After dark', 'Na donker', 'oklch(0.76 0.15 295)', ['galaxy', 'trails', 'sonar', 'window', 'windmap', 'tvtree']],
+  ['science', 'Science fair', 'Wetenschapsbeurs', 'oklch(0.74 0.15 250)', ['chladni', 'pendulum', 'scope', 'chamber', 'vortex']],
+  ['candy', 'Eye candy', 'Kijkdoos', 'oklch(0.86 0.15 85)', ['walker', 'tvtree']],
+  ['sonder', 'Sonder', 'Sonder', 'oklch(0.8 0.11 20)', ['window']],
+  ['dark', 'After dark', 'Na donker', 'oklch(0.76 0.15 295)', ['galaxy', 'trails', 'sonar', 'windmap']],
   ['odd', 'Odd one out', 'Raar', 'oklch(0.84 0.17 330)', ['shadyos']],
 ];
 const SHADOW = 'oklch(0.07 0.01 260)', INK = 'oklch(0.17 0.014 275)';
@@ -80,7 +83,7 @@ const HEX = 'M20 2L36 11V29L20 38L4 29V11Z';
 const hexIcon = (k, c) => `<svg viewBox="0 0 42 42" aria-hidden="true"><path d="${HEX}" fill="${SHADOW}" transform="translate(3 2.5)"/><path d="${HEX}" fill="${c}"/>
   <path d="M4.8 11.5L20 2.9L35.2 11.5" stroke="color-mix(in oklch, ${c} 45%, white)" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
   <path d="M35.2 28.5L20 37.1L4.8 28.5" stroke="color-mix(in oklch, ${c} 60%, black)" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
-  <g transform="translate(8 8)">${GLYPH[k](`color-mix(in oklch, ${c} 35%, white)`)}</g></svg>`;
+  <g transform="translate(8 8)">${(GLYPH[k] || GLYPH.odd)(`color-mix(in oklch, ${c} 35%, white)`)}</g></svg>`;
 
 // Splits a word into letter spans, so each letter can lean on its own.
 const letters = s => [...s].map((ch, i) => ch === ' ' ? '<i class="sp"> </i>' : `<b style="--i:${i}">${ch === '&' ? '&amp;' : ch}</b>`).join('');
@@ -151,10 +154,12 @@ html[data-r="4"] .dv .meta { padding: 0 14px; color: var(--c); }
 html:not([data-r="4"]) .wm .run { display: none; }
 html[data-r="4"] .wm > b, html[data-r="4"] .wm > i { display: none; }
 /* Round 5, demure: an outline hex, the name in plain heavy type, a quiet rule. */
-html:not([data-r="5"]) .dv svg.demure { display: none; }
+html:not([data-r="5"]) .dv .pick { display: none; }
+.dv .pick { all: unset; display: inline-grid; cursor: pointer; border-radius: 8px; }
+.dv .pick:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 html[data-r="5"] .dv svg:not(.demure) { display: none; }
 html[data-r="5"] .dv { gap: 12px; margin-bottom: 20px; }
-html[data-r="5"] .dv svg.demure { width: 34px; height: 34px; }
+html[data-r="5"] .dv svg.demure { width: 40px; height: 40px; }
 html[data-r="5"] .dv:hover svg.demure { rotate: 30deg; }
 html[data-r="5"] .wm { all: unset; font: 800 clamp(20px, 2.6vw, 26px)/1 "Gabarito", system-ui, sans-serif; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
 html[data-r="5"] .wm b, html[data-r="5"] .wm i { all: unset; }
@@ -182,7 +187,7 @@ for (const [k, name, nl, c, ids] of CATS) {
   const sec = d.createElement('section');
   sec.className = 'sec';
   const n = ids.filter(id => byId.has(id)).length;
-  sec.innerHTML = `<div class="dv" style="--c:${c}">${hexLine(k, c)}${hexIcon(k, c)}<span class="wm wm--${k}" aria-label="${name}">${letters(name)}<span class="run" aria-hidden="true">${Array(12).fill(`<span>${name.replace('&', '&amp;')}</span>`).join('')}</span></span><span class="rule"></span><span class="meta">${nl} · ${n}</span></div>`;
+  sec.innerHTML = `<div class="dv" style="--c:${c}"><button class="pick" type="button" data-k="${k}" title="Tap for the next motif">${icon(motif(k, picks()[k]), c).replace('<svg', '<svg class="demure"')}</button>${hexIcon(k, c)}<span class="wm wm--${k}" aria-label="${name}">${letters(name)}<span class="run" aria-hidden="true">${Array(12).fill(`<span>${name.replace('&', '&amp;')}</span>`).join('')}</span></span><span class="rule"></span><span class="meta">${nl} · ${n}</span></div>`;
   const ul = Object.assign(d.createElement('ul'), { className: 'shelf' });
   for (const id of ids) if (byId.has(id)) { ul.append(byId.get(id)); placed.add(id); }
   sec.append(ul);
@@ -191,6 +196,18 @@ for (const [k, name, nl, c, ids] of CATS) {
 // Anything not placed stays in the old shelf, so nothing goes missing.
 shelf.hidden = ![...byId.keys()].some(id => !placed.has(id));
 const fit = () => { frame.style.height = d.documentElement.scrollHeight + 'px'; };
+// A tap on a divider's icon steps to that category's next motif and saves it.
+d.addEventListener('click', e => {
+  const b = e.target.closest('.dv .pick');
+  if (!b) return;
+  const k = b.dataset.k, c = b.parentElement.style.getPropertyValue('--c');
+  const list = M[k].map(([l]) => l), next = list[(list.indexOf(picks()[k]) + 1) % list.length];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(PICKS_KEY)) || {}; } catch (err) {}
+  saved[k] = next;
+  try { localStorage.setItem(PICKS_KEY, JSON.stringify(saved)); } catch (err) {}
+  b.innerHTML = icon(motif(k, next), c).replace('<svg', '<svg class="demure"');
+});
 const setRound = r => {
   d.documentElement.dataset.r = r;
   document.querySelectorAll('.rounds button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === r));

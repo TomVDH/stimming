@@ -45,5 +45,5 @@ Build Lit motorway from docs/plans/motorway.md. It starts in the Lab. One buzzin
 - [x] Overhaul 4: 375 px checked in the pane; coast line runs off screen
 - [ ] Load time: the intro holds about 25 s in the browser pane while shaders compile; check on a real machine
 - [x] Round 7: opens on the signs, slow anchored pull-out; cursor zoom; night only; Glow and Bloom detail; junction aprons fade; cars glide on the GPU between staggered steps
-- [ ] Real traffic, one month (Tom, 2026-11-09): `tools/miv/poll.py` folds each MIV poll into per-loop, per-weekday, 15-minute averages (`bins.f32`, about 54 MB) in `~/Library/Application Support/stimming-miv/`; `tools/miv/be.stimming.miv.plist` runs it every 5 min until 2026-12-10, once Tom installs it; then bake hourly speed and flow per road into roads.json
-
+- [x] Real traffic (Tom, 2026-11-09): October 2024, the worst recent month, from the Flemish traffic centre's open indicators (indicatoren.verkeerscentrum.be); minutes of slowed traffic per segment, morning and afternoon, baked per road point into roads.json `vc` by `tools/vc/fetch.py` and `tools/vc/bake.py`; Brussels and Wallonia keep the hand jam points. The live MIV poller (`tools/miv/`) is retired
+- [ ] Accidents: the same source counts crashes per segment; hazard blinkers where Flemish roads crash most

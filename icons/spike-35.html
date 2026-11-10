@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike 35</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; -webkit-mask: var(--emblem) center / contain no-repeat; -webkit-mask-source-type: luminance; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike 35</h1>
+<p class="lede">Rain on glass and Ink Water, round 2: each tile is built from a frame of the toy. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const set = (e, a) => { for (const k in a) e.setAttribute(k, a[k]); };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const stop = (g, o, c, a = 1) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g);
+  // A seeded random gives every tile size the same frame.
+  const rng = s => () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  const EMB_PANE = '<rect x="14" y="14" width="100" height="100" rx="7" fill="#fff"/>';
+  const EMB_FRAME = '<rect x="16" y="16" width="96" height="96" rx="7" fill="none" stroke="#fff" stroke-width="4"/>';
+
+  /* ================= Shared kit ================= */
+
+  const SHADOW = 'oklch(0.07 0.01 265)';
+  const T = { x: 14, y: 14, width: 100, height: 100, rx: 7 };
+  // The tile: an offset slab, a face and a clipped group for the art.
+  const tile = (svg, id, fill) => {
+    const defs = el('defs', {}, svg);
+    el('rect', T, el('clipPath', { id: `${id}c` }, defs));
+    const lit = el('radialGradient', { id: `${id}lit`, cx: 0.32, cy: 0.26, r: 0.7 }, defs);
+    stop(lit, 0, '#fff', 0.38); stop(lit, 1, '#fff', 0);
+    const rim = el('linearGradient', { id: `${id}rim`, x1: 0, y1: 0, x2: 1, y2: 1 }, defs);
+    stop(rim, 0, '#fff', 0.62); stop(rim, 0.5, '#fff', 0);
+    // Grain: white speckle inside the shape it sits on.
+    const gr = el('filter', { id: `${id}gr`, x: 0, y: 0, width: 1, height: 1 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: 1.5, numOctaves: 1, seed: 7 }, gr);
+    el('feColorMatrix', { type: 'matrix', values: '0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.8 -0.8' }, gr);
+    el('feComposite', { in2: 'SourceGraphic', operator: 'in' }, gr);
+    for (const [k, sd] of [['b1', 0.7], ['b2', 2], ['b6', 5.5], ['bx', '0.9 5']]) {
+      el('feGaussianBlur', { stdDeviation: sd }, el('filter', { id: `${id}${k}`, filterUnits: 'userSpaceOnUse', x: -20, y: -20, width: 168, height: 168 }, defs));
+    }
+    el('rect', { x: 20, y: 20, width: 100, height: 100, rx: 7, fill: SHADOW }, svg);
+    el('rect', { ...T, fill }, svg);
+    return { defs, g: el('g', { 'clip-path': `url(#${id}c)` }, svg) };
+  };
+  const grain = (g, id, a = 0.1) => el('rect', { ...T, fill: '#fff', opacity: a, filter: `url(#${id}gr)`, 'pointer-events': 'none' }, g);
+  const finish = (svg, id, edge, lit = 0.4) => {
+    el('rect', { ...T, fill: `url(#${id}lit)`, opacity: lit, 'pointer-events': 'none' }, svg);
+    el('rect', { x: 14.9, y: 14.9, width: 98.2, height: 98.2, rx: 6.2, fill: 'none', stroke: `url(#${id}rim)`, 'stroke-width': 1.8 }, svg);
+    el('rect', { ...T, fill: 'none', stroke: edge, 'stroke-width': 1 }, svg);
+  };
+  // A loop control: hover plays it, leave settles it.
+  const loop = (make, rest) => {
+    let tl = null;
+    return { enter() { tl?.kill(); tl = make(); }, move() {}, leave() { tl?.kill(); tl = null; rest(); } };
+  };
+
+  /* ================= Rain: the toy's frame ================= */
+
+  // The street lights, as the toy colours them.
+  const LIGHT = {
+    amber: 'oklch(0.83 0.14 75)', warm: 'oklch(0.87 0.1 88)', teal: 'oklch(0.79 0.12 195)', rose: 'oklch(0.67 0.2 350)',
+    red: 'oklch(0.61 0.21 25)', cream: 'oklch(0.95 0.04 95)', blue: 'oklch(0.67 0.15 262)', lilac: 'oklch(0.52 0.1 285)',
+  };
+  const BOKEH = [
+    [30, 50, 9, 'amber'], [57, 47, 7, 'amber'], [87, 52, 8, 'warm'], [21, 70, 6, 'teal'], [75, 63, 7, 'teal'], [66, 75, 5, 'blue'],
+    [45, 80, 8, 'rose'], [31, 89, 9, 'red'], [101, 85, 7, 'rose'], [60, 99, 10, 'cream'], [93, 97, 7, 'cream'],
+  ];
+  const BODY = 'oklch(0.14 0.03 282)', RIM = 'oklch(0.09 0.02 282)', EDGE = 'oklch(0.34 0.04 285)';
+  // A drop takes the colour of the light behind it; high drops hold the sky.
+  const kind = (x, y) => y < 42 ? 'lilac' : BOKEH.reduce((b, l) => Math.hypot(l[0] - x, l[1] - y) < Math.hypot(b[0] - x, b[1] - y) ? l : b)[3];
+  const rainDefs = (defs, id) => {
+    const pane = el('linearGradient', { id: `${id}pane`, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+    stop(pane, 0, 'oklch(0.4 0.045 282)'); stop(pane, 0.5, 'oklch(0.47 0.035 300)'); stop(pane, 0.8, 'oklch(0.5 0.03 325)'); stop(pane, 1, 'oklch(0.36 0.03 285)');
+    const sky = el('linearGradient', { id: `${id}sky`, gradientUnits: 'userSpaceOnUse', x1: 0, y1: 14, x2: 0, y2: 114 }, defs);
+    stop(sky, 0, '#1c2444'); stop(sky, 0.36, '#473965'); stop(sky, 0.5, '#985d46'); stop(sky, 0.53, '#482d45'); stop(sky, 1, '#090a13');
+    for (const k in LIGHT) {
+      const d = el('radialGradient', { id: `${id}d-${k}`, cx: 0.5, cy: 0.76, r: 0.56 }, defs);
+      if (k === 'lilac') { stop(d, 0, 'oklch(0.52 0.1 285)'); stop(d, 0.7, 'oklch(0.36 0.09 282)'); stop(d, 1, 'oklch(0.2 0.06 280)'); }
+      else { stop(d, 0, LIGHT[k]); stop(d, 0.36, LIGHT[k]); stop(d, 0.58, BODY); stop(d, 1, RIM); }
+    }
+  };
+  // A bead: a dark lens, the light low in it, a glint up and left.
+  const drop = (g, id, x, y, r, k) => {
+    const d = el('g', { transform: `translate(${f(x)} ${f(y)})` }, g);
+    el('ellipse', { rx: f(r), ry: f(r * 1.18), fill: `url(#${id}d-${k})` }, d);
+    el('ellipse', { cx: f(-r * 0.32), cy: f(-r * 0.52), rx: f(r * 0.17), ry: f(r * 0.22), fill: '#fff', 'fill-opacity': 0.85 }, d);
+    return d;
+  };
+  const places = (rnd, n, rmin, rmax, keep = () => true) => {
+    const out = [];
+    for (let tries = 0; out.length < n && tries < 600; tries++) {
+      const x = 19 + rnd() * 90, y = 19 + rnd() * 90, r = lerp(rmin, rmax, rnd() ** 2);
+      if (!keep(x, y, r) || out.some(p => Math.hypot(p[0] - x, p[1] - y) < p[2] + r + 2)) continue;
+      out.push([x, y, r]);
+    }
+    return out;
+  };
+  // The fogged pane: blurred lights, smeared towers, haze, spray.
+  const fogPane = (g, id, rnd, haze = 0.3) => {
+    el('rect', { ...T, fill: `url(#${id}pane)` }, g);
+    const b = el('g', { filter: `url(#${id}b6)` }, g);
+    for (const [x, y, r, k] of BOKEH) el('circle', { cx: x, cy: y, r: r * 1.15, fill: LIGHT[k], opacity: 0.8 }, b);
+    const s = el('g', { filter: `url(#${id}bx)` }, g);
+    for (let i = 0; i < 13; i++) {
+      const w = 2.5 + rnd() * 4.5, y = 16 + rnd() * 34;
+      el('rect', { x: f(15 + i * 7.7 + rnd() * 3), y: f(y), width: f(w), height: f(96 - y + rnd() * 18), fill: 'oklch(0.19 0.035 285)', opacity: f(0.32 + rnd() * 0.3) }, s);
+    }
+    el('rect', { ...T, fill: 'oklch(0.5 0.022 285)', opacity: haze }, g);
+    grain(g, id, 0.12);
+    for (let i = 0; i < 150; i++) el('circle', { cx: f(15 + rnd() * 98), cy: f(15 + rnd() * 98), r: f(0.22 + rnd() ** 3 * 0.6), fill: RIM, opacity: f(0.4 + rnd() * 0.45) }, g);
+    // Runs leave columns of small beads.
+    for (let c = 0; c < 4; c++) {
+      const x = 22 + rnd() * 84, y0 = 20 + rnd() * 40, n = 5 + Math.floor(rnd() * 7);
+      for (let i = 0; i < n; i++) el('circle', { cx: f(x + (rnd() - 0.5) * 0.8), cy: f(y0 + i * 3.4 + rnd()), r: f(0.5 + rnd() * 0.4), fill: BODY, opacity: 0.8 }, g);
+    }
+  };
+  // The street in focus: dusk sky, towers, lights and their wet streaks.
+  const street = (g, id, rnd) => {
+    el('rect', { x: 0, y: 0, width: 128, height: 128, fill: `url(#${id}sky)` }, g);
+    for (let x = 6; x < 124;) {
+      const w = 5 + rnd() * 7, y = 38 + rnd() * 18;
+      el('rect', { x: f(x), y: f(y), width: f(w), height: f(66 - y), fill: '#151423' }, g);
+      x += w + rnd() * 1.5;
+    }
+    const keys = ['amber', 'warm', 'teal', 'rose', 'red', 'cream', 'blue', 'amber', 'cream'];
+    const ref = el('g', { filter: `url(#${id}bx)` }, g), pts = el('g', { filter: `url(#${id}b1)` }, g);
+    keys.forEach((k, i) => {
+      const x = 12 + i * 12.6 + rnd() * 5, y = 55 + rnd() * 9, r = 1.7 + rnd() * 1.5;
+      el('rect', { x: f(x - r * 0.7), y: 67, width: f(r * 1.4), height: f(16 + rnd() * 22), fill: LIGHT[k], opacity: 0.6 }, ref);
+      el('circle', { cx: f(x), cy: f(y), r: f(r), fill: LIGHT[k] }, pts);
+    });
+  };
+
+  const WIPE = 'M30 96C42 68 66 52 100 42';
+  const RAIN = [
+    {
+      l: 'A', name: 'Wiped patch',
+      idea: 'A finger has wiped the fog: the street is sharp in the swipe, soft everywhere else. On hover a bead runs down and clears its own trail.',
+      art(svg, id) {
+        const { defs, g } = tile(svg, id, '#1c2444');
+        rainDefs(defs, id);
+        street(g, id, rng(3));
+        const m = el('mask', { id: `${id}m`, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: 128, height: 128 }, defs);
+        el('rect', { width: 128, height: 128, fill: '#fff' }, m);
+        el('path', { d: WIPE, fill: 'none', stroke: '#000', 'stroke-width': 19, 'stroke-linecap': 'round', filter: `url(#${id}b1)` }, m);
+        const trail = el('path', { fill: 'none', stroke: '#000', 'stroke-width': 3.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', filter: `url(#${id}b1)` }, m);
+        const fog = el('g', { mask: `url(#${id}m)` }, g);
+        fogPane(fog, id, rng(11));
+        for (const [x, y, r] of places(rng(5), 11, 1.8, 4.2, x => Math.abs(x - 46) > 7)) drop(g, id, x, y, r, kind(x, y));
+        const run = drop(g, id, 46, 0, 4.4, 'amber');
+        const X = y => 46 + 1.6 * Math.sin(y * 0.13);
+        const st = { v: 0.3 };
+        // The trail fogs over behind the bead.
+        const draw = () => {
+          const y = lerp(6, 124, st.v), y0 = lerp(6, 124, Math.max(0, st.v - 0.5));
+          let d = '';
+          for (let k = 0; k <= 10; k++) { const yy = lerp(y0, y, k / 10); d += `${k ? 'L' : 'M'}${f(X(yy))} ${f(yy)}`; }
+          set(trail, { d });
+          run.setAttribute('transform', `translate(${f(X(y))} ${f(y)})`);
+        };
+        draw();
+        finish(svg, id, EDGE, 0.3);
+        return loop(
+          () => gsap.timeline({ repeat: -1, onUpdate: draw }).to(st, { v: 1.1, duration: 1.5 * (1.1 - st.v), ease: 'power1.in' }).set(st, { v: -0.06 }).to(st, { v: 1.1, duration: 1.7, ease: 'power1.in' }),
+          () => gsap.to(st, { v: 0.3, duration: 0.7, ease: 'power2.out', overwrite: true, onUpdate: draw }),
+        );
+      },
+      emblem() {
+        const ds = places(rng(5), 11, 1.8, 4.2, x => Math.abs(x - 46) > 7).filter(p => p[2] > 2.6);
+        return `${EMB_HEAD}
+  ${EMB_PANE}
+  <path d="${WIPE}" fill="none" stroke="#000" stroke-width="19" stroke-linecap="round"/>
+  <path d="M46 14V40" stroke="#000" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="46.5" cy="42" rx="6" ry="7" fill="#000"/>
+${ds.map(([x, y, r]) => `  <ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(r * 1.2)}" ry="${f(r * 1.4)}" fill="#000"/>`).join('\n')}
+</svg>
+`;
+      },
+    },
+    {
+      l: 'B', name: 'Big drop',
+      idea: 'One fat bead holds the whole street upside down, as the toy refracts it. On hover small beads fall in and it wobbles.',
+      art(svg, id) {
+        const { defs, g } = tile(svg, id, 'oklch(0.4 0.045 282)');
+        rainDefs(defs, id);
+        fogPane(g, id, rng(23), 0.36);
+        for (const [x, y, r] of places(rng(9), 9, 1.8, 5, (x, y, r) => Math.hypot(x - 68, y - 66) > 30 + r && Math.abs(x - 68) > 6)) drop(g, id, x, y, r, kind(x, y));
+        const CX = 68, CY = 66, R = 21;
+        el('ellipse', { rx: R, ry: R * 1.14 }, el('clipPath', { id: `${id}bc` }, defs));
+        const sh = el('radialGradient', { id: `${id}bs`, cx: 0.5, cy: 0.5, r: 0.5 }, defs);
+        stop(sh, 0.5, RIM, 0); stop(sh, 0.82, RIM, 0.55); stop(sh, 1, RIM, 0.96);
+        const big = el('g', {}, g);
+        const lens = el('g', { 'clip-path': `url(#${id}bc)` }, big);
+        // The lens flips the street.
+        street(el('g', { transform: 'scale(0.62 -0.62) translate(-64 -62)' }, lens), id, rng(3));
+        el('ellipse', { rx: R, ry: R * 1.14, fill: `url(#${id}bs)` }, big);
+        el('ellipse', { cx: -7.5, cy: -11.5, rx: 3.2, ry: 4.4, fill: '#fff', 'fill-opacity': 0.9, transform: 'rotate(-24 -7.5 -11.5)' }, big);
+        el('circle', { cx: 9, cy: 14, r: 1.1, fill: '#fff', 'fill-opacity': 0.5 }, big);
+        const feed = [[64, 'lilac'], [73, 'amber'], [68, 'teal']].map(([x, k]) => ({ x, n: drop(g, id, x, 0, 3.4, k) }));
+        const st = { sx: 1, sy: 1, y: [-1, -1, -1] };
+        const draw = () => {
+          big.setAttribute('transform', `translate(${CX} ${CY}) scale(${f(st.sx)} ${f(st.sy)})`);
+          feed.forEach((d, i) => { const v = st.y[i]; set(d.n, { transform: `translate(${d.x} ${f(lerp(8, CY - R * 1.1, clamp(v, 0, 1)))})`, opacity: v < 0 || v >= 1 ? 0 : 1 }); });
+        };
+        draw();
+        finish(svg, id, EDGE, 0.3);
+        return loop(
+          () => {
+            const tl = gsap.timeline({ repeat: -1, onUpdate: draw });
+            feed.forEach((d, i) => {
+              tl.fromTo(st.y, { [i]: 0 }, { [i]: 1, duration: 0.55, ease: 'power2.in' })
+                .to(st, { sx: 1.09, sy: 0.93, duration: 0.12, ease: 'power2.out' })
+                .to(st, { sx: 1, sy: 1, duration: 0.7, ease: 'elastic.out(1.2, 0.3)' });
+            });
+            return tl;
+          },
+          () => { st.y = [-1, -1, -1]; gsap.to(st, { sx: 1, sy: 1, duration: 0.4, ease: 'power2.out', overwrite: true, onUpdate: draw }); },
+        );
+      },
+      emblem() {
+        const ds = places(rng(9), 9, 1.8, 5, (x, y, r) => Math.hypot(x - 68, y - 66) > 30 + r && Math.abs(x - 68) > 6).filter(p => p[2] > 2.4);
+        return `${EMB_HEAD}
+  ${EMB_PANE}
+  <ellipse cx="68" cy="66" rx="24" ry="27" fill="#000"/>
+  <path d="M50 60H86A18 20 0 0 1 50 60Z" fill="#fff" transform="rotate(180 68 66) translate(0 -2)"/>
+  <ellipse cx="60" cy="53" rx="3.6" ry="5" fill="#fff" transform="rotate(-24 60 53)"/>
+${ds.map(([x, y, r]) => `  <ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(r * 1.25)}" ry="${f(r * 1.45)}" fill="#000"/>`).join('\n')}
+</svg>
+`;
+      },
+    },
+    {
+      l: 'C', name: 'Focus pull',
+      idea: 'The lights are the subject: big soft discs behind sharp beads. On hover the focus pulls back to the street and the beads go soft.',
+      art(svg, id) {
+        const { defs, g } = tile(svg, id, '#1c2444');
+        rainDefs(defs, id);
+        el('rect', { x: 0, y: 0, width: 128, height: 128, fill: `url(#${id}sky)` }, g);
+        el('rect', { ...T, fill: 'oklch(0.3 0.04 290)', opacity: 0.45 }, g);
+        const towers = el('g', { opacity: 0 }, g), rnd = rng(3);
+        for (let x = 6; x < 124;) { const w = 5 + rnd() * 7, y = 36 + rnd() * 20; el('rect', { x: f(x), y: f(y), width: f(w), height: f(68 - y), fill: '#151423' }, towers); x += w + rnd() * 1.5; }
+        const fb = el('feGaussianBlur', { stdDeviation: 1.1 }, el('filter', { id: `${id}foc`, filterUnits: 'userSpaceOnUse', x: -20, y: -20, width: 168, height: 168 }, defs));
+        const fd = el('feGaussianBlur', { stdDeviation: 0 }, el('filter', { id: `${id}fd`, filterUnits: 'userSpaceOnUse', x: -20, y: -20, width: 168, height: 168 }, defs));
+        const discs = el('g', { filter: `url(#${id}foc)`, style: 'mix-blend-mode: screen' }, g);
+        const D = BOKEH.map(([x, y, r, k]) => ({ r: r * 1.45, n: el('circle', { cx: x, cy: lerp(y, 60, 0.25), fill: LIGHT[k], 'fill-opacity': 0.5, stroke: LIGHT[k], 'stroke-opacity': 0.85, 'stroke-width': 0.9 }, discs) }));
+        grain(g, id, 0.09);
+        const beads = el('g', { filter: `url(#${id}fd)` }, g), r2 = rng(31);
+        for (let i = 0; i < 90; i++) el('circle', { cx: f(15 + r2() * 98), cy: f(15 + r2() * 98), r: f(0.25 + r2() ** 3 * 0.6), fill: RIM, opacity: 0.7 }, beads);
+        for (const [x, y, r] of places(rng(17), 22, 1.5, 4.6)) drop(beads, id, x, y, r, kind(x, y));
+        const st = { v: 0 };
+        const draw = () => {
+          const v = st.v;
+          D.forEach(d => set(d.n, { r: f(d.r * lerp(1, 0.2, v)), 'fill-opacity': f(lerp(0.5, 1, v)) }));
+          set(fb, { stdDeviation: f(lerp(1.1, 0.35, v)) });
+          set(fd, { stdDeviation: f(v * 1.7) });
+          set(beads, { opacity: f(lerp(1, 0.55, v)) });
+          set(towers, { opacity: f(v) });
+        };
+        draw();
+        finish(svg, id, EDGE, 0.3);
+        return loop(
+          () => gsap.fromTo(st, { v: st.v }, { v: 1, duration: 1.3, ease: 'sine.inOut', yoyo: true, repeat: -1, repeatDelay: 0.35, onUpdate: draw }),
+          () => gsap.to(st, { v: 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: draw }),
+        );
+      },
+      emblem() {
+        return `${EMB_HEAD}
+  ${EMB_PANE}
+${BOKEH.filter(b => b[2] > 6).map(([x, y, r]) => `  <circle cx="${x}" cy="${f(lerp(y, 60, 0.25))}" r="${f(r * 1.3)}" fill="#000"/>`).join('\n')}
+</svg>
+`;
+      },
+    },
+  ];
+
+  /* ================= Ink: the toy's frame ================= */
+
+  const STAGE = 'oklch(0.07 0.008 255)', INDIGO = 'oklch(0.55 0.17 251)', DEEP = 'oklch(0.43 0.17 256)', CARMINE = 'oklch(0.58 0.2 15)', CARMINE_DEEP = 'oklch(0.46 0.19 18)';
+  const INK_EDGE = 'oklch(0.3 0.03 258)';
+  // The backlit tank: a soft lightbox, warm above and cool below.
+  const tank = (svg, id) => {
+    const { defs, g } = tile(svg, id, STAGE);
+    const box = el('linearGradient', { id: `${id}box`, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+    stop(box, 0, '#f8f1e3'); stop(box, 1, '#dfeef7');
+    const b = el('filter', { id: `${id}glow`, filterUnits: 'userSpaceOnUse', x: 0, y: 0, width: 128, height: 128 }, defs);
+    el('feGaussianBlur', { stdDeviation: 7 }, b);
+    el('rect', { x: 26, y: 30, width: 78, height: 64, rx: 15, fill: `url(#${id}box)`, filter: `url(#${id}glow)` }, g);
+    el('ellipse', { cx: 54, cy: 54, rx: 24, ry: 18, fill: '#fff', opacity: 0.35, filter: `url(#${id}glow)` }, g);
+    // Ink wisps: noise pushes the edges, a blur softens them.
+    const w = el('filter', { id: `${id}wisp`, filterUnits: 'userSpaceOnUse', x: 0, y: 0, width: 128, height: 128, 'color-interpolation-filters': 'sRGB' }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: 0.055, numOctaves: 3, seed: 4 }, w);
+    const off = el('feOffset', { dx: 0, dy: 0, result: 'n' }, w);
+    const disp = el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: 9, xChannelSelector: 'R', yChannelSelector: 'G' }, w);
+    el('feGaussianBlur', { stdDeviation: 0.75 }, w);
+    return { defs, g, off, disp };
+  };
+  // Ink absorbs the light, so it multiplies over the lightbox.
+  const inkLayer = (g, id) => el('g', { transform: 'translate(64 58) scale(1.32) translate(-64 -58)' }, el('g', { filter: `url(#${id}wisp)`, style: 'mix-blend-mode: multiply' }, g));
+  const line = (g, d, w, a, c = INDIGO) => el('path', { d, fill: 'none', stroke: c, 'stroke-width': w, 'stroke-opacity': a, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+  const arch = (cx, y, w, h = 15) => `M${f(cx - w)} ${f(y + h * 0.55)}C${f(cx - w - 2)} ${f(y - h)} ${f(cx + w + 2)} ${f(y - h)} ${f(cx + w)} ${f(y + h * 0.55)}`;
+  // A plume: a thin stem and a ring seen side on, with heavy ends.
+  const plume = (g, cx, y, w, c = INDIGO, deep = DEEP, top = 14) => {
+    const p = el('g', {}, g);
+    line(p, `M${cx} ${top}C${cx + 1} ${f(lerp(top, y, 0.5))} ${cx - 1} ${f(y - 14)} ${cx} ${f(y - 8)}`, 3.2, 0.14, c);
+    line(p, `M${cx} ${top}C${cx + 1} ${f(lerp(top, y, 0.5))} ${cx - 1} ${f(y - 14)} ${cx} ${f(y - 8)}`, 1.3, 0.4, c);
+    line(p, arch(cx, y, w), 11, 0.26, c);
+    line(p, arch(cx, y, w), 5.5, 0.6, c);
+    line(p, arch(cx, y + 3, w * 0.55, 9), 2.2, 0.35, c);
+    el('circle', { cx: f(cx - w), cy: f(y + 8), r: 5, fill: deep, 'fill-opacity': 0.82 }, p);
+    el('circle', { cx: f(cx + w), cy: f(y + 8), r: 5.6, fill: deep, 'fill-opacity': 0.85 }, p);
+    return p;
+  };
+
+  const INK = [
+    {
+      l: 'A', name: 'Plume',
+      idea: 'The first seconds of the toy: an indigo jet rolls into a ring against the lightbox. On hover the ring breaks into fingers.',
+      art(svg, id) {
+        const { g } = tank(svg, id);
+        const ink = inkLayer(g, id);
+        const ring = plume(ink, 66, 62, 15);
+        const F = [[-15, 22], [-6, 15], [5, 19], [15, 27]].map(([dx, len]) => {
+          const x = 66 + dx, y0 = 68 + Math.abs(dx) * 0.1;
+          return { x, y0, len, veil: line(ink, '', 4.5, 0.2), core: line(ink, '', 1.4, 0.5), tip: el('circle', { cx: x, r: 0, fill: DEEP, 'fill-opacity': 0.85 }, ink) };
+        });
+        const st = { v: 0 };
+        const draw = () => {
+          const v = st.v;
+          set(ring, { opacity: f(lerp(1, 0.72, v)), transform: `translate(0 ${f(v * 2)})` });
+          for (const k of F) {
+            const y = k.y0 + k.len * v, d = `M${k.x} ${f(k.y0)}C${f(k.x + 1.5)} ${f(lerp(k.y0, y, 0.4))} ${f(k.x - 1.5)} ${f(lerp(k.y0, y, 0.7))} ${k.x} ${f(y)}`;
+            set(k.veil, { d }); set(k.core, { d });
+            set(k.tip, { cy: f(y), r: f(v * (2.4 + k.len * 0.09)) });
+          }
+        };
+        draw();
+        grain(g, id, 0.07);
+        finish(svg, id, INK_EDGE, 0.22);
+        return loop(
+          () => gsap.fromTo(st, { v: st.v }, { v: 1, duration: 1.6, ease: 'sine.inOut', yoyo: true, repeat: -1, repeatDelay: 0.3, onUpdate: draw }),
+          () => gsap.to(st, { v: 0, duration: 0.6, ease: 'power2.out', overwrite: true, onUpdate: draw }),
+        );
+      },
+      emblem() {
+        return `${EMB_HEAD}
+  ${EMB_FRAME}
+  <path d="M66 18V52" stroke="#9a9a9a" stroke-width="4"/>
+  <path d="${arch(66, 62, 17)}" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="49" cy="72" r="9" fill="#fff"/>
+  <circle cx="83" cy="72" r="10" fill="#fff"/>
+</svg>
+`;
+      },
+    },
+    {
+      l: 'B', name: 'Fingers',
+      idea: 'A late frame: the ring has split and hangs in veils with heavy drops at the ends. The pointer stirs them.',
+      art(svg, id) {
+        const { g, off, disp } = tank(svg, id);
+        const ink = inkLayer(g, id);
+        line(ink, 'M64 14C65 30 63 44 64 54', 3, 0.12); line(ink, 'M64 14C65 30 63 44 64 54', 1.2, 0.34);
+        line(ink, arch(64, 60, 15, 10), 7, 0.16); line(ink, arch(64, 60, 15, 10), 2.4, 0.4);
+        line(ink, 'M50 70C58 66 70 66 80 72', 1.2, 0.3); line(ink, 'M46 80C52 76 58 77 62 80', 1, 0.3);
+        // Each veil ends in a drop; the two low ones are the heaviest.
+        for (const [x0, x1, y1, r] of [[49, 43, 84, 2.2], [52, 49, 92, 4.2], [60, 61, 80, 1.8], [72, 70, 84, 3], [79, 84, 96, 6.6], [80, 93, 91, 5.4], [78, 82, 78, 2]]) {
+          const d = `M${x0} 64C${x0} ${f(lerp(64, y1, 0.5))} ${x1} ${f(lerp(64, y1, 0.6))} ${x1} ${y1}`;
+          line(ink, d, 5, 0.13); line(ink, d, 1.2, 0.42);
+          el('circle', { cx: x1, cy: y1, r, fill: DEEP, 'fill-opacity': r > 4 ? 0.8 : 0.7 }, ink);
+        }
+        const st = { s: 9, dx: 0, dy: 0 };
+        const draw = () => { set(disp, { scale: f(st.s) }); set(off, { dx: f(st.dx), dy: f(st.dy) }); };
+        const calm = () => gsap.to(st, { s: 9, dx: 0, dy: 0, duration: 1.1, ease: 'power2.out', overwrite: true, onUpdate: draw });
+        grain(g, id, 0.07);
+        finish(svg, id, INK_EDGE, 0.22);
+        let last = null, demo = null;
+        return {
+          enter(p) { last = p; if (!p) demo = gsap.fromTo(st, { s: 9, dx: -9, dy: 0 }, { s: 18, dx: 9, dy: 5, duration: 1.3, ease: 'sine.inOut', yoyo: true, repeat: -1, onUpdate: draw }); },
+          // A fast stroke pushes the ink harder.
+          move(p) {
+            if (!p || demo) return;
+            const sp = last ? Math.hypot(p[0] - last[0], p[1] - last[1]) : 0;
+            last = p;
+            gsap.to(st, { s: clamp(9 + sp * 2.2, 9, 22), dx: clamp((p[0] - 64) * 0.22, -12, 12), dy: clamp((p[1] - 64) * 0.22, -12, 12), duration: 0.35, ease: 'power2.out', overwrite: true, onUpdate: draw });
+          },
+          leave() { demo?.kill(); demo = null; last = null; calm(); },
+        };
+      },
+      emblem() {
+        return `${EMB_HEAD}
+  ${EMB_FRAME}
+  <path d="M64 18V50" stroke="#9a9a9a" stroke-width="4"/>
+  <path d="${arch(64, 58, 17, 10)}" fill="none" stroke="#9a9a9a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M48 62V86M62 60V78M74 60V82M82 62V92" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="48" cy="89" r="6" fill="#fff"/><circle cx="62" cy="80" r="4.5" fill="#fff"/><circle cx="74" cy="85" r="5" fill="#fff"/><circle cx="84" cy="95" r="9" fill="#fff"/>
+</svg>
+`;
+      },
+    },
+    {
+      l: 'C', name: 'Two inks',
+      idea: 'The Mixed chip: indigo and carmine fall side by side and go purple where they cross. On hover they fold into each other.',
+      art(svg, id) {
+        const { g, disp } = tank(svg, id);
+        const ink = inkLayer(g, id);
+        const a = plume(ink, 52, 60, 12), b = plume(ink, 79, 70, 12, CARMINE, CARMINE_DEEP);
+        const st = { v: 0 };
+        const draw = () => {
+          set(a, { transform: `translate(${f(st.v * 9)} ${f(st.v * 5)})` });
+          set(b, { transform: `translate(${f(st.v * -13)} ${f(st.v * -3)})` });
+          set(disp, { scale: f(lerp(9, 17, st.v)) });
+        };
+        draw();
+        grain(g, id, 0.07);
+        finish(svg, id, INK_EDGE, 0.22);
+        return loop(
+          () => gsap.fromTo(st, { v: st.v }, { v: 1, duration: 1.5, ease: 'sine.inOut', yoyo: true, repeat: -1, repeatDelay: 0.25, onUpdate: draw }),
+          () => gsap.to(st, { v: 0, duration: 0.6, ease: 'power2.out', overwrite: true, onUpdate: draw }),
+        );
+      },
+      emblem() {
+        return `${EMB_HEAD}
+  ${EMB_FRAME}
+  <path d="M52 18V50" stroke="#fff" stroke-width="4"/>
+  <path d="${arch(52, 60, 13)}" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M79 18V60" stroke="#8c8c8c" stroke-width="4"/>
+  <path d="${arch(79, 70, 13)}" fill="none" stroke="#8c8c8c" stroke-width="10" stroke-linecap="round"/>
+</svg>
+`;
+      },
+    },
+  ];
+
+  /* ================= Gallery ================= */
+
+  const ROUND = 35;
+  const TOYS = [['rain', 'Rain on glass', RAIN], ['ink', 'Ink Water', INK]];
+  // Every icon is framed so the tile fills 110 of 128.
+  const fitIcon = svg => {
+    const size = (100 * 128) / 110;
+    svg.setAttribute('viewBox', `${f(64 - size / 2)} ${f(64 - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const [toy, NAME, DIRS] of TOYS) {
+    const sec = document.createElement('section');
+    sec.id = `row-${toy}`;
+    // The round keeps these letters apart from older rounds on the sheet.
+    sec.dataset.round = ROUND;
+    sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+    out.append(sec);
+    for (const D of DIRS) {
+      const file = `${toy}${ROUND}-${D.l.toLowerCase()}`, url = `spike/emblems/${file}.svg`;
+      window.EMBLEMS[file] = D.emblem();
+      const card = document.createElement('article');
+      card.className = 'dir';
+      card.id = file;
+      card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+        <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+        <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+        <div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>
+        <p class="idea">${D.idea}</p>`;
+      sec.querySelector('.row').append(card);
+      card.querySelectorAll('.tile').forEach(tileEl => {
+        const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+        const c = D.art(svg, `u${++uid}`);
+        fitIcon(svg);
+        if (reduce) return;
+        tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+        tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+        tileEl.addEventListener('pointerleave', () => c.leave());
+        tileEl.addEventListener('focus', () => c.enter(null));
+        tileEl.addEventListener('blur', () => c.leave());
+      });
+    }
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

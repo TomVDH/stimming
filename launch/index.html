@@ -5,7 +5,7 @@
 <meta name="color-scheme" content="dark">
 <style>html { background: oklch(0.14 0.014 265); }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Marsh launch</title>
+<title>Ten seconds</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Marsh launch: a reed marsh before dawn. */
+/* Ten seconds: a reed marsh before dawn; the roar comes ten seconds after the light. */
 :root { --stage: oklch(0.12 0.03 265); }
 .stage--launch canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -22,21 +22,39 @@
 .stage--launch canvas.on { opacity: 1; }
 .stage--launch.held canvas { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--launch canvas { transition: none; } }
+/* The cue: one timed line, in the key strip's look. */
+.stage--launch .cue {
+  position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); z-index: 1; margin: 0;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
+  font-size: 11px; letter-spacing: 0.08em; color: oklch(0.94 0.008 275 / 0.78);
+  text-shadow: var(--halo, 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9));
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.stage--launch .cue.on { opacity: 1; }
+/* A short stage has no room under the horizon: the cue moves to the sky. */
+@media (max-height: 480px) { .stage--launch .cue { bottom: auto; top: 32%; } }
+.stage--launch .cue kbd {
+  font: 700 10px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.06em; padding: 3px 5px;
+  color: oklch(0.94 0.008 275 / 0.92); background: var(--glass, oklch(0.13 0.012 275 / 0.86));
+  border: 1px solid oklch(0.94 0.008 275 / 0.45); border-radius: 2px; text-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) { .stage--launch .cue { transition: none; } }
 </style>
 </head>
 <body>
-<div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Marsh launch</span><span class="intro-sub">Stimming Lab</span></div></div>
+<div class="intro" data-done aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/launch.svg)"></span><span class="intro-name">Ten seconds</span><span class="intro-sub">Stimming No. 38</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
     <div class="stage stage--launch" id="stage" tabindex="0" role="application" aria-label="A reed marsh before dawn. A rocket waits on the far shore. Drag to look around.">
-      <p class="fail" hidden>Marsh launch needs WebGL 2, which this browser has turned off.</p>
+      <p class="fail" hidden>Ten seconds needs WebGL 2, which this browser has turned off.</p>
+      <p class="cue" aria-live="polite"></p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
-    <h1 class="display" id="toy-name">Marsh launch</h1>
+    <h1 class="display" id="toy-name">Ten seconds</h1>
     <div class="vignette" hidden></div>
   </section>
 </div>
@@ -109,7 +127,7 @@ const stage = document.getElementById('stage');
 let markReady;
 const sceneReady = new Promise(r => { markReady = r; });
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
 
 // Seeded random keeps the marsh the same on every load.
 let seed = 5511;
@@ -491,7 +509,8 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
   // The reed: a tapered stalk, three leaves at nodes, a panicle that hangs downwind.
   const float STALK_W0 = 0.008, STALK_W1 = 0.003;
   const float LEAF_W = 0.013;
-  const float PLUME_LEN = 0.2, PLUME_DROOP = 0.61;
+  // The panicle: 0.08 to 0.14 of the stalk, held 12 degrees off the stalk's top, the tip drooping.
+  const float PLUME_LEN = 0.11, PLUME_DROOP = 0.22;
   // A point at height u on a stalk whose tangent turns by th * u * u: a length-keeping bend.
   vec3 stalkAt(float u, float th, vec3 root, vec3 dir, float H) {
     float x = th * u * u * u / 3.0, y = u - th * th * u * u * u * u * u / 10.0;
@@ -515,7 +534,7 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     float sway2 = sin(uTime * om * 0.7 + ph * 1.3) * (0.015 + 0.03 * g);
     // The sound front bends the whole stalk away from the pad.
     vec2 fp = frontPush(root.xz);
-    float th = aJ.x + 0.06 * H * g + sway + length(fp) * 0.3;
+    float th = min(aJ.x + 0.035 * H * g + sway + length(fp) * 0.3, 0.45);
     vec3 bend = normalize(hd3 + vec3(fp.x, 0.0, fp.y) * 0.6 + 1e-4);
     vec3 c, tan_;
     float w;
@@ -527,13 +546,13 @@ const reeds = new THREE.Mesh(reedGeo, new THREE.ShaderMaterial({
     } else if (piece > 3.5) {
       // The panicle hangs from the top, nods behind the stalk, and droops toward its tip.
       vec3 top = stalkAt(1.0, th, root, bend, H) + cr3 * sway2 * H;
-      float lag = sin(uTime * om + ph - 0.5) * amp * 1.6 - sway;
+      float lag = sin(uTime * om + ph - 0.5) * amp * 1.3 - sway;
       float Lp = H * PLUME_LEN * aJ.w * 0.1;
       float da = th + lag + PLUME_DROOP;
       vec3 pd = normalize(bend * sin(da) + vec3(0.0, cos(da), 0.0));
-      c = top + pd * t * Lp + bend * t * t * Lp * 0.25 - vec3(0.0, t * t * Lp * 0.2, 0.0);
-      tan_ = normalize(pd + bend * 0.5 * t - vec3(0.0, 0.4 * t, 0.0));
-      w = Lp * 0.13 * sin(3.1416 * pow(t, 0.7)) + 0.003;
+      c = top + pd * t * Lp + bend * t * t * Lp * 0.3 - vec3(0.0, t * t * Lp * 0.25, 0.0);
+      tan_ = normalize(pd + bend * 0.6 * t - vec3(0.0, 0.5 * t, 0.0));
+      w = Lp * 0.17 * sin(3.1416 * pow(t, 0.7)) + 0.003;
       vHead = 1.0;
     } else {
       // Leaves alternate sides at three nodes; each rises, arcs over, and flutters in a gust.
@@ -1656,16 +1675,8 @@ function launch(kind, padX) {
     .to(f, { engine: 0.55, duration: 0.8, ease: 'power2.out' }, PRE + 41.6)
     // Second engine cut-off, near the edge of the frame.
     .to(f, { engine: 0, duration: 5, ease: 'power1.in' }, PRE + 112)
-    // Shake: a jolt at ignition, a rumble through liftoff.
-    .to(f, { shake: 1, duration: 0.08 }, 0)
-    .to(f, { shake: 0.35, duration: 2.5, ease: 'power2.out' }, 0.1)
-    .to(f, { shake: 0.8, duration: 0.3 }, PRE)
-    .to(f, { shake: 0, duration: 14, ease: 'power1.in' }, PRE + 1)
   if (f.k.boosters) f.tl.call(() => { separate(f); thud(f); }, null, PRE + 18);
   f.tl.set(f, { done: true }, END);
-  // The roar reaches the eye: the camera takes a second jolt.
-  const dl = delayOf(f);
-  f.tl.to(f, { shake: 0.9, duration: 0.25 }, dl).to(f, { shake: 0.15, duration: 4, ease: 'power2.out' }, dl + 0.25);
   seedBirds(f);
   roar(f);
   return f;
@@ -1756,9 +1767,6 @@ function flyTo(f) {
       writeStar(rp, simT - rnd() * 0.03, rv, 1.2, rnd() < 0.5 ? 0 : 2, 0.5 + rnd() * 0.7, 0.12, 1.2, 2, 0.6);
     }
   }
-  // The front: strong while it crosses the marsh, gone past the eye.
-  const R = frontR(f);
-  U.uFront.value.set(f.x, f.z, R, reduced() ? 0 : 1.2 * (1 - THREE.MathUtils.smoothstep(R, f.D * 1.2, f.D * 1.6)));
   flyBirds(f, Math.min(0.1, simT - (f.lastSim ?? simT)));
   f.lastSim = simT;
   uploadBirds();
@@ -1777,7 +1785,23 @@ function endFlight() {
   U.uFlame.value.w = 0;
   flame.visible = false;
   ui.action('launch').disabled = false;
+  hideCue();
 }
+/* ---------- cues: one timed line for the launch, one for the zoom ---------- */
+const cueEl = stage.querySelector('.cue');
+const COARSE = matchMedia('(pointer: coarse)');
+let cueT = 0, launches = 0;
+const cueText = verb => (COARSE.matches ? `Tap to ${verb}` : `Click or <kbd>SPACE</kbd> to ${verb}`);
+function showCue(verb, ms) {
+  clearTimeout(cueT);
+  cueEl.innerHTML = cueText(verb);
+  cueEl.classList.add('on');
+  if (ms) cueT = setTimeout(hideCue, ms);
+}
+function hideCue() { clearTimeout(cueT); cueEl.classList.remove('on'); }
+// The launch cue comes 4 s after the intro goes; it stays until the launch.
+const cueLaunch = () => { cueT = setTimeout(() => { if (!flight && !launches) showCue('launch'); }, 4000); };
+introDone.then(cueLaunch, cueLaunch);
 // The pad stands where the shot puts it: small, left of centre, easy to miss.
 // The climb then crosses the frame to the right, into the dark sky.
 function padX() {
@@ -1794,6 +1818,9 @@ function start() {
   // The camera holds the wide shot until the viewer clicks.
   if (zoomed) snapZoom(false);
   ui.action('launch').disabled = true;
+  // The zoom cue comes 2 s into the first flight; it holds for 6 s.
+  hideCue();
+  if (!launches++) cueT = setTimeout(() => { if (flight && !zoomed) showCue('zoom', 6000); }, 2000);
   wake();
 }
 act.launch = () => start();
@@ -1806,6 +1833,7 @@ let zoomed = false, zoomTl = null;
 function snapZoom(on) {
   zoomed = on;
   follow = on;
+  hideCue();
   zoomTl?.kill();
   const z = on ? 0.5 : 1, k = reduced() ? 0 : 1;
   zoomTl = gsap.timeline()
@@ -1824,7 +1852,7 @@ const frontR = f => C_SOUND * Math.max(0, simT - f.start);
 const delayOf = f => Math.hypot(f.x - camera.position.x, f.z - camera.position.z) / C_SOUND;
 
 /* ---------- birds: they lift when the front reaches their bed ---------- */
-// Sixty birds in five reed beds between the eye and the pad.
+// Sixty birds in five reed beds, 30 to 220 m from the eye, so they cross the frame large.
 const BIRDS = 60;
 const birdGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
 const aBP = new THREE.InstancedBufferAttribute(new Float32Array(BIRDS * 4), 4);
@@ -1845,30 +1873,37 @@ const birdMesh = new THREE.Mesh(birdGeo, new THREE.ShaderMaterial({
     vec3 P = aBP.xyz;
     vec3 V = normalize(cameraPosition - P);
     vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
-    // A bird spans 1.1 m, never less than five pixels.
-    float s = max(0.55, length(cameraPosition - P) * uPx * 2.5);
+    // A bird spans 0.9 m, never less than six pixels.
+    float s = max(0.45, length(cameraPosition - P) * uPx * 3.0);
     vQ = position.xy;
     // Mirror the shape when the bird flies left on screen.
     float dir = sign(dot(aBV.xyz, rt) + 1e-4);
     vQ.x *= dir;
     vFlap = aBP.w;
-    gl_Position = projectionMatrix * viewMatrix * vec4(P + (rt * position.x + vec3(0.0, 1.0, 0.0) * position.y * 0.6) * s, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * vec4(P + (rt * position.x + vec3(0.0, 1.0, 0.0) * position.y * 0.8) * s, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  uniform vec3 uAmb;
+  uniform vec3 uAmb, uGlowC;
   varying vec2 vQ; varying float vA, vFlap;
   // Distance from p to the segment a-b.
   float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
   void main() {
-    // Two frames: wings up in a V, wings down in a shallow arch.
-    float up = step(0.5, fract(vFlap));
-    vec2 tip = vec2(0.95, up > 0.5 ? 0.55 : -0.35), mid = vec2(0.45, up > 0.5 ? 0.25 : 0.05);
+    // One wingbeat: the stroke angle runs on the flap phase; the wrist leads the tip.
+    float st = sin(vFlap * 2.6), st2 = sin(vFlap * 2.6 - 0.9);
     vec2 q = vec2(abs(vQ.x), vQ.y);
-    float d = min(seg(q, vec2(0.0), mid), seg(q, mid, tip));
-    d = min(d, length(vQ - vec2(0.15, 0.0)) - 0.08);
-    float a = (1.0 - smoothstep(0.05, 0.13, d)) * vA;
+    vec2 sh = vec2(0.06, 0.04);
+    vec2 wrist = vec2(0.5, 0.06 + 0.38 * st);
+    vec2 tip = vec2(0.98, 0.06 + 0.78 * st2 - 0.08 * (1.0 - abs(st2)));
+    // Wings taper from the shoulder to the tip; body, head and a notched tail.
+    float dw = min(seg(q, sh, wrist) - mix(0.075, 0.045, clamp(q.x * 2.0, 0.0, 1.0)), seg(q, wrist, tip) - mix(0.045, 0.012, clamp(q.x * 2.0 - 1.0, 0.0, 1.0)));
+    float body = length((vQ - vec2(0.02, 0.0)) / vec2(0.3, 0.1)) - 1.0;
+    float head = length(vQ - vec2(0.36, 0.05)) - 0.075;
+    float tail = seg(vQ, vec2(-0.28, 0.0), vec2(-0.42, 0.06 + 0.04 * st)) - 0.04;
+    float d = min(min(dw, body * 0.1), min(head, tail));
+    float a = (1.0 - smoothstep(0.0, 0.03, d)) * vA;
     if (a < 0.02) discard;
-    gl_FragColor = vec4(uAmb * 0.15 * a, a);
+    // The dawn behind them rims each bird: a warm grey mark, never lost in the sky.
+    gl_FragColor = vec4(max(uAmb * 0.5 + uGlowC * 0.35, vec3(0.05, 0.044, 0.04)) * a, a);
   }`,
 }));
 birdMesh.frustumCulled = false;
@@ -1879,19 +1914,26 @@ const birds = Array.from({ length: BIRDS }, () => ({ p: new THREE.Vector3(), v: 
 let beds = [];
 // Each launch seeds the beds and settles every bird into the reeds.
 function seedBirds(f) {
-  beds = [0.08, 0.2, 0.38, 0.6, 0.82].map(u => {
-    const z = -120 - (f.D - 220) * u, x = f.x * u * 0.8 + (Math.random() - 0.5) * -z * 0.35;
-    return { x, z, d: Math.hypot(x - f.x, z - f.z), lifted: false };
+  // Beds sit 30 to 220 m out, left or right of the open lane toward the pad.
+  beds = [0.05, 0.22, 0.42, 0.65, 0.88].map((u, i) => {
+    const z = -(28 + 230 * Math.pow(u, 1.3));
+    const side = i % 2 ? 1 : -1, lane = f.x / f.D * -z;
+    const x = lane + side * (0.18 + 0.3 * Math.random()) * -z;
+    return { x, z, side, d: Math.hypot(x - f.x, z - f.z), lifted: false };
   });
   birds.forEach((b, i) => {
     const bed = beds[i % beds.length];
     b.bed = i % beds.length;
-    b.p.set(bed.x + (Math.random() - 0.5) * 40, 1.2, bed.z + (Math.random() - 0.5) * 30);
+    b.p.set(bed.x + (Math.random() - 0.5) * -bed.z * 0.3, 1.2, bed.z + (Math.random() - 0.5) * -bed.z * 0.25);
     b.v.set(0, 0, 0); b.up = false; b.t = 0; b.a = 0;
     // Each bird waits its own moment after the front, and picks its own way.
     b.wait = Math.pow(Math.random(), 1.6) * 3.2;
     b.turn = (Math.random() - 0.5) * 2.6;
+    if (b.bed < 3) b.turn = (Math.random() < 0.5 ? -1 : 1) * (1.1 + Math.random() * 0.9);
     b.goalX = (Math.random() - 0.5) * 600;
+    // Near beds wheel out to their own side and pass the eye; far beds head for the far point.
+    b.near = b.bed < 3;
+    b.side = bed.side;
   });
 }
 // Flee from the pad and climb; then flock toward a far point to the left.
@@ -1911,10 +1953,11 @@ function flyBirds(f, dt) {
     away.set(b.p.x - f.x, 0, b.p.z - f.z).normalize();
     const c = Math.cos(b.turn), sn = Math.sin(b.turn);
     const dx = away.x * c - away.z * sn, dz = away.x * sn + away.z * c;
-    const sp = 3 + Math.random() * 5;
-    b.v.set(dx * sp, 4 + Math.random() * 6, dz * sp);
+    // Near birds break sideways and low, so they stay in the lens; far birds climb.
+    const sp = b.near ? 2 + Math.random() * 2 : 4 + Math.random() * 5;
+    b.v.set(dx * sp, b.near ? 3 + Math.random() * 2 : 4 + Math.random() * 6, dz * sp);
   }
-  const goal = tmpF.set(f.x - f.D * 0.45, 70, -f.D * 0.3);
+  const farGoal = tmpF.set(f.x - f.D * 0.45, 70, -f.D * 0.3);
   const calm = reduced();
   for (const b of birds) {
     if (!b.up) continue;
@@ -1938,12 +1981,15 @@ function flyBirds(f, dt) {
       b.v.addScaledVector(cohV.divideScalar(n).sub(b.p), 0.08 * dt);
     }
     // A loose pull toward the far point, each bird's own, after a few seconds of panic.
-    const pull = 1.8 * THREE.MathUtils.smoothstep(b.t, 2, 7);
-    b.v.addScaledVector(tmpA.set(goal.x + b.goalX, goal.y, goal.z).sub(b.p).normalize(), pull * dt);
+    const pull = (b.near ? 4.5 : 1.8) * THREE.MathUtils.smoothstep(b.t, b.near ? 0.5 : 2, b.near ? 3 : 7);
+    // Near birds wheel inside the lens for ten seconds, then pass the eye on their side.
+    if (b.near) tmpA.set(b.side * 18 + b.goalX * 0.04, 17 + b.goalX * 0.01, b.t < 10 ? -40 : 60); else tmpA.set(farGoal.x + b.goalX, farGoal.y, farGoal.z);
+    b.v.addScaledVector(tmpA.sub(b.p).normalize(), pull * dt);
     // A flutter: the path bobs with the wingbeat.
     b.v.y += Math.sin(b.ph * 0.5) * 2.5 * dt;
     const sp = b.v.length();
-    if (sp > 14) b.v.multiplyScalar(14 / sp);
+    const cap = b.near ? 9 : 16;
+    if (sp > cap) b.v.multiplyScalar(cap / sp);
     b.p.addScaledVector(b.v, dt);
     b.p.y = Math.max(b.p.y, 1);
   }
@@ -1971,6 +2017,20 @@ function stopAll() {
   if (flight) flight.roarOn = false;
 }
 function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+// The thrust: a recorded booster roar with crackle, looped.
+// It loads once, after the first gesture opens the audio context.
+// null while it loads; false if it fails, and the synth band plays.
+let thrust = null, thrustP = null;
+function loadThrust(ac) {
+  thrustP ??= fetch('thrust.mp3').then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => {
+    // The MP3 pads both ends with silence; the loop skips it.
+    const d = buf.getChannelData(0), q = 0.002;
+    let a = 0, z = d.length - 1;
+    while (a < z && Math.abs(d[a]) < q) a++;
+    while (z > a && Math.abs(d[z]) < q) z--;
+    thrust = { buf, a: a / buf.sampleRate, z: (z + 1) / buf.sampleRate };
+  }).catch(() => { thrust = false; });
+}
 function hiss(ac, t, dur, rate = 1) {
   const s = ac.createBufferSource();
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
@@ -2015,6 +2075,7 @@ function soundBed() {
   const ac = kit.live();
   if (!ac) return;
   marsh(ac);
+  loadThrust(ac);
   const now = ac.currentTime;
   bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
   // A roar that could not start (asleep, interrupted) starts when it can.
@@ -2047,18 +2108,30 @@ function roar(f, off = 0) {
   const ac = kit.live();
   // A roar that has already ended never plays again.
   if (!ac || f.roarOn || off >= PRE + 53) return;
+  // The roar waits for the recording; the tick tries again.
+  loadThrust(ac);
+  if (thrust === null) return;
   f.roarOn = true;
   const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
   const t = ac.currentTime + lead, L = PRE + 56 - off, k = f.k.flame;
   const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
   // A resume starts at the level the full curve has reached by then.
   const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
-  const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // The recorded thrust replaces the noise band once it loads.
+  const s = thrust ? ac.createBufferSource() : hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  if (thrust) {
+    s.buffer = thrust.buf; s.loop = true; s.loopStart = thrust.a; s.loopEnd = thrust.z;
+    // Heavier rockets sound a little deeper.
+    s.playbackRate.value = (f.kind === 'heavy' ? 0.82 : f.kind === 'small' ? 1.08 : 0.94) * jit(0.03);
+    s.start(t, thrust.a + Math.random() * (thrust.z - thrust.a) * 0.8); s.stop(t + L + 1);
+  }
   // Swell over 2 s, hold, then fade with distance until cut-off.
   const swell = Math.max(0.05, 2 - off);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(lvl * fade, t + swell);
-  g.gain.setTargetAtTime(lvl * 0.25, t + swell + Math.max(0, 4 - off), 18);
+  // The recording runs hotter than the noise band: it plays at 0.6.
+  const gl = lvl * (thrust ? 0.6 : 1);
+  g.gain.exponentialRampToValueAtTime(gl * fade, t + swell);
+  g.gain.setTargetAtTime(gl * 0.25, t + swell + Math.max(0, 4 - off), 18);
   g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
   lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
   lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
@@ -2080,7 +2153,8 @@ function roar(f, off = 0) {
   const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
   c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
   cg.gain.setValueAtTime(0.0001, t);
-  cg.gain.exponentialRampToValueAtTime(lvl * 0.7, t + swell);
+  // The recording has its own crackle; the clicks only edge it.
+  cg.gain.exponentialRampToValueAtTime(lvl * (thrust ? 0.25 : 0.7), t + swell);
   cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
   c.connect(cbp).connect(cg).connect(kit.out);
   c.start(t); c.stop(t + L);
@@ -2328,9 +2402,8 @@ function frame() {
   // The launch zoom narrows the lens; the horizon holds its place in the frame.
   camera.fov = fov * cam.zoom;
   baseUp = Math.atan((2 * hf - 1) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-  // A hand on the camera: a slow, tiny wobble while the scene is awake.
-  // The launch adds a shake that dies away as the rocket climbs.
-  const wk = reduced() ? 0 : pace * (1 + (flight ? flight.shake : 0) * 2.2), t = simT;
+  // A hand on the camera: a slow, tiny wobble while the scene is awake. No launch shake.
+  const wk = reduced() ? 0 : pace, t = simT;
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3));
   const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1));
   const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
@@ -2527,6 +2600,8 @@ window.__qa = {
   dawn(v) { opts.dawn = v; setDawn(); draw(); },
   simT: () => simT,
   draws: () => drawN,
+  light: () => ({ amb: U.uAmb.value.toArray(), glow: U.uGlowC.value.toArray() }),
+  birds: () => birds.filter(b => b.up).map(b => [b.bed, Math.round(b.p.x), Math.round(b.p.y), Math.round(b.p.z), +b.a.toFixed(2)]),
   flightT: () => (flight ? simT - flight.start - PRE : null),
   // Jump the flight to T+t seconds: the clock, the timeline and the trail catch up.
   jump(t) { if (!flight) return; const te = Math.max(0, t + PRE); simT = flight.start + te; flight.lastSim = simT; frame(); draw(); },

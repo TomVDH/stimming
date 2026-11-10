@@ -90,7 +90,16 @@ px, py = merc(lat, lon)
 hg = bil(dem, px, py); wg = bil(wet, px, py); dg = bil(dens, px / 4, py / 4) * (1 - np.clip(wg * 2, 0, 1))
 # The eye rides 6 m above the smoothed rail level.
 j0 = int(np.argmin(np.abs(tj)))
-rail = smooth(np.interp(s10, ss, hg[:, j0 + 2]), 300); rail = np.interp(ss, s10, rail)
+# The DEM shows the hill above a tunnel, not the rails.
+# So the rail level is the lowest ground near the line over 800 m, smoothed,
+# and held within 15 m of each stretch's floor.
+near = hg[:, max(0, j0 - 3):j0 + 4].min(axis=1)
+rm = np.interp(s10, ss, near)
+K8 = int(400 / 10)
+low = np.array([rm[max(0, i - K8):i + K8 + 1].min() for i in range(len(rm))])
+# The line runs 4 to 10 m above each lake: a floor per stretch keeps the lakes below the eye.
+floor = np.where(s10 < 34000, 410.0, np.where(s10 < 56500, 413.0, 425.0))
+rail = smooth(np.clip(low, floor, floor + 15.0), 300); rail = np.interp(ss, s10, rail)
 rel = hg - rail[:, None] - 6.0
 # Cuttings and tunnels: nothing near the line rises above the sill.
 lim = np.where(tj < 0, -4.0, -3.0 + np.maximum(tj - 25.0, 0) * 0.7)
@@ -106,10 +115,19 @@ img = np.zeros((NT, NS, 3), np.uint8)
 img[..., 0] = (q >> 8).T; img[..., 1] = (q & 255).T
 img[..., 2] = np.where(wg.T > 0.5, 255, np.clip(np.round(dg.T * 250), 0, 250)).astype(np.uint8)
 Image.fromarray(img).save('route.png', optimize=True)
-st = [(n, round(float(s), 1)) for n, s in tr['stations']]
+# Each station sits where the resampled track passes closest to it; positions are route metres.
+st = []
+for n, _ in tr['stations']:
+    if n == 'Unterterzen': continue
+    la, lo = tr['coords'][n]
+    e0 = (lo - 9.0) * cl * math.pi / 180 * R; n0 = (la - 47.25) * math.pi / 180 * R
+    k = int(np.argmin((E10 - e0) ** 2 + (N10 - n0) ** 2))
+    st.append((n, round(float(s10[k]), 1)))
 meta = {'L': round(float(L), 1), 'NS': NS, 'NT': NT, 'b': b, 'stations': st}
 json.dump(meta, open('route-meta.json', 'w'), ensure_ascii=False)
 print('L', L, 'rel range', rel.min(), rel.max(), 'water frac', (wg > 0.5).mean(), 'dens mean', dg.mean())
+wm = wg > 0.5
+print('lake rel: min', rel[wm].min() if wm.any() else None, 'max', rel[wm].max() if wm.any() else None, 'p5', np.percentile(rel[wm], 5) if wm.any() else None)
 print(json.dumps(meta, ensure_ascii=False)[:600])
 # Places in route coordinates: the nearest grid sample to each town or village.
 sub = (slice(None, None, 2), slice(None, None, 2))

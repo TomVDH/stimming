@@ -12,6 +12,22 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Smoke ring cannon: vortex rings in haze, cut by a laser sheet. */
 :root { --stage: oklch(0.1 0.01 265); }
@@ -41,21 +57,10 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, onReducedChange, audioKit } from '../shared/stim.js';
+import { initPage, whenVisible, fitCanvas, onQuality, oklchLinear, reduced, onReducedChange, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+mark('libs');
 
 const stage = document.getElementById('stage');
 const TAU = Math.PI * 2;
@@ -95,10 +100,7 @@ let breakup = ui.setting('breakup')?.value ?? 0.5;
 // Two smoke looks: a raymarched volume, or the particles themselves.
 let look = ui.setting('render')?.value ?? 'volume';
 
-let markReady;
-const glReady = new Promise(r => { markReady = r; });
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, glReady]) });
+const introDone = playIntro({ ready: pageReady() });
 
 /* ---------- K7: vortex filaments ---------- */
 // Each ring is a closed filament of N nodes with circulation G and core radius a.
@@ -1474,6 +1476,7 @@ function preroll() {
 }
 
 /* ---------- boot ---------- */
+mark('build');
 try {
   await initGL();
   layout();
@@ -1481,13 +1484,12 @@ try {
   render();
   gl.finish();
   canvas.classList.add('on');
+  mark('first-frame');
 } catch (err) {
   stage.querySelector('.fail').hidden = false;
   ui.hideControls?.();
-  markReady();
   throw err;
 }
-markReady();
 // The pre-rolled rings wait under the intro, so the first frame shows them.
 Promise.race([introDone, new Promise(r => setTimeout(r, 9000))]).then(() => touch());
 

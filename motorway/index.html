@@ -30,12 +30,6 @@
   --halo: 0 0 1px oklch(0.07 0.01 260), 0 0 2px oklch(0.07 0.01 260), 0 0 4px oklch(0.07 0.01 260 / 0.85);
   font-family: Gabarito, system-ui, sans-serif; color: var(--ink); text-shadow: var(--halo);
 }
-/* Cities: a dot and a name; the other languages sit quieter below. */
-.mk { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; --s: 1; }
-.mk .dot { position: absolute; left: -2.5px; top: -2.5px; width: 5px; height: 5px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 1.5px oklch(0.07 0.01 260); }
-.mk .nm { position: absolute; left: 9px; top: -9px; transform: scale(var(--s)); transform-origin: 0 50%; white-space: nowrap; line-height: 1.1; }
-.mk .nm b { display: block; font-weight: 500; font-size: 16px; }
-.mk .nm small { display: block; font-size: 10.5px; font-style: italic; color: var(--mute); }
 /* Jam points: hairline circles sized by queue; the worst three get a leader line and a label. */
 .pc { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; will-change: transform, opacity; }
 .pc i { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); border-radius: 50%; border: 1px solid var(--jam); box-shadow: 0 0 0 1px oklch(0.07 0.01 260 / 0.6); }
@@ -123,7 +117,7 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -152,7 +146,7 @@ const ui = initPage({ id: 'motorway', bar: {
       options: [{ value: 'clear', label: 'Clear' }, { value: 'haze', label: 'Haze' }, { value: 'fog', label: 'Fog' }] },
     { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.tilt(v) },
     { type: 'toggle', id: 'near', label: 'Neighbours', value: true, persist: true, onToggle: on => act.near(on) },
-    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.8, persist: true, onInput: v => act.glow(v) },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 1.5, step: 0.01, value: 0.6, persist: true, onInput: v => act.glow(v) },
     { type: 'choice', id: 'detail', label: 'Bloom detail', value: 'full', persist: true, onPick: v => act.detail(v),
       options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] },
     { type: 'toggle', id: 'atlas', label: 'Atlas', value: false, persist: true, onToggle: on => act.atlas(on) },
@@ -202,8 +196,8 @@ const TOWNS = [
   [6.13, 49.61, 5, 0.5], [3.52, 50.36, 4, 0.4], [2.37, 51.03, 5, 0.5], [4.48, 51.92, 10, 0.8], [6.95, 50.94, 12, 0.9],
   [3.83, 51.33, 3, 0.3], [4.3, 51.49, 3, 0.35], [6.17, 49.12, 6, 0.5],
 ];
-// The hero lamp stands on the E19 by Mechelen.
-const HERO_LL = [4.4495, 51.0175];
+// The hero lamp stands on the northbound E19, 170 m short of the L53 rail bridges.
+const HERO_LL = [4.4529, 51.01224];
 
 // Roads and border come from OpenStreetMap, simplified offline into roads.json.
 // Classes: 0 motorway, 1 trunk, 2 primary, 3 a neighbour's motorway, 4 a slip road.
@@ -290,7 +284,7 @@ let hB = -1, hBs = 0, sep = 18;
     }
   });
 }
-sep = Math.min(40, Math.max(12, sep));
+sep = Math.min(60, Math.max(12, sep));
 // The reserve's centre at the hero lamp is the world origin, for precision.
 const ORIGIN = [PA[0] - NA[0] * sep / 2, PA[1] - NA[1] * sep / 2];
 dense.forEach(d => d.p.forEach(q => { q[0] -= ORIGIN[0]; q[1] -= ORIGIN[1]; }));
@@ -406,7 +400,7 @@ const U = {
   uRush: { value: 0 }, uHour: { value: 17.2 }, uInstant: { value: 0 }, uSun: { value: 0 }, uStyle: { value: 0 },
   uTac: { value: new THREE.Vector3(...linFit(0.85, 0.13, 195)) }, uVol: { value: 0.9 }, uBootK: { value: 0 },
   uRipV: { value: 2000 }, uRip: { value: new THREE.Vector2() },
-  uCutT: { value: -100 }, uCutV: { value: 30000 }, uCut: { value: new THREE.Vector2() },
+  uCutT: { value: -100 }, uCutV: { value: 45000 }, uCut: { value: new THREE.Vector2() },
   uSod: { value: new THREE.Vector3(...SOD) }, uPink: { value: new THREE.Vector3(...PINK) }, uSalmon: { value: new THREE.Vector3(...SALMON) },
   uFogD: { value: 0.00015 }, uFogH: { value: 300 }, uFogC: { value: new THREE.Vector3() },
   // Metres per CSS pixel, per metre of view depth.
@@ -598,7 +592,7 @@ const ribMat = new THREE.ShaderMaterial({
   uniforms: {
     ...U, uHalf: { value: 60 }, uLampE: { value: 1.6 }, uFar: { value: 1 }, uGlow: { value: 0.1 }, uWide: { value: 25 },
     uAm: { value: 0 }, uPm: { value: 0 }, uJamK: { value: 0 }, uJamC: { value: new THREE.Vector3(...linFit(0.6, 0.23, 25)) },
-    uWet: { value: 0.6 },
+    uWet: { value: 0.6 }, uRushK: { value: 0 },
   },
   vertexShader: /* glsl */`
     attribute vec2 aN; attribute float aSide, aS, aEnd; attribute vec4 aInfo; attribute vec2 aJam;
@@ -618,13 +612,13 @@ const ribMat = new THREE.ShaderMaterial({
       vec3 w = position + vec3(aN.x, 0.0, aN.y) * aSide * half_;
       w.y = 0.04 + 0.01 * aInfo.z;
       vLat = aSide * half_; vS = aS; vEnd = aEnd; vLit = aInfo.x; vRoad = aInfo.y; vCls = aInfo.z; vHoff = aInfo.w; vW = w;
-      // Town-bound lanes jam in the morning, outbound lanes in the evening.
-      vJam = aJam.x * (aJam.y > 1.5 ? max(uAm, uPm) * 0.7 : (aJam.y > 0.5 ? uAm : uPm));
+      // Each point weighs the morning and the evening rush.
+      vJam = min(1.0, aJam.x * uAm + aJam.y * uPm);
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
   fragmentShader: /* glsl */`
     ${COMMON}
-    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol;
+    uniform float uLampE, uFar, uGlow, uWide, uJamK, uWet, uSun, uVol, uRushK;
     uniform vec3 uTac;
     uniform vec3 uJamC;
     varying float vLat, vS, vLit, vK, vRoad, vHalf, vCls, vHoff, vJam, vEnd;
@@ -642,8 +636,9 @@ const ribMat = new THREE.ShaderMaterial({
     void main() {
       float a = abs(vLat);
       float fs = fwidth(vS), fl = fwidth(vLat);
-      bool main_ = vCls > 1.5 && vCls < 2.5, link = vCls > 3.5;
-      float gap = main_ || link ? 40.0 : 50.0, lvl = main_ ? 0.55 : link ? 0.8 : 1.0;
+      bool main_ = vCls > 1.5 && vCls < 2.5, link = vCls > 3.5, trunk = vCls > 0.5 && vCls < 1.5;
+      // Motorways carry the light; N-roads and main roads sit well below them.
+      float gap = main_ || link ? 40.0 : 50.0, lvl = main_ ? 0.22 : trunk ? 0.45 : link ? 0.8 : 1.0;
       // The head row hangs at -vHoff across the strip.
       float dl = vLat + vHoff;
       float k0 = floor(vS / gap + 0.5);
@@ -677,13 +672,13 @@ const ribMat = new THREE.ShaderMaterial({
       // Asphalt, the lines and the verge: three lanes one way, or one lane each way.
       float dash = step(mod(vS, 12.0), 3.0), alb, m;
       if (link) {
-        alb = a < 2.6 ? 0.055 : 0.07 * exp(-(a - 2.6) / 18.0);
+        alb = a < 2.6 ? 0.055 : 0.04 * exp(-(a - 2.6) / 9.0);
         m = band(vLat, -2.3, 0.12) + band(vLat, 2.3, 0.12);
       } else if (vHoff > 0.0) {
-        alb = vLat > -6.0 && vLat < 8.4 ? 0.055 : 0.07 * exp(-max(-6.0 - vLat, vLat - 8.4) / 18.0);
+        alb = vLat > -6.0 && vLat < 8.4 ? 0.055 : 0.04 * exp(-max(-6.0 - vLat, vLat - 8.4) / 9.0);
         m = band(vLat, -5.3, 0.15) + band(vLat, 5.3, 0.15) + (band(vLat, -1.75, 0.12) + band(vLat, 1.75, 0.12)) * dash;
       } else {
-        alb = a < 4.2 ? 0.055 : 0.07 * exp(-(a - 4.2) / 18.0);
+        alb = a < 4.2 ? 0.055 : 0.04 * exp(-(a - 4.2) / 9.0);
         m = band(vLat, -3.6, 0.12) + band(vLat, 3.6, 0.12) + band(vLat, 0.0, 0.12) * dash;
       }
       alb += m * 0.3 * (1.0 - smoothstep(0.15, 1.0, fl));
@@ -715,7 +710,7 @@ const ribMat = new THREE.ShaderMaterial({
         // The map styles: one glowing line per road, coloured by its traffic.
         float w = vK < 0.999 ? vHalf * 0.6 : max(7.0, fl * 1.5);
         float core = exp(-pow(a / w, 2.0) * 2.5);
-        float jam = clamp(vJam * 2.2, 0.0, 1.0);
+        float jam = clamp(vJam * 2.2, 0.0, 1.0) * uRushK;
         float cw = vCls < 0.5 ? 1.0 : vCls < 1.5 ? 0.8 : vCls > 3.5 ? 0.6 : 0.45;
         vec3 c;
         if (uStyle < 2.5) {
@@ -959,33 +954,152 @@ scene.add(set);
 const concrete = new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.92 });
 const steel = new THREE.MeshStandardMaterial({ color: 0x6d7076, roughness: 0.55, metalness: 0.4 });
 const box = (w, h, d, x, y, z, m = concrete) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); set.add(b); return b; };
-// The overpass crosses the motorway ahead of the camera.
-// The overpass stands 60 m ahead, so the jam crawls under it.
-const OVER = 60 * JAM.dir;
-const fascia = new THREE.MeshStandardMaterial({ color: 0xa9a7a1, roughness: 0.8 });
-box(12, 0.5, 74, OVER, 7.25, 0);
-// Four girders under the slab, a fascia beam on each edge.
-for (const dx of [-4.5, -1.5, 1.5, 4.5]) box(0.5, 1.1, 74, OVER + dx, 6.45, 0);
-for (const dx of [-5.95, 5.95]) box(0.3, 1.5, 74.6, OVER + dx, 7.0, 0, fascia);
-// A steel railing: a top rail and posts every 1.5 m.
-for (const dx of [-5.9, 5.9]) box(0.08, 0.08, 74, OVER + dx, 8.62, 0, steel);
+const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
+// Railway L53 runs east to west under both carriageways, in a shallow cutting.
+// Track geometry from OpenStreetMap; the east end runs on straight.
+const RAIL_Y = -6;
+const ballast = new THREE.MeshStandardMaterial({ color: 0x3d3a36, roughness: 1 });
+const sleeperM = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.95 });
+const railM = new THREE.MeshStandardMaterial({ color: 0xa4a9ae, roughness: 0.3, metalness: 0.85 });
+const slopeM = new THREE.MeshStandardMaterial({ color: 0x3c4632, roughness: 1, side: THREE.DoubleSide });
+const TRACK_LL = [
+  [[4.437, 51.01352], [4.442996, 51.013568], [4.444135, 51.013572], [4.445955, 51.013604], [4.449112, 51.013658], [4.454975, 51.013738], [4.461, 51.01382]],
+  [[4.437, 51.0135], [4.442941, 51.013534], [4.444136, 51.013537], [4.445961, 51.013555], [4.449113, 51.013606], [4.454983, 51.013696], [4.461, 51.01378]],
+];
+const path = P => {
+  const s = [0];
+  for (let i = 1; i < P.length; i++) s.push(s[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  // A point and its unit tangent at distance u along the path.
+  const at = u => {
+    let i = 1;
+    while (i < P.length - 1 && s[i] < u) i++;
+    const a = P[i - 1], b = P[i], l = s[i] - s[i - 1] || 1, f = (u - s[i - 1]) / l;
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, (b[0] - a[0]) / l, (b[1] - a[1]) / l];
+  };
+  return { P, s, L: s[s.length - 1], at };
+};
+const TRACKS = TRACK_LL.map(t => path(t.map(([lo, la]) => geo(lo, la))));
+const CUT = path(TRACKS[0].P.map((q, i) => [(q[0] + TRACKS[1].P[i][0]) / 2, (q[1] + TRACKS[1].P[i][1]) / 2]));
+// A strip along a path: two edges at their own offsets and heights.
+function railStrip(T, o0, y0, o1, y1, mat, step = 8) {
+  const pos = [], idx = [];
+  for (let u = 0, k = 0; u <= T.L; u += step, k++) {
+    const [x, z, tx, tz] = T.at(Math.min(u, T.L)), nx = -tz, nz = tx;
+    pos.push(x + nx * o0, y0, z + nz * o0, x + nx * o1, y1, z + nz * o1);
+    if (k) { const v = k * 2; idx.push(v - 2, v - 1, v, v - 1, v + 1, v); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); scene.add(m); return m;
+}
+// The cutting: a flat floor and grass slopes up to the fields.
+railStrip(CUT, -7, RAIL_Y, 7, RAIL_Y, ballast);
+railStrip(CUT, 7, RAIL_Y, 15, 0, slopeM);
+railStrip(CUT, -7, RAIL_Y, -15, 0, slopeM);
+// Two tracks: a raised ballast bed, sleepers every 0.6 m, two rails.
+TRACKS.forEach(T => {
+  railStrip(T, -1.7, RAIL_Y + 0.25, 1.7, RAIL_Y + 0.25, ballast, 6);
+  for (const o of [-0.72, 0.72]) railStrip(T, o - 0.04, RAIL_Y + 0.42, o + 0.04, RAIL_Y + 0.42, railM, 4);
+  const n = Math.floor(T.L / 0.6), sl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 0.14, 2.5), sleeperM, n);
+  for (let i = 0; i < n; i++) {
+    const [x, z, tx, tz] = T.at(i * 0.6);
+    q4.setFromAxisAngle(yAx, -Math.atan2(tz, tx));
+    m4.compose(new THREE.Vector3(x, RAIL_Y + 0.33, z), q4, new THREE.Vector3(1, 1, 1));
+    sl.setMatrixAt(i, m4);
+  }
+  scene.add(sl);
+});
+// Catenary portals every 60 m, and a contact wire over each track.
 {
-  const xs = [-5.9, 5.9], n = 50, inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 1.1, 0.06), steel, n * 2), mm = new THREE.Matrix4();
-  xs.forEach((dx, j) => { for (let i = 0; i < n; i++) inst.setMatrixAt(j * n + i, mm.makeTranslation(OVER + dx, 8.05, -36.75 + i * 1.5)); });
-  set.add(inst);
+  const mast = new THREE.MeshStandardMaterial({ color: 0x6f7378, roughness: 0.6, metalness: 0.5 });
+  const portals = [];
+  for (let u = 20; u < CUT.L; u += 60) portals.push(u);
+  const legs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 7, 0.3), mast, portals.length * 2);
+  const beams = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 0.3, 12), mast, portals.length);
+  portals.forEach((u, i) => {
+    const [x, z, tx, tz] = CUT.at(u), nx = -tz, nz = tx;
+    q4.setFromAxisAngle(yAx, -Math.atan2(tz, tx));
+    for (const [j, o] of [[0, -5.6], [1, 5.6]]) {
+      m4.compose(new THREE.Vector3(x + nx * o, RAIL_Y + 3.5, z + nz * o), q4, new THREE.Vector3(1, 1, 1));
+      legs.setMatrixAt(i * 2 + j, m4);
+    }
+    m4.compose(new THREE.Vector3(x, RAIL_Y + 6.9, z), q4, new THREE.Vector3(1, 1, 1));
+    beams.setMatrixAt(i, m4);
+  });
+  scene.add(legs, beams);
+  TRACKS.forEach(T => railStrip(T, -0.02, RAIL_Y + 5.7, 0.02, RAIL_Y + 5.7, mast, 10));
 }
-// Round piers under a cap beam.
-box(2.0, 0.6, 44, OVER, 5.6, 0);
-for (const z of [-19, 0, 19]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 5.3, 20), concrete); c.position.set(OVER, 2.65, z); set.add(c); }
-// Earth embankments carry the side road up to the deck.
-const grass = new THREE.MeshStandardMaterial({ color: 0x48523c, roughness: 1 });
-const tarmac = new THREE.MeshStandardMaterial({ color: 0x2c2c2e, roughness: 0.85 });
-for (const sd of [-1, 1]) {
-  const sh = new THREE.Shape([[25, 0], [37, 7.5], [150, 7.5], [175, 0]].map(([u, v]) => new THREE.Vector2(-sd * u, v)));
-  const g = new THREE.ExtrudeGeometry(sh, { depth: 34, bevelEnabled: false }).rotateY(Math.PI / 2).translate(OVER - 17, 0, 0);
-  set.add(new THREE.Mesh(g, grass));
-  box(10, 0.12, 113, OVER, 7.56, sd * 93.5, tarmac);
+// Signals stand beside each track; their lamps keep their colour under sodium.
+{
+  const post = new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.7 });
+  const red = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.2, 0.12) });
+  const green = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 4, 1.6) });
+  [[0, 0.32, -3.2, red], [1, 0.68, 3.2, green], [0, 0.6, -3.2, green], [1, 0.4, 3.2, red]].forEach(([k, f, o, lamp]) => {
+    const T = TRACKS[k], [x, z, tx, tz] = T.at(T.L * f), nx = -tz, nz = tx;
+    const pb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 4.2, 0.18), post); pb.position.set(x + nx * o, RAIL_Y + 2.1, z + nz * o); scene.add(pb);
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lamp); l.position.set(x + nx * o, RAIL_Y + 4.0, z + nz * o); scene.add(l);
+  });
 }
+// Each carriageway crosses on its own bridge: a deck over the cutting, parapets on top.
+const BRIDGES = [];
+{
+  const deckM = new THREE.MeshStandardMaterial({ color: 0x7c7b77, roughness: 0.9 });
+  [hA, hB].forEach(r => {
+    if (r < 0) return;
+    const p = dense[r].p;
+    // The road point nearest the cutting's centre line marks the bridge.
+    let bi = 0, bd = Infinity;
+    p.forEach((q, i) => {
+      for (let u = 0; u < CUT.L; u += 20) { const [x, z] = CUT.at(u), d = Math.hypot(q[0] - x, q[1] - z); if (d < bd) { bd = d; bi = i; } }
+    });
+    if (bd > 60) return;
+    const [x, z] = p[bi], [tx, tz] = tangent(p, bi);
+    BRIDGES.push([x, z]);
+    const g = new THREE.Group();
+    g.position.set(x, 0, z); g.rotation.y = -Math.atan2(tz, tx);
+    // In the group frame x runs along the road and z to its right.
+    const add = (w, h, d, px, py, pz, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(px, py, pz); g.add(b); };
+    add(34, 1.6, 17, 0, -0.85, 1.2, deckM);
+    for (const pz of [-7.2, 9.6]) add(34, 1.1, 0.35, 0, 0.5, pz, concrete);
+    scene.add(g);
+  });
+}
+// A local train passes every minute or so, windows lit, under both bridges.
+const train = (() => {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0x2b2e34, roughness: 0.5, metalness: 0.3 });
+  const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.35, 1.05) });
+  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 4.8, 4.2) });
+  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.1, 0.08) });
+  const cars = [0, 1, 2, 3].map(i => {
+    const c = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(24, 3.8, 2.9), body); b.position.y = 2.3; c.add(b);
+    for (const sz of [-1.46, 1.46]) { const w = new THREE.Mesh(new THREE.BoxGeometry(21, 0.75, 0.02), glass); w.position.set(0, 2.7, sz); c.add(w); }
+    if (i === 0) for (const sz of [-0.9, 0.9]) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), head); h.position.set(12.05, 1.2, sz); c.add(h); }
+    if (i === 3) for (const sz of [-0.9, 0.9]) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), tail); h.position.set(-12.05, 1.2, sz); c.add(h); }
+    g.add(c);
+    return c;
+  });
+  g.visible = false;
+  scene.add(g);
+  return { g, cars };
+})();
+function stepTrain(t) {
+  // 33 m/s over the whole cutting, then a pause before the next one.
+  const T = TRACKS[0], run = T.L + 110, period = run / 33 + 40, u0 = ((t % period) * 33) - 5;
+  train.g.visible = u0 < run;
+  if (!train.g.visible) return;
+  train.cars.forEach((c, i) => {
+    const u = u0 - i * 24.6;
+    c.visible = u > 12 && u < T.L - 12;
+    if (!c.visible) return;
+    const [x, z, tx, tz] = T.at(u);
+    c.position.set(x, RAIL_Y + 0.42, z); c.rotation.y = -Math.atan2(tz, tx);
+  });
+}
+// Distance from a ground point to the rail cutting's centre line.
+const railDist = (x, z) => { let d = Infinity; for (let u = 0; u <= CUT.L; u += 10) { const [cx, cz] = CUT.at(u); d = Math.min(d, Math.hypot(x - cx, z - cz)); } return d; };
 
 // Poles, arms and housings for the lamps near the hero, as instances.
 const NEAR = LAMPS.filter(l => l.r === hA && Math.hypot(l.x, l.z) < 1500);
@@ -998,7 +1112,6 @@ const refrGeo = mergeGeometries([-1, 1].map(sd => new THREE.PlaneGeometry(0.32, 
 const poles = new THREE.InstancedMesh(poleGeo, steel, NEAR.length);
 const refrMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...SOD).multiplyScalar(5), side: THREE.DoubleSide });
 const refrs = new THREE.InstancedMesh(refrGeo, refrMat, NEAR.length);
-const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
 NEAR.forEach((l, i) => {
   q4.setFromAxisAngle(yAx, -Math.atan2(l.tz, l.tx));
   // The pole stands on the reserve's centre, one arm per carriageway.
@@ -1055,7 +1168,7 @@ scene.add(poles, refrs);
         const o = off + k * (5 + 34 * rnd(i, j + 11 + k)), a = (rnd(i, j + 23 + k) - 0.5) * 8;
         const px = x + tx * a - tz * o, pz = z + tz * a + tx * o;
         // Trees keep clear of the overpass embankments.
-        if (Math.abs(px * HT.x + pz * HT.z - OVER) < 24) continue;
+        if (railDist(px, pz) < 24) continue;
         // The camera's own corner stays clear.
         if (Math.hypot(px + HT.x * 26 * JAM.dir, pz + HT.z * 26 * JAM.dir) < 55) continue;
         at.push([px, pz, 9 + 9 * rnd(i, j + 31 + k)]);
@@ -1135,28 +1248,6 @@ const GX = 22 * JAM.dir, JZ = JAM.side * sep / 2;
     arrowExit(g, W - 52, H * 0.66, 58);
   });
 }
-// Cars cross the overpass, headlights first.
-const deckCars = (() => {
-  const body = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.5, metalness: 0.3 });
-  const head = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 5.6, 4.8) });
-  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.15, 0.1) });
-  return [0, 1, 2, 3, 4, 5].map(i => {
-    const g = new THREE.Group(), dir = i % 2 ? 1 : -1;
-    const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.3, 4.3), body); b.position.y = 0.75; g.add(b);
-    for (const sx of [-0.65, 0.65]) {
-      const h = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), head); h.position.set(sx, 0.7, dir * 2.16); g.add(h);
-      const t = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), tail); t.position.set(sx, 0.8, -dir * 2.16); g.add(t);
-    }
-    g.position.set(OVER + dir * 2.2, 7.6, 0);
-    set.add(g);
-    return { g, dir, ph: i * 61.7, v: 13 + (i % 3) * 3 };
-  });
-})();
-function stepDeck(t) {
-  // Each car loops a 400 m run along the side road.
-  for (const c of deckCars) c.g.position.z = c.dir * (((t * c.v + c.ph) % 400) - 200);
-}
-
 // Point lights at the eight heads nearest the hero light the solids.
 const HEADS = LAMPS.filter(l => (l.r === hA || l.r === hB) && Math.hypot(l.x, l.z) < 300).map(l => new THREE.Vector3(l.x, HEAD_H - 0.2, l.z));
 HEADS.sort((a, b) => a.lengthSq() - b.lengthSq());
@@ -1167,6 +1258,13 @@ const lights = HEADS.slice(0, 8).map(h => {
   scene.add(L);
   return L;
 });
+// Four more heads light the bridges, so the crossing reads from the start.
+if (BRIDGES.length) {
+  const [bx, bz] = BRIDGES[0];
+  LAMPS.filter(l => (l.r === hA || l.r === hB) && Math.hypot(l.x - bx, l.z - bz) < 140)
+    .sort((a, b) => Math.hypot(a.x - bx, a.z - bz) - Math.hypot(b.x - bx, b.z - bz)).slice(0, 4)
+    .forEach(h => { const L = new THREE.PointLight(new THREE.Color(...SOD), LIGHT_I, 0, 2); L.position.set(h.x, HEAD_H - 0.2, h.z); scene.add(L); lights.push(L); });
+}
 scene.add(new THREE.HemisphereLight(new THREE.Color(...linFit(0.3, 0.05, 262)), 0x000000, 0.06));
 
 /* ---------- traffic ---------- */
@@ -1189,13 +1287,13 @@ function measureJams() {
   jamBy.fill(0);
   TW.forEach((W, r) => {
     if (!W) return;
-    const S = dense[r].s, I = TI[r], H = TH[r], two = !ROADS[r].o;
+    const S = dense[r].s, H = TH[r], two = !ROADS[r].o;
     for (let i = 0; i < W.length - 1; i++) {
       if (W[i] < 0.3) continue;
       const len = S[i + 1] - S[i];
       let q = 0;
-      if (W[i] * (I[i] ? am : pm) > 0.45) q += len;
-      if (two && W[i] * (I[i] ? pm : am) > 0.45) q += len;
+      if (congAt(r, i, 1, am, pm) > 0.45) q += len;
+      if (two && congAt(r, i, -1, am, pm) > 0.45) q += len;
       m += q;
       if (H[i] >= 0) jamBy[H[i]] += q / 1000;
     }
@@ -1223,7 +1321,28 @@ dense.forEach((d, r) => {
   }
   TW[r] = W; TI[r] = I; TH[r] = H;
 });
-const congAt = (r, k, dir, am, pm) => TW[r][k] * ((TI[r][k] ^ (dir < 0 ? 1 : 0)) ? am : pm);
+// Real jams: October 2024, from the Flemish traffic centre's indicators.
+// Each road point holds minutes of slowed traffic, morning and afternoon.
+// Roads without that data keep the hand-placed jam points.
+const WA = [], WP = [];
+const vcW = m => Math.min(1, Math.pow(Math.max(0, m) / 220, 0.8));
+dense.forEach((d, r) => {
+  if (!TW[r]) return;
+  const n = d.p.length, A = new Float32Array(n), P = new Float32Array(n), vc = DATA.vc?.roads?.[r];
+  if (vc) {
+    // Values and a presence mask ride the same curve as the points.
+    const ride = F => { const o = []; sample(ROADS[r].p, STEP[ROADS[r].c], F, o); return o; };
+    const has = vc[0].map(v => (v >= 0 ? 100 : 0));
+    const am = ride(vc[0].map(v => Math.max(0, v) * 100)), pm = ride(vc[1].map(v => Math.max(0, v) * 100)), m = ride(has);
+    for (let i = 0; i < n; i++) if (m[i] > 0.01) { A[i] = vcW(am[i] / m[i]); P[i] = vcW(pm[i] / m[i]); }
+  } else {
+    for (let i = 0; i < n; i++) { const w = TW[r][i]; if (TI[r][i]) A[i] = w; else P[i] = w; }
+  }
+  WA[r] = A; WP[r] = P;
+  for (let i = 0; i < n; i++) TW[r][i] = Math.max(A[i], P[i]);
+});
+// Forward travel weighs the morning and evening shapes; the way back swaps them.
+const congAt = (r, k, dir, am, pm) => Math.min(1, dir < 0 ? WP[r][k] * am + WA[r][k] * pm : WA[r][k] * am + WP[r][k] * pm);
 
 // Cars: ten per km on each carriageway, three per km each way on trunk roads.
 const CARS = (() => {
@@ -1277,13 +1396,17 @@ const CARS = (() => {
   });
   return C;
 })();
-// Jam weight and town-bound flag per ribbon vertex; the clock lights them red from altitude.
+// Morning and evening jam weights per ribbon vertex; the clock lights them red from altitude.
 ribbons.children.forEach(m => {
   const g = m.geometry, J = new Float32Array(g.attributes.aS.count * 2);
   let v = 0;
   g.userData.list.forEach(r => {
-    const n = dense[r].p.length, W = TW[r], I = TI[r], two = !ROADS[r].o;
-    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++, v++) { J[v * 2] = W ? W[i] : 0; J[v * 2 + 1] = W ? (two ? 2 : I[i]) : 0; }
+    const n = dense[r].p.length, A = WA[r], P = WP[r], two = !ROADS[r].o;
+    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++, v++) {
+      // A two-way road shows both directions, a little softer.
+      const m = A ? Math.max(A[i], P[i]) * 0.7 : 0;
+      J[v * 2] = A ? (two ? m : A[i]) : 0; J[v * 2 + 1] = A ? (two ? m : P[i]) : 0;
+    }
   });
   g.setAttribute('aJam', new THREE.BufferAttribute(J, 2));
 });
@@ -1409,41 +1532,100 @@ const markLayer = document.createElement('div');
 markLayer.className = 'mk-layer';
 markLayer.setAttribute('aria-hidden', 'true');
 stage.append(markLayer);
+// Each city flies a flag: a big amber name high above it, on a glowing stem.
+// The names live in the scene, so they rise and grow with the zoom.
+const FLAG_C = new THREE.Color(...linFit(0.86, 0.14, 68));
+const stemTex = (() => {
+  const c = document.createElement('canvas'); c.width = 4; c.height = 128;
+  const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 128);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 128);
+  return new THREE.CanvasTexture(c);
+})();
+// Flags draw after the post passes, so blur and bloom never soften them.
+const flagScene = new THREE.Scene(), flagGroup = new THREE.Group();
+flagScene.add(flagGroup);
 const marks = MARKS.map(([names, lo, la]) => {
-  const el = document.createElement('div');
-  el.className = 'mk';
-  // The Dutch name leads; the French, German and English follow, without repeats.
   const tc = w => w.toLowerCase().replace(/(^|[-\s])(\S)/g, (m, a, b) => a + b.toUpperCase());
   const name = names[0], rest = [...new Set(names.slice(1).map(tc))].filter(w => w !== tc(name));
-  el.innerHTML = `<i class="dot"></i><span class="nm"><b>${tc(name)}</b>${rest.length ? `<small>${rest.join(' · ')}</small>` : ''}</span>`;
-  markLayer.append(el);
   const [x, z] = geo(lo, la);
-  // Neighbouring flags stand at different heights, so their words never collide.
-  const lift = { MECHELEN: 0.75, BONHEIDEN: 1.45, LEUVEN: 1.2, BRUSSEL: 1.1 }[name] ?? 1;
-  return { el, v: new THREE.Vector3(x, 0, z), o: 0, shown: -1, lift };
+  const mat = new THREE.MeshBasicMaterial({ color: FLAG_C, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false });
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  const stem = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+    color: FLAG_C, alphaMap: stemTex, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false,
+  }));
+  label.renderOrder = stem.renderOrder = 10;
+  flagGroup.add(label, stem);
+  // Neighbouring flags fly at different heights, so their words never collide.
+  const lift = { MECHELEN: 0.8, BONHEIDEN: 1.5, LEUVEN: 1.25, BRUSSEL: 1.1 }[name] ?? 1;
+  return { name: tc(name).toUpperCase(), rest: rest.join('  ·  ').toUpperCase(), label, stem, v: new THREE.Vector3(x, 0, z), o: 0, lift, aspect: 4 };
 });
+// The name in heavy Gabarito; the other languages in a quiet line under it.
+function drawFlag(m) {
+  const H = 256, c = document.createElement('canvas'), g = c.getContext('2d');
+  const big = '800 150px Gabarito, system-ui, sans-serif', small = '600 54px Gabarito, system-ui, sans-serif';
+  g.font = big; const w1 = g.measureText(m.name).width;
+  g.font = small; const w2 = m.rest ? g.measureText(m.rest).width : 0;
+  c.width = Math.ceil(Math.max(w1, w2) + 24); c.height = H;
+  g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
+  g.font = big; g.fillText(m.name, 8, 150);
+  if (m.rest) { g.globalAlpha = 0.6; g.font = small; g.fillText(m.rest, 12, 226); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  m.label.material.alphaMap = null; m.label.material.map = tex; m.label.material.needsUpdate = true;
+  m.aspect = c.width / H;
+}
+document.fonts.ready.then(() => marks.forEach(drawFlag));
 const mv = new THREE.Vector3();
 // The Atlas setting holds the city names, jam circles, study and trains.
 let atlas = false;
 function placeMarks(dt) {
+  flagGroup.visible = atlas;
   if (!atlas) return;
+  camera.updateMatrixWorld();
+  const camR = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0), camU = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+  // Names grow as the camera comes down; from orbit they stay compact.
+  const px = 26 + 30 * (1 - ss(0.38, 0.95, z));
+  // Placed names, in screen pixels; a later name climbs until it clears them.
+  const taken = [], sp = new THREE.Vector3();
+  const rectOf = (m, w, h, mpp) => {
+    sp.copy(m.label.position).project(camera);
+    const cx = (sp.x * 0.5 + 0.5) * size.w, cy = (0.5 - sp.y * 0.5) * size.h, hw = w / mpp / 2, hh = h / mpp / 2;
+    return [cx - hw, cy - hh, cx + hw, cy + hh];
+  };
+  const hits = a => taken.find(b => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]);
   marks.forEach(m => {
-    mv.copy(m.v).project(camera);
     const dist = camera.position.distanceTo(m.v);
+    mv.copy(m.v).project(camera);
     // A band of distance: hidden from orbit and from the street, gentle between.
-    // Flags show only from overhead, and only near their city.
-    let want = ss(70000, 30000, dist) * ss(1200, 4000, dist) * ss(0.3, 0.42, z);
-    if (mv.z > 1 || Math.abs(mv.x) > 1.1 || Math.abs(mv.y) > 1.1) want = 0;
+    let want = ss(90000, 35000, dist) * ss(1200, 4000, dist) * ss(0.3, 0.42, z);
+    if (mv.z > 1 || Math.abs(mv.x) > 1.2 || Math.abs(mv.y) > 1.3) want = 0;
+    const mpp = dist * U.uPxK.value;
+    let stemL = (55 + 35 * m.lift) * mpp * (0.7 + 0.3 * Math.max(m.o, 0.5));
+    const h = px * 1.7 * mpp, w = h * m.aspect;
+    const put = () => m.label.position.set(m.v.x, stemL, m.v.z).addScaledVector(camR, w / 2 + 5 * mpp).addScaledVector(camU, h * 0.42);
+    if (want > 0) {
+      put();
+      let rc = rectOf(m, w, h, mpp), hit;
+      for (let k = 0; k < 2 && (hit = hits(rc)); k++) {
+        // Climb by the overlap, measured on screen, plus a small gap.
+        stemL += (rc[3] - hit[1] + 6) * mpp / Math.max(0.3, Math.abs(camU.y));
+        put(); rc = rectOf(m, w, h, mpp);
+      }
+      // A name with no room left under the top controls gives way.
+      if (hits(rc) || rc[1] < 64) want = 0; else taken.push(rc);
+    }
     m.o += (want - m.o) * (1 - Math.exp(-dt * 2.5));
-    if (m.o < 0.01 && m.shown === 0) return;
     const o = m.o < 0.01 ? 0 : m.o;
-    m.el.style.opacity = o.toFixed(3);
-    const py = (0.5 - mv.y * 0.5) * size.h;
-    m.el.style.transform = `translate(${((mv.x * 0.5 + 0.5) * size.w).toFixed(1)}px, ${py.toFixed(1)}px)`;
-    // The stripe rises and the letters swell as the flag fades in; the words stay on screen.
-    // Names grow a little as the camera comes closer.
-    m.el.style.setProperty('--s', (0.85 + 0.3 * ss(80000, 8000, dist)).toFixed(3));
-    m.shown = o > 0 ? 1 : 0;
+    m.label.visible = m.stem.visible = o > 0;
+    if (!o) return;
+    if (want === 0) put();
+    m.stem.position.set(m.v.x, stemL / 2, m.v.z);
+    m.stem.scale.set(1.5 * mpp, stemL, 1);
+    m.stem.rotation.set(0, Math.atan2(camera.position.x - m.v.x, camera.position.z - m.v.z), 0);
+    m.label.quaternion.copy(camera.quaternion);
+    m.label.scale.set(w, h, 1);
+    m.label.material.opacity = o; m.stem.material.opacity = o * 0.8;
   });
   placeStudy(dt);
 }
@@ -1839,7 +2021,96 @@ const tilt0 = new ShaderPass({
     }`,
 });
 composer.addPass(tilt0);
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.4, 0.7);
+// A soft bloom: a 13-tap downsample chain, then tent upsamples.
+// No coarse level is ever stretched, so glows stay round, never square.
+class SoftBloom extends Pass {
+  constructor(levels = 7) {
+    super();
+    this.strength = 0.7; this.radius = 0.4; this.threshold = 0.8; this.full = true;
+    this.levels = levels; this.down = []; this.up = []; this.size = [1, 1];
+    const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    for (let i = 0; i < levels; i++) { this.down.push(rt()); this.up.push(rt()); }
+    const vs = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+    const tap13 = `
+      vec3 s(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+      vec3 down13() {
+        vec3 a = s(vec2(-2, -2)), b = s(vec2(0, -2)), c = s(vec2(2, -2)), d = s(vec2(-2, 0)), e = s(vec2(0, 0));
+        vec3 f = s(vec2(2, 0)), g = s(vec2(-2, 2)), h = s(vec2(0, 2)), i = s(vec2(2, 2));
+        vec3 j = s(vec2(-1, -1)), k = s(vec2(1, -1)), l = s(vec2(-1, 1)), m = s(vec2(1, 1));
+        return e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+      }`;
+    this.downMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uFirst: { value: 0 }, uTh: { value: 0.8 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uFirst, uTh; varying vec2 vUv; ${tap13}
+        void main() {
+          vec3 c = down13();
+          if (uFirst > 0.5) {
+            // A soft knee keeps faint light out without a hard edge.
+            float br = max(c.r, max(c.g, c.b)), knee = uTh * 0.5;
+            float soft = clamp(br - uTh + knee, 0.0, 2.0 * knee);
+            soft = soft * soft / (4.0 * knee + 1e-4);
+            c *= max(soft, br - uTh) / max(br, 1e-4);
+            c = min(c, vec3(20.0));
+          }
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.upMat = new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uW: { value: 0.7 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tSrc, tBase; uniform vec2 uTexel; uniform float uW; varying vec2 vUv;
+        vec3 s(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+        void main() {
+          // A 3 by 3 tent widens each level smoothly.
+          vec3 t = s(vec2(-1, -1)) + 2.0 * s(vec2(0, -1)) + s(vec2(1, -1)) + 2.0 * s(vec2(-1, 0)) + 4.0 * s(vec2(0, 0))
+            + 2.0 * s(vec2(1, 0)) + s(vec2(-1, 1)) + 2.0 * s(vec2(0, 1)) + s(vec2(1, 1));
+          gl_FragColor = vec4(texture2D(tBase, vUv).rgb + t / 16.0 * uW, 1.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.mixMat = new THREE.ShaderMaterial({
+      uniforms: { tScene: { value: null }, tBloom: { value: null }, uK: { value: 0.7 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tScene, tBloom; uniform float uK; varying vec2 vUv;
+        void main() { vec4 c = texture2D(tScene, vUv); gl_FragColor = vec4(c.rgb + texture2D(tBloom, vUv).rgb * uK, c.a); }`,
+      depthTest: false, depthWrite: false,
+    });
+    this.quad = new FullScreenQuad(null);
+  }
+  setSize(w, h) {
+    this.size = [w, h];
+    let cw = Math.max(1, Math.round(w / (this.full ? 1 : 2))), ch = Math.max(1, Math.round(h / (this.full ? 1 : 2)));
+    for (let i = 0; i < this.levels; i++) {
+      cw = Math.max(1, cw >> 1); ch = Math.max(1, ch >> 1);
+      this.down[i].setSize(cw, ch); this.up[i].setSize(cw, ch);
+    }
+  }
+  pass(renderer, mat, target) { this.quad.material = mat; renderer.setRenderTarget(target); this.quad.render(renderer); }
+  render(renderer, writeBuffer, readBuffer) {
+    const D = this.downMat.uniforms, Up = this.upMat.uniforms, n = this.levels;
+    D.uTh.value = this.threshold;
+    let src = readBuffer.texture, sw = this.size[0], sh = this.size[1];
+    for (let i = 0; i < n; i++) {
+      D.tSrc.value = src; D.uTexel.value.set(1 / sw, 1 / sh); D.uFirst.value = i === 0 ? 1 : 0;
+      this.pass(renderer, this.downMat, this.down[i]);
+      src = this.down[i].texture; sw = this.down[i].width; sh = this.down[i].height;
+    }
+    // Wider levels weigh by the radius; the smallest level seeds the climb.
+    let top = this.down[n - 1];
+    for (let i = n - 2; i >= 0; i--) {
+      Up.tSrc.value = top.texture; Up.tBase.value = this.down[i].texture;
+      Up.uTexel.value.set(1 / top.width, 1 / top.height); Up.uW.value = 0.35 + 0.65 * this.radius;
+      this.pass(renderer, this.upMat, this.up[i]);
+      top = this.up[i];
+    }
+    const M = this.mixMat.uniforms;
+    M.tScene.value = readBuffer.texture; M.tBloom.value = top.texture; M.uK.value = this.strength / 2.5;
+    this.pass(renderer, this.mixMat, this.renderToScreen ? null : writeBuffer);
+  }
+}
+const bloom = new SoftBloom();
 composer.addPass(bloom);
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uSeed: { value: 0 }, uScan: { value: 0 } },
@@ -1872,7 +2143,7 @@ const air = { ...AIR.haze };
 let airTo = AIR.haze;
 
 /* ---------- state ---------- */
-let glowK = ui.setting('glow')?.value ?? 0.8, bloomFull = (ui.setting('detail')?.value ?? 'full') === 'full';
+let glowK = ui.setting('glow')?.value ?? 0.6, bloomFull = (ui.setting('detail')?.value ?? 'full') === 'full';
 let lastD = 1, z = ui.slider?.value ?? 1, zTo = z, tilt = ui.setting('tilt')?.value ?? 0.6;
 const size = { w: 1, h: 1 };
 let rung = 0;
@@ -1884,9 +2155,9 @@ function resize() {
   renderer.setSize(size.w, size.h, false);
   composer.setPixelRatio(pr);
   composer.setSize(size.w, size.h);
-  // Full detail renders the bloom at screen size, so glows stay round, not blocky.
-  const b = (bloomFull ? 1 : 0.5) * (rung > 1 ? 0.7 : 1);
-  bloom.resolution.set(size.w * pr * b, size.h * pr * b);
+  // Full detail starts the bloom chain at screen size; Half starts it at half.
+  bloom.full = bloomFull && rung < 2;
+  bloom.setSize(size.w * pr, size.h * pr);
   camera.aspect = size.w / size.h;
   camera.fov = camera.aspect < 0.8 ? 58 : 40;
   U.uPxK.value = (2 * Math.tan((camera.fov * Math.PI) / 360)) / size.h;
@@ -1901,7 +2172,7 @@ function draw() {
   const t = nowS();
   U.uNow.value = t;
   const D = place(z);
-  if (z < 0.3) stepDeck(t);
+  if (z < 0.3) stepTrain(t);
   updateSound(t);
   // Air eases toward the chip.
   ribMat.uniforms.uHalf.value = 60 + air.wide * 2;
@@ -1934,16 +2205,17 @@ function draw() {
   lights.forEach(L => { L.color.setRGB(...st.c); L.intensity = LIGHT_I * st.l; });
   // From orbit thin lines would alias in a wide blur; the tilt eases off.
   // A smaller disc keeps the blur smooth; wide discs break into blocks.
-  tilt0.uniforms.uMax.value = tilt * (6 + 3 * z) * (1 - 0.65 * ss(0.55, 1, z));
+  tilt0.uniforms.uMax.value = tilt * (6 + 4 * z) * (1 - 0.35 * ss(0.55, 1, z));
   // The bloom spreads wider and softer from orbit, so thin lines glow round.
   // Only true light sources bloom; a low radius keeps the coarse levels out.
   bloom.radius = 0.15 + 0.3 * ss(0.4, 1, z);
-  bloom.strength = glowK * (0.75 - 0.2 * ss(0.4, 1, z));
-  bloom.threshold = 0.95;
+  bloom.strength = glowK * 1.4;
+  // From altitude the arteries are dim, so the threshold drops to catch them.
+  bloom.threshold = 0.6 - 0.4 * ss(0.3, 1, z);
   tilt0.uniforms.uBand.value = 0.06 + 0.08 * z;
   // From orbit the ribbons need a lift to read.
   // A phone draws the country smaller, so its strips need more lift.
-  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 34 : 20) * ss(0.35, 1, z) + 8 * ss(0.9, 1, z);
+  ribMat.uniforms.uFar.value = 1 + (camera.aspect < 0.8 ? 40 : 28) * ss(0.35, 1, z) + 12 * ss(0.9, 1, z);
   padMat.uniforms.uFar.value = 1 + 40 * ss(0.3, 0.9, z);
   // The border line shows only once the climb is high.
   // At boot the outline draws in bright, then settles as the roads light.
@@ -1951,7 +2223,8 @@ function draw() {
   borderLine.material.uniforms.uLine.value = (0.06 * ss(0.35, 0.85, z) + 0.12 * (1 - ss(3, 9, bt))) * ss(0, 1.4, bt);
   // Traffic lights up behind the lamps.
   // By day car lamps barely show; the map styles keep their traffic.
-  carMat.uniforms.uBoot.value = ss(4, 9, bt) * (look_.cars ? 1 : 0) * (1 - 0.85 * U.uSun.value);
+  // High views show only the lit arteries; Rush brings the traffic streaks in.
+  carMat.uniforms.uBoot.value = ss(4, 9, bt) * (look_.cars ? 1 : 0) * (1 - 0.85 * U.uSun.value) * (1 - (1 - reveal) * ss(0.25, 0.7, z));
   U.uBootK.value = ss(1.4, 7, bt);
   U.uVol.value = hourly(VOL, clock.h);
   // From high up the strips carry the light; the sprites add nothing but work.
@@ -1971,14 +2244,21 @@ function draw() {
   carMat.uniforms.uHeadAt.value = 0.55 + 0.4 * ss(0.4, 1, z);
   ribMat.uniforms.uAm.value = hourly(AM, clock.h);
   ribMat.uniforms.uPm.value = hourly(PM, clock.h);
-  ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z);
+  // Jams show only while Rush runs.
+  ribMat.uniforms.uJamK.value = ss(0.45, 0.85, z) * reveal;
+  ribMat.uniforms.uRushK.value = reveal;
   placeMarks(frameDt);
   trainMat.uniforms.uFar.value = 1 + 10 * ss(0.35, 1, z);
-  // Rail lines read clearer from altitude.
-  railLines.material.uniforms.uRailK.value = (0.03 + 0.05 * ss(0.4, 1, z)) * (1 + U.uSun.value);
+  // Rail stays a faint hint under the roads.
+  railLines.material.uniforms.uRailK.value = (0.006 + 0.01 * ss(0.4, 1, z)) * (1 + U.uSun.value);
   grade.uniforms.uSeed.value = (t * 7.31) % 1;
   sky.material.uniforms.uInvVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
   composer.render();
+  if (flagGroup.visible) {
+    renderer.autoClear = false; renderer.setRenderTarget(null);
+    renderer.render(flagScene, camera);
+    renderer.autoClear = true;
+  }
 }
 // The JS twin of lampState, for the near heads.
 function jsLamp(t) {
@@ -2031,6 +2311,11 @@ act.style = v => {
   grade.uniforms.uScan.value = look_.scan;
   railLines.material.uniforms.uRailC.value.set(...linFit(...(look_.rail ?? [0.75, 0.06, 170])));
   markLayer.style.setProperty('--flag', look_.flag);
+  // The city flags take the style's own colour.
+  {
+    const m = look_.flag.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/);
+    if (m) { FLAG_C.setRGB(...linFit(+m[1], +m[2], +m[3])); marks.forEach(k => { k.label.material.color.copy(FLAG_C); k.stem.material.color.copy(FLAG_C); }); }
+  }
   markLayer.style.setProperty('--glow', look_.glow);
   try { localStorage.setItem('stimming.motorway.style', v); } catch {}
   wake(); draw();
@@ -2053,7 +2338,7 @@ act.cut = () => {
   cut.on = true;
   thump();
   // The country sits dark for a few seconds before the grid returns.
-  cut.timer = setTimeout(relight, (cut.dur + 4) * 1000);
+  cut.timer = setTimeout(relight, (cut.dur + 2.5) * 1000);
   busyUntil = performance.now() + (cut.dur + 22) * 1000;
   wake();
 };
@@ -2133,6 +2418,8 @@ const boot = { t0: null };
 U.uOn.value = 1; U.uHot.value = 0; U.uSwT.value = 1e6;
 // The opening holds on the signs, then pulls slowly out to the whole country.
 const pull = { t0: -1, dur: 32, hold: 3.5 };
+// Jam red and high traffic streaks show only while Rush runs, fading over about 3 s.
+let reveal = 0;
 const stopPull = () => { pull.t0 = -1; };
 function bootUp() {
   boot.t0 = nowS();
@@ -2162,6 +2449,8 @@ function tick(now) {
       moving = true;
       if (k >= 1) stopPull();
     }
+    const revealTo = clock.day && pull.t0 < 0 ? 1 : 0;
+    if (reveal !== revealTo) { reveal = reduced() ? revealTo : Math.min(1, Math.max(0, reveal + Math.sign(revealTo - reveal) * dt / 3)); moving = true; }
     if (Math.abs(zTo - z) > 1e-4) { z = reduced() ? zTo : z + (zTo - z) * (1 - Math.exp(-dt * 4)); moving = true; } else z = zTo;
     holdAnchor();
     for (const k of ['d', 'h', 'size', 'halo', 'glow', 'wide', 'stars']) {
@@ -2380,6 +2669,9 @@ act.reset = () => {
   pan.set(0, 0, 0); panTo.set(0, 0, 0);
   ui.setting('air')?.set('haze'); airTo = AIR.haze;
   ui.setting('tilt')?.set(0.6); tilt = 0.6;
+  ui.setting('glow')?.set(0.6); glowK = 0.6;
+  ui.setting('detail')?.set('full'); bloomFull = true; resize();
+  ui.setting('near')?.set(true); act.near(true);
   look.yaw = look.pitch = 0;
   if (!U.uOn.value) act.sw();
   setZoom(1);

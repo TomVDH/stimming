@@ -26,7 +26,8 @@ def bottle_outline(bid, D_mm, cl):
     return pts, lab
 
 # Read from the photo where the stem test fails: Gulden Draak's rock foot is thick.
-YBOT = {'gulden-draak': 6.3}
+# Kwak has no stem: its waist is not one. Averbode's bowl starts above its tall stem.
+YBOT = {'gulden-draak': 6.3, 'kwak': 0.45, 'averbode': 7.0}
 
 def outline(bid, H_mm, base_mm):
     # A silhouette from a product photo, scaled so the glass is H_mm tall.
@@ -71,6 +72,7 @@ for b in D:
                  rock=('rock' in feat), hex=('hexagon' in gt))
     pts, yb = outline(b['id'], g['heightMm'], g.get('baseThicknessMm') or 8)
     if pts: glass.update(outline=pts, ybot=yb, src=SIL[SHARE.get(b['id'], b['id'])]['src'])
+    if kind == 'coachman': glass.update(stand=True)
     bs = (bt.get('shape') or '').lower()
     bkind = 'bulb' if b['id'] == 'duvel' else 'skittle' if 'skittle' in bs else 'champ' if 'champagne' in bs else 'steinie' if 'steinie' in bs else 'longneck' if 'longneck' in bs else 'belgian'
     paint = bt.get('glassHex') if 'paint' in (bt.get('glassColour') or '') else None
@@ -96,8 +98,8 @@ for b in D:
         ebc=b['colour'].get('ebc'), tint=b['colour'].get('hex') if red else None, haze=haze,
         foam=f.get('hex') or '#FBF8EF', half=round((f.get('halfLifeS') or 120) / 3), power={'high': 1.5, 'med': 1.1, 'low': 0.75}.get(stab, 1.1),
         cell=cell, rock=rock, fizz=round(min(1, max(0.45, 0.45 + (co2 - 2.4) / 1.6 * 0.55)), 2),
-        glass=glass, bottle=bottle, label=dict(shape=shape, colours=[c['hex'] for c in lab.get('colours', [])], elements=lab.get('elements')),
-        pour=dict(tilt=p.get('tiltDeg') or 45, head=p.get('headCm') or 3, yeast=bool(p.get('leaveYeast')))))
+        glass=glass, bottle=bottle, label=dict(shape=shape, colours=[c['hex'] for c in lab.get('colours', [])], band=lab.get('band'), elements=lab.get('elements')),
+        pour=dict(tilt=45 if p.get('tiltDeg') is None else p['tiltDeg'], head=p.get('headCm') or 3, yeast=bool(p.get('leaveYeast')))))
 head = '''/* Beer pour: the beers, their glasses and their bottles. */
 // beer/data/gen_catalogue.py writes this file from beer/data/research.json; do not edit by hand.
 // Lengths are in cm. ebc: colour; tint: a measured colour for red beers.

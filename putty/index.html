@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Heat putty: a bar of thermochromic putty that smears and warms under the pointer. */
 :root { --stage: oklch(0.19 0.035 300); }
@@ -34,26 +49,15 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Heat putty</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 <script type="module">
-import { initPage, audioKit, whenVisible, reduced, fitCanvas, linFit, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, whenVisible, reduced, fitCanvas, linFit, onQuality, stage as mark } from '../shared/stim.js';
+mark('libs');
 
 /* ---------- palettes ---------- */
 // Each putty is a bold duotone: dyed cold, base pigment hot.
@@ -79,6 +83,7 @@ const ui = initPage({ id: 'putty', bar: {
   keys: [['drag', 'smear'], ['hold', 'handprint'], ['1 2 3', 'putty'], ['c', 'clear']],
 } });
 
+mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const layer = document.querySelector('.stim-ui');
 const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
@@ -453,6 +458,7 @@ function step() {
   if (F.down) { hb = 1.25; quiet = 0; } else { hb *= Math.exp(-DT * cool / TAU_MAX); quiet++; }
 }
 
+let shown = false;
 function render() {
   if (!targets) return;
   pass(view, null, dev.W, dev.H, targets[flip]);
@@ -469,6 +475,7 @@ function render() {
   gl.uniform3f(u.uCold, ...pal.cold); gl.uniform3f(u.uHot, ...pal.hot);
   gl.uniform3f(u.uTable, ...pal.table); gl.uniform3f(u.uShade, ...pal.shade);
   draw();
+  if (!shown) { shown = true; mark('first-frame'); }
 }
 
 /* ---------- sound ---------- */

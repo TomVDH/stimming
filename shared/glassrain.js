@@ -5,7 +5,7 @@
 //
 // Use:
 //   vec2 off; float rim, spec, cover, clear;
-//   grBeads(p, wet, strip, off, rim, spec, cover);
+//   grBeads(p, wet, strip, [dens,] L, off, rim, spec, cover);
 //   grRuns(p, m, flow, wet, off, rim, spec, cover, clear);
 //   Sample the view behind at the pixel plus off; darken by rim; add light by spec.
 // m is the run direction on the pane: straight down at rest, aft with speed.
@@ -33,7 +33,8 @@ vec4 grBead(vec2 p, float sc, float dens, float seed) {
 }
 // Running drops: lanes along m, small fast heads with thin trails.
 // trail returns the clear track the head wipes through fog.
-vec4 grRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed, float tl0, out float trail) {
+// stick 0 runs freely; stick 1 makes each drop hold, then slip, as surface tension does.
+vec4 grRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed, float tl0, float stick, out float trail) {
   trail = 0.0;
   vec2 ax = vec2(-m.y, m.x);
   float u = dot(p, ax), v = dot(p, m);
@@ -43,7 +44,10 @@ vec4 grRun(vec2 p, vec2 m, float flow, float Wc, float keep, float seed, float t
   // Gusts make each run wander across its lane.
   float fu = (fract(u / Wc) - 0.5) * Wc + sin(v * 60.0 + h * 40.0) * 0.0015 + (h - 0.5) * Wc * 0.4;
   float sp = 0.6 + 0.8 * grH(vec2(col, seed + 7.0));
-  float head = mod(flow * sp + h * 17.0, 1.6) - 0.8;
+  float ph = flow * sp + h * 17.0;
+  // Stick-slip: a pinned drop waits most of each cycle, then lets go and slides.
+  float slip = floor(ph) + smoothstep(0.55, 1.0, fract(ph));
+  float head = mod(mix(ph, slip, stick), 1.6) - 0.8;
   float dv = v - head;
   float hr = 0.0016 + 0.0016 * h;
   vec2 q = vec2(fu / hr, dv / (hr * 1.6));
@@ -73,20 +77,27 @@ void grLens(vec4 b, float k, vec3 L, inout vec2 off, inout float rim, inout floa
   vec3 N = normalize(vec3(b.xy, h * 1.4));
   spec = max(spec, k * pow(max(dot(N, L), 0.0), 60.0));
 }
-// Beads: three sizes; strip thins the two larger ones at speed.
-void grBeads(vec2 p, float wet, float strip, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover) {
+// Beads: three sizes; strip thins the two larger ones at speed; dens thins all three.
+void grBeads(vec2 p, float wet, float strip, float dens, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover) {
   if (wet <= 0.001) return;
-  grLens(grBead(p + 0.37, 60.0, 0.22 * wet * strip, 2.0), wet, L, off, rim, spec, cover);
-  grLens(grBead(p + 0.71, 160.0, 0.26 * wet * strip, 3.0), wet, L, off, rim, spec, cover);
-  grLens(grBead(p + 0.13, 380.0, 0.35 * wet, 6.0), wet, L, off, rim, spec, cover);
+  grLens(grBead(p + 0.37, 60.0, 0.22 * wet * strip * dens, 2.0), wet, L, off, rim, spec, cover);
+  grLens(grBead(p + 0.71, 160.0, 0.26 * wet * strip * dens, 3.0), wet, L, off, rim, spec, cover);
+  grLens(grBead(p + 0.13, 380.0, 0.35 * wet * dens, 6.0), wet, L, off, rim, spec, cover);
+}
+void grBeads(vec2 p, float wet, float strip, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover) {
+  grBeads(p, wet, strip, 1.0, L, off, rim, spec, cover);
 }
 // Runs: two lane sets; tl0 scales the trail length.
-void grRuns(vec2 p, vec2 m, float flow, float wet, float tl0, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover, inout float clear) {
+// stick: 0 free runs (fast air), 1 drops that hold and slip (slow or still).
+void grRuns(vec2 p, vec2 m, float flow, float wet, float tl0, float stick, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover, inout float clear) {
   if (wet <= 0.001) return;
   float t1, t2;
-  grLens(grRun(p, m, flow, 0.01, 0.8 * wet, 4.0, tl0, t1), wet, L, off, rim, spec, cover);
-  grLens(grRun(p * 1.3 + 0.2, m, flow, 0.01, 0.7 * wet, 5.0, tl0, t2), wet, L, off, rim, spec, cover);
+  grLens(grRun(p, m, flow, 0.01, 0.8 * wet, 4.0, tl0, stick, t1), wet, L, off, rim, spec, cover);
+  grLens(grRun(p * 1.3 + 0.2, m, flow, 0.01, 0.7 * wet, 5.0, tl0, stick, t2), wet, L, off, rim, spec, cover);
   clear = max(clear, max(t1, t2) * wet);
+}
+void grRuns(vec2 p, vec2 m, float flow, float wet, float tl0, vec3 L, inout vec2 off, inout float rim, inout float spec, inout float cover, inout float clear) {
+  grRuns(p, m, flow, wet, tl0, 0.0, L, off, rim, spec, cover, clear);
 }
 // Pane fog: a mottled base, a cold rim near the frame, and patches that grow with time.
 // edge is the signed distance to the frame, negative inside; grow runs 0 to 1.

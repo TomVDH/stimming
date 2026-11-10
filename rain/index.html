@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: every module downloads in parallel. -->
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Rain on glass: a dusk window in the Bar v2 shell. */
 :root { --stage: oklch(0.25 0.045 290); }
@@ -71,7 +75,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-import { initPage, sound, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Space steps the weather; arrows wipe stripes. The page binds both below.
 const ui = initPage({ id: 'rain', bar: {
   choice: { label: 'Weather', value: 'rain',
@@ -90,7 +95,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 // Seeded random keeps the street the same across resizes.
 const rng = s => () => {
@@ -1231,7 +1235,7 @@ function frame(now) {
   stepSweeps(dt);
   fogStep(dt);
   render(now, dt);
-  if (frames === 2) canvas.classList.add('on');
+  if (frames === 2) { canvas.classList.add('on'); stage('first-frame'); }
   raf = requestAnimationFrame(frame);
 }
 // Off screen or hidden, the rain pauses and goes quiet.
@@ -1329,6 +1333,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
   } catch (err) { console.error(err); failed(); }
 });
 async function boot() {
+  stage('build');
   await idle();
   fit();
   if (!W) {
@@ -1352,9 +1357,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>
