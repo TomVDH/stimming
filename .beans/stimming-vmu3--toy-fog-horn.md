@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T11:00:13Z
-updated_at: 2026-11-10T11:13:58Z
+updated_at: 2026-11-10T11:26:25Z
 ---
 
 Lab toy `foghorn/`. Idea 100 in `docs/toy-ideas.md`: a harbour mouth in thick fog. Tap the horn; a container ship slides out of the grey, lights first.
@@ -30,3 +30,10 @@ The first toy on the environment runner (`shared/environment.js`, bean `stimming
 - The lens widens on a narrow frame, so both harbour lights stay in view on a phone.
 - Dutch name Misthoorn and the menu icon are drafts for Tom.
 - Not done: vignette, emblem, bell buoy or other sounds, hull reflection in the water.
+
+- 2026-11-10, Tom: "the boat looks a lil weird", use the Vlootzak if it is not too heavy, movement "FAR FAR slower", and "a rough sea here, like bad: it is an emergency to have to moor".
+- The ship is now the KS Vlootzak (Havoc bulk carrier), drawn in the shader from her own measures: hull, five hatch covers, four cranes in two pairs, the house, funnel and mast aft, and her own lamp list (`bulker-lights.json`). A second, end-on shape crosses the side view, so she has a beam when she points at the eye.
+- The model itself is not used: `bulker.glb` is 9.6 MB, needs a 3D renderer, and its source licence is unknown (Havoc CREDITS: confirm before shipping). A side render of it served only as a reference in the scratchpad; nothing from the model ships.
+- Speed: 2.4 m/s near (under five knots), up to 8 m/s far off; the pass takes about five minutes. Was 16 to 60 m/s.
+- Storm (Settings, default 0.85): 5 m swell, the water surface lifted onto the swell, foam, spray over the breakwater and up from the quay, the ship heaving, pitching and rolling on the same swell (`swellHeight`), driven rain, wind in the sound.
+- Seen at desktop size only. Not checked: phone sizes, frame time on a phone, reduced motion, sound by ear.

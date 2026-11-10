@@ -16,7 +16,7 @@
 <link rel="modulepreload" href="../shared/intro.js">
 <link rel="modulepreload" href="../shared/environment.js">
 <style>
-/* Fog horn: a harbour mouth in thick fog. The horn calls a ship out of the grey. */
+/* Fog horn: a harbour mouth in thick fog and a bad sea. The horn calls a ship in out of the grey. */
 :root { --stage: oklch(0.1 0.012 250); }
 .stage--foghorn canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -34,7 +34,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--foghorn" id="stage" tabindex="0" role="application" aria-label="A harbour mouth at night in thick fog, seen through a wet window. Two lights flash on the breakwater. Click, or press H, to sound the fog horn. A ship answers and comes out of the fog, lights first.">
+    <div class="stage stage--foghorn" id="stage" tabindex="0" role="application" aria-label="A harbour mouth at night in thick fog and a heavy sea, seen through a wet window. Two lights flash on the breakwater. Click, or press H, to sound the fog horn. A ship answers and comes slowly out of the fog, lights first.">
       <p class="fail" hidden>Fog horn needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -62,6 +62,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { weather } from '../shared/weather.js';
 import { skyAt } from '../shared/sky.js';
+import { swellHeight } from '../shared/water.js';
 
 const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -72,7 +73,7 @@ mark('build');
 /* ---------- bar ---------- */
 const HOURS = { dusk: 19.3, night: 23, dawn: 6.2 };
 // The handlers bind once the scene exists.
-const act = { time() {}, fog() {}, rain() {}, horn() {} };
+const act = { time() {}, fog() {}, storm() {}, horn() {} };
 const ui = initPage({ id: 'foghorn', bar: {
   choice: { label: 'Time', value: 'night', options: [
     { value: 'dusk', label: 'Dusk', key: '1' },
@@ -82,7 +83,7 @@ const ui = initPage({ id: 'foghorn', bar: {
   slider: { label: 'Fog', min: 0, max: 1, step: 0.01, value: 0.55, onInput: v => act.fog(v) },
   actions: [{ verb: 'horn', key: 'H', onPress: () => act.horn() }],
   settings: [
-    { type: 'slider', id: 'rain', label: 'Rain', min: 0, max: 1, step: 0.01, value: 0.3, persist: true, onInput: v => act.rain(v) },
+    { type: 'slider', id: 'storm', label: 'Storm', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.storm(v) },
   ],
   quality: true,
   keys: [['click', 'sound the horn'], ['h', 'horn']],
@@ -95,7 +96,9 @@ const CAMH = 7, FOC = 1.5, HZ = 0.42;
 // The scene is one function for shared/environment.js. Light does the work:
 // the fog hides each shape, and its lamps show first.
 const SCENE = `
-uniform float uThick, uHorn;
+uniform float uThick, uHorn, uSea;
+// The ship rides the sea: heave in metres, pitch as a slope, roll in radians.
+uniform vec3 uShipM;
 uniform vec3 uFogGlow;
 // The ship: its place on the water (x, z), then its heading.
 uniform vec4 uShipA;
@@ -131,7 +134,7 @@ vec3 lamp(vec2 uv, float asp, vec3 P, vec3 col, float k, float f) {
   float halo = gwOrb(uv, at, asp, 0.06 + 0.45 * f) * (0.1 + 0.6 * f) * uOrbs;
   return col * k * pow(1.0 - f, 0.35) * (core * 6.0 + halo);
 }
-#define ON(u, v) (S0 + vec3(H.x * (u), v, H.y * (u)))
+#define ON(u, v) (S0 + vec3(H.x * (u), (v) + uShipM.x + uShipM.y * (u), H.y * (u)))
 // Every lamp in the scene. The water mirrors this, tap by tap.
 vec3 lights(vec2 uv, float asp) {
   // The breakwater lights flash in turn; the horn holds them on.
@@ -143,15 +146,19 @@ vec3 lights(vec2 uv, float asp) {
     vec2 H = uShipA.zw;
     vec3 S0 = vec3(uShipA.x, 0.0, uShipA.y), white = vec3(1.0, 0.95, 0.85), warm = vec3(1.0, 0.72, 0.4);
     float k = uShipK.x, f = gFogShip;
-    // Two masthead lights, the side light, the bridge, the deck and the stern.
-    c += lamp(uv, asp, ON(80.0, 32.0), white, k, f);
-    c += lamp(uv, asp, ON(-76.0, 46.0), white, k, f);
-    c += lamp(uv, asp, ON(-66.0, 34.0), uShipK.y > 0.5 ? vec3(1.0, 0.1, 0.06) : vec3(0.08, 1.0, 0.4), k * 0.8, f);
-    c += lamp(uv, asp, ON(-84.0, 35.5), warm, k * 0.4, f);
-    c += lamp(uv, asp, ON(-70.0, 35.5), warm, k * 0.4, f);
-    c += lamp(uv, asp, ON(-30.0, 27.0), warm, k * 0.22, f);
-    c += lamp(uv, asp, ON(25.0, 27.0), warm, k * 0.22, f);
-    c += lamp(uv, asp, ON(-95.0, 13.0), white, k * 0.3, f);
+    // Her own lamp list: two mastheads, a side light, the stern, the bridge,
+    // a flood on each crane, and the bow spot.
+    vec3 flood = vec3(1.0, 0.85, 0.63);
+    c += lamp(uv, asp, ON(-76.7, 29.6), white, k, f);
+    c += lamp(uv, asp, ON(95.7, 14.5), white, k * 0.9, f);
+    c += lamp(uv, asp, ON(-70.6, 18.7), uShipK.y > 0.5 ? vec3(1.0, 0.1, 0.06) : vec3(0.08, 1.0, 0.4), k * 0.8, f);
+    c += lamp(uv, asp, ON(-100.3, 4.9), white, k * 0.3, f);
+    c += lamp(uv, asp, ON(-69.4, 17.0), warm, k * 0.5, f);
+    c += lamp(uv, asp, ON(-34.2, 22.3), flood, k * 0.28, f);
+    c += lamp(uv, asp, ON(-2.5, 22.3), flood, k * 0.28, f);
+    c += lamp(uv, asp, ON(29.3, 22.3), flood, k * 0.28, f);
+    c += lamp(uv, asp, ON(60.9, 22.3), flood, k * 0.28, f);
+    c += lamp(uv, asp, ON(99.2, 9.4), vec3(0.98, 0.85, 0.57), k * 0.35, f);
   }
   return c;
 }
@@ -159,32 +166,79 @@ float sbox(vec2 q, vec2 lo, vec2 hi, float w) {
   vec2 a = smoothstep(-w, w, q - lo) * smoothstep(-w, w, hi - q);
   return a.x * a.y;
 }
-// The ship's side: q.x is metres toward the bow, q.y metres over the water.
+// The KS Vlootzak's side, drawn from her own measures: a geared bulk carrier, 204 m long.
+// q.x is metres toward the bow from midship; q.y is metres over the water.
 // w is one pixel in metres, for a soft edge.
-float shipShape(vec2 q, float w) {
-  // The hull, with a raked bow.
-  float m = smoothstep(-w, w, q.x + 95.0 - (11.0 - q.y) * 0.15) * smoothstep(-w, w, 95.0 - (11.0 - q.y) * 0.9 - q.x) * smoothstep(-w, w, 11.0 - q.y);
-  // The bridge, the funnel and the foremast.
-  m = max(m, sbox(q, vec2(-88.0, 10.0), vec2(-64.0, 38.0), w));
-  m = max(m, sbox(q, vec2(-84.0, 37.0), vec2(-77.0, 45.0), w));
-  m = max(m, sbox(q, vec2(79.0, 10.0), vec2(80.2, 31.0), w));
-  // Container stacks: each bay two to five boxes high.
-  float g = (q.x + 58.0) / 13.8, top = 11.0 + 2.6 * floor(2.0 + 3.99 * grH(vec2(floor(g), 3.0)));
-  float stack = step(0.0, g) * step(g, 10.0) * smoothstep(0.04, 0.04 + w / 13.8, fract(g)) * smoothstep(-w, w, top - q.y) * step(10.0, q.y);
-  return max(m, stack);
+float shipSide(vec2 q, float w) {
+  float x = q.x, y = q.y;
+  // The hull: a plumb stern, a raked stem, a raised forecastle.
+  float deck = 10.2 + 3.2 * smoothstep(79.0, 83.0, x) + 0.6 * smoothstep(83.0, 102.0, x);
+  float stem = 98.0 + 3.9 * pow(clamp(y / 13.8, 0.0, 1.0), 1.5);
+  float m = smoothstep(-w, w, x + 100.0) * smoothstep(-w, w, stem - x) * smoothstep(-w, w, deck - y);
+  // Five hatch covers.
+  m = max(m, sbox(q, vec2(-63.5, 10.0), vec2(-38.2, 11.7), w));
+  m = max(m, sbox(q, vec2(-31.3, 10.0), vec2(-6.0, 11.7), w));
+  m = max(m, sbox(q, vec2(0.4, 10.0), vec2(25.2, 11.7), w));
+  m = max(m, sbox(q, vec2(31.5, 10.0), vec2(56.9, 11.7), w));
+  m = max(m, sbox(q, vec2(62.7, 10.0), vec2(79.5, 11.7), w));
+  // Four cranes in two pairs; each pair rests its jibs between its posts.
+  for (int i = 0; i < 4; i++) {
+    float cx = i == 0 ? -35.5 : i == 1 ? -2.05 : i == 2 ? 27.8 : 61.3;
+    m = max(m, smoothstep(-w, w, 1.8 + 0.035 * (y - 10.2) - abs(x - cx)) * step(10.0, y) * smoothstep(-w, w, 27.8 - y));
+  }
+  m = max(m, sbox(q, vec2(-35.5, 18.7), vec2(-2.05, 19.7), w));
+  m = max(m, sbox(q, vec2(27.8, 18.7), vec2(61.3, 19.7), w));
+  // Aft: the lifeboat on its ramp, the lower house, the funnel, the bridge and the mast.
+  m = max(m, smoothstep(-w, w, x + 99.5) * smoothstep(-w, w, -93.5 - x) * step(10.0, y) * smoothstep(-w, w, 16.0 + 0.75 * (x + 99.5) - y));
+  m = max(m, sbox(q, vec2(-93.5, 10.0), vec2(-80.0, 15.6), w));
+  m = max(m, sbox(q, vec2(-86.7, 10.0), vec2(-82.0, 28.2), w));
+  m = max(m, sbox(q, vec2(-80.1, 10.0), vec2(-68.8, 24.7), w));
+  m = max(m, sbox(q, vec2(-81.0, 22.5), vec2(-67.8, 24.7), w));
+  m = max(m, sbox(q, vec2(-77.4, 24.0), vec2(-76.4, 34.7), w));
+  m = max(m, sbox(q, vec2(-78.4, 31.0), vec2(-75.4, 31.6), w));
+  // Forward: the foremast and the windlass on the forecastle.
+  m = max(m, sbox(q, vec2(95.3, 13.0), vec2(95.9, 21.2), w));
+  return max(m, sbox(q, vec2(87.5, 13.0), vec2(91.0, 15.2), w));
 }
-// Where the view ray meets the ship's upright plane.
-bool shipHit(vec3 d, out vec2 q, inout float dist) {
+// Her end view, for the moments she points at the eye: the beam, the house, the posts.
+float shipEnd(vec2 q, float w) {
+  float a = abs(q.x), y = q.y;
+  float m = smoothstep(-w, w, 16.2 - a) * smoothstep(-w, w, 10.2 - y);
+  m = max(m, smoothstep(-w, w, 13.0 - a) * smoothstep(-w, w, 24.7 - y));
+  m = max(m, smoothstep(-w, w, 16.2 - a) * step(22.5, y) * smoothstep(-w, w, 24.7 - y));
+  m = max(m, smoothstep(-w, w, 2.4 - a) * smoothstep(-w, w, 28.2 - y));
+  return max(m, smoothstep(-w, w, 0.5 - a) * smoothstep(-w, w, 34.7 - y));
+}
+// Where a ray from o meets the ship's upright plane.
+bool shipHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
   vec2 H = uShipA.zw;
   vec3 N = vec3(H.y, 0.0, -H.x);
   float dn = dot(d, N);
   if (abs(dn) < 1e-5) return false;
-  float t = dot(vec3(uShipA.x, CAMH, uShipA.y) - CAM, N) / dn;
+  float t = dot(vec3(uShipA.x, o.y, uShipA.y) - o, N) / dn;
   if (t <= 0.0) return false;
   dist = t;
-  vec3 P = CAM + d * t;
+  vec3 P = o + d * t;
   q = vec2(dot(P.xz - uShipA.xy, H), P.y);
-  return q.y >= 0.0 && q.y < 48.0 && abs(q.x) < 100.0;
+  // She heaves and pitches; her hull goes 8 m under her own waterline.
+  q.y -= uShipM.x + uShipM.y * q.x;
+  return q.y >= -8.0 && q.y < 36.0 && q.x > -101.0 && q.x < 103.0;
+}
+// Where it meets the plane across her beam, a little forward of midship.
+bool endHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
+  vec2 H = uShipA.zw, C = uShipA.xy + H * 30.0;
+  float dn = dot(d.xz, H);
+  if (abs(dn) < 1e-5) return false;
+  float t = dot(C - o.xz, H) / dn;
+  if (t <= 0.0) return false;
+  vec3 P = o + d * t;
+  q = vec2(dot(P.xz - C, vec2(-H.y, H.x)), P.y - uShipM.x - uShipM.y * 30.0);
+  // Seen end on, she rolls.
+  float cr = cos(uShipM.z), sr = sin(uShipM.z);
+  q = vec2(cr * q.x + sr * q.y, cr * q.y - sr * q.x);
+  if (q.y < -8.0 || q.y > 36.0 || abs(q.x) > 18.0) return false;
+  dist = t;
+  return true;
 }
 // The breakwater: two low arms, a short tower at the end of each.
 bool wallHit(vec3 d) {
@@ -192,6 +246,19 @@ bool wallHit(vec3 d) {
   vec3 P = CAM + d * (BW / -d.z);
   float ax = abs(P.x);
   return P.y >= 0.0 && ((ax > GAP && P.y < 5.0) || (abs(ax - GAP - 2.0) < 2.0 && P.y < 12.0));
+}
+// The sea hits the quay under the window: a wall of spray climbs into view and falls back.
+vec3 quaySpray(vec2 uv, float asp, vec3 c, vec3 d) {
+  float beat = uTime / 9.0, n = floor(beat), ph = fract(beat) * 9.0;
+  // Three waves in four break high enough to see.
+  if (uSea <= 0.0 || grH(vec2(n, 2.0)) > 0.75 || ph > 4.2) return c;
+  float x = (uv.x - 0.12 - 0.76 * grH(vec2(n, 9.0))) * asp / (0.2 + 0.22 * grH(vec2(n, 4.0)));
+  // It goes up fast and sags slowly.
+  float rise = ph < 1.1 ? sin(1.5708 * ph / 1.1) : 1.0 - 0.4 * (ph - 1.1) / 3.1;
+  float top = (0.28 + 0.3 * grH(vec2(n, 6.0))) * rise * uSea * exp(-x * x);
+  float nz = 0.5 * wtNoised(vec2(uv.x * asp * 6.0, uv.y * 5.0 - uTime * 1.4)).x + 0.5 * wtNoised(vec2(uv.x * asp * 17.0, uv.y * 14.0 - uTime * 2.6)).x;
+  float dens = smoothstep(top, top * 0.2, uv.y + (nz - 0.5) * 0.14) * clamp(1.0 - (ph - 1.1) / 3.1, 0.0, 1.0) * (0.5 + 0.7 * nz);
+  return mix(c, (fogCol(d) + vec3(0.035)) * 2.4, clamp(dens * uSea, 0.0, 0.9));
 }
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
@@ -205,6 +272,16 @@ vec3 envScene(vec2 uv) {
     // water.js: waves tilt the mirror; the fog swallows the far water.
     float dist = CAMH / -d.y;
     vec2 p = d.xz * dist;
+    // A bad sea stands up: the ray meets the swell's own height, not a flat plane.
+    // Two steps find it; near the horizon the plane is close enough.
+    float lift = uSea * smoothstep(0.015, 0.1, -d.y), high = 0.0;
+    if (lift > 0.0) {
+      for (int i = 0; i < 2; i++) {
+        high = wtSwell(p, uTime, 0.0, uSwell).z * lift;
+        dist = (CAMH - high) / -d.y;
+        p = d.xz * dist;
+      }
+    }
     float sig2, foot = wtFoot(dist, -d.y, uRes.y * gFoc);
     vec2 slope = wtWavesN(p, uTime, foot, uSwell, uChop, uSets, uOct, sig2);
     slope += wtRingsN(p, uTime, foot, uRings, 0.6, uRingN, sig2);
@@ -225,27 +302,73 @@ vec3 envScene(vec2 uv) {
       ws += w;
     }
     refl = refl / ws + skyFog(r);
+    // The hull stands in the mirror as a dark shape; the ripples blur its edge.
+    if (uShipK.x > 0.0) {
+      vec3 Pw = vec3(p.x, 0.0, p.y);
+      vec2 qm = vec2(0.0);
+      float dm = 1.0, shade = 0.0, soft = 1.0 + 40.0 * sqrt(sig2);
+      if (shipHit(Pw, r, qm, dm)) shade = shipSide(qm, soft);
+      if (endHit(Pw, r, qm, dm)) shade = max(shade, shipEnd(qm, soft));
+      refl *= 1.0 - 0.85 * shade * (1.0 - gFogShip);
+    }
     c = mix(mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay), refl, F);
+    // A bad sea: foam on the crests, as bright as the fog round it.
+    if (uSea > 0.0) {
+      float tall = wtSwell(p, uTime, foot, uSwell).z / max(uSwell * 16.0, 0.05);
+      // The troughs lie in shadow; the crests stand in the fog's light.
+      c *= 1.0 + 0.45 * uSea * clamp(tall, -1.0, 1.0);
+      float crest = tall + (wtNoised(p * 0.3 + vec2(uTime * 0.25, 0.0)).x - 0.5) * 1.1;
+      float foam = smoothstep(0.4, 1.0, crest) * uSea * (1.0 - smoothstep(0.5, 2.5, foot));
+      c = mix(c, (fogCol(d) + vec3(0.025)) * 2.6, foam * 0.85);
+    }
     c = mix(c, fogCol(d), fogAt(vec3(p.x, 0.0, p.y)));
   }
   // The shapes on the water, far to near. Each is one dark tone under the fog.
   vec3 dark = mix(vec3(0.006, 0.007, 0.009), vec3(0.05, 0.06, 0.07), uDay);
   vec2 q = vec2(0.0);
-  float dist = 1.0;
-  bool behind = uShipA.y < -BW, hit = uShipK.x > 0.0 && shipHit(d, q, dist);
-  float cover = hit ? shipShape(q, dist / (gFoc * uRes.y) * 1.5) : 0.0;
-  vec3 hull = hit ? mix(dark, fogCol(d), fogAt(CAM + d * dist)) : c;
+  float dist = 1.0, cover = 0.0, px = 1.5 / (gFoc * uRes.y);
+  bool behind = uShipA.y < -BW;
+  vec3 hull = c;
+  if (uShipK.x > 0.0) {
+    // The side view and the end view cross; the eye takes whichever shows more.
+    if (shipHit(CAM, d, q, dist)) {
+      vec3 P = CAM + d * dist;
+      // The sea climbs and falls along her side.
+      cover = shipSide(q, dist * px) * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
+      hull = mix(dark, fogCol(d), fogAt(P));
+    }
+    if (endHit(CAM, d, q, dist)) {
+      vec3 P = CAM + d * dist;
+      float end = shipEnd(q, dist * px) * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
+      if (end > cover) {
+        cover = end;
+        hull = mix(dark, fogCol(d), fogAt(P));
+      }
+    }
+  }
   if (behind) c = mix(c, hull, cover);
   if (wallHit(d)) c = mix(dark, fogCol(d), gFogBW);
+  // The sea breaks over the breakwater: plumes of spray climb and fall back.
+  if (uSea > 0.0 && d.z < -1e-4) {
+    vec3 P = CAM + d * (BW / -d.z);
+    if (abs(P.x) > GAP + 6.0 && P.y > 0.0 && P.y < 44.0) {
+      float cell = floor(P.x / 46.0), beat = uTime / 9.0 + grH(vec2(cell, 5.0)) * 9.0, ph = fract(beat) / 0.32;
+      if (ph < 1.0) {
+        float top = (10.0 + 26.0 * grH(vec2(cell, floor(beat)))) * sin(3.1416 * sqrt(ph)), fx = (fract(P.x / 46.0) - 0.5) * 46.0;
+        float puff = smoothstep(top, top * 0.3, P.y) * exp(-fx * fx / 110.0) * (1.0 - ph) * (0.5 + wtNoised(vec2(P.x * 0.22, P.y * 0.25 - uTime * 2.2)).x);
+        c = mix(c, mix((fogCol(d) + vec3(0.04)) * 2.4, fogCol(d), gFogBW * 0.45), clamp(puff * uSea * 1.3, 0.0, 0.9));
+      }
+    }
+  }
   if (!behind) c = mix(c, hull, cover);
-  return c + lights(uv, asp);
+  return quaySpray(uv, asp, c + lights(uv, asp), d);
 }`;
 
 /* ---------- state ---------- */
-let fog = 0.55, rain = 0.3, visible = true, simT = 0, hornEnd = -1, hornK = 0, lastHorn = -10;
+let fog = 0.55, storm = 0.85, visible = true, simT = 0, hornEnd = -1, hornK = 0, lastHorn = -10;
 // The ship: its place along the path, in waypoints, and when it answers.
 let ship = null;
-const shipA = [0, -3000, -1, 0], shipK = [0, 0];
+const shipA = [0, -3000, -1, 0], shipK = [0, 0], shipM = [0, 0, 0];
 // The fog's density gain: 1 is a clear night, 12 is pea soup.
 const thick = () => 1 + 11 * fog * fog;
 
@@ -264,6 +387,8 @@ try {
       uFogGlow: () => { const k = 1 - skyAt(env.state.hour).day; return [0.03 * k, 0.034 * k, 0.042 * k]; },
       uShipA: () => shipA,
       uShipK: () => shipK,
+      uShipM: () => shipM,
+      uSea: () => storm,
     },
   });
 } catch (err) {
@@ -274,22 +399,25 @@ try {
 }
 const S = env.state;
 // An overcast harbour: calm water, heavy cloud, a strong bloom on every lamp.
-Object.assign(S, { hour: HOURS.night, clouds: 0.85, stars: 0.6, haze: 1, swell: 0.008, chop: 0.12, sets: 0.4, bloom: 0.55, thr: 0.7, orbs: 1, vig: 0.55, grain: 0.05, expo: 1.1, defocus: 0, zoom: 1, flGain: 0, flSize: 0.6 });
+Object.assign(S, { hour: HOURS.night, clouds: 0.95, stars: 0.3, haze: 1, bloom: 0.55, thr: 0.7, orbs: 1, vig: 0.55, grain: 0.05, expo: 1.1, defocus: 0, zoom: 1, flGain: 0, flSize: 0.6 });
 S.lightColor = [0, 0, 0];
 // No window frame shows, so the pane has no cold rim.
 S.frame = false;
 function apply() {
-  // Rain runs down the pane and rings the water; fog also mists the glass.
-  const w = weather(rain);
-  Object.assign(S, { wet: w.rain, wind: w.wind * 0.5, rings: w.rings, air: w.air, fog: 0.1 + 0.35 * fog, patch: 0.2 + 0.4 * fog });
-  S.on.air = rain > 0.05;
+  // The storm drives the rain, the wind and the sea; fog also mists the glass.
+  // The pane takes less than the full gale, so the view stays readable.
+  // At full storm the swell stands about 5 m from trough to crest.
+  const w = weather(storm);
+  Object.assign(S, { wet: 0.45 + 0.45 * storm, wind: 2.5 + 5.5 * storm, rings: w.rings * 0.6, air: w.air, swell: 0.008 + 0.1 * storm, chop: 0.1 + 0.26 * storm, sets: 0.3 + 0.5 * storm, fog: 0.1 + 0.35 * fog, patch: 0.2 + 0.4 * fog });
+  S.on.air = storm > 0.05;
+  tuneSea();
   env.touch();
 }
 
 /* ---------- the ship ---------- */
-// It comes in bow-on from the sea, through the mouth, then turns to port and crosses close in front.
-// At 260 m its 190 m side nearly fills the view.
-const WAY = [[120, -1800], [40, -1100], [30, -640], [80, -400], [20, -290], [-260, -262], [-430, -258]];
+// The KS Vlootzak comes in bow-on from the sea, through the mouth, then turns to port and crosses close in front.
+// At 150 m her 204 m side is far wider than the view. The whole pass takes about five minutes.
+const WAY = [[80, -1150], [45, -900], [30, -640], [85, -400], [50, -215], [-150, -156], [-340, -150]];
 const LAST = WAY.length - 1;
 // A smooth curve through the waypoints: k 0 is x, k 1 is z; d true gives the slope.
 function way(t, k, d = false) {
@@ -304,18 +432,29 @@ function placeShip() {
   shipK[0] = 1;
   // Its port side shows red when that side faces the eye.
   shipK[1] = -x * shipA[3] + z * shipA[2] > 0 ? 1 : 0;
-  // The forward masthead light is the key light: it flares, and it lights the drops.
-  const mx = x + 80 * shipA[2], mz = z + 80 * shipA[3], asp = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  // The aft masthead light is the key light: it flares, and it lights the drops.
+  const mx = x - 76.7 * shipA[2], mz = z - 76.7 * shipA[3], asp = canvas.clientWidth / Math.max(1, canvas.clientHeight);
   // The same lens as the scene: wider on a narrow frame.
   const foc = FOC * Math.min(1, asp / 1.2);
   S.light[0] = 0.5 + mx / -mz * foc / asp;
-  S.light[1] = HZ + (32 - CAMH) / -mz * foc;
+  S.light[1] = HZ + (29.6 - CAMH) / -mz * foc;
   const seen = Math.exp(-0.35 * Math.hypot(mx, mz) * S.haze * 0.0008 * thick() * 0.95);
   S.lightColor = [1.0 * seen, 0.95 * seen, 0.85 * seen];
   // The flare's streak keeps a cool tint of its own, so its gain follows the light too.
   // It fades as the light leaves the frame.
   S.flGain = 0.28 * Math.min(1, seen * 3) * clamp(1 - (Math.abs(S.light[0] - 0.5) - 0.5) / 0.12);
   return l;
+}
+// The swell under her bow, her stern and her two sides, in metres.
+function rideSea(dt) {
+  const [x, z, hx, hz] = shipA, t = env.clock.time, a = S.swell;
+  const at = (u, v) => swellHeight(x + hx * u - hz * v, z + hz * u + hx * v, t, a);
+  const bow = at(85, 0), stern = at(-85, 0), mid = at(0, 0);
+  // A 204 m hull rides over the short waves; she answers the long ones, and late.
+  const k = 1 - Math.exp(-dt / 1.6);
+  shipM[0] += ((bow + stern + mid) / 3 * 0.8 - shipM[0]) * k;
+  shipM[1] += ((bow - stern) / 170 - shipM[1]) * k;
+  shipM[2] += ((at(0, 16) - at(0, -16)) / 32 * 1.3 - shipM[2]) * k;
 }
 function dropShip() {
   ship = null;
@@ -328,9 +467,10 @@ function step(dt) {
   hornK += ((simT < hornEnd ? 1 : 0) - hornK) * (1 - Math.exp(-dt / 0.15));
   if (!ship) return;
   if (!ship.answered && simT >= ship.answerAt) { ship.answered = true; shipHorn(clamp(shipA[0] / 400, -1, 1)); }
-  // Far off it closes fast; near the eye it passes slowly.
-  const speed = clamp(-shipA[1] / 22, 16, 60);
+  // She creeps in at under five knots: about 2.4 m/s. Far off, the lens hides more speed.
+  const speed = clamp(-shipA[1] / 80, 2.4, 8);
   ship.t += speed * dt / placeShip();
+  rideSea(dt);
   // It is gone once its stern leaves the frame.
   if (ship.t >= LAST) dropShip();
 }
@@ -338,7 +478,14 @@ function step(dt) {
 /* ---------- sound ---------- */
 const kit = audioKit({ keys: new Set(['h', 'H', ' ', 'Enter']), noiseSeconds: 2 });
 let wash = null;
-// The sea: low noise that swells and ebbs.
+// The sea and the wind grow with the storm.
+function tuneSea() {
+  const ac = kit.ac;
+  if (!wash || !ac) return;
+  wash.g.gain.setTargetAtTime(0.06 + 0.1 * storm, ac.currentTime, 0.4);
+  wash.wg.gain.setTargetAtTime(0.05 * storm, ac.currentTime, 0.4);
+}
+// The sea: low noise that swells and ebbs. The wind: a band of noise that gusts.
 function startWash() {
   const ac = kit.live();
   if (!ac || wash || !kit.noise) return;
@@ -348,18 +495,29 @@ function startWash() {
   lp.type = 'lowpass';
   lp.frequency.value = 420;
   g.gain.value = 0;
-  g.gain.setTargetAtTime(0.07, ac.currentTime, 1.5);
   lfo.frequency.value = 0.13;
   depth.gain.value = 0.035;
   lfo.connect(depth).connect(g.gain);
   src.connect(lp).connect(g).connect(kit.out);
+  // The wind: the same noise through a narrow band; a slow wobble moves its pitch.
+  const bp = ac.createBiquadFilter(), wg = ac.createGain(), gust = ac.createOscillator(), sweep = ac.createGain();
+  bp.type = 'bandpass';
+  bp.frequency.value = 520;
+  bp.Q.value = 1.6;
+  wg.gain.value = 0;
+  gust.frequency.value = 0.09;
+  sweep.gain.value = 180;
+  gust.connect(sweep).connect(bp.frequency);
+  src.connect(bp).connect(wg).connect(kit.out);
   src.start();
   lfo.start();
-  wash = { src, lfo };
+  gust.start();
+  wash = { src, lfo, gust, g, wg };
+  tuneSea();
 }
 function stopWash() {
   if (!wash) return;
-  try { wash.src.stop(); wash.lfo.stop(); } catch (err) { /* The context closed first. */ }
+  try { wash.src.stop(); wash.lfo.stop(); wash.gust.stop(); } catch (err) { /* The context closed first. */ }
   wash = null;
 }
 // One horn blast: two reeds a little apart, a slow start, and a drop in pitch at the end.
@@ -411,23 +569,23 @@ function horn() {
   if (reduced()) {
     // With motion off, the horn puts the ship in the mouth, or takes it away.
     if (ship) dropShip();
-    else { ship = { t: 4.6, answered: true, answerAt: 0 }; placeShip(); shipHorn(0); }
+    else { ship = { t: 4.7, answered: true, answerAt: 0 }; placeShip(); shipHorn(0); }
     hornK = 0;
   } else if (!ship) {
-    ship = { t: 0, answered: false, answerAt: simT + 2.8 };
+    ship = { t: 0, answered: false, answerAt: simT + 4 };
     placeShip();
   } else if (ship.t < LAST - 1) {
     // A ship already under way answers again.
     ship.answered = false;
-    ship.answerAt = simT + 2.2;
+    ship.answerAt = simT + 3;
   }
   env.touch();
 }
 act.horn = horn;
 act.time = v => { S.hour = HOURS[v]; env.touch(); };
 act.fog = v => { fog = v; apply(); };
-act.rain = v => { rain = v; apply(); };
-rain = ui.setting('rain')?.value ?? rain;
+act.storm = v => { storm = v; apply(); };
+storm = ui.setting('storm')?.value ?? storm;
 apply();
 
 canvas.addEventListener('pointerdown', e => { if (e.button === 0) horn(); });
