@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T18:00:52Z
+updated_at: 2026-11-10T18:20:24Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -99,3 +99,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] The shot dust wall and pall fan out in an arc ahead of the bore
 
 - [x] Cirrus: thin streaks run across the whole sky; random seeds no longer leave it bare
+
+- [x] Soot cloud: about two thirds the density, fewer steps once it is soot
+- [x] A thin shock skirt leaves the muzzle and grows to about a kilometre
+- [x] Air distortion: both shock fronts refract the frame; the hot barrel shimmers
