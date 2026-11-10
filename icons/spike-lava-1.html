@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Lava lamp 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Lava lamp 1</h1>
+<p class="lede">Lava lamp, round 1: the lamp as the toy renders it. Brushed metal cone and cap, red liquid, amber wax, the molten layer at the foot, the glow on the wall. Each shows at 256, 128 and 64. Move the pointer over a tile.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  gsap.ticker.fps(60);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const grad = (defs, id, stops, a = { x1: 0, y1: 0, x2: 0, y2: 1 }, type = 'linearGradient') => {
+    const g = el(type, { id, ...a }, defs);
+    for (const [o, c, op] of stops) el('stop', { offset: o, 'stop-color': c, ...(op != null ? { 'stop-opacity': op } : {}) }, g);
+    return `url(#${id})`;
+  };
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+
+  // The lamp in base units: 104 tall, centred on x = 64.
+  const GLASS = 'M53 26.4C50 40 44.4 54 44.4 66C44.4 73 48 78.5 50 83H78C80 78.5 83.6 73 83.6 66C83.6 54 78 40 75 26.4Z';
+  const CAP = 'M56.5 13.5Q57 12 59 12H69Q71 12 71.5 13.5L75.6 25Q76 26.6 74 26.6H54Q52 26.6 52.4 25Z';
+  const CONE = 'M51.5 87.5H76.5L85 111.5Q85.6 116 80 116H48Q42.4 116 43 111.5Z';
+  const MELT = 'M40 79.4Q50 77 58 78.8T70 78.2T88 79.4V86H40Z';
+  // The wax as the toy opens: a tall pair, a necked drop, one on the melt.
+  const WAX = [[58, 45, 7], [67, 42, 6], [62, 55, 5.5], [64.5, 61, 3.4], [66, 67, 6.4], [55.5, 75, 4.4]];
+  const RED = 'oklch(0.5 0.21 27)';
+
+  // The lamp: halo, glass, wax, melt, glints, then the metal.
+  // O: wax (blobs), halo (opacity), tf (transform of the whole lamp).
+  const lamp = (parent, defs, id, O = {}) => {
+    const u = n => `url(#${id}${n})`;
+    el('path', { d: GLASS }, el('clipPath', { id: `${id}c` }, defs));
+    grad(defs, `${id}h`, [[0, 'oklch(0.56 0.23 30)', 0.85], [0.55, RED, 0.3], [1, RED, 0]], { cx: 0.5, cy: 0.5, r: 0.5 }, 'radialGradient');
+    grad(defs, `${id}l`, [[0, 'oklch(0.66 0.25 36)'], [0.6, 'oklch(0.52 0.22 29)'], [1, 'oklch(0.3 0.14 25)']], { gradientUnits: 'userSpaceOnUse', cx: 64, cy: 62, r: 24 }, 'radialGradient');
+    grad(defs, `${id}w`, [[0, 'oklch(0.7 0.2 48)'], [0.7, 'oklch(0.8 0.18 68)'], [1, 'oklch(0.9 0.18 98)']], { gradientUnits: 'userSpaceOnUse', x1: 0, y1: 30, x2: 0, y2: 82 });
+    grad(defs, `${id}m`, [[0, 'oklch(0.36 0.008 260)'], [0.22, 'oklch(0.72 0.006 260)'], [0.48, 'oklch(0.56 0.006 260)'], [0.74, 'oklch(0.68 0.006 260)'], [1, 'oklch(0.33 0.008 260)']], { x1: 0, y1: 0, x2: 1, y2: 0 });
+    // The goo filter joins near blobs with a neck.
+    const goo = el('filter', { id: `${id}g`, x: -0.3, y: -0.3, width: 1.6, height: 1.6, 'color-interpolation-filters': 'sRGB' }, defs);
+    el('feGaussianBlur', { stdDeviation: 1.7, result: 'b' }, goo);
+    el('feColorMatrix', { in: 'b', values: '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 16 -6' }, goo);
+    const blur = (n, s) => { el('feGaussianBlur', { stdDeviation: s }, el('filter', { id: `${id}${n}`, x: -0.6, y: -0.6, width: 2.2, height: 2.2 }, defs)); return u(n); };
+    const bS = blur('s', 0.6), bL = blur('b', 5);
+    // Brush lines: noise stretched along the metal.
+    const br = el('filter', { id: `${id}r`, x: 0, y: 0, width: 1, height: 1 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.012 1.1', numOctaves: 2, seed: 4, result: 'n' }, br);
+    el('feColorMatrix', { in: 'n', values: '0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1.6 0 0 0 -0.55', result: 'd' }, br);
+    el('feComposite', { in: 'd', in2: 'SourceGraphic', operator: 'in' }, br);
+
+    const root = el('g', O.tf ? { transform: O.tf } : {}, parent);
+    const halo = el('ellipse', { cx: 64, cy: 58, rx: 46, ry: 50, fill: u('h'), opacity: O.halo ?? 0.8, 'pointer-events': 'none' }, root);
+    el('path', { d: GLASS, fill: u('l') }, root);
+    const inside = el('g', { 'clip-path': u('c') }, root);
+    // The lit wax glows through the liquid.
+    const glow = el('g', { fill: 'oklch(0.8 0.2 60)', filter: bL, opacity: 0.35 }, inside);
+    const wax = el('g', { filter: u('g'), fill: u('w') }, inside);
+    const blobs = (O.wax || WAX).map(([cx, cy, r]) => { el('circle', { cx, cy, r: r + 2 }, glow); return el('circle', { cx, cy, r }, wax); });
+    // A soft shade under each blob gives it body.
+    const melt = el('path', { d: MELT, fill: 'oklch(0.91 0.19 102)' }, inside);
+    el('path', { d: MELT, fill: 'oklch(0.97 0.14 105)', filter: bS, opacity: 0.6, transform: 'translate(0 3)' }, inside);
+    // Glints: two long streaks on the glass.
+    const glint = el('g', { fill: 'none', stroke: '#fff', 'stroke-linecap': 'round', filter: bS }, inside);
+    el('path', { d: 'M58.6 29C56.4 44 55 58 56.2 76', 'stroke-width': 1.5, opacity: 0.4 }, glint);
+    el('path', { d: 'M68.4 29C69.6 42 70.6 52 70 63', 'stroke-width': 0.9, opacity: 0.28 }, glint);
+    el('path', { d: GLASS, fill: 'none', stroke: 'oklch(0.22 0.1 25)', 'stroke-width': 1.2, opacity: 0.8 }, root);
+    // The metal: cap, collar and cone, with brush lines over each.
+    const metal = el('g', {}, root);
+    for (const d of [CAP, CONE]) { el('path', { d, fill: u('m') }, metal); el('path', { d, fill: '#fff', filter: u('r'), opacity: 0.22 }, metal); }
+    el('rect', { x: 51.2, y: 82.6, width: 25.6, height: 5.2, rx: 1.6, fill: u('m') }, metal);
+    el('rect', { x: 51.2, y: 84.6, width: 25.6, height: 1.1, fill: '#000', opacity: 0.3 }, metal);
+    // The liquid lights the rim of the cap and the collar.
+    el('path', { d: 'M52.6 26.2H75.4', stroke: 'oklch(0.72 0.2 45)', 'stroke-width': 0.9, 'stroke-linecap': 'round', opacity: 0.8 }, metal);
+    el('path', { d: 'M52 83H76', stroke: 'oklch(0.86 0.17 90)', 'stroke-width': 0.8, 'stroke-linecap': 'round', opacity: 0.7 }, metal);
+    el('path', { d: 'M46 115Q64 117.6 82 115', fill: 'none', stroke: 'oklch(0.55 0.16 30)', 'stroke-width': 0.9, opacity: 0.6 }, metal);
+    return { root, halo, blobs, melt, wax, u, bS, bL };
+  };
+
+  // Each blob drifts up or down on its own slow clock.
+  const bob = (blobs, moves) => blobs.map((b, i) => {
+    const [dx, dy, dr] = moves[i % moves.length], cx = +b.getAttribute('cx'), cy = +b.getAttribute('cy'), r = +b.getAttribute('r');
+    return gsap.to(b, { attr: { cx: cx + dx, cy: cy + dy, r: r + (dr || 0) }, duration: 2 + (i % 3) * 0.45, ease: 'sine.inOut', yoyo: true, repeat: -1, paused: true });
+  });
+  const RISE = [[1, -9, 0.6], [-2, 13, -0.8], [2, -10, 0], [1.5, -14, 0.6], [-1, -17, -0.6], [3, -4, 1]];
+
+  // The emblem: white metal, grey glass, white wax.
+  const embLamp = (tf, wax, extra = '') => `${EMB_HEAD}${extra}<g transform="${tf}"><path d="${GLASS}" fill="#6a6a6a"/><g fill="#fff">${wax.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`).join('')}<path d="M48.6 79.4Q54 77 60 78.8T72 78.2T79.4 79.4L78 83H50Z"/><path d="${CAP}"/><path d="M51.2 82.6H76.8V87.5L85 111.5Q85.6 116 80 116H48Q42.4 116 43 111.5L51.2 87.5Z"/></g></g></svg>\n`;
+  const EW = [[58, 45, 7.4], [67.5, 42, 5.6], [62.5, 57, 5], [66, 67, 6.2]];
+
+  /* ================= Directions ================= */
+  const DIRS = [
+    {
+      l: 'A', name: 'The lamp',
+      idea: 'The whole lamp as the toy shows it: brushed cone and cap, red liquid, amber wax, the molten layer, a soft glow behind. On hover the wax rises and sinks; the blob under the pointer swells.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg), T = lamp(svg, defs, id);
+        const tws = bob(T.blobs, RISE), r0 = T.blobs.map(b => +b.getAttribute('r'));
+        // The pointer warms the nearest blob.
+        const warm = p => T.blobs.forEach((b, i) => {
+          const near = p && Math.hypot(p[0] - b.getAttribute('cx'), p[1] - b.getAttribute('cy')) < 12;
+          gsap.to(b, { scale: near ? 1.3 : 1, transformOrigin: '50% 50%', duration: 0.5, overwrite: 'auto' });
+        });
+        return {
+          enter(p) { tws.forEach(t => t.play()); gsap.to(T.halo, { opacity: 1, duration: 0.6 }); warm(p); },
+          move(p) { warm(p); },
+          leave() { tws.forEach(t => t.pause()); gsap.to(T.halo, { opacity: 0.8, duration: 0.6 }); warm(null); },
+        };
+      },
+      box: [43, 12, 42, 104],
+      emblem: () => embLamp('translate(64 64) scale(1.12) translate(-64 -64)', EW),
+    },
+    {
+      l: 'B', name: 'Close on the glass',
+      idea: 'Leaned in until the bulb fills the tile: big wax blobs that neck and merge, the molten layer along the foot, the glints. On hover one drop pinches off and climbs while the others swap places.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 5 }, el('clipPath', { id: `${id}t` }, defs));
+        const g = el('g', { 'clip-path': `url(#${id}t)` }, svg);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, fill: 'oklch(0.2 0.08 28)' }, g);
+        const T = lamp(g, defs, id, { tf: 'translate(64 64) scale(2.35) translate(-64 -60.5)', halo: 1, wax: [[57, 50, 7.5], [66, 46, 6], [70, 57, 5.5], [61, 62, 5.5], [63, 68.5, 3.2], [57.5, 75.5, 4.6], [72, 74, 3.6]] });
+        const tws = bob(T.blobs, [[1.5, -6, 0.5], [-2, 9, -0.6], [-3, -8, 0.4], [2, -13, 0.5], [1.5, -19, 0.8], [2, -2, 0.8], [-2, -3, 0.5]]);
+        return {
+          enter() { tws.forEach(t => t.play()); },
+          move() {},
+          leave() { tws.forEach(t => t.pause()); },
+        };
+      },
+      box: [14, 14, 100, 100],
+      emblem: () => `${EMB_HEAD}<clipPath id="k"><rect x="14" y="14" width="100" height="100" rx="7"/></clipPath><g clip-path="url(#k)"><rect x="14" y="14" width="100" height="100" fill="#2e2e2e"/><g transform="translate(64 64) scale(2.35) translate(-64 -60.5)"><path d="${GLASS}" fill="#767676"/><g fill="#fff"><circle cx="57" cy="50" r="7.5"/><circle cx="66" cy="46" r="6"/><path d="M58 55H64L64.6 62L66 68H60L59 62Z"/><circle cx="62.5" cy="66" r="5.6"/><circle cx="72" cy="60" r="4"/><path d="M44 79.4Q52 77 60 78.8T72 78.2T84 79.4V84H44Z"/></g></g></g></svg>\n`,
+    },
+    {
+      l: 'C', name: 'Glow in the room',
+      idea: 'Sat back: the lamp small on the dark desk, its red glow pooled on the wall and laid along the wood. On hover the glow breathes with the wax.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, rx: 5 }, el('clipPath', { id: `${id}t` }, defs));
+        grad(defs, `${id}wl`, [[0, 'oklch(0.5 0.2 30)', 0.95], [0.5, 'oklch(0.3 0.12 28)', 0.6], [1, 'oklch(0.12 0.03 30)', 0]], { cx: 0.5, cy: 0.5, r: 0.5 }, 'radialGradient');
+        grad(defs, `${id}dk`, [[0, 'oklch(0.2 0.08 30)'], [1, 'oklch(0.09 0.03 30)']]);
+        grad(defs, `${id}rf`, [[0, 'oklch(0.55 0.2 32)', 0.7], [1, 'oklch(0.4 0.16 30)', 0]]);
+        const g = el('g', { 'clip-path': `url(#${id}t)` }, svg);
+        el('rect', { x: 14, y: 14, width: 100, height: 100, fill: 'oklch(0.11 0.025 30)' }, g);
+        const pool = el('ellipse', { cx: 64, cy: 62, rx: 62, ry: 56, fill: `url(#${id}wl)` }, g);
+        // The desk: dark wood, lit red where the lamp stands.
+        el('rect', { x: 14, y: 93, width: 100, height: 21, fill: `url(#${id}dk)` }, g);
+        el('rect', { x: 14, y: 92.4, width: 100, height: 1.6, fill: '#000', opacity: 0.45 }, g);
+        const grain = el('g', { stroke: '#000', 'stroke-width': 0.35, opacity: 0.3, fill: 'none' }, g);
+        for (const y of [97, 100.5, 104.5, 109]) el('path', { d: `M14 ${y}Q40 ${y - 0.8} 64 ${y}T114 ${y - 0.4}` }, grain);
+        const T = lamp(g, defs, id, { tf: 'translate(64 98) scale(0.68) translate(-64 -116)', halo: 0.9 });
+        const refl = el('rect', { x: 50, y: 99, width: 28, height: 15, fill: `url(#${id}rf)`, filter: T.bS, opacity: 0.8 }, g);
+        el('ellipse', { cx: 64, cy: 98.6, rx: 16.5, ry: 1.8, fill: '#000', opacity: 0.6, filter: T.bS }, g);
+        g.appendChild(T.root);
+        const tws = [...bob(T.blobs, RISE), gsap.to([pool, refl], { opacity: 0.55, duration: 2.2, ease: 'sine.inOut', yoyo: true, repeat: -1, paused: true })];
+        return {
+          enter() { tws.forEach(t => t.play()); },
+          move() {},
+          leave() { tws.forEach(t => t.pause()); gsap.to([pool], { opacity: 1, duration: 0.5 }); gsap.to(refl, { opacity: 0.8, duration: 0.5 }); },
+        };
+      },
+      box: [14, 14, 100, 100],
+      emblem: () => embLamp('translate(64 98) scale(0.78) translate(-64 -116)', EW, '<circle cx="64" cy="58" r="48" fill="#3a3a3a"/><path d="M14 101H114" stroke="#9a9a9a" stroke-width="3"/>'),
+    },
+    {
+      l: 'D', name: 'Flip',
+      idea: 'The toy’s Flip, caught mid-turn: the lamp tipped over, the wax sliding along the glass toward the cap. On hover the lamp rocks and the wax runs with it.',
+      art(svg, id) {
+        const defs = el('defs', {}, svg);
+        const T = lamp(svg, defs, id, { wax: [[57, 40, 6.5], [63, 33.5, 5], [54.5, 52, 6], [53, 62, 4.6], [69, 44, 3.6], [58, 73, 4]] });
+        const st = { a: -34 };
+        const draw = () => T.root.setAttribute('transform', `rotate(${f(st.a)} 64 64)`);
+        draw();
+        const cx0 = T.blobs.map(b => +b.getAttribute('cx'));
+        // The wax leans to the low side of the glass.
+        const rock = gsap.timeline({ repeat: -1, yoyo: true, paused: true })
+          .to(st, { a: 34, duration: 2.4, ease: 'sine.inOut', onUpdate: draw }, 0)
+          .to(T.blobs, { attr: { cx: i => 128 - cx0[i] }, duration: 2.4, ease: 'sine.inOut', stagger: 0.08 }, 0.15);
+        return {
+          enter() { rock.play(); },
+          move() {},
+          leave() { rock.pause(); },
+        };
+      },
+      box: [18, 14, 92, 100],
+      emblem: () => embLamp('rotate(-34 64 64) translate(64 64) scale(1.08) translate(-64 -64)', [[57, 40, 6.8], [63.5, 33.5, 5], [54.5, 53, 6], [58, 72, 4]]),
+    },
+  ];
+
+  /* ================= Gallery ================= */
+  const NAME = 'Lava lamp';
+  const fitIcon = (svg, box) => {
+    const b = { x: box[0], y: box[1], width: box[2], height: box[3] }, side = Math.max(b.width, b.height);
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-lava';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `lava1-${D.l.toLowerCase()}`;
+    const url = `spike/emblems/${file}.svg`;
+    window.EMBLEMS[file] = D.emblem();
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      <div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>
+      <p class="idea">${D.idea}</p>`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
