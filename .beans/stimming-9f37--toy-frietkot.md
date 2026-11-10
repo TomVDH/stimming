@@ -62,4 +62,4 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - Tom (2026-11-09): the order interaction is pointless; more ideas later; lit board as the sign. Built: no Order button, no tap-to-order, no hold-to-shake; the key strip shows drag and scroll only. The staff run orders themselves (stepOrders: 6 to 12 s after someone waits, else every 18 to 38 s). The Sign default is Lit board.
 - [ ] Next interactivity: Tom to think it over.
 - [x] Main shelf as No. 39, Tom's call (2026-11-09).
-- [x] Intro emblem: the lit shack, lamp and a customer cut out of the window (`shared/emblems/frietkot.svg`). Tom's pick pending.
+- [x] Intro emblem: a striped cone with three fries (`shared/emblems/frietkot.svg`). The shack scene is out (Tom, 2026-11-09).
