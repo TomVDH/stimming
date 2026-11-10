@@ -835,6 +835,54 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
 land.frustumCulled = false;
 out.add(land);
 
+// Mapped roads (tools/carpaths.py): the car paths, joined end to end into long runs.
+// A run is { k, pts }: its class, and its points 12 m apart as x along the line and z out from it.
+const ROADS = (() => {
+  const raw = [], Pb = ROUTE.paths || [];
+  for (let i = 0; i + 1 < Pb.length; i += 2) {
+    if (Pb[i] === 65535) raw.push({ k: Pb[i + 1], pts: [] });
+    else if (raw.length) raw[raw.length - 1].pts.push([Pb[i] / 65535 * TILE, -Pb[i + 1] / 100]);
+  }
+  const paths = raw.filter(q => q.pts.length > 2), used = new Uint8Array(paths.length), runs = [];
+  const unit = (a, b) => { const x = b[0] - a[0], z = b[1] - a[1], l = Math.hypot(x, z) || 1; return [x / l, z / l]; };
+  // q continues p when their ends meet within 20 m and head the same way.
+  const fits = (p, q) => {
+    const a = p[p.length - 1], b = q[0];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 20) return false;
+    const u = unit(p[p.length - 2], a), v = unit(b, q[1]);
+    return u[0] * v[0] + u[1] * v[1] > 0.7;
+  };
+  for (let i = 0; i < paths.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const k = paths[i].k;
+    let pts = paths[i].pts;
+    for (let grew = true; grew;) {
+      grew = false;
+      // The same class first, then any other; a motorway keeps its class and its direction.
+      for (const same of [true, false]) for (let j = 0; j < paths.length && !grew; j++) {
+        if (used[j] || (same ? paths[j].k !== k : k === 0 || paths[j].k === 0)) continue;
+        const q = paths[j].pts, qr = k === 0 ? null : q.slice().reverse();
+        const all = fits(pts, q) ? pts.concat(q) : qr && fits(pts, qr) ? pts.concat(qr) : fits(q, pts) ? q.concat(pts) : qr && fits(qr, pts) ? qr.concat(pts) : null;
+        if (all) { pts = all; used[j] = 1; grew = true; }
+      }
+    }
+    // The joined run gets even points again.
+    const cum = [0], even = [];
+    for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
+    for (let d = 0, j = 0; d <= cum[cum.length - 1]; d += 12) {
+      while (cum[j + 1] < d) j++;
+      const f = (d - cum[j]) / (cum[j + 1] - cum[j] || 1);
+      even.push([pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f, pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f]);
+    }
+    runs.push({ k, pts: even });
+  }
+  return runs;
+})();
+// A long class 0 run is open motorway; it carries its own lamps on the Linth plain.
+const MOTORWAY = ROADS.filter(q => q.k === 0 && q.pts.length > 34);
+const onMotorway = x => MOTORWAY.some(q => { const a = q.pts[0][0], b = q.pts[q.pts.length - 1][0]; return x > Math.min(a, b) && x < Math.max(a, b); });
+
 /* Town lights: a fixed tile of sources, wrapped round the camera on the GPU. */
 const glints = [];
 {
@@ -885,7 +933,8 @@ const glints = [];
     // The motorway across the Linth plain: a sodium string with a gentle curve.
     for (let x = 34500; x < 56500; x += 38) {
       const tt = 330 + 90 * Math.sin(x / 2300) + 40 * Math.sin(x / 700);
-      if (rnd() < 0.9) lit(x + rnd() * 6, tt, SOD, range(1.6, 2.2), range(24, 30), 6);
+      // Where the mapped motorway runs, its own lamps stand in for this string.
+      if (rnd() < 0.9) { const xj = x + rnd() * 6, k = range(1.6, 2.2); lit(xj, tt, SOD, onMotorway(x) ? 0 : k, range(24, 30), 6); }
     }
     // Quinten: a few warm lights across the water from Murg, with no road to them.
     const murg = ROUTE.meta.stations.find(s => s[0] === 'Murg')?.[1] ?? 68500;
@@ -2114,6 +2163,136 @@ vec3 boatAt(vec4 a, float t) {
   m.frustumCulled = false;
   m.renderOrder = 1;
   out.add(m);
+}
+
+// Street lamps: a mast, an arm and a head at the kerb of the mapped roads, where a town is.
+// Each throws a pool on the road; far off, its head reads as one of the far lights.
+if (ROUTE.rd) {
+  const rd = ROUTE.rd, rw = ROUTE.rw, rh = rd.length / rw, G = 34, L = [], grid = new Map();
+  let ls = 977;
+  const rr = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
+  const h2 = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
+  // Metres to the nearest kerb at a texel of the road map.
+  const dAt = (c, r) => rd[Math.min(Math.max(r, 0), rh - 1) * rw + ((c % rw) + rw) % rw] / 10 - 4;
+  const free = (x, t) => {
+    const cx = Math.floor(x / G), ct = Math.floor(t / G);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [lx, lt] of grid.get((cx + a) * 4096 + ct + b) || []) if ((lx - x) ** 2 + (lt - t) ** 2 < G * G) return false;
+    return true;
+  };
+  // Kind 0 is warm white, 1 sodium, 2 cool white: the far lights' three colours.
+  const add = (x, t, yaw, kind) => {
+    const key = Math.floor(x / G) * 4096 + Math.floor(t / G);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push([x, t]);
+    L.push(x, -t, yaw, kind + 0.05 + 0.9 * rr());
+  };
+  // The motorway on the Linth plain: sodium lamps every 36 m, right of each carriageway. Elsewhere it is dark.
+  const mw = new Set();
+  for (const run of MOTORWAY) run.pts.forEach(([x, z], i) => {
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) mw.add((Math.floor(x / 40) + a) * 4096 + Math.floor(-z / 40) + b);
+    if (i % 3 !== 1 || i + 1 >= run.pts.length || x < 34500 || x > 56500 || -z < 14) return;
+    const [nx, nz] = run.pts[i + 1], l = Math.hypot(nx - x, nz - z) || 1, rx = -(nz - z) / l, rz = (nx - x) / l;
+    // The arm points back at the carriageway.
+    add(x + rx * 7, -(z + rz * 7), Math.atan2(rz, -rx), 1);
+  });
+  // Every other road: a lamp 1 m outside the kerb, none within 34 m of the last.
+  for (let c = 0; c < rw; c++) for (let r = 1; r < rh - 1; r++) {
+    const d = dAt(c, r);
+    if (d < 0.6 || d > 4.4) continue;
+    const x = (c + 0.5) * TILE / rw, t = 4 * r + 2;
+    // The distance map's slope points away from the road.
+    const gx = (dAt(c + 1, r) - dAt(c - 1, r)) / (2 * TILE / rw), gt = (dAt(c, r + 1) - dAt(c, r - 1)) / 8, gl = Math.hypot(gx, gt);
+    if (gl < 0.3) continue;
+    const lx = x - gx / gl * (d - 1), lt = t - gt / gl * (d - 1);
+    if (lt < 14 || mw.has(Math.floor(lx / 40) * 4096 + Math.floor(lt / 40)) || !free(lx, lt)) continue;
+    // A street is lit where the town is dense enough; each 150 m stretch has its own bar.
+    if (townAt(lx, lt) < 0.1 + 0.22 * h2(Math.floor(lx / 150), Math.floor(lt / 150))) continue;
+    // Colours follow the far lights' sectors: Zurich cool, the lake warm, the plain sodium.
+    const hk = h2(Math.floor(lx / 300), 7), kind = lx < 5000 ? (hk < 0.6 ? 2 : 0) : lx < 34000 ? (hk < 0.7 ? 0 : hk < 0.85 ? 2 : 1) : lx < 57000 ? (hk < 0.6 ? 1 : 0) : 0;
+    add(lx, lt, Math.atan2(-gt, -gx), kind);
+  }
+  const lamps = placer(new Float32Array(L), /* glsl */`
+  vec4 place(vec4 a) {
+    float x = uCamX + mod(a.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    vec2 xz = vec2(x, a.y);
+    // None in the water, on a platform or in the yard.
+    if (a.w <= 0.0 || abs(x - uCamX) > 3000.0 || shore(xz) < 2.0 || atStation(xz, 4.0) || inYard(xz, 4.0)) return vec4(0.0);
+    // w packs the lamp's kind and its heading.
+    return vec4(x, land(xz), a.y, 1.0 + floor(a.w) * 8.0 + a.z + 3.14159265);
+  }`, 30);
+  // The head's place: the mast is 6 to 8 m tall and the arm reaches 1.6 m toward the road.
+  const LAMP = /* glsl */`
+  flat varying float vKind;
+  vec3 lampHead(vec4 q, out vec2 arm, out float hs) {
+    float kind = floor((q.w - 1.0) / 8.0), yaw = q.w - 1.0 - kind * 8.0 - 3.14159265;
+    vKind = kind;
+    arm = vec2(cos(yaw), -sin(yaw));
+    hs = 0.86 + 0.28 * hash1(floor(q.xz));
+    return q.xyz + vec3(arm.x * 1.6, 6.9 * hs, arm.y * 1.6);
+  }`;
+  const LAMPC = /* glsl */`
+  flat varying float vKind;
+  vec3 lampCol() { return vKind < 0.5 ? vec3(1.0, 0.75, 0.45) : vKind < 1.5 ? vec3(1.0, 0.55, 0.2) : vec3(0.85, 0.92, 1.0); }`;
+  const box = (w, h, d, x, y) => new THREE.BoxGeometry(w, h, d).translate(x, y, 0);
+  propMesh(joinParts([[box(0.14, 7, 0.14, 0, 3.5), 0], [box(1.7, 0.08, 0.08, 0.8, 7), 0], [box(0.7, 0.1, 0.26, 1.6, 6.95), 1]]), lamps, /* glsl */`
+  ${LAMP}
+  void main() {
+    vec4 q = inst();
+    // A mast is too thin to draw far off.
+    if (q.w <= 0.0 || length(q.xyz - cameraPosition) > 450.0) { ${HIDE} }
+    vec2 arm; float hs;
+    lampHead(q, arm, hs);
+    vec3 l = position * vec3(1.0, hs, 1.0);
+    vP = q.xyz + vec3(arm.x * l.x - arm.y * l.z, l.y, arm.y * l.x + arm.x * l.z);
+    vN = vec3(arm.x * normal.x - arm.y * normal.z, normal.y, arm.y * normal.x + arm.x * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  ${LAMPC}
+  void main() {
+    vec3 N = normalize(vN);
+    vec3 c = propLit(vP, N, vec3(0.3, 0.32, 0.33), 1.0, 0.0);
+    // The lens under the head burns at night.
+    if (vPart > 0.5 && N.y < -0.5) c += lampCol() * 3.0 * (1.0 - uDay);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+  // Part 0 is the glow at the head; part 1 is the pool on the ground.
+  const glow = propMesh(joinParts([[new THREE.PlaneGeometry(2, 2), 0], [new THREE.PlaneGeometry(2, 2, 2, 2).rotateX(-Math.PI / 2), 1]]), lamps, /* glsl */`
+  uniform float uScale, uDay;
+  varying vec3 vU;
+  ${LAMP}
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0 || uDay > 0.995) { ${HIDE} }
+    vec2 arm; float hs;
+    vec3 head = lampHead(q, arm, hs);
+    if (part < 0.5) {
+      // Far off the glow keeps a few pixels, as a far light does.
+      float sz = max(1.0, length(head - cameraPosition) * 3.75 / (400.0 * uScale));
+      vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      vP = head - vec3(0.0, 0.12, 0.0) + (cr * position.x + cu * position.y) * sz;
+      vU = vec3(position.xy, 0.0);
+    } else {
+      vec2 g = head.xz + position.xz * 13.0;
+      vP = vec3(g.x, land(g) + 0.12, g.y);
+      // z holds the head's height over this point.
+      vU = vec3(position.xz, head.y - vP.y);
+    }
+    vN = vec3(0.0, 1.0, 0.0);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying vec3 vU;
+  ${LAMPC}
+  void main() {
+    float r2 = dot(vU.xy, vU.xy), k;
+    // The glow: a hot core and a soft halo; rain widens the halo.
+    if (vPart < 0.5) k = min(2.6 * exp(-r2 * 26.0), 4.0) + exp(-r2 * 3.0) * (0.1 + 0.12 * uRain);
+    // The pool: the light of a point source on flat ground, cut soft at the rim.
+    else { float h = max(vU.z, 3.0); k = 0.15 * pow(h * h / (h * h + r2 * 169.0), 1.5) * smoothstep(1.0, 0.5, sqrt(r2)); }
+    gl_FragColor = vec4(lampCol() * k * (1.0 - uDay) * (1.0 - 0.6 * hazeAmt(vP)), 1.0);
+  }`, { transparent: true, order: 3, side: THREE.DoubleSide });
+  glow.material.blending = THREE.AdditiveBlending;
 }
 
 // Cars at night: pairs of lights that drive the bigger mapped roads (tools/carpaths.py).
