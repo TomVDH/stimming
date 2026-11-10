@@ -944,17 +944,21 @@ void main() {
   // A tower leans away as the blast wave rolls through it, slow and heavy.
   if (vS.z > 0.5) {
     float tw = uStarT - uHitP.w, rw = length(vP - uHitP.xyz);
-    float wave = uBk > 0.0 && tw > 0.0 ? exp(-pow((rw - 7000.0 * tw) / 20000.0, 2.0)) * exp(-tw / 40.0) : 0.0;
-    // The top shears away from the hit; a long, slow swell runs up the column.
+    // The wave front reaches the tower and passes; the push stays, easing back over a minute.
+    float front = uBk > 0.0 && tw > 0.0 ? smoothstep(-25000.0, 5000.0, 7000.0 * tw - rw) : 0.0;
+    float wave = front * exp(-max(tw - rw / 7000.0, 0.0) / 60.0);
+    // The top shears hard away from the hit and the anvil slumps; a slow swell runs up the column.
     float away = sign(dot(vP - uHitP.xyz, vR));
-    X.x -= wave * away * 0.06 * X.y;
+    X.x -= wave * away * 0.14 * X.y;
+    X.y += wave * 0.08 * X.y;
     X += wave * H * vec2(0.012 * sin(X.y / H * 3.0 + tw * 0.35), 0.008 * sin(X.x / H * 2.5 - tw * 0.3));
   }
   float F = body(X);
   float soft = H * 0.05;
   // The base melts into the haze, so the blast's push never shows a hard bottom edge.
   // The blast's push clears the heap instead of shoving a hard tuft.
-  float a = smoothstep(0.0, soft, F) * smoothstep(-0.02 * H, 0.18 * H, vUv.y * H) * (1.0 - 0.8 * smoothstep(300.0, 2500.0, length(push)));
+  float tc = uStarT - uHitP.w;
+  float a = smoothstep(0.0, soft, F) * smoothstep(-0.02 * H, 0.18 * H, vUv.y * H) * (1.0 - 0.7 * smoothstep(600.0, 4000.0, length(push)) * smoothstep(1.0, 9.0, tc));
   if (a < 0.004) discard;
   // Pillow depth toward the eye gives a normal.
   float e = H * 0.03;
@@ -972,9 +976,14 @@ void main() {
   vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
   float thin = 1.0 - smoothstep(0.0, soft * 10.0, F);
   vec3 V = normalize(P - cameraPosition);
-  // Wrapped light: the face away from the key still takes some.
+  // Light through the cloud, as the comet tail takes it: Beer for the beam,
+  // a soft term for light scattered many times, a forward and a back lobe, powder edges.
+  float mu = dot(V, uSun);
+  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
+  float od = occ / (H * 0.3), Tl = exp(-od), Tm = exp(-0.18 * od);
+  float powder = mix(1.0, 1.0 - exp(-6.0 * pd / H), 0.5 * (1.0 - max(mu, 0.0)));
   float wrap = max(dot(N, uSun) * 0.6 + 0.4, 0.0);
-  vec3 col = sunC * wrap * wrap * (0.3 + 0.7 * sh) * 1.25;
+  vec3 col = sunC * (Tl * 0.8 + Tm * 0.25) * ph * powder * (0.55 + 0.45 * wrap) * 1.6;
   // Backlit cloud glows through its whole body, its thin rim most.
   float back = max(dot(V, uSun), 0.0);
   col += sunC * (0.22 * back * back + 0.7 * thin * pow(back, 6.0));
