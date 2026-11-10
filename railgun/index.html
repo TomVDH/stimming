@@ -429,12 +429,16 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   if (tl > -0.1) {
     float tp = max(tl, 0.0);
     // A hard white flash, then a long amber afterglow.
-    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.6 * exp(-tp / 0.6) + 0.8 * exp(-tp / 5.0)) * (1.0 - smoothstep(9.0, 18.0, tp));
-    vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, tp));
+    float I = uBk * smoothstep(-0.1, 0.05, tl) * (0.5 * exp(-tp / 0.6) + 0.8 * exp(-tp / 5.0)) * (1.0 - smoothstep(9.0, 18.0, tp));
+    // The glow turns fire-coloured fast; the white lives in the front rim.
+    vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.3, uAstC, smoothstep(0.0, 0.7, tp));
     I *= 6.0 / (1.0 + r * r / 1.2e9);
     // Light that passes through toward the eye: a silver edge.
     float fwd = pow(max(dot(n, normalize(cameraPosition - P)), 0.0), 5.0);
-    L = c * I * (0.45 + 2.2 * fwd * thin);
+    // Little flat wash: thin edges and the far side take the light.
+    L = c * I * (0.12 + 2.4 * fwd * thin);
+    // The light front: a bright rim runs ahead of the glow.
+    L += vec3(1.0, 0.92, 0.82) * uBk * exp(-tl * tl / 0.02) * (0.6 + 1.6 * thin) * 4.0 / (1.0 + r * r / 1.2e9);
   }
   // The fast rim rides the drawn shell, so the two meet.
   float Rr = 1.4 * uHitR + 36000.0 * (1.0 - exp(-t / 9.0));
@@ -492,7 +496,7 @@ vec3 boltGlow(vec3 dir) {
 vec3 hitGlow(vec3 dir) {
   if (uHit.w < 0.001) return vec3(0.0);
   float c = dot(dir, uHit.xyz) - 1.0;
-  return uAstC * uHit.w * (0.2 * exp(c * 40.0) + 0.07 * exp(c * 4.0) + 0.02);
+  return uAstC * uHit.w * (0.2 * exp(c * 40.0) + 0.045 * exp(c * 4.0) + 0.006);
 }
 // The bare sky: no glow from the rock, the bolt or the hit.
 vec3 k2skyB(vec3 dir, float sunK) {
@@ -3708,7 +3712,13 @@ float dens(vec3 p, out vec3 em) {
   vec3 q = p - uBP - vec3(0.0, 25.0 * age, 0.0);
   // The aging cloud spreads sideways and sags.
   float old = smoothstep(2.0, 18.0, age);
-  float r = length(q * vec3(1.0, 1.0 + 0.3 * old, 1.0)) / Rb;
+  // The wind shears the top over; the cloud spreads sideways as it ages.
+  q.x -= q.y * 0.3 * old;
+  float r = length(q * vec3(1.0 / (1.0 + 0.25 * old), 1.0 + 0.3 * old, 1.0)) / Rb;
+  if (r > 1.45) return 0.0;
+  // Big lobes swell and sink round the ball, slowly changing.
+  float lob = texture(uVol, normalize(q) * 0.33 + vec3(uFb.w, age * 0.008, 0.0)).r;
+  r *= 1.0 + 0.6 * (0.55 - lob) * (0.5 + 0.5 * smoothstep(0.5, 6.0, age));
   if (r > 1.3) return 0.0;
   vec3 w = q / Rb + vec3(uFb.w, -age * 0.02, 0.0);
   // A slow curl warp turns the ball into torn billows.
@@ -3754,7 +3764,7 @@ function updateBlast() {
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
   const Rb = R * (1 + 11 * (1 - Math.exp(-ha / 4.5)));
   u.uC.value.copy(blastFx.P).y += 25 * ha;
-  u.uR.value = Rb * 1.35;
+  u.uR.value = Rb * 1.6;
   // The soot ball others fade behind: thick early, thin as it erodes.
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 4, 22)) * (1 - THREE.MathUtils.smoothstep(ha, 20, 30));
@@ -4836,7 +4846,7 @@ window.__qa = {
   look: () => ({ yaw: THREE.MathUtils.radToDeg(look.yaw), pitch: THREE.MathUtils.radToDeg(look.pitch), to: THREE.MathUtils.radToDeg(lookTo.yaw) }),
   blastState: () => {
     const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
-    return { fire: fireball.visible, w: b.w, off: blastFx ? +(blastFx.P.distanceTo(b) / blastFx.R).toFixed(2) : -1, size: blastFx ? +(u.uR.value / 1.35 / blastFx.R).toFixed(2) : 0,
+    return { fire: fireball.visible, w: b.w, off: blastFx ? +(blastFx.P.distanceTo(b) / blastFx.R).toFixed(2) : -1, size: blastFx ? +(u.uR.value / 1.6 / blastFx.R).toFixed(2) : 0,
       hot: blastFx ? Math.exp(-T / 5) + 0.8 * Math.exp(-T / 0.6) : 0, shellA: hitShellA.visible ? Math.round(hitShellA.material.uniforms.uR.value) : 0,
       shellB: hitShellB.visible ? Math.round(hitShellB.material.uniforms.uR.value) : 0, rings: false, astW: U.uAst.value.w, hitFlash };
   },
