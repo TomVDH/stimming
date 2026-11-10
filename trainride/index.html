@@ -910,7 +910,70 @@ const ROADS = (() => {
       const f = (d - cum[j]) / (cum[j + 1] - cum[j] || 1);
       even.push([pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f, pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f]);
     }
-    runs.push({ k, pts: even });
+    if (!rd) { runs.push({ k, pts: even.map(([x, z]) => [x, z, 1.6]) }); continue; }
+    // Each point moves to the painted road's middle, found across the road.
+    // Its lane sits half way to the kerb; no paint across it means no road.
+    const fit = even.map(([x, z], j) => {
+      const a = even[Math.max(j - 1, 0)], b = even[Math.min(j + 1, even.length - 1)];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
+      if (-z > 496) return null;
+      let best = null;
+      for (let s0 = -8; s0 <= 8; s0 += 0.5) {
+        if (kerb(x + nx * s0, -(z + nz * s0)) >= 0) continue;
+        let s1 = s0;
+        while (s1 + 0.5 <= 8 && kerb(x + nx * (s1 + 0.5), -(z + nz * (s1 + 0.5))) < 0) s1 += 0.5;
+        // The painted span nearest the mapped point is its road.
+        const mid = (s0 + s1) / 2;
+        if (!best || Math.abs(mid) < Math.abs(best[0])) best = [mid, (s1 - s0) / 2 + 0.25, s0 <= -8 || s1 >= 8];
+        s0 = s1;
+      }
+      if (!best || Math.abs(best[0]) > 6) return null;
+      // A span that runs past the search is a square or a junction: the point stays.
+      if (best[2]) return [x, z, 1.6];
+      return [x + nx * best[0], z + nz * best[0], Math.min(Math.max(best[1] * 0.5, 0.8), 1.9)];
+    });
+    // A light smoothing keeps the snapped line from stepping texel by texel.
+    for (let j = 0; j < fit.length; j++) {
+      if (!fit[j]) continue;
+      const nb = [fit[j - 1], fit[j], fit[j + 1]].filter(Boolean);
+      fit[j].s = [0, 1, 2].map(c => nb.reduce((t, q) => t + q[c], 0) / nb.length);
+    }
+    // The run breaks where its road leaves the map; short pieces carry no cars.
+    let piece = [];
+    for (const q of [...fit, null]) {
+      if (q) { piece.push(q.s); continue; }
+      if (piece.length >= 8) runs.push({ k, pts: piece });
+      piece = [];
+    }
+  }
+  if (!rd) return runs;
+  // Both lanes must stay on paint along the shader's curve, or the run breaks there.
+  const onPaint = (P, i) => {
+    const N = P.length - 1, p0 = P[Math.max(i - 1, 0)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(i + 2, N)];
+    for (let f = 0; f < 1; f += 0.25) {
+      const f2 = f * f, f3 = f2 * f, h0 = 2 * f3 - 3 * f2 + 1, h1 = f3 - 2 * f2 + f, h2 = 3 * f2 - 2 * f3, h3 = f3 - f2;
+      const d0 = 6 * f2 - 6 * f, d1 = 3 * f2 - 4 * f + 1, d3 = 3 * f2 - 2 * f, out = [0, 0];
+      for (const c of [0, 1]) out[c] = h0 * p1[c] + h1 * (p2[c] - p0[c]) / 2 + h2 * p2[c] + h3 * (p3[c] - p1[c]) / 2;
+      const tx = d0 * (p1[0] - p2[0]) + d1 * (p2[0] - p0[0]) / 2 + d3 * (p3[0] - p1[0]) / 2;
+      const tz = d0 * (p1[1] - p2[1]) + d1 * (p2[1] - p0[1]) / 2 + d3 * (p3[1] - p1[1]) / 2;
+      const tl = Math.hypot(tx, tz) || 1, w = p1[2] + (p2[2] - p1[2]) * f;
+      for (const sd of [-1, 1]) if (kerb(out[0] - tz / tl * w * sd, -(out[1] + tx / tl * w * sd)) > 0.5) return false;
+    }
+    return true;
+  };
+  for (let pass = 0; pass < 3; pass++) {
+    const next = [];
+    for (const { k, pts: P } of runs) {
+      let from = 0;
+      for (let i = 0; i < P.length; i++) {
+        if (i < P.length - 1 && onPaint(P, i)) continue;
+        if (i + 1 - from >= 8) next.push({ k, pts: P.slice(from, i + 1) });
+        from = i + 1;
+      }
+    }
+    if (next.length === runs.length) break;
+    runs.length = 0;
+    runs.push(...next);
   }
   return runs;
 })();
@@ -2364,19 +2427,20 @@ if (ROADS.length) {
   // By class: metres between cars in one direction, and their speed in m/s.
   const GAP = [90, 130, 170, 230, 380], VEL = [28, 16, 14, 13, 11];
   for (const { k, pts: q } of ROADS) {
-    const start = pts.length / 2, n = q.length, len = (n - 1) * 12;
-    for (const [x, z] of q) pts.push(x, z);
+    const start = pts.length / 4, n = q.length, len = (n - 1) * 12;
+    for (const [x, z, lw] of q) pts.push(x, z, lw, 0);
     // A motorway carriageway runs one way in two lanes; the left lane is the faster.
-    for (const [dir, lane] of k === 0 ? [[1, 1.75], [1, -1.75]] : [[1, 1.6], [-1, 1.6]]) {
+    // lane is the side: 1 right of the middle line, -1 left.
+    for (const [dir, lane] of k === 0 ? [[1, 1], [1, -1]] : [[1, 1], [-1, 1]]) {
       const m = Math.max(rr() < len / GAP[k] ? 1 : 0, Math.round(len / GAP[k] * (0.7 + 0.6 * rr())));
       const v = dir * VEL[k] * (0.88 + 0.24 * rr()) * (lane < 0 ? 1.15 : 1) / 12;
       // Each car gets its own slot along the run, so the spacing holds.
       for (let c = 0; c < m; c++) { A.push(start, n, v, (c + 0.15 + 0.7 * rr()) / m); B.push(lane, rr()); }
     }
   }
-  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 2 / TW) * 2);
+  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 4 / TW) * 4);
   pd.set(pts);
-  const tPath = new THREE.DataTexture(pd, TW, pd.length / 2 / TW, THREE.RGFormat, THREE.FloatType);
+  const tPath = new THREE.DataTexture(pd, TW, pd.length / 4 / TW, THREE.RGBAFormat, THREE.FloatType);
   tPath.needsUpdate = true;
   const U = Object.assign({}, OUTU, { tPath: { value: tPath } });
   const CAR = /* glsl */`
@@ -2387,24 +2451,28 @@ if (ROADS.length) {
   uniform float uTime, uCamX, uDay;
   ${NOISE}
   ${LAND}
-  vec2 pathAt(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rg; }
+  // xy is the road's middle; z is the lane's offset from it.
+  vec3 pathP(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rgb; }
+  vec2 pathAt(float i) { return pathP(i).xy; }
   // The car's point on the road, its heading, its right side, and its fade at the run's ends.
   // False when the car is farther along the line than reach.
   bool carAt(float reach, out vec3 c, out vec3 dir, out vec3 rt, out float ends) {
     // u counts points along the run; the car wraps from one end to the other.
     float n = aCar.y - 1.0, u = mod(aCar.w * n + uTime * aCar.z, n), i0 = floor(u), f = u - i0;
-    vec2 p1 = pathAt(aCar.x + i0);
+    vec3 q1 = pathP(aCar.x + i0);
+    vec2 p1 = q1.xy;
     float x = uCamX + mod(p1.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
     if (abs(x - uCamX) > reach) return false;
     // A smooth curve through four points: the heading turns, and never jumps.
-    vec2 p0 = pathAt(aCar.x + max(i0 - 1.0, 0.0)), p2 = pathAt(aCar.x + i0 + 1.0), p3 = pathAt(aCar.x + min(i0 + 2.0, n));
+    vec3 q2 = pathP(aCar.x + i0 + 1.0);
+    vec2 p0 = pathAt(aCar.x + max(i0 - 1.0, 0.0)), p2 = q2.xy, p3 = pathAt(aCar.x + min(i0 + 2.0, n));
     vec2 m1 = (p2 - p0) * 0.5, m2 = (p3 - p1) * 0.5;
     float f2 = f * f, f3 = f2 * f;
     vec2 p = (2.0 * f3 - 3.0 * f2 + 1.0) * p1 + (f3 - 2.0 * f2 + f) * m1 + (3.0 * f2 - 2.0 * f3) * p2 + (f3 - f2) * m2;
     vec2 tg = (6.0 * f2 - 6.0 * f) * (p1 - p2) + (3.0 * f2 - 4.0 * f + 1.0) * m1 + (3.0 * f2 - 2.0 * f) * m2;
     vec2 d2 = normalize(tg) * sign(aCar.z), r2 = vec2(-d2.y, d2.x);
     // The lane lies to the right of the road's middle line.
-    p += r2 * aCar2.x + vec2(x - p1.x, 0.0);
+    p += r2 * aCar2.x * mix(q1.z, q2.z, f) + vec2(x - p1.x, 0.0);
     c = vec3(p.x, land(p), p.y);
     dir = vec3(d2.x, 0.0, d2.y);
     rt = vec3(r2.x, 0.0, r2.y);
@@ -2539,7 +2607,7 @@ if (ROADS.length) {
       const t = OUTU.uTime.value, cx = OUTU.uCamX.value;
       best.length = 0;
       for (let i = 0; i < A.length; i += 4) {
-        const n = A[i + 1] - 1, u = (((A[i + 3] * n + t * A[i + 2]) % n) + n) % n, i0 = Math.min(Math.floor(u), n - 1), o = (A[i] + i0) * 2;
+        const n = A[i + 1] - 1, u = (((A[i + 3] * n + t * A[i + 2]) % n) + n) % n, i0 = Math.min(Math.floor(u), n - 1), o = (A[i] + i0) * 4;
         const dx = ((((pd[o] - cx + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2, z = pd[o + 1];
         if (Math.abs(dx) > 260 || z < -260) continue;
         best.push([dx * dx + z * z, i, u, i0, o, dx - pd[o] + cx]);
@@ -2547,11 +2615,11 @@ if (ROADS.length) {
       best.sort((p, q) => p[0] - q[0]);
       for (let b = 0; b < Math.min(NB, best.length); b++) {
         const [d2, i, u, i0, o, wrap] = best[b], n = A[i + 1] - 1, f = u - i0, sg = Math.sign(A[i + 2]);
-        let hx = (pd[o + 2] - pd[o]) * sg, hz = (pd[o + 3] - pd[o + 1]) * sg;
-        const hl = Math.hypot(hx, hz) || 1, lane = B[i / 2];
+        let hx = (pd[o + 4] - pd[o]) * sg, hz = (pd[o + 5] - pd[o + 1]) * sg;
+        const hl = Math.hypot(hx, hz) || 1, lane = B[i / 2] * (pd[o + 2] + (pd[o + 6] - pd[o + 2]) * f);
         hx /= hl; hz /= hl;
         // The lamps sit at the car's nose, in its lane.
-        BEAMU.uCarP.value[b].set(pd[o] + (pd[o + 2] - pd[o]) * f + wrap - hz * lane + hx * 2.2, pd[o + 1] + (pd[o + 3] - pd[o + 1]) * f + hx * lane + hz * 2.2, hx, hz);
+        BEAMU.uCarP.value[b].set(pd[o] + (pd[o + 4] - pd[o]) * f + wrap - hz * lane + hx * 2.2, pd[o + 1] + (pd[o + 5] - pd[o + 1]) * f + hx * lane + hz * 2.2, hx, hz);
         K[b] = night * sstep(0, 2.5, u) * sstep(n, n - 2.5, u) * sstep(260, 140, Math.sqrt(d2));
       }
     },

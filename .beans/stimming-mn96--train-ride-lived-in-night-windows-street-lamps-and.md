@@ -23,6 +23,7 @@ Tom, 2026-11-10: a subsession on the procedural buildings, their night windows, 
 - Street lamps: about 1,500, placed in JS from the road map at the kerb, 34 m apart, where the town density passes a bar. Colours follow the far lights' sectors. The glow matches a far light's size and strength. The Linth motorway carries its own sodium lamps; the far layer's string is dark there.
 - Cars: paths join into runs and get even points. One pace per lane, one slot per car. A smooth curve gives the heading. Bodies show by day (decision: yes, as plain boxes; one in eight is a van). A beam lies on the road; the six nearest cars light the house walls. Paths that leave the road map carry no cars.
 - Zürich: three in five flat-roofed blocks are modern, at the same polygon count.
+- Cars follow the OSM roads (Tom, 2026-11-10): each run point snaps to the middle of the painted road, found across it in the road map. The lane sits half way to the kerb. A run breaks where a lane on the shader's curve leaves the paint or the road leaves the map. Result: 0 of 25,952 lane samples off asphalt (798 before); 39 km of road carries cars.
 - Frame time: no change within noise (17 to 25 ms before and after at 2077 x 1251, hidden pane, A/B in one session).
 
 ## Not done
