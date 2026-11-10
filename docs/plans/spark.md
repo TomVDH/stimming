@@ -73,7 +73,7 @@ Two visible controls. The stage is the toy.
 | Teeth | 36 knurl teeth. Tooth rate = ω · 36 / 2π. |
 | Emission | Each passing tooth scrapes 0 to 3 particles (Ferro 2, Steel 1.5, Titanium 1 on average). No sparks below 4 teeth per second. |
 | Launch | From the contact point, along the rim's tangent, at 1.5 to 3 times the rim speed, in a 12° cone. |
-| Flight | Gravity, plus air drag proportional to speed squared. Small sparks slow faster. |
+| Flight | Gravity, plus linear drag in closed form (K6). Small sparks get more drag and slow faster. |
 | Burn | Each spark has a life of 0.4 to 1.6 s and a temperature that falls from 2200 K. Colour comes from a blackbody ramp. |
 | Fork | Ferro and Steel sparks may burst once in the last third of life: 3 to 8 children, short life, in a sphere. |
 | Floor | y = 0. Restitution 0.35, sliding friction 0.6. A hot Ferro spark may split on impact. |
@@ -85,7 +85,7 @@ Two visible controls. The stage is the toy.
 
 | Item | Fireworks | Spark wheel |
 |---|---|---|
-| Motion | ballistic, written once per burst | CPU integration per spark (drag, floor, fork), uploaded each frame |
+| Motion | ballistic, written once per burst | the same closed form; at launch the CPU finds the floor hit and the fork, and writes each later segment with a future start time |
 | Count | 48 000 slots | 6 000 (3 000 at 375 px and on the lower rung) |
 | Ramps | firework salts | one blackbody ramp per metal |
 | Streak | trail from velocity | trail from velocity times the Trails setting |

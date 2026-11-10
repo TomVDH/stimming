@@ -270,7 +270,7 @@ mirror.add(ghostHaze);
 
 /* ---------- embers ---------- */
 // Each ember cools from its start temperature; the colour follows a blackbody ramp.
-const EMBERS = 64;
+const EMBERS = 512;
 const emberGeo = new THREE.BufferGeometry();
 const ePos = new Float32Array(EMBERS * 3), eAttr = new Float32Array(EMBERS * 3);
 emberGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
@@ -321,18 +321,277 @@ mirror.add(ghostEmbers);
 // Seeded random keeps the first frame the same on every load.
 let seed = 1031;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-let emberN = 0, emberEnd = 0;
-// The first frame holds a few embers that cool over 8 s.
-function seedEmbers(t) {
-  emberN = 6;
-  for (let i = 0; i < emberN; i++) {
-    ePos.set(narrow ? [0.4 + rnd() * 1.8, FLOOR + 0.02, -1 + rnd() * 3.6] : [0.8 + rnd() * 3.6, FLOOR + 0.02, -1.6 + rnd() * 4.2], i * 3);
-    eAttr.set([t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25], i * 3);
-  }
+let emberHead = 0, emberN = 0, emberEnd = 0;
+// Embers fill a ring; the oldest gives way.
+function addEmber(x, z, born, tau, t0) {
+  const i = emberHead;
+  emberHead = (emberHead + 1) % EMBERS;
+  emberN = Math.max(emberN, emberHead || EMBERS);
+  ePos.set([x, FLOOR + 0.02, z], i * 3);
+  eAttr.set([born, tau, t0], i * 3);
   emberGeo.setDrawRange(0, emberN);
   emberGeo.attributes.position.needsUpdate = true;
   emberGeo.attributes.aE.needsUpdate = true;
-  emberEnd = t + 4 * 4.2;
+  emberEnd = Math.max(emberEnd, born + 4 * tau);
+}
+// Clear the ring. The first frame then holds six embers that cool over 8 s.
+function seedEmbers(t) {
+  eAttr.fill(0);
+  emberHead = emberN = 0;
+  emberEnd = 0;
+  for (let i = 0; i < 6; i++) {
+    const [x, z] = narrow ? [0.4 + rnd() * 1.8, -1 + rnd() * 3.6] : [0.8 + rnd() * 3.6, -1.6 + rnd() * 4.2];
+    addEmber(x, z, t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25);
+  }
+}
+
+/* ---------- K6: burst particles ---------- */
+// Lifted from Fireworks: a ring of spark slots on one instanced streak quad.
+// Each slot holds one flight segment in closed form, written once.
+// A spark is a chain of segments: flight, then forks or floor bounces.
+// Later segments carry a future start time; they wait hidden until then.
+const CAP = 8000;
+const G = new THREE.Vector3(0, -16, 0);
+const sparkGeo = new THREE.InstancedBufferGeometry();
+// Three columns, tail (0), middle (1) and head (2), so a trail can bend.
+// y runs across the streak.
+sparkGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
+sparkGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
+const slot = name => {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
+  a.setUsage(THREE.DynamicDrawUsage);
+  sparkGeo.setAttribute(name, a);
+  return a;
+};
+// aA: start point, start time. aB: start velocity, drag. aC: start heat, life, trail, size. aD: kind, seed, end heat, gain.
+const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD');
+sparkGeo.instanceCount = 0;
+function sparkMat(mirrored) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 },
+      uG: { value: G }, uFloor: { value: FLOOR }, uMirror: { value: mirrored ? 1 : 0 }, uTrail: { value: 1 },
+      // The wet floor mirrors the sparks at half strength.
+      uGain: { value: mirrored ? 0.5 : 1 },
+    },
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`
+    attribute vec4 aA, aB, aC, aD;
+    uniform float uTime, uDpr, uFloor, uMirror, uTrail, uGain;
+    uniform vec2 uRes;
+    uniform vec3 uG;
+    varying vec3 vCol, vColT, vLWH;
+    varying float vS, vY, vSpark, vSeed;
+    ${BODY}
+    // Linear drag, a = G - k v, in closed form: no stored state.
+    vec3 path(float t) {
+      vec3 vt = uG / aB.w;
+      vec3 p = aA.xyz + vt * t + (aB.xyz - vt) * (1.0 - exp(-aB.w * t)) / aB.w;
+      // The mirror copy flips about the floor.
+      if (uMirror > 0.5) p.y = 2.0 * uFloor - p.y;
+      return p;
+    }
+    // Screen position in pixels, and the clip position for output.
+    vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
+    void main() {
+      float age = uTime - aA.w, life = aC.y;
+      if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      float f = age / life, tr = min(aC.z * uTrail, age);
+      // Three points on the true path, so the trail follows the fall.
+      vec4 c0, c1, c2;
+      vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(path(age), c2);
+      float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
+      // The core is w wide; the quad is wider to hold the head's halo.
+      float w = aC.w * uDpr * (1.0 - 0.4 * f), W = w * 2.4;
+      int col = int(position.x + 0.5);
+      vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
+      vec2 dir = col == 0 ? s1 - s0 : col == 1 ? s2 - s0 : s2 - s1;
+      dir = length(dir) > 1e-3 ? normalize(dir) : vec2(0.0, 1.0);
+      float s = col == 0 ? -W : col == 1 ? L01 : len + W;
+      vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
+      c.xy += off / (0.5 * uRes) * c.w;
+      gl_Position = c;
+      vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vSeed = aD.y;
+      // Heat falls along the segment; radiance rises steeply with heat.
+      float heat = mix(aC.x, aD.z, f);
+      float e = pow(heat, 2.5) * 5.0 * aD.w * uGain * (1.0 - smoothstep(0.85, 1.0, f) * 0.6);
+      vCol = body(heat) * e;
+      // The tail is cooler and redder than the head.
+      vColT = body(heat * 0.7) * e * 0.5;
+      vSpark = aD.x > 0.5 ? 0.9 : 0.3;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vCol, vColT, vLWH;
+    varying float vS, vY, vSpark, vSeed;
+    void main() {
+      float len = vLWH.x, W = vLWH.z;
+      // A core thinner than a pixel aliases; widen it and dim it to match.
+      float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
+      // Distance from the tail-to-head path: a capsule with round ends.
+      float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
+      float d2 = (out_ * out_ + vY * vY) / (w * w);
+      float core = max(exp(-d2 * 1.8) - 0.01, 0.0);
+      // Brightness falls off exponentially from the head down the trail.
+      float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
+      float trail = 0.05 + 0.95 * exp(-3.0 * (1.0 - u));
+      // Glints every few pixels along the tail.
+      float g = step(0.55, fract(sin(floor(vS / 3.0) * 12.9898 + vSeed) * 43758.5453));
+      float sp = mix(1.0, 0.4 + 1.4 * g, vSpark * (1.0 - u));
+      // The head carries a soft halo, wider than the core.
+      float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
+      float halo = 0.22 * exp(-dh2 * 3.0);
+      vec3 c = mix(vColT, vCol, u) * core * trail * sp + vCol * halo;
+      gl_FragColor = vec4(c * dim, 0.0);
+    }`,
+  });
+}
+const sparks = new THREE.Mesh(sparkGeo, sparkMat(false));
+sparks.frustumCulled = false;
+sparks.renderOrder = 2;
+const sparksGhost = new THREE.Mesh(sparkGeo, sparkMat(true));
+sparksGhost.frustumCulled = false;
+sparksGhost.renderOrder = 0;
+scene.add(sparks, sparksGhost);
+let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
+// Write one segment into the next slot; the oldest slot gives way.
+function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain) {
+  const i = head;
+  head = (head + 1) % CAP;
+  if (dirtyFrom < 0) dirtyFrom = i;
+  dirtyN = Math.min(CAP, dirtyN + 1);
+  aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
+  aB.setXYZW(i, v0.x, v0.y, v0.z, k);
+  aC.setXYZW(i, heat0, life, trail, size);
+  aD.setXYZW(i, kind, rnd() * 100, heat1, gain);
+  sparkGeo.instanceCount = Math.max(sparkGeo.instanceCount, i + 1);
+  lastDeath = Math.max(lastDeath, t0 + life);
+}
+// Upload only the slots written since the last render; a wrap gives two ranges.
+function commitSparks() {
+  if (dirtyFrom < 0) return;
+  const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
+  for (const at of [aA, aB, aC, aD]) {
+    at.addUpdateRange(a * 4, run * 4);
+    if (n > run) at.addUpdateRange(0, (n - run) * 4);
+    at.needsUpdate = true;
+  }
+  dirtyFrom = -1; dirtyN = 0;
+}
+// The same closed form on the CPU, for forks and bounces.
+function posAt(p0, v0, k, t, out) {
+  const vt = G.y / k, e = (1 - Math.exp(-k * t)) / k;
+  return out.set(p0.x + v0.x * e, p0.y + vt * t + (v0.y - vt) * e, p0.z + v0.z * e);
+}
+function velAt(v0, k, t, out) {
+  const vt = G.y / k, e = Math.exp(-k * t);
+  return out.set(v0.x * e, vt + (v0.y - vt) * e, v0.z * e);
+}
+// The first time the path meets the floor, or Infinity.
+const tmpP = new THREE.Vector3();
+function floorHit(p0, v0, k, life) {
+  const N = 12;
+  let a = 0;
+  for (let i = 1; i <= N; i++) {
+    let b = (life * i) / N;
+    if (posAt(p0, v0, k, b, tmpP).y <= FLOOR) {
+      for (let j = 0; j < 14; j++) { const m = (a + b) / 2; if (posAt(p0, v0, k, m, tmpP).y <= FLOOR) b = m; else a = m; }
+      return b;
+    }
+    a = b;
+  }
+  return Infinity;
+}
+/* ---------- end K6 ---------- */
+
+/* ---------- metals ---------- */
+// Spark tests read a metal by its sparks.
+// n: sparks per tooth. life: burn time. heat: start and end, 0 to 1.
+// k: drag. fork: chance to burst, and children. split: chance to split on the floor.
+const METALS = {
+  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, kids: [3, 8], split: 0.5, size: 1.6 },
+  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, kids: [4, 9], split: 0.2, size: 1.4 },
+  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, kids: [2, 4], split: 0.15, size: 1.9 },
+};
+const span = ([a, b]) => a + (b - a) * rnd();
+const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
+// One spark: write its flight, then schedule what ends it.
+// fd counts fork depth; bd counts floor bounces.
+function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
+  const m = METALS[metal];
+  const hit = floorHit(p0, v0, k, life);
+  // A burst comes late in the flight, before the spark lands.
+  const forkAt = fd === 0 && bd === 0 && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
+  const end = Math.min(life, hit, forkAt);
+  const heatEnd = heat0 + (heat1 - heat0) * (end / life);
+  const trail = fd ? 0.03 : 0.07;
+  writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1);
+  if (end === forkAt) {
+    // A burst: three to eight short stars in a sphere.
+    const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+    const n = Math.round(span(m.kids));
+    for (let i = 0; i < n; i++) {
+      Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(3 + 4 * rnd());
+      const cv = v.clone().multiplyScalar(0.5).add(Q);
+      const kid = span([0.1, 0.28]);
+      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, fd + 1, bd);
+    }
+  } else if (end === hit) {
+    const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+    p.y = FLOOR + 0.001;
+    // The floor takes most of the fall and some of the slide.
+    const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
+    const rest = life - end;
+    if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
+      const hot = heatEnd > 0.6 && rnd() < m.split;
+      const parts = hot ? 2 : 1;
+      for (let i = 0; i < parts; i++) {
+        const pv = bv.clone();
+        if (hot) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i ? 1 : -1) * (0.3 + 0.4 * rnd()));
+        launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (hot ? 0.75 : 0.9), fd, bd + 1);
+      }
+    } else if (heatEnd > 0.3) {
+      // A slow, hot spark comes to rest as an ember.
+      addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85));
+    }
+  }
+}
+// The contact point and the rim's direction of travel there.
+// The wheel's axis is its yaw applied to +z; the rim moves along axis x radius.
+const AXIS = new THREE.Vector3(), TANGENT = new THREE.Vector3(), SIDE = new THREE.Vector3();
+function setYaw(yaw) {
+  for (const w of [real, ghost]) w.pivot.rotation.y = yaw;
+  AXIS.set(0, 0, 1).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+  TANGENT.crossVectors(AXIS, new THREE.Vector3(0, -1, 0)).normalize();
+  SIDE.crossVectors(TANGENT, AXIS).normalize();
+}
+setYaw(-0.75);
+const CONE = Math.tan(12 * Math.PI / 180);
+let toothAcc = 0, rate = 0;
+// Each passing tooth scrapes 0 to 3 particles off the flint.
+function emit(dt) {
+  if (wheel.omega <= 0) { toothAcc = 0; return 0; }
+  const teethRate = wheel.omega * TEETH / TAU;
+  if (teethRate < 4) return 0;
+  toothAcc += teethRate * dt;
+  const m = METALS[metal], rim = wheel.omega * R;
+  let n = 0;
+  const lite = reduced() ? 0.5 : 1;
+  while (toothAcc >= 1) {
+    toothAcc -= 1;
+    // Teeth spread over the frame, so sparks leave in a stream.
+    const t0 = time - dt * (toothAcc / Math.max(1, teethRate * dt));
+    const count = Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
+    for (let i = 0; i < count; i++) {
+      P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
+      V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
+        .multiplyScalar(2 + Math.min(16, rim * (0.45 + 0.45 * rnd())));
+      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), reduced() ? 9 : 0);
+      n++;
+    }
+  }
+  return n;
 }
 
 /* ---------- smoke ---------- */
@@ -466,6 +725,8 @@ function frameShot() {
   const asp = size.w / size.h;
   camera.aspect = asp;
   narrow = asp < 0.9;
+  // Tall stages turn the wheel toward the camera, so the spray stays in frame.
+  setYaw(narrow ? -1.3 : -0.75);
   if (!narrow) {
     camera.fov = 30;
     camera.position.set(2.6, 0.9, 13);
@@ -487,12 +748,16 @@ function resize() {
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
   // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2e6, low: rung >= 1 }) };
+  frameShot();
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
   emberMat.uniforms.uDpr.value = size.dpr * h / 800;
-  frameShot();
+  for (const m of [sparks.material, sparksGhost.material]) {
+    m.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+    m.uniforms.uDpr.value = size.dpr * (narrow ? 0.75 : Math.max(0.7, h / 800));
+  }
 }
 
 /* ---------- render ---------- */
@@ -502,8 +767,15 @@ function draw() {
   emberMat.uniforms.uTime.value = time;
   smokeMat.uniforms.uTime.value = time;
   smokeMat.uniforms.uAmt.value = smokeOn && !reduced() ? smokeAmt : 0;
-  // A stand-in for the spray: the contact light follows the spin.
-  contact.intensity = 5 * clamp(wheel.omega / 25);
+  for (const m of [sparks.material, sparksGhost.material]) {
+    m.uniforms.uTime.value = time;
+    m.uniforms.uTrail.value = 0.25 + 1.75 * trails;
+  }
+  sparksGhost.material.uniforms.uMirror.value = 1;
+  sparksGhost.visible = mirror.visible;
+  commitSparks();
+  // The contact light follows the spark rate, so the knurl flashes warm.
+  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : 6 * clamp(rate / 250);
   composer.render();
 }
 
@@ -514,7 +786,7 @@ const live = () => wake();
 function wake() {
   if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < emberEnd || (smokeOn && smokeAmt > 0.01);
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || (smokeOn && smokeAmt > 0.01);
 function frame(now) {
   raf = 0;
   let again = true;
@@ -528,6 +800,9 @@ function frame(now) {
     else wheel.omega *= Math.exp(-dt / FRICTION);
     if (wheel.omega < 0.02 && !grinding) wheel.omega = 0;
     wheel.angle = (wheel.angle + wheel.omega * dt) % TAU;
+    // The spark rate eases over 60 ms, so the light flashes, not flickers.
+    const n = emit(dt);
+    rate += (n / Math.max(dt, 1e-3) - rate) * (1 - Math.exp(-dt / 0.06));
     // Smoke fades over 3 s; a fast wheel feeds it.
     smokeAmt = clamp(smokeAmt * Math.exp(-dt / 3) + dt * clamp(wheel.omega / 20) * 1.5);
     draw();
@@ -603,6 +878,12 @@ function strike() {
 act.reset = () => {
   wheel.omega = 0;
   grinding = false;
+  rate = 0;
+  // Every live spark ends now.
+  aA.array.fill(0); aC.array.fill(0);
+  sparkGeo.instanceCount = 0;
+  head = 0; dirtyFrom = -1; dirtyN = 0; lastDeath = 0;
+  for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
   smokeAmt = 0.7;
   live();
