@@ -2449,7 +2449,8 @@ function updateMuzzle(ma, c, m0) {
   const pu = plume.material.uniforms, age = Math.max(ma, 0), Lj = 900 * cc * (1 - Math.exp(-age / 0.05));
   pu.uMz.value.copy(m0); pu.uMx.value.copy(shot.ax);
   pu.uDrift.value.set(6 * age, 2.5 * age, 0).addScaledVector(shot.ax, 120 * (1 - Math.exp(-age / 1.5)));
-  pu.uPl.value.set(age, cc, Lj, 6 * cc * Math.exp(-age / 0.15));
+  // Reduced motion halves the fire.
+  pu.uPl.value.set(age, cc, Lj, (reduced() ? 3 : 6) * cc * Math.exp(-age / 0.15));
   const Rm = 16 + 0.23 * Lj + 75 * Math.sqrt(age);
   pu.uC.value.copy(m0).add(pu.uDrift.value).addScaledVector(shot.ax, 0.45 * Lj);
   pu.uR.value = 0.8 * Lj + Rm;
@@ -2591,7 +2592,7 @@ function updateBlast() {
   if (ha > 31) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
-  u.uFb.value.set(ha, R, k, blastFx.seed);
+  u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
   const Rb = R * (1 + 5 * (1 - Math.exp(-ha / 1.4)));
   u.uC.value.copy(blastFx.P).y += 40 * ha;
   u.uR.value = Rb * 1.15;
