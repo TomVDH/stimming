@@ -796,24 +796,34 @@ vec4 deck(vec3 d) {
 }
 
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
+// The last mid sample's shape terms, for the crease light.
+float gMidSh = 0.0, gMidA = 1.0, gMidFb = 0.0;
+// Each cell is a low dome with a flat base; small billows break it, as on the deck.
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float cv = coverAt(w, 55.0, 0.71), lo = 5.2, lo2 = 5.45, hi = 6.1, hi2 = 5.75;
+  float cv = coverAt(w, 55.0, 0.71), lo = 5.25, hi = 6.05;
   // In a storm the mid layer runs in bands along the wind.
   if (uStorm > 0.0) {
     float wv = smoothstep(0.35, 0.75, weave(w * 0.8 + 31.0));
     cv += uStorm * 0.4 * (wv - 0.35);
-    lo -= uStorm * 0.7 * wv; lo2 -= uStorm * 0.7 * wv;
-    hi += uStorm * 0.6 * wv; hi2 += uStorm * 0.6 * wv;
+    lo -= uStorm * 0.7 * wv; hi += uStorm * 0.6 * wv;
   }
   float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, cv) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
-  float hgt = smoothstep(lo, lo2, p.y) * smoothstep(hi, hi2, p.y);
-  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 6.0, lod);
-  return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
+  // Small cells in rolls: the cell map is stretched across the wind.
+  float cell = cn(vec3(w.x, 1.7, w.y * 1.6), 3.0, lod).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  float top = lo - 0.05 + (hi - lo) * sqrt(loc);
+  float sh = min(top - p.y, (p.y - lo) * 2.0);
+  float A = 0.06 + 0.14 * loc;
+  if (sh < -A * 0.55) return 0.0;
+  vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, p.y * 1.2 - uTime * 0.01, w.x * 0.6 + w.y * 0.8) + 5.3, 0.9, lod);
+  float fb = sh + A * (m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48);
+  gMidSh = sh; gMidA = A; gMidFb = fb;
+  return smoothstep(0.0, 0.05 + 0.05 * lod, fb);
 }
 vec4 midLayer(vec3 d) {
-  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.1 + uStorm * 0.6);
+  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.25 + uStorm * 0.6);
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   const int N = 12;
@@ -828,11 +838,14 @@ vec4 midLayer(vec3 d) {
     if (t > t1) break;
     vec2 w = uCam + d.xz * t;
     vec3 p = vec3(w.x, heightAt(d, t), w.y);
-    float dn = midDens(p, lodAt(t, 6.0) + 0.5);
+    float dn = midDens(p, lodAt(t, 3.0));
     if (dn > 0.002) {
+      float mSh = gMidSh, mA = gMidA, mFb = gMidFb;
       // Thin cloud: one tap toward the light is enough.
-      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 6.0) + 1.5) * 0.3);
-      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03;
+      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 3.0) + 1.0) * 0.3);
+      // Lump crowns catch the sky; the folds between them do not.
+      float open = exp(-6.0 * max(mFb, 0.0)) * clamp(0.7 - 1.4 * mSh / max(mA, 0.03), 0.15, 1.2);
+      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03 * (0.35 + 0.9 * open);
       if (uStorm > 0.0) S += stormGlow(vec3(0.0, 1.0, 0.0)) * 0.6 * uStorm;
       float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
       col += Tc * S * a;
