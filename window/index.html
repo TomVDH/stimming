@@ -869,7 +869,8 @@ function stepBreath(dt) {
   if (close !== breath.shown) {
     breath.shown = close;
     const el = document.querySelector('.s2-chip[aria-keyshortcuts="B"]');
-    if (el) Object.assign(el.style, { transition: 'opacity 0.3s', opacity: close ? '1' : '0', pointerEvents: close ? '' : 'none' });
+    // A hidden Breathe takes no room, so the other chips close up.
+    if (el) el.style.display = close ? '' : 'none';
     const h = ui.action('breathe');
     if (h) h.disabled = !close;
   }
@@ -915,6 +916,7 @@ function wake() { if (visible && ready && !broken && !raf) { last = 0; raf = req
 // gw: vertical gust in m/s, up positive. gl: sideways gust.
 // Each is a slow swell (2 s) plus a fast chop (0.35 s), as real air turbulence has.
 // vz: the plane's own climb rate, which follows the gust about a second late.
+const rough = { level: 0, until: -1 };
 const turb = { x: 0, y: 0, vx: 0, vy: 0, on: false, until: 0, level: 0, a: [0, 0, 0, 0], gw: 0, gl: 0, vz: 0, vl: 0 };
 // A standard normal sample.
 const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
@@ -927,11 +929,16 @@ function stepTurb(dt) {
   // Inside a thick fog bank the air is rough whatever the storm.
   // The dense core is the roughest air of all, rougher than a full storm.
   const inFog = reduce ? 0 : smooth(0.2, 0.8, fog.level) * 0.9 + smooth(0.75, 1, fog.level) * 0.5;
-  turb.level += (Math.max(turb.on ? s : 0, inFog) - turb.level) * Math.min(1, dt / 1.5);
+  // Rough air after Cozy quiet flight eases in over 2 s and out over 6 s.
+  rough.level += ((t < rough.until && !reduce ? 1 : 0) - rough.level) * Math.min(1, dt / (t < rough.until ? 2 : 6));
+  turb.level += (Math.max(turb.on ? s : 0, inFog, rough.level) - turb.level) * Math.min(1, dt / 1.5);
   // Gust strength: about 3.5 m/s at full, moderate turbulence.
-  const sig = 3.5 * turb.level, h = Math.min(dt, 0.05);
+  const sig = 3.5 * turb.level * (1 + 0.7 * rough.level), h = Math.min(dt, 0.05);
+  // Rough air chops faster: every band's time shortens.
+  const fast = 1 + 2 * rough.level;
   // Four noise bands: slow and fast, vertical and sideways.
   [[2.0, 1], [0.35, 0.5], [2.4, 0.4], [0.4, 0.2]].forEach(([tau, k], i) => {
+    tau /= fast;
     turb.a[i] += -turb.a[i] / tau * h + sig * k * Math.sqrt(2 * h / tau) * randn();
   });
   turb.gw = turb.a[0] + turb.a[1];
@@ -956,6 +963,17 @@ function stormKick(v) {
 }
 // The slider sets a target; the weather builds fast and calms slowly.
 let stormTarget = opts.storm;
+// Cozy quiet flight is a joke: it throws the flight into its worst weather.
+// Full storm, the thick fog bank, and 40 s of fast, hard turbulence.
+function cozy() {
+  stormTarget = 1;
+  save('storm', 1);
+  ui.slider?.set(1);
+  fog.ep = { age: 0, rise: 3, hold: 30, fall: 7, peak: 1 };
+  rough.until = t + 40;
+  stormKick(1);
+  wake();
+}
 // The wing light switches on at once and dies in a blink.
 const wlight = { on: false, level: 0 };
 function step(dt) {
@@ -1875,6 +1893,7 @@ const ui = initPage({
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
       { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
+      { verb: 'cozy', label: 'Cozy quiet flight', key: 'Q', onPress: cozy },
       { verb: 'breathe', label: 'Breathe', key: 'B', hold: true, onDown: () => { breath.out = true; wake(); }, onUp: () => { breath.out = false; } }],
     settings: [
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
