@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: low
 created_at: 2026-11-04T12:00:00Z
-updated_at: 2026-11-10T17:20:31Z
+updated_at: 2026-11-10T20:41:39Z
 ---
 
 Make toys open faster from the menu. Shelved by Tom on 2026-11-04 in favour of the toy builds.
@@ -40,6 +40,7 @@ Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. 
 - [x] Trails, Wind map: parallel shader compile
 - [x] Launch and Frietkot use the stage contract
 - [x] Railgun, Train ride, Foghorn use the stage contract
+- [x] Railgun re-checked after PR 40: marks in order, warm frame holds
 - [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
 - [ ] Elective offline cache: service worker behind a "Keep offline" switch
 

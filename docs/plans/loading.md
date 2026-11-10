@@ -173,6 +173,9 @@ Per-toy work beyond the recipe:
 - Launch and Frietkot: recipe only. First frame stays near 1.3 s and the intro lift near 5.0 s in the harness, before and after.
   The jsDelivr lookup sets both numbers, so the preloads show no gain on a direct cold visit.
 - Railgun, Train ride, Foghorn: recipe only. Foghorn already used `pageReady`; it gains the `libs` mark and the full preload list.
+- Railgun warm frame (PR 40): every hidden mesh compiles and draws once before `first-frame`.
+  It costs one task of about 185 ms behind the intro; the intro lifts at the same time as before.
+  Five harness runs of two shots each: no long task at a shot; one 200 ms frame gap in one first charge.
 
 Open:
 
