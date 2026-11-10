@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-08T10:45:59Z
+updated_at: 2026-11-10T08:04:36Z
 parent: stimming-w1nd
 ---
 
@@ -30,3 +30,5 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 - Tom asked for a larger, Dreamliner-like window: the visible glass is now about 27 by 47 cm, and the eye sits 40 cm from the wall.
 - Tom swapped the pull-down shade for Dreamliner-style glass dimming (five levels; the tint spreads in from the rim). The last shade build is commit 7fc2126: restore `window/index.html` and `window/shader.js` from it to go back.
 - Storm now starts at zero. The eye sits 33 cm from the wall, so the glass fills most of the frame height.
+
+Round 6 (Tom: the reveal looked like a camera obscura; plastic is matte and textured): the reveal, gasket and wall no longer sample a mirrored image of the outside. Each face sums a 4 by 4 grid of patches on the skin opening (radiance times form factor). The sun or moon lays a sharp patch in the opening's shape; the wing and towers block it. The lit patch bounces onto the other faces and the wall. Dimmed glass tints all this light. Fine pebble grain (about 0.7 mm) tilts the normal; it fades with pixel size. The sheen is a low GGX gloss, roughness 0.55.

@@ -1919,20 +1919,85 @@ float rainStreaks(vec2 px) {
   }
   return s;
 }
-// Light through the opening, as it lands on the far side: sample the soft outside at q.
+// The soft outside along cabin direction d.
+// The eye sees d where d crosses the skin plane; that point stays inside the opening.
+vec3 envDir(vec3 d) {
+  vec2 q = uEye.xy + d.xy * ((Z_OUT - uEye.z) / max(d.z, 1e-3));
+  q /= max(1.0, length(q / (SKIN * 0.8)));
+  vec3 P = vec3(q, Z_OUT) - uEye;
+  vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+  // The clamp keeps the sun's bloom from counting twice with the direct patch.
+  return min(texture(uEnv, sp / uRes).rgb, vec3(0.6));
+}
+// The soft outside as the eye sees it through point q of the opening.
 vec3 envAt(vec2 q) {
   vec3 P = vec3(q, Z_OUT) - uEye;
   vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
-  return texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb;
+  return min(texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb, vec3(0.6));
+}
+const float SKIN_A = 4.0 * SKIN.x * SKIN.y - (4.0 - PI) * RSK * RSK;
+// Diffuse light at cabin point P, facing n, from the whole skin opening.
+// It sums an n by n grid of patches: radiance times form factor.
+// Each patch glows with the light the eye sees there, so nothing projects.
+vec3 irr(vec3 P, vec3 n, int g) {
+  vec3 s = vec3(0.0);
+  float fg = float(g);
+  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {
+    if (i >= g || j >= g) continue;
+    vec2 q = ((vec2(i, j) + 0.5) / fg * 2.0 - 1.0) * SKIN * 0.8;
+    vec3 v = vec3(q, Z_OUT) - P;
+    float r2 = dot(v, v);
+    vec3 d = v * inversesqrt(r2);
+    float w = max(dot(n, d), 0.0) * d.z / r2;
+    if (w > 0.0) s += envAt(q) * w;
+  }
+  return s * SKIN_A / (fg * fg * PI);
 }
 // The sun in the cabin frame: the bank turned back out.
 vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
 // How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
+// The penumbra grows with the distance to the opening and the disc's size.
 float sunThrough(vec3 P) {
   vec3 L = sunCabin();
-  if (L.z <= 0.05) return 0.0;
-  vec2 q = P.xy + L.xy * (Z_OUT - P.z) / L.z;
-  return smoothstep(0.01, -0.01, sdBox(q, SKIN, RSK));
+  if (L.z <= 0.02) return 0.0;
+  float t = (Z_OUT - P.z) / L.z;
+  vec2 q = P.xy + L.xy * t;
+  float pw = 0.0005 + t * max(uSunR, 0.0047);
+  return smoothstep(pw, -pw, sdBox(q, SKIN, RSK));
+}
+// The open sky at the sun's place in the view: wing, towers and cloud block it.
+float sunOpen() {
+  vec3 L = sunCabin();
+  if (dot(L, uF) <= 0.0) return 1.0;
+  vec2 sp = uRes * 0.5 + vec2(dot(L, uR), dot(L, uU)) / dot(L, uF) * uFocal;
+  if (any(lessThan(sp, vec2(0.0))) || any(greaterThan(sp, uRes))) return 1.0;
+  // Only a sun seen through the pane says anything; elsewhere it counts as open.
+  vec3 P = vec3(uEye.xy + L.xy * ((Z_OUT - uEye.z) / max(L.z, 1e-3)), Z_OUT);
+  if (sdBox(P.xy, SKIN, RSK) > -0.01) return 1.0;
+  return clamp(texture(uOut, sp / uRes).a, 0.0, 1.0);
+}
+// The glass dims all light that comes in: the mean of edge and core tint.
+vec3 dimT() { return exp(-max(mix(uDimE, uDimC, 0.6), 0.0) * vec3(4.6, 3.3, 2.2)); }
+// Fine pebble grain of the moulded plastic, about 0.7 mm across.
+float grainH(vec2 p) { return vnoise(p * 1400.0) * 0.65 + vnoise(p * 3100.0 + 7.1) * 0.35; }
+// The grain tilts normal n on a face with tangents t1 and t2.
+// fp is the pixel's footprint in grains; the grain fades out above one.
+vec3 grainN(vec3 n, vec2 uv, vec3 t1, vec3 t2, float fp, float amp) {
+  amp *= 1.0 - smoothstep(0.35, 1.1, fp);
+  if (amp <= 0.0) return n;
+  const float e = 0.00012;
+  float h = grainH(uv);
+  vec2 g = vec2(grainH(uv + vec2(e, 0.0)) - h, grainH(uv + vec2(0.0, e)) - h) / e;
+  return normalize(n - amp * 0.00012 * (g.x * t1 + g.y * t2));
+}
+// Low-gloss sheen of a sanded plastic, from one light: GGX, roughness 0.55.
+float sheen(vec3 n, vec3 v, vec3 l) {
+  vec3 h = normalize(v + l);
+  float nh = max(dot(n, h), 0.0), nl = max(dot(n, l), 0.0), nv = max(dot(n, v), 0.05);
+  const float a2 = 0.3025 * 0.3025;
+  float dd = nh * nh * (a2 - 1.0) + 1.0;
+  float F = 0.04 + 0.96 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+  return a2 / (PI * dd * dd) * F * nl / (4.0 * max(nl, nv));
 }
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
@@ -2080,17 +2145,31 @@ void main() {
 
   vec2 p0 = da.z > 0.0 ? at(da, 0.0) : vec2(9.0);
   float sOut = sdBox(p0, OUTB, ROUT);
-  // Wall: curved plastic panels, lit from above and by the window.
+  // Outside light, through the dimmable glass, for the bezel, gasket and wall.
+  vec3 Tdim = dimT(), Ls = sunCabin(), V = -da;
+  vec3 sunE = uSunC * 0.3 * sunOpen() * Tdim;
+  float slope = (OUTB.x - INB.x) / DEPTH;
+  // Fake GI: the lit reveal sends light back to its other faces and the wall.
+  vec3 bounce = vec3(0.0);
+  if (uEnvOn > 0.5 && sOut < 0.2) {
+    float pat = 0.0;
+    vec2 mid = mix(OUTB, INB, 0.5);
+    for (int i = 0; i < 8; i++) {
+      vec2 cs = vec2(cos(float(i) * PI * 0.25), sin(float(i) * PI * 0.25));
+      pat += sunThrough(vec3(cs * mid, DEPTH * 0.5)) * max(dot(normalize(vec3(-cs, -slope)), Ls), 0.0);
+    }
+    bounce = alb * (irr(vec3(0.0), vec3(0.0, 0.0, 1.0), 2) * Tdim * 0.5 + sunE * pat / 8.0);
+  }
+  // Wall: matte plastic panels with a fine grain, lit from above.
   float wy = p0.y;
-  vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * (0.85 + 0.15 * vnoise(p0 * 900.0));
+  float fpW = length(vec3(p0, 0.0) - uEye) / uFocal / max(abs(da.z), 0.15) * 1400.0;
+  vec3 nW = grainN(vec3(0.0, 0.0, -1.0), p0, vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), fpW, 0.8);
+  float gW = clamp(dot(nW, Lc) / max(-Lc.z, 0.05), 0.6, 1.4);
+  vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * mix(1.0, gW, 0.5);
   // A seam between two wall panels gives the plane its slant.
   wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.5));
-  vec3 wallL = outGlow * 0.8;
-  if (uEnvOn > 0.5) {
-    // The wall sits beside the opening, not across it: it gets only a weak, broad spill.
-    wallL = mix(wallL, envAt(vec2(0.0)) * 0.25 + outGlow * 0.4, exp(-max(sOut, 0.0) / 0.05));
-  }
-  wall += alb * wallL * exp(-max(sOut, 0.0) / 0.07);
+  // The wall faces away from the glass: only the reveal's bounce reaches it.
+  wall += alb * (outGlow * 0.5 + bounce * 0.6) * exp(-max(sOut, 0.0) / 0.06);
   // A soft shadow rings the rim of the recess.
   wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
   // The rim rolls over into the wall; its outward face catches the light from above.
@@ -2124,24 +2203,40 @@ void main() {
       float k = hit / DEPTH;
       vec2 e = vec2(0.002, 0.0);
       vec2 g2 = normalize(vec2(sdRecess(ph + e.xy, hit) - sdRecess(ph - e.xy, hit), sdRecess(ph + e.yx, hit) - sdRecess(ph - e.yx, hit)) + 1e-6);
-      float slope = (OUTB.x - INB.x) / DEPTH;
       vec3 n = normalize(vec3(-g2, -slope));
-      float diff = max(dot(n, Lc), 0.0);
-      // Sky light through the glass falls on the sill and lower walls.
-      float sky = (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
-      // The light comes through the stretch of glass across the hole from this spot.
-      vec3 envL = outGlow * 1.6;
+      vec3 P = vec3(ph, hit);
+      // Triplanar grain: sill and head use x and z; the sides use y and z.
+      bool horiz = abs(n.y) > abs(n.x);
+      vec2 uv = horiz ? P.xz : P.yz;
+      vec3 t1 = horiz ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0), t2 = vec3(0.0, 0.0, 1.0);
+      float fp = length(P - uEye) / uFocal / max(abs(dot(n, da)), 0.15) * 1400.0;
+      vec3 nb = grainN(n, uv, t1, t2, fp, 1.0);
+      float diff = max(dot(nb, Lc), 0.0);
+      // Without the soft outside, the sill takes a plain glow.
+      vec3 envL = outGlow * 1.6 * (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
+      vec3 spec = vec3(0.0);
       if (uEnvOn > 0.5) {
-        // Light crosses the opening in straight lines: this wall sees the far side of the glass.
-        // So the sill catches the sky, and the head of the tunnel the dimmer ground.
-        float reach = (0.45 + 0.55 * max(-g2.y, 0.0)) * (0.3 + 0.7 * k);
-        envL = (envAt(-ph * 0.55) * 1.7 + outGlow * 0.5) * reach;
-        // The sun or moon lays a patch on the wall that faces it, cut by the opening.
-        vec3 Ls = sunCabin();
-        envL += uSunC * 0.02 * max(dot(n, Ls), 0.0) * sunThrough(vec3(ph, hit));
-        sky = 1.0;
+        // Each face takes the light of all the opening it can see.
+        // The sill sees sky, the head sees ground and deck, the depth sets how much.
+        envL = irr(P, n, 4) * Tdim * 9.0 + outGlow * 0.4 * k;
+        // The sun or moon lays a sharp patch in the opening's own shape.
+        float sv = sunThrough(P);
+        envL += sunE * max(dot(nb, Ls), 0.0) * sv;
+        // The lit faces glow back onto the rest.
+        envL += bounce * (1.0 - 0.6 * sv);
+        // The grain breaks the sun's sheen into a soft, low gloss.
+        spec = sunE * sv * sheen(nb, V, Ls) * 0.5;
+        // At grazing angles the face mirrors the bright opening, broad and dim.
+        vec3 Rr = reflect(da, nb);
+        if (Rr.z > 0.0) {
+          float tr = (Z_OUT - P.z) / Rr.z;
+          float w = 0.01 + tr * 0.5;
+          float m = smoothstep(w, -w, sdBox(P.xy + Rr.xy * tr, SKIN, RSK));
+          float F = 0.04 + 0.96 * pow(1.0 - max(dot(nb, V), 0.0), 5.0);
+          spec += envDir(Rr) * Tdim * m * F * 0.08;
+        }
       }
-      inner = alb * (cabin * (0.25 + 1.3 * diff) + envL * sky);
+      inner = alb * (cabin * (0.25 + 1.3 * diff) + envL) + spec;
       // The rolled lip at the rim catches the cabin light.
       inner += alb * cabin * 1.2 * smoothstep(0.0, 0.003, hit) * smoothstep(0.01, 0.004, hit) * (0.3 + diff);
       // The corners and the joint to the pane sit in soft shadow.
@@ -2188,8 +2283,9 @@ void main() {
         float gk = clamp(sSk / 0.03, 0.0, 1.0);
         vec3 gasket = alb * 0.4 * (cabin * 0.5 + outGlow * (1.5 - gk));
         if (uEnvOn > 0.5) {
-          // The gasket faces into the opening: it takes the light from across it.
-          gasket += alb * envAt(-pO * 0.55) * 0.5 * (1.0 - 0.7 * gk);
+          // The rubber faces in toward the opening and sees it at a grazing angle.
+          vec3 nG = normalize(vec3(-normalize(pO + 1e-6), -0.3));
+          gasket += alb * irr(vec3(pO, Z_IN), nG, 2) * Tdim * 4.0 * (1.0 - 0.7 * gk);
         }
         // The inner pane's edge catches a thin line of light.
         gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));

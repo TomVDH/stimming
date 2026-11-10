@@ -50,7 +50,7 @@ function loft(sections) {
   return g;
 }
 
-export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
+export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS }) {
 
   // Planform: leading and trailing edge x at span z.
   const edge = (z, col) => {
@@ -98,8 +98,10 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   };
   const flap = (s0, z0, z1) => loft(span(z0, z1).map(z => flapSection(s0, z)));
 
-  // Grey gloss paint with a clear coat.
-  const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.35, 0.37), roughness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.14 });
+  // Grey satin paint: matte when dry, a glossy film of water in rain.
+  const DRY = { roughness: 0.66, clearcoat: 0.1, clearcoatRoughness: 0.5 };
+  const WET = { roughness: 0.38, clearcoat: 1.0, clearcoatRoughness: 0.06 };
+  const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.35, 0.37), ...DRY });
   const flapPaint = paint.clone(); flapPaint.color.setRGB(0.3, 0.31, 0.33);
   const dark = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.6, metalness: 0.4 });
   const metal = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.7, 0.7, 0.72), roughness: 0.22, metalness: 1 });
@@ -153,13 +155,13 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   add(plate(SPOIL, LIP, Z0, 1.975));
   add(plate(SPOIL, LIP, 17.425, 23.3));
 
-  // The winglet: a thin foil that rises and sweeps back.
-  const [l0, l1, l2, l3] = LET;
-  // The root starts 9.5 cm down, inside the tip, so it never floats on the skin.
-  add(loft(Array.from({ length: 8 }, (_, i) => {
-    const f = i === 0 ? -0.045 : (i - 1) / 6, le = V(...l0).lerp(V(...l1), f), te = V(...l3).lerp(V(...l2), f);
-    const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
-    const pt = (s, side) => le.clone().lerp(te, s).add(V(0, 0, side * 0.09 * naca(s) * le.distanceTo(te)));
+  // The winglet: a blended curve out of the tip, then a swept, tapered blade.
+  // Its root section starts inside the wing tip, so no seam shows.
+  const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
+  add(loft(Array.from({ length: 16 }, (_, i) => {
+    const w = WINGLET(i / 15);
+    const le = V(w.le, w.y, w.z), te = V(w.le - w.c, w.y, w.z), nrm = V(0, w.ny, w.nz);
+    const pt = (s, side) => le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
   })));
 
@@ -217,7 +219,7 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   scene.add(strobeL, navL);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1 };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -250,8 +252,12 @@ export function createWing3({ renderer, ST, flex, LET, NAC, FAIRS }) {
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
+      // The skin wets fast in rain and dries over about half a minute.
+      const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
+      mo.wet += (wet - mo.wet) * Math.min(1, dtw * (wet > mo.wet ? 0.5 : 0.08));
+      for (const m of [paint, flapPaint]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
       air.rotation.x = bank;
       // The roll rate drives the controls; a low-pass keeps them smooth.
       const dt = mo.t === null ? 0 : t - mo.t;
