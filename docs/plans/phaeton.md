@@ -2,97 +2,108 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** A rail gun on a salt flat at dusk. Hold to charge, release to fire. The slug goes through a row of mixed targets in bullet time, then everything bursts at once in real time.
+**Goal:** A rail gun diorama, seen from the side. You load it by hand: the rack, the crane, the breech lever. Hold to charge, release to fire. The slug goes sideways through a row of mixed targets in bullet time, then everything bursts at once in real time.
 
-**Architecture:** three.js 0.170 on one perspective camera. A sim clock with a time scale runs the shot, so bullet time is one number. Targets are small meshes; shards and chunks are instanced meshes; spray and dust are points.
+**Architecture:** three.js 0.170 on one perspective camera with a long lens. A sim clock with a time scale runs the shot, so bullet time is one number. GSAP timelines run the loading machines. Targets are small meshes; debris is instanced meshes; steam, dust and spray are soft points.
 
-**Tech stack:** three.js 0.170 (WebGLRenderer, InstancedMesh, Points), Tone.js through `kit.tone()`, simplex-noise for the salt crust.
+**Tech stack:** three.js 0.170 (WebGLRenderer, InstancedMesh, Points, MeshPhysicalMaterial, RoundedBoxGeometry), GSAP 3.13, Tone.js through `kit.tone()`.
 
-**Direction:** Tom, 2026-11-10: "Through everything", a mixed row that refills, charge sets power, salt flat at dusk. Tom named it Phaeton. Bean `stimming-xh8y`. The Lab toy Railgun (`railgun/`) is a different toy.
+**Direction:** Tom, 2026-11-10: "Through everything", a mixed row that refills, charge sets power. Then: a high-quality side diorama, a fictional loading process with diegetic parts, firing sideways onto the objects; other modes later. Hands-on loading steps; a stage on a plinth. Tom named it Phaeton. Bean `stimming-xh8y`. The Lab toy Railgun (`railgun/`) is a different toy.
 
 | | |
 |---|---|
-| Tier | 4, three.js: a moving perspective camera through several lit objects |
-| Size, estimate | M · $20 to $35 |
-| Kits | Burst particles (K6) from `fireworks/index.html` for sparks, in Task 3 |
+| Tier | 4, three.js: a lit diorama with moving machines and a tracking camera |
+| Size, estimate | M to L · $30 to $50 |
+| Kits | Burst particles (K6) from `fireworks/index.html` for sparks, in Task 4 |
 
 ## The shot
 
-A low camera behind the breech, a little to the right, looks down the rails.
-A white salt flat with a cracked hexagon crust runs to a flat horizon. The sky is low orange under deep blue. The sun is just down, so shadows are long and soft.
-Two long copper rails sit on a dark armature. A capacitor box sits at the breech.
-Six targets stand on thin stands down the lane, 8 to 48 m out. A steel backstop closes the lane at 60 m.
+A slab of salt flat, cut clean like a museum diorama, sits on a dark plinth and floats in a dusk sky. The camera looks at its long side with a long lens, tilted down 15°.
+The cut faces show strata: white crust, grey mud, brown clay. The top shows the hexagon crust. A low sun from the front left throws long shadows to the right.
+On the left stands the gun: a slug rack, a gantry crane, a breech with a sliding block and a red-knobbed lever, a barrel with copper rails and ceramic collars on two trestles. Behind it stand six capacitors and a panel with a dial and three lamps.
+Six targets stand down the lane on thin stands. A steel backstop closes the lane on the right.
 
-## Hero moments
+## Loading (diegetic)
 
-1. **The charge.** The rails warm from copper to orange. Blue arcs crawl between them. The whine climbs.
-2. **The flash.** On release, a plasma flash at the muzzle lights the salt and the targets for a few frames.
-3. **The ride.** Time drops to about 1/40. The camera rides beside the slug through each target it reaches. Each target cracks, bulges and starts to burst, in slow motion.
-4. **The snap.** Time snaps back. Everything bursts at once. A shock cone kicks up salt dust along the lane. The boom rolls out over the flat.
-
-## Loop
-
-- **Hold (pointer anywhere or Space):** charge 0 to 100 % in 2.5 s.
-- **Release:** fire. A tap under 0.15 s fires nothing.
-- **Power:** the slug carries energy `E = charge`. Each target takes its resistance from E. At E ≤ 0 the slug stops in that target.
-- **Ride length:** from the muzzle to the stop point, so a bigger shot gets a longer ride.
-- **Refill:** 4 s after the snap, a new mix of six drops onto the stands.
-- **Untouched:** the scene holds still; the loop sleeps.
-
-| Target | Resistance | Hit |
+| Step | You | The machine |
 |---|---|---|
-| Glass pane | 0.05 | A star crack, then sharp shards that catch the sky |
-| Ice block | 0.12 | A white crush cone, then clear chunks and frost dust |
-| Water tank | 0.15 | A clear tank bulges, splits, and throws a sheet of spray |
-| Melon | 0.08 | Bursts outward in red pulp and green rind |
-| Concrete block | 0.25 | A grey puff and heavy chunks that fall short |
-| Steel plate | 0.30 | Petals open round a glowing hole; sparks spray on the far side |
-| Backstop | stops all | A deep dent that glows and cools |
+| 1. Load | Click the rack, or L | The crane runs to the rack, the magnet takes the top slug, carries it to the tray and sets it down. The LOAD lamp turns green. |
+| 2. Lock | Click the lever, or K | The lever swings, the breech block slides shut over the slug. The LOCK lamp turns green. |
+| 3. Charge | Hold anywhere, or Space | The capacitors light one by one, the dial needle climbs, the rails glow, arcs crawl on the barrel. |
+| 4. Fire | Release | The slug leaves the muzzle with a flash and goes down the lane. |
+| 5. Vent | (by itself) | The block slides open, the lever returns, steam rises from the breech. The gun is empty again. |
+
+- The amber lamp asks for the next step. A step out of order blinks its lamp red.
+- The part that takes the next step glows under the pointer.
+- The rack holds five slugs; it restocks after the last one.
+
+## The shot and the row
+
+- **Power:** the slug carries energy `E = 0.15 + 1.25 · charge`. Each target takes its resistance from E. At E < resistance the slug stops and knocks that target off its stand.
+- **Bullet time:** time drops to the Slow-mo setting (1/8 to 1/100). The track camera runs beside the slug, close in. At the stop point it holds 0.35 s, then time snaps back and the camera pulls out.
+- **Debris:** chunks fly down the lane. Those that leave the slab fall off its edge into the dusk.
+- **Refill:** 4 s after the snap, a new mix of six drops onto the stands. S shuffles it.
+
+| Target | Resistance | Hit (Task 2) |
+|---|---|---|
+| Glass pane | 0.05 | Sharp shards that catch the sky; glitter |
+| Ice block | 0.12 | Clear chunks and a frost cloud |
+| Water tank | 0.15 | The shell splits and throws a sheet of spray; wet stains |
+| Melon | 0.08 | Rind chunks, red pulp, splats |
+| Concrete block | 0.25 | Heavy chunks and a grey dust puff |
+| Steel plate | 0.30 | Petals open round a glowing hole |
+| Backstop | stops all | A dent that glows and cools |
 
 ## Bar (Bar v2)
 
 | Slot | Content |
 |---|---|
-| Top left | none |
-| Bottom left | Fire (held, key `Space`), Shuffle (die icon, key `S`) |
-| Bottom right | Slow-mo: the bullet-time scale |
-| Bottom centre | Keys: `[HOLD] charge` · `[RELEASE] fire` |
-| Settings | Camera: Ride, Fixed · Dust (toggle) · Quality (shared) |
-| Settings footer | Reset: a fresh row and an unmarked backstop |
+| Top left | none (modes come later) |
+| Bottom left | Load (L), Lock (K), Fire (held, Space) |
+| Bottom right | Slow-mo |
+| Bottom centre | Keys: `[CLICK] rack, lever` · `[HOLD] charge` · `[RELEASE] fire` · `[S] shuffle` |
+| Settings | Camera: Track, Fixed · Dust (toggle) · Quality (shared) |
+| Settings footer | Reset: a fresh row and a clean backstop |
 
-## Sound
+## Sound (Task 5)
 
-- **Charge:** a 50 Hz capacitor hum, a rising whine, arc crackle.
-- **Fire:** a supersonic crack and a deep thump, then a late echo off the flat.
-- **Hits:** one per material: tinkle, crunch, slap, splat, thud, clang. In bullet time they play pitched down.
+- **Machines:** crane motor whine, magnet clunk, breech slide and lock, lever ratchet, steam hiss.
+- **Charge:** a 50 Hz hum per capacitor, a rising whine, arc crackle.
+- **Fire:** a supersonic crack and a deep thump, then a late echo.
+- **Hits:** one per material; pitched down in bullet time.
 - Muted by default.
 
 ## Reduced motion and idle
 
-- **Reduced motion:** no ride; the camera stays fixed. No flash. Half the debris.
-- **Idle:** the loop sleeps when the charge is zero and no debris moves.
+- **Reduced motion:** no track camera; no flash; half the debris.
+- **Idle:** the loop sleeps when no machine moves, the charge is zero and no debris moves.
 
 ## Tasks
 
-### Task 1: Blockout (checkpoint)
+### Task 1: Diorama blockout (checkpoint)
 
-- [ ] `phaeton/index.html`: salt flat, sky, rails, six box targets, backstop.
-- [ ] Hold to charge (rail glow), release to fire. The slug flies; boxes pop in bullet time and snap. Refill.
-- [ ] Bar v2 spec with Fire, Shuffle, Slow-mo and the Settings rows.
-- [ ] `toys.json` entry and Lab menu entry. Stills at 1280 and 375 px. Checkpoint with Tom.
+- [x] Slab with strata on a plinth, dusk sky, side camera that fits the frame.
+- [x] Gun, rack, crane, breech, lever, capacitors, panel, lamps.
+- [x] Load, lock, charge, fire, vent; refusals blink red; pointer picks the rack and lever.
+- [x] Sideways shot, track camera, box debris that falls off the slab, steam.
+- [x] `toys.json` entry and Lab menu entry. Checkpoint with Tom.
 
 ### Task 2: Targets
 
-- [ ] Real meshes and a hit for each material: shards, chunks, spray, pulp, petals.
+- [ ] A hit for each material: shards, chunks, spray, pulp, petals, dust. Stains on the salt.
 
-### Task 3: Light and sparks
+### Task 3: Modes
 
-- [ ] Arcs, muzzle flash light, steel sparks (K6), shock cone and salt dust.
+- [ ] Tom names the other modes. One choice group, top left.
 
-### Task 4: Sound
+### Task 4: Light and sparks
 
-- [ ] Charge, fire, hits and echo through `kit.tone()`.
+- [ ] Muzzle plasma, steel sparks (K6), shock ring in the salt dust.
 
-### Task 5: Finish and QA
+### Task 5: Sound
+
+- [ ] Machines, charge, fire, hits and echo through `kit.tone()`.
+
+### Task 6: Finish and QA
 
 - [ ] Phones, reduced motion, idle sleep, fps ladder. Tick the bean.

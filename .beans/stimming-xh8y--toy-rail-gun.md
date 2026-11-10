@@ -23,6 +23,10 @@ Tier 4, three.js 0.170. Plan: `docs/plans/phaeton.md`.
 
 Reopened 2026-11-10. Tom saw the Railgun clash and named this toy Phaeton: a separate Lab toy, own folder.
 
-## Next
+## Diorama pass (Tom, 2026-11-10)
 
-Task 2 of the plan: real hits per material. Waits on Tom's verdict on the blockout.
+Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane, lever, capacitors, lamps), firing sideways. Stage on a plinth. Other modes later.
+
+- [x] Diorama blockout: slab, gun machines, load, lock, charge, fire, vent, track camera
+- [ ] Task 2: a hit per material
+- [ ] Task 3: modes (Tom names them)
