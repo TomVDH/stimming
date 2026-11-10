@@ -29,4 +29,5 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
 
 - [x] Diorama blockout: slab, gun machines, load, lock, charge, fire, vent, track camera
 - [x] Task 2: a hit per material
-- [ ] Task 3: modes (Tom names them)
+- [x] Task 3: modes: Range, Corridor, Aquarium, Depth
+- [ ] Graphics pass: from blockout to finished look

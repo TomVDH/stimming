@@ -95,7 +95,11 @@ Six targets stand down the lane on thin stands. A steel backstop closes the lane
 
 ### Task 3: Modes
 
-- [ ] Tom names the other modes. One choice group, top left.
+- [x] Tom picked Corridor, Aquarium and Depth (2026-11-10). Mode choice top left, keys 1 to 4, kept per viewer.
+  - Corridor: twenty glass panes, 0.68 m apart, a shard cascade.
+  - Aquarium: one 12 m water tank; water drags 0.09 per metre; bubble trail and shock rings; the tank bursts at the snap.
+  - Depth: 26 steel plates, 0.055 each, so no shot goes through; pierced plates glow; the slug stays stuck; a red flag marks the last depth, a yellow flag the best.
+  - A mode change during a shot waits for the refill.
 
 ### Task 4: Light and sparks
 

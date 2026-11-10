@@ -83,9 +83,18 @@ const onSlab = (x, z) => x > SLAB.x0 && x < SLAB.x1 && Math.abs(z) < SLAB.z;
 
 /* ---------- bar ---------- */
 let camMode = 'track', dustOn = true, slowmo = 0.35;
+const MODES = ['range', 'corridor', 'aquarium', 'depth'];
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+let mode = MODES.includes(store.get('stimming.phaeton.mode')) ? store.get('stimming.phaeton.mode') : 'range';
 // The handlers bind once the scene exists.
-const act = { load() {}, lock() {}, down() {}, up() {}, shuffle() {}, reset() {} };
+const act = { load() {}, lock() {}, down() {}, up() {}, shuffle() {}, reset() {}, mode() {} };
 const ui = initPage({ id: 'phaeton', bar: {
+  choice: { label: 'Mode', value: mode, options: [
+    { value: 'range', label: 'Range', key: '1' },
+    { value: 'corridor', label: 'Corridor', key: '2' },
+    { value: 'aquarium', label: 'Aquarium', key: '3' },
+    { value: 'depth', label: 'Depth', key: '4' },
+  ], onPick: v => act.mode(v) },
   actions: [
     { verb: 'load', key: 'L', onPress: () => act.load() },
     { verb: 'lock', key: 'K', onPress: () => act.lock() },
@@ -419,14 +428,15 @@ function addDent(y, z) {
   m.position.set(BACK_X - 0.01, y, z);
   scene.add(m);
   glows.push({ m, t: 0 });
-  if (glows.length > 24) { const d = glows.shift(); scene.remove(d.m); d.m.material.dispose(); }
+  if (glows.length > 60) { const i = glows.findIndex(d => !d.row); if (i >= 0) { const [d] = glows.splice(i, 1); scene.remove(d.m); d.m.material.dispose(); } }
 }
 function coolGlows(dt) {
   let warm = false;
   for (const d of glows) {
     d.t += dt;
     const k = Math.exp(-d.t / (d.tau ?? 1.6));
-    d.m.material.color.copy(COLD).lerp(HOT, k);
+    if (d.emissive) d.mat.emissive.copy(EM_COLD).lerp(EM_HOT, k);
+    else d.m.material.color.copy(COLD).lerp(HOT, k);
     if (k > 0.01) warm = true;
   }
   return warm;
@@ -471,7 +481,7 @@ const GEO = {
   concrete: bx(0.5, 0.8, 0.8, 0.03),
   steel: bx(0.06, 1.1, 1.1, 0.01),
 };
-function buildBody(kind) {
+function buildBody(kind, yaw) {
   const g = new THREE.Group();
   if (kind === 'water') {
     add(g, GEO.shell, shellMat, 0, 0, 0, false);
@@ -486,7 +496,7 @@ function buildBody(kind) {
     const mat = { glass: glassMat, ice: iceMat, concrete: concreteMat, steel: plateMat }[kind];
     const m = add(g, GEO[kind], mat, 0, 0, 0, kind !== 'glass');
     // Flat targets turn toward the viewer, so they never read edge-on.
-    if (kind === 'glass' || kind === 'steel') m.rotation.y = -0.75;
+    if (kind === 'glass' || kind === 'steel') m.rotation.y = yaw;
   }
   return g;
 }
@@ -499,29 +509,39 @@ const TYPES = {
   steel:    { res: 0.3, h: 1.1 },
 };
 const KINDS = Object.keys(TYPES);
+TYPES.plate = { res: 0.055, h: 1.2 };
 const standGeo = new THREE.CylinderGeometry(0.035, 0.05, 1, 8).translate(0, 0.5, 0);
 const footGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.05, 16);
 const row = [];
-function makeTarget(kind, x) {
+function makeTarget(kind, x, yaw = -0.75) {
   const T = TYPES[kind];
   const g = new THREE.Group();
   const stand = add(g, standGeo, steel, 0, 0, 0);
   stand.scale.y = BORE - T.h / 2;
   add(g, footGeo, steel, 0, 0.025, 0);
-  const body = buildBody(kind);
+  const body = buildBody(kind, yaw);
   body.position.y = BORE;
   g.add(body);
   g.position.set(x, 0, 0);
   scene.add(g);
-  return { kind, T, g, body, x, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
+  const face = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  return { kind, T, g, body, x, face, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
 }
+// Extras are mode props that go at the refill: frames, rulers, flags.
+const extras = [];
 function clearRow() {
   for (const t of row) scene.remove(t.g);
   row.length = 0;
+  for (const e of extras) scene.remove(e);
+  extras.length = 0;
+}
+function extra(o) { scene.add(o); extras.push(o); return o; }
+function buildMode(drop = true) {
+  clearRow();
+  ({ range: rangeRow, corridor: corridorRow, aquarium: tankRow, depth: depthRow })[mode](drop);
 }
 // A new mix: six kinds, at most two of the heavy ones.
-function newRow(drop = true) {
-  clearRow();
+function rangeRow(drop) {
   let heavy = 0;
   SLOTS.forEach((x, i) => {
     let k;
@@ -533,6 +553,89 @@ function newRow(drop = true) {
     t.drop = drop ? -i * 0.07 : 1;
     row.push(t);
   });
+}
+// Corridor: twenty panes close together; each breaks into fewer shards.
+function corridorRow(drop) {
+  for (let i = 0; i < 20; i++) {
+    const t = makeTarget('glass', -4.2 + i * 0.68, -0.5);
+    t.n = 30;
+    t.drop = drop ? -i * 0.03 : 1;
+    row.push(t);
+  }
+}
+// Depth: a block of steel plates in a frame, a ruler on the salt, flags.
+const DEPTH = { x0: 1.0, n: 26, pitch: 0.1 };
+const plateGeo = bx(0.06, 1.2, 1.2, 0.01);
+const rulerTex = canvasTex(2048, 64, (g, w, h) => {
+  g.fillStyle = '#e9e2d4'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#2b2620';
+  g.font = 'bold 26px Gabarito, sans-serif';
+  // One tick per centimetre of the 280 cm strip; labels every 50.
+  for (let c = 0; c <= 280; c++) {
+    const x = c / 280 * w, big = c % 50 === 0, mid = c % 10 === 0;
+    g.fillRect(x - (big ? 2 : 1), 0, big ? 4 : 2, big ? 34 : mid ? 22 : 10);
+    if (big && c > 0 && c < 280) g.fillText(String(c), x + 6, 58);
+  }
+});
+let bestDepth = Number(store.get('stimming.phaeton.best')) || 0;
+const flagGeo = new THREE.BufferGeometry();
+flagGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.62, 0, 0.26, 0.53, 0, 0, 0.44, 0], 3));
+flagGeo.computeVertexNormals();
+function flag(color) {
+  const g = new THREE.Group();
+  add(g, new THREE.CylinderGeometry(0.012, 0.012, 0.64, 6).translate(0, 0.32, 0), steel, 0, 0, 0);
+  add(g, flagGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide }), 0, 0, 0);
+  return g;
+}
+const flags = { last: flag(col(0.6, 0.2, 28)), best: flag(col(0.85, 0.16, 90)) };
+function depthRow(drop) {
+  const L = DEPTH.n * DEPTH.pitch;
+  const frame = extra(new THREE.Group());
+  add(frame, bx(L + 0.3, 0.1, 1.4, 0.02), steel, DEPTH.x0 + L / 2 - 0.05, BORE - 0.65, 0);
+  for (const x of [DEPTH.x0 - 0.15, DEPTH.x0 + L + 0.05]) for (const z of [-0.6, 0.6]) add(frame, bx(0.08, BORE - 0.7, 0.08), steel, x, (BORE - 0.7) / 2, z);
+  const ruler = add(frame, new THREE.PlaneGeometry(2.8, 0.09).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: rulerTex, roughness: 0.8 }), DEPTH.x0 + 1.4, 0.004, 0.95, false);
+  ruler.receiveShadow = true;
+  for (let i = 0; i < DEPTH.n; i++) {
+    const g = new THREE.Group();
+    const mat = plateMat.clone();
+    mat.emissive = new THREE.Color(0);
+    const body = add(g, plateGeo, mat, 0, BORE, 0);
+    g.position.x = DEPTH.x0 + i * DEPTH.pitch;
+    scene.add(g);
+    row.push({ kind: 'plate', T: TYPES.plate, g, body, x: g.position.x, state: 'stand', drop: drop ? -i * 0.02 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
+  }
+  if (bestDepth > 0) { flags.best.position.set(DEPTH.x0 + bestDepth, 0, 1.05); extra(flags.best); }
+}
+// The flags mark the last depth and the best one on the ruler.
+function depthResult(x) {
+  const d = clamp(x - DEPTH.x0, 0, 2.8);
+  flags.last.position.set(DEPTH.x0 + d, 0, 0.88);
+  extra(flags.last);
+  if (d > bestDepth) {
+    bestDepth = d;
+    store.set('stimming.phaeton.best', d.toFixed(3));
+    flags.best.position.set(DEPTH.x0 + d, 0, 1.05);
+    if (!extras.includes(flags.best)) extra(flags.best);
+  }
+}
+// Aquarium: one long glass tank of water on a low table.
+const TANK = { x0: -3.6, x1: 8.6, d: 1.1, h: 1.3, top: BORE + 0.5, burst: false };
+const tankWater = new THREE.MeshPhysicalMaterial({ color: col(0.6, 0.11, 225), roughness: 0.05, transparent: true, opacity: 0.38, depthWrite: false });
+function tankRow(drop) {
+  const L = TANK.x1 - TANK.x0, cx = (TANK.x0 + TANK.x1) / 2;
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  add(body, bx(L, TANK.h, TANK.d), shellMat, 0, 0, 0, false);
+  add(body, bx(L - 0.04, 1.14, TANK.d - 0.04), tankWater, 0, -0.07, 0, false);
+  for (const y of [-0.65, 0.65]) for (const z of [-0.55, 0.55]) add(body, bx(L, 0.05, 0.05), steel, 0, y, z);
+  for (const x of [-L / 2, L / 2]) for (const z of [-0.55, 0.55]) add(body, bx(0.05, TANK.h, 0.05), steel, x, 0, z);
+  body.position.set(cx, BORE, 0);
+  g.add(body);
+  add(g, bx(L + 0.2, 0.08, TANK.d + 0.2), paint, cx, BORE - 0.69, 0);
+  for (let x = TANK.x0; x <= TANK.x1 + 0.01; x += L / 5) for (const z of [-0.5, 0.5]) add(g, bx(0.08, BORE - 0.73, 0.08), paint, x, (BORE - 0.73) / 2, z);
+  scene.add(g);
+  TANK.burst = false;
+  row.push({ kind: 'tank', T: { res: 0, h: TANK.h }, g, body, x: TANK.x0, state: 'stand', drop: drop ? 0 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
 }
 
 /* ---------- debris ---------- */
@@ -595,7 +698,7 @@ class Bits {
 const triGeo = new THREE.BufferGeometry();
 triGeo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.4, 0, 0.5, -0.3, 0, 0.05, 0.55, 0], 3));
 triGeo.computeVertexNormals();
-const shards = new Bits(triGeo, new THREE.MeshStandardMaterial({ roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 3 }), 500);
+const shards = new Bits(triGeo, new THREE.MeshStandardMaterial({ roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 3 }), 1000);
 shards.mesh.castShadow = false;
 const ice = new Bits(new THREE.IcosahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.12, transparent: true, opacity: 0.78, flatShading: true, envMapIntensity: 1.8 }), 160);
 const rubble = new Bits(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), 400);
@@ -605,7 +708,7 @@ const rubble = new Bits(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshSt
 const puffSets = [];
 class Puffs {
   constructor(max, soft) {
-    this.max = max; this.n = 0;
+    this.max = max; this.n = 0; this.ceil = Infinity;
     const F = k => new Float32Array(max * k);
     Object.assign(this, { p: F(3), v: F(3), c: F(3), a: F(1), s: F(1), age: F(1), life: F(1), s0: F(1), s1: F(1), a0: F(1), g: F(1), drag: F(1), st: F(1) });
     const geo = new THREE.BufferGeometry();
@@ -664,6 +767,7 @@ class Puffs {
       v[o + 1] -= 9.8 * this.g[i] * h;
       v[o] *= k; v[o + 1] *= k; v[o + 2] *= k;
       p[o] += v[o] * h; p[o + 1] += v[o + 1] * h; p[o + 2] += v[o + 2] * h;
+      if (p[o + 1] > this.ceil) { p[o + 1] = this.ceil; v[o + 1] = 0; }
       if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) {
         // A drop that lands may leave a stain on the salt.
         if (this.st[i]) { stains.add(p[o], p[o + 2], this.st[i]); this.st[i] = 0; }
@@ -681,6 +785,8 @@ class Puffs {
 }
 const drops = new Puffs(6000, false);
 const dust = new Puffs(600, true);
+const bubbles = new Puffs(2500, false);
+bubbles.ceil = TANK.top;
 
 /* ---------- stains ---------- */
 // Wet patches and pulp splats lie flat on the salt until the refill.
@@ -721,6 +827,88 @@ function clearDebris() {
   for (const s of sets) s.clear();
   for (const s of puffSets) s.clear();
   stains.clear();
+  for (const r of rings) r.m.visible = false;
+}
+
+/* ---------- mode hits ---------- */
+const EM_HOT = col(0.72, 0.19, 42).multiplyScalar(2.2), EM_COLD = new THREE.Color(0);
+const stuckGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 10).rotateZ(Math.PI / 2);
+// A slug that stops stays where it stopped and cools.
+function stuck(x, y, z) {
+  const m = extra(new THREE.Mesh(stuckGeo, new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false })));
+  m.position.set(x, y, z);
+  glows.push({ m, t: 0, tau: 2.5, row: true });
+  return m;
+}
+const BUBBLE = col(0.96, 0.02, 220).multiplyScalar(1.2);
+const ringGeo = new THREE.RingGeometry(0.9, 1, 40).rotateY(Math.PI / 2);
+const rings = Array.from({ length: 16 }, () => {
+  const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: col(0.9, 0.08, 220), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  m.visible = false;
+  scene.add(m);
+  return { m, age: 0 };
+});
+let ringNext = 0, ringAt = 0, bubbleAt = 0;
+// The slug's shock leaves a ring that spreads to the tank walls.
+function stepRings(h) {
+  let on = false;
+  for (const r of rings) {
+    if (!r.m.visible) continue;
+    r.age += h;
+    const k = 1 - Math.exp(-r.age * 30), rad = 0.52 * k;
+    r.m.scale.setScalar(Math.max(rad, 0.01));
+    r.m.material.opacity = 0.7 * (1 - k);
+    if (k > 0.98) r.m.visible = false;
+    on = true;
+  }
+  return on;
+}
+// In the tank the slug trails cavitation bubbles and shock rings.
+function tankTrail(x0, x1, hy, hz) {
+  if (mode !== 'aquarium' || TANK.burst) return;
+  const a = Math.max(x0, TANK.x0), b = Math.min(x1, TANK.x1);
+  for (bubbleAt = Math.max(bubbleAt, a); bubbleAt < b; bubbleAt += 0.025) {
+    for (let i = 0; i < 3; i++) {
+      bubbles.add(bubbleAt + rnd(-0.03, 0.03), hy + rnd(-0.04, 0.04), hz + rnd(-0.04, 0.04), rnd(-0.1, 0.1), rnd(0, 0.3), rnd(-0.3, 0.3), BUBBLE,
+        { life: rnd(5, 10), s0: rnd(0.012, 0.035), s1: rnd(0.03, 0.07), a0: 0.8, g: -0.06, drag: 3 });
+    }
+  }
+  for (ringAt = Math.max(ringAt, a); ringAt < b; ringAt += 0.4) {
+    const r = rings[ringNext++ % rings.length];
+    r.age = 0;
+    r.m.visible = true;
+    r.m.position.set(ringAt, hy, hz);
+  }
+}
+function tankWall(x, e, hy, hz) {
+  for (let i = 0; i < K(16); i++) {
+    const s = rnd(0.04, 0.12);
+    shards.add(V3(x, hy + rnd(-0.1, 0.1), hz + rnd(-0.1, 0.1)), V3(rnd(-2, 2) + (x > TANK.x0 ? (0.5 + e) * rnd(3, 9) : -rnd(0, 2)), rnd(-1, 2), rnd(-2, 2)), V3(s, s, 0.01), any(C.glass), 16);
+  }
+}
+// At the snap the pressure bursts the tank: glass out both sides, water everywhere.
+function tankBurst() {
+  if (mode !== 'aquarium' || TANK.burst) return;
+  TANK.burst = true;
+  const t = row[0];
+  t.state = 'gone';
+  t.body.visible = false;
+  bubbles.clear();
+  for (const r of rings) r.m.visible = false;
+  const L = TANK.x1 - TANK.x0;
+  for (let i = 0; i < K(320); i++) {
+    const side = Math.random() < 0.5 ? -1 : 1, s = rnd(0.08, 0.3);
+    const p = V3(rnd(TANK.x0, TANK.x1), BORE + rnd(-0.6, 0.6), side * 0.55);
+    shards.add(p, V3(rnd(-1, 1.5), rnd(-0.5, 2), side * rnd(1.5, 5)), V3(s, s * rnd(0.6, 1.4), 0.01), any(C.glass), 10);
+  }
+  for (let i = 0; i < K(4200); i++) {
+    const x = rnd(TANK.x0, TANK.x1), y = BORE + rnd(-0.6, 0.48), z = rnd(-0.52, 0.52);
+    drops.add(x, y, z, rnd(-0.8, 1.6), rnd(-0.5, 2.5), z * rnd(4, 11) + rnd(-0.5, 0.5), any(C.spray),
+      { life: rnd(1.5, 3), s0: rnd(0.025, 0.06), g: 1, drag: 0.2, stain: Math.random() < 0.06 ? 1 : 0 });
+  }
+  if (dustOn) for (let i = 0; i < 30; i++) {
+    dust.add(TANK.x0 + rnd(0, L), BORE + rnd(-0.3, 0.5), rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 0.8), rnd(-2, 2), C.spray[2], { life: rnd(1.5, 2.8), s0: 0.3, s1: rnd(1, 1.6), a0: 0.25, g: -0.01, drag: 1.3 });
+  }
 }
 
 /* ---------- hits ---------- */
@@ -739,10 +927,18 @@ const C = {
 // Flat targets turn by this yaw; their local z runs along this axis.
 const YAW = -0.75, FACE = V3(Math.sin(YAW), 0, Math.cos(YAW));
 const HIT = {
+  plate(t, e, hy, hz) {
+    // Each plate the slug passes glows at its edges and cools.
+    t.state = 'pierced';
+    glows.push({ mat: t.body.material, emissive: true, t: 0, tau: 1.4, row: true });
+    for (let i = 0; i < K(5); i++) {
+      drops.add(t.x + 0.05, hy, hz, rnd(-0.5, 0.5), rnd(1, 4), rnd(-2, 2), C.hot, { life: rnd(0.3, 0.7), s0: rnd(0.012, 0.022), g: 1, drag: 0.5 });
+    }
+  },
   glass(t, e, hy, hz) {
     // Radial fracture: small fast shards near the hole, big slow ones at the rim.
-    const lz = hz / FACE.z;
-    for (let i = 0; i < K(70); i++) {
+    const FACE = t.face, lz = hz / FACE.z;
+    for (let i = 0; i < K(t.n ?? 70); i++) {
       const py = rnd(-0.7, 0.7), pz = rnd(-0.6, 0.6);
       const dy = py - (hy - BORE), dz = pz - lz, d = Math.hypot(dy, dz);
       const s = 0.05 + d * 0.25 * rnd(0.6, 1.4), out = 1.2 / (d + 0.25);
@@ -750,7 +946,7 @@ const HIT = {
       const v = V3((0.5 + e) * 12 * Math.exp(-d * 2.2) + rnd(0, 1), dy / (d || 1) * out + rnd(0, 1), dz / (d || 1) * out * FACE.z);
       shards.add(p, v, V3(s, s * rnd(0.6, 1.5), 0.01), any(C.glass), 16);
     }
-    for (let i = 0; i < K(140); i++) {
+    for (let i = 0; i < K(t.n ? 40 : 140); i++) {
       drops.add(t.x, hy, hz, (0.5 + e) * rnd(5, 18), rnd(-2, 3), rnd(-3, 3), C.glint, { life: rnd(0.8, 1.8), s0: rnd(0.012, 0.03), g: 1, drag: 0.4 });
     }
   },
@@ -826,7 +1022,7 @@ const HIT = {
   steel(t, e, hy, hz) {
     // The slug punches through and the plate stays: a hot hole, petals on the exit side.
     t.state = 'pierced';
-    const plate = t.body.children[0], lz = hz / FACE.z, ly = hy - BORE;
+    const plate = t.body.children[0], lz = hz / t.face.z, ly = hy - BORE;
     for (const side of [1, -1]) {
       const m = new THREE.Mesh(new THREE.CircleGeometry(0.05, 18).rotateY(side * Math.PI / 2), new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false }));
       m.position.set(side * 0.032, ly, lz);
@@ -943,12 +1139,20 @@ function fire() {
   let E = 0.15 + gunState.charge * 1.25;
   shot.events = [];
   shot.stopX = BACK_X;
-  for (const t of row) {
+  if (mode === 'aquarium' && !TANK.burst) {
+    // Water drags the slug per metre; the glass walls take a little each.
+    const WALL = 0.03, DRAG = 0.09, need = (TANK.x1 - TANK.x0) * DRAG;
+    E -= WALL;
+    shot.events.push({ x: TANK.x0, kind: 'wall', e: E });
+    if (E > need + WALL) { E -= need + WALL; shot.events.push({ x: TANK.x1, kind: 'wall', e: E }); }
+    else { shot.stopX = TANK.x0 + Math.max(0.3, E / DRAG); E = 0; shot.events.push({ x: shot.stopX, kind: 'sink', e: 0 }); }
+  } else for (const t of row) {
     if (t.state !== 'stand') continue;
     if (E >= t.T.res) { E -= t.T.res; shot.events.push({ x: t.x, t, kind: 'burst', e: E }); }
     else { shot.events.push({ x: t.x, t, kind: 'stop', e: 0 }); shot.stopX = t.x; E = 0; break; }
   }
   if (E > 0) shot.events.push({ x: BACK_X, kind: 'back', e: E });
+  bubbleAt = ringAt = -1e9;
   shot.aim.set(rnd(-0.1, 0.1), rnd(-0.12, 0.12));
   shot.next = 0;
   shot.x = TRAY_X;
@@ -964,8 +1168,14 @@ const aimAt = x => clamp((x - MUZZLE) / 20);
 function hitEvent(ev) {
   const hy = BORE + shot.aim.y * aimAt(ev.x), hz = shot.aim.x * aimAt(ev.x);
   if (ev.kind === 'burst') {
-    if (ev.t.kind !== 'steel') { ev.t.state = 'gone'; ev.t.body.visible = false; }
+    // Steel and plates stay standing; everything else breaks apart.
+    if (ev.t.kind !== 'steel' && ev.t.kind !== 'plate') { ev.t.state = 'gone'; ev.t.body.visible = false; }
     HIT[ev.t.kind](ev.t, ev.e, hy, hz);
+  } else if (ev.kind === 'wall') {
+    tankWall(ev.x, ev.e, hy, hz);
+  } else if (ev.kind === 'sink' || (ev.kind === 'stop' && ev.t.kind === 'plate')) {
+    // In water or steel plate, the slug stops and stays.
+    stuck(ev.kind === 'sink' ? ev.x : ev.x - 0.05, hy, hz);
   } else if (ev.kind === 'stop') {
     // The stopped slug knocks its target off the stand.
     const t = ev.t;
@@ -996,9 +1206,11 @@ function stepKnocked(h) {
   return moving;
 }
 function refill() {
+  // A new mode takes effect only with a fresh build.
+  if (pendingMode) { mode = pendingMode; pendingMode = null; }
   shot.phase = 'refill';
   fadeT = 0;
-  newRow(true);
+  buildMode(true);
   knocked.length = 0;
   // Holes go with their plates.
   for (let i = glows.length; i--;) if (glows[i].row) glows.splice(i, 1);
@@ -1011,8 +1223,19 @@ window.__qa = {
   freeze(on = true) { frozen = on; wake(); },
   // Freeze when the slug passes x, or t seconds after the snap.
   at(x = null, t = null) { qaAt = { x, t }; },
-  state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase }),
+  // Set the bullet-time scale without saving it.
+  slow(v) { slowmo = v; },
+  mode: v => act.mode(v),
+  state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase, mode, row: row.slice(0, 3).map(t => [t.kind, t.state, +t.g.position.y.toFixed(2), t.drop, t.g.parent === scene]) }),
   row(kind) { clearDebris(); clearRow(); SLOTS.forEach(x => row.push(makeTarget(kind, x))); shot.phase = 'idle'; wake(); },
+};
+let pendingMode = null;
+act.mode = v => {
+  if (!MODES.includes(v)) return;
+  pendingMode = v;
+  store.set('stimming.phaeton.mode', v);
+  // A mode change mid-shot waits for the refill.
+  if (shot.phase !== 'flight' && shot.phase !== 'hold' && shot.phase !== 'snap') { refill(); clearDebris(); }
 };
 act.load = load;
 act.lock = lock;
@@ -1020,7 +1243,7 @@ act.down = startCharge;
 act.up = release;
 act.shuffle = () => { if (shot.phase === 'idle' || shot.phase === 'after' || shot.phase === 'refill') { refill(); clearDebris(); } };
 act.reset = () => {
-  for (const d of glows) { scene.remove(d.m); d.m.material.dispose(); }
+  for (const d of glows) if (d.m) { d.m.removeFromParent(); d.m.material.dispose(); }
   glows.length = 0;
   clearDebris();
   slug.visible = false; timeScale = 1; camBlend = 0;
@@ -1061,16 +1284,20 @@ function step(dt) {
   if (shot.phase === 'snap') timeScale = Math.min(1, timeScale + dt / 0.15);
   const h = frozen ? 0 : dt * timeScale;
   if (shot.phase === 'flight') {
-    shot.x += SPEED * h;
+    const from = shot.x;
+    shot.x = Math.min(shot.x + SPEED * h, shot.stopX);
+    const ka = aimAt(shot.x);
+    tankTrail(from, shot.x, BORE + shot.aim.y * ka, shot.aim.x * ka);
     while (shot.next < shot.events.length && shot.x >= shot.events[shot.next].x) hitEvent(shot.events[shot.next++]);
     if (shot.x >= shot.stopX) { shot.x = shot.stopX; shot.phase = 'hold'; shot.hold = 0; }
     if (qaAt?.x != null && shot.x >= qaAt.x) { frozen = true; qaAt = null; }
   } else if (shot.phase === 'hold') {
     if (!frozen) shot.hold += dt;
-    if (shot.hold > 0.35) shot.phase = 'snap';
+    if (shot.hold > 0.35) { shot.phase = 'snap'; tankBurst(); }
   } else if (shot.phase === 'snap' && timeScale >= 1) {
     shot.phase = 'after'; shot.after = 0;
     if (G.s === 'fired') unlock();
+    if (mode === 'depth') depthResult(shot.stopX);
   } else if (shot.phase === 'after') {
     if (qaAt?.t != null && shot.after >= qaAt.t) { frozen = true; qaAt = null; }
     if (!frozen) shot.after += dt;
@@ -1115,7 +1342,7 @@ function step(dt) {
   let steaming = false;
   for (const s of puffSets) steaming = s.step(hs) || steaming;
   if (shot.phase === 'refill') moving = steaming = false;
-  const tumbling = stepKnocked(h);
+  const tumbling = stepKnocked(h) || stepRings(hs);
   const warm = coolGlows(dt);
 
   // The track camera follows the slug in bullet time.
@@ -1228,7 +1455,7 @@ addEventListener('keydown', e => {
 });
 
 /* ---------- ready ---------- */
-newRow(false);
+buildMode(false);
 placeGun();
 resize();
 renderer.compileAsync(scene, camera).then(() => {
