@@ -88,13 +88,19 @@ const opts = {
 /* ---------- bar ---------- */
 // 'random' rolls each new rock's size; a dev pick pins it.
 let devSize = 'random';
+// The charge sound's mix: 'hum', 'blend' or 'choir'.
+let chargeMix = (() => { try { return localStorage.getItem('stimming.railgun.chargemix') || 'blend'; } catch { return 'blend'; } })();
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
+  // Reset spins the days by and brings a new rock.
+  actions: [{ verb: 'reset', onPress: () => startFfwd() }],
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+    // The charge: main's hum alone, the choir alone, or a blend.
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', value: 'blend', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock (dev)', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -244,9 +250,10 @@ const sstep = THREE.MathUtils.smoothstep;
 const lerp = THREE.MathUtils.lerp;
 // The moon: cool and dim, high on the left.
 const MOON_C = [0.09, 0.11, 0.16];
-function sun(deg) {
+// az: the sun's bearing on the plain; the timelapse swings it round.
+function sun(deg, az = SUN_AZ) {
   const r = rad(deg);
-  U.uSunD.value.set(SUN_AZ.x * Math.cos(r), Math.sin(r), SUN_AZ.y * Math.cos(r));
+  U.uSunD.value.set(az.x * Math.cos(r), Math.sin(r), az.y * Math.cos(r));
   U.uSunE.value = r;
   // Dusk: the first look, 0 to 15 degrees.
   // low: 0 at the horizon, 1 at fifteen degrees up.
@@ -1373,12 +1380,14 @@ function makeTrain(pu) {
     float u = x > 0.0 ? log(1.0 + uK * x / r0) / uK : x / r0;
     vec2 v = vec2(dot(q, uSide), dot(q, uUpv)) / rr;
     // Wind shear bends the old smoke off its line.
-    v -= smoothstep(1.0, 9.0, u) * vec2(0.26 * sin(u * 0.83 + 1.3) + 0.16 * sin(u * 0.31), 0.22 * sin(u * 0.61 + 4.0) + 0.14 * cos(u * 0.27 + 2.0));
+    // A little curl, and a steady lean downwind as the smoke ages.
+    v -= smoothstep(1.0, 9.0, u) * 0.45 * vec2(0.26 * sin(u * 0.83 + 1.3) + 0.16 * sin(u * 0.31), 0.22 * sin(u * 0.61 + 4.0) + 0.14 * cos(u * 0.27 + 2.0));
+    v -= smoothstep(1.0, 20.0, u) * vec2(0.35, -0.08);
     float rv = length(v);
     g = vec4(x, u, rr, rv); e = 0.0;
     if (rv > 1.0 || u < -0.7) return 0.0;
     // Coverage: a full core, a ragged rim, thinner with age.
-    float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * (1.0 - smoothstep(0.72, 1.0, x / uLen));
+    float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * (1.0 - smoothstep(0.55, 1.0, x / uLen));
     // After the hit: the tail goes from its tip back, the head end softens.
     cov *= 1.0 - smoothstep(uCut - 0.25 * uLen, uCut, x);
     cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
@@ -1390,7 +1399,8 @@ function makeTrain(pu) {
     if (fine && d > 0.0) {
       // Fine cells carve the rim into small lobes.
       e = texture(uVol, p * 3.1 + vec3(uTime * 0.017, 0.0, 0.0)).g;
-      d = rmp(d, (1.0 - e) * 0.55, 1.0);
+      // Old smoke frays into wisps toward the tail's end.
+      d = rmp(d, (1.0 - e) * mix(0.55, 0.85, smoothstep(0.35, 1.0, x / uLen)), 1.0);
     }
     return d;
   }
@@ -1613,7 +1623,7 @@ function placeFrags() {
     f.m.position.copy(f.pos);
     f.m.scale.setScalar(f.k * ast.R);
     const u = f.trail.material.uniforms;
-    u.uP.value.copy(f.pos); u.uR.value = f.k * ast.R; u.uLen.value = f.k * ast.R * 60;
+    u.uP.value.copy(f.pos); u.uR.value = f.k * ast.R; u.uLen.value = f.k * ast.R * (f.k >= 0.18 ? 90 : 60);
   }
 }
 // The shock front's radius, ha seconds after the hit.
@@ -1636,11 +1646,9 @@ function stepFrags() {
       u.uOn.value = Math.min(1, u.uOn.value + 1 / 90);
       if (f.breakT && simT >= f.breakT) breakFrag(f);
     } else u.uOn.value = Math.exp(-(simT - f.broke) / 1.5);
-    // Medium pieces trail a mini comet train; small ones keep the ribbon.
-    const medium = f.k >= 0.18;
-    f.trail.visible = !medium && u.uOn.value > 0.01;
-    if (medium) aimMini(f.mini, f.pos, ast.away, f.k * ast.R, f.k * ast.R * 110, u.uOn.value, f.broke < 0 ? 0.7 : 0.2);
-    else f.mini.m.visible = false;
+    // Every fragment keeps its ribbon trail (Tom); medium ones run longer.
+    f.trail.visible = u.uOn.value > 0.01;
+    f.mini.m.visible = false;
   }
 }
 // A fragment bursts into embers.
@@ -2301,7 +2309,7 @@ let ventT = -1e9;
 // A hold belongs to the pointer or to Space.
 // Only its owner releases it.
 act.press = (by = 'pointer') => {
-  if (charge) return;
+  if (charge || ffwd) return;
   charge = { t0: simT, c: 0.12, chase: 0, dust: 0, by };
   // The shake starts on this very frame.
   U.uCharge.value = 0.12;
@@ -3207,7 +3215,7 @@ function shatter(c) {
     // Slow shards read as huge ones.
     bv.multiplyScalar((25 + 70 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
     // A lift throws the pieces up first, so they fall in arcs.
-    bv.y += 0.6 * bv.length();
+    bv.y += 0.3 * bv.length();
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
@@ -3371,13 +3379,53 @@ function stepShot(dt) {
   // The Mach ring reaches the eye: a jolt, no sound of its own.
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
   if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
-  // The next rock waits until the blast has had its time.
-  if (age > shot.hitT + 50 && age > shot.arrive + 1) {
-    if (ast.state === 'shatter') respawn();
-    shot = null;
-    bolt.visible = false;
-    flare(headFlare, MUZZLE, 1, 0);
-  }
+  // After a hit the timelapse starts; a miss just ends later.
+  if (shot.hit && shot.canHit && age > shot.hitT + 22) startFfwd();
+  else if (age > shot.hitT + 50 && age > shot.arrive + 1) endShot();
+}
+// The shot ends; a shattered rock gives way to a new one.
+function endShot() {
+  if (ast.state === 'shatter') respawn();
+  shot = null;
+  bolt.visible = false;
+  flare(headFlare, MUZZLE, 1, 0);
+}
+
+/* ---------- the timelapse: days and nights spin by, then a new rock ---------- */
+// It runs after a hit, and from the Reset action.
+// The day cycle speeds up until it spins out, then lands where it began.
+const FFWD_T = 10;
+// The sun's orbit: it rises at SUN_AZ; its noon leans 30 degrees south of overhead.
+const ORB_E = new THREE.Vector3(SUN_AZ.x, 0, SUN_AZ.y);
+const ORB_N = new THREE.Vector3(-SUN_AZ.y, 0, SUN_AZ.x).multiplyScalar(-Math.sin(rad(30))).add(new THREE.Vector3(0, Math.cos(rad(30)), 0));
+const orbitDir = new THREE.Vector3(), orbitAz = new THREE.Vector2();
+let ffwd = null;
+function startFfwd() {
+  if (ffwd) return;
+  if (charge) cancelHold();
+  // The orbit starts where the sun stands now.
+  const d0 = rad(sunDeg(opts.sun));
+  ffwd = { t: 0, from: opts.sun, swapped: false, th0: Math.asin(clamp(Math.sin(d0) / ORB_N.y, -1, 1)) };
+  wake();
+}
+// Drives the time of day; returns the sim speed for this frame.
+function stepFfwd(dt) {
+  if (!ffwd) return 1;
+  ffwd.t += dt;
+  const p = clamp(ffwd.t / FFWD_T, 0, 1);
+  // Three full days on an accelerating curve: the sun circles the sky.
+  // It rises at its usual bearing and arcs across in front of the eye.
+  const K = 5, g = (Math.exp(K * p) - 1) / (Math.exp(K) - 1), th = ffwd.th0 + Math.PI * 2 * 3 * g;
+  orbitDir.copy(ORB_E).multiplyScalar(Math.cos(th)).addScaledVector(ORB_N, Math.sin(th));
+  orbitAz.set(orbitDir.x, orbitDir.z);
+  if (orbitAz.lengthSq() < 1e-6) orbitAz.copy(SUN_AZ); else orbitAz.normalize();
+  sun(THREE.MathUtils.radToDeg(Math.asin(clamp(orbitDir.y, -1, 1))), orbitAz);
+  // It spins out of control: the lens shakes harder and harder.
+  if (!reduced()) cam.shake = Math.max(cam.shake, 2.2 * Math.pow(p, 4));
+  // Near the end the old scene clears and a new rock begins.
+  if (p > 0.85 && !ffwd.swapped) { ffwd.swapped = true; if (shot) endShot(); else respawn(); }
+  if (p >= 1) { opts.sun = ffwd.from; sun(sunDeg(opts.sun)); ffwd = null; return 1; }
+  return 1 + 40 * Math.pow(Math.sin(Math.PI * Math.min(p, 0.95)), 2);
 }
 // The blast: the slug leaves the muzzle.
 function blast(sh) {
@@ -3487,7 +3535,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ffwd || !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -3498,12 +3546,14 @@ function tick(now) {
   pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
   const lively = busy();
   try {
-    simT += dt;
+    // The timelapse runs the sim faster than the clock.
+    const sdt = dt * stepFfwd(dt);
+    simT += sdt;
     U.uTime.value = simT;
-    stepAst(dt);
-    stepAim(dt);
-    stepCharge(dt);
-    stepShot(dt);
+    stepAst(sdt);
+    stepAim(sdt);
+    stepCharge(sdt);
+    stepShot(sdt);
     easeLook(dt);
     if (now - lastDraw >= FRAME - 2) {
       frame();
@@ -3699,7 +3749,7 @@ function humUpdate(ac) {
   hum.sub.frequency.setTargetAtTime(f / 2, t, 0.05);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos), t, 0.05);
+  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * (chargeMix === 'choir' ? 0.6 : 1), t, 0.05);
   hum.sg.gain.setTargetAtTime(0.14 * c * c, t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c + 0.35 * rage, t, 0.05);
@@ -3722,7 +3772,8 @@ function humUpdate(ac) {
   }
   // A swell at the lock, then a held chord.
   const accent = Math.exp(-(t - hum.lockAt) / 1.2);
-  hum.cg.gain.setTargetAtTime(0.11 * THREE.MathUtils.smoothstep(u, 0.15, 0.9) * (1 + 0.5 * accent) * (1 + 0.3 * over), t, 0.08);
+  const cm = chargeMix === 'hum' ? 0 : chargeMix === 'blend' ? 0.55 : 1;
+  hum.cg.gain.setTargetAtTime(0.11 * cm * THREE.MathUtils.smoothstep(u, 0.15, 0.9) * (1 + 0.5 * accent) * (1 + 0.3 * over), t, 0.08);
   hum.cpre.gain.setTargetAtTime(0.6 + 4 * over, t, 0.08);
 }
 // The vent: the choir groans down two octaves and dies.
@@ -3946,6 +3997,8 @@ window.__qa = {
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
+  ffwd: () => (ffwd ? { t: ffwd.t, swapped: ffwd.swapped, time: opts.sun } : null),
+  reset() { startFfwd(); },
   look: () => ({ yaw: THREE.MathUtils.radToDeg(look.yaw), pitch: THREE.MathUtils.radToDeg(look.pitch), to: THREE.MathUtils.radToDeg(lookTo.yaw) }),
   blastState: () => {
     const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
@@ -3971,7 +4024,7 @@ window.__qa = {
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
-  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { simT += dt; U.uTime.value = simT; stepAst(dt); stepAim(dt); stepCharge(dt); stepShot(dt); easeLook(dt); } frame(); draw(); },
+  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { const sdt = dt * stepFfwd(dt); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
   // Pose the blast on the clouds t seconds after a hit at the rock.
   blast(t) { hitFlash = Math.exp(-t / 0.4) + 0.3 * Math.exp(-t / 5); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); frame(); draw(); },
