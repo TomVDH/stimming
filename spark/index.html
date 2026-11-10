@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spark wheel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<style>
+/* Spark wheel: a knurled wheel on a flint, close up, in the dark. */
+:root { --stage: oklch(0.07 0.008 250); }
+.stage--spark canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--spark canvas.on { opacity: 1; }
+.stage--spark { cursor: grab; }
+.stage--spark.drag { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--spark canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Spark wheel</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--spark" id="stage" tabindex="0" role="application" aria-label="A knurled steel wheel on a flint, close up. Drag down to flick the wheel and throw sparks. Click to strike. Hold Space to grind.">
+      <p class="fail" hidden>Spark wheel needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Spark wheel</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const col = (L, C, h) => new THREE.Color().setRGB(...linFit(L, C, h), THREE.LinearSRGBColorSpace);
+
+/* ---------- the wheel ---------- */
+// Units: the wheel radius is 1. The floor lies below the flint.
+const R = 1, WIDTH = 0.55, TEETH = 36, FLOOR = -2.35;
+// Friction stops a free wheel in about a second.
+const FRICTION = 0.35, GRIND = 30, MAXW = 60;
+const wheel = { angle: 0, omega: 0 };
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+let metal = 'ferro', grinding = false;
+// The handlers bind once the scene exists.
+const act = { reset() {} };
+const ui = initPage({ id: 'spark', bar: {
+  choice: { label: 'Metal', value: 'ferro', options: [
+    { value: 'ferro', label: 'Ferro', key: '1' },
+    { value: 'steel', label: 'Steel', key: '2' },
+    { value: 'titanium', label: 'Titanium', key: '3' },
+  ], onPick: v => { metal = v; } },
+  actions: [{ verb: 'grind', key: 'Space', hold: true,
+    onDown: () => { grinding = true; live(); }, onUp: () => { grinding = false; live(); } }],
+  settings: [
+    { type: 'slider', id: 'trails', label: 'Trails', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => { trails = v; } },
+    { type: 'choice', id: 'floor', label: 'Floor', value: 'wet', persist: true,
+      options: [{ value: 'wet', label: 'Wet' }, { value: 'dry', label: 'Dry' }], onPick: v => { setFloor(v); live(); } },
+    { type: 'toggle', id: 'smoke', label: 'Smoke', value: true, persist: true, onToggle: v => { smokeOn = v; live(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'flick the wheel'], ['click', 'strike'], ['space', 'grind']],
+} });
+// Task 2 reads the trail length.
+let trails = ui.setting('trails')?.value ?? 0.5;
+let smokeOn = ui.setting('smoke')?.value ?? true;
+
+/* ---------- renderer ---------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+const BG = col(0.075, 0.008, 250);
+const scene = new THREE.Scene();
+scene.background = BG;
+scene.fog = new THREE.Fog(BG, 9, 26);
+// Faint room reflections let bare steel read as metal.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.1;
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+// The performance ladder's rung; slow frames raise it, never lower it.
+let rung = 0;
+
+/* ---------- knurl ---------- */
+// A diamond knurl: two groove sets at 45 degrees round the rim.
+// The map holds tangent-space normals from a pyramid height field.
+function knurlMap() {
+  const W = 1152, H = 64;
+  const across = (WIDTH / (TAU * R / TEETH));
+  const hgt = (u, v) => {
+    const a = (u * TEETH + v * across) % 1, b = (((u * TEETH - v * across) % 1) + 1) % 1;
+    return 1 - Math.max(Math.abs(a - 0.5), Math.abs(b - 0.5)) * 2;
+  };
+  const data = new Uint8Array(W * H * 4);
+  const du = 1 / W, dv = 1 / H, k = 0.035;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = x / W, v = y / H;
+      // Slopes in world units: the rim is 2πR around and WIDTH across.
+      const sx = (hgt(u + du, v) - hgt(u - du, v)) / (2 * du * TAU * R) * k;
+      const sy = (hgt(u, v + dv) - hgt(u, v - dv)) / (2 * dv * WIDTH) * k;
+      const l = Math.hypot(sx, sy, 1), i = (y * W + x) * 4;
+      data[i] = (-sx / l * 0.5 + 0.5) * 255;
+      data[i + 1] = (-sy / l * 0.5 + 0.5) * 255;
+      data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+      data[i + 3] = 255;
+    }
+  }
+  const t = new THREE.DataTexture(data, W, H);
+  t.wrapS = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.needsUpdate = true;
+  return t;
+}
+// The face: fine lathe rings, a darker axle hole in the centre.
+function faceMaps() {
+  const S = 256, c = new Uint8Array(S * S * 4), r = new Uint8Array(S * S * 4);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const d = Math.hypot(x / S - 0.5, y / S - 0.5) * 2, i = (y * S + x) * 4;
+      const ring = 0.5 + 0.5 * Math.sin(d * 260);
+      const hole = d < 0.2 ? 0.08 : d < 0.24 ? 0.5 : 1;
+      c[i] = c[i + 1] = c[i + 2] = 255 * hole;
+      r[i + 1] = 255 * (0.18 + 0.14 * ring);
+      c[i + 3] = r[i + 3] = 255;
+    }
+  }
+  const tex = d => { const t = new THREE.DataTexture(d, S, S); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+  const map = tex(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  return { map, rough: tex(r) };
+}
+
+/* ---------- scene ---------- */
+const steel = col(0.68, 0.008, 250);
+const rimMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 0.3, normalMap: knurlMap(), normalScale: new THREE.Vector2(1, 1) });
+const fm = faceMaps();
+const faceMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 1, map: fm.map, roughnessMap: fm.rough });
+const wheelGeo = new THREE.CylinderGeometry(R, R, WIDTH, 160, 1);
+const flintMat = new THREE.MeshStandardMaterial({ color: col(0.36, 0.006, 70), metalness: 0.1, roughness: 0.92 });
+const flintGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 40, 1);
+
+// The yaw shows the knurled rim band three-quarter on.
+function makeWheel() {
+  const pivot = new THREE.Group();
+  pivot.rotation.y = -0.75;
+  const mesh = new THREE.Mesh(wheelGeo, [rimMat, faceMat, faceMat]);
+  mesh.rotation.x = Math.PI / 2;
+  pivot.add(mesh);
+  const flint = new THREE.Mesh(flintGeo, flintMat);
+  flint.position.y = -R - 0.4;
+  return { pivot, mesh, flint };
+}
+const real = makeWheel();
+scene.add(real.pivot, real.flint);
+
+/* ---------- lights ---------- */
+// A cool rim light from behind on the right picks out the knurl.
+const rim = new THREE.DirectionalLight(col(0.9, 0.03, 240), 2.4);
+rim.position.set(4, 5, -4);
+// A weak fill from the front left shows the face.
+const fill = new THREE.DirectionalLight(col(0.8, 0.02, 80), 0.35);
+fill.position.set(-4, 2, 6);
+// The contact light flashes warm with the spray.
+const contact = new THREE.PointLight(col(0.82, 0.16, 62), 0, 7, 2);
+contact.position.set(0.35, -R + 0.2, 0.7);
+scene.add(rim, fill, contact);
+
+/* ---------- floor ---------- */
+// A wet floor: a dark, glossy sheet over a mirrored copy of the scene.
+const floorMat = new THREE.MeshStandardMaterial({ color: col(0.1, 0.006, 250), metalness: 0, roughness: 0.28, transparent: true, opacity: 0.88 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = FLOOR;
+floor.renderOrder = 1;
+scene.add(floor);
+const mirror = new THREE.Group();
+mirror.scale.y = -1;
+mirror.position.y = 2 * FLOOR;
+const ghost = makeWheel();
+mirror.add(ghost.pivot, ghost.flint);
+scene.add(mirror);
+function setFloor(v) {
+  mirror.visible = v === 'wet';
+  floorMat.opacity = v === 'wet' ? 0.88 : 1;
+  floorMat.roughness = v === 'wet' ? 0.28 : 0.85;
+  floorMat.transparent = v === 'wet';
+  floorMat.needsUpdate = true;
+}
+setFloor(ui.setting('floor')?.value ?? 'wet');
+
+/* ---------- haze ---------- */
+// A far backdrop: a faint cool glow up and right, behind the wheel.
+// The wet floor mirrors it, so the floor reads as wet.
+const hazeMat = new THREE.ShaderMaterial({
+  uniforms: { uCol: { value: col(0.3, 0.03, 245) }, uBg: { value: BG } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uCol, uBg;
+    varying vec2 vUv;
+    void main() {
+      vec2 d = (vUv - vec2(0.56, 0.6)) * vec2(1.0, 2.4);
+      gl_FragColor = vec4(uBg + uCol * exp(-dot(d, d) * 12.0), 1.0);
+    }`,
+  depthWrite: false, fog: false,
+});
+const hazeGeo = new THREE.PlaneGeometry(120, 60);
+const haze = new THREE.Mesh(hazeGeo, hazeMat);
+haze.position.set(4, 2, -14);
+haze.renderOrder = -1;
+const ghostHaze = haze.clone();
+scene.add(haze);
+mirror.add(ghostHaze);
+
+/* ---------- embers ---------- */
+// Each ember cools from its start temperature; the colour follows a blackbody ramp.
+const EMBERS = 64;
+const emberGeo = new THREE.BufferGeometry();
+const ePos = new Float32Array(EMBERS * 3), eAttr = new Float32Array(EMBERS * 3);
+emberGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
+// x: birth time, y: cooling time, z: start temperature as 0 to 1.
+emberGeo.setAttribute('aE', new THREE.BufferAttribute(eAttr, 3));
+const BODY = /* glsl */`
+vec3 body(float t) {
+  vec3 c = mix(vec3(0.35, 0.015, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.0, 0.45, t));
+  c = mix(c, vec3(1.0, 0.78, 0.5), smoothstep(0.45, 0.85, t));
+  return mix(c, vec3(1.0, 0.95, 0.88), smoothstep(0.85, 1.0, t));
+}
+`;
+const emberMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uDpr: { value: 1 } },
+  vertexShader: /* glsl */`
+    attribute vec3 aE;
+    uniform float uTime, uDpr;
+    varying float vT;
+    void main() {
+      float age = uTime - aE.x;
+      vT = age < 0.0 ? 0.0 : aE.z * exp(-age / aE.y);
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = (4.0 + 10.0 * vT) * uDpr * 16.0 / -mv.z;
+    }`,
+  fragmentShader: /* glsl */`
+    varying float vT;
+    ${BODY}
+    void main() {
+      float r = length(gl_PointCoord - 0.5) * 2.0;
+      // A hot core inside a soft glow.
+      float a = exp(-r * r * 9.0) + 0.25 * exp(-r * r * 2.5) * smoothstep(1.0, 0.6, r);
+      // Radiance rises steeply with temperature.
+      float e = pow(vT, 3.0) * 9.0;
+      gl_FragColor = vec4(body(vT) * e * a, 1.0);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const embers = new THREE.Points(emberGeo, emberMat);
+embers.frustumCulled = false;
+const ghostEmbers = new THREE.Points(emberGeo, emberMat);
+ghostEmbers.frustumCulled = false;
+// Embers draw after the wet floor; their mirror draws under it.
+embers.renderOrder = 2;
+scene.add(embers);
+mirror.add(ghostEmbers);
+
+// Seeded random keeps the first frame the same on every load.
+let seed = 1031;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+let emberN = 0, emberEnd = 0;
+// The first frame holds a few embers that cool over 8 s.
+function seedEmbers(t) {
+  emberN = 6;
+  for (let i = 0; i < emberN; i++) {
+    ePos.set(narrow ? [0.4 + rnd() * 1.8, FLOOR + 0.02, -1 + rnd() * 3.6] : [0.8 + rnd() * 3.6, FLOOR + 0.02, -1.6 + rnd() * 4.2], i * 3);
+    eAttr.set([t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25], i * 3);
+  }
+  emberGeo.setDrawRange(0, emberN);
+  emberGeo.attributes.position.needsUpdate = true;
+  emberGeo.attributes.aE.needsUpdate = true;
+  emberEnd = t + 4 * 4.2;
+}
+
+/* ---------- smoke ---------- */
+// A thin wisp rises from the flint and fades within seconds.
+const smokeMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uAmt: { value: 0 } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform float uTime, uAmt;
+    varying vec2 vUv;
+    float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+    }
+    float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * noise(p); p = p * 2.1 + 7.3; a *= 0.5; } return s; }
+    void main() {
+      float y = vUv.y, t = uTime;
+      // The wisp's centre line sways more as it rises.
+      float cx = 0.5 + (fbm(vec2(y * 2.0 - t * 0.25, 3.1)) - 0.5) * 0.9 * y;
+      float w = 0.02 + 0.12 * y;
+      float d = abs(vUv.x - cx) / w;
+      float body = exp(-d * d * 1.8) * fbm(vec2(vUv.x * 5.0, y * 3.0 - t * 0.6));
+      // Holes in the noise break the column into threads.
+      float breakup = smoothstep(0.35, 0.7, fbm(vec2(vUv.x * 3.0, y * 5.0 - t * 0.9)));
+      float a = body * breakup * smoothstep(0.0, 0.06, y) * (1.0 - smoothstep(0.25, 0.7, y)) * uAmt;
+      gl_FragColor = vec4(vec3(0.16, 0.17, 0.19), a * 0.45);
+    }`,
+  transparent: true, depthWrite: false,
+});
+const smoke = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 3.4), smokeMat);
+smoke.position.set(0.25, -R + 1.6, 0.9);
+smoke.renderOrder = 2;
+scene.add(smoke);
+let smokeAmt = 0.7;
+
+/* ---------- K2: bloom ---------- */
+// Bloom on a float target; only bright sources cross the threshold.
+// Lifted from Fireworks; the size scale knob is gone.
+function makeBloom(strength, radius, threshold) {
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+  const full = bloom.setSize.bind(bloom);
+  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
+  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
+  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
+  // A sigma of radius / 2.5 gives each layer a round falloff.
+  for (const m of bloom.separableBlurMaterials) {
+    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
+    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  }
+  // Bilinear upsampling of the small mips draws square feathers.
+  // A cubic B-spline read of each mip keeps the glow round.
+  const cm = bloom.compositeMaterial;
+  cm.fragmentShader = cm.fragmentShader
+    .replace('void main() {', /* glsl */`vec4 bsw(float v) {
+      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
+      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+      return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+    }
+    vec4 bic(sampler2D t, vec2 uv) {
+      vec2 ts = vec2(textureSize(t, 0)), p = uv * ts - 0.5, fp = fract(p);
+      p -= fp;
+      vec4 xc = bsw(fp.x), yc = bsw(fp.y);
+      vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy, w = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+      vec4 o = (c + vec4(xc.yw, yc.yw) / w) / ts.xxyy;
+      float sx = w.x / (w.x + w.y), sy = w.z / (w.z + w.w);
+      return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
+    }
+    void main() {`)
+    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
+  cm.needsUpdate = true;
+  return bloom;
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- K2: grade ---------- */
+// Linear grade before tone mapping: haze lift, vignette, fixed grain.
+function makeGrade({ tint, vig, vigIn, grain }) {
+  return new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uTint: { value: new THREE.Vector3(...tint) },
+      uVig: { value: vig },
+      uVigIn: { value: vigIn },
+      uGrain: { value: grain },
+    },
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform vec2 uRes;
+    uniform vec3 uTint;
+    uniform float uVig, uVigIn, uGrain;
+    varying vec2 vUv;
+    // An integer hash per pixel; float hashes draw faint stripes here.
+    float h(vec2 p) {
+      uvec2 q = uvec2(p);
+      uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+      n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+      return float(n) / 4294967295.0;
+    }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
+      vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+      c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
+      gl_FragColor = vec4(max(c, 0.0), 1.0);
+    }`,
+  });
+}
+/* ---------- end K2 ---------- */
+
+/* ---------- post chain ---------- */
+const POST = { bloom: [0.8, 0.45, 0.85], tint: [0.0008, 0.0009, 0.0013], vig: 0.55, vigIn: 0.35, grain: 0.035 };
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = makeBloom(...POST.bloom);
+composer.addPass(bloomPass);
+const grade = makeGrade(POST);
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- layout ---------- */
+// Wide stages hold the wheel at the left third; tall ones at the top centre.
+let size = { w: 1, h: 1, dpr: 1 }, rPx = 100, narrow = false;
+const centre = new THREE.Vector2();
+function frameShot() {
+  const asp = size.w / size.h;
+  camera.aspect = asp;
+  narrow = asp < 0.9;
+  if (!narrow) {
+    camera.fov = 30;
+    camera.position.set(2.6, 0.9, 13);
+    camera.lookAt(2.6, -1.1, 0);
+  } else {
+    camera.fov = 34;
+    camera.position.set(0.8, 1.2, 18.5);
+    camera.lookAt(0.8, -2.9, 0);
+  }
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  // The wheel's screen centre and radius map a drag to spin.
+  const c = new THREE.Vector3(0, 0, 0).project(camera), e = new THREE.Vector3(0, R, 0).project(camera);
+  centre.set((c.x * 0.5 + 0.5) * size.w, (0.5 - c.y * 0.5) * size.h);
+  rPx = Math.max(20, Math.abs(e.y - c.y) * 0.5 * size.h);
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom.
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2e6, low: rung >= 1 }) };
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+  emberMat.uniforms.uDpr.value = size.dpr * h / 800;
+  frameShot();
+}
+
+/* ---------- render ---------- */
+let time = 0;
+function draw() {
+  for (const w of [real, ghost]) w.mesh.rotation.y = wheel.angle;
+  emberMat.uniforms.uTime.value = time;
+  smokeMat.uniforms.uTime.value = time;
+  smokeMat.uniforms.uAmt.value = smokeOn && !reduced() ? smokeAmt : 0;
+  // A stand-in for the spray: the contact light follows the spin.
+  contact.intensity = 5 * clamp(wheel.omega / 25);
+  composer.render();
+}
+
+/* ---------- frame loop ---------- */
+// Lively while the wheel turns, embers glow or smoke rises.
+let raf = 0, last = 0, visible = !document.hidden, dragging = false;
+const live = () => wake();
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < emberEnd || (smokeOn && smokeAmt > 0.01);
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const raw = (now - last) / 1000;
+    if (raw < 0.1) watchdog(raw);
+    const dt = Math.min(0.05, raw);
+    last = now;
+    time += dt;
+    if (grinding) wheel.omega += (GRIND - wheel.omega) * (1 - Math.exp(-dt / 0.08));
+    else wheel.omega *= Math.exp(-dt / FRICTION);
+    if (wheel.omega < 0.02 && !grinding) wheel.omega = 0;
+    wheel.angle = (wheel.angle + wheel.omega * dt) % TAU;
+    // Smoke fades over 3 s; a fast wheel feeds it.
+    smokeAmt = clamp(smokeAmt * Math.exp(-dt / 3) + dt * clamp(wheel.omega / 20) * 1.5);
+    draw();
+    again = lively();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
+// Rungs: pixel ratio down, then a half-size bloom.
+let runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 2) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  resize();
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px, or a hold after 260 ms.
+// A release that is neither is a tap, and a tap strikes.
+// The forward stroke runs down and a little right; the ratchet blocks the back stroke.
+const FWD = new THREE.Vector2(0.25, 1).normalize();
+let ptr = null, holdTo = 0;
+function spinFrom(dx, dy, dt) {
+  if (dt <= 0) return;
+  const fwd = (dx * FWD.x + dy * FWD.y) / dt;
+  // The thumb drives the wheel up to its own rim speed, never brakes it.
+  if (fwd > 0) wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / rPx));
+}
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: e.timeStamp, mode: 'press' };
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press') ptr.mode = 'hold'; }, 260);
+  dragging = true;
+  live();
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (ptr.mode !== 'drag' && Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > 8) {
+    clearTimeout(holdTo);
+    ptr.mode = 'drag';
+    stage.classList.add('drag');
+  }
+  if (ptr.mode === 'drag') spinFrom(e.clientX - ptr.x, e.clientY - ptr.y, (e.timeStamp - ptr.t) / 1000);
+  ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = e.timeStamp;
+  live();
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup';
+  ptr = null;
+  dragging = false;
+  stage.classList.remove('drag');
+  if (tap) strike();
+  live();
+}
+// A strike turns the wheel about a quarter turn.
+function strike() {
+  wheel.omega = Math.max(wheel.omega, (Math.PI / 2) / FRICTION);
+  live();
+}
+act.reset = () => {
+  wheel.omega = 0;
+  grinding = false;
+  seedEmbers(time);
+  smokeAmt = 0.7;
+  live();
+};
+
+/* ---------- ready ---------- */
+// The intro holds until shaders compile and the first frame draws.
+let ready = false;
+resize();
+seedEmbers(0);
+renderer.compileAsync(scene, camera).then(() => {
+  draw();
+  canvas.classList.add('on');
+  ready = true;
+  mark('first-frame');
+  wake();
+}, () => { canvas.classList.add('on'); ready = true; mark('first-frame'); });
+
+// The first-frame embers start to cool once the intro has gone.
+const introEl = document.querySelector('.intro');
+if (introEl) {
+  const mo = new MutationObserver(() => {
+    if (introEl.isConnected) return;
+    mo.disconnect();
+    act.reset();
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+}
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+onQuality(() => { rung = 0; runFor = slowFor = 0; resize(); if (ready) draw(); });
+onReducedChange(() => { if (ready) draw(); wake(); });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>

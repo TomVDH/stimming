@@ -33,7 +33,8 @@ The first frame is a picture: the knurl glints in the rim light, a thin smoke wi
 
 ## Loop
 
-- **Drag across the wheel:** the pointer's speed along the rim sets the wheel's spin. A downward flick throws the sparks to the right and down.
+- **Drag down:** the forward stroke. The pointer's speed sets the wheel's spin, and the sparks fly to the right and down.
+- **Drag up:** the back stroke. The wheel holds on its ratchet and the pawl clicks; no sparks.
 - **Tap:** a short strike: one quarter turn, a small spray.
 - **Hold Grind (or Space):** the wheel runs at a steady speed, as a grinder does.
 - **Release:** the wheel spins down on friction over about 1 s; the spray thins with it.
@@ -111,7 +112,7 @@ Two visible controls. The stage is the toy.
 
 ## Finesse
 
-- The sparks leave along the rim's direction of travel. Reverse the flick and they spray the other way.
+- The sparks leave along the rim's direction of travel. The ratchet lets the wheel turn one way only.
 - The knurl flashes warm with the spray and falls back to cool steel.
 - Small sparks slow and die first; the long survivors are the big ones.
 - Mirror images in the wet floor streak toward the viewer.

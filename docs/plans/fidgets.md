@@ -60,6 +60,8 @@ Answer in one batch. A build that waits on one starts after the answer.
 | F4 | Abacus, Detent dial, Doorstop twang and Toggle wall are Fidget board parts today. Cut them from the pool? | nothing | Cut. A better build of one goes into Fidget board as a part. |
 | F5 | Spark wheel shows only the knurled wheel and the flint, close up: no lighter body, no thumb. Yes? | Spark wheel | Yes (the Look rule: no props). |
 
+Tom, 2026-11-09: "Go for it". Every default above holds. Spark wheel builds first.
+
 ## Build order
 
 1. Spark wheel and Worry stone: small, low risk, no kit work beyond a copy.
