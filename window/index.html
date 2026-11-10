@@ -740,6 +740,99 @@ function moveHead(dx, dy, dz) {
   head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
   head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
 }
+/* ---------- St Elmo's fire and strikes ---------- */
+// Deep in a storm cloud a violet corona creeps over the leading edges and tips.
+// A strike on the plane flares it, then it fades over a few seconds.
+const elmo = { level: 0, surge: 0 };
+function stepElmo(dt) {
+  const field = reduce ? 0 : smooth(0.55, 0.95, opts.storm) * smooth(0.15, 0.6, fog.level);
+  // The corona swells and ebbs on its own slow beat.
+  elmo.level += (field * (0.6 + 0.4 * Math.sin(t * 1.3) * Math.sin(t * 0.37)) - elmo.level) * Math.min(1, dt / 2);
+  elmo.surge *= Math.exp(-dt / 2.5);
+  // Now and then a strike finds the plane in the thick of it.
+  if (field > 0.5 && Math.random() < 0.004 * field * dt) strike();
+}
+let strikeT = -9;
+function strike() {
+  if (t - strikeT < 3) return;
+  strikeT = t;
+  elmo.surge = 1;
+  // The bolt's light whites out the view; it burns at the plane's own height.
+  flash(cam.x + 0.05, cam.z + 0.03, 3, null, ALT);
+  if (!reduce) turb.a[1] += 4;
+  crack();
+}
+// A strike cracks through the hull like a shot, then booms low.
+function crack() {
+  const ac = kit.live();
+  if (!ac || !sound.on) return;
+  const n = Math.round(ac.sampleRate * 1.4), buf = ac.createBuffer(1, n, ac.sampleRate), ch = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1, a = i / ac.sampleRate;
+    b = (b + 0.05 * w) / 1.05;
+    ch[i] = w * Math.exp(-a / 0.012) * 0.9 + b * 4 * Math.exp(-a / 0.4);
+  }
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = buf; lp.type = 'lowpass'; lp.frequency.value = 2400; g.gain.value = 0.8;
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start();
+}
+
+/* ---------- breath on the glass ---------- */
+// Leaning in close fogs the scratch pane; a finger draws in the fog.
+// R holds the fog; G holds the finger's trace, which shows clear in new fog.
+// The map spans the pane in metres: x to the nose, y up.
+const BR = { w: 96, h: 160, x: 0.17, y: 0.28 };
+const breathF = new Float32Array(BR.w * BR.h * 2), breathData = new Uint8Array(BR.w * BR.h * 4);
+const breathTex = new THREE.DataTexture(breathData, BR.w, BR.h, THREE.RGBAFormat, THREE.UnsignedByteType);
+breathTex.magFilter = breathTex.minFilter = THREE.LinearFilter;
+const breath = { phase: 0, any: false };
+// Adds fog, or wipes it, in a soft disc of radius r metres round pane point (x, y).
+function brDisc(x, y, r, k, wipe) {
+  const cx = (x / BR.x * 0.5 + 0.5) * BR.w, cy = (y / BR.y * 0.5 + 0.5) * BR.h;
+  const rx = r / BR.x * 0.5 * BR.w, ry = r / BR.y * 0.5 * BR.h;
+  for (let j = Math.max(0, Math.floor(cy - ry)); j <= Math.min(BR.h - 1, Math.ceil(cy + ry)); j++)
+    for (let i = Math.max(0, Math.floor(cx - rx)); i <= Math.min(BR.w - 1, Math.ceil(cx + rx)); i++) {
+      const q = ((i + 0.5 - cx) / rx) ** 2 + ((j + 0.5 - cy) / ry) ** 2;
+      if (q >= 1) continue;
+      const f = (1 - q) ** 2 * k, o = (j * BR.w + i) * 2;
+      if (wipe) { breathF[o] *= 1 - Math.min(1, f); breathF[o + 1] = Math.max(breathF[o + 1], Math.min(1, f)); }
+      else breathF[o] = Math.min(1, breathF[o] + f);
+    }
+  breath.any = true;
+}
+// The fog at a pane point, from 0 to 1.
+const brAt = (x, y) => {
+  const i = Math.floor((x / BR.x * 0.5 + 0.5) * BR.w), j = Math.floor((y / BR.y * 0.5 + 0.5) * BR.h);
+  return i < 0 || j < 0 || i >= BR.w || j >= BR.h ? 0 : breathF[(j * BR.w + i) * 2];
+};
+// The scratch pane point the eye sees at screen pixel (x, y).
+function panePoint(x, y) {
+  setBasis();
+  const d = [0, 1, 2].map(i => basis.Fa[i] * basis.focal + basis.Ra[i] * (x - W / 2) + basis.Ua[i] * (y - H / 2));
+  const s = (WIN.depth - basis.eye[2]) / d[2];
+  return [basis.eye[0] + d[0] * s, basis.eye[1] + d[1] * s];
+}
+// A breath every 3.6 s while the face is near the glass; the out-breath takes 40 percent.
+function stepBreath(dt) {
+  const near = smooth(0.06, 0.15, head.z);
+  breath.phase = (breath.phase + dt / 3.6) % 1;
+  // The mouth sits 7 cm under the eye; the breath spreads as it meets the pane.
+  if (near > 0 && breath.phase < 0.4) brDisc(basis.eye[0], basis.eye[1] - 0.07, 0.05 + 0.04 * near, Math.sin(PI * breath.phase / 0.4) * near * dt * 3.5, false);
+  if (!breath.any) return;
+  // The fog dries over about eight seconds; the trace fades over minutes.
+  const kf = Math.exp(-dt / 8), kt = Math.exp(-dt / 240);
+  let any = false;
+  for (let o = 0, i = 0; o < breathF.length; o += 2, i += 4) {
+    breathF[o] *= kf; breathF[o + 1] *= kt;
+    if (breathF[o] > 0.004) any = true;
+    breathData[i] = breathF[o] * 255; breathData[i + 1] = breathF[o + 1] * 255;
+  }
+  breath.any = any;
+  breathTex.needsUpdate = true;
+}
+
 // The glass dims in five steps, from clear to deep blue.
 // The tint spreads from the rim inward: the edge leads, the centre follows.
 const dim = { edge: opts.dim / 4, core: opts.dim / 4 };
@@ -827,6 +920,8 @@ function step(dt) {
   dim.edge += (goal - dim.edge) * (1 - Math.exp(-dt / (reduce ? 0.15 : 0.7)));
   dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
   wlight.level += ((wlight.on ? 1 : 0) - wlight.level) * Math.min(1, dt / (wlight.on ? 0.05 : 0.12));
+  stepBreath(dt);
+  stepElmo(dt);
   stepCells(dt);
   stepFlashes(dt);
   stepWeather(dt);
@@ -1374,7 +1469,7 @@ function render() {
   // The aircraft goes first; the outside then fills only the uncovered pixels.
   tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
     veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
-    wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce, beam: wlight.level });
+    wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce, beam: wlight.level, elmo: Math.min(1.6, elmo.level + elmo.surge * 1.6) });
   renderer.render(wing3.scene, wing3.cam);
   renderer.render(P1.scene, quadCam);
   // Bolts add their light over the outside; the wing's depth hides them.
@@ -1409,6 +1504,7 @@ function render() {
   const wa = norm(sub(WING_LIGHT.aim, WING_LIGHT.p));
   UG.uniform4f(u.uBeamL, WING_LIGHT.p[0] + seatDx, WING_LIGHT.p[1], WING_LIGHT.p[2], wlight.level);
   UG.uniform4f(u.uBeamA, wa[0], wa[1], wa[2], fog.level);
+  UG.tex(u.uBreath, breathTex); UG.uniform1f(u.uBreathOn, breath.any ? 1 : 0);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
   UG.uniform3fv(u.uCabin, sky.cabin);
@@ -1577,6 +1673,9 @@ const toPx = e => { const r = canvas.getBoundingClientRect(), x = (e.clientX - r
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
   setBasis();
+  // A tap on the winglet calls a strike on the plane.
+  const tip = toScreen([TIP[0] + seatDx, TIP[1], TIP[2]]);
+  if (Math.hypot(tip[0] - x, tip[1] - y) < 0.07 * Math.min(W, H)) { strike(); return; }
   const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
   // The nearest tower under the tap flashes where the tap meets it.
   let hit = null;
@@ -1607,6 +1706,9 @@ stage.addEventListener('pointerdown', e => {
   touches.set(e.pointerId, [x, y]);
   if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
   drag = { x0: x, y0: y, x, y, moved: false };
+  // A press on fogged glass draws in the fog; the head stays put.
+  const pp = panePoint(x, y);
+  if (brAt(...pp) > 0.12) { drag.draw = pp; drag.moved = true; brDisc(...pp, 0.008, 1, true); }
   stage.classList.add('dragging');
 });
 stage.addEventListener('pointermove', e => {
@@ -1621,6 +1723,13 @@ stage.addEventListener('pointermove', e => {
     return;
   }
   if (!drag) return;
+  if (drag.draw) {
+    // The finger wipes a line in steps of 3 mm.
+    const pp = panePoint(x, y), [ax, ay] = drag.draw, n = Math.max(1, Math.ceil(Math.hypot(pp[0] - ax, pp[1] - ay) / 0.003));
+    for (let k = 1; k <= n; k++) brDisc(ax + (pp[0] - ax) * k / n, ay + (pp[1] - ay) * k / n, 0.008, 1, true);
+    drag.draw = pp;
+    return;
+  }
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
   // The head follows the drag: right moves toward the nose, up rises.
   const k = 0.42 / Math.min(W, H);

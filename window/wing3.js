@@ -56,6 +56,7 @@ const FOG_U = {
   uFogN: { value: null }, uFogLvl: { value: 0 }, uFogWisp: { value: V(0, 0, 0) },
   uUpW: { value: V(0, 1, 0) }, uSpanW: { value: V(0, 0, 1) }, uFlex: { value: new THREE.Vector2() },
   uTipP: { value: V(0, 0, 0) }, uStrobeL: { value: 0 }, uNavL: { value: V(1, 0.1, 0.05) },
+  uElmo: { value: 0 }, uElmoT: { value: 0 },
 };
 // The wing bends in its first two modes; s runs root to tip.
 const BEND_GLSL = `
@@ -79,7 +80,19 @@ gl_Position = projectionMatrix * mvPosition;`);
       .replace('#include <common>', `#include <common>
 uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
 uniform vec3 uTipP, uNavL; uniform float uStrobeL;
+uniform float uElmo, uElmoT; uniform vec3 uSpanW;
 varying vec3 vFogW;`)
+      // St Elmo's fire: a violet corona flickers on the leading edges and the tips.
+      // It burns after the fog, so it glows through the bank.
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if (uElmo > 0.001) {
+    // The view's axes mirror, but they stay orthogonal: the transpose turns normals back.
+    vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+    float sp = dot(vFogW, uSpanW);
+    float edge = smoothstep(0.55, 0.95, nW.x) + 0.8 * smoothstep(22.0, 25.0, sp);
+    float fl = 0.5 + 0.5 * sin(uElmoT * 37.0 + vFogW.x * 9.0 + sp * 3.1) * sin(uElmoT * 23.0 - sp * 5.3 + vFogW.y * 7.0);
+    gl_FragColor.rgb += vec3(0.5, 0.42, 1.0) * uElmo * edge * (0.25 + 0.75 * fl * fl) * 0.06;
+  }`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   // Fog curtains and banks between the eye and the skin hide stretches of the wing.
@@ -323,7 +336,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -401,6 +414,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
       wingL.intensity = beam * WING_LIGHT.k;
+      FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
       return [bend.x, bend.y, bend.z];
     },
   };
