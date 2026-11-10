@@ -2042,15 +2042,18 @@ function breakFrag(f) {
 // One glowing bit off the rock's hot face.
 let ablN = 0;
 const shedP = new THREE.Vector3(), shedV = new THREE.Vector3();
-function shedSpark() {
+// age > 0 backdates a bit: it left the rock where the rock was then.
+function shedSpark(age = 0) {
   const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
-  shedP.copy(ast.pos).addScaledVector(tp, 0.85 * R).add(shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.8 * R));
+  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / SIZES[opts.size].T * age).addScaledVector(tp, 0.85 * R).add(shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.8 * R));
   // Big burning pieces drift slowly back up the smoke train.
   // They carry no weight, so they never arc off; they go 12 to 25 km.
   shedV.copy(ast.away).multiplyScalar(350 + rnd() * 300).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(40));
-  writeStar(shedP, simT, shedV, -0.008, 2, 38 + rnd() * 14, 2.4, 2.4 + rnd() * 1.4, 3, 0.35);
+  writeStar(shedP, simT - age, shedV, -0.008, 2, 38 + rnd() * 14, 2.4, 2.4 + rnd() * 1.4, 3, 0.35);
   ablN++;
 }
+// A rock already in flight already has its trail of embers.
+function prewarmEmbers() { if (!reduced()) for (let i = 0; i < 150; i++) shedSpark(rnd() * 50); }
 
 
 /* ---------- dust: puffs that lift off the plain ---------- */
@@ -4814,6 +4817,7 @@ function landReset() {
   PU.uTrail.value = 1;
   placeAst();
   stepAim(0, true);
+  prewarmEmbers();
 }
 // A tape-rewind hiss falls under the spin, rushes up into the white,
 // then breathes out as the white burns off.
@@ -5472,6 +5476,7 @@ seedFrags();
 placeAst();
 astSize();
 stepAim(0, true);
+prewarmEmbers();
 setBox(ui.setting('letterbox').value);
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
