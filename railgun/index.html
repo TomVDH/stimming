@@ -141,6 +141,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
     { type: 'choice', id: 'tone', label: 'Tone map', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }], onPick: v => { gfx.tone = v; setTone(); } },
     { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.exp = v; draw(); } },
+    { type: 'slider', id: 'brightness', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 1, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
     { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.22, persist: true, onInput: v => { gfx.con = v; setTone(); } },
     { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 0.82, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
@@ -192,7 +193,7 @@ camera.rotation.order = 'YXZ';
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
 // Graphics settings: resolution share, smoke step factor, bloom gain, FXAA mode.
 const DETAIL = { low: 0.6, mid: 1, high: 1.4 };
-const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'agx', exp: 1, con: 0.22, sat: 0.82 };
+const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'agx', exp: 1, bri: 1, con: 0.22, sat: 0.82 };
 // The share of the quality's resolution per rung.
 const RES_STEP = [1, 0.82, 0.68, 0.55];
 
@@ -752,23 +753,36 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
   ${AIR}
   // Dunes: long rounded crests across the wind, bent by low noise.
   const vec2 WIND = vec2(0.8, 0.6);
-  float dune(vec2 p) {
-    float c = 0.5 + 0.5 * sin(dot(p, WIND) * 0.0165 + 2.2 * k2fbm(p * 0.00035));
-    float h = c * c * (3.0 - 2.0 * c);
+  const vec2 WIND2 = vec2(-0.5, 0.86);
+  const float F1 = 0.011, F2 = 0.0052;
+  // g holds each set's gain; a set fades once a pixel spans its wave.
+  float dune(vec2 p, vec2 g) {
+    float w = k2fbm(p * 0.00028);
+    float c = 0.5 + 0.5 * sin(dot(p, WIND) * F1 + 3.2 * w);
+    // Crest height wanders with the warp, so the rows do not repeat.
+    float h = 0.5 + (c * c * (3.0 - 2.0 * c) - 0.5) * g.x * (0.45 + 0.8 * w);
     // A second, longer set crosses the first.
-    float c2 = 0.5 + 0.5 * sin(dot(p, vec2(-0.5, 0.86)) * 0.0071 + 1.7 * k2fbm(p * 0.0006 + 3.1));
-    return h + 0.35 * c2;
+    float c2 = 0.5 + 0.5 * sin(dot(p, WIND2) * F2 + 2.4 * k2fbm(p * 0.0005 + 3.1));
+    return h + 0.35 * (0.5 + (c2 - 0.5) * g.y);
+  }
+  // Gaussian gain of a wave of frequency f over the pixel footprint.
+  // The footprint runs along the wave, so grazing pixels filter hard.
+  float band(vec2 dx, vec2 dy, vec2 dir, float f) {
+    float w = 1.6 * f * length(vec2(dot(dx, dir), dot(dy, dir)));
+    return exp(-0.5 * w * w);
   }
   void main() {
     // The relief fades with distance, so far dunes never shimmer.
     float dist = length(vP - cameraPosition);
     float fade = smoothstep(14000.0, 900.0, dist);
-    float e = 6.0, h0 = dune(vP.xz);
+    vec2 dx = dFdx(vP.xz), dy = dFdy(vP.xz);
+    vec2 g = vec2(band(dx, dy, WIND, F1), band(dx, dy, WIND2, F2));
+    float e = 6.0, h0 = dune(vP.xz, g);
     float A = 14.0 * fade;
-    vec3 N = normalize(vec3(-(dune(vP.xz + vec2(e, 0.0)) - h0) / e * A, 1.0, -(dune(vP.xz + vec2(0.0, e)) - h0) / e * A));
-    // Fine wind ripples near the eye.
-    float near = smoothstep(1600.0, 200.0, dist);
-    float rp = cos(dot(vP.xz, WIND) * 0.55 + 4.0 * k2noise(vP.xz * 0.02)) * 0.05 * near;
+    vec3 N = normalize(vec3(-(dune(vP.xz + vec2(e, 0.0), g) - h0) / e * A, 1.0, -(dune(vP.xz + vec2(0.0, e), g) - h0) / e * A));
+    // Fine wind ripples near the eye, filtered like the dunes.
+    float near = smoothstep(1600.0, 200.0, dist) * band(dx, dy, WIND, 0.38);
+    float rp = cos(dot(vP.xz, WIND) * 0.38 + 5.0 * k2noise(vP.xz * 0.012)) * 0.05 * near;
     N = normalize(N + vec3(WIND.x, 0.0, WIND.y) * rp);
     // Clean sand: crests a touch lighter, troughs a touch deeper.
     float tone = 0.94 + 0.12 * k2fbm(vP.xz * 0.0002);
@@ -2021,9 +2035,10 @@ const shedP = new THREE.Vector3(), shedV = new THREE.Vector3();
 function shedSpark() {
   const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
   shedP.copy(ast.pos).addScaledVector(tp, 0.85 * R).add(shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.8 * R));
-  // Low drag: each bit sweeps slowly out 4 to 10 km, trailing fire.
-  shedV.copy(ast.away).multiplyScalar(500 + rnd() * 700).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(160));
-  writeStar(shedP, simT, shedV, 0.12, 2, 6 + rnd() * 4, 1.2, 2.6 + rnd() * 1.4, 0, 1.4);
+  // Big burning pieces drift slowly back up the smoke train.
+  // They carry no weight, so they never arc off; they go 12 to 25 km.
+  shedV.copy(ast.away).multiplyScalar(350 + rnd() * 300).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(40));
+  writeStar(shedP, simT, shedV, -0.008, 2, 38 + rnd() * 14, 2.4, 3.6 + rnd() * 2.2, 0, 1.2);
   ablN++;
 }
 
@@ -2156,8 +2171,10 @@ const starMat = new THREE.ShaderMaterial({
   }
   varying vec3 vCol, vColT, vLWH;
   varying float vS, vY, vSpark, vSeed;
+  // A negative k marks a weightless star: drag only, no fall.
   vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
-    vec3 vt = uG / k;
+    vec3 vt = k < 0.0 ? vec3(0.0) : uG / k;
+    k = abs(k);
     return p0 + vt * t + (v0 - vt) * (1.0 - exp(-k * t)) / k;
   }
   float hash11(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
@@ -2491,7 +2508,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       // The focus pull: 0 sharp, 1 soft.
       uSoft: { value: 0 },
       // Contrast power and saturation, from the settings.
-      uCon: { value: 0.22 }, uSat: { value: 0.82 },
+      uCon: { value: 0.22 }, uSat: { value: 0.82 }, uBri: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
@@ -2511,7 +2528,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2;
-    uniform float uSoft, uCon, uSat;
+    uniform float uSoft, uCon, uSat, uBri;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2616,7 +2633,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       c *= pow(lc / 0.18, uCon);
       lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
       // A restrained palette: colour pulled back, shadows cool, highs warm.
-      c = max(mix(vec3(lc), c, uSat), 0.0);
+      c = max(mix(vec3(lc), c, uSat), 0.0) * uBri;
       c *= mix(vec3(0.94, 0.98, 1.06), vec3(1.04, 1.0, 0.95), smoothstep(0.02, 0.6, lc));
       // A soft matte floor: the deepest blacks lift a touch.
       c += vec3(0.004, 0.0045, 0.006) * (1.0 - smoothstep(0.0, 0.05, lc));
@@ -2873,7 +2890,7 @@ function stepAst(dt) {
   stepChunks();
   if (ast.state === 'approach' || ast.state === 'hold') {
     // The hot face sheds glowing bits; they fall back into the smoke.
-    if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 8 + rnd()); n > 0; n--) shedSpark();
+    if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 3 + rnd()); n > 0; n--) shedSpark();
   }
   if (ast.state === 'approach') {
     ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
@@ -3983,13 +4000,13 @@ const shardMat = new THREE.ShaderMaterial({
   void main() {
     float age = uTime - aSeed.z;
     if (age < 0.0 || age > 60.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    // Mild drag, a slow fall, a spin.
-    // The shard shrinks away over its last two seconds.
-    float k = 0.04;
-    // Air drag sets a fall speed; each shard falls at its own.
-    // A slow approach to it makes a long arc.
-    float vt = 250.0 + 150.0 * fract(aSeed.x * 3.7);
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.11 * age)) / 0.11), 0.0);
+    // Drag eats the lob fast and the sideways fling slowly.
+    // The pieces carry out sideways as gravity bends them down.
+    vec3 k = vec3(0.035, 0.1, 0.035);
+    // Each shard reaches its own fall speed in about five seconds.
+    // The lob and the fall make one ballistic arc.
+    float vt = 420.0 + 220.0 * fract(aSeed.x * 3.7);
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.2 * age)) / 0.2), 0.0);
     // Pieces come to rest on the plain.
     c.y = max(c.y, 15.0);
     // Half the pieces burn away in the air; the rest fall all the way.
@@ -4160,10 +4177,10 @@ function stepShards(dt) {
 }
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
-  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.04, vt = 250 + 150 * ((S[i * 4] * 3.7) % 1);
-  const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
-  out.set(P[i * 3] + V[i * 4] * e, Math.max(15, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.11 * age)) / 0.11)), P[i * 3 + 2] + V[i * 4 + 2] * e);
-  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.11 * age)), V[i * 4 + 2] * ek);
+  const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, kv = 0.1, vt = 420 + 220 * ((S[i * 4] * 3.7) % 1);
+  const e = (1 - Math.exp(-kh * age)) / kh, ek = Math.exp(-kh * age), ev = (1 - Math.exp(-kv * age)) / kv, ekv = Math.exp(-kv * age);
+  out.set(P[i * 3] + V[i * 4] * e, Math.max(15, P[i * 3 + 1] + V[i * 4 + 1] * ev - vt * (age - (1 - Math.exp(-0.2 * age)) / 0.2)), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ekv - vt * (1 - Math.exp(-0.2 * age)), V[i * 4 + 2] * ek);
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 // Each trail is a chain of short trains laid along the shard's own arc.
@@ -4312,8 +4329,9 @@ function shatter(c) {
   // The four fly wide apart, fast, and carry on along the rock's own arc.
   const fw = bq.copy(ast.away).negate(), sd = new THREE.Vector3().crossVectors(fw, yUp).normalize(), up = new THREE.Vector3().crossVectors(sd, fw).normalize();
   keep.forEach(([p, v, d], j) => {
-    const a = j * Math.PI / 2 + (rnd() - 0.5) * 0.9, sp = (180 + 280 * c) * (R / 600) * (0.8 + 0.4 * rnd());
-    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp * 0.8 + 0.25 * sp).addScaledVector(fw, FALL / SIZES[opts.size].T + 160 * (R / 600));
+    // Four pieces fan out round the hit, each at its own speed; most lob up before they fall.
+    const a = j * Math.PI / 2 + 0.4 + (rnd() - 0.5) * 1.1, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp * 0.6 + (0.35 + 0.4 * rnd()) * sp).addScaledVector(fw, 0.8 * FALL / SIZES[opts.size].T + 90 * (R / 600));
     sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, ...d);
   });
   shardGeo.instanceCount = keep.length;
@@ -5229,7 +5247,7 @@ function setBloom() { bloomPass.strength = POST.bloom[0] * gfx.bloom; draw(); }
 const TONES = { agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, neutral: THREE.NeutralToneMapping };
 function setTone() {
   renderer.toneMapping = TONES[gfx.tone] || THREE.AgXToneMapping;
-  grade.uniforms.uCon.value = gfx.con; grade.uniforms.uSat.value = gfx.sat;
+  grade.uniforms.uCon.value = gfx.con; grade.uniforms.uSat.value = gfx.sat; grade.uniforms.uBri.value = gfx.bri;
   draw();
 }
 
