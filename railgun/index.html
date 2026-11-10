@@ -1685,6 +1685,7 @@ function draw() {
   updateDust();
   updateArcs();
   updateBolt();
+  updateIon();
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
   grade.uniforms.uFlash.value = reduced() ? 0.3 * flashNow : flashNow;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
@@ -1959,7 +1960,7 @@ const boltGeo = new THREE.BufferGeometry();
   boltGeo.setAttribute('aK', k);
 }
 const boltMat = new THREE.ShaderMaterial({
-  uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uBlue: { value: new THREE.Vector3(...linFit(0.85, 0.08, 230)) }, uCore: { value: 3 }, uGain: { value: 6 }, uWide: { value: 70 } },
+  uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uBlue: { value: new THREE.Vector3(...linFit(0.85, 0.08, 230)) }, uCore: { value: 3 }, uGain: { value: 6 }, uWide: { value: 110 } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -1999,6 +2000,99 @@ bolt.frustumCulled = false;
 bolt.renderOrder = 3;
 bolt.visible = false;
 scene.add(bolt);
+
+/* ---------- the ion line: the bolt's path stays in the sky ---------- */
+// It glows blue-white just behind the head, then cools to a contrail.
+// The contrail widens, bends in the wind and fades over 25 seconds.
+// uI: seconds since the slug left, flight time, power.
+const ION_SEG = 64;
+const ionGeo = new THREE.BufferGeometry();
+{
+  const n = ION_SEG, pos = new Float32Array(n * 12), f = new Float32Array(n * 8), idx = [];
+  for (let i = 0; i < n; i++) {
+    const b = i * 4, f0 = i / n, f1 = (i + 1) / n;
+    pos.set([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], i * 12);
+    f.set([f0, f1, f0, f1, f1, f0, f1, f0], i * 8);
+    idx.push(b, b + 2, b + 3, b, b + 3, b + 1);
+  }
+  ionGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  ionGeo.setAttribute('aF', new THREE.BufferAttribute(f, 2));
+  ionGeo.setIndex(idx);
+}
+const ionMat = new THREE.ShaderMaterial({
+  uniforms: {
+    ...U, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr,
+    uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() },
+    uIonC: { value: new THREE.Vector3(...linFit(0.88, 0.1, 230)) }, uConC: { value: new THREE.Vector3(...linFit(0.93, 0.008, 80)) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec2 aF;
+  uniform vec3 uA, uB, uI;
+  uniform vec2 uRes;
+  uniform float uDpr;
+  varying float vY, vLa, vF;
+  varying vec3 vP;
+  // The line at fraction f; la is the time since the head passed.
+  vec3 at(float f, out float la) {
+    f = min(f, uI.x / uI.y);
+    la = uI.x - f * uI.y;
+    vec3 p = mix(uA, uB, f);
+    // Wind drifts the old line and makes it waver.
+    p += vec3(7.0, 1.5, 2.0) * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    return p;
+  }
+  void main() {
+    float la, lb;
+    vec3 p = at(aF.x, la), q = at(aF.y, lb);
+    vec4 c0 = projectionMatrix * viewMatrix * vec4(p, 1.0), c1 = projectionMatrix * viewMatrix * vec4(q, 1.0);
+    // An end vertex looks back to its start, so its direction flips.
+    vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * uRes * (position.x < 0.5 ? 1.0 : -1.0);
+    d = length(d) > 1e-3 ? normalize(d) : vec2(0.0, 1.0);
+    // The width is in metres, with a floor in pixels.
+    float ppm = 0.5 * uRes.y * projectionMatrix[1][1] / max(c0.w, 1.0);
+    float W = clamp((10.0 + 25.0 * la) * ppm, 1.6 * uDpr, 60.0 * uDpr);
+    c0.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c0.w;
+    vY = position.y; vLa = la; vF = aF.x; vP = p;
+    gl_Position = c0;
+  }`,
+  fragmentShader: /* glsl */`
+  uniform vec3 uI, uIonC, uConC;
+  uniform vec4 uBlast;
+  varying float vY, vLa, vF;
+  varying vec3 vP;
+  ${HEAD}
+  ${AIR}
+  void main() {
+    float n = abs(vY), core = exp(-n * n * 5.0);
+    float k = 0.6 + 0.4 * uI.z;
+    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k;
+    // The contrail is ragged along its length.
+    float rag = 0.6 + 0.4 * k2noise(vec2(vF * 60.0, vLa * 0.25));
+    float a = smoothstep(0.1, 1.0, vLa) * exp(-vLa / 20.0) * (1.0 - smoothstep(18.0, 26.0, vLa)) * core * 0.8 * rag * k;
+    // Sunlit ice reads brighter than the dusty air around it.
+    vec3 lit = uConC * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 1.4);
+    // The blast lights the line's far end.
+    vec3 b = uBlast.xyz - vP;
+    lit += uAstC * uBlast.w * 2.0e7 / (dot(b, b) + 4.0e6);
+    // The line takes half the air, so it holds against the haze.
+    gl_FragColor = vec4(em + mix(lit, air(lit, vP), 0.5) * a, a);
+  }`,
+});
+const ionLine = new THREE.Mesh(ionGeo, ionMat);
+ionLine.frustumCulled = false; ionLine.renderOrder = 2.6; ionLine.visible = false;
+scene.add(ionLine);
+// The live line: its start time, flight time and power.
+let ion = null;
+function updateIon() {
+  if (!ion) { ionLine.visible = false; return; }
+  const a = simT - ion.t0 - 0.3;
+  if (a > ion.T + 26) { ion = null; ionLine.visible = false; return; }
+  ionMat.uniforms.uI.value.set(a, ion.T, ion.c);
+  ionLine.visible = a > 0;
+}
 
 /* ---------- glints: streaks of light with a length and a width in metres ---------- */
 // The length lies along one world direction.
@@ -2327,6 +2421,8 @@ fire = c => {
     dustV.set((rnd() - 0.5) * 4, -4 - rnd() * 6, (rnd() - 0.5) * 4);
     puff(dustP, dustV, 3 + rnd() * 3, 8 + rnd() * 10);
   }
+  ion = { t0: simT, T, c: Math.min(c, 1.25) };
+  ionMat.uniforms.uA.value.copy(MUZZLE); ionMat.uniforms.uB.value.copy(shot.target);
   boltMat.uniforms.uCore.value = 3 * (0.6 + c);
   boltMat.uniforms.uGain.value = 5 + 3 * c;
   { const ac = kit.live(); if (ac) { chirp(ac, c); hitSounds(ac, shot); } }
@@ -2532,7 +2628,7 @@ function updateBolt() {
   const live = age < shot.hitT + 0.3;
   bolt.visible = live;
   if (live) {
-    const tail = 0.35 + 0.03 * shot.T;
+    const tail = 0.55 + 0.03 * shot.T;
     const p0 = boltGeo.attributes.aP0, p1 = boltGeo.attributes.aP1, kk = boltGeo.attributes.aK;
     const fade = 1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3);
     for (let k = 0; k < BOLT_SEG; k++) {
@@ -2557,7 +2653,7 @@ function updateBolt() {
     if (bv.lengthSq() < 1e-6) bv.copy(shot.ax); else bv.normalize();
     const inGun = age < 0.3, pw = 0.6 + c;
     bq.copy(bp).addScaledVector(bv, inGun ? -40 : -220 * pw);
-    glint(headGlint, bq, bv, inGun ? 110 : 620 * pw, inGun ? 12 : 50 * pw, 5 * fade);
+    glint(headGlint, bq, bv, inGun ? 110 : 1100 * pw, inGun ? 12 : 70 * pw, 5 * fade);
     // A lens streak crosses the head, level with the frame.
     bv.setFromMatrixColumn(camera.matrixWorld, 0);
     glint(headStreak, bp, bv, inGun ? 60 : 800 * pw, inGun ? 4 : 9, inGun ? 0.8 * fade : 1.6 * fade);
@@ -2595,7 +2691,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!press || !!charge || !!shot || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!charge || !!shot || !!ion || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -2944,16 +3040,18 @@ function playSample(ac, buf, when, gain, rate, dark = 0) {
   src.start(when);
   track(when + buf.duration / rate + 0.1, src);
 }
-// The impact lands on the flash; the boom follows at once.
+// The impact's prelude lands on the flash.
+// The boom crosses the distance at sound speed, compressed eight times.
 function hitSounds(ac, sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
-  sh.sfx = { hit, impact: 0, boom: 0 };
+  const late = camera.position.distanceTo(sh.target) / 343 / 8;
+  sh.sfx = { hit, impact: 0, boom: 0, late };
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (shot !== sh || !kit.live()) return;
     if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04)); }
     // The boom plays slow, low and dark: about 33 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + 0.12; playSample(ac, boom, sh.sfx.boom, 0.9 * k * jit(0.1), 0.68 * jit(0.04), 900); }
+    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 0.9 * k * jit(0.1), 0.68 * jit(0.04), 900); }
   });
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
@@ -3048,6 +3146,7 @@ window.__qa = {
   holding: () => !!charge,
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
+  ion: () => ({ visible: ionLine.visible, glow: ion ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
   release() { act.release('pointer'); },

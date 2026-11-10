@@ -168,7 +168,7 @@ Wind bed with a whistle past the pylon, dipping under a charge. A charge synth o
 Bean `stimming-z9w9`, branch `claude/railgun-shot-99c65f`. Tom, 2026-11-10: "the gun, the muzzle effects and projectile, the incoming threats and the explosion thereof upon destruction".
 Decisions: the Volumetric direction for the shot; the barrel glows after a shot and cools; a main rock with two to four fragments.
 Tom, 02:32, added: "the harmonic wind up should culminate in a thx like chorus right before firing -- we can hold the gun a little longer -- it will really start acting out if we hold it for too long". Then: a hold past the acting-out vents the charge (a soft fail).
-Tom, 02:50, sent two samples: "impact sound direct prelude and explosion boom". `railgun/impact.mp3` (a whoosh into an impact, peak at 1.85 s) lands on the hit flash; `railgun/boom.mp3` follows 0.12 s after. The boom replaces the delayed synth rumble; the rock no longer breaks in silence.
+Tom, 02:50, sent two samples: "impact sound direct prelude and explosion boom". `railgun/impact.mp3` (a whoosh into an impact, peak at 1.85 s) lands on the hit flash; `railgun/boom.mp3` plays slow, low and dark (Tom: "longer darker deeper"), and lands after the hit by the distance at sound speed, compressed eight times (Tom: "a delay commensurate with the distance"), about 15 to 17 s. It replaces the synth rumble.
 
 **Fixed.** The smoke train keeps its look: no edit to `trail()`, the march or the `PU.*` uniforms. A change there needs a before/after still for Tom first.
 The sky, the cirrus, the sun and the time of day belong to another session: no edit to `k2skyB`, `wisps`, `sun`, `sunDeg`, `setSun` or the Sun slider.
