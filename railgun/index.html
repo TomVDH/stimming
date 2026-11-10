@@ -1684,7 +1684,8 @@ const PU = {
   uBurn: astMat.uniforms.uBurn, uVol: { value: volRT.texture },
   // Long enough that the tip lies past the frame, even at the wide lens.
   uLen: { value: 480000 }, uK: { value: 0.085 },
-  // uTrail fades the smoke; uSolid tells that the rock blocks the ray.
+  // uTrail fades the smoke.
+  // uSolid: the rock's blocking radius in rock radii; 0 when no rock.
   uTrail: { value: 1 }, uSolid: { value: 1 }, uFlow: { value: 0 }, uSteps: { value: 72 }, uLSteps: { value: 4 },
   // uEatK: how much the impact cloud eats this train; the main trail only.
   // uJoin: 1 keeps a debris train full to its far end, where it meets the main trail.
@@ -1790,8 +1791,8 @@ function makeTrain(pu) {
     } else if (xo < xa || xo > xb) discard;
     t0 = max(t0, 0.0);
     // The rock stops the ray.
-    float bs = dot(qo, rd), ds = bs * bs - dot(qo, qo) + 0.81 * R * R;
-    if (uSolid > 0.5 && ds > 0.0) t1 = min(t1, -bs - sqrt(ds));
+    float bs = dot(qo, rd), ds = bs * bs - dot(qo, qo) + uSolid * uSolid * R * R;
+    if (uSolid > 0.05 && ds > 0.0) t1 = min(t1, -bs - sqrt(ds));
     if (t1 <= t0) discard;
     float dt = (t1 - t0) / float(uSteps);
     // Each pixel starts its march at its own offset.
@@ -2799,7 +2800,8 @@ function aimAst() {
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
-  PU.uSolid.value = astMesh.visible ? 1 : 0;
+  // The blocker sits inside the rock's thinnest outline, so no gap shows.
+  PU.uSolid.value = astMesh.visible ? { long: 0.62, lumpy: 0.78, cratered: 0.8 }[astMesh.geometry.userData.kind] || 0.7 : 0;
 }
 
 function resize() {
