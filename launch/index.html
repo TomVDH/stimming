@@ -2017,6 +2017,20 @@ function stopAll() {
   if (flight) flight.roarOn = false;
 }
 function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+// The thrust: a recorded booster roar with crackle, looped.
+// It loads once, after the first gesture opens the audio context.
+// null while it loads; false if it fails, and the synth band plays.
+let thrust = null, thrustP = null;
+function loadThrust(ac) {
+  thrustP ??= fetch('thrust.mp3').then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => {
+    // The MP3 pads both ends with silence; the loop skips it.
+    const d = buf.getChannelData(0), q = 0.002;
+    let a = 0, z = d.length - 1;
+    while (a < z && Math.abs(d[a]) < q) a++;
+    while (z > a && Math.abs(d[z]) < q) z--;
+    thrust = { buf, a: a / buf.sampleRate, z: (z + 1) / buf.sampleRate };
+  }).catch(() => { thrust = false; });
+}
 function hiss(ac, t, dur, rate = 1) {
   const s = ac.createBufferSource();
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
@@ -2061,6 +2075,7 @@ function soundBed() {
   const ac = kit.live();
   if (!ac) return;
   marsh(ac);
+  loadThrust(ac);
   const now = ac.currentTime;
   bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
   // A roar that could not start (asleep, interrupted) starts when it can.
@@ -2093,18 +2108,30 @@ function roar(f, off = 0) {
   const ac = kit.live();
   // A roar that has already ended never plays again.
   if (!ac || f.roarOn || off >= PRE + 53) return;
+  // The roar waits for the recording; the tick tries again.
+  loadThrust(ac);
+  if (thrust === null) return;
   f.roarOn = true;
   const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
   const t = ac.currentTime + lead, L = PRE + 56 - off, k = f.k.flame;
   const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
   // A resume starts at the level the full curve has reached by then.
   const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
-  const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // The recorded thrust replaces the noise band once it loads.
+  const s = thrust ? ac.createBufferSource() : hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  if (thrust) {
+    s.buffer = thrust.buf; s.loop = true; s.loopStart = thrust.a; s.loopEnd = thrust.z;
+    // Heavier rockets sound a little deeper.
+    s.playbackRate.value = (f.kind === 'heavy' ? 0.82 : f.kind === 'small' ? 1.08 : 0.94) * jit(0.03);
+    s.start(t, thrust.a + Math.random() * (thrust.z - thrust.a) * 0.8); s.stop(t + L + 1);
+  }
   // Swell over 2 s, hold, then fade with distance until cut-off.
   const swell = Math.max(0.05, 2 - off);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(lvl * fade, t + swell);
-  g.gain.setTargetAtTime(lvl * 0.25, t + swell + Math.max(0, 4 - off), 18);
+  // The recording runs hotter than the noise band: it plays at 0.6.
+  const gl = lvl * (thrust ? 0.6 : 1);
+  g.gain.exponentialRampToValueAtTime(gl * fade, t + swell);
+  g.gain.setTargetAtTime(gl * 0.25, t + swell + Math.max(0, 4 - off), 18);
   g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
   lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
   lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
@@ -2126,7 +2153,8 @@ function roar(f, off = 0) {
   const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
   c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
   cg.gain.setValueAtTime(0.0001, t);
-  cg.gain.exponentialRampToValueAtTime(lvl * 0.7, t + swell);
+  // The recording has its own crackle; the clicks only edge it.
+  cg.gain.exponentialRampToValueAtTime(lvl * (thrust ? 0.25 : 0.7), t + swell);
   cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
   c.connect(cbp).connect(cg).connect(kit.out);
   c.start(t); c.stop(t + L);
