@@ -147,7 +147,8 @@ try {
   stage.querySelector('.fail').hidden = false; ui.hideControls(); markReady();
   throw err;
 }
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// AgX rolls bright fire and sky off softly, without the yellow skew of ACES.
+renderer.toneMapping = THREE.AgXToneMapping;
 renderer.toneMappingExposure = 1.0;
 // The time of day's exposure; the eye's adaptation scales it each frame.
 let baseExp = 1.0;
@@ -993,6 +994,8 @@ void main() {
   // The tower keeps some body through seventy kilometres of air.
   // At night the heaps take the moon dimly; they never glow.
   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
+  // Moonlit tops: the upper faces and thin crowns turn silver, like the tail's upper side.
+  col += uSunC * uStars * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
   // The air layers the heaps by distance: near ones crisp, far ones in the horizon colour.
   col = air(col, P);
   // The blast: its light, thin parts brightest, and the shock rim.
@@ -2582,9 +2585,13 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       // Contrast: shadows sink and highs lift round a mid grey.
       float lc = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
-      c *= pow(lc / 0.18, 0.14);
+      c *= pow(lc / 0.18, 0.22);
       lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c = max(mix(vec3(lc), c, 1.1), 0.0);
+      // A restrained palette: colour pulled back, shadows cool, highs warm.
+      c = max(mix(vec3(lc), c, 0.82), 0.0);
+      c *= mix(vec3(0.94, 0.98, 1.06), vec3(1.04, 1.0, 0.95), smoothstep(0.02, 0.6, lc));
+      // A soft matte floor: the deepest blacks lift a touch.
+      c += vec3(0.004, 0.0045, 0.006) * (1.0 - smoothstep(0.0, 0.05, lc));
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
       c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
