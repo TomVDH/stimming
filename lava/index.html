@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
 <script type="importmap">
 {
   "imports": {
@@ -24,6 +25,10 @@
   }
 }
 </script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm">
 <style>
 /* Lava lamp: a soft metal lamp on a desk in a dark room. */
 :root { --stage: oklch(0.13 0.02 30); }
@@ -54,7 +59,8 @@
 
 <script type="module">
 import { gsap } from 'gsap';
-import { initPage, sound, audioKit, reduced, onReducedChange, linFit, onQuality, pixelRatio, quality } from '../shared/stim.js';
+import { initPage, sound, audioKit, reduced, onReducedChange, linFit, onQuality, pixelRatio, quality, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Each dot shows the wax over its liquid.
 const dot = (w, l) => `linear-gradient(135deg, oklch(${w}) 0 50%, oklch(${l}) 50% 100%)`;
 const COLOURS = [
@@ -88,7 +94,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
 /* ---------- colour: OKLCH in, linear sRGB out ---------- */
@@ -1568,7 +1573,7 @@ function frame(now) {
   }
   render();
   soundFrame(now, dt);
-  if (frames === 2) canvas.classList.add('on');
+  if (frames === 2) { canvas.classList.add('on'); stage('first-frame'); }
   // At rest the loop stops and the sound sleeps.
   if (heat === 0 && motion < 0.0015 && dp < 1e-3 && Math.abs(lt - light) < 1e-3 && !grabs.size && !lamp.tw) {
     resting = true;
@@ -1807,6 +1812,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
   } catch (err) { console.error(err); failed(); }
 });
 async function boot() {
+  stage('build');
   await idle();
   fit();
   let gate;
@@ -1832,9 +1838,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

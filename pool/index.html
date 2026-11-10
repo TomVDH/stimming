@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Caustic pool: thick water seen from above, by day or by night. */
 :root { --stage: oklch(0.32 0.07 222); }
@@ -45,20 +60,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Caustic pool</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, sound, audioKit, linFit, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, audioKit, linFit, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Each tool shows as a small solid stencil.
 const stencil = d => `<svg class="solid" viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
 // The three things to throw come first, then Cut.
@@ -104,7 +108,6 @@ const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const rng = s => () => {
   s = (s + 0x6d2b79f5) | 0;
@@ -2277,7 +2280,7 @@ function frame(now) {
     inFrame = false;
   }
   // The canvas fades in once its first frame is up.
-  if (++drawn === 1) requestAnimationFrame(() => canvas.classList.add('on'));
+  if (++drawn === 1) { stage('first-frame'); requestAnimationFrame(() => canvas.classList.add('on')); }
   const still = !busy() && !petalsMoving();
   if (!still || drifting()) raf = requestAnimationFrame(frame);
   // Once the action stops, the sound sleeps; only the drift goes on.
@@ -2575,6 +2578,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
 });
 async function boot() {
   await idle();
+  stage('build');
   fit();
   if (!W) { W = 1160; H = 652; }
   try { await initGL(); } catch (err) {
@@ -2597,9 +2601,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

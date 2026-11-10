@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Sonar: a red low-light console, an active scope and a sonogram. */
 :root { --stage: oklch(0.08 0.012 25); }
@@ -42,28 +57,14 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, audioKit, sound, fitCanvas, whenVisible, reduced, onReducedChange, linFit, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, sound, fitCanvas, whenVisible, reduced, onReducedChange, linFit, onQuality, stage as setStage, pageReady, later as extras } from '../shared/stim.js';
+setStage('libs');
 import { intro as playIntro } from '../shared/intro.js';
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
-let markReady;
-const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+playIntro({ ready: pageReady() });
+setStage('build');
 // The handlers bind once the console exists.
 const on = { mode() {}, slider() {}, act() {}, shuffle() {}, persist() {}, scan() {}, grid() {} };
 const savedMode = (() => { try { return localStorage.getItem('stimming.sonar.mode'); } catch { return null; } })();
@@ -142,7 +143,7 @@ const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; setStage('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Half floats keep the afterglow smooth; bytes are the fallback.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
@@ -956,8 +957,8 @@ function makeRow(tt) {
 /* ---------- sound ---------- */
 const kit = audioKit({ keys: new Set([' ', 'Enter']), sleepMs: 2500 });
 let V = null, T = null, toneLoad = null;
-// The recorded ping loads early and decodes once audio starts.
-const pingBytes = fetch('ping.mp3').then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+// The recorded ping decodes once audio starts.
+const pingBytes = extras(() => fetch('ping.mp3').then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null));
 let pingBuf = null;
 function voices() {
   if (!kit.live()) return null;
@@ -2062,7 +2063,7 @@ if (SOUNDER) {
 }
 render();
 ready = true;
-markReady();
+setStage('first-frame');
 requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => { visible = v; if (v) wake(); else kit.rest(() => true); });
 // The console boots once the intro has cleared, then pings once.

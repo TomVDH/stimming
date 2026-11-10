@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Wind map: a chart with no land, and the wind drawn in silk. */
 :root { --stage: oklch(0.17 0.015 250); }
@@ -45,28 +60,13 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, css, quality, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, css, quality, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
-let markReady;
-const firstFrame = new Promise(r => (markReady = r));
+mark('libs');
 // The intro holds until the page, the font and the first frame are ready.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+playIntro({ ready: pageReady() });
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -145,12 +145,14 @@ const HIGH_G = 0.08, HIGH_Q = 1.33;
 const JET_V = 0.35, JET_W = 0.04;
 
 /* ---------- WebGL2 ---------- */
+mark('build');
 const stage = document.getElementById('stage');
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls?.(); markReady(); throw new Error('no webgl2'); };
+// The fail line counts as the first frame, so the intro lifts.
+const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls?.(); mark('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Float targets hold particle state and smooth trails.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
@@ -240,20 +242,29 @@ void main() {
   o = vec4(vCol.rgb * k, 1.0);
 }`;
 
+// The status queries wait in programs(), so the driver compiles in parallel.
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
-    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
-    gl.attachShader(p, sh);
+  const sh = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    gl.attachShader(p, s);
+    return s;
   });
   attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
-  const u = {};
-  // Array uniforms answer to their bare name.
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
-  return { p, u };
+  return { p, sh, u: {} };
+}
+async function programs(set) {
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const busy = () => Object.values(set).some(q => !gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR));
+  // A timer polls, because a hidden tab stops frames.
+  if (par) while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 8));
+  for (const { p, sh, u } of Object.values(set)) {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(sh.map(s => gl.getShaderInfoLog(s)).join(''), gl.getProgramInfoLog(p)); fail(); }
+    // Array uniforms answer to their bare name.
+    for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
+  }
+  return set;
 }
 
 const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
@@ -645,7 +656,7 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-const P = {
+const P = await programs({
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   segTex: program(SEG_TEX_VS, SEG_FS, ['aCorner']),
@@ -655,7 +666,7 @@ const P = {
   bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
   blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   final: program(QUAD_VS, FINAL_FS, ['aPos']),
-};
+});
 const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.62, 0.02, 245), ISO_COL = linFit(0.62, 0.05, 75);
 const GLOW_COL = linFit(0.92, 0.04, 80), GUST_COL = linFit(0.95, 0.03, 230), RIM_COL = linFit(0.75, 0.08, 235);
 
@@ -1846,7 +1857,7 @@ resize();
 render();
 gl.finish();
 ready = true;
-markReady();
+mark('first-frame');
 requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => { visible = v; if (v) resume(); else hush(); });
 wake();

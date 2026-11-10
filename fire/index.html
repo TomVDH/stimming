@@ -12,6 +12,29 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/capabilities/WebGPU.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/math/curlNoise.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/math/ImprovedNoise.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/GaussianBlurNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/controls/DragControls.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/geometries/RoundedBoxGeometry.js">
 <style>
 /* Fire: a flame burns on a dark ember-tinted stage. */
 :root { --stage: oklch(0.12 0.02 35); }
@@ -38,17 +61,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Fire</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
-  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
-  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
-  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
-} }
-</script>
 <script type="module">
-import { initPage, audioKit, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio, stage } from '../shared/stim.js';
+stage('libs');
 // Adapted from the three.js webgpu_volume_fire example (MIT).
 const panel = document.getElementById('fire');
 
@@ -274,6 +289,8 @@ async function hasWebGPU() {
 function noWebGPU() {
   panel.querySelector('.fail').hidden = false;
   ui.hideControls();
+  // The fail line counts as the first frame, so the intro lifts.
+  stage('first-frame');
 }
 
 async function start() {
@@ -293,6 +310,7 @@ async function start() {
     import('three/addons/utils/BufferGeometryUtils.js'),
     import('three/addons/geometries/RoundedBoxGeometry.js'),
   ]);
+  stage('build');
   const {
     vec3, vec4, uvec3, float, Fn, uniform, texture3D, textureStore, instanceIndex,
     screenCoordinate, pass, smoothstep, mix, min, max, floor, mx_noise_float, storage, storageTexture, If,
@@ -1386,7 +1404,7 @@ async function start() {
     // A still frame always redraws the shadow.
     keyLight.shadow.needsUpdate = !running || ++shadowFrame % QUALITY[quality].shadow === 0;
     renderPipeline.render();
-    if (++frames >= 3) canvas.classList.add('on');
+    if (++frames >= 3 && !canvas.classList.contains('on')) { canvas.classList.add('on'); stage('first-frame'); }
   }
 
   // Reduced motion: run the fire forward, then show one still frame.
@@ -1773,9 +1791,9 @@ start().catch(err => console.error(err));
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

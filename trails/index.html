@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Star trails: one horizon, the turning sky, a shutter you hold open. */
 :root { --stage: oklch(0.1 0.02 265); }
@@ -41,28 +56,13 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, linFit, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
-let markReady;
-const firstFrame = new Promise(r => (markReady = r));
+mark('libs');
 // The intro holds until the page, the font and the first frame are ready.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+playIntro({ ready: pageReady() });
 
 const PI = Math.PI, TAU = PI * 2, D2R = PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -127,12 +127,14 @@ const FLUX = 11;
 const tau = () => 1.5 * Math.pow(40, opts.expo);
 
 /* ---------- WebGL2 ---------- */
+mark('build');
 const stage = document.getElementById('stage');
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+// The fail line counts as the first frame, so the intro lifts.
+const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Half floats keep faint trails smooth; bytes are the fallback.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
@@ -278,28 +280,37 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+// The status queries wait in programs(), so the driver compiles in parallel.
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
-    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
-    gl.attachShader(p, sh);
+  const sh = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    gl.attachShader(p, s);
+    return s;
   });
   attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
-  const u = {};
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
-  return { p, u };
+  return { p, sh, u: {} };
 }
-const P = {
+async function programs(set) {
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const busy = () => Object.values(set).some(q => !gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR));
+  // A timer polls, because a hidden tab stops frames.
+  if (par) while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 8));
+  for (const { p, sh, u } of Object.values(set)) {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(sh.map(s => gl.getShaderInfoLog(s)).join(''), gl.getProgramInfoLog(p)); fail(); }
+    for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  }
+  return set;
+}
+const P = await programs({
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   sky: program(QUAD_VS, SKY_FS, ['aPos']),
   bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
   blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
-};
+});
 
 const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
 const quadVao = gl.createVertexArray();
@@ -773,7 +784,7 @@ onQuality(() => resize());
 resize();
 render();
 ready = true;
-markReady();
+mark('first-frame');
 requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => { visible = v; if (v) wake(); });
 wake();

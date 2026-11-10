@@ -12,6 +12,21 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Cloud chamber: black velvet, a raking light, tracks in the mist. */
 :root { --stage: oklch(0.08 0.005 260); }
@@ -41,28 +56,13 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, onQuality } from '../shared/stim.js';
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+mark('libs');
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
-let markReady;
-const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
+playIntro({ ready: pageReady() });
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Box-Muller gives one normal sample.
@@ -112,12 +112,14 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 /* ---------- WebGL2 ---------- */
+mark('build');
 const stage = document.getElementById('stage');
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+// A failed start still frees the intro.
+const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Half floats keep the fade smooth; bytes are the fallback.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
@@ -707,7 +709,7 @@ render();
 // One finished frame folds shader work into the intro.
 gl.finish();
 ready = true;
-markReady();
+mark('first-frame');
 requestAnimationFrame(() => canvas.classList.add('on'));
 whenVisible(stage, v => { visible = v; if (v) wake(); else kit.rest(() => true); });
 wake();

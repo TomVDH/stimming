@@ -12,6 +12,22 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm">
 <style>
 /* Neon Hum: the wall fills the stage under the corner controls. */
 :root { --stage: oklch(0.15 0.02 30); }
@@ -39,21 +55,10 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Neon Hum</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, sound, audioKit, linFit, css, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, sound, audioKit, linFit, css, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
 import { createNoise2D } from 'simplex-noise';
+stage('libs');
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -62,7 +67,6 @@ const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rand = (a, b) => a + Math.random() * (b - a);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 // The sign strikes as the intro starts to clear.
 const curtain = new Promise(res => {
@@ -1788,7 +1792,7 @@ function frame(ms) {
   if (draftDirty) rebuildDraft();
   render();
   humSync();
-  if (++drawn === 2) canvas.classList.add('on');
+  if (++drawn === 2) { canvas.classList.add('on'); stage('first-frame'); }
   // Input during the frame may have queued the next one already.
   if ((busy || drawn < 3) && !raf) raf = requestAnimationFrame(frame);
   else if (!raf) rest();
@@ -2189,6 +2193,7 @@ canvas.addEventListener('webglcontextrestored', async () => {
 });
 async function boot() {
   await idle();
+  stage('build');
   fit();
   if (!W) {
     layout(1160, 652);
@@ -2217,9 +2222,9 @@ else addEventListener('load', boot, { once: true });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

@@ -12,6 +12,29 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/geometries/RoundedBoxGeometry.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js">
 <style>
 /* Glass: a pane in a frame before a night city. */
 :root { --stage: oklch(0.17 0.03 292); }
@@ -37,20 +60,9 @@
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Glass</h1><div class="vignette" hidden></div></section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
-import { initPage, audioKit, linFit, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, linFit, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
+stage('libs');
 // Nine glasses: each breaks its own way.
 const KINDS = ['annealed', 'tempered', 'laminated', 'armored', 'reeded', 'dichroic', 'shuttle', 'stained', 'rice'];
 // Each glass breaks like one of five; several share annealed or armored breaks.
@@ -98,7 +110,6 @@ const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
-const idle = () => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout: 800 }) : setTimeout(r, 50)));
 
 /* ---------- sound: the shared kit owns the context; Tone.js plays the shot ---------- */
 const MAXV = 24, LEAD = 0.004;
@@ -1786,8 +1797,8 @@ function onSize(w, h) {
   if (crackRT.width !== cw || crackRT.height !== ch) crackRT.setSize(cw, ch);
   for (const m of [paneMat, shardMat]) m.uniforms.uTexel.value.set(1 / cw, 1 / ch);
   ribbons();
-  renderBack();
-  if (ready) { draw(); wake(); }
+  // The first backdrop waits for the async compile.
+  if (ready) { renderBack(); draw(); wake(); }
 }
 
 /* ---------- shards from faces ---------- */
@@ -2646,6 +2657,7 @@ async function start() {
     console.error(err);
     return failed();
   }
+  stage('build');
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   } catch (err) {
@@ -2846,6 +2858,7 @@ async function start() {
   renderer.setRenderTarget(null);
   await Promise.all([warm, warmCracks]);
   // One hidden draw takes each program's first-use cost before the canvas shows.
+  renderBack();
   composer.render();
   renderCracks();
   shardMesh.visible = brickMesh.visible = flashMesh.visible = mark.visible = false;
@@ -2854,15 +2867,15 @@ async function start() {
   ready = true;
   draw();
   stir();
-  requestAnimationFrame(() => canvas.classList.add('on'));
+  requestAnimationFrame(() => { canvas.classList.add('on'); stage('first-frame'); });
 }
 start().catch(err => { console.error(err); failed(); });
 </script>
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 </body>
 </html>

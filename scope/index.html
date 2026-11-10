@@ -12,6 +12,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
 /* Oscilloscope: a flat stencil face on a live phosphor screen. */
 :root { --stage: oklch(0.13 0.01 265); }
@@ -62,12 +65,13 @@
 
 <script type="module">
 import { intro as playIntro } from '../shared/intro.js';
-// The intro holds until the page and its font have loaded.
-const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
+import { pageReady } from '../shared/stim.js';
+// The intro holds until the page, its font and the first frame are in.
+playIntro({ ready: pageReady() });
 </script>
 <script type="module">
-import { initPage, sound, audioKit, whenVisible, reduced, onReducedChange, fitCanvas, onQuality, oklchLinear } from '../shared/stim.js';
+import { initPage, sound, audioKit, whenVisible, reduced, onReducedChange, fitCanvas, onQuality, oklchLinear, stage as mark } from '../shared/stim.js';
+mark('libs');
 // The Pitch slider is logarithmic: 0 is 40 hertz, 1000 is 400 hertz.
 const toHz = v => 40 * 10 ** (v / 1000);
 const fromHz = f => Math.round(1000 * Math.log10(f / 40));
@@ -90,6 +94,7 @@ const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const now = () => performance.now() / 1000;
 
+mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const shell = stage.parentElement.querySelector('.stim-ui'), sndTag = document.getElementById('snd-tag');
 const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag');
@@ -893,6 +898,7 @@ function quadPass(prog, dst, src, set) {
   set(prog.u);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
+let drew = false;
 function present(t) {
   const src = acc[ai];
   quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
@@ -918,6 +924,7 @@ function present(t) {
   gl.uniform3fv(u.uTint, ph.flash.map((f, i) => (f * 0.45 + ph.glow[i] * 0.8) * 0.9));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.activeTexture(gl.TEXTURE0);
+  if (!drew) { drew = true; mark('first-frame'); }
 }
 
 /* ---------- the beam reads the traces ---------- */
