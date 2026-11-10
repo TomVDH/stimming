@@ -223,3 +223,5 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Default tone from Tom's pick: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06
 - [x] Tone defaults: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06 (Tom's look)
 - [x] Reset redo: a 2.4 s rewind (sky and clouds run backward, long shutter), then a soft white veil, a crisp ring that closes in, and a chime; the dust wall is gone
+- [x] Reset: 1.8 s rewind into a full white fill; the cut happens under the white; white burns off fast while the frame settles from overexposure and springs back from a 6% punch-in; ring and chime gone
+- [x] Bloom: threshold 2 with a wide soft knee; sunlit cloud and smoke bloom only a trace, fire and sparks in full

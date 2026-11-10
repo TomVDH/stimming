@@ -67,6 +67,7 @@
   <main>
     <div class="stage stage--railgun" id="stage" tabindex="0" role="application" aria-label="A colossal railgun at dusk. A burning asteroid hangs beyond its muzzle. Hold to charge, release to fire.">
       <p class="fail" hidden>Railgun needs WebGL 2, which this browser has turned off.</p>
+      <div class="reset-fill" aria-hidden="true" style="position:absolute;inset:0;background:#fffaf3;opacity:0;pointer-events:none"></div>
       <p class="release-hint" aria-live="polite" style="position:absolute;left:50%;bottom:22%;transform:translateX(-50%);margin:0;font:600 11px/1 var(--mono, ui-monospace, monospace);letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,236,214,0.85);text-shadow:0 0 12px rgba(255,140,60,0.5);opacity:0;transition:opacity 0.6s;pointer-events:none">Release to fire</p>
     </div>
   </main>
@@ -2450,6 +2451,9 @@ function makeDirt() {
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
+  // A wide, soft knee: sunlit cloud and smoke bloom only a trace.
+  // Fire, flashes and sparks run far past it and bloom in full.
+  bloom.highPassUniforms.smoothWidth.value = 5.0;
   // Full size on High, 0.7 on Standard.
   // Half on rung 2 and on phones.
   bloom.setSize = (w, h) => { const m = rung >= 2 || w / (size.dpr || 1) < 640 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
@@ -2510,7 +2514,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uSoft: { value: 0 },
       // Contrast power and saturation, from the settings.
       uCon: { value: 0.24 }, uSat: { value: 1.06 }, uBri: { value: 0.78 },
-      uRing: { value: new THREE.Vector4(0, 0, 0, 0) }, uRingL: { value: 0 }, uVeil: { value: 0 },
+      // The reset: overexposure under the white fill, and an image scale.
+      uVeil: { value: 0 }, uZoom: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
@@ -2531,9 +2536,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2;
     uniform float uSoft, uCon, uSat, uBri;
-    // The reset ring: centre, radius, warp; and its line strength.
-    uniform vec4 uRing;
-    uniform float uRingL, uVeil;
+    uniform float uVeil, uZoom;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2564,7 +2567,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     void main() {
       // Shock fronts and hot air bend the frame.
       vec2 asp = vec2(uRes.x / uRes.y, 1.0), q0 = (vUv - 0.5) * asp;
-      vec2 dq = shk(q0, uShk0) + shk(q0, uShk1) + shk(q0, uRing);
+      vec2 dq = shk(q0, uShk0) + shk(q0, uShk1);
       if (uHzK.y > 0.001) {
         // Shimmer rises off the barrel, strongest just above it.
         vec2 a = (uHzA.xy - 0.5) * asp, b = (uHzA.zw - 0.5) * asp, ab = b - a;
@@ -2574,13 +2577,12 @@ function makeGrade({ tint, vig, vigIn, grain }) {
         vec2 np = q0 * 90.0 + vec2(0.0, -uHzK.z * 3.0);
         dq += (vec2(vn(np), vn(np + 17.0)) - 0.5) * uHzK.y * m;
       }
-      vec2 uv = vUv + dq / asp;
+      // The reset punches the image in, then springs it back.
+      vec2 uv = 0.5 + (vUv - 0.5) / uZoom + dq / asp;
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c0 = texture2D(tDiffuse, uv).rgb;
-      // The reset ring: one thin, crisp line that closes in.
-      if (uRingL > 0.001) c0 += vec3(1.0, 0.97, 0.92) * uRingL * exp(-pow((length(q0) - uRing.z) / 0.003, 2.0));
-      // The reset flash: a soft white veil, not an exposure jump.
-      c0 = mix(c0, vec3(1.0, 0.98, 0.95), uVeil);
+      // After the white fill the frame comes back overexposed and settles.
+      c0 *= 1.0 + 3.0 * uVeil;
       // The lens hunts focus for a moment after the hit.
       if (uSoft > 0.002) {
         vec2 px = uSoft * 3.5 / uRes;
@@ -2660,7 +2662,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.6, vigIn: 0.38, grain: 0.075 };
+const POST = { bloom: [0.5, 0.5, 2.0], tint: [0.0008, 0.0009, 0.0016], vig: 0.6, vigIn: 0.38, grain: 0.075 };
 let size = { w: 1, h: 1, dpr: 1 };
 // The scene renders with 4x multisampling into a half-float target.
 // The chain starts from it.
@@ -4616,13 +4618,15 @@ function updateBolt() {
   grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
 }
 
-/* ---------- reset: a short rewind, then a soft flash and a ring ---------- */
+/* ---------- reset: a short rewind into a white fill ---------- */
 // The sky runs backward, half a day a second up to 1.5.
 // A long shutter blends the days, so the light never strobes.
-// After SPIN_T the toy cuts to its start under a soft white flash.
-// A thin ring then closes in on the frame.
-const SPIN_T = 2.4, DAYS_MAX = 1.5, RING_T = 0.7;
-let spin = null, ringIn = null, cutFlash = 0;
+// The frame fills white; the toy cuts to its start under the white.
+// The white then burns off fast, and the image springs back.
+const SPIN_T = 1.8, DAYS_MAX = 1.5;
+const FILL_IN = 0.3, FILL_HOLD = 0.1, FILL_OUT = 1.2;
+let spin = null, fill = null, cutFlash = 0;
+const fillEl = document.querySelector('.reset-fill');
 // The sky values the shutter blends toward their mean over one day.
 const SHUT_V = ['uSunC', 'uZenC', 'uHorC', 'uGlowC', 'uCloudSun', 'uCloudAmb', 'uGLift'], SHUT_S = ['uStars', 'uMoonK', 'uSunE'];
 function dayMean(H) {
@@ -4644,25 +4648,32 @@ function shutter(m, s) {
   for (const k of SHUT_S) U[k].value = lerp(U[k].value, m[k], s);
   baseExp = lerp(baseExp, m.exp, s);
 }
-const ease = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
-// The ring starts past the corners and closes to the centre.
-function stepRing(dt) {
+// In: white eases up and the image punches in.
+// Out: white falls fast, then slow; the frame settles from overexposure.
+function stepFill(dt) {
   const g = grade.uniforms;
-  if (!ringIn) { g.uRingL.value = 0; g.uRing.value.w = 0; g.uVeil.value = 0; return; }
-  ringIn.t += dt;
-  const f = clamp(ringIn.t / RING_T, 0, 1), k = 1 - f * f;
-  g.uRing.value.set(0, 0, 0.95 * (1 - ease(f)), 0.004 * k);
-  g.uRingL.value = 2.5 * k;
-  // The veil fades over about half a second.
-  g.uVeil.value = 0.55 * Math.exp(-ringIn.t / 0.25);
-  if (f >= 1 && ringIn.t > 1.2) ringIn = null;
+  if (!fill) return;
+  fill.t += dt;
+  const t = fill.t, calm = fill.calm ? 0 : 1;
+  if (!fill.cut && t >= FILL_IN) { fill.cut = true; spin = null; landReset(); }
+  let op, veil = 0, zoom = 1;
+  if (t < FILL_IN) {
+    const a = t / FILL_IN;
+    op = a * a; zoom = 1 + 0.035 * a * a * calm;
+  } else {
+    const f = clamp((t - FILL_IN - FILL_HOLD) / FILL_OUT, 0, 1);
+    op = Math.pow(1 - f, 2.4); veil = 0.6 * Math.pow(1 - f, 1.5); zoom = 1 + 0.06 * Math.pow(1 - f, 3) * calm;
+    if (f >= 1) { fill = null; op = 0; veil = 0; zoom = 1; }
+  }
+  fillEl.style.opacity = op.toFixed(3);
+  g.uVeil.value = veil; g.uZoom.value = zoom;
 }
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
   if (spin) return;
   cancelHold();
   wake();
-  if (reduced()) { cutFlash = 0.25; landReset(); return; }
+  if (reduced()) { fill = { t: 0, calm: true }; return; }
   spin = { t: 0, H: skyH, m: dayMean(skyH) };
   whoosh();
 }
@@ -4680,7 +4691,7 @@ resetReady(false);
 const spinSpeed = () => (spin ? 1 + 30 * Math.min(1, spin.t / 3) : 1);
 function stepSpin(dt) {
   cutFlash *= Math.exp(-dt / 0.5);
-  stepRing(dt);
+  stepFill(dt);
   if (!spin) return;
   spin.t += dt;
   // The rate grows e-fold every 0.8 s, then holds at DAYS_MAX.
@@ -4692,7 +4703,8 @@ function stepSpin(dt) {
   // The clouds run back too.
   U.uWisp.value.x -= w * dt * 0.5;
   CLOUD_U.uCloudT.value -= w * dt * 0.05;
-  if (spin.t >= SPIN_T) { spin = null; ringIn = { t: 0 }; landReset(); chime(); }
+  // The white fill starts so it is full at SPIN_T; the cut waits for it.
+  if (spin.t >= SPIN_T - FILL_IN && !fill) fill = { t: 0 };
 }
 // Back to the start: the chosen time, still clouds, a fresh rock high up.
 function landReset() {
@@ -4714,26 +4726,20 @@ function landReset() {
   placeAst();
   stepAim(0, true);
 }
-// A tape-rewind hiss falls in pitch under the spin.
+// A tape-rewind hiss falls under the spin, rushes up into the white,
+// then breathes out as the white burns off.
 function whoosh() {
   const ac = kit.live();
   if (!ac) return;
-  const t = ac.currentTime, s = hiss(ac, t, SPIN_T + 0.3), bp = filt(ac, 'bandpass', 2400, 1.0), g = ac.createGain();
-  bp.frequency.setValueAtTime(2400, t); bp.frequency.exponentialRampToValueAtTime(500, t + SPIN_T);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.1, t + 0.4);
-  g.gain.setValueAtTime(0.1, t + SPIN_T - 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t + SPIN_T);
+  const L = SPIN_T + FILL_HOLD + FILL_OUT;
+  const t = ac.currentTime, s = hiss(ac, t, L + 0.3), bp = filt(ac, 'bandpass', 2400, 0.9), g = ac.createGain();
+  bp.frequency.setValueAtTime(2400, t); bp.frequency.exponentialRampToValueAtTime(700, t + SPIN_T - FILL_IN);
+  bp.frequency.exponentialRampToValueAtTime(3200, t + SPIN_T); bp.frequency.exponentialRampToValueAtTime(400, t + L);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.08, t + 0.4);
+  g.gain.setValueAtTime(0.08, t + SPIN_T - FILL_IN); g.gain.exponentialRampToValueAtTime(0.18, t + SPIN_T);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + L);
   s.connect(bp).connect(g).connect(kit.out);
-  track(t + SPIN_T + 0.4, s);
-}
-// A soft, clear chime lands with the ring.
-function chime() {
-  const ac = kit.live();
-  if (!ac) return;
-  const t = ac.currentTime, g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
-  const os = [1320, 1980, 2640].map((f, i) => { const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = f; og.gain.value = [1, 0.4, 0.15][i]; o.connect(og).connect(g); o.start(t); o.stop(t + 2.5); return o; });
-  g.connect(kit.out);
-  track(t + 2.6, ...os);
+  track(t + L + 0.4, s);
 }
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
@@ -4741,7 +4747,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!ringIn || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
