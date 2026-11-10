@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T11:00:13Z
-updated_at: 2026-11-10T11:38:54Z
+updated_at: 2026-11-10T11:42:36Z
 ---
 
 Lab toy `foghorn/`. Idea 100 in `docs/toy-ideas.md`: a harbour mouth in thick fog. Tap the horn; a container ship slides out of the grey, lights first.
@@ -22,7 +22,7 @@ The first toy on the environment runner (`shared/environment.js`, bean `stimming
 - [x] `toys.json` entry and Lab menu tile with a hover hook
 - [x] Desktop seen in the browser pane; 375 x 812 and 812 x 375 checked by layout measurement only (the pane was hidden)
 - [ ] See the picture at phone sizes; hear the sound; check frame time on a phone
-- [ ] Tom reviews; Dutch name and icon are drafts
+- [x] Tom promoted it to the main shelf (2026-11-10): No. 42, Beta, a new icon. The Dutch name is still a draft.
 
 ## Notes
 
@@ -41,3 +41,5 @@ The first toy on the environment runner (`shared/environment.js`, bean `stimming
 - 2026-11-10, Tom: "Yes, bake it". The ship is now two baked pictures of the Vlootzak model: her port side (2048 x 436, 29 KB) and her bow (341 x 436, 10 KB), rendered in Blender from Havoc's `bulker.glb`, 9.48 px a metre. The funnel mark is painted out. `foghorn/CREDITS.md` records the source and the open licence question. The procedural hull is gone; the lamp list and the flood pools stay.
 - The runner loads the pictures (`textures` option). Foam cut back to the highest crests. Lamps outside a pixel's reach are skipped, and thick fog skips the sky.
 - Frame time: not measured in a way to trust. The pane was hidden and the numbers swung from 8 to 60 ms for the same frame.
+
+- 2026-11-10, Tom: "promote to main menu with a neat icon, you choose". The tile moved from the Lab to the main shelf, after Train Ride. `toys.json`: number 42, stage beta, no Lab tag. Icon: her bow in fog between the green and the red harbour light; on hover she comes out of the fog, the lights flash in turn, and the fog parts round the pointer. Seen as stills only (rest, hover, back to rest); the pane was hidden.
