@@ -427,7 +427,7 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   if (tl > -0.1) {
     float tp = max(tl, 0.0);
     // A hard white flash, then a long amber afterglow.
-    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.0 * exp(-tp / 0.5) + 0.6 * exp(-tp / 5.0) + 0.2 * exp(-tp / 12.0)) * (1.0 - smoothstep(10.0, 30.0, tp));
+    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.0 * exp(-tp / 0.4) + 0.4 * exp(-tp / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tp));
     vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, tp));
     I *= 5.0 / (1.0 + r * r / 8.0e8);
     // Light that passes through toward the eye: a silver edge.
@@ -597,7 +597,8 @@ float sootT(vec3 P) {
 // The light lands late: it sweeps out at sixty kilometres a second.
 float blastAt(vec3 P) {
   float tl = uStarT - uHitP.w - length(uBlast.xyz - P) / 60000.0;
-  return tl < 0.0 ? 0.0 : uBk * (exp(-tl / 0.4) + 0.3 * exp(-tl / 4.0) + 0.08 * exp(-tl / 10.0)) * (1.0 - smoothstep(8.0, 25.0, tl));
+  // The same envelope as the big flash: hitFlash on the CPU.
+  return tl < 0.0 ? 0.0 : uBk * (exp(-tl / 0.4) + 0.3 * exp(-tl / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tl));
 }
 vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * blastAt(P) * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8); }
 // The rock lights what faces it: faintly by day, clearly at night.
@@ -1673,8 +1674,8 @@ function makeTrain(pu) {
         Lf += uAstC * uHit.w * 60.0 * R * R / (dot(q, q) + 9.0 * R * R) * bsh;
         // The afterglow reaches far up the trail and lingers.
         float tb = uStarT - uHitP.w - length(uAstP + q - uHitP.xyz) / 60000.0;
-        if (tb > 0.0 && tb < 30.0) {
-          float gl = uBk * (exp(-tb / 0.5) + 0.6 * exp(-tb / 5.0) + 0.2 * exp(-tb / 12.0)) * (1.0 - smoothstep(10.0, 30.0, tb)) * bsh;
+        if (tb > 0.0 && tb < 18.0) {
+          float gl = uBk * (exp(-tb / 0.4) + 0.4 * exp(-tb / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tb)) * bsh;
           vec3 qh = uAstP + q - uHitP.xyz;
           Lf += uAstC * gl * (6.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 0.45 * 400.0 * R * R / (dot(qh, qh) + 400.0 * R * R));
         }
