@@ -34,4 +34,4 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
   - [x] Atomic-age restyle of the machines; bloom, tilt-shift, grade
   - [ ] Light: contact shadows, rim light, sky with cloud
   - [ ] Materials: edge wear, patina, salt glitter
-  - [ ] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice
+  - [x] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice

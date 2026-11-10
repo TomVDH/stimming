@@ -147,6 +147,22 @@ const camera = new THREE.PerspectiveCamera(20, 1, 0.5, 1500);
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.6);
+const heat = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uA: { value: new THREE.Vector2() }, uB: { value: new THREE.Vector2() }, uAmt: { value: 0 }, uW: { value: 0.01 }, uAspect: { value: 1 }, uTime: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uA, uB; uniform float uAmt, uW, uAspect, uTime; varying vec2 vUv;
+    void main() {
+      vec2 k = vec2(uAspect, 1.0), ap = (vUv - uA) * k, ab = (uB - uA) * k;
+      float t = clamp(dot(ap, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+      float d = length(ap - ab * t);
+      float f = uAmt * exp(-d * d / (uW * uW));
+      vec2 n = vec2(sin(vUv.y * 190.0 + vUv.x * 40.0 + uTime * 9.0), cos(vUv.x * 170.0 - uTime * 7.0 + vUv.y * 30.0));
+      gl_FragColor = texture2D(tDiffuse, vUv + n * f * 0.0035);
+    }`,
+});
+heat.enabled = false;
+composer.addPass(heat);
 composer.addPass(bloom);
 const POST_VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
 const TILTSHIFT = {
@@ -646,6 +662,7 @@ function addDent(y, z) {
   m.position.set(BACK_X - 0.01, y, z);
   scene.add(m);
   glows.push({ m, t: 0 });
+  sparks.spray(90, BACK_X - 0.05, y, z, new THREE.Vector3(-1, 0.5, 0), 1.1, 4, 14, [0.3, 1.1]);
   if (glows.length > 60) { const i = glows.findIndex(d => !d.row); if (i >= 0) { const [d] = glows.splice(i, 1); scene.remove(d.m); d.m.material.dispose(); } }
 }
 function coolGlows(dt) {
@@ -663,7 +680,24 @@ function coolGlows(dt) {
 /* ---------- targets ---------- */
 // Resistance is the slug energy each target takes.
 const glassMat = new THREE.MeshPhysicalMaterial({ color: col(0.96, 0.03, 175), roughness: 0.03, transmission: 1, thickness: 0.05, ior: 1.5 });
-const iceMat = new THREE.MeshPhysicalMaterial({ color: col(0.96, 0.03, 220), roughness: 0.2, transmission: 0.85, thickness: 0.9, ior: 1.31, attenuationColor: col(0.72, 0.09, 225), attenuationDistance: 1.4 });
+// Ice: a blue tint, a cloudy core of frozen air and white crack lines.
+const iceTex = canvasTex(256, 256, (g, N) => {
+  g.fillStyle = '#d9ecf6'; g.fillRect(0, 0, N, N);
+  const r = g.createRadialGradient(N / 2, N / 2, 10, N / 2, N / 2, N * 0.55);
+  r.addColorStop(0, 'rgba(255,255,255,0.75)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, N, N);
+  g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) {
+    g.beginPath();
+    let x = rnd(0, N), y = rnd(0, N);
+    g.moveTo(x, y);
+    for (let k = 0; k < 5; k++) { x += rnd(-40, 40); y += rnd(-40, 40); g.lineTo(x, y); }
+    g.stroke();
+  }
+  for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(255,255,255,${rnd(0.2, 0.6)})`; g.beginPath(); g.arc(rnd(40, N - 40), rnd(40, N - 40), rnd(1, 3), 0, TAU); g.fill(); }
+});
+// Transmission would show the orange sky; a soft inner light reads as ice instead.
+const iceMat = new THREE.MeshPhysicalMaterial({ color: col(0.9, 0.05, 225), map: iceTex, roughness: 0.18, transparent: true, opacity: 0.88, clearcoat: 1, clearcoatRoughness: 0.15, emissive: col(0.55, 0.09, 225), emissiveIntensity: 0.35 });
 // The shell is plain glass, so the water inside shows through it.
 const shellMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.05, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
 const waterMat = new THREE.MeshPhysicalMaterial({ color: col(0.62, 0.11, 230), roughness: 0.05, transmission: 0.7, thickness: 0.8, ior: 1.33, attenuationColor: col(0.45, 0.13, 240), attenuationDistance: 0.4 });
@@ -918,14 +952,14 @@ triGeo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.4, 0,
 triGeo.computeVertexNormals();
 const shards = new Bits(triGeo, new THREE.MeshStandardMaterial({ roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 3 }), 1000);
 shards.mesh.castShadow = false;
-const ice = new Bits(new THREE.IcosahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.12, transparent: true, opacity: 0.78, flatShading: true, envMapIntensity: 1.8 }), 160);
+const ice = new Bits(new THREE.IcosahedronGeometry(0.5, 0), new THREE.MeshPhysicalMaterial({ color: col(0.92, 0.05, 222), roughness: 0.12, transparent: true, opacity: 0.85, flatShading: true, clearcoat: 1, clearcoatRoughness: 0.1, emissive: col(0.55, 0.09, 225), emissiveIntensity: 0.35 }), 160);
 const rubble = new Bits(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), 400);
 
 /* ---------- puffs ---------- */
 // Round sprites: crisp drops and grit, or soft dust and steam.
 const puffSets = [];
 class Puffs {
-  constructor(max, soft) {
+  constructor(max, soft, additive = false) {
     this.max = max; this.n = 0; this.ceil = Infinity;
     const F = k => new Float32Array(max * k);
     Object.assign(this, { p: F(3), v: F(3), c: F(3), a: F(1), s: F(1), age: F(1), life: F(1), s0: F(1), s1: F(1), a0: F(1), g: F(1), drag: F(1), st: F(1) });
@@ -935,7 +969,7 @@ class Puffs {
     }
     this.geo = geo;
     this.mat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false,
+      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       uniforms: { uScale: { value: 400 }, uFade: { value: 1 }, uSoft: { value: soft ? 1 : 0 } },
       vertexShader: /* glsl */`
         attribute vec3 tint; attribute float alpha; attribute float size;
@@ -1002,9 +1036,72 @@ class Puffs {
   clear() { this.n = 0; this.geo.setDrawRange(0, 0); }
 }
 const drops = new Puffs(6000, false);
-const dust = new Puffs(600, true);
+const dust = new Puffs(1400, true);
+const plasma = new Puffs(400, true, true);
 const bubbles = new Puffs(2500, false);
 bubbles.ceil = TANK.top;
+
+/* ---------- sparks ---------- */
+// Each spark draws as a streak along its velocity, like a long exposure.
+const sparks = {
+  max: 1500, n: 0,
+  init() {
+    const F = k => new Float32Array(this.max * k);
+    Object.assign(this, { p: F(3), v: F(3), age: F(1), life: F(1) });
+    this.geo = new THREE.BufferGeometry();
+    this.pos = new THREE.BufferAttribute(F(6), 3).setUsage(THREE.DynamicDrawUsage);
+    this.col = new THREE.BufferAttribute(F(6), 3).setUsage(THREE.DynamicDrawUsage);
+    this.geo.setAttribute('position', this.pos);
+    this.geo.setAttribute('color', this.col);
+    this.geo.setDrawRange(0, 0);
+    this.lines = new THREE.LineSegments(this.geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.lines.frustumCulled = false;
+    scene.add(this.lines);
+    return this;
+  },
+  add(x, y, z, vx, vy, vz, life) {
+    if (this.n >= this.max) return;
+    const i = this.n++;
+    this.p.set([x, y, z], i * 3); this.v.set([vx, vy, vz], i * 3);
+    this.age[i] = 0; this.life[i] = life;
+  },
+  step(h) {
+    const { p, v } = this, P = this.pos.array, Cc = this.col.array;
+    for (let i = 0; i < this.n; i++) {
+      this.age[i] += h;
+      if (this.age[i] >= this.life[i]) {
+        const j = --this.n;
+        if (i !== j) { p.copyWithin(i * 3, j * 3, j * 3 + 3); v.copyWithin(i * 3, j * 3, j * 3 + 3); this.age[i] = this.age[j]; this.life[i] = this.life[j]; }
+        i--;
+        continue;
+      }
+      const o = i * 3, k = Math.exp(-0.6 * h);
+      v[o + 1] -= 9.8 * h;
+      v[o] *= k; v[o + 1] *= k; v[o + 2] *= k;
+      p[o] += v[o] * h; p[o + 1] += v[o + 1] * h; p[o + 2] += v[o + 2] * h;
+      if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) { p[o + 1] = 0; v[o + 1] *= -0.4; v[o] *= 0.6; v[o + 2] *= 0.6; }
+      // The tail trails one sixtieth of a second behind the head.
+      const t = this.age[i] / this.life[i], q = i * 6, L = 0.016;
+      P[q] = p[o]; P[q + 1] = p[o + 1]; P[q + 2] = p[o + 2];
+      P[q + 3] = p[o] - v[o] * L; P[q + 4] = p[o + 1] - v[o + 1] * L; P[q + 5] = p[o + 2] - v[o + 2] * L;
+      const heatK = (1 - t) * 3.2;
+      const r = heatK, g = heatK * (0.85 - 0.6 * t), b = heatK * Math.max(0, 0.55 - 1.2 * t);
+      Cc[q] = r; Cc[q + 1] = g; Cc[q + 2] = b;
+      Cc[q + 3] = r * 0.3; Cc[q + 4] = g * 0.2; Cc[q + 5] = b * 0.1;
+    }
+    this.pos.needsUpdate = this.col.needsUpdate = true;
+    this.geo.setDrawRange(0, this.n * 2);
+    return this.n > 0;
+  },
+  clear() { this.n = 0; this.geo.setDrawRange(0, 0); },
+  // A spray of sparks in a cone round a direction.
+  spray(n, x, y, z, dir, spread, v0, v1, life = [0.25, 0.8]) {
+    for (let i = 0; i < K(n); i++) {
+      const d = new THREE.Vector3(dir.x + rnd(-spread, spread), dir.y + rnd(-spread, spread), dir.z + rnd(-spread, spread)).normalize().multiplyScalar(rnd(v0, v1));
+      this.add(x, y, z, d.x, d.y, d.z, rnd(...life));
+    }
+  },
+}.init();
 
 /* ---------- stains ---------- */
 // Wet patches and pulp splats lie flat on the salt until the refill.
@@ -1046,6 +1143,7 @@ function clearDebris() {
   for (const s of puffSets) s.clear();
   stains.clear();
   for (const r of rings) r.m.visible = false;
+  sparks.clear();
 }
 
 /* ---------- mode hits ---------- */
@@ -1064,7 +1162,7 @@ const rings = Array.from({ length: 16 }, () => {
   const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: col(0.9, 0.08, 220), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
   m.visible = false;
   scene.add(m);
-  return { m, age: 0 };
+  return { m, age: 0, max: 0.52 };
 });
 let ringNext = 0, ringAt = 0, bubbleAt = 0;
 // The slug's shock leaves a ring that spreads to the tank walls.
@@ -1073,7 +1171,7 @@ function stepRings(h) {
   for (const r of rings) {
     if (!r.m.visible) continue;
     r.age += h;
-    const k = 1 - Math.exp(-r.age * 30), rad = 0.52 * k;
+    const k = 1 - Math.exp(-r.age * 30), rad = r.max * k;
     r.m.scale.setScalar(Math.max(rad, 0.01));
     r.m.material.opacity = 0.7 * (1 - k);
     if (k > 0.98) r.m.visible = false;
@@ -1094,6 +1192,7 @@ function tankTrail(x0, x1, hy, hz) {
   for (ringAt = Math.max(ringAt, a); ringAt < b; ringAt += 0.4) {
     const r = rings[ringNext++ % rings.length];
     r.age = 0;
+    r.max = 0.52;
     r.m.visible = true;
     r.m.position.set(ringAt, hy, hz);
   }
@@ -1129,6 +1228,42 @@ function tankBurst() {
   }
 }
 
+/* ---------- muzzle and wake ---------- */
+const PLASMA = [col(0.86, 0.12, 245).multiplyScalar(1.5), col(0.7, 0.2, 295).multiplyScalar(1.3), col(0.95, 0.05, 230).multiplyScalar(1.8)];
+const SALT = col(0.95, 0.015, 80), GUNSMOKE = col(0.62, 0.01, 70);
+// Plasma bursts from the muzzle, a shock ring spreads, a smoke ring lingers.
+function muzzleBlast(hy, hz) {
+  const x = MUZZLE + 0.05;
+  for (let i = 0; i < K(60); i++) {
+    const a = rnd(0, TAU), r = Math.random();
+    plasma.add(x, hy, hz, rnd(8, 55) * (1 - r * 0.6), Math.sin(a) * r * 22, Math.cos(a) * r * 22, any(PLASMA),
+      { life: rnd(0.012, 0.04), s0: rnd(0.06, 0.14), s1: rnd(0.25, 0.6), a0: 0.35, g: 0, drag: 25 });
+  }
+  if (dustOn) for (let i = 0; i < K(40); i++) {
+    const a = i / 40 * TAU;
+    dust.add(x + 0.2, hy + Math.sin(a) * 0.3, hz + Math.cos(a) * 0.3, rnd(2, 5), Math.sin(a) * 2.5, Math.cos(a) * 2.5, GUNSMOKE,
+      { life: rnd(2, 3.4), s0: 0.14, s1: rnd(0.55, 0.9), a0: 0.32, g: -0.02, drag: 2.6 });
+  }
+  const r = rings[ringNext++ % rings.length];
+  Object.assign(r, { age: 0, max: 1.6 });
+  r.m.visible = true;
+  r.m.position.set(x + 0.15, hy, hz);
+  sparks.spray(30, x, hy, hz, new THREE.Vector3(1, 0.1, 0), 0.35, 12, 30, [0.15, 0.45]);
+}
+// The shock kicks up salt below the slug as it passes over the slab.
+let wakeAt = 0;
+function saltWake(x0, x1) {
+  if (!dustOn) return;
+  for (wakeAt = Math.max(wakeAt, x0, MUZZLE + 0.3); wakeAt < x1; wakeAt += 0.32) {
+    if (!onSlab(wakeAt, 0) || (mode === 'aquarium' && wakeAt > TANK.x0 - 0.3 && wakeAt < TANK.x1 + 0.3)) continue;
+    for (let i = 0; i < 4; i++) {
+      const side = i % 2 ? 1 : -1;
+      dust.add(wakeAt + rnd(-0.1, 0.1), 0.05, side * rnd(0, 0.3), rnd(0, 1.6), rnd(0.2, 1), side * rnd(1.5, 5), SALT,
+        { life: rnd(2, 3.4), s0: 0.14, s1: rnd(0.6, 1.2), a0: 0.28, g: -0.01, drag: 1.7 });
+    }
+  }
+}
+
 /* ---------- hits ---------- */
 // Each material breaks its own way. e is the energy the slug keeps.
 const K = n => Math.round(n * (reduced() ? 0.5 : 1));
@@ -1150,7 +1285,7 @@ const HIT = {
     t.state = 'pierced';
     glows.push({ mat: t.body.material, emissive: true, t: 0, tau: 1.4, row: true });
     for (let i = 0; i < K(5); i++) {
-      drops.add(t.x + 0.05, hy, hz, rnd(-0.5, 0.5), rnd(1, 4), rnd(-2, 2), C.hot, { life: rnd(0.3, 0.7), s0: rnd(0.012, 0.022), g: 1, drag: 0.5 });
+      sparks.add(t.x + 0.05, hy, hz, rnd(-1, 1), rnd(2, 6), rnd(-3, 3), rnd(0.3, 0.7));
     }
   },
   glass(t, e, hy, hz) {
@@ -1262,8 +1397,9 @@ const HIT = {
       const s = rnd(0.02, 0.06);
       rubble.add(V3(t.x + 0.1, hy, hz), V3((0.5 + e) * rnd(5, 14), rnd(-1, 2), rnd(-1.5, 1.5)), V3(s, s, s * 0.4), C.steel, 20);
     }
+    sparks.spray(70, t.x + 0.05, hy, hz, new THREE.Vector3(-1, 0.4, 0), 0.9, 3, 9, [0.3, 0.9]);
     for (let i = 0; i < K(70); i++) {
-      drops.add(t.x + 0.05, hy, hz, (0.5 + e) * rnd(4, 16), rnd(-1, 3), rnd(-2.5, 2.5), C.hot, { life: rnd(0.3, 0.8), s0: rnd(0.012, 0.025), g: 1, drag: 0.5 });
+      sparks.add(t.x + 0.05, hy, hz, (0.5 + e) * rnd(4, 16), rnd(-1, 3), rnd(-2.5, 2.5), rnd(0.3, 0.8));
     }
   },
 };
@@ -1338,7 +1474,7 @@ function placeGun() {
 /* ---------- the shot ---------- */
 // Phases: idle, flight, hold, snap, after, refill.
 const shot = { phase: 'idle', x: TRAY_X, events: [], next: 0, stopX: BACK_X, hold: 0, after: 0, aim: new THREE.Vector2() };
-let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false, qaAt = null;
+let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false, qaAt = null, heatT = 0;
 const knocked = [];
 function startCharge() {
   if (gunState.s !== 'locked') { refuse(gunState.s === 'empty' || gunState.s === 'loading' ? 0 : 1); return; }
@@ -1370,7 +1506,8 @@ function fire() {
     else { shot.events.push({ x: t.x, t, kind: 'stop', e: 0 }); shot.stopX = t.x; E = 0; break; }
   }
   if (E > 0) shot.events.push({ x: BACK_X, kind: 'back', e: E });
-  bubbleAt = ringAt = -1e9;
+  bubbleAt = ringAt = wakeAt = -1e9;
+  heatT = 0;
   shot.aim.set(rnd(-0.1, 0.1), rnd(-0.12, 0.12));
   shot.next = 0;
   shot.x = TRAY_X;
@@ -1509,6 +1646,8 @@ function step(dt) {
     shot.x = Math.min(shot.x + SPEED * h, shot.stopX);
     const ka = aimAt(shot.x);
     tankTrail(from, shot.x, BORE + shot.aim.y * ka, shot.aim.x * ka);
+    if (from < MUZZLE && shot.x >= MUZZLE && !reduced()) muzzleBlast(BORE, 0);
+    saltWake(from, shot.x);
     while (shot.next < shot.events.length && shot.x >= shot.events[shot.next].x) hitEvent(shot.events[shot.next++]);
     if (shot.x >= shot.stopX) { shot.x = shot.stopX; shot.phase = 'hold'; shot.hold = 0; }
     if (qaAt?.x != null && shot.x >= qaAt.x) { frozen = true; qaAt = null; }
@@ -1563,7 +1702,23 @@ function step(dt) {
   let steaming = false;
   for (const s of puffSets) steaming = s.step(hs) || steaming;
   if (shot.phase === 'refill') moving = steaming = false;
-  const tumbling = stepKnocked(h) || stepRings(hs);
+  // Every stepper runs each frame; none may short-circuit another.
+  const knocking = stepKnocked(h), ringing = stepRings(hs), sparking = sparks.step(hs);
+  const tumbling = knocking || ringing || sparking;
+  // The heat shimmer lives through the flight, then fades in a second.
+  const flying = shot.phase === 'flight' || shot.phase === 'hold';
+  heatT = flying ? 1 : heatT * Math.exp(-dt / 0.6);
+  if (heatT < 0.01 || reduced()) heatT = 0;
+  heat.enabled = heatT > 0;
+  if (heat.enabled) {
+    const a = new THREE.Vector3(MUZZLE, BORE, 0).project(camera), b = slug.position.clone().project(camera);
+    heat.uniforms.uA.value.set(a.x * 0.5 + 0.5, a.y * 0.5 + 0.5);
+    heat.uniforms.uB.value.set(b.x * 0.5 + 0.5, b.y * 0.5 + 0.5);
+    heat.uniforms.uAmt.value = heatT;
+    heat.uniforms.uW.value = lerp(0.006, 0.03, camBlend);
+    heat.uniforms.uAspect.value = size.w / size.h;
+    heat.uniforms.uTime.value = performance.now() / 1000;
+  }
   const warm = coolGlows(dt);
 
   // The track camera follows the slug in bullet time.
@@ -1579,7 +1734,7 @@ function step(dt) {
     p.uniforms.uBand.value = lerp(narrow ? 0.06 : 0.09, 0.16, camBlend);
     p.uniforms.uMax.value = (narrow ? 4 : 7) * size.dpr;
   }
-  return spinning || shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
+  return spinning || heatT > 0 || shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
 }
 
 /* ---------- camera ---------- */

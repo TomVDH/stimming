@@ -115,7 +115,7 @@ Six targets stand down the lane on thin stands. A steel backstop closes the lane
 
 ### Task 4: Light and sparks
 
-- [ ] Muzzle plasma, steel sparks (K6), shock ring in the salt dust.
+- [x] Muzzle plasma, a shock ring and a smoke ring; streak sparks on steel, plates and the backstop; a salt-dust wake under the slug; heat shimmer along its path; stylised inner-lit ice (transmission showed the orange sky).
 
 ### Task 5: Sound
 
