@@ -170,7 +170,7 @@ export const PARTS = [
 
   // Street: a cherry tree in bloom, a power pole and its wires.
   cyl([-5, 1.75, 6.1], 0.17, 3.2, 'trunk', STREET, { k: 'trunk' }),
-  blob([-5, 4.9, 6.1], 1.6, 'blossom', STREET, { k: 'crown' }), blob([-6.1, 4.2, 6], 1.1, 'blossom2', STREET, { k: 'crown' }),
+  blob([-5, 4.9, 6.1], 1.6, 'blossom', STREET, { k: 'crown', pivot: [-5, 0.15, 6.1] }), blob([-6.1, 4.2, 6], 1.1, 'blossom2', STREET, { k: 'crown' }),
   blob([-3.95, 4.3, 6.3], 1.15, 'blossom2', STREET, { k: 'crown' }), blob([-4.7, 6, 6], 1, 'blossom', STREET, { k: 'crown' }),
   blob([-5.8, 5.4, 6.3], 0.85, 'blossom', STREET, { k: 'crown' }),
   cyl([3.9, 4.65, 6.2], 0.13, 9, 'wood', STREET, { k: 'pole' }),

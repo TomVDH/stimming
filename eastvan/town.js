@@ -1,19 +1,13 @@
-// East Van: the Toy-town scene, built in three.js from lot.js.
+// East Van: one Toy-town diorama, built in three.js from zone files.
 // Static parts are painted and merged: one draw call for all of them.
 // A part with dyn moves on a hinge. A part with sw is a light switch.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
 import { reduced, quality } from '../shared/stim.js';
-import * as lot from './lot.js';
-import * as alley from './alley.js';
+import { COL } from './lot.js';
 import { lin, lift, lerp, paint, PAINT, glowMat, beamGeo } from './kit.js';
-import { buildLife } from './life.js';
 
-// The zones, front to back. Each one is a plain data file.
-const ZONES = [lot, alley], all = key => ZONES.flatMap(z => z[key] || []);
-const COL = lot.COL, PARTS = all('PARTS'), WIRES = all('WIRES'), POKES = all('POKES'), LAMPS = all('LAMPS');
-const MOVES = Object.assign({}, ...ZONES.map(z => z.MOVES)), ACTS = Object.assign({}, ...ZONES.map(z => z.ACTS));
 
 /* ---------- geometry from parts ---------- */
 const roofEave = q => { const hw = q.s[0] / 2 + q.over, slope = q.s[1] / (q.s[0] / 2); return { hw, slope, y: q.p[1] + q.s[1] - slope * hw }; };
@@ -61,7 +55,11 @@ function geomsOf(q) {
 // A switch that is off shows its colour through this dark tint.
 const OFF = new THREE.Color(0.11, 0.16, 0.5);
 
-export function buildTown(skyTexture) {
+// zones: plain data files, front to back. life: adds the creatures, or null.
+export function buildTown(skyTexture, zones, life = null) {
+  const all = key => zones.flatMap(z => z[key] || []);
+  const PARTS = all('PARTS'), WIRES = all('WIRES'), POKES = all('POKES'), LAMPS = all('LAMPS');
+  const MOVES = Object.assign({}, ...zones.map(z => z.MOVES)), ACTS = Object.assign({}, ...zones.map(z => z.ACTS));
   const scene = new THREE.Scene();
   scene.background = skyTexture;
   const hemi = new THREE.HemisphereLight(lin([0.74, 0.08, 285]), lin([0.62, 0.07, 60]), 2.5);
@@ -98,13 +96,19 @@ export function buildTown(skyTexture) {
     }
     bins.paint.push(paint(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.024, 5), COL.wire));
   }
-  const mesh = (geos, mat, cast, receive = true) => { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.castShadow = cast; m.receiveShadow = receive; return m; };
+  // An empty bin makes no mesh.
+  const mesh = (geos, mat, cast, receive = true) => {
+    if (!geos.length) return null;
+    const m = new THREE.Mesh(mergeGeometries(geos), mat);
+    m.castShadow = cast; m.receiveShadow = receive;
+    return m;
+  };
   const glow = glowMat();
   const flowers = mesh(bins.flower, PAINT, false);
-  // The crown turns about the foot of the trunk.
-  const crown = mesh(bins.crown, PAINT, true);
-  crown.geometry.translate(5, -0.15, -6.1); crown.position.set(-5, 0.15, 6.1);
-  scene.add(mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers);
+  // The crown turns about its pivot: the foot of the trunk.
+  const crown = mesh(bins.crown, PAINT, true), pivot = PARTS.find(q => q.k === 'crown')?.pivot;
+  if (crown && pivot) { crown.geometry.translate(-pivot[0], -pivot[1], -pivot[2]); crown.position.set(...pivot); }
+  for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) scene.add(m);
   for (const s of Object.values(sw)) s.mat = glowMat(s.gain);
   for (const id in sw) if (sw[id].geos.length) scene.add(mesh(sw[id].geos, sw[id].mat, false, false));
   for (const id in mv) {
@@ -152,13 +156,13 @@ export function buildTown(skyTexture) {
     const steps = (ACTS[q.id] || [['flip', q.id]]).map(step);
     return { id: q.id, pos: new THREE.Vector3(...q.at), r: q.r, fire: () => { for (const f of steps) f(); } };
   });
-  const life = buildLife(scene, crown, pokes);
+  const alive = life ? life(scene, crown, pokes) : { noInk: [], update() {} };
 
   const on = new THREE.Color();
   return {
     scene, pokes,
     // The lens leaves these out of the ink line.
-    noInk: [flowers, ...life.noInk],
+    noInk: [flowers, ...alive.noInk].filter(Boolean),
     update(t, dt) {
       for (const s of Object.values(sw)) {
         s.mat.color.lerpColors(OFF, on.setScalar(s.gain), s.k);
@@ -167,7 +171,7 @@ export function buildTown(skyTexture) {
       }
       for (const id in mv) MOVES[id](mv[id].group, mv[id].k, mv[id].hinge);
       for (const l of lamps) l.light.intensity = l.power * Math.max(0, Math.min(1, l.src.k));
-      life.update(t, dt);
+      alive.update(t, dt);
     },
   };
 }
