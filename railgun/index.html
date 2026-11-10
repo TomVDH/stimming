@@ -78,25 +78,25 @@ const SIZES = {
   moon: { R: 1700, T: 380, shards: 56, rumble: 1.3 },
 };
 const opts = {
-  size: store.get('size') in SIZES ? store.get('size') : 'mountain',
+  // The first rock rolls its size too.
+  size: Object.keys(SIZES)[Math.floor(Math.random() * 3)],
   // Time of day, 0 for night to 1 for noon.
   // It has its own key: the old Sun key had a narrower range.
   sun: Number.isFinite(+store.get('time')) && store.get('time') !== null ? Math.min(1, Math.max(0, +store.get('time'))) : 0.5,
 };
 
 /* ---------- bar ---------- */
+// 'random' rolls each new rock's size; a dev pick pins it.
+let devSize = 'random';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
-  choice: {
-    label: 'Asteroid', value: opts.size,
-    options: [{ value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }],
-    onPick: v => { opts.size = v; store.set('size', v); retune(); },
-  },
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+    // Dev: pin the rock's size; Random rolls a new one per rock.
+    { type: 'choice', id: 'devsize', label: 'Rock (dev)', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
   ],
   quality: true,
@@ -499,6 +499,9 @@ vec3 arcLight(vec3 P, vec3 N) {
 vec3 ambient(vec3 N) { return mix(uHorC, uZenC, N.y * 0.5 + 0.5) * 0.55; }
 vec3 sunLight(vec3 N) { return uSunC * max(dot(N, uSun), 0.0); }
 // The rock lights what faces it, faintly by day.
+// The blast lights everything within some 20 km of it.
+uniform vec4 uBlast;
+vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * uBlast.w * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8); }
 // The rock lights what faces it: faintly by day, clearly at night.
 float nightK() { return 1.0 - smoothstep(-0.05, 0.15, uSunD.y); }
 vec3 keyLight(vec3 N) { return uAstC * uAst.w * 0.25 * (1.0 + 5.0 * nightK()) * max(dot(N, uAst.xyz), 0.0); }
@@ -1078,7 +1081,12 @@ const gunMat = new THREE.ShaderMaterial({
     vec3 amb = mix(uGroundC * uSunC * 0.3, mix(uHorC, uZenC, 0.75) * 0.6, N.y * 0.5 + 0.5) * occ;
     float nl = max(dot(N, uSun), 0.0);
     float vis = nl > 0.0 ? sunVis(vP) : 1.0;
-    vec3 col = alb * (amb + uSunC * 2.8 * nl * vis + keyLight(N) + rim(N, vP) * vis + arcLight(vP, N));
+    // A soft fill from the eye's side and a thin rim; both faint at night.
+    float day = 1.0 - 0.75 * nightK();
+    vec3 V0 = normalize(cameraPosition - vP);
+    vec3 fill = mix(uHorC, uZenC, 0.5) * 0.18 * max(dot(N, normalize(V0 + vec3(0.0, 0.3, 0.0))), 0.0) * day;
+    vec3 rimL = mix(uHorC, uSunC, 0.5) * 0.35 * pow(1.0 - max(dot(N, V0), 0.0), 3.0) * day;
+    vec3 col = alb * (amb + uSunC * 2.8 * nl * vis + keyLight(N) + rim(N, vP) * vis + arcLight(vP, N) + fill + rimL + blastLight(vP));
     // Heat glows on the barrel, hottest at the muzzle.
     // The dark rails and the brake run hotter than the hull.
     float hz = clamp(uHeat * vPart.y * smoothstep(0.3, 1.0, vPart.x) * mix(0.6, 1.0, dark), 0.0, 1.2);
@@ -1452,6 +1460,8 @@ function makeTrain(pu) {
         vec3 Lf = uAstC * uBurn * 6.0 * R * R / (dot(q, q) + R * R);
         // The blast lights the smoke for many radii.
         Lf += uAstC * uHit.w * 110.0 * R * R / (dot(q, q) + 9.0 * R * R);
+        // Debris trains far from their own head still see the blast.
+        Lf += blastLight(uAstP + q) * 2.0 * (1.0 - step(590.0, uAstRad));
         vec3 S = mix(uSoot, uAsh, smoothstep(0.3, 8.0, g.y)) * (Ls + La + Lf);
         // Fire lives in the core, close behind the rock.
         float heat = c01(d * (1.0 - smoothstep(0.15, 0.95, g.w)) * exp(-max(x, 0.0) / (4.5 * R)) * uBurn * (0.6 + 0.9 * e));
@@ -1563,7 +1573,7 @@ function makeFragTrail(own = false) {
       float n = k2fbm(vec2(vF * 14.0 - uTime * 0.5 + uSeed, vY * 1.3 + uSeed));
       // The clamp keeps pow off a negative base.
       float a = pow(clamp(1.0 - vF, 0.0, 1.0), 1.4) * smoothstep(0.2, 0.75, n * 0.7 + 0.45 * edge) * edge * 0.8 * uOn;
-      vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8);
+      vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8 + blastLight(vP));
       vec3 fire = uFireC * exp(-vF * 8.0) * edge * 2.5 * uOn;
       gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
     }`,
@@ -1588,6 +1598,8 @@ function seedFrags() {
     const th = (i / n) * Math.PI * 2 + rnd() * 0.8, gap = 3.8 + 2.4 * rnd();
     f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -3 + 9 * rnd();
     f.k = 0.12 + 0.12 * rnd();
+    // Medium pieces come a little bigger.
+    if (f.k >= 0.18) f.k *= 1.25;
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     f.m.quaternion.random();
     f.m.visible = f.on; f.trail.visible = f.on; f.mini.m.visible = false;
@@ -1627,7 +1639,7 @@ function stepFrags() {
     // Medium pieces trail a mini comet train; small ones keep the ribbon.
     const medium = f.k >= 0.18;
     f.trail.visible = !medium && u.uOn.value > 0.01;
-    if (medium) aimMini(f.mini, f.pos, ast.away, f.k * ast.R, f.k * ast.R * 60, u.uOn.value, f.broke < 0 ? 0.7 : 0.2);
+    if (medium) aimMini(f.mini, f.pos, ast.away, f.k * ast.R, f.k * ast.R * 110, u.uOn.value, f.broke < 0 ? 0.7 : 0.2);
     else f.mini.m.visible = false;
   }
 }
@@ -1697,7 +1709,7 @@ const dust = new THREE.Mesh(dustGeo, new THREE.ShaderMaterial({
     float a = smoothstep(1.0, 0.25, d + (n - 0.5) * 0.9) * smoothstep(1.0, 0.7, d) * 0.5 * pow(max(sin(3.14159 * vF), 0.0), 0.7);
     if (a < 0.003) discard;
     float steam = step(1000.0, vSeed);
-    vec3 col = mix(uDustC, vec3(0.92, 0.93, 0.95), steam) * (0.7 + 0.6 * n) * (ambient(vec3(0.0, 1.0, 0.0)) + sunLight(vec3(0.0, 0.6, 0.0)) * 0.7);
+    vec3 col = mix(uDustC, vec3(0.92, 0.93, 0.95), steam) * (0.7 + 0.6 * n) * (ambient(vec3(0.0, 1.0, 0.0)) + sunLight(vec3(0.0, 0.6, 0.0)) * 0.7 + blastLight(vC));
     // Steam scatters the low sun; it glows against the haze.
     col += steam * vec3(0.92) * uSunC * 0.9;
     a *= 1.0 - 0.45 * steam;
@@ -2631,7 +2643,6 @@ const ionMat = new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   uniform vec3 uI, uIonC, uConC;
-  uniform vec4 uBlast;
   varying float vY, vLa, vF;
   varying vec3 vP, vSide;
   ${HEAD}
@@ -2701,7 +2712,6 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   uniform vec3 uI, uConC;
-  uniform vec4 uBlast;
   varying vec2 vUv;
   varying float vLa, vSeed;
   varying vec3 vP, vR, vU;
@@ -2884,7 +2894,7 @@ float dens(vec3 p, out vec3 em) {
 }
 vec3 alb(vec3 p) { return uSmokeC; }
 // The blast's light reaches into the smoke.
-vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e4 / (dot(m, m) + 6.0e4); }`, {
+vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e4 / (dot(m, m) + 6.0e4) + blastLight(p); }`, {
   uMz: { value: new THREE.Vector3() }, uMx: { value: new THREE.Vector3(0, 0, -1) }, uDrift: { value: new THREE.Vector3() }, uPl: { value: new THREE.Vector4() },
   uHotC: { value: new THREE.Vector3(...linFit(0.95, 0.05, 230)) }, uSmokeC: { value: new THREE.Vector3(...linFit(0.74, 0.012, 70)) },
 });
@@ -3132,7 +3142,7 @@ function stepChunks() {
     shardAt(ch.i, age, chP, chV);
     // The trail streams back up the fall line, and dies at the ground.
     const on = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
-    aimMini(ch.mini, chP, chV.negate(), r * 0.8, r * 40, on, 0.35 + 0.4 * Math.exp(-age / 8));
+    aimMini(ch.mini, chP, chV.negate(), r * 0.8, r * 70, on, 0.35 + 0.4 * Math.exp(-age / 8));
   }
 }
 
@@ -3228,6 +3238,8 @@ function respawn() {
   astMesh.quaternion.random();
   seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
+  // Each new rock rolls its size.
+  if (devSize === 'random') { const ks = Object.keys(SIZES); opts.size = ks[Math.floor(Math.random() * ks.length)]; }
   // Each rock comes in a little to one side of the last.
   turnPath(ast.next);
   PU.uTrail.value = 0;
