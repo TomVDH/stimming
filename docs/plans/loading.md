@@ -192,3 +192,4 @@ Open:
 - Railgun sweep after PR 41, branch against main: desktop, 375 px, reduced motion, low quality, changed graphics settings, 6x CPU throttle.
   Idle, charge, shot, sight and reset frames match. No page error. First frame at 2.1 s under the throttle.
   Railgun holds the intro up to 15 s for the scene; main held it with no cap.
+- Railgun sweep repeated after PR 43 (cloud towers): the same six cases match main. Two shots show no long task and no frame gap.
