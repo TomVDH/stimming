@@ -964,8 +964,9 @@ function stepTurb(dt) {
   const az = (turb.gw - turb.vz) / 1.1, al = (turb.gl - turb.vl) / 1.1;
   turb.vz += az * h; turb.vl += al * h;
   // An upward lurch leaves the eye behind: it dips, and the spring brings it back.
-  turb.vy += (-0.16 * az - 60 * turb.y - 7 * turb.vy) * h;
-  turb.vx += (-0.08 * al - 60 * turb.x - 7 * turb.vx) * h;
+  // The spring is critically damped, so the head settles without a bob.
+  turb.vy += (-0.07 * az - 40 * turb.y - 13 * turb.vy) * h;
+  turb.vx += (-0.035 * al - 40 * turb.x - 13 * turb.vx) * h;
   turb.x += turb.vx * h; turb.y += turb.vy * h;
 }
 // A big push on the slider answers at once: a flash in the nearest cell or the deck, and a lurch.
@@ -2037,7 +2038,8 @@ function stepRumble() {
   const { g, lp, ac } = rumble;
   // The bank sets the level; turbulence buffets it and opens the filter a little.
   const lvl = smooth(0.1, 0.8, fog.level) * 0.9 + 0.15 * opts.storm * turb.level;
-  const buffet = Math.min(1, Math.abs(turb.vy) * 12);
+  // The damped head moves a third as fast, so the gain is three times higher.
+  const buffet = Math.min(1, Math.abs(turb.vy) * 36);
   g.gain.setTargetAtTime(lvl * (0.75 + 0.6 * buffet), ac.currentTime, 0.25);
   lp.frequency.setTargetAtTime(100 + 90 * buffet, ac.currentTime, 0.2);
 }
