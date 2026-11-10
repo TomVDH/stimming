@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:04:36Z
+updated_at: 2026-11-10T08:23:17Z
 parent: stimming-w1nd
 ---
 
@@ -32,3 +32,5 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 - Storm now starts at zero. The eye sits 33 cm from the wall, so the glass fills most of the frame height.
 
 Round 6 (Tom: the reveal looked like a camera obscura; plastic is matte and textured): the reveal, gasket and wall no longer sample a mirrored image of the outside. Each face sums a 4 by 4 grid of patches on the skin opening (radiance times form factor). The sun or moon lays a sharp patch in the opening's shape; the wing and towers block it. The lit patch bounces onto the other faces and the wall. Dimmed glass tints all this light. Fine pebble grain (about 0.7 mm) tilts the normal; it fades with pixel size. The sheen is a low GGX gloss, roughness 0.55.
+
+Seat (Tom): Settings has a Seat row: Wing L, Wing R, Aft L, Aft R (stimming.window.seat). Aft seats move the whole aircraft 3.2 m forward of the eye, so the wing sits up front and more ground shows. Right seats mirror the picture and the input; the wingtip nav light turns green.

@@ -112,6 +112,7 @@ const opts = {
   towns: num('towns', 1),
   dim: num('dim', 0),
   aurora: saved('aurora') || 'on',
+  seat: saved('seat') || 'wl',
   rain: +(saved('rain') || 0),
 };
 // A test hook sets values from the address, for screenshots.
@@ -479,7 +480,7 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
 const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex });
 // The wing tip's flex offset, in world metres, from the last frame.
 let tipBend = [0, 0, 0];
-const tipW = () => toWorld(TIP).map((v, i) => v + tipBend[i]);
+const tipW = () => toWorldA(TIP).map((v, i) => v + tipBend[i]);
 const bolts = createBolts();
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -496,6 +497,15 @@ let W = 1, H = 1, dpr = 1, t = 0;
 let bank = 6 * D2R;
 // Aircraft axes in the world: the left wing dips by the bank.
 const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+// The seat: over the wing or a few rows aft, on the left or the right.
+// An aft seat moves the whole aircraft forward of the eye, along the roll axis.
+// The right side shows the left side's mirror image: the aircraft is symmetric.
+const SEATS = { wl: [0, false], wr: [0, true], al: [3.2, false], ar: [3.2, true] };
+let seatDx = 0, mirror = false;
+// Aircraft points to the world, from the seat's eye.
+const toWorldA = v => toWorld([v[0] + seatDx, v[1], v[2]]);
+// The left wingtip carries a red nav light, the right a green one.
+const navCol = () => (mirror ? [0.05, 1.0, 0.3] : [1.0, 0.1, 0.05]);
 // Camera axes in the cabin (a*) and in the world (F, R, U).
 const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
 function setBasis() {
@@ -1213,7 +1223,7 @@ function shared(u) {
   UG.uniform3fv(u.uSun, sky.sun);
   UG.uniform2fv(u.uSunAz, sky.sunAz);
   UG.uniform1f(u.uHorEl, HOR);
-  UG.uniform3fv(u.uTip, tipW());
+  UG.uniform3fv(u.uTip, tipW()); UG.uniform3fv(u.uNavC, navCol());
   UG.uniform1f(u.uStrobe, reduce ? 0 : strobe());
   UG.tex(u.uSkyL, skyTex.L);
   UG.tex(u.uSkyT, skyTex.T);
@@ -1261,20 +1271,20 @@ function render() {
   UG.uniform1f(u.uAurora, aur);
   UG.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); UG.uniform3fv(u.uSunL, sky.sunL); UG.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
-  UG.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorld)).flat());
+  UG.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorldA)).flat());
   UG.uniform3fv(u['uWN[0]'], PANELS.map(q => quadNormal(q.map(toWorld))).flat());
   UG.uniform1fv(u['uWS[0]'], SPAN);
   // Straight reference edges, root to tip, for the panel lines.
   // The trailing edge line runs on from the outboard part, past the kink.
   UG.uniform4f(u.uWL, ST[0][0], ST[0][2], ST[5][0], ST[5][2]);
   UG.uniform2f(u.uWT, ST[1][1] - (ST[5][1] - ST[1][1]) / (ST[5][2] - ST[1][2]) * (ST[1][2] - ST[0][2]), ST[5][1]);
-  const let_ = LET.map(toWorld);
+  const let_ = LET.map(toWorldA);
   UG.uniform3fv(u['uLet[0]'], let_.flat()); UG.uniform3fv(u.uLetN, quadNormal(let_));
   // Aircraft axes in the world: chord runs aft, up, and span runs out the window.
   UG.uniform3fv(u.uChord, toWorld([-1, 0, 0])); UG.uniform3fv(u.uUpA, toWorld([0, 1, 0])); UG.uniform3fv(u.uSpan, toWorld([0, 0, 1]));
-  UG.uniform3fv(u.uNacA, toWorld(NAC.a)); UG.uniform3fv(u.uNacB, toWorld(NAC.b)); UG.uniform1f(u.uNacR, NAC.r);
-  UG.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorld(f.a), f.a[3]]));
-  UG.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorld(f.b), f.b[3]]));
+  UG.uniform3fv(u.uNacA, toWorldA(NAC.a)); UG.uniform3fv(u.uNacB, toWorldA(NAC.b)); UG.uniform1f(u.uNacR, NAC.r);
+  UG.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorldA(f.a), f.a[3]]));
+  UG.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorldA(f.b), f.b[3]]));
   const n = towerUniforms();
   UG.uniform1i(u.uTowSteps, quality() === 'high' ? 64 : 40);
   UG.uniform1i(u.uTowOct, 3);
@@ -1295,7 +1305,7 @@ function render() {
   renderer.setRenderTarget(outRT);
   renderer.clear();
   // The aircraft goes first; the outside then fills only the uncovered pixels.
-  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
+  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
     veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
     wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce });
   renderer.render(wing3.scene, wing3.cam);
@@ -1378,7 +1388,7 @@ function seen(dirA, rad = 0) {
 // True when a world ray from the eye meets the wing or winglet.
 function onWing(d) {
   for (const q of [...PANELS, LET]) {
-    const v = q.map(toWorld), n = quadNormal(v), dn = dot(d, n);
+    const v = q.map(toWorldA), n = quadNormal(v), dn = dot(d, n);
     if (Math.abs(dn) < 1e-4) continue;
     const tt = dot(v[0], n) / dn;
     if (tt <= 0) continue;
@@ -1440,11 +1450,11 @@ function flareUniforms(u) {
   const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
   put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR, sky.h.moon ? 0 : 0.4);
   // Lightning glows inside the cloud, so it throws no lens flare.
-  // The strobe and the red nav light on the wingtip.
-  const tipW = norm(toWorld(sub(TIP, basis.eye)));
+  // The strobe and the nav light on the wingtip.
+  const tipW = norm(toWorld(sub([TIP[0] + seatDx, TIP[1], TIP[2]], basis.eye)));
   // Neither wingtip light throws ghosts: a ghost of -1 cancels them.
   put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, -1);
-  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05], 0, 0, -1);
+  put(3, tipW, 0.08, 0.35, navCol(), 0, 0, -1);
   eventFlares(put);
   UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
@@ -1479,8 +1489,18 @@ function resize(force = false) {
   if (ready) render();
 }
 
+/* ---------- seat ---------- */
+function applySeat() {
+  if (!SEATS[opts.seat]) opts.seat = 'wl';
+  [seatDx, mirror] = SEATS[opts.seat];
+  canvas.style.transform = mirror ? 'scaleX(-1)' : '';
+  histFresh = true;
+}
+applySeat();
+
 /* ---------- input ---------- */
-const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
+// On the right side the picture is mirrored, so input mirrors with it.
+const toPx = e => { const r = canvas.getBoundingClientRect(), x = (e.clientX - r.left) * dpr; return [mirror ? W - x : x, H - (e.clientY - r.top) * dpr]; };
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
   setBasis();
@@ -1551,6 +1571,7 @@ stage.addEventListener('keydown', e => {
   const m = { ArrowLeft: [-0.02, 0, 0], ArrowRight: [0.02, 0, 0], ArrowUp: [0, 0.02, 0], ArrowDown: [0, -0.02, 0], '+': [0, 0, 0.02], '=': [0, 0, 0.02], '-': [0, 0, -0.02] }[e.key];
   if (!m) return;
   e.preventDefault();
+  if (mirror) m[0] = -m[0];
   moveHead(...m);
 });
 
@@ -1572,6 +1593,7 @@ const ui = initPage({
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
       { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
       { type: 'choice', id: 'rain', label: 'Rain', value: String(opts.rain), options: pick3(['0', 'Off'], ['0.5', 'Light'], ['1', 'Heavy']), onPick: v => { opts.rain = +v; save('rain', v); render(); } },
+      { type: 'choice', id: 'seat', label: 'Seat', value: opts.seat, options: [{ value: 'wl', label: 'Wing L' }, { value: 'wr', label: 'Wing R' }, { value: 'al', label: 'Aft L' }, { value: 'ar', label: 'Aft R' }], onPick: v => { opts.seat = v; save('seat', v); applySeat(); render(); } },
       { type: 'toggle', id: 'aurora', label: 'Aurora', value: opts.aurora === 'on', onToggle: on => { opts.aurora = on ? 'on' : 'off'; save('aurora', opts.aurora); render(); } },
       // Sights: each option calls its sight now.
       { type: 'choice', id: 'falling', label: 'Falling', value: '', options: [{ value: 'meteor', label: 'Meteor' }, { value: 'fireball', label: 'Fireball' }, { value: 'boom', label: 'Impact' }], onPick: v => startEvent(v) },

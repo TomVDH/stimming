@@ -265,7 +265,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
   scene.add(boltL, boltL.target);
   // A fog bank swallows the wing; the shader sets the bank's density.
   scene.fog = new THREE.FogExp2(0x000000, 0);
-  // The tip strobe and the red nav light light the skin near the tip.
+  // The tip strobe and the nav light light the skin near the tip.
   const strobeL = new THREE.PointLight(0xffffff, 0, 30, 2), navL = new THREE.PointLight(0xff2010, 0.4, 14, 2);
   scene.add(strobeL, navL);
 
@@ -303,13 +303,16 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, seatDx = 0, nav = [1, 0.1, 0.05] }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
       mo.wet += (wet - mo.wet) * Math.min(1, dtw * (wet > mo.wet ? 0.5 : 0.08));
       for (const m of [paint, flapPaint]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
       air.rotation.x = bank;
+      // An aft seat sees the whole aircraft further forward.
+      air.position.x = seatDx;
+      navL.color.setRGB(...nav);
       // The roll rate drives the controls; a low-pass keeps them smooth.
       const dt = mo.t === null ? 0 : t - mo.t;
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
@@ -356,7 +359,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       sun.intensity = m * 0.012 * Math.PI / 0.34 * veil;
       // Storm murk also dulls the sky the paint mirrors.
       scene.environmentIntensity = 1 - 0.6 * storm;
-      const c = V(3, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
+      const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }

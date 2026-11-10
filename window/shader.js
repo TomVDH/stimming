@@ -91,6 +91,8 @@ uniform vec4 uBoom; uniform vec2 uBoomL;
 uniform float uStorm, uFog; uniform vec4 uSpr[2];
 // uWisp: the plane's wrapped place in metres, for wing fog.
 uniform vec3 uWisp;
+// The wingtip nav light: red on the left wing, green on the right.
+uniform vec3 uNavC;
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -983,7 +985,7 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
-  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
+  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + uNavC * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
@@ -1006,7 +1008,7 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
     float dn = smoothstep(0.62 - 0.35 * uFog, 0.9 - 0.3 * uFog, n) * smoothstep(0.05, 0.5, uFog);
     // The strobe and nav light glow in wisps by the tip.
     float ft = length(d * tm - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + vec3(0.8, 0.03, 0.02) * 0.02) * exp(-ft / 5.0);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + uNavC * 0.8 * 0.02) * exp(-ft / 5.0);
     float a = 1.0 - exp(-0.09 * dn * dt);
     col += T * L * a;
     T *= 1.0 - a;
@@ -1657,7 +1659,7 @@ vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   c += vec3(1.0, 0.72, 0.42) * 0.01 * row * pane;
   // The nav light and the strobe light the wing near the tip.
   vec3 tp = d * t - uTip;
-  c += vec3(1.0, 0.08, 0.05) * exp(-dot(tp, tp) / 0.8) * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * strobe * 0.3;
+  c += uNavC * exp(-dot(tp, tp) / 0.8) * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * strobe * 0.3;
   c += vec3(0.72, 0.74, 1.0) * E * 0.25;
   return c;
 }
@@ -1829,6 +1831,8 @@ uniform sampler2D uEnv; uniform float uEnvOn;
 // The sun or moon's light, for the patch it throws through the opening; 0 where unset.
 uniform vec3 uSunC;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
+// The wingtip nav light: red on the left wing, green on the right.
+uniform vec3 uNavC;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 // Extra ghost strength per flare; 0 keeps the old ghosts.
 uniform float uFlrG[10];
@@ -2059,9 +2063,9 @@ vec3 glass(vec3 da, vec2 px) {
     float r2 = dot(px - pt.xy, px - pt.xy);
     view += uPtC[i] * pt.w * (exp(-r2 / (pt.z * pt.z)) + 0.06 * exp(-sqrt(r2) / (pt.z * 5.0)));
   }
-  // The red nav light: a hot core and a soft halo.
+  // The nav light: a hot core and a soft halo.
   float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
-  view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
+  view += uNavC * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
   // Rain streaks catch the sky glow, the strobe and the lightning.
   float rs = rainStreaks(px);
