@@ -14,6 +14,7 @@
 // It can call every bundle (sk*, wt*, pp*, gw*, gr*) and read ENV_UNIFORMS.
 // Its own uniforms go in the scene text and in `uniforms`: { uName: () => value }.
 // state.light is the key light's place on the frame: it flares and lights rain and drops.
+// state.lightColor sets its colour; state.frame = false takes the pane's foggy rim away.
 
 import { GLASS_RAIN } from './glassrain.js';
 import { BOKEH } from './bokeh.js';
@@ -98,7 +99,7 @@ uniform sampler2D tScene, tBok;
 uniform vec2 uRes, uM, uLamp;
 uniform vec3 uLampCol, uTint;
 uniform float uDay, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
-uniform float uGlassOn, uFlareOn, uGradeOn, uOutOn, uExpo;
+uniform float uGlassOn, uFlareOn, uGradeOn, uOutOn, uExpo, uFrame;
 ${GLASS_RAIN}
 ${WET_GLASS}
 ${FLARE}
@@ -109,7 +110,8 @@ void main() {
   float asp = uRes.x / uRes.y, day = uDay;
   // The pane is one unit tall; its frame is the edge of the view.
   vec2 pane = (uv - 0.5) * vec2(asp, 1.0);
-  float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
+  // With no frame in view, the pane has no cold rim.
+  float edge = uFrame > 0.5 ? max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5) : -1.0;
   vec3 warm = vec3(1.0, 0.85, 0.7);
   vec3 veil = warm * 0.02 * (1.0 - day) + vec3(0.03) * day;
   vec3 glint = mix(warm * 0.3, vec3(0.6, 0.63, 0.66), day);
@@ -309,6 +311,7 @@ export function environment(canvas, { scene, uniforms = {}, animated = false, ac
     gl.uniform1f(u('uScatter'), Math.min(1, S.defocus / 0.15));
     for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain'], ['uExpo', 'expo']]) gl.uniform1f(u(name), S[k]);
     for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
+    gl.uniform1f(u('uFrame'), S.frame === false ? 0 : 1);
     run(progPane, rtPane);
     // glow.js: the chain halves the frame down, then tents it back up.
     const glowTex = S.on.glow && S.bloom > 0 ? bloom.render(rtPane.tex, w, h, { threshold: S.thr, levels: glowDetail(D.level).levels }) : null;

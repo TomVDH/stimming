@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T10:51:39Z
+updated_at: 2026-11-10T11:13:58Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -39,7 +39,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Cloud deck: `skClouds()` in `shared/sky.js`, a slider in `fxlab/`
 - [x] Lights and bloom: `shared/glow.js` (orbs, `bloomChain`), a card in `fxlab/`, one copy check
 - [x] The runner: `shared/environment.js`; `fxlab/` moved onto it; a second scene (Open sea)
-- [ ] Tom picks what comes next (a first toy on the runner, water extras, light shafts, caustics, more adopters)
+- [x] A first toy on the runner: Fog horn (`foghorn/`, bean `stimming-vmu3`)
+- [ ] Tom picks what comes next (water extras, light shafts, caustics, more adopters)
 
 ## Rules
 
@@ -76,3 +77,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: `shared/glow.js` built (Tom: "Lights and bloom"). The lab scene now ends in a last pass (bloom, grade, output); the pane pass keeps linear light. `fxlab.bench()` measures the real frame cost: about 7 to 8 ms at 1440 x 1536 with everything on. A target resize between passes broke one frame; fixed, and noted in the plan.
 
 - 2026-11-10: Tom: "Keep building". Built `shared/environment.js`, the runner that turns the bundles into one frame from a single scene function. The lab moved onto it with no change: eight frozen frames have the same checksum before and after. Open sea is a second scene in thirty lines of GLSL.
+
+- 2026-11-10: Fog horn, a new Lab toy, runs on the runner (Tom: "Yes, a new toy"). The runner gained `state.frame`.
