@@ -4067,7 +4067,11 @@ uniform vec4 uFb;
 // It swells to twelve radii over about twelve seconds.
 float rb() { return uFb.y * (1.0 + 11.0 * (1.0 - exp(-uFb.x / 4.5))); }
 // The fire sphere blows out to eight radii, most of it in two seconds.
-float rf() { return uFb.y * (1.0 + 7.0 * (1.0 - exp(-uFb.x / 1.1))); }
+// The negative phase then pulls it in by a fifth; it eases back a little.
+float rf() {
+  float a = uFb.x, pull = smoothstep(2.2, 5.0, a) - 0.4 * smoothstep(6.0, 10.0, a);
+  return uFb.y * (1.0 + 7.0 * (1.0 - exp(-a / 1.1))) * (1.0 - 0.22 * pull);
+}
 // The fire's heat: a flash, then a strong glow for 8 s, then a faint tail.
 float fireEnv(float a) { return 0.8 * exp(-a / 0.6) + 0.9 * exp(-a / 8.0) + 0.12 * exp(-a / 40.0); }
 // Blackbody cooling: white, yellow, orange, deep red.
@@ -4377,9 +4381,11 @@ function shatter(c) {
   // The four fly wide apart, fast, and carry on along the rock's own arc.
   const fw = bq.copy(ast.away).negate(), sd = new THREE.Vector3().crossVectors(fw, yUp).normalize(), up = new THREE.Vector3().crossVectors(sd, fw).normalize();
   keep.forEach(([p, v, d], j) => {
-    // Four pieces fan out round the hit, each at its own speed; most lob up before they fall.
+    // The pieces carry on along the rock's own path, at nearly one speed.
+    // The blast only fans them a little round that path and lifts them.
     const a = j * Math.PI / 2 + 0.4 + (rnd() - 0.5) * 1.1, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
-    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp * 0.6 + (0.35 + 0.4 * rnd()) * sp).addScaledVector(fw, 0.8 * FALL / SIZES[opts.size].T + 90 * (R / 600));
+    const go = (350 + 250 * c) * (R / 600) * (0.92 + 0.16 * rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.35).addScaledVector(up, (0.2 * Math.sin(a) + 0.15 + 0.2 * rnd()) * sp).addScaledVector(fw, go);
     sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, ...d);
   });
   shardGeo.instanceCount = keep.length;
@@ -4388,11 +4394,13 @@ function shatter(c) {
   // Embers: burning pieces jet out in a few sprays and arc down.
   // Most fly slow; a few fly very fast with long fiery trails.
   const sp = R / 600, jets = Array.from({ length: 7 }, () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize());
+  // The burning pieces keep part of the rock's motion along its path.
+  const mo = new THREE.Vector3().copy(ast.away).negate();
   for (let i = 0; i < N * 2.5; i++) {
     if (rnd() < 0.7) bv.copy(jets[i % 7]).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.45)).normalize();
     else bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
-    bv.multiplyScalar((300 + 1400 * f * f) * sp);
+    bv.multiplyScalar((300 + 1400 * f * f) * sp).addScaledVector(mo, (250 + 200 * c) * sp * (0.9 + 0.2 * rnd()));
     bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
     // Fast pieces draw long trails; slow ones only a short tail.
     writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, 10 + rnd() * 12, 0.5 + 3.5 * f * f + 0.5 * rnd(), 1.8 + 3.2 * rnd(), 3, 0.3 + 0.4 * rnd());
@@ -4512,12 +4520,15 @@ function stepShot(dt) {
   // It drifts on a high wind and thins as it goes.
   if (ast.state === 'shatter' && ast.hitAt != null) {
     const ha = simT - ast.hitAt;
-    // The whole tail drifts and fades slowly, from a few seconds after the hit.
+    // The whole tail drifts; it starts to thin 2.5 s after the hit.
+    // x eases in, then grows at one rate, so the fade starts soft and keeps pace.
+    const x = Math.max(0, ha - 2.5), s = x * x / (x + 1.5);
     PU.uCut.value = 1e9;
     PU.uDrift.value.set(45, 8, 15).multiplyScalar(ha);
-    PU.uBreak.value = Math.min(0.2, ha / 300);
+    // The density falls by e every 6 s; erosion opens it as it goes.
+    PU.uBreak.value = 0.5 * (1 - Math.exp(-s / 18));
     PU.uSwipe.value.z = 0.45 * (1 - Math.exp(-ha / 2.5));
-    PU.uTrail.value = 1 - THREE.MathUtils.smoothstep(ha, 3, 90);
+    PU.uTrail.value = Math.exp(-s / 6) * (1 - THREE.MathUtils.smoothstep(ha, 45, 70));
   } else if (ast.state !== 'shatter') {
     PU.uCut.value = 1e9; PU.uDrift.value.set(0, 0, 0); PU.uBreak.value = 0; PU.uSwipe.value.z = 0;
     PU.uTrail.value = Math.min(1, PU.uTrail.value + dt / 3);

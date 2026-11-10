@@ -47,3 +47,6 @@ Give the railgun's impact a real fireball, after the Window Seat impact, and col
 
 Headless stills at hit +0.3, 1, 3, 6, 10, 20 and 30 s, at dusk and at night. Tom judges it live on localhost:8077.
 - [x] Redo: the fire is a sphere that blows outward to 8 R in about 2 s, with hot and cool cells and soot veins; burning embers jet out in sprays and arc down; trail embers lose their halo
+- [x] Negative phase: the fire sphere pulls in by a fifth from 2 to 5 s, then eases back a little
+- [x] Trail fade starts 2.5 s after the hit and keeps pace: density falls by e every 6 s, erosion opens it; gone by about 45 s
+- [x] Debris and burning pieces carry the rock's own path on, at nearly one speed, with a small fan
