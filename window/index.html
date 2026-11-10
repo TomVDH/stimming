@@ -787,7 +787,7 @@ const BR = { w: 96, h: 160, x: 0.17, y: 0.28 };
 const breathF = new Float32Array(BR.w * BR.h * 2), breathData = new Uint8Array(BR.w * BR.h * 4);
 const breathTex = new THREE.DataTexture(breathData, BR.w, BR.h, THREE.RGBAFormat, THREE.UnsignedByteType);
 breathTex.magFilter = breathTex.minFilter = THREE.LinearFilter;
-const breath = { phase: 0, any: false, hold: 0 };
+const breath = { any: false, out: false, shown: null };
 // Adds fog, or wipes it, in a soft disc of radius r metres round pane point (x, y).
 function brDisc(x, y, r, k, wipe) {
   const cx = (x / BR.x * 0.5 + 0.5) * BR.w, cy = (y / BR.y * 0.5 + 0.5) * BR.h;
@@ -798,7 +798,7 @@ function brDisc(x, y, r, k, wipe) {
       if (q >= 1) continue;
       const f = (1 - q) ** 2 * k, o = (j * BR.w + i) * 2;
       if (wipe) { breathF[o] *= 1 - Math.min(1, f); breathF[o + 1] = Math.max(breathF[o + 1], Math.min(1, f)); }
-      else breathF[o] = Math.min(0.75, breathF[o] + f);
+      else breathF[o] = Math.min(0.85, breathF[o] + f);
     }
   breath.any = true;
 }
@@ -814,16 +814,20 @@ function panePoint(x, y) {
   const s = (WIN.depth - basis.eye[2]) / d[2];
   return [basis.eye[0] + d[0] * s, basis.eye[1] + d[1] * s];
 }
-// Breath fogs the glass only once the face rests right at the pane.
-// A quick lean to peer out leaves it clear.
-// Then a breath comes every 3.6 s; the out-breath takes 40 percent.
+// Breathe shows only when the face is close to the glass.
+// Holding it breathes out; nearer glass fogs in a smaller, denser patch.
 function stepBreath(dt) {
-  const near = smooth(0.12, 0.16, head.z);
-  breath.hold = near > 0.5 ? breath.hold + dt : 0;
-  const on = smooth(2.5, 4, breath.hold) * near;
-  breath.phase = (breath.phase + dt / 3.6) % 1;
-  // The mouth sits 10 cm under the eye, so the fog stays low on the pane.
-  if (on > 0 && breath.phase < 0.4) brDisc(basis.eye[0], basis.eye[1] - 0.1, 0.035 + 0.02 * on, Math.sin(PI * breath.phase / 0.4) * on * dt * 2.5, false);
+  const close = head.tz > 0.09;
+  if (close !== breath.shown) {
+    breath.shown = close;
+    const el = document.querySelector('.s2-chip[aria-keyshortcuts="B"]');
+    if (el) Object.assign(el.style, { transition: 'opacity 0.3s', opacity: close ? '1' : '0', pointerEvents: close ? '' : 'none' });
+    const h = ui.action('breathe');
+    if (h) h.disabled = !close;
+  }
+  const near = smooth(0.06, 0.16, head.z);
+  // The mouth sits 6 cm under the eye.
+  if (breath.out && close) brDisc(basis.eye[0], basis.eye[1] - 0.06, 0.06 - 0.02 * near, dt * (1.2 + 1.5 * near), false);
   if (!breath.any) return;
   // The fog dries over about five seconds; the trace fades over minutes.
   const kf = Math.exp(-dt / 5), kt = Math.exp(-dt / 240);
@@ -1776,7 +1780,8 @@ const ui = initPage({
     slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { if (v > stormTarget + 0.12) stormKick(v); stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
-      { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } }],
+      { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
+      { verb: 'breathe', label: 'Breathe', key: 'B', hold: true, onDown: () => { breath.out = true; wake(); }, onUp: () => { breath.out = false; } }],
     settings: [
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
       { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
