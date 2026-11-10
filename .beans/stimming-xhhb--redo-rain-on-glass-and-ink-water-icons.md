@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-09T23:42:21Z
-updated_at: 2026-11-09T23:46:10Z
+updated_at: 2026-11-10T00:07:04Z
 ---
 
 Round 2 icons built from real toy frames.
@@ -14,5 +14,6 @@ Round 2 icons built from real toy frames.
 - [x] Build three Rain directions with emblems (spike 35)
 - [x] Build three Ink directions with emblems (spike 35)
 - [x] Register on icons/sheet.html and show Tom
-- [ ] Ship Tom's picks to the menu and shared/emblems
+- [x] Ship Rain (Macro redraw) to the menu and shared/emblems
+- [ ] Ink Water: waiting on Tom's pick
 - [ ] Commit, push, verify on Pages
