@@ -104,9 +104,9 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
-  actions: [{ verb: 'reset', key: 'R', onPress: () => resetToy() }],
+  actions: [{ verb: 'reset', key: 'R', onPress: () => resetToy() }, { verb: 'sight', key: 'V', onPress: () => toggleSight() }],
   quality: true,
-  keys: [['hold', 'charge'], ['release', 'fire'], ['space', 'charge']],
+  keys: [['hold', 'charge'], ['release', 'fire'], ['space', 'charge'], ['v', 'sight']],
 } });
 
 const stage = document.getElementById('stage');
@@ -2136,6 +2136,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       // The impact flare: screen place of the hit, and its strength.
       uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
+      // The thermal sight: 0 off, 1 on.
+      uSight: { value: 0 },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
@@ -2144,6 +2146,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF;
+    uniform float uSight;
     varying vec2 vUv;
     ${FLARE}
     float h(vec2 p) {
@@ -2157,6 +2160,24 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       vec3 c = texture2D(tDiffuse, vUv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The impact flare: the house anamorphic flare, bright white.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, vec3(1.0), 1.0, vec3(0.55, 1.6, 1.6)) * uLF.z;
+      // The thermal sight: white-hot heat in a round scope with a reticle.
+      if (uSight > 0.5) {
+        vec2 sq = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+        float lumH = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        float heat = pow(smoothstep(0.5, 4.0, lumH), 0.6);
+        float sn = h(gl_FragCoord.xy + vec2(uSeed * 13.0, uSeed * 71.0)) - 0.5;
+        float scan = 0.94 + 0.06 * sin(gl_FragCoord.y * 1.6);
+        // Cold reads near black; heat runs up to white.
+        vec3 th = vec3(0.012 + 1.6 * heat + 0.012 * sn) * scan;
+        float rr = length(sq), mask = smoothstep(0.465, 0.455, rr);
+        // The reticle: a gapped cross, range ticks, a ring.
+        float w = 1.2 / uRes.y;
+        float cross = (1.0 - smoothstep(w, w * 2.0, abs(sq.x))) * step(0.03, abs(sq.y)) + (1.0 - smoothstep(w, w * 2.0, abs(sq.y))) * step(0.03, abs(sq.x));
+        float ticks = (1.0 - smoothstep(w, w * 2.0, abs(sq.x))) * step(0.5, fract(sq.y * 20.0)) * step(0.0, -sq.y) * step(0.12, abs(sq.y)) * 0.0;
+        float ring = 1.0 - smoothstep(w, w * 2.5, abs(rr - 0.11));
+        float ret = clamp(cross * step(rr, 0.44) + ring * 0.6 + ticks, 0.0, 1.0);
+        c = mix(th, vec3(1.0, 0.25, 0.15) * 1.4, ret * 0.85) * mask;
+      }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
@@ -2227,12 +2248,37 @@ function frame() {
     pp = (Math.asin(pushG.y) - baseUp) * 0.8 * pk;
   }
   camera.rotation.set(baseUp + pp + look.pitch + cam.kickP + wp, yaw0 + py + look.yaw + cam.kickY + wy, wr);
+  // The sight: a 3 degree lens straight on its mark; the shake still reaches it.
+  if (sight) {
+    camera.fov = portrait ? 5 : 3;
+    camera.rotation.set(Math.asin(clamp(sightDir.y, -1, 1)) + wp * 0.3, Math.atan2(-sightDir.x, -sightDir.z) + wy * 0.3, 0);
+  }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+}
+// The thermal sight: a narrow lens on the slug, then the blast, else the rock.
+let sight = false;
+const sightDir = new THREE.Vector3(0, 0, -1), sightTo = new THREE.Vector3();
+function toggleSight() {
+  sight = !sight;
+  grade.uniforms.uSight.value = sight ? 1 : 0;
+  if (sight) sightDir.copy(sightTarget(sightTo)).sub(camera.position).normalize();
+  wake();
+}
+// Where the scope looks, in the world.
+function sightTarget(out) {
+  if (shot && !shot.hit) return boltAt(simT - shot.t0, out);
+  if (shot && shot.hit) return out.copy(shot.target);
+  return out.copy(ast.pos);
 }
 // A critically damped spring: the lens moves heavy and smooth.
 const lookV = { yaw: 0, pitch: 0 };
 function easeLook(dt) {
+  // The scope follows its mark, a little behind.
+  if (sight) {
+    sightTo.copy(sightTarget(sightTo)).sub(camera.position).normalize();
+    sightDir.lerp(sightTo, 1 - Math.exp(-dt * 4)).normalize();
+  }
   // The push builds over about twelve seconds of hold and eases out slower.
   const pt = charge ? clamp((simT - charge.t0) / 12, 0, 1) : 0;
   cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
@@ -2294,6 +2340,7 @@ function draw() {
   updateBolt();
   updateIon();
   updateBlast();
+  updateChargeDust(1 / 30);
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
   grade.uniforms.uFlash.value = (reduced() ? 0.3 * flashNow : flashNow) + cutFlash;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
@@ -2981,6 +3028,43 @@ function makeShell(sharp = 3.5) {
   return m;
 }
 const shellMesh = makeShell();
+// Charge dust: a ground-hugging ring of raymarched dust round the plinth.
+// uDu: strength, spread in metres, height in metres, time.
+const chargeDust = makeVol(/* glsl */`
+uniform vec4 uDu;
+uniform vec3 uDustC;
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  if (p.y < 0.0) return 0.0;
+  float r = length(p.xz - vec2(0.0, 60.0));
+  // A ring that starts at the parapet and spreads with the charge.
+  float band = smoothstep(420.0, 520.0, r) * (1.0 - smoothstep(470.0 + 0.6 * uDu.y, 470.0 + uDu.y, r));
+  float hf = exp(-p.y / uDu.z);
+  // The dust rolls outward and swirls round the mount.
+  float ang = atan(p.z - 60.0, p.x) + uDu.w * 0.02;
+  vec3 w = vec3(cos(ang) * r, p.y * 1.8, sin(ang) * r) * 0.004 - vec3(0.0, uDu.w * 0.04, uDu.w * 0.03);
+  float n = texture(uVol, w).r;
+  float d = clamp((n - (1.0 - band * hf * uDu.x)) * 2.5, 0.0, 1.0);
+  if (d > 0.0) d = clamp((d - (1.0 - texture(uVol, w * 3.0).g) * 0.35) * 1.6, 0.0, 1.0);
+  return d * 0.02;
+}
+vec3 alb(vec3 p) { return uDustC; }
+// The arcs, the muzzle and the blast light the dust.
+vec3 vlight(vec3 p) {
+  vec3 a = uArcL.xyz - p, m = uMuzL.xyz - p;
+  return vec3(0.7, 0.8, 1.0) * uArcL.w * 4.0e4 / (dot(a, a) + 4.0e4) + vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e5 / (dot(m, m) + 6.0e5) + blastLight(p);
+}`, { uDu: { value: new THREE.Vector4() }, uDustC: { value: new THREE.Vector3(...linFit(0.66, 0.045, 65)) } });
+let cdust = 0;
+function updateChargeDust(dt) {
+  // It builds with the chaos and settles over a few seconds.
+  const want = charge ? chaos : 0;
+  cdust += (want - cdust) * (1 - Math.exp(-dt / (want > cdust ? 1.0 : 3.0)));
+  const u = chargeDust.material.uniforms;
+  u.uDu.value.set(cdust, 150 + 650 * cdust, 25 + 120 * cdust + 160 * rage, simT);
+  u.uC.value.set(0, 0, 60); u.uR.value = 470 + 150 + 650 * cdust + 50;
+  u.uVSteps.value = volSteps();
+  chargeDust.visible = !reduced() && cdust > 0.02;
+}
 const jp = new THREE.Vector3();
 // ma: seconds since the slug left. c: power. m0: the muzzle at the shot.
 function updateMuzzle(ma, c, m0) {
@@ -3060,11 +3144,11 @@ const shardMat = new THREE.ShaderMaterial({
     if (age < 0.0 || age > 60.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     // Mild drag, a slow fall, a spin.
     // The shard shrinks away over its last two seconds.
-    float k = 0.08;
+    float k = 0.04;
     // Air drag sets a fall speed; each shard falls at its own.
     // A slow approach to it makes a long arc.
     float vt = 160.0 + 120.0 * fract(aSeed.x * 3.7);
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.12 * age)) / 0.12), 0.0);
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.08 * age)) / 0.08), 0.0);
     // It burns up in the last few hundred metres.
     float sc = aSeed.y * smoothstep(120.0, 500.0, c.y) * (1.0 - smoothstep(55.0, 60.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
@@ -3178,10 +3262,10 @@ function stepShards(dt) {
 }
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
-  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.08, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
+  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.04, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
   const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
-  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.12 * age)) / 0.12), P[i * 3 + 2] + V[i * 4 + 2] * e);
-  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.12 * age)), V[i * 4 + 2] * ek);
+  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.08 * age)) / 0.08), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.08 * age)), V[i * 4 + 2] * ek);
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 const chunks = Array.from({ length: 4 }, () => ({ mini: makeMini(), i: -1 }));
@@ -3193,7 +3277,8 @@ function stepChunks() {
     shardAt(ch.i, age, chP, chV);
     // The trail streams back up the fall line, and dies at the ground.
     const on = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
-    aimMini(ch.mini, chP, chV.negate(), r * 0.8, r * 70, on, 0.35 + 0.4 * Math.exp(-age / 8));
+    const flown = Math.hypot(chP.x - sPos.array[ch.i * 3], chP.y - sPos.array[ch.i * 3 + 1], chP.z - sPos.array[ch.i * 3 + 2]);
+    aimMini(ch.mini, chP, chV.negate(), r * 0.8, Math.min(r * 70, flown + r), on, 0.35 + 0.4 * Math.exp(-age / 8));
   }
 }
 
@@ -3256,9 +3341,10 @@ function shatter(c) {
     bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.2 * R);
     bv.copy(bp).addScaledVector(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), 0.4 * R).normalize();
     // Slow shards read as huge ones.
-    bv.multiplyScalar((25 + 70 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
-    // A lift throws the pieces up first, so they fall in arcs.
-    bv.y += 0.3 * bv.length();
+    // The blast casts each piece outward; it keeps the rock's own motion.
+    bv.multiplyScalar((70 + 160 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
+    bv.y += 0.25 * bv.length();
+    bv.addScaledVector(ast.away, -FALL / SIZES[opts.size].T);
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
@@ -3534,7 +3620,7 @@ function updateBolt() {
   // A white lens flare with ghosts, if the hit is in front of the lens.
   bq.copy(shot.target).project(camera);
   const lfOn = hk > 0 && bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4;
-  grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
+  grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
 }
 
 /* ---------- reset: a timelapse that runs away, then a cut ---------- */
@@ -3598,7 +3684,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => sight || !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -4063,6 +4149,8 @@ window.__qa = {
   rockKind: () => astMesh.geometry.userData.kind,
   spin: () => (spin ? { t: spin.t } : null),
   reset() { resetToy(); },
+  sight: () => sight,
+  toggleSight() { toggleSight(); },
   look: () => ({ yaw: THREE.MathUtils.radToDeg(look.yaw), pitch: THREE.MathUtils.radToDeg(look.pitch), to: THREE.MathUtils.radToDeg(lookTo.yaw) }),
   blastState: () => {
     const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
