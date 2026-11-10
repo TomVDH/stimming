@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:33:27Z
+updated_at: 2026-11-10T09:39:36Z
 parent: stimming-w1nd
 ---
 
@@ -50,3 +50,9 @@ Tom asked for his favourite flight-sim world under the plane as a personal easte
 - Towns by day: grey roofs and paving with block grain, mixed into the land.
 - Towns by night: a crisp, ragged built-up edge (fbm at 0.35 km, edge sharp to the pixel); streets and avenues carry more lamps; the flat roof glow is cut to 40 percent and warmed.
 - Open: far lamps still show some grain at Standard quality (half-res outside buffer).
+
+## Cloud shadows (Tom, 2026-11-10: make them soft)
+
+- The deck had cast no shadows; the dark blobs were lakes and woodlots.
+- Each ground point reads the deck's cover and cell map where the sun ray crosses 2.4 km, from a blurred mip; the sun term drops up to 70 percent. Sun glint on water dims with it.
+- Seen at Noon and Golden hour, Broken cloud: soft edges; long shadows at golden hour.

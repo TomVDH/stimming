@@ -193,6 +193,21 @@ float landField(vec2 w) {
 float gWater = 0.0, gSea = 0.0;
 // The nearest airport, and the pixel in its runway frame.
 int gAp = -1; vec2 gApQ = vec2(1e3);
+// Soft cloud shadows: deck cells where the sun ray crosses 2.4 km.
+// A blurred mip keeps every edge soft. gCloudSh holds the pixel's value.
+float gCloudSh = 1.0;
+float cloudShadow(vec2 w) {
+  if (uSun.y <= 0.03) return 1.0;
+  vec2 p = w + uSun.xz / uSun.y * 2.4 + vec2(uTime * 0.012, 0.0);
+  // The deck's own cover and cell map, as deckDens reads them.
+  vec2 a = mat2(0.825, -0.565, 0.565, 0.825) * p / 70.0, b = mat2(-0.32, -0.947, 0.947, -0.32) * p / 27.23;
+  float cv = textureLod(uNoise, vec3(a, 0.13), 1.0).r * 0.65 + textureLod(uNoise, vec3(b, 0.44), 1.0).r * 0.35;
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, cv);
+  if (c <= 0.0) return 1.0;
+  float cell = textureLod(uNoise, vec3(p.x, 3.1, p.y) / 7.0, 2.0).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  return 1.0 - 0.7 * smoothstep(0.0, 0.45, loc);
+}
 // Set by landBase: the map point, elevation in km and its gradient.
 // gBelt: the mountain share. gHab: how fit the ground is for towns.
 vec2 gW = vec2(0.0), gEG = vec2(0.0);
@@ -274,7 +289,7 @@ vec3 landFlat(vec2 w, float fw) {
   vec2 lz = normalize(uSun.xz + 1e-5);
   float skyK = clamp(1.0 - 3.0 * length(gr), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
   vec3 g = uAmb * 0.03 * alb * skyK;
-  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0);
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * gCloudSh;
   return g;
 }
 
@@ -473,7 +488,7 @@ vec3 landRelief(vec2 w, float fw) {
   float skyK = clamp(1.0 - length(Gs), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
   float sh = reliefShadow(w, base);
   vec3 g = uAmb * 0.03 * alb * skyK;
-  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * sh;
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * sh * gCloudSh;
   gE = E; gEG = G; gBelt = m;
   // Towns keep to dry, low, gentle ground, and crowd the coasts.
   gHab = (1.0 - gWater) * smoothstep(1.0, 0.35, slope) * smoothstep(1.5, 0.7, E) * (1.0 + 0.4 * smoothstep(0.1, 0.0, sf - SEAR));
@@ -481,6 +496,7 @@ vec3 landRelief(vec2 w, float fw) {
 }
 vec3 landBase(vec2 w, float fw) {
   gW = w; gHab = 1.0;
+  gCloudSh = cloudShadow(w);
   return uLand < 0.5 ? landFlat(w, fw) : landRelief(w, fw);
 }
 
@@ -592,7 +608,7 @@ vec3 landCover(vec3 g, float fw, vec3 d, vec3 up) {
       vec3 hv = normalize(uSun - d);
       float hz = max(dot(hv, n), 1e-3);
       float D = exp(-(1.0 - hz * hz) / (hz * hz * m2)) / (PI * m2 * hz * hz * hz * hz);
-      wc += uSunL * 0.014 * fres * D / (4.0 * nv);
+      wc += uSunL * 0.014 * fres * D / (4.0 * nv) * gCloudSh;
     }
     g = mix(g, wc, gWater);
   }
