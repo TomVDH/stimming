@@ -29,6 +29,25 @@ The page reads the largest difference between A and B. "Check all copies" tests 
 | Module | Date | Proof | Adopted by |
 |---|---|---|---|
 | `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | None yet |
+| `shared/grade.js` (tint, vignette, grain) | 2026-11-10 | Five copies match within 1 / 255 in raw WebGL2. In three.js, three match; see the note | None yet |
+
+Note on the grade in three.js: `viaduct` and `subway` hash `vUv * uRes`, which turns on the last bit of `vUv`.
+The lab's three.js run has another `vUv`, so it draws other grain of the same strength (`subway`: 0.009 % of pixels differ by more than one step; `viaduct`: up to 8.7 %).
+Inside a toy the pass keeps its own `vUv`, so the picture does not change.
+
+### Grade: how a toy adopts it
+
+| Toy | Copy today | Replace with |
+|---|---|---|
+| `fireworks`, `canal`, `bread`, `meteor` | `makeGrade` (integer hash) | `new ShaderPass(gradePass(POST))`. Pass `res` and `tint` as three.js vectors if the toy calls `.set` on them. `meteor` keeps its letterbox line, so it uses the parts |
+| `viaduct` | `makeGrade` (sine hash) | `gradePass({ ..., noise: 'sin' })`; its hex tint step stays |
+| `subway` | The grade `ShaderPass` (gradient noise) | `gradePass({ ..., noise: 'ign' })` |
+| `trainride` | The grade `ShaderPass` with exposure, saturation, contrast | The parts: `gdVignette`, `gdGrain(gdIgn(vUv * uRes), ...)`; its own three steps stay |
+| `launch` | `makeGrade` with fringe, split tone, seed, letterbox | The parts (lab: Ten seconds); grain weights `vec2(1.2, 0.6)` |
+| `frietkot` | `makeGrade` with tape look, split tone, flicker | The parts (lab: Frietkot); `gdHashU` takes its frame offset |
+
+A raw WebGL2 toy calls `gdGrade()` once at the end of its last pass.
+Not shared, on purpose: split tone (two toys, two formulas), letterbox (two toys), exposure and contrast (one toy).
 
 ### Lens flare: how a toy adopts it
 
@@ -60,7 +79,7 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 | Pane rain, pane fog | `shared/glassrain.js` | `trainride`, `window`; lab `glasslab/` | The shared module (Tom's base) | Done |
 | Disc bokeh | `shared/bokeh.js`. By hand: `windfarm` `dofPass`, `motorway` `tilt0`, `bread` `tilt`, `frietkot` `tiltPass` | `trainride` shared; 4 by hand | The shared module. Havoc: `discBlur`, `tiltShift` in `src/engine/post.js` | Done. A tilt-shift band helper: S |
 | Lens flare | `walker` `POST_FS`, `window/shader.js` `flare()`, `bread` flare pass, `fireworks` `makeFlares`, `meteor` `makeFlares` | 5 by hand | `walker` `POST_FS` (the Look rule's reference). Slots from `window`. Warmth, length and thinness knobs from Havoc `src/view/lensflare.js`; orb from `orbNode` | Built: `shared/flare.js` |
-| Grade: tint, vignette, grain | `makeGrade` (K2) in `viaduct`, `fireworks`, `launch`, `meteor`, `canal`, `bread`, `frietkot`. Variants in `subway`, `trainride`, `windfarm`, `motorway`, `beer`, `dandelion` | 7 near word for word; 6 variants | `launch` `makeGrade`: integer pixel hash, grain seed | S |
+| Grade: tint, vignette, grain | `makeGrade` (K2) in `viaduct`, `fireworks`, `launch`, `meteor`, `canal`, `bread`, `frietkot`. Variants in `subway`, `trainride`, `windfarm`, `motorway`, `beer`, `dandelion` | 7 near word for word; 6 variants | `launch` `makeGrade`: integer pixel hash, grain seed | Built: `shared/grade.js` |
 | Output: ACES fit, sRGB, dither | Raw WebGL2 toys: `aces()` in 10, `srgb()` in 19, a dither line in 22. three.js toys use the renderer's ACES | 10 to 22 | `pool` `aces` and `srgb`; `walker` dither | S |
 | Noise: hash, value noise, fbm | Every shader toy: value noise in about 50 files, fbm in 35, three hash families | 50+ | `grH`, `grN`, `grFbm` in `glassrain.js` (the same text as `K2_NOISE`) | S. For new toys only: a new hash changes each old pattern |
 | Night sky: gradient, stars | `K2_SKY` in `viaduct` (port, pass), `fireworks`, `launch`, `meteor`, `canal`. Own sky in `window`, `flock`, `trails`, `nvg`, `trainride`, `walker`, `windfarm` | 5 on K2; 7 own | `meteor` `duskGlow` and `k2stars`. Havoc `starField` (`src/view/aqua/sea.js:138`): tint and twinkle per star | M |

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T06:46:47Z
+updated_at: 2026-11-10T08:13:24Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -24,7 +24,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] A/B panel on a dev page (noindex): `fxlab/`
 - [x] Check in the browser pane
 - [x] Name the toys that can adopt it
-- [ ] Tom picks the next effect (grade, water surface, night sky and haze, output)
+- [x] Grade: `shared/grade.js`, panel in `fxlab/`, checked
+- [ ] Tom picks the next effect (water surface, night sky and haze, output)
 
 ## Rules
 
@@ -38,3 +39,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - Dev page for the modules: `fxlab/` (noindex), not built yet.
 
 - 2026-11-09: `shared/flare.js` built. `fxlab/` checks five copies (walker, window, bread, fireworks and meteor) against it: each matches within 1 / 255 in raw WebGL2 and in a three.js ShaderMaterial. No toy adopted it; the plan lists how each one can.
+
+- 2026-11-10: `shared/grade.js` built (Tom: "Build grade"). `fxlab/` checks five grade copies (kit, viaduct, subway, launch, frietkot): each matches within 1 / 255 in raw WebGL2. In three.js, kit, launch and frietkot match; viaduct and subway hash `vUv * uRes`, so the lab draws other grain of the same strength there. No toy adopted it.
