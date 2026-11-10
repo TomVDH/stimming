@@ -68,9 +68,10 @@ input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; marg
   <h1>FX lab</h1>
   <div class="seg" id="mode" style="margin:6px 0 8px"><button data-v="stack" aria-pressed="true">All effects</button><button data-v="check" aria-pressed="false">Check a copy</button></div>
   <div id="pStack">
-    <p class="note">One window, every shared shader. Switch each on or off. Drag the light.</p>
+    <p class="note">One window on a harbour, every shared shader. Switch each on or off. Drag the light.</p>
     <h2>Look</h2>
     <div class="seg" id="looks"></div>
+    <div class="seg" style="margin-top:6px"><button id="pause" aria-pressed="false">Pause</button></div>
     <h2>Sky</h2>
     <div class="seg" id="sky"><button data-v="0" aria-pressed="true">Night</button><button data-v="1" aria-pressed="false">Dusk</button><button data-v="2" aria-pressed="false">Day</button></div>
     <h2>Shaders</h2>
@@ -104,6 +105,8 @@ import { FLARE } from '../shared/flare.js';
 import { GRADE, gradePass } from '../shared/grade.js';
 import { GLASS_RAIN } from '../shared/glassrain.js';
 import { BOKEH } from '../shared/bokeh.js';
+import { WET_GLASS, wetGlassMotion } from '../shared/wetglass.js';
+import { WATER } from '../shared/water.js';
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), view = $('view');
@@ -652,6 +655,8 @@ async function checkAll() {
     }
     rows.push(row);
   }
+  const wg = checkGlass();
+  rows.push({ name: 'Wet glass, Train Ride', raw: wg.m, rawShare: wg.share });
   ({ back, light, bMode } = keep);
   usePreset(keep.preset);
   $('preset').value = keep.preset.id;
@@ -741,7 +746,7 @@ seg('bmode', v => { bMode = v; if (v === 'three') loadThree(); });
 seg('vmode', v => { vMode = +v; });
 
 /* ---------- the stack: every shared shader on one scene ---------- */
-// A night town behind a window. Each module is one step of the last pass.
+// A harbour town at night behind a window. Each module is one step.
 const hdr = !!gl.getExtension('EXT_color_buffer_float');
 function hdrTarget() {
   const t = target();
@@ -760,13 +765,20 @@ function hdrTarget() {
 }
 const rtScene = hdrTarget(), rt4 = hdrTarget(), rt8 = hdrTarget(), rtBok = hdrTarget();
 const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
+// The scene pass: sky, ridge, town, the lamp, and water.js below the shore.
 const progScene = compile(TRI_VS, ST_HEAD + `
 uniform vec2 uRes, uLamp;
-uniform float uSky;
+uniform float uSky, uTime, uWaterOn, uSwell, uChop, uSets;
 uniform vec3 uLampCol;
 ${GLASS_RAIN}
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
+${WATER}
+// The camera stands 3 m over the water; the far shore lies just under the horizon.
+const float HZ = 0.38, SHORE = 0.376, FOC = 1.6, CAMH = 3.0;
+vec3 lightCol(float pick) {
+  return pick < 0.25 ? vec3(1.0, 0.12, 0.08) : pick < 0.45 ? vec3(0.15, 1.0, 0.45) : pick < 0.8 ? vec3(1.0, 0.62, 0.25) : vec3(0.9, 0.95, 1.0);
+}
+// All that stands above the water. lamp 0 leaves the dragged light out.
+vec3 above(vec2 uv, float lamp) {
   float asp = uRes.x / uRes.y, up = max(uv.y - 0.42, 0.0);
   vec2 q = vec2(uv.x * asp, uv.y);
   vec3 nightSky = mix(vec3(0.05, 0.045, 0.07), vec3(0.008, 0.012, 0.03), smoothstep(0.42, 1.0, uv.y));
@@ -775,7 +787,7 @@ void main() {
   vec3 c = uSky < 0.5 ? nightSky : uSky < 1.5 ? duskSky : daySky;
   // Town lights are on at night and at dusk.
   float lit = uSky < 0.5 ? 1.0 : uSky < 1.5 ? 0.7 : 0.0;
-  float hill = 0.42 + 0.06 * sin(q.x * 3.0) + 0.03 * sin(q.x * 9.0);
+  float hill = 0.44 + 0.04 * sin(q.x * 3.0) + 0.02 * sin(q.x * 9.0);
   if (uv.y < hill) c = (uSky > 1.5 ? vec3(0.16, 0.2, 0.14) : vec3(0.006, 0.008, 0.01)) * (0.7 + 0.3 * uv.y);
   // Small town lights in a band under the ridge.
   vec2 g = vec2(q.x * 140.0, (uv.y - hill) * 140.0);
@@ -783,17 +795,60 @@ void main() {
   float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
   vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
   c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
-  // Street lights lower down: red, green, amber and white.
-  vec2 g2 = q * 22.0;
-  vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
-  float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
-  float pick = grH(id2 + 4.1);
-  vec3 lc2 = pick < 0.25 ? vec3(1.0, 0.12, 0.08) : pick < 0.45 ? vec3(0.15, 1.0, 0.45) : pick < 0.8 ? vec3(1.0, 0.62, 0.25) : vec3(0.9, 0.95, 1.0);
-  c += lc2 * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+  if (uWaterOn > 0.5) {
+    // Quay lights in one row on the shore.
+    float cx = q.x * 14.0, ci = floor(cx);
+    vec2 dq = vec2((fract(cx) - 0.3 - 0.4 * grH(vec2(ci, 7.0))) / 14.0, uv.y - SHORE - 0.006);
+    c += lightCol(grH(vec2(ci, 4.1))) * step(0.35, grH(vec2(ci, 2.0))) * exp(-dot(dq, dq) * 60000.0) * 5.0 * lit;
+  } else {
+    // Street lights on the land below.
+    vec2 g2 = q * 22.0;
+    vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
+    float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
+    c += lightCol(grH(id2 + 4.1)) * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+  }
   // The near lamp: the light you drag.
   vec2 d = q - vec2(uLamp.x * asp, uLamp.y);
   float r2 = dot(d, d);
-  c += uLampCol * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12);
+  return c + uLampCol * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12) * lamp;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y;
+  vec3 c;
+  if (uWaterOn > 0.5 && uv.y < SHORE) {
+    // water.js: the ray meets the water; waves tilt the mirror.
+    vec3 d = normalize(vec3((uv.x - 0.5) * asp, uv.y - HZ, -FOC));
+    float dist = CAMH / -d.y;
+    vec2 p = d.xz * dist;
+    float sig2;
+    vec2 slope = wtWaves(p, uTime, wtFoot(dist, -d.y, uRes.y * FOC), uSwell, uChop, uSets, sig2);
+    vec3 n = wtNormal(slope);
+    vec3 r = reflect(d, n);
+    r.y = abs(r.y);
+    float F = wtFresnel(d, n);
+    // The mirrored ray lands back on the frame.
+    float rz = max(-r.z, 0.05);
+    vec2 ur = vec2(0.5 + r.x / rz * FOC / asp, HZ + r.y / rz * FOC);
+    // Rough water smears each light into a tall streak.
+    float len = 2.0 * sqrt(sig2) * FOC;
+    vec3 refl = vec3(0.0);
+    float ws = 0.0;
+    for (int i = -3; i <= 3; i++) {
+      float fi = float(i) / 3.0, w = exp(-fi * fi * 2.0);
+      vec2 at = ur + vec2(0.0, fi * len);
+      at.y = SHORE + abs(at.y - SHORE);
+      refl += above(at, 0.0) * w;
+      ws += w;
+    }
+    vec3 deep = uSky < 0.5 ? vec3(0.004, 0.008, 0.012) : uSky < 1.5 ? vec3(0.01, 0.02, 0.035) : vec3(0.02, 0.07, 0.1);
+    c = mix(deep, refl / ws, F);
+    // The lamp lays a glitter path on the water.
+    if (uLamp.y > HZ) {
+      vec3 l = normalize(vec3((uLamp.x - 0.5) * asp, uLamp.y - HZ, -FOC));
+      c += uLampCol * 6.0 * wtGlint(r, l, sig2, 0.03) * F;
+    }
+  } else c = above(uv, 1.0);
   outC = vec4(c, 1.0);
 }`);
 const progDown = compile(TRI_VS, ST_HEAD + `
@@ -810,50 +865,59 @@ uniform vec2 uRad, uDst;
 uniform float uBlades, uRimB;
 ${BOKEH}
 void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, uBlades, 0.015, 500.0, uRimB), 1.0); }`);
-// The pane pass: drops, fog, bokeh, flare and grade, in that order.
-const progPane = compile(TRI_VS, ST_HEAD + `
+// The pane, two ways. The module version is what the lab shows.
+const GLASS_MOD = `
+    WgPane g = wgPane(pane, uZoom, uM, uFlow, uWet, uWind, 0.4, uFog, uPatch, edge);
+    vec2 su = uv + g.off / vec2(asp, 1.0);
+    col = wgView(g, texture(tScene, su).rgb, texture(tBok, su).rgb, uScatter, vec3(0.8, 0.84, 0.81), veil, glint);
+    rim = g.rim; cover = g.cover; fog = g.fog;`;
+// Train Ride's own lines, for the check. They have no zoom and no scatter.
+const GLASS_HAND = `
+    vec2 p = pane;
+    vec2 off = vec2(0.0);
+    float cv = 0.0, rm = 0.0, spec = 0.0, clear = 0.0;
+    vec3 Ls = vec3(0.28, 0.5, 0.82);
+    vec2 pr = p * 0.45;
+    grBeads(pr, uWet, 1.0 - 0.5 * smoothstep(5.0, 40.0, uWind), 0.4, Ls, off, rm, spec, cv);
+    grRuns(pr, uM, uFlow, uWet, 1.0 + uWind / 18.0, 1.0 - smoothstep(4.0, 18.0, uWind), Ls, off, rm, spec, cv, clear);
+    off /= 0.45;
+    float fg = grFog(p, uFog, edge, uPatch);
+    fg = clamp(fg * (1.0 - clear * 0.95) * (1.0 - cv * 0.8), 0.0, 1.0);
+    vec2 su = uv + off / vec2(asp, 1.0);
+    vec3 sharp = texture(tScene, su).rgb;
+    vec3 blur = sharp;
+    if (fg > 0.02) blur = mix(sharp, texture(tBok, su).rgb, smoothstep(0.02, 0.45, fg));
+    col = mix(sharp, blur, smoothstep(0.05, 0.55, fg));
+    col *= vec3(0.8, 0.84, 0.81);
+    col = col * (1.0 - 0.8 * fg) + (blur * 1.1 + veil) * fg * 0.9;
+    col *= 1.0 - 0.7 * rm;
+    col += glint * spec;
+    rim = rm; cover = cv; fog = fg;`;
+// The pane pass: wet glass, then flare, then grade.
+const paneFS = glass => ST_HEAD + `
 uniform sampler2D tScene, tBok;
 uniform vec2 uRes, uM, uLamp;
 uniform vec3 uLampCol, uTint;
-uniform float uSky, uFlow, uWet, uWind, uZoom, uFog, uPatch, uDefocus, uFlGain, uFlSize, uVig, uGrain, uSeed;
-uniform float uRainOn, uFogOn, uBokOn, uFlareOn, uGradeOn;
+uniform float uSky, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
+uniform float uGlassOn, uFlareOn, uGradeOn;
 ${GLASS_RAIN}
+${WET_GLASS}
 ${FLARE}
 ${GRADE}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y, day = step(1.5, uSky);
-  // The pane is one unit tall. Drop size zooms it.
+  // The pane is one unit tall; its frame is the edge of the view.
   vec2 pane = (uv - 0.5) * vec2(asp, 1.0);
-  float k = 1.0 / uZoom;
-  vec2 p = pane * k;
-  vec2 off = vec2(0.0);
-  float rim = 0.0, spec = 0.0, cover = 0.0, clear = 0.0;
-  // glassrain.js: still beads, and runs that the wind slants.
-  if (uRainOn > 0.5 && uWet > 0.001) {
-    vec3 L = vec3(0.28, 0.5, 0.82);
-    vec2 pr = p * 0.45;
-    grBeads(pr, uWet, 1.0 - 0.5 * smoothstep(5.0, 40.0, uWind), 0.6, L, off, rim, spec, cover);
-    grRuns(pr, uM, uFlow, uWet, 1.0 + uWind / 18.0, 1.0 - smoothstep(4.0, 18.0, uWind), L, off, rim, spec, cover, clear);
-    off /= 0.45;
-  }
-  // glassrain.js: fog on the pane. Runs wipe it; the frame edge is colder.
-  float fog = 0.0;
-  if (uFogOn > 0.5) {
-    float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
-    fog = clamp(grFog(pane, uFog, edge, uPatch) * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
-  }
-  vec2 su = uv + off / k / vec2(asp, 1.0);
-  vec3 sharp = texture(tScene, su).rgb;
-  // bokeh.js: the view behind fog, or behind the focus, opens into discs.
-  // A drop is a small lens, so the view inside it stays sharp.
-  vec3 blur = uBokOn > 0.5 ? texture(tBok, su).rgb : sharp;
-  float soft = max(smoothstep(0.02, 0.45, fog), smoothstep(0.0, 0.15, uDefocus) * uBokOn) * (1.0 - cover);
+  float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
   vec3 warm = vec3(1.0, 0.85, 0.7);
-  vec3 col = mix(sharp, blur, soft) * vec3(0.8, 0.84, 0.81);
-  col = col * (1.0 - 0.8 * fog) + (blur * 1.1 + warm * 0.02 * (1.0 - day) + vec3(0.03) * day) * fog * 0.9;
-  col *= 1.0 - 0.7 * rim;
-  col += mix(warm * 0.3, vec3(0.6, 0.63, 0.66), day) * spec;
+  vec3 veil = warm * 0.02 * (1.0 - day) + vec3(0.03) * day;
+  vec3 glint = mix(warm * 0.3, vec3(0.6, 0.63, 0.66), day);
+  vec3 col = texture(tScene, uv).rgb;
+  float rim = 0.0, cover = 0.0, fog = 0.0;
+  // wetglass.js: beads, runs, fog and the scattered view, together.
+  if (uGlassOn > 0.5) {${glass}
+  }
   // The near lamp lights the drops and the fog it passes.
   float near = length(vec2((uv.x - uLamp.x) * asp, uv.y - uLamp.y));
   col += uLampCol * ((cover * 0.5 + rim * 0.9) * exp(-near * 7.0) + fog * 0.6 * exp(-near * 5.0));
@@ -863,24 +927,25 @@ void main() {
   if (uGradeOn > 0.5) col = gdGrade(col, uv, asp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, uVig, 0.4, uGrain);
   col = clamp((col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14), 0.0, 1.0);
   outC = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
-}`);
+}`;
+const progPane = compile(TRI_VS, paneFS(GLASS_MOD)), progPaneHand = compile(TRI_VS, paneFS(GLASS_HAND));
 
-// One card per shared shader: a switch and its sliders.
+// One card per effect: a switch and its sliders.
 const CARDS = [
-  { id: 'rain', name: 'Rain drops', file: 'glassrain.js', knobs: [['wet', 'Wet', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05]] },
-  { id: 'fog', name: 'Fog on glass', file: 'glassrain.js', knobs: [['fog', 'Fog', 0, 1, 0.05], ['patch', 'Patches', 0, 1, 0.05]] },
-  { id: 'bok', name: 'Bokeh', file: 'bokeh.js', knobs: [['defocus', 'Out of focus', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05], ['blades', 'Blades', 0, 8, 1], ['rimB', 'Rim', 0, 1, 0.05]] },
+  { id: 'glass', name: 'Wet glass', file: 'wetglass.js', knobs: [['wet', 'Rain', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05], ['fog', 'Fog', 0, 1, 0.05], ['patch', 'Fog patches', 0, 1, 0.05], ['defocus', 'Scatter', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05]] },
+  { id: 'water', name: 'Water', file: 'water.js', knobs: [['swell', 'Swell', 0, 0.04, 0.001], ['chop', 'Chop', 0, 0.4, 0.01], ['sets', 'Wave sets', 0, 1, 0.05]] },
   { id: 'flare', name: 'Lens flare', file: 'flare.js', knobs: [['flGain', 'Gain', 0, 2, 0.01], ['flSize', 'Size', 0.1, 2, 0.01]] },
   { id: 'grade', name: 'Grade', file: 'grade.js', knobs: [['vig', 'Vignette', 0, 1, 0.01], ['grain', 'Grain', 0, 0.3, 0.005], ['tintK', 'Tint', 0, 40, 0.5]] },
 ];
 const LOOKS = {
-  Everything: { on: ['rain', 'fog', 'bok', 'flare', 'grade'] },
+  Everything: { on: ['glass', 'water', 'flare', 'grade'] },
   Clear: { on: [] },
-  Drizzle: { on: ['rain', 'bok'], wet: 0.5, wind: 0, defocus: 0.6 },
-  Storm: { on: ['rain', 'fog', 'bok', 'grade'], wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25 },
-  'Fogged up': { on: ['rain', 'fog', 'bok', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
+  Harbour: { on: ['water', 'flare', 'grade'] },
+  Drizzle: { on: ['glass', 'water'], wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6 },
+  Storm: { on: ['glass', 'water', 'grade'], wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3 },
+  'Fogged up': { on: ['glass', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
 };
-const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, blades: 0, rimB: 0.3, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
+const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
 const S = { on: {}, sky: 0, look: 'Everything', ...DEF };
 function buildCards() {
   const host = $('cards');
@@ -928,10 +993,11 @@ for (const name of Object.keys(LOOKS)) {
   $('looks').append(b);
 }
 
-// Motion: the runs flow, the wind slants them, the grain moves.
+// Motion: the runs flow, the waves roll, the grain moves.
 const still = matchMedia('(prefers-reduced-motion: reduce)');
-let looping = false, lastT = 0, runS = 3, flow = 0, seed = 0, frameN = 0;
-const moving = () => mode === 'stack' && !document.hidden && !still.matches && S.on.rain && S.wet > 0.001;
+const motion = wetGlassMotion();
+let looping = false, paused = false, lastT = 0, time = 0, seed = 0, frameN = 0;
+const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water);
 function kick() {
   if (looping || !moving()) return;
   looping = true;
@@ -942,30 +1008,34 @@ function loop(t) {
   if (!moving()) { looping = false; touch(); return; }
   const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0.016);
   lastT = t;
-  runS += (S.wind - runS) * (1 - Math.exp(-dt / 0.3));
-  flow += dt * (0.25 + runS / 14);
+  motion.step(dt, S.wind);
+  time += dt;
   if (++frameN & 1) seed = seed % 997 + 1;
   drawStack();
   requestAnimationFrame(loop);
 }
 document.addEventListener('visibilitychange', touch);
-function drawStack() {
+$('pause').addEventListener('click', () => { paused = !paused; $('pause').setAttribute('aria-pressed', paused); touch(); });
+// fw and fh force a frame size; prog picks the pane program. The check uses them.
+function drawStack(fw, fh, prog = progPane) {
   dirty = false;
-  if (!looping) runS = S.wind;
+  if (!looping) motion.step(0, S.wind, true);
   const dpr = Math.min(devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.round(view.clientWidth * dpr)), h = Math.max(1, Math.round(view.clientHeight * dpr));
+  const w = fw || Math.max(1, Math.round(view.clientWidth * dpr)), h = fh || Math.max(1, Math.round(view.clientHeight * dpr));
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
   // By day the light you drag is a low sun.
   const lamp = S.sky > 1.5 ? [1.0, 0.93, 0.8] : [1.0, 0.8, 0.55];
-  const run = (prog, rt) => pass(prog, rt ? rt.fbo : null, rt ? rt.w : w, rt ? rt.h : h);
+  const run = (pr, rt) => pass(pr, rt ? rt.fbo : null, rt ? rt.w : w, rt ? rt.h : h);
   gl.activeTexture(gl.TEXTURE0);
   let u = progScene.loc;
   gl.useProgram(progScene.p);
   gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform1f(u('uSky'), S.sky); gl.uniform3fv(u('uLampCol'), lamp);
+  gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
+  gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets);
   run(progScene, rtScene);
-  if (S.on.bok) {
-    // Two 4x4 box steps to an eighth, then the disc gather at half size.
+  if (S.on.glass) {
+    // bokeh.js: two 4x4 box steps to an eighth, then the disc gather at half size.
     u = progDown.loc;
     gl.useProgram(progDown.p);
     gl.uniform1i(u('tSrc'), 0);
@@ -977,29 +1047,54 @@ function drawStack() {
     gl.useProgram(progBok.p);
     gl.bindTexture(gl.TEXTURE_2D, rt8.tex);
     gl.uniform1i(u('tSrc'), 0);
-    // Out of focus sets the disc size; fog alone keeps a fair disc.
-    const rad = 0.024 * S.rad * (S.on.fog ? Math.max(S.defocus, 0.6) : S.defocus);
+    // Scatter sets the disc size; fog alone keeps a fair disc.
+    const rad = 0.024 * S.rad * Math.max(S.defocus, S.fog > 0 || S.patch > 0 ? 0.6 : 0);
     gl.uniform2f(u('uRad'), rad * h / w, rad); gl.uniform2f(u('uDst'), rtBok.w, rtBok.h);
-    gl.uniform1f(u('uBlades'), S.blades); gl.uniform1f(u('uRimB'), S.rimB);
+    gl.uniform1f(u('uBlades'), 0); gl.uniform1f(u('uRimB'), 0.3);
     run(progBok, rtBok);
   }
-  u = progPane.loc;
-  gl.useProgram(progPane.p);
+  u = prog.loc;
+  gl.useProgram(prog.p);
   gl.bindTexture(gl.TEXTURE_2D, rtScene.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rtBok.tex);
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBok'), 1);
-  const m = [-runS / 6, -1], ml = Math.hypot(m[0], m[1]);
-  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uM'), m[0] / ml, m[1] / ml); gl.uniform2f(u('uLamp'), src[0], src[1]);
+  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uM'), motion.m[0], motion.m[1]); gl.uniform2f(u('uLamp'), src[0], src[1]);
   gl.uniform3fv(u('uLampCol'), lamp); gl.uniform3fv(u('uTint'), TINT.map(x => x * S.tintK));
-  gl.uniform1f(u('uSky'), S.sky); gl.uniform1f(u('uFlow'), flow); gl.uniform1f(u('uWind'), runS); gl.uniform1f(u('uSeed'), seed);
-  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uDefocus', 'defocus'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
-  for (const [name, k] of [['uRainOn', 'rain'], ['uFogOn', 'fog'], ['uBokOn', 'bok'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
-  run(progPane, null);
+  gl.uniform1f(u('uSky'), S.sky); gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.speed); gl.uniform1f(u('uSeed'), seed);
+  gl.uniform1f(u('uScatter'), Math.min(1, S.defocus / 0.15));
+  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
+  for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
+  run(prog, null);
+}
+// wetglass.js against Train Ride's own lines, on one frozen frame.
+function checkGlass() {
+  const keep = { on: { ...S.on }, zoom: S.zoom, defocus: S.defocus, paused };
+  Object.assign(S, { zoom: 1, defocus: 0 });
+  S.on.glass = true;
+  paused = true;
+  const grab = prog => {
+    drawStack(640, 360, prog);
+    const px = new Uint8Array(640 * 360 * 4);
+    gl.readPixels(0, 0, 640, 360, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return px;
+  };
+  const a = grab(progPaneHand), b = grab(progPane);
+  let m = 0, over = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+    if (d > m) m = d;
+    if (d > 1) over++;
+  }
+  Object.assign(S, { zoom: keep.zoom, defocus: keep.defocus });
+  S.on = keep.on;
+  paused = keep.paused;
+  touch();
+  return { m, share: over / (640 * 360) * 100 };
 }
 seg('mode', v => { mode = v; $('pStack').hidden = v !== 'stack'; $('pCheck').hidden = v !== 'check'; });
 seg('sky', v => { S.sky = +v; });
-window.fxlab.state = S;
+Object.assign(window.fxlab, { state: S, checkGlass });
 
 /* ---------- pointer ---------- */
 function drag(el, move) {

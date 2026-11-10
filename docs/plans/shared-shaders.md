@@ -21,8 +21,9 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 
 - **All effects** (the page opens here): one window scene with every shared shader stacked on it.
-  Each shader has a card: a switch and its sliders. Today: rain drops, fog on glass, bokeh, lens flare, grade.
-  Look buttons set a whole combination (Everything, Clear, Drizzle, Storm, Fogged up). The light is draggable.
+  Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Lens flare, Grade.
+  Glass effects stay one group (Tom, 2026-11-10): drops, running drops, fog and scatter go together.
+  Look buttons set a whole combination (Everything, Clear, Harbour, Drizzle, Storm, Fogged up). The light is draggable.
   A new module gets a card here first.
 - **Check a copy**: A is a toy's own copy; B is the shared module, in raw WebGL2 or in a three.js `ShaderMaterial`.
   The page reads the largest difference between A and B. "Check all copies" tests every copy in both runtimes.
@@ -35,10 +36,31 @@ One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 |---|---|---|---|
 | `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | None yet |
 | `shared/grade.js` (tint, vignette, grain) | 2026-11-10 | Five copies match within 1 / 255 in raw WebGL2. In three.js, three match; see the note | None yet |
+| `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
+| `shared/water.js` (swell, chop, wave sets, Fresnel, glitter) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
 
 Note on the grade in three.js: `viaduct` and `subway` hash `vUv * uRes`, which turns on the last bit of `vUv`.
 The lab's three.js run has another `vUv`, so it draws other grain of the same strength (`subway`: 0.009 % of pixels differ by more than one step; `viaduct`: up to 8.7 %).
 Inside a toy the pass keeps its own `vUv`, so the picture does not change.
+
+### Wet glass: how a toy adopts it
+
+`wetglass.js` sits on `glassrain.js` and `bokeh.js`. Paste `GLASS_RAIN`, then `WET_GLASS`.
+`wgPane()` makes the drops, the runs and the fog; `wgView()` lights the pane; `wetGlassMotion()` gives `flow` and the run direction.
+
+| Toy | Today | Replace with |
+|---|---|---|
+| `trainride` | `grBeads`, `grRuns`, `grFog` and the fog and blur lines, by hand | `wgPane()`. Its room reflection and frame shading stay, so it keeps its own view lines or passes them as `veil` |
+| `window` | `grBeads`, `grRuns` with its own strip and time | Its numbers differ from Train Ride's; it stays on the parts unless Tom wants one look |
+| `rain`, `frietkot`, `motorway` | Own drops, or none | New users: one `wgPane()` and one `wgView()` |
+
+### Water: how a toy adopts it
+
+No toy's water equals the module, so a move changes that toy's look. Tom decides per toy.
+`wtWaves()` gives the slope and the roughness; the toy keeps its own colours, mirror and lights.
+`wtGlint()` replaces a hand-made glitter path. `swellHeight()` floats a boat on the same swell.
+Could adopt: `trainride`, `fireworks`, `launch`, `canal`, `viaduct`, `windfarm`, `meteor`.
+Not in this cut: Buoy Business rain rings, moon glade and wind slicks; the planar mirror pass.
 
 ### Grade: how a toy adopts it
 
@@ -90,7 +112,7 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 | Night sky: gradient, stars | `K2_SKY` in `viaduct` (port, pass), `fireworks`, `launch`, `meteor`, `canal`. Own sky in `window`, `flock`, `trails`, `nvg`, `trainride`, `walker`, `windfarm` | 5 on K2; 7 own | `meteor` `duskGlow` and `k2stars`. Havoc `starField` (`src/view/aqua/sea.js:138`): tint and twinkle per star | M |
 | Height haze | `K2_HAZE` in the same five. Own haze in `trainride`, `frietkot`, `motorway`, `bread` | 5 on K2; 4 own | `meteor` `k2hazeAmount`: the fog integral in closed form. Haze colour stays per toy | S |
 | Bloom | three.js: `UnrealBloomPass` in 18 toys (`makeBloom` wrapper in 7). Raw WebGL2: an own down and up chain in about 20 toys. `motorway` `SoftBloom` | 18 and 20 | three.js toys keep the addon. Raw: the `vortex` chain | M: it needs a render-target helper |
-| Water surface | `trainride`, `fireworks`, `launch`, `canal`, `viaduct/port.js`, `windfarm` `swell`, `walker` `SEA_FS`, `window` `seaField`, `meteor`, `nvg/harbour.js`, `dijkstra` | 11, all different | `windfarm` `swell` (each wave fades by pixel footprint). Havoc: `swell.js` and `swellmath.js` (wave sets, envelope, bent crests); `src/view/water.js:147` (two ripple layers, glint roll-off, backlit crests); `sea.js:585` rain rings; `sea.js:618` moon glade | L. First cut (slopes, Fresnel, glitter): M |
+| Water surface | `trainride`, `fireworks`, `launch`, `canal`, `viaduct/port.js`, `windfarm` `swell`, `walker` `SEA_FS`, `window` `seaField`, `meteor`, `nvg/harbour.js`, `dijkstra` | 11, all different | `windfarm` `swell` (each wave fades by pixel footprint). Havoc: `swell.js` and `swellmath.js` (wave sets, envelope, bent crests); `src/view/water.js:147` (two ripple layers, glint roll-off, backlit crests); `sea.js:585` rain rings; `sea.js:618` moon glade | First cut built: `shared/water.js` |
 | Water mirror: the smeared reflection | `tMirror` in `canal`, `fireworks`, `launch`, `viaduct/port.js` | 4 | `fireworks` | M. Part of water |
 | Light orbs, point flares | K2 orbs in `viaduct`, `fireworks`, `launch`; point flares in `viaduct/port.js`, `pass.js`; `windfarm` lights | 4 | `fireworks` orbs | M |
 | Rain and snow in the air | `viaduct` (K2 precipitation), `canal`, `trainride`, `window`, `rain`, `frietkot`, `washline` | 7, all different | `viaduct/port.js`. Havoc `src/view/aqua/weatherfx.js`: each drop's place is a function of seed and time | M |
