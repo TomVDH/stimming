@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T08:30:24Z
+updated_at: 2026-11-10T08:47:24Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -252,3 +252,13 @@ Open from the critics:
 
 - [x] Dev sound mixer (?dev): each layer plays through its own channel gain (running noise, standstill hum, pull-away, arrival, whine, points, joint, passing train, pass knock, bass thud, door knock), with a level slider, mute and solo; All sound and Door muffle depth; play buttons for the one-shots and the door; a live line of what sounds now; Copy levels gives JSON. Levels save in the browser under stimming.trainride.mix and apply only with ?dev
 - [ ] Tom to set the mix by ear and send the levels; then bake them in as the defaults
+
+## Round 25: sound by speed (Tom, 2026-11-10)
+
+- [x] Measured the clips against the cruise loop, by octave band: the low bands (45 to 355 Hz) rise in the first seconds of motion and hold; the bands above 700 Hz rise with speed at about 35 dB per decade; under power the 355 Hz band stands 5 dB over brake. The recording has no pitched whine; it is broadband
+- [x] The running sound is now the cruise loop through a speed EQ: gain, low shelf (230 Hz), peak (430 Hz) and sub shelf (75 Hz), from a table by speed share (of 30 m/s) and drive (brake, coast, power). tools/sound-fit.py fits the table and checks it: the model stands within about 3 dB of the recording in each band from rest to 0.62 of cruise. At cruise the EQ is flat, so the loop plays as before
+- [x] The timed pull-away and arrival clips no longer play whole. Events: the first 3.4 s of the pull-away clip (air and doors) ends as the train moves; the arrival clip from 35.5 s (squeal, the jolt on the mark, the air let go) starts when the model says 5 s to the stop
+- [x] The standstill hum is the same loop at rest (a low hum, 35 s long); the old 5 s loop was the air hiss after a stop, with a bump at its end
+- [x] The whine stays as a layer, at the level Tom set in the mixer (2.3 times the first try), driven by power and brake
+- [x] Mixer rows follow the new layers; it reads only keys it knows
+- [ ] Not run with live sound: the departure and arrival cuts (the pane was hidden). Tom to listen

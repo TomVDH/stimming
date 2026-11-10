@@ -3756,12 +3756,12 @@ function watchdog(dt) {
 /* ---------- sound ---------- */
 // A real cabin recording carries the ride (freesound community, inside-train-start-cruise-and-stop).
 // trainride/dev/sonograph.png marks each clip's source and the peaks cut out.
-// bed: a clean cruise stretch, looped; level and pitch follow the speed.
-// away and stop: the pull-away and the arrival, timed to the train.
+// bed: a clean cruise stretch, looped. An EQ that follows the speed turns it into the sound at any speed.
+// away and stop: only their ends play, as events: the air and doors before a start, the squeal, jolt and air at a stop.
 // points and joints: one-shots on the switches and the rail joints.
 // whoosh: a trackside pass-by (freesound community, train-passing), muffled as if through the glass.
 // thump: the cabin's own pressure knock as a train meets it (the cabin recording at 2:26).
-const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'whoosh', 'thump', 'idle'];
+const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'whoosh', 'thump'];
 const SEAM = 1.5;
 let clipLoad = null, clips = null;
 function seamless(buf, ac) {
@@ -3779,7 +3779,6 @@ function loadClips(ac) {
     .then(bs => {
       clips = Object.fromEntries(CLIPS.map((n, i) => [n, bs[i]]));
       clips.bed = seamless(clips.bed, ac);
-      clips.idle = seamless(clips.idle, ac);
     }).catch(() => { clipLoad = null; });
   return clipLoad;
 }
@@ -3789,10 +3788,10 @@ const DOOR_SHUT = 3000, DOOR_OPEN = 16000;
 let recBus = null, doorF = null, doorG = null, subBus = null;
 // The mix: each layer's level as a multiple of its set level; 1 leaves it as set.
 // door is the muffle's depth: 0 leaves the sound open, 1 is the full muffle.
-const MIX = { master: 1, bed: 1, idle: 1, away: 1, stop: 1, whine: 1, points: 1, joints: 1, pass: 1, knock: 1, thud: 1, latch: 1, door: 1 };
+const MIX = { master: 1, bed: 1, whine: 1, depart: 1, arrive: 1, points: 1, joints: 1, pass: 1, knock: 1, thud: 1, latch: 1, door: 1 };
 // Dev (?dev): the mixer saves its levels here, and may mute or solo a layer.
 const MIXKEY = 'stimming.trainride.mix', MUTE = new Set(), SOLO = new Set();
-if (qs.has('dev')) try { Object.assign(MIX, JSON.parse(localStorage.getItem(MIXKEY) || '{}')); } catch { /* storage is optional */ }
+if (qs.has('dev')) try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem(MIXKEY) || '{}'))) if (k in MIX && v === +v) MIX[k] = v; } catch { /* storage is optional */ }
 const mixOf = n => (MUTE.has(n) || (SOLO.size && !SOLO.has(n)) ? 0 : MIX[n]);
 // Each layer plays through its own channel gain; the thud's channel feeds the sub bus.
 const chans = {};
@@ -3845,14 +3844,6 @@ function door(ac, open) {
   doorSet(ac, open ? 0.3 : 0.45);
   if (clips) shot(ac, clips.thump, 0.14, 0, 0.005, 1.8, 'latch');
 }
-// A looping layer with its own gain, on the channel ch.
-function loopLayer(ac, buf, ch) {
-  const src = ac.createBufferSource(), g = ac.createGain();
-  src.buffer = buf; src.loop = true; g.gain.value = 0;
-  src.connect(g).connect(chan(ac, ch));
-  src.start(0, Math.random() * buf.duration);
-  return { src, g };
-}
 // A one-shot from offset, with short fades; g fades it, m sets its place in the mix.
 function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1, ch = 'points') {
   const src = ac.createBufferSource(), g = ac.createGain(), m = ac.createGain(), now = ac.currentTime;
@@ -3865,11 +3856,27 @@ function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1, ch = 'points'
 }
 function fadeOut(ac, s, tau = 0.6) {
   if (!s) return;
+  // Ramps set for later would bring the sound back; they go first.
+  s.g.gain.cancelScheduledValues(ac.currentTime);
   s.g.gain.setTargetAtTime(0, ac.currentTime, tau);
   s.src.stop(ac.currentTime + tau * 6);
 }
 // Recordings only: no synth voices.
 const kit = audioKit({ gain: 0.6, noiseSeconds: 0 });
+// The speed EQ (tools/sound-fit.py): for each share u of 30 m/s, and for brake, coast and power,
+// the gain, low-shelf gain, peak gain and sub-shelf gain in dB that match the recording at that speed.
+const EQ = {"u":[0,0.02,0.05,0.1,0.15,0.2,0.3,0.45,0.62,0.8,1.0,1.3],"fls":230.0,"fpk":430.0,"qpk":1.1,"brake":[[-25.4,14.0,6.3,-0.0],[-25.7,17.5,9.2,-2.9],[-26.6,21.3,17.7,-5.7],[-26.8,21.6,19.3,-5.4],[-26.9,21.9,19.9,-5.1],[-26.3,21.5,19.9,-4.8],[-19.4,14.9,13.8,-4.2],[-12.7,8.9,8.2,-3.3],[-7.6,4.4,4.4,-2.3],[-3.5,1.1,1.9,-1.2],[-0.0,-1.6,0.1,-0.0],[4.3,-4.5,-4.6,-0.0]],"coast":[[-25.4,14.0,6.3,-0.0],[-25.7,18.3,9.0,-2.9],[-26.5,23.0,17.3,-5.7],[-26.8,23.3,18.9,-5.4],[-26.8,23.6,19.5,-5.1],[-26.3,23.2,19.5,-4.8],[-19.4,16.6,13.6,-4.2],[-12.7,10.5,8.1,-3.3],[-7.6,6.0,4.3,-2.3],[-3.5,2.7,1.8,-1.2],[0.0,0.0,0.0,-0.0],[4.3,-2.9,-4.6,-0.0]],"power":[[-25.4,14.0,6.3,-0.0],[-25.6,19.1,8.9,-2.9],[-26.6,24.8,17.8,-5.7],[-27.4,25.2,23.2,-5.4],[-27.8,25.5,25.7,-5.1],[-27.2,25.1,25.3,-4.8],[-20.0,18.4,18.5,-4.2],[-13.1,12.2,11.8,-3.3],[-7.7,7.6,6.8,-2.3],[-3.6,4.3,3.0,-1.2],[0.0,1.6,-0.1,-0.0],[4.3,-1.3,-4.7,-0.0]]};
+const UREF = 30;
+// The EQ at speed share u and drive a: -1 full brake, 0 coast, 1 full power.
+function eqAt(u, a) {
+  const U = EQ.u;
+  let i = 0;
+  while (i < U.length - 2 && u > U[i + 1]) i++;
+  const f = Math.min(1, Math.max(0, (u - U[i]) / (U[i + 1] - U[i])));
+  const row = k => EQ[k][i].map((v, j) => v + (EQ[k][i + 1][j] - v) * f);
+  const c = row('coast'), o = row(a > 0 ? 'power' : 'brake'), w = Math.abs(a);
+  return c.map((v, j) => v + (o[j] - v) * w);
+}
 let V = null;
 function voices() {
   const ac = kit.live();
@@ -3877,23 +3884,45 @@ function voices() {
   V ||= {};
   if (!clips) loadClips(ac);
   else if (!V.bed) {
-    V.bed = loopLayer(ac, clips.bed, 'bed'); V.idle = loopLayer(ac, clips.idle, 'idle');
-    // The whine: a narrow band of the bed that climbs with speed, heard only under power or brake.
-    const f = ac.createBiquadFilter(), g = ac.createGain();
-    f.type = 'bandpass'; f.frequency.value = 200; f.Q.value = 7; g.gain.value = 0;
-    V.bed.src.connect(f).connect(g).connect(chan(ac, 'whine'));
-    V.whine = { f, g };
+    // The running sound: the cruise loop through a gain and three filters that the speed drives.
+    const src = ac.createBufferSource(), g = ac.createGain();
+    const sub = ac.createBiquadFilter(), ls = ac.createBiquadFilter(), pk = ac.createBiquadFilter();
+    sub.type = 'lowshelf'; sub.frequency.value = 75;
+    ls.type = 'lowshelf'; ls.frequency.value = EQ.fls;
+    pk.type = 'peaking'; pk.frequency.value = EQ.fpk; pk.Q.value = EQ.qpk;
+    src.buffer = clips.bed; src.loop = true; g.gain.value = 0;
+    src.connect(g).connect(sub).connect(ls).connect(pk).connect(chan(ac, 'bed'));
+    src.start(0, Math.random() * clips.bed.duration);
+    V.bed = { src, g, sub, ls, pk };
+    // The whine: a narrow band of the same loop that climbs with the speed, heard under power or brake.
+    // Its level is the one Tom set in the mixer (2.3 times the first try).
+    const wf = ac.createBiquadFilter(), wg = ac.createGain();
+    wf.type = 'bandpass'; wf.frequency.value = 200; wf.Q.value = 7; wg.gain.value = 0;
+    src.connect(wf).connect(wg).connect(chan(ac, 'whine'));
+    V.whine = { f: wf, g: wg };
   }
   return V;
 }
-let accS = 0;
+// The drive, from full brake at -1 to full power at 1, smoothed over about half a second.
+let drive = 0;
 function voice(dt) {
   const v = voices();
   if (!v || !v.bed) return;
   const ac = kit.ac, sp = S.speed;
-  // The pull or the brake, smoothed over half a second.
-  if (dt > 0) accS += (Math.min(1.2, Math.abs(sp - REC.prevSp) / dt) - accS) * (1 - Math.exp(-dt / 0.5));
+  if (dt > 0) drive += (Math.max(-1, Math.min(1, (sp - REC.prevSp) / dt / 1.1)) - drive) * (1 - Math.exp(-dt / 0.6));
   recorded(v, ac, ac.currentTime, sp, Math.min(1, sp / 30));
+}
+// Part of a clip, from t0 to t1 seconds, with soft ends; returns its gain to stop it early.
+function cut(ac, buf, t0, t1, level, ch, fadeIn = 0.3, fadeOut = 0.4) {
+  const src = ac.createBufferSource(), g = ac.createGain(), now = ac.currentTime, dur = Math.min(t1, buf.duration) - t0;
+  src.buffer = buf;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(level, now + fadeIn);
+  g.gain.setValueAtTime(level, now + dur - fadeOut);
+  g.gain.linearRampToValueAtTime(0, now + dur);
+  src.connect(g).connect(chan(ac, ch));
+  src.start(now, t0, dur);
+  return { src, g, end: now + dur };
 }
 // The pass-by: the whoosh's loud stretch (2.5 s in) is held for the train's length, then let go.
 function passBy(ac, tMeet, dur) {
@@ -3924,37 +3953,28 @@ function passBy(ac, tMeet, dur) {
   knock(meet, 2.4, 0.5, chan(ac, 'thud'));
   knock(end, 1.1, 0.6, chan(ac, 'thud'));
 }
-// The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
-const REC = { away: null, stop: null, awayT: 0, stopV: 1, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
-// The arrival clip squeals and stops 36.5 s in; braking ends on that mark.
-const STOP_AT = 36.5;
+// The running sound follows the speed at every instant; the events hang on what the train does.
+const REC = { dep: null, arr: null, depDone: false, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+// In the arrival clip the last jolt falls 40.5 s in; the cut starts 5 s before it.
+const ARR0 = 35.5, ARR_JOLT = 40.5;
 function recorded(v, ac, now, sp, k) {
-  // The pull-away hands over to the bed as the train nears its cruise speed.
-  // The arrival takes over from the bed as the brakes bite.
-  let dip = 1;
-  if (REC.away) {
-    const w = THREE.MathUtils.smoothstep(sp / Math.max(S.cruise, 6), 0.5, 0.97), late = THREE.MathUtils.smoothstep(now, REC.away.end - 7, REC.away.end - 1);
-    const out = Math.max(w, late);
-    REC.away.m.gain.setTargetAtTime(Math.cos(out * Math.PI / 2), now, 0.5);
-    dip = 0.3 + 0.7 * Math.sin(out * Math.PI / 2);
-    if (now > REC.away.end || sp < REC.prevSp - 0.05 || (w >= 1 && now > REC.awayT + 6)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
-  }
-  if (REC.stop) {
-    const bp = THREE.MathUtils.smoothstep(1 - sp / Math.max(REC.stopV, 1), 0.03, 0.6);
-    REC.stop.m.gain.setTargetAtTime(0.4 + 0.6 * bp, now, 0.6);
-    dip = Math.min(dip, 1 - 0.7 * bp);
-  }
-  v.bed.g.gain.setTargetAtTime(1.1 * Math.min(1, sp / 22) ** 0.7 * dip, now, 0.8);
-  v.bed.src.playbackRate.setTargetAtTime(0.82 + 0.22 * Math.min(1, sp / 32), now, 1.0);
-  // The whine climbs with the speed and sounds only while the train pulls or brakes.
+  // The cruise loop, shaped to the speed: a low hum at rest, the motors' band under power, the full rush at speed.
+  const [g, ls, pk, sub] = eqAt(sp / UREF, sp > 0.3 ? drive : 0);
+  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** (g / 20), now, 0.25);
+  v.bed.ls.gain.setTargetAtTime(ls, now, 0.25);
+  v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
+  v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
+  v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
   v.whine.f.frequency.setTargetAtTime(170 + 30 * sp, now, 0.3);
-  v.whine.g.gain.setTargetAtTime(1.4 * Math.min(1, accS / 0.8) * Math.min(1, sp / 5), now, 0.4);
-  // At rest the standing carriage hums, at a platform or not.
-  v.idle.g.gain.setTargetAtTime(0.65 * (1 - THREE.MathUtils.smoothstep(sp, 0.3, 5)), now, 1.0);
-  // Pull away: the doors close and the motors wind up with the train.
-  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5, 0.5, 1, 'away'); REC.awayT = now; }
-  // The compartment door: open while the train stands at a platform, and now and then on the way.
+  v.whine.g.gain.setTargetAtTime(3.2 * Math.min(1, Math.abs(drive) / 0.7) * Math.min(1, sp / 5), now, 0.4);
+  // Before a start: the air and the doors, the clip's first 3.4 s, timed to end as the train moves.
   const left = S.dwellLeft;
+  if (left > 0 && left < 3.3 && !REC.depDone) { REC.dep = cut(ac, clips.away, 0, 3.4, 1.0, 'depart', 0.2, 0.5); REC.depDone = true; }
+  if (left === 0 && sp > 3) REC.depDone = false;
+  // Into a stop: the squeal, the last jolt on the mark, then the air let go.
+  if (!REC.arr && sp > 1 && S.toStop < 300 && S.eta < ARR_JOLT - ARR0) REC.arr = cut(ac, clips.stop, ARR0, 48.0, 0.8, 'arrive', 0.6, 0.6);
+  if (REC.arr && now > REC.arr.end) REC.arr = null;
+  // The compartment door: open while the train stands at a platform, and now and then on the way.
   if (DOOR.hold) { /* the dev mixer holds the door */ }
   else if (left > 0) door(ac, left < 15.5 && left > 4);
   else if (DOOR.open && now > DOOR.until) { door(ac, false); DOOR.next = now + 50 + Math.random() * 90; }
@@ -3962,15 +3982,6 @@ function recorded(v, ac, now, sp, k) {
     if (!DOOR.next) DOOR.next = now + 35 + Math.random() * 60;
     if (now > DOOR.next) { door(ac, true); DOOR.until = now + 3.5 + Math.random() * 4.5; }
   }
-  // Arrival: start the clip so its last squeal lands on the stop.
-  // Time left comes from the speed model, so a slow run into the terminus still lands the squeal.
-  const tLeft = sp > 0.5 && S.toStop < 1500 ? S.eta : Infinity;
-  if (!REC.stop && sp > 3 && tLeft < STOP_AT && S.toStop < 1500) {
-    fadeOut(ac, REC.away, 1); REC.away = null;
-    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 3, 1, 'stop');
-    REC.stopV = sp;
-  }
-  if (REC.stop && now > REC.stop.end) REC.stop = null;
   // Points: a clatter through each station's throat at speed.
   const d = Math.abs(S.stationNear(S.camX)[1]);
   if (sp > 8 && d < 140 && REC.stn >= 140 && S.toStop > 300) shot(ac, clips.points, 0.8 * k, 0, 0.03, 1, 'points');
@@ -3984,14 +3995,15 @@ function recorded(v, ac, now, sp, k) {
   if (o !== o) REC.opp = false;
   REC.prevSp = sp;
   // Dev: the layer state, for QA.
-  if (window.__train) window.__rec = `running ${v.bed.g.gain.value.toFixed(2)} · hum ${v.idle.g.gain.value.toFixed(2)} · whine ${v.whine.g.gain.value.toFixed(2)}${REC.away ? ' · pull-away' : ''}${REC.stop ? ' · arrival' : ''} · door ${DOOR.open ? 'open' : 'shut'}`;
+  if (window.__train) window.__rec = `${Math.round(sp * 3.6)} km/h · drive ${drive.toFixed(2)} · EQ ${g.toFixed(0)} / ${ls.toFixed(0)} / ${pk.toFixed(0)} dB · whine ${v.whine.g.gain.value.toFixed(1)}${REC.dep && now < REC.dep.end ? ' · departure' : ''}${REC.arr ? ' · arrival' : ''} · door ${DOOR.open ? 'open' : 'shut'}`;
 }
 function hush() {
   if (!V || !kit.ac) return;
   const now = kit.ac.currentTime;
-  for (const l of [V.bed, V.idle, V.whine]) l?.g.gain.setTargetAtTime(0, now, 0.15);
-  fadeOut(kit.ac, REC.away, 0.15); fadeOut(kit.ac, REC.stop, 0.15);
-  REC.away = REC.stop = null;
+  V.bed?.g.gain.setTargetAtTime(0, now, 0.15);
+  V.whine?.g.gain.setTargetAtTime(0, now, 0.15);
+  fadeOut(kit.ac, REC.dep, 0.15); fadeOut(kit.ac, REC.arr, 0.15);
+  REC.dep = REC.arr = null;
 }
 
 /* ---------- loop ---------- */
@@ -4143,6 +4155,8 @@ addEventListener('keydown', e => {
 if (qs.has('dev')) {
   // QA scripts drive the scene through this handle.
   window.__train = { S, wake };
+  // Dev: one step of the ride and its sound, with no frame drawn.
+  window.__train.tick = dt => { S.update(dt, 1); voice(dt); };
   // Dev: mean milliseconds per drawn frame, with the GPU forced to finish each one.
   window.__train.bench = (n = 40) => {
     const gl = renderer.getContext(), px = new Uint8Array(4);
@@ -4169,13 +4183,13 @@ if (qs.has('dev')) {
   alt.addEventListener('input', setTop);
   if (qs.has('top')) { topOn.checked = true; if (+qs.get('top')) alt.value = qs.get('top'); setTop(); }
   // The sound mixer: one row per layer, to set each by ear. Levels save in this browser.
-  const NAMES = { master: 'All sound', bed: 'Running noise', idle: 'Standstill hum', away: 'Pull-away clip', stop: 'Arrival clip', whine: 'Whine', points: 'Points clatter', joints: 'Rail joint', pass: 'Passing train', knock: 'Pass knock', thud: 'Bass thud', latch: 'Door knock', door: 'Door muffle' };
+  const NAMES = { master: 'All sound', bed: 'Running noise', whine: 'Whine', depart: 'Air and doors', arrive: 'Squeal, jolt, air', points: 'Points clatter', joints: 'Rail joint', pass: 'Passing train', knock: 'Pass knock', thud: 'Bass thud', latch: 'Door knock', door: 'Door muffle' };
   const mx = document.createElement('div');
   mx.style.cssText = 'position:fixed;left:16px;bottom:64px;z-index:50;width:min(330px,calc(100vw - 32px));max-height:calc(100vh - 220px);overflow:auto;padding:8px 10px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.9);backdrop-filter:blur(8px);color:oklch(0.92 0.01 260);font:500 12px/1.5 Gabarito,system-ui,sans-serif';
   const btn = 'font:inherit;color:inherit;background:oklch(0.26 0.01 260);border:0;border-radius:5px;padding:1px 7px;cursor:pointer';
   mx.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>Sound mix</b><span><button data-fold style="${btn}">Hide</button></span></div><div data-body>`
     + Object.keys(MIX).map(k => `<div data-row="${k}" style="display:grid;grid-template-columns:104px 1fr 34px auto auto;gap:6px;align-items:center"><span>${NAMES[k]}</span><input type="range" min="0" max="${k === 'door' ? 1 : 2.5}" step="0.05" value="${MIX[k]}"><span data-v>${(+MIX[k]).toFixed(2)}</span>${k === 'master' || k === 'door' ? '<span></span><span></span>' : `<button data-m style="${btn}">M</button><button data-s style="${btn}">S</button>`}</div>`).join('')
-    + `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${[['latch', 'Door knock'], ['doorT', 'Door open/shut'], ['points', 'Points'], ['joints', 'Joint'], ['pass', 'Passing train']].map(([k, n]) => `<button data-play="${k}" style="${btn}">▶ ${n}</button>`).join('')}</div>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${[['depart', 'Departure'], ['arrive', 'Arrival'], ['latch', 'Door knock'], ['doorT', 'Door open/shut'], ['points', 'Points'], ['joints', 'Joint'], ['pass', 'Passing train']].map(([k, n]) => `<button data-play="${k}" style="${btn}">▶ ${n}</button>`).join('')}</div>`
     + `<div style="display:flex;gap:5px;margin-top:6px"><button data-reset style="${btn}">Reset</button><button data-copy style="${btn}">Copy levels</button></div><div data-now style="margin-top:6px;opacity:0.75"></div><textarea data-out readonly rows="2" style="width:100%;margin-top:4px;font:11px ui-monospace,monospace;background:oklch(0.12 0.01 260);color:inherit;border:0;border-radius:5px;display:none"></textarea></div>`;
   document.body.append(mx);
   const body = mx.querySelector('[data-body]'), outT = mx.querySelector('[data-out]');
@@ -4202,6 +4216,8 @@ if (qs.has('dev')) {
     const ac = kit.live();
     if (b.dataset.play && ac && clips) {
       const p = b.dataset.play;
+      if (p === 'depart') cut(ac, clips.away, 0, 3.4, 1.0, 'depart', 0.2, 0.5);
+      if (p === 'arrive') cut(ac, clips.stop, ARR0, 48.0, 0.8, 'arrive', 0.6, 0.6);
       if (p === 'latch') shot(ac, clips.thump, 0.14, 0, 0.005, 1.8, 'latch');
       if (p === 'doorT') { DOOR.hold = true; door(ac, !DOOR.open); }
       if (p === 'points') shot(ac, clips.points, 0.8, 0, 0.03, 1, 'points');
