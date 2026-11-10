@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.008 270); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Peel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Peel: a film over a glowing surface, peeled back by its tab. */
+:root { --stage: oklch(0.08 0.008 270); }
+.stage--peel canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--peel canvas.on { opacity: 1; }
+.stage--peel.over { cursor: grab; }
+.stage--peel.drag { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--peel canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Peel</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--peel" id="stage" tabindex="0" role="application" aria-label="A sheet of film over a glowing surface. Drag the lifted tab to peel the film back. N lays a fresh sheet.">
+      <p class="fail" hidden>Peel needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Peel</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+// The handlers bind once the GL exists.
+const act = { sheet() {}, reset() {} };
+let film = 'screen', under = 'aurora', tack = 0.5, glow = true;
+const ui = initPage({ id: 'peel', bar: {
+  choice: { label: 'Film', value: 'screen', options: [
+    { value: 'screen', label: 'Screen', key: '1' },
+    { value: 'tape', label: 'Tape', key: '2' },
+    { value: 'holo', label: 'Holo', key: '3' },
+  ], onPick: v => { film = v; act.sheet(); } },
+  actions: [{ verb: 'add', noun: 'Sheet', key: 'N', onPress: () => act.sheet() }],
+  slider: { label: 'Tack', min: 0, max: 1, step: 0.01, value: tack, onInput: v => { tack = v; } },
+  settings: [
+    { type: 'toggle', id: 'glow', label: 'Glow', value: true, persist: true, onToggle: v => { glow = v; draw(); } },
+    { type: 'choice', id: 'under', label: 'Under', value: 'aurora', persist: true,
+      options: [{ value: 'aurora', label: 'Aurora' }, { value: 'ink', label: 'Ink' }, { value: 'plain', label: 'Plain' }], onPick: v => { under = v; draw(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag tab', 'peel'], ['n', 'new sheet']],
+} });
+glow = ui.setting('glow')?.value ?? true;
+under = ui.setting('under')?.value ?? 'aurora';
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: true, premultipliedAlpha: true });
+if (!gl) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('WebGL 2 is off');
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const col = (L, C, h) => linFit(L, C, h);
+
+/* ---------- the peel model ---------- */
+// Plane units: the stage is 2 tall at the surface. The camera looks straight down.
+// u runs along the peel direction d from the sheet's first corner, u0 in plane terms.
+// Film with u < s is peeled: it wraps a curl of radius R, then runs back at angle beta.
+const sheet = { half: [1, 1], d: [-Math.SQRT1_2, Math.SQRT1_2], u0: 0, umax: 1, s: 0, beta: 0.6, R: 0.03, tip: [0, 0] };
+// The flap's free end in plane terms: where the film at u = 0 has gone.
+function flapEnd() {
+  const { s, R, beta } = sheet, arc = PI * R;
+  return s <= arc ? s - R * Math.sin(s / R) : s + (s - arc) * Math.cos(beta);
+}
+// Fresh sheet: a lifted tab at one corner, pointing inward on the diagonal.
+function layTab(corner = 3) {
+  const [hx, hy] = sheet.half;
+  const cs = [[-hx, hy], [hx, hy], [-hx, -hy], [hx, -hy]];
+  const c = cs[corner];
+  const d = [-Math.sign(c[0]) / Math.SQRT2, -Math.sign(c[1]) / Math.SQRT2];
+  sheet.d = d;
+  const dots = cs.map(q => q[0] * d[0] + q[1] * d[1]);
+  sheet.u0 = Math.min(...dots);
+  sheet.umax = Math.max(...dots) - sheet.u0;
+  sheet.tip = c;
+  sheet.s = 0.07;
+  sheet.beta = 0.6;
+  sheet.R = 0.03;
+}
+
+/* ---------- shaders ---------- */
+const QUAD_VS = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const COMMON = `
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
+`;
+// The surface under the film, the haze where the film still lies, and the panel's bezel.
+const BASE_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes, uHalf, uD;
+uniform float uAspect, uU0, uS, uR, uLift, uHas;
+uniform int uUnder;
+uniform vec3 uA, uB, uC;
+out vec4 o;
+${COMMON}
+vec3 underAt(vec2 p) {
+  if (uUnder == 2) return uB * 0.9;
+  float f = fbm(p * 0.9 + vec2(3.1, 1.7));
+  float g = fbm(p * 1.6 - vec2(f * 1.4, 0.0) + 5.0);
+  vec3 c = mix(uA, uB, smoothstep(0.25, 0.75, f));
+  c = mix(c, uC, smoothstep(0.55, 0.85, g) * 0.8);
+  // A soft hot band crosses the panel.
+  c *= 0.75 + 0.5 * exp(-pow((p.y + 0.4 * p.x - 0.2) * 1.6, 2.0));
+  return uUnder == 1 ? c * 0.35 : c;
+}
+void main() {
+  vec2 p = (gl_FragCoord.xy / uRes * 2.0 - 1.0) * vec2(uAspect, 1.0);
+  vec2 pan = uHalf + 0.025;
+  // Outside the panel: the dark bezel.
+  vec2 e = abs(p) - pan;
+  if (max(e.x, e.y) > 0.0) { o = vec4(vec3(0.012, 0.012, 0.018) * (1.0 - smoothstep(0.0, 0.3, max(e.x, e.y))), 1.0); return; }
+  vec3 c = underAt(p);
+  float u = dot(p, uD) - uU0;
+  bool on = uHas > 0.5 && abs(p.x) < uHalf.x && abs(p.y) < uHalf.y;
+  if (on && u >= uS) {
+    // The film's haze: dimmer, greyer, a fine orange-peel texture, dust and a few bubbles.
+    float l = dot(c, vec3(0.3, 0.55, 0.15));
+    vec3 hz = mix(c, vec3(l), 0.5) * 0.62 + vec3(0.035, 0.04, 0.05);
+    hz *= 0.96 + 0.08 * noise(p * 220.0);
+    float dust = step(0.9965, hash(floor(p * 260.0)));
+    hz += dust * 0.12;
+    vec2 bq = p * 3.3 + 0.5;
+    vec2 bc = floor(bq) + vec2(hash(floor(bq)), hash(floor(bq) + 9.0));
+    float br = hash(floor(bq) + 4.0) < 0.12 ? length(bq - bc) : 9.0;
+    hz += 0.07 * smoothstep(0.09, 0.07, br) * smoothstep(0.03, 0.08, br);
+    // The film's outer edge catches a hairline of light.
+    vec2 ed = uHalf - abs(p);
+    hz += 0.05 * exp(-min(ed.x, ed.y) * 400.0);
+    // The lifted flap shades the film just past the peel front.
+    float sh = exp(-(u - uS) / (0.05 + 0.25 * uLift));
+    c = hz * (1.0 - 0.45 * sh * smoothstep(0.0, 0.02, uLift + 0.02));
+  }
+  o = vec4(c, 1.0);
+}`;
+// The peeled flap: a grid in sheet space, bent by the curl and the free run.
+const FLAP_VS = `#version 300 es
+in vec2 aP;
+uniform vec2 uD;
+uniform float uU0, uS, uR, uBeta, uAspect, uCam;
+out vec3 vN, vW;
+out float vPeeled;
+void main() {
+  float u = dot(aP, uD) - uU0;
+  vec2 lat = aP - uD * dot(aP, uD);
+  vec3 pos = vec3(aP, 0.0), n = vec3(0.0, 0.0, 1.0);
+  vPeeled = 0.0;
+  if (u < uS) {
+    float w = uS - u, arc = 3.14159265 * uR, U, Z;
+    vec2 nd;
+    // n is the top face's normal; it points into the curl.
+    if (w < arc) { float ph = w / uR; U = uS - uR * sin(ph); Z = uR - uR * cos(ph); nd = vec2(sin(ph), cos(ph)); }
+    else { float l = w - arc; U = uS + l * cos(uBeta); Z = 2.0 * uR + l * sin(uBeta); nd = vec2(sin(uBeta), -cos(uBeta)); }
+    pos = vec3(lat + uD * (U + uU0), Z);
+    n = vec3(uD * nd.x, nd.y);
+    vPeeled = 1.0;
+  }
+  vN = n;
+  vW = pos;
+  // Straight down from uCam: nearer film looks a little larger.
+  float k = uCam / (uCam - pos.z);
+  gl_Position = vec4(pos.x * k / uAspect, pos.y * k, 0.5 - pos.z * 0.1, 1.0);
+}`;
+const FLAP_FS = `#version 300 es
+precision highp float;
+in vec3 vN, vW;
+in float vPeeled;
+uniform int uFilm;
+uniform vec3 uKey;
+out vec4 o;
+${COMMON}
+vec3 rainbow(float t) { return 0.5 + 0.5 * cos(6.2832 * (t + vec3(0.0, 0.33, 0.67))); }
+void main() {
+  if (vPeeled < 0.5) discard;
+  vec3 n = normalize(vN);
+  // The camera looks down: the face whose normal points up is the one seen.
+  bool top = n.z >= 0.0;
+  vec3 f = top ? n : -n;
+  vec3 v = vec3(0.0, 0.0, 1.0), h = normalize(uKey + v);
+  float dif = 0.35 + 0.65 * max(dot(f, uKey), 0.0);
+  float spec = pow(max(dot(f, h), 0.0), 60.0);
+  float rim = pow(1.0 - abs(f.z), 3.0);
+  vec3 c;
+  float a;
+  if (uFilm == 0) {
+    // Screen film: clear, milky; its back carries a faint sheen.
+    c = vec3(0.86, 0.9, 0.96) * dif * (top ? 0.4 : 0.5);
+    a = top ? 0.42 : 0.5;
+  } else if (uFilm == 1) {
+    // Tape: translucent amber; the adhesive back is duller.
+    c = vec3(0.85, 0.55, 0.18) * dif * (top ? 0.5 : 0.36);
+    a = top ? 0.62 : 0.7;
+  } else {
+    // Holo: the rainbow slides as the normal turns; the back is white paper.
+    c = top ? rainbow(f.x * 1.3 + f.y * 0.7 + vW.x * 0.6) * dif * 0.75 : vec3(0.95, 0.93, 0.88) * (0.55 + 0.45 * dif) * (0.94 + 0.06 * noise(vW.xy * 300.0));
+    a = top ? 0.9 : 1.0;
+  }
+  c += vec3(1.0) * (spec * 0.9 + rim * 0.25);
+  o = vec4(c * a + vec3(spec * 0.3), a);
+}`;
+let baseP, flapP, vao, grid, gridN = 0;
+function buildGrid(n = 96) {
+  const [hx, hy] = sheet.half;
+  const pts = new Float32Array((n + 1) * (n + 1) * 2);
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const k = (j * (n + 1) + i) * 2;
+    pts[k] = -hx + (2 * hx * i) / n;
+    pts[k + 1] = -hy + (2 * hy * j) / n;
+  }
+  const idx = new Uint32Array(n * n * 6);
+  let q = 0;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const a = j * (n + 1) + i, b = a + 1, c = a + n + 1, d = c + 1;
+    idx.set([a, b, d, a, d, c], q);
+    q += 6;
+  }
+  if (!vao) vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const pb = grid?.pb || gl.createBuffer(), ib = grid?.ib || gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+  gl.bufferData(gl.ARRAY_BUFFER, pts, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  grid = { pb, ib };
+  gridN = idx.length;
+}
+
+/* ---------- layout ---------- */
+let size = { w: 1, h: 1, dpr: 1 }, aspect = 1, pxPerUnit = 1;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.2e6 }) };
+  canvas.width = Math.round(w * size.dpr);
+  canvas.height = Math.round(h * size.dpr);
+  aspect = w / h;
+  pxPerUnit = h / 2;
+  // The sheet fills the stage less a margin: 40 px wide, 16 px on phones.
+  const m = (w < 640 ? 16 : 40) / pxPerUnit;
+  const half = [aspect - m - 0.025, 1 - m - 0.025];
+  const changed = Math.abs(half[0] - sheet.half[0]) > 1e-4 || Math.abs(half[1] - sheet.half[1]) > 1e-4;
+  sheet.half = half;
+  if (changed && baseP) { buildGrid(); layTab(cornerNow); }
+}
+
+/* ---------- render ---------- */
+const UNDERS = { aurora: 0, ink: 1, plain: 2 };
+const FILMS = { screen: 0, tape: 1, holo: 2 };
+const KEY = (() => { const k = [-0.45, 0.55, 0.7], l = Math.hypot(...k); return k.map(x => x / l); })();
+function draw() {
+  if (!baseP) return;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.disable(gl.BLEND);
+  gl.useProgram(baseP.p);
+  const U = baseP.u;
+  gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform2f(U.uHalf, ...sheet.half);
+  gl.uniform2f(U.uD, ...sheet.d);
+  gl.uniform1f(U.uAspect, aspect);
+  gl.uniform1f(U.uU0, sheet.u0);
+  gl.uniform1f(U.uS, sheet.s);
+  gl.uniform1f(U.uR, sheet.R);
+  gl.uniform1f(U.uLift, sheet.beta);
+  gl.uniform1f(U.uHas, 1);
+  gl.uniform1i(U.uUnder, UNDERS[under]);
+  gl.uniform3f(U.uA, ...col(0.66, 0.14, 195));
+  gl.uniform3f(U.uB, ...col(0.5, 0.18, 288));
+  gl.uniform3f(U.uC, ...col(0.78, 0.17, 350));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // The flap draws over the surface with premultiplied blending.
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(flapP.p);
+  const F = flapP.u;
+  gl.uniform2f(F.uD, ...sheet.d);
+  gl.uniform1f(F.uU0, sheet.u0);
+  gl.uniform1f(F.uS, sheet.s);
+  gl.uniform1f(F.uR, sheet.R);
+  gl.uniform1f(F.uBeta, sheet.beta);
+  gl.uniform1f(F.uAspect, aspect);
+  gl.uniform1f(F.uCam, 4);
+  gl.uniform1i(F.uFilm, FILMS[film]);
+  gl.uniform3f(F.uKey, ...KEY);
+  gl.bindVertexArray(vao);
+  gl.drawElements(gl.TRIANGLES, gridN, gl.UNSIGNED_INT, 0);
+  gl.bindVertexArray(null);
+}
+
+/* ---------- frame loop ---------- */
+// The flap eases its lift; the loop sleeps when it rests.
+let raf = 0, last = 0, visible = !document.hidden, dragging = false, betaTarget = 0.6, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const k = reduced() ? 1 : 1 - Math.exp(-dt / 0.12);
+    sheet.beta += (betaTarget - sheet.beta) * k;
+    again = dragging || Math.abs(betaTarget - sheet.beta) > 1e-3;
+    draw();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- pointer ---------- */
+// Only the flap can be grabbed: a press within 40 px of its free end.
+// The front advances to keep the free end under the pointer; the film never re-sticks.
+let ptr = null, cornerNow = 3;
+function planeAt(e) {
+  const r = stage.getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width * 2 - 1) * aspect, -((e.clientY - r.top) / r.height * 2 - 1)];
+}
+function nearFlap(q) {
+  const ue = flapEnd(), d = sheet.d;
+  const lat = [sheet.tip[0] - d[0] * (sheet.tip[0] * d[0] + sheet.tip[1] * d[1]), sheet.tip[1] - d[1] * (sheet.tip[0] * d[0] + sheet.tip[1] * d[1])];
+  const tx = lat[0] + d[0] * (ue + sheet.u0), ty = lat[1] + d[1] * (ue + sheet.u0);
+  return Math.hypot(q[0] - tx, q[1] - ty) * pxPerUnit < 40 + sheet.s * pxPerUnit * 0.5;
+}
+function down(e) {
+  if (ptr || e.button > 0) return;
+  const q = planeAt(e);
+  if (!nearFlap(q)) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const uq = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0;
+  ptr = { id: e.pointerId, off: flapEnd() - uq };
+  dragging = true;
+  betaTarget = 0.45;
+  stage.classList.add('drag');
+  wake();
+}
+function move(e) {
+  const q = planeAt(e);
+  if (!ptr) { stage.classList.toggle('over', nearFlap(q)); return; }
+  if (e.pointerId !== ptr.id) return;
+  const ue = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0 + ptr.off;
+  const cb = Math.cos(sheet.beta), arc = PI * sheet.R;
+  const target = (ue + arc * cb) / (1 + cb);
+  sheet.s = clamp(Math.max(sheet.s, target), 0, sheet.umax - 0.002);
+  wake();
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  ptr = null;
+  dragging = false;
+  // Let go, the flap settles lower over the film.
+  betaTarget = 0.22;
+  stage.classList.remove('drag');
+  wake();
+}
+act.sheet = () => {
+  cornerNow = (cornerNow + 1 + Math.floor(Math.random() * 3)) % 4;
+  layTab(cornerNow);
+  betaTarget = sheet.beta;
+  draw();
+};
+act.reset = () => { cornerNow = 3; layTab(3); betaTarget = sheet.beta; draw(); };
+
+/* ---------- boot ---------- */
+try {
+  baseP = program(QUAD_VS, BASE_FS);
+  flapP = program(FLAP_VS, FLAP_FS);
+  resize();
+  buildGrid();
+  layTab(cornerNow);
+  draw();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+ready = true;
+mark('first-frame');
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+new ResizeObserver(() => { resize(); draw(); }).observe(stage);
+onQuality(() => { resize(); draw(); });
+onReducedChange(() => draw());
+// A hidden tab stops the loop.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>
