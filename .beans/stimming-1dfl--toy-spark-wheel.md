@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:26:45Z
-updated_at: 2026-11-10T07:55:58Z
+updated_at: 2026-11-10T08:01:23Z
 parent: stimming-oh7b
 ---
 
@@ -13,7 +13,7 @@ Build Spark wheel from docs/plans/spark.md (rank 1 in docs/plans/fidgets.md). F5
 
 - [x] Task 1: wheel, flint, floor, rim light, first-frame embers (blockout); checkpoint with Tom
 - [x] Task 2: K6 lift: three metals, forks, floor bounce, embers, contact light
-- [ ] Task 3: sound: knurl ticks and rasp, strike, pops, sizzle; Q9
+- [x] Task 3: sound: knurl ticks and rasp, strike, pops, sizzle; Q9
 - [ ] Task 4: Settings, persistence, performance ladder; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name
@@ -28,3 +28,5 @@ Build Spark wheel from docs/plans/spark.md (rank 1 in docs/plans/fidgets.md). F5
 
 - Task 1 passed Tom's checkpoint (2026-11-10: "Yes, build sparks").
 - Task 2 (2026-11-10): K6 lifted from Fireworks and marked. Each spark is a chain of closed-form segments written once: flight, then a fork or up to two floor bounces (hot Ferro may split), then an ember. Later segments carry a future start time. Steel bursts come before the landing. The wet floor mirrors sparks at half strength. Tall stages turn the wheel toward the camera so the spray stays in frame. Checked with a throwaway probe (the pane was hidden): flick, grind, all three metals, phone; console clean. Live frame rate unchecked.
+
+- Task 3 (2026-11-10): raw Web Audio on the kit, no Tone. Single knurl ticks below 26 teeth a second, then a noise rasp gated at the tooth rate. A scrape and knock when the thumb starts a still wheel. Pawl clicks on the back stroke, one each 16 px. Fork pops and wet-floor hisses are cued at launch and play when the sim clock reaches them, each kind rate-capped. Q9 passed in a probe: the context runs after a click and suspends once the sparks settle. Not yet heard by ear.

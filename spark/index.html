@@ -56,7 +56,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -537,12 +537,15 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
       const kid = span([0.1, 0.28]);
       launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, fd + 1, bd);
     }
+    cue(t0 + end, 'pop', p, heatEnd);
   } else if (end === hit) {
     const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
     p.y = FLOOR + 0.001;
     // The floor takes most of the fall and some of the slide.
     const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
     const rest = life - end;
+    // Hot sparks hiss on the wet floor.
+    if (heatEnd > 0.55 && mirror.visible) cue(t0 + end, 'hiss', p, heatEnd);
     if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
       const hot = heatEnd > 0.6 && rnd() < m.split;
       const parts = hot ? 2 : 1;
@@ -582,6 +585,8 @@ function emit(dt) {
     toothAcc -= 1;
     // Teeth spread over the frame, so sparks leave in a stream.
     const t0 = time - dt * (toothAcc / Math.max(1, teethRate * dt));
+    // Single ticks while the teeth are slow; the rasp takes over above 25 a second.
+    if (teethRate < 26) cue(t0, 'tick', P.set(0, -R, 0), 1 - clamp((teethRate - 14) / 12));
     const count = Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
@@ -803,12 +808,14 @@ function frame(now) {
     // The spark rate eases over 60 ms, so the light flashes, not flickers.
     const n = emit(dt);
     rate += (n / Math.max(dt, 1e-3) - rate) * (1 - Math.exp(-dt / 0.06));
+    audioStep();
     // Smoke fades over 3 s; a fast wheel feeds it.
     smokeAmt = clamp(smokeAmt * Math.exp(-dt / 3) + dt * clamp(wheel.omega / 20) * 1.5);
     draw();
     again = lively();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !grinding);
   }
 }
 
@@ -829,6 +836,121 @@ function watchdog(raw) {
   resize();
 }
 
+/* ---------- sound ---------- */
+// Space counts as a gesture, so it can start the sound.
+const kit = audioKit({ keys: new Set([' ']) });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const tmpV = new THREE.Vector3();
+// Each sound pans with its source on the screen.
+const panAt = p => clamp(tmpV.copy(p).project(camera).x * 0.85, -1, 1);
+// Spark events wait here until the sim clock reaches them.
+const queue = [];
+const nextAt = { tick: 0, pop: 0, hiss: 0, pawl: 0 };
+const GAP = { tick: 1 / 26, pop: 1 / 40, hiss: 1 / 30, pawl: 1 / 22 };
+let rasp = null;
+function cue(t, kind, p, level) {
+  if (!kit.live() || queue.length > 600) return;
+  queue.push({ t, kind, x: p.x, y: p.y, z: p.z, level });
+}
+// A short noise burst through a filter, with a fast attack and an exponential fall.
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.0008);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A short decaying sine: the body of a knock or a click.
+function blip(ac, at, { f, dur, level, pan = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.value = f * jit(0.06);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(level * jit(0.2), at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// The rasp: looped noise, gated at the tooth rate by a square wave.
+function raspChain(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const flt = ac.createBiquadFilter();
+  flt.type = 'bandpass';
+  flt.frequency.value = 3200;
+  flt.Q.value = 1.2;
+  const am = ac.createGain();
+  am.gain.value = 0.5;
+  const lfo = ac.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = 30;
+  const depth = ac.createGain();
+  depth.gain.value = 0.45;
+  lfo.connect(depth).connect(am.gain);
+  const out = ac.createGain();
+  out.gain.value = 0;
+  const pn = ac.createStereoPanner();
+  src.connect(flt).connect(am).connect(out).connect(pn).connect(kit.out);
+  src.start();
+  lfo.start();
+  return { out, lfo, pn };
+}
+// One voice per event kind; each kind keeps its own rate cap.
+function play(ac, at, e) {
+  if (at < nextAt[e.kind]) return;
+  nextAt[e.kind] = at + GAP[e.kind] * jit(0.3);
+  const pan = panAt(tmpV.set(e.x, e.y, e.z));
+  if (e.kind === 'tick') {
+    burst(ac, at, { f: 4000, q: 2, dur: 0.004, level: 0.35 * e.level, pan });
+  } else if (e.kind === 'pop') {
+    burst(ac, at, { f: 2000, type: 'highpass', q: 0.7, dur: 0.003 + 0.004 * Math.random(), level: 0.3 * e.level, pan });
+    blip(ac, at, { f: 2200 + 1200 * Math.random(), dur: 0.015, level: 0.05, pan });
+  } else if (e.kind === 'hiss') {
+    burst(ac, at, { f: 5000, type: 'highpass', q: 0.7, dur: 0.12, level: 0.05 * e.level, pan });
+  } else if (e.kind === 'pawl') {
+    burst(ac, at, { f: 2200, q: 3, dur: 0.012, level: 0.18, pan });
+    blip(ac, at, { f: 900, dur: 0.02, level: 0.06, pan });
+  }
+}
+// Each frame steers the rasp and plays the events now due.
+function audioStep() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) { queue.length = 0; return; }
+  rasp ||= raspChain(ac);
+  const now = ac.currentTime, teeth = wheel.omega * TEETH / TAU;
+  rasp.out.gain.setTargetAtTime(0.22 * clamp((teeth - 18) / 22), now, 0.03);
+  rasp.lfo.frequency.setTargetAtTime(Math.max(1, teeth), now, 0.02);
+  rasp.pn.pan.setTargetAtTime(panAt(tmpV.set(0, -R, 0)), now, 0.1);
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const e = queue[i];
+    if (e.t > time + 0.05) continue;
+    queue.splice(i, 1);
+    // An event older than a tenth of a second is dropped, not bunched.
+    if (e.t < time - 0.1) continue;
+    play(ac, now + 0.02 + Math.max(0, e.t - time), e);
+  }
+}
+// The thumb on the knurl: a short scrape over a dull knock.
+function scrape() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panAt(tmpV.set(0, -R, 0));
+  burst(ac, at, { f: 2500, q: 0.8, dur: 0.07, level: 0.4, pan });
+  blip(ac, at, { f: 170, dur: 0.06, level: 0.3, pan });
+}
+
 /* ---------- pointer ---------- */
 // A press becomes a drag after 8 px, or a hold after 260 ms.
 // A release that is neither is a tap, and a tap strikes.
@@ -839,7 +961,19 @@ function spinFrom(dx, dy, dt) {
   if (dt <= 0) return;
   const fwd = (dx * FWD.x + dy * FWD.y) / dt;
   // The thumb drives the wheel up to its own rim speed, never brakes it.
-  if (fwd > 0) wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / rPx));
+  if (fwd > 0) {
+    const was = wheel.omega;
+    wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / rPx));
+    if (was < 3 && wheel.omega >= 4) scrape();
+    return;
+  }
+  // The back stroke slips over the pawl: one click each 16 px.
+  ptr.back = (ptr.back || 0) - fwd * dt;
+  while (ptr.back > 16) {
+    ptr.back -= 16;
+    const ac = kit.live();
+    if (ac && kit.noise) play(ac, ac.currentTime + 0.005, { kind: 'pawl', x: 0, y: -R, z: 0 });
+  }
 }
 function down(e) {
   if (ptr || e.button > 0) return;
@@ -872,6 +1006,7 @@ function up(e) {
 }
 // A strike turns the wheel about a quarter turn.
 function strike() {
+  if (wheel.omega < 3) scrape();
   wheel.omega = Math.max(wheel.omega, (Math.PI / 2) / FRICTION);
   live();
 }
@@ -925,7 +1060,7 @@ onReducedChange(() => { if (ready) draw(); wake(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; queue.length = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>
