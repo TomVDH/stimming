@@ -2209,9 +2209,6 @@ void main() {
       // A reading light further up the cabin, as a soft warm smear.
       vec2 lq = (rq - vec2(-0.1, 0.19)) * vec2(1.0, 1.8);
       view += vec3(1.0, 0.8, 0.55) * 0.004 * exp(-dot(lq, lq) / 0.0016);
-      // A ghost of the bezel's far rim, just inside the pane's edge.
-      float gr = sdBox(rq * 1.02, INB, RIN);
-      view += cabin * 0.22 * smoothstep(0.005, 0.0, abs(gr + 0.01)) * smoothstep(-0.05, 0.15, rq.y);
       float bh = length(pG - vec2(0.0, -INB.y * 0.72));
       view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
       inner = view;
