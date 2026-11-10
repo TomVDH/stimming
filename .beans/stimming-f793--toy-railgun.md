@@ -222,3 +222,4 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Embers and fragment fire dimmed so the pieces read; old embers clear on reset
 - [x] Default tone from Tom's pick: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06
 - [x] Tone defaults: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06 (Tom's look)
+- [x] Reset redo: a 2.4 s rewind (sky and clouds run backward, long shutter), then a soft white veil, a crisp ring that closes in, and a chime; the dust wall is gone
