@@ -812,11 +812,16 @@ const brAt = (x, y) => {
   const i = Math.floor((x / BR.x * 0.5 + 0.5) * BR.w), j = Math.floor((y / BR.y * 0.5 + 0.5) * BR.h);
   return i < 0 || j < 0 || i >= BR.w || j >= BR.h ? 0 : breathF[(j * BR.w + i) * 2];
 };
+// The shade: 0 open, 1 shut; it eases toward the finger.
+const shade = { s: +(saved('shade') || 0), goal: +(saved('shade') || 0) };
+const SHADE_EXT = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * WIN.slot / WIN.depth;
+// The shade's lower edge, in window metres.
+const shadeEdge = s => SHADE_EXT - 0.012 - s * (2 * SHADE_EXT - 0.012);
 // The scratch pane point the eye sees at screen pixel (x, y).
-function panePoint(x, y) {
+function panePoint(x, y, z = WIN.depth) {
   setBasis();
   const d = [0, 1, 2].map(i => basis.Fa[i] * basis.focal + basis.Ra[i] * (x - W / 2) + basis.Ua[i] * (y - H / 2));
-  const s = (WIN.depth - basis.eye[2]) / d[2];
+  const s = (z - basis.eye[2]) / d[2];
   return [basis.eye[0] + d[0] * s, basis.eye[1] + d[1] * s];
 }
 // Breathe shows only when the face is close to the glass.
@@ -935,6 +940,7 @@ function step(dt) {
   dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
   wlight.level += ((wlight.on ? 1 : 0) - wlight.level) * Math.min(1, dt / (wlight.on ? 0.05 : 0.12));
   stepBreath(dt);
+  shade.s += (shade.goal - shade.s) * Math.min(1, dt / 0.08);
   stepElmo(dt);
   stepCells(dt);
   stepFlashes(dt);
@@ -1519,6 +1525,7 @@ function render() {
   UG.uniform4f(u.uBeamL, WING_LIGHT.p[0] + seatDx, WING_LIGHT.p[1], WING_LIGHT.p[2], wlight.level);
   UG.uniform4f(u.uBeamA, wa[0], wa[1], wa[2], fog.level);
   UG.tex(u.uBreath, breathTex); UG.uniform1f(u.uBreathOn, breath.any ? 1 : 0);
+  UG.uniform1f(u.uShade, shade.s);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
   UG.uniform3fv(u.uCabin, sky.cabin);
@@ -1720,6 +1727,11 @@ stage.addEventListener('pointerdown', e => {
   touches.set(e.pointerId, [x, y]);
   if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
   drag = { x0: x, y0: y, x, y, moved: false };
+  // A press on the shade or its lip grabs it; the head stays put.
+  const sp = panePoint(x, y, WIN.slot);
+  if (Math.abs(sp[0]) < WIN.inn[0] + 0.02 && Math.abs(sp[1]) < SHADE_EXT && sp[1] > shadeEdge(shade.goal) - 0.012) {
+    drag.shade = sp[1] - shadeEdge(shade.goal); drag.moved = true; return;
+  }
   // A press on fogged glass draws in the fog; the head stays put.
   const pp = panePoint(x, y);
   if (brAt(...pp) > 0.12) { drag.draw = pp; drag.moved = true; brDisc(...pp, 0.008, 1, true); }
@@ -1737,6 +1749,13 @@ stage.addEventListener('pointermove', e => {
     return;
   }
   if (!drag) return;
+  if (drag.shade !== undefined) {
+    // The lip follows the finger, held where it was grabbed.
+    const sp = panePoint(x, y, WIN.slot), ey = sp[1] - drag.shade;
+    shade.goal = clamp((SHADE_EXT - 0.012 - ey) / (2 * SHADE_EXT - 0.012));
+    wake();
+    return;
+  }
   if (drag.draw) {
     // The finger wipes a line in steps of 3 mm.
     const pp = panePoint(x, y), [ax, ay] = drag.draw, n = Math.max(1, Math.ceil(Math.hypot(pp[0] - ax, pp[1] - ay) / 0.003));
@@ -1754,6 +1773,7 @@ function release(e) {
   touches.delete(e.pointerId);
   if (touches.size) return;
   if (drag && !drag.moved) tapAt(drag.x0, drag.y0);
+  if (drag && drag.shade !== undefined) save('shade', shade.goal.toFixed(3));
   drag = null;
   stage.classList.remove('dragging');
 }

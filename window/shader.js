@@ -1897,6 +1897,8 @@ uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 uniform vec4 uBeamL, uBeamA;
 // Breath on the scratch pane: R fog, G the finger's trace; uBreathOn is 0 when clear.
 uniform sampler2D uBreath; uniform float uBreathOn;
+// The shade: 0 open, 1 shut.
+uniform float uShade;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
@@ -2182,6 +2184,39 @@ vec3 glass(vec3 da, vec2 px) {
   return view;
 }
 
+// The cabin behind the eye, as the panes mirror it: a soft map, no texture.
+// r points back into the cabin: -z across the aisle, x to the nose, y up.
+// rgb is in units of cabin light; a is the far windows' share of outside light.
+vec4 cabinEnv(vec3 r) {
+  float az = atan(r.x, -r.z), el = asin(clamp(r.y, -1.0, 1.0));
+  vec3 c = vec3(0.3);
+  // A cove light runs fore and aft along the ceiling, above the bins.
+  c += 3.0 * exp(-pow((el - 0.62) / 0.05, 2.0));
+  // The bins: a darker band with a bright lower lip.
+  c *= 1.0 - 0.4 * smoothstep(0.28, 0.32, el) * smoothstep(0.56, 0.5, el);
+  c += 0.8 * exp(-pow((el - 0.29) / 0.012, 2.0));
+  // Seat backs: dark rows below the window line; their tops catch the light.
+  c *= 1.0 - 0.6 * smoothstep(-0.02, -0.07, el);
+  c += 0.35 * exp(-pow((el + 0.06) / 0.015, 2.0)) * (0.6 + 0.4 * sin(az * 38.0));
+  // The far side's windows: a row of soft ovals, bright by day.
+  float wx = fract(az / 0.16 + 0.5) - 0.5;
+  float win = smoothstep(0.3, 0.18, abs(wx)) * smoothstep(0.11, 0.06, abs(el - 0.09));
+  return vec4(c, win);
+}
+// The seat in front: its back faces us, a little reclined, by the wall.
+// Window metres; it returns the hit point and, in w, coverage from 0 to 1.
+const float SEAT_X = 0.2;
+vec4 seatBack(vec3 da) {
+  // The back leans aft toward its top: x falls as y rises.
+  float den = da.x + 0.12 * da.y;
+  if (den <= 1e-4) return vec4(0.0);
+  float t = (SEAT_X - 0.12 * uEye.y - uEye.x) / den;
+  vec3 P = uEye + da * t;
+  if (t <= 0.0 || P.z > -0.03) return vec4(0.0);
+  float sd = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
+  float aa = fwidth(sd) * 1.2;
+  return vec4(P, smoothstep(aa, -aa, sd));
+}
 // Fine scratches on the scratch pane, pG in metres.
 // A scratch glints when it runs across the line to a bright source.
 // So the glints ring each source in arcs.
@@ -2310,6 +2345,9 @@ void main() {
   float sOut = sdBox(p0, OUTB, ROUT);
   // Outside light, through the dimmable glass, for the bezel, gasket and wall.
   vec3 Tdim = dimT(), Ls = sunCabin(), V = -da;
+  // A lowered shade cuts the light the window sends into the cabin.
+  vec3 outGlow0 = outGlow;
+  Tdim *= 1.0 - 0.9 * uShade; outGlow *= 1.0 - 0.8 * uShade;
   vec3 sunE = uSunC * 0.3 * sunOpen() * Tdim;
   float slope = (OUTB.x - INB.x) / DEPTH;
   // Fake GI: the lit reveal sends light back to its other faces and the wall.
@@ -2479,6 +2517,9 @@ void main() {
       // The shift follows the head's move from its rest pose at (-0.04, 0.06).
       vec2 rq = pG + (uEye.xy - vec2(-0.04, 0.06)) * 0.4;
       view += cabin * 0.12 * smoothstep(0.25, -0.2, rq.x + rq.y * 0.5);
+      // A very faint mirror of the cabin: cove lights, bins, the far windows.
+      vec4 ce = cabinEnv(vec3(da.xy, -da.z));
+      view += (cabin * ce.rgb + outGlow0 * 2.0 * ce.a) * 0.05;
       // A reading light further up the cabin, as a soft warm smear.
       vec2 lq = (rq - vec2(-0.1, 0.19)) * vec2(1.0, 1.8);
       view += vec3(1.0, 0.8, 0.55) * 0.004 * exp(-dot(lq, lq) / 0.0016);
@@ -2486,10 +2527,54 @@ void main() {
       view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
       inner = view;
     }
+    // The shade slides down its slot behind the bezel lip.
+    // Its lip always shows at the head of the opening, ready to pull.
+    {
+      vec2 ps = at(da, SLOT);
+      float ext = mix(OUTB.y, INB.y, SLOT / DEPTH);
+      float edge = ext - 0.012 - uShade * (2.0 * ext - 0.012);
+      float sR = sdRecess(ps, SLOT), ly = ps.y - edge;
+      float aaS = fwidth(ly) * 1.2;
+      if ((hit < 0.0 || hit > SLOT) && sR < 0.0 && ly > -aaS) {
+        // Matte plastic with a fine grain, lit by the cabin.
+        float fpS = length(vec3(ps, SLOT) - uEye) / uFocal / max(da.z, 0.15) * 1400.0;
+        vec3 nS = grainN(vec3(0.0, 0.0, -1.0), ps, vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), fpS, 0.8);
+        float dS = clamp(dot(nS, Lc) / max(-Lc.z, 0.05), 0.6, 1.4);
+        // Off-white plastic; daylight glows warmly through it.
+        vec3 sh = alb * 1.6 * (cabin * 1.4 * mix(1.0, dS, 0.5) + outGlow0 * vec3(0.55, 0.5, 0.42));
+        // The lip: a rounded bar along the lower edge, lit on top, shadowed under.
+        sh *= 1.0 + 0.35 * smoothstep(0.004, 0.011, ly) * smoothstep(0.014, 0.011, ly) - 0.3 * smoothstep(0.004, 0.0, ly);
+        // A finger notch in the middle of the lip.
+        sh *= 1.0 - 0.45 * smoothstep(0.03, 0.022, abs(ps.x)) * smoothstep(0.011, 0.005, ly);
+        // A thin line of daylight leaks round the edges in the slot.
+        sh += outGlow0 * 0.5 * smoothstep(-0.003, 0.0, sR) * step(0.014, ly);
+        inner = mix(inner, sh, smoothstep(-aaS, aaS, ly));
+        glassK *= 1.0 - smoothstep(-aaS, aaS, ly);
+      }
+    }
     // Soften the step from wall to rim over about a pixel.
     float aa = fwidth(sOut) * 1.2;
     c = mix(wall, inner, smoothstep(aa, -aa, sOut));
     glassK *= smoothstep(aa, -aa, sOut);
+  }
+  // The seat in front stands between the eye and the wall's nose side.
+  vec4 sb = seatBack(da);
+  if (sb.w > 0.0) {
+    vec3 P = sb.xyz;
+    // Fabric: dark blue-grey with a fine weave; the headrest wears a cream cover.
+    float cover = smoothstep(-0.155, -0.15, P.y);
+    vec3 alS = mix(vec3(0.16, 0.17, 0.21), vec3(0.72, 0.69, 0.63), cover);
+    alS *= 0.9 + 0.2 * hash12(floor(P.zy * 900.0));
+    // A stitched seam rings the cover.
+    alS *= 1.0 - 0.3 * smoothstep(0.003, 0.0, abs(P.y + 0.15));
+    // Cabin light from above; the side by the window takes its light too.
+    vec3 Ls2 = cabin * (0.7 + 0.5 * smoothstep(-0.5, 0.05, P.y)) + outGlow * 2.5 * exp((P.z + 0.03) / 0.22);
+    vec3 seat = alS * Ls2;
+    // The rounded edge by the wall catches a rim of window light.
+    float sdS = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
+    seat += outGlow * 1.5 * smoothstep(-0.02, 0.0, sdS) * smoothstep(-0.3, -0.03, P.z);
+    c = mix(c, seat, sb.w);
+    glassK *= 1.0 - sb.w;
   }
   // Each hour carries a small colour grade.
   c *= uTint;
