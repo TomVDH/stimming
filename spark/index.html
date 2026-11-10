@@ -580,7 +580,8 @@ function emit(dt) {
   toothAcc += teethRate * dt;
   const m = METALS[metal], rim = wheel.omega * R;
   let n = 0;
-  const lite = reduced() ? 0.5 : 1;
+  // Reduced motion and the ladder's last rung each halve the count; so does a tall stage.
+  const lite = (reduced() ? 0.5 : 1) * (rung >= 3 ? 0.5 : 1) * (narrow ? 0.6 : 1);
   while (toothAcc >= 1) {
     toothAcc -= 1;
     // Teeth spread over the frame, so sparks leave in a stream.
@@ -821,12 +822,12 @@ function frame(now) {
 
 /* ---------- performance ladder ---------- */
 // After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
-// Rungs: pixel ratio down, then a half-size bloom.
+// Rungs: pixel ratio down, then a half-size bloom, then half the sparks.
 let runFor = 0, slowFor = 0, avgDt = 1 / 60;
 function watchdog(raw) {
   runFor += raw;
   avgDt += (raw - avgDt) * 0.1;
-  if (runFor < 4 || rung >= 2) return;
+  if (runFor < 4 || rung >= 3) return;
   slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
   if (slowFor < 2) return;
   rung++;
