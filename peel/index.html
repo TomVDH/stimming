@@ -121,7 +121,7 @@ const col = (L, C, h) => linFit(L, C, h);
 // Plane units: the stage is 2 tall at the surface. The camera looks straight down.
 // u runs along the peel direction d from the sheet's first corner, u0 in plane terms.
 // Film with u < s is peeled: it wraps a curl of radius R, then runs back at angle beta.
-const sheet = { half: [1, 1], d: [-Math.SQRT1_2, Math.SQRT1_2], u0: 0, umax: 1, s: 0, beta: 0.6, R: 0.03, tip: [0, 0] };
+const sheet = { half: [1, 1], d: [-Math.SQRT1_2, Math.SQRT1_2], u0: 0, umax: 1, s: 0, beta: 0.6, R: 0.03, tip: [0, 0], gone: false };
 // The flap's free end in plane terms: where the film at u = 0 has gone.
 function flapEnd() {
   const { s, R, beta } = sheet, arc = PI * R;
@@ -162,7 +162,8 @@ float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a
 const BASE_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes, uHalf, uD;
-uniform float uAspect, uU0, uS, uR, uLift, uHas;
+uniform float uAspect, uU0, uS, uR, uLift, uHas, uLay;
+uniform vec4 uRing;
 uniform int uUnder;
 uniform vec3 uA, uB, uC;
 out vec4 o;
@@ -196,13 +197,21 @@ void main() {
     vec2 bq = p * 3.3 + 0.5;
     vec2 bc = floor(bq) + vec2(hash(floor(bq)), hash(floor(bq) + 9.0));
     float br = hash(floor(bq) + 4.0) < 0.12 ? length(bq - bc) : 9.0;
-    hz += 0.07 * smoothstep(0.09, 0.07, br) * smoothstep(0.03, 0.08, br);
+    // A fresh sheet holds more air; it squeezes out as the sheet settles.
+    hz += (0.07 + 0.25 * (1.0 - uLay)) * smoothstep(0.09, 0.07, br) * smoothstep(0.03, 0.08, br);
+    // Pressing the film thins the air gap: coloured rings, as in Newton's rings.
+    if (uRing.w > 0.0) {
+      float r = length(p - uRing.xy);
+      vec3 rb = 0.5 + 0.5 * cos(6.2832 * (r * 38.0 + vec3(0.0, 0.33, 0.67)));
+      hz += (rb - 0.35) * 0.35 * exp(-r / 0.09) * uRing.w;
+    }
     // The film's outer edge catches a hairline of light.
     vec2 ed = uHalf - abs(p);
     hz += 0.05 * exp(-min(ed.x, ed.y) * 400.0);
     // The lifted flap shades the film just past the peel front.
     float sh = exp(-(u - uS) / (0.05 + 0.25 * uLift));
-    c = hz * (1.0 - 0.45 * sh * smoothstep(0.0, 0.02, uLift + 0.02));
+    // A fresh sheet fades in over the glow.
+    c = mix(c, hz * (1.0 - 0.45 * sh * smoothstep(0.0, 0.02, uLift + 0.02)), uLay);
   }
   o = vec4(c, 1.0);
 }`;
@@ -210,7 +219,8 @@ void main() {
 const FLAP_VS = `#version 300 es
 in vec2 aP;
 uniform vec2 uD;
-uniform float uU0, uS, uR, uBeta, uAspect, uCam;
+uniform float uU0, uS, uR, uBeta, uAspect, uCam, uAll, uWave;
+uniform vec4 uFly;
 out vec3 vN, vW;
 out float vPeeled;
 void main() {
@@ -218,7 +228,12 @@ void main() {
   vec2 lat = aP - uD * dot(aP, uD);
   vec3 pos = vec3(aP, 0.0), n = vec3(0.0, 0.0, 1.0);
   vPeeled = 0.0;
-  if (u < uS) {
+  if (uAll > 0.5) {
+    // A torn sheet flies flat, rippling as it goes.
+    pos.z = 0.06 * sin(dot(aP, uD) * 4.0 + uWave) + 0.03 * sin(aP.x * 7.0 - uWave * 1.3);
+    n = normalize(vec3(-0.24 * cos(dot(aP, uD) * 4.0 + uWave) * uD, 1.0));
+    vPeeled = 1.0;
+  } else if (u < uS) {
     float w = uS - u, arc = 3.14159265 * uR, U, Z;
     vec2 nd;
     // n is the top face's normal; it points into the curl.
@@ -228,6 +243,11 @@ void main() {
     n = vec3(uD * nd.x, nd.y);
     vPeeled = 1.0;
   }
+  // A torn sheet turns and drifts off: x, y offset, z turn, w lift.
+  float ca = cos(uFly.z), sa = sin(uFly.z);
+  pos.xy = mat2(ca, sa, -sa, ca) * pos.xy + uFly.xy;
+  n.xy = mat2(ca, sa, -sa, ca) * n.xy;
+  pos.z += uFly.w;
   vN = n;
   vW = pos;
   // Straight down from uCam: nearer film looks a little larger.
@@ -240,6 +260,7 @@ in vec3 vN, vW;
 in float vPeeled;
 uniform int uFilm;
 uniform vec3 uKey;
+uniform float uAlpha;
 out vec4 o;
 ${COMMON}
 vec3 rainbow(float t) { return 0.5 + 0.5 * cos(6.2832 * (t + vec3(0.0, 0.33, 0.67))); }
@@ -269,7 +290,7 @@ void main() {
     a = top ? 0.9 : 1.0;
   }
   c += vec3(1.0) * (spec * 0.9 + rim * 0.25);
-  o = vec4(c * a + vec3(spec * 0.3), a);
+  o = vec4(c * a + vec3(spec * 0.3), a) * uAlpha;
 }`;
 let baseP, flapP, vao, grid, gridN = 0;
 function buildGrid(n = 96) {
@@ -337,7 +358,10 @@ function draw() {
   gl.uniform1f(U.uS, sheet.s);
   gl.uniform1f(U.uR, sheet.R);
   gl.uniform1f(U.uLift, sheet.beta);
-  gl.uniform1f(U.uHas, 1);
+  // While a torn sheet flies, no film lies on the panel.
+  gl.uniform1f(U.uHas, sheet.gone || fly.on ? 0 : 1);
+  gl.uniform1f(U.uLay, lay.t);
+  gl.uniform4f(U.uRing, ring.x, ring.y, 0, reduced() ? (ring.held ? 1 : 0) : Math.max(0, 1 - ring.t / 0.6) * (ring.held ? 1 : 1));
   gl.uniform1i(U.uUnder, UNDERS[under]);
   gl.uniform3f(U.uA, ...col(0.66, 0.14, 195));
   gl.uniform3f(U.uB, ...col(0.5, 0.18, 288));
@@ -355,86 +379,165 @@ function draw() {
   gl.uniform1f(F.uBeta, sheet.beta);
   gl.uniform1f(F.uAspect, aspect);
   gl.uniform1f(F.uCam, 4);
+  gl.uniform4f(F.uFly, fly.x, fly.y, fly.a, fly.z);
+  gl.uniform1f(F.uAll, fly.on ? 1 : 0);
+  gl.uniform1f(F.uWave, fly.t * 9);
+  gl.uniform1f(F.uAlpha, fly.on ? clamp(1.4 - fly.t * 1.3) : 1);
   gl.uniform1i(F.uFilm, FILMS[film]);
   gl.uniform3f(F.uKey, ...KEY);
   gl.bindVertexArray(vao);
-  gl.drawElements(gl.TRIANGLES, gridN, gl.UNSIGNED_INT, 0);
+  if (!sheet.gone) gl.drawElements(gl.TRIANGLES, gridN, gl.UNSIGNED_INT, 0);
   gl.bindVertexArray(null);
 }
 
 /* ---------- frame loop ---------- */
-// The flap eases its lift; the loop sleeps when it rests.
-let raf = 0, last = 0, visible = !document.hidden, dragging = false, betaTarget = 0.6, ready = false;
+// The flap eases its lift, flutters off or settles; the loop sleeps when all rest.
+let raf = 0, last = 0, visible = !document.hidden, dragging = false, betaTarget = 0.6, ready = false, time = 0;
+// fly: a torn sheet leaving. lay: a fresh sheet settling. ring: a press on the film.
+const fly = { on: false, t: 0, x: 0, y: 0, vx: 0, vy: 0, spin: 0, a: 0, z: 0 };
+const lay = { t: 1 };
+const ring = { x: 0, y: 0, t: 9, held: false };
 function wake() {
   if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
+const busy = () => dragging || fly.on || lay.t < 1 || ring.held || ring.t < 0.7 || Math.abs(betaTarget - sheet.beta) > 1e-3;
 function frame(now) {
   raf = 0;
   let again = false;
   try {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const k = reduced() ? 1 : 1 - Math.exp(-dt / 0.12);
-    sheet.beta += (betaTarget - sheet.beta) * k;
-    again = dragging || Math.abs(betaTarget - sheet.beta) > 1e-3;
+    time += dt;
+    const rm = reduced();
+    if (!dragging && !fly.on) sheet.beta += (betaTarget - sheet.beta) * (rm ? 1 : 1 - Math.exp(-dt / 0.12));
+    if (fly.on) flyStep(dt, rm);
+    if (lay.t < 1) lay.t = Math.min(1, lay.t + dt / (rm ? 0.01 : 0.35));
+    if (!ring.held) ring.t += dt;
+    again = busy();
     draw();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
   }
 }
+// A torn sheet leaves flat: it lifts, turns and flutters off along the throw, fading.
+// Reduced motion: it fades where it lies.
+function flyStep(dt, rm) {
+  fly.t += dt;
+  if (!rm) {
+    fly.vy -= 1.2 * dt;
+    fly.x += fly.vx * dt;
+    fly.y += fly.vy * dt;
+    fly.z += 1.0 * dt;
+    fly.a += fly.spin * dt;
+  }
+  if (fly.t > (rm ? 0.4 : 1.1)) { fly.on = false; sheet.gone = true; }
+}
 
 /* ---------- pointer ---------- */
-// Only the flap can be grabbed: a press within 40 px of its free end.
-// The front advances to keep the free end under the pointer; the film never re-sticks.
+// A press on the flap grabs it; a press on the film presses it (Newton's rings).
+// A tap on an empty panel lays a fresh sheet.
+// Pulled taut, the front holds until the pull passes the tack, then slips: stick-slip.
+// Pulled back, the film goes slack and the flap lifts toward the pointer.
 let ptr = null, cornerNow = 3;
+const BETA_MIN = 0.15;
 function planeAt(e) {
   const r = stage.getBoundingClientRect();
   return [((e.clientX - r.left) / r.width * 2 - 1) * aspect, -((e.clientY - r.top) / r.height * 2 - 1)];
 }
 function nearFlap(q) {
+  if (sheet.gone || fly.on) return false;
   const ue = flapEnd(), d = sheet.d;
   const lat = [sheet.tip[0] - d[0] * (sheet.tip[0] * d[0] + sheet.tip[1] * d[1]), sheet.tip[1] - d[1] * (sheet.tip[0] * d[0] + sheet.tip[1] * d[1])];
   const tx = lat[0] + d[0] * (ue + sheet.u0), ty = lat[1] + d[1] * (ue + sheet.u0);
   return Math.hypot(q[0] - tx, q[1] - ty) * pxPerUnit < 40 + sheet.s * pxPerUnit * 0.5;
 }
+const onFilm = q => !sheet.gone && Math.abs(q[0]) < sheet.half[0] && Math.abs(q[1]) < sheet.half[1] && q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0 >= sheet.s;
 function down(e) {
-  if (ptr || e.button > 0) return;
+  if (ptr || e.button > 0 || fly.on) return;
   const q = planeAt(e);
-  if (!nearFlap(q)) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
-  const uq = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0;
-  ptr = { id: e.pointerId, off: flapEnd() - uq };
-  dragging = true;
-  betaTarget = 0.45;
-  stage.classList.add('drag');
+  if (nearFlap(q)) {
+    const uq = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0;
+    ptr = { id: e.pointerId, mode: 'flap', off: flapEnd() - uq, hist: [[e.timeStamp, uq]] };
+    dragging = true;
+    stage.classList.add('drag');
+  } else if (onFilm(q)) {
+    ptr = { id: e.pointerId, mode: 'press' };
+    Object.assign(ring, { x: q[0], y: q[1], t: 0, held: true });
+  } else {
+    ptr = { id: e.pointerId, mode: 'tap' };
+  }
   wake();
 }
 function move(e) {
   const q = planeAt(e);
   if (!ptr) { stage.classList.toggle('over', nearFlap(q)); return; }
   if (e.pointerId !== ptr.id) return;
-  const ue = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0 + ptr.off;
-  const cb = Math.cos(sheet.beta), arc = PI * sheet.R;
-  const target = (ue + arc * cb) / (1 + cb);
-  sheet.s = clamp(Math.max(sheet.s, target), 0, sheet.umax - 0.002);
+  if (ptr.mode === 'press') { Object.assign(ring, { x: q[0], y: q[1] }); wake(); return; }
+  if (ptr.mode !== 'flap') return;
+  const uq = q[0] * sheet.d[0] + q[1] * sheet.d[1] - sheet.u0;
+  ptr.hist.push([e.timeStamp, uq]);
+  if (ptr.hist.length > 6) ptr.hist.shift();
+  const ue = uq + ptr.off, arc = PI * sheet.R;
+  const cb = Math.cos(BETA_MIN), reach = sheet.s + Math.max(0, sheet.s - arc) * cb;
+  if (ue > reach) {
+    // Taut: the front wants to move to keep the end under the pointer.
+    const target = Math.min(sheet.umax - 0.002, (ue + arc * cb) / (1 + cb));
+    const speed = Math.abs(speedOf(ptr.hist));
+    // Tack sets the hold; a fast pull slips in smaller, quicker steps.
+    const gap = (0.002 + 0.035 * tack) / (1 + speed * 1.5);
+    if (target - sheet.s > gap) { sheet.s = target; slip(); }
+    sheet.beta = BETA_MIN;
+  } else {
+    // Slack: the flap tilts up so its end stays under the pointer.
+    const len = Math.max(1e-3, sheet.s - arc);
+    sheet.beta = clamp(Math.acos(clamp((ue - sheet.s) / len, -1, 1)), BETA_MIN, 2.6);
+  }
   wake();
+}
+// Pointer speed along the peel, in plane units per second, over the last moves.
+function speedOf(h) {
+  if (h.length < 2) return 0;
+  const [t0, u0] = h[0], [t1, u1] = h[h.length - 1];
+  return (u1 - u0) / Math.max(1e-3, (t1 - t0) / 1000);
+}
+// Each slip is one event: Task 3 flickers the blue line, Task 4 crackles.
+const slips = [];
+function slip() {
+  slips.push(time);
+  while (slips.length && slips[0] < time - 0.5) slips.shift();
 }
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const p = ptr;
   ptr = null;
   dragging = false;
-  // Let go, the flap settles lower over the film.
-  betaTarget = 0.22;
   stage.classList.remove('drag');
+  if (p.mode === 'flap') {
+    // A fast throw once a third is off tears the sheet away.
+    const v = speedOf(p.hist);
+    if (sheet.s > sheet.umax * 0.3 && v > 2.2) tearOff(v);
+    else betaTarget = 0.22;
+  } else if (p.mode === 'press') ring.held = false;
+  else if (p.mode === 'tap' && sheet.gone && e?.type === 'pointerup') act.sheet();
   wake();
 }
+function tearOff(v) {
+  Object.assign(fly, { on: true, t: 0, x: 0, y: 0, z: 0, a: 0,
+    vx: sheet.d[0] * Math.min(4, v) * 0.6, vy: sheet.d[1] * Math.min(4, v) * 0.6 + 0.6, spin: (Math.random() - 0.5) * 3 });
+}
 act.sheet = () => {
+  if (fly.on) return;
   cornerNow = (cornerNow + 1 + Math.floor(Math.random() * 3)) % 4;
   layTab(cornerNow);
+  sheet.gone = false;
+  Object.assign(fly, { x: 0, y: 0, z: 0, a: 0 });
   betaTarget = sheet.beta;
+  lay.t = 0;
+  wake();
   draw();
 };
-act.reset = () => { cornerNow = 3; layTab(3); betaTarget = sheet.beta; draw(); };
+act.reset = () => { fly.on = false; Object.assign(fly, { x: 0, y: 0, z: 0, a: 0 }); sheet.gone = false; cornerNow = 3; layTab(3); betaTarget = sheet.beta; lay.t = 1; draw(); };
 
 /* ---------- boot ---------- */
 try {
