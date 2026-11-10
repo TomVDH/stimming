@@ -2728,7 +2728,7 @@ function stepCharge(dt) {
     // Full power locks with one hard shudder.
     if (!charge.locked && held >= HOLD.full) { charge.locked = true; cam.shake += 0.7; }
     // The gun arms: a clunk and a spark down the rails.
-    if (!charge.armed && c >= ARM) { charge.armed = true; cam.shake += 0.25; if (!reduced()) { spawnArc(0.5); spawnArc(0.8); } armSound(); }
+    if (!charge.armed && c >= ARM) { charge.armed = true; cam.shake += 0.25; if (!reduced()) { spawnArc(0.5); spawnArc(0.8); } dustPulse(0.9); armSound(); }
     // Sparks spit from the brake through the over-hold.
     if (over > 0 && !reduced()) {
       for (let n = Math.floor(dt * 60 * over + rnd()); n > 0; n--) {
@@ -3287,25 +3287,57 @@ const shellMesh = makeShell();
 const muzzleSkirt = makeShell(7.0, -0.1, 0.45);
 // Air distortion: world place and radius of each shock, and the strength.
 const warpM = new THREE.Vector4(), warpH = new THREE.Vector4();
-// Charge dust: a ground-hugging ring of raymarched dust round the plinth.
+// Charge dust: one raymarched volume round the plinth.
+// The gun draws dust in, beats throw rings out, devils climb at rage.
 // uDu: strength, spread in metres, height in metres, time.
+// uDf: inflow in metres, devil strength, blow-out age (-1 off), blow-out power.
+// uPu: each pulse's front radius, strength and height.
 const chargeDust = makeVol(/* glsl */`
-uniform vec4 uDu;
+uniform vec4 uDu, uDf;
+uniform vec4 uPu[4];
+uniform vec2 uFw;
 uniform vec3 uDustC;
 float dens(vec3 p, out vec3 em) {
   em = vec3(0.0);
   if (p.y < 0.0) return 0.0;
-  // The ring centres on the plinth.
-  float r = length(p.xz);
-  // A ring that starts at the parapet and spreads with the charge.
+  float r0 = length(p.xz);
+  vec2 dir = p.xz / max(r0, 1.0);
+  // The shot throws the ring outward, hardest ahead of the bore.
+  float bo = uDf.z >= 0.0 ? uDf.w * (1.0 - exp(-uDf.z / 0.7)) * (0.45 + 0.55 * smoothstep(-0.3, 0.8, dot(dir, uFw))) : 0.0;
+  float r = r0 - 420.0 * bo;
+  // The pattern slides toward the mount: the gun pulls the dust in.
+  float rs = r + uDf.x;
+  float ang = atan(p.z, p.x);
+  vec3 w = vec3(dir.x * rs, p.y * 1.8, dir.y * rs) * 0.004 - vec3(0.0, uDu.w * 0.04, 0.0);
+  // A slow noise lifts some stretches higher, so the top is not a dome.
+  float hn = texture(uVol, vec3(ang * 1.2732, 0.37, rs * 0.0015 + uDu.w * 0.01)).r;
+  float hf = exp(-p.y / (uDu.z * (0.3 + 1.0 * hn)));
   float band = smoothstep(420.0, 520.0, r) * (1.0 - smoothstep(470.0 + 0.6 * uDu.y, 470.0 + uDu.y, r));
-  float hf = exp(-p.y / uDu.z);
-  // The dust rolls outward and swirls round the mount.
-  float ang = atan(p.z, p.x) + uDu.w * 0.02;
-  vec3 w = vec3(cos(ang) * r, p.y * 1.8, sin(ang) * r) * 0.004 - vec3(0.0, uDu.w * 0.04, uDu.w * 0.03);
+  float cov = band * hf * uDu.x;
+  // A low sheet streams in across the plain in radial streaks.
+  float sheet = smoothstep(480.0, 600.0, r) * (1.0 - smoothstep(470.0 + 1.1 * uDu.y, 470.0 + 1.6 * uDu.y, r)) * exp(-p.y / 12.0);
+  float streak = texture(uVol, vec3(ang * 3.1831, p.y * 0.01, rs * 0.0012)).r;
+  cov = max(cov, sheet * uDu.x * smoothstep(0.45, 0.8, streak) * 0.8);
+  // Each beat throws a low ring of dust outward.
+  for (int i = 0; i < 4; i++) {
+    vec4 q = uPu[i];
+    if (q.y < 0.01) continue;
+    float x = (r0 - q.x) / (35.0 + 0.2 * (q.x - 420.0));
+    cov += q.y * exp(-x * x) * exp(-p.y / q.z);
+  }
+  // At rage, dust devils climb off the ring and lean downwind.
+  if (uDf.y > 0.01) {
+    for (int i = 0; i < 4; i++) {
+      float a = float(i) * 1.5708 + 0.6 + uDu.w * (mod(float(i), 2.0) < 0.5 ? 0.05 : -0.04);
+      vec2 o = p.xz - vec2(cos(a), sin(a)) * (540.0 + 60.0 * float(i)) - vec2(0.18, 0.06) * p.y;
+      float cr = 16.0 + 0.1 * p.y;
+      cov = max(cov, smoothstep(cr, 0.25 * cr, length(o)) * (1.0 - smoothstep(0.0, 480.0 * uDf.y, p.y)) * 0.85 * uDf.y);
+    }
+  }
+  if (cov < 0.004) return 0.0;
+  cov = min(cov, 1.0);
   float n = dustN(w);
   // Billows ride on a thin floor, so the ring never breaks.
-  float cov = band * hf * uDu.x;
   float d = clamp((n - (1.0 - cov)) * 2.2, 0.0, 1.0) * 0.8 + 0.3 * cov;
   // Fine cells carve wisps into it.
   d *= 0.55 + 0.45 * texture(uVol, w * 3.1).g;
@@ -3316,19 +3348,52 @@ vec3 alb(vec3 p) { return uDustC; }
 vec3 vlight(vec3 p) {
   vec3 a = uArcL.xyz - p, m = uMuzL.xyz - p;
   return vec3(0.7, 0.8, 1.0) * uArcL.w * 4.0e4 / (dot(a, a) + 4.0e4) + vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e5 / (dot(m, m) + 6.0e5) + blastLight(p);
-}`, { uDu: { value: new THREE.Vector4() }, uDustC: { value: new THREE.Vector3(...linFit(0.66, 0.045, 65)) } });
+}`, {
+  uDu: { value: new THREE.Vector4() }, uDf: { value: new THREE.Vector4(0, 0, -1, 0) }, uFw: { value: new THREE.Vector2(0, -1) },
+  uPu: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+  uDustC: { value: new THREE.Vector3(...linFit(0.66, 0.045, 65)) },
+});
 let cdust = 0, dustShot = null;
+// dIn: inflow so far. devil: devil strength. blow: the shot's blow-out.
+let dIn = 0, devil = 0, beatT = 0, dustT = 0, blow = null, pulseI = 0;
+const pulses = Array.from({ length: 4 }, () => ({ t0: -1e9, k: 0 }));
+// A beat throws one ring of dust out from the mount.
+function dustPulse(k) {
+  if (reduced()) return;
+  const q = pulses[pulseI++ % 4];
+  q.t0 = simT; q.k = k;
+}
 function updateChargeDust(dt) {
   // It builds with the chaos and settles over a few seconds.
   const want = charge ? chaos : 0;
   cdust += (want - cdust) * (1 - Math.exp(-dt / (want > cdust ? 1.0 : 3.0)));
+  const st = clamp(simT - dustT, 0, 0.1);
+  dustT = simT;
+  // The draw speeds up with the charge.
+  dIn += st * (20 + 110 * cdust + 140 * rage);
+  const dw = charge ? rage : 0;
+  devil += (dw - devil) * (1 - Math.exp(-st / (dw > devil ? 1.2 : 2.5)));
+  // Beats come faster as the chaos grows.
+  if (charge && chaos > 0.12) {
+    beatT -= st;
+    if (beatT <= 0) { dustPulse(0.3 + 0.6 * chaos); beatT = THREE.MathUtils.lerp(1.8, 0.4, chaos) * (0.7 + 0.6 * rnd()); }
+  }
   const u = chargeDust.material.uniforms;
-  u.uDu.value.set(cdust, 150 + 650 * cdust, 25 + 120 * cdust + 160 * rage, simT);
-  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 150 + 650 * cdust + 50;
+  let ph = 0;
+  pulses.forEach((q, i) => {
+    const a = simT - q.t0, k = a < 6 ? q.k * Math.exp(-a / 1.1) : 0;
+    u.uPu.value[i].set(420 + 260 * a, k, 30 + 60 * a, 0);
+    if (k > 0.01) ph = Math.max(ph, 30 + 60 * a);
+  });
+  if (blow && simT - blow.t0 > 10) blow = null;
+  u.uDf.value.set(dIn, devil, blow ? simT - blow.t0 : -1, blow ? 0.8 * blow.k : 0);
+  u.uDu.value.set(cdust, 150 + 650 * cdust, 25 + 100 * cdust + 90 * rage, simT);
+  const sp = u.uDu.value.y;
+  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 1.6 * sp + (blow ? 420 : 0) + 80;
   u.uVSteps.value = dustSteps(); u.uLSteps.value = volLSteps();
-  // The ring hugs the ground: the slab holds the march near it.
-  u.uLs.value = 10 + 0.12 * u.uDu.value.z; u.uSlab.value = 4 * u.uDu.value.z;
-  chargeDust.visible = !reduced() && cdust > 0.02;
+  // The slab holds the march near the ground; devils and beats raise it.
+  u.uLs.value = 10 + 0.12 * u.uDu.value.z; u.uSlab.value = Math.max(6 * u.uDu.value.z, 500 * devil + 40, 3 * ph);
+  chargeDust.visible = !reduced() && (cdust > 0.02 || ph > 0 || devil > 0.02);
 }
 // Shot dust: the blast's skirt and the Mach wall, one raymarched volume.
 // uBd: the muzzle foot (x, z), the age, the power.
@@ -3712,6 +3777,9 @@ fire = c => {
   U.uShock.value.set(MUZZLE.x, MUZZLE.z, 0, 0);
   // The kick lifts the ring of dust round the mount.
   cdust = Math.max(cdust, 0.9);
+  // The muzzle shock throws the ring outward.
+  blow = { t0: simT, k: Math.min(c, 1.25) };
+  chargeDust.material.uniforms.uFw.value.set(AX.x, AX.z).normalize();
   // The blast and the Mach wall raise one dust volume.
   dustShot = { t0: simT, c, foot: new THREE.Vector3(MUZZLE.x, 0, MUZZLE.z) };
   shotDust.material.uniforms.uFwd.value.set(AX.x, AX.z).normalize();
@@ -4049,7 +4117,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; ion = null; dustShot = null; caseDust = null; spent = null; caseMesh.visible = false; wispPts.length = 0; stepWisp(); shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; wispPts.length = 0; stepWisp(); shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // The first rock's own track.
   ast.next = 0;
