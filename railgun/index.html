@@ -64,6 +64,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, later } from '../shared/stim.js';
@@ -153,6 +154,8 @@ const camera = new THREE.PerspectiveCamera(44, 1, 20, 300000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
+// The share of the quality's resolution per rung.
+const RES_STEP = [1, 0.82, 0.68, 0.55];
 
 /* ---------- the gun's axis ---------- */
 // One unit is one metre. The trunnion sits 215 m over the origin.
@@ -2493,6 +2496,9 @@ composer.addPass(bloomPass);
 const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
+// FXAA smooths edges once multisampling is off (rung 2 and up).
+const fxaa = new ShaderPass(FXAAShader);
+composer.addPass(fxaa);
 function setSamples(n) {
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { if (rt.samples !== n) { rt.samples = n; rt.dispose(); } }
 }
@@ -2610,12 +2616,16 @@ function aimAst() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  // Rung 1 drops the pixel ratio.
-  // Rung 2 drops multisampling and shrinks the bloom.
-  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6, low: rung >= 1 }) };
+  // Each rung renders at a smaller share of the quality's resolution.
+  // High caps at 2x: the volumes march every pixel.
+  // Rung 2 also drops multisampling for FXAA and shrinks the bloom.
+  const base = Math.min(2, pixelRatio(w, h, { maxDpr: 1.5, budget: 1.6e6 }));
+  size = { w, h, dpr: Math.max(0.5, base * RES_STEP[Math.min(rung, 3)]) };
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   setSamples(rung >= 2 ? 0 : 4);
+  fxaa.enabled = rung >= 2;
+  fxaa.material.uniforms.resolution.value.set(1 / (w * size.dpr), 1 / (h * size.dpr));
   composer.setPixelRatio(size.dpr);
   composer.setSize(w, h);
   grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
