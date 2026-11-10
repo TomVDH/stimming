@@ -17,6 +17,26 @@
 :root { --stage: oklch(0.1 0.01 260); }
 .stage--trainride { cursor: grab; touch-action: none; }
 .stage--trainride.dragging { cursor: grabbing; }
+/* The line: a slim strip that shows the route and scrubs along it. */
+.tr-line {
+  position: absolute; left: 50%; bottom: 58px; z-index: 6; transform: translateX(-50%);
+  width: min(620px, calc(100% - 32px)); padding: 8px 14px 10px; border-radius: 12px;
+  background: oklch(0.16 0.01 260 / 0.82); backdrop-filter: blur(10px);
+  color: oklch(0.92 0.01 260); font: 500 12px/1.3 Gabarito, system-ui, sans-serif;
+  cursor: default; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.tr-line[hidden] { display: none; }
+.tr-line-top { display: flex; justify-content: space-between; gap: 12px; }
+.tr-line-top b { font-weight: 600; }
+.tr-line-top span { opacity: 0.7; font-variant-numeric: tabular-nums; }
+.tr-line-track { position: relative; height: 26px; margin-top: 4px; cursor: ew-resize; }
+.tr-line-track::before { content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 2px; border-radius: 1px; background: oklch(0.55 0.01 260); }
+.tr-line-track i { position: absolute; top: 9px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: oklch(0.7 0.01 260); }
+.tr-line-track i[data-k="1"] { top: 6px; height: 14px; background: oklch(0.92 0.01 260); }
+.tr-line-track i[data-k="2"] { top: 10px; height: 6px; background: oklch(0.55 0.01 260); }
+.tr-line-track u { position: absolute; top: 5px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: oklch(0.86 0.13 85); box-shadow: 0 0 0 3px oklch(0.16 0.01 260); }
+.tr-line-dev { display: flex; align-items: center; gap: 8px; margin-top: 6px; opacity: 0.85; }
+.tr-line-dev input[type="range"] { flex: 1; }
 .stage--trainride canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.8s ease;
@@ -4063,6 +4083,9 @@ return {
   // Dev scrub: jump to a point on the line; the next stop is found again.
   seek(x) { camX = x; stopX = null; dwell = 0; place(); },
   get length() { return TILE; },
+  // For the line strip: each station's name and place; its kind is 1 for an end or a town, 2 for a halt, 0 otherwise.
+  get stations() { return STN; },
+  stationKind: n => (n === 'Zürich HB' || MAJOR.has(n) ? 1 : HALT.has(n) ? 2 : 0),
   stationNear(x) { let b = null, bd = Infinity; for (const [n, sv] of STN) { const d0 = Math.abs(sv - x), d = Math.min(d0, TILE - d0); if (d < bd) { bd = d; b = n; } } return [b, bd]; },
   set onArrive(f) { arrive = f; },
   outside: [out, outCam],
@@ -4749,6 +4772,8 @@ const ui = initPage({
       { type: 'toggle', id: 'express', label: 'Express', value: opts.express, onToggle: on => { opts.express = on; save('express', on ? '1' : '0'); S.setExpress(on); wake(); } },
       { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
     ],
+    // The line: a strip that shows where the train is and jumps along the route.
+    actions: [{ verb: 'line', label: 'Line', key: 'L', onPress: () => lineUI.toggle() }],
     quality: true,
     keys: [['click', 'lean in or sit back'], ['drag', 'peer'], ['W', 'next weather'], ['E', 'express']],
   },
@@ -4782,8 +4807,55 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
 });
 
-/* ---------- dev scrub (?dev) ---------- */
-// A strip over the stage scrubs the whole line; readouts show km, the nearest station and speed.
+/* ---------- the line ---------- */
+// The Line button opens a strip: the route with a tick per station, and the train on it.
+// A drag along the strip moves the train; ?dev adds the top view to it.
+const lineUI = (() => {
+  const L = S.length, el = document.createElement('div');
+  el.className = 'tr-line';
+  el.hidden = true;
+  el.innerHTML = '<div class="tr-line-top"><b data-s></b><span data-k></span></div><div class="tr-line-track" role="slider" aria-label="Place on the line" tabindex="0"></div>';
+  const track = el.querySelector('.tr-line-track'), name = el.querySelector('[data-s]'), km = el.querySelector('[data-k]');
+  // Ticks: tall for the ends and the towns, short for the halts.
+  for (const [n, sv] of S.stations) {
+    const t = document.createElement('i');
+    t.style.left = `${sv / L * 100}%`;
+    t.dataset.k = S.stationKind(n);
+    track.append(t);
+  }
+  const dot = document.createElement('u');
+  track.append(dot);
+  let held = false;
+  const lap = () => Math.floor(S.camX / L) * L;
+  const seek = e => { const r = track.getBoundingClientRect(); S.seek(lap() + Math.min(0.999, Math.max(0, (e.clientX - r.left) / r.width)) * L); show(); wake(); };
+  // The stage must not take these presses for a lean or a click.
+  for (const t of ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'click']) el.addEventListener(t, e => e.stopPropagation());
+  track.addEventListener('pointerdown', e => { held = true; try { track.setPointerCapture(e.pointerId); } catch { /* capture is optional */ } seek(e); });
+  track.addEventListener('pointermove', e => { if (held) seek(e); });
+  for (const t of ['pointerup', 'pointercancel']) track.addEventListener(t, () => { held = false; });
+  // Arrow keys step half a kilometre.
+  track.addEventListener('keydown', e => {
+    const d = e.key === 'ArrowRight' ? 500 : e.key === 'ArrowLeft' ? -500 : 0;
+    if (!d) return;
+    e.preventDefault(); e.stopPropagation();
+    S.seek(lap() + ((((S.camX + d) % L) + L) % L)); show(); wake();
+  });
+  function show() {
+    if (el.hidden) return;
+    const x = ((S.camX % L) + L) % L, [n, d] = S.stationNear(x);
+    dot.style.left = `${x / L * 100}%`;
+    name.textContent = d < 60 ? n : `${n}, ${(d / 1000).toFixed(1)} km`;
+    km.textContent = `${(x / 1000).toFixed(1)} km · ${Math.round(S.speed * 3.6)} km/h`;
+    track.setAttribute('aria-valuetext', name.textContent);
+  }
+  setInterval(show, 250);
+  stage.append(el);
+  return { el, toggle() { el.hidden = !el.hidden; show(); document.querySelector('.stim-ui .s2-chip[aria-keyshortcuts="L"]')?.setAttribute('aria-pressed', String(!el.hidden)); wake(); } };
+})();
+if (qs.has('line') || qs.has('dev')) lineUI.toggle();
+
+/* ---------- dev (?dev) ---------- */
+// The line strip gains the top view; a mixer sets the sound by ear.
 if (qs.has('dev')) {
   // QA scripts drive the scene through this handle.
   window.__train = { S, wake };
@@ -4803,11 +4875,10 @@ if (qs.has('dev')) {
     }
     return (performance.now() - t0) / n;
   };
-  const L = S.length;
   const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
-  box.innerHTML = '<input type="range" min="0" step="10" style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><span data-k></span><span data-s></span><span data-v></span></div>'
-    + '<label style="display:flex;align-items:center;gap:8px;margin-top:4px"><input type="checkbox" data-top> Top view <input type="range" data-alt min="120" max="4000" value="500" step="20" style="flex:1"> <span data-h>500 m</span></label>';
+  box.className = 'tr-line-dev';
+  box.innerHTML = '<label style="display:flex;align-items:center;gap:6px"><input type="checkbox" data-top> Top view</label><input type="range" data-alt min="120" max="4000" value="500" step="20"><span data-h>500 m</span>';
+  lineUI.el.append(box);
   // The plan view: straight down on the built scene, from a set height.
   const topOn = box.querySelector('[data-top]'), alt = box.querySelector('[data-alt]'), altH = box.querySelector('[data-h]');
   const setTop = () => { S.top(topOn.checked, +alt.value); altH.textContent = `${alt.value} m`; wake(); };
@@ -4860,23 +4931,6 @@ if (qs.has('dev')) {
   });
   const nowT = mx.querySelector('[data-now]');
   setInterval(() => { nowT.textContent = kit.live() ? (clips ? window.__rec || 'waiting for the first frame' : 'loading the clips') : 'Sound is off: turn it on, top right.'; }, 300);
-  const range = box.querySelector('input'), km = box.querySelector('[data-k]'), stn = box.querySelector('[data-s]'), vel = box.querySelector('[data-v]');
-  range.max = String(Math.round(L));
-  document.body.append(box);
-  let held = false;
-  range.addEventListener('pointerdown', () => { held = true; });
-  addEventListener('pointerup', () => { held = false; });
-  range.addEventListener('input', () => { S.seek(+range.value); wake(); });
-  const show = () => {
-    const x = ((S.camX % L) + L) % L;
-    if (!held) range.value = String(Math.round(x));
-    const [n, d] = S.stationNear(x);
-    km.textContent = `${(x / 1000).toFixed(2)} / ${(L / 1000).toFixed(1)} km`;
-    stn.textContent = `${n} ${d < 50 ? '' : `${(d / 1000).toFixed(1)} km`}`;
-    vel.textContent = `${Math.round(S.speed * 3.6)} km/h`;
-  };
-  setInterval(show, 200);
-  show();
 }
 
 /* ---------- start ---------- */
