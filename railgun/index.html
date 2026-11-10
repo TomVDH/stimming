@@ -139,11 +139,11 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
-    { type: 'choice', id: 'tone', label: 'Tone map', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }], onPick: v => { gfx.tone = v; setTone(); } },
-    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.exp = v; draw(); } },
-    { type: 'slider', id: 'brightness', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 1, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
-    { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.22, persist: true, onInput: v => { gfx.con = v; setTone(); } },
-    { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 0.82, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
+    { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }], onPick: v => { gfx.tone = v; setTone(); } },
+    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 0.55, persist: true, onInput: v => { gfx.exp = v; draw(); } },
+    { type: 'slider', id: 'brightness', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 0.78, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
+    { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.24, persist: true, onInput: v => { gfx.con = v; setTone(); } },
+    { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 1.06, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
@@ -193,7 +193,7 @@ camera.rotation.order = 'YXZ';
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
 // Graphics settings: resolution share, smoke step factor, bloom gain, FXAA mode.
 const DETAIL = { low: 0.6, mid: 1, high: 1.4 };
-const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'agx', exp: 1, bri: 1, con: 0.22, sat: 0.82 };
+const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'aces', exp: 0.55, bri: 0.78, con: 0.24, sat: 1.06 };
 // The share of the quality's resolution per rung.
 const RES_STEP = [1, 0.82, 0.68, 0.55];
 
@@ -1953,7 +1953,8 @@ function makeFragTrail(own = false) {
       // The clamp keeps pow off a negative base.
       float a = pow(clamp(1.0 - vF, 0.0, 1.0), 1.4) * smoothstep(0.2, 0.75, n * 0.7 + 0.45 * edge) * edge * 0.8 * uOn;
       vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8 + blastLight(vP));
-      vec3 fire = uFireC * exp(-vF * 8.0) * edge * 2.5 * uOn;
+      // A short hot tip; a long glow hides the piece.
+      vec3 fire = uFireC * exp(-vF * 16.0) * edge * 0.8 * uOn;
       gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
     }`,
   }));
@@ -2038,7 +2039,7 @@ function shedSpark() {
   // Big burning pieces drift slowly back up the smoke train.
   // They carry no weight, so they never arc off; they go 12 to 25 km.
   shedV.copy(ast.away).multiplyScalar(350 + rnd() * 300).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(40));
-  writeStar(shedP, simT, shedV, -0.008, 2, 38 + rnd() * 14, 2.4, 3.6 + rnd() * 2.2, 0, 1.2);
+  writeStar(shedP, simT, shedV, -0.008, 2, 38 + rnd() * 14, 2.4, 3.2 + rnd() * 1.8, 0, 0.45);
   ablN++;
 }
 
@@ -2508,7 +2509,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       // The focus pull: 0 sharp, 1 soft.
       uSoft: { value: 0 },
       // Contrast power and saturation, from the settings.
-      uCon: { value: 0.22 }, uSat: { value: 0.82 }, uBri: { value: 1 },
+      uCon: { value: 0.24 }, uSat: { value: 1.06 }, uBri: { value: 0.78 },
+      uWall: { value: new THREE.Vector4(-1, -1, 0, 0) }, uWallC: { value: new THREE.Vector3(0.4, 0.3, 0.2) },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
@@ -2529,6 +2531,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2;
     uniform float uSoft, uCon, uSat, uBri;
+    // The dust wall: front, back, strength, time; and its colour.
+    uniform vec4 uWall;
+    uniform vec3 uWallC;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2625,6 +2630,17 @@ function makeGrade({ tint, vig, vigIn, grain }) {
         float mask = smoothstep(0.462, 0.452, rr), outer = smoothstep(0.5, 0.494, rr);
         c = mix(bez * outer, inner, mask);
         #undef LN
+      }
+      if (uWall.z > 0.001) {
+        // A wall of blown dust crosses the frame on the wind.
+        vec2 wq = vec2(vUv.x * uRes.x / uRes.y, vUv.y);
+        float t = uWall.w;
+        float b = 0.6 * vn(wq * 3.0 + vec2(-t * 1.6, t * 0.3)) + 0.3 * vn(wq * 7.0 + vec2(-t * 3.1, -t * 0.5)) + 0.1 * vn(wq * 15.0 - vec2(t * 5.0, 0.0));
+        // Billows break the edges; the wall leans with the wind.
+        float x = vUv.x + 0.24 * (b - 0.5) - 0.06 * vUv.y;
+        float cov = smoothstep(uWall.x, uWall.x - 0.25, x) * smoothstep(uWall.y - 0.25, uWall.y, x);
+        float dn = clamp(cov * (0.95 + 0.3 * b), 0.0, 1.0) * uWall.z;
+        c = mix(c, uWallC * (0.7 + 0.6 * b) * (0.85 + 0.3 * vUv.y), dn);
       }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
@@ -4607,18 +4623,52 @@ function updateBolt() {
   grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
 }
 
-/* ---------- reset: a timelapse that runs away, then a cut ---------- */
-// The sky turns a day in four seconds, then faster and faster.
-// After eight seconds it is a strobe; a white cut lands the toy at its start.
-const SPIN_T = 8;
-let spin = null, cutFlash = 0;
+/* ---------- reset: a timelapse, then a dust wall hides the cut ---------- */
+// The sky turns a day in four seconds, then faster, to 1.5 days a second.
+// A long shutter blends the days, so the light never strobes.
+// After SPIN_T a dust wall crosses the frame; the toy resets behind it.
+const SPIN_T = 5.6, DAYS_MAX = 1.5;
+const WALL_IN = 1.6, WALL_CUT = 1.9, WALL_OUT = 2.4, WALL_END = 4.4;
+let spin = null, wall = null, cutFlash = 0;
+// The sky values the shutter blends toward their mean over one day.
+const SHUT_V = ['uSunC', 'uZenC', 'uHorC', 'uGlowC', 'uCloudSun', 'uCloudAmb', 'uGLift'], SHUT_S = ['uStars', 'uMoonK', 'uSunE'];
+function dayMean(H) {
+  const m = { exp: 0 }, N = 24;
+  for (const k of SHUT_V) m[k] = U[k].value.clone().multiplyScalar(0);
+  for (const k of SHUT_S) m[k] = 0;
+  for (let i = 0; i < N; i++) {
+    skyAt(H + i * Math.PI * 2 / N);
+    for (const k of SHUT_V) m[k].addScaledVector(U[k].value, 1 / N);
+    for (const k of SHUT_S) m[k] += U[k].value / N;
+    m.exp += baseExp / N;
+  }
+  skyAt(H);
+  return m;
+}
+// s: 0 sees one instant, 1 sees the whole day's mean.
+function shutter(m, s) {
+  for (const k of SHUT_V) U[k].value.lerp(m[k], s);
+  for (const k of SHUT_S) U[k].value = lerp(U[k].value, m[k], s);
+  baseExp = lerp(baseExp, m.exp, s);
+}
+const ease = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+function stepWall(dt) {
+  const u = grade.uniforms.uWall.value;
+  if (!wall) { u.z = 0; return; }
+  wall.t += dt;
+  const t = wall.t;
+  u.set(-0.3 + 2.0 * ease(t / WALL_IN), -0.3 + 2.0 * ease((t - WALL_OUT) / (WALL_END - WALL_OUT)), 1, t);
+  // The wall covers the whole frame here; the reset is not seen.
+  if (!wall.cut && t >= WALL_CUT) { wall.cut = true; spin = null; landReset(); }
+  if (t >= WALL_END) { wall = null; u.z = 0; }
+}
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
   if (spin) return;
   cancelHold();
   wake();
-  if (reduced()) { cutFlash = 0.6; landReset(); return; }
-  spin = { t: 0, H: skyH };
+  if (reduced()) { landReset(); return; }
+  spin = { t: 0, H: skyH, m: dayMean(skyH) };
   whoosh();
 }
 // The Reset chip: hidden while a rock lives, glowing after a kill.
@@ -4635,15 +4685,23 @@ resetReady(false);
 const spinSpeed = () => (spin ? 1 + 30 * Math.min(1, spin.t / 3) : 1);
 function stepSpin(dt) {
   cutFlash *= Math.exp(-dt / 0.5);
+  stepWall(dt);
   if (!spin) return;
   spin.t += dt;
-  // The rate grows e-fold every 2.2 s: about ten days a second at the end.
-  const w = (Math.PI * 2 / 4) * Math.exp(spin.t / 2.2);
+  // The rate grows e-fold every 2.2 s, then holds at DAYS_MAX.
+  const w = Math.min(Math.PI * 2 * DAYS_MAX, (Math.PI * 2 / 4) * Math.exp(spin.t / 2.2));
   spin.H += w * dt;
   skyAt(spin.H);
+  // The shutter opens with the speed; a faint day pulse stays.
+  shutter(spin.m, 0.85 * clamp((w / (Math.PI * 2) - 0.35) / 0.9, 0, 1));
   U.uWisp.value.x += w * dt * 0.5;
   CLOUD_U.uCloudT.value += w * dt * 0.05;
-  if (spin.t >= SPIN_T) { spin = null; cutFlash = 1.4; landReset(); }
+  if (spin.t >= SPIN_T && !wall) {
+    // The dust takes the colour of the day's mean horizon.
+    const h = spin.m.uHorC, L = 0.2126 * h.x + 0.7152 * h.y + 0.0722 * h.z;
+    grade.uniforms.uWallC.value.set(1.0, 0.78, 0.56).multiplyScalar(0.3 + 0.7 * L);
+    wall = { t: 0, cut: false };
+  }
 }
 // Back to the start: the chosen time, still clouds, a fresh rock high up.
 function landReset() {
@@ -4655,6 +4713,8 @@ function landReset() {
   // The old blast, its debris and the bolt's line are gone.
   blastFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
+  // Embers from the old rock go too.
+  starGeo.instanceCount = 0; head = 0; lastDeath = 0;
   // The first rock's own track.
   ast.next = 0;
   respawn();
@@ -4663,15 +4723,19 @@ function landReset() {
   placeAst();
   stepAim(0, true);
 }
-// A rising rush of air under the spin; it cuts with the flash.
+// Air rises under the spin; the dust wall lands as a low roar.
 function whoosh() {
   const ac = kit.live();
   if (!ac) return;
-  const t = ac.currentTime, s = hiss(ac, t, SPIN_T + 0.3), bp = filt(ac, 'bandpass', 160, 1.2), g = ac.createGain();
-  bp.frequency.setValueAtTime(160, t); bp.frequency.exponentialRampToValueAtTime(4200, t + SPIN_T);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + SPIN_T - 0.05); g.gain.setValueAtTime(0.0001, t + SPIN_T);
+  const W = SPIN_T, L = SPIN_T + WALL_END;
+  const t = ac.currentTime, s = hiss(ac, t, L + 0.3), bp = filt(ac, 'bandpass', 160, 0.8), g = ac.createGain();
+  bp.frequency.setValueAtTime(160, t); bp.frequency.exponentialRampToValueAtTime(1400, t + W);
+  bp.frequency.exponentialRampToValueAtTime(380, t + W + WALL_IN); bp.frequency.exponentialRampToValueAtTime(220, t + L);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + W);
+  g.gain.exponentialRampToValueAtTime(0.22, t + W + WALL_IN); g.gain.setValueAtTime(0.22, t + W + WALL_OUT);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + L);
   s.connect(bp).connect(g).connect(kit.out);
-  track(t + SPIN_T + 0.4, s);
+  track(t + L + 0.4, s);
 }
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
@@ -4679,7 +4743,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!wall || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
