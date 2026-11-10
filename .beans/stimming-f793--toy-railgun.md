@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T18:51:52Z
+updated_at: 2026-11-10T19:07:12Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -123,3 +123,10 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Fix: charge dust back to the old frame cost (36 ms vs 57 ms at a full hold, headless)
 - [x] Fix: the cloud glow and the heave taper out; nothing cuts
 - [x] Fix: no smoke hangs at the muzzle; the bolt trail drifts on the wind and fades in about 15 s
+
+- [x] Fix: the night plain stays dark; the rock only warms it
+- [x] Fix: more contrast and colour in the grade, a deeper vignette
+- [x] Fix: the blast lights the meteor trail softly; the trail lingers about 150 s
+- [x] Fix: softer, cheaper shafts; the cirrus glow fades over about 80 s
+- [x] Fix: depth: the soot draws before the trails; the soot hides shards, sparks and trail behind it; far shards take the air
+- [x] Fix: with no rock in the sky the bolt flies along the bore

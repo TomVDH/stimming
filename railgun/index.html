@@ -254,6 +254,8 @@ const U = {
   uBlast: { value: new THREE.Vector4(0, 0, 0, 0) },
   // uBk: the live blast's power; 0 when no blast burns.
   uBk: { value: 0 },
+  // The soot ball: centre and radius, and its density.
+  uSootS: { value: new THREE.Vector4() }, uSootK: { value: 0 },
 };
 U.uStarT = U.uTime;
 
@@ -340,7 +342,7 @@ function skyAt(H) {
   U.uCloudSun.value.set(...sunC.map((x, i) => x * sstep(deg, -6, 1) + MOON_C[i] * mK * 0.3));
   U.uCloudAmb.value.setScalar(lerp(lerp(0.012, 0.05, nt), 0.22, tw));
   // A high sun needs no lift on the plain.
-  U.uGLift.value.set(lerp(4, 1.1, day), lerp(0.25, 0.05, day));
+  U.uGLift.value.set(lerp(2.6, 1.1, day), lerp(0.08, 0.05, day));
   renderer.toneMappingExposure = lerp(lerp(2.2, 1.35, nt), 0.9, tw);
   fitShadow();
 }
@@ -406,6 +408,8 @@ uniform vec4 uHitP;
 // The blast: its world place and strength; the rock's radius sizes the shell.
 uniform vec4 uBlast;
 uniform float uBk;
+uniform vec4 uSootS;
+uniform float uSootK;
 uniform float uHitR;
 // The blast on a cloud at P: its light, the shock rim and the push.
 // thin is 1 at a cloud's thin edge, where light shines through.
@@ -413,7 +417,7 @@ uniform float uHitR;
 vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   rim = 0.0; push = vec3(0.0);
   float t = uStarT - uHitP.w;
-  if (t < 0.0 || t > 70.0) return vec3(0.0);
+  if (t < 0.0 || t > 82.0) return vec3(0.0);
   vec3 d = P - uHitP.xyz;
   float r = max(length(d), 1.0);
   vec3 n = d / r;
@@ -423,7 +427,7 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   if (tl > -0.1) {
     float tp = max(tl, 0.0);
     // A hard white flash, then a long amber afterglow.
-    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.0 * exp(-tp / 0.5) + 0.8 * exp(-tp / 6.0) + 0.35 * exp(-tp / 15.0)) * (1.0 - smoothstep(14.0, 40.0, tp));
+    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.0 * exp(-tp / 0.5) + 0.7 * exp(-tp / 8.0) + 0.35 * exp(-tp / 28.0)) * (1.0 - smoothstep(25.0, 80.0, tp));
     vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, tp));
     I *= 5.0 / (1.0 + r * r / 8.0e8);
     // Light that passes through toward the eye: a silver edge.
@@ -577,6 +581,19 @@ vec3 ambient(vec3 N) { return mix(uHorC, uZenC, N.y * 0.5 + 0.5) * 0.55; }
 vec3 sunLight(vec3 N) { return uSunC * max(dot(N, uSun), 0.0); }
 // The rock lights what faces it, faintly by day.
 // The blast lights everything within some 20 km of it.
+// The light from P to the eye through the soot ball: 1 clear, 0 hidden.
+float sootT(vec3 P) {
+  if (uSootK < 0.001) return 1.0;
+  vec3 rd = P - cameraPosition;
+  float L = length(rd);
+  rd /= L;
+  vec3 oc = cameraPosition - uSootS.xyz;
+  float b = dot(oc, rd), h = b * b - dot(oc, oc) + uSootS.w * uSootS.w;
+  if (h <= 0.0) return 1.0;
+  h = sqrt(h);
+  float ch = max(min(-b + h, L) - max(-b - h, 0.0), 0.0) / uSootS.w;
+  return exp(-uSootK * ch);
+}
 // The light lands late: it sweeps out at sixty kilometres a second.
 float blastAt(vec3 P) {
   float tl = uStarT - uHitP.w - length(uBlast.xyz - P) / 60000.0;
@@ -670,7 +687,8 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     // A flat plain takes little light at four degrees; lift it.
     float nl = clamp(dot(N, uSun) * uGLift.x + uGLift.y, 0.0, 1.2);
     float sv = sunVis(vP);
-    vec3 col = alb * (ambient(N) + uSunC * nl * sv + keyLight(N) + arcLight(vP, N));
+    // At night the rock only warms the plain; it does not flood it.
+    vec3 col = alb * (ambient(N) + uSunC * nl * sv + keyLight(N) * mix(1.0, 0.22, nightK()) + arcLight(vP, N));
     // The blast lights the plain once its light arrives.
     col += alb * blastLight(vP) * (0.35 + 0.65 * max(dot(N, normalize(uBlast.xyz - vP)), 0.0));
     // A satin sheen: Fresnel at grazing angles, a soft lobe toward the sun.
@@ -1651,6 +1669,13 @@ function makeTrain(pu) {
         vec3 Lf = uAstC * uBurn * 6.0 * R * R / (dot(q, q) + R * R);
         // The blast lights the smoke for many radii.
         Lf += uAstC * uHit.w * 110.0 * R * R / (dot(q, q) + 9.0 * R * R);
+        // The afterglow reaches far up the trail and lingers.
+        float tb = uStarT - uHitP.w - length(uAstP + q - uHitP.xyz) / 60000.0;
+        if (tb > 0.0 && tb < 40.0) {
+          float gl = uBk * (exp(-tb / 0.5) + 0.8 * exp(-tb / 6.0) + 0.35 * exp(-tb / 15.0)) * (1.0 - smoothstep(14.0, 40.0, tb));
+          vec3 qh = uAstP + q - uHitP.xyz;
+          Lf += uAstC * gl * (12.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 0.9 * 400.0 * R * R / (dot(qh, qh) + 400.0 * R * R));
+        }
         // Debris trains far from their own head still see the blast.
         Lf += blastLight(uAstP + q) * 2.0 * (1.0 - step(590.0, uAstRad));
         vec3 S = mix(uSoot, uAsh, smoothstep(0.3, 8.0, g.y)) * (Ls + La + Lf);
@@ -1672,7 +1697,9 @@ function makeTrain(pu) {
     vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + t1));
     vec3 Ta = airT(Pm) * (1.0 - 0.45 * k2hazeAmount(Pm));
     col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
-    gl_FragColor = vec4(col, al);
+    // Smoke behind the soot ball hides in it.
+    float sT = sootT(Pm);
+    gl_FragColor = vec4(col * sT, al * sT);
   }`,
   }));
 }
@@ -1956,7 +1983,7 @@ starGeo.instanceCount = 0;
 const starMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime: U.uTime, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uSteady: { value: reduced() ? 1 : 0 },
-    uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
+    uSootS: U.uSootS, uSootK: U.uSootK, uG: { value: G }, uRamp: { value: RAMPS.map(c => new THREE.Vector3(...c)) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -1966,6 +1993,20 @@ const starMat = new THREE.ShaderMaterial({
   uniform float uTime, uDpr, uSteady;
   uniform vec2 uRes;
   uniform vec3 uG, uRamp[${RAMPS.length}], uEmber;
+  uniform vec4 uSootS;
+  uniform float uSootK;
+  // The light from P to the eye through the soot ball.
+  float sootT(vec3 P) {
+    if (uSootK < 0.001) return 1.0;
+    vec3 rd = P - cameraPosition;
+    float L = length(rd);
+    rd /= L;
+    vec3 oc = cameraPosition - uSootS.xyz;
+    float b = dot(oc, rd), h = b * b - dot(oc, oc) + uSootS.w * uSootS.w;
+    if (h <= 0.0) return 1.0;
+    h = sqrt(h);
+    return exp(-uSootK * max(min(-b + h, L) - max(-b - h, 0.0), 0.0) / uSootS.w);
+  }
   varying vec3 vCol, vColT, vLWH;
   varying float vS, vY, vSpark, vSeed;
   vec3 starPos(vec3 p0, vec3 v0, float k, float t) {
@@ -2002,6 +2043,8 @@ const starMat = new THREE.ShaderMaterial({
     if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
     vCol = col3 * 4.0 * aD.w * b;
     vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
+    float sT = sootT(ph);
+    vCol *= sT; vColT *= sT;
     vSpark = abs(aD.x - 2.0) < 0.5 ? 0.8 : 0.25;
   }`,
   fragmentShader: /* glsl */`
@@ -2338,7 +2381,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c = texture2D(tDiffuse, uv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // Shafts of light through smoke and dust.
-      if (uShK > 0.001) c += texture2D(tShafts, uv).rgb * uShK;
+      // They blend like light in haze: less where the frame is bright.
+      if (uShK > 0.001) { vec3 sh = texture2D(tShafts, uv).rgb * uShK; c += sh / (1.0 + c); }
       // The impact flare: the house anamorphic flare, bright white.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, vec3(1.0), 1.0, vec3(0.55, 1.6, 1.6)) * uLF.z;
       // The thermal sight: an old white-hot tube in a round eyepiece.
@@ -2385,6 +2429,11 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
+      // Contrast: shadows sink and highs lift round a mid grey.
+      float lc = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+      c *= pow(lc / 0.18, 0.14);
+      lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c = max(mix(vec3(lc), c, 1.1), 0.0);
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
       c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -2399,7 +2448,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
 /* ---------- end K2 ---------- */
 
 /* ---------- post chain ---------- */
-const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.5, vigIn: 0.4, grain: 0.075 };
+const POST = { bloom: [0.5, 0.5, 1.2], tint: [0.0008, 0.0009, 0.0016], vig: 0.6, vigIn: 0.38, grain: 0.075 };
 let size = { w: 1, h: 1, dpr: 1 };
 // The scene renders with 4x multisampling into a half-float target.
 // The chain starts from it.
@@ -2428,11 +2477,11 @@ class ShaftPass extends Pass {
       // Only the bright parts of the frame cast shafts.
       vec3 src(vec2 uv) {
         vec3 c = min(texture2D(tDiffuse, uv).rgb, vec3(6.0));
-        return c * smoothstep(0.7, 2.0, dot(c, vec3(0.2126, 0.7152, 0.0722)));
+        return c * smoothstep(1.0, 2.6, dot(c, vec3(0.2126, 0.7152, 0.0722)));
       }
       vec3 shafts(vec3 L) {
         if (L.z < 0.001) return vec3(0.0);
-        vec2 d = (vUv - L.xy) * 0.85 / float(uN);
+        vec2 d = (vUv - L.xy) * 0.6 / float(uN);
         // A jittered start hides the steps.
         vec2 uv = vUv - d * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)) + uSeed) * 43758.5453);
         vec3 s = vec3(0.0);
@@ -2440,7 +2489,7 @@ class ShaftPass extends Pass {
         for (int i = 0; i < 40; i++) {
           if (i >= uN) break;
           s += src(uv) * w;
-          w *= 0.97;
+          w *= 0.94;
           uv -= d;
         }
         return s / float(uN) * L.z;
@@ -2451,14 +2500,14 @@ class ShaftPass extends Pass {
     this.quad = new FullScreenQuad(this.mat);
   }
   setSize(w, h) {
-    const m = rung >= 2 ? 0.25 : 0.5;
+    const m = rung >= 2 ? 0.2 : 0.33;
     this.rt.setSize(Math.max(1, Math.round(w * m)), Math.max(1, Math.round(h * m)));
   }
   render(renderer, writeBuffer, readBuffer) {
     const u = this.mat.uniforms;
     if (u.uL0.value.z + u.uL1.value.z < 0.001) return;
     u.tDiffuse.value = readBuffer.texture;
-    u.uN.value = rung >= 2 ? 16 : 28;
+    u.uN.value = rung >= 2 ? 10 : 18;
     renderer.setRenderTarget(this.rt);
     this.quad.render(renderer);
   }
@@ -2659,7 +2708,7 @@ function updateShafts() {
   let bk = 0;
   if (blastFx && on) {
     const ha = simT - blastFx.t0;
-    bk = blastFx.k * (1.6 * Math.exp(-ha / 0.6) + 1.0 * Math.exp(-ha / 6)) * (1 - THREE.MathUtils.smoothstep(ha, 12, 24)) * (reduced() ? 0.5 : 1);
+    bk = blastFx.k * (0.8 * Math.exp(-ha / 0.6) + 0.4 * Math.exp(-ha / 6)) * (1 - THREE.MathUtils.smoothstep(ha, 12, 24)) * (reduced() ? 0.5 : 1);
   }
   shaftLight(blastFx ? blastFx.P : wb, false, bk, su.uL1.value);
   su.uSeed.value = reduced() ? 0 : (su.uSeed.value + 0.37) % 13;
@@ -3670,6 +3719,7 @@ const shardMat = new THREE.ShaderMaterial({
   varying float vHeat, vSeed;
   uniform vec3 uRock, uWhite, uEmber;
   ${HEAD}
+  ${AIR}
   void main() {
     vec3 N = normalize(vN);
     float n = k3fbm(vO * 3.0 + vSeed);
@@ -3678,11 +3728,14 @@ const shardMat = new THREE.ShaderMaterial({
     // Fresh faces glow and cool; the crust stays dark.
     float fresh = smoothstep(0.45, 0.6, n);
     col += uEmber * fresh * vHeat * 3.0 + uWhite * fresh * vHeat * vHeat * 2.0;
-    gl_FragColor = vec4(k2haze(col, vP), 1.0);
+    // Far shards go blue and flat in the air.
+    gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
+  depthWrite: false,
 });
 const shards = new THREE.Mesh(shardGeo, shardMat);
-shards.frustumCulled = false;
+// The shards write no depth: the soot drawn after them covers them.
+shards.frustumCulled = false; shards.renderOrder = 1.8;
 scene.add(shards);
 let shardsEnd = 0;
 
@@ -3730,13 +3783,15 @@ vec3 vlight(vec3 p) { return vec3(0.0); }`, {
   uHotC: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: PU.uFireC.value }, uEmberC: { value: new THREE.Vector3(...EMBER) },
   uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) },
 });
+// The soot draws before the trails, so they can lie in front of it.
+fireball.renderOrder = 1.9;
 const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
 const hitShellC = makeShell(7.0, -0.1, 0.45);
 // The live blast: start time, place, rock radius and power.
 let blastFx = null;
 function updateBlast() {
-  if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; return; }
+  if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
   if (ha > 31) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
@@ -3745,6 +3800,9 @@ function updateBlast() {
   const Rb = R * (1 + 11 * (1 - Math.exp(-ha / 4.5)));
   u.uC.value.copy(blastFx.P).y += 25 * ha;
   u.uR.value = Rb * 1.35;
+  // The soot ball others fade behind: thick early, thin as it erodes.
+  U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
+  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 4, 22)) * (1 - THREE.MathUtils.smoothstep(ha, 20, 30));
   // Soot needs fewer steps than fire.
   const soot = ha > 3;
   u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 2 : volLSteps(); u.uLs.value = 0.06 * Rb;
@@ -3852,7 +3910,10 @@ fire = c => {
   // A weak shot takes nine seconds to cross; a full one six.
   const T = THREE.MathUtils.lerp(9, 6, c);
   const canHit = ast.state === 'approach' || ast.state === 'hold';
-  shot = { t0: simT, c, T, target: astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3()), muzzle: MUZZLE.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T };
+  const target = astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3());
+  // With no rock in the sky the bolt flies where the barrel points.
+  if (!canHit) target.copy(MUZZLE).addScaledVector(AX, Math.max(20000, target.distanceTo(MUZZLE)));
+  shot = { t0: simT, c, T, target, muzzle: MUZZLE.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T };
   // The Mach ring starts at the muzzle's foot.
   // It reaches the eye at the speed of sound.
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
@@ -3887,6 +3948,7 @@ fire = c => {
 };
 function shatter(c) {
   ast.state = 'shatter';
+  ast.hitAt = simT;
   // A random side for the blast's shove on the trail.
   { const a = rnd() * Math.PI * 2; PU.uSwipe.value.set(Math.cos(a), Math.sin(a), 0); }
   ast.next = rad((rnd() - 0.5) * 6);
@@ -4004,15 +4066,16 @@ function stepShot(dt) {
   if (U.uHeat.value < 0.003) U.uHeat.value = 0;
   if (ast.state === 'shatter') astMat.uniforms.uBurn.value *= Math.exp(-dt / 0.6);
   // The smoke outlives the fire, then grows back behind the next rock.
-  // After the hit the tail fades from its tip back to the head over ~40 s.
+  // After the hit the tail fades from its tip back to the head over 150 s.
   // It drifts on a high wind and thins as it goes.
-  if (ast.state === 'shatter' && shot && shot.hit) {
-    const ha = simT - shot.t0 - shot.hitT, f = clamp(ha / 40, 0, 1);
-    PU.uCut.value = PU.uLen.value * 1.25 * (1 - f * (2 - f)) - 2 * ast.R * f;
+  if (ast.state === 'shatter' && ast.hitAt != null) {
+    const ha = simT - ast.hitAt, f = clamp(ha / 150, 0, 1);
+    // The tip retreats at an even pace; most of the trail hangs on.
+    PU.uCut.value = PU.uLen.value * 1.25 * (1 - f) * (1 - 0.3 * f) - 2 * ast.R * f;
     PU.uDrift.value.set(45, 8, 15).multiplyScalar(ha);
-    PU.uBreak.value = Math.min(0.6, ha / 60);
+    PU.uBreak.value = Math.min(0.6, ha / 160);
     PU.uSwipe.value.z = 0.45 * (1 - Math.exp(-ha / 2.5));
-    PU.uTrail.value = Math.max(0, 1 - Math.max(0, ha - 30) / 15);
+    PU.uTrail.value = Math.max(0, 1 - Math.max(0, ha - 120) / 40);
   } else if (ast.state !== 'shatter') {
     PU.uCut.value = 1e9; PU.uDrift.value.set(0, 0, 0); PU.uBreak.value = 0; PU.uSwipe.value.z = 0;
     PU.uTrail.value = Math.min(1, PU.uTrail.value + dt / 3);
@@ -4232,7 +4295,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 70 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 165 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
