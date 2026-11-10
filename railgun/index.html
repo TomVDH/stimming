@@ -496,7 +496,7 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   // High ice still holds sunlight; it reads brighter than the dusty air.
   vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
   // The passing bolt lights the ice round it, blue-white, for a few kilometres.
-  if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += uBoltC * uBolt.w * 1.6 / (1.0 + dot(bd, bd) / 3.0e7); }
+  if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
   // By day the bright sky drowns thin ice; denser, brighter streaks still read.
   float dayW = smoothstep(0.08, 0.45, uSunD.y);
   cloud *= 1.0 + 0.15 * dayW;
@@ -515,7 +515,7 @@ vec3 boltGlow(vec3 dir) {
   if (uBolt.w < 0.001) return vec3(0.0);
   vec3 v = uBolt.xyz - cameraPosition;
   float c = dot(dir, normalize(v)) - 1.0;
-  return uBoltC * uBolt.w * (0.08 * exp(c * 900.0) + 0.03 * exp(c * 60.0) + 0.012 * exp(c * 8.0));
+  return uBoltC * uBolt.w * (0.06 * exp(c * 900.0) + 0.015 * exp(c * 60.0) + 0.004 * exp(c * 8.0));
 }
 vec3 hitGlow(vec3 dir) {
   if (uHit.w < 0.001) return vec3(0.0);
@@ -743,6 +743,8 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     vec2 ag = vP.xz - uAstG;
     float pool = 2.5 * exp(-dot(ag, ag) / 2.9e8);
     vec3 col = alb * (ambient(N) + uSunC * nl * sv + keyLight(N) * mix(1.0, pool, nightK()) + arcLight(vP, N));
+    // The bolt lights the plain faintly as it climbs away.
+    if (uBolt.w > 0.001) { vec3 bb = uBolt.xyz - vP; col += alb * uBoltC * uBolt.w * 0.5 * 2.5e7 / (dot(bb, bb) + 2.5e7); }
     // The blast lights the plain once its light arrives.
     col += alb * blastLight(vP) * (0.35 + 0.65 * max(dot(N, normalize(uBlast.xyz - vP)), 0.0));
     // A satin sheen: Fresnel at grazing angles, a soft lobe toward the sun.
@@ -968,7 +970,7 @@ void main() {
   float occH = max(body(X + h2 * H * 0.15), 0.0) + max(body(X + h2 * H * 0.4), 0.0);
   float shH = exp(-occH / (H * 0.3));
   // The passing bolt lights the cloud faces near its path.
-  if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 1.2 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 6.0e7); }
+  if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -4065,8 +4067,8 @@ function boltAt(t, out) {
 }
 fire = c => {
   if (shot) return;
-  // A weak shot takes nine seconds to cross; a full one six.
-  const T = THREE.MathUtils.lerp(9, 6, c);
+  // A weak shot takes 11.5 seconds to cross; a full one 8.5.
+  const T = THREE.MathUtils.lerp(11.5, 8.5, c);
   const canHit = ast.state === 'approach' || ast.state === 'hold';
   const target = astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3());
   // With no rock in the sky the bolt flies where the barrel points.
@@ -4206,7 +4208,7 @@ function stepAim(dt, snap = false) {
   if (shot && !shot.hit) return;
   // After the hit the gun waits, then parks.
   if (!snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
-  if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 7.5 / SIZES[opts.size].T), aimP).sub(A0);
+  if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
   else aimP.copy(PARK);
   const dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw, de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
