@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T08:47:24Z
+updated_at: 2026-11-10T10:42:32Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -262,3 +262,11 @@ Open from the critics:
 - [x] The whine stays as a layer, at the level Tom set in the mixer (2.3 times the first try), driven by power and brake
 - [x] Mixer rows follow the new layers; it reads only keys it knows
 - [ ] Not run with live sound: the departure and arrival cuts (the pane was hidden). Tom to listen
+
+## Round 26: life outside (Tom, 2026-11-10)
+
+- [x] Boats: 14 lake steamers (two decks, lit windows at night, a wake) that run 1.5 km each way; 320 sails by day, most within a kilometre of the near shore; one car ferry that crosses at Horgen with cars on deck. One placer, three meshes on one shader
+- [x] Birds: 340 gull flocks over the water (flap, then glide), 16 buzzards that circle over dry ground, and crows that sit in a field and lift off as the train draws near (about once a minute by day, at speed, clear of stations and water). All roost at night. One mesh, two triangles a bird
+- [x] Plane: most pass 6 km out on their way down, a small grey shape by day and three lights at night (steady, red pulse, double strobe); one in three by day is a high one with a contrail. One every few minutes
+- [x] Dev: S.cue('plane' or 'crows') and S.life, to bring them on and find them
+- [ ] Not seen yet: gulls and buzzards up close, the ferry from the window, the contrail against blue sky. Tom to look
