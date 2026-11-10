@@ -207,6 +207,12 @@ const U = {
   uShock: { value: new THREE.Vector4(0, 0, 0, 0) },
   // The strength of the Rayleigh air.
   uAir: { value: 0.7 },
+  // Barrel heat, 0 cold to 1 white-hot.
+  uHeat: { value: 0 },
+  // The over-hold, 0 to 1: the gun acts out.
+  uOver: { value: 0 },
+  // The blast light: world position and strength.
+  uBlast: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
 
 /* ---------- sun: late light over a dusty plain ---------- */
@@ -694,17 +700,22 @@ const gunMat = new THREE.ShaderMaterial({
   vertexShader: /* glsl */`
   attribute vec4 aPart;
   ${AIM}
+  uniform vec3 uAxisUp; uniform float uOver, uTime;
   varying vec3 vP, vO; varying vec4 vPart;
   void main() {
     // vO holds still, so the seams ride with the barrel.
     vO = position;
     vP = aim(vO, aPart.y, 1.0 - step(1.5, aPart.z));
+    // Loose dark plates on the barrel rattle through the over-hold.
+    float loose = step(1.5, aPart.w) * step(aPart.w, 2.5) * step(0.25, aPart.y);
+    vP += uAxisUp * loose * uOver * 1.6 * sin(uTime * 53.0 + fract(aPart.z) * 91.0);
     vPart = vec4(aPart.x, step(0.25, aPart.y), fract(aPart.z), aPart.w);
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vO; varying vec4 vPart;
   uniform vec3 uShellC, uDarkC, uHullC, uBandC, uGroundC;
+  uniform float uHeat;
   ${HEAD}
   // A line every period metres, w metres wide, softened to a pixel.
   float seam(float x, float period, float w) {
@@ -739,6 +750,9 @@ const gunMat = new THREE.ShaderMaterial({
     float nl = max(dot(N, uSun), 0.0);
     float vis = nl > 0.0 ? sunVis(vP) : 1.0;
     vec3 col = alb * (amb + uSunC * 2.8 * nl * vis + keyLight(N) + rim(N, vP) * vis + arcLight(vP, N));
+    // Heat glows on the barrel, hottest at the muzzle.
+    float hz = uHeat * vPart.y * smoothstep(0.45, 1.0, vPart.x);
+    col += mix(vec3(0.9, 0.08, 0.01), vec3(2.2, 0.9, 0.25), smoothstep(0.4, 0.9, hz)) * hz * hz * 6.0;
     gl_FragColor = vec4(k2haze(col, vP), 1.0);
   }`,
 });
@@ -1371,13 +1385,24 @@ function rimPt(out, y, far = 0.2) {
   out.set(Math.sin(th) * k, y, Math.cos(th) * k);
   return th;
 }
-function spawnArc(st) {
+// mode 'vent' drops a strike straight down from the barrel.
+function spawnArc(st, mode = '') {
   const arc = arcList.find(x => !x.on);
   if (!arc) return;
   const a = st * L, hw = halfW(a) + 1.5, hh = halfH(a);
   const kind = rnd();
   arc.life = 0.08 + rnd() * 0.1;
-  if (chaos > 0.6 && kind < 0.22 + 0.25 * rage) {
+  if (mode === 'vent' || (over > 0.05 && kind < 0.3 * over)) {
+    // A far strike: from the barrel out across the plain.
+    const vent = mode === 'vent';
+    barrelPt(a, (rnd() - 0.5) * hw, -hh, arc.a);
+    const sr = vent ? 20 + rnd() * 140 : 300 + rnd() * 700, sth = rnd() * Math.PI * 2;
+    arc.b.set(arc.a.x + Math.sin(sth) * sr, 0, arc.a.z + Math.cos(sth) * sr);
+    const rr = Math.hypot(arc.b.x, arc.b.z);
+    arc.b.y = rr < 396 ? 34 : rr < 456 ? 22 : rr < 600 ? 4 : 0;
+    arc.bowV.set((rnd() - 0.5) * (vent ? 60 : 300), (vent ? 10 : 80) + rnd() * (vent ? 40 : 200), (rnd() - 0.5) * (vent ? 60 : 300));
+    arc.life = vent ? 0.25 + rnd() * 0.2 : 0.2 + rnd() * 0.15;
+  } else if (chaos > 0.6 && kind < 0.22 + 0.25 * rage) {
     // Strike: from the barrel down to the plinth under it.
     barrelPt(a, (rnd() - 0.5) * hw, -hh, arc.a);
     const sr = 60 + rnd() * 140, sth = rnd() * Math.PI * 2;
@@ -1573,8 +1598,8 @@ function frame() {
   const yaw0 = portrait ? rad(8.5) : rad(24.5);
   // A locked-off camera.
   // Only the hold and the recoil move it.
-  const wk = reduced() ? 0 : 1.2 * chaos * chaos + 2.2 * cam.shake + 2.6 * rage * rage, t = simT;
-  const jit = () => (Math.random() - 0.5) * 0.0005 * (1 + 5 * rage);
+  const wk = reduced() ? 0 : 1.2 * chaos * chaos + 2.2 * cam.shake + 2.6 * rage * rage + 4 * over * over, t = simT;
+  const jit = () => (Math.random() - 0.5) * 0.0005 * (1 + 5 * rage + 8 * over);
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
   const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1) + jit());
   const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
@@ -1636,7 +1661,7 @@ function draw() {
   updateDust();
   updateArcs();
   updateBolt();
-  grade.uniforms.uRage.value = reduced() ? 0 : rage * (0.5 + 0.5 * Math.random());
+  grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
   grade.uniforms.uFlash.value = reduced() ? 0.3 * flashNow : flashNow;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   drawShadow();
@@ -1663,13 +1688,27 @@ function stepAst(dt) {
 // The level follows the hold time.
 // Any release fires.
 let charge = null;
-const CHASE_T = c => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(c, 1.5));
-const levelOf = held => 0.12 + 0.88 * (1 - Math.exp(-held / 2.5));
+// Hold times in seconds: full power, end of the ready window, the vent.
+const HOLD = { full: 10, ready: 14, vent: 24 };
+const CHASE_T = c => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(Math.min(c, 1), 1.5));
+// The ease reaches full power at HOLD.full.
+const EASE_P = 2.4;
+// The over-hold, 0 to 1 from the ready window to the vent.
+const overOf = held => clamp((held - HOLD.ready) / (HOLD.vent - HOLD.ready), 0, 1);
+// Past the ready window the power climbs to 1.25.
+const levelOf = held => held >= HOLD.full ? 1 + 0.25 * overOf(held) : 0.12 + 0.88 * (1 - Math.pow(1 - held / HOLD.full, EASE_P));
+// The inverse of levelOf.
+const heldOf = c => c > 1 ? HOLD.ready + (HOLD.vent - HOLD.ready) * Math.min(1, (c - 1) / 0.25) : HOLD.full * (1 - Math.pow(1 - clamp((c - 0.12) / 0.88, 0, 1), 1 / EASE_P));
+const stageOf = held => held < HOLD.full ? 'build' : held < HOLD.full + 0.4 ? 'full' : held < HOLD.ready ? 'ready' : held < HOLD.vent ? 'over' : 'vent';
 // Chaos keeps growing after the power has saturated.
 let chaos = 0;
-// Rage is the last stretch of a long hold.
+// Rage is the last stretch of the build.
 let rage = 0;
-const chaosOf = held => 1 - Math.exp(-held / 4);
+// Over is the gun acting out past the ready window.
+let over = 0;
+const chaosOf = held => 1 - Math.exp(-held / 8);
+// The vent's start time; a vent has no shot.
+let ventT = -1e9;
 // A hold belongs to the pointer or to Space.
 // Only its owner releases it.
 act.press = (by = 'pointer') => {
@@ -1695,24 +1734,61 @@ function cancelHold() {
   stage.classList.remove('held');
   humStop(kit.live());
 }
+// The vent: the gun dumps its charge into the plain.
+// No shot; the rock keeps coming.
+function vent() {
+  charge = null;
+  ventT = simT;
+  humStop(kit.live());
+  cam.shake += reduced() ? 0 : 2.4;
+  U.uHeat.value = Math.max(U.uHeat.value, 0.8);
+  // The strike throws the plain up under the barrel.
+  for (let i = 0; i < 160; i++) {
+    const th = rnd() * Math.PI * 2, r = 30 + rnd() * 420, v = 14 + rnd() * 26, sx = Math.sin(th), cz = Math.cos(th);
+    barrelPt(L * (0.35 + 0.5 * rnd()), 0, 0, dustP);
+    dustP.set(dustP.x + sx * r, 2 + rnd() * 8, dustP.z + cz * r);
+    dustV.set(sx * v, 5 + rnd() * 12, cz * v);
+    puff(dustP, dustV, 6 + rnd() * 6, 70 + rnd() * 110);
+  }
+  ventSound();
+  wake();
+}
+// The vent's strike point, under the barrel's middle.
+const ventP = new THREE.Vector3();
+let ventSound = () => {};
 // The shot assigns this below.
 let fire = () => {};
 const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
 function stepCharge(dt) {
   if (charge) {
     const held = simT - charge.t0;
+    // A hold past the over-hold vents the charge.
+    if (held >= HOLD.vent) { vent(); return; }
     charge.c = levelOf(held);
     chaos = chaosOf(held);
-    rage = THREE.MathUtils.smoothstep(chaos, 0.6, 0.9);
+    rage = THREE.MathUtils.smoothstep(chaos, 0.55, 0.85);
+    over = overOf(held);
     U.uRage.value = reduced() ? 0 : rage;
+    U.uOver.value = reduced() ? 0 : over;
+    // The rails glow red through the over-hold.
+    U.uHeat.value = Math.max(U.uHeat.value, 0.55 * over);
     const c = charge.c;
+    // Full power locks with one hard shudder.
+    if (!charge.locked && held >= HOLD.full) { charge.locked = true; cam.shake += 0.7; }
+    // Sparks spit from the brake through the over-hold.
+    if (over > 0 && !reduced()) {
+      for (let n = Math.floor(dt * 60 * over + rnd()); n > 0; n--) {
+        dustV.set(rnd() - 0.5, rnd() - 0.2, rnd() - 0.5).normalize().multiplyScalar(30 + rnd() * 90);
+        writeStar(MUZZLE, simT, dustV, 0.8, rnd() < 0.5 ? 0 : 2, 0.6 + rnd() * 0.9, 0.2, 1.2 + rnd(), 2, 0.7);
+      }
+    }
     charge.chase = (charge.chase + dt / CHASE_T(c)) % 1;
     U.uCharge.value = c;
     const ac = kit.live();
     if (ac) { humStart(ac); humUpdate(ac); }
     // Arcs: a few a second at first, then a storm.
     if (chaos > 0.1 && !reduced()) {
-      const rate = THREE.MathUtils.lerp(1, 24, chaos) + 50 * rage;
+      const rate = THREE.MathUtils.lerp(1, 24, chaos) + 40 * rage + 40 * over;
       if (rnd() < dt * rate) {
         const st = rnd() < 0.6 ? clamp(charge.chase + (rnd() - 0.5) * 0.3, 0.03, 0.97) : 0.03 + rnd() * 0.94;
         spawnArc(st);
@@ -1720,7 +1796,7 @@ function stepCharge(dt) {
     }
     // Dust lifts off the plain round the mount and under the barrel.
     if (chaos > 0.08) {
-      charge.dust += dt * (70 * chaos * chaos + 180 * rage);
+      charge.dust += dt * (70 * chaos * chaos + 150 * rage + 150 * over);
       while (charge.dust >= 1) {
         charge.dust -= 1;
         // At rage the ground throws dust outward in sheets.
@@ -1742,11 +1818,16 @@ function stepCharge(dt) {
       }
     }
   } else {
+    // The vent strikes the plain for most of a second.
+    const va = simT - ventT;
+    if (va < 0.9 && !reduced() && rnd() < dt * 45) spawnArc(0.3 + rnd() * 0.6, 'vent');
     // Level, chaos and chase let go in a fraction of a second.
     U.uCharge.value *= Math.exp(-dt / 0.2);
     chaos *= Math.exp(-dt / 0.3);
     rage *= Math.exp(-dt / 0.3);
+    over *= Math.exp(-dt / 0.3);
     U.uRage.value = reduced() ? 0 : rage;
+    U.uOver.value = reduced() ? 0 : over;
     if (U.uCharge.value < 0.005) U.uCharge.value = 0;
   }
 }
@@ -2141,12 +2222,21 @@ function stepShot(dt) {
     hitFlash = shot.bk * (Math.exp(-ha / 0.28) + 0.22 * Math.exp(-ha / 2.4));
   } else hitFlash *= Math.exp(-dt / 0.35);
   U.uHit.value.w = hitFlash;
+  // The barrel cools in about ten seconds.
+  U.uHeat.value *= Math.exp(-dt / 3.5);
+  if (U.uHeat.value < 0.003) U.uHeat.value = 0;
   if (ast.state === 'shatter') astMat.uniforms.uBurn.value *= Math.exp(-dt / 0.6);
   // The smoke outlives the fire, then grows back behind the next rock.
   PU.uTrail.value = ast.state === 'shatter' ? PU.uTrail.value * Math.exp(-dt / 2.4) : Math.min(1, PU.uTrail.value + dt / 3);
   if (!shot) {
     U.uFire.value *= Math.exp(-dt / 0.15);
     if (U.uRecoil.value) { U.uRecoil.value = 0; shadowDirty = true; }
+    // The vent sends a shock ring out over the plain.
+    const va = simT - ventT;
+    if (va < 14) {
+      barrelPt(L * 0.6, 0, 0, ventP);
+      U.uShock.value.set(ventP.x, ventP.z, 340 * va, 1.2 * (Math.max(0, 1 - va / 14) + 1.5 * Math.exp(-va / 1.5)));
+    }
     return;
   }
   const age = simT - shot.t0;
@@ -2199,6 +2289,15 @@ function updateBolt() {
     flare(muzzleFlare, MUZZLE, 50 + 70 * cg, 1.6 * cg); flare(muzzleGlow, MUZZLE, 1, 0);
     ring(muzRingA, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0); ring(muzRingB, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0);
     U.uMuzL.value.set(MUZZLE.x, MUZZLE.y, MUZZLE.z, 1.2 * cg); flashNow = 0;
+    // The vent's strike lights the gun and the plain.
+    const va = simT - ventT;
+    if (va < 3) {
+      const vl = Math.exp(-va / 0.25) * (0.7 + 0.3 * Math.random());
+      barrelPt(L * 0.6, 0, -80, ventP);
+      U.uMuzL.value.set(ventP.x, ventP.y, ventP.z, 10 * vl);
+      flare(muzzleFlare, ventP, 420, 3 * vl);
+      flashNow = 0.5 * vl;
+    }
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(hitGlow, MUZZLE, 1, 0); ring(hitRingA, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0); ring(hitRingB, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0);
     flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; return; }
@@ -2271,11 +2370,13 @@ function updateBolt() {
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
-const busy = () => !!press || !!charge || !!shot || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+let qaFreeze = false;
+const busy = () => !!press || !!charge || !!shot || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
-  const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+  // A QA freeze holds the clock; stills land on exact times.
+  const dt = lastT && !qaFreeze ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
   const awake = !reduced() && now - lastInput < SLEEP;
   pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
@@ -2607,7 +2708,12 @@ window.__qa = {
   size: v => { opts.size = v; retune(); },
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th) }),
   // Hold at a level: the charge starts as if held for c.
-  charge(c) { c = clamp(c, 0.12, 0.999); act.press('pointer'); charge.t0 = simT + 2.5 * Math.log(1 - (c - 0.12) / 0.88); stepCharge(0); frame(); draw(); },
+  charge(c) { c = clamp(c, 0.12, 1.25); act.press('pointer'); charge.t0 = simT - heldOf(c); stepCharge(0); frame(); draw(); },
+  // Hold as if pressed t seconds ago.
+  hold(t) { act.press('pointer'); if (charge) charge.t0 = simT - t; stepCharge(0); frame(); draw(); },
+  level: () => (charge ? charge.c : 0),
+  stage: () => (charge ? stageOf(simT - charge.t0) : simT - ventT < 3 ? 'vent' : 'idle'),
+  holding: () => !!charge,
   release() { act.release('pointer'); },
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
@@ -2617,6 +2723,9 @@ window.__qa = {
   chaos: () => chaos,
   audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size }),
   shoot(c) { fire(c); frame(); draw(); },
+  // Freeze the clock, then run it t seconds in frame steps.
+  freeze(on = true) { qaFreeze = on; },
+  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { simT += dt; U.uTime.value = simT; stepAst(dt); stepAim(dt); stepCharge(dt); stepShot(dt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive } : null),
 };
 
