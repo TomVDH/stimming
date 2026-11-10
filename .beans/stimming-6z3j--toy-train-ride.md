@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T10:42:32Z
+updated_at: 2026-11-10T10:47:12Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -270,3 +270,6 @@ Open from the critics:
 - [x] Plane: most pass 6 km out on their way down, a small grey shape by day and three lights at night (steady, red pulse, double strobe); one in three by day is a high one with a contrail. One every few minutes
 - [x] Dev: S.cue('plane' or 'crows') and S.life, to bring them on and find them
 - [ ] Not seen yet: gulls and buzzards up close, the ferry from the window, the contrail against blue sky. Tom to look
+
+- [x] Headlights (Tom): tools/carpaths.py turns the bigger mapped roads (motorway to unclassified, no residential) into 177 paths, 52 km, paths.bin 19 KB. 713 cars drive them at night: paired headlights toward the eye, red tail lights away, a faint pool on the road, a wider halo in rain; pace and spacing by road class; they fade at a path's ends. One mesh, three quads a car. Seen: a car at Bäch, a line of lights on the motorway near Bilten
+- [ ] Cars by day are not drawn; cars do not stop at junctions or meet each other

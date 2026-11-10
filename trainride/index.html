@@ -2045,6 +2045,101 @@ vec3 boatAt(vec4 a, float t) {
   out.add(m);
 }
 
+// Cars at night: pairs of lights that drive the bigger mapped roads (tools/carpaths.py).
+// Each car rides one path at its road's pace, keeps to its lane, and throws a faint pool on the road ahead.
+if (ROUTE.paths && ROUTE.paths.length > 4) {
+  const Pb = ROUTE.paths, pts = [], paths = [];
+  for (let i = 0; i + 1 < Pb.length; i += 2) {
+    if (Pb[i] === 65535) paths.push([pts.length / 2, 0, Pb[i + 1]]);
+    else if (paths.length) { pts.push(Pb[i] / 65535 * TILE, -Pb[i + 1] / 100); paths[paths.length - 1][1]++; }
+  }
+  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 2 / TW) * 2);
+  pd.set(pts);
+  const tPath = new THREE.DataTexture(pd, TW, pd.length / 2 / TW, THREE.RGFormat, THREE.FloatType);
+  tPath.needsUpdate = true;
+  // By class: metres between cars in one direction, and their speed in m/s.
+  const GAP = [90, 130, 170, 230, 380], VEL = [28, 16, 14, 13, 11], A = [];
+  for (const [start, n, k] of paths) {
+    const len = (n - 1) * 12;
+    for (const dir of [1, -1]) for (let c = 0, m = Math.max(rnd() < len / GAP[k] ? 1 : 0, Math.round(len / GAP[k] * (0.6 + 0.8 * rnd()))); c < m; c++) A.push(start, n, dir * VEL[k] * (0.85 + 0.3 * rnd()) / 12, rnd());
+  }
+  const g = new THREE.InstancedBufferGeometry(), P = [], T = [];
+  // Part 0: the headlights. Part 1: the tail lights. Part 2: the pool of light on the road.
+  for (let k = 0; k < 3; k++) { P.push(-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0); for (let i = 0; i < 6; i++) T.push(k); }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  g.setAttribute('aCar', new THREE.InstancedBufferAttribute(new Float32Array(A), 4));
+  g.instanceCount = A.length / 4;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tPath: { value: tPath } }),
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`
+    attribute float part;
+    attribute vec4 aCar;
+    uniform sampler2D tPath;
+    uniform float uTime, uCamX, uDay;
+    varying vec2 vU;
+    varying vec3 vP;
+    varying float vPart, vK;
+    ${NOISE}
+    ${LAND}
+    vec2 pathAt(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rg; }
+    void main() {
+      if (uDay > 0.6) { ${HIDE} }
+      // u counts points along the path; the car wraps from one end to the other.
+      float n = aCar.y - 1.0, u = mod(aCar.w * n + uTime * aCar.z, n), i0 = floor(u);
+      vec2 a = pathAt(aCar.x + i0), b = pathAt(aCar.x + i0 + 1.0);
+      vec2 d2 = normalize(b - a) * sign(aCar.z), rt2 = vec2(-d2.y, d2.x);
+      // Its lane lies 1.6 m to one side of the road's middle line.
+      vec2 p = mix(a, b, u - i0) + rt2 * 1.6;
+      float x = uCamX + mod(p.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+      vec3 c = vec3(x, land(vec2(x, p.y)) + 0.65, p.y), dir = vec3(d2.x, 0.0, d2.y), rt = vec3(rt2.x, 0.0, rt2.y);
+      vec3 toEye = cameraPosition - c;
+      float dist = length(toEye), facing = dot(dir, toEye / dist);
+      // A car fades in and out at its path's ends, so none pops.
+      float ends = smoothstep(0.0, 2.5, u) * smoothstep(n, n - 2.5, u);
+      vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      // Far lights keep a few pixels of size.
+      float sz = max(1.0, dist * 0.0035);
+      vec3 w;
+      if (part < 0.5) { w = c + dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz; vK = smoothstep(-0.3, 0.3, facing); }
+      else if (part < 1.5) { w = c - dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz * 0.6; vK = smoothstep(0.3, -0.3, facing); }
+      else {
+        w = c + dir * (3.0 + (position.x * 0.5 + 0.5) * 18.0) + rt * position.y * 2.4;
+        w.y = land(w.xz) + 0.08;
+        vK = 1.0;
+      }
+      vK *= ends * (1.0 - uDay / 0.6);
+      vU = position.xy; vPart = part; vP = w;
+      gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec2 vU;
+    varying vec3 vP;
+    varying float vPart, vK;
+    ${NOISE}
+    ${HAZE}
+    void main() {
+      vec3 c;
+      if (vPart < 1.5) {
+        // Two lamps side by side: a hot core each and one soft halo; rain widens the halo.
+        vec2 q = vec2(vU.x * 1.5, vU.y);
+        float l = exp(-dot(q - vec2(0.42, 0.0), q - vec2(0.42, 0.0)) * 26.0) + exp(-dot(q + vec2(0.42, 0.0), q + vec2(0.42, 0.0)) * 26.0);
+        float halo = exp(-dot(q, q) * (3.0 - 1.5 * uRain)) * (0.12 + 0.2 * uRain);
+        c = (vPart < 0.5 ? vec3(1.0, 0.94, 0.82) * 2.6 : vec3(1.0, 0.07, 0.04) * 1.3) * (l + halo);
+      } else {
+        // The pool: brightest near the car, gone by 20 m.
+        float along = vU.x * 0.5 + 0.5;
+        c = vec3(1.0, 0.9, 0.72) * 0.07 * (1.0 - along) * (1.0 - along) * (1.0 - vU.y * vU.y) * (1.0 + 2.0 * uRain);
+      }
+      gl_FragColor = vec4(c * vK * (1.0 - 0.7 * hazeAmt(vP)), 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 3;
+  out.add(m);
+}
+
 /* Station platforms: a wet slab, a canopy on columns, masts, a fence, benches and the name signs. */
 // One platform moves to whichever station is nearest.
 // Its parts sit in platform space: x = 0 is the station's centre.
@@ -3874,7 +3969,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -3889,6 +3984,8 @@ async function loadRoute() {
     // Farm parcels beside the line (tools/fields.py); without them the invented farms serve.
     // Dev: ?nofields leaves them out, to compare.
     qs.has('nofields') ? null : opt('fields.png'),
+    // Car paths on the bigger mapped roads (tools/carpaths.py); without them no cars drive.
+    fetch('paths.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -3972,7 +4069,7 @@ async function loadRoute() {
     fd = new Uint8Array(g4.getImageData(0, 0, fimg.width, fimg.height).data.buffer);
     fw = fimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
