@@ -62,7 +62,8 @@ uniform float uLand;
 // The hidden ode world: on, start map x and y in source pixels, km per pixel.
 uniform vec4 uOde; uniform sampler2D uOdeMap;
 // The sea's glitter: 1 under the moon, 0 under the sun.
-uniform float uSeaNight;
+// uSeaWind: wind at sea level in m/s; the weather sets it.
+uniform float uSeaNight, uSeaWind;
 // Airports: map site xz, then the landing heading's cos and sin.
 // uApB: runway half length, twin runway offset, seed, apron size.
 uniform vec4 uAp[8], uApB[8];
@@ -568,21 +569,23 @@ vec3 airport(vec2 q, vec4 b, vec4 F) {
 /* The open sea: havoc's classic sea, after window/seaprobe.html variant C. */
 // Havoc's regular look, as linear colour: deep, shallow and scatter.
 const vec3 SEA_DEEP = vec3(0.0003, 0.0024, 0.006), SEA_SHALLOW = vec3(0.003, 0.034, 0.055), SEA_SCATTER = vec3(0.0116, 0.332, 0.188);
-// Wind at sea level: speed in m/s, and the direction it blows toward.
-const float SEA_WIND = 7.0;
+// The wind always blows toward this direction; only its speed changes.
 const vec2 SEA_WD = vec2(0.866, 0.5);
+// Gale share: 0 below 9 m/s, 1 at 22 m/s.
+float gale() { return smoothstep(9.0, 22.0, uSeaWind); }
 float seaFres(float c) { return 0.02 + 0.98 * pow(1.0 - clamp(c, 0.0, 1.0), 5.0); }
 // Sun on the sea: cloud shadows dim it.
 vec3 seaSunL() { return uSunL * gCloudSh; }
 // Light on a diffuse face, with the cloud constants.
 vec3 seaLightOn(vec3 n) { return seaSunL() * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016; }
 // Monahan: the whitecap share of the sea grows with the wind.
-float monahan() { return min(3.84e-6 * pow(SEA_WIND, 3.41), 1.0); }
+float monahan() { return min(3.84e-6 * pow(uSeaWind, 3.41), 1.0); }
 // Gusts roughen the sea in patches a few km across; lulls lie glassy between.
 float gusts(vec2 m) {
   vec2 q = m / 2600.0 + vec2(uTime * 0.004, 0.0);
   float n = vnoise(q) * 0.65 + vnoise(q * 2.3 + 7.1) * 0.35;
-  return mix(0.35, 1.8, smoothstep(0.25, 0.75, n));
+  // A gale blows everywhere, so the patches even out.
+  return mix(mix(0.35, 0.8, gale()), mix(1.8, 1.25, gale()), smoothstep(0.25, 0.75, n));
 }
 // Footprint cells: about one pixel each way, in power-of-two metres.
 vec2 footCell(vec2 m, float fa, float fl, out vec2 cs) {
@@ -607,18 +610,19 @@ float caps(vec2 m, float fa, float fl, float W, float bias) {
 // A train fades flat once a pixel spans it; its variance moves to m2.
 float seaWaves(vec2 m, float fl, out vec2 s, out float res, out float m2, out float ph) {
   vec2 wd = SEA_WD, wc = vec2(-wd.y, wd.x);
-  float cm = (0.003 + 0.00512 * SEA_WIND) * gusts(m);
+  float cm = (0.003 + 0.00512 * uSeaWind) * gusts(m);
   m2 = cm; s = vec2(0.0); res = 0.0;
   float h = 0.0, hs = 0.0;
   // Swell: a long train from a far storm, 25 degrees off the wind.
+  // A gale makes it longer and steeper.
   vec2 sd = mat2(0.906, 0.423, -0.423, 0.906) * wd;
-  float k = 6.2832 / 420.0, a = 0.03 / k, f = fd(420.0, fl);
+  float L = mix(420.0, 620.0, gale()), k = 6.2832 / L, a = mix(0.03, 0.07, gale()) / k, f = fd(L, fl);
   ph = dot(m, sd) * k - uTime * sqrt(9.81 * k);
   h += a * sin(ph) * f; hs += a * f;
   s += sd * (a * k * cos(ph) * f);
   res += f * 0.5;
   // Wind sea: four octaves of stretched noise, crests across the wind.
-  float lam = max(0.83 * SEA_WIND * SEA_WIND, 6.0) * 1.8;
+  float lam = max(0.83 * uSeaWind * uSeaWind, 6.0) * 1.8;
   for (int i = 0; i < 4; i++) {
     float wi = i == 0 ? 0.04 : 0.08;
     float fi = fd(lam, fl);
@@ -657,6 +661,8 @@ vec3 seaClassic(vec2 w, float fw, vec3 d, vec3 up, float shelf) {
   // Body: dark deep water at a slant, lighter looking straight down.
   // Over the shelf the sand shows through, green-blue.
   vec3 body = mix(mix(SEA_DEEP, SEA_SHALLOW, pow(nv, 0.35)), vec3(0.05, 0.14, 0.13), shelf) * seaLightOn(up);
+  // A gale churns the water grey-green.
+  body = mix(body, vec3(dot(body, vec3(0.3, 0.5, 0.2))) * vec3(0.8, 1.05, 1.0) * 1.4, 0.6 * gale());
   float crest = mix(0.3, smoothstep(0.2, 1.0, hn), res);
   // Subsurface: crests lit from behind glow toward the eye.
   vec3 sunFlat = normalize(vec3(uSun.x, 0.0, uSun.z) + 1e-5);
@@ -680,15 +686,18 @@ vec3 seaClassic(vec2 w, float fw, vec3 d, vec3 up, float shelf) {
   D += sp * 4.0 / (PI * m2);
   col += sunL * 0.014 * seaFres(dot(v, hv)) * D / (4.0 * nv);
   // Lace: foam from the breakers drifts out in streaks downwind.
-  float W = monahan() * gusts(m);
+  // Whitecaps never cover more than a fifth of the sea.
+  float W = min(monahan() * gusts(m), 0.2);
+  // In a gale the spray lies in long sheets of streaked foam.
+  float sheet = gale();
   vec2 wc = vec2(-SEA_WD.y, SEA_WD.x);
   float al = dot(m, SEA_WD), ac = dot(m, wc);
   float st = vnoise(vec2(al / 700.0 - uTime * 0.004, ac / 60.0)) * 0.65 + vnoise(vec2(al / 240.0, ac / 22.0) + 5.1) * 0.35;
-  float streak = mix(0.1, smoothstep(0.6, 0.85, st), fd(60.0, fl));
+  float streak = mix(0.1 + 0.3 * sheet, smoothstep(0.6 - 0.25 * sheet, 0.85, st), fd(60.0, fl));
   // Two noises multiplied make holes, so foam reads as lace.
   float n1 = vnoise(m / 45.0) * 2.0 - 1.0, n2 = vnoise(m / 19.0 + 5.3) * 2.0 - 1.0;
   float lace = mix(0.55, smoothstep(0.02, 0.2, abs(n1 * n2)), fd(19.0, fl));
-  float foam = clamp(caps(m, fa, fl, W, 0.6 + 0.8 * crest) + streak * lace * W * 2.5, 0.0, 1.0);
+  float foam = clamp(caps(m, fa, fl, W, 0.6 + 0.8 * crest) + streak * lace * clamp(W * 3.0 + 0.3 * sheet, 0.0, 0.6), 0.0, 0.7);
   vec3 foamC = vec3(0.86, 0.9, 0.93) * 0.85 * (sunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016);
   return mix(col, foamC, foam);
 }

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:43:32Z
+updated_at: 2026-11-10T09:49:00Z
 parent: stimming-w1nd
 ---
 
@@ -64,3 +64,10 @@ Tom asked for his favourite flight-sim world under the plane as a personal easte
 - Wind: 7 m/s, fixed. uSeaNight (moon flag) makes the glitter sparser at night.
 - Cost: within noise against the flat land on a sea-heavy view (about 9 ms a frame both, dev Mac, Standard).
 - Seen at Noon, Golden hour, Midnight (Clear).
+
+## Sea follows the weather (Tom, 2026-11-10: far more intense when the weather demands it)
+
+- One wind direction; its speed (uSeaWind) follows the weather: 6 m/s under Clear, 10 under Deck, plus 18 times storm^1.3, plus 4 in a fog bank. Full storm: about 28 m/s.
+- Roughness (Cox-Munk), whitecaps (Monahan), wind-sea wavelength scale with it. A gale (9 to 22 m/s) lengthens and steepens the swell, evens out the gust patches, lays foam in long streaks and greys the water.
+- Whitecaps cap at a fifth of the sea; foam caps at 70 percent, so a gale never turns the sea into cloud-like blotches.
+- Seen at 6, 14, 20 and 28 m/s, and under the storm slider at 0.6 and 1.
