@@ -163,6 +163,13 @@ vec3 lightOn(vec3 n) { return uSunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.
 // Monahan: the whitecap share of the sea grows with the wind.
 float monahan() { return min(3.84e-6 * pow(max(uWind, 1e-3), 3.41), 1.0); }
 
+// Gusts roughen the sea in patches a few km across; lulls lie glassy between.
+// The glint shows them as a mottle of bright and dull water.
+float gusts(vec2 m) {
+  vec2 q = m / 2600.0 + vec2(uTime * 0.004, 0.0);
+  float n = vnoise(q) * 0.65 + vnoise(q * 2.3 + 7.1) * 0.35;
+  return mix(0.35, 1.8, smoothstep(0.25, 0.75, n));
+}
 // Footprint cells: about one pixel each way, in power-of-two metres.
 // The view looks along +z, so x is across and z is along.
 vec2 footCell(vec2 m, float fa, float fl, out vec2 cs) {
@@ -212,7 +219,8 @@ vec3 seaB(vec2 w, float tg, vec3 d, vec3 up) {
   vec2 wc = vec2(-uWd.y, uWd.x);
   float al = dot(m, uWd), ac = dot(m, wc);
   // Cox-Munk: the mean square slope grows with the wind.
-  float m2 = 0.003 + 0.00512 * uWind;
+  float gu = gusts(m);
+  float m2 = (0.003 + 0.00512 * uWind) * gu;
   // Swell steepens the short waves on its fronts.
   float k1 = TAU / 470.0, k2 = TAU / 330.0;
   float sw = sin(al * k1 - uTime * sqrt(9.81 * k1)) * 0.65
@@ -232,12 +240,12 @@ vec3 seaB(vec2 w, float tg, vec3 d, vec3 up) {
   float g = exp(-(1.0 - c2) / (c2 * m2));
   float D = g / (PI * m2 * c2 * c2);
   // Single facets flash near the lobe's peak, never in a slick.
-  float sp = sparkle(m, fa, fl, mix(0.006, 0.014, uNight), 6.0) * smoothstep(0.25, 0.7, g) * (1.0 - sl) * uGlit;
+  float sp = sparkle(m, fa, fl, mix(0.03, 0.02, uNight), 6.0) * smoothstep(0.2, 0.7, g) * (1.0 - sl) * uGlit;
   D += sp * mix(3.0, 5.0, uNight) / (PI * m2);
   col += uSunL * 0.014 * fresnel(dot(v, hv)) * D / (4.0 * nv);
   // Whitecaps lift the albedo; caps gather on swell crests.
-  float foam = caps(m, fa, fl, monahan(), 1.0 + 0.8 * sw);
-  return mix(col, vec3(0.86, 0.9, 0.93) * 0.6 * lightOn(up), foam);
+  float foam = caps(m, fa, fl, monahan(), (1.0 + 0.8 * sw) * gu);
+  return mix(col, vec3(0.86, 0.9, 0.93) * 0.85 * lightOn(up), foam);
 }
 #endif
 
@@ -246,7 +254,7 @@ vec3 seaB(vec2 w, float tg, vec3 d, vec3 up) {
 // A train fades flat once a pixel spans it; its variance moves to m2.
 float waves(vec2 m, float fl, out vec2 s, out float res, out float m2) {
   vec2 wd = uWd, wc = vec2(-wd.y, wd.x);
-  float cm = 0.003 + 0.00512 * uWind;
+  float cm = (0.003 + 0.00512 * uWind) * gusts(m);
   m2 = cm; s = vec2(0.0); res = 0.0;
   float h = 0.0, hs = 0.0;
   // Swell: a long train from a far storm, 25 degrees off the wind.
@@ -325,10 +333,10 @@ vec3 seaC(vec2 w, float tg, vec3 d, vec3 up) {
   float D = (0.9 * g / m2 + 0.1 * exp(-t2 / 0.08) / 0.08) / (PI * c2 * c2);
 #endif
   // Glitter: facets that catch the light twinkle near the peak.
-  float sp = sparkle(m, fa, fl, mix(0.015, 0.025, uNight), 6.0) * smoothstep(0.15, 0.6, g) * uGlit;
+  float sp = sparkle(m, fa, fl, mix(0.04, 0.025, uNight), 6.0) * smoothstep(0.15, 0.6, g) * uGlit;
   D += sp * 4.0 / (PI * m2);
   col += uSunL * 0.014 * fresnel(dot(v, hv)) * D / (4.0 * nv);
-  float W = monahan();
+  float W = monahan() * gusts(m);
 #if V == 2
   // Lace: foam from the breakers drifts out in streaks downwind.
   vec2 wc = vec2(-uWd.y, uWd.x);
@@ -342,7 +350,7 @@ vec3 seaC(vec2 w, float tg, vec3 d, vec3 up) {
 #else
   float foam = caps(m, fa, fl, W, 1.0);
 #endif
-  vec3 foamC = vec3(0.86, 0.9, 0.93) * 0.6 * (uSunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016);
+  vec3 foamC = vec3(0.86, 0.9, 0.93) * 0.85 * (uSunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016);
   return mix(col, foamC, foam);
 }
 #endif
