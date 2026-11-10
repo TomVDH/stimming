@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T18:40:13Z
+updated_at: 2026-11-10T18:48:12Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -119,3 +119,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [ ] 8. The gun breathes
 - [ ] 10. Exposure and focus
 - [ ] 9. A slow sun drift
+
+- [x] Fix: charge dust back to the old frame cost (36 ms vs 57 ms at a full hold, headless)
+- [x] Fix: the cloud glow and the heave taper out; nothing cuts
+- [x] Fix: no smoke hangs at the muzzle; the bolt trail drifts on the wind and fades in about 15 s
