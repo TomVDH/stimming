@@ -1879,7 +1879,8 @@ function makeMini() {
     uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: { value: new THREE.Vector3(...SOOT_D) }, uAsh: { value: new THREE.Vector3(...ASH_D) },
   };
   const m = makeTrain(pu);
-  m.frustumCulled = false; m.renderOrder = 2; m.visible = false;
+  // Debris trains draw after the main trail: they fly nearer the eye.
+  m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
   scene.add(m);
   return { m, pu };
 }
@@ -4050,13 +4051,14 @@ const shardMat = new THREE.ShaderMaterial({
     // Mostly silhouettes: the embers stay faint.
     col += uEmber * fresh * vHeat * 1.4 + uWhite * fresh * vHeat * vHeat * 0.8;
     // Far shards go blue and flat in the air.
-    gl_FragColor = vec4(air(col, vP), 1.0);
+    // A shard behind the soot ball fades into it; one in front stays solid.
+    gl_FragColor = vec4(air(col, vP), sootT(vP));
   }`,
-  depthWrite: false,
+  depthWrite: false, transparent: true,
 });
 const shards = new THREE.Mesh(shardGeo, shardMat);
-// The shards write no depth: the soot drawn after them covers them.
-shards.frustumCulled = false; shards.renderOrder = 1.8;
+// The shards draw after the soot and take its cover by depth.
+shards.frustumCulled = false; shards.renderOrder = 1.95;
 scene.add(shards);
 let shardsEnd = 0;
 
@@ -4134,20 +4136,20 @@ float dens(vec3 p, out vec3 em) {
   d *= 1.0 - 0.85 * fd;
   // The soot skin starts thin and thickens as the fire dies.
   d *= mix(0.4, 1.0, smoothstep(0.5, 7.0, age));
-  // The soot erodes from the rim and its thin parts, gone by 30 s.
-  float er = smoothstep(4.0, 22.0, age);
+  // The soot erodes from the rim and its thin parts, gone by 38 s.
+  float er = smoothstep(5.0, 28.0, age);
   // Large cells tear it into tufts, not grain.
   float e = 0.7 * texture(uVol, w * 0.5 + vec3(age * 0.008)).b + 0.3 * texture(uVol, w * 1.2).g;
   d = clamp((d - er * (0.1 + 0.8 * e + 0.35 * r)) / max(1.0 - 0.75 * er, 0.12), 0.0, 1.0);
   // It thins as it grows, so the sky shows through.
-  return d * 2.6 / Rb * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(20.0, 30.0, age));
+  return d * 2.6 / Rb * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(26.0, 38.0, age));
 }
 // Soot turns to pale ash as it cools, like the comet trail.
 vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 // The fire's core and the falling pieces light the smoke from inside.
 vec3 vlight(vec3 p) {
   vec3 b = p - uBP;
-  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(22.0, 31.0, uFb.x));
+  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(26.0, 38.0, uFb.x));
   vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0);
   // At night the moon lights the soot faintly and silvers its far edge.
   vec3 nb = normalize(b);
@@ -4175,7 +4177,7 @@ let blastFx = null;
 function updateBlast() {
   if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
-  if (ha > 31) { blastFx = null; updateBlast(); return; }
+  if (ha > 39) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
@@ -4187,7 +4189,7 @@ function updateBlast() {
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   // The tail's eaten end grows with the cloud and keeps its last size.
   U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.2));
-  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 4, 22)) * (1 - THREE.MathUtils.smoothstep(ha, 20, 30));
+  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 5, 28)) * (1 - THREE.MathUtils.smoothstep(ha, 26, 38));
   // Soot needs fewer steps than fire.
   // While the fire burns it needs full steps; soot alone needs fewer.
   const soot = ha > 12;
@@ -4532,10 +4534,10 @@ function stepShot(dt) {
     const x = Math.max(0, ha - 2.5), s = x * x / (x + 1.5);
     PU.uCut.value = 1e9;
     PU.uDrift.value.set(45, 8, 15).multiplyScalar(ha);
-    // The density falls by e every 6 s; erosion opens it as it goes.
-    PU.uBreak.value = 0.5 * (1 - Math.exp(-s / 18));
+    // The density falls by e every 10 s; erosion opens it as it goes.
+    PU.uBreak.value = 0.5 * (1 - Math.exp(-s / 30));
     PU.uSwipe.value.z = 0.45 * (1 - Math.exp(-ha / 2.5));
-    PU.uTrail.value = Math.exp(-s / 6) * (1 - THREE.MathUtils.smoothstep(ha, 45, 70));
+    PU.uTrail.value = Math.exp(-s / 10) * (1 - THREE.MathUtils.smoothstep(ha, 60, 90));
   } else if (ast.state !== 'shatter') {
     PU.uCut.value = 1e9; PU.uDrift.value.set(0, 0, 0); PU.uBreak.value = 0; PU.uSwipe.value.z = 0;
     PU.uTrail.value = Math.min(1, PU.uTrail.value + dt / 3);
