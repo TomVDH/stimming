@@ -218,3 +218,5 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Sand: longer, less regular dunes, band-limited per pixel against aliasing
 - [x] Brightness slider in Settings, beside exposure, contrast and saturation
 - [x] Shed embers: big weightless pieces drift slowly far back up the trail
+- [x] Reset: speed capped at 1.5 days a second, a long shutter blends the light, a dust wall hides the cut; wind roar replaces the whoosh
+- [x] Embers and fragment fire dimmed so the pieces read; old embers clear on reset
