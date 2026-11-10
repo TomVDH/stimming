@@ -833,23 +833,37 @@ function drawShadow() {
 
 
 /* ---------- asteroid: a displaced ball with a hot face ---------- */
-// Three shapes bake at load; each new rock takes the next.
-function bakeRock(detail, sd) {
+// One shape per size bakes at load: long, lumpy or cratered.
+function bakeRock(detail, sd, kind) {
   // Merged vertices give smooth normals; the icosahedron comes unindexed.
   const g = mergeVertices(new THREE.IcosahedronGeometry(1, detail));
   const p = g.attributes.position, v = new THREE.Vector3();
-  const dents = Array.from({ length: 6 }, () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize());
-  const o = sd * 10;
+  const dir = () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+  const dents = Array.from({ length: 6 }, dir);
+  // Flat cuts shear the ball into a few broad faces.
+  const cuts = Array.from({ length: 3 }, () => [dir(), 0.8 + 0.12 * rnd()]);
+  const craters = kind === 'cratered' ? Array.from({ length: 11 }, () => [dir(), 0.12 + 0.28 * rnd()]) : [];
+  const o = sd * 10, amp = kind === 'lumpy' ? 0.34 : 0.22;
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    let r = 1 + 0.22 * (noise3(v.x * 1.3 + o, v.y * 1.3, v.z * 1.3) * 0.6 + noise3(v.x * 2.9, v.y * 2.9 + o, v.z * 2.9) * 0.3 + noise3(v.x * 6.1, v.y * 6.1, v.z * 6.1 + o) * 0.1);
+    let r = 1 + amp * (noise3(v.x * 1.3 + o, v.y * 1.3, v.z * 1.3) * 0.6 + noise3(v.x * 2.9, v.y * 2.9 + o, v.z * 2.9) * 0.3 + noise3(v.x * 6.1, v.y * 6.1, v.z * 6.1 + o) * 0.1);
+    // Folded noise raises sharp crests.
+    r += 0.07 * Math.pow(1 - Math.abs(noise3(v.x * 4.3 + o, v.y * 4.3, v.z * 4.3)), 3);
     for (const d of dents) r -= 0.12 * THREE.MathUtils.smoothstep(0.35 - Math.acos(clamp(v.dot(d), -1, 1)), 0, 0.35);
-    p.setXYZ(i, v.x * r, v.y * r, v.z * r);
+    // A crater: a bowl inside a raised rim.
+    for (const [d, cr] of craters) {
+      const a = Math.acos(clamp(v.dot(d), -1, 1)) / cr;
+      if (a < 1.6) r += (a < 1 ? -0.09 * (1 - a * a) : 0) + 0.035 * Math.exp(-(((a - 1) / 0.2) ** 2));
+    }
+    for (const [n, k] of cuts) { const dn = v.dot(n); if (dn > 0.4) r = Math.max(0.55, Math.min(r, k / dn)); }
+    const e = kind === 'long' ? [1.5, 0.78, 0.82] : [1, 1, 1];
+    p.setXYZ(i, v.x * r * e[0], v.y * r * e[1], v.z * r * e[2]);
   }
   g.computeVertexNormals();
+  g.userData.kind = kind;
   return g;
 }
-const ROCKS = [bakeRock(5, 1), bakeRock(5, 2), bakeRock(5, 3)];
+const ROCKS = { boulder: bakeRock(5, 1, 'long'), mountain: bakeRock(5, 2, 'lumpy'), moon: bakeRock(5, 3, 'cratered') };
 const AST_ROCK = linFit(0.30, 0.015, 60), WHITE = linFit(0.95, 0.06, 80), EMBER = linFit(0.55, 0.18, 35);
 const astMat = new THREE.ShaderMaterial({
   uniforms: {
@@ -891,7 +905,7 @@ const astMat = new THREE.ShaderMaterial({
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
 });
-const astMesh = new THREE.Mesh(ROCKS[0], astMat);
+const astMesh = new THREE.Mesh(ROCKS[opts.size], astMat);
 astMesh.frustumCulled = false;
 scene.add(astMesh);
 // The rock's place in the sky, its size curve and its state.
@@ -902,12 +916,14 @@ const ast = { s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: 
 const astAt = (s, out) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 - s));
 function astSize() {
   ast.R = SIZES[opts.size].R;
+  astMesh.geometry = ROCKS[opts.size];
   astMesh.scale.setScalar(ast.R);
   if (ast.state !== 'shatter') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
 }
 function placeAst() {
   astAt(ast.s, ast.pos);
   astMesh.position.copy(ast.pos);
+  placeFrags();
   // The hot face looks down the track, a little toward the planet.
   astMat.uniforms.uToPlanet.value.copy(A0).sub(ast.pos).normalize().multiplyScalar(0.35).addScaledVector(ast.away, -0.65).normalize();
 }
@@ -923,7 +939,8 @@ function turnPath(turn) {
   ast.away.copy(AWAY0).applyAxisAngle(yUp, turn);
   trailBasis();
 }
-function retune() { placeAst(); astSize(); draw(); }
+// The size comes first; the fragments measure their gaps in radii.
+function retune() { astSize(); placeAst(); draw(); }
 
 /* ---------- vol: a tiled 3D billow noise, baked on the GPU ---------- */
 // R holds Perlin-Worley billows; G holds fine Worley for erosion.
@@ -1133,6 +1150,146 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
 smoke.frustumCulled = false;
 smoke.renderOrder = 2;
 scene.add(smoke);
+
+/* ---------- fragments: small rocks on their own tracks ---------- */
+// Two to four pieces fall beside the main rock, on parallel tracks.
+// The blast's shock breaks each one when it arrives.
+const FRAG_GEO = bakeRock(3, 4, 'lumpy');
+const FRAG_SEG = 32;
+const fragTrailGeo = new THREE.BufferGeometry();
+{
+  const n = FRAG_SEG, pos = new Float32Array(n * 12), f = new Float32Array(n * 8), idx = [];
+  for (let i = 0; i < n; i++) {
+    const b = i * 4, f0 = i / n, f1 = (i + 1) / n;
+    pos.set([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], i * 12);
+    f.set([f0, f1, f0, f1, f1, f0, f1, f0], i * 8);
+    idx.push(b, b + 2, b + 3, b, b + 3, b + 1);
+  }
+  fragTrailGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  fragTrailGeo.setAttribute('aF', new THREE.BufferAttribute(f, 2));
+  fragTrailGeo.setIndex(idx);
+}
+// A cheap smoke ribbon: fire at the head, soot to ash behind.
+function makeFragTrail() {
+  const m = new THREE.Mesh(fragTrailGeo, new THREE.ShaderMaterial({
+    uniforms: {
+      ...U, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uP: { value: new THREE.Vector3() }, uR: { value: 100 }, uLen: { value: 5000 },
+      uOn: { value: 0 }, uSeed: { value: rnd() * 50 }, uAway: PU.uAway, uSide: PU.uSide, uSoot: PU.uSoot, uAsh: PU.uAsh, uFireC: PU.uFireC,
+    },
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`
+    attribute vec2 aF;
+    uniform vec3 uP, uAway, uSide;
+    uniform vec2 uRes;
+    uniform float uDpr, uR, uLen, uSeed;
+    varying float vY, vF;
+    varying vec3 vP;
+    vec3 at(float f) { return uP + uAway * uLen * f + uSide * uR * 2.0 * f * sin(f * 9.0 + uSeed); }
+    void main() {
+      vec3 p = at(aF.x), q = at(aF.y);
+      vec4 c0 = projectionMatrix * viewMatrix * vec4(p, 1.0), c1 = projectionMatrix * viewMatrix * vec4(q, 1.0);
+      vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * uRes * (position.x < 0.5 ? 1.0 : -1.0);
+      d = length(d) > 1e-3 ? normalize(d) : vec2(0.0, 1.0);
+      float ppm = 0.5 * uRes.y * projectionMatrix[1][1] / max(c0.w, 1.0);
+      float W = max(uR * (1.1 + 3.5 * aF.x) * ppm, 1.5 * uDpr);
+      c0.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c0.w;
+      vY = position.y; vF = aF.x; vP = p;
+      gl_Position = c0;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec3 uSoot, uAsh, uFireC;
+    uniform float uOn, uTime, uSeed;
+    varying float vY, vF;
+    varying vec3 vP;
+    ${HEAD}
+    ${AIR}
+    void main() {
+      float edge = exp(-vY * vY * 2.5);
+      float n = k2fbm(vec2(vF * 14.0 - uTime * 0.5 + uSeed, vY * 1.3 + uSeed));
+      // The clamp keeps pow off a negative base.
+      float a = pow(clamp(1.0 - vF, 0.0, 1.0), 1.4) * smoothstep(0.2, 0.75, n * 0.7 + 0.45 * edge) * edge * 0.8 * uOn;
+      vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8);
+      vec3 fire = uFireC * exp(-vF * 16.0) * edge * 6.0 * uOn;
+      gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
+    }`,
+  }));
+  m.frustumCulled = false; m.renderOrder = 2.1; m.visible = false;
+  scene.add(m);
+  return m;
+}
+const frags = Array.from({ length: 4 }, () => {
+  const m = new THREE.Mesh(FRAG_GEO, astMat);
+  m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return { m, trail: makeFragTrail(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0) };
+});
+// Offsets count main-rock radii, so a size change keeps the gaps.
+function seedFrags() {
+  const n = 2 + Math.floor(rnd() * 3);
+  frags.forEach((f, i) => {
+    f.on = i < n; f.broke = -1; f.breakT = 0;
+    const th = (i / n) * Math.PI * 2 + rnd() * 0.8, gap = 3.8 + 2.4 * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -3 + 9 * rnd();
+    f.k = 0.12 + 0.12 * rnd();
+    f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+    f.m.quaternion.random();
+    f.m.visible = f.on; f.trail.visible = f.on;
+    f.trail.material.uniforms.uOn.value = 0;
+  });
+}
+function placeFrags() {
+  for (const f of frags) {
+    if (!f.on) continue;
+    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * ast.R).addScaledVector(ast.upv, f.oy * ast.R).addScaledVector(ast.away, f.oz * ast.R);
+    f.m.position.copy(f.pos);
+    f.m.scale.setScalar(f.k * ast.R);
+    const u = f.trail.material.uniforms;
+    u.uP.value.copy(f.pos); u.uR.value = f.k * ast.R; u.uLen.value = f.k * ast.R * 60;
+  }
+}
+// The shock front's radius, ha seconds after the hit.
+const shockR = (ha, R) => R * 1.4 + 26000 * (1 - Math.exp(-ha / 3.5));
+// The hit sets each fragment's break time by its distance.
+function armFrags() {
+  for (const f of frags) {
+    if (!f.on || f.broke >= 0) continue;
+    const d = f.pos.distanceTo(ast.pos), x = clamp((d - ast.R * 1.4) / 26000, 0, 0.95);
+    f.breakT = simT - 3.5 * Math.log(1 - x);
+  }
+}
+function stepFrags() {
+  for (const f of frags) {
+    if (!f.on) continue;
+    const u = f.trail.material.uniforms;
+    u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
+    if (f.broke < 0) {
+      u.uOn.value = Math.min(1, u.uOn.value + 1 / 90);
+      if (f.breakT && simT >= f.breakT) breakFrag(f);
+    } else u.uOn.value = Math.exp(-(simT - f.broke) / 1.5);
+    f.trail.visible = u.uOn.value > 0.01;
+  }
+}
+// A fragment bursts into embers.
+function breakFrag(f) {
+  f.broke = simT; f.m.visible = false;
+  const r = f.k * ast.R, sp = r / 120;
+  for (let i = 0; i < 90; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((60 + rnd() * 220) * sp);
+    writeStar(f.pos, simT + rnd() * 0.05, bv, 0.3, rnd() < 0.5 ? 0 : 2, 2 + rnd() * 2, 0.5, 1.4 + rnd(), rnd() < 0.3 ? 2 : 0, 1.0);
+  }
+}
+// One glowing bit off the rock's hot face.
+let ablN = 0;
+const shedP = new THREE.Vector3(), shedV = new THREE.Vector3();
+function shedSpark() {
+  const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
+  shedP.copy(ast.pos).addScaledVector(tp, 0.85 * R).add(shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.8 * R));
+  shedV.copy(ast.away).multiplyScalar(1200 + rnd() * 1600).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(500));
+  writeStar(shedP, simT, shedV, 0.5, rnd() < 0.6 ? 2 : 0, 1.6 + rnd() * 2, 0.35, 1.6 + rnd(), 2, 1.2);
+  ablN++;
+}
 
 
 /* ---------- dust: puffs that lift off the plain ---------- */
@@ -1680,6 +1837,7 @@ function draw() {
   if (!visible || !compiled) return;
   drawN++;
   astMesh.rotateOnAxis(ast.spin, 0.0012);
+  for (const f of frags) if (f.on) f.m.rotateOnAxis(f.spin, 0.004);
   aimAst();
   commitStars();
   updateDust();
@@ -1698,6 +1856,11 @@ function draw() {
 // The rock falls down its track.
 // At the end it holds and waits.
 function stepAst(dt) {
+  stepFrags();
+  if (ast.state === 'approach' || ast.state === 'hold') {
+    // The hot face sheds glowing bits; they fall back into the smoke.
+    if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 22 + rnd()); n > 0; n--) shedSpark();
+  }
   if (ast.state === 'approach') {
     ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
     if (ast.s >= 1) ast.state = 'hold';
@@ -2452,13 +2615,15 @@ function shatter(c) {
     writeStar(P, simT + rnd() * 0.05, bv, 0.3, rnd() < 0.5 ? 0 : 2, 3 + rnd() * 3, 0.6, 1.5 + rnd() * 1.5, rnd() < 0.3 ? 2 : 0, 0.8);
   }
   hitFlash = 1; cam.shake += 0.5 * c;
+  armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
   // The boom sample replaces the synth rumble once it decodes.
   if (!boomOK) rumble(c);
 }
 function respawn() {
-  ast.shape = (ast.shape + 1) % ROCKS.length;
-  astMesh.geometry = ROCKS[ast.shape];
+  // Each new rock turns a fresh face to the eye.
+  astMesh.quaternion.random();
+  seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
   // Each rock comes in a little to one side of the last.
   turnPath(ast.next);
@@ -3146,6 +3311,9 @@ window.__qa = {
   holding: () => !!charge,
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
+  rockKind: () => astMesh.geometry.userData.kind,
+  frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
+  ablation: () => ablN,
   ion: () => ({ visible: ionLine.visible, glow: ion ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
@@ -3169,6 +3337,7 @@ window.__qa = {
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
 sun(sunDeg(opts.sun));
+seedFrags();
 placeAst();
 astSize();
 stepAim(0, true);
