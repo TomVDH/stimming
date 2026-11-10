@@ -83,7 +83,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 ## Batch 11
 - [ ] oilslick
 - [ ] ink
-- [ ] sonar
+- [x] sonar (Display Active/Listen top left; Ping and Shuffle bottom left; Range/Span slider bottom right; Afterglow, Scanlines, Grid, Quality in Settings; keys off)
 - [ ] subway
 - [ ] trainride
 
