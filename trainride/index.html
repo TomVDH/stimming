@@ -161,7 +161,7 @@ float ridged(vec2 p, int oct) {
 
 // Real ground from the route map: heights relative to the eye, a lake flag, town density.
 const LAND = /* glsl */`
-uniform sampler2D tH, tF;
+uniform sampler2D tH, tF, tS, tLk;
 vec2 rt(vec2 xz) {
   float t = clamp(-xz.y, -400.0, 18400.0);
   float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
@@ -175,8 +175,17 @@ vec3 seg(float x) {
 }
 float wet(vec2 xz) { return textureLod(tF, rt(xz), 0.0).r; }
 float town(vec2 xz) { return textureLod(tF, rt(xz), 0.0).g; }
-// Distance outside the water, roughly in metres; negative on the water.
-float shore(vec2 xz) { return (0.5 - wet(xz)) * 30.0; }
+// Distance outside the water in metres; negative on the water.
+// Beside the line a distance map of the lake outlines gives the near shore to about a metre.
+// Past 760 m, and on the far shore, the coarse lake flag stands in.
+float shoreK(float t) { return ${ROUTE.sh ? 'smoothstep(0.0, 6.0, t) * (1.0 - smoothstep(690.0, 760.0, t))' : '0.0'}; }
+float shoreN(vec2 xz) { return (textureLod(tS, vec2(xz.x / ${f8(TILE)}, -xz.y / 768.0), 0.0).r * 255.0 - 128.0) * 0.25; }
+float shore(vec2 xz) {
+  float k = shoreK(-xz.y);
+  if (k >= 1.0) return shoreN(xz);
+  float old = (0.5 - wet(xz)) * 30.0;
+  return k <= 0.0 ? old : mix(old, shoreN(xz), k);
+}
 // oct above 4 adds relief finer than the 13 m elevation grid.
 // Cubic B-spline height: four bilinear taps.
 // Bilinear heights crease along the grid; the cubic keeps slopes smooth.
@@ -201,6 +210,15 @@ float landO(vec2 xz, int oct) {
     float d = (1.0 - textureLod(tF, uv, 0.0).r) * smoothstep(20.0, 80.0, -xz.y);
     h += (gnoise(xz * 0.03) * 2.0 + gnoise(xz * 0.11) * 0.6) * d;
   }
+  // Near shore: the lake lies flat inside its outline, and the bank rises gently from it.
+  float k = shoreK(-xz.y);
+  if (k > 0.0) {
+    float sd = shoreN(xz);
+    if (sd < 14.0) {
+      float lk = textureLod(tLk, vec2(xz.x / ${f8(TILE)}, 0.5), 0.0).r;
+      h = mix(h, mix(max(h, lk + clamp(sd, 0.0, 12.0) * 0.12), lk, smoothstep(2.0, 0.0, sd)), k);
+    }
+  }
   return h;
 }
 float land(vec2 xz) { return landO(xz, 7); }`;
@@ -216,10 +234,15 @@ float roadW(float x) {
 // The route map: half-float heights, and a lake flag with town density.
 const tH = new THREE.DataTexture(ROUTE.h, ROUTE.w, ROUTE.ht, THREE.RedFormat, THREE.HalfFloatType);
 const tF = new THREE.DataTexture(ROUTE.f, ROUTE.w, ROUTE.ht, THREE.RGFormat, THREE.UnsignedByteType);
-for (const t of [tH, tF]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+// The near shore's distance map, and each column's lake level.
+const tS = new THREE.DataTexture(ROUTE.sh || new Uint8Array([255]), ROUTE.sh ? ROUTE.sw : 1, ROUTE.sh ? ROUTE.sh.length / ROUTE.sw : 1, THREE.RedFormat, THREE.UnsignedByteType);
+const tLk = new THREE.DataTexture(ROUTE.lk, ROUTE.w, 1, THREE.RedFormat, THREE.HalfFloatType);
+for (const t of [tH, tF, tS, tLk]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
 const OUTU = {
   tH: { value: tH },
   tF: { value: tF },
+  tS: { value: tS },
+  tLk: { value: tLk },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   // The sun stands beyond the window, low on the left, so it shines into the cabin.
@@ -3252,11 +3275,13 @@ renderer.toneMappingExposure = 1.0;
 // route.png: R and G hold the height in decimetres plus 500 m.
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
-  const [meta, img, bld] = await Promise.all([
+  const [meta, img, bld, simg] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
     fetch('buildings.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
+    // The near shore's distance map (tools/shore.py); without it the coarse lake flag serves.
+    new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'shore.png'; }),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -3270,7 +3295,40 @@ async function loadRoute() {
     f[i * 2] = b === 255 ? 255 : 0;
     f[i * 2 + 1] = b === 255 ? 0 : b;
   }
-  return { meta, w: c.width, ht: c.height, h, f, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  // Each column's lake level: the median of its lake texels within 1500 m of the line.
+  // A texel on the shore blends in the bank, so one texel alone can stand too high or too low.
+  // Columns with no lake near take the nearest column's level.
+  const W = c.width, lk = new Float32Array(W).fill(NaN), tb = meta.b;
+  for (let i = 0; i < W; i++) {
+    const vs = [];
+    for (let j = 0; j < c.height && -400 + 8 * j + tb * j * j < 1500; j++) {
+      const k = j * W + i;
+      if (px[k * 4 + 2] === 255) vs.push((px[k * 4] * 256 + px[k * 4 + 1]) / 10 - 500);
+    }
+    if (vs.length) lk[i] = vs.sort((a, b) => a - b)[vs.length >> 1];
+  }
+  for (let pass = 0; pass < 2; pass++) for (let i = 0, last = NaN; i < W; i++) {
+    const k = pass ? W - 1 - i : i;
+    if (lk[k] === lk[k]) last = lk[k]; else if (last === last) lk[k] = last;
+  }
+  for (let i = 0; i < W; i++) if (lk[i] !== lk[i]) lk[i] = -40;
+  // Half floats filter on every GPU.
+  const lkH = Uint16Array.from(lk, v => THREE.DataUtils.toHalfFloat(v));
+  // The shore map: one byte per texel; a GPU with small textures gets every other column.
+  let sh = null, sw = 0;
+  if (simg) {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    const step = gl && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= simg.width ? 1 : 2;
+    const c2 = document.createElement('canvas');
+    c2.width = simg.width; c2.height = simg.height;
+    const g2 = c2.getContext('2d', { willReadFrequently: true });
+    g2.drawImage(simg, 0, 0);
+    const sp = g2.getImageData(0, 0, c2.width, c2.height).data;
+    sw = simg.width / step;
+    sh = new Uint8Array(sw * simg.height);
+    for (let y = 0; y < simg.height; y++) for (let x = 0; x < sw; x++) sh[y * sw + x] = sp[(y * simg.width + x * step) * 4];
+  }
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
