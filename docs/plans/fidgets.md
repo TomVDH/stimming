@@ -68,7 +68,7 @@ Tom, 2026-11-09: "Go for it". Every default above holds. Spark wheel builds firs
 |---|---|
 | Spark wheel | built, Lab (`stimming-1dfl`) |
 | Worry stone | built, Lab (`stimming-1pxz`) |
-| Ice tray | Tom picked it next on 2026-11-10, in place of Rain stick; plan in [ice.md](ice.md) |
+| Ice tray | built, Lab (`stimming-9lcg`); Tom picked it on 2026-11-10 in place of Rain stick; plan in [ice.md](ice.md) |
 | Rain stick, Peel, Calm jar | waiting |
 
 ## Build order

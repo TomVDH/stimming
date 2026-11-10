@@ -1,22 +1,37 @@
 ---
 # stimming-xh8y
-title: 'Toy: Rail gun'
-status: scrapped
+title: 'Toy: Phaeton'
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T08:52:13Z
-updated_at: 2026-11-10T08:57:04Z
+updated_at: 2026-11-10T09:00:56Z
 ---
 
-A new Lab toy at `railgun/`: charge, release, the shot.
+A new Lab toy at `phaeton/`: a rail gun on a salt flat; the slug goes through a row of mixed targets in bullet time. Tom named it Phaeton (2026-11-10). The Lab toy Railgun (`railgun/`, stimming-f793) is a different toy and stays as it is.
 
-- [ ] Brainstorm the direction with Tom
-- [ ] Plan in docs/plans/railgun.md
-- [ ] Blockout at railgun/index.html (tier written here)
-- [ ] toys.json entry and Lab menu entry
-- [ ] Stills to Tom
-- [ ] Commit through tools/commit.sh
+Tier 4, three.js 0.170. Plan: `docs/plans/phaeton.md`.
 
-## Reasons for Scrapping
+- [x] Brainstorm the direction with Tom
+- [x] Plan in docs/plans/phaeton.md
+- [x] Blockout at phaeton/index.html
+- [x] toys.json entry and Lab menu entry
+- [x] Stills to Tom
+- [x] Commit through tools/commit.sh
 
-Duplicate of `stimming-f793` (Railgun). That toy already exists at `railgun/`; PR 32 merged it to main on 2026-11-10. Work continues on `stimming-f793`.
+## Not a duplicate
+
+Reopened 2026-11-10. Tom saw the Railgun clash and named this toy Phaeton: a separate Lab toy, own folder.
+
+## Diorama pass (Tom, 2026-11-10)
+
+Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane, lever, capacitors, lamps), firing sideways. Stage on a plinth. Other modes later.
+
+- [x] Diorama blockout: slab, gun machines, load, lock, charge, fire, vent, track camera
+- [x] Task 2: a hit per material
+- [x] Task 3: modes: Range, Corridor, Aquarium, Depth
+- [ ] Graphics pass: from blockout to finished look
+  - [x] Atomic-age restyle of the machines; bloom, tilt-shift, grade
+  - [x] Light: contact shadows, rim light, a low sun, a cloud sea under the diorama
+  - [ ] Materials: edge wear, patina, salt glitter
+  - [x] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice

@@ -56,6 +56,7 @@ const FOG_U = {
   uFogN: { value: null }, uFogLvl: { value: 0 }, uFogWisp: { value: V(0, 0, 0) },
   uUpW: { value: V(0, 1, 0) }, uSpanW: { value: V(0, 0, 1) }, uFlex: { value: new THREE.Vector2() },
   uTipP: { value: V(0, 0, 0) }, uStrobeL: { value: 0 }, uNavL: { value: V(1, 0.1, 0.05) },
+  uElmo: { value: 0 }, uElmoT: { value: 0 },
 };
 // The wing bends in its first two modes; s runs root to tip.
 const BEND_GLSL = `
@@ -79,7 +80,20 @@ gl_Position = projectionMatrix * mvPosition;`);
       .replace('#include <common>', `#include <common>
 uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
 uniform vec3 uTipP, uNavL; uniform float uStrobeL;
+uniform float uElmo, uElmoT; uniform vec3 uSpanW;
 varying vec3 vFogW;`)
+      // St Elmo's fire: a violet corona flickers on the leading edges and the tips.
+      // It burns after the fog, so it glows through the bank.
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if (uElmo > 0.001) {
+    // The view's axes mirror, but they stay orthogonal: the transpose turns normals back.
+    vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+    float sp = dot(vFogW, uSpanW);
+    // Leading and trailing edges both carry it; the mirror can flip the normal's sign.
+    float edge = smoothstep(0.5, 0.9, abs(nW.x)) + 0.8 * smoothstep(22.0, 25.0, sp);
+    float fl = 0.5 + 0.5 * sin(uElmoT * 37.0 + vFogW.x * 9.0 + sp * 3.1) * sin(uElmoT * 23.0 - sp * 5.3 + vFogW.y * 7.0);
+    gl_FragColor.rgb += vec3(0.5, 0.42, 1.0) * uElmo * edge * (0.25 + 0.75 * fl * fl) * 0.12;
+  }`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   // Fog curtains and banks between the eye and the skin hide stretches of the wing.
@@ -268,9 +282,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   scene.add(sun, sun.target);
   const flashL = new THREE.AmbientLight(0xb8bdff, 0);
   scene.add(flashL);
-  // The brightest bolt lights the skin from its own side.
+  // The nearest bright flash lights the skin from its own side.
+  // A flash is a glowing cloud kilometres wide, not a point.
+  // So most of its light is soft fill, which gives no hot spots.
   const boltL = new THREE.DirectionalLight(0xc8ccff, 0);
-  scene.add(boltL, boltL.target);
+  const boltH = new THREE.HemisphereLight(0xc8ccff, 0x0c0d14, 0);
+  scene.add(boltL, boltL.target, boltH);
   // A fog bank swallows the wing; the shader sets the bank's density.
   scene.fog = new THREE.FogExp2(0x000000, 0);
   // The tip strobe and the nav light light the skin near the tip.
@@ -290,7 +307,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   air.add(wingL, wingL.target);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0] };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -323,7 +340,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -371,11 +388,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       cam.matrixWorld.makeBasis(R, U, F.clone().negate());
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
       cam.fov = 2 * Math.atan(H / 2 / basis.focal) * 180 / Math.PI; cam.aspect = W / H; cam.updateProjectionMatrix();
-      // Lambert divides by pi; the shader's sun term is 0.012 on grey paint.
+      // The sun's irradiance is sunL over 1.5, in the bake's own units.
+      // So the paint takes sun and sky in their true ratio.
       const s = V(...sky.sun).normalize(), sl = sky.sunL, m = Math.max(...sl, 1e-6);
       sun.color.setRGB(sl[0] / m, sl[1] / m, sl[2] / m);
       // Towers, storm murk and fog veil the sun, so its glint and shadows fade.
-      sun.intensity = m * 0.012 * Math.PI / 0.34 * veil;
+      sun.intensity = m / 1.5 * veil;
       // Storm murk also dulls the sky the paint mirrors.
       scene.environmentIntensity = 1 - 0.6 * storm;
       const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
@@ -383,8 +401,13 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
       flashL.intensity = flash * 0.06;
-      boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.3 : 0;
-      if (bolt) boltL.position.copy(bolt.dir).multiplyScalar(50);
+      // The light swells in about 40 ms and fades over about 200 ms.
+      // So a stroke blooms on the skin instead of a hard pop.
+      const want = bolt ? Math.min(bolt.level, 2.5) : 0;
+      mo.bolt += (want - mo.bolt) * (1 - Math.exp(-dtw / (want > mo.bolt ? 0.04 : 0.2)));
+      boltL.intensity = mo.bolt * 0.06;
+      boltH.intensity = mo.bolt * 0.3;
+      if (bolt) { boltL.position.copy(bolt.dir).multiplyScalar(50); boltH.position.copy(bolt.dir); }
       // The bank's sight range, as the shader's fogAt sets it.
       const vis = 120000 * Math.exp(-11 * Math.pow(fogLevel, 1.3));
       scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;
@@ -401,6 +424,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
       navL.position.copy(tw).add(V(0.4, -0.5, 0));
       wingL.intensity = beam * WING_LIGHT.k;
+      FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
       return [bend.x, bend.y, bend.z];
     },
   };

@@ -1,0 +1,1930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.3 0.06 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phaeton</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<style>
+/* Phaeton: a rail gun diorama on a salt slab, fired sideways through a row of targets. */
+:root { --stage: oklch(0.3 0.06 265); }
+.stage--phaeton canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--phaeton canvas.on { opacity: 1; }
+.stage--phaeton { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--phaeton canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Phaeton</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--phaeton" id="stage" tabindex="0" role="application" aria-label="A rail gun on a salt slab, seen from the side, aimed along a row of six targets. Click the rack to load a slug, pull the breech lever to lock it, hold to charge and release to fire. The slug goes through the targets in slow motion. L loads, K locks, Space charges and fires, S shuffles the row.">
+      <p class="fail" hidden>Phaeton needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Phaeton</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { gsap } from 'gsap';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const col = (L, C, h) => new THREE.Color().setRGB(...linFit(L, C, h), THREE.LinearSRGBColorSpace);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- the diorama ---------- */
+// Units are metres. The lane runs along +x; the camera looks from +z.
+const BORE = 1.3;
+const SLAB = { x0: -17, x1: 12.6, z: 3.5, salt: 1.2, plinth: 1.5 };
+const RACK_X = -15.2, TRAY_X = -12.4, MUZZLE = -6, BACK_X = 10.4;
+const SLOTS = [-3.6, -1.2, 1.2, 3.6, 6, 8.4];
+// The slug speed is in sim metres per second.
+const SPEED = 380, CHARGE_TIME = 2.5, MIN_HOLD = 0.15, REFILL = 4;
+const onSlab = (x, z) => x > SLAB.x0 && x < SLAB.x1 && Math.abs(z) < SLAB.z;
+
+/* ---------- bar ---------- */
+let camMode = 'track', dustOn = true, slowmo = 0.35;
+const MODES = ['range', 'corridor', 'aquarium', 'depth'];
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+let mode = MODES.includes(store.get('stimming.phaeton.mode')) ? store.get('stimming.phaeton.mode') : 'range';
+// The handlers bind once the scene exists.
+const act = { load() {}, lock() {}, down() {}, up() {}, shuffle() {}, reset() {}, mode() {} };
+const ui = initPage({ id: 'phaeton', bar: {
+  choice: { label: 'Mode', value: mode, options: [
+    { value: 'range', label: 'Range', key: '1' },
+    { value: 'corridor', label: 'Corridor', key: '2' },
+    { value: 'aquarium', label: 'Aquarium', key: '3' },
+    { value: 'depth', label: 'Depth', key: '4' },
+  ], onPick: v => act.mode(v) },
+  actions: [
+    { verb: 'load', key: 'L', onPress: () => act.load() },
+    { verb: 'lock', key: 'K', onPress: () => act.lock() },
+    { verb: 'fire', key: 'Space', hold: true, onDown: () => act.down(), onUp: () => act.up() },
+  ],
+  // Slow-mo sets the bullet-time scale, from 1/8 to 1/100.
+  slider: { label: 'Slow-mo', min: 0, max: 1, step: 0.01, value: 0.35, persist: true, onInput: v => { slowmo = v; } },
+  settings: [
+    { type: 'choice', id: 'camera', label: 'Camera', value: 'track', persist: true,
+      options: [{ value: 'track', label: 'Track' }, { value: 'fixed', label: 'Fixed' }], onPick: v => { camMode = v; } },
+    { type: 'toggle', id: 'dust', label: 'Dust', value: true, persist: true, onToggle: v => { dustOn = v; } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['click', 'rack, lever'], ['hold', 'charge'], ['release', 'fire'], ['S', 'shuffle']],
+} });
+camMode = ui.setting('camera')?.value ?? camMode;
+dustOn = ui.setting('dust')?.value ?? dustOn;
+slowmo = ui.slider?.value ?? slowmo;
+const timeSlow = () => 1 / (8 + 92 * slowmo);
+
+/* ---------- renderer ---------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+const HORIZON = col(0.74, 0.12, 52), ZENITH = col(0.3, 0.09, 268), GLOW = col(0.84, 0.15, 62), VOID = col(0.22, 0.05, 280);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(20, 1, 0.5, 1500);
+
+/* ---------- lens and grade ---------- */
+// Bloom on the hot parts, a tilt-shift blur that sells the miniature, then a film grade.
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.6);
+const heat = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uA: { value: new THREE.Vector2() }, uB: { value: new THREE.Vector2() }, uAmt: { value: 0 }, uW: { value: 0.01 }, uAspect: { value: 1 }, uTime: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uA, uB; uniform float uAmt, uW, uAspect, uTime; varying vec2 vUv;
+    void main() {
+      vec2 k = vec2(uAspect, 1.0), ap = (vUv - uA) * k, ab = (uB - uA) * k;
+      float t = clamp(dot(ap, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+      float d = length(ap - ab * t);
+      float f = uAmt * exp(-d * d / (uW * uW));
+      vec2 n = vec2(sin(vUv.y * 190.0 + vUv.x * 40.0 + uTime * 9.0), cos(vUv.x * 170.0 - uTime * 7.0 + vUv.y * 30.0));
+      gl_FragColor = texture2D(tDiffuse, vUv + n * f * 0.0035);
+    }`,
+});
+heat.enabled = false;
+composer.addPass(heat);
+composer.addPass(bloom);
+const POST_VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+const TILTSHIFT = {
+  uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2(1, 0) }, uRes: { value: new THREE.Vector2(1, 1) }, uFocus: { value: 0.45 }, uBand: { value: 0.1 }, uMax: { value: 7 } },
+  vertexShader: POST_VS,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uDir, uRes; uniform float uFocus, uBand, uMax; varying vec2 vUv;
+    void main() {
+      // Blur grows with distance from the focus band, as a tilted lens does.
+      float r = uMax * smoothstep(uBand, uBand + 0.32, abs(vUv.y - uFocus));
+      vec4 c = vec4(0.0); float w = 0.0;
+      for (int i = -4; i <= 4; i++) {
+        float k = exp(-float(i * i) / 8.0);
+        c += texture2D(tDiffuse, vUv + uDir * float(i) * r / uRes) * k;
+        w += k;
+      }
+      gl_FragColor = c / w;
+    }`,
+};
+const tiltH = new ShaderPass(TILTSHIFT), tiltV = new ShaderPass(TILTSHIFT);
+tiltV.uniforms.uDir.value.set(0, 1);
+composer.addPass(tiltH);
+composer.addPass(tiltV);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 } },
+  vertexShader: POST_VS,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime; varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      // A warm print stock: lifted shadows, golden mids, a soft vignette, fine grain.
+      c = c * vec3(1.05, 1.0, 0.92) + vec3(0.006, 0.004, 0.012);
+      float v = length((vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0));
+      c *= mix(1.0, 0.62, smoothstep(0.35, 1.05, v));
+      c += (hash(vUv * uRes + fract(uTime) * 100.0) - 0.5) * 0.035 * (c + 0.04);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+const draw = () => { grade.uniforms.uTime.value = performance.now() / 1000; composer.render(); };
+
+/* ---------- sky ---------- */
+// The diorama floats in a dusk sky; below the horizon it fades to violet.
+const SUN = new THREE.Vector3(-0.7, 0.05, -0.7).normalize();
+const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uHor: { value: HORIZON }, uZen: { value: ZENITH }, uGlow: { value: GLOW }, uVoid: { value: VOID }, uSun: { value: SUN },
+    uLit: { value: col(0.86, 0.13, 48) }, uShade: { value: col(0.46, 0.09, 320) }, uDisc: { value: col(0.97, 0.08, 75).multiplyScalar(14) } },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uHor, uZen, uGlow, uVoid, uSun, uLit, uShade, uDisc;
+    varying vec3 vDir;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+    }
+    float fbm(vec2 p) {
+      float a = 0.5, v = 0.0;
+      for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; }
+      return v;
+    }
+    void main() {
+      float y = vDir.y;
+      vec3 c = mix(uHor, uZen, pow(smoothstep(0.0, 0.55, max(y, 0.0)), 0.6));
+      c = mix(c, uVoid, smoothstep(0.0, -0.35, y));
+      float s = max(dot(normalize(vec3(vDir.x, 0.0, vDir.z)), normalize(vec3(uSun.x, 0.0, uSun.z))), 0.0);
+      c += uGlow * pow(s, 5.0) * exp(-abs(y) * 8.0) * 0.8;
+      // Cirrus: streaks on a plane overhead, thick near the horizon, gone up high.
+      if (y > 0.0) {
+        vec2 q = vDir.xz / (y + 0.05);
+        float n = fbm(q * vec2(0.22, 1.1) + vec2(2.0, 5.0));
+        float band = smoothstep(0.0, 0.03, y) * (1.0 - smoothstep(0.25, 0.6, y));
+        float cl = smoothstep(0.38, 0.7, n) * band;
+        c = mix(c, mix(uShade, uLit, pow(s, 2.0)) * (0.75 + 0.6 * s), cl * 0.9);
+      }
+      // Below the horizon the diorama floats over a sea of cloud, lit gold on the sun side.
+      if (y < 0.0) {
+        vec2 q = vDir.xz / (-y + 0.03);
+        float n = fbm(q * 0.45 + vec2(11.0, 3.0)) * 0.65 + fbm(q * 1.6 + 4.0) * 0.35;
+        float cl = smoothstep(0.42, 0.68, n);
+        float haze = smoothstep(0.0, -0.06, y) * (1.0 - smoothstep(-0.35, -0.75, y) * 0.6);
+        vec3 deck = mix(uShade * 0.6, uLit * 1.2, clamp(smoothstep(0.45, 0.85, n) * 0.8 + pow(s, 2.0) * 0.4, 0.0, 1.0));
+        c = mix(c, deck, cl * haze * 0.85);
+      }
+      // The sun sits low with a tight halo.
+      float sd = max(dot(vDir, normalize(uSun)), 0.0);
+      c += uDisc * smoothstep(0.99935, 0.9997, sd) + uGlow * pow(sd, 400.0) * 1.5;
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+}));
+scene.add(sky);
+// The sky lights the bare metal by reflection.
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new THREE.Scene().add(sky.clone()), 0.02).texture;
+  scene.environmentIntensity = 0.7;
+  pmrem.dispose();
+}
+
+/* ---------- light ---------- */
+const hemi = new THREE.HemisphereLight(col(0.66, 0.06, 255), col(0.6, 0.06, 40), 1.0);
+scene.add(hemi);
+// A low sun from the front left rakes the slab and throws long shadows right.
+const sun = new THREE.DirectionalLight(col(0.88, 0.1, 60), 2.2);
+sun.position.set(-38, 11, 26);
+sun.target.position.set(0, 0, 0);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 14, bottom: -14, near: 1, far: 120 });
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.02;
+scene.add(sun, sun.target);
+const rim = new THREE.DirectionalLight(col(0.84, 0.13, 45), 1.7);
+rim.position.copy(SUN).multiplyScalar(60).setY(9);
+scene.add(rim);
+// The muzzle flash lights the slab and the targets for a moment.
+const flash = new THREE.PointLight(col(0.9, 0.08, 230), 0, 30, 1.6);
+flash.position.set(MUZZLE + 0.8, BORE + 0.5, 0.8);
+scene.add(flash);
+
+/* ---------- textures ---------- */
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+// A periodic Voronoi tile draws the hexagon crust of a salt flat.
+function crustTile(N = 256, cells = 6) {
+  const pts = [];
+  for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) pts.push([(i + rnd(0.2, 0.8)) / cells, (j + rnd(0.2, 0.8)) / cells]);
+  const t = canvasTex(N, N, (g) => {
+    const img = g.createImageData(N, N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = x / N, v = y / N;
+      let f1 = 9, f2 = 9;
+      for (const [px, py] of pts) {
+        let dx = Math.abs(u - px), dy = Math.abs(v - py);
+        dx = Math.min(dx, 1 - dx); dy = Math.min(dy, 1 - dy);
+        const d = Math.hypot(dx, dy);
+        if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+      }
+      // Ridges rise where two cells meet.
+      const e = (f2 - f1) * cells, k = (Math.exp(-e * e * 70) * 255) | 0, o = (y * N + x) * 4;
+      img.data[o] = img.data[o + 1] = img.data[o + 2] = k; img.data[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  });
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+// The cut faces show strata: crust, mud and clay bands.
+function strataTex(len) {
+  const t = canvasTex(1024, 128, (g, w, h) => {
+    const bands = [[0, 0.08, '#efeae2'], [0.08, 0.2, '#cfc6b8'], [0.2, 0.34, '#a59a8a'], [0.34, 0.4, '#d9d1c4'], [0.4, 0.62, '#8c7d6c'], [0.62, 0.7, '#b9ad9b'], [0.7, 1, '#6f6255']];
+    for (const [a, b, c] of bands) { g.fillStyle = c; g.fillRect(0, a * h, w, (b - a) * h + 1); }
+    // Wavy seams and grit break the bands.
+    for (let i = 0; i < 2600; i++) {
+      const v = Math.random() < 0.5 ? 255 : 0;
+      g.fillStyle = `rgba(${v},${v},${v},${rnd(0.03, 0.1)})`;
+      g.fillRect(Math.random() * w, Math.random() * h, rnd(1, 6), rnd(1, 2));
+    }
+  });
+  t.repeat.set(len / 9, 1);
+  return t;
+}
+const crust = crustTile();
+
+/* ---------- slab and plinth ---------- */
+{
+  const L = SLAB.x1 - SLAB.x0, D = SLAB.z * 2;
+  crust.repeat.set(L / 2.6, D / 2.6);
+  const top = new THREE.MeshStandardMaterial({ color: col(0.95, 0.012, 70), roughness: 0.95, bumpMap: crust, bumpScale: 1.4 });
+  const side = new THREE.MeshStandardMaterial({ map: strataTex(L), roughness: 1 });
+  const end = new THREE.MeshStandardMaterial({ map: strataTex(D), roughness: 1 });
+  const dark = new THREE.MeshStandardMaterial({ color: col(0.16, 0.01, 280), roughness: 0.7, metalness: 0.1 });
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(L, SLAB.salt, D), [end, end, top, dark, side, side]);
+  slab.position.set((SLAB.x0 + SLAB.x1) / 2, -SLAB.salt / 2, 0);
+  slab.receiveShadow = true;
+  // The plinth is a dark museum base, set in from the slab edge.
+  const plinth = new THREE.Mesh(new RoundedBoxGeometry(L - 0.8, SLAB.plinth, D - 0.8, 2, 0.08), dark);
+  plinth.position.set(slab.position.x, -SLAB.salt - SLAB.plinth / 2, 0);
+  scene.add(slab, plinth);
+}
+
+/* ---------- materials ---------- */
+// Atomic-age proving ground: enamel paint, chrome, Bakelite, copper.
+const enamel = (c, r = 0.32) => new THREE.MeshPhysicalMaterial({ color: c, roughness: r, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.12 });
+const PAL = { cream: col(0.93, 0.035, 90), seafoam: col(0.74, 0.085, 180), cherry: col(0.56, 0.19, 25), mustard: col(0.8, 0.14, 85), bakelite: col(0.32, 0.06, 45) };
+const steel = new THREE.MeshStandardMaterial({ color: col(0.36, 0.012, 250), roughness: 0.5, metalness: 0.65 });
+const steelLight = new THREE.MeshStandardMaterial({ color: col(0.58, 0.01, 250), roughness: 0.35, metalness: 0.8 });
+const chrome = new THREE.MeshStandardMaterial({ color: col(0.92, 0.005, 250), roughness: 0.1, metalness: 1 });
+const paint = enamel(PAL.mustard, 0.4);
+const cream = enamel(PAL.cream), seafoam = enamel(PAL.seafoam), cherry = enamel(PAL.cherry, 0.28), bakelite = enamel(PAL.bakelite, 0.3);
+const ceramic = new THREE.MeshStandardMaterial({ color: col(0.86, 0.02, 85), roughness: 0.45 });
+const copper = new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) });
+const black = new THREE.MeshStandardMaterial({ color: col(0.14, 0.005, 250), roughness: 0.6 });
+const add = (parent, geo, mat, x, y, z, shadow = true) => {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.castShadow = shadow; m.receiveShadow = true;
+  parent.add(m);
+  return m;
+};
+const bx = (w, h, d, r = 0) => (r ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d));
+const cylX = (r, len, seg = 20) => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2);
+// A ring round the x axis.
+const ringX = (r, tube) => new THREE.TorusGeometry(r, tube, 10, 40).rotateY(Math.PI / 2);
+// A lathe along x from a list of [x, radius] points.
+const blobTex = canvasTex(128, 128, (g, N) => {
+  const r = g.createRadialGradient(N / 2, N / 2, 0, N / 2, N / 2, N / 2);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.45, 'rgba(255,255,255,0.55)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, N, N);
+});
+const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const BLOB = col(0.22, 0.05, 285);
+// One blob: a soft violet shadow on the salt, sx by sz metres.
+function blob(parent, x, z, sx, sz, op = 0.5) {
+  const m = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({ color: BLOB, alphaMap: blobTex, transparent: true, opacity: op, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  m.position.set(x, 0.006, z);
+  m.scale.set(sx, 1, sz);
+  m.renderOrder = -1;
+  parent.add(m);
+  return m;
+}
+const latheX = pts => new THREE.LatheGeometry(pts.map(([x, r]) => new THREE.Vector2(r, x)), 48).rotateZ(-Math.PI / 2);
+// Hazard stripes for crane beams and the backstop band.
+const hazardTex = canvasTex(256, 64, (g, w, h) => {
+  g.fillStyle = '#e8b725'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#1d1a16';
+  for (let x = -h; x < w + h; x += 48) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 24, h); g.lineTo(x + 24 + h, 0); g.lineTo(x + h, 0); g.fill(); }
+});
+function hazardMat(len) {
+  const t = hazardTex.clone();
+  t.needsUpdate = true;
+  t.repeat.set(len / 1.2, 1);
+  const m = enamel(new THREE.Color(1, 1, 1), 0.45);
+  m.map = t;
+  return m;
+}
+
+/* ---------- the gun ---------- */
+const gun = new THREE.Group();
+scene.add(gun);
+// The barrel is a streamlined seafoam nacelle with chrome rings and a flared muzzle.
+const NOSE = TRAY_X + 0.42;
+add(gun, latheX([[NOSE, 0.001], [NOSE, 0.3], [NOSE + 0.25, 0.4], [NOSE + 1.2, 0.43], [MUZZLE - 1.2, 0.38], [MUZZLE - 0.45, 0.3], [MUZZLE - 0.45, 0.001]]), seafoam, 0, BORE, 0);
+add(gun, latheX([[MUZZLE - 0.5, 0.001], [MUZZLE - 0.5, 0.26], [MUZZLE - 0.2, 0.3], [MUZZLE, 0.44], [MUZZLE + 0.02, 0.44], [MUZZLE + 0.02, 0.18], [MUZZLE - 0.3, 0.12]]), chrome, 0, BORE, 0);
+for (const x of [NOSE + 0.6, NOSE + 1.7, NOSE + 2.8, NOSE + 3.9, MUZZLE - 0.8]) add(gun, ringX(0.425, 0.03), chrome, x, BORE, 0);
+add(gun, ringX(0.31, 0.035), cherry, MUZZLE - 0.42, BORE, 0);
+// Coil portholes along the camera side glow with the charge.
+const ports = [];
+for (let i = 0; i < 5; i++) {
+  const x = NOSE + 1.15 + i * 1.1;
+  const p = new THREE.Group();
+  p.position.set(x, BORE, 0.39);
+  add(p, new THREE.TorusGeometry(0.1, 0.022, 10, 28), chrome, 0, 0, 0.02);
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
+  add(p, new THREE.CircleGeometry(0.09, 28), m, 0, 0, 0.012, false);
+  gun.add(p);
+  ports.push(m);
+}
+// A cherry tail fin rides on top of the breech end.
+{
+  const s = new THREE.Shape();
+  s.moveTo(0, 0); s.lineTo(1.5, 0); s.quadraticCurveTo(0.6, 0.15, 0.1, 0.55); s.lineTo(0, 0);
+  const fin = add(gun, new THREE.ExtrudeGeometry(s, { depth: 0.04, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2 }), cherry, NOSE + 0.15, BORE + 0.36, -0.02);
+  fin.rotation.y = 0;
+}
+// Twin copper rails run outside the nacelle on chrome standoffs.
+const rails = [];
+const railLen = MUZZLE - NOSE - 0.9;
+for (const s of [-1, 1]) {
+  rails.push(add(gun, cylX(0.032, railLen, 12), copper, NOSE + 0.55 + railLen / 2, BORE + s * 0.22, 0.44, false));
+  for (let x = NOSE + 0.7; x < MUZZLE - 0.5; x += 1.1) add(gun, bx(0.05, 0.05, 0.1), chrome, x, BORE + s * 0.22, 0.4, false);
+}
+// Two mustard cradles with chrome rams hold the barrel.
+for (const x of [NOSE + 1.1, MUZZLE - 1.5]) {
+  const saddle = add(gun, new THREE.TorusGeometry(0.46, 0.05, 8, 24, Math.PI), paint, x, BORE, 0);
+  saddle.rotation.set(0, Math.PI / 2, Math.PI);
+  for (const z of [-1, 1]) {
+    const leg = add(gun, bx(0.14, BORE - 0.2, 0.12, 0.03), paint, x, (BORE - 0.2) / 2, z * 0.42);
+    leg.rotation.x = z * 0.2;
+  }
+  add(gun, bx(0.6, 0.1, 1.3, 0.04), paint, x, 0.05, 0);
+  const ram = add(gun, new THREE.CylinderGeometry(0.035, 0.035, 0.95, 12), chrome, x - 0.35, 0.55, 0.25);
+  ram.rotation.z = 0.55;
+}
+// The breech: a cream housing, a chrome tray, a sliding capsule block and a lever.
+add(gun, bx(1.7, 0.16, 0.6, 0.05), cream, TRAY_X - 0.35, BORE - 0.34, 0);
+add(gun, bx(0.6, 0.12, 0.5, 0.03), chrome, TRAY_X - 0.05, BORE - 0.22, 0);
+add(gun, ringX(0.33, 0.06), cream, NOSE - 0.03, BORE, 0);
+const block = add(gun, new THREE.CapsuleGeometry(0.25, 0.36, 8, 24).rotateZ(Math.PI / 2), cream, 0, BORE, 0);
+add(block, new THREE.CylinderGeometry(0.2, 0.2, 0.05, 24).rotateZ(Math.PI / 2), cherry, -0.43, 0, 0);
+add(block, ringX(0.255, 0.018), chrome, 0.05, 0, 0);
+const BLOCK_OPEN = TRAY_X - 1.0, BLOCK_SHUT = TRAY_X;
+const lever = new THREE.Group();
+lever.position.set(TRAY_X - 0.6, BORE - 0.2, 0.42);
+add(lever, new THREE.CylinderGeometry(0.028, 0.034, 0.9, 12).translate(0, 0.45, 0), chrome, 0, 0, 0);
+const knobMat = enamel(PAL.cherry, 0.18);
+knobMat.emissive = new THREE.Color(0);
+add(lever, new THREE.SphereGeometry(0.1, 20, 14), knobMat, 0, 0.94, 0);
+add(lever, cylX(0.08, 0.07).rotateY(Math.PI / 2), cherry, 0, 0, 0);
+gun.add(lever);
+const LEVER_OPEN = 0.65, LEVER_SHUT = -0.65;
+
+/* ---------- the rack and crane ---------- */
+// A slug is a finned chrome dart with a copper drive band.
+const slugGeo = cylX(0.07, 0.36, 18);
+const noseGeo = new THREE.ConeGeometry(0.07, 0.14, 18).rotateZ(-Math.PI / 2);
+const bandGeo = cylX(0.077, 0.06, 18);
+const finGeo = bx(0.14, 0.11, 0.012);
+const slugMat = chrome;
+const bandMat = new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) });
+function makeSlug() {
+  const g = new THREE.Group();
+  add(g, slugGeo, slugMat, 0, 0, 0);
+  add(g, noseGeo, slugMat, 0.25, 0, 0);
+  add(g, bandGeo, bandMat, 0.08, 0, 0);
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.Group();
+    f.rotation.x = k * TAU / 3;
+    add(f, finGeo, cherry, -0.13, 0.1, 0);
+    g.add(f);
+  }
+  return g;
+}
+const rack = new THREE.Group();
+scene.add(rack);
+blob(scene, RACK_X, 0, 1.5, 1.5, 0.55);
+for (const z of [-0.34, 0.34]) add(rack, bx(0.12, 2.3, 0.12, 0.05), cream, RACK_X, 1.15, z);
+add(rack, bx(0.95, 0.12, 0.95, 0.05), cherry, RACK_X, 0.06, 0);
+add(rack, bx(0.3, 0.12, 0.85, 0.05), cherry, RACK_X, 2.3, 0);
+const RACK_N = 5, rackY = i => 0.45 + i * 0.36;
+const rackSlugs = [];
+for (let i = 0; i < RACK_N; i++) {
+  add(rack, bx(0.62, 0.04, 0.62, 0.015), chrome, RACK_X, rackY(i) - 0.11, 0);
+  const s = makeSlug();
+  s.position.set(RACK_X, rackY(i), 0);
+  rack.add(s);
+  rackSlugs.push(s);
+}
+// A mustard gantry with hazard stripes; the hook is a horseshoe magnet.
+const CRANE_Y = 3.6;
+for (const x of [-16.1, -11.3]) {
+  add(scene, bx(0.16, CRANE_Y, 0.16, 0.04), paint, x, CRANE_Y / 2, -1.0);
+  add(scene, bx(0.14, 0.14, 1.1, 0.03), paint, x, CRANE_Y - 0.07, -0.5);
+  add(scene, bx(0.5, 0.08, 0.5, 0.03), paint, x, 0.04, -1.0);
+}
+add(scene, bx(5.1, 0.2, 0.2, 0.03), hazardMat(5.1), -13.7, CRANE_Y, 0);
+const trolley = add(scene, bx(0.44, 0.24, 0.38, 0.06), cherry, 0, CRANE_Y - 0.2, 0);
+for (const dx of [-0.13, 0.13]) add(trolley, new THREE.CylinderGeometry(0.06, 0.06, 0.42, 16).rotateX(Math.PI / 2), chrome, dx, 0.13, 0);
+const cable = add(scene, new THREE.CylinderGeometry(0.012, 0.012, 1, 6).translate(0, -0.5, 0), black, 0, 0, 0, false);
+const hook = new THREE.Group();
+scene.add(hook);
+{
+  const u = add(hook, new THREE.TorusGeometry(0.12, 0.045, 12, 28, Math.PI), cherry, 0, 0.0, 0);
+  u.rotation.z = 0;
+  for (const s of [-1, 1]) add(hook, new THREE.CylinderGeometry(0.046, 0.046, 0.08, 14), chrome, s * 0.12, -0.04, 0);
+  add(hook, new THREE.CylinderGeometry(0.03, 0.03, 0.06, 10), chrome, 0, 0.17, 0);
+}
+const gripMat = new THREE.MeshBasicMaterial({ color: col(0.85, 0.14, 230), toneMapped: false, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+const grip = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.12), gripMat);
+hook.add(grip);
+grip.position.set(0, -0.1, 0.06);
+const crane = { x: -13.8, y: 2.9, magnet: 0 };
+function placeCrane() {
+  trolley.position.x = crane.x;
+  cable.position.set(crane.x, CRANE_Y - 0.32, 0);
+  cable.scale.y = Math.max(0.01, CRANE_Y - 0.32 - crane.y - 0.2);
+  hook.position.set(crane.x, crane.y + 0.02, 0);
+  gripMat.opacity = crane.magnet * (0.6 + 0.4 * Math.sin(performance.now() / 40));
+}
+
+/* ---------- vacuum tubes, generator and panel ---------- */
+// Six glass tubes on a bench; their filaments light one by one.
+const caps = [];
+const tubeGlass = new THREE.MeshPhysicalMaterial({ color: col(0.95, 0.02, 200), roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide });
+add(scene, bx(4.7, 0.5, 0.8, 0.06), paint, -9.2, 0.25, -1.7);
+for (let i = 0; i < 6; i++) {
+  const x = -11 + i * 0.72;
+  add(scene, new THREE.CylinderGeometry(0.22, 0.25, 0.2, 24), bakelite, x, 0.6, -1.7);
+  add(scene, new THREE.CapsuleGeometry(0.2, 0.6, 8, 24), tubeGlass, x, 1.2, -1.7, false);
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
+  add(scene, new THREE.CylinderGeometry(0.07, 0.07, 0.55, 12, 1, true), m, x, 1.15, -1.7, false);
+  add(scene, new THREE.TorusGeometry(0.1, 0.012, 6, 20).rotateX(Math.PI / 2), m, x, 1.38, -1.7, false);
+  add(scene, new THREE.CylinderGeometry(0.06, 0.04, 0.08, 12), chrome, x, 1.62, -1.7);
+  caps.push(m);
+}
+add(scene, cylX(0.03, 4.4, 10), copper, -9.2, 1.7, -1.7);
+add(scene, new THREE.CylinderGeometry(0.03, 0.03, 1.2, 10).rotateX(Math.PI / 2), copper, -8.5, 1.7, -1.1);
+const CAP_OFF = col(0.3, 0.05, 50), CAP_ON = col(0.86, 0.17, 58).multiplyScalar(2.8);
+// A diesel generator behind the rack: flywheel and exhaust stack.
+blob(scene, -9.2, -1.7, 5.4, 1.4, 0.5);
+blob(scene, -9.4, -1.0, 0.5, 0.5, 0.45);
+for (const x of [-16.1, -11.3]) blob(scene, x, -1.0, 0.8, 0.8, 0.45);
+blob(scene, NOSE + 1.1, 0, 1.0, 1.8, 0.55);
+blob(scene, MUZZLE - 1.5, 0, 1.0, 1.8, 0.55);
+blob(scene, TRAY_X - 0.35, 0, 2.2, 1.1, 0.35);
+blob(scene, -14.1, -2.3, 2.2, 1.5, 0.55);
+blob(scene, BACK_X + 0.4, 0, 1.6, 3.6, 0.6);
+const engine = new THREE.Group();
+engine.position.set(-14.1, 0, -2.3);
+scene.add(engine);
+add(engine, bx(1.5, 0.95, 0.9, 0.12), cream, 0, 0.6, 0);
+add(engine, bx(1.55, 0.2, 0.95, 0.06), seafoam, 0, 0.9, 0);
+for (let i = 0; i < 7; i++) add(engine, bx(0.03, 0.5, 0.02), chrome, 0.78, 0.55, -0.3 + i * 0.1);
+add(engine, bx(0.3, 0.12, 0.9, 0.04), paint, -0.55, 0.06, 0);
+add(engine, bx(0.3, 0.12, 0.9, 0.04), paint, 0.55, 0.06, 0);
+add(engine, new THREE.CylinderGeometry(0.07, 0.08, 2.0, 14), black, -0.5, 2.0, -0.1);
+add(engine, new THREE.CylinderGeometry(0.11, 0.08, 0.14, 14), chrome, -0.5, 3.05, -0.1);
+const flywheel = new THREE.Group();
+flywheel.position.set(0.25, 0.65, 0.5);
+engine.add(flywheel);
+add(flywheel, new THREE.TorusGeometry(0.34, 0.05, 10, 36), cherry, 0, 0, 0);
+for (let k = 0; k < 5; k++) { const sp = add(flywheel, bx(0.04, 0.62, 0.03), chrome, 0, 0, 0); sp.rotation.z = k * TAU / 5; }
+add(flywheel, new THREE.CylinderGeometry(0.07, 0.07, 0.08, 16).rotateX(Math.PI / 2), chrome, 0, 0, 0.02);
+const STACK = new THREE.Vector3(-14.6, 3.15, -2.4), SMOKE = col(0.38, 0.015, 60);
+let flySpin = 0, smokeAt = 0;
+// The panel: a Bakelite console, a cream dial with numbers, jewel lamps.
+const dialTex = canvasTex(256, 256, (g, w) => {
+  g.fillStyle = '#f1e9d6'; g.beginPath(); g.arc(w / 2, w / 2, w / 2, 0, TAU); g.fill();
+  g.strokeStyle = '#2a2420'; g.fillStyle = '#2a2420'; g.lineCap = 'round';
+  g.font = 'bold 22px Gabarito, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  // Ticks sweep 252 degrees, matching the needle; the last band is red.
+  for (let i = 0; i <= 50; i++) {
+    const a = (-126 + i / 50 * 252) * Math.PI / 180, big = i % 5 === 0;
+    g.lineWidth = big ? 4 : 2;
+    if (i >= 40) g.strokeStyle = '#c4362a';
+    g.beginPath();
+    g.moveTo(w / 2 + Math.sin(a) * 112, w / 2 - Math.cos(a) * 112);
+    g.lineTo(w / 2 + Math.sin(a) * (big ? 92 : 102), w / 2 - Math.cos(a) * (big ? 92 : 102));
+    g.stroke();
+    if (big) { g.fillStyle = i >= 40 ? '#c4362a' : '#2a2420'; g.fillText(String(i / 5), w / 2 + Math.sin(a) * 74, w / 2 - Math.cos(a) * 74); }
+  }
+  g.font = 'bold 16px Gabarito, sans-serif'; g.fillStyle = '#2a2420';
+  g.fillText('MEGAJOULES', w / 2, w / 2 + 46);
+});
+const panel = new THREE.Group();
+// It stands behind the barrel and reads above it.
+panel.position.set(-9.4, 0, -1.0);
+scene.add(panel);
+add(panel, bx(0.1, 1.8, 0.1, 0.03), paint, 0, 0.9, 0);
+add(panel, bx(1.0, 0.66, 0.2, 0.08), bakelite, 0, 2.1, 0);
+add(panel, new THREE.CircleGeometry(0.22, 40), new THREE.MeshStandardMaterial({ map: dialTex, roughness: 0.5 }), -0.2, 2.1, 0.105, false);
+add(panel, new THREE.TorusGeometry(0.225, 0.02, 10, 40), chrome, -0.2, 2.1, 0.11);
+const needle = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.19, 0.008).translate(0, 0.08, 0), new THREE.MeshBasicMaterial({ color: col(0.5, 0.2, 28) }));
+needle.position.set(-0.2, 2.1, 0.12);
+panel.add(needle);
+const lamps = [0, 1, 2].map(i => {
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
+  add(panel, new THREE.SphereGeometry(0.05, 16, 10, 0, TAU, 0, Math.PI / 2).rotateX(Math.PI / 2), m, 0.16 + i * 0.12, 2.16, 0.1, false);
+  add(panel, new THREE.TorusGeometry(0.055, 0.012, 8, 20), chrome, 0.16 + i * 0.12, 2.16, 0.105);
+  return m;
+});
+for (let i = 0; i < 3; i++) add(panel, bx(0.04, 0.08, 0.04, 0.01), chrome, 0.16 + i * 0.12, 1.98, 0.12);
+const LAMP = { off: col(0.3, 0.03, 60), ask: col(0.82, 0.16, 75).multiplyScalar(2), ok: col(0.82, 0.18, 145).multiplyScalar(2), no: col(0.62, 0.22, 28).multiplyScalar(2.5), live: col(0.88, 0.14, 225).multiplyScalar(2.5) };
+// Signs: the proving ground's name and a high-voltage warning.
+function sign(w, h, draw, x, z, mat = cream) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  for (const s of [-1, 1]) add(g, bx(0.06, 1.0, 0.06, 0.02), steel, s * w * 0.38, 0.5, 0);
+  const tex = canvasTex(512, Math.round(512 * h / w), draw);
+  add(g, bx(w, h, 0.05, 0.02), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }), 0, 0.95 + h / 2, 0.02);
+  scene.add(g);
+  return g;
+}
+blob(scene, -16.2, 2.7, 1.3, 0.35, 0.4);
+blob(scene, -12.6, 2.9, 1.0, 0.35, 0.4);
+sign(1.3, 0.62, (g, w, h) => {
+  g.fillStyle = '#5fb3a6'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#f1e9d6'; g.fillRect(10, 10, w - 20, h - 20);
+  g.strokeStyle = '#c4362a'; g.lineWidth = 6;
+  // An atom: three orbits and a nucleus.
+  for (let k = 0; k < 3; k++) { g.beginPath(); g.ellipse(110, h / 2, 70, 24, k * Math.PI / 3, 0, TAU); g.stroke(); }
+  g.fillStyle = '#c4362a'; g.beginPath(); g.arc(110, h / 2, 12, 0, TAU); g.fill();
+  g.fillStyle = '#2a2420'; g.font = 'bold 54px Gabarito, sans-serif'; g.textBaseline = 'middle';
+  g.fillText('PROVING', 200, h / 2 - 34); g.fillText('GROUND 7', 200, h / 2 + 30);
+}, -16.2, 2.7);
+sign(1.0, 0.6, (g, w, h) => {
+  g.fillStyle = '#e8b725'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#1d1a16'; g.font = 'bold 70px Gabarito, sans-serif'; g.textAlign = 'center';
+  g.fillText('DANGER', w / 2, 90);
+  g.font = 'bold 40px Gabarito, sans-serif'; g.fillText('HIGH VOLTAGE', w / 2, 150);
+  g.beginPath(); g.moveTo(w / 2 + 10, 170); g.lineTo(w / 2 - 30, 240); g.lineTo(w / 2, 236); g.lineTo(w / 2 - 14, 296); g.lineTo(w / 2 + 34, 220); g.lineTo(w / 2 + 4, 224); g.closePath(); g.fill();
+}, -12.6, 2.9);
+// The generator turns faster as the tubes charge and puffs diesel smoke.
+function stepMachines(dt, c) {
+  const target = c > 0 ? 3 + 20 * c : 0;
+  flySpin += (target - flySpin) * (1 - Math.exp(-dt / (c > 0 ? 0.4 : 1.2)));
+  if (flySpin < 0.05) flySpin = 0;
+  flywheel.rotation.z -= flySpin * dt;
+  const glow = c > 0 ? 0.25 + 0.75 * c : 0;
+  ports.forEach((m, i) => m.color.copy(CAP_OFF).lerp(col(0.88, 0.12, 215).multiplyScalar(2.6), clamp(glow * (0.7 + 0.3 * Math.sin(performance.now() / 60 + i * 1.7)))));
+  if (c > 0 && !reduced()) {
+    for (smokeAt += dt * (3 + 14 * c); smokeAt > 1; smokeAt--) {
+      dust.add(STACK.x + rnd(-0.04, 0.04), STACK.y, STACK.z, rnd(-0.1, 0.3), rnd(1.2, 2.2), rnd(-0.1, 0.1), SMOKE,
+        { life: rnd(1.6, 2.6), s0: 0.1, s1: rnd(0.5, 0.9), a0: 0.55, g: -0.04, drag: 1.1 });
+    }
+  }
+  return flySpin > 0;
+}
+
+// Arcs crackle between the twin rails while the gun charges.
+const ARCS = 8, ARC_SEG = 6;
+const arcGeo = new THREE.BufferGeometry();
+arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARCS * ARC_SEG * 2 * 3), 3));
+const arcs = new THREE.LineSegments(arcGeo, new THREE.LineBasicMaterial({ color: col(0.95, 0.12, 240).multiplyScalar(2.5), toneMapped: false }));
+arcs.frustumCulled = false;
+scene.add(arcs);
+function drawArcs(c) {
+  const p = arcGeo.attributes.position.array;
+  let o = 0;
+  for (let a = 0; a < ARCS; a++) {
+    const on = Math.random() < c * 1.2 ? 1 : 0;
+    const x = rnd(NOSE + 0.6, MUZZLE - 0.6);
+    let px = x, py = BORE - 0.22;
+    for (let s = 0; s < ARC_SEG; s++) {
+      const t = (s + 1) / ARC_SEG;
+      const nx = x + (s < ARC_SEG - 1 ? rnd(-0.07, 0.07) : 0), ny = lerp(BORE - 0.22, BORE + 0.22, t);
+      p[o++] = px * on; p[o++] = py * on; p[o++] = 0.47 * on;
+      p[o++] = nx * on; p[o++] = ny * on; p[o++] = 0.47 * on;
+      px = nx; py = ny;
+    }
+  }
+  arcGeo.attributes.position.needsUpdate = true;
+  arcs.visible = c > 0.02;
+}
+
+/* ---------- the flying slug ---------- */
+const slug = new THREE.Group();
+add(slug, new THREE.CylinderGeometry(0.05, 0.05, 0.3, 10).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: col(0.98, 0.04, 80).multiplyScalar(3), toneMapped: false }), 0, 0, 0, false);
+// A hot trail stretches behind the slug.
+const trail = add(slug, new THREE.CylinderGeometry(0.003, 0.03, 1, 8, 1, true).rotateZ(Math.PI / 2).translate(-0.5, 0, 0),
+  new THREE.MeshBasicMaterial({ color: col(0.9, 0.12, 60).multiplyScalar(2), toneMapped: false, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }), 0, 0, 0, false);
+slug.visible = false;
+scene.add(slug);
+
+/* ---------- backstop ---------- */
+add(scene, bx(0.8, 3.4, 3, 0.06), new THREE.MeshStandardMaterial({ color: col(0.5, 0.03, 45), roughness: 0.8, metalness: 0.3 }), BACK_X + 0.4, 1.7, 0);
+// Each dent glows and cools on the backstop face.
+const glows = [];
+const dentGeo = new THREE.CircleGeometry(0.16, 20).rotateY(-Math.PI / 2);
+const HOT = col(0.97, 0.06, 90).multiplyScalar(4), COLD = col(0.22, 0.02, 40);
+function addDent(y, z) {
+  const m = new THREE.Mesh(dentGeo, new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false }));
+  m.position.set(BACK_X - 0.01, y, z);
+  scene.add(m);
+  glows.push({ m, t: 0 });
+  sparks.spray(90, BACK_X - 0.05, y, z, new THREE.Vector3(-1, 0.5, 0), 1.1, 4, 14, [0.3, 1.1]);
+  if (glows.length > 60) { const i = glows.findIndex(d => !d.row); if (i >= 0) { const [d] = glows.splice(i, 1); scene.remove(d.m); d.m.material.dispose(); } }
+}
+function coolGlows(dt) {
+  let warm = false;
+  for (const d of glows) {
+    d.t += dt;
+    const k = Math.exp(-d.t / (d.tau ?? 1.6));
+    if (d.emissive) d.mat.emissive.copy(EM_COLD).lerp(EM_HOT, k);
+    else d.m.material.color.copy(COLD).lerp(HOT, k);
+    if (k > 0.01) warm = true;
+  }
+  return warm;
+}
+
+/* ---------- targets ---------- */
+// Resistance is the slug energy each target takes.
+const glassMat = new THREE.MeshPhysicalMaterial({ color: col(0.96, 0.03, 175), roughness: 0.03, transmission: 1, thickness: 0.05, ior: 1.5 });
+// Ice: a blue tint, a cloudy core of frozen air and white crack lines.
+const iceTex = canvasTex(256, 256, (g, N) => {
+  g.fillStyle = '#d9ecf6'; g.fillRect(0, 0, N, N);
+  const r = g.createRadialGradient(N / 2, N / 2, 10, N / 2, N / 2, N * 0.55);
+  r.addColorStop(0, 'rgba(255,255,255,0.75)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, N, N);
+  g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) {
+    g.beginPath();
+    let x = rnd(0, N), y = rnd(0, N);
+    g.moveTo(x, y);
+    for (let k = 0; k < 5; k++) { x += rnd(-40, 40); y += rnd(-40, 40); g.lineTo(x, y); }
+    g.stroke();
+  }
+  for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(255,255,255,${rnd(0.2, 0.6)})`; g.beginPath(); g.arc(rnd(40, N - 40), rnd(40, N - 40), rnd(1, 3), 0, TAU); g.fill(); }
+});
+// Transmission would show the orange sky; a soft inner light reads as ice instead.
+const iceMat = new THREE.MeshPhysicalMaterial({ color: col(0.9, 0.05, 225), map: iceTex, roughness: 0.18, transparent: true, opacity: 0.88, clearcoat: 1, clearcoatRoughness: 0.15, emissive: col(0.55, 0.09, 225), emissiveIntensity: 0.35 });
+// The shell is plain glass, so the water inside shows through it.
+const shellMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.05, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
+const waterMat = new THREE.MeshPhysicalMaterial({ color: col(0.62, 0.11, 230), roughness: 0.05, transmission: 0.7, thickness: 0.8, ior: 1.33, attenuationColor: col(0.45, 0.13, 240), attenuationDistance: 0.4 });
+const melonMap = canvasTex(256, 256, (g, N) => {
+  g.fillStyle = '#2d571c'; g.fillRect(0, 0, N, N);
+  // Pale stripes run pole to pole with a slow wobble.
+  g.fillStyle = '#86a94e';
+  for (let i = 0; i < 12; i++) {
+    g.beginPath();
+    for (let y = 0; y <= N; y += 8) g.lineTo((i + 0.5) * N / 12 + Math.sin(y * 0.09 + i) * 5 - 5, y);
+    for (let y = N; y >= 0; y -= 8) g.lineTo((i + 0.5) * N / 12 + Math.sin(y * 0.09 + i) * 5 + 5, y);
+    g.fill();
+  }
+});
+const melonMat = new THREE.MeshStandardMaterial({ map: melonMap, roughness: 0.4 });
+const gritMap = canvasTex(256, 256, (g, N) => {
+  g.fillStyle = '#9b978f'; g.fillRect(0, 0, N, N);
+  for (let i = 0; i < 3000; i++) {
+    const v = (100 + Math.random() * 80) | 0;
+    g.fillStyle = `rgb(${v},${v - 3},${v - 8})`;
+    g.fillRect(Math.random() * N, Math.random() * N, rnd(1, 3), rnd(1, 3));
+  }
+});
+const concreteMat = new THREE.MeshStandardMaterial({ map: gritMap, roughness: 1 });
+const plateMat = new THREE.MeshStandardMaterial({ color: col(0.52, 0.01, 250), roughness: 0.4, metalness: 0.85 });
+const GEO = {
+  glass: bx(0.04, 1.4, 1.2),
+  ice: bx(0.9, 0.9, 0.9, 0.07),
+  shell: new THREE.CylinderGeometry(0.45, 0.45, 1.1, 32, 1, true),
+  water: new THREE.CylinderGeometry(0.43, 0.43, 0.92, 32),
+  cap: new THREE.CylinderGeometry(0.47, 0.47, 0.05, 32),
+  melon: new THREE.SphereGeometry(0.34, 28, 18),
+  concrete: bx(0.5, 0.8, 0.8, 0.03),
+  steel: bx(0.06, 1.1, 1.1, 0.01),
+};
+function buildBody(kind, yaw) {
+  const g = new THREE.Group();
+  if (kind === 'water') {
+    add(g, GEO.shell, shellMat, 0, 0, 0, false);
+    add(g, GEO.water, waterMat, 0, -0.08, 0);
+    add(g, GEO.cap, steel, 0, 0.55, 0);
+    add(g, GEO.cap, steel, 0, -0.55, 0);
+  } else if (kind === 'melon') {
+    const m = add(g, GEO.melon, melonMat, 0, 0, 0);
+    m.rotation.z = Math.PI / 2;
+    m.scale.set(0.86, 1.15, 0.86);
+  } else {
+    const mat = { glass: glassMat, ice: iceMat, concrete: concreteMat, steel: plateMat }[kind];
+    const m = add(g, GEO[kind], mat, 0, 0, 0, kind !== 'glass');
+    // Flat targets turn toward the viewer, so they never read edge-on.
+    if (kind === 'glass' || kind === 'steel') m.rotation.y = yaw;
+  }
+  return g;
+}
+const TYPES = {
+  glass:    { res: 0.05, h: 1.4 },
+  ice:      { res: 0.12, h: 0.9 },
+  water:    { res: 0.15, h: 1.1 },
+  melon:    { res: 0.08, h: 0.7 },
+  concrete: { res: 0.25, h: 0.8 },
+  steel:    { res: 0.3, h: 1.1 },
+};
+const KINDS = Object.keys(TYPES);
+TYPES.plate = { res: 0.055, h: 1.2 };
+const standGeo = new THREE.CylinderGeometry(0.035, 0.05, 1, 8).translate(0, 0.5, 0);
+const footGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.05, 16);
+const row = [];
+function makeTarget(kind, x, yaw = -0.75) {
+  const T = TYPES[kind];
+  const g = new THREE.Group();
+  const stand = add(g, standGeo, steel, 0, 0, 0);
+  stand.scale.y = BORE - T.h / 2;
+  add(g, footGeo, steel, 0, 0.025, 0);
+  const body = buildBody(kind, yaw);
+  body.position.y = BORE;
+  g.add(body);
+  g.position.set(x, 0, 0);
+  scene.add(g);
+  const face = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const sh = blob(g, 0, 0, 0.9, 0.9, 0.5);
+  return { kind, T, g, body, x, face, blob: sh, blobOp: 0.5, state: 'stand', drop: 0, vel: new THREE.Vector3(), spin: new THREE.Vector3() };
+}
+// Extras are mode props that go at the refill: frames, rulers, flags.
+const extras = [];
+function clearRow() {
+  for (const t of row) scene.remove(t.g);
+  row.length = 0;
+  for (const e of extras) scene.remove(e);
+  extras.length = 0;
+}
+function extra(o) { scene.add(o); extras.push(o); return o; }
+function buildMode(drop = true) {
+  clearRow();
+  ({ range: rangeRow, corridor: corridorRow, aquarium: tankRow, depth: depthRow })[mode](drop);
+}
+// A new mix: six kinds, at most two of the heavy ones.
+function rangeRow(drop) {
+  let heavy = 0;
+  SLOTS.forEach((x, i) => {
+    let k;
+    do k = KINDS[(Math.random() * KINDS.length) | 0];
+    while ((k === 'steel' || k === 'concrete') && heavy >= 2);
+    if (k === 'steel' || k === 'concrete') heavy++;
+    const t = makeTarget(k, x);
+    // Each target drops in from above, one after the next.
+    t.drop = drop ? -i * 0.07 : 1;
+    row.push(t);
+  });
+}
+// Corridor: twenty panes close together; each breaks into fewer shards.
+function corridorRow(drop) {
+  for (let i = 0; i < 20; i++) {
+    const t = makeTarget('glass', -4.2 + i * 0.68, -0.5);
+    t.n = 30;
+    t.drop = drop ? -i * 0.03 : 1;
+    row.push(t);
+  }
+}
+// Depth: a block of steel plates in a frame, a ruler on the salt, flags.
+const DEPTH = { x0: 1.0, n: 26, pitch: 0.1 };
+const plateGeo = bx(0.06, 1.2, 1.2, 0.01);
+const rulerTex = canvasTex(2048, 64, (g, w, h) => {
+  g.fillStyle = '#e9e2d4'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#2b2620';
+  g.font = 'bold 26px Gabarito, sans-serif';
+  // One tick per centimetre of the 280 cm strip; labels every 50.
+  for (let c = 0; c <= 280; c++) {
+    const x = c / 280 * w, big = c % 50 === 0, mid = c % 10 === 0;
+    g.fillRect(x - (big ? 2 : 1), 0, big ? 4 : 2, big ? 34 : mid ? 22 : 10);
+    if (big && c > 0 && c < 280) g.fillText(String(c), x + 6, 58);
+  }
+});
+let bestDepth = Number(store.get('stimming.phaeton.best')) || 0;
+const flagGeo = new THREE.BufferGeometry();
+flagGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.62, 0, 0.26, 0.53, 0, 0, 0.44, 0], 3));
+flagGeo.computeVertexNormals();
+function flag(color) {
+  const g = new THREE.Group();
+  add(g, new THREE.CylinderGeometry(0.012, 0.012, 0.64, 6).translate(0, 0.32, 0), steel, 0, 0, 0);
+  add(g, flagGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide }), 0, 0, 0);
+  return g;
+}
+const flags = { last: flag(col(0.6, 0.2, 28)), best: flag(col(0.85, 0.16, 90)) };
+function depthRow(drop) {
+  const L = DEPTH.n * DEPTH.pitch;
+  const frame = extra(new THREE.Group());
+  blob(frame, DEPTH.x0 + L / 2, 0, L + 1.0, 1.9, 0.55);
+  add(frame, bx(L + 0.3, 0.1, 1.4, 0.02), steel, DEPTH.x0 + L / 2 - 0.05, BORE - 0.65, 0);
+  for (const x of [DEPTH.x0 - 0.15, DEPTH.x0 + L + 0.05]) for (const z of [-0.6, 0.6]) add(frame, bx(0.08, BORE - 0.7, 0.08), steel, x, (BORE - 0.7) / 2, z);
+  const ruler = add(frame, new THREE.PlaneGeometry(2.8, 0.09).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: rulerTex, roughness: 0.8 }), DEPTH.x0 + 1.4, 0.004, 0.95, false);
+  ruler.receiveShadow = true;
+  for (let i = 0; i < DEPTH.n; i++) {
+    const g = new THREE.Group();
+    const mat = plateMat.clone();
+    mat.emissive = new THREE.Color(0);
+    const body = add(g, plateGeo, mat, 0, BORE, 0);
+    g.position.x = DEPTH.x0 + i * DEPTH.pitch;
+    scene.add(g);
+    row.push({ kind: 'plate', T: TYPES.plate, g, body, x: g.position.x, state: 'stand', drop: drop ? -i * 0.02 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
+  }
+  if (bestDepth > 0) { flags.best.position.set(DEPTH.x0 + bestDepth, 0, 1.05); extra(flags.best); }
+}
+// The flags mark the last depth and the best one on the ruler.
+function depthResult(x) {
+  const d = clamp(x - DEPTH.x0, 0, 2.8);
+  flags.last.position.set(DEPTH.x0 + d, 0, 0.88);
+  extra(flags.last);
+  if (d > bestDepth) {
+    bestDepth = d;
+    store.set('stimming.phaeton.best', d.toFixed(3));
+    flags.best.position.set(DEPTH.x0 + d, 0, 1.05);
+    if (!extras.includes(flags.best)) extra(flags.best);
+  }
+}
+// Aquarium: one long glass tank of water on a low table.
+const TANK = { x0: -3.6, x1: 8.6, d: 1.1, h: 1.3, top: BORE + 0.5, burst: false };
+const tankWater = new THREE.MeshPhysicalMaterial({ color: col(0.6, 0.11, 225), roughness: 0.05, transparent: true, opacity: 0.38, depthWrite: false });
+function tankRow(drop) {
+  const L = TANK.x1 - TANK.x0, cx = (TANK.x0 + TANK.x1) / 2;
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  add(body, bx(L, TANK.h, TANK.d), shellMat, 0, 0, 0, false);
+  add(body, bx(L - 0.04, 1.14, TANK.d - 0.04), tankWater, 0, -0.07, 0, false);
+  for (const y of [-0.65, 0.65]) for (const z of [-0.55, 0.55]) add(body, bx(L, 0.05, 0.05), steel, 0, y, z);
+  for (const x of [-L / 2, L / 2]) for (const z of [-0.55, 0.55]) add(body, bx(0.05, TANK.h, 0.05), steel, x, 0, z);
+  body.position.set(cx, BORE, 0);
+  g.add(body);
+  add(g, bx(L + 0.2, 0.08, TANK.d + 0.2), paint, cx, BORE - 0.69, 0);
+  for (let x = TANK.x0; x <= TANK.x1 + 0.01; x += L / 5) for (const z of [-0.5, 0.5]) add(g, bx(0.08, BORE - 0.73, 0.08), paint, x, (BORE - 0.73) / 2, z);
+  const sh = blob(g, cx, 0, L + 1.2, 1.8, 0.5);
+  scene.add(g);
+  TANK.burst = false;
+  row.push({ kind: 'tank', T: { res: 0, h: TANK.h }, g, body, x: TANK.x0, blob: sh, blobOp: 0.5, state: 'stand', drop: drop ? 0 : 1, vel: new THREE.Vector3(), spin: new THREE.Vector3() });
+}
+
+/* ---------- debris ---------- */
+// Each debris set is one instanced mesh: shards, ice chunks or rubble.
+const sets = [];
+const dummy = new THREE.Object3D();
+const tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler();
+const randQ = () => new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU)));
+class Bits {
+  constructor(geo, mat, max) {
+    const m = new THREE.InstancedMesh(geo, mat, max);
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.setColorAt(0, new THREE.Color(1, 1, 1));
+    m.castShadow = m.receiveShadow = true;
+    m.count = 0;
+    m.frustumCulled = false;
+    scene.add(m);
+    Object.assign(this, { mesh: m, max, list: [], fade: 1 });
+    sets.push(this);
+  }
+  add(p, v, s, c, spin = 12) {
+    if (this.list.length >= this.max) return;
+    this.mesh.setColorAt(this.list.length, c);
+    this.mesh.instanceColor.needsUpdate = true;
+    const w = new THREE.Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(spin);
+    this.list.push({ p, v, s, q: randQ(), w, rest: false, gone: false });
+    this.mesh.count = this.list.length;
+  }
+  step(h) {
+    let moving = false;
+    this.list.forEach((b, i) => {
+      if (!b.rest && !b.gone && h > 0) {
+        b.v.y -= 9.8 * h;
+        b.p.addScaledVector(b.v, h);
+        const floor = Math.min(b.s.x, b.s.y, b.s.z) * 0.5;
+        // Pieces that leave the slab fall off the edge into the dusk.
+        if (b.p.y < floor && b.p.y > -0.4 && onSlab(b.p.x, b.p.z)) {
+          b.p.y = floor;
+          b.v.y = -b.v.y * 0.3;
+          b.v.x *= 0.55; b.v.z *= 0.55; b.w.multiplyScalar(0.5);
+          if (b.v.lengthSq() < 0.15) { b.rest = true; b.v.set(0, 0, 0); }
+        }
+        if (b.p.y < -30) b.gone = true;
+        tmpQ.setFromEuler(tmpE.set(b.w.x * h, b.w.y * h, b.w.z * h));
+        b.q.multiply(tmpQ);
+        moving = moving || !b.gone;
+      }
+      dummy.position.copy(b.p);
+      dummy.quaternion.copy(b.q);
+      dummy.scale.copy(b.s).multiplyScalar(b.gone ? 0 : this.fade);
+      dummy.updateMatrix();
+      this.mesh.setMatrixAt(i, dummy.matrix);
+    });
+    this.mesh.instanceMatrix.needsUpdate = true;
+    return moving;
+  }
+  clear() { this.list.length = 0; this.mesh.count = 0; }
+}
+// A shard is a thin sliver triangle; the sky glints off it as it turns.
+const triGeo = new THREE.BufferGeometry();
+triGeo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.4, 0, 0.5, -0.3, 0, 0.05, 0.55, 0], 3));
+triGeo.computeVertexNormals();
+const shards = new Bits(triGeo, new THREE.MeshStandardMaterial({ roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 3 }), 1000);
+shards.mesh.castShadow = false;
+const ice = new Bits(new THREE.IcosahedronGeometry(0.5, 0), new THREE.MeshPhysicalMaterial({ color: col(0.92, 0.05, 222), roughness: 0.12, transparent: true, opacity: 0.85, flatShading: true, clearcoat: 1, clearcoatRoughness: 0.1, emissive: col(0.55, 0.09, 225), emissiveIntensity: 0.35 }), 160);
+const rubble = new Bits(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), 400);
+
+/* ---------- puffs ---------- */
+// Round sprites: crisp drops and grit, or soft dust and steam.
+const puffSets = [];
+class Puffs {
+  constructor(max, soft, additive = false) {
+    this.max = max; this.n = 0; this.ceil = Infinity;
+    const F = k => new Float32Array(max * k);
+    Object.assign(this, { p: F(3), v: F(3), c: F(3), a: F(1), s: F(1), age: F(1), life: F(1), s0: F(1), s1: F(1), a0: F(1), g: F(1), drag: F(1), st: F(1) });
+    const geo = new THREE.BufferGeometry();
+    for (const [name, arr, k] of [['position', this.p, 3], ['tint', this.c, 3], ['alpha', this.a, 1], ['size', this.s, 1]]) {
+      geo.setAttribute(name, new THREE.BufferAttribute(arr, k).setUsage(THREE.DynamicDrawUsage));
+    }
+    this.geo = geo;
+    this.mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      uniforms: { uScale: { value: 400 }, uFade: { value: 1 }, uSoft: { value: soft ? 1 : 0 } },
+      vertexShader: /* glsl */`
+        attribute vec3 tint; attribute float alpha; attribute float size;
+        uniform float uScale; varying vec3 vC; varying float vA;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = clamp(size * uScale / -mv.z, 1.5, 320.0);
+          vC = tint; vA = alpha;
+        }`,
+      fragmentShader: /* glsl */`
+        uniform float uFade, uSoft; varying vec3 vC; varying float vA;
+        void main() {
+          float r = length(gl_PointCoord - 0.5) * 2.0;
+          if (r > 1.0) discard;
+          float a = uSoft > 0.5 ? pow(1.0 - r * r, 2.0) : smoothstep(1.0, 0.55, r);
+          gl_FragColor = vec4(vC, a * vA * uFade);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.points = new THREE.Points(geo, this.mat);
+    this.points.frustumCulled = false;
+    geo.setDrawRange(0, 0);
+    scene.add(this.points);
+    puffSets.push(this);
+  }
+  add(x, y, z, vx, vy, vz, c, { life = 1, s0 = 0.1, s1 = s0, a0 = 1, g = 1, drag = 0, stain = 0 } = {}) {
+    if (this.n >= this.max) return;
+    const i = this.n++;
+    this.p.set([x, y, z], i * 3); this.v.set([vx, vy, vz], i * 3); this.c.set([c.r, c.g, c.b], i * 3);
+    this.age[i] = 0; this.life[i] = life; this.s0[i] = s0; this.s1[i] = s1; this.a0[i] = a0; this.g[i] = g; this.drag[i] = drag; this.st[i] = stain;
+  }
+  kill(i) {
+    const j = --this.n;
+    if (i === j) return;
+    for (const k of ['p', 'v', 'c']) this[k].copyWithin(i * 3, j * 3, j * 3 + 3);
+    for (const k of ['age', 'life', 's0', 's1', 'a0', 'g', 'drag', 'st']) this[k][i] = this[k][j];
+  }
+  step(h) {
+    const { p, v } = this;
+    for (let i = 0; i < this.n; i++) {
+      this.age[i] += h;
+      const t = this.age[i] / this.life[i];
+      if (t >= 1) { this.kill(i--); continue; }
+      const o = i * 3, k = Math.exp(-this.drag[i] * h);
+      v[o + 1] -= 9.8 * this.g[i] * h;
+      v[o] *= k; v[o + 1] *= k; v[o + 2] *= k;
+      p[o] += v[o] * h; p[o + 1] += v[o + 1] * h; p[o + 2] += v[o + 2] * h;
+      if (p[o + 1] > this.ceil) { p[o + 1] = this.ceil; v[o + 1] = 0; }
+      if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) {
+        // A drop that lands may leave a stain on the salt.
+        if (this.st[i]) { stains.add(p[o], p[o + 2], this.st[i]); this.st[i] = 0; }
+        p[o + 1] = 0; v[o + 1] *= -0.2; v[o] *= 0.5; v[o + 2] *= 0.5;
+      }
+      // Each sprite fades in fast, grows and fades out.
+      this.a[i] = this.a0[i] * clamp(t * 10) * (1 - t * t);
+      this.s[i] = lerp(this.s0[i], this.s1[i], Math.sqrt(t));
+    }
+    for (const n of ['position', 'tint', 'alpha', 'size']) this.geo.attributes[n].needsUpdate = true;
+    this.geo.setDrawRange(0, this.n);
+    return this.n > 0;
+  }
+  clear() { this.n = 0; this.geo.setDrawRange(0, 0); }
+}
+const drops = new Puffs(6000, false);
+const dust = new Puffs(1400, true);
+const plasma = new Puffs(400, true, true);
+const bubbles = new Puffs(2500, false);
+bubbles.ceil = TANK.top;
+
+/* ---------- sparks ---------- */
+// Each spark draws as a streak along its velocity, like a long exposure.
+const sparks = {
+  max: 1500, n: 0,
+  init() {
+    const F = k => new Float32Array(this.max * k);
+    Object.assign(this, { p: F(3), v: F(3), age: F(1), life: F(1) });
+    this.geo = new THREE.BufferGeometry();
+    this.pos = new THREE.BufferAttribute(F(6), 3).setUsage(THREE.DynamicDrawUsage);
+    this.col = new THREE.BufferAttribute(F(6), 3).setUsage(THREE.DynamicDrawUsage);
+    this.geo.setAttribute('position', this.pos);
+    this.geo.setAttribute('color', this.col);
+    this.geo.setDrawRange(0, 0);
+    this.lines = new THREE.LineSegments(this.geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.lines.frustumCulled = false;
+    scene.add(this.lines);
+    return this;
+  },
+  add(x, y, z, vx, vy, vz, life) {
+    if (this.n >= this.max) return;
+    const i = this.n++;
+    this.p.set([x, y, z], i * 3); this.v.set([vx, vy, vz], i * 3);
+    this.age[i] = 0; this.life[i] = life;
+  },
+  step(h) {
+    const { p, v } = this, P = this.pos.array, Cc = this.col.array;
+    for (let i = 0; i < this.n; i++) {
+      this.age[i] += h;
+      if (this.age[i] >= this.life[i]) {
+        const j = --this.n;
+        if (i !== j) { p.copyWithin(i * 3, j * 3, j * 3 + 3); v.copyWithin(i * 3, j * 3, j * 3 + 3); this.age[i] = this.age[j]; this.life[i] = this.life[j]; }
+        i--;
+        continue;
+      }
+      const o = i * 3, k = Math.exp(-0.6 * h);
+      v[o + 1] -= 9.8 * h;
+      v[o] *= k; v[o + 1] *= k; v[o + 2] *= k;
+      p[o] += v[o] * h; p[o + 1] += v[o + 1] * h; p[o + 2] += v[o + 2] * h;
+      if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) { p[o + 1] = 0; v[o + 1] *= -0.4; v[o] *= 0.6; v[o + 2] *= 0.6; }
+      // The tail trails one sixtieth of a second behind the head.
+      const t = this.age[i] / this.life[i], q = i * 6, L = 0.016;
+      P[q] = p[o]; P[q + 1] = p[o + 1]; P[q + 2] = p[o + 2];
+      P[q + 3] = p[o] - v[o] * L; P[q + 4] = p[o + 1] - v[o + 1] * L; P[q + 5] = p[o + 2] - v[o + 2] * L;
+      const heatK = (1 - t) * 3.2;
+      const r = heatK, g = heatK * (0.85 - 0.6 * t), b = heatK * Math.max(0, 0.55 - 1.2 * t);
+      Cc[q] = r; Cc[q + 1] = g; Cc[q + 2] = b;
+      Cc[q + 3] = r * 0.3; Cc[q + 4] = g * 0.2; Cc[q + 5] = b * 0.1;
+    }
+    this.pos.needsUpdate = this.col.needsUpdate = true;
+    this.geo.setDrawRange(0, this.n * 2);
+    return this.n > 0;
+  },
+  clear() { this.n = 0; this.geo.setDrawRange(0, 0); },
+  // A spray of sparks in a cone round a direction.
+  spray(n, x, y, z, dir, spread, v0, v1, life = [0.25, 0.8]) {
+    for (let i = 0; i < K(n); i++) {
+      const d = new THREE.Vector3(dir.x + rnd(-spread, spread), dir.y + rnd(-spread, spread), dir.z + rnd(-spread, spread)).normalize().multiplyScalar(rnd(v0, v1));
+      this.add(x, y, z, d.x, d.y, d.z, rnd(...life));
+    }
+  },
+}.init();
+
+/* ---------- stains ---------- */
+// Wet patches and pulp splats lie flat on the salt until the refill.
+const STAIN = [null, { c: col(0.6, 0.03, 240), r: [0.06, 0.16] }, { c: col(0.42, 0.15, 20), r: [0.04, 0.12] }];
+const stains = {
+  mesh: new THREE.InstancedMesh(new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ roughness: 0.25, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 400),
+  n: 0,
+  add(x, z, kind) {
+    if (this.n >= 400) return;
+    const S = STAIN[kind], r = rnd(...S.r);
+    dummy.position.set(x, 0.003, z);
+    dummy.quaternion.setFromEuler(tmpE.set(0, rnd(0, TAU), 0));
+    dummy.scale.set(r * rnd(1, 1.8), 1, r);
+    dummy.updateMatrix();
+    this.mesh.setMatrixAt(this.n, dummy.matrix);
+    this.mesh.setColorAt(this.n, S.c);
+    this.mesh.count = ++this.n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.instanceColor.needsUpdate = true;
+  },
+  clear() { this.n = 0; this.mesh.count = 0; },
+};
+stains.mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+stains.mesh.count = 0;
+stains.mesh.receiveShadow = true;
+stains.mesh.frustumCulled = false;
+scene.add(stains.mesh);
+
+const STEAM = col(0.9, 0.02, 250);
+function vent(x, y, n = 40) {
+  for (let i = 0; i < n; i++) {
+    dust.add(x + rnd(-0.3, 0.3), y + rnd(0, 0.2), rnd(-0.25, 0.25), rnd(-0.4, 0.4), rnd(0.6, 2), rnd(-0.3, 0.6), STEAM,
+      { life: rnd(1.2, 2.4), s0: 0.12, s1: rnd(0.6, 1.1), a0: 0.45, g: -0.02, drag: 1.2 });
+  }
+}
+function clearDebris() {
+  for (const s of sets) s.clear();
+  for (const s of puffSets) s.clear();
+  stains.clear();
+  for (const r of rings) r.m.visible = false;
+  sparks.clear();
+}
+
+/* ---------- mode hits ---------- */
+const EM_HOT = col(0.72, 0.19, 42).multiplyScalar(2.2), EM_COLD = new THREE.Color(0);
+const stuckGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 10).rotateZ(Math.PI / 2);
+// A slug that stops stays where it stopped and cools.
+function stuck(x, y, z) {
+  const m = extra(new THREE.Mesh(stuckGeo, new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false })));
+  m.position.set(x, y, z);
+  glows.push({ m, t: 0, tau: 2.5, row: true });
+  return m;
+}
+const BUBBLE = col(0.96, 0.02, 220).multiplyScalar(1.2);
+const ringGeo = new THREE.RingGeometry(0.9, 1, 40).rotateY(Math.PI / 2);
+const rings = Array.from({ length: 16 }, () => {
+  const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: col(0.9, 0.08, 220), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  m.visible = false;
+  scene.add(m);
+  return { m, age: 0, max: 0.52 };
+});
+let ringNext = 0, ringAt = 0, bubbleAt = 0;
+// The slug's shock leaves a ring that spreads to the tank walls.
+function stepRings(h) {
+  let on = false;
+  for (const r of rings) {
+    if (!r.m.visible) continue;
+    r.age += h;
+    const k = 1 - Math.exp(-r.age * 30), rad = r.max * k;
+    r.m.scale.setScalar(Math.max(rad, 0.01));
+    r.m.material.opacity = 0.7 * (1 - k);
+    if (k > 0.98) r.m.visible = false;
+    on = true;
+  }
+  return on;
+}
+// In the tank the slug trails cavitation bubbles and shock rings.
+function tankTrail(x0, x1, hy, hz) {
+  if (mode !== 'aquarium' || TANK.burst) return;
+  const a = Math.max(x0, TANK.x0), b = Math.min(x1, TANK.x1);
+  for (bubbleAt = Math.max(bubbleAt, a); bubbleAt < b; bubbleAt += 0.025) {
+    for (let i = 0; i < 3; i++) {
+      bubbles.add(bubbleAt + rnd(-0.03, 0.03), hy + rnd(-0.04, 0.04), hz + rnd(-0.04, 0.04), rnd(-0.1, 0.1), rnd(0, 0.3), rnd(-0.3, 0.3), BUBBLE,
+        { life: rnd(5, 10), s0: rnd(0.012, 0.035), s1: rnd(0.03, 0.07), a0: 0.8, g: -0.06, drag: 3 });
+    }
+  }
+  for (ringAt = Math.max(ringAt, a); ringAt < b; ringAt += 0.4) {
+    const r = rings[ringNext++ % rings.length];
+    r.age = 0;
+    r.max = 0.52;
+    r.m.visible = true;
+    r.m.position.set(ringAt, hy, hz);
+  }
+}
+function tankWall(x, e, hy, hz) {
+  for (let i = 0; i < K(16); i++) {
+    const s = rnd(0.04, 0.12);
+    shards.add(V3(x, hy + rnd(-0.1, 0.1), hz + rnd(-0.1, 0.1)), V3(rnd(-2, 2) + (x > TANK.x0 ? (0.5 + e) * rnd(3, 9) : -rnd(0, 2)), rnd(-1, 2), rnd(-2, 2)), V3(s, s, 0.01), any(C.glass), 16);
+  }
+}
+// At the snap the pressure bursts the tank: glass out both sides, water everywhere.
+function tankBurst() {
+  if (mode !== 'aquarium' || TANK.burst) return;
+  TANK.burst = true;
+  const t = row[0];
+  t.state = 'gone';
+  t.body.visible = false;
+  bubbles.clear();
+  for (const r of rings) r.m.visible = false;
+  const L = TANK.x1 - TANK.x0;
+  for (let i = 0; i < K(320); i++) {
+    const side = Math.random() < 0.5 ? -1 : 1, s = rnd(0.08, 0.3);
+    const p = V3(rnd(TANK.x0, TANK.x1), BORE + rnd(-0.6, 0.6), side * 0.55);
+    shards.add(p, V3(rnd(-1, 1.5), rnd(-0.5, 2), side * rnd(1.5, 5)), V3(s, s * rnd(0.6, 1.4), 0.01), any(C.glass), 10);
+  }
+  for (let i = 0; i < K(4200); i++) {
+    const x = rnd(TANK.x0, TANK.x1), y = BORE + rnd(-0.6, 0.48), z = rnd(-0.52, 0.52);
+    drops.add(x, y, z, rnd(-0.8, 1.6), rnd(-0.5, 2.5), z * rnd(4, 11) + rnd(-0.5, 0.5), any(C.spray),
+      { life: rnd(1.5, 3), s0: rnd(0.025, 0.06), g: 1, drag: 0.2, stain: Math.random() < 0.06 ? 1 : 0 });
+  }
+  if (dustOn) for (let i = 0; i < 30; i++) {
+    dust.add(TANK.x0 + rnd(0, L), BORE + rnd(-0.3, 0.5), rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 0.8), rnd(-2, 2), C.spray[2], { life: rnd(1.5, 2.8), s0: 0.3, s1: rnd(1, 1.6), a0: 0.25, g: -0.01, drag: 1.3 });
+  }
+}
+
+/* ---------- muzzle and wake ---------- */
+const PLASMA = [col(0.86, 0.12, 245).multiplyScalar(1.5), col(0.7, 0.2, 295).multiplyScalar(1.3), col(0.95, 0.05, 230).multiplyScalar(1.8)];
+const SALT = col(0.95, 0.015, 80), GUNSMOKE = col(0.62, 0.01, 70);
+// Plasma bursts from the muzzle, a shock ring spreads, a smoke ring lingers.
+function muzzleBlast(hy, hz) {
+  const x = MUZZLE + 0.05;
+  for (let i = 0; i < K(60); i++) {
+    const a = rnd(0, TAU), r = Math.random();
+    plasma.add(x, hy, hz, rnd(8, 55) * (1 - r * 0.6), Math.sin(a) * r * 22, Math.cos(a) * r * 22, any(PLASMA),
+      { life: rnd(0.012, 0.04), s0: rnd(0.06, 0.14), s1: rnd(0.25, 0.6), a0: 0.35, g: 0, drag: 25 });
+  }
+  if (dustOn) for (let i = 0; i < K(40); i++) {
+    const a = i / 40 * TAU;
+    dust.add(x + 0.2, hy + Math.sin(a) * 0.3, hz + Math.cos(a) * 0.3, rnd(2, 5), Math.sin(a) * 2.5, Math.cos(a) * 2.5, GUNSMOKE,
+      { life: rnd(2, 3.4), s0: 0.14, s1: rnd(0.55, 0.9), a0: 0.32, g: -0.02, drag: 2.6 });
+  }
+  const r = rings[ringNext++ % rings.length];
+  Object.assign(r, { age: 0, max: 1.6 });
+  r.m.visible = true;
+  r.m.position.set(x + 0.15, hy, hz);
+  sparks.spray(30, x, hy, hz, new THREE.Vector3(1, 0.1, 0), 0.35, 12, 30, [0.15, 0.45]);
+}
+// The shock kicks up salt below the slug as it passes over the slab.
+let wakeAt = 0;
+function saltWake(x0, x1) {
+  if (!dustOn) return;
+  for (wakeAt = Math.max(wakeAt, x0, MUZZLE + 0.3); wakeAt < x1; wakeAt += 0.32) {
+    if (!onSlab(wakeAt, 0) || (mode === 'aquarium' && wakeAt > TANK.x0 - 0.3 && wakeAt < TANK.x1 + 0.3)) continue;
+    for (let i = 0; i < 4; i++) {
+      const side = i % 2 ? 1 : -1;
+      dust.add(wakeAt + rnd(-0.1, 0.1), 0.05, side * rnd(0, 0.3), rnd(0, 1.6), rnd(0.2, 1), side * rnd(1.5, 5), SALT,
+        { life: rnd(2, 3.4), s0: 0.14, s1: rnd(0.6, 1.2), a0: 0.28, g: -0.01, drag: 1.7 });
+    }
+  }
+}
+
+/* ---------- hits ---------- */
+// Each material breaks its own way. e is the energy the slug keeps.
+const K = n => Math.round(n * (reduced() ? 0.5 : 1));
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const any = a => a[(Math.random() * a.length) | 0];
+const C = {
+  glass: [col(0.95, 0.03, 190), col(0.88, 0.05, 170)], glint: col(0.99, 0.01, 90).multiplyScalar(1.6),
+  ice: [col(0.93, 0.04, 220), col(0.98, 0.015, 220)], frost: col(0.96, 0.02, 230),
+  spray: [col(0.88, 0.04, 225), col(0.78, 0.07, 230), col(0.97, 0.01, 220)],
+  rind: [col(0.42, 0.11, 145), col(0.55, 0.12, 135), col(0.86, 0.07, 110)], flesh: [col(0.56, 0.19, 22), col(0.64, 0.17, 15)], seed: col(0.16, 0.02, 40),
+  rock: [col(0.66, 0.01, 70), col(0.56, 0.01, 70), col(0.74, 0.012, 75)], grit: col(0.64, 0.01, 70), cloud: col(0.76, 0.01, 70),
+  hot: col(0.9, 0.16, 70).multiplyScalar(3), steel: col(0.5, 0.01, 250),
+};
+// Flat targets turn by this yaw; their local z runs along this axis.
+const YAW = -0.75, FACE = V3(Math.sin(YAW), 0, Math.cos(YAW));
+const HIT = {
+  plate(t, e, hy, hz) {
+    // Each plate the slug passes glows at its edges and cools.
+    t.state = 'pierced';
+    glows.push({ mat: t.body.material, emissive: true, t: 0, tau: 1.4, row: true });
+    for (let i = 0; i < K(5); i++) {
+      sparks.add(t.x + 0.05, hy, hz, rnd(-1, 1), rnd(2, 6), rnd(-3, 3), rnd(0.3, 0.7));
+    }
+  },
+  glass(t, e, hy, hz) {
+    // Radial fracture: small fast shards near the hole, big slow ones at the rim.
+    const FACE = t.face, lz = hz / FACE.z;
+    for (let i = 0; i < K(t.n ?? 70); i++) {
+      const py = rnd(-0.7, 0.7), pz = rnd(-0.6, 0.6);
+      const dy = py - (hy - BORE), dz = pz - lz, d = Math.hypot(dy, dz);
+      const s = 0.05 + d * 0.25 * rnd(0.6, 1.4), out = 1.2 / (d + 0.25);
+      const p = V3(t.x + pz * FACE.x, BORE + py, pz * FACE.z);
+      const v = V3((0.5 + e) * 12 * Math.exp(-d * 2.2) + rnd(0, 1), dy / (d || 1) * out + rnd(0, 1), dz / (d || 1) * out * FACE.z);
+      shards.add(p, v, V3(s, s * rnd(0.6, 1.5), 0.01), any(C.glass), 16);
+    }
+    for (let i = 0; i < K(t.n ? 40 : 140); i++) {
+      drops.add(t.x, hy, hz, (0.5 + e) * rnd(5, 18), rnd(-2, 3), rnd(-3, 3), C.glint, { life: rnd(0.8, 1.8), s0: rnd(0.012, 0.03), g: 1, drag: 0.4 });
+    }
+  },
+  ice(t, e, hy, hz) {
+    for (let i = 0; i < K(30); i++) {
+      const p = V3(t.x + rnd(-0.4, 0.4), BORE + rnd(-0.4, 0.4), rnd(-0.4, 0.4));
+      const ax = V3(0, p.y - hy, p.z - hz), d = ax.length();
+      const v = V3((0.5 + e) * rnd(3, 11) * Math.exp(-d * 1.5), 0, 0).addScaledVector(ax.normalize(), rnd(1.5, 5)).add(V3(0, rnd(0, 1.5), 0));
+      const s = rnd(0.07, 0.26);
+      ice.add(p, v, V3(s * rnd(0.7, 1.3), s * rnd(0.7, 1.3), s * rnd(0.7, 1.3)), any(C.ice));
+    }
+    for (let i = 0; i < K(240); i++) {
+      drops.add(t.x + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz + rnd(-0.2, 0.2), (0.5 + e) * rnd(2, 10), rnd(-2, 2.5), rnd(-2.5, 2.5), C.frost, { life: rnd(0.8, 1.8), s0: rnd(0.015, 0.04), g: 0.4, drag: 2 });
+    }
+    if (dustOn) for (let i = 0; i < 12; i++) {
+      dust.add(t.x + rnd(0, 0.5), hy + rnd(-0.3, 0.3), hz + rnd(-0.3, 0.3), (0.5 + e) * rnd(1, 4), rnd(-0.3, 0.6), rnd(-1, 1), C.frost, { life: rnd(1.8, 3), s0: 0.2, s1: rnd(0.8, 1.3), a0: 0.35, g: -0.01, drag: 1.5 });
+    }
+  },
+  water(t, e, hy, hz) {
+    for (let i = 0; i < K(22); i++) {
+      const a = rnd(0, TAU), y = rnd(-0.55, 0.55);
+      const out = V3(Math.cos(a), 0, Math.sin(a));
+      const s = rnd(0.1, 0.26);
+      shards.add(V3(t.x + out.x * 0.45, BORE + y, out.z * 0.45), out.clone().multiplyScalar(rnd(1, 3)).add(V3((0.5 + e) * rnd(1, 5), rnd(0, 1.5), 0)), V3(s, s * rnd(0.7, 1.4), 0.01), any(C.spray), 10);
+    }
+    // The water leaves as a radial sheet, with a jet down the slug's path.
+    for (let i = 0; i < K(1100); i++) {
+      const jet = Math.random() < 0.25;
+      const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * 0.42, y = rnd(-0.5, 0.36);
+      const x = jet ? t.x : t.x + Math.cos(a) * r, z = jet ? hz : Math.sin(a) * r, py = jet ? hy : BORE + y;
+      const sp = jet ? 0 : rnd(1.5, 4.5);
+      const vx = (0.5 + e) * (jet ? rnd(8, 20) : rnd(1.5, 8)) + Math.cos(a) * sp;
+      drops.add(x, py, z, vx, rnd(-0.5, 2.2) + (jet ? rnd(-1, 1) : 0), Math.sin(a) * sp + (jet ? rnd(-1, 1) : 0), any(C.spray),
+        { life: rnd(1.5, 3), s0: rnd(0.02, 0.05), g: 1, drag: 0.25, stain: Math.random() < 0.12 ? 1 : 0 });
+    }
+    if (dustOn) for (let i = 0; i < 10; i++) {
+      dust.add(t.x + rnd(0, 0.6), hy, hz, (0.5 + e) * rnd(1, 5), rnd(0, 0.8), rnd(-1, 1), C.spray[2], { life: rnd(1.2, 2.2), s0: 0.2, s1: 1, a0: 0.25, g: -0.01, drag: 1.4 });
+    }
+  },
+  melon(t, e, hy, hz) {
+    // A melon bursts all round, not only down the lane.
+    const burst = (n, cols, sz, set) => {
+      for (let i = 0; i < K(n); i++) {
+        const dir = V3(rnd(-1, 1), rnd(-0.6, 1), rnd(-1, 1)).normalize();
+        const s = rnd(...sz);
+        set.add(V3(t.x, BORE, 0).addScaledVector(dir, 0.3), dir.multiplyScalar(rnd(2, 6)).add(V3((0.5 + e) * rnd(2, 8), 0, 0)), V3(s, s * rnd(0.5, 1), s * rnd(0.8, 1.3)), any(cols));
+      }
+    };
+    burst(22, C.rind, [0.06, 0.16], rubble);
+    burst(16, C.flesh, [0.04, 0.1], rubble);
+    for (let i = 0; i < K(420); i++) {
+      const dir = V3(rnd(-1, 1), rnd(-0.5, 1), rnd(-1, 1)).normalize().multiplyScalar(rnd(1.5, 6.5));
+      const seed = Math.random() < 0.1;
+      drops.add(t.x, BORE + rnd(-0.2, 0.2), rnd(-0.2, 0.2), dir.x + (0.5 + e) * rnd(1, 9), dir.y, dir.z, seed ? C.seed : any(C.flesh),
+        { life: rnd(1.4, 2.8), s0: seed ? 0.02 : rnd(0.025, 0.055), g: 1, drag: 0.3, stain: !seed && Math.random() < 0.18 ? 2 : 0 });
+    }
+  },
+  concrete(t, e, hy, hz) {
+    // Concrete is heavy: its chunks fall short and its dust hangs.
+    for (let i = 0; i < K(28); i++) {
+      const s = rnd(0.07, 0.3);
+      const p = V3(t.x + rnd(-0.25, 0.25), BORE + rnd(-0.4, 0.4), rnd(-0.4, 0.4));
+      rubble.add(p, V3((0.5 + e) * rnd(1.2, 5), rnd(0, 2.5), rnd(-2, 2)).addScaledVector(V3(0, p.y - hy, p.z - hz), 3), V3(s, s * rnd(0.6, 1), s * rnd(0.7, 1.2)), any(C.rock), 8);
+    }
+    for (let i = 0; i < K(220); i++) {
+      drops.add(t.x + rnd(0, 0.25), hy, hz, (0.5 + e) * rnd(3, 11), rnd(-1.5, 2.5), rnd(-2, 2), C.grit, { life: rnd(0.8, 1.6), s0: rnd(0.012, 0.03), g: 1, drag: 0.6 });
+    }
+    if (dustOn) for (let i = 0; i < 28; i++) {
+      dust.add(t.x + rnd(-0.2, 0.6), hy + rnd(-0.3, 0.3), hz + rnd(-0.3, 0.3), (0.5 + e) * rnd(0.6, 4.5), rnd(-0.2, 0.8), rnd(-1.2, 1.2), C.cloud,
+        { life: rnd(2.5, 4), s0: 0.25, s1: rnd(1.2, 1.9), a0: 0.42, g: -0.015, drag: 1.6 });
+    }
+  },
+  steel(t, e, hy, hz) {
+    // The slug punches through and the plate stays: a hot hole, petals on the exit side.
+    t.state = 'pierced';
+    const plate = t.body.children[0], lz = hz / t.face.z, ly = hy - BORE;
+    for (const side of [1, -1]) {
+      const m = new THREE.Mesh(new THREE.CircleGeometry(0.05, 18).rotateY(side * Math.PI / 2), new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false }));
+      m.position.set(side * 0.032, ly, lz);
+      plate.add(m);
+      glows.push({ m, t: 0, tau: 1.1, row: true });
+    }
+    const pos = [];
+    for (let k = 0; k < 7; k++) {
+      const a0 = k / 7 * TAU, a1 = (k + 1) / 7 * TAU, am = (a0 + a1) / 2;
+      pos.push(0.03, ly + Math.sin(a0) * 0.05, lz + Math.cos(a0) * 0.05,
+        0.03, ly + Math.sin(a1) * 0.05, lz + Math.cos(a1) * 0.05,
+        0.11, ly + Math.sin(am) * 0.1, lz + Math.cos(am) * 0.1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    plate.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col(0.6, 0.02, 60), roughness: 0.3, metalness: 0.9, side: THREE.DoubleSide, emissive: col(0.5, 0.15, 45), emissiveIntensity: 0.6 })));
+    for (let i = 0; i < K(10); i++) {
+      const s = rnd(0.02, 0.06);
+      rubble.add(V3(t.x + 0.1, hy, hz), V3((0.5 + e) * rnd(5, 14), rnd(-1, 2), rnd(-1.5, 1.5)), V3(s, s, s * 0.4), C.steel, 20);
+    }
+    sparks.spray(70, t.x + 0.05, hy, hz, new THREE.Vector3(-1, 0.4, 0), 0.9, 3, 9, [0.3, 0.9]);
+    for (let i = 0; i < K(70); i++) {
+      sparks.add(t.x + 0.05, hy, hz, (0.5 + e) * rnd(4, 16), rnd(-1, 3), rnd(-2.5, 2.5), rnd(0.3, 0.8));
+    }
+  },
+};
+
+/* ---------- the gun state ---------- */
+// empty, loading, loaded, locking, locked, charging, fired, venting.
+const gunState = { s: 'empty', charge: 0, held: 0, rack: RACK_N, tray: null, blink: [0, 0, 0], busy: 0 };
+let hover = null;
+const tween = (target, { done, ...vars }) => {
+  gunState.busy++;
+  wake();
+  return gsap.to(target, { ...vars, onComplete() { gunState.busy--; done?.(); } });
+};
+function refuse(lamp) {
+  gunState.blink[lamp] = 0.6;
+  wake();
+}
+function load() {
+  if (gunState.s !== 'empty') { refuse(gunState.s === 'loaded' ? 1 : 0); return; }
+  if (shot.phase === 'flight' || shot.phase === 'hold') return;
+  gunState.s = 'loading';
+  const i = gunState.rack - 1;
+  const take = rackSlugs[i];
+  const tl = gsap.timeline({ onStart: () => { gunState.busy++; wake(); }, onComplete: () => { gunState.busy--; } });
+  tl.to(crane, { x: RACK_X, duration: 0.55, ease: 'power2.inOut' })
+    .to(crane, { y: rackY(i) + 0.13, duration: 0.4, ease: 'power2.in' })
+    .to(crane, { magnet: 1, duration: 0.1 })
+    .add(() => {
+      // The magnet lifts the slug off its cradle.
+      rack.remove(take);
+      scene.add(take);
+      gunState.carry = take;
+      gunState.rack--;
+    })
+    .to(crane, { y: 2.85, duration: 0.45, ease: 'power2.out' })
+    .to(crane, { x: TRAY_X, duration: 0.7, ease: 'power2.inOut' })
+    .to(crane, { y: BORE + 0.13, duration: 0.45, ease: 'power2.in' })
+    .add(() => { gunState.carry = null; gunState.tray = take; take.position.set(TRAY_X, BORE, 0); })
+    .to(crane, { magnet: 0, duration: 0.15 })
+    .add(() => { gunState.s = 'loaded'; })
+    .to(crane, { y: 2.9, x: -13.8, duration: 0.6, ease: 'power2.inOut' });
+  // An empty rack restocks after the last slug goes.
+  if (gunState.rack === 1) tl.add(restock, '+=0.2');
+}
+function restock() {
+  gunState.rack = RACK_N;
+  rackSlugs.forEach((s, i) => {
+    s.position.set(RACK_X - 1.2, rackY(i), 0);
+    rack.add(s);
+    tween(s.position, { x: RACK_X, duration: 0.35, delay: i * 0.08, ease: 'back.out(2)' });
+  });
+}
+function lock() {
+  if (gunState.s !== 'loaded') { refuse(gunState.s === 'empty' ? 0 : 1); return; }
+  gunState.s = 'locking';
+  tween(gunState, { lever: 1, duration: 0.55, ease: 'power3.inOut', done: () => { gunState.s = 'locked'; } });
+}
+function unlock() {
+  gunState.s = 'venting';
+  vent(TRAY_X - 0.5, BORE + 0.2);
+  tween(gunState, { lever: 0, duration: 0.8, ease: 'power2.inOut', done: () => { gunState.s = 'empty'; } });
+}
+gunState.lever = 0;
+function placeGun() {
+  const k = gunState.lever;
+  block.position.x = lerp(BLOCK_OPEN, BLOCK_SHUT, k);
+  lever.rotation.z = lerp(LEVER_OPEN, LEVER_SHUT, k);
+  if (gunState.carry) gunState.carry.position.set(crane.x, crane.y - 0.13, 0);
+  placeCrane();
+}
+
+/* ---------- the shot ---------- */
+// Phases: idle, flight, hold, snap, after, refill.
+const shot = { phase: 'idle', x: TRAY_X, events: [], next: 0, stopX: BACK_X, hold: 0, after: 0, aim: new THREE.Vector2() };
+let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false, qaAt = null, heatT = 0;
+const knocked = [];
+function startCharge() {
+  if (gunState.s !== 'locked') { refuse(gunState.s === 'empty' || gunState.s === 'loading' ? 0 : 1); return; }
+  if (shot.phase === 'after') refill();
+  gunState.s = 'charging';
+  gunState.held = 0;
+  wake();
+}
+function release() {
+  if (gunState.s !== 'charging') return;
+  if (gunState.held < MIN_HOLD) { gunState.s = 'locked'; gunState.charge = 0; wake(); return; }
+  fire();
+}
+function fire() {
+  // The slug carries its energy down the lane and spends it in each target.
+  let E = 0.15 + gunState.charge * 1.25;
+  shot.events = [];
+  shot.stopX = BACK_X;
+  if (mode === 'aquarium' && !TANK.burst) {
+    // Water drags the slug per metre; the glass walls take a little each.
+    const WALL = 0.03, DRAG = 0.09, need = (TANK.x1 - TANK.x0) * DRAG;
+    E -= WALL;
+    shot.events.push({ x: TANK.x0, kind: 'wall', e: E });
+    if (E > need + WALL) { E -= need + WALL; shot.events.push({ x: TANK.x1, kind: 'wall', e: E }); }
+    else { shot.stopX = TANK.x0 + Math.max(0.3, E / DRAG); E = 0; shot.events.push({ x: shot.stopX, kind: 'sink', e: 0 }); }
+  } else for (const t of row) {
+    if (t.state !== 'stand') continue;
+    if (E >= t.T.res) { E -= t.T.res; shot.events.push({ x: t.x, t, kind: 'burst', e: E }); }
+    else { shot.events.push({ x: t.x, t, kind: 'stop', e: 0 }); shot.stopX = t.x; E = 0; break; }
+  }
+  if (E > 0) shot.events.push({ x: BACK_X, kind: 'back', e: E });
+  bubbleAt = ringAt = wakeAt = -1e9;
+  heatT = 0;
+  shot.aim.set(rnd(-0.1, 0.1), rnd(-0.12, 0.12));
+  shot.next = 0;
+  shot.x = TRAY_X;
+  shot.phase = 'flight';
+  gunState.s = 'fired';
+  gunState.charge = 0;
+  if (gunState.tray) { gunState.tray.removeFromParent(); gunState.tray = null; }
+  flashT = -((MUZZLE - TRAY_X) / SPEED) / timeSlow();
+  timeScale = timeSlow();
+  wake();
+}
+const aimAt = x => clamp((x - MUZZLE) / 20);
+function hitEvent(ev) {
+  const hy = BORE + shot.aim.y * aimAt(ev.x), hz = shot.aim.x * aimAt(ev.x);
+  if (ev.kind === 'burst') {
+    // Steel and plates stay standing; everything else breaks apart.
+    if (ev.t.kind !== 'steel' && ev.t.kind !== 'plate') { ev.t.state = 'gone'; ev.t.body.visible = false; }
+    HIT[ev.t.kind](ev.t, ev.e, hy, hz);
+  } else if (ev.kind === 'wall') {
+    tankWall(ev.x, ev.e, hy, hz);
+  } else if (ev.kind === 'sink' || (ev.kind === 'stop' && ev.t.kind === 'plate')) {
+    // In water or steel plate, the slug stops and stays.
+    stuck(ev.kind === 'sink' ? ev.x : ev.x - 0.05, hy, hz);
+  } else if (ev.kind === 'stop') {
+    // The stopped slug knocks its target off the stand.
+    const t = ev.t;
+    t.state = 'knock';
+    t.vel.set(rnd(2, 4), rnd(1.5, 3), rnd(-0.6, 0.6));
+    t.spin.set(rnd(-2, 2), rnd(-2, 2), rnd(-4, -1));
+    knocked.push(t);
+  } else {
+    addDent(hy, hz);
+  }
+}
+function stepKnocked(h) {
+  let moving = false;
+  for (const t of knocked) {
+    if (t.state !== 'knock') continue;
+    const b = t.body;
+    t.vel.y -= 9.8 * h;
+    b.position.addScaledVector(t.vel, h);
+    b.rotation.x += t.spin.x * h; b.rotation.y += t.spin.y * h; b.rotation.z += t.spin.z * h;
+    const floor = t.T.h * 0.35;
+    if (b.position.y < floor) {
+      b.position.y = floor;
+      t.vel.y = -t.vel.y * 0.25; t.vel.x *= 0.5; t.vel.z *= 0.5; t.spin.multiplyScalar(0.5);
+      if (t.vel.lengthSq() < 0.1) { t.state = 'down'; continue; }
+    }
+    moving = true;
+  }
+  return moving;
+}
+function refill() {
+  // A new mode takes effect only with a fresh build.
+  if (pendingMode) { mode = pendingMode; pendingMode = null; }
+  shot.phase = 'refill';
+  fadeT = 0;
+  buildMode(true);
+  knocked.length = 0;
+  // Holes go with their plates.
+  for (let i = glows.length; i--;) if (glows[i].row) glows.splice(i, 1);
+  wake();
+}
+// QA: fire at a set charge, and freeze the sim clock for stills.
+window.__qa = {
+  ready() { gunState.s = 'locked'; gunState.lever = 1; placeGun(); wake(); },
+  fire(c = 1) { this.ready(); gunState.s = 'charging'; gunState.held = 1; gunState.charge = c; fire(); },
+  freeze(on = true) { frozen = on; wake(); },
+  // Freeze when the slug passes x, or t seconds after the snap.
+  at(x = null, t = null) { qaAt = { x, t }; },
+  // Set the bullet-time scale without saving it.
+  slow(v) { slowmo = v; },
+  mode: v => act.mode(v),
+  // Close-up stills: look at x, y from d metres; a resize resets it.
+  view(x, y, d) { fixedLook.set(x, y, 0); fixedPos.set(x, y + d * 0.26, d); placeCamera(); draw(); },
+  state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase, mode, row: row.slice(0, 3).map(t => [t.kind, t.state, +t.g.position.y.toFixed(2), t.drop, t.g.parent === scene]) }),
+  row(kind) { clearDebris(); clearRow(); SLOTS.forEach(x => row.push(makeTarget(kind, x))); shot.phase = 'idle'; wake(); },
+};
+let pendingMode = null;
+act.mode = v => {
+  if (!MODES.includes(v)) return;
+  pendingMode = v;
+  store.set('stimming.phaeton.mode', v);
+  // A mode change mid-shot waits for the refill.
+  if (shot.phase !== 'flight' && shot.phase !== 'hold' && shot.phase !== 'snap') { refill(); clearDebris(); }
+};
+act.load = load;
+act.lock = lock;
+act.down = startCharge;
+act.up = release;
+act.shuffle = () => { if (shot.phase === 'idle' || shot.phase === 'after' || shot.phase === 'refill') { refill(); clearDebris(); } };
+act.reset = () => {
+  for (const d of glows) if (d.m) { d.m.removeFromParent(); d.m.material.dispose(); }
+  glows.length = 0;
+  clearDebris();
+  slug.visible = false; timeScale = 1; camBlend = 0;
+  if (shot.phase === 'flight' || shot.phase === 'hold') shot.phase = 'after';
+  refill();
+};
+
+/* ---------- step ---------- */
+function step(dt) {
+  // Real time drives the charge, the lamps, the camera and the flash.
+  const G = gunState;
+  if (G.s === 'charging') {
+    G.held += dt;
+    G.charge = clamp(G.charge + dt / CHARGE_TIME);
+  }
+  const c = G.s === 'charging' ? G.charge : 0;
+  for (const r of rails) r.material.emissive.copy(col(0.7, 0.18, 45)).multiplyScalar(c * c * 1.6);
+  drawArcs(c);
+  const spinning = stepMachines(dt, c);
+  needle.rotation.z = lerp(2.2, -2.2, c);
+  caps.forEach((m, i) => m.color.copy(CAP_OFF).lerp(CAP_ON, clamp(c * 6 - i)));
+  // Lamps: load, lock, charge. Amber asks, green is done, red refuses.
+  const ask = G.s === 'empty' ? 0 : G.s === 'loaded' ? 1 : G.s === 'locked' ? 2 : -1;
+  const st = [G.s !== 'empty' && G.s !== 'loading', ['locked', 'charging', 'fired'].includes(G.s), G.s === 'charging' && c >= 1];
+  lamps.forEach((m, i) => {
+    G.blink[i] = Math.max(0, G.blink[i] - dt);
+    if (G.blink[i] > 0) m.color.copy(Math.floor(G.blink[i] * 10) % 2 ? LAMP.no : LAMP.off);
+    else if (i === 2 && G.s === 'charging') m.color.copy(c >= 1 ? LAMP.ok : LAMP.live).multiplyScalar(c >= 1 ? 1 : 0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 120)));
+    else m.color.copy(st[i] ? LAMP.ok : ask === i ? LAMP.ask : LAMP.off);
+  });
+  // The part that takes the next step glows under the pointer.
+  knobMat.emissive.copy(hover === 'lever' && G.s === 'loaded' ? col(0.6, 0.2, 28) : new THREE.Color(0));
+  bandMat.emissive.copy(hover === 'rack' && G.s === 'empty' ? col(0.6, 0.12, 50) : new THREE.Color(0));
+  placeGun();
+  flashT += dt;
+  flash.intensity = reduced() || flashT < 0 ? 0 : 90 * Math.exp(-flashT / 0.07);
+
+  // The sim clock runs at the time scale; bullet time is one number.
+  if (shot.phase === 'snap') timeScale = Math.min(1, timeScale + dt / 0.15);
+  const h = frozen ? 0 : dt * timeScale;
+  if (shot.phase === 'flight') {
+    const from = shot.x;
+    shot.x = Math.min(shot.x + SPEED * h, shot.stopX);
+    const ka = aimAt(shot.x);
+    tankTrail(from, shot.x, BORE + shot.aim.y * ka, shot.aim.x * ka);
+    if (from < MUZZLE && shot.x >= MUZZLE && !reduced()) muzzleBlast(BORE, 0);
+    saltWake(from, shot.x);
+    while (shot.next < shot.events.length && shot.x >= shot.events[shot.next].x) hitEvent(shot.events[shot.next++]);
+    if (shot.x >= shot.stopX) { shot.x = shot.stopX; shot.phase = 'hold'; shot.hold = 0; }
+    if (qaAt?.x != null && shot.x >= qaAt.x) { frozen = true; qaAt = null; }
+  } else if (shot.phase === 'hold') {
+    if (!frozen) shot.hold += dt;
+    if (shot.hold > 0.35) { shot.phase = 'snap'; tankBurst(); }
+  } else if (shot.phase === 'snap' && timeScale >= 1) {
+    shot.phase = 'after'; shot.after = 0;
+    if (G.s === 'fired') unlock();
+    if (mode === 'depth') depthResult(shot.stopX);
+  } else if (shot.phase === 'after') {
+    if (qaAt?.t != null && shot.after >= qaAt.t) { frozen = true; qaAt = null; }
+    if (!frozen) shot.after += dt;
+    if (shot.after > REFILL) refill();
+  }
+  const k = aimAt(shot.x);
+  slug.position.set(shot.x, BORE + shot.aim.y * k, shot.aim.x * k);
+  // The slug shows once it leaves the barrel.
+  slug.visible = (shot.phase === 'flight' || shot.phase === 'hold') && shot.x > MUZZLE - 0.2;
+  trail.scale.x = clamp((shot.x - MUZZLE) / 4, 0.05, 1) * 1.2;
+
+  // The row drops in after a refill.
+  let dropping = false;
+  for (const t of row) {
+    if (t.drop < 1) {
+      t.drop = Math.min(1, t.drop + dt / 0.55);
+      const q = clamp(t.drop);
+      // A falling ease with one small bounce.
+      const y = q < 0.75 ? 1 - (q / 0.75) ** 2 : 0.06 * Math.sin((q - 0.75) / 0.25 * Math.PI);
+      t.g.position.y = y * 6;
+      if (t.blob) { t.blob.position.y = 0.006 - t.g.position.y; t.blob.material.opacity = t.blobOp * (1 - y); }
+      dropping = true;
+    }
+  }
+  if (shot.phase === 'refill') {
+    // Old debris shrinks away while the new row lands.
+    fadeT += dt;
+    const f = clamp(1 - fadeT / 0.4);
+    for (const s of sets) s.fade = f;
+    for (const s of puffSets) s.mat.uniforms.uFade.value = f;
+    stains.mesh.material.opacity = 0.7 * f;
+    if (f <= 0) {
+      clearDebris();
+      for (const s of sets) s.fade = 1;
+      for (const s of puffSets) s.mat.uniforms.uFade.value = 1;
+      stains.mesh.material.opacity = 0.7;
+    }
+    if (!dropping && f <= 0) shot.phase = 'idle';
+  }
+  const hs = shot.phase === 'refill' ? 0 : h;
+  let moving = false;
+  for (const s of sets) moving = s.step(hs) || moving;
+  let steaming = false;
+  for (const s of puffSets) steaming = s.step(hs) || steaming;
+  if (shot.phase === 'refill') moving = steaming = false;
+  // Every stepper runs each frame; none may short-circuit another.
+  const knocking = stepKnocked(h), ringing = stepRings(hs), sparking = sparks.step(hs);
+  const tumbling = knocking || ringing || sparking;
+  // The heat shimmer lives through the flight, then fades in a second.
+  const flying = shot.phase === 'flight' || shot.phase === 'hold';
+  heatT = flying ? 1 : heatT * Math.exp(-dt / 0.6);
+  if (heatT < 0.01 || reduced()) heatT = 0;
+  heat.enabled = heatT > 0;
+  if (heat.enabled) {
+    const a = new THREE.Vector3(MUZZLE, BORE, 0).project(camera), b = slug.position.clone().project(camera);
+    heat.uniforms.uA.value.set(a.x * 0.5 + 0.5, a.y * 0.5 + 0.5);
+    heat.uniforms.uB.value.set(b.x * 0.5 + 0.5, b.y * 0.5 + 0.5);
+    heat.uniforms.uAmt.value = heatT;
+    heat.uniforms.uW.value = lerp(0.006, 0.03, camBlend);
+    heat.uniforms.uAspect.value = size.w / size.h;
+    heat.uniforms.uTime.value = performance.now() / 1000;
+  }
+  const warm = coolGlows(dt);
+
+  // The track camera follows the slug in bullet time.
+  const ride = camMode === 'track' && !reduced() && (shot.phase === 'flight' || shot.phase === 'hold');
+  camBlend += ((ride ? 1 : 0) - camBlend) * (1 - Math.exp(-dt / (ride ? 0.2 : 0.35)));
+  if (Math.abs(camBlend - (ride ? 1 : 0)) < 0.002) camBlend = ride ? 1 : 0;
+  placeCamera();
+
+  const blinking = G.blink.some(b => b > 0);
+  // The focus band follows the view: the slab, or the slug when tracking.
+  for (const p of [tiltH, tiltV]) {
+    p.uniforms.uFocus.value = lerp(narrow ? 0.5 : 0.47, 0.52, camBlend);
+    p.uniforms.uBand.value = lerp(narrow ? 0.06 : 0.09, 0.16, camBlend);
+    p.uniforms.uMax.value = (narrow ? 4 : 7) * size.dpr;
+  }
+  return spinning || heatT > 0 || shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
+}
+
+/* ---------- camera ---------- */
+let size = { w: 1, h: 1, dpr: 1 }, narrow = false;
+const fixedPos = new THREE.Vector3(), fixedLook = new THREE.Vector3();
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+const CX = (SLAB.x0 + SLAB.x1) / 2, HALF_W = 15.6, TILT = 15 * Math.PI / 180;
+function frameShot() {
+  const asp = size.w / size.h;
+  narrow = asp < 0.9;
+  camera.aspect = asp;
+  camera.fov = narrow ? 44 : 20;
+  // The distance fits the whole diorama across the frame.
+  const hf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * asp);
+  const d = HALF_W / Math.tan(hf);
+  fixedLook.set(CX, narrow ? 0.2 : 0.9, 0);
+  fixedPos.set(CX, fixedLook.y + d * Math.sin(TILT), d * Math.cos(TILT));
+  camera.far = d + 1000;
+  camera.updateProjectionMatrix();
+  const scale = size.h * size.dpr / (2 * Math.tan(camera.fov * Math.PI / 360));
+  for (const s of puffSets) s.mat.uniforms.uScale.value = scale;
+}
+function placeCamera() {
+  const x = shot.x;
+  camPos.set(lerp(fixedPos.x, x + 0.4, camBlend), lerp(fixedPos.y, BORE + 1.6, camBlend), lerp(fixedPos.z, 13, camBlend));
+  camLook.set(lerp(fixedLook.x, x + 1.4, camBlend), lerp(fixedLook.y, BORE, camBlend), lerp(fixedLook.z, 0, camBlend));
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2.2e6 }) };
+  frameShot();
+  placeCamera();
+  renderer.setPixelRatio(size.dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(size.dpr);
+  composer.setSize(w, h);
+  for (const p of [tiltH, tiltV, grade]) p.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while anything moves; it sleeps at rest.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    again = step(dt);
+    draw();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+  }
+}
+
+/* ---------- pointer ---------- */
+// The rack and the lever take clicks; anywhere else charges.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (ray.intersectObject(lever, true).length || ray.intersectObject(block, false).length) return 'lever';
+  if (ray.intersectObject(rack, true).length) return 'rack';
+  return null;
+}
+let pointerId = null;
+canvas.addEventListener('pointermove', e => {
+  if (pointerId !== null || e.pointerType !== 'mouse') return;
+  const p = pick(e);
+  if (p === hover) return;
+  hover = p;
+  stage.style.cursor = p ? 'pointer' : '';
+  wake();
+});
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || pointerId !== null) return;
+  const p = pick(e);
+  if (p === 'rack') { load(); return; }
+  if (p === 'lever') { lock(); return; }
+  pointerId = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  startCharge();
+});
+const up = e => {
+  if (e.pointerId !== pointerId) return;
+  pointerId = null;
+  release();
+};
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea, select')) return;
+  if (e.key === 's' || e.key === 'S') act.shuffle();
+});
+
+/* ---------- ready ---------- */
+buildMode(false);
+placeGun();
+resize();
+renderer.compileAsync(scene, camera).then(() => {
+  draw();
+  canvas.classList.add('on');
+  ready = true;
+  mark('first-frame');
+}, () => { canvas.classList.add('on'); ready = true; mark('first-frame'); });
+
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+onQuality(() => { resize(); if (ready) draw(); });
+onReducedChange(() => wake());
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  wake();
+});
+</script>
+</body>
+</html>

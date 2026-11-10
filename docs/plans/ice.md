@@ -74,8 +74,8 @@ Three visible controls.
 | Twist | θ(u) = T · (u − 0.5) along the tray's length u in 0 to 1. T follows the pointer through a spring (ω 18 rad/s, ζ 0.7). |
 | Bond | each cube holds a bond of 1 ± 0.3. Strain at its cell is \|T\| · (1 + edge bonus), where cells near the ends strain more. Strain past the bond for 80 ms breaks it. |
 | Crack | a break plays the crack, flashes one crack plane inside the cube for 250 ms, and leaves it as a faint white sheet. |
-| Pop | when the twist eases back, the cell wall pushes a loose cube up at 1.5 to 3 units per second, with a small random spin. |
-| Rigid body | position, velocity, orientation (quaternion), angular velocity. Fixed step 1/120 s. Gravity 9.8 units per second squared, units are cube edges. |
+| Pop | when the twist eases to 70 % of its peak, the cell wall throws the cube up (5 to 7) and out over the nearest long side (3 to 4.5), with a random spin. Strain also tires the bond, so a held or repeated twist frees a stubborn cube. |
+| Rigid body | position, velocity, orientation (quaternion), angular velocity. Fixed step 1/120 s. Units are cube edges; gravity is 28 per second squared, slowed from true scale so a fall reads. |
 | Table | the eight corners against y = 0: impulse with restitution 0.25 and friction 0.35, so cubes skid, tip and settle on a face. |
 | Cubes | sphere against sphere (radius 0.55 edges), restitution 0.4. Impact speed drives the clink. |
 | Tray | while in the tray, a cube follows its cell. A loose cube that lands back in a cell stays loose. |
@@ -161,7 +161,7 @@ Three visible controls.
 
 ### Task 5: Finish and QA
 
-- [ ] Cubes, Table and persistence. The performance ladder: pixel ratio 1, then transmission size and no mirror, then 12 cubes.
+- [ ] Cubes, Table and persistence. The performance ladder: pixel ratio 1, then transmission size and no mirror, then smaller shadows and no caustics. (A forced 12-cube rebuild mid-play would wipe the table, so it is not a rung.)
 - [ ] Q1 to Q10. Tick the bean and record the cost. Commit.
 
 ## Kit handoff
