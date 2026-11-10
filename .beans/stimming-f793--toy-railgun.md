@@ -214,3 +214,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 
 - [x] Charge dust: a tighter, lower, thinner ring with softer wisps and more steps (less grain)
 - [x] Settings: Tone map (AgX, ACES, Neutral), Exposure, Contrast and Saturation
+- [x] Debris arcs: four pieces fan out, lob, then fall in a ballistic arc
+- [x] Sand: longer, less regular dunes, band-limited per pixel against aliasing
+- [x] Brightness slider in Settings, beside exposure, contrast and saturation
+- [x] Shed embers: big weightless pieces drift slowly far back up the trail
