@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T08:22:33Z
+updated_at: 2026-11-10T08:27:08Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -245,3 +245,7 @@ Open from the critics:
 
 - [x] Softer cabin light at night (Tom): one warm, dimmed light colour for wall, reveal and cross bar; a wide shallow pool with no hard spot; the baked cabin's lamps dim and warm at night
 - [x] Cabin mirror blurred (Tom): the cube map reads from a coarse mip; the reveal's mirror image stays sharp
+
+- [x] Darker night cabin (Tom): the cabin light is 0.6 of its last level on wall, reveal, cross bar and the glass's room terms; the baked cabin and its lamps drop by the same share, so the mirror image matches
+- [x] Pull-away shaped like a real unit, quicker: the pull builds over about a second, holds 1.25 m/s2 to 13 m/s, then falls with speed (27 m/s in about 30 s). Out of Zurich HB: 300 m at 11 m/s, then 800 m at 19 m/s. Into Zurich HB: the last 250 m at 12 m/s. The arrival sound takes its timing from the same model (S.eta)
+- [x] Stops drawn at random each lap: Zurich HB and Murg always; a town 0.4, a village 0.2, a halt 0.12; about seven stops a lap. A simulated two laps gave Thalwil, Lachen, Ziegelbrücke, Murg, HB, then Wiedikon, Enge, Kilchberg, Au, Altendorf, Siebnen-Wangen, Murg, HB
