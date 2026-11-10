@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:06:10Z
+updated_at: 2026-11-10T09:15:28Z
 parent: stimming-w1nd
 ---
 
@@ -30,3 +30,12 @@ Branch claude/window-terrain-a0002d; Tom decides on merge. A/B with ?land=0 (old
 - Cost: within noise on the dev Mac (about +1 ms of a 16 ms cloudless frame at 1544 x 1036).
 - ?land=0 old, 1 relief, 2 relief with parallax (default on the branch). ?x=km starts the flight further along: x=1960 has a fjord coast.
 - Tom asked for the Ace Combat world map as an easter egg; declined (copied map). An original hidden world is offered instead.
+
+## Ode world (Tom, 2026-11-10)
+
+Tom asked for his favourite flight-sim world under the plane as a personal easter egg.
+- window/ode.js: ten hand-traced continent outlines from Tom's reference map, rounded by corner cutting, baked into a blurred land mask (1024 x 588).
+- Hidden: ?ode, or type the world's name on the page (again to fly home). No names, flags or text on screen.
+- 4 km per map pixel; the flight starts at map (960, 638) and runs east along the central continent's southern coast.
+- Coasts meander by noise at 70 and 22 km, so traced edges never run straight. index.html mirrors the field for airports.
+- Seen at Noon and Golden hour (Clear): open sea, then a lake coast, then snowy ranges.

@@ -59,6 +59,8 @@ uniform highp sampler3D uNoise;
 uniform vec2 uCam;
 // Land: 0 the flat country, 1 relief, 2 relief with parallax on peaks.
 uniform float uLand;
+// The hidden ode world: on, start map x and y in source pixels, km per pixel.
+uniform vec4 uOde; uniform sampler2D uOdeMap;
 // Airports: map site xz, then the landing heading's cos and sin.
 // uApB: runway half length, twin runway offset, seed, apron size.
 uniform vec4 uAp[8], uApB[8];
@@ -176,6 +178,16 @@ const float SEA = 0.3;
 // Relief land has more open sea: about a third of the map.
 const float SEAR = 0.42;
 float seaField(vec2 w) { return vnoise(w / 260.0 + 3.7) * 0.65 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 95.0 + 1.3) * 0.35; }
+// The land field for relief: the sea field, or the ode world's traced coasts.
+// index.html mirrors it, so no airport lands in the sea.
+float landField(vec2 w) {
+  if (uOde.x < 0.5) return seaField(w);
+  vec2 px = vec2(uOde.y + w.x / uOde.w, uOde.z - w.y / uOde.w);
+  float m = textureLod(uOdeMap, (px - 55.0) / vec2(1890.0, 1085.0), 0.0).r;
+  // Coasts meander, so the traced edges never run straight.
+  float fr = (vnoise(w / 70.0 + 5.1) - 0.5) * 0.3 + (vnoise(w / 22.0 + 9.7) - 0.5) * 0.1;
+  return SEAR + 0.8 * (m - 0.5) + fr;
+}
 
 // Set by landBase for landCover: the water share, the open sea share.
 float gWater = 0.0, gSea = 0.0;
@@ -330,7 +342,7 @@ float reliefShadow(vec2 w, float base) {
 vec2 reliefParallax(vec2 w, vec3 d, vec3 up) {
   float sd = max(-dot(d, up), 0.12);
   vec2 hd = normalize(d.xz + 1e-6) * sqrt(1.0 - sd * sd) / sd;
-  float base = 2.5 * (seaField(w) - SEAR), top = max(base + MTN * 0.4, 0.0);
+  float base = 2.5 * (landField(w) - SEAR), top = max(base + MTN * 0.4, 0.0);
   if (beltField(w) + beltField(w - hd * top * 0.5) + beltField(w - hd * top) <= 0.0) return w;
   // From the top of the peaks down to sea level, in even height steps.
   // Grazing rays cover more ground, so they take more steps.
@@ -355,7 +367,7 @@ vec3 landRelief(vec2 w, float fw) {
   float apD = apNear(w);
   vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
   float woods = vnoise(wr / 55.0 + 2.3), wet = vnoise(w / 70.0 - 4.4);
-  float sf = seaField(w) + 0.06 * (vnoise(wr / 9.0) - 0.5) + 0.03 * (vnoise(w / 2.6 + 4.0) - 0.5) * fd(2.6, fw);
+  float sf = landField(w) + 0.06 * (vnoise(wr / 9.0) - 0.5) + 0.03 * (vnoise(w / 2.6 + 4.0) - 0.5) * fd(2.6, fw);
   // Airports keep their ground dry and flat.
   float calm = smoothstep(4.0, 7.0, apD);
   float m = beltField(w) * calm;
@@ -575,7 +587,7 @@ float townDome(vec2 w) {
     g += s.z * sqrt(s.z) * exp(-dot(q, q) / (rd * rd)) * smoothstep(15.0, 9.0, length(q));
   }
   // Relief land: no town glow over open sea; little over the peaks.
-  if (uLand > 0.5) g *= smoothstep(SEAR - 0.06, SEAR + 0.03, seaField(w)) * (1.0 - 0.5 * beltField(w));
+  if (uLand > 0.5) g *= smoothstep(SEAR - 0.06, SEAR + 0.03, landField(w)) * (1.0 - 0.5 * beltField(w));
   // The scale keeps the deck's mean glow at its approved level.
   return g * 0.83 * uLit;
 }

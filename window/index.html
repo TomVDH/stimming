@@ -78,6 +78,7 @@ import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
 import { createBolts } from './bolts3.js';
+import { bakeOde } from './ode.js';
 import * as THREE from 'three';
 
 // The intro holds until the page, the font and the first frame are ready.
@@ -123,7 +124,11 @@ onReducedChange(v => { reduce = v; });
 
 const ALT = 11;            // cruise height in km
 // The land below: 0 flat country, 1 relief, 2 relief with parallax.
-const RELIEF = qs.has('land') ? +qs.get('land') : 2;
+// The hidden ode world: ?ode, or type its name. It needs relief land.
+const ODE = qs.has('ode');
+const RELIEF = Math.max(ODE ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
+// Its start: map x and y in source pixels, and km per pixel.
+const ODE_AT = [960, 638, 4];
 const SPEED = 0.25;        // ground speed in km/s, real cruise
 const HOR = horizonEl(ALT);
 // Each hour places one light: the sun by day and twilight, the moon at midnight.
@@ -301,6 +306,11 @@ Object.assign(noiseTex, {
   wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, wrapR: THREE.RepeatWrapping,
 });
 noiseTex.needsUpdate = true;
+// The ode world's land mask; a blank pixel stands in when it is off.
+const odeMask = ODE ? bakeOde() : { W: 1, H: 1, m: new Uint8Array(1) };
+const odeTex = new THREE.DataTexture(odeMask.m, odeMask.W, odeMask.H, THREE.RedFormat, THREE.UnsignedByteType);
+Object.assign(odeTex, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, unpackAlignment: 1 });
+odeTex.needsUpdate = true;
 // The outside target: half size on Standard, three quarters on High.
 // It keeps a depth buffer and 4x MSAA for the aircraft meshes.
 const outBuf = { w: 0, h: 0 };
@@ -1174,6 +1184,17 @@ function vnoise2(px, py) {
 }
 const SEA = 0.3, SEAR = 0.42;
 const seaField = (x, z) => vnoise2(x / 260 + 3.7, z / 260 + 3.7) * 0.65 + vnoise2((0.8 * x + 0.6 * z) / 95 + 1.3, (-0.6 * x + 0.8 * z) / 95 + 1.3) * 0.35;
+// The shader's landField: the sea field, or the ode world's mask.
+function landField(x, z) {
+  if (!ODE) return seaField(x, z);
+  const { W, H, m } = odeMask;
+  const u = ((ODE_AT[0] + x / ODE_AT[2] - 55) / 1890) * W - 0.5, v = clamp(((ODE_AT[1] - z / ODE_AT[2] - 55) / 1085) * H - 0.5, 0, H - 1);
+  const i = Math.floor(u), j = Math.min(Math.floor(v), H - 2), fu = u - i, fv = v - j;
+  const at = (a, b) => m[b * W + (((a % W) + W) % W)] / 255;
+  const k = (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
+  const fr = (vnoise2(x / 70 + 5.1, z / 70 + 5.1) - 0.5) * 0.3 + (vnoise2(x / 22 + 9.7, z / 22 + 9.7) - 0.5) * 0.1;
+  return SEAR + 0.8 * (k - 0.5) + fr;
+}
 // The shader's beltField, so no airport lands on a peak.
 const smooth01 = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const beltField = (x, z) => smooth01(0.55, 0.9, 1 - Math.abs(2 * vnoise2((0.6 * x + 0.8 * z) / 170 + 11.3, (-0.8 * x + 0.6 * z) / 170 + 11.3) - 1)) * smooth01(0.25, 0.6, vnoise2(x / 75 + 2.2, z / 75 + 2.2));
@@ -1184,7 +1205,7 @@ function airportIn(i, j) {
   let a = null;
   if (ihash(i, j, 11) < 0.5) {
     const x = (i + 0.2 + 0.6 * ihash(i, j, 12)) * AP_CELL, z = (j + 0.2 + 0.6 * ihash(i, j, 13)) * AP_CELL;
-    if (seaField(x, z) > (RELIEF < 0.5 ? SEA : SEAR) + 0.08 && (RELIEF < 0.5 || beltField(x, z) < 0.02)) {
+    if (RELIEF < 0.5 ? seaField(x, z) > SEA + 0.08 : landField(x, z) > SEAR + 0.08 && beltField(x, z) < 0.02) {
       const th = ihash(i, j, 14) * PI, big = ihash(i, j, 15);
       // The runway end that faces the wind takes the landings.
       const s = Math.cos(th) * LAND[0] + Math.sin(th) * LAND[1] < 0 ? -1 : 1;
@@ -1283,6 +1304,8 @@ function render() {
   UG.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
   UG.uniform1f(u.uTowns, opts.towns);
   UG.uniform1f(u.uLand, RELIEF);
+  UG.uniform4f(u.uOde, ODE ? 1 : 0, ...ODE_AT);
+  UG.tex(u.uOdeMap, odeTex);
   UG.uniform1f(u.uLit, sky.h.lit);
   UG.uniform2f(u.uCam, cam.x, cam.z);
   // A storm closes the deck, fills the mid layer, thickens the cirrus.
@@ -1614,6 +1637,16 @@ stage.addEventListener('keydown', e => {
   e.preventDefault();
   if (mirror) m[0] = -m[0];
   moveHead(...m);
+});
+// An easter egg: typing the ode world's name flies over it, or back home.
+let typed = '';
+addEventListener('keydown', e => {
+  if (e.key.length !== 1 || e.metaKey || e.ctrlKey) return;
+  typed = (typed + e.key.toLowerCase()).slice(-11);
+  if (typed !== 'strangereal') return;
+  const q = new URLSearchParams(location.search);
+  if (ODE) q.delete('ode'); else q.set('ode', '');
+  location.search = q.toString();
 });
 
 /* ---------- bar ---------- */
