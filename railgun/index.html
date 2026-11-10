@@ -1333,10 +1333,10 @@ function stepCase(dt) {
   s.p.addScaledVector(s.v, dt);
   spinQ.setFromAxisAngle(bq.copy(s.w).normalize(), s.w.length() * dt);
   caseMesh.quaternion.premultiply(spinQ);
-  // The case hits the plain: a burst of dust, one small hop.
+  // The case hits the plain: a burst of dust, one small hop, no jolt.
   if (s.p.y < 13.5) {
     s.p.y = 13.5;
-    if (s.lt < 0) { s.lt = simT; caseDust = { t0: simT, P: s.p.clone() }; cam.shake += 0.15; }
+    if (s.lt < 0) { s.lt = simT; caseDust = { t0: simT, P: s.p.clone() }; }
     s.bounce++;
     s.v.multiplyScalar(0.25); s.v.y = s.bounce < 2 ? 9 : 0;
     s.w.multiplyScalar(0.3);
@@ -3382,12 +3382,18 @@ const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linF
 // A shell: a thin skin of condensed air, lit by the sun and by uEm.
 function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
   const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
-  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() } },
+  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() }, uSq: { value: new THREE.Vector4(0, 1, 0, 1) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; varying vec3 vP, vN;
-  void main() { vN = position; vP = uC + position * uR; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; uniform vec4 uSq; varying vec3 vP, vN;
+  void main() {
+    // uSq squashes the shell along its axis; 1 keeps it round.
+    vec3 p = position - uSq.xyz * dot(position, uSq.xyz) * (1.0 - uSq.w);
+    vN = normalize(position + uSq.xyz * dot(position, uSq.xyz) * (1.0 / uSq.w - 1.0));
+    vP = uC + p * uR;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`,
   fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
   void main() {
     vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
@@ -3405,7 +3411,7 @@ function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
 }
 const shellMesh = makeShell();
 // The muzzle skirt: a thin, nearly whole shock sphere.
-const muzzleSkirt = makeShell(7.0, -0.1, 0.45);
+const muzzleSkirt = makeShell(5.0, 0.25, 0.6);
 // Air distortion: world place and radius of each shock, and the strength.
 const warpM = new THREE.Vector4(), warpH = new THREE.Vector4();
 // Charge dust: one raymarched volume round the plinth.
@@ -3626,13 +3632,22 @@ function updateMuzzle(ma, c, m0) {
   plume.visible = on && age < 1.0;
   // Six jets for 0.15 s.
   const jg = on ? 3.5 * cc * Math.exp(-ma / 0.06) : 0;
+  // The brake spits smoke out of its ports once, sideways; it drifts and thins.
+  if (on && !shot.puffed && !reduced()) {
+    shot.puffed = true;
+    for (const a of BRAKE_PORTS) for (const sd of [-1, 1]) for (let k = 0; k < 5; k++) {
+      barrelPt(a, sd * 24, 0, jp);
+      bv.copy(shot.side).multiplyScalar(sd * (50 + 70 * rnd()) * cc).addScaledVector(shot.ax, 10 + 25 * rnd()).addScaledVector(shot.up, 4 + 10 * rnd());
+      puff(jp, bv, 2 + 1.5 * rnd(), 18 + 22 * rnd(), true);
+    }
+  }
   jets.forEach((j, i) => {
     const sd = i % 2 ? 1 : -1, a = BRAKE_PORTS[i >> 1];
     barrelPt(a, sd * 24, 0, jp);
     bv.copy(shot.side).multiplyScalar(sd);
     glint(j, jp, bv, 250 * cc, 22, jg > 0.02 ? jg * 1.3 : 0);
   });
-  flare(spike, m0, 1700 * (0.6 + cc), on ? 2.8 * cc * Math.exp(-ma / 0.07) : 0);
+  flare(spike, m0, 900 * (0.6 + cc), on ? 2.0 * cc * Math.exp(-ma / 0.06) : 0);
   // The shell runs out ahead of the muzzle and burns off in a second.
   const sg = on ? 2.2 * cc * Math.exp(-ma / 0.25) : 0, su = shellMesh.material.uniforms;
   su.uR.value = 30 + 650 * (1 - Math.exp(-ma / 0.3));
@@ -3640,9 +3655,11 @@ function updateMuzzle(ma, c, m0) {
   su.uGain.value = reduced() ? sg * 0.5 : sg;
   shellMesh.visible = sg > 0.01;
   // The skirt grows round the muzzle to about a kilometre and fades.
-  const ku = muzzleSkirt.material.uniforms, kr = 20 + 1100 * (1 - Math.exp(-ma / 0.55));
-  ku.uC.value.copy(m0); ku.uR.value = kr;
-  ku.uGain.value = on ? (reduced() ? 0.5 : 1) * 2.6 * cc * Math.exp(-ma / 0.7) * Math.min(1, ma / 0.03) : 0;
+  // A torn disc of condensed air, square to the bore, that thins fast.
+  const ku = muzzleSkirt.material.uniforms, kr = 20 + 900 * (1 - Math.exp(-ma / 0.45));
+  ku.uC.value.copy(m0).addScaledVector(shot.ax, 0.15 * kr); ku.uR.value = kr;
+  ku.uSq.value.set(shot.ax.x, shot.ax.y, shot.ax.z, 0.4);
+  ku.uGain.value = on ? (reduced() ? 0.5 : 1) * 2.2 * cc * Math.exp(-ma / 0.45) * Math.min(1, ma / 0.03) : 0;
   ku.uEm.value.set(...WHITE).multiplyScalar(2 * Math.exp(-ma / 0.15));
   muzzleSkirt.visible = ku.uGain.value > 0.01;
   warpM.set(m0.x, m0.y, m0.z, kr);
@@ -3701,12 +3718,15 @@ const shardMat = new THREE.ShaderMaterial({
     // A slow approach to it makes a long arc.
     float vt = 250.0 + 150.0 * fract(aSeed.x * 3.7);
     vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.11 * age)) / 0.11), 0.0);
-    // It burns up in the last few hundred metres.
-    float sc = aSeed.y * smoothstep(120.0, 500.0, c.y) * (1.0 - smoothstep(55.0, 60.0, age));
+    // Pieces come to rest on the plain.
+    c.y = max(c.y, 15.0);
+    // Half the pieces burn away in the air; the rest fall all the way.
+    float shr = fract(aSeed.x * 5.13) < 0.5 ? 1.0 - smoothstep(8.0, 22.0, age) : 1.0;
+    float sc = aSeed.y * shr * (1.0 - smoothstep(55.0, 60.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
     mat3 R = rot(axis, aVel.w * age * uSpin + aSeed.x);
     vP = c + R * (position * sc); vN = R * normal; vO = position;
-    vHeat = max(exp(-age / aSeed.w), 1.3 * smoothstep(1600.0, 350.0, c.y)); vSeed = aSeed.x;
+    vHeat = max(exp(-age / aSeed.w), 0.5 * smoothstep(1600.0, 350.0, c.y) * step(16.0, c.y)); vSeed = aSeed.x;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
@@ -3722,7 +3742,8 @@ const shardMat = new THREE.ShaderMaterial({
     vec3 col = alb * (ambient(N) + sunLight(N));
     // Fresh faces glow and cool; the crust stays dark.
     float fresh = smoothstep(0.45, 0.6, n);
-    col += uEmber * fresh * vHeat * 3.0 + uWhite * fresh * vHeat * vHeat * 2.0;
+    // Mostly silhouettes: the embers stay faint.
+    col += uEmber * fresh * vHeat * 1.4 + uWhite * fresh * vHeat * vHeat * 0.8;
     // Far shards go blue and flat in the air.
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
@@ -3865,7 +3886,7 @@ function stepShards(dt) {
 function shardAt(i, age, out, vel) {
   const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.04, vt = 250 + 150 * ((S[i * 4] * 3.7) % 1);
   const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
-  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.11 * age)) / 0.11), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  out.set(P[i * 3] + V[i * 4] * e, Math.max(15, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.11 * age)) / 0.11)), P[i * 3 + 2] + V[i * 4 + 2] * e);
   vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.11 * age)), V[i * 4 + 2] * ek);
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
@@ -3881,12 +3902,16 @@ function stepChunks() {
     if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; continue; }
     const age = simT - sSeed.array[ch.i * 4 + 2], r = sSeed.array[ch.i * 4 + 1];
     shardAt(ch.i, age, chP, chV);
-    // The trail streams back up the fall line, and dies at the ground.
-    const on = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
-    // The globe swells as the piece falls and fades as it cools.
-    flare(chunkGlow[ci], chP, r * (8 + 0.15 * age), on * (0.04 + 0.09 * Math.exp(-age / 6)));
+    // Half the pieces burn away in the air; the shader shrinks the same ones.
+    const shr = ((sSeed.array[ch.i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
+    // A landed piece's trail lingers, then fades; nothing cuts.
+    if (chP.y <= 15.5 && !ch.landAt) ch.landAt = simT;
+    const landed = ch.landAt ? 1 - THREE.MathUtils.smoothstep(simT - ch.landAt, 0, 10) : 1;
+    const on = Math.min(1, age / 2) * shr * landed * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    // A faint globe swells as the piece falls and fades as it cools.
+    flare(chunkGlow[ci], chP, r * (8 + 0.15 * age) * Math.max(shr, 0.3), on * (0.022 + 0.05 * Math.exp(-age / 6)));
     // Each piece's glow lights the smoke round it.
-    U.uDebL.value[ci].set(chP.x, chP.y, chP.z, on * r * (0.6 + 1.4 * Math.exp(-age / 6)));
+    U.uDebL.value[ci].set(chP.x, chP.y, chP.z, on * r * (0.35 + 0.8 * Math.exp(-age / 6)));
     const flown = Math.hypot(chP.x - sPos.array[ch.i * 3], chP.y - sPos.array[ch.i * 3 + 1], chP.z - sPos.array[ch.i * 3 + 2]);
     const len = Math.min(r * 70, flown + r), step = len / SEG;
     // Walk back in time; mark a joint every step metres of arc.
@@ -3907,7 +3932,7 @@ function stepChunks() {
       const t = ch.segs[j], seg = chPts[j].distanceTo(chPts[j + 1]);
       if (seg < 1) { t.m.visible = false; continue; }
       chA.subVectors(chPts[j + 1], chPts[j]);
-      aimMini(t, chPts[j], chA, r * 0.8, len, on, j ? 0 : 0.35 + 0.4 * Math.exp(-age / 8));
+      aimMini(t, chPts[j], chA, r * 0.8 * Math.max(shr, 0.25), len, on, j ? 0 : 0.18 + 0.22 * Math.exp(-age / 8));
       t.pu.uX0.value = chX[j]; t.pu.uSeg.value = seg * 1.03;
       t.pu.uSteps.value = rung >= 2 ? 8 : 12;
     }
@@ -4006,7 +4031,7 @@ function shatter(c) {
   });
   shardGeo.instanceCount = keep.length;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
-  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; });
+  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; });
   // Embers: a burst of K6 stars from the rock's heart.
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
