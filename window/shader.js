@@ -2627,20 +2627,6 @@ vec4 cabinEnv(vec3 r) {
   float win = smoothstep(0.3, 0.18, abs(wx)) * smoothstep(0.11, 0.06, abs(el - 0.09));
   return vec4(c, win);
 }
-// The seat in front: its back faces us, a little reclined, by the wall.
-// Window metres; it returns the hit point and, in w, coverage from 0 to 1.
-const float SEAT_X = 0.2;
-vec4 seatBack(vec3 da) {
-  // The back leans aft toward its top: x falls as y rises.
-  float den = da.x + 0.12 * da.y;
-  if (den <= 1e-4) return vec4(0.0);
-  float t = (SEAT_X - 0.12 * uEye.y - uEye.x) / den;
-  vec3 P = uEye + da * t;
-  if (t <= 0.0 || P.z > -0.03) return vec4(0.0);
-  float sd = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
-  float aa = fwidth(sd) * 1.2;
-  return vec4(P, smoothstep(aa, -aa, sd));
-}
 // Fine scratches on the scratch pane, pG in metres.
 // A scratch glints when it runs across the line to a bright source.
 // So the glints ring each source in arcs.
@@ -2980,25 +2966,6 @@ void main() {
     float aa = fwidth(sOut) * 1.2;
     c = mix(wall, inner, smoothstep(aa, -aa, sOut));
     glassK *= smoothstep(aa, -aa, sOut);
-  }
-  // The seat in front stands between the eye and the wall's nose side.
-  vec4 sb = seatBack(da);
-  if (sb.w > 0.0) {
-    vec3 P = sb.xyz;
-    // Fabric: dark blue-grey with a fine weave; the headrest wears a cream cover.
-    float cover = smoothstep(-0.155, -0.15, P.y);
-    vec3 alS = mix(vec3(0.16, 0.17, 0.21), vec3(0.72, 0.69, 0.63), cover);
-    alS *= 0.9 + 0.2 * hash12(floor(P.zy * 900.0));
-    // A stitched seam rings the cover.
-    alS *= 1.0 - 0.3 * smoothstep(0.003, 0.0, abs(P.y + 0.15));
-    // Cabin light from above; the side by the window takes its light too.
-    vec3 Ls2 = cabin * (0.7 + 0.5 * smoothstep(-0.5, 0.05, P.y)) + outGlow * 2.5 * exp((P.z + 0.03) / 0.22);
-    vec3 seat = alS * Ls2;
-    // The rounded edge by the wall catches a rim of window light.
-    float sdS = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
-    seat += outGlow * 1.5 * smoothstep(-0.02, 0.0, sdS) * smoothstep(-0.3, -0.03, P.z);
-    c = mix(c, seat, sb.w);
-    glassK *= 1.0 - sb.w;
   }
   // Each hour carries a small colour grade.
   c *= uTint;
