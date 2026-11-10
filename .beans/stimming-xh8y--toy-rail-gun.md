@@ -16,9 +16,13 @@ Tier 4, three.js 0.170. Plan: `docs/plans/phaeton.md`.
 - [x] Plan in docs/plans/phaeton.md
 - [x] Blockout at phaeton/index.html
 - [x] toys.json entry and Lab menu entry
-- [ ] Stills to Tom
-- [ ] Commit through tools/commit.sh
+- [x] Stills to Tom
+- [x] Commit through tools/commit.sh
 
 ## Not a duplicate
 
 Reopened 2026-11-10. Tom saw the Railgun clash and named this toy Phaeton: a separate Lab toy, own folder.
+
+## Next
+
+Task 2 of the plan: real hits per material. Waits on Tom's verdict on the blockout.
