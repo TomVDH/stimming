@@ -1895,6 +1895,8 @@ uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
 // The wing light: lamp point and level; beam axis and the fog level.
 uniform vec4 uBeamL, uBeamA;
+// Breath on the scratch pane: R fog, G the finger's trace; uBreathOn is 0 when clear.
+uniform sampler2D uBreath; uniform float uBreathOn;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
@@ -2464,6 +2466,18 @@ void main() {
       view = mix(view, view * Tg, smoothstep(aaO, -aaO, sSk));
       // Scratches on the scratch pane ring each bright source.
       view += scratches(pG, px) * Tg;
+      // Breath fogs the scratch pane; a finger's trace stays clear in new fog.
+      if (uBreathOn > 0.5) {
+        vec2 bm = texture(uBreath, pG / vec2(0.34, 0.56) + 0.5).rg;
+        float fb = bm.r * (1.0 - 0.85 * bm.g);
+        if (fb > 0.003) {
+          // Tiny droplets scatter the view into a pale, soft blur.
+          vec3 soft = uEnvOn > 0.5 ? texture(uEnv, px / uRes).rgb : view;
+          float grain = 0.85 + 0.3 * hash12(floor(pG * 3000.0));
+          vec3 haze = (mix(view, soft, 0.8) * 0.85 + cabin * 0.5 + outGlow * 0.4) * grain;
+          view = mix(view, haze, smoothstep(0.0, 0.6, fb) * 0.92);
+        }
+      }
       // The pane mirrors the dim cabin, shifted as the head moves.
       // The shift follows the head's move from its rest pose at (-0.04, 0.06).
       vec2 rq = pG + (uEye.xy - vec2(-0.04, 0.06)) * 0.4;
