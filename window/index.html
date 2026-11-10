@@ -140,13 +140,15 @@ const HOURS = {
   dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, ev: 2, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
   morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, ev: 1.8, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
   noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, ev: 1.3, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.012, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  // Afternoon: the sun stands behind the plane, so the glory shows on the deck below.
+  afternoon: { mood: [0.02, 0.018, 0.016], moon: false, az: 177, rel: 20, ev: 1.5, disc: 5, r: 0.4, stars: 0, flare: 0, tint: [0.89, 0.03, 90], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
   golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, ev: 2.6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.09, 68], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
   dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, ev: 3.9, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
   blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, ev: 3.8, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
   night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, ev: 2.3, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
 };
 for (const h of Object.values(HOURS)) h.E = (h.moon ? MOON : 1) * 2 ** h.ev;
-const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
+const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', afternoon: 'Afternoon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // The baked sky and the light terms that follow from it.
 let sky = null;
@@ -486,7 +488,10 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
   const te = [teAt(z), flex(z), z], k = 1 - 0.18 * j;
   return { a: [te[0] + 2.0 * k, te[1] - 0.33 * k, z, 0.3 * k], b: [te[0] - 1.3 * k, te[1] - 0.46 * k, z, 0.045 * k] };
 });
-const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex });
+// The wing light sits on the fuselage, ahead of the root and below the window.
+// It aims out along the leading edge; k is its strength in candela.
+const WING_LIGHT = { p: [11, -0.8, -0.4], aim: [4.3, -1.95, 11], k: 600 };
+const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT });
 // The wing tip's flex offset, in world metres, from the last frame.
 let tipBend = [0, 0, 0];
 const tipW = () => toWorldA(TIP).map((v, i) => v + tipBend[i]);
@@ -632,7 +637,11 @@ function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) :
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
   // Most flashes stay inside the cloud; one in ten shows a bolt, more when tapped.
   const bolt = Math.random() < (big > 1.1 ? 0.45 : 0.1);
-  flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0, bolt });
+  // Brightness is log-normal: most flashes are dim, a few blaze.
+  // Size varies too: a small pulse in a cell, or a wide sheet.
+  const k = clamp(0.55 * Math.exp(0.6 * randn()), 0.12, 2.2) * big;
+  const r = clamp(4.5 * Math.exp(0.4 * randn()), 2, 11) * big;
+  flashes.push({ x, z, y, r, k, strokes, age: 0, cell, level: 0, bolt });
   if (flashes.length > MAXFL) flashes.shift();
 }
 function flashLevel(f) {
@@ -670,11 +679,17 @@ function stepFlashes(dt) {
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
-      if (g.anv > 0.5 && Math.random() < 0.25) {
-        const u = g.lean + rnd(0.15, 0.7) * g.len, v = rnd(-0.4, 0.4) * g.r1;
-        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 1.6));
+      // Flashes follow the cloud's charge layers.
+      // Most run mid-level in the core, at 6 to 8 km.
+      // Some spread through the anvil; a few sit low, near the base.
+      const zone = Math.random();
+      if (g.anv > 0.5 && zone < 0.25) {
+        const u = g.lean + rnd(0.15, 0.85) * g.len, v = rnd(-0.5, 0.5) * g.r1;
+        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 2.4));
       } else {
-        const y = rnd(4, g.top - 2), a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * 0.7;
+        const low = zone > 0.82;
+        const y = clamp(low ? rnd(3.2, 5) : 7 + 1.1 * randn(), g.base + 1, g.top - 1.5);
+        const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * (low ? 0.5 : 0.75);
         const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
         flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
       }
@@ -799,6 +814,8 @@ function stormKick(v) {
 }
 // The slider sets a target; the weather builds fast and calms slowly.
 let stormTarget = opts.storm;
+// The wing light switches on at once and dies in a blink.
+const wlight = { on: false, level: 0 };
 function step(dt) {
   t += dt;
   // The storm builds fast and calms slowly.
@@ -818,6 +835,7 @@ function step(dt) {
   const goal = opts.dim / 4;
   dim.edge += (goal - dim.edge) * (1 - Math.exp(-dt / (reduce ? 0.15 : 0.7)));
   dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
+  wlight.level += ((wlight.on ? 1 : 0) - wlight.level) * Math.min(1, dt / (wlight.on ? 0.05 : 0.12));
   stepCells(dt);
   stepFlashes(dt);
   stepWeather(dt);
@@ -861,8 +879,8 @@ function startEvent(want = null) {
   if (!pool.length && !call) return;
   const kind = call ? (call === 'fireball' ? 'meteor' : call) : pool[Math.floor(Math.random() * pool.length)];
   if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
-  // The rocket lifts off 140 to 200 km out and heads away downrange.
-  if (kind === 'rocket') { const x = cam.x + rnd(40, 110), z = cam.z + rnd(140, 200); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
+  // The rocket lifts off 45 to 80 km out, near enough to see through a storm, and heads downrange.
+  if (kind === 'rocket') { const x = cam.x + rnd(20, 60), z = cam.z + rnd(45, 80); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
   // The impact is rare on its own; the Sights button calls it any time.
   // The impactor strikes 110 to 160 km out, close enough to loom over the wing.
   if (kind === 'boom') EV.boom = { x: cam.x + rnd(25, 60), z: cam.z + rnd(110, 160), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU), shake: 0,
@@ -1289,7 +1307,8 @@ function render() {
   setBasis();
   fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
   let sum = 0;
-  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
+  // Near flashes light the cabin; far ones, past about 40 km, barely do.
+  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level / (1 + (Math.hypot(f.x - cam.x, f.z - cam.z) / 40) ** 2); fl.set([f.x, f.z, f.level, f.r], i * 4); });
   // A fireball lights the whole scene for a moment, as lightning does.
   const flash = Math.min(1.6, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0) + (EV.boom ? (EV.boom.flash || 0) * 1.1 : 0));
 
@@ -1364,7 +1383,7 @@ function render() {
   // The aircraft goes first; the outside then fills only the uncovered pixels.
   tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
     veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
-    wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce });
+    wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce, beam: wlight.level });
   renderer.render(wing3.scene, wing3.cam);
   renderer.render(P1.scene, quadCam);
   // Bolts add their light over the outside; the wing's depth hides them.
@@ -1395,6 +1414,10 @@ function render() {
   // The storm brings rain to the window, up to heavy.
   UG.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
   UG.uniform1f(u.uStorm, opts.storm);
+  // The wing light's lamp and axis in the cabin frame, with its level and the fog.
+  const wa = norm(sub(WING_LIGHT.aim, WING_LIGHT.p));
+  UG.uniform4f(u.uBeamL, WING_LIGHT.p[0] + seatDx, WING_LIGHT.p[1], WING_LIGHT.p[2], wlight.level);
+  UG.uniform4f(u.uBeamA, wa[0], wa[1], wa[2], fog.level);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
   UG.uniform3fv(u.uCabin, sky.cabin);
@@ -1510,8 +1533,10 @@ function flareUniforms(u) {
   // The strobe and the nav light on the wingtip.
   const tipW = norm(toWorld(sub([TIP[0] + seatDx, TIP[1], TIP[2]], basis.eye)));
   // Neither wingtip light throws ghosts: a ghost of -1 cancels them.
-  put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, -1);
-  put(3, tipW, 0.08, 0.35, navCol(), 0, 0, -1);
+  // In a fog bank both lights swell into a wide, soft bloom.
+  const fb = fog.level;
+  put(2, tipW, reduce ? 0 : strobe() * 0.8 * (1 + 1.5 * fb), 0.5 + 1.4 * fb, [0.9, 0.95, 1.0], 0, 0.6 * (1 - fb), -1);
+  put(3, tipW, 0.08 * (1 + 3 * fb), 0.35 + 1.2 * fb, navCol(), 0, 0, -1);
   eventFlares(put);
   UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
@@ -1645,7 +1670,8 @@ const ui = initPage({
     },
     slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { if (v > stormTarget + 0.12) stormKick(v); stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
-    actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } }],
+    actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
+      { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } }],
     settings: [
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
       { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
@@ -1727,9 +1753,12 @@ async function startBed() {
     const buf = await bedLoad;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buf; src.loop = true;
+    // The recording carries an 11 kHz whine and bright clinks above the rumble.
+    // Two low-passes at 3 kHz remove the whine and dull the clinks; the rumble sits below 2 kHz.
+    const lp = [0, 1].map(() => { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; f.Q.value = 0.707; return f; });
     g.gain.setValueAtTime(0, ac.currentTime);
     g.gain.linearRampToValueAtTime(BED, ac.currentTime + 2);
-    src.connect(g).connect(kit.out);
+    src.connect(lp[0]).connect(lp[1]).connect(g).connect(kit.out);
     src.start();
     bed = { src, g };
     startRumble(ac);

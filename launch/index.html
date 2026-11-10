@@ -80,6 +80,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BokehShader } from 'three/addons/shaders/BokehShader2.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
+import { FLARE } from '../shared/flare.js';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -627,10 +628,13 @@ function plantReeds(count) {
     const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
     if (clump < -0.25 + rnd() * 0.5) continue;
     // Reeds fill the frame; only a small gap toward the pad stays open.
-    const side = z > -40 ? THREE.MathUtils.smoothstep(Math.abs(x / -z - gapDir), 0.05, 0.16) : 1;
-    if (rnd() > 0.15 + 0.85 * side) continue;
-    // Hero stalks rise past the horizon everywhere but the gap.
-    const tall = z > -16 && side > 0.8 && rnd() < 0.1;
+    // Noise along the depth makes the gap's edge wander.
+    const off = Math.abs(x / -z - gapDir) + noise(z * 0.21, 3.3) * 0.035;
+    const side = z > -40 ? THREE.MathUtils.smoothstep(off, 0.03, 0.16) : 1;
+    if (rnd() > 0.3 + 0.7 * side) continue;
+    // Hero stalks rise past the horizon; a few stray ones stand in the gap.
+    // The line straight to the pad stays clear.
+    const tall = z > -16 && rnd() < (side > 0.8 ? 0.1 : off > 0.04 ? 0.04 : 0);
     const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
     aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
     aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
@@ -1090,6 +1094,8 @@ function makeOrbs() {
       tDiffuse: { value: null },
       uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
       uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+      // The classic anamorphic streak: gain and flare size.
+      uOS: { value: Array.from({ length: ORB_N }, () => new THREE.Vector2()) },
       uN: { value: 0 },
       uAsp: { value: 1 },
     },
@@ -1098,7 +1104,9 @@ function makeOrbs() {
     uniform sampler2D tDiffuse;
     uniform vec3 uOP[${ORB_N}];
     uniform vec4 uOC[${ORB_N}];
+    uniform vec2 uOS[${ORB_N}];
     uniform int uN;
+    ${FLARE}
     uniform float uAsp;
     varying vec2 vUv;
     void main() {
@@ -1109,6 +1117,11 @@ function makeOrbs() {
         float r = length(vec2(d.x * uAsp * 0.6, d.y));
         // A tight core and a wide skirt; z holds the orb size.
         c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+        // The shared streak, the Look rule's bands, used sparingly.
+        if (uOS[i].x > 0.001) {
+          vec2 fd = flOffset(vUv, uOP[i].xy, uAsp, uOS[i].y);
+          c += mix(uOC[i].rgb, FL_COOL, 0.25) * flStreak(fd, vec3(0.9, 0.3, 0.07), vec3(34.0, 9.0, 2.6), 1.4) * uOS[i].x;
+        }
       }
       // A soft roll-off above 2 keeps bloom free of square tiles.
       float m = max(max(c.r, c.g), c.b);
@@ -1127,6 +1140,7 @@ function placeOrbs(pass, list) {
     if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
     pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
     pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    pass.uniforms.uOS.value[n].set(o.streak?.[0] ?? 0, o.streak?.[1] ?? 1);
     n++;
   }
   pass.uniforms.uN.value = n;
@@ -1155,20 +1169,37 @@ const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread;
+  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread, uTime;
   varying vec2 vQ;
+  ${K2_NOISE}
   void main() {
     // y below 0 is the nozzle; y above 0 runs down the tail.
-    float x = vQ.x, y = max(vQ.y, 0.0);
+    float y = max(vQ.y, 0.0), t = uTime;
+    // Turbulence bends the tail; the bend grows down its length.
+    float x = vQ.x + (k2noise(vec2(y * 5.0 - t * 9.0, 1.7)) - 0.5) * 0.3 * y;
     float wide = mix(1.0, 3.0, uSpread);
     float core = exp(-(x * x * 40.0 * wide * wide + vQ.y * vQ.y * (vQ.y < 0.0 ? 80.0 : 22.0)));
-    // The tail is a narrow white-hot cone that cools to orange, then red.
+    // The tail breathes: its length pulses a little, many times a second.
+    float breath = 1.0 + 0.18 * (k2noise(vec2(t * 11.0, 3.1)) - 0.5);
     float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
-    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.08) * exp(-y * mix(2.4, 1.3, uSpread)) * step(-0.15, vQ.y);
+    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.2) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
+    // Eddies run down the tail and break it into tongues.
+    float eddy = k2noise(vec2(x * 7.0, y * 16.0 - t * 34.0)) * 0.6 + k2noise(vec2(x * 15.0, y * 31.0 - t * 52.0)) * 0.4;
+    tail *= mix(1.0, 0.45 + 1.1 * eddy, smoothstep(0.05, 0.3, y));
+    // Shock diamonds: bright knots in the jet, low in thick air only.
+    float jw = 0.16 + 0.06 * y;
+    float n = (y - 0.03) / 0.5 * 4.0, i = floor(n), u = fract(n) * 2.0 - 1.0;
+    float rhomb = 1.0 - abs(u) - abs(x) / (jw * (1.0 - 0.1 * i));
+    float knots = smoothstep(0.0, 0.45, rhomb) * exp(-i * 0.4) * step(0.0, n) * step(n, 4.0);
+    knots *= (1.0 - uSpread) * (0.8 + 0.4 * k2noise(vec2(t * 23.0, i)));
+    // A dark gap sits between knots, so the jet reads as a chain.
+    float jet = exp(-x * x / (jw * jw)) * exp(-y * 4.0) * mix(1.0, 0.5 + 0.5 * abs(u), (1.0 - uSpread) * step(0.0, n) * step(n, 4.0));
     vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
     hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
-    vec3 c = vec3(1.0, 0.96, 0.9) * core * 16.0 + hot * tail * 6.0 * uFlick;
-    gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
+    vec3 c = vec3(1.0, 0.96, 0.9) * core * 12.0 + hot * tail * 0.7 * uFlick + vec3(1.0, 0.6, 0.3) * jet * 0.5 + vec3(1.0, 0.95, 0.85) * knots * 14.0;
+    // Every edge of the quad fades to black, so no square outline shows.
+    float win = smoothstep(1.0, 0.55, abs(vQ.x)) * smoothstep(1.0, 0.6, vQ.y) * smoothstep(-1.0, -0.7, vQ.y);
+    gl_FragColor = vec4(c * win * min(uFlame.w, 1.5), 0.0);
   }`,
 }));
 flame.frustumCulled = false;
@@ -1360,7 +1391,8 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
       vec3 Li = key * tk * pd * pw * mix(2.2 * thin, 1.2, vKind) + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 0.1 + 1.5 * topLit * tk * tk, vKind);
       float ab = 1.0 - exp(-od);
       // Fire: exhaust just out of the nozzle still burns, hottest where densest.
-      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens);
+      // It lights a beat after birth, so the flame and its diamonds show first.
+      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens) * smoothstep(0.12, 0.5, vAge);
       vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-vAge / 0.5)) * burn * 22.0;
       col += T * ab * (Li + fire);
       T *= 1.0 - ab;
@@ -1727,7 +1759,8 @@ function flyTo(f) {
   // After staging only the upper stage flies, with a smaller engine.
   const up = f.stage > 1 ? 0.36 : 1;
   core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1) * fade, bl * sk * up * fade, bw * sk * (f.stage > 1 ? 0.85 : 1) * fade);
-  FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
+  // A floor keeps the flame and its diamonds readable beside the wide trail.
+  FU.uSize.value = Math.max(bl * sk * 0.32, D * 0.0075) * k.flame * (f.stage > 1 ? 0.55 : 1);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
   // Exhaust: walk the path since the last puff and drop one each spacing.
   const q = quality() === 'high' ? 1 : 2.3;
@@ -2017,6 +2050,20 @@ function stopAll() {
   if (flight) flight.roarOn = false;
 }
 function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+// The thrust: a recorded booster roar with crackle, looped.
+// It loads once, after the first gesture opens the audio context.
+// null while it loads; false if it fails, and the synth band plays.
+let thrust = null, thrustP = null;
+function loadThrust(ac) {
+  thrustP ??= fetch('thrust.mp3').then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => {
+    // The MP3 pads both ends with silence; the loop skips it.
+    const d = buf.getChannelData(0), q = 0.002;
+    let a = 0, z = d.length - 1;
+    while (a < z && Math.abs(d[a]) < q) a++;
+    while (z > a && Math.abs(d[z]) < q) z--;
+    thrust = { buf, a: a / buf.sampleRate, z: (z + 1) / buf.sampleRate };
+  }).catch(() => { thrust = false; });
+}
 function hiss(ac, t, dur, rate = 1) {
   const s = ac.createBufferSource();
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
@@ -2061,6 +2108,7 @@ function soundBed() {
   const ac = kit.live();
   if (!ac) return;
   marsh(ac);
+  loadThrust(ac);
   const now = ac.currentTime;
   bed.g.gain.setTargetAtTime(0.012 * pace * (0.6 + 0.4 * Math.abs(Math.sin(simT * 0.9))), now, 0.3);
   // A roar that could not start (asleep, interrupted) starts when it can.
@@ -2093,22 +2141,37 @@ function roar(f, off = 0) {
   const ac = kit.live();
   // A roar that has already ended never plays again.
   if (!ac || f.roarOn || off >= PRE + 53) return;
+  // The roar waits for the recording; the tick tries again.
+  loadThrust(ac);
+  if (thrust === null) return;
   f.roarOn = true;
   const delay = delayOf(f), lead = Math.max(0, f.start + delay - simT);
   const t = ac.currentTime + lead, L = PRE + 56 - off, k = f.k.flame;
   const lvl = 0.5 * k * Math.min(1.3, 2000 / f.D);
   // A resume starts at the level the full curve has reached by then.
   const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
-  const s = hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // The recorded thrust replaces the noise band once it loads.
+  // Three kilometres of air take the highs; the low end carries.
+  const s = thrust ? ac.createBufferSource() : hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 1500), g = ac.createGain();
+  const ls = ac.createBiquadFilter();
+  ls.type = 'lowshelf'; ls.frequency.value = 160; ls.gain.value = 9;
+  if (thrust) {
+    s.buffer = thrust.buf; s.loop = true; s.loopStart = thrust.a; s.loopEnd = thrust.z;
+    // Played slow, the crackle turns to a deep rumble; Heavy goes deepest.
+    s.playbackRate.value = (f.kind === 'heavy' ? 0.6 : f.kind === 'small' ? 0.78 : 0.68) * jit(0.03);
+    s.start(t, thrust.a + Math.random() * (thrust.z - thrust.a) * 0.8); s.stop(t + L + 1);
+  }
   // Swell over 2 s, hold, then fade with distance until cut-off.
   const swell = Math.max(0.05, 2 - off);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(lvl * fade, t + swell);
-  g.gain.setTargetAtTime(lvl * 0.25, t + swell + Math.max(0, 4 - off), 18);
+  // The recording runs hotter than the noise band, more so with the shelf.
+  const gl = lvl * (thrust ? 0.45 : 1);
+  g.gain.exponentialRampToValueAtTime(gl * fade, t + swell);
+  g.gain.setTargetAtTime(gl * 0.25, t + swell + Math.max(0, 4 - off), 18);
   g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
-  lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
-  lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
-  s.connect(lp).connect(g).connect(kit.out);
+  lp.frequency.setValueAtTime(Math.max(380, 1500 * Math.exp(-off / 20)), t);
+  lp.frequency.exponentialRampToValueAtTime(380, t + Math.max(1, 30 - off));
+  s.connect(ls).connect(lp).connect(g).connect(kit.out);
   // The sub: a low drone with a slow wobble.
   const o = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 33 * jit(0.05);
@@ -2117,16 +2180,17 @@ function roar(f, off = 0) {
   og.gain.setTargetAtTime(0.0001, t + swell + 6, 8);
   o.connect(og).connect(kit.out);
   o.start(t); o.stop(t + L);
-  // Crackle: random clicks, the signature of rocket noise.
-  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.0015);
-  for (let n = 0; n < 220; n++) {
+  // Crackle: random thumps, the signature of rocket noise, low with distance.
+  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.008);
+  for (let n = 0; n < 140; n++) {
     const at = Math.floor(Math.random() * (cd.length - cl)), amp = Math.pow(Math.random(), 2);
     for (let i = 0; i < cl; i++) cd[at + i] += (Math.random() * 2 - 1) * amp * (1 - i / cl);
   }
-  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
+  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 240, 0.7), cg = ac.createGain();
   c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
   cg.gain.setValueAtTime(0.0001, t);
-  cg.gain.exponentialRampToValueAtTime(lvl * 0.7, t + swell);
+  // The recording has its own crackle; the clicks only edge it.
+  cg.gain.exponentialRampToValueAtTime(lvl * (thrust ? 0.6 : 0.9), t + swell);
   cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
   c.connect(cbp).connect(cg).connect(kit.out);
   c.start(t); c.stop(t + L);
@@ -2362,7 +2426,13 @@ function aimFollow(dt) {
   auto.yaw += (ty - auto.yaw) * e;
 }
 // The flame's glow goes in the post pass as an orb.
-const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value) }] : []);
+// The streak flares at ignition, then holds faint while the engine burns.
+const streak = [0, 0.35];
+function orbList() {
+  if (!flight || U.uFlame.value.w <= 0.01) return [];
+  streak[0] = flight.flash * 0.5 + Math.min(flight.engine, 1) * 0.05;
+  return [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value), streak }];
+}
 // The horizon sits low: the climb needs a tall sky.
 function frame() {
   const portrait = size.w < size.h;

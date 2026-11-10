@@ -54,7 +54,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, reduced, onReducedChange, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const stage = document.getElementById('stage');
@@ -246,7 +246,9 @@ void palette(float h, out vec3 c, out float t) {
 }
 void agate(vec2 p) {
   // Bands follow the nodule's outline inward, with a wander.
-  vec2 w = p + 0.12 * vec2(fbm(p * 2.0 + uSeed), fbm(p * 2.0 + uSeed + 9.0)) - 0.06;
+  // Low octaves only, so band edges stay smooth.
+  vec2 sw = p * 1.6 + uSeed;
+  vec2 w = p + 0.12 * vec2(noise(sw) + 0.4 * noise(sw * 2.1), noise(sw + 9.0) + 0.4 * noise(sw * 2.1 + 9.0)) / 1.4 - 0.06;
   float D = 1.0 - ovalR(w * 1.02) + 0.06 * (fbm(p * 2.2 + uSeed) - 0.5);
   float u = pow(max(D, 0.0), 1.15) * 16.0 + 1.6 * fbm(p * 2.0 - uSeed);
   float band = floor(u), f = fract(u);
@@ -373,14 +375,6 @@ float ggx(vec3 N, vec3 H, vec3 L, float a) {
   float NH = max(dot(N, H), 0.0), dd = NH * NH * (a - 1.0) + 1.0;
   return a / (3.14159 * dd * dd) * max(dot(N, L), 0.0) / (4.0 * max(N.z, 0.25));
 }
-vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
-// An integer hash per pixel for the grain.
-float ih(vec2 p) {
-  uvec2 q = uvec2(p);
-  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
-  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
-  return float(n) / 4294967295.0;
-}
 void main() {
   vec2 sp = (gl_FragCoord.xy - uCentre) / uScale;
   vec2 p = uRot * sp;
@@ -501,9 +495,59 @@ void main() {
     }
     col = mix(col, stone, inside);
   }
+  // Linear light out; the composite pass grades it.
+  o = vec4(col, 1.0);
+}`;
 
-  // Grade: vignette, tone map, grain.
-  vec2 q = (gl_FragCoord.xy / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+/* ---------- post ---------- */
+// Bloom: a soft threshold at a quarter size, then a separable blur.
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+out vec4 o;
+void main() {
+  // Four bilinear taps average a 4 x 4 block of the source.
+  vec3 c = 0.25 * (texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rgb + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb
+    + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb);
+  float l = max(c.r, max(c.g, c.b));
+  // A soft knee keeps the threshold from drawing hard edges.
+  float k = clamp(l - 0.6, 0.0, 0.8);
+  float w = max(k * k / 3.2, l - 1.0) / max(l, 1e-4);
+  o = vec4(c * w, 1.0);
+}`;
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 0.227027;
+  c += (texture(uSrc, vUv + uDir * 1.3846).rgb + texture(uSrc, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uSrc, vUv + uDir * 3.2308).rgb + texture(uSrc, vUv - uDir * 3.2308).rgb) * 0.0702703;
+  o = vec4(c, 1.0);
+}`;
+// The composite: bloom, vignette, tone map, grain.
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK;
+out vec4 o;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+// An integer hash per pixel for the grain.
+float ih(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 col = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   col *= 1.0 - 0.55 * smoothstep(0.35, 1.15, length(q));
   col = pow(aces(col * 1.1), vec3(1.0 / 2.2));
   col += (ih(gl_FragCoord.xy) - 0.5) * 0.022;
@@ -511,6 +555,17 @@ void main() {
 }`;
 
 const bakeP = program(BAKE_FS), rubP = program(RUB_FS), wetP = program(WET_FS), dryP = program(DRY_FS), shadeP = program(SHADE_FS);
+const brightP = program(BRIGHT_FS), blurP = program(BLUR_FS), compP = program(COMP_FS);
+// The frame targets: full-size linear light, and two bloom buffers.
+// Each resize remakes them; texture() makes one of the given size.
+let hdr = null, bloom = null;
+function frameTargets(W, H, div) {
+  for (const t of [hdr, bloom].flat()) if (t) { gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+  const make = (w, h) => { const tex = texture(Math.max(1, w), Math.max(1, h), gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]), w: Math.max(1, w), h: Math.max(1, h) }; };
+  hdr = make(W, H);
+  const bw = Math.round(W / div), bh = Math.round(H / div);
+  bloom = [make(bw, bh), make(bw, bh)];
+}
 
 /* ---------- buffers ---------- */
 // Stone space spans uExt each way; every map covers that box.
@@ -586,6 +641,7 @@ function buildStone(k, s) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 function clearPolish() {
+  pg.fill(0);
   for (const fb of polFb) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.clearColor(0, 0, 0, 1);
@@ -606,7 +662,9 @@ function rub(x, y, v, press = 1) {
   const len = Math.hypot(x - from[0], y - from[1]);
   if (len < 1e-4) return;
   const speed = 0.6 + 0.6 * clamp((v - 0.2) / 2.8);
-  stamps.push({ a: from, b: [x, y], amt: RATE * len * speed * press * grit });
+  const amt = RATE * len * speed * press * grit;
+  stamps.push({ a: from, b: [x, y], amt });
+  gridStamp(from, [x, y], amt);
 }
 function applyStamps() {
   if (!stamps.length) return;
@@ -664,6 +722,7 @@ function splash(x, y) {
   const r = 0.12 + 0.06 * Math.random();
   drop([x, y], r, 1);
   const n = 3 + Math.floor(Math.random() * 3);
+  splashSound(x, y, n);
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, d = r * (0.3 + 0.8 * Math.random());
     addBead(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.cos(a) * 0.15, Math.sin(a) * 0.15);
@@ -673,6 +732,7 @@ function splash(x, y) {
 // Wet: water over the whole stone, and beads where it pools.
 function wetAll() {
   drop([0, 0], 3, 1);
+  pourSound();
   for (let i = 0; i < MAX_BEADS; i++) {
     let x, y;
     do { x = (Math.random() * 2 - 1) * 0.85; y = (Math.random() * 2 - 1) * 0.6; } while (ovalR(x, y) > 0.85);
@@ -740,16 +800,201 @@ function clearWater() {
   wetEnd = 0;
 }
 
+/* ---------- polish map ---------- */
+// A coarse copy of the polish on the CPU, so the rub sound knows the surface.
+const GW = 96, GH = 80, pg = new Float32Array(GW * GH);
+function gridStamp(a, b, amt) {
+  const R = BRUSH * 2.2;
+  const [ex, ey] = EXT;
+  const i0 = Math.max(0, Math.floor(((Math.min(a[0], b[0]) - R) / ex * 0.5 + 0.5) * GW));
+  const i1 = Math.min(GW - 1, Math.ceil(((Math.max(a[0], b[0]) + R) / ex * 0.5 + 0.5) * GW));
+  const j0 = Math.max(0, Math.floor(((Math.min(a[1], b[1]) - R) / ey * 0.5 + 0.5) * GH));
+  const j1 = Math.min(GH - 1, Math.ceil(((Math.max(a[1], b[1]) + R) / ey * 0.5 + 0.5) * GH));
+  const abx = b[0] - a[0], aby = b[1] - a[1], ab2 = Math.max(abx * abx + aby * aby, 1e-8);
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const x = ((i + 0.5) / GW * 2 - 1) * ex, y = ((j + 0.5) / GH * 2 - 1) * ey;
+      const t = clamp(((x - a[0]) * abx + (y - a[1]) * aby) / ab2);
+      const dx = x - a[0] - abx * t, dy = y - a[1] - aby * t;
+      const k = Math.exp(-(dx * dx + dy * dy) / (BRUSH * BRUSH)) * (1 + 0.5 * dipMask(x, y));
+      if (ovalR(x, y) <= 1.03) pg[j * GW + i] = Math.min(1, pg[j * GW + i] + amt * k);
+    }
+  }
+}
+function polishAt(x, y) {
+  const i = Math.floor(clamp(x / EXT[0] * 0.5 + 0.5, 0, 0.999) * GW), j = Math.floor(clamp(y / EXT[1] * 0.5 + 0.5, 0, 0.999) * GH);
+  return pg[j * GW + i];
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// The pan of a stone point, from its place on the screen.
+const panOf = (x, y) => clamp((upright ? -y : x) * sc / (size.w / 2), -1, 1) * 0.8;
+// A short noise burst through a filter, with a fast attack and an exponential fall.
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A short decaying sine: the body of a knock.
+function blip(ac, at, { f, dur, level, pan = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.value = f * jit(0.06);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(level * jit(0.2), at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// A drop: a small air pocket rings with a rising chirp.
+function plop(ac, at, { f, level, pan = 0, dur = 0.05 }) {
+  const o = ac.createOscillator();
+  const f0 = f * jit(0.15);
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * 2.2, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.25), at + 0.003);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// The rub voice: grainy low noise, a thin high hiss and a faint squeak.
+let rubV = null;
+function rubVoice(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const lo = ac.createBiquadFilter(), lo2 = ac.createBiquadFilter();
+  lo.type = lo2.type = 'lowpass';
+  lo.frequency.value = 650;
+  lo2.frequency.value = 900;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 3200;
+  bp.Q.value = 1.6;
+  const osc = ac.createOscillator(), vib = ac.createOscillator(), vibG = ac.createGain();
+  osc.type = 'triangle';
+  osc.frequency.value = 1400;
+  vib.frequency.value = 7;
+  vibG.gain.value = 30;
+  vib.connect(vibG).connect(osc.frequency);
+  const rough = ac.createGain(), hiss = ac.createGain(), squeak = ac.createGain(), pan = ac.createStereoPanner();
+  rough.gain.value = hiss.gain.value = squeak.gain.value = 0;
+  src.connect(lo).connect(lo2).connect(rough).connect(pan);
+  src.connect(bp).connect(hiss).connect(pan);
+  osc.connect(squeak).connect(pan);
+  pan.connect(kit.out);
+  src.start();
+  osc.start();
+  vib.start();
+  return { rough, hiss, squeak, pan, bp, osc };
+}
+// One rub event: polish p under the pointer, speed v in stone units a second.
+// Rough stone grinds low with crackle; polish turns it higher, quieter, then a squeak.
+function rubSound(x, y, p, v) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  rubV ||= rubVoice(ac);
+  const now = ac.currentTime, lvl = clamp(v / 2.5) * jit(0.1), pan = panOf(x, y);
+  // Each event holds the voice for 90 ms; then it fades unless another comes.
+  const hold = (param, val) => {
+    param.cancelScheduledValues(now);
+    param.setTargetAtTime(val, now, 0.025);
+    param.setTargetAtTime(0, now + 0.09, 0.05);
+  };
+  hold(rubV.rough.gain, lvl * 0.6 * (1 - p) ** 1.5);
+  hold(rubV.hiss.gain, lvl * 0.12 * smooth(0.2, 0.9, p));
+  hold(rubV.squeak.gain, lvl * 0.025 * smooth(0.85, 1, p));
+  rubV.bp.frequency.setTargetAtTime((2200 + 2400 * p + 600 * lvl) * jit(0.05), now, 0.05);
+  rubV.osc.frequency.setTargetAtTime((1200 + 400 * clamp(v / 3)) * jit(0.03), now, 0.05);
+  rubV.pan.pan.setTargetAtTime(pan, now, 0.05);
+  // Crackle: grit breaks under the thumb.
+  if (Math.random() < lvl * (1 - p) * 0.8) {
+    burst(ac, now + Math.random() * 0.03, { f: 1600 + 2800 * Math.random(), q: 2, dur: 0.004 + 0.008 * Math.random(), level: 0.3 * (1 - p), pan });
+  }
+}
+// A splash: one drop, a short spread hiss, and the beads' spatter.
+function splashSound(x, y, beadsN) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x, y);
+  plop(ac, at, { f: 650, level: 0.35, pan, dur: 0.06 });
+  burst(ac, at + 0.008, { f: 4200, type: 'highpass', q: 0.7, dur: 0.22 * jit(0.2), level: 0.1, pan });
+  for (let i = 0; i < beadsN; i++) plop(ac, at + 0.03 + Math.random() * 0.14, { f: 1500 + 900 * Math.random(), level: 0.07, pan: clamp(pan + (Math.random() - 0.5) * 0.2, -1, 1), dur: 0.03 });
+}
+// The pour: a band of water noise sweeps across the stone, with drops.
+function pourSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, dur = 1.3 * jit(0.1);
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(800 * jit(0.1), at);
+  bp.frequency.linearRampToValueAtTime(1600 * jit(0.1), at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.22, at + 0.08);
+  g.gain.setValueAtTime(0.22, at + dur - 0.4);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.setValueAtTime(-0.6, at);
+  pn.pan.linearRampToValueAtTime(0.6, at + dur);
+  src.connect(bp).connect(g).connect(pn).connect(kit.out);
+  src.start(at);
+  src.stop(at + dur + 0.05);
+  for (let i = 0; i < 12; i++) {
+    const t = Math.random() * dur * 0.9;
+    plop(ac, at + t, { f: 700 + 1300 * Math.random(), level: 0.08, pan: -0.6 + 1.2 * t / dur, dur: 0.04 });
+  }
+}
+// A soft knock as a new stone settles, and a smaller second bump.
+function knockSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  blip(ac, at, { f: 140, dur: 0.14, level: 0.4 });
+  burst(ac, at, { f: 600, type: 'lowpass', q: 0.7, dur: 0.03, level: 0.3 });
+  const t2 = at + 0.07 * jit(0.2);
+  blip(ac, t2, { f: 170, dur: 0.08, level: 0.14 });
+  burst(ac, t2, { f: 700, type: 'lowpass', q: 0.7, dur: 0.02, level: 0.1 });
+}
+
 /* ---------- layout ---------- */
 // Wide stages lay the stone flat across; tall ones stand it upright.
 let size = { w: 1, h: 1, dpr: 1 }, sc = 100, centre = [0, 0], upright = false;
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.4e6 });
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 halves the bloom.
+  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.4e6, low: rung >= 1 });
   canvas.width = Math.max(1, Math.round(w * dpr));
   canvas.height = Math.max(1, Math.round(h * dpr));
   size = { w, h, dpr };
+  frameTargets(canvas.width, canvas.height, rung >= 2 ? 8 : 4);
   upright = w / h < 0.9;
   // The scale is CSS pixels per stone unit.
   sc = upright ? Math.min(0.86 * w / 1.44, 0.4 * h) : Math.min(0.4 * w, 0.4 * h / 0.74);
@@ -779,8 +1024,8 @@ function aimLight(q) {
 
 /* ---------- render ---------- */
 function draw() {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, hdr.w, hdr.h);
   gl.useProgram(shadeP);
   setShape(shadeP);
   const d = size.dpr;
@@ -806,6 +1051,43 @@ function draw() {
   gl.uniform1i(shadeP.u('uWet'), 3);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  post();
+}
+// Bloom on the highlights and flashes, then the grade to the screen.
+function post() {
+  const [b0, b1] = bloom;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.useProgram(brightP);
+  gl.uniform1i(brightP.u('uSrc'), 0);
+  gl.uniform2f(brightP.u('uTexel'), 1 / hdr.w, 1 / hdr.h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b0.fb);
+  gl.viewport(0, 0, b0.w, b0.h);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(blurP);
+  gl.uniform1i(blurP.u('uSrc'), 0);
+  // Two rounds, the second wider, give a soft, round falloff.
+  for (const s of [1, 2.5]) {
+    gl.uniform2f(blurP.u('uDir'), s / b0.w, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fb);
+    gl.bindTexture(gl.TEXTURE_2D, b0.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.uniform2f(blurP.u('uDir'), 0, s / b0.h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b0.fb);
+    gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(compP);
+  gl.uniform2f(compP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(compP.u('uBloomK'), 0.35);
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, b0.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.activeTexture(gl.TEXTURE0);
 }
 
@@ -819,7 +1101,9 @@ function frame(now) {
   raf = 0;
   let again = false;
   try {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const raw = (now - last) / 1000;
+    if (raw > 0 && raw < 0.1) watchdog(raw);
+    const dt = clamp(raw, 0, 0.05);
     last = now;
     time += dt;
     const k = 1 - Math.exp(-dt / 0.12);
@@ -834,7 +1118,25 @@ function frame(now) {
     again = easing || stamps.length > 0 || beads.length > 0 || time < wetEnd;
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !ptr);
   }
+}
+
+/* ---------- performance ladder ---------- */
+// After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
+// Rungs: pixel ratio 1, then the bloom at an eighth size. It never steps back up.
+let rung = 0, runFor = 0, slowFor = 0, avgDt = 1 / 60;
+function watchdog(raw) {
+  runFor += raw;
+  avgDt += (raw - avgDt) * 0.1;
+  if (runFor < 4 || rung >= 2) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
+  if (slowFor < 2) return;
+  rung++;
+  slowFor = 0;
+  runFor = 2;
+  avgDt = 1 / 60;
+  resize();
 }
 
 /* ---------- pointer ---------- */
@@ -867,7 +1169,9 @@ function move(e) {
     const v = Math.hypot(x - ptr.x, y - ptr.y) / sc / dt;
     // A held press bears down: up to half again after 1.2 s.
     const press = 1 + 0.5 * clamp((e.timeStamp - ptr.t0) / 1200);
-    rub(...toStone(...screenUnits(x, y)), v, press);
+    const [sx, sy] = toStone(...screenUnits(x, y));
+    rub(sx, sy, v, press);
+    rubSound(sx, sy, polishAt(sx, sy), v);
   }
   ptr.x = x; ptr.y = y; ptr.t = e.timeStamp;
   aimLight(screenUnits(x, y));
@@ -890,6 +1194,8 @@ canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') aimLight(Q0); });
+// A press anywhere wakes the sound; with the loop asleep, it sleeps again.
+addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !ptr); });
 
 /* ---------- actions ---------- */
 // A stone change clears the polish and the water.
@@ -901,9 +1207,9 @@ function showStone() {
   wake();
 }
 // A new kind opens on its known stone, with one polished stroke.
-act.pick = () => { first = true; buildStone(kind, FIRST[kind]); showStone(); };
+act.pick = () => { first = true; buildStone(kind, FIRST[kind]); showStone(); knockSound(); };
 // A new stone of the same kind: a new pattern, fully rough.
-act.stone = () => { first = false; buildStone(kind, 1 + Math.floor(Math.random() * 2147483000)); showStone(); };
+act.stone = () => { first = false; buildStone(kind, 1 + Math.floor(Math.random() * 2147483000)); showStone(); knockSound(); };
 act.reset = () => { clearPolish(); clearWater(); if (ready) draw(); };
 act.wet = () => wetAll();
 
@@ -919,12 +1225,13 @@ ready = true;
 mark('first-frame');
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
-onQuality(() => { resize(); if (ready) draw(); });
+// A new quality choice clears the ladder.
+onQuality(() => { rung = 0; runFor = slowFor = 0; resize(); if (ready) draw(); });
 onReducedChange(() => aimLight(Q0));
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>

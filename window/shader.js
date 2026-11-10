@@ -617,6 +617,26 @@ float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
 // Light scattered many times leaves a thick cloud evenly in all directions.
 // So a side-lit top stays white; only the silver lining needs the forward lobe.
 const float CLOUD_MS = 1.5;
+// The glory: coloured rings round the point opposite the light, on cloud tops.
+// th is the angle from that point, in radians; red rings sit outside blue.
+// It tints the cloud's colour, so it still reads on a bright white deck.
+vec3 glory(float th) {
+  float a = th * 57.2958;
+  // Small droplets make a wide glory; these rings suit 6 micron drops.
+  vec3 r1 = vec3(4.3, 3.7, 3.2), r2 = vec3(7.6, 6.6, 5.7);
+  vec3 g = 0.72 + 0.6 * exp(-pow((a - r1) / 0.55, vec3(2.0))) + 0.32 * exp(-pow((a - r2) / 0.75, vec3(2.0)));
+  g += 0.7 * exp(-a * a / 2.0);
+  return mix(vec3(1.0), g, smoothstep(10.5, 8.5, a));
+}
+// The plane's own shadow at the glory's heart, t km below along the ray.
+// u runs along the flight line, v across it, in radians from the centre.
+float planeShadow(vec2 uv, float t) {
+  vec2 q = abs(uv * t * 1000.0);
+  // Fuselage and wings, in metres.
+  float body = step(q.x, 30.0) * step(q.y, 3.0);
+  float wing = step(q.y, 30.0) * step(abs(uv.x * t * 1000.0 + 3.0 + q.y * 0.5), 3.5);
+  return max(body, wing);
+}
 
 /* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
 const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
@@ -730,6 +750,10 @@ vec4 deck(vec3 d) {
   float ua = townDome(uCam + d.xz * t0), ub = townDome(uCam + d.xz * t1);
   float mu = dot(d, uSun);
   float phase = cloudPhase(mu) + CLOUD_MS;
+  // The glory and the plane's shadow ride the point opposite the light.
+  float gTh = acos(clamp(-mu, -1.0, 1.0));
+  vec3 gF = normalize(vec3(1.0, 0.0, 0.0) - uSun * uSun.x), gS = cross(-uSun, gF);
+  vec2 gUV = vec2(dot(d, gF), dot(d, gS));
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
@@ -795,28 +819,43 @@ vec4 deck(vec3 d) {
     col += Tc * last * a;
     Tc *= 1.0 - a;
   }
+  // The glory rings the plane's small shadow on the tops below.
+  if (gTh < 0.19 && lit) {
+    col *= glory(gTh);
+    if (gTh < 0.01) col *= 1.0 - 0.7 * planeShadow(gUV, t0);
+  }
   return vec4(col, Tc);
 }
 
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
+// The last mid sample's shape terms, for the crease light.
+float gMidSh = 0.0, gMidA = 1.0, gMidFb = 0.0;
+// Each cell is a low dome with a flat base; small billows break it, as on the deck.
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float cv = coverAt(w, 55.0, 0.71), lo = 5.2, lo2 = 5.45, hi = 6.1, hi2 = 5.75;
+  float cv = coverAt(w, 55.0, 0.71), lo = 5.25, hi = 6.05;
   // In a storm the mid layer runs in bands along the wind.
   if (uStorm > 0.0) {
     float wv = smoothstep(0.35, 0.75, weave(w * 0.8 + 31.0));
     cv += uStorm * 0.4 * (wv - 0.35);
-    lo -= uStorm * 0.7 * wv; lo2 -= uStorm * 0.7 * wv;
-    hi += uStorm * 0.6 * wv; hi2 += uStorm * 0.6 * wv;
+    lo -= uStorm * 0.7 * wv; hi += uStorm * 0.6 * wv;
   }
   float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, cv) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
-  float hgt = smoothstep(lo, lo2, p.y) * smoothstep(hi, hi2, p.y);
-  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 6.0, lod);
-  return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
+  // Small cells in rolls: the cell map is stretched across the wind.
+  float cell = cn(vec3(w.x, 1.7, w.y * 1.6), 3.0, lod).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  float top = lo - 0.05 + (hi - lo) * sqrt(loc);
+  float sh = min(top - p.y, (p.y - lo) * 2.0);
+  float A = 0.06 + 0.14 * loc;
+  if (sh < -A * 0.55) return 0.0;
+  vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, p.y * 1.2 - uTime * 0.01, w.x * 0.6 + w.y * 0.8) + 5.3, 0.9, lod);
+  float fb = sh + A * (m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48);
+  gMidSh = sh; gMidA = A; gMidFb = fb;
+  return smoothstep(0.0, 0.05 + 0.05 * lod, fb);
 }
 vec4 midLayer(vec3 d) {
-  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.1 + uStorm * 0.6);
+  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.25 + uStorm * 0.6);
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   const int N = 12;
@@ -831,11 +870,14 @@ vec4 midLayer(vec3 d) {
     if (t > t1) break;
     vec2 w = uCam + d.xz * t;
     vec3 p = vec3(w.x, heightAt(d, t), w.y);
-    float dn = midDens(p, lodAt(t, 6.0) + 0.5);
+    float dn = midDens(p, lodAt(t, 3.0));
     if (dn > 0.002) {
+      float mSh = gMidSh, mA = gMidA, mFb = gMidFb;
       // Thin cloud: one tap toward the light is enough.
-      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 6.0) + 1.5) * 0.3);
-      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03;
+      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 3.0) + 1.0) * 0.3);
+      // Lump crowns catch the sky; the folds between them do not.
+      float open = exp(-6.0 * max(mFb, 0.0)) * clamp(0.7 - 1.4 * mSh / max(mA, 0.03), 0.15, 1.2);
+      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03 * (0.35 + 0.9 * open);
       if (uStorm > 0.0) S += stormGlow(vec3(0.0, 1.0, 0.0)) * 0.6 * uStorm;
       float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
       col += Tc * S * a;
@@ -952,7 +994,9 @@ vec3 stormGlow(vec3 d) {
     vec3 fd = normalize(vec3(l.x - uCam.x, 5.0 - H, l.y - uCam.y));
     float m = max(dot(d, fd), 0.0);
     // A broad soft swell round the flash bearing, never a hard point.
-    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0));
+    // Far flashes stay on the horizon: they barely light the murk round us.
+    vec2 fq = (l.xy - uCam) / 50.0;
+    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0)) / (1.0 + dot(fq, fq));
   }
   return air + FLASH_C * g * 0.02 * max(uStorm, uFog);
 }
@@ -1001,9 +1045,12 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
 // Fog curtains: tall, thin sheets parallel to the cabin, long along the flight line.
 // A ray out of the window crosses several, so each veils its own stretch of wing.
 // wing3.js repeats this field for the aircraft; keep the two the same.
+// Large banks, about wing-sized, swallow whole stretches: the tip goes, the root stays.
 float wispDens(vec3 p) {
   float n = textureLod(uNoise, p / vec3(136.0, 30.0, 9.0), 0.0).r * 0.78 + textureLod(uNoise, p / vec3(68.0, 10.0, 3.2) + 0.37, 0.0).g * 0.22;
-  return smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n) * smoothstep(0.05, 0.5, uFog);
+  float bank = textureLod(uNoise, p / vec3(408.0, 80.0, 26.0) + 0.71, 0.0).b;
+  float d = max(smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n), smoothstep(0.62 - 0.2 * uFog, 0.76 - 0.2 * uFog, bank) * 0.85);
+  return d * smoothstep(0.05, 0.5, uFog);
 }
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
@@ -1014,9 +1061,9 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   for (int i = 0; i < 16; i++) {
     if (t >= t1) break;
     float dn = wispDens(d * t + uWisp);
-    // The strobe and nav light glow in wisps by the tip.
+    // The strobe and nav light bloom thickly in fog round the tip.
     float ft = length(d * t - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + uNavC * 0.8 * 0.02) * exp(-ft / 5.0);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 3.0 + uNavC * 0.25) * exp(-ft / 6.0);
     float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;
@@ -1421,7 +1468,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         float fd = length(p - pf);
         // The flash is a soft ball of light inside the cloud, brightest deep in.
         // Far flashes punch through the haze, so distant storms still flicker.
-        S += FLASH_C * f.w * (2.2 * exp(-fd * fd / 5.0) + 0.6 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
+        S += FLASH_C * f.w * (1.8 * exp(-fd * fd / 5.0) + 0.5 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
         // Below the deck top, the deck in front hides the tower.
         float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(deckTop, deckTop - 1.2, p.y));
         col += Tc * S * al;
@@ -1846,6 +1893,8 @@ uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 // Extra ghost strength per flare; 0 keeps the old ghosts.
 uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
+// The wing light: lamp point and level; beam axis and the fog level.
+uniform vec4 uBeamL, uBeamA;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
@@ -1961,8 +2010,9 @@ vec3 meteor(vec3 d) {
 
 // Rain in the air outside: streaks that race aft past the window.
 // Three layers: near ones are longer, wider and faster.
-float rainStreaks(vec2 px) {
-  if (uStorm <= 0.05) return 0.0;
+// amt sets how many drops fall.
+float rainStreaks(vec2 px, float amt) {
+  if (amt <= 0.05) return 0.0;
   vec2 q = px / uDpr;
   float s = 0.0;
   for (int l = 0; l < 3; l++) {
@@ -1972,7 +2022,7 @@ float rainStreaks(vec2 px) {
     vec2 g = vec2((q.x - q.y * 0.1) + uTime * 2600.0 * k, q.y) / vec2(220.0 * k, row);
     vec2 id = floor(g), f = fract(g);
     vec2 h = hash22(id + fl * 31.7);
-    if (h.x > uStorm * 0.18) continue;
+    if (h.x > amt * 0.18) continue;
     float len = 0.25 + 0.5 * h.y;
     float across = abs(f.y - 0.5) * row;
     s += smoothstep(0.45 * k, 0.0, across) * smoothstep(0.0, 0.05, f.x) * smoothstep(len, len - 0.15, f.x) * hash12(id + 7.1) * 0.6;
@@ -2062,6 +2112,41 @@ float sheen(vec3 n, vec3 v, vec3 l) {
   float F = 0.04 + 0.96 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
   return a2 / (PI * dd * dd) * F * nl / (4.0 * max(nl, nv));
 }
+// Mist streams aft through the beam: noise stretched along the flight line.
+float beamMist(vec2 px) {
+  vec2 q = px / uDpr;
+  float n = vnoise(vec2(q.x * 0.005 + uTime * 7.0, q.y * 0.04)) * 0.6 + vnoise(vec2(q.x * 0.012 + uTime * 13.0, q.y * 0.1) + 4.0) * 0.4;
+  return 0.35 + 1.3 * n * n;
+}
+// Drops and crystals in the beam: short, bright dashes racing aft.
+// amt sets the share of cells that hold one.
+float beamMotes(vec2 px, float amt) {
+  vec2 q = px / uDpr;
+  float s = 0.0;
+  for (int l = 0; l < 2; l++) {
+    float k = 1.0 + float(l) * 1.4;
+    vec2 g = vec2(q.x - q.y * 0.12 + uTime * 1500.0 * k, q.y + float(l) * 5.0) / vec2(70.0 * k, 16.0);
+    vec2 id = floor(g), f = fract(g);
+    vec2 h = hash22(id + float(l) * 13.1);
+    if (h.x > amt * 0.3) continue;
+    float y0 = 0.2 + 0.6 * h.y, len = 0.25 + 0.3 * hash12(id + 2.7);
+    float across = abs(f.y - y0) * 16.0 / k;
+    s += smoothstep(0.9, 0.0, across) * smoothstep(0.0, 0.08, f.x) * smoothstep(len, len - 0.12, f.x) * (0.3 + hash12(id + 9.3));
+  }
+  return s;
+}
+// The wing light's beam along cabin ray da: 1 on its axis, 0 outside the cone.
+// s returns the distance from the lamp along the beam, in metres.
+float beamAt(vec3 da, out float s) {
+  vec3 a = uBeamA.xyz, w0 = uEye - uBeamL.xyz;
+  float b = dot(da, a), dd = dot(da, w0), e = dot(a, w0), den = max(1.0 - b * b, 1e-4);
+  // The nearest points of the view ray and the beam axis.
+  float tr = (b * e - dd) / den;
+  s = (e - b * dd) / den;
+  if (tr < 0.3 || s < 0.3) return 0.0;
+  float dist = length(w0 + da * tr - a * s), r = s * 0.36;
+  return smoothstep(r, r * 0.15, dist) * smoothstep(0.3, 2.5, s) * smoothstep(45.0, 12.0, s);
+}
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
   vec3 view = out1.rgb;
@@ -2080,8 +2165,21 @@ vec3 glass(vec3 da, vec2 px) {
   view += uNavC * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
   // Rain streaks catch the sky glow, the strobe and the lightning.
-  float rs = rainStreaks(px);
+  float rs = rainStreaks(px, uStorm);
   if (rs > 0.0) view += rs * (uGlow * 0.012 + vec3(0.8, 0.85, 1.0) * (uFlash * 0.012 + uStrobe * 0.012 * exp(-ang / 150.0)));
+  // The wing light's beam glows in fog and lights what falls through it.
+  if (uBeamL.w > 0.001) {
+    float bs, bk = beamAt(da, bs) * uBeamL.w;
+    if (bk > 0.0) {
+      // Light falls off with the square of the distance from the lamp.
+      float fall = 60.0 / (bs * bs + 20.0);
+      // Cloud, rain or storm fills the beam with streaming drops and crystals.
+      float wet = max(max(uStorm, uRain * 0.8), uBeamA.w);
+      vec3 BEAM = vec3(1.0, 0.95, 0.86);
+      // The haze is brightest where the eye looks down the beam.
+      view += BEAM * bk * fall * (beamMotes(px, 0.1 + 0.5 * wet) * (0.04 + 0.08 * wet) + 0.0015 + 0.06 * wet * bk * beamMist(px));
+    }
+  }
   return view;
 }
 
