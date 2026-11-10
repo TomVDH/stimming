@@ -31,7 +31,7 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 
 - **All effects** (the page opens here): one window scene with every shared shader stacked on it.
-  Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Rain and snow in the air, Sky and haze, Lens flare, Grade, Output.
+  Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Rain and snow in the air, Sky and haze, Lens flare, Glow, Grade, Output.
   Glass effects stay one group (Tom, 2026-11-10): drops, running drops, fog and scatter go together.
   Look buttons set a whole combination (Everything, Clear, Harbour, Dawn, Drizzle, Storm, Snow, Fogged up). The light is draggable.
   The Weather slider runs `shared/weather.js`: one value, dry to storm, moves the glass and the water together.
@@ -66,6 +66,7 @@ Every module compiles together in a three.js `ShaderMaterial`: the lab's check s
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
 | `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
 | `shared/weather.js` (one value drives glass, water, air, clouds and haze) | 2026-11-10 | The lab's Weather slider | None yet |
+| `shared/glow.js` (light orbs; a bloom chain for raw WebGL2) | 2026-11-10 | The kit's orb matches exactly (0 / 255). The bloom chain is Lichtenberg's and Dijkstra's lines; it has no pixel check | None yet |
 | `shared/precip.js` (rain and snow in the air, on the frame) | 2026-11-10 | Seen in the lab. A new common version: no copy check | None yet |
 | Cloud deck in `shared/sky.js` (`skClouds`) | 2026-11-10 | Seen in the lab at dusk and by day. A new common version: no copy check | None yet |
 | `shared/output.js` (film curve, soft knee, sRGB, dither) | 2026-11-10 | Lava lamp's curve and Rain on glass's knee and dither match within 1 / 255, raw and three.js | None yet |
@@ -105,6 +106,18 @@ Both are new common versions, so a move changes that toy's look. Tom decides per
 - `skClouds()` is one flat, drifting deck with a lit side and a shaded side. `skyAt()` gives both colours for the hour.
   `window` (a cloud volume) and `walker` keep their own clouds. `fireworks`, `windfarm`, `washline` and `trainride` could take the deck.
 - In a mirror (water), take the sky and the clouds once and only the lights per tap; the lab's scene pass shows how. Seven full taps doubled the frame time.
+
+### Glow: how a toy adopts it
+
+| Toy | Today | Replace with |
+|---|---|---|
+| `fireworks`, `viaduct`, `launch` | `makeOrbs`: a core and a skirt per light, then a roll-off | `gwOrb()` in the loop, `gwRoll()` after it: the same math |
+| `lichtenberg`, `dijkstra` | Own 13-tap `DOWN_FS`, 9-tap `UP_FS`, and the loop that runs them | `bloomChain(gl)` and one `render()` call. Their caps differ (6 and 5): pass `cap`. `lichtenberg` also reads a wide level; it keeps its own chain unless that is exposed |
+| `vortex`, `flametest`, `windmap`, `trails`, `glow` and other raw toys | Smaller chains (5-tap, or bright and blur) | `bloomChain(gl)` gives a rounder glow; that is a look change, so Tom decides |
+| three.js toys | `UnrealBloomPass` | Stays |
+
+`render()` changes GL state: its program, framebuffer, viewport, texture units 0 and 1, blending off, no vertex array. Set yours again after it.
+Size every render target before the first pass of a frame. A resize binds the texture, and that broke one frame in the lab when it sat between two passes.
 
 ### Output: how a toy adopts it
 
@@ -191,10 +204,10 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 | Noise: hash, value noise, fbm | Every shader toy: value noise in about 50 files, fbm in 35, three hash families | 50+ | `grH`, `grN`, `grFbm` in `glassrain.js` (the same text as `K2_NOISE`) | S. For new toys only: a new hash changes each old pattern |
 | Night sky: gradient, stars | `K2_SKY` in `viaduct` (port, pass), `fireworks`, `launch`, `meteor`, `canal`. Own sky in `window`, `flock`, `trails`, `nvg`, `trainride`, `walker`, `windfarm` | 5 on K2; 7 own | `meteor` `duskGlow` and `k2stars`. Havoc `starField` (`src/view/aqua/sea.js:138`): tint and twinkle per star | Built: `shared/sky.js` |
 | Height haze | `K2_HAZE` in the same five. Own haze in `trainride`, `frietkot`, `motorway`, `bread` | 5 on K2; 4 own | `meteor` `k2hazeAmount`: the fog integral in closed form. Haze colour stays per toy | Built: `skHaze()` in `shared/sky.js` |
-| Bloom | three.js: `UnrealBloomPass` in 18 toys (`makeBloom` wrapper in 7). Raw WebGL2: an own down and up chain in about 20 toys. `motorway` `SoftBloom` | 18 and 20 | three.js toys keep the addon. Raw: the `vortex` chain | M: it needs a render-target helper |
+| Bloom | three.js: `UnrealBloomPass` in 18 toys (`makeBloom` wrapper in 7). Raw WebGL2: an own down and up chain in about 20 toys. `motorway` `SoftBloom` | 18 and 20 | three.js toys keep the addon. Raw: the `lichtenberg` chain (13-tap down, tent up) | Built: `bloomChain()` in `shared/glow.js` |
 | Water surface | `trainride`, `fireworks`, `launch`, `canal`, `viaduct/port.js`, `windfarm` `swell`, `walker` `SEA_FS`, `window` `seaField`, `meteor`, `nvg/harbour.js`, `dijkstra` | 11, all different | `windfarm` `swell` (each wave fades by pixel footprint). Havoc: `swell.js` and `swellmath.js` (wave sets, envelope, bent crests); `src/view/water.js:147` (two ripple layers, glint roll-off, backlit crests); `sea.js:585` rain rings; `sea.js:618` moon glade | First cut built: `shared/water.js` |
 | Water mirror: the smeared reflection | `tMirror` in `canal`, `fireworks`, `launch`, `viaduct/port.js` | 4 | `fireworks` | M. Part of water |
-| Light orbs, point flares | K2 orbs in `viaduct`, `fireworks`, `launch`; point flares in `viaduct/port.js`, `pass.js`; `windfarm` lights | 4 | `fireworks` orbs | M |
+| Light orbs, point flares | K2 orbs in `viaduct`, `fireworks`, `launch`; point flares in `viaduct/port.js`, `pass.js`; `windfarm` lights | 4 | `fireworks` orbs | Built: `gwOrb()` in `shared/glow.js` |
 | Rain and snow in the air | `viaduct` (K2 precipitation), `canal`, `trainride`, `window`, `rain`, `frietkot`, `washline` | 7, all different | `viaduct/port.js`. Havoc `src/view/aqua/weatherfx.js`: each drop's place is a function of seed and time | A screen version is built: `shared/precip.js`. World-lit particles stay per toy |
 | Clouds | `window` (`noise3d.js`, a volume), `fireworks`, `flock`, `trainride`, `washline`, `windfarm`, `walker` | 7, all different | None. Each toy's clouds are its own look | A common deck is built: `skClouds()` in `shared/sky.js`. Toys keep their own unless Tom moves them |
 | Light shafts | `walker` `HAZE_FS`, `frietkot`, `sunbeam`, `pins` | 4, all different | None | Do not share |

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T10:36:34Z
+updated_at: 2026-11-10T10:43:51Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -37,7 +37,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Output: `shared/output.js`, a card in `fxlab/`, two copy checks
 - [x] Rain and snow in the air: `shared/precip.js`, a card in `fxlab/`
 - [x] Cloud deck: `skClouds()` in `shared/sky.js`, a slider in `fxlab/`
-- [ ] Tom picks what comes next (light orbs and bloom, water extras, more adopters)
+- [x] Lights and bloom: `shared/glow.js` (orbs, `bloomChain`), a card in `fxlab/`, one copy check
+- [ ] Tom picks what comes next (water extras, light shafts, caustics, more adopters)
 
 ## Rules
 
@@ -70,3 +71,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: `shared/output.js` built (Tom: "Build output"): film curve, soft knee, sRGB, dither. Every ranked effect of the first plan is now built: flare, grade, water, sky and haze, output.
 
 - 2026-11-10: Tom: "Keep building". Built `shared/precip.js` (screen-space rain and snow) and a cloud deck in `shared/sky.js`; `weather.js` now drives air and clouds too. The lab scene first ran at 22 ms a frame with clouds in every mirror tap; mirroring the sky once brought it back to 8 ms.
+
+- 2026-11-10: `shared/glow.js` built (Tom: "Lights and bloom"). The lab scene now ends in a last pass (bloom, grade, output); the pane pass keeps linear light. `fxlab.bench()` measures the real frame cost: about 7 to 8 ms at 1440 x 1536 with everything on. A target resize between passes broke one frame; fixed, and noted in the plan.
