@@ -16,6 +16,18 @@
 | Size, estimate | M to L · $30 to $50 |
 | Kits | Burst particles (K6) from `fireworks/index.html` for sparks, in Task 4 |
 
+## Art direction (Tom, 2026-11-10)
+
+Zany, 1950s atomic age, dieselpunk. An original proving ground, no names or symbols from any game.
+
+| Element | Look |
+|---|---|
+| Palette | Cream, seafoam, cherry, mustard, Bakelite brown, chrome, copper; hazard stripes |
+| Gun | A streamlined seafoam nacelle with chrome rings, coil portholes, a cherry tail fin, a flared chrome muzzle; twin copper rails outside on standoffs |
+| Machines | A diesel generator with a cherry flywheel and an exhaust stack; six glass vacuum tubes; a Bakelite console with a numbered dial and jewel lamps; a gantry with hazard stripes and a horseshoe magnet |
+| Props | A PROVING GROUND 7 sign with an atom, a DANGER HIGH VOLTAGE sign |
+| Lens | Bloom on hot parts only, a tilt-shift blur that sells the miniature, a warm print grade, vignette, grain |
+
 ## The shot
 
 A slab of salt flat, cut clean like a museum diorama, sits on a dark plinth and floats in a dusk sky. The camera looks at its long side with a long lens, tilted down 15°.

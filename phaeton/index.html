@@ -60,6 +60,11 @@ import { intro as playIntro } from '../shared/intro.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { gsap } from 'gsap';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const stage = document.getElementById('stage');
 const TAU = Math.PI * 2;
@@ -136,6 +141,54 @@ stage.prepend(canvas);
 const HORIZON = col(0.74, 0.12, 52), ZENITH = col(0.3, 0.09, 268), GLOW = col(0.84, 0.15, 62), VOID = col(0.22, 0.05, 280);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(20, 1, 0.5, 1500);
+
+/* ---------- lens and grade ---------- */
+// Bloom on the hot parts, a tilt-shift blur that sells the miniature, then a film grade.
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.6);
+composer.addPass(bloom);
+const POST_VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+const TILTSHIFT = {
+  uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2(1, 0) }, uRes: { value: new THREE.Vector2(1, 1) }, uFocus: { value: 0.45 }, uBand: { value: 0.1 }, uMax: { value: 7 } },
+  vertexShader: POST_VS,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uDir, uRes; uniform float uFocus, uBand, uMax; varying vec2 vUv;
+    void main() {
+      // Blur grows with distance from the focus band, as a tilted lens does.
+      float r = uMax * smoothstep(uBand, uBand + 0.32, abs(vUv.y - uFocus));
+      vec4 c = vec4(0.0); float w = 0.0;
+      for (int i = -4; i <= 4; i++) {
+        float k = exp(-float(i * i) / 8.0);
+        c += texture2D(tDiffuse, vUv + uDir * float(i) * r / uRes) * k;
+        w += k;
+      }
+      gl_FragColor = c / w;
+    }`,
+};
+const tiltH = new ShaderPass(TILTSHIFT), tiltV = new ShaderPass(TILTSHIFT);
+tiltV.uniforms.uDir.value.set(0, 1);
+composer.addPass(tiltH);
+composer.addPass(tiltV);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 } },
+  vertexShader: POST_VS,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime; varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      // A warm print stock: lifted shadows, golden mids, a soft vignette, fine grain.
+      c = c * vec3(1.05, 1.0, 0.92) + vec3(0.006, 0.004, 0.012);
+      float v = length((vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0));
+      c *= mix(1.0, 0.62, smoothstep(0.35, 1.05, v));
+      c += (hash(vUv * uRes + fract(uTime) * 100.0) - 0.5) * 0.035 * (c + 0.04);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+const draw = () => { grade.uniforms.uTime.value = performance.now() / 1000; composer.render(); };
 
 /* ---------- sky ---------- */
 // The diorama floats in a dusk sky; below the horizon it fades to violet.
@@ -257,12 +310,17 @@ const crust = crustTile();
 }
 
 /* ---------- materials ---------- */
+// Atomic-age proving ground: enamel paint, chrome, Bakelite, copper.
+const enamel = (c, r = 0.32) => new THREE.MeshPhysicalMaterial({ color: c, roughness: r, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.12 });
+const PAL = { cream: col(0.93, 0.035, 90), seafoam: col(0.74, 0.085, 180), cherry: col(0.56, 0.19, 25), mustard: col(0.8, 0.14, 85), bakelite: col(0.32, 0.06, 45) };
 const steel = new THREE.MeshStandardMaterial({ color: col(0.36, 0.012, 250), roughness: 0.5, metalness: 0.65 });
 const steelLight = new THREE.MeshStandardMaterial({ color: col(0.58, 0.01, 250), roughness: 0.35, metalness: 0.8 });
-const paint = new THREE.MeshStandardMaterial({ color: col(0.5, 0.06, 150), roughness: 0.6, metalness: 0.2 });
+const chrome = new THREE.MeshStandardMaterial({ color: col(0.92, 0.005, 250), roughness: 0.1, metalness: 1 });
+const paint = enamel(PAL.mustard, 0.4);
+const cream = enamel(PAL.cream), seafoam = enamel(PAL.seafoam), cherry = enamel(PAL.cherry, 0.28), bakelite = enamel(PAL.bakelite, 0.3);
 const ceramic = new THREE.MeshStandardMaterial({ color: col(0.86, 0.02, 85), roughness: 0.45 });
-const copper = new THREE.MeshStandardMaterial({ color: col(0.6, 0.11, 48), roughness: 0.4, metalness: 0.85, emissive: new THREE.Color(0) });
-const black = new THREE.MeshStandardMaterial({ color: col(0.12, 0.005, 250), roughness: 0.6 });
+const copper = new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) });
+const black = new THREE.MeshStandardMaterial({ color: col(0.14, 0.005, 250), roughness: 0.6 });
 const add = (parent, geo, mat, x, y, z, shadow = true) => {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
@@ -272,121 +330,281 @@ const add = (parent, geo, mat, x, y, z, shadow = true) => {
 };
 const bx = (w, h, d, r = 0) => (r ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d));
 const cylX = (r, len, seg = 20) => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2);
+// A ring round the x axis.
+const ringX = (r, tube) => new THREE.TorusGeometry(r, tube, 10, 40).rotateY(Math.PI / 2);
+// A lathe along x from a list of [x, radius] points.
+const latheX = pts => new THREE.LatheGeometry(pts.map(([x, r]) => new THREE.Vector2(r, x)), 48).rotateZ(-Math.PI / 2);
+// Hazard stripes for crane beams and the backstop band.
+const hazardTex = canvasTex(256, 64, (g, w, h) => {
+  g.fillStyle = '#e8b725'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#1d1a16';
+  for (let x = -h; x < w + h; x += 48) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 24, h); g.lineTo(x + 24 + h, 0); g.lineTo(x + h, 0); g.fill(); }
+});
+function hazardMat(len) {
+  const t = hazardTex.clone();
+  t.needsUpdate = true;
+  t.repeat.set(len / 1.2, 1);
+  const m = enamel(new THREE.Color(1, 1, 1), 0.45);
+  m.map = t;
+  return m;
+}
 
 /* ---------- the gun ---------- */
 const gun = new THREE.Group();
 scene.add(gun);
-// Trestles carry the barrel; a ceramic collar sits every 0.75 m.
-for (const x of [-11.2, -7.2]) {
-  add(gun, bx(0.18, BORE - 0.3, 0.9, 0.03), paint, x, (BORE - 0.3) / 2, 0);
-  add(gun, bx(0.9, 0.12, 1.3, 0.03), paint, x, 0.06, 0);
+// The barrel is a streamlined seafoam nacelle with chrome rings and a flared muzzle.
+const NOSE = TRAY_X + 0.42;
+add(gun, latheX([[NOSE, 0.001], [NOSE, 0.3], [NOSE + 0.25, 0.4], [NOSE + 1.2, 0.43], [MUZZLE - 1.2, 0.38], [MUZZLE - 0.45, 0.3], [MUZZLE - 0.45, 0.001]]), seafoam, 0, BORE, 0);
+add(gun, latheX([[MUZZLE - 0.5, 0.001], [MUZZLE - 0.5, 0.26], [MUZZLE - 0.2, 0.3], [MUZZLE, 0.44], [MUZZLE + 0.02, 0.44], [MUZZLE + 0.02, 0.18], [MUZZLE - 0.3, 0.12]]), chrome, 0, BORE, 0);
+for (const x of [NOSE + 0.6, NOSE + 1.7, NOSE + 2.8, NOSE + 3.9, MUZZLE - 0.8]) add(gun, ringX(0.425, 0.03), chrome, x, BORE, 0);
+add(gun, ringX(0.31, 0.035), cherry, MUZZLE - 0.42, BORE, 0);
+// Coil portholes along the camera side glow with the charge.
+const ports = [];
+for (let i = 0; i < 5; i++) {
+  const x = NOSE + 1.15 + i * 1.1;
+  const p = new THREE.Group();
+  p.position.set(x, BORE, 0.39);
+  add(p, new THREE.TorusGeometry(0.1, 0.022, 10, 28), chrome, 0, 0, 0.02);
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
+  add(p, new THREE.CircleGeometry(0.09, 28), m, 0, 0, 0.012, false);
+  gun.add(p);
+  ports.push(m);
 }
-const barrelLen = MUZZLE - (TRAY_X + 0.4);
-const barrelX = (MUZZLE + TRAY_X + 0.4) / 2;
-add(gun, bx(barrelLen, 0.5, 0.5, 0.04), steel, barrelX, BORE, 0);
-// The rails show as copper strips on the barrel face.
+// A cherry tail fin rides on top of the breech end.
+{
+  const s = new THREE.Shape();
+  s.moveTo(0, 0); s.lineTo(1.5, 0); s.quadraticCurveTo(0.6, 0.15, 0.1, 0.55); s.lineTo(0, 0);
+  const fin = add(gun, new THREE.ExtrudeGeometry(s, { depth: 0.04, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2 }), cherry, NOSE + 0.15, BORE + 0.36, -0.02);
+  fin.rotation.y = 0;
+}
+// Twin copper rails run outside the nacelle on chrome standoffs.
 const rails = [];
-for (const s of [-1, 1]) rails.push(add(gun, bx(barrelLen, 0.07, 0.04), copper, barrelX, BORE + s * 0.19, 0.25, false));
-for (let x = TRAY_X + 0.8; x < MUZZLE - 0.2; x += 0.75) add(gun, bx(0.12, 0.66, 0.66, 0.03), ceramic, x, BORE, 0);
-add(gun, bx(0.32, 0.74, 0.74, 0.05), steelLight, MUZZLE - 0.16, BORE, 0);
-// The breech: an open tray, a sliding block and a lever.
-add(gun, bx(1.6, 0.14, 0.56, 0.03), steel, TRAY_X - 0.3, BORE - 0.32, 0);
-add(gun, bx(0.12, 0.62, 0.62, 0.03), steel, TRAY_X + 0.37, BORE, 0);
-const block = add(gun, bx(0.74, 0.52, 0.56, 0.05), steelLight, 0, BORE, 0);
+const railLen = MUZZLE - NOSE - 0.9;
+for (const s of [-1, 1]) {
+  rails.push(add(gun, cylX(0.032, railLen, 12), copper, NOSE + 0.55 + railLen / 2, BORE + s * 0.22, 0.44, false));
+  for (let x = NOSE + 0.7; x < MUZZLE - 0.5; x += 1.1) add(gun, bx(0.05, 0.05, 0.1), chrome, x, BORE + s * 0.22, 0.4, false);
+}
+// Two mustard cradles with chrome rams hold the barrel.
+for (const x of [NOSE + 1.1, MUZZLE - 1.5]) {
+  const saddle = add(gun, new THREE.TorusGeometry(0.46, 0.05, 8, 24, Math.PI), paint, x, BORE, 0);
+  saddle.rotation.set(0, Math.PI / 2, Math.PI);
+  for (const z of [-1, 1]) {
+    const leg = add(gun, bx(0.14, BORE - 0.2, 0.12, 0.03), paint, x, (BORE - 0.2) / 2, z * 0.42);
+    leg.rotation.x = z * 0.2;
+  }
+  add(gun, bx(0.6, 0.1, 1.3, 0.04), paint, x, 0.05, 0);
+  const ram = add(gun, new THREE.CylinderGeometry(0.035, 0.035, 0.95, 12), chrome, x - 0.35, 0.55, 0.25);
+  ram.rotation.z = 0.55;
+}
+// The breech: a cream housing, a chrome tray, a sliding capsule block and a lever.
+add(gun, bx(1.7, 0.16, 0.6, 0.05), cream, TRAY_X - 0.35, BORE - 0.34, 0);
+add(gun, bx(0.6, 0.12, 0.5, 0.03), chrome, TRAY_X - 0.05, BORE - 0.22, 0);
+add(gun, ringX(0.33, 0.06), cream, NOSE - 0.03, BORE, 0);
+const block = add(gun, new THREE.CapsuleGeometry(0.25, 0.36, 8, 24).rotateZ(Math.PI / 2), cream, 0, BORE, 0);
+add(block, new THREE.CylinderGeometry(0.2, 0.2, 0.05, 24).rotateZ(Math.PI / 2), cherry, -0.43, 0, 0);
+add(block, ringX(0.255, 0.018), chrome, 0.05, 0, 0);
 const BLOCK_OPEN = TRAY_X - 1.0, BLOCK_SHUT = TRAY_X;
 const lever = new THREE.Group();
-lever.position.set(TRAY_X - 0.6, BORE - 0.2, 0.38);
-add(lever, new THREE.CylinderGeometry(0.03, 0.035, 0.9, 10).translate(0, 0.45, 0), steelLight, 0, 0, 0);
-const knobMat = new THREE.MeshStandardMaterial({ color: col(0.58, 0.2, 28), roughness: 0.35, emissive: new THREE.Color(0) });
-add(lever, new THREE.SphereGeometry(0.085, 16, 12), knobMat, 0, 0.92, 0);
-add(lever, cylX(0.07, 0.06).rotateY(Math.PI / 2), steel, 0, 0, 0);
+lever.position.set(TRAY_X - 0.6, BORE - 0.2, 0.42);
+add(lever, new THREE.CylinderGeometry(0.028, 0.034, 0.9, 12).translate(0, 0.45, 0), chrome, 0, 0, 0);
+const knobMat = enamel(PAL.cherry, 0.18);
+knobMat.emissive = new THREE.Color(0);
+add(lever, new THREE.SphereGeometry(0.1, 20, 14), knobMat, 0, 0.94, 0);
+add(lever, cylX(0.08, 0.07).rotateY(Math.PI / 2), cherry, 0, 0, 0);
 gun.add(lever);
 const LEVER_OPEN = 0.65, LEVER_SHUT = -0.65;
 
 /* ---------- the rack and crane ---------- */
-const slugGeo = cylX(0.085, 0.5, 18);
-const bandGeo = cylX(0.092, 0.08, 18);
-const slugMat = new THREE.MeshStandardMaterial({ color: col(0.42, 0.015, 250), roughness: 0.3, metalness: 0.9 });
-const bandMat = new THREE.MeshStandardMaterial({ color: col(0.6, 0.11, 48), roughness: 0.35, metalness: 0.85, emissive: new THREE.Color(0) });
+// A slug is a finned chrome dart with a copper drive band.
+const slugGeo = cylX(0.07, 0.36, 18);
+const noseGeo = new THREE.ConeGeometry(0.07, 0.14, 18).rotateZ(-Math.PI / 2);
+const bandGeo = cylX(0.077, 0.06, 18);
+const finGeo = bx(0.14, 0.11, 0.012);
+const slugMat = chrome;
+const bandMat = new THREE.MeshStandardMaterial({ color: col(0.62, 0.12, 50), roughness: 0.3, metalness: 0.95, emissive: new THREE.Color(0) });
 function makeSlug() {
   const g = new THREE.Group();
   add(g, slugGeo, slugMat, 0, 0, 0);
-  add(g, bandGeo, bandMat, -0.12, 0, 0);
-  add(g, bandGeo, bandMat, 0.12, 0, 0);
+  add(g, noseGeo, slugMat, 0.25, 0, 0);
+  add(g, bandGeo, bandMat, 0.08, 0, 0);
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.Group();
+    f.rotation.x = k * TAU / 3;
+    add(f, finGeo, cherry, -0.13, 0.1, 0);
+    g.add(f);
+  }
   return g;
 }
 const rack = new THREE.Group();
 scene.add(rack);
-for (const z of [-0.34, 0.34]) add(rack, bx(0.1, 2.3, 0.1, 0.02), paint, RACK_X, 1.15, z);
-add(rack, bx(0.9, 0.1, 0.9, 0.02), paint, RACK_X, 0.05, 0);
+for (const z of [-0.34, 0.34]) add(rack, bx(0.12, 2.3, 0.12, 0.05), cream, RACK_X, 1.15, z);
+add(rack, bx(0.95, 0.12, 0.95, 0.05), cherry, RACK_X, 0.06, 0);
+add(rack, bx(0.3, 0.12, 0.85, 0.05), cherry, RACK_X, 2.3, 0);
 const RACK_N = 5, rackY = i => 0.45 + i * 0.36;
 const rackSlugs = [];
 for (let i = 0; i < RACK_N; i++) {
-  add(rack, bx(0.7, 0.05, 0.62), steel, RACK_X, rackY(i) - 0.11, 0);
+  add(rack, bx(0.62, 0.04, 0.62, 0.015), chrome, RACK_X, rackY(i) - 0.11, 0);
   const s = makeSlug();
   s.position.set(RACK_X, rackY(i), 0);
   rack.add(s);
   rackSlugs.push(s);
 }
-// A gantry crane carries the slug from the rack to the tray.
+// A mustard gantry with hazard stripes; the hook is a horseshoe magnet.
 const CRANE_Y = 3.6;
 for (const x of [-16.1, -11.3]) {
-  add(scene, bx(0.14, CRANE_Y, 0.14, 0.02), paint, x, CRANE_Y / 2, -1.0);
-  add(scene, bx(0.12, 0.12, 1.1), paint, x, CRANE_Y - 0.06, -0.5);
+  add(scene, bx(0.16, CRANE_Y, 0.16, 0.04), paint, x, CRANE_Y / 2, -1.0);
+  add(scene, bx(0.14, 0.14, 1.1, 0.03), paint, x, CRANE_Y - 0.07, -0.5);
+  add(scene, bx(0.5, 0.08, 0.5, 0.03), paint, x, 0.04, -1.0);
 }
-add(scene, bx(5.1, 0.18, 0.18, 0.02), paint, -13.7, CRANE_Y, 0);
-const trolley = add(scene, bx(0.4, 0.22, 0.36, 0.04), steelLight, 0, CRANE_Y - 0.18, 0);
+add(scene, bx(5.1, 0.2, 0.2, 0.03), hazardMat(5.1), -13.7, CRANE_Y, 0);
+const trolley = add(scene, bx(0.44, 0.24, 0.38, 0.06), cherry, 0, CRANE_Y - 0.2, 0);
+for (const dx of [-0.13, 0.13]) add(trolley, new THREE.CylinderGeometry(0.06, 0.06, 0.42, 16).rotateX(Math.PI / 2), chrome, dx, 0.13, 0);
 const cable = add(scene, new THREE.CylinderGeometry(0.012, 0.012, 1, 6).translate(0, -0.5, 0), black, 0, 0, 0, false);
-const hook = add(scene, new THREE.CylinderGeometry(0.15, 0.15, 0.07, 20), steelLight, 0, 0, 0);
-const gripMat = new THREE.MeshBasicMaterial({ color: col(0.8, 0.14, 230), toneMapped: false, transparent: true, opacity: 0 });
-const grip = new THREE.Mesh(new THREE.CircleGeometry(0.12, 20).rotateX(Math.PI / 2), gripMat);
+const hook = new THREE.Group();
+scene.add(hook);
+{
+  const u = add(hook, new THREE.TorusGeometry(0.12, 0.045, 12, 28, Math.PI), cherry, 0, 0.0, 0);
+  u.rotation.z = 0;
+  for (const s of [-1, 1]) add(hook, new THREE.CylinderGeometry(0.046, 0.046, 0.08, 14), chrome, s * 0.12, -0.04, 0);
+  add(hook, new THREE.CylinderGeometry(0.03, 0.03, 0.06, 10), chrome, 0, 0.17, 0);
+}
+const gripMat = new THREE.MeshBasicMaterial({ color: col(0.85, 0.14, 230), toneMapped: false, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+const grip = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.12), gripMat);
 hook.add(grip);
-grip.position.y = -0.04;
+grip.position.set(0, -0.1, 0.06);
 const crane = { x: -13.8, y: 2.9, magnet: 0 };
 function placeCrane() {
   trolley.position.x = crane.x;
-  cable.position.set(crane.x, CRANE_Y - 0.28, 0);
-  cable.scale.y = Math.max(0.01, CRANE_Y - 0.28 - crane.y - 0.035);
-  hook.position.set(crane.x, crane.y, 0);
-  gripMat.opacity = crane.magnet;
+  cable.position.set(crane.x, CRANE_Y - 0.32, 0);
+  cable.scale.y = Math.max(0.01, CRANE_Y - 0.32 - crane.y - 0.2);
+  hook.position.set(crane.x, crane.y + 0.02, 0);
+  gripMat.opacity = crane.magnet * (0.6 + 0.4 * Math.sin(performance.now() / 40));
 }
 
-/* ---------- capacitors and panel ---------- */
+/* ---------- vacuum tubes, generator and panel ---------- */
+// Six glass tubes on a bench; their filaments light one by one.
 const caps = [];
+const tubeGlass = new THREE.MeshPhysicalMaterial({ color: col(0.95, 0.02, 200), roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide });
+add(scene, bx(4.7, 0.5, 0.8, 0.06), paint, -9.2, 0.25, -1.7);
 for (let i = 0; i < 6; i++) {
   const x = -11 + i * 0.72;
-  add(scene, new THREE.CylinderGeometry(0.25, 0.25, 1.1, 24), black, x, 0.55, -1.7);
-  add(scene, new THREE.CylinderGeometry(0.12, 0.12, 0.1, 16), ceramic, x, 1.15, -1.7);
+  add(scene, new THREE.CylinderGeometry(0.22, 0.25, 0.2, 24), bakelite, x, 0.6, -1.7);
+  add(scene, new THREE.CapsuleGeometry(0.2, 0.6, 8, 24), tubeGlass, x, 1.2, -1.7, false);
   const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
-  add(scene, new THREE.CylinderGeometry(0.255, 0.255, 0.1, 24, 1, true), m, x, 0.85, -1.7, false);
+  add(scene, new THREE.CylinderGeometry(0.07, 0.07, 0.55, 12, 1, true), m, x, 1.15, -1.7, false);
+  add(scene, new THREE.TorusGeometry(0.1, 0.012, 6, 20).rotateX(Math.PI / 2), m, x, 1.38, -1.7, false);
+  add(scene, new THREE.CylinderGeometry(0.06, 0.04, 0.08, 12), chrome, x, 1.62, -1.7);
   caps.push(m);
 }
-add(scene, bx(4.3, 0.08, 0.14), copper, -9.2, 1.24, -1.7);
-add(scene, bx(0.1, 0.08, 1.5), copper, -9.2, 1.24, -0.95);
-const CAP_OFF = col(0.25, 0.03, 230), CAP_ON = col(0.88, 0.14, 225).multiplyScalar(2.5);
-// The panel: a dial with a needle and three lamps, facing the viewer.
+add(scene, cylX(0.03, 4.4, 10), copper, -9.2, 1.7, -1.7);
+add(scene, new THREE.CylinderGeometry(0.03, 0.03, 1.2, 10).rotateX(Math.PI / 2), copper, -8.5, 1.7, -1.1);
+const CAP_OFF = col(0.3, 0.05, 50), CAP_ON = col(0.86, 0.17, 58).multiplyScalar(2.8);
+// A diesel generator behind the rack: flywheel and exhaust stack.
+const engine = new THREE.Group();
+engine.position.set(-14.1, 0, -2.3);
+scene.add(engine);
+add(engine, bx(1.5, 0.95, 0.9, 0.12), cream, 0, 0.6, 0);
+add(engine, bx(1.55, 0.2, 0.95, 0.06), seafoam, 0, 0.9, 0);
+for (let i = 0; i < 7; i++) add(engine, bx(0.03, 0.5, 0.02), chrome, 0.78, 0.55, -0.3 + i * 0.1);
+add(engine, bx(0.3, 0.12, 0.9, 0.04), paint, -0.55, 0.06, 0);
+add(engine, bx(0.3, 0.12, 0.9, 0.04), paint, 0.55, 0.06, 0);
+add(engine, new THREE.CylinderGeometry(0.07, 0.08, 2.0, 14), black, -0.5, 2.0, -0.1);
+add(engine, new THREE.CylinderGeometry(0.11, 0.08, 0.14, 14), chrome, -0.5, 3.05, -0.1);
+const flywheel = new THREE.Group();
+flywheel.position.set(0.25, 0.65, 0.5);
+engine.add(flywheel);
+add(flywheel, new THREE.TorusGeometry(0.34, 0.05, 10, 36), cherry, 0, 0, 0);
+for (let k = 0; k < 5; k++) { const sp = add(flywheel, bx(0.04, 0.62, 0.03), chrome, 0, 0, 0); sp.rotation.z = k * TAU / 5; }
+add(flywheel, new THREE.CylinderGeometry(0.07, 0.07, 0.08, 16).rotateX(Math.PI / 2), chrome, 0, 0, 0.02);
+const STACK = new THREE.Vector3(-14.6, 3.15, -2.4), SMOKE = col(0.38, 0.015, 60);
+let flySpin = 0, smokeAt = 0;
+// The panel: a Bakelite console, a cream dial with numbers, jewel lamps.
+const dialTex = canvasTex(256, 256, (g, w) => {
+  g.fillStyle = '#f1e9d6'; g.beginPath(); g.arc(w / 2, w / 2, w / 2, 0, TAU); g.fill();
+  g.strokeStyle = '#2a2420'; g.fillStyle = '#2a2420'; g.lineCap = 'round';
+  g.font = 'bold 22px Gabarito, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  // Ticks sweep 252 degrees, matching the needle; the last band is red.
+  for (let i = 0; i <= 50; i++) {
+    const a = (-126 + i / 50 * 252) * Math.PI / 180, big = i % 5 === 0;
+    g.lineWidth = big ? 4 : 2;
+    if (i >= 40) g.strokeStyle = '#c4362a';
+    g.beginPath();
+    g.moveTo(w / 2 + Math.sin(a) * 112, w / 2 - Math.cos(a) * 112);
+    g.lineTo(w / 2 + Math.sin(a) * (big ? 92 : 102), w / 2 - Math.cos(a) * (big ? 92 : 102));
+    g.stroke();
+    if (big) { g.fillStyle = i >= 40 ? '#c4362a' : '#2a2420'; g.fillText(String(i / 5), w / 2 + Math.sin(a) * 74, w / 2 - Math.cos(a) * 74); }
+  }
+  g.font = 'bold 16px Gabarito, sans-serif'; g.fillStyle = '#2a2420';
+  g.fillText('MEGAJOULES', w / 2, w / 2 + 46);
+});
 const panel = new THREE.Group();
 // It stands behind the barrel and reads above it.
 panel.position.set(-9.4, 0, -1.0);
 scene.add(panel);
-add(panel, bx(0.1, 1.8, 0.1), paint, 0, 0.9, 0);
-add(panel, bx(0.9, 0.6, 0.14, 0.04), paint, 0, 2.1, 0);
-add(panel, new THREE.CircleGeometry(0.2, 32), new THREE.MeshStandardMaterial({ color: col(0.92, 0.02, 90), roughness: 0.5 }), -0.18, 2.1, 0.075, false);
-const needle = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.17, 0.01).translate(0, 0.075, 0), new THREE.MeshBasicMaterial({ color: col(0.5, 0.2, 28) }));
-needle.position.set(-0.18, 2.1, 0.085);
+add(panel, bx(0.1, 1.8, 0.1, 0.03), paint, 0, 0.9, 0);
+add(panel, bx(1.0, 0.66, 0.2, 0.08), bakelite, 0, 2.1, 0);
+add(panel, new THREE.CircleGeometry(0.22, 40), new THREE.MeshStandardMaterial({ map: dialTex, roughness: 0.5 }), -0.2, 2.1, 0.105, false);
+add(panel, new THREE.TorusGeometry(0.225, 0.02, 10, 40), chrome, -0.2, 2.1, 0.11);
+const needle = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.19, 0.008).translate(0, 0.08, 0), new THREE.MeshBasicMaterial({ color: col(0.5, 0.2, 28) }));
+needle.position.set(-0.2, 2.1, 0.12);
 panel.add(needle);
 const lamps = [0, 1, 2].map(i => {
   const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(), toneMapped: false });
-  add(panel, new THREE.SphereGeometry(0.05, 14, 10), m, 0.14 + i * 0.12, 2.1, 0.08, false);
+  add(panel, new THREE.SphereGeometry(0.05, 16, 10, 0, TAU, 0, Math.PI / 2).rotateX(Math.PI / 2), m, 0.16 + i * 0.12, 2.16, 0.1, false);
+  add(panel, new THREE.TorusGeometry(0.055, 0.012, 8, 20), chrome, 0.16 + i * 0.12, 2.16, 0.105);
   return m;
 });
-const LAMP = { off: col(0.25, 0.02, 60), ask: col(0.82, 0.16, 75).multiplyScalar(2), ok: col(0.82, 0.18, 145).multiplyScalar(2), no: col(0.62, 0.22, 28).multiplyScalar(2.5), live: col(0.88, 0.14, 225).multiplyScalar(2.5) };
+for (let i = 0; i < 3; i++) add(panel, bx(0.04, 0.08, 0.04, 0.01), chrome, 0.16 + i * 0.12, 1.98, 0.12);
+const LAMP = { off: col(0.3, 0.03, 60), ask: col(0.82, 0.16, 75).multiplyScalar(2), ok: col(0.82, 0.18, 145).multiplyScalar(2), no: col(0.62, 0.22, 28).multiplyScalar(2.5), live: col(0.88, 0.14, 225).multiplyScalar(2.5) };
+// Signs: the proving ground's name and a high-voltage warning.
+function sign(w, h, draw, x, z, mat = cream) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  for (const s of [-1, 1]) add(g, bx(0.06, 1.0, 0.06, 0.02), steel, s * w * 0.38, 0.5, 0);
+  const tex = canvasTex(512, Math.round(512 * h / w), draw);
+  add(g, bx(w, h, 0.05, 0.02), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }), 0, 0.95 + h / 2, 0.02);
+  scene.add(g);
+  return g;
+}
+sign(1.3, 0.62, (g, w, h) => {
+  g.fillStyle = '#5fb3a6'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#f1e9d6'; g.fillRect(10, 10, w - 20, h - 20);
+  g.strokeStyle = '#c4362a'; g.lineWidth = 6;
+  // An atom: three orbits and a nucleus.
+  for (let k = 0; k < 3; k++) { g.beginPath(); g.ellipse(110, h / 2, 70, 24, k * Math.PI / 3, 0, TAU); g.stroke(); }
+  g.fillStyle = '#c4362a'; g.beginPath(); g.arc(110, h / 2, 12, 0, TAU); g.fill();
+  g.fillStyle = '#2a2420'; g.font = 'bold 54px Gabarito, sans-serif'; g.textBaseline = 'middle';
+  g.fillText('PROVING', 200, h / 2 - 34); g.fillText('GROUND 7', 200, h / 2 + 30);
+}, -16.2, 2.7);
+sign(1.0, 0.6, (g, w, h) => {
+  g.fillStyle = '#e8b725'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#1d1a16'; g.font = 'bold 70px Gabarito, sans-serif'; g.textAlign = 'center';
+  g.fillText('DANGER', w / 2, 90);
+  g.font = 'bold 40px Gabarito, sans-serif'; g.fillText('HIGH VOLTAGE', w / 2, 150);
+  g.beginPath(); g.moveTo(w / 2 + 10, 170); g.lineTo(w / 2 - 30, 240); g.lineTo(w / 2, 236); g.lineTo(w / 2 - 14, 296); g.lineTo(w / 2 + 34, 220); g.lineTo(w / 2 + 4, 224); g.closePath(); g.fill();
+}, -12.6, 2.9);
+// The generator turns faster as the tubes charge and puffs diesel smoke.
+function stepMachines(dt, c) {
+  const target = c > 0 ? 3 + 20 * c : 0;
+  flySpin += (target - flySpin) * (1 - Math.exp(-dt / (c > 0 ? 0.4 : 1.2)));
+  if (flySpin < 0.05) flySpin = 0;
+  flywheel.rotation.z -= flySpin * dt;
+  const glow = c > 0 ? 0.25 + 0.75 * c : 0;
+  ports.forEach((m, i) => m.color.copy(CAP_OFF).lerp(col(0.88, 0.12, 215).multiplyScalar(2.6), clamp(glow * (0.7 + 0.3 * Math.sin(performance.now() / 60 + i * 1.7)))));
+  if (c > 0 && !reduced()) {
+    for (smokeAt += dt * (3 + 14 * c); smokeAt > 1; smokeAt--) {
+      dust.add(STACK.x + rnd(-0.04, 0.04), STACK.y, STACK.z, rnd(-0.1, 0.3), rnd(1.2, 2.2), rnd(-0.1, 0.1), SMOKE,
+        { life: rnd(1.6, 2.6), s0: 0.1, s1: rnd(0.5, 0.9), a0: 0.55, g: -0.04, drag: 1.1 });
+    }
+  }
+  return flySpin > 0;
+}
 
-// Arcs crawl down the barrel face while the gun charges.
-const ARCS = 7, ARC_SEG = 6;
+// Arcs crackle between the twin rails while the gun charges.
+const ARCS = 8, ARC_SEG = 6;
 const arcGeo = new THREE.BufferGeometry();
 arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARCS * ARC_SEG * 2 * 3), 3));
-const arcs = new THREE.LineSegments(arcGeo, new THREE.LineBasicMaterial({ color: col(0.95, 0.12, 240).multiplyScalar(2), toneMapped: false }));
+const arcs = new THREE.LineSegments(arcGeo, new THREE.LineBasicMaterial({ color: col(0.95, 0.12, 240).multiplyScalar(2.5), toneMapped: false }));
 arcs.frustumCulled = false;
 scene.add(arcs);
 function drawArcs(c) {
@@ -394,13 +612,13 @@ function drawArcs(c) {
   let o = 0;
   for (let a = 0; a < ARCS; a++) {
     const on = Math.random() < c * 1.2 ? 1 : 0;
-    const x = rnd(TRAY_X + 0.5, MUZZLE - 0.3);
-    let px = x, py = BORE - 0.16;
+    const x = rnd(NOSE + 0.6, MUZZLE - 0.6);
+    let px = x, py = BORE - 0.22;
     for (let s = 0; s < ARC_SEG; s++) {
       const t = (s + 1) / ARC_SEG;
-      const nx = x + (s < ARC_SEG - 1 ? rnd(-0.06, 0.06) : 0), ny = lerp(BORE - 0.16, BORE + 0.16, t);
-      p[o++] = px * on; p[o++] = py * on; p[o++] = 0.28 * on;
-      p[o++] = nx * on; p[o++] = ny * on; p[o++] = 0.28 * on;
+      const nx = x + (s < ARC_SEG - 1 ? rnd(-0.07, 0.07) : 0), ny = lerp(BORE - 0.22, BORE + 0.22, t);
+      p[o++] = px * on; p[o++] = py * on; p[o++] = 0.47 * on;
+      p[o++] = nx * on; p[o++] = ny * on; p[o++] = 0.47 * on;
       px = nx; py = ny;
     }
   }
@@ -1226,6 +1444,8 @@ window.__qa = {
   // Set the bullet-time scale without saving it.
   slow(v) { slowmo = v; },
   mode: v => act.mode(v),
+  // Close-up stills: look at x, y from d metres; a resize resets it.
+  view(x, y, d) { fixedLook.set(x, y, 0); fixedPos.set(x, y + d * 0.26, d); placeCamera(); draw(); },
   state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase, mode, row: row.slice(0, 3).map(t => [t.kind, t.state, +t.g.position.y.toFixed(2), t.drop, t.g.parent === scene]) }),
   row(kind) { clearDebris(); clearRow(); SLOTS.forEach(x => row.push(makeTarget(kind, x))); shot.phase = 'idle'; wake(); },
 };
@@ -1262,6 +1482,7 @@ function step(dt) {
   const c = G.s === 'charging' ? G.charge : 0;
   for (const r of rails) r.material.emissive.copy(col(0.7, 0.18, 45)).multiplyScalar(c * c * 1.6);
   drawArcs(c);
+  const spinning = stepMachines(dt, c);
   needle.rotation.z = lerp(2.2, -2.2, c);
   caps.forEach((m, i) => m.color.copy(CAP_OFF).lerp(CAP_ON, clamp(c * 6 - i)));
   // Lamps: load, lock, charge. Amber asks, green is done, red refuses.
@@ -1352,7 +1573,13 @@ function step(dt) {
   placeCamera();
 
   const blinking = G.blink.some(b => b > 0);
-  return shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
+  // The focus band follows the view: the slab, or the slug when tracking.
+  for (const p of [tiltH, tiltV]) {
+    p.uniforms.uFocus.value = lerp(narrow ? 0.5 : 0.47, 0.52, camBlend);
+    p.uniforms.uBand.value = lerp(narrow ? 0.06 : 0.09, 0.16, camBlend);
+    p.uniforms.uMax.value = (narrow ? 4 : 7) * size.dpr;
+  }
+  return spinning || shot.phase !== 'idle' || G.busy > 0 || G.s === 'charging' || blinking || dropping || moving || steaming || tumbling || warm || camBlend > 0 || flashT < 0.5;
 }
 
 /* ---------- camera ---------- */
@@ -1390,6 +1617,9 @@ function resize() {
   placeCamera();
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
+  composer.setPixelRatio(size.dpr);
+  composer.setSize(w, h);
+  for (const p of [tiltH, tiltV, grade]) p.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
 }
 
 /* ---------- frame loop ---------- */
@@ -1405,7 +1635,7 @@ function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     again = step(dt);
-    renderer.render(scene, camera);
+    draw();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
   }
@@ -1459,14 +1689,14 @@ buildMode(false);
 placeGun();
 resize();
 renderer.compileAsync(scene, camera).then(() => {
-  renderer.render(scene, camera);
+  draw();
   canvas.classList.add('on');
   ready = true;
   mark('first-frame');
 }, () => { canvas.classList.add('on'); ready = true; mark('first-frame'); });
 
-new ResizeObserver(() => { resize(); if (ready) renderer.render(scene, camera); }).observe(stage);
-onQuality(() => { resize(); if (ready) renderer.render(scene, camera); });
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+onQuality(() => { resize(); if (ready) draw(); });
 onReducedChange(() => wake());
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {

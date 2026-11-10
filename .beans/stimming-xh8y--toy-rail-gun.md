@@ -31,3 +31,7 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
 - [x] Task 2: a hit per material
 - [x] Task 3: modes: Range, Corridor, Aquarium, Depth
 - [ ] Graphics pass: from blockout to finished look
+  - [x] Atomic-age restyle of the machines; bloom, tilt-shift, grade
+  - [ ] Light: contact shadows, rim light, sky with cloud
+  - [ ] Materials: edge wear, patina, salt glitter
+  - [ ] Effects: muzzle plasma, dust ring, heat shimmer, sparks, clear ice
