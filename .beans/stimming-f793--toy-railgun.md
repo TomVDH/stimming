@@ -32,6 +32,13 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Task 7: the aim drops to 6°; the barrel lowers 4° after the shot; the rock sits low over the horizon
 - [x] Task 7: open flats with a few faraway mesas, no ranges (Tom: the ranges enclosed the scene); long cirrus streaks
 - [x] Task 7: QA again at 1280 × 800, 375 × 812, 812 × 375: no console errors; hold 30 fps, shot 30 fps; sleep and hidden draw 0 frames; Space charges and fires
+- [x] Task 8: the meteorite: a displaced rock, a raymarched volumetric smoke train, Rayleigh air
+- [x] Task 9: the rock starts high and falls head-on along its trail in 220 to 380 s
+- [x] Task 9: ONE gun on a turning deck, a richer model; it tracks the rock
+- [x] Task 9: a ten-partial harmonic charge synth; rage at a full hold
+- [x] Task 9: muzzle blast, shock rings, dust front; a bolt with a width in metres that foreshortens
+- [x] Task 9: impact fireball, two shock shells, blast light on the plain, the gun and the smoke
+- [x] Task 9: QA again at 1280 × 800, 375 × 812, 812 × 375, rungs 2 and 3: no console errors; hold 30 fps, shot 30 fps; sleep and hidden draw 0 frames; reduced motion clean
 - [ ] Tom sets the Dutch name (proposal: Spoorkanon) and IPA
 - [ ] Record the session cost
 
@@ -71,3 +78,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - Fixed: a NaN in the dust alpha (3.1416 > pi), the dust buffer (400 to 640), the Asteroid chip restoring the plume mid-shatter, reduced motion (shards do not spin, flashes halve), the QA charge hook clamp, a dead GSAP import, stale comments, the Alpha tag on the tile, a second rest ask after a pending rumble.
 - Deferred (minor): a faint seam where the 30 km ground meets the sky dome at the horizon, unverified; depth precision at 40 km with near 0.5 and far 300000 is two steps of margin on the plume, unverified.
 - Ruling: the wind bed's source and LFO are not tracked; they are a continuous bed gated by gain and die with the context. Cost if wrong: two idle nodes.
+
+## Notes for other toys (2026-11-09)
+
+- Tom: the trail shading "VERY impressive"; it may go to another toy ("ten seconds"). The `vol` and `trail` blocks in `railgun/index.html` lift as a pair.
