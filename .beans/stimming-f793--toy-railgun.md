@@ -221,3 +221,4 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Reset: speed capped at 1.5 days a second, a long shutter blends the light, a dust wall hides the cut; wind roar replaces the whoosh
 - [x] Embers and fragment fire dimmed so the pieces read; old embers clear on reset
 - [x] Default tone from Tom's pick: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06
+- [x] Tone defaults: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06 (Tom's look)
