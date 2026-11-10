@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:43:36Z
+updated_at: 2026-11-10T19:48:06Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -179,3 +179,5 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] The cumulus heaps dissipate when the blast hits; no hard tufts
 
 - [x] The storm tower reacts more to the blast; two more towers spread across the sky
+
+- [x] Settings: long choices step instead of overflowing; graphics rows for Resolution, Smoke detail, Bloom and FXAA
