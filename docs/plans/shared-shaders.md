@@ -31,7 +31,7 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 
 - **All effects** (the page opens here): one window scene with every shared shader stacked on it.
-  Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Sky and haze, Lens flare, Grade.
+  Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Sky and haze, Lens flare, Grade, Output.
   Glass effects stay one group (Tom, 2026-11-10): drops, running drops, fog and scatter go together.
   Look buttons set a whole combination (Everything, Clear, Harbour, Dawn, Drizzle, Storm, Fogged up). The light is draggable.
   The Weather slider runs `shared/weather.js`: one value, dry to storm, moves the glass and the water together.
@@ -66,6 +66,7 @@ Every module compiles together in a three.js `ShaderMaterial`: the lab's check s
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
 | `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
 | `shared/weather.js` (one value drives glass, water and haze) | 2026-11-10 | The lab's Weather slider | None yet |
+| `shared/output.js` (film curve, soft knee, sRGB, dither) | 2026-11-10 | Lava lamp's curve and Rain on glass's knee and dither match within 1 / 255, raw and three.js | None yet |
 | `shared/detail.js` (quality and slow frames give one level) | 2026-11-10 | The lab's Quality row: High, Standard and Low each seen; the stored site quality was put back | None yet |
 | `shared/sky.js` (sky by direction, stars, height haze, `skyAt(hour)`) | 2026-11-10 | Stars, Coast and meteor's sky and the kit's haze match exactly (0 / 255), raw and three.js | None yet |
 
@@ -92,6 +93,18 @@ No toy's water equals the module, so a move changes that toy's look. Tom decides
 Could adopt: `trainride`, `fireworks`, `launch`, `canal`, `viaduct`, `windfarm`, `meteor`.
 `wtRings()` adds rain rings to the slope (a port of Buoy Business; `canal` has its own).
 Not in this cut: Buoy Business moon glade and wind slicks; the planar mirror pass.
+
+### Output: how a toy adopts it
+
+For raw WebGL2 toys only. A three.js toy keeps the renderer's ACES and its `OutputPass`.
+
+| Toy | Today | Replace with |
+|---|---|---|
+| `lava`, `pool`, `vortex`, `dijkstra`, `lichtenberg`, `chocolate`, `rubens`, `bismuth`, `flametest`, `beer`, `stone` | Local `aces()` and `srgb()` | `ouAces()`, `ouSrgb()`: the same functions. Each toy keeps its own exposure number |
+| `rain`, `frost`, `chladni` | Local `knee()`, `srgb()` and a dither line | `ouDither(ouSrgb(ouKnee(col)), px)`; keep the toy's own offset in `px`. `eyes` has its own knee numbers and stays |
+| About twenty more raw toys | `+ (hash(px) - 0.5) / 255.0` | `ouDither(c, px)`: the same hash |
+
+A new raw toy ends its last pass with `ouFilm(col, exposure, gl_FragCoord.xy)`.
 
 ### Detail: how a toy adopts it
 
@@ -162,7 +175,7 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 | Disc bokeh | `shared/bokeh.js`. By hand: `windfarm` `dofPass`, `motorway` `tilt0`, `bread` `tilt`, `frietkot` `tiltPass` | `trainride` shared; 4 by hand | The shared module. Havoc: `discBlur`, `tiltShift` in `src/engine/post.js` | Done. A tilt-shift band helper: S |
 | Lens flare | `walker` `POST_FS`, `window/shader.js` `flare()`, `bread` flare pass, `fireworks` `makeFlares`, `meteor` `makeFlares` | 5 by hand | `walker` `POST_FS` (the Look rule's reference). Slots from `window`. Warmth, length and thinness knobs from Havoc `src/view/lensflare.js`; orb from `orbNode` | Built: `shared/flare.js` |
 | Grade: tint, vignette, grain | `makeGrade` (K2) in `viaduct`, `fireworks`, `launch`, `meteor`, `canal`, `bread`, `frietkot`. Variants in `subway`, `trainride`, `windfarm`, `motorway`, `beer`, `dandelion` | 7 near word for word; 6 variants | `launch` `makeGrade`: integer pixel hash, grain seed | Built: `shared/grade.js` |
-| Output: ACES fit, sRGB, dither | Raw WebGL2 toys: `aces()` in 10, `srgb()` in 19, a dither line in 22. three.js toys use the renderer's ACES | 10 to 22 | `pool` `aces` and `srgb`; `walker` dither | S |
+| Output: ACES fit, sRGB, dither | Raw WebGL2 toys: `aces()` in 10, `srgb()` in 19, a dither line in 22. three.js toys use the renderer's ACES | 10 to 22 | `pool` `aces` and `srgb`; `walker` dither | Built: `shared/output.js` |
 | Noise: hash, value noise, fbm | Every shader toy: value noise in about 50 files, fbm in 35, three hash families | 50+ | `grH`, `grN`, `grFbm` in `glassrain.js` (the same text as `K2_NOISE`) | S. For new toys only: a new hash changes each old pattern |
 | Night sky: gradient, stars | `K2_SKY` in `viaduct` (port, pass), `fireworks`, `launch`, `meteor`, `canal`. Own sky in `window`, `flock`, `trails`, `nvg`, `trainride`, `walker`, `windfarm` | 5 on K2; 7 own | `meteor` `duskGlow` and `k2stars`. Havoc `starField` (`src/view/aqua/sea.js:138`): tint and twinkle per star | Built: `shared/sky.js` |
 | Height haze | `K2_HAZE` in the same five. Own haze in `trainride`, `frietkot`, `motorway`, `bread` | 5 on K2; 4 own | `meteor` `k2hazeAmount`: the fog integral in closed form. Haze colour stays per toy | Built: `skHaze()` in `shared/sky.js` |

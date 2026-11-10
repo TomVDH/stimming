@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T10:22:00Z
+updated_at: 2026-11-10T10:28:30Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -34,7 +34,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Night sky and haze: `shared/sky.js` with `skyAt(hour)`, a card in `fxlab/`, three copy checks
 - [x] Tom picks the first adopter: Train Ride. Brief handed to the Train Ride chat
 - [ ] Train Ride adopts swaps 1 to 4 (its own chat)
-- [ ] Tom picks the next bundle (output, water extras, clouds)
+- [x] Output: `shared/output.js`, a card in `fxlab/`, two copy checks
+- [ ] Tom picks what comes next (water extras, clouds, more adopters)
 
 ## Rules
 
@@ -63,3 +64,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: `shared/detail.js` built (Tom: "Quality setting"). One level from the site quality and a slow-frame watch (Subway numbers). Water takes an octave and ring-layer budget; the wet pane a bokeh target scale. About twenty toys carry that watch by hand and could adopt it.
 
 - 2026-11-10: Tom picked Train Ride as the first adopter. The brief is in the plan (First adopter) and in the shared notes folder (`trainride-adoption.md`). Four swaps keep the picture; water, flare and sky change the look and wait for Tom. The lab check shaders now include every module, so all compile together in three.js.
+
+- 2026-11-10: `shared/output.js` built (Tom: "Build output"): film curve, soft knee, sRGB, dither. Every ranked effect of the first plan is now built: flare, grade, water, sky and haze, output.
