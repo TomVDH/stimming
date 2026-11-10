@@ -861,6 +861,129 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
 land.frustumCulled = false;
 out.add(land);
 
+// Mapped roads (tools/carpaths.py): the car paths, joined end to end into long runs.
+// A run is { k, pts }: its class, and its points 12 m apart as x along the line and z out from it.
+const ROADS = (() => {
+  const raw = [], Pb = ROUTE.paths || [];
+  for (let i = 0; i + 1 < Pb.length; i += 2) {
+    if (Pb[i] === 65535) raw.push({ k: Pb[i + 1], pts: [] });
+    else if (raw.length) raw[raw.length - 1].pts.push([Pb[i] / 65535 * TILE, -Pb[i + 1] / 100]);
+  }
+  // Metres to the nearest kerb, from the road map.
+  const rd = ROUTE.rd, rw = ROUTE.rw, rh = rd ? rd.length / rw : 0;
+  const tex = (c, r) => rd[Math.min(Math.max(r, 0), rh - 1) * rw + ((c % rw) + rw) % rw];
+  const kerb = (x, t) => {
+    const u = x / TILE * rw - 0.5, v = t / 4 - 0.5, c = Math.floor(u), r = Math.floor(v), fu = u - c, fv = v - r;
+    return ((tex(c, r) * (1 - fu) + tex(c + 1, r) * fu) * (1 - fv) + (tex(c, r + 1) * (1 - fu) + tex(c + 1, r + 1) * fu) * fv) / 10 - 4;
+  };
+  // A path that leaves the mapped roads is a bake fault: it carries no cars.
+  const paths = raw.filter(q => q.pts.length > 2 && (!rd || q.pts.filter(([x, z]) => kerb(x, -z) > 1.5).length < 0.3 * q.pts.length));
+  const used = new Uint8Array(paths.length), runs = [];
+  const unit = (a, b) => { const x = b[0] - a[0], z = b[1] - a[1], l = Math.hypot(x, z) || 1; return [x / l, z / l]; };
+  // q continues p when their ends meet within 20 m and head the same way.
+  const fits = (p, q) => {
+    const a = p[p.length - 1], b = q[0];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 20) return false;
+    const u = unit(p[p.length - 2], a), v = unit(b, q[1]);
+    return u[0] * v[0] + u[1] * v[1] > 0.7;
+  };
+  for (let i = 0; i < paths.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const k = paths[i].k;
+    let pts = paths[i].pts;
+    for (let grew = true; grew;) {
+      grew = false;
+      // The same class first, then any other; a motorway keeps its class and its direction.
+      for (const same of [true, false]) for (let j = 0; j < paths.length && !grew; j++) {
+        if (used[j] || (same ? paths[j].k !== k : k === 0 || paths[j].k === 0)) continue;
+        const q = paths[j].pts, qr = k === 0 ? null : q.slice().reverse();
+        const all = fits(pts, q) ? pts.concat(q) : qr && fits(pts, qr) ? pts.concat(qr) : fits(q, pts) ? q.concat(pts) : qr && fits(qr, pts) ? qr.concat(pts) : null;
+        if (all) { pts = all; used[j] = 1; grew = true; }
+      }
+    }
+    // The joined run gets even points again.
+    const cum = [0], even = [];
+    for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
+    for (let d = 0, j = 0; d <= cum[cum.length - 1]; d += 12) {
+      while (cum[j + 1] < d) j++;
+      const f = (d - cum[j]) / (cum[j + 1] - cum[j] || 1);
+      even.push([pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f, pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f]);
+    }
+    if (!rd) { runs.push({ k, pts: even.map(([x, z]) => [x, z, 1.6]) }); continue; }
+    // Each point moves to the painted road's middle, found across the road.
+    // Its lane sits half way to the kerb; no paint across it means no road.
+    const fit = even.map(([x, z], j) => {
+      const a = even[Math.max(j - 1, 0)], b = even[Math.min(j + 1, even.length - 1)];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
+      if (-z > 496) return null;
+      let best = null;
+      for (let s0 = -8; s0 <= 8; s0 += 0.5) {
+        if (kerb(x + nx * s0, -(z + nz * s0)) >= 0) continue;
+        let s1 = s0;
+        while (s1 + 0.5 <= 8 && kerb(x + nx * (s1 + 0.5), -(z + nz * (s1 + 0.5))) < 0) s1 += 0.5;
+        // The painted span nearest the mapped point is its road.
+        const mid = (s0 + s1) / 2;
+        if (!best || Math.abs(mid) < Math.abs(best[0])) best = [mid, (s1 - s0) / 2 + 0.25, s0 <= -8 || s1 >= 8];
+        s0 = s1;
+      }
+      if (!best || Math.abs(best[0]) > 6) return null;
+      // A span that runs past the search is a square or a junction: the point stays.
+      if (best[2]) return [x, z, 1.6];
+      return [x + nx * best[0], z + nz * best[0], Math.min(Math.max(best[1] * 0.5, 0.8), 1.9)];
+    });
+    // A light smoothing keeps the snapped line from stepping texel by texel.
+    for (let j = 0; j < fit.length; j++) {
+      if (!fit[j]) continue;
+      const nb = [fit[j - 1], fit[j], fit[j + 1]].filter(Boolean);
+      fit[j].s = [0, 1, 2].map(c => nb.reduce((t, q) => t + q[c], 0) / nb.length);
+    }
+    // The run breaks where its road leaves the map; short pieces carry no cars.
+    let piece = [];
+    for (const q of [...fit, null]) {
+      if (q) { piece.push(q.s); continue; }
+      if (piece.length >= 8) runs.push({ k, pts: piece });
+      piece = [];
+    }
+  }
+  if (!rd) return runs;
+  // Both lanes must stay on paint along the shader's curve, or the run breaks there.
+  const onPaint = (P, i) => {
+    const N = P.length - 1, p0 = P[Math.max(i - 1, 0)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(i + 2, N)];
+    for (let f = 0; f < 1; f += 0.25) {
+      const f2 = f * f, f3 = f2 * f, h0 = 2 * f3 - 3 * f2 + 1, h1 = f3 - 2 * f2 + f, h2 = 3 * f2 - 2 * f3, h3 = f3 - f2;
+      const d0 = 6 * f2 - 6 * f, d1 = 3 * f2 - 4 * f + 1, d3 = 3 * f2 - 2 * f, out = [0, 0];
+      for (const c of [0, 1]) out[c] = h0 * p1[c] + h1 * (p2[c] - p0[c]) / 2 + h2 * p2[c] + h3 * (p3[c] - p1[c]) / 2;
+      const tx = d0 * (p1[0] - p2[0]) + d1 * (p2[0] - p0[0]) / 2 + d3 * (p3[0] - p1[0]) / 2;
+      const tz = d0 * (p1[1] - p2[1]) + d1 * (p2[1] - p0[1]) / 2 + d3 * (p3[1] - p1[1]) / 2;
+      const tl = Math.hypot(tx, tz) || 1, w = p1[2] + (p2[2] - p1[2]) * f;
+      for (const sd of [-1, 1]) if (kerb(out[0] - tz / tl * w * sd, -(out[1] + tx / tl * w * sd)) > 0.5) return false;
+    }
+    return true;
+  };
+  for (let pass = 0; pass < 3; pass++) {
+    const next = [];
+    for (const { k, pts: P } of runs) {
+      let from = 0;
+      for (let i = 0; i < P.length; i++) {
+        if (i < P.length - 1 && onPaint(P, i)) continue;
+        if (i + 1 - from >= 8) next.push({ k, pts: P.slice(from, i + 1) });
+        from = i + 1;
+      }
+    }
+    if (next.length === runs.length) break;
+    runs.length = 0;
+    runs.push(...next);
+  }
+  return runs;
+})();
+// A long class 0 run is open motorway; it carries its own lamps on the Linth plain.
+const MOTORWAY = ROADS.filter(q => q.k === 0 && q.pts.length > 34);
+const onMotorway = x => MOTORWAY.some(q => { const a = q.pts[0][0], b = q.pts[q.pts.length - 1][0]; return x > Math.min(a, b) && x < Math.max(a, b); });
+// The headlights nearest the eye, for the house walls: lamp x and z, heading x and z; then strength.
+const NB = 6;
+const BEAMU = { uCarP: { value: Array.from({ length: NB }, () => new THREE.Vector4()) }, uCarK: { value: new Float32Array(NB) } };
+
 /* Town lights: a fixed tile of sources, wrapped round the camera on the GPU. */
 const glints = [];
 {
@@ -911,7 +1034,8 @@ const glints = [];
     // The motorway across the Linth plain: a sodium string with a gentle curve.
     for (let x = 34500; x < 56500; x += 38) {
       const tt = 330 + 90 * Math.sin(x / 2300) + 40 * Math.sin(x / 700);
-      if (rnd() < 0.9) lit(x + rnd() * 6, tt, SOD, range(1.6, 2.2), range(24, 30), 6);
+      // Where the mapped motorway runs, its own lamps stand in for this string.
+      if (rnd() < 0.9) { const xj = x + rnd() * 6, k = range(1.6, 2.2); lit(xj, tt, SOD, onMotorway(x) ? 0 : k, range(24, 30), 6); }
     }
     // Quinten: a few warm lights across the water from Murg, with no road to them.
     const murg = ROUTE.meta.stations.find(s => s[0] === 'Murg')?.[1] ?? 68500;
@@ -1377,17 +1501,22 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   varying vec3 vL;
   flat varying vec3 vS;
   flat varying float vK, vV;
+  uniform vec4 uCarP[${NB}];
+  uniform float uCarK[${NB}];
   void main() {
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
     if (dot(N, cameraPosition - vP) < 0.0) N = -N;
     vec3 alb, glow = vec3(0.0);
     bool city = vK > 1.5 && vK < 2.5, church = vK > 2.5 && vK < 3.5, tower = vK > 3.5;
+    // A modern block: a flat roof, pale concrete, and windows in long ribbons.
+    bool modern = city && (vS.x > 22.0 || vV < 0.3) && fract(vV * 19.0) < 0.6;
     // An end face is wall on a gable and roof on a hip.
     if (vPart > 0.5 && (vPart < 1.5 || abs(N.y) > 0.15)) {
       // Roofs: brown or red tile, dark shingle, slate or anthracite; flat tops in town.
       float rc = fract(vV * 23.0);
       alb = rc < 0.3 ? vec3(0.2, 0.1, 0.065) : rc < 0.5 ? vec3(0.3, 0.11, 0.07) : rc < 0.68 ? vec3(0.14, 0.09, 0.06) : rc < 0.86 ? vec3(0.17, 0.17, 0.19) : vec3(0.09, 0.095, 0.1);
       if (city) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
+      if (modern) alb = vec3(0.3, 0.3, 0.29);
       if (church) alb = rc < 0.6 ? vec3(0.26, 0.11, 0.07) : vec3(0.15, 0.15, 0.17);
       // Spires: green copper or dark slate; a saddle roof keeps its tile.
       if (tower) alb = vV < 0.4 ? vec3(0.26, 0.11, 0.07) : rc < 0.55 ? vec3(0.2, 0.36, 0.3) : vec3(0.12, 0.12, 0.14);
@@ -1405,6 +1534,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       if (city) {
         float cc = fract(vV * 5.3);
         alb = cc < 0.3 ? vec3(0.8, 0.76, 0.66) : cc < 0.5 ? vec3(0.78, 0.62, 0.38) : cc < 0.65 ? vec3(0.8, 0.6, 0.5) : cc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
+        if (modern) alb = cc < 0.4 ? vec3(0.82, 0.82, 0.8) : cc < 0.7 ? vec3(0.62, 0.63, 0.64) : vec3(0.74, 0.7, 0.62);
         // A darker ground floor: shops and doors.
         if (vL.y < 3.1 && fract(vV * 3.1) < 0.5) alb *= 0.55;
       }
@@ -1429,28 +1559,103 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : church ? 4.2 : 2.3 + 0.9 * fract(vV * 9.7);
         float ww = city ? 0.45 : church ? 0.6 : 0.42 + 0.14 * fract(vV * 3.3), fh = city ? 2.9 : church ? 30.0 : 2.5, wh = city ? 1.4 : church ? min(4.2, vS.y - 3.2) : 1.15;
         float y0 = city ? 3.6 : church ? 2.0 : 0.8;
-        float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
+        // A ribbon: each pane fills its bay but for a thin post.
+        if (modern) { ww = gap * 0.5 - 0.11; wh = 1.55; }
+        // sd is the house's own number, the same on every pixel; each wall adds its own.
+        float sd = floor(vV * 283.0 + 0.5), face = xface ? (vL.x > 0.0 ? 1.0 : 2.0) : (vL.z > 0.0 ? 3.0 : 4.0);
+        float col = floor(u / gap), cu = u / gap - col - 0.5;
+        // A stairwell: one narrow column in a block, its panes half a floor up.
+        bool stair = city && hash1(vec2(col, sd) + face) < 0.09;
+        float wy = vL.y - y0 + (stair ? 0.5 * fh : 0.0), row = floor(wy / fh), cv = wy - row * fh;
+        if (stair) ww *= 0.7;
+        vec2 cell = vec2(col, row) + sd * 0.37 + face * 7.13;
+        // Awake is the share of lit rooms: one house in eight sleeps; one in four is full of light.
+        float hh = hash1(vec2(sd, 3.0)), awake = hh < 0.12 ? 0.0 : hh < 0.72 ? 0.25 + 0.3 * fract(hh * 9.0) : 0.75;
+        // An office block is cool white: nearly dark, or with a late floor or two.
+        bool office = city && fract(hh * 31.0) < 0.22;
+        if (city) awake = hh < 0.1 ? 0.05 : office ? 0.08 + 0.3 * step(0.5, hash1(vec2(row, sd))) : 0.25 + 0.4 * fract(hh * 9.0);
+        // Fine detail fades before the panes do, so no bar or fold flickers.
+        float det = 1.0 - smoothstep(0.03, 0.09, length(fwidth(vec2(u, vL.y))));
+        float night = 1.0 - uDay, nearK = smoothstep(600.0, 200.0, length(vP - cameraPosition));
         // At a slant the panes merge: a near wall keeps their mean glow, so none vanish.
         // Far houses go dark: the far lights are their own layer, and house glow there reads as strips.
         // A church is lit as a whole, or not at all.
         float litC = step(0.7, fract(vV * 3.7)) * 0.45;
         bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-        if (zone) glow = lamp * (church ? litC : 0.5) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * smoothstep(600.0, 200.0, length(vP - cameraPosition));
+        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
         if (zone && cv < wh) {
           float ax = abs(cu) * gap;
-          float lit = church ? litC : step(0.5, hash1(vec2(floor(u / gap), row) + floor(vV * 283.0 + 0.5) * 0.37));
           // A church window ends in a round arch.
           bool pane = ax < ww && !(church && cv > wh - ww && length(vec2(ax, cv - (wh - ww))) > ww);
           // City windows sit in a pale frame.
-          if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
-          else if (pane) {
+          if (city && !modern && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
+          else if (pane && church) {
             alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
-            glow += lamp * lit * fade;
+            glow += lamp * litC * fade;
+          } else if (pane) {
+            float h1 = hash1(cell), h2 = hash1(cell + 9.3), h3 = hash1(cell + 2.7);
+            float lit = step(h1, awake);
+            // A few rooms switch on and off, each at its own slow pace.
+            if (h3 < 0.14 && awake > 0.0) lit = step(fract(uTime / (20.0 + 70.0 * h2) + h1), 0.5);
+            // The room's light: a warm lamp, a dim amber one, a white kitchen, a screen, a hall.
+            vec3 lc = h2 < 0.5 ? vec3(1.0, 0.72, 0.42) * 1.4 : h2 < 0.68 ? vec3(1.0, 0.56, 0.26) * 0.7 : h2 < 0.84 ? vec3(1.0, 0.9, 0.74) * 1.4
+              : h2 < 0.94 ? vec3(0.42, 0.6, 1.0) * (0.4 + 0.7 * vnoise(vec2(uTime * 3.0, h1 * 91.0))) : vec3(1.0, 0.8, 0.55) * 0.3;
+            if (office) lc = vec3(0.82, 0.92, 1.0) * 1.2;
+            // A wide pane spreads the same lamp thinner.
+            if (modern) lc *= 0.65;
+            // The cover: none, two curtains, a blind from the top, or a sheer over all.
+            float px = cu * gap / ww, py = cv / wh, ck = fract(h3 * 17.0), co = fract(h3 * 53.0), cur = 0.0, cov = 0.7 + 0.3 * py;
+            if (stair) {
+              // The stairwell burns on every floor, or on none.
+              lit = step(hash1(vec2(sd, face)), 0.7);
+              lc = vec3(0.8, 1.0, 0.84) * 0.5;
+            } else if (ck < 0.3) {
+              // An open pane shows the lamp as a soft spot.
+              vec2 q = (vec2(px, py) - vec2(co * 1.2 - 0.6, 0.35 + 0.4 * fract(co * 7.0))) * vec2(ww, wh);
+              cov += 0.5 * exp(-dot(q, q) * 9.0) * det;
+            } else if (ck < 0.58) {
+              cur = step(0.15 + 0.6 * co, abs(px));
+              cov = mix(cov, 0.38 * (1.0 + 0.2 * sin(px * 26.0) * det), cur);
+            } else if (ck < 0.82) {
+              cur = step(0.85 * co, py);
+              cov = mix(cov, 0.3 * (1.0 + 0.3 * (step(0.5, fract(cv * 9.0)) - 0.5) * det), cur);
+            } else {
+              cur = 1.0;
+              cov = 0.5 * (1.0 + 0.14 * sin(px * 20.0 + co * 6.0) * det);
+            }
+            // By day a curtain shows pale behind the glass.
+            alb = mix(alb, mix(vec3(0.05, 0.06, 0.07), vec3(0.3, 0.29, 0.26), cur * 0.8), fade);
+            // A house pane has a centre bar; it stands dark against the light.
+            if (!city) cov *= 1.0 - 0.85 * det * step(abs(px), 0.1);
+            glow += lc * cov * lit * fade * night;
           } else if (vK < 0.5 && ax < ww + 0.42 && fract(vV * 5.1) < 0.66) {
             // Shutters: green, red, grey, blue or brown, one colour per house.
             float sc = fract(vV * 41.0);
             vec3 sh = sc < 0.3 ? vec3(0.08, 0.2, 0.1) : sc < 0.5 ? vec3(0.3, 0.07, 0.05) : sc < 0.7 ? vec3(0.5, 0.5, 0.48) : sc < 0.85 ? vec3(0.1, 0.16, 0.28) : vec3(0.2, 0.12, 0.07);
             alb = mix(alb, sh, fade);
+          }
+        }
+        // Shops: wide panes on a block's ground floor, a sign band over each; some stay lit.
+        if (city && fract(vV * 3.1) < 0.5 && vPart < 0.5 && vL.y < 3.3 && abs(u) < half_ - 0.6) {
+          float sg = gap * 2.0, si = floor(u / sg), sx = abs(u / sg - si - 0.5) * sg;
+          float s1 = hash1(vec2(si, sd) + face * 3.3), s2 = fract(s1 * 31.0);
+          if (sx < sg * 0.5 - 0.35) {
+            if (vL.y > 0.5 && vL.y < 2.7) {
+              // Thin bars split the shop front into panes.
+              float bar = det * step(abs(fract(u / 1.7) - 0.5), 0.03);
+              alb = mix(alb, mix(vec3(0.05, 0.06, 0.07), vec3(0.2), bar), fade);
+              // The display light: warm or cool white, seldom a colour; a shut shop keeps a night light.
+              vec3 sl = s2 < 0.55 ? vec3(1.0, 0.84, 0.62) : s2 < 0.88 ? vec3(0.8, 0.9, 1.0) : s2 < 0.94 ? vec3(0.9, 0.3, 0.5) : vec3(0.4, 0.9, 0.65);
+              // Inside: a bright strip at the ceiling, dim air, and a dark floor.
+              float yy = (vL.y - 0.5) / 2.2;
+              float inner = 0.24 + 0.55 * smoothstep(0.72, 0.92, yy) - 0.14 * smoothstep(0.5, 0.15, yy);
+              glow += sl * (s1 < 0.33 ? 0.85 : 0.06) * inner * (1.0 - bar) * fade * night * nearK;
+            } else if (vL.y > 2.84 && vL.y < 3.24) {
+              float sc = fract(s1 * 7.7);
+              vec3 band = sc < 0.25 ? vec3(0.6, 0.08, 0.06) : sc < 0.45 ? vec3(0.08, 0.2, 0.5) : sc < 0.6 ? vec3(0.1, 0.36, 0.2) : sc < 0.75 ? vec3(0.75, 0.55, 0.1) : vec3(0.8, 0.8, 0.76);
+              alb = mix(alb, band, fade);
+              glow += band * 0.9 * step(fract(s1 * 13.0), 0.45) * fade * night * nearK;
+            }
           }
         }
         // A barn has one tall door in a long side.
@@ -1459,8 +1664,20 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     }
     float ao = smoothstep(-0.5, 2.0, vL.y);
     vec3 c = propLit(vP, N, alb, ao, 0.0) + glow;
+    // Headlights: a low cone that sweeps the walls a car points at.
+    if (uDay < 0.6) {
+      float beam = 0.0;
+      for (int i = 0; i < ${NB}; i++) {
+        if (uCarK[i] <= 0.0) continue;
+        vec2 L = vP.xz - uCarP[i].xy;
+        float d = length(L);
+        vec2 l = L / max(d, 0.01);
+        beam += uCarK[i] * smoothstep(0.9, 0.99, dot(l, uCarP[i].zw)) * max(dot(N.xz, -l), 0.0) * 40.0 / (d * d + 60.0);
+      }
+      c += alb * vec3(1.0, 0.92, 0.78) * beam * 1.2 * smoothstep(3.2, 0.6, vL.y);
+    }
     gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
-  }`, { side: THREE.DoubleSide, uniforms: { tAt: { value: tAt } } });
+  }`, { side: THREE.DoubleSide, uniforms: { tAt: { value: tAt }, ...BEAMU } });
 }
 {
   // Fences: runs of 4 m timber segments, most along the line, some leading away.
@@ -2071,92 +2288,308 @@ vec3 boatAt(vec4 a, float t) {
   out.add(m);
 }
 
-// Cars at night: pairs of lights that drive the bigger mapped roads (tools/carpaths.py).
-// Each car rides one path at its road's pace, keeps to its lane, and throws a faint pool on the road ahead.
-if (ROUTE.paths && ROUTE.paths.length > 4) {
-  const Pb = ROUTE.paths, pts = [], paths = [];
-  for (let i = 0; i + 1 < Pb.length; i += 2) {
-    if (Pb[i] === 65535) paths.push([pts.length / 2, 0, Pb[i + 1]]);
-    else if (paths.length) { pts.push(Pb[i] / 65535 * TILE, -Pb[i + 1] / 100); paths[paths.length - 1][1]++; }
+// Street lamps: a mast, an arm and a head at the kerb of the mapped roads, where a town is.
+// Each throws a pool on the road; far off, its head reads as one of the far lights.
+if (ROUTE.rd) {
+  const rd = ROUTE.rd, rw = ROUTE.rw, rh = rd.length / rw, G = 34, L = [], grid = new Map();
+  let ls = 977;
+  const rr = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
+  const h2 = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
+  // Metres to the nearest kerb at a texel of the road map.
+  const dAt = (c, r) => rd[Math.min(Math.max(r, 0), rh - 1) * rw + ((c % rw) + rw) % rw] / 10 - 4;
+  const free = (x, t) => {
+    const cx = Math.floor(x / G), ct = Math.floor(t / G);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [lx, lt] of grid.get((cx + a) * 4096 + ct + b) || []) if ((lx - x) ** 2 + (lt - t) ** 2 < G * G) return false;
+    return true;
+  };
+  // Kind 0 is warm white, 1 sodium, 2 cool white: the far lights' three colours.
+  const add = (x, t, yaw, kind) => {
+    const key = Math.floor(x / G) * 4096 + Math.floor(t / G);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push([x, t]);
+    L.push(x, -t, yaw, kind + 0.05 + 0.9 * rr());
+  };
+  // The motorway on the Linth plain: sodium lamps every 36 m, right of each carriageway. Elsewhere it is dark.
+  const mw = new Set();
+  for (const run of MOTORWAY) run.pts.forEach(([x, z], i) => {
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) mw.add((Math.floor(x / 40) + a) * 4096 + Math.floor(-z / 40) + b);
+    if (i % 3 !== 1 || i + 1 >= run.pts.length || x < 34500 || x > 56500 || -z < 14) return;
+    const [nx, nz] = run.pts[i + 1], l = Math.hypot(nx - x, nz - z) || 1, rx = -(nz - z) / l, rz = (nx - x) / l;
+    // The arm points back at the carriageway.
+    add(x + rx * 7, -(z + rz * 7), Math.atan2(rz, -rx), 1);
+  });
+  // Every other road: a lamp 1 m outside the kerb, none within 34 m of the last.
+  for (let c = 0; c < rw; c++) for (let r = 1; r < rh - 1; r++) {
+    const d = dAt(c, r);
+    if (d < 0.6 || d > 4.4) continue;
+    const x = (c + 0.5) * TILE / rw, t = 4 * r + 2;
+    // The distance map's slope points away from the road.
+    const gx = (dAt(c + 1, r) - dAt(c - 1, r)) / (2 * TILE / rw), gt = (dAt(c, r + 1) - dAt(c, r - 1)) / 8, gl = Math.hypot(gx, gt);
+    if (gl < 0.3) continue;
+    const lx = x - gx / gl * (d - 1), lt = t - gt / gl * (d - 1);
+    if (lt < 14 || mw.has(Math.floor(lx / 40) * 4096 + Math.floor(lt / 40)) || !free(lx, lt)) continue;
+    // A street is lit where the town is dense enough; each 150 m stretch has its own bar.
+    if (townAt(lx, lt) < 0.1 + 0.22 * h2(Math.floor(lx / 150), Math.floor(lt / 150))) continue;
+    // Colours follow the far lights' sectors: Zurich cool, the lake warm, the plain sodium.
+    const hk = h2(Math.floor(lx / 300), 7), kind = lx < 5000 ? (hk < 0.6 ? 2 : 0) : lx < 34000 ? (hk < 0.7 ? 0 : hk < 0.85 ? 2 : 1) : lx < 57000 ? (hk < 0.6 ? 1 : 0) : 0;
+    add(lx, lt, Math.atan2(-gt, -gx), kind);
   }
-  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 2 / TW) * 2);
-  pd.set(pts);
-  const tPath = new THREE.DataTexture(pd, TW, pd.length / 2 / TW, THREE.RGFormat, THREE.FloatType);
-  tPath.needsUpdate = true;
+  const lamps = placer(new Float32Array(L), /* glsl */`
+  vec4 place(vec4 a) {
+    float x = uCamX + mod(a.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    vec2 xz = vec2(x, a.y);
+    // None in the water, on a platform or in the yard.
+    if (a.w <= 0.0 || abs(x - uCamX) > 3000.0 || shore(xz) < 2.0 || atStation(xz, 4.0) || inYard(xz, 4.0)) return vec4(0.0);
+    // w packs the lamp's kind and its heading.
+    return vec4(x, land(xz), a.y, 1.0 + floor(a.w) * 8.0 + a.z + 3.14159265);
+  }`, 30);
+  // The head's place: the mast is 6 to 8 m tall and the arm reaches 1.6 m toward the road.
+  const LAMP = /* glsl */`
+  flat varying float vKind;
+  vec3 lampHead(vec4 q, out vec2 arm, out float hs) {
+    float kind = floor((q.w - 1.0) / 8.0), yaw = q.w - 1.0 - kind * 8.0 - 3.14159265;
+    vKind = kind;
+    arm = vec2(cos(yaw), -sin(yaw));
+    hs = 0.86 + 0.28 * hash1(floor(q.xz));
+    return q.xyz + vec3(arm.x * 1.6, 6.9 * hs, arm.y * 1.6);
+  }`;
+  const LAMPC = /* glsl */`
+  flat varying float vKind;
+  vec3 lampCol() { return vKind < 0.5 ? vec3(1.0, 0.75, 0.45) : vKind < 1.5 ? vec3(1.0, 0.55, 0.2) : vec3(0.85, 0.92, 1.0); }`;
+  const box = (w, h, d, x, y) => new THREE.BoxGeometry(w, h, d).translate(x, y, 0);
+  propMesh(joinParts([[box(0.14, 7, 0.14, 0, 3.5), 0], [box(1.7, 0.08, 0.08, 0.8, 7), 0], [box(0.7, 0.1, 0.26, 1.6, 6.95), 1]]), lamps, /* glsl */`
+  ${LAMP}
+  void main() {
+    vec4 q = inst();
+    // A mast is too thin to draw far off.
+    if (q.w <= 0.0 || length(q.xyz - cameraPosition) > 450.0) { ${HIDE} }
+    vec2 arm; float hs;
+    lampHead(q, arm, hs);
+    vec3 l = position * vec3(1.0, hs, 1.0);
+    vP = q.xyz + vec3(arm.x * l.x - arm.y * l.z, l.y, arm.y * l.x + arm.x * l.z);
+    vN = vec3(arm.x * normal.x - arm.y * normal.z, normal.y, arm.y * normal.x + arm.x * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  ${LAMPC}
+  void main() {
+    vec3 N = normalize(vN);
+    vec3 c = propLit(vP, N, vec3(0.3, 0.32, 0.33), 1.0, 0.0);
+    // The lens under the head burns at night.
+    if (vPart > 0.5 && N.y < -0.5) c += lampCol() * 3.0 * (1.0 - uDay);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+  // Part 0 is the glow at the head; part 1 is the pool on the ground.
+  const glow = propMesh(joinParts([[new THREE.PlaneGeometry(2, 2), 0], [new THREE.PlaneGeometry(2, 2, 2, 2).rotateX(-Math.PI / 2), 1]]), lamps, /* glsl */`
+  uniform float uScale, uDay;
+  varying vec3 vU;
+  ${LAMP}
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0 || uDay > 0.995) { ${HIDE} }
+    vec2 arm; float hs;
+    vec3 head = lampHead(q, arm, hs);
+    if (part < 0.5) {
+      // Far off the glow keeps a few pixels, as a far light does.
+      float sz = max(1.0, length(head - cameraPosition) * 3.75 / (400.0 * uScale));
+      vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      vP = head - vec3(0.0, 0.12, 0.0) + (cr * position.x + cu * position.y) * sz;
+      vU = vec3(position.xy, 0.0);
+    } else {
+      vec2 g = head.xz + position.xz * 13.0;
+      vP = vec3(g.x, land(g) + 0.12, g.y);
+      // z holds the head's height over this point.
+      vU = vec3(position.xz, head.y - vP.y);
+    }
+    vN = vec3(0.0, 1.0, 0.0);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying vec3 vU;
+  ${LAMPC}
+  void main() {
+    float r2 = dot(vU.xy, vU.xy), k;
+    // The glow: a hot core and a soft halo; rain widens the halo.
+    if (vPart < 0.5) k = min(2.6 * exp(-r2 * 26.0), 4.0) + exp(-r2 * 3.0) * (0.1 + 0.12 * uRain);
+    // The pool: the light of a point source on flat ground, cut soft at the rim.
+    else { float h = max(vU.z, 3.0); k = 0.15 * pow(h * h / (h * h + r2 * 169.0), 1.5) * smoothstep(1.0, 0.5, sqrt(r2)); }
+    gl_FragColor = vec4(lampCol() * k * (1.0 - uDay) * (1.0 - 0.6 * hazeAmt(vP)), 1.0);
+  }`, { transparent: true, order: 3, side: THREE.DoubleSide });
+  glow.material.blending = THREE.AdditiveBlending;
+}
+
+// Cars on the bigger mapped roads (tools/carpaths.py): plain bodies by day, lights by night.
+// Each car rides one run in its lane; a lane's cars share one pace, so none drives through another.
+if (ROADS.length) {
+  const pts = [], A = [], B = [];
+  let cs = 4711;
+  const rr = () => (cs = (cs * 16807) % 2147483647) / 2147483647;
   // By class: metres between cars in one direction, and their speed in m/s.
-  const GAP = [90, 130, 170, 230, 380], VEL = [28, 16, 14, 13, 11], A = [];
-  for (const [start, n, k] of paths) {
-    const len = (n - 1) * 12;
-    for (const dir of [1, -1]) for (let c = 0, m = Math.max(rnd() < len / GAP[k] ? 1 : 0, Math.round(len / GAP[k] * (0.6 + 0.8 * rnd()))); c < m; c++) A.push(start, n, dir * VEL[k] * (0.85 + 0.3 * rnd()) / 12, rnd());
+  const GAP = [90, 130, 170, 230, 380], VEL = [28, 16, 14, 13, 11];
+  for (const { k, pts: q } of ROADS) {
+    const start = pts.length / 4, n = q.length, len = (n - 1) * 12;
+    for (const [x, z, lw] of q) pts.push(x, z, lw, 0);
+    // A motorway carriageway runs one way in two lanes; the left lane is the faster.
+    // lane is the side: 1 right of the middle line, -1 left.
+    for (const [dir, lane] of k === 0 ? [[1, 1], [1, -1]] : [[1, 1], [-1, 1]]) {
+      const m = Math.max(rr() < len / GAP[k] ? 1 : 0, Math.round(len / GAP[k] * (0.7 + 0.6 * rr())));
+      const v = dir * VEL[k] * (0.88 + 0.24 * rr()) * (lane < 0 ? 1.15 : 1) / 12;
+      // Each car gets its own slot along the run, so the spacing holds.
+      for (let c = 0; c < m; c++) { A.push(start, n, v, (c + 0.15 + 0.7 * rr()) / m); B.push(lane, rr()); }
+    }
   }
-  const g = new THREE.InstancedBufferGeometry(), P = [], T = [];
-  // Part 0: the headlights. Part 1: the tail lights. Part 2: the pool of light on the road.
-  for (let k = 0; k < 3; k++) { P.push(-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0); for (let i = 0; i < 6; i++) T.push(k); }
+  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 4 / TW) * 4);
+  pd.set(pts);
+  const tPath = new THREE.DataTexture(pd, TW, pd.length / 4 / TW, THREE.RGBAFormat, THREE.FloatType);
+  tPath.needsUpdate = true;
+  const U = Object.assign({}, OUTU, { tPath: { value: tPath } });
+  const CAR = /* glsl */`
+  attribute float part;
+  attribute vec4 aCar;
+  attribute vec2 aCar2;
+  uniform sampler2D tPath;
+  uniform float uTime, uCamX, uDay;
+  ${NOISE}
+  ${LAND}
+  // xy is the road's middle; z is the lane's offset from it.
+  vec3 pathP(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rgb; }
+  vec2 pathAt(float i) { return pathP(i).xy; }
+  // The car's point on the road, its heading, its right side, and its fade at the run's ends.
+  // False when the car is farther along the line than reach.
+  bool carAt(float reach, out vec3 c, out vec3 dir, out vec3 rt, out float ends) {
+    // u counts points along the run; the car wraps from one end to the other.
+    float n = aCar.y - 1.0, u = mod(aCar.w * n + uTime * aCar.z, n), i0 = floor(u), f = u - i0;
+    vec3 q1 = pathP(aCar.x + i0);
+    vec2 p1 = q1.xy;
+    float x = uCamX + mod(p1.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    if (abs(x - uCamX) > reach) return false;
+    // A smooth curve through four points: the heading turns, and never jumps.
+    vec3 q2 = pathP(aCar.x + i0 + 1.0);
+    vec2 p0 = pathAt(aCar.x + max(i0 - 1.0, 0.0)), p2 = q2.xy, p3 = pathAt(aCar.x + min(i0 + 2.0, n));
+    vec2 m1 = (p2 - p0) * 0.5, m2 = (p3 - p1) * 0.5;
+    float f2 = f * f, f3 = f2 * f;
+    vec2 p = (2.0 * f3 - 3.0 * f2 + 1.0) * p1 + (f3 - 2.0 * f2 + f) * m1 + (3.0 * f2 - 2.0 * f3) * p2 + (f3 - f2) * m2;
+    vec2 tg = (6.0 * f2 - 6.0 * f) * (p1 - p2) + (3.0 * f2 - 4.0 * f + 1.0) * m1 + (3.0 * f2 - 2.0 * f) * m2;
+    vec2 d2 = normalize(tg) * sign(aCar.z), r2 = vec2(-d2.y, d2.x);
+    // The lane lies to the right of the road's middle line.
+    p += r2 * aCar2.x * mix(q1.z, q2.z, f) + vec2(x - p1.x, 0.0);
+    c = vec3(p.x, land(p), p.y);
+    dir = vec3(d2.x, 0.0, d2.y);
+    rt = vec3(r2.x, 0.0, r2.y);
+    ends = smoothstep(0.0, 2.5, u) * smoothstep(n, n - 2.5, u);
+    return true;
+  }
+  // One car in eight is a van: longer and taller.
+  vec2 carSize() { return aCar2.y > 0.875 ? vec2(1.2, 1.45) : vec2(1.0); }`;
+  const inst = g => {
+    g.setAttribute('aCar', new THREE.InstancedBufferAttribute(new Float32Array(A), 4));
+    g.setAttribute('aCar2', new THREE.InstancedBufferAttribute(new Float32Array(B), 2));
+    g.instanceCount = A.length / 4;
+    return g;
+  };
+  // The body: a low box and a cabin, in one of six paints.
+  const body = new THREE.Mesh(inst(joinParts([[new THREE.BoxGeometry(4.3, 0.75, 1.76).translate(0, 0.62, 0), 0], [new THREE.BoxGeometry(2.3, 0.55, 1.6).translate(-0.25, 1.27, 0), 1]])), new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */`
+    ${CAR}
+    varying vec3 vP, vN;
+    varying float vPart, vY;
+    flat varying float vSd;
+    void main() {
+      vec3 c, dir, rt;
+      float ends;
+      if (!carAt(700.0, c, dir, rt, ends)) { ${HIDE} }
+      // At a run's end the body shrinks to nothing, as its lights fade.
+      vec3 l = position * vec3(carSize(), 1.05) * smoothstep(0.0, 0.4, ends);
+      vP = c + dir * l.x + vec3(0.0, l.y, 0.0) + rt * l.z;
+      vN = dir * normal.x + vec3(0.0, normal.y, 0.0) + rt * normal.z;
+      vPart = part; vY = position.y; vSd = aCar2.y;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP, vN;
+    varying float vPart, vY;
+    flat varying float vSd;
+    ${NOISE}
+    ${HAZE}
+    ${PROPL}
+    void main() {
+      vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+      float pc = fract(vSd * 7.3);
+      vec3 paint = pc < 0.24 ? vec3(0.55, 0.56, 0.58) : pc < 0.44 ? vec3(0.8, 0.8, 0.78) : pc < 0.62 ? vec3(0.05, 0.05, 0.06) : pc < 0.76 ? vec3(0.25, 0.26, 0.28) : pc < 0.88 ? vec3(0.08, 0.14, 0.32) : vec3(0.5, 0.07, 0.05);
+      // The cabin's sides are glass; its roof is paint. A van's cabin is all paint.
+      bool glass = vPart > 0.5 && N.y < 0.5 && vSd < 0.875;
+      vec3 c = propLit(vP, N, glass ? vec3(0.04, 0.05, 0.06) : paint, smoothstep(0.2, 0.6, vY), 0.0);
+      // The glass throws back a little sky.
+      if (glass) c += skyCol(reflect(-V, N)) * 0.2 * pow(1.0 - max(dot(N, V), 0.0), 2.0);
+      gl_FragColor = vec4(mix(c, hazeCol(-V, vP), hazeAmt(vP)), 1.0);
+    }`,
+  }));
+  body.frustumCulled = false;
+  out.add(body);
+  // The lights. Part 0: the headlights. Part 1: the tail lights. Part 2: the beam on the road, in four strips.
+  const P = [], T = [];
+  for (let k = 0; k < 2; k++) { P.push(-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0); for (let i = 0; i < 6; i++) T.push(k); }
+  for (let k = 0; k < 4; k++) { const a = k / 4, b = (k + 1) / 4; P.push(a, -1, 0, b, -1, 0, b, 1, 0, a, -1, 0, b, 1, 0, a, 1, 0); for (let i = 0; i < 6; i++) T.push(2); }
+  const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
-  g.setAttribute('aCar', new THREE.InstancedBufferAttribute(new Float32Array(A), 4));
-  g.instanceCount = A.length / 4;
-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
-    uniforms: Object.assign({}, OUTU, { tPath: { value: tPath } }),
+  const m = new THREE.Mesh(inst(g), new THREE.ShaderMaterial({
+    uniforms: U,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: /* glsl */`
-    attribute float part;
-    attribute vec4 aCar;
-    uniform sampler2D tPath;
-    uniform float uTime, uCamX, uDay;
+    ${CAR}
     varying vec2 vU;
     varying vec3 vP;
     varying float vPart, vK;
-    ${NOISE}
-    ${LAND}
-    vec2 pathAt(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rg; }
+    flat varying float vSd;
     void main() {
-      if (uDay > 0.6) { ${HIDE} }
-      // u counts points along the path; the car wraps from one end to the other.
-      float n = aCar.y - 1.0, u = mod(aCar.w * n + uTime * aCar.z, n), i0 = floor(u);
-      vec2 a = pathAt(aCar.x + i0), b = pathAt(aCar.x + i0 + 1.0);
-      vec2 d2 = normalize(b - a) * sign(aCar.z), rt2 = vec2(-d2.y, d2.x);
-      // Its lane lies 1.6 m to one side of the road's middle line.
-      vec2 p = mix(a, b, u - i0) + rt2 * 1.6;
-      float x = uCamX + mod(p.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
-      vec3 c = vec3(x, land(vec2(x, p.y)) + 0.65, p.y), dir = vec3(d2.x, 0.0, d2.y), rt = vec3(rt2.x, 0.0, rt2.y);
+      vec3 c, dir, rt;
+      float ends;
+      if (uDay > 0.6 || !carAt(2400.0, c, dir, rt, ends)) { ${HIDE} }
+      c.y += 0.62;
       vec3 toEye = cameraPosition - c;
-      float dist = length(toEye), facing = dot(dir, toEye / dist);
-      // A car fades in and out at its path's ends, so none pops.
-      float ends = smoothstep(0.0, 2.5, u) * smoothstep(n, n - 2.5, u);
+      float dist = length(toEye), facing = dot(dir, toEye / dist), nose = 2.2 * carSize().x;
       vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
       // Far lights keep a few pixels of size.
       float sz = max(1.0, dist * 0.0035);
       vec3 w;
-      if (part < 0.5) { w = c + dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz; vK = smoothstep(-0.3, 0.3, facing); }
-      else if (part < 1.5) { w = c - dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz * 0.6; vK = smoothstep(0.3, -0.3, facing); }
+      if (part < 0.5) { w = c + dir * nose + (cr * position.x * 1.5 + cu * position.y) * sz; vK = smoothstep(-0.3, 0.3, facing); }
+      else if (part < 1.5) { w = c - dir * nose + (cr * position.x * 1.5 + cu * position.y) * sz * 0.6; vK = smoothstep(0.3, -0.3, facing); }
       else {
-        w = c + dir * (3.0 + (position.x * 0.5 + 0.5) * 18.0) + rt * position.y * 2.4;
-        w.y = land(w.xz) + 0.08;
+        // The beam: 42 m of road ahead, widening from the two lamps to both lanes.
+        if (dist > 700.0) { ${HIDE} }
+        w = c + dir * (nose + 0.3 + position.x * 42.0) + rt * (position.y * mix(1.4, 5.5, position.x) + 0.8 * position.x);
+        w.y = land(w.xz) + 0.1;
         vK = 1.0;
       }
+      // A car fades in and out at its run's ends, so none pops.
       vK *= ends * (1.0 - uDay / 0.6);
-      vU = position.xy; vPart = part; vP = w;
+      vU = position.xy; vPart = part; vP = w; vSd = aCar2.y;
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
     fragmentShader: /* glsl */`
     varying vec2 vU;
     varying vec3 vP;
     varying float vPart, vK;
+    flat varying float vSd;
     ${NOISE}
     ${HAZE}
     void main() {
       vec3 c;
+      // One car in four has cool white lamps.
+      vec3 lampC = fract(vSd * 3.7) < 0.25 ? vec3(0.86, 0.93, 1.0) : vec3(1.0, 0.93, 0.8);
       if (vPart < 1.5) {
         // Two lamps side by side: a hot core each and one soft halo; rain widens the halo.
         vec2 q = vec2(vU.x * 1.5, vU.y);
         float l = exp(-dot(q - vec2(0.42, 0.0), q - vec2(0.42, 0.0)) * 26.0) + exp(-dot(q + vec2(0.42, 0.0), q + vec2(0.42, 0.0)) * 26.0);
         float halo = exp(-dot(q, q) * (3.0 - 1.5 * uRain)) * (0.12 + 0.2 * uRain);
-        c = (vPart < 0.5 ? vec3(1.0, 0.94, 0.82) * 2.6 : vec3(1.0, 0.07, 0.04) * 1.3) * (l + halo);
+        c = (vPart < 0.5 ? lampC * 2.6 : vec3(1.0, 0.07, 0.04) * 1.3) * (l + halo);
       } else {
-        // The pool: brightest near the car, gone by 20 m.
-        float along = vU.x * 0.5 + 0.5;
-        c = vec3(1.0, 0.9, 0.72) * 0.07 * (1.0 - along) * (1.0 - along) * (1.0 - vU.y * vU.y) * (1.0 + 2.0 * uRain);
+        // The beam: two spots at the nose that merge, brightest some 8 m out, gone by 42 m.
+        float a = vU.x, yl = vU.y - 0.46, yr = vU.y + 0.46, sp = exp(-yl * yl * 9.0) + exp(-yr * yr * 9.0);
+        float across = mix(sp, 1.4 * exp(-vU.y * vU.y * 2.6), smoothstep(0.0, 0.3, a));
+        c = lampC * 0.13 * across * smoothstep(0.0, 0.07, a) * (1.0 - a) * (1.0 - a) * (1.0 + 1.5 * uRain);
       }
       gl_FragColor = vec4(c * vK * (1.0 - 0.7 * hazeAmt(vP)), 1.0);
     }`,
@@ -2164,6 +2597,33 @@ if (ROUTE.paths && ROUTE.paths.length > 4) {
   m.frustumCulled = false;
   m.renderOrder = 3;
   out.add(m);
+  // Each frame: the six cars nearest the eye lend their beams to the house walls.
+  const best = [];
+  placers.push({
+    run() {
+      const K = BEAMU.uCarK.value, night = 1 - OUTU.uDay.value / 0.6;
+      K.fill(0);
+      if (night <= 0) return;
+      const t = OUTU.uTime.value, cx = OUTU.uCamX.value;
+      best.length = 0;
+      for (let i = 0; i < A.length; i += 4) {
+        const n = A[i + 1] - 1, u = (((A[i + 3] * n + t * A[i + 2]) % n) + n) % n, i0 = Math.min(Math.floor(u), n - 1), o = (A[i] + i0) * 4;
+        const dx = ((((pd[o] - cx + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2, z = pd[o + 1];
+        if (Math.abs(dx) > 260 || z < -260) continue;
+        best.push([dx * dx + z * z, i, u, i0, o, dx - pd[o] + cx]);
+      }
+      best.sort((p, q) => p[0] - q[0]);
+      for (let b = 0; b < Math.min(NB, best.length); b++) {
+        const [d2, i, u, i0, o, wrap] = best[b], n = A[i + 1] - 1, f = u - i0, sg = Math.sign(A[i + 2]);
+        let hx = (pd[o + 4] - pd[o]) * sg, hz = (pd[o + 5] - pd[o + 1]) * sg;
+        const hl = Math.hypot(hx, hz) || 1, lane = B[i / 2] * (pd[o + 2] + (pd[o + 6] - pd[o + 2]) * f);
+        hx /= hl; hz /= hl;
+        // The lamps sit at the car's nose, in its lane.
+        BEAMU.uCarP.value[b].set(pd[o] + (pd[o + 4] - pd[o]) * f + wrap - hz * lane + hx * 2.2, pd[o + 1] + (pd[o + 5] - pd[o + 1]) * f + hx * lane + hz * 2.2, hx, hz);
+        K[b] = night * sstep(0, 2.5, u) * sstep(n, n - 2.5, u) * sstep(260, 140, Math.sqrt(d2));
+      }
+    },
+  });
 }
 
 /* Station platforms: a wet slab, a canopy on columns, masts, a fence, benches and the name signs. */
