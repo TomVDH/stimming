@@ -93,7 +93,7 @@ const opts = {
 /* ---------- bar ---------- */
 // 'random' rolls each new rock's size; a dev pick pins it.
 let devSize = 'random';
-// The charge sound's mix: 'hum', 'blend' or 'choir'.
+// The charge sound's mix: 'hum', 'blend', 'choir', 'vast' or 'titan'.
 let chargeMix = (() => { try { return localStorage.getItem('stimming.railgun.chargemix') || 'blend'; } catch { return 'blend'; } })();
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
@@ -102,8 +102,8 @@ const ui = initPage({ id: 'railgun', bar: {
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
-    // The charge: main's hum alone, the choir alone, or a blend.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', value: 'blend', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }], onPick: v => { chargeMix = v; } },
+    // The charge: the hum, the choir, a blend, or a blend on the plain.
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', value: 'blend', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock (dev)', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -4367,11 +4367,63 @@ const PARTIALS = [
 // Each voice: [target semitones, start harmonic, arrival curve, sour sign, pan].
 const CHORD = [0, 0, 7, 12, 14, 17, 19, 22, 24, 26, 29, 31, 34, 36, 38, 41, 43, 48];
 const VOICES = CHORD.map((tgt, i) => [tgt, 1 + (i % 8), 0.7 + 1.5 * Math.random(), Math.random() < 0.5 ? -1 : 1, (i % 2 ? 1 : -1) * Math.min(0.85, 0.05 * i)]);
-// Vowel formants in hertz: oo, ah, and a bright scream.
-const VOWEL = { oo: [300, 870], ah: [730, 1090], scream: [900, 2500] };
+// Bass voices sit an octave and a fifth under the root.
+const BASS = [-12, -12, -5, 0];
+// Vowel formants in hertz: oo, ah, a bright scream, a low uu.
+const VOWEL = { oo: [300, 870], ah: [730, 1090], scream: [900, 2500], uu: [250, 595] };
+// One profile per charge mix.
+// hum, choir: bus levels. oct: hum pitch factor. sub: sub level.
+// glide: voice lag in seconds. late: arrival curve power.
+// tier: voices enter low to high. bass: low voices, two saws per voice.
+// wob: tape wobble in semitones. bloom: a closed filter opens at the lock.
+// verb: plain send. pre: echo pre-delay in seconds. dark: send cutoff.
+// accent: the swell at the lock.
+const MIX0 = { hum: 1, choir: 0, oct: 1, sub: 1, glide: 0.06, late: 1, tier: false, bass: false, wob: 0, bloom: false, verb: 0, pre: 0, dark: 0, accent: 0.5 };
+const MIX = {
+  hum: MIX0,
+  blend: { ...MIX0, choir: 0.55 },
+  choir: { ...MIX0, hum: 0.6, choir: 1 },
+  // Expanse: the choir stacks bass to soprano over the open plain.
+  vast: { hum: 0.85, choir: 1, oct: 1, sub: 1.7, glide: 0.35, late: 1.5, tier: true, bass: true, wob: 0.12, bloom: false, verb: 0.5, pre: 0.03, dark: 9000, accent: 1 },
+  // Titan: an octave down, a slow drawl, the choir bursts open at the lock.
+  titan: { hum: 0.8, choir: 0.85, oct: 0.5, sub: 1.5, glide: 0.6, late: 1.8, tier: true, bass: true, wob: 0.35, bloom: true, verb: 0.4, pre: 0.09, dark: 2600, accent: 1 },
+};
+// The plain: one convolver per context, built on first use.
+// Open flats have no room: a ground bounce, mesa echoes, a low roll.
+let verb = null;
+function plainVerb(ac) {
+  if (verb && verb.ac === ac) return verb.in;
+  const sr = ac.sampleRate, len = Math.round(sr * 6), ir = ac.createBuffer(2, len, sr);
+  // Mesa echoes: [delay s, level, pan side]; far ones come back darker.
+  const ECHO = [[0.38, 0.5, -1], [0.61, 0.42, 1], [0.95, 0.33, -1], [1.3, 0.27, 1], [1.75, 0.2, -1], [2.3, 0.15, 1], [3.0, 0.1, -1]];
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch), side = ch ? 1 : -1;
+    d[0] = 1; d[Math.round(0.006 * sr)] = 0.6;
+    for (const [at, lv, pn] of ECHO) {
+      // Each echo is a smeared burst; distance widens and darkens it.
+      const i0 = Math.round(at * sr), w = Math.round((0.03 + 0.05 * at) * sr), k = 0.25 / (1 + 2 * at);
+      const amp = lv * (pn === side ? 1 : 0.55);
+      let y = 0;
+      for (let i = 0; i < w && i0 + i < len; i++) { y += k * (Math.random() * 2 - 1 - y); d[i0 + i] += amp * 6 * y * Math.exp(-4 * i / w); }
+    }
+    // The roll: a dark tail that thins to -60 dB at six seconds.
+    let y = 0;
+    for (let i = Math.round(0.15 * sr); i < len; i++) {
+      const x = i / len;
+      y += (0.03 - 0.02 * x) * (Math.random() * 2 - 1 - y);
+      d[i] += 2.2 * y * Math.exp(-6.9 * x) * Math.min(1, (i / sr - 0.15) / 0.4);
+    }
+  }
+  const conv = ac.createConvolver(), inG = ac.createGain(), wet = ac.createGain();
+  conv.normalize = true; conv.buffer = ir; wet.gain.value = 0.8;
+  inG.connect(conv).connect(wet).connect(kit.out);
+  verb = { ac, in: inG };
+  return inG;
+}
 let hum = null;
 function humStart(ac) {
   if (hum) return;
+  const P = MIX[chargeMix] || MIX.blend;
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
@@ -4387,7 +4439,7 @@ function humStart(ac) {
     pan.pan.value = (i % 2 ? 1 : -1) * Math.min(0.7, 0.1 * i);
     for (const sgn of [-1, 1]) {
       const o = ac.createOscillator();
-      o.type = type; o.detune.value = sgn * (3 + i); o.frequency.value = 55 * ratio;
+      o.type = type; o.detune.value = sgn * (3 + i); o.frequency.value = 55 * P.oct * ratio;
       o.connect(lg); o.start(); os.push(o); src.push(o);
     }
     lg.connect(pan).connect(lp);
@@ -4407,42 +4459,75 @@ function humStart(ac) {
   const cpre = ac.createGain(), cshape = ac.createWaveShaper(), cg = ac.createGain();
   cshape.curve = curve; cshape.oversample = '2x';
   cpre.gain.value = 0.6; cg.gain.value = 0;
-  cpre.connect(cshape).connect(cg).connect(kit.out);
-  const voices = VOICES.map(([tgt, harm, k, sour, pn], i) => {
-    const o = ac.createOscillator(), f1 = filt(ac, 'bandpass', VOWEL.oo[0], 6), f2 = filt(ac, 'bandpass', VOWEL.oo[1], 8), vg = ac.createGain(), pan = ac.createStereoPanner();
-    o.type = 'sawtooth'; o.frequency.value = 55 * harm;
+  // Bloom: a closed lowpass holds the choir dark until the lock.
+  const bloom = P.bloom ? filt(ac, 'lowpass', 380, 0.9) : null;
+  if (bloom) cpre.connect(cshape).connect(bloom).connect(cg).connect(kit.out);
+  else cpre.connect(cshape).connect(cg).connect(kit.out);
+  // Each voice: [target, start semitones, arrival curve, sour sign, pan, bass].
+  const list = VOICES.map(([tgt, harm, k, sour, pn]) => [tgt, 12 * Math.log2(harm), k, sour, pn, false]);
+  // Bass voices rise a fifth into place.
+  if (P.bass) BASS.forEach((tgt, i) => list.push([tgt, tgt - 7, 0.8 + 0.8 * Math.random(), Math.random() < 0.5 ? -1 : 1, (i % 2 ? 1 : -1) * 0.2 * i, true]));
+  // Tiered mixes enter low to high; the top voices arrive at the climax.
+  const rank = list.map((v, i) => i).sort((a, b) => list[a][0] - list[b][0]);
+  const n = list.length, dual = P.bass;
+  const voices = list.map(([tgt, start, k, sour, pn, low], i) => {
+    const f1 = low ? filt(ac, 'lowpass', 320, 0.7) : filt(ac, 'bandpass', VOWEL.oo[0], 6);
+    const f2 = filt(ac, 'bandpass', low ? VOWEL.uu[1] : VOWEL.oo[1], 8), vg = ac.createGain(), pan = ac.createStereoPanner();
     vg.gain.value = 0; pan.pan.value = pn;
-    o.connect(f1).connect(vg); o.connect(f2).connect(vg);
+    // Two saws six cents apart thicken each voice.
+    const os = (dual ? [-6, 6] : [0]).map(dt => {
+      const o = ac.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = 55 * Math.pow(2, start / 12); o.detune.value = dt;
+      o.connect(f1); o.connect(f2); o.start(); src.push(o);
+      return o;
+    });
+    f1.connect(vg); f2.connect(vg);
     vg.connect(pan).connect(cpre);
-    o.start(); src.push(o);
-    return { o, f1, f2, vg, tgt, start: 12 * Math.log2(harm), k, sour, ph: Math.random() * 6.28, enter: 0.6 * i / VOICES.length };
+    const enter = P.tier ? 0.04 + 0.78 * rank.indexOf(i) / (n - 1) : 0.6 * i / VOICES.length;
+    return { os, f1, f2, vg, tgt, start, k, sour, low, ph: Math.random() * 6.28, enter };
   });
-  hum = { layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, locked: false, lockAt: -1e9, sour: 0 };
+  // The plain send takes the hum and the choir.
+  let vs = null;
+  if (P.verb) {
+    vs = ac.createGain(); vs.gain.value = 0;
+    const dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', P.dark, 0.5);
+    dl.delayTime.value = P.pre;
+    g.connect(vs); cg.connect(vs);
+    vs.connect(dl).connect(dk).connect(plainVerb(ac));
+  }
+  hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
 }
 // Semitones from the hum's root for a voice at power c.
-function voicePitch(v, c, t) {
+function voicePitch(v, c, t, P, wow) {
   const u = clamp((c - 0.12) / 0.88, 0, 1);
   const lock = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
   // Each voice climbs on its own curve.
-  let p = v.start + (v.tgt - v.start) * Math.pow(u, v.k);
+  let p = v.start + (v.tgt - v.start) * Math.pow(u, v.k * P.late);
   // Before the lock the voices wander and beat.
   p += (1 - lock) * u * 1.4 * Math.sin(t * (0.7 + v.k) + v.ph);
   // The over-hold pulls each voice sharp or flat.
   p += over * v.sour * (0.5 + 1.4 * v.k / 2.2) + over * 0.6 * Math.sin(t * 7.0 + v.ph);
-  return p;
+  // A tiered voice scoops up from below as it enters.
+  if (P.tier) p -= 5 * (1 - THREE.MathUtils.smoothstep(u, v.enter, v.enter + 0.2));
+  return p + wow;
 }
 function humUpdate(ac) {
   if (!hum || !charge) return;
-  const c = charge.c, t = ac.currentTime, f = 55 * Math.pow(2, c * 7 / 12);
+  const P = hum.P, c = charge.c, t = ac.currentTime;
+  // A slow tape wobble bends the whole charge.
+  const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
+  const f = 55 * P.oct * Math.pow(2, (c * 7 + wow) / 12), hg = Math.max(0.05, 0.5 * P.glide);
   for (const l of hum.layers) {
-    for (const o of l.os) o.frequency.setTargetAtTime(f * l.ratio, t, 0.05);
+    for (const o of l.os) o.frequency.setTargetAtTime(f * l.ratio, t, hg);
     l.lg.gain.setTargetAtTime(0.12 * l.level * THREE.MathUtils.smoothstep(chaos, l.enter, l.enter + 0.1), t, 0.08);
   }
-  hum.sub.frequency.setTargetAtTime(f / 2, t, 0.05);
+  const lockK = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
+  hum.sub.frequency.setTargetAtTime(55 * Math.pow(2, c * 7 / 12) / 2, t, hg);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * (chargeMix === 'choir' ? 0.6 : 1), t, 0.05);
-  hum.sg.gain.setTargetAtTime(0.14 * c * c, t, 0.05);
+  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
+  // Bloom mixes drop the sub in hard at the lock.
+  hum.sg.gain.setTargetAtTime(0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c + 0.35 * rage, t, 0.05);
   hum.nb.frequency.setTargetAtTime(1200 + 2500 * rage, t, 0.08);
@@ -4457,27 +4542,38 @@ function humUpdate(ac) {
   const vo = THREE.MathUtils.smoothstep(u, 0.3, 0.95);
   const F1 = THREE.MathUtils.lerp(THREE.MathUtils.lerp(VOWEL.oo[0], VOWEL.ah[0], vo), VOWEL.scream[0], over);
   const F2 = THREE.MathUtils.lerp(THREE.MathUtils.lerp(VOWEL.oo[1], VOWEL.ah[1], vo), VOWEL.scream[1], over);
+  // Bass voices open only halfway, from uu toward ah.
+  const B2 = THREE.MathUtils.lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * vo + 0.5 * over);
+  const ramp = P.tier ? 0.15 : 0.25;
   for (const v of hum.voices) {
-    v.o.frequency.setTargetAtTime(root * Math.pow(2, voicePitch(v, c, t) / 12), t, 0.06);
-    v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1);
-    v.vg.gain.setTargetAtTime(0.5 * THREE.MathUtils.smoothstep(u, v.enter, v.enter + 0.25), t, 0.1);
+    const fr = root * Math.pow(2, voicePitch(v, c, t, P, wow) / 12);
+    for (const o of v.os) o.frequency.setTargetAtTime(fr, t, P.glide);
+    if (v.low) v.f2.frequency.setTargetAtTime(B2, t, 0.1);
+    else { v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1); }
+    v.vg.gain.setTargetAtTime(hum.vlev * THREE.MathUtils.smoothstep(u, v.enter, v.enter + ramp), t, 0.1);
   }
   // A swell at the lock, then a held chord.
   const accent = Math.exp(-(t - hum.lockAt) / 1.2);
-  const cm = chargeMix === 'hum' ? 0 : chargeMix === 'blend' ? 0.55 : 1;
-  hum.cg.gain.setTargetAtTime(0.11 * cm * THREE.MathUtils.smoothstep(u, 0.15, 0.9) * (1 + 0.5 * accent) * (1 + 0.3 * over), t, 0.08);
+  const env = P.tier ? THREE.MathUtils.smoothstep(u, 0.02, 0.5) : THREE.MathUtils.smoothstep(u, 0.15, 0.9);
+  hum.cg.gain.setTargetAtTime(0.11 * P.choir * env * (1 + P.accent * accent) * (1 + 0.3 * over), t, 0.08);
   hum.cpre.gain.setTargetAtTime(0.6 + 4 * over, t, 0.08);
+  // The bloom opens from 380 Hz to 7.5 kHz over the last stretch.
+  if (hum.bloom) hum.bloom.frequency.setTargetAtTime(380 * Math.pow(2, 4.3 * Math.max(THREE.MathUtils.smoothstep(u, 0.8, 1.0), over)), t, 0.15);
+  // The echoes grow with the charge and swell at the lock.
+  if (hum.vs) hum.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
 }
 // The vent: the choir groans down two octaves and dies.
 function humGroan(ac) {
   if (!hum || !ac) { humStop(ac, true); return; }
   const h = hum, t = ac.currentTime;
   hum = null;
-  for (const v of h.voices) v.o.frequency.setTargetAtTime(v.o.frequency.value / 4, t, 0.5);
-  h.cg.gain.setTargetAtTime(0, t + 0.3, 0.5);
+  // Plain mixes fall slower and roll on across the flats.
+  const long = !!h.P.verb, fall = long ? 0.9 : 0.5, end = long ? 4.5 : 2.6;
+  for (const v of h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
+  h.cg.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
   for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.05);
-  for (const n of h.src) n.stop(t + 2.6);
-  track(t + 2.7, ...h.src);
+  for (const n of h.src) n.stop(t + end);
+  track(t + end + 0.1, ...h.src);
 }
 function humStop(ac, now = false) {
   if (!hum) return;

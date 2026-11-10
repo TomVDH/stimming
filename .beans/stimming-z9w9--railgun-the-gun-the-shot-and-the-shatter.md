@@ -39,3 +39,4 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [x] Reset no longer runs on its own: the chip shows and glows right of Sight after a kill
 - [x] The soot cloud lingers to about 40 s; the blast shoves the trail's head aside
 - [x] Heaps drift, thin away and form again on their own clocks
+- [ ] Charge sound: Expanse and Titan mixes (tiered choir, bass voices, drawl, mesa echoes); Tom to judge by ear
