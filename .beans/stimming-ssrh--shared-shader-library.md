@@ -53,7 +53,7 @@ Gaps the library fills first, so no toy needs its own copy:
 Adoption, per toy:
 - [ ] Train Ride: steps 1 to 4 of its brief (wet glass, motion, detail, grade); same look
 - [x] Train Ride: lake waves on `wtWaves()` and rain rings on `wtRings()` (2026-11-10, Tom: "the water itself looks alright")
-- [ ] Train Ride: light reflections on `wtLights()`, once built
+- [ ] Train Ride: light reflections on `wtLights()`, once built. Until then it keeps its own slim streaks over the shared waves (2026-11-10, Tom: "clean them up a little"); its brief's steps 1 to 4 also still wait (Tom chose reflections first)
 - [ ] Fog horn: on the runner already; its own light reflections move into `wtLights()`
 - [ ] Water by hand: Fireworks, Launch, Window seat, Wind farm, Beach walker, Canal, Viaduct, Meteor
 - [ ] Flare by hand: Beach walker, Window seat, Bread, Fireworks, Meteor
