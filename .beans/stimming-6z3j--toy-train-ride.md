@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T06:54:46Z
+updated_at: 2026-11-10T06:55:56Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -229,3 +229,6 @@ Open from the critics:
 - [x] Light OSM road data: tools/roads.py fetches 1,604 ways (205 km; motorway to residential, no tunnels) within 540 m on the lake side and bakes roads.png (204 KB): a distance map, 4.4 m by 4 m texels, two halves stacked. The land paints asphalt and verges from it; trees, shrubs, fences and bales keep off it. The invented country road is gone; its pole line stays
 - [ ] Fields and pastures: realistic tilings in clusters, deterministic, all baked
 - [ ] Train horn of the current Swiss stock
+
+- [ ] Train horn: no source gives the pitch; candidate clip freesound 20065 (Swiss train whistle, licence unchecked). Tom to supply a clip and say when it sounds
+- [ ] Fields bake: Tom to choose runtime tiles (all land colour) or an offline field map
