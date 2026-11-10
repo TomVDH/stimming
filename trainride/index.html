@@ -1403,28 +1403,99 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : church ? 4.2 : 2.3 + 0.9 * fract(vV * 9.7);
         float ww = city ? 0.45 : church ? 0.6 : 0.42 + 0.14 * fract(vV * 3.3), fh = city ? 2.9 : church ? 30.0 : 2.5, wh = city ? 1.4 : church ? min(4.2, vS.y - 3.2) : 1.15;
         float y0 = city ? 3.6 : church ? 2.0 : 0.8;
-        float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
+        // sd is the house's own number, the same on every pixel; each wall adds its own.
+        float sd = floor(vV * 283.0 + 0.5), face = xface ? (vL.x > 0.0 ? 1.0 : 2.0) : (vL.z > 0.0 ? 3.0 : 4.0);
+        float col = floor(u / gap), cu = u / gap - col - 0.5;
+        // A stairwell: one narrow column in a block, its panes half a floor up.
+        bool stair = city && hash1(vec2(col, sd) + face) < 0.09;
+        float wy = vL.y - y0 + (stair ? 0.5 * fh : 0.0), row = floor(wy / fh), cv = wy - row * fh;
+        if (stair) ww *= 0.7;
+        vec2 cell = vec2(col, row) + sd * 0.37 + face * 7.13;
+        // Awake is the share of lit rooms: some houses sleep, most keep a few lamps on, some are full of light.
+        float hh = hash1(vec2(sd, 3.0)), awake = hh < 0.2 ? 0.0 : hh < 0.75 ? 0.18 + 0.3 * fract(hh * 9.0) : 0.7;
+        // An office block is cool white: nearly dark, or with a late floor or two.
+        bool office = city && fract(hh * 31.0) < 0.22;
+        if (city) awake = hh < 0.1 ? 0.05 : office ? 0.08 + 0.3 * step(0.5, hash1(vec2(row, sd))) : 0.2 + 0.4 * fract(hh * 9.0);
+        // Fine detail fades before the panes do, so no bar or fold flickers.
+        float det = 1.0 - smoothstep(0.03, 0.09, length(fwidth(vec2(u, vL.y))));
+        float night = 1.0 - uDay, nearK = smoothstep(600.0, 200.0, length(vP - cameraPosition));
         // At a slant the panes merge: a near wall keeps their mean glow, so none vanish.
         // Far houses go dark: the far lights are their own layer, and house glow there reads as strips.
         // A church is lit as a whole, or not at all.
         float litC = step(0.7, fract(vV * 3.7)) * 0.45;
         bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-        if (zone) glow = lamp * (church ? litC : 0.5) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * smoothstep(600.0, 200.0, length(vP - cameraPosition));
+        if (zone) glow = lamp * (church ? litC : 0.6 * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
         if (zone && cv < wh) {
           float ax = abs(cu) * gap;
-          float lit = church ? litC : step(0.5, hash1(vec2(floor(u / gap), row) + floor(vV * 283.0 + 0.5) * 0.37));
           // A church window ends in a round arch.
           bool pane = ax < ww && !(church && cv > wh - ww && length(vec2(ax, cv - (wh - ww))) > ww);
           // City windows sit in a pale frame.
           if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
-          else if (pane) {
+          else if (pane && church) {
             alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
-            glow += lamp * lit * fade;
+            glow += lamp * litC * fade;
+          } else if (pane) {
+            float h1 = hash1(cell), h2 = hash1(cell + 9.3), h3 = hash1(cell + 2.7);
+            float lit = step(h1, awake);
+            // A few rooms switch on and off, each at its own slow pace.
+            if (h3 < 0.14 && awake > 0.0) lit = step(fract(uTime / (20.0 + 70.0 * h2) + h1), 0.5);
+            // The room's light: a warm lamp, a dim amber one, a white kitchen, a screen, a hall.
+            vec3 lc = h2 < 0.5 ? vec3(1.0, 0.72, 0.42) * 1.4 : h2 < 0.68 ? vec3(1.0, 0.56, 0.26) * 0.7 : h2 < 0.84 ? vec3(1.0, 0.9, 0.74) * 1.4
+              : h2 < 0.94 ? vec3(0.42, 0.6, 1.0) * (0.4 + 0.7 * vnoise(vec2(uTime * 3.0, h1 * 91.0))) : vec3(1.0, 0.8, 0.55) * 0.3;
+            if (office) lc = vec3(0.82, 0.92, 1.0) * 1.2;
+            // The cover: none, two curtains, a blind from the top, or a sheer over all.
+            float px = cu * gap / ww, py = cv / wh, ck = fract(h3 * 17.0), co = fract(h3 * 53.0), cur = 0.0, cov = 0.7 + 0.3 * py;
+            if (stair) {
+              // The stairwell burns on every floor, or on none.
+              lit = step(hash1(vec2(sd, face)), 0.7);
+              lc = vec3(0.8, 1.0, 0.84) * 0.5;
+            } else if (ck < 0.3) {
+              // An open pane shows the lamp as a soft spot.
+              vec2 q = (vec2(px, py) - vec2(co * 1.2 - 0.6, 0.35 + 0.4 * fract(co * 7.0))) * vec2(ww, wh);
+              cov += 0.5 * exp(-dot(q, q) * 9.0) * det;
+            } else if (ck < 0.58) {
+              cur = step(0.15 + 0.6 * co, abs(px));
+              cov = mix(cov, 0.38 * (1.0 + 0.2 * sin(px * 26.0) * det), cur);
+            } else if (ck < 0.82) {
+              cur = step(0.85 * co, py);
+              cov = mix(cov, 0.3 * (1.0 + 0.3 * (step(0.5, fract(cv * 9.0)) - 0.5) * det), cur);
+            } else {
+              cur = 1.0;
+              cov = 0.5 * (1.0 + 0.14 * sin(px * 20.0 + co * 6.0) * det);
+            }
+            // By day a curtain shows pale behind the glass.
+            alb = mix(alb, mix(vec3(0.05, 0.06, 0.07), vec3(0.3, 0.29, 0.26), cur * 0.8), fade);
+            // A house pane has a centre bar; it stands dark against the light.
+            if (!city) cov *= 1.0 - 0.85 * det * step(abs(px), 0.1);
+            glow += lc * cov * lit * fade * night;
           } else if (vK < 0.5 && ax < ww + 0.42 && fract(vV * 5.1) < 0.66) {
             // Shutters: green, red, grey, blue or brown, one colour per house.
             float sc = fract(vV * 41.0);
             vec3 sh = sc < 0.3 ? vec3(0.08, 0.2, 0.1) : sc < 0.5 ? vec3(0.3, 0.07, 0.05) : sc < 0.7 ? vec3(0.5, 0.5, 0.48) : sc < 0.85 ? vec3(0.1, 0.16, 0.28) : vec3(0.2, 0.12, 0.07);
             alb = mix(alb, sh, fade);
+          }
+        }
+        // Shops: wide panes on a block's ground floor, a sign band over each; some stay lit.
+        if (city && fract(vV * 3.1) < 0.5 && vPart < 0.5 && vL.y < 3.3 && abs(u) < half_ - 0.6) {
+          float sg = gap * 2.0, si = floor(u / sg), sx = abs(u / sg - si - 0.5) * sg;
+          float s1 = hash1(vec2(si, sd) + face * 3.3), s2 = fract(s1 * 31.0);
+          if (sx < sg * 0.5 - 0.35) {
+            if (vL.y > 0.5 && vL.y < 2.7) {
+              // Thin bars split the shop front into panes.
+              float bar = det * step(abs(fract(u / 1.7) - 0.5), 0.03);
+              alb = mix(alb, mix(vec3(0.05, 0.06, 0.07), vec3(0.2), bar), fade);
+              // The display light: warm or cool white, seldom a colour; a shut shop keeps a night light.
+              vec3 sl = s2 < 0.55 ? vec3(1.0, 0.84, 0.62) : s2 < 0.88 ? vec3(0.8, 0.9, 1.0) : s2 < 0.94 ? vec3(0.9, 0.3, 0.5) : vec3(0.4, 0.9, 0.65);
+              // Inside: a bright strip at the ceiling, dim air, and a dark floor.
+              float yy = (vL.y - 0.5) / 2.2;
+              float inner = 0.24 + 0.55 * smoothstep(0.72, 0.92, yy) - 0.14 * smoothstep(0.5, 0.15, yy);
+              glow += sl * (s1 < 0.33 ? 0.85 : 0.06) * inner * (1.0 - bar) * fade * night * nearK;
+            } else if (vL.y > 2.84 && vL.y < 3.24) {
+              float sc = fract(s1 * 7.7);
+              vec3 band = sc < 0.25 ? vec3(0.6, 0.08, 0.06) : sc < 0.45 ? vec3(0.08, 0.2, 0.5) : sc < 0.6 ? vec3(0.1, 0.36, 0.2) : sc < 0.75 ? vec3(0.75, 0.55, 0.1) : vec3(0.8, 0.8, 0.76);
+              alb = mix(alb, band, fade);
+              glow += band * 0.9 * step(fract(s1 * 13.0), 0.45) * fade * night * nearK;
+            }
           }
         }
         // A barn has one tall door in a long side.
