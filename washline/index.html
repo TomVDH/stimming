@@ -13,10 +13,9 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Washing line: plain sheets on one line against a wide sky. */
-:root { --stage: oklch(0.56 0.17 255); }
-.stage--washline { touch-action: none; cursor: grab; }
-.stage--washline.held { cursor: grabbing; }
+/* Washing line: a pulley line across a place, in a wide shot. */
+:root { --stage: oklch(0.62 0.08 70); }
+.stage--washline { touch-action: none; cursor: ew-resize; }
 .stage--washline canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -32,7 +31,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--washline" id="stage" tabindex="0" role="application" aria-label="Plain sheets hang on one line and snap in the wind against a deep blue sky. Tap a peg to unclip it; a sheet with no pegs flies away. Drag a sheet to pull it, or drag the line to pluck it. Tap the sky for a gust. Move the Sun slider behind the line and the sheets glow like stained glass.">
+    <div class="stage stage--washline" id="stage" tabindex="0" role="application" aria-label="A pulley line crosses a narrow street between two windows, with washing pegged on it. Drag sideways to reel the line. Move the Sun slider behind the line and the cloth glows.">
       <p class="fail" hidden>Washing line needs WebGL 2, which this browser doesn't have.</p>
     </div>
   </main>
@@ -60,9 +59,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { H, WIND, makeLine, makePiece, hang, reel, stepWorld } from './core.js';
+import { makeLook } from './cloth.js';
+import alley from './places/alley.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -72,541 +73,30 @@ const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addE
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
-const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-const rnd = (a, b) => a + Math.random() * (b - a);
+const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
+const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-// Seven scenes; the URL (?env=) or the last visit picks the first.
-const SCENES = [['summer', 'Summer'], ['riviera', 'Riviera'], ['monsoon', 'Monsoon'], ['snow', 'Snow'], ['dusk', 'Dusk'], ['night', 'Night'], ['desert', 'Desert']];
-const firstScene = (() => {
-  const q = new URLSearchParams(location.search).get('env');
-  let saved = null;
-  try { saved = localStorage.getItem('stimming.washline.scene'); } catch { /* storage can be blocked */ }
-  return [q, saved].find(v => SCENES.some(([id]) => id === v)) || 'summer';
-})();
+const PLACES = { alley };
 // Handlers bind once the scene exists.
-const act = { scene() {}, wind() {}, sun() {}, add() {}, release() {}, fabric() {}, line() {} };
+const act = { place() {}, sun() {}, wind() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Scene', value: firstScene, options: SCENES.map(([value, label]) => ({ value, label })), onPick: v => act.scene(v) },
-  slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.86, onInput: v => act.sun(v) },
-  actions: [
-    { verb: 'add', noun: 'Sheet', onPress: () => act.add() },
-    { verb: 'release', onPress: () => act.release() },
-  ],
+  choice: { label: 'Place', value: 'alley', options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
+  slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.85, onInput: v => act.sun(v) },
   settings: [
-    { type: 'choice', id: 'wind', label: 'Wind', value: 'gusty', onPick: v => act.wind(v),
-      options: [{ value: 'breeze', label: 'Breeze' }, { value: 'gusty', label: 'Gusty' }, { value: 'gale', label: 'Gale' }] },
-    { type: 'choice', id: 'fabric', label: 'Fabric', value: 'cotton', persist: true, onPick: v => act.fabric(v),
-      options: [{ value: 'cotton', label: 'Cotton' }, { value: 'linen', label: 'Linen' }, { value: 'silk', label: 'Silk' }] },
-    { type: 'choice', id: 'line', label: 'Line', value: 'slack', persist: true, onPick: v => act.line(v),
-      options: [{ value: 'slack', label: 'Slack' }, { value: 'taut', label: 'Taut' }] },
+    { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
+      options: [{ value: 'calm', label: 'Calm' }, { value: 'breeze', label: 'Breeze' }, { value: 'blowy', label: 'Blowy' }] },
   ],
   quality: true,
-  keys: [['click', 'unclip'], ['drag', 'pull'], ['space', 'sheet']],
+  keys: [['drag', 'reel']],
 } });
 
 const stage = document.getElementById('stage');
 let reduce = reduced();
 onReducedChange(v => { reduce = v; });
-
-/* ---------- K4: Verlet rope ---------- */
-// Lifted from balloons/ (physics: verlet strings); Pull chain is not built yet.
-// This copy adds a z array, so ropes move in 3D.
-// It adds cloth: a grid of Verlet points pinned to a rope at its pegs.
-const K4 = {
-  // A rope is a chain of points with one rest length per segment.
-  makeRope(n, x0, y0, x1, y1, len, mass) {
-    const r = {
-      n, seg: len / (n - 1), mass,
-      x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n),
-      px: new Float32Array(n), py: new Float32Array(n), pz: new Float32Array(n),
-      fx: new Float32Array(n), fy: new Float32Array(n), fz: new Float32Array(n),
-      pin: new Uint8Array(n),
-    };
-    for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      r.x[i] = r.px[i] = lerp(x0, x1, t);
-      r.y[i] = r.py[i] = lerp(y0, y1, t);
-    }
-    r.pin[0] = r.pin[n - 1] = 1;
-    return r;
-  },
-  // Gravity and the loads in fx, fy, fz move each free point.
-  stepRope(r, h, damp) {
-    const h2 = h * h, im = 1 / r.mass;
-    for (let i = 0; i < r.n; i++) {
-      if (r.pin[i]) continue;
-      const vx = (r.x[i] - r.px[i]) * damp, vy = (r.y[i] - r.py[i]) * damp, vz = (r.z[i] - r.pz[i]) * damp;
-      r.px[i] = r.x[i]; r.py[i] = r.y[i]; r.pz[i] = r.z[i];
-      r.x[i] += vx + r.fx[i] * im * h2;
-      r.y[i] += vy + (r.fy[i] * im - 9.8) * h2;
-      r.z[i] += vz + r.fz[i] * im * h2;
-    }
-  },
-  // One pass pulls each segment back to its rest length.
-  solveRope(r) {
-    const x = r.x, y = r.y, z = r.z, pin = r.pin;
-    for (let i = 0; i < r.n - 1; i++) {
-      const dx = x[i + 1] - x[i], dy = y[i + 1] - y[i], dz = z[i + 1] - z[i];
-      const d = Math.hypot(dx, dy, dz) || 1e-9;
-      const wa = pin[i] ? 0 : 1, wb = pin[i + 1] ? 0 : 1, ws = wa + wb;
-      if (!ws) continue;
-      const k = (d - r.seg) / (d * ws);
-      x[i] += dx * k * wa; y[i] += dy * k * wa; z[i] += dz * k * wa;
-      x[i + 1] -= dx * k * wb; y[i + 1] -= dy * k * wb; z[i + 1] -= dz * k * wb;
-    }
-  },
-  // A cloth is a grid of points with structural, shear and bend links.
-  // A mask(u, v) cuts a garment shape out of the grid.
-  makeCloth(w, h, cols, rows, x0, y0, z0, mask = null) {
-    const n = cols * rows, dx = w / (cols - 1), dy = h / (rows - 1);
-    const c = {
-      w, h, cols, rows, n,
-      x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n),
-      px: new Float32Array(n), py: new Float32Array(n), pz: new Float32Array(n),
-      ax: new Float32Array(n), ay: new Float32Array(n), az: new Float32Array(n),
-      inv: new Float32Array(n).fill(1),
-    };
-    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-      const p = i * cols + j;
-      c.x[p] = c.px[p] = x0 + j * dx;
-      c.y[p] = c.py[p] = y0 - i * dy;
-      c.z[p] = c.pz[p] = z0 + 0.002 * Math.sin(j * 1.7 + i * 0.9);
-    }
-    c.act = new Uint8Array(n);
-    c.uv = new Float32Array(n * 2);
-    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-      const p = i * cols + j, u = j / (cols - 1), v = i / (rows - 1);
-      c.uv[p * 2] = u; c.uv[p * 2 + 1] = v;
-      c.act[p] = !mask || mask(u, v) ? 1 : 0;
-    }
-    // The grid grows one point past the shape; the shader cuts the exact edge.
-    const raw = c.act.slice();
-    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-      let on = 0;
-      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-        const ii = i + a, jj = j + b;
-        if (ii >= 0 && jj >= 0 && ii < rows && jj < cols && raw[ii * cols + jj]) on = 1;
-      }
-      c.act[i * cols + j] = on;
-      if (!on) c.inv[i * cols + j] = 0;
-    }
-    c.na = c.act.reduce((s, a) => s + a, 0);
-    const A = [], B = [], R = [], K = [];
-    const link = (a, b, k) => { if (!c.act[a] || !c.act[b]) return; A.push(a); B.push(b); R.push(Math.hypot(c.x[a] - c.x[b], c.y[a] - c.y[b])); K.push(k); };
-    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-      const p = i * cols + j;
-      if (j < cols - 1) link(p, p + 1, 1);
-      if (i < rows - 1) link(p, p + cols, 1);
-      if (i < rows - 1 && j < cols - 1) { link(p, p + cols + 1, 0.9); link(p + 1, p + cols, 0.9); }
-      // Bend links span two points; their stiffness is the fabric's.
-      if (j < cols - 2) link(p, p + 2, -1);
-      if (i < rows - 2) link(p, p + 2 * cols, -1);
-    }
-    c.a = Int32Array.from(A); c.b = Int32Array.from(B); c.rest = Float32Array.from(R); c.k = Float32Array.from(K);
-    const T = [];
-    for (let i = 0; i < rows - 1; i++) for (let j = 0; j < cols - 1; j++) {
-      const p = i * cols + j;
-      const on = q => c.act[q];
-      if (on(p) && on(p + cols) && on(p + 1)) T.push(p, p + cols, p + 1);
-      if (on(p + 1) && on(p + cols) && on(p + cols + 1)) T.push(p + 1, p + cols, p + cols + 1);
-    }
-    c.tris = Uint16Array.from(T);
-    return c;
-  },
-  // Gravity and the accelerations in ax, ay, az move each free point.
-  // Each step moves a point 0.05 units at most, so a yank cannot blow up.
-  stepCloth(c, h, damp) {
-    const h2 = h * h, MAX = 0.05;
-    for (let p = 0; p < c.n; p++) {
-      if (!c.inv[p]) continue;
-      let sx = (c.x[p] - c.px[p]) * damp + c.ax[p] * h2;
-      let sy = (c.y[p] - c.py[p]) * damp + (c.ay[p] - 9.8) * h2;
-      let sz = (c.z[p] - c.pz[p]) * damp + c.az[p] * h2;
-      const s = Math.hypot(sx, sy, sz);
-      if (s > MAX) { const f = MAX / s; sx *= f; sy *= f; sz *= f; }
-      c.px[p] = c.x[p]; c.py[p] = c.y[p]; c.pz[p] = c.z[p];
-      c.x[p] += sx; c.y[p] += sy; c.z[p] += sz;
-    }
-  },
-  // One pass over every link; bend links take the fabric's stiffness.
-  solveCloth(c, bend) {
-    const x = c.x, y = c.y, z = c.z, inv = c.inv, A = c.a, B = c.b, R = c.rest, K = c.k;
-    for (let i = 0, m = A.length; i < m; i++) {
-      const a = A[i], b = B[i], wa = inv[a], wb = inv[b], ws = wa + wb;
-      if (!ws) continue;
-      const dx = x[b] - x[a], dy = y[b] - y[a], dz = z[b] - z[a];
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
-      const k = ((d - R[i]) / (d * ws)) * (K[i] < 0 ? bend : K[i]);
-      x[a] += dx * k * wa; y[a] += dy * k * wa; z[a] += dz * k * wa;
-      x[b] -= dx * k * wb; y[b] -= dy * k * wb; z[b] -= dz * k * wb;
-    }
-  },
-};
-/* ---------- end K4 ---------- */
-
-/* ---------- wind ---------- */
-// Gusts are noise that scrolls downwind, so they travel along the line.
-const noise3D = createNoise3D(() => 0.4127);
-const WIND = {
-  breeze: { u: 1.1, gust: 0.5, turb: 0.35 },
-  gusty: { u: 1.9, gust: 0.95, turb: 0.5 },
-  gale: { u: 4.2, gust: 0.6, turb: 0.75 },
-};
-const DIR_X = 0.55, DIR_Z = 0.835;
-const RHO_C = 1.2 * 0.8;
-const st = { wind: 'gusty', sun: 0.86, windScale: 1, scroll: 0, drift: 0, t: 0, lastInput: performance.now() };
-// A tap on the sky sends one gust in from that side.
-const gusts = [];
-const windOut = [0, 0, 0];
-function windAt(x, y, t, free) {
-  const w = WIND[st.wind], U = w.u * st.windScale * (reduce ? 0.3 : 1);
-  const s = x * 0.2 - st.scroll;
-  const k = Math.max(0.05, 1 + w.gust * noise3D(s, y * 0.15, t * 0.07));
-  const tw = noise3D(s * 3.1 + 11, y * 0.9, t * 0.6) * w.turb;
-  let wx = U * (k * DIR_X + tw * 0.4), wy = U * tw * 0.3, wz = U * (k * DIR_Z + tw * 0.3);
-  for (const g of gusts) {
-    const age = t - g.t0, front = g.x0 + g.dir * 3.4 * age, d = (x - front) / 1.5;
-    const b = g.amp * Math.exp(-d * d) * smooth(0, 0.3, age) * (1 - smooth(4, 6, age));
-    wx += g.dir * b * 0.8; wy += b * 0.2; wz += b * 0.6;
-  }
-  // Loose cloth rides an updraft and sails downwind.
-  if (free) { wx = wx * 1.4 + 0.9 * g1(); wy += U * 1.1 + 1.5; wz *= 0.3; }
-  windOut[0] = wx; windOut[1] = wy; windOut[2] = wz;
-  return windOut;
-}
-const g1 = () => (WIND[st.wind].u > 3 ? 1.6 : 1);
-
-/* ---------- the line and its washing ---------- */
-const lin = (L, C, h) => oklchLinear(L, C, h).map(v => Math.max(0, v));
-// Laundry colours, clean and a little bright, as painted.
-const COLOURS = {
-  white: [0.97, 0.006, 95], cream: [0.93, 0.03, 88], sky: [0.8, 0.08, 236], navy: [0.4, 0.09, 262],
-  denim: [0.52, 0.08, 250], red: [0.6, 0.18, 27], coral: [0.74, 0.13, 36], yellow: [0.88, 0.14, 95],
-  mint: [0.86, 0.08, 165], sage: [0.7, 0.06, 145], pink: [0.83, 0.07, 8], lilac: [0.76, 0.08, 305],
-  charcoal: [0.36, 0.012, 260], orange: [0.74, 0.15, 55], khaki: [0.74, 0.05, 82],
-  lemon: [0.9, 0.15, 100], terracotta: [0.6, 0.12, 40], teal: [0.58, 0.1, 200], indigo: [0.36, 0.12, 272],
-  wine: [0.42, 0.12, 10], saffron: [0.78, 0.16, 68], heather: [0.66, 0.012, 280], oatmeal: [0.86, 0.03, 80],
-};
-const ANY = Object.keys(COLOURS);
-const pick = a => a[Math.floor(Math.random() * a.length)];
-// Each item: size in metres, peg spots along the top, weight, shape, colours and patterns.
-// Shapes take u across and v down, from the pegged edge.
-const ITEMS = {
-  sheet: { w: [1.5, 1.8], h: [1.1, 1.35], pegs: [0, 0.5, 1], kg: 1, cols: ['white', 'cream', 'sky', 'mint', 'pink', 'yellow'], pats: [0, 0, 1] },
-  towel: { w: [0.9, 1.25], h: [0.55, 0.72], pegs: [0, 1], kg: 2.4, cols: ANY, pats: [0, 2, 2] },
-  tee: { shape: 1, w: [0.9, 1.0], h: [0.72, 0.82], pegs: [0.3, 0.7], kg: 1.1, cols: ANY, pats: [0, 0, 1],
-    // Hung by the shoulders: a neck at the top, sleeves out to the sides.
-    mask(u, v) {
-      const a = Math.min(u, 1 - u);
-      if (a >= 0.2) return (u - 0.5) ** 2 / 0.017 + v * v / 0.0064 > 1;
-      return v > (0.2 - a) * 0.45 && v < 0.36 + (0.2 - a) * 0.15;
-    } },
-  trousers: { shape: 2, w: [0.42, 0.5], h: [0.92, 1.05], pegs: [0, 1], kg: 2.2, cols: ['denim', 'navy', 'charcoal', 'khaki', 'denim'], pats: [0],
-    // Hung by the waist: two legs part below the seat and taper.
-    mask(u, v) { const a = Math.abs(u - 0.5); return a < 0.5 - 0.07 * v && (v < 0.32 || a > 0.015 + 0.07 * (v - 0.32) / 0.68); } },
-  dress: { shape: 3, w: [0.75, 0.9], h: [0.95, 1.15], pegs: [0.3, 0.7], kg: 0.9, cols: ['red', 'yellow', 'lilac', 'sky', 'mint', 'coral', 'navy'], pats: [0, 0, 3],
-    // Hung by the straps: bodice, waist, then a flared skirt.
-    mask(u, v) {
-      const a = Math.abs(u - 0.5);
-      if (v < 0.12) return a > 0.15 && a < 0.23;
-      if (v < 0.42) return a < 0.25 - 0.06 * (v - 0.12) / 0.3;
-      return a < 0.19 + 0.31 * (v - 0.42) / 0.58;
-    } },
-  pillow: { w: [0.62, 0.74], h: [0.44, 0.52], pegs: [0, 1], kg: 1, cols: ['white', 'cream', 'sky', 'pink', 'yellow'], pats: [0, 3] },
-  cloth: { w: [0.4, 0.48], h: [0.4, 0.48], pegs: [0, 1], kg: 1.3, cols: ['red', 'sky', 'navy', 'yellow', 'sage'], pats: [3, 1] },
-  sock: { shape: 4, w: [0.17, 0.2], h: [0.36, 0.44], pegs: [0.27], kg: 1.6, cols: ANY, pats: [0, 2],
-    // Hung by the cuff: the leg, then the foot turns out.
-    mask(u, v) { return v < 0.72 ? u < 0.56 : !(u > 0.82 && v > 0.9 && (u - 0.82) ** 2 + (v - 0.9) ** 2 > 0.012); } },
-  sarong: { w: [1.0, 1.2], h: [0.85, 1.0], pegs: [0, 0.5, 1], kg: 0.9, cols: ANY, pats: [8, 6], grain: 0.03 },
-  scarf: { shape: 6, w: [0.26, 0.34], h: [1.1, 1.35], pegs: [0.2, 0.8], kg: 1.6, cols: ANY, pats: [5, 1, 9], fixed: true },
-  sweater: { shape: 5, w: [0.95, 1.1], h: [0.68, 0.78], pegs: [0.32, 0.68], kg: 2.8, cols: ANY, pats: [5], fixed: true, grain: 0,
-    // Hung by the shoulders: long sleeves hang down beside the body.
-    mask(u, v) {
-      const a = Math.min(u, 1 - u), c = Math.abs(u - 0.5);
-      if (a >= 0.22) return c * c / 0.015 + v * v / 0.006 > 1;
-      return a > 0.02 && v > (0.22 - a) * 0.35 && v < 0.9 - (0.22 - a) * 0.4;
-    } },
-  mitten: { shape: 7, w: [0.15, 0.18], h: [0.25, 0.3], pegs: [0.62], kg: 3, cols: ANY, pats: [5], fixed: true, grain: 0,
-    // Hung by the cuff: the hand, a thumb out to one side.
-    mask(u, v) { return u > 0.28 ? v < 0.82 || ((u - 0.64) / 0.36) ** 2 + ((v - 0.82) / 0.18) ** 2 < 1 : v > 0.4 && v < 0.74; } },
-  robe: { shape: 8, w: [1.0, 1.2], h: [1.1, 1.3], pegs: [0.3, 0.7], kg: 1.3, cols: ANY, pats: [4, 1, 7],
-    // Hung by the shoulders: a V neck and wide, square sleeves.
-    mask(u, v) {
-      const a = Math.min(u, 1 - u), c = Math.abs(u - 0.5);
-      if (a >= 0.25) return !(v < 0.3 && c < 0.12 * (1 - v / 0.3));
-      return v > (0.25 - a) * 0.08 && v < 0.55;
-    } },
-};
-ITEMS.towel.grain = 0.18;
-// Scenes: sky, land, weather, light and the wardrobe on the line.
-// Land: 1 hills, 2 rooftops, 3 dunes, 4 pines, 5 town with poles and wires.
-// Weather: 1 rain, 2 snow, 3 dust.
-const ENV_DEF = { cover: 0, top: 1, over: 0, stars: 0, moon: 0, land: 0, precip: 0, lights: 0, wet: 0, exp: 1, cols: null, pats: null };
-const ENVS = {
-  summer: { sky: { zen: [0.42, 0.19, 259], mid: [0.62, 0.16, 247], hor: [0.9, 0.06, 214], haze: [0.64, 0.1, 238], cloud: [0.99, 0.012, 85], shade: [0.74, 0.06, 256], land: [0.55, 0.08, 230] },
-    warm: [0.95, 0.07, 70], white: [0.99, 0.015, 90], sunK: 2.6, sun: 0.86, amb: [[0.6, 0.7, 0.9], [0.3, 0.4, 0.62]], wind: 'gusty',
-    first: ['sheet', 'tee', 'trousers', 'towel', 'dress'], firstN: ['tee', 'towel', 'trousers'],
-    mix: ['sheet', 'towel', 'tee', 'trousers', 'dress', 'pillow', 'cloth', 'sock'] },
-  riviera: { sky: { zen: [0.55, 0.13, 245], mid: [0.74, 0.08, 230], hor: [0.9, 0.06, 75], haze: [0.84, 0.06, 65], cloud: [0.97, 0.03, 75], shade: [0.8, 0.05, 40], land: [0.8, 0.07, 55] },
-    warm: [0.92, 0.12, 62], white: [0.97, 0.04, 80], sunK: 3, sun: 0.82, exp: 0.95, cover: -0.08, top: 0.8, land: 2,
-    amb: [[0.78, 0.72, 0.66], [0.55, 0.45, 0.36]], wind: 'breeze',
-    first: ['sheet', 'tee', 'towel', 'sheet', 'pillow'], firstN: ['tee', 'pillow', 'towel'],
-    mix: ['sheet', 'tee', 'towel', 'pillow', 'dress', 'cloth'], cols: ['white', 'cream', 'white', 'navy', 'sky', 'lemon', 'terracotta'], pats: [0, 0, 9, 9, 1] },
-  monsoon: { sky: { zen: [0.4, 0.03, 190], mid: [0.52, 0.03, 180], hor: [0.66, 0.03, 165], haze: [0.5, 0.04, 165], cloud: [0.72, 0.02, 175], shade: [0.42, 0.03, 200], land: [0.38, 0.05, 155] },
-    warm: [0.8, 0.03, 120], white: [0.85, 0.02, 150], sunK: 1.2, sun: 0.75, exp: 1.2, over: 0.9, land: 1, precip: 1, wet: 1,
-    amb: [[0.55, 0.62, 0.6], [0.3, 0.36, 0.34]], wind: 'gusty',
-    first: ['sarong', 'tee', 'sarong', 'towel', 'cloth'], firstN: ['sarong', 'tee', 'cloth'],
-    mix: ['sarong', 'sarong', 'tee', 'towel', 'cloth', 'robe'], cols: ['red', 'orange', 'yellow', 'teal', 'indigo', 'wine', 'saffron'], pats: [6, 6, 8, 8, 1] },
-  snow: { sky: { zen: [0.7, 0.04, 268], mid: [0.8, 0.03, 260], hor: [0.9, 0.02, 250], haze: [0.88, 0.015, 250], cloud: [0.95, 0.01, 250], shade: [0.76, 0.03, 265], land: [0.42, 0.03, 220] },
-    warm: [0.93, 0.04, 75], white: [0.96, 0.01, 250], sunK: 1.7, sun: 0.7, exp: 1.05, over: 0.65, land: 4, precip: 2,
-    amb: [[0.8, 0.82, 0.9], [0.68, 0.68, 0.74]], wind: 'breeze',
-    first: ['sweater', 'scarf', 'mitten', 'sweater', 'sock', 'scarf'], firstN: ['sweater', 'scarf', 'mitten'],
-    mix: ['sweater', 'scarf', 'mitten', 'sock', 'towel'], cols: ['red', 'cream', 'heather', 'navy', 'sage', 'wine', 'oatmeal'], pats: [5] },
-  dusk: { sky: { zen: [0.32, 0.12, 290], mid: [0.52, 0.16, 335], hor: [0.8, 0.14, 50], haze: [0.5, 0.1, 15], cloud: [0.84, 0.11, 40], shade: [0.48, 0.1, 315], land: [0.27, 0.05, 300] },
-    warm: [0.86, 0.17, 45], white: [0.9, 0.1, 55], sunK: 2.3, sun: 0.92, cover: -0.05, top: 0.7, land: 5,
-    amb: [[0.5, 0.36, 0.58], [0.55, 0.32, 0.3]], wind: 'breeze',
-    first: ['robe', 'towel', 'pillow', 'robe', 'cloth'], firstN: ['robe', 'towel', 'cloth'],
-    mix: ['robe', 'towel', 'pillow', 'sheet', 'cloth', 'tee'], cols: ['indigo', 'white', 'lilac', 'pink', 'sky', 'saffron', 'red'], pats: [4, 1, 3, 7, 0] },
-  night: { sky: { zen: [0.14, 0.05, 268], mid: [0.2, 0.06, 262], hor: [0.3, 0.06, 252], haze: [0.18, 0.04, 255], cloud: [0.34, 0.03, 260], shade: [0.17, 0.03, 265], land: [0.1, 0.02, 260] },
-    warm: [0.88, 0.03, 240], white: [0.92, 0.02, 230], sunK: 0.55, sun: 0.8, exp: 1.3, cover: -0.16, top: 0.8, stars: 1, moon: 1, land: 1, lights: 1,
-    amb: [[0.1, 0.13, 0.24], [0.05, 0.06, 0.1]], wind: 'breeze',
-    first: ['sheet', 'tee', 'pillow', 'sheet', 'dress'], firstN: ['pillow', 'tee', 'dress'],
-    mix: ['sheet', 'tee', 'pillow', 'dress', 'towel'], cols: ['white', 'cream', 'sky', 'pink', 'lilac', 'white'], pats: [0, 0, 4, 3] },
-  desert: { sky: { zen: [0.6, 0.1, 236], mid: [0.78, 0.06, 222], hor: [0.92, 0.04, 85], haze: [0.86, 0.06, 72], cloud: [0.97, 0.02, 80], shade: [0.82, 0.04, 60], land: [0.76, 0.09, 66] },
-    warm: [0.97, 0.06, 78], white: [0.99, 0.02, 85], sunK: 3.2, sun: 0.84, exp: 0.95, cover: -0.25, top: 0.6, land: 3, precip: 3,
-    amb: [[0.78, 0.74, 0.7], [0.75, 0.58, 0.42]], wind: 'gale',
-    first: ['scarf', 'sarong', 'robe', 'scarf', 'sarong'], firstN: ['scarf', 'robe', 'sarong'],
-    mix: ['scarf', 'sarong', 'robe', 'tee', 'cloth'], cols: ['indigo', 'saffron', 'red', 'denim', 'cream', 'terracotta'], pats: [7, 7, 0, 8, 1] },
-};
-let E = { ...ENV_DEF, ...ENVS.summer, id: 'summer' };
-// The scene's palette and patterns win, except for knits, which keep their own.
-function rollItem(kind = pick(E.mix)) {
-  const I = ITEMS[kind], cols = E.cols || I.cols;
-  const a = pick(cols);
-  let b = pick(E.cols || ANY);
-  for (let k = 0; k < 8 && b === a; k++) b = pick(E.cols || ANY);
-  if (b === a) b = a === 'white' ? 'navy' : 'white';
-  const pats = I.fixed || !E.pats ? I.pats : E.pats;
-  return { kind, I, w: rnd(...I.w), h: rnd(...I.h), alb: COLOURS[a], alb2: COLOURS[b], pat: pick(pats), freq: rnd(5, 9), grain: I.grain ?? 0.06 };
-}
-const FABRICS = {
-  cotton: { bend: 0.25, damp: 0.992, kgm2: 0.2, tau: 0.62, sheen: 0 },
-  linen: { bend: 0.55, damp: 0.99, kgm2: 0.26, tau: 0.4, sheen: 0 },
-  silk: { bend: 0.05, damp: 0.996, kgm2: 0.08, tau: 0.85, sheen: 1 },
-};
-let FABRIC = FABRICS.cotton;
-const SLACK = { slack: 1.012, taut: 1.002 };
-let slack = SLACK.slack;
-const LINE_Y = 2.0, ROPE_N = 80, ROPE_KG = 0.05, ITER = 8, H = 1 / 120, MAX_SHEETS = 8;
-const sim = { rope: null, sheets: [], pegs: [], flyers: [], narrow: false, span: 9.4, half: 5, seg: 0.1, sc: 1 };
-
-function build(narrow) {
-  for (const c of [...sim.sheets]) removeSheet(c);
-  sim.flyers.length = 0;
-  gusts.length = 0;
-  sim.narrow = narrow;
-  sim.span = narrow ? 4.2 : 6.8;
-  // A phone shows three sheets, larger.
-  sim.sc = narrow ? 1.3 : 1;
-  sim.half = sim.span / 2 + 0.7;
-  sim.rope = K4.makeRope(ROPE_N, -sim.half, LINE_Y, sim.half, LINE_Y, sim.half * 2 * slack, ROPE_KG);
-  sim.seg = (sim.half * 2) / (ROPE_N - 1);
-  // The opening line: a fresh mix each visit, filled left to right.
-  const first = (narrow ? E.firstN : E.first).slice();
-  const items = first.map(k => rollItem(k)).sort(() => Math.random() - 0.5);
-  const gap = narrow ? 0.2 : 0.26;
-  const total = items.reduce((s, it) => s + it.w * sim.sc, 0) + gap * (items.length - 1);
-  let x = -total / 2;
-  for (const it of items) {
-    hang(ropeAt(x), it, false);
-    x += it.w * sim.sc + gap;
-  }
-  updateActions();
-}
-const ropeAt = x => Math.round((x + sim.half) / sim.seg);
-
-// An item hangs from the rope point r0 rightward, pegged at its peg spots.
-function hang(r0, it, unfurl) {
-  const r = sim.rope, w = Math.max(2, Math.round((it.w * sim.sc) / sim.seg)) * sim.seg, h = it.h * sim.sc;
-  const sp = Math.max(w, h) / 22;
-  const cols = clamp(Math.round(w / sp) + 1, 4, 26), rows = clamp(Math.round(h / sp) + 1, 4, 26);
-  const c = K4.makeCloth(w, h, cols, rows, r.x[r0], r.y[r0] - 0.015, r.z[r0], it.I.mask);
-  const top = r.y[r0] - 0.015;
-  // A new item starts bunched at the line and falls open.
-  if (unfurl) for (let p = 0; p < c.n; p++) c.y[p] = c.py[p] = top - (top - c.y[p]) * 0.08;
-  c.it = it;
-  c.area = (w * h * c.na) / c.n;
-  c.mass = c.area * FABRIC.kgm2 * it.I.kg;
-  c.r0 = r0; c.r1 = r0 + Math.round(w / sim.seg);
-  c.pegs = [];
-  c.free = false; c.freeT = 0;
-  c.lastVn = new Float32Array(c.n);
-  c.crackT = 0;
-  // Four active points span the item for its normal; one marks its middle.
-  const near = (u, v) => {
-    let best = 0, bd = Infinity;
-    for (let p = 0; p < c.n; p++) if (c.act[p]) { const d = (c.uv[p * 2] - u) ** 2 + (c.uv[p * 2 + 1] - v) ** 2; if (d < bd) { bd = d; best = p; } }
-    return best;
-  };
-  c.corner = [near(0, 0), near(1, 0), near(0, 1), near(1, 1)];
-  c.mid = near(0.5, 0.5);
-  // Edge points can crack: active points beside a gap, below the top row.
-  const E = [];
-  for (let i = 1; i < rows; i++) for (let j = 0; j < cols; j++) {
-    const p = i * cols + j;
-    if (!c.act[p]) continue;
-    if (i === rows - 1 || j === 0 || j === cols - 1 || !c.act[p - 1] || !c.act[p + 1] || !c.act[p + cols]) E.push(p);
-  }
-  c.edge = Int32Array.from(E);
-  const peg = (p, ri) => { c.inv[p] = 0; const pg = { c, p, ri }; c.pegs.push(pg); sim.pegs.push(pg); };
-  for (const u of it.I.pegs) {
-    let j = Math.round(u * (cols - 1));
-    while (!c.act[j] && j < cols - 1) j++;
-    peg(j, r0 + Math.round((j / (cols - 1)) * (c.r1 - r0)));
-  }
-  sim.sheets.push(c);
-  makeMeshes(c);
-  return c;
-}
-function removeSheet(c) {
-  for (const m of c.meshes) { scene.remove(m); m.material.dispose(); }
-  c.geo.dispose();
-  for (const pg of c.pegs) sim.pegs.splice(sim.pegs.indexOf(pg), 1);
-  sim.sheets.splice(sim.sheets.indexOf(c), 1);
-}
-
-/* ---------- pegs ---------- */
-// An unclipped peg pops off and tumbles out of frame.
-function unclip(pg, quiet) {
-  const c = pg.c, r = sim.rope;
-  c.pegs.splice(c.pegs.indexOf(pg), 1);
-  sim.pegs.splice(sim.pegs.indexOf(pg), 1);
-  if (!(grab && grab.c === c && grab.p === pg.p)) c.inv[pg.p] = 1;
-  sim.flyers.push({ x: r.x[pg.ri], y: r.y[pg.ri] - 0.012, z: r.z[pg.ri] + 0.004,
-    vx: rnd(-0.8, 0.8), vy: rnd(1.2, 2.2), vz: rnd(0.2, 1), a: 0, w: rnd(-14, 14), t: 0 });
-  // The line springs up where the peg let go.
-  r.py[pg.ri] = r.y[pg.ri] - (quiet ? 0.004 : 0.012);
-  if (!c.pegs.length) { c.free = true; c.freeT = st.t; }
-  updateActions();
-}
-function updateActions() {
-  const onLine = sim.sheets.filter(c => !c.free).length;
-  const add = ui.action('add'), rel = ui.action('release');
-  if (add) add.disabled = onLine >= MAX_SHEETS || !freeSpot(0.25);
-  if (rel) rel.disabled = !sim.pegs.length;
-}
-// The widest free stretch of visible line takes a new sheet.
-function freeSpot(minW) {
-  const lo = ropeAt(-sim.span / 2 + 0.15), hi = ropeAt(sim.span / 2 - 0.15), m = Math.round(0.25 / sim.seg);
-  const taken = sim.sheets.filter(c => !c.free).map(c => [c.r0 - m, c.r1 + m]).sort((a, b) => a[0] - b[0]);
-  let best = null, at = lo;
-  for (const [a, b] of [...taken, [hi, hi]]) {
-    const len = Math.min(a, hi) - at;
-    if (len * sim.seg >= minW && (!best || len > best[1] - best[0])) best = [at, Math.min(a, hi)];
-    at = Math.max(at, b);
-  }
-  return best;
-}
-
-/* ---------- one simulation step ---------- */
-function windForces(c, t) {
-  const cols = c.cols, rows = c.rows, x = c.x, y = c.y, z = c.z, px = c.px, py = c.py, pz = c.pz;
-  const ax = c.ax, ay = c.ay, az = c.az, im3 = c.na / (c.mass * 3), ih = 1 / H;
-  ax.fill(0); ay.fill(0); az.fill(0);
-  // Wind samples one point per column in three bands.
-  const ws = c.ws || (c.ws = new Float32Array(cols * 9));
-  for (let b = 0; b < 3; b++) {
-    const row = Math.min(rows - 1, Math.round((b + 0.5) * rows / 3));
-    for (let j = 0; j < cols; j++) {
-      const p = row * cols + j, w = windAt(x[p], y[p], t, c.free), o = (b * cols + j) * 3;
-      ws[o] = w[0]; ws[o + 1] = w[1]; ws[o + 2] = w[2];
-    }
-  }
-  let fx = 0, fy = 0, fz = 0;
-  const T = c.tris;
-  for (let q = 0; q < T.length; q += 3) {
-    const a = T[q], b = T[q + 1], d = T[q + 2];
-    const e1x = x[b] - x[a], e1y = y[b] - y[a], e1z = z[b] - z[a];
-    const e2x = x[d] - x[a], e2y = y[d] - y[a], e2z = z[d] - z[a];
-    // N is the cross product; its length is twice the area.
-    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-    const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    if (nl < 1e-9) continue;
-    const o = (Math.min(2, Math.floor(((a / cols) | 0) * 3 / rows)) * cols + (a % cols)) * 3;
-    const vx = ws[o] - ((x[a] - px[a]) + (x[b] - px[b]) + (x[d] - px[d])) * ih / 3;
-    const vy = ws[o + 1] - ((y[a] - py[a]) + (y[b] - py[b]) + (y[d] - py[d])) * ih / 3;
-    const vz = ws[o + 2] - ((z[a] - pz[a]) + (z[b] - pz[b]) + (z[d] - pz[d])) * ih / 3;
-    // F = 0.5 rho C (v.n)|v.n| n area, with n and area from N.
-    const vn = vx * nx + vy * ny + vz * nz;
-    const s = (0.25 * RHO_C * vn * Math.abs(vn)) / (nl * nl);
-    let Fx = s * nx, Fy = s * ny, Fz = s * nz;
-    // Loose cloth also feels skin drag, so an edge-on sheet still lifts.
-    if (c.free) { const t = 0.5 * 1.2 * 0.35 * 0.5 * nl * Math.hypot(vx, vy, vz); Fx += t * vx; Fy += t * vy; Fz += t * vz; }
-    fx += Fx; fy += Fy; fz += Fz;
-    const gx = Fx * im3, gy = Fy * im3, gz = Fz * im3;
-    ax[a] += gx; ay[a] += gy; az[a] += gz;
-    ax[b] += gx; ay[b] += gy; az[b] += gz;
-    ax[d] += gx; ay[d] += gy; az[d] += gz;
-  }
-  // The pegs carry the sheet's weight and wind load into the line.
-  if (!c.pegs.length) return;
-  const r = sim.rope, k = 1 / c.pegs.length;
-  for (const pg of c.pegs) {
-    r.fx[pg.ri] += fx * k;
-    r.fy[pg.ri] += (fy - c.mass * 9.8) * k;
-    r.fz[pg.ri] += fz * k;
-  }
-}
-// A held point walks toward the pointer, 0.06 units per step at most.
-function follow(xs, ys, zs, i, g) {
-  const dx = g.tx - xs[i], dy = g.ty - ys[i], dz = g.tz - zs[i], d = Math.hypot(dx, dy, dz), f = d > 0.06 ? 0.06 / d : 1;
-  xs[i] += dx * f; ys[i] += dy * f; zs[i] += dz * f;
-}
-function step(t) {
-  const r = sim.rope;
-  r.fx.fill(0); r.fy.fill(0); r.fz.fill(0);
-  for (let i = gusts.length - 1; i >= 0; i--) if (t - gusts[i].t0 > 6) gusts.splice(i, 1);
-  for (const c of sim.sheets) windForces(c, t);
-  K4.stepRope(r, H, 0.995);
-  if (pluck) follow(r.x, r.y, r.z, pluck.i, pluck);
-  for (const c of sim.sheets) K4.stepCloth(c, H, FABRIC.damp);
-  if (grab) { const c = grab.c; c.px[grab.p] = c.x[grab.p]; c.py[grab.p] = c.y[grab.p]; c.pz[grab.p] = c.z[grab.p]; follow(c.x, c.y, c.z, grab.p, grab); }
-  for (let it = 0; it < ITER; it++) {
-    K4.solveRope(r);
-    K4.solveRope(r);
-    for (const pg of sim.pegs) {
-      const c = pg.c;
-      c.x[pg.p] = r.x[pg.ri]; c.y[pg.p] = r.y[pg.ri] - 0.015; c.z[pg.p] = r.z[pg.ri];
-    }
-    for (const c of sim.sheets) K4.solveCloth(c, FABRIC.bend);
-  }
-}
-
-/* ---------- flap cracks ---------- */
-// An edge whose speed across the cloth flips hard cracks, once per 120 ms.
-let onCrack = () => {};
-function cracks() {
-  if (reduce) return;
-  for (const c of sim.sheets) {
-    const x = c.x, y = c.y, z = c.z;
-    const [a, b, d, e] = c.corner;
-    // The sheet normal comes from its two diagonals.
-    const ux = x[e] - x[a], uy = y[e] - y[a], uz = z[e] - z[a], vx = x[d] - x[b], vy = y[d] - y[b], vz = z[d] - z[b];
-    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-    const nl = Math.hypot(nx, ny, nz) || 1;
-    nx /= nl; ny /= nl; nz /= nl;
-    let best = 0, bx = 0;
-    for (const p of c.edge) {
-      const vn = ((x[p] - c.px[p]) * nx + (y[p] - c.py[p]) * ny + (z[p] - c.pz[p]) * nz) / H;
-      const last = c.lastVn[p];
-      if (vn * last < 0 && Math.abs(vn - last) > best) { best = Math.abs(vn - last); bx = x[p]; }
-      c.lastVn[p] = vn;
-    }
-    if (best > 3.2 && st.t - c.crackT > 0.12) { c.crackT = st.t; onCrack(c, clamp((best - 3.2) / 6), bx); }
-  }
-}
+const st = { wind: ui.settings?.get?.('wind')?.value || 'breeze', sun: 0.85, windScale: 1, t: 0, lastInput: performance.now() };
+if (!WIND[st.wind]) st.wind = 'breeze';
 
 /* ---------- renderer ---------- */
 const canvas = document.createElement('canvas');
@@ -620,41 +110,23 @@ try {
   markReady();
   throw new Error('no WebGL 2');
 }
-renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 900);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.6);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.4);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
-/* ---------- light ---------- */
-// The slider moves the sun over the top, from behind the viewer to behind the line.
-const SUN = { dir: new THREE.Vector3(), col: new THREE.Vector3(), b: 0 };
-const v3 = a => new THREE.Vector3(...a);
-const SKY = {
-  zen: v3(lin(0.42, 0.19, 259)), mid: v3(lin(0.62, 0.16, 247)), hor: v3(lin(0.9, 0.06, 214)),
-  haze: v3(lin(0.64, 0.1, 238)), cloud: v3(lin(0.99, 0.012, 85)), shade: v3(lin(0.74, 0.06, 256)),
-  warm: v3(lin(0.95, 0.07, 70)), white: v3(lin(0.99, 0.015, 90)), land: v3(lin(0.55, 0.08, 230)),
-};
-function setSun(s) {
-  st.sun = s;
-  // Behind the line, the sun sits just under the camera's aim, behind the washing.
-  const th = Math.PI * s, el = lerp(0.3, (sim.pitch || 0.28) - 0.13, s) + 1.3 * Math.sin(th) ** 4;
-  SUN.dir.set(lerp(0.4, -0.13, s), Math.tan(Math.min(el, 1.45)), Math.cos(th)).normalize();
-  SUN.col.copy(SKY.warm).lerp(SKY.white, Math.sin(th)).multiplyScalar(E.sunK);
-  SUN.b = smooth(0.4, 0.9, s);
-}
-
 /* ---------- sky ---------- */
-// A painted key-art sky: deep blue, a cumulus bank, brush grain.
+// A gradient by ray height, a sun disc and a soft glow around it.
 const skyU = {
-  uInv: { value: new THREE.Matrix4() }, uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 },
-  uZen: { value: SKY.zen }, uMid: { value: SKY.mid }, uHor: { value: SKY.hor }, uHaze: { value: SKY.haze },
-  uCloud: { value: SKY.cloud }, uShade: { value: SKY.shade }, uDrift: { value: new THREE.Vector2() },
-  uLandCol: { value: SKY.land }, uCover: { value: 0 }, uTop: { value: 1 }, uOver: { value: 0 }, uStars: { value: 0 }, uLand: { value: 0 }, uMoon: { value: 0 },
+  uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
+  uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -662,483 +134,89 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uMid, uHor, uHaze, uCloud, uShade, uLandCol; uniform float uB, uCover, uTop, uOver, uStars, uLand, uMoon; uniform vec2 uDrift;
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float vnoise(vec2 p) {
-        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
-      }
-      float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
-      // Skyline height in radians at azimuth x; far rows sit lower and shift.
-      float landH(float az, float far) {
-        float x = az * (1.0 + far * 0.6) + far * 3.7;
-        if (uLand < 1.5) return 0.012 + 0.06 * fbm(vec2(x * 2.2, far * 5.0)) * (1.0 - far * 0.4);
-        if (uLand < 2.5) {
-          float b = floor(x * 18.0), f = fract(x * 18.0);
-          float h = 0.02 + 0.035 * hash(vec2(b, far));
-          if (hash(vec2(b, 9.0 + far)) > 0.5) h += 0.012 * (1.0 - abs(f - 0.5) * 2.0);
-          if (hash(vec2(b, 3.0 + far)) > 0.7 && abs(f - 0.3) < 0.05) h += 0.012;
-          return h * (1.0 - far * 0.3);
-        }
-        if (uLand < 3.5) { float d = fbm(vec2(x * 0.9, far * 4.0)); return 0.006 + 0.17 * d * d * d * (1.0 - far * 0.3); }
-        if (uLand < 4.5) {
-          float base = 0.015 + 0.03 * fbm(vec2(x * 1.5, far * 4.0));
-          // Pines of mixed height, some gaps between them.
-          float tx = x * 38.0, id = floor(tx), th = (0.015 + 0.05 * hash(vec2(id, far))) * step(0.25, hash(vec2(id, 7.0 + far)));
-          float w = 0.32 + 0.18 * hash(vec2(id, 2.0 + far));
-          return base + th * max(0.0, 1.0 - abs(fract(tx) - 0.5) / w);
-        }
-        float b = floor(x * 8.0);
-        return 0.02 + 0.08 * hash(vec2(b, far)) * step(0.3, hash(vec2(b, 5.0 + far)));
-      }
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor;
       void main() {
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
-        float e = ray.y, cs = max(dot(ray, uSun), 0.0), az = atan(ray.x, -ray.z);
-        // Brush grain: long level strokes, as in painted backgrounds.
-        float grain = fbm(vec2(az * 26.0, e * 70.0)) - 0.5;
-        float ee = e + grain * 0.012;
-        vec3 col = mix(uHor, uMid, smoothstep(-0.02, 0.24, ee));
-        col = mix(col, uZen, smoothstep(0.2, 0.85, ee));
-        // A cumulus bank stands on the horizon: a flat base, billows above.
-        vec2 q = vec2(az * 2.6 + uDrift.x, e * 5.0);
-        vec2 wq = q + 0.45 * vec2(fbm(q * 1.4 + 3.1), fbm(q * 1.4 + 7.7));
-        float top = (0.16 + 0.34 * fbm(vec2(az * 1.3 + uDrift.x * 0.5, 2.0))) * uTop;
-        float dens = (fbm(wq * 1.7) + 0.46 * (1.0 - smoothstep(0.0, top, e)) - 0.63 + uCover) * smoothstep(-0.005, 0.02, e);
-        dens -= smoothstep(top, top + 0.12, e) * 0.5;
-        float d = smoothstep(0.0, 0.035, dens);
-        // A puff is bright where the cloud above it thins.
-        float above = fbm((wq + vec2(0.0, 0.18)) * 1.7) + 0.46 * (1.0 - smoothstep(0.0, top, e + 0.03)) - 0.63;
-        float lit = clamp(0.5 + (dens - above) * 7.0 + (e - 0.06) * 2.5 + grain * 0.3, 0.0, 1.0);
-        vec3 cl = mix(uShade, uCloud * 1.08, smoothstep(0.3, 0.7, lit));
-        // The base of the bank sits in cool shade.
-        cl = mix(uShade * 0.9, cl, smoothstep(0.0, 0.06, e));
-        // Toward the sun the bank darkens and its edges glow.
-        cl = mix(cl, uShade * 0.85, uB * 0.4);
-        cl += uSunCol * (1.0 - smoothstep(0.0, 0.1, dens)) * smoothstep(0.75, 0.99, cs) * uB * 1.2;
-        col = mix(col, cl, d);
-        // High wisps lie on a flat deck.
-        if (e > 0.0) {
-          vec2 cp = ray.xz / (e + 0.08) * vec2(0.18, 0.45) + uDrift * 0.7;
-          float wd = smoothstep(0.55, 0.85, fbm(cp + 0.3 * fbm(cp * 2.0))) * smoothstep(0.08, 0.3, e) * 0.55;
-          col = mix(col, mix(uCloud, uShade, 0.25 + 0.4 * uB), wd);
-        }
-        // An overcast deck: low, mottled, lit from within.
-        if (uOver > 0.0) {
-          vec2 op = ray.xz / (abs(e) + 0.12) * 0.25 + uDrift * 0.5;
-          float o = fbm(op * 1.3 + fbm(op * 2.7));
-          vec3 oc = mix(uShade, uCloud, smoothstep(0.3, 0.75, o) * 0.7 + smoothstep(-0.05, 0.5, e) * 0.3);
-          col = mix(col, oc, uOver * smoothstep(-0.05, 0.02, e));
-        }
-        // Stars on a clear night.
-        if (uStars > 0.0 && e > 0.0) {
-          vec3 sp = ray * 260.0;
-          float h = hash(floor(sp.xy) + floor(sp.z) * 7.13);
-          col += vec3(0.9, 0.95, 1.0) * step(0.9965, h) * smoothstep(0.03, 0.15, e) * uStars * (0.4 + 0.6 * hash(floor(sp.zx)));
-        }
-        // Sun or moon: a disc and its glow, dimmed by overcast.
-        float glow = uMoon > 0.5 ? 0.06 * pow(cs, 30.0) + 0.3 * pow(cs, 400.0) + 8.0 * smoothstep(0.99985, 0.99992, cs)
-                                 : 0.08 * pow(cs, 8.0) + 0.45 * pow(cs, 90.0) + 10.0 * smoothstep(0.99955, 0.99975, cs);
-        col += uSunCol * glow * (1.0 - 0.8 * uOver);
-        // Below the horizon lies a pale band of haze.
-        col = mix(col, mix(uHor * 1.02, uHaze, smoothstep(0.0, 0.05, -e)), smoothstep(0.0, -0.01, e));
-        // The land: a far row in haze, a near row in colour, ground below.
-        if (uLand > 0.5) {
-          float hf = landH(az, 1.0), hn = landH(az, 0.0);
-          vec3 far = mix(uLandCol, uHor, 0.55), near = mix(uLandCol, uHaze, 0.15 + 0.2 * grain);
-          if (e < hf) col = mix(far, uHor, smoothstep(hf - 0.02, hf, e) * 0.25);
-          if (e < hn) col = mix(near * 0.9, near * 1.05, smoothstep(hn - 0.03, hn, e));
-          col += uSunCol * 0.25 * (1.0 - smoothstep(0.0, 0.004, abs(e - hn))) * uB * smoothstep(0.6, 0.95, cs);
-          // The town strings wires from pole to pole.
-          if (uLand > 4.5) {
-            float f = fract(az * 4.0 + 0.3);
-            if (abs(f - 0.5) > 0.497 && e < 0.22) col = uLandCol * 0.7;
-            for (int i = 0; i < 3; i++) {
-              float y = 0.17 + float(i) * 0.012 - 0.025 * (1.0 - pow(2.0 * f - 1.0, 2.0));
-              col = mix(col, uLandCol * 0.7, 1.0 - smoothstep(0.0008, 0.0016, abs(e - y)));
-            }
-          }
-        }
+        float e = max(ray.y, 0.0), cs = max(dot(ray, uSun), 0.0);
+        vec3 col = mix(uHor, uZen, pow(e, 0.45));
+        col += uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
         gl_FragColor = vec4(col, 1.0);
       }` }));
 sky.frustumCulled = false;
 sky.renderOrder = -10;
 scene.add(sky);
 
-/* ---------- cloth materials ---------- */
-// Three passes, each free of draw order:
-// 1. Max lifts the sky behind an item to the sun's light through it.
-// 2. Multiply tints that light with the cloth, so overlaps make a third colour.
-// 3. Add puts soft front light, sky light and fold shade on the face we see.
-// Hems are two layers: darker in back light.
-const clothVS = /* glsl */ `
-  varying vec3 vW, vN; varying vec2 vUv;
-  void main() {
-    vec4 w = modelMatrix * vec4(position, 1.0);
-    vW = w.xyz; vN = normal; vUv = uv;
-    gl_Position = projectionMatrix * viewMatrix * w;
-  }`;
-const clothHead = /* glsl */ `
-  varying vec3 vW, vN; varying vec2 vUv;
-  uniform vec3 uSun, uSunCol, uAlb, uAlb2, uAmbTop, uAmbBot, uLamp; uniform vec2 uSize;
-  uniform float uB, uTau, uSheen, uFade, uPat, uFreq, uKind, uGrain, uWet;
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
-  }
-  // Shapes: 0 plain, 1 tee, 2 trousers, 3 dress, 4 sock, 5 sweater, 6 scarf, 7 mitten, 8 robe.
-  bool inside(vec2 t) {
-    if (t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0) return false;
-    float u = t.x, v = t.y, a = min(u, 1.0 - u), c = abs(u - 0.5);
-    if (uKind < 0.5) return true;
-    if (uKind < 1.5) {
-      if (a >= 0.2) return c * c / 0.017 + v * v / 0.0064 > 1.0;
-      return v > (0.2 - a) * 0.45 && v < 0.36 + (0.2 - a) * 0.15;
-    }
-    if (uKind < 2.5) return c < 0.5 - 0.07 * v && (v < 0.32 || c > 0.015 + 0.07 * (v - 0.32) / 0.68);
-    if (uKind < 3.5) {
-      if (v < 0.12) return c > 0.15 && c < 0.23;
-      if (v < 0.42) return c < 0.25 - 0.06 * (v - 0.12) / 0.3;
-      return c < 0.19 + 0.31 * (v - 0.42) / 0.58;
-    }
-    if (uKind < 4.5) {
-      if (v < 0.72) return u < 0.56;
-      return !(u > 0.82 && v > 0.9 && (u - 0.82) * (u - 0.82) + (v - 0.9) * (v - 0.9) > 0.012);
-    }
-    if (uKind < 5.5) {
-      if (a >= 0.22) return c * c / 0.015 + v * v / 0.006 > 1.0;
-      return a > 0.02 && v > (0.22 - a) * 0.35 && v < 0.9 - (0.22 - a) * 0.4;
-    }
-    // A scarf ends in a fringe of loose strands.
-    if (uKind < 6.5) return v < 0.93 || fract(u * 16.0) < 0.5;
-    if (uKind < 7.5) {
-      if (u > 0.28) return v < 0.82 || pow((u - 0.64) / 0.36, 2.0) + pow((v - 0.82) / 0.18, 2.0) < 1.0;
-      return v > 0.4 && v < 0.74;
-    }
-    if (a >= 0.25) return !(v < 0.3 && c < 0.12 * (1.0 - v / 0.3));
-    return v > (0.25 - a) * 0.08 && v < 0.55;
-  }
-  // A hem is a band 1.2 cm in from any cut edge.
-  float hemK() {
-    vec2 d = 0.012 / uSize;
-    float k = 0.0;
-    if (!inside(vUv + vec2(d.x, 0.0))) k += 0.25;
-    if (!inside(vUv - vec2(d.x, 0.0))) k += 0.25;
-    if (!inside(vUv + vec2(0.0, d.y))) k += 0.25;
-    if (!inside(vUv - vec2(0.0, d.y))) k += 0.25;
-    return min(1.0, k * 2.0);
-  }
-  vec3 faceN(out vec3 v) {
-    if (!inside(vUv)) discard;
-    v = normalize(cameraPosition - vW);
-    vec3 n = normalize(vN);
-    return dot(n, v) < 0.0 ? -n : n;
-  }
-  // Patterns: 1 stripes, 2 end bands, 3 gingham, 4 dots, 5 knit, 6 batik, 7 ikat, 8 border cloth, 9 breton.
-  // Edges widen with screen distance, so fine patterns never shimmer.
-  float gBump = 0.0;
-  float aa(float x) { return max(fwidth(x), 0.02); }
-  vec3 albedo() {
-    vec2 s = vUv * uSize, m = s * uFreq;
-    float k = 0.0, vein = 0.0, p = uPat;
-    if (p > 0.5 && p < 1.5) { float f = fract(m.x), w = aa(m.x); k = smoothstep(0.62 - w, 0.62 + w, f) * (1.0 - smoothstep(0.94 - w, 0.94 + w, f)); }
-    else if (p > 1.5 && p < 2.5) { float y = min(vUv.y, 1.0 - vUv.y); k = smoothstep(0.08, 0.1, y) * (1.0 - smoothstep(0.16, 0.18, y)); }
-    else if (p > 2.5 && p < 3.5) { vec2 w = vec2(aa(m.x), aa(m.y)); vec2 g = smoothstep(0.5 - w, 0.5 + w, fract(m)); k = (g.x + g.y) * 0.5; }
-    else if (p > 3.5 && p < 4.5) {
-      vec2 g = m * 1.2; g.x += 0.5 * floor(g.y);
-      float w = aa(g.x); k = 1.0 - smoothstep(0.2 - w, 0.2 + w, length(fract(g) - 0.5));
-    }
-    else if (p > 4.5 && p < 5.5) {
-      // Knit: ribs that catch the light, and one Nordic band of zigzags.
-      float r = s.x * 70.0;
-      gBump = sin(r * 6.2832) * (1.0 - smoothstep(0.3, 0.8, aa(r)));
-      float y = vUv.y, band = step(0.2, y) * step(y, 0.3);
-      float zz = abs(fract(s.x * 9.0) - 0.5) * 2.0, row = fract((y - 0.2) / 0.1 * 2.0);
-      k = band * step(zz, row);
-      k = max(k, step(0.33, y) * step(y, 0.345));
-    }
-    else if (p > 5.5 && p < 6.5) {
-      // Batik: wax-resist blots, and dye that cracks into fine veins.
-      float n = vnoise(s * 4.0) * 0.6 + vnoise(s * 9.0) * 0.4;
-      k = smoothstep(0.49, 0.53, n);
-      vein = (1.0 - smoothstep(0.0, 0.03, abs(vnoise(s * 26.0 + 3.0) - 0.5))) * (1.0 - smoothstep(0.3, 0.8, aa(s.x * 26.0)));
-    }
-    else if (p > 6.5 && p < 7.5) {
-      // Ikat: diamonds whose edges bleed along the warp.
-      vec2 q = m * vec2(0.8, 0.4);
-      float j = (vnoise(vec2(0.0, s.y * 60.0)) - 0.5) * 0.14;
-      float d = abs(fract(q.x + j) - 0.5) + abs(fract(q.y) - 0.5);
-      k = max(1.0 - smoothstep(0.24, 0.3, d), smoothstep(0.42, 0.46, d) * 0.7);
-    }
-    else if (p > 7.5 && p < 8.5) {
-      // Border cloth: a frame, a centre ring, dots in the field.
-      float e = min(min(s.x, uSize.x - s.x), min(s.y, uSize.y - s.y));
-      float frame = max(step(0.1, e) * step(e, 0.17), step(e, 0.035));
-      float r = length(s - uSize * 0.5);
-      float ring = step(0.1, r) * step(r, 0.17);
-      float dots = (1.0 - smoothstep(0.12, 0.16, length(fract(m * 0.8) - 0.5))) * step(0.2, e);
-      k = max(max(frame, ring), dots * 0.8);
-    }
-    else if (p > 8.5) {
-      float f = fract(m.y * 1.3), w = aa(m.y * 1.3);
-      k = smoothstep(0.66 - w, 0.66 + w, f) * (1.0 - smoothstep(0.92 - w, 0.92 + w, f)) * step(0.12, vUv.y);
-    }
-    vec3 a = mix(uAlb, uAlb2, k);
-    a = mix(a, uAlb * 0.4, vein * 0.6);
-    // Thread grain: fine slubs along the weft, gone at a distance.
-    float gx = s.x * 900.0;
-    a *= 1.0 + (vnoise(vec2(gx, s.y * 40.0)) - 0.5) * 0.12 * (1.0 - smoothstep(0.4, 1.0, fwidth(gx)));
-    // Terry loops on towels.
-    float tx = s.x * 400.0;
-    a *= 1.0 + (vnoise(s * 400.0) - 0.5) * uGrain * 2.0 * (1.0 - smoothstep(0.4, 1.0, fwidth(tx)));
-    // Wet cloth darkens and deepens.
-    return mix(a, pow(a, vec3(1.5)) * 0.85, uWet);
-  }
-  vec3 trans(vec3 a) { return clamp(pow(a, vec3(1.4)) * 1.15, 0.0, 1.0); }`;
-const PASS = {
-  max: `void main() { vec3 v; vec3 n = faceN(v);
-    float through = 0.45 + 0.55 * max(dot(-n, uSun), 0.0);
-    float fwd = 1.0 + 0.8 * pow(max(dot(-v, uSun), 0.0), 8.0);
-    gl_FragColor = vec4(uSunCol * uB * uTau * 0.42 * through * fwd * uFade, 1.0); }`,
-  mul: `void main() { vec3 v; vec3 n = faceN(v);
-    float c = max(abs(dot(n, v)), 0.3);
-    vec3 T = pow(trans(albedo()), vec3((1.0 + hemK()) / c));
-    // Wet cloth turns see-through.
-    vec3 m = mix(vec3(0.04), T, min(1.0, (uB * uTau + (1.0 - uB) * 0.04) * (1.0 + 0.6 * uWet)));
-    gl_FragColor = vec4(mix(vec3(1.0), m, uFade), 1.0); }`,
-  add: `void main() { vec3 v; vec3 n = faceN(v);
-    vec3 alb = albedo();
-    // Knit ribs tip the normal across the wale.
-    n = normalize(n + normalize(vec3(1.0, 0.0, 0.0) - n * n.x) * gBump * 0.3);
-    float ndl = dot(n, uSun);
-    float wrap = clamp((ndl + 0.35) / 1.35, 0.0, 1.0);
-    vec3 sky = mix(uAmbBot, uAmbTop, 0.5 + 0.5 * n.y) * (0.9 - 0.45 * uB);
-    // Bent cloth turns its normal fast: shade the folds.
-    float fold = clamp(length(fwidth(n)) / max(length(fwidth(vW)), 1e-4) * 0.035, 0.0, 0.4);
-    vec3 col = alb * (uSunCol * 0.42 * wrap * wrap + sky * 0.85) * (1.0 - fold) * (1.0 - 0.1 * hemK());
-    float fuzz = pow(1.0 - abs(dot(n, v)), 4.0);
-    col += (sky * 0.5 + uSunCol * 0.25 * max(ndl, 0.0)) * fuzz * 0.35;
-    col += uSunCol * pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0) * 0.35 * uSheen;
-    col += uSunCol * pow(max(dot(reflect(-uSun, n), v), 0.0), 40.0) * 0.4 * uWet;
-    // String lights warm the top of each piece.
-    col += alb * uLamp * (1.0 - smoothstep(0.0, 0.5, vUv.y));
-    gl_FragColor = vec4(col * uFade, 1.0); }`,
-};
-const shared = { uSun: { value: SUN.dir }, uSunCol: { value: SUN.col }, uB: { value: 0 }, uTau: { value: FABRIC.tau }, uSheen: { value: 0 },
-  uAmbTop: { value: new THREE.Vector3() }, uAmbBot: { value: new THREE.Vector3() }, uLamp: { value: new THREE.Vector3() }, uWet: { value: 0 } };
-function clothMat(kind, c) {
-  const it = c.it;
-  const m = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uFade: c.fadeU,
-      uAlb: { value: v3(lin(...it.alb)) }, uAlb2: { value: v3(lin(...it.alb2)) },
-      uPat: { value: it.pat }, uFreq: { value: it.freq }, uKind: { value: it.I.shape || 0 }, uGrain: { value: it.grain }, uSize: { value: new THREE.Vector2(c.w, c.h) } },
-    vertexShader: clothVS, fragmentShader: clothHead + PASS[kind],
-    side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
-  });
-  m.blendEquation = kind === 'max' ? THREE.MaxEquation : THREE.AddEquation;
-  m.blendSrc = kind === 'mul' ? THREE.DstColorFactor : THREE.OneFactor;
-  m.blendDst = kind === 'mul' ? THREE.ZeroFactor : THREE.OneFactor;
-  return m;
-}
-const ORDER = { max: 10, mul: 11, add: 12 };
-function makeMeshes(c) {
-  const g = new THREE.BufferGeometry();
-  c.pos = new Float32Array(c.n * 3);
-  g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(c.uv, 2));
-  g.setIndex(new THREE.BufferAttribute(c.tris, 1));
-  c.geo = g;
-  c.fadeU = { value: 1 };
-  c.meshes = ['max', 'mul', 'add'].map(kind => {
-    const m = new THREE.Mesh(g, clothMat(kind, c));
-    m.renderOrder = ORDER[kind];
-    m.frustumCulled = false;
-    m.userData.cloth = c;
-    scene.add(m);
-    return m;
-  });
-  syncCloth(c);
-}
-
-/* ---------- line and pegs ---------- */
-const lineGeo = new THREE.BufferGeometry();
-const linePos = new Float32Array(ROPE_N * 2 * 3);
-lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
-{
-  const idx = [];
-  for (let i = 0; i < ROPE_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  lineGeo.setIndex(idx);
-}
-const lineU = { uCol: { value: new THREE.Vector3() } };
-const line = new THREE.Mesh(lineGeo, new THREE.ShaderMaterial({ uniforms: lineU, side: THREE.DoubleSide,
-  vertexShader: `void main() { gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform vec3 uCol; void main() { gl_FragColor = vec4(uCol, 1.0); }` }));
-line.frustumCulled = false;
-scene.add(line);
-
-const PEG_MAX = 64;
-const pegMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.085, 0.03),
-  new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...lin(0.66, 0.08, 62)), roughness: 0.75 }), PEG_MAX);
-pegMesh.frustumCulled = false;
-scene.add(pegMesh);
-/* ---------- weather ---------- */
-// Rain, snow or dust: points that wrap through a box in front of the line.
-const PRECIP_N = 1800;
-const precipGeo = new THREE.BufferGeometry();
-precipGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PRECIP_N * 3).map(() => Math.random()), 3));
-const precipU = {
-  uTime: { value: 0 }, uKind: { value: 0 }, uWind: { value: 0 }, uPx: { value: 400 }, uAlpha: { value: 0.4 },
-  uCol: { value: new THREE.Vector3(1, 1, 1) }, uOrigin: { value: new THREE.Vector3(-6, -2.5, -3) }, uBox: { value: new THREE.Vector3(12, 7, 7) },
-};
-const precip = new THREE.Points(precipGeo, new THREE.ShaderMaterial({ uniforms: precipU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  vertexShader: /* glsl */ `
-    uniform float uTime, uKind, uWind, uPx; uniform vec3 uOrigin, uBox; varying float vK;
-    void main() {
-      vec3 v = uKind < 1.5 ? vec3(uWind * 0.35, -6.5, 0.4) : uKind < 2.5 ? vec3(uWind * 0.3, -0.6, 0.1) : vec3(uWind * 1.1 + 1.5, 0.15, 0.2);
-      vec3 q = fract(position + v * uTime / uBox);
-      if (uKind > 1.5 && uKind < 2.5) q.x = fract(q.x + 0.015 * sin(uTime * 1.1 + position.y * 40.0));
-      vec4 mv = viewMatrix * vec4(uOrigin + q * uBox, 1.0);
-      gl_Position = projectionMatrix * mv;
-      float sz = uKind < 1.5 ? 0.45 : uKind < 2.5 ? 0.045 : 0.018;
-      gl_PointSize = clamp(sz * uPx / -mv.z, 1.0, 64.0);
-      vK = fract(position.x * 13.7);
-    }`,
-  fragmentShader: /* glsl */ `
-    uniform float uKind, uWind, uAlpha; uniform vec3 uCol; varying float vK;
-    void main() {
-      vec2 c = gl_PointCoord - 0.5;
-      float a = uKind < 1.5 ? (1.0 - smoothstep(0.008, 0.025, abs(c.x + c.y * uWind * 0.05))) * (1.0 - smoothstep(0.25, 0.5, abs(c.y)))
-                            : 1.0 - smoothstep(0.2, 0.5, length(c));
-      gl_FragColor = vec4(uCol * a * uAlpha * (0.6 + 0.4 * vK), 1.0);
-    }` }));
-precip.frustumCulled = false;
-precip.renderOrder = 20;
-precip.visible = false;
-scene.add(precip);
-// String lights: warm bulbs along the line at night.
-const BULBS = 26;
-const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.02, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), BULBS);
-{
-  const tint = [[6, 3.6, 1.4], [5.5, 2.6, 2.2], [6, 4.2, 2]];
-  for (let k = 0; k < BULBS; k++) bulbs.setColorAt(k, new THREE.Color().setRGB(...tint[k % 3]));
-}
-bulbs.frustumCulled = false;
-bulbs.visible = false;
-scene.add(bulbs);
-const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
-const hemi = new THREE.HemisphereLight(0x9fb6ff, 0x6a7290, 0.9);
+/* ---------- light ---------- */
+const sunLight = new THREE.DirectionalLight(0xffffff, 3);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+Object.assign(sunLight.shadow.camera, { left: -16, right: 16, top: 20, bottom: -20, near: 1, far: 140 });
+sunLight.shadow.bias = -0.0004;
+sunLight.shadow.normalBias = 0.03;
+const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
 scene.add(sunLight, sunLight.target, hemi);
+const SUN = { dir: new THREE.Vector3(), col: new THREE.Vector3(), b: 0 };
+const WARM = v3(lin([0.9, 0.11, 60])), WHITE = v3(lin([0.98, 0.025, 85]));
+
+/* ---------- the place ---------- */
+const P = { place: null, set: null, line: null, look: null, d: 12 };
+function buildPlace(id) {
+  const pl = PLACES[id] || alley;
+  if (P.set) { scene.remove(P.set); P.look.dispose(); }
+  P.place = pl;
+  P.set = pl.build(scene);
+  skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
+  skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
+  scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), 30, 420);
+  hemi.color.setRGB(...lin(pl.sky.zen)).lerp(new THREE.Color(1, 1, 1), 0.5);
+  hemi.groundColor.setRGB(...lin(pl.amb.lo));
+  P.line = makeLine(pl.anchors.a, pl.anchors.b, { windDir: pl.windDir });
+  P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
+  // The wardrobe hangs left to right with small gaps.
+  let s = 0.3;
+  for (const it of pl.wash) {
+    const c = makePiece({ w: it.w, h: it.h, col: 0 });
+    hang(P.line, c, s);
+    P.look.addPiece(c, { alb: lin(it.c), tr: lin([Math.min(0.95, it.c[0] + 0.05), it.c[1] * 1.4, it.c[2]]) });
+    s += it.w + 0.14;
+  }
+  setSun(st.sun);
+  settle(2.5);
+}
+
+function setSun(s) {
+  st.sun = s;
+  const pl = P.place;
+  SUN.dir.copy(v3(pl.sun.front)).lerp(v3(pl.sun.back), s).normalize();
+  const el = Math.asin(clamp(SUN.dir.y, -1, 1));
+  SUN.col.copy(WARM).lerp(WHITE, smooth(0.2, 0.9, el)).multiplyScalar(2.6);
+  SUN.b = smooth(0.45, 0.9, s);
+}
 
 /* ---------- draw ---------- */
-const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), zAxis = new THREE.Vector3(0, 0, 1), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3();
-function syncCloth(c) {
-  const pos = c.pos;
-  for (let p = 0; p < c.n; p++) { pos[p * 3] = c.x[p]; pos[p * 3 + 1] = c.y[p]; pos[p * 3 + 2] = c.z[p]; }
-  c.geo.attributes.position.needsUpdate = true;
-  c.geo.computeVertexNormals();
-  c.geo.boundingSphere = null;
-}
-function syncScene() {
-  for (const c of sim.sheets) syncCloth(c);
-  // The line is a ribbon that faces the camera.
-  const r = sim.rope, cp = camera.position, hw = 0.011;
-  for (let i = 0; i < ROPE_N; i++) {
-    const a = Math.max(0, i - 1), b = Math.min(ROPE_N - 1, i + 1);
-    const tx = r.x[b] - r.x[a], ty = r.y[b] - r.y[a], tz = r.z[b] - r.z[a];
-    const vx = cp.x - r.x[i], vy = cp.y - r.y[i], vz = cp.z - r.z[i];
-    let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx;
-    const sl = Math.hypot(sx, sy, sz) || 1;
-    sx *= hw / sl; sy *= hw / sl; sz *= hw / sl;
-    linePos.set([r.x[i] + sx, r.y[i] + sy, r.z[i] + sz, r.x[i] - sx, r.y[i] - sy, r.z[i] - sz], i * 6);
-  }
-  lineGeo.attributes.position.needsUpdate = true;
-  let k = 0;
-  for (const pg of sim.pegs) {
-    if (k >= PEG_MAX) break;
-    const i = pg.ri, a = Math.max(0, i - 1), b = Math.min(ROPE_N - 1, i + 1);
-    q.setFromAxisAngle(zAxis, Math.atan2(r.y[b] - r.y[a], r.x[b] - r.x[a]));
-    at.set(r.x[i], r.y[i] - 0.012, r.z[i] + 0.004);
-    pegMesh.setMatrixAt(k++, mtx.compose(at, q, one));
-  }
-  for (const f of sim.flyers) {
-    if (k >= PEG_MAX) break;
-    q.setFromAxisAngle(zAxis, f.a);
-    at.set(f.x, f.y, f.z);
-    pegMesh.setMatrixAt(k++, mtx.compose(at, q, one));
-  }
-  pegMesh.count = k;
-  pegMesh.instanceMatrix.needsUpdate = true;
-  if (bulbs.visible) {
-    for (let b = 0; b < BULBS; b++) {
-      const i = Math.round(((b + 0.5) / BULBS) * (ROPE_N - 1));
-      at.set(r.x[i], r.y[i] - 0.03, r.z[i] + 0.01);
-      bulbs.setMatrixAt(b, mtx.compose(at, q.identity(), one));
-    }
-    bulbs.instanceMatrix.needsUpdate = true;
-  }
-}
-const DARK = new THREE.Vector3(...lin(0.22, 0.03, 262)), PALE = new THREE.Vector3(...lin(0.82, 0.01, 90));
+const view = { w: 1, h: 1 };
 function syncLight() {
-  shared.uB.value = skyU.uB.value = SUN.b;
-  shared.uTau.value = FABRIC.tau;
-  shared.uSheen.value = FABRIC.sheen;
-  renderer.toneMappingExposure = E.exp * lerp(1, 0.82, SUN.b);
-  sunLight.position.copy(SUN.dir).multiplyScalar(10);
+  P.look.setSun(SUN.dir, SUN.col, SUN.b);
+  skyU.uSun.value.copy(SUN.dir);
+  skyU.uSunCol.value.copy(SUN.col);
+  sunLight.target.position.set(0, 6, -8);
+  sunLight.position.copy(sunLight.target.position).addScaledVector(SUN.dir, 60);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
-  precipU.uTime.value = st.t;
-  precipU.uWind.value = WIND[st.wind].u * st.windScale;
-  precipU.uPx.value = (view.h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-  // The line is pale in front light and a dark thread against the sun.
-  lineU.uCol.value.copy(PALE).lerp(DARK, SUN.b);
+  sunLight.intensity = 3.2;
+  hemi.intensity = 0.9 - 0.25 * SUN.b;
+  renderer.toneMappingExposure = 1 - 0.15 * SUN.b;
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
-  skyU.uDrift.value.set(st.drift, st.drift * 0.25);
 }
 function draw() {
-  syncScene();
+  P.look.sync(camera, view.h);
   syncLight();
   composer.render();
   if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
 }
 
-/* ---------- free cloth and flying pegs ---------- */
-// Loose sheets leave once 20 % past the frame edge; reduced motion fades them.
-const ndc = new THREE.Vector3();
-function loose(dt) {
-  for (let i = sim.flyers.length - 1; i >= 0; i--) {
-    const f = sim.flyers[i];
-    f.vy -= 9.8 * dt;
-    f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt; f.a += f.w * dt; f.t += dt;
-    if (f.t > 3) sim.flyers.splice(i, 1);
-  }
-  for (const c of [...sim.sheets]) {
-    if (!c.free) continue;
-    const mid = c.mid;
-    ndc.set(c.x[mid], c.y[mid], c.z[mid]).project(camera);
-    const age = st.t - c.freeT, held = grab && grab.c === c;
-    const out = Math.abs(ndc.x) > 1.2 || Math.abs(ndc.y) > 1.2 || ndc.z > 1 || c.z[mid] > camera.position.z - 1.5;
-    if (!held && (reduce || age > 14)) c.fadeU.value = Math.max(0, c.fadeU.value - dt / (reduce ? 1.2 : 1));
-    if (!held && (out || c.fadeU.value <= 0)) { removeSheet(c); updateActions(); }
-  }
-}
-
 /* ---------- size ---------- */
-const view = { w: 1, h: 1 };
-function frameCamera() {
-  const a = view.w / view.h, t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), pitch = sim.narrow ? 0.3 : 0.28;
-  // The line spans the frame; on a phone it spans the short side.
-  const dist = sim.span / 2 / (t * a);
-  const ndcY = sim.narrow ? 0.16 : 0.4;
-  const cy = LINE_Y - dist * (pitch + ndcY * t);
-  camera.aspect = a;
-  camera.position.set(0, cy, dist);
-  camera.lookAt(0, cy + dist * pitch, 0);
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-  sim.pitch = pitch;
-  setSun(st.sun);
-}
 function resize() {
   const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
   view.w = w; view.h = h;
@@ -1147,24 +225,17 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
-  const narrow = w < 640;
-  if (narrow !== sim.narrow || !sim.rope) { endGesture(); build(narrow); settle(2.5); }
-  frameCamera();
+  P.d = P.place.frame(camera, w / h);
   kick();
 }
-// The first frame shows sheets already moving in the wind.
+const wind = () => ({ ...WIND[st.wind], scale: st.windScale * (reduce ? 0.3 : 1) });
+// The first frame shows washing already moving in the wind.
 function settle(sec) {
-  for (let i = 0, n = Math.round(sec / H); i < n; i++) { st.t += H; advance(H); step(st.t); }
-}
-function advance(dt) {
-  const U = WIND[st.wind].u * st.windScale;
-  st.scroll += U * DIR_X * 0.16 * dt;
-  st.drift += U * 0.004 * dt;
+  for (let i = 0, n = Math.round(sec / H); i < n; i++) { st.t += H; stepWorld(P.line, st.t, wind()); }
 }
 
 /* ---------- frame loop ---------- */
-// Lively after input or with loose things in flight: every frame.
-// Drifting in the wind: 30 fps.
+// Lively after input: every frame; drifting in the wind: 30 fps.
 // 60 s after the last input the wind eases to calm over 3 s; then the loop sleeps.
 let raf = 0, visible = true, lastT = 0, lastDraw = 0, accum = 0, still = 0;
 function kick() { if (!raf && visible) raf = requestAnimationFrame(frame); }
@@ -1174,230 +245,61 @@ function frame(now) {
   let busy = true;
   try {
     const idle = now - st.lastInput;
-    const lively = idle < 1500 || press || sim.flyers.length || sim.sheets.some(c => c.free);
-    if (!lively && now - lastDraw < 31) return;
+    if (idle > 1500 && now - lastDraw < 31) return;
     const dt = lastT ? Math.min(1 / 15, (now - lastT) / 1000) : 1 / 60;
     lastT = now;
     st.windScale = 1 - smooth(60000, 63000, idle);
-    advance(dt);
     accum += dt;
-    while (accum >= H) { accum -= H; st.t += H; step(st.t); }
-    cracks();
-    loose(dt);
+    const w = wind();
+    while (accum >= H) { accum -= H; st.t += H; stepWorld(P.line, st.t, w); }
     draw();
     lastDraw = now;
-    // Calm air and still cloth for one second put the loop to sleep.
-    if (st.windScale === 0 && !lively) { still += dt; busy = still < 1; } else still = 0;
+    // Calm air for one second puts the loop to sleep.
+    if (st.windScale === 0) { still += dt; busy = still < 1; } else still = 0;
   } finally {
     if (busy) kick(); else { lastT = 0; accum = 0; }
   }
 }
 whenVisible(stage, v => { visible = v; if (v) kick(); else { cancelAnimationFrame(raf); raf = 0; lastT = 0; accum = 0; } });
 
-/* ---------- picking ---------- */
-const ray = new THREE.Raycaster(), ptrN = new THREE.Vector2(), plane = new THREE.Plane(), hitV = new THREE.Vector3(), fwd = new THREE.Vector3();
-const local = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-function toScreen(x, y, z) { ndc.set(x, y, z).project(camera); return [(ndc.x + 1) * view.w / 2, (1 - ndc.y) * view.h / 2]; }
-function aim(p) { ptrN.set((p.x / view.w) * 2 - 1, 1 - (p.y / view.h) * 2); ray.setFromCamera(ptrN, camera); }
-function pickPeg(p, reach) {
-  let best = null, bd = reach;
-  for (const pg of sim.pegs) {
-    const r = sim.rope, [sx, sy] = toScreen(r.x[pg.ri], r.y[pg.ri] - 0.02, r.z[pg.ri]), d = Math.hypot(sx - p.x, sy - p.y);
-    if (d < bd) { bd = d; best = pg; }
-  }
-  return best;
-}
-function pickCloth(p) {
-  aim(p);
-  const hits = ray.intersectObjects(sim.sheets.map(c => c.meshes[2]), false);
-  if (!hits.length) return null;
-  const h = hits[0], c = h.object.userData.cloth;
-  // The nearest corner of the hit triangle that no peg holds.
-  let best = -1, bd = Infinity;
-  for (const i of [h.face.a, h.face.b, h.face.c]) {
-    if (c.pegs.some(pg => pg.p === i)) continue;
-    const d = Math.hypot(c.x[i] - h.point.x, c.y[i] - h.point.y, c.z[i] - h.point.z);
-    if (d < bd) { bd = d; best = i; }
-  }
-  return best < 0 ? null : { c, p: best, point: h.point.clone() };
-}
-function pickLine(p, reach) {
-  const r = sim.rope;
-  let best = -1, bd = reach, prev = toScreen(r.x[0], r.y[0], r.z[0]);
-  for (let i = 1; i < r.n; i++) {
-    const cur = toScreen(r.x[i], r.y[i], r.z[i]);
-    const ex = cur[0] - prev[0], ey = cur[1] - prev[1], L2 = ex * ex + ey * ey || 1;
-    const t = clamp(((p.x - prev[0]) * ex + (p.y - prev[1]) * ey) / L2);
-    const d = Math.hypot(prev[0] + ex * t - p.x, prev[1] + ey * t - p.y);
-    if (d < bd && !r.pin[t < 0.5 ? i - 1 : i]) { bd = d; best = t < 0.5 ? i - 1 : i; }
-    prev = cur;
-  }
-  return best < 0 ? null : best;
-}
-// The pointer moves a held point on a plane that faces the camera.
-function target(p, g) {
-  aim(p);
-  if (ray.ray.intersectPlane(plane, hitV)) { g.tx = hitV.x; g.ty = hitV.y; g.tz = hitV.z; }
-}
-function holdPlane(x, y, z) { camera.getWorldDirection(fwd); plane.setFromNormalAndCoplanarPoint(fwd, hitV.set(x, y, z)); }
-
-/* ---------- pointer ---------- */
-// A press becomes a drag after 8 px, or a hold after 260 ms; else a tap.
-let press = null, grab = null, pluck = null;
-function begin() {
-  const p = press;
-  if (p.cloth) {
-    const c = p.cloth.c;
-    grab = { c, p: p.cloth.p };
-    c.inv[grab.p] = 0;
-    holdPlane(c.x[grab.p], c.y[grab.p], c.z[grab.p]);
-    target(p.now, grab);
-  } else if (p.line != null) {
-    const r = sim.rope;
-    pluck = { i: p.line };
-    r.pin[pluck.i] = 1;
-    holdPlane(r.x[pluck.i], r.y[pluck.i], r.z[pluck.i]);
-    target(p.now, pluck);
-  }
-  stage.classList.toggle('held', !!(grab || pluck));
-}
-function endGesture() {
-  if (grab) { const c = grab.c; if (!c.pegs.some(pg => pg.p === grab.p)) c.inv[grab.p] = 1; grab = null; }
-  if (pluck) { sim.rope.pin[pluck.i] = 0; pluck = null; }
-  stage.classList.remove('held');
-}
-function tap(p) {
-  const touch = p.type !== 'mouse';
-  if (p.peg) { unclip(p.peg); return; }
-  if (p.cloth) {
-    // A poke pushes the cloth away from the eye.
-    const { c, point } = p.cloth;
-    for (let i = 0; i < c.n; i++) {
-      const d = Math.hypot(c.x[i] - point.x, c.y[i] - point.y);
-      if (d < 0.35 && c.inv[i]) c.pz[i] += 0.025 * (1 - d / 0.35);
-    }
-    return;
-  }
-  const li = pickLine(p.now, touch ? 24 : 16);
-  if (li != null) { for (let i = Math.max(1, li - 3); i <= Math.min(ROPE_N - 2, li + 3); i++) sim.rope.py[i] += 0.02; return; }
-  // The sky sends a gust in from the side tapped.
-  const dir = p.now.x < view.w / 2 ? 1 : -1;
-  gusts.push({ x0: -dir * (sim.span / 2 + 1.5), dir, t0: st.t, amp: 2.2 + WIND[st.wind].u * 0.8 });
+/* ---------- reel ---------- */
+// A sideways drag reels the line; the drag follows the line on screen.
+const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+let drag = null;
+function lineScreen() {
+  pa.set(...P.line.a).project(camera); pb.set(...P.line.b).project(camera);
+  const dx = (pb.x - pa.x) * view.w / 2, dy = (pa.y - pb.y) * view.h / 2;
+  const px = Math.hypot(dx, dy) || 1;
+  // Metres of line per pixel of drag along it.
+  return { ux: dx / px, uy: dy / px, mpp: P.line.len / px };
 }
 stage.addEventListener('pointerdown', e => {
-  if (press || e.button > 0) return;
-  try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointers cannot capture */ }
-  const p = local(e), touch = e.pointerType !== 'mouse';
-  const peg = pickPeg(p, touch ? 30 : 22);
-  press = { id: e.pointerId, type: e.pointerType, x0: p.x, y0: p.y, now: p, drag: false,
-    peg, cloth: pickCloth(p), line: pickLine(p, touch ? 24 : 16) };
-  // A peg wins a tap; the cloth under it wins a drag.
-  press.timer = setTimeout(() => { if (press && !press.drag) { press.drag = true; begin(); } }, 260);
+  if (e.button !== 0 || e.target !== canvas) return;
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, ...lineScreen() };
+  stage.setPointerCapture(e.pointerId);
   wake();
 });
 stage.addEventListener('pointermove', e => {
-  if (!press || e.pointerId !== press.id) return;
-  const p = local(e);
-  press.now = p;
-  if (!press.drag && Math.hypot(p.x - press.x0, p.y - press.y0) > 8) { press.drag = true; clearTimeout(press.timer); begin(); }
-  if (grab) target(p, grab);
-  if (pluck) target(p, pluck);
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  reel(P.line, (dx * drag.ux + dy * drag.uy) * drag.mpp);
   wake();
 });
-function endPointer(e) {
-  if (!press || e.pointerId !== press.id) return;
-  clearTimeout(press.timer);
-  if (!press.drag) tap(press);
-  press = null;
-  endGesture();
-  wake();
-}
-stage.addEventListener('pointerup', endPointer);
-stage.addEventListener('pointercancel', endPointer);
-stage.addEventListener('lostpointercapture', endPointer);
-// Space hangs a sheet from the stage or the page, never from a control.
-document.addEventListener('keydown', e => {
-  if (e.key !== ' ' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.target !== document.body && e.target !== stage) return;
-  e.preventDefault();
-  act.add();
-});
-
-/* ---------- scenes ---------- */
-const PRECIP = { 1: [[0.7, 0.76, 0.82], 0.16], 2: [[1, 1, 1], 0.85], 3: [[1, 0.84, 0.6], 0.45] };
-function applyEnv(id) {
-  E = { ...ENV_DEF, ...ENVS[id], id };
-  for (const k of ['zen', 'mid', 'hor', 'haze', 'cloud', 'shade', 'land']) SKY[k].set(...lin(...E.sky[k]));
-  SKY.warm.set(...lin(...E.warm));
-  SKY.white.set(...lin(...E.white));
-  skyU.uCover.value = E.cover; skyU.uTop.value = E.top; skyU.uOver.value = E.over;
-  skyU.uStars.value = E.stars; skyU.uLand.value = E.land; skyU.uMoon.value = E.moon;
-  shared.uAmbTop.value.set(...E.amb[0]);
-  shared.uAmbBot.value.set(...E.amb[1]);
-  shared.uWet.value = E.wet;
-  shared.uLamp.value.set(...(E.lights ? [0.55, 0.34, 0.15] : [0, 0, 0]));
-  precip.visible = !!E.precip;
-  if (E.precip) { precipU.uKind.value = E.precip; precipU.uCol.value.set(...PRECIP[E.precip][0]); precipU.uAlpha.value = PRECIP[E.precip][1]; }
-  bulbs.visible = !!E.lights;
-  st.wind = E.wind;
-  ui.setting('wind')?.set(E.wind);
-  st.sun = E.sun;
-  ui.slider?.set(E.sun);
-}
-act.scene = v => {
-  if (!ENVS[v]) return;
-  applyEnv(v);
-  try { localStorage.setItem('stimming.washline.scene', v); } catch { /* storage can be blocked */ }
-  endGesture();
-  build(sim.narrow);
-  settle(2.5);
-  frameCamera();
-  wake();
-};
+const end = e => { if (drag && e.pointerId === drag.id) drag = null; };
+stage.addEventListener('pointerup', end);
+stage.addEventListener('pointercancel', end);
 
 /* ---------- controls ---------- */
-act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
+act.place = v => { buildPlace(v); resize(); wake(); };
 act.sun = v => { setSun(v); wake(); };
-act.add = () => {
-  const onLine = sim.sheets.filter(c => !c.free).length;
-  if (onLine >= MAX_SHEETS) return;
-  const spot = freeSpot(0.25);
-  if (!spot) return;
-  // The item must fit the gap; a few rolls find one that does.
-  let it = rollItem();
-  for (let k = 0; k < 12 && it.w * sim.sc > (spot[1] - spot[0]) * sim.seg; k++) it = rollItem();
-  if (it.w * sim.sc > (spot[1] - spot[0]) * sim.seg) it = rollItem('sock');
-  const span = Math.round((it.w * sim.sc) / sim.seg);
-  hang(Math.round((spot[0] + spot[1] - span) / 2), it, true);
-  updateActions();
-  wake();
-};
-// Release lets every peg go at once, with an updraft to carry the sheets.
-act.release = () => {
-  for (const pg of [...sim.pegs]) unclip(pg, true);
-  gusts.push({ x0: -(sim.span / 2 + 1.5), dir: 1, t0: st.t, amp: 2.5 + WIND[st.wind].u });
-  updateActions();
-  wake();
-};
-act.fabric = v => {
-  FABRIC = FABRICS[v] || FABRICS.cotton;
-  for (const c of sim.sheets) c.mass = c.area * FABRIC.kgm2 * c.it.I.kg;
-  wake();
-};
-act.line = v => {
-  slack = SLACK[v] || SLACK.slack;
-  if (sim.rope) sim.rope.seg = (sim.half * 2 * slack) / (ROPE_N - 1);
-  wake();
-};
-applyEnv(firstScene);
-setSun(st.sun);
-act.fabric(ui.setting('fabric')?.value);
-act.line(ui.setting('line')?.value);
+act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
 
+buildPlace('alley');
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 resize();
-syncScene();
+P.look.sync(camera, view.h);
 syncLight();
 await renderer.compileAsync(scene, camera);
 draw();
