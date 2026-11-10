@@ -2346,6 +2346,23 @@ const arcsAlive = () => arcList.some(a => a.on);
 
 /* ---------- K2: bloom ---------- */
 // Bloom on a float target; only bright sources cross the threshold.
+// Lens dirt, drawn once: soft smudges, fine specks, a few hairs.
+function makeDirt() {
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  c.width = 512; c.height = 320;
+  x.fillStyle = '#000'; x.fillRect(0, 0, 512, 320);
+  for (let i = 0; i < 46; i++) {
+    const px = rnd() * 512, py = rnd() * 320, r = 12 + rnd() * 60, g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(255,255,255,${0.04 + rnd() * 0.12})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill();
+  }
+  for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(255,255,255,${0.1 + rnd() * 0.35})`; x.beginPath(); x.arc(rnd() * 512, rnd() * 320, 0.4 + rnd() * 1.4, 0, 7); x.fill(); }
+  x.strokeStyle = 'rgba(255,255,255,0.18)'; x.lineWidth = 0.7;
+  for (let i = 0; i < 4; i++) { x.beginPath(); const sx = rnd() * 512, sy = rnd() * 320; x.moveTo(sx, sy); x.bezierCurveTo(sx + 40 * rnd(), sy + 30 * rnd(), sx + 60 * rnd(), sy - 20 * rnd(), sx + 90 * rnd(), sy + 10 * rnd()); x.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
 function makeBloom(strength, radius, threshold) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
   const full = bloom.setSize.bind(bloom);
@@ -2375,8 +2392,16 @@ function makeBloom(strength, radius, threshold) {
       return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
     }
     void main() {`)
-    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
+    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)')
+    // Lens dirt: smudges and specks light up where the bloom is bright.
+    .replace('vec4 bsw(float v) {', 'uniform sampler2D tDirt;\n    uniform float uDirtK;\n    vec4 bsw(float v) {')
+    .replace(/\}\s*$/, '  gl_FragColor.rgb *= 1.0 + uDirtK * texture2D(tDirt, vUv).rgb;\n}');
+  cm.uniforms.tDirt = { value: makeDirt() };
+  cm.uniforms.uDirtK = { value: 1.6 };
   cm.needsUpdate = true;
+  // Halation: the widest blur levels bleed warm red, as on film.
+  bloom.bloomTintColors[3].set(1.0, 0.72, 0.55);
+  bloom.bloomTintColors[4].set(1.0, 0.55, 0.38);
   return bloom;
 }
 /* ---------- end K2 ---------- */
@@ -2397,6 +2422,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uFlash: { value: 0 },
       // The impact flare: screen place of the hit, and its strength.
       uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // The muzzle flash's streak: screen place and strength.
+      uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
       // Shock refraction: screen centre, radius and strength, two fronts.
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
@@ -2413,7 +2440,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec2 uRes;
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
-    uniform vec3 uLF;
+    uniform vec3 uLF, uLF2;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2457,6 +2484,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       vec2 uv = vUv + dq / asp;
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c = texture2D(tDiffuse, uv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
+      // The muzzle flash: a long level blue-white streak.
+      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9)) * uLF.z;
       // The thermal sight: an old white-hot tube in a round eyepiece.
@@ -2662,6 +2691,7 @@ function resize() {
   renderer.setSize(w, h, false);
   setSamples(rung >= 2 ? 0 : 4);
   fxaa.enabled = gfx.fxaa === 'on' || (gfx.fxaa === 'auto' && rung >= 2);
+  bloomPass.compositeMaterial.uniforms.uDirtK.value = rung >= 3 ? 0 : 1.6;
   fxaa.material.uniforms.resolution.value.set(1 / (w * size.dpr), 1 / (h * size.dpr));
   composer.setPixelRatio(size.dpr);
   composer.setSize(w, h);
@@ -3748,6 +3778,9 @@ function updateMuzzle(ma, c, m0) {
   });
   // A bright, brief flash.
   flare(spike, m0, 800 * (0.6 + cc), on ? 3.2 * cc * Math.exp(-ma / 0.05) : 0);
+  // Its streak crosses the frame for a tenth of a second.
+  jp.copy(m0).project(camera);
+  grade.uniforms.uLF2.value.set(jp.x * 0.5 + 0.5, jp.y * 0.5 + 0.5, on && jp.z < 1 ? (reduced() ? 0.5 : 1) * 1.1 * cc * Math.exp(-ma / 0.1) : 0);
   // The shell runs out ahead of the muzzle and burns off in a second.
   const sg = 0, su = shellMesh.material.uniforms;
   su.uR.value = 30 + 650 * (1 - Math.exp(-ma / 0.3));
@@ -4324,7 +4357,7 @@ function updateBolt() {
     // A corona spits at the muzzle at rage.
     const cg = charge && !reduced() ? rage * (0.5 + 0.5 * Math.abs(Math.sin(simT * 71) * Math.sin(simT * 13.7))) : 0;
     flare(muzzleFlare, MUZZLE, 50 + 70 * cg, 1.6 * cg); flare(muzzleGlow, MUZZLE, 1, 0);
-    plume.visible = false; spike.visible = false; shellMesh.visible = muzzleSkirt.visible = shockRing.visible = false; warpM.strength = 0;
+    plume.visible = false; spike.visible = false; shellMesh.visible = muzzleSkirt.visible = shockRing.visible = false; warpM.strength = 0; grade.uniforms.uLF2.value.z = 0;
     for (const j of jets) j.visible = false;
     U.uMuzL.value.set(MUZZLE.x, MUZZLE.y, MUZZLE.z, 1.2 * cg); flashNow = 0;
     // The vent's strike lights the gun and the plain.
