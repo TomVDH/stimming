@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T10:09:42Z
+updated_at: 2026-11-10T10:13:37Z
 parent: stimming-f793
 ---
 
@@ -20,7 +20,7 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [x] Muzzle effects: flash, flares, blast, shock rings, dust front (VOLFX plume, side jets, spike, shell, rolling dust)
 - [x] The projectile: the bolt (longer head, ion line that cools to a 25 s contrail)
 - [x] The incoming threats: the rock and its approach (a shape per size, ablation sparks, two to four fragments that the shock breaks)
-- [ ] The explosion: fireball, shells, shards, embers, hitFlash
+- [x] The explosion: fireball, shells, shards, embers, hitFlash (VOLFX fireball to 6R, Wilson and shock shells, 1.5x shards with smoke, uBlast)
 - [x] The hold: build to 10 s, ready, over-hold, vent at 24 s
 - [x] The chorus: an original choir swell that locks into one chord at full charge (Tom to listen)
 - [ ] QA in the browser pane: clean console, 30 fps through charge and shot

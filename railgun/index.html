@@ -1370,7 +1370,8 @@ function updateDust() {
 // Lifted from Marsh launch, which lifted it from Fireworks.
 // Changes here: a low gravity, a charge-blue ramp, no mirror layer.
 const CAP = 4000;
-const G = new THREE.Vector3(0, -2.5, 0);
+// Embers fall in arcs at the blast's kilometre scale.
+const G = new THREE.Vector3(0, -40, 0);
 const RAMPS = [
   linFit(0.82, 0.16, 80), // sodium gold
   linFit(0.97, 0.02, 90), // magnesium white
@@ -1844,6 +1845,7 @@ function draw() {
   updateArcs();
   updateBolt();
   updateIon();
+  updateBlast();
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
   grade.uniforms.uFlash.value = reduced() ? 0.3 * flashNow : flashNow;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
@@ -1857,6 +1859,7 @@ function draw() {
 // At the end it holds and waits.
 function stepAst(dt) {
   stepFrags();
+  stepShards();
   if (ast.state === 'approach' || ast.state === 'hold') {
     // The hot face sheds glowing bits; they fall back into the smoke.
     if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 22 + rnd()); n > 0; n--) shedSpark();
@@ -2096,8 +2099,6 @@ function ring(m, c, a, b, r, w, gain) {
   u.uC.value.copy(c); u.uA.value.copy(a); u.uB.value.copy(b);
   u.uRW.value.set(r, w); u.uGain.value = gain;
 }
-const hitRingA = makeRing(linFit(0.96, 0.05, 75)), hitRingB = makeRing(linFit(0.92, 0.04, 60));
-const hr = new THREE.Vector3(), hu = new THREE.Vector3();
 
 /* ---------- the bolt: one ribbon from the breech to the rock ---------- */
 // Forty-eight segments.
@@ -2415,27 +2416,31 @@ const spike = makeFlare(linFit(0.95, 0.05, 230), /* glsl */`
       float a = (0.7 * rays + 0.6 * exp(-y * 90.0 - x * 1.2) + exp(-d * d * 30.0)) * (1.0 - smoothstep(0.8, 1.0, max(x, y)));`);
 // Side jets blow out of the brake's ports, square to the barrel.
 const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linFit(0.92, 0.07, 230)));
-// The shell: a thin skin of condensed air ahead of the muzzle.
-const shellMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
-  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: 0 } },
+// A shell: a thin skin of condensed air, lit by the sun and by uEm.
+function makeShell(sharp = 3.5) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
+  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; varying vec3 vP, vN;
   void main() { vN = position; vP = uC + position * uR; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; ${HEAD}
+  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
   void main() {
     vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
     float f = 1.0 - abs(dot(N, V));
     // The skin shows at its rim and breaks up into patches.
     float n = k3fbm(N * 3.2 + uSeed);
-    float a = pow(f, 3.5) * smoothstep(0.32, 0.62, n) * uGain;
-    vec3 col = vec3(0.95) * (ambient(N) + uSunC * (0.4 + 0.6 * max(dot(N, uSun), 0.0)));
+    float a = pow(f, ${sharp.toFixed(1)}) * smoothstep(0.32, 0.62, n) * uGain;
+    vec3 col = vec3(0.95) * (ambient(N) + uSunC * (0.4 + 0.6 * max(dot(N, uSun), 0.0))) + uEm;
     gl_FragColor = vec4(k2haze(col, vP) * a, a);
   }`,
-}));
-shellMesh.frustumCulled = false; shellMesh.renderOrder = 2.3; shellMesh.visible = false;
-scene.add(shellMesh);
+  }));
+  m.frustumCulled = false; m.renderOrder = 2.3; m.visible = false;
+  scene.add(m);
+  return m;
+}
+const shellMesh = makeShell();
 const jp = new THREE.Vector3();
 // ma: seconds since the slug left. c: power. m0: the muzzle at the shot.
 function updateMuzzle(ma, c, m0) {
@@ -2470,14 +2475,17 @@ function updateMuzzle(ma, c, m0) {
 /* ---------- shards: the rock in pieces ---------- */
 // One instanced mesh.
 // Each shard's pose comes from its birth time in closed form.
-const SHARD_MAX = 56;
+const SHARD_MAX = 84;
 const shardBase = (() => {
   let g = mergeVertices(new THREE.IcosahedronGeometry(1, 1));
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const r = 1 + 0.35 * noise3(v.x * 1.7, v.y * 1.7, v.z * 1.7);
-    p.setXYZ(i, v.x * r, v.y * r * 0.8, v.z * r * 1.2);
+    let r = 1 + 0.35 * noise3(v.x * 1.7, v.y * 1.7, v.z * 1.7);
+    // Two flat cuts give each shard a broken face.
+    if (v.x > 0.3) r = Math.min(r, 0.55 / v.x);
+    if (v.y < -0.4) r = Math.min(r, -0.5 / v.y);
+    p.setXYZ(i, v.x * r * 1.1, v.y * r * 0.7, v.z * r * 1.3);
   }
   g.computeVertexNormals();
   return g;
@@ -2541,6 +2549,80 @@ shards.frustumCulled = false;
 scene.add(shards);
 let shardsEnd = 0;
 
+/* ---------- the blast: a fireball, two shells, a soot cloud ---------- */
+// The fireball grows from R to about 6R in four seconds.
+// It cools white, orange, red, then hangs as soot for thirty.
+// uFb: age, rock radius, power, seed.
+const fireball = makeVol(/* glsl */`
+uniform vec3 uBP, uHotC, uFireC, uEmberC, uSootC;
+uniform vec4 uFb;
+float rb() { return uFb.y * (1.0 + 5.0 * (1.0 - exp(-uFb.x / 1.4))); }
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  float age = uFb.x, Rb = rb();
+  // The cloud rises slowly as it cools.
+  vec3 q = p - uBP - vec3(0.0, 40.0 * age, 0.0);
+  float r = length(q) / Rb;
+  if (r > 1.1) return 0.0;
+  vec3 w = q / Rb + vec3(uFb.w, -age * 0.02, 0.0);
+  // Low billows push the surface in and out.
+  float n = texture(uVol, w * 0.45).r;
+  float shape = smoothstep(1.0, 0.5, r + (0.55 - n) * 0.6);
+  float d = clamp(shape * (0.55 + 0.6 * texture(uVol, w * 1.6).g) - 0.12, 0.0, 1.0);
+  // The core burns hottest; the rim cools first.
+  float T = exp(-age / 2.6) * smoothstep(1.0, 0.1, r) + 0.8 * exp(-age / 0.35);
+  vec3 c = mix(uEmberC, uFireC * 2.0, smoothstep(0.1, 0.45, T));
+  c = mix(c, uHotC * 4.0, smoothstep(0.55, 0.95, T));
+  em = c * d * smoothstep(0.03, 0.2, T) * T * 14.0 / Rb * uFb.z;
+  return d * 4.0 / Rb * (1.0 - smoothstep(20.0, 30.0, age));
+}
+vec3 alb(vec3 p) { return uSootC; }
+vec3 vlight(vec3 p) { return vec3(0.0); }`, {
+  uBP: { value: new THREE.Vector3() }, uFb: { value: new THREE.Vector4() },
+  uHotC: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: PU.uFireC.value }, uEmberC: { value: new THREE.Vector3(...EMBER) },
+  uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) },
+});
+const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
+// The live blast: start time, place, rock radius and power.
+let blastFx = null;
+function updateBlast() {
+  if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = false; return; }
+  const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
+  if (ha > 31) { blastFx = null; updateBlast(); return; }
+  const u = fireball.material.uniforms;
+  u.uBP.value.copy(blastFx.P);
+  u.uFb.value.set(ha, R, k, blastFx.seed);
+  const Rb = R * (1 + 5 * (1 - Math.exp(-ha / 1.4)));
+  u.uC.value.copy(blastFx.P).y += 40 * ha;
+  u.uR.value = Rb * 1.15;
+  u.uVSteps.value = volSteps();
+  fireball.visible = true;
+  // The Wilson shell flashes round the fireball and burns off.
+  const ga = reduced() ? 0.5 : 1, A = hitShellA.material.uniforms, B = hitShellB.material.uniforms;
+  A.uC.value.copy(blastFx.P); A.uR.value = R * 1.4 + 9000 * (1 - Math.exp(-ha / 2.6));
+  A.uGain.value = ga * 1.6 * k * Math.exp(-ha / 0.9);
+  A.uEm.value.copy(U.uAstC.value).multiplyScalar(2.5 * Math.exp(-ha / 0.6));
+  hitShellA.visible = A.uGain.value > 0.01;
+  // The shock front runs on; it breaks the fragments as it passes.
+  B.uC.value.copy(blastFx.P); B.uR.value = shockR(ha, R);
+  B.uGain.value = ga * 0.7 * k * Math.exp(-ha / 2.5);
+  hitShellB.visible = B.uGain.value > 0.01;
+}
+// The shards trail burning smoke while they are hot.
+let shardTick = 0;
+function stepShards() {
+  if (simT > shardsEnd || reduced() || (shardTick = (shardTick + 1) % 2)) return;
+  const n = shardGeo.instanceCount, P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.15;
+  for (let i = 0; i < n; i += 2) {
+    const age = simT - S[i * 4 + 2], heat = Math.exp(-age / S[i * 4 + 3]);
+    if (age < 0 || age > 8 || heat < 0.08) continue;
+    const e = (1 - Math.exp(-k * age)) / k;
+    bp.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - 0.25 * age * age, P[i * 3 + 2] + V[i * 4 + 2] * e);
+    bv.set(V[i * 4], V[i * 4 + 1], V[i * 4 + 2]).multiplyScalar(0.05 * Math.exp(-k * age));
+    writeStar(bp, simT, bv, 0.6, 2, 1.4 + rnd(), 0.7, 2.6, 0, 0.7 * heat, 0);
+  }
+}
+
 /* ---------- the shot ---------- */
 // One shot at a time.
 // The slug runs the rails in 0.3 s.
@@ -2595,7 +2677,7 @@ function shatter(c) {
   ast.state = 'shatter';
   ast.next = rad((rnd() - 0.5) * 6);
   astMesh.visible = false;
-  const N = SIZES[opts.size].shards, R = ast.R, P = ast.pos;
+  const N = Math.min(SHARD_MAX, Math.round(1.5 * SIZES[opts.size].shards)), R = ast.R, P = ast.pos;
   for (let i = 0; i < N; i++) {
     bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.2 * R);
     bv.copy(bp).addScaledVector(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), 0.4 * R).normalize();
@@ -2612,8 +2694,9 @@ function shatter(c) {
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((60 + rnd() * 240) * sp);
-    writeStar(P, simT + rnd() * 0.05, bv, 0.3, rnd() < 0.5 ? 0 : 2, 3 + rnd() * 3, 0.6, 1.5 + rnd() * 1.5, rnd() < 0.3 ? 2 : 0, 0.8);
+    writeStar(P, simT + rnd() * 0.05, bv, 0.25, rnd() < 0.5 ? 0 : 2, 5 + rnd() * 4, 0.6, 1.5 + rnd() * 1.5, rnd() < 0.3 ? 2 : 0, 0.8);
   }
+  blastFx = { t0: simT, P: P.clone(), R, k: Math.min(c, 1.25), seed: rnd() * 10 };
   hitFlash = 1; cam.shake += 0.5 * c;
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
@@ -2687,6 +2770,9 @@ function stepShot(dt) {
     hitFlash = shot.bk * (Math.exp(-ha / 0.28) + 0.22 * Math.exp(-ha / 2.4));
   } else hitFlash *= Math.exp(-dt / 0.35);
   U.uHit.value.w = hitFlash;
+  // uBlast: the blast's world place and the same strength as hitFlash.
+  if (blastFx) U.uBlast.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, hitFlash > 0.003 ? hitFlash : 0);
+  else U.uBlast.value.w = 0;
   // The barrel cools in about ten seconds.
   U.uHeat.value *= Math.exp(-dt / 3.5);
   if (U.uHeat.value < 0.003) U.uHeat.value = 0;
@@ -2787,7 +2873,7 @@ function updateBolt() {
       flashNow = 0.5 * vl;
     }
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
-    flare(hitGlow, MUZZLE, 1, 0); ring(hitRingA, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0); ring(hitRingB, MUZZLE, AX_UP, AX_UP, 1, 0.1, 0);
+    flare(hitGlow, MUZZLE, 1, 0);
     flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; return; }
   const age = simT - shot.t0, c = shot.c;
   const live = age < shot.hitT + 0.3;
@@ -2841,14 +2927,11 @@ function updateBolt() {
   updateMuzzle(ma, c, m0);
   // The blast: a white core, a wide warm glow, two shock shells.
   const ha = age - shot.hitT, hk = shot.hit && shot.canHit ? shot.bk : 0, R = ast.R;
-  flare(hitFlare, shot.target, R * (4 + 5 * (1 - Math.exp(-ha / 0.8))), hk * (16 * Math.exp(-ha / 0.22) + 2.2 * Math.exp(-ha / 1.5)));
-  flare(hitGlow, shot.target, R * 26, hk * (1.1 * Math.exp(-ha / 0.5) + 0.25 * Math.exp(-ha / 2.5)));
-  // The shells face the eye and grow for seconds.
-  hr.setFromMatrixColumn(camera.matrixWorld, 0); hu.setFromMatrixColumn(camera.matrixWorld, 1);
-  ring(hitRingA, shot.target, hr, hu, R * 1.4 + 9000 * (1 - Math.exp(-ha / 2.6)), 0.06, hk * 4.5 * Math.exp(-ha / 2.2));
-  ring(hitRingB, shot.target, hr, hu, R * 2 + 26000 * (1 - Math.exp(-ha / 3.5)), 0.022, hk * 1.6 * Math.exp(-ha / 2.8));
+  // A short white core; the fireball carries the rest.
+  flare(hitFlare, shot.target, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
+  flare(hitGlow, shot.target, R * 26, hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5)));
   // The whole frame overexposes for an instant.
-  if (hk > 0) flashNow += hk * (0.9 * Math.exp(-ha / 0.14) + 0.12 * Math.exp(-ha / 1.2));
+  if (hk > 0) flashNow += hk * (0.6 * Math.exp(-ha / 0.14) + 0.1 * Math.exp(-ha / 1.2));
 }
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
@@ -2856,7 +2939,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!press || !!charge || !!shot || !!ion || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -3312,6 +3395,12 @@ window.__qa = {
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
+  blast: () => {
+    const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
+    return { fire: fireball.visible, w: b.w, off: blastFx ? +(blastFx.P.distanceTo(b) / blastFx.R).toFixed(2) : -1, size: blastFx ? +(u.uR.value / 1.15 / blastFx.R).toFixed(2) : 0,
+      hot: blastFx ? Math.exp(-T / 2.6) + 0.8 * Math.exp(-T / 0.35) : 0, shellA: hitShellA.visible ? Math.round(hitShellA.material.uniforms.uR.value) : 0,
+      shellB: hitShellB.visible ? Math.round(hitShellB.material.uniforms.uR.value) : 0, rings: false, astW: U.uAst.value.w, hitFlash };
+  },
   frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
   ablation: () => ablN,
   ion: () => ({ visible: ionLine.visible, glow: ion ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
