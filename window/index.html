@@ -78,6 +78,7 @@ import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
 import { createBolts } from './bolts3.js';
+import { bakeOde } from './ode.js';
 import * as THREE from 'three';
 
 // The intro holds until the page, the font and the first frame are ready.
@@ -112,6 +113,7 @@ const opts = {
   towns: num('towns', 1),
   dim: num('dim', 0),
   aurora: saved('aurora') || 'on',
+  seat: saved('seat') || 'wl',
   rain: +(saved('rain') || 0),
 };
 // A test hook sets values from the address, for screenshots.
@@ -121,25 +123,39 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 const ALT = 11;            // cruise height in km
+// The land below: 0 flat country, 1 relief, 2 relief with parallax.
+// The hidden ode world: ?ode, or type its name. It needs relief land.
+const ODE = qs.has('ode');
+const RELIEF = Math.max(ODE ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
+// Its start: map x and y in source pixels, and km per pixel.
+const ODE_AT = [960, 638, 4];
 const SPEED = 0.25;        // ground speed in km/s, real cruise
 const HOR = horizonEl(ALT);
 // Each hour places one light: the sun by day and twilight, the moon at midnight.
 // az: bearing from straight out, toward the nose positive, in degrees.
 // rel: height above the eye's horizon, in degrees; the horizon dips 3.4.
-// E: light strength for the sky bake. disc: disc brightness.
-// tint: a small OKLCH grade for the hour.
+// ev: the camera's exposure for the hour, in stops.
+// The light itself never changes: the sun has strength 1, the moon MOON.
+// So E, the bake's gain, is the source times 2 to the power ev.
+// Noon has the most light, so it takes the least exposure.
+// disc: disc brightness.
+// tint: the hour's white balance, a small OKLCH grade.
 // mood: the cabin's own lamps, as the 787 tunes them through a flight.
 // lit: how strongly towns and streets burn below.
+const MOON = 0.1;
 const HOURS = {
-  dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, E: 4, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
-  morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, E: 5, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
-  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, E: 4, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.02, 230], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
-  golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, E: 6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.07, 60], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
-  dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, E: 13, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
-  blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, E: 14, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
-  night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, E: 0.5, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
+  dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, ev: 2, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
+  morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, ev: 1.8, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, ev: 1.3, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.012, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  // Afternoon: the sun stands behind the plane, so the glory shows on the deck below.
+  afternoon: { mood: [0.02, 0.018, 0.016], moon: false, az: 177, rel: 20, ev: 1.5, disc: 5, r: 0.4, stars: 0, flare: 0, tint: [0.89, 0.03, 90], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, ev: 2.6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.09, 68], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
+  dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, ev: 3.9, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
+  blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, ev: 3.8, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
+  night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, ev: 2.3, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
 };
-const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
+for (const h of Object.values(HOURS)) h.E = (h.moon ? MOON : 1) * 2 ** h.ev;
+const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', afternoon: 'Afternoon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // The baked sky and the light terms that follow from it.
 let sky = null;
@@ -184,7 +200,10 @@ function buildSky(baked) {
     flareCol: norm(Tsun.map((v, i) => v * shift[i] + 1e-4)).map(v => v * 1.2),
   };
   // Daylight through the cabin's windows adds to the lamps' mood.
-  sky.cabin = h.mood.map((v, i) => v + Math.min(glow[i], 6) * 0.0025);
+  // The low glow lights the cabin at twilight.
+  // A high sun pours in through every window and lights it most.
+  const inSun = Math.max(Math.sin(el), 0) / 1.5 * 0.005;
+  sky.cabin = h.mood.map((v, i) => v + Math.min(glow[i], 6) * 0.0025 + sunL[i] * inSun);
 }
 const FOV = 64 * D2R;      // field of view across the short side
 const ROLL = -6 * D2R;     // the camera tilts a little: a slanted, close look
@@ -261,7 +280,7 @@ const UG = {
   uniform2f: (l, a, b) => put(l, [a, b]), uniform3f: (l, a, b, c) => put(l, [a, b, c]), uniform4f: (l, a, b, c, d) => put(l, [a, b, c, d]),
   tex: put,
 };
-const MAXCELL = 8, MAXFL = 6;
+const MAXCELL = 8, MAXFL = 8;
 // three.js draws the wing, the nacelle and the fairings instead.
 const noWing = s => s
   .replace('  // The wing is the nearest thing outside', '  tw = 1e5;\n  // The wing is the nearest thing outside')
@@ -298,6 +317,11 @@ Object.assign(noiseTex, {
   wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, wrapR: THREE.RepeatWrapping,
 });
 noiseTex.needsUpdate = true;
+// The ode world's land mask; a blank pixel stands in when it is off.
+const odeMask = ODE ? bakeOde() : { W: 1, H: 1, m: new Uint8Array(1) };
+const odeTex = new THREE.DataTexture(odeMask.m, odeMask.W, odeMask.H, THREE.RedFormat, THREE.UnsignedByteType);
+Object.assign(odeTex, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, unpackAlignment: 1 });
+odeTex.needsUpdate = true;
 // The outside target: half size on Standard, three quarters on High.
 // It keeps a depth buffer and 4x MSAA for the aircraft meshes.
 const outBuf = { w: 0, h: 0 };
@@ -449,10 +473,20 @@ const WS = ST.map(([l, t, z]) => [[l, flex(z), z], [t, flex(z), z]]);
 // Each panel runs leading edge root, leading edge tip, trailing edge tip, trailing edge root.
 const PANELS = WS.slice(1).map((w, i) => [WS[i][0], w[0], w[1], WS[i][1]]);
 const SPAN = ST.map(w => (w[2] - ST[0][2]) / (ST[5][2] - ST[0][2]));
-// The winglet rises from the tip and sweeps back.
+// The winglet, after Boeing's blended type: it curves up out of the tip.
+// A 0.6 m bend turns it to 85 degrees; a straight blade follows.
+// It sits 35 cm aft on the tip; its trailing edge meets the wing's.
+// The leading edge sweeps back 38 degrees; the chord tapers 1.25 m to 0.55 m.
 const YT = flex(25.0);
-const LET = [[-3.0, YT, 25.0], [-4.1, YT + 2.1, 25.6], [-4.75, YT + 2.1, 25.6], [-4.6, YT, 25.0]];
-const TIP = [-4.4, YT + 2.05, 25.6];
+const WINGLET = u => {
+  const R = 0.6, PH = 85 * D2R, LS = 1.85, S = R * PH + LS, s = u * S;
+  const ph = Math.min(s / R, PH), q = Math.max(0, s - R * PH);
+  const dz = R * Math.sin(ph) + q * Math.cos(PH), dy = R * (1 - Math.cos(ph)) + q * Math.sin(PH);
+  return { le: -3.35 - Math.tan(38 * D2R) * dy, c: 1.25 - 0.7 * Math.pow(u, 0.8), y: YT - 0.07 + dy, z: 24.85 + dz, ny: Math.cos(ph), nz: -Math.sin(ph) };
+};
+// A flat quad stands in for the winglet in the ray tests.
+const LET = (() => { const a = WINGLET(0.3), b = WINGLET(1); return [[a.le, a.y, a.z], [b.le, b.y, b.z], [b.le - b.c, b.y, b.z], [a.le - a.c, a.y, a.z]]; })();
+const TIP = (() => { const b = WINGLET(1); return [b.le - b.c * 0.5, b.y - 0.05, b.z]; })();
 // The trailing edge x at span z.
 function teAt(z) {
   for (let i = 1; i < ST.length; i++) if (z <= ST[i][2]) { const f = (z - ST[i - 1][2]) / (ST[i][2] - ST[i - 1][2]); return ST[i - 1][1] + (ST[i][1] - ST[i - 1][1]) * f; }
@@ -466,7 +500,13 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
   const te = [teAt(z), flex(z), z], k = 1 - 0.18 * j;
   return { a: [te[0] + 2.0 * k, te[1] - 0.33 * k, z, 0.3 * k], b: [te[0] - 1.3 * k, te[1] - 0.46 * k, z, 0.045 * k] };
 });
-const wing3 = createWing3({ renderer, ST, flex, LET, NAC, FAIRS });
+// The wing light sits on the fuselage, ahead of the root and below the window.
+// It aims out along the leading edge; k is its strength in candela.
+const WING_LIGHT = { p: [11, -0.8, -0.4], aim: [4.3, -1.95, 11], k: 600 };
+const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT });
+// The wing tip's flex offset, in world metres, from the last frame.
+let tipBend = [0, 0, 0];
+const tipW = () => toWorldA(TIP).map((v, i) => v + tipBend[i]);
 const bolts = createBolts();
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -483,6 +523,15 @@ let W = 1, H = 1, dpr = 1, t = 0;
 let bank = 6 * D2R;
 // Aircraft axes in the world: the left wing dips by the bank.
 const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+// The seat: over the wing or a few rows aft, on the left or the right.
+// An aft seat moves the whole aircraft forward of the eye, along the roll axis.
+// The right side shows the left side's mirror image: the aircraft is symmetric.
+const SEATS = { wl: [0, false], wr: [0, true], al: [3.2, false], ar: [3.2, true] };
+let seatDx = 0, mirror = false;
+// Aircraft points to the world, from the seat's eye.
+const toWorldA = v => toWorld([v[0] + seatDx, v[1], v[2]]);
+// The left wingtip carries a red nav light, the right a green one.
+const navCol = () => (mirror ? [0.05, 1.0, 0.3] : [1.0, 0.1, 0.05]);
 // Camera axes in the cabin (a*) and in the world (F, R, U).
 const basis = { F: [0, 0, 1], R: [1, 0, 0], U: [0, 1, 0], Fa: [0, 0, 1], Ra: [1, 0, 0], Ua: [0, 1, 0], eye: EYE.slice(), focal: 600 };
 function setBasis() {
@@ -513,7 +562,8 @@ function toScreen(p) {
 
 /* ---------- flight ---------- */
 // The plane flies along world x; the left window looks along world z.
-const cam = { x: 0, z: 0 };
+// A test hook: ?x=km starts the flight further along, for screenshots.
+const cam = { x: +qs.get('x') || 0, z: 0 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
 // The high wind blows toward the tail, so the anvils stream aft.
@@ -533,40 +583,61 @@ function newCell(ahead) {
     if (near > room) { room = near; best = [ah, sd]; }
   }
   const [a, side] = best;
-  return { x: cam.x + a, z: cam.z + side, r: rnd(9, 22), s: 0, life: rnd(60, 160), age: 0, seed: rnd(0, 100), top: rnd(11.5, 14),
-    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2 };
+  return { x: cam.x + a, z: cam.z + side, s: 0, life: rnd(90, 220), age: 0, seed: rnd(0, 100),
+    shear: WIND + rnd(-0.35, 0.35), glow: Math.random() ** 2, ...cellKind() };
+}
+// Four kinds of cell, so no two storms look alike.
+// v: anvil size (0 for none), lean, turret spread, decay.
+// flashK: how often the cell flashes.
+function cellKind() {
+  const k = Math.random();
+  // A towering cumulus: no anvil, a crisp cauliflower top at 7 to 10 km.
+  if (k < 0.3) return { kind: 'tcu', r: rnd(5, 11), top: rnd(7, 10), v: [0, rnd(0.1, 0.5), rnd(0.6, 1), 0], flashK: 0.2 };
+  // A multicell cluster: broad, with side turrets nearly as tall as the core.
+  if (k < 0.5) return { kind: 'multi', r: rnd(12, 24), top: rnd(9.5, 12.5), v: [rnd(0.3, 0.8), 0.5, rnd(1.4, 1.9), 0], flashK: 1.2 };
+  // A decaying cell: a wide, old anvil over a frayed, thinning column.
+  if (k < 0.65) return { kind: 'old', r: rnd(12, 22), top: rnd(12, 14), v: [rnd(1.3, 1.9), 1, 1, rnd(0.5, 0.85)], flashK: 0.4 };
+  // A mature cumulonimbus, its anvil and lean varied.
+  return { kind: 'cb', r: rnd(9, 22), top: rnd(11.5, 14.5), v: [rnd(0.7, 1.5), rnd(0.3, 1), 1, 0], flashK: 1 };
 }
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 // The tower's frame without billows, as setTower in the shader builds it.
 // The top climbs first; the anvil spreads once the top arrives.
 function towerGeom(c) {
-  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s);
+  const v = c.v || [1, 1, 1, 0];
+  const rc = c.r * 0.36, base = 2.3, anv = smooth(0.3, 0.9, c.s) * (v[0] > 0 ? 1 : 0);
   const top = base + 3.5 + (c.top - base - 3.5) * smooth(0.05, 0.6, c.s);
-  const len = c.r * 1.35 * anv + 0.3, r1 = rc * (0.8 + 0.45 * anv);
+  const len = c.r * 1.35 * anv * v[0] + 0.3, r1 = rc * (0.8 + 0.45 * anv);
   const r2 = clamp(rc * 0.7 + len * 0.42, r1 - len * 0.8, r1 + len * 0.8);
-  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4, ax: [Math.cos(c.shear), Math.sin(c.shear)] };
+  return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4 * v[1], ax: [Math.cos(c.shear), Math.sin(c.shear)] };
 }
-// A calmer storm retires its oldest cells; they die back over 15 s.
-// A stronger one adds a cell every few seconds; each towers up over 20 s.
+// A calmer storm retires its oldest cells; they die back over 40 s.
+// A rising storm is arcade-quick: a cell every 1 to 3 s, in view, boiling up in 12 s.
+// A steady storm adds one every 6 to 14 s, growing over 30 s.
+// Each cell announces itself with a burst of lightning as it matures.
 let cellNext = 0;
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
-    c.s = clamp(Math.min(c.age / 20, (c.life - c.age) / 15));
+    c.s = clamp(Math.min(c.age / (c.grow || 30), (c.life - c.age) / 40));
+    if (!c.told && c.s > 0.5) { c.told = true; c.burst = 2 + Math.floor(Math.random() * 2); c.next = t + rnd(0.05, 0.4); }
     if (c.age > c.life || c.x - cam.x < -120) cells.splice(i, 1);
   }
   const live = cells.filter(c => !c.dying);
   live.sort((a, b) => b.age - a.age);
   for (let n = live.length; n > want; n--) {
     const c = live[live.length - n];
-    c.dying = true; c.life = Math.min(c.life, c.age + 15);
+    c.dying = true; c.life = Math.min(c.life, c.age + 40);
   }
   if (live.length < want && t > cellNext) {
-    // Half arrive in view, half far ahead.
-    cells.push(newCell(Math.random() < 0.5));
-    cellNext = t + rnd(1.5, 4);
+    const rising = stormTarget > opts.storm + 0.02;
+    // Half arrive in view, half far ahead; a rising storm builds in view.
+    const c = newCell(!rising && Math.random() < 0.5);
+    c.grow = rising ? 12 : 30;
+    cells.push(c);
+    cellNext = t + (rising ? rnd(1, 3) : rnd(6, 14));
   }
 }
 // A flash is a burst of strokes within about a second.
@@ -579,7 +650,11 @@ function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) :
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
   // Most flashes stay inside the cloud; one in ten shows a bolt, more when tapped.
   const bolt = Math.random() < (big > 1.1 ? 0.45 : 0.1);
-  flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0, bolt });
+  // Brightness is log-normal: most flashes are dim, a few blaze.
+  // Size varies too: a small pulse in a cell, or a wide sheet.
+  const k = clamp(0.55 * Math.exp(0.6 * randn()), 0.12, 2.2) * big;
+  const r = clamp(4.5 * Math.exp(0.4 * randn()), 2, 11) * big;
+  flashes.push({ x, z, y, r, k, strokes, age: 0, cell, level: 0, bolt });
   if (flashes.length > MAXFL) flashes.shift();
 }
 function flashLevel(f) {
@@ -587,7 +662,15 @@ function flashLevel(f) {
   for (const st of f.strokes) { const a = f.age - st; if (a >= 0) s += Math.exp(-a / 0.07) * (a < 0.02 ? a / 0.02 : 1); }
   return s * f.k;
 }
+// Far storms beyond the cells flicker on the horizon, 180 to 320 km out.
+let horizonNext = 0;
 function stepFlashes(dt) {
+  if (opts.storm > 0.15 && t > horizonNext) {
+    horizonNext = t + rnd(2, 9) / opts.storm;
+    // Out our side of the plane, within about 60 degrees of abeam.
+    const a = rnd(-1.05, 1.05), r = rnd(180, 320);
+    flash(cam.x + Math.sin(a) * r, cam.z + Math.cos(a) * r, 1.6);
+  }
   for (let i = flashes.length - 1; i >= 0; i--) {
     const f = flashes[i];
     f.age += dt;
@@ -597,21 +680,39 @@ function stepFlashes(dt) {
     // A cell recharges between flashes: about one every 10 to 40 s, often a quick second one.
     if (c.next === undefined) c.next = t + rnd(1, 20);
     if (c.s > 0.3 && t > c.next) {
-      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(10, 40) / (0.5 + opts.storm));
+      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(4, 15) / (0.5 + opts.storm) / (c.flashK || 1));
+      // A burst runs its flashes in quick order: a new cell's few, or a cauldron's many.
+      if (c.burst > 0) {
+        c.burst--; c.next = t + (c.cauldron ? rnd(0.06, 0.35) : rnd(0.3, 0.9));
+        if (!c.burst) c.cauldron = false;
+      } else if (c.s > 0.6 && Math.random() < 0.07 * (c.flashK || 1)) {
+        // Now and then a mature cell boils over: six to twelve flashes in a few seconds.
+        c.burst = 6 + Math.floor(Math.random() * 7); c.cauldron = true; c.next = t + rnd(0.06, 0.3);
+      }
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
-      if (g.anv > 0.5 && Math.random() < 0.25) {
-        const u = g.lean + rnd(0.15, 0.7) * g.len, v = rnd(-0.4, 0.4) * g.r1;
-        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 1.6));
+      // Flashes follow the cloud's charge layers.
+      // Most run mid-level in the core, at 6 to 8 km.
+      // Some spread through the anvil; a few sit low, near the base.
+      const zone = Math.random();
+      if (g.anv > 0.5 && zone < 0.25) {
+        const u = g.lean + rnd(0.15, 0.85) * g.len, v = rnd(-0.5, 0.5) * g.r1;
+        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 2.4));
       } else {
-        const y = rnd(4, g.top - 2), a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * 0.7;
+        const low = zone > 0.82;
+        const y = clamp(low ? rnd(3.2, 5) : 7 + 1.1 * randn(), g.base + 1, g.top - 1.5);
+        const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * (low ? 0.5 : 0.75);
         const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
         flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
       }
       // A big flash can throw a red sprite high over the cell.
       if (opts.storm > 0.4 && Math.random() < 0.03 * opts.storm) sprite(c);
     }
+  }
+  // Inside a storm's fog bank, flashes go off close by and light the whole murk.
+  if (fog.level > 0.3 && opts.storm > 0.2 && Math.random() < fog.level * opts.storm * 0.35 * dt) {
+    flash(cam.x + rnd(-5, 5), cam.z + rnd(0.5, 6), rnd(0.5, 1.1));
   }
   // A heavy storm also flashes inside the deck all round the plane.
   if (opts.storm > 0.3 && Math.random() < (opts.storm - 0.3) * 0.12 * dt) {
@@ -665,6 +766,113 @@ function moveHead(dx, dy, dz) {
   head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
   head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
 }
+/* ---------- St Elmo's fire and strikes ---------- */
+// Deep in a storm cloud a violet corona creeps over the leading edges and tips.
+// A strike on the plane flares it, then it fades over a few seconds.
+const elmo = { level: 0, surge: 0 };
+function stepElmo(dt) {
+  const field = reduce ? 0 : smooth(0.55, 0.95, opts.storm) * smooth(0.15, 0.6, fog.level);
+  // The corona swells and ebbs on its own slow beat.
+  elmo.level += (field * (0.6 + 0.4 * Math.sin(t * 1.3) * Math.sin(t * 0.37)) - elmo.level) * Math.min(1, dt / 2);
+  elmo.surge *= Math.exp(-dt / 2.5);
+  // Now and then a strike finds the plane in the thick of it.
+  // In the thick of it, one comes about every half minute.
+  if (field > 0.5 && Math.random() < 0.03 * field * dt) strike();
+}
+let strikeT = -9;
+function strike() {
+  if (t - strikeT < 3) return;
+  strikeT = t;
+  elmo.surge = 1;
+  // The bolt's light whites out the view; it burns at the plane's own height.
+  flash(cam.x + 0.05, cam.z + 0.03, 3, null, ALT);
+  if (!reduce) turb.a[1] += 4;
+  crack();
+}
+// A strike cracks through the hull like a shot, then booms low.
+function crack() {
+  const ac = kit.live();
+  if (!ac || !sound.on) return;
+  const n = Math.round(ac.sampleRate * 1.4), buf = ac.createBuffer(1, n, ac.sampleRate), ch = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1, a = i / ac.sampleRate;
+    b = (b + 0.05 * w) / 1.05;
+    ch[i] = w * Math.exp(-a / 0.012) * 0.9 + b * 4 * Math.exp(-a / 0.4);
+  }
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = buf; lp.type = 'lowpass'; lp.frequency.value = 2400; g.gain.value = 0.8;
+  src.connect(lp).connect(g).connect(kit.out);
+  src.start();
+}
+
+/* ---------- breath on the glass ---------- */
+// Leaning in close fogs the scratch pane; a finger draws in the fog.
+// R holds the fog; G holds the finger's trace, which shows clear in new fog.
+// The map spans the pane in metres: x to the nose, y up.
+const BR = { w: 96, h: 160, x: 0.17, y: 0.28 };
+const breathF = new Float32Array(BR.w * BR.h * 2), breathData = new Uint8Array(BR.w * BR.h * 4);
+const breathTex = new THREE.DataTexture(breathData, BR.w, BR.h, THREE.RGBAFormat, THREE.UnsignedByteType);
+breathTex.magFilter = breathTex.minFilter = THREE.LinearFilter;
+const breath = { any: false, out: false, shown: null };
+// Adds fog, or wipes it, in a soft disc of radius r metres round pane point (x, y).
+function brDisc(x, y, r, k, wipe) {
+  const cx = (x / BR.x * 0.5 + 0.5) * BR.w, cy = (y / BR.y * 0.5 + 0.5) * BR.h;
+  const rx = r / BR.x * 0.5 * BR.w, ry = r / BR.y * 0.5 * BR.h;
+  for (let j = Math.max(0, Math.floor(cy - ry)); j <= Math.min(BR.h - 1, Math.ceil(cy + ry)); j++)
+    for (let i = Math.max(0, Math.floor(cx - rx)); i <= Math.min(BR.w - 1, Math.ceil(cx + rx)); i++) {
+      const q = ((i + 0.5 - cx) / rx) ** 2 + ((j + 0.5 - cy) / ry) ** 2;
+      if (q >= 1) continue;
+      const f = (1 - q) ** 2 * k, o = (j * BR.w + i) * 2;
+      if (wipe) { breathF[o] *= 1 - Math.min(1, f); breathF[o + 1] = Math.max(breathF[o + 1], Math.min(1, f)); }
+      else breathF[o] = Math.min(0.85, breathF[o] + f);
+    }
+  breath.any = true;
+}
+// The fog at a pane point, from 0 to 1.
+const brAt = (x, y) => {
+  const i = Math.floor((x / BR.x * 0.5 + 0.5) * BR.w), j = Math.floor((y / BR.y * 0.5 + 0.5) * BR.h);
+  return i < 0 || j < 0 || i >= BR.w || j >= BR.h ? 0 : breathF[(j * BR.w + i) * 2];
+};
+// The shade: 0 open, 1 shut; it eases toward the finger.
+const shade = { s: +(saved('shade') || 0), goal: +(saved('shade') || 0) };
+const SHADE_EXT = WIN.out[1] + (WIN.inn[1] - WIN.out[1]) * WIN.slot / WIN.depth;
+// The shade's lower edge, in window metres.
+const shadeEdge = s => SHADE_EXT - 0.012 - s * (2 * SHADE_EXT - 0.012);
+// The scratch pane point the eye sees at screen pixel (x, y).
+function panePoint(x, y, z = WIN.depth) {
+  setBasis();
+  const d = [0, 1, 2].map(i => basis.Fa[i] * basis.focal + basis.Ra[i] * (x - W / 2) + basis.Ua[i] * (y - H / 2));
+  const s = (z - basis.eye[2]) / d[2];
+  return [basis.eye[0] + d[0] * s, basis.eye[1] + d[1] * s];
+}
+// Breathe shows only when the face is close to the glass.
+// Holding it breathes out; nearer glass fogs in a smaller, denser patch.
+function stepBreath(dt) {
+  const close = head.tz > 0.09;
+  if (close !== breath.shown) {
+    breath.shown = close;
+    const el = document.querySelector('.s2-chip[aria-keyshortcuts="B"]');
+    if (el) Object.assign(el.style, { transition: 'opacity 0.3s', opacity: close ? '1' : '0', pointerEvents: close ? '' : 'none' });
+    const h = ui.action('breathe');
+    if (h) h.disabled = !close;
+  }
+  const near = smooth(0.06, 0.16, head.z);
+  // The mouth sits 6 cm under the eye.
+  if (breath.out && close) brDisc(basis.eye[0], basis.eye[1] - 0.06, 0.06 - 0.02 * near, dt * (1.2 + 1.5 * near), false);
+  if (!breath.any) return;
+  // The fog dries over about five seconds; the trace fades over minutes.
+  const kf = Math.exp(-dt / 5), kt = Math.exp(-dt / 240);
+  let any = false;
+  for (let o = 0, i = 0; o < breathF.length; o += 2, i += 4) {
+    breathF[o] *= kf; breathF[o + 1] *= kt;
+    if (breathF[o] > 0.004) any = true;
+    breathData[i] = breathF[o] * 255; breathData[i + 1] = breathF[o + 1] * 255;
+  }
+  breath.any = any;
+  breathTex.needsUpdate = true;
+}
+
 // The glass dims in five steps, from clear to deep blue.
 // The tint spreads from the rim inward: the edge leads, the centre follows.
 const dim = { edge: opts.dim / 4, core: opts.dim / 4 };
@@ -675,7 +883,7 @@ const dimT = v => DIM_K.map(k => Math.exp(-v * k));
 /* ---------- loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
 const spr = new Float32Array(8);
-const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4);
+const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4), twD = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
@@ -686,8 +894,13 @@ function frameFn(now) {
 }
 function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 // Turbulence: in a storm the plane meets bumpy patches, 5 to 20 s long, with calm between.
-// Inside a patch the cabin jolts now and then; a damped spring carries the eye back.
-const turb = { x: 0, y: 0, vx: 0, vy: 0, next: 0, on: false, until: 0, level: 0 };
+// One smooth gust field drives it all: the cabin's jolts, the wing's flex, the rumble.
+// gw: vertical gust in m/s, up positive. gl: sideways gust.
+// Each is a slow swell (2 s) plus a fast chop (0.35 s), as real air turbulence has.
+// vz: the plane's own climb rate, which follows the gust about a second late.
+const turb = { x: 0, y: 0, vx: 0, vy: 0, on: false, until: 0, level: 0, a: [0, 0, 0, 0], gw: 0, gl: 0, vz: 0, vl: 0 };
+// A standard normal sample.
+const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
 function stepTurb(dt) {
   const s = reduce ? 0 : opts.storm;
   if (t > turb.until) {
@@ -695,20 +908,43 @@ function stepTurb(dt) {
     turb.until = t + (turb.on ? rnd(5, 20) : rnd(15, 60));
   }
   // Inside a thick fog bank the air is rough whatever the storm.
-  const inFog = reduce ? 0 : smooth(0.2, 0.8, fog.level) * 0.9;
+  // The dense core is the roughest air of all, rougher than a full storm.
+  const inFog = reduce ? 0 : smooth(0.2, 0.8, fog.level) * 0.9 + smooth(0.75, 1, fog.level) * 0.5;
   turb.level += (Math.max(turb.on ? s : 0, inFog) - turb.level) * Math.min(1, dt / 1.5);
-  if (turb.level > 0.05 && t > turb.next) {
-    turb.vx += rnd(-1, 1) * turb.level * 0.025; turb.vy += rnd(-1, 1) * turb.level * 0.06;
-    turb.next = t + rnd(0.4, 2.5);
-  }
-  turb.vx += (-60 * turb.x - 7 * turb.vx) * dt; turb.vy += (-60 * turb.y - 7 * turb.vy) * dt;
-  turb.x += turb.vx * dt; turb.y += turb.vy * dt;
+  // Gust strength: about 3.5 m/s at full, moderate turbulence.
+  const sig = 3.5 * turb.level, h = Math.min(dt, 0.05);
+  // Four noise bands: slow and fast, vertical and sideways.
+  [[2.0, 1], [0.35, 0.5], [2.4, 0.4], [0.4, 0.2]].forEach(([tau, k], i) => {
+    turb.a[i] += -turb.a[i] / tau * h + sig * k * Math.sqrt(2 * h / tau) * randn();
+  });
+  turb.gw = turb.a[0] + turb.a[1];
+  turb.gl = turb.a[2] + turb.a[3];
+  // The plane lifts with an updraft; its lag is the jolt you feel.
+  const az = (turb.gw - turb.vz) / 1.1, al = (turb.gl - turb.vl) / 1.1;
+  turb.vz += az * h; turb.vl += al * h;
+  // An upward lurch leaves the eye behind: it dips, and the spring brings it back.
+  turb.vy += (-0.16 * az - 60 * turb.y - 7 * turb.vy) * h;
+  turb.vx += (-0.08 * al - 60 * turb.x - 7 * turb.vx) * h;
+  turb.x += turb.vx * h; turb.y += turb.vy * h;
 }
-// The slider sets a target; the weather eases toward it over about five seconds.
+// A big push on the slider answers at once: a flash in the nearest cell or the deck, and a lurch.
+let kickT = -9;
+function stormKick(v) {
+  if (reduce || t - kickT < 1.2) return;
+  kickT = t;
+  const c = cells.filter(c => c.s > 0.3).sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z))[0];
+  if (c) flash(c.x, c.z, 1.3, c);
+  else flash(cam.x + rnd(10, 60), cam.z + rnd(25, 90), 1.3);
+  turb.a[1] += (Math.random() < 0.5 ? -1 : 1) * 3 * v;
+}
+// The slider sets a target; the weather builds fast and calms slowly.
 let stormTarget = opts.storm;
+// The wing light switches on at once and dies in a blink.
+const wlight = { on: false, level: 0 };
 function step(dt) {
   t += dt;
-  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / 5);
+  // The storm builds fast and calms slowly.
+  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / (stormTarget > opts.storm ? 4 : 20));
   if (Math.abs(stormTarget - opts.storm) < 1e-3) opts.storm = stormTarget;
   stepTurb(dt);
   stepAurora(dt);
@@ -724,15 +960,21 @@ function step(dt) {
   const goal = opts.dim / 4;
   dim.edge += (goal - dim.edge) * (1 - Math.exp(-dt / (reduce ? 0.15 : 0.7)));
   dim.core += (dim.edge - dim.core) * (1 - Math.exp(-dt / (reduce ? 0.15 : 1.8)));
+  wlight.level += ((wlight.on ? 1 : 0) - wlight.level) * Math.min(1, dt / (wlight.on ? 0.05 : 0.12));
+  stepBreath(dt);
+  shade.s += (shade.goal - shade.s) * Math.min(1, dt / 0.08);
+  stepElmo(dt);
   stepCells(dt);
   stepFlashes(dt);
   stepWeather(dt);
+  stepRumble();
   stepEvents(dt);
 }
 // An anticollision strobe: two hard 50 ms pulses, 120 ms apart, no afterglow.
 const pulse = p => (p < 0.05 || (p >= 0.12 && p < 0.17) ? 1.25 : 0);
 // The wingtip strobe double-flashes every 1.6 seconds.
-function strobe() { return pulse(t % 1.6); }
+// By day it burns brighter against the sky, as the real lamp reads at noon.
+function strobe() { return pulse(t % 1.6) * (sky.h.moon ? 1 : 1 + 5 * smooth(-2, 8, sky.h.rel)); }
 // The aurora shows at midnight only, when Settings allow it.
 // The aurora comes in rare episodes at midnight: one to three minutes, every four to fifteen.
 // Settings can still forbid it.
@@ -765,8 +1007,8 @@ function startEvent(want = null) {
   if (!pool.length && !call) return;
   const kind = call ? (call === 'fireball' ? 'meteor' : call) : pool[Math.floor(Math.random() * pool.length)];
   if (kind === 'meteor') EV.meteor = newMeteor(call === 'fireball' ? true : call === 'meteor' ? false : null);
-  // The rocket lifts off 140 to 200 km out and heads away downrange.
-  if (kind === 'rocket') { const x = cam.x + rnd(40, 110), z = cam.z + rnd(140, 200); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
+  // The rocket lifts off 45 to 80 km out, near enough to see through a storm, and heads downrange.
+  if (kind === 'rocket') { const x = cam.x + rnd(20, 60), z = cam.z + rnd(45, 80); EV.rocket = { x, z, hd: Math.atan2(z - cam.z, x - cam.x) + rnd(-0.5, 0.5), s: 0 }; }
   // The impact is rare on its own; the Sights button calls it any time.
   // The impactor strikes 110 to 160 km out, close enough to loom over the wing.
   if (kind === 'boom') EV.boom = { x: cam.x + rnd(25, 60), z: cam.z + rnd(110, 160), s: 0, seed: -rnd(1, 90), hd: rnd(0, TAU), shake: 0,
@@ -1096,8 +1338,22 @@ function vnoise2(px, py) {
   const a = hash12(ix, iy), b = hash12(ix + 1, iy), c = hash12(ix, iy + 1), e = hash12(ix + 1, iy + 1);
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
 }
-const SEA = 0.3;
+const SEA = 0.3, SEAR = 0.42;
 const seaField = (x, z) => vnoise2(x / 260 + 3.7, z / 260 + 3.7) * 0.65 + vnoise2((0.8 * x + 0.6 * z) / 95 + 1.3, (-0.6 * x + 0.8 * z) / 95 + 1.3) * 0.35;
+// The shader's landField: the sea field, or the ode world's mask.
+function landField(x, z) {
+  if (!ODE) return seaField(x, z);
+  const { W, H, m } = odeMask;
+  const u = ((ODE_AT[0] + x / ODE_AT[2] - 55) / 1890) * W - 0.5, v = clamp(((ODE_AT[1] - z / ODE_AT[2] - 55) / 1085) * H - 0.5, 0, H - 1);
+  const i = Math.floor(u), j = Math.min(Math.floor(v), H - 2), fu = u - i, fv = v - j;
+  const at = (a, b) => m[b * W + (((a % W) + W) % W)] / 255;
+  const k = (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
+  const fr = (vnoise2(x / 70 + 5.1, z / 70 + 5.1) - 0.5) * 0.3 + (vnoise2(x / 22 + 9.7, z / 22 + 9.7) - 0.5) * 0.1;
+  return SEAR + 0.8 * (k - 0.5) + fr;
+}
+// The shader's beltField, so no airport lands on a peak.
+const smooth01 = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const beltField = (x, z) => smooth01(0.55, 0.9, 1 - Math.abs(2 * vnoise2((0.6 * x + 0.8 * z) / 170 + 11.3, (-0.8 * x + 0.6 * z) / 170 + 11.3) - 1)) * smooth01(0.25, 0.6, vnoise2(x / 75 + 2.2, z / 75 + 2.2));
 const apCache = new Map();
 function airportIn(i, j) {
   const key = `${i},${j}`;
@@ -1105,7 +1361,7 @@ function airportIn(i, j) {
   let a = null;
   if (ihash(i, j, 11) < 0.5) {
     const x = (i + 0.2 + 0.6 * ihash(i, j, 12)) * AP_CELL, z = (j + 0.2 + 0.6 * ihash(i, j, 13)) * AP_CELL;
-    if (seaField(x, z) > SEA + 0.08) {
+    if (RELIEF < 0.5 ? seaField(x, z) > SEA + 0.08 : landField(x, z) > SEAR + 0.08 && beltField(x, z) < 0.02) {
       const th = ihash(i, j, 14) * PI, big = ihash(i, j, 15);
       // The runway end that faces the wind takes the landings.
       const s = Math.cos(th) * LAND[0] + Math.sin(th) * LAND[1] < 0 ? -1 : 1;
@@ -1184,7 +1440,7 @@ function shared(u) {
   UG.uniform3fv(u.uSun, sky.sun);
   UG.uniform2fv(u.uSunAz, sky.sunAz);
   UG.uniform1f(u.uHorEl, HOR);
-  UG.uniform3fv(u.uTip, toWorld(TIP));
+  UG.uniform3fv(u.uTip, tipW()); UG.uniform3fv(u.uNavC, navCol());
   UG.uniform1f(u.uStrobe, reduce ? 0 : strobe());
   UG.tex(u.uSkyL, skyTex.L);
   UG.tex(u.uSkyT, skyTex.T);
@@ -1193,7 +1449,8 @@ function render() {
   setBasis();
   fl.fill(0); tw.fill(0); twB.fill(0); twC.fill(0);
   let sum = 0;
-  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level; fl.set([f.x, f.z, f.level, f.r], i * 4); });
+  // Near flashes light the cabin; far ones, past about 40 km, barely do.
+  flashes.forEach((f, i) => { f.level = flashLevel(f); sum += f.level / (1 + (Math.hypot(f.x - cam.x, f.z - cam.z) / 40) ** 2); fl.set([f.x, f.z, f.level, f.r], i * 4); });
   // A fireball lights the whole scene for a moment, as lightning does.
   const flash = Math.min(1.6, sum * 0.35 + (EV.meteor && EV.meteor.fire ? EV.meteor.b * 0.06 : 0) + (EV.boom ? (EV.boom.flash || 0) * 1.1 : 0));
 
@@ -1203,6 +1460,12 @@ function render() {
   shared(u);
   UG.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
   UG.uniform1f(u.uTowns, opts.towns);
+  UG.uniform1f(u.uLand, RELIEF);
+  UG.uniform4f(u.uOde, ODE ? 1 : 0, ...ODE_AT);
+  UG.uniform1f(u.uSeaNight, sky.h.moon ? 1 : 0);
+  // Sea wind in m/s: a breeze under clear sky, fresher under the deck, a gale in a full storm.
+  UG.uniform1f(u.uSeaWind, 6 + 4 * clamp((0.62 - opts.cloud) / 0.24) + 18 * opts.storm ** 1.3 + 4 * fog.level);
+  UG.tex(u.uOdeMap, odeTex);
   UG.uniform1f(u.uLit, sky.h.lit);
   UG.uniform2f(u.uCam, cam.x, cam.z);
   // A storm closes the deck, fills the mid layer, thickens the cirrus.
@@ -1232,25 +1495,25 @@ function render() {
   UG.uniform1f(u.uAurora, aur);
   UG.uniform3fv(u.uAmb, sky.amb.map((v, i) => v + [0.0004, 0.004, 0.0018][i] * aur)); UG.uniform3fv(u.uSunL, sky.sunL); UG.uniform3fv(u.uFloor, sky.h.floor);
   // The wing goes in world space, so it banks with the cabin.
-  UG.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorld)).flat());
+  UG.uniform3fv(u['uWP[0]'], WS.flatMap(w => w.map(toWorldA)).flat());
   UG.uniform3fv(u['uWN[0]'], PANELS.map(q => quadNormal(q.map(toWorld))).flat());
   UG.uniform1fv(u['uWS[0]'], SPAN);
   // Straight reference edges, root to tip, for the panel lines.
   // The trailing edge line runs on from the outboard part, past the kink.
   UG.uniform4f(u.uWL, ST[0][0], ST[0][2], ST[5][0], ST[5][2]);
   UG.uniform2f(u.uWT, ST[1][1] - (ST[5][1] - ST[1][1]) / (ST[5][2] - ST[1][2]) * (ST[1][2] - ST[0][2]), ST[5][1]);
-  const let_ = LET.map(toWorld);
+  const let_ = LET.map(toWorldA);
   UG.uniform3fv(u['uLet[0]'], let_.flat()); UG.uniform3fv(u.uLetN, quadNormal(let_));
   // Aircraft axes in the world: chord runs aft, up, and span runs out the window.
   UG.uniform3fv(u.uChord, toWorld([-1, 0, 0])); UG.uniform3fv(u.uUpA, toWorld([0, 1, 0])); UG.uniform3fv(u.uSpan, toWorld([0, 0, 1]));
-  UG.uniform3fv(u.uNacA, toWorld(NAC.a)); UG.uniform3fv(u.uNacB, toWorld(NAC.b)); UG.uniform1f(u.uNacR, NAC.r);
-  UG.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorld(f.a), f.a[3]]));
-  UG.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorld(f.b), f.b[3]]));
+  UG.uniform3fv(u.uNacA, toWorldA(NAC.a)); UG.uniform3fv(u.uNacB, toWorldA(NAC.b)); UG.uniform1f(u.uNacR, NAC.r);
+  UG.uniform4fv(u['uFairA[0]'], FAIRS.flatMap(f => [...toWorldA(f.a), f.a[3]]));
+  UG.uniform4fv(u['uFairB[0]'], FAIRS.flatMap(f => [...toWorldA(f.b), f.b[3]]));
   const n = towerUniforms();
   UG.uniform1i(u.uTowSteps, quality() === 'high' ? 64 : 40);
   UG.uniform1i(u.uTowOct, 3);
   UG.uniform1f(u.uTowStep, quality() === 'high' ? 0.3 : 0.5);
-  UG.uniform4fv(u['uTw[0]'], tw); UG.uniform4fv(u['uTwB[0]'], twB); UG.uniform4fv(u['uTwC[0]'], twC);
+  UG.uniform4fv(u['uTw[0]'], tw); UG.uniform4fv(u['uTwB[0]'], twB); UG.uniform4fv(u['uTwC[0]'], twC); UG.uniform4fv(u['uTwD[0]'], twD);
   UG.uniform1i(u.uNTw, n);
   UG.uniform4fv(u['uFl[0]'], fl);
   const b0 = EV.boom;
@@ -1266,7 +1529,9 @@ function render() {
   renderer.setRenderTarget(outRT);
   renderer.clear();
   // The aircraft goes first; the outside then fills only the uncovered pixels.
-  wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorld(TIP), turb: 0.4 + opts.storm, bolt: lastBolt, fogLevel: fog.level });
+  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
+    veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
+    wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce, beam: wlight.level, elmo: Math.min(1.6, elmo.level + elmo.surge * 1.6) });
   renderer.render(wing3.scene, wing3.cam);
   renderer.render(P1.scene, quadCam);
   // Bolts add their light over the outside; the wing's depth hides them.
@@ -1297,6 +1562,12 @@ function render() {
   // The storm brings rain to the window, up to heavy.
   UG.uniform1f(u.uRain, Math.max(opts.rain, smooth(0.2, 0.9, opts.storm)));
   UG.uniform1f(u.uStorm, opts.storm);
+  // The wing light's lamp and axis in the cabin frame, with its level and the fog.
+  const wa = norm(sub(WING_LIGHT.aim, WING_LIGHT.p));
+  UG.uniform4f(u.uBeamL, WING_LIGHT.p[0] + seatDx, WING_LIGHT.p[1], WING_LIGHT.p[2], wlight.level);
+  UG.uniform4f(u.uBeamA, wa[0], wa[1], wa[2], fog.level);
+  UG.tex(u.uBreath, breathTex); UG.uniform1f(u.uBreathOn, breath.any ? 1 : 0);
+  UG.uniform1f(u.uShade, shade.s);
   // Less window light reaches the cabin through dimmed glass, and it turns blue.
   const tg = dimT((dim.edge + dim.core) / 2);
   UG.uniform3fv(u.uCabin, sky.cabin);
@@ -1347,7 +1618,7 @@ function seen(dirA, rad = 0) {
 // True when a world ray from the eye meets the wing or winglet.
 function onWing(d) {
   for (const q of [...PANELS, LET]) {
-    const v = q.map(toWorld), n = quadNormal(v), dn = dot(d, n);
+    const v = q.map(toWorldA), n = quadNormal(v), dn = dot(d, n);
     if (Math.abs(dn) < 1e-4) continue;
     const tt = dot(v[0], n) / dn;
     if (tt <= 0) continue;
@@ -1409,11 +1680,13 @@ function flareUniforms(u) {
   const clear = sky.up * (onWing(sky.sun) ? 0 : 1) * (1 - towerCover(sky.sun)) * (1 - 0.7 * opts.storm) * (1 - fog.level);
   put(0, sky.sun, sky.h.flare * clear ** 3, 0.5 + 0.5 * clear, sky.flareCol, sky.sunR, sky.h.moon ? 0 : 0.4);
   // Lightning glows inside the cloud, so it throws no lens flare.
-  // The strobe and the red nav light on the wingtip.
-  const tipW = norm(toWorld(sub(TIP, basis.eye)));
+  // The strobe and the nav light on the wingtip.
+  const tipW = norm(toWorld(sub([TIP[0] + seatDx, TIP[1], TIP[2]], basis.eye)));
   // Neither wingtip light throws ghosts: a ghost of -1 cancels them.
-  put(2, tipW, reduce ? 0 : strobe() * 0.8, 0.5, [0.9, 0.95, 1.0], 0, 0.6, -1);
-  put(3, tipW, 0.08, 0.35, [1.0, 0.1, 0.05], 0, 0, -1);
+  // In a fog bank both lights swell into a wide, soft bloom.
+  const fb = fog.level;
+  put(2, tipW, reduce ? 0 : strobe() * 0.8 * (1 + 1.5 * fb), 0.5 + 1.4 * fb, [0.9, 0.95, 1.0], 0, 0.6 * (1 - fb), -1);
+  put(3, tipW, 0.08 * (1 + 3 * fb), 0.35 + 1.2 * fb, navCol(), 0, 0, -1);
   eventFlares(put);
   UG.uniform4fv(u['uFlr[0]'], flr); UG.uniform4fv(u['uFlrC[0]'], flrC); UG.uniform1fv(u['uFlrG[0]'], flrG);
 }
@@ -1429,6 +1702,7 @@ function towerUniforms() {
   near.forEach(({ c }, i) => {
     tw.set([c.x, c.z, c.r, c.top], i * 4);
     twB.set([c.seed, c.s, c.shear, c.glow * opts.towns * sky.h.lit], i * 4);
+    twD.set(c.v || [1, 1, 1, 0], i * 4);
     // The brightest flash inside this cell lights it from within.
     let best = null;
     for (const f of flashes) if (f.cell === c && (!best || f.level > best.level)) best = f;
@@ -1447,11 +1721,24 @@ function resize(force = false) {
   if (ready) render();
 }
 
+/* ---------- seat ---------- */
+function applySeat() {
+  if (!SEATS[opts.seat]) opts.seat = 'wl';
+  [seatDx, mirror] = SEATS[opts.seat];
+  canvas.style.transform = mirror ? 'scaleX(-1)' : '';
+  histFresh = true;
+}
+applySeat();
+
 /* ---------- input ---------- */
-const toPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, H - (e.clientY - r.top) * dpr]; };
+// On the right side the picture is mirrored, so input mirrors with it.
+const toPx = e => { const r = canvas.getBoundingClientRect(), x = (e.clientX - r.left) * dpr; return [mirror ? W - x : x, H - (e.clientY - r.top) * dpr]; };
 // A tap on a tower lights it at that spot; elsewhere it lights the deck.
 function tapAt(x, y) {
   setBasis();
+  // A tap on the winglet calls a strike on the plane.
+  const tip = toScreen([TIP[0] + seatDx, TIP[1], TIP[2]]);
+  if (Math.hypot(tip[0] - x, tip[1] - y) < 0.07 * Math.min(W, H)) { strike(); return; }
   const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
   // The nearest tower under the tap flashes where the tap meets it.
   let hit = null;
@@ -1482,6 +1769,14 @@ stage.addEventListener('pointerdown', e => {
   touches.set(e.pointerId, [x, y]);
   if (touches.size === 2) { pinch = spread(); if (drag) drag.moved = true; return; }
   drag = { x0: x, y0: y, x, y, moved: false };
+  // A press on the shade or its lip grabs it; the head stays put.
+  const sp = panePoint(x, y, WIN.slot);
+  if (Math.abs(sp[0]) < WIN.inn[0] + 0.02 && Math.abs(sp[1]) < SHADE_EXT && sp[1] > shadeEdge(shade.goal) - 0.012) {
+    drag.shade = sp[1] - shadeEdge(shade.goal); drag.moved = true; return;
+  }
+  // A press on fogged glass draws in the fog; the head stays put.
+  const pp = panePoint(x, y);
+  if (brAt(...pp) > 0.12) { drag.draw = pp; drag.moved = true; brDisc(...pp, 0.008, 1, true); }
   stage.classList.add('dragging');
 });
 stage.addEventListener('pointermove', e => {
@@ -1496,6 +1791,20 @@ stage.addEventListener('pointermove', e => {
     return;
   }
   if (!drag) return;
+  if (drag.shade !== undefined) {
+    // The lip follows the finger, held where it was grabbed.
+    const sp = panePoint(x, y, WIN.slot), ey = sp[1] - drag.shade;
+    shade.goal = clamp((SHADE_EXT - 0.012 - ey) / (2 * SHADE_EXT - 0.012));
+    wake();
+    return;
+  }
+  if (drag.draw) {
+    // The finger wipes a line in steps of 3 mm.
+    const pp = panePoint(x, y), [ax, ay] = drag.draw, n = Math.max(1, Math.ceil(Math.hypot(pp[0] - ax, pp[1] - ay) / 0.003));
+    for (let k = 1; k <= n; k++) brDisc(ax + (pp[0] - ax) * k / n, ay + (pp[1] - ay) * k / n, 0.008, 1, true);
+    drag.draw = pp;
+    return;
+  }
   if (Math.hypot(x - drag.x0, y - drag.y0) > 6 * dpr) drag.moved = true;
   // The head follows the drag: right moves toward the nose, up rises.
   const k = 0.42 / Math.min(W, H);
@@ -1506,6 +1815,7 @@ function release(e) {
   touches.delete(e.pointerId);
   if (touches.size) return;
   if (drag && !drag.moved) tapAt(drag.x0, drag.y0);
+  if (drag && drag.shade !== undefined) save('shade', shade.goal.toFixed(3));
   drag = null;
   stage.classList.remove('dragging');
 }
@@ -1519,7 +1829,18 @@ stage.addEventListener('keydown', e => {
   const m = { ArrowLeft: [-0.02, 0, 0], ArrowRight: [0.02, 0, 0], ArrowUp: [0, 0.02, 0], ArrowDown: [0, -0.02, 0], '+': [0, 0, 0.02], '=': [0, 0, 0.02], '-': [0, 0, -0.02] }[e.key];
   if (!m) return;
   e.preventDefault();
+  if (mirror) m[0] = -m[0];
   moveHead(...m);
+});
+// An easter egg: typing the ode world's name flies over it, or back home.
+let typed = '';
+addEventListener('keydown', e => {
+  if (e.key.length !== 1 || e.metaKey || e.ctrlKey) return;
+  typed = (typed + e.key.toLowerCase()).slice(-11);
+  if (typed !== 'strangereal') return;
+  const q = new URLSearchParams(location.search);
+  if (ODE) q.delete('ode'); else q.set('ode', '');
+  location.search = q.toString();
 });
 
 /* ---------- bar ---------- */
@@ -1533,13 +1854,16 @@ const ui = initPage({
       options: Object.keys(HOURS).map(k => ({ value: k, label: HOUR_NAMES[k] })),
       onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); histFresh = true; render(); },
     },
-    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { stormTarget = v; save('storm', v); } },
+    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { if (v > stormTarget + 0.12) stormKick(v); stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
-    actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } }],
+    actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
+      { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
+      { verb: 'breathe', label: 'Breathe', key: 'B', hold: true, onDown: () => { breath.out = true; wake(); }, onUp: () => { breath.out = false; } }],
     settings: [
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
       { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
       { type: 'choice', id: 'rain', label: 'Rain', value: String(opts.rain), options: pick3(['0', 'Off'], ['0.5', 'Light'], ['1', 'Heavy']), onPick: v => { opts.rain = +v; save('rain', v); render(); } },
+      { type: 'choice', id: 'seat', label: 'Seat', value: opts.seat, options: [{ value: 'wl', label: 'Wing L' }, { value: 'wr', label: 'Wing R' }, { value: 'al', label: 'Aft L' }, { value: 'ar', label: 'Aft R' }], onPick: v => { opts.seat = v; save('seat', v); applySeat(); render(); } },
       { type: 'toggle', id: 'aurora', label: 'Aurora', value: opts.aurora === 'on', onToggle: on => { opts.aurora = on ? 'on' : 'off'; save('aurora', opts.aurora); render(); } },
       // Sights: each option calls its sight now.
       { type: 'choice', id: 'falling', label: 'Falling', value: '', options: [{ value: 'meteor', label: 'Meteor' }, { value: 'fireball', label: 'Fireball' }, { value: 'boom', label: 'Impact' }], onPick: v => startEvent(v) },
@@ -1554,7 +1878,7 @@ onQuality(() => resize(true));
 
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
-for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(20, 40); c.s = 1; cells.push(c); }
+for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(50, 80); c.s = 1; cells.push(c); }
 buildSky(firstSky);
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);
@@ -1573,8 +1897,11 @@ const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
 function stepBank() {
   if (t > roll.t0 + roll.dur + roll.hold) {
     roll.from = bank / D2R;
-    roll.to = Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
-    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / 2; roll.hold = rnd(12, 45);
+    // About one turn in five is steep: up to 28 degrees, rolled in briskly.
+    // The fast roll throws the ailerons and spoilers hard.
+    const steep = Math.random() < 0.2;
+    roll.to = steep ? (Math.random() < 0.6 ? rnd(20, 28) : rnd(-20, -14)) : Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
+    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / (steep ? 4 : 2); roll.hold = steep ? rnd(8, 18) : rnd(12, 45);
   }
   const k = clamp((t - roll.t0) / roll.dur), e = k * k * k * (k * (k * 6 - 15) + 10);
   // A slow wander rides on top, as the autopilot trims.
@@ -1613,12 +1940,44 @@ async function startBed() {
     const buf = await bedLoad;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buf; src.loop = true;
+    // The recording carries an 11 kHz whine and bright clinks above the rumble.
+    // Two low-passes at 3 kHz remove the whine and dull the clinks; the rumble sits below 2 kHz.
+    const lp = [0, 1].map(() => { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; f.Q.value = 0.707; return f; });
     g.gain.setValueAtTime(0, ac.currentTime);
     g.gain.linearRampToValueAtTime(BED, ac.currentTime + 2);
-    src.connect(g).connect(kit.out);
+    src.connect(lp[0]).connect(lp[1]).connect(g).connect(kit.out);
     src.start();
     bed = { src, g };
+    startRumble(ac);
   } catch { bed = null; }
+}
+// Inside a fog bank a deep rumble rises under the bed: brown noise, low-passed.
+// Each gust of rough air swells it for a moment.
+let rumble = null;
+function startRumble(ac) {
+  if (rumble) return;
+  const n = ac.sampleRate * 4, buf = ac.createBuffer(1, n, ac.sampleRate), ch = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < n; i++) { b = (b + 0.02 * (Math.random() * 2 - 1)) / 1.02; ch[i] = b * 3.5; }
+  // The loop's ends meet at zero, so it never clicks.
+  for (let i = 0; i < 2000; i++) { const k = i / 2000; ch[i] *= k; ch[n - 1 - i] *= k; }
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), body = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = buf; src.loop = true;
+  lp.type = 'lowpass'; lp.frequency.value = 120; lp.Q.value = 0.5;
+  body.type = 'peaking'; body.frequency.value = 48; body.Q.value = 1.2; body.gain.value = 9;
+  g.gain.value = 0;
+  src.connect(lp).connect(body).connect(g).connect(kit.out);
+  src.start();
+  rumble = { g, lp, ac };
+}
+function stepRumble() {
+  if (!rumble) return;
+  const { g, lp, ac } = rumble;
+  // The bank sets the level; turbulence buffets it and opens the filter a little.
+  const lvl = smooth(0.1, 0.8, fog.level) * 0.9 + 0.15 * opts.storm * turb.level;
+  const buffet = Math.min(1, Math.abs(turb.vy) * 12);
+  g.gain.setTargetAtTime(lvl * (0.75 + 0.6 * buffet), ac.currentTime, 0.25);
+  lp.frequency.setTargetAtTime(100 + 90 * buffet, ac.currentTime, 0.2);
 }
 sound.onChange(on => { if (on) setTimeout(startBed, 50); });
 ['pointerup', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => setTimeout(startBed, 50), { passive: true }));

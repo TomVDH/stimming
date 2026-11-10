@@ -13,6 +13,8 @@ const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 const common = ({ ALT, WIN }) => `
 const float R = 6371.0, H = ${ALT.toFixed(1)};
 const float PI = 3.14159265;
+// Lightning's colour inside cloud: a cold, slightly violet blue-white.
+const vec3 FLASH_C = vec3(0.64, 0.72, 1.0);
 uniform vec3 uEye; uniform vec2 uBank;
 uniform sampler2D uSkyL, uSkyT; uniform vec2 uSunAz; uniform float uHorEl;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -57,6 +59,13 @@ uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uLit, uFocal, uCover, u
 uniform int uDeckSteps, uTowSteps, uTowOct, uLightSteps; uniform float uTowStep, uMid, uAurora;
 uniform highp sampler3D uNoise;
 uniform vec2 uCam;
+// Land: 0 the flat country, 1 relief, 2 relief with parallax on peaks.
+uniform float uLand;
+// The hidden ode world: on, start map x and y in source pixels, km per pixel.
+uniform vec4 uOde; uniform sampler2D uOdeMap;
+// The sea's glitter: 1 under the moon, 0 under the sun.
+// uSeaWind: wind at sea level in m/s; the weather sets it.
+uniform float uSeaNight, uSeaWind;
 // Airports: map site xz, then the landing heading's cos and sin.
 // uApB: runway half length, twin runway offset, seed, apron size.
 uniform vec4 uAp[8], uApB[8];
@@ -74,6 +83,8 @@ uniform vec4 uWL; uniform vec2 uWT;
 // uFairA: the nose and its radius; uFairB: the tail and its radius.
 uniform vec3 uNacA, uNacB, uChord, uUpA, uSpan; uniform float uNacR; uniform vec4 uFairA[3], uFairB[3];
 uniform vec4 uTw[${MAXCELL}]; uniform vec4 uTwB[${MAXCELL}]; uniform vec4 uTwC[${MAXCELL}]; uniform int uNTw;
+// Each cell's type: anvil size, lean, turret spread, decay.
+uniform vec4 uTwD[${MAXCELL}];
 uniform vec4 uFl[${MAXFL}];
 // Trail points live in a 128 by 2 float texture: row 0 point and radius, row 1 colour and shell.
 uniform highp sampler2D uTrail; uniform int uTrN;
@@ -89,6 +100,8 @@ uniform vec4 uBoom; uniform vec2 uBoomL;
 uniform float uStorm, uFog; uniform vec4 uSpr[2];
 // uWisp: the plane's wrapped place in metres, for wing fog.
 uniform vec3 uWisp;
+// The wingtip nav light: red on the left wing, green on the right.
+uniform vec3 uNavC;
 out vec4 o;
 
 // A ray from the eye hits the sphere at height hl, from above.
@@ -167,15 +180,46 @@ float band(float x, float rw, float fw) { return clamp((min(x + fw * 0.5, rw) - 
 float fd(float sc, float fw) { return smoothstep(sc * 0.6, sc * 0.2, fw); }
 // The sea: a broad field, open water below SEA. index.html mirrors it.
 const float SEA = 0.3;
+// Relief land has more open sea: about a third of the map.
+const float SEAR = 0.42;
 float seaField(vec2 w) { return vnoise(w / 260.0 + 3.7) * 0.65 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 95.0 + 1.3) * 0.35; }
+// The land field for relief: the sea field, or the ode world's traced coasts.
+// index.html mirrors it, so no airport lands in the sea.
+float landField(vec2 w) {
+  if (uOde.x < 0.5) return seaField(w);
+  vec2 px = vec2(uOde.y + w.x / uOde.w, uOde.z - w.y / uOde.w);
+  float m = textureLod(uOdeMap, (px - 55.0) / vec2(1890.0, 1085.0), 0.0).r;
+  // Coasts meander, so the traced edges never run straight.
+  float fr = (vnoise(w / 70.0 + 5.1) - 0.5) * 0.3 + (vnoise(w / 22.0 + 9.7) - 0.5) * 0.1;
+  return SEAR + 0.8 * (m - 0.5) + fr;
+}
 
 // Set by landBase for landCover: the water share, the open sea share.
 float gWater = 0.0, gSea = 0.0;
 // The nearest airport, and the pixel in its runway frame.
 int gAp = -1; vec2 gApQ = vec2(1e3);
+// Soft cloud shadows: deck cells where the sun ray crosses 2.4 km.
+// A blurred mip keeps every edge soft. gCloudSh holds the pixel's value.
+float gCloudSh = 1.0;
+float cloudShadow(vec2 w) {
+  if (uSun.y <= 0.03) return 1.0;
+  vec2 p = w + uSun.xz / uSun.y * 2.4 + vec2(uTime * 0.012, 0.0);
+  // The deck's own cover and cell map, as deckDens reads them.
+  vec2 a = mat2(0.825, -0.565, 0.565, 0.825) * p / 70.0, b = mat2(-0.32, -0.947, 0.947, -0.32) * p / 27.23;
+  float cv = textureLod(uNoise, vec3(a, 0.13), 1.0).r * 0.65 + textureLod(uNoise, vec3(b, 0.44), 1.0).r * 0.35;
+  float c = smoothstep(uCover - 0.1, uCover + 0.14, cv);
+  if (c <= 0.0) return 1.0;
+  float cell = textureLod(uNoise, vec3(p.x, 3.1, p.y) / 7.0, 2.0).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  return 1.0 - 0.7 * smoothstep(0.0, 0.45, loc);
+}
+// Set by landBase: the map point, elevation in km and its gradient.
+// gBelt: the mountain share. gHab: how fit the ground is for towns.
+vec2 gW = vec2(0.0), gEG = vec2(0.0);
+float gE = 0.0, gBelt = 0.0, gHab = 1.0;
 
-// The bare land under the lights: fields, woods, hills and snow.
-vec3 landBase(vec2 w, float fw) {
+// The nearest airport sets gAp and gApQ; it returns the distance.
+float apNear(vec2 w) {
   float apD = 1e3;
   gAp = -1;
   for (int i = 0; i < 8; i++) {
@@ -185,6 +229,22 @@ vec3 landBase(vec2 w, float fw) {
     float d2 = dot(q, q);
     if (d2 < apD * apD) { apD = sqrt(d2); gAp = i; gApQ = vec2(dot(q, a.zw), dot(q, vec2(-a.w, a.z))); }
   }
+  return apD;
+}
+// Airport ground masks: inside the fence, runways, apron.
+vec3 apMasks(float fw) {
+  if (gAp < 0) return vec3(0.0);
+  vec4 b = uApB[gAp]; vec2 q = gApQ;
+  float fence = smoothstep(0.08, 0.0, max(abs(q.x) - b.x - 0.4, max(-0.85 - q.y, q.y - 0.3 - b.y)));
+  float run = band(abs(q.y), 0.03, fw) * step(abs(q.x), b.x);
+  if (b.y > 0.0) run = max(run, band(abs(q.y - b.y), 0.03, fw) * step(abs(q.x - 0.5), b.x * 0.75));
+  float apron = band(abs(q.y + 0.5), 0.16, fw) * band(abs(q.x - 0.2 * b.x), 0.55 * b.w, fw);
+  return vec3(fence, run, apron);
+}
+
+// The bare land under the lights: fields, woods, hills and snow.
+vec3 landFlat(vec2 w, float fw) {
+  float apD = apNear(w);
   vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
   // Regions over tens of km: hill country, wooded belts, wet lowland.
   float relief = smoothstep(0.4, 0.8, vnoise(w / 85.0 + 7.1));
@@ -225,24 +285,224 @@ vec3 landBase(vec2 w, float fw) {
   float alb = mix(parcel, 0.15, forest);
   // Snow lies on the high ridges.
   alb += 2.2 * smoothstep(0.8, 1.15, hgt);
-  if (gAp >= 0) {
-    // Inside the fence: mown grass, dark runways, a pale apron.
-    vec4 b = uApB[gAp]; vec2 q = gApQ;
-    float fence = smoothstep(0.08, 0.0, max(abs(q.x) - b.x - 0.4, max(-0.85 - q.y, q.y - 0.3 - b.y)));
-    alb = mix(alb, 1.0, fence);
-    float run = band(abs(q.y), 0.03, fw) * step(abs(q.x), b.x);
-    if (b.y > 0.0) run = max(run, band(abs(q.y - b.y), 0.03, fw) * step(abs(q.x - 0.5), b.x * 0.75));
-    alb = mix(alb, 0.3, run);
-    alb = mix(alb, 1.7, band(abs(q.y + 0.5), 0.16, fw) * band(abs(q.x - 0.2 * b.x), 0.55 * b.w, fw));
-  }
+  // Inside the fence: mown grass, dark runways, a pale apron.
+  vec3 am = apMasks(fw);
+  alb = mix(mix(mix(alb, 1.0, am.x), 0.3, am.y), 1.7, am.z);
   // Shading triples the slopes, so relief reads from 11 km.
   vec3 n = normalize(vec3(-3.0 * gr.x, 1.0, -3.0 * gr.y));
   // Steep ground sees less sky; slopes toward the bright side see more.
   vec2 lz = normalize(uSun.xz + 1e-5);
   float skyK = clamp(1.0 - 3.0 * length(gr), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
   vec3 g = uAmb * 0.03 * alb * skyK;
-  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0);
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * gCloudSh;
   return g;
+}
+
+/* ---------- relief: mountain belts, coasts by height, the open sea ---------- */
+// Mountain belts: long ranges about 50 km wide, broken by passes.
+// index.html mirrors it, so no airport lands on a peak.
+float beltField(vec2 w) {
+  float r = 1.0 - abs(2.0 * vnoise(mat2(0.6, -0.8, 0.8, 0.6) * w / 170.0 + 11.3) - 1.0);
+  return smoothstep(0.55, 0.9, r) * smoothstep(0.25, 0.6, vnoise(w / 75.0 + 2.2));
+}
+// Eroded ridges: height about 0.25 to 0.8, and its gradient per km.
+// Steep coarse octaves damp the finer ones, so valley floors stay smooth.
+// An octave fades to its mean once a pixel spans it.
+vec3 peaks(vec2 w, int n, float fw) {
+  mat2 M = mat2(0.8, 0.6, -0.6, 0.8) / 14.0;
+  float h = 0.0, b = 0.5, sc = 14.0;
+  vec2 g = vec2(0.0), ds = vec2(0.0);
+  for (int i = 0; i < 7; i++) {
+    if (i >= n) break;
+    vec3 v = vnoiseD(M * w + float(i) * 7.31);
+    float r = 1.0 - abs(2.0 * v.x - 1.0);
+    vec2 rg = -2.0 * sign(v.x - 0.5) * v.yz;
+    float k = fd(sc, fw);
+    float e = 1.0 / (1.0 + 0.15 * dot(ds, ds));
+    ds += rg * r * k;
+    h += b * mix(0.2, r * r * e, k);
+    g += b * k * e * 2.0 * r * (transpose(M) * rg);
+    b *= 0.5; sc *= 0.5;
+    M = mat2(1.6, 1.2, -1.2, 1.6) * M;
+  }
+  return vec3(h, g);
+}
+// Ridge scale in km at full belt, and the ridge height at the ramp.
+// Peaks reach about 3 km; valley floors sink about 1 km below the ramp.
+const float MTN = 7.0, PK0 = 0.42;
+// Inland, valley floors stay near the ramp; at the coast they flood.
+float valleyK(float mt, float base) { return mt < 0.0 ? mix(1.0, 0.25, smoothstep(0.1, 0.6, base)) : 1.0; }
+// Elevation from the three broad octaves, for shadows and parallax.
+// The finer octaves add about 0.04 on average.
+float elevLow(vec2 w, float base) {
+  float m = beltField(w);
+  if (m <= 0.0) return base;
+  float mt = m * MTN * (peaks(w, 3, 0.0).x + 0.04 - PK0);
+  return base + mt * valleyK(mt, base);
+}
+// Soft shadow of the ridges: a short march toward the sun or moon.
+float reliefShadow(vec2 w, float base) {
+  float lh = length(uSun.xz);
+  if (uSun.y <= 0.0 || lh < 1e-3) return 1.0;
+  vec2 sd = uSun.xz / lh;
+  // Only ground in a belt, or just short of one, can lie in shadow.
+  if (beltField(w) + beltField(w + sd * 9.0) <= 0.0) return 1.0;
+  float tn = uSun.y / lh, e0 = elevLow(w, base), s = 1.0, t = 0.3;
+  for (int i = 0; i < 8; i++) {
+    float rh = e0 + 0.04 + t * tn;
+    // Above every possible peak, nothing more can block the light.
+    if (rh > base + MTN * 0.4) break;
+    s = min(s, 7.0 * (rh - elevLow(w + sd * t, base)) / t);
+    t *= 1.75;
+  }
+  return smoothstep(0.0, 1.0, s);
+}
+// The ray meets high ground before the sea-level sphere.
+// A short march back toward the eye finds the nearer hit.
+vec2 reliefParallax(vec2 w, vec3 d, vec3 up) {
+  float sd = max(-dot(d, up), 0.12);
+  vec2 hd = normalize(d.xz + 1e-6) * sqrt(1.0 - sd * sd) / sd;
+  float base = 2.5 * (landField(w) - SEAR), top = max(base + MTN * 0.4, 0.0);
+  if (beltField(w) + beltField(w - hd * top * 0.5) + beltField(w - hd * top) <= 0.0) return w;
+  // From the top of the peaks down to sea level, in even height steps.
+  // Grazing rays cover more ground, so they take more steps.
+  int N = int(mix(10.0, 24.0, smoothstep(2.0, 6.0, length(hd))));
+  float hPrev = top, ePrev = max(elevLow(w - hd * top, base), 0.0);
+  for (int i = 1; i <= 24; i++) {
+    if (i > N) break;
+    float h = top * (1.0 - float(i) / float(N));
+    float e = max(elevLow(w - hd * h, base), 0.0);
+    if (e >= h) {
+      // One secant step between the last two heights.
+      float a = (hPrev - ePrev) / max((hPrev - ePrev) - (h - e), 1e-4);
+      return w - hd * mix(hPrev, h, a);
+    }
+    hPrev = h; ePrev = e;
+  }
+  return w;
+}
+
+// Farm districts: cells about 6 km across, each with its own field pattern.
+// A district sets the field angle, the strip size and the crop mix.
+// gLot: the field's own number, for woodlots.
+float gLot = 1.0;
+vec3 farmland(vec2 w, float fw, out float fk) {
+  vec2 c = w / 6.0, i = floor(c), f = fract(c), best = vec2(0.0);
+  float d1 = 9.0;
+  for (int k = 0; k < 9; k++) {
+    vec2 o = vec2(k % 3 - 1, k / 3 - 1);
+    vec2 r = o + 0.15 + 0.7 * hash22(i + o + 51.0) - f;
+    float d = dot(r, r);
+    if (d < d1) { d1 = d; best = i + o; }
+  }
+  float h = hash12(best + 7.3), a = h * 3.1416, hs = hash12(best + 2.1), hm = hash12(best + 9.4);
+  vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * w;
+  // Strips: narrow and long, or near square; rows shift like bricks.
+  float sx = mix(0.16, 0.45, hs), sy = sx * mix(1.3, 3.5, hm);
+  float row = floor(q.y / sy);
+  float qx = q.x / sx + hash12(vec2(row, h * 91.0)) * 3.0, col = floor(qx);
+  vec2 id = vec2(col, row) + h * 173.0;
+  float hp = hash12(id), hb = hash12(id + 3.1);
+  gLot = hash12(id + 5.7);
+  // Muted crops; each district leans to its own mix.
+  float pick = fract(hp + hm * 0.5);
+  vec3 cc = pick < 0.3 ? vec3(0.24, 0.32, 0.14) : pick < 0.5 ? vec3(0.34, 0.36, 0.18) : pick < 0.72 ? vec3(0.47, 0.42, 0.28) : pick < 0.88 ? vec3(0.31, 0.26, 0.18) : vec3(0.27, 0.34, 0.17);
+  cc *= 0.85 + 0.3 * hb;
+  // Hedges and tracks: thin dark lines on the field edges.
+  vec2 e = vec2(min(fract(qx), 1.0 - fract(qx)) * sx, min(fract(q.y / sy), 1.0 - fract(q.y / sy)) * sy);
+  cc *= 1.0 - 0.3 * band(min(e.x, e.y), 0.005, max(fw, 1e-3));
+  // Once a pixel spans a field, the district's mean colour remains.
+  fk = fd(sx, fw);
+  vec3 mean = vec3(0.35, 0.35, 0.2) * (0.92 + 0.16 * hm);
+  return mix(mean, cc, fk);
+}
+
+// Relief land: one elevation sets the sea, the shore, the snow and the light.
+vec3 landRelief(vec2 w, float fw) {
+  float apD = apNear(w);
+  vec2 wr = mat2(0.8, -0.6, 0.6, 0.8) * w;
+  float woods = vnoise(wr / 55.0 + 2.3), wet = vnoise(w / 70.0 - 4.4);
+  float sf = landField(w) + 0.06 * (vnoise(wr / 9.0) - 0.5) + 0.03 * (vnoise(w / 2.6 + 4.0) - 0.5) * fd(2.6, fw);
+  // Airports keep their ground dry and flat.
+  float calm = smoothstep(4.0, 7.0, apD);
+  float m = beltField(w) * calm;
+  vec3 pk = m > 0.0 ? peaks(w, 7, fw) : vec3(PK0, 0.0, 0.0);
+  // Rivers wind through the lowland; the belts drain by their own valleys.
+  vec2 wq = w + 16.0 * vec2(vnoise(w / 21.0), vnoise(w / 21.0 + 8.3));
+  vec3 rv = vnoiseD(wq / 34.0), rt = vnoiseD(wq / 11.0 + 3.0);
+  float rd = abs(rv.x - 0.5) * 34.0 / max(length(rv.yz), 0.05);
+  float rdt = abs(rt.x - 0.5) * 11.0 / max(length(rt.yz), 0.05);
+  float river = max(band(rd, 0.12 * smoothstep(0.3, 0.7, wet), fw), band(rdt, 0.035 * smoothstep(0.45, 0.8, wet), fw));
+  // Low hills roll over the plain, a few hundred metres high.
+  float relief = smoothstep(0.4, 0.8, vnoise(w / 85.0 + 7.1)) * smoothstep(SEAR, SEAR + 0.12, sf) * (1.0 - m);
+  vec3 h1 = ridge(vnoiseD(wr / 13.0 + 1.9)), h2 = ridge(vnoiseD(w / 4.1 + 6.2)), h3 = vnoiseD(wr / 1.3 + 2.8);
+  float k2 = fd(4.1, fw) * 0.35, k3 = fd(1.3, fw) * 0.06;
+  float valley = 0.3 + 0.7 * smoothstep(0.0, 3.0, rd);
+  float hh = (relief * (h1.x + k2 * h2.x) + k3 * h3.x) * valley;
+  vec2 hg = (relief * (h1.yz / 13.0 + k2 * h2.yz / 4.1) + k3 * h3.yz / 1.3) * valley * calm;
+  // Elevation in km: a coastal ramp, the hills, the ridges round their mean.
+  // Belt valleys sink under the sea at the coast: fjords and headlands.
+  float base = 2.5 * (sf - SEAR);
+  float mt = m * MTN * (pk.x - PK0), vk = valleyK(mt, base);
+  float E = base + 0.3 * hh + mt * vk;
+  vec2 G = 0.3 * hg + m * MTN * vk * pk.yz;
+  float slope = length(G);
+  float sa = 0.002 + 0.6 * fw * (0.03 + slope);
+  gSea = smoothstep(sa, -sa, E);
+  // Lakes gather in wet lowland.
+  float lk = vnoise(wr / 5.0 + 3.3) * 0.75 + mix(0.5, vnoise(w / 1.4 + 1.1), fd(1.4, fw)) * 0.25;
+  float lv = 0.05 + 0.1 * smoothstep(0.4, 0.8, wet) - 0.1 * relief - 0.3 * m;
+  float la = 0.004 + fw * 0.08;
+  float lake = smoothstep(lv + la, lv - la, lk);
+  gWater = max(gSea, max(lake, river * (1.0 - smoothstep(0.0, 0.3, m))) * calm);
+  // Wild woods: ragged edges at three scales, thickest on hills and slopes.
+  vec2 wv = w + 2.5 * vec2(vnoise(w / 7.0 + 3.0), vnoise(w / 7.0 + 8.0));
+  float fn = 0.55 * vnoise(wv / 3.2 + 1.7) + 0.3 * mix(0.5, vnoise(wv / 1.1 + 4.4), fd(1.1, fw)) + 0.15 * mix(0.5, vnoise(w / 0.35 + 2.2), fd(0.35, fw));
+  float P = clamp(0.3 + 0.7 * (woods - 0.5) + 0.35 * relief + 0.35 * m + 0.6 * slope, 0.0, 0.95);
+  float fa = 0.02 + fw * 0.1;
+  float wild = smoothstep(1.0 - P - fa, 1.0 - P + fa, fn);
+  // Farmland: flat, low ground outside the belts.
+  float farm = smoothstep(0.3, 0.12, slope) * smoothstep(1.3, 0.7, E) * (1.0 - smoothstep(0.02, 0.15, m));
+  float fk;
+  vec3 crop = farmland(w, fw, fk);
+  // Woodlots fill whole fields, so wood edges follow field edges.
+  float lot = mix(clamp(0.6 * P - 0.1, 0.0, 1.0), step(gLot, 0.6 * P - 0.1), fk);
+  float forest = mix(wild, max(lot, wild * smoothstep(0.55, 0.8, P)), farm);
+  vec3 open = mix(vec3(0.27, 0.32, 0.16) * (0.85 + 0.3 * fn), crop, farm);
+  // High ground: alpine meadow, then rock; steep faces stay bare.
+  float grit = mix(0.5, vnoise(w / 0.6 + 3.3), fd(0.6, fw));
+  vec3 rock = vec3(0.36, 0.33, 0.3) * (0.7 + 0.6 * grit);
+  open = mix(open, mix(vec3(0.26, 0.3, 0.16), rock, smoothstep(1.3, 2.0, E)), smoothstep(0.7, 1.4, E) * smoothstep(0.0, 0.25, m));
+  open = mix(open, rock, smoothstep(0.6, 1.1, slope) * m);
+  forest *= smoothstep(1.9, 1.5, E + 0.4 * (fn - 0.5));
+  vec3 alb = mix(open, vec3(0.04, 0.075, 0.04), forest);
+  // A thin strip of pale sand on low, gentle shores, about 60 m wide.
+  // The coastal ramp rises about 25 m per km.
+  float beach = (1.0 - smoothstep(0.03, 0.08 + 0.5 * fw, E / (0.025 + slope))) * step(0.0, E) * smoothstep(0.1, 0.03, slope) * (1.0 - m);
+  alb = mix(alb, vec3(0.62, 0.56, 0.42), beach);
+  // Shading lifts the hills, as on the flat land; the belts stand on their own.
+  vec2 Gs = 3.0 * hg + m * MTN * vk * pk.yz;
+  vec3 n = normalize(vec3(-Gs.x, 1.0, -Gs.y));
+  // Snow: a wavy snow line, lower on shaded slopes; steep rock sheds it.
+  float sl = 2.35 + 0.5 * (vnoise(w / 7.0 + 1.7) - 0.5) + 0.35 * dot(n.xz, normalize(uSun.xz + 1e-5));
+  float snow = smoothstep(sl - 0.25, sl + 0.15, E) * smoothstep(1.6, 0.8, slope);
+  alb = mix(alb, vec3(1.7, 1.8, 1.95), snow);
+  vec3 am = apMasks(fw);
+  alb = mix(mix(mix(alb, vec3(0.75, 0.85, 0.55), am.x), vec3(0.3), am.y), vec3(1.7), am.z);
+  vec2 lz = normalize(uSun.xz + 1e-5);
+  float skyK = clamp(1.0 - length(Gs), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
+  float sh = reliefShadow(w, base);
+  vec3 g = uAmb * 0.03 * alb * skyK;
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * sh * gCloudSh;
+  gE = E; gEG = G; gBelt = m;
+  // Towns keep to dry, low, gentle ground, and crowd the coasts.
+  gHab = (1.0 - gWater) * smoothstep(1.0, 0.35, slope) * smoothstep(1.5, 0.7, E) * (1.0 + 0.4 * smoothstep(0.1, 0.0, sf - SEAR));
+  return g;
+}
+vec3 landBase(vec2 w, float fw) {
+  gW = w; gHab = 1.0;
+  gCloudSh = cloudShadow(w);
+  return uLand < 0.5 ? landFlat(w, fw) : landRelief(w, fw);
 }
 
 // The pixel's ground footprint: view heading xy, then along and across radii.
@@ -308,18 +568,165 @@ vec3 airport(vec2 q, vec4 b, vec4 F) {
 
 // Water over the land, then airport lights.
 // up is the local vertical at the ground point.
+/* The open sea: havoc's classic sea, after window/seaprobe.html variant C. */
+// Havoc's regular look, as linear colour: deep, shallow and scatter.
+const vec3 SEA_DEEP = vec3(0.0003, 0.0024, 0.006), SEA_SHALLOW = vec3(0.003, 0.034, 0.055), SEA_SCATTER = vec3(0.0116, 0.332, 0.188);
+// The wind always blows toward this direction; only its speed changes.
+const vec2 SEA_WD = vec2(0.866, 0.5);
+// Gale share: 0 below 9 m/s, 1 at 22 m/s.
+float gale() { return smoothstep(9.0, 22.0, uSeaWind); }
+float seaFres(float c) { return 0.02 + 0.98 * pow(1.0 - clamp(c, 0.0, 1.0), 5.0); }
+// Sun on the sea: cloud shadows dim it.
+vec3 seaSunL() { return uSunL * gCloudSh; }
+// Light on a diffuse face, with the cloud constants.
+vec3 seaLightOn(vec3 n) { return seaSunL() * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016; }
+// Monahan: the whitecap share of the sea grows with the wind.
+float monahan() { return min(3.84e-6 * pow(uSeaWind, 3.41), 1.0); }
+// Gusts roughen the sea in patches a few km across; lulls lie glassy between.
+float gusts(vec2 m) {
+  vec2 q = m / 2600.0 + vec2(uTime * 0.004, 0.0);
+  float n = vnoise(q) * 0.65 + vnoise(q * 2.3 + 7.1) * 0.35;
+  // A gale blows everywhere, so the patches even out.
+  return mix(mix(0.35, 0.8, gale()), mix(1.8, 1.25, gale()), smoothstep(0.25, 0.75, n));
+}
+// Footprint cells: about one pixel each way, in power-of-two metres.
+vec2 footCell(vec2 m, float fa, float fl, out vec2 cs) {
+  vec2 lv = ceil(log2(max(vec2(fa, fl), vec2(0.25))));
+  cs = exp2(lv);
+  return floor(m / cs) + lv * 31.7;
+}
+// Sparkles: a share p of the cells flashes; each holds for 1 / rate s.
+float sparkle(vec2 m, float fa, float fl, float p, float rate) {
+  vec2 cs; vec2 cell = footCell(m, fa, fl, cs);
+  float ph = hash12(cell + 7.1);
+  return step(1.0 - p, hash12(cell + floor(uTime * rate + ph * 8.0) * vec2(1.37, 2.71)));
+}
+// Whitecaps: a cell holds one cap or none; the mean stays W times bias.
+float caps(vec2 m, float fa, float fl, float W, float bias) {
+  vec2 cs; vec2 cell = footCell(m, fa, fl, cs);
+  float mw = W * bias, q = min(1.0, mw * cs.x * cs.y / 80.0);
+  float on = step(1.0 - q, hash12(cell + floor(uTime / 9.0 + hash12(cell + 3.3)) * vec2(2.3, 1.1)));
+  return on * min(1.0, mw / max(q, 1e-6));
+}
+// The resolved sea: height hn (-1 to 1), slope s, roughness m2.
+// A train fades flat once a pixel spans it; its variance moves to m2.
+float seaWaves(vec2 m, float fl, out vec2 s, out float res, out float m2, out float ph) {
+  vec2 wd = SEA_WD, wc = vec2(-wd.y, wd.x);
+  float cm = (0.003 + 0.00512 * uSeaWind) * gusts(m);
+  m2 = cm; s = vec2(0.0); res = 0.0;
+  float h = 0.0, hs = 0.0;
+  // Swell: a long train from a far storm, 25 degrees off the wind.
+  // A gale makes it longer and steeper.
+  vec2 sd = mat2(0.906, 0.423, -0.423, 0.906) * wd;
+  float L = mix(420.0, 620.0, gale()), k = 6.2832 / L, a = mix(0.03, 0.07, gale()) / k, f = fd(L, fl);
+  ph = dot(m, sd) * k - uTime * sqrt(9.81 * k);
+  h += a * sin(ph) * f; hs += a * f;
+  s += sd * (a * k * cos(ph) * f);
+  res += f * 0.5;
+  // Wind sea: four octaves of stretched noise, crests across the wind.
+  float lam = max(0.83 * uSeaWind * uSeaWind, 6.0) * 1.8;
+  for (int i = 0; i < 4; i++) {
+    float wi = i == 0 ? 0.04 : 0.08;
+    float fi = fd(lam, fl);
+    if (fi > 0.0) {
+      float ai = sqrt(wi * cm) * lam / 0.55;
+      vec2 q = vec2(dot(m, wd), dot(m, wc) * 0.4) / lam + float(i) * 17.3;
+      q.x -= uTime * sqrt(9.81 * lam / 6.2832) / lam;
+      vec3 nd = vnoiseD(q);
+      h += ai * (nd.x - 0.5) * fi; hs += ai * 0.5 * fi;
+      s += (wd * nd.y + wc * nd.z * 0.4) * (ai / lam) * fi;
+      m2 -= wi * cm * fi;
+      res += fi * 0.125;
+    }
+    lam *= 0.55;
+  }
+  m2 = max(m2, 0.002);
+  // Swell steepens the short waves on its fronts.
+  m2 *= 1.0 + 0.45 * sin(ph) * fd(330.0, fl);
+  return hs > 0.0 ? h / hs : 0.0;
+}
+// The classic sea at map point w (km); fw is the footprint along the view in km.
+// shelf lifts the sand colour; the moon's glitter is sparser.
+vec3 seaClassic(vec2 w, float fw, vec3 d, vec3 up, float shelf) {
+  vec3 v = -d, sunL = seaSunL();
+  vec2 m = w * 1000.0;
+  float fl = max(fw, 1e-4) * 1000.0, fa = fl * max(dot(v, up), 0.03);
+  vec2 s; float res, m2, sph;
+  float hn = seaWaves(m, fl, s, res, m2, sph);
+  vec3 n = normalize(up - vec3(s.x, 0.0, s.y));
+  float nv = max(dot(n, v), 0.05);
+  // The sky in the facet's mirror, folded above the horizon, without the sun.
+  vec3 r = reflect(d, n);
+  r -= 2.0 * min(dot(r, up), 0.0) * up;
+  float fres = seaFres(nv);
+  vec3 sky = (skyL(r) + aurora(r, 1.0) * 0.5) * (1.0 - 0.9 * smoothstep(0.9, 0.999, dot(r, uSun)));
+  // Body: dark deep water at a slant, lighter looking straight down.
+  // Over the shelf the sand shows through, green-blue.
+  vec3 body = mix(mix(SEA_DEEP, SEA_SHALLOW, pow(nv, 0.35)), vec3(0.05, 0.14, 0.13), shelf) * seaLightOn(up);
+  // A gale churns the water grey-green.
+  body = mix(body, vec3(dot(body, vec3(0.3, 0.5, 0.2))) * vec3(0.8, 1.05, 1.0) * 1.4, 0.6 * gale());
+  float crest = mix(0.3, smoothstep(0.2, 1.0, hn), res);
+  // Subsurface: crests lit from behind glow toward the eye.
+  vec3 sunFlat = normalize(vec3(uSun.x, 0.0, uSun.z) + 1e-5);
+  float back = pow(max(dot(d, sunFlat) * 0.5 + 0.5, 0.0), 3.0);
+  float face = pow(1.0 - nv, 2.0);
+  float sssDot = pow(max(dot(v, -normalize(uSun + n * 0.6)), 0.0), 3.0);
+  vec3 Es = sunL * 0.045 * clamp(dot(uSun, up) * 2.5, 0.0, 1.0);
+  body += SEA_SCATTER * Es * (back * face * crest * 0.9 + (sssDot * 1.6 + 0.3) * crest * (1.0 + 0.6 * fres)) * 0.025;
+  // Relief: troughs darken, crests and sun-facing slopes brighten.
+  float hk = mix(0.5, smoothstep(-1.0, 1.0, hn), res);
+  float sunSide = max(dot(n, normalize(vec3(uSun.x, max(uSun.y, 0.25), uSun.z))), 0.0);
+  body *= mix(1.0, (0.45 + 0.85 * hk) * (0.7 + 0.6 * sunSide), 0.365);
+  vec3 col = mix(body, sky, fres);
+  // Glint: a tight disk, a scatter and a broad glow; the weights sum to one.
+  vec3 hv = normalize(uSun + v + vec3(0.0, 1e-5, 0.0));
+  float hz = max(dot(hv, n), 1e-3), c2 = hz * hz, t2 = (1.0 - c2) / c2;
+  float g = exp(-t2 / m2), ms = m2 * 2.5 + 0.004;
+  float D = (0.72 * g / m2 + 0.2 * exp(-t2 / ms) / ms + 0.08 * exp(-t2 / 0.08) / 0.08) / (PI * c2 * c2);
+  // Glitter: facets that catch the light twinkle near the peak.
+  float sp = sparkle(m, fa, fl, mix(0.04, 0.025, uSeaNight), 6.0) * smoothstep(0.15, 0.6, g);
+  D += sp * 4.0 / (PI * m2);
+  col += sunL * 0.014 * seaFres(dot(v, hv)) * D / (4.0 * nv);
+  // Lace: foam from the breakers drifts out in streaks downwind.
+  // Whitecaps never cover more than a fifth of the sea.
+  float W = min(monahan() * gusts(m), 0.2);
+  // In a gale the spray lies in long sheets of streaked foam.
+  float sheet = gale();
+  vec2 wc = vec2(-SEA_WD.y, SEA_WD.x);
+  float al = dot(m, SEA_WD), ac = dot(m, wc);
+  float st = vnoise(vec2(al / 700.0 - uTime * 0.004, ac / 60.0)) * 0.65 + vnoise(vec2(al / 240.0, ac / 22.0) + 5.1) * 0.35;
+  float streak = mix(0.1 + 0.3 * sheet, smoothstep(0.6 - 0.25 * sheet, 0.85, st), fd(60.0, fl));
+  // Two noises multiplied make holes, so foam reads as lace.
+  float n1 = vnoise(m / 45.0) * 2.0 - 1.0, n2 = vnoise(m / 19.0 + 5.3) * 2.0 - 1.0;
+  float lace = mix(0.55, smoothstep(0.02, 0.2, abs(n1 * n2)), fd(19.0, fl));
+  float foam = clamp(caps(m, fa, fl, W, 0.6 + 0.8 * crest) + streak * lace * clamp(W * 3.0 + 0.3 * sheet, 0.0, 0.6), 0.0, 0.7);
+  vec3 foamC = vec3(0.86, 0.9, 0.93) * 0.85 * (sunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016);
+  return mix(col, foamC, foam);
+}
 vec3 landCover(vec3 g, float fw, vec3 d, vec3 up) {
   if (gWater > 0.0) {
+    // Lakes and rivers: a still mirror with one glint lobe.
+    float m2 = mix(0.004, 0.018, gSea);
     vec3 r = reflect(d, up);
     float nv = max(dot(-d, up), 0.05);
     float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
     vec3 wc = (skyL(r) + aurora(r, 1.0) * 0.5) * fres + uAmb * 0.0008 * vec3(0.5, 0.8, 1.0);
-    // Ripples spread the light into a glitter path: Beckmann slopes.
     if (dot(uSunL, vec3(1.0)) > 1e-4) {
       vec3 hv = normalize(uSun - d);
-      float hz = max(dot(hv, up), 1e-3), m2 = mix(0.004, 0.018, gSea);
+      float hz = max(dot(hv, up), 1e-3);
       float D = exp(-(1.0 - hz * hz) / (hz * hz * m2)) / (PI * m2 * hz * hz * hz * hz);
-      wc += uSunL * 0.014 * fres * D / (4.0 * nv);
+      wc += uSunL * 0.014 * fres * D / (4.0 * nv) * gCloudSh;
+    }
+    if (uLand > 0.5 && gSea > 0.0) {
+      // The open sea: the classic sea, the shelf near shore, then the surf.
+      float shelf = exp(min(gE, 0.0) / 0.025);
+      vec3 sc = seaClassic(gW, fw, d, up, shelf);
+      // Surf: a broken white line just off the shore.
+      vec3 E = uAmb * 0.03 + seaSunL() * 0.1 * max(uSun.y, 0.0);
+      float sd = -gE / max(length(gEG), 0.02);
+      float surf = band(sd - 0.03, 0.01, max(fw, 1e-3)) * smoothstep(0.4, 0.75, vnoise(gW / 0.35 + 2.0)) * (1.0 - gBelt);
+      sc += E * 0.9 * surf;
+      wc = mix(wc, sc, gSea);
     }
     g = mix(g, wc, gWater);
   }
@@ -354,6 +761,8 @@ float townDome(vec2 w) {
     float rd = 2.5 + 9.0 * min(s.z, 1.4);
     g += s.z * sqrt(s.z) * exp(-dot(q, q) / (rd * rd)) * smoothstep(15.0, 9.0, length(q));
   }
+  // Relief land: no town glow over open sea; little over the peaks.
+  if (uLand > 0.5) g *= smoothstep(SEAR - 0.06, SEAR + 0.03, landField(w)) * (1.0 - 0.5 * beltField(w));
   // The scale keeps the deck's mean glow at its approved level.
   return g * 0.83 * uLit;
 }
@@ -505,6 +914,9 @@ vec3 ground(vec2 w, float fw) {
   // Everything added after this point is man-made light.
   vec3 gLand = g;
   Town t = townAt(w, fw);
+  // Relief land: towns fill valleys and coasts, never water or peaks.
+  t.dens *= gHab;
+  t.fade *= min(gHab, 1.0);
   vec2 wq = t.wq;
   // Districts differ in their share of LED lamps.
   // Old centres have new LED lamps; the sprawl keeps sodium.
@@ -517,10 +929,17 @@ vec3 ground(vec2 w, float fw) {
   // Built-up land: parks, rivers and fields break it into ragged patches.
   float lit = 0.0;
   // The finest octave is smaller than a far pixel, so it fades to its mean there.
+  // A crisp, ragged edge round the built-up land; density sets the brightness inside.
   if (t.dens > 0.03) {
-    vec2 lp = wq / 1.2 + 7.0;
-    float n3 = fw < 0.12 ? mix(0.5, vnoise((lp * 2.03 + 17.1) * 2.03 + 17.1), smoothstep(0.12, 0.07, fw)) : 0.5;
-    lit = smoothstep(0.1, 0.65, t.dens * (0.3 + 1.4 * (fbm(lp, 2) + 0.125 * n3)));
+    vec2 lp = wq / 0.35 + 7.0;
+    float n3 = fw < 0.06 ? mix(0.5, vnoise((lp * 2.03 + 17.1) * 2.03 + 17.1), smoothstep(0.06, 0.035, fw)) : 0.5;
+    float aa = 0.04 + 1.5 * fw * min(t.dens, 1.0);
+    lit = smoothstep(0.35 - aa, 0.35 + aa, t.dens * (0.5 + 1.0 * (fbm(lp, 2) + 0.125 * n3)));
+    // By day the built-up land shows as pale grey roofs and paving.
+    float grain = mix(0.5, vnoise(wq / 0.12 + 3.0), fd(0.12, fw));
+    vec3 roof = vec3(dot(gLand, vec3(0.3, 0.5, 0.2))) * vec3(1.0, 1.0, 1.02) * (1.0 + 0.4 * grain);
+    vec3 dl = (roof - gLand) * lit * 0.6;
+    gLand += dl; g += dl;
   }
   if (lit > 0.002) {
     // Streets: edges of irregular cells make blocks of every shape.
@@ -534,13 +953,16 @@ vec3 ground(vec2 w, float fw) {
     }
     // Lamps string along the streets; cores burn brighter than the sprawl.
     float P = lit * (0.4 + 0.6 * web), gain = (0.15 + 1.6 * web) * (0.3 + 0.8 * min(t.dens, 1.2)) * 0.054;
+    // Streets and avenues carry more lamps than the blocks between them.
+    float st = exp(-t.road / max(0.08, fw)) * t.fade;
+    P = min(P * (0.75 + 0.7 * st), 1.0);
     // Far away, lamps merge into coarser points, so towns stay grainy.
     float lv = clamp(log2(fw / 0.02), 0.0, 6.0), l0 = floor(lv), lf = lv - l0;
     vec3 L = lampLight(wq, 0.035 * exp2(l0), P, fw, 2.3 + l0 * 7.0, led) * (1.0 - lf);
     if (lf > 0.0) L += lampLight(wq, 0.07 * exp2(l0), P, fw, 9.3 + l0 * 7.0, led) * lf;
     g += L * gain;
     // Roofs and the low haze catch some of the street light.
-    g += avg * lit * min(t.dens, 1.3) * 0.01;
+    g += mix(avg, vec3(1.0, 0.55, 0.22), 0.4) * lit * min(t.dens, 1.3) * 0.004;
   }
   // Roads: a faint thread of traffic, lit with lamps through towns and villages.
   float rw = max(0.012, fw * 0.6);
@@ -564,7 +986,7 @@ vec3 ground(vec2 w, float fw) {
   // Farms and hamlets: lone lamps, most of them near a road.
   // They cluster by the district noise, so the dark between stays dark.
   float near = exp(-t.road / 0.5);
-  float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn);
+  float pf = 0.06 * min(uTowns, 1.3) * (0.25 + 1.6 * near) * smoothstep(0.25, 0.65, dn) * min(gHab, 1.0);
   g += lampLight(w, 0.45, pf, fw, 41.0, led) * 0.0016;
   return gLand + (g - gLand) * uLit;
 }
@@ -578,7 +1000,7 @@ vec3 flashAt(vec2 w, float dens) {
     vec2 q = w - l.xy;
     f += l.z * exp(-dot(q, q) / (l.w * l.w));
   }
-  return vec3(0.72, 0.74, 1.0) * f * (0.1 + dens * 1.5);
+  return FLASH_C * f * (0.1 + dens * 1.5);
 }
 
 // Cloud noise: one tiling 3D texture, sampled at a level of detail.
@@ -608,6 +1030,29 @@ float coverAt(vec2 w, float sc, float z) {
 // Two Henyey-Greenstein lobes: a strong forward one and a soft back one.
 float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
 float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
+// Light scattered many times leaves a thick cloud evenly in all directions.
+// So a side-lit top stays white; only the silver lining needs the forward lobe.
+const float CLOUD_MS = 1.5;
+// The glory: coloured rings round the point opposite the light, on cloud tops.
+// th is the angle from that point, in radians; red rings sit outside blue.
+// It tints the cloud's colour, so it still reads on a bright white deck.
+vec3 glory(float th) {
+  float a = th * 57.2958;
+  // Small droplets make a wide glory; these rings suit 6 micron drops.
+  vec3 r1 = vec3(4.3, 3.7, 3.2), r2 = vec3(7.6, 6.6, 5.7);
+  vec3 g = 0.72 + 0.6 * exp(-pow((a - r1) / 0.55, vec3(2.0))) + 0.32 * exp(-pow((a - r2) / 0.75, vec3(2.0)));
+  g += 0.7 * exp(-a * a / 2.0);
+  return mix(vec3(1.0), g, smoothstep(10.5, 8.5, a));
+}
+// The plane's own shadow at the glory's heart, t km below along the ray.
+// u runs along the flight line, v across it, in radians from the centre.
+float planeShadow(vec2 uv, float t) {
+  vec2 q = abs(uv * t * 1000.0);
+  // Fuselage and wings, in metres.
+  float body = step(q.x, 30.0) * step(q.y, 3.0);
+  float wing = step(q.y, 30.0) * step(abs(uv.x * t * 1000.0 + 3.0 + q.y * 0.5), 3.5);
+  return max(body, wing);
+}
 
 /* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
 const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
@@ -639,8 +1084,23 @@ void deckStorm(vec2 w) {
   gWeave = weave(w + vec2(uTime * 0.012, 0.0));
   gSkirt = towerSkirt(w);
 }
+// Deck billows: round lumps at three sizes, as on the towers.
+// The lumps rise slowly, so the tops boil.
+float deckBillow(vec2 w, float y, float lod) {
+  vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, y - uTime * 0.008, w.x * 0.6 + w.y * 0.8), 2.6, lod);
+  return m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48;
+}
+// Small lumps on the big ones, at an odd scale and angle.
+float deckBillowFine(vec2 w, float y, float lod) {
+  vec4 m = cn(vec3(w.x * 0.47 + w.y * 0.88, y * 1.1 - uTime * 0.014, w.y * 0.47 - w.x * 0.88) + 3.7, 0.8, lod);
+  return m.g * 0.6 + m.b * 0.4 - 0.48;
+}
+// The last main sample's shape terms, for the crease light.
+// gDeckSh: depth inside the smooth dome. gDeckA: lump size. gDeckFb: depth with lumps.
+float gDeckSh = 0.0, gDeckA = 1.0, gDeckFb = 0.0;
 // Deck density at p = (map x, height, map z) in km, from 0 to 1.
-// fine adds the Worley erosion that frays the edges.
+// Each cell is a dome with a flat base; billows break its surface, as on the towers.
+// fine adds the small lumps; light taps go without them.
 float deckDens(vec3 p, float lod, bool fine) {
   vec2 w = p.xz + vec2(uTime * 0.012, 0.0);
   float cv = coverAt(w, 70.0, 0.13), lift = 0.0;
@@ -652,16 +1112,21 @@ float deckDens(vec3 p, float lod, bool fine) {
   }
   float c = smoothstep(uCover - 0.1, uCover + 0.14, cv);
   if (c <= 0.0) return 0.0;
-  float base = 1.55, top = base + 0.7 + 1.5 * c + lift;
-  float hgt = smoothstep(base, base + 0.35, p.y) * smoothstep(top, top - 0.5 - 0.6 * c - 0.5 * lift, p.y);
-  if (hgt <= 0.0) return 0.0;
-  float d = clamp((cn(vec3(w.x, p.y * 1.6, w.y), 7.0, lod).r * hgt - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
-  if (fine && d > 0.0) {
-    vec4 e = cn(vec3(w.x, p.y * 1.3, w.y) + vec3(0.0, uTime * 0.003, 0.0), 1.4, lod);
-    // Erosion bites the thin edges hardest.
-    d = clamp(d - (1.0 - d) * (e.g * 0.625 + e.b * 0.25 + e.a * 0.125) * 0.6, 0.0, 1.0);
-  }
-  return d;
+  const float base = 1.55;
+  // The cell map sets each dome's height; more cover makes bigger, closer cells.
+  float cell = cn(vec3(w.x, 3.1, w.y), 7.0, lod).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  float top = base - 0.1 + (0.6 + 1.4 * c) * sqrt(loc) + lift;
+  // Depth inside, in km: the dome above, the flat base below.
+  float sh = min(top - p.y, (p.y - base) * 1.5);
+  float A = 0.16 + 0.34 * loc + 0.4 * lift / (lift + 1.0);
+  // Even the biggest lump cannot reach this point.
+  if (sh < -A * 0.55) return 0.0;
+  float fb = sh + A * deckBillow(w, p.y, lod);
+  if (fine) fb += A * 0.4 * deckBillowFine(w, p.y, lod);
+  gDeckSh = sh; gDeckA = A; gDeckFb = fb;
+  // The edge is crisp near; far off it softens with the footprint.
+  return smoothstep(0.0, 0.1 + 0.08 * lod, fb);
 }
 // Optical depth toward the light, in growing steps.
 float deckLight(vec3 p, float lod) {
@@ -700,13 +1165,18 @@ vec4 deck(vec3 d) {
   // Town light under the deck, sampled at both ends of the segment.
   float ua = townDome(uCam + d.xz * t0), ub = townDome(uCam + d.xz * t1);
   float mu = dot(d, uSun);
-  float phase = cloudPhase(mu);
+  float phase = cloudPhase(mu) + CLOUD_MS;
+  // The glory and the plane's shadow ride the point opposite the light.
+  float gTh = acos(clamp(-mu, -1.0, 1.0));
+  vec3 gF = normalize(vec3(1.0, 0.0, 0.0) - uSun * uSun.x), gS = cross(-uSun, gF);
+  vec2 gUV = vec2(dot(d, gF), dot(d, gS));
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
-  // In a storm the deck takes the towers' murk light.
+  // In a storm the deck takes the towers' murk light and their dimmed sun.
   // So deck and towers read as one.
-  vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 0.75 * uStorm : vec3(0.0);
+  vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 1.05 : vec3(0.0);
+  float sunStorm = 1.0 - 0.85 * uStorm;
   vec3 col = vec3(0.0), last = vec3(0.0);
   float Tc = 1.0, lastD = 0.0;
   for (int i = 0; i < 40; i++) {
@@ -716,6 +1186,8 @@ vec4 deck(vec3 d) {
     float lod = lodAt(t, 7.0);
     deckStorm(w);
     float dn = deckDens(p, lod, lod < 3.0);
+    // Light taps overwrite the shape terms, so keep this sample's.
+    float dSh = gDeckSh, dA = gDeckA, dFb = gDeckFb;
     if (dn > 0.002) {
       float h01 = clamp((p.y - 1.55) / 2.0, 0.0, 1.0);
       vec3 S = vec3(0.0);
@@ -725,11 +1197,17 @@ vec4 deck(vec3 d) {
         float Tl = max(exp(-SIG * od), 0.5 * exp(-SIG * od * 0.2));
         // Powder: thin edges facing away from the light look dark.
         float powder = 1.0 - exp(-SIG * dn * 0.6);
-        S += uSunL * 0.05 * sunK * Tl * phase * mix(1.0, powder, 0.55);
+        S += uSunL * 0.05 * sunK * sunStorm * Tl * phase * mix(1.0, powder, 0.55);
       }
       // Sky light from above; the base sees less of it.
-      S += uAmb * 0.026 * (0.3 + 0.7 * h01);
-      if (uStorm > 0.0) S += murk * (0.25 + 0.75 * clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0));
+      // Lump crowns catch the sky; creases deep in the dome do not.
+      float crease = clamp(0.7 - 1.4 * dSh / max(dA, 0.05), 0.15, 1.2);
+      float open = exp(-3.0 * max(dFb, 0.0)) * crease;
+      float sky = (0.3 + 0.7 * h01) * (0.3 + 0.9 * open);
+      // Murk light is flat, as on the towers: folds and crowns see about the same.
+      float hk = clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0);
+      sky = mix(sky, 0.45 * (0.4 + 0.6 * hk), 0.6 * uStorm);
+      S += mix(uAmb * 0.026, murk, uStorm) * sky;
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
@@ -757,28 +1235,43 @@ vec4 deck(vec3 d) {
     col += Tc * last * a;
     Tc *= 1.0 - a;
   }
+  // The glory rings the plane's small shadow on the tops below.
+  if (gTh < 0.19 && lit) {
+    col *= glory(gTh);
+    if (gTh < 0.01) col *= 1.0 - 0.7 * planeShadow(gUV, t0);
+  }
   return vec4(col, Tc);
 }
 
 /* The mid layer: thin altocumulus at 5.2 to 6.1 km, in cells and rolls. */
+// The last mid sample's shape terms, for the crease light.
+float gMidSh = 0.0, gMidA = 1.0, gMidFb = 0.0;
+// Each cell is a low dome with a flat base; small billows break it, as on the deck.
 float midDens(vec3 p, float lod) {
   vec2 w = p.xz + vec2(uTime * 0.02, 0.0);
-  float cv = coverAt(w, 55.0, 0.71), lo = 5.2, lo2 = 5.45, hi = 6.1, hi2 = 5.75;
+  float cv = coverAt(w, 55.0, 0.71), lo = 5.25, hi = 6.05;
   // In a storm the mid layer runs in bands along the wind.
   if (uStorm > 0.0) {
     float wv = smoothstep(0.35, 0.75, weave(w * 0.8 + 31.0));
     cv += uStorm * 0.4 * (wv - 0.35);
-    lo -= uStorm * 0.7 * wv; lo2 -= uStorm * 0.7 * wv;
-    hi += uStorm * 0.6 * wv; hi2 += uStorm * 0.6 * wv;
+    lo -= uStorm * 0.7 * wv; hi += uStorm * 0.6 * wv;
   }
   float c = smoothstep(0.66 - uMid * 0.18, 0.86 - uMid * 0.18, cv) * step(0.01, uMid);
   if (c <= 0.0) return 0.0;
-  float hgt = smoothstep(lo, lo2, p.y) * smoothstep(hi, hi2, p.y);
-  vec4 n = cn(vec3(w.x * 1.0, p.y * 3.0, w.y * 1.6), 6.0, lod);
-  return clamp((n.r * hgt - (1.0 - c)) / max(c, 0.05) - (n.b * 0.3), 0.0, 1.0);
+  // Small cells in rolls: the cell map is stretched across the wind.
+  float cell = cn(vec3(w.x, 1.7, w.y * 1.6), 3.0, lod).r;
+  float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+  float top = lo - 0.05 + (hi - lo) * sqrt(loc);
+  float sh = min(top - p.y, (p.y - lo) * 2.0);
+  float A = 0.06 + 0.14 * loc;
+  if (sh < -A * 0.55) return 0.0;
+  vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, p.y * 1.2 - uTime * 0.01, w.x * 0.6 + w.y * 0.8) + 5.3, 0.9, lod);
+  float fb = sh + A * (m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48);
+  gMidSh = sh; gMidA = A; gMidFb = fb;
+  return smoothstep(0.0, 0.05 + 0.05 * lod, fb);
 }
 vec4 midLayer(vec3 d) {
-  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.1 + uStorm * 0.6);
+  vec2 seg = shellSeg(d, 5.2 - uStorm * 0.7, 6.25 + uStorm * 0.6);
   if (seg.x < 0.0 || uMid <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float t0 = seg.x, t1 = seg.y;
   const int N = 12;
@@ -793,11 +1286,14 @@ vec4 midLayer(vec3 d) {
     if (t > t1) break;
     vec2 w = uCam + d.xz * t;
     vec3 p = vec3(w.x, heightAt(d, t), w.y);
-    float dn = midDens(p, lodAt(t, 6.0) + 0.5);
+    float dn = midDens(p, lodAt(t, 3.0));
     if (dn > 0.002) {
+      float mSh = gMidSh, mA = gMidA, mFb = gMidFb;
       // Thin cloud: one tap toward the light is enough.
-      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 6.0) + 1.5) * 0.3);
-      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03;
+      float Tl = exp(-SIG * 0.6 * midDens(p + uSun * 0.3, lodAt(t, 3.0) + 1.0) * 0.3);
+      // Lump crowns catch the sky; the folds between them do not.
+      float open = exp(-6.0 * max(mFb, 0.0)) * clamp(0.7 - 1.4 * mSh / max(mA, 0.03), 0.15, 1.2);
+      vec3 S = uSunL * 0.05 * sunK * Tl * mix(1.0, phase, 0.45) + uAmb * 0.03 * (0.35 + 0.9 * open);
       if (uStorm > 0.0) S += stormGlow(vec3(0.0, 1.0, 0.0)) * 0.6 * uStorm;
       float a = 1.0 - exp(-SIG * 0.6 * dn * ds);
       col += Tc * S * a;
@@ -889,6 +1385,8 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   float fw = tg / focal1 / max(-d.y, 0.03);
   vec4 cl = deck(d), ml = midLayer(d);
   gDeckT = cl.a;
+  // High ground meets the ray before sea level does.
+  if (uLand > 1.5 && cl.a * ml.a > 0.002) w = reliefParallax(w, d, normalize(P));
   // Ground under thick cloud never shows, so it costs nothing.
   vec3 g = cl.a * ml.a > 0.002 ? landCover(ground(w, fw), fw, d, normalize(P)) : vec3(0.0);
   g = g * cl.a + cl.rgb;
@@ -914,18 +1412,24 @@ vec3 stormGlow(vec3 d) {
     vec3 fd = normalize(vec3(l.x - uCam.x, 5.0 - H, l.y - uCam.y));
     float m = max(dot(d, fd), 0.0);
     // A broad soft swell round the flash bearing, never a hard point.
-    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0));
+    // Far flashes stay on the horizon: they barely light the murk round us.
+    vec2 fq = (l.xy - uCam) / 50.0;
+    g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0)) / (1.0 + dot(fq, fq));
+    // Inside a fog bank, a flash a few km off lights the whole murk round the plane.
+    vec2 fk = (l.xy - uCam) / 4.0;
+    g += l.z * uFog * 2.2 / (1.0 + dot(fk, fk));
   }
-  return air + vec3(0.75, 0.77, 1.0) * g * 0.02 * max(uStorm, uFog);
+  return air + FLASH_C * g * 0.02 * max(uStorm, uFog);
 }
 // How much of the view the fog bank hides, t km out.
 // Wisps rush aft past the window as the plane flies through them.
 float fogAt(vec3 d, float t) {
   if (uFog <= 0.0) return 0.0;
-  vec3 q = vec3(uCam.x, uTime * 0.02, uCam.y);
-  float w = textureLod(uNoise, (d * 0.09 + q) / 0.7, 0.0).r * 0.6 + textureLod(uNoise, (d * 0.3 + q) / 1.9, 0.0).r * 0.4;
-  // Visibility falls from 120 km to 40 m as the bank thickens.
-  float vis = 120.0 * exp(-8.0 * pow(uFog, 1.6)) / (0.35 + 1.3 * w);
+  // The far veil has no pattern of its own: it thickens and thins as the plane flies on.
+  // The near curtains carry all the shape.
+  float w = textureLod(uNoise, vec3(uWisp.x / 816.0, 0.31, uTime * 0.01), 0.0).r;
+  // Visibility falls from 120 km to under a kilometre in a thick bank.
+  float vis = 120.0 * exp(-11.0 * pow(uFog, 1.3)) / (0.35 + 1.3 * w);
   return (1.0 - exp(-min(t, 60.0) / vis)) * smoothstep(0.0, 0.12, uFog);
 }
 // Storm air over a colour, t km out; sky rays pass 1e4.
@@ -950,7 +1454,7 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
-  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + vec3(0.6, 0.02, 0.02) * 0.004) * exp(-(1.0 - tip) * 60.0);
+  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + uNavC * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
@@ -959,26 +1463,32 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
 // Fog by the wing: layered wisps in the near 30 m.
 // The air stands still, so wisps stream aft past the plane.
 // tEnd is the distance to the nearest surface, in metres.
+// Fog curtains: tall, thin sheets parallel to the cabin, long along the flight line.
+// A ray out of the window crosses several, so each veils its own stretch of wing.
+// wing3.js repeats this field for the aircraft; keep the two the same.
+// Large banks, about wing-sized, swallow whole stretches: the tip goes, the root stays.
+float wispDens(vec3 p) {
+  float n = textureLod(uNoise, p / vec3(136.0, 30.0, 9.0), 0.0).r * 0.78 + textureLod(uNoise, p / vec3(68.0, 10.0, 3.2) + 0.37, 0.0).g * 0.22;
+  float bank = textureLod(uNoise, p / vec3(408.0, 80.0, 26.0) + 0.71, 0.0).b;
+  float d = max(smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n), smoothstep(0.62 - 0.2 * uFog, 0.76 - 0.2 * uFog, bank) * 0.85);
+  return d * smoothstep(0.05, 0.5, uFog);
+}
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
-  float t1 = min(tEnd, 30.0), t = 1.0, T = 1.0;
+  float t1 = min(tEnd, 32.0), T = 1.0;
   vec3 air = stormGlow(d) * 1.3, col = vec3(0.0);
-  // Ten steps, each 45 % longer, sampled mid-step against grain.
-  for (int i = 0; i < 10; i++) {
-    float tn = min(t * 1.45, t1);
-    float tm = 0.5 * (t + tn), dt = tn - t;
-    vec3 p = d * tm + uWisp;
-    // Long streaks along the flight path, stacked in thin sheets.
-    float n = textureLod(uNoise, p / vec3(136.0, 7.0, 21.0), 0.0).r * 0.7 + textureLod(uNoise, p / vec3(48.0, 3.0, 9.0) + 0.37, 0.0).g * 0.3;
-    float dn = smoothstep(0.62 - 0.35 * uFog, 0.9 - 0.3 * uFog, n) * smoothstep(0.05, 0.5, uFog);
-    // The strobe and nav light glow in wisps by the tip.
-    float ft = length(d * tm - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + vec3(0.8, 0.03, 0.02) * 0.02) * exp(-ft / 5.0);
-    float a = 1.0 - exp(-0.09 * dn * dt);
+  // Sixteen even steps, jittered per pixel; the resolve smooths the grain.
+  float dt = (t1 - 0.5) / 16.0, t = 0.5 + dt * hash12(gl_FragCoord.xy + 5.3);
+  for (int i = 0; i < 16; i++) {
+    if (t >= t1) break;
+    float dn = wispDens(d * t + uWisp);
+    // The strobe and nav light bloom thickly in fog round the tip.
+    float ft = length(d * t - uTip);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 3.0 + uNavC * 0.25) * exp(-ft / 6.0);
+    float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;
-    t = tn;
-    if (t >= t1) break;
+    t += dt;
   }
   return c * T + col;
 }
@@ -1045,26 +1555,33 @@ float sdUnevenCapsule(vec2 p, float r1, float r2, float h) {
 // gAmp: billow size. gTile: billow noise tile.
 // gGrow: density as the cell forms.
 // gAnv: how far the anvil has spread.
+// gSpread: how far the side turrets stand out. gDecay: how far the column has thinned.
+// gRain: the rain shaft's strength.
 vec2 gAx; vec3 gSeed;
 float gRc, gBase, gTop, gLen, gR1, gR2, gLean, gOver, gAmp, gTile, gGrow, gAnv;
+float gHasAnv, gSpread, gDecay, gRain;
 vec4 gTur[4];
 
-void setTower(vec4 a, vec4 b) {
+void setTower(vec4 a, vec4 b, vec4 v) {
   float s = b.y;
   gGrow = smoothstep(0.0, 0.3, s);
   gRc = a.z * 0.36;
   gBase = 2.3;
+  // A towering cumulus has no anvil; a decaying cell keeps a wide one.
+  gHasAnv = step(0.01, v.x);
+  gSpread = v.z; gDecay = v.w;
+  gRain = mix(0.25, 1.0 - 0.5 * v.w, gHasAnv);
   // The top climbs first.
   // The anvil spreads once the top meets the tropopause.
   gTop = mix(gBase + 3.5, a.w, smoothstep(0.05, 0.6, s));
-  gAnv = smoothstep(0.3, 0.9, s);
-  gLen = a.z * 1.35 * gAnv + 0.3;
+  gAnv = smoothstep(0.3, 0.9, s) * gHasAnv;
+  gLen = a.z * 1.35 * gAnv * v.x + 0.3;
   gAx = vec2(cos(b.z), sin(b.z));
-  gLean = gRc * 0.4;
+  gLean = gRc * 0.4 * v.y;
   gR1 = gRc * (0.8 + 0.45 * gAnv);
   gR2 = clamp(gRc * 0.7 + gLen * 0.42, gR1 - gLen * 0.8, gR1 + gLen * 0.8);
   // The overshooting top heaves slowly up and down.
-  gOver = gRc * 0.45 * smoothstep(0.5, 1.0, s) * (0.8 + 0.2 * sin(uTime * 0.05 + b.x));
+  gOver = gRc * 0.45 * smoothstep(0.5, 1.0, s) * (0.8 + 0.2 * sin(uTime * 0.05 + b.x)) * gHasAnv * (1.0 - v.w);
   gAmp = gRc * 0.4;
   gTile = clamp(gRc * 1.6, 5.0, 11.0);
   gSeed = vec3(b.x * 0.71, b.x * 0.37, b.x * 0.53);
@@ -1075,9 +1592,12 @@ void setTower(vec4 a, vec4 b) {
   for (int j = 0; j < 4; j++) {
     float fj = float(j);
     vec2 h = hash22(vec2(b.x * 1.37 + fj * 7.1, fj * 3.3 + 1.0));
-    float ang = h.x * 6.2832, off = j == 0 ? 0.0 : gRc * (0.4 + 0.4 * h.y);
+    float ang = h.x * 6.2832, off = j == 0 ? 0.0 : gRc * (0.4 + 0.4 * h.y) * gSpread;
     float rad = j == 0 ? gRc * 0.8 : gRc * (0.4 + 0.22 * hash12(h * 9.1));
-    float top = j == 0 ? gTop - 0.4 : mix(gBase + 1.5, mix(gBase + 3.0, gTop - 3.2, 0.2 + 0.8 * hash12(h + 4.2)), smoothstep(0.0, 0.8, s));
+    float top = mix(gBase + 3.0, gTop - 3.2, 0.2 + 0.8 * hash12(h + 4.2));
+    // In a multicell cluster the side turrets climb nearly as high as the core.
+    top = mix(top, gTop - 0.8 - 1.6 * hash12(h + 8.3), clamp(gSpread - 1.0, 0.0, 1.0));
+    top = j == 0 ? gTop - 0.4 : mix(gBase + 1.5, top, smoothstep(0.0, 0.8, s));
     gTur[j] = vec4(vec2(cos(ang), sin(ang)) * off * wide, rad * wide, top);
   }
 }
@@ -1101,7 +1621,7 @@ float towerShape(vec3 p, out float aw) {
   // It narrows as it climbs, so the column rises out of it.
   // Lobes break its outline from a circle.
   float lobe = 1.0 + 0.28 * sin(3.0 * atan(q.y, q.x) + gSeed.x) + 0.15 * sin(5.0 * atan(q.y, q.x) - gSeed.y);
-  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * gGrow * lobe;
+  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * gGrow * lobe * mix(1.0, gSpread, 0.5);
   col = smax(col, min(fr - length(q), (gBase + 4.5 - y) * 0.8), gRc * 0.5);
   // The base is flat.
   col = smin(col, (y - gBase) * 2.0, 0.3);
@@ -1115,8 +1635,8 @@ float towerShape(vec3 p, out float aw) {
   float top = gTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
   float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (0.4 + 0.6 * gAnv) * (1.0 - 0.85 * ku * ku);
   float an = smin(-sdUnevenCapsule(uv, gR1, gR2, gLen), smin(top - y, y - bot, 0.3), 0.8);
-  // A young cell has no anvil yet.
-  an -= (1.0 - gAnv) * 4.0;
+  // A young cell has no anvil yet; a towering cumulus never grows one.
+  an -= (1.0 - gAnv) * 4.0 + (1.0 - gHasAnv) * 20.0;
   // The overshooting top: a squat dome rooted on the core turret's head.
   float ov = gOver - length(vec3(q.x, (y - gTop + 0.4 + gOver * 0.2) * 1.35, q.y));
   // The overshoot boils like the column, so it takes full billows.
@@ -1176,9 +1696,9 @@ vec4 rainShaft(vec3 d, vec2 dh, float a2, vec2 C, float tEnd, vec3 pf, float fl,
     float dn = 0.4 * (1.0 - r01) * smoothstep(0.4, 0.8, str) * smoothstep(gBase + 0.1, gBase - 0.5, y);
     od += dn * dt;
     vec3 q = vec3(rel.x, y, rel.y) - (pf - vec3(Cs.x - C.x, 0.0, Cs.y - C.y));
-    col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + vec3(0.75, 0.77, 1.0) * fl * 0.8 * exp(-length(q) / 5.0));
+    col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + FLASH_C * fl * 0.8 * exp(-length(q) / 5.0));
   }
-  float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow;
+  float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow * gRain;
   return vec4(col / max(od, 1e-4) * al, 1.0 - al);
 }
 
@@ -1296,10 +1816,11 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       vec4 r = stem(d, dh, t0, t1, a, b, f, jit, phaseOld, sunK, tIn);
       col = r.rgb; Tc = r.a;
     } else {
-      setTower(a, b);
+      setTower(a, b, uTwD[i]);
       float deckTop = DECK_HI;
-      // The bound: a cylinder round the core and the whole anvil fan.
-      float back = max(gR1, gRc * 2.5) + gLean, fwd = max(gLen + gR2, gRc * 2.5 - gLean);
+      // The bound: a cylinder round the core, the foot and the whole anvil fan.
+      float foot = gRc * 2.5 * max(1.0, gSpread * 0.9);
+      float back = max(gR1, foot) + gLean, fwd = max(gLen + gR2, foot - gLean);
       vec2 Cb = C + gAx * (gLean + 0.5 * (fwd - back));
       float Rb = 0.5 * (fwd + back) + gAmp * 0.5 + 0.6;
       float bq = dot(dh, Cb), cq = dot(Cb, Cb) - Rb * Rb, disc = bq * bq - a2 * cq;
@@ -1307,6 +1828,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       float sq = sqrt(disc);
       float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
       if (t1 <= t0) continue;
+      float fBoost = 1.0 + clamp(t0 / 120.0, 0.0, 1.5);
       // The rain shaft lies under the tower, so it goes in first.
       vec4 rs = rainShaft(d, dh, a2, C, tEnd, pf, f.w, b.w, dome);
       c = c * rs.a + rs.rgb;
@@ -1328,7 +1850,10 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // The anvil is ice: far out, it frays to a veil.
         float far = aw * smoothstep(0.0, gLen + gR2, dot(p.xz, gAx));
         fb -= far * 0.6;
-        float dn = smoothstep(0.0, 0.3, fb) * gGrow * (1.0 - 0.7 * far);
+        // A decaying column frays and thins below its anvil.
+        float dc = gDecay * (1.0 - aw);
+        fb -= dc * A * 0.5;
+        float dn = smoothstep(0.0, 0.3 + 0.9 * dc, fb) * gGrow * (1.0 - 0.7 * far) * (1.0 - 0.5 * dc);
         if (dn < 0.004) { t += st; continue; }
         if (tIn < 0.0) tIn = t;
         float h01 = clamp((p.y - gBase) / (gTop - gBase), 0.0, 1.0);
@@ -1363,7 +1888,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // A wide glow fills the tower.
         float fd = length(p - pf);
         // The flash is a soft ball of light inside the cloud, brightest deep in.
-        S += vec3(0.75, 0.77, 1.0) * f.w * (1.6 * exp(-fd * fd / 5.0) + 0.45 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0));
+        // Far flashes punch through the haze, so distant storms still flicker.
+        S += FLASH_C * f.w * (1.8 * exp(-fd * fd / 5.0) + 0.5 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
         // Below the deck top, the deck in front hides the tower.
         float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(deckTop, deckTop - 1.2, p.y));
         col += Tc * S * al;
@@ -1610,7 +2136,7 @@ vec3 wingCol(vec3 d, vec3 n, vec2 uv, float t, float E, float strobe) {
   c += vec3(1.0, 0.72, 0.42) * 0.01 * row * pane;
   // The nav light and the strobe light the wing near the tip.
   vec3 tp = d * t - uTip;
-  c += vec3(1.0, 0.08, 0.05) * exp(-dot(tp, tp) / 0.8) * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * strobe * 0.3;
+  c += uNavC * exp(-dot(tp, tp) / 0.8) * 0.02 + vec3(0.9, 0.95, 1.0) * exp(-dot(tp, tp) / 4.0) * strobe * 0.3;
   c += vec3(0.72, 0.74, 1.0) * E * 0.25;
   return c;
 }
@@ -1782,10 +2308,18 @@ uniform sampler2D uEnv; uniform float uEnvOn;
 // The sun or moon's light, for the patch it throws through the opening; 0 where unset.
 uniform vec3 uSunC;
 uniform vec3 uGlow, uSun, uDisc, uTint, uTip, uCabin; uniform float uSunR, uSquash, uMoon, uStars, uStrobe;
+// The wingtip nav light: red on the left wing, green on the right.
+uniform vec3 uNavC;
 uniform vec4 uFlr[10]; uniform vec4 uFlrC[10];
 // Extra ghost strength per flare; 0 keeps the old ghosts.
 uniform float uFlrG[10];
 uniform vec3 uMetA, uMetB; uniform vec4 uMet, uMetF;
+// The wing light: lamp point and level; beam axis and the fog level.
+uniform vec4 uBeamL, uBeamA;
+// Breath on the scratch pane: R fog, G the finger's trace; uBreathOn is 0 when clear.
+uniform sampler2D uBreath; uniform float uBreathOn;
+// The shade: 0 open, 1 shut.
+uniform float uShade;
 uniform vec4 uPt[10]; uniform vec3 uPtC[10];
 out vec4 o;
 
@@ -1901,8 +2435,9 @@ vec3 meteor(vec3 d) {
 
 // Rain in the air outside: streaks that race aft past the window.
 // Three layers: near ones are longer, wider and faster.
-float rainStreaks(vec2 px) {
-  if (uStorm <= 0.05) return 0.0;
+// amt sets how many drops fall.
+float rainStreaks(vec2 px, float amt) {
+  if (amt <= 0.05) return 0.0;
   vec2 q = px / uDpr;
   float s = 0.0;
   for (int l = 0; l < 3; l++) {
@@ -1912,27 +2447,130 @@ float rainStreaks(vec2 px) {
     vec2 g = vec2((q.x - q.y * 0.1) + uTime * 2600.0 * k, q.y) / vec2(220.0 * k, row);
     vec2 id = floor(g), f = fract(g);
     vec2 h = hash22(id + fl * 31.7);
-    if (h.x > uStorm * 0.18) continue;
+    if (h.x > amt * 0.18) continue;
     float len = 0.25 + 0.5 * h.y;
     float across = abs(f.y - 0.5) * row;
     s += smoothstep(0.45 * k, 0.0, across) * smoothstep(0.0, 0.05, f.x) * smoothstep(len, len - 0.15, f.x) * hash12(id + 7.1) * 0.6;
   }
   return s;
 }
-// Light through the opening, as it lands on the far side: sample the soft outside at q.
+// The soft outside along cabin direction d.
+// The eye sees d where d crosses the skin plane; that point stays inside the opening.
+vec3 envDir(vec3 d) {
+  vec2 q = uEye.xy + d.xy * ((Z_OUT - uEye.z) / max(d.z, 1e-3));
+  q /= max(1.0, length(q / (SKIN * 0.8)));
+  vec3 P = vec3(q, Z_OUT) - uEye;
+  vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
+  // The clamp keeps the sun's bloom from counting twice with the direct patch.
+  return min(texture(uEnv, sp / uRes).rgb, vec3(0.6));
+}
+// The soft outside as the eye sees it through point q of the opening.
 vec3 envAt(vec2 q) {
   vec3 P = vec3(q, Z_OUT) - uEye;
   vec2 sp = uRes * 0.5 + vec2(dot(P, uR), dot(P, uU)) / max(dot(P, uF), 1e-3) * uFocal;
-  return texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb;
+  return min(texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb, vec3(0.6));
+}
+const float SKIN_A = 4.0 * SKIN.x * SKIN.y - (4.0 - PI) * RSK * RSK;
+// The reveal's gain on the light from the opening.
+// Above about 5 the reveal outshines the noon sky it sees.
+const float REVEAL_K = 5.0;
+// Diffuse light at cabin point P, facing n, from the whole skin opening.
+// It sums an n by n grid of patches: radiance times form factor.
+// Each patch glows with the light the eye sees there, so nothing projects.
+vec3 irr(vec3 P, vec3 n, int g) {
+  vec3 s = vec3(0.0);
+  float fg = float(g);
+  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {
+    if (i >= g || j >= g) continue;
+    vec2 q = ((vec2(i, j) + 0.5) / fg * 2.0 - 1.0) * SKIN * 0.8;
+    vec3 v = vec3(q, Z_OUT) - P;
+    float r2 = dot(v, v);
+    vec3 d = v * inversesqrt(r2);
+    float w = max(dot(n, d), 0.0) * d.z / r2;
+    if (w > 0.0) s += envAt(q) * w;
+  }
+  return s * SKIN_A / (fg * fg * PI);
 }
 // The sun in the cabin frame: the bank turned back out.
 vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
 // How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
+// The penumbra grows with the distance to the opening and the disc's size.
 float sunThrough(vec3 P) {
   vec3 L = sunCabin();
-  if (L.z <= 0.05) return 0.0;
-  vec2 q = P.xy + L.xy * (Z_OUT - P.z) / L.z;
-  return smoothstep(0.01, -0.01, sdBox(q, SKIN, RSK));
+  if (L.z <= 0.02) return 0.0;
+  float t = (Z_OUT - P.z) / L.z;
+  vec2 q = P.xy + L.xy * t;
+  float pw = 0.0005 + t * max(uSunR, 0.0047);
+  return smoothstep(pw, -pw, sdBox(q, SKIN, RSK));
+}
+// The open sky at the sun's place in the view: wing, towers and cloud block it.
+float sunOpen() {
+  vec3 L = sunCabin();
+  if (dot(L, uF) <= 0.0) return 1.0;
+  vec2 sp = uRes * 0.5 + vec2(dot(L, uR), dot(L, uU)) / dot(L, uF) * uFocal;
+  if (any(lessThan(sp, vec2(0.0))) || any(greaterThan(sp, uRes))) return 1.0;
+  // Only a sun seen through the pane says anything; elsewhere it counts as open.
+  vec3 P = vec3(uEye.xy + L.xy * ((Z_OUT - uEye.z) / max(L.z, 1e-3)), Z_OUT);
+  if (sdBox(P.xy, SKIN, RSK) > -0.01) return 1.0;
+  return clamp(texture(uOut, sp / uRes).a, 0.0, 1.0);
+}
+// The glass dims all light that comes in: the mean of edge and core tint.
+vec3 dimT() { return exp(-max(mix(uDimE, uDimC, 0.6), 0.0) * vec3(4.6, 3.3, 2.2)); }
+// Fine pebble grain of the moulded plastic, about 0.7 mm across.
+float grainH(vec2 p) { return vnoise(p * 1400.0) * 0.65 + vnoise(p * 3100.0 + 7.1) * 0.35; }
+// The grain tilts normal n on a face with tangents t1 and t2.
+// fp is the pixel's footprint in grains; the grain fades out above one.
+vec3 grainN(vec3 n, vec2 uv, vec3 t1, vec3 t2, float fp, float amp) {
+  amp *= 1.0 - smoothstep(0.35, 1.1, fp);
+  if (amp <= 0.0) return n;
+  const float e = 0.00012;
+  float h = grainH(uv);
+  vec2 g = vec2(grainH(uv + vec2(e, 0.0)) - h, grainH(uv + vec2(0.0, e)) - h) / e;
+  return normalize(n - amp * 0.00012 * (g.x * t1 + g.y * t2));
+}
+// Low-gloss sheen of a sanded plastic, from one light: GGX, roughness 0.55.
+float sheen(vec3 n, vec3 v, vec3 l) {
+  vec3 h = normalize(v + l);
+  float nh = max(dot(n, h), 0.0), nl = max(dot(n, l), 0.0), nv = max(dot(n, v), 0.05);
+  const float a2 = 0.3025 * 0.3025;
+  float dd = nh * nh * (a2 - 1.0) + 1.0;
+  float F = 0.04 + 0.96 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+  return a2 / (PI * dd * dd) * F * nl / (4.0 * max(nl, nv));
+}
+// Mist streams aft through the beam: noise stretched along the flight line.
+float beamMist(vec2 px) {
+  vec2 q = px / uDpr;
+  float n = vnoise(vec2(q.x * 0.005 + uTime * 7.0, q.y * 0.04)) * 0.6 + vnoise(vec2(q.x * 0.012 + uTime * 13.0, q.y * 0.1) + 4.0) * 0.4;
+  return 0.35 + 1.3 * n * n;
+}
+// Drops and crystals in the beam: short, bright dashes racing aft.
+// amt sets the share of cells that hold one.
+float beamMotes(vec2 px, float amt) {
+  vec2 q = px / uDpr;
+  float s = 0.0;
+  for (int l = 0; l < 2; l++) {
+    float k = 1.0 + float(l) * 1.4;
+    vec2 g = vec2(q.x - q.y * 0.12 + uTime * 1500.0 * k, q.y + float(l) * 5.0) / vec2(70.0 * k, 16.0);
+    vec2 id = floor(g), f = fract(g);
+    vec2 h = hash22(id + float(l) * 13.1);
+    if (h.x > amt * 0.3) continue;
+    float y0 = 0.2 + 0.6 * h.y, len = 0.25 + 0.3 * hash12(id + 2.7);
+    float across = abs(f.y - y0) * 16.0 / k;
+    s += smoothstep(0.9, 0.0, across) * smoothstep(0.0, 0.08, f.x) * smoothstep(len, len - 0.12, f.x) * (0.3 + hash12(id + 9.3));
+  }
+  return s;
+}
+// The wing light's beam along cabin ray da: 1 on its axis, 0 outside the cone.
+// s returns the distance from the lamp along the beam, in metres.
+float beamAt(vec3 da, out float s) {
+  vec3 a = uBeamA.xyz, w0 = uEye - uBeamL.xyz;
+  float b = dot(da, a), dd = dot(da, w0), e = dot(a, w0), den = max(1.0 - b * b, 1e-4);
+  // The nearest points of the view ray and the beam axis.
+  float tr = (b * e - dd) / den;
+  s = (e - b * dd) / den;
+  if (tr < 0.3 || s < 0.3) return 0.0;
+  float dist = length(w0 + da * tr - a * s), r = s * 0.36;
+  return smoothstep(r, r * 0.15, dist) * smoothstep(0.3, 2.5, s) * smoothstep(45.0, 12.0, s);
 }
 vec3 glass(vec3 da, vec2 px) {
   vec4 out1 = texture(uOut, px / uRes);
@@ -1947,16 +2585,62 @@ vec3 glass(vec3 da, vec2 px) {
     float r2 = dot(px - pt.xy, px - pt.xy);
     view += uPtC[i] * pt.w * (exp(-r2 / (pt.z * pt.z)) + 0.06 * exp(-sqrt(r2) / (pt.z * 5.0)));
   }
-  // The red nav light: a hot core and a soft halo.
+  // The nav light: a hot core and a soft halo.
   float ang = acos(clamp(dot(d, normalize(uTip)), -1.0, 1.0)) * uFocal / uDpr;
-  view += vec3(1.0, 0.06, 0.04) * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
+  view += uNavC * (exp(-ang * ang / 3.0) * 1.5 + exp(-ang / 14.0) * 0.05);
   view += vec3(0.9, 0.95, 1.0) * uStrobe * (exp(-ang * ang / 5.0) * 4.0 + exp(-ang / 40.0) * 0.12);
   // Rain streaks catch the sky glow, the strobe and the lightning.
-  float rs = rainStreaks(px);
+  float rs = rainStreaks(px, uStorm);
   if (rs > 0.0) view += rs * (uGlow * 0.012 + vec3(0.8, 0.85, 1.0) * (uFlash * 0.012 + uStrobe * 0.012 * exp(-ang / 150.0)));
+  // The wing light's beam glows in fog and lights what falls through it.
+  if (uBeamL.w > 0.001) {
+    float bs, bk = beamAt(da, bs) * uBeamL.w;
+    if (bk > 0.0) {
+      // Light falls off with the square of the distance from the lamp.
+      float fall = 60.0 / (bs * bs + 20.0);
+      // Cloud, rain or storm fills the beam with streaming drops and crystals.
+      float wet = max(max(uStorm, uRain * 0.8), uBeamA.w);
+      vec3 BEAM = vec3(1.0, 0.95, 0.86);
+      // The haze is brightest where the eye looks down the beam.
+      view += BEAM * bk * fall * (beamMotes(px, 0.1 + 0.5 * wet) * (0.04 + 0.08 * wet) + 0.0015 + 0.06 * wet * bk * beamMist(px));
+    }
+  }
   return view;
 }
 
+// The cabin behind the eye, as the panes mirror it: a soft map, no texture.
+// r points back into the cabin: -z across the aisle, x to the nose, y up.
+// rgb is in units of cabin light; a is the far windows' share of outside light.
+vec4 cabinEnv(vec3 r) {
+  float az = atan(r.x, -r.z), el = asin(clamp(r.y, -1.0, 1.0));
+  vec3 c = vec3(0.3);
+  // A cove light runs fore and aft along the ceiling, above the bins.
+  c += 3.0 * exp(-pow((el - 0.62) / 0.05, 2.0));
+  // The bins: a darker band with a bright lower lip.
+  c *= 1.0 - 0.4 * smoothstep(0.28, 0.32, el) * smoothstep(0.56, 0.5, el);
+  c += 0.8 * exp(-pow((el - 0.29) / 0.012, 2.0));
+  // Seat backs: dark rows below the window line; their tops catch the light.
+  c *= 1.0 - 0.6 * smoothstep(-0.02, -0.07, el);
+  c += 0.35 * exp(-pow((el + 0.06) / 0.015, 2.0)) * (0.6 + 0.4 * sin(az * 38.0));
+  // The far side's windows: a row of soft ovals, bright by day.
+  float wx = fract(az / 0.16 + 0.5) - 0.5;
+  float win = smoothstep(0.3, 0.18, abs(wx)) * smoothstep(0.11, 0.06, abs(el - 0.09));
+  return vec4(c, win);
+}
+// The seat in front: its back faces us, a little reclined, by the wall.
+// Window metres; it returns the hit point and, in w, coverage from 0 to 1.
+const float SEAT_X = 0.2;
+vec4 seatBack(vec3 da) {
+  // The back leans aft toward its top: x falls as y rises.
+  float den = da.x + 0.12 * da.y;
+  if (den <= 1e-4) return vec4(0.0);
+  float t = (SEAT_X - 0.12 * uEye.y - uEye.x) / den;
+  vec3 P = uEye + da * t;
+  if (t <= 0.0 || P.z > -0.03) return vec4(0.0);
+  float sd = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
+  float aa = fwidth(sd) * 1.2;
+  return vec4(P, smoothstep(aa, -aa, sd));
+}
 // Fine scratches on the scratch pane, pG in metres.
 // A scratch glints when it runs across the line to a bright source.
 // So the glints ring each source in arcs.
@@ -2029,7 +2713,8 @@ float ice(vec2 pO, float edge) {
 // Lens flare, after Buoy Business (see Beach walker): haze, orb,
 // an anamorphic streak and warm ghosts on the line through the centre.
 // uFlr: source xy in pixels, gain times cover, size. uFlrC: colour.
-vec3 flare(vec2 px, vec3 base) {
+// glassK: 1 where the pixel looks through the skin opening, 0 on the frame.
+vec3 flare(vec2 px, vec3 base, float glassK) {
   const vec3 ORANGE = vec3(1.0, 0.42, 0.1);
   vec2 uv = px / uRes;
   float aspect = uRes.x / uRes.y;
@@ -2056,6 +2741,8 @@ vec3 flare(vec2 px, vec3 base) {
       float gr = length(g) / (gs.y * f.w);
       a += mix(col, col * ORANGE, 0.4) * exp(-gr * gr) * gs.z * 0.12 * (0.3 + 0.7 * streak) * (1.0 + uFlrG[i]);
     }
+    // The wingtip lights glow only in the glass: their halo stops at the frame.
+    if (i == 2 || i == 3) a *= glassK;
     add += a * f.z;
   }
   // Screen blend: the flare washes the frame instead of clipping it.
@@ -2070,7 +2757,7 @@ void main() {
   // The camera ray, in the cabin frame.
   vec3 da = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
   float E = 0.004 + uFlash * 0.07;
-  vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
+  vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.68, 0.76, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
   // Cabin mood light, set per hour: amber, deep night blue, or dawn rose.
   vec3 cabin = uCabin;
   vec3 outGlow = uGlow * 0.014 + eCol * E;
@@ -2080,17 +2767,34 @@ void main() {
 
   vec2 p0 = da.z > 0.0 ? at(da, 0.0) : vec2(9.0);
   float sOut = sdBox(p0, OUTB, ROUT);
-  // Wall: curved plastic panels, lit from above and by the window.
+  // Outside light, through the dimmable glass, for the bezel, gasket and wall.
+  vec3 Tdim = dimT(), Ls = sunCabin(), V = -da;
+  // A lowered shade cuts the light the window sends into the cabin.
+  vec3 outGlow0 = outGlow;
+  Tdim *= 1.0 - 0.9 * uShade; outGlow *= 1.0 - 0.8 * uShade;
+  vec3 sunE = uSunC * 0.3 * sunOpen() * Tdim;
+  float slope = (OUTB.x - INB.x) / DEPTH;
+  // Fake GI: the lit reveal sends light back to its other faces and the wall.
+  vec3 bounce = vec3(0.0);
+  if (uEnvOn > 0.5 && sOut < 0.2) {
+    float pat = 0.0;
+    vec2 mid = mix(OUTB, INB, 0.5);
+    for (int i = 0; i < 8; i++) {
+      vec2 cs = vec2(cos(float(i) * PI * 0.25), sin(float(i) * PI * 0.25));
+      pat += sunThrough(vec3(cs * mid, DEPTH * 0.5)) * max(dot(normalize(vec3(-cs, -slope)), Ls), 0.0);
+    }
+    bounce = alb * (irr(vec3(0.0), vec3(0.0, 0.0, 1.0), 2) * Tdim * 0.5 + sunE * pat / 8.0);
+  }
+  // Wall: matte plastic panels with a fine grain, lit from above.
   float wy = p0.y;
-  vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * (0.85 + 0.15 * vnoise(p0 * 900.0));
+  float fpW = length(vec3(p0, 0.0) - uEye) / uFocal / max(abs(da.z), 0.15) * 1400.0;
+  vec3 nW = grainN(vec3(0.0, 0.0, -1.0), p0, vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), fpW, 0.8);
+  float gW = clamp(dot(nW, Lc) / max(-Lc.z, 0.05), 0.6, 1.4);
+  vec3 wall = alb * cabin * (0.55 + 0.6 * smoothstep(-0.6, 0.5, wy)) * mix(1.0, gW, 0.5);
   // A seam between two wall panels gives the plane its slant.
   wall *= 1.0 - 0.35 * smoothstep(0.004, 0.0, abs(p0.x - 0.5));
-  vec3 wallL = outGlow * 0.8;
-  if (uEnvOn > 0.5) {
-    // The wall sits beside the opening, not across it: it gets only a weak, broad spill.
-    wallL = mix(wallL, envAt(vec2(0.0)) * 0.25 + outGlow * 0.4, exp(-max(sOut, 0.0) / 0.05));
-  }
-  wall += alb * wallL * exp(-max(sOut, 0.0) / 0.07);
+  // The wall faces away from the glass: only the reveal's bounce reaches it.
+  wall += alb * (outGlow * 0.5 + bounce * 0.6) * exp(-max(sOut, 0.0) / 0.06);
   // A soft shadow rings the rim of the recess.
   wall *= 1.0 - 0.4 * exp(-max(sOut, 0.0) / 0.012);
   // The rim rolls over into the wall; its outward face catches the light from above.
@@ -2105,6 +2809,7 @@ void main() {
   wall += alb * cabin * 0.6 * smoothstep(0.0018, 0.0, abs(sSeam - 0.0022)) * (0.2 + faceUp);
   vec3 c = wall;
 
+  float glassK = 0.0;
   if (da.z > 0.0 && sOut < 0.01) {
     // March the recess from the rim to the pane.
     float z0 = 0.0, hit = -1.0;
@@ -2124,24 +2829,40 @@ void main() {
       float k = hit / DEPTH;
       vec2 e = vec2(0.002, 0.0);
       vec2 g2 = normalize(vec2(sdRecess(ph + e.xy, hit) - sdRecess(ph - e.xy, hit), sdRecess(ph + e.yx, hit) - sdRecess(ph - e.yx, hit)) + 1e-6);
-      float slope = (OUTB.x - INB.x) / DEPTH;
       vec3 n = normalize(vec3(-g2, -slope));
-      float diff = max(dot(n, Lc), 0.0);
-      // Sky light through the glass falls on the sill and lower walls.
-      float sky = (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
-      // The light comes through the stretch of glass across the hole from this spot.
-      vec3 envL = outGlow * 1.6;
+      vec3 P = vec3(ph, hit);
+      // Triplanar grain: sill and head use x and z; the sides use y and z.
+      bool horiz = abs(n.y) > abs(n.x);
+      vec2 uv = horiz ? P.xz : P.yz;
+      vec3 t1 = horiz ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0), t2 = vec3(0.0, 0.0, 1.0);
+      float fp = length(P - uEye) / uFocal / max(abs(dot(n, da)), 0.15) * 1400.0;
+      vec3 nb = grainN(n, uv, t1, t2, fp, 1.0);
+      float diff = max(dot(nb, Lc), 0.0);
+      // Without the soft outside, the sill takes a plain glow.
+      vec3 envL = outGlow * 1.6 * (0.35 + 0.65 * max(-g2.y, 0.0)) * pow(k, 1.5);
+      vec3 spec = vec3(0.0);
       if (uEnvOn > 0.5) {
-        // Light crosses the opening in straight lines: this wall sees the far side of the glass.
-        // So the sill catches the sky, and the head of the tunnel the dimmer ground.
-        float reach = (0.45 + 0.55 * max(-g2.y, 0.0)) * (0.3 + 0.7 * k);
-        envL = (envAt(-ph * 0.55) * 1.7 + outGlow * 0.5) * reach;
-        // The sun or moon lays a patch on the wall that faces it, cut by the opening.
-        vec3 Ls = sunCabin();
-        envL += uSunC * 0.02 * max(dot(n, Ls), 0.0) * sunThrough(vec3(ph, hit));
-        sky = 1.0;
+        // Each face takes the light of all the opening it can see.
+        // The sill sees sky, the head sees ground and deck, the depth sets how much.
+        envL = irr(P, n, 4) * Tdim * REVEAL_K + outGlow * 0.4 * k;
+        // The sun or moon lays a sharp patch in the opening's own shape.
+        float sv = sunThrough(P);
+        envL += sunE * max(dot(nb, Ls), 0.0) * sv;
+        // The lit faces glow back onto the rest.
+        envL += bounce * (1.0 - 0.6 * sv);
+        // The grain breaks the sun's sheen into a soft, low gloss.
+        spec = sunE * sv * sheen(nb, V, Ls) * 0.5;
+        // At grazing angles the face mirrors the bright opening, broad and dim.
+        vec3 Rr = reflect(da, nb);
+        if (Rr.z > 0.0) {
+          float tr = (Z_OUT - P.z) / Rr.z;
+          float w = 0.01 + tr * 0.5;
+          float m = smoothstep(w, -w, sdBox(P.xy + Rr.xy * tr, SKIN, RSK));
+          float F = 0.04 + 0.96 * pow(1.0 - max(dot(nb, V), 0.0), 5.0);
+          spec += envDir(Rr) * Tdim * m * F * 0.08;
+        }
       }
-      inner = alb * (cabin * (0.25 + 1.3 * diff) + envL * sky);
+      inner = alb * (cabin * (0.25 + 1.3 * diff) + envL) + spec;
       // The rolled lip at the rim catches the cabin light.
       inner += alb * cabin * 1.2 * smoothstep(0.0, 0.003, hit) * smoothstep(0.01, 0.004, hit) * (0.3 + diff);
       // The corners and the joint to the pane sit in soft shadow.
@@ -2153,6 +2874,7 @@ void main() {
       vec2 pG = at(da, DEPTH), pI = at(da, Z_IN), pO = at(da, Z_OUT);
       float sSk = sdBox(pO, SKIN, RSK);
       float aaO = fwidth(sSk) * 1.2;
+      glassK = smoothstep(aaO, -aaO, sSk);
       float sI = sdBox(pI, SKIN + 0.007, RSK + 0.007), aaI = fwidth(sI) * 1.5;
       vec3 view = vec3(0.0);
       if (sSk < aaO) {
@@ -2188,8 +2910,9 @@ void main() {
         float gk = clamp(sSk / 0.03, 0.0, 1.0);
         vec3 gasket = alb * 0.4 * (cabin * 0.5 + outGlow * (1.5 - gk));
         if (uEnvOn > 0.5) {
-          // The gasket faces into the opening: it takes the light from across it.
-          gasket += alb * envAt(-pO * 0.55) * 0.5 * (1.0 - 0.7 * gk);
+          // The rubber faces in toward the opening and sees it at a grazing angle.
+          vec3 nG = normalize(vec3(-normalize(pO + 1e-6), -0.3));
+          gasket += alb * irr(vec3(pO, Z_IN), nG, 2) * Tdim * 4.0 * (1.0 - 0.7 * gk);
         }
         // The inner pane's edge catches a thin line of light.
         gasket += outGlow * 0.45 * smoothstep(aaI, 0.0, abs(sI));
@@ -2202,10 +2925,25 @@ void main() {
       view = mix(view, view * Tg, smoothstep(aaO, -aaO, sSk));
       // Scratches on the scratch pane ring each bright source.
       view += scratches(pG, px) * Tg;
+      // Breath fogs the scratch pane; a finger's trace stays clear in new fog.
+      if (uBreathOn > 0.5) {
+        vec2 bm = texture(uBreath, pG / vec2(0.34, 0.56) + 0.5).rg;
+        float fb = bm.r * (1.0 - 0.85 * bm.g);
+        if (fb > 0.003) {
+          // Tiny droplets scatter the view into a pale, soft blur.
+          vec3 soft = uEnvOn > 0.5 ? texture(uEnv, px / uRes).rgb : view;
+          float grain = 0.85 + 0.3 * hash12(floor(pG * 3000.0));
+          vec3 haze = (mix(view, soft, 0.8) * 0.85 + cabin * 0.5 + outGlow * 0.4) * grain;
+          view = mix(view, haze, smoothstep(0.0, 0.6, fb) * 0.92);
+        }
+      }
       // The pane mirrors the dim cabin, shifted as the head moves.
       // The shift follows the head's move from its rest pose at (-0.04, 0.06).
       vec2 rq = pG + (uEye.xy - vec2(-0.04, 0.06)) * 0.4;
       view += cabin * 0.12 * smoothstep(0.25, -0.2, rq.x + rq.y * 0.5);
+      // A very faint mirror of the cabin: cove lights, bins, the far windows.
+      vec4 ce = cabinEnv(vec3(da.xy, -da.z));
+      view += (cabin * ce.rgb + outGlow0 * 2.0 * ce.a) * 0.05;
       // A reading light further up the cabin, as a soft warm smear.
       vec2 lq = (rq - vec2(-0.1, 0.19)) * vec2(1.0, 1.8);
       view += vec3(1.0, 0.8, 0.55) * 0.004 * exp(-dot(lq, lq) / 0.0016);
@@ -2213,14 +2951,59 @@ void main() {
       view = mix(view, vec3(0.0), smoothstep(0.0028, 0.0018, bh) * 0.85);
       inner = view;
     }
+    // The shade slides down its slot behind the bezel lip.
+    // Its lip always shows at the head of the opening, ready to pull.
+    {
+      vec2 ps = at(da, SLOT);
+      float ext = mix(OUTB.y, INB.y, SLOT / DEPTH);
+      float edge = ext - 0.012 - uShade * (2.0 * ext - 0.012);
+      float sR = sdRecess(ps, SLOT), ly = ps.y - edge;
+      float aaS = fwidth(ly) * 1.2;
+      if ((hit < 0.0 || hit > SLOT) && sR < 0.0 && ly > -aaS) {
+        // Matte plastic with a fine grain, lit by the cabin.
+        float fpS = length(vec3(ps, SLOT) - uEye) / uFocal / max(da.z, 0.15) * 1400.0;
+        vec3 nS = grainN(vec3(0.0, 0.0, -1.0), ps, vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), fpS, 0.8);
+        float dS = clamp(dot(nS, Lc) / max(-Lc.z, 0.05), 0.6, 1.4);
+        // Off-white plastic; daylight glows warmly through it.
+        vec3 sh = alb * 1.6 * (cabin * 1.4 * mix(1.0, dS, 0.5) + outGlow0 * vec3(0.55, 0.5, 0.42));
+        // The lip: a rounded bar along the lower edge, lit on top, shadowed under.
+        sh *= 1.0 + 0.35 * smoothstep(0.004, 0.011, ly) * smoothstep(0.014, 0.011, ly) - 0.3 * smoothstep(0.004, 0.0, ly);
+        // A finger notch in the middle of the lip.
+        sh *= 1.0 - 0.45 * smoothstep(0.03, 0.022, abs(ps.x)) * smoothstep(0.011, 0.005, ly);
+        // A thin line of daylight leaks round the edges in the slot.
+        sh += outGlow0 * 0.5 * smoothstep(-0.003, 0.0, sR) * step(0.014, ly);
+        inner = mix(inner, sh, smoothstep(-aaS, aaS, ly));
+        glassK *= 1.0 - smoothstep(-aaS, aaS, ly);
+      }
+    }
     // Soften the step from wall to rim over about a pixel.
     float aa = fwidth(sOut) * 1.2;
     c = mix(wall, inner, smoothstep(aa, -aa, sOut));
+    glassK *= smoothstep(aa, -aa, sOut);
+  }
+  // The seat in front stands between the eye and the wall's nose side.
+  vec4 sb = seatBack(da);
+  if (sb.w > 0.0) {
+    vec3 P = sb.xyz;
+    // Fabric: dark blue-grey with a fine weave; the headrest wears a cream cover.
+    float cover = smoothstep(-0.155, -0.15, P.y);
+    vec3 alS = mix(vec3(0.16, 0.17, 0.21), vec3(0.72, 0.69, 0.63), cover);
+    alS *= 0.9 + 0.2 * hash12(floor(P.zy * 900.0));
+    // A stitched seam rings the cover.
+    alS *= 1.0 - 0.3 * smoothstep(0.003, 0.0, abs(P.y + 0.15));
+    // Cabin light from above; the side by the window takes its light too.
+    vec3 Ls2 = cabin * (0.7 + 0.5 * smoothstep(-0.5, 0.05, P.y)) + outGlow * 2.5 * exp((P.z + 0.03) / 0.22);
+    vec3 seat = alS * Ls2;
+    // The rounded edge by the wall catches a rim of window light.
+    float sdS = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
+    seat += outGlow * 1.5 * smoothstep(-0.02, 0.0, sdS) * smoothstep(-0.3, -0.03, P.z);
+    c = mix(c, seat, sb.w);
+    glassK *= 1.0 - sb.w;
   }
   // Each hour carries a small colour grade.
   c *= uTint;
   c = 1.0 - exp(-c * 3.2);
-  c = flare(px, c);
+  c = flare(px, c, glassK);
   c += (hash12(px + fract(uTime * 7.13) * 911.0) - 0.5) * 0.006;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
   // A soft S-curve for contrast, as in Beach walker's grade.

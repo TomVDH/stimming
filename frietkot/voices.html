@@ -1,0 +1,1461 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frietkot voices</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<style>
+/* A side lab: record Flemish lines and bend the voice. */
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
+:root {
+  --bg: oklch(0.13 0.015 270);
+  --panel: oklch(0.17 0.015 270);
+  --line: oklch(0.3 0.015 270);
+  --fg: oklch(0.93 0.01 90);
+  --dim: oklch(0.62 0.012 90);
+  --fry: oklch(0.88 0.17 95);
+  --rec: oklch(0.64 0.22 25);
+  --sans: "Gabarito", system-ui, sans-serif;
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 500 15px/1.35 var(--sans); }
+main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 14px; }
+header { display: flex; align-items: baseline; gap: 10px; }
+header h1 { margin: 0; font: 800 22px/1 var(--sans); letter-spacing: -0.01em; }
+header span { font: 500 11px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+header a { margin-left: auto; color: var(--dim); font: 500 11px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.08em; text-decoration: none; }
+
+.stage { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #07070c; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.chyron { position: absolute; left: 5%; bottom: 9%; display: grid; gap: 0; max-width: 80%; pointer-events: none; }
+.chyron b { background: var(--fg); color: oklch(0.14 0.02 270); font: 800 clamp(15px, 3.2vw, 30px)/1 var(--sans); padding: 0.28em 0.5em 0.24em; text-transform: uppercase; border-left: 0.32em solid var(--fry); letter-spacing: -0.005em; }
+.chyron i { justify-self: start; background: oklch(0.12 0.02 270 / 0.92); color: var(--fry); font: 700 clamp(10px, 1.5vw, 13px)/1 var(--slab); font-style: normal; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.5em 0.7em; }
+.chyron i:empty { display: none; }
+.drop { position: absolute; inset: 0; display: grid; place-items: center; background: oklch(0.2 0.05 95 / 0.6); font: 800 24px var(--sans); opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.drop.on { opacity: 1; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.panel h2 { margin: 0; font: 700 11px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, .btn { font: 700 13px/1 var(--sans); color: var(--fg); background: oklch(0.22 0.015 270); border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; min-height: 36px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button:hover { border-color: oklch(0.5 0.02 270); }
+button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:disabled { opacity: 0.4; cursor: default; }
+kbd { font: 500 10px/1 var(--slab); opacity: 0.6; border: 1px solid currentColor; border-radius: 3px; padding: 2px 4px; }
+#rec { background: var(--rec); border-color: var(--rec); color: white; }
+#rec[aria-pressed="true"] { background: white; color: var(--rec); }
+#rec .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+#rec[aria-pressed="true"] .dot { border-radius: 2px; }
+.sep { flex: 1; }
+
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.presets button { flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 10px; }
+.presets small { font: 500 10px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.6; }
+
+.knobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; }
+.knob { display: grid; grid-template-columns: 62px 1fr 52px; align-items: center; gap: 8px; font: 500 11px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.06em; }
+.knob output { text-align: right; color: var(--dim); }
+input[type="range"] { width: 100%; accent-color: var(--fry); }
+
+.lines { display: flex; flex-wrap: wrap; gap: 6px; }
+.lines button { font: 500 13px/1.2 var(--sans); padding: 7px 10px; min-height: 32px; text-align: left; }
+#name { font: 600 14px var(--sans); color: var(--fg); background: oklch(0.11 0.012 270); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; min-width: 0; flex: 1 1 220px; }
+
+.takes { display: grid; gap: 4px; }
+.take { display: grid; grid-template-columns: 36px 112px 1fr 160px auto; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; }
+.take[aria-selected="true"] { border-color: var(--fry); background: oklch(0.88 0.17 95 / 0.06); }
+.take input { font: 600 14px var(--sans); color: var(--fg); background: none; border: 0; padding: 4px; min-width: 0; }
+.take canvas { width: 160px; height: 28px; }
+.take select { font: 600 12px var(--sans); color: var(--fg); background: oklch(0.11 0.012 270); border: 1px solid var(--line); border-radius: 6px; padding: 5px 4px; min-width: 0; }
+.take .pack { display: inline-flex; align-items: center; gap: 4px; font: 500 10px/1 var(--slab); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); cursor: pointer; }
+.take .pack input { accent-color: var(--fry); margin: 0; }
+.take .acts { display: flex; gap: 4px; }
+.take .acts button { padding: 6px 8px; min-height: 30px; font-size: 12px; }
+.take .play { width: 36px; padding: 0; justify-content: center; }
+.empty { color: var(--dim); font-size: 13px; }
+.note { color: var(--dim); font-size: 12px; }
+
+@media (max-width: 640px) {
+  .take { grid-template-columns: 36px 1fr auto; }
+  .take select { grid-column: 2; grid-row: 2; justify-self: start; }
+  .take canvas { display: none; }
+  .knob { grid-template-columns: 58px 1fr 46px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Frietkot voices</h1>
+    <span>Stem vervormd</span>
+    <a href="./">← Frietkot</a>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="c" aria-label="A backlit witness in front of the frituur window, face hidden by a mosaic."></canvas>
+    <div class="chyron" aria-live="polite"><b id="chyTitle">Getuige</b><i id="chySub"></i></div>
+    <div class="drop" id="drop">Drop audio to add a take</div>
+  </div>
+
+  <section class="panel" aria-label="Transport">
+    <div class="row">
+      <button id="rec" type="button" aria-pressed="false"><span class="dot"></span><span id="recLabel">Record</span> <kbd>R</kbd></button>
+      <button id="play" type="button" disabled>▶ Play <kbd>Space</kbd></button>
+      <button id="loop" type="button" aria-pressed="false">Loop</button>
+      <button id="bleep" type="button" title="Hold while it plays">Piep <kbd>B</kbd></button>
+      <span class="sep"></span>
+      <button id="shuffle" type="button">⚄ Shuffle <kbd>S</kbd></button>
+      <button id="live" type="button" aria-pressed="false" title="Hear yourself through the filter. Use headphones.">🎧 Live <kbd>L</kbd></button>
+      <button id="save" type="button" disabled>Save to toy</button>
+      <button id="folder" type="button" hidden title="Pick the frietkot/voices folder">Folder…</button>
+    </div>
+    <div class="row">
+      <input id="name" type="text" placeholder="Name the next take, or pick a line below" maxlength="80" autocomplete="off">
+      <label class="btn">Import<input id="file" type="file" accept="audio/*" multiple hidden></label>
+    </div>
+    <p class="note" id="note"></p>
+  </section>
+
+  <section class="panel" aria-label="Cast">
+    <h2>Who speaks</h2>
+    <div class="presets" id="cast"></div>
+  </section>
+
+  <section class="panel" aria-label="Voices">
+    <h2>Voice</h2>
+    <div class="presets" id="presets"></div>
+    <div class="row">
+      <h2 style="margin-right:6px">Bookends</h2>
+      <div class="row" id="ends"></div>
+    </div>
+    <div class="knobs" id="knobs"></div>
+  </section>
+
+  <section class="panel" aria-label="Lines">
+    <h2 id="linesHead">Lines to read</h2>
+    <div class="lines" id="lines"></div>
+  </section>
+
+  <section class="panel" aria-label="Takes">
+    <h2>Takes</h2>
+    <div class="takes" id="takes"><p class="empty">No takes yet. Press Record and say something.</p></div>
+  </section>
+</main>
+
+<script type="module">
+import * as Tone from 'tone';
+
+// --- Voices ------------------------------------------------------------------
+
+const st = (v) => (v > 0 ? '+' : '') + v + ' st';
+const KNOBS = [
+  ['pitch', 'Pitch', -12, 12, 0.5, st],
+  ['formant', 'Formant', -8, 8, 0.5, st],
+  ['tape', 'Tape', 0.6, 1.6, 0.01, (v) => '×' + v.toFixed(2)],
+  ['turian', 'Turian', 0, 1, 0.01, pct],
+  ['double', 'Double', 0, 1, 0.01, pct],
+  ['doubleSt', 'Double at', -12, 12, 1, st],
+  ['wobble', 'Wobble', 0, 1, 0.01, pct],
+  ['flange', 'Flange', 0, 1, 0.01, pct],
+  ['metal', 'Metal', 0, 1, 0.01, pct],
+  ['robot', 'Robot', 0, 1, 0.01, pct],
+  ['vocoder', 'Vocoder', 0, 1, 0.01, pct],
+  ['crunch', 'Crunch', 0, 1, 0.01, pct],
+  ['phone', 'Phone', 0, 1, 0.01, pct],
+  ['muffle', 'Muffle', 0, 1, 0.01, pct],
+  ['echo', 'Echo', 0, 1, 0.01, pct],
+  ['room', 'Room', 0, 1, 0.01, pct],
+  ['sizzle', 'Sizzle', 0, 1, 0.01, pct],
+];
+function pct(v) { return Math.round(v * 100) + '%'; }
+
+const BASE = {
+  pitch: 0, formant: 0, tape: 1, turian: 0, tSubSt: -5, tSub: 0.35, tDet: 0, tMs: 1.8, tFb: 0.5, tWet: 0.3, tChest: 4, tPres: 3, double: 0, doubleSt: -12, wobble: 0, flange: 0, metal: 0, metalHz: 220,
+  robot: 0, ringHz: 50, vocoder: 0, vocType: 'saw', vocHz: 110, crunch: 0, phone: 0, muffle: 0, echo: 0, room: 0, sizzle: 0, ends: 'none',
+};
+// Tuning keys colour a stage, but alone they leave the voice clean.
+const TUNING = new Set(['tSubSt', 'tSub', 'tDet', 'tMs', 'tFb', 'tWet', 'tChest', 'tPres', 'doubleSt', 'metalHz', 'ringHz', 'vocType', 'vocHz']);
+
+// The people on the square. Each id names the clips the toy plays for them.
+const CAST = [
+  { id: 'bruno', name: 'Bruno', nl: 'Bakt', title: 'Bruno, frituurbaas', voice: { pitch: -2, formant: -1.5, muffle: 0.08 }, lines: [
+    'Volgende!', 'Ze zitten in de pot, nog efkes.', 'Moet er zout op?', 'Pas op, ze zijn heet.', 'Amai, druk vanavond.', 'Anja, nog ne grote!',
+  ] },
+  { id: 'anja', name: 'Anja', nl: 'Bedient', title: 'Anja, frituurbazin', voice: { pitch: 5, formant: 3 }, lines: [
+    'Wie is er aan de beurt?', 'Welke saus moet ge hebben?', 'Voor hier of om mee?', "Da's dan zeven euro vijftig.", "Mag 't iets meer zijn?", 'Merci, en smakelijk!',
+  ] },
+  { id: 'klant', name: 'Customer', nl: 'Klant', title: 'Een klant', voice: {}, lines: [
+    'Ne grote friet met stoofvleessaus, alstublieft.', 'Een kleintje met mayonaise.', 'Twee frikandellen speciaal.', 'Een curryworst en een kleine friet.', 'Zonder zout, alstublieft.', 'Merci, nog een schone avond!',
+  ] },
+  { id: 'vaste', name: 'Regular', nl: 'Vaste klant', title: 'Vaste klant sinds 1987', voice: { pitch: -2, formant: -1, wobble: 0.35, tape: 0.95 }, lines: [
+    "Amai, 't regent hier weer.", 'Ge weet hoe ik hem wil.', 'Vroeger was da allemaal beter.', "Bruno! Hoe is 't, jong?",
+  ] },
+  { id: 'jeugd', name: 'Youth', nl: 'Jeugd', title: 'Jeugd van tegenwoordig', voice: { pitch: 2, formant: 1.5, tape: 1.06 }, lines: [
+    'Allez, komaan!', 'Wie trakteert?', 'Gast, ik heb honger.', 'Haha, zot!', 'Wacht op mij!',
+  ] },
+  { id: 'kind', name: 'Kid', nl: 'Kind', title: 'Kleine gast', voice: { pitch: 7, formant: 5, tape: 1.04 }, lines: [
+    'Mama, mag ik een frikandel?', 'Ik wil mayonaise!', 'Kijk, een hond!',
+  ] },
+  { id: 'schim', name: 'Shady', nl: 'Schimmig', title: 'Anonieme getuige', voice: { pitch: -4, formant: -2, muffle: 0.15, room: 0.12 }, lines: [
+    'Psst. Gij daar.', 'Niet hier. Achter de kerk.', 'Ik heb niks gezien.', 'Ik kwam gewoon frieten halen.',
+  ] },
+  { id: 'hond', name: 'Dog walker', nl: 'Hondenbaasje', title: 'De man met de hond', voice: { pitch: -1, formant: -0.5 }, lines: [
+    'Kom hier, Bobby!', 'Zit! Brave hond.', "Nee, da's van die meneer!",
+  ] },
+];
+
+const PRESETS = [
+  { id: 'clean', name: 'Clean', nl: 'Gewoon', sub: '', p: {} },
+  { id: 'anon', name: 'Anonymous', nl: 'Anoniem', sub: 'Stem vervormd', p: { pitch: -4, formant: -2, muffle: 0.15, room: 0.12 } },
+  { id: 'deep', name: 'Deep cover', nl: 'Diep', sub: 'Bron binnen de frituur', p: { pitch: -8, formant: -4, crunch: 0.1, muffle: 0.2 } },
+  { id: 'vakarian', name: 'Vakarian', nl: 'Turiaan A', sub: 'Is aan het kalibreren', p: { formant: -0.5, turian: 1, tSubSt: -5, tSub: 0.35, tDet: 0, tMs: 1.8, tFb: 0.5, tWet: 0.3, tChest: 4, tPres: 3, room: 0.05 } },
+  { id: 'vakarian-b', name: 'Vakarian B', nl: 'Turiaan, diep', sub: 'Is nog altijd aan het kalibreren', p: { formant: -1.5, turian: 1, tSubSt: -6, tSub: 0.45, tDet: 0, tMs: 2.4, tFb: 0.45, tWet: 0.25, tChest: 5, tPres: 2.5, room: 0.05 } },
+  { id: 'vakarian-c', name: 'Vakarian C', nl: 'Turiaan, metaal', sub: 'Kalibreert de frietpot', p: { formant: -0.5, turian: 1, tSubSt: -3, tSub: 0.28, tDet: 0.15, tMs: 1.3, tFb: 0.65, tWet: 0.45, tChest: 3.5, tPres: 4, room: 0.05 } },
+  { id: 'higher', name: 'Higher', nl: 'Hoger', sub: 'Stem vervormd', p: { pitch: 5, formant: 3 } },
+  { id: 'lower', name: 'Lower', nl: 'Lager', sub: 'Stem vervormd', p: { pitch: -4, formant: -3 } },
+  { id: 'kiddo', name: 'Kiddo', nl: 'Kleuter', sub: 'Mag nog niet alleen', p: { pitch: 7, formant: 5, tape: 1.04 } },
+  { id: 'chip', name: 'Chipmunk', nl: 'Eekhoorn', sub: 'Stem vervormd', p: { pitch: 8, formant: 8, tape: 1.08 } },
+  { id: 'helium', name: 'Helium', nl: 'Ballon', sub: 'Na één ballon', p: { pitch: 2, formant: 7, wobble: 0.05 } },
+  { id: 'ogre', name: 'Ogre', nl: 'Reus', sub: 'Stem vervormd', p: { pitch: -9, formant: -6, crunch: 0.2 } },
+  { id: 'demon', name: 'Demon', nl: 'Duivel', sub: 'Uit de frietpot van de hel', p: { pitch: -5, formant: -4, double: 0.6, doubleSt: -12, crunch: 0.2, room: 0.35 } },
+  { id: 'harmony', name: 'Harmony', nl: 'Tweestemmig', sub: 'Het duo van de kermis', p: { double: 0.55, doubleSt: 4, room: 0.15 } },
+  { id: 'robot', name: 'Robot', nl: 'Robot', sub: 'Bliep bloep', p: { robot: 1, ringHz: 48, pitch: -2 } },
+  { id: 'vocoder', name: 'Vocoder', nl: 'Vocoder', sub: 'Frietrobot 3000', p: { vocoder: 1, vocType: 'saw', vocHz: 98 } },
+  { id: 'choir', name: 'Choir', nl: 'Koor', sub: 'Het parochiekoor', p: { vocoder: 0.85, vocType: 'chord', vocHz: 147, room: 0.55 } },
+  { id: 'whisper', name: 'Whisper', nl: 'Fluister', sub: 'Strikt vertrouwelijk', p: { vocoder: 1, vocType: 'noise', muffle: 0.1 } },
+  { id: 'helmet', name: 'Helmet', nl: 'Helm', sub: 'Vanuit de ruimte', p: { metal: 0.55, metalHz: 820, phone: 0.25, room: 0.05 } },
+  { id: 'alien', name: 'Alien', nl: 'Ruimtewezen', sub: 'Landde achter de kerk', p: { robot: 0.5, ringHz: 330, pitch: 5, formant: -3, flange: 0.4, echo: 0.2 } },
+  { id: 'phone', name: 'Phone', nl: 'Telefoon', sub: 'Belt vanuit Aalst', p: { phone: 1, crunch: 0.25 } },
+  { id: 'megaphone', name: 'Megaphone', nl: 'Megafoon', sub: 'Betoging op het plein', p: { phone: 0.75, crunch: 0.65, echo: 0.1 } },
+  { id: 'station', name: 'Station', nl: 'Omroep', sub: 'Spoor 2', p: { phone: 0.6, echo: 0.35, room: 0.6, ends: 'chime' } },
+  { id: 'gramophone', name: 'Gramophone', nl: 'Grammofoon', sub: 'Opname uit 1958', p: { phone: 0.5, crunch: 0.12, sizzle: 0.25, wobble: 0.08 } },
+  { id: 'tipsy', name: 'Tipsy', nl: 'Zat', sub: "2 u 's nachts", p: { wobble: 0.7, tape: 0.92, pitch: -1 } },
+  { id: 'underwater', name: 'Underwater', nl: 'Onder water', sub: 'In de vijver', p: { muffle: 0.85, wobble: 0.35, flange: 0.35 } },
+  { id: 'church', name: 'Church', nl: 'Kerk', sub: 'Vanaf de kansel', p: { room: 0.9, echo: 0.25, pitch: -2, formant: -1 } },
+  { id: 'frypot', name: 'Fry pot', nl: 'Frietpot', sub: 'Vanuit de frietpot, 180 °C', p: { muffle: 0.75, sizzle: 0.6, wobble: 0.15 } },
+  { id: 'walkie', name: 'Walkie', nl: 'Portofoon', sub: 'Over', p: { phone: 0.9, crunch: 0.5, ends: 'squelch' } },
+];
+
+const ENDS = [['none', 'None'], ['chime', 'Ding-dong'], ['squelch', 'Squelch']];
+const SHUFFLE_SUBS = ['Wil niet herkend worden', 'Stem vervormd', 'Heeft alles gezien', 'Bestelt altijd hetzelfde', 'Ex-medewerker'];
+
+// Clips for the toy: mono, 24 kHz, peaks at -1 dB.
+const PACK_RATE = 24000;
+const NOTE = 'Pick who speaks, pick a line, press Record. Ticked takes go to the toy.';
+
+let cast = CAST[0];
+let P = { ...BASE, ...cast.voice };
+let preset = null;
+let sub = 'Stem vervormd';
+
+// --- Pitch and formant (TD-PSOLA) ----------------------------------------------
+
+// Finds the pitch period in samples every 10 ms; zero is unvoiced.
+function track(d, sr) {
+  const k = Math.max(1, Math.round(sr / 12000)), sr2 = sr / k, m = Math.floor(d.length / k);
+  const x = new Float32Array(m);
+  for (let i = 0; i < m; i++) { let s = 0; for (let j = 0; j < k; j++) s += d[i * k + j]; x[i] = s / k; }
+  const hop = Math.round(sr2 * 0.01), win = Math.round(sr2 * 0.03);
+  const minT = Math.floor(sr2 / 450), maxT = Math.ceil(sr2 / 60);
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  const df = new Float32Array(maxT + 1), per = [];
+  for (let c = 0; c + win + maxT < m; c += hop) {
+    let e = 0;
+    for (let i = 0; i < win; i++) e += x[c + i] * x[c + i];
+    if (Math.sqrt(e / win) < peak * 0.04) { per.push(0); continue; }
+    let run = 0, best = 0;
+    for (let t = 1; t <= maxT; t++) {
+      let s = 0;
+      for (let i = 0; i < win; i++) { const q = x[c + i] - x[c + i + t]; s += q * q; }
+      run += s;
+      df[t] = run ? (s * t) / run : 1;
+    }
+    for (let t = minT; t <= maxT; t++) {
+      if (df[t] < 0.2) { while (t < maxT && df[t + 1] < df[t]) t++; best = t; break; }
+    }
+    per.push(best * k);
+  }
+  // A median of five removes octave slips.
+  const out = per.map((v, i) => {
+    const w = per.slice(Math.max(0, i - 2), i + 3).filter(Boolean).sort((a, b) => a - b);
+    return v && w.length ? w[w.length >> 1] : 0;
+  });
+  return { hop: hop * k, per: out };
+}
+
+// Places one mark per period on voiced parts, every 8 ms elsewhere.
+function marks(d, sr, tr) {
+  const out = [], uv = Math.round(sr * 0.008);
+  const perAt = (i) => tr.per[Math.min(tr.per.length - 1, Math.floor(i / tr.hop))] || 0;
+  let t = 0;
+  while (t < d.length) {
+    const P0 = perAt(t);
+    out.push({ t, P: P0 || uv, v: !!P0 });
+    let nt = t + (P0 || uv);
+    if (P0) {
+      // The next mark snaps to the waveform peak near one period on.
+      let bv = -Infinity;
+      const a = Math.max(t + 1, nt - (P0 >> 2)), b = Math.min(d.length, nt + (P0 >> 2));
+      for (let i = a; i < b; i++) if (d[i] > bv) { bv = d[i]; nt = i; }
+    }
+    t = nt;
+  }
+  return out;
+}
+
+// Moves pitch by p and the formants by q; the length stays.
+function psola(d, mk, p, q) {
+  const N = d.length, out = new Float32Array(N), ws = new Float32Array(N);
+  let k = 0, ts = mk.length ? mk[0].t : 0;
+  while (ts < N && mk.length) {
+    while (k + 1 < mk.length && Math.abs(mk[k + 1].t - ts) <= Math.abs(mk[k].t - ts)) k++;
+    const m = mk[k], step = m.v ? m.P / p : m.P;
+    // Voiced grains hold one pulse each; unvoiced grains overlap to stay smooth.
+    const W = m.v ? m.P / q : Math.max(m.P / q, step), c = Math.round(ts);
+    for (let j = -Math.floor(W); j <= W; j++) {
+      const o = c + j;
+      if (o < 0 || o >= N) continue;
+      const src = m.t + j * q, i0 = Math.floor(src);
+      if (i0 < 0 || i0 + 1 >= N) continue;
+      const w = 0.5 + 0.5 * Math.cos((Math.PI * j) / W), fr = src - i0;
+      out[o] += w * (d[i0] * (1 - fr) + d[i0 + 1] * fr);
+      ws[o] += w;
+    }
+    ts += Math.max(1, step);
+  }
+  // Only piled-up grains scale down; gaps between pulses stay silent.
+  let pin = 0, pout = 0;
+  for (let i = 0; i < N; i++) { out[i] /= Math.max(ws[i], 1); pout = Math.max(pout, Math.abs(out[i])); pin = Math.max(pin, Math.abs(d[i])); }
+  if (pout > 0) for (let i = 0; i < N; i++) out[i] *= pin / pout;
+  return out;
+}
+
+// Returns the take shifted in pitch and formant, cached per setting.
+function hq(take, semis, fsemis) {
+  const sr = take.buf.sampleRate;
+  if (!take.src) {
+    const [off, len] = take.trim, a = Math.floor(off * sr);
+    take.src = take.buf.getChannelData(0).slice(a, a + Math.floor(len * sr));
+    take.mk = marks(take.src, sr, track(take.src, sr));
+    take.hq = new Map();
+  }
+  const key = semis + '|' + fsemis;
+  if (!take.hq.has(key)) {
+    const y = semis || fsemis ? psola(take.src, take.mk, 2 ** (semis / 12), 2 ** (fsemis / 12)) : take.src;
+    const b = new AudioBuffer({ length: y.length, numberOfChannels: 1, sampleRate: sr });
+    b.copyToChannel(y, 0);
+    if (take.hq.size > 24) take.hq.delete(take.hq.keys().next().value);
+    take.hq.set(key, b);
+  }
+  return take.hq.get(key);
+}
+const turKey = (p) => (p.turian ? [p.turian, p.tSubSt, p.tSub, p.tDet, p.tMs, p.tFb, p.tWet, p.tChest, p.tPres] : ['x']).join(',');
+const hqKey = (p) => [p.pitch, p.formant, p.double ? p.doubleSt : 'x', turKey(p)].join('|');
+
+// One RBJ biquad over a buffer: a high-pass or a peaking bell.
+function biquad(x, sr, type, f, q, db = 0) {
+  const w = (2 * Math.PI * f) / sr, cs = Math.cos(w), al = Math.sin(w) / (2 * q), A = Math.pow(10, db / 40);
+  let b0, b1, b2, a0, a1, a2;
+  if (type === 'hp') { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al; }
+  else { b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A; }
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = (b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+  }
+  return y;
+}
+
+// A fast compressor glues the layers: 5 ms attack, 80 ms release, 4:1.
+function glue(x, sr, thrDb = -16, ratio = 4) {
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  const thr = peak * Math.pow(10, thrDb / 20), at = Math.exp(-1 / (sr * 0.005)), re = Math.exp(-1 / (sr * 0.08));
+  const y = new Float32Array(x.length);
+  let env = 0;
+  for (let i = 0; i < x.length; i++) {
+    const a = Math.abs(x[i]);
+    env = a > env ? at * env + (1 - at) * a : re * env + (1 - re) * a;
+    y[i] = x[i] * (env > thr ? Math.pow(env / thr, 1 / ratio - 1) : 1);
+  }
+  return y;
+}
+
+// The turian voice: a lower harmony, a short damped comb, then EQ and glue.
+// It runs on the buffer, so the preview and the clip sound the same.
+function voiceBuf(take, p) {
+  const main = hq(take, p.pitch, p.formant);
+  if (!p.turian) return main;
+  const key = 't|' + p.pitch + '|' + p.formant + '|' + turKey(p);
+  if (take.hq.has(key)) return take.hq.get(key);
+  const sr = main.sampleRate, a = main.getChannelData(0), N = a.length;
+  const sub = hq(take, p.pitch + p.tSubSt, p.formant - 1.5).getChannelData(0);
+  const det = p.tDet ? hq(take, p.pitch - 0.25, p.formant - 0.3).getChannelData(0) : null;
+  const lag = Math.round(sr * 0.009);
+  let y = new Float32Array(N);
+  for (let i = 0; i < N; i++) y[i] = a[i] + p.tSub * sub[i] + (det && i >= lag ? p.tDet * det[i - lag] : 0);
+  // The comb sweeps slowly, so the buzz moves but never whooshes.
+  const z = new Float32Array(N), D0 = (sr * p.tMs) / 1000;
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const j = i - D0 * (1 + 0.15 * Math.sin((2 * Math.PI * 0.15 * i) / sr)), j0 = Math.floor(j), fr = j - j0;
+    const zd = j0 >= 0 ? z[j0] * (1 - fr) + z[j0 + 1] * fr : 0;
+    lp += 0.45 * (zd - lp);
+    z[i] = y[i] + p.tFb * lp;
+  }
+  for (let i = 0; i < N; i++) y[i] = (1 - p.tWet) * y[i] + p.tWet * z[i];
+  // Cut mud under 80 Hz, lift the chest at 180 Hz and the grit at 3.2 kHz.
+  y = biquad(y, sr, 'hp', 80, 0.7);
+  y = biquad(y, sr, 'peak', 180, 0.9, p.tChest);
+  y = biquad(y, sr, 'peak', 3200, 0.8, p.tPres);
+  y = glue(y, sr);
+  const out = new Float32Array(N);
+  let pin = 0, pout = 0;
+  for (let i = 0; i < N; i++) {
+    out[i] = (1 - p.turian) * a[i] + p.turian * y[i];
+    pin = Math.max(pin, Math.abs(a[i])); pout = Math.max(pout, Math.abs(out[i]));
+  }
+  if (pout > 0) for (let i = 0; i < N; i++) out[i] *= pin / pout;
+  const b = new AudioBuffer({ length: N, numberOfChannels: 1, sampleRate: sr });
+  b.copyToChannel(out, 0);
+  take.hq.set(key, b);
+  return b;
+}
+
+// --- Audio chain -------------------------------------------------------------
+
+function makeIR(sr, secs = 3.2) {
+  const n = Math.floor(sr * secs);
+  const b = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: sr });
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.5);
+  }
+  return b;
+}
+
+function wetDry(fx, dryDrop) {
+  const input = new Tone.Gain(1), output = new Tone.Gain(1);
+  const dry = new Tone.Gain(1), wet = new Tone.Gain(0);
+  input.connect(dry); dry.connect(output);
+  // A stage is a Tone node, or a bank with its own input and output.
+  const tone = fx instanceof Tone.ToneAudioNode;
+  input.connect(tone ? fx : fx.input); (tone ? fx : fx.output).connect(wet); wet.connect(output);
+  return { input, output, set(w) { dry.gain.value = 1 - w * dryDrop; wet.gain.value = w; } };
+}
+
+// A bank of tight resonances on a slightly stretched series rings like sheet metal.
+function metalBank(sr) {
+  const input = new Tone.Gain(1), output = new Tone.Gain(7);
+  const ks = [1, 2.02, 3.07, 4.2, 5.4, 6.8];
+  const fs = ks.map((k, i) => {
+    const f = new Tone.Filter({ type: 'bandpass', frequency: 220 * k, Q: 28 });
+    input.chain(f, new Tone.Gain(1 / (1 + i * 0.35)), output);
+    return f;
+  });
+  return { input, output, tune(hz) { fs.forEach((f, i) => { f.frequency.value = Math.min(sr * 0.45, hz * ks[i]); }); } };
+}
+
+// A channel vocoder: the voice's band levels open the same bands of a carrier.
+function vocoderBank() {
+  const input = new Tone.Gain(1), output = new Tone.Gain(16), carrier = new Tone.Gain(1);
+  const saws = [1, 1.26, 1.5].map((k) => new Tone.Oscillator({ type: 'sawtooth', frequency: 110 * k }).start());
+  const sawG = new Tone.Gain(0), chordG = new Tone.Gain(0), noiseG = new Tone.Gain(0);
+  saws[0].connect(sawG);
+  saws.forEach((o) => o.connect(chordG));
+  new Tone.Noise('white').start().connect(noiseG);
+  sawG.connect(carrier); chordG.connect(carrier); noiseG.connect(carrier);
+  const N = 20, lo = 120, hi = 8000, Q = 6;
+  for (let i = 0; i < N; i++) {
+    const f = lo * Math.pow(hi / lo, i / (N - 1));
+    const env = new Tone.Filter({ type: 'lowpass', frequency: 35 });
+    input.chain(new Tone.Filter({ type: 'bandpass', frequency: f, Q }), new Tone.WaveShaper((x) => Math.abs(x), 1024), env);
+    const vca = new Tone.Gain(0);
+    env.connect(vca.gain);
+    carrier.chain(new Tone.Filter({ type: 'bandpass', frequency: f, Q }), vca, output);
+  }
+  return {
+    input, output,
+    set(type, hz) {
+      sawG.gain.value = type === 'saw' ? 1 : 0;
+      chordG.gain.value = type === 'chord' ? 0.55 : 0;
+      noiseG.gain.value = type === 'noise' ? 1.3 : 0;
+      saws.forEach((o, i) => { o.frequency.value = hz * [1, 1.26, 1.5][i]; });
+    },
+  };
+}
+
+// Builds one voice chain in the current Tone context.
+// Live mic and raw takes enter at input; shifted takes enter at hqIn and layerIn.
+function build() {
+  const n = {};
+  const sr = Tone.getContext().sampleRate;
+  n.input = new Tone.Gain(1);
+  n.rtPitch = new Tone.PitchShift({ pitch: 0, windowSize: 0.06 });
+  n.rtLayerOn = new Tone.Gain(0);
+  n.rtLayer = new Tone.PitchShift({ pitch: -12, windowSize: 0.06 });
+  n.hqIn = new Tone.Gain(1);
+  n.layerIn = new Tone.Gain(1);
+  n.layer = new Tone.Gain(0);
+  n.sum = new Tone.Gain(1);
+  n.duck = new Tone.Gain(1);
+  n.vib = new Tone.Vibrato({ frequency: 4, depth: 0 });
+  n.ring = new Tone.Gain(0);
+  n.ringOsc = new Tone.Oscillator(50, 'sine').start();
+  n.ringOsc.connect(n.ring.gain);
+  n.ringMix = wetDry(n.ring, 1);
+  n.mid = new Tone.Gain(1);
+  n.flange = new Tone.Chorus({ frequency: 0.22, delayTime: 2.2, depth: 0.8, feedback: 0.5, spread: 0, wet: 0 }).start();
+  n.metal = metalBank(sr);
+  n.metalMix = wetDry(n.metal, 0.6);
+  n.voc = vocoderBank();
+  n.vocMix = wetDry(n.voc, 1);
+  n.dist = new Tone.Distortion({ distortion: 0, oversample: '2x' });
+  n.hp = new Tone.Filter({ type: 'highpass', frequency: 20, rolloff: -24 });
+  n.lp = new Tone.Filter({ type: 'lowpass', frequency: 18000, rolloff: -24 });
+  n.delay = new Tone.FeedbackDelay({ delayTime: 0.21, feedback: 0.3, wet: 0 });
+  n.verb = new Tone.Convolver(makeIR(sr));
+  n.verbMix = wetDry(n.verb, 0.4);
+  n.out = new Tone.Gain(1);
+  n.limiter = new Tone.Limiter(-1);
+  // The sizzle bed sits under the voice and opens only while a take plays.
+  n.noise = new Tone.Noise('pink').start();
+  n.noiseHp = new Tone.Filter(2600, 'highpass');
+  n.trem = new Tone.Tremolo({ frequency: 11, depth: 0.7, spread: 0 }).start();
+  n.noiseGain = new Tone.Gain(0);
+  n.gate = new Tone.Gain(0);
+
+  n.input.chain(n.rtPitch, n.sum);
+  n.input.chain(n.rtLayerOn, n.rtLayer, n.layer);
+  n.hqIn.connect(n.sum);
+  n.layerIn.connect(n.layer);
+  n.layer.connect(n.sum);
+  n.sum.chain(n.duck, n.vib, n.ringMix.input);
+  n.ringMix.output.chain(n.mid, n.flange, n.metalMix.input);
+  n.metalMix.output.connect(n.vocMix.input);
+  n.vocMix.output.chain(n.dist, n.hp, n.lp, n.delay, n.verbMix.input);
+  n.verbMix.output.chain(n.out, n.limiter);
+  n.noise.chain(n.noiseHp, n.trem, n.noiseGain, n.gate, n.out);
+  return n;
+}
+
+// Shifted takes skip the realtime shifters; the live mic uses them.
+function apply(n, p, hqMode = !n.mic) {
+  n.rtPitch.pitch = p.pitch;
+  n.rtPitch.wet.value = !hqMode && p.pitch ? 1 : 0;
+  n.rtLayer.pitch = p.pitch + p.doubleSt;
+  n.rtLayerOn.gain.value = hqMode ? 0 : 1;
+  n.layer.gain.value = p.double * 0.9;
+  n.vib.depth.value = p.wobble * 0.6;
+  n.vib.frequency.value = 2.5 + p.wobble * 3.5;
+  n.vib.wet.value = p.wobble ? 1 : 0;
+  n.ringOsc.frequency.value = p.ringHz;
+  n.ringMix.set(p.robot);
+  n.flange.wet.value = p.flange * 0.75;
+  n.flange.feedback.value = 0.3 + p.flange * 0.5;
+  n.metal.tune(p.metalHz);
+  n.metalMix.set(p.metal);
+  n.voc.set(p.vocType, p.vocHz);
+  n.vocMix.set(p.vocoder);
+  n.dist.distortion = p.crunch * 0.85;
+  n.dist.wet.value = p.crunch ? 1 : 0;
+  n.hp.frequency.value = 20 * Math.pow(500 / 20, p.phone);
+  n.lp.frequency.value = Math.min(18000 * Math.pow(2800 / 18000, p.phone), 18000 * Math.pow(450 / 18000, p.muffle));
+  n.delay.wet.value = p.echo * 0.55;
+  n.delay.feedback.value = 0.2 + p.echo * 0.4;
+  n.verbMix.set(p.room * 0.85);
+  n.noiseGain.gain.value = p.sizzle * 0.22;
+}
+
+function bookendLead(k) { return k === 'chime' ? 1.7 : k === 'squelch' ? 0.12 : 0; }
+
+// Schedules the chime or squelch. Returns the lead time before the voice.
+function bookends(kind, n, t, voiceEnd) {
+  if (kind === 'chime') {
+    const s = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.004, decay: 1.4, sustain: 0, release: 0.4 }, volume: -8 }).connect(n.mid);
+    s.triggerAttackRelease('E5', 0.5, t);
+    s.triggerAttackRelease('C5', 0.9, t + 0.55);
+  } else if (kind === 'squelch') {
+    burst(n, t, 0.09);
+    if (voiceEnd) burst(n, voiceEnd + 0.05, 0.22);
+  }
+  return bookendLead(kind);
+}
+function burst(n, t, d) {
+  const z = new Tone.Noise('white'), g = new Tone.Gain(0.16);
+  z.connect(g); g.connect(n.mid);
+  z.start(t).stop(t + d);
+}
+
+let live = null;
+async function chain() {
+  await Tone.start();
+  if (!live) {
+    live = build();
+    live.limiter.toDestination();
+    live.meter = new Tone.Meter({ normalRange: true, smoothing: 0.75 });
+    live.limiter.connect(live.meter);
+    live.bleepOsc = new Tone.Oscillator(1000, 'sine').start();
+    live.bleep = new Tone.Gain(0);
+    live.bleepOsc.connect(live.bleep);
+    live.bleep.connect(live.limiter);
+  }
+  apply(live, P);
+  return live;
+}
+
+// Renders a take through its voice, offline.
+async function render(take, p, channels = 2, rate = take.buf.sampleRate) {
+  const main = voiceBuf(take, p);
+  const dbl = p.double ? hq(take, p.pitch + p.doubleSt, p.formant) : null;
+  const lead0 = 0.05, leadEnds = bookendLead(p.ends);
+  const voiceLen = main.duration / p.tape;
+  const tail = 0.15 + p.echo * 2.5 + p.room * 2.8 + (p.ends === 'squelch' ? 0.4 : 0);
+  const dur = lead0 + leadEnds + voiceLen + tail;
+  const out = await Tone.Offline(() => {
+    const n = build();
+    apply(n, p, true);
+    n.limiter.toDestination();
+    const t = lead0 + leadEnds;
+    bookends(p.ends, n, lead0, t + voiceLen);
+    for (const [buf, dest] of [[main, n.hqIn], [dbl, n.layerIn]]) {
+      if (!buf) continue;
+      const pl = new Tone.Player(buf).connect(dest);
+      pl.playbackRate = p.tape;
+      pl.start(t);
+    }
+    n.gate.gain.setValueAtTime(1, lead0);
+    n.gate.gain.setValueAtTime(1, t + voiceLen);
+    n.gate.gain.linearRampToValueAtTime(0, t + voiceLen + 0.15);
+  }, dur, channels, rate);
+  return normalize(out.get());
+}
+
+function normalize(ab) {
+  let peak = 0;
+  for (let c = 0; c < ab.numberOfChannels; c++) for (const v of ab.getChannelData(c)) peak = Math.max(peak, Math.abs(v));
+  if (peak > 0.01) {
+    const k = 0.89 / peak;
+    for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] *= k; }
+  }
+  return ab;
+}
+
+// --- Storage ----------------------------------------------------------------
+
+let dbp = null;
+function db() {
+  if (!dbp) dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('frietkot-voices', 2);
+    r.onupgradeneeded = () => {
+      if (!r.result.objectStoreNames.contains('takes')) r.result.createObjectStore('takes', { keyPath: 'id' });
+      if (!r.result.objectStoreNames.contains('meta')) r.result.createObjectStore('meta');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return dbp;
+}
+async function tx(name, fn) {
+  const d = await db();
+  return await new Promise((res, rej) => {
+    const t = d.transaction(name, 'readwrite');
+    const req = fn(t.objectStore(name));
+    t.oncomplete = () => res(req && req.result);
+    t.onerror = () => rej(t.error);
+  });
+}
+function plain(t) { return { id: t.id, name: t.name, who: t.who, voice: t.voice, pack: t.pack, blob: t.blob, at: t.at }; }
+const saveTimers = new Map();
+function saveTake(t) {
+  clearTimeout(saveTimers.get(t.id));
+  saveTimers.set(t.id, setTimeout(() => tx('takes', (s) => s.put(plain(t))).catch((e) => console.warn('voices: storage off', e)), 300));
+}
+function dropTake(id) { tx('takes', (s) => s.delete(id)).catch(() => {}); }
+const meta = {
+  get: (k) => tx('meta', (s) => s.get(k)).catch(() => null),
+  set: (k, v) => tx('meta', (s) => s.put(v, k)).catch(() => {}),
+};
+
+async function loadAll() {
+  try {
+    const all = (await tx('takes', (s) => s.getAll())) || [];
+    all.sort((a, b) => a.at - b.at);
+    for (const rec of all) {
+      try { await addTake(rec, false); } catch (e) { console.warn('voices: bad take', rec.name, e); }
+    }
+  } catch (e) { console.warn('voices: storage off', e); }
+  select(takes[takes.length - 1] || null);
+}
+
+// --- Takes ------------------------------------------------------------------
+
+const takes = [];
+let sel = null;
+
+async function decode(blob) {
+  return await Tone.getContext().rawContext.decodeAudioData(await blob.arrayBuffer());
+}
+
+function peaks(buf, [off, len], bins = 120) {
+  const d = buf.getChannelData(0), sr = buf.sampleRate;
+  const a = Math.floor(off * sr), n = Math.floor(len * sr), step = Math.max(1, Math.floor(n / bins)), out = [];
+  for (let i = 0; i < bins; i++) {
+    let m = 0;
+    for (let j = a + i * step, e = Math.min(a + n, j + step); j < e; j++) m = Math.max(m, Math.abs(d[j]));
+    out.push(m);
+  }
+  const top = Math.max(0.05, ...out);
+  return out.map((v) => v / top);
+}
+
+// Finds the spoken part, so silence at each end stays out.
+function trimOf(buf) {
+  const d = buf.getChannelData(0), sr = buf.sampleRate;
+  let peak = 0;
+  for (const v of d) peak = Math.max(peak, Math.abs(v));
+  const th = Math.max(0.015, peak * 0.06);
+  let a = 0, b = d.length - 1;
+  while (a < d.length && Math.abs(d[a]) < th) a++;
+  while (b > a && Math.abs(d[b]) < th) b--;
+  const s = Math.max(0, a / sr - 0.06), e = Math.min(buf.duration, b / sr + 0.15);
+  return e - s > 0.15 ? [s, e - s] : [0, buf.duration];
+}
+
+async function addTake(rec, save = true) {
+  const buf = await decode(rec.blob);
+  const trim = trimOf(buf);
+  const take = { pack: true, who: cast.id, voice: { ...P }, ...rec, buf, trim, peaks: peaks(buf, trim) };
+  // Older takes lack the newer knobs; the defaults fill them in.
+  take.voice = { ...BASE, ...take.voice };
+  takes.push(take);
+  if (save) saveTake(take);
+  return take;
+}
+
+function select(take, load = true) {
+  sel = take;
+  if (sel && load) {
+    cast = CAST.find((c) => c.id === sel.who) || cast;
+    P = { ...BASE, ...sel.voice };
+    preset = null;
+    sub = voiced(P) ? 'Stem vervormd' : '';
+    syncUi();
+  }
+  drawTakes();
+  $('#play').disabled = !sel;
+  markCast();
+}
+
+function castOptions(who) {
+  return CAST.map((c) => `<option value="${c.id}"${c.id === who ? ' selected' : ''}>${c.name}</option>`).join('');
+}
+
+function drawTakes() {
+  const box = $('#takes');
+  box.textContent = '';
+  updateSave();
+  if (!takes.length) {
+    box.innerHTML = '<p class="empty">No takes yet. Press Record and say a line.</p>';
+    return;
+  }
+  for (const t of takes) {
+    const row = document.createElement('div');
+    row.className = 'take';
+    row.setAttribute('aria-selected', t === sel);
+    row.innerHTML = `<button class="play" type="button" aria-label="Play">${playing && playing.take === t ? '■' : '▶'}</button>
+      <select aria-label="Who speaks">${castOptions(t.who)}</select>
+      <input type="text" maxlength="80" aria-label="Line">
+      <canvas width="320" height="56"></canvas>
+      <span class="acts"><span class="note">${t.trim[1].toFixed(1)} s</span>
+      <label class="pack" title="Goes to the toy"><input type="checkbox"${t.pack ? ' checked' : ''}>Toy</label>
+      <button type="button" data-a="wav" title="Download this take through its voice">WAV</button>
+      <button type="button" data-a="del" aria-label="Delete">×</button></span>`;
+    const inp = row.querySelector('input[type="text"]');
+    inp.value = t.name;
+    inp.addEventListener('change', () => { t.name = inp.value.trim() || 'Take'; saveTake(t); });
+    inp.addEventListener('keydown', (e) => e.stopPropagation());
+    const who = row.querySelector('select');
+    who.addEventListener('change', () => { t.who = who.value; saveTake(t); if (t === sel) { cast = CAST.find((c) => c.id === t.who); syncUi(); markCast(); } });
+    row.querySelector('.pack input').addEventListener('change', (e) => { t.pack = e.target.checked; saveTake(t); updateSave(); });
+    row.addEventListener('click', (e) => { if (e.target.closest('button,input,select,label')) return; select(t); });
+    row.querySelector('.play').addEventListener('click', () => { if (sel !== t) select(t); toggle(); });
+    row.querySelector('[data-a="wav"]').addEventListener('click', () => saveWav(t));
+    row.querySelector('[data-a="del"]').addEventListener('click', () => {
+      if (playing && playing.take === t) stop();
+      takes.splice(takes.indexOf(t), 1);
+      dropTake(t.id);
+      select(t === sel ? null : sel, false);
+    });
+    const cv = row.querySelector('canvas'), g = cv.getContext('2d');
+    g.fillStyle = t === sel ? '#f2d23c' : '#8c8a84';
+    const w = cv.width / t.peaks.length;
+    t.peaks.forEach((v, i) => { const h = Math.max(2, v * cv.height * 0.9); g.fillRect(i * w, (cv.height - h) / 2, Math.max(1, w - 1), h); });
+    box.appendChild(row);
+  }
+}
+
+function updateSave() {
+  const n = takes.filter((t) => t.pack).length;
+  const b = $('#save');
+  if (b.dataset.busy) return;
+  b.disabled = !n;
+  b.textContent = n ? `Save to toy (${n})` : 'Save to toy';
+}
+
+// --- Play -------------------------------------------------------------------
+
+let playing = null;
+let loopOn = false;
+
+async function play() {
+  if (!sel) return;
+  stop();
+  const n = await chain();
+  const take = sel, rt = !!n.mic;
+  let main = take.buf, dbl = null, off = 0, len;
+  if (rt) [off, len] = take.trim;
+  else {
+    main = voiceBuf(take, P);
+    if (P.double) dbl = hq(take, P.pitch + P.doubleSt, P.formant);
+    len = main.duration;
+  }
+  apply(n, P, !rt);
+  const t0 = Tone.now() + 0.05;
+  const voiceLen = len / P.tape;
+  const lead = bookends(P.ends, n, t0, loopOn ? 0 : t0 + bookendLead(P.ends) + voiceLen);
+  const players = [];
+  for (const [buf, dest] of [[main, rt ? n.input : n.hqIn], [dbl, n.layerIn]]) {
+    if (!buf) continue;
+    const pl = new Tone.Player(buf).connect(dest);
+    pl.playbackRate = P.tape;
+    if (loopOn) { pl.loop = true; pl.loopStart = off; pl.loopEnd = off + len; pl.start(t0 + lead, off); }
+    else pl.start(t0 + lead, off, len);
+    players.push(pl);
+  }
+  n.gate.gain.cancelScheduledValues(t0);
+  n.gate.gain.setValueAtTime(1, t0);
+  const me = { player: players[0], players, take, key: hqKey(P) };
+  playing = me;
+  players[0].onstop = () => { if (playing === me) stop(); };
+  setPlayUi(true);
+  wake();
+}
+
+function stop() {
+  if (!playing) return;
+  const { players } = playing;
+  playing = null;
+  for (const pl of players) {
+    try { pl.onstop = () => {}; pl.stop(); } catch (e) { /* The player already stopped. */ }
+    setTimeout(() => pl.dispose(), 400);
+  }
+  if (live) {
+    const t = Tone.now();
+    live.gate.gain.cancelScheduledValues(t);
+    live.gate.gain.setValueAtTime(live.gate.gain.value, t);
+    live.gate.gain.linearRampToValueAtTime(live.mic ? 1 : 0, t + 0.3);
+  }
+  setPlayUi(false);
+  sleepSoon();
+}
+function toggle() { playing ? stop() : play(); }
+
+function setPlayUi(on) {
+  $('#play').innerHTML = (on ? '■ Stop' : '▶ Play') + ' <kbd>Space</kbd>';
+  drawTakes();
+}
+
+// Suspends the audio context when nothing sounds.
+let sleepTimer = 0;
+function sleepSoon() {
+  clearTimeout(sleepTimer);
+  sleepTimer = setTimeout(() => {
+    if (!playing && !(live && live.mic) && !recording) Tone.getContext().rawContext.suspend?.();
+  }, 4000);
+}
+
+// --- Save -------------------------------------------------------------------
+
+function clipName(t, used) {
+  let base = `${t.who}-${slug(t.name)}`, name = base + '.wav', i = 2;
+  while (used.has(name)) name = `${base}-${i++}.wav`;
+  used.add(name);
+  return name;
+}
+
+async function saveWav(take) {
+  try {
+    const ab = await render(take, { ...take.voice });
+    download(wav(ab), `${take.who}-${slug(take.name)}.wav`);
+  } catch (e) { console.error(e); note('The render failed. Try again.'); }
+}
+
+// Renders every ticked take and writes the pack the toy reads.
+async function savePack(pickNew = false) {
+  const list = takes.filter((t) => t.pack);
+  if (!list.length) return;
+  const b = $('#save');
+  b.dataset.busy = 1; b.disabled = true;
+  const used = new Set(), files = [];
+  try {
+    for (let i = 0; i < list.length; i++) {
+      b.textContent = `Rendering ${i + 1}/${list.length}…`;
+      const t = list[i];
+      const ab = await render(t, { ...t.voice }, 1, PACK_RATE);
+      files.push({ file: clipName(t, used), who: t.who, line: t.name, dur: +ab.duration.toFixed(2), blob: wav(ab) });
+    }
+    const manifest = { clips: files.map(({ blob, ...c }) => c) };
+    const json = new Blob([JSON.stringify(manifest, null, 2) + '\n'], { type: 'application/json' });
+    const dir = window.showDirectoryPicker ? await packDir(pickNew) : null;
+    if (dir) {
+      await writePack(dir, files, json);
+      note(`Saved ${files.length} ${files.length === 1 ? 'clip' : 'clips'} to the “${dir.name}” folder.`);
+    } else {
+      for (const f of files) { download(f.blob, f.file); await wait(250); }
+      download(json, 'voices.json');
+      note(`Downloaded ${files.length} ${files.length === 1 ? 'clip' : 'clips'} and voices.json. They belong in frietkot/voices/.`);
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') { console.error(e); note('Saving failed. Try again.'); }
+  } finally {
+    delete b.dataset.busy;
+    updateSave();
+  }
+}
+
+async function packDir(pickNew) {
+  let h = pickNew ? null : await meta.get('dir');
+  if (h) {
+    let ok = (await h.queryPermission({ mode: 'readwrite' })) === 'granted';
+    if (!ok) ok = (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
+    if (ok) return h;
+  }
+  h = await window.showDirectoryPicker({ id: 'frietkot-voices', mode: 'readwrite' });
+  await meta.set('dir', h);
+  return h;
+}
+
+// Writes the clips, removes clips the old list named, then writes the list.
+async function writePack(dir, files, json) {
+  const keep = new Set(files.map((f) => f.file));
+  try {
+    const old = await (await (await dir.getFileHandle('voices.json')).getFile()).text();
+    for (const c of JSON.parse(old).clips || []) {
+      if (!keep.has(c.file) && /^[a-z0-9-]+\.wav$/.test(c.file)) await dir.removeEntry(c.file).catch(() => {});
+    }
+  } catch (e) { /* No old list in this folder. */ }
+  for (const f of files) await writeFile(dir, f.file, f.blob);
+  await writeFile(dir, 'voices.json', json);
+}
+async function writeFile(dir, name, blob) {
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(blob);
+  await w.close();
+}
+
+function wav(ab) {
+  const ch = ab.numberOfChannels, sr = ab.sampleRate, n = ab.length;
+  const buf = new ArrayBuffer(44 + n * ch * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * ch * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true);
+  v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * ch * 2, true);
+  const data = Array.from({ length: ch }, (_, c) => ab.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) {
+    const s = Math.max(-1, Math.min(1, data[c][i]));
+    v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+function slug(s) { return (s || 'take').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'take'; }
+
+// --- Record -----------------------------------------------------------------
+
+let recording = null;
+let micStream = null;
+let meterCtx = null, micAn = null;
+
+async function getMic() {
+  if (micStream && micStream.active) return micStream;
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+  return micStream;
+}
+
+async function startRec() {
+  if (!window.MediaRecorder) { note('This browser cannot record. Import a file instead.'); return; }
+  stop();
+  let stream;
+  try { stream = await getMic(); } catch (e) { note(MIC_OFF, true); return; }
+  await Tone.start();
+  meterCtx = meterCtx || new AudioContext();
+  await meterCtx.resume();
+  const src = meterCtx.createMediaStreamSource(stream);
+  micAn = meterCtx.createAnalyser();
+  micAn.fftSize = 1024;
+  src.connect(micAn);
+  const mr = new MediaRecorder(stream);
+  const chunks = [];
+  const who = cast.id, voice = { ...P };
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    src.disconnect();
+    micAn = null;
+    if (!(live && live.mic)) { stream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+    if (blob.size < 2000) { note('That take was empty.'); return; }
+    const name = $('#name').value.trim() || `Take ${takes.length + 1}`;
+    $('#name').value = '';
+    pickedLine = null;
+    markLines();
+    try { select(await addTake({ id: crypto.randomUUID(), name, who, voice, blob, at: Date.now() }), false); }
+    catch (e) { console.error(e); note('The take did not decode.'); }
+  };
+  mr.start();
+  recording = { mr, t0: performance.now() };
+  $('#rec').setAttribute('aria-pressed', 'true');
+  $('#recLabel').textContent = 'Stop';
+  // A take stops itself after 20 s.
+  recording.cap = setTimeout(stopRec, 20000);
+  wake();
+}
+function stopRec() {
+  if (!recording) return;
+  clearTimeout(recording.cap);
+  recording.mr.stop();
+  recording = null;
+  $('#rec').setAttribute('aria-pressed', 'false');
+  $('#recLabel').textContent = 'Record';
+  sleepSoon();
+}
+
+// --- Live and bleep -----------------------------------------------------------
+
+async function toggleLive() {
+  const btn = $('#live');
+  if (live && live.mic) {
+    live.mic.disconnect();
+    live.mic.close();
+    live.mic = null;
+    stop();
+    apply(live, P);
+    if (!playing) { live.gate.gain.cancelScheduledValues(Tone.now()); live.gate.gain.value = 0; }
+    btn.setAttribute('aria-pressed', 'false');
+    sleepSoon();
+    return;
+  }
+  const n = await chain();
+  const mic = new Tone.UserMedia();
+  try { await mic.open(); } catch (e) { note(MIC_OFF, true); return; }
+  stop();
+  mic.connect(n.input);
+  n.mic = mic;
+  apply(n, P);
+  n.gate.gain.cancelScheduledValues(Tone.now());
+  n.gate.gain.value = 1;
+  btn.setAttribute('aria-pressed', 'true');
+  note('Live: use headphones, or the speakers feed back.');
+  wake();
+}
+
+let bleeping = false;
+async function bleep(on) {
+  if (on === bleeping) return;
+  bleeping = on;
+  const n = await chain();
+  const t = Tone.now();
+  n.bleep.gain.cancelScheduledValues(t);
+  n.duck.gain.cancelScheduledValues(t);
+  n.bleep.gain.linearRampToValueAtTime(on ? 0.22 : 0, t + 0.01);
+  n.duck.gain.linearRampToValueAtTime(on ? 0 : 1, t + 0.01);
+  $('#bleep').setAttribute('aria-pressed', on);
+  if (on) wake(); else sleepSoon();
+}
+
+// --- Stage ------------------------------------------------------------------
+
+const cv = $('#c'), g = cv.getContext('2d');
+let W = 0, H = 0, back = null;
+let mosaic = [], lastStep = 0, raf = 0;
+
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+  W = cv.width = Math.round(r.width * dpr);
+  H = cv.height = Math.round(r.height * dpr);
+  back = paintBack(W, H);
+  reroll(0);
+  draw(performance.now());
+}
+
+// Paints the soft frituur window behind the witness.
+function paintBack(w, h) {
+  const o = document.createElement('canvas');
+  o.width = w; o.height = h;
+  const x = o.getContext('2d');
+  x.fillStyle = '#0a0a12'; x.fillRect(0, 0, w, h);
+  x.filter = `blur(${Math.round(h * 0.03)}px)`;
+  x.fillStyle = '#6a2a1c'; x.fillRect(w * 0.18, h * 0.1, w * 0.66, h * 0.62);
+  const gr = x.createLinearGradient(0, h * 0.14, 0, h * 0.66);
+  gr.addColorStop(0, '#ffd88a'); gr.addColorStop(1, '#f09a3a');
+  x.fillStyle = gr; x.fillRect(w * 0.22, h * 0.14, w * 0.58, h * 0.5);
+  x.fillStyle = '#c23a24'; x.fillRect(w * 0.18, h * 0.06, w * 0.66, h * 0.07);
+  x.fillStyle = '#fff3d6';
+  for (let i = 0; i < 5; i++) x.fillRect(w * (0.25 + i * 0.11), h * 0.2, w * 0.07, h * 0.09);
+  x.fillStyle = '#3b2a20'; x.fillRect(w * 0.18, h * 0.64, w * 0.66, h * 0.05);
+  x.filter = 'none';
+  const v = x.createRadialGradient(w / 2, h * 0.45, h * 0.2, w / 2, h * 0.5, w * 0.7);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.75)');
+  x.fillStyle = v; x.fillRect(0, 0, w, h);
+  return o;
+}
+
+function reroll(lv) {
+  mosaic = [];
+  for (let i = 0; i < 12 * 14; i++) {
+    const k = Math.random();
+    mosaic.push(`hsl(${20 + k * 20} ${18 + k * 25}% ${18 + k * 34 + lv * 70 * Math.random()}%)`);
+  }
+}
+
+function level() {
+  if (recording && micAn) {
+    const d = new Float32Array(micAn.fftSize);
+    micAn.getFloatTimeDomainData(d);
+    let s = 0;
+    for (const v of d) s += v * v;
+    return Math.min(1, Math.sqrt(s / d.length) * 6);
+  }
+  if (live && (playing || live.mic || bleeping)) {
+    const v = live.meter.getValue();
+    return Math.min(1, (Array.isArray(v) ? v[0] : v) * 3);
+  }
+  return 0;
+}
+
+function draw(now) {
+  if (!back) return;
+  const lv = level();
+  // The mosaic steps at 8 fps, like the toy's stop-motion.
+  if (now - lastStep > 125) { reroll(lv); lastStep = now; }
+  g.drawImage(back, 0, 0);
+  const cx = W / 2, hy = H * 0.42, hr = H * 0.15, sway = Math.sin(now / 900) * H * 0.004;
+  g.fillStyle = '#050508';
+  g.beginPath();
+  g.ellipse(cx + sway, hy, hr * 0.78, hr, 0, 0, Math.PI * 2);
+  g.fill();
+  g.beginPath();
+  g.moveTo(cx - hr * 0.32 + sway, hy + hr * 0.8);
+  g.lineTo(cx + hr * 0.32 + sway, hy + hr * 0.8);
+  g.lineTo(cx + hr * 0.4, hy + hr * 1.35);
+  g.bezierCurveTo(cx + hr * 2.4, hy + hr * 1.45, cx + hr * 2.9, hy + hr * 1.9, cx + hr * 3.1, H);
+  g.lineTo(cx - hr * 3.1, H);
+  g.bezierCurveTo(cx - hr * 2.9, hy + hr * 1.9, cx - hr * 2.4, hy + hr * 1.45, cx - hr * 0.4, hy + hr * 1.35);
+  g.closePath();
+  g.fill();
+  // The rim light comes from the window behind.
+  g.strokeStyle = `rgba(255, 196, 120, ${0.25 + lv * 0.25})`;
+  g.lineWidth = H * 0.004;
+  g.beginPath();
+  g.ellipse(cx + sway, hy, hr * 0.78, hr, 0, Math.PI * 1.05, Math.PI * 1.95);
+  g.stroke();
+  // The mosaic hides the face and jitters with the voice.
+  const cols = 12, rows = 14, cw = (hr * 1.7) / cols, ch = (hr * 2.1) / rows;
+  const mx = cx + sway - (cols * cw) / 2 + lv * (Math.random() - 0.5) * cw * 0.6;
+  const my = hy - (rows * ch) / 2;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const dx = (c + 0.5 - cols / 2) / (cols / 2), dy = (r + 0.5 - rows / 2) / (rows / 2);
+    if (dx * dx + dy * dy > 1.15) continue;
+    g.fillStyle = mosaic[r * cols + c];
+    g.fillRect(mx + c * cw, my + r * ch, cw + 0.5, ch + 0.5);
+  }
+  // The camcorder caption marks a take in progress.
+  const fs = Math.round(H * 0.045);
+  g.font = `700 ${fs}px "Iosevka Term Slab", monospace`;
+  g.textBaseline = 'top';
+  if (recording) {
+    const s = Math.floor((performance.now() - recording.t0) / 1000);
+    if (Math.floor(now / 500) % 2 === 0) { g.fillStyle = '#ff4a3a'; g.beginPath(); g.arc(W * 0.05 + fs * 0.35, H * 0.07 + fs * 0.45, fs * 0.32, 0, 7); g.fill(); }
+    g.fillStyle = '#fff';
+    g.fillText(`REC 00:${String(s).padStart(2, '0')}`, W * 0.05 + fs, H * 0.07);
+    const line = $('#name').value.trim();
+    if (line) {
+      g.textAlign = 'center';
+      g.font = `700 ${Math.round(H * 0.05)}px "Gabarito", sans-serif`;
+      const tw = g.measureText(line).width;
+      g.fillStyle = 'rgba(0,0,0,0.6)';
+      g.fillRect(W / 2 - tw / 2 - fs * 0.5, H * 0.16, tw + fs, H * 0.075);
+      g.fillStyle = '#fff';
+      g.fillText(line, W / 2, H * 0.172);
+      g.textAlign = 'left';
+    }
+  } else if (live && live.mic) {
+    g.fillStyle = '#f2d23c';
+    g.fillText('LIVE', W * 0.05, H * 0.07);
+  }
+}
+
+function busy() { return !!(recording || playing || (live && live.mic) || bleeping); }
+function loop(now) {
+  draw(now);
+  raf = busy() ? requestAnimationFrame(loop) : 0;
+}
+function wake() { if (!raf) raf = requestAnimationFrame(loop); }
+
+// --- UI ---------------------------------------------------------------------
+
+function $(s) { return document.querySelector(s); }
+let noteTimer = 0;
+function note(s, stay = false) {
+  const el = $('#note');
+  el.textContent = s;
+  clearTimeout(noteTimer);
+  if (!stay) noteTimer = setTimeout(() => { el.textContent = NOTE; }, 7000);
+}
+// A blocked mic stays on screen until the page reloads.
+const MIC_OFF = 'The mic is blocked here. Allow it, or open this page in Chrome.';
+
+function voiced(p) { return Object.keys(BASE).some((k) => !TUNING.has(k) && p[k] !== BASE[k]); }
+
+function setCaption() {
+  $('#chyTitle').textContent = cast.title;
+  $('#chySub').textContent = sub;
+}
+
+// A voice change on a chosen take tunes that take.
+// A new pitch, formant or double restarts the take with fresh buffers.
+let replayTimer = 0;
+function voiceChanged() {
+  if (sel) { sel.voice = { ...P }; saveTake(sel); }
+  if (live) apply(live, P);
+  if (!playing) return;
+  for (const pl of playing.players) pl.playbackRate = P.tape;
+  clearTimeout(replayTimer);
+  if (!playing.player.loop || hqKey(P) === playing.key || (live && live.mic)) return;
+  replayTimer = setTimeout(() => { if (playing) play(); }, 220);
+}
+
+function buttonGrid(box, items, onPick) {
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.id = it.id;
+    b.innerHTML = `${it.name}<small>${it.nl}</small>`;
+    b.addEventListener('click', () => onPick(it));
+    box.appendChild(b);
+  }
+}
+
+// Picking a person starts fresh takes in that person's voice.
+function useCast(c) {
+  if (playing) stop();
+  cast = c;
+  P = { ...BASE, ...c.voice };
+  preset = null;
+  sub = voiced(P) ? 'Stem vervormd' : '';
+  select(null, false);
+  pickedLine = null;
+  $('#name').value = '';
+  syncUi();
+  buildLines();
+}
+function markCast() {
+  for (const b of $('#cast').children) b.setAttribute('aria-pressed', b.dataset.id === cast.id);
+}
+
+function usePreset(pr) {
+  preset = pr;
+  P = { ...BASE, ...pr.p };
+  sub = pr.sub;
+  syncUi();
+  voiceChanged();
+}
+
+function buildEnds() {
+  const box = $('#ends');
+  for (const [id, label] of ENDS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.id = id; b.textContent = label;
+    b.addEventListener('click', () => { P.ends = id; preset = null; syncUi(); voiceChanged(); });
+    box.appendChild(b);
+  }
+}
+
+function buildKnobs() {
+  const box = $('#knobs');
+  for (const [k, label, min, max, step, fmt] of KNOBS) {
+    const row = document.createElement('label');
+    row.className = 'knob';
+    row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+    const inp = row.querySelector('input'), out = row.querySelector('output');
+    inp.dataset.k = k;
+    inp.addEventListener('input', () => {
+      P[k] = +inp.value;
+      out.textContent = fmt(P[k]);
+      preset = null;
+      markPresets();
+      voiceChanged();
+    });
+    inp._fmt = fmt; inp._out = out;
+    box.appendChild(row);
+  }
+}
+
+function markPresets() {
+  for (const b of $('#presets').children) b.setAttribute('aria-pressed', !!preset && b.dataset.id === preset.id);
+}
+
+function syncUi() {
+  markPresets();
+  markCast();
+  for (const b of $('#ends').children) b.setAttribute('aria-pressed', b.dataset.id === P.ends);
+  for (const inp of $('#knobs').querySelectorAll('input')) {
+    inp.value = P[inp.dataset.k];
+    inp._out.textContent = inp._fmt(P[inp.dataset.k]);
+  }
+  setCaption();
+  if (live) apply(live, P);
+}
+
+let pickedLine = null;
+function buildLines() {
+  const box = $('#lines');
+  box.textContent = '';
+  $('#linesHead').textContent = `Lines for ${cast.name}`;
+  cast.lines.forEach((line, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = line;
+    b.addEventListener('click', () => {
+      pickedLine = pickedLine === i ? null : i;
+      $('#name').value = pickedLine === null ? '' : line;
+      markLines();
+    });
+    box.appendChild(b);
+  });
+  markLines();
+}
+function markLines() { [...$('#lines').children].forEach((b, i) => b.setAttribute('aria-pressed', i === pickedLine)); }
+
+function shuffle() {
+  const r = Math.random, some = (c, f) => (r() < c ? +f().toFixed(2) : 0);
+  P = {
+    ...BASE,
+    pitch: Math.round((r() * 20 - 10) * 2) / 2,
+    formant: Math.round((r() * 12 - 6) * 2) / 2,
+    tape: +(0.85 + r() * 0.35).toFixed(2),
+    turian: some(0.12, () => 0.6 + r() * 0.4),
+    double: some(0.25, () => 0.3 + r() * 0.4),
+    doubleSt: [-12, -7, -5, 4, 7, 12][Math.floor(r() * 6)],
+    wobble: some(0.3, () => r() * 0.7),
+    flange: some(0.25, () => r() * 0.7),
+    metal: some(0.2, () => r() * 0.6),
+    metalHz: Math.round(120 + r() * 900),
+    robot: some(0.15, () => 0.4 + r() * 0.6),
+    ringHz: Math.round(30 + r() * 370),
+    vocoder: some(0.12, () => 0.6 + r() * 0.4),
+    vocType: ['saw', 'chord', 'noise'][Math.floor(r() * 3)],
+    vocHz: Math.round(80 + r() * 140),
+    crunch: some(0.3, () => r() * 0.6),
+    phone: some(0.25, () => 0.5 + r() * 0.5),
+    muffle: some(0.2, () => r() * 0.7),
+    echo: some(0.25, () => r() * 0.5),
+    room: some(0.4, () => r() * 0.7),
+    sizzle: some(0.1, () => r() * 0.6),
+    ends: r() < 0.12 ? (r() < 0.5 ? 'chime' : 'squelch') : 'none',
+  };
+  preset = null;
+  sub = SHUFFLE_SUBS[Math.floor(r() * SHUFFLE_SUBS.length)];
+  syncUi();
+  voiceChanged();
+}
+
+async function importFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('audio/') && !/\.(wav|mp3|m4a|ogg|webm|aac|flac)$/i.test(f.name)) continue;
+    try { select(await addTake({ id: crypto.randomUUID(), name: f.name.replace(/\.[^.]+$/, ''), blob: f, at: Date.now() }), false); }
+    catch (e) { note(`${f.name} did not decode.`); }
+  }
+}
+
+$('#rec').addEventListener('click', () => (recording ? stopRec() : startRec()));
+$('#play').addEventListener('click', toggle);
+$('#loop').addEventListener('click', () => {
+  loopOn = !loopOn;
+  $('#loop').setAttribute('aria-pressed', loopOn);
+  if (playing) play();
+});
+$('#shuffle').addEventListener('click', shuffle);
+$('#live').addEventListener('click', toggleLive);
+$('#save').addEventListener('click', () => savePack());
+if (window.showDirectoryPicker) {
+  $('#folder').hidden = false;
+  $('#folder').addEventListener('click', () => savePack(true));
+}
+$('#file').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
+const bl = $('#bleep');
+bl.addEventListener('pointerdown', (e) => { bl.setPointerCapture(e.pointerId); bleep(true); });
+bl.addEventListener('pointerup', () => bleep(false));
+bl.addEventListener('pointercancel', () => bleep(false));
+$('#name').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); });
+$('#name').addEventListener('input', () => { pickedLine = null; markLines(); });
+
+addEventListener('keydown', (e) => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input,select')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') { recording ? stopRec() : startRec(); }
+  else if (k === ' ') { e.preventDefault(); toggle(); }
+  else if (k === 's') shuffle();
+  else if (k === 'l') toggleLive();
+  else if (k === 'b') bleep(true);
+});
+addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'b') bleep(false); });
+
+const drop = $('#drop');
+addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('on'); });
+addEventListener('dragleave', (e) => { if (!e.relatedTarget) drop.classList.remove('on'); });
+addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('on'); importFiles([...(e.dataTransfer?.files || [])]); });
+
+buttonGrid($('#cast'), CAST, useCast);
+buttonGrid($('#presets'), PRESETS, usePreset);
+buildEnds();
+buildKnobs();
+buildLines();
+syncUi();
+$('#note').textContent = NOTE;
+new ResizeObserver(resize).observe(cv);
+document.fonts?.ready.then(() => draw(performance.now()));
+loadAll();
+</script>
+</body>
+</html>

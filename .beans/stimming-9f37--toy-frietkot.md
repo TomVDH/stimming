@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:14:44Z
-updated_at: 2026-11-09T23:35:45Z
+updated_at: 2026-11-10T09:16:12Z
 ---
 
 Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chip shack stands alone on an empty village square at night: a warm steamy service window, a humming neon strip, a low wide toy-scale shot. Drop fries, shake the basket, pick a sauce, fill a cone.
@@ -64,3 +64,8 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - [x] Main shelf as No. 39, Tom's call (2026-11-09).
 - [x] Intro emblem: the 3D fry cone from icon spike 4 (C1 Stripe) as a mask (`shared/emblems/frietkot.svg`). The shack scene and the flat cone are out (Tom, 2026-11-09).
 - [x] Menu tile: the spike 4 cone, C1 Stripe (Tom's pick), in `53c6223`.
+
+- [x] Voices lab (frietkot/voices.html): record Flemish lines per character (Bruno, Anja, customer, regular, youth, kid, shady, dog walker), 14 voice filters, a pack of mono 24 kHz clips plus frietkot/voices/voices.json (Tom, 2026-11-10).
+- [ ] Tom records the lines; the toy plays each clip from its character.
+
+- Voices lab, round 2 (Tom, 2026-11-10): takes shift by TD-PSOLA, so pitch and formant move apart (checked: +5, -12, +8/+8 land on the right period and brightness). New stages: Double (a shifted copy), Flange, Metal (a resonance bank), a 20-band vocoder (saw, chord, noise). 27 voices, among them Vakarian (octave-down double, flange, metal ring), Higher, Lower, Demon, Choir, Whisper, Helmet. The live mic keeps the realtime shifter. The Claude pane blocks the mic; record in Chrome.

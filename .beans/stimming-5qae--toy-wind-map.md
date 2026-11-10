@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:10:55Z
-updated_at: 2026-11-09T10:09:38Z
+updated_at: 2026-11-10T06:16:40Z
 ---
 
 Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace a wind field; circle a finger to spin up a cyclone; two cyclones orbit and merge.
@@ -29,7 +29,7 @@ Build Wind map from docs/plans/windmap.md. It starts in the Lab. Particles trace
 - Drawn particles scale with stage area (full count at 1250 by 680 CSS px), so line spacing holds on a phone.
 - Each particle has a fixed random brightness: a few bright threads over many faint ones. Without it, 13 overlapping trails per pixel read as grey haze.
 - A still particle draws nothing, so stagnant air stays dark.
-- Heat and Dye render but are not tuned yet (Task 3).
+- Heat runs violet, red, orange, pale yellow as OKLCH stops, so neighbour hues do not mix to khaki. Dye sits at L 0.72, C 0.19 and bleeds 0.08 toward white, not 0.35, so its bands keep their colour. Silk is unchanged.
 
 - Task 2 QA ran in the browser pane, not Playwright (Tom's rule). The page loads in memory with a manual frame pump, so sim time is exact while the pane is hidden.
 - Storms steer at 0.35 of the base flow, plus beta drift poleward and west. A storm at the centre stays on screen for about 30 s.

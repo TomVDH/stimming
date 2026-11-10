@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T23:05:00Z
+updated_at: 2026-11-10T11:06:33Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -205,3 +205,86 @@ Open from the critics:
 - [x] Window cross bar backlit: its cabin face sits in its own shade, the view's light wraps its edges, the sun lights its top lip
 - [x] Culling: each placement pass drops instances outside the view frustum; an async readback compacts the ids, so each prop mesh draws only what is in view (headless day frame 16.6 ms)
 - [x] Pass-by timed to the oncoming train: whoosh held for its length, a recorded cabin thump as the fronts meet and a softer one as the tail goes
+
+## Round 22: buildings, halts, view, glass, sound (Tom, 2026-11-09)
+
+- [x] Night windows no longer vanish: the per-house seed is flat and quantised (an interpolated seed flipped the window hash); far or slanted walls keep the panes' mean glow
+- [x] Buildings lower: mapped heights count the roof, so houses lose it; blocks three to five floors; floors 2.5 m (houses) and 2.9 m (blocks); flatter roofs; 34 m cap
+- [x] Four station kinds: HB hall, town (canopy and island), village (canopy), rural halt (170 m slab, no canopy, five warm masts, a timber hut); 11 halts on the upper lake, the Linth plain and the Walensee
+- [x] View: FOV 44 (62 on tall screens); bumps damped in the seat and full by the glass; more head turn and sideways reach by the glass; a soft head nod on start and stop
+- [x] Glass: cabin cube map box-projected (shifts with the head), 512 px, far fainter; the reveal mirrors in the pane edge and always covers the cabin; the railway mark etched in the low right corner; seats, headrests, rack rails and pane frames in the cabin
+- [x] No post shadows on the wall beside the window: bounced sun carries none
+- [x] Water: each wave octave runs its own way; stronger ripples; livelier light columns at night
+- [x] Far lights flicker a little, each at its own pace
+- [x] Sound: pull-away and arrival cross-fade with the bed by speed; a whine band under power and brake; hum at any standstill (idle clip); compartment door muffles the bus and opens at platforms and now and then; a low thud on the sub bus as a train passes
+- [x] Dev: top view of the built scene (?dev, tick Top view, or ?top=<m>)
+- [ ] Sound: Tom to listen (whine level, door muffle, thud)
+- [ ] Frame and cross bar wireframes: Tom to pick
+
+## Round 23: churches, variety, shore, roads, fields (Tom, 2026-11-09)
+
+- [x] Churches: in each village the house nearest the centre becomes a white nave with arched windows; its tower stands at the nave's end with a lit clock, belfry slots and a saddle roof, spire or tent. Same mesh and shader as the houses
+- [x] Variety at the same polygon count: one roof mesh makes gable, half-hip, hip, tent and spire; a third of the houses turn their ridge; six plaster tints, five roof colours, five shutter colours, some houses without shutters; window spacing per house; plinths; barn doors
+- [x] Near shore of both lakes at higher resolution (far shore stays): tools/shore.py bakes shore.png (8192 x 128, 60 KB), a signed distance to the OSM lake outlines for the 768 m beside the line, 8.7 m by 6 m texels, quarter-metre steps. shore() reads it there; the land lies flat at the column's lake level inside the outline and rises gently on the bank. The bake follows the drawn land's half-texel offset. Rebuild check: tools reproduce route.png bit for bit
+- [x] Light OSM road data: tools/roads.py fetches 1,604 ways (205 km; motorway to residential, no tunnels) within 540 m on the lake side and bakes roads.png (204 KB): a distance map, 4.4 m by 4 m texels, two halves stacked. The land paints asphalt and verges from it; trees, shrubs, fences and bales keep off it. The invented country road is gone; its pole line stays
+- [ ] Fields and pastures: realistic tilings in clusters, deterministic, all baked
+- [ ] Train horn of the current Swiss stock
+
+- [ ] Train horn: no source gives the pitch; candidate clip freesound 20065 (Swiss train whistle, licence unchecked). Tom to supply a clip and say when it sounds
+- [x] Land tiles (Tom chose runtime tiles, all land): landMat() holds all land colour, the per-pixel normal, sky cover and shore distance. Five tiles (0.125, 0.5, 2, 8, 32 m texels; 2048 columns) scroll with the train; only columns that come into reach are baked, two targets each (colour as square root in 8 bit; normal, cover and shore in half float), mipped, 8x anisotropic. The land shader samples two textures and lights them. The eye's distance in the bake is the offset from the line times 1.08. GPU time per frame at 1586 x 1798 px, timer query, before to after: Bäch day 66 to 18 ms, lake day 93 to 22, plain day 59 to 16, Zurich night 61 to 16
+- [x] Fields and pastures in clusters, in the bake: Voronoi clusters some 480 m across; two in five stay pasture; each of the rest has one heading (along or across the valley), one tiling (long strips, short strips or staggered blocks), a lean to a few crops (ley, maize, wheat, stubble, earth), drill lines, grass baulks, a meadow belt, and for half a hedge on the rim. Same strength rule as before: muted, fading in from 300 m
+- [x] Stronger fields (Tom): strength 0.85, in view from 110 to 300 m out, clearer wheat, stubble and maize, stronger drill lines and hedges
+
+## Round 24: fine heights, night lights (Tom, 2026-11-10)
+
+- [x] Fine heights beside the line: tools/near.py fetches 146 swissALTI3D tiles (2 m, 112 MB, kept outside the repo) and bakes near.png (8192 x 192, 469 KB) for the 768 m beside the line, 8.7 m by 4 m texels, smoothed 3 m. The band is re-referenced to the real trackbed (our eye rides 3 m above our track) and eases back by its far edge; the sill clamp and the loop blend follow build.py. landO() blends it in with a cubic lookup; frame time unchanged (A/B with ?nonear). Fewer hills block the view: 12.6 % of columns against 17.7 %. Credits in annex.json name swisstopo
+- [x] The catenary mast is solid at rest (its 3 % see-through showed the view as a ghost)
+- [x] Far houses go dark again past 600 m: their mean window glow read as dense strips; the far light points carry the far shore
+- [x] Water lights cleaned: slim soft streaks under each light, each with its own length and strength; ripples dash only the near ones; a narrower, fainter moon path
+- [ ] Tunnels: the real line runs in tunnels in places (Kerenzerberg at 62 to 64 km); the ride shows a hillside there
+
+- [x] Softer cabin light at night (Tom): one warm, dimmed light colour for wall, reveal and cross bar; a wide shallow pool with no hard spot; the baked cabin's lamps dim and warm at night
+- [x] Cabin mirror blurred (Tom): the cube map reads from a coarse mip; the reveal's mirror image stays sharp
+
+- [x] Darker night cabin (Tom): the cabin light is 0.6 of its last level on wall, reveal, cross bar and the glass's room terms; the baked cabin and its lamps drop by the same share, so the mirror image matches
+- [x] Pull-away shaped like a real unit, quicker: the pull builds over about a second, holds 1.25 m/s2 to 13 m/s, then falls with speed (27 m/s in about 30 s). Out of Zurich HB: 300 m at 11 m/s, then 800 m at 19 m/s. Into Zurich HB: the last 250 m at 12 m/s. The arrival sound takes its timing from the same model (S.eta)
+- [x] Stops drawn at random each lap: Zurich HB and Murg always; a town 0.4, a village 0.2, a halt 0.12; about seven stops a lap. A simulated two laps gave Thalwil, Lachen, Ziegelbrücke, Murg, HB, then Wiedikon, Enge, Kilchberg, Au, Altendorf, Siebnen-Wangen, Murg, HB
+
+- [x] Dev sound mixer (?dev): each layer plays through its own channel gain (running noise, standstill hum, pull-away, arrival, whine, points, joint, passing train, pass knock, bass thud, door knock), with a level slider, mute and solo; All sound and Door muffle depth; play buttons for the one-shots and the door; a live line of what sounds now; Copy levels gives JSON. Levels save in the browser under stimming.trainride.mix and apply only with ?dev
+- [ ] Tom to set the mix by ear and send the levels; then bake them in as the defaults
+
+## Round 25: sound by speed (Tom, 2026-11-10)
+
+- [x] Measured the clips against the cruise loop, by octave band: the low bands (45 to 355 Hz) rise in the first seconds of motion and hold; the bands above 700 Hz rise with speed at about 35 dB per decade; under power the 355 Hz band stands 5 dB over brake. The recording has no pitched whine; it is broadband
+- [x] The running sound is now the cruise loop through a speed EQ: gain, low shelf (230 Hz), peak (430 Hz) and sub shelf (75 Hz), from a table by speed share (of 30 m/s) and drive (brake, coast, power). tools/sound-fit.py fits the table and checks it: the model stands within about 3 dB of the recording in each band from rest to 0.62 of cruise. At cruise the EQ is flat, so the loop plays as before
+- [x] The timed pull-away and arrival clips no longer play whole. Events: the first 3.4 s of the pull-away clip (air and doors) ends as the train moves; the arrival clip from 35.5 s (squeal, the jolt on the mark, the air let go) starts when the model says 5 s to the stop
+- [x] The standstill hum is the same loop at rest (a low hum, 35 s long); the old 5 s loop was the air hiss after a stop, with a bump at its end
+- [x] The whine stays as a layer, at the level Tom set in the mixer (2.3 times the first try), driven by power and brake
+- [x] Mixer rows follow the new layers; it reads only keys it knows
+- [ ] Not run with live sound: the departure and arrival cuts (the pane was hidden). Tom to listen
+
+## Round 26: life outside (Tom, 2026-11-10)
+
+- [x] Boats: 14 lake steamers (two decks, lit windows at night, a wake) that run 1.5 km each way; 320 sails by day, most within a kilometre of the near shore; one car ferry that crosses at Horgen with cars on deck. One placer, three meshes on one shader
+- [x] Birds: 340 gull flocks over the water (flap, then glide), 16 buzzards that circle over dry ground, and crows that sit in a field and lift off as the train draws near (about once a minute by day, at speed, clear of stations and water). All roost at night. One mesh, two triangles a bird
+- [x] Plane: most pass 6 km out on their way down, a small grey shape by day and three lights at night (steady, red pulse, double strobe); one in three by day is a high one with a contrail. One every few minutes
+- [x] Dev: S.cue('plane' or 'crows') and S.life, to bring them on and find them
+- [ ] Not seen yet: gulls and buzzards up close, the ferry from the window, the contrail against blue sky. Tom to look
+
+- [x] Headlights (Tom): tools/carpaths.py turns the bigger mapped roads (motorway to unclassified, no residential) into 177 paths, 52 km, paths.bin 19 KB. 713 cars drive them at night: paired headlights toward the eye, red tail lights away, a faint pool on the road, a wider halo in rain; pace and spacing by road class; they fade at a path's ends. One mesh, three quads a car. Seen: a car at Bäch, a line of lights on the motorway near Bilten
+- [ ] Cars by day are not drawn; cars do not stop at junctions or meet each other
+
+## Round 27: stations, yard, small things (Tom, 2026-11-10)
+
+- [x] Sound body: the bus EQ now lifts the lows (+4 dB under 180 Hz), dips 2.8 kHz and rolls off the top; level 0.42 to 0.32. The motor band is lower and wider (120 to 500 Hz) and comes through plainly only with the compartment door open
+- [x] A click on the view leans to the glass or sits back
+- [x] A passing train's lit saloon washes the wall and the reveal while it is alongside
+
+- [x] Platforms stand beyond the second track (the old ones sat on it): a gravel apron with grassed banks carries each; canopy lights, signs, masts and fence move with it
+- [x] Rural halt redone: a short, narrow platform, five warm masts, a glass shelter with a bench and a yellow departures board, a clock on a post
+- [x] Station clock with the real time; the red seconds hand waits at the top for the minute
+- [x] Town stations: a two-floor station house with arched ground floor openings behind the platform (in place of the island platform)
+- [x] Zürich HB: the five tracks join the line one by one from 1.5 km; six trains stand in the yard and one shunts; the land keeps below the deck
+- [x] Line button (L): a strip with the route, a tick per station and the train; a drag jumps along the line; with ?dev it holds the top view
+- [x] Main shelf as beta, No. 41 (Tom, 2026-11-10): menu tile moved, toys.json, AGENTS.md
+- [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat

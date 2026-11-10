@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-09T11:10:26Z
+updated_at: 2026-11-10T16:21:20Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -97,3 +97,51 @@ Tom asked for higher-fidelity mini dioramas with their own camera angles, one sc
 - Strangereal v2 (Tom: more imposing, better blending of skylines, furball without explosions): four tower districts, nearer and up to ~480 m; haze darkens with height so towers stay dark masses with lit windows; distant windows fade to a mean glow; warm light-pollution band over the horizon; ridges sit under the haze. Explosions, puffs and debris removed: missiles miss and burn out; flares stay. Three furballs, 28 jets.
 
 - Strangereal v3 (Tom: far tighter zoom lens on a multilayered sweeping scape of cities, furball going on): 13 degree long lens from 30 m back on a longer roof; city packed along the lens axis in five tower districts whose skylines rise with distance (0.9 to 3.7 degrees), a bay between the banks; furballs sit low over the far banks; thinner, shorter contrails; fewer lit windows.
+
+## Full redo (Tom, 2026-11-10)
+
+Tom asked for a full redo. The checklists above are superseded; the old pages stay in git history. Spec: `docs/plans/washline.md`.
+
+| Question | Tom's pick |
+|---|---|
+| Base | Fresh start. No old look or scene code carries over. |
+| Core play | Unclip and fly, backlit glow, hang it yourself. Travelling gusts and flap cracks are dropped. |
+| Look | Cinematic wide: the line sits in a big place; the place sets the mood. |
+| Hanging | Pulley line: peg a piece at the near end, then reel the line out across the gap. |
+| Places | Alley, Garden, Beach to start; more spread from there. |
+| Strangereal | Stays: a city with a jet furball, built fully new as a place. |
+| Structure | Shared `core.js` plus one module per place. |
+| First place | Alley. Each place gets Tom's sign-off before the next. |
+
+- Assumption, not yet confirmed: the three old pages move to `washline/archive/` (noindex); `legacy` becomes false.
+
+### Redo tasks
+
+- [x] R1: core (K4 rope, cloth, pulley, pegs) plus Alley blockout; old pages archived; checkpoint with Tom
+- [x] R2: hands on: reel, + Piece, unclip and fly, cloth drag, Release
+- [x] R3: backlit glow; Alley sign-off (Tom, 2026-11-10)
+- [ ] R4: Garden; sign-off
+- [ ] R5: Beach; sign-off
+- [ ] R6: Strangereal (fully new, jet furball); sign-off
+- [ ] R7: sound: reel, peg click, whoosh, place ambience
+- [ ] R8: Bar v2 Settings, persistence, QA (1280, 375 × 812, 812 × 375; tests/bar-v2.html)
+- [ ] Tom sets the Dutch name (draft: Wasdraad)
+- [ ] Record the session cost
+
+
+### Alley is Valldemossa (Tom, 2026-11-10)
+
+The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and colourful things on the walls, a small market below, lanterns.
+
+- Honey limestone walls, green shutters, potted geraniums on the walls, iron wall lanterns.
+- Bunting strings cross the street at several depths.
+- Market stalls with striped awnings, fruit crates and ceramics fill the street floor under the line.
+
+
+### R3 glow (2026-11-10)
+
+- Light through the cloth: hems read as two layers, slub varies the weave, a forward-scatter lift toward the sun.
+- Neighbours' washing and the bunting use the same glow, so overlaps mix like stained glass.
+- The sun sets in a valley notch at the end of the street, beside the bell tower; the slider starts there (0.95).
+- A low sun warms the sky; bloom and exposure follow it.
+- Open: Tom's Alley sign-off.
