@@ -293,3 +293,4 @@ Open from the critics:
 - [x] Menu icon: Tom picked A of spike trainride-1 (window by day; mast sweeps and lake glints on hover); emblem shared/emblems/trainride.svg; picks.json records it
 - [x] Night walls: at a slant the merged window glow stays in a band per floor, never the whole wall
 - [x] Water: six swells with exact slopes and one noise layer (was four noise octaves, each sampled three times); one mirror ray on the bilinear map, 24 steps and three halvings (was two rays, 32 cubic steps); sunlit crests glow; light and moon reflections follow the rippled surface, shards near and a soft column far. Night lake at 3840x2400: 42 to 26 ms and 56 to 31 ms per frame against the previous build
+- [x] Water rebuild reverted (Tom: way worse); the previous water is back while a shared water shader is studied
