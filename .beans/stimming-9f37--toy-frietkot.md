@@ -63,4 +63,4 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 - [ ] Next interactivity: Tom to think it over.
 - [x] Main shelf as No. 39, Tom's call (2026-11-09).
 - [x] Intro emblem: the 3D fry cone from icon spike 4 (C1 Stripe) as a mask (`shared/emblems/frietkot.svg`). The shack scene and the flat cone are out (Tom, 2026-11-09).
-- [ ] Menu tile: install the spike 4 cone; Tom picks the paper (C1 to C4).
+- [x] Menu tile: the spike 4 cone, C1 Stripe (Tom's pick), in `53c6223`.
