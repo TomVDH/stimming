@@ -3,8 +3,9 @@
 title: 'Prism: element lamps on the table; Spectroscope mode removed'
 status: completed
 type: task
+priority: normal
 created_at: 2026-11-10T00:29:02Z
-updated_at: 2026-11-10T00:29:02Z
+updated_at: 2026-11-10T00:33:20Z
 parent: stimming-ubwe
 ---
 
@@ -19,3 +20,5 @@ The Spectroscope is no longer a separate view. Element lamps (Li, Na, K, Cu, Sr,
 ## Summary of Changes
 
 The table/Spectroscope mode switch and five Settings rows are gone. The default white view is pixel-identical outside the top-left control. The loupe and the strike chord of the old view are dropped.
+
+- [x] Sensor pictures stay above the key strip (phones)

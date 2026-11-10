@@ -27,3 +27,18 @@ Tom picked option (a): alphas stay straight in the magnet, as in physics. Mantle
 - [ ] Record the session cost
 
 Fix: walks that start off screen (muons, cosmic electrons, the shower) no longer end before they enter the view.
+
+## Bar v2 (2026-11-09)
+
+| v1 control | v2 slot | Why |
+|---|---|---|
+| Source: Cosmic, Mantle, Beta | Top left choice, segments, keys 1 to 3 | The one choice group |
+| Magnet slider | Bottom right slider | The main knob; it moves to Settings on phones |
+| Shower | Bottom left action, key Space | The one verb |
+| Activity, Mist, Light, Tracks | Settings rows, persisted | Tweaks; the old storage keys carry over |
+| (none) | Settings: Quality | Site row; a new quality refits the canvas |
+| `dl.how` | Key strip: click place the source, drag stir the mist | |
+
+- [x] Port to Bar v2; local popover CSS and JS deleted
+- [x] Diegetic: none fits (the lamp and the magnet sit outside the frame)
+

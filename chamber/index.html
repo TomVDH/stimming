@@ -37,24 +37,6 @@
 }
 .stage--chamber canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--chamber canvas { transition: none; } }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -63,53 +45,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--chamber" id="stage" tabindex="0" role="application" aria-label="A dark chamber of mist under a side light. Particle tracks form as thin white lines and fade. Tap to place the source, drag to stir the mist, Space for a cosmic shower.">
+    <div class="stage stage--chamber" id="stage" tabindex="0" role="application" aria-label="A dark chamber of mist under a side light. Particle tracks form as thin white lines and fade. Tap to place the source, drag to stir the mist, Space for a cosmic shower. Source, Magnet and Shower sit in the corners; Settings holds activity, mist, light and track life.">
       <p class="fail" hidden>Cloud chamber needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="src" role="group" aria-label="Source">
-        <button class="chip" type="button" data-value="cosmic" aria-pressed="false">Cosmic</button>
-        <button class="chip" type="button" data-value="mantle" aria-pressed="true">Mantle</button>
-        <button class="chip" type="button" data-value="beta" aria-pressed="false">Beta</button>
-      </div>
-      <label class="slider"><span>Magnet</span><input type="range" id="mag" min="0" max="1" step="0.01" value="0" aria-label="Magnet: how hard the field bends the tracks"></label>
-      <div class="actions">
-        <button class="chip" id="shower" type="button">Shower</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Activity</span><div class="choices" id="act" role="group" aria-label="Activity">
-              <button class="chip" type="button" data-value="0.5" aria-pressed="false">Low</button>
-              <button class="chip" type="button" data-value="1" aria-pressed="true">Mid</button>
-              <button class="chip" type="button" data-value="2" aria-pressed="false">High</button>
-            </div></div>
-            <div class="group"><span>Mist</span><div class="choices" id="mist" role="group" aria-label="Mist">
-              <button class="chip" type="button" data-value="0.5" aria-pressed="false">Thin</button>
-              <button class="chip" type="button" data-value="1" aria-pressed="true">Some</button>
-              <button class="chip" type="button" data-value="1.8" aria-pressed="false">Thick</button>
-            </div></div>
-            <div class="group"><span>Light</span><div class="choices" id="light" role="group" aria-label="Light">
-              <button class="chip" type="button" data-value="side" aria-pressed="true">Side</button>
-              <button class="chip" type="button" data-value="corner" aria-pressed="false">Corner</button>
-              <button class="chip" type="button" data-value="top" aria-pressed="false">Top</button>
-            </div></div>
-            <div class="group"><span>Tracks</span><div class="choices" id="life" role="group" aria-label="Track life">
-              <button class="chip" type="button" data-value="1.4" aria-pressed="false">Brief</button>
-              <button class="chip" type="button" data-value="2.4" aria-pressed="true">Mid</button>
-              <button class="chip" type="button" data-value="4.5" aria-pressed="false">Long</button>
-            </div></div>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>place the source</dd></div>
-          <div><dt>Drag</dt><dd>stir the mist</dd></div>
-          <div class="fine"><dt><kbd>Space</kbd></dt><dd>shower</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -119,33 +57,54 @@
 </div>
 
 <script type="module">
-import { initPage, audioKit, choices, fitCanvas, whenVisible, reduced, onReducedChange, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, audioKit, fitCanvas, whenVisible, reduced, onReducedChange, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 mark('libs');
 
 // The intro holds until the page, the font and the first frame are ready.
 playIntro({ ready: pageReady() });
-initPage({ id: 'chamber' });
 
-const PI = Math.PI, TAU = PI * 2;
-const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Box-Muller gives one normal sample.
 const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
 
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
 /* ---------- settings ---------- */
-// Settings persist per browser; storage is optional.
+// Source and Magnet persist per browser; storage is optional.
 const saved = k => { try { return localStorage.getItem(`stimming.chamber.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.chamber.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v != null && isFinite(+v) ? +v : d; };
+const SOURCES = ['cosmic', 'mantle', 'beta'];
 const opts = {
-  src: saved('src') || 'mantle',
-  mag: num('mag', 0),
-  act: num('act', 1),
-  mist: num('mist', 1),
-  light: saved('light') || 'side',
-  life: num('life', 2.4),
+  src: SOURCES.includes(saved('src')) ? saved('src') : 'mantle',
+  mag: clamp(num('mag', 0)),
+  act: 1, mist: 1, light: 'side', life: 2.4,
 };
+// The shell builds every control; actions bind once the sim exists.
+const act = { shower() {}, redraw() {} };
+const row = (id, label, value, options) => ({ type: 'choice', id, label, value, persist: true, options: options.map(([v, l]) => ({ value: v, label: l })),
+  onPick: v => { opts[id] = id === 'light' ? v : +v; act.redraw(); } });
+const ui = initPage({ id: 'chamber', bar: {
+  choice: { label: 'Source', value: opts.src,
+    options: [{ value: 'cosmic', label: 'Cosmic', key: '1' }, { value: 'mantle', label: 'Mantle', key: '2' }, { value: 'beta', label: 'Beta', key: '3' }],
+    onPick: v => { opts.src = v; save('src', v); act.redraw(); } },
+  // Magnet sets how hard the field bends the tracks.
+  slider: { label: 'Magnet', min: 0, max: 1, step: 0.01, value: opts.mag, onInput: v => { opts.mag = v; save('mag', v); } },
+  actions: [{ verb: 'shower', label: 'Shower', key: 'Space', onPress: () => act.shower() }],
+  settings: [
+    row('act', 'Activity', '1', [['0.5', 'Low'], ['1', 'Mid'], ['2', 'High']]),
+    row('mist', 'Mist', '1', [['0.5', 'Thin'], ['1', 'Some'], ['1.8', 'Thick']]),
+    row('light', 'Light', 'side', [['side', 'Side'], ['corner', 'Corner'], ['top', 'Top']]),
+    row('life', 'Tracks', '2.4', [['1.4', 'Brief'], ['2.4', 'Mid'], ['4.5', 'Long']]),
+  ],
+  quality: true,
+  keys: [['click', 'place the source'], ['drag', 'stir the mist']],
+} });
+// Settings rows restore stored values; the sim reads them once.
+for (const id of ['act', 'mist', 'life']) opts[id] = +ui.setting(id).value;
+opts.light = ui.setting('light').value;
 // A test hook sets values from the address, for screenshots.
 const qs = new URLSearchParams(location.search);
 for (const k of Object.keys(opts)) if (qs.has(k)) opts[k] = typeof opts[k] === 'number' ? +qs.get(k) : qs.get(k);
@@ -680,9 +639,9 @@ function render() {
 }
 
 /* ---------- size ---------- */
-function resize() {
+function resize(force = false) {
   const fit = fitCanvas(canvas, { budget: 1.8e6 });
-  if (fit.W === W && fit.H === H && acc.length) return;
+  if (!force && fit.W === W && fit.H === H && acc.length) return;
   const oW = W, oH = H;
   W = fit.W; H = fit.H; dpr = fit.dpr; U = Math.min(W, H) / 100;
   acc.forEach(drop);
@@ -737,32 +696,14 @@ function tap(x, y) {
   source.x = x; source.y = y; source.placed = true;
   render(); wake();
 }
-stage.addEventListener('keydown', e => {
-  if (e.key !== ' ') return;
-  e.preventDefault();
-  if (!e.repeat) shower();
-});
-
 /* ---------- bar ---------- */
-function popover(box, btn) {
-  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-const magEl = document.getElementById('mag');
-magEl.value = String(opts.mag);
-magEl.addEventListener('input', () => { opts.mag = +magEl.value; save('mag', opts.mag); });
-choices(document.getElementById('src'), v => { opts.src = v; save('src', v); render(); }).set(opts.src);
-choices(document.getElementById('act'), v => { opts.act = +v; save('act', v); }).set(String(opts.act));
-choices(document.getElementById('mist'), v => { opts.mist = +v; save('mist', v); render(); }).set(String(opts.mist));
-choices(document.getElementById('light'), v => { opts.light = v; save('light', v); render(); }).set(opts.light);
-choices(document.getElementById('life'), v => { opts.life = +v; save('life', v); }).set(String(opts.life));
-document.getElementById('shower').addEventListener('click', shower);
+act.shower = shower;
+act.redraw = () => { if (ready) { render(); wake(); } };
 
 /* ---------- start ---------- */
 new ResizeObserver(() => resize()).observe(stage);
+// A new quality refits the canvas.
+onQuality(() => resize(true));
 resize();
 render();
 // One finished frame folds shader work into the intro.

@@ -38,26 +38,6 @@
 }
 .stage--sonar canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--sonar canvas { transition: none; } }
-/* The die is a solid face with its pips cut out. */
-.chip svg.die { width: 16px; height: 16px; flex: none; fill: currentColor; stroke: none; }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -66,40 +46,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
     <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active, tap a bearing to ping it, hold to charge a power ping and drag to turn the boat. In Listen, drag to aim the ear; the waterfall and the sound follow that bearing. Tap to knock the hull. Double-tap to lock a target; the ear follows it.">
       <p class="fail" hidden>Sonar needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="mode" role="group" aria-label="Display">
-        <button class="chip" type="button" data-value="active" aria-pressed="true">Active</button>
-        <button class="chip" type="button" data-value="sono" aria-pressed="false">Listen</button>
-      </div>
-      <label class="slider"><span id="sliderLab">Range</span><input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" aria-label="Range"></label>
-      <div class="actions">
-        <button class="chip" id="ping" type="button">Ping</button>
-        <button class="chip" id="shuffle" type="button" title="Shuffle: a new sea"><svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M3.5 1.5h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5.2 3.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm5.6 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM8 6.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM5.2 9.7a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm5.6 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg>Shuffle</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Afterglow</span><div class="choices" id="persist" role="group" aria-label="Afterglow">
-              <button class="chip" type="button" data-value="short" aria-pressed="false">Short</button>
-              <button class="chip" type="button" data-value="long" aria-pressed="true">Long</button>
-            </div></div>
-            <div class="group"><span>Scanlines</span><div class="choices" id="scan" role="group" aria-label="Scanlines">
-              <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
-              <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
-            </div></div>
-            <div class="group"><span>Grid</span><div class="choices" id="grid" role="group" aria-label="Grid">
-              <button class="chip" type="button" data-value="off" aria-pressed="false">Off</button>
-              <button class="chip" type="button" data-value="on" aria-pressed="true">On</button>
-            </div></div>
-          </div>
-        </div>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -109,16 +58,33 @@
 </div>
 
 <script type="module">
-import { initPage, audioKit, sound, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, qualitySetting, onQuality, stage as setStage, pageReady, later as extras } from '../shared/stim.js';
+import { initPage, audioKit, sound, fitCanvas, whenVisible, reduced, onReducedChange, linFit, onQuality, stage as setStage, pageReady, later as extras } from '../shared/stim.js';
 setStage('libs');
 import { intro as playIntro } from '../shared/intro.js';
 
 // The intro holds until the page, the font and the first frame are ready.
 playIntro({ ready: pageReady() });
 setStage('build');
-initPage({ id: 'sonar' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
+// The handlers bind once the console exists.
+const on = { mode() {}, slider() {}, act() {}, shuffle() {}, persist() {}, scan() {}, grid() {} };
+const savedMode = (() => { try { return localStorage.getItem('stimming.sonar.mode'); } catch { return null; } })();
+const MODE0 = savedMode === 'sono' || savedMode === 'btr' ? 'sono' : 'active';
+// The console draws its own legend, so the key strip stays off.
+const ui = initPage({ id: 'sonar', bar: {
+  choice: { label: 'Display', value: MODE0, options: [{ value: 'active', label: 'Active', key: '1' }, { value: 'sono', label: 'Listen', key: '2' }], onPick: v => on.mode(v) },
+  slider: { label: 'Range', min: 0, max: 1, step: 0.01, value: 0.5, onInput: v => on.slider(v) },
+  actions: [
+    { verb: 'ping', key: 'P', onPress: () => on.act() },
+    { verb: 'shuffle', key: 'S', onPress: () => on.shuffle() },
+  ],
+  settings: [
+    { type: 'choice', id: 'persist', label: 'Afterglow', value: 'long', persist: true, options: [{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }], onPick: v => on.persist(v) },
+    { type: 'toggle', id: 'scanlines', label: 'Scanlines', value: true, persist: true, onToggle: v => on.scan(v) },
+    { type: 'toggle', id: 'gridlines', label: 'Grid', value: true, persist: true, onToggle: v => on.grid(v) },
+  ],
+  quality: true,
+  keys: false,
+} });
 
 // The Sounder is parked: its chip is off until Tom brings it back.
 const SOUNDER = false;
@@ -135,13 +101,13 @@ const saved = k => { try { return localStorage.getItem(`stimming.sonar.${k}`); }
 const save = (k, v) => { try { localStorage.setItem(`stimming.sonar.${k}`, String(v)); } catch { /* storage is optional */ } };
 const num = (k, d) => { const v = saved(k); return v == null || isNaN(+v) ? d : +v; };
 const opts = {
-  mode: saved('mode') === 'btr' ? 'sono' : ['active', 'sono', ...(SOUNDER ? ['sounder'] : [])].includes(saved('mode')) ? saved('mode') : 'active',
+  mode: MODE0,
   depth: num('depth', 0.45),
   range: num('range', 0.55),
   span: num('span', 0.33),
-  persist: saved('persist') || 'long',
-  scan: saved('scan') || 'on',
-  grid: saved('grid') || 'on',
+  persist: ui.setting('persist').value,
+  scan: ui.setting('scanlines').value ? 'on' : 'off',
+  grid: ui.setting('gridlines').value ? 'on' : 'off',
 };
 let reduce = reduced();
 onReducedChange(v => { reduce = v; hudDirty = true; });
@@ -172,7 +138,7 @@ const BIN_HZ = FMAX / NBIN;
 
 /* ---------- WebGL2 ---------- */
 const stage = document.getElementById('stage');
-const barEl = document.querySelector('.bar');
+const shell = stage.parentElement.querySelector('.stim-ui');
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
@@ -1383,20 +1349,34 @@ function say(text, warn = false) {
 const pad3 = n => String(Math.round(n) % 360).padStart(3, '0');
 
 /* ---------- layout ---------- */
-let W = 1, H = 1, dpr = 1, safe = 0;
+let W = 1, H = 1, dpr = 1, safe = 0, hudTop = 0;
 const scope = { cx: 0, cy: 0, rad: 100 };
 const box = { x0: 0, y0: 0, x1: 1, y1: 1 };
+// The corners' boxes in stage pixels; offsets ignore the entrance slide.
+function corners() {
+  let top = 0, bot = 0;
+  if (!shell) return { top, bot };
+  const h = shell.clientHeight;
+  for (const el of shell.children) {
+    if (!el.offsetParent || !/^s2-(tl|tr|bl|br)$/.test(el.className)) continue;
+    if (/t[lr]$/.test(el.className)) top = Math.max(top, el.offsetTop + el.offsetHeight);
+    else bot = Math.max(bot, h - el.offsetTop);
+  }
+  return { top, bot };
+}
 function measure() {
-  const sr = stage.getBoundingClientRect(), first = barEl?.firstElementChild;
-  safe = first ? clamp(sr.bottom - first.getBoundingClientRect().top, 0, sr.height * 0.4) * dpr : 0;
+  const cn = corners();
+  // The legend sits above the bottom corners; the readouts start under the top ones.
+  safe = clamp(cn.bot + 4, 0, stage.clientHeight * 0.4) * dpr;
+  hudTop = clamp(cn.top, 0, stage.clientHeight * 0.3) * dpr;
   const lab = 30 * dpr, keys = keysH() * dpr;
-  const availH = H - safe - keys - 20 * dpr;
+  const availH = H - safe - keys - hudTop - 20 * dpr;
   scope.rad = Math.max(40, Math.min(W / 2, availH / 2) - lab);
   scope.cx = W / 2;
   scope.cy = safe + keys + 10 * dpr + availH / 2;
   box.x0 = Math.min(64 * dpr, W * 0.12); box.x1 = W - 22 * dpr;
   // The bearing strip sits between the title and the waterfall.
-  box.y0 = safe + keysH() * dpr + 38 * dpr; box.y1 = H - (opts.mode === 'sono' ? 90 : W < 620 * dpr ? 64 : 34) * dpr;
+  box.y0 = safe + keysH() * dpr + 38 * dpr; box.y1 = H - hudTop - (opts.mode === 'sono' ? 90 : W < 620 * dpr ? 64 : 34) * dpr;
 }
 
 /* ---------- HUD ---------- */
@@ -1562,7 +1542,7 @@ function drawHud() {
   const fs = Math.round(12 * dpr);
   c.font = `${fs}px ${MONO}`;
   c.textBaseline = 'middle';
-  const top = H - 16 * dpr;
+  const top = H - hudTop - 16 * dpr;
   if (boot.phase !== 'run') {
     drawBoot(c, Y);
   } else if (opts.mode === 'active') {
@@ -1892,8 +1872,9 @@ function step(dt) {
 }
 
 /* ---------- modes ---------- */
-const sliderEl = document.getElementById('slider'), sliderLab = document.getElementById('sliderLab');
-const pingBtn = document.getElementById('ping');
+// The shell owns the slider and the action; the toy renames them per display.
+const sliderLab = shell?.querySelector('.s2-slider > span'), sliderIn = shell?.querySelector('.s2-slider input');
+const pingLab = shell?.querySelector('.s2-chip[aria-keyshortcuts="P"] .s2-label');
 // Each display names its slider and its action.
 const MODES = ['active', 'sono', 'sounder'];
 const MODE = {
@@ -1903,10 +1884,10 @@ const MODE = {
 };
 function syncSlider() {
   const m = MODE[opts.mode];
-  sliderLab.textContent = m.label;
-  sliderEl.setAttribute('aria-label', m.aria);
-  sliderEl.value = String(opts[m.key]);
-  pingBtn.textContent = m.btn;
+  if (sliderLab) sliderLab.textContent = m.label;
+  sliderIn?.setAttribute('aria-label', m.aria);
+  ui.slider.set(opts[m.key]);
+  if (pingLab) pingLab.textContent = m.btn;
 }
 const act = () => (opts.mode === 'active' ? ping() : opts.mode === 'sounder' ? mark() : knock());
 function applyMode(m) {
@@ -2038,32 +2019,32 @@ stage.addEventListener('keydown', e => {
 });
 
 /* ---------- bar ---------- */
-function popover(boxEl, btn) {
-  const set = on => { boxEl.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!boxEl.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!boxEl.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-choices(document.getElementById('mode'), v => setMode(v)).set(opts.mode);
-choices(document.getElementById('persist'), v => { opts.persist = v; save('persist', v); wake(); }).set(opts.persist);
-choices(document.getElementById('scan'), v => { opts.scan = v; save('scan', v); render(); wake(); }).set(opts.scan);
-choices(document.getElementById('grid'), v => { opts.grid = v; save('grid', v); hudDirty = true; render(); wake(); }).set(opts.grid);
-sliderEl.addEventListener('input', () => {
+on.mode = v => setMode(v);
+on.persist = v => { opts.persist = v; wake(); };
+on.scan = v => { opts.scan = v ? 'on' : 'off'; render(); wake(); };
+on.grid = v => { opts.grid = v ? 'on' : 'off'; hudDirty = true; render(); wake(); };
+on.slider = v => {
   const key = MODE[opts.mode].key;
-  opts[key] = +sliderEl.value;
-  save(key, opts[key]);
+  opts[key] = v;
+  save(key, v);
   if (key === 'range') { clearAcc(); ring.on = false; }
   hudDirty = true; render(); wake();
-});
-pingBtn.addEventListener('click', act);
-document.getElementById('shuffle').addEventListener('click', () => { shuffle(); clearAcc(); ring.on = false; render(); if (opts.mode === 'active') ping(); });
-sound.onChange(on => { if (on) wake(); });
+};
+on.act = act;
+on.shuffle = () => { shuffle(); clearAcc(); ring.on = false; render(); if (opts.mode === 'active') ping(); };
+sound.onChange(v => { if (v) wake(); });
 
 /* ---------- start ---------- */
 shuffle();
 syncSlider();
 new ResizeObserver(() => resize()).observe(stage);
+// The corners resize or move when the shell refits; the console follows.
+if (shell) {
+  const refit = () => { if (!ready) return; measure(); hudDirty = true; render(); wake(); };
+  const ro = new ResizeObserver(refit);
+  [...shell.children].forEach(el => ro.observe(el));
+  new MutationObserver(refit).observe(shell.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
+}
 // High renders the tube at the screen's own resolution.
 onQuality(() => resize());
 resize();

@@ -57,3 +57,17 @@ Tom renames the toy to Ink Water. The Dutch name is Inktwater, ˈɪŋktˌʋaːt�
 
 Tom signs off Ink Water on 2026-11-09. It carries `data-done` on its intro and menu entry. The version steps to 0.7, codename Inktwater.
 The toy runs K3 on WebGPU, with the ink on a finer grid than the flow. Backlit is the default light. The menu logo is a bloom traced from the toy.
+
+## Bar v2 (2026-11-09)
+
+| v1 control | v2 slot | Why |
+|---|---|---|
+| Ink chips (Indigo, Carmine, Sumi, Saffron, Mixed) | Choice, segments, with dots | The main pick; five options fit segments. Mixed takes a gradient dot. |
+| Weight slider | Main slider | The one continuous knob. |
+| Clear | Action, key C | Empties the tank. |
+| Space drops (stage only) | Action Drop, key Space | A tap and keyboard path that works from any focus. |
+| Light, Water, Quality | Settings rows | Set once, then left alone. Quality keeps Low and Medium. |
+| `dl.how` | Key strip | Click drop, hold pipette, drag stir, Space drop. |
+
+- The tank fits between the corner rows; it measures them, so phones and stacked rows hold.
+- Diegetic: none fits. The tank is the control already.

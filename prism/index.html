@@ -349,7 +349,7 @@ let pieces = [make('source', { base: true }), make('prism', { side: BASE_SIDE, b
 let VZ = 1, VX = 0, VY = 0, S0 = 1;
 const ZMAX = 3;
 const wu = x => (x - VX) / (VZ * W), wv = y => (y - VY) / (VZ * H);
-let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0;
+let W = 0, H = 0, S = 1, pr = 1, cw = 0, ch = 0, ready = false, lowDpr = false, baseMoved = false, safeT = 0, safeB = 0, pipB = 0;
 
 function corners(p, hw, hh) {
   const c = Math.cos(p.rot), s = Math.sin(p.rot), v = new Float64Array(8);
@@ -1582,7 +1582,7 @@ function litNear(x, y, r) {
 function pipAt(p) {
   if (p.pipAt && p.pipStamp === pipStamp) return p.pipAt;
   const rp0 = pipR() * clamp(p.k, 0.75, 1.4), rp = p.big ? Math.max(rp0, Math.min(rp0 * 2.2, 0.3 * S)) : rp0, d0 = ringR(p) + rp + 8, m = rp + 10;
-  const top = Math.max(m, safeT + m), bot = Math.max(top, H - safeB - m);
+  const top = Math.max(m, safeT + m), bot = Math.max(top, H - pipB - m);
   let best = null, cost = Infinity;
   for (const f of [1, 1.6]) {
     PIP_SIDES.forEach((a, j) => {
@@ -2630,6 +2630,12 @@ function measureBar() {
   }
   safeT = clamp(t, 0, H * 0.3);
   safeB = clamp(b, 0, H * 0.3);
+  // Sensor pictures also stay above the key strip.
+  const ks = document.querySelector('.stim-ui > .s2-keys');
+  const kb = ks && ks.offsetParent ? r.bottom - ks.getBoundingClientRect().top : 0;
+  const was = pipB;
+  pipB = clamp(Math.max(b, kb), 0, H * 0.35);
+  if (pipB !== was) pipStamp++;
 }
 function fit(force) {
   const w = panel.clientWidth, h = panel.clientHeight;

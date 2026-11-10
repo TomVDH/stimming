@@ -39,6 +39,11 @@ A session builds a proposal only on Tom's yes. Tom sets the verdict here; the to
 | Coil | Tap the coil body to tip it over the edge. | Nudge | Space | [coil](diegetic/coil-diegetic-tap.jpg) | waiting | `stimming-gg7y` |
 | Dandelion | A bud in the grass; tap it to regrow the head. | Regrow | R | [dandelion](diegetic/dandelion-diegetic-bud.jpg) | waiting | `stimming-jmpi` |
 | Fireworks | The sky is already the control: a press launches, a hold sizes the shell. A firing console on the shore would sit outside the view. | | | | none fits | `stimming-u4us` |
+| Star trails | The sky is already the shutter: a press opens it. A cable release on the ridge would only repeat that. | | | | none fits | `stimming-80dc` |
+| Cloud chamber | The view is the mist itself; the lamp and the magnet sit outside the frame. | | | | none fits | `stimming-c7hm` |
+| Sonar | The console is already the control: a tap pings, a drag turns the boat, and the screen prints its own legend. | | | | none fits | `stimming-80dc` |
+| Ink Water | The tank is already the control: a tap drops, a hold pipettes, a drag stirs. A pipette prop at the rim would only repeat the tap. | | | | none fits | `stimming-x4qk` |
+| ShadyOS | The desktop is already the control: drag a window, double-click a title to fold it, tap the shelf to bring it back. The menu strip now holds the shell's own top row. | | | | none fits | `stimming-80dc` |
 
 ## Not yet proposed
 

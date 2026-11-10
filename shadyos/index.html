@@ -38,28 +38,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--shadyos" id="stage" tabindex="0" role="application" aria-label="An old glass desktop. Drag a window to smear it across the screen, or fling it so it wobbles.">
+    <div class="stage stage--shadyos" id="stage" tabindex="0" role="application" aria-label="An old glass desktop. Drag a window to smear it across the screen, or fling it so it wobbles. Double-click a title bar to fold the window to the shelf; click the shelf to bring it back. N opens a window, Space raises an error, C clears.">
       <p class="fail" hidden>This toy needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar bar--below">
-      <div class="choices" id="mode" role="group" aria-label="Drag">
-        <button class="chip" type="button" data-value="smear" aria-pressed="true">Smear</button>
-        <button class="chip" type="button" data-value="jelly" aria-pressed="false">Jelly</button>
-      </div>
-      <label class="slider"><span>Age</span><input type="range" id="age" min="0" max="1" step="0.01" value="0.6" aria-label="Age: how worn the screen is"></label>
-      <div class="actions">
-        <button class="chip" id="add" type="button">+ Window</button>
-        <button class="chip" id="err" type="button">Error</button>
-        <button class="chip" id="clear" type="button">Clear</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>smear or fling a window</dd></div>
-          <div><dt>Double-click title</dt><dd>fold it to the shelf</dd></div>
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span> shelf</dt><dd>bring it back</dd></div>
-          <div class="fine"><dt><kbd>Space</kbd></dt><dd>error</dd></div>
-      </dl>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -69,14 +50,12 @@
 </div>
 
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, audioKit, qualitySetting, onQuality, oklchRgb, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, audioKit, onQuality, oklchRgb, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 mark('libs');
 
 // The intro holds until the page, the fonts and the first frame are ready.
 playIntro({ ready: pageReady() });
-initPage({ id: 'shadyos' });
-qualitySetting();
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = t => t * t * (3 - 2 * t);
@@ -86,7 +65,23 @@ onReducedChange(v => { reduce = v; });
 /* ---------- settings ---------- */
 const saved = k => { try { return localStorage.getItem(`stimming.shadyos.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.shadyos.${k}`, String(v)); } catch { /* storage is optional */ } };
-const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6, haunt: saved('haunt') !== 'off' };
+const opts = { mode: saved('mode') || 'smear', age: saved('age') != null ? +saved('age') : 0.6, haunt: true };
+// The desktop draws its own shelf and clock, so the key strip stays off.
+const ui = initPage({ id: 'shadyos', bar: {
+  choice: { label: 'Drag', value: opts.mode, options: [{ value: 'smear', label: 'Smear', key: '1' }, { value: 'jelly', label: 'Jelly', key: '2' }],
+    onPick: v => { opts.mode = v; save('mode', v); wake(); } },
+  slider: { label: 'Age', min: 0, max: 1, step: 0.01, value: opts.age, onInput: v => { opts.age = v; save('age', v); wake(); } },
+  actions: [
+    { verb: 'add', noun: 'Window', key: 'N', onPress: () => addWindow() },
+    { verb: 'error', key: 'Space', onPress: () => cascade() },
+    { verb: 'clear', key: 'C', onPress: () => clearPlate() },
+  ],
+  // The haunt: the 3:33 clock, the tidy-up, the saver and the pointer pause.
+  settings: [{ type: 'toggle', id: 'haunt', label: 'Haunt', value: true, persist: true, onToggle: v => { opts.haunt = v; } }],
+  quality: true,
+  keys: false,
+} });
+opts.haunt = ui.setting('haunt').value;
 // The untitled files survive between visits.
 let untitled = Math.max(43, +saved('untitled') || 0);
 // ?haunt=fast runs every haunt beat within a minute, for tuning.
@@ -153,6 +148,24 @@ function gelPill(x, y, w, h, label, def) {
 
 /* ---------- desktop: wallpaper, icons, shelf, strip ---------- */
 const SHELF = ['jar', 'box', 'disc', 'page', 'lamp', 'box', 'jar'];
+// The shell corners set the desktop's layout.
+// The menu strip holds the top corners; the shelf and the watermark clear the bottom ones.
+const lay = { bar: 25, tlR: 0, trL: 1e5, shelfY: 0, foot: 1e5, key: '' };
+const corners = () => [...(document.querySelector('.stim-ui')?.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)') ?? [])];
+function measure(w, h, sw) {
+  let bar = 25, tlR = 0, trL = w, foot = h - 12, shelfB = h - 12;
+  const sx0 = w / 2 - sw / 2, sx1 = w / 2 + sw / 2;
+  // Offsets ignore the corners' slide-in transform.
+  for (const el of corners()) {
+    if (!el.offsetHeight || !el.childElementCount) continue;
+    const x0 = el.offsetLeft, x1 = x0 + el.offsetWidth, y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
+    if (y1 < h / 2) { bar = Math.max(bar, y1 + 7); if (x0 < w / 2) tlR = Math.max(tlR, x1); else trL = Math.min(trL, x0); continue; }
+    if (x1 > w / 2) foot = Math.min(foot, y0);
+    if (x0 < sx1 && x1 > sx0) shelfB = Math.min(shelfB, y0 - 8);
+  }
+  Object.assign(lay, { bar: Math.round(bar), tlR, trL, shelfY: shelfB - 34, foot });
+  return [bar, tlR, trL, shelfB, foot].map(Math.round).join();
+}
 function wallpaper() {
   g.fillStyle = lin(0, 0, PW * 0.4, PH, [[0, 'oklch(0.2 0.045 230)'], [0.5, 'oklch(0.16 0.04 210)'], [1, 'oklch(0.11 0.03 280)']]);
   g.fillRect(0, 0, PW, PH);
@@ -225,7 +238,7 @@ function icons(list) {
   });
 }
 function shelf(cx, w, n) {
-  const y = PH - 46, h = 34, inset = 16, spots = [];
+  const y = lay.shelfY, h = 34, inset = 16, spots = [];
   const trap = () => { g.beginPath(); g.moveTo(cx - w / 2 + inset, y); g.lineTo(cx + w / 2 - inset, y); g.lineTo(cx + w / 2, y + h); g.lineTo(cx - w / 2, y + h); g.closePath(); };
   g.save(); trap(); g.clip(); frost(cx - w / 2, y, w, h, 0, 6, 'oklch(0.75 0.02 220 / 0.22)'); g.restore();
   trap(); g.strokeStyle = 'oklch(1 0 0 / 0.45)'; g.lineWidth = 1; g.stroke();
@@ -240,13 +253,15 @@ function shelf(cx, w, n) {
   return spots;
 }
 function topStrip() {
-  frost(0, 0, PW, 24, 0, 8, 'oklch(0.3 0.025 220 / 0.45)');
-  g.fillStyle = lin(0, 0, 0, 24, [[0, 'oklch(1 0 0 / 0.22)'], [0.5, 'oklch(1 0 0 / 0.06)'], [1, 'oklch(1 0 0 / 0)']]); g.fillRect(0, 0, PW, 24);
-  g.fillStyle = 'oklch(0.05 0.02 240 / 0.7)'; g.fillRect(0, 24, PW, 1);
-  bead(16, 12, 6, [0.62, 0.12, 190]);
+  const b = lay.bar - 1;
+  frost(0, 0, PW, b, 0, 8, 'oklch(0.3 0.025 220 / 0.45)');
+  g.fillStyle = lin(0, 0, 0, b, [[0, 'oklch(1 0 0 / 0.22)'], [0.5, 'oklch(1 0 0 / 0.06)'], [1, 'oklch(1 0 0 / 0)']]); g.fillRect(0, 0, PW, b);
+  g.fillStyle = 'oklch(0.05 0.02 240 / 0.7)'; g.fillRect(0, b, PW, 1);
+  // The power bead sits right of the top-left corner, when the clock leaves room.
+  if (!lay.tlR || lay.trL - lay.tlR > 96) bead(lay.tlR ? lay.tlR + 16 : 16, b / 2, 6, [0.62, 0.12, 190]);
   // The clock corner keeps a clean copy, so the clock repaints alone.
-  const x0 = Math.round(Math.max(30, PW - 300) * PD);
-  const cw = Math.round(PW * PD) - x0, ch = Math.ceil(25 * PD);
+  const x0 = Math.round(clamp(lay.trL - 320, 0, PW) * PD);
+  const cw = Math.max(1, Math.round(PW * PD) - x0), ch = Math.ceil(lay.bar * PD);
   stripBase.width = cw; stripBase.height = ch; stripBase.getContext('2d').drawImage(cv, x0, 0, cw, ch, 0, 0, cw, ch);
   strip = { x: x0, w: PW, cw, ch };
   lastClock = '';
@@ -278,10 +293,14 @@ function paintClock() {
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(stripBase, 0, 0);
   g.setTransform(PD, 0, 0, PD, -strip.x, 0); PW = strip.w;
+  // The clock sits left of the top-right corner, centred in the strip.
+  const r = Math.min(PW, lay.trL) - 12, by = (lay.bar - 1) / 2 + 4.5;
   g.font = `700 12.5px ${SANS}`;
   const tw = g.measureText(time).width;
-  txt(time, PW - 14, 16.5, 12.5, 'oklch(0.97 0.01 90)', { w: 700, align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
-  txt(up, PW - 26 - tw, 16.5, 10.5, 'oklch(0.85 0.02 90 / 0.8)', { align: 'right', font: MONO, shadow: 'oklch(0 0 0 / 0.8)' });
+  txt(time, r, by, 12.5, 'oklch(0.97 0.01 90)', { w: 700, align: 'right', shadow: 'oklch(0 0 0 / 0.8)' });
+  // A narrow strip drops the uptime before it reaches the bead.
+  g.font = `500 10.5px ${MONO}`;
+  if (r - 12 - tw - g.measureText(up).width > lay.tlR + (lay.trL - lay.tlR > 96 ? 30 : 6)) txt(up, r - 12 - tw, by, 10.5, 'oklch(0.85 0.02 90 / 0.8)', { align: 'right', font: MONO, shadow: 'oklch(0 0 0 / 0.8)' });
   gl.bindTexture(gl.TEXTURE_2D, deskTex);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, strip.x, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, c);
   blurDirty = true;
@@ -300,11 +319,13 @@ function bakeDesktop(canvas, w, h) {
   wallpaper();
   flare(w * (phone ? 0.8 : 0.82), h * (phone ? 0.6 : 0.47));
   const sw = phone ? w - 24 : Math.min(460, w * 0.5);
-  burnIn([[w / 2 - sw / 2, h - 46, sw, 34, 4], [0, 0, w, 25, 0], [w * 0.36, h * 0.4, Math.min(330, w * 0.6), 150, 9]]);
-  if (!phone) icons([['disc', 'Basement', w - 52, 64], ['jar', 'Keep', w - 52, 140], ['page', 'read me', w - 52, 216]]);
+  lay.key = measure(w, h, sw);
+  burnIn([[w / 2 - sw / 2, lay.shelfY, sw, 34, 4], [0, 0, w, lay.bar, 0], [w * 0.36, h * 0.4, Math.min(330, w * 0.6), 150, 9]]);
+  const iy = lay.bar + 39;
+  if (!phone) icons([['disc', 'Basement', w - 52, iy], ['jar', 'Keep', w - 52, iy + 76], ['page', 'read me', w - 52, iy + 152]]);
   const spots = shelf(w / 2, sw, phone ? 5 : SHELF.length);
   topStrip();
-  if (phone) watermark(w / 2, h - 120, 'center'); else watermark(w - 16, h - 40, 'right');
+  if (phone) watermark(w / 2, lay.shelfY - 74, 'center'); else watermark(w - 16, Math.min(h - 40, lay.foot - 26), 'right');
   return spots;
 }
 
@@ -476,7 +497,7 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: true });
 // A failed start still frees the intro.
-if (!gl) { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no webgl2'); }
+if (!gl) { stage.querySelector('.fail').hidden = false; ui.hideControls(); mark('first-frame'); throw new Error('no webgl2'); }
 
 function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
 function prog(vs, fs) {
@@ -658,7 +679,7 @@ function makeWin(spec) {
   const w = Math.min(spec.w, W - 16), h = Math.min(spec.h, H - 90);
   const win = { id: nextId++, skin: 'glass', ...spec, w, h, x: spec.x, y: spec.y, vx: 0, vy: 0,
     pos: new Float32Array(NV * 2), vel: new Float32Array(NV * 2), alpha: 1, state: 'open', g: 0, gTo: 0, pop: spec.pop ? 0.82 : 1, closing: 0 };
-  win.x = clamp(win.x, 4, W - w - 4); win.y = clamp(win.y, 28, H - h - 6);
+  win.x = clamp(win.x, 4, W - w - 4); win.y = clamp(win.y, lay.bar + 3, H - h - 6);
   win.tex = tex(1, 1); upload(win.tex, paintWindow(win));
   const cx = win.x + w / 2, cy = win.y + h / 2;
   for (let k = 0; k < NV; k++) {
@@ -675,7 +696,7 @@ function seedScene() {
   wins.splice(0).forEach(w => gl.deleteTexture(w.tex));
   const phone = W < 600;
   if (phone) {
-    makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: 10, y: 34, w: W - 20, h: 236 });
+    makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: 10, y: lay.bar + 9, w: W - 20, h: 236 });
     makeWin({ kind: 'dialog', title: 'Notice', x: 18, y: H * 0.5, w: W - 36, h: 132, head: 'This copy is genuine :)', body: 'Please do not shut down.', yes: 'Keep on' });
   } else {
     makeWin({ kind: 'nfo', skin: 'kid', title: 'd4rkm0th.nfo', x: W * 0.6, y: H * 0.08, w: 390, h: 240 });
@@ -690,10 +711,8 @@ function resize() {
   const changed = s.w !== W || s.h !== H;
   W = s.w; H = s.h; dpr = s.dpr; FW = s.W; FH = s.H;
   if (!changed && scene) return;
-  spots = bakeDesktop(deskCanvas, W, H);
-  if (deskTex) gl.deleteTexture(deskTex);
-  deskTex = tex(1, 1); upload(deskTex, deskCanvas);
-  paintClock();
+  if (!deskTex) deskTex = tex(1, 1);
+  bake();
   const oldAcc = acc;
   [scene, b1, b2].forEach(free);
   scene = target(FW, FH); acc = target(FW, FH);
@@ -703,10 +722,27 @@ function resize() {
   // A switch between phone and desk layouts lays the desktop out again.
   const phone = W < 600;
   if (!wins.length || phone !== lastPhone) seedScene();
-  else wins.forEach(w => { w.x = clamp(w.x, 4, Math.max(4, W - w.w - 4)); w.y = clamp(w.y, 28, Math.max(28, H - w.h - 6)); });
+  else wins.forEach(w => { w.x = clamp(w.x, 4, Math.max(4, W - w.w - 4)); w.y = clamp(w.y, lay.bar + 3, Math.max(lay.bar + 3, H - w.h - 6)); });
   lastPhone = phone;
   blurDirty = true;
   wake();
+}
+
+// Bake the desktop again; folded windows follow their shelf spot.
+function bake() {
+  spots = bakeDesktop(deskCanvas, W, H);
+  upload(deskTex, deskCanvas);
+  paintClock();
+  wins.forEach(w => { if (w.spot) w.spot = spots.find(s => s.kind === w.spot.kind) || spots[0]; });
+}
+// A corner that changes size lays the desktop out again.
+function cornersMoved() {
+  if (!deskTex || !W) return;
+  const k = lay.key;
+  if (measure(W, H, W < 600 ? W - 24 : Math.min(460, W * 0.5)) === k) return;
+  bake();
+  wins.forEach(w => { w.y = clamp(w.y, lay.bar + 3, Math.max(lay.bar + 3, H - w.h - 6)); });
+  blurDirty = true; wake();
 }
 
 /* ---------- drawing ---------- */
@@ -818,7 +854,7 @@ function step(win, dt) {
   if (drag?.win !== win && win.state === 'open' && (Math.abs(win.vx) + Math.abs(win.vy) > 1)) {
     win.x += win.vx * dt; win.y += win.vy * dt;
     const f = Math.exp(-dt * 3.2); win.vx *= f; win.vy *= f;
-    const minY = 28, maxX = W - win.w - 2, maxY = H - win.h - 2;
+    const minY = lay.bar + 3, maxX = W - win.w - 2, maxY = H - win.h - 2;
     if (win.x < 2) { win.x = 2; win.vx = Math.abs(win.vx) * 0.55; bump(win); }
     if (win.x > maxX) { win.x = maxX; win.vx = -Math.abs(win.vx) * 0.55; bump(win); }
     if (win.y < minY) { win.y = minY; win.vy = Math.abs(win.vy) * 0.55; bump(win); }
@@ -881,7 +917,7 @@ let noteN = 0;
 function addWindow() {
   const kinds = ['note', 'files', 'note', 'nfo'];
   const kind = kinds[noteN % kinds.length];
-  const x = W * 0.15 + (noteN * 47) % Math.max(60, W * 0.5), y = 40 + (noteN * 31) % Math.max(40, H * 0.4);
+  const x = W * 0.15 + (noteN * 47) % Math.max(60, W * 0.5), y = lay.bar + 15 + (noteN * 31) % Math.max(40, H * 0.4);
   if (kind === 'note') makeWin({ kind, title: 'your notes', x, y, w: 300, h: 220, lines: NOTES[noteN % NOTES.length], pop: true });
   else if (kind === 'files') makeWin({ kind, title: 'Basement', x, y, w: 560, h: 310, pop: true });
   else makeWin({ kind, skin: 'kid', title: 'd4rkm0th.nfo', x, y, w: 390, h: 240, pop: true });
@@ -961,7 +997,7 @@ canvas.addEventListener('pointermove', e => {
 function follow() {
   if (!drag || press?.px === undefined) return;
   const win = drag.win, [x, y] = drag.mouse ? [ptr.dx, ptr.dy] : [press.px, press.py];
-  win.x = x - drag.gx; win.y = clamp(y - drag.gy, 28 - win.h * 0.6, H - 20);
+  win.x = x - drag.gx; win.y = clamp(y - drag.gy, lay.bar + 3 - win.h * 0.6, H - 20);
 }
 function endPress(e, cancel) {
   if (!press || e.pointerId !== press.id) return;
@@ -998,7 +1034,7 @@ function tap(x, y, win) {
     return;
   }
   // The shelf brings a folded window back, or opens a new one.
-  if (y > H - 70) {
+  if (y > lay.shelfY - 24 && y < lay.shelfY + 40) {
     const s = spots.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a), spots[0]);
     if (s && Math.abs(s.x - x) < 28) {
       const folded = [...wins].reverse().find(w => w.state === 'min' && w.spot === s) || [...wins].reverse().find(w => w.state === 'min');
@@ -1061,7 +1097,7 @@ let messy = false, hiddenAt = 0, aways = 0, balk = 0, balked = false;
 const AWAY = [['You looked away.', 'So I tidied up.'], ['You looked away again.', 'I put it all back.'], ['Welcome back.', 'Nothing happened.']];
 // Put a window at x, y at once, with a still mesh.
 function place(win, x, y) {
-  win.x = clamp(x, 4, Math.max(4, W - win.w - 4)); win.y = clamp(y, 28, Math.max(28, H - win.h - 6));
+  win.x = clamp(x, 4, Math.max(4, W - win.w - 4)); win.y = clamp(y, lay.bar + 3, Math.max(lay.bar + 3, H - win.h - 6));
   win.vx = win.vy = 0; win.lsx = undefined;
   for (let k = 0; k < NV; k++) { win.pos[k * 2] = win.x + uvs[k * 2] * win.w; win.pos[k * 2 + 1] = win.y + uvs[k * 2 + 1] * win.h; win.vel[k * 2] = win.vel[k * 2 + 1] = 0; }
 }
@@ -1071,7 +1107,7 @@ function tidy() {
   wins.filter(w => w.kind === 'dialog').forEach(killWin);
   gl.bindFramebuffer(gl.FRAMEBUFFER, acc.f); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); clearing = 0; blurDirty = true;
   const phone = W < 600, gap = phone ? 22 : 30;
-  wins.filter(w => w.state === 'open').sort((a, b) => b.w * b.h - a.w * a.h).forEach((w, i) => { place(w, (phone ? 10 : 24) + i * gap, 36 + i * gap); raise(w); });
+  wins.filter(w => w.state === 'open').sort((a, b) => b.w * b.h - a.w * a.h).forEach((w, i) => { place(w, (phone ? 10 : 24) + i * gap, lay.bar + 11 + i * gap); raise(w); });
   const [head, body] = AWAY[Math.min(aways++, AWAY.length - 1)], bw = Math.min(360, W - 36);
   setTimeout(() => {
     if (document.hidden) return;
@@ -1090,7 +1126,7 @@ function lineUp() {
   const row = W >= H, last = list[n - 1], span = Math.max(0, row ? W - 32 - last.w : H - 90 - last.h);
   list.forEach((w, i) => {
     const t = n > 1 ? i / (n - 1) : 0.5;
-    w.tx = row ? 16 + span * t : (W - w.w) / 2; w.ty = row ? Math.max(40, H * 0.34 - w.h / 2) : 34 + span * t;
+    w.tx = row ? 16 + span * t : (W - w.w) / 2; w.ty = row ? Math.max(lay.bar + 15, H * 0.34 - w.h / 2) : lay.bar + 9 + span * t;
     w.tk = 0.26 + ((w.id * 7) % 5) * 0.03;
     if (reduce) place(w, w.tx, w.ty);
   });
@@ -1202,20 +1238,11 @@ function frame(now) {
 }
 whenVisible(stage, v => { visible = v; if (v) wake(); else if (raf) { cancelAnimationFrame(raf); raf = 0; } });
 
-/* ---------- bar ---------- */
-const mode = choices(document.getElementById('mode'), v => { opts.mode = v; save('mode', v); wake(); });
-mode.set(opts.mode);
-const age = document.getElementById('age');
-age.value = opts.age;
-age.addEventListener('input', () => { opts.age = +age.value; save('age', opts.age); wake(); });
-document.getElementById('add').addEventListener('click', addWindow);
-document.getElementById('err').addEventListener('click', cascade);
-document.getElementById('clear').addEventListener('click', clearPlate);
-stage.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); cascade(); } });
-
 /* ---------- start ---------- */
 await Promise.all(['600 12px Gabarito', '700 12px Gabarito', `500 12px ${MONO}`, `700 12px ${MONO}`].map(f => document.fonts.load(f).catch(() => {})));
 new ResizeObserver(() => resize()).observe(stage);
+const cornerWatch = new ResizeObserver(() => cornersMoved());
+corners().forEach(el => cornerWatch.observe(el));
 // A new quality rebuilds the targets at the new pixel ratio.
 onQuality(() => { W = 0; resize(); });
 resize();
