@@ -623,7 +623,11 @@ function flash(x, z, big = 1, cell = null, y = cell ? rnd(3.5, cell.top - 1.5) :
   for (let i = 1; i < n; i++) strokes.push(strokes[i - 1] + rnd(0.05, 0.22));
   // Most flashes stay inside the cloud; one in ten shows a bolt, more when tapped.
   const bolt = Math.random() < (big > 1.1 ? 0.45 : 0.1);
-  flashes.push({ x, z, y, r: rnd(4, 9) * big, k: rnd(0.6, 1.3) * big, strokes, age: 0, cell, level: 0, bolt });
+  // Brightness is log-normal: most flashes are dim, a few blaze.
+  // Size varies too: a small pulse in a cell, or a wide sheet.
+  const k = clamp(0.55 * Math.exp(0.6 * randn()), 0.12, 2.2) * big;
+  const r = clamp(4.5 * Math.exp(0.4 * randn()), 2, 11) * big;
+  flashes.push({ x, z, y, r, k, strokes, age: 0, cell, level: 0, bolt });
   if (flashes.length > MAXFL) flashes.shift();
 }
 function flashLevel(f) {
@@ -661,11 +665,17 @@ function stepFlashes(dt) {
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
-      if (g.anv > 0.5 && Math.random() < 0.25) {
-        const u = g.lean + rnd(0.15, 0.7) * g.len, v = rnd(-0.4, 0.4) * g.r1;
-        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 1.6));
+      // Flashes follow the cloud's charge layers.
+      // Most run mid-level in the core, at 6 to 8 km.
+      // Some spread through the anvil; a few sit low, near the base.
+      const zone = Math.random();
+      if (g.anv > 0.5 && zone < 0.25) {
+        const u = g.lean + rnd(0.15, 0.85) * g.len, v = rnd(-0.5, 0.5) * g.r1;
+        flash(c.x + ax * u - az * v, c.z + az * u + ax * v, 1, c, g.top - rnd(0.6, 2.4));
       } else {
-        const y = rnd(4, g.top - 2), a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * 0.7;
+        const low = zone > 0.82;
+        const y = clamp(low ? rnd(3.2, 5) : 7 + 1.1 * randn(), g.base + 1, g.top - 1.5);
+        const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * g.rc * (low ? 0.5 : 0.75);
         const l = g.lean * ((y - g.base) / (g.top - g.base)) ** 2;
         flash(c.x + ax * l + Math.cos(a) * r, c.z + az * l + Math.sin(a) * r, 1, c, y);
       }

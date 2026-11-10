@@ -1423,7 +1423,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         float fd = length(p - pf);
         // The flash is a soft ball of light inside the cloud, brightest deep in.
         // Far flashes punch through the haze, so distant storms still flicker.
-        S += FLASH_C * f.w * (2.2 * exp(-fd * fd / 5.0) + 0.6 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
+        S += FLASH_C * f.w * (1.8 * exp(-fd * fd / 5.0) + 0.5 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
         // Below the deck top, the deck in front hides the tower.
         float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(deckTop, deckTop - 1.2, p.y));
         col += Tc * S * al;
