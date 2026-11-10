@@ -197,6 +197,7 @@ const U = {
   uGLift: { value: new THREE.Vector2(4, 0.25) },
   // The hit: world position and the sim time of the hit.
   uHitP: { value: new THREE.Vector4(0, 0, 0, -1e6) },
+  uHitR: { value: 1000 },
   // Haze: dust per metre, and the height where it thins.
   uHaze: { value: 0.00013 },
   uHazeH: { value: 700 },
@@ -392,26 +393,29 @@ uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
 uniform vec4 uHitP;
+// The blast: its world place and strength; the rock's radius sizes the shell.
+uniform vec4 uBlast;
+uniform float uHitR;
 // The blast on a cloud at P: its light, the shock rim and the push.
 // thin is 1 at a cloud's thin edge, where light shines through.
 // The flash lights near cloud brightest; the shock reaches it first.
 vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   rim = 0.0; push = vec3(0.0);
   float t = uStarT - uHitP.w;
-  if (t < 0.0 || t > 40.0) return vec3(0.0);
+  if (t < 0.0 || t > 45.0) return vec3(0.0);
   vec3 d = P - uHitP.xyz;
   float r = max(length(d), 1.0);
   vec3 n = d / r;
   // The flash: white first, then the fireball's amber.
   vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, t));
-  float I = uHit.w * 5.0 / (1.0 + r * r / 2.0e8);
+  float I = uBlast.w * 5.0 / (1.0 + r * r / 2.0e8);
   // Light that passes through toward the eye: a silver edge.
   float fwd = pow(max(dot(n, normalize(cameraPosition - P)), 0.0), 5.0);
   vec3 L = c * I * (0.45 + 2.2 * fwd * thin);
-  // The shock shell: fast at first, slow at sixty kilometres.
-  float R = 60000.0 * (1.0 - exp(-t / 5.0));
+  // The shock front: the same shell the blast draws, so they meet.
+  float R = 1.4 * uHitR + 36000.0 * (1.0 - exp(-t / 9.0));
   float w = 500.0 + 0.06 * R;
-  float fade = exp(-t / 9.0);
+  float fade = exp(-t / 7.0);
   rim = exp(-(r - R) * (r - R) / (2.0 * w * w)) * fade;
   // Cloud behind the front is pushed out, then settles.
   push = n * smoothstep(R + w, R - 2.0 * w, r) * fade * (900.0 + 0.04 * R);
@@ -551,7 +555,6 @@ vec3 ambient(vec3 N) { return mix(uHorC, uZenC, N.y * 0.5 + 0.5) * 0.55; }
 vec3 sunLight(vec3 N) { return uSunC * max(dot(N, uSun), 0.0); }
 // The rock lights what faces it, faintly by day.
 // The blast lights everything within some 20 km of it.
-uniform vec4 uBlast;
 vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * uBlast.w * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8); }
 // The rock lights what faces it: faintly by day, clearly at night.
 // uStars is 0 by day and 1 once the sun is 10 degrees under.
@@ -3627,7 +3630,7 @@ function shatter(c) {
   hitFlash = 1; cam.shake += 0.5 * c;
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
-  U.uHitP.value.set(P.x, P.y, P.z, simT);
+  U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
   // The boom sample replaces the synth rumble once it decodes.
   if (!boomOK) rumble(c);
 }
@@ -4456,7 +4459,7 @@ window.__qa = {
   dust: () => ({ charge: chargeDust.visible, shot: shotDust.visible, kase: caseDustV.visible }),
   chunkSegs: () => chunks.map(ch => ch.segs.map(t => (t.m.visible ? [t.pu.uX0.value | 0, t.pu.uSeg.value | 0] : null))),
   // Pose the blast on the clouds t seconds after a hit at the rock.
-  blast(t) { hitFlash = Math.exp(-t / 0.4) + 0.3 * Math.exp(-t / 5); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); frame(); draw(); },
+  blast(t) { hitFlash = Math.exp(-t / 0.4) + 0.3 * Math.exp(-t / 5); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); U.uHitR.value = ast.R; U.uBlast.value.set(ast.pos.x, ast.pos.y, ast.pos.z, hitFlash); frame(); draw(); },
 };
 
 /* ---------- ready ---------- */
