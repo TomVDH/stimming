@@ -37,7 +37,7 @@ The first frame is a picture: the hazed glow, the lit tab and its small shadow.
 - **Press near an edge or on a lifted flap (within 28 px):** grab the film there. The peel direction is set by the grab point: an edge peels straight, a corner peels on the diagonal.
 - **Drag:** the front advances when the film goes taut. A slow drag peels smoothly and quietly; a fast drag peels in crackling jumps.
 - **Release:** the flap stays lifted and sags into a loose curl. Grab it again to go on.
-- **Flick past halfway:** the sheet tears free and flutters off.
+- **Flick once a third is off:** the sheet tears free and flutters off.
 - **Press inside the sheet:** the film flexes under the press and coloured rings bloom where the air gap thins (Newton's rings). Nothing peels.
 - **+ Sheet (N):** a fresh sheet drops on, settles, and pushes its air out to the edges.
 - **Untouched:** no drift. The loop sleeps.
@@ -79,7 +79,7 @@ Sheet coordinates: u runs along the peel direction d from the grabbed edge; the 
 | Advance | If the path from the front to the pointer is longer than s, the film is taut and the front advances. |
 | Stick-slip | The front holds until tension passes the tack threshold, then jumps a step. Faster pulls make smaller, more frequent jumps. Each jump is an event: crackle, a glow flicker, and on Tape a faint band left on the surface. |
 | Slack | If the path is shorter than s, the free part sags under gravity into a loose curl. |
-| Tear-off | Release with s past half the sheet and pointer speed above a threshold: the sheet leaves as one body with spin and lift, and flutters off in about 1 s. |
+| Tear-off | Release with s past a third of the sheet and pointer speed above a threshold: the sheet leaves flat, with spin, lift and a ripple, and flutters off fading in about 1 s. |
 
 ## Tech
 

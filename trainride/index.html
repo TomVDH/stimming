@@ -464,6 +464,13 @@ const OUTU = {
   tLk: { value: tLk },
   tR: { value: tR },
   tN: { value: tN },
+  // Crow flocks: the field point (x, z), the take-off time, and which way they fly off.
+  uCrow: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+  // The plane: where it starts and when; its velocity and how long it flies.
+  uPlane: { value: new THREE.Vector4() },
+  uPlaneV: { value: new THREE.Vector4(1, 0, 0, 0) },
+  // 1 for a high plane that draws a contrail; 0 for a near one on its way down.
+  uPlaneK: { value: 0 },
   tFd: { value: tFd },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
@@ -1720,6 +1727,419 @@ void main() {
   gl_FragColor = vec4(LAMPC * max(vK, 0.0) * (1.0 - uDay) * (core * 14.0 + halo * 1.2) * k, 1.0);
 }`);
 
+/* Life outside: boats on the lakes, birds in the air, a plane far off. */
+// Boats: a few lake steamers with a wake, sails by day, and one car ferry that crosses at Horgen.
+// Each boat's texel holds its home point, its kind (0 steamer, 1 sail, 2 ferry) and a seed.
+const BOATMOVE = /* glsl */`
+// Where a boat is at time t: offset along the line, offset out from it, and its heading.
+vec3 boatAt(vec4 a, float t) {
+  float sd = a.w;
+  // A steamer runs 1.5 km each way along the lake.
+  if (a.z < 0.5) { float ph = t * 0.0035 + sd * 40.0; return vec3(1500.0 * sin(ph), 0.0, cos(ph) > 0.0 ? 0.0 : 3.14159); }
+  // A sail tacks about in a small patch.
+  if (a.z < 1.5) { float ph = t * 0.02 + sd * 40.0, p2 = t * 0.013 + sd * 70.0; return vec3(120.0 * sin(ph), 60.0 * sin(p2), atan(-0.78 * cos(p2), 2.4 * cos(ph))); }
+  // The ferry crosses the lake and comes back; its seed holds the half width of the crossing.
+  float ph = t * 0.0045;
+  return vec3(0.0, sd * 4000.0 * sin(ph), cos(ph) > 0.0 ? -1.5708 : 1.5708);
+}`;
+{
+  const W = ROUTE.w, isLake = (i, j) => ROUTE.f[(j * W + i) * 2] === 255, tOf = j => -400 + 8 * j + TB * j * j;
+  // A column's lake beside the line: from its near shore out to its far shore, in metres.
+  const span = x => {
+    const i = Math.floor((((x % TILE) + TILE) % TILE) / TILE * W) % W;
+    let a = -1, b = -1;
+    for (let j = Math.ceil(jOf(30)); j < NT; j++) { if (isLake(i, j)) { if (a < 0) a = j; b = j; } else if (a >= 0) break; }
+    return a < 0 ? null : [tOf(a), tOf(b)];
+  };
+  const list = [];
+  // Dev reads the list to find a boat.
+  out.userData.boats = list;
+  // Boats keep to the train's side of the lake, where the window sees them well: most within a kilometre of the near shore.
+  const add = (kind, n, room, reach) => {
+    for (let k = 0, tries = 0; k < n && tries < n * 40; tries++) {
+      const x = rnd() * (TILE - 4000), sp = span(x);
+      if (!sp || sp[1] - sp[0] < 2 * room + 200) continue;
+      const t = sp[0] + room + rnd() ** 1.6 * Math.min(reach, sp[1] - sp[0] - 2 * room);
+      // A steamer needs water along its whole run.
+      if (kind === 0 && [-1500, -750, 750, 1500].some(d => { const q = span(x + d); return !q || t < q[0] + 120 || t > q[1] - 120; })) continue;
+      list.push([x, -t, kind, rnd()]);
+      k++;
+    }
+  };
+  add(0, 14, 260, 900);
+  add(1, 320, 90, 1300);
+  // The Horgen ferry: its home is the middle of the lake there.
+  { const x = S0('Horgen') + 250, sp = span(x); if (sp) list.push([x, -(sp[0] + sp[1]) / 2, 2, Math.max(0, (sp[1] - sp[0]) / 2 - 90) / 4000]); }
+  const d = new Float32Array(list.flat()), bo = new Float32Array(PW * Math.ceil(list.length / PW) * 4);
+  bo.set(d);
+  const tBo = new THREE.DataTexture(bo, PW, bo.length / 4 / PW, THREE.RGBAFormat, THREE.FloatType);
+  tBo.needsUpdate = true;
+  const fleet = placer(d, /* glsl */`
+  uniform float uTime, uDay;
+  ${BOATMOVE}
+  vec4 place(vec4 a) {
+    // Sails come out by day only.
+    if (a.w <= 0.0 || (a.z > 0.5 && a.z < 1.5 && uDay < 0.35)) return vec4(0.0);
+    vec3 mv = boatAt(a, uTime);
+    float x = uCamX + mod(a.x + mv.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    vec2 xz = vec2(x, a.y - mv.y);
+    if (abs(x - uCamX) > 9000.0 || shore(xz) > -5.0) return vec4(0.0);
+    return vec4(x, land(xz), xz.y, 1.0 + a.z * 10.0 + 0.9 * a.w);
+  }`, 60);
+  const box = (w, h, dd, x, y, z) => new THREE.BoxGeometry(w, h, dd).translate(x, y, z);
+  const tri = pts => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)); g.computeVertexNormals(); return g; };
+  // Parts: 0 hull, 1 cabins with windows, 2 funnel, 3 sail, 4 dark trim, 5 cars.
+  const steamer = joinParts([[box(42, 2.4, 7, 0, 0.5, 0), 0], [box(30, 2.25, 6, -1, 2.83, 0), 1], [box(19, 2.25, 5, -2, 5.08, 0), 1], [new THREE.CylinderGeometry(0.85, 1.0, 3.4, 8).translate(-3, 7.9, 0), 2], [box(0.12, 4.5, 0.12, 15, 6.0, 0), 4]]);
+  const sail = joinParts([[box(10, 1.3, 3.0, 0, 0.4, 0), 0], [box(0.16, 13.4, 0.16, 0.6, 7.6, 0), 4], [tri([0.45, 1.8, 0, 0.45, 14.2, 0, -5.0, 2.1, 0]), 3], [tri([0.9, 1.8, 0, 0.9, 11.8, 0, 4.8, 1.6, 0]), 3]]);
+  const cars = [];
+  for (let i = 0; i < 7; i++) for (const z of [-3.4, 0, 3.4]) if ((i * 3 + z) % 4 !== 1) cars.push([box(4.1, 1.35, 1.8, -15 + i * 5, 2.2, z), 5]);
+  const ferry = joinParts([[box(50, 2.2, 13, 0, 0.4, 0), 0], [box(9, 2.6, 13.4, 0, 6.6, 0), 1], [box(0.5, 4.0, 0.5, -3.5, 3.5, 6.2), 4], [box(0.5, 4.0, 0.5, 3.5, 3.5, 6.2), 4], [box(0.5, 4.0, 0.5, -3.5, 3.5, -6.2), 4], [box(0.5, 4.0, 0.5, 3.5, 3.5, -6.2), 4], ...cars]);
+  const BVS = /* glsl */`
+  uniform sampler2D tBo;
+  uniform float uTime;
+  varying vec3 vL;
+  flat varying float vK, vV;
+  ${BOATMOVE}
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    vec4 a = texelFetch(tBo, ivec2(GID % ${PW}, GID / ${PW}), 0);
+    float hd = boatAt(a, uTime).z, sail = step(0.5, a.z) * step(a.z, 1.5);
+    // A sail heels to the wind; every boat rolls a little and rides the swell.
+    float roll = 0.16 * sail + 0.03 * sin(uTime * 0.8 + a.w * 31.0), cr = cos(roll), sr = sin(roll);
+    vec3 l = vec3(position.x, cr * position.y - sr * position.z, sr * position.y + cr * position.z);
+    vec3 n = vec3(normal.x, cr * normal.y - sr * normal.z, sr * normal.y + cr * normal.z);
+    float c = cos(hd), s = sin(hd);
+    vP = q.xyz + vec3(c * l.x + s * l.z, l.y + 0.1 * sin(uTime * 0.9 + a.w * 50.0), -s * l.x + c * l.z);
+    vN = vec3(c * n.x + s * n.z, n.y, -s * n.x + c * n.z);
+    vL = position; vK = a.z; vV = a.w; vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`;
+  const BFS = /* glsl */`
+  varying vec3 vL;
+  flat varying float vK, vV;
+  void main() {
+    vec3 N = normalize(vN);
+    if (!gl_FrontFacing) N = -N;
+    vec3 alb = vec3(0.86, 0.86, 0.84), glow = vec3(0.0);
+    if (vPart < 0.5) {
+      // Hulls: white over a dark waterline; the ferry is blue.
+      alb = vL.y < 0.35 ? vec3(0.05, 0.06, 0.08) : vK > 1.5 ? vec3(0.1, 0.19, 0.34) : vec3(0.86, 0.86, 0.84);
+    } else if (vPart < 1.5) {
+      // Cabins: one band of windows a deck, dark by day and lit at night.
+      float y = vK > 1.5 ? vL.y - 5.3 : mod(vL.y - 1.7, 2.25);
+      float win = step(0.75, y) * step(y, 1.65) * step(0.3, fract(vL.x / 1.7 + 0.15)) * step(abs(N.y), 0.5);
+      alb = mix(alb, vec3(0.07, 0.09, 0.12), win);
+      glow = vec3(1.0, 0.78, 0.5) * 0.8 * win * (1.0 - uDay);
+    } else if (vPart < 2.5) alb = vL.y > 8.9 ? vec3(0.05) : vec3(0.8, 0.7, 0.45);
+    else if (vPart < 3.5) alb = fract(vV * 7.0) < 0.15 ? vec3(0.75, 0.2, 0.12) : vec3(0.9, 0.89, 0.85);
+    else if (vPart < 4.5) alb = vec3(0.1, 0.1, 0.11);
+    else {
+      // Cars on the ferry's deck, one colour each.
+      float h = hash1(floor(vec2(vL.x / 5.0 + 3.5, vL.z / 3.4 + 1.5)));
+      alb = h < 0.3 ? vec3(0.6, 0.6, 0.62) : h < 0.5 ? vec3(0.1, 0.1, 0.12) : h < 0.7 ? vec3(0.5, 0.08, 0.06) : h < 0.85 ? vec3(0.08, 0.16, 0.4) : vec3(0.8, 0.8, 0.78);
+    }
+    vec3 c = propLit(vP, N, alb, 1.0, 0.0) + glow;
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`;
+  const bu = { side: THREE.DoubleSide, uniforms: { tBo: { value: tBo } } };
+  propMesh(steamer, fleet, BVS, BFS, { ...bu, keep: w => w < 10 });
+  propMesh(sail, fleet, BVS, BFS, { ...bu, keep: w => w >= 10 && w < 20 });
+  propMesh(ferry, fleet, BVS, BFS, { ...bu, keep: w => w >= 20 });
+  // A wake trails each steamer and the ferry: a pale wedge on the water that fades astern.
+  const wake = joinParts([[new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), 0]]);
+  propMesh(wake, fleet, /* glsl */`
+  uniform sampler2D tBo;
+  uniform float uTime;
+  varying vec2 vU;
+  ${BOATMOVE}
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    vec4 a = texelFetch(tBo, ivec2(GID % ${PW}, GID / ${PW}), 0);
+    float hd = boatAt(a, uTime).z, c = cos(hd), s = sin(hd);
+    // u runs from the stern back 110 m; the wedge widens as it goes.
+    vU = vec2(0.5 - position.x, position.z * 2.0);
+    vec3 l = vec3(-20.0 - vU.x * 110.0, 0.06, position.z * (9.0 + 26.0 * vU.x));
+    vP = q.xyz + vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z);
+    vN = vec3(0.0, 1.0, 0.0);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying vec2 vU;
+  void main() {
+    // Foam at the two edges of the wedge, broken by noise, thinning astern.
+    float edge = smoothstep(0.45, 0.95, abs(vU.y)) * smoothstep(1.0, 0.92, abs(vU.y));
+    float foam = (edge * 0.8 + 0.25 * (1.0 - abs(vU.y))) * (1.0 - vU.x) * (0.6 + 0.4 * vnoise(vec2(vP.x, vP.z) * 0.5 + uTime * 0.3));
+    vec3 c = propLit(vP, vec3(0.0, 1.0, 0.0), vec3(0.8, 0.84, 0.86), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), clamp(foam, 0.0, 1.0) * 0.7);
+  }`, { transparent: true, side: THREE.DoubleSide, uniforms: { tBo: { value: tBo } }, keep: w => w < 10 || w >= 20, order: 1 });
+}
+// Birds: gulls in loose flocks over the water, a buzzard that circles over the land, and crows that lift off a field as the train comes.
+// One bird is two wings; the vertex shader flies it. All of them roost at night.
+{
+  const W = ROUTE.w, lakeAt = (x, t) => ROUTE.f[(Math.round(jOf(t)) * W + Math.floor((((x % TILE) + TILE) % TILE) / TILE * W) % W) * 2] === 255;
+  const A = [], K = [];
+  // Gull flocks: over the lake, 60 to 450 m out.
+  for (let f = 0, tries = 0; f < 340 && tries < 20000; tries++) {
+    const x = rnd() * TILE, t = 35 + rnd() * 260;
+    if (!lakeAt(x, t) || !lakeAt(x, t + 60)) continue;
+    const h = 6 + rnd() * 26, nb = 4 + Math.floor(rnd() * 6);
+    for (let b = 0; b < nb; b++) { A.push(x, h, -t, rnd()); K.push(0); }
+    f++;
+  }
+  // Buzzards: alone, high over dry ground.
+  for (let b = 0, tries = 0; b < 16 && tries < 2000; tries++) {
+    const x = rnd() * TILE, t = 150 + rnd() * 700;
+    if (lakeAt(x, t) || lakeAt(x, t + 150) || lakeAt(x, Math.max(40, t - 150))) continue;
+    A.push(x, 60 + rnd() * 70, -t, rnd()); K.push(1);
+    b++;
+  }
+  // Crows: four flocks of nine wait for their cue; kind 2 to 5 names the flock.
+  for (let e = 0; e < 4; e++) for (let b = 0; b < 9; b++) { A.push(0, 0, 0, rnd()); K.push(2 + e); }
+  const g = new THREE.InstancedBufferGeometry();
+  // Two wings: body line along x, tips out along z.
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0.36, 0, 0, -0.34, 0, 0, -0.1, 0, -0.86, 0.36, 0, 0, -0.1, 0, 0.86, -0.34, 0, 0], 3));
+  g.setAttribute('aB', new THREE.InstancedBufferAttribute(new Float32Array(A), 4));
+  g.setAttribute('aK', new THREE.InstancedBufferAttribute(new Float32Array(K), 1));
+  g.instanceCount = K.length;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`
+    attribute vec4 aB;
+    attribute float aK;
+    uniform float uCamX, uTime, uDay;
+    uniform vec4 uCrow[4];
+    varying vec3 vP, vC;
+    ${NOISE}
+    ${LAND}
+    void main() {
+      if (uDay < 0.3) { ${HIDE} }
+      float sd = aB.w, s2 = fract(sd * 7.31), s3 = fract(sd * 13.7);
+      vec3 c, fw;
+      float flap, span = 1.0, bank = 0.0;
+      if (aK < 0.5) {
+        // A gull rides a wide ring round its flock's point; it flaps a while, then glides.
+        float x0 = uCamX + mod(aB.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+        float R = 14.0 + 30.0 * s2, an = uTime * (0.22 + 0.16 * s3) * (s2 > 0.5 ? 1.0 : -1.0) + sd * 40.0;
+        c = vec3(x0 + R * cos(an), land(vec2(x0, aB.z)) + aB.y + 3.0 * sin(uTime * 0.4 + sd * 20.0), aB.z + R * 0.7 * sin(an));
+        fw = normalize(vec3(-sin(an), 0.0, 0.7 * cos(an))) * (s2 > 0.5 ? 1.0 : -1.0);
+        flap = sin(uTime * 7.0 + sd * 60.0) * smoothstep(-0.2, 0.5, sin(uTime * 0.5 + sd * 30.0)) * 0.55 + 0.12;
+        vC = vec3(0.8, 0.82, 0.84);
+      } else if (aK < 1.5) {
+        // A buzzard soars: a slow, wide circle on set wings, banked into the turn.
+        float x0 = uCamX + mod(aB.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+        float R = 45.0 + 40.0 * s2, an = uTime * (0.1 + 0.05 * s3) + sd * 40.0;
+        c = vec3(x0 + R * cos(an), land(vec2(x0, aB.z)) + aB.y, aB.z + R * sin(an));
+        fw = vec3(-sin(an), 0.0, cos(an));
+        flap = 0.18; span = 1.9; bank = 0.35;
+        vC = vec3(0.2, 0.14, 0.09);
+      } else {
+        // Crows sit in a field; on their cue they rise and fly off from the line.
+        vec4 e = uCrow[int(aK - 1.5)];
+        float age = uTime - e.z - s3 * 1.2;
+        if (e.z <= 0.0 || age < -30.0 || age > 16.0) { ${HIDE} }
+        vec2 g0 = e.xy + vec2((sd - 0.5) * 16.0, (s2 - 0.5) * 12.0);
+        float up = max(age, 0.0), side = e.w > 0.5 ? 1.0 : -1.0;
+        vec3 dir = normalize(vec3(side * (0.5 + 0.5 * s2), 0.0, -1.0));
+        c = vec3(g0.x, land(g0) + 0.12 + 1.5 * up * (1.0 - exp(-up * 0.8)), g0.y) + dir * 8.5 * up * (1.0 - exp(-up));
+        fw = age > 0.0 ? dir : normalize(vec3(sd - 0.5, 0.0, s2 - 0.5));
+        // On the ground the wings fold; in the air they beat fast.
+        flap = age > 0.0 ? sin(uTime * 11.0 + sd * 60.0) * 0.7 : 0.0;
+        span = age > 0.0 ? 1.05 : 0.3;
+        vC = vec3(0.02, 0.02, 0.025);
+      }
+      // The wing tips rise and fall; a banked bird drops one wing.
+      vec3 l = position * span;
+      l.y += abs(l.z) * flap + l.z * bank;
+      vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
+      vP = c + fw * l.x + vec3(0.0, l.y, 0.0) + rt * l.z;
+      gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP, vC;
+    ${NOISE}
+    ${HAZE}
+    void main() {
+      vec3 c = vC * (sunC() * 0.5 + skyA(0.5) * 1.2) * uDay;
+      gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  out.add(m);
+}
+// A plane: most come by near and low, on their way down to the airport: a small shape by day, three lights at night.
+// Now and then by day a high one draws a contrail far off. All fly low enough in the sky for the window to hold them.
+{
+  const g = new THREE.BufferGeometry();
+  // Part 0: the contrail, a strip from the plane back along its path. Part 1: the plane. Part 2 to 4: its lights.
+  const P = [], T = [];
+  const quad = (part, x0, x1) => { P.push(x0, -1, 0, x1, -1, 0, x1, 1, 0, x0, -1, 0, x1, 1, 0, x0, 1, 0); for (let k = 0; k < 6; k++) T.push(part); };
+  for (let i = 0; i < 24; i++) quad(0, i / 24, (i + 1) / 24);
+  for (let k = 1; k <= 4; k++) quad(k, -1, 1);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`
+    attribute float part;
+    uniform float uTime, uDay, uPlaneK;
+    uniform vec4 uPlane, uPlaneV;
+    varying vec3 vP;
+    varying vec2 vU;
+    varying float vPart;
+    void main() {
+      float age = uTime - uPlane.w;
+      if (uPlane.w <= 0.0 || age < 0.0 || age > uPlaneV.w) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec3 at = uPlane.xyz + uPlaneV.xyz * age, fw = normalize(uPlaneV.xyz);
+      vec3 toEye = normalize(cameraPosition - at), up = normalize(cross(fw, toEye));
+      vU = position.xy; vPart = part;
+      vec3 w;
+      if (part < 0.5) {
+        // The trail grows to 3.2 km, then keeps that length; it spreads as it ages.
+        float len = min(age * length(uPlaneV.xyz), 3200.0);
+        w = at - fw * (40.0 + position.x * len) + up * position.y * (14.0 + 40.0 * position.x);
+        if (uDay < 0.5 || uPlaneK < 0.5) w = vec3(0.0, -1e5, 0.0);
+      } else {
+        // The plane's shape is drawn a little over life size, so it reads; a light's glow is far wider than its lamp.
+        float sz = part < 1.5 ? 17.0 : 34.0;
+        w = at + fw * position.x * sz * (part < 1.5 ? 1.6 : 1.0) + up * position.y * sz;
+      }
+      vP = w;
+      gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    uniform float uTime;
+    varying vec3 vP;
+    varying vec2 vU;
+    varying float vPart;
+    ${NOISE}
+    ${HAZE}
+    void main() {
+      vec3 c;
+      float a;
+      if (vPart < 0.5) {
+        // The contrail: white, soft at its edges, thin where it is old.
+        a = (1.0 - vU.y * vU.y) * smoothstep(0.0, 0.03, vU.x) * (1.0 - vU.x) * 0.8 * uDay * (1.0 - 0.8 * uRain);
+        c = vec3(1.0, 0.99, 0.97) * (sunC() * 0.5 + skyA(1.0));
+      } else if (vPart < 1.5) {
+        // The plane by day, from the side: a fuselage, a wing root and a tail fin, grey against the bright sky.
+        float shape = max(step(abs(vU.y), 0.2), max(step(abs(vU.x + 0.84), 0.14) * step(0.0, vU.y) * step(vU.y, 0.62), step(abs(vU.x - 0.05), 0.22) * step(abs(vU.y + 0.12), 0.26)));
+        a = shape * uDay * (1.0 - 0.8 * uRain);
+        c = vec3(0.3, 0.32, 0.36) * (sunC() * 0.6 + skyA(1.0)) + sunC() * 0.5 * step(0.08, vU.y) * step(vU.y, 0.2);
+      } else {
+        // At night: a steady white light, a red beacon that pulses, a white strobe that flashes twice.
+        float r2 = dot(vU, vU), spot = exp(-r2 * 30.0) + 0.25 * exp(-r2 * 5.0);
+        float ph = fract(uTime / 1.3);
+        float on = vPart < 2.5 ? 0.5 : vPart < 3.5 ? smoothstep(0.5, 0.2, abs(fract(uTime / 1.1) - 0.5) * 2.0) : step(ph, 0.06) + step(0.16, ph) * step(ph, 0.22);
+        c = (vPart < 2.5 ? vec3(1.0, 0.95, 0.85) : vPart < 3.5 ? vec3(1.0, 0.12, 0.08) : vec3(1.0)) * 2.5;
+        a = spot * on * (1.0 - uDay) * (1.0 - 0.8 * uRain);
+        // The red beacon and the strobe sit a little apart from the steady light.
+        if (vPart > 2.5 && vPart < 3.5) a *= step(0.0, vU.x); else if (vPart > 3.5) a *= step(vU.x, 0.0);
+      }
+      gl_FragColor = vec4(c, a * (1.0 - 0.6 * hazeAmt(vP)));
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 1;
+  out.add(m);
+}
+
+// Cars at night: pairs of lights that drive the bigger mapped roads (tools/carpaths.py).
+// Each car rides one path at its road's pace, keeps to its lane, and throws a faint pool on the road ahead.
+if (ROUTE.paths && ROUTE.paths.length > 4) {
+  const Pb = ROUTE.paths, pts = [], paths = [];
+  for (let i = 0; i + 1 < Pb.length; i += 2) {
+    if (Pb[i] === 65535) paths.push([pts.length / 2, 0, Pb[i + 1]]);
+    else if (paths.length) { pts.push(Pb[i] / 65535 * TILE, -Pb[i + 1] / 100); paths[paths.length - 1][1]++; }
+  }
+  const TW = 1024, pd = new Float32Array(TW * Math.ceil(pts.length / 2 / TW) * 2);
+  pd.set(pts);
+  const tPath = new THREE.DataTexture(pd, TW, pd.length / 2 / TW, THREE.RGFormat, THREE.FloatType);
+  tPath.needsUpdate = true;
+  // By class: metres between cars in one direction, and their speed in m/s.
+  const GAP = [90, 130, 170, 230, 380], VEL = [28, 16, 14, 13, 11], A = [];
+  for (const [start, n, k] of paths) {
+    const len = (n - 1) * 12;
+    for (const dir of [1, -1]) for (let c = 0, m = Math.max(rnd() < len / GAP[k] ? 1 : 0, Math.round(len / GAP[k] * (0.6 + 0.8 * rnd()))); c < m; c++) A.push(start, n, dir * VEL[k] * (0.85 + 0.3 * rnd()) / 12, rnd());
+  }
+  const g = new THREE.InstancedBufferGeometry(), P = [], T = [];
+  // Part 0: the headlights. Part 1: the tail lights. Part 2: the pool of light on the road.
+  for (let k = 0; k < 3; k++) { P.push(-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0); for (let i = 0; i < 6; i++) T.push(k); }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  g.setAttribute('aCar', new THREE.InstancedBufferAttribute(new Float32Array(A), 4));
+  g.instanceCount = A.length / 4;
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tPath: { value: tPath } }),
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`
+    attribute float part;
+    attribute vec4 aCar;
+    uniform sampler2D tPath;
+    uniform float uTime, uCamX, uDay;
+    varying vec2 vU;
+    varying vec3 vP;
+    varying float vPart, vK;
+    ${NOISE}
+    ${LAND}
+    vec2 pathAt(float i) { int k = int(i + 0.5); return texelFetch(tPath, ivec2(k % ${TW}, k / ${TW}), 0).rg; }
+    void main() {
+      if (uDay > 0.6) { ${HIDE} }
+      // u counts points along the path; the car wraps from one end to the other.
+      float n = aCar.y - 1.0, u = mod(aCar.w * n + uTime * aCar.z, n), i0 = floor(u);
+      vec2 a = pathAt(aCar.x + i0), b = pathAt(aCar.x + i0 + 1.0);
+      vec2 d2 = normalize(b - a) * sign(aCar.z), rt2 = vec2(-d2.y, d2.x);
+      // Its lane lies 1.6 m to one side of the road's middle line.
+      vec2 p = mix(a, b, u - i0) + rt2 * 1.6;
+      float x = uCamX + mod(p.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+      vec3 c = vec3(x, land(vec2(x, p.y)) + 0.65, p.y), dir = vec3(d2.x, 0.0, d2.y), rt = vec3(rt2.x, 0.0, rt2.y);
+      vec3 toEye = cameraPosition - c;
+      float dist = length(toEye), facing = dot(dir, toEye / dist);
+      // A car fades in and out at its path's ends, so none pops.
+      float ends = smoothstep(0.0, 2.5, u) * smoothstep(n, n - 2.5, u);
+      vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cu = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      // Far lights keep a few pixels of size.
+      float sz = max(1.0, dist * 0.0035);
+      vec3 w;
+      if (part < 0.5) { w = c + dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz; vK = smoothstep(-0.3, 0.3, facing); }
+      else if (part < 1.5) { w = c - dir * 1.9 + (cr * position.x * 1.5 + cu * position.y) * sz * 0.6; vK = smoothstep(0.3, -0.3, facing); }
+      else {
+        w = c + dir * (3.0 + (position.x * 0.5 + 0.5) * 18.0) + rt * position.y * 2.4;
+        w.y = land(w.xz) + 0.08;
+        vK = 1.0;
+      }
+      vK *= ends * (1.0 - uDay / 0.6);
+      vU = position.xy; vPart = part; vP = w;
+      gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec2 vU;
+    varying vec3 vP;
+    varying float vPart, vK;
+    ${NOISE}
+    ${HAZE}
+    void main() {
+      vec3 c;
+      if (vPart < 1.5) {
+        // Two lamps side by side: a hot core each and one soft halo; rain widens the halo.
+        vec2 q = vec2(vU.x * 1.5, vU.y);
+        float l = exp(-dot(q - vec2(0.42, 0.0), q - vec2(0.42, 0.0)) * 26.0) + exp(-dot(q + vec2(0.42, 0.0), q + vec2(0.42, 0.0)) * 26.0);
+        float halo = exp(-dot(q, q) * (3.0 - 1.5 * uRain)) * (0.12 + 0.2 * uRain);
+        c = (vPart < 0.5 ? vec3(1.0, 0.94, 0.82) * 2.6 : vec3(1.0, 0.07, 0.04) * 1.3) * (l + halo);
+      } else {
+        // The pool: brightest near the car, gone by 20 m.
+        float along = vU.x * 0.5 + 0.5;
+        c = vec3(1.0, 0.9, 0.72) * 0.07 * (1.0 - along) * (1.0 - along) * (1.0 - vU.y * vU.y) * (1.0 + 2.0 * uRain);
+      }
+      gl_FragColor = vec4(c * vK * (1.0 - 0.7 * hazeAmt(vP)), 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 3;
+  out.add(m);
+}
+
 /* Station platforms: a wet slab, a canopy on columns, masts, a fence, benches and the name signs. */
 // One platform moves to whichever station is nearest.
 // Its parts sit in platform space: x = 0 is the station's centre.
@@ -2563,6 +2983,8 @@ const W = {
   // tBok is the outside, gathered into bokeh discs at half resolution.
   tBok: { value: null },
   uStnK: { value: 0 },
+  // The light a passing train's saloon throws into our cabin.
+  uOppL: { value: 0 },
   // uPost: the nearest posts in wall units, with the sun strength in z.
   uPost: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
   uSunW: { value: new THREE.Vector3(-0.6, 0.36, -0.72).normalize() },
@@ -2586,7 +3008,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec2 uHalf;
   uniform vec3 uLamp[3];
   uniform sampler2D tPid, tStamp, tBok;
-  uniform float uStnK;
+  uniform float uStnK, uOppL;
   uniform vec3 uPost[3], uSunW;
   uniform vec2 uPh;
   varying vec2 vUv;
@@ -2869,6 +3291,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
         col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
+        col += alb * vec3(1.0, 0.86, 0.68) * uOppL * 0.2 * (0.4 + 0.6 * f);
         for (int i = 0; i < 3; i++) {
           float k = uLamp[i].z;
           if (k <= 0.0) continue;
@@ -2903,6 +3326,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         col += alb * vec3(1.0, 0.84, 0.6) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
+      // A passing train's lit saloon washes the wall round the window.
+      col += alb * vec3(1.0, 0.86, 0.68) * uOppL * (0.02 + 0.07 * exp(-max(dW, 0.0) * 3.0));
       // Spill: a little lamp light reaches the wall beside the window.
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.72, 0.42) * uLamp[i].z * 0.012 * exp(-dW * 18.0) * exp(-length(uLamp[i].xy - p) * 3.0);
       // The stop line: flat type straight on the wall over the window, no screen.
@@ -3236,6 +3661,9 @@ function place() {
   OUTU.uPlat.value.set(halt ? -10 : CAN, half, halt ? 36 : 24, halt ? -4 / 36 : 0.5);
   OUTU.uStn.value.set(sx, platform.visible ? half + 2 : 0);
   // Inside the platform's reach, its light comes in through the window.
+  // A passing train's saloon lights reach in while it is alongside; they waver as its windows go by.
+  { const d = opp.x - camX, k = opp.on ? THREE.MathUtils.smoothstep(-d, 0, 8) * THREE.MathUtils.smoothstep(d + opp.len, 0, 8) : 0;
+    W.uOppL.value = k * (1 - 0.8 * dayV) * (0.8 + 0.2 * Math.sin(time * 23)); }
   W.uStnK.value = (1 - dayV) * (halt ? 0.4 : 1) * THREE.MathUtils.smoothstep(half + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
   if (platform.visible) drawSign(sn);
   sky.position.copy(outCam.position);
@@ -3354,6 +3782,29 @@ function eta() {
   }
   return Infinity;
 }
+// Cues for the life outside: crows that lift off ahead of the train, and a plane now and then.
+let crowAt = 25, crowN = 0, planeAt = 30;
+function life() {
+  // Crows: by day, at speed, on dry ground clear of any station; they rise as the train draws near.
+  if (time > crowAt && dayV > 0.6 && speed > 9) {
+    crowAt = time + 40 + Math.random() * 80;
+    const x0 = camX + 150 + Math.random() * 60, t0 = 26 + Math.random() * 44, xm = ((x0 % TILE) + TILE) % TILE;
+    const j = Math.round(jOf(t0)), i = Math.floor(xm / TILE * ROUTE.w) % ROUTE.w;
+    const wet = [0, 1, 2, 3].some(k => ROUTE.f[((j + k) * ROUTE.w + i) * 2] === 255);
+    if (!wet && STN.every(([, sv]) => Math.abs(sv - xm) > 350)) OUTU.uCrow.value[crowN++ % 4].set(x0, -t0, time + Math.max(0.5, (x0 - camX - 55) / speed), Math.random());
+  }
+  // A plane: it crosses the far sky in two to three minutes, then the sky rests a while.
+  if (time > planeAt) {
+    // By day one plane in three is a high one, 15 km out, with a contrail; the rest pass 6 km out, on their way down.
+    const high = dayV > 0.5 && Math.random() < 0.33, dir = Math.random() < 0.5 ? 1 : -1, dur = high ? 170 : 100;
+    const el = (high ? 7 + Math.random() * 4 : 3.5 + Math.random() * 4.5) * Math.PI / 180, R = high ? 15000 : 6000;
+    const v = high ? 62 : 72, x0 = camX + speed * dur * 0.5 - dir * v * dur * 0.5, z0 = -R * Math.cos(el) * (0.85 + 0.15 * Math.random());
+    OUTU.uPlane.value.set(x0, R * Math.sin(el), z0, time);
+    OUTU.uPlaneV.value.set(dir * v, high ? 0.8 : -2.2, (Math.random() - 0.5) * 14, dur);
+    OUTU.uPlaneK.value = high ? 1 : 0;
+    planeAt = time + dur + 60 + Math.random() * 150;
+  }
+}
 // Runs on the pane follow the head wind closely: a short lag, no more.
 // At rest they fall straight down; at speed they stream aft.
 let runS = 0, flow = 0;
@@ -3387,6 +3838,7 @@ function update(dt, pace) {
   }
   camX += speed * dt;
   time += dt;
+  life();
   runFlow(dt);
   oncoming(dt);
   OUTU.uTime.value = time;
@@ -3438,6 +3890,10 @@ return {
     if (!on) topCam = null;
     W.uTop.value = on ? 1 : 0;
   },
+  // Dev: bring on the next plane or the next crows at once.
+  cue(k) { if (k === 'plane') planeAt = 0; else crowAt = 0; },
+  // Dev: where the plane and the crows are now, to find them on screen.
+  get life() { return { time, plane: OUTU.uPlane.value, planeV: OUTU.uPlaneV.value, crows: OUTU.uCrow.value }; },
   // Dev: stand still at a point, as at a stop, for stills.
   hold(x) { camX = x; speed = 0; stopX = x; dwell = 1e9; place(); },
   // Dev scrub: jump to a point on the line; the next stop is found again.
@@ -3483,6 +3939,11 @@ return {
     eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far);
     eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
   },
+  // A click: lean to the glass, or sit back in the seat.
+  zoom() {
+    eyeT.z = eyeT.z > 0.7 ? 0.42 : REACH.far;
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
+  },
   // A moving train draws at full rate; the sleep still stops it.
   lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT || Math.abs(nod) + Math.abs(nodV) > 0.0004,
   setMode(v, now) {
@@ -3521,7 +3982,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -3536,6 +3997,8 @@ async function loadRoute() {
     // Farm parcels beside the line (tools/fields.py); without them the invented farms serve.
     // Dev: ?nofields leaves them out, to compare.
     qs.has('nofields') ? null : opt('fields.png'),
+    // Car paths on the bigger mapped roads (tools/carpaths.py); without them no cars drive.
+    fetch('paths.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -3619,7 +4082,7 @@ async function loadRoute() {
     fd = new Uint8Array(g4.getImageData(0, 0, fimg.width, fimg.height).data.buffer);
     fw = fimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -3782,9 +4245,11 @@ function loadClips(ac) {
     }).catch(() => { clipLoad = null; });
   return clipLoad;
 }
-// The recording bus: background level, a trimmed low end and a gentle treble lift.
+// The recording bus: background level and a warm tilt.
 // Last comes the compartment door: shut, it muffles the ride; open, the sound clears and lifts.
 const DOOR_SHUT = 3000, DOOR_OPEN = 16000;
+// The bus level: a little under the first mix.
+const BUS = 0.32;
 let recBus = null, doorF = null, doorG = null, subBus = null;
 // The mix: each layer's level as a multiple of its set level; 1 leaves it as set.
 // door is the muffle's depth: 0 leaves the sound open, 1 is the full muffle.
@@ -3817,17 +4282,18 @@ function applyMix() {
   const ac = kit.ac;
   if (!ac) return;
   for (const [n, g] of Object.entries(chans)) g.gain.setTargetAtTime(mixOf(n), ac.currentTime, 0.05);
-  if (recBus) recBus.gain.setTargetAtTime(0.42 * MIX.master, ac.currentTime, 0.05);
+  if (recBus) recBus.gain.setTargetAtTime(BUS * MIX.master, ac.currentTime, 0.05);
   doorSet(ac, 0.1);
 }
 function bus(ac) {
   if (recBus) return recBus;
-  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
-  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
-  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
+  // More body, less edge: the lows come up, the thin band near 3 kHz comes down, the top rolls off.
+  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 180; lo.gain.value = 4;
+  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 4200; hi.gain.value = -4;
+  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 2800; air.Q.value = 0.9; air.gain.value = -3;
   doorF = ac.createBiquadFilter(); doorF.type = 'lowpass'; doorF.frequency.value = DOOR_OPEN * (DOOR_SHUT / DOOR_OPEN) ** MIX.door; doorF.Q.value = 0.6;
   doorG = ac.createGain();
-  recBus = ac.createGain(); recBus.gain.value = 0.42 * MIX.master;
+  recBus = ac.createGain(); recBus.gain.value = BUS * MIX.master;
   recBus.connect(lo).connect(hi).connect(air).connect(doorF).connect(doorG).connect(kit.out);
   // The sub bus carries only the low thud of a passing train.
   const sub = ac.createBiquadFilter(); sub.type = 'lowpass'; sub.frequency.value = 130; sub.Q.value = 0.7;
@@ -3894,10 +4360,9 @@ function voices() {
     src.connect(g).connect(sub).connect(ls).connect(pk).connect(chan(ac, 'bed'));
     src.start(0, Math.random() * clips.bed.duration);
     V.bed = { src, g, sub, ls, pk };
-    // The whine: a narrow band of the same loop that climbs with the speed, heard under power or brake.
-    // Its level is the one Tom set in the mixer (2.3 times the first try).
+    // The motor band: a low, wide band of the same loop that climbs with the speed, heard under power or brake.
     const wf = ac.createBiquadFilter(), wg = ac.createGain();
-    wf.type = 'bandpass'; wf.frequency.value = 200; wf.Q.value = 7; wg.gain.value = 0;
+    wf.type = 'bandpass'; wf.frequency.value = 140; wf.Q.value = 3.5; wg.gain.value = 0;
     src.connect(wf).connect(wg).connect(chan(ac, 'whine'));
     V.whine = { f: wf, g: wg };
   }
@@ -3965,8 +4430,9 @@ function recorded(v, ac, now, sp, k) {
   v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
   v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
   v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
-  v.whine.f.frequency.setTargetAtTime(170 + 30 * sp, now, 0.3);
-  v.whine.g.gain.setTargetAtTime(3.2 * Math.min(1, Math.abs(drive) / 0.7) * Math.min(1, sp / 5), now, 0.4);
+  v.whine.f.frequency.setTargetAtTime(120 + 14 * sp, now, 0.3);
+  // The band comes through plainly only with the compartment door open; shut, it is a trace.
+  v.whine.g.gain.setTargetAtTime(1.8 * (DOOR.open ? 1 : 0.15) * Math.min(1, Math.abs(drive) / 0.7) * Math.min(1, sp / 5), now, 0.4);
   // Before a start: the air and the doors, the clip's first 3.4 s, timed to end as the train moves.
   const left = S.dwellLeft;
   if (left > 0 && left < 3.3 && !REC.depDone) { REC.dep = cut(ac, clips.away, 0, 3.4, 1.0, 'depart', 0.2, 0.5); REC.depDone = true; }
@@ -4086,6 +4552,8 @@ function endPress(e) {
   if (touches.size < 2) pinch = 0;
   if (!press || e.pointerId !== press.id) return;
   if (press.moved) S.drag(0, 0, false);
+  // A plain click on the view leans to the glass, or sits back.
+  else if (e.type === 'pointerup' && e.target === canvas) S.zoom();
   stage.classList.remove('dragging');
   press = null;
   wake();
@@ -4118,7 +4586,7 @@ const ui = initPage({
       { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
     ],
     quality: true,
-    keys: [['drag', 'lean and peer'], ['scroll', 'lean to the glass'], ['W', 'next weather'], ['E', 'express']],
+    keys: [['click', 'lean in or sit back'], ['drag', 'peer'], ['W', 'next weather'], ['E', 'express']],
   },
 });
 onQuality(() => { rung = 0; resize(true); wake(); });
