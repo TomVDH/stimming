@@ -55,7 +55,7 @@
 }
 </script>
 <script type="module">
-import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -520,6 +520,8 @@ function stepBody(b, h) {
       tC.crossVectors(b.w, tR).add(b.v);
       const vn = tC.y;
       if (vn >= 0) continue;
+      // A hard landing knocks; table and tray rim sound the same here.
+      if (vn < -1.5 && pass === 0) sfx('knock', b.p, Math.min(1, -vn / 8));
       // r x n with n = up is (-r.z, 0, r.x).
       tX.set(-tR.z, 0, tR.x);
       const jn = -(1 + (vn < -1 ? REST : 0)) * vn / (1 + tX.lengthSq() / INERT);
@@ -539,6 +541,8 @@ function stepBody(b, h) {
   }
   if (deep > 0) b.p.y += deep;
   if (floor > 0) slideOff(b, h);
+  // Skidding cubes feed the slide hiss.
+  if (hit) slideSum += Math.hypot(b.v.x, b.v.z) * h;
   // Air and contact take a little spin away each step.
   b.w.multiplyScalar(hit ? 0.992 : 0.998);
   // A slow cube on the table settles fast, so contact jitter cannot keep it awake.
@@ -568,6 +572,7 @@ function collide() {
       b.p.addScaledVector(tX, over / 2);
       const rel = tT.subVectors(b.v, a.v).dot(tX);
       if (rel >= 0) continue;
+      if (rel < -0.8) sfx('clink', tL.addVectors(a.p, b.p).multiplyScalar(0.5), Math.min(1, -rel / 8));
       const j2 = -(1.4 * rel) / 2;
       a.v.addScaledVector(tX, -j2);
       b.v.addScaledVector(tX, j2);
@@ -854,6 +859,8 @@ function bonds(dt) {
         // One fracture plane through the cube, at a random tilt.
         const nrm = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
         c.look.crack = { n: nrm, off: (rnd() - 0.5) * 0.3, at: time };
+        cellMatrix(c, M).decompose(V, Q, S);
+        sfx('crack', V, 1);
         if (!reduced()) {
           cellMatrix(c, M).decompose(V, Q, S);
           flashAt(V);
@@ -868,6 +875,7 @@ function bonds(dt) {
 // The cell wall throws the cube up and out over the nearest long side.
 function pop(c) {
   cellMatrix(c, M).decompose(V, Q, S);
+  sfx('pop', V, 1);
   c.full = false;
   const side = rows === 1 ? 1 : c.r < (rows - 1) / 2 ? -1 : c.r > (rows - 1) / 2 ? 1 : (rnd() < 0.5 ? -1 : 1);
   const out = new THREE.Vector3(0, 0, side).transformDirection(trayInner.matrixWorld).multiplyScalar(3 + 1.5 * rnd());
@@ -956,15 +964,18 @@ function frame(now) {
     trayInv.copy(trayInner.matrixWorld).invert();
     bonds(dt);
     const m = Math.ceil(dt / (1 / 120));
+    slideSum = 0;
     for (let i = 0; i < m; i++) {
       for (const b of bodies) stepBody(b, dt / m);
       collide();
     }
+    audioStep(dt);
     placeCubes();
     draw();
     again = lively();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf);
   }
 }
 
@@ -983,6 +994,110 @@ function watchdog(raw) {
   runFor = 2;
   avgDt = 1 / 60;
   resize();
+}
+
+/* ---------- sound ---------- */
+// Every voice is synthesized on the kit: noise bursts and short decaying sines.
+const kit = audioKit();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const tP = new THREE.Vector3();
+// Each sound pans with its source on the screen.
+const panAt = p => clamp(tP.copy(p).project(camera).x * 0.85, -1, 1);
+const nextAt = { crack: 0, pop: 0, clink: 0, knock: 0 };
+const GAP = { crack: 1 / 20, pop: 1 / 25, clink: 1 / 35, knock: 1 / 30 };
+let slideSum = 0, bed = null;
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.001);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+function blip(ac, at, { f, dur, level, pan = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.value = f * jit(0.05);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(level * jit(0.2), at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// One voice per event; each kind keeps its own rate cap.
+function sfx(kind, p, k) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  if (at < nextAt[kind]) return;
+  nextAt[kind] = at + GAP[kind] * jit(0.3);
+  const pan = panAt(p);
+  if (kind === 'crack') {
+    // A sharp snap, then the high ring of stressed ice.
+    burst(ac, at, { f: 2500, type: 'highpass', q: 0.7, dur: 0.012, level: 0.55, pan });
+    blip(ac, at + 0.002, { f: 3000 + 3000 * Math.random(), dur: 0.09, level: 0.09, pan });
+  } else if (kind === 'pop') {
+    // A soft, hollow tock as the cube leaves its cell.
+    blip(ac, at, { f: 380 + 140 * Math.random(), dur: 0.06, level: 0.28, pan });
+    burst(ac, at, { f: 900, q: 2, dur: 0.025, level: 0.18, pan });
+  } else if (kind === 'clink') {
+    // Ice on ice: two inharmonic partials.
+    const f = 2200 + 1600 * Math.random();
+    blip(ac, at, { f, dur: 0.12, level: 0.16 * k, pan });
+    blip(ac, at, { f: f * 2.76, dur: 0.06, level: 0.07 * k, pan });
+  } else if (kind === 'knock') {
+    // A dull knock on the table.
+    blip(ac, at, { f: 150 + 60 * Math.random(), dur: 0.07, level: 0.3 * k, pan });
+    burst(ac, at, { f: 800, type: 'lowpass', q: 0.7, dur: 0.03, level: 0.2 * k, pan });
+  }
+}
+// Two looped beds: the tray's creak and the cubes' slide hiss.
+function bedChain(ac) {
+  const loopNoise = () => { const s = ac.createBufferSource(); s.buffer = kit.noise; s.loop = true; s.start(); return s; };
+  const creakF = ac.createBiquadFilter();
+  creakF.type = 'bandpass';
+  creakF.frequency.value = 900;
+  creakF.Q.value = 9;
+  const creak = ac.createGain();
+  creak.gain.value = 0;
+  loopNoise().connect(creakF).connect(creak).connect(kit.out);
+  const hissF = ac.createBiquadFilter();
+  hissF.type = 'highpass';
+  hissF.frequency.value = 3000;
+  const hiss = ac.createGain();
+  hiss.gain.value = 0;
+  loopNoise().connect(hissF).connect(hiss).connect(kit.out);
+  return { creak, creakF, hiss };
+}
+let wander = 0;
+function audioStep(dt) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  bed ||= bedChain(ac);
+  const now = ac.currentTime;
+  // The creak follows how fast the tray twists; its pitch wanders slowly.
+  wander += dt * (0.7 + Math.random());
+  bed.creak.gain.setTargetAtTime(0.35 * clamp(Math.abs(twist.v) / 3), now, 0.04);
+  bed.creakF.frequency.setTargetAtTime(700 + 350 * Math.sin(wander) + 150 * clamp(Math.abs(twist.T) / MAXT), now, 0.08);
+  bed.hiss.gain.setTargetAtTime(0.06 * clamp(slideSum / Math.max(dt, 1e-3) / 20), now, 0.05);
+}
+// Refill: running water, then a sparse tinkle as the frost creeps in.
+function pour() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  burst(ac, at, { f: 1200, type: 'lowpass', q: 0.5, dur: 0.8, level: 0.25 });
+  for (let i = 0; i < 7; i++) blip(ac, at + 0.6 + i * 0.07 + 0.05 * Math.random(), { f: 4000 + 3000 * Math.random(), dur: 0.05, level: 0.04, pan: Math.random() * 1.2 - 0.6 });
 }
 
 /* ---------- pointer ---------- */
@@ -1088,6 +1203,7 @@ act.dump = () => {
 act.refill = () => {
   if (dump.t > 0 || refill.t > 0) return;
   refill.t = reduced() ? 0.999 : 1e-4;
+  pour();
   live();
 };
 act.reset = () => { twist.T = twist.v = twist.target = 0; dump.t = refill.t = 0; trayFlip.rotation.x = 0; build(true); draw(); live(); };
@@ -1115,7 +1231,7 @@ onReducedChange(() => { if (ready) draw(); });
 // A hidden tab stops the loop.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>
