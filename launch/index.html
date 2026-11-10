@@ -80,6 +80,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BokehShader } from 'three/addons/shaders/BokehShader2.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
+import { FLARE } from '../shared/flare.js';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -1090,6 +1091,8 @@ function makeOrbs() {
       tDiffuse: { value: null },
       uOP: { value: Array.from({ length: ORB_N }, () => new THREE.Vector3()) },
       uOC: { value: Array.from({ length: ORB_N }, () => new THREE.Vector4()) },
+      // The classic anamorphic streak: gain and flare size.
+      uOS: { value: Array.from({ length: ORB_N }, () => new THREE.Vector2()) },
       uN: { value: 0 },
       uAsp: { value: 1 },
     },
@@ -1098,7 +1101,9 @@ function makeOrbs() {
     uniform sampler2D tDiffuse;
     uniform vec3 uOP[${ORB_N}];
     uniform vec4 uOC[${ORB_N}];
+    uniform vec2 uOS[${ORB_N}];
     uniform int uN;
+    ${FLARE}
     uniform float uAsp;
     varying vec2 vUv;
     void main() {
@@ -1109,6 +1114,11 @@ function makeOrbs() {
         float r = length(vec2(d.x * uAsp * 0.6, d.y));
         // A tight core and a wide skirt; z holds the orb size.
         c += uOC[i].rgb * uOC[i].w * (exp(-r * 40.0 / uOP[i].z) + 0.35 * exp(-r * 9.0 / uOP[i].z));
+        // The shared streak, the Look rule's bands, used sparingly.
+        if (uOS[i].x > 0.001) {
+          vec2 fd = flOffset(vUv, uOP[i].xy, uAsp, uOS[i].y);
+          c += mix(uOC[i].rgb, FL_COOL, 0.25) * flStreak(fd, vec3(0.9, 0.3, 0.07), vec3(34.0, 9.0, 2.6), 1.4) * uOS[i].x;
+        }
       }
       // A soft roll-off above 2 keeps bloom free of square tiles.
       float m = max(max(c.r, c.g), c.b);
@@ -1127,6 +1137,7 @@ function placeOrbs(pass, list) {
     if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) continue;
     pass.uniforms.uOP.value[n].set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5, o.size);
     pass.uniforms.uOC.value[n].set(o.color[0], o.color[1], o.color[2], o.k);
+    pass.uniforms.uOS.value[n].set(o.streak?.[0] ?? 0, o.streak?.[1] ?? 1);
     n++;
   }
   pass.uniforms.uN.value = n;
@@ -1155,19 +1166,34 @@ const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread;
+  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread, uTime;
   varying vec2 vQ;
+  ${K2_NOISE}
   void main() {
     // y below 0 is the nozzle; y above 0 runs down the tail.
-    float x = vQ.x, y = max(vQ.y, 0.0);
+    float y = max(vQ.y, 0.0), t = uTime;
+    // Turbulence bends the tail; the bend grows down its length.
+    float x = vQ.x + (k2noise(vec2(y * 5.0 - t * 9.0, 1.7)) - 0.5) * 0.3 * y;
     float wide = mix(1.0, 3.0, uSpread);
     float core = exp(-(x * x * 40.0 * wide * wide + vQ.y * vQ.y * (vQ.y < 0.0 ? 80.0 : 22.0)));
-    // The tail is a narrow white-hot cone that cools to orange, then red.
+    // The tail breathes: its length pulses a little, many times a second.
+    float breath = 1.0 + 0.18 * (k2noise(vec2(t * 11.0, 3.1)) - 0.5);
     float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
-    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.08) * exp(-y * mix(2.4, 1.3, uSpread)) * step(-0.15, vQ.y);
+    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.08) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
+    // Eddies run down the tail and break it into tongues.
+    float eddy = k2noise(vec2(x * 7.0, y * 16.0 - t * 34.0)) * 0.6 + k2noise(vec2(x * 15.0, y * 31.0 - t * 52.0)) * 0.4;
+    tail *= mix(1.0, 0.45 + 1.1 * eddy, smoothstep(0.05, 0.3, y));
+    // Shock diamonds: bright knots in the jet, low in thick air only.
+    float jw = 0.16 + 0.06 * y;
+    float n = (y - 0.03) / 0.5 * 4.0, i = floor(n), u = fract(n) * 2.0 - 1.0;
+    float rhomb = 1.0 - abs(u) - abs(x) / (jw * (1.0 - 0.1 * i));
+    float knots = smoothstep(0.0, 0.45, rhomb) * exp(-i * 0.4) * step(0.0, n) * step(n, 4.0);
+    knots *= (1.0 - uSpread) * (0.8 + 0.4 * k2noise(vec2(t * 23.0, i)));
+    // A dark gap sits between knots, so the jet reads as a chain.
+    float jet = exp(-x * x / (jw * jw)) * exp(-y * 4.0) * mix(1.0, 0.5 + 0.5 * abs(u), (1.0 - uSpread) * step(0.0, n) * step(n, 4.0));
     vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
     hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
-    vec3 c = vec3(1.0, 0.96, 0.9) * core * 16.0 + hot * tail * 6.0 * uFlick;
+    vec3 c = vec3(1.0, 0.96, 0.9) * core * 12.0 + hot * tail * 0.7 * uFlick + vec3(1.0, 0.6, 0.3) * jet * 0.5 + vec3(1.0, 0.95, 0.85) * knots * 14.0;
     gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
   }`,
 }));
@@ -1360,7 +1386,8 @@ const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
       vec3 Li = key * tk * pd * pw * mix(2.2 * thin, 1.2, vKind) + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 0.1 + 1.5 * topLit * tk * tk, vKind);
       float ab = 1.0 - exp(-od);
       // Fire: exhaust just out of the nozzle still burns, hottest where densest.
-      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens);
+      // It lights a beat after birth, so the flame and its diamonds show first.
+      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens) * smoothstep(0.12, 0.5, vAge);
       vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-vAge / 0.5)) * burn * 22.0;
       col += T * ab * (Li + fire);
       T *= 1.0 - ab;
@@ -1727,7 +1754,8 @@ function flyTo(f) {
   // After staging only the upper stage flies, with a smaller engine.
   const up = f.stage > 1 ? 0.36 : 1;
   core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1) * fade, bl * sk * up * fade, bw * sk * (f.stage > 1 ? 0.85 : 1) * fade);
-  FU.uSize.value = Math.max(bl * sk * 0.32 * k.flame * (f.stage > 1 ? 0.55 : 1), D * 0.0007);
+  // A floor keeps the flame and its diamonds readable beside the wide trail.
+  FU.uSize.value = Math.max(bl * sk * 0.32, D * 0.0075) * k.flame * (f.stage > 1 ? 0.55 : 1);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
   // Exhaust: walk the path since the last puff and drop one each spacing.
   const q = quality() === 'high' ? 1 : 2.3;
@@ -2390,7 +2418,13 @@ function aimFollow(dt) {
   auto.yaw += (ty - auto.yaw) * e;
 }
 // The flame's glow goes in the post pass as an orb.
-const orbList = () => (flight && U.uFlame.value.w > 0.01 ? [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value) }] : []);
+// The streak flares at ignition, then holds faint while the engine burns.
+const streak = [0, 0.35];
+function orbList() {
+  if (!flight || U.uFlame.value.w <= 0.01) return [];
+  streak[0] = flight.flash * 0.5 + Math.min(flight.engine, 1) * 0.05;
+  return [{ pos: tmpB.set(U.uFlame.value.x, U.uFlame.value.y, U.uFlame.value.z), color: [1, 0.6, 0.3], size: 0.4 + 0.4 * U.uAir.value + flight.flash * 2.5, k: U.uFlame.value.w * (0.12 + 0.3 * U.uAir.value), streak }];
+}
 // The horizon sits low: the climb needs a tall sky.
 function frame() {
   const portrait = size.w < size.h;
