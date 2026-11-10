@@ -16,6 +16,9 @@
 /* Washing line: a pulley line across a place, in a wide shot. */
 :root { --stage: oklch(0.62 0.08 70); }
 .stage--washline { touch-action: none; cursor: ew-resize; }
+.stage--washline.on-peg { cursor: pointer; }
+.stage--washline.on-cloth { cursor: grab; }
+.stage--washline.held { cursor: grabbing; }
 .stage--washline canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
@@ -61,7 +64,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { H, WIND, makeLine, makePiece, hang, reel, stepWorld } from './core.js';
+import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear, cull, ropeAt } from './core.js';
 import { makeLook } from './cloth.js';
 import alley from './places/alley.js';
 
@@ -80,7 +83,7 @@ const v3 = a => new THREE.Vector3(...a);
 /* ---------- the bar ---------- */
 const PLACES = { alley };
 // Handlers bind once the scene exists.
-const act = { place() {}, sun() {}, wind() {} };
+const act = { place() {}, sun() {}, wind() {}, add() {}, release() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
   choice: { label: 'Place', value: 'alley', options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.95, onInput: v => act.sun(v) },
@@ -88,8 +91,12 @@ const ui = initPage({ id: 'washline', silent: true, bar: {
     { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
       options: [{ value: 'calm', label: 'Calm' }, { value: 'breeze', label: 'Breeze' }, { value: 'blowy', label: 'Blowy' }] },
   ],
+  actions: [
+    { verb: 'add', noun: 'Piece', onPress: () => act.add() },
+    { verb: 'release', onPress: () => act.release() },
+  ],
   quality: true,
-  keys: [['drag', 'reel']],
+  keys: [['click', 'unclip'], ['drag', 'pull'], ['drag line', 'reel']],
 } });
 
 const stage = document.getElementById('stage');
@@ -177,16 +184,34 @@ function buildPlace(id) {
   P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
   // The set builds after the look, so its still cloth can glow too.
   P.set = pl.build(scene, P.look);
+  P.flyers = [];
+  P.pending = null;
   // The wardrobe hangs left to right with small gaps.
   let s = pl.hangFrom ?? 0.3;
-  for (const it of pl.wash) {
-    const c = makePiece({ w: it.w, h: it.h, col: 0 });
-    hang(P.line, c, s);
-    P.look.addPiece(c, { alb: lin(it.c), tr: lin([Math.min(0.95, it.c[0] + 0.05), it.c[1] * 1.4, it.c[2]]) });
-    s += it.w + 0.14;
-  }
+  for (const it of pl.wash.slice(0, pl.start ?? pl.wash.length)) { hangPiece(it, s); s += it.w + 0.14; }
+  syncBar();
   setSun(st.sun);
   settle(2.5);
+}
+
+const GAP = 0.14, MAX_ON = 6;
+function hangPiece(it, s0) {
+  const c = makePiece({ w: it.w, h: it.h, col: 0 });
+  hang(P.line, c, s0);
+  P.look.addPiece(c, { alb: lin(it.c), tr: lin([Math.min(0.95, it.c[0] + 0.05), it.c[1] * 1.4, it.c[2]]) });
+  return c;
+}
+// A new piece takes a size from the wardrobe and a colour from the palette.
+function newPiece() {
+  const pl = P.place, base = pl.wash[Math.floor(Math.random() * pl.wash.length)], k = 0.85 + Math.random() * 0.3;
+  const pal = pl.palette || pl.wash.map(w => w.c);
+  return { w: Math.min(1.6, base.w * k), h: base.h * k, c: pal[Math.floor(Math.random() * pal.length)] };
+}
+const onLine = () => P.line.pieces.filter(c => c.pegs.length).length;
+function syncBar() {
+  const add = ui.action?.('add'), rel = ui.action?.('release');
+  if (add) add.disabled = !!P.pending || onLine() >= MAX_ON || roomAtNear(P.line, 0.9, GAP) === Infinity;
+  if (rel) rel.disabled = !P.line.pieces.some(c => c.pegs.length);
 }
 
 function setSun(s) {
@@ -215,8 +240,25 @@ function syncLight() {
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
 }
+// Per frame: the reel for a new piece, loose pegs, and pieces that leave.
+function tick(dt) {
+  if (P.pending) {
+    const need = roomAtNear(P.line, P.pending.w, GAP);
+    if (need === Infinity) P.pending = null;
+    else if (need <= 1e-4) { hangPiece(P.pending, 0); P.pending = null; }
+    else reel(P.line, Math.min(need, 3.2 * dt));
+    if (!P.pending) syncBar();
+  }
+  for (const f of P.flyers) {
+    f.vy -= 9.8 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt;
+    f.rx += f.sx * dt; f.rz += f.sz * dt; f.age += dt;
+  }
+  P.flyers = P.flyers.filter(f => f.y > 0.15 && f.age < 4);
+  const gone = cull(P.line, { r: 45, floor: -1 });
+  if (gone.length) { for (const c of gone) P.look.removePiece(c); syncBar(); }
+}
 function draw() {
-  P.look.sync(camera, view.h);
+  P.look.sync(camera, view.h, P.flyers);
   syncLight();
   composer.render();
   if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
@@ -258,19 +300,23 @@ function frame(now) {
     accum += dt;
     const w = wind();
     while (accum >= H) { accum -= H; st.t += H; stepWorld(P.line, st.t, w); }
+    tick(dt);
     draw();
     lastDraw = now;
     // Calm air for one second puts the loop to sleep.
-    if (st.windScale === 0) { still += dt; busy = still < 1; } else still = 0;
+    const moving = P.flyers.length || P.pending || P.line.pieces.some(c => !c.pegs.length);
+    if (st.windScale === 0 && !moving) { still += dt; busy = still < 1; } else still = 0;
   } finally {
     if (busy) kick(); else { lastT = 0; accum = 0; }
   }
 }
 whenVisible(stage, v => { visible = v; if (v) kick(); else { cancelAnimationFrame(raf); raf = 0; lastT = 0; accum = 0; } });
 
-/* ---------- reel ---------- */
-// A sideways drag reels the line; the drag follows the line on screen.
-const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+/* ---------- hands ---------- */
+// Tap a peg to unclip it; drag cloth to pull it; drag elsewhere to reel.
+const pa = new THREE.Vector3(), pb = new THREE.Vector3(), sv = new THREE.Vector3(), ray = new THREE.Vector3(), fwd = new THREE.Vector3();
+const o3 = [0, 0, 0];
+const coarse = matchMedia('(pointer: coarse)');
 let drag = null;
 function lineScreen() {
   pa.set(...P.line.a).project(camera); pb.set(...P.line.b).project(camera);
@@ -279,20 +325,89 @@ function lineScreen() {
   // Metres of line per pixel of drag along it.
   return { ux: dx / px, uy: dy / px, mpp: P.line.len / px };
 }
+function toScreen(x, y, z) {
+  sv.set(x, y, z).project(camera);
+  return [(sv.x + 1) / 2 * view.w, (1 - sv.y) / 2 * view.h];
+}
+function local(e) { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+// Pegs win over cloth; a pegged corner is never grabbed.
+function pick(px, py) {
+  const pegR = coarse.matches ? 30 : 20, clothR = coarse.matches ? 26 : 16;
+  let best = null, bd = pegR;
+  for (const c of P.line.pieces) c.pegs.forEach((g, i) => {
+    ropeAt(P.line.rope, g.s, o3);
+    const [sx, sy] = toScreen(o3[0], o3[1] - 0.02, o3[2]), d = Math.hypot(sx - px, sy - py);
+    if (d < bd) { bd = d; best = { kind: 'peg', c, i }; }
+  });
+  if (best) return best;
+  bd = clothR;
+  for (const c of P.line.pieces) for (let p = 0; p < c.n; p++) {
+    if (!c.inv[p]) continue;
+    const [sx, sy] = toScreen(c.x[p], c.y[p], c.z[p]), d = Math.hypot(sx - px, sy - py);
+    if (d < bd) { bd = d; best = { kind: 'cloth', c, p }; }
+  }
+  return best;
+}
+// The pointer's point at a given depth along the view.
+function atDepth(px, py, depth, out) {
+  ray.set(px / view.w * 2 - 1, 1 - py / view.h * 2, 0.5).unproject(camera).sub(camera.position).normalize();
+  camera.getWorldDirection(fwd);
+  return out.copy(camera.position).addScaledVector(ray, depth / Math.max(0.05, ray.dot(fwd)));
+}
+function popPeg(c, i) {
+  ropeAt(P.line.rope, c.pegs[i].s, o3);
+  const r = Math.random;
+  P.flyers.push({ x: o3[0], y: o3[1], z: o3[2], vx: (r() - 0.5) * 1.6, vy: 1.4 + r(), vz: 0.6 + r(), rx: 0, ry: r() * 6, rz: 0, sx: 8 + r() * 8, sz: (r() - 0.5) * 14, age: 0 });
+  unpeg(c, i);
+  syncBar();
+}
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || e.target !== canvas) return;
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, ...lineScreen() };
+  const [px, py] = local(e), hit = pick(px, py);
   stage.setPointerCapture(e.pointerId);
   wake();
+  if (hit?.kind === 'peg') { popPeg(hit.c, hit.i); return; }
+  if (hit?.kind === 'cloth') {
+    const { c, p } = hit;
+    camera.getWorldDirection(fwd);
+    const depth = sv.set(c.x[p], c.y[p], c.z[p]).sub(camera.position).dot(fwd);
+    c.inv[p] = 0;
+    drag = { id: e.pointerId, kind: 'cloth', c, p, depth };
+    stage.classList.add('held');
+    return;
+  }
+  drag = { id: e.pointerId, kind: 'reel', x: e.clientX, y: e.clientY, ...lineScreen() };
 });
 stage.addEventListener('pointermove', e => {
-  if (!drag || e.pointerId !== drag.id) return;
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  drag.x = e.clientX; drag.y = e.clientY;
-  reel(P.line, (dx * drag.ux + dy * drag.uy) * drag.mpp);
+  if (!drag) {
+    // Hover shows what a press would do.
+    if (e.pointerType === 'mouse') {
+      const [px, py] = local(e), hit = pick(px, py);
+      stage.classList.toggle('on-peg', hit?.kind === 'peg');
+      stage.classList.toggle('on-cloth', hit?.kind === 'cloth');
+    }
+    return;
+  }
+  if (e.pointerId !== drag.id) return;
+  if (drag.kind === 'cloth') {
+    const { c, p } = drag, [px, py] = local(e);
+    atDepth(px, py, drag.depth, sv);
+    c.px[p] = c.x[p]; c.py[p] = c.y[p]; c.pz[p] = c.z[p];
+    c.x[p] = sv.x; c.y[p] = sv.y; c.z[p] = sv.z;
+  } else {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    reel(P.line, (dx * drag.ux + dy * drag.uy) * drag.mpp);
+  }
   wake();
 });
-const end = e => { if (drag && e.pointerId === drag.id) drag = null; };
+const end = e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  // A released corner swings free unless a peg holds it.
+  if (drag.kind === 'cloth' && !drag.c.pegs.some(g => g.p === drag.p)) drag.c.inv[drag.p] = 1;
+  drag = null;
+  stage.classList.remove('held');
+};
 stage.addEventListener('pointerup', end);
 stage.addEventListener('pointercancel', end);
 
@@ -300,6 +415,20 @@ stage.addEventListener('pointercancel', end);
 act.place = v => { buildPlace(v); resize(); wake(); };
 act.sun = v => { setSun(v); wake(); };
 act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
+// + Piece reels the line out until the near end is free, then hangs it.
+act.add = () => {
+  if (P.pending || onLine() >= MAX_ON) return;
+  const it = newPiece();
+  if (roomAtNear(P.line, it.w, GAP) === Infinity) return;
+  P.pending = it;
+  syncBar();
+  wake();
+};
+// Release takes every peg off at once.
+act.release = () => {
+  for (const c of P.line.pieces) while (c.pegs.length) popPeg(c, c.pegs.length - 1);
+  wake();
+};
 
 buildPlace('alley');
 new ResizeObserver(() => resize()).observe(stage);

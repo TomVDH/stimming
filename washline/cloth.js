@@ -140,7 +140,7 @@ export function makeLook(scene, line, { cord, peg, amb }) {
     group.add(w);
   }
 
-  const PEG_MAX = 32;
+  const PEG_MAX = 48;
   const pegs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.022, 0.07, 0.022),
     new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...peg), roughness: 0.75 }), PEG_MAX);
   pegs.frustumCulled = false;
@@ -178,7 +178,8 @@ export function makeLook(scene, line, { cord, peg, amb }) {
 
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
   const at = new THREE.Vector3(), o = [0, 0, 0], o2 = [0, 0, 0];
-  function sync(camera, viewH) {
+  // flyers are loose pegs in the air: position and spin.
+  function sync(camera, viewH, flyers = []) {
     for (const [c, p] of pieces) {
       for (let k = 0; k < c.n; k++) { p.pos[k * 3] = c.x[k]; p.pos[k * 3 + 1] = c.y[k]; p.pos[k * 3 + 2] = c.z[k]; }
       p.g.attributes.position.needsUpdate = true;
@@ -203,6 +204,10 @@ export function makeLook(scene, line, { cord, peg, amb }) {
       ropeAt(r, g.s, o);
       at.set(o[0], o[1] - 0.01, o[2]);
       pegs.setMatrixAt(k++, mtx.compose(at, q, one));
+    }
+    for (const f of flyers) {
+      if (k >= PEG_MAX) break;
+      pegs.setMatrixAt(k++, mtx.compose(at.set(f.x, f.y, f.z), q.setFromEuler(e.set(f.rx, f.ry, f.rz, 'XYZ')), one));
     }
     pegs.count = k;
     pegs.instanceMatrix.needsUpdate = true;

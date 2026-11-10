@@ -167,6 +167,9 @@ export default {
   peg: [0.55, 0.38, 0.22],
   // The wardrobe: sizes in metres, colours in OKLCH.
   hangFrom: 0.3,
+  start: 3,
+  // + Piece picks its colour here.
+  palette: [[0.95, 0.01, 90], [0.62, 0.15, 30], [0.82, 0.12, 88], [0.7, 0.09, 235], [0.72, 0.1, 150], [0.75, 0.1, 0], [0.88, 0.04, 75]],
   fog: [60, 1500],
   wash: [
     { w: 1.5, h: 1.15, c: [0.95, 0.01, 90] },

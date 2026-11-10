@@ -45,3 +45,35 @@ test('600 steps in a blowy wind stay finite; pegs follow the line', () => {
     assert.ok(d < 0.02, `peg off the line by ${d}`);
   }
 });
+
+test('unpeg frees the corner; a piece with no pegs flies off and is culled', async () => {
+  const { unpeg, cull, roomAtNear } = await import('../washline/core.js');
+  const line = makeLine(A, B);
+  const c = hang(line, makePiece({ w: 1, h: 0.8, col: 0 }), 0.4);
+  const corner = c.pegs[0].p;
+  assert.equal(unpeg(c, 0), 1);
+  assert.equal(c.inv[corner], 1);
+  unpeg(c, 0);
+  assert.equal(c.pegs.length, 0);
+  const y0 = c.y[0];
+  let t = 0, gone = [];
+  for (let i = 0; i < 1200 && !gone.length; i++) {
+    t += 1 / 120;
+    stepWorld(line, t, { ...WIND.blowy, scale: 1 });
+    gone = cull(line, { r: 30, floor: -1 });
+  }
+  for (const v of c.y) assert.ok(Number.isFinite(v));
+  assert.equal(gone.length, 1, `piece stayed; y moved ${c.y[0] - y0}`);
+  assert.equal(line.pieces.length, 0);
+  assert.equal(roomAtNear(line, 1, 0.14), 0);
+});
+
+test('roomAtNear asks for the reel that clears the near end', async () => {
+  const { roomAtNear } = await import('../washline/core.js');
+  const line = makeLine(A, B);
+  hang(line, makePiece({ w: 1, h: 0.8, col: 0 }), 0.25);
+  const need = roomAtNear(line, 0.9, 0.14);
+  assert.ok(Math.abs(need - (0.25 + 0.9 + 0.14 - 0.25)) < 1e-6, `need ${need}`);
+  hang(line, makePiece({ w: 3.2, h: 0.8, col: 0 }), 1.5);
+  assert.equal(roomAtNear(line, 0.9, 0.14), Infinity);
+});

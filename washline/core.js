@@ -195,6 +195,39 @@ export function reel(line, ds) {
   return got;
 }
 
+// Unclipping a peg frees its corner; it returns the pegs left.
+export function unpeg(c, i) {
+  const g = c.pegs.splice(i, 1)[0];
+  if (g) c.inv[g.p] = 1;
+  // The last peg off lets the piece leap on the gust.
+  if (g && !c.pegs.length) for (let p = 0; p < c.n; p++) c.py[p] = c.y[p] - 1.8 * H;
+  return c.pegs.length;
+}
+
+// The reel that clears width w at the near pulley.
+// 0 means room now; Infinity means the line is full.
+export function roomAtNear(line, w, gap) {
+  let lo = Infinity, hi = -Infinity;
+  for (const c of line.pieces) for (const g of c.pegs) { lo = Math.min(lo, g.s); hi = Math.max(hi, g.s); }
+  if (lo === Infinity) return 0;
+  const need = Math.max(0, END + w + gap - lo);
+  return hi + need <= line.len - END ? need : Infinity;
+}
+
+// Free pieces leave once they are far away or below the floor.
+export function cull(line, { r = 30, floor = -1 } = {}) {
+  const mx = (line.a[0] + line.b[0]) / 2, my = (line.a[1] + line.b[1]) / 2, mz = (line.a[2] + line.b[2]) / 2;
+  const gone = [];
+  line.pieces = line.pieces.filter(c => {
+    if (c.pegs.length) return true;
+    const k = c.n >> 1, d = Math.hypot(c.x[k] - mx, c.y[k] - my, c.z[k] - mz);
+    if (d < r && c.y[k] > floor) return true;
+    gone.push(c);
+    return false;
+  });
+  return gone;
+}
+
 /* ---------- one step ---------- */
 // Wind pushes each triangle; the pegs carry the loads into the rope.
 function windForces(line, c, t, wind) {
@@ -248,7 +281,20 @@ function windForces(line, c, t, wind) {
 export function stepWorld(line, t, wind) {
   const r = line.rope;
   r.fx.fill(0); r.fy.fill(0); r.fz.fill(0);
-  for (const c of line.pieces) windForces(line, c, t, wind);
+  for (const c of line.pieces) {
+    windForces(line, c, t, wind);
+    // A free piece rides an updraft, stronger in a strong wind.
+    if (!c.pegs.length) {
+      const lift = 9.8 * (0.86 + 0.34 * (wind.u * wind.scale) / 2.8);
+      // The gust carries it at about twice the mean wind speed.
+      const k = c.n >> 1, w = windAt(line, c.x[k], c.y[k], t, wind), wx = w[0] * 2.2, wz = w[2] * 2.2;
+      for (let p = 0; p < c.n; p++) {
+        c.ay[p] += lift * (1 + 0.35 * Math.sin(t * 3.1 + (p % c.cols) * 0.7));
+        c.ax[p] += (wx - (c.x[p] - c.px[p]) / H) * 1.5;
+        c.az[p] += (wz - (c.z[p] - c.pz[p]) / H) * 1.5;
+      }
+    }
+  }
   K4.stepRope(r, H, 0.995);
   for (const c of line.pieces) K4.stepCloth(c, H, FABRIC.damp);
   for (let it = 0; it < ITER; it++) {
