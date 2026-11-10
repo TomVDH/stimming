@@ -725,21 +725,23 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${LANDTILE}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
+  // One coarse march on the bilinear map, then three halvings; soft returns how far
+  // the ray cleared the land near its hit, which softens the mirrored shoreline.
   vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
     float t = 20.0;
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 24; i++) {
       vec3 q = P + Rm * t;
-      if (landO(q.xz, 3) > q.y) {
-        float lo = t / 1.25, hi = t;
-        for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); vec3 qm = P + Rm * m; if (landO(qm.xz, 3) > qm.y) hi = m; else lo = m; }
+      if (landC(q.xz) > q.y) {
+        float lo = t / 1.33, hi = t;
+        for (int b = 0; b < 3; b++) { float m = 0.5 * (lo + hi); vec3 qm = P + Rm * m; if (landC(qm.xz) > qm.y) hi = m; else lo = m; }
         q = P + Rm * hi;
-        float qh = landO(q.xz, 3) + 20.0;
+        float qh = landC(q.xz) + 20.0;
         vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
         a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sgz), mix(1650.0, 1280.0, sgz), qh));
         vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
         return mix(a * lit, hazeCol(Rm, q), hazeAmt(q));
       }
-      t *= 1.25;
+      t *= 1.33;
     }
     return sky;
   }
@@ -800,23 +802,27 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Lakes are flat; the coarse lake mask must not paint water up a cliff.
     float water = smoothstep(2.0, -2.0, wd) * smoothstep(0.985, 0.997, normalize(vN).y);
     if (water > 0.0) {
-      // Waves: four octaves of gradient noise, each faded by its own footprint, so none aliases.
-      // Far water keeps only the long swell; the fine chop shows close in.
+      // Waves: six swells with exact slopes, each faded by its own footprint, so none aliases.
+      // Each runs its own way at its own speed; one noise layer breaks their regularity.
       vec2 slopeW = vec2(0.0);
-      // Each octave runs its own way, so the ripples cross and never slide as one sheet.
-      float amp = 0.05, fr = 0.09;
       vec2 wp = vP.xz;
-      for (int o = 0; o < 4; o++) {
-        float an = 0.5 + float(o) * 1.9;
-        vec2 q = wp * fr * vec2(1.0, 1.8) + vec2(cos(an), sin(an)) * uTime * 0.45 * (1.0 + float(o) * 0.5) + float(o) * 7.1;
+      float wl = 9.0, amp = 0.05;
+      for (int o = 0; o < 6; o++) {
+        float an = float(o) * 2.39996 + 0.4;
+        vec2 dir = vec2(cos(an), sin(an) * 0.6);
+        float k = 6.2832 / wl, ph = dot(wp, dir) * k + uTime * sqrt(9.81 * k) * 0.8 + float(o) * 1.7;
+        float fade = 1.0 - smoothstep(0.35, 1.2, fwidth(ph));
+        slopeW += dir * k * amp * cos(ph) * fade;
+        wl *= 0.62; amp *= 0.7;
+      }
+      {
+        vec2 q = wp * vec2(0.35, 0.6) + vec2(uTime * 0.3, -uTime * 0.2);
         float fade = 1.0 - smoothstep(0.15, 0.5, length(fwidth(q)));
-        float e = 0.05;
         float h0 = gnoise(q);
-        slopeW += vec2(gnoise(q + vec2(e, 0.0)) - h0, gnoise(q + vec2(0.0, e)) - h0) / e * amp * fade;
-        amp *= 0.55; fr *= 2.3;
+        slopeW += vec2(gnoise(q + vec2(0.05, 0.0)) - h0, gnoise(q + vec2(0.0, 0.05)) - h0) / 0.05 * 0.035 * fade;
       }
       // The surface steepens a little near the eye; a calm far field mirrors.
-      slopeW *= mix(1.0, 0.5, smoothstep(300.0, 2500.0, dist));
+      slopeW *= mix(1.0, 0.45, smoothstep(300.0, 2500.0, dist));
       vec3 Nw = normalize(vec3(-slopeW.x, 1.0, -slopeW.y));
       vec3 R = reflect(-V, Nw);
       R.y = max(R.y, 0.005);
@@ -825,12 +831,14 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
       vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.45, 1.0, -slopeW.y * 0.45)));
       Rm.y = max(Rm.y, 0.005);
-      // Two mirror rays a hair apart, averaged, so the mirrored shoreline has a soft edge.
-      refl = 0.5 * (mirrorLand(vP, Rm, refl, sg.z) + mirrorLand(vP, normalize(Rm + vec3(0.0, 0.006, 0.0)), refl, sg.z));
+      refl = mirrorLand(vP, Rm, refl, sg.z);
       // Lake Zurich is blue-green; the Walensee is emerald; shallows near the shore run lighter.
       float shallow = smoothstep(-25.0, -2.0, wd);
       vec3 deep = mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z);
       vec3 body = mix(deep, deep * 1.8 + vec3(0.01, 0.02, 0.012), shallow);
+      // Sunlight through the back of a wave: crests facing away from the sun glow green-blue.
+      float crest = max(dot(normalize(vec3(slopeW.x, 0.0, slopeW.y) + 1e-4), -normalize(vec3(uSun.x, 0.0, uSun.z))), 0.0) * length(slopeW);
+      body += sunC() * vec3(0.02, 0.06, 0.05) * crest * 3.0 * uDay * (1.0 - uRain);
       vec3 wc = mix(vec3(0.0, 0.003, 0.005), body, uDay) * (1.0 - F) + refl * max(F, 0.08);
       // The sun lays a glittering path; each facet that tilts to it flashes.
       if (uDay > 0.01) {
@@ -840,30 +848,32 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       }
       // A thin pale lap line where the water meets the shore.
       wc = mix(wc, mix(vec3(0.02), vec3(0.35, 0.38, 0.36), uDay), smoothstep(-1.2, -0.2, wd) * smoothstep(0.6, -0.2, wd) * 0.5);
-      // Lights and the moon lay soft streaks on the water at night.
+      // Lights and the moon on the water: each streak follows the rippled surface,
+      // so near the eye it breaks into dancing shards; far off it settles into a soft column.
       if (uDay < 0.99) {
         vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
         vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
-        // Ripples break a near streak into short moving dashes; far off they merge to an even glow.
-        float rp = gnoise(vec2(vP.x * 0.12 + uTime * 0.2, vP.z * 0.8 + uTime * 0.9));
-        float dash = mix(0.35 + 0.65 * smoothstep(-0.25, 0.45, rp), 0.62, smoothstep(0.3, 1.2, fwidth(vP.z * 0.8)));
+        float calm = smoothstep(150.0, 1800.0, dist);
+        vec3 Rs = normalize(mix(R, R0, calm * 0.7));
         vec3 cols = vec3(0.0);
         for (int i = 0; i < ${NG}; i++) {
           vec3 L = uGP[i].xyz - vP;
           float dl = length(L);
-          vec3 err = R0 - L / dl;
-          float ex = dot(err, right), ey = err.y;
-          // A slim streak under each light: longer toward the eye, short beyond the light.
-          // Each light has its own length and strength, so a row of them is no comb.
+          vec3 Ld = L / dl;
+          vec3 e1 = Rs - Ld, e0 = R0 - Ld;
           float hl = fract(float(i) * 0.618 + uGP[i].x * 0.0013);
-          float sy = ey > 0.0 ? 0.026 + 0.03 * fract(hl * 7.3) : 0.02, sx = max(0.0035, 2.0 / dl);
-          cols += uGC[i].rgb * uGP[i].w * exp(-ex * ex / (sx * sx) - ey * ey / (sy * sy)) * (0.16 + 0.24 * hl);
+          float sx = max(0.004, 2.0 / dl);
+          // Shards: narrow across, long down the path, from the rippled ray.
+          float sh = exp(-pow(dot(e1, right) / (sx * 1.4), 2.0) - pow(e1.y / (0.05 + 0.04 * hl), 2.0));
+          // A faint column underneath, from the calm ray, so no light floats free.
+          float cl = exp(-pow(dot(e0, right) / (sx * 3.0), 2.0) - pow(max(e0.y, 0.0) / 0.09, 2.0) - pow(min(e0.y, 0.0) / 0.02, 2.0));
+          cols += uGC[i].rgb * uGP[i].w * (sh * 0.5 + cl * 0.08) * (0.6 + 0.6 * hl);
         }
-        // The moon's path: narrow far out, wider and fainter toward the eye.
-        vec3 errM = R0 - uMoon;
-        float mx = dot(errM, right), my = errM.y, mw = 0.012 + 0.06 * max(my, 0.0);
-        cols += vec3(0.7, 0.75, 0.85) * exp(-mx * mx / (mw * mw) - pow(max(my, 0.0) / 0.3, 2.0) - pow(min(my, 0.0) / 0.03, 2.0)) * 0.3 * (0.012 / mw + 0.2);
-        wc += cols * dash * (1.0 - uDay);
+        // The moon's path: shards near, a narrow ribbon far.
+        vec3 eM = Rs - uMoon;
+        float mx = dot(eM, right), mw = 0.012 + 0.05 * max(eM.y, 0.0);
+        cols += vec3(0.7, 0.75, 0.85) * exp(-mx * mx / (mw * mw) - pow(max(eM.y, 0.0) / 0.32, 2.0) - pow(min(eM.y, 0.0) / 0.03, 2.0)) * 0.35 * (0.012 / mw + 0.2);
+        wc += cols * (1.0 - uDay);
       }
       c = mix(c, wc, water);
     }
@@ -1594,7 +1604,10 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         // A church is lit as a whole, or not at all.
         float litC = step(0.7, fract(vV * 3.7)) * 0.45;
         bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
+        // The merged glow stays in the window rows: a band per floor, never the whole wall.
+        float fwy = fwidth(vL.y) + 0.001;
+        float band = mix(wh / fh, smoothstep(-fwy, fwy, cv) * smoothstep(wh + fwy, wh - fwy, cv), smoothstep(0.6, 0.25, fwy * 2.0));
+        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * band * (1.0 - fade) * nearK;
         if (zone && cv < wh) {
           float ax = abs(cu) * gap;
           // A church window ends in a round arch.
