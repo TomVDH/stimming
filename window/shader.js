@@ -13,6 +13,8 @@ const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 const common = ({ ALT, WIN }) => `
 const float R = 6371.0, H = ${ALT.toFixed(1)};
 const float PI = 3.14159265;
+// Lightning's colour inside cloud: a cold, slightly violet blue-white.
+const vec3 FLASH_C = vec3(0.64, 0.72, 1.0);
 uniform vec3 uEye; uniform vec2 uBank;
 uniform sampler2D uSkyL, uSkyT; uniform vec2 uSunAz; uniform float uHorEl;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -582,7 +584,7 @@ vec3 flashAt(vec2 w, float dens) {
     vec2 q = w - l.xy;
     f += l.z * exp(-dot(q, q) / (l.w * l.w));
   }
-  return vec3(0.72, 0.74, 1.0) * f * (0.1 + dens * 1.5);
+  return FLASH_C * f * (0.1 + dens * 1.5);
 }
 
 // Cloud noise: one tiling 3D texture, sampled at a level of detail.
@@ -949,7 +951,7 @@ vec3 stormGlow(vec3 d) {
     // A broad soft swell round the flash bearing, never a hard point.
     g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0));
   }
-  return air + vec3(0.75, 0.77, 1.0) * g * 0.02 * max(uStorm, uFog);
+  return air + FLASH_C * g * 0.02 * max(uStorm, uFog);
 }
 // How much of the view the fog bank hides, t km out.
 // Wisps rush aft past the window as the plane flies through them.
@@ -1223,7 +1225,7 @@ vec4 rainShaft(vec3 d, vec2 dh, float a2, vec2 C, float tEnd, vec3 pf, float fl,
     float dn = 0.4 * (1.0 - r01) * smoothstep(0.4, 0.8, str) * smoothstep(gBase + 0.1, gBase - 0.5, y);
     od += dn * dt;
     vec3 q = vec3(rel.x, y, rel.y) - (pf - vec3(Cs.x - C.x, 0.0, Cs.y - C.y));
-    col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + vec3(0.75, 0.77, 1.0) * fl * 0.8 * exp(-length(q) / 5.0));
+    col += dn * dt * (grey + vec3(1.0, 0.5, 0.2) * glow * 0.04 + FLASH_C * fl * 0.8 * exp(-length(q) / 5.0));
   }
   float al = (1.0 - exp(-0.5 * od)) * gDeckT * gGrow * gRain;
   return vec4(col / max(od, 1e-4) * al, 1.0 - al);
@@ -1355,6 +1357,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
       float sq = sqrt(disc);
       float t0 = max((bq - sq) / a2, 0.0), t1 = min((bq + sq) / a2, tEnd);
       if (t1 <= t0) continue;
+      float fBoost = 1.0 + clamp(t0 / 120.0, 0.0, 1.5);
       // The rain shaft lies under the tower, so it goes in first.
       vec4 rs = rainShaft(d, dh, a2, C, tEnd, pf, f.w, b.w, dome);
       c = c * rs.a + rs.rgb;
@@ -1414,7 +1417,8 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
         // A wide glow fills the tower.
         float fd = length(p - pf);
         // The flash is a soft ball of light inside the cloud, brightest deep in.
-        S += vec3(0.75, 0.77, 1.0) * f.w * (1.6 * exp(-fd * fd / 5.0) + 0.45 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0));
+        // Far flashes punch through the haze, so distant storms still flicker.
+        S += FLASH_C * f.w * (2.2 * exp(-fd * fd / 5.0) + 0.6 * exp(-fd / 4.5)) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost;
         // Below the deck top, the deck in front hides the tower.
         float al = (1.0 - exp(-7.0 * dn * st)) * mix(1.0, gDeckT, smoothstep(deckTop, deckTop - 1.2, p.y));
         col += Tc * S * al;
@@ -2191,7 +2195,7 @@ void main() {
   // The camera ray, in the cabin frame.
   vec3 da = normalize(uF * uFocal + uR * (px.x - uRes.x * 0.5) + uU * (px.y - uRes.y * 0.5));
   float E = 0.004 + uFlash * 0.07;
-  vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.75, 0.8, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
+  vec3 eCol = mix(vec3(1.0, 0.86, 0.72), vec3(0.68, 0.76, 1.0), clamp(uFlash * 3.0, 0.0, 1.0));
   // Cabin mood light, set per hour: amber, deep night blue, or dawn rose.
   vec3 cabin = uCabin;
   vec3 outGlow = uGlow * 0.014 + eCol * E;

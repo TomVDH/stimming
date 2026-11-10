@@ -262,7 +262,7 @@ const UG = {
   uniform2f: (l, a, b) => put(l, [a, b]), uniform3f: (l, a, b, c) => put(l, [a, b, c]), uniform4f: (l, a, b, c, d) => put(l, [a, b, c, d]),
   tex: put,
 };
-const MAXCELL = 8, MAXFL = 6;
+const MAXCELL = 8, MAXFL = 8;
 // three.js draws the wing, the nacelle and the fairings instead.
 const noWing = s => s
   .replace('  // The wing is the nearest thing outside', '  tw = 1e5;\n  // The wing is the nearest thing outside')
@@ -631,7 +631,15 @@ function flashLevel(f) {
   for (const st of f.strokes) { const a = f.age - st; if (a >= 0) s += Math.exp(-a / 0.07) * (a < 0.02 ? a / 0.02 : 1); }
   return s * f.k;
 }
+// Far storms beyond the cells flicker on the horizon, 180 to 320 km out.
+let horizonNext = 0;
 function stepFlashes(dt) {
+  if (opts.storm > 0.15 && t > horizonNext) {
+    horizonNext = t + rnd(2, 9) / opts.storm;
+    // Out our side of the plane, within about 60 degrees of abeam.
+    const a = rnd(-1.05, 1.05), r = rnd(180, 320);
+    flash(cam.x + Math.sin(a) * r, cam.z + Math.cos(a) * r, 1.6);
+  }
   for (let i = flashes.length - 1; i >= 0; i--) {
     const f = flashes[i];
     f.age += dt;
@@ -641,9 +649,15 @@ function stepFlashes(dt) {
     // A cell recharges between flashes: about one every 10 to 40 s, often a quick second one.
     if (c.next === undefined) c.next = t + rnd(1, 20);
     if (c.s > 0.3 && t > c.next) {
-      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(10, 40) / (0.5 + opts.storm) / (c.flashK || 1));
-      // A new cell's arrival burst: a few flashes in quick order.
-      if (c.burst > 0) { c.burst--; c.next = t + rnd(0.3, 0.9); }
+      c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(4, 15) / (0.5 + opts.storm) / (c.flashK || 1));
+      // A burst runs its flashes in quick order: a new cell's few, or a cauldron's many.
+      if (c.burst > 0) {
+        c.burst--; c.next = t + (c.cauldron ? rnd(0.06, 0.35) : rnd(0.3, 0.9));
+        if (!c.burst) c.cauldron = false;
+      } else if (c.s > 0.6 && Math.random() < 0.07 * (c.flashK || 1)) {
+        // Now and then a mature cell boils over: six to twelve flashes in a few seconds.
+        c.burst = 6 + Math.floor(Math.random() * 7); c.cauldron = true; c.next = t + rnd(0.06, 0.3);
+      }
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
