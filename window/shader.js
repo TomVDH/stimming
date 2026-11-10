@@ -362,6 +362,41 @@ vec2 reliefParallax(vec2 w, vec3 d, vec3 up) {
   return w;
 }
 
+// Farm districts: cells about 6 km across, each with its own field pattern.
+// A district sets the field angle, the strip size and the crop mix.
+// gLot: the field's own number, for woodlots.
+float gLot = 1.0;
+vec3 farmland(vec2 w, float fw, out float fk) {
+  vec2 c = w / 6.0, i = floor(c), f = fract(c), best = vec2(0.0);
+  float d1 = 9.0;
+  for (int k = 0; k < 9; k++) {
+    vec2 o = vec2(k % 3 - 1, k / 3 - 1);
+    vec2 r = o + 0.15 + 0.7 * hash22(i + o + 51.0) - f;
+    float d = dot(r, r);
+    if (d < d1) { d1 = d; best = i + o; }
+  }
+  float h = hash12(best + 7.3), a = h * 3.1416, hs = hash12(best + 2.1), hm = hash12(best + 9.4);
+  vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * w;
+  // Strips: narrow and long, or near square; rows shift like bricks.
+  float sx = mix(0.16, 0.45, hs), sy = sx * mix(1.3, 3.5, hm);
+  float row = floor(q.y / sy);
+  float qx = q.x / sx + hash12(vec2(row, h * 91.0)) * 3.0, col = floor(qx);
+  vec2 id = vec2(col, row) + h * 173.0;
+  float hp = hash12(id), hb = hash12(id + 3.1);
+  gLot = hash12(id + 5.7);
+  // Muted crops; each district leans to its own mix.
+  float pick = fract(hp + hm * 0.5);
+  vec3 cc = pick < 0.3 ? vec3(0.24, 0.32, 0.14) : pick < 0.5 ? vec3(0.34, 0.36, 0.18) : pick < 0.72 ? vec3(0.47, 0.42, 0.28) : pick < 0.88 ? vec3(0.31, 0.26, 0.18) : vec3(0.27, 0.34, 0.17);
+  cc *= 0.85 + 0.3 * hb;
+  // Hedges and tracks: thin dark lines on the field edges.
+  vec2 e = vec2(min(fract(qx), 1.0 - fract(qx)) * sx, min(fract(q.y / sy), 1.0 - fract(q.y / sy)) * sy);
+  cc *= 1.0 - 0.3 * band(min(e.x, e.y), 0.005, max(fw, 1e-3));
+  // Once a pixel spans a field, the district's mean colour remains.
+  fk = fd(sx, fw);
+  vec3 mean = vec3(0.35, 0.35, 0.2) * (0.92 + 0.16 * hm);
+  return mix(mean, cc, fk);
+}
+
 // Relief land: one elevation sets the sea, the shore, the snow and the light.
 vec3 landRelief(vec2 w, float fw) {
   float apD = apNear(w);
@@ -396,24 +431,30 @@ vec3 landRelief(vec2 w, float fw) {
   gSea = smoothstep(sa, -sa, E);
   // Lakes gather in wet lowland.
   float lk = vnoise(wr / 5.0 + 3.3) * 0.75 + mix(0.5, vnoise(w / 1.4 + 1.1), fd(1.4, fw)) * 0.25;
-  float lv = 0.12 + 0.16 * smoothstep(0.35, 0.75, wet) - 0.1 * relief - 0.3 * m;
+  float lv = 0.05 + 0.1 * smoothstep(0.4, 0.8, wet) - 0.1 * relief - 0.3 * m;
   float la = 0.004 + fw * 0.08;
   float lake = smoothstep(lv + la, lv - la, lk);
   gWater = max(gSea, max(lake, river * (1.0 - smoothstep(0.0, 0.3, m))) * calm);
-  // Woods grow in belts, up the mountain flanks to the tree line.
-  float fn = vnoise(wr / 2.7 + 1.7) * 0.7 + mix(0.5, vnoise(w / 0.55 + 4.4), fd(0.55, fw)) * 0.3;
-  float fth = 0.78 - 0.4 * woods - 0.3 * relief - 0.25 * m, fa = 0.03 + fw * 0.15;
-  float forest = smoothstep(fth - fa, fth + fa, fn) * smoothstep(1.9, 1.5, E + 0.4 * (fn - 0.5));
-  // Fields: green crops, pale stubble and brown ploughland.
-  vec2 fp = floor(vec2(w.x * 1.7 + w.y * 0.4, w.y * 2.4 - w.x * 0.3));
-  float ph = hash12(fp);
-  vec3 crop = (ph < 0.4 ? vec3(0.22, 0.32, 0.12) : ph < 0.72 ? vec3(0.55, 0.48, 0.3) : vec3(0.3, 0.23, 0.16)) * (0.9 + 0.75 * hash12(fp + 3.1));
-  vec3 open = mix(crop, vec3(0.43, 0.43, 0.26), smoothstep(0.15, 0.5, fw));
+  // Wild woods: ragged edges at three scales, thickest on hills and slopes.
+  vec2 wv = w + 2.5 * vec2(vnoise(w / 7.0 + 3.0), vnoise(w / 7.0 + 8.0));
+  float fn = 0.55 * vnoise(wv / 3.2 + 1.7) + 0.3 * mix(0.5, vnoise(wv / 1.1 + 4.4), fd(1.1, fw)) + 0.15 * mix(0.5, vnoise(w / 0.35 + 2.2), fd(0.35, fw));
+  float P = clamp(0.3 + 0.7 * (woods - 0.5) + 0.35 * relief + 0.35 * m + 0.6 * slope, 0.0, 0.95);
+  float fa = 0.02 + fw * 0.1;
+  float wild = smoothstep(1.0 - P - fa, 1.0 - P + fa, fn);
+  // Farmland: flat, low ground outside the belts.
+  float farm = smoothstep(0.3, 0.12, slope) * smoothstep(1.3, 0.7, E) * (1.0 - smoothstep(0.02, 0.15, m));
+  float fk;
+  vec3 crop = farmland(w, fw, fk);
+  // Woodlots fill whole fields, so wood edges follow field edges.
+  float lot = mix(clamp(0.6 * P - 0.1, 0.0, 1.0), step(gLot, 0.6 * P - 0.1), fk);
+  float forest = mix(wild, max(lot, wild * smoothstep(0.55, 0.8, P)), farm);
+  vec3 open = mix(vec3(0.27, 0.32, 0.16) * (0.85 + 0.3 * fn), crop, farm);
   // High ground: alpine meadow, then rock; steep faces stay bare.
   float grit = mix(0.5, vnoise(w / 0.6 + 3.3), fd(0.6, fw));
   vec3 rock = vec3(0.36, 0.33, 0.3) * (0.7 + 0.6 * grit);
   open = mix(open, mix(vec3(0.26, 0.3, 0.16), rock, smoothstep(1.3, 2.0, E)), smoothstep(0.7, 1.4, E) * smoothstep(0.0, 0.25, m));
   open = mix(open, rock, smoothstep(0.6, 1.1, slope) * m);
+  forest *= smoothstep(1.9, 1.5, E + 0.4 * (fn - 0.5));
   vec3 alb = mix(open, vec3(0.04, 0.075, 0.04), forest);
   // A thin strip of pale sand on low, gentle shores, about 60 m wide.
   // The coastal ramp rises about 25 m per km.
@@ -754,10 +795,17 @@ vec3 ground(vec2 w, float fw) {
   // Built-up land: parks, rivers and fields break it into ragged patches.
   float lit = 0.0;
   // The finest octave is smaller than a far pixel, so it fades to its mean there.
+  // A crisp, ragged edge round the built-up land; density sets the brightness inside.
   if (t.dens > 0.03) {
-    vec2 lp = wq / 1.2 + 7.0;
-    float n3 = fw < 0.12 ? mix(0.5, vnoise((lp * 2.03 + 17.1) * 2.03 + 17.1), smoothstep(0.12, 0.07, fw)) : 0.5;
-    lit = smoothstep(0.1, 0.65, t.dens * (0.3 + 1.4 * (fbm(lp, 2) + 0.125 * n3)));
+    vec2 lp = wq / 0.35 + 7.0;
+    float n3 = fw < 0.06 ? mix(0.5, vnoise((lp * 2.03 + 17.1) * 2.03 + 17.1), smoothstep(0.06, 0.035, fw)) : 0.5;
+    float aa = 0.04 + 1.5 * fw * min(t.dens, 1.0);
+    lit = smoothstep(0.35 - aa, 0.35 + aa, t.dens * (0.5 + 1.0 * (fbm(lp, 2) + 0.125 * n3)));
+    // By day the built-up land shows as pale grey roofs and paving.
+    float grain = mix(0.5, vnoise(wq / 0.12 + 3.0), fd(0.12, fw));
+    vec3 roof = vec3(dot(gLand, vec3(0.3, 0.5, 0.2))) * vec3(1.0, 1.0, 1.02) * (1.0 + 0.4 * grain);
+    vec3 dl = (roof - gLand) * lit * 0.6;
+    gLand += dl; g += dl;
   }
   if (lit > 0.002) {
     // Streets: edges of irregular cells make blocks of every shape.
@@ -771,13 +819,16 @@ vec3 ground(vec2 w, float fw) {
     }
     // Lamps string along the streets; cores burn brighter than the sprawl.
     float P = lit * (0.4 + 0.6 * web), gain = (0.15 + 1.6 * web) * (0.3 + 0.8 * min(t.dens, 1.2)) * 0.054;
+    // Streets and avenues carry more lamps than the blocks between them.
+    float st = exp(-t.road / max(0.08, fw)) * t.fade;
+    P = min(P * (0.75 + 0.7 * st), 1.0);
     // Far away, lamps merge into coarser points, so towns stay grainy.
     float lv = clamp(log2(fw / 0.02), 0.0, 6.0), l0 = floor(lv), lf = lv - l0;
     vec3 L = lampLight(wq, 0.035 * exp2(l0), P, fw, 2.3 + l0 * 7.0, led) * (1.0 - lf);
     if (lf > 0.0) L += lampLight(wq, 0.07 * exp2(l0), P, fw, 9.3 + l0 * 7.0, led) * lf;
     g += L * gain;
     // Roofs and the low haze catch some of the street light.
-    g += avg * lit * min(t.dens, 1.3) * 0.01;
+    g += mix(avg, vec3(1.0, 0.55, 0.22), 0.4) * lit * min(t.dens, 1.3) * 0.004;
   }
   // Roads: a faint thread of traffic, lit with lamps through towns and villages.
   float rw = max(0.012, fw * 0.6);

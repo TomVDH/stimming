@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:15:28Z
+updated_at: 2026-11-10T09:33:27Z
 parent: stimming-w1nd
 ---
 
@@ -39,3 +39,14 @@ Tom asked for his favourite flight-sim world under the plane as a personal easte
 - 4 km per map pixel; the flight starts at map (960, 638) and runs east along the central continent's southern coast.
 - Coasts meander by noise at 70 and 22 km, so traced edges never run straight. index.html mirrors the field for airports.
 - Seen at Noon and Golden hour (Clear): open sea, then a lake coast, then snowy ranges.
+
+## Ground and town blending (Tom, 2026-11-10: patchy ground, awful town blending)
+
+- Cause, day: forests, fields and lakes were thresholded value noise, so they read as soft blobs and checkerboard squares. Towns had no daytime look at all.
+- Cause, night: the lit mask was 1.2 km fbm blobs with a soft roof glow; far lamps sat one per half-res pixel, so they upsampled into bubbles.
+- Farm districts: Voronoi cells about 6 km across, each with its own field angle, strip size and crop mix; hedges on field edges; far fields fade to the district mean.
+- Woodlots fill whole fields, so wood edges follow field edges; wild woods have ragged edges at three scales; no fields inside mountain belts.
+- Lakes: about a third as many.
+- Towns by day: grey roofs and paving with block grain, mixed into the land.
+- Towns by night: a crisp, ragged built-up edge (fbm at 0.35 km, edge sharp to the pixel); streets and avenues carry more lamps; the flat roof glow is cut to 40 percent and warmed.
+- Open: far lamps still show some grain at Standard quality (half-res outside buffer).
