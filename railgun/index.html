@@ -993,7 +993,8 @@ void main() {
   // The tower keeps some body through seventy kilometres of air.
   // At night the heaps take the moon dimly; they never glow.
   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
-  col = mix(col, air(col, P), vS.z > 0.5 ? 0.4 : 0.7);
+  // The air layers the heaps by distance: near ones crisp, far ones in the horizon colour.
+  col = air(col, P);
   // The blast: its light, thin parts brightest, and the shock rim.
   // It lands after the haze: the flash lights the air on the way too.
   // Faces turned to the hit take it; the far side stays in shadow.
@@ -1068,8 +1069,8 @@ const heaps = cloudLayer([
 ], 2.2);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
-// The storm towers are volumes now (towerVols); the card layer stays empty.
-const tower = { visible: false };
+// Storm towers far out, scattered: different sizes and distances, uneven gaps.
+const tower = cloudLayer([[-3, 96000, 1500, 9000, 10500, 1], [27, 74000, 1500, 15000, 15500, 1], [49, 88000, 1500, 10500, 12500, 1], [71, 104000, 1500, 7500, 9000, 1]], 1.5);
 
 /* ---------- the gun: one clean artillery piece ---------- */
 // Every piece is a straight block or drum; one merged mesh, one draw call.
@@ -2771,7 +2772,6 @@ function draw() {
   updateShotDust(dustShot ? simT - dustShot.t0 - 0.3 : -1, dustShot ? dustShot.c : 0, dustShot ? dustShot.foot : MUZZLE);
   updateCaseDust();
   updateMuzzleSmoke();
-  updateTowers();
   CLOUD_U.uCloudC.value = simT;
   // The thermal lens sees through smoke and dust.
   if (sight) plume.visible = chargeDust.visible = shotDust.visible = caseDustV.visible = muzzleSmoke.visible = false;
@@ -3372,6 +3372,10 @@ vec2 sphHit(vec3 ro, vec3 rd, vec3 c, float r) {
   return vec2(-b - h, -b + h);
 }
 float vhg(float c, float k) { return (1.0 - k * k) / pow(1.0 + k * k - 2.0 * k * c, 1.5); }
+// VHAZE: how much of the distance haze a volume takes.
+#ifndef VHAZE
+#define VHAZE 0.6
+#endif
 void main() {
   vec3 rd = normalize(vP - cameraPosition);
   vec2 h = sphHit(cameraPosition, rd, uC, uR);
@@ -3427,7 +3431,7 @@ void main() {
   if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
   // The air acts once, at the volume's mean depth.
   vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + h.y));
-  vec3 Ta = airT(Pm) * (1.0 - 0.6 * k2hazeAmount(Pm));
+  vec3 Ta = airT(Pm) * (1.0 - VHAZE * k2hazeAmount(Pm));
   col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
   gl_FragColor = vec4(col, al);
 }`;
@@ -3761,72 +3765,6 @@ function updateCaseDust() {
   u.uC.value.set(caseDust.P.x, 0, caseDust.P.z); u.uR.value = 2 * (30 + 75 * sa);
   u.uSlab.value = 4 * (10 + 40 * sa); u.uLs.value = 4 + 6 * sa;
   u.uVSteps.value = dustSteps(); u.uLSteps.value = volLSteps();
-}
-// Storm towers: raymarched volumes lit like the comet's smoke.
-// The sun marches through them, so their undersides and far sides go dark.
-// uTw: base x, y, z and height. uTs: column radius, seed. uTl: lean (x, z) per metre of height.
-const TOWER_DECL = /* glsl */`
-uniform vec4 uTw, uTs;
-uniform vec2 uTl;
-float dens(vec3 p, out vec3 em) {
-  em = vec3(0.0);
-  vec3 q = p - uTw.xyz;
-  float H = uTw.w, W = uTs.x, h = q.y / H;
-  if (h < 0.0 || h > 1.08) return 0.0;
-  // The blast wave shears the column away from the hit.
-  q.xz -= uTl * q.y;
-  float r = length(q.xz);
-  // The anvil spreads downwind; the column stays put.
-  float an = smoothstep(0.74, 0.93, h);
-  vec2 xa = q.xz - vec2(1.0, 0.25) * an * W * 1.4;
-  float r2 = length(xa * vec2(0.75, 1.0));
-  // A lumpy column that swells a little with height, then a thin anvil.
-  float R = mix(W * (0.62 + 0.38 * h), W * (0.9 + 1.2 * an), an);
-  float rr = mix(r, r2, an);
-  float top = 1.0 - smoothstep(0.95, 1.04, h);
-  vec3 w = q / W * 0.45 + vec3(uTs.y, 0.0, uTs.y * 0.7);
-  // Big cauliflower lobes push the edge in and out; fine cells carve them.
-  float n = 0.6 * texture(uVol, w).r + 0.4 * texture(uVol, w * 2.3).r;
-  float s = (R - rr) / W + (n - 0.55) * mix(1.9, 1.0, an) - 0.6 * an * smoothstep(0.82, 0.74, h);
-  float d = smoothstep(0.0, 0.35, s) * top * smoothstep(0.0, 0.05, h);
-  if (d <= 0.0) return 0.0;
-  // The anvil is ice: thinner than the column.
-  d *= mix(1.0, 0.55, an);
-  d = clamp(d - (1.0 - texture(uVol, w * 4.2).g) * 0.3 * (1.0 - d), 0.0, 1.0);
-  return d * 5.0 / W;
-}
-vec3 alb(vec3 p) { return vec3(0.92); }
-// The blast lights the near face; the hit's glow reaches through the tops.
-vec3 vlight(vec3 p) { float rim; vec3 push; return cloudHit(p, 0.35, rim, push) * 0.5 + rim * 0.05; }`;
-const TOWERS = [[34, 72000, 1500, 4200, 16000], [4, 84000, 1500, 3000, 12500], [60, 90000, 1500, 3500, 13500]];
-const towerVols = TOWERS.map(([deg, dist, base, W, H], i) => {
-  const v = makeVol(TOWER_DECL, { uTw: { value: new THREE.Vector4() }, uTs: { value: new THREE.Vector4(W, 7.3 * i + 1.1, 0, 0) }, uTl: { value: new THREE.Vector2() } });
-  const P = polar(rad(deg), dist);
-  v.material.uniforms.uTw.value.set(P.x, base, P.z, H);
-  v.material.uniforms.uC.value.set(P.x, base + 0.55 * H, P.z);
-  v.material.uniforms.uR.value = Math.hypot(0.6 * H, 4.2 * W);
-  // Far towers draw before the smoke, as the cards did.
-  v.renderOrder = 1.5; v.visible = true;
-  return v;
-});
-const twD = new THREE.Vector2();
-function updateTowers() {
-  const tw = simT - U.uHitP.value.w;
-  for (const v of towerVols) {
-    const u = v.material.uniforms, b = u.uTw.value;
-    u.uVSteps.value = Math.min(48, Math.round(32 * gfx.detail * (rung >= 2 ? 0.6 : 1)));
-    u.uLSteps.value = rung >= 2 ? 2 : 3; u.uLs.value = 0.35 * u.uTs.value.x;
-    // The wave reaches the tower, leans it away from the hit, then lets it ease back over a minute.
-    let lean = 0;
-    if (U.uBk.value > 0 && tw > 0 && tw < 200) {
-      twD.set(b.x - U.uHitP.value.x, b.z - U.uHitP.value.z);
-      const rw = Math.hypot(b.x - U.uHitP.value.x, b.y + 0.5 * b.w - U.uHitP.value.y, b.z - U.uHitP.value.z);
-      lean = THREE.MathUtils.smoothstep(7000 * tw - rw, -25000, 5000) * Math.exp(-Math.max(tw - rw / 7000, 0) / 60) * 0.16;
-      twD.normalize();
-    }
-    u.uTl.value.copy(twD).multiplyScalar(lean);
-    v.visible = !sight;
-  }
 }
 // Muzzle blast: a white vapour ring that bursts square to the bore,
 // a short fireball, and a lobed smoke burst that coasts out and drifts.
