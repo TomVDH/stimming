@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T06:45:28Z
+updated_at: 2026-11-10T06:54:46Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -226,6 +226,6 @@ Open from the critics:
 - [x] Churches: in each village the house nearest the centre becomes a white nave with arched windows; its tower stands at the nave's end with a lit clock, belfry slots and a saddle roof, spire or tent. Same mesh and shader as the houses
 - [x] Variety at the same polygon count: one roof mesh makes gable, half-hip, hip, tent and spire; a third of the houses turn their ridge; six plaster tints, five roof colours, five shutter colours, some houses without shutters; window spacing per house; plinths; barn doors
 - [x] Near shore of both lakes at higher resolution (far shore stays): tools/shore.py bakes shore.png (8192 x 128, 60 KB), a signed distance to the OSM lake outlines for the 768 m beside the line, 8.7 m by 6 m texels, quarter-metre steps. shore() reads it there; the land lies flat at the column's lake level inside the outline and rises gently on the bank. The bake follows the drawn land's half-texel offset. Rebuild check: tools reproduce route.png bit for bit
-- [ ] Light OSM road data
+- [x] Light OSM road data: tools/roads.py fetches 1,604 ways (205 km; motorway to residential, no tunnels) within 540 m on the lake side and bakes roads.png (204 KB): a distance map, 4.4 m by 4 m texels, two halves stacked. The land paints asphalt and verges from it; trees, shrubs, fences and bales keep off it. The invented country road is gone; its pole line stays
 - [ ] Fields and pastures: realistic tilings in clusters, deterministic, all baked
 - [ ] Train horn of the current Swiss stock
