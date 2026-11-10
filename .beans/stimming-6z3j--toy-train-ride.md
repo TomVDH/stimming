@@ -288,3 +288,11 @@ Open from the critics:
 - [x] Line button (L): a strip with the route, a tick per station and the train; a drag jumps along the line; with ?dev it holds the top view
 - [x] Main shelf as beta, No. 41 (Tom, 2026-11-10): menu tile moved, toys.json, AGENTS.md
 - [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat
+- [x] The ride starts standing at Zurich Enge (3.14 km), the last stop before the lake opens up (Tom, 2026-11-10); ?x= still sets any start
+- [x] Time of day in five hours (Tom, 2026-11-10): morning, noon, afternoon, evening, night. Each sets the daylight share, the sun's direction and colour, a horizon tint for sky and haze, and its strength; a change eases over in about three seconds (sun, tints, daylight, cabin sun patches, lamps); the cabin rebakes as the sun moves; T steps through the hours; an old saved 'day' reads as afternoon
+- [x] Menu icon: Tom picked A of spike trainride-1 (window by day; mast sweeps and lake glints on hover); emblem shared/emblems/trainride.svg; picks.json records it
+- [x] Night walls: at a slant the merged window glow stays in a band per floor, never the whole wall
+- [x] Water: six swells with exact slopes and one noise layer (was four noise octaves, each sampled three times); one mirror ray on the bilinear map, 24 steps and three halvings (was two rays, 32 cubic steps); sunlit crests glow; light and moon reflections follow the rippled surface, shards near and a soft column far. Night lake at 3840x2400: 42 to 26 ms and 56 to 31 ms per frame against the previous build
+- [x] Water rebuild reverted (Tom: way worse); the previous water is back while a shared water shader is studied
+- [x] Water adopts shared/water.js (Buoy Business, Beach walker and Wind farm lineage): swell, chop and wave sets with unresolved waves moved into roughness; rain rings in rain; Fresnel and the sun glint from the module; town lights and the moon reflect as lobes stretched along the path by the view's slant, broken by the ripples near the eye. The lake colours, shore line and land mirror stay
+- [x] Night reflections cleaned up (Tom): slim streaks under each light and a moon path, their length from the calm surface and their sideways wobble from the shared water's ripples. Still to do (master bean stimming-ssrh): adoption steps 1 to 4, and wtLights() once the library builds it

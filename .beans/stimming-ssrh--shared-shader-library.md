@@ -42,6 +42,25 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] A first toy on the runner: Fog horn (`foghorn/`, bean `stimming-vmu3`)
 - [ ] Tom picks what comes next (water extras, light shafts, caustics, more adopters)
 
+## Consolidation (Tom, 2026-11-10: "modularize and bring together these shader implementations")
+
+Every toy that draws water, glass, sky, glow, grade or output by hand moves onto the module, one toy at a time, in its own chat.
+A swap that keeps the look goes in straight away; a swap that changes it waits for Tom's pick on a day and night sheet.
+
+Gaps the library fills first, so no toy needs its own copy:
+- [ ] Light reflections on water: `wtLights()` in `shared/water.js` for point lights and the moon (columns that the chop breaks near the eye). A card in `fxlab/` compares Train Ride A (this morning), Fog horn and Fireworks; Tom picks one.
+
+Adoption, per toy:
+- [ ] Train Ride: steps 1 to 4 of its brief (wet glass, motion, detail, grade); same look
+- [x] Train Ride: lake waves on `wtWaves()` and rain rings on `wtRings()` (2026-11-10, Tom: "the water itself looks alright")
+- [ ] Train Ride: light reflections on `wtLights()`, once built. Until then it keeps its own slim streaks over the shared waves (2026-11-10, Tom: "clean them up a little"); its brief's steps 1 to 4 also still wait (Tom chose reflections first)
+- [ ] Fog horn: on the runner already; its own light reflections move into `wtLights()`
+- [ ] Water by hand: Fireworks, Launch, Window seat, Wind farm, Beach walker, Canal, Viaduct, Meteor
+- [ ] Flare by hand: Beach walker, Window seat, Bread, Fireworks, Meteor
+- [ ] Grade by hand: Kit, Viaduct, Subway, Launch, Frietkot
+- [ ] Output by hand: about thirty raw toys (list in the plan, Output section)
+- [ ] Detail watch by hand: about twenty toys (list in the plan, Detail section)
+
 ## Rules
 
 - One effect at a time. Tom picks.

@@ -84,6 +84,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { initPage, whenVisible, reduced, onReducedChange, quality, pixelRatio, onQuality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { GLASS_RAIN } from '../shared/glassrain.js';
+import { WATER } from '../shared/water.js';
 import { BOKEH } from '../shared/bokeh.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -106,6 +107,9 @@ const opts = {
   speed: saved('speed') != null ? +saved('speed') : 0.6,
   time: saved('time') || 'night',
 };
+// The five hours, in order; an old saved 'day' reads as afternoon.
+const HOUR_KEYS = ['morning', 'noon', 'afternoon', 'evening', 'night'];
+if (opts.time === 'day') opts.time = 'afternoon';
 // QA can open a look with ?time=, ?mode= and ?x=; these are not saved.
 const qs = new URLSearchParams(location.search);
 if (qs.get('time')) opts.time = qs.get('time');
@@ -499,6 +503,10 @@ const OUTU = {
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   // The sun stands beyond the window, low on the left, so it shines into the cabin.
   uSun: { value: new THREE.Vector3(-0.6, 0.36, -0.72).normalize() },
+  // The hour: the sun's colour, the horizon's colour and how strongly it shows.
+  uSunTint: { value: new THREE.Vector3(1, 0.95, 0.86) },
+  uSkyLow: { value: new THREE.Vector3(1, 0.8, 0.6) },
+  uDusk: { value: 0 },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -562,13 +570,14 @@ void landTile(vec2 xz, out vec4 a, out vec4 b) {
 
 // Light, sky and haze for night and day; uDay blends the two.
 const HAZE = /* glsl */`
-uniform vec3 uMoon, uSun;
-uniform float uDay, uRain;
+uniform vec3 uMoon, uSun, uSunTint, uSkyLow;
+uniform float uDay, uRain, uDusk;
 uniform vec4 uGP[${NG}];
 uniform vec4 uGC[${NG}];
 // Day light: the sun and the blue sky; rain greys both.
-vec3 sunC() { return vec3(1.0, 0.95, 0.86) * 3.2 * (1.0 - 0.85 * uRain); }
-vec3 skyA(float ny) { return mix(vec3(0.25, 0.4, 0.75) * 0.55, vec3(0.45, 0.48, 0.52) * 0.75, uRain) * (0.55 + 0.45 * ny); }
+// The hour tints the sun; a low sun is weaker.
+vec3 sunC() { return uSunTint * 3.2 * mix(0.55, 1.0, smoothstep(0.03, 0.4, uSun.y)) * (1.0 - 0.85 * uRain); }
+vec3 skyA(float ny) { return mix(mix(vec3(0.25, 0.4, 0.75) * 0.55, uSkyLow * 0.42, uDusk * 0.4), vec3(0.45, 0.48, 0.52) * 0.75, uRain) * (0.55 + 0.45 * ny); }
 vec3 skyCol(vec3 d) {
   float up = max(d.y, 0.0);
   // Night: deep blue, a glow round the moon, a far town low on the left.
@@ -579,7 +588,11 @@ vec3 skyCol(vec3 d) {
   // Day: pale at the horizon, deep blue overhead, bright round the sun.
   float s = max(dot(d, uSun), 0.0);
   vec3 dc = mix(vec3(0.55, 0.68, 0.88), vec3(0.08, 0.22, 0.6), pow(up, 0.4)) * 1.1;
-  dc += vec3(1.0, 0.88, 0.7) * (pow(s, 6.0) * 0.18 + pow(s, 60.0) * 0.5);
+  // Morning and evening: a warm band at the horizon, a deeper sky overhead, warmest toward the sun.
+  float sideSun = 0.6 + 0.4 * max(dot(normalize(d.xz + 1e-4), normalize(uSun.xz + 1e-4)), 0.0);
+  dc = mix(dc, uSkyLow * 1.05, uDusk * exp(-up * 5.0) * sideSun);
+  dc *= 1.0 - 0.3 * uDusk * smoothstep(0.1, 0.8, up);
+  dc += uSunTint * (pow(s, 6.0) * 0.18 + pow(s, 60.0) * 0.5);
   dc = mix(dc, vec3(0.42, 0.45, 0.5) * (0.75 + 0.35 * up), uRain * 0.85);
   return mix(n, dc, uDay);
 }
@@ -711,6 +724,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${LAND}
   ${HAZE}
   ${LANDTILE}
+  ${WATER}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
   vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
@@ -788,27 +802,16 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Lakes are flat; the coarse lake mask must not paint water up a cliff.
     float water = smoothstep(2.0, -2.0, wd) * smoothstep(0.985, 0.997, normalize(vN).y);
     if (water > 0.0) {
-      // Waves: four octaves of gradient noise, each faded by its own footprint, so none aliases.
-      // Far water keeps only the long swell; the fine chop shows close in.
-      vec2 slopeW = vec2(0.0);
-      // Each octave runs its own way, so the ripples cross and never slide as one sheet.
-      float amp = 0.05, fr = 0.09;
-      vec2 wp = vP.xz;
-      for (int o = 0; o < 4; o++) {
-        float an = 0.5 + float(o) * 1.9;
-        vec2 q = wp * fr * vec2(1.0, 1.8) + vec2(cos(an), sin(an)) * uTime * 0.45 * (1.0 + float(o) * 0.5) + float(o) * 7.1;
-        float fade = 1.0 - smoothstep(0.15, 0.5, length(fwidth(q)));
-        float e = 0.05;
-        float h0 = gnoise(q);
-        slopeW += vec2(gnoise(q + vec2(e, 0.0)) - h0, gnoise(q + vec2(0.0, e)) - h0) / e * amp * fade;
-        amp *= 0.55; fr *= 2.3;
-      }
-      // The surface steepens a little near the eye; a calm far field mirrors.
-      slopeW *= mix(1.0, 0.5, smoothstep(300.0, 2500.0, dist));
-      vec3 Nw = normalize(vec3(-slopeW.x, 1.0, -slopeW.y));
+      // The shared water (shared/water.js): swell, chop and wave sets; a wave too fine
+      // for a pixel moves into sig2, so far water becomes a smooth glitter path.
+      float foot = max(max(fwidth(vP.x), fwidth(vP.z)), 0.001), sig2;
+      vec2 slopeW = wtWaves(vP.xz, uTime, foot, 0.012, 0.16, 0.4, sig2);
+      // Rain rings, as hard as it falls.
+      slopeW += wtRings(vP.xz, uTime, foot, uRain, 0.6, sig2);
+      vec3 Nw = wtNormal(slopeW);
       vec3 R = reflect(-V, Nw);
-      R.y = max(R.y, 0.005);
-      float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nw, V), 0.0), 5.0);
+      R.y = abs(R.y);
+      float F = wtFresnel(-V, Nw);
       vec3 refl = skyCol(R);
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
       vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.45, 1.0, -slopeW.y * 0.45)));
@@ -821,37 +824,32 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       vec3 body = mix(deep, deep * 1.8 + vec3(0.01, 0.02, 0.012), shallow);
       vec3 wc = mix(vec3(0.0, 0.003, 0.005), body, uDay) * (1.0 - F) + refl * max(F, 0.08);
       // The sun lays a glittering path; each facet that tilts to it flashes.
-      if (uDay > 0.01) {
-        float sd = max(dot(R, uSun), 0.0);
-        float glit = pow(sd, 900.0) * 60.0 + pow(sd, 120.0) * 2.0;
-        wc += sunC() * glit * uDay * (1.0 - 0.8 * uRain);
-      }
+      if (uDay > 0.01) wc += sunC() * wtGlint(R, uSun, sig2, 0.02) * F * 40.0 * uDay * (1.0 - 0.8 * uRain);
       // A thin pale lap line where the water meets the shore.
       wc = mix(wc, mix(vec3(0.02), vec3(0.35, 0.38, 0.36), uDay), smoothstep(-1.2, -0.2, wd) * smoothstep(0.6, -0.2, wd) * 0.5);
-      // Lights and the moon lay soft streaks on the water at night.
+      // Lights and the moon on the water: slim streaks under each light.
+      // Their length comes from the calm surface, so it holds steady;
+      // their sideways wobble comes from the rippled one, so near streaks shatter and far ones stay clean.
       if (uDay < 0.99) {
         vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
         vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
-        // Ripples break a near streak into short moving dashes; far off they merge to an even glow.
-        float rp = gnoise(vec2(vP.x * 0.12 + uTime * 0.2, vP.z * 0.8 + uTime * 0.9));
-        float dash = mix(0.35 + 0.65 * smoothstep(-0.25, 0.45, rp), 0.62, smoothstep(0.3, 1.2, fwidth(vP.z * 0.8)));
+        float near = 1.0 - smoothstep(200.0, 1500.0, dist);
+        vec3 Rw = normalize(mix(R0, R, 0.35 + 0.65 * near));
         vec3 cols = vec3(0.0);
         for (int i = 0; i < ${NG}; i++) {
           vec3 L = uGP[i].xyz - vP;
           float dl = length(L);
-          vec3 err = R0 - L / dl;
-          float ex = dot(err, right), ey = err.y;
-          // A slim streak under each light: longer toward the eye, short beyond the light.
+          vec3 Ld = L / dl;
+          float ex = dot(Rw - Ld, right), ey = (R0 - Ld).y;
           // Each light has its own length and strength, so a row of them is no comb.
           float hl = fract(float(i) * 0.618 + uGP[i].x * 0.0013);
-          float sy = ey > 0.0 ? 0.026 + 0.03 * fract(hl * 7.3) : 0.02, sx = max(0.0035, 2.0 / dl);
-          cols += uGC[i].rgb * uGP[i].w * exp(-ex * ex / (sx * sx) - ey * ey / (sy * sy)) * (0.16 + 0.24 * hl);
+          float sy = ey > 0.0 ? 0.024 + 0.026 * fract(hl * 7.3) : 0.018, sx = max(0.0035, 1.8 / dl);
+          cols += uGC[i].rgb * uGP[i].w * exp(-ex * ex / (sx * sx) - ey * ey / (sy * sy)) * (0.16 + 0.22 * hl);
         }
         // The moon's path: narrow far out, wider and fainter toward the eye.
-        vec3 errM = R0 - uMoon;
-        float mx = dot(errM, right), my = errM.y, mw = 0.012 + 0.06 * max(my, 0.0);
+        float mx = dot(Rw - uMoon, right), my = (R0 - uMoon).y, mw = 0.012 + 0.05 * max(my, 0.0);
         cols += vec3(0.7, 0.75, 0.85) * exp(-mx * mx / (mw * mw) - pow(max(my, 0.0) / 0.3, 2.0) - pow(min(my, 0.0) / 0.03, 2.0)) * 0.3 * (0.012 / mw + 0.2);
-        wc += cols * dash * (1.0 - uDay);
+        wc += cols * (1.0 - uDay);
       }
       c = mix(c, wc, water);
     }
@@ -1582,7 +1580,10 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         // A church is lit as a whole, or not at all.
         float litC = step(0.7, fract(vV * 3.7)) * 0.45;
         bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
+        // The merged glow stays in the window rows: a band per floor, never the whole wall.
+        float fwy = fwidth(vL.y) + 0.001;
+        float band = mix(wh / fh, smoothstep(-fwy, fwy, cv) * smoothstep(wh + fwy, wh - fwy, cv), smoothstep(0.6, 0.25, fwy * 2.0));
+        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * band * (1.0 - fade) * nearK;
         if (zone && cv < wh) {
           float ax = abs(cu) * gap;
           // A church window ends in a round arch.
@@ -3622,6 +3623,8 @@ const W = {
   // uPost: the nearest posts in wall units, with the sun strength in z.
   uPost: { value: Array.from({ length: 3 }, () => new THREE.Vector3()) },
   uSunW: { value: new THREE.Vector3(-0.6, 0.36, -0.72).normalize() },
+  // The sun's colour for the hour, shared with the outside.
+  uSunTint: OUTU.uSunTint,
   // uPh is the stop line's half size on the wall.
   uPh: { value: new THREE.Vector2(0.42, 0.033) },
 };
@@ -3643,7 +3646,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec3 uLamp[3];
   uniform sampler2D tPid, tStamp, tBok;
   uniform float uStnK, uOppL;
-  uniform vec3 uPost[3], uSunW;
+  uniform vec3 uPost[3], uSunW, uSunTint;
   uniform vec2 uPh;
   varying vec2 vUv;
   const vec3 STNC = vec3(0.84, 0.92, 1.0);
@@ -3767,7 +3770,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Light wraps round its top and bottom edges from the glass; the sun lights the top lip.
       float wrapE = smoothstep(0.55, 0.98, abs(by));
       vec3 viewL = texture2D(tOut, px + vec2(0.0, BAR * 2.5 * sign(by) / uEye.z)).rgb;
-      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.035 + viewL * 0.45 * wrapE + vec3(1.0, 0.9, 0.74) * 1.2 * smoothstep(0.6, 0.97, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
+      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.035 + viewL * 0.45 * wrapE + uSunTint * vec3(1.0, 0.94, 0.86) * 1.2 * smoothstep(0.6, 0.97, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
       col = alb * mix(nightB, dayB, uDay);
       // A soft shade falls across its middle, deepest at its centre line.
       col *= 1.0 - 0.35 * uDay * (1.0 - wrapE);
@@ -3918,7 +3921,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         through *= smoothstep(BAR * 0.8, BAR * 1.4, abs(h2.y + lat.y - uHalf.y * 0.74));
         // Lambert: the face's normal lies in the wall plane.
         float face = max(dot(n2, uSunW.xy), 0.0);
-        day += vec3(1.0, 0.9, 0.74) * 2.6 * face * through * sunAt(h2.x + uC0.x);
+        day += uSunTint * vec3(1.0, 0.94, 0.86) * 2.6 * face * through * sunAt(h2.x + uC0.x);
         col = alb * mix(night, day, uDay);
         // A rounded bevel where the recess turns onto the wall catches a thin line of light.
         col += alb * mix(CABN * 0.05, vec3(0.12), uDay) * smoothstep(0.05, 0.0, f) * (0.5 + 0.5 * max(n2.y, 0.0));
@@ -3957,7 +3960,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         float faceW = max(dot(-gO, uSunW.xy), 0.0);
         // The wall takes only bounced sun, so no post shadow crosses it.
         float sk = sunK();
-        col += alb * vec3(1.0, 0.84, 0.6) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
+        col += alb * uSunTint * vec3(1.0, 0.88, 0.7) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // A passing train's lit saloon washes the wall round the window.
@@ -4084,6 +4087,7 @@ const room = new THREE.Scene();
 // The baked cabin follows the time of day and the sun.
 const ROOMU = { uD: { value: 0 }, uS: { value: OUTU.uSun.value } };
 let bakedDay = -1, roomLamps = () => {};
+const bakedSun = new THREE.Vector3();
 const roomRT = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
 const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
 W.tRoom.value = roomRT.texture;
@@ -4200,9 +4204,9 @@ function frame(w, h, pr) {
 }
 
 /* ---------- motion ---------- */
-// QA can start at a point on the route with ?x=.
-// The ride starts standing at Zurich HB; QA can start elsewhere with ?x=.
-let time = 0, camX = qs.has('x') ? +qs.get('x') : -1, speed = 0, target = 27;
+// The ride starts standing at Zurich Enge, the last stop before the lake opens up (Tom).
+// QA can start elsewhere with ?x=.
+let time = 0, camX = qs.has('x') ? +qs.get('x') : S0('Zürich Enge') - 1, speed = 0, target = 27;
 // Each weather sets the rain in the air, the water on the pane and the pane fog.
 // air above 1 only thickens the streaks; the sky and haze cap at 1.
 const MODES = {
@@ -4215,6 +4219,19 @@ const MODES = {
 };
 let wetMul = 1;
 let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0;
+// Five hours (Tom, 2026-11-10). day is the daylight share; sun is the direction to the sun.
+// tint colours the sun; low colours the horizon, and dusk sets how strong that band is.
+const HOURS = {
+  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4 },
+  noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0 },
+  afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1 },
+  evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85 },
+  night: { day: 0, sun: [-0.76, 0.07, -0.65], tint: [1.0, 0.58, 0.3], low: [0.4, 0.3, 0.3], dusk: 0 },
+};
+const hourOf = v => HOURS[v === 'day' ? 'afternoon' : v] || HOURS.night;
+let hourT = hourOf('night');
+const sunT = new THREE.Vector3(), tintT = new THREE.Vector3(), lowT = new THREE.Vector3();
+function aimHour(h) { hourT = h; dayT = h.day; sunT.set(...h.sun).normalize(); tintT.set(...h.tint); lowT.set(...h.low); }
 const hashN = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
 let drag = false;
 // Each wheelset kicks the carriage as it crosses a rail joint.
@@ -4497,9 +4514,15 @@ function update(dt, pace) {
   const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2), wetK = wetT > W.uRain.value ? 0.18 : wetT < 0.01 ? 0.4 : 0.08;
   W.uRain.value += (wetT - W.uRain.value) * Math.min(1, dt * wetK);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 0.12);
-  // Night and day cross over in about two seconds.
-  dayV += (dayT - dayV) * Math.min(1, dt * 1.6);
+  // The hours cross over in about three seconds: daylight, sun, tints.
+  const kh = Math.min(1, dt * 1.1);
+  dayV += (dayT - dayV) * kh;
   if (Math.abs(dayT - dayV) < 0.002) dayV = dayT;
+  OUTU.uSun.value.lerp(sunT, kh).normalize();
+  W.uSunW.value.copy(OUTU.uSun.value);
+  OUTU.uSunTint.value.lerp(tintT, kh);
+  OUTU.uSkyLow.value.lerp(lowT, kh);
+  OUTU.uDusk.value += (hourT.dusk - OUTU.uDusk.value) * kh;
   OUTU.uRain.value = Math.min(1, air);
   OUTU.uPour.value = air;
   eye.lerp(eyeT, Math.min(1, dt * 7));
@@ -4525,7 +4548,10 @@ return {
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
   get day() { return dayV; },
-  setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
+  setTime(v, now) {
+    aimHour(hourOf(v));
+    if (now) { dayV = dayT; OUTU.uSun.value.copy(sunT); W.uSunW.value.copy(sunT); OUTU.uSunTint.value.copy(tintT); OUTU.uSkyLow.value.copy(lowT); OUTU.uDusk.value = hourT.dusk; place(); }
+  },
   setSpeed(v) { target = v; },
   // Dev: a plan view of the outside from h metres up; off returns to the window.
   top(on, h = topH) {
@@ -4551,7 +4577,7 @@ return {
   outside: [out, outCam],
   before(r) {
     // Rebake the cabin when day and night have moved on.
-    if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomLamps(dayV); roomCam.update(r, room); baked = true; bakedDay = dayV; }
+    if (!baked || Math.abs(dayV - bakedDay) > 0.05 || OUTU.uSun.value.distanceTo(bakedSun) > 0.05) { ROOMU.uD.value = dayV; roomLamps(dayV); roomCam.update(r, room); baked = true; bakedDay = dayV; bakedSun.copy(OUTU.uSun.value); }
     outCam.updateMatrixWorld();
     // Dev: the top camera hangs over the line and looks straight down.
     const cam = topCam || outCam;
@@ -4592,7 +4618,7 @@ return {
     eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
   },
   // A moving train draws at full rate; the sleep still stops it.
-  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT || Math.abs(nod) + Math.abs(nodV) > 0.0004,
+  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT || OUTU.uSun.value.distanceTo(sunT) > 0.001 || Math.abs(nod) + Math.abs(nodV) > 0.0004,
   setMode(v, now) {
     mode = MODES[v] || MODES.rain;
     mk = now ? 1 : 0;
@@ -5225,7 +5251,7 @@ const ui = initPage({
     },
     slider: { label: 'Speed', min: 0, max: 1, step: 0.01, value: opts.speed, onInput: v => { opts.speed = v; save('speed', v); S.setSpeed(cruise(v)); wake(); } },
     settings: [
-      { type: 'choice', id: 'time', label: 'Time', value: opts.time, options: [{ value: 'night', label: 'Night' }, { value: 'day', label: 'Day' }], onPick: setTime },
+      { type: 'choice', id: 'time', label: 'Time', value: opts.time, options: HOUR_KEYS.map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) })), onPick: setTime },
       // Drift lets the weather wander to a neighbour every few minutes.
       { type: 'toggle', id: 'drift', label: 'Drift', value: opts.drift, onToggle: on => { opts.drift = on; save('drift', on ? '1' : '0'); } },
       // Express runs through every station without stopping.
@@ -5264,7 +5290,7 @@ addEventListener('keydown', e => {
     setWeather(v);
   }
   if (e.code === 'KeyE') { const on = !opts.express; opts.express = on; save('express', on ? '1' : '0'); ui.setting('express')?.set(on); S.setExpress(on); wake(); }
-  if (e.code === 'KeyT') { const v = opts.time === 'day' ? 'night' : 'day'; ui.setting('time')?.set(v); setTime(v); }
+  if (e.code === 'KeyT') { const v = HOUR_KEYS[(HOUR_KEYS.indexOf(opts.time) + 1) % HOUR_KEYS.length]; ui.setting('time')?.set(v); setTime(v); }
 });
 
 /* ---------- the line ---------- */
