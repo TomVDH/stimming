@@ -499,7 +499,9 @@ vec3 arcLight(vec3 P, vec3 N) {
 vec3 ambient(vec3 N) { return mix(uHorC, uZenC, N.y * 0.5 + 0.5) * 0.55; }
 vec3 sunLight(vec3 N) { return uSunC * max(dot(N, uSun), 0.0); }
 // The rock lights what faces it, faintly by day.
-vec3 keyLight(vec3 N) { return uAstC * uAst.w * 0.25 * max(dot(N, uAst.xyz), 0.0); }
+// The rock lights what faces it: faintly by day, clearly at night.
+float nightK() { return 1.0 - smoothstep(-0.05, 0.15, uSunD.y); }
+vec3 keyLight(vec3 N) { return uAstC * uAst.w * 0.25 * (1.0 + 5.0 * nightK()) * max(dot(N, uAst.xyz), 0.0); }
 // Light from behind catches the edges: the sun's and the rock's.
 vec3 rim(vec3 N, vec3 P) {
   vec3 V = normalize(cameraPosition - P);
@@ -577,7 +579,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     N = normalize(N + vec3(WIND.x, 0.0, WIND.y) * rp);
     // Clean sand: crests a touch lighter, troughs a touch deeper.
     float tone = 0.94 + 0.12 * k2fbm(vP.xz * 0.0002);
-    vec3 alb = uGroundC * tone * mix(0.8, 1.1, clamp(h0 / 1.35, 0.0, 1.0));
+    vec3 alb = uGroundC * tone * mix(0.8, 1.1, clamp(h0 / 1.35, 0.0, 1.0)) * (1.0 - 0.28 * nightK());
     // The ground round the mount is scorched: a shade darker.
     alb *= 1.0 - 0.25 * smoothstep(560.0, 240.0, length(vP.xz - vec2(0.0, 90.0)));
     // A flat plain takes little light at four degrees; lift it.
@@ -1321,27 +1323,34 @@ const PU = {
   uTrail: { value: 1 }, uSolid: { value: 1 }, uFlow: { value: 0 }, uSteps: { value: 72 }, uLSteps: { value: 4 },
   // uBreak erodes the train after the hit; at 0 it changes nothing.
   uBreak: { value: 0 },
+  // After the hit the tail fades from its tip, metres along: uCut.
+  // uDrift carries the old smoke on the wind. Both idle before the hit.
+  uCut: { value: 1e9 }, uDrift: { value: new THREE.Vector3() },
   uHot: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uEmberC: { value: new THREE.Vector3(...EMBER) },
   uSoot: { value: new THREE.Vector3(...linFit(0.26, 0.02, 50)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
 };
-const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...PU }, transparent: true, depthWrite: false,
+// One train per uniform set: the rock's own, and smaller ones for debris.
+const TRAIN_GEO = new THREE.CylinderGeometry(1, 1, 1, 20, 1);
+function makeTrain(pu) {
+  return new THREE.Mesh(TRAIN_GEO, new THREE.ShaderMaterial({
+  uniforms: { ...U, ...pu }, transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`uniform vec3 uAstP, uAway, uSide, uUpv; uniform float uAstRad, uLen, uK;
+  vertexShader: /* glsl */`uniform vec3 uAstP, uAway, uSide, uUpv, uDrift; uniform float uAstRad, uLen, uK;
   varying vec3 vP;
   void main() {
     // The proxy is the cone, padded by half its radius.
     float x = mix(-1.6 * uAstRad, uLen, position.y + 0.5);
     float r = 1.56 * (1.05 * uAstRad + uK * max(x, 0.0));
-    vP = uAstP + uAway * x + (uSide * position.x + uUpv * position.z) * r;
+    vP = uAstP + uDrift + uAway * x + (uSide * position.x + uUpv * position.z) * r;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`precision highp sampler3D;
   varying vec3 vP;
   uniform sampler3D uVol;
   uniform vec3 uAstP, uAway, uSide, uUpv, uHot, uFireC, uEmberC, uSoot, uAsh;
-  uniform float uAstRad, uLen, uK, uBurn, uTrail, uSolid, uTime, uFlow, uBreak;
+  uniform float uAstRad, uLen, uK, uBurn, uTrail, uSolid, uTime, uFlow, uBreak, uCut;
+  uniform vec3 uDrift;
   uniform int uSteps, uLSteps;
   ${HEAD}
   ${AIR}
@@ -1362,6 +1371,9 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
     if (rv > 1.0 || u < -0.7) return 0.0;
     // Coverage: a full core, a ragged rim, thinner with age.
     float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * (1.0 - smoothstep(0.72, 1.0, x / uLen));
+    // After the hit: the tail goes from its tip back, the head end softens.
+    cov *= 1.0 - smoothstep(uCut - 0.25 * uLen, uCut, x);
+    cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
     if (cov < 0.002) return 0.0;
     // A skew along u hides the tile repeat.
     vec3 p = vec3(u - uFlow, v.x + 0.37 * u, v.y + 0.19 * u) * 0.36;
@@ -1376,7 +1388,7 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
   }
   float hg(float c, float k) { return (1.0 - k * k) / pow(1.0 + k * k - 2.0 * k * c, 1.5); }
   void main() {
-    vec3 rd = normalize(vP - cameraPosition), qo = cameraPosition - uAstP;
+    vec3 rd = normalize(vP - cameraPosition), qo = cameraPosition - uAstP - uDrift;
     float R = uAstRad;
     // The ray meets the padded cone at the roots of a quadratic.
     float xo = dot(qo, uAway), da = dot(rd, uAway);
@@ -1461,7 +1473,32 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
     col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
     gl_FragColor = vec4(col, al);
   }`,
-}));
+  }));
+}
+const smoke = makeTrain(PU);
+// Mini trains: smaller, darker copies of the comet trail for debris.
+const SOOT_D = linFit(0.15, 0.015, 50), ASH_D = linFit(0.5, 0.01, 70);
+function makeMini() {
+  const pu = {
+    uAstP: { value: new THREE.Vector3() }, uAstRad: { value: 100 }, uAway: { value: new THREE.Vector3(0, 1, 0) }, uSide: { value: new THREE.Vector3(1, 0, 0) }, uUpv: { value: new THREE.Vector3(0, 0, 1) },
+    uBurn: { value: 0.6 }, uVol: PU.uVol, uLen: { value: 4000 }, uK: { value: 0.11 }, uTrail: { value: 0 }, uSolid: { value: 0 }, uFlow: { value: 0 },
+    uSteps: { value: 24 }, uLSteps: { value: 2 }, uBreak: { value: 0 }, uCut: { value: 1e9 }, uDrift: { value: new THREE.Vector3() },
+    uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: { value: new THREE.Vector3(...SOOT_D) }, uAsh: { value: new THREE.Vector3(...ASH_D) },
+  };
+  const m = makeTrain(pu);
+  m.frustumCulled = false; m.renderOrder = 2; m.visible = false;
+  scene.add(m);
+  return { m, pu };
+}
+// Point a mini train: head at pos, streaming along away.
+function aimMini(t, pos, away, R, len, on, burn) {
+  const u = t.pu;
+  u.uAstP.value.copy(pos); u.uAway.value.copy(away).normalize();
+  u.uSide.value.set(0, 1, 0).cross(u.uAway.value).negate().normalize(); u.uUpv.value.crossVectors(u.uSide.value, u.uAway.value);
+  u.uAstRad.value = R; u.uLen.value = len; u.uTrail.value = on; u.uBurn.value = burn; u.uFlow.value = simT * 0.5;
+  u.uSteps.value = rung >= 2 ? 14 : 24;
+  t.m.visible = on > 0.01;
+}
 smoke.frustumCulled = false;
 smoke.renderOrder = 2;
 scene.add(smoke);
@@ -1541,7 +1578,7 @@ const frags = Array.from({ length: 4 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
   scene.add(m);
-  return { m, trail: makeFragTrail(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0) };
+  return { m, trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0) };
 });
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
@@ -1553,7 +1590,7 @@ function seedFrags() {
     f.k = 0.12 + 0.12 * rnd();
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     f.m.quaternion.random();
-    f.m.visible = f.on; f.trail.visible = f.on;
+    f.m.visible = f.on; f.trail.visible = f.on; f.mini.m.visible = false;
     f.trail.material.uniforms.uOn.value = 0;
   });
 }
@@ -1587,7 +1624,11 @@ function stepFrags() {
       u.uOn.value = Math.min(1, u.uOn.value + 1 / 90);
       if (f.breakT && simT >= f.breakT) breakFrag(f);
     } else u.uOn.value = Math.exp(-(simT - f.broke) / 1.5);
-    f.trail.visible = u.uOn.value > 0.01;
+    // Medium pieces trail a mini comet train; small ones keep the ribbon.
+    const medium = f.k >= 0.18;
+    f.trail.visible = !medium && u.uOn.value > 0.01;
+    if (medium) aimMini(f.mini, f.pos, ast.away, f.k * ast.R, f.k * ast.R * 60, u.uOn.value, f.broke < 0 ? 0.7 : 0.2);
+    else f.mini.m.visible = false;
   }
 }
 // A fragment bursts into embers.
@@ -2958,10 +2999,11 @@ const shardMat = new THREE.ShaderMaterial({
     if (age < 0.0 || age > 60.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     // Mild drag, a slow fall, a spin.
     // The shard shrinks away over its last two seconds.
-    float k = 0.15;
+    float k = 0.08;
     // Air drag sets a fall speed; each shard falls at its own.
+    // A slow approach to it makes a long arc.
     float vt = 160.0 + 120.0 * fract(aSeed.x * 3.7);
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.3 * age)) / 0.3), 0.0);
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.12 * age)) / 0.12), 0.0);
     // It burns up in the last few hundred metres.
     float sc = aSeed.y * smoothstep(120.0, 500.0, c.y) * (1.0 - smoothstep(55.0, 60.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
@@ -3075,27 +3117,22 @@ function stepShards(dt) {
 }
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
-  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.15, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
+  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.08, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
   const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
-  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.3 * age)) / 0.3), P[i * 3 + 2] + V[i * 4 + 2] * e);
-  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.3 * age)), V[i * 4 + 2] * ek);
+  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.12 * age)) / 0.12), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.12 * age)), V[i * 4 + 2] * ek);
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
-const chunks = Array.from({ length: 4 }, () => ({ trail: makeFragTrail(true), i: -1 }));
+const chunks = Array.from({ length: 4 }, () => ({ mini: makeMini(), i: -1 }));
 const chP = new THREE.Vector3(), chV = new THREE.Vector3();
 function stepChunks() {
   for (const ch of chunks) {
-    const u = ch.trail.material.uniforms;
-    if (ch.i < 0 || simT > shardsEnd) { ch.trail.visible = false; continue; }
+    if (ch.i < 0 || simT > shardsEnd || reduced()) { ch.mini.m.visible = false; continue; }
     const age = simT - sSeed.array[ch.i * 4 + 2], r = sSeed.array[ch.i * 4 + 1];
     shardAt(ch.i, age, chP, chV);
     // The trail streams back up the fall line, and dies at the ground.
-    u.uP.value.copy(chP); u.uAway.value.copy(chV).negate().normalize();
-    u.uSide.value.crossVectors(yUp, u.uAway.value).normalize();
-    u.uR.value = r * 0.9; u.uLen.value = r * 30;
-    u.uOn.value = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
-    u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
-    ch.trail.visible = u.uOn.value > 0.01;
+    const on = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    aimMini(ch.mini, chP, chV.negate(), r * 0.8, r * 40, on, 0.35 + 0.4 * Math.exp(-age / 8));
   }
 }
 
@@ -3159,6 +3196,8 @@ function shatter(c) {
     bv.copy(bp).addScaledVector(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), 0.4 * R).normalize();
     // Slow shards read as huge ones.
     bv.multiplyScalar((25 + 70 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
+    // A lift throws the pieces up first, so they fall in arcs.
+    bv.y += 0.6 * bv.length();
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
@@ -3169,7 +3208,7 @@ function shatter(c) {
   shardsEnd = simT + 60;
   // The four biggest shards drag smoke trails down with them.
   const big = Array.from({ length: N }, (_, i) => i).sort((a, b) => sSeed.array[b * 4 + 1] - sSeed.array[a * 4 + 1]).slice(0, chunks.length);
-  chunks.forEach((ch, j) => { ch.i = big[j] ?? -1; ch.trail.material.uniforms.uOn.value = 0; });
+  chunks.forEach((ch, j) => { ch.i = big[j] ?? -1; });
   // Embers: a burst of K6 stars from the rock's heart.
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
@@ -3259,9 +3298,18 @@ function stepShot(dt) {
   if (U.uHeat.value < 0.003) U.uHeat.value = 0;
   if (ast.state === 'shatter') astMat.uniforms.uBurn.value *= Math.exp(-dt / 0.6);
   // The smoke outlives the fire, then grows back behind the next rock.
-  // After the hit the train erodes and thins over about forty seconds.
-  PU.uTrail.value = ast.state === 'shatter' ? PU.uTrail.value * Math.exp(-dt / 18) : Math.min(1, PU.uTrail.value + dt / 3);
-  PU.uBreak.value = ast.state === 'shatter' ? Math.min(1, PU.uBreak.value + dt / 35) : 0;
+  // After the hit the tail fades from its tip back to the head over ~40 s.
+  // It drifts on a high wind and thins as it goes.
+  if (ast.state === 'shatter' && shot && shot.hit) {
+    const ha = simT - shot.t0 - shot.hitT, f = clamp(ha / 40, 0, 1);
+    PU.uCut.value = PU.uLen.value * 1.25 * (1 - f * (2 - f)) - 2 * ast.R * f;
+    PU.uDrift.value.set(45, 8, 15).multiplyScalar(ha);
+    PU.uBreak.value = Math.min(0.6, ha / 60);
+    PU.uTrail.value = Math.max(0, 1 - Math.max(0, ha - 30) / 15);
+  } else if (ast.state !== 'shatter') {
+    PU.uCut.value = 1e9; PU.uDrift.value.set(0, 0, 0); PU.uBreak.value = 0;
+    PU.uTrail.value = Math.min(1, PU.uTrail.value + dt / 3);
+  }
   // Steam rises off the hot barrel.
   if (U.uHeat.value > 0.15 && !reduced()) {
     for (let n = Math.floor(dt * 14 * U.uHeat.value + rnd()); n > 0; n--) {
