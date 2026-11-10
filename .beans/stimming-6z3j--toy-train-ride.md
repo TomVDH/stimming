@@ -288,3 +288,4 @@ Open from the critics:
 - [x] Line button (L): a strip with the route, a tick per station and the train; a drag jumps along the line; with ?dev it holds the top view
 - [x] Main shelf as beta, No. 41 (Tom, 2026-11-10): menu tile moved, toys.json, AGENTS.md
 - [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat
+- [x] The ride starts standing at Zurich Enge (3.14 km), the last stop before the lake opens up (Tom, 2026-11-10); ?x= still sets any start
