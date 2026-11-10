@@ -585,14 +585,17 @@ function towerGeom(c) {
   return { rc, base, top, anv, len, r1, r2, lean: rc * 0.4 * v[1], ax: [Math.cos(c.shear), Math.sin(c.shear)] };
 }
 // A calmer storm retires its oldest cells; they die back over 40 s.
-// A stronger one adds a cell every 6 to 14 s; each towers up over 45 s.
+// A rising storm is arcade-quick: a cell every 1 to 3 s, in view, boiling up in 12 s.
+// A steady storm adds one every 6 to 14 s, growing over 30 s.
+// Each cell announces itself with a burst of lightning as it matures.
 let cellNext = 0;
 function stepCells(dt) {
   const want = Math.round(opts.storm * MAXCELL);
   for (let i = cells.length - 1; i >= 0; i--) {
     const c = cells[i];
     c.age += dt;
-    c.s = clamp(Math.min(c.age / 45, (c.life - c.age) / 40));
+    c.s = clamp(Math.min(c.age / (c.grow || 30), (c.life - c.age) / 40));
+    if (!c.told && c.s > 0.5) { c.told = true; c.burst = 2 + Math.floor(Math.random() * 2); c.next = t + rnd(0.05, 0.4); }
     if (c.age > c.life || c.x - cam.x < -120) cells.splice(i, 1);
   }
   const live = cells.filter(c => !c.dying);
@@ -602,9 +605,12 @@ function stepCells(dt) {
     c.dying = true; c.life = Math.min(c.life, c.age + 40);
   }
   if (live.length < want && t > cellNext) {
-    // Half arrive in view, half far ahead.
-    cells.push(newCell(Math.random() < 0.5));
-    cellNext = t + rnd(6, 14);
+    const rising = stormTarget > opts.storm + 0.02;
+    // Half arrive in view, half far ahead; a rising storm builds in view.
+    const c = newCell(!rising && Math.random() < 0.5);
+    c.grow = rising ? 12 : 30;
+    cells.push(c);
+    cellNext = t + (rising ? rnd(1, 3) : rnd(6, 14));
   }
 }
 // A flash is a burst of strokes within about a second.
@@ -636,6 +642,8 @@ function stepFlashes(dt) {
     if (c.next === undefined) c.next = t + rnd(1, 20);
     if (c.s > 0.3 && t > c.next) {
       c.next = t + (Math.random() < 0.3 ? rnd(0.4, 1.6) : rnd(10, 40) / (0.5 + opts.storm) / (c.flashK || 1));
+      // A new cell's arrival burst: a few flashes in quick order.
+      if (c.burst > 0) { c.burst--; c.next = t + rnd(0.3, 0.9); }
       const g = towerGeom(c), [ax, az] = g.ax;
       // Most flashes sit in the core.
       // A mature cell also sends some through its anvil.
@@ -756,11 +764,22 @@ function stepTurb(dt) {
   turb.vx += (-0.08 * al - 60 * turb.x - 7 * turb.vx) * h;
   turb.x += turb.vx * h; turb.y += turb.vy * h;
 }
-// The slider sets a target; the weather eases toward it over about half a minute.
+// A big push on the slider answers at once: a flash in the nearest cell or the deck, and a lurch.
+let kickT = -9;
+function stormKick(v) {
+  if (reduce || t - kickT < 1.2) return;
+  kickT = t;
+  const c = cells.filter(c => c.s > 0.3).sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z))[0];
+  if (c) flash(c.x, c.z, 1.3, c);
+  else flash(cam.x + rnd(10, 60), cam.z + rnd(25, 90), 1.3);
+  turb.a[1] += (Math.random() < 0.5 ? -1 : 1) * 3 * v;
+}
+// The slider sets a target; the weather builds fast and calms slowly.
 let stormTarget = opts.storm;
 function step(dt) {
   t += dt;
-  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / 20);
+  // The storm builds fast and calms slowly.
+  opts.storm += (stormTarget - opts.storm) * Math.min(1, dt / (stormTarget > opts.storm ? 4 : 20));
   if (Math.abs(stormTarget - opts.storm) < 1e-3) opts.storm = stormTarget;
   stepTurb(dt);
   stepAurora(dt);
@@ -1601,7 +1620,7 @@ const ui = initPage({
       options: Object.keys(HOURS).map(k => ({ value: k, label: HOUR_NAMES[k] })),
       onPick: v => { opts.hour = v; save('hour', v); buildSky(); uploadSky(); histFresh = true; render(); },
     },
-    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { stormTarget = v; save('storm', v); } },
+    slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { if (v > stormTarget + 0.12) stormKick(v); stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } }],
     settings: [

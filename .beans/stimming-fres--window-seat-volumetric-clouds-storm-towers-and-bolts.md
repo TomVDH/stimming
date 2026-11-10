@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:37:51Z
+updated_at: 2026-11-10T08:44:13Z
 parent: stimming-w1nd
 ---
 
@@ -41,3 +41,5 @@ Round 5 (Tom: the deck as the towers; gentler storms; more variety): the deck is
 Fog banks (Tom): the veil's grain is now long sheets along the flight line that stream aft (it was noise on a sphere round the eye). The wing takes the same near-fog streak field in its own materials: eight taps from the eye to the skin hide stretches of it, in the outside murk's colour. Rough air in a bank flexes the wing: two damped springs (1.1 Hz and 3.2 Hz), kicked by gusts; the tip lights ride the bend. A brown-noise rumble, low-passed near 100 Hz with a 48 Hz body, swells with the bank and buffets with the turbulence.
 
 Fog round 2 (Tom: still a sphere): the near fog is now curtains: tall, thin sheets parallel to the cabin (136 m along the flight line, 30 m tall, 9 m thick), marched in 16 jittered steps to 32 m. A ray out of the window crosses several, so each veils its own stretch of wing; the wing's materials march the same field. The far veil lost its sphere pattern and thickens to under 1 km in a thick bank, so gaps between curtains stay grey. The wingtip strobe burns up to six times brighter by day.
+
+Arcade ramp (Tom): the storm builds in about 4 s and calms over about 20 s. While it rises, cells arrive every 1 to 3 s in view and boil up in 12 s (30 s when steady). Each cell fires a burst of two or three flashes as it matures. A big push on the slider answers at once with a flash in the nearest cell (or the deck) and a lurch.
