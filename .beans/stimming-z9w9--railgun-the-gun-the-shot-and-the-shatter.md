@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T09:46:23Z
+updated_at: 2026-11-10T09:51:36Z
 parent: stimming-f793
 ---
 
@@ -16,7 +16,7 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 ## Checklist
 
 - [x] Brainstorm with Tom; stills of the current state (design: docs/plans/railgun.md, Task 10)
-- [ ] The gun: model, tracking, recoil
+- [x] The gun: model, tracking, recoil (brake, cables, spring slew, cradle kick, heat glow, steam)
 - [ ] Muzzle effects: flash, flares, blast, shock rings, dust front
 - [ ] The projectile: the bolt
 - [ ] The incoming threats: the rock and its approach
