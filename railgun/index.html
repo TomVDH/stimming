@@ -2172,7 +2172,7 @@ fire = c => {
   }
   boltMat.uniforms.uCore.value = 3 * (0.6 + c);
   boltMat.uniforms.uGain.value = 5 + 3 * c;
-  { const ac = kit.live(); if (ac) chirp(ac, c); }
+  { const ac = kit.live(); if (ac) { chirp(ac, c); hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
@@ -2200,7 +2200,8 @@ function shatter(c) {
   }
   hitFlash = 1; cam.shake += 0.5 * c;
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
-  rumble(c);
+  // The boom sample replaces the synth rumble once it decodes.
+  if (!boomOK) rumble(c);
 }
 function respawn() {
   ast.shape = (ast.shape + 1) % ROCKS.length;
@@ -2762,6 +2763,31 @@ ventSound = () => {
   o.connect(og).connect(kit.out); o.start(t); o.stop(t + 1.5);
   track(t + 1.7, cr, o);
 };
+// Tom's samples: a whoosh into an impact, then a far boom.
+const SAMPLES = { impact: 'impact.mp3', boom: 'boom.mp3' };
+// The impact's peak sits 1.85 s into its file.
+const IMPACT_AT = 1.85;
+const sampleP = {};
+let boomOK = false;
+const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name]).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).catch(() => null));
+function playSample(ac, buf, when, gain, rate) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
+  src.connect(g).connect(kit.out);
+  src.start(when);
+  track(when + buf.duration / rate + 0.1, src);
+}
+// The impact lands on the flash; the boom follows at once.
+function hitSounds(ac, sh) {
+  if (!sh.canHit) return;
+  const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
+  sh.sfx = { hit, impact: 0, boom: 0 };
+  Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
+    if (shot !== sh || !kit.live()) return;
+    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04)); }
+    if (boom) { boomOK = true; sh.sfx.boom = hit + 0.12; playSample(ac, boom, sh.sfx.boom, 0.7 * k * jit(0.1), jit(0.05)); }
+  });
+}
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
 function rumble(c) {
@@ -2869,7 +2895,7 @@ window.__qa = {
   // A frozen page draws even when hidden, for stills from a background tab.
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { simT += dt; U.uTime.value = simT; stepAst(dt); stepAim(dt); stepCharge(dt); stepShot(dt); easeLook(dt); } frame(); draw(); },
-  shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive } : null),
+  shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
 };
 
 /* ---------- ready ---------- */
