@@ -843,7 +843,16 @@ const ROADS = (() => {
     if (Pb[i] === 65535) raw.push({ k: Pb[i + 1], pts: [] });
     else if (raw.length) raw[raw.length - 1].pts.push([Pb[i] / 65535 * TILE, -Pb[i + 1] / 100]);
   }
-  const paths = raw.filter(q => q.pts.length > 2), used = new Uint8Array(paths.length), runs = [];
+  // Metres to the nearest kerb, from the road map.
+  const rd = ROUTE.rd, rw = ROUTE.rw, rh = rd ? rd.length / rw : 0;
+  const tex = (c, r) => rd[Math.min(Math.max(r, 0), rh - 1) * rw + ((c % rw) + rw) % rw];
+  const kerb = (x, t) => {
+    const u = x / TILE * rw - 0.5, v = t / 4 - 0.5, c = Math.floor(u), r = Math.floor(v), fu = u - c, fv = v - r;
+    return ((tex(c, r) * (1 - fu) + tex(c + 1, r) * fu) * (1 - fv) + (tex(c, r + 1) * (1 - fu) + tex(c + 1, r + 1) * fu) * fv) / 10 - 4;
+  };
+  // A path that leaves the mapped roads is a bake fault: it carries no cars.
+  const paths = raw.filter(q => q.pts.length > 2 && (!rd || q.pts.filter(([x, z]) => kerb(x, -z) > 1.5).length < 0.3 * q.pts.length));
+  const used = new Uint8Array(paths.length), runs = [];
   const unit = (a, b) => { const x = b[0] - a[0], z = b[1] - a[1], l = Math.hypot(x, z) || 1; return [x / l, z / l]; };
   // q continues p when their ends meet within 20 m and head the same way.
   const fits = (p, q) => {
@@ -1410,12 +1419,15 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     if (dot(N, cameraPosition - vP) < 0.0) N = -N;
     vec3 alb, glow = vec3(0.0);
     bool city = vK > 1.5 && vK < 2.5, church = vK > 2.5 && vK < 3.5, tower = vK > 3.5;
+    // A modern block: a flat roof, pale concrete, and windows in long ribbons.
+    bool modern = city && (vS.x > 22.0 || vV < 0.3) && fract(vV * 19.0) < 0.6;
     // An end face is wall on a gable and roof on a hip.
     if (vPart > 0.5 && (vPart < 1.5 || abs(N.y) > 0.15)) {
       // Roofs: brown or red tile, dark shingle, slate or anthracite; flat tops in town.
       float rc = fract(vV * 23.0);
       alb = rc < 0.3 ? vec3(0.2, 0.1, 0.065) : rc < 0.5 ? vec3(0.3, 0.11, 0.07) : rc < 0.68 ? vec3(0.14, 0.09, 0.06) : rc < 0.86 ? vec3(0.17, 0.17, 0.19) : vec3(0.09, 0.095, 0.1);
       if (city) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
+      if (modern) alb = vec3(0.3, 0.3, 0.29);
       if (church) alb = rc < 0.6 ? vec3(0.26, 0.11, 0.07) : vec3(0.15, 0.15, 0.17);
       // Spires: green copper or dark slate; a saddle roof keeps its tile.
       if (tower) alb = vV < 0.4 ? vec3(0.26, 0.11, 0.07) : rc < 0.55 ? vec3(0.2, 0.36, 0.3) : vec3(0.12, 0.12, 0.14);
@@ -1433,6 +1445,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       if (city) {
         float cc = fract(vV * 5.3);
         alb = cc < 0.3 ? vec3(0.8, 0.76, 0.66) : cc < 0.5 ? vec3(0.78, 0.62, 0.38) : cc < 0.65 ? vec3(0.8, 0.6, 0.5) : cc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
+        if (modern) alb = cc < 0.4 ? vec3(0.82, 0.82, 0.8) : cc < 0.7 ? vec3(0.62, 0.63, 0.64) : vec3(0.74, 0.7, 0.62);
         // A darker ground floor: shops and doors.
         if (vL.y < 3.1 && fract(vV * 3.1) < 0.5) alb *= 0.55;
       }
@@ -1457,6 +1470,8 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : church ? 4.2 : 2.3 + 0.9 * fract(vV * 9.7);
         float ww = city ? 0.45 : church ? 0.6 : 0.42 + 0.14 * fract(vV * 3.3), fh = city ? 2.9 : church ? 30.0 : 2.5, wh = city ? 1.4 : church ? min(4.2, vS.y - 3.2) : 1.15;
         float y0 = city ? 3.6 : church ? 2.0 : 0.8;
+        // A ribbon: each pane fills its bay but for a thin post.
+        if (modern) { ww = gap * 0.5 - 0.11; wh = 1.55; }
         // sd is the house's own number, the same on every pixel; each wall adds its own.
         float sd = floor(vV * 283.0 + 0.5), face = xface ? (vL.x > 0.0 ? 1.0 : 2.0) : (vL.z > 0.0 ? 3.0 : 4.0);
         float col = floor(u / gap), cu = u / gap - col - 0.5;
@@ -1465,11 +1480,11 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         float wy = vL.y - y0 + (stair ? 0.5 * fh : 0.0), row = floor(wy / fh), cv = wy - row * fh;
         if (stair) ww *= 0.7;
         vec2 cell = vec2(col, row) + sd * 0.37 + face * 7.13;
-        // Awake is the share of lit rooms: some houses sleep, most keep a few lamps on, some are full of light.
-        float hh = hash1(vec2(sd, 3.0)), awake = hh < 0.2 ? 0.0 : hh < 0.75 ? 0.18 + 0.3 * fract(hh * 9.0) : 0.7;
+        // Awake is the share of lit rooms: one house in eight sleeps; one in four is full of light.
+        float hh = hash1(vec2(sd, 3.0)), awake = hh < 0.12 ? 0.0 : hh < 0.72 ? 0.25 + 0.3 * fract(hh * 9.0) : 0.75;
         // An office block is cool white: nearly dark, or with a late floor or two.
         bool office = city && fract(hh * 31.0) < 0.22;
-        if (city) awake = hh < 0.1 ? 0.05 : office ? 0.08 + 0.3 * step(0.5, hash1(vec2(row, sd))) : 0.2 + 0.4 * fract(hh * 9.0);
+        if (city) awake = hh < 0.1 ? 0.05 : office ? 0.08 + 0.3 * step(0.5, hash1(vec2(row, sd))) : 0.25 + 0.4 * fract(hh * 9.0);
         // Fine detail fades before the panes do, so no bar or fold flickers.
         float det = 1.0 - smoothstep(0.03, 0.09, length(fwidth(vec2(u, vL.y))));
         float night = 1.0 - uDay, nearK = smoothstep(600.0, 200.0, length(vP - cameraPosition));
@@ -1478,13 +1493,13 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
         // A church is lit as a whole, or not at all.
         float litC = step(0.7, fract(vV * 3.7)) * 0.45;
         bool zone = (vK < 0.5 || city || church) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
-        if (zone) glow = lamp * (church ? litC : 0.6 * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
+        if (zone) glow = lamp * (church ? litC : (modern ? 0.4 : 0.6) * awake) * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade) * nearK;
         if (zone && cv < wh) {
           float ax = abs(cu) * gap;
           // A church window ends in a round arch.
           bool pane = ax < ww && !(church && cv > wh - ww && length(vec2(ax, cv - (wh - ww))) > ww);
           // City windows sit in a pale frame.
-          if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
+          if (city && !modern && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
           else if (pane && church) {
             alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
             glow += lamp * litC * fade;
@@ -1497,6 +1512,8 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
             vec3 lc = h2 < 0.5 ? vec3(1.0, 0.72, 0.42) * 1.4 : h2 < 0.68 ? vec3(1.0, 0.56, 0.26) * 0.7 : h2 < 0.84 ? vec3(1.0, 0.9, 0.74) * 1.4
               : h2 < 0.94 ? vec3(0.42, 0.6, 1.0) * (0.4 + 0.7 * vnoise(vec2(uTime * 3.0, h1 * 91.0))) : vec3(1.0, 0.8, 0.55) * 0.3;
             if (office) lc = vec3(0.82, 0.92, 1.0) * 1.2;
+            // A wide pane spreads the same lamp thinner.
+            if (modern) lc *= 0.65;
             // The cover: none, two curtains, a blind from the top, or a sheer over all.
             float px = cu * gap / ww, py = cv / wh, ck = fract(h3 * 17.0), co = fract(h3 * 53.0), cur = 0.0, cov = 0.7 + 0.3 * py;
             if (stair) {
