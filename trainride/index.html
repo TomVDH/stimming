@@ -242,6 +242,8 @@ const OUTU = {
   tSect: { value: null },
   // uHall is 1 under the Zurich HB hall; uIsl is 1 where an island platform stands behind.
   uHall: { value: 0 },
+  // The platform in use: canopy half length, slab half length, mast spacing, mast phase.
+  uPlat: { value: new THREE.Vector4(70, 160, 24, 0.5) },
   uIsl: { value: 0 },
   // uOpp: the oncoming train's front x, its length, 1 while it runs, its smear in metres.
   uOpp: { value: new THREE.Vector4(0, 200, 0, 0) },
@@ -586,10 +588,12 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // Waves: four octaves of gradient noise, each faded by its own footprint, so none aliases.
       // Far water keeps only the long swell; the fine chop shows close in.
       vec2 slopeW = vec2(0.0);
-      float amp = 0.032, fr = 0.09;
+      // Each octave runs its own way, so the ripples cross and never slide as one sheet.
+      float amp = 0.05, fr = 0.09;
       vec2 wp = vP.xz;
       for (int o = 0; o < 4; o++) {
-        vec2 q = wp * fr * vec2(1.0, 1.8) + vec2(uTime * 0.35 * (1.0 + float(o) * 0.4), float(o) * 7.1);
+        float an = 0.5 + float(o) * 1.9;
+        vec2 q = wp * fr * vec2(1.0, 1.8) + vec2(cos(an), sin(an)) * uTime * 0.45 * (1.0 + float(o) * 0.5) + float(o) * 7.1;
         float fade = 1.0 - smoothstep(0.15, 0.5, length(fwidth(q)));
         float e = 0.05;
         float h0 = gnoise(q);
@@ -597,15 +601,15 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
         amp *= 0.55; fr *= 2.3;
       }
       // The surface steepens a little near the eye; a calm far field mirrors.
-      slopeW *= mix(1.0, 0.45, smoothstep(300.0, 2500.0, dist));
+      slopeW *= mix(1.0, 0.5, smoothstep(300.0, 2500.0, dist));
       vec3 Nw = normalize(vec3(-slopeW.x, 1.0, -slopeW.y));
       vec3 R = reflect(-V, Nw);
       R.y = max(R.y, 0.005);
       float F = 0.02 + 0.98 * pow(1.0 - max(dot(Nw, V), 0.0), 5.0);
       vec3 refl = skyCol(R);
-      float calm = 0.1;
+      float calm = 0.17;
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
-      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.3, 1.0, -slopeW.y * 0.3)));
+      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.45, 1.0, -slopeW.y * 0.45)));
       Rm.y = max(Rm.y, 0.005);
       // Two mirror rays a hair apart, averaged, so the mirrored shoreline has a soft edge.
       refl = 0.5 * (mirrorLand(vP, Rm, refl, sg.z) + mirrorLand(vP, normalize(Rm + vec3(0.0, 0.006, 0.0)), refl, sg.z));
@@ -626,7 +630,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       if (uDay < 0.99) {
         vec3 right = normalize(cross(V, vec3(0.0, 1.0, 0.0)));
         vec3 R0 = reflect(-V, vec3(0.0, 1.0, 0.0));
-        float tilt = (vnoise(vec2(vP.x * 0.05, vP.z * 0.6 + uTime * 0.5)) - 0.5) * 0.4 * calm;
+        float tilt = (vnoise(vec2(vP.x * 0.05 + uTime * 0.11, vP.z * 0.6 + uTime * 0.8)) - 0.5) * 0.4 * calm;
         vec3 cols = vec3(0.0);
         for (int i = 0; i < ${NG}; i++) {
           vec3 L = uGP[i].xyz - vP;
@@ -738,8 +742,10 @@ const glints = [];
       // The far mesh is filtered now, so far lights need only a small lift.
       w.y += land(w.xz) + length(w.xz - cameraPosition.xz) * 0.002;
       vP = w;
-      // Distant lights shimmer a little in the valley air.
-      vC = color * (1.0 - uDay) * (0.85 + 0.15 * sin(uTime * 3.0 + position.x * 0.37 + position.z * 0.11));
+      // Distant lights flicker a little in the valley air, each at its own pace.
+      float fh = hash1(position.xz * 0.37);
+      float tw = sin(uTime * (2.2 + 3.6 * fh) + fh * 60.0) * sin(uTime * (0.6 + 1.1 * fract(fh * 7.3)) + fh * 17.0);
+      vC = color * (1.0 - uDay) * (0.9 + 0.1 * tw);
       vec4 mv = viewMatrix * vec4(w, 1.0);
       gl_PointSize = clamp(abs(size) * 7.0 * uScale / -mv.z, 2.5, 28.0);
       gl_Position = projectionMatrix * mv;
@@ -1004,10 +1010,12 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     const w = B[o + 4] / 4, l = B[o + 5] / 4, h = B[o + 6] / 4, yaw = B[o + 7] / 256 * Math.PI, area = w * l;
     // Kind 2 is a city block, 1 a barn or hall, 0 a house.
     const kind = (s < 5500 && (area > 160 || h > 11)) || h > 14 ? 2 : area > 450 && (h === 0 || h < 10) ? 1 : 0;
-    // Unknown heights: blocks four to six floors; houses two, big ones three.
-    const H = h || (kind === 2 ? 3.1 * (4 + Math.floor(rnd() * 3)) + 0.6 : kind === 1 ? 6 + rnd() * 2 : area > 220 ? 8.6 : 5.6 + rnd() * 1.2);
+    // H is the eaves height. A mapped height counts the roof, so a house loses it.
+    // Unknown heights: blocks three to five floors; houses one and a half or two.
+    const H = h ? (kind === 2 ? h * 0.8 : Math.max(3.4, h * 0.8 - 2.5))
+      : kind === 2 ? 2.9 * (3 + Math.floor(rnd() * 3)) + 0.6 : kind === 1 ? 4.6 + rnd() * 1.6 : area > 220 ? 7.0 : rnd() < 0.4 ? 3.4 + rnd() * 0.5 : 5.1 + rnd() * 0.5;
     d.set([s, -t, kind, rnd()], i * 4);
-    at.set([Math.min(w, 40), Math.min(H, 60), Math.min(l, 80), yaw], i * 4);
+    at.set([Math.min(w, 40), Math.min(H, 34), Math.min(l, 80), yaw], i * 4);
   }
   const tAt = new THREE.DataTexture(at, PW, at.length / 4 / PW, THREE.RGBAFormat, THREE.FloatType);
   tAt.needsUpdate = true;
@@ -1035,16 +1043,18 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   const geo = joinParts([[new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0], [roof.slopes, 1], [roof.gables, 2]]);
   propMesh(geo, houses, /* glsl */`
   uniform sampler2D tAt;
-  varying vec3 vL, vS;
-  varying float vK, vV;
+  varying vec3 vL;
+  // Flat: an interpolated seed drifts by a bit, and the window hash flips.
+  flat varying vec3 vS;
+  flat varying float vK, vV;
   void main() {
     vec4 q = inst();
     if (q.w <= 0.0) { ${HIDE} }
-    float kind = floor(q.w / 10.0), v = q.w - kind * 10.0 - 1.0;
+    float kind = floor(q.w / 10.0), v = floor((q.w - kind * 10.0 - 1.0) * 283.0 + 0.5) / 283.0;
     vec4 A = texelFetch(tAt, ivec2(GID % ${PW}, GID / ${PW}), 0);
     vec3 S = A.xyz;
     // Roofs: a gentle pitch on houses, steeper on barns, flat on wide or some city blocks.
-    float rh = kind < 0.5 ? min(0.3 * S.x, 5.0) : kind < 1.5 ? min(0.36 * S.x, 7.0) : (S.x > 22.0 || v < 0.3 ? 0.4 : min(0.22 * S.x, 4.5));
+    float rh = kind < 0.5 ? min(0.26 * S.x, 3.6) : kind < 1.5 ? min(0.3 * S.x, 5.0) : (S.x > 22.0 || v < 0.3 ? 0.4 : min(0.2 * S.x, 3.6));
     vec3 p = position, l;
     // Walls reach 4 m into the ground, so a slope never shows a gap.
     if (part < 0.5) l = vec3(p.x * S.x, p.y < 0.01 ? -4.0 : S.y, p.z * S.z);
@@ -1059,8 +1069,9 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     vPart = part;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`, /* glsl */`
-  varying vec3 vL, vS;
-  varying float vK, vV;
+  varying vec3 vL;
+  flat varying vec3 vS;
+  flat varying float vK, vV;
   void main() {
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
     if (dot(N, cameraPosition - vP) < 0.0) N = -N;
@@ -1075,31 +1086,35 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       vec3 plaster = mix(vec3(0.78, 0.75, 0.68), vec3(0.86, 0.83, 0.76), vV);
       vec3 wood = mix(vec3(0.28, 0.16, 0.08), vec3(0.36, 0.22, 0.12), fract(vV * 7.0));
       // A chalet: a plaster ground floor, timber above and in the gable.
-      alb = (vL.y < 2.9 && vPart < 1.5) || fract(vV * 13.0) > 0.35 ? plaster : wood;
+      alb = (vL.y < 2.6 && vPart < 1.5) || fract(vV * 13.0) > 0.35 ? plaster : wood;
       if (vK > 0.5 && vK < 1.5) alb = vL.y < 0.8 ? plaster * 0.8 : mix(vec3(0.3, 0.22, 0.15), vec3(0.36, 0.27, 0.18), vV);
       // City plaster: cream, ochre, salmon, pale grey or sage, one per block.
       if (vK > 1.5) {
         float pc = fract(vV * 5.3);
         alb = pc < 0.3 ? vec3(0.8, 0.76, 0.66) : pc < 0.5 ? vec3(0.78, 0.62, 0.38) : pc < 0.65 ? vec3(0.8, 0.6, 0.5) : pc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
         // A darker ground floor: shops and doors.
-        if (vL.y < 3.4 && fract(vV * 3.1) < 0.5) alb *= 0.55;
+        if (vL.y < 3.1 && fract(vV * 3.1) < 0.5) alb *= 0.55;
       }
-      // Windows with shutters, on rows of 2.8 m; barns have none.
+      // Windows with shutters, on rows of 2.5 m; barns have none.
       bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
       float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
       bool city = vK > 1.5;
-      float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : 2.6, ww = city ? 0.45 : 0.5, fh = city ? 3.1 : 2.8, wh = city ? 1.5 : 1.3;
-      float y0 = city ? 4.0 : 0.9;
+      float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : 2.6, ww = city ? 0.45 : 0.5, fh = city ? 2.9 : 2.5, wh = city ? 1.4 : 1.15;
+      float y0 = city ? 3.6 : 0.8;
       float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
       float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
-      if (vK < 0.5 || city) if (row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && cv < wh && vPart < 1.5) {
+      // Far or at a slant the panes merge: the wall keeps their mean glow, so none vanish.
+      vec3 lamp = vec3(1.0, 0.72, 0.42) * 1.4 * (1.0 - uDay);
+      bool zone = (vK < 0.5 || city) && row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && vPart < 1.5;
+      if (zone) glow = lamp * 0.5 * (2.0 * ww / gap) * (wh / fh) * (1.0 - fade);
+      if (zone && cv < wh) {
         float ax = abs(cu) * gap;
-        float lit = step(0.5, hash1(vec2(floor(u / gap), row) + vV * 31.0));
+        float lit = step(0.5, hash1(vec2(floor(u / gap), row) + floor(vV * 283.0 + 0.5) * 0.37));
         // City windows sit in a pale frame.
         if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
         else if (ax < ww) {
           alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
-          glow = vec3(1.0, 0.72, 0.42) * 1.4 * lit * (1.0 - uDay) * fade;
+          glow += lamp * lit * fade;
         } else if (vK < 0.5 && ax < ww + 0.42) {
           // Shutters: green, red or grey, one colour per house.
           vec3 sh = vV < 0.4 ? vec3(0.08, 0.2, 0.1) : vV < 0.7 ? vec3(0.3, 0.07, 0.05) : vec3(0.5, 0.5, 0.48);
@@ -1410,11 +1425,12 @@ const PL = 320, CAN = 70, SIGNS = 7;
 const STNL = /* glsl */`
 uniform vec2 uStn;
 uniform float uHall, uIsl, uYard;
+uniform vec4 uPlat;
 const vec3 STNC = vec3(0.84, 0.92, 1.0);
 const vec3 HALLC = vec3(1.0, 0.9, 0.76);
 const vec3 MASTC = vec3(1.0, 0.82, 0.6);
 // x is along the platform from its centre.
-float canopyAt(float x) { return smoothstep(${CAN + 2}.0, ${CAN - 4}.0, abs(x)); }
+float canopyAt(float x) { return smoothstep(uPlat.x + 2.0, uPlat.x - 4.0, abs(x)); }
 vec3 stnLight(vec3 P, vec3 N) {
   if (uStn.y <= 0.0 || uDay > 0.999) return vec3(0.0);
   float x = P.x - uStn.x;
@@ -1430,11 +1446,11 @@ vec3 stnLight(vec3 P, vec3 N) {
     float d2 = dot(L, L);
     c += STNC * 3.5 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
-  // Beyond the canopy, a mast every 24 m lights the open platform.
-  float mx = (floor(x / 24.0) + 0.5) * 24.0;
+  // Beyond the canopy, lamp masts light the open platform.
+  float mx = (floor(x / uPlat.z - uPlat.w + 0.5) + uPlat.w) * uPlat.z;
   for (int i = -1; i <= 1; i++) {
-    float lx = mx + float(i) * 24.0;
-    if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
+    float lx = mx + float(i) * uPlat.z;
+    if (abs(lx) < uPlat.x || abs(lx) > uPlat.y) continue;
     vec3 L = vec3(lx - x, 2.3 - P.y, -6.0 - P.z);
     float d2 = dot(L, L);
     c += MASTC * 5.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
@@ -1522,10 +1538,10 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
       float hx = h.x - uStn.x;
       float s = (exp(-pow(h.z + 3.6, 2.0) / 0.01) + exp(-pow(h.z + 8.4, 2.0) / 0.01)) * canopyAt(hx) * (1.0 - uHall);
       vec3 refl = STNC * s * 3.0;
-      float mx = (floor(x / 24.0) + 0.5) * 24.0;
+      float mx = (floor(x / uPlat.z - uPlat.w + 0.5) + uPlat.w) * uPlat.z;
       for (int i = -1; i <= 1; i++) {
-        float lx = mx + float(i) * 24.0;
-        if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
+        float lx = mx + float(i) * uPlat.z;
+        if (abs(lx) < uPlat.x || abs(lx) > uPlat.y) continue;
         vec3 Ld = normalize(vec3(lx + uStn.x, 2.3, -6.0) - vP);
         refl += MASTC * 6.0 * pow(max(dot(R, Ld), 0.0), 900.0);
       }
@@ -1542,7 +1558,7 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
 `)));
 // Each platform end slopes down to the ground in a 9 m ramp, so it never ends as a block.
 function ramps(group, half, za, zb, mat) {
-  const x0 = half, x1 = half + 9, y0 = -1.9, y1 = -2.5;
+  const x0 = half, x1 = half + 9, y0 = -1.9, y1 = -2.5, out = [];
   const P = [x0, y0, za, x1, y1, za, x1, y1, zb, x0, y0, za, x1, y1, zb, x0, y0, zb, x0, y0, za, x0, y1, za, x1, y1, za, x0, y0, zb, x1, y1, zb, x0, y1, zb];
   for (const sx of [1, -1]) {
     const g = new THREE.BufferGeometry();
@@ -1555,13 +1571,19 @@ function ramps(group, half, za, zb, mat) {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     const m = new THREE.Mesh(g, mat);
     m.frustumCulled = false;
+    m.userData.sx = sx;
     group.add(m);
+    out.push(m);
   }
+  return out;
 }
-{
-  const slab = platform.children[platform.children.length - 1];
-  slab.material.side = THREE.DoubleSide;
-  ramps(platform, PL / 2, -1.3, -11.1, slab.material);
+// A rural halt has a shorter slab: the slab scales, and its ramps move in.
+const slab = platform.children[platform.children.length - 1];
+slab.material.side = THREE.DoubleSide;
+const slabRamps = ramps(platform, PL / 2, -1.3, -11.1, slab.material);
+function slabHalf(half) {
+  slab.scale.x = half / (PL / 2);
+  for (const m of slabRamps) m.position.x = -m.userData.sx * (PL / 2 - half);
 }
 // The canopy roof: a dark fascia toward the track, a ribbed soffit with two LED strips.
 const canopyBody = (z1, z2) => /* glsl */`
@@ -1682,14 +1704,13 @@ void main() {
 }`, { aI: COLX.map(x => Math.min(3, Math.max(0, Math.floor((x + 70) / 35)))) }));
 // Masts on the open ends: a slim pole and a lamp head with a halo.
 const MASTX = [-156, -132, -108, -84, 84, 108, 132, 156];
-openParts.push(pstrip(new THREE.PlaneGeometry(1, 4.3).translate(0, 0.25, -6.0), 0.12, MASTX, 3, false, /* glsl */`
+const mastSet = xs => [pstrip(new THREE.PlaneGeometry(1, 4.3).translate(0, 0.25, -6.0), 0.12, xs, 3, false, /* glsl */`
 void main() {
   float cov = ${PCOVER('0.12')};
   vec3 N = normalize(vec3(clamp(vL.x / (0.06 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
   vec3 c = litBy(vW, N, vec3(0.16, 0.17, 0.17));
   gl_FragColor = vec4(c, cov);
-}`));
-openParts.push(pstrip(new THREE.PlaneGeometry(1, 1.2).translate(0, 2.3, -5.95), 1.2, MASTX, 4, true, /* glsl */`
+}`), pstrip(new THREE.PlaneGeometry(1, 1.2).translate(0, 2.3, -5.95), 1.2, xs, 4, true, /* glsl */`
 void main() {
   float dx = max(abs(vL.x) - 0.2 - uSmear * 0.5, 0.0), dy = vW.y - 2.3;
   float core = exp(-dx * dx / 0.0004 - dy * dy / 0.0002);
@@ -1697,7 +1718,52 @@ void main() {
   float halo = exp(-r2 / 0.03) * 0.15 + exp(-r2 / 0.2) * 0.02;
   float k = 0.4 / (0.4 + uSmear);
   gl_FragColor = vec4(MASTC * (1.0 - uDay) * (core * 12.0 + halo * (1.0 + 2.0 * uRain)) * k, 1.0);
-}`));
+}`)];
+openParts.push(...mastSet(MASTX));
+// A rural halt: no canopy, five warm masts 36 m apart, and a timber waiting hut.
+const HALF_HALT = 85, HUTX = 14;
+const haltParts = mastSet([-76, -40, -4, 32, 68]);
+{
+  const hut = new THREE.Group();
+  // The hut body sets its colours by place: boards, a lit inside, a tiled roof.
+  const mat = solid(/* glsl */`
+    if (dot(N, V) > 0.0) N = -N;
+    vec3 wood = vec3(0.3, 0.19, 0.11) * (0.82 + 0.18 * step(0.12, fract(vP.y * 6.0)));
+    alb = wood;
+    // Inside: pale boards under one warm lamp.
+    bool inside = vP.z < -8.15 && vP.z > -10.3 && abs(x - ${HUTX}.0) < 2.9 && vP.y < 0.5;
+    if (inside) {
+      alb = vec3(0.5, 0.42, 0.3) * (0.88 + 0.12 * step(0.1, fract(x * 4.0)));
+      // The lamp hangs under the ridge; its light falls off across the boards.
+      vec3 dl = vP - vec3(uStn.x + ${HUTX}.0, 0.35, -9.2);
+      glow = vec3(1.0, 0.72, 0.42) * 0.5 * alb * (1.0 - uDay) / (1.0 + dot(dl, dl) * 0.9);
+      shade = 0.25;
+    }
+    // The bench is dark; the roof is brown tile.
+    if (vP.y < -1.36 && vP.y > -1.5 && vP.z > -10.3) alb = vec3(0.12, 0.08, 0.05);
+    if (vP.y > 0.52) alb = N.y < -0.1 ? vec3(0.2, 0.14, 0.09) : vec3(0.2, 0.1, 0.065) * (0.85 + 0.15 * step(0.2, fract(x * 3.0)));
+  `);
+  mat.side = THREE.DoubleSide;
+  const box = (w, h, d, x, y, z) => hut.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(HUTX + x, y, z), mat));
+  // Back wall, two side walls, a bench; the front stays open to the track.
+  box(6, 2.4, 0.12, 0, -0.7, -10.34);
+  box(0.12, 2.4, 2.3, -2.94, -0.7, -9.2);
+  box(0.12, 2.4, 2.3, 2.94, -0.7, -9.2);
+  box(4.8, 0.08, 0.45, 0, -1.42, -10.0);
+  // A gable roof with its ridge along the track, and both gable ends.
+  const x0 = HUTX - 3.4, x1 = HUTX + 3.4, zf = -7.6, zb = -10.7, zr = -9.15, ye = 0.5, yr = 1.25;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([
+    x0, ye, zf, x1, ye, zf, x1, yr, zr, x0, ye, zf, x1, yr, zr, x0, yr, zr,
+    x1, ye, zb, x0, ye, zb, x0, yr, zr, x1, ye, zb, x0, yr, zr, x1, yr, zr,
+    x0, ye, zf, x0, yr, zr, x0, ye, zb, x1, ye, zf, x1, ye, zb, x1, yr, zr,
+  ], 3));
+  g.computeVertexNormals();
+  hut.add(new THREE.Mesh(g, mat));
+  hut.children.forEach(m => { m.frustumCulled = false; });
+  platform.add(hut);
+  haltParts.push(hut);
+}
 // The back fence: posts every 2.5 m, two rails and a faint mesh.
 const fence = pstrip(new THREE.PlaneGeometry(1, 1.25).translate(0, -1.3, -10.9), PL, [0], 2, false, /* glsl */`
 void main() {
@@ -1707,7 +1773,7 @@ void main() {
   float rail = max(smoothstep(0.035, 0.02, abs(vW.y + 0.72)), smoothstep(0.03, 0.015, abs(vW.y + 1.55)));
   // The mesh blurs into a faint veil at speed.
   float mesh = 0.12 * mix(step(0.8, fract(x * 12.0)) + step(0.85, fract(vW.y * 12.0)), 0.35, smoothstep(0.02, 0.15, uSmear));
-  float a = clamp(max(max(post, rail), mesh), 0.0, 1.0) * step(abs(x), ${PL / 2}.0) * step(vW.y, -0.68);
+  float a = clamp(max(max(post, rail), mesh), 0.0, 1.0) * step(abs(x), uPlat.y) * step(vW.y, -0.68);
   if (a < 0.01) discard;
   gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.3, 0.95), vec3(0.07, 0.075, 0.075)), a);
 }`);
@@ -2079,7 +2145,9 @@ void main() {
   vec3 c = vec3(0.0);
   float a = 0.0;
   float y = vW.y;
-  bool hang = uHall < 0.5 && abs(vW.x - uStn.x) < ${CAN - 6}.0;
+  // A short platform carries fewer signs.
+  if (abs(vW.x - vL.x - uStn.x) > uPlat.y - 8.0) discard;
+  bool hang = uHall < 0.5 && abs(vW.x - uStn.x) < uPlat.x - 6.0;
   for (int i = 0; i < 8; i++) {
     float x = vL.x + ((float(i) + 0.5) / 8.0 - 0.5) * uSmear;
     // The panel spans 0.46 m round eye height.
@@ -2181,6 +2249,8 @@ const W = {
   uPatch: { value: 0 },
   uDay: { value: 0 },
   tRoom: { value: null },
+  // Dev: 1 shows the outside render alone, for the top-down view.
+  uTop: { value: 0 },
   uSpeed: { value: 0 },
   uRunM: { value: new THREE.Vector2(0, -1) },
   uFlow: { value: 0 },
@@ -2206,6 +2276,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   uniform vec2 uRunM;
   uniform float uFlow;
   uniform samplerCube tRoom;
+  uniform float uTop;
   uniform vec2 uTan, uC0;
   uniform float uYaw;
   uniform vec3 uEye;
@@ -2265,6 +2336,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     return s;
   }
   // Sun through our window: its strength at wall point x, cut by passing post shadows.
+  // The sun's strength with thin cloud drifting over it, and no post shadows.
+  // Bounced light uses this: a post's shadow falls only where the sun lands.
+  float sunK() { return max(uPost[0].z, 0.0) * (0.8 + 0.2 * sin(uTime * 0.13) * sin(uTime * 0.071 + 1.0)); }
   float sunAt(float x) {
     float k = uPost[0].z;
     if (k <= 0.0) return 0.0;
@@ -2276,6 +2350,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   }
   void main() {
     vec2 px = gl_FragCoord.xy / uRes;
+    if (uTop > 0.5) { gl_FragColor = vec4(texture2D(tOut, px).rgb, 1.0); return; }
     float asp = uRes.x / uRes.y;
     // The head leans inside the cabin; the window stays fixed in the wall.
     // Each pixel's ray meets the wall plane; p is the point it hits.
@@ -2374,9 +2449,18 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // The top hopper pane tilts in a little, so its reflection shifts.
       if (q.y > yb) R = normalize(R + vec3(0.0, 0.035, 0.0));
       float F = 0.04 + 0.96 * pow(1.0 - max(-V.z, 0.0), 5.0);
-      vec3 room = textureLod(tRoom, R, 1.0).rgb;
+      // The mirror ray starts at the pane and ends on the cabin's walls.
+      // That end point aims the cube map, so the cabin shifts as the head moves.
+      vec3 G = vec3(pg * 2.0 * uTan.y, -0.99);
+      vec3 Rs = R + (1.0 - abs(sign(R))) * 1e-5;
+      vec3 rb = (mix(vec3(-30.0, -1.1, -1.0), vec3(30.0, 1.2, 1.8), step(0.0, Rs)) - G) / Rs;
+      R = G + Rs * min(min(rb.x, rb.y), rb.z);
+      // Near its edges the pane mirrors the reveal, not the cabin.
+      float rv = smoothstep(0.0, 0.006, sdRR(q + Rs.xy / max(Rs.z, 0.05) * REVEAL / (2.0 * uTan.y), uHalf, uRad));
+      // The cabin shows only faintly; the reveal's image always lies over it.
+      vec3 room = textureLod(tRoom, R, 0.6).rgb * 0.3 * (1.0 - rv);
       // Fog scatters the room light, so its reflection blurs and grows.
-      vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb;
+      vec3 roomSoft = textureLod(tRoom, R, 2.5).rgb * (1.0 - rv);
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
       // By day the sunlit cabin shows a little more in the pane.
@@ -2384,8 +2468,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // At night the lit cabin shows plainly wherever the view behind is dark.
       float darkV = 1.0 - smoothstep(0.0, 0.08, dot(col, vec3(0.2126, 0.7152, 0.0722)));
       col += room * 0.09 * darkV * (1.0 - uDay) * (1.0 - fog);
+      // The reveal's pale lining, as the pane mirrors it: faint, strongest at a slant.
+      col += vec3(0.82, 0.81, 0.78) * mix(vec3(1.0, 0.88, 0.74) * 0.1, vec3(0.16), uDay) * rv * (F + 0.03) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
-      col += textureLod(tRoom, R + vec3(0.012, -0.018, 0.0), 1.5).rgb * F * 0.18 * (1.0 - fog);
+      col += textureLod(tRoom, R + vec3(0.03, -0.045, 0.0), 1.5).rgb * F * 0.05 * (1.0 - fog) * (1.0 - rv);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
@@ -2409,7 +2495,13 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // The maker's etching in the low corner: frosted marks.
       vec2 st = (q - vec2(-uHalf.x + 0.03, -uHalf.y + 0.02)) / vec2(0.15, 0.03);
       if (st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0) {
-        float et = texture2D(tStamp, st).r;
+        float et = texture2D(tStamp, vec2(st.x, 0.5 + st.y * 0.5)).r;
+        col += et * (vec3(0.006, 0.0055, 0.005) * (1.0 - uDay) + blur * 0.12 * uDay + STNC * uStnK * 0.04);
+      }
+      // The railway's mark, etched in the other low corner.
+      vec2 st2 = (q - vec2(uHalf.x - 0.18, -uHalf.y + 0.02)) / vec2(0.15, 0.03);
+      if (st2.x > 0.0 && st2.x < 1.0 && st2.y > 0.0 && st2.y < 1.0) {
+        float et = texture2D(tStamp, vec2(st2.x, st2.y * 0.5)).r;
         col += et * (vec3(0.006, 0.0055, 0.005) * (1.0 - uDay) + blur * 0.12 * uDay + STNC * uStnK * 0.04);
       }
       // The glass edge shows green where it meets the seal.
@@ -2500,7 +2592,8 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         float e2 = 0.002;
         vec2 gO = normalize(vec2(sdRR(p - uC0 + vec2(e2, 0.0), uHalf, uRad) - sdRR(p - uC0 - vec2(e2, 0.0), uHalf, uRad), sdRR(p - uC0 + vec2(0.0, e2), uHalf, uRad) - sdRR(p - uC0 - vec2(0.0, e2), uHalf, uRad)) + 1e-6);
         float faceW = max(dot(-gO, uSunW.xy), 0.0);
-        float sk = sunAt(p.x);
+        // The wall takes only bounced sun, so no post shadow crosses it.
+        float sk = sunK();
         col += alb * vec3(1.0, 0.84, 0.6) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
@@ -2581,12 +2674,13 @@ ${BOKEH}
 void main() { gl_FragColor = vec4(bokeh(tSrc, vUv, uRad, 0.0, 0.015, 500.0, 0.3), 1.0); }`);
 // The maker's etching: small frosted marks in the low corner of the pane.
 {
-  const c = Object.assign(document.createElement('canvas'), { width: 600, height: 120 });
+  // Top half: the maker's stamp. Bottom half: the railway's double arrow and cross.
+  const c = Object.assign(document.createElement('canvas'), { width: 600, height: 240 });
   const tStamp = new THREE.CanvasTexture(c);
   W.tStamp.value = tStamp;
   const draw = () => {
     const g = c.getContext('2d');
-    g.clearRect(0, 0, 600, 120);
+    g.clearRect(0, 0, 600, 240);
     g.fillStyle = g.strokeStyle = '#fff';
     g.lineWidth = 4;
     g.beginPath(); g.arc(52, 60, 34, 0, TAU); g.stroke();
@@ -2598,6 +2692,20 @@ void main() { gl_FragColor = vec4(bokeh(tSrc, vUv, uRad, 0.0, 0.015, 500.0, 0.3)
     g.fillText('43R-00 1907  AS2', 104, 42);
     g.font = '500 24px Gabarito, sans-serif';
     g.fillText('TEMPERED · 6 mm · M 117', 104, 84);
+    // The mark: a frame, a cross, and an arrowhead at each end of its bar.
+    g.lineWidth = 3;
+    g.strokeRect(430, 142, 150, 76);
+    g.fillRect(498, 155, 14, 50);
+    g.fillRect(456, 173, 98, 14);
+    g.lineWidth = 13; g.lineJoin = 'miter';
+    for (const sx of [-1, 1]) {
+      g.beginPath();
+      g.moveTo(505 + sx * 31, 158); g.lineTo(505 + sx * 53, 180); g.lineTo(505 + sx * 31, 202);
+      g.stroke();
+    }
+    g.font = '600 26px Gabarito, sans-serif';
+    g.textAlign = 'right';
+    g.fillText('SBB CFF FFS', 416, 181);
     tStamp.needsUpdate = true;
   };
   draw();
@@ -2611,7 +2719,7 @@ const room = new THREE.Scene();
 // The baked cabin follows the time of day and the sun.
 const ROOMU = { uD: { value: 0 }, uS: { value: OUTU.uSun.value } };
 let bakedDay = -1;
-const roomRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const roomRT = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
 const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
 W.tRoom.value = roomRT.texture;
 {
@@ -2653,26 +2761,45 @@ W.tRoom.value = roomRT.texture;
     m.position.set(x, 0.05, 1.79);
     room.add(m);
   }
+  // Seats in dark blue cloth, each with a pale headrest cover.
+  const head = new THREE.BoxGeometry(0.13, 0.2, 0.5);
   for (let x = -24.3; x <= 24; x += 0.95) for (const z of [-0.45, 1.25]) {
-    const m = new THREE.Mesh(seat, flat([0.05, 0.05, 0.056]));
+    const m = new THREE.Mesh(seat, flat([0.028, 0.038, 0.07]));
     m.position.set(x, -0.2, z);
     room.add(m);
+    const hd = new THREE.Mesh(head, flat([0.17, 0.16, 0.145]));
+    hd.position.set(x, 0.12, z);
+    room.add(hd);
   }
+  // Pale frames round the far panes, and an aluminium rail on each luggage rack.
+  const fr = new THREE.PlaneGeometry(1.66, 0.78).rotateY(Math.PI);
+  for (let x = -24; x <= 24; x += 2.4) {
+    const m = new THREE.Mesh(fr, flat([0.2, 0.185, 0.16]));
+    m.position.set(x, 0.05, 1.795);
+    room.add(m);
+  }
+  for (const z of [1.38, -0.62]) room.add(new THREE.Mesh(new THREE.BoxGeometry(60, 0.025, 0.03).translate(0, 0.68, z), flat([0.42, 0.4, 0.37])));
 }
 let baked = false;
+// Dev: a camera over the line, for a plan view of the built scene.
+let topCam = null, topH = 500;
 
 /* ---------- framing ---------- */
 // The head: x and y lean along the wall, z is the distance to the glass.
 // The seated eye sits a little low and to one side, so the recess's sides differ.
 const eye = new THREE.Vector3(-0.07, -0.05, 1), eyeT = eye.clone();
 const REACH = { x: 0.26, y: 0.1, near: 0.3, far: 1 };
+// 0 leaned back in the seat, 1 with the head at the glass.
+const nearK = z => Math.min(1, Math.max(0, (REACH.far - z) / (REACH.far - REACH.near)));
+// By the glass the head has more room to move sideways.
+const reachX = z => REACH.x * (1 + 0.5 * nearK(z));
 const asp = { v: 1.6 };
 // The gaze tilts down to the track; a tall phone view needs less tilt.
 let pitch0 = -0.115;
 function frame(w, h, pr) {
   asp.v = w / h;
   outCam.aspect = w / h;
-  outCam.fov = w >= h ? 48 : 66;
+  outCam.fov = w >= h ? 44 : 62;
   pitch0 = w >= h ? -0.115 : -0.02;
   outCam.updateProjectionMatrix();
   const tanY = Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2);
@@ -2750,18 +2877,22 @@ function jolt() {
 }
 const proj = new THREE.Vector3();
 const MAJOR = new Set(['Zürich Enge', 'Thalwil', 'Horgen', 'Wädenswil', 'Richterswil', 'Pfäffikon SZ', 'Lachen SZ', 'Ziegelbrücke']);
+// Rural halts: the small stations on the upper lake, the Linth plain and the Walensee.
+const HALT = new Set(['Au ZH', 'Bäch SZ', 'Freienbach SBB', 'Altendorf', 'Siebnen-Wangen', 'Schübelbach-Buttikon', 'Reichenburg', 'Bilten', 'Weesen', 'Mühlehorn', 'Murg']);
 function place() {
   // The carriage bumps on each joint and rolls a little on the curve.
-  const k = Math.min(1, speed / 25), j = jolt();
-  // The head aims partly back at the window as it leans.
-  const yaw = Math.atan2(eye.x, eye.z) * 0.55;
+  // Leaned back, the seat damps the ride; by the glass the bumps come through.
+  const near = nearK(eye.z), bk = 0.4 + 0.75 * near;
+  const k = Math.min(1, speed / 25) * bk, j = jolt() * bk;
+  // The head aims partly back at the window as it leans; by the glass it turns further.
+  const yaw = Math.atan2(eye.x, eye.z) * (0.55 + 0.35 * near);
   W.uYaw.value = yaw;
   // The cabin rides the same jolts and a slow sway, so the window bobs with the outside.
   W.uEye.value.copy(eye);
   W.uEye.value.y += j * 0.004 + Math.sin(time * 1.3) * 0.0012 * k;
-  W.uEye.value.x += Math.sin(time * 0.71 + 1.0) * 0.0015 * k;
+  W.uEye.value.x += Math.sin(time * 0.71 + 1.0) * 0.0015 * k + nod;
   // The wall sits 1 m out; the jolt and the roll move only the world outside.
-  outCam.position.set(camX + eye.x, eye.y + j * 0.006, eye.z - 1);
+  outCam.position.set(camX + eye.x + nod, eye.y + j * 0.006, eye.z - 1);
   // Under the Churfirsten the eye lifts to the summits.
   const sg = seg(camX);
   outCam.rotation.set(pitch0 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
@@ -2781,17 +2912,22 @@ function place() {
   yard.visible = camX - xHB > -1200 && camX - xHB < 3500;
   OUTU.uYard.value = xHB;
   // Zurich HB stands under its hall; the larger stations get an island.
-  const hb = sn === 'Zürich HB', isl = !hb && MAJOR.has(sn);
+  // Four kinds: the HB hall, a town station, a village platform, a rural halt.
+  const hb = sn === 'Zürich HB', isl = !hb && MAJOR.has(sn), halt = HALT.has(sn), half = halt ? HALF_HALT : PL / 2;
   hall.visible = hb;
   island.visible = isl;
-  for (const m of openParts) m.visible = !hb;
+  for (const m of openParts) m.visible = !hb && !halt;
+  for (const m of haltParts) m.visible = halt;
+  slabHalf(half);
   fence.visible = !hb;
   fence.position.z = isl ? -13.6 : 0;
   OUTU.uHall.value = hb ? 1 : 0;
   OUTU.uIsl.value = isl ? 1 : 0;
-  OUTU.uStn.value.set(sx, platform.visible ? PL / 2 + 2 : 0);
+  // A halt has no canopy: a negative length keeps canopyAt at zero.
+  OUTU.uPlat.value.set(halt ? -10 : CAN, half, halt ? 36 : 24, halt ? -4 / 36 : 0.5);
+  OUTU.uStn.value.set(sx, platform.visible ? half + 2 : 0);
   // Inside the platform's reach, its light comes in through the window.
-  W.uStnK.value = (1 - dayV) * THREE.MathUtils.smoothstep(PL / 2 + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
+  W.uStnK.value = (1 - dayV) * (halt ? 0.4 : 1) * THREE.MathUtils.smoothstep(half + 30 - Math.abs(camX - sx), 0, 60) * (platform.visible ? 1 : 0);
   if (platform.visible) drawSign(sn);
   sky.position.copy(outCam.position);
   outCam.updateMatrixWorld();
@@ -2843,7 +2979,7 @@ function place() {
   // Fog on the pane scatters the sun too, so no sharp patches under fog.
   let sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85) * (1 - Math.min(1, W.uFog.value * 1.1));
   // A station canopy or the HB hall roof shades the window.
-  if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 ? dx < 200 : dx < CAN) sunK *= OUTU.uHall.value > 0.5 ? 0.0 : 0.2; }
+  if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 ? dx < 200 : dx < OUTU.uPlat.value.x) sunK *= OUTU.uHall.value > 0.5 ? 0.0 : 0.2; }
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
@@ -2855,6 +2991,7 @@ function place() {
 // The train stops at every station: it brakes in, waits, then pulls away.
 // The stop point puts the middle name sign in the window.
 const A_UP = 1.0, A_DN = 0.9, DWELL = 18;
+let nod = 0, nodV = 0;
 let stopX = qs.has('x') ? null : -1, dwell = qs.has('x') ? 0 : 8, arrive = () => {};
 // The train stops only at the larger stations; it runs through the rest.
 const STOPS = new Set(['Zürich HB', 'Thalwil', 'Wädenswil', 'Pfäffikon SZ', 'Ziegelbrücke', 'Murg']);
@@ -2894,8 +3031,16 @@ function update(dt, pace) {
     cap = Math.min(cap, Math.sqrt(2 * A_DN * Math.max(d, 0)));
     if (d <= 0.3 && pace > 0) { camX = stopX; speed = 0; dwell = DWELL; arrive(); }
   }
+  const v0 = speed;
   speed = cap > speed ? Math.min(cap, speed + A_UP * dt) : Math.max(cap, speed - 2 * A_DN * dt);
   if (pace === 0 && speed < 0.05) speed = 0;
+  // Inertia: the head lags the carriage on a soft spring.
+  // It tips forward under braking and rocks back as the train comes to rest.
+  if (dt > 0) {
+    const acc = THREE.MathUtils.clamp((speed - v0) / dt, -2, 2);
+    nodV += ((-acc * 0.011 - nod) * 22 - nodV * 3.2) * dt;
+    nod += nodV * dt;
+  }
   camX += speed * dt;
   time += dt;
   runFlow(dt);
@@ -2927,6 +3072,9 @@ return {
   // Metres to the next stop, while the train rolls toward it.
   get toStop() { return dwell > 0 || stopX === null ? Infinity : stopX - camX; },
   get dwelling() { return dwell > 0; },
+  // Seconds left at the platform, and the speed the train aims for.
+  get dwellLeft() { return dwell > 0 && dwell < 1e6 ? dwell : 0; },
+  get cruise() { return target; },
   get brake() { return A_DN; },
   // The oncoming train's front, relative to the eye; NaN when none runs.
   get oppAt() { return opp.on ? opp.x - camX : NaN; },
@@ -2937,6 +3085,13 @@ return {
   get day() { return dayV; },
   setTime(v, now) { dayT = v === 'day' ? 1 : 0; if (now) { dayV = dayT; place(); } },
   setSpeed(v) { target = v; },
+  // Dev: a plan view of the outside from h metres up; off returns to the window.
+  top(on, h = topH) {
+    topH = h;
+    if (on && !topCam) { topCam = new THREE.PerspectiveCamera(50, 1, 5, 60000); topCam.rotation.x = -Math.PI / 2; }
+    if (!on) topCam = null;
+    W.uTop.value = on ? 1 : 0;
+  },
   // Dev: stand still at a point, as at a stop, for stills.
   hold(x) { camX = x; speed = 0; stopX = x; dwell = 1e9; place(); },
   // Dev scrub: jump to a point on the line; the next stop is found again.
@@ -2949,10 +3104,18 @@ return {
     // Rebake the cabin when day and night have moved on.
     if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomCam.update(r, room); baked = true; bakedDay = dayV; }
     outCam.updateMatrixWorld();
-    OUTU.uCullVP.value.multiplyMatrices(outCam.projectionMatrix, outCam.matrixWorldInverse.copy(outCam.matrixWorld).invert());
+    // Dev: the top camera hangs over the line and looks straight down.
+    const cam = topCam || outCam;
+    if (topCam) {
+      topCam.aspect = outCam.aspect;
+      topCam.position.set(outCam.position.x, topH, -0.42 * topH);
+      topCam.updateProjectionMatrix();
+      topCam.updateMatrixWorld();
+    }
+    OUTU.uCullVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse.copy(cam.matrixWorld).invert());
     for (const p of placers) p.run(r);
     r.setRenderTarget(outRT);
-    r.render(out, outCam);
+    r.render(out, cam);
     // The bokeh pass runs only while the pane holds fog.
     if (W.uFog.value > 0.01 || W.uPatch.value > 0.01) {
       r.setRenderTarget(ds4RT); r.render(d4Scene, camera);
@@ -2965,13 +3128,16 @@ return {
   drag(dx, dy, on) {
     drag = on;
     if (!on) return;
-    eyeT.x = THREE.MathUtils.clamp(eyeT.x - dx * 0.5 * eyeT.z, -REACH.x, REACH.x);
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x - dx * 0.5 * eyeT.z, -reachX(eyeT.z), reachX(eyeT.z));
     eyeT.y = THREE.MathUtils.clamp(eyeT.y + dy * 0.3 * eyeT.z, -REACH.y, REACH.y);
   },
   // Lean toward the glass or back; k above 1 comes closer.
-  lean(k) { eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far); },
+  lean(k) {
+    eyeT.z = THREE.MathUtils.clamp(eyeT.z / k, REACH.near, REACH.far);
+    eyeT.x = THREE.MathUtils.clamp(eyeT.x, -reachX(eyeT.z), reachX(eyeT.z));
+  },
   // A moving train draws at full rate; the sleep still stops it.
-  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT,
+  lively: () => drag || speed > 0.5 || eye.distanceTo(eyeT) > 0.0005 || mk < 1 || dayV !== dayT || Math.abs(nod) + Math.abs(nodV) > 0.0004,
   setMode(v, now) {
     mode = MODES[v] || MODES.rain;
     mk = now ? 1 : 0;
@@ -3190,15 +3356,33 @@ function loadClips(ac) {
   return clipLoad;
 }
 // The recording bus: background level, a trimmed low end and a gentle treble lift.
-let recBus = null;
+// Last comes the compartment door: shut, it muffles the ride; open, the sound clears and lifts.
+const DOOR_SHUT = 3000, DOOR_OPEN = 16000;
+let recBus = null, doorF = null, doorG = null, subBus = null;
 function bus(ac) {
   if (recBus) return recBus;
   const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
   const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
   const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
+  doorF = ac.createBiquadFilter(); doorF.type = 'lowpass'; doorF.frequency.value = DOOR_SHUT; doorF.Q.value = 0.6;
+  doorG = ac.createGain();
   recBus = ac.createGain(); recBus.gain.value = 0.42;
-  recBus.connect(lo).connect(hi).connect(air).connect(kit.out);
+  recBus.connect(lo).connect(hi).connect(air).connect(doorF).connect(doorG).connect(kit.out);
+  // The sub bus carries only the low thud of a passing train.
+  const sub = ac.createBiquadFilter(); sub.type = 'lowpass'; sub.frequency.value = 130; sub.Q.value = 0.7;
+  subBus = ac.createGain(); subBus.gain.value = 0.9;
+  subBus.connect(sub).connect(kit.out);
   return recBus;
+}
+// The door slides open or shut; a soft knock marks the latch.
+const DOOR = { open: false, next: 0, until: 0 };
+function door(ac, open) {
+  if (DOOR.open === open || !doorF) return;
+  DOOR.open = open;
+  const now = ac.currentTime;
+  doorF.frequency.setTargetAtTime(open ? DOOR_OPEN : DOOR_SHUT, now, open ? 0.3 : 0.45);
+  doorG.gain.setTargetAtTime(open ? 1.3 : 1, now, 0.4);
+  if (clips) shot(ac, clips.thump, 0.14, 0, 0.005, 1.8);
 }
 // A looping layer with its own gain.
 function loopLayer(ac, buf) {
@@ -3208,15 +3392,15 @@ function loopLayer(ac, buf) {
   src.start(0, Math.random() * buf.duration);
   return { src, g };
 }
-// A one-shot from offset, with short fades; returns its gain to duck or stop it.
+// A one-shot from offset, with short fades; g fades it, m sets its place in the mix.
 function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1) {
-  const src = ac.createBufferSource(), g = ac.createGain(), now = ac.currentTime;
+  const src = ac.createBufferSource(), g = ac.createGain(), m = ac.createGain(), now = ac.currentTime;
   src.buffer = buf; src.playbackRate.value = rate;
   g.gain.setValueAtTime(0, now);
   g.gain.linearRampToValueAtTime(level, now + fadeIn);
-  src.connect(g).connect(bus(ac));
+  src.connect(g).connect(m).connect(bus(ac));
   src.start(now, Math.min(offset, buf.duration - 0.1));
-  return { src, g, end: now + (buf.duration - offset) / rate };
+  return { src, g, m, end: now + (buf.duration - offset) / rate };
 }
 function fadeOut(ac, s, tau = 0.6) {
   if (!s) return;
@@ -3231,13 +3415,23 @@ function voices() {
   if (!ac) return null;
   V ||= {};
   if (!clips) loadClips(ac);
-  else if (!V.bed) { V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle); }
+  else if (!V.bed) {
+    V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle);
+    // The whine: a narrow band of the bed that climbs with speed, heard only under power or brake.
+    const f = ac.createBiquadFilter(), g = ac.createGain();
+    f.type = 'bandpass'; f.frequency.value = 200; f.Q.value = 7; g.gain.value = 0;
+    V.bed.src.connect(f).connect(g).connect(bus(ac));
+    V.whine = { f, g };
+  }
   return V;
 }
+let accS = 0;
 function voice(dt) {
   const v = voices();
   if (!v || !v.bed) return;
   const ac = kit.ac, sp = S.speed;
+  // The pull or the brake, smoothed over half a second.
+  if (dt > 0) accS += (Math.min(1.2, Math.abs(sp - REC.prevSp) / dt) - accS) * (1 - Math.exp(-dt / 0.5));
   recorded(v, ac, ac.currentTime, sp, Math.min(1, sp / 30));
 }
 // The pass-by: the whoosh's loud stretch (2.5 s in) is held for the train's length, then let go.
@@ -3256,35 +3450,63 @@ function passBy(ac, tMeet, dur) {
   src.connect(g).connect(bus(ac));
   src.start(now, Math.max(0, 2.5 - tMeet));
   src.stop(end + 3);
-  const knock = (at, level, rate) => {
+  const knock = (at, level, rate, to = bus(ac)) => {
     const s = ac.createBufferSource(), k = ac.createGain();
     s.buffer = clips.thump; s.playbackRate.value = rate;
     k.gain.value = level;
-    s.connect(k).connect(bus(ac));
+    s.connect(k).connect(to);
     s.start(at);
   };
   knock(meet, 0.9, 1);
   knock(end, 0.55, 1.12);
+  // The bow wave lands as a low thud: the same knock, slowed, through the sub bus.
+  knock(meet, 2.4, 0.5, subBus);
+  knock(end, 1.1, 0.6, subBus);
 }
 // The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
-const REC = { away: null, stop: null, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+const REC = { away: null, stop: null, awayT: 0, stopV: 1, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
 // The arrival clip squeals and stops 36.5 s in; braking ends on that mark.
 const STOP_AT = 36.5;
 function recorded(v, ac, now, sp, k) {
-  // Under the pull-away or the arrival, the bed steps back.
-  const dip = (REC.away && now < REC.away.end - 4) || REC.stop ? 0.25 : 1;
+  // The pull-away hands over to the bed as the train nears its cruise speed.
+  // The arrival takes over from the bed as the brakes bite.
+  let dip = 1;
+  if (REC.away) {
+    const w = THREE.MathUtils.smoothstep(sp / Math.max(S.cruise, 6), 0.5, 0.97), late = THREE.MathUtils.smoothstep(now, REC.away.end - 7, REC.away.end - 1);
+    const out = Math.max(w, late);
+    REC.away.m.gain.setTargetAtTime(Math.cos(out * Math.PI / 2), now, 0.5);
+    dip = 0.3 + 0.7 * Math.sin(out * Math.PI / 2);
+    if (now > REC.away.end || sp < REC.prevSp - 0.05 || (w >= 1 && now > REC.awayT + 6)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
+  }
+  if (REC.stop) {
+    const bp = THREE.MathUtils.smoothstep(1 - sp / Math.max(REC.stopV, 1), 0.03, 0.6);
+    REC.stop.m.gain.setTargetAtTime(0.4 + 0.6 * bp, now, 0.6);
+    dip = Math.min(dip, 1 - 0.7 * bp);
+  }
   v.bed.g.gain.setTargetAtTime(1.1 * Math.min(1, sp / 22) ** 0.7 * dip, now, 0.8);
   v.bed.src.playbackRate.setTargetAtTime(0.82 + 0.22 * Math.min(1, sp / 32), now, 1.0);
-  v.idle.g.gain.setTargetAtTime(S.dwelling && !REC.stop ? 0.5 : 0, now, 1.2);
+  // The whine climbs with the speed and sounds only while the train pulls or brakes.
+  v.whine.f.frequency.setTargetAtTime(170 + 30 * sp, now, 0.3);
+  v.whine.g.gain.setTargetAtTime(1.4 * Math.min(1, accS / 0.8) * Math.min(1, sp / 5), now, 0.4);
+  // At rest the standing carriage hums, at a platform or not.
+  v.idle.g.gain.setTargetAtTime(0.65 * (1 - THREE.MathUtils.smoothstep(sp, 0.3, 5)), now, 1.0);
   // Pull away: the doors close and the motors wind up with the train.
-  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5); }
-  if (REC.away && (now > REC.away.end || sp < REC.prevSp - 0.05)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
+  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5, 0.5); REC.awayT = now; }
+  // The compartment door: open while the train stands at a platform, and now and then on the way.
+  const left = S.dwellLeft;
+  if (left > 0) door(ac, left < 15.5 && left > 4);
+  else if (DOOR.open && now > DOOR.until) { door(ac, false); DOOR.next = now + 50 + Math.random() * 90; }
+  else if (!DOOR.open && sp > 10 && S.toStop > 900) {
+    if (!DOOR.next) DOOR.next = now + 35 + Math.random() * 60;
+    if (now > DOOR.next) { door(ac, true); DOOR.until = now + 3.5 + Math.random() * 4.5; }
+  }
   // Arrival: start the clip so its last squeal lands on the stop.
   // Time left: cruise to the braking point, then brake to the mark.
   const bd = sp * sp / (2 * S.brake), tLeft = sp > 0.5 ? Math.max(S.toStop - bd, 0) / sp + sp / S.brake : Infinity;
   if (!REC.stop && sp > 3 && tLeft < STOP_AT && S.toStop < 1500) {
     fadeOut(ac, REC.away, 1); REC.away = null;
-    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 1.5);
+    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 3);
+    REC.stopV = sp;
   }
   if (REC.stop && now > REC.stop.end) REC.stop = null;
   // Points: a clatter through each station's throat at speed.
@@ -3305,7 +3527,7 @@ function recorded(v, ac, now, sp, k) {
 function hush() {
   if (!V || !kit.ac) return;
   const now = kit.ac.currentTime;
-  for (const l of [V.bed, V.idle]) l?.g.gain.setTargetAtTime(0, now, 0.15);
+  for (const l of [V.bed, V.idle, V.whine]) l?.g.gain.setTargetAtTime(0, now, 0.15);
   fadeOut(kit.ac, REC.away, 0.15); fadeOut(kit.ac, REC.stop, 0.15);
   REC.away = REC.stop = null;
 }
@@ -3462,7 +3684,14 @@ if (qs.has('dev')) {
   const L = S.length;
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:50;width:min(720px,calc(100vw - 32px));padding:8px 12px;border-radius:10px;background:oklch(0.16 0.01 260 / 0.85);backdrop-filter:blur(8px);font:12px/1.3 Gabarito,sans-serif;color:#dde;display:grid;gap:6px';
-  box.innerHTML = '<input type="range" min="0" step="10" style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><span data-k></span><span data-s></span><span data-v></span></div>';
+  box.innerHTML = '<input type="range" min="0" step="10" style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><span data-k></span><span data-s></span><span data-v></span></div>'
+    + '<label style="display:flex;align-items:center;gap:8px;margin-top:4px"><input type="checkbox" data-top> Top view <input type="range" data-alt min="120" max="4000" value="500" step="20" style="flex:1"> <span data-h>500 m</span></label>';
+  // The plan view: straight down on the built scene, from a set height.
+  const topOn = box.querySelector('[data-top]'), alt = box.querySelector('[data-alt]'), altH = box.querySelector('[data-h]');
+  const setTop = () => { S.top(topOn.checked, +alt.value); altH.textContent = `${alt.value} m`; wake(); };
+  topOn.addEventListener('change', setTop);
+  alt.addEventListener('input', setTop);
+  if (qs.has('top')) { topOn.checked = true; if (+qs.get('top')) alt.value = qs.get('top'); setTop(); }
   const range = box.querySelector('input'), km = box.querySelector('[data-k]'), stn = box.querySelector('[data-s]'), vel = box.querySelector('[data-v]');
   range.max = String(Math.round(L));
   document.body.append(box);

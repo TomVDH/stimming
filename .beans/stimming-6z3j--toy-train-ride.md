@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-09T23:05:00Z
+updated_at: 2026-11-10T06:31:20Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -205,3 +205,18 @@ Open from the critics:
 - [x] Window cross bar backlit: its cabin face sits in its own shade, the view's light wraps its edges, the sun lights its top lip
 - [x] Culling: each placement pass drops instances outside the view frustum; an async readback compacts the ids, so each prop mesh draws only what is in view (headless day frame 16.6 ms)
 - [x] Pass-by timed to the oncoming train: whoosh held for its length, a recorded cabin thump as the fronts meet and a softer one as the tail goes
+
+## Round 22: buildings, halts, view, glass, sound (Tom, 2026-11-09)
+
+- [x] Night windows no longer vanish: the per-house seed is flat and quantised (an interpolated seed flipped the window hash); far or slanted walls keep the panes' mean glow
+- [x] Buildings lower: mapped heights count the roof, so houses lose it; blocks three to five floors; floors 2.5 m (houses) and 2.9 m (blocks); flatter roofs; 34 m cap
+- [x] Four station kinds: HB hall, town (canopy and island), village (canopy), rural halt (170 m slab, no canopy, five warm masts, a timber hut); 11 halts on the upper lake, the Linth plain and the Walensee
+- [x] View: FOV 44 (62 on tall screens); bumps damped in the seat and full by the glass; more head turn and sideways reach by the glass; a soft head nod on start and stop
+- [x] Glass: cabin cube map box-projected (shifts with the head), 512 px, far fainter; the reveal mirrors in the pane edge and always covers the cabin; the railway mark etched in the low right corner; seats, headrests, rack rails and pane frames in the cabin
+- [x] No post shadows on the wall beside the window: bounced sun carries none
+- [x] Water: each wave octave runs its own way; stronger ripples; livelier light columns at night
+- [x] Far lights flicker a little, each at its own pace
+- [x] Sound: pull-away and arrival cross-fade with the bed by speed; a whine band under power and brake; hum at any standstill (idle clip); compartment door muffles the bus and opens at platforms and now and then; a low thud on the sub bus as a train passes
+- [x] Dev: top view of the built scene (?dev, tick Top view, or ?top=<m>)
+- [ ] Sound: Tom to listen (whine level, door muffle, thud)
+- [ ] Frame and cross bar wireframes: Tom to pick
