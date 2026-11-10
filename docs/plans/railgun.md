@@ -234,7 +234,7 @@ An original swell. It uses no recording, notes, sweep or score of the THX Deep N
 
 #### The explosion
 
-- A raymarched fireball on a sphere proxy at the hit: radius R to about 6R in four seconds. It runs white core, orange billows, then a dark cloud of soot and debris. The cloud drifts, is lit by the sun from outside and stays about 30 seconds.
+- A raymarched fireball on a sphere proxy at the hit. Tom, 03:17: "far more slow, dramatic sweeping - MASSIVE scale". It swells from R to about 12R over twelve seconds, white core, orange billows, red, then a soot cloud that rises and hangs for a minute. The shock front sweeps 36 km out toward the eye over half a minute; the Wilson shell grows to 20 km and burns off in about twelve seconds. Shards drift slower and live sixteen seconds. The next rock comes 22 s after the hit.
 - A condensation shell (a Wilson cloud) flashes round the fireball and burns off. It replaces `hitRingA` and `hitRingB`.
 - More shards, craggier; each trails burning smoke through K6 stars.
 - The embers fall in longer arcs through the cloud.

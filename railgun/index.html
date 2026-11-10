@@ -1250,13 +1250,14 @@ function placeFrags() {
   }
 }
 // The shock front's radius, ha seconds after the hit.
-const shockR = (ha, R) => R * 1.4 + 26000 * (1 - Math.exp(-ha / 3.5));
+// It sweeps out slowly toward the eye: 36 km, over half a minute.
+const shockR = (ha, R) => R * 1.4 + 36000 * (1 - Math.exp(-ha / 9));
 // The hit sets each fragment's break time by its distance.
 function armFrags() {
   for (const f of frags) {
     if (!f.on || f.broke >= 0) continue;
-    const d = f.pos.distanceTo(ast.pos), x = clamp((d - ast.R * 1.4) / 26000, 0, 0.95);
-    f.breakT = simT - 3.5 * Math.log(1 - x);
+    const d = f.pos.distanceTo(ast.pos), x = clamp((d - ast.R * 1.4) / 36000, 0, 0.95);
+    f.breakT = simT - 9 * Math.log(1 - x);
   }
 }
 function stepFrags() {
@@ -2218,6 +2219,8 @@ const ionMat = new THREE.ShaderMaterial({
     // The width is in metres, with a floor in pixels.
     float ppm = 0.5 * uRes.y * projectionMatrix[1][1] / max(c0.w, 1.0);
     float W = clamp((10.0 + 25.0 * la) * ppm, 1.6 * uDpr, 60.0 * uDpr);
+    // A short segment on screen gets a narrow ribbon, so it never fans.
+    W = min(W, max(2.5 * length((c1.xy / c1.w - c0.xy / c0.w) * 0.5 * uRes), 1.6 * uDpr));
     c0.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c0.w;
     vY = position.y; vLa = la; vF = aF.x; vP = p;
     gl_Position = c0;
@@ -2517,12 +2520,12 @@ const shardMat = new THREE.ShaderMaterial({
   }
   void main() {
     float age = uTime - aSeed.z;
-    if (age < 0.0 || age > 9.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    if (age < 0.0 || age > 16.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     // Mild drag, a slow fall, a spin.
     // The shard shrinks away over its last two seconds.
     float k = 0.15;
     vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, 0.25 * age * age, 0.0);
-    float sc = aSeed.y * (1.0 - smoothstep(7.0, 9.0, age));
+    float sc = aSeed.y * (1.0 - smoothstep(12.0, 16.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
     mat3 R = rot(axis, aVel.w * age * uSpin + aSeed.x);
     vP = c + R * (position * sc); vN = R * normal; vO = position;
@@ -2557,25 +2560,27 @@ let shardsEnd = 0;
 const fireball = makeVol(/* glsl */`
 uniform vec3 uBP, uHotC, uFireC, uEmberC, uSootC;
 uniform vec4 uFb;
-float rb() { return uFb.y * (1.0 + 5.0 * (1.0 - exp(-uFb.x / 1.4))); }
+// It swells to twelve radii over about twelve seconds.
+float rb() { return uFb.y * (1.0 + 11.0 * (1.0 - exp(-uFb.x / 4.5))); }
 float dens(vec3 p, out vec3 em) {
   em = vec3(0.0);
   float age = uFb.x, Rb = rb();
   // The cloud rises slowly as it cools.
-  vec3 q = p - uBP - vec3(0.0, 40.0 * age, 0.0);
+  vec3 q = p - uBP - vec3(0.0, 25.0 * age, 0.0);
   float r = length(q) / Rb;
   if (r > 1.1) return 0.0;
   vec3 w = q / Rb + vec3(uFb.w, -age * 0.02, 0.0);
-  // Low billows push the surface in and out.
-  float n = texture(uVol, w * 0.45).r;
-  float shape = smoothstep(1.0, 0.5, r + (0.55 - n) * 0.6);
-  float d = clamp(shape * (0.55 + 0.6 * texture(uVol, w * 1.6).g) - 0.12, 0.0, 1.0);
+  // Two octaves of billows push the surface in and out.
+  float n = 0.6 * texture(uVol, w * 1.1).r + 0.4 * texture(uVol, w * 2.3).r;
+  float shape = smoothstep(1.0, 0.78, r + (0.55 - n) * 0.7);
+  // Fine cells carve small lobes into each billow.
+  float d = clamp(shape * (0.45 + 0.7 * texture(uVol, w * 4.5).g) - 0.15, 0.0, 1.0) * 1.4;
   // The core burns hottest; the rim cools first.
-  float T = exp(-age / 2.6) * smoothstep(1.0, 0.1, r) + 0.8 * exp(-age / 0.35);
+  float T = exp(-age / 5.0) * smoothstep(1.0, 0.1, r) + 0.8 * exp(-age / 0.6);
   vec3 c = mix(uEmberC, uFireC * 2.0, smoothstep(0.1, 0.45, T));
   c = mix(c, uHotC * 4.0, smoothstep(0.55, 0.95, T));
   em = c * d * smoothstep(0.03, 0.2, T) * T * 14.0 / Rb * uFb.z;
-  return d * 4.0 / Rb * (1.0 - smoothstep(20.0, 30.0, age));
+  return d * 4.0 / Rb * (1.0 - smoothstep(45.0, 60.0, age));
 }
 vec3 alb(vec3 p) { return uSootC; }
 vec3 vlight(vec3 p) { return vec3(0.0); }`, {
@@ -2589,24 +2594,24 @@ let blastFx = null;
 function updateBlast() {
   if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = false; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
-  if (ha > 31) { blastFx = null; updateBlast(); return; }
+  if (ha > 61) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
-  const Rb = R * (1 + 5 * (1 - Math.exp(-ha / 1.4)));
-  u.uC.value.copy(blastFx.P).y += 40 * ha;
+  const Rb = R * (1 + 11 * (1 - Math.exp(-ha / 4.5)));
+  u.uC.value.copy(blastFx.P).y += 25 * ha;
   u.uR.value = Rb * 1.15;
   u.uVSteps.value = volSteps();
   fireball.visible = true;
   // The Wilson shell flashes round the fireball and burns off.
   const ga = reduced() ? 0.5 : 1, A = hitShellA.material.uniforms, B = hitShellB.material.uniforms;
-  A.uC.value.copy(blastFx.P); A.uR.value = R * 1.4 + 9000 * (1 - Math.exp(-ha / 2.6));
-  A.uGain.value = ga * 1.6 * k * Math.exp(-ha / 0.9);
-  A.uEm.value.copy(U.uAstC.value).multiplyScalar(2.5 * Math.exp(-ha / 0.6));
+  A.uC.value.copy(blastFx.P); A.uR.value = R * 1.4 + 20000 * (1 - Math.exp(-ha / 5));
+  A.uGain.value = ga * 1.6 * k * Math.exp(-ha / 2.5);
+  A.uEm.value.copy(U.uAstC.value).multiplyScalar(2.5 * Math.exp(-ha / 1.5));
   hitShellA.visible = A.uGain.value > 0.01;
   // The shock front runs on; it breaks the fragments as it passes.
   B.uC.value.copy(blastFx.P); B.uR.value = shockR(ha, R);
-  B.uGain.value = ga * 0.7 * k * Math.exp(-ha / 2.5);
+  B.uGain.value = ga * 0.7 * k * Math.exp(-ha / 7);
   hitShellB.visible = B.uGain.value > 0.01;
 }
 // The shards trail burning smoke while they are hot.
@@ -2616,7 +2621,7 @@ function stepShards() {
   const n = shardGeo.instanceCount, P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.15;
   for (let i = 0; i < n; i += 2) {
     const age = simT - S[i * 4 + 2], heat = Math.exp(-age / S[i * 4 + 3]);
-    if (age < 0 || age > 8 || heat < 0.08) continue;
+    if (age < 0 || age > 15 || heat < 0.08) continue;
     const e = (1 - Math.exp(-k * age)) / k;
     bp.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - 0.25 * age * age, P[i * 3 + 2] + V[i * 4 + 2] * e);
     bv.set(V[i * 4], V[i * 4 + 1], V[i * 4 + 2]).multiplyScalar(0.05 * Math.exp(-k * age));
@@ -2682,20 +2687,21 @@ function shatter(c) {
   for (let i = 0; i < N; i++) {
     bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.2 * R);
     bv.copy(bp).addScaledVector(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), 0.4 * R).normalize();
-    bv.multiplyScalar((40 + 120 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
+    // Slow shards read as huge ones.
+    bv.multiplyScalar((25 + 70 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
-    sSeed.setXYZW(i, rnd() * 100, R * (0.08 + 0.27 * Math.pow(rnd(), 2.2)), simT, 3 + rnd() * 3);
+    sSeed.setXYZW(i, rnd() * 100, R * (0.08 + 0.27 * Math.pow(rnd(), 2.2)), simT, 6 + rnd() * 4);
   }
   shardGeo.instanceCount = N;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
-  shardsEnd = simT + 9;
+  shardsEnd = simT + 16;
   // Embers: a burst of K6 stars from the rock's heart.
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((60 + rnd() * 240) * sp);
-    writeStar(P, simT + rnd() * 0.05, bv, 0.25, rnd() < 0.5 ? 0 : 2, 5 + rnd() * 4, 0.6, 1.5 + rnd() * 1.5, rnd() < 0.3 ? 2 : 0, 0.8);
+    writeStar(P, simT + rnd() * 0.05, bv, 0.25, rnd() < 0.5 ? 0 : 2, 8 + rnd() * 6, 0.6, 1.5 + rnd() * 1.5, rnd() < 0.3 ? 2 : 0, 0.8);
   }
   blastFx = { t0: simT, P: P.clone(), R, k: Math.min(c, 1.25), seed: rnd() * 10 };
   hitFlash = 1; cam.shake += 0.5 * c;
@@ -2768,7 +2774,7 @@ function stepShot(dt) {
   // The blast light: a hard flash, then a slow fireball.
   if (shot && shot.hit && shot.canHit) {
     const ha = simT - shot.t0 - shot.hitT;
-    hitFlash = shot.bk * (Math.exp(-ha / 0.28) + 0.22 * Math.exp(-ha / 2.4));
+    hitFlash = shot.bk * (Math.exp(-ha / 0.4) + 0.3 * Math.exp(-ha / 5));
   } else hitFlash *= Math.exp(-dt / 0.35);
   U.uHit.value.w = hitFlash;
   // uBlast: the blast's world place and the same strength as hitFlash.
@@ -2828,7 +2834,8 @@ function stepShot(dt) {
   }
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; crack(shot); }
   if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
-  if (age > shot.hitT + 12 && age > shot.arrive + 1) {
+  // The next rock waits until the blast has had its time.
+  if (age > shot.hitT + 22 && age > shot.arrive + 1) {
     if (ast.state === 'shatter') respawn();
     shot = null;
     bolt.visible = false;
@@ -3300,7 +3307,7 @@ function hitSounds(ac, sh) {
     if (shot !== sh || !kit.live()) return;
     if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04)); }
     // The boom plays slow, low and dark: about 33 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 0.9 * k * jit(0.1), 0.68 * jit(0.04), 900); }
+    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.4 * k * jit(0.1), 0.68 * jit(0.04), 1800); }
   });
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
@@ -3399,7 +3406,7 @@ window.__qa = {
   blast: () => {
     const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
     return { fire: fireball.visible, w: b.w, off: blastFx ? +(blastFx.P.distanceTo(b) / blastFx.R).toFixed(2) : -1, size: blastFx ? +(u.uR.value / 1.15 / blastFx.R).toFixed(2) : 0,
-      hot: blastFx ? Math.exp(-T / 2.6) + 0.8 * Math.exp(-T / 0.35) : 0, shellA: hitShellA.visible ? Math.round(hitShellA.material.uniforms.uR.value) : 0,
+      hot: blastFx ? Math.exp(-T / 5) + 0.8 * Math.exp(-T / 0.6) : 0, shellA: hitShellA.visible ? Math.round(hitShellA.material.uniforms.uR.value) : 0,
       shellB: hitShellB.visible ? Math.round(hitShellB.material.uniforms.uR.value) : 0, rings: false, astW: U.uAst.value.w, hitFlash };
   },
   frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
