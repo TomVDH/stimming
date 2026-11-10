@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T10:28:30Z
+updated_at: 2026-11-10T10:36:34Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -35,7 +35,9 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Tom picks the first adopter: Train Ride. Brief handed to the Train Ride chat
 - [ ] Train Ride adopts swaps 1 to 4 (its own chat)
 - [x] Output: `shared/output.js`, a card in `fxlab/`, two copy checks
-- [ ] Tom picks what comes next (water extras, clouds, more adopters)
+- [x] Rain and snow in the air: `shared/precip.js`, a card in `fxlab/`
+- [x] Cloud deck: `skClouds()` in `shared/sky.js`, a slider in `fxlab/`
+- [ ] Tom picks what comes next (light orbs and bloom, water extras, more adopters)
 
 ## Rules
 
@@ -66,3 +68,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: Tom picked Train Ride as the first adopter. The brief is in the plan (First adopter) and in the shared notes folder (`trainride-adoption.md`). Four swaps keep the picture; water, flare and sky change the look and wait for Tom. The lab check shaders now include every module, so all compile together in three.js.
 
 - 2026-11-10: `shared/output.js` built (Tom: "Build output"): film curve, soft knee, sRGB, dither. Every ranked effect of the first plan is now built: flare, grade, water, sky and haze, output.
+
+- 2026-11-10: Tom: "Keep building". Built `shared/precip.js` (screen-space rain and snow) and a cloud deck in `shared/sky.js`; `weather.js` now drives air and clouds too. The lab scene first ran at 22 ms a frame with clouds in every mirror tap; mirroring the sky once brought it back to 8 ms.
