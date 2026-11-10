@@ -170,6 +170,8 @@ Per-toy work beyond the recipe:
 - Kaleido: the settle loop yields every 12 ms.
 - Dijkstra: `maps/index.json` preloads; the city is random, so its file does not.
 - Fidget: the part modules still load one at a time.
+- Launch and Frietkot: recipe only. First frame stays near 1.3 s and the intro lift near 5.0 s in the harness, before and after.
+  The jsDelivr lookup sets both numbers, so the preloads show no gain on a direct cold visit.
 
 Open:
 
