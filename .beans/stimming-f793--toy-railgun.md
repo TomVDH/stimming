@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:55:30Z
+updated_at: 2026-11-10T19:58:50Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -188,3 +188,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] The clouds' shock rim is a faint warm ripple, not a white wave; the impact cloud takes the moon at night; the gun fires only when aimed; the storm towers ripple as the blast wave passes
 
 - [x] The barrel heats only once the slug leaves; no glow through the over-hold; the conical muzzle plume (fire and smoke) is off, for a redo
+
+- [x] Muzzle redo: a bright brief flash, a torus shock ring square to the bore, a billowing smoke burst lit by the flash
+- [x] The impact lens flare is a wide orange glow
+- [ ] Projectile redo: it lights the clouds and the sky faintly as it races past
