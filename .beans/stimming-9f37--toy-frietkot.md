@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:14:44Z
-updated_at: 2026-11-09T11:21:44Z
+updated_at: 2026-11-09T23:35:45Z
 ---
 
 Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chip shack stands alone on an empty village square at night: a warm steamy service window, a humming neon strip, a low wide toy-scale shot. Drop fries, shake the basket, pick a sauce, fill a cone.
@@ -61,3 +61,6 @@ Build Frietkot at night from docs/plans/frietkot.md. It starts in the Lab. A chi
 
 - Tom (2026-11-09): the order interaction is pointless; more ideas later; lit board as the sign. Built: no Order button, no tap-to-order, no hold-to-shake; the key strip shows drag and scroll only. The staff run orders themselves (stepOrders: 6 to 12 s after someone waits, else every 18 to 38 s). The Sign default is Lit board.
 - [ ] Next interactivity: Tom to think it over.
+- [x] Main shelf as No. 39, Tom's call (2026-11-09).
+- [x] Intro emblem: the 3D fry cone from icon spike 4 (C1 Stripe) as a mask (`shared/emblems/frietkot.svg`). The shack scene and the flat cone are out (Tom, 2026-11-09).
+- [x] Menu tile: the spike 4 cone, C1 Stripe (Tom's pick), in `53c6223`.

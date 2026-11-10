@@ -204,6 +204,14 @@ float landO(vec2 xz, int oct) {
   return h;
 }
 float land(vec2 xz) { return landO(xz, 7); }`;
+// The road wanders beside the line; land, trees and poles all read it.
+const ROAD = /* glsl */`
+float roadZ(float x) { return -(68.0 + 24.0 * sin(x * 0.0011) + 9.0 * sin(x * 0.0047 + 1.3)); }
+// The road runs in some 1300 m stretches; it narrows to nothing at each end.
+float roadW(float x) {
+  float f = fract(x / 1300.0);
+  return step(0.45, hash1(vec2(floor(x / 1300.0), 3.0))) * smoothstep(0.0, 0.04, f) * smoothstep(1.0, 0.96, f);
+}`;
 
 // The route map: half-float heights, and a lake flag with town density.
 const tH = new THREE.DataTexture(ROUTE.h, ROUTE.w, ROUTE.ht, THREE.RedFormat, THREE.HalfFloatType);
@@ -237,6 +245,10 @@ const OUTU = {
   uIsl: { value: 0 },
   // uOpp: the oncoming train's front x, its length, 1 while it runs, its smear in metres.
   uOpp: { value: new THREE.Vector4(0, 200, 0, 0) },
+  // The outside camera's view-projection, for culling the props.
+  uCullVP: { value: new THREE.Matrix4() },
+  // x of Zurich HB nearest the eye: the track field before it sits there.
+  uYard: { value: 0 },
 };
 
 // Light, sky and haze for night and day; uDay blends the two.
@@ -388,6 +400,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   uniform float uTime;
   ${NOISE}
   ${LAND}
+  ${ROAD}
   ${HAZE}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
@@ -423,16 +436,16 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     vec3 N = normalize(vec3(nh0 - landO(vP.xz + vec2(ne, 0.0), 4), ne, nh0 - landO(vP.xz + vec2(0.0, ne), 4)));
     // Close land gets fine relief from noise.
     float near = smoothstep(1400.0, 250.0, dist);
-    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.07), 0.0, gnoise(vP.xz * 0.07 + 9.0)) * 0.5 * near);
+    if (near > 0.0) N = normalize(N + vec3(gnoise(vP.xz * 0.04), 0.0, gnoise(vP.xz * 0.04 + 9.0)) * 0.15 * near);
     float slope = 1.0 - N.y;
     float n1 = fbm(vP.xz * 0.002);
     // Meadow: lush in the valley, browner up high.
     // Pixar-lite: clean, saturated meadow greens in broad soft bands.
-    vec3 alb = mix(vec3(0.07, 0.17, 0.035), vec3(0.15, 0.2, 0.05), smoothstep(0.35, 0.65, fbm(vP.xz * 0.0017 + 3.0)));
+    // Soft sage to warm meadow, in wide calm bands.
+    vec3 alb = mix(vec3(0.1, 0.165, 0.06), vec3(0.16, 0.19, 0.08), smoothstep(0.3, 0.7, fbm(vP.xz * 0.0012 + 3.0)));
     alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
     // Grass texture close by; it fades before it can shimmer.
-    float grain = vnoise(vP.xz * 0.9) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.9))));
-    alb *= (0.9 + 0.2 * vnoise(vP.xz * 0.05)) * (0.94 + 0.12 * grain);
+    alb *= 0.95 + 0.1 * vnoise(vP.xz * 0.02);
     // Farms: a patchwork of fields on the flat floor.
     float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
     if (flatL > 0.0) {
@@ -457,14 +470,25 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Towns from the map, densest on the Lake Zurich shore.
     // Each roof has a pale wall toward the train.
     float vm = min(town(vP.xz) * 1.2, 1.0), house = 0.0;
+    // Dense town ground: paving, yards and small lawns in place of meadow.
+    // Central Zurich only: some paving among the lawns, on flat ground; villages stay green.
+    float urb = smoothstep(0.5, 0.9, vm) * step(4.0, wd) * smoothstep(0.14, 0.06, slope) * smoothstep(5000.0, 3500.0, mod(vP.x, ${f8(TILE)}));
+    if (urb > 0.0) {
+      float lawn = smoothstep(0.4, 0.6, vnoise(vP.xz * 0.025) * 0.7 + vnoise(vP.xz * 0.11) * 0.3);
+      alb = mix(alb, mix(vec3(0.17, 0.17, 0.155), alb, lawn), urb * 0.6);
+    }
     for (int i = 0; i < ${NG}; i++) vm = max(vm, smoothstep(170.0, 50.0, length(vP.xz - uGP[i].xz)));
     if (vm > 0.0 && wd > 6.0) {
       vec2 g = vP.xz / vec2(17.0, 14.0), f = fract(g) - 0.5;
       float hs = hash1(floor(g) + 31.0);
+      // Far roofs merge into a soft town tint; single pixels would speckle.
+      float hf = 1.0 - smoothstep(0.12, 0.35, length(fwidth(g)));
+      alb = mix(alb, vec3(0.2, 0.18, 0.15), vm * 0.45 * (1.0 - hf));
       // Roofs show from 200 m out; closer they would read as flat tiles.
-      if (hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
+      if (hf > 0.0 && hs < vm * 0.7 * smoothstep(200.0, 450.0, dist) && abs(f.x) < 0.33 && abs(f.y) < 0.3) {
         house = 1.0;
-        alb = f.y > 0.2 ? vec3(0.5, 0.47, 0.42) : hs < 0.25 ? vec3(0.13, 0.045, 0.025) : hs < 0.5 ? vec3(0.075, 0.048, 0.032) : vec3(0.085, 0.085, 0.09);
+        vec3 hc = f.y > 0.2 ? vec3(0.42, 0.4, 0.36) : hs < 0.25 ? vec3(0.2, 0.1, 0.07) : hs < 0.5 ? vec3(0.14, 0.1, 0.08) : vec3(0.15, 0.15, 0.16);
+        alb = mix(alb, hc, hf);
       }
     }
     // Forest: patches on the slopes, thick on the near bank, none above the treeline.
@@ -472,16 +496,18 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float fm = fbm(vP.xz * 0.0035 + 4.0) + slope * 0.9 - flatL * 0.3 + (vnoise(vP.xz * 0.04) - 0.5) * 0.1;
     // Flat floors stay open; lone woods there read as dark holes.
     fm -= 0.3 * smoothstep(0.08, 0.02, slope);
-    float forest = smoothstep(0.5, 0.64, fm);
+    float forest = smoothstep(0.5, 0.7, fm);
     forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
     // Crowns show up close; the pattern fades before it can shimmer.
     float crown = vnoise(vP.xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.45))));
     // Dark spruce mixes with brighter beech.
     // Woods stay rich green, not black: deep spruce and bright beech.
-    vec3 wood = mix(vec3(0.045, 0.09, 0.035), vec3(0.08, 0.13, 0.04), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
-    alb = mix(alb, wood * (0.8 + 0.4 * crown), forest);
+    vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(vP.xz * 0.003 + 7.0)));
+    alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
     // Rock on steep faces and high crags; snow above the snow line.
     float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
+    // Cuttings and banks beside the line are grassed, not bare rock.
+    rock *= smoothstep(40.0, 140.0, -vP.z);
     // Limestone: pale grey with bedding lines and dark water streaks.
     float strata = vnoise(vec2(vP.x * 0.004, vP.y * 0.12));
     float streak = vnoise(vec2(vP.x * 0.05, vP.y * 0.01)) * (1.0 - smoothstep(0.3, 0.8, fwidth(vP.x * 0.12)));
@@ -491,6 +517,15 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     float sl = mix(1450.0, 1080.0, sg.z);
     float snow = smoothstep(sl, sl + 200.0, hh + (n1 - 0.5) * 600.0) * smoothstep(0.65, 0.4, slope);
     alb = mix(alb, vec3(0.85, 0.88, 0.93), snow);
+    // The country road: grey asphalt with pale verges, on dry and gentle ground.
+    float rw = roadW(vP.x) * step(4.0, wd) * smoothstep(0.22, 0.12, slope);
+    if (rw > 0.0) {
+      float rd = abs(vP.z - roadZ(vP.x)), fr = fwidth(rd) + 0.05;
+      float verge = 1.0 - smoothstep(3.2 - fr, 3.2 + fr, rd);
+      float road = 1.0 - smoothstep(2.5 - fr, 2.5 + fr, rd);
+      alb = mix(alb, vec3(0.3, 0.29, 0.25), verge * rw * (1.0 - snow));
+      alb = mix(alb, vec3(0.17, 0.17, 0.17), road * rw * (1.0 - snow));
+    }
     // Day: sun with soft terrain shadows, and sky light.
     // Hedges and tree lines edge the fields.
     if (flatL > 0.0) {
@@ -517,7 +552,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       }
       vSh = smoothstep(0.0, 1.0, vSh);
     }
-    float shSoft = mix(0.6 + 0.4 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
+    float shSoft = mix(0.72 + 0.28 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
     float wrapD = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
     float keyL = wrapD * wrapD * shSoft;
     // Shade is tinted cool blue, never dead black.
@@ -725,6 +760,502 @@ const glints = [];
   out.add(p);
 }
 
+/* Props: trees, Swiss houses, fences, bales, poles and a country road. */
+// A placement pass per kind decides on the GPU where each one stands.
+// Each texel holds one instance: its base point and size, or zero for none.
+const PROPG = /* glsl */`
+uniform float uCamX;
+uniform vec2 uStn;
+${ROAD}
+// Wraps a patch x round the camera; y counts the wraps, so each pass differs.
+vec2 wrapP(float x, float P) { float wx = uCamX + mod(x - uCamX + P * 0.5, P) - P * 0.5; return vec2(wx, floor((wx - x) / P + 0.5)); }
+float slopeAt(vec2 xz, float e) { float h = land(xz); return 1.0 - normalize(vec3(h - land(xz + vec2(e, 0.0)), e, h - land(xz + vec2(0.0, e)))).y; }
+bool atStation(vec2 xz, float m) { return uStn.y > 0.0 && abs(xz.x - uStn.x) < uStn.y + m && xz.y > -45.0; }
+bool onRoad(vec2 xz, float m) { return roadW(xz.x) > 0.0 && abs(xz.y - roadZ(xz.x)) < m; }
+// Zurich HB's track field, from 260 m behind the hall to the throat 2.1 km out.
+bool inYard(vec2 xz, float m) {
+  float d = mod(xz.x + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+  return d > -280.0 - m && d < 2100.0 + m && xz.y > -76.0 + 66.0 * smoothstep(1400.0, 2050.0, d) - 9.0 - m;
+}
+// The same woods the land paints: fbm on the slopes, none on flat floors.
+float forestAt(vec2 xz, float slope) {
+  float fm = fbm(xz * 0.0035 + 4.0) + slope * 0.9 + (vnoise(xz * 0.04) - 0.5) * 0.1;
+  fm -= 0.3 * smoothstep(0.08, 0.02, slope);
+  return smoothstep(0.5, 0.7, fm);
+}`;
+// Lit like the land: wrapped sun, sky fill, moon by night, town glow, haze.
+const PROPL = /* glsl */`
+vec3 propLit(vec3 P, vec3 N, vec3 alb, float ao, float trans) {
+  vec3 V = normalize(cameraPosition - P);
+  float w = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
+  vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * w * w + skyA(N.y) * 1.25 * ao + sunC() * vec3(0.07, 0.07, 0.05) * (1.0 - w) * (0.6 + 0.4 * (1.0 - N.y));
+  // Leaves glow when the sun stands behind them.
+  day += sunC() * trans * pow(max(dot(-V, uSun), 0.0), 4.0) * 0.3 * vec3(0.9, 1.0, 0.6) * (1.0 - uRain);
+  vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
+  vec3 c = alb * mix(night, day, uDay) * mix(0.7, 1.0, ao);
+  if (uDay < 0.99) {
+    vec3 pool = vec3(0.0);
+    for (int i = 0; i < ${NG}; i++) { float d = length(uGP[i].xyz - P); pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0); }
+    c += alb * pool * (1.0 - uDay);
+  }
+  return c;
+}`;
+const placers = [];
+const PW = 128;
+// Culling: each placement pass drops instances outside the view frustum, with a margin.
+// The pass is read back without a stall; each mesh then draws only the instances kept.
+function placer(data, body, R = 30) {
+  const n = data.length / 4, h = Math.ceil(n / PW), buf = new Float32Array(PW * h * 4);
+  buf.set(data);
+  const tIn = new THREE.DataTexture(buf, PW, h, THREE.RGBAFormat, THREE.FloatType);
+  tIn.needsUpdate = true;
+  const rt = new THREE.WebGLRenderTarget(PW, h, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+  const q = new FullScreenQuad(new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tIn: { value: tIn } }),
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: /* glsl */`
+    uniform sampler2D tIn;
+    ${NOISE}
+    ${LAND}
+    ${PROPG}
+    ${body}
+    uniform mat4 uCullVP;
+    void main() {
+      vec4 r = place(texelFetch(tIn, ivec2(gl_FragCoord.xy), 0));
+      if (r.w > 0.0) {
+        vec4 k = uCullVP * vec4(r.x, (r.y == 0.0 ? land(r.xz) : r.y) + 6.0, r.z, 1.0);
+        if (k.w < -${R}.0 || abs(k.x) > k.w + ${(1.6 * R).toFixed(1)} || abs(k.y) > k.w + ${(1.6 * R).toFixed(1)}) r = vec4(0.0);
+      }
+      gl_FragColor = r;
+    }`,
+  }));
+  const back = new Float32Array(PW * h * 4);
+  let busy = false;
+  const p = {
+    n, tex: rt.texture, meshes: [],
+    run(r) {
+      r.setRenderTarget(rt);
+      q.render(r);
+      if (busy || !p.meshes.length) return;
+      if (!r.readRenderTargetPixelsAsync) { for (const m of p.meshes) m.geo.instanceCount = n; return; }
+      busy = true;
+      r.readRenderTargetPixelsAsync(rt, 0, 0, PW, h, back).then(() => {
+        // Compact: each mesh gets the ids of the instances it draws.
+        for (const m of p.meshes) {
+          let c = 0;
+          for (let i = 0; i < n; i++) { const w = back[i * 4 + 3]; if (w > 0 && m.keep(w)) m.ids[c++] = i; }
+          m.attr.needsUpdate = true;
+          m.geo.instanceCount = c;
+        }
+        busy = false;
+      }).catch(() => { busy = false; });
+    },
+  };
+  placers.push(p);
+  return p;
+}
+// Joins parts into one flat geometry; each vertex keeps its part number.
+function joinParts(list, soft) {
+  const P = [], N = [], T = [];
+  for (const [g0, part, c] of list) {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    const p = g.attributes.position.array, nn = g.attributes.normal.array;
+    for (let i = 0; i < p.length; i += 3) {
+      P.push(p[i], p[i + 1], p[i + 2]);
+      let n = [nn[i], nn[i + 1], nn[i + 2]];
+      // A soft crown: leaf clumps share one rounded normal, as in a clay model.
+      if (c) {
+        const d = [p[i] - c[0], p[i + 1] - c[1], p[i + 2] - c[2]], l = Math.hypot(...d) || 1;
+        n = n.map((v, k) => v * (1 - soft) + d[k] / l * soft);
+      }
+      N.push(...n);
+      T.push(part);
+    }
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  return g;
+}
+function propMesh(geo, pl, vs, fs, opts = {}) {
+  const ids = new Float32Array(pl.n), attr = new THREE.InstancedBufferAttribute(ids, 1);
+  attr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aId', attr);
+  geo.instanceCount = 0;
+  pl.meshes.push({ geo, ids, attr, keep: opts.keep || (() => true) });
+  const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: Object.assign({}, OUTU, { tPl: { value: pl.tex } }, opts.uniforms),
+    side: opts.side ?? THREE.FrontSide,
+    transparent: !!opts.transparent, depthWrite: !opts.transparent,
+    vertexShader: /* glsl */`
+    uniform sampler2D tPl;
+    attribute float part, aId;
+    varying vec3 vP, vN;
+    varying float vPart;
+    ${NOISE}
+    ${LAND}
+    #define GID int(aId + 0.5)
+    vec4 inst() { return texelFetch(tPl, ivec2(GID % ${PW}, GID / ${PW}), 0); }
+    ${vs}`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP, vN;
+    varying float vPart;
+    uniform float uTime;
+    ${NOISE}
+    ${HAZE}
+    ${PROPL}
+    ${fs}`,
+  }));
+  m.frustumCulled = false;
+  if (opts.order) m.renderOrder = opts.order;
+  out.add(m);
+  return m;
+}
+const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
+{
+  // Trees: a 2.4 km patch of candidates, none past 1 km; far woods are painted.
+  const TP = 2400, n = PW * 128, d = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) d.set([rnd() * TP, -(16 + 1000 * rnd() ** 1.35), rnd() * 1000, 0], i * 4);
+  const trees = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${TP}.0), xz = vec2(wk.x, a.y);
+    float k = wk.y, h = hash1(vec2(a.z * 0.0371, k + 0.5));
+    if (atStation(xz, 40.0) || shore(xz) < 3.0 || onRoad(xz, 7.0) || inYard(xz, 8.0)) return vec4(0.0);
+    float s = slopeAt(xz, 6.0), y = land(xz);
+    if (s > 0.6 || y + 20.0 > 1350.0 + (hash1(vec2(k, a.z)) - 0.5) * 300.0) return vec4(0.0);
+    float f = forestAt(xz, s), tw = town(xz);
+    // Woods stand thick; the open meadow keeps a few lone trees.
+    // Towns keep street and garden trees.
+    if (h > f * 0.92 + 0.02 * (1.0 - f) + 0.05 * tw - tw * f * 0.6) return vec4(0.0);
+    // Spruce holds the high, steep ground; broadleaf the low.
+    float sp = clamp((smoothstep(250.0, 900.0, y + 20.0) + s * 1.5) * 0.7 + 0.2, 0.1, 0.95);
+    float kind = hash1(vec2(a.z * 0.133, k + 4.0)) < sp ? 1.0 : 0.0;
+    return vec4(xz.x, y, xz.y, 0.7 + 0.6 * hash1(vec2(a.z, k + 9.0)) + kind * 10.0);
+  }`);
+  // Shrubs: a low fringe along the line, beyond the second track.
+  const SP = 900, ns = PW * 32, ds = new Float32Array(ns * 4);
+  for (let i = 0; i < ns; i++) ds.set([rnd() * SP, -(11 + 60 * rnd() ** 1.3), rnd() * 1000, 0], i * 4);
+  const shrubs = placer(ds, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${SP}.0), xz = vec2(wk.x, a.y);
+    float h = hash1(vec2(a.z * 0.0291, wk.y + 0.5));
+    if (atStation(xz, 20.0) || shore(xz) < 2.0 || onRoad(xz, 4.0) || inYard(xz, 4.0)) return vec4(0.0);
+    if (h > 0.08 - town(xz) * 0.8) return vec4(0.0);
+    return vec4(xz.x, land(xz), xz.y, 0.18 + 0.18 * hash1(vec2(a.z, wk.y + 9.0)));
+  }`);
+  const crown = [[2.6, 0, 4.7, 0], [2.0, 1.3, 4.0, 0.6], [1.9, -1.1, 4.2, -0.7], [1.6, 0.2, 6.2, 0.2]];
+  const leafy = joinParts([
+    [new THREE.CylinderGeometry(0.18, 0.28, 3.4, 6).translate(0, 1.5, 0), 0],
+    ...crown.map(([r, x, y, z]) => [new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), 1, [0, 4.8, 0]]),
+  ], 0.55);
+  const spruce = joinParts([
+    [new THREE.CylinderGeometry(0.15, 0.25, 2.2, 6).translate(0, 1.0, 0), 0],
+    ...[[2.3, 4.2, 3.3], [1.8, 3.6, 5.6], [1.25, 3.2, 7.7], [0.7, 2.4, 9.4]].map(([r, hh, y]) => [new THREE.ConeGeometry(r, hh, 9).translate(0, y, 0), 1, [0, 5.5, 0]]),
+  ], 0.35);
+  const treeVS = (kind, shrub) => /* glsl */`
+  varying float vTint, vY;
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float kind = floor(q.w / 10.0), sc = q.w - kind * 10.0;
+    ${shrub ? '' : `if (kind != ${kind}.0) { ${HIDE} }`}
+    float yaw = hash1(q.xz * 0.013) * 6.283, c = cos(yaw), s = sin(yaw);
+    mat2 R = mat2(c, -s, s, c);
+    vec3 p = position * sc;
+    // Shrubs grow wide and low.
+    ${shrub ? 'p.xz *= 1.5;' : ''}
+    p.xz = R * p.xz;
+    vec3 n = normal;
+    n.xz = R * n.xz;
+    vP = q.xyz + p - vec3(0.0, 0.4 * sc, 0.0);
+    vN = n;
+    vPart = part;
+    vTint = hash1(q.xz * 0.071);
+    vY = position.y / 10.0;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`;
+  const treeFS = (kind) => /* glsl */`
+  varying float vTint, vY;
+  void main() {
+    vec3 N = normalize(vN);
+    vec3 alb = vec3(0.12, 0.085, 0.055);
+    if (vPart > 0.5) {
+      alb = ${kind === 1 ? 'mix(vec3(0.035, 0.07, 0.04), vec3(0.055, 0.095, 0.045), vTint)' : 'mix(vec3(0.07, 0.125, 0.04), vec3(0.12, 0.16, 0.05), vTint)'};
+      // Clumps of leaves, faded before they can shimmer.
+      float cl = vnoise(vP.xz * 1.3 + vP.y * 0.9);
+      alb *= 0.9 + 0.2 * mix(cl, 0.5, smoothstep(0.3, 0.9, length(fwidth(vP.xz * 1.3))));
+    }
+    // The lower crown and the trunk see less sky.
+    float ao = smoothstep(0.0, 0.8, vY);
+    vec3 c = propLit(vP, N, alb, ao, vPart * 0.6);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`;
+  propMesh(leafy, trees, treeVS(0, false), treeFS(0), { keep: w => w < 10 });
+  propMesh(spruce, trees, treeVS(1, false), treeFS(1), { keep: w => w >= 10 });
+  propMesh(joinParts([...crown.map(([r, x, y, z]) => [new THREE.IcosahedronGeometry(r, 1).translate(x, y - 1.2, z), 1, [0, 3.6, 0]])], 0.6), shrubs, treeVS(0, true), treeFS(0));
+}
+{
+  // Houses from OSM footprints (tools/buildings.py): Zurich's blocks, the shore villages, the farms.
+  // Each has its real place, footprint and heading; a share survive, so the land leads.
+  const B = ROUTE.bld, n = B.length / 8, d = new Float32Array(n * 4), at = new Float32Array(PW * Math.ceil(n / PW) * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 8, s = (B[o] | B[o + 1] << 8) * 1.2, t = (B[o + 2] | B[o + 3] << 8) / 10;
+    const w = B[o + 4] / 4, l = B[o + 5] / 4, h = B[o + 6] / 4, yaw = B[o + 7] / 256 * Math.PI, area = w * l;
+    // Kind 2 is a city block, 1 a barn or hall, 0 a house.
+    const kind = (s < 5500 && (area > 160 || h > 11)) || h > 14 ? 2 : area > 450 && (h === 0 || h < 10) ? 1 : 0;
+    // Unknown heights: blocks four to six floors; houses two, big ones three.
+    const H = h || (kind === 2 ? 3.1 * (4 + Math.floor(rnd() * 3)) + 0.6 : kind === 1 ? 6 + rnd() * 2 : area > 220 ? 8.6 : 5.6 + rnd() * 1.2);
+    d.set([s, -t, kind, rnd()], i * 4);
+    at.set([Math.min(w, 40), Math.min(H, 60), Math.min(l, 80), yaw], i * 4);
+  }
+  const tAt = new THREE.DataTexture(at, PW, at.length / 4 / PW, THREE.RGBAFormat, THREE.FloatType);
+  tAt.needsUpdate = true;
+  const houses = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    float x = uCamX + mod(a.x - uCamX + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
+    vec2 xz = vec2(x, a.y);
+    // No house within 40 m of the line, nor within 75 m of a platform: nothing cuts the station.
+    if (a.y > -40.0 || abs(x - uCamX) > 6000.0 || shore(xz) < 4.0 || inYard(xz, 25.0)) return vec4(0.0);
+    if (uStn.y > 0.0 && abs(x - uStn.x) < uStn.y + 45.0 && a.y > -75.0) return vec4(0.0);
+    // Steep ground would leave a wall floating or buried.
+    if (slopeAt(xz, 6.0) > 0.32) return vec4(0.0);
+    return vec4(x, land(xz), a.y, 1.0 + a.z * 10.0 + 0.9 * a.w);
+  }`, 60);
+  // A unit gable roof: ridge along z, so each gable faces the train and the lake.
+  const roof = (() => {
+    const v = { L0: [-0.5, 0, -0.5], R0: [0.5, 0, -0.5], T0: [0, 1, -0.5], L1: [-0.5, 0, 0.5], R1: [0.5, 0, 0.5], T1: [0, 1, 0.5] };
+    const tri = (...k) => k.flatMap(n => v[n]);
+    const mk = a => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); g.computeVertexNormals(); return g; };
+    return {
+      slopes: mk([...tri('L0', 'L1', 'T1'), ...tri('L0', 'T1', 'T0'), ...tri('R0', 'T0', 'T1'), ...tri('R0', 'T1', 'R1'), ...tri('L0', 'R0', 'R1'), ...tri('L0', 'R1', 'L1')]),
+      gables: mk([...tri('L0', 'T0', 'R0'), ...tri('L1', 'R1', 'T1')]),
+    };
+  })();
+  const geo = joinParts([[new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0], [roof.slopes, 1], [roof.gables, 2]]);
+  propMesh(geo, houses, /* glsl */`
+  uniform sampler2D tAt;
+  varying vec3 vL, vS;
+  varying float vK, vV;
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float kind = floor(q.w / 10.0), v = q.w - kind * 10.0 - 1.0;
+    vec4 A = texelFetch(tAt, ivec2(GID % ${PW}, GID / ${PW}), 0);
+    vec3 S = A.xyz;
+    // Roofs: a gentle pitch on houses, steeper on barns, flat on wide or some city blocks.
+    float rh = kind < 0.5 ? min(0.3 * S.x, 5.0) : kind < 1.5 ? min(0.36 * S.x, 7.0) : (S.x > 22.0 || v < 0.3 ? 0.4 : min(0.22 * S.x, 4.5));
+    vec3 p = position, l;
+    // Walls reach 4 m into the ground, so a slope never shows a gap.
+    if (part < 0.5) l = vec3(p.x * S.x, p.y < 0.01 ? -4.0 : S.y, p.z * S.z);
+    // The roof overhangs the walls and the gables.
+    else if (part < 1.5) l = vec3(p.x * S.x * 1.14, S.y + 0.1 + p.y * rh, p.z * S.z * 1.12);
+    else l = vec3(p.x * S.x, S.y + p.y * rh, p.z * S.z);
+    float yaw = A.w, c = cos(yaw), s = sin(yaw);
+    vec3 w = vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z);
+    vP = q.xyz + w;
+    vN = vec3(0.0, 1.0, 0.0);
+    vL = l; vS = S; vK = kind; vV = v;
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying vec3 vL, vS;
+  varying float vK, vV;
+  void main() {
+    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
+    if (dot(N, cameraPosition - vP) < 0.0) N = -N;
+    vec3 alb, glow = vec3(0.0);
+    if (vPart > 0.5 && vPart < 1.5) {
+      // Roofs: brown tile, dark timber shingle or grey slate; flat tops in town.
+      alb = vV < 0.5 ? vec3(0.2, 0.1, 0.065) : vV < 0.8 ? vec3(0.14, 0.09, 0.06) : vec3(0.17, 0.17, 0.19);
+      if (vK > 1.5) alb = vV < 0.6 ? vec3(0.24, 0.12, 0.08) : vV < 0.85 ? vec3(0.2, 0.2, 0.22) : vec3(0.3, 0.3, 0.29);
+      // The eaves' underside sits in shade.
+      if (N.y < -0.2) alb *= 0.4;
+    } else {
+      vec3 plaster = mix(vec3(0.78, 0.75, 0.68), vec3(0.86, 0.83, 0.76), vV);
+      vec3 wood = mix(vec3(0.28, 0.16, 0.08), vec3(0.36, 0.22, 0.12), fract(vV * 7.0));
+      // A chalet: a plaster ground floor, timber above and in the gable.
+      alb = (vL.y < 2.9 && vPart < 1.5) || fract(vV * 13.0) > 0.35 ? plaster : wood;
+      if (vK > 0.5 && vK < 1.5) alb = vL.y < 0.8 ? plaster * 0.8 : mix(vec3(0.3, 0.22, 0.15), vec3(0.36, 0.27, 0.18), vV);
+      // City plaster: cream, ochre, salmon, pale grey or sage, one per block.
+      if (vK > 1.5) {
+        float pc = fract(vV * 5.3);
+        alb = pc < 0.3 ? vec3(0.8, 0.76, 0.66) : pc < 0.5 ? vec3(0.78, 0.62, 0.38) : pc < 0.65 ? vec3(0.8, 0.6, 0.5) : pc < 0.85 ? vec3(0.66, 0.66, 0.64) : vec3(0.62, 0.68, 0.58);
+        // A darker ground floor: shops and doors.
+        if (vL.y < 3.4 && fract(vV * 3.1) < 0.5) alb *= 0.55;
+      }
+      // Windows with shutters, on rows of 2.8 m; barns have none.
+      bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
+      float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
+      bool city = vK > 1.5;
+      float gap = city ? 2.4 + 0.8 * fract(vV * 9.7) : 2.6, ww = city ? 0.45 : 0.5, fh = city ? 3.1 : 2.8, wh = city ? 1.5 : 1.3;
+      float y0 = city ? 4.0 : 0.9;
+      float cu = fract(u / gap) - 0.5, row = floor((vL.y - y0) / fh), cv = vL.y - y0 - row * fh;
+      float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
+      if (vK < 0.5 || city) if (row >= 0.0 && vL.y < vS.y - 0.6 && abs(u) < half_ - 1.0 && cv < wh && vPart < 1.5) {
+        float ax = abs(cu) * gap;
+        float lit = step(0.5, hash1(vec2(floor(u / gap), row) + vV * 31.0));
+        // City windows sit in a pale frame.
+        if (city && ax < ww + 0.08 && (ax > ww || cv < 0.08 || cv > wh - 0.08)) { alb = mix(alb, vec3(0.86, 0.85, 0.82), fade); }
+        else if (ax < ww) {
+          alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
+          glow = vec3(1.0, 0.72, 0.42) * 1.4 * lit * (1.0 - uDay) * fade;
+        } else if (vK < 0.5 && ax < ww + 0.42) {
+          // Shutters: green, red or grey, one colour per house.
+          vec3 sh = vV < 0.4 ? vec3(0.08, 0.2, 0.1) : vV < 0.7 ? vec3(0.3, 0.07, 0.05) : vec3(0.5, 0.5, 0.48);
+          alb = mix(alb, sh, fade);
+        }
+      }
+    }
+    float ao = smoothstep(-0.5, 2.0, vL.y);
+    vec3 c = propLit(vP, N, alb, ao, 0.0) + glow;
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`, { side: THREE.DoubleSide, uniforms: { tAt: { value: tAt } } });
+}
+{
+  // Fences: runs of 4 m timber segments, most along the line, some leading away.
+  const FP = 1600, n = PW * 32, d = new Float32Array(n * 4);
+  for (let i = 0; i < n;) {
+    const x0 = rnd() * FP, z0 = -(13 + 420 * rnd() ** 1.6), along = rnd() < 0.7;
+    const a = along ? (rnd() - 0.5) * 0.12 : -Math.PI / 2 + (rnd() - 0.5) * 0.3, len = 5 + Math.floor(rnd() * 22), id = rnd() * 1000;
+    for (let k = 0; k < len && i < n; k++, i++) d.set([x0 + k * 4 * Math.cos(a), z0 + k * 4 * Math.sin(a), a, id], i * 4);
+  }
+  const fences = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${FP}.0), xz = vec2(wk.x, a.y);
+    if (xz.y > -12.0 || atStation(xz, 40.0) || shore(xz) < 2.0 || onRoad(xz, 3.0) || inYard(xz, 6.0)) return vec4(0.0);
+    if (town(xz) > 0.2 || hash1(vec2(a.w * 0.0173, wk.y + 0.5)) > 0.55 * (1.0 - town(xz))) return vec4(0.0);
+    float s = slopeAt(xz, 4.0);
+    if (s > 0.35 || forestAt(xz, s) > 0.45) return vec4(0.0);
+    return vec4(xz.x, 0.0, xz.y, a.z + 10.0);
+  }`);
+  const geo = joinParts([
+    [new THREE.BoxGeometry(0.12, 1.2, 0.12).translate(0, 0.5, 0), 0],
+    [new THREE.BoxGeometry(4.0, 0.08, 0.05).translate(2, 0.45, 0), 1],
+    [new THREE.BoxGeometry(4.0, 0.08, 0.05).translate(2, 0.92, 0), 1],
+  ]);
+  propMesh(geo, fences, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vec2 xz = q.xz + vec2(c * position.x - s * position.z, s * position.x + c * position.z);
+    // Each vertex sits on the ground below it, so the fence follows the land.
+    vP = vec3(xz.x, land(xz) + position.y - 0.05, xz.y);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 c = propLit(vP, normalize(vN), vec3(0.3, 0.26, 0.21), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+}
+{
+  // Round bales in white wrap, in loose groups on the flat meadow.
+  const BP = 2000, n = PW * 16, d = new Float32Array(n * 4);
+  for (let i = 0; i < n;) {
+    const cx = rnd() * BP, cz = -(18 + 520 * rnd() ** 1.4), m = 3 + Math.floor(rnd() * 7), id = rnd() * 1000, row = rnd() < 0.5;
+    for (let k = 0; k < m && i < n; k++, i++) d.set(row ? [cx + k * 2.1, cz + (rnd() - 0.5) * 0.4, id, rnd() * 0.3] : [cx + (rnd() - 0.5) * 18, cz + (rnd() - 0.5) * 12, id, rnd() * 3.14], i * 4);
+  }
+  const bales = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${BP}.0), xz = vec2(wk.x, a.y);
+    if (atStation(xz, 40.0) || shore(xz) < 8.0 || onRoad(xz, 4.0) || town(xz) > 0.2 || inYard(xz, 6.0)) return vec4(0.0);
+    if (hash1(vec2(a.z * 0.0123, wk.y + 0.5)) > 0.3) return vec4(0.0);
+    float s = slopeAt(xz, 5.0);
+    if (s > 0.07 || forestAt(xz, s) > 0.15) return vec4(0.0);
+    return vec4(xz.x, land(xz), xz.y, a.w + 10.0);
+  }`);
+  const geo = joinParts([[new THREE.CylinderGeometry(0.66, 0.66, 1.25, 16).rotateZ(Math.PI / 2).translate(0, 0.6, 0), 0]]);
+  propMesh(geo, bales, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vP = q.xyz + vec3(c * position.x - s * position.z, position.y - 0.08, s * position.x + c * position.z);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = hash1(q.xz);
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 N = normalize(vN), V = normalize(cameraPosition - vP);
+    vec3 alb = vPart < 0.8 ? vec3(0.8, 0.82, 0.8) : vec3(0.45, 0.6, 0.42);
+    vec3 c = propLit(vP, N, alb, 1.0, 0.0);
+    // The plastic wrap has a soft sheen.
+    c += sunC() * uDay * 0.08 * pow(max(dot(reflect(-uSun, N), V), 0.0), 20.0);
+    gl_FragColor = vec4(mix(c, hazeCol(-V, vP), hazeAmt(vP)), 1.0);
+  }`);
+}
+{
+  // Timber power poles along the road, every 42 m, with three sagging wires.
+  const GAP = 42, NP = 64, d = new Float32Array(NP * 4);
+  for (let i = 0; i < NP; i++) d.set([i * GAP, 0, i, 0], i * 4);
+  const poles = placer(d, /* glsl */`
+  vec4 place(vec4 a) {
+    vec2 wk = wrapP(a.x, ${GAP * NP}.0);
+    float x = wk.x, z = roadZ(x) + 4.5;
+    vec2 xz = vec2(x, z);
+    if (roadW(x) <= 0.0 || atStation(xz, 30.0) || shore(xz) < 3.0 || inYard(xz, 10.0)) return vec4(0.0);
+    // w carries the road's heading for the cross arm.
+    return vec4(x, land(xz), z, atan(roadZ(x + 1.0) - roadZ(x)) + 10.0);
+  }`, 45);
+  const geo = joinParts([
+    [new THREE.CylinderGeometry(0.11, 0.15, 9.6, 6).translate(0, 4.6, 0), 0],
+    [new THREE.BoxGeometry(0.14, 0.12, 1.9).translate(0, 8.7, 0), 0],
+  ]);
+  propMesh(geo, poles, /* glsl */`
+  void main() {
+    vec4 q = inst();
+    if (q.w <= 0.0) { ${HIDE} }
+    float a = q.w - 10.0, c = cos(a), s = sin(a);
+    vP = q.xyz + vec3(c * position.x - s * position.z, position.y, s * position.x + c * position.z);
+    vN = vec3(c * normal.x - s * normal.z, normal.y, s * normal.x + c * normal.z);
+    vPart = part;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  void main() {
+    vec3 c = propLit(vP, normalize(vN), vec3(0.2, 0.15, 0.11), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), 1.0);
+  }`);
+  // Wires: ribbons that face the eye and never thin below a pixel; coverage sets alpha.
+  const SEGS = 16, P = [], N = [], T = [];
+  for (let wi = 0; wi < 3; wi++) for (let k = 0; k < SEGS; k++) {
+    const t0 = k / SEGS, t1 = (k + 1) / SEGS;
+    for (const [t, sd] of [[t0, -1], [t1, -1], [t1, 1], [t0, -1], [t1, 1], [t0, 1]]) { P.push(t, sd, wi); N.push(0, 1, 0); T.push(0); }
+  }
+  const wg = new THREE.InstancedBufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  wg.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  wg.setAttribute('part', new THREE.Float32BufferAttribute(T, 1));
+  propMesh(wg, poles, /* glsl */`
+  varying float vA;
+  void main() {
+    vec4 q0 = inst();
+    int j = (GID + 1) % ${NP};
+    vec4 q1 = texelFetch(tPl, ivec2(j % ${PW}, j / ${PW}), 0);
+    if (q0.w <= 0.0 || q1.w <= 0.0 || abs(q1.x - q0.x - ${GAP}.0) > 1.0) { ${HIDE} }
+    vec3 d = normalize(q1.xyz - q0.xyz);
+    vec3 across = normalize(vec3(-d.z, 0.0, d.x));
+    float wi = position.z, t = position.x;
+    vec3 off = across * (wi - 1.0) * 0.8 + vec3(0.0, wi == 1.0 ? 9.35 : 8.78, 0.0);
+    vec3 p = mix(q0.xyz, q1.xyz, t) + off - vec3(0.0, 0.9 * 4.0 * t * (1.0 - t), 0.0);
+    float dist = length(p - cameraPosition);
+    float wd = max(0.022, dist * 0.0011);
+    vec3 side = normalize(cross(d, p - cameraPosition));
+    vP = p + side * position.y * wd * 0.5;
+    vN = vec3(0.0, 1.0, 0.0);
+    vPart = 0.0;
+    vA = 0.022 / wd;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`, /* glsl */`
+  varying float vA;
+  void main() {
+    vec3 c = propLit(vP, vec3(0.0, 1.0, 0.0), vec3(0.04), 1.0, 0.0);
+    gl_FragColor = vec4(mix(c, hazeCol(normalize(vP - cameraPosition), vP), hazeAmt(vP)), clamp(vA, 0.0, 1.0) * 0.9);
+  }`, { transparent: true, order: 1 });
+}
+
 // The carriage's lit panes throw warm light out onto the rain and the parapet.
 // They fade by day.
 const TRAIN = /* glsl */`
@@ -878,7 +1409,7 @@ const PL = 320, CAN = 70, SIGNS = 7;
 // Station light at night: two LED strips under the canopy, then masts on the open ends.
 const STNL = /* glsl */`
 uniform vec2 uStn;
-uniform float uHall, uIsl;
+uniform float uHall, uIsl, uYard;
 const vec3 STNC = vec3(0.84, 0.92, 1.0);
 const vec3 HALLC = vec3(1.0, 0.9, 0.76);
 const vec3 MASTC = vec3(1.0, 0.82, 0.6);
@@ -897,7 +1428,7 @@ vec3 stnLight(vec3 P, vec3 N) {
     if (i > 1 && uIsl < 0.5) break;
     vec3 L = vec3(0.0, 1.32 - P.y, (i == 0 ? -3.6 : i == 1 ? -8.4 : i == 2 ? -16.6 : -20.6) - P.z);
     float d2 = dot(L, L);
-    c += STNC * 8.0 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 0.8);
+    c += STNC * 3.5 * inC * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
   // Beyond the canopy, a mast every 24 m lights the open platform.
   float mx = (floor(x / 24.0) + 0.5) * 24.0;
@@ -906,7 +1437,7 @@ vec3 stnLight(vec3 P, vec3 N) {
     if (abs(lx) < ${CAN}.0 || abs(lx) > ${PL / 2}.0) continue;
     vec3 L = vec3(lx - x, 2.3 - P.y, -6.0 - P.z);
     float d2 = dot(L, L);
-    c += MASTC * 9.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.0);
+    c += MASTC * 5.0 * max(dot(N, L * inversesqrt(d2)) * 0.8 + 0.2, 0.0) / (d2 + 1.5);
   }
   return c * (1.0 - uDay);
 }`;
@@ -951,7 +1482,7 @@ const solid = body => new THREE.ShaderMaterial({
     }
     // Station day light, Pixar-lite: a wrapped sun and a strong sky fill with a warm bounce.
     float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-    vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
+    vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
     gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
   }`,
 });
@@ -965,10 +1496,7 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
     // Concrete coping at the edge, with joints every metre that blur with the smear.
     float j = (0.5 - abs(fract(x) - 0.5));
     float joint = (1.0 - smoothstep(0.0, 0.01 + uSmear * 0.5, j)) * 0.03 / (0.03 + uSmear);
-    vec3 asph = vec3(0.2, 0.198, 0.19) * (0.93 + 0.14 * vnoise(vec2(x * 0.7, vP.z * 1.3))) * (0.96 + 0.08 * vnoise(vec2(x * 9.0, vP.z * 9.0)));
-    // Patched asphalt: darker repair rectangles.
-    vec2 pc = floor(vec2(x / 7.0, vP.z / 3.0));
-    if (hash1(pc) > 0.75) asph *= 0.9;
+    vec3 asph = vec3(0.3, 0.29, 0.27) * (0.96 + 0.08 * vnoise(vec2(x * 0.5, vP.z * 0.9)));
     alb = asph;
     float cop = 1.0 - smoothstep(0.34, 0.36, dz);
     alb = mix(alb, vec3(0.46, 0.45, 0.42) * (1.0 - 0.6 * joint) * (0.9 + 0.2 * vnoise(vec2(x * 3.0, dz * 20.0))), cop);
@@ -1012,6 +1540,29 @@ platform.add(new THREE.Mesh(new THREE.BoxGeometry(PL, 0.6, 9.8).translate(0, -2.
     alb *= 0.6 + 0.4 * smoothstep(-2.5, -1.95, vP.y);
   }
 `)));
+// Each platform end slopes down to the ground in a 9 m ramp, so it never ends as a block.
+function ramps(group, half, za, zb, mat) {
+  const x0 = half, x1 = half + 9, y0 = -1.9, y1 = -2.5;
+  const P = [x0, y0, za, x1, y1, za, x1, y1, zb, x0, y0, za, x1, y1, zb, x0, y0, zb, x0, y0, za, x0, y1, za, x1, y1, za, x0, y0, zb, x1, y1, zb, x0, y1, zb];
+  for (const sx of [1, -1]) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P.map((v, i) => i % 3 === 0 ? v * sx : v), 3));
+    // The slope faces up; the two sides face out across the track.
+    const up = [0.6 / 9 * sx, 1, 0], N = [];
+    for (let k = 0; k < 6; k++) N.push(...up);
+    for (let k = 0; k < 3; k++) N.push(0, 0, 1);
+    for (let k = 0; k < 3; k++) N.push(0, 0, -1);
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    const m = new THREE.Mesh(g, mat);
+    m.frustumCulled = false;
+    group.add(m);
+  }
+}
+{
+  const slab = platform.children[platform.children.length - 1];
+  slab.material.side = THREE.DoubleSide;
+  ramps(platform, PL / 2, -1.3, -11.1, slab.material);
+}
 // The canopy roof: a dark fascia toward the track, a ribbed soffit with two LED strips.
 const canopyBody = (z1, z2) => /* glsl */`
   if (N.y < -0.5) {
@@ -1020,7 +1571,7 @@ const canopyBody = (z1, z2) => /* glsl */`
     alb = vec3(0.34, 0.35, 0.36) * (1.0 - 0.35 * rib);
     // Each strip is a slim diffuser, 8 cm wide, broken every 3 m.
     float s = (smoothstep(0.045, 0.035, abs(vP.z - (${z1}))) + smoothstep(0.045, 0.035, abs(vP.z - (${z2})))) * mix(smoothstep(1.46, 1.41, abs(fract(x / 3.0) - 0.5) * 3.0), 1.0, smoothstep(0.02, 0.1, uSmear));
-    glow = STNC * s * (2.2 * (1.0 - uDay) + 0.25 * uDay);
+    glow = STNC * s * 1.4 * (1.0 - uDay);
     shade = 0.0;
   } else if (N.z > 0.5) {
     alb = vec3(0.6, 0.6, 0.58);
@@ -1072,7 +1623,7 @@ function pstrip(geo, w, xs, order, add, frag, attrs = {}) {
       vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * trainLight(P) * 0.15 + stnLight(P, N);
       for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - P; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
       float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-      vec3 day = sunC() * wrapS * wrapS + skyA(N.y) * 1.7 + sunC() * vec3(0.06, 0.055, 0.045);
+      vec3 day = sunC() * wrapS * wrapS + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
       return alb * mix(night, day, uDay);
     }
     ${frag}`,
@@ -1094,7 +1645,7 @@ const COLFRAG = /* glsl */`
 void main() {
   float cov = ${PCOVER('0.22')};
   vec3 N = normalize(vec3(clamp(vL.x / (0.11 + uSmear * 0.5), -1.0, 1.0), 0.0, 1.0));
-  vec3 c = litBy(vW, N, vec3(0.42, 0.44, 0.44));
+  vec3 c = litBy(vW, N, vec3(0.34, 0.35, 0.35));
   // A dark plinth at the foot.
   c *= 1.0 - 0.5 * smoothstep(-1.5, -1.6, vW.y);
   gl_FragColor = vec4(c, cov);
@@ -1269,6 +1820,73 @@ out.add(bed);
     bed.add(m);
   }
 }
+/* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
+// The windows look into a saloon: a ceiling light strip, seat backs and the far windows.
+// The glass mirrors the sky and catches the sun; the body curves, so its sheen changes with height.
+const TSIDE = /* glsl */`
+float tsCover(float d, float w, float s) { return clamp((w + s + 0.001 - abs(d) * 2.0) / (2.0 * s + 0.002), 0.0, 1.0) * min(1.0, w / (s + 0.001)); }
+// u is metres from the front, len the train's length, s the motion smear in metres.
+// lit is 1 when the saloon lights are on; sunK is 0 under a roof.
+vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
+  float y = W.y;
+  float nose = smoothstep(0.0, 2.5, u) * smoothstep(0.0, 2.5, len - u);
+  float gap = 1.0 - tsCover(u - len * 0.5, 0.6, s) * 0.9;
+  float top = 1.55 - (1.0 - nose) * 1.2;
+  if (y > top || nose * gap < 0.02) return vec4(0.0);
+  vec3 V = normalize(W - cameraPosition);
+  // The body curves in above the windows and below the floor.
+  vec3 Nb = normalize(vec3(0.0, clamp((y - 0.35) * 0.55, -0.35, 0.7), 1.0));
+  vec3 alb = vec3(0.66, 0.67, 0.68);
+  alb = mix(alb, vec3(0.07), smoothstep(-1.75, -1.85, y));
+  alb = mix(alb, vec3(0.45, 0.07, 0.06), smoothstep(0.03, 0.0, abs(y + 1.05) - 0.12));
+  alb = mix(alb, alb * 0.75, smoothstep(1.25, 1.45, y));
+  vec3 day = sunC() * sunK * max(dot(Nb, uSun), 0.0) * 0.6 + skyA(Nb.y) * mix(0.6, 1.2, sunK) + sunC() * vec3(0.12, 0.11, 0.1) * mix(0.3, 1.0, sunK);
+  vec3 night = vec3(0.012) + vec3(1.0, 0.66, 0.36) * trainLight(W) * 0.25;
+  for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - W; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
+  vec3 Rb = reflect(V, Nb);
+  vec3 body = alb * mix(night, day, uDay) + skyCol(Rb) * 0.06 * mix(0.4, 1.0, sunK) + sunC() * uDay * sunK * 0.25 * pow(max(dot(Rb, uSun), 0.0), 60.0);
+  // Windows every 2.7 m; doors every 26 m, each with a tall pane.
+  float win = tsCover(mod(u, 2.7) - 1.35, 1.8, s) * smoothstep(0.42, 0.38, abs(y - 0.15)) * step(3.0, u) * step(u, len - 3.0);
+  float dx = mod(u, 26.0) - 13.0;
+  float door = tsCover(dx, 1.4, s) * step(y, 0.75) * step(-1.7, y);
+  float dwin = tsCover(dx, 0.9, s) * smoothstep(0.32, 0.28, abs(y - 0.25));
+  body = mix(body, body * 0.55, door * (1.0 - dwin));
+  win = max(win * (1.0 - door), dwin);
+  // The saloon's warm light shows by day too, a little softer.
+  vec3 roomLit = vec3(1.0, 0.86, 0.68) * mix(0.9, 0.55, uDay) * (0.12 + 0.88 * lit);
+  vec3 inside;
+  {
+    // March into the saloon, 2.6 m deep: far wall, ceiling or floor.
+    float tz = 2.6 / max(-V.z, 0.05);
+    vec3 h = W + V * tz;
+    if (h.y > 1.25) {
+      float th = (1.25 - y) / max(V.y, 0.001);
+      float dep = -(V.z * th);
+      inside = roomLit * (0.5 + 2.4 * lit * smoothstep(0.28, 0.1, abs(dep - 1.3)));
+    } else if (h.y < -1.15) {
+      inside = roomLit * 0.16;
+    } else {
+      // The far windows show the day beyond, or the dark.
+      float fw = tsCover(mod(u + h.x - W.x, 2.7) - 1.35, 1.8, s) * smoothstep(0.42, 0.38, abs(h.y - 0.15));
+      // Under a roof the far windows show the dim hall, not the sky.
+      vec3 beyond = mix(vec3(0.02, 0.025, 0.035), mix(vec3(0.07, 0.07, 0.075), skyCol(vec3(0.0, 0.2, -1.0)) * 0.9, sunK), uDay);
+      inside = mix(roomLit * 0.6, beyond, fw);
+    }
+    // Seat backs at mid depth, rows every 1.9 m, below the sill.
+    vec3 m = W + V * (1.0 / max(-V.z, 0.05));
+    float seat = step(m.y, -0.25) * step(-1.15, m.y) * step(fract((u + m.x - W.x) / 1.9), 0.42);
+    inside = mix(inside, roomLit * 0.25, seat);
+    // At speed the saloon blurs to its average.
+    inside = mix(inside, roomLit * 0.5, smoothstep(0.3, 2.0, s));
+  }
+  // The glass: the saloon through a green tint; sky and sun mirrored on top.
+  vec3 Ng = normalize(vec3(0.0, 0.06, 1.0));
+  vec3 Rg = reflect(V, Ng);
+  float F = max(0.05 + 0.95 * pow(1.0 - max(dot(-V, Ng), 0.0), 5.0), 0.1);
+  vec3 mirror = skyCol(Rg) * mix(0.2, 1.0, uDay) * mix(0.15, 1.0, sunK) + sunC() * uDay * sunK * 2.0 * pow(max(dot(Rg, uSun), 0.0), 400.0);
+  vec3 glass = inside * vec3(0.72, 0.78, 0.76) * (1.0 - F) + mirror * F;
+  return vec4(mix(body, glass, win), nose * gap);
+}`;
 /* The oncoming train: now and then a two-unit train rushes past on the second track. */
 // One quad spans its whole side; the shader draws body, windows and doors, blurred by the relative speed.
 {
@@ -1294,42 +1912,68 @@ out.add(bed);
     varying float vU;
     ${TRAIN}
     ${HAZE}
-    // A box convolved with the motion smear: how much of a feature covers this pixel.
-    float cover(float d, float w, float s) { return clamp((w + s + 0.001 - abs(d) * 2.0) / (2.0 * s + 0.002), 0.0, 1.0) * min(1.0, w / (s + 0.001)); }
+    ${TSIDE}
     void main() {
-      float s = uOpp.w, y = vW.y;
-      // The cars: rounded noses at both ends, a gap where the two units couple.
-      float u = vU, len = uOpp.y;
-      float nose = smoothstep(0.0, 2.5, u) * smoothstep(0.0, 2.5, len - u);
-      float gap = 1.0 - cover(u - len * 0.5, 0.6, s) * 0.9;
-      float top = 1.55 - (1.0 - nose) * 1.2;
-      if (y > top || nose * gap < 0.02) discard;
-      // Pale body, a dark skirt and a coloured band; the roof edge darkens.
-      vec3 alb = vec3(0.62, 0.63, 0.64);
-      alb = mix(alb, vec3(0.08), smoothstep(-1.75, -1.85, y));
-      alb = mix(alb, vec3(0.42, 0.08, 0.07), smoothstep(0.03, 0.0, abs(y + 1.05) - 0.12));
-      // Windows every 2.7 m and doors every 26 m, smeared by the rush.
-      float wx = mod(u, 2.7) - 1.35;
-      float win = cover(wx, 1.8, s) * smoothstep(0.42, 0.38, abs(y - 0.15)) * step(3.0, u) * step(u, len - 3.0);
-      float door = cover(mod(u, 26.0) - 13.0, 1.4, s) * step(y, 0.75);
-      alb = mix(alb, vec3(0.05, 0.06, 0.07), max(win, door * 0.85));
-      vec3 N = vec3(0.0, 0.0, 1.0);
-      vec3 night = vec3(0.012) + vec3(1.0, 0.66, 0.36) * trainLight(vW) * 0.25;
-      for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - vW; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
-      // Its side faces away from the sun: sky light plus a neutral bounce off the bed.
-      vec3 day = sunC() * max(dot(N, uSun), 0.0) * 0.3 + skyA(0.5) * 0.9 + sunC() * vec3(0.16, 0.15, 0.13);
-      vec3 c = alb * mix(night, day, uDay);
-      // Lit windows at night; headlights at the leading nose, day and night.
-      c += vec3(1.0, 0.88, 0.7) * win * 0.9 * mix(1.0, 0.1, uDay);
-      float head = exp(-pow((u - 0.6) / (0.5 + s), 2.0)) * exp(-pow((y + 1.25) / 0.18, 2.0));
+      float s = uOpp.w, u = vU;
+      vec4 r = trainSide(vW, u, uOpp.y, s, 1.0, 1.0);
+      if (r.a < 0.02) discard;
+      vec3 c = r.rgb;
+      // Headlights at the leading nose, day and night.
+      float head = exp(-pow((u - 0.6) / (0.5 + s), 2.0)) * exp(-pow((vW.y + 1.25) / 0.18, 2.0));
       c += vec3(1.0, 0.95, 0.85) * head * mix(6.0, 2.0, uDay);
-      gl_FragColor = vec4(c, nose * gap);
+      gl_FragColor = vec4(c, r.a);
     }`,
   }));
   m.frustumCulled = false;
   m.renderOrder = 2;
   out.add(m);
 }
+
+/* Zurich HB's track field: five tracks under the hall and out to the throat, then merging into the line. */
+// The deck sits at rail level; its far edge drops to the ground as an embankment.
+const yardEdge = d => -76 + 66 * sstep(1400, 2050, d);
+const yard = (() => {
+  const P = [], N = [], seg = 160, a = -260, b = 2100;
+  const quad = (p, q, r, s, n) => { P.push(...p, ...q, ...r, ...p, ...r, ...s); for (let k = 0; k < 6; k++) N.push(...n); };
+  for (let k = 0; k < seg; k++) {
+    const d0 = a + (b - a) * k / seg, d1 = a + (b - a) * (k + 1) / seg, e0 = yardEdge(d0), e1 = yardEdge(d1);
+    quad([d0, -2.5, -9.9], [d1, -2.5, -9.9], [d1, -2.5, e1], [d0, -2.5, e0], [0, 1, 0]);
+    // The far bank: down 6 m over 9 m.
+    quad([d0, -2.5, e0], [d1, -2.5, e1], [d1, -8.5, e1 - 9], [d0, -8.5, e0 - 9], [0, 0.83, -0.55]);
+  }
+  // The end behind the buffers: a bank down toward the city.
+  quad([a, -2.5, -9.9], [a, -2.5, -76], [a - 9, -8.5, -85], [a - 9, -8.5, -9.9], [-0.55, 0.83, 0]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  const m = new THREE.Mesh(g, solid(/* glsl */`
+  float d = vP.x - uYard;
+  // Ballast, a little mottled; the banks are darker and grassier.
+  alb = vec3(0.17, 0.16, 0.145) * (0.88 + 0.24 * vnoise(vP.xz * vec2(0.6, 1.4)));
+  if (N.y > 0.95) {
+    float m = smoothstep(1300.0, 2000.0, d);
+    float fs = 1.0 - smoothstep(0.25, 0.7, fwidth(d / 0.6));
+    for (int k = 0; k < 5; k++) {
+      float z0 = k == 0 ? -13.4 : k == 1 ? -26.0 : k == 2 ? -40.0 : k == 3 ? -54.0 : -68.0;
+      float dz = vP.z - mix(z0, -5.6, m);
+      if (abs(dz) > 1.4) continue;
+      // Concrete sleepers every 0.6 m, faded before they shimmer.
+      float sl = step(fract(d / 0.6), 0.42) * step(abs(dz), 1.3);
+      alb = mix(alb, vec3(0.27, 0.26, 0.245), sl * mix(0.3, 0.7, fs));
+      // Two rails: a dark web with a bright head, each with a thin shadow beside it.
+      float fr = fwidth(dz) + 0.004, ad = abs(abs(dz) - 0.7175);
+      alb *= 1.0 - 0.35 * (1.0 - smoothstep(0.04, 0.09 + fr, ad));
+      float rl = 1.0 - smoothstep(0.03, 0.03 + fr, ad);
+      alb = mix(alb, vec3(0.55, 0.54, 0.52), rl);
+    }
+  } else alb = mix(alb, vec3(0.08, 0.13, 0.05), 0.6);
+  // The hall roof keeps the sun off its part of the field.
+  shade = smoothstep(200.0, 228.0, abs(d));
+`));
+  m.frustumCulled = false;
+  out.add(m);
+  return m;
+})();
 // Bigger stations get an island platform behind, with its own canopy.
 const island = new THREE.Group();
 platform.add(island);
@@ -1357,24 +2001,47 @@ hall.add(new THREE.Mesh(new THREE.BoxGeometry(420, 0.4, 70).translate(0, 7.6, -3
   glow = HALLC * lamp * 4.0 * (1.0 - uDay) + skyA(1.0) * sky * 0.6 * uDay;
   shade = 0.0;
 `)));
-for (const z of [-19, -33, -47, -61]) hall.add(new THREE.Mesh(new THREE.BoxGeometry(380, 0.6, 8).translate(0, -2.2, z), solid(/* glsl */`
-  alb = vec3(0.11, 0.112, 0.118) * (0.85 + 0.3 * vnoise(vec2(x * 0.5, vP.z)));
+{
+  const hp = solid(/* glsl */`
+  alb = vec3(0.3, 0.29, 0.27) * (0.92 + 0.16 * vnoise(vec2(x * 0.5, vP.z)));
+  // White safety lines along both edges.
+  alb = mix(alb, vec3(0.8), smoothstep(0.08, 0.05, abs(abs(fract((vP.z + 3.0) / 14.0) * 14.0 - 4.0) - 3.4)) * step(0.5, N.y));
   shade = 0.4;
-`)));
-// The waiting train: pale sides, a dark skirt, warm lit windows every 2.6 m.
-hall.add(new THREE.Mesh(new THREE.BoxGeometry(260, 4.0, 2.9).translate(-20, -0.4, -26.0), solid(/* glsl */`
-  alb = vec3(0.3, 0.31, 0.32);
-  alb *= 1.0 - 0.75 * smoothstep(-1.2, -1.35, vP.y);
-  float wx = abs(fract((x + 20.0) / 2.6) - 0.5) * 2.6;
-  float win = smoothstep(0.95, 0.9, wx) * smoothstep(0.42, 0.38, abs(vP.y + 0.05));
-  // A door every 26 m: a dark slot with a lit strip.
-  float door = smoothstep(0.7, 0.65, abs(fract((x + 20.0) / 26.0) - 0.5) * 26.0) * step(vP.y, 0.7);
-  alb = mix(alb, vec3(0.03), max(win, door * 0.8));
-  // Seat backs and heads darken the lower part of each lit window.
-  win *= 1.0 - 0.6 * smoothstep(-0.05, -0.2, vP.y) * step(0.5, fract(x * 0.38 + 0.2));
-  glow = (vec3(1.0, 0.86, 0.7) * 0.32 * win + vec3(1.0, 0.86, 0.7) * 0.2 * door) * (N.z > 0.5 ? 1.0 : 0.0) * mix(1.0, 0.15, uDay);
-  shade = 0.4;
-`)));
+`);
+  hp.side = THREE.DoubleSide;
+  for (const z of [-19, -33, -47, -61]) {
+    hall.add(new THREE.Mesh(new THREE.BoxGeometry(380, 0.6, 8).translate(0, -2.2, z), hp));
+    ramps(hall, 190, z + 4, z - 4, hp);
+  }
+}
+// Trains stand at two hall platforms: the shared side, lit saloons, under the roof.
+for (const [x0, len, zt] of [[-170, 260, -26], [-120, 150, -40]]) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(len, 4.0).translate(x0 + len / 2, -0.4, zt + 1.45), new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    vertexShader: /* glsl */`
+    varying vec3 vW;
+    varying float vU;
+    void main() {
+      vU = uv.x * ${len}.0;
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vW = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    uniform vec4 uLP[${NL}];
+    varying vec3 vW;
+    varying float vU;
+    ${TRAIN}
+    ${HAZE}
+    ${TSIDE}
+    void main() {
+      vec4 r = trainSide(vW, vU, ${len}.0, 0.0, 0.7, 0.0);
+      if (r.a < 0.5) discard;
+      gl_FragColor = vec4(r.rgb, 1.0);
+    }`,
+  }));
+  hall.add(m);
+}
 hall.children.forEach(m => { m.frustumCulled = false; });
 // The name sign: the blue panel with a white rule and the name.
 const signC = Object.assign(document.createElement('canvas'), { width: 1024, height: 178 });
@@ -1387,19 +2054,15 @@ function drawSign(name) {
   if (name === signName) return;
   signName = name;
   const c = signC.getContext('2d');
-  // A slim dark frame, then the enamel blue with a soft top sheen.
-  c.fillStyle = '#15183a';
+  // A slim dark frame, then flat muted navy enamel.
+  c.fillStyle = '#1c1f33';
   c.fillRect(0, 0, 1024, 178);
-  const g = c.createLinearGradient(0, 6, 0, 172);
-  g.addColorStop(0, '#383e92');
-  g.addColorStop(0.5, '#2d327d');
-  g.addColorStop(1, '#262a6c');
-  c.fillStyle = g;
+  c.fillStyle = '#2c3360';
   c.fillRect(6, 6, 1012, 166);
-  c.strokeStyle = '#ffffff';
-  c.lineWidth = 5;
+  c.strokeStyle = '#d8dade';
+  c.lineWidth = 4;
   c.strokeRect(20, 20, 984, 138);
-  c.fillStyle = '#ffffff';
+  c.fillStyle = '#e4e5e8';
   c.textAlign = 'center';
   c.textBaseline = 'middle';
   let fs = 92;
@@ -1425,8 +2088,8 @@ void main() {
   }
   if (a < 0.5) discard;
   c /= a;
-  // The enamel catches stray light, so the name stays legible in shade.
-  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (mix(0.3, 1.0, uDay) + 1.2 * uHall) + c * mix(0.04, 0.35, uDay), a / 8.0);
+  // Matte enamel: lit like the platform, no light of its own.
+  gl_FragColor = vec4(litBy(vW, vec3(0.0, 0.0, 1.0), c) * (0.8 + 0.6 * uHall), a / 8.0);
 }`);
 
 /* Rain in the air: streaks along the wind the train makes, lit by lamps and panes. */
@@ -1663,8 +2326,14 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float edge = smoothstep(1.0, 1.0 + SEAL / BAR, abs(by));
       vec3 alb = vec3(0.62, 0.63, 0.65) * (0.96 + 0.04 * vnoise(vec2(q.x * 500.0, by)));
       vec3 nightB = vec3(1.0, 0.88, 0.74) * 0.12 * (0.45 + 0.55 * smoothstep(-1.0, 1.0, by));
-      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.15 + vec3(1.0, 0.9, 0.74) * 1.5 * smoothstep(0.45, 0.95, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
+      // Backlit: the bright view sits behind it, so its cabin face is in its own shadow.
+      // Light wraps round its top and bottom edges from the glass; the sun lights the top lip.
+      float wrapE = smoothstep(0.55, 0.98, abs(by));
+      vec3 viewL = texture2D(tOut, px + vec2(0.0, BAR * 2.5 * sign(by) / uEye.z)).rgb;
+      vec3 dayB = vec3(1.0, 0.97, 0.92) * 0.035 + viewL * 0.45 * wrapE + vec3(1.0, 0.9, 0.74) * 1.2 * smoothstep(0.6, 0.97, by) * max(uSunW.y, 0.0) * sunAt(pg.x);
       col = alb * mix(nightB, dayB, uDay);
+      // A soft shade falls across its middle, deepest at its centre line.
+      col *= 1.0 - 0.35 * uDay * (1.0 - wrapE);
       col += alb * STNC * uStnK * 0.25;
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.82, 0.6) * uLamp[i].z * 0.25 * exp(-length(uLamp[i].xy - pg) * 8.0);
       col = mix(col, col * 0.35, edge);
@@ -2106,6 +2775,11 @@ function place() {
   }
   platform.visible = sd < 1000;
   platform.position.x = sx;
+  // The track field follows Zurich HB nearest the eye (route metre 0, wrapped).
+  const xHB = camX + ((((0 - camX + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2;
+  yard.position.x = xHB;
+  yard.visible = camX - xHB > -1200 && camX - xHB < 3500;
+  OUTU.uYard.value = xHB;
   // Zurich HB stands under its hall; the larger stations get an island.
   const hb = sn === 'Zürich HB', isl = !hb && MAJOR.has(sn);
   hall.visible = hb;
@@ -2250,6 +2924,14 @@ place();
 return {
   scene, camera, frame, update,
   get speed() { return speed; },
+  // Metres to the next stop, while the train rolls toward it.
+  get toStop() { return dwell > 0 || stopX === null ? Infinity : stopX - camX; },
+  get dwelling() { return dwell > 0; },
+  get brake() { return A_DN; },
+  // The oncoming train's front, relative to the eye; NaN when none runs.
+  get oppAt() { return opp.on ? opp.x - camX : NaN; },
+  get oppLen() { return opp.len; },
+  get oppV() { return opp.v; },
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
   get day() { return dayV; },
@@ -2266,6 +2948,9 @@ return {
   before(r) {
     // Rebake the cabin when day and night have moved on.
     if (!baked || Math.abs(dayV - bakedDay) > 0.05) { ROOMU.uD.value = dayV; roomCam.update(r, room); baked = true; bakedDay = dayV; }
+    outCam.updateMatrixWorld();
+    OUTU.uCullVP.value.multiplyMatrices(outCam.projectionMatrix, outCam.matrixWorldInverse.copy(outCam.matrixWorld).invert());
+    for (const p of placers) p.run(r);
     r.setRenderTarget(outRT);
     r.render(out, outCam);
     // The bokeh pass runs only while the pane holds fog.
@@ -2322,9 +3007,11 @@ renderer.toneMappingExposure = 1.0;
 // route.png: R and G hold the height in decimetres plus 500 m.
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
-  const [meta, img] = await Promise.all([
+  const [meta, img, bld] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
+    // OSM buildings, 8 bytes each; the ride runs without them.
+    fetch('buildings.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -2338,7 +3025,7 @@ async function loadRoute() {
     f[i * 2] = b === 255 ? 255 : 0;
     f[i * 2 + 1] = b === 255 ? 0 : b;
   }
-  return { meta, w: c.width, ht: c.height, h, f };
+  return { meta, w: c.width, ht: c.height, h, f, bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -2473,84 +3160,154 @@ function watchdog(dt) {
 }
 
 /* ---------- sound ---------- */
-// Rain hisses on the glass, the bogies rumble, and each rail joint clacks.
-const kit = audioKit({ gain: 0.6, noiseSeconds: 2 });
-const JOINT = 25, BOGIE = [0, 2.6, 16, 18.6];
-let V = null, joint = null, dropBudget = 0;
-function loopNoise(ac, type, f, q) {
-  const src = ac.createBufferSource(); src.buffer = kit.noise; src.loop = true;
-  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-  const g = ac.createGain(); g.gain.value = 0;
-  src.connect(fl).connect(g).connect(kit.out);
-  src.start(0, Math.random() * kit.noise.duration);
-  return { fl, g };
+// A real cabin recording carries the ride (freesound community, inside-train-start-cruise-and-stop).
+// trainride/dev/sonograph.png marks each clip's source and the peaks cut out.
+// bed: a clean cruise stretch, looped; level and pitch follow the speed.
+// away and stop: the pull-away and the arrival, timed to the train.
+// points and joints: one-shots on the switches and the rail joints.
+// whoosh: a trackside pass-by (freesound community, train-passing), muffled as if through the glass.
+// thump: the cabin's own pressure knock as a train meets it (the cabin recording at 2:26).
+const CLIPS = ['bed', 'away', 'stop', 'points', 'joints', 'whoosh', 'thump', 'idle'];
+const SEAM = 1.5;
+let clipLoad = null, clips = null;
+function seamless(buf, ac) {
+  // MP3 frames pad both ends; trim 60 ms from each.
+  const trim = Math.round(0.06 * buf.sampleRate), F = Math.round(SEAM * buf.sampleRate);
+  const L = buf.length - 2 * trim - F, out = ac.createBuffer(1, L, buf.sampleRate);
+  const src = buf.getChannelData(0), dst = out.getChannelData(0);
+  for (let i = 0; i < L; i++) dst[i] = src[trim + i];
+  // The tail fades out over the head as it fades in: equal power.
+  for (let i = 0; i < F; i++) { const a = (i + 0.5) / F; dst[i] = src[trim + i] * Math.sin(a * Math.PI / 2) + src[trim + L + i] * Math.cos(a * Math.PI / 2); }
+  return out;
 }
+function loadClips(ac) {
+  clipLoad ||= Promise.all(CLIPS.map(n => fetch(`sound/${n}.mp3`).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b))))
+    .then(bs => {
+      clips = Object.fromEntries(CLIPS.map((n, i) => [n, bs[i]]));
+      clips.bed = seamless(clips.bed, ac);
+      clips.idle = seamless(clips.idle, ac);
+    }).catch(() => { clipLoad = null; });
+  return clipLoad;
+}
+// The recording bus: background level, a trimmed low end and a gentle treble lift.
+let recBus = null;
+function bus(ac) {
+  if (recBus) return recBus;
+  const lo = ac.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 140; lo.gain.value = -4;
+  const hi = ac.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3200; hi.gain.value = 5;
+  const air = ac.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 7000; air.Q.value = 0.8; air.gain.value = 2.5;
+  recBus = ac.createGain(); recBus.gain.value = 0.42;
+  recBus.connect(lo).connect(hi).connect(air).connect(kit.out);
+  return recBus;
+}
+// A looping layer with its own gain.
+function loopLayer(ac, buf) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.loop = true; g.gain.value = 0;
+  src.connect(g).connect(bus(ac));
+  src.start(0, Math.random() * buf.duration);
+  return { src, g };
+}
+// A one-shot from offset, with short fades; returns its gain to duck or stop it.
+function shot(ac, buf, level, offset = 0, fadeIn = 0.03, rate = 1) {
+  const src = ac.createBufferSource(), g = ac.createGain(), now = ac.currentTime;
+  src.buffer = buf; src.playbackRate.value = rate;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(level, now + fadeIn);
+  src.connect(g).connect(bus(ac));
+  src.start(now, Math.min(offset, buf.duration - 0.1));
+  return { src, g, end: now + (buf.duration - offset) / rate };
+}
+function fadeOut(ac, s, tau = 0.6) {
+  if (!s) return;
+  s.g.gain.setTargetAtTime(0, ac.currentTime, tau);
+  s.src.stop(ac.currentTime + tau * 6);
+}
+// Recordings only: no synth voices.
+const kit = audioKit({ gain: 0.6, noiseSeconds: 0 });
+let V = null;
 function voices() {
   const ac = kit.live();
-  if (!ac || !kit.noise) return null;
-  V ||= { rain: loopNoise(ac, 'bandpass', 4200, 0.5), rumble: loopNoise(ac, 'lowpass', 150, 0.7) };
+  if (!ac) return null;
+  V ||= {};
+  if (!clips) loadClips(ac);
+  else if (!V.bed) { V.bed = loopLayer(ac, clips.bed); V.idle = loopLayer(ac, clips.idle); }
   return V;
-}
-function burst(ac, at, { f, q, dur, level, type = 'bandpass' }) {
-  const src = ac.createBufferSource(); src.buffer = kit.noise;
-  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(level, at + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
-  src.connect(fl).connect(g).connect(kit.out);
-  src.start(at, Math.random() * (kit.noise.duration - dur - 0.05), dur + 0.02);
-}
-// One wheel on one joint: a click of steel and a low thump.
-function clack(ac, at, level) {
-  burst(ac, at, { f: 1100 + Math.random() * 500, q: 1.4, dur: 0.035, level: level * 0.35 });
-  const o = ac.createOscillator(), g = ac.createGain();
-  o.frequency.setValueAtTime(95, at); o.frequency.exponentialRampToValueAtTime(48, at + 0.09);
-  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(level * 0.5, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0005, at + 0.12);
-  o.connect(g).connect(kit.out);
-  o.start(at); o.stop(at + 0.14);
 }
 function voice(dt) {
   const v = voices();
-  if (!v) return;
-  const ac = kit.ac, now = ac.currentTime, sp = S.speed, k = Math.min(1, sp / 30);
-  v.rain.g.gain.setTargetAtTime(0.05 * S.rain, now, 0.2);
-  v.rumble.g.gain.setTargetAtTime(0.32 * Math.pow(k, 0.8), now, 0.2);
-  v.rumble.fl.frequency.setTargetAtTime(110 + 90 * k, now, 0.3);
-  // Single drops tick on the pane at a rate set by the rain.
-  dropBudget = Math.min(4, dropBudget + dt * 9 * S.rain);
-  while (dropBudget >= 1) {
-    dropBudget--;
-    if (Math.random() < 0.6) burst(ac, now + Math.random() * 0.05, { f: 2400 + Math.random() * 4000, q: 2, dur: 0.008 + Math.random() * 0.01, level: 0.05 + 0.06 * Math.random() });
+  if (!v || !v.bed) return;
+  const ac = kit.ac, sp = S.speed;
+  recorded(v, ac, ac.currentTime, sp, Math.min(1, sp / 30));
+}
+// The pass-by: the whoosh's loud stretch (2.5 s in) is held for the train's length, then let go.
+function passBy(ac, tMeet, dur) {
+  const now = ac.currentTime, meet = now + tMeet, end = meet + dur;
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = clips.whoosh;
+  // Past its loud stretch the clip loops back into it, for a long train at low speed.
+  src.loop = true; src.loopStart = 3.0; src.loopEnd = 9.5;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.12, meet - 0.05);
+  g.gain.linearRampToValueAtTime(0.5, meet + 0.08);
+  g.gain.setValueAtTime(0.5, end - 0.1);
+  g.gain.linearRampToValueAtTime(0.14, end + 0.12);
+  g.gain.setTargetAtTime(0, end + 0.12, 0.45);
+  src.connect(g).connect(bus(ac));
+  src.start(now, Math.max(0, 2.5 - tMeet));
+  src.stop(end + 3);
+  const knock = (at, level, rate) => {
+    const s = ac.createBufferSource(), k = ac.createGain();
+    s.buffer = clips.thump; s.playbackRate.value = rate;
+    k.gain.value = level;
+    s.connect(k).connect(bus(ac));
+    s.start(at);
+  };
+  knock(meet, 0.9, 1);
+  knock(end, 0.55, 1.12);
+}
+// The recording drives the ride: bed by speed, pull-away and arrival timed to the train.
+const REC = { away: null, stop: null, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+// The arrival clip squeals and stops 36.5 s in; braking ends on that mark.
+const STOP_AT = 36.5;
+function recorded(v, ac, now, sp, k) {
+  // Under the pull-away or the arrival, the bed steps back.
+  const dip = (REC.away && now < REC.away.end - 4) || REC.stop ? 0.25 : 1;
+  v.bed.g.gain.setTargetAtTime(1.1 * Math.min(1, sp / 22) ** 0.7 * dip, now, 0.8);
+  v.bed.src.playbackRate.setTargetAtTime(0.82 + 0.22 * Math.min(1, sp / 32), now, 1.0);
+  v.idle.g.gain.setTargetAtTime(S.dwelling && !REC.stop ? 0.5 : 0, now, 1.2);
+  // Pull away: the doors close and the motors wind up with the train.
+  if (REC.prevSp === 0 && sp > 0 && !S.dwelling) { fadeOut(ac, REC.stop, 0.4); REC.stop = null; REC.away = shot(ac, clips.away, 1.1, 3.5); }
+  if (REC.away && (now > REC.away.end || sp < REC.prevSp - 0.05)) { fadeOut(ac, REC.away, 1.5); REC.away = null; }
+  // Arrival: start the clip so its last squeal lands on the stop.
+  // Time left: cruise to the braking point, then brake to the mark.
+  const bd = sp * sp / (2 * S.brake), tLeft = sp > 0.5 ? Math.max(S.toStop - bd, 0) / sp + sp / S.brake : Infinity;
+  if (!REC.stop && sp > 3 && tLeft < STOP_AT && S.toStop < 1500) {
+    fadeOut(ac, REC.away, 1); REC.away = null;
+    REC.stop = shot(ac, clips.stop, 1.1, STOP_AT - tLeft, 1.5);
   }
-  // Each bogie wheel crosses the joint in turn; the gap shrinks with speed.
-  const j = Math.floor(S.camX / JOINT);
-  if (joint !== null && j !== joint && sp > 2) for (const b of BOGIE) clack(ac, now + b / sp, 0.25 + 0.5 * k);
-  joint = j;
+  if (REC.stop && now > REC.stop.end) REC.stop = null;
+  // Points: a clatter through each station's throat at speed.
+  const d = Math.abs(S.stationNear(S.camX)[1]);
+  if (sp > 8 && d < 140 && REC.stn >= 140 && S.toStop > 300) shot(ac, clips.points, 0.8 * k);
+  REC.stn = d;
+  // A worn joint now and then, louder at speed.
+  if (sp > 12 && S.camX > REC.nextJoint) { shot(ac, clips.joints, 0.55 * k); REC.nextJoint = S.camX + 600 + Math.random() * 1400; }
+  if (REC.nextJoint > S.camX + 3000 || REC.nextJoint < S.camX - 3000) REC.nextJoint = S.camX + 800;
+  // The oncoming train: a thump as the fronts meet, the roar for exactly its length, a softer thump as the tail goes.
+  const o = S.oppAt, vr = sp + S.oppV;
+  if (o === o && o < vr * 0.8 && !REC.opp) { passBy(ac, o / vr, S.oppLen / vr); REC.opp = true; }
+  if (o !== o) REC.opp = false;
+  REC.prevSp = sp;
+  // Dev: the layer state, for QA.
+  if (window.__train) window.__rec = `away=${!!REC.away} stop=${REC.stop ? (ac.currentTime - REC.stop.end + REC.stop.src.buffer.duration).toFixed(1) : '-'} bed=${v.bed.g.gain.value.toFixed(2)} idle=${v.idle.g.gain.value.toFixed(2)}`;
 }
-// The arrival chime: two soft falling notes.
-function chime() {
-  const ac = kit.live();
-  if (!ac) return;
-  const now = ac.currentTime;
-  [[659.3, 0], [523.3, 0.42]].forEach(([f, t]) => {
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'sine';
-    o.frequency.value = f;
-    g.gain.setValueAtTime(0, now + t);
-    g.gain.linearRampToValueAtTime(0.12, now + t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0005, now + t + 1.3);
-    o.connect(g).connect(kit.out);
-    o.start(now + t);
-    o.stop(now + t + 1.4);
-  });
-}
-S.onArrive = chime;
 function hush() {
   if (!V || !kit.ac) return;
   const now = kit.ac.currentTime;
-  V.rain.g.gain.setTargetAtTime(0, now, 0.15);
-  V.rumble.g.gain.setTargetAtTime(0, now, 0.15);
+  for (const l of [V.bed, V.idle]) l?.g.gain.setTargetAtTime(0, now, 0.15);
+  fadeOut(kit.ac, REC.away, 0.15); fadeOut(kit.ac, REC.stop, 0.15);
+  REC.away = REC.stop = null;
 }
 
 /* ---------- loop ---------- */

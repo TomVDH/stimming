@@ -248,3 +248,26 @@ Dutch name: Tom rejected Tien tellen. Options put to Tom: Aftellen, Hemelvaart, 
 ## Dutch name: Hemelvaart (Tom's pick, 2026-11-09)
 
 Tom picked Hemelvaart /ˈɦeːməlˌvaːrt/ from the four options. `toys.json` holds it; the page fallback carries no Dutch, so nothing else changes.
+
+## Icon spike 34 (2026-11-09, Tom: more abstract yet beautiful; the intro icon must be nice too)
+
+Four directions in the toy's night palette, each with its own intro emblem: A Long exposure (the flight as one line of light, star trails, soft reeds), B Rack focus (reeds sharp and the launch a bokeh disc; hover pulls focus), C Strata (flat dawn bands, one hairline), D Tally (ten reeds as a count; the tenth carries the spark).
+`icons/spike-34.html`; emblems in `icons/spike/emblems/launch34-a..d.svg`, exported with `?dump`. The menu tile and `shared/emblems/launch.svg` stay on spike 33 A until Tom picks.
+
+## Tom picks Strata; emblem refined (2026-11-09, Tom: thinner, like the original)
+
+The Strata emblem is redrawn as line work: the band edges as six fine lines that tighten toward the horizon, four shorter water lines, a 2 px hairline to a small dot, a dashed mirror of it, and two reed pairs with a halo.
+It is live as `shared/emblems/launch.svg`. The menu tile still shows spike 33 A; the Strata tile is the next step.
+
+## Menu tile is Strata (2026-11-09)
+
+The menu tile now shows spike 34 C. The bands, water and reeds are static markup in `index.html`; the script only moves the hairline, its dot and mirror, and the warm overlay. Checked headless in the Lab at 1280: rest and hover, no script errors. `icons/picks.json` records the pick.
+
+## Main shelf as No. 38 (Beta) (2026-11-09, Tom: promote this to main)
+
+Tom vetted the toy for the main shelf. `toys.json`: `number` 38, `sub` null, the entry sits after Fireworks; `stage` stays beta. The Strata tile moves from the Lab list to the main shelf in `index.html`, where the menu passes it the pointer. The page's intro fallback shows the emblem and No. 38.
+Not signed off: the version tag stays v0.9.
+
+## Signed off (2026-11-09, Tom: "its done")
+
+The menu tile and the intro carry `data-done`; the Beta tag goes; `toys.json` drops the stage. The version steps to 0.10, codename Hemelvaart.

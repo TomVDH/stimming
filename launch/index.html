@@ -22,17 +22,35 @@
 .stage--launch canvas.on { opacity: 1; }
 .stage--launch.held canvas { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--launch canvas { transition: none; } }
+/* The cue: one timed line, in the key strip's look. */
+.stage--launch .cue {
+  position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); z-index: 1; margin: 0;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
+  font-size: 11px; letter-spacing: 0.08em; color: oklch(0.94 0.008 275 / 0.78);
+  text-shadow: var(--halo, 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9));
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.stage--launch .cue.on { opacity: 1; }
+/* A short stage has no room under the horizon: the cue moves to the sky. */
+@media (max-height: 480px) { .stage--launch .cue { bottom: auto; top: 32%; } }
+.stage--launch .cue kbd {
+  font: 700 10px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.06em; padding: 3px 5px;
+  color: oklch(0.94 0.008 275 / 0.92); background: var(--glass, oklch(0.13 0.012 275 / 0.86));
+  border: 1px solid oklch(0.94 0.008 275 / 0.45); border-radius: 2px; text-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) { .stage--launch .cue { transition: none; } }
 </style>
 </head>
 <body>
-<div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Ten seconds</span><span class="intro-sub">Stimming Lab</span></div></div>
+<div class="intro" data-done aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/launch.svg)"></span><span class="intro-name">Ten seconds</span><span class="intro-sub">Stimming No. 38</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
     <div class="stage stage--launch" id="stage" tabindex="0" role="application" aria-label="A reed marsh before dawn. A rocket waits on the far shore. Drag to look around.">
       <p class="fail" hidden>Ten seconds needs WebGL 2, which this browser has turned off.</p>
+      <p class="cue" aria-live="polite"></p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -109,7 +127,7 @@ const stage = document.getElementById('stage');
 let markReady;
 const sceneReady = new Promise(r => { markReady = r; });
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
-playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
+const introDone = playIntro({ ready: Promise.all([loaded, document.fonts.ready, sceneReady]) });
 
 // Seeded random keeps the marsh the same on every load.
 let seed = 5511;
@@ -1767,7 +1785,23 @@ function endFlight() {
   U.uFlame.value.w = 0;
   flame.visible = false;
   ui.action('launch').disabled = false;
+  hideCue();
 }
+/* ---------- cues: one timed line for the launch, one for the zoom ---------- */
+const cueEl = stage.querySelector('.cue');
+const COARSE = matchMedia('(pointer: coarse)');
+let cueT = 0, launches = 0;
+const cueText = verb => (COARSE.matches ? `Tap to ${verb}` : `Click or <kbd>SPACE</kbd> to ${verb}`);
+function showCue(verb, ms) {
+  clearTimeout(cueT);
+  cueEl.innerHTML = cueText(verb);
+  cueEl.classList.add('on');
+  if (ms) cueT = setTimeout(hideCue, ms);
+}
+function hideCue() { clearTimeout(cueT); cueEl.classList.remove('on'); }
+// The launch cue comes 4 s after the intro goes; it stays until the launch.
+const cueLaunch = () => { cueT = setTimeout(() => { if (!flight && !launches) showCue('launch'); }, 4000); };
+introDone.then(cueLaunch, cueLaunch);
 // The pad stands where the shot puts it: small, left of centre, easy to miss.
 // The climb then crosses the frame to the right, into the dark sky.
 function padX() {
@@ -1784,6 +1818,9 @@ function start() {
   // The camera holds the wide shot until the viewer clicks.
   if (zoomed) snapZoom(false);
   ui.action('launch').disabled = true;
+  // The zoom cue comes 2 s into the first flight; it holds for 6 s.
+  hideCue();
+  if (!launches++) cueT = setTimeout(() => { if (flight && !zoomed) showCue('zoom', 6000); }, 2000);
   wake();
 }
 act.launch = () => start();
@@ -1796,6 +1833,7 @@ let zoomed = false, zoomTl = null;
 function snapZoom(on) {
   zoomed = on;
   follow = on;
+  hideCue();
   zoomTl?.kill();
   const z = on ? 0.5 : 1, k = reduced() ? 0 : 1;
   zoomTl = gsap.timeline()

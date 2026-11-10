@@ -289,3 +289,11 @@ Tom asked for vague human shapes, a deeper frietkot, and the look of 90s and 200
 - [x] Phones aim lower, so the shack sits near mid-height.
 - [x] Rain under MSAA: the fade clamps its UV, so thin drops never darken.
 - [ ] Record the cost. Commit.
+
+## Main shelf as No. 39 (2026-11-09, Tom: get it to the main page)
+
+Tom vetted the toy for the main shelf. `toys.json`: `number` 39, `sub` null, the entry sits after Ten seconds. The tile moves from the Lab list to the main shelf in `index.html`. The page's intro fallback shows No. 39. No emblem yet.
+
+## Intro emblem (2026-11-09, Tom: the 3D fry cone)
+
+`shared/emblems/frietkot.svg`, a luminance mask of the icon spike's cone (`icons/spike-frietkot-4.html`, C1 Stripe, at rest): 24 fries in depth greys, the striped paper, the fork. Two earlier drafts are out: the shack scene and a flat three-fry cone. The menu tile is the same cone, C1 Stripe, with no offset shadow (Tom, 2026-11-09; commit `53c6223`).

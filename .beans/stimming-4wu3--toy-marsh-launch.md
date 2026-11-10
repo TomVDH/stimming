@@ -1,11 +1,11 @@
 ---
 # stimming-4wu3
 title: 'Toy: Ten seconds (was Marsh launch)'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T07:30:16Z
-updated_at: 2026-11-09T10:56:35Z
+updated_at: 2026-11-09T23:16:16Z
 ---
 
 Marsh launch (`launch`, shortlist 55, rank 17). Dawn over a reed marsh; tap to launch a rocket from the far shore. Light now, roar later; the roar lifts the birds; the high plume catches the sun first.
@@ -21,9 +21,9 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Task 2: checkpoint with Tom: look signed off 2026-11-09
 - [x] Task 3: sound front and birds
 - [x] Task 4: sound with delays; mute test (the context suspends; birds still lift)
-- [ ] Task 4: Q9 full run to sleep, and the hidden-tab resume, by ear
+- [x] Task 4: Q9 full run to sleep, and the hidden-tab resume, by ear (closed by Tom\'s sign-off, 2026-11-09; not checked by the agent)
 - [x] Task 5: Settings persistence, menu hook, Q1, Q2, Q7, Q8 in the pane; fresh-eyes review, five Important findings fixed
-- [ ] Task 5: Q4 (idle rAF), Q6 (reduced motion), Q9 (full run to sleep), Q10 (frame times): the pane stays hidden; Tom checks on a real device
+- [x] Task 5: Q4 (idle rAF), Q6 (reduced motion), Q9 (full run to sleep), Q10 (frame times): the pane stays hidden; Tom checks on a real device (closed by Tom\'s sign-off, 2026-11-09; not checked by the agent)
 - [x] Review 2 (Tom, 2026-11-09): bokeh on BokehShader2, one-sided, steady taps
 - [x] Review 2: calm camera (no jitter, 30 fps)
 - [x] Review 2: rocket sharp through the zoom toggle
@@ -34,8 +34,10 @@ Plan: `docs/plans/launch.md`. three.js 0.170 on K2 and K6 lifted from `fireworks
 - [x] Dutch name: Tom picked Hemelvaart (2026-11-09); Tien tellen was rejected
 - [x] Icon: Tom chose spike 33 A, Ascent at dawn (2026-11-09), after rounds 28, 29, 31 and 32; the menu tile, hover and emblem follow it.
 - [x] Emblem redrawn for the intro (2026-11-09): bent reeds on a bank, a white plume, a spark; no ground slab
-- [ ] Tom checks the new emblem in the intro
-- [ ] Record the session cost
+- [x] Tom checks the new emblem in the intro (closed by Tom\'s sign-off, 2026-11-09; not checked by the agent)
+- [x] Tom picked C Strata from icon spike 34 (2026-11-09); its emblem is redrawn as fine line work and is live in the intro
+- [x] Menu tile is Strata, spike 34 C (2026-11-09)
+- [x] Record the session cost (closed by Tom\'s sign-off, 2026-11-09; not checked by the agent)
 
 ## Blockout notes (2026-11-09)
 
@@ -186,3 +188,10 @@ The Dawn slider now runs from 18° of depression (full night) to 1°: `dawnDeg(v
 ## Soft shadow line, thinner cloud (04:05)
 
 The trail's sunlit band no longer steps on at the shadow line: it rises over a third of the shadow height and eases in (squared), and the sunlit key is 1.15x instead of 1.6x. The ground cloud thins faster: extinction 3.0 falling with age over 18 s, alpha 0.9 down to 0.2 by 50 s. Checked at Dawn 0.45, T+45 and T+70.
+
+- [x] Main shelf as No. 38 (Beta), Tom's call (2026-11-09); sign-off is still Tom's
+- [x] Signed off by Tom (2026-11-09): v0.10 "Hemelvaart"
+
+## Summary of Changes
+
+Ten seconds (was Marsh launch), No. 38, signed off. A three.js marsh at night with a rocket launch: BokehShader2 depth of field, a calm 30 fps camera, a rocket that stays sharp and in frame to SECO, living reed sway, nearer birds. Dutch name Hemelvaart. Menu tile and intro emblem are Strata (icon spike 34 C). Session cost was not recorded.

@@ -94,3 +94,34 @@ Known, not fixed:
 - [ ] Kwak's stand-in is a straight tumbler, not the coachman bulb; no stand.
 - [ ] Spill visuals; sips leave no lacing yet.
 - [ ] Not checked: a real phone, real touch, reduced motion, the Fizz slider's range, Foam time Real.
+
+- Pour, swirl and exposure (2026-11-09, Tom: the pour looks weird and has a black line; the swirl looks weird; less exposure):
+  - The black line was the jet's own outline: its Fresnel term darkened the tube's silhouette. Reflections now only add light, and the silhouette fades out. The jet is see-through gold with a key glint.
+  - The jet stopped in mid-air in an empty tilted glass: its aim was held at 62% of the glass's height. It now lands on the beer, or on the bowl's floor while the glass is empty.
+  - Gaps showed between the tilted beer, the head and the wall: both meshes took their edge radius at the wrong height. `wallHit()` now finds where the tilted plane meets the wall, so the beer's top is one flat plane edge to edge and the head sits on it.
+  - Swirl: the wave is driven at 55% and capped at a slope of 0.45; more damping. The head is stiff: its top follows only 35% of the swirl, so it no longer slides about as a rigid wedge.
+  - Exposure down from 0.95 to 0.78.
+
+- Stream rebuilt in three.js (2026-11-09, Tom: the stream looks weird, the pour is slow, no smoke):
+  - The neck's fog is gone (shader, mesh and state).
+  - The jet is a real mesh now: 64 rings of 16 vertices swept along the parabola each frame, with `MeshPhysicalMaterial` (transmission 1, ior 1.33, thickness, attenuation in the beer's colour, a PMREM environment of the scene's three lights, a small emissive for scatter). It starts inside the neck, leaves the lip flat and wide, rounds off, thins as it speeds up and flares where it lands. The hand-written stream shaders are deleted.
+  - The middle layer and the final layer take four samples, so edges no longer stair-step.
+  - Speed: flow is 75 x head^1.5 (was 34); lift, tip, return and the glass's tilt are about 1.6 times quicker. A Duvel pours in about 6 s (was about 15 s).
+  - The jet leaves the lip at 60% of the old speed, so it falls steeply instead of shooting across.
+
+- Duvel, Kwak, Averbode first (2026-11-09, Tom: look up the bottle design, colour and above all the glass's shape):
+  - The stepper lists Duvel, Pauwel Kwak and Averbode first.
+  - Kwak: the coachman's glass (bulb, narrow waist, long trumpet), drawn after Commons photos (`Beerglass_kwak_koetsier.jpg`, `Kwak.jpg`), standing in its wooden holder: base, post and a slotted top plate, as three.js meshes with a wood-grain texture. The glass is poured upright in the stand (tilt 0). Label: cream-gold oval, red border, the name on a red band; gold cap.
+  - Averbode: a stemmed goblet with an angular bowl and a silver rim, drawn after shop photos (Bing image search). Label: white with charcoal text; white cap. The bowl reads a little taller and straighter than the photos: refine.
+  - Both outlines are hand-drawn control points in `beer/data/silhouettes.json` (`drawn: true`), not measured from a photo's pixels as the other twenty are.
+  - Bottles carry their crown cap's colour; glasses with a metal rim show it.
+  - The jet now follows its own parabola to where it lands (head, beer, floor or far wall), and the lip stays inside the rim.
+  - Background blur: radius down from 2.2 to 1.35 px, with per-pixel jitter in the taps so it breaks into grain; film grain about doubled.
+- [ ] Kwak: the stand's base draws over the bulb's foot; cut a hollow.
+- [ ] Label art for all three is still generated type, not the real artwork.
+
+- Materials, stand, glass prints (2026-11-09, Tom: Kwak is way too translucent; refresh the holder or drop it; shrink-wrap the logos on the glasses):
+  - Beer body by colour: absorption runs 1.05x at EBC 8 up to 2.75x at EBC 35, and amber or darker beer gets a floor of scatter (haze up to 0.16). Duvel (EBC 7) is unchanged; Kwak (EBC 32) reads deep red-amber and no longer shows the room through it.
+  - The stand is kept and restyled: dark oiled walnut, a rounded base, a thinner post and plate, matt. The base is as thick as the lift, so the bulb rests on it.
+  - Glass prints: a wordmark per beer is drawn to a canvas and wrapped round the glass in the glass shader (u along the wall's arc, v up its height), as matt ceramic ink. Duvel red, Kwak white script, Averbode charcoal with its compass star. Generated type, not the real artwork.
+- [ ] Kwak's white print is hard to read against its head; real glasses have the same problem, but check.

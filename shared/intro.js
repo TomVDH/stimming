@@ -1,6 +1,6 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
-// The root toys.json holds each toy's name, subtitle, emblem and Dutch name.
+// The root toys.json holds each toy's name, subtitle, emblem, accent and Dutch name.
 // The page's own intro text stays when toys.json cannot load.
 
 const TOYS = new URL('../toys.json', import.meta.url);
@@ -83,7 +83,10 @@ export const TIMING = {
   sndK: 1,        // audio notice size, times the copy size
   clsK: 1,        // classic notice size, times the copy size
   gapK: 1,        // vertical space between the lines, times its responsive size
-  clsY: 0,        // vh the classic notice moves down
+  padK: 1,        // flash box padding, times its responsive size
+  blur: 36,       // px the glass blurs the page
+  dim: 0.45,      // brightness the glass leaves of the page
+  clsY: 0,       // vh the classic notice moves down
   nameY: 0,       // vh the main title moves down
   nlY: 0,         // vh the translation moves down
   tagY: -14,      // vh the subtitle moves down
@@ -101,11 +104,31 @@ export const TIMING = {
 // glyph and words make the quiet line at the foot; nudge pulses the speaker.
 export const SOUND_NOTE = { glyph: true, words: 'Best with sound', nudge: false };
 
-// Classic ships for now. The others are proposals for the intro lab.
+// Signal ships for now (Tom, 2026-11-09). The others stay in the intro lab for later.
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
 // read: true holds for reading time; false holds to T.hold from the start.
-export const DEFAULT_VARIETY = 'classic';
+export const DEFAULT_VARIETY = 'signal';
+// Classic's beats; the restyle looks share this one table.
+const CLASSIC = { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 };
+// A look restyles Classic: look names its CSS block, style holds sizes and places.
+// stack keeps the subtitles under the translation; fonts fill the lab's four slots.
+const SLAB = 'Iosevka Term Slab Nerd Font';
+const look = (key, label, style, more = {}) => ({ label, group: 'Restyle', timing: CLASSIC, look: key, style, exit: 'wipe', read: true, ...more });
 export const VARIETIES = {
+  brut: look('brut', 'Brut: one stack, slab caps, hard shadow', { tagY: 0, tagNlY: 0, blur: 18, dim: 0.32 },
+    { stack: true, fonts: { fd: SLAB, fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+  label: look('label', 'Label: lines hang left of the logo box', { nameK: 0.8, padK: 0.6, tagY: 0, tagNlY: 0 },
+    { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  poster: look('poster', 'Poster: the title leads, near-black glass', { nameK: 1.45, logoK: 0.85, padK: 1.35, blur: 48, dim: 0.28 },
+    { fonts: { fd: 'Gabarito', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  plate: look('plate', 'Plate: the title sits on a white plate', { nameK: 0.8, blur: 30, dim: 0.38 },
+    { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  signal: look('signal', 'Signal: white flash, then the logo takes the toy’s accent', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
+    { stack: true, ink: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+  readout: look('readout', 'Readout: the title rides above the logo, all slab caps', { nameK: 0.6, logoK: 0.9, padK: 0.8, blur: 24, dim: 0.4 },
+    { fonts: { fd: SLAB, fn: SLAB, fs: SLAB, fsn: SLAB } }),
+  // Strobe keeps Classic's style; its blinks and cuts fit inside Classic's beats.
+  strobe: { label: 'Strobe: the box blinks, lines cut in hard', group: 'Restyle', timing: CLASSIC, flash: 'strobe', reveal: 'cut', exit: 'cut', read: true },
   // Snap runs 20% longer than the base table, every beat in proportion.
   snap: {
     label: 'Snap', group: 'Earlier', read: true,
@@ -138,7 +161,7 @@ export const VARIETIES = {
   },
   classic: {
     label: 'Classic', group: 'Default',
-    timing: { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 }, exit: 'wipe', read: true,
+    timing: CLASSIC, exit: 'wipe', read: true,
   },
   type: {
     label: 'Type: lines are typed, then erased', group: 'Earlier',
@@ -150,17 +173,21 @@ export const VARIETIES = {
     timing: { lead: 3, flash: 11, unfurl: 300, wipe: 280, fade: 450, readBase: 400 },
     reveal: 'lift', exit: 'drop', read: true,
   },
-  strobe: {
-    label: 'Strobe: the box blinks, lines cut in hard', group: 'Earlier',
-    timing: { flash: 8, nlLag: 4, subLag: 4, tagLag: 4, tagNlLag: 4, sndLag: 4, fade: 300, readBase: 450 },
-    flash: 'strobe', reveal: 'cut', exit: 'cut', read: true,
-  },
   shutter: {
     label: 'Shutter: slits open, a tube switches off', group: 'Earlier',
     timing: { lead: 3, flash: 11, unfurl: 280, wipe: 300, fade: 380, readBase: 400 },
     reveal: 'slit', exit: 'crt', read: true,
   },
 };
+
+// A look's style can never change a beat; these keys are dropped from it.
+const BEAT = /^(lead|pop|flash|unfurl|hold|wipe|fade|read\w+|\w+Lag)$/;
+// A variety's full table: the base, its timing, then its style.
+export function tableOf(variety) {
+  const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
+  const style = Object.fromEntries(Object.entries(V.style || {}).filter(([k]) => !BEAT.test(k)));
+  return { ...TIMING, ...(V.timing || {}), ...style };
+}
 
 // The phases the intro lab can pause on, in order.
 export const PHASES = ['glass', 'pop', 'flash', 'lines', 'hold', 'wipe'];
@@ -197,9 +224,10 @@ const REVEAL = {
   cut: {
     shut: { clipPath: 'inset(0 0 100% 0)' },
     // A hard cut: the line shows inverted for one frame, then settles.
-    open: el => {
+    // The promise lasts as long as an unfurl, so the beat keeps its length.
+    open: (el, T) => {
       Object.assign(el.style, { clipPath: 'none', background: '#fff', color: 'var(--intro-bg)' });
-      return wait(1).then(() => { el.style.background = ''; el.style.color = ''; });
+      return wait(1).then(() => { el.style.background = ''; el.style.color = ''; }).then(() => wait(frames(T.unfurl) - 1));
     },
   },
   stamp: {
@@ -256,7 +284,7 @@ export function popFit(root, box, want) {
 }
 
 // The size knobs, as the CSS variables they set.
-const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k' };
+const SIZES = { logoK: '--logo-k', nameK: '--name-k', nlK: '--nl-k', tagK: '--tag-k', tagNlK: '--tagnl-k', sndK: '--snd-k', clsK: '--cls-k', gapK: '--gap-k', padK: '--pad-k', blur: '--blur', dim: '--dim' };
 
 // Sets the sizes, then shrinks the copy until every line fits on screen.
 export function fitIntro(root, T) {
@@ -290,12 +318,15 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const root = document.querySelector('.intro');
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
-  const T = { ...TIMING, ...(V.timing || {}), ...timing };
+  const T = { ...tableOf(variety), ...timing };
   root.classList.add('is-live');
+  if (V.look) root.dataset.look = V.look;
   if (V.layout) root.dataset.layout = V.layout;
   const text = root.querySelector('.intro-text');
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
+  // The toy's accent inks the logo; without one it stays white.
+  if (V.ink && info?.accent) root.style.setProperty('--ink', info.accent);
   // The lab's Static mode fills lines a toy lacks, so every line shows.
   if (fill && info) for (const k of Object.keys(fill)) info[k] ||= fill[k];
   let nl = null;
@@ -373,7 +404,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (!V.layout) {
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
     const foot = make('div', 'intro-foot'), notes = make('div', 'intro-notes'), left = make('span', 'intro-notes-l');
-    foot.append(...text.querySelectorAll('.intro-tag'));
+    // A stacked look keeps the subtitles in the column.
+    if (!V.stack) foot.append(...text.querySelectorAll('.intro-tag'));
     if (num) left.append(num);
     notes.append(left, ...(snd ? [snd] : []));
     foot.append(notes);
@@ -400,11 +432,12 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   const blow = both ? text : big;
 
   // The box flashes on and holds.
-  await wait(T.lead);
+  // Strobe's blinks take their frames out of the lead, so the box lands on the beat.
+  const blinks = V.flash === 'strobe' ? Math.min(2, Math.floor(T.lead / 2)) : 0;
+  await wait(T.lead - 2 * blinks);
   await gate('glass');
-  if (V.flash === 'strobe') {
-    // Strobe: two short blinks before the box lands.
-    for (let k = 0; k < 2; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
+  if (blinks) {
+    for (let k = 0; k < blinks; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
   }
   box(true);
   text.style.opacity = 1;
@@ -486,7 +519,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (exit === 'erase') await each(el => play(el, p => ({ clipPath: `inset(0 ${pct(p)} 0 0)` }), T.wipe, accel));
   if (exit === 'drop') await each(el => play(el, p => ({ clipPath: `inset(${pct(p)} 0 0 0)`, transform: `translateY(${(0.6 * p).toFixed(3)}em)` }), T.wipe, accel));
   if (exit === 'fold') await each(el => play(el, p => ({ transformOrigin: '50% 0', transform: `perspective(30em) rotateX(${(90 * p).toFixed(2)}deg)` }), T.wipe, accel));
-  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; }
+  // The cut takes one frame; the rest of the exit beat stays dark.
+  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; await wait(frames(T.wipe) - 1); }
   if (exit === 'crt') {
     // The column collapses to a line, then the line shrinks to a dot.
     text.style.transformOrigin = '50% 50%';

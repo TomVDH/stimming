@@ -1169,7 +1169,9 @@ function grow(dt) {
     if (!held && B.n >= zapTo) finish('zap');
   }
 }
+let userBurned = false;
 function press(bx, by) {
+  userBurned = true;
   if (sweep >= 0) { sweep = -1; clearBoard(); }
   if (burn && !burn.done) finish('freeze');
   rnd = Math.random;
@@ -1295,6 +1297,20 @@ function clearBoard() {
   layout();
   still();
 }
+// The board regrids to the stage and burns the seeds again.
+function reboard() {
+  burn = null;
+  arcOld = null;
+  nSeg = 0;
+  flies.length = 0;
+  grid();
+  layout();
+  allocBoard(view.dpr);
+  distance();
+  preburn();
+  still();
+  live();
+}
 // Clear sands from left to right; reduced motion clears at once.
 act.clear = () => {
   if (ptr) up();
@@ -1353,7 +1369,17 @@ stage.addEventListener('keyup', e => {
   release(false);
 });
 
-new ResizeObserver(() => { if (burn && !burn.done) finish('freeze'); layout(); still(); }).observe(stage);
+// A stage that boots unsized gets a fresh board once it has a size.
+function misfit() {
+  const r = stage.getBoundingClientRect();
+  return r.width > 0 && (Math.abs(r.width / CELL - GW) > GW * 0.15 || Math.abs(r.height / CELL - GH) > GH * 0.15);
+}
+new ResizeObserver(() => {
+  if (!userBurned && misfit()) { reboard(); return; }
+  if (burn && !burn.done) finish('freeze');
+  layout();
+  still();
+}).observe(stage);
 onQuality(() => { layout(); still(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
