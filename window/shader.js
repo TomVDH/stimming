@@ -955,12 +955,11 @@ vec3 stormGlow(vec3 d) {
 // Wisps rush aft past the window as the plane flies through them.
 float fogAt(vec3 d, float t) {
   if (uFog <= 0.0) return 0.0;
-  // The bank's grain lies in long sheets along the flight line and streams aft.
-  // Two depths, 25 m and 90 m out, give it parallax.
-  vec3 p1 = d * 25.0 + uWisp, p2 = d * 90.0 + uWisp;
-  float w = textureLod(uNoise, p1 / vec3(136.0, 9.0, 30.0), 0.0).r * 0.6 + textureLod(uNoise, p2 / vec3(272.0, 24.0, 63.0) + 0.21, 0.0).r * 0.4;
-  // Visibility falls from 120 km to 40 m as the bank thickens.
-  float vis = 120.0 * exp(-8.0 * pow(uFog, 1.6)) / (0.35 + 1.3 * w);
+  // The far veil has no pattern of its own: it thickens and thins as the plane flies on.
+  // The near curtains carry all the shape.
+  float w = textureLod(uNoise, vec3(uWisp.x / 816.0, 0.31, uTime * 0.01), 0.0).r;
+  // Visibility falls from 120 km to under a kilometre in a thick bank.
+  float vis = 120.0 * exp(-11.0 * pow(uFog, 1.3)) / (0.35 + 1.3 * w);
   return (1.0 - exp(-min(t, 60.0) / vis)) * smoothstep(0.0, 0.12, uFog);
 }
 // Storm air over a colour, t km out; sky rays pass 1e4.
@@ -994,26 +993,29 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
 // Fog by the wing: layered wisps in the near 30 m.
 // The air stands still, so wisps stream aft past the plane.
 // tEnd is the distance to the nearest surface, in metres.
+// Fog curtains: tall, thin sheets parallel to the cabin, long along the flight line.
+// A ray out of the window crosses several, so each veils its own stretch of wing.
+// wing3.js repeats this field for the aircraft; keep the two the same.
+float wispDens(vec3 p) {
+  float n = textureLod(uNoise, p / vec3(136.0, 30.0, 9.0), 0.0).r * 0.78 + textureLod(uNoise, p / vec3(68.0, 10.0, 3.2) + 0.37, 0.0).g * 0.22;
+  return smoothstep(0.64 - 0.16 * uFog, 0.78 - 0.14 * uFog, n) * smoothstep(0.05, 0.5, uFog);
+}
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
-  float t1 = min(tEnd, 30.0), t = 1.0, T = 1.0;
+  float t1 = min(tEnd, 32.0), T = 1.0;
   vec3 air = stormGlow(d) * 1.3, col = vec3(0.0);
-  // Ten steps, each 45 % longer, sampled mid-step against grain.
-  for (int i = 0; i < 10; i++) {
-    float tn = min(t * 1.45, t1);
-    float tm = 0.5 * (t + tn), dt = tn - t;
-    vec3 p = d * tm + uWisp;
-    // Long streaks along the flight path, stacked in thin sheets.
-    float n = textureLod(uNoise, p / vec3(136.0, 7.0, 21.0), 0.0).r * 0.7 + textureLod(uNoise, p / vec3(48.0, 3.0, 9.0) + 0.37, 0.0).g * 0.3;
-    float dn = smoothstep(0.62 - 0.35 * uFog, 0.9 - 0.3 * uFog, n) * smoothstep(0.05, 0.5, uFog);
+  // Sixteen even steps, jittered per pixel; the resolve smooths the grain.
+  float dt = (t1 - 0.5) / 16.0, t = 0.5 + dt * hash12(gl_FragCoord.xy + 5.3);
+  for (int i = 0; i < 16; i++) {
+    if (t >= t1) break;
+    float dn = wispDens(d * t + uWisp);
     // The strobe and nav light glow in wisps by the tip.
-    float ft = length(d * tm - uTip);
+    float ft = length(d * t - uTip);
     vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.4 + uNavC * 0.8 * 0.02) * exp(-ft / 5.0);
-    float a = 1.0 - exp(-0.09 * dn * dt);
+    float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;
-    t = tn;
-    if (t >= t1) break;
+    t += dt;
   }
   return c * T + col;
 }

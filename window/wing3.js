@@ -80,15 +80,16 @@ uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
 varying vec3 vFogW;`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
-  // Streaks of cloud between the eye and the skin hide stretches of the wing.
+  // Fog curtains between the eye and the skin hide stretches of the wing.
+  // The field matches wispDens in shader.js.
   if (uFogLvl > 0.05) {
-    float L = length(vFogW), T = 1.0;
+    float L = length(vFogW), T = 1.0, dt = L / 16.0;
     vec3 dir = vFogW / L;
-    for (int i = 0; i < 8; i++) {
-      vec3 p = dir * L * (float(i) + 0.5) / 8.0 + uFogWisp;
-      float n = texture(uFogN, p / vec3(136.0, 7.0, 21.0)).r * 0.7 + texture(uFogN, p / vec3(48.0, 3.0, 9.0) + 0.37).g * 0.3;
-      float dn = smoothstep(0.62 - 0.35 * uFogLvl, 0.9 - 0.3 * uFogLvl, n) * smoothstep(0.05, 0.5, uFogLvl);
-      T *= exp(-0.2 * dn * L / 8.0);
+    for (int i = 0; i < 16; i++) {
+      vec3 p = dir * dt * (float(i) + 0.5) + uFogWisp;
+      float n = texture(uFogN, p / vec3(136.0, 30.0, 9.0)).r * 0.78 + texture(uFogN, p / vec3(68.0, 10.0, 3.2) + 0.37).g * 0.22;
+      float dn = smoothstep(0.64 - 0.16 * uFogLvl, 0.78 - 0.14 * uFogLvl, n) * smoothstep(0.05, 0.5, uFogLvl);
+      T *= exp(-0.22 * dn * dt);
     }
     fogFactor = max(fogFactor, 1.0 - T);
   }
@@ -365,8 +366,8 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       flashL.intensity = flash * 0.06;
       boltL.intensity = bolt ? Math.min(bolt.level, 2.5) * 0.3 : 0;
       if (bolt) boltL.position.copy(bolt.dir).multiplyScalar(50);
-      // The bank's sight range, as the shader's fogAt sets it: 120 km to 40 m.
-      const vis = 120000 * Math.exp(-8 * Math.pow(fogLevel, 1.6));
+      // The bank's sight range, as the shader's fogAt sets it.
+      const vis = 120000 * Math.exp(-11 * Math.pow(fogLevel, 1.3));
       scene.fog.density = fogLevel > 0.05 ? 1.2 / vis : 0;
       // The fog takes the outside pass's murk colour, so the wing sinks into the same grey.
       const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
