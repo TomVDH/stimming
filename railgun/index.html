@@ -64,7 +64,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
@@ -1299,10 +1298,10 @@ function stepCase(dt) {
   s.p.addScaledVector(s.v, dt);
   spinQ.setFromAxisAngle(bq.copy(s.w).normalize(), s.w.length() * dt);
   caseMesh.quaternion.premultiply(spinQ);
-  // The case hits the plain: a thump, a burst of dust, one small hop.
+  // The case hits the plain: a burst of dust, one small hop.
   if (s.p.y < 13.5) {
     s.p.y = 13.5;
-    if (s.lt < 0) { s.lt = simT; caseDust = { t0: simT, P: s.p.clone() }; const ac = kit.live(); if (ac) thump(ac); cam.shake += 0.15; }
+    if (s.lt < 0) { s.lt = simT; caseDust = { t0: simT, P: s.p.clone() }; cam.shake += 0.15; }
     s.bounce++;
     s.v.multiplyScalar(0.25); s.v.y = s.bounce < 2 ? 9 : 0;
     s.w.multiplyScalar(0.3);
@@ -1686,14 +1685,14 @@ function makeTrain(pu) {
         vec3 Lf = uAstC * uBurn * 6.0 * R * R / (dot(q, q) + R * R);
         // The blast lights the smoke for many radii.
         // Thick smoke swallows the blast light; thin edges and creases catch it.
-        float bsh = 0.2 + 0.8 * exp(-3.0 * d);
+        float bsh = 0.35 + 0.65 * exp(-2.0 * d);
         Lf += uAstC * uHit.w * 60.0 * R * R / (dot(q, q) + 9.0 * R * R) * bsh;
         // The afterglow reaches far up the trail and lingers.
         float tb = uStarT - uHitP.w - length(uAstP + q - uHitP.xyz) / 60000.0;
         if (tb > 0.0 && tb < 18.0) {
           float gl = uBk * (exp(-tb / 0.4) + 0.4 * exp(-tb / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tb)) * bsh;
           vec3 qh = uAstP + q - uHitP.xyz;
-          Lf += uAstC * gl * (6.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 0.45 * 400.0 * R * R / (dot(qh, qh) + 400.0 * R * R));
+          Lf += uAstC * gl * (14.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 1.1 * 400.0 * R * R / (dot(qh, qh) + 400.0 * R * R));
         }
         // Debris trains far from their own head still see the blast.
         Lf += blastLight(uAstP + q) * 2.0 * (1.0 - step(590.0, uAstRad));
@@ -2335,8 +2334,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uFlash: { value: 0 },
       // The impact flare: screen place of the hit, and its strength.
       uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
-      // Light shafts: the half-size buffer and their gain.
-      tShafts: { value: null }, uShK: { value: 0 },
       uBox: { value: 0 },
       // Shock refraction: screen centre, radius and strength, two fronts.
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
@@ -2354,8 +2351,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF;
-    uniform sampler2D tShafts;
-    uniform float uShK;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2399,9 +2394,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       vec2 uv = vUv + dq / asp;
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c = texture2D(tDiffuse, uv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
-      // Shafts of light through smoke and dust.
-      // They blend like light in haze: less where the frame is bright.
-      if (uShK > 0.001) { vec3 sh = texture2D(tShafts, uv).rgb * uShK; c += sh / (1.0 + c); }
       // The impact flare: the house anamorphic flare, bright white.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, vec3(1.0), 1.0, vec3(0.55, 1.6, 1.6)) * uLF.z;
       // The thermal sight: an old white-hot tube in a round eyepiece.
@@ -2475,66 +2467,7 @@ const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, 
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = makeBloom(...POST.bloom);
 composer.addPass(bloomPass);
-/* ---------- light shafts: the sun and the blast through smoke ---------- */
-// A half-size radial blur of the bright frame toward each light.
-// Smoke, dust and the gun darken the source, so shafts fall through gaps.
-// uL0, uL1: each light's screen place and strength.
-class ShaftPass extends Pass {
-  constructor() {
-    super();
-    this.needsSwap = false;
-    this.rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
-    this.mat = new THREE.ShaderMaterial({
-      uniforms: { tDiffuse: { value: null }, uL0: { value: new THREE.Vector3() }, uL1: { value: new THREE.Vector3() }, uN: { value: 28 }, uSeed: { value: 0 } },
-      vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-      fragmentShader: /* glsl */`
-      uniform sampler2D tDiffuse;
-      uniform vec3 uL0, uL1;
-      uniform int uN;
-      uniform float uSeed;
-      varying vec2 vUv;
-      // Only the bright parts of the frame cast shafts.
-      vec3 src(vec2 uv) {
-        vec3 c = min(texture2D(tDiffuse, uv).rgb, vec3(6.0));
-        return c * smoothstep(1.0, 2.6, dot(c, vec3(0.2126, 0.7152, 0.0722)));
-      }
-      vec3 shafts(vec3 L) {
-        if (L.z < 0.001) return vec3(0.0);
-        vec2 d = (vUv - L.xy) * 0.6 / float(uN);
-        // A jittered start hides the steps.
-        vec2 uv = vUv - d * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)) + uSeed) * 43758.5453);
-        vec3 s = vec3(0.0);
-        float w = 1.0;
-        for (int i = 0; i < 40; i++) {
-          if (i >= uN) break;
-          s += src(uv) * w;
-          w *= 0.94;
-          uv -= d;
-        }
-        return s / float(uN) * L.z;
-      }
-      void main() { gl_FragColor = vec4(shafts(uL0) + shafts(uL1), 1.0); }`,
-      depthTest: false, depthWrite: false,
-    });
-    this.quad = new FullScreenQuad(this.mat);
-  }
-  setSize(w, h) {
-    const m = rung >= 2 ? 0.2 : 0.33;
-    this.rt.setSize(Math.max(1, Math.round(w * m)), Math.max(1, Math.round(h * m)));
-  }
-  render(renderer, writeBuffer, readBuffer) {
-    const u = this.mat.uniforms;
-    if (u.uL0.value.z + u.uL1.value.z < 0.001) return;
-    u.tDiffuse.value = readBuffer.texture;
-    u.uN.value = rung >= 2 ? 10 : 18;
-    renderer.setRenderTarget(this.rt);
-    this.quad.render(renderer);
-  }
-}
-const shaftPass = new ShaftPass();
-composer.addPass(shaftPass);
 const grade = makeGrade(POST);
-grade.uniforms.tShafts.value = shaftPass.rt.texture;
 composer.addPass(grade);
 composer.addPass(new OutputPass());
 function setSamples(n) {
@@ -2711,30 +2644,6 @@ function warpFront(src, out, gain) {
   const tn = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
   out.set(wv.x * 0.5 * camera.aspect, wv.y * 0.5, Math.min(src.w / (D * tn * 2), 3), gain * s);
 }
-// Place the shaft lights: the sun, and the blast while it burns.
-function shaftLight(P, far, k, out) {
-  wv.copy(P);
-  if (far) wv.multiplyScalar(1e6).add(camera.position);
-  wv.project(camera);
-  if (wv.z > 1 || k < 0.002) { out.z = 0; return; }
-  const x = wv.x * 0.5 + 0.5, y = wv.y * 0.5 + 0.5;
-  // A light that leaves the frame fades; no hard shafts from the edge.
-  const o = Math.max(0, -x, x - 1, -y, y - 1);
-  out.set(x, y, k * (1 - THREE.MathUtils.smoothstep(o, 0, 0.35)));
-}
-function updateShafts() {
-  const su = shaftPass.mat.uniforms, on = rung < 3 && !sight;
-  const day = THREE.MathUtils.smoothstep(U.uSunD.value.y, -0.02, 0.04);
-  shaftLight(U.uSunD.value, true, on ? 0.9 * day : 0, su.uL0.value);
-  let bk = 0;
-  if (blastFx && on) {
-    const ha = simT - blastFx.t0;
-    bk = blastFx.k * (0.8 * Math.exp(-ha / 0.6) + 0.4 * Math.exp(-ha / 6)) * (1 - THREE.MathUtils.smoothstep(ha, 12, 24)) * (reduced() ? 0.5 : 1);
-  }
-  shaftLight(blastFx ? blastFx.P : wb, false, bk, su.uL1.value);
-  su.uSeed.value = reduced() ? 0 : (su.uSeed.value + 0.37) % 13;
-  grade.uniforms.uShK.value = su.uL0.value.z + su.uL1.value.z > 0.001 ? 1 : 0;
-}
 // Steer the soot's shadow: it lands far out, then sweeps in over the gun.
 const sootFar = new THREE.Vector3(), sootTo = new THREE.Vector3();
 function updateSootShade() {
@@ -2746,7 +2655,6 @@ function updateSootShade() {
 }
 function updateWarp() {
   updateSootShade();
-  updateShafts();
   const g = grade.uniforms;
   warpFront(warpM, g.uShk0.value, 0.012);
   warpFront(warpH, g.uShk1.value, 0.008);
@@ -3735,8 +3643,8 @@ const shardMat = new THREE.ShaderMaterial({
     float k = 0.04;
     // Air drag sets a fall speed; each shard falls at its own.
     // A slow approach to it makes a long arc.
-    float vt = 160.0 + 120.0 * fract(aSeed.x * 3.7);
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.08 * age)) / 0.08), 0.0);
+    float vt = 250.0 + 150.0 * fract(aSeed.x * 3.7);
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.11 * age)) / 0.11), 0.0);
     // It burns up in the last few hundred metres.
     float sc = aSeed.y * smoothstep(120.0, 500.0, c.y) * (1.0 - smoothstep(55.0, 60.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
@@ -3775,7 +3683,7 @@ let shardsEnd = 0;
 // It cools white, orange, red, then hangs as soot for twenty.
 // uFb: age, rock radius, power, seed.
 const fireball = makeVol(/* glsl */`
-uniform vec3 uBP, uHotC, uFireC, uEmberC, uSootC;
+uniform vec3 uBP, uHotC, uFireC, uEmberC, uSootC, uAshC;
 uniform vec4 uFb;
 // It swells to twelve radii over about twelve seconds.
 float rb() { return uFb.y * (1.0 + 11.0 * (1.0 - exp(-uFb.x / 4.5))); }
@@ -3806,13 +3714,15 @@ float dens(vec3 p, out vec3 em) {
   // Large cells tear it into tufts, not grain.
   float e = 0.7 * texture(uVol, w * 0.5 + vec3(age * 0.008)).b + 0.3 * texture(uVol, w * 1.2).g;
   d = clamp((d - er * (0.1 + 0.8 * e + 0.35 * r)) / max(1.0 - 0.75 * er, 0.12), 0.0, 1.0);
-  return d * 2.6 / Rb * (1.0 - smoothstep(20.0, 30.0, age));
+  // It thins as it grows, so the sky shows through.
+  return d * 2.6 / Rb * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(20.0, 30.0, age));
 }
-vec3 alb(vec3 p) { return uSootC; }
+// Soot turns to pale ash as it cools, like the comet trail.
+vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 vec3 vlight(vec3 p) { return vec3(0.0); }`, {
   uBP: { value: new THREE.Vector3() }, uFb: { value: new THREE.Vector4() },
   uHotC: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: PU.uFireC.value }, uEmberC: { value: new THREE.Vector3(...EMBER) },
-  uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) },
+  uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) }, uAshC: { value: new THREE.Vector3(...ASH_D) },
 });
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
@@ -3877,10 +3787,10 @@ function stepShards(dt) {
 }
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
-  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.04, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
+  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.04, vt = 250 + 150 * ((S[i * 4] * 3.7) % 1);
   const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
-  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.08 * age)) / 0.08), P[i * 3 + 2] + V[i * 4 + 2] * e);
-  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.08 * age)), V[i * 4 + 2] * ek);
+  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.11 * age)) / 0.11), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.11 * age)), V[i * 4 + 2] * ek);
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 // Each trail is a chain of short trains laid along the shard's own arc.
@@ -4002,8 +3912,13 @@ function shatter(c) {
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
   shardsEnd = simT + 60;
   // The four biggest shards drag smoke trails down with them.
+  // Only they fly: small shards without a trail read as noise.
   const big = Array.from({ length: N }, (_, i) => i).sort((a, b) => sSeed.array[b * 4 + 1] - sSeed.array[a * 4 + 1]).slice(0, chunks.length);
-  chunks.forEach((ch, j) => { ch.i = big[j] ?? -1; });
+  const keep = big.map(i => [[...sPos.array.slice(i * 3, i * 3 + 3)], [...sVel.array.slice(i * 4, i * 4 + 4)], [...sSeed.array.slice(i * 4, i * 4 + 4)]]);
+  keep.forEach(([p, v, d], j) => { sPos.setXYZ(j, ...p); sVel.setXYZW(j, ...v); sSeed.setXYZW(j, ...d); });
+  shardGeo.instanceCount = keep.length;
+  sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
+  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; });
   // Embers: a burst of K6 stars from the rock's heart.
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
@@ -4787,17 +4702,6 @@ function shotSound(ac, sh) {
     track(sh.sfx.shot + 20.1, src, o);
   });
 }
-// The case lands: a deep plomp, then the dust's hiss.
-function thump(ac) {
-  const t = ac.currentTime, o = ac.createOscillator(), og = ac.createGain();
-  o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.5);
-  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.9, t + 0.012); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
-  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 0.9);
-  const n = hiss(ac, t, 1.6), lp = filt(ac, 'lowpass', 500, 0.7), ng = ac.createGain();
-  ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.3, t + 0.02); ng.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
-  n.connect(lp).connect(ng).connect(kit.out);
-  track(t + 1.7, o, n);
-}
 // The impact's prelude lands on the flash.
 // The boom crosses the distance at sound speed, compressed eight times.
 function hitSounds(ac, sh) {
@@ -4942,7 +4846,6 @@ window.__qa = {
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
   spent: () => (spent ? { y: spent.p.y, bounce: spent.bounce, landed: spent.lt >= 0, r: Math.hypot(spent.p.x, spent.p.z), visible: caseMesh.visible } : null),
   resetReady: () => resetOn,
-  shafts: () => ({ sun: shaftPass.mat.uniforms.uL0.value.toArray().map(v => +v.toFixed(3)), blast: shaftPass.mat.uniforms.uL1.value.toArray().map(v => +v.toFixed(3)) }),
   dust: () => ({ charge: chargeDust.visible, shot: shotDust.visible, kase: caseDustV.visible }),
   chunkSegs: () => chunks.map(ch => ch.segs.map(t => (t.m.visible ? [t.pu.uX0.value | 0, t.pu.uSeg.value | 0] : null))),
   // Pose the blast on the clouds t seconds after a hit at the rock.

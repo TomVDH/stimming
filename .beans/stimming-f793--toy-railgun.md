@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:15:19Z
+updated_at: 2026-11-10T19:20:47Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -138,11 +138,18 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 
 - [x] Night flash: the foreground stays a stark silhouette against the lit sky
 - [x] 2. Smoke shadows: the soot ball's shadow, steered so it falls on the seen plain and the gun; the trail's real shadow lands out of frame, so it is left out
-- [ ] Remove the light shafts altogether
-- [ ] Light the comet's main smoke column properly again under the blast
-- [ ] Remove the small ejecta that have no full trail
-- [ ] The big trailed ejecta fall a little faster
+- [x] Remove the light shafts altogether
+- [x] Light the comet's main smoke column properly again under the blast
+- [x] Remove the small ejecta that have no full trail
+- [x] The big trailed ejecta fall a little faster
 - [ ] Rework the charge dust at the base: it still slows the whole toy
 - [ ] Post pass: FXAA, AO, better bloom; every pass scales with the quality ladder
 - [ ] Quality ladder: render at a lower % of full resolution per step, one pattern across all passes
 - [ ] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
+
+- [ ] The muzzle: flash, ring, shock wave and smoke puffs, one more look
+- [ ] Talk to the staged-loading session about performance (a lag spike on release after a long hold)
+- [ ] Last: one more look at the charge-up effect
+
+- [x] The soot cloud: lit like the trail, pale ash as it cools, thinner as it grows
+- [x] The case lands without the synth thump
