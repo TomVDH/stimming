@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T21:23:59Z
+updated_at: 2026-11-10T21:25:23Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -209,3 +209,5 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Clouds: the card towers return in their old form, scattered (four, uneven sizes, distances and gaps); heaps and towers take the full distance haze and hue shift, the tail's light model, dark bases and a dim night; the volume towers are gone
 
 - [x] Villeneuve grade: AgX tone mapping, colour pulled back, cool shadows and warm highs, a soft matte floor, more contrast; moonlit silver tops on the clouds at night
+
+- [x] Over-hold: a quiet 'Release to fire' hint fades in 1.3 s past the overcharge point; a crackle grows with the over-hold on top of the souring chord

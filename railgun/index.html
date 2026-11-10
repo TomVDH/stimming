@@ -37,6 +37,7 @@
   <main>
     <div class="stage stage--railgun" id="stage" tabindex="0" role="application" aria-label="A colossal railgun at dusk. A burning asteroid hangs beyond its muzzle. Hold to charge, release to fire.">
       <p class="fail" hidden>Railgun needs WebGL 2, which this browser has turned off.</p>
+      <p class="release-hint" aria-live="polite" style="position:absolute;left:50%;bottom:22%;transform:translateX(-50%);margin:0;font:600 11px/1 var(--mono, ui-monospace, monospace);letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,236,214,0.85);text-shadow:0 0 12px rgba(255,140,60,0.5);opacity:0;transition:opacity 0.6s;pointer-events:none">Release to fire</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -2895,6 +2896,7 @@ act.press = (by = 'pointer') => {
 const ARM = 0.6;
 act.release = (by = 'pointer') => {
   if (!charge || charge.by !== by) return;
+  releaseHint.style.opacity = '0';
   const c = charge.c;
   charge = null;
   // It fires only on target: a release while the gun still swings bleeds the charge.
@@ -2926,6 +2928,7 @@ function cancelHold() {
 // No shot; the rock keeps coming.
 function vent() {
   charge = null;
+  releaseHint.style.opacity = '0';
   ventT = simT;
   humGroan(kit.live());
   cam.shake += reduced() ? 0 : 2.4;
@@ -2948,6 +2951,7 @@ let armSound = () => {};
 // The shot assigns this below.
 let fire = () => {};
 const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
+const releaseHint = document.querySelector('.release-hint');
 function stepCharge(dt) {
   if (charge) {
     const held = simT - charge.t0;
@@ -2957,6 +2961,9 @@ function stepCharge(dt) {
     chaos = chaosOf(held);
     rage = THREE.MathUtils.smoothstep(chaos, 0.55, 0.85);
     over = overOf(held);
+    // Past the overcharge point the gun strains: a quiet hint, and a crackle that grows.
+    releaseHint.style.opacity = held > HOLD.ready + 1.3 ? '1' : '0';
+    if (over > 0) { const ac = kit.live(); if (ac && rnd() < dt * (4 + 26 * over)) crackle(ac, over); }
     U.uRage.value = reduced() ? 0 : rage;
     U.uOver.value = reduced() ? 0 : over;
     const c = charge.c;
@@ -4721,6 +4728,15 @@ function stopAll() {
 }
 const jit = (a = 0.1) => 1 + (Math.random() * 2 - 1) * a;
 function filt(ac, type, fr, q = 0.7) { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = fr; b.Q.value = q; return b; }
+// The over-hold crackle: a short bright burst of noise, panned at random.
+function crackle(ac, k) {
+  const t = ac.currentTime, d = 0.015 + 0.05 * Math.random(), n = hiss(ac, t, d + 0.02, 1.5);
+  const bp = filt(ac, 'bandpass', 1800 + 4200 * Math.random(), 2.5), g = ac.createGain(), pn = ac.createStereoPanner();
+  pn.pan.value = Math.random() * 1.6 - 0.8;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05 + 0.16 * k, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  n.connect(bp).connect(g).connect(pn).connect(kit.out);
+  track(t + d + 0.05, n);
+}
 function hiss(ac, t, dur, rate = 1) {
   const s = ac.createBufferSource();
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
