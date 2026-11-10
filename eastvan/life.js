@@ -116,7 +116,7 @@ export function buildLife(scene, crown, pokes) {
     scene.add(mesh); noInk.push(mesh);
     const blobs = PARTS.filter(q => q.k === 'crown');
     // The ground under a point. Off the plinth there is none.
-    const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -11 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
+    const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -28.5 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
     function emit(push) {
       const p = list.find(q => !q.on);
       if (!p) return;
@@ -197,6 +197,29 @@ export function buildLife(scene, crown, pokes) {
       });
       mesh.instanceMatrix.needsUpdate = true;
     });
+  }
+
+  /* ---------- basketball: lies in the lane, flies to the hoop ---------- */
+  {
+    const rest = [1.7, 0.18, -24.3], rim = [3.5, 2.95, -22.88], s = { x: rest[0], y: rest[1], z: rest[2], roll: 0, busy: false };
+    const ball = body([part(new THREE.IcosahedronGeometry(0.13, 1), COL.ball)]);
+    scene.add(ball);
+    poke('ball', ball.position, 0.45, () => {
+      if (s.busy) return;
+      s.busy = true;
+      const done = () => { s.busy = false; };
+      if (still()) { gsap.timeline({ onComplete: done }).to(s, { y: 0.6, duration: 0.2 }).to(s, { y: rest[1], duration: 0.2 }); return; }
+      // Up to the rim, down through it, then two bounces back home.
+      gsap.timeline({ onComplete: done })
+        .to(s, { x: rim[0], z: rim[2], duration: 0.9, ease: 'none' }, 0)
+        .to(s, { y: 4.5, duration: 0.45, ease: 'power2.out' }, 0).to(s, { y: rim[1], duration: 0.45, ease: 'power2.in' }, 0.45)
+        .to(s, { y: rest[1], duration: 0.38, ease: 'power2.in' }, 0.9)
+        .to(s, { x: rest[0], z: rest[2], duration: 1.1, ease: 'power1.out' }, 1.28)
+        .to(s, { y: 1.2, duration: 0.25, ease: 'power2.out' }, 1.28).to(s, { y: rest[1], duration: 0.25, ease: 'power2.in' }, 1.53)
+        .to(s, { y: 0.55, duration: 0.17, ease: 'power2.out' }, 1.78).to(s, { y: rest[1], duration: 0.17, ease: 'power2.in' }, 1.95)
+        .to(s, { roll: '+=9', duration: 2.4, ease: 'power1.out' }, 0);
+    });
+    updates.push(() => { ball.position.set(s.x, s.y, s.z); ball.rotation.set(s.roll, 0, s.roll * 0.6); });
   }
 
   return { noInk, update(t, dt) { for (const f of updates) f(t, dt); } };

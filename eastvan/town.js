@@ -4,10 +4,16 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
-import { reduced } from '../shared/stim.js';
-import { COL, PARTS, WIRES, POKES } from './lot.js';
+import { reduced, quality } from '../shared/stim.js';
+import * as lot from './lot.js';
+import * as alley from './alley.js';
 import { lin, lift, lerp, paint, PAINT, glowMat, beamGeo } from './kit.js';
 import { buildLife } from './life.js';
+
+// The zones, front to back. Each one is a plain data file.
+const ZONES = [lot, alley], all = key => ZONES.flatMap(z => z[key] || []);
+const COL = lot.COL, PARTS = all('PARTS'), WIRES = all('WIRES'), POKES = all('POKES'), LAMPS = all('LAMPS');
+const MOVES = Object.assign({}, ...ZONES.map(z => z.MOVES)), ACTS = Object.assign({}, ...ZONES.map(z => z.ACTS));
 
 /* ---------- geometry from parts ---------- */
 const roofEave = q => { const hw = q.s[0] / 2 + q.over, slope = q.s[1] / (q.s[0] / 2); return { hw, slope, y: q.p[1] + q.s[1] - slope * hw }; };
@@ -15,7 +21,11 @@ function geomsOf(q) {
   const out = [];
   const add = (g, x, y, z) => { out.push(g.translate(x, y, z)); };
   if (q.t === 'box') add(new THREE.BoxGeometry(...q.s), ...q.p);
-  else if (q.t === 'cyl') { const g = new THREE.CylinderGeometry(q.r, q.r, q.h, 12); if (q.ax === 'z') g.rotateX(Math.PI / 2); add(g, ...q.p); }
+  else if (q.t === 'cyl') {
+    const g = new THREE.CylinderGeometry(q.r, q.r, q.h, q.r > 0.6 ? 20 : 12);
+    if (q.ax === 'z') g.rotateX(Math.PI / 2); else if (q.ax === 'x') g.rotateZ(Math.PI / 2);
+    add(g, ...q.p);
+  } else if (q.t === 'ring') add(new THREE.TorusGeometry(q.r, q.tube, 6, 20).rotateX(Math.PI / 2), ...q.p);
   else if (q.t === 'blob') add(new THREE.IcosahedronGeometry(q.r, 1), ...q.p);
   else if (q.t === 'beam') out.push(beamGeo(q.a, q.b, q.w));
   else if (q.t === 'prism') {
@@ -33,8 +43,8 @@ function geomsOf(q) {
     }
   } else if (q.t === 'pickets') {
     for (let i = 0; i < q.n; i++) {
-      const u = lerp(q.a, q.b, i / Math.max(1, q.n - 1)), g = new THREE.BoxGeometry(q.w, q.h, q.w);
-      if (q.ax === 'z') add(g, q.at, q.y + q.h / 2, u); else add(g, u, q.y + q.h / 2, q.at);
+      const u = lerp(q.a, q.b, i / Math.max(1, q.n - 1)), d = q.d || q.w;
+      if (q.ax === 'z') add(new THREE.BoxGeometry(d, q.h, q.w), q.at, q.y + q.h / 2, u); else add(new THREE.BoxGeometry(q.w, q.h, d), u, q.y + q.h / 2, q.at);
     }
   } else if (q.t === 'boards') {
     // The lower edge of each board stands out from the wall.
@@ -48,16 +58,7 @@ function geomsOf(q) {
   return out.map(g => paint(g, q.k === 'lid' ? lift(COL[q.c], 0.05) : COL[q.c]));
 }
 
-/* ---------- how each mover moves, and how its poke runs ---------- */
-// k runs 0 to 1. h is the hinge.
-const MOVES = {
-  lidA: (g, k) => { g.rotation.x = -1.9 * k; },
-  lidB: (g, k) => { g.rotation.x = -1.9 * k; },
-  door: (g, k) => { g.rotation.y = -1.35 * k; },
-  gate: (g, k) => { g.rotation.y = 1.25 * k; },
-  bluebox: (g, k, h) => { g.position.y = h[1] + 0.55 * k; g.rotation.z = 0.28 * Math.sin(k * 9.4); },
-  van: (g, k) => { g.position.y = 0.16 * k; g.rotation.z = 0.03 * Math.sin(k * 12); },
-};
+// A switch that is off shows its colour through this dark tint.
 const OFF = new THREE.Color(0.11, 0.16, 0.5);
 
 export function buildTown(skyTexture) {
@@ -65,10 +66,12 @@ export function buildTown(skyTexture) {
   scene.background = skyTexture;
   const hemi = new THREE.HemisphereLight(lin([0.74, 0.08, 285]), lin([0.62, 0.07, 60]), 2.5);
   const sun = new THREE.DirectionalLight(lin([0.93, 0.09, 62]), 3.3);
-  sun.position.set(-15, 11, 21); sun.target.position.set(0, 2, -1);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
-  Object.assign(sun.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15, near: 1, far: 70 });
+  sun.position.set(-15, 11, 12); sun.target.position.set(0, 2, -10);
+  // The shadow covers the whole plinth, so High doubles the map.
+  const size = quality() === 'high' ? 4096 : 2048;
+  sun.castShadow = true; sun.shadow.mapSize.set(size, size);
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 20, bottom: -20, near: 1, far: 80 });
   scene.add(hemi, sun, sun.target);
 
   // Sort the parts: static paint, ground, crown, flowers, glow, switches, movers.
@@ -114,14 +117,14 @@ export function buildTown(skyTexture) {
   }
 
   // Lamps that light the scene: each follows a switch or a mover.
-  const lamps = [];
-  const lamp = (light, power, of) => { scene.add(light); lamps.push({ light, power, of }); return light; };
-  lamp(new THREE.PointLight(lin([0.9, 0.13, 75]), 0, 11, 2), 16, () => sw.light.k).position.set(2.78, 3.35, -0.7);
-  lamp(new THREE.PointLight(lin([0.88, 0.13, 68]), 0, 9, 2), 14, () => Math.max(0, mv.door.k)).position.set(1.8, 2.6, -0.7);
-  lamp(new THREE.PointLight(lin([0.9, 0.11, 70]), 0, 8, 2), 7, () => sw.string.k).position.set(0, 3.4, 1.3);
-  const street = lamp(new THREE.SpotLight(lin([0.86, 0.14, 65]), 0, 20, 1.05, 0.8, 2), 420, () => sw.street.k);
-  street.position.set(3.9, 7.4, 8.25); street.target.position.set(3.6, 0, 6.6); scene.add(street.target);
-  lamp(new THREE.PointLight(lin([0.95, 0.08, 90]), 0, 7, 2), 9, () => sw.van.k).position.set(0.3, 0.9, 8.5);
+  const lamps = LAMPS.map(l => {
+    const light = l.to ? new THREE.SpotLight(lin(l.col), 0, l.range, 1.05, 0.8, 2) : new THREE.PointLight(lin(l.col), 0, l.range, 2);
+    light.position.set(...l.at);
+    if (l.to) { light.target.position.set(...l.to); scene.add(light.target); }
+    scene.add(light);
+    const [kind, id] = l.of.split(':'), src = kind === 'sw' ? sw[id] : mv[id];
+    return { light, power: l.power, src };
+  });
 
   /* ---------- pokes ---------- */
   const still = () => reduced();
@@ -143,17 +146,12 @@ export function buildTown(skyTexture) {
     if (still()) gsap.timeline().set(m, { k: 1 }).set(m, { k: 0 }, 0.5);
     else gsap.timeline().to(m, { k: 1, duration: up, ease: 'power2.out' }).to(m, { k: 0, duration: down, ease }, '+=' + hold);
   };
-  const vanLights = flip('van'), vanBounce = pulse('van', 0.09, 0, 1.3, 'elastic.out(1, 0.28)');
-  const fire = {
-    light: flip('light'), string: flip('string'), street: flip('street', true),
-    wFront: flip('wFront'), wAttic: flip('wAttic'), wE1: flip('wE1'), wE2: flip('wE2'), wW1: flip('wW1'), wW2: flip('wW2'),
-    door: swing('door', { duration: 0.7, ease: 'back.out(1.6)' }, { duration: 0.45, ease: 'power2.in' }),
-    gate: swing('gate', { duration: 0.9, ease: 'elastic.out(1, 0.5)' }, { duration: 0.5, ease: 'power2.in' }),
-    lidA: pulse('lidA', 0.2, 0.25, 0.6, 'bounce.out'), lidB: pulse('lidB', 0.2, 0.25, 0.6, 'bounce.out'),
-    bluebox: pulse('bluebox', 0.18, 0, 0.55, 'bounce.out'),
-    van: () => { vanLights(); vanBounce(); },
-  };
-  const pokes = POKES.map(q => ({ id: q.id, pos: new THREE.Vector3(...q.at), r: q.r, fire: fire[q.id] }));
+  // A poke runs its steps from ACTS. With none, it flips its own switch.
+  const step = ([kind, id, ...rest]) => (kind === 'flip' ? flip(id, rest[0]) : kind === 'swing' ? swing(id, ...rest) : pulse(id, ...rest));
+  const pokes = POKES.map(q => {
+    const steps = (ACTS[q.id] || [['flip', q.id]]).map(step);
+    return { id: q.id, pos: new THREE.Vector3(...q.at), r: q.r, fire: () => { for (const f of steps) f(); } };
+  });
   const life = buildLife(scene, crown, pokes);
 
   const on = new THREE.Color();
@@ -168,7 +166,7 @@ export function buildTown(skyTexture) {
         s.mat.opacity = 1 - 0.5 * Math.min(1, s.k);
       }
       for (const id in mv) MOVES[id](mv[id].group, mv[id].k, mv[id].hinge);
-      for (const l of lamps) l.light.intensity = l.power * l.of();
+      for (const l of lamps) l.light.intensity = l.power * Math.max(0, Math.min(1, l.src.k));
       life.update(t, dt);
     },
   };
