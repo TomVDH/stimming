@@ -1,6 +1,7 @@
-// East Van: one 33 ft house lot as plain data.
+// East Van: the house lot as plain data. alley.js holds the zone behind it.
 // Units are metres. x runs right, y runs up, z runs to the street.
-// town.js builds the 3D scene from this file.
+// town.js builds the 3D scene from the zone files.
+// A zone exports PARTS, WIRES, POKES, MOVES, ACTS and LAMPS.
 
 // Colours are OKLCH: [L, C, h].
 export const COL = {
@@ -14,6 +15,8 @@ export const COL = {
   hall: [0.82, 0.13, 68], tomatoDark: [0.55, 0.18, 30], brass: [0.76, 0.12, 85], soil: [0.25, 0.035, 55], rock: [0.4, 0.02, 270],
   vanOrange: [0.7, 0.16, 55], tyre: [0.22, 0.01, 270], chrome: [0.8, 0.01, 250], plum: [0.42, 0.09, 335], red: [0.58, 0.2, 25],
   bulbWarm: [0.94, 0.1, 85], bulbPink: [0.82, 0.14, 0], bulbTeal: [0.84, 0.1, 190],
+  garage: [0.74, 0.035, 150], cedar: [0.5, 0.075, 52], lane: [0.45, 0.014, 80], kale: [0.5, 0.09, 168], puddle: [0.52, 0.06, 252],
+  raccoon: [0.56, 0.012, 270], ball: [0.66, 0.17, 50], white: [0.93, 0.01, 100],
   binGreen: [0.5, 0.12, 150], binGrey: [0.34, 0.012, 260], binBlue: [0.52, 0.14, 255], crow: [0.17, 0.02, 280],
 };
 
@@ -24,10 +27,10 @@ export const LAYERS = [
 ];
 const HOUSE = 0, PORCH = 1, YARD = 2, STREET = 3, ROAD = 4;
 
-const box = (p, s, c, L, o = {}) => ({ t: 'box', p, s, c, L, ...o });
+export const box = (p, s, c, L, o = {}) => ({ t: 'box', p, s, c, L, ...o });
 // ax: 'z' lays a cylinder on its side, as a wheel.
-const cyl = (p, r, h, c, L, o = {}) => ({ t: 'cyl', p, r, h, c, L, ...o });
-const blob = (p, r, c, L, o = {}) => ({ t: 'blob', p, r, c, L, ...o });
+export const cyl = (p, r, h, c, L, o = {}) => ({ t: 'cyl', p, r, h, c, L, ...o });
+export const blob = (p, r, c, L, o = {}) => ({ t: 'blob', p, r, c, L, ...o });
 // A window is a cream frame with a pane in front of it.
 // The pane is a switch: sw names it, on is its state at the start.
 const win = (sw, x, y, w, h, z, L, on = true) => [
@@ -43,8 +46,8 @@ const sideWin = (sw, x, y, z, d, h, on) => [
   box([x + Math.sign(x) * 0.08, y - h / 2 + h * 0.62, z], [0.04, 0.06, d], 'cream', HOUSE, { k: 'mullion', side: true }),
 ];
 // Tilted boards on a wall: each row throws its own ink line.
-const boards = (face, at, out, a, b, y0, y1, h, c, o = {}) => ({ t: 'boards', face, at, out, a, b, y0, y1, h, c, L: HOUSE, ...o });
-const beam = (a, b, w, c, L) => ({ t: 'beam', a, b, w, c, L });
+export const boards = (face, at, out, a, b, y0, y1, h, c, o = {}) => ({ t: 'boards', face, at, out, a, b, y0, y1, h, c, L: HOUSE, ...o });
+export const beam = (a, b, w, c, L) => ({ t: 'beam', a, b, w, c, L });
 const steps = [0, 1, 2, 3, 4].map(i => {
   const top = 1.2 - 0.2 * i;
   return box([1.8, (0.2 + top) / 2, 0.65 + 0.3 * i], [1.7, top - 0.2, 0.3], 'concrete', PORCH, { k: 'step' });
@@ -80,9 +83,10 @@ function van(x, z) {
 export const PARTS = [
   // Ground. The paper theatre draws each slab as a band under its flat.
   // under is the height where a second band starts on the paper.
-  box([0, -0.225, -0.5], [14, 0.35, 21], 'soil', HOUSE, { k: 'plinth' }),
-  box([0, -0.7, -0.5], [13.9, 0.6, 20.9], 'earth', HOUSE, { k: 'plinth' }),
-  box([0, -1.175, -0.5], [14, 0.35, 21], 'rock', HOUSE, { k: 'plinth' }),
+  // The plinth runs from the far side of the lane to the road.
+  box([0, -0.225, -9.25], [14, 0.35, 38.5], 'soil', HOUSE, { k: 'plinth' }),
+  box([0, -0.7, -9.25], [13.9, 0.6, 38.4], 'earth', HOUSE, { k: 'plinth' }),
+  box([0, -1.175, -9.25], [14, 0.35, 38.5], 'rock', HOUSE, { k: 'plinth' }),
   box([0, 0.1, -3.5], [14, 0.2, 15], 'grass', HOUSE, { k: 'ground' }),
   ...[-6, -4, -2, 0, 2, 4, 6].map(x => box([x, 0.075, 4.7], [1.96, 0.15, 1.4], 'concrete', STREET, { k: 'ground' })),
   box([0, 0.075, 6.1], [14, 0.15, 1.4], 'verge', STREET, { k: 'ground', under: -0.4 }),
@@ -217,4 +221,36 @@ export const POKES = [
   { id: 'string', at: [-1.3, 3.72, 0.95], r: 0.45 }, { id: 'street', at: [3.9, 7.45, 8.25], r: 0.6 },
   { id: 'gate', at: [1.8, 0.7, 3.9], r: 0.6 }, { id: 'bluebox', at: [3.2, 0.4, 3.35], r: 0.4 },
   { id: 'van', at: [-2.6, 1.2, 8.5], r: 1.3 },
+];
+
+// How each mover moves. k runs 0 to 1; h is the hinge.
+export const MOVES = {
+  lidA: (g, k) => { g.rotation.x = -1.9 * k; },
+  lidB: (g, k) => { g.rotation.x = -1.9 * k; },
+  door: (g, k) => { g.rotation.y = -1.35 * k; },
+  gate: (g, k) => { g.rotation.y = 1.25 * k; },
+  bluebox: (g, k, h) => { g.position.y = h[1] + 0.55 * k; g.rotation.z = 0.28 * Math.sin(k * 9.4); },
+  van: (g, k) => { g.position.y = 0.16 * k; g.rotation.z = 0.03 * Math.sin(k * 12); },
+};
+
+// What a poke does: a list of steps.
+// ['flip', switch, flicker], ['swing', mover, open, close], ['pulse', mover, up, hold, down, ease].
+// A poke with no entry flips the switch of its own name.
+const lid = id => [['pulse', id, 0.2, 0.25, 0.6, 'bounce.out']];
+export const ACTS = {
+  street: [['flip', 'street', true]],
+  door: [['swing', 'door', { duration: 0.7, ease: 'back.out(1.6)' }, { duration: 0.45, ease: 'power2.in' }]],
+  gate: [['swing', 'gate', { duration: 0.9, ease: 'elastic.out(1, 0.5)' }, { duration: 0.5, ease: 'power2.in' }]],
+  lidA: lid('lidA'), lidB: lid('lidB'),
+  bluebox: [['pulse', 'bluebox', 0.18, 0, 0.55, 'bounce.out']],
+  van: [['flip', 'van'], ['pulse', 'van', 0.09, 0, 1.3, 'elastic.out(1, 0.28)']],
+};
+
+// Lamps that light the scene. of names the switch or mover each one follows.
+export const LAMPS = [
+  { col: [0.9, 0.13, 75], at: [2.78, 3.35, -0.7], power: 16, range: 11, of: 'sw:light' },
+  { col: [0.88, 0.13, 68], at: [1.8, 2.6, -0.7], power: 14, range: 9, of: 'mv:door' },
+  { col: [0.9, 0.11, 70], at: [0, 3.4, 1.3], power: 7, range: 8, of: 'sw:string' },
+  { col: [0.86, 0.14, 65], at: [3.9, 7.4, 8.25], to: [3.6, 0, 6.6], power: 420, range: 20, of: 'sw:street' },
+  { col: [0.95, 0.08, 90], at: [0.3, 0.9, 8.5], power: 9, range: 7, of: 'sw:van' },
 ];

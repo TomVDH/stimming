@@ -110,12 +110,18 @@ The repo has no draw-call budget. East Van sets one.
 - [x] 21 pokes: six windows, lamp, string lights, street lamp, door, gate, lids, blue box, van, crow, cat, flamingo, tree, chimney.
 - [x] Life: cat, flamingo, couch, flowers, a camper van, petals, smoke.
 
+### The alley (`stimming-jp71`)
+
+- [x] Zone files: `lot.js` and `alley.js`, each with parts, wires, pokes, moves, acts and lamps.
+- [x] Backyard, garage and lane behind the house; 13 new pokes; a basketball.
+- [x] Camera stops House and Alley (keys 1 and 2), free turn.
+
 ### Next (Tom picks the order)
 
 - [ ] More life: a bike, a mailbox flap, a sprinkler, a second crow; first CC0 model candidates.
 - [ ] Sound for every poke; a dusk bed.
 - [ ] Lab registration: `toys.json`, menu tile and icon, Bar v2 shell, intro.
-- [ ] The alley, then the Drive at East 4th from city data.
+- [ ] The Drive at East 4th from city data.
 
 ## Reduced motion and idle
 

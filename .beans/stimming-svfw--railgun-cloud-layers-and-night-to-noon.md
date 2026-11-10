@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T10:00:17Z
-updated_at: 2026-11-10T10:15:47Z
+updated_at: 2026-11-10T11:01:40Z
 parent: stimming-f793
 ---
 
@@ -21,3 +21,9 @@ Tom (2026-11-10): more scale with cloud layers at several heights and distances 
 - [x] Commit through tools/commit.sh
 - [x] Tom's verdict on the clouds and the time range (2026-11-10: looks good)
 - [ ] At the railgun-shot merge: read its new blast light (uBlast) in cloudHit
+
+## Sky turn and Reset (2026-11-10)
+
+- [x] The sky turns about a tilted pole (latitude 30°): the sun path, the moon (6 h behind, low south) and the stars ride it; the dusk sun keeps its first bearing
+- [x] Reset (R): an 8 s timelapse that runs from a day in 4 s to about ten a second, cirrus drift, clouds boil, a rising whoosh; a white cut lands the toy at its start; reduced motion gets a plain cut
+- [ ] Tom's verdict on the spin
