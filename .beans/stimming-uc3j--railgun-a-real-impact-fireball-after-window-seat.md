@@ -50,3 +50,4 @@ Headless stills at hit +0.3, 1, 3, 6, 10, 20 and 30 s, at dusk and at night. Tom
 - [x] Negative phase: the fire sphere pulls in by a fifth from 2 to 5 s, then eases back a little
 - [x] Trail fade starts 2.5 s after the hit and keeps pace: density falls by e every 6 s, erosion opens it; gone by about 45 s
 - [x] Debris and burning pieces carry the rock's own path on, at nearly one speed, with a small fan
+- [x] Continuity: the impact cloud eats only the last fifth of the main trail; the four debris trains reach back to the burst and stay full there while the main trail lives, so the trail splits into them
