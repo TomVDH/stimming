@@ -706,7 +706,7 @@ async function loadAll() {
       try { await addTake(rec, false); } catch (e) { console.warn('voices: bad take', rec.name, e); }
     }
   } catch (e) { console.warn('voices: storage off', e); }
-  select(takes[takes.length - 1] || null, false);
+  select(takes[takes.length - 1] || null);
 }
 
 // --- Takes ------------------------------------------------------------------
@@ -747,6 +747,8 @@ async function addTake(rec, save = true) {
   const buf = await decode(rec.blob);
   const trim = trimOf(buf);
   const take = { pack: true, who: cast.id, voice: { ...P }, ...rec, buf, trim, peaks: peaks(buf, trim) };
+  // Older takes lack the newer knobs; the defaults fill them in.
+  take.voice = { ...BASE, ...take.voice };
   takes.push(take);
   if (save) saveTake(take);
   return take;
