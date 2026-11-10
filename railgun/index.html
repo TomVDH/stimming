@@ -66,7 +66,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D } from 'simplex-noise';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -4439,6 +4439,8 @@ function plainVerb(ac) {
 let hum = null;
 function humStart(ac) {
   if (hum) return;
+  // The echo's impulse builds in idle time during the hold, not on the shot.
+  if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
   const P = MIX[chargeMix] || MIX.vast;
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
@@ -4800,7 +4802,7 @@ window.__qa = {
   sun(v) { opts.sun = v; setSun(); },
   simT: () => simT,
   draws: () => drawN,
-  info: () => ({ ...renderer.info.render }),
+  info: () => ({ ...renderer.info.render, programs: renderer.info.programs.length, ...renderer.info.memory }),
   size: v => { opts.size = v; retune(); },
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th) }),
   // Hold at a level: the charge starts as if held for c.
@@ -4862,7 +4864,16 @@ stepAim(0, true);
 setBox(ui.setting('letterbox').value);
 setGrain();
 resize();
-renderer.compileAsync(scene, camera).then(() => {
+renderer.compileAsync(scene, camera).then(async () => {
+  // Warm every hidden piece once behind the intro.
+  // The first charge, shot and hit then link no programs and upload no buffers.
+  const hidden = [];
+  scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
+  await renderer.compileAsync(scene, camera);
+  composer.render();
+  for (const o of hidden) o.visible = false;
+  // The shot's sound files download now; they decode on first use.
+  later(() => Object.values(SAMPLES).forEach(f => fetch(f)));
   compiled = true;
   draw();
   canvas.classList.add('on');

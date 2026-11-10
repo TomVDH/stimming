@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:20:47Z
+updated_at: 2026-11-10T19:24:04Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -148,7 +148,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [ ] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
 
 - [ ] The muzzle: flash, ring, shock wave and smoke puffs, one more look
-- [ ] Talk to the staged-loading session about performance (a lag spike on release after a long hold)
+- [x] Release lag spike: a warm-up frame behind the intro links every program and uploads every buffer (programs flat at 67 from load); the echo impulse builds in idle time during the hold; the shot samples prefetch in later()
 - [ ] Last: one more look at the charge-up effect
 
 - [x] The soot cloud: lit like the trail, pale ash as it cools, thinner as it grows
