@@ -52,13 +52,6 @@ html[data-carry] .palette { opacity: 0; pointer-events: none; }
 }
 .zoomchip[hidden] { display: none; }
 .zoomchip svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
-/* The spectroscope covers the table while it shows. */
-.stage canvas.spectro { z-index: 2; pointer-events: none; touch-action: none; }
-.stage canvas.spectro.on { pointer-events: auto; }
-.halo { transition: opacity 0.6s ease; }
-html[data-spectro] .halo { opacity: 0; }
-/* The four lights fit the sheet's width. */
-.s2-row .s2-seg:has(.s2-dot) .s2-chip { padding: 0 5px; gap: 4px; }
 /* The remove button is a solid disc with a cut cross. */
 .drop {
   position: absolute; left: -13px; top: -13px; z-index: 1; width: 26px; height: 26px; padding: 0;
@@ -118,7 +111,6 @@ html[data-spectro] .halo { opacity: 0; }
 import * as THREE from 'three';
 import { initPage, sound, audioKit, oklchRgb, css as okCss, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { spectroscope, ELEMENTS } from './spectro.js';
 // The intro holds until the page and its font have loaded.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready]) });
@@ -133,49 +125,43 @@ const KINDS = [
   { value: 'sensor', label: 'Sensor pad', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="10.4" width="7.5" height="3" rx="0.5"/><circle cx="11.6" cy="5.4" r="3.3"/></svg>' },
   { value: 'gram', label: 'Spectrogram', icon: '<svg viewBox="0 0 16 16"><rect class="solid" x="1.5" y="11.4" width="13" height="2.6" rx="0.5"/><rect x="1.5" y="2" width="13" height="6.5" rx="0.5"/><path d="M4.5 3.4v3.7M7.2 3.4v3.7M8.4 3.4v3.7M12 3.4v3.7"/></svg>' },
 ];
-// The lamp shines white light or one laser line.
-// Each value is one wavelength bin; -1 is the full spectrum.
+// The lamp shines white light, one laser line or one element's lines.
+// A number is one wavelength bin; -1 is the full spectrum.
+// Line data: [nm, strength, band width in nm].
+const SALTS = [
+  { id: 'li', label: 'Lithium', sym: 'Li', col: [0.56, 0.21, 24], lines: [[670.8, 1], [610.4, 0.25], [460.3, 0.08]] },
+  { id: 'na', label: 'Sodium', sym: 'Na', col: [0.82, 0.17, 80], lines: [[589.0, 1], [589.6, 0.5]] },
+  { id: 'k', label: 'Potassium', sym: 'K', col: [0.68, 0.12, 310], lines: [[766.5, 0.8], [769.9, 0.5], [404.4, 0.35], [404.7, 0.2]] },
+  { id: 'cu', label: 'Copper', sym: 'Cu', col: [0.74, 0.15, 170],
+    lines: [[510.5, 0.5], [515.3, 0.6], [521.8, 0.7], [428, 0.35, 6], [435, 0.4, 6], [443, 0.35, 6], [452, 0.3, 6], [488, 0.3, 5], [498, 0.35, 5], [535, 0.4, 14]] },
+  { id: 'sr', label: 'Strontium', sym: 'Sr', col: [0.6, 0.21, 28],
+    lines: [[460.7, 0.3], [606, 0.6, 8], [646, 0.7, 6], [659, 0.8, 5], [668, 0.9, 6], [682, 0.6, 6], [636, 0.4, 5], [674, 0.5, 4]] },
+  { id: 'ca', label: 'Calcium', sym: 'Ca', col: [0.66, 0.17, 45], lines: [[422.7, 0.5], [554, 0.6, 8], [602, 0.5, 6], [622, 1, 7], [646, 0.35, 6]] },
+  { id: 'ba', label: 'Barium', sym: 'Ba', col: [0.86, 0.13, 125],
+    lines: [[553.5, 1], [455.4, 0.2], [493.4, 0.2], [487, 0.3, 5], [513, 0.5, 6], [524, 0.55, 6], [534, 0.45, 6]] },
+];
 const LIGHTS = [
-  { value: '-1', label: 'White', dot: 'oklch(0.97 0.01 90)' },
-  { value: '20', label: 'Red', dot: 'oklch(0.64 0.24 28)' },
-  { value: '10', label: 'Green', dot: 'oklch(0.82 0.24 142)' },
-  { value: '1', label: 'Violet', dot: 'oklch(0.58 0.24 300)' },
+  { value: '-1', label: 'White light', dot: 'oklch(0.97 0.01 90)' },
+  { value: '20', label: 'Red laser', dot: 'oklch(0.64 0.24 28)' },
+  { value: '10', label: 'Green laser', dot: 'oklch(0.82 0.24 142)' },
+  { value: '1', label: 'Violet laser', dot: 'oklch(0.58 0.24 300)' },
+  ...SALTS.map(e => ({ value: e.id, label: `${e.label} lamp`, dot: okCss(e.col) })),
 ];
 const ui = initPage({ id: 'prism', bar: {
-  // Two modes: the light table, and the spectroscope's line readout.
-  choice: { label: 'Mode', display: 'segments', value: 'table',
-    options: [{ value: 'table', label: 'Table' }, { value: 'spectro', label: 'Spectroscope' }],
-    onPick: v => (v === 'spectro' ? openSpectro() : closeSpectro()) },
+  choice: { label: 'Light', display: 'stepper', value: '-1', options: LIGHTS, onPick: v => setLight(v) },
   actions: [
     { verb: 'add', noun: 'Piece', key: 'A', onPress: () => palette.toggle() },
     { verb: 'clear', key: 'C', onPress: () => clearAll() },
   ],
   settings: [
-    { type: 'choice', id: 'light', label: 'Light', value: '-1', options: LIGHTS,
-      onPick: v => { lightBin = +v; geomDirty = true; wake(); } },
     // The toggle keeps the old stored key, stimming.prism.wire.
     { type: 'toggle', id: 'wire', label: 'Wireframe', value: false, persist: true, onToggle: on => { wire = on; wake(); } },
-    // These rows show only with the spectroscope.
-    { type: 'choice', id: 'element', label: 'Element', value: 'li', persist: true, display: 'stepper', options: ELEMENTS,
-      onPick: v => spec.setElement(v) },
-    { type: 'choice', id: 'spectro', label: 'Spectrometer', value: 'prism', persist: true,
-      options: [{ value: 'prism', label: 'Prism' }, { value: 'grating', label: 'Grating' }], onPick: v => spec.setGrating(v === 'grating') },
-    { type: 'toggle', id: 'trace', label: 'Trace sodium', value: true, persist: true, onToggle: v => spec.setTrace(v) },
-    { type: 'toggle', id: 'cobalt', label: 'Cobalt glass', value: false, persist: true, onToggle: v => spec.setCobalt(v) },
   ],
   reset: () => reset(),
   quality: true,
   keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'size, zoom'], ['delete', 'remove']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-/* ---------- the spectroscope view ---------- */
-// The shell has no row toggle, so rows hide by their label.
-const SPEC_ROWS = ['Element', 'Spectrometer', 'Trace sodium', 'Cobalt glass'], TABLE_ROWS = ['Light', 'Wireframe'];
-const rowsShow = (labels, show) => document.querySelectorAll('.stim-ui .s2-row').forEach(r => {
-  if (labels.includes(r.firstElementChild?.textContent)) r.hidden = !show;
-});
-rowsShow(SPEC_ROWS, false);
-const spec = spectroscope({ stage: panel, kit: { live: () => kit.live(), rest: f => kit.rest(f), get out() { return kit.out; }, get noise() { return kit.noise; } }, ui, onExit: () => closeSpectro() });
 /* ---------- the piece palette ---------- */
 // Tap a tile to drop the piece into the light; drag it to place it.
 const palette = (() => {
@@ -207,36 +193,13 @@ const palette = (() => {
     const x = clamp(r.left - fr.left, 12, Math.max(12, fr.width - w - 12)), y = Math.max(12, r.top - fr.top - h - 8);
     el.style.transform = `translate(${x}px, ${y}px)`;
   }
-  function open() { if (spec.on) return; el.hidden = false; place(); btn()?.setAttribute('aria-expanded', 'true'); el.querySelector('.tile')?.focus({ preventScroll: true }); }
+  function open() { el.hidden = false; place(); btn()?.setAttribute('aria-expanded', 'true'); el.querySelector('.tile')?.focus({ preventScroll: true }); }
   function close() { if (el.hidden) return; el.hidden = true; btn()?.setAttribute('aria-expanded', 'false'); }
   document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !btn()?.contains(e.target)) close(); }, true);
   document.addEventListener('keydown', e => { if (!el.hidden && e.key === 'Escape') { e.preventDefault(); close(); panel.focus({ preventScroll: true }); } }, true);
   addEventListener('resize', () => { if (!el.hidden) place(); });
   return { open, close, toggle: () => (el.hidden ? open() : close()), get isOpen() { return !el.hidden; } };
 })();
-async function openSpectro() {
-  if (spec.on) { spec.strike(); return; }
-  select(-1);
-  palette.close();
-  try { if (!(await spec.open())) { ui.choice.set('table'); return; } } catch (err) { console.warn('Spectroscope:', err.message); ui.choice.set('table'); return; }
-  ui.choice.set('spectro');
-  document.documentElement.dataset.spectro = '';
-  rowsShow(SPEC_ROWS, true);
-  rowsShow(TABLE_ROWS, false);
-  panel.focus({ preventScroll: true });
-  hush();
-  sync();
-}
-function closeSpectro() {
-  if (!spec.on) return;
-  spec.close();
-  delete document.documentElement.dataset.spectro;
-  rowsShow(SPEC_ROWS, false);
-  rowsShow(TABLE_ROWS, true);
-  ui.choice.set('table');
-  sync();
-  panel.focus({ preventScroll: true });
-}
 // A laser is one wavelength bin, so it never splits.
 let lightBin = -1, wire = ui.setting('wire').value;
 const dropB = panel.querySelector('.drop');
@@ -279,7 +242,19 @@ const css = (L, C, h, a = 1) => okCss([L, C, h], a);
 
 /* ---------- light: 24 wavelengths, Cauchy glass ---------- */
 const NK = 24, L0 = 0.405, L1 = 0.69, CA = 1.5, CB = 0.028;
-const LAM = Float64Array.from({ length: NK }, (_, k) => L0 + ((L1 - L0) * k) / (NK - 1));
+// Element lines follow the 24 bins and white in every table.
+// A band is three lines across its width.
+const XL = [];
+for (const e of SALTS) {
+  e.ks = [];
+  const add = (nm, w) => { e.ks.push([NK + 1 + XL.length, 0.3 + 0.7 * w]); XL.push(nm / 1000); };
+  for (const [nm, w, bw] of [...e.lines].sort((a, b) => a[0] - b[0])) {
+    if (bw) for (const d of [-1, 0, 1]) add(nm + (d * bw) / 3, w * 0.7); else add(nm, w);
+  }
+  e.ks.sort((a, b) => XL[a[0] - NK - 1] - XL[b[0] - NK - 1]);
+}
+const NT = NK + 1 + XL.length;
+const LAM = Float64Array.from({ length: NT }, (_, k) => (k < NK ? L0 + ((L1 - L0) * k) / (NK - 1) : k === NK ? 0.55 : XL[k - NK - 1]));
 const NI = LAM.map(l => CA + CB / (l * l));
 const NW = CA + CB / 0.55 ** 2;
 // COL holds one sRGB colour per wavelength.
@@ -290,7 +265,7 @@ const COL = [], CORE = [], LINC = [];
 {
   const g = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
   const raw = [], sum = [0, 0, 0];
-  for (const l of LAM) {
+  for (const l of LAM.subarray(0, NK)) {
     const n = l * 1000;
     const X = 1.056 * g(n, 599.8, 37.9, 31) + 0.362 * g(n, 442, 16, 26.7) - 0.065 * g(n, 501.1, 20.4, 26.2);
     const Y = 0.821 * g(n, 568.8, 46.9, 40.5) + 0.286 * g(n, 530.9, 16.3, 31.1);
@@ -310,9 +285,37 @@ const COL = [], CORE = [], LINC = [];
     COL.push(e.map(v => Math.round((v / hi) * lift * 255)));
   }
   COL.push([255, 255, 255]);
+  LINC.push([1, 1, 1]);
+  // A line keeps its hue; the far ends hold red and violet.
+  const sm = x => x * x * (3 - 2 * x), RED = [1, 0, 0], VIO = [0.55, 0, 1];
+  for (const l of XL) {
+    const n = l * 1000;
+    const X = 1.056 * g(n, 599.8, 37.9, 31) + 0.362 * g(n, 442, 16, 26.7) - 0.065 * g(n, 501.1, 20.4, 26.2);
+    const Y = 0.821 * g(n, 568.8, 46.9, 40.5) + 0.286 * g(n, 530.9, 16.3, 31.1);
+    const Z = 1.217 * g(n, 437, 11.8, 36) + 0.681 * g(n, 459, 26, 13.8);
+    const c = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z].map(v => Math.max(0, v));
+    const pk = Math.max(...c, 1e-5), r = sm(clamp((n - 690) / 30)), v = sm(clamp((415 - n) / 20));
+    const lin = c.map((x, i) => lerp(lerp(x / pk, RED[i], r), VIO[i], v));
+    LINC.push(lin.map(x => x * 0.22));
+    COL.push(lin.map(x => Math.round(enc(x) * 255)));
+  }
+  // Each element lamp has one beam colour, its flame colour.
+  for (const e of SALTS) { e.ci = COL.length; COL.push(rgb(...e.col)); LINC.push(oklchRgb(...e.col).map(x => x ** 2.2)); }
   for (const c of COL) CORE.push(c.map(v => Math.round(lerp(v, 255, 0.4))));
 }
-const WHITE = NK, WLIN = [1, 1, 1];
+const WHITE = NK;
+// The lamp's unsplit beam: its colour, and the lines it splits into.
+const WSPLIT = Array.from({ length: NK }, (_, k) => [k, 1]);
+let WCI = WHITE, WLIN = LINC[WHITE], SPLIT = WSPLIT, elem = null;
+function setLight(v) {
+  elem = SALTS.find(e => e.id === v) || null;
+  lightBin = elem ? -1 : +v;
+  WCI = elem ? elem.ci : WHITE;
+  WLIN = LINC[WCI];
+  SPLIT = elem ? elem.ks : WSPLIT;
+  geomDirty = true;
+  wake();
+}
 
 /* ---------- the pieces ---------- */
 // Sizes are fractions of S, the short side of the table.
@@ -441,7 +444,7 @@ function build(p) {
 const EPS = 1e-4, IMIN = 0.012, MAXD = 48, MAXS = 6000, SK = 11, SG = 10, SHK = 7, MAXH = 4000;
 const STK = new Float64Array(SK * 2048), SEG = new Float64Array(MAXS * SG), GLI = new Float32Array(3000 * 5), EDG = new Float32Array(1500 * 5);
 const SH = new Float64Array(MAXH * SHK), GAP = new Float32Array(MAXH);
-const fin = new Float64Array(NK);
+const fin = new Float64Array(NT);
 let sp = 0, nSeg = 0, nGl = 0, nEd = 0, nSH = 0, nFam = 0, spread = 0, hT = 0, hNX = 0, hNY = 0, hI = -1, hS = 0, eSide = 0;
 // A ray's signature hashes every surface event along its path.
 const mix = (s, c) => (Math.imul(s ^ Math.imul(c + 1, 0x9e3779b1), 0x85ebca6b) ^ (s >>> 15)) >>> 0;
@@ -638,12 +641,12 @@ function trace() {
       // White light splits into the spectrum at its first glass surface.
       const R = fresnel(enter ? 1 : NW, enter ? NW : 1, ci), f = nFam++;
       if (I * R > IMIN) push(hx, hy, dx + 2 * ci * nx, dy + 2 * ci * ny, -1, I * R, d + 1, ins, 0, -1, 0);
-      for (let j = 0; j < NK; j++) bend(hx, hy, dx, dy, nx, ny, ci, enter, j, I, d, prim, false, f, 0, code);
+      for (const [j, wt] of SPLIT) bend(hx, hy, dx, dy, nx, ny, ci, enter, j, I * wt, d, prim, false, f, 0, code);
       continue;
     }
     bend(hx, hy, dx, dy, nx, ny, ci, enter, k, I, d, prim, true, fam, sig, code);
   }
-  const a = fin[0], b = fin[NK - 1];
+  const a = fin[SPLIT[0][0]], b = fin[SPLIT[SPLIT.length - 1][0]];
   spread = Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.abs(wrapA(a - b));
 }
 
@@ -663,7 +666,7 @@ function expose() {
   GAP.fill(0, 0, nSH);
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK;
-    if (SH[o + 2] < 0 || pieces[SH[o]].kind !== 'sensor') continue;
+    if (SH[o + 2] < 0 || SH[o + 2] >= NK || pieces[SH[o]].kind !== 'sensor') continue;
     const key = `${SH[o]}:${SH[o + 5]}:${SH[o + 6]}`;
     let g = grp.get(key);
     if (!g) grp.set(key, (g = new Int32Array(NK).fill(-1)));
@@ -857,7 +860,7 @@ function bleed() {
       // A zoom pushes some table edges off screen; their light stays unseen.
       if (EDG[o] < -1 || EDG[o] > W + 1 || EDG[o + 1] < -1 || EDG[o + 1] > H + 1) continue;
       st.on = true;
-      const k = EDG[o + 3], col = COL[k < 0 ? WHITE : k], w = (k < 0 ? 0.45 : 0.2) * EDG[o + 4] / 255;
+      const k = EDG[o + 3], col = COL[k < 0 ? WCI : k], w = (k < 0 ? 0.45 : 0.2) * EDG[o + 4] / 255;
       const c = (s & 1 ? EDG[o + 1] : EDG[o]) / bw - 0.5;
       // Wider blurs lose some energy, so the bleed stays faint.
       for (let j = 0; j < 3; j++) {
@@ -953,7 +956,7 @@ function pack() {
   for (let i = 0; i < nSeg; i++) {
     const o = i * SG, a = SEG[o + 5] ** 0.8;
     if (a < 0.04) continue;
-    const k = SEG[o + 4], ci = k < 0 ? WHITE : k, col = COL[ci], core = CORE[ci], q = nInst++ * 12;
+    const k = SEG[o + 4], ci = k < 0 ? WCI : k, col = COL[ci], core = CORE[ci], q = nInst++ * 12;
     INST[q] = SEG[o]; INST[q + 1] = SEG[o + 1]; INST[q + 2] = SEG[o + 2]; INST[q + 3] = SEG[o + 3];
     INST[q + 4] = col[0] / 255; INST[q + 5] = col[1] / 255; INST[q + 6] = col[2] / 255; INST[q + 7] = a;
     INST[q + 8] = core[0] / 255; INST[q + 9] = core[1] / 255; INST[q + 10] = core[2] / 255;
@@ -963,7 +966,7 @@ function pack() {
   groups.clear();
   for (let i = 0; i < nSeg; i++) {
     const o = i * SG, k = SEG[o + 4];
-    if (k < 0) continue;
+    if (k < 0 || k >= NK) continue;
     const key = SEG[o + 7] * 4294967296 + SEG[o + 8];
     let g = groups.get(key);
     if (!g) groups.set(key, (g = new Int32Array(NK).fill(-1)));
@@ -1272,7 +1275,7 @@ function glassBody(p, i) {
     const a = GLI[o + 3] ** 0.8, k = GLI[o + 2];
     if (a < 0.2) continue;
     c.globalAlpha = a * (k < 0 ? 0.16 : 0.022);
-    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - big, GLI[o + 1] - big, big * 2, big * 2);
+    c.drawImage(SPR[k < 0 ? WCI : k], GLI[o] - big, GLI[o + 1] - big, big * 2, big * 2);
   }
   c.restore();
 }
@@ -1542,7 +1545,7 @@ function drawSource(p) {
   for (const [r, a] of [[0.045, 0.9], [0.13, 0.22]]) {
     const R = r * S;
     c.globalAlpha = a;
-    c.drawImage(SPR[WHITE], g.ex - R, g.ey - R, R * 2, R * 2);
+    c.drawImage(SPR[WCI], g.ex - R, g.ey - R, R * 2, R * 2);
   }
   c.globalAlpha = 1;
 }
@@ -1585,20 +1588,20 @@ function pipAt(p) {
 }
 // The readout names the band of light that lands on the pad.
 function pipBand(p) {
-  const i = pieces.indexOf(p), w = new Float32Array(NK);
+  const i = pieces.indexOf(p), w = new Float32Array(NT);
   let white = 0, top = 0;
   for (let h = 0; h < nSH; h++) {
     const o = h * SHK;
     if (SH[o] !== i) continue;
     if (SH[o + 2] < 0) white += SH[o + 3]; else w[SH[o + 2]] += SH[o + 3];
   }
-  for (let k = 0; k < NK; k++) top = Math.max(top, w[k]);
-  if (white > top * 3 && white > 0.02) return 'WHITE';
+  for (let k = 0; k < NT; k++) top = Math.max(top, w[k]);
+  if (white > top * 3 && white > 0.02) return elem ? elem.label.toUpperCase() : 'WHITE';
   if (top < 0.01) return '';
-  let lo = -1, hi = -1;
-  for (let k = 0; k < NK; k++) if (w[k] > top * 0.15) { if (lo < 0) lo = k; hi = k; }
-  const nm = k => Math.round(LAM[k] * 1000);
-  return lo === hi ? `${nm(lo)} NM` : `${nm(lo)}–${nm(hi)} NM`;
+  let lo = Infinity, hi = 0;
+  for (let k = 0; k < NT; k++) if (w[k] > top * 0.15) { lo = Math.min(lo, LAM[k]); hi = Math.max(hi, LAM[k]); }
+  const a = Math.round(lo * 1000), b = Math.round(hi * 1000), tag = elem ? `${elem.sym} ` : '';
+  return a === b ? `${tag}${a} NM` : `${tag}${a}–${b} NM`;
 }
 function drawPip(p) {
   if (!p.pc) return;
@@ -1677,27 +1680,30 @@ function drawPip(p) {
   c.fillText(band, x, y + rp * 0.82);
 }
 // The spectrogram: one sharp line per wavelength that lands, violet left.
-// Ticks mark 450, 500, 550, 600 and 650 nm.
+// Ticks stand every 50 nm.
 function gramLines(p, x0, y0, w, h) {
-  const c = over, i = pieces.indexOf(p), bin = new Float32Array(NK);
+  const c = over, i = pieces.indexOf(p), bin = new Float32Array(NT);
   for (let n = 0; n < nSH; n++) {
     const o = n * SHK;
     if (SH[o] !== i) continue;
-    if (SH[o + 2] < 0) for (let k = 0; k < NK; k++) bin[k] += SH[o + 3]; else bin[SH[o + 2]] += SH[o + 3];
+    if (SH[o + 2] < 0) for (const [k, wt] of SPLIT) bin[k] += SH[o + 3] * wt; else bin[SH[o + 2]] += SH[o + 3];
   }
-  const px = l => x0 + w * 0.06 + (w * 0.88 * (l - LAM[0])) / (LAM[NK - 1] - LAM[0]);
+  // The scale widens for lines past the visible bins.
+  let l0 = LAM[0], l1 = LAM[NK - 1];
+  if (elem) for (const [k] of elem.ks) { l0 = Math.min(l0, LAM[k] - 0.01); l1 = Math.max(l1, LAM[k] + 0.01); }
+  const px = l => x0 + w * 0.06 + (w * 0.88 * (l - l0)) / (l1 - l0);
   const top = y0 + h * 0.14, bot = y0 + h * 0.72, lw = Math.max(1.2, (w * 0.88) / NK * 0.42);
   c.lineCap = 'butt';
-  for (let k = 0; k < NK; k++) {
+  for (let k = 0; k < NT; k++) {
     const v = 1 - Math.exp(-bin[k] * 5);
-    if (v < 0.01) continue;
-    const [r, gg, b] = COL[k], xk = px(LAM[k]);
+    if (v < 0.01 || k === NK) continue;
+    const [r, gg, b] = COL[k], xk = px(LAM[k]), lk = k > NK ? Math.max(1.2, lw * 0.5) : lw;
     c.globalAlpha = v;
     c.strokeStyle = `rgb(${r},${gg},${b})`;
-    c.lineWidth = lw;
+    c.lineWidth = lk;
     c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
     c.globalAlpha = v * 0.35;
-    c.lineWidth = lw * 3.2;
+    c.lineWidth = lk * 3.2;
     c.beginPath(); c.moveTo(xk, top); c.lineTo(xk, bot); c.stroke();
   }
   c.globalAlpha = 1;
@@ -1705,8 +1711,8 @@ function gramLines(p, x0, y0, w, h) {
   c.strokeStyle = TONE.pipLine;
   c.lineWidth = 1;
   c.beginPath();
-  for (const l of [0.45, 0.5, 0.55, 0.6, 0.65]) { const xk = px(l); c.moveTo(xk, bot + 2); c.lineTo(xk, bot + 6); }
-  c.moveTo(px(LAM[0]), bot + 2); c.lineTo(px(LAM[NK - 1]), bot + 2);
+  for (let l = 0.45; l < l1; l += 0.05) { const xk = px(l); c.moveTo(xk, bot + 2); c.lineTo(xk, bot + 6); }
+  c.moveTo(px(l0), bot + 2); c.lineTo(px(l1), bot + 2);
   c.stroke();
 }
 // The picture under the pointer, if any.
@@ -1796,7 +1802,7 @@ function edgeLight() {
     if (a < 0.2) continue;
     const r = r0 * (0.5 + 0.5 * a);
     c.globalAlpha = a * (k < 0 ? 0.45 : 0.06);
-    c.drawImage(SPR[k < 0 ? WHITE : k], GLI[o] - r, GLI[o + 1] - r, r * 2, r * 2);
+    c.drawImage(SPR[k < 0 ? WCI : k], GLI[o] - r, GLI[o + 1] - r, r * 2, r * 2);
   }
   c.globalAlpha = 1;
 }
@@ -1896,12 +1902,12 @@ function placeDrop() {
 
 /* ---------- sound: Tone.js voices on the shared audio kit ---------- */
 const LEAD = 0.004;
-const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace', '1', '2', '3', '4', '5', '6', '7']);
+const GESTURE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'q', 'Q', 'e', 'E', 'Tab', ' ', 'Enter', 'Delete', 'Backspace']);
 const kit = audioKit({ keys: GESTURE_KEYS });
 let V = null, T = null, toneLoad = null, tickNext = 0, toneT = 0;
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 // Once the table settles, the context sleeps until the next gesture.
-const rest = () => kit.rest(() => !raf && !ptrs.size && !spec.on);
+const rest = () => kit.rest(() => !raf && !ptrs.size);
 // The first live call starts the load; voices answer once it lands.
 function voices() {
   if (!kit.live()) return null;
@@ -2001,8 +2007,8 @@ function applyLayout() {
 }
 function sync() {
   const n = liveAdded();
-  ui.action('clear').disabled = !n || spec.on;
-  ui.action('add').disabled = n >= MAXADD || spec.on;
+  ui.action('clear').disabled = !n;
+  ui.action('add').disabled = n >= MAXADD;
 }
 const backOut = t => { const u = t - 1; return 1 + 2.5 * u * u * u + 1.5 * u * u; };
 // A new piece drops into the light, turned to meet it.
@@ -2019,7 +2025,7 @@ function spot(kind) {
   for (let i = SEG[9] < 1000 ? 1 : 0; i < nSeg; i++) {
     const o = i * SG, I = SEG[o + 5], k = SEG[o + 4], len = Math.hypot(SEG[o + 2] - SEG[o], SEG[o + 3] - SEG[o + 1]);
     if (I < 0.12 || len < 2.2 * rr) continue;
-    const mid = k < 0 ? 1.3 : 1 - Math.abs(k - (NK - 1) / 2) / NK;
+    const mid = k < 0 ? 1.3 : k > NK ? 1 : 1 - Math.abs(k - (NK - 1) / 2) / NK;
     cands.push([len * I * mid * (SEG[o + 9] >= 1000 ? 2 : 1), i]);
   }
   cands.sort((a, b) => b[0] - a[0]);
@@ -2117,7 +2123,7 @@ function carryAim(kind, x, y) {
 }
 function carryStart(e) {
   const kind = carry.kind;
-  if (!ready || liveAdded() >= MAXADD || spec.on) { carry = null; return; }
+  if (!ready || liveAdded() >= MAXADD) { carry = null; return; }
   measureBar();
   carry.seg = SEG.slice(0, nSeg * SG);
   const [x, y] = at(e), p = make(kind);
@@ -2301,7 +2307,6 @@ function stepView(dt) {
   if (viewTween.t >= 1) viewTween = null;
 }
 function reset() {
-  closeSpectro();
   resetView();
   if (!ready || (pristine() && !tween)) return;
   select(-1);
@@ -2556,7 +2561,7 @@ dropB.addEventListener('click', e => {
   panel.focus({ preventScroll: true });
 });
 panel.addEventListener('keydown', e => {
-  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready || spec.on) return;
+  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
   // Tab walks the pieces, then lets focus leave the table.
   const n = pieces.length, next = sel < 0 ? (e.shiftKey ? n - 1 : 0) : sel + (e.shiftKey ? -1 : 1);
   if (next < 0 || next >= n) { select(-1); return; }
@@ -2580,7 +2585,7 @@ panel.addEventListener('wheel', e => {
 }, { passive: false });
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready || spec.on) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], button, a')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel > 0) { e.preventDefault(); remove(sel); return; }
   const k = e.key.toLowerCase(), arrow = ARROWS[e.key];
