@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T20:05:56Z
+updated_at: 2026-11-10T20:06:46Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -117,7 +117,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] 7. Debris lights the plain: a landing throws a ring of dust and leaves an ember pool that cools over about twenty seconds
 - [x] 5. The plain answers the shock: sand ripples trail the Mach front; three thin devils wake on the plain ahead as the front reaches them
 - [x] 8. The gun breathes: steam from the housing joints during the charge, a dull red barrel tail over about 40 s, thin sand streams from the ledges after the kick
-- [ ] 10. Exposure and focus
+- [x] 10. Exposure and focus: the exposure dips after the hit (about 40 %) and the muzzle flash (15 %) and recovers over seconds; the lens softens on the hit and refocuses in about a second
 - [ ] 9. A slow sun drift
 
 - [x] Fix: charge dust back to the old frame cost (36 ms vs 57 ms at a full hold, headless)

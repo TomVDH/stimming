@@ -149,6 +149,8 @@ try {
 }
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
+// The time of day's exposure; the eye's adaptation scales it each frame.
+let baseExp = 1.0;
 renderer.setClearColor(0x000000, 1);
 const canvas = renderer.domElement;
 stage.prepend(canvas);
@@ -366,7 +368,8 @@ function skyAt(H) {
   U.uCloudAmb.value.setScalar(lerp(lerp(0.012, 0.05, nt), 0.22, tw));
   // A high sun needs no lift on the plain.
   U.uGLift.value.set(lerp(2.6, 1.1, day), lerp(0.08, 0.05, day));
-  renderer.toneMappingExposure = lerp(lerp(2.2, 1.35, nt), 0.9, tw);
+  baseExp = lerp(lerp(2.2, 1.35, nt), 0.9, tw);
+  renderer.toneMappingExposure = baseExp;
   fitShadow();
 }
 // The slider runs from night to noon.
@@ -2436,6 +2439,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uFlash: { value: 0 },
       // The impact flare: screen place of the hit, and its strength.
       uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // The focus pull: 0 sharp, 1 soft.
+      uSoft: { value: 0 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
@@ -2455,6 +2460,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2;
+    uniform float uSoft;
     uniform float uSight;
     uniform vec3 uSightA;
     uniform vec4 uShk0, uShk1, uHzA;
@@ -2497,7 +2503,15 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       }
       vec2 uv = vUv + dq / asp;
       // The exposure flickers at rage; there is no colour fringe.
-      vec3 c = texture2D(tDiffuse, uv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
+      vec3 c0 = texture2D(tDiffuse, uv).rgb;
+      // The lens hunts focus for a moment after the hit.
+      if (uSoft > 0.002) {
+        vec2 px = uSoft * 3.5 / uRes;
+        vec3 b = vec3(0.0);
+        for (int k = 0; k < 8; k++) { float a = float(k) * 0.785398; b += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * px).rgb; }
+        c0 = mix(c0, b / 8.0, min(uSoft, 1.0));
+      }
+      vec3 c = c0 * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The muzzle flash: a long level blue-white streak.
       if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
@@ -2745,6 +2759,13 @@ function draw() {
   grade.uniforms.uFlash.value = (reduced() ? 0.3 * flashNow : flashNow) + cutFlash;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   updateWarp();
+  // The eye stops down after the hit's flash and the muzzle's, then opens again.
+  const ha = simT - U.uHitP.value.w, hk = blastFx ? 1 : U.uBk.value > 0 ? 0.6 : 0;
+  const ma = muzzleFx ? simT - muzzleFx.t0 : 99;
+  const dip = (reduced() ? 0.5 : 1) * (hk * 0.42 * (1 - Math.exp(-ha / 0.2)) * Math.exp(-ha / 3.5) * (ha > 0 ? 1 : 0) + 0.15 * (1 - Math.exp(-ma / 0.1)) * Math.exp(-ma / 1.5));
+  renderer.toneMappingExposure = baseExp * (1 - dip);
+  // The lens softens on the hit and finds focus again.
+  grade.uniforms.uSoft.value = reduced() ? 0 : hk * 0.8 * (1 - Math.exp(-Math.max(ha, 0) / 0.08)) * Math.exp(-Math.max(ha, 0) / 0.6) * (ha > 0 && ha < 6 ? 1 : 0);
   drawShadow();
   composer.render();
 }
