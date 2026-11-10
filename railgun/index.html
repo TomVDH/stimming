@@ -64,6 +64,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { FLARE } from '../shared/flare.js';
 
 /* ---------- settings ---------- */
 const store = {
@@ -945,11 +946,21 @@ function buildGun() {
     add(slab(6, 8, 250, 440, sd * 27, 24), 0.5, 2);
     // Dark rails run the barrel's flanks.
     add(slab(3, 12, 462, 864, sd * 16.5, 0), 1, 2);
-    // Booms rise from the back of the housing.
-    add(spar(-190, 56, -330, 236, sd * 42, 6), 0.5, 2);
+    // A hoist A-frame leans over the back of the housing.
+    add(beam(barrelPt(-300, sd * 48, 56, v3()), barrelPt(-262, sd * 6, 150, v3()), 9, 9), 0.5, 2);
   }
-  add(beam(barrelPt(-296, -42, 192, v3()), barrelPt(-296, 42, 192, v3()), 5, 5), 0.5, 2);
-  add(spar(-40, 84, -8, 176, 0, 5), 0.5, 2);
+  // Lacing ties the two legs; a block caps the apex.
+  for (const f of [0.35, 0.7]) {
+    const a = -300 + 38 * f, x = 48 - 42 * f, u = 56 + 94 * f;
+    add(beam(barrelPt(a, -x, u, v3()), barrelPt(a, x, u, v3()), 5, 5), 0.5, 2);
+  }
+  add(slab(26, 16, -272, -252, 0, 152), 0.5, 2);
+  // A back stay runs from the apex down to the counterweight.
+  add(beam(barrelPt(-262, 0, 150, v3()), barrelPt(-366, 0, 10, v3()), 4, 4), 0.5, 2);
+  // A rangefinder bar sits on a pedestal at the housing's front.
+  add(slab(16, 18, -42, -24, 0, 93), 0.5, 0);
+  add(beam(barrelPt(-33, -70, 106, v3()), barrelPt(-33, 70, 106, v3()), 11, 11), 0.5, 0);
+  for (const sd of [-1, 1]) add(slab(16, 16, -41, -25, sd * 72, 106), 0.5, 2);
   // Cradle: a box neck, then a tongue with three collars and fins.
   add(slab(70, 62, 70, 250, 0, -4), 0.5, 0);
   add(slab(40, 18, 250, 440, 0, -36), 0.5, 0);
@@ -2008,11 +2019,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF;
     varying vec2 vUv;
-    // A ghost: a soft disc with a brighter rim, gr screen heights wide.
-    float ghost(vec2 g, float gr, vec2 asp) {
-      float d = length((vUv - g) * asp);
-      return smoothstep(gr, gr * 0.82, d) * (0.3 + 0.7 * smoothstep(gr * 0.5, gr, d));
-    }
+    ${FLARE}
     float h(vec2 p) {
       uvec2 q = uvec2(p);
       uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
@@ -2022,20 +2029,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     void main() {
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c = texture2D(tDiffuse, vUv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
-      // The impact flare: a white core, a level streak, four rays, five ghosts.
-      if (uLF.z > 0.001) {
-        vec2 asp = vec2(uRes.x / uRes.y, 1.0), p = (vUv - uLF.xy) * asp;
-        float r = length(p);
-        float lf = exp(-r * 30.0) * 2.5 + exp(-abs(p.y) * 300.0 - abs(p.x) * 1.6) * 1.4;
-        lf += (exp(-abs(p.y) * 160.0 - abs(p.x) * 7.0) + exp(-abs(p.x) * 160.0 - abs(p.y) * 7.0)) * 0.8;
-        vec2 ax = vec2(0.5) - uLF.xy;
-        vec3 gh = vec3(1.0) * ghost(uLF.xy + ax * 0.45, 0.05, asp) * 0.35
-                + vec3(0.85, 0.95, 1.0) * ghost(uLF.xy + ax * 0.8, 0.09, asp) * 0.25
-                + vec3(1.0) * ghost(uLF.xy + ax * 1.25, 0.035, asp) * 0.5
-                + vec3(1.0, 0.95, 0.85) * ghost(uLF.xy + ax * 1.6, 0.13, asp) * 0.18
-                + vec3(1.0) * ghost(uLF.xy + ax * 2.1, 0.06, asp) * 0.3;
-        c += (vec3(lf) + gh) * uLF.z;
-      }
+      // The impact flare: the house anamorphic flare, bright white.
+      if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, vec3(1.0), 1.0, vec3(0.55, 1.6, 1.6)) * uLF.z;
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
@@ -2812,8 +2807,8 @@ vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMu
 // The spike: a hot core, four rays and a level streak.
 const spike = makeFlare(linFit(0.95, 0.05, 230), /* glsl */`
       float d = length(vUv), x = abs(vUv.x), y = abs(vUv.y);
-      float rays = exp(-y * 40.0 - x * 2.5) + exp(-x * 40.0 - y * 2.5);
-      float a = (0.7 * rays + 0.6 * exp(-y * 90.0 - x * 1.2) + exp(-d * d * 30.0)) * (1.0 - smoothstep(0.8, 1.0, max(x, y)));`);
+      // Anamorphic: a hot core and a long level streak, no cross.
+      float a = (exp(-y * 120.0 - x * 0.9) + 0.35 * exp(-y * 30.0 - x * 2.2) + exp(-d * d * 30.0)) * (1.0 - smoothstep(0.8, 1.0, max(x, y)));`);
 // Side jets blow out of the brake's ports, square to the barrel.
 const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linFit(0.92, 0.07, 230)));
 // A shell: a thin skin of condensed air, lit by the sun and by uEm.
@@ -2850,7 +2845,7 @@ function updateMuzzle(ma, c, m0) {
   pu.uMz.value.copy(m0); pu.uMx.value.copy(shot.ax);
   pu.uDrift.value.set(6 * age, 2.5 * age, 0).addScaledVector(shot.ax, 120 * (1 - Math.exp(-age / 1.5)));
   // Reduced motion halves the fire.
-  pu.uPl.value.set(age, cc, Lj, (reduced() ? 3 : 6) * cc * Math.exp(-age / 0.15));
+  pu.uPl.value.set(age, cc, Lj, (reduced() ? 4 : 8) * cc * Math.exp(-age / 0.18));
   const Rm = 16 + 0.23 * Lj + 75 * Math.sqrt(age);
   pu.uC.value.copy(m0).add(pu.uDrift.value).addScaledVector(shot.ax, 0.45 * Lj);
   pu.uR.value = 0.8 * Lj + Rm;
@@ -2862,9 +2857,9 @@ function updateMuzzle(ma, c, m0) {
     const sd = i % 2 ? 1 : -1, a = BRAKE_PORTS[i >> 1];
     barrelPt(a, sd * 24, 0, jp);
     bv.copy(shot.side).multiplyScalar(sd);
-    glint(j, jp, bv, 160 * cc, 16, jg > 0.02 ? jg : 0);
+    glint(j, jp, bv, 250 * cc, 22, jg > 0.02 ? jg * 1.3 : 0);
   });
-  flare(spike, m0, 900 * (0.6 + cc), on ? 2.2 * cc * Math.exp(-ma / 0.05) : 0);
+  flare(spike, m0, 1700 * (0.6 + cc), on ? 2.8 * cc * Math.exp(-ma / 0.07) : 0);
   // The shell runs out ahead of the muzzle and burns off in a second.
   const sg = on ? 2.2 * cc * Math.exp(-ma / 0.25) : 0, su = shellMesh.material.uniforms;
   su.uR.value = 30 + 650 * (1 - Math.exp(-ma / 0.3));
@@ -3329,7 +3324,7 @@ function updateBolt() {
   const ma = age - 0.3;
   const on = ma > 0 ? 1 : 0, m0 = shot.muzzle;
   // A small hot core; the plume carries the rest.
-  flare(muzzleFlare, m0, 110 * (0.6 + c), on * c * 9 * Math.exp(-ma / 0.06));
+  flare(muzzleFlare, m0, 200 * (0.6 + c), on * c * 11 * Math.exp(-ma / 0.07));
   flare(muzzleGlow, m0, 1400 * (0.6 + c), on * 0.12 * c * Math.exp(-ma / 0.25));
   // The blast lights the plain and the gun.
   U.uMuzL.value.set(m0.x, m0.y, m0.z, on * 9 * c * Math.exp(-ma / 0.18));
@@ -3688,12 +3683,17 @@ function shotSound(ac, sh) {
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = buf; src.playbackRate.value = jit(0.03);
     // Its long tail fades out before the boom lands.
-    const lvl = 0.8 * Math.min(sh.c, 1.25) * jit(0.1);
+    const lvl = 1.4 * Math.min(sh.c, 1.25) * jit(0.1);
     g.gain.setValueAtTime(lvl, Math.max(ac.currentTime, at)); g.gain.setTargetAtTime(0, at + 4, 3.5);
     src.connect(g).connect(kit.out);
     sh.sfx.shot = Math.max(ac.currentTime, at);
     src.start(sh.sfx.shot); src.stop(sh.sfx.shot + 20);
-    track(sh.sfx.shot + 20.1, src);
+    // A sub punch under the report gives it weight.
+    const t0 = sh.sfx.shot, o = ac.createOscillator(), og = ac.createGain();
+    o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
+    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * Math.min(sh.c, 1.25), t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+    o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
+    track(sh.sfx.shot + 20.1, src, o);
   });
 }
 // The impact's prelude lands on the flash.
