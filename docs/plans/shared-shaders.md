@@ -43,6 +43,7 @@ env.touch();                  // after a change
 - Limits: raw WebGL2 only; one key light; the scene is one full-screen pass. A three.js toy uses the bundles one by one.
 - First toy on it: Fog horn (`foghorn/`, bean `stimming-vmu3`), a Lab toy. Its page is the scene, the ship's path, the sound and the bar; the runner does the rest.
 - `state.frame = false` takes away the pane's foggy rim, for a view with no window frame in it.
+- `textures: { tName: 'file.webp' }` loads pictures for the scene: sRGB, mipmapped, flipped upright. The scene declares `uniform sampler2D tName`. Fog horn draws its ship from two.
 
 ## The contract
 

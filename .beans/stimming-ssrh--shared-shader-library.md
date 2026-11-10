@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T11:13:58Z
+updated_at: 2026-11-10T11:38:54Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -79,3 +79,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: Tom: "Keep building". Built `shared/environment.js`, the runner that turns the bundles into one frame from a single scene function. The lab moved onto it with no change: eight frozen frames have the same checksum before and after. Open sea is a second scene in thirty lines of GLSL.
 
 - 2026-11-10: Fog horn, a new Lab toy, runs on the runner (Tom: "Yes, a new toy"). The runner gained `state.frame`.
+
+- 2026-11-10: `environment()` takes `textures: { tName: url }` (sRGB, mipmaps, upright). Fog horn uses it for the baked ship. The lab's eight checksums are unchanged.

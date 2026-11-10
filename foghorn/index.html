@@ -15,6 +15,7 @@
 <link rel="modulepreload" href="../shared/stim.js">
 <link rel="modulepreload" href="../shared/intro.js">
 <link rel="modulepreload" href="../shared/environment.js">
+<link rel="preload" as="image" href="vlootzak-side.webp">
 <style>
 /* Fog horn: a harbour mouth in thick fog and a bad sea. The horn calls a ship in out of the grey. */
 :root { --stage: oklch(0.1 0.012 250); }
@@ -116,23 +117,29 @@ vec3 fogCol(vec3 dir) { return skDusk(normalize(vec3(dir.x, 0.04, dir.z)), uSunD
 float fogAt(vec3 P) { return skHaze(CAM, P, uHazeD * uThick, 150.0); }
 // The sky behind the fog.
 vec3 skyFog(vec3 d) {
+  // Thick fog hides the sky, so its stars and clouds are not worth their cost.
+  float f = fogAt(CAM + d * 9000.0);
+  if (f > 0.985) return fogCol(d);
   vec3 c = vec3(0.012, 0.015, 0.03);
   if (uSkyOn > 0.5) {
     c = skSky(d, uSunD, uZen, uMid, uBand, uAnti, uStars, uTime);
     vec4 cl = skCloudsN(d, uSunD, uTime, uCloud, uCloudLit, uCloudShade, 3);
     c = mix(c, cl.rgb, cl.a);
   }
-  return mix(c, fogCol(d), fogAt(CAM + d * 9000.0));
+  return mix(c, fogCol(d), f);
 }
 // One lamp at a world point: a small core, and a halo that the fog widens.
-// Light reaches further through fog than a shape does.
+// k already holds the fog's dimming; f only sizes the halo.
 vec3 lamp(vec2 uv, float asp, vec3 P, vec3 col, float k, float f) {
   vec2 at = vec2(0.5 + P.x / -P.z * gFoc / asp, HZ + (P.y - CAMH) / -P.z * gFoc);
   vec2 d = (uv - at) * vec2(asp, 1.0);
+  float size = 0.06 + 0.45 * f;
+  // Past this reach the halo adds nothing; most lamps stop here.
+  if (abs(d.x) > size * 1.3 + 0.02 || abs(d.y) > size * 0.8 + 0.02) return vec3(0.0);
   float s = gFoc / -P.z;
   float core = exp(-dot(d, d) / (s * s * 2.0 + 3e-6));
-  float halo = gwOrb(uv, at, asp, 0.06 + 0.45 * f) * (0.1 + 0.6 * f) * uOrbs;
-  return col * k * pow(1.0 - f, 0.35) * (core * 6.0 + halo);
+  float halo = gwOrb(uv, at, asp, size) * (0.1 + 0.6 * f) * uOrbs;
+  return col * k * (core * 6.0 + halo);
 }
 #define ON(u, v) (S0 + vec3(H.x * (u), (v) + uShipM.x + uShipM.y * (u), H.y * (u)))
 // Every lamp in the scene. The water mirrors this, tap by tap.
@@ -140,12 +147,14 @@ vec3 lights(vec2 uv, float asp) {
   // The breakwater lights flash in turn; the horn holds them on.
   float pa = fract(uTime / 4.0), pb = fract(uTime / 4.0 + 0.5);
   float a = smoothstep(0.0, 0.03, pa) * smoothstep(0.28, 0.25, pa), b = smoothstep(0.0, 0.03, pb) * smoothstep(0.28, 0.25, pb);
-  vec3 c = lamp(uv, asp, vec3(-GAP - 2.0, 12.5, -BW), vec3(0.1, 1.0, 0.45), max(a, uHorn) * (1.0 + uHorn), gFogBW);
-  c += lamp(uv, asp, vec3(GAP + 2.0, 12.5, -BW), vec3(1.0, 0.12, 0.08), max(b, uHorn) * (1.0 + uHorn), gFogBW);
+  // Light reaches further through fog than a shape does.
+  float far = pow(1.0 - gFogBW, 0.35);
+  vec3 c = lamp(uv, asp, vec3(-GAP - 2.0, 12.5, -BW), vec3(0.1, 1.0, 0.45), max(a, uHorn) * (1.0 + uHorn) * far, gFogBW);
+  c += lamp(uv, asp, vec3(GAP + 2.0, 12.5, -BW), vec3(1.0, 0.12, 0.08), max(b, uHorn) * (1.0 + uHorn) * far, gFogBW);
   if (uShipK.x > 0.0) {
     vec2 H = uShipA.zw;
     vec3 S0 = vec3(uShipA.x, 0.0, uShipA.y), white = vec3(1.0, 0.95, 0.85), warm = vec3(1.0, 0.72, 0.4);
-    float k = uShipK.x, f = gFogShip;
+    float f = gFogShip, k = uShipK.x * pow(1.0 - f, 0.35);
     // Her own lamp list: two mastheads, a side light, the stern, the bridge,
     // a flood on each crane, and the bow spot.
     vec3 flood = vec3(1.0, 0.85, 0.63);
@@ -162,52 +171,29 @@ vec3 lights(vec2 uv, float asp) {
   }
   return c;
 }
-float sbox(vec2 q, vec2 lo, vec2 hi, float w) {
-  vec2 a = smoothstep(-w, w, q - lo) * smoothstep(-w, w, hi - q);
-  return a.x * a.y;
+// The KS Vlootzak, from two baked pictures of the model: her port side and her bow.
+// Each runs from 9.5 m under her waterline to 36.5 m over it, at 9.48 pixels a metre.
+// q.x is metres toward the bow from midship; q.y is metres over her waterline.
+// lod picks the mip by hand: the hit test breaks the automatic choice at her edges.
+uniform sampler2D tSide, tEnd;
+vec4 sidePic(vec2 q, float lod) {
+  // The bow is at the left of the picture.
+  vec4 c = textureLod(tSide, vec2((109.85 - q.x) / 216.0, (q.y + 9.5) / 46.0), lod);
+  return vec4(c.rgb / max(c.a, 1e-3), c.a);
 }
-// The KS Vlootzak's side, drawn from her own measures: a geared bulk carrier, 204 m long.
-// q.x is metres toward the bow from midship; q.y is metres over the water.
-// w is one pixel in metres, for a soft edge.
-float shipSide(vec2 q, float w) {
-  float x = q.x, y = q.y;
-  // The hull: a plumb stern, a raked stem, a raised forecastle.
-  float deck = 10.2 + 3.2 * smoothstep(79.0, 83.0, x) + 0.6 * smoothstep(83.0, 102.0, x);
-  float stem = 98.0 + 3.9 * pow(clamp(y / 13.8, 0.0, 1.0), 1.5);
-  float m = smoothstep(-w, w, x + 100.0) * smoothstep(-w, w, stem - x) * smoothstep(-w, w, deck - y);
-  // Five hatch covers.
-  m = max(m, sbox(q, vec2(-63.5, 10.0), vec2(-38.2, 11.7), w));
-  m = max(m, sbox(q, vec2(-31.3, 10.0), vec2(-6.0, 11.7), w));
-  m = max(m, sbox(q, vec2(0.4, 10.0), vec2(25.2, 11.7), w));
-  m = max(m, sbox(q, vec2(31.5, 10.0), vec2(56.9, 11.7), w));
-  m = max(m, sbox(q, vec2(62.7, 10.0), vec2(79.5, 11.7), w));
-  // Four cranes in two pairs; each pair rests its jibs between its posts.
+vec4 endPic(vec2 q, float lod) {
+  vec4 c = textureLod(tEnd, vec2(q.x / 36.0 + 0.5, (q.y + 9.5) / 46.0), lod);
+  return vec4(c.rgb / max(c.a, 1e-3), c.a);
+}
+// Her paint at night is near black. Her floods light the deck and the gear under them.
+vec3 shipLit(vec3 paint, vec2 q) {
+  float pool = exp(-dot(q - vec2(-69.9, 15.6), q - vec2(-69.9, 15.6)) / 110.0);
   for (int i = 0; i < 4; i++) {
-    float cx = i == 0 ? -35.5 : i == 1 ? -2.05 : i == 2 ? 27.8 : 61.3;
-    m = max(m, smoothstep(-w, w, 1.8 + 0.035 * (y - 10.2) - abs(x - cx)) * step(10.0, y) * smoothstep(-w, w, 27.8 - y));
+    vec2 v = q - vec2(i == 0 ? -34.2 : i == 1 ? -2.5 : i == 2 ? 29.3 : 60.9, 22.3);
+    pool += exp(-v.x * v.x / 170.0 - min(v.y, 0.0) * min(v.y, 0.0) / 230.0) * step(v.y, 2.0);
   }
-  m = max(m, sbox(q, vec2(-35.5, 18.7), vec2(-2.05, 19.7), w));
-  m = max(m, sbox(q, vec2(27.8, 18.7), vec2(61.3, 19.7), w));
-  // Aft: the lifeboat on its ramp, the lower house, the funnel, the bridge and the mast.
-  m = max(m, smoothstep(-w, w, x + 99.5) * smoothstep(-w, w, -93.5 - x) * step(10.0, y) * smoothstep(-w, w, 16.0 + 0.75 * (x + 99.5) - y));
-  m = max(m, sbox(q, vec2(-93.5, 10.0), vec2(-80.0, 15.6), w));
-  m = max(m, sbox(q, vec2(-86.7, 10.0), vec2(-82.0, 28.2), w));
-  m = max(m, sbox(q, vec2(-80.1, 10.0), vec2(-68.8, 24.7), w));
-  m = max(m, sbox(q, vec2(-81.0, 22.5), vec2(-67.8, 24.7), w));
-  m = max(m, sbox(q, vec2(-77.4, 24.0), vec2(-76.4, 34.7), w));
-  m = max(m, sbox(q, vec2(-78.4, 31.0), vec2(-75.4, 31.6), w));
-  // Forward: the foremast and the windlass on the forecastle.
-  m = max(m, sbox(q, vec2(95.3, 13.0), vec2(95.9, 21.2), w));
-  return max(m, sbox(q, vec2(87.5, 13.0), vec2(91.0, 15.2), w));
-}
-// Her end view, for the moments she points at the eye: the beam, the house, the posts.
-float shipEnd(vec2 q, float w) {
-  float a = abs(q.x), y = q.y;
-  float m = smoothstep(-w, w, 16.2 - a) * smoothstep(-w, w, 10.2 - y);
-  m = max(m, smoothstep(-w, w, 13.0 - a) * smoothstep(-w, w, 24.7 - y));
-  m = max(m, smoothstep(-w, w, 16.2 - a) * step(22.5, y) * smoothstep(-w, w, 24.7 - y));
-  m = max(m, smoothstep(-w, w, 2.4 - a) * smoothstep(-w, w, 28.2 - y));
-  return max(m, smoothstep(-w, w, 0.5 - a) * smoothstep(-w, w, 34.7 - y));
+  vec3 air = vec3(0.012) + uDay * 0.3 * (uZen + uMid + vec3(0.25));
+  return paint * (air + vec3(1.0, 0.85, 0.63) * 0.3 * pool * uShipK.x);
 }
 // Where a ray from o meets the ship's upright plane.
 bool shipHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
@@ -222,7 +208,7 @@ bool shipHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
   q = vec2(dot(P.xz - uShipA.xy, H), P.y);
   // She heaves and pitches; her hull goes 8 m under her own waterline.
   q.y -= uShipM.x + uShipM.y * q.x;
-  return q.y >= -8.0 && q.y < 36.0 && q.x > -101.0 && q.x < 103.0;
+  return q.y >= -9.5 && q.y < 36.5 && q.x > -106.0 && q.x < 109.8;
 }
 // Where it meets the plane across her beam, a little forward of midship.
 bool endHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
@@ -236,7 +222,7 @@ bool endHit(vec3 o, vec3 d, out vec2 q, inout float dist) {
   // Seen end on, she rolls.
   float cr = cos(uShipM.z), sr = sin(uShipM.z);
   q = vec2(cr * q.x + sr * q.y, cr * q.y - sr * q.x);
-  if (q.y < -8.0 || q.y > 36.0 || abs(q.x) > 18.0) return false;
+  if (q.y < -9.5 || q.y > 36.5 || abs(q.x) > 18.0) return false;
   dist = t;
   return true;
 }
@@ -307,42 +293,46 @@ vec3 envScene(vec2 uv) {
       vec3 Pw = vec3(p.x, 0.0, p.y);
       vec2 qm = vec2(0.0);
       float dm = 1.0, shade = 0.0, soft = 1.0 + 40.0 * sqrt(sig2);
-      if (shipHit(Pw, r, qm, dm)) shade = shipSide(qm, soft);
-      if (endHit(Pw, r, qm, dm)) shade = max(shade, shipEnd(qm, soft));
+      if (shipHit(Pw, r, qm, dm)) shade = sidePic(qm, 3.0 + soft * 0.4).a;
+      if (endHit(Pw, r, qm, dm)) shade = max(shade, endPic(qm, 3.0 + soft * 0.4).a);
       refl *= 1.0 - 0.85 * shade * (1.0 - gFogShip);
     }
     c = mix(mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay), refl, F);
     // A bad sea: foam on the crests, as bright as the fog round it.
     if (uSea > 0.0) {
-      float tall = wtSwell(p, uTime, foot, uSwell).z / max(uSwell * 16.0, 0.05);
+      float tall = (lift > 0.0 ? high / lift : wtSwell(p, uTime, 0.0, uSwell).z) / max(uSwell * 16.0, 0.05);
       // The troughs lie in shadow; the crests stand in the fog's light.
-      c *= 1.0 + 0.45 * uSea * clamp(tall, -1.0, 1.0);
-      float crest = tall + (wtNoised(p * 0.3 + vec2(uTime * 0.25, 0.0)).x - 0.5) * 1.1;
-      float foam = smoothstep(0.4, 1.0, crest) * uSea * (1.0 - smoothstep(0.5, 2.5, foot));
-      c = mix(c, (fogCol(d) + vec3(0.025)) * 2.6, foam * 0.85);
+      c *= 1.0 + 0.3 * uSea * clamp(tall, -1.0, 1.0);
+      // Foam only on the highest crests, torn into streaks along them.
+      float crest = tall + (wtNoised(p * 0.3 + vec2(uTime * 0.25, 0.0)).x - 0.5) * 0.9;
+      float torn = smoothstep(0.38, 0.8, wtNoised(p * vec2(0.5, 1.7) + vec2(uTime * 0.4, 0.0)).x);
+      float foam = smoothstep(0.7, 1.25, crest) * torn * uSea * (1.0 - smoothstep(0.5, 2.5, foot));
+      c = mix(c, (fogCol(d) + vec3(0.025)) * 2.0, foam * 0.7);
     }
     c = mix(c, fogCol(d), fogAt(vec3(p.x, 0.0, p.y)));
   }
   // The shapes on the water, far to near. Each is one dark tone under the fog.
   vec3 dark = mix(vec3(0.006, 0.007, 0.009), vec3(0.05, 0.06, 0.07), uDay);
   vec2 q = vec2(0.0);
-  float dist = 1.0, cover = 0.0, px = 1.5 / (gFoc * uRes.y);
+  float dist = 1.0, cover = 0.0;
   bool behind = uShipA.y < -BW;
   vec3 hull = c;
   if (uShipK.x > 0.0) {
-    // The side view and the end view cross; the eye takes whichever shows more.
+    // The side picture and the bow picture cross; the eye takes whichever shows more.
     if (shipHit(CAM, d, q, dist)) {
       vec3 P = CAM + d * dist;
+      vec4 pic = sidePic(q, log2(max(dist / (gFoc * uRes.y) * 9.48, 1.0)));
       // The sea climbs and falls along her side.
-      cover = shipSide(q, dist * px) * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
-      hull = mix(dark, fogCol(d), fogAt(P));
+      cover = pic.a * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
+      hull = mix(shipLit(pic.rgb, q), fogCol(d), fogAt(P));
     }
     if (endHit(CAM, d, q, dist)) {
       vec3 P = CAM + d * dist;
-      float end = shipEnd(q, dist * px) * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
+      vec4 pic = endPic(q, log2(max(dist / (gFoc * uRes.y) * 9.48, 1.0)));
+      float end = pic.a * smoothstep(-0.4, 0.4, P.y - wtSwell(P.xz, uTime, 0.0, uSwell).z);
       if (end > cover) {
         cover = end;
-        hull = mix(dark, fogCol(d), fogAt(P));
+        hull = mix(pic.rgb * (vec3(0.012) + uDay * 0.3 * (uZen + uMid + vec3(0.25))), fogCol(d), fogAt(P));
       }
     }
   }
@@ -380,6 +370,8 @@ try {
     scene: SCENE,
     active: () => visible,
     onFrame: raw => step(Math.min(raw, 0.05)),
+    // Two small pictures of the ship, baked from the model.
+    textures: { tSide: 'vlootzak-side.webp', tEnd: 'vlootzak-end.webp' },
     uniforms: {
       uThick: thick,
       uHorn: () => hornK,

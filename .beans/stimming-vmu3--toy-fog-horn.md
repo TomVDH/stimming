@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T11:00:13Z
-updated_at: 2026-11-10T11:26:25Z
+updated_at: 2026-11-10T11:38:54Z
 ---
 
 Lab toy `foghorn/`. Idea 100 in `docs/toy-ideas.md`: a harbour mouth in thick fog. Tap the horn; a container ship slides out of the grey, lights first.
@@ -37,3 +37,7 @@ The first toy on the environment runner (`shared/environment.js`, bean `stimming
 - Speed: 2.4 m/s near (under five knots), up to 8 m/s far off; the pass takes about five minutes. Was 16 to 60 m/s.
 - Storm (Settings, default 0.85): 5 m swell, the water surface lifted onto the swell, foam, spray over the breakwater and up from the quay, the ship heaving, pitching and rolling on the same swell (`swellHeight`), driven rain, wind in the sound.
 - Seen at desktop size only. Not checked: phone sizes, frame time on a phone, reduced motion, sound by ear.
+
+- 2026-11-10, Tom: "Yes, bake it". The ship is now two baked pictures of the Vlootzak model: her port side (2048 x 436, 29 KB) and her bow (341 x 436, 10 KB), rendered in Blender from Havoc's `bulker.glb`, 9.48 px a metre. The funnel mark is painted out. `foghorn/CREDITS.md` records the source and the open licence question. The procedural hull is gone; the lamp list and the flood pools stay.
+- The runner loads the pictures (`textures` option). Foam cut back to the highest crests. Lamps outside a pixel's reach are skipped, and thick fog skips the sky.
+- Frame time: not measured in a way to trust. The pane was hidden and the numbers swung from 8 to 60 ms for the same frame.

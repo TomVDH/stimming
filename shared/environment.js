@@ -13,6 +13,7 @@
 // The scene returns linear light for a frame point; uv is 0 to 1.
 // It can call every bundle (sk*, wt*, pp*, gw*, gr*) and read ENV_UNIFORMS.
 // Its own uniforms go in the scene text and in `uniforms`: { uName: () => value }.
+// Its own pictures go in `textures`: { tName: 'file.webp' }; the scene declares each as a sampler2D.
 // state.light is the key light's place on the frame: it flares and lights rain and drops.
 // state.lightColor sets its colour; state.frame = false takes the pane's foggy rim away.
 
@@ -150,13 +151,14 @@ void main() {
 // Options:
 //   scene     GLSL with vec3 envScene(vec2 uv). Required.
 //   uniforms  the scene's own uniforms: { uName: () => number or array }.
+//   textures  the scene's own pictures: { tName: url }. sRGB in, linear out, with mips.
 //   animated  true when the scene moves with no bundle on. Default false.
 //   active    () => false stops the loop, for a page with other modes.
 //   onFrame   called with the frame time in seconds, each loop frame.
 //   onLevel   called when the detail level changes.
 //   glass     other GLSL for the pane's glass step: for tests.
 //   share     another runner: this one uses its state, clock, motion and detail.
-export function environment(canvas, { scene, uniforms = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, share = null, maxDpr = 2, budget = 2.6e6 } = {}) {
+export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, share = null, maxDpr = 2, budget = 2.6e6 } = {}) {
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   function compile(fs) {
@@ -192,6 +194,26 @@ export function environment(canvas, { scene, uniforms = {}, animated = false, ac
   const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target(), rtPane = target();
   const progScene = compile(sceneFS(scene)), progDown = compile(DOWN_FS), progBok = compile(BOK_FS), progPane = compile(paneFS(glass)), progFinal = compile(FINAL_FS);
   const bloom = bloomChain(gl);
+  // The scene's own pictures. Each loads once; until then it is one clear pixel.
+  const pics = Object.entries(textures).map(([name, src], i) => {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    const img = new Image();
+    img.onload = () => {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      // Row 0 of the file is the top; the shader wants v = 0 at the bottom.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      touch();
+    };
+    img.src = src;
+    // Units 0 and 1 belong to the passes; the pictures start at 4.
+    return { name, tex, unit: 4 + i };
+  });
 
   const S = share ? share.state : { on: Object.fromEntries(ENV_PARTS.map(k => [k, true])), ...ENV_DEFAULTS, light: [0.32, 0.52], lightColor: null };
   // The clock: time in seconds, and the grain's seed.
@@ -279,6 +301,12 @@ export function environment(canvas, { scene, uniforms = {}, animated = false, ac
       else if (v.length === 3) gl.uniform3fv(at, v);
       else gl.uniform4fv(at, v);
     }
+    for (const pic of pics) {
+      gl.activeTexture(gl.TEXTURE0 + pic.unit);
+      gl.bindTexture(gl.TEXTURE_2D, pic.tex);
+      gl.uniform1i(u(pic.name), pic.unit);
+    }
+    gl.activeTexture(gl.TEXTURE0);
     run(progScene, rtScene);
     if (S.on.glass) {
       // bokeh.js: two 4x4 box steps to an eighth, then the disc gather at half size.
