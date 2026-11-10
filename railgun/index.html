@@ -1301,6 +1301,8 @@ const PU = {
   uLen: { value: 160000 }, uK: { value: 0.085 },
   // uTrail fades the smoke; uSolid tells that the rock blocks the ray.
   uTrail: { value: 1 }, uSolid: { value: 1 }, uFlow: { value: 0 }, uSteps: { value: 72 }, uLSteps: { value: 4 },
+  // uBreak erodes the train after the hit; at 0 it changes nothing.
+  uBreak: { value: 0 },
   uHot: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uEmberC: { value: new THREE.Vector3(...EMBER) },
   uSoot: { value: new THREE.Vector3(...linFit(0.26, 0.02, 50)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
 };
@@ -1321,7 +1323,7 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
   varying vec3 vP;
   uniform sampler3D uVol;
   uniform vec3 uAstP, uAway, uSide, uUpv, uHot, uFireC, uEmberC, uSoot, uAsh;
-  uniform float uAstRad, uLen, uK, uBurn, uTrail, uSolid, uTime, uFlow;
+  uniform float uAstRad, uLen, uK, uBurn, uTrail, uSolid, uTime, uFlow, uBreak;
   uniform int uSteps, uLSteps;
   ${HEAD}
   ${AIR}
@@ -1346,6 +1348,7 @@ const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1), new THR
     // A skew along u hides the tile repeat.
     vec3 p = vec3(u - uFlow, v.x + 0.37 * u, v.y + 0.19 * u) * 0.36;
     float d = c01(rmp(texture(uVol, p).r, 1.0 - cov, 1.0) * 3.0);
+    if (uBreak > 0.0) d = c01(rmp(d, uBreak * 0.85, 1.0));
     if (fine && d > 0.0) {
       // Fine cells carve the rim into small lobes.
       e = texture(uVol, p * 3.1 + vec3(uTime * 0.017, 0.0, 0.0)).g;
@@ -1464,11 +1467,12 @@ const fragTrailGeo = new THREE.BufferGeometry();
   fragTrailGeo.setIndex(idx);
 }
 // A cheap smoke ribbon: fire at the head, soot to ash behind.
-function makeFragTrail() {
+// own: the trail keeps its own direction instead of the rock's.
+function makeFragTrail(own = false) {
   const m = new THREE.Mesh(fragTrailGeo, new THREE.ShaderMaterial({
     uniforms: {
       ...U, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uP: { value: new THREE.Vector3() }, uR: { value: 100 }, uLen: { value: 5000 },
-      uOn: { value: 0 }, uSeed: { value: rnd() * 50 }, uAway: PU.uAway, uSide: PU.uSide, uSoot: PU.uSoot, uAsh: PU.uAsh, uFireC: PU.uFireC,
+      uOn: { value: 0 }, uSeed: { value: rnd() * 50 }, uAway: own ? { value: new THREE.Vector3(0, 1, 0) } : PU.uAway, uSide: own ? { value: new THREE.Vector3(1, 0, 0) } : PU.uSide, uSoot: PU.uSoot, uAsh: PU.uAsh, uFireC: PU.uFireC,
     },
     transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
@@ -2162,6 +2166,7 @@ function draw() {
 function stepAst(dt) {
   stepFrags();
   stepShards(dt);
+  stepChunks();
   if (ast.state === 'approach' || ast.state === 'hold') {
     // The hot face sheds glowing bits; they fall back into the smoke.
     if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 8 + rnd()); n > 0; n--) shedSpark();
@@ -2912,16 +2917,19 @@ const shardMat = new THREE.ShaderMaterial({
   }
   void main() {
     float age = uTime - aSeed.z;
-    if (age < 0.0 || age > 16.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+    if (age < 0.0 || age > 60.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     // Mild drag, a slow fall, a spin.
     // The shard shrinks away over its last two seconds.
     float k = 0.15;
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, 0.25 * age * age, 0.0);
-    float sc = aSeed.y * (1.0 - smoothstep(12.0, 16.0, age));
+    // Air drag sets a fall speed; each shard falls at its own.
+    float vt = 160.0 + 120.0 * fract(aSeed.x * 3.7);
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.3 * age)) / 0.3), 0.0);
+    // It burns up in the last few hundred metres.
+    float sc = aSeed.y * smoothstep(120.0, 500.0, c.y) * (1.0 - smoothstep(55.0, 60.0, age));
     vec3 axis = normalize(vec3(sin(aSeed.x * 7.0), cos(aSeed.x * 3.0) + 0.3, sin(aSeed.x * 5.0)));
     mat3 R = rot(axis, aVel.w * age * uSpin + aSeed.x);
     vP = c + R * (position * sc); vN = R * normal; vO = position;
-    vHeat = exp(-age / aSeed.w); vSeed = aSeed.x;
+    vHeat = max(exp(-age / aSeed.w), 1.3 * smoothstep(1600.0, 350.0, c.y)); vSeed = aSeed.x;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
@@ -2972,7 +2980,10 @@ float dens(vec3 p, out vec3 em) {
   vec3 c = mix(uEmberC, uFireC * 2.0, smoothstep(0.1, 0.45, T));
   c = mix(c, uHotC * 4.0, smoothstep(0.55, 0.95, T));
   em = c * d * smoothstep(0.03, 0.2, T) * T * 14.0 / Rb * uFb.z;
-  return d * 4.0 / Rb * (1.0 - smoothstep(45.0, 60.0, age));
+  // The soot cloud erodes from its thin parts first, gone by about 26 s.
+  float er = smoothstep(4.0, 18.0, age);
+  d = clamp((d - er * (0.35 + 0.65 * texture(uVol, w * 2.0 + vec3(age * 0.01)).g)) / max(1.0 - 0.6 * er, 0.2), 0.0, 1.0);
+  return d * 4.0 / Rb * (1.0 - smoothstep(18.0, 26.0, age));
 }
 vec3 alb(vec3 p) { return uSootC; }
 vec3 vlight(vec3 p) { return vec3(0.0); }`, {
@@ -2986,7 +2997,7 @@ let blastFx = null;
 function updateBlast() {
   if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = false; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
-  if (ha > 61) { blastFx = null; updateBlast(); return; }
+  if (ha > 27) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
@@ -3014,14 +3025,39 @@ function stepShards(dt) {
   shardAcc += dt;
   if (shardAcc < 1 / 12) return;
   shardAcc %= 1 / 12;
-  const n = shardGeo.instanceCount, P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.15;
+  const n = shardGeo.instanceCount, S = sSeed.array;
   for (let i = 0; i < n; i += 2) {
-    const age = simT - S[i * 4 + 2], heat = Math.exp(-age / S[i * 4 + 3]);
-    if (age < 0 || age > 15 || heat < 0.08) continue;
-    const e = (1 - Math.exp(-k * age)) / k;
-    bp.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - 0.25 * age * age, P[i * 3 + 2] + V[i * 4 + 2] * e);
-    bv.set(V[i * 4], V[i * 4 + 1], V[i * 4 + 2]).multiplyScalar(0.05 * Math.exp(-k * age));
-    writeStar(bp, simT, bv, 0.6, 2, 1.4 + rnd(), 0.7, 2.6, 0, 0.7 * heat, 0);
+    const age = simT - S[i * 4 + 2];
+    shardAt(i, age, bp, bv);
+    const heat = Math.max(Math.exp(-age / S[i * 4 + 3]), 1.3 * THREE.MathUtils.smoothstep(1600 - bp.y, 0, 1250));
+    if (age < 0 || age > 58 || heat < 0.08 || bp.y < 150) continue;
+    bv.multiplyScalar(0.05);
+    writeStar(bp, simT, bv, 0.6, 2, 1.4 + rnd(), 0.7, 2.6, 0, 0.7 * Math.min(heat, 1.2), 0);
+  }
+}
+// A shard's place and velocity at age, as the shard shader has them.
+function shardAt(i, age, out, vel) {
+  const P = sPos.array, V = sVel.array, S = sSeed.array, k = 0.15, vt = 160 + 120 * ((S[i * 4] * 3.7) % 1);
+  const e = (1 - Math.exp(-k * age)) / k, ek = Math.exp(-k * age);
+  out.set(P[i * 3] + V[i * 4] * e, P[i * 3 + 1] + V[i * 4 + 1] * e - vt * (age - (1 - Math.exp(-0.3 * age)) / 0.3), P[i * 3 + 2] + V[i * 4 + 2] * e);
+  vel.set(V[i * 4] * ek, V[i * 4 + 1] * ek - vt * (1 - Math.exp(-0.3 * age)), V[i * 4 + 2] * ek);
+}
+// Chunk trails: smoke ribbons behind the biggest falling shards.
+const chunks = Array.from({ length: 4 }, () => ({ trail: makeFragTrail(true), i: -1 }));
+const chP = new THREE.Vector3(), chV = new THREE.Vector3();
+function stepChunks() {
+  for (const ch of chunks) {
+    const u = ch.trail.material.uniforms;
+    if (ch.i < 0 || simT > shardsEnd) { ch.trail.visible = false; continue; }
+    const age = simT - sSeed.array[ch.i * 4 + 2], r = sSeed.array[ch.i * 4 + 1];
+    shardAt(ch.i, age, chP, chV);
+    // The trail streams back up the fall line, and dies at the ground.
+    u.uP.value.copy(chP); u.uAway.value.copy(chV).negate().normalize();
+    u.uSide.value.crossVectors(yUp, u.uAway.value).normalize();
+    u.uR.value = r * 0.9; u.uLen.value = r * 30;
+    u.uOn.value = Math.min(1, age / 2) * THREE.MathUtils.smoothstep(chP.y, 150, 600) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
+    ch.trail.visible = u.uOn.value > 0.01;
   }
 }
 
@@ -3092,7 +3128,10 @@ function shatter(c) {
   }
   shardGeo.instanceCount = N;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
-  shardsEnd = simT + 16;
+  shardsEnd = simT + 60;
+  // The four biggest shards drag smoke trails down with them.
+  const big = Array.from({ length: N }, (_, i) => i).sort((a, b) => sSeed.array[b * 4 + 1] - sSeed.array[a * 4 + 1]).slice(0, chunks.length);
+  chunks.forEach((ch, j) => { ch.i = big[j] ?? -1; ch.trail.material.uniforms.uOn.value = 0; });
   // Embers: a burst of K6 stars from the rock's heart.
   const n = N * 15, sp = R / 600;
   for (let i = 0; i < n; i++) {
@@ -3182,7 +3221,9 @@ function stepShot(dt) {
   if (U.uHeat.value < 0.003) U.uHeat.value = 0;
   if (ast.state === 'shatter') astMat.uniforms.uBurn.value *= Math.exp(-dt / 0.6);
   // The smoke outlives the fire, then grows back behind the next rock.
-  PU.uTrail.value = ast.state === 'shatter' ? PU.uTrail.value * Math.exp(-dt / 2.4) : Math.min(1, PU.uTrail.value + dt / 3);
+  // After the hit the train erodes and thins over about forty seconds.
+  PU.uTrail.value = ast.state === 'shatter' ? PU.uTrail.value * Math.exp(-dt / 18) : Math.min(1, PU.uTrail.value + dt / 3);
+  PU.uBreak.value = ast.state === 'shatter' ? Math.min(1, PU.uBreak.value + dt / 35) : 0;
   // Steam rises off the hot barrel.
   if (U.uHeat.value > 0.15 && !reduced()) {
     for (let n = Math.floor(dt * 14 * U.uHeat.value + rnd()); n > 0; n--) {
@@ -3233,7 +3274,7 @@ function stepShot(dt) {
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
   if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
   // The next rock waits until the blast has had its time.
-  if (age > shot.hitT + 22 && age > shot.arrive + 1) {
+  if (age > shot.hitT + 50 && age > shot.arrive + 1) {
     if (ast.state === 'shatter') respawn();
     shot = null;
     bolt.visible = false;

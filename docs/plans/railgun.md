@@ -254,6 +254,8 @@ An original swell. It uses no recording, notes, sweep or score of the THX Deep N
 - A bright white lens flare with ghosts on the impact, in the grade pass.
 - The camera's near plane moves from 0.5 m to 20 m: the rocks z-fought at 40 km.
 - Next mode (not built): a scope view with the projectile in its sights; the sight's display filter is the cake. Little or no interaction.
+- Tom, 03:47: the debris keeps falling and burns up near the ground; the main plume lingers and breaks up into smaller trails behind the big chunks; the soot cloud dissipates sooner through the noise; the next rock waits 50 s after the hit.
+- Next (not built, needs the clouds session's time of day): a dedicated Reset button. It runs a day-and-night timelapse that slowly accelerates until it spins out of control, then lands back at the start.
 
 ### Task 10: steps
 
