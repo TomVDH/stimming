@@ -2628,18 +2628,52 @@ vec4 cabinEnv(vec3 r) {
   return vec4(c, win);
 }
 // The seat in front: its back faces us, a little reclined, by the wall.
-// Window metres; it returns the hit point and, in w, coverage from 0 to 1.
-const float SEAT_X = 0.2;
-vec4 seatBack(vec3 da) {
-  // The back leans aft toward its top: x falls as y rises.
-  float den = da.x + 0.12 * da.y;
-  if (den <= 1e-4) return vec4(0.0);
-  float t = (SEAT_X - 0.12 * uEye.y - uEye.x) / den;
-  vec3 P = uEye + da * t;
-  if (t <= 0.0 || P.z > -0.03) return vec4(0.0);
-  float sd = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
-  float aa = fwidth(sd) * 1.2;
-  return vec4(P, smoothstep(aa, -aa, sd));
+// Seat space q: x is depth into the seat, toward the nose; y up; z as the window's.
+// The back leans aft toward its top, so the face's x falls as y rises.
+const float SEAT_X = 0.25, SEAT_LEAN = 0.12;
+float sdRB(vec3 p, vec3 b, float r) { vec3 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r; }
+// Distance to the seat; y holds 1 on the headrest, 0 on the back.
+vec2 seatMap(vec3 q) {
+  // The back: a padded slab, its face a little convex across the width.
+  vec3 b = q - vec3(0.05, -0.49, -0.475);
+  float zn = b.z / 0.425;
+  b.x -= 0.018 * zn * zn;
+  float dB = sdRB(b, vec3(0.05, 0.47, 0.425), 0.045);
+  // The headrest: a cushion proud of the back, centred on the seat in front.
+  vec3 h = q - vec3(-0.02, -0.035, -0.31);
+  float hz = h.z / 0.23, hy = h.y / 0.1;
+  // It pillows in the middle; its side wings fold toward us.
+  h.x -= 0.028 * hy * hy - 0.04 * smoothstep(0.45, 1.0, abs(hz));
+  float dH = sdRB(h, vec3(0.045, 0.1, 0.23), 0.05);
+  return dH < dB ? vec2(dH, 1.0) : vec2(dB, 0.0);
+}
+// Hit point in xyz and coverage in w; n is the seat-space normal, m the part.
+vec4 seatBack(vec3 da, out vec3 n, out float m) {
+  n = vec3(0.0); m = 0.0;
+  vec3 o = vec3(uEye.x + SEAT_LEAN * uEye.y - SEAT_X, uEye.yz);
+  vec3 d = vec3(da.x + SEAT_LEAN * da.y, da.yz);
+  // Clip the ray to the seat's box; rays outside it pay nothing more.
+  vec3 lo = vec3(-0.09, -0.97, -0.92), hi = vec3(0.13, 0.08, -0.03);
+  vec3 inv = 1.0 / d, t0 = (lo - o) * inv, t1 = (hi - o) * inv;
+  vec3 tn = min(t0, t1), tf = max(t0, t1);
+  float t = max(max(tn.x, tn.y), max(tn.z, 0.0)), tEnd = min(min(tf.x, tf.y), tf.z);
+  if (t >= tEnd) return vec4(0.0);
+  float px = 1.0 / uFocal, near = 1e5;
+  vec2 h = vec2(1.0);
+  for (int i = 0; i < 40; i++) {
+    h = seatMap(o + d * t);
+    near = min(near, h.x / t);
+    if (h.x < 0.25 * px * t || t > tEnd) break;
+    t += h.x * 0.95;
+  }
+  // Rays that only graze the edge get partial cover, for a soft silhouette.
+  float w = h.x < 0.25 * px * t ? 1.0 : smoothstep(1.2 * px, 0.0, near);
+  if (w <= 0.0) return vec4(0.0);
+  vec3 q = o + d * min(t, tEnd);
+  vec2 e = vec2(0.002, -0.002);
+  n = normalize(e.xyy * seatMap(q + e.xyy).x + e.yyx * seatMap(q + e.yyx).x + e.yxy * seatMap(q + e.yxy).x + e.xxx * seatMap(q + e.xxx).x);
+  m = h.y;
+  return vec4(q.x - SEAT_LEAN * q.y + SEAT_X, q.yz, w);
 }
 // Fine scratches on the scratch pane, pG in metres.
 // A scratch glints when it runs across the line to a bright source.
@@ -2982,21 +3016,28 @@ void main() {
     glassK *= smoothstep(aa, -aa, sOut);
   }
   // The seat in front stands between the eye and the wall's nose side.
-  vec4 sb = seatBack(da);
+  vec3 nQ; float part;
+  vec4 sb = seatBack(da, nQ, part);
   if (sb.w > 0.0) {
     vec3 P = sb.xyz;
+    // The seat-space normal, sheared back into window space.
+    vec3 nS = normalize(vec3(nQ.x, SEAT_LEAN * nQ.x + nQ.y, nQ.z));
     // Fabric: dark blue-grey with a fine weave; the headrest wears a cream cover.
-    float cover = smoothstep(-0.155, -0.15, P.y);
-    vec3 alS = mix(vec3(0.16, 0.17, 0.21), vec3(0.72, 0.69, 0.63), cover);
-    alS *= 0.9 + 0.2 * hash12(floor(P.zy * 900.0));
-    // A stitched seam rings the cover.
-    alS *= 1.0 - 0.3 * smoothstep(0.003, 0.0, abs(P.y + 0.15));
-    // Cabin light from above; the side by the window takes its light too.
-    vec3 Ls2 = cabin * (0.7 + 0.5 * smoothstep(-0.5, 0.05, P.y)) + outGlow * 2.5 * exp((P.z + 0.03) / 0.22);
+    vec3 alS = mix(vec3(0.16, 0.17, 0.21), vec3(0.72, 0.69, 0.63), part);
+    alS *= 0.9 + 0.2 * hash12(floor((P.zy + P.x) * 900.0));
+    // A stitched hem runs along the cover's lower edge.
+    alS *= 1.0 - 0.3 * part * smoothstep(0.003, 0.0, abs(P.y + 0.11));
+    // Occlusion: one probe off the surface darkens the seam and the folds.
+    vec3 qS = vec3(P.x + SEAT_LEAN * P.y - SEAT_X, P.yz);
+    float ao = clamp(seatMap(qS + nQ * 0.04).x / 0.04, 0.2, 1.0);
+    // Cabin light falls from above; faces that tip up catch more.
+    float dc = 0.5 + 0.5 * dot(nS, Lc);
+    // Window light reaches faces turned toward the glass.
+    float dw = max(dot(nS, normalize(-P)), 0.0);
+    vec3 Ls2 = cabin * (0.12 + 1.4 * dc * dc) * ao + outGlow * 3.0 * dw * exp((P.z + 0.03) / 0.22) * mix(ao, 1.0, 0.5);
     vec3 seat = alS * Ls2;
-    // The rounded edge by the wall catches a rim of window light.
-    float sdS = sdBox(vec2(P.z + 0.475, P.y + 0.43), vec2(0.425, 0.47), 0.08);
-    seat += outGlow * 1.5 * smoothstep(-0.02, 0.0, sdS) * smoothstep(-0.3, -0.03, P.z);
+    // Edges that turn away from the eye catch a thin rim of window light.
+    seat += outGlow * 0.8 * pow(1.0 - abs(dot(nS, da)), 4.0) * smoothstep(-0.35, -0.05, P.z);
     c = mix(c, seat, sb.w);
     glassK *= 1.0 - sb.w;
   }
