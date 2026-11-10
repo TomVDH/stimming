@@ -9,8 +9,9 @@ export const lin = c => new THREE.Color().setRGB(...linFit(c[0], c[1], c[2]));
 
 // Paints a geometry: one colour on every vertex.
 // Painted geometries merge, so many parts make one draw call.
-export function paint(geo, c) {
-  const g = geo.index ? geo.toNonIndexed() : geo, col = lin(c), n = g.attributes.position.count, a = new Float32Array(n * 3);
+// boost lifts a glow part over the others on its switch.
+export function paint(geo, c, boost = 1) {
+  const g = geo.index ? geo.toNonIndexed() : geo, col = lin(c).multiplyScalar(boost), n = g.attributes.position.count, a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; }
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
   return g;

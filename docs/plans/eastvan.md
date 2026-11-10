@@ -119,7 +119,7 @@ The repo has no draw-call budget. East Van sets one.
 ### The Drive (`stimming-pmsi`)
 
 - [x] Five city extracts fetched and baked; `eastvan/CREDITS.md`; the credit line on the page.
-- [x] `eastvan/drive.js`: the west side of Commercial Drive north of East 4th, as its own diorama.
+- [x] `eastvan/drive.js`: a disc of 58 m radius round the corner of Commercial Drive and East 4th, as its own diorama.
 - [x] Pokes: shops, upper windows, street lamps, the trolley bus, the fruit stand. Stop 3.
 
 ### Next (Tom picks the order)

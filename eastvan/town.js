@@ -16,7 +16,7 @@ function geomsOf(q) {
   const add = (g, x, y, z) => { out.push(g.translate(x, y, z)); };
   if (q.t === 'box') add(new THREE.BoxGeometry(...q.s), ...q.p);
   else if (q.t === 'cyl') {
-    const g = new THREE.CylinderGeometry(q.r, q.r, q.h, q.r > 0.6 ? 20 : 12);
+    const g = new THREE.CylinderGeometry(q.r, q.r, q.h, q.seg || (q.r > 0.6 ? 20 : 12));
     if (q.ax === 'z') g.rotateX(Math.PI / 2); else if (q.ax === 'x') g.rotateZ(Math.PI / 2);
     add(g, ...q.p);
   } else if (q.t === 'ring') {
@@ -31,19 +31,23 @@ function geomsOf(q) {
   }
   else if (q.t === 'blob') add(new THREE.IcosahedronGeometry(q.r, 1), ...q.p);
   else if (q.t === 'beam') out.push(beamGeo(q.a, q.b, q.w));
-  else if (q.t === 'prism') {
-    const sh = new THREE.Shape(), w = q.s[0] / 2;
-    sh.moveTo(-w, 0); sh.lineTo(w, 0); sh.lineTo(0, q.s[1]); sh.closePath();
-    add(new THREE.ExtrudeGeometry(sh, { depth: q.s[2], bevelEnabled: false }), q.p[0], q.p[1], q.p[2] - q.s[2] / 2);
-  } else if (q.t === 'roof') {
-    // Each side is a run of courses. Each course lifts its lower edge.
-    const e = roofEave(q), a = Math.atan(e.slope), len = Math.hypot(e.hw, e.slope * e.hw) + 0.05, top = q.p[1] + q.s[1];
-    const n = q.courses || 1, tilt = n > 1 ? 0.045 : 0, run = len / n;
-    for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
-      const mid = (i + 0.5) * run, lap = n > 1 ? 0.08 : 0;
-      const cx = q.p[0] + s * (Math.cos(a) * mid + Math.sin(a) * q.th / 2), cy = top - Math.sin(a) * mid + Math.cos(a) * q.th / 2;
-      add(new THREE.BoxGeometry(run + lap, q.th, q.s[2]).rotateZ(-s * (a - tilt)), cx, cy, q.p[2]);
+  else if (q.t === 'prism' || q.t === 'roof') {
+    // Both are built on the origin with the ridge along z, then turned and set down.
+    const local = [];
+    if (q.t === 'prism') {
+      const sh = new THREE.Shape(), w = q.s[0] / 2;
+      sh.moveTo(-w, 0); sh.lineTo(w, 0); sh.lineTo(0, q.s[1]); sh.closePath();
+      local.push(new THREE.ExtrudeGeometry(sh, { depth: q.s[2], bevelEnabled: false }).translate(0, 0, -q.s[2] / 2));
+    } else {
+      // Each side is a run of courses. Each course lifts its lower edge.
+      const e = roofEave(q), a = Math.atan(e.slope), len = Math.hypot(e.hw, e.slope * e.hw) + 0.05;
+      const n = q.courses || 1, tilt = n > 1 ? 0.045 : 0, run = len / n;
+      for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
+        const mid = (i + 0.5) * run, lap = n > 1 ? 0.08 : 0;
+        local.push(new THREE.BoxGeometry(run + lap, q.th, q.s[2]).rotateZ(-s * (a - tilt)).translate(s * (Math.cos(a) * mid + Math.sin(a) * q.th / 2), q.s[1] - Math.sin(a) * mid + Math.cos(a) * q.th / 2, 0));
+      }
     }
+    for (const g of local) add(q.ax === 'x' ? g.rotateY(Math.PI / 2) : g, ...q.p);
   } else if (q.t === 'pickets') {
     for (let i = 0; i < q.n; i++) {
       const u = lerp(q.a, q.b, i / Math.max(1, q.n - 1)), d = q.d || q.w;
@@ -58,7 +62,7 @@ function geomsOf(q) {
       else add(new THREE.BoxGeometry(0.03, q.h, w).rotateZ(q.out * lean), q.at + q.out * 0.03, y, mid);
     }
   }
-  return out.map(g => paint(g, q.k === 'lid' ? lift(COL[q.c], 0.05) : COL[q.c]));
+  return out.map(g => paint(g, q.k === 'lid' ? lift(COL[q.c], 0.05) : COL[q.c], q.boost || 1));
 }
 
 // A switch that is off shows its colour through this dark tint.

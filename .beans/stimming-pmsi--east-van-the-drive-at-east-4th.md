@@ -41,3 +41,14 @@ Tom: start the Drive. The real block at Commercial Drive and East 4th Avenue, fr
 - The page holds two dioramas. Drive is stop 3 (key 3, `?at=drive`); it loads on the first visit.
 - Measured in the pane (1380 x 1968): 50 draw calls, 28.5k triangles, about 75 frames each second.
 - Not done: people, crows, sound, shop interiors, the east side of the street.
+
+## Rebuilt as a disc (Tom, 2026-11-10)
+
+Tom: "it's this: the radius around Commercial and E 4th Ave". The first build showed only the west side as a strip.
+
+- `eastvan/drive.js` now cuts a disc of 58 m radius round the corner. `R` sets the radius.
+- Real: every lot (as a low slab; the bare ground is street and lane), every building outline and height on both sides, gable roofs on the pitched houses, shop units and trades on both sides, trees, lamp poles.
+- Buildings stop at their lot line: the 2009 outlines take in awnings.
+- One switch per shop (glass and sign); the sign is brighter through a vertex boost.
+- The view runs up the Drive from the south, from high up.
+- Measured in the pane (1380 x 1968): 84 draw calls, 73k triangles, about 55 frames each second.
