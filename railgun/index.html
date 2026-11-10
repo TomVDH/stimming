@@ -499,8 +499,9 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   cloud *= 1.0 + 0.15 * dayW;
   d *= 1.0 + 0.35 * dayW;
   // The shock rim: compressed air, lit by everything round it.
-  cloud += hl + rim * (uCloudSun * 0.5 + uCloudAmb * 3.0 + hl * 2.0 + 0.05);
-  return mix(col, cloud, min(1.0, d * (0.75 + 0.5 * rim)));
+  // The shock rim: a faint warm ripple, not a white wave.
+  cloud += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
+  return mix(col, cloud, min(1.0, d * (0.75 + 0.2 * rim)));
 }
 vec3 astGlow(vec3 dir) {
   float ang = acos(clamp(dot(dir, uAst.xyz), -1.0, 1.0));
@@ -907,6 +908,12 @@ void main() {
   float rim; vec3 push;
   vec3 hl0 = cloudHit(vP, 0.5, rim, push);
   X -= vec2(dot(push, vR), push.y);
+  // A tower ripples as the blast wave rolls through it.
+  if (vS.z > 0.5) {
+    float tw = uStarT - uHitP.w, rw = length(vP - uHitP.xyz);
+    float wave = uBk > 0.0 && tw > 0.0 ? exp(-pow((rw - 9000.0 * tw) / 7000.0, 2.0)) * exp(-tw / 25.0) : 0.0;
+    X += wave * H * vec2(0.06 * sin(X.y / H * 9.0 + tw * 2.5), 0.03 * sin(X.x / H * 7.0 - tw * 2.0));
+  }
   float F = body(X);
   float soft = H * 0.05;
   // The base melts into the haze, so the blast's push never shows a hard bottom edge.
@@ -949,7 +956,7 @@ void main() {
   float occH = max(body(X + h2 * H * 0.15), 0.0) + max(body(X + h2 * H * 0.4), 0.0);
   float shH = exp(-occH / (H * 0.3));
   // Towers are tall and catch the blast hardest.
-  col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.35 + amb * 1.5 + hl * 1.2 + 0.04);
+  col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
 }`;
 const CLOUD_VS = /* glsl */`
@@ -2769,13 +2776,15 @@ act.press = (by = 'pointer') => {
   // The shake starts on this very frame.
   U.uCharge.value = 0.12;
 };
-// The gun fires only once armed; below that a release fizzles.
+// The gun fires only once armed and aimed; else a release fizzles.
 const ARM = 0.6;
 act.release = (by = 'pointer') => {
   if (!charge || charge.by !== by) return;
   const c = charge.c;
   charge = null;
-  if (c < ARM) { fizzle(); return; }
+  // It fires only on target: a release while the gun still swings bleeds the charge.
+  const aimed = ast.state === 'shatter' || aimNow.err < 0.012;
+  if (c < ARM || !aimed) { fizzle(); return; }
   humStop(kit.live());
   fire(c);
 };
@@ -3807,6 +3816,10 @@ vec3 vlight(vec3 p) {
   vec3 b = p - uBP;
   float R0 = uFb.y * 3.0, k = uFb.z * (2.0 * exp(-uFb.x / 1.5) + 0.5 * exp(-uFb.x / 9.0)) * (1.0 - smoothstep(18.0, 30.0, uFb.x));
   vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0);
+  // At night the moon lights the soot faintly and silvers its far edge.
+  vec3 nb = normalize(b);
+  float edge = pow(1.0 - abs(dot(nb, normalize(cameraPosition - uBP))), 2.0);
+  L += uSunC * uStars * (0.3 + 0.6 * max(dot(nb, uSun), 0.0) + 0.9 * edge);
   for (int i = 0; i < 4; i++) {
     if (uDebL[i].w <= 0.0) continue;
     vec3 d = p - uDebL[i].xyz;
