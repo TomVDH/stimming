@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T06:23:28Z
+updated_at: 2026-11-10T06:46:47Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -19,11 +19,12 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Take stock in Stimming: shared shaders and hand copies
 - [x] Take stock in Havoc: Buoy Business TSL shaders and classic water
 - [x] Write `docs/plans/shared-shaders.md`: table and ranked list
-- [ ] Tom picks the first effect
-- [ ] Build that effect in `shared/`
-- [ ] A/B panel on a dev page (noindex)
-- [ ] Check in the browser pane
-- [ ] Name the toys that can adopt it
+- [x] Tom picks the first effect: lens flare
+- [x] Build that effect in `shared/`: `shared/flare.js`
+- [x] A/B panel on a dev page (noindex): `fxlab/`
+- [x] Check in the browser pane
+- [x] Name the toys that can adopt it
+- [ ] Tom picks the next effect (grade, water surface, night sky and haze, output)
 
 ## Rules
 
@@ -35,3 +36,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-09: stock taken. Ranked list: lens flare, grade, water surface, night sky and haze, output. Recommended first: lens flare. Waits on Tom.
 - Havoc `src/engine/tsl` (`hvc-01d1`) is still a plan; its shaders sit in `src/view` and `src/engine/post.js`.
 - Dev page for the modules: `fxlab/` (noindex), not built yet.
+
+- 2026-11-09: `shared/flare.js` built. `fxlab/` checks five copies (walker, window, bread, fireworks and meteor) against it: each matches within 1 / 255 in raw WebGL2 and in a three.js ShaderMaterial. No toy adopted it; the plan lists how each one can.

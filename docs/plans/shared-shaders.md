@@ -20,7 +20,29 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 
 One dev page tests every module: `fxlab/` (noindex), built like `glasslab/`.
 Each effect gets one panel: A against B at full resolution, with knobs.
+A is a toy's own copy; B is the shared module. B runs in raw WebGL2 or in a three.js `ShaderMaterial`.
+The page reads the largest difference between A and B. "Check all copies" tests every copy in both runtimes.
 `glasslab/` stays the pane-rain page.
+
+## Built
+
+| Module | Date | Proof | Adopted by |
+|---|---|---|---|
+| `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | None yet |
+
+### Lens flare: how a toy adopts it
+
+`fxlab/` shows the exact B source for each copy; paste it from there.
+
+| Toy | Copy today | Replace with |
+|---|---|---|
+| `walker` | `POST_FS`: veil, streak, ghosts, screen blend | The parts, with `uBand` and `uHard` (lab: Beach walker). Keep the depth cover, haze pass, vignette and grade |
+| `window` | `flare()` in `window/shader.js` | The parts in its ten-slot loop (lab: Window seat). `flareSlots(10)` can pack `uFlr` and `uFlrC` |
+| `bread` | The flare `ShaderPass` | The parts with its own numbers (lab: Broodautomaat). Keep its blend |
+| `fireworks`, `meteor` | `makeFlares` | `flWarm`, `flStreak`, `flGhosts` (lab: Fireworks). The local `warm()` goes |
+
+New users (`launch`, `canal`, `viaduct`, `trainride`) call `flFlare()` and `flScreen()`: the Look rule's flare in one call.
+`flareAt()` gives a raw WebGL2 toy the light's place on the frame.
 
 Rules:
 
@@ -37,7 +59,7 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 |---|---|---|---|---|
 | Pane rain, pane fog | `shared/glassrain.js` | `trainride`, `window`; lab `glasslab/` | The shared module (Tom's base) | Done |
 | Disc bokeh | `shared/bokeh.js`. By hand: `windfarm` `dofPass`, `motorway` `tilt0`, `bread` `tilt`, `frietkot` `tiltPass` | `trainride` shared; 4 by hand | The shared module. Havoc: `discBlur`, `tiltShift` in `src/engine/post.js` | Done. A tilt-shift band helper: S |
-| Lens flare | `walker` `POST_FS`, `window/shader.js` `flare()`, `bread` flare pass, `fireworks` `makeFlares`, `meteor` `makeFlares` | 5 by hand | `walker` `POST_FS` (the Look rule's reference). Slots from `window`. Warmth, length and thinness knobs from Havoc `src/view/lensflare.js`; orb from `orbNode` | S |
+| Lens flare | `walker` `POST_FS`, `window/shader.js` `flare()`, `bread` flare pass, `fireworks` `makeFlares`, `meteor` `makeFlares` | 5 by hand | `walker` `POST_FS` (the Look rule's reference). Slots from `window`. Warmth, length and thinness knobs from Havoc `src/view/lensflare.js`; orb from `orbNode` | Built: `shared/flare.js` |
 | Grade: tint, vignette, grain | `makeGrade` (K2) in `viaduct`, `fireworks`, `launch`, `meteor`, `canal`, `bread`, `frietkot`. Variants in `subway`, `trainride`, `windfarm`, `motorway`, `beer`, `dandelion` | 7 near word for word; 6 variants | `launch` `makeGrade`: integer pixel hash, grain seed | S |
 | Output: ACES fit, sRGB, dither | Raw WebGL2 toys: `aces()` in 10, `srgb()` in 19, a dither line in 22. three.js toys use the renderer's ACES | 10 to 22 | `pool` `aces` and `srgb`; `walker` dither | S |
 | Noise: hash, value noise, fbm | Every shader toy: value noise in about 50 files, fbm in 35, three hash families | 50+ | `grH`, `grN`, `grFbm` in `glassrain.js` (the same text as `K2_NOISE`) | S. For new toys only: a new hash changes each old pattern |
