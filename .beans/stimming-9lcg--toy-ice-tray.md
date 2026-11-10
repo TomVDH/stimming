@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T09:04:15Z
-updated_at: 2026-11-10T09:43:56Z
+updated_at: 2026-11-10T09:48:54Z
 parent: stimming-oh7b
 ---
 
@@ -15,7 +15,7 @@ Build Ice tray from docs/plans/ice.md. Tom picked it on 2026-11-10 in place of R
 - [x] Task 2: bonds, cracks, pops, rigid bodies, flick, Dump, Refill; Tom tries the feel
 - [x] Task 3: three ices, core, bubbles, frost, crack planes, caustics, wet mirror
 - [x] Task 4: sound: creak, crack, pop, clink, knock, slide, refill; Q9
-- [ ] Task 5: Settings, persistence, performance ladder; Q1 to Q10
+- [x] Task 5: Settings, persistence, performance ladder; Q1 to Q10
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -33,3 +33,6 @@ Build Ice tray from docs/plans/ice.md. Tom picked it on 2026-11-10 in place of R
 
 - Task 3 passed Tom's checkpoint (2026-11-10: "Yes, add sound").
 - Task 4 (2026-11-10): raw Web Audio on the kit. Creak: narrow band noise whose level follows the twist rate and whose pitch wanders. Crack: a snap and a high ring. Pop: a hollow tock. Clink: two inharmonic partials by impact speed. Knock: a dull thud on hard landings. Slide: a high hiss fed by skidding cubes. Refill: a water pour, then a sparse tinkle. Each sound pans with its source; each kind is rate-capped. Q9 passed in a probe; the sound key was restored to unset. Not yet heard by ear.
+
+- Task 5 (2026-11-10): the ladder has three rungs: pixel ratio; then half-size bloom and transmission and no mirror; then 512 shadows and no caustics. A 12-cube rebuild is not a rung, as it would wipe the table (plan updated). 16 and 24 cubes pull the camera, the fog, the key's cone and the table bounds back with the tray; a tall stage keeps its side bounds tight. QA: Q1 syntax clean. Q2 console clean through Ice keys, Dump, Refill and Settings. Q7: three visible controls, four key rows. Q8: keys 1, 2, 3, D, R work. Cubes and Table survive a reload; the test keys were removed. Q3 stills at 12, 16 and 24 cubes, desktop and 375 px. Q4 and Q9 in a probe. Q5 and Q6 by code: the pane was hidden and cannot emulate reduced motion. Q10 open: Tom checks fps on a real screen.
+- Cost: no dollar figure is readable on this plan; Ice tray ran in the same long session as the Fidget plans and Spark wheel.

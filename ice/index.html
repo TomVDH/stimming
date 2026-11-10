@@ -99,7 +99,7 @@ const ui = initPage({ id: 'ice', bar: {
   ],
   settings: [
     { type: 'choice', id: 'cubes', label: 'Cubes', value: '12', persist: true,
-      options: [{ value: '12', label: '12' }, { value: '16', label: '16' }, { value: '24', label: '24' }], onPick: v => { cubeCount = +v; build(); live(); } },
+      options: [{ value: '12', label: '12' }, { value: '16', label: '16' }, { value: '24', label: '24' }], onPick: v => { cubeCount = +v; frameShot(); build(); placeCubes(); draw(); live(); } },
     { type: 'choice', id: 'table', label: 'Table', value: 'wet', persist: true,
       options: [{ value: 'wet', label: 'Wet' }, { value: 'dry', label: 'Dry' }], onPick: v => { setTable(v); live(); } },
   ],
@@ -194,9 +194,12 @@ const ghostMat = (c, k) => new THREE.ShaderMaterial({
     }`,
   depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
 });
+let tableKind = 'wet';
 function setTable(v) {
+  tableKind = v;
   tableMat.roughness = v === 'dry' ? 0.8 : 0.38;
-  mirror.visible = v !== 'dry';
+  // The ladder's second rung drops the mirror, whatever the table.
+  mirror.visible = v !== 'dry' && rung < 2;
 }
 
 /* ---------- ice ---------- */
@@ -548,7 +551,9 @@ function stepBody(b, h) {
   // A slow cube on the table settles fast, so contact jitter cannot keep it awake.
   if (hit && b.v.lengthSq() < 0.05 && b.w.lengthSq() < 0.2) { b.v.multiplyScalar(0.9); b.w.multiplyScalar(0.85); }
   if (reduced()) b.w.set(0, 0, 0);
-  const [x0, x1, z0, z1] = BOUNDS[narrow ? 'narrow' : 'wide'];
+  // A tall stage is narrow: its side bounds barely grow, or cubes leave the frame.
+  const fx = narrow ? Math.min(fit, 1.15) : fit;
+  const [x0, x1, z0, z1] = BOUNDS[narrow ? 'narrow' : 'wide'].map((b, i) => b * (i < 2 ? fx : fit));
   if (b.p.x < x0 || b.p.x > x1) { b.p.x = clamp(b.p.x, x0, x1); b.v.x *= -0.3; }
   if (b.p.z < z0 || b.p.z > z1) { b.p.z = clamp(b.p.z, z0, z1); b.v.z *= -0.3; }
   // A cube sleeps after 0.4 s nearly still.
@@ -784,24 +789,28 @@ composer.addPass(new OutputPass());
 /* ---------- layout ---------- */
 // Wide stages lay the tray across; tall ones turn it to run up the screen.
 const SHAPES = { wide: { 12: [2, 6], 16: [2, 8], 24: [3, 8] }, narrow: { 12: [3, 4], 16: [4, 4], 24: [4, 6] } };
-let size = { w: 1, h: 1, dpr: 1 }, narrow = false;
+let size = { w: 1, h: 1, dpr: 1 }, narrow = false, fit = 1;
 function frameShot() {
   const asp = size.w / size.h;
   camera.aspect = asp;
   narrow = asp < 0.9;
-  if (!narrow) {
-    camera.fov = 28;
-    camera.position.set(0, 5.4, 12.5);
-    camera.lookAt(0, 0.35, 0.6);
-  } else {
-    camera.fov = 34;
-    camera.position.set(0, 17, 14);
-    camera.lookAt(0.2, 0, 1.2);
-  }
+  // A bigger tray pulls the camera back; the table's bounds grow with it.
+  const [r, c] = SHAPES[narrow ? 'narrow' : 'wide'][cubeCount] || [2, 6];
+  fit = narrow ? Math.max(1, c / 4, r / 3) : Math.max(1, c / 6, r / 2.4);
+  const look = narrow ? new THREE.Vector3(0.2, 0, 1.2) : new THREE.Vector3(0, 0.35, 0.6);
+  const from = narrow ? new THREE.Vector3(0, 17, 14) : new THREE.Vector3(0, 5.4, 12.5);
+  camera.fov = narrow ? 34 : 28;
+  camera.position.copy(from.sub(look).multiplyScalar(fit).add(look));
+  camera.lookAt(look);
   camera.updateProjectionMatrix();
   trayGroup.rotation.y = narrow ? Math.PI / 2 - 0.22 : 0.18;
   // Seen from above, the top faces catch the key square on; it is softer there.
   key.intensity = narrow ? 520 : 900;
+  // The key's cone widens with the tray, so no cube sits in the dark.
+  key.angle = Math.min(0.6, 0.3 * fit);
+  // The fog keeps its distance from the camera as it pulls back.
+  scene.fog.near = 16 * fit;
+  scene.fog.far = 34 * fit;
 }
 // Build or rebuild the tray and its cubes for this shape and count.
 let shapeKey = '';
@@ -981,19 +990,31 @@ function frame(now) {
 
 /* ---------- performance ladder ---------- */
 // After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
-// Rungs: pixel ratio down, then a half-size bloom.
+// Rungs: pixel ratio down; then half-size bloom and transmission, and no mirror; then smaller shadows and no caustics.
 let runFor = 0, slowFor = 0, avgDt = 1 / 60;
 function watchdog(raw) {
   runFor += raw;
   avgDt += (raw - avgDt) * 0.1;
-  if (runFor < 4 || rung >= 2) return;
+  if (runFor < 4 || rung >= 3) return;
   slowFor = avgDt > 1 / 38 ? slowFor + raw : 0;
   if (slowFor < 2) return;
   rung++;
   slowFor = 0;
   runFor = 2;
   avgDt = 1 / 60;
+  applyRung();
   resize();
+}
+function applyRung() {
+  renderer.transmissionResolutionScale = rung >= 2 ? 0.5 : 1;
+  setTable(tableKind);
+  const sm = rung >= 3 ? 512 : 1024;
+  if (key.shadow.mapSize.x !== sm) {
+    key.shadow.mapSize.set(sm, sm);
+    key.shadow.map?.dispose();
+    key.shadow.map = null;
+  }
+  causMesh.visible = rung < 3;
 }
 
 /* ---------- sound ---------- */
@@ -1226,7 +1247,7 @@ canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
-onQuality(() => { rung = 0; runFor = slowFor = 0; resize(); if (ready) draw(); });
+onQuality(() => { rung = 0; runFor = slowFor = 0; applyRung(); resize(); if (ready) draw(); });
 onReducedChange(() => { if (ready) draw(); });
 // A hidden tab stops the loop.
 whenVisible(stage, v => {

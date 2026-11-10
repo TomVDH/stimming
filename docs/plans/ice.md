@@ -161,7 +161,7 @@ Three visible controls.
 
 ### Task 5: Finish and QA
 
-- [ ] Cubes, Table and persistence. The performance ladder: pixel ratio 1, then transmission size and no mirror, then 12 cubes.
+- [ ] Cubes, Table and persistence. The performance ladder: pixel ratio 1, then transmission size and no mirror, then smaller shadows and no caustics. (A forced 12-cube rebuild mid-play would wipe the table, so it is not a rung.)
 - [ ] Q1 to Q10. Tick the bean and record the cost. Commit.
 
 ## Kit handoff
