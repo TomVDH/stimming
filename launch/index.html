@@ -1182,7 +1182,7 @@ const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     // The tail breathes: its length pulses a little, many times a second.
     float breath = 1.0 + 0.18 * (k2noise(vec2(t * 11.0, 3.1)) - 0.5);
     float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
-    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.08) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
+    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.2) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
     // Eddies run down the tail and break it into tongues.
     float eddy = k2noise(vec2(x * 7.0, y * 16.0 - t * 34.0)) * 0.6 + k2noise(vec2(x * 15.0, y * 31.0 - t * 52.0)) * 0.4;
     tail *= mix(1.0, 0.45 + 1.1 * eddy, smoothstep(0.05, 0.3, y));
@@ -1197,7 +1197,9 @@ const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
     hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
     vec3 c = vec3(1.0, 0.96, 0.9) * core * 12.0 + hot * tail * 0.7 * uFlick + vec3(1.0, 0.6, 0.3) * jet * 0.5 + vec3(1.0, 0.95, 0.85) * knots * 14.0;
-    gl_FragColor = vec4(c * min(uFlame.w, 1.5), 0.0);
+    // Every edge of the quad fades to black, so no square outline shows.
+    float win = smoothstep(1.0, 0.55, abs(vQ.x)) * smoothstep(1.0, 0.6, vQ.y) * smoothstep(-1.0, -0.7, vQ.y);
+    gl_FragColor = vec4(c * win * min(uFlame.w, 1.5), 0.0);
   }`,
 }));
 flame.frustumCulled = false;
@@ -2149,24 +2151,27 @@ function roar(f, off = 0) {
   // A resume starts at the level the full curve has reached by then.
   const fade = off > 6 ? 0.25 + 0.75 * Math.exp(-(off - 6) / 18) : 1;
   // The recorded thrust replaces the noise band once it loads.
-  const s = thrust ? ac.createBufferSource() : hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 4000), g = ac.createGain();
+  // Three kilometres of air take the highs; the low end carries.
+  const s = thrust ? ac.createBufferSource() : hiss(ac, t, L + 1, 0.45), lp = filt(ac, 'lowpass', 1500), g = ac.createGain();
+  const ls = ac.createBiquadFilter();
+  ls.type = 'lowshelf'; ls.frequency.value = 160; ls.gain.value = 9;
   if (thrust) {
     s.buffer = thrust.buf; s.loop = true; s.loopStart = thrust.a; s.loopEnd = thrust.z;
-    // Heavier rockets sound a little deeper.
-    s.playbackRate.value = (f.kind === 'heavy' ? 0.82 : f.kind === 'small' ? 1.08 : 0.94) * jit(0.03);
+    // Played slow, the crackle turns to a deep rumble; Heavy goes deepest.
+    s.playbackRate.value = (f.kind === 'heavy' ? 0.6 : f.kind === 'small' ? 0.78 : 0.68) * jit(0.03);
     s.start(t, thrust.a + Math.random() * (thrust.z - thrust.a) * 0.8); s.stop(t + L + 1);
   }
   // Swell over 2 s, hold, then fade with distance until cut-off.
   const swell = Math.max(0.05, 2 - off);
   g.gain.setValueAtTime(0.0001, t);
-  // The recording runs hotter than the noise band: it plays at 0.6.
-  const gl = lvl * (thrust ? 0.6 : 1);
+  // The recording runs hotter than the noise band, more so with the shelf.
+  const gl = lvl * (thrust ? 0.45 : 1);
   g.gain.exponentialRampToValueAtTime(gl * fade, t + swell);
   g.gain.setTargetAtTime(gl * 0.25, t + swell + Math.max(0, 4 - off), 18);
   g.gain.setTargetAtTime(0.0001, t + L - 3, 1.2);
-  lp.frequency.setValueAtTime(Math.max(620, 4000 * Math.exp(-off / 20)), t);
-  lp.frequency.exponentialRampToValueAtTime(600, t + Math.max(1, 30 - off));
-  s.connect(lp).connect(g).connect(kit.out);
+  lp.frequency.setValueAtTime(Math.max(380, 1500 * Math.exp(-off / 20)), t);
+  lp.frequency.exponentialRampToValueAtTime(380, t + Math.max(1, 30 - off));
+  s.connect(ls).connect(lp).connect(g).connect(kit.out);
   // The sub: a low drone with a slow wobble.
   const o = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 33 * jit(0.05);
@@ -2175,17 +2180,17 @@ function roar(f, off = 0) {
   og.gain.setTargetAtTime(0.0001, t + swell + 6, 8);
   o.connect(og).connect(kit.out);
   o.start(t); o.stop(t + L);
-  // Crackle: random clicks, the signature of rocket noise.
-  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.0015);
-  for (let n = 0; n < 220; n++) {
+  // Crackle: random thumps, the signature of rocket noise, low with distance.
+  const cb = ac.createBuffer(1, Math.round(ac.sampleRate * 2), ac.sampleRate), cd = cb.getChannelData(0), cl = Math.round(ac.sampleRate * 0.008);
+  for (let n = 0; n < 140; n++) {
     const at = Math.floor(Math.random() * (cd.length - cl)), amp = Math.pow(Math.random(), 2);
     for (let i = 0; i < cl; i++) cd[at + i] += (Math.random() * 2 - 1) * amp * (1 - i / cl);
   }
-  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 2600, 0.8), cg = ac.createGain();
+  const c = ac.createBufferSource(), cbp = filt(ac, 'bandpass', 240, 0.7), cg = ac.createGain();
   c.buffer = cb; c.loop = true; c.playbackRate.value = jit(0.1);
   cg.gain.setValueAtTime(0.0001, t);
   // The recording has its own crackle; the clicks only edge it.
-  cg.gain.exponentialRampToValueAtTime(lvl * (thrust ? 0.25 : 0.7), t + swell);
+  cg.gain.exponentialRampToValueAtTime(lvl * (thrust ? 0.6 : 0.9), t + swell);
   cg.gain.setTargetAtTime(0.0001, t + swell + 3, 9);
   c.connect(cbp).connect(cg).connect(kit.out);
   c.start(t); c.stop(t + L);

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:49:58Z
-updated_at: 2026-11-10T08:59:51Z
+updated_at: 2026-11-10T09:03:09Z
 parent: stimming-4wu3
 ---
 
@@ -21,3 +21,6 @@ Tom (2026-11-10): the rocket itself needs to be more compelling. Today the body 
 - [x] Thrust sound: Tom's recorded booster roar (launch/thrust.mp3) replaces the noise band in the roar; the sub stays; the synth crackle drops to an edge
 
 - [x] Reed gap (Tom, 2026-11-10): its edge wanders with noise, twice the stalks stay inside, and a few stray tall stalks stand in it; the line to the pad stays clear
+
+- [x] Far roar deeper and bassier (Tom): slower recording, a low shelf, a low-pass from 1.5 kHz, crackle as low thumps
+- [x] Square outline on the exhaust (Tom): the flame quad fades at every edge; the tail is narrower
