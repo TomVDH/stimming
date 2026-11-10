@@ -1,7 +1,7 @@
 ---
 # stimming-uc3j
 title: 'Railgun: a real impact fireball, after Window Seat'
-status: todo
+status: in-progress
 type: task
 created_at: 2026-11-10T23:10:20Z
 updated_at: 2026-11-10T23:10:20Z
@@ -27,14 +27,14 @@ Give the railgun's impact a real fireball, after the Window Seat impact, and col
 
 ## Plan
 
-- [ ] Fire core: a separate emissive phase in the `fireball` volume. Low soot opacity for the first 3 to 6 s, so the fire shows. Turbulent, self-lit, about 3 to 4 R.
-- [ ] Blackbody cooling: white, yellow, orange, deep red, with the Window Seat envelope (8 s strong, 40 s tail).
-- [ ] Soot rolls over the fire: the soot forms as a growing outer skin. Fire pockets glow through the gaps as it tears.
-- [ ] Rise: the fire core rises and rolls into a buoyant ring as it cools.
-- [ ] Inner glow: the soot is lit orange from inside for about 15 s and fades with the fire tail (`vlight`).
-- [ ] A soft glow globe round the fire: one `flare()`, sized by the fire radius, fading with the 8 s envelope. It lights the air, not a bloom halo.
-- [ ] Scene light: the `uBk` tail follows the fire envelope, so the plain, the gun and the clouds glow as long as the fire does.
-- [ ] Bloom stays only on the fire, not on the lit soot or the clouds.
+- [x] Fire core: a separate emissive phase in the `fireball` volume. Low soot opacity for the first 3 to 6 s, so the fire shows. Turbulent, self-lit, about 3 to 4 R.
+- [x] Blackbody cooling: white, yellow, orange, deep red, with the Window Seat envelope (8 s strong, 40 s tail).
+- [x] Soot rolls over the fire: the soot forms as a growing outer skin. Fire pockets glow through the gaps as it tears.
+- [x] Rise: the fire core rises and rolls into a buoyant ring as it cools.
+- [x] Inner glow: the soot is lit orange from inside for about 15 s and fades with the fire tail (`vlight`).
+- [x] A soft glow globe round the fire: one `flare()`, sized by the fire radius, fading with the 8 s envelope. It lights the air, not a bloom halo.
+- [x] Scene light: the `uBk` tail follows the fire envelope, so the plain, the gun and the clouds glow as long as the fire does.
+- [x] Bloom stays only on the fire, not on the lit soot or the clouds.
 
 ## Other missed chances to weigh
 

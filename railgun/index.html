@@ -687,7 +687,7 @@ float smokeShade(vec3 P) {
 float blastAt(vec3 P) {
   float tl = uStarT - uHitP.w;
   if (tl < 0.0) return 0.0;
-  return uBk * ((exp(-tl / 0.4) + 0.3 * exp(-tl / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tl)) + 0.14 * exp(-tl / 9.0) * (1.0 - smoothstep(18.0, 32.0, tl)));
+  return uBk * ((exp(-tl / 0.4) + 0.3 * exp(-tl / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tl)) + 0.16 * exp(-tl / 8.0) * (1.0 - smoothstep(20.0, 32.0, tl)));
 }
 // At night the near world stays mostly dark against the lit sky.
 vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * blastAt(P) * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8) * mix(1.0, 0.35, uStars); }
@@ -4064,6 +4064,17 @@ uniform vec3 uBP, uHotC, uFireC, uEmberC, uSootC, uAshC;
 uniform vec4 uFb;
 // It swells to twelve radii over about twelve seconds.
 float rb() { return uFb.y * (1.0 + 11.0 * (1.0 - exp(-uFb.x / 4.5))); }
+// The fire core grows to about four radii in five seconds.
+float rf() { return uFb.y * (1.0 + 3.2 * (1.0 - exp(-uFb.x / 2.2))); }
+// The fire's heat: a flash, then a strong glow for 8 s, then a faint tail.
+float fireEnv(float a) { return 0.8 * exp(-a / 0.6) + 0.9 * exp(-a / 8.0) + 0.12 * exp(-a / 40.0); }
+// Blackbody cooling: white, yellow, orange, deep red.
+vec3 bbody(float T) {
+  vec3 c = uEmberC;
+  c = mix(c, uFireC * 2.0, smoothstep(0.1, 0.4, T));
+  c = mix(c, uFireC * 1.4 + uHotC * 1.6, smoothstep(0.4, 0.75, T));
+  return mix(c, uHotC * 4.0, smoothstep(0.8, 1.2, T));
+}
 float dens(vec3 p, out vec3 em) {
   em = vec3(0.0);
   float age = uFb.x, Rb = rb();
@@ -4087,11 +4098,23 @@ float dens(vec3 p, out vec3 em) {
   float shape = smoothstep(0.95, 0.75, r + (0.72 - n) * (1.3 + 0.6 * old)) * smoothstep(1.3, 1.15, r);
   // Fine cells carve small lobes into each billow.
   float d = clamp(shape * (0.45 + 0.7 * texture(uVol, w * 4.5).g) - 0.15, 0.0, 1.0) * 1.4;
-  // The core burns hottest; the rim cools first.
-  float T = exp(-age / 5.0) * smoothstep(1.0, 0.1, r) + 0.8 * exp(-age / 0.6);
-  vec3 c = mix(uEmberC, uFireC * 2.0, smoothstep(0.1, 0.45, T));
-  c = mix(c, uHotC * 4.0, smoothstep(0.55, 0.95, T));
-  em = c * d * smoothstep(0.03, 0.2, T) * T * 14.0 / Rb * uFb.z;
+  // The fire core: its own churning ball, climbing inside the cloud.
+  float Rf = rf(), cool = smoothstep(2.0, 14.0, age);
+  vec3 qf = p - uBP - vec3(0.0, 70.0 * age, 0.0);
+  // As it cools, the core rolls up into a buoyant ring.
+  float rs = length(qf) / Rf, rt = length(vec2(length(qf.xz) - 0.55 * Rf, qf.y)) / (0.6 * Rf);
+  float rq = mix(rs, rt, 0.7 * cool);
+  float fn = 0.65 * texture(uVol, qf / Rf * 0.7 + vec3(uFb.w, -age * 0.12, age * 0.04)).r + 0.35 * texture(uVol, qf / Rf * 1.8 + vec3(0.0, -age * 0.25, 0.0)).g;
+  // The ball tears into glowing pockets as it cools.
+  // Cooling shrinks the ball into a few torn pockets; it is gone by 20 s.
+  float fire = smoothstep(1.0, 0.55, rq + (0.62 - fn) * (0.8 + 2.6 * cool) + 0.3 * cool) * (1.0 - smoothstep(9.0, 20.0, age));
+  float T = fireEnv(age) * (0.55 + 0.45 * smoothstep(1.0, 0.0, rq)) * (0.7 + 0.6 * fn);
+  // Cool fire is dim fire, not pink fire.
+  em = bbody(T) * fire * min(1.0, T * 2.5) * 9.0 / Rf * uFb.z;
+  // The fire clears its own soot for the first seconds.
+  d *= 1.0 - 0.85 * fire * (1.0 - smoothstep(2.0, 9.0, age));
+  // The soot skin starts thin and thickens as the fire dies.
+  d *= mix(0.4, 1.0, smoothstep(0.5, 7.0, age));
   // The soot erodes from the rim and its thin parts, gone by 30 s.
   float er = smoothstep(4.0, 22.0, age);
   // Large cells tear it into tufts, not grain.
@@ -4104,8 +4127,9 @@ float dens(vec3 p, out vec3 em) {
 vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 // The fire's core and the falling pieces light the smoke from inside.
 vec3 vlight(vec3 p) {
-  vec3 b = p - uBP;
-  float R0 = uFb.y * 3.0, k = uFb.z * (2.0 * exp(-uFb.x / 1.5) + 0.5 * exp(-uFb.x / 9.0)) * (1.0 - smoothstep(18.0, 30.0, uFb.x));
+  // The light sits in the climbing fire core.
+  vec3 b = p - uBP - vec3(0.0, 70.0 * uFb.x, 0.0);
+  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(22.0, 31.0, uFb.x));
   vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0);
   // At night the moon lights the soot faintly and silvers its far edge.
   vec3 nb = normalize(b);
@@ -4146,7 +4170,8 @@ function updateBlast() {
   U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.8));
   U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 4, 22)) * (1 - THREE.MathUtils.smoothstep(ha, 20, 30));
   // Soot needs fewer steps than fire.
-  const soot = ha > 3;
+  // While the fire burns it needs full steps; soot alone needs fewer.
+  const soot = ha > 14;
   u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 2 : volLSteps(); u.uLs.value = 0.06 * Rb;
   fireball.visible = true;
   // The Wilson shell flashes round the fireball and burns off.
@@ -4609,7 +4634,9 @@ function updateBolt() {
   // A short white core; the fireball carries the rest.
   flare(hitFlare, shot.target, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
   // A gentle globe of glow swells a little and lingers after the flash.
-  flare(hitGlow, shot.target, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.04 * Math.exp(-ha / 10)));
+  // Its tail follows the fire core: strong for 8 s, faint to 40 s.
+  bq.copy(shot.target).y += 70 * ha;
+  flare(hitGlow, bq, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.06 * Math.exp(-ha / 8) + 0.01 * Math.exp(-ha / 40)));
   // The whole frame overexposes for an instant.
   if (hk > 0) flashNow += hk * (0.6 * Math.exp(-ha / 0.14) + 0.1 * Math.exp(-ha / 1.2));
   // A white lens flare with ghosts, if the hit is in front of the lens.
