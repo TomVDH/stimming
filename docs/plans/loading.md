@@ -189,3 +189,6 @@ Open:
   A page that preloads culori starts that lookup with the font lookups, so it meets the stall on every run here.
 - The local preview server resets connections under parallel requests, on main and on the branch. A reset module request stops the toy.
 - Sound on the first gesture is not exercised by the harness.
+- Railgun sweep after PR 41, branch against main: desktop, 375 px, reduced motion, low quality, changed graphics settings, 6x CPU throttle.
+  Idle, charge, shot, sight and reset frames match. No page error. First frame at 2.1 s under the throttle.
+  Railgun holds the intro up to 15 s for the scene; main held it with no cap.

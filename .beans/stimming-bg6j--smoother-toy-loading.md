@@ -41,6 +41,7 @@ Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. 
 - [x] Launch and Frietkot use the stage contract
 - [x] Railgun, Train ride, Foghorn use the stage contract
 - [x] Railgun re-checked after PR 40: marks in order, warm frame holds
+- [x] Railgun sweep after PR 41: six cases match main; intro cap raised to 15 s
 - [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
 - [ ] Elective offline cache: service worker behind a "Keep offline" switch
 
