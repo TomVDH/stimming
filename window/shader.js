@@ -61,6 +61,8 @@ uniform vec2 uCam;
 uniform float uLand;
 // The hidden ode world: on, start map x and y in source pixels, km per pixel.
 uniform vec4 uOde; uniform sampler2D uOdeMap;
+// The sea's glitter: 1 under the moon, 0 under the sun.
+uniform float uSeaNight;
 // Airports: map site xz, then the landing heading's cos and sin.
 // uApB: runway half length, twin runway offset, seed, apron size.
 uniform vec4 uAp[8], uApB[8];
@@ -563,52 +565,157 @@ vec3 airport(vec2 q, vec4 b, vec4 F) {
 
 // Water over the land, then airport lights.
 // up is the local vertical at the ground point.
-// The open sea's surface: wind sets the roughness, swell tilts the normal.
-// A swell train turns into roughness once a pixel spans its wavelength.
-vec3 seaNormal(vec2 w, vec3 up, float fw, inout float m2) {
-  // Calm slicks mirror the light; rough patches spread it.
-  float wind = vnoise(w / 26.0 + vec2(0.0, uTime * 0.004)) * 0.7 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 6.0) * 0.3;
-  m2 = mix(0.003, 0.032, smoothstep(0.25, 0.75, wind));
-  vec2 s = vec2(0.0);
-  for (int k = 0; k < 3; k++) {
-    float fk = float(k), L = 0.32 * pow(0.55, fk), an = 0.5 + 0.8 * fk;
-    vec2 dir = vec2(cos(an), sin(an));
-    // Deep water: the crests run at sqrt(g L / 2 pi).
-    float c = sqrt(9.81e-3 * L / 6.2832);
-    float ph = 6.2832 * fract(dot(w, dir) / L - uTime * c / L);
-    // Swell comes in groups, so the crests come and go.
-    float a = 0.07 * (0.4 + vnoise(w / (L * 9.0) + fk * 3.1));
-    float vis = fd(L, fw);
-    s += dir * a * sin(ph) * vis;
-    m2 += a * a * 0.5 * (1.0 - vis);
+/* The open sea: havoc's classic sea, after window/seaprobe.html variant C. */
+// Havoc's regular look, as linear colour: deep, shallow and scatter.
+const vec3 SEA_DEEP = vec3(0.0003, 0.0024, 0.006), SEA_SHALLOW = vec3(0.003, 0.034, 0.055), SEA_SCATTER = vec3(0.0116, 0.332, 0.188);
+// Wind at sea level: speed in m/s, and the direction it blows toward.
+const float SEA_WIND = 7.0;
+const vec2 SEA_WD = vec2(0.866, 0.5);
+float seaFres(float c) { return 0.02 + 0.98 * pow(1.0 - clamp(c, 0.0, 1.0), 5.0); }
+// Sun on the sea: cloud shadows dim it.
+vec3 seaSunL() { return uSunL * gCloudSh; }
+// Light on a diffuse face, with the cloud constants.
+vec3 seaLightOn(vec3 n) { return seaSunL() * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016; }
+// Monahan: the whitecap share of the sea grows with the wind.
+float monahan() { return min(3.84e-6 * pow(SEA_WIND, 3.41), 1.0); }
+// Gusts roughen the sea in patches a few km across; lulls lie glassy between.
+float gusts(vec2 m) {
+  vec2 q = m / 2600.0 + vec2(uTime * 0.004, 0.0);
+  float n = vnoise(q) * 0.65 + vnoise(q * 2.3 + 7.1) * 0.35;
+  return mix(0.35, 1.8, smoothstep(0.25, 0.75, n));
+}
+// Footprint cells: about one pixel each way, in power-of-two metres.
+vec2 footCell(vec2 m, float fa, float fl, out vec2 cs) {
+  vec2 lv = ceil(log2(max(vec2(fa, fl), vec2(0.25))));
+  cs = exp2(lv);
+  return floor(m / cs) + lv * 31.7;
+}
+// Sparkles: a share p of the cells flashes; each holds for 1 / rate s.
+float sparkle(vec2 m, float fa, float fl, float p, float rate) {
+  vec2 cs; vec2 cell = footCell(m, fa, fl, cs);
+  float ph = hash12(cell + 7.1);
+  return step(1.0 - p, hash12(cell + floor(uTime * rate + ph * 8.0) * vec2(1.37, 2.71)));
+}
+// Whitecaps: a cell holds one cap or none; the mean stays W times bias.
+float caps(vec2 m, float fa, float fl, float W, float bias) {
+  vec2 cs; vec2 cell = footCell(m, fa, fl, cs);
+  float mw = W * bias, q = min(1.0, mw * cs.x * cs.y / 80.0);
+  float on = step(1.0 - q, hash12(cell + floor(uTime / 9.0 + hash12(cell + 3.3)) * vec2(2.3, 1.1)));
+  return on * min(1.0, mw / max(q, 1e-6));
+}
+// The resolved sea: height hn (-1 to 1), slope s, roughness m2.
+// A train fades flat once a pixel spans it; its variance moves to m2.
+float seaWaves(vec2 m, float fl, out vec2 s, out float res, out float m2, out float ph) {
+  vec2 wd = SEA_WD, wc = vec2(-wd.y, wd.x);
+  float cm = (0.003 + 0.00512 * SEA_WIND) * gusts(m);
+  m2 = cm; s = vec2(0.0); res = 0.0;
+  float h = 0.0, hs = 0.0;
+  // Swell: a long train from a far storm, 25 degrees off the wind.
+  vec2 sd = mat2(0.906, 0.423, -0.423, 0.906) * wd;
+  float k = 6.2832 / 420.0, a = 0.03 / k, f = fd(420.0, fl);
+  ph = dot(m, sd) * k - uTime * sqrt(9.81 * k);
+  h += a * sin(ph) * f; hs += a * f;
+  s += sd * (a * k * cos(ph) * f);
+  res += f * 0.5;
+  // Wind sea: four octaves of stretched noise, crests across the wind.
+  float lam = max(0.83 * SEA_WIND * SEA_WIND, 6.0) * 1.8;
+  for (int i = 0; i < 4; i++) {
+    float wi = i == 0 ? 0.04 : 0.08;
+    float fi = fd(lam, fl);
+    if (fi > 0.0) {
+      float ai = sqrt(wi * cm) * lam / 0.55;
+      vec2 q = vec2(dot(m, wd), dot(m, wc) * 0.4) / lam + float(i) * 17.3;
+      q.x -= uTime * sqrt(9.81 * lam / 6.2832) / lam;
+      vec3 nd = vnoiseD(q);
+      h += ai * (nd.x - 0.5) * fi; hs += ai * 0.5 * fi;
+      s += (wd * nd.y + wc * nd.z * 0.4) * (ai / lam) * fi;
+      m2 -= wi * cm * fi;
+      res += fi * 0.125;
+    }
+    lam *= 0.55;
   }
-  return normalize(up - vec3(s.x, 0.0, s.y));
+  m2 = max(m2, 0.002);
+  // Swell steepens the short waves on its fronts.
+  m2 *= 1.0 + 0.45 * sin(ph) * fd(330.0, fl);
+  return hs > 0.0 ? h / hs : 0.0;
+}
+// The classic sea at map point w (km); fw is the footprint along the view in km.
+// shelf lifts the sand colour; the moon's glitter is sparser.
+vec3 seaClassic(vec2 w, float fw, vec3 d, vec3 up, float shelf) {
+  vec3 v = -d, sunL = seaSunL();
+  vec2 m = w * 1000.0;
+  float fl = max(fw, 1e-4) * 1000.0, fa = fl * max(dot(v, up), 0.03);
+  vec2 s; float res, m2, sph;
+  float hn = seaWaves(m, fl, s, res, m2, sph);
+  vec3 n = normalize(up - vec3(s.x, 0.0, s.y));
+  float nv = max(dot(n, v), 0.05);
+  // The sky in the facet's mirror, folded above the horizon, without the sun.
+  vec3 r = reflect(d, n);
+  r -= 2.0 * min(dot(r, up), 0.0) * up;
+  float fres = seaFres(nv);
+  vec3 sky = (skyL(r) + aurora(r, 1.0) * 0.5) * (1.0 - 0.9 * smoothstep(0.9, 0.999, dot(r, uSun)));
+  // Body: dark deep water at a slant, lighter looking straight down.
+  // Over the shelf the sand shows through, green-blue.
+  vec3 body = mix(mix(SEA_DEEP, SEA_SHALLOW, pow(nv, 0.35)), vec3(0.05, 0.14, 0.13), shelf) * seaLightOn(up);
+  float crest = mix(0.3, smoothstep(0.2, 1.0, hn), res);
+  // Subsurface: crests lit from behind glow toward the eye.
+  vec3 sunFlat = normalize(vec3(uSun.x, 0.0, uSun.z) + 1e-5);
+  float back = pow(max(dot(d, sunFlat) * 0.5 + 0.5, 0.0), 3.0);
+  float face = pow(1.0 - nv, 2.0);
+  float sssDot = pow(max(dot(v, -normalize(uSun + n * 0.6)), 0.0), 3.0);
+  vec3 Es = sunL * 0.045 * clamp(dot(uSun, up) * 2.5, 0.0, 1.0);
+  body += SEA_SCATTER * Es * (back * face * crest * 0.9 + (sssDot * 1.6 + 0.3) * crest * (1.0 + 0.6 * fres)) * 0.025;
+  // Relief: troughs darken, crests and sun-facing slopes brighten.
+  float hk = mix(0.5, smoothstep(-1.0, 1.0, hn), res);
+  float sunSide = max(dot(n, normalize(vec3(uSun.x, max(uSun.y, 0.25), uSun.z))), 0.0);
+  body *= mix(1.0, (0.45 + 0.85 * hk) * (0.7 + 0.6 * sunSide), 0.365);
+  vec3 col = mix(body, sky, fres);
+  // Glint: a tight disk, a scatter and a broad glow; the weights sum to one.
+  vec3 hv = normalize(uSun + v + vec3(0.0, 1e-5, 0.0));
+  float hz = max(dot(hv, n), 1e-3), c2 = hz * hz, t2 = (1.0 - c2) / c2;
+  float g = exp(-t2 / m2), ms = m2 * 2.5 + 0.004;
+  float D = (0.72 * g / m2 + 0.2 * exp(-t2 / ms) / ms + 0.08 * exp(-t2 / 0.08) / 0.08) / (PI * c2 * c2);
+  // Glitter: facets that catch the light twinkle near the peak.
+  float sp = sparkle(m, fa, fl, mix(0.04, 0.025, uSeaNight), 6.0) * smoothstep(0.15, 0.6, g);
+  D += sp * 4.0 / (PI * m2);
+  col += sunL * 0.014 * seaFres(dot(v, hv)) * D / (4.0 * nv);
+  // Lace: foam from the breakers drifts out in streaks downwind.
+  float W = monahan() * gusts(m);
+  vec2 wc = vec2(-SEA_WD.y, SEA_WD.x);
+  float al = dot(m, SEA_WD), ac = dot(m, wc);
+  float st = vnoise(vec2(al / 700.0 - uTime * 0.004, ac / 60.0)) * 0.65 + vnoise(vec2(al / 240.0, ac / 22.0) + 5.1) * 0.35;
+  float streak = mix(0.1, smoothstep(0.6, 0.85, st), fd(60.0, fl));
+  // Two noises multiplied make holes, so foam reads as lace.
+  float n1 = vnoise(m / 45.0) * 2.0 - 1.0, n2 = vnoise(m / 19.0 + 5.3) * 2.0 - 1.0;
+  float lace = mix(0.55, smoothstep(0.02, 0.2, abs(n1 * n2)), fd(19.0, fl));
+  float foam = clamp(caps(m, fa, fl, W, 0.6 + 0.8 * crest) + streak * lace * W * 2.5, 0.0, 1.0);
+  vec3 foamC = vec3(0.86, 0.9, 0.93) * 0.85 * (sunL * 0.045 * max(dot(n, uSun), 0.0) + uAmb * 0.016);
+  return mix(col, foamC, foam);
 }
 vec3 landCover(vec3 g, float fw, vec3 d, vec3 up) {
   if (gWater > 0.0) {
+    // Lakes and rivers: a still mirror with one glint lobe.
     float m2 = mix(0.004, 0.018, gSea);
-    vec3 n = up;
-    if (uLand > 0.5 && gSea > 0.0) n = normalize(mix(up, seaNormal(gW, up, fw, m2), gSea));
-    vec3 r = reflect(d, n);
-    float nv = max(dot(-d, n), 0.05);
+    vec3 r = reflect(d, up);
+    float nv = max(dot(-d, up), 0.05);
     float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
     vec3 wc = (skyL(r) + aurora(r, 1.0) * 0.5) * fres + uAmb * 0.0008 * vec3(0.5, 0.8, 1.0);
-    if (uLand > 0.5) {
-      // The water body: navy at depth; over the shelf the sand shows through.
-      vec3 E = uAmb * 0.03 + uSunL * 0.1 * max(uSun.y, 0.0);
-      float shelf = exp(min(gE, 0.0) / 0.025) * gSea;
-      wc += E * mix(vec3(0.004, 0.012, 0.02), vec3(0.14, 0.32, 0.3), shelf) * (1.0 - fres);
-      // Surf: a broken white line just off the shore.
-      float sd = -gE / max(length(gEG), 0.02);
-      float surf = band(sd - 0.03, 0.01, max(fw, 1e-3)) * smoothstep(0.4, 0.75, vnoise(gW / 0.35 + 2.0)) * (1.0 - gBelt);
-      wc += E * 0.9 * surf * gSea;
-    }
-    // Ripples spread the light into a glitter path: Beckmann slopes.
     if (dot(uSunL, vec3(1.0)) > 1e-4) {
       vec3 hv = normalize(uSun - d);
-      float hz = max(dot(hv, n), 1e-3);
+      float hz = max(dot(hv, up), 1e-3);
       float D = exp(-(1.0 - hz * hz) / (hz * hz * m2)) / (PI * m2 * hz * hz * hz * hz);
       wc += uSunL * 0.014 * fres * D / (4.0 * nv) * gCloudSh;
+    }
+    if (uLand > 0.5 && gSea > 0.0) {
+      // The open sea: the classic sea, the shelf near shore, then the surf.
+      float shelf = exp(min(gE, 0.0) / 0.025);
+      vec3 sc = seaClassic(gW, fw, d, up, shelf);
+      // Surf: a broken white line just off the shore.
+      vec3 E = uAmb * 0.03 + seaSunL() * 0.1 * max(uSun.y, 0.0);
+      float sd = -gE / max(length(gEG), 0.02);
+      float surf = band(sd - 0.03, 0.01, max(fw, 1e-3)) * smoothstep(0.4, 0.75, vnoise(gW / 0.35 + 2.0)) * (1.0 - gBelt);
+      sc += E * 0.9 * surf;
+      wc = mix(wc, sc, gSea);
     }
     g = mix(g, wc, gWater);
   }

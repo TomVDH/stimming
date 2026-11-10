@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:39:36Z
+updated_at: 2026-11-10T09:43:32Z
 parent: stimming-w1nd
 ---
 
@@ -56,3 +56,11 @@ Tom asked for his favourite flight-sim world under the plane as a personal easte
 - The deck had cast no shadows; the dark blobs were lakes and woodlots.
 - Each ground point reads the deck's cover and cell map where the sun ray crosses 2.4 km, from a blurred mip; the sun term drops up to 70 percent. Sun glint on water dims with it.
 - Seen at Noon and Golden hour, Broken cloud: soft edges; long shadows at golden hour.
+
+## Classic sea (Tom, 2026-11-10: port classic)
+
+- The open sea now uses havoc's classic sea, ported from window/seaprobe.html variant C: swell 25 degrees off the wind, four octaves of wind sea, km-wide gusts, subsurface glow on backlit crests, a three-lobe glint with glitter, whitecaps and lace.
+- Kept from the relief sea: shelf colour near shore, the surf line, cloud shadows (they dim the sun on the sea). Lakes and rivers keep the still mirror.
+- Wind: 7 m/s, fixed. uSeaNight (moon flag) makes the glitter sparser at night.
+- Cost: within noise against the flat land on a sea-heavy view (about 9 ms a frame both, dev Mac, Standard).
+- Seen at Noon, Golden hour, Midnight (Clear).
