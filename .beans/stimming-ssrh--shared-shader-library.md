@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T09:59:38Z
+updated_at: 2026-11-10T10:09:03Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -31,7 +31,8 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] Rain rings on water: `wtRings()` in `shared/water.js`, a slider in `fxlab/`
 - [x] `shared/weather.js`: one value drives glass and water; Weather slider in `fxlab/`
 - [ ] Bundles follow the site quality setting
-- [ ] Tom picks the next bundle (night sky and haze, output, water extras)
+- [x] Night sky and haze: `shared/sky.js` with `skyAt(hour)`, a card in `fxlab/`, three copy checks
+- [ ] Tom picks the next bundle (output, water extras, clouds)
 
 ## Rules
 
@@ -54,3 +55,5 @@ Plan: `docs/plans/shared-shaders.md`.
 - 2026-11-10: `shared/water.js` built (Tom: "Water surface"): Wind farm swell, Beach walker chop and glitter, Buoy Business wave sets. The lab scene is now a harbour. No toy adopted either.
 
 - 2026-11-10: Tom: "we will use bundled shaders to quickly pump out responsive and reactive environments". Recorded as the Direction section of the plan. Rain rings ported from Buoy Business (`sea.js:585`). `shared/weather.js` is the first driver.
+
+- 2026-11-10: `shared/sky.js` built (Tom: "Night sky and haze"). The kit stars, Coast and meteor sky and the kit haze match exactly. `skyAt(hour)` drives the palette; night, blue hour and last light are Coast and meteor palettes; day and dawn are a first proposal. The lab scene now takes its sky, stars and haze from the module.

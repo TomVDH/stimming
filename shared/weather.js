@@ -5,6 +5,7 @@
 //   wgPane(..., w.rain, speed + w.wind, 0.4, w.fog, w.patches, edge)   // wetglass.js
 //   wtWaves(p, t, foot, w.swell, w.chop, w.sets, sig2)                 // water.js
 //   wtRings(p, t, foot, w.rings, 0.6, sig2)
+//   skHaze(cam, P, w.haze * 0.0008, 150.0)                             // sky.js
 // Every value is a plain number, so a toy can override any one of them.
 
 const ramp = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -25,5 +26,7 @@ export function weather(k) {
     chop: 0.08 + 0.26 * k,
     swell: 0.008 + 0.02 * k,
     sets: 0.3 + 0.5 * k,
+    // The air thickens: 0 to 1 for the sky's haze.
+    haze: 0.25 + 0.6 * k,
   };
 }

@@ -74,8 +74,6 @@ input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; marg
     <div class="seg" style="margin-top:6px"><button id="pause" aria-pressed="false">Pause</button></div>
     <h2>Weather</h2>
     <label class="row"><span>Dry to storm</span><input type="range" id="wx" min="0" max="1" step="0.01" value="0.5"><output id="wxOut">0.5</output></label>
-    <h2>Sky</h2>
-    <div class="seg" id="sky"><button data-v="0" aria-pressed="true">Night</button><button data-v="1" aria-pressed="false">Dusk</button><button data-v="2" aria-pressed="false">Day</button></div>
     <h2>Shaders</h2>
     <div id="cards"></div>
   </div>
@@ -110,6 +108,7 @@ import { BOKEH } from '../shared/bokeh.js';
 import { WET_GLASS, wetGlassMotion } from '../shared/wetglass.js';
 import { WATER } from '../shared/water.js';
 import { weather } from '../shared/weather.js';
+import { SKY, skyAt } from '../shared/sky.js';
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), view = $('view');
@@ -124,8 +123,9 @@ const KNOBS = {
   kVeil: ['Veil', 0, 3, 0.01, 1], kStreak: ['Streak', 0, 3, 0.01, 1], kGhost: ['Ghosts', 0, 3, 0.01, 1], bSize: ['Size', 0.1, 2, 0.01, 1],
   tintK: ['Tint', 0, 40, 0.1, 1], vig: ['Vignette', 0, 1, 0.01, 0.5], vigIn: ['Inner edge', 0, 1, 0.01, 0.4], grain: ['Grain', 0, 0.3, 0.001, 0.03],
   seed: ['Grain seed', 0, 20, 1, 0], box: ['Letterbox', 0, 1, 1, 0], flick: ['Flicker', -0.1, 0.1, 0.001, 0],
+  starsK: ['Stars', 0, 3, 0.01, 1], sunAz: ['Sun bearing', -3.14, 3.14, 0.01, 0.6], hazeD: ['Haze', 0, 0.003, 0.00005, 0.0006], hazeH: ['Haze height', 20, 400, 1, 120],
 };
-const FXS = { flare: 'Lens flare', grade: 'Grade' };
+const FXS = { flare: 'Lens flare', grade: 'Grade', sky: 'Sky and haze' };
 // The lab's tint at Tint 1: the night-scene toys' haze lift.
 const TINT = [0.0008, 0.0009, 0.0014];
 const uName = k => 'u' + k[0].toUpperCase() + k.slice(1);
@@ -412,6 +412,77 @@ float h(vec2 p) {
   },
 );
 
+/* ---------- sky and haze: the copies ---------- */
+// The view looks up from the horizon; the toys' uniforms become lab names.
+const SKY_PRE = `
+float k2hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float k2stars(vec3 dir) {
+  vec2 q = vec2(atan(dir.x, -dir.z) * 260.0, dir.y * 260.0);
+  vec2 i = floor(q), f = fract(q) - 0.5;
+  float h = k2hash(i);
+  // About one cell in two hundred holds a star.
+  float on = step(0.995, h);
+  vec2 o = vec2(k2hash(i + 7.1), k2hash(i + 3.3)) - 0.5;
+  return on * exp(-dot(f - o * 0.6, f - o * 0.6) * 60.0) * (0.02 + 0.05 * k2hash(i + 1.7));
+}
+vec3 skyDir(vec2 uv) { return normalize(vec3((uv.x - 0.5) * uAsp, uv.y * 0.9 + 0.02, -1.2)); }
+// Coast and meteor's blue-hour palette.
+const vec3 uZen = vec3(0.0059, 0.0201, 0.0796), uMid = vec3(0.1009, 0.0418, 0.1188), uBand = vec3(0.6045, 0.1298, 0.019), uAnti = vec3(0.0299, 0.0323, 0.0776);
+vec3 sunV() { return vec3(sin(uSunAz) * 0.994, -0.105, -cos(uSunAz) * 0.994); }
+const vec3 CAM = vec3(0.0, 6.0, 0.0);
+// A point on the ground under the horizon, or far off in the sky above it.
+vec3 hazeP(vec2 uv) {
+  vec3 d = normalize(vec3((uv.x - 0.5) * uAsp, uv.y - 0.45, -1.2));
+  return CAM + d * (d.y < -0.002 ? min(CAM.y / -d.y, 20000.0) : 20000.0);
+}`;
+PRESETS.push(
+  {
+    fx: 'sky', id: 'stars', name: 'Stars (the kit)', a: 'Canal at dusk', b: 'skStars()', light: 'white',
+    knobs: { starsK: 1 }, pre: SKY_PRE,
+    use: 'Also Ten seconds, Coast and meteor, Fireworks.\nskStarField() is the livelier field: tint and twinkle per star.',
+    A: `
+  vec3 dir = skyDir(uv);
+  return vec3(0.004, 0.006, 0.012) + vec3(0.85, 0.9, 1.0) * k2stars(dir) * uStarsK * 20.0 * smoothstep(0.03, 0.25, dir.y);`,
+    B: `
+  vec3 dir = skyDir(uv);
+  return vec3(0.004, 0.006, 0.012) + vec3(0.85, 0.9, 1.0) * skStars(dir) * uStarsK * 20.0 * smoothstep(0.03, 0.25, dir.y);`,
+  },
+  {
+    fx: 'sky', id: 'dusk', name: 'Coast and meteor sky', a: 'Coast and meteor', b: 'skDusk()', light: 'white',
+    knobs: { sunAz: 0.6 }, pre: SKY_PRE,
+    A: `
+  vec3 dir = skyDir(uv);
+  float up = max(dir.y, 0.0);
+  float az = dot(normalize(dir.xz + vec2(1e-5)), normalize(sunV().xz));
+  float sw = pow(0.5 + 0.5 * az, 3.0);
+  vec3 hor = mix(uAnti, uBand, sw);
+  vec3 mid = mix(uAnti, uMid, sw);
+  vec3 col = mix(uZen, mid, exp(-up * 3.2));
+  col = mix(col, hor, exp(-up * 11.0));
+  // The afterglow hugs the horizon above the set sun.
+  col += uBand * 0.8 * pow(sw, 8.0) * exp(-up * 28.0);
+  return col;`,
+    B: `
+  return skDusk(skyDir(uv), sunV(), uZen, uMid, uBand, uAnti);`,
+  },
+  {
+    fx: 'sky', id: 'haze', name: 'Height haze (the kit)', a: 'Fireworks', b: 'skHaze()', light: 'sun',
+    knobs: { hazeD: 0.0006, hazeH: 120 }, pre: SKY_PRE,
+    use: 'Also Ten seconds, Coast and meteor, Night viaduct. Canal at dusk caps its haze at 0.86.',
+    A: `
+  vec3 P = hazeP(uv);
+  vec3 v = P - CAM;
+  float dist = length(v);
+  float k = 1.0 / uHazeH;
+  float h0 = max(CAM.y, 0.0), h1 = max(P.y, 0.0), dh = h1 - h0;
+  // Exponential height fog integrated along the ray.
+  float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+  return mix(base, vec3(0.5, 0.55, 0.62), 1.0 - exp(-dist * uHazeD * max(avg, 0.0)));`,
+    B: `
+  return mix(base, vec3(0.5, 0.55, 0.62), skHaze(CAM, hazeP(uv), uHazeD, uHazeH));`,
+  },
+);
+
 /* ---------- shaders ---------- */
 const UNI = `uniform vec2 uSrc, uRes; uniform vec3 uCol, uTint; uniform int uBack; uniform float uAsp;
 uniform float ${Object.keys(KNOBS).map(uName).join(', ')};`;
@@ -438,7 +509,7 @@ vec3 scene(vec2 uv) {
   return c + uCol * 3.0 * smoothstep(0.011, 0.007, length(d));
 }`;
 // Every module goes into every shader, so a name clash shows at once.
-const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${p.pre || ''}
+const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${SKY}\n${p.pre || ''}
 vec3 sideA(vec2 uv, vec3 base) {${p.A}\n}
 vec3 sideB(vec2 uv, vec3 base) {${p.B}\n}`;
 const OUT = side => `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`;
@@ -771,27 +842,31 @@ const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
 // The scene pass: sky, ridge, town, the lamp, and water.js below the shore.
 const progScene = compile(TRI_VS, ST_HEAD + `
 uniform vec2 uRes, uLamp;
-uniform float uSky, uTime, uWaterOn, uSwell, uChop, uSets, uRings;
-uniform vec3 uLampCol;
+uniform float uTime, uWaterOn, uSwell, uChop, uSets, uRings, uSkyOn, uStars, uHazeD, uDay;
+uniform vec3 uLampCol, uZen, uMid, uBand, uAnti, uSunD;
 ${GLASS_RAIN}
 ${WATER}
+${SKY}
 // The camera stands 3 m over the water; the far shore lies just under the horizon.
 const float HZ = 0.38, SHORE = 0.376, FOC = 1.6, CAMH = 3.0;
 vec3 lightCol(float pick) {
   return pick < 0.25 ? vec3(1.0, 0.12, 0.08) : pick < 0.45 ? vec3(0.15, 1.0, 0.45) : pick < 0.8 ? vec3(1.0, 0.62, 0.25) : vec3(0.9, 0.95, 1.0);
 }
+// sky.js: the haze takes the colour of the low sky that way.
+vec3 hazeCol(vec3 dir) { return skDusk(normalize(vec3(dir.x, 0.04, dir.z)), uSunD, uZen, uMid, uBand, uAnti) * 0.9; }
 // All that stands above the water. lamp 0 leaves the dragged light out.
 vec3 above(vec2 uv, float lamp) {
-  float asp = uRes.x / uRes.y, up = max(uv.y - 0.42, 0.0);
+  float asp = uRes.x / uRes.y;
   vec2 q = vec2(uv.x * asp, uv.y);
-  vec3 nightSky = mix(vec3(0.05, 0.045, 0.07), vec3(0.008, 0.012, 0.03), smoothstep(0.42, 1.0, uv.y));
-  vec3 duskSky = mix(mix(vec3(0.03, 0.06, 0.16), vec3(0.2, 0.16, 0.2), exp(-up * 4.0)), vec3(0.75, 0.34, 0.14), exp(-up * 14.0));
-  vec3 daySky = vec3(0.5, 0.55, 0.62) * (0.6 + 0.6 * uv.y);
-  vec3 c = uSky < 0.5 ? nightSky : uSky < 1.5 ? duskSky : daySky;
-  // Town lights are on at night and at dusk.
-  float lit = uSky < 0.5 ? 1.0 : uSky < 1.5 ? 0.7 : 0.0;
+  // sky.js: the sky by direction, with stars. Off, the sky is one flat colour.
+  vec3 dir = normalize(vec3((uv.x - 0.5) * asp, max(uv.y - HZ, 0.0), -FOC));
+  vec3 c = uSkyOn > 0.5 ? skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars, uTime) : vec3(0.012, 0.015, 0.03);
+  // The far shore lies 2.4 km off; haze covers a share of it.
+  float far = uSkyOn > 0.5 ? skHaze(vec3(0.0, CAMH, 0.0), vec3(0.0, 30.0, -2400.0), uHazeD, 150.0) : 0.0;
+  // Town lights go out by day; haze dims them.
+  float lit = (1.0 - smoothstep(0.3, 0.8, uDay)) * (1.0 - 0.6 * far);
   float hill = 0.44 + 0.04 * sin(q.x * 3.0) + 0.02 * sin(q.x * 9.0);
-  if (uv.y < hill) c = (uSky > 1.5 ? vec3(0.16, 0.2, 0.14) : vec3(0.006, 0.008, 0.01)) * (0.7 + 0.3 * uv.y);
+  if (uv.y < hill) c = mix(mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y), hazeCol(dir), far);
   // Small town lights in a band under the ridge.
   vec2 g = vec2(q.x * 140.0, (uv.y - hill) * 140.0);
   vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
@@ -846,13 +921,15 @@ void main() {
       refl += above(at, 0.0) * w;
       ws += w;
     }
-    vec3 deep = uSky < 0.5 ? vec3(0.004, 0.008, 0.012) : uSky < 1.5 ? vec3(0.01, 0.02, 0.035) : vec3(0.02, 0.07, 0.1);
+    vec3 deep = mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay);
     c = mix(deep, refl / ws, F);
     // The lamp lays a glitter path on the water.
     if (uLamp.y > HZ) {
       vec3 l = normalize(vec3((uLamp.x - 0.5) * asp, uLamp.y - HZ, -FOC));
       c += uLampCol * 6.0 * wtGlint(r, l, sig2, 0.03) * F;
     }
+    // sky.js: far water fades into the haze, so the horizon has no hard line.
+    if (uSkyOn > 0.5) c = mix(c, hazeCol(d), skHaze(vec3(0.0, CAMH, 0.0), vec3(p.x, 0.0, p.y), uHazeD, 150.0));
   } else c = above(uv, 1.0);
   outC = vec4(c, 1.0);
 }`);
@@ -903,7 +980,7 @@ const paneFS = glass => ST_HEAD + `
 uniform sampler2D tScene, tBok;
 uniform vec2 uRes, uM, uLamp;
 uniform vec3 uLampCol, uTint;
-uniform float uSky, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
+uniform float uDay, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
 uniform float uGlassOn, uFlareOn, uGradeOn;
 ${GLASS_RAIN}
 ${WET_GLASS}
@@ -911,7 +988,7 @@ ${FLARE}
 ${GRADE}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
-  float asp = uRes.x / uRes.y, day = step(1.5, uSky);
+  float asp = uRes.x / uRes.y, day = uDay;
   // The pane is one unit tall; its frame is the edge of the view.
   vec2 pane = (uv - 0.5) * vec2(asp, 1.0);
   float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
@@ -939,19 +1016,21 @@ const progPane = compile(TRI_VS, paneFS(GLASS_MOD)), progPaneHand = compile(TRI_
 const CARDS = [
   { id: 'glass', name: 'Wet glass', file: 'wetglass.js', knobs: [['wet', 'Rain', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05], ['fog', 'Fog', 0, 1, 0.05], ['patch', 'Fog patches', 0, 1, 0.05], ['defocus', 'Scatter', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05]] },
   { id: 'water', name: 'Water', file: 'water.js', knobs: [['swell', 'Swell', 0, 0.04, 0.001], ['chop', 'Chop', 0, 0.4, 0.01], ['sets', 'Wave sets', 0, 1, 0.05], ['rings', 'Rain rings', 0, 1, 0.05]] },
+  { id: 'sky', name: 'Sky and haze', file: 'sky.js', knobs: [['hour', 'Time', 0, 24, 0.25], ['stars', 'Stars', 0, 2, 0.05], ['haze', 'Haze', 0, 1, 0.05]] },
   { id: 'flare', name: 'Lens flare', file: 'flare.js', knobs: [['flGain', 'Gain', 0, 2, 0.01], ['flSize', 'Size', 0.1, 2, 0.01]] },
   { id: 'grade', name: 'Grade', file: 'grade.js', knobs: [['vig', 'Vignette', 0, 1, 0.01], ['grain', 'Grain', 0, 0.3, 0.005], ['tintK', 'Tint', 0, 40, 0.5]] },
 ];
 const LOOKS = {
-  Everything: { on: ['glass', 'water', 'flare', 'grade'] },
+  Everything: { on: ['glass', 'water', 'sky', 'flare', 'grade'] },
   Clear: { on: [] },
-  Harbour: { on: ['water', 'flare', 'grade'], rings: 0 },
-  Drizzle: { on: ['glass', 'water'], wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
-  Storm: { on: ['glass', 'water', 'grade'], wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
-  'Fogged up': { on: ['glass', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
+  Harbour: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 19.25 },
+  Dawn: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 6.25, haze: 0.6 },
+  Drizzle: { on: ['glass', 'water', 'sky'], hour: 20, wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
+  Storm: { on: ['glass', 'water', 'sky', 'grade'], hour: 23, haze: 0.8, stars: 0, wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
+  'Fogged up': { on: ['glass', 'sky', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
 };
-const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, rings: 0.6, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
-const S = { on: {}, sky: 0, look: 'Everything', ...DEF };
+const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, rings: 0.6, hour: 21.5, stars: 1, haze: 0.4, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
+const S = { on: {}, look: 'Everything', ...DEF };
 function buildCards() {
   const host = $('cards');
   host.textContent = '';
@@ -1002,7 +1081,7 @@ for (const name of Object.keys(LOOKS)) {
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const motion = wetGlassMotion();
 let looping = false, paused = false, lastT = 0, time = 0, seed = 0, frameN = 0;
-const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water);
+const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water || S.on.sky);
 function kick() {
   if (looping || !moving()) return;
   looping = true;
@@ -1029,13 +1108,17 @@ function drawStack(fw, fh, prog = progPane) {
   const w = fw || Math.max(1, Math.round(view.clientWidth * dpr)), h = fh || Math.max(1, Math.round(view.clientHeight * dpr));
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
-  // By day the light you drag is a low sun.
-  const lamp = S.sky > 1.5 ? [1.0, 0.93, 0.8] : [1.0, 0.8, 0.55];
+  // sky.js: the hour sets the palette, the sun and the daylight.
+  const sk = skyAt(S.hour), day = S.on.sky ? sk.day : 0;
+  // By day the light you drag is a pale sun.
+  const lamp = day > 0.5 ? [1.0, 0.93, 0.8] : [1.0, 0.8, 0.55];
   const run = (pr, rt) => pass(pr, rt ? rt.fbo : null, rt ? rt.w : w, rt ? rt.h : h);
   gl.activeTexture(gl.TEXTURE0);
   let u = progScene.loc;
   gl.useProgram(progScene.p);
-  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform1f(u('uSky'), S.sky); gl.uniform3fv(u('uLampCol'), lamp);
+  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform3fv(u('uLampCol'), lamp);
+  gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
+  gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
   gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
   gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
   run(progScene, rtScene);
@@ -1066,7 +1149,7 @@ function drawStack(fw, fh, prog = progPane) {
   gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBok'), 1);
   gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uM'), motion.m[0], motion.m[1]); gl.uniform2f(u('uLamp'), src[0], src[1]);
   gl.uniform3fv(u('uLampCol'), lamp); gl.uniform3fv(u('uTint'), TINT.map(x => x * S.tintK));
-  gl.uniform1f(u('uSky'), S.sky); gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.speed); gl.uniform1f(u('uSeed'), seed);
+  gl.uniform1f(u('uDay'), day); gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.speed); gl.uniform1f(u('uSeed'), seed);
   gl.uniform1f(u('uScatter'), Math.min(1, S.defocus / 0.15));
   for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
   for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
@@ -1098,13 +1181,12 @@ function checkGlass() {
   return { m, share: over / (640 * 360) * 100 };
 }
 seg('mode', v => { mode = v; $('pStack').hidden = v !== 'stack'; $('pCheck').hidden = v !== 'check'; });
-seg('sky', v => { S.sky = +v; });
 // weather.js: one value drives the glass and the water together.
 $('wx').addEventListener('input', () => {
   const k = +$('wx').value, w = weather(k);
   $('wxOut').textContent = k;
-  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets });
-  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets']) S[key] = +S[key].toFixed(3);
+  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets, haze: w.haze });
+  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets', 'haze']) S[key] = +S[key].toFixed(3);
   for (const b of $('looks').children) b.setAttribute('aria-pressed', 'false');
   buildCards();
   touch();
