@@ -994,6 +994,9 @@ vec3 stormGlow(vec3 d) {
     // Far flashes stay on the horizon: they barely light the murk round us.
     vec2 fq = (l.xy - uCam) / 50.0;
     g += l.z * (0.08 + 0.7 * pow(m, 6.0) + 0.6 * pow(m, 18.0)) / (1.0 + dot(fq, fq));
+    // Inside a fog bank, a flash a few km off lights the whole murk round the plane.
+    vec2 fk = (l.xy - uCam) / 4.0;
+    g += l.z * uFog * 2.2 / (1.0 + dot(fk, fk));
   }
   return air + FLASH_C * g * 0.02 * max(uStorm, uFog);
 }

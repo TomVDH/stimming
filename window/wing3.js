@@ -89,9 +89,10 @@ varying vec3 vFogW;`)
     // The view's axes mirror, but they stay orthogonal: the transpose turns normals back.
     vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
     float sp = dot(vFogW, uSpanW);
-    float edge = smoothstep(0.55, 0.95, nW.x) + 0.8 * smoothstep(22.0, 25.0, sp);
+    // Leading and trailing edges both carry it; the mirror can flip the normal's sign.
+    float edge = smoothstep(0.5, 0.9, abs(nW.x)) + 0.8 * smoothstep(22.0, 25.0, sp);
     float fl = 0.5 + 0.5 * sin(uElmoT * 37.0 + vFogW.x * 9.0 + sp * 3.1) * sin(uElmoT * 23.0 - sp * 5.3 + vFogW.y * 7.0);
-    gl_FragColor.rgb += vec3(0.5, 0.42, 1.0) * uElmo * edge * (0.25 + 0.75 * fl * fl) * 0.06;
+    gl_FragColor.rgb += vec3(0.5, 0.42, 1.0) * uElmo * edge * (0.25 + 0.75 * fl * fl) * 0.12;
   }`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
