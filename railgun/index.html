@@ -83,14 +83,14 @@ const SIZES = {
 };
 const opts = {
   // The first rock rolls its size too.
-  size: Object.keys(SIZES)[Math.floor(Math.random() * 3)],
+  size: 'mountain',
   // Time of day, 0 for night to 1 for noon.
   // It has its own key: the old Sun key had a narrower range.
   sun: Number.isFinite(+store.get('time')) && store.get('time') !== null ? Math.min(1, Math.max(0, +store.get('time'))) : 0.5,
 };
 
 /* ---------- bar ---------- */
-// 'random' rolls each new rock's size; a dev pick pins it.
+// 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
 // The charge sound's mix: 'hum', 'blend', 'choir', 'vast' or 'titan'.
 // Expanse is the default; an old Blend default moves to it once.
@@ -429,9 +429,9 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   if (tl > -0.1) {
     float tp = max(tl, 0.0);
     // A hard white flash, then a long amber afterglow.
-    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.0 * exp(-tp / 0.4) + 0.4 * exp(-tp / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tp));
+    float I = uBk * smoothstep(-0.1, 0.05, tl) * (1.6 * exp(-tp / 0.6) + 0.8 * exp(-tp / 5.0)) * (1.0 - smoothstep(9.0, 18.0, tp));
     vec3 c = mix(vec3(1.0, 0.9, 0.78) * 1.6, uAstC, smoothstep(0.1, 2.0, tp));
-    I *= 5.0 / (1.0 + r * r / 8.0e8);
+    I *= 6.0 / (1.0 + r * r / 1.2e9);
     // Light that passes through toward the eye: a silver edge.
     float fwd = pow(max(dot(n, normalize(cameraPosition - P)), 0.0), 5.0);
     L = c * I * (0.45 + 2.2 * fwd * thin);
@@ -470,6 +470,10 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (d < 0.002) return col;
   // High ice still holds sunlight; it reads brighter than the dusty air.
   vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
+  // By day the bright sky drowns thin ice; denser, brighter streaks still read.
+  float dayW = smoothstep(0.08, 0.45, uSunD.y);
+  cloud *= 1.0 + 0.15 * dayW;
+  d *= 1.0 + 0.35 * dayW;
   // The shock rim: compressed air, lit by everything round it.
   cloud += hl + rim * (uCloudSun * 0.5 + uCloudAmb * 3.0 + hl * 2.0 + 0.05);
   return mix(col, cloud, min(1.0, d * (0.75 + 0.5 * rim)));
@@ -1687,12 +1691,13 @@ function makeTrain(pu) {
         // Thick smoke swallows the blast light; thin edges and creases catch it.
         float bsh = 0.35 + 0.65 * exp(-2.0 * d);
         Lf += uAstC * uHit.w * 60.0 * R * R / (dot(q, q) + 9.0 * R * R) * bsh;
-        // The afterglow reaches far up the trail and lingers.
+        // The afterglow reaches far up the tail.
         float tb = uStarT - uHitP.w - length(uAstP + q - uHitP.xyz) / 60000.0;
         if (tb > 0.0 && tb < 18.0) {
-          float gl = uBk * (exp(-tb / 0.4) + 0.4 * exp(-tb / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tb)) * bsh;
+          float gl = uBk * (1.6 * exp(-tb / 0.6) + 0.8 * exp(-tb / 5.0)) * (1.0 - smoothstep(9.0, 18.0, tb)) * bsh;
           vec3 qh = uAstP + q - uHitP.xyz;
-          Lf += uAstC * gl * (14.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 1.1 * 400.0 * R * R / (dot(qh, qh) + 400.0 * R * R));
+          // The tail takes the fire far down its length.
+          Lf += uAstC * gl * (20.0 * R * R / (dot(qh, qh) + 9.0 * R * R) + 2.5 * 3000.0 * R * R / (dot(qh, qh) + 3000.0 * R * R));
         }
         // Debris trains far from their own head still see the blast.
         Lf += blastLight(uAstP + q) * 2.0 * (1.0 - step(590.0, uAstRad));
@@ -3225,15 +3230,21 @@ void main() {
     vec3 p = cameraPosition + rd * t, em;
     float d = dens(p, em);
     if (d > 0.0) {
+      float tl = 0.0;
+#ifdef VSHADE
+      // A cheap volume shades itself in closed form.
+      tl = vshade(p, d);
+#else
       // The comet trail's light: a short march toward the sun.
       vec3 e2, ql = p;
-      float tl = 0.0, ls = uLs;
+      float ls = uLs;
       for (int j = 0; j < 3; j++) {
         if (j >= uLSteps) break;
         ql += uSun * ls;
         tl += dens(ql, e2) * ls;
         ls *= 1.8;
       }
+#endif
       // The second term stands in for light that scatters many times.
       // The gun's shadow cuts shafts through the dust.
       vec3 Ls = sunAt(p.y) * (exp(-tl) * 0.8 + exp(-tl * 0.18) * 0.2) * ph * 1.25 * (0.15 + 0.85 * sunVis(p));
@@ -3361,6 +3372,7 @@ const warpM = new THREE.Vector4(), warpH = new THREE.Vector4();
 // uDf: inflow in metres, devil strength, blow-out age (-1 off), blow-out power.
 // uPu: each pulse's front radius, strength and height.
 const chargeDust = makeVol(/* glsl */`
+#define VSHADE
 uniform vec4 uDu, uDf;
 uniform vec4 uPu[4];
 uniform int uPn;
@@ -3376,7 +3388,7 @@ float dens(vec3 p, out vec3 em) {
   float r = r0 - 420.0 * bo;
   // Cheap shape terms first; texture reads only where dust can be.
   float band = smoothstep(420.0, 520.0, r) * (1.0 - smoothstep(470.0 + 0.6 * uDu.y, 470.0 + uDu.y, r));
-  float sheet = smoothstep(480.0, 600.0, r) * (1.0 - smoothstep(470.0 + 0.9 * uDu.y, 470.0 + 1.3 * uDu.y, r)) * exp(-p.y / 12.0);
+  float sheet = smoothstep(480.0, 600.0, r) * (1.0 - smoothstep(470.0 + 0.8 * uDu.y, 470.0 + 1.15 * uDu.y, r)) * exp(-p.y / 12.0);
   float cov = 0.0;
   // Each beat throws a low ring of dust outward.
   for (int i = 0; i < 4; i++) {
@@ -3415,6 +3427,8 @@ float dens(vec3 p, out vec3 em) {
   d *= 0.55 + 0.45 * texture(uVol, w * 3.1).g;
   return d * 0.045;
 }
+// The sun's path through the dust: density times the layer's height, longer when the sun is low.
+float vshade(vec3 p, float d) { return clamp(d * uDu.z * 0.8 / max(uSun.y, 0.15), 0.0, 4.0); }
 vec3 alb(vec3 p) { return uDustC; }
 // The arcs, the muzzle and the blast light the dust.
 vec3 vlight(vec3 p) {
@@ -3463,9 +3477,9 @@ function updateChargeDust(dt) {
   u.uDf.value.set(dIn, devil, blow ? simT - blow.t0 : -1, blow ? 0.8 * blow.k : 0);
   u.uDu.value.set(cdust, 150 + 650 * cdust, 25 + 100 * cdust + 90 * rage, simT);
   const sp = u.uDu.value.y;
-  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 1.3 * sp + (blow ? 420 : 0) + 60;
+  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 1.15 * sp + (blow ? 420 : 0) + 40;
   // Fewer steps than shot dust: the ring is thick and soft.
-  u.uVSteps.value = Math.round(dustSteps() * 0.75); u.uLSteps.value = rung >= 2 ? 1 : 2;
+  u.uVSteps.value = Math.round(dustSteps() * 0.65);
   // The slab holds the march near the ground; devils and beats raise it.
   u.uLs.value = 10 + 0.12 * u.uDu.value.z; u.uSlab.value = Math.max(4.5 * u.uDu.value.z, 500 * devil + 40, 3 * ph);
   chargeDust.visible = !reduced() && (cdust > 0.02 || ph > 0 || devil > 0.02);
@@ -3939,7 +3953,7 @@ function respawn() {
   seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
   // Each new rock rolls its size.
-  if (devSize === 'random') { const ks = Object.keys(SIZES); opts.size = ks[Math.floor(Math.random() * ks.length)]; }
+  if (devSize === 'random') { const ks = Object.keys(SIZES); opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
   // Each rock comes in a little to one side of the last.
   turnPath(ast.next);
   PU.uTrail.value = 0;

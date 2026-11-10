@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:24:04Z
+updated_at: 2026-11-10T19:29:35Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -142,7 +142,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Light the comet's main smoke column properly again under the blast
 - [x] Remove the small ejecta that have no full trail
 - [x] The big trailed ejecta fall a little faster
-- [ ] Rework the charge dust at the base: it still slows the whole toy
+- [x] Rework the charge dust at the base: it still slows the whole toy
 - [ ] Post pass: FXAA, AO, better bloom; every pass scales with the quality ladder
 - [ ] Quality ladder: render at a lower % of full resolution per step, one pattern across all passes
 - [ ] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
@@ -153,3 +153,11 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 
 - [x] The soot cloud: lit like the trail, pale ash as it cools, thinner as it grows
 - [x] The case lands without the synth thump
+
+- [ ] Faint glow globes round the falling debris after the blast
+- [x] The charge dust: closed-form shading, fewer steps, a tighter bound (58 ms to 14 ms a frame at a full hold, headless)
+- [x] Daytime cirrus: denser and brighter by day, still subtle until the blast lights it
+- [x] Fiery sky: a hotter, wider glow on the clouds and the trail at the hit, still ending with the flash
+- [x] The mid rock is the default; each Reset brings the next size
+
+- [x] The blast lights the asteroid's tail down its whole length, fading with the flash
