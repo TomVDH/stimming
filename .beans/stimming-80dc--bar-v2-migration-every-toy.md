@@ -71,7 +71,7 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 - [ ] tesseract
 - [ ] top
 - [ ] zipper
-- [ ] trails
+- [x] trails
 
 ## Batch 10
 - [ ] chamber
@@ -93,3 +93,14 @@ Move every toy's index.html to Bar v2, five at a time. Follows stimming-tbpn. Br
 - [ ] window
 - [ ] viaduct
 - [ ] sunbeam
+
+## Star trails map
+
+| v1 control | v2 slot | Why |
+|---|---|---|
+| Sky (North, South, Equator) | Choice, top left, keys 1 to 3 | The one scene pick. |
+| Exposure slider | Main slider, bottom right | The toy's main dial. |
+| Hold the stage, Space | Shutter, held action, Space | A visible keyboard path for the shutter. |
+| Clear | Clear, key C | Empties the plate. |
+| Stars, Colour, Meteors | Settings, persisted | Tweaks; same storage keys as v1. |
+| Quality | Settings, Site | Shell row. |

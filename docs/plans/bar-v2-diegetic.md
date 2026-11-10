@@ -39,6 +39,7 @@ A session builds a proposal only on Tom's yes. Tom sets the verdict here; the to
 | Coil | Tap the coil body to tip it over the edge. | Nudge | Space | [coil](diegetic/coil-diegetic-tap.jpg) | waiting | `stimming-gg7y` |
 | Dandelion | A bud in the grass; tap it to regrow the head. | Regrow | R | [dandelion](diegetic/dandelion-diegetic-bud.jpg) | waiting | `stimming-jmpi` |
 | Fireworks | The sky is already the control: a press launches, a hold sizes the shell. A firing console on the shore would sit outside the view. | | | | none fits | `stimming-u4us` |
+| Star trails | The sky is already the shutter: a press opens it. A cable release on the ridge would only repeat that. | | | | none fits | `stimming-80dc` |
 
 ## Not yet proposed
 
