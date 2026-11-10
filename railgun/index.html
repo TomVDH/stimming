@@ -31,7 +31,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--railgun" id="stage" tabindex="0" role="application" aria-label="A colossal railgun at dusk. A burning asteroid hangs beyond its muzzle. Hold to charge, release to fire, drag to look around.">
+    <div class="stage stage--railgun" id="stage" tabindex="0" role="application" aria-label="A colossal railgun at dusk. A burning asteroid hangs beyond its muzzle. Hold to charge, release to fire.">
       <p class="fail" hidden>Railgun needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -100,7 +100,7 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
   ],
   quality: true,
-  keys: [['hold', 'charge'], ['release', 'fire'], ['drag', 'look around'], ['space', 'charge']],
+  keys: [['hold', 'charge'], ['release', 'fire'], ['space', 'charge']],
 } });
 
 const stage = document.getElementById('stage');
@@ -555,22 +555,40 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
   uniform float uTime;
   uniform vec2 uGLift;
   ${HEAD}
+  // Dunes: long rounded crests across the wind, bent by low noise.
+  const vec2 WIND = vec2(0.8, 0.6);
+  float dune(vec2 p) {
+    float c = 0.5 + 0.5 * sin(dot(p, WIND) * 0.0165 + 2.2 * k2fbm(p * 0.00035));
+    float h = c * c * (3.0 - 2.0 * c);
+    // A second, longer set crosses the first.
+    float c2 = 0.5 + 0.5 * sin(dot(p, vec2(-0.5, 0.86)) * 0.0071 + 1.7 * k2fbm(p * 0.0006 + 3.1));
+    return h + 0.35 * c2;
+  }
   void main() {
-    // Low swells tilt the plain; the low sun rakes across them.
-    // The relief fades with distance.
-    float fade = smoothstep(12000.0, 600.0, length(vP - cameraPosition));
-    vec2 q = vP.xz * 0.0011, g = vP.xz * 0.013;
-    float h0 = k2fbm(q) + 0.05 * k2fbm(g);
-    float hx = k2fbm(q + vec2(0.033, 0.0)) + 0.05 * k2fbm(g + vec2(0.39, 0.0));
-    float hz = k2fbm(q + vec2(0.0, 0.033)) + 0.05 * k2fbm(g + vec2(0.0, 0.39));
-    vec3 N = normalize(vec3((h0 - hx) * 3.5 * fade, 1.0, (h0 - hz) * 3.5 * fade));
-    float grit = k2fbm(vP.xz * 0.0012) * 0.7 + k2fbm(vP.xz * 0.02) * 0.3;
-    vec3 alb = uGroundC * (0.72 + 0.5 * grit);
+    // The relief fades with distance, so far dunes never shimmer.
+    float dist = length(vP - cameraPosition);
+    float fade = smoothstep(14000.0, 900.0, dist);
+    float e = 6.0, h0 = dune(vP.xz);
+    float A = 14.0 * fade;
+    vec3 N = normalize(vec3(-(dune(vP.xz + vec2(e, 0.0)) - h0) / e * A, 1.0, -(dune(vP.xz + vec2(0.0, e)) - h0) / e * A));
+    // Fine wind ripples near the eye.
+    float near = smoothstep(1600.0, 200.0, dist);
+    float rp = cos(dot(vP.xz, WIND) * 0.55 + 4.0 * k2noise(vP.xz * 0.02)) * 0.05 * near;
+    N = normalize(N + vec3(WIND.x, 0.0, WIND.y) * rp);
+    // Clean sand: crests a touch lighter, troughs a touch deeper.
+    float tone = 0.94 + 0.12 * k2fbm(vP.xz * 0.0002);
+    vec3 alb = uGroundC * tone * mix(0.8, 1.1, clamp(h0 / 1.35, 0.0, 1.0));
     // The ground round the mount is scorched: a shade darker.
     alb *= 1.0 - 0.25 * smoothstep(560.0, 240.0, length(vP.xz - vec2(0.0, 90.0)));
     // A flat plain takes little light at four degrees; lift it.
     float nl = clamp(dot(N, uSun) * uGLift.x + uGLift.y, 0.0, 1.2);
-    vec3 col = alb * (ambient(N) + uSunC * nl * sunVis(vP) + keyLight(N) + arcLight(vP, N));
+    float sv = sunVis(vP);
+    vec3 col = alb * (ambient(N) + uSunC * nl * sv + keyLight(N) + arcLight(vP, N));
+    // A satin sheen: Fresnel at grazing angles, a soft lobe toward the sun.
+    vec3 V = normalize(cameraPosition - vP);
+    float fres = pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    float lobe = pow(max(dot(reflect(-uSun, N), V), 0.0), 10.0);
+    col += uSunC * (0.22 * lobe + 0.12 * fres) * sv * fade + ambient(N) * 0.15 * fres;
     // The plain trembles in rings round the mount at rage.
     float r0 = length(vP.xz);
     col *= 1.0 + 0.14 * uRage * sin(r0 * 0.045 - uTime * 9.0) * exp(-r0 / 900.0);
@@ -2070,7 +2088,9 @@ function setSamples(n) {
 // The gun stands left of centre; its barrel climbs to the right.
 // The rock hangs past the muzzle, low over the horizon.
 const look = { yaw: 0, pitch: 0 }, lookTo = { yaw: 0, pitch: 0 };
-const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0 };
+// push: 0 wide, 1 fully pushed in on the gun and the rock.
+const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0 };
+const pushG = new THREE.Vector3(), pushR = new THREE.Vector3();
 let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
 function frame() {
   const portrait = size.w < size.h;
@@ -2078,7 +2098,9 @@ function frame() {
   const fov = portrait ? 74 : 55;
   camera.aspect = size.w / size.h;
   // The charge pushes the lens in a little.
-  camera.fov = fov * cam.zoom * (1 - 0.03 * U.uCharge.value);
+  // A hold pushes the lens in, slow and heavy.
+  const pk = reduced() ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
+  camera.fov = fov * cam.zoom * (1 - 0.18 * pk);
   // The horizon sits low: the gun and the sky own the frame.
   const hf = portrait ? 0.80 : 0.84;
   baseUp = Math.atan((2 * hf - 1) * Math.tan(rad(camera.fov / 2)));
@@ -2091,14 +2113,30 @@ function frame() {
   const wy = wk * (0.0026 * Math.sin(t * 0.61) + 0.0012 * Math.sin(t * 1.73 + 1.3) + 0.0005 * Math.sin(t * 4.9 + 0.3) + jit());
   const wp = wk * (0.002 * Math.sin(t * 0.83 + 0.4) + 0.001 * Math.sin(t * 2.11) + 0.0005 * Math.sin(t * 6.3 + 2.1) + jit());
   const wr = wk * (0.0014 * Math.sin(t * 0.47 + 2.0) + 0.0004 * Math.sin(t * 3.7));
-  camera.rotation.set(baseUp + look.pitch + cam.kickP + wp, yaw0 + look.yaw + cam.kickY + wy, wr);
+  // The push swings toward the midpoint of the gun and the rock.
+  let py = 0, pp = 0;
+  if (pk > 0.001) {
+    pushG.copy(axisAt(0.3, pushG)).sub(camera.position).normalize();
+    pushR.copy(ast.pos).sub(camera.position).normalize();
+    pushG.add(pushR).normalize();
+    py = (Math.atan2(-pushG.x, -pushG.z) - yaw0) * 0.8 * pk;
+    pp = (Math.asin(pushG.y) - baseUp) * 0.8 * pk;
+  }
+  camera.rotation.set(baseUp + pp + look.pitch + cam.kickP + wp, yaw0 + py + look.yaw + cam.kickY + wy, wr);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
+// A critically damped spring: the lens moves heavy and smooth.
+const lookV = { yaw: 0, pitch: 0 };
 function easeLook(dt) {
-  const e = 1 - Math.exp(-dt * (reduced() ? 12 : 6));
-  look.yaw += (lookTo.yaw - look.yaw) * e;
-  look.pitch += (lookTo.pitch - look.pitch) * e;
+  // The push builds over about twelve seconds of hold and eases out slower.
+  const pt = charge ? clamp((simT - charge.t0) / 12, 0, 1) : 0;
+  cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
+  const W = 1.6;
+  for (const k of ['yaw', 'pitch']) {
+    lookV[k] += (W * W * (lookTo[k] - look[k]) - 2 * W * lookV[k]) * dt;
+    look[k] += lookV[k] * dt;
+  }
 }
 // The rock's direction and light, as the shaders see them.
 const tmpA = new THREE.Vector3();
@@ -3389,7 +3427,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) > 1e-4;
+const busy = () => !!press || !!charge || !!shot || !!ion || !!blastFx || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -3708,7 +3746,7 @@ function playSample(ac, buf, when, gain, rate, dark = 0) {
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
     const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
-    sh.gain.value = 6;
+    sh.gain.value = 9;
     src.connect(lp).connect(sh).connect(g).connect(kit.out);
   } else src.connect(g).connect(kit.out);
   src.start(when);
@@ -3742,14 +3780,14 @@ function shotSound(ac, sh) {
 function hitSounds(ac, sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
-  // Compressed fourteen times: the boom lands about 10 s after the flash.
-  const late = camera.position.distanceTo(sh.target) / 343 / 14;
+  // Compressed 28 times: the boom lands about 5 s after the flash.
+  const late = camera.position.distanceTo(sh.target) / 343 / 28;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (shot !== sh || !kit.live()) return;
     if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04)); }
-    // The boom plays slow, low and dark: about 33 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.4 * k * jit(0.1), 0.68 * jit(0.04), 1800); }
+    // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
+    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200); }
   });
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
@@ -3776,26 +3814,29 @@ sound.onChange(on => {
 });
 
 
-/* Pointer: a press charges; a drag past 8 px also looks around; any release fires. */
+/* Pointer: a press charges, a release fires; the cursor leans the lens a little. */
 let press = null, spaceDown = false;
 stage.addEventListener('pointerdown', e => {
   // One finger at a time: a second pointer changes nothing.
   if (e.button > 0 || press) return;
   stage.setPointerCapture(e.pointerId);
-  press = { id: e.pointerId, x: e.clientX, y: e.clientY, yaw: lookTo.yaw, pitch: lookTo.pitch, at: performance.now(), drag: false };
+  press = { id: e.pointerId, at: performance.now() };
+  stage.classList.add('held');
   if (sound.on) kit.wake();
   act.press();
   wake();
 });
+// The lens leans a degree or so toward the cursor, slow and heavy.
+// Reduced motion keeps it still.
 stage.addEventListener('pointermove', e => {
-  if (!press || e.pointerId !== press.id) return;
-  const dx = e.clientX - press.x, dy = e.clientY - press.y;
-  if (!press.drag && Math.hypot(dx, dy) > 8) { press.drag = true; stage.classList.add('held'); }
-  if (!press.drag) return;
-  const k = rad(camera.fov) / size.h;
-  lookTo.yaw = clamp(press.yaw + dx * k, -0.3, 0.3);
-  lookTo.pitch = clamp(press.pitch + dy * k, -0.15, 0.35);
+  if (reduced() || e.pointerType === 'touch') return;
+  const r = stage.getBoundingClientRect();
+  const nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5;
+  lookTo.yaw = -clamp(nx, -0.5, 0.5) * rad(1.4);
+  lookTo.pitch = -clamp(ny, -0.5, 0.5) * rad(0.9);
+  wake();
 });
+stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; wake(); });
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
   press = null;
@@ -3845,6 +3886,7 @@ window.__qa = {
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
+  look: () => ({ yaw: THREE.MathUtils.radToDeg(look.yaw), pitch: THREE.MathUtils.radToDeg(look.pitch), to: THREE.MathUtils.radToDeg(lookTo.yaw) }),
   blastState: () => {
     const u = fireball.material.uniforms, b = U.uBlast.value, T = u.uFb.value.x;
     return { fire: fireball.visible, w: b.w, off: blastFx ? +(blastFx.P.distanceTo(b) / blastFx.R).toFixed(2) : -1, size: blastFx ? +(u.uR.value / 1.15 / blastFx.R).toFixed(2) : 0,
