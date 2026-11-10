@@ -8,7 +8,7 @@
 <title>FX lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..800&display=swap">
 <style>
-/* FX lab: each shared shader effect, a toy's own copy (A) against the shared module (B). */
+/* FX lab: every shared shader on one scene, each on a switch. A second mode checks a toy's copy against a module. */
 :root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); --bad: oklch(0.72 0.17 25); --good: oklch(0.8 0.14 150); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
@@ -36,6 +36,12 @@ pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: o
 .diff { margin-top: 8px; font-variant-numeric: tabular-nums; }
 .diff.ok { color: var(--good); } .diff.off { color: var(--bad); }
 .err { color: var(--bad); white-space: pre-wrap; font-size: 11px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 6px; margin: 8px 0; }
+.card .head { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin-bottom: 4px; }
+.card .head small { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 11px; }
+.card.off .row { opacity: 0.35; }
+input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; margin: 0; }
+[hidden] { display: none !important; }
 @media (max-width: 760px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
 <script type="importmap">
@@ -60,7 +66,18 @@ pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: o
 </div>
 <aside>
   <h1>FX lab</h1>
-  <p class="note">Drag the light. Drag the line to move the split.</p>
+  <div class="seg" id="mode" style="margin:6px 0 8px"><button data-v="stack" aria-pressed="true">All effects</button><button data-v="check" aria-pressed="false">Check a copy</button></div>
+  <div id="pStack">
+    <p class="note">One window, every shared shader. Switch each on or off. Drag the light.</p>
+    <h2>Look</h2>
+    <div class="seg" id="looks"></div>
+    <h2>Sky</h2>
+    <div class="seg" id="sky"><button data-v="0" aria-pressed="true">Night</button><button data-v="1" aria-pressed="false">Dusk</button><button data-v="2" aria-pressed="false">Day</button></div>
+    <h2>Shaders</h2>
+    <div id="cards"></div>
+  </div>
+  <div id="pCheck" hidden>
+  <p class="note">A is a toy's own copy. B is the shared module. Drag the light. Drag the line to move the split.</p>
   <h2>Effect</h2>
   <div class="row wide"><span>Effect</span><select id="fx"></select></div>
   <div class="row wide"><span>Copy (A)</span><select id="preset"></select></div>
@@ -79,11 +96,14 @@ pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: o
   <div id="knobsB"></div>
   <h2>Side B source</h2>
   <pre id="code"></pre>
+  </div>
 </aside>
 
 <script type="module">
 import { FLARE } from '../shared/flare.js';
 import { GRADE, gradePass } from '../shared/grade.js';
+import { GLASS_RAIN } from '../shared/glassrain.js';
+import { BOKEH } from '../shared/bokeh.js';
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), view = $('view');
@@ -575,6 +595,8 @@ function draw(fw, fh) {
     W = cv.width = w; H = cv.height = h;
     sizeTarget(tA, W, H); sizeTarget(tB, W, H);
   }
+  // The stack may have resized the canvas.
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   setU(progA); pass(progA, tA.fbo, W, H);
   if (bMode === 'three' && T) drawThree();
   else { setU(progB); pass(progB, tB.fbo, W, H); }
@@ -643,7 +665,12 @@ async function checkAll() {
 }
 $('check').addEventListener('click', checkAll);
 window.fxlab = { checkAll };
-const touch = () => { if (!dirty) { dirty = true; requestAnimationFrame(() => draw()); } };
+// The lab opens on the stack; the check is the second mode.
+let mode = 'stack';
+const touch = () => {
+  if (mode === 'stack') { kick(); if (looping) return; }
+  if (!dirty) { dirty = true; requestAnimationFrame(() => (mode === 'stack' ? drawStack() : draw())); }
+};
 
 /* ---------- panel ---------- */
 function knobRows(host, set) {
@@ -683,7 +710,7 @@ function tags() {
   $('tagA').textContent = 'A · ' + preset.a;
   $('tagB').textContent = 'B · ' + (bMode === 'three' ? (preset.pass ? 'gradePass()' : preset.b) + ' · three.js' : preset.b);
   $('split').style.left = split * 100 + '%';
-  const off = vMode !== 0;
+  const off = vMode !== 0 || mode === 'stack';
   $('split').hidden = $('tagA').hidden = $('tagB').hidden = off;
 }
 function seg(id, on) {
@@ -713,6 +740,267 @@ $('back').addEventListener('change', e => { back = +e.target.value; touch(); });
 seg('bmode', v => { bMode = v; if (v === 'three') loadThree(); });
 seg('vmode', v => { vMode = +v; });
 
+/* ---------- the stack: every shared shader on one scene ---------- */
+// A night town behind a window. Each module is one step of the last pass.
+const hdr = !!gl.getExtension('EXT_color_buffer_float');
+function hdrTarget() {
+  const t = target();
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  t.w = t.h = 0;
+  t.size = (w, h) => {
+    if (t.w === w && t.h === h) return;
+    t.w = w; t.h = h;
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    if (hdr) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  };
+  return t;
+}
+const rtScene = hdrTarget(), rt4 = hdrTarget(), rt8 = hdrTarget(), rtBok = hdrTarget();
+const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
+const progScene = compile(TRI_VS, ST_HEAD + `
+uniform vec2 uRes, uLamp;
+uniform float uSky;
+uniform vec3 uLampCol;
+${GLASS_RAIN}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y, up = max(uv.y - 0.42, 0.0);
+  vec2 q = vec2(uv.x * asp, uv.y);
+  vec3 nightSky = mix(vec3(0.05, 0.045, 0.07), vec3(0.008, 0.012, 0.03), smoothstep(0.42, 1.0, uv.y));
+  vec3 duskSky = mix(mix(vec3(0.03, 0.06, 0.16), vec3(0.2, 0.16, 0.2), exp(-up * 4.0)), vec3(0.75, 0.34, 0.14), exp(-up * 14.0));
+  vec3 daySky = vec3(0.5, 0.55, 0.62) * (0.6 + 0.6 * uv.y);
+  vec3 c = uSky < 0.5 ? nightSky : uSky < 1.5 ? duskSky : daySky;
+  // Town lights are on at night and at dusk.
+  float lit = uSky < 0.5 ? 1.0 : uSky < 1.5 ? 0.7 : 0.0;
+  float hill = 0.42 + 0.06 * sin(q.x * 3.0) + 0.03 * sin(q.x * 9.0);
+  if (uv.y < hill) c = (uSky > 1.5 ? vec3(0.16, 0.2, 0.14) : vec3(0.006, 0.008, 0.01)) * (0.7 + 0.3 * uv.y);
+  // Small town lights in a band under the ridge.
+  vec2 g = vec2(q.x * 140.0, (uv.y - hill) * 140.0);
+  vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
+  float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
+  vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
+  c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
+  // Street lights lower down: red, green, amber and white.
+  vec2 g2 = q * 22.0;
+  vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
+  float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
+  float pick = grH(id2 + 4.1);
+  vec3 lc2 = pick < 0.25 ? vec3(1.0, 0.12, 0.08) : pick < 0.45 ? vec3(0.15, 1.0, 0.45) : pick < 0.8 ? vec3(1.0, 0.62, 0.25) : vec3(0.9, 0.95, 1.0);
+  c += lc2 * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+  // The near lamp: the light you drag.
+  vec2 d = q - vec2(uLamp.x * asp, uLamp.y);
+  float r2 = dot(d, d);
+  c += uLampCol * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12);
+  outC = vec4(c, 1.0);
+}`);
+const progDown = compile(TRI_VS, ST_HEAD + `
+uniform sampler2D tSrc;
+uniform vec2 uTx, uDst;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  outC = vec4(0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
+    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb), 1.0);
+}`);
+const progBok = compile(TRI_VS, ST_HEAD + `
+uniform sampler2D tSrc;
+uniform vec2 uRad, uDst;
+uniform float uBlades, uRimB;
+${BOKEH}
+void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, uBlades, 0.015, 500.0, uRimB), 1.0); }`);
+// The pane pass: drops, fog, bokeh, flare and grade, in that order.
+const progPane = compile(TRI_VS, ST_HEAD + `
+uniform sampler2D tScene, tBok;
+uniform vec2 uRes, uM, uLamp;
+uniform vec3 uLampCol, uTint;
+uniform float uSky, uFlow, uWet, uWind, uZoom, uFog, uPatch, uDefocus, uFlGain, uFlSize, uVig, uGrain, uSeed;
+uniform float uRainOn, uFogOn, uBokOn, uFlareOn, uGradeOn;
+${GLASS_RAIN}
+${FLARE}
+${GRADE}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y, day = step(1.5, uSky);
+  // The pane is one unit tall. Drop size zooms it.
+  vec2 pane = (uv - 0.5) * vec2(asp, 1.0);
+  float k = 1.0 / uZoom;
+  vec2 p = pane * k;
+  vec2 off = vec2(0.0);
+  float rim = 0.0, spec = 0.0, cover = 0.0, clear = 0.0;
+  // glassrain.js: still beads, and runs that the wind slants.
+  if (uRainOn > 0.5 && uWet > 0.001) {
+    vec3 L = vec3(0.28, 0.5, 0.82);
+    vec2 pr = p * 0.45;
+    grBeads(pr, uWet, 1.0 - 0.5 * smoothstep(5.0, 40.0, uWind), 0.6, L, off, rim, spec, cover);
+    grRuns(pr, uM, uFlow, uWet, 1.0 + uWind / 18.0, 1.0 - smoothstep(4.0, 18.0, uWind), L, off, rim, spec, cover, clear);
+    off /= 0.45;
+  }
+  // glassrain.js: fog on the pane. Runs wipe it; the frame edge is colder.
+  float fog = 0.0;
+  if (uFogOn > 0.5) {
+    float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
+    fog = clamp(grFog(pane, uFog, edge, uPatch) * (1.0 - clear * 0.95) * (1.0 - cover * 0.8), 0.0, 1.0);
+  }
+  vec2 su = uv + off / k / vec2(asp, 1.0);
+  vec3 sharp = texture(tScene, su).rgb;
+  // bokeh.js: the view behind fog, or behind the focus, opens into discs.
+  // A drop is a small lens, so the view inside it stays sharp.
+  vec3 blur = uBokOn > 0.5 ? texture(tBok, su).rgb : sharp;
+  float soft = max(smoothstep(0.02, 0.45, fog), smoothstep(0.0, 0.15, uDefocus) * uBokOn) * (1.0 - cover);
+  vec3 warm = vec3(1.0, 0.85, 0.7);
+  vec3 col = mix(sharp, blur, soft) * vec3(0.8, 0.84, 0.81);
+  col = col * (1.0 - 0.8 * fog) + (blur * 1.1 + warm * 0.02 * (1.0 - day) + vec3(0.03) * day) * fog * 0.9;
+  col *= 1.0 - 0.7 * rim;
+  col += mix(warm * 0.3, vec3(0.6, 0.63, 0.66), day) * spec;
+  // The near lamp lights the drops and the fog it passes.
+  float near = length(vec2((uv.x - uLamp.x) * asp, uv.y - uLamp.y));
+  col += uLampCol * ((cover * 0.5 + rim * 0.9) * exp(-near * 7.0) + fog * 0.6 * exp(-near * 5.0));
+  // flare.js: the lamp flares the lens.
+  if (uFlareOn > 0.5) col = flScreen(col, flFlare(uv, uLamp, asp, uLampCol, uFlSize, vec3(1.0)) * uFlGain);
+  // grade.js: tint, vignette and grain.
+  if (uGradeOn > 0.5) col = gdGrade(col, uv, asp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, uVig, 0.4, uGrain);
+  col = clamp((col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14), 0.0, 1.0);
+  outC = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}`);
+
+// One card per shared shader: a switch and its sliders.
+const CARDS = [
+  { id: 'rain', name: 'Rain drops', file: 'glassrain.js', knobs: [['wet', 'Wet', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05]] },
+  { id: 'fog', name: 'Fog on glass', file: 'glassrain.js', knobs: [['fog', 'Fog', 0, 1, 0.05], ['patch', 'Patches', 0, 1, 0.05]] },
+  { id: 'bok', name: 'Bokeh', file: 'bokeh.js', knobs: [['defocus', 'Out of focus', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05], ['blades', 'Blades', 0, 8, 1], ['rimB', 'Rim', 0, 1, 0.05]] },
+  { id: 'flare', name: 'Lens flare', file: 'flare.js', knobs: [['flGain', 'Gain', 0, 2, 0.01], ['flSize', 'Size', 0.1, 2, 0.01]] },
+  { id: 'grade', name: 'Grade', file: 'grade.js', knobs: [['vig', 'Vignette', 0, 1, 0.01], ['grain', 'Grain', 0, 0.3, 0.005], ['tintK', 'Tint', 0, 40, 0.5]] },
+];
+const LOOKS = {
+  Everything: { on: ['rain', 'fog', 'bok', 'flare', 'grade'] },
+  Clear: { on: [] },
+  Drizzle: { on: ['rain', 'bok'], wet: 0.5, wind: 0, defocus: 0.6 },
+  Storm: { on: ['rain', 'fog', 'bok', 'grade'], wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25 },
+  'Fogged up': { on: ['rain', 'fog', 'bok', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
+};
+const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, blades: 0, rimB: 0.3, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
+const S = { on: {}, sky: 0, look: 'Everything', ...DEF };
+function buildCards() {
+  const host = $('cards');
+  host.textContent = '';
+  for (const c of CARDS) {
+    const card = document.createElement('section');
+    card.className = 'card' + (S.on[c.id] ? '' : ' off');
+    const head = document.createElement('label'), box = document.createElement('input'), name = document.createElement('span'), file = document.createElement('small');
+    head.className = 'head';
+    box.type = 'checkbox';
+    box.checked = !!S.on[c.id];
+    box.addEventListener('change', () => { S.on[c.id] = box.checked; card.classList.toggle('off', !box.checked); touch(); });
+    name.textContent = c.name;
+    file.textContent = 'shared/' + c.file;
+    head.append(box, name, file);
+    card.append(head);
+    for (const [k, label, lo, hi, step] of c.knobs) {
+      const row = document.createElement('label'), nm = document.createElement('span'), inp = document.createElement('input'), out = document.createElement('output');
+      row.className = 'row';
+      nm.textContent = label;
+      Object.assign(inp, { type: 'range', min: lo, max: hi, step, value: S[k] });
+      out.textContent = S[k];
+      inp.addEventListener('input', () => { S[k] = +inp.value; out.textContent = inp.value; touch(); });
+      row.append(nm, inp, out);
+      card.append(row);
+    }
+    host.append(card);
+  }
+}
+function useLook(name) {
+  const { on, ...vals } = LOOKS[name];
+  Object.assign(S, DEF, vals);
+  S.look = name;
+  S.on = Object.fromEntries(CARDS.map(c => [c.id, on.includes(c.id)]));
+  for (const b of $('looks').children) b.setAttribute('aria-pressed', b.dataset.v === name);
+  buildCards();
+  touch();
+}
+for (const name of Object.keys(LOOKS)) {
+  const b = document.createElement('button');
+  b.dataset.v = name;
+  b.textContent = name;
+  b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => useLook(name));
+  $('looks').append(b);
+}
+
+// Motion: the runs flow, the wind slants them, the grain moves.
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+let looping = false, lastT = 0, runS = 3, flow = 0, seed = 0, frameN = 0;
+const moving = () => mode === 'stack' && !document.hidden && !still.matches && S.on.rain && S.wet > 0.001;
+function kick() {
+  if (looping || !moving()) return;
+  looping = true;
+  lastT = 0;
+  requestAnimationFrame(loop);
+}
+function loop(t) {
+  if (!moving()) { looping = false; touch(); return; }
+  const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0.016);
+  lastT = t;
+  runS += (S.wind - runS) * (1 - Math.exp(-dt / 0.3));
+  flow += dt * (0.25 + runS / 14);
+  if (++frameN & 1) seed = seed % 997 + 1;
+  drawStack();
+  requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', touch);
+function drawStack() {
+  dirty = false;
+  if (!looping) runS = S.wind;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(view.clientWidth * dpr)), h = Math.max(1, Math.round(view.clientHeight * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
+  // By day the light you drag is a low sun.
+  const lamp = S.sky > 1.5 ? [1.0, 0.93, 0.8] : [1.0, 0.8, 0.55];
+  const run = (prog, rt) => pass(prog, rt ? rt.fbo : null, rt ? rt.w : w, rt ? rt.h : h);
+  gl.activeTexture(gl.TEXTURE0);
+  let u = progScene.loc;
+  gl.useProgram(progScene.p);
+  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform1f(u('uSky'), S.sky); gl.uniform3fv(u('uLampCol'), lamp);
+  run(progScene, rtScene);
+  if (S.on.bok) {
+    // Two 4x4 box steps to an eighth, then the disc gather at half size.
+    u = progDown.loc;
+    gl.useProgram(progDown.p);
+    gl.uniform1i(u('tSrc'), 0);
+    gl.bindTexture(gl.TEXTURE_2D, rtScene.tex); gl.uniform2f(u('uTx'), 1 / w, 1 / h); gl.uniform2f(u('uDst'), rt4.w, rt4.h);
+    run(progDown, rt4);
+    gl.bindTexture(gl.TEXTURE_2D, rt4.tex); gl.uniform2f(u('uTx'), 1 / rt4.w, 1 / rt4.h); gl.uniform2f(u('uDst'), rt8.w, rt8.h);
+    run(progDown, rt8);
+    u = progBok.loc;
+    gl.useProgram(progBok.p);
+    gl.bindTexture(gl.TEXTURE_2D, rt8.tex);
+    gl.uniform1i(u('tSrc'), 0);
+    // Out of focus sets the disc size; fog alone keeps a fair disc.
+    const rad = 0.024 * S.rad * (S.on.fog ? Math.max(S.defocus, 0.6) : S.defocus);
+    gl.uniform2f(u('uRad'), rad * h / w, rad); gl.uniform2f(u('uDst'), rtBok.w, rtBok.h);
+    gl.uniform1f(u('uBlades'), S.blades); gl.uniform1f(u('uRimB'), S.rimB);
+    run(progBok, rtBok);
+  }
+  u = progPane.loc;
+  gl.useProgram(progPane.p);
+  gl.bindTexture(gl.TEXTURE_2D, rtScene.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rtBok.tex);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBok'), 1);
+  const m = [-runS / 6, -1], ml = Math.hypot(m[0], m[1]);
+  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uM'), m[0] / ml, m[1] / ml); gl.uniform2f(u('uLamp'), src[0], src[1]);
+  gl.uniform3fv(u('uLampCol'), lamp); gl.uniform3fv(u('uTint'), TINT.map(x => x * S.tintK));
+  gl.uniform1f(u('uSky'), S.sky); gl.uniform1f(u('uFlow'), flow); gl.uniform1f(u('uWind'), runS); gl.uniform1f(u('uSeed'), seed);
+  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uDefocus', 'defocus'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
+  for (const [name, k] of [['uRainOn', 'rain'], ['uFogOn', 'fog'], ['uBokOn', 'bok'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
+  run(progPane, null);
+}
+seg('mode', v => { mode = v; $('pStack').hidden = v !== 'stack'; $('pCheck').hidden = v !== 'check'; });
+seg('sky', v => { S.sky = +v; });
+window.fxlab.state = S;
+
 /* ---------- pointer ---------- */
 function drag(el, move) {
   el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); move(e); e.preventDefault(); });
@@ -724,6 +1012,7 @@ drag($('split'), e => { split = Math.min(0.98, Math.max(0.02, at(e)[0])); tags()
 new ResizeObserver(touch).observe(view);
 
 useFx('flare');
+useLook('Everything');
 </script>
 </body>
 </html>

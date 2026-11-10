@@ -18,11 +18,16 @@ One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
 - The JS helper imports nothing. No shared module imports three.
 - Out of scope: the three TSL toys (`galaxy`, `fire`, `ink`). GLSL strings do not reach them.
 
-One dev page tests every module: `fxlab/` (noindex), built like `glasslab/`.
-Each effect gets one panel: A against B at full resolution, with knobs.
-A is a toy's own copy; B is the shared module. B runs in raw WebGL2 or in a three.js `ShaderMaterial`.
-The page reads the largest difference between A and B. "Check all copies" tests every copy in both runtimes.
-`glasslab/` stays the pane-rain page.
+One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
+
+- **All effects** (the page opens here): one window scene with every shared shader stacked on it.
+  Each shader has a card: a switch and its sliders. Today: rain drops, fog on glass, bokeh, lens flare, grade.
+  Look buttons set a whole combination (Everything, Clear, Drizzle, Storm, Fogged up). The light is draggable.
+  A new module gets a card here first.
+- **Check a copy**: A is a toy's own copy; B is the shared module, in raw WebGL2 or in a three.js `ShaderMaterial`.
+  The page reads the largest difference between A and B. "Check all copies" tests every copy in both runtimes.
+
+`glasslab/` stays the page that tunes the pane-rain variants against each other.
 
 ## Built
 
