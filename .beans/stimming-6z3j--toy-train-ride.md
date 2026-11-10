@@ -290,3 +290,4 @@ Open from the critics:
 - [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat
 - [x] The ride starts standing at Zurich Enge (3.14 km), the last stop before the lake opens up (Tom, 2026-11-10); ?x= still sets any start
 - [x] Time of day in five hours (Tom, 2026-11-10): morning, noon, afternoon, evening, night. Each sets the daylight share, the sun's direction and colour, a horizon tint for sky and haze, and its strength; a change eases over in about three seconds (sun, tints, daylight, cabin sun patches, lamps); the cabin rebakes as the sun moves; T steps through the hours; an old saved 'day' reads as afternoon
+- [x] Menu icon: Tom picked A of spike trainride-1 (window by day; mast sweeps and lake glints on hover); emblem shared/emblems/trainride.svg; picks.json records it
