@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T10:33:27Z
+updated_at: 2026-11-10T10:36:51Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -87,4 +87,4 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 
 - [x] Menu icon: the far shot at dusk (icons/spike-railgun-2.html, A); the rock follows the pointer, rest to charge and fire, the clouds flash
 - [x] Main shelf as beta: number 40, stage beta; Tom's call
-- [ ] Emblem for the intro (shared/emblems/railgun.svg) and an accent
+- [x] Emblem for the intro (shared/emblems/railgun.svg) and an accent (proposal: dusk lilac to fireball amber; Tom sets the final)
