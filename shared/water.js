@@ -15,7 +15,10 @@
 // Its energy moves into sig2, the roughness, so far water shows a smooth glitter path.
 // swell and chop are slope gains: 0.012 and 0.16 make a breezy lake.
 // sets 0 gives even waves; 1 gives wave groups with calm water between.
-// Sources: Wind farm (swell), Beach walker (chop, glitter), Buoy Business (sets).
+// Rain on the water, before wtNormal:
+//   slope += wtRings(p, time, foot, rain, 0.6, sig2);
+// rain 0 to 1 is how hard it falls. size 1 makes rings up to 1.4 m wide, to read from afar.
+// Sources: Wind farm (swell), Beach walker (chop, glitter), Buoy Business (sets, rain rings).
 
 export const WATER = /* glsl */`
 float wtH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -79,6 +82,27 @@ vec2 wtWaves(vec2 p, float t, float foot, float swell, float chop, float scatter
   float e = wtSets(p, t, scatter);
   vec2 g = wtSwell(p, t, foot, swell * e).xy;
   return g + wtChop(p, t, foot, chop * (0.4 + 0.6 * e), sig2);
+}
+// One layer of rain rings. A share of the cells holds a drop; each drop falls once a cycle.
+vec2 wtRingLayer(vec2 p, float t, float amount, float size, float rate) {
+  vec2 q = p / (3.0 * size), id = floor(q);
+  float h1 = wtH(id), h2 = wtH(id + 17.3), h3 = wtH(id + 41.7);
+  vec2 f = fract(q) - (0.25 + 0.5 * vec2(h1, h2));
+  float age = fract(t * rate + h1 * 7.3);
+  // A lead ring and a fainter one behind it, as a real drop makes.
+  float r = length(f) * 3.0, x = r - age * 1.4, x2 = r - age * 0.8;
+  float w = (sin(x * 16.0) * exp(-x * x * 70.0) + 0.5 * sin(x2 * 16.0) * exp(-x2 * x2 * 70.0)) * pow(1.0 - age, 1.5) * step(h3, amount);
+  return f / max(length(f), 1e-3) * w;
+}
+// Rain rings: each drop lays a ring that spreads and fades. Add the result to the slope.
+// Rings too small for a pixel fade out and roughen the water through sig2.
+vec2 wtRings(vec2 p, float t, float foot, float amount, float size, inout float sig2) {
+  if (amount <= 0.0) return vec2(0.0);
+  float seen = 1.0 - smoothstep(0.15, 0.5, foot / (0.39 * size));
+  sig2 += (1.0 - seen) * amount * 0.004;
+  if (seen <= 0.0) return vec2(0.0);
+  // Two offset layers, so drops never fall on a grid.
+  return (wtRingLayer(p, t, amount, size, 0.55) + wtRingLayer(p + vec2(1.4, 0.9) * size, t, amount, size, 0.45)) * 0.5 * seen;
 }
 vec3 wtNormal(vec2 slope) { return normalize(vec3(-slope.x, 1.0, -slope.y)); }
 // Schlick: water mirrors little from above and almost all at a grazing view.

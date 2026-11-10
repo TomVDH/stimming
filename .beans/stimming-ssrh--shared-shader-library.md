@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T06:18:01Z
-updated_at: 2026-11-10T09:52:18Z
+updated_at: 2026-11-10T09:59:38Z
 ---
 
 Reusable shader effects that several toys share. Each effect is one ES module in `shared/`: GLSL source strings and a small JS helper, in the style of `shared/glassrain.js`. It works in raw WebGL2 and in a three.js `ShaderMaterial`. Some effects come from Havoc (Buoy Business).
@@ -28,7 +28,10 @@ Plan: `docs/plans/shared-shaders.md`.
 - [x] `fxlab/` opens on one scene with every shared shader on a switch (Tom: rain drops, fog on glass, the combo)
 - [x] Wet glass as one group: `shared/wetglass.js`, one card in `fxlab/`, checked against Train Ride
 - [x] Water surface, first cut: `shared/water.js`, a card in `fxlab/`
-- [ ] Tom picks the next effect (night sky and haze, output, water extras)
+- [x] Rain rings on water: `wtRings()` in `shared/water.js`, a slider in `fxlab/`
+- [x] `shared/weather.js`: one value drives glass and water; Weather slider in `fxlab/`
+- [ ] Bundles follow the site quality setting
+- [ ] Tom picks the next bundle (night sky and haze, output, water extras)
 
 ## Rules
 
@@ -49,3 +52,5 @@ Plan: `docs/plans/shared-shaders.md`.
 
 - 2026-11-10: Tom: glass with drops, fog, directional drops and scatter usually go together. `shared/wetglass.js` makes the pane in one call (`wgPane`, `wgView`, `wetGlassMotion`); the lab has one Wet glass card. It matches Train Ride within 1 / 255.
 - 2026-11-10: `shared/water.js` built (Tom: "Water surface"): Wind farm swell, Beach walker chop and glitter, Buoy Business wave sets. The lab scene is now a harbour. No toy adopted either.
+
+- 2026-11-10: Tom: "we will use bundled shaders to quickly pump out responsive and reactive environments". Recorded as the Direction section of the plan. Rain rings ported from Buoy Business (`sea.js:585`). `shared/weather.js` is the first driver.

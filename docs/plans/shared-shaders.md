@@ -4,6 +4,15 @@ Bean: `stimming-ssrh`. Started 2026-11-09. Tom picks; nothing here is built yet.
 
 Tom, Train Ride chat, 2026-11-09: "we also need to spin off sub session into REUSABLE shader effects that are shared between several toys; some of these too will be sourced from havoc / buoy business".
 
+## Direction
+
+Tom, 2026-11-10: "we will use bundled shaders to quickly pump out responsive and reactive environments".
+
+- **Bundles, not a parts bin.** Effects that belong together ship as one call. `shared/wetglass.js` is the pattern: drops, runs, fog and scatter.
+- **Reactive.** Each bundle has a JS driver, so an environment follows one value. `shared/weather.js` maps dry-to-storm onto the glass and the water.
+- **Responsive.** A bundle must hold 30 fps on Standard quality and follow `quality()` from `shared/stim.js`. Not done yet: no module reads the quality setting.
+- **Fast to use.** A new toy pastes the bundles, calls the driver, and has an environment. `fxlab/`'s pane pass is the worked example.
+
 ## The contract
 
 One effect is one ES module in `shared/`, in the style of `shared/glassrain.js`.
@@ -24,6 +33,7 @@ One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
   Each effect has a card: a switch and its sliders. Today: Wet glass, Water, Lens flare, Grade.
   Glass effects stay one group (Tom, 2026-11-10): drops, running drops, fog and scatter go together.
   Look buttons set a whole combination (Everything, Clear, Harbour, Drizzle, Storm, Fogged up). The light is draggable.
+  The Weather slider runs `shared/weather.js`: one value, dry to storm, moves the glass and the water together.
   A new module gets a card here first.
 - **Check a copy**: A is a toy's own copy; B is the shared module, in raw WebGL2 or in a three.js `ShaderMaterial`.
   The page reads the largest difference between A and B. "Check all copies" tests every copy in both runtimes.
@@ -37,7 +47,8 @@ One dev page shows and tests every module: `fxlab/` (noindex). It has two modes.
 | `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | None yet |
 | `shared/grade.js` (tint, vignette, grain) | 2026-11-10 | Five copies match within 1 / 255 in raw WebGL2. In three.js, three match; see the note | None yet |
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
-| `shared/water.js` (swell, chop, wave sets, Fresnel, glitter) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
+| `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
+| `shared/weather.js` (one value drives glass and water) | 2026-11-10 | The lab's Weather slider | None yet |
 
 Note on the grade in three.js: `viaduct` and `subway` hash `vUv * uRes`, which turns on the last bit of `vUv`.
 The lab's three.js run has another `vUv`, so it draws other grain of the same strength (`subway`: 0.009 % of pixels differ by more than one step; `viaduct`: up to 8.7 %).
@@ -60,7 +71,8 @@ No toy's water equals the module, so a move changes that toy's look. Tom decides
 `wtWaves()` gives the slope and the roughness; the toy keeps its own colours, mirror and lights.
 `wtGlint()` replaces a hand-made glitter path. `swellHeight()` floats a boat on the same swell.
 Could adopt: `trainride`, `fireworks`, `launch`, `canal`, `viaduct`, `windfarm`, `meteor`.
-Not in this cut: Buoy Business rain rings, moon glade and wind slicks; the planar mirror pass.
+`wtRings()` adds rain rings to the slope (a port of Buoy Business; `canal` has its own).
+Not in this cut: Buoy Business moon glade and wind slicks; the planar mirror pass.
 
 ### Grade: how a toy adopts it
 
