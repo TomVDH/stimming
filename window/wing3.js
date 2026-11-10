@@ -352,11 +352,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex 
       cam.matrixWorld.makeBasis(R, U, F.clone().negate());
       cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
       cam.fov = 2 * Math.atan(H / 2 / basis.focal) * 180 / Math.PI; cam.aspect = W / H; cam.updateProjectionMatrix();
-      // Lambert divides by pi; the shader's sun term is 0.012 on grey paint.
+      // The sun's irradiance is sunL over 1.5, in the bake's own units.
+      // So the paint takes sun and sky in their true ratio.
       const s = V(...sky.sun).normalize(), sl = sky.sunL, m = Math.max(...sl, 1e-6);
       sun.color.setRGB(sl[0] / m, sl[1] / m, sl[2] / m);
       // Towers, storm murk and fog veil the sun, so its glint and shadows fade.
-      sun.intensity = m * 0.012 * Math.PI / 0.34 * veil;
+      sun.intensity = m / 1.5 * veil;
       // Storm murk also dulls the sky the paint mirrors.
       scene.environmentIntensity = 1 - 0.6 * storm;
       const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);

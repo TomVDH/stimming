@@ -614,6 +614,9 @@ float coverAt(vec2 w, float sc, float z) {
 // Two Henyey-Greenstein lobes: a strong forward one and a soft back one.
 float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
 float cloudPhase(float mu) { return mix(hg(mu, 0.72), hg(mu, -0.2), 0.35); }
+// Light scattered many times leaves a thick cloud evenly in all directions.
+// So a side-lit top stays white; only the silver lining needs the forward lobe.
+const float CLOUD_MS = 1.5;
 
 /* The deck: stratocumulus at 1.5 to 3.7 km, fully volumetric. */
 const float DECK_LO = 1.45, DECK_HI = 3.8, SIG = 9.0;
@@ -726,7 +729,7 @@ vec4 deck(vec3 d) {
   // Town light under the deck, sampled at both ends of the segment.
   float ua = townDome(uCam + d.xz * t0), ub = townDome(uCam + d.xz * t1);
   float mu = dot(d, uSun);
-  float phase = cloudPhase(mu);
+  float phase = cloudPhase(mu) + CLOUD_MS;
   // A low sun reaches only the tops that face it.
   float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
   bool lit = dot(uSunL, vec3(1.0)) > 1e-4;
@@ -1993,6 +1996,9 @@ vec3 envAt(vec2 q) {
   return min(texture(uEnv, clamp(sp / uRes, 0.0, 1.0)).rgb, vec3(0.6));
 }
 const float SKIN_A = 4.0 * SKIN.x * SKIN.y - (4.0 - PI) * RSK * RSK;
+// The reveal's gain on the light from the opening.
+// Above about 5 the reveal outshines the noon sky it sees.
+const float REVEAL_K = 5.0;
 // Diffuse light at cabin point P, facing n, from the whole skin opening.
 // It sums an n by n grid of patches: radiance times form factor.
 // Each patch glows with the light the eye sees there, so nothing projects.
@@ -2279,7 +2285,7 @@ void main() {
       if (uEnvOn > 0.5) {
         // Each face takes the light of all the opening it can see.
         // The sill sees sky, the head sees ground and deck, the depth sets how much.
-        envL = irr(P, n, 4) * Tdim * 9.0 + outGlow * 0.4 * k;
+        envL = irr(P, n, 4) * Tdim * REVEAL_K + outGlow * 0.4 * k;
         // The sun or moon lays a sharp patch in the opening's own shape.
         float sv = sunThrough(P);
         envL += sunE * max(dot(nb, Ls), 0.0) * sv;
