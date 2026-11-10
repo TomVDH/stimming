@@ -151,6 +151,8 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 // The time of day's exposure; the eye's adaptation scales it each frame.
 let baseExp = 1.0;
+// The last sun drift step, on the sim clock.
+let sunT = -99;
 renderer.setClearColor(0x000000, 1);
 const canvas = renderer.domElement;
 stage.prepend(canvas);
@@ -2759,6 +2761,12 @@ function draw() {
   grade.uniforms.uFlash.value = (reduced() ? 0.3 * flashNow : flashNow) + cutFlash;
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   updateWarp();
+  // The sun creeps three degrees either way over ten minutes; it never sets for it.
+  if (Math.abs(simT - sunT) > 2) {
+    sunT = simT;
+    const d0 = sunDeg(opts.sun);
+    if (!reduced() && d0 > 3 && !spin) sun(Math.max(2, d0 + 3 * Math.sin(simT * Math.PI * 2 / 600)));
+  }
   // The eye stops down after the hit's flash and the muzzle's, then opens again.
   const ha = simT - U.uHitP.value.w, hk = blastFx ? 1 : U.uBk.value > 0 ? 0.6 : 0;
   const ma = muzzleFx ? simT - muzzleFx.t0 : 99;

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T20:06:46Z
+updated_at: 2026-11-10T20:07:43Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -118,7 +118,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] 5. The plain answers the shock: sand ripples trail the Mach front; three thin devils wake on the plain ahead as the front reaches them
 - [x] 8. The gun breathes: steam from the housing joints during the charge, a dull red barrel tail over about 40 s, thin sand streams from the ledges after the kick
 - [x] 10. Exposure and focus: the exposure dips after the hit (about 40 %) and the muzzle flash (15 %) and recovers over seconds; the lens softens on the hit and refocuses in about a second
-- [ ] 9. A slow sun drift
+- [x] 9. A slow sun drift: ±3° round the slider over ten minutes, stepped every 2 s, never below 2°, off under reduced motion and during the Reset spin
 
 - [x] Fix: charge dust back to the old frame cost (36 ms vs 57 ms at a full hold, headless)
 - [x] Fix: the cloud glow and the heave taper out; nothing cuts
@@ -145,7 +145,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Rework the charge dust at the base: it still slows the whole toy
 - [ ] Post pass: FXAA, AO, better bloom; every pass scales with the quality ladder
 - [x] Quality ladder: 100/82/68/55 % of the quality's resolution per rung, High capped at 2x, FXAA when MSAA drops
-- [ ] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
+- [x] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
 
 - [ ] The muzzle: flash, ring, shock wave and smoke puffs, one more look
 - [x] Release lag spike: a warm-up frame behind the intro links every program and uploads every buffer (programs flat at 67 from load); the echo impulse builds in idle time during the hold; the shot samples prefetch in later()
