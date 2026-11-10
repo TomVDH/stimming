@@ -129,7 +129,8 @@ const canvas = renderer.domElement;
 stage.prepend(canvas);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(44, 1, 0.5, 300000);
+// A 20 m near plane keeps depth precision on rocks 40 km out.
+const camera = new THREE.PerspectiveCamera(44, 1, 20, 300000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
@@ -1178,7 +1179,7 @@ const astMat = new THREE.ShaderMaterial({
     col += uWhite * limb * 1.5;
     // Ember cracks: a thin band of the noise, flickering.
     float cr = smoothstep(0.55, 0.62, n) * (1.0 - smoothstep(0.62, 0.70, n));
-    float flick = 0.8 + 0.2 * sin(uTime * 9.0 + n * 40.0);
+    float flick = 0.92 + 0.08 * sin(uTime * 3.0 + n * 40.0);
     col += uEmber * cr * (0.3 + hot) * uBurn * flick * 5.0 * uCracks;
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
@@ -1992,6 +1993,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uSeed: { value: 0 },
       uRage: { value: 0 },
       uFlash: { value: 0 },
+      // The impact flare: screen place of the hit, and its strength.
+      uLF: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uBox: { value: 0 },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -2000,7 +2003,13 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec2 uRes;
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
+    uniform vec3 uLF;
     varying vec2 vUv;
+    // A ghost: a soft disc with a brighter rim, gr screen heights wide.
+    float ghost(vec2 g, float gr, vec2 asp) {
+      float d = length((vUv - g) * asp);
+      return smoothstep(gr, gr * 0.82, d) * (0.3 + 0.7 * smoothstep(gr * 0.5, gr, d));
+    }
     float h(vec2 p) {
       uvec2 q = uvec2(p);
       uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
@@ -2010,6 +2019,20 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     void main() {
       // The exposure flickers at rage; there is no colour fringe.
       vec3 c = texture2D(tDiffuse, vUv).rgb * (1.0 + 0.1 * uRage + uFlash) + uTint;
+      // The impact flare: a white core, a level streak, four rays, five ghosts.
+      if (uLF.z > 0.001) {
+        vec2 asp = vec2(uRes.x / uRes.y, 1.0), p = (vUv - uLF.xy) * asp;
+        float r = length(p);
+        float lf = exp(-r * 30.0) * 2.5 + exp(-abs(p.y) * 300.0 - abs(p.x) * 1.6) * 1.4;
+        lf += (exp(-abs(p.y) * 160.0 - abs(p.x) * 7.0) + exp(-abs(p.x) * 160.0 - abs(p.y) * 7.0)) * 0.8;
+        vec2 ax = vec2(0.5) - uLF.xy;
+        vec3 gh = vec3(1.0) * ghost(uLF.xy + ax * 0.45, 0.05, asp) * 0.35
+                + vec3(0.85, 0.95, 1.0) * ghost(uLF.xy + ax * 0.8, 0.09, asp) * 0.25
+                + vec3(1.0) * ghost(uLF.xy + ax * 1.25, 0.035, asp) * 0.5
+                + vec3(1.0, 0.95, 0.85) * ghost(uLF.xy + ax * 1.6, 0.13, asp) * 0.18
+                + vec3(1.0) * ghost(uLF.xy + ax * 2.1, 0.06, asp) * 0.3;
+        c += (vec3(lf) + gh) * uLF.z;
+      }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
@@ -2050,7 +2073,7 @@ let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
 function frame() {
   const portrait = size.w < size.h;
   // A locked-off lens from 1.5 km, a man's height over the dust.
-  const fov = portrait ? 56 : 38;
+  const fov = portrait ? 74 : 55;
   camera.aspect = size.w / size.h;
   // The charge pushes the lens in a little.
   camera.fov = fov * cam.zoom * (1 - 0.03 * U.uCharge.value);
@@ -3051,7 +3074,7 @@ fire = c => {
   ionMat.uniforms.uA.value.copy(MUZZLE); ionMat.uniforms.uB.value.copy(shot.target);
   boltMat.uniforms.uCore.value = 3 * (0.6 + c);
   boltMat.uniforms.uGain.value = 5 + 3 * c;
-  { const ac = kit.live(); if (ac) { chirp(ac, c); shotSound(ac, shot); hitSounds(ac, shot); } }
+  { const ac = kit.live(); if (ac) { shotSound(ac, shot); hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
@@ -3120,16 +3143,16 @@ function applyAim() {
   if (Math.abs(yaw - aimNow.sy) + Math.abs(elev - aimNow.se) > 3e-4) { aimNow.sy = yaw; aimNow.se = elev; shadowDirty = true; }
 }
 const aimP = new THREE.Vector3();
-// The gun leads the rock by the bolt's flight time.
+// The parked aim: straight down the causeway, eight degrees up.
+const PARK = new THREE.Vector3(0, Math.sin(rad(8)), -Math.cos(rad(8)));
+// At rest the gun parks.
+// A hold traverses it to lead the rock by the bolt's flight time.
 function stepAim(dt, snap = false) {
   if (shot && !shot.hit) return;
-  if (ast.state === 'shatter') {
-    // After the hit the gun waits, then turns to the next track.
-    if (!snap && shot && simT - shot.t0 < shot.hitT + 2.5) return;
-    aimP.copy(AWAY0).multiplyScalar(FALL).add(END0).sub(A0).applyAxisAngle(yUp, ast.next);
-  } else {
-    astAt(Math.min(1, ast.s + 7.5 / SIZES[opts.size].T), aimP).sub(A0);
-  }
+  // After the hit the gun waits, then parks.
+  if (!snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
+  if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 7.5 / SIZES[opts.size].T), aimP).sub(A0);
+  else aimP.copy(PARK);
   const dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw, de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
   if (snap) { aimNow.vy = aimNow.ve = 0; setAim(aimNow.yaw + dy, aimNow.elev + de); return; }
@@ -3208,7 +3231,8 @@ function stepShot(dt) {
       puff(dustP, dustV, 4 + rnd() * 3, 50 + rnd() * 60);
     }
   }
-  if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; crack(shot); }
+  // The Mach ring reaches the eye: a jolt, no sound of its own.
+  if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
   if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
   // The next rock waits until the blast has had its time.
   if (age > shot.hitT + 22 && age > shot.arrive + 1) {
@@ -3218,7 +3242,6 @@ function stepShot(dt) {
     flare(headFlare, MUZZLE, 1, 0);
   }
 }
-let crack = () => {};
 // The blast: the slug leaves the muzzle.
 function blast(sh) {
   cam.shake += 1.0 * sh.c; cam.kickP += rad(0.4) * sh.c;
@@ -3258,7 +3281,7 @@ function updateBolt() {
     }
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(hitGlow, MUZZLE, 1, 0);
-    flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; return; }
+    flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; return; }
   const age = simT - shot.t0, c = shot.c;
   const live = age < shot.hitT + 0.3;
   bolt.visible = live;
@@ -3316,6 +3339,10 @@ function updateBolt() {
   flare(hitGlow, shot.target, R * 26, hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5)));
   // The whole frame overexposes for an instant.
   if (hk > 0) flashNow += hk * (0.6 * Math.exp(-ha / 0.14) + 0.1 * Math.exp(-ha / 1.2));
+  // A white lens flare with ghosts, if the hit is in front of the lens.
+  bq.copy(shot.target).project(camera);
+  const lfOn = hk > 0 && bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4;
+  grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
 }
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
@@ -3581,7 +3608,7 @@ function humStop(ac, now = false) {
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
 }
-/* ---------- arcs, slug, crack, rumble ---------- */
+/* ---------- arcs and rumble ---------- */
 // Every hit jitters in pitch, time and level.
 let lastClick = 0;
 const panV = new THREE.Vector3();
@@ -3597,47 +3624,6 @@ click = arc => {
   pan.pan.value = clamp(panV.copy(arc.a).project(camera).x, -0.8, 0.8);
   s.connect(bp).connect(g).connect(pan).connect(kit.out);
   track(t + dur + 0.05, s);
-};
-// The slug: a chirp that rises along the rails.
-// It pans left to right.
-function chirp(ac, c) {
-  const t = ac.currentTime;
-  const o = ac.createOscillator(), g = ac.createGain(), pan = ac.createStereoPanner();
-  o.frequency.setValueAtTime(300 * jit(0.1), t); o.frequency.exponentialRampToValueAtTime(2400, t + 0.3);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.15 * c, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
-  pan.pan.setValueAtTime(-0.5, t); pan.pan.linearRampToValueAtTime(0.4, t + 0.3);
-  o.connect(g).connect(pan).connect(kit.out);
-  o.start(t); o.stop(t + 0.35);
-  track(t + 0.4, o);
-}
-// The crack plays when the Mach ring reaches the eye.
-// That is seconds after the flash.
-crack = sh => {
-  const ac = kit.live();
-  if (!ac) return;
-  const c = sh.c, t = ac.currentTime;
-  const sub = ac.createOscillator(), subG = ac.createGain();
-  sub.frequency.setValueAtTime(60 * jit(0.08), t); sub.frequency.exponentialRampToValueAtTime(28, t + 0.35);
-  subG.gain.setValueAtTime(0.0001, t); subG.gain.exponentialRampToValueAtTime(0.5 * c, t + 0.01); subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-  sub.connect(subG).connect(kit.out); sub.start(t); sub.stop(t + 0.55);
-  const cr = hiss(ac, t, 0.06), hp = filt(ac, 'highpass', 1500), crG = ac.createGain();
-  crG.gain.setValueAtTime(0.35 * c * jit(0.15), t); crG.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
-  cr.connect(hp).connect(crG).connect(kit.out);
-  const wh = hiss(ac, t, 0.3, 0.7), bp = filt(ac, 'bandpass', 300 * jit(0.1), 1.2), whG = ac.createGain();
-  whG.gain.setValueAtTime(0.0001, t); whG.gain.exponentialRampToValueAtTime(0.3 * c, t + 0.015); whG.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-  wh.connect(bp).connect(whG).connect(kit.out);
-  const tail = hiss(ac, t, 2.0, 0.9), lp = filt(ac, 'lowpass', 1200), tG = ac.createGain();
-  tG.gain.setValueAtTime(0.1 * c, t); tG.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
-  tail.connect(lp).connect(tG).connect(kit.out);
-  // Stone rings low and dull.
-  for (const f of [180, 270]) {
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.frequency.value = f * jit(0.03);
-    g.gain.setValueAtTime(0.03 * c, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
-    o.connect(g).connect(kit.out); o.start(t); o.stop(t + 1.6);
-    track(t + 1.7, o);
-  }
-  track(t + 2.1, sub, cr, wh, tail);
 };
 // The vent: a crash and a boom under the barrel.
 ventSound = () => {
@@ -3689,11 +3675,10 @@ function playSample(ac, buf, when, gain, rate, dark = 0) {
   src.start(when);
   track(when + buf.duration / rate + 0.1, src);
 }
-// Tom's cannon report leaves with the slug.
-// It reaches the eye at sound speed, compressed eight times.
+// Tom's cannon report plays as the slug leaves the muzzle.
 function shotSound(ac, sh) {
-  const late = Math.hypot(camera.position.x - sh.muzzle.x, camera.position.z - sh.muzzle.z) / 343 / 8;
-  const at = ac.currentTime + 0.3 + late;
+  const late = 0;
+  const at = ac.currentTime + 0.3;
   sh.sfx = { ...sh.sfx, shot: 0, shotLate: late };
   sample(ac, 'shot').then(buf => {
     if (!buf || shot !== sh || !kit.live()) return;
@@ -3713,7 +3698,8 @@ function shotSound(ac, sh) {
 function hitSounds(ac, sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
-  const late = camera.position.distanceTo(sh.target) / 343 / 8;
+  // Compressed fourteen times: the boom lands about 10 s after the flash.
+  const late = camera.position.distanceTo(sh.target) / 343 / 14;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (shot !== sh || !kit.live()) return;

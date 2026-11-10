@@ -246,6 +246,15 @@ An original swell. It uses no recording, notes, sweep or score of the THX Deep N
 - Rungs 2 and 3 cut their march steps, as they do for the train.
 - The target holds: 30 fps at 1280 × 800 on High through charge, shot and hit.
 
+#### Tom's notes, 03:37
+
+- The default lens is a far wider shot (55°, portrait 74°).
+- The gun parks at rest: straight down the causeway, 8° up. A hold traverses it slowly onto the firing solution; after the hit it parks again.
+- The shot sound is Tom's cannon render at the muzzle exit; the synth slug chirp and the Mach crack are gone. The boom lands about 10 s after the flash (14x compressed).
+- A bright white lens flare with ghosts on the impact, in the grade pass.
+- The camera's near plane moves from 0.5 m to 20 m: the rocks z-fought at 40 km.
+- Next mode (not built): a scope view with the projectile in its sights; the sight's display filter is the cake. Little or no interaction.
+
 ### Task 10: steps
 
 All code stays in `railgun/index.html`. A test here is a probe in the browser pane through `__qa`, plus a still to the local sink. No Playwright.
