@@ -1,11 +1,11 @@
 ---
 # stimming-f793
 title: 'Toy: Railgun'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T21:27:35Z
+updated_at: 2026-11-10T23:30:16Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -223,3 +223,6 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Default tone from Tom's pick: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06
 - [x] Tone defaults: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06 (Tom's look)
 - [x] Reset redo: a 2.4 s rewind (sky and clouds run backward, long shutter), then a soft white veil, a crisp ring that closes in, and a chime; the dust wall is gone
+- [x] Reset: 1.8 s rewind into a full white fill; the cut happens under the white; white burns off fast while the frame settles from overexposure and springs back from a 6% punch-in; ring and chime gone
+- [x] Bloom: threshold 2 with a wide soft knee; sunlit cloud and smoke bloom only a trace, fire and sparks in full
+- [x] Shell casing: real gravity, a slow shove out, slow spin, a low dead hop on landing
