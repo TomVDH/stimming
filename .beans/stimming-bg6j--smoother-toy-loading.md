@@ -37,7 +37,7 @@ Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. 
 - [ ] Tom checks TV tree on Pages
 - [x] All 35 other main-shelf toys: preloads, stage marks, first-frame `ready`; results in `docs/plans/loading.md`
 - [ ] Tom checks sound and a direct cold link on Pages
-- [ ] Trails, Wind map: parallel shader compile
+- [x] Trails, Wind map: parallel shader compile
 - [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
 - [ ] Elective offline cache: service worker behind a "Keep offline" switch
 

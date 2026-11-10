@@ -173,7 +173,8 @@ Per-toy work beyond the recipe:
 
 Open:
 
-- Trails and Wind map: a cold shader compile of 350–500 ms remains. `KHR_parallel_shader_compile` polling is the likely fix.
+- Trails and Wind map: the status queries wait for `KHR_parallel_shader_compile`, so the programs compile in parallel.
+  Trails keeps one task of 70–80 ms: the pre-exposed plate, which is the first frame.
 - Walker, Window seat, Fireworks: the stall that remains is three.js program link.
 - Direct cold visit in the harness: the jsDelivr DNS lookup takes about 1 s when it starts with the font lookups.
   Main shows the same stall in about half its runs. A visit from the menu never shows it.

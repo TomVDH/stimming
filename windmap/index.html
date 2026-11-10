@@ -242,20 +242,29 @@ void main() {
   o = vec4(vCol.rgb * k, 1.0);
 }`;
 
+// The status queries wait in programs(), so the driver compiles in parallel.
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
-    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
-    gl.attachShader(p, sh);
+  const sh = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    gl.attachShader(p, s);
+    return s;
   });
   attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
-  const u = {};
-  // Array uniforms answer to their bare name.
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
-  return { p, u };
+  return { p, sh, u: {} };
+}
+async function programs(set) {
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const busy = () => Object.values(set).some(q => !gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR));
+  // A timer polls, because a hidden tab stops frames.
+  if (par) while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 8));
+  for (const { p, sh, u } of Object.values(set)) {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(sh.map(s => gl.getShaderInfoLog(s)).join(''), gl.getProgramInfoLog(p)); fail(); }
+    // Array uniforms answer to their bare name.
+    for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, n); }
+  }
+  return set;
 }
 
 const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
@@ -647,7 +656,7 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-const P = {
+const P = await programs({
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   segTex: program(SEG_TEX_VS, SEG_FS, ['aCorner']),
@@ -657,7 +666,7 @@ const P = {
   bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
   blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   final: program(QUAD_VS, FINAL_FS, ['aPos']),
-};
+});
 const BG = linFit(0.17, 0.015, 250), GRID = linFit(0.62, 0.02, 245), ISO_COL = linFit(0.62, 0.05, 75);
 const GLOW_COL = linFit(0.92, 0.04, 80), GUST_COL = linFit(0.95, 0.03, 230), RIM_COL = linFit(0.75, 0.08, 235);
 

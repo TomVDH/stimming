@@ -308,28 +308,37 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+// The status queries wait in programs(), so the driver compiles in parallel.
 function program(vs, fs, attrs) {
   const p = gl.createProgram();
-  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
-    const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); fail(); }
-    gl.attachShader(p, sh);
+  const sh = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    gl.attachShader(p, s);
+    return s;
   });
   attrs.forEach((name, i) => gl.bindAttribLocation(p, i, name));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); fail(); }
-  const u = {};
-  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
-  return { p, u };
+  return { p, sh, u: {} };
 }
-const P = {
+async function programs(set) {
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const busy = () => Object.values(set).some(q => !gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR));
+  // A timer polls, because a hidden tab stops frames.
+  if (par) while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 8));
+  for (const { p, sh, u } of Object.values(set)) {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(sh.map(s => gl.getShaderInfoLog(s)).join(''), gl.getProgramInfoLog(p)); fail(); }
+    for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  }
+  return set;
+}
+const P = await programs({
   decay: program(QUAD_VS, DECAY, ['aPos']),
   seg: program(SEG_VS, SEG_FS, ['aCorner', 'aSeg', 'aCol']),
   sky: program(QUAD_VS, SKY_FS, ['aPos']),
   bright: program(QUAD_VS, BRIGHT_FS, ['aPos']),
   blur: program(QUAD_VS, BLUR_FS, ['aPos']),
   out: program(QUAD_VS, OUT_FS, ['aPos']),
-};
+});
 
 const corners = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
 const quadVao = gl.createVertexArray();
