@@ -104,10 +104,15 @@ The repo has no draw-call budget. East Van sets one.
 - [x] Detail: clapboards, shingles, roof courses, mullions, barge boards, stair rails, strata, sidewalk slabs.
 - [x] Poke: the front door.
 
+### Pokes and life (`stimming-0tf8`)
+
+- [x] One draw call for static paint; switches and movers from `sw` and `dyn` in `lot.js`.
+- [x] 21 pokes: six windows, lamp, string lights, street lamp, door, gate, lids, blue box, van, crow, cat, flamingo, tree, chimney.
+- [x] Life: cat, flamingo, couch, flowers, a camper van, petals, smoke.
+
 ### Next (Tom picks the order)
 
-- [ ] More pokes on the lot: windows, mailbox, tree (petals), chimney smoke, blue box, fence gate.
-- [ ] More life: garden, cat, bike, a parked car (first CC0 model candidate).
+- [ ] More life: a bike, a mailbox flap, a sprinkler, a second crow; first CC0 model candidates.
 - [ ] Sound for every poke; a dusk bed.
 - [ ] Lab registration: `toys.json`, menu tile and icon, Bar v2 shell, intro.
 - [ ] The alley, then the Drive at East 4th from city data.

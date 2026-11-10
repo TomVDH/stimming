@@ -150,14 +150,17 @@ export function createLens(renderer) {
       lens.uniforms.uBlur.value = 5.5 * ratio;
     },
     // focus is the distance from the camera to the sharp plane.
-    render(scene, camera, focus) {
+    // noInk objects stay out of the depth pass: no line, no occlusion.
+    render(scene, camera, focus, noInk = []) {
       renderer.info.reset();
       depth.uNear.value = camera.near; depth.uFar.value = camera.far;
       const bg = scene.background;
       scene.background = null; scene.overrideMaterial = normalMat;
+      for (const o of noInk) o.visible = false;
       renderer.setRenderTarget(rtNrm); renderer.setClearColor(flatNormal, 1); renderer.clear();
       renderer.render(scene, camera);
       scene.background = bg; scene.overrideMaterial = null;
+      for (const o of noInk) o.visible = true;
       renderer.shadowMap.needsUpdate = true;
       renderer.setRenderTarget(rtCol); renderer.setClearColor(black, 1); renderer.clear();
       renderer.render(scene, camera);
