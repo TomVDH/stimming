@@ -268,19 +268,47 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
   // Grass texture close by; it fades before it can shimmer.
   alb *= 0.95 + 0.1 * vnoise(xz * 0.02);
-  // Farms: a patchwork of fields on the flat floor.
+  // Farms on the flat floor, in hives: each cluster of fields shares a heading, a tiling and its crops.
   float flatL = smoothstep(0.06, 0.015, slope) * smoothstep(90.0, 30.0, hh) * smoothstep(7000.0, 2500.0, dist) * step(4.0, wd);
+  float rimH = 0.0;
   if (flatL > 0.0) {
-    // Strips in staggered rows, so the fields never form a grid.
-    vec2 fp = mat2(0.94, 0.34, -0.34, 0.94) * xz / vec2(85.0, 36.0);
-    fp.x += floor(fp.y) * 0.37;
-    float fh = hash1(floor(fp));
-    vec3 fc = fh < 0.6 ? alb * (0.85 + 0.35 * fh) : fh < 0.8 ? vec3(0.1, 0.19, 0.035) : fh < 0.93 ? vec3(0.15, 0.17, 0.06) : vec3(0.11, 0.12, 0.05);
-    // Field edges blend over a few metres, so no hard line crosses the meadow.
-    vec2 fe0 = abs(fract(fp) - 0.5) * vec2(85.0, 36.0);
-    float soft = smoothstep(0.0, 6.0, min(42.5 - fe0.x, 18.0 - fe0.y));
-    // Close fields fill the window as flat slabs; they fade in from 300 m.
-    alb = mix(alb, fc, flatL * 0.4 * soft * smoothstep(250.0, 600.0, dist));
+    // Clusters: jittered cells some 480 m across. The nearest seed owns the point; the next one sets the rim.
+    vec2 g = xz / 480.0, ic = floor(g), o1 = vec2(0.0), o2 = vec2(0.0), id = vec2(0.0);
+    float d1 = 1e9, d2 = 1e9;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+      vec2 c = ic + vec2(float(i), float(j));
+      vec2 o = c + 0.5 + 0.76 * (vec2(hash1(c + 3.7), hash1(c + 8.1)) - 0.5);
+      float d = length(g - o);
+      if (d < d1) { d2 = d1; o2 = o1; d1 = d; o1 = o; id = c; } else if (d < d2) { d2 = d; o2 = o; }
+    }
+    // Metres to the cluster's edge: the line midway between the two seeds.
+    float rim = dot(0.5 * (o1 + o2) - g, normalize(o2 - o1)) * 480.0;
+    // Two clusters in five stay open pasture.
+    if (hash1(id + 17.3) > 0.4) {
+      // Heading: along the valley or across it, a few degrees off.
+      float ang = (hash1(id + 5.5) < 0.6 ? 0.0 : 1.5708) + (hash1(id + 9.9) - 0.5) * 0.6;
+      float ca = cos(ang), sa = sin(ang);
+      vec2 q = mat2(ca, -sa, sa, ca) * (xz - o1 * 480.0);
+      // Three common tilings: long strips, short strips, and staggered blocks.
+      float tk = hash1(id + 2.2), h4 = hash1(id + 4.4);
+      vec2 cell = tk < 0.45 ? vec2(170.0 + 110.0 * h4, 24.0 + 14.0 * h4) : tk < 0.75 ? vec2(110.0, 38.0 + 10.0 * h4) : vec2(96.0 + 30.0 * h4, 70.0 + 24.0 * h4);
+      vec2 f = q / cell;
+      f.x += floor(f.y) * (tk < 0.75 ? 0.37 : 0.5);
+      vec2 ff = fract(f) - 0.5;
+      // Crops, muted: ley, maize, wheat, stubble and bare earth. Each cluster leans to a few of them.
+      float fh = fract(hash1(floor(f) + id * 7.3 + 1.0) * 0.6 + hash1(id + 12.1));
+      vec3 crop = fh < 0.34 ? alb * (0.9 + 0.3 * fract(fh * 9.0)) : fh < 0.52 ? vec3(0.08, 0.165, 0.04) : fh < 0.7 ? vec3(0.17, 0.18, 0.07) : fh < 0.86 ? vec3(0.16, 0.15, 0.08) : vec3(0.115, 0.1, 0.06);
+      // Drill lines run along each strip; they fade as they near a texel's width.
+      float dl = abs(fract(q.y / 3.0) - 0.5) * 2.0 * (1.0 - smoothstep(0.25, 0.7, fwidth(q.y / 3.0)));
+      crop *= 1.0 - 0.07 * dl * step(0.34, fh);
+      // A grass baulk parts the fields; a belt of meadow rings the cluster.
+      vec2 e = (0.5 - abs(ff)) * cell;
+      float soft = smoothstep(0.5, 4.0, min(e.x, e.y)) * smoothstep(14.0, 30.0, rim);
+      // Close fields fill the window as flat slabs; they fade in from 300 m.
+      alb = mix(alb, crop, flatL * 0.5 * soft * smoothstep(250.0, 600.0, dist));
+      // Half the clusters keep a hedge on their rim.
+      rimH = step(0.5, hash1(id + 6.1)) * smoothstep(16.0, 13.5, rim) * smoothstep(9.0, 11.5, rim);
+    }
   }
   // Vineyards on the sunny slopes above Lake Zurich.
   float vine = sg.x * smoothstep(0.06, 0.12, slope) * smoothstep(0.45, 0.3, slope) * smoothstep(400.0, 150.0, hh) * step(12.0, hh) * smoothstep(0.15, 0.4, N.z);
@@ -349,14 +377,8 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
     alb = mix(alb, vec3(0.3, 0.29, 0.25), verge * rw);
     alb = mix(alb, vec3(0.17, 0.17, 0.17), road * rw);
   }
-  // Hedges and tree lines edge the fields.
-  if (flatL > 0.0) {
-    vec2 fp2 = mat2(0.94, 0.34, -0.34, 0.94) * xz / vec2(85.0, 36.0);
-    fp2.x += floor(fp2.y) * 0.37;
-    vec2 fe = abs(fract(fp2) - 0.5);
-    float hedge = smoothstep(0.47, 0.495, max(fe.x, fe.y)) * step(0.45, hash1(floor(fp2) + 5.0)) * (1.0 - smoothstep(0.03, 0.08, length(fwidth(fp2))));
-    alb = mix(alb, vec3(0.03, 0.05, 0.02), hedge * flatL * 0.5 * smoothstep(300.0, 700.0, dist));
-  }
+  // Hedges ring some clusters; they fade where a texel is wider than a hedge.
+  alb = mix(alb, vec3(0.03, 0.05, 0.02), rimH * flatL * 0.5 * smoothstep(300.0, 700.0, dist) * (1.0 - smoothstep(3.0, 7.0, fwidth(xz.x))));
   // Valleys and the feet of slopes see less sky.
   float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
   albO = alb; NO = N; aoO = ao; wdO = wd;
