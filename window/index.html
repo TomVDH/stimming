@@ -234,6 +234,22 @@ const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-fr
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' }); } catch { fail(); }
 const gl = renderer.getContext();
+// A shader that fails to link stops the toy; retries reset weak GPUs.
+let broken = false;
+const giveUp = () => {
+  if (broken) return;
+  broken = true;
+  // The loop may not exist yet during the first compile.
+  try { cancelAnimationFrame(raf); raf = 0; } catch {}
+  const p = stage.querySelector('.fail');
+  p.textContent = 'Window seat is too heavy for this graphics chip.';
+  p.hidden = false;
+  canvas.style.visibility = 'hidden';
+};
+renderer.debug.onShaderError = (g, prog) => { console.warn('window: shader link failed', g.getProgramInfoLog(prog)); giveUp(); };
+// A lost context stops the loop; the toy wakes again only if it still works.
+canvas.addEventListener('webglcontextlost', () => { try { cancelAnimationFrame(raf); raf = 0; } catch {} });
+canvas.addEventListener('webglcontextrestored', () => wake());
 renderer.autoClear = false;
 renderer.setPixelRatio(1);
 renderer.setClearColor(0x000000, 0);
@@ -886,13 +902,14 @@ const spr = new Float32Array(8);
 const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4), twD = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
+  if (broken) return;
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
   last = now;
   step(dt);
   render();
   if (visible) raf = requestAnimationFrame(frameFn);
 }
-function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+function wake() { if (visible && ready && !broken && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 // Turbulence: in a storm the plane meets bumpy patches, 5 to 20 s long, with calm between.
 // One smooth gust field drives it all: the cabin's jolts, the wing's flex, the rumble.
 // gw: vertical gust in m/s, up positive. gl: sideways gust.
