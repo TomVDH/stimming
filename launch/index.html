@@ -628,10 +628,13 @@ function plantReeds(count) {
     const clump = noise(x * 0.07, z * 0.07) * 0.7 + noise(x * 0.3, z * 0.3) * 0.3;
     if (clump < -0.25 + rnd() * 0.5) continue;
     // Reeds fill the frame; only a small gap toward the pad stays open.
-    const side = z > -40 ? THREE.MathUtils.smoothstep(Math.abs(x / -z - gapDir), 0.05, 0.16) : 1;
-    if (rnd() > 0.15 + 0.85 * side) continue;
-    // Hero stalks rise past the horizon everywhere but the gap.
-    const tall = z > -16 && side > 0.8 && rnd() < 0.1;
+    // Noise along the depth makes the gap's edge wander.
+    const off = Math.abs(x / -z - gapDir) + noise(z * 0.21, 3.3) * 0.035;
+    const side = z > -40 ? THREE.MathUtils.smoothstep(off, 0.03, 0.16) : 1;
+    if (rnd() > 0.3 + 0.7 * side) continue;
+    // Hero stalks rise past the horizon; a few stray ones stand in the gap.
+    // The line straight to the pad stays clear.
+    const tall = z > -16 && rnd() < (side > 0.8 ? 0.1 : off > 0.04 ? 0.04 : 0);
     const H = tall ? 5.6 + rnd() * 1.2 : (1.2 + 1.1 * side) + rnd() * 1.1 + Math.max(0, clump) * 0.4;
     aI.setXYZW(n, x, z, H, rnd() * Math.PI * 2);
     aJ.setXYZW(n, 0.03 + rnd() * 0.08, rnd() * 10, rnd(), 7 + rnd() * 6);
