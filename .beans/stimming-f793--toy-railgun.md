@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:35:42Z
+updated_at: 2026-11-10T19:38:45Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -154,7 +154,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] The soot cloud: lit like the trail, pale ash as it cools, thinner as it grows
 - [x] The case lands without the synth thump
 
-- [ ] Faint glow globes round the falling debris after the blast
+- [x] Faint glow globes round the falling debris after the blast
 - [x] The charge dust: closed-form shading, fewer steps, a tighter bound (58 ms to 14 ms a frame at a full hold, headless)
 - [x] Daytime cirrus: denser and brighter by day, still subtle until the blast lights it
 - [x] Fiery sky: a hotter, wider glow on the clouds and the trail at the hit, still ending with the flash
@@ -167,3 +167,6 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] The tail's end frays into the impact cloud; the tail takes the blast light all at once, not as a front crawling up it
 
 - [x] A gentle glow globe lingers round the blast for about 10 s; the cirrus melts into the horizon
+
+- [x] No orange night glow on the base or the plain; the rock warms only a pool under it
+- [x] The ridged cumulus near the horizon melts into the haze at its base; the cirrus edge is back as it was
