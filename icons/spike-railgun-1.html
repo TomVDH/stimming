@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike railgun-1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike railgun-1</h1>
+<p class="lede">Railgun. The pointer is the rock; the gun tracks it. Rest on a tile: it charges, fires, and the blast lights the clouds.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NAME = 'Railgun';
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const DEG = Math.PI / 180;
+  // A point turned by a degrees, counterclockwise on screen, about c.
+  const turn = (p, c, a) => {
+    const s = Math.sin(-a * DEG), k = Math.cos(-a * DEG), x = p[0] - c[0], y = p[1] - c[1];
+    return [c[0] + x * k - y * s, c[1] + x * s + y * k];
+  };
+  // A jagged arc along y = y0 from x0 to x1, j units wild.
+  const jag = (x0, x1, y0, j, n = 9) => Array.from({ length: n + 1 }, (_, i) => `${f(x0 + (x1 - x0) * i / n)},${f(y0 + (i && i < n ? (Math.random() - 0.5) * 2 * j : 0))}`).join(' ');
+
+  // The shot cycle every direction shares.
+  // It charges for 1.3 s, fires, lets the blast play, then a new rock comes in.
+  // o.charge(c) draws the charge; o.fire() plays the blast and returns its length.
+  function cycle(o) {
+    const st = { c: 0 };
+    let tl = null;
+    const start = () => {
+      tl?.kill();
+      tl = gsap.timeline({ repeat: -1, repeatDelay: 0.4 })
+        .to(st, { c: 1, duration: 1.3, ease: 'power1.in', onUpdate: () => o.charge(st.c) })
+        .add(() => { st.c = 0; o.charge(0); o.fire(); })
+        .to({}, { duration: 2.1 });
+    };
+    const stop = () => { tl?.kill(); tl = null; gsap.to(st, { c: 0, duration: 0.3, onUpdate: () => o.charge(st.c) }); o.rest(); };
+    return {
+      enter(p) { if (p) o.aim(p, true); start(); },
+      move(p) { if (p) o.aim(p); },
+      leave() { stop(); },
+    };
+  }
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  DIRS.push({
+    l: 'Current', name: 'Menu icon', box: [16, 16, 98, 98],
+    art(svg, u) {
+      svg.innerHTML = `
+        <defs><radialGradient id="${u}-rf" cx="0.4" cy="0.4" r="0.6"><stop offset="0" stop-color="oklch(0.95 0.08 80)"/><stop offset="0.5" stop-color="oklch(0.72 0.19 45)"/><stop offset="1" stop-color="oklch(0.45 0.16 30)"/></radialGradient></defs>
+        <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 280)"/>
+        <rect x="16" y="16" width="92" height="92" fill="oklch(0.16 0.02 290)"/>
+        <rect x="16" y="92" width="92" height="16" fill="oklch(0.21 0.03 300)"/>
+        <g fill="oklch(0.1 0.015 285)"><rect x="46" y="68" width="5" height="26"/><rect x="62" y="56" width="5" height="38"/><rect x="78" y="44" width="5" height="50"/></g>
+        <g transform="rotate(-30 30 86)"><rect x="26" y="78" width="78" height="14" fill="oklch(0.1 0.015 285)"/><rect x="20" y="73" width="20" height="24" fill="oklch(0.13 0.02 285)"/></g>
+        <circle cx="92" cy="34" r="9" fill="url(#${u}-rf)"/>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A · The far shot ================= */
+
+  // The toy's own frame at dusk, small: the gun lower left, the rock high right.
+  // A thunderhead stands behind the gun; heaps sit on the horizon.
+  // The rock follows the pointer and the barrel tracks it.
+  DIRS.push({
+    l: 'A', name: 'The far shot', box: [16, 16, 98, 98],
+    idea: 'The toy’s frame at dusk. The rock follows the pointer, the barrel tracks it; rest to charge and fire.',
+    art(svg, u) {
+      const T = [40, 86], MUZ = [86, 86], REST = [88, 38];
+      const TOWER = 'M27 92C26 84 25 77 28 71C26 66 30 61 34 63C35 58 42 57 44 62C48 61 51 65 49 69C52 73 51 83 53 92Z';
+      const ANVIL = 'M22 64C32 59.5 52 58.5 80 61.5C68 64 44 64.5 22 64Z';
+      const HEAPS = 'M68 92C68 88 71 86 74 87.5C75 84 80 83.5 82 86.5C84 84 89 85 89 88.5C92 88.5 93 90 93 92Z M96 92C96 89.5 98 88.5 100 89.5C101 87.5 104 87.5 105 89.5C107 89.5 108 90.5 108 92Z';
+      const CIR = 'M18 28H70M44 34H106M16 42H52M60 47H104';
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="${u}-sky" x1="0" y1="16" x2="0" y2="92" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.42 0.05 285)"/><stop offset="0.62" stop-color="oklch(0.64 0.06 330)"/><stop offset="1" stop-color="oklch(0.84 0.07 62)"/></linearGradient>
+          <radialGradient id="${u}-rk" cx="0.38" cy="0.38" r="0.66"><stop offset="0" stop-color="oklch(0.99 0.04 95)"/><stop offset="0.45" stop-color="oklch(0.82 0.16 60)"/><stop offset="1" stop-color="oklch(0.52 0.16 35)"/></radialGradient>
+          <linearGradient id="${u}-tr" x1="0" y1="0" x2="-36" y2="-26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.74 0.16 48)" stop-opacity="0.95"/><stop offset="0.3" stop-color="oklch(0.5 0.05 330)" stop-opacity="0.85"/><stop offset="1" stop-color="oklch(0.58 0.03 300)" stop-opacity="0"/></linearGradient>
+          <filter id="${u}-gl" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="1.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <clipPath id="${u}-cl"><rect x="16" y="16" width="92" height="92"/></clipPath>
+        </defs>
+        <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 280)"/>
+        <g clip-path="url(#${u}-cl)">
+          <g id="${u}-scene">
+            <rect x="10" y="10" width="104" height="104" fill="url(#${u}-sky)"/>
+            <path d="${CIR}" stroke="oklch(0.88 0.04 45)" stroke-width="1.1" stroke-linecap="round" opacity="0.3"/>
+            <path id="${u}-cirL" d="${CIR}" stroke="oklch(0.98 0.05 80)" stroke-width="1.3" stroke-linecap="round" opacity="0"/>
+            <path d="${TOWER} ${ANVIL}" fill="oklch(0.8 0.05 45)" opacity="0.5"/>
+            <path id="${u}-towL" d="${TOWER} ${ANVIL}" fill="oklch(0.97 0.06 80)" opacity="0"/>
+            <path d="M56 92V89H63L65 92Z M86 92V90H94L95 92Z" fill="oklch(0.6 0.05 40)"/>
+            <path d="${HEAPS}" fill="oklch(0.86 0.05 55)" opacity="0.7"/>
+            <path id="${u}-hpL" d="${HEAPS}" fill="oklch(0.98 0.06 80)" opacity="0"/>
+            <rect x="10" y="92" width="104" height="22" fill="oklch(0.42 0.05 55)"/>
+            <rect x="10" y="92" width="104" height="1.2" fill="oklch(0.34 0.04 50)"/>
+            <g fill="oklch(0.19 0.02 40)">
+              <path d="M32 93L36 87H44L48 93Z"/>
+              <path d="M33 93L40 86.5L41 87.5L35 93Z M47 93L40 86.5L39 87.5L45 93Z" opacity="0.9"/>
+            </g>
+            <g id="${u}-gun">
+              <g id="${u}-slide">
+                <path d="M33 82L28 76M35 81L31 74" stroke="oklch(0.19 0.02 40)" stroke-width="1.2"/>
+                <rect x="31" y="82" width="15" height="8" fill="oklch(0.22 0.02 40)"/>
+                <rect x="44" y="84.2" width="40" height="3.6" fill="oklch(0.27 0.02 40)"/>
+                <rect x="82" y="83.4" width="5" height="5.2" fill="oklch(0.22 0.02 40)"/>
+                <g fill="oklch(0.84 0.15 92)"><rect x="52" y="84.2" width="1.8" height="3.6"/><rect x="62" y="84.2" width="1.8" height="3.6"/><rect x="72" y="84.2" width="1.8" height="3.6"/></g>
+                <polyline id="${u}-arc" fill="none" stroke="oklch(0.9 0.09 230)" stroke-width="0.8" opacity="0" filter="url(#${u}-gl)"/>
+              </g>
+            </g>
+            <line id="${u}-bolt" stroke="oklch(0.99 0.03 230)" stroke-width="1.3" stroke-linecap="round" opacity="0" filter="url(#${u}-gl)"/>
+            <g id="${u}-rock">
+              <path id="${u}-trail" d="M2.4 -3.2L-38 -32L-31 -18L-2.4 3.2Z" fill="url(#${u}-tr)"/>
+              <circle id="${u}-ball" r="4.2" fill="url(#${u}-rk)" filter="url(#${u}-gl)"/>
+              <g id="${u}-sh" fill="oklch(0.7 0.12 45)" opacity="0"></g>
+            </g>
+            <circle id="${u}-ring" r="2" fill="none" stroke="oklch(0.98 0.03 90)" stroke-width="1.2" opacity="0"/>
+          </g>
+          <rect id="${u}-fl" x="16" y="16" width="92" height="92" fill="oklch(0.98 0.05 85)" opacity="0"/>
+        </g>`;
+      const $ = id => svg.querySelector(`#${u}-${id}`);
+      const gun = $('gun'), slide = $('slide'), arc = $('arc'), bolt = $('bolt'), rock = $('rock'), ball = $('ball'), trail = $('trail');
+      const sh = $('sh'), ring = $('ring'), fl = $('fl'), scene = $('scene'), lit = [$('towL'), $('hpL'), $('cirL')];
+      const shards = Array.from({ length: 7 }, () => el('rect', { x: -0.9, y: -0.9, width: 1.8, height: 1.8 }, sh));
+      const st = { x: REST[0], y: REST[1], a: 0, rec: 0 };
+      const angle = () => clamp(Math.atan2(T[1] - st.y, st.x - T[0]) / DEG, 8, 58);
+      st.a = angle();
+      const draw = () => {
+        gun.setAttribute('transform', `rotate(${f(-st.a)} ${T[0]} ${T[1]})`);
+        slide.setAttribute('transform', `translate(${f(-st.rec * 5)} 0)`);
+        rock.setAttribute('transform', `translate(${f(st.x)} ${f(st.y)})`);
+      };
+      draw();
+      const aim = (p, snap) => {
+        const x = clamp(p[0], 58, 102), y = clamp(p[1], 24, 70);
+        gsap.to(st, { x, y, duration: snap ? 0.3 : 0.6, ease: 'power2.out', overwrite: 'auto', onUpdate() { st.a = angle(); draw(); } });
+      };
+      return cycle({
+        aim,
+        charge(c) {
+          arc.setAttribute('points', jag(46, 84, 86, 0.4 + 1.6 * c, 10));
+          arc.setAttribute('opacity', f(c * c));
+          const k = c > 0.6 ? (c - 0.6) * 1.2 : 0;
+          scene.setAttribute('transform', k ? `translate(${f((Math.random() - 0.5) * k)} ${f((Math.random() - 0.5) * k)})` : '');
+        },
+        fire() {
+          const m = turn(MUZ, T, st.a), hx = st.x, hy = st.y;
+          gsap.set(bolt, { attr: { x1: m[0], y1: m[1], x2: hx, y2: hy }, opacity: 1 });
+          gsap.to(bolt, { opacity: 0, duration: 0.35, ease: 'power2.in' });
+          gsap.fromTo(st, { rec: 1 }, { rec: 0, duration: 0.9, ease: 'elastic.out(1, 0.5)', onUpdate: draw });
+          // The rock bursts; shards fly; a ring runs out.
+          const tl = gsap.timeline({ delay: 0.12 });
+          tl.to([ball, trail], { opacity: 0, duration: 0.18 }, 0)
+            .set(sh, { opacity: 1 }, 0)
+            .fromTo(fl, { opacity: 0.6 }, { opacity: 0, duration: 0.8, ease: 'power2.out' }, 0)
+            .fromTo(ring, { attr: { cx: hx, cy: hy, r: 2 }, opacity: 0.9, 'stroke-width': 1.4 }, { attr: { r: 46 }, opacity: 0, 'stroke-width': 0.3, duration: 1.4, ease: 'power2.out' }, 0);
+          shards.forEach((s, i) => {
+            const a = i / shards.length * Math.PI * 2 + Math.random();
+            tl.fromTo(s, { x: 0, y: 0, opacity: 1 }, { x: Math.cos(a) * 16, y: Math.sin(a) * 16 + 6, opacity: 0, duration: 1.1, ease: 'power2.out' }, 0);
+          });
+          // Each cloud layer flashes, the near ones first.
+          lit.forEach((l, i) => tl.fromTo(l, { opacity: 0 }, { opacity: 0.85 - 0.15 * i, duration: 0.12, yoyo: true, repeat: 1, repeatDelay: 0.25 + 0.1 * i }, 0.04 + 0.07 * i));
+          // A new rock comes in where the pointer is.
+          tl.set([ball, trail], { scale: 0, transformOrigin: '0 0' }, 1.4)
+            .to([ball, trail], { opacity: 1, scale: 1, duration: 0.6, ease: 'power2.out' }, 1.4);
+        },
+        rest() { aim(REST); },
+      });
+    },
+  });
+
+  /* ================= B · Layers ================= */
+
+  // Night. Three cloud layers stand at their heights: cirrus, a thunderhead, heaps.
+  // The pointer sets the hit; the flash lights each layer in turn by its distance.
+  DIRS.push({
+    l: 'B', name: 'Layers', box: [16, 16, 98, 98],
+    idea: 'Night strata. The pointer picks where the rock dies; the flash runs out through cirrus, tower and heaps by distance.',
+    art(svg, u) {
+      // Each cloud: a path and its centre, for the light delay.
+      const CL = [
+        ['M20 27H62', [41, 27], 1.2], ['M48 31H104', [76, 31], 1.2], ['M24 37H78', [51, 37], 1], ['M66 42H106', [86, 42], 1],
+        ['M26 92C25 84 25 76 28 70C26 65 30 61 34 62C35 57 42 56 44 61C48 60 51 64 49 68C52 72 51 83 53 92Z M21 63C32 58.5 52 57.5 82 61C68 63.5 44 64 21 63Z', [38, 72], 0],
+        ['M60 92C60 88 63 86 66 87.5C67 84 72 83.5 74 86.5C76 84 81 85 81 88.5C84 88.5 85 90 85 92Z', [72, 88], 0],
+        ['M88 92C88 89 90 88 92.5 89C93.5 86.5 97.5 86.5 99 89C101.5 88.5 103 90 103 92Z', [96, 89], 0],
+      ];
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="${u}-sky" x1="0" y1="16" x2="0" y2="92" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.13 0.03 270)"/><stop offset="1" stop-color="oklch(0.24 0.04 285)"/></linearGradient>
+          <radialGradient id="${u}-rk" cx="0.4" cy="0.4" r="0.66"><stop offset="0" stop-color="oklch(0.99 0.04 95)"/><stop offset="0.5" stop-color="oklch(0.8 0.17 55)"/><stop offset="1" stop-color="oklch(0.5 0.16 35)"/></radialGradient>
+          <filter id="${u}-gl" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <clipPath id="${u}-cl"><rect x="16" y="16" width="92" height="92"/></clipPath>
+        </defs>
+        <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 280)"/>
+        <g clip-path="url(#${u}-cl)">
+          <rect x="16" y="16" width="92" height="92" fill="url(#${u}-sky)"/>
+          <g fill="oklch(0.9 0.02 260)"><circle cx="30" cy="21" r="0.5"/><circle cx="58" cy="24" r="0.4"/><circle cx="96" cy="20" r="0.6"/><circle cx="82" cy="50" r="0.4"/><circle cx="20" cy="48" r="0.4"/><circle cx="66" cy="54" r="0.5"/></g>
+          <g id="${u}-base"></g>
+          <g id="${u}-lit"></g>
+          <rect x="16" y="92" width="92" height="16" fill="oklch(0.12 0.02 280)"/>
+          <g fill="oklch(0.06 0.01 280)">
+            <path d="M30 93L33 88H39L42 93Z"/>
+            <g id="${u}-gun"><rect x="31" y="85.6" width="12" height="4.6"/><rect x="40" y="86.8" width="30" height="2.4"/></g>
+          </g>
+          <line id="${u}-bolt" stroke="oklch(0.99 0.03 230)" stroke-width="1.1" stroke-linecap="round" opacity="0" filter="url(#${u}-gl)"/>
+          <g id="${u}-rock"><path d="M1.6 -2.4L-26 -22L-20 -12L-1.6 2.4Z" fill="oklch(0.55 0.08 40)" opacity="0.7"/><circle id="${u}-ball" r="3.2" fill="url(#${u}-rk)" filter="url(#${u}-gl)"/></g>
+          <circle id="${u}-ring" r="2" fill="none" stroke="oklch(0.95 0.06 80)" stroke-width="1" opacity="0"/>
+        </g>`;
+      const $ = id => svg.querySelector(`#${u}-${id}`);
+      const base = $('base'), litG = $('lit'), bolt = $('bolt'), rock = $('rock'), ball = $('ball'), ring = $('ring'), gun = $('gun');
+      const lits = CL.map(([d, c, w]) => {
+        el('path', w ? { d, stroke: 'oklch(0.42 0.03 270)', 'stroke-width': w, 'stroke-linecap': 'round', fill: 'none' } : { d, fill: 'oklch(0.26 0.03 275)' }, base);
+        const l = el('path', w ? { d, stroke: 'oklch(0.97 0.06 75)', 'stroke-width': w + 0.4, 'stroke-linecap': 'round', fill: 'none', opacity: 0 } : { d, fill: 'oklch(0.95 0.07 70)', opacity: 0 }, litG);
+        return [l, c];
+      });
+      const T = [37, 88], MUZ = [70, 88], REST = [84, 50];
+      const st = { x: REST[0], y: REST[1], a: 0 };
+      const draw = () => {
+        st.a = clamp(Math.atan2(T[1] - st.y, st.x - T[0]) / DEG, 6, 60);
+        gun.setAttribute('transform', `rotate(${f(-st.a)} ${T[0]} ${T[1]})`);
+        rock.setAttribute('transform', `translate(${f(st.x)} ${f(st.y)})`);
+      };
+      draw();
+      const aim = (p, snap) => gsap.to(st, { x: clamp(p[0], 50, 104), y: clamp(p[1], 22, 66), duration: snap ? 0.3 : 0.6, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
+      return cycle({
+        aim,
+        charge(c) { ball.setAttribute('r', f(3.2 + 0.5 * c * Math.random())); },
+        fire() {
+          const m = turn(MUZ, T, st.a), hx = st.x, hy = st.y;
+          gsap.set(bolt, { attr: { x1: m[0], y1: m[1], x2: hx, y2: hy }, opacity: 1 });
+          gsap.to(bolt, { opacity: 0, duration: 0.3, ease: 'power2.in' });
+          const tl = gsap.timeline({ delay: 0.1 });
+          tl.to(rock, { opacity: 0, duration: 0.15 }, 0)
+            .fromTo(ring, { attr: { cx: hx, cy: hy, r: 2 }, opacity: 0.8 }, { attr: { r: 90 }, opacity: 0, duration: 1.8, ease: 'power1.out' }, 0);
+          // Light reaches near cloud first and brightest.
+          lits.forEach(([l, c]) => {
+            const d = Math.hypot(c[0] - hx, c[1] - hy);
+            tl.fromTo(l, { opacity: 0 }, { opacity: clamp(1.2 - d / 70, 0.15, 1), duration: 0.1 }, d * 0.012)
+              .to(l, { opacity: 0, duration: 1.1, ease: 'power2.in' }, d * 0.012 + 0.25);
+          });
+          tl.to(rock, { opacity: 1, duration: 0.6 }, 1.5);
+        },
+        rest() { aim(REST); },
+      });
+    },
+  });
+
+  /* ================= C · The barrel ================= */
+
+  // A close crop: the banded barrel runs corner to corner; the rock is a spark far off.
+  // The pointer along the barrel pulls the charge chase there.
+  DIRS.push({
+    l: 'C', name: 'The barrel', box: [16, 16, 98, 98],
+    idea: 'The gun up close: a banded barrel corner to corner, arcs in the rail gap, the rock a spark far off. Rest to fire; the barrel kicks back.',
+    art(svg, u) {
+      const A = 32, O = [20, 102];
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="${u}-sky" x1="0" y1="16" x2="0" y2="108" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.4 0.05 285)"/><stop offset="0.7" stop-color="oklch(0.66 0.06 335)"/><stop offset="1" stop-color="oklch(0.82 0.07 60)"/></linearGradient>
+          <linearGradient id="${u}-steel" x1="0" y1="-9" x2="0" y2="9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.42 0.02 50)"/><stop offset="0.35" stop-color="oklch(0.3 0.02 45)"/><stop offset="1" stop-color="oklch(0.16 0.02 40)"/></linearGradient>
+          <radialGradient id="${u}-rk" cx="0.4" cy="0.4" r="0.66"><stop offset="0" stop-color="oklch(0.99 0.04 95)"/><stop offset="0.5" stop-color="oklch(0.8 0.17 55)"/><stop offset="1" stop-color="oklch(0.5 0.16 35)"/></radialGradient>
+          <filter id="${u}-gl" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <clipPath id="${u}-cl"><rect x="16" y="16" width="92" height="92"/></clipPath>
+        </defs>
+        <rect x="22" y="22" width="92" height="92" fill="oklch(0.07 0.01 280)"/>
+        <g clip-path="url(#${u}-cl)">
+          <rect x="16" y="16" width="92" height="92" fill="url(#${u}-sky)"/>
+          <path d="M16 30H58M70 36H108M16 46H40" stroke="oklch(0.88 0.04 45)" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+          <g id="${u}-rock" transform="translate(98 26)"><path d="M1.2 -1.6L-18 -10L-15 -4L-1.2 1.6Z" fill="oklch(0.55 0.06 330)" opacity="0.75"/><circle id="${u}-ball" r="2.2" fill="url(#${u}-rk)" filter="url(#${u}-gl)"/></g>
+          <circle id="${u}-blast" r="2" fill="oklch(0.98 0.05 90)" opacity="0" filter="url(#${u}-gl)"/>
+          <circle id="${u}-ring" r="2" fill="none" stroke="oklch(0.98 0.03 90)" stroke-width="1" opacity="0"/>
+          <line id="${u}-bolt" stroke="oklch(0.99 0.03 230)" stroke-width="1.6" stroke-linecap="round" opacity="0" filter="url(#${u}-gl)"/>
+          <g transform="translate(${O[0]} ${O[1]}) rotate(${-A})">
+            <g id="${u}-slide">
+              <rect x="-20" y="-9" width="104" height="18" fill="url(#${u}-steel)"/>
+              <rect x="-20" y="-1.2" width="100" height="2.4" fill="oklch(0.08 0.01 40)"/>
+              <polyline id="${u}-arc" fill="none" stroke="oklch(0.9 0.1 230)" stroke-width="0.9" opacity="0" filter="url(#${u}-gl)"/>
+              <polyline id="${u}-arc2" fill="none" stroke="oklch(0.95 0.06 230)" stroke-width="0.6" opacity="0" filter="url(#${u}-gl)"/>
+              <g fill="oklch(0.84 0.15 92)"><rect x="18" y="-9" width="3.4" height="7.8"/><rect x="18" y="1.2" width="3.4" height="7.8"/><rect x="38" y="-9" width="3.4" height="7.8"/><rect x="38" y="1.2" width="3.4" height="7.8"/><rect x="58" y="-9" width="3.4" height="7.8"/><rect x="58" y="1.2" width="3.4" height="7.8"/></g>
+              <rect x="80" y="-11" width="8" height="22" fill="oklch(0.2 0.02 40)"/>
+              <rect x="82" y="-11" width="1.4" height="22" fill="oklch(0.1 0.01 40)"/>
+            </g>
+          </g>
+          <rect id="${u}-fl" x="16" y="16" width="92" height="92" fill="oklch(0.98 0.05 85)" opacity="0"/>
+        </g>`;
+      const $ = id => svg.querySelector(`#${u}-${id}`);
+      const slide = $('slide'), arc = $('arc'), arc2 = $('arc2'), bolt = $('bolt'), ball = $('ball'), rockG = $('rock'), blast = $('blast'), ring = $('ring'), fl = $('fl');
+      const st = { s: 50, rec: 0 };
+      const draw = () => slide.setAttribute('transform', `translate(${f(-st.rec * 7)} 0)`);
+      // The pointer's place along the barrel sets the charge's centre.
+      const along = p => { const x = p[0] - O[0], y = p[1] - O[1], c = Math.cos(A * DEG), s = Math.sin(A * DEG); return x * c - y * s; };
+      const aim = p => gsap.to(st, { s: clamp(along(p), 0, 78), duration: 0.4, overwrite: 'auto' });
+      const MZ = turn([O[0] + 88, O[1]], O, A);
+      return cycle({
+        aim,
+        charge(c) {
+          const w = 8 + 40 * c, a = clamp(st.s - w, -10, 78), b = clamp(st.s + w, -10, 80);
+          arc.setAttribute('points', jag(a, b, 0, 0.6 + 2.2 * c, 12));
+          arc2.setAttribute('points', jag(a + 4, b - 4, 0, 0.4 + 3 * c, 8));
+          arc.setAttribute('opacity', f(Math.min(1, c * 1.4)));
+          arc2.setAttribute('opacity', f(c * c));
+        },
+        fire() {
+          gsap.set(bolt, { attr: { x1: MZ[0], y1: MZ[1], x2: 98, y2: 26 }, opacity: 1 });
+          gsap.to(bolt, { opacity: 0, duration: 0.3, ease: 'power2.in' });
+          gsap.fromTo(st, { rec: 1 }, { rec: 0, duration: 1, ease: 'elastic.out(1, 0.45)', onUpdate: draw });
+          gsap.fromTo(blast, { attr: { cx: MZ[0], cy: MZ[1], r: 3 }, opacity: 1 }, { attr: { r: 14 }, opacity: 0, duration: 0.5, ease: 'power2.out' });
+          const tl = gsap.timeline({ delay: 0.15 });
+          tl.to(rockG, { opacity: 0, duration: 0.12 }, 0)
+            .fromTo(fl, { opacity: 0.45 }, { opacity: 0, duration: 0.7 }, 0)
+            .fromTo(ring, { attr: { cx: 98, cy: 26, r: 1 }, opacity: 0.9 }, { attr: { r: 30 }, opacity: 0, duration: 1.2, ease: 'power2.out' }, 0)
+            .to(rockG, { opacity: 1, duration: 0.6 }, 1.4);
+        },
+        rest() { gsap.to(st, { s: 50, duration: 0.5 }); },
+      });
+    },
+  });
+
+  /* ================= mount ================= */
+
+  const fitIcon = (svg, box) => {
+    const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : { x: 14, y: 14, width: 100, height: 100 }, side = Math.max(b.width, b.height);
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.CTL = {};
+  for (const D of DIRS) {
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = `railgun-${D.l.toLowerCase()}`;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tile => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tile);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      (window.CTL[D.l] ||= []).push({ c, svg });
+      if (reduce) return;
+      tile.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tile.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tile.addEventListener('pointerleave', () => c.leave());
+      tile.addEventListener('focus', () => c.enter(null));
+      tile.addEventListener('blur', () => c.leave());
+    });
+  }
+})();
+</script>
+</body>
+</html>
