@@ -116,12 +116,20 @@ The repo has no draw-call budget. East Van sets one.
 - [x] Backyard, garage and lane behind the house; 13 new pokes; a basketball.
 - [x] Camera stops House and Alley (keys 1 and 2), free turn.
 
+### The Drive (`stimming-pmsi`)
+
+- [x] Five city extracts fetched and baked; `eastvan/CREDITS.md`; the credit line on the page.
+- [x] `eastvan/drive.js`: the west side of Commercial Drive north of East 4th, as its own diorama.
+- [x] Pokes: shops, upper windows, street lamps, the trolley bus, the fruit stand. Stop 3.
+
 ### Next (Tom picks the order)
+
+- [ ] The alley as its own full diorama (`stimming-cly0`; Tom asked for it after the Drive).
 
 - [ ] More life: a bike, a mailbox flap, a sprinkler, a second crow; first CC0 model candidates.
 - [ ] Sound for every poke; a dusk bed.
 - [ ] Lab registration: `toys.json`, menu tile and icon, Bar v2 shell, intro.
-- [ ] The Drive at East 4th from city data.
+- [ ] The Drive: people, crows, the east side, shop interiors.
 
 ## Reduced motion and idle
 

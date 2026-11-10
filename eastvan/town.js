@@ -19,7 +19,16 @@ function geomsOf(q) {
     const g = new THREE.CylinderGeometry(q.r, q.r, q.h, q.r > 0.6 ? 20 : 12);
     if (q.ax === 'z') g.rotateX(Math.PI / 2); else if (q.ax === 'x') g.rotateZ(Math.PI / 2);
     add(g, ...q.p);
-  } else if (q.t === 'ring') add(new THREE.TorusGeometry(q.r, q.tube, 6, 20).rotateX(Math.PI / 2), ...q.p);
+  } else if (q.t === 'ring') {
+    // A ring lies flat unless ax is z: then it stands and faces the street.
+    const g = new THREE.TorusGeometry(q.r, q.tube, 6, 20);
+    add(q.ax === 'z' ? g : g.rotateX(Math.PI / 2), ...q.p);
+  } else if (q.t === 'slab') add(new THREE.BoxGeometry(...q.s).rotateX(q.rx), ...q.p);
+  else if (q.t === 'poly') {
+    // A ground outline [x, z], pushed up to a height.
+    const sh = new THREE.Shape(q.ring.map(([x, z]) => new THREE.Vector2(x, -z)));
+    add(new THREE.ExtrudeGeometry(sh, { depth: q.h, bevelEnabled: false }).rotateX(-Math.PI / 2), 0, q.y, 0);
+  }
   else if (q.t === 'blob') add(new THREE.IcosahedronGeometry(q.r, 1), ...q.p);
   else if (q.t === 'beam') out.push(beamGeo(q.a, q.b, q.w));
   else if (q.t === 'prism') {
@@ -64,12 +73,15 @@ export function buildTown(skyTexture, zones, life = null) {
   scene.background = skyTexture;
   const hemi = new THREE.HemisphereLight(lin([0.74, 0.08, 285]), lin([0.62, 0.07, 60]), 2.5);
   const sun = new THREE.DirectionalLight(lin([0.93, 0.09, 62]), 3.3);
-  sun.position.set(-15, 11, 12); sun.target.position.set(0, 2, -10);
+  // The sun keeps one direction. Each diorama says how wide its shadow is.
+  const S = zones.find(z => z.SUN)?.SUN || { target: [0, 2, -10], half: [24, 20] }, reach = Math.max(...S.half) * 1.2;
+  sun.target.position.set(...S.target);
+  sun.position.copy(sun.target.position).add(new THREE.Vector3(-15, 9, 22).normalize().multiplyScalar(reach));
   // The shadow covers the whole plinth, so High doubles the map.
   const size = quality() === 'high' ? 4096 : 2048;
   sun.castShadow = true; sun.shadow.mapSize.set(size, size);
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
-  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 20, bottom: -20, near: 1, far: 80 });
+  Object.assign(sun.shadow.camera, { left: -S.half[0], right: S.half[0], top: S.half[1], bottom: -S.half[1], near: 1, far: reach * 2.6 });
   scene.add(hemi, sun, sun.target);
 
   // Sort the parts: static paint, ground, crown, flowers, glow, switches, movers.
@@ -83,12 +95,13 @@ export function buildTown(skyTexture, zones, life = null) {
     }
     if (q.sw) { sw[q.sw] ||= { on: !!q.on, gain: q.gain || 1.5, k: q.on ? 1 : 0, geos: [], mat: null }; if (!q.dyn) sw[q.sw].geos.push(...geos); }
     if (q.dyn || q.sw) continue;
-    const bin = q.glow ? 'glow' : q.k === 'ground' || q.k === 'plinth' ? 'ground' : q.k === 'crown' ? 'crown' : q.k === 'flower' ? 'flower' : 'paint';
+    const bin = q.glow ? 'glow' : q.k === 'ground' || q.k === 'plinth' ? 'ground' : q.k === 'crown' ? 'crown' : q.k === 'flower' || q.noInk ? 'flower' : 'paint';
     bins[bin].push(...geos);
   }
   // Wires are thin tubes, cut where the plinth ends.
   for (const w of WIRES) {
-    const ta = (-7.5 - w.a[0]) / (w.b[0] - w.a[0]), tb = (7.5 - w.a[0]) / (w.b[0] - w.a[0]);
+    // clip is the plinth's half length. A wire that runs across has no cut.
+    const c = w.clip || 7.5, dx = w.b[0] - w.a[0], ta = dx ? (-c - w.a[0]) / dx : 0, tb = dx ? (c - w.a[0]) / dx : 1;
     const t0 = Math.max(0, Math.min(ta, tb)), t1 = Math.min(1, Math.max(ta, tb)), pts = [];
     for (let i = 0; i <= 12; i++) {
       const t = lerp(t0, t1, i / 12);
@@ -150,9 +163,16 @@ export function buildTown(skyTexture, zones, life = null) {
     if (still()) gsap.timeline().set(m, { k: 1 }).set(m, { k: 0 }, 0.5);
     else gsap.timeline().to(m, { k: 1, duration: up, ease: 'power2.out' }).to(m, { k: 0, duration: down, ease }, '+=' + hold);
   };
+  // One run from 0 to 1 at a steady rate, then back to the start.
+  const run = (id, seconds) => () => {
+    const m = mv[id];
+    if (m.busy) return;
+    m.busy = true;
+    gsap.fromTo(m, { k: 0 }, { k: 1, duration: still() ? 0.01 : seconds, ease: 'none', onComplete: () => { m.k = 0; m.busy = false; } });
+  };
   // A poke runs its steps from ACTS. With none, it flips its own switch.
-  const step = ([kind, id, ...rest]) => (kind === 'flip' ? flip(id, rest[0]) : kind === 'swing' ? swing(id, ...rest) : pulse(id, ...rest));
-  const pokes = POKES.map(q => {
+  const step = ([kind, id, ...rest]) => (kind === 'flip' ? flip(id, rest[0]) : kind === 'swing' ? swing(id, ...rest) : kind === 'run' ? run(id, ...rest) : pulse(id, ...rest));
+  const pokes = POKES.filter(q => ACTS[q.id] || sw[q.id]).map(q => {
     const steps = (ACTS[q.id] || [['flip', q.id]]).map(step);
     return { id: q.id, pos: new THREE.Vector3(...q.at), r: q.r, fire: () => { for (const f of steps) f(); } };
   });

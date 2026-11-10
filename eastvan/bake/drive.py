@@ -55,7 +55,7 @@ def bake(raw, out):
         if f['geometry'] and (p['store_id'] not in latest or p['year_recorded'] > latest[p['store_id']]['properties']['year_recorded']): latest[p['store_id']] = f
     stores = [{'at': en(f['geometry']['coordinates']), 'cat': f['properties'].get('general_business_category'), 'civic': f['properties'].get('civic_number'), 'street': f['properties'].get('street')}
               for f in latest.values()]
-    json.dump({'origin': [LON0, LAT0], 'credit': 'Contains information licensed under the Open Government Licence - Vancouver.', 'b': b, 'lots': lots, 'trees': trees, 'poles': poles, 'stores': stores},
+    json.dump({'origin': [LON0, LAT0], 'credit': 'Contains information licensed under the Open Government Licence – Vancouver.', 'b': b, 'lots': lots, 'trees': trees, 'poles': poles, 'stores': stores},
               open(out, 'w'), separators=(',', ':'))
     print(f'{out}: {len(b)} buildings, {len(lots)} lots, {len(trees)} trees, {len(poles)} poles, {len(stores)} stores, {os.path.getsize(out)} bytes')
 
