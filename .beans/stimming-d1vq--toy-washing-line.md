@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-10T10:13:16Z
+updated_at: 2026-11-10T10:27:13Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -127,3 +127,12 @@ Tom asked for a full redo. The checklists above are superseded; the old pages st
 - [ ] R8: Bar v2 Settings, persistence, QA (1280, 375 × 812, 812 × 375; tests/bar-v2.html)
 - [ ] Tom sets the Dutch name (draft: Wasdraad)
 - [ ] Record the session cost
+
+
+### Alley is Valldemossa (Tom, 2026-11-10)
+
+The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and colourful things on the walls, a small market below, lanterns.
+
+- Honey limestone walls, green shutters, potted geraniums on the walls, iron wall lanterns.
+- Bunting strings cross the street at several depths.
+- Market stalls with striped awnings, fruit crates and ceramics fill the street floor under the line.

@@ -3,10 +3,12 @@
 // The street runs along z; the walls face each other at x = ±W.
 import * as THREE from 'three';
 import { oklchLinear } from '../../shared/stim.js';
+import { dress, backdrop } from './alley-dress.js';
 
 const W = 2.6;
 const LINE_Z = 0;
-const EYE = [0.45, 4.6, 12];
+// The camera hangs level with the line, up the street from it.
+const EYE = [0.2, 8.4, 11];
 
 // A small seeded random, so the street is the same every visit.
 function rng(seed) {
@@ -18,21 +20,33 @@ function rng(seed) {
   };
 }
 
-const PLASTER = [
-  [0.78, 0.07, 70], [0.7, 0.09, 45], [0.82, 0.05, 85], [0.74, 0.06, 30],
-  [0.8, 0.08, 95], [0.69, 0.04, 60], [0.76, 0.05, 20], [0.72, 0.03, 230],
-];
-const SHUTTER = [[0.48, 0.07, 160], [0.45, 0.06, 200], [0.42, 0.05, 50], [0.5, 0.06, 140], [0.4, 0.03, 250]];
+// Valldemossa: honey limestone, some ochre render, green shutters.
+const STONE = [[0.76, 0.08, 72], [0.71, 0.075, 64], [0.79, 0.07, 80], [0.68, 0.07, 58]];
+const PLASTER = [[0.8, 0.08, 78], [0.84, 0.05, 85], [0.76, 0.08, 60]];
+const SHUTTER = [[0.47, 0.09, 155], [0.43, 0.08, 160], [0.5, 0.08, 150], [0.45, 0.07, 165], [0.42, 0.05, 55]];
 const ok = ([L, C, h], a = 1) => `oklch(${L} ${C} ${h} / ${a})`;
-const PPM = 28;
+// Pixels per metre; near facades get more.
+let PPM = 28;
 
 // One canvas per facade: plaster, grime, floors, windows and shutters.
 function facade(len, ht, R, anchorWin) {
   const cv = document.createElement('canvas');
   cv.width = Math.ceil(len * PPM); cv.height = Math.ceil(ht * PPM);
   const g = cv.getContext('2d'), X = cv.width, Y = cv.height;
-  const base = PLASTER[Math.floor(R() * PLASTER.length)];
+  const stone = R() < 0.72;
+  const base = stone ? STONE[Math.floor(R() * STONE.length)] : PLASTER[Math.floor(R() * PLASTER.length)];
   g.fillStyle = ok(base); g.fillRect(0, 0, X, Y);
+  // Coursed limestone: rows of blocks with pale mortar between them.
+  if (stone) {
+    for (let y = 0; y < Y; y += 0.3 * PPM) {
+      for (let x = -R() * 0.5 * PPM; x < X; ) {
+        const bw = (0.35 + R() * 0.55) * PPM;
+        g.fillStyle = ok([base[0] + (R() - 0.5) * 0.09, base[1] * (0.7 + R() * 0.6), base[2] + (R() - 0.5) * 16]);
+        g.fillRect(x + 1, y + 1, bw - 2, 0.3 * PPM - 2);
+        x += bw;
+      }
+    }
+  }
   // Blotches of damp and sun-bleach.
   for (let i = 0; i < 60; i++) {
     const r = (0.4 + R() * 2.2) * PPM;
@@ -50,9 +64,11 @@ function facade(len, ht, R, anchorWin) {
   g.fillStyle = ok([base[0] - 0.12, base[1], base[2]]); g.fillRect(0, 0, X, 0.25 * PPM);
   g.fillStyle = ok([base[0] + 0.06, base[1] * 0.5, base[2]]); g.fillRect(0, 0.25 * PPM, X, 0.08 * PPM);
   const shut = SHUTTER[Math.floor(R() * SHUTTER.length)];
+  const wins = [];
   const bays = Math.max(1, Math.round(len / 2.3)), bw = len / bays;
   const win = (cx, cy, w, h, mode) => {
     const x = (cx - w / 2) * PPM, y = Y - (cy + h / 2) * PPM, pw = w * PPM, ph = h * PPM;
+    wins.push({ u: cx, y: cy, w, h, kind: 'win', mode, shut });
     // A stone surround, a dark pane, a sill.
     g.fillStyle = ok([base[0] + 0.07, base[1] * 0.4, base[2]]);
     g.fillRect(x - 0.1 * PPM, y - 0.1 * PPM, pw + 0.2 * PPM, ph + 0.18 * PPM);
@@ -81,6 +97,7 @@ function facade(len, ht, R, anchorWin) {
       g.fillStyle = ok([0.24, 0.02, 50]);
       g.fillRect((cx - 0.55) * PPM, Y - 2.6 * PPM, 1.1 * PPM, 2.6 * PPM);
       g.beginPath(); g.arc(cx * PPM, Y - 2.6 * PPM, 0.55 * PPM, Math.PI, 0); g.fill();
+      wins.push({ u: cx, y: 1.5, w: 1.1, h: 3.1, kind: 'door' });
     } else win(cx, 1.9, 0.8, 1.2, R() < 0.5 ? 0 : 2);
     for (let fy = 4.2; fy + 1.6 < ht - 0.6; fy += 3.1) {
       if (anchorWin && Math.abs(fy + 0.8 - anchorWin.y) < 1.6 && Math.abs(cx - anchorWin.u) < bw * 0.6) continue;
@@ -90,7 +107,7 @@ function facade(len, ht, R, anchorWin) {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
-  return { tex: t, base };
+  return { tex: t, base, wins };
 }
 
 // Balconies and window frames add relief that catches the sun.
@@ -111,42 +128,36 @@ export default {
   name: 'Alley',
   anchors: { a: [-W + 0.14, 8.3, LINE_Z], b: [W - 0.14, 8.05, LINE_Z] },
   windDir: [0.25, 0.97],
-  // Directions to the sun: behind the viewer, then low down the street.
-  sun: { front: [0.5, 0.72, 0.48], back: [0.05, 0.25, -0.97] },
+  // Directions to the sun: behind the viewer, then low at the street's end.
+  sun: { front: [0.5, 0.72, 0.48], back: [0.06, 0.25, -0.97] },
   sky: { zen: [0.5, 0.13, 250], hor: [0.88, 0.05, 75], haze: [0.84, 0.04, 70] },
   amb: { hi: [0.8, 0.03, 240], lo: [0.6, 0.04, 60] },
   cord: [0.08, 0.075, 0.07],
   peg: [0.55, 0.38, 0.22],
   // The wardrobe: sizes in metres, colours in OKLCH.
+  hangFrom: 0.3,
+  fog: [60, 1500],
   wash: [
     { w: 1.5, h: 1.15, c: [0.95, 0.01, 90] },
-    { w: 0.7, h: 1.05, c: [0.62, 0.15, 30] },
-    { w: 0.9, h: 0.75, c: [0.82, 0.12, 88] },
+    { w: 0.7, h: 0.95, c: [0.62, 0.15, 30] },
+    { w: 0.9, h: 0.7, c: [0.82, 0.12, 88] },
     { w: 0.6, h: 0.45, c: [0.7, 0.09, 235] },
   ],
 
+  // A level view down the street; the line crosses the frame.
   frame(cam, aspect) {
-    const span = 5.0, d = EYE[2] - LINE_Z;
-    const f = aspect < 1 ? 0.86 : aspect < 1.3 ? 0.7 : 0.56;
-    const tanH = span / f / (2 * d);
-    const tanV = Math.min(Math.tan(THREE.MathUtils.degToRad(36)), tanH / aspect);
-    cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanV));
+    cam.fov = aspect < 1 ? 70 : 44;
     cam.aspect = aspect;
-    // The line sits in the top half of the frame.
-    const elev = Math.atan2(8.2 - EYE[1], d);
-    const pitch = elev - Math.atan(0.42 * tanV);
     cam.position.set(...EYE);
-    cam.lookAt(0.15, EYE[1] + Math.tan(pitch) * d, LINE_Z);
+    cam.lookAt(0, EYE[1] - 1.1, -20);
     cam.updateProjectionMatrix();
-    // The line spans this many metres of the view, for drag scale.
-    return d;
   },
 
   build(scene) {
     const R = rng(7);
     const group = new THREE.Group();
     scene.add(group);
-    const slabs = [], rails = [];
+    const slabs = [], rails = [], spots = [], eaves = [], ribs = [];
     // Buildings line both sides, from behind the camera to far down the street.
     for (const side of [-1, 1]) {
       let z = 26;
@@ -156,7 +167,10 @@ export default {
         // The anchor walls need a free bay for the explicit window.
         const holds = zc + len / 2 > LINE_Z && zc - len / 2 < LINE_Z;
         const u = side < 0 ? z - LINE_Z + 0.75 : LINE_Z - 0.75 - (z - len);
-        const { tex, base } = facade(len, ht, R, holds ? { y: 8.3 - 0.75, u } : null);
+        PPM = Math.abs(zc) < 30 ? 64 : 28;
+        const { tex, base, wins } = facade(len, ht, R, holds ? { y: 8.3 - 0.75, u } : null);
+        // Facade windows and doors in world space, for the dressing.
+        for (const w of wins) spots.push({ ...w, side, x: xf, z: side < 0 ? z - w.u : z - len + w.u });
         const plain = new THREE.MeshStandardMaterial({ color: lin([base[0] - 0.08, base[1], base[2]]), roughness: 0.95 });
         const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
         const mats = side < 0 ? [face, plain, plain, plain, plain, plain] : [plain, face, plain, plain, plain, plain];
@@ -164,8 +178,10 @@ export default {
         box.position.set(xf + side * 4, ht / 2, zc);
         box.castShadow = box.receiveShadow = true;
         group.add(box);
-        // A cornice ledge casts a line of shadow.
-        addBox(slabs, xf - side * 0.12, ht - 0.35, zc, 0.26, 0.16, len);
+        // A stone corbel course, then terracotta eaves over the street.
+        addBox(slabs, xf - side * 0.12, ht - 0.12, zc, 0.24, 0.14, len);
+        addBox(eaves, xf - side * 0.3, ht + 0.06, zc, 0.62, 0.1, len + 0.1);
+        if (Math.abs(zc) < 45) for (let tz = zc - len / 2 + 0.1; tz < zc + len / 2; tz += 0.22) ribs.push([xf - side * 0.3, ht + 0.12, tz]);
         // Some floors carry a balcony.
         for (let fy = 4.2; fy + 1.6 < ht - 0.6; fy += 3.1) {
           if (R() < 0.18 && !(holds && Math.abs(fy - 7.5) < 1.6)) {
@@ -179,6 +195,14 @@ export default {
     }
     instanced(slabs, new THREE.MeshStandardMaterial({ color: lin([0.78, 0.02, 80]), roughness: 0.9 }), group);
     instanced(rails, new THREE.MeshStandardMaterial({ color: lin([0.22, 0.01, 250]), roughness: 0.6, metalness: 0.4 }), group);
+    const terra = new THREE.MeshStandardMaterial({ color: lin([0.56, 0.11, 42]), roughness: 0.85 });
+    instanced(eaves, terra, group);
+    // Rounded tile ends ribbed along the eaves.
+    const rib = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.075, 0.085, 0.64, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), terra, ribs.length);
+    const rm = new THREE.Matrix4();
+    ribs.forEach((r, i) => rib.setMatrixAt(i, rm.makeTranslation(r[0], r[1], r[2])));
+    rib.castShadow = rib.receiveShadow = true;
+    group.add(rib);
 
     // The windows that hold the pulleys: frame, dark pane, open shutters.
     const frame = new THREE.MeshStandardMaterial({ color: lin([0.9, 0.02, 85]), roughness: 0.8 });
@@ -208,9 +232,9 @@ export default {
     // Cobbles: a long street floor with a worn centre.
     const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
     const g = cv.getContext('2d');
-    g.fillStyle = ok([0.55, 0.02, 70]); g.fillRect(0, 0, 256, 256);
+    g.fillStyle = ok([0.62, 0.03, 70]); g.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 16; i++) for (let j = 0; j < 16; j++) {
-      g.fillStyle = ok([0.5 + R() * 0.12, 0.02, 60 + R() * 30]);
+      g.fillStyle = ok([0.6 + R() * 0.12, 0.03, 60 + R() * 30]);
       g.beginPath(); g.ellipse(i * 16 + 8 + (j % 2) * 8, j * 16 + 8, 7, 6.5, 0, 0, Math.PI * 2); g.fill();
     }
     const ct = new THREE.CanvasTexture(cv);
@@ -222,10 +246,7 @@ export default {
     const land = new THREE.Mesh(new THREE.PlaneGeometry(800, 600), new THREE.MeshStandardMaterial({ color: lin([0.6, 0.04, 80]), roughness: 1 }));
     land.rotation.x = -Math.PI / 2; land.position.set(0, -0.02, -400);
     group.add(land);
-    // A far ridge closes the end of the street in haze.
-    const ridge = new THREE.Mesh(new THREE.PlaneGeometry(900, 60), new THREE.MeshStandardMaterial({ color: lin([0.55, 0.05, 120]), roughness: 1 }));
-    ridge.position.set(0, 4, -520);
-    group.add(ridge);
+    backdrop(group, R, lin);
 
     // Neighbours' lines further down the street hang still.
     const cord = new THREE.MeshStandardMaterial({ color: 0x1a1918, roughness: 0.8 });
@@ -247,6 +268,7 @@ export default {
         x += w + 0.08 + R() * 0.3;
       }
     }
+    dress(group, R, { W, LINE_Z, spots, lin });
     return group;
   },
 };

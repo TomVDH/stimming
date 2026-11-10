@@ -168,13 +168,13 @@ function buildPlace(id) {
   P.set = pl.build(scene);
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
-  scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), 30, 420);
+  scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), ...(pl.fog || [30, 420]));
   hemi.color.setRGB(...lin(pl.sky.zen)).lerp(new THREE.Color(1, 1, 1), 0.5);
   hemi.groundColor.setRGB(...lin(pl.amb.lo));
   P.line = makeLine(pl.anchors.a, pl.anchors.b, { windDir: pl.windDir });
   P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
   // The wardrobe hangs left to right with small gaps.
-  let s = 0.3;
+  let s = pl.hangFrom ?? 0.3;
   for (const it of pl.wash) {
     const c = makePiece({ w: it.w, h: it.h, col: 0 });
     hang(P.line, c, s);
@@ -204,7 +204,7 @@ function syncLight() {
   sunLight.position.copy(sunLight.target.position).addScaledVector(SUN.dir, 60);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
   sunLight.intensity = 3.2;
-  hemi.intensity = 0.9 - 0.25 * SUN.b;
+  hemi.intensity = 1.35 - 0.3 * SUN.b;
   renderer.toneMappingExposure = 1 - 0.15 * SUN.b;
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
@@ -225,7 +225,7 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
-  P.d = P.place.frame(camera, w / h);
+  P.place.frame(camera, w / h);
   kick();
 }
 const wind = () => ({ ...WIND[st.wind], scale: st.windScale * (reduce ? 0.3 : 1) });
