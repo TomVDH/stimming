@@ -425,7 +425,7 @@ function coolGlows(dt) {
   let warm = false;
   for (const d of glows) {
     d.t += dt;
-    const k = Math.exp(-d.t / 1.6);
+    const k = Math.exp(-d.t / (d.tau ?? 1.6));
     d.m.material.color.copy(COLD).lerp(HOT, k);
     if (k > 0.01) warm = true;
   }
@@ -491,12 +491,12 @@ function buildBody(kind) {
   return g;
 }
 const TYPES = {
-  glass:    { res: 0.05, h: 1.4, n: 46, bits: [col(0.9, 0.04, 200)], size: [0.012, 0.2, 0.18], kick: 1.6 },
-  ice:      { res: 0.12, h: 0.9, n: 30, bits: [col(0.92, 0.05, 220), col(0.98, 0.01, 220)], size: [0.15, 0.14, 0.16], kick: 1.2 },
-  water:    { res: 0.15, h: 1.1, n: 70, bits: [col(0.7, 0.1, 230), col(0.85, 0.06, 220)], size: [0.07, 0.07, 0.07], kick: 2.2 },
-  melon:    { res: 0.08, h: 0.7, n: 40, bits: [col(0.58, 0.19, 25), col(0.5, 0.12, 145), col(0.86, 0.06, 110)], size: [0.08, 0.08, 0.09], kick: 2 },
-  concrete: { res: 0.25, h: 0.8, n: 22, bits: [col(0.66, 0.01, 70), col(0.55, 0.01, 70)], size: [0.18, 0.17, 0.2], kick: 0.8 },
-  steel:    { res: 0.3, h: 1.1, n: 12, bits: [col(0.55, 0.01, 250), col(0.9, 0.12, 70)], size: [0.02, 0.14, 0.14], kick: 0.9 },
+  glass:    { res: 0.05, h: 1.4 },
+  ice:      { res: 0.12, h: 0.9 },
+  water:    { res: 0.15, h: 1.1 },
+  melon:    { res: 0.08, h: 0.7 },
+  concrete: { res: 0.25, h: 0.8 },
+  steel:    { res: 0.3, h: 1.1 },
 };
 const KINDS = Object.keys(TYPES);
 const standGeo = new THREE.CylinderGeometry(0.035, 0.05, 1, 8).translate(0, 0.5, 0);
@@ -536,98 +536,102 @@ function newRow(drop = true) {
 }
 
 /* ---------- debris ---------- */
-// One instanced box mesh holds every chunk, shard and drop.
-const MAXBITS = 900;
-const bitMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.2 }), MAXBITS);
-bitMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-bitMesh.setColorAt(0, new THREE.Color(1, 1, 1));
-bitMesh.castShadow = true;
-bitMesh.count = 0;
-bitMesh.frustumCulled = false;
-scene.add(bitMesh);
-const bits = [];
+// Each debris set is one instanced mesh: shards, ice chunks or rubble.
+const sets = [];
 const dummy = new THREE.Object3D();
-function burst(t, energy, hy, hz) {
-  const T = t.T;
-  for (let i = 0; i < T.n && bits.length < MAXBITS; i++) {
-    const a = rnd(0, TAU), r = Math.sqrt(Math.random());
-    // Chunks leave down the lane in a cone; a faster slug opens it wider.
-    const v = new THREE.Vector3(rnd(4, 16) * (0.5 + energy), Math.sin(a) * r * T.kick * 3 + rnd(0, 2), Math.cos(a) * r * T.kick * 3);
-    const s = rnd(0.5, 1.4);
-    bits.push({
-      p: new THREE.Vector3(t.x + rnd(-0.1, 0.1), hy + rnd(-0.3, 0.3), hz + rnd(-0.3, 0.3)), v,
-      q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU))),
-      w: new THREE.Vector3(rnd(-12, 12), rnd(-12, 12), rnd(-12, 12)),
-      s: new THREE.Vector3(T.size[0] * s, T.size[1] * s, T.size[2] * s),
-      c: T.bits[(Math.random() * T.bits.length) | 0], rest: false, gone: false, fade: 1,
-    });
-  }
-  bitMesh.count = bits.length;
-  bits.forEach((b, i) => bitMesh.setColorAt(i, b.c));
-  bitMesh.instanceColor.needsUpdate = true;
-}
 const tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler();
-function stepBits(h) {
-  let moving = false;
-  for (let i = 0; i < bits.length; i++) {
-    const b = bits[i];
-    if (!b.rest && !b.gone) {
-      b.v.y -= 9.8 * h;
-      b.p.addScaledVector(b.v, h);
-      const floor = Math.min(b.s.x, b.s.y, b.s.z) * 0.5;
-      // Chunks that leave the slab fall off the edge into the dusk.
-      if (b.p.y < floor && b.p.y > -0.4 && onSlab(b.p.x, b.p.z)) {
-        b.p.y = floor;
-        b.v.y = -b.v.y * 0.3;
-        b.v.x *= 0.55; b.v.z *= 0.55; b.w.multiplyScalar(0.5);
-        if (b.v.lengthSq() < 0.15) { b.rest = true; b.v.set(0, 0, 0); }
-      }
-      if (b.p.y < -30) b.gone = true;
-      tmpQ.setFromEuler(tmpE.set(b.w.x * h, b.w.y * h, b.w.z * h));
-      b.q.multiply(tmpQ);
-      moving = moving || !b.gone;
-    }
-    dummy.position.copy(b.p);
-    dummy.quaternion.copy(b.q);
-    dummy.scale.copy(b.s).multiplyScalar(b.gone ? 0 : b.fade);
-    dummy.updateMatrix();
-    bitMesh.setMatrixAt(i, dummy.matrix);
+const randQ = () => new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU)));
+class Bits {
+  constructor(geo, mat, max) {
+    const m = new THREE.InstancedMesh(geo, mat, max);
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.setColorAt(0, new THREE.Color(1, 1, 1));
+    m.castShadow = m.receiveShadow = true;
+    m.count = 0;
+    m.frustumCulled = false;
+    scene.add(m);
+    Object.assign(this, { mesh: m, max, list: [], fade: 1 });
+    sets.push(this);
   }
-  bitMesh.instanceMatrix.needsUpdate = true;
-  return moving;
+  add(p, v, s, c, spin = 12) {
+    if (this.list.length >= this.max) return;
+    this.mesh.setColorAt(this.list.length, c);
+    this.mesh.instanceColor.needsUpdate = true;
+    const w = new THREE.Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(spin);
+    this.list.push({ p, v, s, q: randQ(), w, rest: false, gone: false });
+    this.mesh.count = this.list.length;
+  }
+  step(h) {
+    let moving = false;
+    this.list.forEach((b, i) => {
+      if (!b.rest && !b.gone && h > 0) {
+        b.v.y -= 9.8 * h;
+        b.p.addScaledVector(b.v, h);
+        const floor = Math.min(b.s.x, b.s.y, b.s.z) * 0.5;
+        // Pieces that leave the slab fall off the edge into the dusk.
+        if (b.p.y < floor && b.p.y > -0.4 && onSlab(b.p.x, b.p.z)) {
+          b.p.y = floor;
+          b.v.y = -b.v.y * 0.3;
+          b.v.x *= 0.55; b.v.z *= 0.55; b.w.multiplyScalar(0.5);
+          if (b.v.lengthSq() < 0.15) { b.rest = true; b.v.set(0, 0, 0); }
+        }
+        if (b.p.y < -30) b.gone = true;
+        tmpQ.setFromEuler(tmpE.set(b.w.x * h, b.w.y * h, b.w.z * h));
+        b.q.multiply(tmpQ);
+        moving = moving || !b.gone;
+      }
+      dummy.position.copy(b.p);
+      dummy.quaternion.copy(b.q);
+      dummy.scale.copy(b.s).multiplyScalar(b.gone ? 0 : this.fade);
+      dummy.updateMatrix();
+      this.mesh.setMatrixAt(i, dummy.matrix);
+    });
+    this.mesh.instanceMatrix.needsUpdate = true;
+    return moving;
+  }
+  clear() { this.list.length = 0; this.mesh.count = 0; }
 }
+// A shard is a thin sliver triangle; the sky glints off it as it turns.
+const triGeo = new THREE.BufferGeometry();
+triGeo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.4, 0, 0.5, -0.3, 0, 0.05, 0.55, 0], 3));
+triGeo.computeVertexNormals();
+const shards = new Bits(triGeo, new THREE.MeshStandardMaterial({ roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 3 }), 500);
+shards.mesh.castShadow = false;
+const ice = new Bits(new THREE.IcosahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.12, transparent: true, opacity: 0.78, flatShading: true, envMapIntensity: 1.8 }), 160);
+const rubble = new Bits(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), 400);
 
 /* ---------- puffs ---------- */
-// Soft round sprites for steam now, and dust and spray later.
+// Round sprites: crisp drops and grit, or soft dust and steam.
+const puffSets = [];
 class Puffs {
-  constructor(max, additive = false) {
+  constructor(max, soft) {
     this.max = max; this.n = 0;
     const F = k => new Float32Array(max * k);
-    Object.assign(this, { p: F(3), v: F(3), c: F(3), a: F(1), s: F(1), age: F(1), life: F(1), s0: F(1), s1: F(1), a0: F(1), g: F(1), drag: F(1) });
+    Object.assign(this, { p: F(3), v: F(3), c: F(3), a: F(1), s: F(1), age: F(1), life: F(1), s0: F(1), s1: F(1), a0: F(1), g: F(1), drag: F(1), st: F(1) });
     const geo = new THREE.BufferGeometry();
     for (const [name, arr, k] of [['position', this.p, 3], ['tint', this.c, 3], ['alpha', this.a, 1], ['size', this.s, 1]]) {
       geo.setAttribute(name, new THREE.BufferAttribute(arr, k).setUsage(THREE.DynamicDrawUsage));
     }
     this.geo = geo;
     this.mat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      uniforms: { uScale: { value: 400 }, uFade: { value: 1 } },
+      transparent: true, depthWrite: false,
+      uniforms: { uScale: { value: 400 }, uFade: { value: 1 }, uSoft: { value: soft ? 1 : 0 } },
       vertexShader: /* glsl */`
         attribute vec3 tint; attribute float alpha; attribute float size;
         uniform float uScale; varying vec3 vC; varying float vA;
         void main() {
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mv;
-          gl_PointSize = min(size * uScale / -mv.z, 320.0);
+          gl_PointSize = clamp(size * uScale / -mv.z, 1.5, 320.0);
           vC = tint; vA = alpha;
         }`,
       fragmentShader: /* glsl */`
-        uniform float uFade; varying vec3 vC; varying float vA;
+        uniform float uFade, uSoft; varying vec3 vC; varying float vA;
         void main() {
           float r = length(gl_PointCoord - 0.5) * 2.0;
           if (r > 1.0) discard;
-          float a = 1.0 - r * r;
-          gl_FragColor = vec4(vC, a * a * vA * uFade);
+          float a = uSoft > 0.5 ? pow(1.0 - r * r, 2.0) : smoothstep(1.0, 0.55, r);
+          gl_FragColor = vec4(vC, a * vA * uFade);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
@@ -636,18 +640,19 @@ class Puffs {
     this.points.frustumCulled = false;
     geo.setDrawRange(0, 0);
     scene.add(this.points);
+    puffSets.push(this);
   }
-  add(x, y, z, vx, vy, vz, c, { life = 1, s0 = 0.1, s1 = 0.1, a0 = 1, g = 1, drag = 0 } = {}) {
+  add(x, y, z, vx, vy, vz, c, { life = 1, s0 = 0.1, s1 = s0, a0 = 1, g = 1, drag = 0, stain = 0 } = {}) {
     if (this.n >= this.max) return;
     const i = this.n++;
     this.p.set([x, y, z], i * 3); this.v.set([vx, vy, vz], i * 3); this.c.set([c.r, c.g, c.b], i * 3);
-    this.age[i] = 0; this.life[i] = life; this.s0[i] = s0; this.s1[i] = s1; this.a0[i] = a0; this.g[i] = g; this.drag[i] = drag;
+    this.age[i] = 0; this.life[i] = life; this.s0[i] = s0; this.s1[i] = s1; this.a0[i] = a0; this.g[i] = g; this.drag[i] = drag; this.st[i] = stain;
   }
   kill(i) {
     const j = --this.n;
     if (i === j) return;
     for (const k of ['p', 'v', 'c']) this[k].copyWithin(i * 3, j * 3, j * 3 + 3);
-    for (const k of ['age', 'life', 's0', 's1', 'a0', 'g', 'drag']) this[k][i] = this[k][j];
+    for (const k of ['age', 'life', 's0', 's1', 'a0', 'g', 'drag', 'st']) this[k][i] = this[k][j];
   }
   step(h) {
     const { p, v } = this;
@@ -659,7 +664,11 @@ class Puffs {
       v[o + 1] -= 9.8 * this.g[i] * h;
       v[o] *= k; v[o + 1] *= k; v[o + 2] *= k;
       p[o] += v[o] * h; p[o + 1] += v[o + 1] * h; p[o + 2] += v[o + 2] * h;
-      if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) { p[o + 1] = 0; v[o + 1] *= -0.2; v[o] *= 0.5; v[o + 2] *= 0.5; }
+      if (p[o + 1] < 0 && p[o + 1] > -0.3 && onSlab(p[o], p[o + 2])) {
+        // A drop that lands may leave a stain on the salt.
+        if (this.st[i]) { stains.add(p[o], p[o + 2], this.st[i]); this.st[i] = 0; }
+        p[o + 1] = 0; v[o + 1] *= -0.2; v[o] *= 0.5; v[o + 2] *= 0.5;
+      }
       // Each sprite fades in fast, grows and fades out.
       this.a[i] = this.a0[i] * clamp(t * 10) * (1 - t * t);
       this.s[i] = lerp(this.s0[i], this.s1[i], Math.sqrt(t));
@@ -670,14 +679,180 @@ class Puffs {
   }
   clear() { this.n = 0; this.geo.setDrawRange(0, 0); }
 }
-const steam = new Puffs(400);
+const drops = new Puffs(6000, false);
+const dust = new Puffs(600, true);
+
+/* ---------- stains ---------- */
+// Wet patches and pulp splats lie flat on the salt until the refill.
+const STAIN = [null, { c: col(0.6, 0.03, 240), r: [0.06, 0.16] }, { c: col(0.42, 0.15, 20), r: [0.04, 0.12] }];
+const stains = {
+  mesh: new THREE.InstancedMesh(new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ roughness: 0.25, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 400),
+  n: 0,
+  add(x, z, kind) {
+    if (this.n >= 400) return;
+    const S = STAIN[kind], r = rnd(...S.r);
+    dummy.position.set(x, 0.003, z);
+    dummy.quaternion.setFromEuler(tmpE.set(0, rnd(0, TAU), 0));
+    dummy.scale.set(r * rnd(1, 1.8), 1, r);
+    dummy.updateMatrix();
+    this.mesh.setMatrixAt(this.n, dummy.matrix);
+    this.mesh.setColorAt(this.n, S.c);
+    this.mesh.count = ++this.n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.instanceColor.needsUpdate = true;
+  },
+  clear() { this.n = 0; this.mesh.count = 0; },
+};
+stains.mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+stains.mesh.count = 0;
+stains.mesh.receiveShadow = true;
+stains.mesh.frustumCulled = false;
+scene.add(stains.mesh);
+
 const STEAM = col(0.9, 0.02, 250);
 function vent(x, y, n = 40) {
   for (let i = 0; i < n; i++) {
-    steam.add(x + rnd(-0.3, 0.3), y + rnd(0, 0.2), rnd(-0.25, 0.25), rnd(-0.4, 0.4), rnd(0.6, 2), rnd(-0.3, 0.6), STEAM,
+    dust.add(x + rnd(-0.3, 0.3), y + rnd(0, 0.2), rnd(-0.25, 0.25), rnd(-0.4, 0.4), rnd(0.6, 2), rnd(-0.3, 0.6), STEAM,
       { life: rnd(1.2, 2.4), s0: 0.12, s1: rnd(0.6, 1.1), a0: 0.45, g: -0.02, drag: 1.2 });
   }
 }
+function clearDebris() {
+  for (const s of sets) s.clear();
+  for (const s of puffSets) s.clear();
+  stains.clear();
+}
+
+/* ---------- hits ---------- */
+// Each material breaks its own way. e is the energy the slug keeps.
+const K = n => Math.round(n * (reduced() ? 0.5 : 1));
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const any = a => a[(Math.random() * a.length) | 0];
+const C = {
+  glass: [col(0.95, 0.03, 190), col(0.88, 0.05, 170)], glint: col(0.99, 0.01, 90).multiplyScalar(1.6),
+  ice: [col(0.93, 0.04, 220), col(0.98, 0.015, 220)], frost: col(0.96, 0.02, 230),
+  spray: [col(0.88, 0.04, 225), col(0.78, 0.07, 230), col(0.97, 0.01, 220)],
+  rind: [col(0.42, 0.11, 145), col(0.55, 0.12, 135), col(0.86, 0.07, 110)], flesh: [col(0.56, 0.19, 22), col(0.64, 0.17, 15)], seed: col(0.16, 0.02, 40),
+  rock: [col(0.66, 0.01, 70), col(0.56, 0.01, 70), col(0.74, 0.012, 75)], grit: col(0.64, 0.01, 70), cloud: col(0.76, 0.01, 70),
+  hot: col(0.9, 0.16, 70).multiplyScalar(3), steel: col(0.5, 0.01, 250),
+};
+// Flat targets turn by this yaw; their local z runs along this axis.
+const YAW = -0.75, FACE = V3(Math.sin(YAW), 0, Math.cos(YAW));
+const HIT = {
+  glass(t, e, hy, hz) {
+    // Radial fracture: small fast shards near the hole, big slow ones at the rim.
+    const lz = hz / FACE.z;
+    for (let i = 0; i < K(70); i++) {
+      const py = rnd(-0.7, 0.7), pz = rnd(-0.6, 0.6);
+      const dy = py - (hy - BORE), dz = pz - lz, d = Math.hypot(dy, dz);
+      const s = 0.05 + d * 0.25 * rnd(0.6, 1.4), out = 1.2 / (d + 0.25);
+      const p = V3(t.x + pz * FACE.x, BORE + py, pz * FACE.z);
+      const v = V3((0.5 + e) * 12 * Math.exp(-d * 2.2) + rnd(0, 1), dy / (d || 1) * out + rnd(0, 1), dz / (d || 1) * out * FACE.z);
+      shards.add(p, v, V3(s, s * rnd(0.6, 1.5), 0.01), any(C.glass), 16);
+    }
+    for (let i = 0; i < K(140); i++) {
+      drops.add(t.x, hy, hz, (0.5 + e) * rnd(5, 18), rnd(-2, 3), rnd(-3, 3), C.glint, { life: rnd(0.8, 1.8), s0: rnd(0.012, 0.03), g: 1, drag: 0.4 });
+    }
+  },
+  ice(t, e, hy, hz) {
+    for (let i = 0; i < K(30); i++) {
+      const p = V3(t.x + rnd(-0.4, 0.4), BORE + rnd(-0.4, 0.4), rnd(-0.4, 0.4));
+      const ax = V3(0, p.y - hy, p.z - hz), d = ax.length();
+      const v = V3((0.5 + e) * rnd(3, 11) * Math.exp(-d * 1.5), 0, 0).addScaledVector(ax.normalize(), rnd(1.5, 5)).add(V3(0, rnd(0, 1.5), 0));
+      const s = rnd(0.07, 0.26);
+      ice.add(p, v, V3(s * rnd(0.7, 1.3), s * rnd(0.7, 1.3), s * rnd(0.7, 1.3)), any(C.ice));
+    }
+    for (let i = 0; i < K(240); i++) {
+      drops.add(t.x + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz + rnd(-0.2, 0.2), (0.5 + e) * rnd(2, 10), rnd(-2, 2.5), rnd(-2.5, 2.5), C.frost, { life: rnd(0.8, 1.8), s0: rnd(0.015, 0.04), g: 0.4, drag: 2 });
+    }
+    if (dustOn) for (let i = 0; i < 12; i++) {
+      dust.add(t.x + rnd(0, 0.5), hy + rnd(-0.3, 0.3), hz + rnd(-0.3, 0.3), (0.5 + e) * rnd(1, 4), rnd(-0.3, 0.6), rnd(-1, 1), C.frost, { life: rnd(1.8, 3), s0: 0.2, s1: rnd(0.8, 1.3), a0: 0.35, g: -0.01, drag: 1.5 });
+    }
+  },
+  water(t, e, hy, hz) {
+    for (let i = 0; i < K(22); i++) {
+      const a = rnd(0, TAU), y = rnd(-0.55, 0.55);
+      const out = V3(Math.cos(a), 0, Math.sin(a));
+      const s = rnd(0.1, 0.26);
+      shards.add(V3(t.x + out.x * 0.45, BORE + y, out.z * 0.45), out.clone().multiplyScalar(rnd(1, 3)).add(V3((0.5 + e) * rnd(1, 5), rnd(0, 1.5), 0)), V3(s, s * rnd(0.7, 1.4), 0.01), any(C.spray), 10);
+    }
+    // The water leaves as a radial sheet, with a jet down the slug's path.
+    for (let i = 0; i < K(1100); i++) {
+      const jet = Math.random() < 0.25;
+      const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * 0.42, y = rnd(-0.5, 0.36);
+      const x = jet ? t.x : t.x + Math.cos(a) * r, z = jet ? hz : Math.sin(a) * r, py = jet ? hy : BORE + y;
+      const sp = jet ? 0 : rnd(1.5, 4.5);
+      const vx = (0.5 + e) * (jet ? rnd(8, 20) : rnd(1.5, 8)) + Math.cos(a) * sp;
+      drops.add(x, py, z, vx, rnd(-0.5, 2.2) + (jet ? rnd(-1, 1) : 0), Math.sin(a) * sp + (jet ? rnd(-1, 1) : 0), any(C.spray),
+        { life: rnd(1.5, 3), s0: rnd(0.02, 0.05), g: 1, drag: 0.25, stain: Math.random() < 0.12 ? 1 : 0 });
+    }
+    if (dustOn) for (let i = 0; i < 10; i++) {
+      dust.add(t.x + rnd(0, 0.6), hy, hz, (0.5 + e) * rnd(1, 5), rnd(0, 0.8), rnd(-1, 1), C.spray[2], { life: rnd(1.2, 2.2), s0: 0.2, s1: 1, a0: 0.25, g: -0.01, drag: 1.4 });
+    }
+  },
+  melon(t, e, hy, hz) {
+    // A melon bursts all round, not only down the lane.
+    const burst = (n, cols, sz, set) => {
+      for (let i = 0; i < K(n); i++) {
+        const dir = V3(rnd(-1, 1), rnd(-0.6, 1), rnd(-1, 1)).normalize();
+        const s = rnd(...sz);
+        set.add(V3(t.x, BORE, 0).addScaledVector(dir, 0.3), dir.multiplyScalar(rnd(2, 6)).add(V3((0.5 + e) * rnd(2, 8), 0, 0)), V3(s, s * rnd(0.5, 1), s * rnd(0.8, 1.3)), any(cols));
+      }
+    };
+    burst(22, C.rind, [0.06, 0.16], rubble);
+    burst(16, C.flesh, [0.04, 0.1], rubble);
+    for (let i = 0; i < K(420); i++) {
+      const dir = V3(rnd(-1, 1), rnd(-0.5, 1), rnd(-1, 1)).normalize().multiplyScalar(rnd(1.5, 6.5));
+      const seed = Math.random() < 0.1;
+      drops.add(t.x, BORE + rnd(-0.2, 0.2), rnd(-0.2, 0.2), dir.x + (0.5 + e) * rnd(1, 9), dir.y, dir.z, seed ? C.seed : any(C.flesh),
+        { life: rnd(1.4, 2.8), s0: seed ? 0.02 : rnd(0.025, 0.055), g: 1, drag: 0.3, stain: !seed && Math.random() < 0.18 ? 2 : 0 });
+    }
+  },
+  concrete(t, e, hy, hz) {
+    // Concrete is heavy: its chunks fall short and its dust hangs.
+    for (let i = 0; i < K(28); i++) {
+      const s = rnd(0.07, 0.3);
+      const p = V3(t.x + rnd(-0.25, 0.25), BORE + rnd(-0.4, 0.4), rnd(-0.4, 0.4));
+      rubble.add(p, V3((0.5 + e) * rnd(1.2, 5), rnd(0, 2.5), rnd(-2, 2)).addScaledVector(V3(0, p.y - hy, p.z - hz), 3), V3(s, s * rnd(0.6, 1), s * rnd(0.7, 1.2)), any(C.rock), 8);
+    }
+    for (let i = 0; i < K(220); i++) {
+      drops.add(t.x + rnd(0, 0.25), hy, hz, (0.5 + e) * rnd(3, 11), rnd(-1.5, 2.5), rnd(-2, 2), C.grit, { life: rnd(0.8, 1.6), s0: rnd(0.012, 0.03), g: 1, drag: 0.6 });
+    }
+    if (dustOn) for (let i = 0; i < 28; i++) {
+      dust.add(t.x + rnd(-0.2, 0.6), hy + rnd(-0.3, 0.3), hz + rnd(-0.3, 0.3), (0.5 + e) * rnd(0.6, 4.5), rnd(-0.2, 0.8), rnd(-1.2, 1.2), C.cloud,
+        { life: rnd(2.5, 4), s0: 0.25, s1: rnd(1.2, 1.9), a0: 0.42, g: -0.015, drag: 1.6 });
+    }
+  },
+  steel(t, e, hy, hz) {
+    // The slug punches through and the plate stays: a hot hole, petals on the exit side.
+    t.state = 'pierced';
+    const plate = t.body.children[0], lz = hz / FACE.z, ly = hy - BORE;
+    for (const side of [1, -1]) {
+      const m = new THREE.Mesh(new THREE.CircleGeometry(0.05, 18).rotateY(side * Math.PI / 2), new THREE.MeshBasicMaterial({ color: HOT.clone(), toneMapped: false }));
+      m.position.set(side * 0.032, ly, lz);
+      plate.add(m);
+      glows.push({ m, t: 0, tau: 1.1, row: true });
+    }
+    const pos = [];
+    for (let k = 0; k < 7; k++) {
+      const a0 = k / 7 * TAU, a1 = (k + 1) / 7 * TAU, am = (a0 + a1) / 2;
+      pos.push(0.03, ly + Math.sin(a0) * 0.05, lz + Math.cos(a0) * 0.05,
+        0.03, ly + Math.sin(a1) * 0.05, lz + Math.cos(a1) * 0.05,
+        0.11, ly + Math.sin(am) * 0.1, lz + Math.cos(am) * 0.1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    plate.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col(0.6, 0.02, 60), roughness: 0.3, metalness: 0.9, side: THREE.DoubleSide, emissive: col(0.5, 0.15, 45), emissiveIntensity: 0.6 })));
+    for (let i = 0; i < K(10); i++) {
+      const s = rnd(0.02, 0.06);
+      rubble.add(V3(t.x + 0.1, hy, hz), V3((0.5 + e) * rnd(5, 14), rnd(-1, 2), rnd(-1.5, 1.5)), V3(s, s, s * 0.4), C.steel, 20);
+    }
+    for (let i = 0; i < K(70); i++) {
+      drops.add(t.x + 0.05, hy, hz, (0.5 + e) * rnd(4, 16), rnd(-1, 3), rnd(-2.5, 2.5), C.hot, { life: rnd(0.3, 0.8), s0: rnd(0.012, 0.025), g: 1, drag: 0.5 });
+    }
+  },
+};
 
 /* ---------- the gun state ---------- */
 // empty, loading, loaded, locking, locked, charging, fired, venting.
@@ -749,7 +924,7 @@ function placeGun() {
 /* ---------- the shot ---------- */
 // Phases: idle, flight, hold, snap, after, refill.
 const shot = { phase: 'idle', x: TRAY_X, events: [], next: 0, stopX: BACK_X, hold: 0, after: 0, aim: new THREE.Vector2() };
-let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false;
+let timeScale = 1, flashT = 1, camBlend = 0, fadeT = 0, frozen = false, qaAt = null;
 const knocked = [];
 function startCharge() {
   if (gunState.s !== 'locked') { refuse(gunState.s === 'empty' || gunState.s === 'loading' ? 0 : 1); return; }
@@ -789,9 +964,8 @@ const aimAt = x => clamp((x - MUZZLE) / 20);
 function hitEvent(ev) {
   const hy = BORE + shot.aim.y * aimAt(ev.x), hz = shot.aim.x * aimAt(ev.x);
   if (ev.kind === 'burst') {
-    ev.t.state = 'gone';
-    ev.t.body.visible = false;
-    burst(ev.t, ev.e, hy, hz);
+    if (ev.t.kind !== 'steel') { ev.t.state = 'gone'; ev.t.body.visible = false; }
+    HIT[ev.t.kind](ev.t, ev.e, hy, hz);
   } else if (ev.kind === 'stop') {
     // The stopped slug knocks its target off the stand.
     const t = ev.t;
@@ -826,26 +1000,29 @@ function refill() {
   fadeT = 0;
   newRow(true);
   knocked.length = 0;
+  // Holes go with their plates.
+  for (let i = glows.length; i--;) if (glows[i].row) glows.splice(i, 1);
   wake();
 }
-function clearBits() { bits.length = 0; bitMesh.count = 0; }
 // QA: fire at a set charge, and freeze the sim clock for stills.
 window.__qa = {
   ready() { gunState.s = 'locked'; gunState.lever = 1; placeGun(); wake(); },
   fire(c = 1) { this.ready(); gunState.s = 'charging'; gunState.held = 1; gunState.charge = c; fire(); },
   freeze(on = true) { frozen = on; wake(); },
+  // Freeze when the slug passes x, or t seconds after the snap.
+  at(x = null, t = null) { qaAt = { x, t }; },
   state: () => ({ gun: gunState.s, rack: gunState.rack, shot: shot.phase }),
+  row(kind) { clearDebris(); clearRow(); SLOTS.forEach(x => row.push(makeTarget(kind, x))); shot.phase = 'idle'; wake(); },
 };
 act.load = load;
 act.lock = lock;
 act.down = startCharge;
 act.up = release;
-act.shuffle = () => { if (shot.phase === 'idle' || shot.phase === 'after' || shot.phase === 'refill') { refill(); clearBits(); } };
+act.shuffle = () => { if (shot.phase === 'idle' || shot.phase === 'after' || shot.phase === 'refill') { refill(); clearDebris(); } };
 act.reset = () => {
   for (const d of glows) { scene.remove(d.m); d.m.material.dispose(); }
   glows.length = 0;
-  clearBits();
-  steam.clear();
+  clearDebris();
   slug.visible = false; timeScale = 1; camBlend = 0;
   if (shot.phase === 'flight' || shot.phase === 'hold') shot.phase = 'after';
   refill();
@@ -887,6 +1064,7 @@ function step(dt) {
     shot.x += SPEED * h;
     while (shot.next < shot.events.length && shot.x >= shot.events[shot.next].x) hitEvent(shot.events[shot.next++]);
     if (shot.x >= shot.stopX) { shot.x = shot.stopX; shot.phase = 'hold'; shot.hold = 0; }
+    if (qaAt?.x != null && shot.x >= qaAt.x) { frozen = true; qaAt = null; }
   } else if (shot.phase === 'hold') {
     if (!frozen) shot.hold += dt;
     if (shot.hold > 0.35) shot.phase = 'snap';
@@ -894,7 +1072,8 @@ function step(dt) {
     shot.phase = 'after'; shot.after = 0;
     if (G.s === 'fired') unlock();
   } else if (shot.phase === 'after') {
-    shot.after += dt;
+    if (qaAt?.t != null && shot.after >= qaAt.t) { frozen = true; qaAt = null; }
+    if (!frozen) shot.after += dt;
     if (shot.after > REFILL) refill();
   }
   const k = aimAt(shot.x);
@@ -919,12 +1098,23 @@ function step(dt) {
     // Old debris shrinks away while the new row lands.
     fadeT += dt;
     const f = clamp(1 - fadeT / 0.4);
-    for (const b of bits) { b.fade = f; b.rest = false; b.v.set(0, 0, 0); }
-    if (f <= 0) clearBits();
+    for (const s of sets) s.fade = f;
+    for (const s of puffSets) s.mat.uniforms.uFade.value = f;
+    stains.mesh.material.opacity = 0.7 * f;
+    if (f <= 0) {
+      clearDebris();
+      for (const s of sets) s.fade = 1;
+      for (const s of puffSets) s.mat.uniforms.uFade.value = 1;
+      stains.mesh.material.opacity = 0.7;
+    }
     if (!dropping && f <= 0) shot.phase = 'idle';
   }
-  const moving = stepBits(shot.phase === 'refill' ? 0 : h) && shot.phase !== 'refill';
-  const steaming = steam.step(h);
+  const hs = shot.phase === 'refill' ? 0 : h;
+  let moving = false;
+  for (const s of sets) moving = s.step(hs) || moving;
+  let steaming = false;
+  for (const s of puffSets) steaming = s.step(hs) || steaming;
+  if (shot.phase === 'refill') moving = steaming = false;
   const tumbling = stepKnocked(h);
   const warm = coolGlows(dt);
 
@@ -956,12 +1146,12 @@ function frameShot() {
   camera.far = d + 1000;
   camera.updateProjectionMatrix();
   const scale = size.h * size.dpr / (2 * Math.tan(camera.fov * Math.PI / 360));
-  steam.mat.uniforms.uScale.value = scale;
+  for (const s of puffSets) s.mat.uniforms.uScale.value = scale;
 }
 function placeCamera() {
   const x = shot.x;
-  camPos.set(lerp(fixedPos.x, x + 1.2, camBlend), lerp(fixedPos.y, BORE + 1.6, camBlend), lerp(fixedPos.z, 13, camBlend));
-  camLook.set(lerp(fixedLook.x, x + 3.2, camBlend), lerp(fixedLook.y, BORE, camBlend), lerp(fixedLook.z, 0, camBlend));
+  camPos.set(lerp(fixedPos.x, x + 0.4, camBlend), lerp(fixedPos.y, BORE + 1.6, camBlend), lerp(fixedPos.z, 13, camBlend));
+  camLook.set(lerp(fixedLook.x, x + 1.4, camBlend), lerp(fixedLook.y, BORE, camBlend), lerp(fixedLook.z, 0, camBlend));
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 }

@@ -28,5 +28,5 @@ Reopened 2026-11-10. Tom saw the Railgun clash and named this toy Phaeton: a sep
 Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane, lever, capacitors, lamps), firing sideways. Stage on a plinth. Other modes later.
 
 - [x] Diorama blockout: slab, gun machines, load, lock, charge, fire, vent, track camera
-- [ ] Task 2: a hit per material
+- [x] Task 2: a hit per material
 - [ ] Task 3: modes (Tom names them)

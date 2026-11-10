@@ -90,7 +90,8 @@ Six targets stand down the lane on thin stands. A steel backstop closes the lane
 
 ### Task 2: Targets
 
-- [ ] A hit for each material: shards, chunks, spray, pulp, petals, dust. Stains on the salt.
+- [x] A hit for each material: shards, chunks, spray, pulp, petals, dust. Stains on the salt.
+- [ ] Polish: ice reads grey, not clear; the steel petals face away from the camera.
 
 ### Task 3: Modes
 
