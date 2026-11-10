@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T19:10:19Z
+updated_at: 2026-11-10T19:13:08Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -132,3 +132,17 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 - [x] Fix: with no rock in the sky the bolt flies along the bore
 
 - [x] Fix: the sky glow fades with the big flash, gone by about 15 s; the blast lights the trail softly, so its creases show
+
+
+## Queue from Tom (2026-11-10), in order
+
+- [x] Night flash: the foreground stays a stark silhouette against the lit sky
+- [ ] 2. Smoke shadows (in progress)
+- [ ] Remove the light shafts altogether
+- [ ] Light the comet's main smoke column properly again under the blast
+- [ ] Remove the small ejecta that have no full trail
+- [ ] The big trailed ejecta fall a little faster
+- [ ] Rework the charge dust at the base: it still slows the whole toy
+- [ ] Post pass: FXAA, AO, better bloom; every pass scales with the quality ladder
+- [ ] Quality ladder: render at a lower % of full resolution per step, one pattern across all passes
+- [ ] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9

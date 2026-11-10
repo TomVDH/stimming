@@ -542,7 +542,8 @@ float k2hazeAmount(vec3 P) {
   return 1.0 - exp(-dist * uHaze * max(avg, 0.0));
 }
 // The haze takes the horizon sky colour without the sun's disc.
-vec3 k2hazeColor(vec3 dir) { return k2skyS(normalize(vec3(dir.x, 0.02, dir.z)), 0.0) * 0.9; }
+// At night the hit's glow stays out of the near haze, so the plain stays dark.
+vec3 k2hazeColor(vec3 dir) { vec3 d = normalize(vec3(dir.x, 0.02, dir.z)); return max(k2skyS(d, 0.0) - hitGlow(d) * 0.85 * uStars, 0.0) * 0.9; }
 vec3 k2haze(vec3 c, vec3 P) {
   return mix(c, k2hazeColor(normalize(P - cameraPosition)), k2hazeAmount(P));
 }`;
@@ -600,7 +601,8 @@ float blastAt(vec3 P) {
   // The same envelope as the big flash: hitFlash on the CPU.
   return tl < 0.0 ? 0.0 : uBk * (exp(-tl / 0.4) + 0.3 * exp(-tl / 5.0)) * (1.0 - smoothstep(8.0, 18.0, tl));
 }
-vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * blastAt(P) * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8); }
+// At night the near world stays a dark silhouette against the lit sky.
+vec3 blastLight(vec3 P) { vec3 b = uBlast.xyz - P; return uAstC * blastAt(P) * 1.5 * 4.0e8 / (dot(b, b) + 4.0e8) * mix(1.0, 0.18, uStars); }
 // The rock lights what faces it: faintly by day, clearly at night.
 // uStars is 0 by day and 1 once the sun is 10 degrees under.
 float nightK() { return uStars; }
@@ -2625,7 +2627,9 @@ function aimAst() {
   tmpA.divideScalar(dist);
   const near = 0.35 + 0.65 * ast.s;
   ast.th = 2 * Math.atan(ast.R / dist);
-  U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash);
+  // At night the hit's flash lights the sky, not the near world: the gun stays a silhouette.
+  const nk = U.uStars.value;
+  U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
