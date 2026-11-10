@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-10T18:48:12Z
+updated_at: 2026-11-10T18:51:52Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -110,7 +110,7 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 ## Cinematic pass (2026-11-10)
 
 - [x] 4. The sky answers the blast: the light sweeps out at 60 km/s, a 15 s amber afterglow, a slow heave bows and clears the cirrus, the plain takes the blast light
-- [ ] 1. Light shafts
+- [x] 1. Light shafts: the fireball throws shafts through the soot for about 20 s; the gun's shadow cuts the dust (the sun stays behind the camera, so no sun shafts in frame)
 - [ ] 2. Smoke shadows
 - [ ] 3. Air, distance and dust
 - [ ] 6. Lens: anamorphic streak, halation, dirty lens
