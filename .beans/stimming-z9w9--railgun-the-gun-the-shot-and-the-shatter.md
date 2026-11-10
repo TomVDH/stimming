@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-10T09:08:22Z
-updated_at: 2026-11-10T10:21:06Z
+updated_at: 2026-11-10T10:33:17Z
 parent: stimming-f793
 ---
 
@@ -25,4 +25,7 @@ Out of scope: sky, cirrus, clouds, sun, time of day (another session on main). K
 - [x] The chorus: an original choir swell that locks into one chord at full charge (Tom to listen)
 - [x] QA in the browser pane: clean console, 30 fps through charge and shot (synchronous frame time, p90 under 24 ms at 1280x800, 375x812, 812x375 and rung 3; 46 probe checks pass; reduced motion checked in code)
 - [ ] Tom signs off on the stills
-- [ ] PR to main
+- [x] PR to main (TomVDH/stimming#37)
+- [ ] Follow-up: orchestral choir rebuild (sections, strings, brass at the apex, hall; foul within 3 s of the over-hold)
+- [ ] Follow-up: PBR gun and Pixar-like dunes with fresnel (Tom, 03:26)
+- [ ] Decision for Tom: ship railgun/shot.mp3 (game-audio render; push blocked, kept local)
