@@ -130,7 +130,7 @@ const CARD = {
 };
 
 // Starts the page. mods: the place modules, in card order.
-// onCard(i, card) fires after each switch. Returns { cards, pick }.
+// onCard(i, card) fires after each switch. Returns { cards, pick, resize, still }.
 export function start(stage, mods, { onCard = () => {} } = {}) {
   const canvas = document.createElement('canvas');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -725,5 +725,6 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
   onReducedChange(v => { reduce = v; kick(); });
   new ResizeObserver(resize).observe(stage);
   whenVisible(stage, v => { visible = v; if (v) kick(); else { cancelAnimationFrame(raf); raf = 0; last = 0; } });
-  return { cards, pick };
+  // still(t): draws one frame at time t, for captures.
+  return { cards, pick, resize, still(t) { T = t; draw(); } };
 }

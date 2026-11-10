@@ -17,6 +17,7 @@ export const COL = {
   bulbWarm: [0.94, 0.1, 85], bulbPink: [0.82, 0.14, 0], bulbTeal: [0.84, 0.1, 190],
   garage: [0.74, 0.035, 150], cedar: [0.5, 0.075, 52], lane: [0.45, 0.014, 80], kale: [0.5, 0.09, 168], puddle: [0.52, 0.06, 252],
   raccoon: [0.56, 0.012, 270], ball: [0.66, 0.17, 50], white: [0.93, 0.01, 100],
+  mapleRed: [0.64, 0.17, 42], linden: [0.74, 0.14, 112], oak: [0.55, 0.12, 140],
   binGreen: [0.5, 0.12, 150], binGrey: [0.34, 0.012, 260], binBlue: [0.52, 0.14, 255], crow: [0.17, 0.02, 280],
 };
 
@@ -170,7 +171,7 @@ export const PARTS = [
 
   // Street: a cherry tree in bloom, a power pole and its wires.
   cyl([-5, 1.75, 6.1], 0.17, 3.2, 'trunk', STREET, { k: 'trunk' }),
-  blob([-5, 4.9, 6.1], 1.6, 'blossom', STREET, { k: 'crown' }), blob([-6.1, 4.2, 6], 1.1, 'blossom2', STREET, { k: 'crown' }),
+  blob([-5, 4.9, 6.1], 1.6, 'blossom', STREET, { k: 'crown', pivot: [-5, 0.15, 6.1] }), blob([-6.1, 4.2, 6], 1.1, 'blossom2', STREET, { k: 'crown' }),
   blob([-3.95, 4.3, 6.3], 1.15, 'blossom2', STREET, { k: 'crown' }), blob([-4.7, 6, 6], 1, 'blossom', STREET, { k: 'crown' }),
   blob([-5.8, 5.4, 6.3], 0.85, 'blossom', STREET, { k: 'crown' }),
   cyl([3.9, 4.65, 6.2], 0.13, 9, 'wood', STREET, { k: 'pole' }),

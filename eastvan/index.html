@@ -24,6 +24,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   text-shadow: 0 1px 6px oklch(0.1 0.02 280 / 0.7);
 }
 .read { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.credit { position: fixed; right: 14px; top: calc(16px + env(safe-area-inset-top, 0px)); max-width: 46vw; text-align: right; font-size: 11px; line-height: 1.3; color: inherit; opacity: 0.6; }
+.credit:hover, .credit:focus-visible { opacity: 1; }
+[hidden] { display: none !important; }
 .keys kbd { font: inherit; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: oklch(0.2 0.02 280 / 0.7); margin-left: 8px; }
 @media (max-width: 640px) { .keys { display: none; } }
 </style>
@@ -47,11 +50,13 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   <div class="seg" id="stops" role="group" aria-label="Place">
     <button type="button" data-v="house">House</button>
     <button type="button" data-v="alley">Alley</button>
+    <button type="button" data-v="drive">Drive</button>
   </div>
 </div>
+<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver</a>
 <div class="foot">
   <span class="read" id="read"></span>
-  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1 2</kbd> place</span>
+  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1 2 3</kbd> place</span>
 </div>
 <script type="module">
 // East Van: the Toy-town house lot. town.js builds it; lens.js draws it.
@@ -59,6 +64,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 import * as THREE from 'three';
 import { pixelRatio, whenVisible, css } from '../shared/stim.js';
 import { buildTown } from './town.js';
+import * as lot from './lot.js';
+import * as alley from './alley.js';
+import { buildLife } from './life.js';
 import { createLens } from './lens.js';
 
 const canvas = document.getElementById('c'), read = document.getElementById('read');
@@ -87,21 +95,50 @@ function skyTexture(v0, v1) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-const town = buildTown(skyTexture(0.2, 0.8)), lens = createLens(renderer);
+// Two dioramas: the house lot with its alley, and the Drive.
+// The Drive loads on the first visit: it reads the baked city data.
+const sky = skyTexture(0.2, 0.8), lens = createLens(renderer);
+const PLACES = {
+  home: () => buildTown(sky, [lot, alley], buildLife),
+  drive: async () => buildTown(sky, [await (await import('./drive.js')).loadDrive()]),
+};
+const towns = {};
+let town = null, place = '', stop = null;
 const cam = new THREE.PerspectiveCamera(22, 1, 5, 160);
 const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 };
 // A stop is a place the camera rests on: a target and a side to look from.
-const STOPS = { house: { at: [0, 2.6, 0], yaw: 0.5 }, alley: { at: [0, 2.2, -20.5], yaw: Math.PI + 0.55 } };
+// w and h are the metres the frame must hold. band and range set the depth blur.
+const STOPS = {
+  // tall is the width to hold on an upright screen.
+  house: { place: 'home', at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 19, h: 19, band: 5, range: 14 },
+  alley: { place: 'home', at: [0, 2.2, -20.5], yaw: Math.PI + 0.55, w: 27, tall: 19, h: 19, band: 5, range: 14 },
+  drive: { place: 'drive', at: [0, 4, 1], yaw: 0.42, w: 80, tall: 74, h: 42, band: 16, range: 46 },
+};
 const TARGET = new THREE.Vector3(0, 2.6, 0), goal = new THREE.Vector3(0, 2.6, 0);
-function setStop(name, snap) {
+function refit() {
+  if (!stop) return;
+  const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight), t = Math.tan(cam.fov * Math.PI / 360);
+  view.fit = Math.max(stop.h / (2 * t), (w < h ? stop.tall : stop.w) / (2 * t * (w / h)));
+}
+async function setStop(name, snap) {
   const s = STOPS[name];
+  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(b.dataset.v === name));
+  if (s.place !== place) {
+    // Another diorama: build it once, then open on it with no travel.
+    towns[s.place] ||= await PLACES[s.place]();
+    town = towns[s.place]; place = s.place; snap = true;
+  }
+  stop = s;
+  // The Drive is built from city data: its licence asks for this credit.
+  document.getElementById('credit').hidden = s.place !== 'drive';
+  refit();
+  lens.uniforms.lens.uBand.value = s.band; lens.uniforms.lens.uRange.value = s.range;
   goal.set(...s.at);
   // Turn the short way round to the stop's side.
   view.ty += Math.atan2(Math.sin(s.yaw - view.ty), Math.cos(s.yaw - view.ty));
   view.tp = 0.3; view.tz = 1;
   // The first stop has no travel: the page opens on it.
   if (snap) { view.yaw = view.ty; TARGET.copy(goal); }
-  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(b.dataset.v === name));
   wake();
 }
 function resize() {
@@ -110,10 +147,8 @@ function resize() {
   renderer.setSize(w, h, false);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   lens.resize(size.x, size.y, renderer.getPixelRatio());
-  // The plinth must fit the frame in both directions.
-  const t = Math.tan(cam.fov * Math.PI / 360);
-  view.fit = Math.max(19 / (2 * t), (w < h ? 19 : 27) / (2 * t * (w / h)));
   cam.aspect = w / h;
+  refit();
 }
 function aim() {
   view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
@@ -121,7 +156,8 @@ function aim() {
   const d = view.fit * view.zoom, cp = Math.cos(view.pitch);
   cam.position.set(TARGET.x + Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, TARGET.z + Math.cos(view.yaw) * cp * d);
   cam.lookAt(TARGET);
-  cam.near = Math.max(3, d - 45); cam.far = d + 60;
+  const span = stop ? stop.w * 0.9 : 24;
+  cam.near = Math.max(3, d - span - 20); cam.far = d + span + 40;
   cam.updateProjectionMatrix();
   cam.updateMatrixWorld();
   return d;
@@ -132,7 +168,7 @@ const v = new THREE.Vector3();
 function pokeAt(x, y) {
   const r = canvas.getBoundingClientRect();
   let best = null, bestD = Infinity;
-  for (const q of town.pokes) {
+  for (const q of town ? town.pokes : []) {
     v.copy(q.pos).applyMatrix4(cam.matrixWorldInverse);
     const reach = q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
     v.applyMatrix4(cam.projectionMatrix);
@@ -166,19 +202,22 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view
 document.getElementById('stops').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setStop(b.dataset.v); });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === '1') setStop('house'); else if (e.key === '2') setStop('alley');
+  if (e.key === '1') setStop('house'); else if (e.key === '2') setStop('alley'); else if (e.key === '3') setStop('drive');
 });
 
 /* ---------- frame loop ---------- */
 let raf = 0, visible = true, lastInput = performance.now(), last = 0, fps = 60, readAt = 0;
 function frame(now) {
   raf = 0;
-  const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
+  // A wake can stamp a time just after this frame's, so dt keeps a floor.
+  const dt = Math.min(0.1, Math.max(1 / 240, (now - last) / 1000 || 0.016));
   last = now;
   fps = lerp(fps, 1 / dt, 0.08);
   const d = aim();
-  town.update(now / 1000, dt);
-  lens.render(town.scene, cam, d, town.noInk);
+  if (town) {
+    town.update(now / 1000, dt);
+    lens.render(town.scene, cam, d, town.noInk);
+  }
   if (now - readAt > 300) {
     readAt = now;
     read.textContent = `${Math.round(fps)} fps · ${renderer.info.render.calls} calls · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris`;
@@ -194,7 +233,7 @@ whenVisible(canvas, on => { visible = on; if (on) wake(); });
 // The pane can open at zero size, so the canvas itself reports its size.
 new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
 resize();
-setStop(new URLSearchParams(location.search).get('at') === 'alley' ? 'alley' : 'house', true);
+setStop(STOPS[new URLSearchParams(location.search).get('at')] ? new URLSearchParams(location.search).get('at') : 'house', true);
 </script>
 </body>
 </html>

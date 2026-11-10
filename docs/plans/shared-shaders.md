@@ -41,6 +41,8 @@ env.touch();                  // after a change
 - `detail.js` sets the pixel ratio and each bundle's budget; `skyAt(hour)` and `weather(k)` drive the values.
 - Proof: the lab drew the same eight frozen frames, bit for bit, before and after it moved onto the runner.
 - Limits: raw WebGL2 only; one key light; the scene is one full-screen pass. A three.js toy uses the bundles one by one.
+- First toy on it: Fog horn (`foghorn/`, bean `stimming-vmu3`), a Lab toy. Its page is the scene, the ship's path, the sound and the bar; the runner does the rest.
+- `state.frame = false` takes away the pane's foggy rim, for a view with no window frame in it.
 
 ## The contract
 

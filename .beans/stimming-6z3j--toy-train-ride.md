@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T10:52:19Z
+updated_at: 2026-11-10T11:06:33Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -279,3 +279,12 @@ Open from the critics:
 - [x] Sound body: the bus EQ now lifts the lows (+4 dB under 180 Hz), dips 2.8 kHz and rolls off the top; level 0.42 to 0.32. The motor band is lower and wider (120 to 500 Hz) and comes through plainly only with the compartment door open
 - [x] A click on the view leans to the glass or sits back
 - [x] A passing train's lit saloon washes the wall and the reveal while it is alongside
+
+- [x] Platforms stand beyond the second track (the old ones sat on it): a gravel apron with grassed banks carries each; canopy lights, signs, masts and fence move with it
+- [x] Rural halt redone: a short, narrow platform, five warm masts, a glass shelter with a bench and a yellow departures board, a clock on a post
+- [x] Station clock with the real time; the red seconds hand waits at the top for the minute
+- [x] Town stations: a two-floor station house with arched ground floor openings behind the platform (in place of the island platform)
+- [x] Zürich HB: the five tracks join the line one by one from 1.5 km; six trains stand in the yard and one shunts; the land keeps below the deck
+- [x] Line button (L): a strip with the route, a tick per station and the train; a drag jumps along the line; with ?dev it holds the top view
+- [x] Main shelf as beta, No. 41 (Tom, 2026-11-10): menu tile moved, toys.json, AGENTS.md
+- [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat
