@@ -793,11 +793,51 @@ vec3 sunAt(float h) {
   return uSunC * exp(BETA_R * uAir * AIR_H * (1.0 - exp(-max(h, 0.0) / AIR_H)) * am * 0.4);
 }`;
 
+/* ---------- the ship's impacts: light on the horizon and the cloud bases ---------- */
+// uImp: each hulk's impact site and its flash level.
+// Only the sky dome and the clouds read it.
+// The plain and the gun stay dark at night.
+const IMP_U = {
+  uImp: { value: Array.from({ length: 5 }, () => new THREE.Vector4()) },
+  uImpC: { value: new THREE.Vector3(...linFit(0.86, 0.09, 55)) },
+};
+const IMP_GLSL = /* glsl */`
+uniform vec4 uImp[5];
+uniform vec3 uImpC;
+// A tight glow over each site and a wide band along the horizon.
+// The wide band reaches a phone's narrow frame.
+vec3 impSky(vec3 dir) {
+  float hl = length(dir.xz), s = 0.0;
+  if (hl < 1e-3) return vec3(0.0);
+  vec2 dh = dir.xz / hl;
+  float up = max(dir.y, 0.0);
+  for (int i = 0; i < 5; i++) {
+    float w = uImp[i].w;
+    if (w < 0.001) continue;
+    float az = acos(clamp(dot(dh, normalize(uImp[i].xz - cameraPosition.xz)), -1.0, 1.0));
+    s += w * (2.5 * exp(-az / 0.08) * exp(-up / 0.03) + 0.5 * exp(-az / 0.5) * exp(-up / 0.08));
+  }
+  // A bright day sky needs a stronger flash to show.
+  return uImpC * s * mix(3.0, 1.0, uStars) * smoothstep(-0.03, 0.0, dir.y);
+}
+// The flash lights cloud bases thirty kilometres round each site.
+// base: the height up the cloud, 0 at its foot, 1 at its top.
+vec3 impCloud(vec3 P, vec3 N, float base) {
+  float s = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float w = uImp[i].w;
+    if (w < 0.001) continue;
+    vec3 b = uImp[i].xyz - P;
+    s += w * 9.0e8 / (dot(b.xz, b.xz) + 9.0e8) * (0.4 + 0.6 * max(dot(N, normalize(b)), 0.0));
+  }
+  return uImpC * s * mix(5.0, 2.5, uStars) * (1.0 - smoothstep(0.0, 0.5, base));
+}`;
+
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
-  uniforms: U, side: THREE.BackSide, depthWrite: false,
+  uniforms: { ...U, ...IMP_U }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} void main() { gl_FragColor = vec4(k2sky(normalize(vP - cameraPosition)), 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} ${IMP_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(k2sky(d) + impSky(d), 1.0); }`,
 }));
 sky.renderOrder = -1;
 scene.add(sky);
@@ -991,7 +1031,7 @@ scene.add(far);
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 } };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, ...IMP_U };
 const CLOUD_FS = /* glsl */`precision highp sampler3D;
 uniform sampler3D uVol;
 varying vec2 vUv;
@@ -1002,6 +1042,7 @@ varying vec3 vP, vR, vF;
 flat varying vec4 vS;
 ${HEAD}
 ${AIR}
+${IMP_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
@@ -1152,6 +1193,8 @@ void main() {
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
+  // The ship's impacts light the cloud bases from beyond the horizon.
+  col += impCloud(P, N, X.y / H);
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -2189,23 +2232,29 @@ const trA = new THREE.Vector3(), trE = new THREE.Vector3();
 function placeTrain(i, a) {
   const tr = shipTrains[i];
   if (!tr) return;
-  const h = ship.hulks[i], m = shipMeshes[i], on = a && !a.landed ? a.entry : 0;
+  const h = ship.hulks[i], m = shipMeshes[i];
+  // A landed streak holds its landing pose.
+  // It lingers for LINGER seconds.
+  const tl = a && a.landed ? h.breakAt + h.fallT : simT, late = simT - tl;
+  const on = !a ? 0 : a.landed ? (late < LINGER ? 1 : 0) : a.entry;
   // Rungs 2 and 3 give the prow and the tower a ribbon.
   tr.cheap = !!tr.rib && rung >= 2;
   tr.m.visible = on > 0.01 && !tr.cheap;
   if (tr.rib) tr.rib.visible = on > 0.01 && tr.cheap;
   if (on <= 0.01) return;
-  const age = simT - h.breakAt, R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
+  const age = tl - h.breakAt, R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
   // The tail follows the last few seconds of the fall.
-  hulkPos(i, simT - clamp(age - VACUUM, 0.25, 8), trA).sub(m.position).normalize();
+  hulkPos(i, tl - clamp(age - VACUUM, 0.25, 8), trA).sub(m.position).normalize();
   const len = Math.min(STREAK_MAX, m.position.distanceTo(hulkPos(i, h.breakAt + VACUUM, trE))) + R;
+  // The fade runs from the ground up.
+  const fade = THREE.MathUtils.smootherstep(late, 0, LINGER);
   if (tr.cheap) {
     const u = tr.rib.material.uniforms;
     u.uP.value.copy(m.position); u.uAway.value.copy(trA);
     u.uSide.value.set(0, 1, 0).cross(trA);
     if (u.uSide.value.lengthSq() < 1e-6) u.uSide.value.set(1, 0, 0);
     u.uSide.value.normalize();
-    u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on;
+    u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on * (1 - fade);
     u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
     return;
   }
@@ -2216,8 +2265,11 @@ function placeTrain(i, a) {
   u.uSide.value.normalize();
   u.uUpv.value.crossVectors(u.uSide.value, trA);
   u.uAstRad.value = R; u.uLen.value = len; u.uTrail.value = on;
+  // The floor climbs from behind the head to the tail's end.
+  u.uLift.value.set(len * (1.25 * fade - 0.25), a.landed ? 1 : 0);
   // The fire builds as the hulk speeds up.
-  u.uBurn.value = on * (0.35 + 0.4 * THREE.MathUtils.smoothstep(a.f, 0.05, 0.5));
+  // It dies in a second or two after the landing.
+  u.uBurn.value = on * (0.35 + 0.4 * THREE.MathUtils.smoothstep(a.f, 0.05, 0.5)) * Math.exp(-late / 1.2);
   // The smoke holds still in the world as the hulk runs on.
   u.uFlow.value = len / (1.05 * R) + 0.012 * simT;
 }
@@ -2378,6 +2430,9 @@ function makeTrain(pu) {
   uniform vec3 uAstP, uAway, uSide, uUpv, uHot, uFireC, uEmberC, uSoot, uAsh;
   uniform float uAstRad, uLen, uK, uBurn, uTrail, uSolid, uTime, uFlow, uBreak, uCut, uX0, uSeg, uEatK, uJoin;
   uniform vec3 uDrift, uSwipe;
+  // uLift: a fade floor in metres along, and its weight.
+  // A landed hulk's streak fades from the ground up.
+  uniform vec2 uLift;
   uniform int uSteps, uLSteps;
   ${HEAD}
   ${AIR}
@@ -2405,6 +2460,7 @@ function makeTrain(pu) {
     float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * mix(1.0 - smoothstep(0.55, 1.0, x / uLen), 1.0, uJoin);
     // After the hit: the tail goes from its tip back, the head end softens.
     cov *= 1.0 - smoothstep(uCut - 0.25 * uLen, uCut, x);
+    cov *= mix(1.0, smoothstep(uLift.x, uLift.x + 0.25 * uLen, x), uLift.y);
     // The tail's end dissolves into the impact cloud.
     if (uEat.w > 0.0 && uEatK > 0.0) cov *= mix(1.0, smoothstep(0.2, 1.35, length(uAstP + q - uEat.xyz) / uEat.w), uEatK);
     cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
@@ -2636,7 +2692,7 @@ function makeFragTrail(own = false) {
       uAstP: { value: new THREE.Vector3() }, uAstRad: { value: 1000 }, uAway: { value: new THREE.Vector3(0, 1, 0) }, uSide: { value: new THREE.Vector3(1, 0, 0) }, uUpv: { value: new THREE.Vector3(0, 0, 1) },
       uBurn: { value: 0 }, uVol: PU.uVol, uLen: { value: 1000 }, uK: { value: 0.05 }, uTrail: { value: 0 }, uFlow: { value: 0 },
       // The blocker stops the sheath's glow inside the hulk.
-      uSolid: { value: 0.5 },
+      uSolid: { value: 0.5 }, uLift: { value: new THREE.Vector2() },
       uSteps: PU.uSteps, uLSteps: PU.uLSteps, uBreak: { value: 0 }, uEatK: { value: 0 }, uJoin: { value: 0 }, uCut: { value: 1e9 }, uDrift: { value: new THREE.Vector3() }, uX0: { value: 0 }, uSeg: { value: 0 }, uSwipe: { value: new THREE.Vector3() },
       uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: PU.uSoot, uAsh: PU.uAsh,
     };
@@ -3793,6 +3849,7 @@ function draw() {
   aimAst();
   // The ship follows the clock and the sun.
   if (tgtKind === 'ship') placeShip();
+  updateDomes();
   commitStars();
   updateDust();
   updateArcs();
@@ -3887,6 +3944,7 @@ function stepAst(dt) {
   if (tgtKind === 'ship') stepShip(ship, simT);
   stepShipFx(dt);
   stepHulks(dt);
+  stepImpacts();
   stepFrags();
   stepShards(dt);
   stepRain(dt);
@@ -5766,6 +5824,156 @@ fireball.material.depthTest = true;
 // The fire's pull-in, 0 to 1, as the fireball shader has it.
 const pullOf = a => THREE.MathUtils.smoothstep(a, 2.0, 5.5) - 0.35 * THREE.MathUtils.smoothstep(a, 7.0, 12.0);
 
+/* ---------- the hulks land: a flash, a dust dome, a late rumble ---------- */
+// A dome lives 60 s.
+// The next ship rises once the last dome is that old.
+const DOME_LIFE = 60;
+// A landed streak fades over 25 s.
+const LINGER = 25;
+// The dust drifts downwind, metres per second.
+const DOME_WIND = new THREE.Vector3(6, 0, 2);
+// uDm: age, size in metres, seed, flash level.
+// uDc: the dome's foot, carried by the wind.
+const domeVols = HULL.sections.map(() => makeVol(/* glsl */`
+// The domes take less of the haze, so they read at sixty kilometres.
+#define VHAZE 0.3
+// The dome shades itself in closed form.
+// It skips the march toward the sun.
+#define VSHADE
+uniform vec4 uDm;
+uniform vec3 uDc, uDustC, uImpC;
+// The dome climbs fast, then spreads as it settles.
+float dH(float a) { return uDm.y * (0.12 + 0.88 * (1.0 - exp(-a / 7.0))); }
+float dR(float a) { return uDm.y * 0.7 * (0.3 + 0.7 * (1.0 - exp(-a / 5.0))) * (1.0 + 0.35 * smoothstep(10.0, 60.0, a)); }
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  float a = uDm.x, S = uDm.y, Hd = dH(a), Rd = dR(a);
+  vec3 q = p - uDc;
+  float old = smoothstep(8.0, 50.0, a);
+  // The wind shears the top over.
+  q.x -= q.y * 0.25 * old;
+  // A round dome over a flat skirt.
+  float rd = length(vec3(q.x / Rd, q.y / Hd, q.z / Rd));
+  float rs = length(vec3(q.x / (1.7 * Rd), q.y / (0.22 * Hd), q.z / (1.7 * Rd)));
+  float r = min(rd, rs);
+  if (r > 1.4) return 0.0;
+  vec3 w = q / S * 2.2 + vec3(uDm.z, -a * 0.012, 0.0);
+  // A slow curl warp tears the dome into billows.
+  w += (texture(uVol, w * 0.5 + vec3(a * 0.004)).rgb - 0.5) * 0.35;
+  float n = 0.6 * texture(uVol, w * 0.45).r + 0.28 * texture(uVol, w * 1.1).r + 0.12 * texture(uVol, w * 2.6).g;
+  float shape = smoothstep(1.0, 0.8, r + (0.62 - n) * 1.2);
+  // The dust settles from the rim and its thin parts.
+  float er = smoothstep(20.0, 60.0, a);
+  float d = clamp((shape - er * (0.15 + 0.7 * (1.0 - n) + 0.3 * r)) / max(1.0 - 0.7 * er, 0.15), 0.0, 1.0);
+  // The flash glows in the dome's foot.
+  em = uImpC * uDm.w * exp(-max(q.y, 0.0) / (0.2 * Hd)) * d * 6.0 / S;
+  return d * 6.0 / S * (1.0 - smoothstep(40.0, 60.0, a));
+}
+vec3 alb(vec3 p) { return uDustC; }
+// The dome's foot sits in its own shade.
+// Its crown takes the sun.
+float vshade(vec3 p, float d) { return 0.8 * (1.0 - clamp((p.y - uDc.y) / dH(uDm.x), 0.0, 1.0)) + 0.1 * d * uDm.y; }
+// The flash lights the dust from its foot.
+vec3 vlight(vec3 p) { vec3 b = p - uDc; return uImpC * uDm.w * 4.0 * uDm.y * uDm.y / (dot(b, b) + uDm.y * uDm.y); }`, {
+  uDm: { value: new THREE.Vector4() }, uDc: { value: new THREE.Vector3() },
+  uDustC: { value: new THREE.Vector3(...linFit(0.72, 0.05, 65)) }, uImpC: IMP_U.uImpC,
+}));
+for (const m of domeVols) {
+  // Mesas stand in front of the domes.
+  m.material.depthTest = true;
+  // The far storm towers draw first; the near heaps draw after.
+  m.renderOrder = 1.8;
+}
+// shipDomes: { m, t0, i, P, S } for each landed hulk.
+// shipRumbles: the audio handles of the queued rumbles.
+const shipDomes = [], shipRumbles = [];
+// impK is a QA switch.
+// 1 draws the impacts in full.
+// 0 draws no impact.
+// 2 keeps the domes and drops the flash's sky and cloud light.
+let impK = 1;
+// The flash: a hard spike, then a glow for some seconds.
+// Reduced motion halves it.
+const flashOf = a => (a < 0 ? 0 : (reduced() ? 0.5 : 1) * (Math.exp(-a / 0.3) + 0.35 * Math.exp(-a / 2.5) + 0.06 * Math.exp(-a / 12)));
+const domeAlive = d => simT - d.t0 < DOME_LIFE;
+// Each landing gets a dome and a rumble.
+// A Reset's spin lets no new impact land.
+// The last dome settles; the next target comes.
+function stepImpacts() {
+  if (tgtKind !== 'ship' || spin || (fill && !fill.cut)) return;
+  ship.hulks.forEach((h, i) => {
+    if (h.landedAt === null || h.domed) return;
+    h.domed = true;
+    const m = shipMeshes[i];
+    shipDomes.push({ m: domeVols[i], t0: h.landedAt, i, P: hulkSite(i, new THREE.Vector3()), S: 3500 + 1.5 * m.geometry.boundingSphere.radius * SHIP_SCALE });
+    h.rumbleAt = h.landedAt + h.rumbleDelay;
+    // A rumble already past its time stays silent.
+    const wait = h.rumbleAt - simT;
+    const r = wait > -1 ? rumble(1, Math.max(0, wait)) : null;
+    if (r) shipRumbles.push(r);
+  });
+  if (ship.state === 'gone' && ship.hulks.every(h => simT - h.landedAt >= DOME_LIFE)) nextTarget();
+}
+// The domes and the flash lights follow the clock.
+function updateDomes() {
+  const L = IMP_U.uImp.value;
+  for (const v of L) v.w = 0;
+  for (const m of domeVols) m.visible = false;
+  for (const d of shipDomes) {
+    const a = simT - d.t0;
+    if (a < 0 || !domeAlive(d) || !impK) continue;
+    const f = flashOf(a);
+    L[d.i].set(d.P.x, d.P.y, d.P.z, impK === 2 ? 0 : f);
+    const u = d.m.material.uniforms, Hd = d.S * (0.12 + 0.88 * (1 - Math.exp(-a / 7))), Rd = d.S * 0.7 * (0.3 + 0.7 * (1 - Math.exp(-a / 5))) * (1 + 0.35 * THREE.MathUtils.smoothstep(a, 10, 60));
+    u.uDc.value.copy(d.P).addScaledVector(DOME_WIND, a);
+    u.uDm.value.set(a, d.S, 0.37 * d.i + 0.11, f);
+    // The bound holds the sheared dome and its skirt.
+    u.uC.value.copy(u.uDc.value);
+    u.uC.value.y += 0.35 * Hd;
+    u.uC.value.x += 0.15 * Hd;
+    u.uR.value = 1.25 * Math.hypot(1.75 * Rd, 0.8 * Hd);
+    // A far dome draws before the storm towers in front of it.
+    d.m.renderOrder = d.P.distanceTo(camera.position) > 70000 ? 1.4 : 1.8;
+    // The domes are small on screen.
+    // More steps hide the grain at little cost.
+    u.uVSteps.value = Math.min(48, Math.round(volSteps() * 1.5));
+    d.m.visible = true;
+  }
+}
+// Reset and the next ship clear the impacts.
+// Queued rumbles stop.
+// Domes and flashes go.
+function clearShip() {
+  for (const r of shipRumbles) {
+    for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+    pend.delete(r);
+  }
+  shipRumbles.length = 0;
+  shipDomes.length = 0;
+  for (const m of domeVols) m.visible = false;
+  for (const v of IMP_U.uImp.value) v.w = 0;
+}
+// True while a ship rumble waits or plays.
+function rumbleDue() {
+  if (!shipRumbles.length) return false;
+  const now = kit.ac?.currentTime ?? 0;
+  return shipRumbles.some(r => pend.has(r) && r.end >= now);
+}
+// The next target: a new ship from the horizon, or a stored Target change.
+function nextTarget() {
+  clearShip();
+  resetReady(false);
+  tgtKind = ui.setting('target').value;
+  if (tgtKind === 'ship') { newShip(0); return; }
+  shipOff();
+  respawn();
+  ast.s = 0.25;
+  PU.uTrail.value = 1;
+  placeAst();
+  stepAim(0, true);
+  prewarmEmbers();
+}
+
 /* ---------- volumes at 75% resolution ---------- */
 // The volumes march into a smaller target; one quad lays it over the frame.
 // Each group keeps its draw order, so the layering holds.
@@ -6340,7 +6548,9 @@ function stepShipFx(dt) {
 // True while the ship's hit effects need frames.
 function shipBusy() {
   if (tgtKind !== 'ship') return false;
-  if (ship.state === 'breakup' || ship.state === 'falling') return true;
+  // A gone ship waits for its last dome, then the next ship comes.
+  if (ship.state === 'breakup' || ship.state === 'falling' || ship.state === 'gone') return true;
+  if (rumbleDue()) return true;
   return !!ship.wound && simT - ship.wound.t0 < SMOULDER + 1;
 }
 // Sparks per second from each hulk's cracks in vacuum.
@@ -6774,6 +6984,7 @@ function stepFill(dt) {
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
   if (spin) return;
+  clearShip();
   cancelHold();
   wake();
   if (reduced()) { fill = { t: 0, calm: true }; return; }
@@ -7048,7 +7259,7 @@ onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.un
 /* ---------- sound scaffolding ---------- */
 const kit = audioKit({ keys: new Set([' ']) });
 const pend = new Set();
-function track(end, ...nodes) { pend.add({ end, nodes }); }
+function track(end, ...nodes) { const h = { end, nodes }; pend.add(h); return h; }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const pending = () => { prune(); return pend.size > 0; };
 let click = () => {};
@@ -7452,10 +7663,12 @@ function hitSounds(ac, sh) {
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
-function rumble(c) {
+// A ship impact passes its own wait, in seconds.
+// It returns the audio handle, or nothing when muted.
+function rumble(c, wait = DA / 343 / 8) {
   const ac = kit.live();
-  if (!ac) return;
-  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble;
+  if (!ac) return null;
+  const t = ac.currentTime + wait, k = SIZES[opts.size].rumble;
   const s = hiss(ac, t, 7, 0.3), lp = filt(ac, 'lowpass', 180), g = ac.createGain();
   const lvl = 0.25 * (0.5 + 0.5 * c) * k * jit(0.1);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.6); g.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
@@ -7464,7 +7677,7 @@ function rumble(c) {
   o.frequency.value = 30 * jit(0.05);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 0.6); og.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
   o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
-  track(t + 7.5, s, o);
+  return track(t + 7.5, s, o);
 }
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
@@ -7575,12 +7788,46 @@ window.__qa = {
     return { dist: sshot.to.distanceTo(camera.position), nx: q.x, ny: q.y, gun: Math.hypot(sshot.to.x, sshot.to.z) };
   },
   shipFireEnabled: () => !ui.setting('shipfire').disabled,
-  ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, bend: THREE.MathUtils.radToDeg(shipMat.uniforms.uWound.value.y), smoulder: shipMat.uniforms.uWound.value.z, arc: THREE.MathUtils.radToDeg(shipArc(simT)), part: ship.hulks.map((h, i) => hulkDrift(i, simT)), breakAt: ship.hulks.map(h => h.breakAt), aim: shipAim(simT, new THREE.Vector3()).toArray(), alive: ship.hulks.filter(h => h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)),
+  ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, bend: THREE.MathUtils.radToDeg(shipMat.uniforms.uWound.value.y), smoulder: shipMat.uniforms.uWound.value.z, arc: THREE.MathUtils.radToDeg(shipArc(simT)), part: ship.hulks.map((h, i) => hulkDrift(i, simT)), breakAt: ship.hulks.map(h => h.breakAt), aim: shipAim(simT, new THREE.Vector3()).toArray(), alive: ship.hulks.filter(h => h.breakAt !== null && h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)),
     uEntry: shipMeshes.map(m => m.material.uniforms.uEntry.value.w), f: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).f)),
     fallT: ship.hulks.map(h => h.fallT), pos: shipMeshes.map(m => m.position.toArray()), vis: shipMeshes.map(m => m.visible),
     tumble: shipMeshes.map(m => m.quaternion.angleTo(shipQ)), lit: shipMeshes.map(m => m.material.uniforms.uLit.value), halo: U.uAstR.value,
-    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value })),
-    steps: PU.uSteps.value, vent: ventN, shed: shedN }),
+    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value, lift: t.pu.uLift.value.y ? t.pu.uLift.value.x : 0 })),
+    steps: PU.uSteps.value, vent: ventN, shed: shedN,
+    domes: shipDomes.filter(domeAlive).length, landedF: ship.hulks.map(h => h.landedAt !== null), rumbleAt: ship.hulks.map(h => h.rumbleAt ?? null),
+    rumbles: shipRumbles.length, rise: simT - ship.t0, flash: IMP_U.uImp.value.map(v => v.w) }),
+  // Each live dome: hulk, age, foot and distance from the eye.
+  domesQ: () => shipDomes.filter(domeAlive).map(d => ({ i: d.i, age: simT - d.t0, S: d.S, P: d.P.toArray(), dist: Math.hypot(d.P.x - 1670, d.P.z - 1990), vis: d.m.visible })),
+  rumbleDelay: i => ship.hulks[i].rumbleDelay,
+  // Each pending sound: seconds left and its source count.
+  pendQ: () => [...pend].map(h => ({ left: h.end - (kit.ac?.currentTime ?? 0), n: h.nodes.length, ship: shipRumbles.includes(h) })),
+  // Start the audio context as a gesture would.
+  wakeAudio() { kit.wake(); },
+  // Draw the same frame with no impact, for the night check.
+  // impOff(2) keeps the domes and drops only the flash light.
+  impOff(on) { impK = on === 2 ? 2 : on ? 0 : 1; draw(); },
+  // The gun's own pixels in CSS pixels, every step device pixels.
+  // Edge pixels drop out.
+  // A gun pixel needs gun all round it.
+  gunMask(step = 3, pad = 3) {
+    const w = renderer.domElement.width, h = renderer.domElement.height, rt = new THREE.WebGLRenderTarget(w, h);
+    const mat = gunDepthMesh.material, cw = mat.colorWrite, cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+    mat.colorWrite = true;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(rt); renderer.clear(); renderer.render(gunDepthScene, camera);
+    const px = new Uint8Array(w * h * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); mat.colorWrite = cw; rt.dispose();
+    const r = canvas.getBoundingClientRect(), k = r.width / w, out = [];
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && px[(y * w + x) * 4] > 128;
+    for (let y = pad; y < h - pad; y += step) for (let x = pad; x < w - pad; x += step) {
+      if (!on(x, y) || !on(x - pad, y) || !on(x + pad, y) || !on(x, y - pad) || !on(x, y + pad)) continue;
+      out.push([Math.round(r.left + x * k), Math.round(r.top + (h - 1 - y) * k)]);
+    }
+    return out;
+  },
+  // Set the bloom strength, as the Settings slider does.
+  bloom(v) { gfx.bloom = v; setBloom(); },
   hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
   hulkSite: i => hulkSite(i, new THREE.Vector3()).toArray(),
   // The ground ease g at age a after the break.
@@ -7642,7 +7889,7 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: (prune(), pend.size), voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
   mute(on) { sound.set(!on); },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
