@@ -27,5 +27,5 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 
 - Tom, 2026-11-12: the ship draws a little larger than the spec's 4 degrees. He tried 12 and 9.5, then chose about 5.
 - Now: about 5 degrees across (`SHIP_SCALE = 1.2`), 36 degrees up (`SHIP_EL`), 150 km out. `HULL` keeps its design units.
-- Ship mode: the gun rests laid on the ship; Free aim reaches 50 degrees; the sight scale runs to 250 km.
+- Ship mode: the gun rests laid on the ship; Free aim reaches 50 degrees.
 - The cirrus draws in front of the hull, in the ship's own shader.

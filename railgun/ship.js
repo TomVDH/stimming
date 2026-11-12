@@ -1,6 +1,8 @@
 // Capital ship core: states, hits, joint order, hulk fall and light.
-// It has no imports, so node can test it.
-// Hull frame: x runs stern to prow, y up, z to starboard.
+// It has no imports.
+// Node can test it.
+// Hull frame: x runs stern to prow.
+// y runs up and z runs to starboard.
 // Units are metres and seconds.
 
 export const KILL = 0.85;
@@ -47,7 +49,7 @@ export function makeShip(seed, t) {
     id: sec.id,
     fallT: 60 + rnd() * 60,
     dist: 40000 + rnd() * 40000,
-    // Five bearings spread over about +-0.6 rad.
+    // Five bearings span about +-0.6 rad.
     // Bearing 0 is straight ahead.
     bearing: -0.6 + i * 0.3 + (rnd() - 0.5) * 0.1,
     rumbleDelay: 15 + rnd() * 10,

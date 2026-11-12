@@ -453,7 +453,8 @@ function makeRow(row, key, layer) {
     el.append(a);
     return { el, handle: { value: row.href, set() {}, get disabled() { return false; }, set disabled(d) {} } };
   }
-  // A button row runs an action; it holds no value.
+  // A button row runs an action.
+  // It holds no value.
   if (row.type === 'button') {
     const el = make('div', 's2-row', `<span>${row.label}</span>`);
     const b = make('button', 's2-chip', row.text ?? 'Go');
