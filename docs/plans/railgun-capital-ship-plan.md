@@ -171,6 +171,44 @@ const th = await qa('__qa.ship().th'); expect(th).toBeGreaterThan(3.5); expect(t
 
 ---
 
+### Task 3b: Dev menu and the ship's test shot (Tom, 2026-11-12)
+
+Tom asked for the ship in the toy's dev menu, and a test button that makes the ship fire down at the planet. This reverses the spec's "the ship firing back" exclusion for a dev-only test.
+
+**Files:**
+- Modify: `shared/stim.js` (`makeRow`: a new `button` row type)
+- Modify: `railgun/index.html` (settings array; a new section `/* ---------- the ship's shot: a test round to the plain ---------- */`; `busy()`; `__qa`)
+
+**Interfaces:**
+- Consumes: `shipAt` / `tgtPos` (Task 3); `puff`, `writeStar`, `flare`, `cam.shake`.
+- Produces:
+  - `shared/stim.js`: a settings row `{ type: 'button', id, label, text, onClick }`. It draws a label and an `s2-chip` button and holds no value. Its handle is `{ value: null, set() {}, disabled }`.
+  - `railgun/index.html`: the Target row becomes `label: 'Target (dev)'`, beside `Rock (dev)`. A `{ type: 'button', id: 'shipfire', label: 'Ship fires (dev)', text: 'Fire' }` row follows it, enabled only while a ship holds station.
+  - `shipShot(): void` starts one round. `stepShipShot(dt)` advances it. `__qa.shipFire()` and `__qa.shipShot() → { state: 'idle' | 'flight' | 'boom', age, pos }`.
+
+- [ ] **Step 1: Write the QA check.**
+
+```js
+// Ship mode, at station: __qa.shipFire() → state 'flight'.
+// Flight lasts 1.5 to 2.5 s from the ship's belly to the plain.
+// The round's screen size grows as it nears; it lands in frame on the plain, 3 to 8 km from the eye, never on the gun.
+// After landing: state 'boom'; idle again within 6 s.
+// Rock mode: the button is disabled; __qa.shipFire() does nothing.
+// bar-v2 still DONE with no FAIL; the button row adds no visible bar control.
+```
+
+- [ ] **Step 2: Run, expect failure.**
+- [ ] **Step 3: Add the `button` row to `shared/stim.js`.** It is additive; no other toy changes.
+- [ ] **Step 4: Build the round.**
+  - It leaves the ship's belly as a tiny hot point and accelerates hard: blazing speed, 1.5 to 2.5 s in all.
+  - A thin bright streak trails it. It grows naturally by perspective.
+  - It lands on the plain in frame, 3 to 8 km from the eye, away from the gun.
+- [ ] **Step 5: Build the placeholder "silly" explosion.** A cartoonish pop: an oversized flash, a bouncy ring of dust puffs, a few tumbling K6 sparks, a little camera shake. It clears within 6 s. It is a stand-in to replace later; keep it in one function, `sillyBoom(p)`.
+- [ ] **Step 6: Run the QA check and bar-v2. Take stills of mid-flight and the boom at 1280 × 800.**
+- [ ] **Step 7: Commit** `shared/stim.js`, `railgun/index.html` and the bean.
+
+---
+
 ### Task 4: The hit, the wound and the breakup
 
 **Files:**
