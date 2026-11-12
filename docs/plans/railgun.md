@@ -27,6 +27,8 @@ The eye stands 30 m up, 1.7 km right of the axis and 2 km behind the trunnion, w
 Portrait: the eye stands 3 km back and 0.8 km right with a 56° lens.
 The rock starts high and far and falls head-on along its smoke train. The train streams back up the path, 160 km long.
 
+Fire modes: Rail (one charged shot) and Salvo (the hold banks up to five rounds; the release ripples them out; the rounds crater, break, then hunt the chunks). Salvo spec: `docs/plans/railgun-salvo.md`. The Settings choice *Fire* stands in until the HUD selector.
+
 ## Hero moments
 
 1. **The looming.** First frame: a monument in dusty light, and a rock already too big over the mesas, trailing dark smoke.
