@@ -24,12 +24,13 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] Tom (2026-11-12): five more surges: Colossus, Dirge, Leviathan, Eclipse, Monolith
 - [x] Tom (2026-11-12): Monolith Hum blend (Tom: it sucks); Monolith is the default again
 - [x] Tom (2026-11-12): Surge Syl, Surge with pipe-organ voices
+- [x] Merged main (2026-11-12): Charge sound and Shot sound rows moved to the Dev sheet (`?dev`); the synth fire layers stay out, as on main
 - [x] Tom (2026-11-12): Surge Syl is the game-over sound: `surgeOver(ac, { u, vol, over })` for the strike (branch claude/railgun-game-over-6e5171, bean stimming-hsym)
 - [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
 
-1. Turn sound on. Open Settings. Find the row **Shot sound**.
+1. Open the page with `?dev`. Turn sound on. Open the Dev sheet (the code bracket right of Settings). Find the row **Shot sound**.
 2. Pick a take. Each pick plays that take once, at full charge, while no shot flies. Pick the next take to hear it against the last one.
 3. Fire a real shot to hear the take in place. The pick stays saved (`stimming.railgun.shotmix`).
 4. Console: `__qa.take('mesa', 1)` plays any take at a charge level.
@@ -41,7 +42,7 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 | Coil | An electric crack, a falling discharge, a ringing struck-bar barrel and the slug's N-wave supersonic snap with flutter |
 | Thump | A heavy knock, a resonant pressure whoomp, a sub swell and three seconds of debris rattle |
 
-## Surge charge (Settings, Charge sound)
+## Surge charge (Dev sheet, Charge sound)
 
 Tom (2026-11-12): the first stacks were too musical; he wants bombastic, mechanical, hummy synth layers in the THX spirit. Rebuilt as Surge.
 
