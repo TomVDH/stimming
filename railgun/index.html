@@ -1763,7 +1763,7 @@ const ROCKS = { boulder: bakeRock(5, 1, 'long'), mountain: bakeRock(5, 2, 'lumpy
 const AST_ROCK = linFit(0.30, 0.015, 60), WHITE = linFit(0.95, 0.06, 80), EMBER = linFit(0.55, 0.18, 35);
 const astMat = new THREE.ShaderMaterial({
   uniforms: {
-    ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 }, uEvil: { value: 0 },
+    ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 }, uEvil: { value: 0 }, uRockAir: { value: 3 },
     uRock: { value: new THREE.Vector3(...AST_ROCK) }, uWhite: { value: new THREE.Vector3(...WHITE) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   vertexShader: /* glsl */`
@@ -1775,7 +1775,7 @@ const astMat = new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vN, vO;
-  uniform float uBurn, uCracks, uTime, uEvil;
+  uniform float uBurn, uCracks, uTime, uEvil, uRockAir;
   uniform vec3 uToPlanet, uRock, uWhite, uEmber;
   ${HEAD}
   ${AIR}
@@ -1805,7 +1805,12 @@ const astMat = new THREE.ShaderMaterial({
       col += vec3(1.0, 0.18, 0.05) * fis * (0.6 + 0.4 * sin(uTime * 0.7 + n * 12.0)) * 3.5;
     }
     // The plain's distance haze too, so a body this size sits deep in the air.
-    gl_FragColor = vec4(air(k2haze(col, vP), vP), 1.0);
+    col = air(k2haze(col, vP), vP);
+    // Extra air on the rock: far out, blue scatters away and the sky fills in.
+    // The rock reddens and pales with distance and sharpens as it nears.
+    vec3 Tr = exp(-BETA_R * uAir * (uRockAir - 1.0) * airDepth(vP));
+    col = col * Tr + k2skyB(-V, 0.0) * (1.0 - Tr);
+    gl_FragColor = vec4(col, 1.0);
   }`,
 });
 const astMesh = new THREE.Mesh(ROCKS[opts.size], astMat);
@@ -3909,7 +3914,7 @@ const bowMat = new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
   fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime; uniform vec3 uHot, uRim; varying vec2 vUv;
-  // One shock shell: a hyperbola, round at the nose, a long straight cone behind.
+  // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
     float r = sqrt(c * c + m * m * across * across);
@@ -3920,33 +3925,54 @@ const bowMat = new THREE.ShaderMaterial({
     // Rock radii from the rock's centre.
     vec2 q = vUv * 6.0;
     float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
-    // The cone runs five radii back and fades out from the tail.
-    float tail = smoothstep(-5.6, -1.2, along);
-    float d = shellD(along, across, 1.35, 0.75, 3.0);
-    // A fine line that widens a little toward the tail, with a soft halo.
-    // It never thins below about a pixel, so it does not shimmer.
     float px = length(fwidth(q));
-    float w = max(0.03 + 0.03 * smoothstep(0.0, -5.0, along), 0.7 * px);
-    float line = exp(-d * d / (w * w)) + 0.12 * exp(-abs(d) / 0.22);
-    // A fainter second shell rides just inside the first.
-    float d2 = shellD(along, across, 1.18, 0.65, 3.6);
-    float w2 = max(0.02, 0.6 * px);
-    line += 0.3 * exp(-d2 * d2 / (w2 * w2)) * smoothstep(-3.0, 0.5, along);
-    // Faint streaks run down the flanks and drift back.
-    line *= 0.85 + 0.15 * sin(along * 11.0 + uTime * 18.0 + across * 3.0);
-    // Hot white at the nose, cooling to orange down the cone.
-    float k = smoothstep(1.4, -3.5, along);
+    // A thin crescent hugs the nose and wraps a little way down the flanks.
+    // It never thins below about a pixel, so it does not shimmer.
+    float d = shellD(along, across, 1.3, 0.5, 1.0);
+    float w = max(0.035, 0.7 * px);
+    float g = (exp(-d * d / (w * w)) + 0.15 * exp(-abs(d) / 0.2)) * exp(-across * across / 2.2) * smoothstep(-1.2, 0.6, along);
+    g *= 0.92 + 0.08 * sin(uTime * 23.0 + across * 7.0);
+    // Hot white at the nose, orange where it wraps.
+    float k = smoothstep(0.0, 1.6, across);
     vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
-    // The cone dims steadily down its length.
-    float fade = exp(-max(-along, 0.0) / 2.2);
-    gl_FragColor = vec4(c * line * tail * fade * uGain, 0.0);
+    gl_FragColor = vec4(c * g * uGain, 0.0);
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
 bow.frustumCulled = false; bow.renderOrder = 4; bow.visible = false;
 scene.add(bow);
+// A fiery haze hangs round the burning rock; night shows it most.
+// It shares the bow's card and draws over the smoke near the rock.
+const haloMat = new THREE.ShaderMaterial({
+  uniforms: { uF: bowMat.uniforms.uF, uGain: { value: 0 }, uTime: U.uTime, uC: U.uAstC, uHot: bowMat.uniforms.uHot },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: bowMat.vertexShader,
+  fragmentShader: /* glsl */`uniform float uGain, uTime; uniform vec3 uC, uHot; varying vec2 vUv;
+  void main() {
+    // r is in rock radii from the centre.
+    float r = length(vUv) * 6.0, e = max(r - 0.9, 0.0);
+    // A bright skin on the rock and a wide faint globe beyond.
+    float g = 0.5 * exp(-e / 0.45) + 0.16 * exp(-e / 1.7);
+    g *= 1.0 - smoothstep(4.0, 6.0, r);
+    // The rim licks unevenly and breathes.
+    float a = atan(vUv.y, vUv.x);
+    g *= 0.85 + 0.15 * sin(a * 5.0 + uTime * 2.3) * sin(a * 3.0 - uTime * 1.7);
+    // White hot at the skin, amber farther out.
+    vec3 c = mix(uHot * 1.4, uC, smoothstep(1.0, 2.6, r));
+    gl_FragColor = vec4(c * g * uGain, 0.0);
+  }`,
+});
+const halo = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), haloMat);
+halo.frustumCulled = false; halo.renderOrder = 4; halo.visible = false;
+scene.add(halo);
 const bowR = new THREE.Vector3(), bowU = new THREE.Vector3();
 function updateBow() {
+  // The haze is faint by day and strong at night.
+  halo.visible = astMesh.visible;
+  haloMat.uniforms.uGain.value = astMat.uniforms.uBurn.value * (0.12 + 0.5 * U.uStars.value);
+  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
   bow.visible = astMesh.visible && !reduced();
   if (!bow.visible) return;
   // The rock travels against ast.away; that heading, laid on the screen.

@@ -61,7 +61,9 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Cloud flicker: heap tops flickered on every GPU (measured on D3D11 and GL, old and new builds): the heaps' drift re-sampled their fine cells each frame. Heaps now hold still (they still boil and cycle); their edges stay at least two pixels wide
 - [x] Slow ejecta: 460 small burning flecks drift down through the cloud; each goes out at its own time, most before the ground. Three to seven small companion rocks ride round the main one at random
 - [x] Rock light on the clouds: the burning rock lights the heaps and the storm tower, faint far out, strong near the end; `rockGlowK` scales it for the game-over event
-- [x] Bow shock: a fine hyperbolic shell, round at the nose, a long thin cone five radii back, with a faint inner shell; it fades down its length and never thins below a pixel
+- [x] Bow shock: a thin crescent hugs the nose and wraps a little down the flanks (the long cone read as whiskers); it never thins below a pixel
+- [x] Fiery haze: a soft amber globe round the rock, faint by day, strong at night
+- [x] Rayleigh fade on the rock: extra air (`uRockAir` 3) reddens and pales it far out; it sharpens as it nears
 - [ ] Frame cost on Tom's PC: headless RTX 3070 at 1280 x 800 shows shot 2.8 / 5.2 ms and impact 5.4 / 11.9 ms (p50 / p90), near the old 1.9 / 4.2 and 4.6 / 12; check live
 - [ ] Stills to Tom; Tom's verdict
 
