@@ -92,7 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { bankAt, launchAt, recoilAt, makeTally, landRound, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
+import { bankAt, launchAt, recoilAt, makeTally, landRound, roundGain, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -5676,6 +5676,24 @@ function launchRound(r) {
   t.line.material.uniforms.uA.value.copy(MUZZLE); t.line.material.uniforms.uB.value.copy(target);
   t.bolt.material.uniforms.uCore.value = 3 * (0.6 + r.c);
   t.bolt.material.uniforms.uGain.value = 5 + 3 * r.c;
+  if (!r.salvo) return;
+  const ac = kit.live();
+  if (!ac) return;
+  roundSound(ac, r);
+  // The round that will break the rock gets the impact prelude and the boom.
+  const k = breakPower(r);
+  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target, sfx: {} }, () => rounds.includes(r));
+}
+// The tally this round would leave on landing, if it breaks the rock; else 0.
+function breakPower(r) {
+  if (!r.canHit || ast.tally.broken) return 0;
+  const t = { ...ast.tally };
+  for (const q of rounds) {
+    if (!q.salvo || !q.launched || q.hit || !q.canHit) continue;
+    const res = landRound(t, q.c);
+    if (q === r) return res === 'break' ? t.dmg : 0;
+  }
+  return 0;
 }
 // A cycle's hit is decided: its light and its blast follow this round.
 function decide(cy, r, power) {
@@ -5730,6 +5748,7 @@ function addCrater(r) {
   crV.copy(crP); astMesh.worldToLocal(crV).normalize();
   const C = astMat.uniforms.uCrater.value, slot = C[0].w < 0 ? C[0] : C[1].w < 0 ? C[1] : (C[0].w <= C[1].w ? C[0] : C[1]);
   slot.set(crV.x, crV.y, crV.z, simT);
+  craterSound(crP);
   hitFlash = Math.max(hitFlash, 0.33);
   // uHit holds the sky direction to the rock, as the shatter sets it.
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, hitFlash);
@@ -5756,6 +5775,7 @@ function burstChunk(ci) {
   ch.burstP = new THREE.Vector3(); shardAt(ch.i, age, ch.burstP, bv);
   // The piece itself is gone.
   sSeed.array[ch.i * 4 + 1] = 0; sSeed.needsUpdate = true;
+  huntSound(ch.burstP);
   if (reduced()) return;
   const sp = ast.R / 600;
   for (let n = 0; n < 70; n++) {
@@ -5832,7 +5852,8 @@ fire = (c, n = 1, salvo = false) => {
   // The shot flings the field's motes out along the bore.
   flingMotes();
   // A salvo's hit sounds wait for the sound pass.
-  { const ac = kit.live(); if (ac) { shotSound(ac, shot); if (!salvo) hitSounds(ac, shot); } }
+  // A salvo's rounds play their own reports as they launch.
+  { const ac = kit.live(); if (ac && !salvo) { shotSound(ac, shot); hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
@@ -6689,7 +6710,9 @@ function humUpdate(ac) {
   const P = hum.P, c = charge.c, t = ac.currentTime;
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
-  const f = 55 * P.oct * Math.pow(2, (c * 7 + wow) / 12), hg = Math.max(0.05, 0.5 * P.glide);
+  // In Salvo each banked round lifts the hum a semitone.
+  const lift = fireMode === 'salvo' ? (charge.bank || 0) : 0;
+  const f = 55 * P.oct * Math.pow(2, (c * 7 + wow + lift) / 12), hg = Math.max(0.05, 0.5 * P.glide);
   for (const l of hum.layers) {
     for (const o of l.os) o.frequency.setTargetAtTime(f * l.ratio, t, hg);
     l.lg.gain.setTargetAtTime(0.12 * l.level * THREE.MathUtils.smoothstep(chaos, l.enter, l.enter + 0.1), t, 0.08);
@@ -6859,16 +6882,64 @@ function shotSound(ac, sh) {
     track(sh.sfx.shot + 20.1, src, o);
   });
 }
+// Salvo sound counts, for QA.
+const sfxN = { round: 0, crater: 0, hunt: 0 };
+// One salvo round's report: the shot take, louder round by round.
+// Early rounds cut their tail short so the ripple stays crisp.
+function roundSound(ac, r) {
+  const at = ac.currentTime + 0.3, k = roundGain(r.j, r.n), last = r.j === r.n;
+  sfxN.round++;
+  sample(ac, 'shot').then(buf => {
+    if (!buf || !rounds.includes(r) || !kit.live()) return;
+    const src = ac.createBufferSource(), g = ac.createGain(), t0 = Math.max(ac.currentTime, at);
+    src.buffer = buf; src.playbackRate.value = jit(0.03) * (1.06 - 0.06 * k);
+    g.gain.setValueAtTime(1.4 * k * jit(0.1), t0);
+    if (last) g.gain.setTargetAtTime(0, t0 + 4, 3.5); else g.gain.setTargetAtTime(0, t0 + 0.2, 0.5);
+    src.connect(g).connect(kit.out);
+    echo(ac, g, 0.35 * k);
+    src.start(t0); src.stop(t0 + (last ? 20 : 2.5));
+    // A sub punch under each report.
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
+    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * k, t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+    o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
+    track(t0 + (last ? 20.1 : 2.6), src, o);
+  });
+}
+// A far strike: a thin crack and a low thud, after the sound's delay.
+function farHit(ac, P, crackK, thudK, ring = 0) {
+  const t = ac.currentTime + camera.position.distanceTo(P) / 343 / 28;
+  const n = hiss(ac, t, 0.08, 1.4), bp = filt(ac, 'bandpass', 3000, 1.6), g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4 * crackK, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  n.connect(bp).connect(g).connect(kit.out);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(35, t + 0.3);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.6 * thudK, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 0.4);
+  echo(ac, og, 0.3, 400);
+  const nodes = [n, o];
+  // A burst in the air crackles as its embers fly.
+  for (let i = 0; i < ring; i++) {
+    const tc = t + 0.05 + 0.9 * Math.random(), d = 0.015 + 0.05 * Math.random(), c = hiss(ac, tc, d + 0.02, 1.5);
+    const cb = filt(ac, 'bandpass', 1800 + 4200 * Math.random(), 2.5), cg = ac.createGain();
+    cg.gain.setValueAtTime(0.0001, tc); cg.gain.exponentialRampToValueAtTime(0.12, tc + 0.003); cg.gain.exponentialRampToValueAtTime(0.0001, tc + d);
+    c.connect(cb).connect(cg).connect(kit.out);
+    nodes.push(c);
+  }
+  track(t + 1.2, ...nodes);
+}
+function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.8, 0.9); }
+function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 1.2, 0.5, 8); }
 // The impact's prelude lands on the flash.
 // The boom crosses the distance at sound speed, compressed eight times.
-function hitSounds(ac, sh) {
+function hitSounds(ac, sh, alive = () => shot === sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
   // Compressed 28 times: the boom lands about 5 s after the flash.
   const late = camera.position.distanceTo(sh.target) / 343 / 28;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
-    if (shot !== sh || !kit.live()) return;
+    if (!alive() || !kit.live()) return;
     if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25); }
     // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
     if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
@@ -7006,6 +7077,7 @@ window.__qa = {
   cap: () => SALVO_CAP,
   rings: () => U.uShocks.value.map(v => +v.w.toFixed(3)),
   tally: () => ({ ...ast.tally }),
+  sfx: () => ({ ...sfxN }),
   craters: () => astMat.uniforms.uCrater.value.filter(c => c.w >= 0 && simT - c.w < 20).length,
   hunted: () => chunks.filter(ch => ch.burstAt).length,
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),

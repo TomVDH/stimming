@@ -110,11 +110,26 @@ const checks = {
     q().aimTrack();
     settle();
   },
+  async task6() {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    settle();
+    q().mute(false); await wait(300);
+    q().salvo(5); q().run(2.5); await wait(1500);
+    const p = q().audio().pend;
+    ok(p >= 5, `five rounds schedule five reports or more (${p} pending)`);
+    q().mute(true); await wait(300);
+    ok(q().audio().pend === 0, `mute drains every pending sound (${q().audio().pend})`);
+    q().mute(false); settle();
+    const c0 = q().sfx().crater;
+    q().salvo(2); q().run(11.5); await wait(600);
+    ok(q().sfx().crater - c0 === 2, `each crater sounds (${q().sfx().crater - c0})`);
+    q().mute(true); settle();
+  },
 };
 
 export async function run(...names) {
   log.length = 0;
-  for (const n of names) { log.push(`# ${n}`); checks[n](); }
+  for (const n of names) { log.push(`# ${n}`); await checks[n](); }
   const fails = log.filter(l => l.startsWith('FAIL')).length;
   return { fails, log: [...log] };
 }
