@@ -5529,7 +5529,6 @@ function shatter(c) {
     off: new THREE.Vector3(rnd() - 0.5, rnd() - 0.35, rnd() - 0.5).multiplyScalar(4.5 * R),
   }));
   blastFx = { t0: simT, P: P.clone(), R, k: Math.min(c, 1.25), seed: rnd() * 10, bursts };
-  { const ac = kit.live(); if (ac && shot?.sfx) fireSounds(ac, shot, blastFx); }
   hitFlash = 1; cam.shake += 0.5 * c;
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
@@ -6469,38 +6468,6 @@ function hitSounds(ac, sh) {
     // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
     if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
   });
-}
-// The fire's own sound, after the boom's delay: a low roar that follows the fire,
-// far crackle, and one muffled thud per late burst.
-function fireSounds(ac, sh, fx) {
-  const t0 = ac.currentTime + (sh.sfx.late || 0), k = SIZES[opts.size].rumble * fx.k;
-  // The roar: low noise that swells in a second and dies with the fire.
-  const roar = hiss(ac, t0, 30, 0.5), lp = filt(ac, 'lowpass', 260), rg = ac.createGain();
-  rg.gain.setValueAtTime(0.0001, t0); rg.gain.exponentialRampToValueAtTime(0.12 * k, t0 + 1.2);
-  rg.gain.setTargetAtTime(0.0001, t0 + 2, 7);
-  roar.connect(lp).connect(rg).connect(kit.out);
-  lp.frequency.setValueAtTime(320, t0); lp.frequency.setTargetAtTime(120, t0 + 2, 9);
-  // Crackle: dull pops, thick at first, rarer as the fire cools.
-  const pops = [];
-  for (let t = 0.4; t < 20; t += 0.08 + 0.5 * Math.random() * (t / 8)) {
-    const at = t0 + t, d = 0.02 + 0.06 * Math.random(), n = hiss(ac, at, d + 0.03, 0.9);
-    const bp = filt(ac, 'bandpass', 500 + 1300 * Math.random(), 1.8), g = ac.createGain(), pn = ac.createStereoPanner();
-    pn.pan.value = Math.random() * 0.8 - 0.4;
-    const lvl = 0.07 * k * Math.exp(-t / 7) * (0.4 + 0.6 * Math.random());
-    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(Math.max(lvl, 0.0002), at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + d);
-    n.connect(bp).connect(g).connect(pn).connect(kit.out);
-    pops.push(n);
-  }
-  // A thud per burst: low, short, with a little body.
-  const thuds = fx.bursts.map(b => {
-    const at = t0 + b.t, o = ac.createOscillator(), og = ac.createGain();
-    o.frequency.setValueAtTime(58 * jit(0.1), at); o.frequency.exponentialRampToValueAtTime(30, at + 0.9);
-    og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(0.45 * k * b.k, at + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, at + 1.4);
-    o.connect(og).connect(kit.out); o.start(at); o.stop(at + 1.5);
-    echo(ac, og, 0.3, 500);
-    return o;
-  });
-  track(t0 + 31, roar, ...pops, ...thuds);
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
