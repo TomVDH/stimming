@@ -5320,6 +5320,9 @@ function stepChunks() {
       // The far end stays full while the main trail does, and fades with it.
       t.pu.uJoin.value = Math.min(1, 3 * PU.uTrail.value);
       t.pu.uSteps.value = rung >= 2 ? 8 : 12;
+      // A debris trail widens a third as fast as the main tail, and frays as it ages.
+      t.pu.uK.value = 0.035;
+      t.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(age, 5, 28);
     }
   }
 }
@@ -5424,11 +5427,12 @@ function shatter(c) {
   keep.forEach(([p, v, d], j) => {
     // The pieces carry on along the rock's own path, at nearly one speed.
     // The blast only fans them a little round that path and lifts them.
+    // They fan out wide, each on its own lob and speed, so no two trails run parallel.
     const a = j * Math.PI * 2 / 3 + 0.4 + (rnd() - 0.5) * 0.8, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
-    const go = (350 + 250 * c) * (R / 600) * (0.92 + 0.16 * rnd());
-    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.35).addScaledVector(up, (0.2 * Math.sin(a) + 0.15 + 0.2 * rnd()) * sp).addScaledVector(fw, go);
-    // Each is a small copy of the rock: about a tenth of its radius.
-    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.09 + 0.04 * rnd()), d[2], d[3]);
+    const go = (350 + 250 * c) * (R / 600) * (0.7 + 0.55 * rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.9).addScaledVector(up, (0.45 * Math.sin(a) + 0.1 + 0.35 * rnd()) * sp).addScaledVector(fw, go);
+    // Each is a small copy of the rock: a fifteenth to a seventh of its radius.
+    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.065 + 0.08 * rnd()), d[2], d[3]);
   });
   shardGeo.instanceCount = keep.length;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
