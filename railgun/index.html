@@ -3274,9 +3274,8 @@ function aimAst() {
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
   // The clouds take the rock's light, faint far out, strong near the end.
-  // The strike turns it up as the rock nears the ground.
-  const su = strike && !strike.hit ? strikeU() : 0;
-  const lw = astMesh.visible ? (astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) + 1.5 * su * su) * rockGlowK : 0;
+  // Past the horizon line s holds at 1; the strike drives rockGlowK instead.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
@@ -6145,8 +6144,9 @@ function landReset() {
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
   ast.next = 0;
-  if (strike) humStop(kit.live());
+  if (strike) gameOverSound(kit.live(), null);
   strike = null;
+  rockGlowK = 1;
   // The old hit's clock goes too, so the start is clean.
   U.uHitP.value.w = -1e6;
   respawn();
@@ -6209,7 +6209,20 @@ function startStrike() {
 function endStrike() {
   if (!strike) return;
   strike = null;
-  humStop(kit.live());
+  rockGlowK = 1;
+  gameOverSound(kit.live(), null);
+}
+// The game-over sound: one seam, so another charge mix can take it over.
+// d.u: nearness to the ground, 0 to 1; it holds at 1 after contact.
+// d.vol: fades in over the first third, out across the white.
+// d.over: the strain, up to 1 in the burn. Null stops the sound.
+// Today it drives the charge hum; a live charge owns the hum.
+function gameOverSound(ac, d) {
+  if (!d) { humStop(ac); return; }
+  if (!ac || charge) return;
+  humStart(ac);
+  const ch = Math.pow(d.u, 0.8);
+  humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(d.u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: d.over, vol: d.vol });
 }
 // Strike test: the rock jumps to the horizon line.
 function strikeSoon() {
@@ -6230,13 +6243,10 @@ function stepStrike(dt) {
     if (!reduced()) cam.shake = Math.max(cam.shake, 0.7 * Math.pow(u, 4));
     // The ground glow lights the world before contact.
     hitFlash = 0.8 * Math.pow(u, 4);
-    // The surge: the charge sound climbs with the rock's nearness to the ground.
-    // A live charge owns the hum; the surge takes it back after the shot.
-    if (ac && !charge) {
-      humStart(ac);
-      const ch = Math.pow(u, 0.8);
-      humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1), vol: THREE.MathUtils.smoothstep(u, 0, 0.35) });
-    }
+    // The rock lights the heaps and the tower harder as it comes down.
+    rockGlowK = 1 + 5 * u * u;
+    // The surge climbs with the rock's nearness to the ground.
+    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
     if (ast.s >= strike.s1) strikeHit();
   } else {
     strike.tb += dt;
@@ -6244,7 +6254,7 @@ function stepStrike(dt) {
     // The blast light: a short flash, then it climbs with the burn.
     hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
     // The surge is the impact's sound: it screams through the burn and dies in the white.
-    if (ac) { humStart(ac); humUpdate(ac, { c: 1, chaos: 1, rage: 1, over: 0.6 + 0.4 * b, vol: 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T) }); }
+    gameOverSound(ac, { u: 1, vol: 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T), over: 0.6 + 0.4 * b });
     // The white holds, then Reset's fill takes over and cuts to the start.
     if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; fill = { t: FILL_IN, calm: reduced() }; }
   }
