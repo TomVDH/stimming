@@ -92,6 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
+import { bankAt, ROUND_C } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -139,6 +140,9 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // Fire: one rail shot, or a salvo of banked rounds.
+    // This choice stands in until the HUD selector lands.
+    { type: 'choice', id: 'firemode', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
     { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
     { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
@@ -3438,24 +3442,34 @@ function startCharge(by) {
   // The shake starts on this very frame.
   U.uCharge.value = 0.12;
 }
+// The live fire mode; a new pick lands at the next press.
+let fireMode = 'rail';
 act.press = (by = 'pointer', skip = false) => {
   if (charge || spin || ranging) return;
+  fireMode = ui.setting('firemode').value;
   if (skip || reduced()) { startCharge(by); return; }
   ranging = { t0: simT, by };
 };
 // The gun fires only once armed and aimed; else a release fizzles.
 const ARM = 0.6;
+// The arm cue: a clunk and a spark down the rails.
+function armCue() {
+  cam.shake += 0.25;
+  if (!reduced()) { spawnArc(0.5); spawnArc(0.8); }
+  dustPulse(0.9); armSound();
+}
 act.release = (by = 'pointer') => {
   if (ranging && ranging.by === by) { ranging = null; return; }
   if (!charge || charge.by !== by) return;
   releaseHint.style.opacity = '0';
-  const c = charge.c;
+  const c = charge.c, bank = charge.bank || 0;
   charge = null;
   // It fires only on target: a release while the gun still swings bleeds the charge.
   const aimed = manual.on || ast.state === 'shatter' || aimNow.err < 0.012;
-  if (c < ARM || !aimed) { fizzle(); return; }
+  if (c < ARM || !aimed || (fireMode === 'salvo' && !bank)) { fizzle(); return; }
   humStop(kit.live());
-  fire(c);
+  if (fireMode === 'salvo') fire(ROUND_C, bank);
+  else fire(c);
 };
 // The charge bleeds off with a falling groan and a few sparks.
 function fizzle() {
@@ -3530,7 +3544,9 @@ function stepCharge(dt) {
     // Full power locks with one hard shudder.
     if (!charge.locked && held >= HOLD.full) { charge.locked = true; cam.shake += 0.7; }
     // The gun arms: a clunk and a spark down the rails.
-    if (!charge.armed && c >= ARM) { charge.armed = true; cam.shake += 0.25; if (!reduced()) { spawnArc(0.5); spawnArc(0.8); } dustPulse(0.9); armSound(); }
+    if (!charge.armed && c >= ARM) { charge.armed = true; if (fireMode !== 'salvo') armCue(); }
+    // In Salvo each banked round gives the arm cue.
+    if (fireMode === 'salvo') for (const n = bankAt(held); (charge.bank || 0) < n;) { charge.bank = (charge.bank || 0) + 1; armCue(); }
     // Sparks spit from the brake through the over-hold.
     if (over > 0 && !reduced()) {
       for (let n = Math.floor(dt * 60 * over + rnd()); n > 0; n--) {
@@ -6688,6 +6704,10 @@ window.__qa = {
   level: () => (charge ? charge.c : 0),
   stage: () => (charge ? stageOf(simT - charge.t0) : simT - ventT < 3 ? 'vent' : 'idle'),
   holding: () => !!charge,
+  // Salvo: pick the fire mode, read the live one, read the bank.
+  mode(m) { ui.setting('firemode').set(m); },
+  fireMode: () => fireMode,
+  bank: () => charge?.bank ?? 0,
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
