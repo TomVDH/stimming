@@ -131,6 +131,8 @@ const ui = initPage({ id: 'railgun', bar: {
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
+    // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
+    { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, a blend, or a blend on the plain.
     { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
@@ -152,7 +154,7 @@ const ui = initPage({ id: 'railgun', bar: {
   // Reset waits right of Sight; it shows and glows after a kill.
   actions: [{ verb: 'sight', key: 'V', onPress: () => toggleSight() }, { verb: 'reset', key: 'R', onPress: () => resetToy() }],
   quality: true,
-  keys: [['hold', 'charge'], ['release', 'fire'], ['space', 'charge'], ['v', 'sight']],
+  keys: [['hold', 'charge'], ['release', 'fire'], ['arrows', 'traverse'], ['v', 'sight']],
 } });
 
 const stage = document.getElementById('stage');
@@ -3135,7 +3137,7 @@ act.release = (by = 'pointer') => {
   const c = charge.c;
   charge = null;
   // It fires only on target: a release while the gun still swings bleeds the charge.
-  const aimed = ast.state === 'shatter' || aimNow.err < 0.012;
+  const aimed = manual.on || ast.state === 'shatter' || aimNow.err < 0.012;
   if (c < ARM || !aimed) { fizzle(); return; }
   humStop(kit.live());
   fire(c);
@@ -4925,8 +4927,13 @@ fire = c => {
   if (shot) return;
   // A weak shot takes 11.5 seconds to cross; a full one 8.5.
   const T = THREE.MathUtils.lerp(11.5, 8.5, c);
-  const canHit = ast.state === 'approach' || ast.state === 'hold';
+  let canHit = ast.state === 'approach' || ast.state === 'hold';
   const target = astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3());
+  // Laid by hand, the bolt hits only if the bore points within the rock's disc.
+  if (manual.on && canHit) {
+    const D = target.distanceTo(MUZZLE), off = AX.angleTo(bq.copy(target).sub(MUZZLE));
+    canHit = off < 1.2 * ast.R / D + 0.004;
+  }
   // With no rock in the sky the bolt flies where the barrel points.
   if (!canHit) target.copy(MUZZLE).addScaledVector(AX, Math.max(20000, target.distanceTo(MUZZLE)));
   shot = { t0: simT, c, T, target, muzzle: MUZZLE.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T };
@@ -5087,15 +5094,36 @@ function applyAim() {
   if (Math.abs(yaw - aimNow.sy) + Math.abs(elev - aimNow.se) > 3e-4) { aimNow.sy = yaw; aimNow.se = elev; shadowDirty = true; }
 }
 const aimP = new THREE.Vector3();
+// Free aim: the arrow keys or WASD lay the gun by hand.
+// Left turns the muzzle to the frame's left; up raises it.
+const manual = { on: false, yaw: 0, elev: rad(8) };
+const tkeys = new Set();
+const TRAV = { ArrowLeft: [1, 0], KeyA: [1, 0], ArrowRight: [-1, 0], KeyD: [-1, 0], ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1] };
+function setAimMode(v) {
+  manual.on = v === 'free';
+  if (manual.on) { manual.yaw = aimNow.yaw; manual.elev = aimNow.elev; }
+  wake();
+}
+function stepTraverse(dt) {
+  if (!tkeys.size || dt <= 0) return;
+  // The first key press hands the gun over to the keys.
+  if (!manual.on) ui.setting('aim').set('free', true);
+  let y = 0, e = 0;
+  for (const k of tkeys) { y += TRAV[k][0]; e += TRAV[k][1]; }
+  manual.yaw += Math.sign(y) * rad(8) * dt;
+  manual.elev = clamp(manual.elev + Math.sign(e) * rad(5) * dt, rad(2), rad(35));
+}
 // The parked aim: straight down the causeway, eight degrees up.
 const PARK = new THREE.Vector3(0, Math.sin(rad(8)), -Math.cos(rad(8)));
 // At rest the gun parks.
 // A hold traverses it to lead the rock by the bolt's flight time.
 function stepAim(dt, snap = false) {
+  stepTraverse(dt);
   if (shot && !shot.hit) return;
-  // After the hit the gun waits, then parks.
-  if (!snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
-  if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
+  // After the hit the gun waits, then parks; laid by hand, it stays where it is put.
+  if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
+  if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
+  else if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
   else aimP.copy(PARK);
   const dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw, de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
@@ -5105,8 +5133,8 @@ function stepAim(dt, snap = false) {
   const W = 0.9, Z = 0.62;
   aimNow.vy += (W * W * dy - 2 * Z * W * aimNow.vy) * dt;
   aimNow.ve += (W * W * de - 2 * Z * W * aimNow.ve) * dt;
-  // The mount turns at 3.2 degrees a second at most.
-  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(3.2);
+  // The mount turns at 3.2 degrees a second at most; by hand, at 7.
+  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(manual.on ? 7 : 3.2);
   if (sp > top) { aimNow.vy *= top / sp; aimNow.ve *= top / sp; }
   setAim(aimNow.yaw + aimNow.vy * dt, aimNow.elev + aimNow.ve * dt);
 }
@@ -5446,7 +5474,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6025,6 +6053,7 @@ stage.addEventListener('lostpointercapture', end);
 // Space holds the charge.
 // The shell ignores it while a sheet has focus.
 document.addEventListener('keydown', e => {
+  if (TRAV[e.code] && !e.target.closest?.('input, .s2-sheet') && !e.metaKey && !e.ctrlKey) { e.preventDefault(); tkeys.add(e.code); wake(); return; }
   if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
   e.preventDefault();
   spaceDown = true;
@@ -6033,12 +6062,13 @@ document.addEventListener('keydown', e => {
   wake();
 });
 document.addEventListener('keyup', e => {
+  if (TRAV[e.code]) { tkeys.delete(e.code); return; }
   if (e.code !== 'Space' || !spaceDown) return;
   spaceDown = false;
   act.release('space');
   wake();
 });
-addEventListener('blur', () => { if (charge || press) { cancelHold(); wake(); } });
+addEventListener('blur', () => { tkeys.clear(); if (charge || press) { cancelHold(); wake(); } });
 
 function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
 function setGrain() { grade.uniforms.uGrain.value = POST.grain * ui.setting('grain').value; draw(); }
@@ -6099,6 +6129,8 @@ window.__qa = {
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
+  // Free aim: lay the gun at yaw and elevation in degrees.
+  aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
   // The muzzle in CSS pixels, for cropped stills.
   // Any barrel point in CSS pixels: a along, x across, u up.
   screenOf(a, x = 0, u = 0) { const p = barrelPt(a, x, u, new THREE.Vector3()).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height }; },
@@ -6122,6 +6154,8 @@ astSize();
 stepAim(0, true);
 prewarmEmbers();
 setBox(ui.setting('letterbox').value);
+// A stored Free aim takes the gun from where it parks.
+setAimMode(ui.setting('aim').value);
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
