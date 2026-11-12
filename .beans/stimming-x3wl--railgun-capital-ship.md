@@ -30,7 +30,8 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - `railgun/index.html`: a target seam (`tgt*`); the battleship in orbit; the kill, the wound and the breakup; the de-orbit streaks; landings, dust domes and the next ship; the ship's sound; Dev rows Target and Ship fires.
 - `shared/stim.js`: an additive `button` row for settings and dev sheets.
 - QA (headless Edge, D3D11): Q1 to Q10 at three sizes, rungs 0 to 3, both modes; bar-v2 102/102. Rock-mode Q4 fails on main too (the ember shed keeps the loop awake).
-- Follow-ups: move the ship's voices onto the blast bus when `claude/railgun-sound-3af021` lands; two colon-joined comments at index.html ~7879 and ~8160.
+- Follow-ups: two colon-joined comments in index.html's ship sound section.
+- Merge M2 (main's Salvo, game over and sound pass): the ship rides Salvo rounds; its voices feed the blast bus and its limiter.
 
 ## Notes
 
@@ -38,3 +39,5 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - Now: about 5 degrees across (`SHIP_SCALE = 1.2`), 36 degrees up (`SHIP_EL`), 150 km out. `HULL` keeps its design units.
 - Ship mode: the gun rests laid on the ship; Free aim reaches 50 degrees.
 - The cirrus draws in front of the hull, in the ship's own shader.
+- Salvo against the ship (merge M2): each round hits with its own charge (0.35). Round 1 wounds, round 2 kills. Later rounds aim past a ship that earlier rounds break, and fly on. They do not hunt the hulks; the Salvo spec's hulk hunt is a follow-up.
+- Game over runs only in rock mode: the ship mode has no falling rock.

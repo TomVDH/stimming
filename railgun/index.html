@@ -92,7 +92,8 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE, VACUUM } from './ship.js';
+import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE, VACUUM, KILL as SHIP_KILL } from './ship.js';
+import { bankAt, launchAt, recoilAt, makeTally, landRound, roundGain, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -121,15 +122,17 @@ const opts = {
 /* ---------- bar ---------- */
 // 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
-// The charge sound's mix: 'hum', 'blend', 'choir', 'vast' or 'titan'.
-// Expanse is the default; an old Blend default moves to it once.
+// The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
+// Monolith is the default; an old Blend default moves to Expanse once.
 let chargeMix = (() => {
   try {
     const K = 'stimming.railgun.chargemix';
     if (!localStorage.getItem(K + '.v2')) { if (localStorage.getItem(K) === 'blend') localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v2', '1'); }
-    return localStorage.getItem(K) || 'vast';
-  } catch { return 'vast'; }
+    return localStorage.getItem(K) || 'monolith';
+  } catch { return 'monolith'; }
 })();
+// The shot's sound: 'mesa', 'coil', 'thump' or 'report'.
+let shotMix = 'mesa';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -140,14 +143,20 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // Fire: one rail shot, or a salvo of banked rounds.
+    // This choice stands in until the HUD selector lands.
+    { type: 'choice', id: 'firemode', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
     { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
     { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
-    // The charge: the hum, the choir, a blend, or a blend on the plain.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
+    // The charge: the hum, the choir, blends, or a mechanical surge.
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monolith', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    // The shot: three synth takes, or Tom's report sample. Mesa is the default.
+    // A pick plays the take once, so takes compare side by side.
+    { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target picks the rock or the capital ship.
@@ -156,6 +165,10 @@ const ui = initPage({ id: 'railgun', bar: {
     // Ship fires sends a test round to the plain.
     // The button waits for a ship at station.
     { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    // Strike test: each rock starts at its hold and strikes after a short grace.
+    // Fast rock: the rock falls ten times faster; off is the normal speed.
+    { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
+    { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
@@ -316,7 +329,7 @@ const U = {
   uArcL: { value: new THREE.Vector4(0, 0, 0, 0) },
   uMuzL: { value: new THREE.Vector4(0, 0, 0, 0) },
   // The Mach ring on the ground: centre x, z, radius, strength.
-  uShock: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uShocks: { value: Array.from({ length: 5 }, () => new THREE.Vector4(0, 0, 0, 0)) },
   // The strength of the Rayleigh air.
   uAir: { value: 0.7 },
   // Barrel heat, 0 cold to 1 white-hot.
@@ -852,7 +865,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
   fragmentShader: /* glsl */`
   varying vec3 vP;
   uniform vec3 uGroundC;
-  uniform vec4 uShock;
+  uniform vec4 uShocks[5];
   uniform float uRage;
   uniform float uTime;
   uniform vec2 uGLift;
@@ -935,18 +948,22 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
     // The plain trembles in rings round the mount at rage.
     float r0 = length(vP.xz);
     col *= 1.0 + 0.14 * uRage * sin(r0 * 0.045 - uTime * 9.0) * exp(-r0 / 900.0);
-    // The Mach ring: a thin bright front, compressed air dark behind it.
-    float r = length(vP.xz - uShock.xy);
-    float sw = 6.0 + 0.07 * uShock.z;
-    float shock = exp(-(r - uShock.z) * (r - uShock.z) / (2.0 * sw * sw));
-    float inside = smoothstep(uShock.z, uShock.z - sw * 3.0, r);
-    // Dust stands up in the front and catches the sun.
-    // The air behind it is swept clean.
-    col *= 1.0 - min(0.6, 0.3 * uShock.w) * inside * (1.0 - shock);
-    // Sand ripples trail the front and settle.
-    float behind = max(uShock.z - r, 0.0);
-    col *= 1.0 + 0.1 * min(uShock.w, 1.0) * sin(behind * 0.07) * exp(-behind / 400.0) * inside;
-    col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * uShock.w;
+    // The Mach rings: one per round, a thin bright front, dark air behind.
+    for (int i = 0; i < 5; i++) {
+      vec4 S = uShocks[i];
+      if (S.w <= 0.0) continue;
+      float r = length(vP.xz - S.xy);
+      float sw = 6.0 + 0.07 * S.z;
+      float shock = exp(-(r - S.z) * (r - S.z) / (2.0 * sw * sw));
+      float inside = smoothstep(S.z, S.z - sw * 3.0, r);
+      // Dust stands up in the front and catches the sun.
+      // The air behind it is swept clean.
+      col *= 1.0 - min(0.6, 0.3 * S.w) * inside * (1.0 - shock);
+      // Sand ripples trail the front and settle.
+      float behind = max(S.z - r, 0.0);
+      col *= 1.0 + 0.1 * min(S.w, 1.0) * sin(behind * 0.07) * exp(-behind / 400.0) * inside;
+      col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * S.w;
+    }
     // Far plain goes blue and flat in the air.
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
@@ -1830,6 +1847,8 @@ const AST_ROCK = linFit(0.30, 0.015, 60), WHITE = linFit(0.95, 0.06, 80), EMBER 
 const astMat = new THREE.ShaderMaterial({
   uniforms: {
     ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 }, uEvil: { value: 0 }, uRockAir: { value: 3 },
+    // Crater spots: xyz the hit's direction in rock space, w the hit time; w < 0 is off.
+    uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] },
     uRock: { value: new THREE.Vector3(...AST_ROCK) }, uWhite: { value: new THREE.Vector3(...WHITE) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   vertexShader: /* glsl */`
@@ -1843,6 +1862,7 @@ const astMat = new THREE.ShaderMaterial({
   varying vec3 vP, vN, vO;
   uniform float uBurn, uCracks, uTime, uEvil, uRockAir;
   uniform vec3 uToPlanet, uRock, uWhite, uEmber;
+  uniform vec4 uCrater[2];
   ${HEAD}
   ${AIR}
   void main() {
@@ -1864,6 +1884,17 @@ const astMat = new THREE.ShaderMaterial({
     float cr = smoothstep(0.55, 0.62, n) * (1.0 - smoothstep(0.62, 0.70, n));
     float flick = 0.92 + 0.08 * sin(uTime * 3.0 + n * 40.0);
     col += uEmber * cr * (0.3 + hot) * uBurn * flick * 5.0 * uCracks;
+    // Craters: a white-hot pit where a round struck, cooling to dull red over 20 s.
+    for (int i = 0; i < 2; i++) {
+      vec4 C = uCrater[i];
+      if (C.w < 0.0) continue;
+      float age = uTime - C.w, d = dot(normalize(vO), C.xyz) + 0.02 * (n - 0.5);
+      float pit = smoothstep(0.955, 0.985, d), rim = smoothstep(0.93, 0.955, d) * (1.0 - pit);
+      float glow = max(0.0, 1.0 - age / 20.0) * (0.35 + 2.6 * exp(-age / 4.0));
+      // A scorched ring frames the pit.
+      col *= 1.0 - 0.6 * rim;
+      col += mix(uEmber * 1.6, uWhite * 2.0, exp(-age / 1.2)) * pit * glow * (0.6 + 0.8 * n);
+    }
     // Aerosmith: near-black basalt split by wide, slow-breathing red fissures.
     if (uEvil > 0.5) {
       col *= 0.4;
@@ -1885,7 +1916,8 @@ scene.add(astMesh);
 // The rock's place in the sky, its size curve and its state.
 // state: approach, hold, entry (reserved), shatter, gone.
 // away: the trail's direction; side and upv span its section.
-const ast = { s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
+// jolt: a crater's shove; tally: the damage the salvo rounds have done.
+const ast = { jolt: new THREE.Vector3(), tally: makeTally(), s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
 // Where the rock is at fall fraction s.
 const astAt = (s, out) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 - s));
 function astSize() {
@@ -1896,7 +1928,7 @@ function astSize() {
   if (ast.state !== 'shatter' && ast.state !== 'gone') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
 }
 function placeAst() {
-  astAt(ast.s, ast.pos);
+  astAt(ast.s, ast.pos).add(ast.jolt);
   astMesh.position.copy(ast.pos);
   U.uAstG.value.set(ast.pos.x, ast.pos.z);
   placeFrags();
@@ -2758,7 +2790,7 @@ function makeFragTrail(own = false) {
   seed = s0;
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
-const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
+const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 }, uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
 // Up to seven companions ride with the main rock.
 const frags = Array.from({ length: 7 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
@@ -2840,7 +2872,7 @@ function shedSpark(age = 0, src = null) {
   // They leave from anywhere across the rock's back, not from one spot.
   const th = rnd() * Math.PI * 2, rr = 1.05 * R * Math.sqrt(rnd());
   shedU.crossVectors(ast.away, ast.side);
-  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / SIZES[opts.size].T * age + 0.45 * R).addScaledVector(ast.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr).addScaledVector(tp, 0.15 * R);
+  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / fallT() * age + 0.45 * R).addScaledVector(ast.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr).addScaledVector(tp, 0.15 * R);
   // Big burning pieces drift slowly back up the smoke train.
   // They carry no weight, so they never arc off; they go 12 to 25 km.
   // They fan out wide off the back; small, crisp, dim.
@@ -3658,7 +3690,7 @@ function sightMarks() {
   m.rock = { ...rock, r: Math.max(6, tgtR() / D * fpx), D };
   // The rock's velocity: it falls FALL metres along -away over the size's time.
   // The ship's velocity: its track over the next second.
-  const v = tgtKind === 'rock' ? skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / SIZES[opts.size].T : 0) : shipAim(simT + 1, skV).sub(P);
+  const v = tgtKind === 'rock' ? skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / fallT() : 0) : shipAim(simT + 1, skV).sub(P);
   m.rdot = v.dot(skQ.copy(P).sub(camera.position)) / D;
   // The intercept point is the target's place after one flight.
   const c = charge ? clamp(U.uCharge.value, 0.12, 1) : 1, T = THREE.MathUtils.lerp(11.5, 8.5, c) + 0.3;
@@ -3856,7 +3888,8 @@ function aimAst() {
   // The ship's halo takes the ship's aim radius, not the parked rock's.
   U.uAstR.value = tgtKind === 'ship' ? Math.atan(SHIP_AIM_R / shipP.distanceTo(camera.position)) : Math.atan(ast.R / dist);
   // The clouds take the rock's light, faint far out, strong near the end.
-  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
+  // Past the horizon line s holds at 1; the strike drives rockGlowK instead.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
@@ -3911,6 +3944,7 @@ function draw() {
   updateBolt();
   updateIon();
   updateBlast();
+  updateStrike();
   updateChargeDust(1 / 30);
   // The blast's dust round the gun: under half its old strength.
   updateShotDust(dustShot ? simT - dustShot.t0 - 0.3 : -1, dustShot ? 0.45 * dustShot.c : 0, dustShot ? dustShot.foot : MUZZLE);
@@ -3994,7 +4028,14 @@ function updateWarp() {
 
 /* ---------- the approach ---------- */
 // The rock falls down its track.
-// At the end it holds and waits.
+// Past the horizon line it strikes the planet, at the same speed.
+// The fair window: the whole fall, a few minutes, until contact.
+// A kill takes about 22 s: ranging 1.75, full charge 8.6, bolt 8.5 to 11.5.
+// The live strike, or null; the Strike test dev toggle.
+let strike = null, strikeTest = false;
+// Fast rock: a dev toggle that runs the fall ten times faster.
+let fastRock = false;
+const fallT = () => SIZES[opts.size].T / (fastRock ? 10 : 1);
 function stepAst(dt) {
   if (tgtKind === 'ship') stepShip(ship, simT);
   stepShipFx(dt);
@@ -4005,17 +4046,20 @@ function stepAst(dt) {
   stepShards(dt);
   stepRain(dt);
   stepChunks();
-  if (ast.state === 'approach' || ast.state === 'hold') {
-    // The hot face sheds glowing bits; they fall back into the smoke.
-    if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
-  }
-  if (ast.state === 'approach') {
-    ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
-    if (ast.s >= 1) ast.state = 'hold';
+  const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
+  // The hot face sheds glowing bits; they fall back into the smoke.
+  if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
+  // A crater's shove eases back onto the path over a second and a half.
+  if (ast.jolt.lengthSq() > 1) { ast.jolt.multiplyScalar(Math.exp(-dt / 1.5)); if (ast.state === 'hold') placeAst(); } else ast.jolt.set(0, 0, 0);
+  if (falling) {
+    // One steady speed from first sight to the ground.
+    ast.s = Math.min(strike ? strike.s1 : 1, ast.s + dt / fallT());
+    // Past the horizon line the strike starts; a rewind holds it back.
+    // Only a rock strikes.
+    // The ship mode has no falling rock.
+    if (!strike && ast.s >= 1 && !spin && !fill && tgtKind === 'rock') startStrike();
     placeAst();
     astSize();
-  } else if (ast.state === 'hold') {
-    ast.holdT += dt;
   }
 }
 
@@ -4058,24 +4102,35 @@ function startCharge(by) {
   // The shake starts on this very frame.
   U.uCharge.value = 0.12;
 }
+// The live fire mode; a new pick lands at the next press.
+let fireMode = 'rail';
 act.press = (by = 'pointer', skip = false) => {
-  if (charge || spin || ranging) return;
+  // After contact the gun stands down.
+  if (charge || spin || ranging || strike?.hit) return;
+  fireMode = ui.setting('firemode').value;
   if (skip || reduced()) { startCharge(by); return; }
   ranging = { t0: simT, by };
 };
 // The gun fires only once armed and aimed; else a release fizzles.
 const ARM = 0.6;
+// The arm cue: a clunk and a spark down the rails.
+function armCue() {
+  cam.shake += 0.25;
+  if (!reduced()) { spawnArc(0.5); spawnArc(0.8); }
+  dustPulse(0.9); armSound();
+}
 act.release = (by = 'pointer') => {
   if (ranging && ranging.by === by) { ranging = null; return; }
   if (!charge || charge.by !== by) return;
   releaseHint.style.opacity = '0';
-  const c = charge.c;
+  const c = charge.c, bank = charge.bank || 0;
   charge = null;
   // It fires only on target: a release while the gun still swings bleeds the charge.
   const aimed = manual.on || ast.state === 'shatter' || aimNow.err < 0.012;
-  if (c < ARM || !aimed) { fizzle(); return; }
+  if (c < ARM || !aimed || (fireMode === 'salvo' && !bank)) { fizzle(); return; }
   humStop(kit.live());
-  fire(c);
+  if (fireMode === 'salvo') fire(ROUND_C, bank, true);
+  else fire(c);
 };
 // The charge bleeds off with a falling groan and a few sparks.
 function fizzle() {
@@ -4150,7 +4205,9 @@ function stepCharge(dt) {
     // Full power locks with one hard shudder.
     if (!charge.locked && held >= HOLD.full) { charge.locked = true; cam.shake += 0.7; }
     // The gun arms: a clunk and a spark down the rails.
-    if (!charge.armed && c >= ARM) { charge.armed = true; cam.shake += 0.25; if (!reduced()) { spawnArc(0.5); spawnArc(0.8); } dustPulse(0.9); armSound(); }
+    if (!charge.armed && c >= ARM) { charge.armed = true; if (fireMode !== 'salvo') armCue(); }
+    // In Salvo each banked round gives the arm cue.
+    if (fireMode === 'salvo') for (const n = bankAt(held); (charge.bank || 0) < n;) { charge.bank = (charge.bank || 0) + 1; armCue(); }
     // Sparks spit from the brake through the over-hold.
     if (over > 0 && !reduced()) {
       for (let n = Math.floor(dt * 60 * over + rnd()); n > 0; n--) {
@@ -4227,7 +4284,8 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 /* ---------- the bow shock: a glowing arc of air in front of the rock ---------- */
 // A camera-facing card; the arc opens toward the rock's travel on screen.
 const bowMat = new THREE.ShaderMaterial({
-  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime,
+  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 },
+    uCos: { value: new THREE.Vector3(...linFit(0.8, 0.13, 290)) },
     uHot: { value: new THREE.Vector3(...linFit(0.97, 0.05, 85)) }, uRim: { value: new THREE.Vector3(...linFit(0.78, 0.17, 50)) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -4240,7 +4298,7 @@ const bowMat = new THREE.ShaderMaterial({
     // The card spans six rock radii each way.
     gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
-  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime; uniform vec3 uHot, uRim; varying vec2 vUv;
+  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
   // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
@@ -4262,7 +4320,16 @@ const bowMat = new THREE.ShaderMaterial({
     // Hot white at the nose, orange where it wraps.
     float k = smoothstep(0.0, 1.6, across);
     vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
-    gl_FragColor = vec4(c * g * uGain, 0.0);
+    vec3 col = c * g;
+    // The strike: a second thin crescent, violet, a little farther out.
+    if (uGrand > 0.01) {
+      float d3 = shellD(along, across, 1.8 + 0.25 * uGrand, 0.65, 0.9);
+      float w3 = max(0.03, 0.6 * px);
+      float v = (exp(-d3 * d3 / (w3 * w3)) + 0.1 * exp(-abs(d3) / 0.25)) * exp(-across * across / 3.2) * smoothstep(-1.4, 0.8, along);
+      v *= 0.8 + 0.2 * sin(across * 5.0 - uTime * 2.5);
+      col += uCos * 1.6 * v * uGrand;
+    }
+    gl_FragColor = vec4(col * uGain, 0.0);
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
@@ -4296,9 +4363,11 @@ halo.frustumCulled = false; halo.renderOrder = 4; halo.visible = false;
 scene.add(halo);
 const bowR = new THREE.Vector3(), bowU = new THREE.Vector3();
 function updateBow() {
+  // The strike's nearness grows the haze, the crescent and a violet crescent.
+  const g = strike && !strike.hit ? THREE.MathUtils.smoothstep(strikeU(), 0, 1) : 0;
   // The haze is faint by day and strong at night.
   halo.visible = astMesh.visible;
-  haloMat.uniforms.uGain.value = astMat.uniforms.uBurn.value * (0.12 + 0.5 * U.uStars.value);
+  haloMat.uniforms.uGain.value = astMat.uniforms.uBurn.value * (0.12 + 0.5 * U.uStars.value) * (1 + g);
   bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
   bow.visible = astMesh.visible && !reduced();
   if (!bow.visible) return;
@@ -4306,8 +4375,8 @@ function updateBow() {
   bowR.setFromMatrixColumn(camera.matrixWorld, 0); bowU.setFromMatrixColumn(camera.matrixWorld, 1);
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
-  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
-  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value;
+  bowMat.uniforms.uGrand.value = g;
+  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (1 + 1.5 * g);
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
@@ -4365,25 +4434,28 @@ function ring(m, c, a, b, r, w, gain) {
 // Forty-eight segments.
 // Each frame they take the head's last quarter second.
 const BOLT_SEG = 48, BOLT_PTS = BOLT_SEG + 1;
-const boltGeo = new THREE.BufferGeometry();
-{
+// Each round in flight has its own ribbon geometry.
+function makeBoltGeo() {
+  const g = new THREE.BufferGeometry();
   const n = BOLT_SEG, pos = new Float32Array(n * 12), idx = [];
   for (let i = 0; i < n; i++) {
     const b = i * 4;
     pos.set([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], i * 12);
     idx.push(b, b + 2, b + 3, b, b + 3, b + 1);
   }
-  boltGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  boltGeo.setIndex(idx);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(idx);
   for (const name of ['aP0', 'aP1']) {
     const a = new THREE.BufferAttribute(new Float32Array(n * 12), 3);
     a.setUsage(THREE.DynamicDrawUsage);
-    boltGeo.setAttribute(name, a);
+    g.setAttribute(name, a);
   }
   const k = new THREE.BufferAttribute(new Float32Array(n * 8), 2);
   k.setUsage(THREE.DynamicDrawUsage);
-  boltGeo.setAttribute('aK', k);
+  g.setAttribute('aK', k);
+  return g;
 }
+const boltGeo = makeBoltGeo();
 const boltMat = new THREE.ShaderMaterial({
   uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uBlue: { value: new THREE.Vector3(...linFit(0.85, 0.08, 230)) }, uCore: { value: 3 }, uGain: { value: 6 }, uWide: { value: 110 } },
   transparent: true, depthWrite: false,
@@ -4590,16 +4662,38 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
 }));
 ionPuffs.frustumCulled = false; ionPuffs.renderOrder = 2.55; ionPuffs.visible = false;
 scene.add(ionPuffs);
-// The live line: its start time, flight time and power.
-let ion = null;
+// Tracers: one ribbon and one ion trail per round in flight.
+// Slot 0 is the first set; the copies share every uniform but their own.
+function matCopy(m, own) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...m.uniforms, ...own }, vertexShader: m.vertexShader, fragmentShader: m.fragmentShader, defines: { ...m.defines },
+    transparent: m.transparent, depthWrite: m.depthWrite, depthTest: m.depthTest, side: m.side,
+    blending: m.blending, blendSrc: m.blendSrc, blendDst: m.blendDst, blendSrcAlpha: m.blendSrcAlpha, blendDstAlpha: m.blendDstAlpha,
+  });
+}
+const tracers = [{ bolt, line: ionLine, puffs: ionPuffs, round: null }];
+for (let i = 1; i < MAX_ROUNDS; i++) {
+  const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() } };
+  const t = {
+    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 6 } })),
+    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), round: null,
+  };
+  for (const k of ['bolt', 'line', 'puffs']) { t[k].frustumCulled = false; t[k].renderOrder = tracers[0][k].renderOrder; t[k].visible = false; scene.add(t[k]); }
+  tracers.push(t);
+}
+// Each slot's ion trail follows its round: hot behind the head, then a contrail.
 function updateIon() {
-  if (!ion) { ionLine.visible = ionPuffs.visible = false; return; }
-  const a = simT - ion.t0 - 0.3;
-  if (a > ion.T + 11) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
-  ionMat.uniforms.uI.value.set(a, ion.T, ion.c);
-  // The hot ribbon only lives a second behind the head.
-  ionLine.visible = a > 0 && a < ion.T + 1.5;
-  ionPuffs.visible = a > 0.15;
+  for (const t of tracers) {
+    const r = t.round;
+    if (!r) { t.line.visible = t.puffs.visible = false; continue; }
+    const a = simT - r.s0 - 0.3;
+    t.line.material.uniforms.uI.value.set(a, r.T, Math.min(r.c, 1.25));
+    // The hot ribbon only lives a second behind the head.
+    t.line.visible = a > 0 && a < r.T + 1.5;
+    t.puffs.visible = a > 0.15;
+    // On rungs 2 and 3, later rounds draw no contrail puffs.
+    if (r.j > 1 && rung >= 2) t.puffs.visible = false;
+  }
 }
 
 /* ---------- glints: streaks of light with a length and a width in metres ---------- */
@@ -5607,18 +5701,18 @@ function updateMuzzle(ma, c, m0) {
   // The conical plume is off; the flash, the disc and the brake smoke carry the shot.
   plume.visible = false;
   // The barrel glows once the slug has left it.
-  if (on && !shot.heated) {
-    shot.heated = true; U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * cc); U.uHeatT.value = 1;
+  if (on && shot.heated !== shot.jN) {
+    shot.heated = shot.jN; U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * cc); U.uHeatT.value = 1;
     // The blast throws its smoke out of the muzzle.
     muzzleFx = { t0: simT, P: m0.clone(), ax: shot.ax.clone(), k: Math.min(1, 0.5 + 0.5 * cc) };
   }
   // The bore throws a cone of burning plasma once.
-  if (on && !shot.sprayed) { shot.sprayed = true; muzzleSpray(m0, cc, shot.ax, shot.side, shot.up); }
+  if (on && shot.sprayed !== shot.jN) { shot.sprayed = shot.jN; muzzleSpray(m0, cc, shot.ax, shot.side, shot.up); }
   // Six jets for 0.15 s.
   const jg = on ? 3.5 * cc * Math.exp(-ma / 0.06) : 0;
   // The brake spits smoke out of its ports once, sideways; it drifts and thins.
-  if (on && !shot.puffed && !reduced()) {
-    shot.puffed = true;
+  if (on && shot.puffed !== shot.jN && !reduced()) {
+    shot.puffed = shot.jN;
     for (const a of BRAKE_PORTS) for (const sd of [-1, 1]) for (let k = 0; k < 5; k++) {
       barrelPt(a, sd * 24, 0, jp);
       bv.copy(shot.side).multiplyScalar(sd * (50 + 70 * rnd()) * cc).addScaledVector(shot.ax, 10 + 25 * rnd()).addScaledVector(shot.up, 4 + 10 * rnd());
@@ -6285,10 +6379,15 @@ const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chQ = new THREE.Vect
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
 const chunkGlow = chunks.map(() => makeFlare(linFit(0.78, 0.13, 52)));
+// A hunted chunk's burst flash.
+const huntFlares = chunks.map(() => makeFlare(linFit(0.9, 0.12, 60)));
 function stepChunks() {
   for (const [ci, ch] of chunks.entries()) {
-    if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; continue; }
-    const age = simT - sSeed.array[ch.i * 4 + 2], r = sSeed.array[ch.i * 4 + 1];
+    if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; huntFlares[ci].visible = false; continue; }
+    // A hunted chunk stops where it burst; its trail holds, then fades.
+    const age = ch.burstAt ? ch.burstAge : simT - sSeed.array[ch.i * 4 + 2], r = ch.burstAt ? ch.r0 : sSeed.array[ch.i * 4 + 1];
+    const bt = ch.burstAt ? simT - ch.burstAt : -1;
+    flare(huntFlares[ci], ch.burstP || MUZZLE, r * 12 * (1 + (1 - Math.exp(-Math.max(bt, 0) / 0.3))), bt >= 0 && bt < 4 ? 3 * Math.exp(-bt / 0.08) + 0.7 * Math.exp(-bt / 1.1) : 0);
     shardAt(ch.i, age, chP, chV);
     // Half the pieces burn away in the air; the shader shrinks the same ones.
     const shr = ((sSeed.array[ch.i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
@@ -6304,7 +6403,7 @@ function stepChunks() {
     // The ember pool cools over about twenty seconds.
     U.uPool.value[ci].set(ch.landP ? ch.landP.x : 0, ch.landP ? ch.landP.z : 0, ch.landAt ? Math.exp(-(simT - ch.landAt) / 8) * (1 - THREE.MathUtils.smoothstep(simT - ch.landAt, 15, 22)) : 0, r * 3);
     const landed = ch.landAt ? 1 - THREE.MathUtils.smoothstep(simT - ch.landAt, 0, 10) : 1;
-    const on = Math.min(1, age / 2) * shr * landed * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    const on = Math.min(1, age / 2) * shr * landed * (1 - THREE.MathUtils.smoothstep(age, 50, 58)) * (bt >= 0 ? 1 - THREE.MathUtils.smoothstep(bt, 0, 6) : 1);
     // A faint globe swells as the piece falls and fades as it cools.
     flare(chunkGlow[ci], chP, r * (8 + 0.15 * age) * Math.max(shr, 0.3), on * (0.022 + 0.05 * Math.exp(-age / 6)));
     // Each piece's glow lights the smoke round it.
@@ -6347,17 +6446,27 @@ function stepChunks() {
 // One shot at a time.
 // The slug runs the rails in 0.3 s.
 // Then the bolt crosses to the rock.
-let shot = null, hitFlash = 0, flashNow = 0;
+// The deepest salvo slide in metres: the breech's clearance point.
+const SALVO_CAP = 240;
+// shot is the gun's firing cycle; lit is the cycle whose hit lights the sky.
+let shot = null, lit = null, hitFlash = 0, flashNow = 0;
 const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bv = new THREE.Vector3();
-// Where the bolt is t seconds after the shot.
-function boltAt(t, out) {
-  if (!shot) return out.copy(MUZZLE);
-  if (t <= 0) return axisAt(BREECH, out);
+// Rounds in flight.
+// A round's clock starts on the rails, 0.3 s before it leaves the muzzle.
+const rounds = [];
+// Where a round is t seconds after its rail start.
+function roundAt(r, t, out) {
+  // A hunting round leaves its path and runs slowly to its chunk.
+  if (r.re && t >= r.re.t) return out.lerpVectors(r.re.p0, r.re.to, Math.min(1, (t - r.re.t) / r.re.T));
+  if (t <= 0 || !r.target) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
   // It leaves at 2.6 times its mean speed and slows in the air: same arrival, a much quicker look.
-  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 2.6);
-  return out.lerpVectors(shot.muzzle, shot.target, u);
+  const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 2.6);
+  return out.lerpVectors(r.muzzle, r.target, u);
 }
+// A round's landing time on its own clock.
+const landOf = r => (r.re ? r.re.t + r.re.T : 0.3 + r.T);
+// The target seam: the rock or the capital ship.
 // The live target takes the stored choice.
 // It updates at load and at Reset.
 let tgtKind = 'rock';
@@ -6367,8 +6476,9 @@ function tgtPos(out) {
   return shipAim(simT, out);
 }
 // Where the target is after 0.3 + T seconds.
+// The rock's lead stops at contact with the ground.
 function tgtLead(T, out) {
-  if (tgtKind === 'rock') return astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), out);
+  if (tgtKind === 'rock') return astAt(Math.min(ast.s + (0.3 + T) / fallT(), contactS()), out);
   return shipAim(simT + 0.3 + T, out);
 }
 // The target's radius, as the sight and the laser see it.
@@ -6380,28 +6490,212 @@ function tgtLive() { return tgtKind === 'rock' || ship.state === 'arrive' || shi
 function tgtShown() { return tgtKind === 'rock' ? astMesh.visible : shipMeshes.some(m => m.visible); }
 // True while a bolt can hit the target.
 function tgtCanHit() {
-  if (tgtKind === 'rock') return ast.state === 'approach' || ast.state === 'hold';
+  if (tgtKind === 'rock') return ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
   return ship.state === 'station' || ship.state === 'wounded';
 }
 // The bolt lands on the target.
-function tgtHit(c) {
+// A ship round passes itself, so the hit marks its cycle.
+function tgtHit(c, r) {
   if (tgtKind === 'rock') shatter(c);
-  else shipHit(c);
+  else return shipHit(c, r);
 }
-fire = c => {
-  if (shot) return;
-  // A weak shot takes 11.5 seconds to cross; a full one 8.5.
-  const T = THREE.MathUtils.lerp(11.5, 8.5, c);
+// True when ship rounds already in flight break the ship first.
+// Each earlier round either wounds or kills.
+function shipDoomed(r) {
+  let s = ship.state;
+  for (const q of rounds) {
+    if (q === r) break;
+    if (q.kind !== 'ship' || !q.launched || q.hit || !q.canHit) continue;
+    if (s === 'station') s = q.c >= SHIP_KILL ? 'gone' : 'wounded';
+    else if (s === 'wounded') s = 'gone';
+  }
+  return s !== 'station' && s !== 'wounded';
+}
+// A round takes its aim and a tracer slot as it starts down the rails.
+// Each round leads the target on its own, so Track mode leads every round.
+function launchRound(r) {
+  r.launched = true;
   let canHit = tgtCanHit();
-  const target = tgtLead(T, new THREE.Vector3());
-  // By hand, the bolt hits with the bore on the disc.
+  // A bolt that would land after contact is too late.
+  if (tgtKind === 'rock' && ast.s + (0.3 + r.T) / fallT() >= contactS()) canHit = false;
+  // Earlier rounds may break the ship first.
+  // Then this round flies on.
+  if (r.kind === 'ship' && canHit && shipDoomed(r)) canHit = false;
+  const target = tgtLead(r.T, new THREE.Vector3());
+  // Laid by hand, the bolt hits only if the bore points within the target's disc.
   if (manual.on && canHit) {
     const D = target.distanceTo(MUZZLE), off = AX.angleTo(bq.copy(target).sub(MUZZLE));
     canHit = off < 1.2 * tgtR() / D + 0.004;
   }
   // With no rock in the sky the bolt flies where the barrel points.
   if (!canHit) target.copy(MUZZLE).addScaledVector(AX, Math.max(20000, target.distanceTo(MUZZLE)));
-  shot = { t0: simT, c, T, target, muzzle: MUZZLE.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T, kind: tgtKind };
+  r.target = target; r.muzzle = MUZZLE.clone(); r.canHit = canHit;
+  // A free slot, else the oldest round's slot.
+  const t = tracers.find(x => !x.round) || tracers.reduce((a, b) => (a.round.s0 <= b.round.s0 ? a : b));
+  if (t.round) t.round.slot = null;
+  t.round = r; r.slot = t;
+  t.line.material.uniforms.uA.value.copy(MUZZLE); t.line.material.uniforms.uB.value.copy(target);
+  t.bolt.material.uniforms.uCore.value = 3 * (0.6 + r.c);
+  t.bolt.material.uniforms.uGain.value = 5 + 3 * r.c;
+  if (!r.salvo) return;
+  const ac = kit.live();
+  if (!ac) return;
+  roundSound(ac, r);
+  // The round that will break the rock gets the impact prelude and the boom.
+  const k = breakPower(r);
+  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target, sfx: {}, tag: 'salvo', kind: r.kind }, () => rounds.includes(r));
+}
+// The tally this round would leave on landing, if it breaks the rock; else 0.
+// A ship round never breaks the rock.
+function breakPower(r) {
+  if (!r.canHit || r.kind === 'ship' || ast.tally.broken) return 0;
+  const t = { ...ast.tally };
+  for (const q of rounds) {
+    if (!q.salvo || !q.launched || q.hit || !q.canHit) continue;
+    const res = landRound(t, q.c);
+    if (q === r) return res === 'break' ? t.dmg : 0;
+  }
+  return 0;
+}
+// A cycle's hit is decided: its light and its blast follow this round.
+function decide(cy, r, power) {
+  cy.decided = cy.hit = cy.canHit = true;
+  cy.hitT = r.s0 - cy.t0 + 0.3 + r.T;
+  cy.target.copy(r.target);
+  // The ship's hit takes no rock size.
+  cy.bk = (0.75 + 0.5 * Math.min(power, 1.25)) * (r.kind === 'ship' ? 1 : SIZES[opts.size].rumble);
+  lit = cy;
+}
+// A round lands.
+// Rail: a round on target breaks the rock.
+// Salvo: the tally says crater, break, hunt or miss.
+// Ship: each round wounds or kills by its own charge, or misses.
+function roundHits(r) {
+  const cy = r.cy;
+  if (r.kind === 'ship') {
+    const res = r.canHit && tgtCanHit() ? tgtHit(r.c, r) : null;
+    r.res = res || 'miss';
+    if (res) { decide(cy, r, r.c); cy.res = res; } else if (!cy.decided && r.j === r.n) cy.hit = true;
+    return;
+  }
+  if (!r.salvo) {
+    if (r.canHit && !ast.tally.broken && tgtCanHit()) { decide(cy, r, r.c); ast.tally.broken = true; tgtHit(r.c); huntAfter(); }
+    else cy.hit = true;
+    return;
+  }
+  r.res = r.canHit && (!ast.tally.broken || r.chunk >= 0) ? landRound(ast.tally, r.c) : 'miss';
+  if (r.res === 'crater') addCrater(r);
+  else if (r.res === 'break') { decide(cy, r, ast.tally.dmg); tgtHit(Math.min(1.25, ast.tally.dmg)); huntAfter(); }
+  else if (r.res === 'hunt') burstChunk(r.chunk);
+  // The last round lands with no break: the cycle's hit is a miss.
+  if (!cy.decided && r.j === r.n) cy.hit = true;
+}
+// After a break, salvo rounds in flight lock onto the big chunks, the biggest first.
+// Each slows in the thin air and lands HUNT_GAP s after the last.
+// So each chunk bursts clear of the fireball.
+const HUNT_GAP = 2.5;
+function huntAfter() {
+  let ci = 0, k = 0;
+  for (const q of rounds) {
+    if (!q.launched || q.hit || !q.canHit || !q.salvo || q.chunk >= 0) continue;
+    while (ci < chunks.length && chunks[ci].i < 0) ci++;
+    if (ci >= chunks.length) break;
+    q.chunk = ci++;
+    // The round runs from where it is now to where the chunk will be.
+    const ch = chunks[q.chunk], t = simT - q.s0, land = simT + HUNT_GAP * ++k;
+    const p0 = roundAt(q, t, new THREE.Vector3()), to = new THREE.Vector3();
+    shardAt(ch.i, land - sSeed.array[ch.i * 4 + 2], to, bv);
+    q.re = { t, p0, to, T: land - simT };
+  }
+}
+// A crater: a hot pit on the face toward the gun, spall, a small flash, a shove.
+const crDir = new THREE.Vector3(), crP = new THREE.Vector3(), crV = new THREE.Vector3();
+function addCrater(r) {
+  const R = ast.R;
+  crDir.copy(r.muzzle).sub(ast.pos).normalize().add(crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.7)).normalize();
+  crP.copy(ast.pos).addScaledVector(crDir, R);
+  astMesh.updateMatrixWorld();
+  crV.copy(crP); astMesh.worldToLocal(crV).normalize();
+  const C = astMat.uniforms.uCrater.value, slot = C[0].w < 0 ? C[0] : C[1].w < 0 ? C[1] : (C[0].w <= C[1].w ? C[0] : C[1]);
+  slot.set(crV.x, crV.y, crV.z, simT);
+  craterSound(crP);
+  // Reduced motion halves the flash.
+  hitFlash = Math.max(hitFlash, reduced() ? 0.165 : 0.33);
+  // uHit holds the sky direction to the rock, as the shatter sets it.
+  U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, hitFlash);
+  ast.jolt.addScaledVector(crDir, -0.08 * R);
+  if (reduced()) return;
+  const sp = R / 600;
+  for (let i = 0; i < 40; i++) {
+    crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().addScaledVector(crDir, 1.2).normalize().multiplyScalar((150 + 450 * rnd()) * sp);
+    writeStar(crP, simT + rnd() * 0.2, crV, 0.08 + 0.12 * rnd(), 2, 2 + rnd() * 6, 0.4 + 0.8 * rnd(), 0.9 + 0.7 * rnd(), 3, 0.3);
+  }
+}
+// The rock's damage and craters clear for a new rock or a reset.
+function clearHits() {
+  ast.tally = makeTally(chunks.length);
+  for (const c of astMat.uniforms.uCrater.value) c.set(0, 0, 0, -1);
+  ast.jolt.set(0, 0, 0);
+}
+// A hunted chunk bursts in the air: a flash, embers, and its trail stops.
+function burstChunk(ci) {
+  const ch = chunks[ci];
+  if (!ch || ch.i < 0 || ch.burstAt) return;
+  const age = simT - sSeed.array[ch.i * 4 + 2];
+  ch.burstAt = simT; ch.burstAge = age; ch.r0 = sSeed.array[ch.i * 4 + 1];
+  ch.burstP = new THREE.Vector3(); shardAt(ch.i, age, ch.burstP, bv);
+  // The piece itself is gone.
+  sSeed.array[ch.i * 4 + 1] = 0; sSeed.needsUpdate = true;
+  huntSound(ch.burstP);
+  if (reduced()) return;
+  const sp = ast.R / 600;
+  for (let n = 0; n < 70; n++) {
+    crV.set(rnd() - 0.5, rnd() - 0.4, rnd() - 0.5).normalize().multiplyScalar((60 + 220 * rnd()) * sp);
+    writeStar(ch.burstP, simT + 0.03 * rnd(), crV, 0.3 + 0.3 * rnd(), 1, 1.5 + 2 * rnd(), 0.4 + 0.4 * rnd(), 1.1 + 0.9 * rnd(), 2, 0.7, 2);
+  }
+}
+// The gun-side power of a round: it rises round by round in a salvo.
+const gunPow = r => (r.salvo ? r.j / MAX_ROUNDS : r.c);
+// The newest round out of the muzzle: its number, its clock and its power.
+// Rail has one round: j 1, the clock from 0.3 s, the shot's power.
+function newest(sh) {
+  const age = simT - sh.t0, j = sh.salvo ? Math.max(1, Math.min(sh.n, Math.floor((age - LAUNCH) / GAP) + 1)) : 1;
+  return { j, ra: age - launchAt(j), gp: sh.salvo ? j / MAX_ROUNDS : sh.c };
+}
+// Rounds launch, land, and leave once their contrail fades.
+function stepRounds() {
+  for (const r of rounds) {
+    const a = simT - r.s0;
+    if (!r.launched && a >= 0) launchRound(r);
+    if (r.launched && !r.hit && a >= landOf(r)) { r.hit = true; roundHits(r); }
+  }
+  // Each round's Mach ring runs out from the muzzle at 340 m/s and fades over 14 s.
+  for (const s of U.uShocks.value) s.w = 0;
+  for (const r of rounds) {
+    if (!r.launched) continue;
+    const sa = Math.max(0, simT - r.s0 - 0.3), k = gunPow(r);
+    U.uShocks.value[r.j - 1].set(r.muzzle.x, r.muzzle.z, 340 * sa, sa > 14 ? 0 : k * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5)));
+  }
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    const r = rounds[i];
+    if (simT - r.s0 > landOf(r) + 11) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
+  }
+}
+fire = (c, n = 1, salvo = false) => {
+  // A new cycle waits until the last cycle's rounds have all left.
+  if (shot && simT < shot.t0 + launchAt(shot.n)) return;
+  // A new cycle throws out a case the last one still holds.
+  if (shot && !shot.ejected) ejectCase();
+  // A weak shot takes 11.5 seconds to cross; a full one 8.5.
+  const T = THREE.MathUtils.lerp(11.5, 8.5, c);
+  // The barrel may still be back from the last cycle; slide0 eases it in.
+  const slide0 = U.uRecoil.value;
+  // kind marks a ship cycle and its rounds.
+  shot = { slide0, t0: simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T, kind: tgtKind, res: null };
+  for (let j = 1; j <= n; j++) rounds.push({ j, n, c, salvo, T, cy: shot, s0: simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null, kind: tgtKind });
+  launchRound(rounds[rounds.length - n]);
+  // Rail: the cycle knows its target at once.
+  if (!salvo) { const r = rounds[rounds.length - 1]; shot.target.copy(r.target); shot.canHit = r.canHit; }
   // The Mach ring starts at the muzzle's foot.
   // It reaches the eye at the speed of sound.
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
@@ -6411,7 +6705,6 @@ fire = c => {
   U.uFire.value = 1;
   // The release only clunks; the big kick lands with the blast, as the slug leaves.
   cam.shake = 0.25 * c;
-  U.uShock.value.set(MUZZLE.x, MUZZLE.z, 0, 0);
   // The kick lifts the ring of dust round the mount.
   cdust = Math.max(cdust, 0.9);
   // The muzzle shock throws the ring outward.
@@ -6432,14 +6725,13 @@ fire = c => {
   if (!reduced()) for (let i = 0; i < 9; i++) sandStreams.push({ p: barrelPt(-200 + rnd() * 1050, (rnd() - 0.5) * 40, 30 + rnd() * 20, new THREE.Vector3()), t0: simT + rnd() * 0.4, dur: 3 + 2 * rnd(), acc: 0 });
   // The shot flings the field's motes out along the bore.
   flingMotes();
-  ion = { t0: simT, T, c: Math.min(c, 1.25) };
-  ionMat.uniforms.uA.value.copy(MUZZLE); ionMat.uniforms.uB.value.copy(shot.target);
-  boltMat.uniforms.uCore.value = 3 * (0.6 + c);
-  boltMat.uniforms.uGain.value = 5 + 3 * c;
-  { const ac = kit.live(); if (ac) { shotSound(ac, shot); hitSounds(ac, shot); } }
+  // A salvo's hit sounds wait for the sound pass.
+  // A salvo's rounds play their own reports as they launch.
+  { const ac = kit.live(); if (ac && !salvo) { shotSound(ac, shot); hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
+  endStrike();
   starMat.uniforms.uShedCut.value = simT + 0.3;
   ast.state = 'shatter';
   ast.hitAt = simT;
@@ -6456,7 +6748,7 @@ function shatter(c) {
     // It keeps the rock's own motion.
     bv.multiplyScalar((70 + 160 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
     bv.y += 0.25 * bv.length();
-    bv.addScaledVector(ast.away, -FALL / SIZES[opts.size].T);
+    bv.addScaledVector(ast.away, -FALL / fallT());
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
@@ -6483,7 +6775,7 @@ function shatter(c) {
   });
   shardGeo.instanceCount = keep.length;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
-  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; });
+  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; ch.burstAt = 0; ch.burstP = null; });
   // Embers: burning pieces fly out all round and arc down.
   const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
@@ -6528,8 +6820,8 @@ function shatter(c) {
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
   U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
-  // The boom sample replaces the synth rumble once it decodes.
-  if (!boomOK) rumble(c);
+  // The synth rumble stands in when the hit's sounds were not scheduled.
+  if (!shot?.sfx?.boom) rumble(c);
 }
 /* ---------- the ship's hit: the kill and the wound ---------- */
 // The hit's flash has no tail and a half share.
@@ -6552,17 +6844,18 @@ function hullPt(x, y, out) {
   return out.set(x, y, 0).multiplyScalar(SHIP_SCALE).applyQuaternion(fxQ).add(fxP);
 }
 // The bolt strikes the ship at the mid hull.
-function shipHit(c) {
+// r is the round.
+// It returns 'wound', 'kill' or null.
+function shipHit(c, r) {
   const res = hitShip(ship, c, simT, SHIP_MID.x);
-  if (shot) shot.res = res;
-  if (!res) return;
+  if (!res) return null;
   const P = shipAim(simT, new THREE.Vector3()), kill = res === 'kill';
   // The flash lights the sky round the ship.
   fxV.subVectors(P, camera.position).normalize();
   U.uHit.value.set(fxV.x, fxV.y, fxV.z, 1);
   if (!reduced()) cam.shake += 0.3 * Math.min(c, 1);
   // Molten spray flies out in straight lines, mostly along the bolt.
-  const fw = new THREE.Vector3().subVectors(P, shot ? shot.muzzle : MUZZLE).normalize();
+  const fw = new THREE.Vector3().subVectors(P, r ? r.muzzle : MUZZLE).normalize();
   for (let i = 0, n = kill ? 260 : 90; i < n; i++) {
     const f = rnd();
     rndDir(fxV).addScaledVector(fw, 0.7 * rnd()).normalize().multiplyScalar(300 + 1700 * f * f);
@@ -6574,7 +6867,7 @@ function shipHit(c) {
   const joints = kill ? jointOrder(SHIP_MID.x) : [{ joint: ship.wound.joint, at: 0.12 }];
   ship.fx = { t0: simT, P, kill, joints: joints.map(j => ({ joint: j.joint, t: simT + j.at, done: false, P: new THREE.Vector3() })) };
   queueShipSounds(ship.fx, Math.min(c, 1.25));
-  if (!kill) return;
+  if (!kill) return res;
   // Each hulk leaves its joints.
   // The ends go fore and aft.
   // The tower goes up.
@@ -6585,7 +6878,7 @@ function shipHit(c) {
     // Far hulks fly faster, so the end hulks part too.
     const far = Math.abs(dx) * SHIP_SCALE;
     return { dir, pop: 300 + 0.2 * far + 200 * rnd(), v: 30 + 0.012 * far + 20 * rnd(), axis: rndDir(new THREE.Vector3()) };
-  });
+  });  return res;
 }
 // A joint fails with a short flash and thrown plates.
 function jointBurst(j, wound) {
@@ -6618,7 +6911,7 @@ function stepShipFx(dt) {
     for (const f of jointFlares) f.visible = false;
     return;
   }
-  const ha = simT - fx.t0, k = shot && shot.bk ? shot.bk : 1;
+  const ha = simT - fx.t0, k = lit && lit.bk ? lit.bk : 1;
   flare(shipSpark, fx.P, 1400 * (1 + 0.6 * (1 - Math.exp(-ha / 0.15))), ha < 1.5 ? k * 7 * Math.exp(-ha / 0.12) : 0);
   // The vapour sphere swells and fades inside 1 s.
   flare(shipVapour, fx.P, 500 + 2600 * (1 - Math.exp(-ha / 0.25)), k * 1.1 * THREE.MathUtils.smoothstep(ha, 0, 0.05) * (1 - THREE.MathUtils.smoothstep(ha, 0.25, 0.9)));
@@ -6682,6 +6975,7 @@ function respawn() {
   astMesh.quaternion.random();
   seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
+  clearHits();
   // Each new rock rolls its size.
   // Random runs through the three common sizes; Aerosmith is picked on purpose.
   if (devSize === 'random') { const ks = ['boulder', 'mountain', 'moon']; opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
@@ -6766,7 +7060,8 @@ function stepAim(dt, snap = false) {
   if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
   const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
-  else if (charge && (tgtKind === 'rock' ? ast.state !== 'shatter' : shipLaid())) tgtLead(9.7, aimP).sub(A0);
+  else if (charge && tgtKind === 'rock' && ast.state !== 'shatter') astAt(Math.min(contactS(), ast.s + 10 / fallT()), aimP).sub(A0);
+  // A ship at rest keeps the gun laid on it.
   else if (shipLaid()) tgtLead(9.7, aimP).sub(A0);
   else aimP.copy(PARK);
   // The short way round: the mount turns a full circle.
@@ -6803,25 +7098,26 @@ function stepSand(dt) {
   }
 }
 function stepShot(dt) {
+  stepRounds();
   stepSand(dt);
   stepMotes(dt);
   // Flashes and kicks let go.
   cam.shake *= Math.exp(-dt / 0.4);
   cam.kickP *= Math.exp(-dt / 0.3); cam.kickY *= Math.exp(-dt / 0.3);
   // The blast light: a hard flash, then a slow fireball.
-  if (shot && shot.hit && shot.canHit) {
-    const ha = simT - shot.t0 - shot.hitT;
+  if (lit) {
+    const ha = simT - lit.t0 - lit.hitT;
     // A ship's hit has no fireball.
     // The flash has no tail.
-    if (shot.kind === 'ship') hitFlash = SHIP_FLASH * shot.bk * Math.exp(-ha / 0.4);
-    else hitFlash = shot.bk * (Math.exp(-ha / 0.4) + 0.3 * Math.exp(-ha / 5) + burstLight(ha));
+    if (lit.kind === 'ship') hitFlash = SHIP_FLASH * lit.bk * Math.exp(-ha / 0.4);
+    else hitFlash = lit.bk * (Math.exp(-ha / 0.4) + 0.3 * Math.exp(-ha / 5) + burstLight(ha));
   } else hitFlash *= Math.exp(-dt / 0.35);
   U.uHit.value.w = hitFlash;
   // uBlast: the blast's world place and the same strength as hitFlash.
   if (blastFx) U.uBlast.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, hitFlash > 0.003 ? hitFlash : 0);
   else U.uBlast.value.w = 0;
   // The power holds after the fireball; the shaders taper the light.
-  if (blastFx) U.uBk.value = (shot && shot.bk ? shot.bk : blastFx.k) * (reduced() ? 0.5 : 1);
+  if (blastFx) U.uBk.value = (lit ? lit.bk : blastFx.k) * (reduced() ? 0.5 : 1);
   // The barrel cools in about ten seconds.
   U.uHeat.value *= Math.exp(-dt / 3.5);
   U.uDustLoad.value *= Math.exp(-dt / 60);
@@ -6865,32 +7161,29 @@ function stepShot(dt) {
     const va = simT - ventT;
     if (va < 14) {
       barrelPt(L * 0.6, 0, 0, ventP);
-      U.uShock.value.set(ventP.x, ventP.z, 340 * va, (reduced() ? 0.6 : 1.2) * (Math.max(0, 1 - va / 14) + 1.5 * Math.exp(-va / 1.5)));
+      U.uShocks.value[0].set(ventP.x, ventP.z, 340 * va, (reduced() ? 0.6 : 1.2) * (Math.max(0, 1 - va / 14) + 1.5 * Math.exp(-va / 1.5)));
     }
     return;
   }
-  const age = simT - shot.t0;
-  U.uFire.value = Math.exp(-age / 0.15);
+  const age = simT - shot.t0, nw = newest(shot), ra = nw.ra, gp = nw.gp;
+  U.uFire.value = Math.exp(-(ra + 0.3) / 0.15);
   // The barrel slams back 320 m, holds half a second, then runs out over seconds.
   // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
-  const ra = age - 0.3;
-  U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  // A salvo kicks harder round by round, up to the clearance point.
+  if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
+  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  U.uRecoil.value = Math.max(U.uRecoil.value, shot.slide0 * Math.exp(-age / 0.6));
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
-    kick.p = ra > 0 ? rad(0.5) * shot.c * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
-    kick.y = ra > 0 ? rad(0.1) * shot.c * Math.exp(-ra / 0.8) * Math.sin(ra * 2 * Math.PI / 0.9) : 0;
+    kick.p = ra > 0 ? rad(0.5) * gp * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
+    kick.y = ra > 0 ? rad(0.1) * gp * Math.exp(-ra / 0.8) * Math.sin(ra * 2 * Math.PI / 0.9) : 0;
   }
   applyAim();
-  // The Mach ring runs out from the muzzle at 340 m/s.
-  // It fades over fourteen seconds.
-  const sa = Math.max(0, age - 0.3);
-  U.uShock.value.z = 340 * sa;
-  U.uShock.value.w = shot.c * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5));
-  if (!shot.blast && age >= 0.3) { shot.blast = true; blast(shot); }
+  // Each round blasts as it leaves the muzzle.
+  if ((shot.blasts || 0) < nw.j && ra >= 0) { shot.blasts = nw.j; blast(shot, gp); }
   // The Mach ring reaches the eye: a jolt, no sound of its own.
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
-  if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) tgtHit(shot.c); }
   // The back vents blow in a ripple; then the flap opens and the case leaves.
   // Half-way home the back vents blow; then the flap opens and the case leaves.
   // Laid by hand the gun does not park: the breech cycles 3.5 s after the hit.
@@ -6901,27 +7194,64 @@ function stepShot(dt) {
   if (!shot.ejected && shot.vented && age > shot.ventT + 1.0) { shot.ejected = true; ejectCase(); }
   // After a kill the Reset chip glows; only a press starts the timelapse.
   // A wound leaves the ship alive, so the chip stays dark.
-  if (shot.hit && shot.canHit && shot.res !== 'wound' && age > shot.hitT + 6) resetReady(true);
+  if (lit && lit.res !== 'wound' && simT - lit.t0 > lit.hitT + 6) resetReady(true);
   // A ship's hit has no fire.
   // The next shot comes sooner.
   if (age > shot.hitT + (shot.kind === 'ship' ? 15 : 50) && age > shot.arrive + 1) endShot();
 }
 // The shot ends. A shattered sky waits for Reset.
 function endShot() {
-  shot = null;
+  shot = null; lit = null;
   bolt.visible = false;
   flare(headFlare, MUZZLE, 1, 0);
 }
 
 // The blast: the slug leaves the muzzle.
-function blast(sh) {
-  cam.shake += 2.3 * sh.c; cam.kickP += rad(1.0) * sh.c; cam.kickY -= rad(0.3) * sh.c;
+function blast(sh, k = sh.c) {
+  cam.shake += 2.3 * k; cam.kickP += rad(1.0) * k; cam.kickY -= rad(0.3) * k;
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
+// The last stretch: the slug's light dies away into the distance before it strikes.
+function farFade(r, a) {
+  const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (a - 0.3) / r.T)), 2.6);
+  return 1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97);
+}
+// Each round's ribbon: one hot streak with shock diamonds behind the head.
+// It returns the leading round in flight.
+function updateRibbons() {
+  let lead = null;
+  for (const t of tracers) {
+    const r = t.round, a = r ? simT - r.s0 : -1, land = r ? landOf(r) : 0;
+    const live = !!r && a >= 0 && a < land + 0.3;
+    t.bolt.visible = live;
+    if (!live) continue;
+    if (!lead || r.s0 < lead.s0) lead = r;
+    const tail = 0.55 + 0.03 * r.T, g = t.bolt.geometry;
+    const p0 = g.attributes.aP0, p1 = g.attributes.aP1, kk = g.attributes.aK;
+    const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * farFade(r, a);
+    for (let k = 0; k < BOLT_SEG; k++) {
+      const ta = a - tail * (1 - k / BOLT_SEG), tb = a - tail * (1 - (k + 1) / BOLT_SEG);
+      roundAt(r, ta, bp); roundAt(r, tb, bq);
+      const lag = (a - tb) / tail;
+      // Inside the barrel the slug is hidden.
+      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
+      // The streak tapers to a point at its tail.
+      const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
+      for (let v = 0; v < 4; v++) {
+        const vi = k * 4 + v;
+        p0.setXYZ(vi, bp.x, bp.y, bp.z);
+        p1.setXYZ(vi, bq.x, bq.y, bq.z);
+        kk.setXY(vi, b, taper);
+      }
+    }
+    p0.needsUpdate = p1.needsUpdate = kk.needsUpdate = true;
+  }
+  return lead;
+}
 function updateBolt() {
+  const lead = updateRibbons();
   if (!shot) {
-    bolt.visible = false;
     // A corona spits at the muzzle at rage.
     const cg = charge && !reduced() ? rage * (0.5 + 0.5 * Math.abs(Math.sin(simT * 71) * Math.sin(simT * 13.7))) : 0;
     flare(muzzleFlare, MUZZLE, 50 + 70 * cg, 1.6 * cg); flare(muzzleGlow, MUZZLE, 1, 0);
@@ -6940,37 +7270,15 @@ function updateBolt() {
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(hitGlow, MUZZLE, 1, 0);
     flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; grade.uniforms.uGod.value.z = grade.uniforms.uGod.value.w = 0; return; }
-  const age = simT - shot.t0, c = shot.c;
-  const live = age < shot.hitT + 0.3;
-  bolt.visible = live;
-  if (live) {
-    const tail = 0.55 + 0.03 * shot.T;
-    const p0 = boltGeo.attributes.aP0, p1 = boltGeo.attributes.aP1, kk = boltGeo.attributes.aK;
-    // The last stretch: the slug's light dies away into the distance before it strikes.
-    const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (age - 0.3) / shot.T)), 2.6);
-    const fade = (1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3)) * (1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97));
-    for (let k = 0; k < BOLT_SEG; k++) {
-      const ta = age - tail * (1 - k / BOLT_SEG), tb = age - tail * (1 - (k + 1) / BOLT_SEG);
-      boltAt(ta, bp); boltAt(tb, bq);
-      // Brightness: one hot streak with fading shock diamonds.
-      const lag = (age - tb) / tail;
-      // Inside the barrel the slug is hidden.
-      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
-      // The streak tapers to a point at its tail.
-      const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
-      for (let v = 0; v < 4; v++) {
-        const vi = k * 4 + v;
-        p0.setXYZ(vi, bp.x, bp.y, bp.z);
-        p1.setXYZ(vi, bq.x, bq.y, bq.z);
-        kk.setXY(vi, b, taper);
-      }
-    }
-    p0.needsUpdate = p1.needsUpdate = kk.needsUpdate = true;
-    boltAt(age, bp); boltAt(age - 0.02, bq);
+  let c = shot.c;
+  if (lead) {
+    // The head's glints and flare follow the leading round.
+    const a = simT - lead.s0, land = landOf(lead), fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * farFade(lead, a);
+    roundAt(lead, a, bp); roundAt(lead, a - 0.02, bq);
     // The glint lies along the flight line.
     bv.subVectors(bp, bq);
     if (bv.lengthSq() < 1e-6) bv.copy(shot.ax); else bv.normalize();
-    const inGun = age < 0.3, pw = 0.6 + c;
+    const inGun = a < 0.3, pw = 0.6 + lead.c;
     bq.copy(bp).addScaledVector(bv, inGun ? -40 : -220 * pw);
     glint(headGlint, bq, bv, 1100 * pw, 70 * pw, inGun ? 0 : 5 * fade);
     // A lens streak crosses the head, level with the frame.
@@ -6983,8 +7291,9 @@ function updateBolt() {
     flare(headFlare, MUZZLE, 1, 0);
     U.uBolt.value.w = 0;
   }
-  // The muzzle flash: a burst as the slug leaves.
-  const ma = age - 0.3;
+  // The muzzle flash: a burst as each round leaves.
+  const nw = newest(shot), ma = nw.ra;
+  c = nw.gp; shot.jN = nw.j;
   const on = ma > 0 ? 1 : 0, m0 = shot.muzzle;
   // A small hot core for a few frames; the spike and the fire carry the rest.
   flare(muzzleFlare, m0, 110 * (0.6 + c), on * c * 9 * Math.exp(-ma / 0.035));
@@ -6996,18 +7305,18 @@ function updateBolt() {
   updateMuzzle(ma, c, m0);
   // The blast: a white core, a wide warm glow, two shock shells.
   // A ship's hit draws its own flash in stepShipFx.
-  const ha = age - shot.hitT, hk = shot.hit && shot.canHit && shot.kind !== 'ship' ? shot.bk : 0, R = ast.R;
+  const ha = lit ? simT - lit.t0 - lit.hitT : 0, hk = lit && lit.kind !== 'ship' ? lit.bk : 0, R = ast.R, hitP = lit ? lit.target : MUZZLE;
   // A short white core; the fireball carries the rest.
-  flare(hitFlare, shot.target, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
+  flare(hitFlare, hitP, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
   // A gentle globe of glow swells a little and lingers after the flash.
   // Its tail follows the fire: strong for 8 s, faint to 40 s.
-  flare(hitGlow, shot.target, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.06 * Math.exp(-ha / 8) + 0.01 * Math.exp(-ha / 40)));
+  flare(hitGlow, hitP, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.06 * Math.exp(-ha / 8) + 0.01 * Math.exp(-ha / 40)));
   // The whole frame overexposes for an instant.
   if (hk > 0) flashNow += hk * (0.6 * Math.exp(-ha / 0.14) + 0.1 * Math.exp(-ha / 1.2));
   // A ship's hit overexposes the frame for a blink only.
-  if (shot.kind === 'ship' && shot.hit && shot.canHit) flashNow += 0.2 * shot.bk * Math.exp(-ha / 0.1);
+  if (lit && lit.kind === 'ship') flashNow += 0.2 * lit.bk * Math.exp(-ha / 0.1);
   // A white lens flare with ghosts, if the hit is in front of the lens.
-  bq.copy(shot.target).project(camera);
+  bq.copy(hitP).project(camera);
   const lfOn = hk > 0 && bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4;
   grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
   // God rays from the core for the hot flash, a few seconds; the sky fills with them.
@@ -7067,7 +7376,8 @@ function stepFill(dt) {
 }
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
-  if (spin) return;
+  // After contact the white already cuts to the start.
+  if (spin || strike?.hit) return;
   stopRumbles();
   cancelHold();
   wake();
@@ -7116,8 +7426,14 @@ function landReset() {
   if (sshot) { dustGeo.instanceCount = 0; dustHead = 0; dustEnd = 0; }
   sshot = null; sRound.visible = sRoundGlint.visible = sPop.visible = sPopGlow.visible = false;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; clearHits(); for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
+  // Salvo sounds still to come stop with the old rock.
+  for (const h of pend) {
+    if (h.tag !== 'salvo') continue;
+    for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+    pend.delete(h);
+  }
   // Embers from the old rock go too.
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
@@ -7125,8 +7441,13 @@ function landReset() {
   // The domes and flashes go under the white.
   clearShip();
   tgtKind = ui.setting('target').value;
+  if (strike) gameOverSound(kit.live(), null);
+  strike = null;
+  rockGlowK = 1;
+  // The old hit's clock goes too, so the start is clean.
+  U.uHitP.value.w = -1e6;
   respawn();
-  ast.s = 0.25;
+  ast.s = strikeTest ? 0.995 : 0.25;
   PU.uTrail.value = 1;
   placeAst();
   // A ship takes the rock's place in the sky.
@@ -7256,12 +7577,148 @@ function sillyBoom(p) {
 }
 /* ---------- end the ship's shot ---------- */
 
+/* ---------- the strike: an unshot rock hits the planet ---------- */
+// The rock never holds: past the horizon line it falls on, at one speed.
+// Its strike runs from the horizon line, s = 1, to the ground, s = s1.
+// The glow, the rays, the flare, the bow and the surge grow with u.
+// The surge is the strike's only sound; it peaks at contact.
+// u is the share of that last stretch the rock has covered.
+// A bolt can still save the planet until contact.
+// At contact the blast goes off there and the frame burns to white.
+// Under the white the toy cuts to a fresh start, as Reset does.
+// The burn to white and the held white, in seconds.
+const BURN_T = 2.6, WHITE_T = 0.7;
+// The ground point the rock strikes.
+const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
+// The horizon's drop at ground distance d, as hzFade draws it.
+const dropAt = d => d * d / 3.2e6;
+// The fall fraction at contact: the centre half a radius over the curved ground.
+// It caches per size and path, and leaves the ground point in strikeP.
+let contactKey = '', contactS1 = 1;
+function contactS() {
+  const key = opts.size + ':' + ast.turn, R = SIZES[opts.size].R;
+  if (key === contactKey) return contactS1;
+  let s = 1;
+  for (; s < 2; s += 0.002) { astAt(s, strikeP); if (strikeP.y - dropAt(Math.hypot(strikeP.x, strikeP.z)) <= 0.5 * R) break; }
+  strikeP.y -= 0.5 * R;
+  contactKey = key; contactS1 = s;
+  return s;
+}
+function startStrike() {
+  strike = { s1: contactS(), hit: false, out: false, tb: 0 };
+  ast.state = 'strike';
+  resetReady(false);
+  wake();
+}
+// A bolt saves the planet: the strike and its surge stop.
+function endStrike() {
+  if (!strike) return;
+  strike = null;
+  rockGlowK = 1;
+  gameOverSound(kit.live(), null);
+}
+// The game-over sound: one seam, so another charge mix can take it over.
+// d.u: nearness to the ground, 0 to 1; it holds at 1 after contact.
+// d.vol: fades in over the first third, out across the white.
+// d.over: the strain, up to 1 in the burn. Null stops the sound.
+// Today it drives the charge hum; a live charge owns the hum.
+function gameOverSound(ac, d) {
+  // Surge Syl takes the seam once the sound branch merges.
+  if (typeof surgeOver === 'function') { surgeOver(ac, d); return; }
+  if (!d) { humStop(ac); return; }
+  if (!ac || charge) return;
+  humStart(ac);
+  const ch = Math.pow(d.u, 0.8);
+  humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(d.u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: d.over, vol: d.vol });
+}
+// Strike test: the rock jumps to the horizon line.
+function strikeSoon() {
+  if (tgtKind !== 'rock' || ast.state !== 'approach') return;
+  ast.s = Math.max(ast.s, 0.995);
+  placeAst(); astSize(); wake();
+}
+const strikeU = () => clamp((ast.s - 1) / Math.max(strike.s1 - 1, 1e-3), 0, 1);
+const burnT = () => (reduced() ? 1.6 : 1) * BURN_T;
+function stepStrike(dt) {
+  if (!strike || spin) return;
+  const ac = kit.live();
+  if (!strike.hit) {
+    const u = strikeU();
+    // The face burns white as the air thickens.
+    astMat.uniforms.uBurn.value = 1 + 2.5 * u * u * u;
+    // The ground shakes under the lens as the rock comes down.
+    if (!reduced()) cam.shake = Math.max(cam.shake, 0.7 * Math.pow(u, 4));
+    // The ground glow lights the world before contact.
+    hitFlash = 0.8 * Math.pow(u, 4);
+    // The rock lights the heaps and the tower harder as it comes down.
+    rockGlowK = 1 + 5 * u * u;
+    // The surge climbs with the rock's nearness to the ground.
+    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
+    if (ast.s >= strike.s1) strikeHit();
+  } else {
+    strike.tb += dt;
+    const tb = strike.tb, b = clamp(tb / burnT(), 0, 1);
+    // The blast light: a short flash, then it climbs with the burn.
+    hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
+    // The surge is the impact's sound: it screams through the burn and dies in the white.
+    gameOverSound(ac, { u: 1, vol: 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T), over: 0.6 + 0.4 * b });
+    // The white holds, then Reset's fill takes over and cuts to the start.
+    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; fill = { t: FILL_IN, calm: reduced() }; }
+  }
+  U.uHit.value.w = hitFlash;
+  if (blastFx) U.uBlast.value.w = hitFlash;
+}
+function strikeHit() {
+  strike.hit = true;
+  ast.state = 'struck';
+  astMesh.visible = false;
+  // A live charge or ranging ends with the planet.
+  if (charge || ranging) cancelHold();
+  const R = ast.R, P = strikeP.clone().setY(strikeP.y + 0.3 * R);
+  // Three late bursts break inside the fire.
+  const bursts = [0, 1, 2].map(i => ({ t: 0.4 + 0.6 * i + 0.3 * rnd(), k: 0.7 + 0.3 * rnd(), done: false, off: new THREE.Vector3(rnd() - 0.5, 0.4 * rnd(), rnd() - 0.5).multiplyScalar(3 * R) }));
+  blastFx = { t0: simT, P, R, k: 0.6, seed: rnd() * 10, bursts };
+  U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
+  U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
+  if (!reduced()) cam.shake += 1.5;
+}
+// The strike's light, each drawn frame, after the bolt and the blast.
+function updateStrike() {
+  if (!strike) return;
+  // The glow stops growing past the Moon: Aerosmith would white the frame early.
+  const u = strikeU(), tb = strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = strike.hit;
+  const e = x => 1 - Math.exp(-Math.max(x, 0));
+  // The ground glows under the rock and swells after contact.
+  flare(hitGlow, strikeP, Rg * (hit ? 24 + 30 * e(tb / 0.8) : 8 + 16 * u), hit ? 0.7 + 0.8 * e(tb / 0.3) : 0.6 * u * u * u);
+  // A white core grows in the last seconds; contact blows it up.
+  flare(hitFlare, strikeP, Rg * (hit ? 4 + 6 * e(tb / 0.4) : 1.5 + 2 * u), hit ? 14 * Math.exp(-tb / 0.3) + 4 : 6 * Math.pow(u, 6));
+  // The anamorphic flare rides the rock's leading face down to the ground.
+  // It starts at about half way down and grows until contact.
+  if (hit) strikeF.copy(strikeP); else strikeF.copy(ast.pos).setY(ast.pos.y - 0.5 * R);
+  strikeF.project(camera);
+  const rm = reduced() ? 0.5 : 1, onF = strikeF.z < 1 && Math.abs(strikeF.x) < 1.4 && Math.abs(strikeF.y) < 1.4 && !sight;
+  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(clamp((u - 0.55) / 0.45, 0, 1), 2.2);
+  // The level streak carries the flare; the warm veil sits under it.
+  grade.uniforms.uLF2.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 1.4 * lf : 0);
+  grade.uniforms.uLF.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 0.5 * lf : 0);
+  bq.copy(strikeP).project(camera);
+  const on = bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4 && !sight;
+  // God rays rise from the glow and fill the sky at contact.
+  const gk = on ? (reduced() ? 0.4 : 1) * (hit ? 1 : u * u * u) : 0;
+  grade.uniforms.uGod.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, gk, gk);
+  if (!hit) return;
+  // The burn: the frame overexposes, then the white fill takes it.
+  const b = clamp(tb / burnT(), 0, 1);
+  flashNow += 10 * b * b * b + 0.3 * Math.exp(-tb / 0.14);
+  if (!fill) fillEl.style.opacity = THREE.MathUtils.smoothstep(b, 0.35, 1).toFixed(3);
+}
+
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!sshot || shipBusy() || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!sshot || shipBusy() || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -7279,9 +7736,11 @@ function tick(now) {
     U.uTime.value = simT;
     stepAst(sdt);
     stepAim(sdt);
+    motorUpdate(dt);
     stepCharge(sdt);
     stepShot(sdt);
     stepShipShot(sdt);
+    stepStrike(sdt);
     stepCase(sdt);
     easeLook(dt);
     if (now - lastDraw >= FRAME - 2) {
@@ -7331,7 +7790,7 @@ whenVisible(stage, vis => {
     // A hidden tab drops the hold.
     // No finger is on it when it returns.
     cancelHold();
-    stopAll(); humStop(kit.ac, true); hushRoars();
+    stopAll(); humStop(kit.ac, true); motorStop(true); surgeOverStop(true); hushRoars();
     if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
@@ -7349,6 +7808,8 @@ onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.un
 const kit = audioKit({ keys: new Set([' ']) });
 const pend = new Set();
 function track(end, ...nodes) { const h = { end, nodes }; pend.add(h); return h; }
+// Salvo sounds carry a tag, so a Reset can stop them.
+function trackS(end, ...nodes) { const h = { end, nodes, tag: 'salvo' }; pend.add(h); return h; }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const pending = () => { prune(); return pend.size > 0; };
 let click = () => {};
@@ -7372,6 +7833,26 @@ function hiss(ac, t, dur, rate = 1) {
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
   s.start(t, Math.random() * 0.9); s.stop(t + dur);
   return s;
+}
+// A tone with a pitch glide and a struck envelope; returns the oscillator.
+function blip(ac, dest, t, { type = 'sine', f0, f1 = f0, glide = 0.5, peak, a = 0.01, dur }) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+  return o;
+}
+// A burst of filtered noise with a struck envelope; returns the source and its gain.
+function burst(ac, dest, t, { dur, rate = 1, type = 'bandpass', f = 1000, f1 = f, q = 0.7, peak, a = 0.004, pan = 0 }) {
+  const src = hiss(ac, t, dur + 0.05, rate), b = filt(ac, type, f, q), g = ac.createGain();
+  if (f1 !== f) b.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let n = src.connect(b).connect(g);
+  if (pan) { const p = ac.createStereoPanner(); p.pan.value = pan; n = n.connect(p); }
+  n.connect(dest);
+  return { src, g };
 }
 /* ---------- the wind bed ---------- */
 // Low wind over the plain, a whistle past the pylon.
@@ -7433,6 +7914,17 @@ const MIX = {
   vast: { hum: 0.85, choir: 1, oct: 1, sub: 1.7, glide: 0.35, late: 1.5, tier: true, bass: true, wob: 0.12, bloom: false, verb: 0.5, pre: 0.03, dark: 9000, accent: 1 },
   // Titan: an octave down, a slow drawl, the choir bursts open at the lock.
   titan: { hum: 0.8, choir: 0.85, oct: 0.5, sub: 1.5, glide: 0.6, late: 1.8, tier: true, bass: true, wob: 0.35, bloom: true, verb: 0.4, pre: 0.09, dark: 2600, accent: 1 },
+  // Surges: mechanical layers, then a saw swarm gliding into a chord; see SURGE.
+  penta: { ...MIX0, stack: 'penta', verb: 0.45, pre: 0.04, dark: 7000 },
+  hijaz: { ...MIX0, stack: 'hijaz', verb: 0.5, pre: 0.06, dark: 6000 },
+  syl: { ...MIX0, stack: 'syl', verb: 0.55, pre: 0.05, dark: 7000 },
+  colossus: { ...MIX0, stack: 'colossus', verb: 0.55, pre: 0.08, dark: 5000 },
+  dirge: { ...MIX0, stack: 'dirge', verb: 0.6, pre: 0.09, dark: 4000 },
+  leviathan: { ...MIX0, stack: 'leviathan', verb: 0.5, pre: 0.07, dark: 3500 },
+  eclipse: { ...MIX0, stack: 'eclipse', verb: 0.5, pre: 0.05, dark: 7000 },
+  monolith: { ...MIX0, stack: 'monolith', verb: 0.45, pre: 0.06, dark: 5000 },
+  // Monolith Hum: the plain hum ramps up, then Monolith's swarm joins it.
+  monohum: { ...MIX0, surge: 'monohum', verb: 0.45, pre: 0.05, dark: 6000 },
 };
 // The plain: one convolver per context, built on first use.
 // Open flats have no room: a ground bounce, mesa echoes, a low roll.
@@ -7471,7 +7963,9 @@ function humStart(ac) {
   if (hum) return;
   // The echo's impulse builds in idle time during the hold, not on the shot.
   if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
+  if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
+  if (P.stack) { hum = stackStart(ac, P); return; }
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
@@ -7544,9 +8038,15 @@ function humStart(ac) {
     vs.connect(dl).connect(dk).connect(plainVerb(ac));
   }
   hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
+  // A blend runs a surge swarm on top of the hum.
+  if (P.surge) {
+    const s = stackStart(ac, { ...P, stack: P.surge, verb: 0 });
+    hum.surge = s; src.push(...s.src);
+    if (vs) s.g.connect(vs);
+  }
 }
 // Semitones from the hum's root for a voice at power c.
-function voicePitch(v, c, t, P, wow) {
+function voicePitch(v, c, t, P, wow, over) {
   const u = clamp((c - 0.12) / 0.88, 0, 1);
   const lock = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
   // Each voice climbs on its own curve.
@@ -7559,12 +8059,18 @@ function voicePitch(v, c, t, P, wow) {
   if (P.tier) p -= 5 * (1 - THREE.MathUtils.smoothstep(u, v.enter, v.enter + 0.2));
   return p + wow;
 }
-function humUpdate(ac) {
-  if (!hum || !charge) return;
-  const P = hum.P, c = charge.c, t = ac.currentTime;
+// s: the drive; the hold's own by default, the strike's surge otherwise.
+// vol fades the whole stack in.
+function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 }) {
+  if (!hum || !s) return;
+  // A stacked charge sound runs its own update, only while a hold lasts.
+  if (hum.stack) { if (charge) stackUpdate(ac, hum); return; }
+  const { c, chaos, rage, over, vol } = s, P = hum.P, t = ac.currentTime;
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
-  const f = 55 * P.oct * Math.pow(2, (c * 7 + wow) / 12), hg = Math.max(0.05, 0.5 * P.glide);
+  // In Salvo each banked round lifts the hum a semitone.
+  const lift = fireMode === 'salvo' ? (charge.bank || 0) : 0;
+  const f = 55 * P.oct * Math.pow(2, (c * 7 + wow + lift) / 12), hg = Math.max(0.05, 0.5 * P.glide);
   for (const l of hum.layers) {
     for (const o of l.os) o.frequency.setTargetAtTime(f * l.ratio, t, hg);
     l.lg.gain.setTargetAtTime(0.12 * l.level * THREE.MathUtils.smoothstep(chaos, l.enter, l.enter + 0.1), t, 0.08);
@@ -7573,13 +8079,15 @@ function humUpdate(ac) {
   hum.sub.frequency.setTargetAtTime(55 * Math.pow(2, c * 7 / 12) / 2, t, hg);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
+  // In a blend the hum steps back a little as the swarm arrives.
+  const duck = hum.surge ? 1 - 0.35 * THREE.MathUtils.smoothstep(c, 0.6, 1) : 1;
+  hum.g.gain.setTargetAtTime(vol * 0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum * duck, t, 0.05);
   // Bloom mixes drop the sub in hard at the lock.
-  hum.sg.gain.setTargetAtTime(0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
+  hum.sg.gain.setTargetAtTime(vol * 0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c + 0.35 * rage, t, 0.05);
   hum.nb.frequency.setTargetAtTime(1200 + 2500 * rage, t, 0.08);
-  hum.ng.gain.setTargetAtTime(0.05 * rage + 0.07 * over, t, 0.08);
+  hum.ng.gain.setTargetAtTime(vol * (0.05 * rage + 0.07 * over), t, 0.08);
   // The choir: the root stays at the full-power pitch once locked.
   const root = 55 * Math.pow(2, Math.min(c, 1) * 7 / 12);
   const u = clamp((c - 0.12) / 0.88, 0, 1);
@@ -7594,7 +8102,7 @@ function humUpdate(ac) {
   const B2 = THREE.MathUtils.lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * vo + 0.5 * over);
   const ramp = P.tier ? 0.15 : 0.25;
   for (const v of hum.voices) {
-    const fr = root * Math.pow(2, voicePitch(v, c, t, P, wow) / 12);
+    const fr = root * Math.pow(2, voicePitch(v, c, t, P, wow, over) / 12);
     for (const o of v.os) o.frequency.setTargetAtTime(fr, t, P.glide);
     if (v.low) v.f2.frequency.setTargetAtTime(B2, t, 0.1);
     else { v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1); }
@@ -7603,12 +8111,13 @@ function humUpdate(ac) {
   // A swell at the lock, then a held chord.
   const accent = Math.exp(-(t - hum.lockAt) / 1.2);
   const env = P.tier ? THREE.MathUtils.smoothstep(u, 0.02, 0.5) : THREE.MathUtils.smoothstep(u, 0.15, 0.9);
-  hum.cg.gain.setTargetAtTime(0.11 * P.choir * env * (1 + P.accent * accent) * (1 + 0.3 * over), t, 0.08);
+  hum.cg.gain.setTargetAtTime(vol * 0.11 * P.choir * env * (1 + P.accent * accent) * (1 + 0.3 * over), t, 0.08);
   hum.cpre.gain.setTargetAtTime(0.6 + 4 * over, t, 0.08);
   // The bloom opens from 380 Hz to 7.5 kHz over the last stretch.
   if (hum.bloom) hum.bloom.frequency.setTargetAtTime(380 * Math.pow(2, 4.3 * Math.max(THREE.MathUtils.smoothstep(u, 0.8, 1.0), over)), t, 0.15);
   // The echoes grow with the charge and swell at the lock.
   if (hum.vs) hum.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
+  if (hum.surge) stackUpdate(ac, hum.surge);
 }
 // The vent: the choir groans down two octaves and dies.
 function humGroan(ac) {
@@ -7617,8 +8126,9 @@ function humGroan(ac) {
   hum = null;
   // Plain mixes fall slower and roll on across the flats.
   const long = !!h.P.verb, fall = long ? 0.9 : 0.5, end = long ? 4.5 : 2.6;
-  for (const v of h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
+  for (const v of h.surge ? [...h.voices, ...h.surge.voices] : h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
   h.cg.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
+  if (h.surge) h.surge.g.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
   for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.05);
   for (const n of h.src) n.stop(t + end);
   track(t + end + 0.1, ...h.src);
@@ -7628,9 +8138,218 @@ function humStop(ac, now = false) {
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
   if (!ac || now) { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
-  for (const n of [h.g, h.sg, h.ng, h.cg]) n.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.g, h.sg, h.ng, h.cg, h.surge?.g].filter(Boolean)) n.gain.setTargetAtTime(0, t, 0.03);
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
+}
+/* ---------- the surge charge ---------- */
+// Surge mixes: mechanical layers enter one by one as the charge grows.
+// On top, a swarm of saws glides from chaos into one massive chord.
+// Each profile: root (semitones from A1), chord tones per register,
+// pre (an optional chord held until the lock), wave, mechanical layers.
+// late and fade: a later swarm entry and a longer fade-in, for blends.
+// Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter),
+// pipe (drawbar harmonics, a little buzz). leslie: a rotary tremolo on the swarm.
+// Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
+const SURGE = {
+  // Surge: a pentatonic chord, open fifths, thirds and sixths.
+  penta: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Syl: Surge's chord and machines, with pipe-organ voices and a rotary tremolo.
+  syl: { root: 0, wave: 'pipe', leslie: true, mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Hijaz: the flat second, the augmented second and the flat sixth.
+  hijaz: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 25, 28, 31, 32, 36], high: [37, 40, 43, 44, 48, 55] },
+  // Colossus: a Lydian chord on D, bright and vast, over grinding stone.
+  colossus: { root: 5, wave: 'brass', mech: ['mains', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 26, 28, 30, 31, 35], high: [36, 38, 40, 42, 43, 47] },
+  // Dirge: a minor eleventh on G, a temple organ, bells tolling faster.
+  dirge: { root: -2, wave: 'organ', mech: ['grind', 'toll', 'mains'], bass: [-12, 0, 0, 7], mid: [12, 15, 19, 22, 24, 26, 27, 31], high: [34, 36, 39, 41, 43, 48] },
+  // Leviathan: stacked fourths on E, very low, with a ratchet winding up.
+  leviathan: { root: -5, wave: 'saw', mech: ['mains', 'ratchet', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 17, 22, 24, 27, 29, 32, 34], high: [36, 39, 41, 44, 46, 48] },
+  // Eclipse: a whole-tone cloud that resolves to a major chord at the lock.
+  eclipse: { root: 0, wave: 'brass', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 16, 19, 24, 28, 31, 36, 40], high: [43, 48, 52, 55, 60, 64], pre: { bass: [-12, 0, 0, 6], mid: [12, 14, 18, 20, 22, 26, 28, 30], high: [32, 34, 36, 38, 40, 42] } },
+  // Monolith Hum: the swarm alone, on E, where the hum's pitch lands.
+  // The hum carries the machines; the swarm enters late.
+  monohum: { root: 7, wave: 'saw', mech: [], sub: false, late: 0.3, fade: 0.18, bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
+  // Monolith: octaves and fifths only, every machine running.
+  monolith: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
+};
+// Per register: [entry charge, start low Hz, start high Hz, voice level].
+const REG = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
+function stackStart(ac, P) {
+  const src = [], S = SURGE[P.stack], R = 55 * Math.pow(2, S.root / 12), has = l => S.mech.includes(l);
+  const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
+  const gain = (to, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
+  const noise = (to, rate = 1) => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate; n.connect(to); n.start(); src.push(n); return n; };
+  // Every layer runs through one soft clip for glue and growl.
+  const cg = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain();
+  const curve = new Float32Array(257);
+  for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
+  shape.curve = curve; shape.oversample = '2x'; cg.gain.value = 0.8; g.gain.value = 0;
+  cg.connect(shape).connect(g).connect(kit.out);
+  const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 };
+  // The mains: a transformer hum, saw and square on the root.
+  if (has('mains')) {
+    const mlp = filt(ac, 'lowpass', 380, 1.5);
+    h.mainsG = gain(cg); mlp.connect(h.mainsG);
+    osc('sawtooth', R, mlp); osc('square', 2 * R, mlp, 7); osc('sawtooth', 3 * R, mlp, -5);
+  }
+  // The capacitor whine: a thin tone climbs four octaves.
+  if (has('whine')) { h.whineG = gain(cg); h.whine = osc('sine', 180, h.whineG); h.whine2 = osc('triangle', 90, gain(h.whineG, 0.5)); }
+  // Grinding stone: dark noise that heaves on two slow beats.
+  if (has('grind')) {
+    const gb = filt(ac, 'bandpass', 160, 1.6), gam = ac.createGain();
+    h.grindG = gain(cg); gam.gain.value = 0.6; gb.connect(gam).connect(h.grindG);
+    noise(gb, 0.35);
+    for (const [fr, d] of [[0.37, 0.3], [0.83, 0.15]]) osc('sine', fr, gain(gam.gain, d));
+    h.gb = gb;
+  }
+  // The sub: the root and the octave under it; a blend leaves it to the hum.
+  h.sg = gain(kit.out);
+  if (S.sub !== false) { osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5)); }
+  // The turbine: a saw and a band of noise throb faster and faster.
+  // Its gain doubles as the rage noise the stop and the vent fade.
+  h.ng = gain(cg);
+  if (has('turbine')) {
+    const am = gain(h.ng, 0.6);
+    h.tb = filt(ac, 'bandpass', 500, 2.5); h.tb.connect(am);
+    h.turb = osc('sawtooth', 2 * R, h.tb); noise(h.tb);
+    h.thr = osc('sine', 3, gain(am.gain, 0.5));
+  }
+  // The swarm: two oscillators per voice, under a filter that opens with the charge.
+  // Brass rings a resonant filter; organ uses squares.
+  h.sw = filt(ac, 'lowpass', 600, S.wave === 'brass' ? 5 : 0.9);
+  // The rotary tremolo: the swarm's level wobbles at 5.6 Hz.
+  if (S.leslie) {
+    const rot = ac.createGain();
+    rot.gain.value = 0.85;
+    osc('sine', 5.6, gain(rot.gain, 0.15));
+    h.sw.connect(rot).connect(cg);
+  } else h.sw.connect(cg);
+  // Pipe: drawbar harmonics 1, 2, 3, 4, 6 and 8, over a faint saw buzz.
+  let pw = null;
+  if (S.wave === 'pipe') {
+    const im = new Float32Array(17), DRAW = { 1: 1, 2: 0.75, 3: 0.45, 4: 0.55, 5: 0.12, 6: 0.3, 8: 0.25 };
+    for (let n = 1; n < 17; n++) im[n] = (DRAW[n] || 0) + 0.08 / n;
+    pw = ac.createPeriodicWave(new Float32Array(17), im);
+  }
+  const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : S.wave === 'pipe' ? 0.85 : 1;
+  h.voices = [];
+  for (const reg of ['bass', 'mid', 'high']) {
+    const [enter, lo, hi, lv] = REG[reg], tg = S[reg];
+    tg.forEach((s, i) => {
+      const pn = ac.createStereoPanner();
+      pn.pan.value = reg === 'bass' ? (i % 2 ? 0.15 : -0.15) : (i % 2 ? 1 : -1) * (0.25 + 0.5 * Math.random());
+      pn.connect(h.sw);
+      const vg = gain(pn), start = lo * Math.pow(hi / lo, Math.random());
+      const os = (pw ? [-4, 4] : [-7, 7]).map(dt => osc(type, start, vg, dt));
+      if (pw) for (const o of os) o.setPeriodicWave(pw);
+      // late: the swarm's entries squeeze into the last part of the charge.
+      const e = enter + 0.1 * i / tg.length;
+      h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: S.late ? S.late + (1 - S.late) * e : e, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
+    });
+  }
+  // The plain send takes the whole surge.
+  if (P.verb) {
+    h.vs = ac.createGain(); h.vs.gain.value = 0;
+    const dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', P.dark, 0.5);
+    dl.delayTime.value = P.pre;
+    g.connect(h.vs).connect(dl).connect(dk).connect(plainVerb(ac));
+  }
+  return h;
+}
+// dv: an optional drive { c, over, rage, lock, vol } in place of the charge.
+function stackUpdate(ac, h = hum, dv = null) {
+  const P = h.P, c = dv ? dv.c : charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+  const ov = dv ? dv.over : over, rg = dv ? dv.rage : rage, vol = dv ? dv.vol : 1;
+  const locked = dv ? dv.lock : c >= 0.999 && ov < 0.15;
+  if (locked && !h.locked) h.lockAt = t;
+  h.locked = locked; h.sour = ov;
+  const accent = Math.exp(-(t - h.lockAt) / 1.2);
+  // The mains hum from the first instant.
+  if (h.mainsG) h.mainsG.gain.setTargetAtTime(0.2 * ss(u, 0, 0.12) * (0.45 + 0.55 * u), t, 0.08);
+  // The whine climbs from 180 Hz to 4 kHz.
+  if (h.whine) {
+    h.whine.frequency.setTargetAtTime(180 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whine2.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whineG.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
+  }
+  // The stone grinds louder and higher.
+  if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
+  // The sub swells, and drops in hard at the lock.
+  h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent) * vol, t, 0.08);
+  // The turbine spins up from 3 to 18 throbs a second.
+  h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rg + 0.08 * ov, t, 0.08);
+  if (h.turb) {
+    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rg, t, 0.1);
+    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rg, t, 0.1);
+    h.turb.frequency.setTargetAtTime(2 * h.R * (1 + u), t, 0.1);
+  }
+  // Bells toll and the ratchet clanks, faster with the charge.
+  // Each strike is scheduled ahead, so the rhythm holds between frames.
+  if (u > 0.15 && (h.S.mech.includes('toll') || h.S.mech.includes('ratchet'))) {
+    if (!h.next) h.next = t + 0.05;
+    const toll = h.S.mech.includes('toll');
+    while (h.next < t + 0.15) {
+      if (toll) bell(ac, h, Math.max(t, h.next), u); else ratchet(ac, h, Math.max(t, h.next), u);
+      h.next += toll ? 3.2 - 2.4 * u : 1 / (1 + 9 * u);
+    }
+  }
+  // The swarm: each voice wanders, then glides to its chord tone.
+  // A pre chord holds until the lock, then resolves slowly.
+  for (const v of h.voices) {
+    const k = ss(u, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
+    const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
+    const fr = h.R * Math.pow(2, (q + ov * v.sour * 0.6) / 12);
+    for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
+    v.vg.gain.setTargetAtTime(v.lv * k, t, 0.1);
+  }
+  // The swarm's filter opens from 600 Hz to 9 kHz.
+  // Pipe voices open less: from 1.5 kHz to 9 kHz.
+  h.sw.frequency.setTargetAtTime(h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
+  // The drive grows with the charge and the over-hold.
+  h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * ov, t, 0.1);
+  h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent) * vol, t, 0.08);
+  if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent) * vol, t, 0.1);
+}
+/* ---------- the game-over surge ---------- */
+// Surge Syl plays the rock's last fall; its contact is the game over.
+// The strike calls surgeOver every sim step with d: { u, vol, over }.
+// d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
+// d.over: the strain, 0.6 at contact, 1 at the end of the burn.
+// Null stops it. A null ac (muted) stops it hard.
+let goSurge = null;
+function surgeOver(ac, d) {
+  if (!d || !ac) { surgeOverStop(!ac); return; }
+  if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
+  if (!goSurge) { goSurge = stackStart(ac, MIX.syl); goSurge.ac = ac; }
+  const ss = THREE.MathUtils.smoothstep;
+  // The chord locks at contact and holds through the burn.
+  // A live charge keeps the lead; the surge ducks under it.
+  stackUpdate(ac, goSurge, {
+    c: d.u, lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
+    // The strain sours the chord at half depth, so the chord still reads.
+    over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
+  });
+}
+// now: a hard stop for mute and a hidden tab; else a two-second fade.
+function surgeOverStop(now = false) {
+  if (!goSurge) return;
+  const h = goSurge, ac = h.ac, t = ac.currentTime;
+  goSurge = null;
+  if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
+  for (const n of [h.g, h.sg]) n.gain.setTargetAtTime(0, t, 0.5);
+  for (const n of h.src) n.stop(t + 2.5);
+  track(t + 2.6, ...h.src);
+}
+// A temple bell: inharmonic partials two octaves over the root, long decay.
+function bell(ac, h, t, u) {
+  const f = 4 * h.R, k = 0.5 + 0.5 * u;
+  track(t + 5, ...[[0.5, 0.05, 4.5], [1, 0.06, 3.5], [1.19, 0.035, 2.8], [1.5, 0.03, 2.2], [2, 0.025, 1.6], [2.74, 0.015, 1.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.004), peak: lv * k, a: 0.004, dur: d })));
+}
+// A ratchet tooth: a low metal clank with a short bright click.
+function ratchet(ac, h, t, u) {
+  const f = (h.n = (h.n || 0) + 1) % 2 ? 180 : 140, k = (0.5 + 0.5 * u) * jit(0.15);
+  track(t + 0.4, ...[[1, 0.07, 0.3], [2.4, 0.04, 0.18], [4.1, 0.02, 0.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.02), peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, h.g, t, { dur: 0.03, rate: 1.2, f: 2500, q: 1.2, peak: 0.04 * k, a: 0.0008 }).src);
 }
 /* ---------- arcs and rumble ---------- */
 // Every hit jitters in pitch, time and level.
@@ -7682,91 +8401,362 @@ const SAMPLES = { impact: 'impact.mp3', boom: 'boom.mp3', shot: 'shot.mp3' };
 // The impact's peak sits 1.85 s into its file.
 const IMPACT_AT = 1.85;
 const sampleP = {};
-let boomOK = false;
 // A missing or failed sample resolves null and tries again next time.
 const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name])
   .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
   .then(b => ac.decodeAudioData(b))
   .catch(() => { delete sampleP[name]; return null; }));
 // Send a node into the plain's echoes, darkened above dark hertz.
-function echo(ac, node, lvl, dark = 6000) {
+// dest: a send bus in front of the echoes; the plain itself by default.
+function echo(ac, node, lvl, dark = 6000, dest = plainVerb(ac)) {
   const s = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
   s.gain.value = lvl;
-  node.connect(s).connect(lp).connect(plainVerb(ac));
+  node.connect(s).connect(lp).connect(dest);
 }
 // dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
-// wet: the send into the plain's echoes.
-function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0) {
+// wet: the send into the plain's echoes. dest: the bus it feeds.
+// tag: a salvo tag, so a Reset can stop the sample.
+function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out, tag = null) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
     const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
-    sh.gain.value = 9;
-    src.connect(lp).connect(sh).connect(g).connect(kit.out);
-  } else src.connect(g).connect(kit.out);
+    sh.gain.value = 6;
+    src.connect(lp).connect(sh).connect(g).connect(dest);
+  } else src.connect(g).connect(dest);
   if (wet) echo(ac, g, wet, dark || 6000);
   src.start(when);
-  track(when + buf.duration / rate + 0.1, src);
+  (tag ? trackS : track)(when + buf.duration / rate + 0.1, src);
 }
-// Tom's cannon report plays as the slug leaves the muzzle.
+// The blast bus: the impact, the boom, the fire and the rumble.
+// One limiter holds the stacked layers under the master's knee.
+// Its peak output sits near -3 dBFS.
+let limBus = null;
+function blastBus(ac) {
+  if (limBus?.ac === ac) return limBus.in;
+  const inG = ac.createGain(), lim = ac.createDynamicsCompressor(), mk = ac.createGain();
+  // A slow attack keeps the limiter from bending the sub-bass waveform.
+  lim.threshold.value = -14; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = 0.03; lim.release.value = 0.6;
+  mk.gain.value = 1.2;
+  inG.connect(lim).connect(mk).connect(kit.out);
+  limBus = { ac, in: inG, lim };
+  return inG;
+}
+/* ---------- baked buffers ---------- */
+// The slug's N-wave and the debris rattle.
+// They build once per context, in idle time during the charge.
+let baked = null;
+function bake(ac) {
+  if (baked?.ac === ac) return baked;
+  baked = {
+    ac, nwave: nWave(ac),
+    // Rattle: thick at first, then thinning; ticks, grit and a few stones.
+    rattle: grains(ac, 3.5, 24000, t => 70 * Math.exp(-t / 0.8) + 4, t => {
+      const r = Math.random(), a = Math.exp(-t / 1.4) * (0.3 + 0.7 * Math.random());
+      return r < 0.55 ? [0.004 + 0.012 * Math.random(), 1500 + 3500 * Math.random(), 0.5 * a] : r < 0.88 ? [0.01 + 0.02 * Math.random(), 0, 0.9 * a] : [0.03 + 0.05 * Math.random(), 250 + 450 * Math.random(), 0.7 * a];
+    }),
+  };
+  return baked;
+}
+// The slug's sonic boom: a jump up, a straight fall, a jump back.
+function nWave(ac) {
+  const sr = ac.sampleRate, n = Math.round(0.012 * sr), b = ac.createBuffer(1, n + 8, sr), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = 1 - 2 * i / n;
+  return b;
+}
+// A stereo buffer of short grains at a falling rate.
+// rate(t): grains a second. grain(t): [length s, ring hertz or 0, level].
+function grains(ac, dur, sr, rate, grain) {
+  const b = ac.createBuffer(2, Math.round(dur * sr), sr), L = b.getChannelData(0), R = b.getChannelData(1);
+  for (let t = 0.01; t < dur; t += -Math.log(1 - Math.random()) / rate(t)) {
+    const [len, ring, lv] = grain(t), n = Math.round(len * sr), i0 = Math.round(t * sr), p = Math.random();
+    const gl = lv * Math.sqrt(1 - p), gr = lv * Math.sqrt(p), w = 2 * Math.PI * ring / sr;
+    let y = 0;
+    for (let i = 0; i < n && i0 + i < L.length; i++) {
+      const e = Math.exp(-5 * i / n);
+      // A ring is a struck partial; no ring is a dull puff of noise.
+      const s = ring ? Math.sin(w * i) : (y += 0.35 * (Math.random() * 2 - 1 - y)) * 2;
+      L[i0 + i] += gl * e * s; R[i0 + i] += gr * e * s;
+    }
+  }
+  return b;
+}
+// A rolling tail: low noise whose level waves on two slow beats.
+// It swells, ebbs over dur seconds and drifts across the plain.
+function roll(ac, dest, t, dur, lvl, cut) {
+  const n = hiss(ac, t, dur, 0.3), lp = filt(ac, 'lowpass', cut, 0.6), am = ac.createGain(), g = ac.createGain(), pn = ac.createStereoPanner();
+  am.gain.value = 0.65;
+  const srcs = [n];
+  for (const [fr, dp] of [[0.21, 0.22], [0.47, 0.13], [0.06, 0]]) {
+    const l = ac.createOscillator(), lg = ac.createGain();
+    l.frequency.value = fr * jit(0.3); lg.gain.value = dp || 0.45;
+    // The slowest beat moves the pan, not the level.
+    l.connect(lg).connect(dp ? am.gain : pn.pan); l.start(t); l.stop(t + dur); srcs.push(l);
+  }
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + Math.min(2, dur * 0.2));
+  g.gain.setTargetAtTime(0.0001, t + Math.min(3, dur * 0.3), dur / 6);
+  lp.frequency.setValueAtTime(cut, t); lp.frequency.setTargetAtTime(cut * 0.45, t + 2, dur / 3);
+  n.connect(lp).connect(am).connect(g).connect(pn).connect(dest);
+  return srcs;
+}
+/* ---------- the shot ---------- */
+// The shot bus: the impact's prelude ducks the shot's tail under its swell.
+// The duck holds the dry sound and the send into the echoes.
+let shotG = null, shotW = null;
+function shotBus(ac) {
+  if (shotG?.context !== ac) {
+    shotG = ac.createGain(); shotG.connect(kit.out);
+    shotW = ac.createGain(); shotW.connect(plainVerb(ac));
+  }
+  return shotG;
+}
+const shotSend = ac => (shotBus(ac), shotW);
+function shotDuck(ac, to, at, tau) {
+  for (const p of [shotBus(ac).gain, shotW.gain]) { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); p.setTargetAtTime(to, at, tau); }
+}
+// The shot plays as the slug leaves the muzzle.
 function shotSound(ac, sh) {
-  const late = 0;
   const at = ac.currentTime + 0.3;
-  sh.sfx = { ...sh.sfx, shot: 0, shotLate: late };
+  sh.sfx = { ...sh.sfx, shot: at, shotLate: 0, take: shotMix };
+  playShot(ac, at, Math.min(sh.c, 1.25), shotMix, sh);
+}
+// One take at time t with charge k.
+// A report that decodes after its shot is gone stays silent.
+function playShot(ac, t, k, name, sh = null) {
+  // A new shot lifts the last duck.
+  shotDuck(ac, 1, ac.currentTime, 0.005);
+  if (name === 'report' || !TAKES[name]) {
+    sample(ac, 'shot').then(buf => {
+      if (!buf || (sh && shot !== sh) || !kit.live()) return;
+      t = Math.max(ac.currentTime, t);
+      if (sh) sh.sfx.shot = t;
+      report(ac, buf, t, k);
+    });
+    return;
+  }
+  const { srcs, end } = TAKES[name](ac, t, k);
+  track(end, ...srcs);
+}
+// A pick in Settings plays the take once, while no shot flies.
+function audition(name) {
+  const ac = kit.live();
+  if (!ac || shot) return;
+  playShot(ac, ac.currentTime + 0.05, 1, name);
+  wake();
+}
+// Report: Tom's cannon sample with a sub punch under it.
+function report(ac, buf, t0, k) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = jit(0.03);
+  // Its long tail fades out before the boom lands.
+  const lvl = 1.4 * k * jit(0.1);
+  g.gain.setValueAtTime(lvl, t0); g.gain.setTargetAtTime(0, t0 + 4, 3.5);
+  src.connect(g).connect(shotBus(ac));
+  // The report rolls off the mesas across the flats.
+  echo(ac, g, 0.35, 6000, shotSend(ac));
+  src.start(t0); src.stop(t0 + 20);
+  const o = blip(ac, shotBus(ac), t0, { f0: 52, f1: 28, glide: 0.7, peak: 0.8 * k, a: 0.015, dur: 0.9 });
+  echo(ac, o, 0.25, 400, shotSend(ac));
+  track(t0 + 20.1, src, o);
+}
+// Mesa echoes: [delay s, pan, level].
+const MESAS = [[0.85, -0.7, 0.55], [1.5, 0.75, 0.42], [2.35, -0.5, 0.33], [3.4, 0.6, 0.24], [4.7, -0.35, 0.16], [6.3, 0.4, 0.1]];
+// The synth takes: each plays at t with charge k.
+// Each returns its sources and its end time.
+const TAKES = {
+  // Mesa: a deep cannon; its echo rolls off the mesas for ten seconds.
+  mesa(ac, t, k) {
+    const o = shotBus(ac), b = burst(ac, o, t, { dur: 1.8, rate: 0.6, type: 'lowpass', f: 2600, f1: 150, q: 0.8, peak: 0.85 * k, a: 0.005 });
+    echo(ac, b.g, 0.6, 2000, shotSend(ac));
+    // The body: two low tones sink under the blast.
+    const srcs = [b.src,
+      blip(ac, o, t, { f0: 56, f1: 23, glide: 1.3, peak: 0.95 * k, a: 0.01, dur: 1.7 }),
+      blip(ac, o, t, { type: 'triangle', f0: 120, f1: 40, glide: 0.45, peak: 0.3 * k, a: 0.004, dur: 0.7 })];
+    // Each mesa wall answers later, wider and darker.
+    MESAS.forEach(([dt, pan, lv], i) => srcs.push(burst(ac, o, t + dt, { dur: 0.9 + 0.4 * i, rate: 0.45, type: 'lowpass', f: 1100 / (1 + 0.6 * i), f1: 110, q: 0.6, peak: lv * k, a: 0.03 + 0.04 * i, pan }).src));
+    srcs.push(...roll(ac, o, t + 0.3, 10, 0.3 * k, 170));
+    return { srcs, end: t + 10.5 };
+  },
+  // Coil: a hard electric crack, a ringing barrel, the slug's supersonic snap.
+  coil(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The crack: a bright tear of noise, then a sizzle that falls.
+    srcs.push(burst(ac, o, t, { dur: 0.05, rate: 1.5, type: 'highpass', f: 2200, peak: 0.9 * k, a: 0.0008 }).src,
+      burst(ac, o, t, { dur: 0.35, rate: 1.2, f: 6000, f1: 1500, q: 1.2, peak: 0.25 * k, a: 0.002 }).src);
+    // The discharge: a saw falls from a shriek to a growl.
+    const lp = filt(ac, 'lowpass', 5000, 0.7);
+    lp.connect(o);
+    srcs.push(blip(ac, lp, t, { type: 'sawtooth', f0: 2600, f1: 70, glide: 0.2, peak: 0.16 * k, a: 0.001, dur: 0.32 }),
+      blip(ac, o, t, { f0: 62, f1: 30, glide: 0.5, peak: 0.75 * k, a: 0.006, dur: 0.7 }));
+    // The barrel rings: struck-bar partials, each a beating pair.
+    const ring = ac.createGain(), f = 360 * jit(0.03);
+    ring.connect(o);
+    echo(ac, ring, 0.45, 7000, shotSend(ac));
+    for (const [r, lv, d] of [[1, 0.22, 3.4], [2.76, 0.15, 2.5], [5.4, 0.1, 1.7], [8.93, 0.06, 1.1]]) {
+      for (const det of [-0.6, 0.6]) srcs.push(blip(ac, ring, t + 0.002, { f0: f * r + det, peak: lv * k, a: 0.002, dur: d }));
+    }
+    // The snap: the slug's N-wave, then its flutter off the plain.
+    const hp = filt(ac, 'highpass', 180, 0.7), nw = bake(ac).nwave;
+    hp.connect(o);
+    for (const [dt, lv] of [[0.09, 0.9], [0.13, 0.35], [0.21, 0.2], [0.34, 0.1]]) {
+      const s = ac.createBufferSource(), g = ac.createGain();
+      s.buffer = nw; g.gain.value = lv * k;
+      s.connect(g).connect(hp); s.start(t + dt); srcs.push(s);
+    }
+    return { srcs, end: t + 3.6 };
+  },
+  // Thump: a heavy knock, a pressure whoomp, then debris rattling down.
+  thump(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The knock: a dull burst and a deep falling tone.
+    srcs.push(burst(ac, o, t, { dur: 0.14, rate: 0.7, type: 'lowpass', f: 600, f1: 140, peak: 0.9 * k, a: 0.002 }).src,
+      blip(ac, o, t, { f0: 78, f1: 27, glide: 0.4, peak: 1.0 * k, a: 0.004, dur: 1.0 }));
+    // The whoomp: low air pushed out; a resonant filter opens and shuts.
+    const n = hiss(ac, t, 1.6, 0.4), lp = filt(ac, 'lowpass', 90, 3), g = ac.createGain();
+    lp.frequency.setValueAtTime(90, t); lp.frequency.exponentialRampToValueAtTime(750, t + 0.16); lp.frequency.exponentialRampToValueAtTime(100, t + 1.1);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8 * k, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    n.connect(lp).connect(g).connect(o);
+    echo(ac, g, 0.45, 900, shotSend(ac));
+    srcs.push(n, blip(ac, o, t + 0.04, { f0: 24, f1: 19, glide: 1.2, peak: 0.55 * k, a: 0.12, dur: 1.5 }));
+    // Debris: grit and stones rattle off the gun for three seconds.
+    const r = ac.createBufferSource(), hp = filt(ac, 'highpass', 350, 0.7), rg = ac.createGain();
+    r.buffer = bake(ac).rattle; r.playbackRate.value = jit(0.08); rg.gain.value = 0.6 * k;
+    r.connect(hp).connect(rg).connect(o);
+    echo(ac, rg, 0.2, 5000, shotSend(ac));
+    r.start(t + 0.18); srcs.push(r);
+    return { srcs, end: t + 4 };
+  },
+};
+/* ---------- the hit ---------- */
+// The prelude: the whoosh swells and brightens into the hit.
+// A short hush before the peak makes the hit land harder.
+function impactSound(ac, buf, hit, k, tag = null) {
+  const rate = jit(0.03), start = hit - IMPACT_AT / rate, t = Math.max(ac.currentTime, start);
+  const bus = blastBus(ac), src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 700, 0.9), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = rate;
+  // The shot's tail and its echoes dip 20 dB before the swell.
+  // The swell then climbs out of a quiet sky.
+  shotDuck(ac, 0.1, Math.max(ac.currentTime, t - 1.6), 0.45);
+  // The swell climbs 18 dB up the whoosh; the filter opens with it.
+  const lvl = 0.55 * k * jit(0.08);
+  g.gain.setValueAtTime(lvl * 0.12, t); g.gain.exponentialRampToValueAtTime(lvl, hit - 0.1);
+  g.gain.linearRampToValueAtTime(lvl * 0.3, hit - 0.02); g.gain.linearRampToValueAtTime(lvl * 1.2, hit + 0.004);
+  lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(14000, hit);
+  src.connect(lp).connect(g).connect(bus);
+  echo(ac, g, 0.3);
+  src.start(t, (t - start) * rate);
+  // The riser: noise climbs in pitch, and a sub tone climbs under it.
+  const r0 = Math.min(t + 0.1, hit - 0.3), n = hiss(ac, r0, hit - r0, 1), bp = filt(ac, 'bandpass', 250, 1.4), ng = ac.createGain();
+  bp.frequency.setValueAtTime(250, r0); bp.frequency.exponentialRampToValueAtTime(4200, hit - 0.02);
+  ng.gain.setValueAtTime(0.0001, r0); ng.gain.exponentialRampToValueAtTime(0.14 * k, hit - 0.06); ng.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  n.connect(bp).connect(ng).connect(bus);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(30, r0); o.frequency.exponentialRampToValueAtTime(85, hit - 0.02);
+  og.gain.setValueAtTime(0.0001, r0); og.gain.exponentialRampToValueAtTime(0.3 * k, hit - 0.06); og.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  o.connect(og).connect(bus); o.start(r0); o.stop(hit);
+  // The strike on the flash: a hard crack over a low knock.
+  (tag ? trackS : track)(hit + (buf.duration - IMPACT_AT) / rate + 0.1, src, n, o,
+    burst(ac, bus, hit, { dur: 0.08, rate: 1.4, type: 'highpass', f: 1600, peak: 0.5 * k, a: 0.001 }).src,
+    blip(ac, bus, hit, { f0: 95, f1: 34, glide: 0.5, peak: 0.6 * k, a: 0.003, dur: 0.8 }));
+}
+// Salvo sound counts, for QA.
+const sfxN = { round: 0, crater: 0, hunt: 0 };
+// One salvo round's report: the shot take, louder round by round.
+// Early rounds cut their tail short so the ripple stays crisp.
+function roundSound(ac, r) {
+  const at = ac.currentTime + 0.3, k = roundGain(r.j, r.n), last = r.j === r.n;
+  sfxN.round++;
   sample(ac, 'shot').then(buf => {
-    if (!buf || shot !== sh || !kit.live()) return;
-    const src = ac.createBufferSource(), g = ac.createGain();
-    src.buffer = buf; src.playbackRate.value = jit(0.03);
-    // Its long tail fades out before the boom lands.
-    const lvl = 1.4 * Math.min(sh.c, 1.25) * jit(0.1);
-    g.gain.setValueAtTime(lvl, Math.max(ac.currentTime, at)); g.gain.setTargetAtTime(0, at + 4, 3.5);
+    if (!buf || !rounds.includes(r) || !kit.live()) return;
+    const src = ac.createBufferSource(), g = ac.createGain(), t0 = Math.max(ac.currentTime, at);
+    src.buffer = buf; src.playbackRate.value = jit(0.03) * (1.06 - 0.06 * k);
+    g.gain.setValueAtTime(1.4 * k * jit(0.1), t0);
+    if (last) g.gain.setTargetAtTime(0, t0 + 4, 3.5); else g.gain.setTargetAtTime(0, t0 + 0.2, 0.5);
     src.connect(g).connect(kit.out);
-    // The report rolls off the mesas across the flats.
-    echo(ac, g, 0.35);
-    sh.sfx.shot = Math.max(ac.currentTime, at);
-    src.start(sh.sfx.shot); src.stop(sh.sfx.shot + 20);
-    // A sub punch under the report gives it weight.
-    const t0 = sh.sfx.shot, o = ac.createOscillator(), og = ac.createGain();
+    echo(ac, g, 0.35 * k);
+    src.start(t0); src.stop(t0 + (last ? 20 : 2.5));
+    // A sub punch under each report.
+    const o = ac.createOscillator(), og = ac.createGain();
     o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
-    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * Math.min(sh.c, 1.25), t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * k, t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
     o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
-    echo(ac, og, 0.25, 400);
-    track(sh.sfx.shot + 20.1, src, o);
+    trackS(t0 + (last ? 20.1 : 2.6), src, o);
   });
 }
+// A far strike: a thin crack and a low thud, after the sound's delay.
+function farHit(ac, P, crackK, thudK, ring = 0) {
+  const t = ac.currentTime + camera.position.distanceTo(P) / 343 / 28;
+  const n = hiss(ac, t, 0.08, 1.4), bp = filt(ac, 'bandpass', 3000, 1.6), g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4 * crackK, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  n.connect(bp).connect(g).connect(kit.out);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(35, t + 0.3);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.6 * thudK, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 0.4);
+  echo(ac, og, 0.3, 400);
+  const nodes = [n, o];
+  // A burst in the air crackles as its embers fly.
+  for (let i = 0; i < ring; i++) {
+    const tc = t + 0.05 + 0.9 * Math.random(), d = 0.015 + 0.05 * Math.random(), c = hiss(ac, tc, d + 0.02, 1.5);
+    const cb = filt(ac, 'bandpass', 1800 + 4200 * Math.random(), 2.5), cg = ac.createGain();
+    cg.gain.setValueAtTime(0.0001, tc); cg.gain.exponentialRampToValueAtTime(0.12, tc + 0.003); cg.gain.exponentialRampToValueAtTime(0.0001, tc + d);
+    c.connect(cb).connect(cg).connect(kit.out);
+    nodes.push(c);
+  }
+  trackS(t + 1.2, ...nodes);
+}
+function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.8, 0.9); }
+function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 1.2, 0.5, 8); }
 // The impact's prelude lands on the flash.
-// The boom crosses the distance at sound speed, compressed eight times.
-function hitSounds(ac, sh) {
+// The boom crosses the distance at sound speed, compressed 28 times.
+function hitSounds(ac, sh, alive = () => shot === sh) {
   // A ship hit does not play the rock's samples.
   if (!sh.canHit || sh.kind === 'ship') return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
   // Compressed 28 times: the boom lands about 5 s after the flash.
   const late = camera.position.distanceTo(sh.target) / 343 / 28;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
+  blastBus(ac);
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
-    if (shot !== sh || !kit.live()) return;
-    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25); }
-    // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
+    if (!alive() || !kit.live()) return;
+    if (imp) { sh.sfx.impact = hit - IMPACT_AT; impactSound(ac, imp, hit, k, sh.tag); }
+    sh.sfx.boom = hit + late;
+    boomSound(ac, boom, sh.sfx.boom, k, sh.tag);
   });
+}
+// The boom: Tom's far boom at half speed, an octave down, about 45 s long.
+// Under it: a sub swell and a rolling tail.
+// Without the file the synth body plays alone.
+function boomSound(ac, buf, t, k, tag = null) {
+  const bus = blastBus(ac), srcs = [];
+  if (buf) playSample(ac, buf, t, 1.5 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, bus, tag);
+  // The sub swell: two low tones beat slowly and sink as they fade.
+  for (const [f, lv] of [[31, 0.22], [43, 0.12]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(f * jit(0.04), t); o.frequency.exponentialRampToValueAtTime(f * 0.75, t + 16);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv * k, t + 1.8); g.gain.setTargetAtTime(0.0001, t + 3.5, 4.5);
+    o.connect(g).connect(bus); o.start(t); o.stop(t + 28); srcs.push(o);
+  }
+  // The rolling tail: low noise rolls on across the plain.
+  srcs.push(...roll(ac, bus, t + 0.4, 28, 0.22 * k, 200));
+  (tag ? trackS : track)(t + 30, ...srcs);
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
-// A ship impact passes its own wait, in seconds.
-// It returns the audio handle, or nothing when muted.
-function rumble(c, wait = DA / 343 / 8) {
+// It plays only when the hit's sounds were not scheduled.
+function rumble(c) {
   const ac = kit.live();
-  if (!ac) return null;
-  const t = ac.currentTime + wait, k = SIZES[opts.size].rumble;
+  if (!ac) return;
+  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble, bus = blastBus(ac);
   const s = hiss(ac, t, 7, 0.3), lp = filt(ac, 'lowpass', 180), g = ac.createGain();
   const lvl = 0.25 * (0.5 + 0.5 * c) * k * jit(0.1);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.6); g.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  s.connect(lp).connect(g).connect(kit.out);
+  s.connect(lp).connect(g).connect(bus);
   const o = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 30 * jit(0.05);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 0.6); og.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
-  return track(t + 7.5, s, o);
+  o.connect(og).connect(bus); o.start(t); o.stop(t + 7);
+  track(t + 7.5, s, o);
 }
 /* ---------- the ship's voices ---------- */
 // A queued sound waits for its sim time.
@@ -7853,6 +8843,7 @@ function stepRoar(ac, h, i) {
 }
 // A far, thin crack: a high-passed burst.
 // A second tick follows it.
+// The ship's voices feed the blast bus, as the rock's impact does.
 function shipCrack(ac, k) {
   const t = ac.currentTime + 0.02, g = ac.createGain(), g2 = ac.createGain();
   const n = hiss(ac, t, 0.5, 1.2), n2 = hiss(ac, t + 0.11, 0.4, 0.9);
@@ -7860,7 +8851,7 @@ function shipCrack(ac, k) {
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7 * k, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
   g2.gain.setValueAtTime(0.0001, t + 0.11); g2.gain.exponentialRampToValueAtTime(0.18 * k, t + 0.115); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
   n.connect(g).connect(hp); n2.connect(g2).connect(hp);
-  hp.connect(bp).connect(kit.out);
+  hp.connect(bp).connect(blastBus(ac));
   echo(ac, bp, 0.6, 5000);
   return track(t + 0.7, n, n2, hp, bp, g, g2);
 }
@@ -7871,7 +8862,8 @@ function jointThud(ac, k) {
   o.frequency.setValueAtTime(66 * jit(0.08), t); o.frequency.exponentialRampToValueAtTime(34, t + 0.4);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.42 * k, t + 0.012); og.gain.setTargetAtTime(0.0001, t + 0.05, 0.14);
   ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.45 * k, t + 0.01); ng.gain.setTargetAtTime(0.0001, t + 0.04, 0.1);
-  o.connect(og).connect(kit.out); n.connect(lp).connect(ng).connect(kit.out);
+  const bus = blastBus(ac);
+  o.connect(og).connect(bus); n.connect(lp).connect(ng).connect(bus);
   echo(ac, og, 0.3, 300);
   o.start(t); o.stop(t + 1.2);
   return track(t + 1.3, o, n, lp, og, ng);
@@ -7886,7 +8878,8 @@ function shipGroan(ac, i) {
   lp.frequency.setValueAtTime(520, t); lp.frequency.exponentialRampToValueAtTime(170, t + d);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 1.8); g.gain.setTargetAtTime(0.0001, t + d * 0.6, d * 0.2);
   o2g.gain.value = 0.45;
-  o1.connect(lp); o2.connect(o2g).connect(lp); lp.connect(g).connect(kit.out);
+  const bus = blastBus(ac);
+  o1.connect(lp); o2.connect(o2g).connect(lp); lp.connect(g).connect(bus);
   // Tearing noise passes a falling band.
   // A fast uneven wobble chops it.
   const n = hiss(ac, t, d + 0.5, 0.8), bp = filt(ac, 'bandpass', 900, 4), cg = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain(), ng = ac.createGain();
@@ -7894,7 +8887,7 @@ function shipGroan(ac, i) {
   lfo.frequency.value = 9 * jit(0.3); lg.gain.value = 0.5; cg.gain.value = 0.5;
   lfo.connect(lg).connect(cg.gain);
   ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.1, t + 1.5); ng.gain.setTargetAtTime(0.0001, t + d * 0.6, d * 0.2);
-  n.connect(bp).connect(cg).connect(ng).connect(kit.out);
+  n.connect(bp).connect(cg).connect(ng).connect(bus);
   echo(ac, g, 0.3, 500);
   for (const o of [o1, o2, lfo]) { o.start(t); o.stop(t + d + 1); }
   return track(t + d + 1.1, o1, o2, lfo, n, lp, g, o2g, bp, cg, lg, ng);
@@ -7906,7 +8899,7 @@ const roarSet = new Set();
 function roarOut(ac) {
   if (roarBus && roarBus.ac === ac) return roarBus.g;
   const g = ac.createGain();
-  g.gain.value = 0.9; g.connect(kit.out);
+  g.gain.value = 0.9; g.connect(blastBus(ac));
   echo(ac, g, 0.22, 900);
   roarBus = { ac, g };
   return g;
@@ -7934,19 +8927,106 @@ function shipRumble(ac, k) {
   const t = ac.currentTime + 0.02, s = hiss(ac, t, 15, 0.22), lp = filt(ac, 'lowpass', 120), g = ac.createGain();
   const lvl = 0.34 * k * jit(0.1);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 1.4); g.gain.setTargetAtTime(0.0001, t + 2.6, 3.2);
-  s.connect(lp).connect(g).connect(kit.out);
+  const bus = blastBus(ac);
+  s.connect(lp).connect(g).connect(bus);
   const o = ac.createOscillator(), o2 = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 24 * jit(0.05); o2.frequency.value = 37 * jit(0.05);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 1.4); og.gain.setTargetAtTime(0.0001, t + 2.6, 3.2);
-  o.connect(og); o2.connect(og); og.connect(kit.out);
+  o.connect(og); o2.connect(og); og.connect(bus);
   echo(ac, g, 0.2, 150);
   o.start(t); o.stop(t + 15); o2.start(t); o2.stop(t + 15);
   return track(t + 15.5, s, o, o2, lp, g, og);
 }
+/* ---------- the traverse motor ---------- */
+// A hydraulic pump whines with the slew speed; gears chatter under it.
+// A clunk marks each start and each stop.
+let motor = null, clunks = 0;
+// This slew speed, in radians a second, runs the motor flat out.
+const SLEW_TOP = rad(6);
+function motorStart(ac) {
+  const g = ac.createGain(), am = ac.createGain(), lp = filt(ac, 'lowpass', 700, 0.9), bp = filt(ac, 'bandpass', 900, 5);
+  g.gain.value = 0; am.gain.value = 0.75;
+  // The pump: a low saw, darkened, for the hydraulic drone.
+  const pump = ac.createOscillator();
+  pump.type = 'sawtooth'; pump.frequency.value = 34;
+  pump.connect(lp).connect(am);
+  // The gear whine: a square through a narrow band.
+  const gear = ac.createOscillator(), gg = ac.createGain();
+  gear.type = 'square'; gear.frequency.value = 220; gg.gain.value = 0.15;
+  gear.connect(bp).connect(gg).connect(am);
+  // The flow: oil hisses through the valves.
+  const flow = ac.createBufferSource(), fb = filt(ac, 'bandpass', 1500, 1.2), fg = ac.createGain();
+  flow.buffer = kit.noise; flow.loop = true; fg.gain.value = 0.1;
+  flow.connect(fb).connect(fg).connect(am);
+  // The chatter: gear teeth beat the level at the mesh rate.
+  const chat = ac.createOscillator(), cg = ac.createGain();
+  chat.frequency.value = 8; cg.gain.value = 0.25;
+  chat.connect(cg).connect(am.gain);
+  am.connect(g).connect(kit.out);
+  const srcs = [pump, gear, flow, chat];
+  for (const s of srcs) s.start();
+  motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0, next: 0, n: 0 };
+}
+// The traverse sound is off for now (Tom, 2026-11-12).
+const MOTOR_ON = false;
+// The frame loop feeds the motor the gun's slew speed.
+function motorUpdate() {
+  if (!MOTOR_ON) return;
+  const s = clamp(Math.hypot(aimNow.vy, aimNow.ve) / SLEW_TOP, 0, 1), ac = kit.live();
+  if (!ac) { motorStop(true); return; }
+  if (!motor) { if (s < 0.1) return; motorStart(ac); }
+  const m = motor, t = ac.currentTime;
+  // Two thresholds keep a slow settle from clunking twice.
+  if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); m.next = t + 0.12; }
+  else if (m.on && s < 0.025) { m.on = false; clunk(ac, 0.7); m.off = setTimeout(() => { if (motor === m && !m.on) motorStop(); }, 1500); }
+  // The teeth clank in a rhythm: 1.5 a second at a crawl, 7 flat out.
+  // Each clank is scheduled ahead, so the rhythm holds between frames.
+  if (m.on) while (m.next < t + 0.12) { clank(ac, Math.max(t, m.next), m.n++ % 2, s); m.next += 1 / (1.5 + 5.5 * s); }
+  if (m.quiet) return;
+  m.quiet = !m.on;
+  const v = m.on ? s : 0;
+  m.pump.frequency.setTargetAtTime(34 + 60 * v, t, 0.12);
+  m.gear.frequency.setTargetAtTime(220 + 520 * v, t, 0.12);
+  m.bp.frequency.setTargetAtTime(700 + 1400 * v, t, 0.12);
+  m.chat.frequency.setTargetAtTime(8 + 34 * v, t, 0.12);
+  m.fg.gain.setTargetAtTime(0.1 + 0.4 * v, t, 0.1);
+  // The bed sits low; the clanks carry the motion.
+  m.g.gain.setTargetAtTime(m.on ? 0.018 + 0.04 * Math.sqrt(s) : 0, t, m.on ? 0.06 : 0.1);
+}
+// A metal clank: a gear tooth strikes; tick and tock alternate in pitch.
+// Inharmonic partials ring short, over a click of bright noise.
+function clank(ac, t, tock, s) {
+  const o = kit.out, f = (tock ? 470 : 610) * jit(0.03), k = 1.4 * (0.6 + 0.4 * s) * jit(0.15), lp = filt(ac, 'lowpass', 5200, 0.7);
+  lp.connect(o);
+  track(t + 0.4,
+    ...[[1, 0.03, 0.22], [2.63, 0.018, 0.14], [4.95, 0.01, 0.08]].map(([r, lv, d]) => blip(ac, lp, t, { f0: f * r, peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, lp, t, { dur: 0.025, rate: 1.2, f: 3200, q: 1.2, peak: 0.025 * k, a: 0.0008 }).src);
+}
+// now: a hard stop for mute and a hidden tab; else a short fade.
+function motorStop(now = false) {
+  if (!motor) return;
+  const m = motor, ac = kit.ac;
+  motor = null;
+  clearTimeout(m.off);
+  if (now || !ac || ac.state !== 'running') { for (const s of m.srcs) { try { s.stop(); s.disconnect(); } catch { /* gone */ } } m.g.disconnect(); return; }
+  const t = ac.currentTime;
+  m.g.gain.setTargetAtTime(0, t, 0.03);
+  for (const s of m.srcs) s.stop(t + 0.2);
+  track(t + 0.25, ...m.srcs);
+}
+// A clunk: a low knock, a short tick, a brief metal ring.
+function clunk(ac, k) {
+  const t = ac.currentTime, o = kit.out;
+  clunks++;
+  track(t + 0.5,
+    blip(ac, o, t, { f0: 130, f1: 52, glide: 0.12, peak: 0.3 * k, a: 0.002, dur: 0.24 }),
+    burst(ac, o, t, { dur: 0.05, rate: 0.8, f: 1300, q: 1.5, peak: 0.14 * k, a: 0.001 }).src,
+    blip(ac, o, t + 0.004, { f0: 780 * jit(0.05), peak: 0.03 * k, a: 0.002, dur: 0.4 }));
+}
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
 sound.onChange(on => {
-  if (!on) { stopAll(); humStop(kit.ac); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  if (!on) { stopAll(); humStop(kit.ac); motorStop(true); surgeOverStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
 });
 
@@ -8035,6 +9115,10 @@ window.__qa = {
   level: () => (charge ? charge.c : 0),
   stage: () => (charge ? stageOf(simT - charge.t0) : simT - ventT < 3 ? 'vent' : 'idle'),
   holding: () => !!charge,
+  // Salvo: pick the fire mode, read the live one, read the bank.
+  mode(m) { ui.setting('firemode').set(m); },
+  fireMode: () => fireMode,
+  bank: () => charge?.bank ?? 0,
   recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
@@ -8144,7 +9228,20 @@ window.__qa = {
   },
   frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
   ablation: () => ablN,
-  ion: () => ({ visible: ionLine.visible || ionPuffs.visible, glow: ion ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
+  ion: () => ({ visible: tracers.some(t => t.line.visible || t.puffs.visible), glow: tracers[0].round ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
+  // Salvo: the rounds in flight, and a salvo of n rounds fired at once.
+  // Pose the barrel's slide in metres, for clearance stills.
+  slide(m) { U.uRecoil.value = m; shadowDirty = true; frame(); draw(); },
+  cap: () => SALVO_CAP,
+  rings: () => U.uShocks.value.map(v => +v.w.toFixed(3)),
+  tally: () => ({ ...ast.tally }),
+  sfx: () => ({ ...sfxN }),
+  flash: () => hitFlash,
+  hitAt: () => ast.hitAt,
+  craters: () => astMat.uniforms.uCrater.value.filter(c => c.w >= 0 && simT - c.w < 20).length,
+  hunted: () => chunks.filter(ch => ch.burstAt).length,
+  rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
+  salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n, true); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
   release() { act.release('pointer'); },
@@ -8155,7 +9252,12 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: (prune(), pend.size), voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: (prune(), pend.size), salvoPend: [...pend].filter(h => h.tag === 'salvo').length, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix, chargeMix, layers: (hum?.surge || (hum?.stack && hum))?.voices.filter(v => v.vg.gain.value > 0.005).length ?? null }),
+  // Drive the game-over surge by hand: d is { u, vol, over } or null.
+  surgeOver(d) { surgeOver(kit.live(), d); },
+  surgeLive: () => (goSurge ? { locked: goSurge.locked, layers: goSurge.voices.filter(v => v.vg.gain.value > 0.005).length } : null),
+  // Play one shot take now, at charge c.
+  take(name, c = 1) { const ac = kit.live(); if (ac) playShot(ac, ac.currentTime + 0.05, Math.min(c, 1.25), name); },
   mute(on) { sound.set(!on); },
   // The ship's voices: each queued sound, its due and start times.
   shipSfx: () => ({ simT, roarSrc: [...roarSet].filter(r => pend.has(r)).length, hit: ship.fx ? ship.fx.t0 : null, joints: ship.fx ? ship.fx.joints.length : 0, due: shipDue.length, roars: ship.hulks.map((h, i) => !!(shipVoice[i]?.roar && !shipVoice[i].done && pend.has(shipVoice[i].roar))), log: shipSfxLog.map(({ kind, i, k, due, ref, started, ctx }) => ({ kind, i, k, due, ref, started, ctx })) }),
@@ -8172,13 +9274,16 @@ window.__qa = {
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
-  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
+  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepStrike(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx, canHit: shot.canHit, res: shot.res ?? null, target: shot.target.toArray(), muzzle: shot.muzzle.toArray(), bore: THREE.MathUtils.radToDeg(shot.ax.angleTo(bq.copy(shot.target).sub(shot.muzzle))) } : null),
   // End the live shot at once, so the next one can fire.
   endShot() { if (shot) endShot(); },
   shipLaidQ: () => shipLaid(),
   // Free aim: lay the gun at yaw and elevation in degrees.
   aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
+  aimTrack() { ui.setting('aim').set('track', true); },
+  // The rock's centre and radius in CSS pixels, for cropped stills.
+  astScreen() { const p = ast.pos.clone().project(camera), q = ast.pos.clone().addScaledVector(camera.up, ast.R).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height, R: Math.abs(q.y - p.y) * 0.5 * r.height }; },
   // The muzzle in CSS pixels, for cropped stills.
   // Any barrel point in CSS pixels: a along, x across, u up.
   screenOf(a, x = 0, u = 0) { const p = barrelPt(a, x, u, new THREE.Vector3()).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height }; },
@@ -8187,6 +9292,12 @@ window.__qa = {
   resetReady: () => resetOn,
   dust: () => ({ charge: chargeDust.visible, shot: shotDust.visible, kase: caseDustV.visible }),
   chunkSegs: () => chunks.map(ch => ch.segs.map(t => (t.m.visible ? [t.pu.uX0.value | 0, t.pu.uSeg.value | 0] : null))),
+  // Put the rock at the end of its grace hold: the strike starts next step.
+  strike() { ast.s = 1; ast.state = 'approach'; stepAst(0); frame(); draw(); },
+  // Put a live strike at nearness u, 0 at the horizon line, 1 at contact.
+  strikeAt(u) { if (!strike) this.strike(); ast.s = 1 + u * (strike.s1 - 1); placeAst(); astSize(); stepStrike(0); frame(); draw(); },
+  fast(on) { fastRock = on; },
+  strikeState: () => (strike ? { tb: strike.tb, u: strikeU(), hit: strike.hit, out: strike.out, s: ast.s, s1: strike.s1, y: ast.pos.y, fill: +fillEl.style.opacity, flash: grade.uniforms.uFlash.value, lf: grade.uniforms.uLF2.value.z, god: grade.uniforms.uGod.value.z } : { state: ast.state, s: ast.s, fill: +fillEl.style.opacity, spin: !!spin, fillOn: !!fill }),
   // Pose the blast on the clouds t seconds after a hit at the rock.
   blast(t) { hitFlash = Math.exp(-t / 0.4) + 0.3 * Math.exp(-t / 5); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); U.uHitR.value = ast.R; U.uBlast.value.set(ast.pos.x, ast.pos.y, ast.pos.z, hitFlash); U.uBk.value = 1; frame(); draw(); },
 };
@@ -8208,6 +9319,7 @@ if (tgtKind === 'rock') prewarmEmbers();
 setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
+shotMix = ui.setting('shotmix').value;
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
