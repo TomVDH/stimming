@@ -800,10 +800,13 @@ vec3 sunAt(float h) {
 const IMP_U = {
   uImp: { value: Array.from({ length: 5 }, () => new THREE.Vector4()) },
   uImpC: { value: new THREE.Vector3(...linFit(0.86, 0.09, 55)) },
+  // uImpCK: the cloud light's gain, 0 only for a QA check.
+  uImpCK: { value: 1 },
 };
 const IMP_GLSL = /* glsl */`
 uniform vec4 uImp[5];
 uniform vec3 uImpC;
+uniform float uImpCK;
 // A tight glow over each site and a wide band along the horizon.
 // The wide band reaches a phone's narrow frame.
 vec3 impSky(vec3 dir) {
@@ -820,18 +823,7 @@ vec3 impSky(vec3 dir) {
   // A bright day sky needs a stronger flash to show.
   return uImpC * s * mix(3.0, 1.0, uStars) * smoothstep(-0.03, 0.0, dir.y);
 }
-// The flash lights cloud bases thirty kilometres round each site.
-// base: the height up the cloud, 0 at its foot, 1 at its top.
-vec3 impCloud(vec3 P, vec3 N, float base) {
-  float s = 0.0;
-  for (int i = 0; i < 5; i++) {
-    float w = uImp[i].w;
-    if (w < 0.001) continue;
-    vec3 b = uImp[i].xyz - P;
-    s += w * 9.0e8 / (dot(b.xz, b.xz) + 9.0e8) * (0.4 + 0.6 * max(dot(N, normalize(b)), 0.0));
-  }
-  return uImpC * s * mix(5.0, 2.5, uStars) * (1.0 - smoothstep(0.0, 0.5, base));
-}`;
+`;
 
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
@@ -1105,6 +1097,35 @@ float body(vec2 X) {
   }
   return F;
 }
+// The ship's impacts glow through a heap's underside from beyond it.
+// The glow rises softly off the floor.
+// It fades up into the body.
+vec3 impCloud(vec3 P, vec3 N, vec3 V, vec2 X, float F) {
+  float on = 0.0;
+  for (int i = 0; i < 5; i++) on += uImp[i].w;
+  if (on < 0.001) return vec3(0.0);
+  float H = vS.y, yk = X.y / H;
+  float band = smoothstep(0.0, 0.3, yk) * (1.0 - smoothstep(0.3, 0.75, yk));
+  // The light fades in from every edge.
+  // The flat floor then shows no line.
+  band *= smoothstep(0.0, 0.12 * H, F);
+  if (band < 0.001) return vec3(0.0);
+  // Thick body swallows the light.
+  // Thin parts let it through.
+  float trans = exp(-sqrt(max(F, 0.0) * H) / (0.25 * H));
+  float s = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float w = uImp[i].w;
+    if (w < 0.001) continue;
+    vec3 b = uImp[i].xyz - P, Ls = normalize(b);
+    // A site behind the heap shines through it toward the eye.
+    float back = pow(max(dot(V, Ls), 0.0), 3.0);
+    float face = 0.1 + 0.4 * max(dot(N, Ls), 0.0);
+    s += w * 9.0e8 / (dot(b.xz, b.xz) + 9.0e8) * (0.3 * face + back);
+  }
+  // The air between dims the glow, as it dims the cloud.
+  return uImpC * s * band * trans * mix(5.0, 2.5, uStars) * airT(P) * (1.0 - 0.5 * k2hazeAmount(P));
+}
 void main() {
   float W = vS.x, H = vS.y;
   vec2 X = vec2(vUv.x * W, vUv.y * H);
@@ -1194,7 +1215,7 @@ void main() {
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
   // The ship's impacts light the cloud bases from beyond the horizon.
-  col += impCloud(P, N, X.y / H);
+  col += impCloud(P, N, V, X, F) * uImpCK;
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -2254,7 +2275,8 @@ function placeTrain(i, a) {
     u.uSide.value.set(0, 1, 0).cross(trA);
     if (u.uSide.value.lengthSq() < 1e-6) u.uSide.value.set(1, 0, 0);
     u.uSide.value.normalize();
-    u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on * (1 - fade);
+    u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on;
+    u.uLift.value.set(1.25 * fade - 0.25, a.landed ? 1 : 0, Math.exp(-late / 1.2));
     u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
     return;
   }
@@ -2636,7 +2658,7 @@ function makeFragTrail(own = false) {
   const m = new THREE.Mesh(fragTrailGeo, new THREE.ShaderMaterial({
     uniforms: {
       ...U, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 }, uP: { value: new THREE.Vector3() }, uR: { value: 100 }, uLen: { value: 5000 },
-      uOn: { value: 0 }, uSeed: { value: rnd() * 50 }, uAway: own ? { value: new THREE.Vector3(0, 1, 0) } : PU.uAway, uSide: own ? { value: new THREE.Vector3(1, 0, 0) } : PU.uSide, uSoot: PU.uSoot, uAsh: PU.uAsh, uFireC: PU.uFireC,
+      uOn: { value: 0 }, uLift: { value: new THREE.Vector3() }, uSeed: { value: rnd() * 50 }, uAway: own ? { value: new THREE.Vector3(0, 1, 0) } : PU.uAway, uSide: own ? { value: new THREE.Vector3(1, 0, 0) } : PU.uSide, uSoot: PU.uSoot, uAsh: PU.uAsh, uFireC: PU.uFireC,
     },
     transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
@@ -2663,6 +2685,9 @@ function makeFragTrail(own = false) {
     fragmentShader: /* glsl */`
     uniform vec3 uSoot, uAsh, uFireC;
     uniform float uOn, uTime, uSeed;
+    // uLift: a fade floor along the ribbon, its weight, and the fire's level.
+    // A landed hulk's ribbon fades from the ground up.
+    uniform vec3 uLift;
     varying float vY, vF;
     varying vec3 vP;
     ${HEAD}
@@ -2671,10 +2696,11 @@ function makeFragTrail(own = false) {
       float edge = exp(-vY * vY * 2.5);
       float n = k2fbm(vec2(vF * 14.0 - uTime * 0.5 + uSeed, vY * 1.3 + uSeed));
       // The clamp keeps pow off a negative base.
-      float a = pow(clamp(1.0 - vF, 0.0, 1.0), 1.4) * smoothstep(0.2, 0.75, n * 0.7 + 0.45 * edge) * edge * 0.8 * uOn;
+      float lift = mix(1.0, smoothstep(uLift.x, uLift.x + 0.25, vF), uLift.y);
+      float a = pow(clamp(1.0 - vF, 0.0, 1.0), 1.4) * smoothstep(0.2, 0.75, n * 0.7 + 0.45 * edge) * edge * 0.8 * uOn * lift;
       vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8 + blastLight(vP));
       // A short hot tip; a long glow hides the piece.
-      vec3 fire = uFireC * exp(-vF * 16.0) * edge * 0.8 * uOn;
+      vec3 fire = uFireC * exp(-vF * 16.0) * edge * 0.8 * uOn * lift * mix(1.0, uLift.z, uLift.y);
       gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
     }`,
   }));
@@ -5835,7 +5861,8 @@ const DOME_WIND = new THREE.Vector3(6, 0, 2);
 // uDm: age, size in metres, seed, flash level.
 // uDc: the dome's foot, carried by the wind.
 const domeVols = HULL.sections.map(() => makeVol(/* glsl */`
-// The domes take less of the haze, so they read at sixty kilometres.
+// The domes take less of the haze.
+// They then read at sixty kilometres.
 #define VHAZE 0.3
 // The dome shades itself in closed form.
 // It skips the march toward the sun.
@@ -5881,7 +5908,8 @@ vec3 vlight(vec3 p) { vec3 b = p - uDc; return uImpC * uDm.w * 4.0 * uDm.y * uDm
 for (const m of domeVols) {
   // Mesas stand in front of the domes.
   m.material.depthTest = true;
-  // The far storm towers draw first; the near heaps draw after.
+  // The far storm towers draw first.
+  // The near heaps draw after.
   m.renderOrder = 1.8;
 }
 // shipDomes: { m, t0, i, P, S } for each landed hulk.
@@ -5891,6 +5919,7 @@ const shipDomes = [], shipRumbles = [];
 // 1 draws the impacts in full.
 // 0 draws no impact.
 // 2 keeps the domes and drops the flash's sky and cloud light.
+// 3 drops only the cloud light.
 let impK = 1;
 // The flash: a hard spike, then a glow for some seconds.
 // Reduced motion halves it.
@@ -5898,7 +5927,7 @@ const flashOf = a => (a < 0 ? 0 : (reduced() ? 0.5 : 1) * (Math.exp(-a / 0.3) + 
 const domeAlive = d => simT - d.t0 < DOME_LIFE;
 // Each landing gets a dome and a rumble.
 // A Reset's spin lets no new impact land.
-// The last dome settles; the next target comes.
+// The next target comes when the last dome settles.
 function stepImpacts() {
   if (tgtKind !== 'ship' || spin || (fill && !fill.cut)) return;
   ship.hulks.forEach((h, i) => {
@@ -5940,15 +5969,19 @@ function updateDomes() {
     d.m.visible = true;
   }
 }
-// Reset and the next ship clear the impacts.
-// Queued rumbles stop.
-// Domes and flashes go.
-function clearShip() {
+// The Reset click stops the queued rumbles.
+function stopRumbles() {
   for (const r of shipRumbles) {
     for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
     pend.delete(r);
   }
   shipRumbles.length = 0;
+}
+// Reset's white and the next ship clear the impacts.
+// The rumbles stop.
+// The domes and flashes go.
+function clearShip() {
+  stopRumbles();
   shipDomes.length = 0;
   for (const m of domeVols) m.visible = false;
   for (const v of IMP_U.uImp.value) v.w = 0;
@@ -5959,7 +5992,8 @@ function rumbleDue() {
   const now = kit.ac?.currentTime ?? 0;
   return shipRumbles.some(r => pend.has(r) && r.end >= now);
 }
-// The next target: a new ship from the horizon, or a stored Target change.
+// The next target follows the stored Target.
+// A ship rises from the horizon.
 function nextTarget() {
   clearShip();
   resetReady(false);
@@ -6548,7 +6582,7 @@ function stepShipFx(dt) {
 // True while the ship's hit effects need frames.
 function shipBusy() {
   if (tgtKind !== 'ship') return false;
-  // A gone ship waits for its last dome, then the next ship comes.
+  // A gone ship waits for its last dome.
   if (ship.state === 'breakup' || ship.state === 'falling' || ship.state === 'gone') return true;
   if (rumbleDue()) return true;
   return !!ship.wound && simT - ship.wound.t0 < SMOULDER + 1;
@@ -6984,7 +7018,7 @@ function stepFill(dt) {
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
   if (spin) return;
-  clearShip();
+  stopRumbles();
   cancelHold();
   wake();
   if (reduced()) { fill = { t: 0, calm: true }; return; }
@@ -7037,6 +7071,8 @@ function landReset() {
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
   ast.next = 0;
+  // The domes and flashes go under the white.
+  clearShip();
   tgtKind = ui.setting('target').value;
   respawn();
   ast.s = 0.25;
@@ -7792,12 +7828,12 @@ window.__qa = {
     uEntry: shipMeshes.map(m => m.material.uniforms.uEntry.value.w), f: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).f)),
     fallT: ship.hulks.map(h => h.fallT), pos: shipMeshes.map(m => m.position.toArray()), vis: shipMeshes.map(m => m.visible),
     tumble: shipMeshes.map(m => m.quaternion.angleTo(shipQ)), lit: shipMeshes.map(m => m.material.uniforms.uLit.value), halo: U.uAstR.value,
-    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value, lift: t.pu.uLift.value.y ? t.pu.uLift.value.x : 0 })),
+    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value, lift: t.cheap ? (t.rib.material.uniforms.uLift.value.y ? t.rib.material.uniforms.uLift.value.x * t.rib.material.uniforms.uLen.value : 0) : t.pu.uLift.value.y ? t.pu.uLift.value.x : 0 })),
     steps: PU.uSteps.value, vent: ventN, shed: shedN,
     domes: shipDomes.filter(domeAlive).length, landedF: ship.hulks.map(h => h.landedAt !== null), rumbleAt: ship.hulks.map(h => h.rumbleAt ?? null),
     rumbles: shipRumbles.length, rise: simT - ship.t0, flash: IMP_U.uImp.value.map(v => v.w) }),
   // Each live dome: hulk, age, foot and distance from the eye.
-  domesQ: () => shipDomes.filter(domeAlive).map(d => ({ i: d.i, age: simT - d.t0, S: d.S, P: d.P.toArray(), dist: Math.hypot(d.P.x - 1670, d.P.z - 1990), vis: d.m.visible })),
+  domesQ: () => shipDomes.filter(domeAlive).map(d => ({ i: d.i, age: simT - d.t0, S: d.S, P: d.P.toArray(), dist: d.P.distanceTo(camera.position), vis: d.m.visible })),
   rumbleDelay: i => ship.hulks[i].rumbleDelay,
   // Each pending sound: seconds left and its source count.
   pendQ: () => [...pend].map(h => ({ left: h.end - (kit.ac?.currentTime ?? 0), n: h.nodes.length, ship: shipRumbles.includes(h) })),
@@ -7805,7 +7841,8 @@ window.__qa = {
   wakeAudio() { kit.wake(); },
   // Draw the same frame with no impact, for the night check.
   // impOff(2) keeps the domes and drops only the flash light.
-  impOff(on) { impK = on === 2 ? 2 : on ? 0 : 1; draw(); },
+  // impOff(3) drops only the cloud light.
+  impOff(on) { impK = on === 2 || on === 3 ? on : on ? 0 : 1; IMP_U.uImpCK.value = impK === 3 ? 0 : 1; draw(); },
   // The gun's own pixels in CSS pixels, every step device pixels.
   // Edge pixels drop out.
   // A gun pixel needs gun all round it.
