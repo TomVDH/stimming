@@ -279,6 +279,9 @@ const U = {
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
   uAstR: { value: 0.05 },
   uAstC: { value: new THREE.Vector3(...AMBER) },
+  // The rock as a light on the clouds: world position, strength; its reach in metres.
+  uRockL: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uRockR: { value: 10000 },
   // The bolt: world position and strength. The hit: direction and strength.
   uBolt: { value: new THREE.Vector4(0, 0, 0, 0) },
   uBoltC: { value: new THREE.Vector3(...linFit(0.9, 0.08, 225)) },
@@ -481,6 +484,8 @@ uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
 uniform vec3 uAstC;
+uniform vec4 uRockL;
+uniform float uRockR;
 uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
@@ -1137,6 +1142,18 @@ void main() {
   float shH = exp(-occH / (H * 0.3));
   // The passing bolt lights the cloud faces near its path.
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
+  // The burning rock lights the faces turned to it, the nearest most.
+  // Thin edges between the eye and the rock glow through.
+  if (uRockL.w > 0.001) {
+    vec3 rb = uRockL.xyz - P, Lr = normalize(rb);
+    vec2 r2 = vec2(dot(Lr, vR), Lr.y);
+    r2 = length(r2) > 1e-3 ? normalize(r2) : vec2(0.0, 1.0);
+    float occR = max(body(X + r2 * H * 0.15), 0.0) + max(body(X + r2 * H * 0.4), 0.0);
+    float fall = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+    float face = (0.08 + 0.92 * max(dot(N, Lr), 0.0)) * (0.25 + 0.75 * exp(-occR / (H * 0.3)));
+    float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
+    col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
+  }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -2203,7 +2220,8 @@ function makeFragTrail(own = false) {
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
 const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 }, uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
-const frags = Array.from({ length: 4 }, () => {
+// Up to seven companions ride with the main rock.
+const frags = Array.from({ length: 7 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
   scene.add(m);
@@ -2211,12 +2229,13 @@ const frags = Array.from({ length: 4 }, () => {
 });
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  const n = 2 + Math.floor(rnd() * 3);
+  // Three to seven, scattered at random round the main rock.
+  const n = 3 + Math.floor(rnd() * 5);
   frags.forEach((f, i) => {
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    const th = (i / n) * Math.PI * 2 + rnd() * 0.8, gap = 3.8 + 2.4 * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -3 + 9 * rnd();
-    f.k = 0.12 + 0.12 * rnd();
+    const th = (i / n) * Math.PI * 2 + rnd() * 1.4, gap = 2.8 + 5 * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -6 + 16 * rnd();
+    f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
@@ -3041,8 +3060,8 @@ class SightPass extends Pass {
     const now = performance.now(), dt = f.last ? clamp((now - f.last) / 1000, 1 / 120, 0.1) : 1 / 30;
     f.last = now;
     f.tube.sigU.tCam.value = readBuffer.texture;
-    // Photon count follows the light: dusk feeds the cathode far more than starlight.
-    f.tube.sigU.uCamExpo.value = 45 + 45 * clamp((opts.sun - 0.1) / 0.4, 0, 1);
+    // Tom: the big chunky grain. The NVG toy's own photon count, starved at any hour.
+    f.tube.sigU.uCamExpo.value = 14;
     f.tube.mOut.uniforms.uFlick.value = reduced() ? 0 : 1;
     f.tube.render(null, null, dt, now / 1000);
     f.keyMat.uniforms.tImg.value = f.out.texture;
@@ -3260,6 +3279,9 @@ function easeLook(dt) {
 }
 // The rock's direction and light, as the shaders see them.
 const tmpA = new THREE.Vector3();
+// rockGlowK scales the rock's light on the clouds.
+// The game-over event raises it as the rock comes down.
+let rockGlowK = 1;
 function aimAst() {
   tmpA.subVectors(ast.pos, camera.position);
   const dist = tmpA.length();
@@ -3270,6 +3292,10 @@ function aimAst() {
   const nk = U.uStars.value;
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
+  // The clouds take the rock's light, faint far out, strong near the end.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
+  U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
+  U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
@@ -3654,19 +3680,41 @@ const bowMat = new THREE.ShaderMaterial({
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vUv = position.xy;
-    gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w, 1.0);
+    // The card spans six rock radii each way.
+    gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
   fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime; uniform vec3 uHot, uRim; varying vec2 vUv;
+  // One shock shell: a hyperbola, round at the nose, a long straight cone behind.
+  // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
+  float shellD(float along, float across, float n, float c, float m) {
+    float r = sqrt(c * c + m * m * across * across);
+    float slope = m * m * across / r;
+    return (along - (n + c - r)) / sqrt(1.0 + slope * slope);
+  }
   void main() {
-    // The shock stands off the nose in a parabola: close ahead, wider at the flanks.
-    float along = dot(vUv, uDir), across = dot(vUv, vec2(-uDir.y, uDir.x));
-    float shell = along - (0.62 - 0.55 * across * across);
-    float w = 0.05 + 0.05 * abs(across);
-    float arc = exp(-shell * shell / (w * w)) * smoothstep(-0.95, -0.2, along) * (1.0 - smoothstep(0.75, 0.98, abs(across)));
-    // Hot white at the nose, orange down the flanks; it shimmers.
-    vec3 c = mix(uHot * 3.0, uRim * 1.2, smoothstep(0.0, 0.7, abs(across)));
-    float fl = 0.85 + 0.15 * sin(uTime * 37.0 + across * 9.0);
-    gl_FragColor = vec4(c * arc * uGain * fl, 0.0);
+    // Rock radii from the rock's centre.
+    vec2 q = vUv * 6.0;
+    float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
+    // The cone runs five radii back and fades out from the tail.
+    float tail = smoothstep(-5.6, -1.2, along);
+    float d = shellD(along, across, 1.35, 0.75, 3.0);
+    // A fine line that widens a little toward the tail, with a soft halo.
+    // It never thins below about a pixel, so it does not shimmer.
+    float px = length(fwidth(q));
+    float w = max(0.03 + 0.03 * smoothstep(0.0, -5.0, along), 0.7 * px);
+    float line = exp(-d * d / (w * w)) + 0.12 * exp(-abs(d) / 0.22);
+    // A fainter second shell rides just inside the first.
+    float d2 = shellD(along, across, 1.18, 0.65, 3.6);
+    float w2 = max(0.02, 0.6 * px);
+    line += 0.3 * exp(-d2 * d2 / (w2 * w2)) * smoothstep(-3.0, 0.5, along);
+    // Faint streaks run down the flanks and drift back.
+    line *= 0.85 + 0.15 * sin(along * 11.0 + uTime * 18.0 + across * 3.0);
+    // Hot white at the nose, cooling to orange down the cone.
+    float k = smoothstep(1.4, -3.5, along);
+    vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
+    // The cone dims steadily down its length.
+    float fade = exp(-max(-along, 0.0) / 2.2);
+    gl_FragColor = vec4(c * line * tail * fade * uGain, 0.0);
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
@@ -3680,7 +3728,7 @@ function updateBow() {
   bowR.setFromMatrixColumn(camera.matrixWorld, 0); bowU.setFromMatrixColumn(camera.matrixWorld, 1);
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
-  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R * 1.9);
+  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
   bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value;
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
@@ -3837,13 +3885,15 @@ const ionMat = new THREE.ShaderMaterial({
   uniform float uDpr;
   varying float vY, vLa, vF;
   varying vec3 vP, vSide;
+  // The slug leaves fast and slows: it reaches fraction f at this time.
+  float reach(float f) { return uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6)); }
   // The line at fraction f; la is the time since the head passed.
   vec3 at(float f, out float la) {
-    f = min(f, uI.x / uI.y);
-    la = uI.x - f * uI.y;
+    f = min(f, 1.0 - pow(max(1.0 - uI.x / uI.y, 0.0), 2.6));
+    la = max(uI.x - reach(f), 0.0);
     vec3 p = mix(uA, uB, f);
-    // Wind drifts the old line and makes it waver.
-    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // Wind drifts the old line, wavers it and sways it in long slow bends.
+    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     return p;
   }
   void main() {
@@ -3875,7 +3925,8 @@ const ionMat = new THREE.ShaderMaterial({
   void main() {
     float n = abs(vY), core = exp(-n * n * 5.0);
     float k = 0.6 + 0.4 * uI.z;
-    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k;
+    // Far up toward the rock the line dies out, as the slug does.
+    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k * (1.0 - smoothstep(0.6, 0.85, vF));
     // A round trail: thick through its middle, with puffy, broken edges.
     float depth = sqrt(max(1.0 - n * n, 0.0));
     float rag = k2fbm(vec2(vF * 220.0, vY * 1.6 + vLa * 0.2));
@@ -3917,13 +3968,14 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   uniform vec2 uRes;
   uniform float uDpr;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   void main() {
-    float f = aF.x, la = uI.x - f * uI.y;
+    // The slug reaches fraction f late on its slowing path.
+    float f = aF.x, la = uI.x - uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6));
     if (la < 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    // The wind takes the trail and gathers pace.
-    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // The wind takes the trail, gathers pace and sways it.
+    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     // Each puff swells with age, some more than others.
     float r = (8.0 + 14.0 * la) * (0.7 + 0.6 * fract(aF.y * 7.31));
     // A cap in pixels keeps near puffs from flooding the screen.
@@ -3932,13 +3984,13 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     r = min(r, 48.0 * uDpr / max(ppm, 1e-6));
     vR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y;
+    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y; vFr = f;
     gl_Position = projectionMatrix * viewMatrix * vec4(p + (vR * position.x + vU * position.y) * r, 1.0);
   }`,
   fragmentShader: /* glsl */`
   uniform vec3 uI, uConC;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   ${HEAD}
   ${AIR}
@@ -3948,7 +4000,10 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     if (d > 1.0) discard;
     float n = k2fbm(vUv * 1.7 + vSeed);
     float a = smoothstep(1.0, 0.35, d + (n - 0.5) * 0.7);
-    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 9.0) * (1.0 - smoothstep(9.0, 15.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // The oldest smoke, nearest the gun, thins first and goes by 10 s.
+    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 6.0) * (1.0 - smoothstep(4.0, 10.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // Far up toward the rock the contrail thins out too.
+    a *= 1.0 - smoothstep(0.6, 0.85, vFr);
     if (a < 0.004) discard;
     // Light each puff as a ball: the low sun warms one side.
     vec3 V = normalize(cameraPosition - vP), N = normalize(vR * vUv.x + vU * vUv.y + V * sqrt(max(1.0 - d * d, 0.0)));
@@ -5586,8 +5641,8 @@ function roundAt(r, t, out) {
   if (r.re && t >= r.re.t) return out.lerpVectors(r.re.p0, r.re.to, Math.min(1, (t - r.re.t) / r.re.T));
   if (t <= 0 || !r.target) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
-  // It leaves at 1.6 times its mean speed and slows in the air: same arrival, a quicker look.
-  const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 1.6);
+  // It leaves at 2.6 times its mean speed and slows in the air: same arrival, a much quicker look.
+  const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 2.6);
   return out.lerpVectors(r.muzzle, r.target, u);
 }
 // A round's landing time on its own clock.
@@ -5732,7 +5787,7 @@ function stepRounds() {
   }
   for (let i = rounds.length - 1; i >= 0; i--) {
     const r = rounds[i];
-    if (simT - r.s0 > landOf(r) + 16) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
+    if (simT - r.s0 > landOf(r) + 11) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
   }
 }
 fire = (c, n = 1, salvo = false) => {
@@ -5828,6 +5883,13 @@ function shatter(c) {
   const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
   const mo = new THREE.Vector3().copy(ast.away).negate();
+  // Slow ejecta: many small burning flecks drift down from the cloud.
+  // Each goes out at its own time, most long before the ground.
+  if (!reduced()) for (let i = 0; i < 460; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.2, rnd() - 0.5).normalize().multiplyScalar((60 + 300 * rnd()) * sp).addScaledVector(mo, (60 + 90 * rnd()) * sp);
+    bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(4 * R);
+    writeStar(bq.add(P), simT + rnd() * 3, bv, 0.5 + 0.6 * rnd(), rnd() < 0.5 ? 2 : 0, 4 + 22 * rnd(), 0.6 + 0.9 * rnd(), 0.9 + 1.1 * rnd(), 3, 0.18 + 0.22 * rnd());
+  }
   for (let i = 0; i < N * 1.2; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
@@ -6086,6 +6148,11 @@ function blast(sh, k = sh.c) {
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
+// The last stretch: the slug's light dies away into the distance before it strikes.
+function farFade(r, a) {
+  const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (a - 0.3) / r.T)), 2.6);
+  return 1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97);
+}
 // Each round's ribbon: one hot streak with shock diamonds behind the head.
 // It returns the leading round in flight.
 function updateRibbons() {
@@ -6098,7 +6165,7 @@ function updateRibbons() {
     if (!lead || r.s0 < lead.s0) lead = r;
     const tail = 0.55 + 0.03 * r.T, g = t.bolt.geometry;
     const p0 = g.attributes.aP0, p1 = g.attributes.aP1, kk = g.attributes.aK;
-    const fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
+    const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * farFade(r, a);
     for (let k = 0; k < BOLT_SEG; k++) {
       const ta = a - tail * (1 - k / BOLT_SEG), tb = a - tail * (1 - (k + 1) / BOLT_SEG);
       roundAt(r, ta, bp); roundAt(r, tb, bq);
@@ -6142,7 +6209,7 @@ function updateBolt() {
   let c = shot.c;
   if (lead) {
     // The head's glints and flare follow the leading round.
-    const a = simT - lead.s0, land = landOf(lead), fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
+    const a = simT - lead.s0, land = landOf(lead), fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * farFade(lead, a);
     roundAt(lead, a, bp); roundAt(lead, a - 0.02, bq);
     // The glint lies along the flight line.
     bv.subVectors(bp, bq);
@@ -6949,6 +7016,7 @@ window.__qa = {
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
   jump(t) { simT += t; U.uTime.value = simT; stepAst(t); stepAim(t, true); stepCharge(Math.min(t, 0.1)); frame(); draw(); },
+  glowK(k) { rockGlowK = k; aimAst(); draw(); },
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
