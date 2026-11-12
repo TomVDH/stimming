@@ -48,7 +48,7 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Clouds: noise samples at level 0 (no derivatives after discard, for Direct3D); nearer heaps tried and reverted (grainy)
 - [x] GLB export and a nine-view turnaround (docs/railgun-model/, not committed)
 - [ ] Post pass: AO not added (a screen-space pass would need the volumes kept out of its normal pass); FXAA and bloom already on the ladder
-- [ ] Cloud flicker on Tom's Windows PC: original heaps restored; level-0 noise fix in; Tom to confirm live
+- [x] Cloud flicker: heap tops flickered on every GPU (measured on D3D11 and GL, old and new builds): the heaps' drift re-sampled their fine cells each frame. Heaps now hold still (they still boil and cycle); their edges stay at least two pixels wide
 - [ ] Frame cost on Tom's PC: headless RTX 3070 at 1280 x 800 shows shot 2.8 / 5.2 ms and impact 5.4 / 11.9 ms (p50 / p90), near the old 1.9 / 4.2 and 4.6 / 12; check live
 - [ ] Stills to Tom; Tom's verdict
 

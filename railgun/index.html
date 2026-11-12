@@ -1053,11 +1053,14 @@ void main() {
     X += wave * H * vec2(0.012 * sin(X.y / H * 3.0 + tw * 0.35), 0.008 * sin(X.x / H * 2.5 - tw * 0.3));
   }
   float F = body(X);
-  float soft = H * 0.05;
+  // The heaps drift a fraction of a pixel each frame.
+  // An edge under two pixels wide snaps on and off: keep it at least that wide.
+  float fw = fwidth(F);
+  float soft = max(H * 0.05, 2.0 * fw);
   // The base melts into the haze, so the blast's push never shows a hard bottom edge.
   // The blast's push clears the heap instead of shoving a hard tuft.
   float tc = uStarT - uHitP.w;
-  float a = smoothstep(0.0, soft, F) * smoothstep(-0.02 * H, 0.18 * H, vUv.y * H) * (1.0 - 0.7 * smoothstep(600.0, 4000.0, length(push)) * smoothstep(1.0, 9.0, tc));
+  float a = smoothstep(-fw, soft, F) * smoothstep(-0.02 * H, 0.18 * H, vUv.y * H) * (1.0 - 0.7 * smoothstep(600.0, 4000.0, length(push)) * smoothstep(1.0, 9.0, tc));
   // The void blows the cloud away where it reaches.
   a *= 1.0 - voidIn(vP);
   if (a < 0.004) discard;
@@ -1125,7 +1128,9 @@ void main() {
   // Each heap drifts on its own clock, thins away, then forms again.
   float sd = aS.z, heap = 1.0 - step(0.5, aS.y);
   float ph = fract(uCloudC * (0.6 + 0.8 * hs(sd)) / 360.0 + hs(sd + 1.0));
-  float a = (ph - 0.5) * radians(16.0) * mix(0.2, 1.0, heap);
+  // Towers drift slowly round the horizon; heaps hold still.
+  // A drifting heap re-samples its fine cells each frame, and its tops flicker.
+  float a = (ph - 0.5) * radians(16.0) * 0.2 * (1.0 - heap);
   vec3 C = vec3(aC.x * cos(a) - aC.z * sin(a), aC.y, aC.x * sin(a) + aC.z * cos(a));
   vLife = mix(1.0, sin(3.14159 * ph), heap);
   vec3 f = C - cameraPosition;
