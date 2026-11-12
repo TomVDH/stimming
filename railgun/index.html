@@ -92,7 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { bankAt, launchAt, ROUND_C, MAX_ROUNDS } from './salvo.js';
+import { bankAt, launchAt, recoilAt, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -310,7 +310,7 @@ const U = {
   uArcL: { value: new THREE.Vector4(0, 0, 0, 0) },
   uMuzL: { value: new THREE.Vector4(0, 0, 0, 0) },
   // The Mach ring on the ground: centre x, z, radius, strength.
-  uShock: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uShocks: { value: Array.from({ length: 5 }, () => new THREE.Vector4(0, 0, 0, 0)) },
   // The strength of the Rayleigh air.
   uAir: { value: 0.7 },
   // Barrel heat, 0 cold to 1 white-hot.
@@ -811,7 +811,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
   fragmentShader: /* glsl */`
   varying vec3 vP;
   uniform vec3 uGroundC;
-  uniform vec4 uShock;
+  uniform vec4 uShocks[5];
   uniform float uRage;
   uniform float uTime;
   uniform vec2 uGLift;
@@ -894,18 +894,22 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
     // The plain trembles in rings round the mount at rage.
     float r0 = length(vP.xz);
     col *= 1.0 + 0.14 * uRage * sin(r0 * 0.045 - uTime * 9.0) * exp(-r0 / 900.0);
-    // The Mach ring: a thin bright front, compressed air dark behind it.
-    float r = length(vP.xz - uShock.xy);
-    float sw = 6.0 + 0.07 * uShock.z;
-    float shock = exp(-(r - uShock.z) * (r - uShock.z) / (2.0 * sw * sw));
-    float inside = smoothstep(uShock.z, uShock.z - sw * 3.0, r);
-    // Dust stands up in the front and catches the sun.
-    // The air behind it is swept clean.
-    col *= 1.0 - min(0.6, 0.3 * uShock.w) * inside * (1.0 - shock);
-    // Sand ripples trail the front and settle.
-    float behind = max(uShock.z - r, 0.0);
-    col *= 1.0 + 0.1 * min(uShock.w, 1.0) * sin(behind * 0.07) * exp(-behind / 400.0) * inside;
-    col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * uShock.w;
+    // The Mach rings: one per round, a thin bright front, dark air behind.
+    for (int i = 0; i < 5; i++) {
+      vec4 S = uShocks[i];
+      if (S.w <= 0.0) continue;
+      float r = length(vP.xz - S.xy);
+      float sw = 6.0 + 0.07 * S.z;
+      float shock = exp(-(r - S.z) * (r - S.z) / (2.0 * sw * sw));
+      float inside = smoothstep(S.z, S.z - sw * 3.0, r);
+      // Dust stands up in the front and catches the sun.
+      // The air behind it is swept clean.
+      col *= 1.0 - min(0.6, 0.3 * S.w) * inside * (1.0 - shock);
+      // Sand ripples trail the front and settle.
+      float behind = max(S.z - r, 0.0);
+      col *= 1.0 + 0.1 * min(S.w, 1.0) * sin(behind * 0.07) * exp(-behind / 400.0) * inside;
+      col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * S.w;
+    }
     // Far plain goes blue and flat in the air.
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
@@ -4971,18 +4975,18 @@ function updateMuzzle(ma, c, m0) {
   // The conical plume is off; the flash, the disc and the brake smoke carry the shot.
   plume.visible = false;
   // The barrel glows once the slug has left it.
-  if (on && !shot.heated) {
-    shot.heated = true; U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * cc); U.uHeatT.value = 1;
+  if (on && shot.heated !== shot.jN) {
+    shot.heated = shot.jN; U.uHeat.value = Math.max(U.uHeat.value, 0.75 + 0.4 * cc); U.uHeatT.value = 1;
     // The blast throws its smoke out of the muzzle.
     muzzleFx = { t0: simT, P: m0.clone(), ax: shot.ax.clone(), k: Math.min(1, 0.5 + 0.5 * cc) };
   }
   // The bore throws a cone of burning plasma once.
-  if (on && !shot.sprayed) { shot.sprayed = true; muzzleSpray(m0, cc, shot.ax, shot.side, shot.up); }
+  if (on && shot.sprayed !== shot.jN) { shot.sprayed = shot.jN; muzzleSpray(m0, cc, shot.ax, shot.side, shot.up); }
   // Six jets for 0.15 s.
   const jg = on ? 3.5 * cc * Math.exp(-ma / 0.06) : 0;
   // The brake spits smoke out of its ports once, sideways; it drifts and thins.
-  if (on && !shot.puffed && !reduced()) {
-    shot.puffed = true;
+  if (on && shot.puffed !== shot.jN && !reduced()) {
+    shot.puffed = shot.jN;
     for (const a of BRAKE_PORTS) for (const sd of [-1, 1]) for (let k = 0; k < 5; k++) {
       barrelPt(a, sd * 24, 0, jp);
       bv.copy(shot.side).multiplyScalar(sd * (50 + 70 * rnd()) * cc).addScaledVector(shot.ax, 10 + 25 * rnd()).addScaledVector(shot.up, 4 + 10 * rnd());
@@ -5546,6 +5550,8 @@ function stepChunks() {
 // One shot at a time.
 // The slug runs the rails in 0.3 s.
 // Then the bolt crosses to the rock.
+// The deepest salvo slide in metres: the breech's clearance point.
+const SALVO_CAP = 240;
 // shot is the gun's firing cycle; lit is the cycle whose hit lights the sky.
 let shot = null, lit = null, hitFlash = 0, flashNow = 0;
 const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bv = new THREE.Vector3();
@@ -5606,12 +5612,27 @@ function roundHits(r) {
   // The last round lands with no hit: the cycle's hit is a miss.
   if (!cy.decided && r.j === r.n) cy.hit = true;
 }
+// The gun-side power of a round: it rises round by round in a salvo.
+const gunPow = r => (r.n > 1 ? r.j / MAX_ROUNDS : r.c);
+// The newest round out of the muzzle: its number, its clock and its power.
+// Rail has one round: j 1, the clock from 0.3 s, the shot's power.
+function newest(sh) {
+  const age = simT - sh.t0, j = sh.n > 1 ? Math.max(1, Math.min(sh.n, Math.floor((age - LAUNCH) / GAP) + 1)) : 1;
+  return { j, ra: age - launchAt(j), gp: sh.n > 1 ? j / MAX_ROUNDS : sh.c };
+}
 // Rounds launch, land, and leave once their contrail fades.
 function stepRounds() {
   for (const r of rounds) {
     const a = simT - r.s0;
     if (!r.launched && a >= 0) launchRound(r);
     if (r.launched && !r.hit && a >= 0.3 + r.T) { r.hit = true; roundHits(r); }
+  }
+  // Each round's Mach ring runs out from the muzzle at 340 m/s and fades over 14 s.
+  for (const s of U.uShocks.value) s.w = 0;
+  for (const r of rounds) {
+    if (!r.launched) continue;
+    const sa = Math.max(0, simT - r.s0 - 0.3), k = gunPow(r);
+    U.uShocks.value[r.j - 1].set(r.muzzle.x, r.muzzle.z, 340 * sa, sa > 14 ? 0 : k * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5)));
   }
   for (let i = rounds.length - 1; i >= 0; i--) {
     const r = rounds[i];
@@ -5639,7 +5660,6 @@ fire = (c, n = 1) => {
   U.uFire.value = 1;
   // The release only clunks; the big kick lands with the blast, as the slug leaves.
   cam.shake = 0.25 * c;
-  U.uShock.value.set(MUZZLE.x, MUZZLE.z, 0, 0);
   // The kick lifts the ring of dust round the mount.
   cdust = Math.max(cdust, 0.9);
   // The muzzle shock throws the ring outward.
@@ -5922,29 +5942,26 @@ function stepShot(dt) {
     const va = simT - ventT;
     if (va < 14) {
       barrelPt(L * 0.6, 0, 0, ventP);
-      U.uShock.value.set(ventP.x, ventP.z, 340 * va, (reduced() ? 0.6 : 1.2) * (Math.max(0, 1 - va / 14) + 1.5 * Math.exp(-va / 1.5)));
+      U.uShocks.value[0].set(ventP.x, ventP.z, 340 * va, (reduced() ? 0.6 : 1.2) * (Math.max(0, 1 - va / 14) + 1.5 * Math.exp(-va / 1.5)));
     }
     return;
   }
-  const age = simT - shot.t0;
-  U.uFire.value = Math.exp(-age / 0.15);
+  const age = simT - shot.t0, nw = newest(shot), ra = nw.ra, gp = nw.gp;
+  U.uFire.value = Math.exp(-(ra + 0.3) / 0.15);
   // The barrel slams back 320 m, holds half a second, then runs out over seconds.
   // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
-  const ra = age - 0.3;
-  U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  // A salvo kicks harder round by round, up to the clearance point.
+  if (shot.n > 1) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
+  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
-    kick.p = ra > 0 ? rad(0.5) * shot.c * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
-    kick.y = ra > 0 ? rad(0.1) * shot.c * Math.exp(-ra / 0.8) * Math.sin(ra * 2 * Math.PI / 0.9) : 0;
+    kick.p = ra > 0 ? rad(0.5) * gp * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
+    kick.y = ra > 0 ? rad(0.1) * gp * Math.exp(-ra / 0.8) * Math.sin(ra * 2 * Math.PI / 0.9) : 0;
   }
   applyAim();
-  // The Mach ring runs out from the muzzle at 340 m/s.
-  // It fades over fourteen seconds.
-  const sa = Math.max(0, age - 0.3);
-  U.uShock.value.z = 340 * sa;
-  U.uShock.value.w = shot.c * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5));
-  if (!shot.blast && age >= 0.3) { shot.blast = true; blast(shot); }
+  // Each round blasts as it leaves the muzzle.
+  if ((shot.blasts || 0) < nw.j && ra >= 0) { shot.blasts = nw.j; blast(shot, gp); }
   // The Mach ring reaches the eye: a jolt, no sound of its own.
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
   // The back vents blow in a ripple; then the flap opens and the case leaves.
@@ -5967,8 +5984,8 @@ function endShot() {
 }
 
 // The blast: the slug leaves the muzzle.
-function blast(sh) {
-  cam.shake += 2.3 * sh.c; cam.kickP += rad(1.0) * sh.c; cam.kickY -= rad(0.3) * sh.c;
+function blast(sh, k = sh.c) {
+  cam.shake += 2.3 * k; cam.kickP += rad(1.0) * k; cam.kickY -= rad(0.3) * k;
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
@@ -6025,7 +6042,7 @@ function updateBolt() {
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(hitGlow, MUZZLE, 1, 0);
     flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; grade.uniforms.uGod.value.z = grade.uniforms.uGod.value.w = 0; return; }
-  const age = simT - shot.t0, c = shot.c;
+  let c = shot.c;
   if (lead) {
     // The head's glints and flare follow the leading round.
     const a = simT - lead.s0, land = 0.3 + lead.T, fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
@@ -6046,8 +6063,9 @@ function updateBolt() {
     flare(headFlare, MUZZLE, 1, 0);
     U.uBolt.value.w = 0;
   }
-  // The muzzle flash: a burst as the slug leaves.
-  const ma = age - 0.3;
+  // The muzzle flash: a burst as each round leaves.
+  const nw = newest(shot), ma = nw.ra;
+  c = nw.gp; shot.jN = nw.j;
   const on = ma > 0 ? 1 : 0, m0 = shot.muzzle;
   // A small hot core for a few frames; the spike and the fire carry the rest.
   flare(muzzleFlare, m0, 110 * (0.6 + c), on * c * 9 * Math.exp(-ma / 0.035));
@@ -6819,6 +6837,10 @@ window.__qa = {
   ablation: () => ablN,
   ion: () => ({ visible: tracers.some(t => t.line.visible || t.puffs.visible), glow: tracers[0].round ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
   // Salvo: the rounds in flight, and a salvo of n rounds fired at once.
+  // Pose the barrel's slide in metres, for clearance stills.
+  slide(m) { U.uRecoil.value = m; shadowDirty = true; frame(); draw(); },
+  cap: () => SALVO_CAP,
+  rings: () => U.uShocks.value.map(v => +v.w.toFixed(3)),
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
   salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),

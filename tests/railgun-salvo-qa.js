@@ -48,6 +48,22 @@ const checks = {
     ok(q().ast().state === 'shatter', 'a Rail hit still breaks the rock');
     settle();
   },
+  task4() {
+    settle();
+    const cap = q().cap();
+    ok(cap === 240, `the cap is Tom's clearance point (${cap})`);
+    q().salvo(5);
+    const peaks = [];
+    for (let j = 1; j <= 5; j++) { q().run(0.5); peaks.push(q().recoil().slide); }
+    ok(peaks.every((p, i) => i === 0 || p > peaks[i - 1]), `the kick rises round by round (${peaks.map(Math.round)})`);
+    ok(Math.max(...peaks) <= cap + 1, `no round slides past the cap (${Math.round(Math.max(...peaks))})`);
+    ok(q().rings().filter(w => w > 0).length === 5, `five Mach rings run (${q().rings()})`);
+    settle();
+    q().mode('rail'); q().shoot(1); q().run(0.9);
+    ok(q().recoil().slide > 300, `Rail still slams 320 m (${Math.round(q().recoil().slide)})`);
+    ok(q().rings().filter(w => w > 0).length === 1, 'Rail runs one ring');
+    settle();
+  },
 };
 
 export async function run(...names) {
