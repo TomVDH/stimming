@@ -46,6 +46,9 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Impact void: the blast shoves the 9 km cirrus deck outward into a packed ring and clears a hole round the fireball; clouds inside it go; the sky heals over a minute
 - [x] Meteor: a bow-shock arc at its nose; its shed sparks leave from the whole back, small, orange, fanned wide
 - [x] Clouds: noise samples at level 0 (no derivatives after discard, for Direct3D); nearer heaps tried and reverted (grainy)
+- [x] Impact: the fire pulls in by about 45 % in the negative phase; a billowing dark smoke puff bridges the tail's end and the debris (to about 45 s)
+- [x] Muzzle: a glow globe swells on firing, brightest at night
+- [x] The torn cirrus deck thins and stays torn until Reset
 - [x] GLB export and a nine-view turnaround (docs/railgun-model/, not committed)
 - [ ] Post pass: AO not added (a screen-space pass would need the volumes kept out of its normal pass); FXAA and bloom already on the ladder
 - [x] Cloud flicker: heap tops flickered on every GPU (measured on D3D11 and GL, old and new builds): the heaps' drift re-sampled their fine cells each frame. Heaps now hold still (they still boil and cycle); their edges stay at least two pixels wide

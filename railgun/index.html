@@ -270,7 +270,7 @@ const U = {
   uBoltC: { value: new THREE.Vector3(...linFit(0.9, 0.08, 225)) },
   uHit: { value: new THREE.Vector4(0, 1, 0, 0) },
   // The void: a sphere the blast clears in the sky. Centre and radius; strength.
-  uVoid: { value: new THREE.Vector4(0, 0, 0, 1) }, uVoidK: { value: 0 }, uVoidD: { value: new THREE.Vector2() },
+  uVoid: { value: new THREE.Vector4(0, 0, 0, 1) }, uVoidK: { value: 0 }, uVoidD: { value: new THREE.Vector2() }, uVoidT: { value: 0 },
   // Charge level, chase station, chase half width, muzzle flash.
   uCharge: { value: 0 },
   uRage: { value: 0 },
@@ -471,7 +471,7 @@ uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
 uniform vec4 uVoid;
-uniform float uVoidK;
+uniform float uVoidK, uVoidT;
 uniform vec2 uVoidD;
 // How far inside the void a world point sits: 1 deep in, 0 outside.
 float voidIn(vec3 P) { return uVoidK * (1.0 - smoothstep(0.88 * uVoid.w, uVoid.w, length(P - uVoid.xyz))); }
@@ -566,7 +566,8 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   // The heave clears the air it pushes; the layer fills back in.
   d *= 1.0 - 0.55 * smoothstep(800.0, 5000.0, length(push));
   // Packed ice thickens; the middle is swept clear.
-  d = min(d * pack, 1.0) * (1.0 - hole);
+  // The packed band then thins out over half a minute; it never fills back in.
+  d = min(d * pack, 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
   if (d < 0.002) return col;
   // High ice still holds sunlight; it reads brighter than the dusty air.
   vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
@@ -1652,7 +1653,6 @@ gunDepthScene.add(gunDepthMesh);
 function drawGunDepth() {
   const w = renderer.domElement.width, h = renderer.domElement.height;
   if (gunDepthRT.width !== w || gunDepthRT.height !== h) gunDepthRT.setSize(w, h);
-  U.uDRes.value.set(w, h);
   U.uNF.value.set(camera.near, camera.far);
   camera.getWorldDirection(U.uCamFwd.value);
   renderer.setRenderTarget(gunDepthRT);
@@ -3073,6 +3073,7 @@ function draw() {
   grade.uniforms.uSoft.value = reduced() ? 0 : hk * 0.8 * (1 - Math.exp(-Math.max(ha, 0) / 0.08)) * Math.exp(-Math.max(ha, 0) / 0.6) * (ha > 0 && ha < 6 ? 1 : 0);
   drawShadow();
   drawGunDepth();
+  drawVolumes();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
@@ -3103,7 +3104,7 @@ function updateWarp() {
   // The fire's heat wavers the sky above it: strong for 8 s, faint to 30 s.
   g.uHtA.value.w = 0;
   if (blastFx && !reduced() && !sight) {
-    const ha = simT - blastFx.t0, R = blastFx.R, Rf = 0.8 * R * (1 + 7 * (1 - Math.exp(-ha / 1.1)));
+    const ha = simT - blastFx.t0, R = blastFx.R, Rf = 0.8 * R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * (1 - 0.45 * pullOf(ha));
     wv.copy(blastFx.P).setY(blastFx.P.y + 25 * ha + 0.7 * Rf);
     const D = wv.distanceTo(camera.position), tn = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     wv.project(camera);
@@ -4728,8 +4729,8 @@ float rb() { return uFb.y * (1.0 + 11.0 * (1.0 - exp(-uFb.x / 4.5))); }
 // The fire sphere blows out to eight radii, most of it in two seconds.
 // The negative phase then pulls it in by a fifth; it eases back a little.
 float rf() {
-  float a = uFb.x, pull = smoothstep(2.2, 5.0, a) - 0.4 * smoothstep(6.0, 10.0, a);
-  return uFb.y * (1.0 + 7.0 * (1.0 - exp(-a / 1.1))) * (1.0 - 0.22 * pull);
+  float a = uFb.x, pull = smoothstep(2.0, 5.5, a) - 0.35 * smoothstep(7.0, 12.0, a);
+  return uFb.y * (1.0 + 7.0 * (1.0 - exp(-a / 1.1))) * (1.0 - 0.45 * pull);
 }
 // The fire's heat: a flash, then a strong glow for 8 s, then a faint tail.
 float fireEnv(float a) { return 0.8 * exp(-a / 0.6) + 0.9 * exp(-a / 8.0) + 0.12 * exp(-a / 40.0); }
@@ -4827,15 +4828,144 @@ vec3 vlight(vec3 p) {
 });
 // The fireball is far out: clouds and mesas stand in front of it, so it keeps the depth test.
 fireball.material.depthTest = true;
+// The fire's pull-in, 0 to 1, as the fireball shader has it.
+const pullOf = a => THREE.MathUtils.smoothstep(a, 2.0, 5.5) - 0.35 * THREE.MathUtils.smoothstep(a, 7.0, 12.0);
+// A thick puff of dark smoke on the rock's path, from the tail's end to where the debris starts.
+// uBr: the hit, age. uBa: the rock's heading, its radius.
+const smokeBridge = makeVol(/* glsl */`
+uniform vec4 uBr, uBa;
+uniform vec3 uSootC;
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  float age = uBr.w, R = uBa.w;
+  // It rises a little and swells; the capsule runs along the rock's path.
+  vec3 q = p - uBr.xyz - vec3(0.0, 18.0 * age, 0.0);
+  float s = clamp(dot(q, uBa.xyz), -1.5 * R, 4.5 * R);
+  float d = length(q - uBa.xyz * s);
+  float Rr = R * (1.0 + 1.6 * (1.0 - exp(-age / 3.0))) * (1.0 - 0.25 * smoothstep(1.5 * R, 4.5 * R, s));
+  if (d > 1.4 * Rr) return 0.0;
+  vec3 w = q / (2.2 * R) + vec3(0.0, -age * 0.02, age * 0.01);
+  float n = 0.6 * texture(uVol, w * 0.5).r + 0.4 * texture(uVol, w * 1.3).r;
+  // Billows push its skin far in and out, so it reads as smoke, not a solid.
+  float cov = smoothstep(1.1, 0.35, d / Rr + (0.55 - n) * 1.6);
+  cov *= 0.55 + 0.45 * texture(uVol, w * 2.4).g;
+  // It thins from its rim as it ages, gone by about 45 s.
+  float er = smoothstep(14.0, 42.0, age);
+  cov = clamp((cov - er * (0.3 + 0.7 * texture(uVol, w * 0.8).b)) / max(1.0 - 0.6 * er, 0.2), 0.0, 1.0);
+  // It thickens as the fire dies back inside the soot.
+  return cov * 1.6 / Rr * smoothstep(1.5, 6.0, age);
+}
+vec3 alb(vec3 p) { return uSootC; }
+// The fire lights its near side for the first seconds.
+vec3 vlight(vec3 p) { vec3 b = p - uBr.xyz; float R0 = uBa.w * 3.0; return uAstC * 1.2 * exp(-uBr.w / 4.0) * R0 * R0 / (dot(b, b) + R0 * R0) + blastLight(p); }`, {
+  uBr: { value: new THREE.Vector4() }, uBa: { value: new THREE.Vector4() }, uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) },
+});
+smokeBridge.material.depthTest = true;
+
+/* ---------- volumes at 75% resolution ---------- */
+// The volumes march into a smaller target; one quad lays it over the frame.
+// Each group keeps its draw order, so the layering holds.
+// A depth-tested volume tests its quad at the far side of its proxy.
+const VOL_RES = 0.75;
+const volGroups = [];
+const volDepthP = new THREE.Vector3(), volClear = new THREE.Color();
+function lowRes(order, meshes, depthOf = null) {
+  const layer = volGroups.length + 1;
+  const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: false });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: { tVol: { value: rt.texture }, uDepthP: { value: new THREE.Vector3() }, uDepthOn: { value: depthOf ? 1 : 0 } },
+    transparent: true, depthWrite: false, depthTest: !!depthOf,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: /* glsl */`uniform vec3 uDepthP; varying vec2 vUv; varying float vDepth;
+    void main() {
+      vUv = uv;
+      vec4 c = projectionMatrix * viewMatrix * vec4(uDepthP, 1.0);
+      vDepth = clamp(0.5 + 0.5 * c.z / c.w, 0.0, 1.0);
+      gl_Position = vec4(position.xy, 0.0, 1.0);
+    }`,
+    fragmentShader: /* glsl */`uniform sampler2D tVol; uniform float uDepthOn; varying vec2 vUv; varying float vDepth;
+    void main() {
+      gl_FragColor = texture2D(tVol, vUv);
+      gl_FragDepth = uDepthOn > 0.5 ? vDepth : 0.0;
+    }`,
+  }));
+  quad.frustumCulled = false; quad.renderOrder = order; quad.visible = false;
+  scene.add(quad);
+  for (const m of meshes) {
+    m.layers.set(layer);
+    // The target starts clear, so alpha must build up as cover.
+    m.material.blendSrcAlpha = THREE.OneFactor;
+    m.material.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+    if (depthOf) m.material.depthTest = false;
+  }
+  volGroups.push({ layer, rt, quad, meshes, depthOf });
+}
+lowRes(1.9, [fireball], fireball);
+lowRes(2.2, [plume, chargeDust, shotDust, muzzleSmoke, ...ringVols, ventJets]);
+lowRes(2.2, [smokeBridge], smokeBridge);
+lowRes(3, [caseDustV]);
+// Runs after drawGunDepth: the volumes read the gun's depth by their own size.
+function drawVolumes() {
+  const w = Math.max(1, Math.round(renderer.domElement.width * VOL_RES));
+  const h = Math.max(1, Math.round(renderer.domElement.height * VOL_RES));
+  U.uDRes.value.set(w, h);
+  const mask = camera.layers.mask, ca = renderer.getClearAlpha();
+  renderer.getClearColor(volClear);
+  renderer.setClearColor(0x000000, 0);
+  for (const g of volGroups) {
+    g.quad.visible = g.meshes.some(m => m.visible);
+    if (!g.quad.visible) continue;
+    if (g.rt.width !== w || g.rt.height !== h) g.rt.setSize(w, h);
+    if (g.depthOf) {
+      const u = g.depthOf.material.uniforms;
+      volDepthP.subVectors(u.uC.value, camera.position).normalize().multiplyScalar(u.uR.value * 1.08).add(u.uC.value);
+      g.quad.material.uniforms.uDepthP.value.copy(volDepthP);
+    }
+    camera.layers.set(g.layer);
+    renderer.setRenderTarget(g.rt);
+    renderer.render(scene, camera);
+  }
+  camera.layers.mask = mask;
+  renderer.setClearColor(volClear, ca);
+  renderer.setRenderTarget(null);
+}
+const brHead = new THREE.Vector3();
+function updateBridge(ha, R) {
+  const on = ha > 0.1 && ha < 46;
+  smokeBridge.visible = on;
+  if (!on) return;
+  const u = smokeBridge.material.uniforms;
+  // The rock's heading is against ast.away.
+  brHead.copy(ast.away).negate();
+  u.uBr.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, ha);
+  u.uBa.value.set(brHead.x, brHead.y, brHead.z, R);
+  const Rr = R * 2.6 * 1.4;
+  u.uC.value.copy(blastFx.P).addScaledVector(brHead, 1.5 * R).setY(blastFx.P.y + 1.5 * R * brHead.y + 18 * ha);
+  u.uR.value = 3 * R + Rr;
+  u.uVSteps.value = Math.max(10, Math.round(volSteps() * 0.75)); u.uLSteps.value = volLSteps(); u.uLs.value = 0.15 * R;
+}
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
 const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
 const hitShellC = makeShell(7.0, -0.1, 0.45);
 // The live blast: start time, place, rock radius and power.
-let blastFx = null;
+let blastFx = null, voidFx = null;
+// The sky void and the torn deck outlive the blast; Reset clears them.
+function updateVoid() {
+  if (!voidFx) { U.uVoidK.value = 0; return; }
+  const ha = simT - voidFx.t0, P = voidFx.P;
+  U.uVoid.value.set(P.x, P.y, P.z, voidFx.R * 2 + 13000 * (1 - Math.exp(-ha / 8)));
+  U.uVoidK.value = voidFx.k * THREE.MathUtils.smoothstep(ha, 0.4, 2.5);
+  U.uVoidT.value = ha;
+  // The deck hole opens where the eye's line through the blast meets the 9 km deck.
+  const c = camera.position, t = (9000 - c.y) / Math.max(P.y - c.y, 1);
+  U.uVoidD.value.set(c.x + (P.x - c.x) * t, c.z + (P.z - c.z) * t);
+}
 function updateBlast() {
-  if (!blastFx) { U.uVoidK.value = 0; fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
+  updateVoid();
+  if (!blastFx) { smokeBridge.visible = false; fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
   // The void outlives the soot: the blast state holds until the sky heals.
   if (ha > 70) { blastFx = null; updateBlast(); return; }
@@ -4876,13 +5006,10 @@ function updateBlast() {
   warpH.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, C.uR.value);
   warpH.strength = reduced() ? 0 : k * Math.exp(-ha / 1.2);
   // The void: the blast clears a sphere of sky that grows for twenty seconds.
-  // The air heals over the next minute.
-  U.uVoid.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, R * 2 + 13000 * (1 - Math.exp(-ha / 8)));
-  U.uVoidK.value = Math.min(1, k) * THREE.MathUtils.smoothstep(ha, 0.4, 2.5) * (1 - THREE.MathUtils.smoothstep(ha, 30, 70));
-  // The deck hole opens where the eye's line through the blast meets the 9 km deck.
-  { const c = camera.position, t = (9000 - c.y) / Math.max(blastFx.P.y - c.y, 1);
-    U.uVoidD.value.set(c.x + (blastFx.P.x - c.x) * t, c.z + (blastFx.P.z - c.z) * t); }
+  // It stays until Reset.
+  if (!voidFx) voidFx = { P: blastFx.P.clone(), R, k: Math.min(1, k), t0: blastFx.t0 };
   updateBursts(ha, R, k);
+  updateBridge(ha, R);
 }
 // Each burst: a warm flash through the soot, a spray of sparks, a flicker of light.
 const burstP = new THREE.Vector3();
@@ -4920,7 +5047,7 @@ function stepRain(dt) {
   const R = blastFx.R, P = blastFx.P, sp = R / 600;
   rainAcc += dt * 45 * blastFx.k * Math.exp(-(ha - 0.6) / 4);
   // The fire sphere's radius, as the fireball shader has it.
-  const Rf = 0.8 * R * (1 + 7 * (1 - Math.exp(-ha / 1.1)));
+  const Rf = 0.8 * R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * (1 - 0.45 * pullOf(ha));
   for (; rainAcc >= 1; rainAcc--) {
     const th = rnd() * Math.PI * 2, r = Rf * Math.sqrt(rnd());
     bp.set(P.x + Math.cos(th) * r, P.y + 25 * ha - Rf * (0.2 + 0.5 * rnd()), P.z + Math.sin(th) * r);
@@ -5431,7 +5558,8 @@ function updateBolt() {
   const on = ma > 0 ? 1 : 0, m0 = shot.muzzle;
   // A small hot core for a few frames; the spike and the fire carry the rest.
   flare(muzzleFlare, m0, 110 * (0.6 + c), on * c * 9 * Math.exp(-ma / 0.035));
-  flare(muzzleGlow, m0, 1400 * (0.6 + c), on * 0.12 * c * Math.exp(-ma / 0.25));
+  // A glow globe swells round the muzzle; at night it is the brightest thing on the plain.
+  flare(muzzleGlow, m0, 900 * (0.6 + c) * (1 + 0.6 * (1 - Math.exp(-ma / 0.3))), on * c * (0.3 + 0.5 * U.uStars.value) * (0.7 * Math.exp(-ma / 0.35) + 0.3 * Math.exp(-ma / 1.2)));
   // The blast lights the plain and the gun.
   U.uMuzL.value.set(m0.x, m0.y, m0.z, on * 9 * c * Math.exp(-ma / 0.18));
   flashNow = on * 0.35 * c * Math.exp(-ma / 0.09);
@@ -5547,7 +5675,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // Embers from the old rock go too.
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
