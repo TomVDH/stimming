@@ -5,7 +5,7 @@ status: draft
 type: task
 priority: normal
 created_at: 2026-11-12T08:57:54Z
-updated_at: 2026-11-12T09:23:27Z
+updated_at: 2026-11-12T10:21:04Z
 parent: stimming-f793
 ---
 
@@ -46,6 +46,7 @@ Salvo spec: `docs/plans/railgun-salvo.md` (Tom approved the sections, 2026-11-12
 
 ## Open questions
 
+- [x] Salvo built: feature stimming-qsnm (branch feature/stimming-qsnm).
 - [ ] The HUD selector: its form, its place, and whether the sight session's HUD holds it.
 - [x] Salvo: bank then ripple; five rounds at 0.35; 0.5 s gap; crater, break, hunt; rising recoil to the clearance point (spec).
 - [ ] Siege: is a 20 s lockout fun in a desk toy, or does the gun only look spent?
