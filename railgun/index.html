@@ -133,6 +133,8 @@ let chargeMix = (() => {
 })();
 // The shot's sound: 'mesa', 'coil', 'thump' or 'report'.
 let shotMix = 'mesa';
+// The game-over sound: a surge mix from MIX, or 'hum' for the plain charge hum.
+let goMix = 'syl';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -157,6 +159,9 @@ const ui = initPage({ id: 'railgun', bar: {
     // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
     { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
+    // The game over: the surge that plays as an unshot rock comes down.
+    // A pick takes effect at the next strike; Strike test brings one on.
+    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'syl', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target picks the rock or the capital ship.
@@ -7623,8 +7628,8 @@ function endStrike() {
 // d.over: the strain, up to 1 in the burn. Null stops the sound.
 // Today it drives the charge hum; a live charge owns the hum.
 function gameOverSound(ac, d) {
-  // Surge Syl takes the seam once the sound branch merges.
-  if (typeof surgeOver === 'function') { surgeOver(ac, d); return; }
+  // A surge mix takes the seam; Hum falls through to the charge hum.
+  if (goMix !== 'hum' && typeof surgeOver === 'function') { surgeOver(ac, d); return; }
   if (!d) { humStop(ac); return; }
   if (!ac || charge) return;
   humStart(ac);
@@ -8311,7 +8316,7 @@ function stackUpdate(ac, h = hum, dv = null) {
   if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent) * vol, t, 0.1);
 }
 /* ---------- the game-over surge ---------- */
-// Surge Syl plays the rock's last fall; its contact is the game over.
+// The picked surge plays the rock's last fall to the game over.
 // The strike calls surgeOver every sim step with d: { u, vol, over }.
 // d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
 // d.over: the strain, 0.6 at contact, 1 at the end of the burn.
@@ -8320,7 +8325,7 @@ let goSurge = null;
 function surgeOver(ac, d) {
   if (!d || !ac) { surgeOverStop(!ac); return; }
   if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
-  if (!goSurge) { goSurge = stackStart(ac, MIX.syl); goSurge.ac = ac; }
+  if (!goSurge) { goSurge = stackStart(ac, MIX[goMix] && MIX[goMix].stack ? MIX[goMix] : MIX.syl); goSurge.ac = ac; }
   const ss = THREE.MathUtils.smoothstep;
   // The chord locks at contact and holds through the burn.
   // A live charge keeps the lead; the surge ducks under it.
