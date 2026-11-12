@@ -275,6 +275,9 @@ const U = {
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
   uAstR: { value: 0.05 },
   uAstC: { value: new THREE.Vector3(...AMBER) },
+  // The rock as a light on the clouds: world position, strength; its reach in metres.
+  uRockL: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uRockR: { value: 10000 },
   // The bolt: world position and strength. The hit: direction and strength.
   uBolt: { value: new THREE.Vector4(0, 0, 0, 0) },
   uBoltC: { value: new THREE.Vector3(...linFit(0.9, 0.08, 225)) },
@@ -477,6 +480,8 @@ uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
 uniform vec3 uAstC;
+uniform vec4 uRockL;
+uniform float uRockR;
 uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
@@ -1129,6 +1134,18 @@ void main() {
   float shH = exp(-occH / (H * 0.3));
   // The passing bolt lights the cloud faces near its path.
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
+  // The burning rock lights the faces turned to it, the nearest most.
+  // Thin edges between the eye and the rock glow through.
+  if (uRockL.w > 0.001) {
+    vec3 rb = uRockL.xyz - P, Lr = normalize(rb);
+    vec2 r2 = vec2(dot(Lr, vR), Lr.y);
+    r2 = length(r2) > 1e-3 ? normalize(r2) : vec2(0.0, 1.0);
+    float occR = max(body(X + r2 * H * 0.15), 0.0) + max(body(X + r2 * H * 0.4), 0.0);
+    float fall = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+    float face = (0.08 + 0.92 * max(dot(N, Lr), 0.0)) * (0.25 + 0.75 * exp(-occR / (H * 0.3)));
+    float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
+    col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
+  }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -3239,6 +3256,9 @@ function easeLook(dt) {
 }
 // The rock's direction and light, as the shaders see them.
 const tmpA = new THREE.Vector3();
+// rockGlowK scales the rock's light on the clouds.
+// The game-over event raises it as the rock comes down.
+let rockGlowK = 1;
 function aimAst() {
   tmpA.subVectors(ast.pos, camera.position);
   const dist = tmpA.length();
@@ -3249,6 +3269,10 @@ function aimAst() {
   const nk = U.uStars.value;
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
+  // The clouds take the rock's light, faint far out, strong near the end.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
+  U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
+  U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
@@ -6729,6 +6753,7 @@ window.__qa = {
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
   jump(t) { simT += t; U.uTime.value = simT; stepAst(t); stepAim(t, true); stepCharge(Math.min(t, 0.1)); frame(); draw(); },
+  glowK(k) { rockGlowK = k; aimAst(); draw(); },
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
