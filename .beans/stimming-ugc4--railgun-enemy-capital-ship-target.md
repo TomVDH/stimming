@@ -25,6 +25,7 @@ Spec: `docs/plans/railgun-capital-ship.md`. Tom approved all four sections.
 Build: procedural in `railgun/index.html`; five hulks; one `vol`/`trail` streak each.
 
 - [x] Design spec written
-- [ ] Tom reviews the written spec
-- [ ] Implementation plan (superpowers:writing-plans)
+- [x] Tom reviews the written spec
+- [x] Implementation plan: `docs/plans/railgun-capital-ship-plan.md` (8 tasks)
+- [ ] Tom reviews the plan and picks the execution method
 - [ ] Tom schedules the build; a feature bean and worktree start then
