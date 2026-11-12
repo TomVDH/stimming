@@ -152,7 +152,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target: the rock, or the capital ship. The choice waits for Reset.
     { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
-    // Ship fires: a test round from the ship to the plain; it waits for station.
+    // Ship fires sends a test round to the plain.
+    // The button waits for a ship at station.
     { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
@@ -6420,6 +6421,8 @@ function landReset() {
   CLOUD_U.uCloudT.value = 0;
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
+  // Boom puffs end with the shot; a Reset without a shot keeps its dust.
+  if (sshot) { dustGeo.instanceCount = 0; dustHead = 0; dustEnd = 0; }
   sshot = null; sRound.visible = sRoundGlint.visible = sPop.visible = sPopGlow.visible = false;
   // The old blast, its debris and the bolt's line are gone.
   blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
@@ -6455,21 +6458,26 @@ function whoosh() {
 }
 
 /* ---------- the ship's shot: a test round to the plain ---------- */
-// The round starts at the hull's belly and falls to a spot on the plain.
+// The round leaves the hull's belly.
+// It lands on a spot on the plain.
 const SSHOT_T = 2;
 const sRound = makeFlare(linFit(0.97, 0.04, 225));
 const sRoundGlint = makeGlint(linFit(0.9, 0.08, 225));
 const sPop = makeFlare(linFit(0.95, 0.16, 95));
 const sPopGlow = makeFlare(linFit(0.8, 0.2, 340));
 let sshot = null;
-const sA = new THREE.Vector3(), sB = new THREE.Vector3(), sP = new THREE.Vector3(), sD = new THREE.Vector3(), sV = new THREE.Vector3(), sN = new THREE.Vector3();
-// The belly is the hull's -y side; the mesh matrix takes it to world.
+// The chip's last state; the DOM changes only on a change.
+let fireOff = true;
+const sP = new THREE.Vector3(), sD = new THREE.Vector3(), sV = new THREE.Vector3(), sN = new THREE.Vector3();
+// The belly is the hull's -y side.
+// The mesh matrix takes it to world space.
 function shipBelly(out) {
   const m = shipMeshes[0];
   m.updateMatrixWorld(true);
   return out.set(0, m.geometry.boundingBox.min.y, 0).applyMatrix4(m.matrixWorld);
 }
-// A spot on the plain, 3 to 8 km out, inside a safe band of the frame.
+// A spot on the plain, 3 to 8 km out.
+// It stays inside a safe band of the frame.
 function pickLanding(out) {
   camera.updateMatrixWorld(true);
   const cp = camera.position;
@@ -6490,8 +6498,8 @@ function pickLanding(out) {
     if (Math.hypot(sN.x - sV.x, sN.y - sV.y) < 0.35) continue;
     return out;
   }
-  // Fall back to a point left of the gun, 5 km out.
-  return out.set(cp.x - 3500, 0, cp.z - 3500);
+  // This point sits in frame, 6.6 to 7.5 km out, at all three sizes.
+  return out.set(600, 0, -4500);
 }
 function shipShotReady() { return tgtKind === 'ship' && ship.state === 'station'; }
 function shipShot() {
@@ -6500,9 +6508,11 @@ function shipShot() {
   sshot = { state: 'flight', t0: simT, from, to, pos: from.clone(), boomT: 0, ring2: false };
   wake();
 }
-// The round speeds up all the way down; the boom runs on its own clock.
+// The round speeds up all the way down.
+// The boom runs on its own clock.
 function stepShipShot(dt) {
-  ui.setting('shipfire').disabled = !shipShotReady() || !!sshot;
+  const off = !shipShotReady() || !!sshot;
+  if (off !== fireOff) ui.setting('shipfire').disabled = fireOff = off;
   if (!sshot) return;
   const age = simT - sshot.t0;
   if (sshot.state === 'flight') {
@@ -7158,6 +7168,8 @@ window.__qa = {
   shipFire() { shipShot(); },
   shipShot: () => (sshot ? { state: sshot.state, age: simT - sshot.t0, pos: sshot.pos.toArray(), to: sshot.to.toArray() } : { state: 'idle', age: 0, pos: null }),
   // The landing spot: distance from the eye, NDC, and distance from the gun.
+  // A ground point in NDC, its eye distance and its gun distance.
+  projectPt(x, y, z) { const q = new THREE.Vector3(x, y, z), d = q.distanceTo(camera.position); q.project(camera); return { nx: q.x, ny: q.y, dist: d, gun: Math.hypot(x, z) }; },
   landing() {
     if (!sshot) return null;
     const q = sshot.to.clone().project(camera);
@@ -7250,6 +7262,7 @@ sun(sunDeg(opts.sun));
 seedFrags();
 placeAst();
 astSize();
+ui.setting('shipfire').disabled = true;
 // A stored Target applies at load too.
 tgtKind = ui.setting('target').value;
 if (tgtKind === 'ship') newShip();
