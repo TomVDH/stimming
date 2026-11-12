@@ -83,6 +83,11 @@ test('hulkAt eases in and lands at fallT', () => {
   assert.equal(hulkAt(h, h.fallT).landed, true);
   assert.ok(Math.abs(hulkAt(h, 11).tumble - hulkAt(h, 10).tumble) < 0.1);
 });
+test('a hulk does not fall before its break', () => {
+  const h = makeShip(3, 0).hulks[0];
+  const a = hulkAt(h, -2);
+  assert.equal(a.f, 0); assert.equal(a.entry, 0); assert.equal(a.landed, false);
+});
 test('falling turns gone once every hulk lands', () => {
   const s = station(); hitShip(s, 1, 100, 0);
   const end = Math.max(...s.hulks.map(h => h.breakAt + h.fallT));

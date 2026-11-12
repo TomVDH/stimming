@@ -1,6 +1,7 @@
 // Capital ship core: states, hits, joint order, hulk fall and light.
 // It has no imports, so node can test it.
-// Hull frame: x runs stern to prow, y up, z to starboard. Units are metres and seconds.
+// Hull frame: x runs stern to prow, y up, z to starboard.
+// Units are metres and seconds.
 
 export const KILL = 0.85;
 export const ARRIVE = 40;
@@ -26,7 +27,8 @@ export const HULL = {
   ],
 };
 
-// Each hulk breaks at the later of its two bounding joints.
+// A hulk breaks at the later of its bounding joints.
+// The end hulks and the tower have one joint.
 const BOUNDS = {
   prow: [2440],
   fore: [2440, 150],
@@ -45,7 +47,8 @@ export function makeShip(seed, t) {
     id: sec.id,
     fallT: 60 + rnd() * 60,
     dist: 40000 + rnd() * 40000,
-    // Five bearings spread over about +-0.6 rad; 0 is straight ahead.
+    // Five bearings spread over about +-0.6 rad.
+    // Bearing 0 is straight ahead.
     bearing: -0.6 + i * 0.3 + (rnd() - 0.5) * 0.1,
     rumbleDelay: 15 + rnd() * 10,
     breakAt: null,
@@ -63,7 +66,7 @@ export function jointOrder(hitX) {
 }
 
 export function hulkAt(h, age) {
-  const f = clamp01((age / h.fallT) ** 2);
+  const f = clamp01((Math.max(0, age) / h.fallT) ** 2);
   const entry = age < VACUUM ? 0 : smoothstep(clamp01((age - VACUUM) / ENTRY_SPAN));
   // Spin rate stays under 0.1 rad/s.
   const rate = 0.03 + ((h.fallT - 60) / 60) * 0.04;
@@ -85,6 +88,7 @@ export function stepShip(ship, t) {
 
 export function hitShip(ship, c, t, hitX) {
   if (ship.state !== 'station' && ship.state !== 'wounded') return null;
+  if (!Number.isFinite(hitX) || !Number.isFinite(c)) return null;
   if (c >= KILL || ship.state === 'wounded') {
     const at = {};
     for (const j of jointOrder(hitX)) at[j.joint] = t + j.at;
@@ -102,7 +106,7 @@ export function driftDeg(t) {
   return t / DRIFT_PERIOD;
 }
 
-// Light reaches the ship below the horizon while the ship sits high enough.
+// Dusk light reaches a ship above the shadow edge.
 export function sunlit(alt, sunDeg) {
   if (sunDeg >= 0) return 1;
   const dep = -sunDeg * Math.PI / 180;
