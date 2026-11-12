@@ -2859,15 +2859,20 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       if (uGod.z > 0.002) {
         // Shafts from the blast's core: only its hottest pixels feed them.
         // Cloud and smoke in front block the samples and cut dark shafts.
-        vec2 dl = (uGod.xy - uv) / 28.0, sp = uv;
-        float acc = 0.0, wt = 1.0;
-        for (int k = 0; k < 28; k++) {
+        // 56 taps, each pixel starting at its own offset, so the rays never band.
+        vec2 dl = (uGod.xy - uv) / 56.0, sp = uv + dl * h(gl_FragCoord.xy + uSeed);
+        float acc = 0.0, sky = 0.0, wt = 1.0;
+        for (int k = 0; k < 56; k++) {
           sp += dl;
           float lum = dot(texture2D(tDiffuse, sp).rgb, vec3(0.3, 0.59, 0.11));
+          // The core feeds the hot rays.
           acc += max(lum - 3.0, 0.0) * wt;
-          wt *= 0.965;
+          // The lit sky round it feeds faint rays; far clouds block them and cast shadow shafts.
+          vec2 dc = (sp - uGod.xy) * asp;
+          sky += smoothstep(0.35, 0.9, lum) * exp(-dot(dc, dc) / 0.12) * wt;
+          wt *= 0.982;
         }
-        c0 += uGodC * (acc / 28.0) * uGod.z;
+        c0 += uGodC * (acc / 56.0 + 0.35 * sky / 56.0) * uGod.z;
         // The whole sky fills a little with the flash.
         c0 += uGodC * 0.05 * uGod.w;
       }
@@ -4896,6 +4901,10 @@ const shardMat = new THREE.ShaderMaterial({
                 a.x * a.y * k - a.z * s, c + a.y * a.y * k, a.y * a.z * k + a.x * s,
                 a.x * a.z * k + a.y * s, a.y * a.z * k - a.x * s, c + a.z * a.z * k);
   }
+  // A shard's height at age t: the lob, then the fall.
+  float shardY(float t, float vt) {
+    return aPos.y + aVel.y * (1.0 - exp(-0.1 * t)) / 0.1 - vt * (t - (1.0 - exp(-0.2 * t)) / 0.2);
+  }
   void main() {
     float age = uTime - aSeed.z;
     if (age < 0.0 || age > 60.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -4905,8 +4914,15 @@ const shardMat = new THREE.ShaderMaterial({
     // Each shard reaches its own fall speed in about five seconds.
     // The lob and the fall make one ballistic arc.
     float vt = 420.0 + 220.0 * fract(aSeed.x * 3.7);
-    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * age)) / k - vec3(0.0, vt * (age - (1.0 - exp(-0.2 * age)) / 0.2), 0.0);
-    // Pieces come to rest on the plain.
+    // A piece stops where it lands: the clock halts at the touchdown.
+    // Bisection finds it; the fall is one-way after the apex.
+    float tq = age;
+    if (shardY(age, vt) < 15.0) {
+      float lo = 0.0, hi = age;
+      for (int b = 0; b < 12; b++) { float m = 0.5 * (lo + hi); if (shardY(m, vt) < 15.0) hi = m; else lo = m; }
+      tq = hi;
+    }
+    vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * tq)) / k - vec3(0.0, vt * (tq - (1.0 - exp(-0.2 * tq)) / 0.2), 0.0);
     c.y = max(c.y, 15.0);
     // Half the pieces burn away in the air; the rest fall all the way.
     float shr = fract(aSeed.x * 5.13) < 0.5 ? 1.0 - smoothstep(8.0, 22.0, age) : 1.0;
@@ -5147,6 +5163,8 @@ function updateBridge(ha, R) {
   const fade = THREE.MathUtils.smoothstep(ha, 0.4, 3) * (1 - THREE.MathUtils.smoothstep(ha, 14, 24));
   aimMini(plumeTrain, brHead, brAway, R * (0.9 + 0.8 * (1 - Math.exp(-ha / 3))), R * 7, fade, 0.4 * Math.exp(-ha / 4));
   plumeTrain.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(ha, 8, 24);
+  // One segment covers the whole plume, so its bound never clips the smoke.
+  plumeTrain.pu.uX0.value = 0; plumeTrain.pu.uSeg.value = R * 7 * 1.03;
 }
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
@@ -5279,6 +5297,9 @@ function stepShards(dt) {
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
   const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, kv = 0.1, vt = 420 + 220 * ((S[i * 4] * 3.7) % 1);
+  // The clock halts at touchdown: a landed piece lies still.
+  const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-kv * t)) / kv - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+  if (yAt(age) < 15) { let lo = 0, hi = age; for (let b = 0; b < 12; b++) { const m = 0.5 * (lo + hi); if (yAt(m) < 15) hi = m; else lo = m; } age = hi; }
   const e = (1 - Math.exp(-kh * age)) / kh, ek = Math.exp(-kh * age), ev = (1 - Math.exp(-kv * age)) / kv, ekv = Math.exp(-kv * age);
   out.set(P[i * 3] + V[i * 4] * e, Math.max(15, P[i * 3 + 1] + V[i * 4 + 1] * ev - vt * (age - (1 - Math.exp(-0.2 * age)) / 0.2)), P[i * 3 + 2] + V[i * 4 + 2] * e);
   vel.set(V[i * 4] * ek, V[i * 4 + 1] * ekv - vt * (1 - Math.exp(-0.2 * age)), V[i * 4 + 2] * ek);
