@@ -453,6 +453,16 @@ function makeRow(row, key, layer) {
     el.append(a);
     return { el, handle: { value: row.href, set() {}, get disabled() { return false; }, set disabled(d) {} } };
   }
+  // A button row runs an action.
+  // It holds no value.
+  if (row.type === 'button') {
+    const el = make('div', 's2-row', `<span>${row.label}</span>`);
+    const b = make('button', 's2-chip', row.text ?? 'Go');
+    b.type = 'button';
+    b.addEventListener('click', () => { if (!b.disabled) row.onClick?.(); });
+    el.append(b);
+    return { el, handle: { value: null, set() {}, get disabled() { return b.disabled; }, set disabled(d) { b.disabled = !!d; b.setAttribute('aria-disabled', d ? 'true' : 'false'); } } };
+  }
   const value = restore(row, key);
   if (row.type === 'slider') {
     const sl = makeSlider({ ...row, value, onInput: v => { save(v); row.onInput?.(v); } });
