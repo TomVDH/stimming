@@ -3199,7 +3199,7 @@ let ventT = -1e9;
 // A press first ranges the rock: one long laser pulse, two short blips.
 // The charge starts once the range locks; a release before that cancels.
 // QA can skip the ranging.
-const RANGE_T = 1.15;
+const RANGE_T = 1.75;
 let ranging = null;
 function startCharge(by) {
   charge = { t0: simT, c: 0.12, chase: 0, dust: 0, by };
@@ -3209,7 +3209,7 @@ function startCharge(by) {
 act.press = (by = 'pointer', skip = false) => {
   if (charge || spin || ranging) return;
   if (skip || reduced()) { startCharge(by); return; }
-  ranging = { t0: simT, by, beeps: 0 };
+  ranging = { t0: simT, by };
 };
 // The gun fires only once armed and aimed; else a release fizzles.
 const ARM = 0.6;
@@ -3272,14 +3272,13 @@ let armSound = () => {};
 let fire = () => {};
 const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
 const releaseHint = document.querySelector('.release-hint');
-// The laser's pulses: one long, then two short.
-const RANGE_PULSES = [[0, 0.55], [0.7, 0.78], [0.93, 1.01]];
-const rangeOn = t => RANGE_PULSES.some(([a, b]) => t >= a && t < b);
+// The laser: a long, faint aiming beam, then two short ranging flashes.
+const RANGE_AIM = [0, 1.2], RANGE_FLASH = [[1.35, 1.41], [1.55, 1.61]];
+const rangeFlash = t => RANGE_FLASH.some(([a, b]) => t >= a && t < b);
+const rangeOn = t => (t >= RANGE_AIM[0] && t < RANGE_AIM[1]) || rangeFlash(t);
 function stepCharge(dt) {
   if (ranging) {
     const t = simT - ranging.t0;
-    // A soft tick at the start of each pulse.
-    while (ranging.beeps < RANGE_PULSES.length && t >= RANGE_PULSES[ranging.beeps][0]) { rangeTick(ranging.beeps === 0 ? 0.5 : 0.08); ranging.beeps++; }
     if (t >= RANGE_T) { const by = ranging.by; ranging = null; startCharge(by); }
   }
   if (charge) {
@@ -4608,13 +4607,15 @@ function updateFlap() {
 
 /* ---------- the ranging laser: optic to rock ---------- */
 const laserGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+// The haze shows the beam near the optic; it thins out toward the rock.
+laserGeo.setAttribute('aK', new THREE.BufferAttribute(new Float32Array([1, 0.08]), 1));
 const laserMat = new THREE.ShaderMaterial({
   uniforms: { uGain: { value: 0 }, uC: { value: new THREE.Vector3(...linFit(0.62, 0.22, 25)) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: 'void main() { gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform float uGain; uniform vec3 uC; void main() { gl_FragColor = vec4(uC * uGain, 0.0); }',
+  vertexShader: 'attribute float aK; varying float vK; void main() { vK = aK; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform float uGain; uniform vec3 uC; varying float vK; void main() { gl_FragColor = vec4(uC * uGain * vK, 0.0); }',
 });
 const laser = new THREE.Line(laserGeo, laserMat);
 laser.frustumCulled = false; laser.renderOrder = 4; laser.visible = false;
@@ -4629,20 +4630,11 @@ function updateLaser() {
   lzB.copy(ast.pos).addScaledVector(lzD.subVectors(lzA, ast.pos).normalize(), ast.R * 0.95);
   const a = laserGeo.attributes.position;
   a.setXYZ(0, lzA.x, lzA.y, lzA.z); a.setXYZ(1, lzB.x, lzB.y, lzB.z); a.needsUpdate = true;
-  // The beam reads faintly in the haze; the dot burns on the rock.
-  laserMat.uniforms.uGain.value = 1.2 * (0.85 + 0.15 * Math.sin(simT * 90));
-  flare(laserDot, lzB, ast.R * 0.35, 3.5);
-}
-// The rangefinder's tick: a short, soft high note.
-function rangeTick(len) {
-  const ac = kit.live();
-  if (!ac) return;
-  const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
-  o.type = 'sine'; o.frequency.value = 1760;
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.035, t + 0.01);
-  g.gain.setValueAtTime(0.035, t + len - 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-  o.connect(g).connect(kit.out); o.start(t); o.stop(t + len + 0.02);
-  track(t + len + 0.05, o);
+  // The aiming beam: a faint, steady thread and a small, dim dot.
+  // A ranging flash: the whole beam and the dot flare for a few frames.
+  const fl = rangeFlash(t);
+  laserMat.uniforms.uGain.value = fl ? 1.6 : 0.35;
+  flare(laserDot, lzB, ast.R * (fl ? 0.3 : 0.12), fl ? 3 : 0.7);
 }
 
 /* ---------- the antenna's beacon ---------- */
