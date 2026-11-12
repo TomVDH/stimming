@@ -29,4 +29,4 @@ Build: procedural in `railgun/index.html`; five hulks; one `vol`/`trail` streak 
 - [x] Implementation plan: `docs/plans/railgun-capital-ship-plan.md` (8 tasks)
 - [x] Tom reviews the plan and picks the execution method (subagent-driven, 2026-11-12)
 - [x] Tom schedules the build; feature bean `stimming-x3wl`, worktree `.worktrees/stimming-x3wl`
-- [ ] The PR merges
+- [x] The PR merges (PR 54, d600af7, 2026-11-12)
