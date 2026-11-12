@@ -84,6 +84,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -92,6 +93,8 @@ import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReduce
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
 import { HULL, makeShip, stepShip, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE } from './ship.js';
+// The sight's image intensifier: the NVG toy's tube, used whole.
+import { Tube } from '../nvg/tube.js';
 mark('libs');
 
 /* ---------- settings ---------- */
@@ -104,6 +107,8 @@ const SIZES = {
   boulder: { R: 600, T: 220, shards: 24, rumble: 0.7 },
   mountain: { R: 1000, T: 300, shards: 40, rumble: 1.0 },
   moon: { R: 1700, T: 380, shards: 56, rumble: 1.3 },
+  // Aerosmith: a dark, cracked world-killer, barely clear of the horizon at its hold.
+  aerosmith: { R: 4200, T: 520, shards: 84, rumble: 2.0 },
 };
 const opts = {
   // The first rock rolls its size too.
@@ -130,20 +135,24 @@ const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
+  // Settings: what anyone playing with the toy may want.
   settings: [
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
-    // Target: the rock, or the capital ship. The choice waits for Reset.
-    { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
-    // The charge: the hum, the choir, a blend, or a blend on the plain.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
-    // Dev: pin the rock's size; Random rolls a new one per rock.
-    { type: 'choice', id: 'devsize', label: 'Rock (dev)', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
-    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
     { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
     { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
+  ],
+  // Dev: tuning for the people who build the toy; it shows only with ?dev.
+  dev: [
+    // The charge: the hum, the choir, a blend, or a blend on the plain.
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
+    // Dev: pin the rock's size; Random rolls a new one per rock.
+    { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
+    // Target: the rock, or the capital ship. The choice waits for Reset.
+    { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
+    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
     { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }], onPick: v => { gfx.tone = v; setTone(); } },
@@ -269,6 +278,9 @@ const U = {
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
   uAstR: { value: 0.05 },
   uAstC: { value: new THREE.Vector3(...AMBER) },
+  // The rock as a light on the clouds: world position, strength; its reach in metres.
+  uRockL: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uRockR: { value: 10000 },
   // The bolt: world position and strength. The hit: direction and strength.
   uBolt: { value: new THREE.Vector4(0, 0, 0, 0) },
   uBoltC: { value: new THREE.Vector3(...linFit(0.9, 0.08, 225)) },
@@ -471,6 +483,8 @@ uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
 uniform vec3 uAstC;
+uniform vec4 uRockL;
+uniform float uRockR;
 uniform vec4 uBolt;
 uniform vec3 uBoltC;
 uniform vec4 uHit;
@@ -1123,6 +1137,18 @@ void main() {
   float shH = exp(-occH / (H * 0.3));
   // The passing bolt lights the cloud faces near its path.
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
+  // The burning rock lights the faces turned to it, the nearest most.
+  // Thin edges between the eye and the rock glow through.
+  if (uRockL.w > 0.001) {
+    vec3 rb = uRockL.xyz - P, Lr = normalize(rb);
+    vec2 r2 = vec2(dot(Lr, vR), Lr.y);
+    r2 = length(r2) > 1e-3 ? normalize(r2) : vec2(0.0, 1.0);
+    float occR = max(body(X + r2 * H * 0.15), 0.0) + max(body(X + r2 * H * 0.4), 0.0);
+    float fall = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+    float face = (0.08 + 0.92 * max(dot(N, Lr), 0.0)) * (0.25 + 0.75 * exp(-occR / (H * 0.3)));
+    float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
+    col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
+  }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
   gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
@@ -1730,11 +1756,11 @@ function bakeRock(detail, sd, kind) {
   g.userData.kind = kind;
   return g;
 }
-const ROCKS = { boulder: bakeRock(5, 1, 'long'), mountain: bakeRock(5, 2, 'lumpy'), moon: bakeRock(5, 3, 'cratered') };
+const ROCKS = { boulder: bakeRock(5, 1, 'long'), mountain: bakeRock(5, 2, 'lumpy'), moon: bakeRock(5, 3, 'cratered'), aerosmith: bakeRock(6, 7, 'cratered') };
 const AST_ROCK = linFit(0.30, 0.015, 60), WHITE = linFit(0.95, 0.06, 80), EMBER = linFit(0.55, 0.18, 35);
 const astMat = new THREE.ShaderMaterial({
   uniforms: {
-    ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 },
+    ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 }, uEvil: { value: 0 },
     uRock: { value: new THREE.Vector3(...AST_ROCK) }, uWhite: { value: new THREE.Vector3(...WHITE) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   vertexShader: /* glsl */`
@@ -1746,7 +1772,7 @@ const astMat = new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vN, vO;
-  uniform float uBurn, uCracks, uTime;
+  uniform float uBurn, uCracks, uTime, uEvil;
   uniform vec3 uToPlanet, uRock, uWhite, uEmber;
   ${HEAD}
   ${AIR}
@@ -1769,7 +1795,14 @@ const astMat = new THREE.ShaderMaterial({
     float cr = smoothstep(0.55, 0.62, n) * (1.0 - smoothstep(0.62, 0.70, n));
     float flick = 0.92 + 0.08 * sin(uTime * 3.0 + n * 40.0);
     col += uEmber * cr * (0.3 + hot) * uBurn * flick * 5.0 * uCracks;
-    gl_FragColor = vec4(air(col, vP), 1.0);
+    // Aerosmith: near-black basalt split by wide, slow-breathing red fissures.
+    if (uEvil > 0.5) {
+      col *= 0.4;
+      float fis = smoothstep(0.5, 0.58, n) * (1.0 - smoothstep(0.64, 0.76, n));
+      col += vec3(1.0, 0.18, 0.05) * fis * (0.6 + 0.4 * sin(uTime * 0.7 + n * 12.0)) * 3.5;
+    }
+    // The plain's distance haze too, so a body this size sits deep in the air.
+    gl_FragColor = vec4(air(k2haze(col, vP), vP), 1.0);
   }`,
 });
 const astMesh = new THREE.Mesh(ROCKS[opts.size], astMat);
@@ -1784,6 +1817,7 @@ const astAt = (s, out) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 
 function astSize() {
   ast.R = SIZES[opts.size].R;
   astMesh.geometry = ROCKS[opts.size];
+  astMat.uniforms.uEvil.value = opts.size === 'aerosmith' ? 1 : 0;
   astMesh.scale.setScalar(ast.R);
   if (ast.state !== 'shatter' && ast.state !== 'gone') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
 }
@@ -2324,7 +2358,7 @@ function makeMini() {
     uAstP: { value: new THREE.Vector3() }, uAstRad: { value: 100 }, uAway: { value: new THREE.Vector3(0, 1, 0) }, uSide: { value: new THREE.Vector3(1, 0, 0) }, uUpv: { value: new THREE.Vector3(0, 0, 1) },
     uBurn: { value: 0.6 }, uVol: PU.uVol, uLen: { value: 4000 }, uK: { value: 0.11 }, uTrail: { value: 0 }, uSolid: { value: 0 }, uFlow: { value: 0 },
     uSteps: { value: 24 }, uLSteps: { value: 2 }, uBreak: { value: 0 }, uEatK: { value: 0 }, uJoin: { value: 0 }, uCut: { value: 1e9 }, uDrift: { value: new THREE.Vector3() }, uX0: { value: 0 }, uSeg: { value: 0 }, uSwipe: { value: new THREE.Vector3() },
-    uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: { value: new THREE.Vector3(...SOOT_D) }, uAsh: { value: new THREE.Vector3(...ASH_D) },
+    uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: { value: new THREE.Vector3(...linFit(0.34, 0.014, 50)) }, uAsh: { value: new THREE.Vector3(...ASH_D) },
   };
   const m = makeTrain(pu);
   // Debris trains draw after the main trail: they fly nearer the eye.
@@ -2417,7 +2451,8 @@ function makeFragTrail(own = false) {
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
 const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
-const frags = Array.from({ length: 4 }, () => {
+// Up to seven companions ride with the main rock.
+const frags = Array.from({ length: 7 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
   scene.add(m);
@@ -2425,12 +2460,13 @@ const frags = Array.from({ length: 4 }, () => {
 });
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  const n = 2 + Math.floor(rnd() * 3);
+  // Three to seven, scattered at random round the main rock.
+  const n = 3 + Math.floor(rnd() * 5);
   frags.forEach((f, i) => {
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    const th = (i / n) * Math.PI * 2 + rnd() * 0.8, gap = 3.8 + 2.4 * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -3 + 9 * rnd();
-    f.k = 0.12 + 0.12 * rnd();
+    const th = (i / n) * Math.PI * 2 + rnd() * 1.4, gap = 2.8 + 5 * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -6 + 16 * rnd();
+    f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
@@ -3025,14 +3061,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
       // Heat shimmer: the barrel's ends on screen, then width, strength, clock.
       uHzA: { value: new THREE.Vector4() }, uHzK: { value: new THREE.Vector3() }, uHtA: { value: new THREE.Vector4() },
-      // The sight: 0 off, 1 on.
-      uSight: { value: 0 },
-      // The sight's yaw, elevation and clock.
-      uSightA: { value: new THREE.Vector3() },
-      // The rangefinder: range in metres, the split prism's offset, the charge.
-      uSightR: { value: new THREE.Vector3() },
-      // The range scale, and its length and half window in km.
-      tScale: { value: null }, uScaleK: { value: new THREE.Vector2(80, 6) },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
@@ -3044,11 +3072,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
     uniform float uVeil, uZoom;
-    uniform float uSight;
-    uniform vec3 uSightA;
-    uniform vec3 uSightR;
-    uniform sampler2D tScale;
-    uniform vec2 uScaleK;
     uniform vec4 uShk0, uShk1, uHzA, uHtA;
     uniform vec3 uHzK;
     varying vec2 vUv;
@@ -3134,75 +3157,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9)) * uLF.z;
-      // The sight: the gun's old coincidence rangefinder, an eyepiece down the bore.
-      // Real glass: etched black lines, a split prism, a lamp-lit range scale.
-      if (uSight > 0.5) {
-        float A = uRes.x / uRes.y;
-        vec2 sq = (vUv - 0.5) * vec2(A, 1.0);
-        // The field stop: a round eyepiece, as large as the screen allows.
-        float R = min(0.465, 0.5 * A - 0.025), k = R / 0.46, rr = length(sq), rn = rr / R;
-        vec2 p = sq / k;
-        float px = 1.0 / (uRes.y * k);
-        // The upper half comes through the second window.
-        // It slides into line as the range is taken.
-        vec2 uv = 0.5 + (vUv - 0.5) * (1.0 + 0.04 * rn * rn);
-        if (sq.y > 0.0) uv.x += uSightR.y;
-        // Old glass: colour fringes grow toward the rim.
-        vec2 ca = (uv - 0.5) * 0.006 * rn * rn;
-        vec3 s0 = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
-        // Aged coatings: a little warm, a little flat, a faint veil.
-        float ls = dot(s0, vec3(0.2126, 0.7152, 0.0722));
-        vec3 img = mix(vec3(ls), s0, 0.72) * vec3(1.0, 0.95, 0.84) + vec3(0.006, 0.005, 0.004);
-        if (sq.y > 0.0) img *= vec3(0.96, 0.98, 1.0);
-        img *= 1.0 - 0.6 * smoothstep(0.55, 1.0, rn);
-        // Etched reticle, black.
-        float d = 1e3;
-        // The aim mark: an open chevron, its point on the split line.
-        d = min(d, sgm(p, vec2(0.0), vec2(-0.026, -0.042)));
-        d = min(d, sgm(p, vec2(0.0), vec2(0.026, -0.042)));
-        // Lead marks: smaller chevrons, two each side.
-        for (int i = 1; i <= 2; i++) {
-          float x = 0.075 * float(i), s = 0.6;
-          for (int j = 0; j < 2; j++) {
-            vec2 c = vec2(j == 0 ? x : -x, 0.0);
-            d = min(d, sgm(p, c, c + vec2(-0.026, -0.042) * s));
-            d = min(d, sgm(p, c, c + vec2(0.026, -0.042) * s));
-          }
-        }
-        float fine = 1.0 - smoothstep(0.6 * px, 1.6 * px, d);
-        // Heavy posts from the rim: two across, one from below.
-        float dh = abs(p.y) + (abs(p.x) < 0.22 ? 1e3 : 0.0), dv = abs(p.x) + (p.y > -0.37 ? 1e3 : 0.0);
-        float dp = min(dh, dv);
-        float post = 1.0 - smoothstep(1.3 * px, 2.4 * px, dp);
-        // The prism's edge: a fine dark line across the field.
-        float split = (1.0 - smoothstep(0.4 * px, 1.2 * px, abs(p.y))) * step(0.035, abs(p.x)) * step(abs(p.x), 0.21);
-        // The range scale: a backlit strip in kilometres under an index.
-        float ys = -0.335, sw = 0.15, sh = 0.022;
-        vec2 sp = p - vec2(0.0, ys);
-        float inS = step(abs(sp.x), sw) * step(abs(sp.y), sh);
-        float km = uSightR.x * 0.001 + sp.x / sw * uScaleK.y;
-        float ink = texture2D(tScale, vec2(km / uScaleK.x, sp.y / (2.0 * sh) + 0.5)).a;
-        vec3 strip = vec3(0.62, 0.52, 0.34) * 0.32 * (1.0 - 0.5 * smoothstep(0.6, 1.0, abs(sp.x) / sw)) * (1.0 - 0.9 * ink);
-        float frame = 1.0 - smoothstep(0.6 * px, 1.6 * px, abs(max(abs(sp.x) - sw, abs(sp.y) - sh)));
-        // The index: a small black pointer over the strip's centre.
-        float ty = sp.y - sh, idx = step(0.0, ty) * step(ty, 0.014) * step(abs(sp.x), ty * 0.6);
-        vec3 inner = mix(img, strip, inS);
-        inner *= 1.0 - 0.92 * clamp(fine + post + split * 0.7 + frame * 0.85 + idx, 0.0, 1.0);
-        // Dust on the reticle glass.
-        float dust = step(0.99993, h(floor((sq + 1.0) * uRes.y * 0.5) + vec2(7.0, 3.0)));
-        inner *= 1.0 - 0.5 * dust;
-        // The housing: black crackle paint, the eyecup's dull rim.
-        float sn = h(floor(gl_FragCoord.xy / 2.0) + vec2(3.0, 9.0)) - 0.5;
-        vec3 bez = vec3(0.018, 0.017, 0.016) * (1.0 + 0.5 * sn);
-        bez += vec3(0.03, 0.028, 0.025) * (1.0 - smoothstep(0.0, 0.035, abs(rn - 1.06) * R));
-        // The ready lamp: a small bulb under red glass, lit at full charge.
-        vec2 lp = sq - vec2(cos(-0.8), sin(-0.8)) * (R + 0.055);
-        float bulb = 1.0 - smoothstep(0.009, 0.011, length(lp));
-        float lit = uSightR.z >= 1.0 ? 1.0 : 0.06 + 0.12 * clamp(uSightR.z, 0.0, 1.0);
-        bez = mix(bez, vec3(0.06, 0.012, 0.006) + vec3(1.6, 0.32, 0.08) * lit * (1.0 - 0.5 * length(lp + 0.003) / 0.011), bulb);
-        bez += vec3(1.0, 0.3, 0.08) * lit * 0.04 * exp(-length(lp) / 0.02) * step(1.0, rn);
-        c = mix(bez, inner, smoothstep(1.0 + 2.0 * px / 0.46, 1.0, rn));
-      }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       // Contrast: shadows sink and highs lift round a mid grey.
@@ -3244,6 +3198,231 @@ const fxaa = new ShaderPass(FXAAShader);
 composer.addPass(fxaa);
 function setSamples(n) {
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { if (rt.samples !== n) { rt.samples = n; rt.dispose(); } }
+}
+
+/* ---------- sight: Monolith over an image intensifier ---------- */
+// The sight runs the finished frame through the NVG toy's tube, white phosphor.
+// Its marks and words burn in as negatives through a key (stimming-cido).
+const sightFx = { tube: null, out: null, kc: null, kx: null, keyTex: null, keyMat: null, kd: 1, last: 0, size: '' };
+function sightSetup() {
+  if (sightFx.tube) { sightSize(); return; }
+  const t = sightFx.tube = new Tube(renderer);
+  // The frame is the tube's camera signal.
+  const su = t.sigU;
+  su.uCam.value = 1; su.uMirror.value = 0; su.uCamXf.value.set(1, 1, 0, 0);
+  // The NVG toy's defaults: grain, gain and afterglow at their middles.
+  const tu = t.mTube.uniforms;
+  tu.uPower.value = 1; tu.uScint.value = 0.00008; tu.uKq.value = 0.55;
+  tu.uTail.value = 0.057; tu.uTau.value = 0.15;
+  t.mGain.uniforms.uGmax.value = 0.022 * Math.pow(14, 0.55);
+  t.mOut.uniforms.uPhos.value = 1;
+  t.mOut.uniforms.uPupil.value.set(0, -0.06);
+  // Tom: no chromatic aberration, no hex in the grain.
+  // The sight's own copies of the materials drop the lateral colour and the honeycomb.
+  t.mOut.fragmentShader = t.mOut.fragmentShader.replace('float ca = 0.006 * d * d;', 'float ca = 0.0;');
+  t.mTube.fragmentShader = t.mTube.fragmentShader
+    .replace('float fp = 1.0 + 0.07 * (h2(fib.xy * 4.0, 11.0 + fi) - 0.5);', 'float fp = 1.0;')
+    .replace('fp *= 1.0 - 0.14 * smoothstep(0.04, 0.0, mf.z);', '');
+  // The tube's last pass draws into a target; the key pass then draws on.
+  const pass0 = t.pass.bind(t);
+  t.pass = (m, target) => pass0(m, m === t.mOut ? sightFx.out : target);
+  sightFx.kc = document.createElement('canvas');
+  sightFx.kx = sightFx.kc.getContext('2d');
+  sightFx.keyTex = new THREE.CanvasTexture(sightFx.kc);
+  sightFx.keyTex.minFilter = THREE.LinearFilter; sightFx.keyTex.generateMipmaps = false; sightFx.keyTex.premultiplyAlpha = true;
+  sightFx.keyMat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+    uniforms: { tImg: { value: null }, tKey: { value: sightFx.keyTex }, uTexel: { value: new THREE.Vector2() }, uNeg: { value: 0.9 } },
+    vertexShader: /* glsl */`out vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: /* glsl */`
+      out highp vec4 outColor;
+      uniform sampler2D tImg, tKey;
+      uniform vec2 uTexel;
+      uniform float uNeg;
+      in vec2 vUv;
+      void main() {
+        vec3 c = texture(tImg, vUv).rgb;
+        vec4 k = texture(tKey, vUv);
+        // Green, the soft band: the picture turns to its negative.
+        vec3 o = mix(c, 1.0 - c, clamp(k.g, 0.0, 1.0) * uNeg);
+        // Red, the core: the far extreme of the light round it.
+        // A plain negative vanishes on mid grey; the core never does.
+        if (k.r > 0.004) {
+          float L = 0.0;
+          for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++)
+            L += dot(texture(tImg, vUv + vec2(x, y) * uTexel * 3.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+          L /= 25.0;
+          vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
+          o = mix(o, far, clamp(k.r, 0.0, 1.0));
+        }
+        outColor = vec4(o, 1.0);
+      }`,
+  });
+  sightSize();
+}
+// The tube and the key follow the stage size and the render scale.
+function sightSize() {
+  const f = sightFx;
+  if (!f.tube) return;
+  const { w, h, dpr } = size, key = `${w}x${h}x${dpr}`;
+  if (f.size === key) return;
+  f.size = key;
+  // The tube's grids: the NVG toy's caps, about one CSS pixel per grain cell.
+  const s = Math.min(dpr * 0.85, Math.sqrt(1.25e6 / (w * h)));
+  f.tube.resize(w, h, s, 1.2, 0);
+  f.tube.setTubes([{ x: w / 2, y: h / 2, r: Math.hypot(w, h) / 2 * 1.08, trim: 1 }]);
+  f.tube.cold();
+  // The tube clears with alpha 0; the scene keeps its opaque clear.
+  renderer.setClearColor(0x000000, 1);
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  f.out?.dispose();
+  f.out = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  f.keyMat.uniforms.uTexel.value.set(1 / bw, 1 / bh);
+  f.kd = Math.min(dpr, 1.5);
+  f.kc.width = Math.round(w * f.kd); f.kc.height = Math.round(h * f.kd);
+  f.keyTex.dispose();
+}
+// The last pass in the chain while the sight is on.
+class SightPass extends Pass {
+  constructor() { super(); this.enabled = false; this.needsSwap = false; }
+  render(r, writeBuffer, readBuffer) {
+    const f = sightFx;
+    if (!f.tube) return;
+    const now = performance.now(), dt = f.last ? clamp((now - f.last) / 1000, 1 / 120, 0.1) : 1 / 30;
+    f.last = now;
+    f.tube.sigU.tCam.value = readBuffer.texture;
+    // Tom: the big chunky grain. The NVG toy's own photon count, starved at any hour.
+    f.tube.sigU.uCamExpo.value = 14;
+    f.tube.mOut.uniforms.uFlick.value = reduced() ? 0 : 1;
+    f.tube.render(null, null, dt, now / 1000);
+    f.keyMat.uniforms.tImg.value = f.out.texture;
+    f.keyMat.uniforms.uNeg.value = reduced() ? 0.9 : 0.86 + 0.08 * Math.sin(now / 1000 * 1.3);
+    f.tube.quad.material = f.keyMat;
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    r.render(f.tube.scene, f.tube.cam);
+  }
+}
+const sightPass = new SightPass();
+composer.addPass(sightPass);
+
+// The marks, in CSS pixels, from the toy's own geometry.
+const skP = new THREE.Vector3(), skQ = new THREE.Vector3(), skV = new THREE.Vector3(), skT = new THREE.Vector3();
+function skScreen(v) {
+  skP.copy(v).project(camera);
+  return { x: (skP.x * 0.5 + 0.5) * size.w, y: (0.5 - skP.y * 0.5) * size.h, ok: skP.z < 1 };
+}
+function sightMarks() {
+  const W = size.w, H = size.h, fpx = (H / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const bore = skScreen(barrelPt(60000, 0, 0, skQ));
+  const m = { W, H, phone: W < 640, bore, state: 'hold', lvl: 0 };
+  const hitAge = simT - U.uHitP.value.w;
+  if (shot && !shot.hit) { m.state = 'fired'; m.left = Math.max(0, shot.hitT - (simT - shot.t0)); }
+  else if (hitAge >= 0 && hitAge < 8 && !tgtShown()) m.state = 'struck';
+  else if (charge) { m.lvl = clamp(U.uCharge.value, 0, 1); m.state = m.lvl >= 1 ? 'full' : 'charging'; }
+  if (m.state === 'struck') {
+    skV.set(U.uHitP.value.x, U.uHitP.value.y, U.uHitP.value.z);
+    const D = skV.distanceTo(camera.position);
+    m.hit = { ...skScreen(skV), r: U.uHitR.value / D * fpx, D };
+    return m;
+  }
+  // The marks read the live target: the rock or the ship.
+  if (!tgtShown()) return m;
+  const P = tgtPos(skT), rock = skScreen(P), D = P.distanceTo(camera.position);
+  if (!rock.ok) return m;
+  m.rock = { ...rock, r: Math.max(6, tgtR() / D * fpx), D };
+  // The rock's velocity: it falls FALL metres along -away over the size's time.
+  // The ship's velocity: its track over the next second.
+  const v = tgtKind === 'rock' ? skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / SIZES[opts.size].T : 0) : shipAt(simT + 1, skV).sub(P);
+  m.rdot = v.dot(skQ.copy(P).sub(camera.position)) / D;
+  // The intercept point: where the target will be after one time of flight.
+  const c = charge ? clamp(U.uCharge.value, 0.12, 1) : 1, T = THREE.MathUtils.lerp(11.5, 8.5, c) + 0.3;
+  m.pip = skScreen(tgtKind === 'rock' ? skQ.copy(P).addScaledVector(v, T) : tgtLead(T - 0.3, skQ));
+  m.lay = aimNow.err * 1000;
+  return m;
+}
+// Draw the marks twice: a blurred green band, then a red core.
+function sightKey() {
+  const f = sightFx, x = f.kx;
+  if (!x) return;
+  // Phones and short stages draw at four fifths.
+  const m = sightMarks(), k = m.phone || m.H < 500 ? 0.8 : 1;
+  const ph = reduced() ? 0.5 : (Math.floor(simT * 10) / 10) % 1;
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.clearRect(0, 0, f.kc.width, f.kc.height);
+  for (const band of [true, false]) {
+    x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
+    x.filter = band ? `blur(${3.2 * k}px)` : 'none';
+    x.globalCompositeOperation = band ? 'source-over' : 'lighter';
+    const col = band ? '#0f0' : '#f00';
+    x.strokeStyle = x.fillStyle = col;
+    x.lineJoin = 'round';
+    const lw = w => (x.lineWidth = band ? 5 : w * k);
+    const line = pts => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.stroke(); };
+    const box = (a, b, w, h, fill) => { if (fill) { if (h > 0) x.fillRect(a, b, w, h); } else { lw(1.1); x.strokeRect(a, b, w, h); } };
+    const dot = (a, b, r) => { x.beginPath(); x.arc(a, b, r, 0, Math.PI * 2); x.fill(); };
+    const word = (a, b, str, sz, align = 'center', ls = 0.45, wt = 500) => {
+      x.font = `${wt} ${sz * k}px Gabarito, sans-serif`;
+      x.letterSpacing = `${ls * sz * k}px`;
+      x.textAlign = align;
+      // Letter spacing trails the last glyph; centred and right text shift back.
+      const tr = align === 'center' ? ls * sz * k / 2 : align === 'right' ? ls * sz * k : 0;
+      if (band) { x.lineWidth = 4.4; x.strokeText(str, a + tr, b); }
+      x.fillText(str, a + tr, b);
+    };
+    const { bore, W } = m;
+    // The gun's horizon: one hairline, open round the bore.
+    lw(1);
+    const gap = 48 * k;
+    line([[0, bore.y], [bore.x - gap, bore.y]]); line([[bore.x + gap, bore.y], [W, bore.y]]);
+    // The monolith: two slender blocks round the aim gap; the lower fills with the charge.
+    // The monolith stands at most an eighth of the stage tall, so its word stays clear.
+    const mw = 8 * k, mh = Math.min(112 * k, m.H * 0.13), g2 = 13 * k, mx = bore.x - mw / 2, up = bore.y - g2 - mh, lo = bore.y + g2;
+    box(mx, up, mw, mh); box(mx, lo, mw, mh);
+    if (m.lvl > 0) box(mx, lo + mh * (1 - m.lvl), mw, mh * m.lvl, true);
+    if (m.state === 'full') box(mx, up, mw, mh, true);
+    if (m.rock) {
+      const { rock } = m, hgt = rock.r * 1.25 + 12 * k;
+      // Two obelisks either side of the rock, the height of its disc.
+      for (const sx of [-1, 1]) {
+        const ox = rock.x + sx * (rock.r + 17 * k), tp = rock.y - hgt, bt = rock.y + hgt;
+        if (band) { lw(5); line([[ox, bt], [ox, tp]]); }
+        else { x.beginPath(); x.moveTo(ox - 2.2 * k, bt); x.lineTo(ox - 1.2 * k, tp + 9 * k); x.lineTo(ox, tp); x.lineTo(ox + 1.2 * k, tp + 9 * k); x.lineTo(ox + 2.2 * k, bt); x.closePath(); x.fill(); }
+      }
+      if (m.state !== 'fired') {
+        // The lead: beads drift from the rock to the intercept ring.
+        if (m.pip.ok) {
+          const dx = m.pip.x - rock.x, dy = m.pip.y - rock.y, d = Math.hypot(dx, dy) || 1, a0 = Math.min(0.9, rock.r * 0.6 / d);
+          for (let i = 0; i < 6; i++) { const u = a0 + (1 - a0) * ((i + ph) / 6); if (u < 0.96) dot(rock.x + dx * u, rock.y + dy * u, band ? 4 : 2 * k); }
+          lw(1.2); x.beginPath(); x.arc(m.pip.x, m.pip.y, 6 * k, 0, Math.PI * 2); x.stroke();
+          if (m.state !== 'hold') word(m.pip.x, m.pip.y - 14 * k, m.lay.toFixed(0), 10, 'center', 0.3);
+        }
+      } else {
+        // In flight: beads climb the bolt's path from the bore to the rock.
+        const dx = rock.x - bore.x, dy = rock.y - bore.y;
+        for (let i = 0; i < 9; i++) { const u = (i + ph) / 9; dot(bore.x + dx * u, bore.y + dy * u, band ? 4 : (1.4 + 1.2 * u) * k); }
+      }
+      // The range in light figures beside the rock; closing speed under it.
+      const right = !m.phone && rock.x >= bore.x, al = m.phone ? 'center' : right ? 'left' : 'right';
+      const tx = m.phone ? clamp(rock.x, 90, W - 90) : rock.x + (right ? 1 : -1) * (rock.r + 36 * k);
+      const ty = m.phone ? rock.y - hgt - 34 * k : rock.y + 2;
+      word(tx, ty, (rock.D / 1000).toFixed(2), 34, al, 0.1, 400);
+      word(tx, ty + 22 * k, m.state === 'fired' ? 'KM' : `KM  ·  −${Math.round(Math.abs(m.rdot))} M/S`, 11, al, 0.5);
+    }
+    if (m.hit && m.hit.ok) {
+      // Struck: a ring broken into six arcs where the rock was.
+      const R = m.hit.r + 22 * k;
+      lw(1.6);
+      for (let i = 0; i < 6; i++) { const a0 = i / 6 * Math.PI * 2 + 0.2; x.beginPath(); x.arc(m.hit.x, m.hit.y, R, a0, a0 + Math.PI * 2 / 6 - 0.32); x.stroke(); }
+      word(m.hit.x, m.hit.y - R - 18 * k, `${(m.hit.D / 1000).toFixed(2)} KM`, 12, 'center', 0.5);
+    }
+    // Under the monolith: one word, or the count.
+    const big = m.state === 'charging' || m.state === 'fired';
+    const w0 = { hold: 'HOLD', charging: `${Math.round(m.lvl * 100)}`, full: 'RELEASE', fired: (m.left ?? 0).toFixed(1), struck: 'STRUCK' }[m.state];
+    word(bore.x, lo + mh + (big ? 34 : 28) * k, w0, big ? 22 : 12, 'center', big ? 0.12 : 0.6, big ? 400 : 500);
+  }
+  x.filter = 'none';
+  x.globalCompositeOperation = 'source-over';
+  f.keyTex.needsUpdate = true;
 }
 
 /* ---------- camera: a low eye far out on the plain ---------- */
@@ -3295,11 +3474,9 @@ function frame() {
     sightEye(camera.position);
     barrelPt(1, 0, 0, sightDir).sub(barrelPt(0, 0, 0, sightTo)).normalize();
     camera.rotation.set(Math.asin(clamp(sightDir.y, -1, 1)) + wp * 0.3, Math.atan2(-sightDir.x, -sightDir.z) + wy * 0.3, 0);
-    grade.uniforms.uSightA.value.set(aimNow.yaw + kick.y, aimNow.elev + kick.p, simT);
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-  if (sight) sightMark();
 }
 // The sight: the rangefinder's lens, 22 degrees down the bore.
 const SIGHT_FOV = 22;
@@ -3307,9 +3484,8 @@ let sight = false;
 const sightDir = new THREE.Vector3(0, 0, -1), sightTo = new THREE.Vector3();
 function toggleSight() {
   sight = !sight;
-  grade.uniforms.uSight.value = sight ? 1 : 0;
-  // Each look starts off the range; the halves slide together.
-  if (sight) { sightRng.d = tgtPos(tgtP).distanceTo(sightEye(eyeP)) * 1.35; sightRng.t = simT; }
+  sightPass.enabled = sight;
+  if (sight) sightSetup();
   frame();
   wake();
 }
@@ -3317,47 +3493,6 @@ function toggleSight() {
 const eyeP = new THREE.Vector3(), tgtP = new THREE.Vector3();
 function sightEye(out) {
   return barrelPt(VF.a + 30, VF.x, VF.u, out);
-}
-// The rangefinder takes the range by hand, a little behind the rock.
-// The split image shows the error until the halves line up.
-const sightRng = { d: 0, t: 0 };
-function sightMark() {
-  const r = grade.uniforms.uSightR.value, dt = clamp(simT - sightRng.t, 0, 0.1);
-  sightRng.t = simT;
-  const D = tgtShown() ? tgtPos(tgtP).distanceTo(sightEye(eyeP)) : sightRng.d;
-  sightRng.d += (D - sightRng.d) * (1 - Math.exp(-dt / 0.45));
-  r.set(sightRng.d, clamp((D - sightRng.d) / Math.max(D, 1) * 0.12, -0.05, 0.05), U.uCharge.value);
-}
-// The scale: len km long, a tick every step km.
-// A number marks every tenth tick.
-// Black on clear.
-function makeScale(len, step) {
-  const c = document.createElement('canvas'), x = c.getContext('2d');
-  c.width = 4096; c.height = 64;
-  const s = c.width / len;
-  x.fillStyle = x.strokeStyle = '#000';
-  x.font = '600 22px "Arial Narrow", Arial, sans-serif';
-  x.textAlign = 'center';
-  for (let k = 0; k <= len / step; k++) {
-    const X = k * step * s, big = k % 10 === 0, mid = k % 2 === 0;
-    x.lineWidth = big ? 2.4 : 1.6;
-    x.beginPath(); x.moveTo(X, 64); x.lineTo(X, big ? 34 : mid ? 44 : 52); x.stroke();
-    if (big) x.fillText(String(k * step), X, 26);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-// The rock's scale runs to 80 km; the ship's to 250 km.
-// The ranging overshoot starts at 1.35 times the ship's range.
-// The ship's strip spans four times as far, with as many ticks.
-const SCALES = { rock: [makeScale(80, 0.5), 80, 6], ship: [makeScale(250, 2), 250, 24] };
-grade.uniforms.tScale.value = SCALES.rock[0];
-function setScale() {
-  const [t, len, half] = SCALES[tgtKind];
-  grade.uniforms.tScale.value = t;
-  grade.uniforms.uScaleK.value.set(len, half);
 }
 // A critically damped spring: the lens moves heavy and smooth.
 const lookV = { yaw: 0, pitch: 0 };
@@ -3377,6 +3512,9 @@ function easeLook(dt) {
 }
 // The rock's direction and light, as the shaders see them.
 const tmpA = new THREE.Vector3();
+// rockGlowK scales the rock's light on the clouds.
+// The game-over event raises it as the rock comes down.
+let rockGlowK = 1;
 function aimAst() {
   tmpA.subVectors(ast.pos, camera.position);
   const dist = tmpA.length();
@@ -3387,6 +3525,10 @@ function aimAst() {
   const nk = U.uStars.value;
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
+  // The clouds take the rock's light, faint far out, strong near the end.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
+  U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
+  U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
@@ -3418,6 +3560,7 @@ function resize() {
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
+  sightSize();
   frame();
   draw();
 }
@@ -3470,6 +3613,7 @@ function draw() {
   drawShadow();
   drawGunDepth();
   drawVolumes();
+  if (sight) sightKey();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
@@ -3758,19 +3902,41 @@ const bowMat = new THREE.ShaderMaterial({
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vUv = position.xy;
-    gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w, 1.0);
+    // The card spans six rock radii each way.
+    gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
   fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime; uniform vec3 uHot, uRim; varying vec2 vUv;
+  // One shock shell: a hyperbola, round at the nose, a long straight cone behind.
+  // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
+  float shellD(float along, float across, float n, float c, float m) {
+    float r = sqrt(c * c + m * m * across * across);
+    float slope = m * m * across / r;
+    return (along - (n + c - r)) / sqrt(1.0 + slope * slope);
+  }
   void main() {
-    // The shock stands off the nose in a parabola: close ahead, wider at the flanks.
-    float along = dot(vUv, uDir), across = dot(vUv, vec2(-uDir.y, uDir.x));
-    float shell = along - (0.62 - 0.55 * across * across);
-    float w = 0.05 + 0.05 * abs(across);
-    float arc = exp(-shell * shell / (w * w)) * smoothstep(-0.95, -0.2, along) * (1.0 - smoothstep(0.75, 0.98, abs(across)));
-    // Hot white at the nose, orange down the flanks; it shimmers.
-    vec3 c = mix(uHot * 3.0, uRim * 1.2, smoothstep(0.0, 0.7, abs(across)));
-    float fl = 0.85 + 0.15 * sin(uTime * 37.0 + across * 9.0);
-    gl_FragColor = vec4(c * arc * uGain * fl, 0.0);
+    // Rock radii from the rock's centre.
+    vec2 q = vUv * 6.0;
+    float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
+    // The cone runs five radii back and fades out from the tail.
+    float tail = smoothstep(-5.6, -1.2, along);
+    float d = shellD(along, across, 1.35, 0.75, 3.0);
+    // A fine line that widens a little toward the tail, with a soft halo.
+    // It never thins below about a pixel, so it does not shimmer.
+    float px = length(fwidth(q));
+    float w = max(0.03 + 0.03 * smoothstep(0.0, -5.0, along), 0.7 * px);
+    float line = exp(-d * d / (w * w)) + 0.12 * exp(-abs(d) / 0.22);
+    // A fainter second shell rides just inside the first.
+    float d2 = shellD(along, across, 1.18, 0.65, 3.6);
+    float w2 = max(0.02, 0.6 * px);
+    line += 0.3 * exp(-d2 * d2 / (w2 * w2)) * smoothstep(-3.0, 0.5, along);
+    // Faint streaks run down the flanks and drift back.
+    line *= 0.85 + 0.15 * sin(along * 11.0 + uTime * 18.0 + across * 3.0);
+    // Hot white at the nose, cooling to orange down the cone.
+    float k = smoothstep(1.4, -3.5, along);
+    vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
+    // The cone dims steadily down its length.
+    float fade = exp(-max(-along, 0.0) / 2.2);
+    gl_FragColor = vec4(c * line * tail * fade * uGain, 0.0);
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
@@ -3784,7 +3950,7 @@ function updateBow() {
   bowR.setFromMatrixColumn(camera.matrixWorld, 0); bowU.setFromMatrixColumn(camera.matrixWorld, 1);
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
-  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R * 1.9);
+  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
   bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value;
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
@@ -3938,13 +4104,15 @@ const ionMat = new THREE.ShaderMaterial({
   uniform float uDpr;
   varying float vY, vLa, vF;
   varying vec3 vP, vSide;
+  // The slug leaves fast and slows: it reaches fraction f at this time.
+  float reach(float f) { return uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6)); }
   // The line at fraction f; la is the time since the head passed.
   vec3 at(float f, out float la) {
-    f = min(f, uI.x / uI.y);
-    la = uI.x - f * uI.y;
+    f = min(f, 1.0 - pow(max(1.0 - uI.x / uI.y, 0.0), 2.6));
+    la = max(uI.x - reach(f), 0.0);
     vec3 p = mix(uA, uB, f);
-    // Wind drifts the old line and makes it waver.
-    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // Wind drifts the old line, wavers it and sways it in long slow bends.
+    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     return p;
   }
   void main() {
@@ -3976,7 +4144,8 @@ const ionMat = new THREE.ShaderMaterial({
   void main() {
     float n = abs(vY), core = exp(-n * n * 5.0);
     float k = 0.6 + 0.4 * uI.z;
-    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k;
+    // Far up toward the rock the line dies out, as the slug does.
+    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k * (1.0 - smoothstep(0.6, 0.85, vF));
     // A round trail: thick through its middle, with puffy, broken edges.
     float depth = sqrt(max(1.0 - n * n, 0.0));
     float rag = k2fbm(vec2(vF * 220.0, vY * 1.6 + vLa * 0.2));
@@ -4018,13 +4187,14 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   uniform vec2 uRes;
   uniform float uDpr;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   void main() {
-    float f = aF.x, la = uI.x - f * uI.y;
+    // The slug reaches fraction f late on its slowing path.
+    float f = aF.x, la = uI.x - uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6));
     if (la < 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    // The wind takes the trail and gathers pace.
-    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // The wind takes the trail, gathers pace and sways it.
+    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     // Each puff swells with age, some more than others.
     float r = (8.0 + 14.0 * la) * (0.7 + 0.6 * fract(aF.y * 7.31));
     // A cap in pixels keeps near puffs from flooding the screen.
@@ -4033,13 +4203,13 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     r = min(r, 48.0 * uDpr / max(ppm, 1e-6));
     vR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y;
+    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y; vFr = f;
     gl_Position = projectionMatrix * viewMatrix * vec4(p + (vR * position.x + vU * position.y) * r, 1.0);
   }`,
   fragmentShader: /* glsl */`
   uniform vec3 uI, uConC;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   ${HEAD}
   ${AIR}
@@ -4049,7 +4219,10 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     if (d > 1.0) discard;
     float n = k2fbm(vUv * 1.7 + vSeed);
     float a = smoothstep(1.0, 0.35, d + (n - 0.5) * 0.7);
-    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 9.0) * (1.0 - smoothstep(9.0, 15.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // The oldest smoke, nearest the gun, thins first and goes by 10 s.
+    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 6.0) * (1.0 - smoothstep(4.0, 10.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // Far up toward the rock the contrail thins out too.
+    a *= 1.0 - smoothstep(0.6, 0.85, vFr);
     if (a < 0.004) discard;
     // Light each puff as a ball: the low sun warms one side.
     vec3 V = normalize(cameraPosition - vP), N = normalize(vR * vUv.x + vU * vUv.y + V * sqrt(max(1.0 - d * d, 0.0)));
@@ -4066,7 +4239,7 @@ let ion = null;
 function updateIon() {
   if (!ion) { ionLine.visible = ionPuffs.visible = false; return; }
   const a = simT - ion.t0 - 0.3;
-  if (a > ion.T + 16) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
+  if (a > ion.T + 11) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
   ionMat.uniforms.uI.value.set(a, ion.T, ion.c);
   // The hot ribbon only lives a second behind the head.
   ionLine.visible = a > 0 && a < ion.T + 1.5;
@@ -4178,7 +4351,7 @@ void main() {
       // The comet trail's light: a short march toward the sun.
       vec3 e2, ql = p;
       float ls = uLs;
-      for (int j = 0; j < 3; j++) {
+      for (int j = 0; j < 5; j++) {
         if (j >= uLSteps) break;
         ql += uSun * ls;
         tl += dens(ql, e2) * ls;
@@ -5299,10 +5472,11 @@ float dens(vec3 p, out vec3 em) {
   // A slow curl warp turns the ball into torn billows.
   w += (texture(uVol, w * 0.6 + vec3(age * 0.006)).rgb - 0.5) * (0.25 + 0.4 * old);
   // Three octaves of billows push the surface in and out.
-  float n = 0.55 * texture(uVol, w * 0.4).r + 0.3 * texture(uVol, w * 0.9).r + 0.15 * texture(uVol, w * 2.1).r;
+  // Large billows first: the octaves sit at a broad scale, so the ball rolls, not grains.
+  float n = 0.6 * texture(uVol, w * 0.26).r + 0.28 * texture(uVol, w * 0.6).r + 0.12 * texture(uVol, w * 1.4).r;
   float shape = smoothstep(0.95, 0.75, r + (0.72 - n) * (1.3 + 0.6 * old)) * smoothstep(1.3, 1.15, r);
   // Fine cells carve small lobes into each billow.
-  float d = clamp(shape * (0.45 + 0.7 * texture(uVol, w * 4.5).g) - 0.15, 0.0, 1.0) * 1.4;
+  float d = clamp(shape * (0.55 + 0.6 * texture(uVol, w * 2.6).g) - 0.12, 0.0, 1.0) * 1.4;
   // The fire clears its own soot for the first seconds.
   d *= 1.0 - 0.85 * fd;
   // The soot skin starts thin and thickens as the fire dies.
@@ -5313,7 +5487,8 @@ float dens(vec3 p, out vec3 em) {
   float e = 0.7 * texture(uVol, w * 0.5 + vec3(age * 0.008)).b + 0.3 * texture(uVol, w * 1.2).g;
   d = clamp((d - er * (0.1 + 0.8 * e + 0.35 * r)) / max(1.0 - 0.75 * er, 0.12), 0.0, 1.0);
   // It thins as it grows, so the sky shows through.
-  return d * 2.6 / Rb * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(26.0, 38.0, age));
+  // A denser core: the soot is thickest at the heart of the ball.
+  return d * 2.6 / Rb * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.85, r))) * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(26.0, 38.0, age));
 }
 // Soot turns to pale ash as it cools, like the comet trail.
 vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
@@ -5336,7 +5511,8 @@ vec3 vlight(vec3 p) {
 }`, {
   uBP: { value: new THREE.Vector3() }, uFb: { value: new THREE.Vector4() },
   uHotC: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: PU.uFireC.value }, uEmberC: { value: new THREE.Vector3(...EMBER) },
-  uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) }, uAshC: { value: new THREE.Vector3(...ASH_D) },
+  // Dark mid-grey, not black: black smoke shows no light and shadow, so it reads flat.
+  uSootC: { value: new THREE.Vector3(...linFit(0.5, 0.012, 50)) }, uAshC: { value: new THREE.Vector3(...ASH_D) },
 });
 // The fireball is far out: clouds and mesas stand in front of it, so it keeps the depth test.
 fireball.material.depthTest = true;
@@ -5417,7 +5593,7 @@ function drawVolumes() {
 // The impact's dark plume: the tail's own smoke shader, short and thick,
 // from the blast on ahead along the rock's path, where the debris flies.
 const plumeTrain = makeMini();
-plumeTrain.pu.uSoot.value.set(...linFit(0.12, 0.012, 50));
+plumeTrain.pu.uSoot.value.set(...linFit(0.32, 0.012, 50));
 const brHead = new THREE.Vector3(), brAway = new THREE.Vector3();
 function updateBridge(ha, R) {
   const on = ha > 0.4 && ha < 46;
@@ -5473,7 +5649,8 @@ function updateBlast() {
   // Soot needs fewer steps than fire.
   // While the fire burns it needs full steps; soot alone needs fewer.
   const soot = ha > 12;
-  u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 2 : volLSteps(); u.uLs.value = 0.06 * Rb;
+  // A deeper march toward the sun: the ball shades itself in billows, as the tail does.
+  u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 3 : 4; u.uLs.value = 0.1 * Rb;
   // The soot is gone by 38 s; the blast state lives on for the void.
   fireball.visible = ha < 39;
   // The Wilson shell flashes round the fireball and burns off.
@@ -5650,8 +5827,8 @@ function boltAt(t, out) {
   if (!shot) return out.copy(MUZZLE);
   if (t <= 0) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
-  // It leaves at 1.6 times its mean speed and slows in the air: same arrival, a quicker look.
-  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 1.6);
+  // It leaves at 2.6 times its mean speed and slows in the air: same arrival, a much quicker look.
+  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 2.6);
   return out.lerpVectors(shot.muzzle, shot.target, u);
 }
 // The live target: the stored choice lands at load and at Reset.
@@ -5778,6 +5955,13 @@ function shatter(c) {
   const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
   const mo = new THREE.Vector3().copy(ast.away).negate();
+  // Slow ejecta: many small burning flecks drift down from the cloud.
+  // Each goes out at its own time, most long before the ground.
+  if (!reduced()) for (let i = 0; i < 460; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.2, rnd() - 0.5).normalize().multiplyScalar((60 + 300 * rnd()) * sp).addScaledVector(mo, (60 + 90 * rnd()) * sp);
+    bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(4 * R);
+    writeStar(bq.add(P), simT + rnd() * 3, bv, 0.5 + 0.6 * rnd(), rnd() < 0.5 ? 2 : 0, 4 + 22 * rnd(), 0.6 + 0.9 * rnd(), 0.9 + 1.1 * rnd(), 3, 0.18 + 0.22 * rnd());
+  }
   for (let i = 0; i < N * 1.2; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
@@ -5806,7 +5990,6 @@ function shatter(c) {
     off: new THREE.Vector3(rnd() - 0.5, rnd() - 0.35, rnd() - 0.5).multiplyScalar(4.5 * R),
   }));
   blastFx = { t0: simT, P: P.clone(), R, k: Math.min(c, 1.25), seed: rnd() * 10, bursts };
-  { const ac = kit.live(); if (ac && shot?.sfx) fireSounds(ac, shot, blastFx); }
   hitFlash = 1; cam.shake += 0.5 * c;
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
@@ -5820,7 +6003,8 @@ function respawn() {
   seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
   // Each new rock rolls its size.
-  if (devSize === 'random') { const ks = Object.keys(SIZES); opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
+  // Random runs through the three common sizes; Aerosmith is picked on purpose.
+  if (devSize === 'random') { const ks = ['boulder', 'mountain', 'moon']; opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
   // Each rock comes in a little to one side of the last.
   turnPath(ast.next);
   PU.uTrail.value = 0;
@@ -6073,7 +6257,9 @@ function updateBolt() {
   if (live) {
     const tail = 0.55 + 0.03 * shot.T;
     const p0 = boltGeo.attributes.aP0, p1 = boltGeo.attributes.aP1, kk = boltGeo.attributes.aK;
-    const fade = 1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3);
+    // The last stretch: the slug's light dies away into the distance before it strikes.
+    const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (age - 0.3) / shot.T)), 2.6);
+    const fade = (1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3)) * (1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97));
     for (let k = 0; k < BOLT_SEG; k++) {
       const ta = age - tail * (1 - k / BOLT_SEG), tb = age - tail * (1 - (k + 1) / BOLT_SEG);
       boltAt(ta, bp); boltAt(tb, bq);
@@ -6246,7 +6432,6 @@ function landReset() {
   placeAst();
   // A ship takes the rock's place in the sky.
   if (tgtKind === 'ship') newShip(); else shipOff();
-  setScale();
   stepAim(0, true);
   if (tgtKind === 'rock') prewarmEmbers();
 }
@@ -6758,38 +6943,6 @@ function hitSounds(ac, sh) {
     if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
   });
 }
-// The fire's own sound, after the boom's delay: a low roar that follows the fire,
-// far crackle, and one muffled thud per late burst.
-function fireSounds(ac, sh, fx) {
-  const t0 = ac.currentTime + (sh.sfx.late || 0), k = SIZES[opts.size].rumble * fx.k;
-  // The roar: low noise that swells in a second and dies with the fire.
-  const roar = hiss(ac, t0, 30, 0.5), lp = filt(ac, 'lowpass', 260), rg = ac.createGain();
-  rg.gain.setValueAtTime(0.0001, t0); rg.gain.exponentialRampToValueAtTime(0.12 * k, t0 + 1.2);
-  rg.gain.setTargetAtTime(0.0001, t0 + 2, 7);
-  roar.connect(lp).connect(rg).connect(kit.out);
-  lp.frequency.setValueAtTime(320, t0); lp.frequency.setTargetAtTime(120, t0 + 2, 9);
-  // Crackle: dull pops, thick at first, rarer as the fire cools.
-  const pops = [];
-  for (let t = 0.4; t < 20; t += 0.08 + 0.5 * Math.random() * (t / 8)) {
-    const at = t0 + t, d = 0.02 + 0.06 * Math.random(), n = hiss(ac, at, d + 0.03, 0.9);
-    const bp = filt(ac, 'bandpass', 500 + 1300 * Math.random(), 1.8), g = ac.createGain(), pn = ac.createStereoPanner();
-    pn.pan.value = Math.random() * 0.8 - 0.4;
-    const lvl = 0.07 * k * Math.exp(-t / 7) * (0.4 + 0.6 * Math.random());
-    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(Math.max(lvl, 0.0002), at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + d);
-    n.connect(bp).connect(g).connect(pn).connect(kit.out);
-    pops.push(n);
-  }
-  // A thud per burst: low, short, with a little body.
-  const thuds = fx.bursts.map(b => {
-    const at = t0 + b.t, o = ac.createOscillator(), og = ac.createGain();
-    o.frequency.setValueAtTime(58 * jit(0.1), at); o.frequency.exponentialRampToValueAtTime(30, at + 0.9);
-    og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(0.45 * k * b.k, at + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, at + 1.4);
-    o.connect(og).connect(kit.out); o.start(at); o.stop(at + 1.5);
-    echo(ac, og, 0.3, 500);
-    return o;
-  });
-  track(t0 + 31, roar, ...pops, ...thuds);
-}
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
 function rumble(c) {
@@ -6953,6 +7106,7 @@ window.__qa = {
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
   jump(t) { simT += t; U.uTime.value = simT; stepAst(t); stepAim(t, true); stepCharge(Math.min(t, 0.1)); frame(); draw(); },
+  glowK(k) { rockGlowK = k; aimAst(); draw(); },
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
@@ -6989,7 +7143,6 @@ astSize();
 // A stored Target applies at load too.
 tgtKind = ui.setting('target').value;
 if (tgtKind === 'ship') newShip();
-setScale();
 stepAim(0, true);
 if (tgtKind === 'rock') prewarmEmbers();
 setBox(ui.setting('letterbox').value);
