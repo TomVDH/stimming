@@ -121,15 +121,17 @@ const opts = {
 /* ---------- bar ---------- */
 // 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
-// The charge sound's mix: 'hum', 'blend', 'choir', 'vast' or 'titan'.
-// Expanse is the default; an old Blend default moves to it once.
+// The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
+// Monolith is the default; an old Blend default moves to Expanse once.
 let chargeMix = (() => {
   try {
     const K = 'stimming.railgun.chargemix';
     if (!localStorage.getItem(K + '.v2')) { if (localStorage.getItem(K) === 'blend') localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v2', '1'); }
-    return localStorage.getItem(K) || 'vast';
-  } catch { return 'vast'; }
+    return localStorage.getItem(K) || 'monolith';
+  } catch { return 'monolith'; }
 })();
+// The shot's sound: 'mesa', 'coil', 'thump' or 'report'.
+let shotMix = 'mesa';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -149,8 +151,11 @@ const ui = initPage({ id: 'railgun', bar: {
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
-    // The charge: the hum, the choir, a blend, or a blend on the plain.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
+    // The charge: the hum, the choir, blends, or a mechanical surge.
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monolith', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    // The shot: three synth takes, or Tom's report sample. Mesa is the default.
+    // A pick plays the take once, so takes compare side by side.
+    { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Strike test: each rock starts at its hold and strikes after a short grace.
@@ -6001,8 +6006,8 @@ function shatter(c) {
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
   U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
-  // The boom sample replaces the synth rumble once it decodes.
-  if (!boomOK) rumble(c);
+  // The synth rumble stands in when the hit's sounds were not scheduled.
+  if (!shot?.sfx?.boom) rumble(c);
 }
 function respawn() {
   // Each new rock turns a fresh face to the eye.
@@ -6633,6 +6638,7 @@ function tick(now) {
     U.uTime.value = simT;
     stepAst(sdt);
     stepAim(sdt);
+    motorUpdate(dt);
     stepCharge(sdt);
     stepShot(sdt);
     stepStrike(sdt);
@@ -6685,7 +6691,7 @@ whenVisible(stage, vis => {
     // A hidden tab drops the hold.
     // No finger is on it when it returns.
     cancelHold();
-    stopAll(); humStop(kit.ac, true);
+    stopAll(); humStop(kit.ac, true); motorStop(true); surgeOverStop(true);
     if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
@@ -6728,6 +6734,26 @@ function hiss(ac, t, dur, rate = 1) {
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
   s.start(t, Math.random() * 0.9); s.stop(t + dur);
   return s;
+}
+// A tone with a pitch glide and a struck envelope; returns the oscillator.
+function blip(ac, dest, t, { type = 'sine', f0, f1 = f0, glide = 0.5, peak, a = 0.01, dur }) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+  return o;
+}
+// A burst of filtered noise with a struck envelope; returns the source and its gain.
+function burst(ac, dest, t, { dur, rate = 1, type = 'bandpass', f = 1000, f1 = f, q = 0.7, peak, a = 0.004, pan = 0 }) {
+  const src = hiss(ac, t, dur + 0.05, rate), b = filt(ac, type, f, q), g = ac.createGain();
+  if (f1 !== f) b.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let n = src.connect(b).connect(g);
+  if (pan) { const p = ac.createStereoPanner(); p.pan.value = pan; n = n.connect(p); }
+  n.connect(dest);
+  return { src, g };
 }
 /* ---------- the wind bed ---------- */
 // Low wind over the plain, a whistle past the pylon.
@@ -6789,6 +6815,17 @@ const MIX = {
   vast: { hum: 0.85, choir: 1, oct: 1, sub: 1.7, glide: 0.35, late: 1.5, tier: true, bass: true, wob: 0.12, bloom: false, verb: 0.5, pre: 0.03, dark: 9000, accent: 1 },
   // Titan: an octave down, a slow drawl, the choir bursts open at the lock.
   titan: { hum: 0.8, choir: 0.85, oct: 0.5, sub: 1.5, glide: 0.6, late: 1.8, tier: true, bass: true, wob: 0.35, bloom: true, verb: 0.4, pre: 0.09, dark: 2600, accent: 1 },
+  // Surges: mechanical layers, then a saw swarm gliding into a chord; see SURGE.
+  penta: { ...MIX0, stack: 'penta', verb: 0.45, pre: 0.04, dark: 7000 },
+  hijaz: { ...MIX0, stack: 'hijaz', verb: 0.5, pre: 0.06, dark: 6000 },
+  syl: { ...MIX0, stack: 'syl', verb: 0.55, pre: 0.05, dark: 7000 },
+  colossus: { ...MIX0, stack: 'colossus', verb: 0.55, pre: 0.08, dark: 5000 },
+  dirge: { ...MIX0, stack: 'dirge', verb: 0.6, pre: 0.09, dark: 4000 },
+  leviathan: { ...MIX0, stack: 'leviathan', verb: 0.5, pre: 0.07, dark: 3500 },
+  eclipse: { ...MIX0, stack: 'eclipse', verb: 0.5, pre: 0.05, dark: 7000 },
+  monolith: { ...MIX0, stack: 'monolith', verb: 0.45, pre: 0.06, dark: 5000 },
+  // Monolith Hum: the plain hum ramps up, then Monolith's swarm joins it.
+  monohum: { ...MIX0, surge: 'monohum', verb: 0.45, pre: 0.05, dark: 6000 },
 };
 // The plain: one convolver per context, built on first use.
 // Open flats have no room: a ground bounce, mesa echoes, a low roll.
@@ -6827,7 +6864,9 @@ function humStart(ac) {
   if (hum) return;
   // The echo's impulse builds in idle time during the hold, not on the shot.
   if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
+  if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
+  if (P.stack) { hum = stackStart(ac, P); return; }
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
@@ -6900,6 +6939,12 @@ function humStart(ac) {
     vs.connect(dl).connect(dk).connect(plainVerb(ac));
   }
   hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
+  // A blend runs a surge swarm on top of the hum.
+  if (P.surge) {
+    const s = stackStart(ac, { ...P, stack: P.surge, verb: 0 });
+    hum.surge = s; src.push(...s.src);
+    if (vs) s.g.connect(vs);
+  }
 }
 // Semitones from the hum's root for a voice at power c.
 function voicePitch(v, c, t, P, wow, over) {
@@ -6919,6 +6964,8 @@ function voicePitch(v, c, t, P, wow, over) {
 // vol fades the whole stack in.
 function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 }) {
   if (!hum || !s) return;
+  // A stacked charge sound runs its own update, only while a hold lasts.
+  if (hum.stack) { if (charge) stackUpdate(ac, hum); return; }
   const { c, chaos, rage, over, vol } = s, P = hum.P, t = ac.currentTime;
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
@@ -6933,7 +6980,9 @@ function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 })
   hum.sub.frequency.setTargetAtTime(55 * Math.pow(2, c * 7 / 12) / 2, t, hg);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(vol * 0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
+  // In a blend the hum steps back a little as the swarm arrives.
+  const duck = hum.surge ? 1 - 0.35 * THREE.MathUtils.smoothstep(c, 0.6, 1) : 1;
+  hum.g.gain.setTargetAtTime(vol * 0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum * duck, t, 0.05);
   // Bloom mixes drop the sub in hard at the lock.
   hum.sg.gain.setTargetAtTime(vol * 0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
@@ -6969,6 +7018,7 @@ function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 })
   if (hum.bloom) hum.bloom.frequency.setTargetAtTime(380 * Math.pow(2, 4.3 * Math.max(THREE.MathUtils.smoothstep(u, 0.8, 1.0), over)), t, 0.15);
   // The echoes grow with the charge and swell at the lock.
   if (hum.vs) hum.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
+  if (hum.surge) stackUpdate(ac, hum.surge);
 }
 // The vent: the choir groans down two octaves and dies.
 function humGroan(ac) {
@@ -6977,8 +7027,9 @@ function humGroan(ac) {
   hum = null;
   // Plain mixes fall slower and roll on across the flats.
   const long = !!h.P.verb, fall = long ? 0.9 : 0.5, end = long ? 4.5 : 2.6;
-  for (const v of h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
+  for (const v of h.surge ? [...h.voices, ...h.surge.voices] : h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
   h.cg.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
+  if (h.surge) h.surge.g.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
   for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.05);
   for (const n of h.src) n.stop(t + end);
   track(t + end + 0.1, ...h.src);
@@ -6988,9 +7039,218 @@ function humStop(ac, now = false) {
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
   if (!ac || now) { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
-  for (const n of [h.g, h.sg, h.ng, h.cg]) n.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.g, h.sg, h.ng, h.cg, h.surge?.g].filter(Boolean)) n.gain.setTargetAtTime(0, t, 0.03);
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
+}
+/* ---------- the surge charge ---------- */
+// Surge mixes: mechanical layers enter one by one as the charge grows.
+// On top, a swarm of saws glides from chaos into one massive chord.
+// Each profile: root (semitones from A1), chord tones per register,
+// pre (an optional chord held until the lock), wave, mechanical layers.
+// late and fade: a later swarm entry and a longer fade-in, for blends.
+// Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter),
+// pipe (drawbar harmonics, a little buzz). leslie: a rotary tremolo on the swarm.
+// Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
+const SURGE = {
+  // Surge: a pentatonic chord, open fifths, thirds and sixths.
+  penta: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Syl: Surge's chord and machines, with pipe-organ voices and a rotary tremolo.
+  syl: { root: 0, wave: 'pipe', leslie: true, mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Hijaz: the flat second, the augmented second and the flat sixth.
+  hijaz: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 25, 28, 31, 32, 36], high: [37, 40, 43, 44, 48, 55] },
+  // Colossus: a Lydian chord on D, bright and vast, over grinding stone.
+  colossus: { root: 5, wave: 'brass', mech: ['mains', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 26, 28, 30, 31, 35], high: [36, 38, 40, 42, 43, 47] },
+  // Dirge: a minor eleventh on G, a temple organ, bells tolling faster.
+  dirge: { root: -2, wave: 'organ', mech: ['grind', 'toll', 'mains'], bass: [-12, 0, 0, 7], mid: [12, 15, 19, 22, 24, 26, 27, 31], high: [34, 36, 39, 41, 43, 48] },
+  // Leviathan: stacked fourths on E, very low, with a ratchet winding up.
+  leviathan: { root: -5, wave: 'saw', mech: ['mains', 'ratchet', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 17, 22, 24, 27, 29, 32, 34], high: [36, 39, 41, 44, 46, 48] },
+  // Eclipse: a whole-tone cloud that resolves to a major chord at the lock.
+  eclipse: { root: 0, wave: 'brass', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 16, 19, 24, 28, 31, 36, 40], high: [43, 48, 52, 55, 60, 64], pre: { bass: [-12, 0, 0, 6], mid: [12, 14, 18, 20, 22, 26, 28, 30], high: [32, 34, 36, 38, 40, 42] } },
+  // Monolith Hum: the swarm alone, on E, where the hum's pitch lands.
+  // The hum carries the machines; the swarm enters late.
+  monohum: { root: 7, wave: 'saw', mech: [], sub: false, late: 0.3, fade: 0.18, bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
+  // Monolith: octaves and fifths only, every machine running.
+  monolith: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
+};
+// Per register: [entry charge, start low Hz, start high Hz, voice level].
+const REG = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
+function stackStart(ac, P) {
+  const src = [], S = SURGE[P.stack], R = 55 * Math.pow(2, S.root / 12), has = l => S.mech.includes(l);
+  const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
+  const gain = (to, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
+  const noise = (to, rate = 1) => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate; n.connect(to); n.start(); src.push(n); return n; };
+  // Every layer runs through one soft clip for glue and growl.
+  const cg = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain();
+  const curve = new Float32Array(257);
+  for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
+  shape.curve = curve; shape.oversample = '2x'; cg.gain.value = 0.8; g.gain.value = 0;
+  cg.connect(shape).connect(g).connect(kit.out);
+  const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 };
+  // The mains: a transformer hum, saw and square on the root.
+  if (has('mains')) {
+    const mlp = filt(ac, 'lowpass', 380, 1.5);
+    h.mainsG = gain(cg); mlp.connect(h.mainsG);
+    osc('sawtooth', R, mlp); osc('square', 2 * R, mlp, 7); osc('sawtooth', 3 * R, mlp, -5);
+  }
+  // The capacitor whine: a thin tone climbs four octaves.
+  if (has('whine')) { h.whineG = gain(cg); h.whine = osc('sine', 180, h.whineG); h.whine2 = osc('triangle', 90, gain(h.whineG, 0.5)); }
+  // Grinding stone: dark noise that heaves on two slow beats.
+  if (has('grind')) {
+    const gb = filt(ac, 'bandpass', 160, 1.6), gam = ac.createGain();
+    h.grindG = gain(cg); gam.gain.value = 0.6; gb.connect(gam).connect(h.grindG);
+    noise(gb, 0.35);
+    for (const [fr, d] of [[0.37, 0.3], [0.83, 0.15]]) osc('sine', fr, gain(gam.gain, d));
+    h.gb = gb;
+  }
+  // The sub: the root and the octave under it; a blend leaves it to the hum.
+  h.sg = gain(kit.out);
+  if (S.sub !== false) { osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5)); }
+  // The turbine: a saw and a band of noise throb faster and faster.
+  // Its gain doubles as the rage noise the stop and the vent fade.
+  h.ng = gain(cg);
+  if (has('turbine')) {
+    const am = gain(h.ng, 0.6);
+    h.tb = filt(ac, 'bandpass', 500, 2.5); h.tb.connect(am);
+    h.turb = osc('sawtooth', 2 * R, h.tb); noise(h.tb);
+    h.thr = osc('sine', 3, gain(am.gain, 0.5));
+  }
+  // The swarm: two oscillators per voice, under a filter that opens with the charge.
+  // Brass rings a resonant filter; organ uses squares.
+  h.sw = filt(ac, 'lowpass', 600, S.wave === 'brass' ? 5 : 0.9);
+  // The rotary tremolo: the swarm's level wobbles at 5.6 Hz.
+  if (S.leslie) {
+    const rot = ac.createGain();
+    rot.gain.value = 0.85;
+    osc('sine', 5.6, gain(rot.gain, 0.15));
+    h.sw.connect(rot).connect(cg);
+  } else h.sw.connect(cg);
+  // Pipe: drawbar harmonics 1, 2, 3, 4, 6 and 8, over a faint saw buzz.
+  let pw = null;
+  if (S.wave === 'pipe') {
+    const im = new Float32Array(17), DRAW = { 1: 1, 2: 0.75, 3: 0.45, 4: 0.55, 5: 0.12, 6: 0.3, 8: 0.25 };
+    for (let n = 1; n < 17; n++) im[n] = (DRAW[n] || 0) + 0.08 / n;
+    pw = ac.createPeriodicWave(new Float32Array(17), im);
+  }
+  const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : S.wave === 'pipe' ? 0.85 : 1;
+  h.voices = [];
+  for (const reg of ['bass', 'mid', 'high']) {
+    const [enter, lo, hi, lv] = REG[reg], tg = S[reg];
+    tg.forEach((s, i) => {
+      const pn = ac.createStereoPanner();
+      pn.pan.value = reg === 'bass' ? (i % 2 ? 0.15 : -0.15) : (i % 2 ? 1 : -1) * (0.25 + 0.5 * Math.random());
+      pn.connect(h.sw);
+      const vg = gain(pn), start = lo * Math.pow(hi / lo, Math.random());
+      const os = (pw ? [-4, 4] : [-7, 7]).map(dt => osc(type, start, vg, dt));
+      if (pw) for (const o of os) o.setPeriodicWave(pw);
+      // late: the swarm's entries squeeze into the last part of the charge.
+      const e = enter + 0.1 * i / tg.length;
+      h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: S.late ? S.late + (1 - S.late) * e : e, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
+    });
+  }
+  // The plain send takes the whole surge.
+  if (P.verb) {
+    h.vs = ac.createGain(); h.vs.gain.value = 0;
+    const dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', P.dark, 0.5);
+    dl.delayTime.value = P.pre;
+    g.connect(h.vs).connect(dl).connect(dk).connect(plainVerb(ac));
+  }
+  return h;
+}
+// dv: an optional drive { c, over, rage, lock, vol } in place of the charge.
+function stackUpdate(ac, h = hum, dv = null) {
+  const P = h.P, c = dv ? dv.c : charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+  const ov = dv ? dv.over : over, rg = dv ? dv.rage : rage, vol = dv ? dv.vol : 1;
+  const locked = dv ? dv.lock : c >= 0.999 && ov < 0.15;
+  if (locked && !h.locked) h.lockAt = t;
+  h.locked = locked; h.sour = ov;
+  const accent = Math.exp(-(t - h.lockAt) / 1.2);
+  // The mains hum from the first instant.
+  if (h.mainsG) h.mainsG.gain.setTargetAtTime(0.2 * ss(u, 0, 0.12) * (0.45 + 0.55 * u), t, 0.08);
+  // The whine climbs from 180 Hz to 4 kHz.
+  if (h.whine) {
+    h.whine.frequency.setTargetAtTime(180 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whine2.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whineG.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
+  }
+  // The stone grinds louder and higher.
+  if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
+  // The sub swells, and drops in hard at the lock.
+  h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent) * vol, t, 0.08);
+  // The turbine spins up from 3 to 18 throbs a second.
+  h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rg + 0.08 * ov, t, 0.08);
+  if (h.turb) {
+    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rg, t, 0.1);
+    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rg, t, 0.1);
+    h.turb.frequency.setTargetAtTime(2 * h.R * (1 + u), t, 0.1);
+  }
+  // Bells toll and the ratchet clanks, faster with the charge.
+  // Each strike is scheduled ahead, so the rhythm holds between frames.
+  if (u > 0.15 && (h.S.mech.includes('toll') || h.S.mech.includes('ratchet'))) {
+    if (!h.next) h.next = t + 0.05;
+    const toll = h.S.mech.includes('toll');
+    while (h.next < t + 0.15) {
+      if (toll) bell(ac, h, Math.max(t, h.next), u); else ratchet(ac, h, Math.max(t, h.next), u);
+      h.next += toll ? 3.2 - 2.4 * u : 1 / (1 + 9 * u);
+    }
+  }
+  // The swarm: each voice wanders, then glides to its chord tone.
+  // A pre chord holds until the lock, then resolves slowly.
+  for (const v of h.voices) {
+    const k = ss(u, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
+    const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
+    const fr = h.R * Math.pow(2, (q + ov * v.sour * 0.6) / 12);
+    for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
+    v.vg.gain.setTargetAtTime(v.lv * k, t, 0.1);
+  }
+  // The swarm's filter opens from 600 Hz to 9 kHz.
+  // Pipe voices open less: from 1.5 kHz to 9 kHz.
+  h.sw.frequency.setTargetAtTime(h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
+  // The drive grows with the charge and the over-hold.
+  h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * ov, t, 0.1);
+  h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent) * vol, t, 0.08);
+  if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent) * vol, t, 0.1);
+}
+/* ---------- the game-over surge ---------- */
+// Surge Syl plays the rock's last fall; its contact is the game over.
+// The strike calls surgeOver every sim step with d: { u, vol, over }.
+// d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
+// d.over: the strain, 0.6 at contact, 1 at the end of the burn.
+// Null stops it. A null ac (muted) stops it hard.
+let goSurge = null;
+function surgeOver(ac, d) {
+  if (!d || !ac) { surgeOverStop(!ac); return; }
+  if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
+  if (!goSurge) { goSurge = stackStart(ac, MIX.syl); goSurge.ac = ac; }
+  const ss = THREE.MathUtils.smoothstep;
+  // The chord locks at contact and holds through the burn.
+  // A live charge keeps the lead; the surge ducks under it.
+  stackUpdate(ac, goSurge, {
+    c: d.u, lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
+    // The strain sours the chord at half depth, so the chord still reads.
+    over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
+  });
+}
+// now: a hard stop for mute and a hidden tab; else a two-second fade.
+function surgeOverStop(now = false) {
+  if (!goSurge) return;
+  const h = goSurge, ac = h.ac, t = ac.currentTime;
+  goSurge = null;
+  if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
+  for (const n of [h.g, h.sg]) n.gain.setTargetAtTime(0, t, 0.5);
+  for (const n of h.src) n.stop(t + 2.5);
+  track(t + 2.6, ...h.src);
+}
+// A temple bell: inharmonic partials two octaves over the root, long decay.
+function bell(ac, h, t, u) {
+  const f = 4 * h.R, k = 0.5 + 0.5 * u;
+  track(t + 5, ...[[0.5, 0.05, 4.5], [1, 0.06, 3.5], [1.19, 0.035, 2.8], [1.5, 0.03, 2.2], [2, 0.025, 1.6], [2.74, 0.015, 1.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.004), peak: lv * k, a: 0.004, dur: d })));
+}
+// A ratchet tooth: a low metal clank with a short bright click.
+function ratchet(ac, h, t, u) {
+  const f = (h.n = (h.n || 0) + 1) % 2 ? 180 : 140, k = (0.5 + 0.5 * u) * jit(0.15);
+  track(t + 0.4, ...[[1, 0.07, 0.3], [2.4, 0.04, 0.18], [4.1, 0.02, 0.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.02), peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, h.g, t, { dur: 0.03, rate: 1.2, f: 2500, q: 1.2, peak: 0.04 * k, a: 0.0008 }).src);
 }
 /* ---------- arcs and rumble ---------- */
 // Every hit jitters in pitch, time and level.
@@ -7042,57 +7302,263 @@ const SAMPLES = { impact: 'impact.mp3', boom: 'boom.mp3', shot: 'shot.mp3' };
 // The impact's peak sits 1.85 s into its file.
 const IMPACT_AT = 1.85;
 const sampleP = {};
-let boomOK = false;
 // A missing or failed sample resolves null and tries again next time.
 const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name])
   .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
   .then(b => ac.decodeAudioData(b))
   .catch(() => { delete sampleP[name]; return null; }));
 // Send a node into the plain's echoes, darkened above dark hertz.
-function echo(ac, node, lvl, dark = 6000) {
+// dest: a send bus in front of the echoes; the plain itself by default.
+function echo(ac, node, lvl, dark = 6000, dest = plainVerb(ac)) {
   const s = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
   s.gain.value = lvl;
-  node.connect(s).connect(lp).connect(plainVerb(ac));
+  node.connect(s).connect(lp).connect(dest);
 }
 // dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
-// wet: the send into the plain's echoes.
-function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, tag = null) {
+// wet: the send into the plain's echoes. dest: the bus it feeds.
+// tag: a salvo tag, so a Reset can stop the sample.
+function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out, tag = null) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
     const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
-    sh.gain.value = 9;
-    src.connect(lp).connect(sh).connect(g).connect(kit.out);
-  } else src.connect(g).connect(kit.out);
+    sh.gain.value = 6;
+    src.connect(lp).connect(sh).connect(g).connect(dest);
+  } else src.connect(g).connect(dest);
   if (wet) echo(ac, g, wet, dark || 6000);
   src.start(when);
   (tag ? trackS : track)(when + buf.duration / rate + 0.1, src);
 }
-// Tom's cannon report plays as the slug leaves the muzzle.
+// The blast bus: the impact, the boom, the fire and the rumble.
+// One limiter holds the stacked layers under the master's knee.
+// Its peak output sits near -3 dBFS.
+let limBus = null;
+function blastBus(ac) {
+  if (limBus?.ac === ac) return limBus.in;
+  const inG = ac.createGain(), lim = ac.createDynamicsCompressor(), mk = ac.createGain();
+  // A slow attack keeps the limiter from bending the sub-bass waveform.
+  lim.threshold.value = -14; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = 0.03; lim.release.value = 0.6;
+  mk.gain.value = 1.2;
+  inG.connect(lim).connect(mk).connect(kit.out);
+  limBus = { ac, in: inG, lim };
+  return inG;
+}
+/* ---------- baked buffers ---------- */
+// The slug's N-wave and the debris rattle.
+// They build once per context, in idle time during the charge.
+let baked = null;
+function bake(ac) {
+  if (baked?.ac === ac) return baked;
+  baked = {
+    ac, nwave: nWave(ac),
+    // Rattle: thick at first, then thinning; ticks, grit and a few stones.
+    rattle: grains(ac, 3.5, 24000, t => 70 * Math.exp(-t / 0.8) + 4, t => {
+      const r = Math.random(), a = Math.exp(-t / 1.4) * (0.3 + 0.7 * Math.random());
+      return r < 0.55 ? [0.004 + 0.012 * Math.random(), 1500 + 3500 * Math.random(), 0.5 * a] : r < 0.88 ? [0.01 + 0.02 * Math.random(), 0, 0.9 * a] : [0.03 + 0.05 * Math.random(), 250 + 450 * Math.random(), 0.7 * a];
+    }),
+  };
+  return baked;
+}
+// The slug's sonic boom: a jump up, a straight fall, a jump back.
+function nWave(ac) {
+  const sr = ac.sampleRate, n = Math.round(0.012 * sr), b = ac.createBuffer(1, n + 8, sr), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = 1 - 2 * i / n;
+  return b;
+}
+// A stereo buffer of short grains at a falling rate.
+// rate(t): grains a second. grain(t): [length s, ring hertz or 0, level].
+function grains(ac, dur, sr, rate, grain) {
+  const b = ac.createBuffer(2, Math.round(dur * sr), sr), L = b.getChannelData(0), R = b.getChannelData(1);
+  for (let t = 0.01; t < dur; t += -Math.log(1 - Math.random()) / rate(t)) {
+    const [len, ring, lv] = grain(t), n = Math.round(len * sr), i0 = Math.round(t * sr), p = Math.random();
+    const gl = lv * Math.sqrt(1 - p), gr = lv * Math.sqrt(p), w = 2 * Math.PI * ring / sr;
+    let y = 0;
+    for (let i = 0; i < n && i0 + i < L.length; i++) {
+      const e = Math.exp(-5 * i / n);
+      // A ring is a struck partial; no ring is a dull puff of noise.
+      const s = ring ? Math.sin(w * i) : (y += 0.35 * (Math.random() * 2 - 1 - y)) * 2;
+      L[i0 + i] += gl * e * s; R[i0 + i] += gr * e * s;
+    }
+  }
+  return b;
+}
+// A rolling tail: low noise whose level waves on two slow beats.
+// It swells, ebbs over dur seconds and drifts across the plain.
+function roll(ac, dest, t, dur, lvl, cut) {
+  const n = hiss(ac, t, dur, 0.3), lp = filt(ac, 'lowpass', cut, 0.6), am = ac.createGain(), g = ac.createGain(), pn = ac.createStereoPanner();
+  am.gain.value = 0.65;
+  const srcs = [n];
+  for (const [fr, dp] of [[0.21, 0.22], [0.47, 0.13], [0.06, 0]]) {
+    const l = ac.createOscillator(), lg = ac.createGain();
+    l.frequency.value = fr * jit(0.3); lg.gain.value = dp || 0.45;
+    // The slowest beat moves the pan, not the level.
+    l.connect(lg).connect(dp ? am.gain : pn.pan); l.start(t); l.stop(t + dur); srcs.push(l);
+  }
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + Math.min(2, dur * 0.2));
+  g.gain.setTargetAtTime(0.0001, t + Math.min(3, dur * 0.3), dur / 6);
+  lp.frequency.setValueAtTime(cut, t); lp.frequency.setTargetAtTime(cut * 0.45, t + 2, dur / 3);
+  n.connect(lp).connect(am).connect(g).connect(pn).connect(dest);
+  return srcs;
+}
+/* ---------- the shot ---------- */
+// The shot bus: the impact's prelude ducks the shot's tail under its swell.
+// The duck holds the dry sound and the send into the echoes.
+let shotG = null, shotW = null;
+function shotBus(ac) {
+  if (shotG?.context !== ac) {
+    shotG = ac.createGain(); shotG.connect(kit.out);
+    shotW = ac.createGain(); shotW.connect(plainVerb(ac));
+  }
+  return shotG;
+}
+const shotSend = ac => (shotBus(ac), shotW);
+function shotDuck(ac, to, at, tau) {
+  for (const p of [shotBus(ac).gain, shotW.gain]) { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); p.setTargetAtTime(to, at, tau); }
+}
+// The shot plays as the slug leaves the muzzle.
 function shotSound(ac, sh) {
-  const late = 0;
   const at = ac.currentTime + 0.3;
-  sh.sfx = { ...sh.sfx, shot: 0, shotLate: late };
-  sample(ac, 'shot').then(buf => {
-    if (!buf || shot !== sh || !kit.live()) return;
-    const src = ac.createBufferSource(), g = ac.createGain();
-    src.buffer = buf; src.playbackRate.value = jit(0.03);
-    // Its long tail fades out before the boom lands.
-    const lvl = 1.4 * Math.min(sh.c, 1.25) * jit(0.1);
-    g.gain.setValueAtTime(lvl, Math.max(ac.currentTime, at)); g.gain.setTargetAtTime(0, at + 4, 3.5);
-    src.connect(g).connect(kit.out);
-    // The report rolls off the mesas across the flats.
-    echo(ac, g, 0.35);
-    sh.sfx.shot = Math.max(ac.currentTime, at);
-    src.start(sh.sfx.shot); src.stop(sh.sfx.shot + 20);
-    // A sub punch under the report gives it weight.
-    const t0 = sh.sfx.shot, o = ac.createOscillator(), og = ac.createGain();
-    o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
-    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * Math.min(sh.c, 1.25), t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
-    o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
-    echo(ac, og, 0.25, 400);
-    track(sh.sfx.shot + 20.1, src, o);
-  });
+  sh.sfx = { ...sh.sfx, shot: at, shotLate: 0, take: shotMix };
+  playShot(ac, at, Math.min(sh.c, 1.25), shotMix, sh);
+}
+// One take at time t with charge k.
+// A report that decodes after its shot is gone stays silent.
+function playShot(ac, t, k, name, sh = null) {
+  // A new shot lifts the last duck.
+  shotDuck(ac, 1, ac.currentTime, 0.005);
+  if (name === 'report' || !TAKES[name]) {
+    sample(ac, 'shot').then(buf => {
+      if (!buf || (sh && shot !== sh) || !kit.live()) return;
+      t = Math.max(ac.currentTime, t);
+      if (sh) sh.sfx.shot = t;
+      report(ac, buf, t, k);
+    });
+    return;
+  }
+  const { srcs, end } = TAKES[name](ac, t, k);
+  track(end, ...srcs);
+}
+// A pick in Settings plays the take once, while no shot flies.
+function audition(name) {
+  const ac = kit.live();
+  if (!ac || shot) return;
+  playShot(ac, ac.currentTime + 0.05, 1, name);
+  wake();
+}
+// Report: Tom's cannon sample with a sub punch under it.
+function report(ac, buf, t0, k) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = jit(0.03);
+  // Its long tail fades out before the boom lands.
+  const lvl = 1.4 * k * jit(0.1);
+  g.gain.setValueAtTime(lvl, t0); g.gain.setTargetAtTime(0, t0 + 4, 3.5);
+  src.connect(g).connect(shotBus(ac));
+  // The report rolls off the mesas across the flats.
+  echo(ac, g, 0.35, 6000, shotSend(ac));
+  src.start(t0); src.stop(t0 + 20);
+  const o = blip(ac, shotBus(ac), t0, { f0: 52, f1: 28, glide: 0.7, peak: 0.8 * k, a: 0.015, dur: 0.9 });
+  echo(ac, o, 0.25, 400, shotSend(ac));
+  track(t0 + 20.1, src, o);
+}
+// Mesa echoes: [delay s, pan, level].
+const MESAS = [[0.85, -0.7, 0.55], [1.5, 0.75, 0.42], [2.35, -0.5, 0.33], [3.4, 0.6, 0.24], [4.7, -0.35, 0.16], [6.3, 0.4, 0.1]];
+// The synth takes: each plays at t with charge k.
+// Each returns its sources and its end time.
+const TAKES = {
+  // Mesa: a deep cannon; its echo rolls off the mesas for ten seconds.
+  mesa(ac, t, k) {
+    const o = shotBus(ac), b = burst(ac, o, t, { dur: 1.8, rate: 0.6, type: 'lowpass', f: 2600, f1: 150, q: 0.8, peak: 0.85 * k, a: 0.005 });
+    echo(ac, b.g, 0.6, 2000, shotSend(ac));
+    // The body: two low tones sink under the blast.
+    const srcs = [b.src,
+      blip(ac, o, t, { f0: 56, f1: 23, glide: 1.3, peak: 0.95 * k, a: 0.01, dur: 1.7 }),
+      blip(ac, o, t, { type: 'triangle', f0: 120, f1: 40, glide: 0.45, peak: 0.3 * k, a: 0.004, dur: 0.7 })];
+    // Each mesa wall answers later, wider and darker.
+    MESAS.forEach(([dt, pan, lv], i) => srcs.push(burst(ac, o, t + dt, { dur: 0.9 + 0.4 * i, rate: 0.45, type: 'lowpass', f: 1100 / (1 + 0.6 * i), f1: 110, q: 0.6, peak: lv * k, a: 0.03 + 0.04 * i, pan }).src));
+    srcs.push(...roll(ac, o, t + 0.3, 10, 0.3 * k, 170));
+    return { srcs, end: t + 10.5 };
+  },
+  // Coil: a hard electric crack, a ringing barrel, the slug's supersonic snap.
+  coil(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The crack: a bright tear of noise, then a sizzle that falls.
+    srcs.push(burst(ac, o, t, { dur: 0.05, rate: 1.5, type: 'highpass', f: 2200, peak: 0.9 * k, a: 0.0008 }).src,
+      burst(ac, o, t, { dur: 0.35, rate: 1.2, f: 6000, f1: 1500, q: 1.2, peak: 0.25 * k, a: 0.002 }).src);
+    // The discharge: a saw falls from a shriek to a growl.
+    const lp = filt(ac, 'lowpass', 5000, 0.7);
+    lp.connect(o);
+    srcs.push(blip(ac, lp, t, { type: 'sawtooth', f0: 2600, f1: 70, glide: 0.2, peak: 0.16 * k, a: 0.001, dur: 0.32 }),
+      blip(ac, o, t, { f0: 62, f1: 30, glide: 0.5, peak: 0.75 * k, a: 0.006, dur: 0.7 }));
+    // The barrel rings: struck-bar partials, each a beating pair.
+    const ring = ac.createGain(), f = 360 * jit(0.03);
+    ring.connect(o);
+    echo(ac, ring, 0.45, 7000, shotSend(ac));
+    for (const [r, lv, d] of [[1, 0.22, 3.4], [2.76, 0.15, 2.5], [5.4, 0.1, 1.7], [8.93, 0.06, 1.1]]) {
+      for (const det of [-0.6, 0.6]) srcs.push(blip(ac, ring, t + 0.002, { f0: f * r + det, peak: lv * k, a: 0.002, dur: d }));
+    }
+    // The snap: the slug's N-wave, then its flutter off the plain.
+    const hp = filt(ac, 'highpass', 180, 0.7), nw = bake(ac).nwave;
+    hp.connect(o);
+    for (const [dt, lv] of [[0.09, 0.9], [0.13, 0.35], [0.21, 0.2], [0.34, 0.1]]) {
+      const s = ac.createBufferSource(), g = ac.createGain();
+      s.buffer = nw; g.gain.value = lv * k;
+      s.connect(g).connect(hp); s.start(t + dt); srcs.push(s);
+    }
+    return { srcs, end: t + 3.6 };
+  },
+  // Thump: a heavy knock, a pressure whoomp, then debris rattling down.
+  thump(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The knock: a dull burst and a deep falling tone.
+    srcs.push(burst(ac, o, t, { dur: 0.14, rate: 0.7, type: 'lowpass', f: 600, f1: 140, peak: 0.9 * k, a: 0.002 }).src,
+      blip(ac, o, t, { f0: 78, f1: 27, glide: 0.4, peak: 1.0 * k, a: 0.004, dur: 1.0 }));
+    // The whoomp: low air pushed out; a resonant filter opens and shuts.
+    const n = hiss(ac, t, 1.6, 0.4), lp = filt(ac, 'lowpass', 90, 3), g = ac.createGain();
+    lp.frequency.setValueAtTime(90, t); lp.frequency.exponentialRampToValueAtTime(750, t + 0.16); lp.frequency.exponentialRampToValueAtTime(100, t + 1.1);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8 * k, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    n.connect(lp).connect(g).connect(o);
+    echo(ac, g, 0.45, 900, shotSend(ac));
+    srcs.push(n, blip(ac, o, t + 0.04, { f0: 24, f1: 19, glide: 1.2, peak: 0.55 * k, a: 0.12, dur: 1.5 }));
+    // Debris: grit and stones rattle off the gun for three seconds.
+    const r = ac.createBufferSource(), hp = filt(ac, 'highpass', 350, 0.7), rg = ac.createGain();
+    r.buffer = bake(ac).rattle; r.playbackRate.value = jit(0.08); rg.gain.value = 0.6 * k;
+    r.connect(hp).connect(rg).connect(o);
+    echo(ac, rg, 0.2, 5000, shotSend(ac));
+    r.start(t + 0.18); srcs.push(r);
+    return { srcs, end: t + 4 };
+  },
+};
+/* ---------- the hit ---------- */
+// The prelude: the whoosh swells and brightens into the hit.
+// A short hush before the peak makes the hit land harder.
+function impactSound(ac, buf, hit, k, tag = null) {
+  const rate = jit(0.03), start = hit - IMPACT_AT / rate, t = Math.max(ac.currentTime, start);
+  const bus = blastBus(ac), src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 700, 0.9), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = rate;
+  // The shot's tail and its echoes dip 20 dB before the swell.
+  // The swell then climbs out of a quiet sky.
+  shotDuck(ac, 0.1, Math.max(ac.currentTime, t - 1.6), 0.45);
+  // The swell climbs 18 dB up the whoosh; the filter opens with it.
+  const lvl = 0.55 * k * jit(0.08);
+  g.gain.setValueAtTime(lvl * 0.12, t); g.gain.exponentialRampToValueAtTime(lvl, hit - 0.1);
+  g.gain.linearRampToValueAtTime(lvl * 0.3, hit - 0.02); g.gain.linearRampToValueAtTime(lvl * 1.2, hit + 0.004);
+  lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(14000, hit);
+  src.connect(lp).connect(g).connect(bus);
+  echo(ac, g, 0.3);
+  src.start(t, (t - start) * rate);
+  // The riser: noise climbs in pitch, and a sub tone climbs under it.
+  const r0 = Math.min(t + 0.1, hit - 0.3), n = hiss(ac, r0, hit - r0, 1), bp = filt(ac, 'bandpass', 250, 1.4), ng = ac.createGain();
+  bp.frequency.setValueAtTime(250, r0); bp.frequency.exponentialRampToValueAtTime(4200, hit - 0.02);
+  ng.gain.setValueAtTime(0.0001, r0); ng.gain.exponentialRampToValueAtTime(0.14 * k, hit - 0.06); ng.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  n.connect(bp).connect(ng).connect(bus);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(30, r0); o.frequency.exponentialRampToValueAtTime(85, hit - 0.02);
+  og.gain.setValueAtTime(0.0001, r0); og.gain.exponentialRampToValueAtTime(0.3 * k, hit - 0.06); og.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  o.connect(og).connect(bus); o.start(r0); o.stop(hit);
+  // The strike on the flash: a hard crack over a low knock.
+  (tag ? trackS : track)(hit + (buf.duration - IMPACT_AT) / rate + 0.1, src, n, o,
+    burst(ac, bus, hit, { dur: 0.08, rate: 1.4, type: 'highpass', f: 1600, peak: 0.5 * k, a: 0.001 }).src,
+    blip(ac, bus, hit, { f0: 95, f1: 34, glide: 0.5, peak: 0.6 * k, a: 0.003, dur: 0.8 }));
 }
 // Salvo sound counts, for QA.
 const sfxN = { round: 0, crater: 0, hunt: 0 };
@@ -7143,40 +7609,145 @@ function farHit(ac, P, crackK, thudK, ring = 0) {
 function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.8, 0.9); }
 function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 1.2, 0.5, 8); }
 // The impact's prelude lands on the flash.
-// The boom crosses the distance at sound speed, compressed eight times.
+// The boom crosses the distance at sound speed, compressed 28 times.
 function hitSounds(ac, sh, alive = () => shot === sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
   // Compressed 28 times: the boom lands about 5 s after the flash.
   const late = camera.position.distanceTo(sh.target) / 343 / 28;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
+  blastBus(ac);
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (!alive() || !kit.live()) return;
-    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25, sh.tag); }
-    // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, sh.tag); }
+    if (imp) { sh.sfx.impact = hit - IMPACT_AT; impactSound(ac, imp, hit, k, sh.tag); }
+    sh.sfx.boom = hit + late;
+    boomSound(ac, boom, sh.sfx.boom, k, sh.tag);
   });
+}
+// The boom: Tom's far boom at half speed, an octave down, about 45 s long.
+// Under it: a sub swell and a rolling tail.
+// Without the file the synth body plays alone.
+function boomSound(ac, buf, t, k, tag = null) {
+  const bus = blastBus(ac), srcs = [];
+  if (buf) playSample(ac, buf, t, 1.5 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, bus, tag);
+  // The sub swell: two low tones beat slowly and sink as they fade.
+  for (const [f, lv] of [[31, 0.22], [43, 0.12]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(f * jit(0.04), t); o.frequency.exponentialRampToValueAtTime(f * 0.75, t + 16);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv * k, t + 1.8); g.gain.setTargetAtTime(0.0001, t + 3.5, 4.5);
+    o.connect(g).connect(bus); o.start(t); o.stop(t + 28); srcs.push(o);
+  }
+  // The rolling tail: low noise rolls on across the plain.
+  srcs.push(...roll(ac, bus, t + 0.4, 28, 0.22 * k, 200));
+  (tag ? trackS : track)(t + 30, ...srcs);
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
+// It plays only when the hit's sounds were not scheduled.
 function rumble(c) {
   const ac = kit.live();
   if (!ac) return;
-  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble;
+  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble, bus = blastBus(ac);
   const s = hiss(ac, t, 7, 0.3), lp = filt(ac, 'lowpass', 180), g = ac.createGain();
   const lvl = 0.25 * (0.5 + 0.5 * c) * k * jit(0.1);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.6); g.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  s.connect(lp).connect(g).connect(kit.out);
+  s.connect(lp).connect(g).connect(bus);
   const o = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 30 * jit(0.05);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 0.6); og.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
+  o.connect(og).connect(bus); o.start(t); o.stop(t + 7);
   track(t + 7.5, s, o);
+}
+/* ---------- the traverse motor ---------- */
+// A hydraulic pump whines with the slew speed; gears chatter under it.
+// A clunk marks each start and each stop.
+let motor = null, clunks = 0;
+// This slew speed, in radians a second, runs the motor flat out.
+const SLEW_TOP = rad(6);
+function motorStart(ac) {
+  const g = ac.createGain(), am = ac.createGain(), lp = filt(ac, 'lowpass', 700, 0.9), bp = filt(ac, 'bandpass', 900, 5);
+  g.gain.value = 0; am.gain.value = 0.75;
+  // The pump: a low saw, darkened, for the hydraulic drone.
+  const pump = ac.createOscillator();
+  pump.type = 'sawtooth'; pump.frequency.value = 34;
+  pump.connect(lp).connect(am);
+  // The gear whine: a square through a narrow band.
+  const gear = ac.createOscillator(), gg = ac.createGain();
+  gear.type = 'square'; gear.frequency.value = 220; gg.gain.value = 0.15;
+  gear.connect(bp).connect(gg).connect(am);
+  // The flow: oil hisses through the valves.
+  const flow = ac.createBufferSource(), fb = filt(ac, 'bandpass', 1500, 1.2), fg = ac.createGain();
+  flow.buffer = kit.noise; flow.loop = true; fg.gain.value = 0.1;
+  flow.connect(fb).connect(fg).connect(am);
+  // The chatter: gear teeth beat the level at the mesh rate.
+  const chat = ac.createOscillator(), cg = ac.createGain();
+  chat.frequency.value = 8; cg.gain.value = 0.25;
+  chat.connect(cg).connect(am.gain);
+  am.connect(g).connect(kit.out);
+  const srcs = [pump, gear, flow, chat];
+  for (const s of srcs) s.start();
+  motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0, next: 0, n: 0 };
+}
+// The traverse sound is off for now (Tom, 2026-11-12).
+const MOTOR_ON = false;
+// The frame loop feeds the motor the gun's slew speed.
+function motorUpdate() {
+  if (!MOTOR_ON) return;
+  const s = clamp(Math.hypot(aimNow.vy, aimNow.ve) / SLEW_TOP, 0, 1), ac = kit.live();
+  if (!ac) { motorStop(true); return; }
+  if (!motor) { if (s < 0.1) return; motorStart(ac); }
+  const m = motor, t = ac.currentTime;
+  // Two thresholds keep a slow settle from clunking twice.
+  if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); m.next = t + 0.12; }
+  else if (m.on && s < 0.025) { m.on = false; clunk(ac, 0.7); m.off = setTimeout(() => { if (motor === m && !m.on) motorStop(); }, 1500); }
+  // The teeth clank in a rhythm: 1.5 a second at a crawl, 7 flat out.
+  // Each clank is scheduled ahead, so the rhythm holds between frames.
+  if (m.on) while (m.next < t + 0.12) { clank(ac, Math.max(t, m.next), m.n++ % 2, s); m.next += 1 / (1.5 + 5.5 * s); }
+  if (m.quiet) return;
+  m.quiet = !m.on;
+  const v = m.on ? s : 0;
+  m.pump.frequency.setTargetAtTime(34 + 60 * v, t, 0.12);
+  m.gear.frequency.setTargetAtTime(220 + 520 * v, t, 0.12);
+  m.bp.frequency.setTargetAtTime(700 + 1400 * v, t, 0.12);
+  m.chat.frequency.setTargetAtTime(8 + 34 * v, t, 0.12);
+  m.fg.gain.setTargetAtTime(0.1 + 0.4 * v, t, 0.1);
+  // The bed sits low; the clanks carry the motion.
+  m.g.gain.setTargetAtTime(m.on ? 0.018 + 0.04 * Math.sqrt(s) : 0, t, m.on ? 0.06 : 0.1);
+}
+// A metal clank: a gear tooth strikes; tick and tock alternate in pitch.
+// Inharmonic partials ring short, over a click of bright noise.
+function clank(ac, t, tock, s) {
+  const o = kit.out, f = (tock ? 470 : 610) * jit(0.03), k = 1.4 * (0.6 + 0.4 * s) * jit(0.15), lp = filt(ac, 'lowpass', 5200, 0.7);
+  lp.connect(o);
+  track(t + 0.4,
+    ...[[1, 0.03, 0.22], [2.63, 0.018, 0.14], [4.95, 0.01, 0.08]].map(([r, lv, d]) => blip(ac, lp, t, { f0: f * r, peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, lp, t, { dur: 0.025, rate: 1.2, f: 3200, q: 1.2, peak: 0.025 * k, a: 0.0008 }).src);
+}
+// now: a hard stop for mute and a hidden tab; else a short fade.
+function motorStop(now = false) {
+  if (!motor) return;
+  const m = motor, ac = kit.ac;
+  motor = null;
+  clearTimeout(m.off);
+  if (now || !ac || ac.state !== 'running') { for (const s of m.srcs) { try { s.stop(); s.disconnect(); } catch { /* gone */ } } m.g.disconnect(); return; }
+  const t = ac.currentTime;
+  m.g.gain.setTargetAtTime(0, t, 0.03);
+  for (const s of m.srcs) s.stop(t + 0.2);
+  track(t + 0.25, ...m.srcs);
+}
+// A clunk: a low knock, a short tick, a brief metal ring.
+function clunk(ac, k) {
+  const t = ac.currentTime, o = kit.out;
+  clunks++;
+  track(t + 0.5,
+    blip(ac, o, t, { f0: 130, f1: 52, glide: 0.12, peak: 0.3 * k, a: 0.002, dur: 0.24 }),
+    burst(ac, o, t, { dur: 0.05, rate: 0.8, f: 1300, q: 1.5, peak: 0.14 * k, a: 0.001 }).src,
+    blip(ac, o, t + 0.004, { f0: 780 * jit(0.05), peak: 0.03 * k, a: 0.002, dur: 0.4 }));
 }
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
 sound.onChange(on => {
-  if (!on) { stopAll(); humStop(kit.ac); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  if (!on) { stopAll(); humStop(kit.ac); motorStop(true); surgeOverStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
 });
 
@@ -7306,7 +7877,12 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, salvoPend: [...pend].filter(h => h.tag === 'salvo').length, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, salvoPend: [...pend].filter(h => h.tag === 'salvo').length, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix, chargeMix, layers: (hum?.surge || (hum?.stack && hum))?.voices.filter(v => v.vg.gain.value > 0.005).length ?? null }),
+  // Drive the game-over surge by hand: d is { u, vol, over } or null.
+  surgeOver(d) { surgeOver(kit.live(), d); },
+  surgeLive: () => (goSurge ? { locked: goSurge.locked, layers: goSurge.voices.filter(v => v.vg.gain.value > 0.005).length } : null),
+  // Play one shot take now, at charge c.
+  take(name, c = 1) { const ac = kit.live(); if (ac) playShot(ac, ac.currentTime + 0.05, Math.min(c, 1.25), name); },
   mute(on) { sound.set(!on); },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
@@ -7350,6 +7926,7 @@ prewarmEmbers();
 setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
+shotMix = ui.setting('shotmix').value;
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
