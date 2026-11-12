@@ -20,7 +20,7 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Charge: arcs pick the flank that faces the eye; they step 12 m toward the eye, so the barrel skin never hides them
 - [x] Charge: crown arcs bow up into the sky; corona streamers reach off the brake
 - [x] Charge: coil-stage hoops tried, then removed at Tom's call; the arcs carry the build again
-- [x] Charge: field motes on Galaxy's dot look spiral in to the barrel and stream to the muzzle; the shot flings them
+- [x] Charge: field motes on Galaxy's dot look; CPU orbits round the barrel as a line mass (1/r pull, drag, a pull toward the muzzle); the shot hurls them
 - [x] Charge dust: a spiral inflow; the sheet reaches out to about 1.5 km
 - [x] Impact: two or three late bursts in the cloud (flash, sparks, light flicker, a thud each)
 - [x] Impact: burning fragments rain from the cloud's underside for about 12 s
