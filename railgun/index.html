@@ -1182,6 +1182,9 @@ const heaps = cloudLayer([
   [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0],
   [37, 38000, 1650, 4400, 2600, 0], [43, 32000, 1500, 2300, 1400, 0],
   [50, 14500, 1200, 800, 600, 0], [58, 35000, 1550, 3000, 1800, 0], [63, 29000, 1450, 1800, 1100, 0],
+  // Nearer the eye, between the far clusters.
+  [-13, 22000, 1400, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
+  [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 1450, 2100, 1300, 0],
 ], 2.2);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
@@ -2761,6 +2764,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uVeil: { value: 0 }, uZoom: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // Light shafts from the blast: its place on screen, strength, sky fill.
+      uGod: { value: new THREE.Vector4(0.5, 0.5, 0, 0) }, uGodC: { value: new THREE.Vector3(...linFit(0.9, 0.11, 70)) },
       uBox: { value: 0 },
       // Shock refraction: screen centre, radius and strength, two fronts.
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
@@ -2781,7 +2786,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec2 uRes;
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
-    uniform vec3 uLF, uLF2;
+    uniform vec3 uLF, uLF2, uGodC;
+    uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
     uniform float uVeil, uZoom;
     uniform float uSight;
@@ -2847,6 +2853,21 @@ function makeGrade({ tint, vig, vigIn, grain }) {
         vec3 b = vec3(0.0);
         for (int k = 0; k < 8; k++) { float a = float(k) * 0.785398; b += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * px).rgb; }
         c0 = mix(c0, b / 8.0, min(uSoft, 1.0));
+      }
+      if (uGod.z > 0.002) {
+        // Shafts from the blast's core: only its hottest pixels feed them.
+        // Cloud and smoke in front block the samples and cut dark shafts.
+        vec2 dl = (uGod.xy - uv) / 28.0, sp = uv;
+        float acc = 0.0, wt = 1.0;
+        for (int k = 0; k < 28; k++) {
+          sp += dl;
+          float lum = dot(texture2D(tDiffuse, sp).rgb, vec3(0.3, 0.59, 0.11));
+          acc += max(lum - 3.0, 0.0) * wt;
+          wt *= 0.965;
+        }
+        c0 += uGodC * (acc / 28.0) * uGod.z;
+        // The whole sky fills a little with the flash.
+        c0 += uGodC * 0.05 * uGod.w;
       }
       vec3 c = c0 * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The muzzle flash: a long level blue-white streak.
@@ -5721,7 +5742,7 @@ function updateBolt() {
     }
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(hitGlow, MUZZLE, 1, 0);
-    flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; return; }
+    flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; grade.uniforms.uGod.value.z = grade.uniforms.uGod.value.w = 0; return; }
   const age = simT - shot.t0, c = shot.c;
   const live = age < shot.hitT + 0.3;
   bolt.visible = live;
@@ -5787,6 +5808,9 @@ function updateBolt() {
   bq.copy(shot.target).project(camera);
   const lfOn = hk > 0 && bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4;
   grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
+  // God rays from the core for the hot flash, a few seconds; the sky fills with them.
+  const gk = lfOn && !sight && ha > 0 ? (reduced() ? 0.4 : 1) * hk * (1.4 * Math.exp(-ha / 0.7) + 0.35 * Math.exp(-ha / 3)) : 0;
+  grade.uniforms.uGod.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, gk, gk);
 }
 
 /* ---------- reset: a short rewind into a white fill ---------- */
