@@ -92,7 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE } from './ship.js';
+import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE, VACUUM } from './ship.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -1955,9 +1955,11 @@ function buildHulk(id) {
 // The gun's flat faces, lit by sunlight above the air.
 // uWound.x: the wound's joint, in hull units.
 // uWound.y: the bend in radians; uWound.z: the smoulder, 0 to 1.
-// uEntry waits for the fall.
+// uEntry.xyz: the hulk's heading in the world.
+// uEntry.w: the hulk's entry, 0 to 1.
+// Each hulk's material owns uEntry and uLit and shares the rest.
 const shipMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uWound: { value: new THREE.Vector4(0, 0, 0, 0) }, uEntry: { value: 0 }, uLit: { value: 1 } },
+  uniforms: { ...U, uWound: { value: new THREE.Vector4(0, 0, 0, 0) }, uEntry: { value: new THREE.Vector4(0, 0, 0, 0) }, uLit: { value: 1 } },
   vertexShader: /* glsl */`
   attribute vec3 aHull; attribute vec4 aShip; attribute float aTop;
   uniform vec4 uWound;
@@ -1978,8 +1980,8 @@ const shipMat = new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`
   varying vec3 vP, vH; varying vec4 vS; varying float vTop;
-  uniform vec4 uWound;
-  uniform float uEntry, uLit;
+  uniform vec4 uWound, uEntry;
+  uniform float uLit, uTime;
   ${HEAD}
   ${AIR}
   ${SEAM}
@@ -2021,6 +2023,12 @@ const shipMat = new THREE.ShaderMaterial({
     // The wound's joint smoulders dull red in patches.
     float sm = uWound.z * (1.0 - smoothstep(30.0, 200.0, abs(vH.x - uWound.x)));
     col += vec3(0.9, 0.09, 0.02) * 1.5 * sm * (0.15 + 0.85 * smoothstep(0.3, 0.7, k3fbm(vH * 0.008)));
+    // In the air, plasma lights the face that leads the fall.
+    if (uEntry.w > 0.0) {
+      float lead = max(dot(N, uEntry.xyz), 0.0);
+      float pl = uEntry.w * lead * lead * (0.6 + 0.8 * k3fbm(vH * 0.004 + vec3(0.0, 0.0, uTime * 0.9)));
+      col += mix(vec3(1.0, 0.3, 0.05), vec3(1.6, 1.15, 0.75), smoothstep(0.55, 0.95, lead)) * 4.0 * pl;
+    }
     // A high sun's bright sky washes the ship toward a ghost.
     vec3 dir = normalize(vP - cameraPosition);
     float day = smoothstep(0.2, 0.8, uSunD.y);
@@ -2030,8 +2038,11 @@ const shipMat = new THREE.ShaderMaterial({
     float cs = dot(dir, uSunD);
     vec3 w0 = wisps(dir, vec3(0.0), cs);
     float a = clamp(1.0 - (wisps(dir, vec3(1.0), cs).g - w0.g), 0.0, 1.0);
+    vec3 wc = w0 / max(a, 1e-3);
+    // A hulk under the cirrus has no ice in front of it.
+    a *= smoothstep(8000.0, 10000.0, vP.y);
     // Over the dark hull a thin streak still reads as in front.
-    gl_FragColor = vec4(col * (1.0 - min(1.0, 1.35 * a)) + w0 / max(a, 1e-3) * min(1.0, 1.35 * a), 1.0);
+    gl_FragColor = vec4(col * (1.0 - min(1.0, 1.35 * a)) + wc * min(1.0, 1.35 * a), 1.0);
   }`,
 });
 const shipMeshes = HULL.sections.map(sec => {
@@ -2040,9 +2051,14 @@ const shipMeshes = HULL.sections.map(sec => {
   const c = g.boundingBox.getCenter(new THREE.Vector3());
   g.translate(-c.x, -c.y, -c.z);
   g.computeBoundingSphere();
-  const m = new THREE.Mesh(g, shipMat);
+  const mat = new THREE.ShaderMaterial({ uniforms: { ...shipMat.uniforms, uEntry: { value: new THREE.Vector4() }, uLit: { value: 1 } }, vertexShader: shipMat.vertexShader, fragmentShader: shipMat.fragmentShader });
+  const m = new THREE.Mesh(g, mat);
   m.scale.setScalar(SHIP_SCALE);
-  m.userData = { id: sec.id, c };
+  // Cracks: the hulk's broken joints, in the hull frame.
+  // The tower breaks at its foot on the mid deck.
+  const cracks = HULL.joints.filter(j => j === sec.x0 || j === sec.x1).map(j => new THREE.Vector3(j, 0, 0));
+  if (!cracks.length) cracks.push(new THREE.Vector3((sec.x0 + sec.x1) / 2, 630, 0));
+  m.userData = { id: sec.id, c, cracks };
   m.visible = false;
   scene.add(m);
   return m;
@@ -2097,29 +2113,119 @@ function shipAim(t, out) {
   shipPose(t, out, aimQ, aimF);
   return out.add(aimV.copy(SHIP_MID).multiplyScalar(SHIP_SCALE).applyQuaternion(aimQ));
 }
-const hulkV = new THREE.Vector3(), hulkQ = new THREE.Quaternion();
-// How far hulk i has drifted off its joint, in metres.
+const hulkQ = new THREE.Quaternion(), hulkPP = new THREE.Vector3(), hulkPF = new THREE.Vector3(), hulkPQ = new THREE.Quaternion(), hulkS = new THREE.Vector3();
+// How far hulk i has drifted off its joint at time t, in metres.
 // The joint's kick throws it out; then it coasts.
-function hulkDrift(i) {
+function hulkDrift(i, t) {
   const h = ship.hulks[i], go = ship.go && ship.go[i];
-  if (!go || h.breakAt === null || simT <= h.breakAt) return 0;
-  const age = simT - h.breakAt;
+  if (!go || h.breakAt === null || t <= h.breakAt) return 0;
+  const age = t - h.breakAt;
   return go.pop * (1 - Math.exp(-age / 0.7)) + go.v * age;
+}
+// Bearing 0 looks down the landscape lens.
+// A plus bearing turns right, so the prow falls left.
+const SITE_YAW = rad(24.5);
+// Hulk i's impact site on the plain, about the landscape eye.
+function hulkSite(i, out) {
+  const h = ship.hulks[i], th = SITE_YAW - h.bearing;
+  return out.set(1670 - Math.sin(th) * h.dist, 0, 1990 - Math.cos(th) * h.dist);
+}
+// The ground track leads the drop: the hulk keeps some orbit speed.
+const GLIDE = 0.3;
+// Hulk i's centre at time t.
+// It drifts off its joint, then falls to its site, eased by f.
+// It reads only the clock: a jump gives the same pose.
+function hulkPos(i, t, out) {
+  const h = ship.hulks[i], go = ship.go && ship.go[i];
+  shipPose(t, hulkPP, hulkPQ, hulkPF);
+  out.copy(shipMeshes[i].userData.c).multiplyScalar(SHIP_SCALE);
+  if (go) out.addScaledVector(go.dir, hulkDrift(i, t));
+  out.applyQuaternion(hulkPQ).add(hulkPP);
+  if (h.breakAt === null || t <= h.breakAt) return out;
+  const f = hulkAt(h, t - h.breakAt).f, g = f + GLIDE * (Math.sqrt(f) - f);
+  hulkSite(i, hulkS);
+  out.x += (hulkS.x - out.x) * g;
+  out.z += (hulkS.z - out.z) * g;
+  out.y += (hulkS.y - out.y) * f;
+  return out;
+}
+// Hulk i's turn at time t: the ship's turn, then its tumble.
+// Reduced motion keeps the ship's turn.
+function hulkTurn(i, t, out) {
+  const h = ship.hulks[i], go = ship.go && ship.go[i];
+  shipPose(t, hulkPP, out, hulkPF);
+  if (go && h.breakAt !== null && t > h.breakAt && !reduced()) out.multiply(hulkQ.setFromAxisAngle(go.axis, hulkAt(h, t - h.breakAt).tumble));
+  return out;
+}
+const hulkH = new THREE.Vector3();
+// Hulk i's heading at time t, a unit vector.
+function hulkHead(i, t, out) {
+  hulkPos(i, t, out);
+  return out.sub(hulkPos(i, t - 0.25, hulkH)).normalize();
+}
+// Each hulk's streak: a raymarched train, and a cheap ribbon for prow and tower.
+// cheap is true while the ribbon stands in for the train.
+const shipTrains = [];
+// The streak runs back to the entry point, 60 km at most.
+const STREAK_MAX = 60000;
+// A streak's head radius, as a share of its hulk's bounding radius.
+const STREAK_R = 0.5;
+const trA = new THREE.Vector3(), trE = new THREE.Vector3();
+// Point hulk i's streak.
+// a is the hulk's hulkAt state, or null before the break.
+function placeTrain(i, a) {
+  const tr = shipTrains[i];
+  if (!tr) return;
+  const h = ship.hulks[i], m = shipMeshes[i], on = a && !a.landed ? a.entry : 0;
+  // Rungs 2 and 3 give the prow and the tower a ribbon.
+  tr.cheap = !!tr.rib && rung >= 2;
+  tr.m.visible = on > 0.01 && !tr.cheap;
+  if (tr.rib) tr.rib.visible = on > 0.01 && tr.cheap;
+  if (on <= 0.01) return;
+  const age = simT - h.breakAt, R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
+  // The tail follows the last few seconds of the fall.
+  hulkPos(i, simT - clamp(age - VACUUM, 0.25, 8), trA).sub(m.position).normalize();
+  const len = Math.min(STREAK_MAX, m.position.distanceTo(hulkPos(i, h.breakAt + VACUUM, trE))) + R;
+  if (tr.cheap) {
+    const u = tr.rib.material.uniforms;
+    u.uP.value.copy(m.position); u.uAway.value.copy(trA);
+    u.uSide.value.set(0, 1, 0).cross(trA);
+    if (u.uSide.value.lengthSq() < 1e-6) u.uSide.value.set(1, 0, 0);
+    u.uSide.value.normalize();
+    u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on;
+    u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
+    return;
+  }
+  const u = tr.pu;
+  u.uAstP.value.copy(m.position); u.uAway.value.copy(trA);
+  u.uSide.value.set(0, 1, 0).cross(trA).negate();
+  if (u.uSide.value.lengthSq() < 1e-6) u.uSide.value.set(1, 0, 0);
+  u.uSide.value.normalize();
+  u.uUpv.value.crossVectors(u.uSide.value, trA);
+  u.uAstRad.value = R; u.uLen.value = len; u.uTrail.value = on;
+  // The fire builds as the hulk speeds up.
+  u.uBurn.value = on * (0.5 + 0.5 * THREE.MathUtils.smoothstep(a.f, 0.05, 0.5));
+  // The smoke holds still in the world as the hulk runs on.
+  u.uFlow.value = len / (1.05 * R) + 0.012 * simT;
 }
 function placeShip() {
   shipPose(simT, shipP, shipQ, shipF);
+  const sunDeg = THREE.MathUtils.radToDeg(U.uSunE.value);
   shipMeshes.forEach((m, i) => {
-    const h = ship.hulks[i], go = ship.go && ship.go[i], age = h.breakAt === null ? -1 : simT - h.breakAt;
-    hulkV.copy(m.userData.c).multiplyScalar(SHIP_SCALE);
-    m.quaternion.copy(shipQ);
-    // A broken hulk drifts off its joint and tumbles slowly.
-    if (go && age > 0) {
-      hulkV.addScaledVector(go.dir, hulkDrift(i));
-      if (!reduced()) m.quaternion.multiply(hulkQ.setFromAxisAngle(go.axis, hulkAt(h, age).tumble));
-    }
-    m.position.copy(hulkV).applyQuaternion(shipQ).add(shipP);
+    const h = ship.hulks[i], a = h.breakAt !== null && simT > h.breakAt ? hulkAt(h, simT - h.breakAt) : null;
+    hulkPos(i, simT, m.position);
+    hulkTurn(i, simT, m.quaternion);
+    // A landed hulk hides.
+    m.visible = !(a && a.landed);
+    const u = m.material.uniforms;
+    // A falling hulk sinks into the earth's shadow.
+    u.uLit.value = sunlit(SHIP_ALT * (1 - (a ? a.f : 0)), sunDeg);
+    if (a && a.entry > 0) {
+      hulkHead(i, simT, trE);
+      u.uEntry.value.set(trE.x, trE.y, trE.z, a.entry);
+    } else u.uEntry.value.set(0, 0, 0, 0);
+    placeTrain(i, a);
   });
-  shipMat.uniforms.uLit.value = sunlit(SHIP_ALT, THREE.MathUtils.radToDeg(U.uSunE.value));
 }
 // A new ship starts its rise, head seconds in.
 function newShip(head = SHIP_HEAD) {
@@ -2128,7 +2234,10 @@ function newShip(head = SHIP_HEAD) {
   for (const m of shipMeshes) m.visible = true;
   placeShip();
 }
-function shipOff() { for (const m of shipMeshes) m.visible = false; }
+function shipOff() {
+  for (const m of shipMeshes) m.visible = false;
+  for (const t of shipTrains) { t.m.visible = false; if (t.rib) t.rib.visible = false; }
+}
 // The hull's angular length from the eye, in degrees.
 function shipTh() {
   if (tgtKind !== 'ship') return 0;
@@ -2503,6 +2612,25 @@ function makeFragTrail(own = false) {
   scene.add(m);
   return m;
 }
+// Each hulk's streak has its own uniforms.
+// It shares the rock train's noise, colours and step counts.
+// This block restores the seed, so the rock's draws do not change.
+{
+  const s0 = seed;
+  for (const sec of HULL.sections) {
+    const pu = {
+      uAstP: { value: new THREE.Vector3() }, uAstRad: { value: 1000 }, uAway: { value: new THREE.Vector3(0, 1, 0) }, uSide: { value: new THREE.Vector3(1, 0, 0) }, uUpv: { value: new THREE.Vector3(0, 0, 1) },
+      uBurn: { value: 0 }, uVol: PU.uVol, uLen: { value: 1000 }, uK: { value: 0.05 }, uTrail: { value: 0 }, uSolid: { value: 0 }, uFlow: { value: 0 },
+      uSteps: PU.uSteps, uLSteps: PU.uLSteps, uBreak: { value: 0 }, uEatK: { value: 0 }, uJoin: { value: 0 }, uCut: { value: 1e9 }, uDrift: { value: new THREE.Vector3() }, uX0: { value: 0 }, uSeg: { value: 0 }, uSwipe: { value: new THREE.Vector3() },
+      uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: PU.uSoot, uAsh: PU.uAsh,
+    };
+    const m = makeTrain(pu);
+    m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
+    scene.add(m);
+    shipTrains.push({ m, pu, rib: sec.id === 'prow' || sec.id === 'tower' ? makeFragTrail(true) : null, cheap: false });
+  }
+  seed = s0;
+}
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
 const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
 // Up to seven companions ride with the main rock.
@@ -2574,11 +2702,14 @@ function breakFrag(f) {
   }
 }
 // One glowing bit off the rock's hot face.
-let ablN = 0;
+let ablN = 0, shedN = 0;
 const shedP = new THREE.Vector3(), shedV = new THREE.Vector3();
 // age > 0 backdates a bit: it left the rock where the rock was then.
 const shedU = new THREE.Vector3();
-function shedSpark(age = 0) {
+// src: a falling hulk { pos, away, side, R, vel }.
+// A null src sheds from the rock.
+function shedSpark(age = 0, src = null) {
+  if (src) { shedHulk(src); return; }
   const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
   // They leave from anywhere across the rock's back, not from one spot.
   const th = rnd() * Math.PI * 2, rr = 1.05 * R * Math.sqrt(rnd());
@@ -2590,6 +2721,16 @@ function shedSpark(age = 0) {
   shedV.copy(ast.away).multiplyScalar(350 + rnd() * 300).addScaledVector(ast.side, (rnd() - 0.5) * 260).addScaledVector(shedU, (rnd() - 0.5) * 260);
   writeStar(shedP, simT - age, shedV, -0.008, 2, 38 + rnd() * 14, 1.2, 1.2 + rnd() * 0.8, 3, 0.22);
   ablN++;
+}
+// A burning piece leaves a hulk's back in the air.
+// Drag stops it, then it sinks back along the streak.
+function shedHulk(src) {
+  const th = rnd() * Math.PI * 2, rr = src.R * Math.sqrt(rnd());
+  shedU.crossVectors(src.away, src.side);
+  shedP.copy(src.pos).addScaledVector(src.away, 0.5 * src.R).addScaledVector(src.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr);
+  shedV.copy(src.vel).multiplyScalar(0.8).addScaledVector(src.side, (rnd() - 0.5) * 300).addScaledVector(shedU, (rnd() - 0.5) * 300);
+  writeStar(shedP, simT, shedV, 0.12, 2, 14 + rnd() * 8, 1.2, 2 + rnd(), 3, 0.5);
+  shedN++;
 }
 // A rock already in flight already has its trail of embers.
 function prewarmEmbers() { if (!reduced()) for (let i = 0; i < 150; i++) shedSpark(rnd() * 50); }
@@ -3580,7 +3721,8 @@ function aimAst() {
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   // In ship mode the hit's light comes from the ship.
   if (tgtKind === 'ship') { tmpA.subVectors(shipP, camera.position).normalize(); U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, U.uAst.value.w); }
-  U.uAstR.value = Math.atan(ast.R / dist);
+  // The ship's halo takes the ship's aim radius, not the parked rock's.
+  U.uAstR.value = tgtKind === 'ship' ? Math.atan(SHIP_AIM_R / shipP.distanceTo(camera.position)) : Math.atan(ast.R / dist);
   // The clouds take the rock's light, faint far out, strong near the end.
   const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
@@ -3723,6 +3865,7 @@ function updateWarp() {
 function stepAst(dt) {
   if (tgtKind === 'ship') stepShip(ship, simT);
   stepShipFx(dt);
+  stepHulks(dt);
   stepFrags();
   stepShards(dt);
   stepRain(dt);
@@ -5924,7 +6067,7 @@ function tgtLead(T, out) {
 // The target's radius, as the sight and the laser see it.
 function tgtR() { return tgtKind === 'rock' ? ast.R : SHIP_AIM_R; }
 // True while the target shows in the sky.
-function tgtShown() { return tgtKind === 'rock' ? astMesh.visible : shipMeshes[0].visible; }
+function tgtShown() { return tgtKind === 'rock' ? astMesh.visible : shipMeshes.some(m => m.visible); }
 // True while a bolt can hit the target.
 function tgtCanHit() {
   if (tgtKind === 'rock') return ast.state === 'approach' || ast.state === 'hold';
@@ -6171,6 +6314,48 @@ function shipBusy() {
   if (tgtKind !== 'ship') return false;
   if (ship.state === 'breakup' || ship.state === 'falling') return true;
   return !!ship.wound && simT - ship.wound.t0 < SMOULDER + 1;
+}
+// Sparks per second from each hulk's cracks in vacuum.
+const VENT_RATE = 6;
+// Burning pieces per second from each hulk in the air.
+const SHED_RATE = 0.8;
+let ventN = 0;
+const crackP = new THREE.Vector3(), crackB = new THREE.Vector3(), crackV = new THREE.Vector3(), crackQ = new THREE.Quaternion();
+const hulkSrc = { pos: new THREE.Vector3(), away: new THREE.Vector3(), side: new THREE.Vector3(), R: 0, vel: new THREE.Vector3() };
+// The hulks vent sparks in vacuum and shed burning pieces in the air.
+// The counts follow the sim step.
+// A long jump sends one short burst.
+function stepHulks(dt) {
+  if (tgtKind !== 'ship' || !ship.go || dt <= 0) return;
+  let wrote = false;
+  ship.hulks.forEach((h, i) => {
+    if (h.breakAt === null) return;
+    const age = simT - h.breakAt;
+    if (age <= 0 || age >= h.fallT) return;
+    const a = hulkAt(h, age), m = shipMeshes[i], src = hulkSrc;
+    hulkPos(i, simT, src.pos);
+    // The hulk's velocity, in metres per second.
+    src.vel.subVectors(src.pos, hulkPos(i, simT - 0.25, crackB)).multiplyScalar(4);
+    if (a.entry < 1) {
+      hulkTurn(i, simT, crackQ);
+      const cr = m.userData.cracks;
+      for (let n = Math.min(10, Math.floor(dt * VENT_RATE * (1 - a.entry) + rnd())); n > 0; n--) {
+        crackP.copy(cr[Math.floor(rnd() * cr.length)]).sub(m.userData.c).multiplyScalar(SHIP_SCALE).applyQuaternion(crackQ).add(src.pos);
+        rndDir(crackV).multiplyScalar(150 + 450 * rnd()).add(src.vel);
+        writeStar(crackP, simT, crackV, -0.03, 1, 0.5 + 0.9 * rnd(), 0.15, 1.2 + 0.8 * rnd(), 0, 0.8, 2);
+        ventN++; wrote = true;
+      }
+    }
+    if (a.entry > 0) {
+      src.away.copy(src.vel).negate().normalize();
+      src.side.set(0, 1, 0).cross(src.away);
+      if (src.side.lengthSq() < 1e-6) src.side.set(1, 0, 0);
+      src.side.normalize();
+      src.R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
+      for (let n = Math.min(4, Math.floor(dt * SHED_RATE * a.entry + rnd())); n > 0; n--) { shedSpark(0, src); wrote = true; }
+    }
+  });
+  if (wrote) commitStars();
 }
 function respawn() {
   // Each new rock turns a fresh face to the eye.
@@ -6682,7 +6867,7 @@ function pickLanding(out) {
   // This point sits in frame, 6.6 to 7.5 km out, at all three sizes.
   return out.set(600, 0, -4500);
 }
-function shipShotReady() { return tgtKind === 'ship' && ship.state === 'station'; }
+function shipShotReady() { return tgtKind === 'ship' && (ship.state === 'station' || ship.state === 'wounded'); }
 function shipShot() {
   if (!shipShotReady() || sshot) return;
   const from = shipBelly(new THREE.Vector3()), to = pickLanding(new THREE.Vector3());
@@ -7223,7 +7408,8 @@ function shotSound(ac, sh) {
 // The impact's prelude lands on the flash.
 // The boom crosses the distance at sound speed, compressed eight times.
 function hitSounds(ac, sh) {
-  if (!sh.canHit) return;
+  // A ship hit does not play the rock's samples.
+  if (!sh.canHit || sh.kind === 'ship') return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
   // Compressed 28 times: the boom lands about 5 s after the flash.
   const late = camera.position.distanceTo(sh.target) / 343 / 28;
@@ -7327,6 +7513,7 @@ window.__qa = {
   sun(v) { opts.sun = v; setSun(); },
   simT: () => simT,
   draws: () => drawN,
+  rung: () => rung,
   info: () => ({ ...renderer.info.render, programs: renderer.info.programs.length, ...renderer.info.memory }),
   size: v => { opts.size = v; retune(); },
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th) }),
@@ -7357,7 +7544,16 @@ window.__qa = {
     return { dist: sshot.to.distanceTo(camera.position), nx: q.x, ny: q.y, gun: Math.hypot(sshot.to.x, sshot.to.z) };
   },
   shipFireEnabled: () => !ui.setting('shipfire').disabled,
-  ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, bend: THREE.MathUtils.radToDeg(shipMat.uniforms.uWound.value.y), smoulder: shipMat.uniforms.uWound.value.z, arc: THREE.MathUtils.radToDeg(shipArc(simT)), part: ship.hulks.map((h, i) => hulkDrift(i)), breakAt: ship.hulks.map(h => h.breakAt), aim: shipAim(simT, new THREE.Vector3()).toArray(), alive: ship.hulks.filter(h => h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)) }),
+  ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, bend: THREE.MathUtils.radToDeg(shipMat.uniforms.uWound.value.y), smoulder: shipMat.uniforms.uWound.value.z, arc: THREE.MathUtils.radToDeg(shipArc(simT)), part: ship.hulks.map((h, i) => hulkDrift(i, simT)), breakAt: ship.hulks.map(h => h.breakAt), aim: shipAim(simT, new THREE.Vector3()).toArray(), alive: ship.hulks.filter(h => h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)),
+    uEntry: shipMeshes.map(m => m.material.uniforms.uEntry.value.w), f: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).f)),
+    fallT: ship.hulks.map(h => h.fallT), pos: shipMeshes.map(m => m.position.toArray()), vis: shipMeshes.map(m => m.visible),
+    tumble: shipMeshes.map(m => m.quaternion.angleTo(shipQ)), lit: shipMeshes.map(m => m.material.uniforms.uLit.value), halo: U.uAstR.value,
+    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value })),
+    steps: PU.uSteps.value, vent: ventN, shed: shedN }),
+  hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
+  hulkSite: i => hulkSite(i, new THREE.Vector3()).toArray(),
+  busy: () => busy(),
+  shipBusyQ: () => shipBusy(),
   // The ship's centre and its hull's screen bounds, in CSS pixels.
   shipScreen() {
     const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
