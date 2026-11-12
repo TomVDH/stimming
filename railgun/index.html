@@ -116,13 +116,13 @@ const opts = {
 // 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
 // The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
-// Surge is the default; an old Blend default moves to Expanse once.
+// Monolith Hum is the default; an old Blend default moves to Expanse once.
 let chargeMix = (() => {
   try {
     const K = 'stimming.railgun.chargemix';
     if (!localStorage.getItem(K + '.v2')) { if (localStorage.getItem(K) === 'blend') localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v2', '1'); }
-    return localStorage.getItem(K) || 'penta';
-  } catch { return 'penta'; }
+    return localStorage.getItem(K) || 'monohum';
+  } catch { return 'monohum'; }
 })();
 // The shot's sound: 'mesa', 'coil', 'thump' or 'report'.
 let shotMix = 'mesa';
@@ -136,7 +136,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }], onPick: v => { chargeMix = v; } },
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monohum', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
     // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
     { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
@@ -5914,6 +5914,8 @@ const MIX = {
   leviathan: { ...MIX0, stack: 'leviathan', verb: 0.5, pre: 0.07, dark: 3500 },
   eclipse: { ...MIX0, stack: 'eclipse', verb: 0.5, pre: 0.05, dark: 7000 },
   monolith: { ...MIX0, stack: 'monolith', verb: 0.45, pre: 0.06, dark: 5000 },
+  // Monolith Hum: the plain hum ramps up, then Monolith's swarm joins it.
+  monohum: { ...MIX0, surge: 'monohum', verb: 0.45, pre: 0.05, dark: 6000 },
 };
 // The plain: one convolver per context, built on first use.
 // Open flats have no room: a ground bounce, mesa echoes, a low roll.
@@ -5954,7 +5956,7 @@ function humStart(ac) {
   if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
   if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
-  if (P.stack) { stackStart(ac, P); return; }
+  if (P.stack) { hum = stackStart(ac, P); return; }
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
@@ -6027,6 +6029,12 @@ function humStart(ac) {
     vs.connect(dl).connect(dk).connect(plainVerb(ac));
   }
   hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
+  // A blend runs a surge swarm on top of the hum.
+  if (P.surge) {
+    const s = stackStart(ac, { ...P, stack: P.surge, verb: 0 });
+    hum.surge = s; src.push(...s.src);
+    if (vs) s.g.connect(vs);
+  }
 }
 // Semitones from the hum's root for a voice at power c.
 function voicePitch(v, c, t, P, wow) {
@@ -6044,7 +6052,7 @@ function voicePitch(v, c, t, P, wow) {
 }
 function humUpdate(ac) {
   if (!hum || !charge) return;
-  if (hum.stack) { stackUpdate(ac); return; }
+  if (hum.stack) { stackUpdate(ac, hum); return; }
   const P = hum.P, c = charge.c, t = ac.currentTime;
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
@@ -6057,7 +6065,9 @@ function humUpdate(ac) {
   hum.sub.frequency.setTargetAtTime(55 * Math.pow(2, c * 7 / 12) / 2, t, hg);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
+  // In a blend the hum steps back a little as the swarm arrives.
+  const duck = hum.surge ? 1 - 0.35 * THREE.MathUtils.smoothstep(c, 0.6, 1) : 1;
+  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum * duck, t, 0.05);
   // Bloom mixes drop the sub in hard at the lock.
   hum.sg.gain.setTargetAtTime(0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
@@ -6093,6 +6103,7 @@ function humUpdate(ac) {
   if (hum.bloom) hum.bloom.frequency.setTargetAtTime(380 * Math.pow(2, 4.3 * Math.max(THREE.MathUtils.smoothstep(u, 0.8, 1.0), over)), t, 0.15);
   // The echoes grow with the charge and swell at the lock.
   if (hum.vs) hum.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
+  if (hum.surge) stackUpdate(ac, hum.surge);
 }
 // The vent: the choir groans down two octaves and dies.
 function humGroan(ac) {
@@ -6101,8 +6112,9 @@ function humGroan(ac) {
   hum = null;
   // Plain mixes fall slower and roll on across the flats.
   const long = !!h.P.verb, fall = long ? 0.9 : 0.5, end = long ? 4.5 : 2.6;
-  for (const v of h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
+  for (const v of h.surge ? [...h.voices, ...h.surge.voices] : h.voices) for (const o of v.os) o.frequency.setTargetAtTime(o.frequency.value / 4, t, fall);
   h.cg.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
+  if (h.surge) h.surge.g.gain.setTargetAtTime(0, t + (long ? 0.6 : 0.3), fall);
   for (const n of [h.g, h.sg, h.ng]) n.gain.setTargetAtTime(0, t, 0.05);
   for (const n of h.src) n.stop(t + end);
   track(t + end + 0.1, ...h.src);
@@ -6112,7 +6124,7 @@ function humStop(ac, now = false) {
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
   if (!ac || now) { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
-  for (const n of [h.g, h.sg, h.ng, h.cg]) n.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.g, h.sg, h.ng, h.cg, h.surge?.g].filter(Boolean)) n.gain.setTargetAtTime(0, t, 0.03);
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
 }
@@ -6121,6 +6133,7 @@ function humStop(ac, now = false) {
 // On top, a swarm of saws glides from chaos into one massive chord.
 // Each profile: root (semitones from A1), chord tones per register,
 // pre (an optional chord held until the lock), wave, mechanical layers.
+// late and fade: a later swarm entry and a longer fade-in, for blends.
 // Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter).
 // Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
 const SURGE = {
@@ -6136,6 +6149,9 @@ const SURGE = {
   leviathan: { root: -5, wave: 'saw', mech: ['mains', 'ratchet', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 17, 22, 24, 27, 29, 32, 34], high: [36, 39, 41, 44, 46, 48] },
   // Eclipse: a whole-tone cloud that resolves to a major chord at the lock.
   eclipse: { root: 0, wave: 'brass', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 16, 19, 24, 28, 31, 36, 40], high: [43, 48, 52, 55, 60, 64], pre: { bass: [-12, 0, 0, 6], mid: [12, 14, 18, 20, 22, 26, 28, 30], high: [32, 34, 36, 38, 40, 42] } },
+  // Monolith Hum: the swarm alone, on E, where the hum's pitch lands.
+  // The hum carries the machines; the swarm enters late.
+  monohum: { root: 7, wave: 'saw', mech: [], sub: false, late: 0.3, fade: 0.18, bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
   // Monolith: octaves and fifths only, every machine running.
   monolith: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
 };
@@ -6169,8 +6185,9 @@ function stackStart(ac, P) {
     for (const [fr, d] of [[0.37, 0.3], [0.83, 0.15]]) osc('sine', fr, gain(gam.gain, d));
     h.gb = gb;
   }
-  // The sub: the root and the octave under it.
-  h.sg = gain(kit.out); osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5));
+  // The sub: the root and the octave under it; a blend leaves it to the hum.
+  h.sg = gain(kit.out);
+  if (S.sub !== false) { osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5)); }
   // The turbine: a saw and a band of noise throb faster and faster.
   // Its gain doubles as the rage noise the stop and the vent fade.
   h.ng = gain(cg);
@@ -6194,7 +6211,9 @@ function stackStart(ac, P) {
       pn.connect(h.sw);
       const vg = gain(pn), start = lo * Math.pow(hi / lo, Math.random());
       const os = [-7, 7].map(dt => osc(type, start, vg, dt));
-      h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: enter + 0.1 * i / tg.length, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
+      // late: the swarm's entries squeeze into the last part of the charge.
+      const e = enter + 0.1 * i / tg.length;
+      h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: S.late ? S.late + (1 - S.late) * e : e, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
     });
   }
   // The plain send takes the whole surge.
@@ -6204,10 +6223,10 @@ function stackStart(ac, P) {
     dl.delayTime.value = P.pre;
     g.connect(h.vs).connect(dl).connect(dk).connect(plainVerb(ac));
   }
-  hum = h;
+  return h;
 }
-function stackUpdate(ac) {
-  const h = hum, P = h.P, c = charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+function stackUpdate(ac, h = hum) {
+  const P = h.P, c = charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
   const locked = c >= 0.999 && over < 0.15;
   if (locked && !h.locked) h.lockAt = t;
   h.locked = locked; h.sour = over;
@@ -6244,7 +6263,7 @@ function stackUpdate(ac) {
   // The swarm: each voice wanders, then glides to its chord tone.
   // A pre chord holds until the lock, then resolves slowly.
   for (const v of h.voices) {
-    const k = ss(u, v.enter, v.enter + 0.08), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
+    const k = ss(u, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
     const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
     const fr = h.R * Math.pow(2, (q + over * v.sour * 0.6) / 12);
     for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
@@ -6850,7 +6869,7 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix, chargeMix, layers: hum?.stack ? hum.voices.filter(v => v.vg.gain.value > 0.005).length : null }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix, chargeMix, layers: (hum?.surge || (hum?.stack && hum))?.voices.filter(v => v.vg.gain.value > 0.005).length ?? null }),
   // Play one shot take now, at charge c.
   take(name, c = 1) { const ac = kit.live(); if (ac) playShot(ac, ac.currentTime + 0.05, Math.min(c, 1.25), name); },
   mute(on) { sound.set(!on); },

@@ -22,6 +22,7 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] Tom (2026-11-12): traverse at minimal volume with rhythmic metal clanks
 - [x] Tom (2026-11-12): traverse sound off for now (`MOTOR_ON = false`; the code stays)
 - [x] Tom (2026-11-12): five more surges: Colossus, Dirge, Leviathan, Eclipse, Monolith
+- [x] Tom (2026-11-12): Monolith Hum blend, now the default charge sound
 - [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
@@ -66,6 +67,15 @@ Tom (2026-11-12): the first stacks were too musical; he wants bombastic, mechani
 | Leviathan | stacked fourths on E, very low | saws | mains, a ratchet winding up 1 to 10 clanks a second, turbine |
 | Eclipse | a whole-tone cloud that resolves to A major at the lock | brass | mains, whine, turbine |
 | Monolith | octaves and fifths only | saws | mains, whine, grinding stone, turbine |
+
+### Monolith Hum (default)
+
+Tom (2026-11-12): Monolith is great; Hum has a good mechanical, energetic ramp with a ratcheting wobble. Blend them.
+
+- The classic Hum engine runs as before: partials enter with the chaos, the tremolo chases faster, the pitch climbs a fifth from A to E.
+- Monolith's swarm (octaves and fifths, `SURGE.monohum`) runs on top on E, where the hum lands. No extra machines and no extra sub.
+- The swarm enters late (`late: 0.3`, from about 0.52 of the charge) with a long fade (`fade: 0.18`); the hum steps back 35% over the last 40% of the charge.
+- Level: -46 dB RMS at the start (pure hum) to -13 dB at the lock; the hum alone ends near -20 dB.
 
 ## Notes
 
