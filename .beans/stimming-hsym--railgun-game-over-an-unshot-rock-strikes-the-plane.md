@@ -48,7 +48,7 @@ Columns: `u` = nearness to the ground; `t` = seconds after contact. `t4.2` and `
 
 ## Summary of Changes
 
-- `railgun/index.html`: the hold is gone; `stepAst` runs one speed to contact; new strike section (`contactS`, `startStrike`, `stepStrike`, `strikeHit`, `endStrike`, `updateStrike`). `humUpdate` takes a drive object, so the surge reuses the charge sound. The bow takes `uGrand`. Clouds take `uRockL`. `fire()` and the aim lead past the horizon line; a bolt landing after contact flies wide. `landReset` clears the strike and the old hit clock. Dev rows Fast rock and Strike test. QA hooks `strike()`, `strikeAt(u)`, `fast(on)`, `strikeState()`.
+- `railgun/index.html`: the hold is gone; `stepAst` runs one speed to contact; new strike section (`contactS`, `startStrike`, `stepStrike`, `strikeHit`, `endStrike`, `updateStrike`). `humUpdate` takes a drive object, so the surge reuses the charge sound. The bow takes `uGrand`. The strike boosts main's rock light on the clouds. `fire()` and the aim lead past the horizon line; a bolt landing after contact flies wide. `landReset` clears the strike and the old hit clock. Dev rows Fast rock and Strike test. QA hooks `strike()`, `strikeAt(u)`, `fast(on)`, `strikeState()`.
 - `docs/plans/railgun.md`: the Game over section.
 - QA (headless Edge): 12 runs, console clean; 30 fps through fall, burn and fresh start; the hidden tab freezes the fall and suspends the audio; reduced motion plays a gentler burn; a shot mid-strike shatters the rock.
-- The main session knows about `uRockL`: the clouds session edits `CLOUD_FS` too, so a small merge may follow.
+- Main landed its own rock light on the clouds (`uRockL`, `uRockR`, `rockGlowK`, stimming-wsjx). The merge keeps main's shader; the strike adds `1.5 u^2` to its strength in `aimAst`. The branch merges into main cleanly (merge 99a2198).
