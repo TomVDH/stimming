@@ -183,7 +183,7 @@ Tom asked for the ship in the toy's dev menu, and a test button that makes the s
 - Consumes: `shipAt` / `tgtPos` (Task 3); `puff`, `writeStar`, `flare`, `cam.shake`.
 - Produces:
   - `shared/stim.js`: a settings row `{ type: 'button', id, label, text, onClick }`. It draws a label and an `s2-chip` button and holds no value. Its handle is `{ value: null, set() {}, disabled }`.
-  - `railgun/index.html`: the Target row becomes `label: 'Target (dev)'`, beside `Rock (dev)`. A `{ type: 'button', id: 'shipfire', label: 'Ship fires (dev)', text: 'Fire' }` row follows it, enabled only while a ship holds station.
+  - `railgun/index.html`: the Target row sits in the bar spec's `dev: [...]` rows (the Dev sheet, shown with `?dev`) as `label: 'Target'`, beside `Rock`. A `{ type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire' }` dev row follows it. It is enabled only while a ship holds station.
   - `shipShot(): void` starts one round. `stepShipShot(dt)` advances it. `__qa.shipFire()` and `__qa.shipShot() → { state: 'idle' | 'flight' | 'boom', age, pos }`.
 
 - [ ] **Step 1: Write the QA check.**
