@@ -58,6 +58,30 @@ One shot at a time; a release during a live shot fades out. Changing Asteroid mi
 | Mountain | 1000 m | 300 s | 40 | 1.0 |
 | Moon | 1700 m | 380 s | 56 | 1.3 |
 
+### Game over (stimming-hsym)
+
+The rock never holds. It falls at one speed (`FALL / T` along its track) from first sight to the ground. Past the horizon line (`s = 1`) it is on its strike. Contact is at `s1`, where the rock's centre is half a radius over the curved ground (`contactS()`). `u = (s − 1) / (s1 − 1)` is the rock's nearness to the ground, 0 at the horizon line and 1 at contact.
+
+| Rock | Strike stretch `s1 − 1` | Strike time | Whole fall from a fresh start (`s = 0.25`) |
+|---|---|---|---|
+| Boulder | 0.31 | 67 s | 3 min 52 s |
+| Mountain | 0.29 | 86 s | 5 min 11 s |
+| Moon | 0.26 | 99 s | 6 min 24 s |
+| Aerosmith | 0.15 | 80 s | 7 min 50 s |
+
+The fair window is the whole fall. A kill takes about 22 s: ranging 1.75 s, full charge 8.6 s, the bolt 8.5 to 11.5 s. A bolt that would land after contact flies wide; any bolt that lands before contact saves the planet.
+
+| u, or time after contact | Event |
+|---|---|
+| 0 → 1 | The surge (the charge sound, fed by `u`) fades in over the first third and climbs; the hot face, the ground glow, the god rays, the rock's light on near clouds (`uRockL`) and the shake grow; the bow shock grows larger and wider, with a violet outer shell |
+| 0.55 → 1 | The anamorphic streak rides the rock's leading face down and grows |
+| contact | The blast at the ground point; the streak peaks; the surge screams on at full power |
+| 0 → 2.6 s | The frame burns to white (4.2 s with reduced motion) |
+| + 0.7 s | The white holds; the surge has died out |
+| then | Reset's fill: `landReset()` under the white, then the white burns off on a fresh rock |
+
+Dev rows (`?dev`): Fast rock runs the fall ten times faster; Strike test starts each rock at the horizon line.
+
 ## Bar
 
 | Control | Content |
