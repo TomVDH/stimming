@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>Railgun motes · WebGL2 vs WebGPU</title>
+<style>
+  :root { --bg: #07080c; --ink: #c8d0e0; --dim: #7a8296; --line: #1c1f28; --hi: oklch(0.86 0.09 230); }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .counts { display: flex; gap: 4px; flex-wrap: wrap; }
+  .counts button { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font: inherit; cursor: pointer; }
+  .counts button[aria-pressed="true"] { border-color: var(--hi); color: var(--hi); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; height: min(62vh, 560px); }
+  .pair figure { margin: 0; position: relative; }
+  .pair iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .pair figcaption { position: absolute; top: 8px; left: 10px; font-size: 12px; color: var(--dim); }
+  section { padding: 12px 16px 32px; max-width: 980px; }
+  table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  td.win { color: var(--hi); }
+  p { color: var(--dim); max-width: 70ch; }
+  @media (max-width: 700px) { .pair { grid-template-columns: 1fr; height: auto; } .pair figure { height: 40vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Railgun field motes · WebGL2 CPU step vs WebGPU compute</h1>
+  <div class="counts" role="group" aria-label="Mote count"></div>
+</header>
+<div class="pair">
+  <figure><iframe id="a" title="WebGL2, CPU step"></iframe><figcaption>three 0.170 · WebGL2 · CPU step · Points</figcaption></figure>
+  <figure><iframe id="b" title="WebGPU, compute"></iframe><figcaption>three 0.186.1 · WebGPU · TSL compute · sprites</figcaption></figure>
+</div>
+<section>
+  <p>Both panes run Railgun's mote rule at full charge: a softened 1/r pull to the barrel axis, drag, a drift to the muzzle, substeps of 1/60 s. Railgun ships 2,400 motes. Live panes share one GPU, so read the bench table, not the readouts.</p>
+  <table id="res"><thead><tr><th>Motes</th><th>WebGL2 CPU step</th><th>WebGPU compute</th><th>TSL on WebGL2 fallback</th></tr></thead><tbody></tbody></table>
+  <p id="meta"></p>
+</section>
+<script type="module">
+import { COUNTS } from './motes.js';
+
+const bar = document.querySelector('.counts');
+function pick(n) {
+  for (const b of bar.children) b.setAttribute('aria-pressed', String(+b.dataset.n === n));
+  document.getElementById('a').src = `gl.html?n=${n}`;
+  document.getElementById('b').src = `gpu.html?n=${n}`;
+}
+for (const n of COUNTS) {
+  const b = document.createElement('button');
+  b.dataset.n = n;
+  b.textContent = n >= 1e6 ? `${n / 1e6}M` : n >= 1000 ? `${n / 1000}k` : n;
+  b.onclick = () => pick(n);
+  bar.append(b);
+}
+pick(COUNTS[0]);
+
+// The bench table: ms a frame, median of nine 60-frame bursts.
+const r = await fetch('results.json').then(x => (x.ok ? x.json() : null)).catch(() => null);
+if (r) {
+  const by = {};
+  for (const row of r.rows) (by[row.n] ||= {})[row.variant] = row;
+  const cols = ['WebGL2 CPU step', 'WebGPU compute', 'TSL on WebGL2 fallback'];
+  const body = document.querySelector('#res tbody');
+  for (const n of Object.keys(by).map(Number).sort((x, y) => x - y)) {
+    const tr = document.createElement('tr');
+    const vals = cols.map(c => by[n][c]?.frame);
+    const best = Math.min(...vals.filter(v => v != null));
+    tr.innerHTML = `<td>${n.toLocaleString()}</td>` + vals.map(v => `<td class="${v === best ? 'win' : ''}">${v == null ? '–' : v.toFixed(2) + ' ms'}</td>`).join('');
+    body.append(tr);
+  }
+  document.getElementById('meta').textContent = `${r.browser}, ${r.viewport}, ${r.gpu?.desc || r.gpu?.vendor || 'GPU unknown'}, ${r.date.slice(0, 10)}. Each cell: step plus draw, ms a frame, with one GPU sync per 60 frames.`;
+}
+</script>
+</body>
+</html>

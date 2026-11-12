@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>Motes · WebGPU</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07080c; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .meter { position: fixed; left: 10px; bottom: 8px; font: 12px/1.3 ui-monospace, monospace; color: #c8d0e0; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+    "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+// Variant B: the same motes on three.js 0.186.1 WebGPURenderer.
+// A TSL compute pass steps every mote; instanced sprites draw them.
+// ?webgl forces the renderer's WebGL2 fallback.
+import * as THREE from 'three/webgpu';
+import {
+  Fn, If, Loop, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select,
+  uv, smoothstep, mix, cos, sin, exp, cross, varying, fract, step,
+} from 'three/tsl';
+import { N, A0, AX, UP, SIDE, L, G, PULL, DRAG, SOFT2, CAM, DUST, ICE, substeps, run } from './motes.js';
+
+const forceWebGL = new URLSearchParams(location.search).has('webgl');
+const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL });
+renderer.setPixelRatio(1);
+await renderer.init();
+document.body.append(renderer.domElement);
+const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2 fallback';
+
+const scene = new THREE.Scene();
+// An opaque clear: the motes add colour and leave alpha alone.
+scene.background = new THREE.Color(0x07080c);
+const camera = new THREE.PerspectiveCamera(CAM.fov, 1, 10, 20000);
+camera.position.set(...CAM.pos);
+camera.lookAt(...CAM.at);
+
+const ax = new THREE.Vector3(...AX), a0 = new THREE.Vector3(...A0);
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(9, 12, L, 24), new THREE.MeshBasicNodeMaterial({ color: 0x1c1f28 }));
+barrel.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ax);
+barrel.position.copy(a0).addScaledVector(ax, L / 2);
+scene.add(barrel);
+
+/* ---------- storage buffers: the motes live on the GPU ---------- */
+const pos = instancedArray(N, 'vec4');
+const vel = instancedArray(N, 'vec4');
+// x: birth, y: life, z: seed.
+const meta = instancedArray(N, 'vec4');
+const uT = uniform(0), uH = uniform(1 / 60), uSteps = uniform(1), uSalt = uniform(1, 'uint');
+const vA0 = vec3(...A0), vAX = vec3(...AX), vUP = vec3(...UP), vSIDE = vec3(...SIDE);
+
+// Spawn rule from Railgun's spawnMote at full charge.
+// A first spawn staggers its birth up to 6 s back.
+function spawn(i, first) {
+  const H = k => hash(i.mul(uint(31)).add(uSalt).add(uint(k * 7919 + 3)));
+  const a = H(0).mul(L - 220).add(180);
+  const th = H(1).mul(Math.PI * 2);
+  const e = vSIDE.mul(cos(th)).add(vUP.mul(sin(th))).toVar();
+  const p = vA0.add(vAX.mul(a)).add(e.mul(H(2).mul(280).add(120)));
+  const k = select(H(3).lessThan(0.5), float(-1), float(1)).mul(Math.sqrt(G)).mul(H(4).mul(0.5).add(0.5));
+  const v = cross(vAX, e).mul(k).sub(e.mul(H(5).mul(20)));
+  pos.element(i).assign(vec4(p, 0));
+  vel.element(i).assign(vec4(v, 0));
+  meta.element(i).assign(vec4(first ? H(8).mul(-6) : uT, H(6).mul(4).add(4), H(7).mul(100), 0));
+}
+const init = Fn(() => { spawn(instanceIndex, true); })().compute(N);
+
+// Railgun's stepMotes, one thread per mote, plus a respawn for the dead.
+// Substeps stay at 1/60 s or less; a frame never needs more than three.
+const update = Fn(() => {
+  const i = instanceIndex;
+  const m = meta.element(i);
+  If(uT.sub(m.x).greaterThan(m.y), () => { spawn(i, false); });
+  const p = pos.element(i).xyz.toVar(), v = vel.element(i).xyz.toVar();
+  const drag = exp(uH.mul(-DRAG));
+  Loop(3, ({ i: j }) => {
+    If(float(j).lessThan(uSteps), () => {
+      const d = p.sub(vA0).toVar();
+      d.subAssign(vAX.mul(d.dot(vAX).clamp(150, L + 60)));
+      const f = float(-G).div(d.dot(d).add(SOFT2));
+      v.assign(v.add(d.mul(f).add(vAX.mul(PULL)).mul(uH)).mul(drag));
+      p.addAssign(v.mul(uH));
+    });
+  });
+  pos.element(i).assign(vec4(p, 0));
+  vel.element(i).assign(vec4(v, 0));
+})().compute(N);
+
+/* ---------- draw: Railgun's soft dots as instanced sprites ---------- */
+// View-space size of one CSS pixel at unit depth.
+const uPx = uniform(0.001);
+const h1 = x => fract(sin(x.mul(12.9898)).mul(43758.5453));
+const mat = new THREE.SpriteNodeMaterial({
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+});
+mat.sizeAttenuation = false;
+{
+  const P = pos.element(instanceIndex).xyz, M = meta.element(instanceIndex);
+  const age = uT.sub(M.x), life = M.y, seed = M.z;
+  const lum = h1(seed.add(7)), pop = step(0.875, h1(seed.add(31))).mul(exp(age.mul(-5)));
+  const alive = age.greaterThanEqual(0).and(age.lessThanEqual(life));
+  const vis = smoothstep(0, 0.3, age).mul(float(1).sub(smoothstep(life.sub(1.2), life, age)));
+  const d = P.sub(vA0), r = d.sub(vAX.mul(d.dot(vAX))).length();
+  const col = mix(vec3(...DUST).mul(0.7), vec3(...ICE).mul(2.6), float(1).sub(smoothstep(40, 220, r)))
+    .mul(lum.pow(5).mul(2.8).add(0.5)).mul(pop.mul(6).add(1)).mul(vis);
+  mat.positionNode = P;
+  mat.scaleNode = select(alive, lum.pow(6).mul(2).add(2.2).mul(pop.mul(2).add(1)).mul(uPx), float(0));
+  const vCol = varying(col);
+  mat.colorNode = Fn(() => {
+    const a = float(1).sub(uv().sub(0.5).length().mul(2)).max(0);
+    return vec4(vCol.mul(a.mul(a)), 0);
+  })();
+}
+const motes = new THREE.Sprite(mat);
+motes.count = N;
+motes.frustumCulled = false;
+scene.add(motes);
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  uPx.value = (2 * Math.tan((CAM.fov * Math.PI) / 360)) / h;
+}
+addEventListener('resize', resize);
+resize();
+
+uSalt.value = (Math.random() * 1e6) | 0;
+renderer.compute(init);
+
+const device = renderer.backend.device, gl = renderer.backend.isWebGPUBackend ? null : renderer.getContext(), px = new Uint8Array(4);
+let t = 0;
+function work(dt) {
+  t += dt;
+  const s = substeps(dt);
+  uT.value = t; uH.value = s.h; uSteps.value = s.n;
+  uSalt.value = (Math.random() * 1e6) | 0;
+  renderer.compute(update);
+  renderer.render(scene, camera);
+}
+// The queue promise, or a one-pixel read on the fallback, waits for the GPU.
+const idle = () => (device ? device.queue.onSubmittedWorkDone() : gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px));
+run(`${backend} · compute`, work, idle);
+</script>
+</body>
+</html>
