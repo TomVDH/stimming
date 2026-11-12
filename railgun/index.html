@@ -737,7 +737,15 @@ vec3 rim(vec3 N, vec3 P) {
   float f = pow(1.0 - abs(dot(N, V)), 2.5);
   return f * (uSunC * 0.3 * max(dot(uSun, -V), 0.0) + uAstC * uAst.w * 0.15 * (1.0 - nightK()));
 }`;
-const HEAD = `${K2_NOISE}\nuniform vec3 uSun;\n${K2_SKY}\n${K2_HAZE}\n${LIGHT}`;
+const HZFADE = /* glsl */`
+// Far things sink behind the horizon: the earth's curve, drawn four times deeper,
+// with a band of thick low haze over it. Within 8 km of the eye nothing fades.
+float hzFade(vec3 P) {
+  float d = length(P.xz - cameraPosition.xz), drop = d * d / 3.2e6;
+  return mix(1.0, smoothstep(drop, drop + 300.0 + 0.012 * d, P.y), smoothstep(8000.0, 16000.0, d));
+}`;
+const HEAD = `${K2_NOISE}\nuniform vec3 uSun;\n${K2_SKY}\n${K2_HAZE}\n${LIGHT}
+${HZFADE}`;
 /* ---------- air: Rayleigh scattering for far objects ---------- */
 // Blue light scatters out of the line of sight first.
 // The sky's own colour fills what the air removes.
@@ -1115,7 +1123,8 @@ void main() {
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
-  gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
+  // The high wisps sit behind every heap: heap bodies stay nearly opaque, as the towers do.
+  gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.06) * thin));
 }`;
 const CLOUD_VS = /* glsl */`
 attribute vec4 aC, aS;
@@ -1911,6 +1920,8 @@ function makeTrain(pu) {
     // The tail's end dissolves into the impact cloud.
     if (uEat.w > 0.0 && uEatK > 0.0) cov *= mix(1.0, smoothstep(0.2, 1.35, length(uAstP + q - uEat.xyz) / uEat.w), uEatK);
     cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
+    // Smoke that sinks far out goes over the horizon into the haze.
+    cov *= hzFade(uAstP + q);
     if (cov < 0.002) return 0.0;
     // A skew along u hides the tile repeat.
     vec3 p = vec3(u - uFlow, v.x + 0.37 * u, v.y + 0.19 * u) * 0.36;
@@ -2333,6 +2344,7 @@ const starMat = new THREE.ShaderMaterial({
   uniform float uShedCut;
   uniform vec4 uSootS;
   uniform float uSootK;
+  ${HZFADE}
   // The light from P to the eye through the soot ball.
   float sootT(vec3 P) {
     if (uSootK < 0.001) return 1.0;
@@ -2388,7 +2400,7 @@ const starMat = new THREE.ShaderMaterial({
     if (abs(aD.x - 2.0) < 0.5) b *= 0.85 + 0.15 * hash11(aD.y + floor(age * 30.0));
     vCol = col3 * 4.0 * aD.w * b;
     vColT = mix(vCol, uEmber * 4.0 * aD.w * b * 0.5, 0.55);
-    float sT = sootT(ph);
+    float sT = sootT(ph) * hzFade(ph);
     vCol *= sT; vColT *= sT;
     vSpark = abs(aD.x - 2.0) < 0.5 ? 0.8 : 0.25;
   }`,
@@ -3749,6 +3761,9 @@ void main() {
     if (i >= uVSteps || T < 0.02) break;
     vec3 p = cameraPosition + rd * t, em;
     float d = dens(p, em);
+    // Far volumes sink behind the horizon too.
+    float hz = hzFade(p);
+    d *= hz; em *= hz;
     if (d > 0.0) {
       float tl = 0.0;
 #ifdef VSHADE
@@ -4707,7 +4722,8 @@ const shardMat = new THREE.ShaderMaterial({
     col += uEmber * fresh * vHeat * 1.4 + uWhite * fresh * vHeat * vHeat * 0.8;
     // Far shards go blue and flat in the air.
     // A shard behind the soot ball fades into it; one in front stays solid.
-    gl_FragColor = vec4(air(col, vP), sootT(vP));
+    // Far pieces near the plain drop behind the horizon.
+    gl_FragColor = vec4(air(col, vP), sootT(vP) * hzFade(vP));
   }`,
   depthWrite: false, transparent: true,
 });
@@ -4866,10 +4882,12 @@ smokeBridge.material.depthTest = true;
 // The volumes march into a smaller target; one quad lays it over the frame.
 // Each group keeps its draw order, so the layering holds.
 // A depth-tested volume tests its quad at the far side of its proxy.
-const VOL_RES = 0.75;
+// ?volres=1 keeps the volumes in the main pass at full resolution.
+const VOL_RES = Math.min(1, +new URLSearchParams(location.search).get('volres') || 0.75);
 const volGroups = [];
 const volDepthP = new THREE.Vector3(), volClear = new THREE.Color();
 function lowRes(order, meshes, depthOf = null) {
+  if (VOL_RES >= 1) return;
   const layer = volGroups.length + 1;
   const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: false });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -4910,6 +4928,7 @@ function drawVolumes() {
   const w = Math.max(1, Math.round(renderer.domElement.width * VOL_RES));
   const h = Math.max(1, Math.round(renderer.domElement.height * VOL_RES));
   U.uDRes.value.set(w, h);
+  if (!volGroups.length) return;
   const mask = camera.layers.mask, ca = renderer.getClearAlpha();
   renderer.getClearColor(volClear);
   renderer.setClearColor(0x000000, 0);
