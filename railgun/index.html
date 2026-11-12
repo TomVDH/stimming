@@ -133,6 +133,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // Target: the rock, or the capital ship. The choice waits for Reset.
+    { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
     // The charge: the hum, the choir, a blend, or a blend on the plain.
     { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
@@ -5363,14 +5365,37 @@ function boltAt(t, out) {
   const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 1.6);
   return out.lerpVectors(shot.muzzle, shot.target, u);
 }
+// The live target: the stored choice lands at Reset.
+let tgtKind = 'rock';
+// The ship's seam stays parked until the ship exists.
+const SHIP_PARK = 20000;
+// Where the target is now.
+function tgtPos(out) {
+  if (tgtKind === 'rock') return out.copy(ast.pos);
+  return out.copy(A0).addScaledVector(PARK, SHIP_PARK);
+}
+// Where the target is after 0.3 + T seconds.
+function tgtLead(T, out) {
+  if (tgtKind === 'rock') return astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), out);
+  return out.copy(A0).addScaledVector(PARK, SHIP_PARK);
+}
+// True while a bolt can hit the target.
+function tgtCanHit() {
+  if (tgtKind === 'rock') return ast.state === 'approach' || ast.state === 'hold';
+  return false;
+}
+// The bolt lands on the target.
+function tgtHit(c) {
+  if (tgtKind === 'rock') shatter(c);
+}
 fire = c => {
   if (shot) return;
   // A weak shot takes 11.5 seconds to cross; a full one 8.5.
   const T = THREE.MathUtils.lerp(11.5, 8.5, c);
-  let canHit = ast.state === 'approach' || ast.state === 'hold';
-  const target = astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3());
+  let canHit = tgtCanHit();
+  const target = tgtLead(T, new THREE.Vector3());
   // Laid by hand, the bolt hits only if the bore points within the rock's disc.
-  if (manual.on && canHit) {
+  if (manual.on && canHit && tgtKind === 'rock') {
     const D = target.distanceTo(MUZZLE), off = AX.angleTo(bq.copy(target).sub(MUZZLE));
     canHit = off < 1.2 * ast.R / D + 0.004;
   }
@@ -5576,7 +5601,7 @@ function stepAim(dt, snap = false) {
   if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
   const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
-  else if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
+  else if (charge && (tgtKind !== 'rock' || ast.state !== 'shatter')) tgtLead(9.7, aimP).sub(A0);
   else aimP.copy(PARK);
   // The short way round: the mount turns a full circle.
   let dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw;
@@ -5696,7 +5721,7 @@ function stepShot(dt) {
   if (!shot.blast && age >= 0.3) { shot.blast = true; blast(shot); }
   // The Mach ring reaches the eye: a jolt, no sound of its own.
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
-  if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
+  if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) tgtHit(shot.c); }
   // The back vents blow in a ripple; then the flap opens and the case leaves.
   // Half-way home the back vents blow; then the flap opens and the case leaves.
   // Laid by hand the gun does not park: the breech cycles 3.5 s after the hit.
@@ -5915,6 +5940,7 @@ function landReset() {
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
   ast.next = 0;
+  tgtKind = ui.setting('target').value;
   respawn();
   ast.s = 0.25;
   PU.uTrail.value = 1;
@@ -6572,6 +6598,11 @@ window.__qa = {
   rockKind: () => astMesh.geometry.userData.kind,
   spin: () => (spin ? { t: spin.t } : null),
   reset() { resetToy(); },
+  tgt: () => tgtKind,
+  // Set the choice only, as the Settings sheet does.
+  pick(k) { ui.setting('target').set(k); },
+  // Set the choice and reset at once.
+  target(k) { ui.setting('target').set(k); resetToy(); },
   sight: () => sight,
   toggleSight() { toggleSight(); },
   look: () => ({ yaw: THREE.MathUtils.radToDeg(look.yaw), pitch: THREE.MathUtils.radToDeg(look.pitch), to: THREE.MathUtils.radToDeg(lookTo.yaw) }),

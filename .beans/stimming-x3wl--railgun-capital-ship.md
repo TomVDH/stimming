@@ -14,7 +14,7 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 ## Checklist
 
 - [x] Task 1: ship core (`railgun/ship.js`) and node tests
-- [ ] Task 2: Target setting and the target seam
+- [x] Task 2: Target setting and the target seam
 - [ ] Task 3: the battleship in orbit; Tom checks the look
 - [ ] Task 4: the hit, the wound and the breakup
 - [ ] Task 5: de-orbit and the re-entry streaks
