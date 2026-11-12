@@ -20,6 +20,8 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] Note for Tom on comparing the shot takes
 - [x] Tom (2026-11-12): boom bass trimmed about 3 dB; Mesa is the default shot take
 - [x] Tom (2026-11-12): traverse at minimal volume with rhythmic metal clanks
+- [x] Tom (2026-11-12): traverse sound off for now (`MOTOR_ON = false`; the code stays)
+- [x] Tom (2026-11-12): five more surges: Colossus, Dirge, Leviathan, Eclipse, Monolith
 - [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
@@ -54,6 +56,16 @@ Tom (2026-11-12): the first stacks were too musical; he wants bombastic, mechani
 - **Surge** (default): the swarm lands on a pentatonic chord. **Surge Hijaz**: it lands on a Hijaz chord (flat second, augmented second, flat sixth).
 - The swarm filter opens from 600 Hz to 9 kHz with the charge; one soft clip drives harder with the charge and the over-hold.
 - Level: about -26 dB RMS at the start, -12 dB at the lock; Expanse runs -26 to -15.
+
+### More surges (same engine, one profile each in `SURGE`)
+
+| Pick | Chord | Voice | Machines |
+|---|---|---|---|
+| Colossus | Lydian on D, bright and vast | brass (resonant filter sweep) | mains, grinding stone, turbine |
+| Dirge | minor eleventh on G | temple organ (squares) | grinding stone, bells that toll faster, mains |
+| Leviathan | stacked fourths on E, very low | saws | mains, a ratchet winding up 1 to 10 clanks a second, turbine |
+| Eclipse | a whole-tone cloud that resolves to A major at the lock | brass | mains, whine, turbine |
+| Monolith | octaves and fifths only | saws | mains, whine, grinding stone, turbine |
 
 ## Notes
 

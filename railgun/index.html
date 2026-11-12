@@ -115,7 +115,7 @@ const opts = {
 /* ---------- bar ---------- */
 // 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
-// The charge sound's mix: 'hum', 'blend', 'choir', 'vast', 'titan', 'penta' or 'hijaz'.
+// The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
 // Surge is the default; an old Blend default moves to Expanse once.
 let chargeMix = (() => {
   try {
@@ -136,7 +136,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }], onPick: v => { chargeMix = v; } },
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }], onPick: v => { chargeMix = v; } },
     // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
     { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
@@ -5909,6 +5909,11 @@ const MIX = {
   // Surges: mechanical layers, then a saw swarm gliding into a chord; see SURGE.
   penta: { ...MIX0, stack: 'penta', verb: 0.45, pre: 0.04, dark: 7000 },
   hijaz: { ...MIX0, stack: 'hijaz', verb: 0.5, pre: 0.06, dark: 6000 },
+  colossus: { ...MIX0, stack: 'colossus', verb: 0.55, pre: 0.08, dark: 5000 },
+  dirge: { ...MIX0, stack: 'dirge', verb: 0.6, pre: 0.09, dark: 4000 },
+  leviathan: { ...MIX0, stack: 'leviathan', verb: 0.5, pre: 0.07, dark: 3500 },
+  eclipse: { ...MIX0, stack: 'eclipse', verb: 0.5, pre: 0.05, dark: 7000 },
+  monolith: { ...MIX0, stack: 'monolith', verb: 0.45, pre: 0.06, dark: 5000 },
 };
 // The plain: one convolver per context, built on first use.
 // Open flats have no room: a ground bounce, mesa echoes, a low roll.
@@ -6114,65 +6119,92 @@ function humStop(ac, now = false) {
 /* ---------- the surge charge ---------- */
 // Surge mixes: mechanical layers enter one by one as the charge grows.
 // On top, a swarm of saws glides from chaos into one massive chord.
-// Chord tones in semitones above A1, per register.
+// Each profile: root (semitones from A1), chord tones per register,
+// pre (an optional chord held until the lock), wave, mechanical layers.
+// Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter).
+// Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
 const SURGE = {
-  // Pentatonic: open fifths, thirds and sixths stacked five octaves high.
-  penta: { bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
-  // Hijaz: the flat second, the augmented second and the flat sixth.
-  hijaz: { bass: [-12, 0, 0, 7], mid: [12, 19, 24, 25, 28, 31, 32, 36], high: [37, 40, 43, 44, 48, 55] },
+  // Surge: a pentatonic chord, open fifths, thirds and sixths.
+  penta: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Hijaz: the flat second, the augmented second and the flat sixth.
+  hijaz: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 25, 28, 31, 32, 36], high: [37, 40, 43, 44, 48, 55] },
+  // Colossus: a Lydian chord on D, bright and vast, over grinding stone.
+  colossus: { root: 5, wave: 'brass', mech: ['mains', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 26, 28, 30, 31, 35], high: [36, 38, 40, 42, 43, 47] },
+  // Dirge: a minor eleventh on G, a temple organ, bells tolling faster.
+  dirge: { root: -2, wave: 'organ', mech: ['grind', 'toll', 'mains'], bass: [-12, 0, 0, 7], mid: [12, 15, 19, 22, 24, 26, 27, 31], high: [34, 36, 39, 41, 43, 48] },
+  // Leviathan: stacked fourths on E, very low, with a ratchet winding up.
+  leviathan: { root: -5, wave: 'saw', mech: ['mains', 'ratchet', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 17, 22, 24, 27, 29, 32, 34], high: [36, 39, 41, 44, 46, 48] },
+  // Eclipse: a whole-tone cloud that resolves to a major chord at the lock.
+  eclipse: { root: 0, wave: 'brass', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 16, 19, 24, 28, 31, 36, 40], high: [43, 48, 52, 55, 60, 64], pre: { bass: [-12, 0, 0, 6], mid: [12, 14, 18, 20, 22, 26, 28, 30], high: [32, 34, 36, 38, 40, 42] } },
+  // Monolith: octaves and fifths only, every machine running.
+  monolith: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
 };
 // Per register: [entry charge, start low Hz, start high Hz, voice level].
 const REG = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
-const SURGE_ROOT = 55;
 function stackStart(ac, P) {
-  const src = [], T = SURGE[P.stack], R = SURGE_ROOT;
+  const src = [], S = SURGE[P.stack], R = 55 * Math.pow(2, S.root / 12), has = l => S.mech.includes(l);
   const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
   const gain = (to, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
+  const noise = (to, rate = 1) => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate; n.connect(to); n.start(); src.push(n); return n; };
   // Every layer runs through one soft clip for glue and growl.
   const cg = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain();
   const curve = new Float32Array(257);
   for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
   shape.curve = curve; shape.oversample = '2x'; cg.gain.value = 0.8; g.gain.value = 0;
   cg.connect(shape).connect(g).connect(kit.out);
-  // Layer 1, the mains: a transformer hum, saw and square on the root.
-  const mlp = filt(ac, 'lowpass', 380, 1.5), mainsG = gain(cg);
-  mlp.connect(mainsG);
-  osc('sawtooth', R, mlp); osc('square', 2 * R, mlp, 7); osc('sawtooth', 3 * R, mlp, -5);
-  // Layer 2, the capacitor whine: a thin tone climbs four octaves.
-  const whineG = gain(cg), whine = osc('sine', 180, whineG), whine2 = osc('triangle', 90, gain(whineG, 0.5));
-  // Layer 3, the sub: the root and the octave under it.
-  const sg = gain(kit.out), sub = osc('sine', R / 2, sg);
-  osc('sine', R, gain(sg, 0.5));
-  // Layer 4, the turbine: a saw and a band of noise throb faster and faster.
-  const ng = gain(cg), am = gain(ng, 0.6), tb = filt(ac, 'bandpass', 500, 2.5);
-  tb.connect(am);
-  const turb = osc('sawtooth', 2 * R, tb), nz = ac.createBufferSource();
-  nz.buffer = kit.noise; nz.loop = true; nz.connect(tb); nz.start(); src.push(nz);
-  const thr = osc('sine', 3, gain(am.gain, 0.5));
-  // The swarm: two saws per voice, under a filter that opens with the charge.
-  const sw = filt(ac, 'lowpass', 600, 0.9);
-  sw.connect(cg);
-  const voices = [];
+  const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 };
+  // The mains: a transformer hum, saw and square on the root.
+  if (has('mains')) {
+    const mlp = filt(ac, 'lowpass', 380, 1.5);
+    h.mainsG = gain(cg); mlp.connect(h.mainsG);
+    osc('sawtooth', R, mlp); osc('square', 2 * R, mlp, 7); osc('sawtooth', 3 * R, mlp, -5);
+  }
+  // The capacitor whine: a thin tone climbs four octaves.
+  if (has('whine')) { h.whineG = gain(cg); h.whine = osc('sine', 180, h.whineG); h.whine2 = osc('triangle', 90, gain(h.whineG, 0.5)); }
+  // Grinding stone: dark noise that heaves on two slow beats.
+  if (has('grind')) {
+    const gb = filt(ac, 'bandpass', 160, 1.6), gam = ac.createGain();
+    h.grindG = gain(cg); gam.gain.value = 0.6; gb.connect(gam).connect(h.grindG);
+    noise(gb, 0.35);
+    for (const [fr, d] of [[0.37, 0.3], [0.83, 0.15]]) osc('sine', fr, gain(gam.gain, d));
+    h.gb = gb;
+  }
+  // The sub: the root and the octave under it.
+  h.sg = gain(kit.out); osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5));
+  // The turbine: a saw and a band of noise throb faster and faster.
+  // Its gain doubles as the rage noise the stop and the vent fade.
+  h.ng = gain(cg);
+  if (has('turbine')) {
+    const am = gain(h.ng, 0.6);
+    h.tb = filt(ac, 'bandpass', 500, 2.5); h.tb.connect(am);
+    h.turb = osc('sawtooth', 2 * R, h.tb); noise(h.tb);
+    h.thr = osc('sine', 3, gain(am.gain, 0.5));
+  }
+  // The swarm: two oscillators per voice, under a filter that opens with the charge.
+  // Brass rings a resonant filter; organ uses squares.
+  h.sw = filt(ac, 'lowpass', 600, S.wave === 'brass' ? 5 : 0.9);
+  h.sw.connect(cg);
+  const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : 1;
+  h.voices = [];
   for (const reg of ['bass', 'mid', 'high']) {
-    const [enter, lo, hi, lv] = REG[reg], tg = T[reg];
+    const [enter, lo, hi, lv] = REG[reg], tg = S[reg];
     tg.forEach((s, i) => {
       const pn = ac.createStereoPanner();
       pn.pan.value = reg === 'bass' ? (i % 2 ? 0.15 : -0.15) : (i % 2 ? 1 : -1) * (0.25 + 0.5 * Math.random());
-      pn.connect(sw);
+      pn.connect(h.sw);
       const vg = gain(pn), start = lo * Math.pow(hi / lo, Math.random());
-      const os = [-7, 7].map(dt => osc('sawtooth', start, vg, dt));
-      voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, enter: enter + 0.1 * i / tg.length, lv, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
+      const os = [-7, 7].map(dt => osc(type, start, vg, dt));
+      h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: enter + 0.1 * i / tg.length, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
     });
   }
   // The plain send takes the whole surge.
-  let vs = null;
   if (P.verb) {
-    vs = ac.createGain(); vs.gain.value = 0;
+    h.vs = ac.createGain(); h.vs.gain.value = 0;
     const dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', P.dark, 0.5);
     dl.delayTime.value = P.pre;
-    g.connect(vs).connect(dl).connect(dk).connect(plainVerb(ac));
+    g.connect(h.vs).connect(dl).connect(dk).connect(plainVerb(ac));
   }
-  hum = { P, stack: true, src, g, cg, sg, ng, mainsG, whineG, whine, whine2, sub, am, tb, turb, thr, sw, vs, voices, locked: false, lockAt: -1e9, sour: 0 };
+  hum = h;
 }
 function stackUpdate(ac) {
   const h = hum, P = h.P, c = charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
@@ -6180,25 +6212,42 @@ function stackUpdate(ac) {
   if (locked && !h.locked) h.lockAt = t;
   h.locked = locked; h.sour = over;
   const accent = Math.exp(-(t - h.lockAt) / 1.2);
-  // Layer 1: the mains hum from the first instant.
-  h.mainsG.gain.setTargetAtTime(0.2 * ss(u, 0, 0.12) * (0.45 + 0.55 * u), t, 0.08);
-  // Layer 2: the whine climbs from 180 Hz to 4 kHz.
-  h.whine.frequency.setTargetAtTime(180 * Math.pow(2, 4.5 * u), t, 0.08);
-  h.whine2.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
-  h.whineG.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
-  // Layer 3: the sub swells, and drops in hard at the lock.
+  // The mains hum from the first instant.
+  if (h.mainsG) h.mainsG.gain.setTargetAtTime(0.2 * ss(u, 0, 0.12) * (0.45 + 0.55 * u), t, 0.08);
+  // The whine climbs from 180 Hz to 4 kHz.
+  if (h.whine) {
+    h.whine.frequency.setTargetAtTime(180 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whine2.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whineG.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
+  }
+  // The stone grinds louder and higher.
+  if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
+  // The sub swells, and drops in hard at the lock.
   h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent), t, 0.08);
-  // Layer 4: the turbine spins up from 3 to 18 throbs a second.
-  h.ng.gain.setTargetAtTime(0.1 * ss(u, 0.6, 0.72) + 0.06 * rage + 0.08 * over, t, 0.08);
-  h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rage, t, 0.1);
-  h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rage, t, 0.1);
-  h.turb.frequency.setTargetAtTime(2 * SURGE_ROOT * (1 + u), t, 0.1);
+  // The turbine spins up from 3 to 18 throbs a second.
+  h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rage + 0.08 * over, t, 0.08);
+  if (h.turb) {
+    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rage, t, 0.1);
+    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rage, t, 0.1);
+    h.turb.frequency.setTargetAtTime(2 * h.R * (1 + u), t, 0.1);
+  }
+  // Bells toll and the ratchet clanks, faster with the charge.
+  // Each strike is scheduled ahead, so the rhythm holds between frames.
+  if (u > 0.15 && (h.S.mech.includes('toll') || h.S.mech.includes('ratchet'))) {
+    if (!h.next) h.next = t + 0.05;
+    const toll = h.S.mech.includes('toll');
+    while (h.next < t + 0.15) {
+      if (toll) bell(ac, h, Math.max(t, h.next), u); else ratchet(ac, h, Math.max(t, h.next), u);
+      h.next += toll ? 3.2 - 2.4 * u : 1 / (1 + 9 * u);
+    }
+  }
   // The swarm: each voice wanders, then glides to its chord tone.
+  // A pre chord holds until the lock, then resolves slowly.
   for (const v of h.voices) {
     const k = ss(u, v.enter, v.enter + 0.08), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
-    const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + (v.tgt - p) * conv;
-    const fr = SURGE_ROOT * Math.pow(2, (q + over * v.sour * 0.6) / 12);
-    for (const o of v.os) o.frequency.setTargetAtTime(fr, t, 0.15);
+    const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
+    const fr = h.R * Math.pow(2, (q + over * v.sour * 0.6) / 12);
+    for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
     v.vg.gain.setTargetAtTime(v.lv * k, t, 0.1);
   }
   // The swarm's filter opens from 600 Hz to 9 kHz.
@@ -6207,6 +6256,17 @@ function stackUpdate(ac) {
   h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * over, t, 0.1);
   h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent), t, 0.08);
   if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
+}
+// A temple bell: inharmonic partials two octaves over the root, long decay.
+function bell(ac, h, t, u) {
+  const f = 4 * h.R, k = 0.5 + 0.5 * u;
+  track(t + 5, ...[[0.5, 0.05, 4.5], [1, 0.06, 3.5], [1.19, 0.035, 2.8], [1.5, 0.03, 2.2], [2, 0.025, 1.6], [2.74, 0.015, 1.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.004), peak: lv * k, a: 0.004, dur: d })));
+}
+// A ratchet tooth: a low metal clank with a short bright click.
+function ratchet(ac, h, t, u) {
+  const f = (h.n = (h.n || 0) + 1) % 2 ? 180 : 140, k = (0.5 + 0.5 * u) * jit(0.15);
+  track(t + 0.4, ...[[1, 0.07, 0.3], [2.4, 0.04, 0.18], [4.1, 0.02, 0.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.02), peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, h.g, t, { dur: 0.03, rate: 1.2, f: 2500, q: 1.2, peak: 0.04 * k, a: 0.0008 }).src);
 }
 /* ---------- arcs and rumble ---------- */
 // Every hit jitters in pitch, time and level.
@@ -6622,8 +6682,11 @@ function motorStart(ac) {
   for (const s of srcs) s.start();
   motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0, next: 0, n: 0 };
 }
+// The traverse sound is off for now (Tom, 2026-11-12).
+const MOTOR_ON = false;
 // The frame loop feeds the motor the gun's slew speed.
 function motorUpdate() {
+  if (!MOTOR_ON) return;
   const s = clamp(Math.hypot(aimNow.vy, aimNow.ve) / SLEW_TOP, 0, 1), ac = kit.live();
   if (!ac) { motorStop(true); return; }
   if (!motor) { if (s < 0.1) return; motorStart(ac); }
