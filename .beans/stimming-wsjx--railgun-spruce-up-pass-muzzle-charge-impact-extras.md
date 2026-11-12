@@ -29,7 +29,7 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Back of the gun: two-tier back block, square edges; an armoured, chamfered counterweight with lugs and a yellow band
 - [x] Back of the gun: vent louvres on the upper tier; a ripple of side steam jets before the case leaves
 - [x] Back of the gun: a bolted equipment module on each flank of the lower tier
-- [x] Ejector flap: a top-hinged flap over a hot port; it swings open as the case leaves, then falls shut
+- [x] Ejector flap: a top-hinged flap over a dark, framed recess; it swings open as the case leaves, then falls shut
 - [x] Spent case: faster, heavier throw (38 m/s² stylised gravity, a firmer hop)
 - [x] Antenna: one straight banded mast; a faint red beacon that blinks, goes dark at a charge, relights once the gun parks
 - [x] Viewfinder: an eight-sided cupola with a visor and a side optic along the bore; Sight rides the optic
