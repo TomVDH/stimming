@@ -49,9 +49,21 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Impact: the fire pulls in by about 45 % in the negative phase; a billowing dark smoke puff bridges the tail's end and the debris (to about 45 s)
 - [x] Muzzle: a glow globe swells on firing, brightest at night
 - [x] The torn cirrus deck thins and stays torn until Reset
+- [x] Barrel 75 % longer past the cradle (L 900 to 1388); the brake keeps its size
+- [x] The back block rides the full recoil: it slides out of the housing on the shot
+- [x] Charge gauge: ten dim amber lamps under the flap; rose blink in the over-hold
+- [x] Ranging laser before the charge: one long pulse, two short blips, a soft tick each; a release cancels
+- [x] Gentle camera sway and bob while the cursor moves; still at rest
+- [ ] Falling debris rework (Tom to say what reads wrong)
+- [ ] Impact plume as a trail-shader instance
 - [x] GLB export and a nine-view turnaround (docs/railgun-model/, not committed)
 - [ ] Post pass: AO not added (a screen-space pass would need the volumes kept out of its normal pass); FXAA and bloom already on the ladder
 - [x] Cloud flicker: heap tops flickered on every GPU (measured on D3D11 and GL, old and new builds): the heaps' drift re-sampled their fine cells each frame. Heaps now hold still (they still boil and cycle); their edges stay at least two pixels wide
+- [x] Slow ejecta: 460 small burning flecks drift down through the cloud; each goes out at its own time, most before the ground. Three to seven small companion rocks ride round the main one at random
+- [x] Rock light on the clouds: the burning rock lights the heaps and the storm tower, faint far out, strong near the end; `rockGlowK` scales it for the game-over event
+- [x] Bow shock: a thin crescent hugs the nose and wraps a little down the flanks (the long cone read as whiskers); it never thins below a pixel
+- [x] Fiery haze: a soft amber globe round the rock, faint by day, strong at night
+- [x] Rayleigh fade on the rock: extra air (`uRockAir` 3) reddens and pales it far out; it sharpens as it nears
 - [ ] Frame cost on Tom's PC: headless RTX 3070 at 1280 x 800 shows shot 2.8 / 5.2 ms and impact 5.4 / 11.9 ms (p50 / p90), near the old 1.9 / 4.2 and 4.6 / 12; check live
 - [ ] Stills to Tom; Tom's verdict
 
