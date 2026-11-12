@@ -21,7 +21,16 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - [x] Task 5: de-orbit and the re-entry streaks
 - [x] Task 6: impacts, Reset and the next ship
 - [x] Task 7: sound
-- [ ] Task 8: reduced motion, full QA, review, PR
+- [x] Task 8: reduced motion, full QA, review, PR
+- [ ] Tom checks the look and the sound on a real device (Task 3's look sign-off rides on this)
+
+## Summary of Changes
+
+- `railgun/ship.js`: pure ship logic (states, hits, joint order, hulk fall, light), 16 node tests in `tests/railgun-ship.test.mjs`.
+- `railgun/index.html`: a target seam (`tgt*`); the battleship in orbit; the kill, the wound and the breakup; the de-orbit streaks; landings, dust domes and the next ship; the ship's sound; Dev rows Target and Ship fires.
+- `shared/stim.js`: an additive `button` row for settings and dev sheets.
+- QA (headless Edge, D3D11): Q1 to Q10 at three sizes, rungs 0 to 3, both modes; bar-v2 102/102. Rock-mode Q4 fails on main too (the ember shed keeps the loop awake).
+- Follow-ups: move the ship's voices onto the blast bus when `claude/railgun-sound-3af021` lands; two colon-joined comments at index.html ~7879 and ~8160.
 
 ## Notes
 

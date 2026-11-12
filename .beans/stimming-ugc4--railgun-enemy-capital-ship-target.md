@@ -27,5 +27,6 @@ Build: procedural in `railgun/index.html`; five hulks; one `vol`/`trail` streak 
 - [x] Design spec written
 - [x] Tom reviews the written spec
 - [x] Implementation plan: `docs/plans/railgun-capital-ship-plan.md` (8 tasks)
-- [ ] Tom reviews the plan and picks the execution method
-- [ ] Tom schedules the build; a feature bean and worktree start then
+- [x] Tom reviews the plan and picks the execution method (subagent-driven, 2026-11-12)
+- [x] Tom schedules the build; feature bean `stimming-x3wl`, worktree `.worktrees/stimming-x3wl`
+- [ ] The PR merges
