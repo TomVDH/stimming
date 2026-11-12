@@ -123,18 +123,25 @@ const opts = {
 // 'random' turns to the next size at each Reset; a dev pick pins it.
 let devSize = 'random';
 // The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
-// Monolith is the default; an old Blend default moves to Expanse once.
+// Expanse is the default (Tom, 2026-11-12); every stored pick moves to it once.
 let chargeMix = (() => {
   try {
     const K = 'stimming.railgun.chargemix';
-    if (!localStorage.getItem(K + '.v2')) { if (localStorage.getItem(K) === 'blend') localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v2', '1'); }
-    return localStorage.getItem(K) || 'monolith';
-  } catch { return 'monolith'; }
+    if (!localStorage.getItem(K + '.v3')) { localStorage.setItem(K, 'vast'); localStorage.setItem(K + '.v3', '1'); }
+    return localStorage.getItem(K) || 'vast';
+  } catch { return 'vast'; }
 })();
 // The shot's sound: Tom's report sample. Mesa, Coil and Thump stay in code.
 const shotMix = 'report';
 // The game-over sound: a surge mix from MIX, or 'hum' for the plain charge hum.
-let goMix = 'syl';
+// Surge is the default (Tom, 2026-11-12); every stored pick moves to it once.
+let goMix = (() => {
+  try {
+    const K = 'stimming.railgun.gomix';
+    if (!localStorage.getItem(K + '.v2')) { localStorage.setItem(K, 'penta'); localStorage.setItem(K + '.v2', '1'); }
+    return localStorage.getItem(K) || 'penta';
+  } catch { return 'penta'; }
+})();
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
@@ -157,12 +164,12 @@ const ui = initPage({ id: 'railgun', bar: {
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
     // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monolith', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
     // The frame rate cap: film, the toy's own 30, or a fast screen.
     { type: 'choice', id: 'fps', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
     // The game over: the surge that plays as an unshot rock comes down.
     // A pick takes effect at the next strike; Strike test brings one on.
-    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'syl', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
+    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target picks the rock or the capital ship.
@@ -1646,6 +1653,9 @@ const gunMat = new THREE.ShaderMaterial({
     vec3 col = alb * (1.0 - 0.75 * metal) * (amb + uSunC * 2.8 * nl * vis + keyLight(N) + rim(N, vP) * vis + arcLight(vP, N) + fill + rimL + blastLight(vP) * (0.2 + 0.8 * max(dot(N, normalize(uBlast.xyz - vP)), 0.0)));
     col += spec * uSunC * 2.8 * vis * (1.0 - 0.6 * min(dust, 0.85));
     col += env * Fe * (1.0 - 0.6 * rough) * occ * cav * 0.7 * day;
+    // At night the moon draws a soft fresnel rim round the gun.
+    // At night uSun and uSunC carry the moon.
+    col += uSunC * nightK() * pow(1.0 - NoV, 3.0) * (0.3 + 0.7 * max(dot(N, uSun), 0.0)) * occ * 3.0;
     // Heat glows on the barrel, hottest at the muzzle.
     // The dark rails and the brake run hotter than the hull.
     // The fast white heat, then a dull red that lingers.
@@ -7340,7 +7350,9 @@ function updateBolt() {
 // A long shutter blends the days, so the light never strobes.
 // The frame fills white; the toy cuts to its start under the white.
 // The white then burns off fast, and the image springs back.
-const SPIN_T = 1.8, DAYS_MAX = 1.5;
+// The game over's rewind runs longer, so its white can clear slowly first.
+const SPIN_T = 1.8, SPIN_GO = 3.4, DAYS_MAX = 1.5;
+const spinT = () => (spin && spin.go ? SPIN_GO : SPIN_T);
 // The game over's white clears slower: GO_OUT.
 const FILL_IN = 0.3, FILL_HOLD = 0.1, FILL_OUT = 1.2, GO_OUT = 2.0;
 let spin = null, fill = null, cutFlash = 0;
@@ -7395,7 +7407,7 @@ function resetToy(force = false) {
   wake();
   if (reduced()) { fill = { t: 0, calm: true }; return; }
   spin = { t: 0, H: skyH, m: dayMean(skyH), go: force };
-  whoosh();
+  if (force) whoosh(SPIN_GO, GO_OUT); else whoosh();
 }
 // The Reset chip: hidden while a rock lives, glowing after a kill.
 const resetChip = [...document.querySelectorAll('.s2-chip')].find(b => b.querySelector('.s2-label')?.textContent === 'Reset');
@@ -7423,8 +7435,9 @@ function stepSpin(dt) {
   // The clouds run back too.
   U.uWisp.value.x -= w * dt * 0.5;
   CLOUD_U.uCloudT.value -= w * dt * 0.05;
-  // The white fill starts so it is full at SPIN_T; the cut waits for it.
-  if (spin.t >= SPIN_T - FILL_IN && !fill) fill = { t: 0, out: spin.go ? GO_OUT : FILL_OUT };
+  // The white fill is full at the rewind's end.
+  // The cut waits for it.
+  if (spin.t >= spinT() - FILL_IN && !fill) fill = { t: 0, out: spin.go ? GO_OUT : FILL_OUT };
 }
 // Back to the start: the chosen time, still clouds, a fresh rock high up.
 function landReset() {
@@ -7469,15 +7482,16 @@ function landReset() {
 }
 // A tape-rewind hiss falls under the spin, rushes up into the white,
 // then breathes out as the white burns off.
-function whoosh() {
+// T: the rewind length; the button uses SPIN_T.
+function whoosh(T = SPIN_T, OUT = FILL_OUT) {
   const ac = kit.live();
   if (!ac) return;
-  const L = SPIN_T + FILL_HOLD + FILL_OUT;
+  const L = T + FILL_HOLD + OUT;
   const t = ac.currentTime, s = hiss(ac, t, L + 0.3), bp = filt(ac, 'bandpass', 2400, 0.9), g = ac.createGain();
-  bp.frequency.setValueAtTime(2400, t); bp.frequency.exponentialRampToValueAtTime(700, t + SPIN_T - FILL_IN);
-  bp.frequency.exponentialRampToValueAtTime(3200, t + SPIN_T); bp.frequency.exponentialRampToValueAtTime(400, t + L);
+  bp.frequency.setValueAtTime(2400, t); bp.frequency.exponentialRampToValueAtTime(700, t + T - FILL_IN);
+  bp.frequency.exponentialRampToValueAtTime(3200, t + T); bp.frequency.exponentialRampToValueAtTime(400, t + L);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.08, t + 0.4);
-  g.gain.setValueAtTime(0.08, t + SPIN_T - FILL_IN); g.gain.exponentialRampToValueAtTime(0.18, t + SPIN_T);
+  g.gain.setValueAtTime(0.08, t + T - FILL_IN); g.gain.exponentialRampToValueAtTime(0.18, t + T);
   g.gain.exponentialRampToValueAtTime(0.0001, t + L);
   s.connect(bp).connect(g).connect(kit.out);
   track(t + L + 0.4, s);
@@ -7599,7 +7613,7 @@ function sillyBoom(p) {
 // At contact the blast goes off there and the frame burns to white.
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
-const BURN_T = 2.6, WHITE_T = 0.7;
+const BURN_T = 3.4, WHITE_T = 1.4;
 // The ground point the rock strikes.
 const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
 // The horizon's drop at ground distance d, as hzFade draws it.
@@ -7707,7 +7721,7 @@ function updateStrike() {
   // After the white, the Reset's rewind shows through as the white clears.
   // The strike's flares and rays go with the white.
   if (strike.out) {
-    const k = spin ? 1 - THREE.MathUtils.smoothstep(spin.t, 0, 0.7) : 0;
+    const k = spin ? 1 - THREE.MathUtils.smoothstep(spin.t, 0, 1.6) : 0;
     if (spin && !fill) fillEl.style.opacity = k.toFixed(3);
     for (const v of [grade.uniforms.uLF2.value, grade.uniforms.uLF.value]) v.z *= k;
     grade.uniforms.uGod.value.z *= k; grade.uniforms.uGod.value.w *= k;
@@ -8349,18 +8363,32 @@ function stackUpdate(ac, h = hum, dv = null) {
 // d.over: the strain, 0.6 at contact, 1 at the end of the burn.
 // Null stops it. A null ac (muted) stops it hard.
 let goSurge = null;
-// The game over's Surge Syl: the organ and the tremolo, no machines.
-SURGE.sylgo = { ...SURGE.syl, mech: [] };
-const SYL_GO = { ...MIX.syl, stack: 'sylgo' };
+// The game over plays its surge without the machines.
+// Each pick gets a machine-free copy on first use.
+function goMixP(key) {
+  const k = MIX[key] && MIX[key].stack ? key : 'penta', S = SURGE[MIX[k].stack];
+  SURGE[k + '_go'] ??= { ...S, mech: [] };
+  return { ...MIX[k], stack: k + '_go' };
+}
 function surgeOver(ac, d) {
   if (!d || !ac) { surgeOverStop(!ac); return; }
   if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
-  if (!goSurge) { goSurge = stackStart(ac, goMix === 'syl' ? SYL_GO : MIX[goMix] && MIX[goMix].stack ? MIX[goMix] : SYL_GO); goSurge.ac = ac; }
+  if (!goSurge) {
+    goSurge = stackStart(ac, goMixP(goMix)); goSurge.ac = ac;
+    // A slow tape wobble on every voice; it settles as the rock comes down.
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lfo.frequency.value = 0.55; lg.gain.value = 0;
+    lfo.connect(lg);
+    for (const n of goSurge.src) if (n.detune && n.frequency.value > 30) lg.connect(n.detune);
+    lfo.start(); goSurge.src.push(lfo); goSurge.wob = lg;
+  }
+  goSurge.wob.gain.setTargetAtTime(30 * (1 - THREE.MathUtils.smoothstep(d.u, 0.2, 0.85)), ac.currentTime, 0.3);
   const ss = THREE.MathUtils.smoothstep;
   // The chord locks at contact and holds through the burn.
   // A live charge keeps the lead; the surge ducks under it.
+  // The layers come in evenly over the first half of the fall, then hold.
   stackUpdate(ac, goSurge, {
-    c: d.u, lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
+    c: THREE.MathUtils.smoothstep(d.u, 0, 0.5), lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
     // The strain sours the chord at half depth, so the chord still reads.
     over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
   });
