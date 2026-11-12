@@ -18,6 +18,8 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] Traverse motor: whine follows slew speed, clunk at start and stop; stops on mute, sleep, hidden tab
 - [x] QA: clean console, 30 fps
 - [x] Note for Tom on comparing the shot takes
+- [x] Tom (2026-11-12): boom bass trimmed about 3 dB; Mesa is the default shot take
+- [x] Tom (2026-11-12): layered charge-up: Pentatonic and Hijaz stacks, Pentatonic default
 
 ## How to compare the shot takes
 
@@ -32,6 +34,13 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 | Mesa | A deep cannon: a dark blast, two sinking low tones, six mesa echoes and a ten-second rolling tail |
 | Coil | An electric crack, a falling discharge, a ringing struck-bar barrel and the slug's N-wave supersonic snap with flutter |
 | Thump | A heavy knock, a resonant pressure whoomp, a sub swell and three seconds of debris rattle |
+
+## Layered charge (Settings, Charge sound)
+
+- **Pentatonic** (default): A major pentatonic on A2. Order of entry: root, fifth, octave, third, fifth, sixth, two octaves, ninth, third, fifth, sixth, three octaves.
+- **Hijaz**: an Arabic maqam on A2. The augmented second (B flat to C sharp), the flat sixth and the flat ninth enter in the middle. A slow vibrato is on every tone.
+- Twelve tones enter one by one in step with the charge (entry at 0.03 to 0.86 of full). Each tone arrives with a soft chime an octave up. Full charge locks the chord with a swell; over-hold pulls each tone sharp or flat.
+- The old mixes (Hum, Blend, Choir, Expanse, Titan) stay in the stepper.
 
 ## Notes
 
