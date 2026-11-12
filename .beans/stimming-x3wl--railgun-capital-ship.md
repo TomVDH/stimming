@@ -20,7 +20,7 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - [x] Task 4: the hit, the wound and the breakup
 - [x] Task 5: de-orbit and the re-entry streaks
 - [x] Task 6: impacts, Reset and the next ship
-- [ ] Task 7: sound
+- [x] Task 7: sound
 - [ ] Task 8: reduced motion, full QA, review, PR
 
 ## Notes

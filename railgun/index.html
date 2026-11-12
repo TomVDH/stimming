@@ -3971,6 +3971,7 @@ function stepAst(dt) {
   stepShipFx(dt);
   stepHulks(dt);
   stepImpacts();
+  stepShipSound();
   stepFrags();
   stepShards(dt);
   stepRain(dt);
@@ -5913,8 +5914,11 @@ for (const m of domeVols) {
   m.renderOrder = 1.8;
 }
 // shipDomes: { m, t0, i, P, S } for each landed hulk.
-// shipRumbles: the audio handles of the queued rumbles.
-const shipDomes = [], shipRumbles = [];
+// shipRumbles: the audio handles of every started ship sound.
+// shipDue: the sounds that wait for their sim time.
+// shipVoice: per hulk, its groan and roar state.
+// shipSfxLog: every ship sound, for QA.
+const shipDomes = [], shipRumbles = [], shipDue = [], shipVoice = [], shipSfxLog = [];
 // impK is a QA switch.
 // 1 draws the impacts in full.
 // 0 draws no impact.
@@ -5936,10 +5940,9 @@ function stepImpacts() {
     const m = shipMeshes[i];
     shipDomes.push({ m: domeVols[i], t0: h.landedAt, i, P: hulkSite(i, new THREE.Vector3()), S: 3500 + 1.5 * m.geometry.boundingSphere.radius * SHIP_SCALE });
     h.rumbleAt = h.landedAt + h.rumbleDelay;
-    // A rumble already past its time stays silent.
-    const wait = h.rumbleAt - simT;
-    const r = wait > -1 ? rumble(1, Math.max(0, wait)) : null;
-    if (r) shipRumbles.push(r);
+    // The frame loop starts the rumble when its time comes.
+    const rs = shipMeshes.map(x => x.geometry.boundingSphere.radius), k = 0.6 + 0.4 * rs[i] / Math.max(...rs);
+    sfxQueue('rumble', h.rumbleAt, 8, i, k, h.landedAt, ac => shipRumble(ac, k));
   });
   if (ship.state === 'gone' && ship.hulks.every(h => simT - h.landedAt >= DOME_LIFE)) nextTarget();
 }
@@ -5969,13 +5972,15 @@ function updateDomes() {
     d.m.visible = true;
   }
 }
-// The Reset click stops the queued rumbles.
+function killVoice(r) {
+  for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+  pend.delete(r);
+}
+// The Reset click stops every ship sound.
 function stopRumbles() {
-  for (const r of shipRumbles) {
-    for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
-    pend.delete(r);
-  }
-  shipRumbles.length = 0;
+  for (const r of shipRumbles) killVoice(r);
+  for (const v of shipVoice) if (v?.roar) killVoice(v.roar);
+  shipRumbles.length = 0; shipVoice.length = 0; shipDue.length = 0; shipSfxLog.length = 0;
 }
 // Reset's white and the next ship clear the impacts.
 // The rumbles stop.
@@ -5986,8 +5991,9 @@ function clearShip() {
   for (const m of domeVols) m.visible = false;
   for (const v of IMP_U.uImp.value) v.w = 0;
 }
-// True while a ship rumble waits or plays.
+// True while a ship sound waits or plays.
 function rumbleDue() {
+  if (shipDue.length) return true;
   if (!shipRumbles.length) return false;
   const now = kit.ac?.currentTime ?? 0;
   return shipRumbles.some(r => pend.has(r) && r.end >= now);
@@ -6528,6 +6534,7 @@ function shipHit(c) {
   // A kill fails each joint in turn; a wound fails the nearest.
   const joints = kill ? jointOrder(SHIP_MID.x) : [{ joint: ship.wound.joint, at: 0.12 }];
   ship.fx = { t0: simT, P, kill, joints: joints.map(j => ({ joint: j.joint, t: simT + j.at, done: false, P: new THREE.Vector3() })) };
+  queueShipSounds(ship.fx, Math.min(c, 1.25));
   if (!kill) return;
   // Each hulk leaves its joints: ends fore and aft, the tower up.
   ship.go = HULL.sections.map((sec, i) => {
@@ -7246,7 +7253,7 @@ function tick(now) {
 }
 // The kit asks once.
 // A pending rumble needs a second ask after it lands.
-let restT = 0;
+let restT = 0, meter = null;
 function restSoon() {
   kit.rest(() => !busy() && !pending());
   clearTimeout(restT);
@@ -7715,6 +7722,157 @@ function rumble(c, wait = DA / 343 / 8) {
   o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
   return track(t + 7.5, s, o);
 }
+/* ---------- the ship's voices ---------- */
+// A queued sound waits for its sim time, so a hide or a mute cannot lose it.
+// at: sim time. tol: seconds late before the sound is dropped.
+// ref: the sim time of the flash it answers.
+function sfxQueue(kind, at, tol, i, k, ref, play) {
+  const r = { kind, i, k, due: at, tol, ref, play, started: null, ctx: null };
+  shipDue.push(r); shipSfxLog.push(r);
+  return r;
+}
+// The crack comes four seconds after the flash.
+// Each thud lags its joint's flash.
+function queueShipSounds(fx, k) {
+  sfxQueue('crack', fx.t0 + 4, 8, 0, k, fx.t0, ac => shipCrack(ac, k));
+  fx.joints.forEach((j, n) => sfxQueue('thud', j.t + 0.3 + 0.5 * Math.random(), 3, n, k, j.t, ac => jointThud(ac, fx.kill ? k : 0.8 * k)));
+}
+// Start what is due, then steer the roars.
+function stepShipSound() {
+  if (tgtKind !== 'ship' || (!shipDue.length && !ship.go)) return;
+  // A Reset starts no new sound.
+  if (spin || (fill && !fill.cut)) return;
+  const ac = kit.live();
+  for (const r of shipDue.slice()) {
+    const late = simT - r.due;
+    if (late < 0) continue;
+    if (late <= r.tol && !ac) continue;
+    shipDue.splice(shipDue.indexOf(r), 1);
+    if (late > r.tol) continue;
+    r.started = simT; r.ctx = ac.currentTime;
+    const h = r.play(ac);
+    if (h) shipRumbles.push(h);
+  }
+  if (!ac) return;
+  ship.hulks.forEach((h, i) => stepRoar(ac, h, i));
+}
+// One roar per hulk in the air, all into one bus.
+// The roar follows the live hulk, so a late unmute still hears it.
+function stepRoar(ac, h, i) {
+  const v = shipVoice[i] ??= { groan: false, roar: null, done: false };
+  if (h.breakAt === null || v.done) return;
+  const age = simT - h.breakAt, a = hulkAt(h, age), now = ac.currentTime;
+  const alive = !!v.roar && pend.has(v.roar);
+  if (h.landedAt !== null || a.landed) {
+    v.done = true;
+    if (alive) {
+      v.roar.g.gain.setTargetAtTime(0, now, 0.25);
+      try { v.roar.src.stop(now + 1.6); } catch { /* gone */ }
+      v.roar.end = now + 1.7;
+    }
+    return;
+  }
+  if (a.entry <= 0) return;
+  const at = h.breakAt + VACUUM;
+  if (!v.groan && a.entry < 0.3) {
+    v.groan = true;
+    shipRumbles.push(shipGroan(ac, i));
+    shipSfxLog.push({ kind: 'groan', i, k: 1, due: at, ref: at, started: simT, ctx: now });
+  }
+  if (!alive) {
+    v.roar = entryRoar(ac, i);
+    shipSfxLog.push({ kind: 'roar', i, k: 1, due: at, ref: at, started: simT, ctx: now });
+  }
+  // The roar builds over twenty seconds of entry, then holds.
+  const b = THREE.MathUtils.smoothstep(age - VACUUM, 0, 20);
+  v.roar.g.gain.setTargetAtTime(0.04 + 0.2 * b, now, 0.5);
+  v.roar.lp.frequency.setTargetAtTime(160 + 700 * b, now, 0.5);
+  v.roar.end = now + 30;
+}
+// A far, thin crack: a high-passed burst with a second tick behind it.
+function shipCrack(ac, k) {
+  const t = ac.currentTime + 0.02, g = ac.createGain(), g2 = ac.createGain();
+  const n = hiss(ac, t, 0.5, 1.2), n2 = hiss(ac, t + 0.11, 0.4, 0.9);
+  const hp = filt(ac, 'highpass', 1500, 0.7), bp = filt(ac, 'bandpass', 2800, 1.1);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7 * k, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+  g2.gain.setValueAtTime(0.0001, t + 0.11); g2.gain.exponentialRampToValueAtTime(0.18 * k, t + 0.115); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  n.connect(g).connect(hp); n2.connect(g2).connect(hp);
+  hp.connect(bp).connect(kit.out);
+  echo(ac, bp, 0.6, 5000);
+  return track(t + 0.7, n, n2, hp, bp, g, g2);
+}
+// A low, muffled thud: a falling sine and a dull noise knock.
+function jointThud(ac, k) {
+  const t = ac.currentTime + 0.02, o = ac.createOscillator(), og = ac.createGain();
+  const n = hiss(ac, t, 0.6, 0.5), lp = filt(ac, 'lowpass', 150), ng = ac.createGain();
+  o.frequency.setValueAtTime(66 * jit(0.08), t); o.frequency.exponentialRampToValueAtTime(34, t + 0.4);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.42 * k, t + 0.012); og.gain.setTargetAtTime(0.0001, t + 0.05, 0.14);
+  ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.45 * k, t + 0.01); ng.gain.setTargetAtTime(0.0001, t + 0.04, 0.1);
+  o.connect(og).connect(kit.out); n.connect(lp).connect(ng).connect(kit.out);
+  echo(ac, og, 0.3, 300);
+  o.start(t); o.stop(t + 1.2);
+  return track(t + 1.3, o, n, lp, og, ng);
+}
+// A long tearing groan: a sliding saw pair and a creaking noise band.
+function shipGroan(ac, i) {
+  const t = ac.currentTime + 0.02, d = 7 + 2 * Math.random(), f = 64 * jit(0.12) + 3 * i;
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator(), lp = filt(ac, 'lowpass', 520, 3), g = ac.createGain(), o2g = ac.createGain();
+  o1.type = o2.type = 'sawtooth';
+  o1.frequency.setValueAtTime(f, t); o1.frequency.exponentialRampToValueAtTime(f * 0.55, t + d);
+  o2.frequency.setValueAtTime(f * 1.51, t); o2.frequency.exponentialRampToValueAtTime(f * 0.8, t + d);
+  lp.frequency.setValueAtTime(520, t); lp.frequency.exponentialRampToValueAtTime(170, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 1.8); g.gain.setTargetAtTime(0.0001, t + d * 0.6, d * 0.2);
+  o2g.gain.value = 0.45;
+  o1.connect(lp); o2.connect(o2g).connect(lp); lp.connect(g).connect(kit.out);
+  // Tearing: noise through a falling band, chopped by a fast uneven wobble.
+  const n = hiss(ac, t, d + 0.5, 0.8), bp = filt(ac, 'bandpass', 900, 4), cg = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain(), ng = ac.createGain();
+  bp.frequency.setValueAtTime(900, t); bp.frequency.exponentialRampToValueAtTime(260, t + d);
+  lfo.frequency.value = 9 * jit(0.3); lg.gain.value = 0.5; cg.gain.value = 0.5;
+  lfo.connect(lg).connect(cg.gain);
+  ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.1, t + 1.5); ng.gain.setTargetAtTime(0.0001, t + d * 0.6, d * 0.2);
+  n.connect(bp).connect(cg).connect(ng).connect(kit.out);
+  echo(ac, g, 0.3, 500);
+  for (const o of [o1, o2, lfo]) { o.start(t); o.stop(t + d + 1); }
+  return track(t + d + 1.1, o1, o2, lfo, n, lp, g, o2g, bp, cg, lg, ng);
+}
+// Every roar feeds this one bus.
+let roarBus = null;
+function roarOut(ac) {
+  if (roarBus && roarBus.ac === ac) return roarBus.g;
+  const g = ac.createGain();
+  g.gain.value = 0.9; g.connect(kit.out);
+  echo(ac, g, 0.22, 900);
+  roarBus = { ac, g };
+  return g;
+}
+// A roar voice: dark rushing noise with a rolling swell.
+// The hulk sets its level each frame.
+function entryRoar(ac) {
+  const t = ac.currentTime, src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 160, 0.9), g = ac.createGain(), am = ac.createGain();
+  const bp = filt(ac, 'bandpass', 700, 0.5), hg = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+  src.buffer = kit.noise; src.loop = true; src.playbackRate.value = (0.4 + 0.2 * Math.random()) * jit(0.05);
+  g.gain.value = 0.0001; am.gain.value = 0.8; hg.gain.value = 0.25;
+  lfo.frequency.value = 0.15 + 0.2 * Math.random(); lg.gain.value = 0.25;
+  lfo.connect(lg).connect(am.gain);
+  src.connect(lp).connect(g); src.connect(bp).connect(hg).connect(g);
+  g.connect(am).connect(roarOut(ac));
+  src.start(t, Math.random() * 0.9); lfo.start(t);
+  return Object.assign(track(t + 30, src, lfo, lp, bp, hg, g, am, lg), { src, g, lp });
+}
+// The rumble of a landing: lower and longer than the rock's.
+function shipRumble(ac, k) {
+  const t = ac.currentTime + 0.02, s = hiss(ac, t, 15, 0.22), lp = filt(ac, 'lowpass', 120), g = ac.createGain();
+  const lvl = 0.34 * k * jit(0.1);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 1.4); g.gain.setTargetAtTime(0.0001, t + 2.6, 3.2);
+  s.connect(lp).connect(g).connect(kit.out);
+  const o = ac.createOscillator(), o2 = ac.createOscillator(), og = ac.createGain();
+  o.frequency.value = 24 * jit(0.05); o2.frequency.value = 37 * jit(0.05);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 1.4); og.gain.setTargetAtTime(0.0001, t + 2.6, 3.2);
+  o.connect(og); o2.connect(og); og.connect(kit.out);
+  echo(ac, g, 0.2, 150);
+  o.start(t); o.stop(t + 15); o2.start(t); o2.stop(t + 15);
+  return track(t + 15.5, s, o, o2, lp, g, og);
+}
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
 sound.onChange(on => {
@@ -7928,6 +8086,17 @@ window.__qa = {
   chaos: () => chaos,
   audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: (prune(), pend.size), voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
   mute(on) { sound.set(!on); },
+  // The ship's voices: every queued sound with its due and start sim times.
+  shipSfx: () => ({ simT, hit: ship.fx ? ship.fx.t0 : null, joints: ship.fx ? ship.fx.joints.length : 0, due: shipDue.length, roars: ship.hulks.map((h, i) => !!(shipVoice[i]?.roar && !shipVoice[i].done && pend.has(shipVoice[i].roar))), log: shipSfxLog.map(({ kind, i, k, due, ref, started, ctx }) => ({ kind, i, k, due, ref, started, ctx })) }),
+  // A peak meter on the output bus, polled at 50 Hz.
+  tap() {
+    if (meter || !kit.ac) return !!meter;
+    const an = kit.ac.createAnalyser(), buf = new Float32Array(2048);
+    an.fftSize = 2048; kit.out.connect(an);
+    meter = { peak: 0, id: setInterval(() => { an.getFloatTimeDomainData(buf); for (const x of buf) meter.peak = Math.max(meter.peak, Math.abs(x)); }, 20) };
+    return true;
+  },
+  peak(reset = true) { const p = meter ? meter.peak : -1; if (reset && meter) meter.peak = 0; return p; },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
