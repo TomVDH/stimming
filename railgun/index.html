@@ -1815,11 +1815,11 @@ function retune() { astSize(); placeAst(); draw(); }
 // Hull units are HULL's metres.
 // Each hulk merges its boxes into one mesh, pivoted at its centre.
 const SHIP_DIST = 150000;
-// Tom asks for a larger ship: it draws at three times HULL.
+// Tom asks for a larger ship: it draws at 2.3 times HULL.
 // The hull frame keeps HULL's units, so the joints still match.
-const SHIP_SCALE = 3;
-// The station sits on the rock's hold bearing, high on the right.
-const SHIP_EL = rad(27);
+const SHIP_SCALE = 2.3;
+// The station sits on the rock's hold bearing, high in orbit.
+const SHIP_EL = rad(36);
 // The orbit climbs 8 degrees to the left through the station.
 const SHIP_CLIMB = rad(8);
 // The rise starts 60 degrees back along the orbit, low right.
@@ -1827,11 +1827,11 @@ const SHIP_RISE = rad(60);
 // A Reset or a load starts the rise 20 s in.
 // The ship then shows at once.
 const SHIP_HEAD = 20;
-// The deck tips 14 degrees toward the eye; its top edges show.
-const SHIP_TIP = rad(14);
+// The deck tips 18 degrees toward the eye; its top edges show.
+const SHIP_TIP = rad(18);
 // The aim aids see the rock's disc, moved to 150 km.
 const SHIP_AIM_R = 3750;
-const SHIP_HULL = linFit(0.42, 0.012, 245), SHIP_RUST = linFit(0.52, 0.09, 38), SHIP_GROOVE = linFit(0.28, 0.01, 245), SHIP_DARK = linFit(0.14, 0.01, 250);
+const SHIP_HULL = linFit(0.42, 0.012, 245), SHIP_RUST = linFit(0.56, 0.065, 45), SHIP_GROOVE = linFit(0.2, 0.008, 245), SHIP_BELL = linFit(0.24, 0.008, 250), SHIP_DARK = linFit(0.1, 0.005, 250);
 // A box: x0 to x1, y0 to y1, half width hz.
 const sbox = (x0, x1, y0, y1, hz) => new THREE.BoxGeometry(x1 - x0, y1 - y0, 2 * hz).translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
 // f moves each vertex; a box has vertices at its corners only.
@@ -1861,21 +1861,21 @@ function buildHulk(id) {
   // A dark groove cuts the upper hull; each ledge catches the sun.
   const block = (x0, x1, y0, y1, hz, f = () => {}) => {
     const g0 = y1 - 260;
-    for (const [a, b, c, d] of [[y0, -150, SHIP_HULL, 0], [-150, 30, SHIP_RUST, 60], [30, g0, SHIP_HULL, 0], [g0, g0 + 60, SHIP_GROOVE, 40], [g0 + 60, y1, SHIP_HULL, 0]]) add(shapeG(sbox(x0, x1, a, b, hz - d), f), c);
+    for (const [a, b, c, d] of [[y0, -150, SHIP_HULL, 0], [-150, 30, SHIP_RUST, 60], [30, g0, SHIP_HULL, 0], [g0, g0 + 70, SHIP_GROOVE, 70], [g0 + 70, y1, SHIP_HULL, 0]]) add(shapeG(sbox(x0, x1, a, b, hz - d), f), c);
   };
   // A turret: a sloped house and twin barrels to the prow.
   // dn -1 hangs it under the hull.
   const turret = (x, y, dn = 1) => {
     const top = y + 170 * dn;
     add(shapeG(sbox(x - 220, x + 220, Math.min(y - 20 * dn, top), Math.max(y - 20 * dn, top), 200), v => { if ((v.y - y) * dn > 100) { v.x = x + (v.x - x) * 0.7; v.z *= 0.8; } }));
-    for (const s of [-1, 1]) add(sbox(x + 120, x + 860, y + 60 * dn, y + 130 * dn, 35).translate(0, 0, s * 85));
+    for (const s of [-1, 1]) add(sbox(x + 120, x + 860, Math.min(y + 70 * dn, y + 120 * dn), Math.max(y + 70 * dn, y + 120 * dn), 25).translate(0, 0, s * 130));
   };
   if (id === 'prow') {
     // Two jaws taper to a split point.
     add(shapeG(sbox(2440, 5500, 60, 450, 360), v => { if (v.x > 5000) { v.y = v.y > 200 ? 340 : 230; v.z *= 0.3; } }));
     add(shapeG(sbox(2440, 5200, -450, -60, 340), v => { if (v.x > 5000) { v.y = v.y > -200 ? -230 : -330; v.z *= 0.3; } }));
     // A dark slot fills the split's root; its faces meet the jaws.
-    add(shapeG(sbox(2440, 3600, -60, 60, 330), v => { if (v.x > 3500) v.y = Math.sign(v.y) * 124; }), SHIP_DARK, 1);
+    add(shapeG(sbox(2440, 4300, -60, 60, 300), v => { if (v.x > 4000) v.y = v.y > 0 ? 163 : -175; }), SHIP_DARK, 1);
   } else if (id === 'fore') {
     // The bow end slopes down to the jaws.
     block(150, 2440, -620, 580, 450, v => { if (v.x > 2400) v.y += v.y > 500 ? -110 : v.y < -600 ? 120 : 0; });
@@ -1897,13 +1897,14 @@ function buildHulk(id) {
     block(-5500, -2520, -900, 950, 620, v => { if (v.x > -2600 && v.y > 900) v.x = -2950; });
     add(sbox(-5200, -3300, 930, 1010, 460));
     // Four dark engine bells flare from the stern face.
-    for (const y of [-610, -205, 205, 610]) add(new THREE.CylinderGeometry(175, 120, 420, 12).rotateZ(Math.PI / 2).translate(-5690, y, 0), SHIP_DARK);
+    for (const y of [-645, -215, 215, 645]) add(new THREE.CylinderGeometry(165, 110, 420, 12).rotateZ(Math.PI / 2).translate(-5690, y, 0), SHIP_BELL);
     turret(-3700, -900, -1);
   } else {
     // The tower sweeps back; a dark bridge slit runs under its cap.
-    add(shapeG(sbox(-2300, -1380, 630, 1040, 200), v => { if (v.y > 1000) v.x += v.x > -1800 ? -300 : -120; }));
-    add(sbox(-2420, -1700, 1030, 1150, 150), SHIP_DARK, 1);
-    add(shapeG(sbox(-2470, -1730, 1140, 1220, 200), v => { if (v.y > 1200) v.x += v.x > -2000 ? -65 : -25; }));
+    add(shapeG(sbox(-2300, -1380, 630, 1010, 200), v => { if (v.y > 1000) v.x += v.x > -1800 ? -290 : -110; }));
+    add(sbox(-2420, -1690, 1000, 1160, 140), SHIP_DARK, 1);
+    // The cap juts forward over the slit.
+    add(shapeG(sbox(-2470, -1620, 1150, 1230, 210), v => { if (v.y > 1200) v.x += v.x > -2000 ? -80 : -25; }));
     // A mast stands on the cap.
     add(sbox(-2250, -2190, 1210, 1420, 30));
   }
@@ -1948,7 +1949,7 @@ const shipMat = new THREE.ShaderMaterial({
     alb = mix(vec3(dot(alb, vec3(0.3, 0.59, 0.11))), alb, 0.35 + 0.65 * k3fbm(vH * 0.0021 + 5.0));
     // Panel joints: frames every 260 m, strake and deck lines.
     float joint = max(seam(vH.x, 260.0, 5.0), max(wall * seam(vH.y, 150.0, 3.0), top * seam(vH.z, 160.0, 4.0)));
-    alb *= 1.0 - 0.5 * joint;
+    alb *= 1.0 - 0.55 * joint;
     // The belly is darker than the flanks.
     alb *= mix(0.4, 1.0, smoothstep(-1000.0, 400.0, vH.y));
     vec3 sun = shipSun();
@@ -1957,9 +1958,9 @@ const shipMat = new THREE.ShaderMaterial({
     float nl = max(dot(N, uSunD), 0.0), back = smoothstep(-0.5, 0.6, dot(uSunD, -V));
     // Top faces catch the low sun at a graze: a metal sheen.
     float graze = pow(1.0 - max(dot(N, V), 0.0), 2.0) * back;
-    float sheen = top * graze * 0.4 * (0.55 + 0.6 * k3fbm(vH * 0.004 + 11.0)) * (1.0 - 0.7 * joint);
-    // Each wall's top lip catches the sun as a thin line.
-    float lip = wall * (1.0 - smoothstep(0.0, max(12.0, 1.5 * fwidth(vH.y)), vTop - vH.y)) * back * 0.22;
+    float sheen = top * graze * 0.32 * (0.6 + 0.5 * k3fbm(vH * 0.004 + 11.0)) * (1.0 - 0.7 * joint);
+    // Each wall's top lip catches the sun as a thin, crisp line.
+    float lip = wall * (1.0 - smoothstep(0.0, max(8.0, fwidth(vH.y)), vTop - vH.y)) * back * 0.24;
     // The planet's glow fills the flanks; the belly sees less of it.
     vec3 amb = mix(uHorC, uZenC, 0.5) * mix(0.15, 0.5, smoothstep(-0.6, 0.6, Nh.y));
     vec3 col = (alb * (amb + sun * nl) + warm * (sheen + lip)) * open;
@@ -1968,7 +1969,12 @@ const shipMat = new THREE.ShaderMaterial({
     float day = smoothstep(0.2, 0.8, uSunD.y);
     col = mix(air(col, vP), k2skyB(dir, 0.0), 0.5 * day);
     // The cirrus hangs nine kilometres up, in front of the ship.
-    gl_FragColor = vec4(wisps(dir, col, dot(dir, uSunD)), 1.0);
+    // Two blends give the ice's colour and cover.
+    float cs = dot(dir, uSunD);
+    vec3 w0 = wisps(dir, vec3(0.0), cs);
+    float a = clamp(1.0 - (wisps(dir, vec3(1.0), cs).g - w0.g), 0.0, 1.0);
+    // Over the dark hull a thin streak still reads as in front.
+    gl_FragColor = vec4(col * (1.0 - min(1.0, 1.35 * a)) + w0 / max(a, 1e-3) * min(1.0, 1.35 * a), 1.0);
   }`,
 });
 const shipMeshes = HULL.sections.map(sec => {

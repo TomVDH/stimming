@@ -24,4 +24,6 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 
 ## Notes
 
-- Tom, 2026-11-12: the ship draws about 12 degrees across, three times the spec's 4. `SHIP_SCALE = 3` in `railgun/index.html`; `HULL` keeps its design units.
+- Tom, 2026-11-12: the ship draws larger than the spec's 4 degrees. First 12 degrees; then "a little smaller and higher up in orbit".
+- Now: about 9.5 degrees across (`SHIP_SCALE = 2.3`), 36 degrees up (`SHIP_EL`), 150 km out. `HULL` keeps its design units.
+- The cirrus draws in front of the hull, in the ship's own shader.
