@@ -971,9 +971,6 @@ scene.add(far);
 // uCloudC: the clouds' own slow clock, in sim seconds.
 const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 } };
 const CLOUD_FS = /* glsl */`precision highp sampler3D;
-// The noise has no mipmaps: level 0 always.
-// An explicit level needs no derivatives, so samples after a discard or in a branch stay stable on Direct3D.
-#define texture(s, p) textureLod(s, p, 0.0)
 uniform sampler3D uVol;
 varying vec2 vUv;
 varying vec3 vP, vR, vF;
@@ -1062,16 +1059,12 @@ void main() {
     X += wave * H * vec2(0.012 * sin(X.y / H * 3.0 + tw * 0.35), 0.008 * sin(X.x / H * 2.5 - tw * 0.3));
   }
   float F = body(X);
-  // The heaps drift a fraction of a pixel each frame.
-  // An edge under two pixels wide snaps on and off: keep it at least that wide.
-  float fw = fwidth(F);
-  float soft = max(H * 0.05, 2.0 * fw);
+  float soft = H * 0.05;
   // The base melts into the haze, so the blast's push never shows a hard bottom edge.
   // The blast's push clears the heap instead of shoving a hard tuft.
   float tc = uStarT - uHitP.w;
-  // The edge stays inside the body: outside it the pillow shading is undefined.
   float a = smoothstep(0.0, soft, F) * smoothstep(-0.02 * H, 0.18 * H, vUv.y * H) * (1.0 - 0.7 * smoothstep(600.0, 4000.0, length(push)) * smoothstep(1.0, 9.0, tc));
-  // The void blows the cloud away where it reaches.
+  // The void blows the cloud away where it reaches; idle until a hit.
   a *= 1.0 - voidIn(vP);
   if (a < 0.004) discard;
   // Pillow depth toward the eye gives a normal.
@@ -1124,8 +1117,7 @@ void main() {
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
   // Towers are tall and catch the blast hardest.
   col += 0.8 * (vS.z > 0.5 ? 2.2 : 1.0) * hl * (0.06 + 0.94 * max(dot(N, Lh), 0.0)) * (0.2 + 0.8 * shH) + rim * (sunC * 0.12 + amb * 0.45 + hl * 0.6 + 0.01);
-  // The high wisps sit behind every heap: heap bodies stay nearly opaque, as the towers do.
-  gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.06) * thin));
+  gl_FragColor = vec4(col, a * (1.0 - (vS.z > 0.5 ? 0.0 : 0.25) * thin));
 }`;
 const CLOUD_VS = /* glsl */`
 attribute vec4 aC, aS;
@@ -1139,9 +1131,7 @@ void main() {
   // Each heap drifts on its own clock, thins away, then forms again.
   float sd = aS.z, heap = 1.0 - step(0.5, aS.y);
   float ph = fract(uCloudC * (0.6 + 0.8 * hs(sd)) / 360.0 + hs(sd + 1.0));
-  // Towers drift slowly round the horizon; heaps hold still.
-  // A drifting heap re-samples its fine cells each frame, and its tops flicker.
-  float a = (ph - 0.5) * radians(16.0) * 0.2 * (1.0 - heap);
+  float a = (ph - 0.5) * radians(16.0) * mix(0.2, 1.0, heap);
   vec3 C = vec3(aC.x * cos(a) - aC.z * sin(a), aC.y, aC.x * sin(a) + aC.z * cos(a));
   vLife = mix(1.0, sin(3.14159 * ph), heap);
   vec3 f = C - cameraPosition;
