@@ -152,6 +152,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target: the rock, or the capital ship. The choice waits for Reset.
     { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
+    // Ship fires: a test round from the ship to the plain; it waits for station.
+    { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
@@ -6418,6 +6420,7 @@ function landReset() {
   CLOUD_U.uCloudT.value = 0;
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
+  sshot = null; sRound.visible = sRoundGlint.visible = sPop.visible = sPopGlow.visible = false;
   // The old blast, its debris and the bolt's line are gone.
   blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
@@ -6451,12 +6454,109 @@ function whoosh() {
   track(t + L + 0.4, s);
 }
 
+/* ---------- the ship's shot: a test round to the plain ---------- */
+// The round starts at the hull's belly and falls to a spot on the plain.
+const SSHOT_T = 2;
+const sRound = makeFlare(linFit(0.97, 0.04, 225));
+const sRoundGlint = makeGlint(linFit(0.9, 0.08, 225));
+const sPop = makeFlare(linFit(0.95, 0.16, 95));
+const sPopGlow = makeFlare(linFit(0.8, 0.2, 340));
+let sshot = null;
+const sA = new THREE.Vector3(), sB = new THREE.Vector3(), sP = new THREE.Vector3(), sD = new THREE.Vector3(), sV = new THREE.Vector3(), sN = new THREE.Vector3();
+// The belly is the hull's -y side; the mesh matrix takes it to world.
+function shipBelly(out) {
+  const m = shipMeshes[0];
+  m.updateMatrixWorld(true);
+  return out.set(0, m.geometry.boundingBox.min.y, 0).applyMatrix4(m.matrixWorld);
+}
+// A spot on the plain, 3 to 8 km out, inside a safe band of the frame.
+function pickLanding(out) {
+  camera.updateMatrixWorld(true);
+  const cp = camera.position;
+  for (let i = 0; i < 80; i++) {
+    const nx = (rnd() * 2 - 1) * 0.7;
+    sD.set(nx, 0, 0.5).unproject(camera).sub(cp);
+    sD.y = 0;
+    if (sD.lengthSq() < 1e-6) continue;
+    sD.normalize();
+    const d = 3000 + rnd() * 5000;
+    out.copy(cp).addScaledVector(sD, d);
+    out.y = 0;
+    if (Math.hypot(out.x, out.z) < 1800) continue;
+    sN.copy(out).project(camera);
+    // The fresh point must clear the gun and the frame edge.
+    sV.set(0, TRUN_Y * 0.5, 0).project(camera);
+    if (sN.z > 1 || Math.abs(sN.x) > 0.8 || Math.abs(sN.y) > 0.9) continue;
+    if (Math.hypot(sN.x - sV.x, sN.y - sV.y) < 0.35) continue;
+    return out;
+  }
+  // Fall back to a point left of the gun, 5 km out.
+  return out.set(cp.x - 3500, 0, cp.z - 3500);
+}
+function shipShotReady() { return tgtKind === 'ship' && ship.state === 'station'; }
+function shipShot() {
+  if (!shipShotReady() || sshot) return;
+  const from = shipBelly(new THREE.Vector3()), to = pickLanding(new THREE.Vector3());
+  sshot = { state: 'flight', t0: simT, from, to, pos: from.clone(), boomT: 0, ring2: false };
+  wake();
+}
+// The round speeds up all the way down; the boom runs on its own clock.
+function stepShipShot(dt) {
+  ui.setting('shipfire').disabled = !shipShotReady() || !!sshot;
+  if (!sshot) return;
+  const age = simT - sshot.t0;
+  if (sshot.state === 'flight') {
+    const u = Math.min(1, age / SSHOT_T), s = u * u;
+    sshot.pos.lerpVectors(sshot.from, sshot.to, s);
+    sD.subVectors(sshot.to, sshot.from).normalize();
+    const dist = sshot.pos.distanceTo(camera.position);
+    const spd = 2 * sshot.from.distanceTo(sshot.to) * u / SSHOT_T;
+    // A floor of 1.6 mrad keeps the far round a visible point.
+    flare(sRound, sshot.pos, Math.max(10, dist * 0.0016), 2.2);
+    const len = Math.min(spd * 0.05, dist * 0.3);
+    sP.copy(sshot.pos).addScaledVector(sD, -len);
+    glint(sRoundGlint, sP, sD, len, 2.5, 1.6 * (0.3 + u));
+    if (u >= 1) {
+      sshot.state = 'boom'; sshot.boomT = simT;
+      sRound.visible = false; sRoundGlint.visible = false;
+      sillyBoom(sshot.to);
+    }
+    return;
+  }
+  const a = simT - sshot.boomT;
+  // A second, smaller bounce of the ring.
+  if (!sshot.ring2 && a > 0.35) { sshot.ring2 = true; sillyRing(sshot.to, 0.6); }
+  // The pop overshoots, then settles: a cartoon spring.
+  const spring = 1 - Math.exp(-9 * a) * Math.cos(16 * a);
+  flare(sPop, sshot.to, 700 * Math.max(0, spring), 3.2 * Math.exp(-a / 0.45));
+  flare(sPopGlow, sshot.to, 2200 * Math.min(1, a * 3), 0.9 * Math.exp(-a / 0.9));
+  if (a > 3) { sPop.visible = false; sPopGlow.visible = false; }
+  if (a > 5) { sshot = null; sPop.visible = sPopGlow.visible = false; }
+}
+function sillyRing(p, k) {
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + rnd() * 0.3, v = (260 + 120 * rnd()) * k;
+    puff(sP.set(p.x, 6, p.z), sV.set(Math.cos(a) * v, 60 + 90 * rnd(), Math.sin(a) * v), 3.5 + 1.5 * rnd(), (260 + 160 * rnd()) * k);
+  }
+}
+// A placeholder: an oversized pop, a bouncy dust ring, tumbling sparks.
+function sillyBoom(p) {
+  sillyRing(p, 1);
+  for (let i = 0; i < 18; i++) {
+    const a = rnd() * Math.PI * 2, v = 200 + 350 * rnd();
+    writeStar(sP.set(p.x, 10, p.z), simT, sV.set(Math.cos(a) * v, 300 + 300 * rnd(), Math.sin(a) * v), 0.15, i % 2 ? 0 : 2, 2.2 + rnd() * 1.4, 0.5, 16 + 12 * rnd(), 2, 1.6);
+  }
+  commitStars();
+  if (!reduced()) cam.shake += 0.5;
+}
+/* ---------- end the ship's shot ---------- */
+
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!sshot || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6476,6 +6576,7 @@ function tick(now) {
     stepAim(sdt);
     stepCharge(sdt);
     stepShot(sdt);
+    stepShipShot(sdt);
     stepCase(sdt);
     easeLook(dt);
     if (now - lastDraw >= FRAME - 2) {
@@ -7054,6 +7155,15 @@ window.__qa = {
   spin: () => (spin ? { t: spin.t } : null),
   reset() { resetToy(); },
   tgt: () => tgtKind,
+  shipFire() { shipShot(); },
+  shipShot: () => (sshot ? { state: sshot.state, age: simT - sshot.t0, pos: sshot.pos.toArray(), to: sshot.to.toArray() } : { state: 'idle', age: 0, pos: null }),
+  // The landing spot: distance from the eye, NDC, and distance from the gun.
+  landing() {
+    if (!sshot) return null;
+    const q = sshot.to.clone().project(camera);
+    return { dist: sshot.to.distanceTo(camera.position), nx: q.x, ny: q.y, gun: Math.hypot(sshot.to.x, sshot.to.z) };
+  },
+  shipFireEnabled: () => !ui.setting('shipfire').disabled,
   ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, alive: ship.hulks.filter(h => h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)) }),
   // The ship's centre and its hull's screen bounds, in CSS pixels.
   shipScreen() {
@@ -7116,7 +7226,7 @@ window.__qa = {
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
-  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
+  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
   // Free aim: lay the gun at yaw and elevation in degrees.
   aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
