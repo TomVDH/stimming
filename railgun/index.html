@@ -92,7 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { bankAt, launchAt, recoilAt, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
+import { bankAt, launchAt, recoilAt, makeTally, landRound, ROUND_C, MAX_ROUNDS, LAUNCH, GAP } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -1746,6 +1746,8 @@ const AST_ROCK = linFit(0.30, 0.015, 60), WHITE = linFit(0.95, 0.06, 80), EMBER 
 const astMat = new THREE.ShaderMaterial({
   uniforms: {
     ...U, uBurn: { value: 0.3 }, uToPlanet: { value: new THREE.Vector3(0, -1, 0) }, uCracks: { value: 1 }, uEvil: { value: 0 },
+    // Crater spots: xyz the hit's direction in rock space, w the hit time; w < 0 is off.
+    uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] },
     uRock: { value: new THREE.Vector3(...AST_ROCK) }, uWhite: { value: new THREE.Vector3(...WHITE) }, uEmber: { value: new THREE.Vector3(...EMBER) },
   },
   vertexShader: /* glsl */`
@@ -1759,6 +1761,7 @@ const astMat = new THREE.ShaderMaterial({
   varying vec3 vP, vN, vO;
   uniform float uBurn, uCracks, uTime, uEvil;
   uniform vec3 uToPlanet, uRock, uWhite, uEmber;
+  uniform vec4 uCrater[2];
   ${HEAD}
   ${AIR}
   void main() {
@@ -1780,6 +1783,17 @@ const astMat = new THREE.ShaderMaterial({
     float cr = smoothstep(0.55, 0.62, n) * (1.0 - smoothstep(0.62, 0.70, n));
     float flick = 0.92 + 0.08 * sin(uTime * 3.0 + n * 40.0);
     col += uEmber * cr * (0.3 + hot) * uBurn * flick * 5.0 * uCracks;
+    // Craters: a white-hot pit where a round struck, cooling to dull red over 20 s.
+    for (int i = 0; i < 2; i++) {
+      vec4 C = uCrater[i];
+      if (C.w < 0.0) continue;
+      float age = uTime - C.w, d = dot(normalize(vO), C.xyz) + 0.02 * (n - 0.5);
+      float pit = smoothstep(0.955, 0.985, d), rim = smoothstep(0.93, 0.955, d) * (1.0 - pit);
+      float glow = max(0.0, 1.0 - age / 20.0) * (0.35 + 2.6 * exp(-age / 4.0));
+      // A scorched ring frames the pit.
+      col *= 1.0 - 0.6 * rim;
+      col += mix(uEmber * 1.6, uWhite * 2.0, exp(-age / 1.2)) * pit * glow * (0.6 + 0.8 * n);
+    }
     // Aerosmith: near-black basalt split by wide, slow-breathing red fissures.
     if (uEvil > 0.5) {
       col *= 0.4;
@@ -1796,7 +1810,8 @@ scene.add(astMesh);
 // The rock's place in the sky, its size curve and its state.
 // state: approach, hold, entry (reserved), shatter, gone.
 // away: the trail's direction; side and upv span its section.
-const ast = { s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
+// jolt: a crater's shove; tally: the damage the salvo rounds have done.
+const ast = { jolt: new THREE.Vector3(), tally: makeTally(), s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
 // Where the rock is at fall fraction s.
 const astAt = (s, out) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 - s));
 function astSize() {
@@ -1807,7 +1822,7 @@ function astSize() {
   if (ast.state !== 'shatter') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
 }
 function placeAst() {
-  astAt(ast.s, ast.pos);
+  astAt(ast.s, ast.pos).add(ast.jolt);
   astMesh.position.copy(ast.pos);
   U.uAstG.value.set(ast.pos.x, ast.pos.z);
   placeFrags();
@@ -2187,7 +2202,7 @@ function makeFragTrail(own = false) {
   return m;
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
-const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
+const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 }, uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
 const frags = Array.from({ length: 4 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
@@ -3397,6 +3412,8 @@ function stepAst(dt) {
     // The hot face sheds glowing bits; they fall back into the smoke.
     if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
   }
+  // A crater's shove eases back onto the path over a second and a half.
+  if (ast.jolt.lengthSq() > 1) { ast.jolt.multiplyScalar(Math.exp(-dt / 1.5)); if (ast.state === 'hold') placeAst(); } else ast.jolt.set(0, 0, 0);
   if (ast.state === 'approach') {
     ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
     if (ast.s >= 1) ast.state = 'hold';
@@ -3472,7 +3489,7 @@ act.release = (by = 'pointer') => {
   const aimed = manual.on || ast.state === 'shatter' || aimNow.err < 0.012;
   if (c < ARM || !aimed || (fireMode === 'salvo' && !bank)) { fizzle(); return; }
   humStop(kit.live());
-  if (fireMode === 'salvo') fire(ROUND_C, bank);
+  if (fireMode === 'salvo') fire(ROUND_C, bank, true);
   else fire(c);
 };
 // The charge bleeds off with a falling groan and a few sparks.
@@ -5488,10 +5505,15 @@ const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chQ = new THREE.Vect
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
 const chunkGlow = chunks.map(() => makeFlare(linFit(0.78, 0.13, 52)));
+// A hunted chunk's burst flash.
+const huntFlares = chunks.map(() => makeFlare(linFit(0.9, 0.12, 60)));
 function stepChunks() {
   for (const [ci, ch] of chunks.entries()) {
-    if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; continue; }
-    const age = simT - sSeed.array[ch.i * 4 + 2], r = sSeed.array[ch.i * 4 + 1];
+    if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; huntFlares[ci].visible = false; continue; }
+    // A hunted chunk stops where it burst; its trail holds, then fades.
+    const age = ch.burstAt ? ch.burstAge : simT - sSeed.array[ch.i * 4 + 2], r = ch.burstAt ? ch.r0 : sSeed.array[ch.i * 4 + 1];
+    const bt = ch.burstAt ? simT - ch.burstAt : -1;
+    flare(huntFlares[ci], ch.burstP || MUZZLE, r * 12 * (1 + (1 - Math.exp(-Math.max(bt, 0) / 0.3))), bt >= 0 && bt < 4 ? 3 * Math.exp(-bt / 0.08) + 0.7 * Math.exp(-bt / 1.1) : 0);
     shardAt(ch.i, age, chP, chV);
     // Half the pieces burn away in the air; the shader shrinks the same ones.
     const shr = ((sSeed.array[ch.i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
@@ -5507,7 +5529,7 @@ function stepChunks() {
     // The ember pool cools over about twenty seconds.
     U.uPool.value[ci].set(ch.landP ? ch.landP.x : 0, ch.landP ? ch.landP.z : 0, ch.landAt ? Math.exp(-(simT - ch.landAt) / 8) * (1 - THREE.MathUtils.smoothstep(simT - ch.landAt, 15, 22)) : 0, r * 3);
     const landed = ch.landAt ? 1 - THREE.MathUtils.smoothstep(simT - ch.landAt, 0, 10) : 1;
-    const on = Math.min(1, age / 2) * shr * landed * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    const on = Math.min(1, age / 2) * shr * landed * (1 - THREE.MathUtils.smoothstep(age, 50, 58)) * (bt >= 0 ? 1 - THREE.MathUtils.smoothstep(bt, 0, 6) : 1);
     // A faint globe swells as the piece falls and fades as it cools.
     flare(chunkGlow[ci], chP, r * (8 + 0.15 * age) * Math.max(shr, 0.3), on * (0.022 + 0.05 * Math.exp(-age / 6)));
     // Each piece's glow lights the smoke round it.
@@ -5560,12 +5582,16 @@ const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bv = new THREE.Vector3
 const rounds = [];
 // Where a round is t seconds after its rail start.
 function roundAt(r, t, out) {
+  // A hunting round leaves its path and runs slowly to its chunk.
+  if (r.re && t >= r.re.t) return out.lerpVectors(r.re.p0, r.re.to, Math.min(1, (t - r.re.t) / r.re.T));
   if (t <= 0 || !r.target) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
   // It leaves at 1.6 times its mean speed and slows in the air: same arrival, a quicker look.
   const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 1.6);
   return out.lerpVectors(r.muzzle, r.target, u);
 }
+// A round's landing time on its own clock.
+const landOf = r => (r.re ? r.re.t + r.re.T : 0.3 + r.T);
 // The target seam: the rock today; the ship plugs in here.
 function tgtPos(out) { return out.copy(ast.pos); }
 // Where the target is after 0.3 + T seconds.
@@ -5605,27 +5631,97 @@ function decide(cy, r, power) {
   lit = cy;
 }
 // A round lands.
-// The first round on target breaks the rock.
+// Rail: a round on target breaks the rock.
+// Salvo: the tally says crater, break, hunt or miss.
 function roundHits(r) {
   const cy = r.cy;
-  if (r.canHit && !cy.decided) { decide(cy, r, r.c); tgtHit(r.c); return; }
-  // The last round lands with no hit: the cycle's hit is a miss.
+  if (!r.salvo) {
+    if (r.canHit) { decide(cy, r, r.c); ast.tally.broken = true; tgtHit(r.c); huntAfter(); }
+    else cy.hit = true;
+    return;
+  }
+  r.res = r.canHit && (!ast.tally.broken || r.chunk >= 0) ? landRound(ast.tally, r.c) : 'miss';
+  if (r.res === 'crater') addCrater(r);
+  else if (r.res === 'break') { decide(cy, r, ast.tally.dmg); tgtHit(Math.min(1.25, ast.tally.dmg)); huntAfter(); }
+  else if (r.res === 'hunt') burstChunk(r.chunk);
+  // The last round lands with no break: the cycle's hit is a miss.
   if (!cy.decided && r.j === r.n) cy.hit = true;
 }
+// After a break, salvo rounds in flight lock onto the big chunks, the biggest first.
+// Each slows in the thin air and lands HUNT_GAP s after the last.
+// So each chunk bursts clear of the fireball.
+const HUNT_GAP = 2.5;
+function huntAfter() {
+  let ci = 0, k = 0;
+  for (const q of rounds) {
+    if (!q.launched || q.hit || !q.canHit || !q.salvo || q.chunk >= 0) continue;
+    while (ci < chunks.length && chunks[ci].i < 0) ci++;
+    if (ci >= chunks.length) break;
+    q.chunk = ci++;
+    // The round runs from where it is now to where the chunk will be.
+    const ch = chunks[q.chunk], t = simT - q.s0, land = simT + HUNT_GAP * ++k;
+    const p0 = roundAt(q, t, new THREE.Vector3()), to = new THREE.Vector3();
+    shardAt(ch.i, land - sSeed.array[ch.i * 4 + 2], to, bv);
+    q.re = { t, p0, to, T: land - simT };
+  }
+}
+// A crater: a hot pit on the face toward the gun, spall, a small flash, a shove.
+const crDir = new THREE.Vector3(), crP = new THREE.Vector3(), crV = new THREE.Vector3();
+function addCrater(r) {
+  const R = ast.R;
+  crDir.copy(r.muzzle).sub(ast.pos).normalize().add(crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.7)).normalize();
+  crP.copy(ast.pos).addScaledVector(crDir, R);
+  astMesh.updateMatrixWorld();
+  crV.copy(crP); astMesh.worldToLocal(crV).normalize();
+  const C = astMat.uniforms.uCrater.value, slot = C[0].w < 0 ? C[0] : C[1].w < 0 ? C[1] : (C[0].w <= C[1].w ? C[0] : C[1]);
+  slot.set(crV.x, crV.y, crV.z, simT);
+  hitFlash = Math.max(hitFlash, 0.33);
+  // uHit holds the sky direction to the rock, as the shatter sets it.
+  U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, hitFlash);
+  ast.jolt.addScaledVector(crDir, -0.08 * R);
+  if (reduced()) return;
+  const sp = R / 600;
+  for (let i = 0; i < 40; i++) {
+    crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().addScaledVector(crDir, 1.2).normalize().multiplyScalar((150 + 450 * rnd()) * sp);
+    writeStar(crP, simT + rnd() * 0.2, crV, 0.08 + 0.12 * rnd(), 2, 2 + rnd() * 6, 0.4 + 0.8 * rnd(), 0.9 + 0.7 * rnd(), 3, 0.3);
+  }
+}
+// The rock's damage and craters clear for a new rock or a reset.
+function clearHits() {
+  ast.tally = makeTally(chunks.length);
+  for (const c of astMat.uniforms.uCrater.value) c.set(0, 0, 0, -1);
+  ast.jolt.set(0, 0, 0);
+}
+// A hunted chunk bursts in the air: a flash, embers, and its trail stops.
+function burstChunk(ci) {
+  const ch = chunks[ci];
+  if (!ch || ch.i < 0 || ch.burstAt) return;
+  const age = simT - sSeed.array[ch.i * 4 + 2];
+  ch.burstAt = simT; ch.burstAge = age; ch.r0 = sSeed.array[ch.i * 4 + 1];
+  ch.burstP = new THREE.Vector3(); shardAt(ch.i, age, ch.burstP, bv);
+  // The piece itself is gone.
+  sSeed.array[ch.i * 4 + 1] = 0; sSeed.needsUpdate = true;
+  if (reduced()) return;
+  const sp = ast.R / 600;
+  for (let n = 0; n < 70; n++) {
+    crV.set(rnd() - 0.5, rnd() - 0.4, rnd() - 0.5).normalize().multiplyScalar((60 + 220 * rnd()) * sp);
+    writeStar(ch.burstP, simT + 0.03 * rnd(), crV, 0.3 + 0.3 * rnd(), 1, 1.5 + 2 * rnd(), 0.4 + 0.4 * rnd(), 1.1 + 0.9 * rnd(), 2, 0.7, 2);
+  }
+}
 // The gun-side power of a round: it rises round by round in a salvo.
-const gunPow = r => (r.n > 1 ? r.j / MAX_ROUNDS : r.c);
+const gunPow = r => (r.salvo ? r.j / MAX_ROUNDS : r.c);
 // The newest round out of the muzzle: its number, its clock and its power.
 // Rail has one round: j 1, the clock from 0.3 s, the shot's power.
 function newest(sh) {
-  const age = simT - sh.t0, j = sh.n > 1 ? Math.max(1, Math.min(sh.n, Math.floor((age - LAUNCH) / GAP) + 1)) : 1;
-  return { j, ra: age - launchAt(j), gp: sh.n > 1 ? j / MAX_ROUNDS : sh.c };
+  const age = simT - sh.t0, j = sh.salvo ? Math.max(1, Math.min(sh.n, Math.floor((age - LAUNCH) / GAP) + 1)) : 1;
+  return { j, ra: age - launchAt(j), gp: sh.salvo ? j / MAX_ROUNDS : sh.c };
 }
 // Rounds launch, land, and leave once their contrail fades.
 function stepRounds() {
   for (const r of rounds) {
     const a = simT - r.s0;
     if (!r.launched && a >= 0) launchRound(r);
-    if (r.launched && !r.hit && a >= 0.3 + r.T) { r.hit = true; roundHits(r); }
+    if (r.launched && !r.hit && a >= landOf(r)) { r.hit = true; roundHits(r); }
   }
   // Each round's Mach ring runs out from the muzzle at 340 m/s and fades over 14 s.
   for (const s of U.uShocks.value) s.w = 0;
@@ -5636,21 +5732,21 @@ function stepRounds() {
   }
   for (let i = rounds.length - 1; i >= 0; i--) {
     const r = rounds[i];
-    if (simT - r.s0 > 0.3 + r.T + 16) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
+    if (simT - r.s0 > landOf(r) + 16) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
   }
 }
-fire = (c, n = 1) => {
+fire = (c, n = 1, salvo = false) => {
   // A new cycle waits until the last cycle's rounds have all left.
   if (shot && simT < shot.t0 + launchAt(shot.n)) return;
   // A new cycle throws out a case the last one still holds.
   if (shot && !shot.ejected) ejectCase();
   // A weak shot takes 11.5 seconds to cross; a full one 8.5.
   const T = THREE.MathUtils.lerp(11.5, 8.5, c);
-  shot = { t0: simT, c, n, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T };
-  for (let j = 1; j <= n; j++) rounds.push({ j, n, c, T, cy: shot, s0: simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null });
+  shot = { t0: simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T };
+  for (let j = 1; j <= n; j++) rounds.push({ j, n, c, salvo, T, cy: shot, s0: simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null });
   launchRound(rounds[rounds.length - n]);
-  // One round: the cycle knows its target at once.
-  if (n === 1) { const r = rounds[rounds.length - 1]; shot.target.copy(r.target); shot.canHit = r.canHit; }
+  // Rail: the cycle knows its target at once.
+  if (!salvo) { const r = rounds[rounds.length - 1]; shot.target.copy(r.target); shot.canHit = r.canHit; }
   // The Mach ring starts at the muzzle's foot.
   // It reaches the eye at the speed of sound.
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
@@ -5681,7 +5777,7 @@ fire = (c, n = 1) => {
   // The shot flings the field's motes out along the bore.
   flingMotes();
   // A salvo's hit sounds wait for the sound pass.
-  { const ac = kit.live(); if (ac) { shotSound(ac, shot); if (n === 1) hitSounds(ac, shot); } }
+  { const ac = kit.live(); if (ac) { shotSound(ac, shot); if (!salvo) hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
@@ -5727,7 +5823,7 @@ function shatter(c) {
   });
   shardGeo.instanceCount = keep.length;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
-  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; });
+  chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; ch.burstAt = 0; ch.burstP = null; });
   // Embers: burning pieces fly out all round and arc down.
   const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
@@ -5772,6 +5868,7 @@ function respawn() {
   astMesh.quaternion.random();
   seedFrags();
   ast.s = 0; ast.state = 'approach'; ast.holdT = 0;
+  clearHits();
   // Each new rock rolls its size.
   // Random runs through the three common sizes; Aerosmith is picked on purpose.
   if (devSize === 'random') { const ks = ['boulder', 'mountain', 'moon']; opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
@@ -5951,7 +6048,7 @@ function stepShot(dt) {
   // The barrel slams back 320 m, holds half a second, then runs out over seconds.
   // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
   // A salvo kicks harder round by round, up to the clearance point.
-  if (shot.n > 1) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
+  if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
   else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
@@ -5994,7 +6091,7 @@ function blast(sh, k = sh.c) {
 function updateRibbons() {
   let lead = null;
   for (const t of tracers) {
-    const r = t.round, a = r ? simT - r.s0 : -1, land = r ? 0.3 + r.T : 0;
+    const r = t.round, a = r ? simT - r.s0 : -1, land = r ? landOf(r) : 0;
     const live = !!r && a >= 0 && a < land + 0.3;
     t.bolt.visible = live;
     if (!live) continue;
@@ -6045,7 +6142,7 @@ function updateBolt() {
   let c = shot.c;
   if (lead) {
     // The head's glints and flare follow the leading round.
-    const a = simT - lead.s0, land = 0.3 + lead.T, fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
+    const a = simT - lead.s0, land = landOf(lead), fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
     roundAt(lead, a, bp); roundAt(lead, a - 0.02, bq);
     // The glint lies along the flight line.
     bv.subVectors(bp, bq);
@@ -6189,7 +6286,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; clearHits(); for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // Embers from the old rock go too.
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
@@ -6223,7 +6320,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6841,8 +6938,11 @@ window.__qa = {
   slide(m) { U.uRecoil.value = m; shadowDirty = true; frame(); draw(); },
   cap: () => SALVO_CAP,
   rings: () => U.uShocks.value.map(v => +v.w.toFixed(3)),
+  tally: () => ({ ...ast.tally }),
+  craters: () => astMat.uniforms.uCrater.value.filter(c => c.w >= 0 && simT - c.w < 20).length,
+  hunted: () => chunks.filter(ch => ch.burstAt).length,
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
-  salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n); frame(); draw(); },
+  salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n, true); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
   release() { act.release('pointer'); },
@@ -6862,6 +6962,9 @@ window.__qa = {
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
   // Free aim: lay the gun at yaw and elevation in degrees.
   aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
+  aimTrack() { ui.setting('aim').set('track', true); },
+  // The rock's centre and radius in CSS pixels, for cropped stills.
+  astScreen() { const p = ast.pos.clone().project(camera), q = ast.pos.clone().addScaledVector(camera.up, ast.R).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height, R: Math.abs(q.y - p.y) * 0.5 * r.height }; },
   // The muzzle in CSS pixels, for cropped stills.
   // Any barrel point in CSS pixels: a along, x across, u up.
   screenOf(a, x = 0, u = 0) { const p = barrelPt(a, x, u, new THREE.Vector3()).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height }; },

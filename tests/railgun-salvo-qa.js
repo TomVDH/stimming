@@ -4,6 +4,18 @@ const q = () => window.__qa;
 const log = [];
 const ok = (cond, what) => { log.push(`${cond ? 'PASS' : 'FAIL'} ${what}`); };
 const near = (a, b, eps) => Math.abs(a - b) <= eps;
+// The frame's mean brightness, 0 to 1, read right after a fresh draw.
+function lum() {
+  q().run(1 / 30);
+  const cv = document.querySelector('#stage canvas'), c2 = document.createElement('canvas');
+  c2.width = 64; c2.height = 40;
+  const g = c2.getContext('2d', { willReadFrequently: true });
+  g.drawImage(cv, 0, 0, 64, 40);
+  const d = g.getImageData(0, 0, 64, 40).data;
+  let s = 0;
+  for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2];
+  return s / (d.length / 4) / 765;
+}
 // A reset runs a timelapse; presses wait until it ends.
 function settle() { q().reset(); for (let i = 0; i < 40 && q().spin(); i++) q().run(1); q().run(0.5); }
 
@@ -62,6 +74,40 @@ const checks = {
     q().mode('rail'); q().shoot(1); q().run(0.9);
     ok(q().recoil().slide > 300, `Rail still slams 320 m (${Math.round(q().recoil().slide)})`);
     ok(q().rings().filter(w => w > 0).length === 1, 'Rail runs one ring');
+    settle();
+  },
+  task5() {
+    settle();
+    const before = lum();
+    q().salvo(2); q().run(11.3);
+    ok(lum() > 0.5 * before, `the frame stays lit as a crater lands (${lum().toFixed(3)} vs ${before.toFixed(3)})`);
+    q().run(2.7);
+    ok(near(q().tally().dmg, 0.7, 1e-5), `two rounds leave 0.7 damage (${q().tally().dmg})`);
+    ok(q().craters() === 2, `two craters glow (${q().craters()})`);
+    ok(q().ast().state !== 'shatter', 'the rock holds');
+    q().salvo(4); q().run(11.5);
+    ok(q().ast().state === 'shatter' && q().hunted() === 0, `hunts wait for the chunks to clear the fireball (${q().hunted()} burst at the break)`);
+    q().run(2.5);
+    ok(q().hunted() === 1, `the first hunt lands about 2.5 s after the break (${q().hunted()})`);
+    q().run(6);
+    const res = q().rounds().slice(-4).map(r => r.res);
+    ok(JSON.stringify(res) === JSON.stringify(['break', 'hunt', 'hunt', 'hunt']), `a wounded rock: break, then three hunts (${res})`);
+    ok(q().ast().state === 'shatter', 'the break shatters the rock');
+    ok(q().hunted() === 3, `three chunks burst (${q().hunted()})`);
+    settle();
+    q().salvo(1); q().run(13);
+    ok(q().rounds().slice(-1)[0].res === 'crater', 'a one-round salvo craters, never breaks');
+    ok(q().ast().state !== 'shatter', 'the rock survives one round');
+    // Reset clears at its cut under the white fill, as it does for the shot.
+    q().salvo(5); q().run(4); settle();
+    ok(q().rounds().length === 0, 'Reset clears the rounds');
+    ok(q().tally().dmg === 0, 'Reset clears the tally');
+    ok(q().craters() === 0, 'Reset clears the craters');
+    settle();
+    q().aimFree(40, 10); q().salvo(1); q().run(13);
+    ok(q().tally().dmg === 0, 'a Free-aim round off the disc does no damage');
+    ok(q().rounds().slice(-1)[0].res === 'miss', 'it is a miss');
+    q().aimTrack();
     settle();
   },
 };
