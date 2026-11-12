@@ -622,7 +622,7 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   if (slider) br.append(slider.el);
   const actionEls = [...bl.children];
 
-  /* top right: legacy link, sound, Settings, (i) */
+  /* top right: legacy link, sound, Settings, Dev (only with ?dev), (i) */
   const snd = iconButton('snd', SOUND_SVG, 'Sound');
   if (!document.getElementById('snd')) snd.id = 'snd';
   snd.setAttribute('aria-pressed', 'false');
@@ -672,6 +672,24 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       onQuality(v => q.handle.set(v));
       sec.append(q.el);
       addSec(sec);
+    }
+  }
+  /* the Dev sheet: tuning rows for the people who build the toy */
+  // The rows always exist, so the toy reads their values everywhere.
+  // Only ?dev in the address shows the Dev button, beside Settings.
+  if (spec.dev?.length) {
+    const devOn = new URLSearchParams(location.search).has('dev');
+    const sec = make('div', 's2-sec');
+    const host = devOn ? layer : make('div', '');
+    spec.dev.forEach(row => {
+      const r = makeRow(row, `stimming.${id}.${row.id}`, host);
+      settings.set(row.id, r.handle);
+      sec.append(r.el);
+    });
+    if (devOn) {
+      const dev = iconButton('s2-set s2-dev', DEV_SVG, 'Dev');
+      tr.append(dev);
+      makeSheet(layer, { title: 'Dev', anchor: dev }).el.append(sec);
     }
   }
   let keys = null;
@@ -886,6 +904,8 @@ export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false, qual
 }
 
 /* ---------- settings tray ---------- */
+// The Dev button: a code bracket.
+const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>';
 const SLIDERS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg>';
 // A toy without Settings gets the shared tray at the bar's right edge.
 // Hover or a tap opens it; a press elsewhere or Escape closes it.

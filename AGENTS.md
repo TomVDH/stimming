@@ -118,7 +118,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   | Slot | Holds | Limit |
   |---|---|---|
   | Top left | Stimming logo (unboxed), `/ TOY NAME`, then the choice | One choice group: `segments` (five or fewer), `stepper` (more), or `tray` (icons) |
-  | Top right | Sound, Settings, (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order; does not count to the limit |
+  | Top right | Sound, Settings, Dev (only with `?dev`), (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order; does not count to the limit |
   | Bottom left | Actions | Three at most |
   | Bottom right | Main slider | One at most; a word label, no number |
   | Bottom centre | Key strip | Four entries at most |
@@ -126,6 +126,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   - At most five visible controls; a choice group counts as one. An empty slot draws nothing.
   - Shared verbs: `+ Noun` adds, `Shuffle` (die icon) randomizes, `Clear` empties, `Reset` returns to the start. With Clear shown, Reset lives in the Settings footer. One-word literal verbs are fine (Drip, Blow, Release).
   - Everything else goes in the Settings sheet; the site quality row sits there too.
+  - Settings and Dev (Tom, 2026-11-12, the standard for every toy): Settings holds only what anyone playing with the toy may want (comfort, controls, performance). Tuning for the people who build the toy (look, tone, sound picks, dev pins) goes in the bar spec's `dev: [...]` rows. The shell shows a Dev button (a code bracket) beside Settings only when the address has `?dev`; the rows always exist, so the toy reads their values everywhere. Railgun is the first toy on it; others move when Tom picks them.
   - The key strip shows keycap then verb (`[CLICK] place`), swaps words by pointer, and fades after three gestures or 8 s; (i) brings it back.
   - Phones (stage under 640 px): the choice moves bottom left as a stepper or tray chip, actions bottom right, the slider into Settings. Touch targets are 34 px.
   - Mobile and compliance (Tom, 2026-11-09): every shell change and toy port holds the spec's list. Check 1280 px, 375 × 812 and 812 × 375. The shell measures collisions; never rely on a breakpoint alone. `tests/bar-v2.html` must pass.
