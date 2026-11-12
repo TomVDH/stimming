@@ -19,6 +19,7 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] QA: clean console, 30 fps
 - [x] Note for Tom on comparing the shot takes
 - [x] Tom (2026-11-12): boom bass trimmed about 3 dB; Mesa is the default shot take
+- [x] Tom (2026-11-12): traverse at minimal volume with rhythmic metal clanks
 - [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
@@ -59,5 +60,5 @@ Tom (2026-11-12): the first stacks were too musical; he wants bombastic, mechani
 - Impact: the shot bus and its echo send dip 20 dB 1.6 s before the prelude. The whoosh then swells 18 dB with an opening filter, a riser and a sub climb, a 20 ms hush, then a crack and a knock on the flash.
 - Blast bus: impact, boom, fire and rumble share one compressor (threshold -14, ratio 12, 30 ms attack). Master peak at Moon, charge 1.25: -1.6 dBFS. No energy above 2.5 kHz during the boom (-77 to -88 dB).
 - Tom (2026-11-12): too much crackling. Removed the far crackle layer, halved the fire pops and darkened them, slowed the limiter, cut the sub swell.
-- Motor: start above 0.1 of 6 deg/s, stop below 0.025; torn down 1.5 s after a stop.
+- Motor: the whine bed sits about 6 dB lower (-36 dB RMS); metal clanks alternate tick and tock (610 and 470 Hz, inharmonic partials), 1.5 a second at a crawl to 7 flat out, scheduled ahead of the frame. Start above 0.1 of 6 deg/s, stop below 0.025; torn down 1.5 s after a stop.
 - Frame rate matches the base build (30 draws/s; the same short dips at release and hit).

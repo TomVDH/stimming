@@ -6607,7 +6607,7 @@ function motorStart(ac) {
   pump.connect(lp).connect(am);
   // The gear whine: a square through a narrow band.
   const gear = ac.createOscillator(), gg = ac.createGain();
-  gear.type = 'square'; gear.frequency.value = 220; gg.gain.value = 0.35;
+  gear.type = 'square'; gear.frequency.value = 220; gg.gain.value = 0.15;
   gear.connect(bp).connect(gg).connect(am);
   // The flow: oil hisses through the valves.
   const flow = ac.createBufferSource(), fb = filt(ac, 'bandpass', 1500, 1.2), fg = ac.createGain();
@@ -6620,7 +6620,7 @@ function motorStart(ac) {
   am.connect(g).connect(kit.out);
   const srcs = [pump, gear, flow, chat];
   for (const s of srcs) s.start();
-  motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0 };
+  motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0, next: 0, n: 0 };
 }
 // The frame loop feeds the motor the gun's slew speed.
 function motorUpdate() {
@@ -6629,8 +6629,11 @@ function motorUpdate() {
   if (!motor) { if (s < 0.1) return; motorStart(ac); }
   const m = motor, t = ac.currentTime;
   // Two thresholds keep a slow settle from clunking twice.
-  if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); }
+  if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); m.next = t + 0.12; }
   else if (m.on && s < 0.025) { m.on = false; clunk(ac, 0.7); m.off = setTimeout(() => { if (motor === m && !m.on) motorStop(); }, 1500); }
+  // The teeth clank in a rhythm: 1.5 a second at a crawl, 7 flat out.
+  // Each clank is scheduled ahead, so the rhythm holds between frames.
+  if (m.on) while (m.next < t + 0.12) { clank(ac, Math.max(t, m.next), m.n++ % 2, s); m.next += 1 / (1.5 + 5.5 * s); }
   if (m.quiet) return;
   m.quiet = !m.on;
   const v = m.on ? s : 0;
@@ -6639,7 +6642,17 @@ function motorUpdate() {
   m.bp.frequency.setTargetAtTime(700 + 1400 * v, t, 0.12);
   m.chat.frequency.setTargetAtTime(8 + 34 * v, t, 0.12);
   m.fg.gain.setTargetAtTime(0.1 + 0.4 * v, t, 0.1);
-  m.g.gain.setTargetAtTime(m.on ? 0.05 + 0.13 * Math.sqrt(s) : 0, t, m.on ? 0.06 : 0.1);
+  // The bed sits low; the clanks carry the motion.
+  m.g.gain.setTargetAtTime(m.on ? 0.018 + 0.04 * Math.sqrt(s) : 0, t, m.on ? 0.06 : 0.1);
+}
+// A metal clank: a gear tooth strikes; tick and tock alternate in pitch.
+// Inharmonic partials ring short, over a click of bright noise.
+function clank(ac, t, tock, s) {
+  const o = kit.out, f = (tock ? 470 : 610) * jit(0.03), k = 1.4 * (0.6 + 0.4 * s) * jit(0.15), lp = filt(ac, 'lowpass', 5200, 0.7);
+  lp.connect(o);
+  track(t + 0.4,
+    ...[[1, 0.03, 0.22], [2.63, 0.018, 0.14], [4.95, 0.01, 0.08]].map(([r, lv, d]) => blip(ac, lp, t, { f0: f * r, peak: lv * k, a: 0.001, dur: d })),
+    burst(ac, lp, t, { dur: 0.025, rate: 1.2, f: 3200, q: 1.2, peak: 0.025 * k, a: 0.0008 }).src);
 }
 // now: a hard stop for mute and a hidden tab; else a short fade.
 function motorStop(now = false) {
