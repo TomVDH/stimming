@@ -125,6 +125,21 @@ const checks = {
     ok(q().sfx().crater - c0 === 2, `each crater sounds (${q().sfx().crater - c0})`);
     q().mute(true); settle();
   },
+  task7() {
+    // Force prefers-reduced-motion for this probe only.
+    const d = Object.getOwnPropertyDescriptor(MediaQueryList.prototype, 'matches');
+    Object.defineProperty(MediaQueryList.prototype, 'matches', { configurable: true, get() { return this.media.includes('reduced-motion') || d.get.call(this); } });
+    try {
+      settle();
+      q().salvo(5); q().run(2.4);
+      ok(q().recoil().slide === 0, `reduced motion: no recoil (${q().recoil().slide})`);
+      ok(q().ion().visible, 'reduced motion: the tracers stay');
+      settle();
+      q().salvo(1); q().run(10.8);
+      ok(q().flash() <= 0.17 + 1e-6 && q().flash() > 0, `reduced motion: a crater flash halves (${q().flash()})`);
+      settle();
+    } finally { Object.defineProperty(MediaQueryList.prototype, 'matches', d); }
+  },
 };
 
 export async function run(...names) {
