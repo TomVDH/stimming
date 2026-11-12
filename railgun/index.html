@@ -124,6 +124,8 @@ let chargeMix = (() => {
     return localStorage.getItem(K) || 'vast';
   } catch { return 'vast'; }
 })();
+// The shot's sound: 'report', 'mesa', 'coil' or 'thump'.
+let shotMix = 'report';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -135,6 +137,9 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, a blend, or a blend on the plain.
     { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
+    // The shot: Tom's report sample or one of three synth takes.
+    // A pick plays the take once, so takes compare side by side.
+    { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'report', persist: true, options: [{ value: 'report', label: 'Report' }, { value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }], onPick: v => { shotMix = v; audition(v); } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock (dev)', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -5288,8 +5293,8 @@ function shatter(c) {
   armFrags();
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
   U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
-  // The boom sample replaces the synth rumble once it decodes.
-  if (!boomOK) rumble(c);
+  // The synth rumble stands in when the hit's sounds were not scheduled.
+  if (!shot?.sfx?.boom) rumble(c);
 }
 function respawn() {
   // Each new rock turns a fresh face to the eye.
@@ -5727,6 +5732,7 @@ function tick(now) {
     U.uTime.value = simT;
     stepAst(sdt);
     stepAim(sdt);
+    motorUpdate(dt);
     stepCharge(sdt);
     stepShot(sdt);
     stepCase(sdt);
@@ -5778,7 +5784,7 @@ whenVisible(stage, vis => {
     // A hidden tab drops the hold.
     // No finger is on it when it returns.
     cancelHold();
-    stopAll(); humStop(kit.ac, true);
+    stopAll(); humStop(kit.ac, true); motorStop(true);
     if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
@@ -5819,6 +5825,26 @@ function hiss(ac, t, dur, rate = 1) {
   s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate;
   s.start(t, Math.random() * 0.9); s.stop(t + dur);
   return s;
+}
+// A tone with a pitch glide and a struck envelope; returns the oscillator.
+function blip(ac, dest, t, { type = 'sine', f0, f1 = f0, glide = 0.5, peak, a = 0.01, dur }) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + glide);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+  return o;
+}
+// A burst of filtered noise with a struck envelope; returns the source and its gain.
+function burst(ac, dest, t, { dur, rate = 1, type = 'bandpass', f = 1000, f1 = f, q = 0.7, peak, a = 0.004, pan = 0 }) {
+  const src = hiss(ac, t, dur + 0.05, rate), b = filt(ac, type, f, q), g = ac.createGain();
+  if (f1 !== f) b.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, 2e-4), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let n = src.connect(b).connect(g);
+  if (pan) { const p = ac.createStereoPanner(); p.pan.value = pan; n = n.connect(p); }
+  n.connect(dest);
+  return { src, g };
 }
 /* ---------- the wind bed ---------- */
 // Low wind over the plain, a whistle past the pylon.
@@ -5918,6 +5944,7 @@ function humStart(ac) {
   if (hum) return;
   // The echo's impulse builds in idle time during the hold, not on the shot.
   if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
+  if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
@@ -6129,100 +6156,318 @@ const SAMPLES = { impact: 'impact.mp3', boom: 'boom.mp3', shot: 'shot.mp3' };
 // The impact's peak sits 1.85 s into its file.
 const IMPACT_AT = 1.85;
 const sampleP = {};
-let boomOK = false;
 // A missing or failed sample resolves null and tries again next time.
 const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name])
   .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
   .then(b => ac.decodeAudioData(b))
   .catch(() => { delete sampleP[name]; return null; }));
 // Send a node into the plain's echoes, darkened above dark hertz.
-function echo(ac, node, lvl, dark = 6000) {
+// dest: a send bus in front of the echoes; the plain itself by default.
+function echo(ac, node, lvl, dark = 6000, dest = plainVerb(ac)) {
   const s = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
   s.gain.value = lvl;
-  node.connect(s).connect(lp).connect(plainVerb(ac));
+  node.connect(s).connect(lp).connect(dest);
 }
 // dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
-// wet: the send into the plain's echoes.
-function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0) {
+// wet: the send into the plain's echoes. dest: the bus it feeds.
+function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
     const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
     sh.gain.value = 9;
-    src.connect(lp).connect(sh).connect(g).connect(kit.out);
-  } else src.connect(g).connect(kit.out);
+    src.connect(lp).connect(sh).connect(g).connect(dest);
+  } else src.connect(g).connect(dest);
   if (wet) echo(ac, g, wet, dark || 6000);
   src.start(when);
   track(when + buf.duration / rate + 0.1, src);
 }
-// Tom's cannon report plays as the slug leaves the muzzle.
+// The blast bus: the impact, the boom, the fire and the rumble.
+// One limiter holds the stacked layers under the master's knee.
+// Its peak output sits near -3 dBFS.
+let limBus = null;
+function blastBus(ac) {
+  if (limBus?.ac === ac) return limBus.in;
+  const inG = ac.createGain(), lim = ac.createDynamicsCompressor(), mk = ac.createGain();
+  // A slow attack keeps the limiter from bending the sub-bass waveform.
+  lim.threshold.value = -14; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = 0.03; lim.release.value = 0.6;
+  mk.gain.value = 1.2;
+  inG.connect(lim).connect(mk).connect(kit.out);
+  limBus = { ac, in: inG, lim };
+  return inG;
+}
+/* ---------- baked buffers ---------- */
+// The slug's N-wave and the debris rattle.
+// They build once per context, in idle time during the charge.
+let baked = null;
+function bake(ac) {
+  if (baked?.ac === ac) return baked;
+  baked = {
+    ac, nwave: nWave(ac),
+    // Rattle: thick at first, then thinning; ticks, grit and a few stones.
+    rattle: grains(ac, 3.5, 24000, t => 70 * Math.exp(-t / 0.8) + 4, t => {
+      const r = Math.random(), a = Math.exp(-t / 1.4) * (0.3 + 0.7 * Math.random());
+      return r < 0.55 ? [0.004 + 0.012 * Math.random(), 1500 + 3500 * Math.random(), 0.5 * a] : r < 0.88 ? [0.01 + 0.02 * Math.random(), 0, 0.9 * a] : [0.03 + 0.05 * Math.random(), 250 + 450 * Math.random(), 0.7 * a];
+    }),
+  };
+  return baked;
+}
+// The slug's sonic boom: a jump up, a straight fall, a jump back.
+function nWave(ac) {
+  const sr = ac.sampleRate, n = Math.round(0.012 * sr), b = ac.createBuffer(1, n + 8, sr), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = 1 - 2 * i / n;
+  return b;
+}
+// A stereo buffer of short grains at a falling rate.
+// rate(t): grains a second. grain(t): [length s, ring hertz or 0, level].
+function grains(ac, dur, sr, rate, grain) {
+  const b = ac.createBuffer(2, Math.round(dur * sr), sr), L = b.getChannelData(0), R = b.getChannelData(1);
+  for (let t = 0.01; t < dur; t += -Math.log(1 - Math.random()) / rate(t)) {
+    const [len, ring, lv] = grain(t), n = Math.round(len * sr), i0 = Math.round(t * sr), p = Math.random();
+    const gl = lv * Math.sqrt(1 - p), gr = lv * Math.sqrt(p), w = 2 * Math.PI * ring / sr;
+    let y = 0;
+    for (let i = 0; i < n && i0 + i < L.length; i++) {
+      const e = Math.exp(-5 * i / n);
+      // A ring is a struck partial; no ring is a dull puff of noise.
+      const s = ring ? Math.sin(w * i) : (y += 0.35 * (Math.random() * 2 - 1 - y)) * 2;
+      L[i0 + i] += gl * e * s; R[i0 + i] += gr * e * s;
+    }
+  }
+  return b;
+}
+// A rolling tail: low noise whose level waves on two slow beats.
+// It swells, ebbs over dur seconds and drifts across the plain.
+function roll(ac, dest, t, dur, lvl, cut) {
+  const n = hiss(ac, t, dur, 0.3), lp = filt(ac, 'lowpass', cut, 0.6), am = ac.createGain(), g = ac.createGain(), pn = ac.createStereoPanner();
+  am.gain.value = 0.65;
+  const srcs = [n];
+  for (const [fr, dp] of [[0.21, 0.22], [0.47, 0.13], [0.06, 0]]) {
+    const l = ac.createOscillator(), lg = ac.createGain();
+    l.frequency.value = fr * jit(0.3); lg.gain.value = dp || 0.45;
+    // The slowest beat moves the pan, not the level.
+    l.connect(lg).connect(dp ? am.gain : pn.pan); l.start(t); l.stop(t + dur); srcs.push(l);
+  }
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + Math.min(2, dur * 0.2));
+  g.gain.setTargetAtTime(0.0001, t + Math.min(3, dur * 0.3), dur / 6);
+  lp.frequency.setValueAtTime(cut, t); lp.frequency.setTargetAtTime(cut * 0.45, t + 2, dur / 3);
+  n.connect(lp).connect(am).connect(g).connect(pn).connect(dest);
+  return srcs;
+}
+/* ---------- the shot ---------- */
+// The shot bus: the impact's prelude ducks the shot's tail under its swell.
+// The duck holds the dry sound and the send into the echoes.
+let shotG = null, shotW = null;
+function shotBus(ac) {
+  if (shotG?.context !== ac) {
+    shotG = ac.createGain(); shotG.connect(kit.out);
+    shotW = ac.createGain(); shotW.connect(plainVerb(ac));
+  }
+  return shotG;
+}
+const shotSend = ac => (shotBus(ac), shotW);
+function shotDuck(ac, to, at, tau) {
+  for (const p of [shotBus(ac).gain, shotW.gain]) { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); p.setTargetAtTime(to, at, tau); }
+}
+// The shot plays as the slug leaves the muzzle.
 function shotSound(ac, sh) {
-  const late = 0;
   const at = ac.currentTime + 0.3;
-  sh.sfx = { ...sh.sfx, shot: 0, shotLate: late };
-  sample(ac, 'shot').then(buf => {
-    if (!buf || shot !== sh || !kit.live()) return;
-    const src = ac.createBufferSource(), g = ac.createGain();
-    src.buffer = buf; src.playbackRate.value = jit(0.03);
-    // Its long tail fades out before the boom lands.
-    const lvl = 1.4 * Math.min(sh.c, 1.25) * jit(0.1);
-    g.gain.setValueAtTime(lvl, Math.max(ac.currentTime, at)); g.gain.setTargetAtTime(0, at + 4, 3.5);
-    src.connect(g).connect(kit.out);
-    // The report rolls off the mesas across the flats.
-    echo(ac, g, 0.35);
-    sh.sfx.shot = Math.max(ac.currentTime, at);
-    src.start(sh.sfx.shot); src.stop(sh.sfx.shot + 20);
-    // A sub punch under the report gives it weight.
-    const t0 = sh.sfx.shot, o = ac.createOscillator(), og = ac.createGain();
-    o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
-    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * Math.min(sh.c, 1.25), t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
-    o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
-    echo(ac, og, 0.25, 400);
-    track(sh.sfx.shot + 20.1, src, o);
-  });
+  sh.sfx = { ...sh.sfx, shot: at, shotLate: 0, take: shotMix };
+  playShot(ac, at, Math.min(sh.c, 1.25), shotMix, sh);
+}
+// One take at time t with charge k.
+// A report that decodes after its shot is gone stays silent.
+function playShot(ac, t, k, name, sh = null) {
+  // A new shot lifts the last duck.
+  shotDuck(ac, 1, ac.currentTime, 0.005);
+  if (name === 'report' || !TAKES[name]) {
+    sample(ac, 'shot').then(buf => {
+      if (!buf || (sh && shot !== sh) || !kit.live()) return;
+      t = Math.max(ac.currentTime, t);
+      if (sh) sh.sfx.shot = t;
+      report(ac, buf, t, k);
+    });
+    return;
+  }
+  const { srcs, end } = TAKES[name](ac, t, k);
+  track(end, ...srcs);
+}
+// A pick in Settings plays the take once, while no shot flies.
+function audition(name) {
+  const ac = kit.live();
+  if (!ac || shot) return;
+  playShot(ac, ac.currentTime + 0.05, 1, name);
+  wake();
+}
+// Report: Tom's cannon sample with a sub punch under it.
+function report(ac, buf, t0, k) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = jit(0.03);
+  // Its long tail fades out before the boom lands.
+  const lvl = 1.4 * k * jit(0.1);
+  g.gain.setValueAtTime(lvl, t0); g.gain.setTargetAtTime(0, t0 + 4, 3.5);
+  src.connect(g).connect(shotBus(ac));
+  // The report rolls off the mesas across the flats.
+  echo(ac, g, 0.35, 6000, shotSend(ac));
+  src.start(t0); src.stop(t0 + 20);
+  const o = blip(ac, shotBus(ac), t0, { f0: 52, f1: 28, glide: 0.7, peak: 0.8 * k, a: 0.015, dur: 0.9 });
+  echo(ac, o, 0.25, 400, shotSend(ac));
+  track(t0 + 20.1, src, o);
+}
+// Mesa echoes: [delay s, pan, level].
+const MESAS = [[0.85, -0.7, 0.55], [1.5, 0.75, 0.42], [2.35, -0.5, 0.33], [3.4, 0.6, 0.24], [4.7, -0.35, 0.16], [6.3, 0.4, 0.1]];
+// The synth takes: each plays at t with charge k.
+// Each returns its sources and its end time.
+const TAKES = {
+  // Mesa: a deep cannon; its echo rolls off the mesas for ten seconds.
+  mesa(ac, t, k) {
+    const o = shotBus(ac), b = burst(ac, o, t, { dur: 1.8, rate: 0.6, type: 'lowpass', f: 2600, f1: 150, q: 0.8, peak: 0.85 * k, a: 0.005 });
+    echo(ac, b.g, 0.6, 2000, shotSend(ac));
+    // The body: two low tones sink under the blast.
+    const srcs = [b.src,
+      blip(ac, o, t, { f0: 56, f1: 23, glide: 1.3, peak: 0.95 * k, a: 0.01, dur: 1.7 }),
+      blip(ac, o, t, { type: 'triangle', f0: 120, f1: 40, glide: 0.45, peak: 0.3 * k, a: 0.004, dur: 0.7 })];
+    // Each mesa wall answers later, wider and darker.
+    MESAS.forEach(([dt, pan, lv], i) => srcs.push(burst(ac, o, t + dt, { dur: 0.9 + 0.4 * i, rate: 0.45, type: 'lowpass', f: 1100 / (1 + 0.6 * i), f1: 110, q: 0.6, peak: lv * k, a: 0.03 + 0.04 * i, pan }).src));
+    srcs.push(...roll(ac, o, t + 0.3, 10, 0.3 * k, 170));
+    return { srcs, end: t + 10.5 };
+  },
+  // Coil: a hard electric crack, a ringing barrel, the slug's supersonic snap.
+  coil(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The crack: a bright tear of noise, then a sizzle that falls.
+    srcs.push(burst(ac, o, t, { dur: 0.05, rate: 1.5, type: 'highpass', f: 2200, peak: 0.9 * k, a: 0.0008 }).src,
+      burst(ac, o, t, { dur: 0.35, rate: 1.2, f: 6000, f1: 1500, q: 1.2, peak: 0.25 * k, a: 0.002 }).src);
+    // The discharge: a saw falls from a shriek to a growl.
+    const lp = filt(ac, 'lowpass', 5000, 0.7);
+    lp.connect(o);
+    srcs.push(blip(ac, lp, t, { type: 'sawtooth', f0: 2600, f1: 70, glide: 0.2, peak: 0.16 * k, a: 0.001, dur: 0.32 }),
+      blip(ac, o, t, { f0: 62, f1: 30, glide: 0.5, peak: 0.75 * k, a: 0.006, dur: 0.7 }));
+    // The barrel rings: struck-bar partials, each a beating pair.
+    const ring = ac.createGain(), f = 360 * jit(0.03);
+    ring.connect(o);
+    echo(ac, ring, 0.45, 7000, shotSend(ac));
+    for (const [r, lv, d] of [[1, 0.22, 3.4], [2.76, 0.15, 2.5], [5.4, 0.1, 1.7], [8.93, 0.06, 1.1]]) {
+      for (const det of [-0.6, 0.6]) srcs.push(blip(ac, ring, t + 0.002, { f0: f * r + det, peak: lv * k, a: 0.002, dur: d }));
+    }
+    // The snap: the slug's N-wave, then its flutter off the plain.
+    const hp = filt(ac, 'highpass', 180, 0.7), nw = bake(ac).nwave;
+    hp.connect(o);
+    for (const [dt, lv] of [[0.09, 0.9], [0.13, 0.35], [0.21, 0.2], [0.34, 0.1]]) {
+      const s = ac.createBufferSource(), g = ac.createGain();
+      s.buffer = nw; g.gain.value = lv * k;
+      s.connect(g).connect(hp); s.start(t + dt); srcs.push(s);
+    }
+    return { srcs, end: t + 3.6 };
+  },
+  // Thump: a heavy knock, a pressure whoomp, then debris rattling down.
+  thump(ac, t, k) {
+    const o = shotBus(ac), srcs = [];
+    // The knock: a dull burst and a deep falling tone.
+    srcs.push(burst(ac, o, t, { dur: 0.14, rate: 0.7, type: 'lowpass', f: 600, f1: 140, peak: 0.9 * k, a: 0.002 }).src,
+      blip(ac, o, t, { f0: 78, f1: 27, glide: 0.4, peak: 1.0 * k, a: 0.004, dur: 1.0 }));
+    // The whoomp: low air pushed out; a resonant filter opens and shuts.
+    const n = hiss(ac, t, 1.6, 0.4), lp = filt(ac, 'lowpass', 90, 3), g = ac.createGain();
+    lp.frequency.setValueAtTime(90, t); lp.frequency.exponentialRampToValueAtTime(750, t + 0.16); lp.frequency.exponentialRampToValueAtTime(100, t + 1.1);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8 * k, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    n.connect(lp).connect(g).connect(o);
+    echo(ac, g, 0.45, 900, shotSend(ac));
+    srcs.push(n, blip(ac, o, t + 0.04, { f0: 24, f1: 19, glide: 1.2, peak: 0.55 * k, a: 0.12, dur: 1.5 }));
+    // Debris: grit and stones rattle off the gun for three seconds.
+    const r = ac.createBufferSource(), hp = filt(ac, 'highpass', 350, 0.7), rg = ac.createGain();
+    r.buffer = bake(ac).rattle; r.playbackRate.value = jit(0.08); rg.gain.value = 0.6 * k;
+    r.connect(hp).connect(rg).connect(o);
+    echo(ac, rg, 0.2, 5000, shotSend(ac));
+    r.start(t + 0.18); srcs.push(r);
+    return { srcs, end: t + 4 };
+  },
+};
+/* ---------- the hit ---------- */
+// The prelude: the whoosh swells and brightens into the hit.
+// A short hush before the peak makes the hit land harder.
+function impactSound(ac, buf, hit, k) {
+  const rate = jit(0.03), start = hit - IMPACT_AT / rate, t = Math.max(ac.currentTime, start);
+  const bus = blastBus(ac), src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 700, 0.9), g = ac.createGain();
+  src.buffer = buf; src.playbackRate.value = rate;
+  // The shot's tail and its echoes dip 20 dB before the swell.
+  // The swell then climbs out of a quiet sky.
+  shotDuck(ac, 0.1, Math.max(ac.currentTime, t - 1.6), 0.45);
+  // The swell climbs 18 dB up the whoosh; the filter opens with it.
+  const lvl = 0.55 * k * jit(0.08);
+  g.gain.setValueAtTime(lvl * 0.12, t); g.gain.exponentialRampToValueAtTime(lvl, hit - 0.1);
+  g.gain.linearRampToValueAtTime(lvl * 0.3, hit - 0.02); g.gain.linearRampToValueAtTime(lvl * 1.2, hit + 0.004);
+  lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(14000, hit);
+  src.connect(lp).connect(g).connect(bus);
+  echo(ac, g, 0.3);
+  src.start(t, (t - start) * rate);
+  // The riser: noise climbs in pitch, and a sub tone climbs under it.
+  const r0 = Math.min(t + 0.1, hit - 0.3), n = hiss(ac, r0, hit - r0, 1), bp = filt(ac, 'bandpass', 250, 1.4), ng = ac.createGain();
+  bp.frequency.setValueAtTime(250, r0); bp.frequency.exponentialRampToValueAtTime(4200, hit - 0.02);
+  ng.gain.setValueAtTime(0.0001, r0); ng.gain.exponentialRampToValueAtTime(0.14 * k, hit - 0.06); ng.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  n.connect(bp).connect(ng).connect(bus);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(30, r0); o.frequency.exponentialRampToValueAtTime(85, hit - 0.02);
+  og.gain.setValueAtTime(0.0001, r0); og.gain.exponentialRampToValueAtTime(0.3 * k, hit - 0.06); og.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
+  o.connect(og).connect(bus); o.start(r0); o.stop(hit);
+  // The strike on the flash: a hard crack over a low knock.
+  track(hit + (buf.duration - IMPACT_AT) / rate + 0.1, src, n, o,
+    burst(ac, bus, hit, { dur: 0.08, rate: 1.4, type: 'highpass', f: 1600, peak: 0.5 * k, a: 0.001 }).src,
+    blip(ac, bus, hit, { f0: 95, f1: 34, glide: 0.5, peak: 0.6 * k, a: 0.003, dur: 0.8 }));
 }
 // The impact's prelude lands on the flash.
-// The boom crosses the distance at sound speed, compressed eight times.
+// The boom crosses the distance at sound speed, compressed 28 times.
 function hitSounds(ac, sh) {
   if (!sh.canHit) return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
   // Compressed 28 times: the boom lands about 5 s after the flash.
   const late = camera.position.distanceTo(sh.target) / 343 / 28;
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
+  blastBus(ac);
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (shot !== sh || !kit.live()) return;
-    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25); }
-    // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
+    if (imp) { sh.sfx.impact = hit - IMPACT_AT; impactSound(ac, imp, hit, k); }
+    sh.sfx.boom = hit + late;
+    boomSound(ac, boom, sh.sfx.boom, k);
   });
+}
+// The boom: Tom's far boom at half speed, an octave down, about 45 s long.
+// Under it: a sub swell and a rolling tail.
+// Without the file the synth body plays alone.
+function boomSound(ac, buf, t, k) {
+  const bus = blastBus(ac), srcs = [];
+  if (buf) playSample(ac, buf, t, 1.5 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, bus);
+  // The sub swell: two low tones beat slowly and sink as they fade.
+  for (const [f, lv] of [[31, 0.3], [43, 0.16]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(f * jit(0.04), t); o.frequency.exponentialRampToValueAtTime(f * 0.75, t + 16);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv * k, t + 1.8); g.gain.setTargetAtTime(0.0001, t + 3.5, 4.5);
+    o.connect(g).connect(bus); o.start(t); o.stop(t + 28); srcs.push(o);
+  }
+  // The rolling tail: low noise rolls on across the plain.
+  srcs.push(...roll(ac, bus, t + 0.4, 28, 0.28 * k, 200));
+  track(t + 30, ...srcs);
 }
 // The fire's own sound, after the boom's delay: a low roar that follows the fire,
 // far crackle, and one muffled thud per late burst.
 function fireSounds(ac, sh, fx) {
-  const t0 = ac.currentTime + (sh.sfx.late || 0), k = SIZES[opts.size].rumble * fx.k;
+  const t0 = ac.currentTime + (sh.sfx.late || 0), k = SIZES[opts.size].rumble * fx.k, bus = blastBus(ac);
   // The roar: low noise that swells in a second and dies with the fire.
   const roar = hiss(ac, t0, 30, 0.5), lp = filt(ac, 'lowpass', 260), rg = ac.createGain();
   rg.gain.setValueAtTime(0.0001, t0); rg.gain.exponentialRampToValueAtTime(0.12 * k, t0 + 1.2);
   rg.gain.setTargetAtTime(0.0001, t0 + 2, 7);
-  roar.connect(lp).connect(rg).connect(kit.out);
+  roar.connect(lp).connect(rg).connect(bus);
   lp.frequency.setValueAtTime(320, t0); lp.frequency.setTargetAtTime(120, t0 + 2, 9);
   // Crackle: dull pops, thick at first, rarer as the fire cools.
   const pops = [];
   for (let t = 0.4; t < 20; t += 0.08 + 0.5 * Math.random() * (t / 8)) {
-    const at = t0 + t, d = 0.02 + 0.06 * Math.random(), n = hiss(ac, at, d + 0.03, 0.9);
-    const bp = filt(ac, 'bandpass', 500 + 1300 * Math.random(), 1.8), g = ac.createGain(), pn = ac.createStereoPanner();
-    pn.pan.value = Math.random() * 0.8 - 0.4;
-    const lvl = 0.07 * k * Math.exp(-t / 7) * (0.4 + 0.6 * Math.random());
-    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(Math.max(lvl, 0.0002), at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + d);
-    n.connect(bp).connect(g).connect(pn).connect(kit.out);
-    pops.push(n);
+    const lvl = 0.03 * k * Math.exp(-t / 7) * (0.4 + 0.6 * Math.random());
+    pops.push(burst(ac, bus, t0 + t, { dur: 0.02 + 0.06 * Math.random(), rate: 0.9, f: 400 + 700 * Math.random(), q: 1.8, peak: lvl, a: 0.004, pan: Math.random() * 0.8 - 0.4 }).src);
   }
   // A thud per burst: low, short, with a little body.
   const thuds = fx.bursts.map(b => {
     const at = t0 + b.t, o = ac.createOscillator(), og = ac.createGain();
     o.frequency.setValueAtTime(58 * jit(0.1), at); o.frequency.exponentialRampToValueAtTime(30, at + 0.9);
     og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(0.45 * k * b.k, at + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, at + 1.4);
-    o.connect(og).connect(kit.out); o.start(at); o.stop(at + 1.5);
+    o.connect(og).connect(bus); o.start(at); o.stop(at + 1.5);
     echo(ac, og, 0.3, 500);
     return o;
   });
@@ -6230,24 +6475,95 @@ function fireSounds(ac, sh, fx) {
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
+// It plays only when the hit's sounds were not scheduled.
 function rumble(c) {
   const ac = kit.live();
   if (!ac) return;
-  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble;
+  const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble, bus = blastBus(ac);
   const s = hiss(ac, t, 7, 0.3), lp = filt(ac, 'lowpass', 180), g = ac.createGain();
   const lvl = 0.25 * (0.5 + 0.5 * c) * k * jit(0.1);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.6); g.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  s.connect(lp).connect(g).connect(kit.out);
+  s.connect(lp).connect(g).connect(bus);
   const o = ac.createOscillator(), og = ac.createGain();
   o.frequency.value = 30 * jit(0.05);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl * 0.8, t + 0.6); og.gain.setTargetAtTime(0.0001, t + 1.2, 1.4);
-  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 7);
+  o.connect(og).connect(bus); o.start(t); o.stop(t + 7);
   track(t + 7.5, s, o);
+}
+/* ---------- the traverse motor ---------- */
+// A hydraulic pump whines with the slew speed; gears chatter under it.
+// A clunk marks each start and each stop.
+let motor = null, clunks = 0;
+// This slew speed, in radians a second, runs the motor flat out.
+const SLEW_TOP = rad(6);
+function motorStart(ac) {
+  const g = ac.createGain(), am = ac.createGain(), lp = filt(ac, 'lowpass', 700, 0.9), bp = filt(ac, 'bandpass', 900, 5);
+  g.gain.value = 0; am.gain.value = 0.75;
+  // The pump: a low saw, darkened, for the hydraulic drone.
+  const pump = ac.createOscillator();
+  pump.type = 'sawtooth'; pump.frequency.value = 34;
+  pump.connect(lp).connect(am);
+  // The gear whine: a square through a narrow band.
+  const gear = ac.createOscillator(), gg = ac.createGain();
+  gear.type = 'square'; gear.frequency.value = 220; gg.gain.value = 0.35;
+  gear.connect(bp).connect(gg).connect(am);
+  // The flow: oil hisses through the valves.
+  const flow = ac.createBufferSource(), fb = filt(ac, 'bandpass', 1500, 1.2), fg = ac.createGain();
+  flow.buffer = kit.noise; flow.loop = true; fg.gain.value = 0.1;
+  flow.connect(fb).connect(fg).connect(am);
+  // The chatter: gear teeth beat the level at the mesh rate.
+  const chat = ac.createOscillator(), cg = ac.createGain();
+  chat.frequency.value = 8; cg.gain.value = 0.25;
+  chat.connect(cg).connect(am.gain);
+  am.connect(g).connect(kit.out);
+  const srcs = [pump, gear, flow, chat];
+  for (const s of srcs) s.start();
+  motor = { srcs, g, pump, gear, bp, chat, fg, on: false, quiet: false, off: 0 };
+}
+// The frame loop feeds the motor the gun's slew speed.
+function motorUpdate() {
+  const s = clamp(Math.hypot(aimNow.vy, aimNow.ve) / SLEW_TOP, 0, 1), ac = kit.live();
+  if (!ac) { motorStop(true); return; }
+  if (!motor) { if (s < 0.1) return; motorStart(ac); }
+  const m = motor, t = ac.currentTime;
+  // Two thresholds keep a slow settle from clunking twice.
+  if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); }
+  else if (m.on && s < 0.025) { m.on = false; clunk(ac, 0.7); m.off = setTimeout(() => { if (motor === m && !m.on) motorStop(); }, 1500); }
+  if (m.quiet) return;
+  m.quiet = !m.on;
+  const v = m.on ? s : 0;
+  m.pump.frequency.setTargetAtTime(34 + 60 * v, t, 0.12);
+  m.gear.frequency.setTargetAtTime(220 + 520 * v, t, 0.12);
+  m.bp.frequency.setTargetAtTime(700 + 1400 * v, t, 0.12);
+  m.chat.frequency.setTargetAtTime(8 + 34 * v, t, 0.12);
+  m.fg.gain.setTargetAtTime(0.1 + 0.4 * v, t, 0.1);
+  m.g.gain.setTargetAtTime(m.on ? 0.05 + 0.13 * Math.sqrt(s) : 0, t, m.on ? 0.06 : 0.1);
+}
+// now: a hard stop for mute and a hidden tab; else a short fade.
+function motorStop(now = false) {
+  if (!motor) return;
+  const m = motor, ac = kit.ac;
+  motor = null;
+  clearTimeout(m.off);
+  if (now || !ac || ac.state !== 'running') { for (const s of m.srcs) { try { s.stop(); s.disconnect(); } catch { /* gone */ } } m.g.disconnect(); return; }
+  const t = ac.currentTime;
+  m.g.gain.setTargetAtTime(0, t, 0.03);
+  for (const s of m.srcs) s.stop(t + 0.2);
+  track(t + 0.25, ...m.srcs);
+}
+// A clunk: a low knock, a short tick, a brief metal ring.
+function clunk(ac, k) {
+  const t = ac.currentTime, o = kit.out;
+  clunks++;
+  track(t + 0.5,
+    blip(ac, o, t, { f0: 130, f1: 52, glide: 0.12, peak: 0.3 * k, a: 0.002, dur: 0.24 }),
+    burst(ac, o, t, { dur: 0.05, rate: 0.8, f: 1300, q: 1.5, peak: 0.14 * k, a: 0.001 }).src,
+    blip(ac, o, t + 0.004, { f0: 780 * jit(0.05), peak: 0.03 * k, a: 0.002, dur: 0.4 }));
 }
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
 sound.onChange(on => {
-  if (!on) { stopAll(); humStop(kit.ac); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  if (!on) { stopAll(); humStop(kit.ac); motorStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
 });
 
@@ -6356,7 +6672,9 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix }),
+  // Play one shot take now, at charge c.
+  take(name, c = 1) { const ac = kit.live(); if (ac) playShot(ac, ac.currentTime + 0.05, Math.min(c, 1.25), name); },
   mute(on) { sound.set(!on); },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
@@ -6391,6 +6709,7 @@ prewarmEmbers();
 setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
+shotMix = ui.setting('shotmix').value;
 // The stored graphics settings apply before the first frame.
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
