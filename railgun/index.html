@@ -5512,8 +5512,8 @@ function boltAt(t, out) {
   if (!shot) return out.copy(MUZZLE);
   if (t <= 0) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
-  // It leaves at 1.6 times its mean speed and slows in the air: same arrival, a quicker look.
-  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 1.6);
+  // It leaves at 2.6 times its mean speed and slows in the air: same arrival, a much quicker look.
+  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 2.6);
   return out.lerpVectors(shot.muzzle, shot.target, u);
 }
 fire = c => {
@@ -5902,7 +5902,9 @@ function updateBolt() {
   if (live) {
     const tail = 0.55 + 0.03 * shot.T;
     const p0 = boltGeo.attributes.aP0, p1 = boltGeo.attributes.aP1, kk = boltGeo.attributes.aK;
-    const fade = 1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3);
+    // The last stretch: the slug's light dies away into the distance before it strikes.
+    const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (age - 0.3) / shot.T)), 2.6);
+    const fade = (1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3)) * (1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97));
     for (let k = 0; k < BOLT_SEG; k++) {
       const ta = age - tail * (1 - k / BOLT_SEG), tb = age - tail * (1 - (k + 1) / BOLT_SEG);
       boltAt(ta, bp); boltAt(tb, bq);
