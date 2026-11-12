@@ -3835,7 +3835,8 @@ const ionMat = new THREE.ShaderMaterial({
   void main() {
     float n = abs(vY), core = exp(-n * n * 5.0);
     float k = 0.6 + 0.4 * uI.z;
-    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k;
+    // Far up toward the rock the line dies out, as the slug does.
+    vec3 em = uIonC * exp(-vLa / 0.35) * core * 4.0 * k * (1.0 - smoothstep(0.78, 0.94, vF));
     // A round trail: thick through its middle, with puffy, broken edges.
     float depth = sqrt(max(1.0 - n * n, 0.0));
     float rag = k2fbm(vec2(vF * 220.0, vY * 1.6 + vLa * 0.2));
@@ -3877,7 +3878,7 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   uniform vec2 uRes;
   uniform float uDpr;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   void main() {
     float f = aF.x, la = uI.x - f * uI.y;
@@ -3892,13 +3893,13 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     r = min(r, 48.0 * uDpr / max(ppm, 1e-6));
     vR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y;
+    vP = p; vUv = position.xy; vLa = la; vSeed = aF.y; vFr = f;
     gl_Position = projectionMatrix * viewMatrix * vec4(p + (vR * position.x + vU * position.y) * r, 1.0);
   }`,
   fragmentShader: /* glsl */`
   uniform vec3 uI, uConC;
   varying vec2 vUv;
-  varying float vLa, vSeed;
+  varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   ${HEAD}
   ${AIR}
@@ -3909,6 +3910,8 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     float n = k2fbm(vUv * 1.7 + vSeed);
     float a = smoothstep(1.0, 0.35, d + (n - 0.5) * 0.7);
     a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 9.0) * (1.0 - smoothstep(9.0, 15.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // Far up toward the rock the contrail thins out too.
+    a *= 1.0 - smoothstep(0.78, 0.94, vFr);
     if (a < 0.004) discard;
     // Light each puff as a ball: the low sun warms one side.
     vec3 V = normalize(cameraPosition - vP), N = normalize(vR * vUv.x + vU * vUv.y + V * sqrt(max(1.0 - d * d, 0.0)));
