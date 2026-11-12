@@ -3797,13 +3797,15 @@ const ionMat = new THREE.ShaderMaterial({
   uniform float uDpr;
   varying float vY, vLa, vF;
   varying vec3 vP, vSide;
+  // The slug leaves fast and slows: it reaches fraction f at this time.
+  float reach(float f) { return uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6)); }
   // The line at fraction f; la is the time since the head passed.
   vec3 at(float f, out float la) {
-    f = min(f, uI.x / uI.y);
-    la = uI.x - f * uI.y;
+    f = min(f, 1.0 - pow(max(1.0 - uI.x / uI.y, 0.0), 2.6));
+    la = max(uI.x - reach(f), 0.0);
     vec3 p = mix(uA, uB, f);
-    // Wind drifts the old line and makes it waver.
-    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // Wind drifts the old line, wavers it and sways it in long slow bends.
+    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     return p;
   }
   void main() {
@@ -3881,10 +3883,11 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
   void main() {
-    float f = aF.x, la = uI.x - f * uI.y;
+    // The slug reaches fraction f late on its slowing path.
+    float f = aF.x, la = uI.x - uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6));
     if (la < 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    // The wind takes the trail and gathers pace.
-    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la;
+    // The wind takes the trail, gathers pace and sways it.
+    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
     // Each puff swells with age, some more than others.
     float r = (8.0 + 14.0 * la) * (0.7 + 0.6 * fract(aF.y * 7.31));
     // A cap in pixels keeps near puffs from flooding the screen.
@@ -3909,7 +3912,8 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     if (d > 1.0) discard;
     float n = k2fbm(vUv * 1.7 + vSeed);
     float a = smoothstep(1.0, 0.35, d + (n - 0.5) * 0.7);
-    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 9.0) * (1.0 - smoothstep(9.0, 15.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
+    // The oldest smoke, nearest the gun, thins first and goes by 10 s.
+    a *= smoothstep(0.15, 1.2, vLa) * exp(-vLa / 6.0) * (1.0 - smoothstep(4.0, 10.0, vLa)) * 0.55 * (0.6 + 0.4 * uI.z);
     // Far up toward the rock the contrail thins out too.
     a *= 1.0 - smoothstep(0.6, 0.85, vFr);
     if (a < 0.004) discard;
@@ -3928,7 +3932,7 @@ let ion = null;
 function updateIon() {
   if (!ion) { ionLine.visible = ionPuffs.visible = false; return; }
   const a = simT - ion.t0 - 0.3;
-  if (a > ion.T + 16) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
+  if (a > ion.T + 11) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
   ionMat.uniforms.uI.value.set(a, ion.T, ion.c);
   // The hot ribbon only lives a second behind the head.
   ionLine.visible = a > 0 && a < ion.T + 1.5;
