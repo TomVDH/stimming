@@ -2180,7 +2180,8 @@ function makeFragTrail(own = false) {
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
 const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
-const frags = Array.from({ length: 4 }, () => {
+// Up to seven companions ride with the main rock.
+const frags = Array.from({ length: 7 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
   scene.add(m);
@@ -2188,12 +2189,13 @@ const frags = Array.from({ length: 4 }, () => {
 });
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  const n = 2 + Math.floor(rnd() * 3);
+  // Three to seven, scattered at random round the main rock.
+  const n = 3 + Math.floor(rnd() * 5);
   frags.forEach((f, i) => {
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    const th = (i / n) * Math.PI * 2 + rnd() * 0.8, gap = 3.8 + 2.4 * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -3 + 9 * rnd();
-    f.k = 0.12 + 0.12 * rnd();
+    const th = (i / n) * Math.PI * 2 + rnd() * 1.4, gap = 2.8 + 5 * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -6 + 16 * rnd();
+    f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
@@ -5622,6 +5624,13 @@ function shatter(c) {
   const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
   const mo = new THREE.Vector3().copy(ast.away).negate();
+  // Slow ejecta: many small burning flecks drift down from the cloud.
+  // Each goes out at its own time, most long before the ground.
+  if (!reduced()) for (let i = 0; i < 460; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.2, rnd() - 0.5).normalize().multiplyScalar((60 + 300 * rnd()) * sp).addScaledVector(mo, (60 + 90 * rnd()) * sp);
+    bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(4 * R);
+    writeStar(bq.add(P), simT + rnd() * 3, bv, 0.5 + 0.6 * rnd(), rnd() < 0.5 ? 2 : 0, 4 + 22 * rnd(), 0.6 + 0.9 * rnd(), 0.9 + 1.1 * rnd(), 3, 0.18 + 0.22 * rnd());
+  }
   for (let i = 0; i < N * 1.2; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
