@@ -2480,7 +2480,7 @@ const arcGeo = new THREE.BufferGeometry();
   arcGeo.setAttribute('aK', k);
 }
 const arcMat = new THREE.ShaderMaterial({
-  uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uArcC: { value: new THREE.Vector3(...linFit(0.9, 0.09, 290)) } },
+  uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uArcC: { value: new THREE.Vector3(...linFit(0.88, 0.12, 278)) }, uArcW: { value: 1 } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -2488,7 +2488,7 @@ const arcMat = new THREE.ShaderMaterial({
   attribute vec3 aP0, aP1;
   attribute vec2 aK;
   uniform vec2 uRes;
-  uniform float uDpr;
+  uniform float uDpr, uArcW;
   varying float vY, vA, vSeed;
   void main() {
     if (aK.x < 0.001) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -2501,18 +2501,19 @@ const arcMat = new THREE.ShaderMaterial({
     d = length(d) > 1e-3 ? normalize(d) : vec2(0.0, 1.0);
     // The ribbon is 8 px to each side.
     // The core sits in the middle.
-    float W = 8.0 * uDpr;
+    // The ribbon grows with the charge: 2.5 px to 5 px to each side.
+    float W = 5.0 * uDpr * uArcW;
     vec4 c = position.x < 0.5 ? c0 : c1;
     c.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c.w;
     vY = position.y * W; vA = aK.x; vSeed = aK.y;
     gl_Position = c;
   }`,
   fragmentShader: /* glsl */`
-  uniform float uDpr;
+  uniform float uDpr, uArcW;
   uniform vec3 uArcC;
   varying float vY, vA, vSeed;
   void main() {
-    float y = abs(vY), w = 1.6 * uDpr, W = 8.0 * uDpr;
+    float y = abs(vY), w = 0.9 * uDpr * uArcW, W = 5.0 * uDpr * uArcW;
     float core = exp(-y * y / (w * w) * 0.9);
     float halo = 0.22 * exp(-y * y / (W * W) * 2.5);
     gl_FragColor = vec4(mix(uArcC, vec3(1.0), 0.6 * core) * (core * 9.0 + halo * 3.0) * vA, 0.0);
@@ -2523,7 +2524,7 @@ arcs.frustumCulled = false;
 arcs.renderOrder = 3;
 scene.add(arcs);
 // Each live arc: two ends, birth, life, bow, seed.
-const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.Vector3(), b: new THREE.Vector3(), t0: 0, life: 0.1, bowV: new THREE.Vector3(), seed: 0 }));
+const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.Vector3(), b: new THREE.Vector3(), t0: 0, life: 0.1, bowV: new THREE.Vector3(), seed: 0, k: 1 }));
 const arcP = Array.from({ length: ARC_PTS }, () => new THREE.Vector3());
 const tmpC = new THREE.Vector3();
 // The top of the plinth and its berm at r metres from the mount.
@@ -2598,6 +2599,10 @@ function spawnArc(st, mode = '') {
     barrelPt(a + da, sd * hw, -hh * (0.5 + 0.4 * rnd()), arc.b);
     arc.bowV.copy(arcSide).multiplyScalar(sd * (24 + rnd() * 36));
   }
+  // Size and strength follow the charge: small, faint sparks first.
+  const sz = mode === 'vent' ? 1 : 0.35 + 0.65 * Math.min(1, U.uCharge.value);
+  arc.k = mode === 'vent' ? 1 : 0.3 + 0.7 * sz;
+  if (sz < 1) { tmpC.addVectors(arc.a, arc.b).multiplyScalar(0.5); arc.a.lerp(tmpC, 1 - sz); arc.b.lerp(tmpC, 1 - sz); arc.bowV.multiplyScalar(sz); }
   arc.on = true; arc.t0 = simT; arc.seed = rnd() * 100;
   click(arc);
 }
@@ -2605,6 +2610,7 @@ function spawnArc(st, mode = '') {
 // A bowed line with two octaves of jitter.
 function updateArcs() {
   const p0 = arcGeo.attributes.aP0, p1 = arcGeo.attributes.aP1, kk = arcGeo.attributes.aK;
+  arcMat.uniforms.uArcW.value = 0.5 + 0.5 * Math.min(1, U.uCharge.value + (simT - ventT < 1 ? 1 : 0));
   let any = false, best = 0;
   for (let i = 0; i < ARC_N; i++) {
     const arc = arcList[i], base = i * ARC_SEG * 4;
@@ -2614,7 +2620,8 @@ function updateArcs() {
     any = true;
     const span = arc.a.distanceTo(arc.b);
     // Alpha flickers over the life; the first frame is the brightest.
-    const al = (1 - age / arc.life) * (0.6 + 0.4 * Math.abs(Math.sin(arc.seed + simT * 97)));
+    // Early arcs are small and faint; they grow with the charge.
+    const al = arc.k * (1 - age / arc.life) * (0.6 + 0.4 * Math.abs(Math.sin(arc.seed + simT * 97)));
     // The brightest arc lights the gun.
     const lum = al * (0.6 + span / 300);
     if (lum > best) { best = lum; U.uArcL.value.set((arc.a.x + arc.b.x) / 2 + arc.bowV.x, (arc.a.y + arc.b.y) / 2 + arc.bowV.y, (arc.a.z + arc.b.z) / 2 + arc.bowV.z, lum); }
@@ -3161,7 +3168,8 @@ function stepAst(dt) {
 // Any release fires.
 let charge = null;
 // Hold times in seconds: full power, end of the ready window, the vent.
-const HOLD = { full: 10, ready: 14, vent: 24 };
+// Full power at 8.6 s; a 4 s ready window; then 4 s of over-hold before the vent.
+const HOLD = { full: 8.6, ready: 12.6, vent: 16.6 };
 const CHASE_T = c => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(Math.min(c, 1), 1.5));
 // The ease reaches full power at HOLD.full.
 const EASE_P = 2.4;
@@ -3296,7 +3304,8 @@ function stepCharge(dt) {
     // Streamers reach off the brake as the field grows.
     if (chaos > 0.3 && !reduced() && rnd() < dt * (2 + 10 * chaos + 16 * rage + 20 * over)) spawnArc(1, 'corona');
     // The field draws dust in: motes spiral in to the barrel and stream to the muzzle.
-    if (!reduced()) for (let n = Math.floor(dt * (25 + 160 * chaos + 120 * rage) + rnd()); n > 0; n--) spawnMote(Math.min(1, c));
+    // At full power the field draws in what it has; new motes all but stop.
+    if (!reduced()) for (let n = Math.floor(dt * (25 + 160 * chaos + 120 * rage) * (held >= HOLD.full ? 0.1 : 1) + rnd()); n > 0; n--) spawnMote(Math.min(1, c));
     // The dust round the mount is one volume: chargeDust.
   } else {
     // The vent strikes the plain for most of a second.
@@ -4344,7 +4353,11 @@ const moteG = k => 3600 + 22000 * k;
 // Semi-implicit Euler in substeps of at most 1/60 s.
 function stepMotes(dt) {
   if (simT > moteEnd || !moteN || dt <= 0) return;
-  const k = Math.min(1, U.uCharge.value), G = moteG(k), pull = 6 + 34 * k, P = motePos.array, T = moteT.array;
+  const k = Math.min(1, U.uCharge.value), P = motePos.array, T = moteT.array;
+  // At full power the field collapses: the pull grows, the orbits lose their spin,
+  // and every mote falls into the barrel and goes out.
+  const held = charge ? simT - charge.t0 : 0, ck = THREE.MathUtils.smoothstep(held, HOLD.full - 0.4, HOLD.full + 0.8);
+  const G = moteG(k) * (1 + 9 * ck), pull = (6 + 34 * k) * (1 + 2 * ck);
   const ox = A0.x, oy = A0.y, oz = A0.z, ax = AX.x, ay = AX.y, az = AX.z;
   for (let h = dt; h > 1e-6; h -= 1 / 60) {
     const st = Math.min(h, 1 / 60), drag = Math.exp(-0.12 * st);
@@ -4358,6 +4371,16 @@ function stepMotes(dt) {
       const r2 = dx * dx + dy * dy + dz * dz, f = -G / (r2 + 900);
       let vx = moteV[j] + (dx * f + ax * pull) * st, vy = moteV[j + 1] + (dy * f + ay * pull) * st, vz = moteV[j + 2] + (dz * f + az * pull) * st;
       vx *= drag; vy *= drag; vz *= drag;
+      if (ck > 0) {
+        // The spin bleeds off, so the mote falls straight in.
+        const ir = 1 / Math.sqrt(r2 + 1), rx = dx * ir, ry = dy * ir, rz = dz * ir, vr = vx * rx + vy * ry + vz * rz, va = vx * ax + vy * ay + vz * az;
+        const keep = Math.exp(-st * 4 * ck);
+        vx = rx * vr + ax * va + (vx - rx * vr - ax * va) * keep;
+        vy = ry * vr + ay * va + (vy - ry * vr - ay * va) * keep;
+        vz = rz * vr + az * va + (vz - rz * vr - az * va) * keep;
+        // Inside the barrel's skin it is gone in a quarter second.
+        if (r2 < 900) T[i * 4 + 1] = Math.min(T[i * 4 + 1], simT - T[i * 4] + 0.25);
+      }
       moteV[j] = vx; moteV[j + 1] = vy; moteV[j + 2] = vz;
       P[j] += vx * st; P[j + 1] += vy * st; P[j + 2] += vz * st;
     }
@@ -4465,7 +4488,7 @@ function ventSounds() {
     const t = ac.currentTime + 0.11 * k + (sd > 0 ? 0 : 0.05), n = hiss(ac, t, 1.4, 1.2);
     const bpf = filt(ac, 'bandpass', 2600 + 1400 * Math.random(), 0.9), g = ac.createGain(), pn = ac.createStereoPanner();
     pn.pan.value = 0.5 * sd;
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.02); g.gain.setTargetAtTime(0.0001, t + 0.15, 0.35);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.025, t + 0.02); g.gain.setTargetAtTime(0.0001, t + 0.15, 0.35);
     n.connect(bpf).connect(g).connect(pn).connect(kit.out);
     track(t + 1.5, n);
   }));
@@ -4510,7 +4533,7 @@ function flapAt(t, open, shut) {
 function updateFlap() {
   flapAng = 0;
   if (shot) {
-    const t = simT - shot.t0, open = shot.hitT + 1.3, shut = shot.hitT + 3.4;
+    const t = simT - shot.t0, open = shot.vented ? shot.ventT + 0.7 : 1e9, shut = open + 2.1;
     flapAng = reduced() ? (t > open && t < shut ? rad(105) : 0) : flapAt(t, open, shut);
   }
   arcFrame(FLAP.a);
@@ -5374,11 +5397,14 @@ function stepAim(dt, snap = false) {
   if (shot && !shot.hit) return;
   // After the hit the gun waits, then parks; laid by hand, it stays where it is put.
   if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
+  const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
   else if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
   else aimP.copy(PARK);
   const dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw, de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
+  // The gun's swing home: its first error, for the breech's half-way cue.
+  if (parking && shot.parkErr0 == null) shot.parkErr0 = aimNow.err;
   if (snap) { aimNow.vy = aimNow.ve = 0; setAim(aimNow.yaw + dy, aimNow.elev + de); return; }
   if (aimNow.err < 1e-6 && Math.abs(aimNow.vy) + Math.abs(aimNow.ve) < 1e-6) return;
   // Hydraulics: a damped spring overshoots a little, then settles.
@@ -5489,10 +5515,13 @@ function stepShot(dt) {
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
   if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
   // The back vents blow in a ripple; then the flap opens and the case leaves.
-  if (!shot.vented && age > shot.hitT + 0.55) { shot.vented = true; fireVents(); }
-  if (!shot.flapped && age > shot.hitT + 1.3) { shot.flapped = true; flapSound(); }
+  // Half-way home the back vents blow; then the flap opens and the case leaves.
+  // Laid by hand the gun does not park: the breech cycles 3.5 s after the hit.
+  const halfHome = shot.parkErr0 != null && (shot.parkErr0 < 0.01 || aimNow.err < 0.5 * shot.parkErr0);
+  if (!shot.vented && shot.hit && (halfHome || (manual.on && age > shot.hitT + 3.5) || age > shot.hitT + 12)) { shot.vented = true; shot.ventT = age; fireVents(); }
+  if (!shot.flapped && shot.vented && age > shot.ventT + 0.7) { shot.flapped = true; flapSound(); }
   // The breech throws the spent case just before the gun parks.
-  if (!shot.ejected && age > shot.hitT + 1.6) { shot.ejected = true; ejectCase(); }
+  if (!shot.ejected && shot.vented && age > shot.ventT + 1.0) { shot.ejected = true; ejectCase(); }
   // After a kill the Reset chip glows; only a press starts the timelapse.
   if (shot.hit && shot.canHit && age > shot.hitT + 6) resetReady(true);
   if (age > shot.hitT + 50 && age > shot.arrive + 1) endShot();
