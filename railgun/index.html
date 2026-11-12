@@ -5353,7 +5353,8 @@ fire = c => {
   shot.ax = AX.clone(); shot.bk = (0.75 + 0.5 * c) * SIZES[opts.size].rumble; shot.up = AX_UP.clone(); shot.side = new THREE.Vector3().crossVectors(AX, AX_UP);
   shellMesh.material.uniforms.uSeed.value = rnd() * 60;
   U.uFire.value = 1;
-  cam.shake = 1.3 * c; cam.kickP = rad(0.6) * c; cam.kickY = -rad(0.3) * c;
+  // The release only clunks; the big kick lands with the blast, as the slug leaves.
+  cam.shake = 0.25 * c;
   U.uShock.value.set(MUZZLE.x, MUZZLE.z, 0, 0);
   // The kick lifts the ring of dust round the mount.
   cdust = Math.max(cdust, 0.9);
@@ -5645,12 +5646,14 @@ function stepShot(dt) {
   const age = simT - shot.t0;
   U.uFire.value = Math.exp(-age / 0.15);
   // The barrel slams back 320 m, holds half a second, then runs out over seconds.
-  U.uRecoil.value = reduced() ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-age / 0.06)) * Math.exp(-Math.max(0, age - 0.6) / 3.5);
+  // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
+  const ra = age - 0.3;
+  U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
-    kick.p = rad(0.5) * shot.c * 1.55 * Math.exp(-age / 0.6) * Math.sin(age * Math.PI / 0.6);
-    kick.y = rad(0.1) * shot.c * Math.exp(-age / 0.8) * Math.sin(age * 2 * Math.PI / 0.9);
+    kick.p = ra > 0 ? rad(0.5) * shot.c * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
+    kick.y = ra > 0 ? rad(0.1) * shot.c * Math.exp(-ra / 0.8) * Math.sin(ra * 2 * Math.PI / 0.9) : 0;
   }
   applyAim();
   // The Mach ring runs out from the muzzle at 340 m/s.
@@ -5683,7 +5686,7 @@ function endShot() {
 
 // The blast: the slug leaves the muzzle.
 function blast(sh) {
-  cam.shake += 1.0 * sh.c; cam.kickP += rad(0.4) * sh.c;
+  cam.shake += 2.3 * sh.c; cam.kickP += rad(1.0) * sh.c; cam.kickY -= rad(0.3) * sh.c;
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
