@@ -5682,7 +5682,7 @@ function launchRound(r) {
   roundSound(ac, r);
   // The round that will break the rock gets the impact prelude and the boom.
   const k = breakPower(r);
-  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target, sfx: {} }, () => rounds.includes(r));
+  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target, sfx: {}, tag: 'salvo' }, () => rounds.includes(r));
 }
 // The tally this round would leave on landing, if it breaks the rock; else 0.
 function breakPower(r) {
@@ -5709,7 +5709,7 @@ function decide(cy, r, power) {
 function roundHits(r) {
   const cy = r.cy;
   if (!r.salvo) {
-    if (r.canHit) { decide(cy, r, r.c); ast.tally.broken = true; tgtHit(r.c); huntAfter(); }
+    if (r.canHit && !ast.tally.broken && tgtCanHit()) { decide(cy, r, r.c); ast.tally.broken = true; tgtHit(r.c); huntAfter(); }
     else cy.hit = true;
     return;
   }
@@ -5818,7 +5818,9 @@ fire = (c, n = 1, salvo = false) => {
   if (shot && !shot.ejected) ejectCase();
   // A weak shot takes 11.5 seconds to cross; a full one 8.5.
   const T = THREE.MathUtils.lerp(11.5, 8.5, c);
-  shot = { t0: simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T };
+  // The barrel may still be back from the last cycle; slide0 eases it in.
+  const slide0 = U.uRecoil.value;
+  shot = { slide0, t0: simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T };
   for (let j = 1; j <= n; j++) rounds.push({ j, n, c, salvo, T, cy: shot, s0: simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null });
   launchRound(rounds[rounds.length - n]);
   // Rail: the cycle knows its target at once.
@@ -6134,6 +6136,7 @@ function stepShot(dt) {
   // A salvo kicks harder round by round, up to the clearance point.
   if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
   else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  U.uRecoil.value = Math.max(U.uRecoil.value, shot.slide0 * Math.exp(-age / 0.6));
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
@@ -6154,7 +6157,7 @@ function stepShot(dt) {
   // The breech throws the spent case just before the gun parks.
   if (!shot.ejected && shot.vented && age > shot.ventT + 1.0) { shot.ejected = true; ejectCase(); }
   // After a kill the Reset chip glows; only a press starts the timelapse.
-  if (shot.hit && shot.canHit && age > shot.hitT + 6) resetReady(true);
+  if (lit && simT - lit.t0 > lit.hitT + 6) resetReady(true);
   if (age > shot.hitT + 50 && age > shot.arrive + 1) endShot();
 }
 // The shot ends. A shattered sky waits for Reset.
@@ -6377,6 +6380,12 @@ function landReset() {
   // The old blast, its debris and the bolt's line are gone.
   blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; clearHits(); for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
+  // Salvo sounds still to come stop with the old rock.
+  for (const h of pend) {
+    if (h.tag !== 'salvo') continue;
+    for (const n of h.nodes) { try { n.stop?.(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+    pend.delete(h);
+  }
   // Embers from the old rock go too.
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
@@ -6496,6 +6505,8 @@ onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.un
 const kit = audioKit({ keys: new Set([' ']) });
 const pend = new Set();
 function track(end, ...nodes) { pend.add({ end, nodes }); }
+// Salvo sounds carry a tag, so a Reset can stop them.
+function trackS(end, ...nodes) { pend.add({ end, nodes, tag: 'salvo' }); }
 function prune() { const now = kit.ac?.currentTime ?? 0; for (const h of pend) if (h.end < now) pend.delete(h); }
 const pending = () => { prune(); return pend.size > 0; };
 let click = () => {};
@@ -6845,7 +6856,7 @@ function echo(ac, node, lvl, dark = 6000) {
 }
 // dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
 // wet: the send into the plain's echoes.
-function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0) {
+function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, tag = null) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
@@ -6855,7 +6866,7 @@ function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0) {
   } else src.connect(g).connect(kit.out);
   if (wet) echo(ac, g, wet, dark || 6000);
   src.start(when);
-  track(when + buf.duration / rate + 0.1, src);
+  (tag ? trackS : track)(when + buf.duration / rate + 0.1, src);
 }
 // Tom's cannon report plays as the slug leaves the muzzle.
 function shotSound(ac, sh) {
@@ -6904,7 +6915,7 @@ function roundSound(ac, r) {
     o.frequency.setValueAtTime(52, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.7);
     og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.8 * k, t0 + 0.015); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
     o.connect(og).connect(kit.out); o.start(t0); o.stop(t0 + 1);
-    track(t0 + (last ? 20.1 : 2.6), src, o);
+    trackS(t0 + (last ? 20.1 : 2.6), src, o);
   });
 }
 // A far strike: a thin crack and a low thud, after the sound's delay.
@@ -6927,7 +6938,7 @@ function farHit(ac, P, crackK, thudK, ring = 0) {
     c.connect(cb).connect(cg).connect(kit.out);
     nodes.push(c);
   }
-  track(t + 1.2, ...nodes);
+  trackS(t + 1.2, ...nodes);
 }
 function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.8, 0.9); }
 function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 1.2, 0.5, 8); }
@@ -6941,9 +6952,9 @@ function hitSounds(ac, sh, alive = () => shot === sh) {
   sh.sfx = { ...sh.sfx, hit, impact: 0, boom: 0, late };
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (!alive() || !kit.live()) return;
-    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25); }
+    if (imp) { sh.sfx.impact = Math.max(ac.currentTime, hit - IMPACT_AT); playSample(ac, imp, sh.sfx.impact, 0.45 * k * jit(0.1), jit(0.04), 0, 0.25, sh.tag); }
     // The boom plays half speed, an octave down: deep, bellowing, about 45 s long.
-    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2); }
+    if (boom) { boomOK = true; sh.sfx.boom = hit + late; playSample(ac, boom, sh.sfx.boom, 1.9 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, sh.tag); }
   });
 }
 // The rumble crosses forty kilometres of air, compressed eight times.
@@ -7080,6 +7091,7 @@ window.__qa = {
   tally: () => ({ ...ast.tally }),
   sfx: () => ({ ...sfxN }),
   flash: () => hitFlash,
+  hitAt: () => ast.hitAt,
   craters: () => astMat.uniforms.uCrater.value.filter(c => c.w >= 0 && simT - c.w < 20).length,
   hunted: () => chunks.filter(ch => ch.burstAt).length,
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
@@ -7094,7 +7106,7 @@ window.__qa = {
   setS(v) { ast.s = v; ast.state = v >= 1 ? 'hold' : 'approach'; placeAst(); astSize(); stepAim(0, true); frame(); draw(); },
   charged: () => U.uCharge.value,
   chaos: () => chaos,
-  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
+  audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, salvoPend: [...pend].filter(h => h.tag === 'salvo').length, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0 }),
   mute(on) { sound.set(!on); },
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.

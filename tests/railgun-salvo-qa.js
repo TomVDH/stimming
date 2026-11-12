@@ -125,6 +125,31 @@ const checks = {
     ok(q().sfx().crater - c0 === 2, `each crater sounds (${q().sfx().crater - c0})`);
     q().mute(true); settle();
   },
+  async final() {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    // C1: an older cycle's break still lights the Reset chip.
+    settle();
+    q().mode('rail'); q().shoot(1); q().run(1); q().salvo(1); q().run(15);
+    ok(q().resetReady(), 'a Rail break lights Reset though a salvo fired after it');
+    // I1: two Rail shots in flight break the rock once.
+    settle();
+    q().mode('rail'); q().shoot(1); q().run(0.5); q().shoot(1); q().run(8.5);
+    const h1 = q().hitAt(); q().run(1.5);
+    ok(h1 != null && q().hitAt() === h1, `the second Rail round does not shatter the rock again (${h1} vs ${q().hitAt()})`);
+    // I2: a new cycle starts from where the barrel is.
+    settle();
+    q().mode('rail'); q().shoot(1); q().run(4);
+    const s1 = q().recoil().slide; q().shoot(1); q().run(1 / 30);
+    ok(q().recoil().slide > 0.8 * s1, `the barrel does not jump home on a new cycle (${Math.round(s1)} to ${Math.round(q().recoil().slide)})`);
+    // I3: Reset stops the salvo sounds already scheduled.
+    settle();
+    q().mute(false); await wait(300);
+    q().salvo(5); q().run(2.5); await wait(1500);
+    ok(q().audio().salvoPend > 0, `salvo sounds are tagged (${q().audio().salvoPend})`);
+    settle();
+    ok(q().audio().salvoPend === 0, `Reset stops them (${q().audio().salvoPend})`);
+    q().mute(true); settle();
+  },
   task7() {
     // Force prefers-reduced-motion for this probe only.
     const d = Object.getOwnPropertyDescriptor(MediaQueryList.prototype, 'matches');
