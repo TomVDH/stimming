@@ -84,6 +84,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -91,6 +92,8 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
+// The sight's image intensifier: the NVG toy's tube, used whole.
+import { Tube } from '../nvg/tube.js';
 mark('libs');
 
 /* ---------- settings ---------- */
@@ -2785,14 +2788,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
       // Heat shimmer: the barrel's ends on screen, then width, strength, clock.
       uHzA: { value: new THREE.Vector4() }, uHzK: { value: new THREE.Vector3() }, uHtA: { value: new THREE.Vector4() },
-      // The sight: 0 off, 1 on.
-      uSight: { value: 0 },
-      // The sight's yaw, elevation and clock.
-      uSightA: { value: new THREE.Vector3() },
-      // The rangefinder: range in metres, the split prism's offset, the charge.
-      uSightR: { value: new THREE.Vector3() },
-      // The range scale, drawn once.
-      tScale: { value: null },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
@@ -2804,10 +2799,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
     uniform float uVeil, uZoom;
-    uniform float uSight;
-    uniform vec3 uSightA;
-    uniform vec3 uSightR;
-    uniform sampler2D tScale;
     uniform vec4 uShk0, uShk1, uHzA, uHtA;
     uniform vec3 uHzK;
     varying vec2 vUv;
@@ -2893,75 +2884,6 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9)) * uLF.z;
-      // The sight: the gun's old coincidence rangefinder, an eyepiece down the bore.
-      // Real glass: etched black lines, a split prism, a lamp-lit range scale.
-      if (uSight > 0.5) {
-        float A = uRes.x / uRes.y;
-        vec2 sq = (vUv - 0.5) * vec2(A, 1.0);
-        // The field stop: a round eyepiece, as large as the screen allows.
-        float R = min(0.465, 0.5 * A - 0.025), k = R / 0.46, rr = length(sq), rn = rr / R;
-        vec2 p = sq / k;
-        float px = 1.0 / (uRes.y * k);
-        // The upper half comes through the second window.
-        // It slides into line as the range is taken.
-        vec2 uv = 0.5 + (vUv - 0.5) * (1.0 + 0.04 * rn * rn);
-        if (sq.y > 0.0) uv.x += uSightR.y;
-        // Old glass: colour fringes grow toward the rim.
-        vec2 ca = (uv - 0.5) * 0.006 * rn * rn;
-        vec3 s0 = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
-        // Aged coatings: a little warm, a little flat, a faint veil.
-        float ls = dot(s0, vec3(0.2126, 0.7152, 0.0722));
-        vec3 img = mix(vec3(ls), s0, 0.72) * vec3(1.0, 0.95, 0.84) + vec3(0.006, 0.005, 0.004);
-        if (sq.y > 0.0) img *= vec3(0.96, 0.98, 1.0);
-        img *= 1.0 - 0.6 * smoothstep(0.55, 1.0, rn);
-        // Etched reticle, black.
-        float d = 1e3;
-        // The aim mark: an open chevron, its point on the split line.
-        d = min(d, sgm(p, vec2(0.0), vec2(-0.026, -0.042)));
-        d = min(d, sgm(p, vec2(0.0), vec2(0.026, -0.042)));
-        // Lead marks: smaller chevrons, two each side.
-        for (int i = 1; i <= 2; i++) {
-          float x = 0.075 * float(i), s = 0.6;
-          for (int j = 0; j < 2; j++) {
-            vec2 c = vec2(j == 0 ? x : -x, 0.0);
-            d = min(d, sgm(p, c, c + vec2(-0.026, -0.042) * s));
-            d = min(d, sgm(p, c, c + vec2(0.026, -0.042) * s));
-          }
-        }
-        float fine = 1.0 - smoothstep(0.6 * px, 1.6 * px, d);
-        // Heavy posts from the rim: two across, one from below.
-        float dh = abs(p.y) + (abs(p.x) < 0.22 ? 1e3 : 0.0), dv = abs(p.x) + (p.y > -0.37 ? 1e3 : 0.0);
-        float dp = min(dh, dv);
-        float post = 1.0 - smoothstep(1.3 * px, 2.4 * px, dp);
-        // The prism's edge: a fine dark line across the field.
-        float split = (1.0 - smoothstep(0.4 * px, 1.2 * px, abs(p.y))) * step(0.035, abs(p.x)) * step(abs(p.x), 0.21);
-        // The range scale: a backlit strip in kilometres under an index.
-        float ys = -0.335, sw = 0.15, sh = 0.022;
-        vec2 sp = p - vec2(0.0, ys);
-        float inS = step(abs(sp.x), sw) * step(abs(sp.y), sh);
-        float km = uSightR.x * 0.001 + sp.x / sw * 6.0;
-        float ink = texture2D(tScale, vec2(km / 80.0, sp.y / (2.0 * sh) + 0.5)).a;
-        vec3 strip = vec3(0.62, 0.52, 0.34) * 0.32 * (1.0 - 0.5 * smoothstep(0.6, 1.0, abs(sp.x) / sw)) * (1.0 - 0.9 * ink);
-        float frame = 1.0 - smoothstep(0.6 * px, 1.6 * px, abs(max(abs(sp.x) - sw, abs(sp.y) - sh)));
-        // The index: a small black pointer over the strip's centre.
-        float ty = sp.y - sh, idx = step(0.0, ty) * step(ty, 0.014) * step(abs(sp.x), ty * 0.6);
-        vec3 inner = mix(img, strip, inS);
-        inner *= 1.0 - 0.92 * clamp(fine + post + split * 0.7 + frame * 0.85 + idx, 0.0, 1.0);
-        // Dust on the reticle glass.
-        float dust = step(0.99993, h(floor((sq + 1.0) * uRes.y * 0.5) + vec2(7.0, 3.0)));
-        inner *= 1.0 - 0.5 * dust;
-        // The housing: black crackle paint, the eyecup's dull rim.
-        float sn = h(floor(gl_FragCoord.xy / 2.0) + vec2(3.0, 9.0)) - 0.5;
-        vec3 bez = vec3(0.018, 0.017, 0.016) * (1.0 + 0.5 * sn);
-        bez += vec3(0.03, 0.028, 0.025) * (1.0 - smoothstep(0.0, 0.035, abs(rn - 1.06) * R));
-        // The ready lamp: a small bulb under red glass, lit at full charge.
-        vec2 lp = sq - vec2(cos(-0.8), sin(-0.8)) * (R + 0.055);
-        float bulb = 1.0 - smoothstep(0.009, 0.011, length(lp));
-        float lit = uSightR.z >= 1.0 ? 1.0 : 0.06 + 0.12 * clamp(uSightR.z, 0.0, 1.0);
-        bez = mix(bez, vec3(0.06, 0.012, 0.006) + vec3(1.6, 0.32, 0.08) * lit * (1.0 - 0.5 * length(lp + 0.003) / 0.011), bulb);
-        bez += vec3(1.0, 0.3, 0.08) * lit * 0.04 * exp(-length(lp) / 0.02) * step(1.0, rn);
-        c = mix(bez, inner, smoothstep(1.0 + 2.0 * px / 0.46, 1.0, rn));
-      }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       // Contrast: shadows sink and highs lift round a mid grey.
@@ -3003,6 +2925,229 @@ const fxaa = new ShaderPass(FXAAShader);
 composer.addPass(fxaa);
 function setSamples(n) {
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { if (rt.samples !== n) { rt.samples = n; rt.dispose(); } }
+}
+
+/* ---------- sight: Monolith over an image intensifier ---------- */
+// The sight runs the finished frame through the NVG toy's tube, white phosphor.
+// Its marks and words burn in as negatives through a key (stimming-cido).
+const sightFx = { tube: null, out: null, kc: null, kx: null, keyTex: null, keyMat: null, kd: 1, last: 0, size: '' };
+function sightSetup() {
+  if (sightFx.tube) { sightSize(); return; }
+  const t = sightFx.tube = new Tube(renderer);
+  // The frame is the tube's camera signal.
+  const su = t.sigU;
+  su.uCam.value = 1; su.uMirror.value = 0; su.uCamXf.value.set(1, 1, 0, 0);
+  // The NVG toy's defaults: grain, gain and afterglow at their middles.
+  const tu = t.mTube.uniforms;
+  tu.uPower.value = 1; tu.uScint.value = 0.00008; tu.uKq.value = 0.55;
+  tu.uTail.value = 0.057; tu.uTau.value = 0.15;
+  t.mGain.uniforms.uGmax.value = 0.022 * Math.pow(14, 0.55);
+  t.mOut.uniforms.uPhos.value = 1;
+  t.mOut.uniforms.uPupil.value.set(0, -0.06);
+  // Tom: no chromatic aberration, no hex in the grain.
+  // The sight's own copies of the materials drop the lateral colour and the honeycomb.
+  t.mOut.fragmentShader = t.mOut.fragmentShader.replace('float ca = 0.006 * d * d;', 'float ca = 0.0;');
+  t.mTube.fragmentShader = t.mTube.fragmentShader
+    .replace('float fp = 1.0 + 0.07 * (h2(fib.xy * 4.0, 11.0 + fi) - 0.5);', 'float fp = 1.0;')
+    .replace('fp *= 1.0 - 0.14 * smoothstep(0.04, 0.0, mf.z);', '');
+  // The tube's last pass draws into a target; the key pass then draws on.
+  const pass0 = t.pass.bind(t);
+  t.pass = (m, target) => pass0(m, m === t.mOut ? sightFx.out : target);
+  sightFx.kc = document.createElement('canvas');
+  sightFx.kx = sightFx.kc.getContext('2d');
+  sightFx.keyTex = new THREE.CanvasTexture(sightFx.kc);
+  sightFx.keyTex.minFilter = THREE.LinearFilter; sightFx.keyTex.generateMipmaps = false; sightFx.keyTex.premultiplyAlpha = true;
+  sightFx.keyMat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+    uniforms: { tImg: { value: null }, tKey: { value: sightFx.keyTex }, uTexel: { value: new THREE.Vector2() }, uNeg: { value: 0.9 } },
+    vertexShader: /* glsl */`out vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: /* glsl */`
+      out highp vec4 outColor;
+      uniform sampler2D tImg, tKey;
+      uniform vec2 uTexel;
+      uniform float uNeg;
+      in vec2 vUv;
+      void main() {
+        vec3 c = texture(tImg, vUv).rgb;
+        vec4 k = texture(tKey, vUv);
+        // Green, the soft band: the picture turns to its negative.
+        vec3 o = mix(c, 1.0 - c, clamp(k.g, 0.0, 1.0) * uNeg);
+        // Red, the core: the far extreme of the light round it.
+        // A plain negative vanishes on mid grey; the core never does.
+        if (k.r > 0.004) {
+          float L = 0.0;
+          for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++)
+            L += dot(texture(tImg, vUv + vec2(x, y) * uTexel * 3.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+          L /= 25.0;
+          vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
+          o = mix(o, far, clamp(k.r, 0.0, 1.0));
+        }
+        outColor = vec4(o, 1.0);
+      }`,
+  });
+  sightSize();
+}
+// The tube and the key follow the stage size and the render scale.
+function sightSize() {
+  const f = sightFx;
+  if (!f.tube) return;
+  const { w, h, dpr } = size, key = `${w}x${h}x${dpr}`;
+  if (f.size === key) return;
+  f.size = key;
+  // The tube's grids: the NVG toy's caps, about one CSS pixel per grain cell.
+  const s = Math.min(dpr * 0.85, Math.sqrt(1.25e6 / (w * h)));
+  f.tube.resize(w, h, s, 1.2, 0);
+  f.tube.setTubes([{ x: w / 2, y: h / 2, r: Math.hypot(w, h) / 2 * 1.08, trim: 1 }]);
+  f.tube.cold();
+  // The tube clears with alpha 0; the scene keeps its opaque clear.
+  renderer.setClearColor(0x000000, 1);
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  f.out?.dispose();
+  f.out = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  f.keyMat.uniforms.uTexel.value.set(1 / bw, 1 / bh);
+  f.kd = Math.min(dpr, 1.5);
+  f.kc.width = Math.round(w * f.kd); f.kc.height = Math.round(h * f.kd);
+  f.keyTex.dispose();
+}
+// The last pass in the chain while the sight is on.
+class SightPass extends Pass {
+  constructor() { super(); this.enabled = false; this.needsSwap = false; }
+  render(r, writeBuffer, readBuffer) {
+    const f = sightFx;
+    if (!f.tube) return;
+    const now = performance.now(), dt = f.last ? clamp((now - f.last) / 1000, 1 / 120, 0.1) : 1 / 30;
+    f.last = now;
+    f.tube.sigU.tCam.value = readBuffer.texture;
+    // Photon count follows the light: dusk feeds the cathode far more than starlight.
+    f.tube.sigU.uCamExpo.value = 45 + 45 * clamp((opts.sun - 0.1) / 0.4, 0, 1);
+    f.tube.mOut.uniforms.uFlick.value = reduced() ? 0 : 1;
+    f.tube.render(null, null, dt, now / 1000);
+    f.keyMat.uniforms.tImg.value = f.out.texture;
+    f.keyMat.uniforms.uNeg.value = reduced() ? 0.9 : 0.86 + 0.08 * Math.sin(now / 1000 * 1.3);
+    f.tube.quad.material = f.keyMat;
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    r.render(f.tube.scene, f.tube.cam);
+  }
+}
+const sightPass = new SightPass();
+composer.addPass(sightPass);
+
+// The marks, in CSS pixels, from the toy's own geometry.
+const skP = new THREE.Vector3(), skQ = new THREE.Vector3(), skV = new THREE.Vector3();
+function skScreen(v) {
+  skP.copy(v).project(camera);
+  return { x: (skP.x * 0.5 + 0.5) * size.w, y: (0.5 - skP.y * 0.5) * size.h, ok: skP.z < 1 };
+}
+function sightMarks() {
+  const W = size.w, H = size.h, fpx = (H / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const bore = skScreen(barrelPt(60000, 0, 0, skQ));
+  const m = { W, H, phone: W < 640, bore, state: 'hold', lvl: 0 };
+  const hitAge = simT - U.uHitP.value.w;
+  if (shot && !shot.hit) { m.state = 'fired'; m.left = Math.max(0, shot.hitT - (simT - shot.t0)); }
+  else if (hitAge >= 0 && hitAge < 8 && !astMesh.visible) m.state = 'struck';
+  else if (charge) { m.lvl = clamp(U.uCharge.value, 0, 1); m.state = m.lvl >= 1 ? 'full' : 'charging'; }
+  if (m.state === 'struck') {
+    skV.set(U.uHitP.value.x, U.uHitP.value.y, U.uHitP.value.z);
+    const D = skV.distanceTo(camera.position);
+    m.hit = { ...skScreen(skV), r: U.uHitR.value / D * fpx, D };
+    return m;
+  }
+  if (!astMesh.visible) return m;
+  const rock = skScreen(ast.pos), D = ast.pos.distanceTo(camera.position);
+  if (!rock.ok) return m;
+  m.rock = { ...rock, r: Math.max(6, ast.R / D * fpx), D };
+  // The rock's velocity: it falls FALL metres along -away over the size's time.
+  const v = skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / SIZES[opts.size].T : 0);
+  m.rdot = v.dot(skQ.copy(ast.pos).sub(camera.position)) / D;
+  // The intercept point: where the rock will be after one time of flight.
+  const c = charge ? clamp(U.uCharge.value, 0.12, 1) : 1, T = THREE.MathUtils.lerp(11.5, 8.5, c) + 0.3;
+  m.pip = skScreen(skQ.copy(ast.pos).addScaledVector(v, T));
+  m.lay = aimNow.err * 1000;
+  return m;
+}
+// Draw the marks twice: a blurred green band, then a red core.
+function sightKey() {
+  const f = sightFx, x = f.kx;
+  if (!x) return;
+  // Phones and short stages draw at four fifths.
+  const m = sightMarks(), k = m.phone || m.H < 500 ? 0.8 : 1;
+  const ph = reduced() ? 0.5 : (Math.floor(simT * 10) / 10) % 1;
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.clearRect(0, 0, f.kc.width, f.kc.height);
+  for (const band of [true, false]) {
+    x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
+    x.filter = band ? `blur(${3.2 * k}px)` : 'none';
+    x.globalCompositeOperation = band ? 'source-over' : 'lighter';
+    const col = band ? '#0f0' : '#f00';
+    x.strokeStyle = x.fillStyle = col;
+    x.lineJoin = 'round';
+    const lw = w => (x.lineWidth = band ? 5 : w * k);
+    const line = pts => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.stroke(); };
+    const box = (a, b, w, h, fill) => { if (fill) { if (h > 0) x.fillRect(a, b, w, h); } else { lw(1.1); x.strokeRect(a, b, w, h); } };
+    const dot = (a, b, r) => { x.beginPath(); x.arc(a, b, r, 0, Math.PI * 2); x.fill(); };
+    const word = (a, b, str, sz, align = 'center', ls = 0.45, wt = 500) => {
+      x.font = `${wt} ${sz * k}px Gabarito, sans-serif`;
+      x.letterSpacing = `${ls * sz * k}px`;
+      x.textAlign = align;
+      // Letter spacing trails the last glyph; centred and right text shift back.
+      const tr = align === 'center' ? ls * sz * k / 2 : align === 'right' ? ls * sz * k : 0;
+      if (band) { x.lineWidth = 4.4; x.strokeText(str, a + tr, b); }
+      x.fillText(str, a + tr, b);
+    };
+    const { bore, W } = m;
+    // The gun's horizon: one hairline, open round the bore.
+    lw(1);
+    const gap = 48 * k;
+    line([[0, bore.y], [bore.x - gap, bore.y]]); line([[bore.x + gap, bore.y], [W, bore.y]]);
+    // The monolith: two slender blocks round the aim gap; the lower fills with the charge.
+    // The monolith stands at most an eighth of the stage tall, so its word stays clear.
+    const mw = 8 * k, mh = Math.min(112 * k, m.H * 0.13), g2 = 13 * k, mx = bore.x - mw / 2, up = bore.y - g2 - mh, lo = bore.y + g2;
+    box(mx, up, mw, mh); box(mx, lo, mw, mh);
+    if (m.lvl > 0) box(mx, lo + mh * (1 - m.lvl), mw, mh * m.lvl, true);
+    if (m.state === 'full') box(mx, up, mw, mh, true);
+    if (m.rock) {
+      const { rock } = m, hgt = rock.r * 1.25 + 12 * k;
+      // Two obelisks either side of the rock, the height of its disc.
+      for (const sx of [-1, 1]) {
+        const ox = rock.x + sx * (rock.r + 17 * k), tp = rock.y - hgt, bt = rock.y + hgt;
+        if (band) { lw(5); line([[ox, bt], [ox, tp]]); }
+        else { x.beginPath(); x.moveTo(ox - 2.2 * k, bt); x.lineTo(ox - 1.2 * k, tp + 9 * k); x.lineTo(ox, tp); x.lineTo(ox + 1.2 * k, tp + 9 * k); x.lineTo(ox + 2.2 * k, bt); x.closePath(); x.fill(); }
+      }
+      if (m.state !== 'fired') {
+        // The lead: beads drift from the rock to the intercept ring.
+        if (m.pip.ok) {
+          const dx = m.pip.x - rock.x, dy = m.pip.y - rock.y, d = Math.hypot(dx, dy) || 1, a0 = Math.min(0.9, rock.r * 0.6 / d);
+          for (let i = 0; i < 6; i++) { const u = a0 + (1 - a0) * ((i + ph) / 6); if (u < 0.96) dot(rock.x + dx * u, rock.y + dy * u, band ? 4 : 2 * k); }
+          lw(1.2); x.beginPath(); x.arc(m.pip.x, m.pip.y, 6 * k, 0, Math.PI * 2); x.stroke();
+          if (m.state !== 'hold') word(m.pip.x, m.pip.y - 14 * k, m.lay.toFixed(0), 10, 'center', 0.3);
+        }
+      } else {
+        // In flight: beads climb the bolt's path from the bore to the rock.
+        const dx = rock.x - bore.x, dy = rock.y - bore.y;
+        for (let i = 0; i < 9; i++) { const u = (i + ph) / 9; dot(bore.x + dx * u, bore.y + dy * u, band ? 4 : (1.4 + 1.2 * u) * k); }
+      }
+      // The range in light figures beside the rock; closing speed under it.
+      const right = !m.phone && rock.x >= bore.x, al = m.phone ? 'center' : right ? 'left' : 'right';
+      const tx = m.phone ? clamp(rock.x, 90, W - 90) : rock.x + (right ? 1 : -1) * (rock.r + 36 * k);
+      const ty = m.phone ? rock.y - hgt - 34 * k : rock.y + 2;
+      word(tx, ty, (rock.D / 1000).toFixed(2), 34, al, 0.1, 400);
+      word(tx, ty + 22 * k, m.state === 'fired' ? 'KM' : `KM  ·  −${Math.round(Math.abs(m.rdot))} M/S`, 11, al, 0.5);
+    }
+    if (m.hit && m.hit.ok) {
+      // Struck: a ring broken into six arcs where the rock was.
+      const R = m.hit.r + 22 * k;
+      lw(1.6);
+      for (let i = 0; i < 6; i++) { const a0 = i / 6 * Math.PI * 2 + 0.2; x.beginPath(); x.arc(m.hit.x, m.hit.y, R, a0, a0 + Math.PI * 2 / 6 - 0.32); x.stroke(); }
+      word(m.hit.x, m.hit.y - R - 18 * k, `${(m.hit.D / 1000).toFixed(2)} KM`, 12, 'center', 0.5);
+    }
+    // Under the monolith: one word, or the count.
+    const big = m.state === 'charging' || m.state === 'fired';
+    const w0 = { hold: 'HOLD', charging: `${Math.round(m.lvl * 100)}`, full: 'RELEASE', fired: (m.left ?? 0).toFixed(1), struck: 'STRUCK' }[m.state];
+    word(bore.x, lo + mh + (big ? 34 : 28) * k, w0, big ? 22 : 12, 'center', big ? 0.12 : 0.6, big ? 400 : 500);
+  }
+  x.filter = 'none';
+  x.globalCompositeOperation = 'source-over';
+  f.keyTex.needsUpdate = true;
 }
 
 /* ---------- camera: a low eye far out on the plain ---------- */
@@ -3054,11 +3199,9 @@ function frame() {
     sightEye(camera.position);
     barrelPt(1, 0, 0, sightDir).sub(barrelPt(0, 0, 0, sightTo)).normalize();
     camera.rotation.set(Math.asin(clamp(sightDir.y, -1, 1)) + wp * 0.3, Math.atan2(-sightDir.x, -sightDir.z) + wy * 0.3, 0);
-    grade.uniforms.uSightA.value.set(aimNow.yaw + kick.y, aimNow.elev + kick.p, simT);
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-  if (sight) sightMark();
 }
 // The sight: the rangefinder's lens, 22 degrees down the bore.
 const SIGHT_FOV = 22;
@@ -3066,9 +3209,8 @@ let sight = false;
 const sightDir = new THREE.Vector3(0, 0, -1), sightTo = new THREE.Vector3();
 function toggleSight() {
   sight = !sight;
-  grade.uniforms.uSight.value = sight ? 1 : 0;
-  // Each look starts off the range; the halves slide together.
-  if (sight) { sightRng.d = ast.pos.distanceTo(sightEye(eyeP)) * 1.35; sightRng.t = simT; }
+  sightPass.enabled = sight;
+  if (sight) sightSetup();
   frame();
   wake();
 }
@@ -3077,36 +3219,6 @@ const eyeP = new THREE.Vector3();
 function sightEye(out) {
   return barrelPt(VF.a + 30, VF.x, VF.u, out);
 }
-// The rangefinder takes the range by hand, a little behind the rock.
-// The split image shows the error until the halves line up.
-const sightRng = { d: 0, t: 0 };
-function sightMark() {
-  const r = grade.uniforms.uSightR.value, dt = clamp(simT - sightRng.t, 0, 0.1);
-  sightRng.t = simT;
-  const D = astMesh.visible ? ast.pos.distanceTo(sightEye(eyeP)) : sightRng.d;
-  sightRng.d += (D - sightRng.d) * (1 - Math.exp(-dt / 0.45));
-  r.set(sightRng.d, clamp((D - sightRng.d) / Math.max(D, 1) * 0.12, -0.05, 0.05), U.uCharge.value);
-}
-// The scale: ticks per half kilometre, a number per five, black on clear.
-function makeScale() {
-  const c = document.createElement('canvas'), x = c.getContext('2d');
-  c.width = 4096; c.height = 64;
-  const s = c.width / 80;
-  x.fillStyle = x.strokeStyle = '#000';
-  x.font = '600 22px "Arial Narrow", Arial, sans-serif';
-  x.textAlign = 'center';
-  for (let k = 0; k <= 160; k++) {
-    const X = k * 0.5 * s, big = k % 10 === 0, mid = k % 2 === 0;
-    x.lineWidth = big ? 2.4 : 1.6;
-    x.beginPath(); x.moveTo(X, 64); x.lineTo(X, big ? 34 : mid ? 44 : 52); x.stroke();
-    if (big) x.fillText(String(k / 2), X, 26);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-grade.uniforms.tScale.value = makeScale();
 // A critically damped spring: the lens moves heavy and smooth.
 const lookV = { yaw: 0, pitch: 0 };
 function easeLook(dt) {
@@ -3166,6 +3278,7 @@ function resize() {
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
+  sightSize();
   frame();
   draw();
 }
@@ -3216,6 +3329,7 @@ function draw() {
   drawShadow();
   drawGunDepth();
   drawVolumes();
+  if (sight) sightKey();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
