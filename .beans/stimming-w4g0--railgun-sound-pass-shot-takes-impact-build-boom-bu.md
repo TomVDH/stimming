@@ -19,7 +19,7 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] QA: clean console, 30 fps
 - [x] Note for Tom on comparing the shot takes
 - [x] Tom (2026-11-12): boom bass trimmed about 3 dB; Mesa is the default shot take
-- [x] Tom (2026-11-12): layered charge-up: Pentatonic and Hijaz stacks, Pentatonic default
+- [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
 
@@ -35,12 +35,24 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 | Coil | An electric crack, a falling discharge, a ringing struck-bar barrel and the slug's N-wave supersonic snap with flutter |
 | Thump | A heavy knock, a resonant pressure whoomp, a sub swell and three seconds of debris rattle |
 
-## Layered charge (Settings, Charge sound)
+## Surge charge (Settings, Charge sound)
 
-- **Pentatonic** (default): A major pentatonic on A2. Order of entry: root, fifth, octave, third, fifth, sixth, two octaves, ninth, third, fifth, sixth, three octaves.
-- **Hijaz**: an Arabic maqam on A2. The augmented second (B flat to C sharp), the flat sixth and the flat ninth enter in the middle. A slow vibrato is on every tone.
-- Twelve tones enter one by one in step with the charge (entry at 0.03 to 0.86 of full). Each tone arrives with a soft chime an octave up. Full charge locks the chord with a swell; over-hold pulls each tone sharp or flat.
-- The old mixes (Hum, Blend, Choir, Expanse, Titan) stay in the stepper.
+Tom (2026-11-12): the first stacks were too musical; he wants bombastic, mechanical, hummy synth layers in the THX spirit. Rebuilt as Surge.
+
+| Charge | Layer |
+|---|---|
+| 0 | Mains: a transformer hum, saw and square on A1 |
+| 0.10 | Capacitor whine: climbs from 180 Hz to 4 kHz |
+| 0.22 | Sub: A0 and A1, drops in hard at the lock |
+| 0.32 | Swarm bass: four saw pairs from random low pitches |
+| 0.48 | Swarm mid: eight saw pairs, wandering |
+| 0.60 | Turbine: saw and noise throb, 3 to 18 times a second |
+| 0.72 | Swarm high: six saw pairs |
+| 1.0 | Lock: every swarm voice lands on its chord tone; swell |
+
+- **Surge** (default): the swarm lands on a pentatonic chord. **Surge Hijaz**: it lands on a Hijaz chord (flat second, augmented second, flat sixth).
+- The swarm filter opens from 600 Hz to 9 kHz with the charge; one soft clip drives harder with the charge and the over-hold.
+- Level: about -26 dB RMS at the start, -12 dB at the lock; Expanse runs -26 to -15.
 
 ## Notes
 
