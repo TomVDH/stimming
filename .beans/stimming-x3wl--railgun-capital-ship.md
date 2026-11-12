@@ -21,3 +21,7 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - [ ] Task 6: impacts, Reset and the next ship
 - [ ] Task 7: sound
 - [ ] Task 8: reduced motion, full QA, review, PR
+
+## Notes
+
+- Tom, 2026-11-12: the ship draws about 12 degrees across, three times the spec's 4. `SHIP_SCALE = 3` in `railgun/index.html`; `HULL` keeps its design units.

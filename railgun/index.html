@@ -91,6 +91,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
+import { HULL, makeShip, stepShip, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE } from './ship.js';
 mark('libs');
 
 /* ---------- settings ---------- */
@@ -1438,6 +1439,13 @@ vec3 aim(vec3 p, float f, float g) {
   vec3 t = vec3(p.x * uYaw.x + p.z * uYaw.y, p.y, p.z * uYaw.x - p.x * uYaw.y);
   return mix(p, t, g);
 }`;
+// The gun and the ship share the panel seams.
+const SEAM = /* glsl */`
+// A line every period metres, w metres wide, softened to a pixel.
+float seam(float x, float period, float w) {
+  float d = (0.5 - abs(fract(x / period) - 0.5)) * period;
+  return 1.0 - smoothstep(w, w + fwidth(x), d);
+}`;
 const gunMat = new THREE.ShaderMaterial({
   uniforms: { ...U, uShellC: { value: new THREE.Vector3(...SHELL_C) }, uDarkC: { value: new THREE.Vector3(...DARK_C) }, uHullC: { value: new THREE.Vector3(...HULL_C) }, uBandC: { value: new THREE.Vector3(...BAND_C) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
   vertexShader: /* glsl */`
@@ -1460,11 +1468,7 @@ const gunMat = new THREE.ShaderMaterial({
   uniform vec3 uShellC, uDarkC, uHullC, uBandC, uGroundC;
   uniform float uHeat, uHeatT;
   ${HEAD}
-  // A line every period metres, w metres wide, softened to a pixel.
-  float seam(float x, float period, float w) {
-    float d = (0.5 - abs(fract(x / period) - 0.5)) * period;
-    return 1.0 - smoothstep(w, w + fwidth(x), d);
-  }
+  ${SEAM}
   void main() {
     // Exact flat faces from the screen derivatives.
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
@@ -1781,7 +1785,7 @@ function astSize() {
   ast.R = SIZES[opts.size].R;
   astMesh.geometry = ROCKS[opts.size];
   astMesh.scale.setScalar(ast.R);
-  if (ast.state !== 'shatter') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
+  if (ast.state !== 'shatter' && ast.state !== 'gone') astMat.uniforms.uBurn.value = 0.5 + 0.5 * ast.s;
 }
 function placeAst() {
   astAt(ast.s, ast.pos);
@@ -1805,6 +1809,247 @@ function turnPath(turn) {
 }
 // The size comes first; the fragments measure their gaps in radii.
 function retune() { astSize(); placeAst(); draw(); }
+
+/* ---------- the ship: a battleship in orbit ---------- */
+// Hull frame: x runs stern to prow, y up, z to starboard.
+// Hull units are HULL's metres.
+// Each hulk merges its boxes into one mesh, pivoted at its centre.
+const SHIP_DIST = 150000;
+// Tom asks for a larger ship: it draws at three times HULL.
+// The hull frame keeps HULL's units, so the joints still match.
+const SHIP_SCALE = 3;
+// The station sits on the rock's hold bearing, high on the right.
+const SHIP_EL = rad(27);
+// The orbit climbs 8 degrees to the left through the station.
+const SHIP_CLIMB = rad(8);
+// The rise starts 60 degrees back along the orbit, low right.
+const SHIP_RISE = rad(60);
+// A Reset or a load starts the rise 20 s in.
+// The ship then shows at once.
+const SHIP_HEAD = 20;
+// The deck tips 14 degrees toward the eye; its top edges show.
+const SHIP_TIP = rad(14);
+// The aim aids see the rock's disc, moved to 150 km.
+const SHIP_AIM_R = 3750;
+const SHIP_HULL = linFit(0.42, 0.012, 245), SHIP_RUST = linFit(0.52, 0.09, 38), SHIP_GROOVE = linFit(0.28, 0.01, 245), SHIP_DARK = linFit(0.14, 0.01, 250);
+// A box: x0 to x1, y0 to y1, half width hz.
+const sbox = (x0, x1, y0, y1, hz) => new THREE.BoxGeometry(x1 - x0, y1 - y0, 2 * hz).translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
+// f moves each vertex; a box has vertices at its corners only.
+function shapeG(g, f) {
+  const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) { f(v.fromBufferAttribute(p, i)); p.setXYZ(i, v.x, v.y, v.z); }
+  return g;
+}
+// aHull: the point in the hull frame.
+// aShip: albedo, then 1 for a dark recess.
+// aTop: the part's top height; its wall lip catches the sun.
+function shipPart(g, col, recess) {
+  g.deleteAttribute('uv');
+  g.deleteAttribute('normal');
+  const p = g.attributes.position, a = new Float32Array(p.count * 4);
+  let top = -1e9;
+  for (let i = 0; i < p.count; i++) { a.set([...col, recess], i * 4); top = Math.max(top, p.getY(i)); }
+  g.setAttribute('aHull', p.clone());
+  g.setAttribute('aShip', new THREE.Float32BufferAttribute(a, 4));
+  g.setAttribute('aTop', new THREE.Float32BufferAttribute(new Float32Array(p.count).fill(top), 1));
+  return g;
+}
+function buildHulk(id) {
+  const parts = [];
+  const add = (g, col = SHIP_HULL, recess = 0) => parts.push(shipPart(g, col, recess));
+  // A hull block in strakes: lower hull, recessed rust band, upper hull.
+  // A dark groove cuts the upper hull; each ledge catches the sun.
+  const block = (x0, x1, y0, y1, hz, f = () => {}) => {
+    const g0 = y1 - 260;
+    for (const [a, b, c, d] of [[y0, -150, SHIP_HULL, 0], [-150, 30, SHIP_RUST, 60], [30, g0, SHIP_HULL, 0], [g0, g0 + 60, SHIP_GROOVE, 40], [g0 + 60, y1, SHIP_HULL, 0]]) add(shapeG(sbox(x0, x1, a, b, hz - d), f), c);
+  };
+  // A turret: a sloped house and twin barrels to the prow.
+  // dn -1 hangs it under the hull.
+  const turret = (x, y, dn = 1) => {
+    const top = y + 170 * dn;
+    add(shapeG(sbox(x - 220, x + 220, Math.min(y - 20 * dn, top), Math.max(y - 20 * dn, top), 200), v => { if ((v.y - y) * dn > 100) { v.x = x + (v.x - x) * 0.7; v.z *= 0.8; } }));
+    for (const s of [-1, 1]) add(sbox(x + 120, x + 860, y + 60 * dn, y + 130 * dn, 35).translate(0, 0, s * 85));
+  };
+  if (id === 'prow') {
+    // Two jaws taper to a split point.
+    add(shapeG(sbox(2440, 5500, 60, 450, 360), v => { if (v.x > 5000) { v.y = v.y > 200 ? 340 : 230; v.z *= 0.3; } }));
+    add(shapeG(sbox(2440, 5200, -450, -60, 340), v => { if (v.x > 5000) { v.y = v.y > -200 ? -230 : -330; v.z *= 0.3; } }));
+    // A dark slot fills the split's root; its faces meet the jaws.
+    add(shapeG(sbox(2440, 3600, -60, 60, 330), v => { if (v.x > 3500) v.y = Math.sign(v.y) * 124; }), SHIP_DARK, 1);
+  } else if (id === 'fore') {
+    // The bow end slopes down to the jaws.
+    block(150, 2440, -620, 580, 450, v => { if (v.x > 2400) v.y += v.y > 500 ? -110 : v.y < -600 ? 120 : 0; });
+    // Stepped plates on the spine.
+    add(sbox(300, 1500, 560, 660, 340));
+    add(sbox(450, 1300, 640, 730, 250));
+    turret(1950, 580);
+    turret(1000, 730);
+    // The keel fin: its front edge rakes back.
+    add(shapeG(sbox(150, 2200, -1050, -600, 70), v => { if (v.x > 2000 && v.y < -800) v.x = 900; }));
+  } else if (id === 'mid') {
+    block(-2520, 150, -700, 650, 500);
+    add(sbox(-1300, 0, 630, 730, 380));
+    add(sbox(-1150, -200, 710, 800, 280));
+    turret(-650, 800);
+    add(shapeG(sbox(-2300, 150, -1050, -680, 70), v => { if (v.x < -2000 && v.y < -800) v.x = -1700; }));
+  } else if (id === 'drive') {
+    // The tallest block; its top front edge is cut back.
+    block(-5500, -2520, -900, 950, 620, v => { if (v.x > -2600 && v.y > 900) v.x = -2950; });
+    add(sbox(-5200, -3300, 930, 1010, 460));
+    // Four dark engine bells flare from the stern face.
+    for (const y of [-610, -205, 205, 610]) add(new THREE.CylinderGeometry(175, 120, 420, 12).rotateZ(Math.PI / 2).translate(-5690, y, 0), SHIP_DARK);
+    turret(-3700, -900, -1);
+  } else {
+    // The tower sweeps back; a dark bridge slit runs under its cap.
+    add(shapeG(sbox(-2300, -1380, 630, 1040, 200), v => { if (v.y > 1000) v.x += v.x > -1800 ? -300 : -120; }));
+    add(sbox(-2420, -1700, 1030, 1150, 150), SHIP_DARK, 1);
+    add(shapeG(sbox(-2470, -1730, 1140, 1220, 200), v => { if (v.y > 1200) v.x += v.x > -2000 ? -65 : -25; }));
+    // A mast stands on the cap.
+    add(sbox(-2250, -2190, 1210, 1420, 30));
+  }
+  return mergeGeometries(parts);
+}
+// The gun's flat faces, lit by sunlight above the air.
+// uWound and uEntry wait for the hit and the fall.
+const shipMat = new THREE.ShaderMaterial({
+  uniforms: { ...U, uWound: { value: new THREE.Vector4() }, uEntry: { value: 0 }, uLit: { value: 1 } },
+  vertexShader: /* glsl */`
+  attribute vec3 aHull; attribute vec4 aShip; attribute float aTop;
+  varying vec3 vP, vH; varying vec4 vS; varying float vTop;
+  void main() {
+    vH = aHull; vS = aShip; vTop = aTop;
+    vP = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vP, vH; varying vec4 vS; varying float vTop;
+  uniform vec4 uWound;
+  uniform float uEntry, uLit;
+  ${HEAD}
+  ${AIR}
+  ${SEAM}
+  // The sun above the air: amber low, white high, pale below.
+  vec3 shipSun() {
+    float h = uSunD.y;
+    vec3 c = mix(vec3(1.6, 0.72, 0.3), vec3(1.9, 1.8, 1.65), smoothstep(0.05, 0.6, h));
+    return mix(vec3(0.5, 0.55, 0.65), c, smoothstep(-0.12, 0.0, h)) * uLit;
+  }
+  void main() {
+    // Flat faces from the screen derivatives, in the world and the hull.
+    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 Nh = normalize(cross(dFdx(vH), dFdy(vH)));
+    vec3 V = normalize(cameraPosition - vP);
+    float wall = step(abs(Nh.y), 0.5), open = 1.0 - vS.w;
+    float top = smoothstep(0.55, 0.95, Nh.y);
+    vec3 alb = vS.rgb * (0.8 + 0.4 * k3fbm(vH * 0.0013));
+    // Each plate takes its own tone.
+    alb *= 0.84 + 0.32 * k3hash(floor(vH / vec3(260.0, 150.0, 160.0)));
+    // The paint fades in broad patches.
+    alb = mix(vec3(dot(alb, vec3(0.3, 0.59, 0.11))), alb, 0.35 + 0.65 * k3fbm(vH * 0.0021 + 5.0));
+    // Panel joints: frames every 260 m, strake and deck lines.
+    float joint = max(seam(vH.x, 260.0, 5.0), max(wall * seam(vH.y, 150.0, 3.0), top * seam(vH.z, 160.0, 4.0)));
+    alb *= 1.0 - 0.5 * joint;
+    // The belly is darker than the flanks.
+    alb *= mix(0.4, 1.0, smoothstep(-1000.0, 400.0, vH.y));
+    vec3 sun = shipSun();
+    // The raked light is warm, not a saturated orange.
+    vec3 warm = mix(sun, vec3(dot(sun, vec3(0.3, 0.59, 0.11))), 0.5);
+    float nl = max(dot(N, uSunD), 0.0), back = smoothstep(-0.5, 0.6, dot(uSunD, -V));
+    // Top faces catch the low sun at a graze: a metal sheen.
+    float graze = pow(1.0 - max(dot(N, V), 0.0), 2.0) * back;
+    float sheen = top * graze * 0.4 * (0.55 + 0.6 * k3fbm(vH * 0.004 + 11.0)) * (1.0 - 0.7 * joint);
+    // Each wall's top lip catches the sun as a thin line.
+    float lip = wall * (1.0 - smoothstep(0.0, max(12.0, 1.5 * fwidth(vH.y)), vTop - vH.y)) * back * 0.22;
+    // The planet's glow fills the flanks; the belly sees less of it.
+    vec3 amb = mix(uHorC, uZenC, 0.5) * mix(0.15, 0.5, smoothstep(-0.6, 0.6, Nh.y));
+    vec3 col = (alb * (amb + sun * nl) + warm * (sheen + lip)) * open;
+    // A high sun's bright sky washes the ship toward a ghost.
+    vec3 dir = normalize(vP - cameraPosition);
+    float day = smoothstep(0.2, 0.8, uSunD.y);
+    col = mix(air(col, vP), k2skyB(dir, 0.0), 0.5 * day);
+    // The cirrus hangs nine kilometres up, in front of the ship.
+    gl_FragColor = vec4(wisps(dir, col, dot(dir, uSunD)), 1.0);
+  }`,
+});
+const shipMeshes = HULL.sections.map(sec => {
+  const g = buildHulk(sec.id);
+  g.computeBoundingBox();
+  const c = g.boundingBox.getCenter(new THREE.Vector3());
+  g.translate(-c.x, -c.y, -c.z);
+  g.computeBoundingSphere();
+  const m = new THREE.Mesh(g, shipMat);
+  m.scale.setScalar(SHIP_SCALE);
+  m.userData = { id: sec.id, c };
+  m.visible = false;
+  scene.add(m);
+  return m;
+});
+// S points to the station; T runs along the orbit.
+const SHIP_S = new THREE.Vector3(), SHIP_T = new THREE.Vector3();
+{
+  const b = new THREE.Vector3(END0.x - A0.x, 0, END0.z - A0.z).normalize();
+  SHIP_S.copy(b).multiplyScalar(Math.cos(SHIP_EL)).setY(Math.sin(SHIP_EL));
+  const left = new THREE.Vector3().crossVectors(yUp, SHIP_S).normalize();
+  const up = new THREE.Vector3().crossVectors(SHIP_S, left);
+  SHIP_T.copy(left).multiplyScalar(Math.cos(SHIP_CLIMB)).addScaledVector(up, Math.sin(SHIP_CLIMB));
+}
+// The rock mode keeps a parked ship; it never steps.
+let ship = makeShip(1, 0);
+const shipP = new THREE.Vector3(), shipD = new THREE.Vector3(), shipF = new THREE.Vector3(), shipY = new THREE.Vector3(), shipZ = new THREE.Vector3();
+const shipQ = new THREE.Quaternion(), shipM = new THREE.Matrix4(), shipE0 = new THREE.Vector3(), shipE1 = new THREE.Vector3();
+// The orbit angle at time t: an eased rise, then a drift.
+function shipArc(t) {
+  const age = t - ship.t0;
+  if (age < ARRIVE) return -SHIP_RISE * Math.pow(1 - Math.max(0, age) / ARRIVE, 3);
+  return rad(driftDeg(age - ARRIVE));
+}
+// The ship's centre at time t.
+function shipAt(t, out) {
+  const a = shipArc(t);
+  return out.copy(SHIP_S).multiplyScalar(Math.cos(a)).addScaledVector(SHIP_T, Math.sin(a)).multiplyScalar(SHIP_DIST).add(A0);
+}
+function placeShip() {
+  const a = shipArc(simT);
+  shipD.copy(SHIP_S).multiplyScalar(Math.cos(a)).addScaledVector(SHIP_T, Math.sin(a));
+  shipP.copy(shipD).multiplyScalar(SHIP_DIST).add(A0);
+  // The prow leads along the orbit.
+  shipF.copy(SHIP_S).multiplyScalar(-Math.sin(a)).addScaledVector(SHIP_T, Math.cos(a));
+  // Screen up is square to the prow and the line of sight.
+  shipY.crossVectors(shipF, shipD).normalize();
+  if (shipY.y < 0) shipY.negate();
+  // The deck tips toward the gun.
+  shipY.multiplyScalar(Math.cos(SHIP_TIP)).addScaledVector(shipD, -Math.sin(SHIP_TIP));
+  shipZ.crossVectors(shipF, shipY);
+  shipQ.setFromRotationMatrix(shipM.makeBasis(shipF, shipY, shipZ));
+  for (const m of shipMeshes) {
+    m.position.copy(m.userData.c).multiplyScalar(SHIP_SCALE).applyQuaternion(shipQ).add(shipP);
+    m.quaternion.copy(shipQ);
+  }
+  shipMat.uniforms.uLit.value = sunlit(SHIP_ALT, THREE.MathUtils.radToDeg(U.uSunE.value));
+}
+// A new ship starts its rise, head seconds in.
+function newShip(head = SHIP_HEAD) {
+  ship = makeShip(1 + Math.floor(rnd() * 1e6), simT - head);
+  rockAway();
+  for (const m of shipMeshes) m.visible = true;
+  placeShip();
+}
+function shipOff() { for (const m of shipMeshes) m.visible = false; }
+// The hull's angular length from the eye, in degrees.
+function shipTh() {
+  shipE0.copy(shipP).addScaledVector(shipF, HULL.len * SHIP_SCALE / 2).sub(camera.position);
+  shipE1.copy(shipP).addScaledVector(shipF, -HULL.len * SHIP_SCALE / 2).sub(camera.position);
+  return THREE.MathUtils.radToDeg(shipE0.angleTo(shipE1));
+}
+// The ship takes the sky; the rock, pieces and smoke leave.
+function rockAway() {
+  ast.state = 'gone';
+  astMesh.visible = false;
+  smoke.visible = false;
+  PU.uTrail.value = 0;
+  astMat.uniforms.uBurn.value = 0;
+  for (const f of frags) { f.on = false; f.m.visible = false; f.trail.visible = false; f.mini.m.visible = false; }
+}
 
 /* ---------- vol: a tiled 3D billow noise, baked on the GPU ---------- */
 // R holds Perlin-Worley billows; G holds fine Worley for erosion.
@@ -3026,7 +3271,7 @@ function frame() {
   let py = 0, pp = 0;
   if (pk > 0.001) {
     pushG.copy(axisAt(0.3, pushG)).sub(camera.position).normalize();
-    pushR.copy(ast.pos).sub(camera.position).normalize();
+    tgtPos(pushR).sub(camera.position).normalize();
     pushG.add(pushR).normalize();
     py = (Math.atan2(-pushG.x, -pushG.z) - yaw0) * 0.8 * pk;
     pp = (Math.asin(pushG.y) - baseUp) * 0.8 * pk;
@@ -3056,12 +3301,12 @@ function toggleSight() {
   sight = !sight;
   grade.uniforms.uSight.value = sight ? 1 : 0;
   // Each look starts off the range; the halves slide together.
-  if (sight) { sightRng.d = ast.pos.distanceTo(sightEye(eyeP)) * 1.35; sightRng.t = simT; }
+  if (sight) { sightRng.d = tgtPos(tgtP).distanceTo(sightEye(eyeP)) * 1.35; sightRng.t = simT; }
   frame();
   wake();
 }
 // The eye: the rangefinder's right lens; it recoils with the housing.
-const eyeP = new THREE.Vector3();
+const eyeP = new THREE.Vector3(), tgtP = new THREE.Vector3();
 function sightEye(out) {
   return barrelPt(VF.a + 30, VF.x, VF.u, out);
 }
@@ -3071,7 +3316,7 @@ const sightRng = { d: 0, t: 0 };
 function sightMark() {
   const r = grade.uniforms.uSightR.value, dt = clamp(simT - sightRng.t, 0, 0.1);
   sightRng.t = simT;
-  const D = astMesh.visible ? ast.pos.distanceTo(sightEye(eyeP)) : sightRng.d;
+  const D = tgtShown() ? tgtPos(tgtP).distanceTo(sightEye(eyeP)) : sightRng.d;
   sightRng.d += (D - sightRng.d) * (1 - Math.exp(-dt / 0.45));
   r.set(sightRng.d, clamp((D - sightRng.d) / Math.max(D, 1) * 0.12, -0.05, 0.05), U.uCharge.value);
 }
@@ -3165,6 +3410,8 @@ function draw() {
   astMesh.rotateOnAxis(ast.spin, 0.0012);
   for (const f of frags) if (f.on) f.m.rotateOnAxis(f.spin, 0.004);
   aimAst();
+  // The ship follows the clock and the sun.
+  if (tgtKind === 'ship') placeShip();
   commitStars();
   updateDust();
   updateArcs();
@@ -3255,6 +3502,7 @@ function updateWarp() {
 // The rock falls down its track.
 // At the end it holds and waits.
 function stepAst(dt) {
+  if (tgtKind === 'ship') stepShip(ship, simT);
   stepFrags();
   stepShards(dt);
   stepRain(dt);
@@ -4729,16 +4977,17 @@ const lzA = new THREE.Vector3(), lzB = new THREE.Vector3(), lzD = new THREE.Vect
 function updateLaser() {
   const t = ranging ? simT - ranging.t0 : -1, on = t >= 0 && rangeOn(t) && !sight;
   laser.visible = on;
-  if (!on) { flare(laserDot, ast.pos, 1, 0); return; }
+  if (!on) { flare(laserDot, tgtPos(tgtP), 1, 0); return; }
   barrelPt(VF.a + 30, VF.x, VF.u, lzA);
-  lzB.copy(ast.pos).addScaledVector(lzD.subVectors(lzA, ast.pos).normalize(), ast.R * 0.95);
+  tgtPos(tgtP);
+  lzB.copy(tgtP).addScaledVector(lzD.subVectors(lzA, tgtP).normalize(), tgtR() * 0.95);
   const a = laserGeo.attributes.position;
   a.setXYZ(0, lzA.x, lzA.y, lzA.z); a.setXYZ(1, lzB.x, lzB.y, lzB.z); a.needsUpdate = true;
   // The aiming beam: a faint, steady thread and a small, dim dot.
   // A ranging flash: the whole beam and the dot flare for a few frames.
   const fl = rangeFlash(t);
   laserMat.uniforms.uGain.value = fl ? 1.6 : 0.35;
-  flare(laserDot, lzB, ast.R * (fl ? 0.3 : 0.12), fl ? 3 : 0.7);
+  flare(laserDot, lzB, tgtR() * (fl ? 0.3 : 0.12), fl ? 3 : 0.7);
 }
 
 /* ---------- the antenna's beacon ---------- */
@@ -5388,18 +5637,20 @@ function boltAt(t, out) {
 }
 // The live target: the stored choice lands at Reset.
 let tgtKind = 'rock';
-// The ship's seam stays parked until the ship exists.
-const SHIP_PARK = 20000;
 // Where the target is now.
 function tgtPos(out) {
   if (tgtKind === 'rock') return out.copy(ast.pos);
-  return out.copy(A0).addScaledVector(PARK, SHIP_PARK);
+  return shipAt(simT, out);
 }
 // Where the target is after 0.3 + T seconds.
 function tgtLead(T, out) {
   if (tgtKind === 'rock') return astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), out);
-  return out.copy(A0).addScaledVector(PARK, SHIP_PARK);
+  return shipAt(simT + 0.3 + T, out);
 }
+// The target's radius, as the sight and the laser see it.
+function tgtR() { return tgtKind === 'rock' ? ast.R : SHIP_AIM_R; }
+// True while the target shows in the sky.
+function tgtShown() { return tgtKind === 'rock' ? astMesh.visible : shipMeshes[0].visible; }
 // True while a bolt can hit the target.
 function tgtCanHit() {
   if (tgtKind === 'rock') return ast.state === 'approach' || ast.state === 'hold';
@@ -5557,6 +5808,7 @@ function respawn() {
   placeAst();
   astSize();
   astMesh.visible = true;
+  smoke.visible = true;
 }
 // The gun's aim: yaw left of negative z, elevation over the plain.
 // vy and ve: slew rates. dy and de: the error to the target.
@@ -5966,8 +6218,10 @@ function landReset() {
   ast.s = 0.25;
   PU.uTrail.value = 1;
   placeAst();
+  // A ship takes the rock's place in the sky.
+  if (tgtKind === 'ship') newShip(); else shipOff();
   stepAim(0, true);
-  prewarmEmbers();
+  if (tgtKind === 'rock') prewarmEmbers();
 }
 // A tape-rewind hiss falls under the spin, rushes up into the white,
 // then breathes out as the white burns off.
@@ -5990,7 +6244,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6620,6 +6874,36 @@ window.__qa = {
   spin: () => (spin ? { t: spin.t } : null),
   reset() { resetToy(); },
   tgt: () => tgtKind,
+  ship: () => ({ state: ship.state, wounds: ship.wound ? 1 : 0, alive: ship.hulks.filter(h => h.landedAt === null).length, landed: ship.hulks.filter(h => h.landedAt !== null).length, th: shipTh(), entry: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, simT - h.breakAt).entry)) }),
+  // The ship's centre and its hull's screen bounds, in CSS pixels.
+  shipScreen() {
+    const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
+    const px = q => { q.project(camera); return [r.left + (q.x * 0.5 + 0.5) * r.width, r.top + (0.5 - q.y * 0.5) * r.height]; };
+    const [x, y] = px(shipP.clone()), b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 };
+    for (const m of shipMeshes) {
+      m.updateMatrixWorld();
+      const bb = m.geometry.boundingBox;
+      for (let i = 0; i < 8; i++) {
+        const [sx, sy] = px(v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(m.matrixWorld));
+        b.x0 = Math.min(b.x0, sx); b.x1 = Math.max(b.x1, sx); b.y0 = Math.min(b.y0, sy); b.y1 = Math.max(b.y1, sy);
+      }
+    }
+    return { x, y, ...b };
+  },
+  // Zoom the lens z times onto the ship; 1 restores it.
+  shipLens(z) {
+    cam.zoom = 1; look.yaw = look.pitch = lookTo.yaw = lookTo.pitch = lookV.yaw = lookV.pitch = 0;
+    frame();
+    // The zoom moves the horizon's pitch; two passes settle the aim.
+    for (let i = 0; z > 1 && i < 2; i++) {
+      cam.zoom = 1 / z;
+      frame();
+      const d = shipP.clone().sub(camera.position).normalize(), f = camera.getWorldDirection(new THREE.Vector3());
+      look.yaw = lookTo.yaw += Math.atan2(-d.x, -d.z) - Math.atan2(-f.x, -f.z);
+      look.pitch = lookTo.pitch += Math.asin(d.y) - Math.asin(f.y);
+    }
+    frame(); draw();
+  },
   // Set the choice only, as the Settings sheet does.
   pick(k) { ui.setting('target').set(k); },
   // Set the choice and reset at once.
@@ -6675,8 +6959,11 @@ sun(sunDeg(opts.sun));
 seedFrags();
 placeAst();
 astSize();
+// A stored Target applies at load too.
+tgtKind = ui.setting('target').value;
+if (tgtKind === 'ship') newShip();
 stepAim(0, true);
-prewarmEmbers();
+if (tgtKind === 'rock') prewarmEmbers();
 setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
