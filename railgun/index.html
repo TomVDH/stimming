@@ -136,7 +136,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monolith', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'monolith', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
     // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
     { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
@@ -5909,6 +5909,7 @@ const MIX = {
   // Surges: mechanical layers, then a saw swarm gliding into a chord; see SURGE.
   penta: { ...MIX0, stack: 'penta', verb: 0.45, pre: 0.04, dark: 7000 },
   hijaz: { ...MIX0, stack: 'hijaz', verb: 0.5, pre: 0.06, dark: 6000 },
+  syl: { ...MIX0, stack: 'syl', verb: 0.55, pre: 0.05, dark: 7000 },
   colossus: { ...MIX0, stack: 'colossus', verb: 0.55, pre: 0.08, dark: 5000 },
   dirge: { ...MIX0, stack: 'dirge', verb: 0.6, pre: 0.09, dark: 4000 },
   leviathan: { ...MIX0, stack: 'leviathan', verb: 0.5, pre: 0.07, dark: 3500 },
@@ -6134,11 +6135,14 @@ function humStop(ac, now = false) {
 // Each profile: root (semitones from A1), chord tones per register,
 // pre (an optional chord held until the lock), wave, mechanical layers.
 // late and fade: a later swarm entry and a longer fade-in, for blends.
-// Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter).
+// Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter),
+// pipe (drawbar harmonics, a little buzz). leslie: a rotary tremolo on the swarm.
 // Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
 const SURGE = {
   // Surge: a pentatonic chord, open fifths, thirds and sixths.
   penta: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
+  // Surge Syl: Surge's chord and machines, with pipe-organ voices and a rotary tremolo.
+  syl: { root: 0, wave: 'pipe', leslie: true, mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
   // Surge Hijaz: the flat second, the augmented second and the flat sixth.
   hijaz: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 25, 28, 31, 32, 36], high: [37, 40, 43, 44, 48, 55] },
   // Colossus: a Lydian chord on D, bright and vast, over grinding stone.
@@ -6200,8 +6204,21 @@ function stackStart(ac, P) {
   // The swarm: two oscillators per voice, under a filter that opens with the charge.
   // Brass rings a resonant filter; organ uses squares.
   h.sw = filt(ac, 'lowpass', 600, S.wave === 'brass' ? 5 : 0.9);
-  h.sw.connect(cg);
-  const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : 1;
+  // The rotary tremolo: the swarm's level wobbles at 5.6 Hz.
+  if (S.leslie) {
+    const rot = ac.createGain();
+    rot.gain.value = 0.85;
+    osc('sine', 5.6, gain(rot.gain, 0.15));
+    h.sw.connect(rot).connect(cg);
+  } else h.sw.connect(cg);
+  // Pipe: drawbar harmonics 1, 2, 3, 4, 6 and 8, over a faint saw buzz.
+  let pw = null;
+  if (S.wave === 'pipe') {
+    const im = new Float32Array(17), DRAW = { 1: 1, 2: 0.75, 3: 0.45, 4: 0.55, 5: 0.12, 6: 0.3, 8: 0.25 };
+    for (let n = 1; n < 17; n++) im[n] = (DRAW[n] || 0) + 0.08 / n;
+    pw = ac.createPeriodicWave(new Float32Array(17), im);
+  }
+  const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : S.wave === 'pipe' ? 0.85 : 1;
   h.voices = [];
   for (const reg of ['bass', 'mid', 'high']) {
     const [enter, lo, hi, lv] = REG[reg], tg = S[reg];
@@ -6210,7 +6227,8 @@ function stackStart(ac, P) {
       pn.pan.value = reg === 'bass' ? (i % 2 ? 0.15 : -0.15) : (i % 2 ? 1 : -1) * (0.25 + 0.5 * Math.random());
       pn.connect(h.sw);
       const vg = gain(pn), start = lo * Math.pow(hi / lo, Math.random());
-      const os = [-7, 7].map(dt => osc(type, start, vg, dt));
+      const os = (pw ? [-4, 4] : [-7, 7]).map(dt => osc(type, start, vg, dt));
+      if (pw) for (const o of os) o.setPeriodicWave(pw);
       // late: the swarm's entries squeeze into the last part of the charge.
       const e = enter + 0.1 * i / tg.length;
       h.voices.push({ os, vg, ps: 12 * Math.log2(start / R), tgt: s, pre: S.pre ? S.pre[reg][i] : s, enter: S.late ? S.late + (1 - S.late) * e : e, lv: lv * wk, ph: 6.28 * Math.random(), rate: 0.3 + 0.5 * Math.random(), k: 1 + Math.random(), sour: Math.random() < 0.5 ? -1 : 1 });
@@ -6270,7 +6288,8 @@ function stackUpdate(ac, h = hum) {
     v.vg.gain.setTargetAtTime(v.lv * k, t, 0.1);
   }
   // The swarm's filter opens from 600 Hz to 9 kHz.
-  h.sw.frequency.setTargetAtTime(600 * Math.pow(2, 3.9 * u), t, 0.1);
+  // Pipe voices open less: from 1.5 kHz to 9 kHz.
+  h.sw.frequency.setTargetAtTime(h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
   // The drive grows with the charge and the over-hold.
   h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * over, t, 0.1);
   h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent), t, 0.08);
