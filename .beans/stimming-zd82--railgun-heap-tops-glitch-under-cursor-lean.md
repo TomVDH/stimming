@@ -61,3 +61,20 @@ Images in `docs/qa/railgun-heaps/`:
 - `after-noon-1280.png`, `after-night-1280.png`, `after-dusk-375.png`: the look at other hours and on a phone.
 
 Console: clean (only the local server's favicon 404).
+
+## Drift returns
+
+The heaps held still (566fc83) because their drift flickered. That flicker was this seed bug.
+Test: clock running, cursor still, 90 frames at 1/30 s, dusk, 1280 x 800.
+
+| Run | Heap jump events | Tower events |
+|---|---|---|
+| Old shader, heaps held | 85041 | 4568 |
+| Old shader, heaps drift | 93886 | 11871 |
+| Flat seed, heaps held | 58 | 49 |
+| Flat seed, heaps drift | 97 | 86 |
+| Flat seed, heaps drift, under lean | 7003 | 7484 |
+
+The old shader flickered even with the heaps held: the clock alone moved the scramble.
+With the flat seed, drift costs nothing. The heaps drift round the horizon again, as before 566fc83.
+Still: `docs/qa/railgun-heaps/after-drift-dusk-1280.png`.
