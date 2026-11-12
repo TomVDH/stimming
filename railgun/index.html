@@ -153,6 +153,10 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
+    // Strike test: each rock starts at its hold and strikes after a short grace.
+    // Fast rock: the rock falls ten times faster; off is the normal speed.
+    { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
+    { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
@@ -2303,7 +2307,7 @@ function shedSpark(age = 0) {
   // They leave from anywhere across the rock's back, not from one spot.
   const th = rnd() * Math.PI * 2, rr = 1.05 * R * Math.sqrt(rnd());
   shedU.crossVectors(ast.away, ast.side);
-  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / SIZES[opts.size].T * age + 0.45 * R).addScaledVector(ast.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr).addScaledVector(tp, 0.15 * R);
+  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / fallT() * age + 0.45 * R).addScaledVector(ast.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr).addScaledVector(tp, 0.15 * R);
   // Big burning pieces drift slowly back up the smoke train.
   // They carry no weight, so they never arc off; they go 12 to 25 km.
   // They fan out wide off the back; small, crisp, dim.
@@ -3104,7 +3108,7 @@ function sightMarks() {
   if (!rock.ok) return m;
   m.rock = { ...rock, r: Math.max(6, ast.R / D * fpx), D };
   // The rock's velocity: it falls FALL metres along -away over the size's time.
-  const v = skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / SIZES[opts.size].T : 0);
+  const v = skV.copy(ast.away).multiplyScalar(ast.state === 'approach' ? -FALL / fallT() : 0);
   m.rdot = v.dot(skQ.copy(ast.pos).sub(camera.position)) / D;
   // The intercept point: where the rock will be after one time of flight.
   const c = charge ? clamp(U.uCharge.value, 0.12, 1) : 1, T = THREE.MathUtils.lerp(11.5, 8.5, c) + 0.3;
@@ -3298,7 +3302,8 @@ function aimAst() {
   U.uAst.value.set(tmpA.x, tmpA.y, tmpA.z, (0.5 + 2.5 * near * near) * astMat.uniforms.uBurn.value + 9 * hitFlash * (1 - 0.85 * nk) / (1 + 5 * nk));
   U.uAstR.value = Math.atan(ast.R / dist);
   // The clouds take the rock's light, faint far out, strong near the end.
-  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * ast.s * ast.s) * rockGlowK : 0;
+  // Past the horizon line s holds at 1; the strike drives rockGlowK instead.
+  const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
   PU.uAstRad.value = ast.R;
@@ -3350,6 +3355,7 @@ function draw() {
   updateBolt();
   updateIon();
   updateBlast();
+  updateStrike();
   updateChargeDust(1 / 30);
   // The blast's dust round the gun: under half its old strength.
   updateShotDust(dustShot ? simT - dustShot.t0 - 0.3 : -1, dustShot ? 0.45 * dustShot.c : 0, dustShot ? dustShot.foot : MUZZLE);
@@ -3433,25 +3439,31 @@ function updateWarp() {
 
 /* ---------- the approach ---------- */
 // The rock falls down its track.
-// At the end it holds and waits.
+// Past the horizon line it strikes the planet, at the same speed.
+// The fair window: the whole fall, a few minutes, until contact.
+// A kill takes about 22 s: ranging 1.75, full charge 8.6, bolt 8.5 to 11.5.
+// The live strike, or null; the Strike test dev toggle.
+let strike = null, strikeTest = false;
+// Fast rock: a dev toggle that runs the fall ten times faster.
+let fastRock = false;
+const fallT = () => SIZES[opts.size].T / (fastRock ? 10 : 1);
 function stepAst(dt) {
   stepFrags();
   stepShards(dt);
   stepRain(dt);
   stepChunks();
-  if (ast.state === 'approach' || ast.state === 'hold') {
-    // The hot face sheds glowing bits; they fall back into the smoke.
-    if (!reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
-  }
+  const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
+  // The hot face sheds glowing bits; they fall back into the smoke.
+  if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
   // A crater's shove eases back onto the path over a second and a half.
   if (ast.jolt.lengthSq() > 1) { ast.jolt.multiplyScalar(Math.exp(-dt / 1.5)); if (ast.state === 'hold') placeAst(); } else ast.jolt.set(0, 0, 0);
-  if (ast.state === 'approach') {
-    ast.s = Math.min(1, ast.s + dt / SIZES[opts.size].T);
-    if (ast.s >= 1) ast.state = 'hold';
+  if (falling) {
+    // One steady speed from first sight to the ground.
+    ast.s = Math.min(strike ? strike.s1 : 1, ast.s + dt / fallT());
+    // Past the horizon line the strike starts; a rewind holds it back.
+    if (!strike && ast.s >= 1 && !spin && !fill) startStrike();
     placeAst();
     astSize();
-  } else if (ast.state === 'hold') {
-    ast.holdT += dt;
   }
 }
 
@@ -3497,7 +3509,8 @@ function startCharge(by) {
 // The live fire mode; a new pick lands at the next press.
 let fireMode = 'rail';
 act.press = (by = 'pointer', skip = false) => {
-  if (charge || spin || ranging) return;
+  // After contact the gun stands down.
+  if (charge || spin || ranging || strike?.hit) return;
   fireMode = ui.setting('firemode').value;
   if (skip || reduced()) { startCharge(by); return; }
   ranging = { t0: simT, by };
@@ -3675,7 +3688,8 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 /* ---------- the bow shock: a glowing arc of air in front of the rock ---------- */
 // A camera-facing card; the arc opens toward the rock's travel on screen.
 const bowMat = new THREE.ShaderMaterial({
-  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime,
+  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 },
+    uCos: { value: new THREE.Vector3(...linFit(0.8, 0.13, 290)) },
     uHot: { value: new THREE.Vector3(...linFit(0.97, 0.05, 85)) }, uRim: { value: new THREE.Vector3(...linFit(0.78, 0.17, 50)) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -3688,7 +3702,7 @@ const bowMat = new THREE.ShaderMaterial({
     // The card spans six rock radii each way.
     gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
-  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime; uniform vec3 uHot, uRim; varying vec2 vUv;
+  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
   // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
@@ -3710,7 +3724,16 @@ const bowMat = new THREE.ShaderMaterial({
     // Hot white at the nose, orange where it wraps.
     float k = smoothstep(0.0, 1.6, across);
     vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
-    gl_FragColor = vec4(c * g * uGain, 0.0);
+    vec3 col = c * g;
+    // The strike: a second thin crescent, violet, a little farther out.
+    if (uGrand > 0.01) {
+      float d3 = shellD(along, across, 1.8 + 0.25 * uGrand, 0.65, 0.9);
+      float w3 = max(0.03, 0.6 * px);
+      float v = (exp(-d3 * d3 / (w3 * w3)) + 0.1 * exp(-abs(d3) / 0.25)) * exp(-across * across / 3.2) * smoothstep(-1.4, 0.8, along);
+      v *= 0.8 + 0.2 * sin(across * 5.0 - uTime * 2.5);
+      col += uCos * 1.6 * v * uGrand;
+    }
+    gl_FragColor = vec4(col * uGain, 0.0);
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
@@ -3744,9 +3767,11 @@ halo.frustumCulled = false; halo.renderOrder = 4; halo.visible = false;
 scene.add(halo);
 const bowR = new THREE.Vector3(), bowU = new THREE.Vector3();
 function updateBow() {
+  // The strike's nearness grows the haze, the crescent and a violet crescent.
+  const g = strike && !strike.hit ? THREE.MathUtils.smoothstep(strikeU(), 0, 1) : 0;
   // The haze is faint by day and strong at night.
   halo.visible = astMesh.visible;
-  haloMat.uniforms.uGain.value = astMat.uniforms.uBurn.value * (0.12 + 0.5 * U.uStars.value);
+  haloMat.uniforms.uGain.value = astMat.uniforms.uBurn.value * (0.12 + 0.5 * U.uStars.value) * (1 + g);
   bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
   bow.visible = astMesh.visible && !reduced();
   if (!bow.visible) return;
@@ -3754,8 +3779,8 @@ function updateBow() {
   bowR.setFromMatrixColumn(camera.matrixWorld, 0); bowU.setFromMatrixColumn(camera.matrixWorld, 1);
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
-  bowMat.uniforms.uF.value.set(ast.pos.x, ast.pos.y, ast.pos.z, ast.R);
-  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value;
+  bowMat.uniforms.uGrand.value = g;
+  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (1 + 1.5 * g);
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
@@ -5676,9 +5701,10 @@ const landOf = r => (r.re ? r.re.t + r.re.T : 0.3 + r.T);
 // The target seam: the rock today; the ship plugs in here.
 function tgtPos(out) { return out.copy(ast.pos); }
 // Where the target is after 0.3 + T seconds.
-function tgtLead(T, out) { return astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), out); }
+// The lead stops at contact with the ground.
+function tgtLead(T, out) { return astAt(Math.min(ast.s + (0.3 + T) / fallT(), contactS()), out); }
 // True while a bolt can hit the target.
-function tgtCanHit() { return ast.state === 'approach' || ast.state === 'hold'; }
+function tgtCanHit() { return ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike'; }
 // The bolt lands on the target.
 function tgtHit(c) { shatter(c); }
 // A round takes its aim and a tracer slot as it starts down the rails.
@@ -5686,6 +5712,8 @@ function tgtHit(c) { shatter(c); }
 function launchRound(r) {
   r.launched = true;
   let canHit = tgtCanHit();
+  // A bolt that would land after contact is too late.
+  if (ast.s + (0.3 + r.T) / fallT() >= contactS()) canHit = false;
   const target = tgtLead(r.T, new THREE.Vector3());
   // Laid by hand, the bolt hits only if the bore points within the rock's disc.
   if (manual.on && canHit) {
@@ -5886,6 +5914,7 @@ fire = (c, n = 1, salvo = false) => {
   wake();
 };
 function shatter(c) {
+  endStrike();
   starMat.uniforms.uShedCut.value = simT + 0.3;
   ast.state = 'shatter';
   ast.hitAt = simT;
@@ -5901,7 +5930,7 @@ function shatter(c) {
     // The blast casts each piece outward; it keeps the rock's own motion.
     bv.multiplyScalar((70 + 160 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
     bv.y += 0.25 * bv.length();
-    bv.addScaledVector(ast.away, -FALL / SIZES[opts.size].T);
+    bv.addScaledVector(ast.away, -FALL / fallT());
     bp.add(P);
     sPos.setXYZ(i, bp.x, bp.y, bp.z);
     sVel.setXYZW(i, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
@@ -6055,7 +6084,7 @@ function stepAim(dt, snap = false) {
   if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
   const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
-  else if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
+  else if (charge && ast.state !== 'shatter') astAt(Math.min(contactS(), ast.s + 10 / fallT()), aimP).sub(A0);
   else aimP.copy(PARK);
   // The short way round: the mount turns a full circle.
   let dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw;
@@ -6360,7 +6389,8 @@ function stepFill(dt) {
 }
 const wisp0 = U.uWisp.value.clone();
 function resetToy() {
-  if (spin) return;
+  // After contact the white already cuts to the start.
+  if (spin || strike?.hit) return;
   cancelHold();
   wake();
   if (reduced()) { fill = { t: 0, calm: true }; return; }
@@ -6416,8 +6446,13 @@ function landReset() {
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
   // The first rock's own track.
   ast.next = 0;
+  if (strike) gameOverSound(kit.live(), null);
+  strike = null;
+  rockGlowK = 1;
+  // The old hit's clock goes too, so the start is clean.
+  U.uHitP.value.w = -1e6;
   respawn();
-  ast.s = 0.25;
+  ast.s = strikeTest ? 0.995 : 0.25;
   PU.uTrail.value = 1;
   placeAst();
   stepAim(0, true);
@@ -6439,12 +6474,148 @@ function whoosh() {
   track(t + L + 0.4, s);
 }
 
+/* ---------- the strike: an unshot rock hits the planet ---------- */
+// The rock never holds: past the horizon line it falls on, at one speed.
+// Its strike runs from the horizon line, s = 1, to the ground, s = s1.
+// The glow, the rays, the flare, the bow and the surge grow with u.
+// The surge is the strike's only sound; it peaks at contact.
+// u is the share of that last stretch the rock has covered.
+// A bolt can still save the planet until contact.
+// At contact the blast goes off there and the frame burns to white.
+// Under the white the toy cuts to a fresh start, as Reset does.
+// The burn to white and the held white, in seconds.
+const BURN_T = 2.6, WHITE_T = 0.7;
+// The ground point the rock strikes.
+const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
+// The horizon's drop at ground distance d, as hzFade draws it.
+const dropAt = d => d * d / 3.2e6;
+// The fall fraction at contact: the centre half a radius over the curved ground.
+// It caches per size and path, and leaves the ground point in strikeP.
+let contactKey = '', contactS1 = 1;
+function contactS() {
+  const key = opts.size + ':' + ast.turn, R = SIZES[opts.size].R;
+  if (key === contactKey) return contactS1;
+  let s = 1;
+  for (; s < 2; s += 0.002) { astAt(s, strikeP); if (strikeP.y - dropAt(Math.hypot(strikeP.x, strikeP.z)) <= 0.5 * R) break; }
+  strikeP.y -= 0.5 * R;
+  contactKey = key; contactS1 = s;
+  return s;
+}
+function startStrike() {
+  strike = { s1: contactS(), hit: false, out: false, tb: 0 };
+  ast.state = 'strike';
+  resetReady(false);
+  wake();
+}
+// A bolt saves the planet: the strike and its surge stop.
+function endStrike() {
+  if (!strike) return;
+  strike = null;
+  rockGlowK = 1;
+  gameOverSound(kit.live(), null);
+}
+// The game-over sound: one seam, so another charge mix can take it over.
+// d.u: nearness to the ground, 0 to 1; it holds at 1 after contact.
+// d.vol: fades in over the first third, out across the white.
+// d.over: the strain, up to 1 in the burn. Null stops the sound.
+// Today it drives the charge hum; a live charge owns the hum.
+function gameOverSound(ac, d) {
+  // Surge Syl takes the seam once the sound branch merges.
+  if (typeof surgeOver === 'function') { surgeOver(ac, d); return; }
+  if (!d) { humStop(ac); return; }
+  if (!ac || charge) return;
+  humStart(ac);
+  const ch = Math.pow(d.u, 0.8);
+  humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(d.u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: d.over, vol: d.vol });
+}
+// Strike test: the rock jumps to the horizon line.
+function strikeSoon() {
+  if (ast.state !== 'approach') return;
+  ast.s = Math.max(ast.s, 0.995);
+  placeAst(); astSize(); wake();
+}
+const strikeU = () => clamp((ast.s - 1) / Math.max(strike.s1 - 1, 1e-3), 0, 1);
+const burnT = () => (reduced() ? 1.6 : 1) * BURN_T;
+function stepStrike(dt) {
+  if (!strike || spin) return;
+  const ac = kit.live();
+  if (!strike.hit) {
+    const u = strikeU();
+    // The face burns white as the air thickens.
+    astMat.uniforms.uBurn.value = 1 + 2.5 * u * u * u;
+    // The ground shakes under the lens as the rock comes down.
+    if (!reduced()) cam.shake = Math.max(cam.shake, 0.7 * Math.pow(u, 4));
+    // The ground glow lights the world before contact.
+    hitFlash = 0.8 * Math.pow(u, 4);
+    // The rock lights the heaps and the tower harder as it comes down.
+    rockGlowK = 1 + 5 * u * u;
+    // The surge climbs with the rock's nearness to the ground.
+    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
+    if (ast.s >= strike.s1) strikeHit();
+  } else {
+    strike.tb += dt;
+    const tb = strike.tb, b = clamp(tb / burnT(), 0, 1);
+    // The blast light: a short flash, then it climbs with the burn.
+    hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
+    // The surge is the impact's sound: it screams through the burn and dies in the white.
+    gameOverSound(ac, { u: 1, vol: 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T), over: 0.6 + 0.4 * b });
+    // The white holds, then Reset's fill takes over and cuts to the start.
+    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; fill = { t: FILL_IN, calm: reduced() }; }
+  }
+  U.uHit.value.w = hitFlash;
+  if (blastFx) U.uBlast.value.w = hitFlash;
+}
+function strikeHit() {
+  strike.hit = true;
+  ast.state = 'struck';
+  astMesh.visible = false;
+  // A live charge or ranging ends with the planet.
+  if (charge || ranging) cancelHold();
+  const R = ast.R, P = strikeP.clone().setY(strikeP.y + 0.3 * R);
+  // Three late bursts break inside the fire.
+  const bursts = [0, 1, 2].map(i => ({ t: 0.4 + 0.6 * i + 0.3 * rnd(), k: 0.7 + 0.3 * rnd(), done: false, off: new THREE.Vector3(rnd() - 0.5, 0.4 * rnd(), rnd() - 0.5).multiplyScalar(3 * R) }));
+  blastFx = { t0: simT, P, R, k: 0.6, seed: rnd() * 10, bursts };
+  U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
+  U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
+  if (!reduced()) cam.shake += 1.5;
+}
+// The strike's light, each drawn frame, after the bolt and the blast.
+function updateStrike() {
+  if (!strike) return;
+  // The glow stops growing past the Moon: Aerosmith would white the frame early.
+  const u = strikeU(), tb = strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = strike.hit;
+  const e = x => 1 - Math.exp(-Math.max(x, 0));
+  // The ground glows under the rock and swells after contact.
+  flare(hitGlow, strikeP, Rg * (hit ? 24 + 30 * e(tb / 0.8) : 8 + 16 * u), hit ? 0.7 + 0.8 * e(tb / 0.3) : 0.6 * u * u * u);
+  // A white core grows in the last seconds; contact blows it up.
+  flare(hitFlare, strikeP, Rg * (hit ? 4 + 6 * e(tb / 0.4) : 1.5 + 2 * u), hit ? 14 * Math.exp(-tb / 0.3) + 4 : 6 * Math.pow(u, 6));
+  // The anamorphic flare rides the rock's leading face down to the ground.
+  // It starts at about half way down and grows until contact.
+  if (hit) strikeF.copy(strikeP); else strikeF.copy(ast.pos).setY(ast.pos.y - 0.5 * R);
+  strikeF.project(camera);
+  const rm = reduced() ? 0.5 : 1, onF = strikeF.z < 1 && Math.abs(strikeF.x) < 1.4 && Math.abs(strikeF.y) < 1.4 && !sight;
+  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(clamp((u - 0.55) / 0.45, 0, 1), 2.2);
+  // The level streak carries the flare; the warm veil sits under it.
+  grade.uniforms.uLF2.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 1.4 * lf : 0);
+  grade.uniforms.uLF.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 0.5 * lf : 0);
+  bq.copy(strikeP).project(camera);
+  const on = bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4 && !sight;
+  // God rays rise from the glow and fill the sky at contact.
+  const gk = on ? (reduced() ? 0.4 : 1) * (hit ? 1 : u * u * u) : 0;
+  grade.uniforms.uGod.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, gk, gk);
+  if (!hit) return;
+  // The burn: the frame overexposes, then the white fill takes it.
+  const b = clamp(tb / burnT(), 0, 1);
+  flashNow += 10 * b * b * b + 0.3 * Math.exp(-tb / 0.14);
+  if (!fill) fillEl.style.opacity = THREE.MathUtils.smoothstep(b, 0.35, 1).toFixed(3);
+}
+
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6464,6 +6635,7 @@ function tick(now) {
     stepAim(sdt);
     stepCharge(sdt);
     stepShot(sdt);
+    stepStrike(sdt);
     stepCase(sdt);
     easeLook(dt);
     if (now - lastDraw >= FRAME - 2) {
@@ -6730,7 +6902,7 @@ function humStart(ac) {
   hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
 }
 // Semitones from the hum's root for a voice at power c.
-function voicePitch(v, c, t, P, wow) {
+function voicePitch(v, c, t, P, wow, over) {
   const u = clamp((c - 0.12) / 0.88, 0, 1);
   const lock = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
   // Each voice climbs on its own curve.
@@ -6743,9 +6915,11 @@ function voicePitch(v, c, t, P, wow) {
   if (P.tier) p -= 5 * (1 - THREE.MathUtils.smoothstep(u, v.enter, v.enter + 0.2));
   return p + wow;
 }
-function humUpdate(ac) {
-  if (!hum || !charge) return;
-  const P = hum.P, c = charge.c, t = ac.currentTime;
+// s: the drive; the hold's own by default, the strike's surge otherwise.
+// vol fades the whole stack in.
+function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 }) {
+  if (!hum || !s) return;
+  const { c, chaos, rage, over, vol } = s, P = hum.P, t = ac.currentTime;
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
   // In Salvo each banked round lifts the hum a semitone.
@@ -6759,13 +6933,13 @@ function humUpdate(ac) {
   hum.sub.frequency.setTargetAtTime(55 * Math.pow(2, c * 7 / 12) / 2, t, hg);
   hum.lp.frequency.setTargetAtTime(180 * Math.pow(2, 4.8 * c), t, 0.05);
   hum.pre.gain.setTargetAtTime(0.5 + 2.5 * rage, t, 0.08);
-  hum.g.gain.setTargetAtTime(0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
+  hum.g.gain.setTargetAtTime(vol * 0.12 * (0.3 + 0.7 * c) * (0.6 + 0.4 * chaos) * P.hum, t, 0.05);
   // Bloom mixes drop the sub in hard at the lock.
-  hum.sg.gain.setTargetAtTime(0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
+  hum.sg.gain.setTargetAtTime(vol * 0.14 * c * c * P.sub * (P.bloom ? 1 + 1.2 * lockK : 1), t, 0.05);
   hum.lfo.frequency.setTargetAtTime(1 / CHASE_T(c) + 14 * rage, t, 0.05);
   hum.lg.gain.setTargetAtTime(0.5 - 0.4 * c + 0.35 * rage, t, 0.05);
   hum.nb.frequency.setTargetAtTime(1200 + 2500 * rage, t, 0.08);
-  hum.ng.gain.setTargetAtTime(0.05 * rage + 0.07 * over, t, 0.08);
+  hum.ng.gain.setTargetAtTime(vol * (0.05 * rage + 0.07 * over), t, 0.08);
   // The choir: the root stays at the full-power pitch once locked.
   const root = 55 * Math.pow(2, Math.min(c, 1) * 7 / 12);
   const u = clamp((c - 0.12) / 0.88, 0, 1);
@@ -6780,7 +6954,7 @@ function humUpdate(ac) {
   const B2 = THREE.MathUtils.lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * vo + 0.5 * over);
   const ramp = P.tier ? 0.15 : 0.25;
   for (const v of hum.voices) {
-    const fr = root * Math.pow(2, voicePitch(v, c, t, P, wow) / 12);
+    const fr = root * Math.pow(2, voicePitch(v, c, t, P, wow, over) / 12);
     for (const o of v.os) o.frequency.setTargetAtTime(fr, t, P.glide);
     if (v.low) v.f2.frequency.setTargetAtTime(B2, t, 0.1);
     else { v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1); }
@@ -6789,7 +6963,7 @@ function humUpdate(ac) {
   // A swell at the lock, then a held chord.
   const accent = Math.exp(-(t - hum.lockAt) / 1.2);
   const env = P.tier ? THREE.MathUtils.smoothstep(u, 0.02, 0.5) : THREE.MathUtils.smoothstep(u, 0.15, 0.9);
-  hum.cg.gain.setTargetAtTime(0.11 * P.choir * env * (1 + P.accent * accent) * (1 + 0.3 * over), t, 0.08);
+  hum.cg.gain.setTargetAtTime(vol * 0.11 * P.choir * env * (1 + P.accent * accent) * (1 + 0.3 * over), t, 0.08);
   hum.cpre.gain.setTargetAtTime(0.6 + 4 * over, t, 0.08);
   // The bloom opens from 380 Hz to 7.5 kHz over the last stretch.
   if (hum.bloom) hum.bloom.frequency.setTargetAtTime(380 * Math.pow(2, 4.3 * Math.max(THREE.MathUtils.smoothstep(u, 0.8, 1.0), over)), t, 0.15);
@@ -7138,7 +7312,7 @@ window.__qa = {
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
-  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
+  run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepStrike(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx } : null),
   // Free aim: lay the gun at yaw and elevation in degrees.
   aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
@@ -7153,6 +7327,12 @@ window.__qa = {
   resetReady: () => resetOn,
   dust: () => ({ charge: chargeDust.visible, shot: shotDust.visible, kase: caseDustV.visible }),
   chunkSegs: () => chunks.map(ch => ch.segs.map(t => (t.m.visible ? [t.pu.uX0.value | 0, t.pu.uSeg.value | 0] : null))),
+  // Put the rock at the end of its grace hold: the strike starts next step.
+  strike() { ast.s = 1; ast.state = 'approach'; stepAst(0); frame(); draw(); },
+  // Put a live strike at nearness u, 0 at the horizon line, 1 at contact.
+  strikeAt(u) { if (!strike) this.strike(); ast.s = 1 + u * (strike.s1 - 1); placeAst(); astSize(); stepStrike(0); frame(); draw(); },
+  fast(on) { fastRock = on; },
+  strikeState: () => (strike ? { tb: strike.tb, u: strikeU(), hit: strike.hit, out: strike.out, s: ast.s, s1: strike.s1, y: ast.pos.y, fill: +fillEl.style.opacity, flash: grade.uniforms.uFlash.value, lf: grade.uniforms.uLF2.value.z, god: grade.uniforms.uGod.value.z } : { state: ast.state, s: ast.s, fill: +fillEl.style.opacity, spin: !!spin, fillOn: !!fill }),
   // Pose the blast on the clouds t seconds after a hit at the rock.
   blast(t) { hitFlash = Math.exp(-t / 0.4) + 0.3 * Math.exp(-t / 5); U.uHit.value.w = hitFlash; U.uHitP.value.set(ast.pos.x, ast.pos.y, ast.pos.z, simT - t); U.uHitR.value = ast.R; U.uBlast.value.set(ast.pos.x, ast.pos.y, ast.pos.z, hitFlash); U.uBk.value = 1; frame(); draw(); },
 };
