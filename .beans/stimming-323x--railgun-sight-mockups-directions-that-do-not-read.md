@@ -48,3 +48,19 @@ Stills, dusk on top, night below; tracking, charging, full, fired, hit left to r
 
 Cinema. It speaks the toy's own film language (the far, locked-off shot), so the Sight reads as a cut, not a gadget. The charge as a closing letterbox is new and needs no gauge. The picture carries only a hairline and four brackets. The words sit on black bars, so they read at dusk, at night and through the hit flash, where the other directions wash out.
 Runner-up: Numeral, the most daring. Astrolabe fits "ancient high tech", but its round limb still hints at a scope ring.
+
+## Round 2: Fire control in white phosphor
+
+Tom (2026-11-12): round one missed ("lol wtf"). Make it accurate for a would-be astronomical defence turret. Put the picture through a white phosphor filter: take the NVG toy's shader whole.
+
+- [x] Image: `nvg/tube.js` imported as is. The stills go in through its camera path (`uCam`, `tCam`): photocathode noise, MCP halos, ABC with autogating, P45 white phosphor, blemishes and the fibre honeycomb. One tube wider than the frame, so there is no eyepiece rim. Photon count per light: dusk 90, night 45 (`uCamExpo`). The NVG toy's defaults for grain, gain and afterglow.
+- [x] Capture probe `fc()`: camera, rock and gun axis in world metres, rock velocity, lay error split AZ and EL, fragment count.
+- [x] Direction "Fire control": boresight, track gate sized to the angular diameter, velocity leader to the predicted intercept point (PIP), an angle scale in mrad on the frame edges. Four blocks: track, sensor, solution, gun. One status line.
+- [x] Numbers from the toy's geometry: bearing and elevation, range, range rate, speed, altitude, angular rate, angular size, lead, TOF, MV, gravity drop and superelevation, QE, lay error, predicted miss against the target radius, KE at intercept in GJ and t TNT, fragments.
+- [x] Design constants (not in the toy): slug 400 kg, bank 14 GJ, efficiency 0.32. Stored energy goes as MV squared.
+- [x] Round 1 sits behind a "Round 1" label. The image toggle (White phosphor or Colour) applies to every direction.
+- [x] QA: 120 frames. No page errors. The only console lines are ANGLE D3D X4000 warnings from the tube shader; the NVG toy logs the same ones on Windows.
+
+What the toy shows and a real bolide would not: the rock moves at 59 m/s (17.68 km in 300 s); a real one comes in at 11 to 72 km/s. The display reports the toy's true speed.
+
+Stills: `lab/railgun-sight/sheets/desk-fc.jpg`, `phone-fc.jpg` (dusk on top, night below; tracking, charging, full, fired, hit).

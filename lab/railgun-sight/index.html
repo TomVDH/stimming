@@ -7,6 +7,19 @@
 <link rel="icon" href="data:,">
 <title>Railgun sight mockups</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+
 <style>
   @font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
   @font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(../../shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
@@ -40,7 +53,8 @@
   button kbd { font: 500 11px var(--slab); color: var(--muted); margin-right: 5px; }
   .wrap { position: relative; margin: 0 auto; }
   .frame { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; background: #000; border-radius: 6px; }
-  .frame img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .frame img, .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .group .tag { color: var(--muted); font-size: 12px; margin: 0 2px 0 4px; }
   .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .frame svg text { font-family: var(--sans); }
   .frame svg .slab { font-family: var(--slab); }
@@ -61,117 +75,43 @@
 <header>
   <h1>Railgun · Sight <span>mockups</span></h1>
   <div class="group" id="dirs" role="group" aria-label="Direction"></div>
+  <div class="group" id="imgs" role="group" aria-label="Image"></div>
   <div class="group" id="states" role="group" aria-label="State"></div>
   <div class="group" id="lights" role="group" aria-label="Light"></div>
   <div class="group" id="views" role="group" aria-label="Screen"></div>
   <div class="group"><button id="anim" aria-pressed="true">Motion</button></div>
 </header>
-<div class="wrap" id="wrap"><div class="frame" id="frame"><img id="bg" alt=""><svg id="ov" aria-hidden="true"></svg></div></div>
+<div class="wrap" id="wrap"><div class="frame" id="frame"><img id="bg" alt=""><canvas id="nv" hidden></canvas><svg id="ov" aria-hidden="true"></svg></div></div>
 <div class="note" id="note"></div>
 
 <script type="module">
+import * as THREE from 'three';
+// The NVG toy's intensifier chain, used whole: the stills go in as its camera signal.
+import { Tube } from '../../nvg/tube.js';
 // Real stills from railgun/index.html, Sight on, overlay off.
 // Each still carries the rock, the bore and the gun state at capture.
-const META = {"desk-dusk-tracking":{"rock":{"x":401.94,"y":226.08,"D":42689,"R":1000},
-  "bore":{"x":639.28,"y":403.57},
-  "muzzle":{"x":608.93,"y":553.86},
-  "closing":24.9,"charged":0,"aim":{"err":0},
-  "shot":null},
-  "desk-dusk-charging":{"rock":{"x":533.21,"y":341.2,"D":41328,"R":1000},
-  "bore":{"x":639.11,"y":402.87},
-  "muzzle":{"x":608.77,"y":553.16},
-  "closing":20.13,"charged":0.65,"aim":{"err":0.04778},
-  "shot":null},
-  "desk-dusk-full":{"rock":{"x":576.22,"y":372.65,"D":41014,"R":1000},
-  "bore":{"x":637.55,"y":403},
-  "muzzle":{"x":607.18,"y":553.28},
-  "closing":19.34,"charged":1,"aim":{"err":0.02132},
-  "shot":null},
-  "desk-dusk-fired":{"rock":{"x":570.01,"y":261.39,"D":41009,"R":1000},
-  "bore":{"x":636.67,"y":403.01},
-  "muzzle":{"x":606.63,"y":551.71},
-  "closing":22.66,"charged":1,"aim":{"err":0.02518},
-  "shot":{"age":0.93,"hitT":8.8}},
-  "desk-dusk-hit":{"rock":{"x":589.01,"y":386.78,"D":40849,"R":1000},
-  "bore":{"x":639.48,"y":403.76},
-  "muzzle":{"x":609.15,"y":554.02},
-  "closing":0.13,"charged":0,"aim":{"err":0.02518},
-  "shot":{"age":9.33,"hitT":8.8}},
-  "desk-night-tracking":{"rock":{"x":401.94,"y":226.08,"D":42689,"R":1000},
-  "bore":{"x":639.28,"y":403.57},
-  "muzzle":{"x":608.93,"y":553.86},
-  "closing":24.9,"charged":0,"aim":{"err":0},
-  "shot":null},
-  "desk-night-charging":{"rock":{"x":533.2,"y":341.14,"D":41328,"R":1000},
-  "bore":{"x":639.11,"y":402.82},
-  "muzzle":{"x":608.76,"y":553.11},
-  "closing":20.13,"charged":0.65,"aim":{"err":0.04778},
-  "shot":null},
-  "desk-night-full":{"rock":{"x":575.81,"y":372.72,"D":41014,"R":1000},
-  "bore":{"x":637.14,"y":403.07},
-  "muzzle":{"x":606.78,"y":553.36},
-  "closing":19.34,"charged":1,"aim":{"err":0.02132},
-  "shot":null},
-  "desk-night-fired":{"rock":{"x":569.92,"y":263.23,"D":41009,"R":1000},
-  "bore":{"x":636.57,"y":404.85},
-  "muzzle":{"x":606.52,"y":553.56},
-  "closing":22.66,"charged":1,"aim":{"err":0.02518},
-  "shot":{"age":0.93,"hitT":8.8}},
-  "desk-night-hit":{"rock":{"x":588.98,"y":386.85,"D":40849,"R":1000},
-  "bore":{"x":639.46,"y":403.83},
-  "muzzle":{"x":609.12,"y":554.08},
-  "closing":0.13,"charged":0,"aim":{"err":0.02518},
-  "shot":{"age":9.33,"hitT":8.8}},
-  "phone-dusk-tracking":{"rock":{"x":39.44,"y":297.83,"D":42689,"R":1000},
-  "bore":{"x":187.05,"y":408.22},
-  "muzzle":{"x":168.18,"y":501.69},
-  "closing":24.9,"charged":0,"aim":{"err":0},
-  "shot":null},
-  "phone-dusk-charging":{"rock":{"x":121.07,"y":369.41,"D":41328,"R":1000},
-  "bore":{"x":186.93,"y":407.77},
-  "muzzle":{"x":168.06,"y":501.24},
-  "closing":20.13,"charged":0.65,"aim":{"err":0.04778},
-  "shot":null},
-  "phone-dusk-full":{"rock":{"x":147.1,"y":388.5,"D":41014,"R":1000},
-  "bore":{"x":185.24,"y":407.38},
-  "muzzle":{"x":166.35,"y":500.84},
-  "closing":19.34,"charged":1,"aim":{"err":0.02132},
-  "shot":null},
-  "phone-dusk-fired":{"rock":{"x":145.32,"y":319.84,"D":41009,"R":1000},
-  "bore":{"x":186.79,"y":407.92},
-  "muzzle":{"x":168.11,"y":500.4},
-  "closing":22.66,"charged":1,"aim":{"err":0.02518},
-  "shot":{"age":0.93,"hitT":8.8}},
-  "phone-dusk-hit":{"rock":{"x":155.83,"y":397.78,"D":40849,"R":1000},
-  "bore":{"x":187.23,"y":408.34},
-  "muzzle":{"x":168.36,"y":501.79},
-  "closing":0.13,"charged":0,"aim":{"err":0.02518},
-  "shot":{"age":9.33,"hitT":8.8}},
-  "phone-night-tracking":{"rock":{"x":39.44,"y":297.83,"D":42689,"R":1000},
-  "bore":{"x":187.05,"y":408.22},
-  "muzzle":{"x":168.18,"y":501.69},
-  "closing":24.9,"charged":0,"aim":{"err":0},
-  "shot":null},
-  "phone-night-charging":{"rock":{"x":121.05,"y":369.45,"D":41328,"R":1000},
-  "bore":{"x":186.91,"y":407.81},
-  "muzzle":{"x":168.04,"y":501.28},
-  "closing":20.13,"charged":0.65,"aim":{"err":0.04778},
-  "shot":null},
-  "phone-night-full":{"rock":{"x":147.19,"y":388.75,"D":41014,"R":1000},
-  "bore":{"x":185.33,"y":407.63},
-  "muzzle":{"x":166.44,"y":501.09},
-  "closing":19.34,"charged":1,"aim":{"err":0.02132},
-  "shot":null},
-  "phone-night-fired":{"rock":{"x":144.86,"y":319.84,"D":41009,"R":1000},
-  "bore":{"x":186.33,"y":407.92},
-  "muzzle":{"x":167.65,"y":500.41},
-  "closing":22.66,"charged":1,"aim":{"err":0.02518},
-  "shot":{"age":0.93,"hitT":8.8}},
-  "phone-night-hit":{"rock":{"x":155.8,"y":397.83,"D":40849,"R":1000},
-  "bore":{"x":187.19,"y":408.4},
-  "muzzle":{"x":168.32,"y":501.85},
-  "closing":0.13,"charged":0,"aim":{"err":0.02518},
-  "shot":{"age":9.33,"hitT":8.8}}};
+const META = {
+  "desk-dusk-tracking": {"rock":{"x":401.94,"y":226.08,"D":42689,"R":1000},"bore":{"x":639.28,"y":403.57},"muzzle":{"x":608.93,"y":553.86},"closing":24.9,"charged":0,"aim":{"err":0},"shot":null,"fc":{"cam":[21,347.57,17.44],"rock":[-4867.57,9765.51,-41332.13],"v":[41.67216,-40.00527,11.6682],"ax":[0,0.13917,-0.99027],"muzzle":[0,438.17,-1374.49],"s":0.55511,"Tf":300,"R":1000,"err":0,"dy":0,"de":0,"shards":40}},
+  "desk-dusk-charging": {"rock":{"x":533.23,"y":341.17,"D":41328,"R":1000},"bore":{"x":639.14,"y":402.85},"muzzle":{"x":608.79,"y":553.13},"closing":20.13,"charged":0.65,"aim":{"err":0.04778},"shot":null,"fc":{"cam":[21.12,347.51,17.65],"rock":[-2383.91,7381.19,-40636.71],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00651,0.14254,-0.98977],"muzzle":[-9.03,442.84,-1373.8],"s":0.75378,"Tf":300,"R":1000,"err":0.04778,"dy":0.04251,"de":0.02182,"shards":40}},
+  "desk-dusk-full": {"rock":{"x":575.48,"y":371.72,"D":41014,"R":1000},"bore":{"x":636.81,"y":402.07},"muzzle":{"x":606.44,"y":552.35},"closing":19.34,"charged":1,"aim":{"err":0.02132},"shot":null,"fc":{"cam":[21.23,347.49,17.62],"rock":[-1733.83,6757.11,-40454.68],"v":[41.67216,-40.00527,11.6682],"ax":[-0.01269,0.14349,-0.98957],"muzzle":[-17.61,444.16,-1373.52],"s":0.80578,"Tf":300,"R":1000,"err":0.02132,"dy":0.02031,"de":0.00648,"shards":40}},
+  "desk-dusk-fired": {"rock":{"x":571.12,"y":261.79,"D":41009,"R":1000},"bore":{"x":637.78,"y":403.4},"muzzle":{"x":607.75,"y":552.1},"closing":22.66,"charged":1,"aim":{"err":0.02518},"shot":{"age":0.93,"hitT":8.8},"fc":{"cam":[21.25,347.02,26.52],"rock":[-1704.66,6729.11,-40446.52],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00951,0.08924,-0.99596],"muzzle":[-13.2,368.87,-1382.4],"s":0.80811,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "desk-dusk-hit": {"rock":{"x":589.01,"y":386.78,"D":40849,"R":1000},"bore":{"x":639.48,"y":403.77},"muzzle":{"x":609.15,"y":554.02},"closing":0.13,"charged":0,"aim":{"err":0.02518},"shot":{"age":9.33,"hitT":8.8},"fc":{"cam":[21.17,347.47,17.86],"rock":[-1375.45,6413.07,-40354.34],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00933,0.14208,-0.98981],"muzzle":[-12.95,442.21,-1373.86],"s":0.83444,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "desk-night-tracking": {"rock":{"x":401.94,"y":226.08,"D":42689,"R":1000},"bore":{"x":639.28,"y":403.57},"muzzle":{"x":608.93,"y":553.86},"closing":24.9,"charged":0,"aim":{"err":0},"shot":null,"fc":{"cam":[21,347.57,17.44],"rock":[-4867.57,9765.51,-41332.13],"v":[41.67216,-40.00527,11.6682],"ax":[0,0.13917,-0.99027],"muzzle":[0,438.17,-1374.49],"s":0.55511,"Tf":300,"R":1000,"err":0,"dy":0,"de":0,"shards":40}},
+  "desk-night-charging": {"rock":{"x":533.18,"y":341.2,"D":41328,"R":1000},"bore":{"x":639.08,"y":402.87},"muzzle":{"x":608.73,"y":553.16},"closing":20.13,"charged":0.65,"aim":{"err":0.04778},"shot":null,"fc":{"cam":[21.12,347.51,17.65],"rock":[-2383.91,7381.19,-40636.71],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00651,0.14254,-0.98977],"muzzle":[-9.03,442.84,-1373.8],"s":0.75378,"Tf":300,"R":1000,"err":0.04778,"dy":0.04251,"de":0.02182,"shards":40}},
+  "desk-night-full": {"rock":{"x":576.17,"y":371.97,"D":41014,"R":1000},"bore":{"x":637.51,"y":402.32},"muzzle":{"x":607.14,"y":552.6},"closing":19.34,"charged":1,"aim":{"err":0.02132},"shot":null,"fc":{"cam":[21.23,347.49,17.62],"rock":[-1733.83,6757.11,-40454.68],"v":[41.67216,-40.00527,11.6682],"ax":[-0.01269,0.14349,-0.98957],"muzzle":[-17.61,444.16,-1373.52],"s":0.80578,"Tf":300,"R":1000,"err":0.02132,"dy":0.02031,"de":0.00648,"shards":40}},
+  "desk-night-fired": {"rock":{"x":571.45,"y":263.77,"D":41009,"R":1000},"bore":{"x":638.11,"y":405.38},"muzzle":{"x":608.07,"y":554.09},"closing":22.66,"charged":1,"aim":{"err":0.02518},"shot":{"age":0.93,"hitT":8.8},"fc":{"cam":[21.25,347.02,26.52],"rock":[-1704.66,6729.11,-40446.52],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00951,0.08924,-0.99596],"muzzle":[-13.2,368.87,-1382.4],"s":0.80811,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "desk-night-hit": {"rock":{"x":588.99,"y":386.84,"D":40849,"R":1000},"bore":{"x":639.47,"y":403.82},"muzzle":{"x":609.13,"y":554.08},"closing":0.13,"charged":0,"aim":{"err":0.02518},"shot":{"age":9.33,"hitT":8.8},"fc":{"cam":[21.17,347.47,17.86],"rock":[-1375.45,6413.07,-40354.34],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00933,0.14208,-0.98981],"muzzle":[-12.95,442.21,-1373.86],"s":0.83444,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "phone-dusk-tracking": {"rock":{"x":39.44,"y":297.83,"D":42689,"R":1000},"bore":{"x":187.05,"y":408.22},"muzzle":{"x":168.18,"y":501.69},"closing":24.9,"charged":0,"aim":{"err":0},"shot":null,"fc":{"cam":[21,347.57,17.44],"rock":[-4867.57,9765.51,-41332.13],"v":[41.67216,-40.00527,11.6682],"ax":[0,0.13917,-0.99027],"muzzle":[0,438.17,-1374.49],"s":0.55511,"Tf":300,"R":1000,"err":0,"dy":0,"de":0,"shards":40}},
+  "phone-dusk-charging": {"rock":{"x":121.1,"y":369.44,"D":41328,"R":1000},"bore":{"x":186.97,"y":407.8},"muzzle":{"x":168.09,"y":501.27},"closing":20.13,"charged":0.65,"aim":{"err":0.04778},"shot":null,"fc":{"cam":[21.12,347.51,17.65],"rock":[-2383.91,7381.19,-40636.71],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00651,0.14254,-0.98977],"muzzle":[-9.03,442.84,-1373.8],"s":0.75378,"Tf":300,"R":1000,"err":0.04778,"dy":0.04251,"de":0.02182,"shards":40}},
+  "phone-dusk-full": {"rock":{"x":147.8,"y":388.86,"D":41014,"R":1000},"bore":{"x":185.94,"y":407.74},"muzzle":{"x":167.06,"y":501.21},"closing":19.34,"charged":1,"aim":{"err":0.02132},"shot":null,"fc":{"cam":[21.23,347.49,17.62],"rock":[-1733.83,6757.11,-40454.68],"v":[41.67216,-40.00527,11.6682],"ax":[-0.01269,0.14349,-0.98957],"muzzle":[-17.61,444.16,-1373.52],"s":0.80578,"Tf":300,"R":1000,"err":0.02132,"dy":0.02031,"de":0.00648,"shards":40}},
+  "phone-dusk-fired": {"rock":{"x":145.14,"y":320.88,"D":41009,"R":1000},"bore":{"x":186.6,"y":408.95},"muzzle":{"x":167.92,"y":501.44},"closing":22.66,"charged":1,"aim":{"err":0.02518},"shot":{"age":0.93,"hitT":8.8},"fc":{"cam":[21.25,347.02,26.52],"rock":[-1704.66,6729.11,-40446.52],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00951,0.08924,-0.99596],"muzzle":[-13.2,368.87,-1382.4],"s":0.80811,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "phone-dusk-hit": {"rock":{"x":155.79,"y":397.8,"D":40849,"R":1000},"bore":{"x":187.18,"y":408.36},"muzzle":{"x":168.32,"y":501.81},"closing":0.13,"charged":0,"aim":{"err":0.02518},"shot":{"age":9.33,"hitT":8.8},"fc":{"cam":[21.17,347.47,17.86],"rock":[-1375.45,6413.07,-40354.34],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00933,0.14208,-0.98981],"muzzle":[-12.95,442.21,-1373.86],"s":0.83444,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "phone-night-tracking": {"rock":{"x":39.44,"y":297.83,"D":42689,"R":1000},"bore":{"x":187.05,"y":408.22},"muzzle":{"x":168.18,"y":501.69},"closing":24.9,"charged":0,"aim":{"err":0},"shot":null,"fc":{"cam":[21,347.57,17.44],"rock":[-4867.57,9765.51,-41332.13],"v":[41.67216,-40.00527,11.6682],"ax":[0,0.13917,-0.99027],"muzzle":[0,438.17,-1374.49],"s":0.55511,"Tf":300,"R":1000,"err":0,"dy":0,"de":0,"shards":40}},
+  "phone-night-charging": {"rock":{"x":121.09,"y":369.44,"D":41328,"R":1000},"bore":{"x":186.96,"y":407.8},"muzzle":{"x":168.08,"y":501.27},"closing":20.13,"charged":0.65,"aim":{"err":0.04778},"shot":null,"fc":{"cam":[21.12,347.51,17.65],"rock":[-2383.91,7381.19,-40636.71],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00651,0.14254,-0.98977],"muzzle":[-9.03,442.84,-1373.8],"s":0.75378,"Tf":300,"R":1000,"err":0.04778,"dy":0.04251,"de":0.02182,"shards":40}},
+  "phone-night-full": {"rock":{"x":147.52,"y":388.95,"D":41014,"R":1000},"bore":{"x":185.66,"y":407.82},"muzzle":{"x":166.77,"y":501.29},"closing":19.34,"charged":1,"aim":{"err":0.02132},"shot":null,"fc":{"cam":[21.23,347.49,17.62],"rock":[-1733.83,6757.11,-40454.68],"v":[41.67216,-40.00527,11.6682],"ax":[-0.01269,0.14349,-0.98957],"muzzle":[-17.61,444.16,-1373.52],"s":0.80578,"Tf":300,"R":1000,"err":0.02132,"dy":0.02031,"de":0.00648,"shards":40}},
+  "phone-night-fired": {"rock":{"x":144.84,"y":320.65,"D":41009,"R":1000},"bore":{"x":186.3,"y":408.73},"muzzle":{"x":167.62,"y":501.22},"closing":22.66,"charged":1,"aim":{"err":0.02518},"shot":{"age":0.93,"hitT":8.8},"fc":{"cam":[21.25,347.02,26.52],"rock":[-1704.66,6729.11,-40446.52],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00951,0.08924,-0.99596],"muzzle":[-13.2,368.87,-1382.4],"s":0.80811,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}},
+  "phone-night-hit": {"rock":{"x":155.79,"y":397.82,"D":40849,"R":1000},"bore":{"x":187.19,"y":408.38},"muzzle":{"x":168.32,"y":501.83},"closing":0.13,"charged":0,"aim":{"err":0.02518},"shot":{"age":9.33,"hitT":8.8},"fc":{"cam":[21.17,347.47,17.86],"rock":[-1375.45,6413.07,-40354.34],"v":[41.67216,-40.00527,11.6682],"ax":[-0.00933,0.14208,-0.98981],"muzzle":[-12.95,442.21,-1373.86],"s":0.83444,"Tf":300,"R":1000,"err":0.02518,"dy":0.02393,"de":0.00783,"shards":40}}
+};
 
 const VIEW = { desk: { w: 1280, h: 800, fov: 22 }, phone: { w: 375, h: 812, fov: 35.2 } };
 const STATES = ['tracking', 'charging', 'full', 'fired', 'hit'];
@@ -479,7 +419,163 @@ function numeral(s) {
   return `<g style="filter: drop-shadow(0 0 2px oklch(0.12 0.02 60 / 0.6))">${o}</g>`;
 }
 
+/* ---------- fire control ---------- */
+// Design constants of the gun, not of the toy: slug mass and bank efficiency.
+const SLUG_KG = 400, ETA = 0.32, G0 = 9.81, TNT = 4.184e9;
+// The bank holds 14 GJ; a full charge throws the slug in 8.5 s.
+const BANK_GJ = 14.0;
+const V = {
+  of: a => ({ x: a[0], y: a[1], z: a[2] }),
+  sub: (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }),
+  add: (a, b, k = 1) => ({ x: a.x + b.x * k, y: a.y + b.y * k, z: a.z + b.z * k }),
+  dot: (a, b) => a.x * b.x + a.y * b.y + a.z * b.z,
+  len: a => Math.hypot(a.x, a.y, a.z),
+};
+const deg = r => r * 180 / Math.PI;
+// Bearing from north, where north is the world's negative z.
+const brg = d => (deg(Math.atan2(d.x, -d.z)) + 360) % 360;
+const elv = d => deg(Math.asin(d.y / V.len(d)));
+const ang = (a, b) => Math.acos(clamp(V.dot(a, b) / (V.len(a) * V.len(b)), -1, 1));
+
+// The fire-control solution from the toy's own geometry at the still.
+function solution(s) {
+  const m = META[`${s.phone ? 'phone' : 'desk'}-${s.light}-${s.state}`], f = m.fc;
+  const C = V.of(f.cam), P = V.of(f.rock), v = V.of(f.v), ax = V.of(f.ax), M = V.of(f.muzzle);
+  const los = V.sub(P, C), D = V.len(los);
+  const rdot = V.dot(v, los) / D;
+  const vperp = V.add(v, los, -rdot / D);
+  // Solve for the charge in hand; at rest, for a full charge.
+  const c = s.state === 'charging' ? m.charged : 1;
+  const T = lerp(11.5, 8.5, c) + 0.3;
+  const pip = V.add(P, v, T);
+  const flight = V.len(V.sub(pip, M));
+  const mv = flight / (T - 0.3);
+  const ke = 0.5 * SLUG_KG * mv * mv;
+  const drop = 0.5 * G0 * (T - 0.3) * (T - 0.3);
+  // Stored energy goes as the square of muzzle velocity: (8.5 s / TOF) squared.
+  const share = Math.pow(8.5 / (T - 0.3), 2);
+  // The sight looks down the bore: project with the gun's axis as forward.
+  const W = s.W, H = s.H, fpx = (H / 2) / Math.tan(VIEW[s.phone ? 'phone' : 'desk'].fov * Math.PI / 360);
+  const yaw = Math.atan2(-ax.x, -ax.z), pit = Math.asin(ax.y);
+  const fw = { x: -Math.sin(yaw) * Math.cos(pit), y: Math.sin(pit), z: -Math.cos(yaw) * Math.cos(pit) };
+  const rt = { x: Math.cos(yaw), y: 0, z: -Math.sin(yaw) };
+  const up = { x: rt.y * fw.z - rt.z * fw.y, y: rt.z * fw.x - rt.x * fw.z, z: rt.x * fw.y - rt.y * fw.x };
+  const proj = X => { const d = V.sub(X, C), z = V.dot(d, fw); return { x: W / 2 + fpx * V.dot(d, rt) / z, y: H / 2 - fpx * V.dot(d, up) / z }; };
+  // The model camera omits sway and kick; the real rock's screen place calibrates it.
+  const pr = proj(P), dx = m.rock.x - pr.x, dy = m.rock.y - pr.y, pp = proj(pip);
+  return {
+    D, rdot, speed: V.len(v), omega: V.len(vperp) / D * 1000, alt: P.y,
+    bTgt: brg(los), eTgt: elv(los), bGun: brg(ax), eGun: deg(pit), dia: 2 * Math.atan(f.R / D) * 1000, R: f.R,
+    T, mv, ke, bank: BANK_GJ * 1e9 * share, bankFull: BANK_GJ * 1e9,
+    lead: ang(los, V.sub(pip, C)) * 1000, drop, superel: drop / flight * 1000, qe: deg(pit) + deg(drop / flight),
+    lay: f.err * 1000, layAz: f.dy * 1000, layEl: f.de * 1000, miss: f.err * flight, shards: f.shards,
+    pip: { x: pp.x + dx, y: pp.y + dy }, fpx,
+  };
+}
+
+// Fire control: an EO fire-control display, as a real gun would carry.
+// Boresight, track gate, velocity leader, intercept point; four data blocks.
+function firecontrol(s) {
+  const { W, H, phone, rock, bore } = s, k = phone ? 0.86 : 1, q = solution(s);
+  const ink = 'oklch(0.97 0.006 250)', dim = 'oklch(0.97 0.006 250 / 0.62)', alert = 'oklch(0.86 0.15 80)';
+  const fs = 12 * k, lh = fs * 1.42, pad = 18 * k;
+  const n1 = v => v.toFixed(1), n2 = v => v.toFixed(2), sg = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+  let o = '';
+  // Angle scale: ticks every 10 mrad on the frame's edges, labels every 100.
+  const mr = q.fpx / 1000;
+  let tk = '', lb = '';
+  for (let i = -400; i <= 400; i += 10) {
+    const x = bore.x + i * mr, y = bore.y + i * mr, L = (i % 50 === 0 ? 9 : 4) * k;
+    if (x > 6 && x < W - 6) tk += `M${P(x, 0)}v${L}M${P(x, H)}v${-L}`;
+    if (y > 6 && y < H - 6) tk += `M${P(0, y)}h${L}M${P(W, y)}h${-L}`;
+    if (i && i % 100 === 0 && x > 30 && x < W - 30) lb += `<text class="slab" x="${x}" y="${22 * k}" font-size="${fs * 0.75}" fill="${dim}" text-anchor="middle">${Math.abs(i)}</text>`;
+  }
+  o += `<path d="${tk}" stroke="${dim}" stroke-width="1"/>` + (phone ? '' : lb);
+  // Boresight: the gun line, a cross with an open centre.
+  const g = 6 * k, a = 22 * k;
+  o += `<path d="M${P(bore.x - a, bore.y)}H${bore.x - g}M${P(bore.x + g, bore.y)}H${bore.x + a}M${P(bore.x, bore.y - a)}V${bore.y - g}M${P(bore.x, bore.y + g)}V${bore.y + a}" stroke="${ink}" stroke-width="1.3"/>`;
+  if (s.live) {
+    // Track gate: corners round the target, sized from its angular diameter.
+    const hw = rock.r + 10 * k, L = 10 * k;
+    let gt = '';
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const x = rock.x + sx * hw, y = rock.y + sy * hw; gt += `M${P(x, y - sy * L)}L${P(x, y)}L${P(x - sx * L, y)}`; }
+    o += `<path d="${gt}" fill="none" stroke="${ink}" stroke-width="1.3"/>`;
+    const tx = rock.x + hw + 6 * k, flip = tx > W - 120 * k, ta = flip ? 'end' : 'start', tX = flip ? rock.x - hw - 6 * k : tx;
+    o += `<text class="slab" x="${tX}" y="${rock.y - hw + fs * 0.8}" font-size="${fs}" fill="${ink}" text-anchor="${ta}">T-0417</text>`;
+    o += `<text class="slab" x="${tX}" y="${rock.y - hw + fs * 0.8 + lh}" font-size="${fs * 0.9}" fill="${ink}" text-anchor="${ta}">${n2(q.D / 1000)} KM</text>`;
+    // Velocity leader: where the target will be after one time of flight.
+    if (!s.fired) {
+      o += `<path d="M${P(rock.x, rock.y)}L${P(q.pip.x, q.pip.y)}" stroke="${ink}" stroke-width="1" stroke-dasharray="5 4" opacity="0.85"/>`;
+      // The intercept point: a small diamond; on the boresight, the gun is laid.
+      const d = 7 * k;
+      o += `<path d="M${P(q.pip.x, q.pip.y - d)}L${P(q.pip.x + d, q.pip.y)}L${P(q.pip.x, q.pip.y + d)}L${P(q.pip.x - d, q.pip.y)}Z" fill="none" stroke="${s.lvl >= 1 ? alert : ink}" stroke-width="1.4"/>`;
+      o += `<text class="slab" x="${q.pip.x - 11 * k}" y="${q.pip.y + 4}" font-size="${fs * 0.85}" fill="${dim}" text-anchor="end">PIP</text>`;
+    }
+  } else {
+    // Intercept: a circle of the target radius where the target was.
+    o += `<circle cx="${rock.x}" cy="${rock.y}" r="${rock.r}" fill="none" stroke="${ink}" stroke-width="1" stroke-dasharray="3 4"/>`;
+    o += `<text class="slab" x="${rock.x + rock.r + 8 * k}" y="${rock.y + 4}" font-size="${fs}" fill="${ink}">T-0417</text>`;
+  }
+  // Data blocks: monospace rows, left or right aligned to the frame.
+  const block = (x, y, rows, anchor = 'start') => rows.map((r, i) => {
+    const [txt, col] = Array.isArray(r) ? r : [r, ink];
+    return `<text class="slab" x="${x}" y="${y + i * lh}" font-size="${fs}" fill="${col}" text-anchor="${anchor}" xml:space="preserve">${txt}</text>`;
+  }).join('');
+  const track = [
+    `TRK T-0417  BOLIDE  AUTO`,
+    `BRG ${n1(q.bTgt)}°  EL ${n1(q.eTgt)}°`,
+    `RNG ${n2(q.D / 1000)} KM  LRF`,
+    s.hit ? [`Ṙ   —`, dim] : `Ṙ   ${sg(q.rdot)} M/S  V ${Math.round(q.speed)} M/S`,
+    `ALT ${n2(q.alt / 1000)} KM  ω ${n2(q.omega)} MRAD/S`,
+    `SIZE Ø${n1(2 * q.R / 1000)} KM  ${n1(q.dia)} MRAD`,
+  ];
+  const fovV = VIEW[phone ? 'phone' : 'desk'].fov, fovH = deg(2 * Math.atan(Math.tan(fovV * Math.PI / 360) * W / H));
+  const sensor = [`EO  II  P45`, `FOV ${n1(fovH)}°×${n1(fovV)}°`, `ABC AUTO`, [s.light === 'dusk' ? '18:47:12Z' : '22:14:40Z', dim]];
+  const sol = s.hit
+    ? [`INTERCEPT  T+${n1(s.age)} S`, `RNG ${n2(q.D / 1000)} KM`, `KE ${n2(q.ke / 1e9)} GJ  ${n1(q.ke / TNT)} T TNT`, `BDA ${q.shards} FRAGMENTS TRACKED`]
+    : [
+      `MV  ${n2(q.mv / 1000)} KM/S  TOF ${n1(q.T)} S${s.state === 'tracking' ? '  @FULL' : ''}`,
+      `LEAD ${n1(q.lead)} MRAD`,
+      `DROP ${Math.round(q.drop)} M  SUPEREL +${n1(q.superel)} MRAD`,
+      `QE  ${n2(q.qe)}°`,
+      s.state === 'tracking' ? [`MISS —  GUN NOT LAID`, dim] : [`MISS ${Math.round(q.miss)} M  ${q.miss < q.R ? '<' : '>'} R ${q.R} M`, q.miss < q.R ? ink : alert],
+    ];
+  const bankNow = s.state === 'tracking' ? 0 : s.fired || s.hit ? 0.03 * q.bankFull : q.bank;
+  const frac = clamp(bankNow / q.bankFull, 0, 1);
+  const gun = [
+    `GUN BRG ${n1(q.bGun)}°  EL ${n1(q.eGun)}°`,
+    s.state === 'tracking' ? [`LAY  HOLD`, dim] : `LAY ERR ${n1(q.lay)} MRAD`,
+    s.state === 'tracking' ? [`AZ —  EL —`, dim] : `AZ ${sg(q.layAz)}  EL ${sg(q.layEl)}`,
+    `BANK ${n1(bankNow / 1e9)} / ${n1(q.bankFull / 1e9)} GJ`,
+    [`SLUG ${SLUG_KG} KG  η ${ETA}`, dim],
+  ];
+  // The bank bar: a hairline frame filled to the stored energy.
+  const bar = (x, y, w) => `<rect x="${x}" y="${y}" width="${w}" height="${5 * k}" fill="none" stroke="${dim}" stroke-width="1"/><rect x="${x}" y="${y}" width="${w * frac}" height="${5 * k}" fill="${frac >= 0.999 ? alert : ink}"/>`;
+  // The status line: what the gun is doing, in one phrase.
+  const status = { tracking: ['TRACK  ·  HOLD FIRE', ink], charging: [`CHARGING  ${Math.round(frac * 100)} %`, ink], full: ['READY  ·  FIRE', alert], fired: [`SHOT AWAY  ·  IMPACT ${n1(s.left)} S`, alert], hit: ['INTERCEPT  ·  TARGET BROKEN UP', ink] }[s.state];
+  if (!phone) {
+    o += block(pad, pad + fs + 14, track);
+    o += block(W - pad, pad + fs + 14, sensor, 'end');
+    o += block(pad, H - pad - (sol.length - 1) * lh, sol);
+    o += block(W - pad, H - pad - (gun.length - 1) * lh - 12, gun, 'end');
+    o += bar(W - pad - 200, H - pad - 2, 200);
+    o += `<text class="slab" x="${W / 2}" y="${H - pad - 28}" font-size="${fs * 1.35}" font-weight="700" fill="${status[1]}" text-anchor="middle" letter-spacing="0.08em">${status[0]}</text>`;
+  } else {
+    const tr2 = [track[0], track[2], track[3], track[4]];
+    const sl2 = s.hit ? sol : [sol[0], sol[1], sol[4]];
+    const gn2 = [gun[1], gun[3]];
+    o += block(pad, pad + fs + 14, tr2);
+    o += block(pad, H - pad - (sl2.length + gn2.length - 1) * lh - 14, [...sl2, ...gn2]);
+    o += bar(pad, H - pad - 4, W - 2 * pad);
+    o += `<text class="slab" x="${W / 2}" y="${H * 0.69}" font-size="${fs * 1.2}" font-weight="700" fill="${status[1]}" text-anchor="middle" letter-spacing="0.06em">${status[0]}</text>`;
+  }
+  return `<g style="filter: drop-shadow(0 0 1px oklch(0.08 0.01 250 / 0.95)) drop-shadow(0 0 3px oklch(0.08 0.01 250 / 0.5))">${o}</g>`;
+}
+
 const DIRS = [
+  { id: 'fc', name: 'Fire control', draw: firecontrol, title: 'Fire control: an EO fire-control display',
+    idea: 'What a planetside defence gun would really put in front of its gunner. The picture is the gun\'s electro-optical sight through an image intensifier with a white P45 phosphor: the NVG toy\'s tube, used whole. The symbols are the classic set: boresight, track gate, velocity leader, predicted intercept point (PIP). Four data blocks hold the track, the sensor, the firing solution and the gun. Every number comes from the toy\'s own geometry at the still. Slug mass (400 kg) and bank efficiency (0.32) are design constants.',
+    reads: [['Rock', 'track gate sized to its angular diameter; tag T-0417 with its range'], ['Range, closing', 'RNG from the laser range finder; Ṙ is the range rate, V the true speed, ω the angular rate'], ['Charge', 'BANK in GJ with a bar; MV and TOF follow the charge in hand'], ['Aim error', 'LAY ERR in mrad, split AZ and EL; the leader ends at the PIP, and the PIP on the boresight means laid; predicted MISS against the target radius'], ['Shot', 'SHOT AWAY with the time to impact; INTERCEPT with KE in GJ and t TNT, and the fragments tracked']] },
   { id: 'cinema', name: 'Cinema', draw: cinema, title: 'Cinema: the charge is the aspect ratio',
     idea: 'The sight is the film. Bars close from 2.39:1 to a slit round the rock and the bore as the charge climbs; the shot throws the frame open. One hairline marks the bore, four brackets mark the rock. Words sit in the bars like subtitles.',
     reads: [['Rock', 'four corner brackets; a dotted lead to the bore'], ['Range, closing', 'subtitle in the lower bar'], ['Charge', 'the bars close; the percent, then "ready", in the upper bar'], ['Aim error', '"off 0°49′" in the subtitle; the lead line\'s length'], ['Shot', 'the bars snap open; "fired · 8.6 s"; "struck at 40.8 km"']] },
@@ -499,13 +595,64 @@ const DIRS = [
     idea: 'For reference. The shipped Sight (stimming-oi3i) is a period coincidence rangefinder down the bore: round eyepiece, etched chevron and posts, a split prism, a lamp-lit km scale. The backdrops on this page are the same camera with that overlay turned off.' },
 ];
 
+/* ---------- white phosphor ---------- */
+// The NVG toy's tube runs over the still: photon noise, MCP halos, ABC, P45 phosphor.
+// One tube larger than the frame: no eyepiece rim, the picture fills the display.
+const nv = { cv: document.getElementById('nv'), r: null, tube: null, tex: null, size: '', frames: 0, last: 0 };
+function nvSetup() {
+  if (nv.r) return true;
+  try {
+    nv.r = new THREE.WebGLRenderer({ canvas: nv.cv, antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+  } catch { return false; }
+  nv.r.outputColorSpace = THREE.LinearSRGBColorSpace;
+  nv.r.toneMapping = THREE.NoToneMapping;
+  nv.r.autoClear = false;
+  nv.tube = new Tube(nv.r);
+  const su = nv.tube.sigU;
+  su.uCam.value = 1; su.uMirror.value = 0; su.uCamXf.value.set(1, 1, 0, 0); su.uCamExpo.value = 14;
+  // The NVG toy's defaults: grain 0.5, gain 0.55, afterglow 0.5, white phosphor.
+  const tu = nv.tube.mTube.uniforms;
+  tu.uPower.value = 1; tu.uScint.value = 0.00008; tu.uKq.value = 0.55;
+  tu.uTail.value = 0.012 + 0.09 * 0.5; tu.uTau.value = 0.05 + 0.2 * 0.5;
+  nv.tube.mGain.uniforms.uGmax.value = 0.022 * Math.pow(14, 0.55);
+  const ou = nv.tube.mOut.uniforms;
+  ou.uPhos.value = 1; ou.uPupil.value.set(0, -0.06); ou.uFlick.value = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
+  return true;
+}
+function nvSize(W, H, pr) {
+  const key = `${W}x${H}x${pr}`;
+  if (nv.size === key) return;
+  nv.size = key;
+  nv.r.setPixelRatio(pr);
+  nv.r.setSize(W, H, false);
+  nv.tube.resize(W, H, 1, 1.2, 0);
+  nv.tube.setTubes([{ x: W / 2, y: H / 2, r: Math.hypot(W, H) / 2 * 1.08, trim: 1 }]);
+  nv.tube.cold();
+}
+function nvImage(img) {
+  nv.tex?.dispose();
+  nv.tex = new THREE.Texture(img);
+  nv.tex.minFilter = THREE.LinearFilter; nv.tex.generateMipmaps = false;
+  nv.tex.needsUpdate = true;
+  nv.tube.sigU.tCam.value = nv.tex;
+  nv.frames = 0;
+}
+function nvFrame(now) {
+  const dt = nv.last ? clamp((now - nv.last) / 1000, 1 / 120, 0.1) : 1 / 30;
+  nv.last = now;
+  nv.tube.render(null, null, dt, now / 1000);
+  nv.frames++;
+}
+
 /* ---------- page ---------- */
 const q = new URLSearchParams(location.search);
+const IMGS = [{ id: 'white', name: 'White phosphor' }, { id: 'colour', name: 'Colour' }];
 const st = {
-  dir: DIRS.find(d => d.id === q.get('d')) ? q.get('d') : 'cinema',
+  dir: DIRS.find(d => d.id === q.get('d')) ? q.get('d') : 'fc',
   state: STATES.includes(q.get('s')) ? q.get('s') : 'full',
   light: LIGHTS.includes(q.get('l')) ? q.get('l') : 'dusk',
   view: q.get('v') === 'phone' ? 'phone' : 'desk',
+  img: q.get('i') === 'colour' ? 'colour' : 'white',
   anim: !q.has('still') && !matchMedia('(prefers-reduced-motion: reduce)').matches,
 };
 const $ = id => document.getElementById(id);
@@ -514,6 +661,8 @@ const wrap = $('wrap'), frame = $('frame'), bg = $('bg'), ov = $('ov'), note = $
 function buttons(el, items, key, keys) {
   el.innerHTML = '';
   items.forEach((it, i) => {
+    // Round one sits apart: the first proposals.
+    if (it.id === 'cinema') { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Round 1'; el.append(t); }
     const b = document.createElement('button');
     b.innerHTML = (keys ? `<kbd>${keys[i]}</kbd>` : '') + it.name;
     b.onclick = () => { st[key] = it.id; sync(); };
@@ -523,16 +672,17 @@ function buttons(el, items, key, keys) {
 }
 const cap = w => w[0].toUpperCase() + w.slice(1);
 buttons($('dirs'), DIRS, 'dir', DIRS.map((d, i) => i + 1));
+buttons($('imgs'), IMGS, 'img');
 buttons($('states'), STATES.map(id => ({ id, name: cap(id) })), 'state');
 buttons($('lights'), LIGHTS.map(id => ({ id, name: cap(id) })), 'light');
 buttons($('views'), [{ id: 'desk', name: '1280 × 800' }, { id: 'phone', name: '375 × 812' }], 'view');
 $('anim').onclick = () => { st.anim = !st.anim; sync(); };
 
 const t0 = performance.now();
-function draw() {
+function draw(now = performance.now()) {
   const d = DIRS.find(x => x.id === st.dir);
   if (d.ref) return;
-  const t = st.anim ? (performance.now() - t0) / 1000 : 1.3;
+  const t = st.anim ? (now - t0) / 1000 : 1.3;
   const s = model(st.view, st.light, st.state, t);
   ov.setAttribute('viewBox', `0 0 ${s.W} ${s.H}`);
   ov.innerHTML = d.draw(s);
@@ -549,14 +699,29 @@ function fit() {
   wrap.style.width = v.w * k + 'px'; wrap.style.height = v.h * k + 'px';
 }
 
+// The tube needs the still decoded; it then runs a few frames to settle.
+function nvStart() {
+  const white = st.img === 'white' && nvSetup();
+  nv.cv.hidden = !white;
+  bg.style.visibility = white ? 'hidden' : '';
+  if (!white) return;
+  const v = VIEW[st.view];
+  nvSize(v.w, v.h, st.view === 'phone' ? 2 : 1);
+  // Photon count follows the scene: dusk sky feeds the cathode far more than starlight.
+  nv.tube.sigU.uCamExpo.value = st.light === 'dusk' ? 90 : 45;
+  nv.frames = 0;
+  const go = () => { nvImage(bg); const n = performance.now(); for (let i = 0; i < 6; i++) nvFrame(n + i * 33); };
+  if (bg.complete && bg.naturalWidth) go(); else bg.onload = go;
+}
+
 function sync() {
   const d = DIRS.find(x => x.id === st.dir);
-  for (const [el, key] of [[$('dirs'), 'dir'], [$('states'), 'state'], [$('lights'), 'light'], [$('views'), 'view']]) {
-    for (const b of el.children) { b.setAttribute('aria-pressed', String(b.dataset.id === st[key])); b.disabled = !!d.ref && key !== 'dir' && key !== 'view'; }
+  for (const [el, key] of [[$('dirs'), 'dir'], [$('imgs'), 'img'], [$('states'), 'state'], [$('lights'), 'light'], [$('views'), 'view']]) {
+    for (const b of el.querySelectorAll('button')) { b.setAttribute('aria-pressed', String(b.dataset.id === st[key])); b.disabled = !!d.ref && key !== 'dir' && key !== 'view'; }
   }
   $('anim').setAttribute('aria-pressed', String(st.anim));
-  const u = new URLSearchParams({ d: st.dir, s: st.state, l: st.light, v: st.view });
-  history.replaceState(null, '', '?' + u);
+  const u = new URLSearchParams({ d: st.dir, s: st.state, l: st.light, v: st.view, i: st.img });
+  history.replaceState(null, '', '?' + u + (st.anim ? '' : '&still'));
   if (d.ref) {
     wrap.hidden = true;
     const v = st.view;
@@ -564,13 +729,15 @@ function sync() {
     return;
   }
   wrap.hidden = false;
-  bg.src = `stills/${st.view}-${st.light}-${st.state}.jpg`;
+  const src = `stills/${st.view}-${st.light}-${st.state}.jpg`;
+  if (!bg.src.endsWith(src)) { bg.onload = null; bg.src = src; }
   note.innerHTML = `<h2>${d.title}</h2><p>${d.idea}</p><dl>${d.reads.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
   fit();
+  nvStart();
   draw();
 }
 
-// Keys: 1 to 6 pick a direction; arrows step the state; L light; P screen.
+// Keys: 1 to 7 pick a direction; arrows step the state; L light; P screen; W white phosphor.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const n = +e.key;
@@ -578,6 +745,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') st.state = STATES[(STATES.indexOf(st.state) + (e.key === 'ArrowRight' ? 1 : STATES.length - 1)) % STATES.length];
   else if (e.key === 'l' || e.key === 'L') st.light = st.light === 'dusk' ? 'night' : 'dusk';
   else if (e.key === 'p' || e.key === 'P') st.view = st.view === 'desk' ? 'phone' : 'desk';
+  else if (e.key === 'w' || e.key === 'W') st.img = st.img === 'white' ? 'colour' : 'white';
   else return;
   e.preventDefault();
   sync();
@@ -590,12 +758,15 @@ function loop(now) {
   requestAnimationFrame(loop);
   if (!st.anim || document.hidden || now - last < 33) return;
   last = now;
-  draw();
+  draw(now);
+  if (!nv.cv.hidden && nv.tex) nvFrame(now);
 }
 requestAnimationFrame(loop);
 
 // Warm the cache: every still for this screen.
 for (const l of LIGHTS) for (const s of STATES) { const i = new Image(); i.src = `stills/${st.view}-${l}-${s}.jpg`; }
+// QA: the tube has drawn once the still went through it.
+window.__mock = { ready: () => nv.cv.hidden || nv.frames > 0 };
 sync();
 </script>
 </body>
