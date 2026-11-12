@@ -135,6 +135,8 @@ let chargeMix = (() => {
 let shotMix = 'mesa';
 // The game-over sound: a surge mix from MIX, or 'hum' for the plain charge hum.
 let goMix = 'syl';
+// The frame budget in ms; the Dev sheet's FPS row sets it.
+let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -159,6 +161,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
     { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
+    // The frame rate cap: film, the toy's own 30, or a fast screen.
+    { type: 'choice', id: 'fps', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
     // The game over: the surge that plays as an unshot rock comes down.
     // A pick takes effect at the next strike; Strike test brings one on.
     { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'syl', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
@@ -3413,6 +3417,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uVeil: { value: 0 }, uZoom: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // The flares' ghost gain: 0 keeps a flare one level streak.
+      uGhost: { value: 1 },
       // Light shafts from the blast: its place on screen, strength, sky fill.
       uGod: { value: new THREE.Vector4(0.5, 0.5, 0, 0) }, uGodC: { value: new THREE.Vector3(...linFit(0.9, 0.11, 70)) },
       uBox: { value: 0 },
@@ -3428,6 +3434,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
     uniform vec3 uLF, uLF2, uGodC;
+    uniform float uGhost;
     uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
     uniform float uVeil, uZoom;
@@ -3513,9 +3520,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       }
       vec3 c = c0 * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The muzzle flash: a long level blue-white streak.
-      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
+      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5 * uGhost)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
-      if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9)) * uLF.z;
+      if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9 * uGhost)) * uLF.z;
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
       // Contrast: shadows sink and highs lift round a mid grey.
@@ -4387,6 +4394,8 @@ const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
 const muzzleGlow = makeFlare(linFit(0.9, 0.07, 235));
 const hitGlow = makeFlare(linFit(0.85, 0.1, 62));
+// The game over's glow round the falling rock.
+const rockGlobe = makeFlare(linFit(0.88, 0.12, 55));
 // Late bursts inside the cloud, as big pieces break.
 const burstFlares = [0, 1, 2].map(() => makeFlare(linFit(0.88, 0.13, 58)));
 function flare(m, pos, size, gain) {
@@ -7335,7 +7344,8 @@ function updateBolt() {
 // The frame fills white; the toy cuts to its start under the white.
 // The white then burns off fast, and the image springs back.
 const SPIN_T = 1.8, DAYS_MAX = 1.5;
-const FILL_IN = 0.3, FILL_HOLD = 0.1, FILL_OUT = 1.2;
+// The game over's white clears slower: GO_OUT.
+const FILL_IN = 0.3, FILL_HOLD = 0.1, FILL_OUT = 1.2, GO_OUT = 2.0;
 let spin = null, fill = null, cutFlash = 0;
 const fillEl = document.querySelector('.reset-fill');
 // The sky values the shutter blends toward their mean over one day.
@@ -7372,7 +7382,7 @@ function stepFill(dt) {
     const a = t / FILL_IN;
     op = a * a; zoom = 1 + 0.035 * a * a * calm;
   } else {
-    const f = clamp((t - FILL_IN - FILL_HOLD) / FILL_OUT, 0, 1);
+    const f = clamp((t - FILL_IN - FILL_HOLD) / (fill.out || FILL_OUT), 0, 1);
     op = Math.pow(1 - f, 2.4); veil = 0.6 * Math.pow(1 - f, 1.5); zoom = 1 + 0.06 * Math.pow(1 - f, 3) * calm;
     if (f >= 1) { fill = null; op = 0; veil = 0; zoom = 1; }
   }
@@ -7380,14 +7390,14 @@ function stepFill(dt) {
   g.uVeil.value = veil; g.uZoom.value = zoom;
 }
 const wisp0 = U.uWisp.value.clone();
-function resetToy() {
-  // After contact the white already cuts to the start.
-  if (spin || strike?.hit) return;
+// force: the game over runs the same Reset after its white.
+function resetToy(force = false) {
+  if (spin || (strike?.hit && !force)) return;
   stopRumbles();
   cancelHold();
   wake();
   if (reduced()) { fill = { t: 0, calm: true }; return; }
-  spin = { t: 0, H: skyH, m: dayMean(skyH) };
+  spin = { t: 0, H: skyH, m: dayMean(skyH), go: force };
   whoosh();
 }
 // The Reset chip: hidden while a rock lives, glowing after a kill.
@@ -7417,7 +7427,7 @@ function stepSpin(dt) {
   U.uWisp.value.x -= w * dt * 0.5;
   CLOUD_U.uCloudT.value -= w * dt * 0.05;
   // The white fill starts so it is full at SPIN_T; the cut waits for it.
-  if (spin.t >= SPIN_T - FILL_IN && !fill) fill = { t: 0 };
+  if (spin.t >= SPIN_T - FILL_IN && !fill) fill = { t: 0, out: spin.go ? GO_OUT : FILL_OUT };
 }
 // Back to the start: the chosen time, still clouds, a fresh rock high up.
 function landReset() {
@@ -7448,7 +7458,7 @@ function landReset() {
   tgtKind = ui.setting('target').value;
   if (strike) gameOverSound(kit.live(), null);
   strike = null;
-  rockGlowK = 1;
+  rockGlowK = 1; grade.uniforms.uGhost.value = 1; rockGlobe.visible = false;
   // The old hit's clock goes too, so the start is clean.
   U.uHitP.value.w = -1e6;
   respawn();
@@ -7619,7 +7629,7 @@ function startStrike() {
 function endStrike() {
   if (!strike) return;
   strike = null;
-  rockGlowK = 1;
+  rockGlowK = 1; grade.uniforms.uGhost.value = 1; rockGlobe.visible = false;
   gameOverSound(kit.live(), null);
 }
 // The game-over sound: one seam, so another charge mix can take it over.
@@ -7645,7 +7655,9 @@ function strikeSoon() {
 const strikeU = () => clamp((ast.s - 1) / Math.max(strike.s1 - 1, 1e-3), 0, 1);
 const burnT = () => (reduced() ? 1.6 : 1) * BURN_T;
 function stepStrike(dt) {
-  if (!strike || spin) return;
+  if (!strike) return;
+  // During the Reset's rewind the blast light dies away.
+  if (spin) { hitFlash *= Math.exp(-dt / 0.3); U.uHit.value.w = hitFlash; if (blastFx) U.uBlast.value.w = hitFlash; return; }
   const ac = kit.live();
   if (!strike.hit) {
     const u = strikeU();
@@ -7658,7 +7670,9 @@ function stepStrike(dt) {
     // The rock lights the heaps and the tower harder as it comes down.
     rockGlowK = 1 + 5 * u * u;
     // The surge climbs with the rock's nearness to the ground.
-    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
+    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1), crush: 0.3 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
+    // Crackle starts as the rock nears the ground.
+    if (ac && u > 0.85 && rnd() < dt * 20 * (u - 0.85) / 0.15) crackle(ac, 0.3);
     if (ast.s >= strike.s1) strikeHit();
   } else {
     strike.tb += dt;
@@ -7666,9 +7680,12 @@ function stepStrike(dt) {
     // The blast light: a short flash, then it climbs with the burn.
     hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
     // The surge is the impact's sound: it screams through the burn and dies in the white.
-    gameOverSound(ac, { u: 1, vol: 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T), over: 0.6 + 0.4 * b });
-    // The white holds, then Reset's fill takes over and cuts to the start.
-    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; fill = { t: FILL_IN, calm: reduced() }; }
+    const gv = 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T);
+    // The sound crushes as it burns: harder drive, and crackle all through.
+    gameOverSound(ac, { u: 1, vol: gv, over: 0.6 + 0.4 * b, crush: 0.3 + 0.7 * b });
+    if (ac && gv > 0.05 && rnd() < dt * (10 + 40 * b)) crackle(ac, 0.4 + 0.6 * b);
+    // The white holds, then the button's Reset rewinds and cuts to the start.
+    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
   }
   U.uHit.value.w = hitFlash;
   if (blastFx) U.uBlast.value.w = hitFlash;
@@ -7690,19 +7707,33 @@ function strikeHit() {
 // The strike's light, each drawn frame, after the bolt and the blast.
 function updateStrike() {
   if (!strike) return;
+  // After the white, the Reset's rewind shows through as the white clears.
+  // The strike's flares and rays go with the white.
+  if (strike.out) {
+    const k = spin ? 1 - THREE.MathUtils.smoothstep(spin.t, 0, 0.7) : 0;
+    if (spin && !fill) fillEl.style.opacity = k.toFixed(3);
+    for (const v of [grade.uniforms.uLF2.value, grade.uniforms.uLF.value]) v.z *= k;
+    grade.uniforms.uGod.value.z *= k; grade.uniforms.uGod.value.w *= k;
+    hitGlow.visible = hitFlare.visible = rockGlobe.visible = false;
+    return;
+  }
   // The glow stops growing past the Moon: Aerosmith would white the frame early.
   const u = strikeU(), tb = strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = strike.hit;
   const e = x => 1 - Math.exp(-Math.max(x, 0));
+  // A bright globe of glow wraps the rock as it nears the ground.
+  if (!hit) flare(rockGlobe, ast.pos, Rg * (3 + 5 * u), 0.15 * u + 1.6 * Math.pow(u, 3)); else rockGlobe.visible = false;
   // The ground glows under the rock and swells after contact.
   flare(hitGlow, strikeP, Rg * (hit ? 24 + 30 * e(tb / 0.8) : 8 + 16 * u), hit ? 0.7 + 0.8 * e(tb / 0.3) : 0.6 * u * u * u);
   // A white core grows in the last seconds; contact blows it up.
   flare(hitFlare, strikeP, Rg * (hit ? 4 + 6 * e(tb / 0.4) : 1.5 + 2 * u), hit ? 14 * Math.exp(-tb / 0.3) + 4 : 6 * Math.pow(u, 6));
   // The anamorphic flare rides the rock's leading face down to the ground.
-  // It starts at about half way down and grows until contact.
+  // It starts at about a third of the way down and grows until contact.
   if (hit) strikeF.copy(strikeP); else strikeF.copy(ast.pos).setY(ast.pos.y - 0.5 * R);
   strikeF.project(camera);
   const rm = reduced() ? 0.5 : 1, onF = strikeF.z < 1 && Math.abs(strikeF.x) < 1.4 && Math.abs(strikeF.y) < 1.4 && !sight;
-  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(clamp((u - 0.55) / 0.45, 0, 1), 2.2);
+  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(clamp((u - 0.3) / 0.7, 0, 1), 2.2);
+  // No ghosts in the game over: the flare stays one level streak.
+  grade.uniforms.uGhost.value = 0;
   // The level streak carries the flare; the warm veil sits under it.
   grade.uniforms.uLF2.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 1.4 * lf : 0);
   grade.uniforms.uLF.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 0.5 * lf : 0);
@@ -7720,7 +7751,6 @@ function updateStrike() {
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
-const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
 const busy = () => !!sshot || shipBusy() || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
@@ -8322,10 +8352,13 @@ function stackUpdate(ac, h = hum, dv = null) {
 // d.over: the strain, 0.6 at contact, 1 at the end of the burn.
 // Null stops it. A null ac (muted) stops it hard.
 let goSurge = null;
+// The game over's Surge Syl: the organ and the tremolo, no machines.
+SURGE.sylgo = { ...SURGE.syl, mech: [] };
+const SYL_GO = { ...MIX.syl, stack: 'sylgo' };
 function surgeOver(ac, d) {
   if (!d || !ac) { surgeOverStop(!ac); return; }
   if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
-  if (!goSurge) { goSurge = stackStart(ac, MIX[goMix] && MIX[goMix].stack ? MIX[goMix] : MIX.syl); goSurge.ac = ac; }
+  if (!goSurge) { goSurge = stackStart(ac, goMix === 'syl' ? SYL_GO : MIX[goMix] && MIX[goMix].stack ? MIX[goMix] : SYL_GO); goSurge.ac = ac; }
   const ss = THREE.MathUtils.smoothstep;
   // The chord locks at contact and holds through the burn.
   // A live charge keeps the lead; the surge ducks under it.
@@ -8334,6 +8367,8 @@ function surgeOver(ac, d) {
     // The strain sours the chord at half depth, so the chord still reads.
     over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
   });
+  // Crush: the soft clip is driven hard, so the chord breaks up.
+  if (d.crush) goSurge.cg.gain.setTargetAtTime(0.8 + 0.8 * d.u + 1.25 * d.over + 5 * d.crush, ac.currentTime, 0.1);
 }
 // now: a hard stop for mute and a hidden tab; else a two-second fade.
 function surgeOverStop(now = false) {
