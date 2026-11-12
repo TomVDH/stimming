@@ -17,11 +17,14 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] Muzzle: the vapour ring tears and wobbles; two smaller rings run out along the bolt's line
 - [x] Muzzle: the fireball shows fire colour, not a clipped white disc; the smoke lights warm
 - [x] Muzzle brake: a longer round sleeve with four port rings, a taper and a lip
+- [x] Muzzle smoke: thinner, wider, gone by 6 s; the follow-up rings have their own tight volumes (the shot's frame cost is back near the old one)
+- [x] Vent steam: lit as the comet trail is
+- [x] The berm is sand in the plain's colour; the plain swells a few metres, flat round the mount
 - [x] Charge: arcs pick the flank that faces the eye; they step 12 m toward the eye, so the barrel skin never hides them
 - [x] Charge: crown arcs bow up into the sky; corona streamers reach off the brake
 - [x] Charge: coil-stage hoops tried, then removed at Tom's call; the arcs carry the build again
 - [x] Charge: field motes on Galaxy's dot look; CPU orbits round the barrel as a line mass (1/r pull, drag, a pull toward the muzzle); the shot hurls them
-- [x] Charge dust: a spiral inflow; the sheet reaches out to about 1.5 km
+- [x] Charge dust: a spiral inflow; the sheet reaches out to about 1.1 km
 - [x] Impact: two or three late bursts in the cloud (flash, sparks, light flicker, a thud each)
 - [x] Impact: burning fragments rain from the cloud's underside for about 12 s
 - [x] Impact: a heat shimmer column over the fire, strong 8 s, faint to 30 s
@@ -40,7 +43,7 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] GLB export and a nine-view turnaround (docs/railgun-model/, not committed)
 - [ ] Post pass: AO not added (a screen-space pass would need the volumes kept out of its normal pass); FXAA and bloom already on the ladder
 - [ ] Cloud flicker on Tom's Windows PC: not reproduced headless on D3D11; needs a screen grab
-- [ ] Impact frame cost: up from about 5 to 8-19 ms median at 1280 x 800 on an RTX 3070 (runs vary 2x); check on a real device
+- [ ] Frame cost on Tom's PC: headless RTX 3070 at 1280 x 800 shows shot 2.8 / 5.2 ms and impact 5.4 / 11.9 ms (p50 / p90), near the old 1.9 / 4.2 and 4.6 / 12; check live
 - [ ] Stills to Tom; Tom's verdict
 
 ## Notes

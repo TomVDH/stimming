@@ -745,9 +745,16 @@ scene.add(sky);
 
 /* ---------- ground: a dusty plain with low relief ---------- */
 const GROUND_C = linFit(0.52, 0.035, 65);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+// Low swells on the plain: a few metres, kilometres long, flat round the mount.
+const TERRAIN = /* glsl */`
+float terrH(vec2 p) {
+  float k = smoothstep(900.0, 2400.0, length(p - vec2(0.0, 90.0)));
+  return k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021));
+}`;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
   uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
-  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN}
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   uniform vec3 uGroundC;
@@ -757,6 +764,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
   uniform vec2 uGLift;
   ${HEAD}
   ${AIR}
+  ${TERRAIN}
   // Dunes: long rounded crests across the wind, bent by low noise.
   const vec2 WIND = vec2(0.8, 0.6);
   const vec2 WIND2 = vec2(-0.5, 0.86);
@@ -786,6 +794,9 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Mat
     float e = 6.0, h0 = dune(vP.xz, g);
     float A = 14.0 * fade;
     vec3 N = normalize(vec3(-(dune(vP.xz + vec2(e, 0.0), g) - h0) / e * A, 1.0, -(dune(vP.xz + vec2(0.0, e), g) - h0) / e * A));
+    // The swells tilt the plain: their slope joins the dunes' normal.
+    float t0 = terrH(vP.xz);
+    N = normalize(N + vec3(-(terrH(vP.xz + vec2(40.0, 0.0)) - t0) / 40.0, 0.0, -(terrH(vP.xz + vec2(0.0, 40.0)) - t0) / 40.0));
     // Fine wind ripples near the eye, filtered like the dunes.
     float near = smoothstep(1600.0, 200.0, dist) * band(dx, dy, WIND, 0.38);
     float rp = cos(dot(vP.xz, WIND) * 0.38 + 5.0 * k2noise(vP.xz * 0.012)) * 0.05 * near;
@@ -1188,8 +1199,8 @@ function buildGun() {
   const add = (g, level = 0, tone = 0, fixed = 0) => pieces.push(part(level === 0 && fixed !== 2 ? g.translate(0, LIFT, 0) : g, level, tone, fixed));
   const drum = (r0, r1, h, y, n = 72) => new THREE.CylinderGeometry(r0, r1, h, n, 1).translate(0, y, 0);
   // The fixed plinth: a sloped berm, an apron, a parapet, buttresses, a ramp.
-  add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 0, 2);
-  add(drum(BERM_R + 10, BERM_R + 30, 4, 2), 0, 0, 2);
+  // Tone 4 is sand: the berm takes the plain's own colour.
+  add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 4, 2);
   add(drum(440, 456, 22, 11), 0, 0, 1);
   for (let i = 0; i < 12; i++) add(new THREE.BoxGeometry(70, 30, 110).translate(0, 15, 470).rotateY(rad(i * 30 + 15)), 0, 0, 1);
   add(beam(v3(0, LIFT + 3, 470), v3(0, 3, 1460), 46, 6), 0, 0, 2);
@@ -1383,7 +1394,7 @@ const gunMat = new THREE.ShaderMaterial({
   void main() {
     // Exact flat faces from the screen derivatives.
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
-    float yel = step(2.5, vPart.w), dark = step(1.5, vPart.w) - yel, shell = 1.0 - dark, wall = step(abs(N.y), 0.5);
+    float sand = step(3.5, vPart.w), yel = step(2.5, vPart.w) - sand, dark = step(1.5, vPart.w) - step(2.5, vPart.w), shell = 1.0 - dark, wall = step(abs(N.y), 0.5);
     vec3 alb = mix(mix(mix(uShellC, uHullC, vPart.y), uBandC, yel), uDarkC, dark) * (0.92 + 0.16 * vPart.z);
     // Age: broad stains, then rain streaks down the walls.
     alb *= 0.8 + 0.34 * k3fbm(vO * 0.011);
@@ -1401,6 +1412,8 @@ const gunMat = new THREE.ShaderMaterial({
     // Dust buries the feet and lies on every ledge.
     float dust = 0.7 * smoothstep(70.0, 0.0, vO.y) + 0.3 * smoothstep(0.6, 1.0, N.y);
     alb = mix(alb, uGroundC, min(dust, 0.85));
+    // The berm is the plain's sand, with its broad tone patches.
+    alb = mix(alb, uGroundC * (0.94 + 0.12 * k3fbm(vO * 0.0002)) * (1.0 - 0.28 * nightK()), sand);
     // Sky from above, the plain's bounce from below.
     // Faces that look down sit in their own shade.
     float occ = mix(0.55, 1.0, smoothstep(0.0, 120.0, vO.y)) * mix(0.5, 1.0, smoothstep(-0.6, 0.2, N.y));
@@ -3826,7 +3839,7 @@ float dens(vec3 p, out vec3 em) {
   // Cheap shape terms first; texture reads only where dust can be.
   float band = smoothstep(420.0, 520.0, r) * (1.0 - smoothstep(470.0 + 0.6 * uDu.y, 470.0 + uDu.y, r));
   // The inflow sheet reaches far out over the plain as the charge builds.
-  float sheet = smoothstep(480.0, 600.0, r) * (1.0 - smoothstep(470.0 + 1.6 * uDu.y, 470.0 + 2.4 * uDu.y, r)) * exp(-p.y / 10.0);
+  float sheet = smoothstep(480.0, 600.0, r) * (1.0 - smoothstep(470.0 + 1.1 * uDu.y, 470.0 + 1.6 * uDu.y, r)) * exp(-p.y / 10.0);
   float cov = 0.0;
   // Each beat throws a low ring of dust outward.
   for (int i = 0; i < 4; i++) {
@@ -3918,7 +3931,7 @@ function updateChargeDust(dt) {
   // A tighter, lower ring: the gun stays the subject.
   u.uDu.value.set(cdust, 120 + 380 * cdust, 18 + 60 * cdust + 50 * rage, simT);
   const sp = u.uDu.value.y;
-  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 2.4 * sp + (blow ? 420 : 0) + 40;
+  u.uC.value.set(0, 0, 0); u.uR.value = 470 + 1.6 * sp + (blow ? 420 : 0) + 40;
   // Fewer steps than shot dust: the ring is thick and soft.
   // More steps over a smaller ring: less grain at the same cost.
   u.uVSteps.value = Math.round(dustSteps() * 0.85);
@@ -4023,10 +4036,7 @@ function updateCaseDust() {
 // Muzzle blast: a white vapour ring that bursts square to the bore,
 // a short fireball, and a lobed smoke burst that coasts out and drifts.
 // uMs: muzzle place, age. uMx: bore axis, power.
-const muzzleSmoke = makeVol(/* glsl */`
-uniform vec4 uMs, uMx;
-uniform vec3 uSmC, uVapC;
-vec3 msCentre() { float a = uMs.w; return uMs.xyz + uMx.xyz * 360.0 * (1.0 - exp(-a / 0.6)) + vec3(6.0, 5.0, 2.0) * a; }
+const VRING = /* glsl */`
 // One vapour ring: born at delay d, scale s of the first.
 // It starts off metres ahead and runs a further run metres down the bore.
 float vring(vec3 p, float d, float s, float off, float run, float seed) {
@@ -4049,13 +4059,17 @@ float vring(vec3 p, float d, float s, float off, float run, float seed) {
   return exp(-pow((rr - Rv * wob) / tw, 2.0)) * exp(-pow(x / (0.8 * tw), 2.0)) * exp(-age / 0.55)
     * smoothstep(0.0, 0.05, age) * (0.08 + 0.92 * tear);
 }
-// The first ring, then two smaller ones that run on out along the bolt's line.
-float vapour(vec3 p) {
-  return max(vring(p, 0.0, 1.0, 0.0, 0.0, 0.0), max(0.8 * vring(p, 0.14, 0.5, 260.0, 420.0, 0.37), 0.65 * vring(p, 0.28, 0.32, 520.0, 700.0, 0.71)));
-}
+`;
+const muzzleSmoke = makeVol(/* glsl */`
+uniform vec4 uMs, uMx;
+uniform vec3 uSmC, uVapC;
+${VRING}
+vec3 msCentre() { float a = uMs.w; return uMs.xyz + uMx.xyz * 360.0 * (1.0 - exp(-a / 0.6)) + vec3(6.0, 5.0, 2.0) * a; }
+// The first ring; the smaller ones that follow have their own tight volumes.
+float vapour(vec3 p) { return vring(p, 0.0, 1.0, 0.0, 0.0, 0.0); }
 float dens(vec3 p, out vec3 em) {
   em = vec3(0.0);
-  float age = uMs.w, R = 45.0 + 190.0 * sqrt(age);
+  float age = uMs.w, R = 60.0 + 240.0 * sqrt(age);
   vec3 q = p - msCentre();
   float x = dot(q, uMx.xyz);
   vec3 rq = q - uMx.xyz * x;
@@ -4063,7 +4077,7 @@ float dens(vec3 p, out vec3 em) {
   float ring = exp(-pow((length(rq) - 0.55 * R) / (0.42 * R), 2.0)) * exp(-pow(x / (0.6 * R), 2.0));
   float core = exp(-dot(q, q) / (R * R * 0.5));
   // The core starts as fire and turns to smoke; it is thin for the first breath.
-  float smoke = max(ring, 0.85 * core) * exp(-age / 3.0) * (0.35 + 0.65 * smoothstep(0.05, 0.4, age));
+  float smoke = max(ring, 0.85 * core) * exp(-age / 1.8) * (0.35 + 0.65 * smoothstep(0.05, 0.4, age));
   float vap = vapour(p) * 1.1;
   float cov = max(smoke, vap) * uMx.w;
   if (cov < 0.004) return 0.0;
@@ -4082,7 +4096,8 @@ float dens(vec3 p, out vec3 em) {
   float cell = 0.45 + 0.55 * texture(uVol, w * 2.2 + vec3(age * 0.3)).r;
   // About two units through the ball: fire colour, not a clipped white disc.
   em = bb * d * cell * uMx.w * (2.5 + 10.0 * tk) * hot / R;
-  return d * 2.2 / R;
+  // Thin smoke: it spreads wide and lets the sky through.
+  return d * 1.3 / R;
 }
 // Vapour is white; smoke is a warm grey.
 vec3 alb(vec3 p) { return mix(uSmC, uVapC, smoothstep(0.05, 0.4, vapour(p))); }
@@ -4094,18 +4109,54 @@ vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(1.0, 0.72, 0.48) * uMu
 let muzzleFx = null;
 const msC = new THREE.Vector3();
 function updateMuzzleSmoke() {
-  const age = muzzleFx ? simT - muzzleFx.t0 : 99, on = age < 9 && !reduced();
+  const age = muzzleFx ? simT - muzzleFx.t0 : 99, on = age < 6 && !reduced();
   muzzleSmoke.visible = on;
+  updateRingVols(age, on);
   if (!on) return;
-  const u = muzzleSmoke.material.uniforms, f = muzzleFx, R = 45 + 190 * Math.sqrt(age);
+  const u = muzzleSmoke.material.uniforms, f = muzzleFx, R = 60 + 240 * Math.sqrt(age);
   u.uMs.value.set(f.P.x, f.P.y, f.P.z, age);
   u.uMx.value.set(f.ax.x, f.ax.y, f.ax.z, f.k);
   msC.copy(f.P).addScaledVector(f.ax, 360 * (1 - Math.exp(-age / 0.6))).add(bq.set(6, 5, 2).multiplyScalar(age));
   // The bound holds both the smoke and the vapour ring at the muzzle.
   const Rv = 30 + 560 * (1 - Math.exp(-age / 0.28)), vOn = age < 3;
-  // The follow-up rings ride up to 1.2 km further out.
-  u.uC.value.copy(msC); u.uR.value = Math.max(1.4 * R + 30, vOn ? msC.distanceTo(f.P) + Rv * 1.35 + 1250 : 0);
-  u.uVSteps.value = volSteps(); u.uLSteps.value = volLSteps(); u.uLs.value = 0.15 * R;
+  u.uC.value.copy(msC); u.uR.value = Math.max(1.4 * R + 30, vOn ? msC.distanceTo(f.P) + Rv * 1.35 + 60 : 0);
+  // Once the fire is out, thin smoke needs fewer steps.
+  const late = age > 1.2;
+  u.uVSteps.value = late ? Math.max(8, Math.round(volSteps() * 0.55)) : volSteps(); u.uLSteps.value = late ? 1 : volLSteps(); u.uLs.value = 0.15 * R;
+}
+// The two follow-up rings: each its own small volume on a tight bound.
+// d: delay, s: scale, off: start ahead, run: further run, g: strength.
+const RINGS = [{ d: 0.14, s: 0.5, off: 260, run: 420, seed: 0.37, g: 0.8 }, { d: 0.28, s: 0.32, off: 520, run: 700, seed: 0.71, g: 0.65 }];
+const ringVols = RINGS.map(r => makeVol(/* glsl */`
+uniform vec4 uMs, uMx;
+uniform vec3 uVapC;
+${VRING}
+float dens(vec3 p, out vec3 em) {
+  em = vec3(0.0);
+  float v = vring(p, ${r.d.toFixed(2)}, ${r.s.toFixed(2)}, ${r.off.toFixed(1)}, ${r.run.toFixed(1)}, ${r.seed.toFixed(2)}) * ${r.g.toFixed(2)} * uMx.w;
+  if (v < 0.004) return 0.0;
+  vec3 w = p * 0.006 + vec3(0.0, -uMs.w * 0.05, 0.0);
+  float d = clamp((dustN(w) - (1.0 - min(v, 1.0))) * 2.4, 0.0, 1.0);
+  return d * 0.03;
+}
+vec3 alb(vec3 p) { return uVapC; }
+vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(1.0, 0.72, 0.48) * uMuzL.w * 3.5e4 / (dot(m, m) + 3.5e4) + blastLight(p); }`, {
+  uMs: { value: new THREE.Vector4() }, uMx: { value: new THREE.Vector4() }, uVapC: { value: new THREE.Vector3(...linFit(0.96, 0.006, 240)) },
+}));
+function updateRingVols(age, on) {
+  RINGS.forEach((r, i) => {
+    const m = ringVols[i], a = age - r.d, live = on && a > 0 && a < 2.5;
+    m.visible = live;
+    if (!live) return;
+    const u = m.material.uniforms, f = muzzleFx;
+    u.uMs.value.set(f.P.x, f.P.y, f.P.z, age);
+    u.uMx.value.set(f.ax.x, f.ax.y, f.ax.z, f.k);
+    const Rv = (30 + 560 * (1 - Math.exp(-a / 0.28))) * r.s, tv = (22 + 0.16 * Rv) * (1 + r.s) / 2;
+    const off = 0.12 * Rv + r.off + r.run * (1 - Math.exp(-a / 0.6));
+    u.uC.value.copy(f.P).addScaledVector(f.ax, off);
+    u.uR.value = Rv * 1.2 + 2 * tv;
+    u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 1; u.uLs.value = 20;
+  });
 }
 /* ---------- field motes: dust that falls into orbit round the barrel ---------- */
 // The charged barrel pulls like a line mass: a 1/r force toward its axis.
@@ -4220,8 +4271,8 @@ function flingMotes() {
 /* ---------- breech vents: a ripple of side jets, then the flap opens ---------- */
 // Each jet: uVj = place, birth time. uVd = heading, strength.
 const VJ = VENTS.length * 2;
+// Lit as the comet trail is: a short march toward the sun, two-lobe phase.
 const ventJets = makeVol(/* glsl */`
-#define VSHADE
 uniform vec4 uVj[${VJ}], uVd[${VJ}];
 uniform vec3 uSteamC;
 uniform float uTime;
@@ -4251,10 +4302,7 @@ float dens(vec3 p, out vec3 em) {
   return d * 0.06;
 }
 vec3 alb(vec3 p) { return uSteamC; }
-// Thin steam shades itself in closed form: no march toward the sun.
-float vshade(vec3 p, float d) { return clamp(d * 70.0 / max(uSun.y, 0.15), 0.0, 4.0); }
-// Sky light keeps the jets white in the gun's own shadow.
-vec3 vlight(vec3 p) { return mix(uHorC, uZenC, 0.5) * 0.45 + blastLight(p); }`, {
+vec3 vlight(vec3 p) { return blastLight(p); }`, {
   uVj: { value: Array.from({ length: VJ }, () => new THREE.Vector4(0, 0, 0, -1e9)) },
   uVd: { value: Array.from({ length: VJ }, () => new THREE.Vector4()) },
   uSteamC: { value: new THREE.Vector3(...linFit(0.9, 0.008, 240)) },
@@ -4285,7 +4333,7 @@ function updateVents() {
   const u = ventJets.material.uniforms;
   barrelPt(-275, 0, 50, u.uC.value);
   u.uR.value = 360;
-  u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 1; u.uLs.value = 20;
+  u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 2; u.uLs.value = 12;
 }
 // The flap: a heavy latch clank, then the swing's dull knock.
 function flapSound() {
