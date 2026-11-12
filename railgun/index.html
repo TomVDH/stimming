@@ -1815,9 +1815,9 @@ function retune() { astSize(); placeAst(); draw(); }
 // Hull units are HULL's metres.
 // Each hulk merges its boxes into one mesh, pivoted at its centre.
 const SHIP_DIST = 150000;
-// Tom asks for a larger ship: it draws at 2.3 times HULL.
+// Tom asks for a larger ship: it draws at 1.2 times HULL, 5 degrees.
 // The hull frame keeps HULL's units, so the joints still match.
-const SHIP_SCALE = 2.3;
+const SHIP_SCALE = 1.2;
 // The station sits on the rock's hold bearing, high in orbit.
 const SHIP_EL = rad(36);
 // The orbit climbs 8 degrees to the left through the station.
@@ -2043,6 +2043,7 @@ function newShip(head = SHIP_HEAD) {
 function shipOff() { for (const m of shipMeshes) m.visible = false; }
 // The hull's angular length from the eye, in degrees.
 function shipTh() {
+  if (tgtKind !== 'ship') return 0;
   shipE0.copy(shipP).addScaledVector(shipF, HULL.len * SHIP_SCALE / 2).sub(camera.position);
   shipE1.copy(shipP).addScaledVector(shipF, -HULL.len * SHIP_SCALE / 2).sub(camera.position);
   return THREE.MathUtils.radToDeg(shipE0.angleTo(shipE1));
@@ -3030,8 +3031,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uSightA: { value: new THREE.Vector3() },
       // The rangefinder: range in metres, the split prism's offset, the charge.
       uSightR: { value: new THREE.Vector3() },
-      // The range scale, drawn once.
-      tScale: { value: null },
+      // The range scale, and its length and half window in km.
+      tScale: { value: null }, uScaleK: { value: new THREE.Vector2(80, 6) },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
@@ -3047,6 +3048,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec3 uSightA;
     uniform vec3 uSightR;
     uniform sampler2D tScale;
+    uniform vec2 uScaleK;
     uniform vec4 uShk0, uShk1, uHzA, uHtA;
     uniform vec3 uHzK;
     varying vec2 vUv;
@@ -3178,8 +3180,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
         float ys = -0.335, sw = 0.15, sh = 0.022;
         vec2 sp = p - vec2(0.0, ys);
         float inS = step(abs(sp.x), sw) * step(abs(sp.y), sh);
-        float km = uSightR.x * 0.001 + sp.x / sw * 6.0;
-        float ink = texture2D(tScale, vec2(km / 80.0, sp.y / (2.0 * sh) + 0.5)).a;
+        float km = uSightR.x * 0.001 + sp.x / sw * uScaleK.y;
+        float ink = texture2D(tScale, vec2(km / uScaleK.x, sp.y / (2.0 * sh) + 0.5)).a;
         vec3 strip = vec3(0.62, 0.52, 0.34) * 0.32 * (1.0 - 0.5 * smoothstep(0.6, 1.0, abs(sp.x) / sw)) * (1.0 - 0.9 * ink);
         float frame = 1.0 - smoothstep(0.6 * px, 1.6 * px, abs(max(abs(sp.x) - sw, abs(sp.y) - sh)));
         // The index: a small black pointer over the strip's centre.
@@ -3326,26 +3328,36 @@ function sightMark() {
   sightRng.d += (D - sightRng.d) * (1 - Math.exp(-dt / 0.45));
   r.set(sightRng.d, clamp((D - sightRng.d) / Math.max(D, 1) * 0.12, -0.05, 0.05), U.uCharge.value);
 }
-// The scale: ticks per half kilometre, a number per five, black on clear.
-function makeScale() {
+// The scale: len km long, a tick per step km, a number every ten ticks.
+// Black on clear.
+function makeScale(len, step) {
   const c = document.createElement('canvas'), x = c.getContext('2d');
   c.width = 4096; c.height = 64;
-  const s = c.width / 80;
+  const s = c.width / len;
   x.fillStyle = x.strokeStyle = '#000';
   x.font = '600 22px "Arial Narrow", Arial, sans-serif';
   x.textAlign = 'center';
-  for (let k = 0; k <= 160; k++) {
-    const X = k * 0.5 * s, big = k % 10 === 0, mid = k % 2 === 0;
+  for (let k = 0; k <= len / step; k++) {
+    const X = k * step * s, big = k % 10 === 0, mid = k % 2 === 0;
     x.lineWidth = big ? 2.4 : 1.6;
     x.beginPath(); x.moveTo(X, 64); x.lineTo(X, big ? 34 : mid ? 44 : 52); x.stroke();
-    if (big) x.fillText(String(k / 2), X, 26);
+    if (big) x.fillText(String(k * step), X, 26);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.NoColorSpace;
   t.anisotropy = 4;
   return t;
 }
-grade.uniforms.tScale.value = makeScale();
+// The rock's scale runs to 80 km; the ship's runs to 250 km.
+// The ranging overshoot starts at 1.35 times the ship's range.
+// The ship's strip shows four times the span, with the same tick count.
+const SCALES = { rock: [makeScale(80, 0.5), 80, 6], ship: [makeScale(250, 2), 250, 24] };
+grade.uniforms.tScale.value = SCALES.rock[0];
+function setScale() {
+  const [t, len, half] = SCALES[tgtKind];
+  grade.uniforms.tScale.value = t;
+  grade.uniforms.uScaleK.value.set(len, half);
+}
 // A critically damped spring: the lens moves heavy and smooth.
 const lookV = { yaw: 0, pitch: 0 };
 function easeLook(dt) {
@@ -5641,7 +5653,7 @@ function boltAt(t, out) {
   const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 1.6);
   return out.lerpVectors(shot.muzzle, shot.target, u);
 }
-// The live target: the stored choice lands at Reset.
+// The live target: the stored choice lands at load and at Reset.
 let tgtKind = 'rock';
 // Where the target is now.
 function tgtPos(out) {
@@ -5867,7 +5879,13 @@ function stepTraverse(dt) {
   manual.hold += dt;
   const ramp = THREE.MathUtils.smoothstep(manual.hold, 0, 4);
   manual.yaw += Math.sign(y) * rad(1.5 + 13.5 * ramp) * dt;
-  manual.elev = clamp(manual.elev + Math.sign(e) * rad(1 + 5 * ramp) * dt, rad(2), rad(35));
+  manual.elev = clamp(manual.elev + Math.sign(e) * rad(1 + 5 * ramp) * dt, rad(2), rad(tgtKind === 'ship' ? 50 : 35));
+}
+// In ship mode the gun rests laid on the ship, once it is up.
+function shipLaid() {
+  if (tgtKind !== 'ship') return false;
+  if (ship.state === 'station' || ship.state === 'wounded') return true;
+  return ship.state === 'arrive' && shipAt(simT, tgtP).y > A0.y;
 }
 // The parked aim: straight down the causeway, eight degrees up.
 const PARK = new THREE.Vector3(0, Math.sin(rad(8)), -Math.cos(rad(8)));
@@ -5881,6 +5899,7 @@ function stepAim(dt, snap = false) {
   const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
   else if (charge && (tgtKind !== 'rock' || ast.state !== 'shatter')) tgtLead(9.7, aimP).sub(A0);
+  else if (shipLaid()) tgtLead(9.7, aimP).sub(A0);
   else aimP.copy(PARK);
   // The short way round: the mount turns a full circle.
   let dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw;
@@ -6226,6 +6245,7 @@ function landReset() {
   placeAst();
   // A ship takes the rock's place in the sky.
   if (tgtKind === 'ship') newShip(); else shipOff();
+  setScale();
   stepAim(0, true);
   if (tgtKind === 'rock') prewarmEmbers();
 }
@@ -6250,7 +6270,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6968,6 +6988,7 @@ astSize();
 // A stored Target applies at load too.
 tgtKind = ui.setting('target').value;
 if (tgtKind === 'ship') newShip();
+setScale();
 stepAim(0, true);
 if (tgtKind === 'rock') prewarmEmbers();
 setBox(ui.setting('letterbox').value);
