@@ -57,6 +57,11 @@
   .group .tag { color: var(--muted); font-size: 12px; margin: 0 2px 0 4px; }
   .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .frame svg text { font-family: var(--sans); }
+  /* The negative layer inverts the picture under each symbol. */
+  #ovn { mix-blend-mode: difference; }
+  /* A wide soft band under a firm line: each symbol burns a negative into the picture. */
+  #ovn .nbl * { stroke-width: 5px; }
+  #ovn .nln * { stroke-width: 1.8px; }
   .frame svg .slab { font-family: var(--slab); }
   .note { max-width: 860px; margin: 14px auto 0; color: var(--muted); }
   .note h2 { margin: 0 0 4px; color: var(--fg); font-size: 15px; font-weight: 700; }
@@ -81,7 +86,7 @@
   <div class="group" id="views" role="group" aria-label="Screen"></div>
   <div class="group"><button id="anim" aria-pressed="true">Motion</button></div>
 </header>
-<div class="wrap" id="wrap"><div class="frame" id="frame"><img id="bg" alt=""><canvas id="nv" hidden></canvas><svg id="ov" aria-hidden="true"></svg></div></div>
+<div class="wrap" id="wrap"><div class="frame" id="frame"><img id="bg" alt=""><canvas id="nv" hidden></canvas><svg id="ovn" aria-hidden="true"></svg><svg id="ov" aria-hidden="true"></svg></div></div>
 <div class="note" id="note"></div>
 
 <script type="module">
@@ -480,7 +485,8 @@ function firecontrol(s) {
   const ink = 'oklch(0.97 0.006 250)', dim = 'oklch(0.97 0.006 250 / 0.62)', alert = 'oklch(0.86 0.15 80)';
   const fs = 12 * k, lh = fs * 1.42, pad = 18 * k;
   const n1 = v => v.toFixed(1), n2 = v => v.toFixed(2), sg = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
-  let o = '';
+  // Symbols go to the negative layer; words stay on the plain one.
+  let o = '', n = '';
   // Angle scale: ticks every 10 mrad on the frame's edges, labels every 100.
   const mr = q.fpx / 1000;
   let tk = '', lb = '';
@@ -490,30 +496,30 @@ function firecontrol(s) {
     if (y > 6 && y < H - 6) tk += `M${P(0, y)}h${L}M${P(W, y)}h${-L}`;
     if (i && i % 100 === 0 && x > 30 && x < W - 30) lb += `<text class="slab" x="${x}" y="${22 * k}" font-size="${fs * 0.75}" fill="${dim}" text-anchor="middle">${Math.abs(i)}</text>`;
   }
-  o += `<path d="${tk}" stroke="${dim}" stroke-width="1"/>` + (phone ? '' : lb);
+  n += `<path d="${tk}" stroke="${ink}" stroke-width="1" opacity="0.85"/>` + (phone ? '' : lb);
   // Boresight: the gun line, a cross with an open centre.
   const g = 6 * k, a = 22 * k;
-  o += `<path d="M${P(bore.x - a, bore.y)}H${bore.x - g}M${P(bore.x + g, bore.y)}H${bore.x + a}M${P(bore.x, bore.y - a)}V${bore.y - g}M${P(bore.x, bore.y + g)}V${bore.y + a}" stroke="${ink}" stroke-width="1.3"/>`;
+  n += `<path d="M${P(bore.x - a, bore.y)}H${bore.x - g}M${P(bore.x + g, bore.y)}H${bore.x + a}M${P(bore.x, bore.y - a)}V${bore.y - g}M${P(bore.x, bore.y + g)}V${bore.y + a}" stroke="${ink}" stroke-width="1.3"/>`;
   if (s.live) {
     // Track gate: corners round the target, sized from its angular diameter.
     const hw = rock.r + 10 * k, L = 10 * k;
     let gt = '';
     for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const x = rock.x + sx * hw, y = rock.y + sy * hw; gt += `M${P(x, y - sy * L)}L${P(x, y)}L${P(x - sx * L, y)}`; }
-    o += `<path d="${gt}" fill="none" stroke="${ink}" stroke-width="1.3"/>`;
+    n += `<path d="${gt}" fill="none" stroke="${ink}" stroke-width="1.3"/>`;
     const tx = rock.x + hw + 6 * k, flip = tx > W - 120 * k, ta = flip ? 'end' : 'start', tX = flip ? rock.x - hw - 6 * k : tx;
     o += `<text class="slab" x="${tX}" y="${rock.y - hw + fs * 0.8}" font-size="${fs}" fill="${ink}" text-anchor="${ta}">T-0417</text>`;
     o += `<text class="slab" x="${tX}" y="${rock.y - hw + fs * 0.8 + lh}" font-size="${fs * 0.9}" fill="${ink}" text-anchor="${ta}">${n2(q.D / 1000)} KM</text>`;
     // Velocity leader: where the target will be after one time of flight.
     if (!s.fired) {
-      o += `<path d="M${P(rock.x, rock.y)}L${P(q.pip.x, q.pip.y)}" stroke="${ink}" stroke-width="1" stroke-dasharray="5 4" opacity="0.85"/>`;
+      n += `<path d="M${P(rock.x, rock.y)}L${P(q.pip.x, q.pip.y)}" stroke="${ink}" stroke-width="1" stroke-dasharray="5 4" opacity="0.85"/>`;
       // The intercept point: a small diamond; on the boresight, the gun is laid.
       const d = 7 * k;
-      o += `<path d="M${P(q.pip.x, q.pip.y - d)}L${P(q.pip.x + d, q.pip.y)}L${P(q.pip.x, q.pip.y + d)}L${P(q.pip.x - d, q.pip.y)}Z" fill="none" stroke="${s.lvl >= 1 ? alert : ink}" stroke-width="1.4"/>`;
+      n += `<path d="M${P(q.pip.x, q.pip.y - d)}L${P(q.pip.x + d, q.pip.y)}L${P(q.pip.x, q.pip.y + d)}L${P(q.pip.x - d, q.pip.y)}Z" fill="none" stroke="${s.lvl >= 1 ? alert : ink}" stroke-width="1.4"/>`;
       o += `<text class="slab" x="${q.pip.x - 11 * k}" y="${q.pip.y + 4}" font-size="${fs * 0.85}" fill="${dim}" text-anchor="end">PIP</text>`;
     }
   } else {
     // Intercept: a circle of the target radius where the target was.
-    o += `<circle cx="${rock.x}" cy="${rock.y}" r="${rock.r}" fill="none" stroke="${ink}" stroke-width="1" stroke-dasharray="3 4"/>`;
+    n += `<circle cx="${rock.x}" cy="${rock.y}" r="${rock.r}" fill="none" stroke="${ink}" stroke-width="1" stroke-dasharray="3 4"/>`;
     o += `<text class="slab" x="${rock.x + rock.r + 8 * k}" y="${rock.y + 4}" font-size="${fs}" fill="${ink}">T-0417</text>`;
   }
   // Data blocks: monospace rows, left or right aligned to the frame.
@@ -569,10 +575,88 @@ function firecontrol(s) {
     o += bar(pad, H - pad - 4, W - 2 * pad);
     o += `<text class="slab" x="${W / 2}" y="${H * 0.69}" font-size="${fs * 1.2}" font-weight="700" fill="${status[1]}" text-anchor="middle" letter-spacing="0.06em">${status[0]}</text>`;
   }
-  return `<g style="filter: drop-shadow(0 0 1px oklch(0.08 0.01 250 / 0.95)) drop-shadow(0 0 3px oklch(0.08 0.01 250 / 0.5))">${o}</g>`;
+  return { key: n, pos: `<g style="filter: drop-shadow(0 0 1px oklch(0.08 0.01 250 / 0.95)) drop-shadow(0 0 3px oklch(0.08 0.01 250 / 0.5))">${o}</g>` };
+}
+
+// Monolith: few marks, slender and tall, burnt into the picture as negatives.
+// Words are rare, light and wide; the numbers stay true to the toy.
+function monolith(s) {
+  const { W, H, phone, rock, bore, t } = s, k = phone ? 0.8 : 1, q = solution(s);
+  const ln = (d, w = 1.2) => `<path d="${d}" fill="none" stroke="#fff" stroke-width="${w * k}"/>`;
+  const box = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w}" height="${Math.max(h, 0)}" ${fill ? 'fill="#fff" stroke="none"' : 'fill="none" stroke="#fff" stroke-width="1.1"'}/>`;
+  let key = '', txt = '';
+  // The gun's horizon: one hairline across the frame, open round the bore.
+  const gap = 48 * k;
+  key += ln(`M0,${bore.y}H${bore.x - gap}M${bore.x + gap},${bore.y}H${W}`, 1);
+  // The monolith on the bore: two slender blocks round the aim gap.
+  // The lower block fills with the charge; at full both stand solid.
+  const mw = 8 * k, mh = 112 * k, g2 = 13 * k, mx = bore.x - mw / 2;
+  const up = bore.y - g2 - mh, lo = bore.y + g2;
+  key += box(mx, up, mw, mh) + box(mx, lo, mw, mh);
+  if (!s.fired && !s.hit) {
+    if (s.lvl > 0) key += box(mx, lo + mh * (1 - Math.min(s.lvl, 1)), mw, mh * Math.min(s.lvl, 1), true);
+    if (s.lvl >= 1) key += box(mx, up, mw, mh, true);
+  }
+  // Ten steps a second: the key redraws no faster.
+  const ph = (Math.floor(t * 10) / 10) % 1;
+  if (s.live) {
+    // Two obelisks stand either side of the rock, the height of its disc.
+    const hgt = rock.r * 1.25 + 12 * k;
+    for (const sx of [-1, 1]) {
+      const x = rock.x + sx * (rock.r + 17 * k), tp = rock.y - hgt, bt = rock.y + hgt;
+      key += `<path d="M${P(x - 2.2 * k, bt)}L${P(x - 1.2 * k, tp + 9 * k)}L${P(x, tp)}L${P(x + 1.2 * k, tp + 9 * k)}L${P(x + 2.2 * k, bt)}Z" fill="#fff" stroke="none"/>`;
+    }
+    if (!s.fired) {
+      // The lead: beads drift from the rock to the intercept point.
+      const dx = q.pip.x - rock.x, dy = q.pip.y - rock.y, d = Math.hypot(dx, dy) || 1;
+      const n = 6, a0 = (rock.r * 0.6) / d;
+      for (let i = 0; i < n; i++) {
+        const u = a0 + (1 - a0) * ((i + ph) / n);
+        if (u < 0.96) key += `<circle cx="${rock.x + dx * u}" cy="${rock.y + dy * u}" r="${2 * k}" fill="#fff" stroke="none"/>`;
+      }
+      key += `<circle cx="${q.pip.x}" cy="${q.pip.y}" r="${6 * k}" fill="none" stroke="#fff" stroke-width="1.2"/>`;
+    } else {
+      // In flight: beads climb the bolt's path from the bore to the rock.
+      const dx = rock.x - bore.x, dy = rock.y - bore.y;
+      for (let i = 0; i < 9; i++) { const u = (i + ph) / 9; key += `<circle cx="${bore.x + dx * u}" cy="${bore.y + dy * u}" r="${(1.4 + 1.2 * u) * k}" fill="#fff" stroke="none"/>`; }
+    }
+  } else {
+    // Struck: a ring broken into six arcs, where the rock was.
+    let arcs = '';
+    const R = rock.r + 22 * k;
+    for (let i = 0; i < 6; i++) {
+      const a0 = (i / 6) * Math.PI * 2 + 0.2, a1 = a0 + Math.PI * 2 / 6 - 0.32;
+      arcs += `M${P(rock.x + Math.cos(a0) * R, rock.y + Math.sin(a0) * R)}A${R},${R} 0 0 1 ${P(rock.x + Math.cos(a1) * R, rock.y + Math.sin(a1) * R)}`;
+    }
+    key += ln(arcs, 1.6);
+  }
+  // Words: light weight, very wide, never more than two short lines in one place.
+  // Words go into the key too: the shader burns them in like the marks.
+  const words = [];
+  const T = (x, y, str, size, anchor = 'middle', ls = 0.45, w = 300) => { words.push({ x, y, str, size: size * k, anchor, ls, w }); return ''; };
+  const sp = v => Math.round(v);
+  if (s.live) {
+    const right = phone ? false : rock.x >= bore.x, an = phone ? 'middle' : right ? 'start' : 'end';
+    const x = phone ? clamp(rock.x, 90, W - 90) : rock.x + (right ? 1 : -1) * (rock.r + 36 * k);
+    const y = phone ? rock.y - rock.r * 1.25 - 46 * k : rock.y + 2;
+    txt += T(x, y, (q.D / 1000).toFixed(2), 34, an, 0.1, 250);
+    txt += T(x, y + 22 * k, s.fired ? 'KM' : `KM  ·  −${sp(Math.abs(q.rdot))} M/S`, 11, an, 0.5, 500);
+  } else {
+    txt += T(rock.x, rock.y - rock.r - 40 * k, `${(q.D / 1000).toFixed(2)} KM`, 12, 'middle', 0.5, 500);
+  }
+  // The aim error rides with the intercept ring, in milliradians.
+  if (s.live && !s.fired && s.state !== 'tracking') txt += T(q.pip.x, q.pip.y - 14 * k, `${q.lay.toFixed(0)}`, 10, 'middle', 0.3, 500);
+  // Under the monolith: one word for the gun.
+  const word = { tracking: 'HOLD', charging: `${Math.round(Math.min(s.lvl, 1) * 100)}`, full: 'RELEASE', fired: s.left.toFixed(1), hit: 'STRUCK' }[s.state];
+  const big = s.state === 'charging' || s.fired;
+  txt += T(bore.x, lo + mh + (big ? 34 : 28) * k, word, big ? 22 : 12, 'middle', big ? 0.12 : 0.6, big ? 400 : 500);
+  return { key, words };
 }
 
 const DIRS = [
+  { id: 'monolith', name: 'Monolith', draw: monolith, title: 'Monolith: few marks, burnt in as negatives',
+    idea: 'Dune-inspired, not military. Slender, tall marks stand in a quiet field; nothing boxes the picture in. Every mark is burnt into the tube\'s picture as a negative: a soft inverted band, and a core that takes the far extreme of the light round it, so it reads on night and on grey dusk alike. Words are few, light and wide. The numbers are the toy\'s own.',
+    reads: [['Rock', 'two obelisks stand either side of it, the height of its disc'], ['Range, closing', 'the range in light figures beside the rock; closing speed under it'], ['Charge', 'the monolith\'s lower block fills; at full both blocks stand solid; the figure under it counts'], ['Aim error', 'beads drift from the rock to the intercept ring; the ring on the monolith\'s gap means laid; the mrad figure rides the ring'], ['Shot', 'the monolith empties, beads climb to the rock, the seconds count down; then twelve rays and STRUCK']] },
   { id: 'fc', name: 'Fire control', draw: firecontrol, title: 'Fire control: an EO fire-control display',
     idea: 'What a planetside defence gun would really put in front of its gunner. The picture is the gun\'s electro-optical sight through an image intensifier with a white P45 phosphor: the NVG toy\'s tube, used whole. The symbols are the classic set: boresight, track gate, velocity leader, predicted intercept point (PIP). Four data blocks hold the track, the sensor, the firing solution and the gun. Every number comes from the toy\'s own geometry at the still. Slug mass (400 kg) and bank efficiency (0.32) are design constants.',
     reads: [['Rock', 'track gate sized to its angular diameter; tag T-0417 with its range'], ['Range, closing', 'RNG from the laser range finder; Ṙ is the range rate, V the true speed, ω the angular rate'], ['Charge', 'BANK in GJ with a bar; MV and TOF follow the charge in hand'], ['Aim error', 'LAY ERR in mrad, split AZ and EL; the leader ends at the PIP, and the PIP on the boresight means laid; predicted MISS against the target radius'], ['Shot', 'SHOT AWAY with the time to impact; INTERCEPT with KE in GJ and t TNT, and the fragments tracked']] },
@@ -617,7 +701,96 @@ function nvSetup() {
   nv.tube.mGain.uniforms.uGmax.value = 0.022 * Math.pow(14, 0.55);
   const ou = nv.tube.mOut.uniforms;
   ou.uPhos.value = 1; ou.uPupil.value.set(0, -0.06); ou.uFlick.value = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
+  // Tom (2026-11-12): no chromatic aberration. This page zeroes the lateral colour split.
+  const fs0 = nv.tube.mOut.fragmentShader;
+  nv.tube.mOut.fragmentShader = fs0.replace('float ca = 0.006 * d * d;', 'float ca = 0.0;');
+  if (nv.tube.mOut.fragmentShader === fs0) console.warn('railgun sight: tube lateral colour not found');
+  // Tom (2026-11-12): no hex in the grain. The fibre gain and the honeycomb seams go.
+  const ft0 = nv.tube.mTube.fragmentShader;
+  const ft1 = ft0.replace('float fp = 1.0 + 0.07 * (h2(fib.xy * 4.0, 11.0 + fi) - 0.5);', 'float fp = 1.0;')
+    .replace('fp *= 1.0 - 0.14 * smoothstep(0.04, 0.0, mf.z);', '');
+  if (ft1.length === ft0.length) console.warn('railgun sight: tube honeycomb not found');
+  nv.tube.mTube.fragmentShader = ft1;
+  // The tube's last pass draws into a target; the key pass then draws to screen.
+  const pass0 = nv.tube.pass.bind(nv.tube);
+  nv.tube.pass = (m, target) => pass0(m, m === nv.tube.mOut ? nv.out : target);
+  nv.keyCv = document.createElement('canvas');
+  nv.keyTex = new THREE.CanvasTexture(nv.keyCv);
+  nv.keyTex.minFilter = THREE.LinearFilter; nv.keyTex.generateMipmaps = false; nv.keyTex.premultiplyAlpha = true;
+  nv.keyMat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+    uniforms: { tImg: { value: null }, tKey: { value: nv.keyTex }, uTexel: { value: new THREE.Vector2() }, uNeg: { value: 0.9 } },
+    vertexShader: `out vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: /* glsl */`
+      out highp vec4 outColor;
+      uniform sampler2D tImg, tKey;
+      uniform vec2 uTexel;
+      uniform float uNeg;
+      in vec2 vUv;
+      void main() {
+        vec3 c = texture(tImg, vUv).rgb;
+        vec4 k = texture(tKey, vUv);
+        // Green: the soft band. The picture turns to its negative there.
+        vec3 o = mix(c, 1.0 - c, clamp(k.g, 0.0, 1.0) * uNeg);
+        // Red: the mark's core. It takes the far extreme of its surroundings.
+        // So a mark reads on mid grey, where a plain negative vanishes.
+        if (k.r > 0.004) {
+          float L = 0.0;
+          for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++)
+            L += dot(texture(tImg, vUv + vec2(x, y) * uTexel * 3.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+          L /= 25.0;
+          vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
+          o = mix(o, far, clamp(k.r, 0.0, 1.0));
+        }
+        outColor = vec4(o, 1.0);
+      }`,
+  });
   return true;
+}
+// The key: the marks as an image, green for the band, red for the core.
+// SVG text cannot load the page fonts as an image, so words stay on the plain layer.
+function nvKey(inner, W, H, words = []) {
+  const id = inner + JSON.stringify(words);
+  if (id === nv.key) return;
+  nv.key = id;
+  nv.keyReady = false;
+  const cv = nv.keyCv, x = cv.getContext('2d');
+  if (!inner && !words.length) { x.clearRect(0, 0, cv.width, cv.height); nv.keyTex.needsUpdate = true; nv.keyReady = true; return; }
+  const bl = W > 600 ? 3.4 : 2.6;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cv.width}" height="${cv.height}" viewBox="0 0 ${W} ${H}">`
+    + `<style>.g *{stroke:#0f0 !important;fill:#0f0 !important;stroke-width:5px !important}.g [fill=none]{fill:none !important}`
+    + `.r *{stroke:#f00 !important;fill:#f00 !important}.r [fill=none]{fill:none !important}</style>`
+    + `<defs><filter id="kb" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${bl}"/></filter></defs>`
+    + `<g class="g" filter="url(#kb)">${inner}</g><g class="r" style="mix-blend-mode:screen">${inner}</g></svg>`;
+  const img = new Image();
+  img.onload = () => document.fonts.ready.then(() => {
+    if (nv.key !== id) return;
+    x.clearRect(0, 0, cv.width, cv.height);
+    x.drawImage(img, 0, 0);
+    // Words: a blurred green pass for the band, then a red pass for the core.
+    const sc = cv.width / W;
+    x.save();
+    x.scale(sc, sc);
+    for (const [col, blur, grow] of [['#0f0', bl, 2.2], ['#f00', 0, 0]]) {
+      x.filter = blur ? `blur(${blur}px)` : 'none';
+      x.globalCompositeOperation = blur ? 'source-over' : 'lighter';
+      x.fillStyle = col; x.strokeStyle = col; x.lineWidth = grow * 2; x.lineJoin = 'round';
+      for (const w of words) {
+        x.font = `${w.w} ${w.size}px Gabarito, sans-serif`;
+        x.letterSpacing = `${w.ls * w.size}px`;
+        x.textAlign = w.anchor === 'middle' ? 'center' : w.anchor === 'end' ? 'right' : 'left';
+        // Letter spacing trails the last glyph; centred and right text shift back by half or all of it.
+        const tr = w.anchor === 'middle' ? w.ls * w.size / 2 : w.anchor === 'end' ? w.ls * w.size : 0;
+        if (grow) x.strokeText(w.str, w.x + tr, w.y);
+        x.fillText(w.str, w.x + tr, w.y);
+      }
+    }
+    x.restore();
+    nv.keyTex.needsUpdate = true;
+    nv.keyReady = true;
+    if (!st.anim && nv.tex) nvFrame(performance.now());
+  });
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 function nvSize(W, H, pr) {
   const key = `${W}x${H}x${pr}`;
@@ -628,6 +801,13 @@ function nvSize(W, H, pr) {
   nv.tube.resize(W, H, 1, 1.2, 0);
   nv.tube.setTubes([{ x: W / 2, y: H / 2, r: Math.hypot(W, H) / 2 * 1.08, trim: 1 }]);
   nv.tube.cold();
+  const b = nv.r.getDrawingBufferSize(new THREE.Vector2());
+  nv.out?.dispose();
+  nv.out = new THREE.WebGLRenderTarget(b.x, b.y, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  nv.keyCv.width = b.x; nv.keyCv.height = b.y;
+  nv.keyTex.dispose();
+  nv.key = null;
+  nv.keyMat.uniforms.uTexel.value.set(1 / b.x, 1 / b.y);
 }
 function nvImage(img) {
   nv.tex?.dispose();
@@ -641,6 +821,12 @@ function nvFrame(now) {
   const dt = nv.last ? clamp((now - nv.last) / 1000, 1 / 120, 0.1) : 1 / 30;
   nv.last = now;
   nv.tube.render(null, null, dt, now / 1000);
+  // The key pass: the tube's picture, with the marks burnt in as negatives.
+  nv.keyMat.uniforms.tImg.value = nv.out.texture;
+  nv.keyMat.uniforms.uNeg.value = 0.86 + 0.08 * Math.sin(now / 1000 * 1.3);
+  nv.tube.quad.material = nv.keyMat;
+  nv.r.setRenderTarget(null);
+  nv.r.render(nv.tube.scene, nv.tube.cam);
   nv.frames++;
 }
 
@@ -648,7 +834,7 @@ function nvFrame(now) {
 const q = new URLSearchParams(location.search);
 const IMGS = [{ id: 'white', name: 'White phosphor' }, { id: 'colour', name: 'Colour' }];
 const st = {
-  dir: DIRS.find(d => d.id === q.get('d')) ? q.get('d') : 'fc',
+  dir: DIRS.find(d => d.id === q.get('d')) ? q.get('d') : 'monolith',
   state: STATES.includes(q.get('s')) ? q.get('s') : 'full',
   light: LIGHTS.includes(q.get('l')) ? q.get('l') : 'dusk',
   view: q.get('v') === 'phone' ? 'phone' : 'desk',
@@ -656,13 +842,14 @@ const st = {
   anim: !q.has('still') && !matchMedia('(prefers-reduced-motion: reduce)').matches,
 };
 const $ = id => document.getElementById(id);
-const wrap = $('wrap'), frame = $('frame'), bg = $('bg'), ov = $('ov'), note = $('note');
+const wrap = $('wrap'), frame = $('frame'), bg = $('bg'), ov = $('ov'), ovn = $('ovn'), note = $('note');
 
 function buttons(el, items, key, keys) {
   el.innerHTML = '';
   items.forEach((it, i) => {
     // Round one sits apart: the first proposals.
-    if (it.id === 'cinema') { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Round 1'; el.append(t); }
+    const tag = { fc: 'Round 2', cinema: 'Round 1' }[it.id];
+    if (tag) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = tag; el.append(t); }
     const b = document.createElement('button');
     b.innerHTML = (keys ? `<kbd>${keys[i]}</kbd>` : '') + it.name;
     b.onclick = () => { st[key] = it.id; sync(); };
@@ -685,7 +872,16 @@ function draw(now = performance.now()) {
   const t = st.anim ? (now - t0) / 1000 : 1.3;
   const s = model(st.view, st.light, st.state, t);
   ov.setAttribute('viewBox', `0 0 ${s.W} ${s.H}`);
-  ov.innerHTML = d.draw(s);
+  ovn.setAttribute('viewBox', `0 0 ${s.W} ${s.H}`);
+  // A direction returns one string, or a key of marks and a plain layer of words.
+  const r = d.draw(s), key = typeof r === 'string' ? '' : r.key || '', words = typeof r === 'string' ? [] : r.words || [];
+  ov.innerHTML = typeof r === 'string' ? r : r.pos || '';
+  // Through the tube the key burns in on the GPU; in colour a difference blend stands in.
+  if (!nv.cv.hidden) { ovn.innerHTML = ''; nvKey(key, s.W, s.H, words); }
+  else {
+    const wt = words.map(w => `<text x="${w.x}" y="${w.y}" font-size="${w.size}" font-weight="${w.w}" fill="#fff" text-anchor="${w.anchor}" letter-spacing="${w.ls}em">${w.str}</text>`).join('');
+    ovn.innerHTML = key ? `<defs><filter id="nb" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="3"/></filter></defs><g class="nbl" filter="url(#nb)" opacity="0.95">${key}${wt}</g><g class="nln">${key}${wt}</g>` : '';
+  }
 }
 
 function fit() {
@@ -737,7 +933,7 @@ function sync() {
   draw();
 }
 
-// Keys: 1 to 7 pick a direction; arrows step the state; L light; P screen; W white phosphor.
+// Keys: 1 to 8 pick a direction; arrows step the state; L light; P screen; W white phosphor.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const n = +e.key;
@@ -766,7 +962,7 @@ requestAnimationFrame(loop);
 // Warm the cache: every still for this screen.
 for (const l of LIGHTS) for (const s of STATES) { const i = new Image(); i.src = `stills/${st.view}-${l}-${s}.jpg`; }
 // QA: the tube has drawn once the still went through it.
-window.__mock = { ready: () => nv.cv.hidden || nv.frames > 0 };
+window.__mock = { ready: () => nv.cv.hidden || (nv.frames > 0 && nv.keyReady === true) };
 sync();
 </script>
 </body>

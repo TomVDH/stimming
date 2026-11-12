@@ -64,3 +64,15 @@ Tom (2026-11-12): round one missed ("lol wtf"). Make it accurate for a would-be 
 What the toy shows and a real bolide would not: the rock moves at 59 m/s (17.68 km in 300 s); a real one comes in at 11 to 72 km/s. The display reports the toy's true speed.
 
 Stills: `lab/railgun-sight/sheets/desk-fc.jpg`, `phone-fc.jpg` (dusk on top, night below; tracking, charging, full, fired, hit).
+
+## Round 3: Monolith, burnt in
+
+Tom (2026-11-12): Fire control "looks weird"; not military, not faux; something special, Dune-inspired. The crosshair and ranging lines get a negative effect over the tube. No chromatic aberration. All words blend into the shader. No hex in the grain.
+
+- [x] Direction "Monolith" (now the default): a hairline horizon open round the bore; a slender split monolith on the bore whose lower block fills with the charge; two obelisks flank the rock; beads drift from the rock to the intercept ring; in flight the beads climb the bolt's path; struck is a ring broken into six arcs. Words are few, wide and light: range and closing speed by the rock, lay error on the ring, one word or figure under the monolith.
+- [x] Negative key pass: the tube's last pass draws into a target. The marks and words rasterise into a key (canvas 2D, page fonts). Green, the soft band: the picture turns negative. Red, the core: it takes the far extreme of its 5 x 5 surroundings, so a mark reads on grey dusk as well as at night.
+- [x] Page-only shader patches on the tube's materials (`nvg/tube.js` untouched): lateral colour split zeroed; fibre gain and honeycomb seams removed.
+- [x] Fire control stays as "Round 2"; Round 1 as before.
+- [x] QA: 140 frames, no page errors; 2 ANGLE X4000 warnings from the tube shader, as on the NVG toy.
+
+Stills: `lab/railgun-sight/sheets/desk-monolith.jpg`, `phone-monolith.jpg`.
