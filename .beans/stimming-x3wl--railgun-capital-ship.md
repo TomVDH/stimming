@@ -17,7 +17,7 @@ Build the enemy battleship target for Railgun. Spec: docs/plans/railgun-capital-
 - [x] Task 2: Target setting and the target seam
 - [ ] Task 3: the battleship in orbit; Tom checks the look
 - [x] Task 3b: dev menu Target row and the ship's test shot (Tom, 2026-11-12)
-- [ ] Task 4: the hit, the wound and the breakup
+- [x] Task 4: the hit, the wound and the breakup
 - [ ] Task 5: de-orbit and the re-entry streaks
 - [ ] Task 6: impacts, Reset and the next ship
 - [ ] Task 7: sound
