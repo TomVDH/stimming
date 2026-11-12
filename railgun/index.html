@@ -5784,7 +5784,7 @@ whenVisible(stage, vis => {
     // A hidden tab drops the hold.
     // No finger is on it when it returns.
     cancelHold();
-    stopAll(); humStop(kit.ac, true); motorStop(true);
+    stopAll(); humStop(kit.ac, true); motorStop(true); surgeOverStop(true);
     if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; }
     kit.ac?.suspend()?.catch(() => {});
     return;
@@ -6243,11 +6243,13 @@ function stackStart(ac, P) {
   }
   return h;
 }
-function stackUpdate(ac, h = hum) {
-  const P = h.P, c = charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
-  const locked = c >= 0.999 && over < 0.15;
+// dv: an optional drive { c, over, rage, lock, vol } in place of the charge.
+function stackUpdate(ac, h = hum, dv = null) {
+  const P = h.P, c = dv ? dv.c : charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+  const ov = dv ? dv.over : over, rg = dv ? dv.rage : rage, vol = dv ? dv.vol : 1;
+  const locked = dv ? dv.lock : c >= 0.999 && ov < 0.15;
   if (locked && !h.locked) h.lockAt = t;
-  h.locked = locked; h.sour = over;
+  h.locked = locked; h.sour = ov;
   const accent = Math.exp(-(t - h.lockAt) / 1.2);
   // The mains hum from the first instant.
   if (h.mainsG) h.mainsG.gain.setTargetAtTime(0.2 * ss(u, 0, 0.12) * (0.45 + 0.55 * u), t, 0.08);
@@ -6260,12 +6262,12 @@ function stackUpdate(ac, h = hum) {
   // The stone grinds louder and higher.
   if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
   // The sub swells, and drops in hard at the lock.
-  h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent), t, 0.08);
+  h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent) * vol, t, 0.08);
   // The turbine spins up from 3 to 18 throbs a second.
-  h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rage + 0.08 * over, t, 0.08);
+  h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rg + 0.08 * ov, t, 0.08);
   if (h.turb) {
-    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rage, t, 0.1);
-    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rage, t, 0.1);
+    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rg, t, 0.1);
+    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rg, t, 0.1);
     h.turb.frequency.setTargetAtTime(2 * h.R * (1 + u), t, 0.1);
   }
   // Bells toll and the ratchet clanks, faster with the charge.
@@ -6283,7 +6285,7 @@ function stackUpdate(ac, h = hum) {
   for (const v of h.voices) {
     const k = ss(u, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
     const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
-    const fr = h.R * Math.pow(2, (q + over * v.sour * 0.6) / 12);
+    const fr = h.R * Math.pow(2, (q + ov * v.sour * 0.6) / 12);
     for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
     v.vg.gain.setTargetAtTime(v.lv * k, t, 0.1);
   }
@@ -6291,9 +6293,39 @@ function stackUpdate(ac, h = hum) {
   // Pipe voices open less: from 1.5 kHz to 9 kHz.
   h.sw.frequency.setTargetAtTime(h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
   // The drive grows with the charge and the over-hold.
-  h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * over, t, 0.1);
-  h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent), t, 0.08);
-  if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent), t, 0.1);
+  h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * ov, t, 0.1);
+  h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent) * vol, t, 0.08);
+  if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent) * vol, t, 0.1);
+}
+/* ---------- the game-over surge ---------- */
+// Surge Syl plays the rock's last fall; its contact is the game over.
+// The strike calls surgeOver every sim step with d: { u, vol, over }.
+// d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
+// d.over: the strain, 0.6 at contact, 1 at the end of the burn.
+// Null stops it. A null ac (muted) stops it hard.
+let goSurge = null;
+function surgeOver(ac, d) {
+  if (!d || !ac) { surgeOverStop(!ac); return; }
+  if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
+  if (!goSurge) { goSurge = stackStart(ac, MIX.syl); goSurge.ac = ac; }
+  const ss = THREE.MathUtils.smoothstep;
+  // The chord locks at contact and holds through the burn.
+  // A live charge keeps the lead; the surge ducks under it.
+  stackUpdate(ac, goSurge, {
+    c: d.u, lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
+    // The strain sours the chord at half depth, so the chord still reads.
+    over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
+  });
+}
+// now: a hard stop for mute and a hidden tab; else a two-second fade.
+function surgeOverStop(now = false) {
+  if (!goSurge) return;
+  const h = goSurge, ac = h.ac, t = ac.currentTime;
+  goSurge = null;
+  if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
+  for (const n of [h.g, h.sg]) n.gain.setTargetAtTime(0, t, 0.5);
+  for (const n of h.src) n.stop(t + 2.5);
+  track(t + 2.6, ...h.src);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.
 function bell(ac, h, t, u) {
@@ -6779,7 +6811,7 @@ function clunk(ac, k) {
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
 sound.onChange(on => {
-  if (!on) { stopAll(); humStop(kit.ac); motorStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
+  if (!on) { stopAll(); humStop(kit.ac); motorStop(true); surgeOverStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
 });
 
@@ -6889,6 +6921,9 @@ window.__qa = {
   charged: () => U.uCharge.value,
   chaos: () => chaos,
   audio: () => ({ state: kit.ac?.state ?? null, hum: !!hum, bed: !!bed, pend: pend.size, voices: hum ? hum.voices.length : 0, locked: !!hum?.locked, sour: hum ? hum.sour : 0, motor: motor ? (motor.on ? 'on' : 'idle') : null, clunks, shotMix, chargeMix, layers: (hum?.surge || (hum?.stack && hum))?.voices.filter(v => v.vg.gain.value > 0.005).length ?? null }),
+  // Drive the game-over surge by hand: d is { u, vol, over } or null.
+  surgeOver(d) { surgeOver(kit.live(), d); },
+  surgeLive: () => (goSurge ? { locked: goSurge.locked, layers: goSurge.voices.filter(v => v.vg.gain.value > 0.005).length } : null),
   // Play one shot take now, at charge c.
   take(name, c = 1) { const ac = kit.live(); if (ac) playShot(ac, ac.currentTime + 0.05, Math.min(c, 1.25), name); },
   mute(on) { sound.set(!on); },

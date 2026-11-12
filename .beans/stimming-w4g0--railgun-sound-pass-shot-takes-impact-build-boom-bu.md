@@ -24,6 +24,7 @@ Sound pass on railgun/index.html, on branch claude/railgun-sound-3af021.
 - [x] Tom (2026-11-12): five more surges: Colossus, Dirge, Leviathan, Eclipse, Monolith
 - [x] Tom (2026-11-12): Monolith Hum blend (Tom: it sucks); Monolith is the default again
 - [x] Tom (2026-11-12): Surge Syl, Surge with pipe-organ voices
+- [x] Tom (2026-11-12): Surge Syl is the game-over sound: `surgeOver(ac, { u, vol, over })` for the strike (branch claude/railgun-game-over-6e5171, bean stimming-hsym)
 - [x] Tom (2026-11-12): layered charge-up, rebuilt as Surge and Surge Hijaz (THX-style), Surge default
 
 ## How to compare the shot takes
@@ -78,6 +79,15 @@ Tom (2026-11-12): Monolith is great; Hum has a good mechanical, energetic ramp w
 - Monolith's swarm (octaves and fifths, `SURGE.monohum`) runs on top on E, where the hum lands. No extra machines and no extra sub.
 - The swarm enters late (`late: 0.3`, from about 0.52 of the charge) with a long fade (`fade: 0.18`); the hum steps back 35% over the last 40% of the charge.
 - Level: -46 dB RMS at the start (pure hum) to -13 dB at the lock; the hum alone ends near -20 dB.
+
+### Game-over surge
+
+- `surgeOver(ac, d)` drives Surge Syl from the strike, not from a charge. d: `{ u, vol, over }` per the game-over branch's contract; null fades it out over 2 s.
+- u maps straight to the surge's charge: the organ swarm enters from u 0.42 and locks on the chord at contact (u = 1). The lock holds through the burn; the strain sours it at half depth and drives the clip harder.
+- A live charge keeps the lead: the surge ducks to 35% under it. Mute and a hidden tab stop it hard (`surgeOverStop(true)`).
+- Seam: the game-over branch's `gameOverSound(ac, d)` hands over with `if (typeof surgeOver === 'function') { surgeOver(ac, d); return; }`, so neither branch breaks alone.
+- QA (headless, 12 s fall): -55 dB RMS at the horizon line, -12 dB at contact, locked through the burn; peak -3.6 dBFS.
+- Merge note: both branches change `humUpdate` (the game-over branch adds a drive object; this branch adds the Monolith Hum blend). Expect a conflict there.
 
 ## Notes
 
