@@ -124,8 +124,8 @@ let chargeMix = (() => {
     return localStorage.getItem(K) || 'vast';
   } catch { return 'vast'; }
 })();
-// The shot's sound: 'report', 'mesa', 'coil' or 'thump'.
-let shotMix = 'report';
+// The shot's sound: 'mesa', 'coil', 'thump' or 'report'.
+let shotMix = 'mesa';
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
@@ -137,9 +137,9 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
     // The charge: the hum, the choir, a blend, or a blend on the plain.
     { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }], onPick: v => { chargeMix = v; } },
-    // The shot: Tom's report sample or one of three synth takes.
+    // The shot: three synth takes, or Tom's report sample. Mesa is the default.
     // A pick plays the take once, so takes compare side by side.
-    { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'report', persist: true, options: [{ value: 'report', label: 'Report' }, { value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }], onPick: v => { shotMix = v; audition(v); } },
+    { type: 'choice', id: 'shotmix', label: 'Shot sound', value: 'mesa', persist: true, options: [{ value: 'mesa', label: 'Mesa' }, { value: 'coil', label: 'Coil' }, { value: 'thump', label: 'Thump' }, { value: 'report', label: 'Report' }], onPick: v => { shotMix = v; audition(v); } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock (dev)', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
@@ -6175,7 +6175,7 @@ function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
     const lp = filt(ac, 'lowpass', dark, 0.5), sh = filt(ac, 'lowshelf', 120);
-    sh.gain.value = 9;
+    sh.gain.value = 6;
     src.connect(lp).connect(sh).connect(g).connect(dest);
   } else src.connect(g).connect(dest);
   if (wet) echo(ac, g, wet, dark || 6000);
@@ -6436,14 +6436,14 @@ function boomSound(ac, buf, t, k) {
   const bus = blastBus(ac), srcs = [];
   if (buf) playSample(ac, buf, t, 1.5 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, bus);
   // The sub swell: two low tones beat slowly and sink as they fade.
-  for (const [f, lv] of [[31, 0.3], [43, 0.16]]) {
+  for (const [f, lv] of [[31, 0.22], [43, 0.12]]) {
     const o = ac.createOscillator(), g = ac.createGain();
     o.frequency.setValueAtTime(f * jit(0.04), t); o.frequency.exponentialRampToValueAtTime(f * 0.75, t + 16);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv * k, t + 1.8); g.gain.setTargetAtTime(0.0001, t + 3.5, 4.5);
     o.connect(g).connect(bus); o.start(t); o.stop(t + 28); srcs.push(o);
   }
   // The rolling tail: low noise rolls on across the plain.
-  srcs.push(...roll(ac, bus, t + 0.4, 28, 0.28 * k, 200));
+  srcs.push(...roll(ac, bus, t + 0.4, 28, 0.22 * k, 200));
   track(t + 30, ...srcs);
 }
 // The fire's own sound, after the boom's delay: a low roar that follows the fire,
