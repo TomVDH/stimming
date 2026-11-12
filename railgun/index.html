@@ -1913,7 +1913,8 @@ function turnPath(turn) {
   ast.away.copy(AWAY0).applyAxisAngle(yUp, turn);
   trailBasis();
 }
-// The size comes first; the fragments measure their gaps in radii.
+// The size comes first.
+// The fragments measure their gaps in radii.
 function retune() { astSize(); placeAst(); draw(); }
 
 /* ---------- the ship: a battleship in orbit ---------- */
@@ -1980,7 +1981,8 @@ function buildHulk(id) {
     // Two jaws taper to a split point.
     add(shapeG(sbox(2440, 5500, 60, 450, 360), v => { if (v.x > 5000) { v.y = v.y > 200 ? 340 : 230; v.z *= 0.3; } }));
     add(shapeG(sbox(2440, 5200, -450, -60, 340), v => { if (v.x > 5000) { v.y = v.y > -200 ? -230 : -330; v.z *= 0.3; } }));
-    // A dark slot fills the split's root; its faces meet the jaws.
+    // A dark slot fills the split's root.
+    // Its faces meet the jaws.
     add(shapeG(sbox(2440, 4300, -60, 60, 300), v => { if (v.x > 4000) v.y = v.y > 0 ? 163 : -175; }), SHIP_DARK, 1);
   } else if (id === 'fore') {
     // The bow end slopes down to the jaws.
@@ -1999,7 +2001,8 @@ function buildHulk(id) {
     turret(-650, 800);
     add(shapeG(sbox(-2300, 150, -1050, -680, 70), v => { if (v.x < -2000 && v.y < -800) v.x = -1700; }));
   } else if (id === 'drive') {
-    // The tallest block; its top front edge is cut back.
+    // The tallest block.
+    // Its top front edge is cut back.
     block(-5500, -2520, -900, 950, 620, v => { if (v.x > -2600 && v.y > 900) v.x = -2950; });
     add(sbox(-5200, -3300, 930, 1010, 460));
     // Four dark engine bells flare from the stern face.
@@ -6419,7 +6422,8 @@ function shatter(c) {
     bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.2 * R);
     bv.copy(bp).addScaledVector(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), 0.4 * R).normalize();
     // Slow shards read as huge ones.
-    // The blast casts each piece outward; it keeps the rock's own motion.
+    // The blast casts each piece outward.
+    // It keeps the rock's own motion.
     bv.multiplyScalar((70 + 160 * c) * (R / 600) * (0.8 + 0.4 * rnd()));
     bv.y += 0.25 * bv.length();
     bv.addScaledVector(ast.away, -FALL / SIZES[opts.size].T);
@@ -6466,7 +6470,8 @@ function shatter(c) {
     const f = rnd();
     bv.multiplyScalar((190 + 500 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.9 + 0.2 * rnd()));
     bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
-    // Fast pieces draw long trails; slow ones only a short tail.
+    // Fast pieces draw long trails.
+    // Slow ones draw a short tail.
     // About a third burn out in mid-flight.
     writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, rnd() < 0.35 ? 3 + 4 * rnd() : 8 + rnd() * 8, 0.4 + 1.2 * f * f + 0.3 * rnd(), 1.6 + 2 * rnd(), 3, 0.3 + 0.3 * rnd());
   }
@@ -6499,9 +6504,11 @@ function shatter(c) {
 /* ---------- the ship's hit: the kill and the wound ---------- */
 // The hit's flash has no tail and a half share.
 const SHIP_FLASH = 0.5;
-// A wound bends the hull 4 degrees and smoulders for 20 s.
+// A wound bends the hull 4 degrees.
+// It smoulders for 20 s.
 const BEND = rad(4), SMOULDER = 20;
-// A hard white point, then a vapour sphere that fades inside 1 s.
+// A hard white point shows first.
+// Then a vapour sphere fades inside 1 s.
 const shipSpark = makeFlare(linFit(0.98, 0.02, 90));
 const shipVapour = makeFlare(linFit(0.9, 0.03, 225), 'float d = length(vUv); float a = (1.0 - smoothstep(0.7, 1.0, d)) * (0.25 + 0.75 * d * d);');
 // Each joint flashes once as it fails.
@@ -6551,7 +6558,8 @@ function shipHit(c) {
 // A joint fails: a short flash and thrown plates.
 function jointBurst(j, wound) {
   hullPt(j.joint, 0, j.P);
-  // A wound throws one big plate; a kill throws many.
+  // A wound throws one big plate.
+// A kill throws many.
   for (let i = 0, n = wound ? 1 : 12; i < n; i++) {
     rndDir(fxV).multiplyScalar(wound ? 160 : 100 + 300 * rnd());
     writeStar(j.P, simT, fxV, -0.01, rnd() < 0.5 ? 2 : 0, (wound ? 9 : 4) + 4 * rnd(), 0.6, (wound ? 3.4 : 2.2) + rnd(), 3, 0.7);
@@ -6578,14 +6586,14 @@ function stepShipFx(dt) {
     for (const f of jointFlares) f.visible = false;
     return;
   }
-  const ha = simT - fx.t0, k = shot && shot.bk ? shot.bk : 1;
+  const ha = simT - fx.t0, k = (shot && shot.bk ? shot.bk : 1) * (reduced() ? 0.5 : 1), jk = reduced() ? 0.5 : 1;
   flare(shipSpark, fx.P, 1400 * (1 + 0.6 * (1 - Math.exp(-ha / 0.15))), ha < 1.5 ? k * 7 * Math.exp(-ha / 0.12) : 0);
   // The vapour sphere swells and fades inside 1 s.
   flare(shipVapour, fx.P, 500 + 2600 * (1 - Math.exp(-ha / 0.25)), k * 1.1 * THREE.MathUtils.smoothstep(ha, 0, 0.05) * (1 - THREE.MathUtils.smoothstep(ha, 0.25, 0.9)));
   fx.joints.forEach((j, i) => {
     if (!j.done && simT >= j.t) { j.done = true; jointBurst(j, !fx.kill); }
     const a = simT - j.t;
-    flare(jointFlares[i], j.P, 700 + 500 * (1 - Math.exp(-a / 0.1)), j.done && a < 0.8 ? (fx.kill ? 4 : 2.5) * Math.exp(-a / 0.1) : 0);
+    flare(jointFlares[i], j.P, 700 + 500 * (1 - Math.exp(-a / 0.1)), j.done && a < 0.8 ? jk * (fx.kill ? 4 : 2.5) * Math.exp(-a / 0.1) : 0);
   });
 }
 // True while the ship's hit effects need frames.
@@ -6608,8 +6616,7 @@ const hulkSrc = { pos: new THREE.Vector3(), away: new THREE.Vector3(), side: new
 // The counts follow the sim step.
 // A long jump sends one short burst.
 function stepHulks(dt) {
-  if (tgtKind !== 'ship' || !ship.go || dt <= 0) return;
-  let wrote = false;
+  if (tgtKind !== 'ship' || !ship.go || dt <= 0 || reduced()) return;
   ship.hulks.forEach((h, i) => {
     if (h.breakAt === null) return;
     const age = simT - h.breakAt;
@@ -6625,7 +6632,7 @@ function stepHulks(dt) {
         crackP.copy(cr[Math.floor(rnd() * cr.length)]).sub(m.userData.c).multiplyScalar(SHIP_SCALE).applyQuaternion(crackQ).add(src.pos);
         rndDir(crackV).multiplyScalar(150 + 450 * rnd()).add(src.vel);
         writeStar(crackP, simT, crackV, -0.03, 1, 0.5 + 0.9 * rnd(), 0.15, 1.2 + 0.8 * rnd(), 0, 0.8, 2);
-        ventN++; wrote = true;
+        ventN++;
       }
     }
     if (a.entry > 0) {
@@ -6634,10 +6641,9 @@ function stepHulks(dt) {
       if (src.side.lengthSq() < 1e-6) src.side.set(1, 0, 0);
       src.side.normalize();
       src.R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
-      for (let n = Math.min(4, Math.floor(dt * SHED_RATE * a.entry + rnd())); n > 0; n--) { shedSpark(0, src); wrote = true; }
+      for (let n = Math.min(4, Math.floor(dt * SHED_RATE * a.entry + rnd())); n > 0; n--) shedSpark(0, src);
     }
   });
-  if (wrote) commitStars();
 }
 function respawn() {
   // Each new rock turns a fresh face to the eye.
@@ -7203,7 +7209,7 @@ function sillyRing(p, k) {
 // A placeholder: an oversized pop, a bouncy dust ring, tumbling sparks.
 function sillyBoom(p) {
   sillyRing(p, 1);
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < (reduced() ? 0 : 18); i++) {
     const a = rnd() * Math.PI * 2, v = 200 + 350 * rnd();
     writeStar(sP.set(p.x, 10, p.z), simT, sV.set(Math.cos(a) * v, 300 + 300 * rnd(), Math.sin(a) * v), 0.15, i % 2 ? 0 : 2, 2.2 + rnd() * 1.4, 0.5, 16 + 12 * rnd(), 2, 1.6);
   }
