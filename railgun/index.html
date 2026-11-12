@@ -4653,7 +4653,11 @@ float dens(vec3 p, out vec3 em) {
   float age = uFb.x, Rb = rb(), Rf = rf();
   // The fire: a sphere that blows outward from the hit, then cools.
   vec3 qf = p - uBP;
-  float rs = length(qf) / Rf, fd = 0.0;
+  // The negative phase does not shrink evenly: lobes collapse and bulge as it pulls in.
+  float pk = smoothstep(1.6, 3.2, age) * (1.0 - smoothstep(7.0, 11.0, age));
+  vec3 nd = qf / max(length(qf), 1.0);
+  float lobe = texture(uVol, nd * 0.55 + vec3(uFb.w, 0.12 * age, 0.31)).r - 0.5 + 0.6 * (texture(uVol, nd * 1.3 + vec3(0.2 * age, uFb.w, 0.7)).g - 0.5);
+  float rs = length(qf) / (Rf * (1.0 + pk * 0.45 * lobe)), fd = 0.0;
   if (rs < 1.15 && age < 20.0) {
     float cool = smoothstep(1.5, 12.0, age);
     // The noise scales with the ball, so every cell runs outward with it.
@@ -4729,6 +4733,8 @@ vec3 vlight(vec3 p) {
   uHotC: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: PU.uFireC.value }, uEmberC: { value: new THREE.Vector3(...EMBER) },
   uSootC: { value: new THREE.Vector3(...linFit(0.34, 0.012, 50)) }, uAshC: { value: new THREE.Vector3(...ASH_D) },
 });
+// The fireball is far out: clouds and mesas stand in front of it, so it keeps the depth test.
+fireball.material.depthTest = true;
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
 const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
@@ -4849,7 +4855,8 @@ function shardAt(i, age, out, vel) {
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 // Each trail is a chain of short trains laid along the shard's own arc.
 const SEG = 4;
-const chunks = Array.from({ length: 4 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
+// Three trailed pieces: scaled-down rocks, not slabs.
+const chunks = Array.from({ length: 3 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
 const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chQ = new THREE.Vector3(), chA = new THREE.Vector3();
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
@@ -5007,33 +5014,31 @@ function shatter(c) {
   keep.forEach(([p, v, d], j) => {
     // The pieces carry on along the rock's own path, at nearly one speed.
     // The blast only fans them a little round that path and lifts them.
-    const a = j * Math.PI / 2 + 0.4 + (rnd() - 0.5) * 1.1, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
+    const a = j * Math.PI * 2 / 3 + 0.4 + (rnd() - 0.5) * 0.8, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
     const go = (350 + 250 * c) * (R / 600) * (0.92 + 0.16 * rnd());
     bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.35).addScaledVector(up, (0.2 * Math.sin(a) + 0.15 + 0.2 * rnd()) * sp).addScaledVector(fw, go);
-    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, ...d);
+    // Each is a small copy of the rock: about a tenth of its radius.
+    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.09 + 0.04 * rnd()), d[2], d[3]);
   });
   shardGeo.instanceCount = keep.length;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
   chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; });
-  // Embers: burning pieces jet out in a few sprays and arc down.
-  // Most fly slow; a few fly very fast with long fiery trails.
-  const sp = R / 600, jets = Array.from({ length: 7 }, () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize());
+  // Embers: burning pieces fly out all round and arc down.
+  const sp = R / 600;
   // The burning pieces keep part of the rock's motion along its path.
   const mo = new THREE.Vector3().copy(ast.away).negate();
-  for (let i = 0; i < N * 2.5; i++) {
-    if (rnd() < 0.7) bv.copy(jets[i % 7]).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.45)).normalize();
-    else bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+  for (let i = 0; i < N * 1.2; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
-    bv.multiplyScalar((190 + 900 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.9 + 0.2 * rnd()));
+    bv.multiplyScalar((190 + 500 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.9 + 0.2 * rnd()));
     bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
     // Fast pieces draw long trails; slow ones only a short tail.
     // About a third burn out in mid-flight.
-    writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, rnd() < 0.35 ? 3 + 4 * rnd() : 10 + rnd() * 12, 0.5 + 3.5 * f * f + 0.5 * rnd(), 1.8 + 3.2 * rnd(), 3, 0.3 + 0.4 * rnd());
+    writeStar(bq.add(P), simT + rnd() * 0.4, bv, 0.05 + 0.1 * rnd(), 2, rnd() < 0.35 ? 3 + 4 * rnd() : 8 + rnd() * 8, 0.4 + 1.2 * f * f + 0.3 * rnd(), 1.6 + 2 * rnd(), 3, 0.3 + 0.3 * rnd());
   }
   // Small burning pips fill the sprays; most fizzle out in mid-flight.
-  for (let i = 0; i < N * 2; i++) {
-    if (rnd() < 0.7) bv.copy(jets[i % 7]).add(bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.55)).normalize();
-    else bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+  for (let i = 0; i < N; i++) {
+    bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     const f = rnd();
     bv.multiplyScalar((150 + 600 * f * f) * sp).addScaledVector(mo, (170 + 130 * c) * sp * (0.85 + 0.3 * rnd()));
     bq.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(R);
@@ -5291,7 +5296,8 @@ function updateBolt() {
       boltAt(ta, bp); boltAt(tb, bq);
       // Brightness: one hot streak with fading shock diamonds.
       const lag = (age - tb) / tail;
-      const b = Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
+      // Inside the barrel the slug is hidden.
+      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
       // The streak tapers to a point at its tail.
       const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
       for (let v = 0; v < 4; v++) {
@@ -5308,12 +5314,12 @@ function updateBolt() {
     if (bv.lengthSq() < 1e-6) bv.copy(shot.ax); else bv.normalize();
     const inGun = age < 0.3, pw = 0.6 + c;
     bq.copy(bp).addScaledVector(bv, inGun ? -40 : -220 * pw);
-    glint(headGlint, bq, bv, inGun ? 110 : 1100 * pw, inGun ? 12 : 70 * pw, 5 * fade);
+    glint(headGlint, bq, bv, 1100 * pw, 70 * pw, inGun ? 0 : 5 * fade);
     // A lens streak crosses the head, level with the frame.
     bv.setFromMatrixColumn(camera.matrixWorld, 0);
-    glint(headStreak, bp, bv, inGun ? 60 : 800 * pw, inGun ? 4 : 9, inGun ? 0.8 * fade : 1.6 * fade);
-    flare(headFlare, bp, inGun ? 40 : 70 * pw, 1.4 * fade);
-    U.uBolt.value.set(bp.x, bp.y, bp.z, 0.8 * pw * fade);
+    glint(headStreak, bp, bv, 800 * pw, 9, inGun ? 0 : 1.6 * fade);
+    flare(headFlare, bp, 70 * pw, inGun ? 0 : 1.4 * fade);
+    U.uBolt.value.set(bp.x, bp.y, bp.z, inGun ? 0 : 0.8 * pw * fade);
   } else {
     glint(headGlint, MUZZLE, AX, 1, 1, 0); glint(headStreak, MUZZLE, AX, 1, 1, 0);
     flare(headFlare, MUZZLE, 1, 0);

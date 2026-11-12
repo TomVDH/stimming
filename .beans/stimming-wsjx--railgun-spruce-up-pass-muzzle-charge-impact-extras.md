@@ -41,6 +41,8 @@ Tom (2026-11-11): spruce up the railgun further. Open items from the railgun bea
 - [x] PBR gun shading: GGX sun lobe, fresnel sky reflection, metal graphite, rough concrete and paint, cavity shade
 - [x] Dunes: wrap light, a cool bounce in the lee, a fresnel rim on the crests
 - [x] Free aim: Settings Aim (Track, Free); arrows or WASD traverse at 8°/s and elevate at 5°/s (2° to 35°); a free shot hits only if the bore covers the rock's lead point
+- [x] Impact: the fireball's in-pull collapses and bulges in lobes; three small trailed pieces; embers fly all round, no jet sprays; the far fireball keeps the depth test, so clouds and mesas stand in front
+- [x] The bolt stays hidden inside the barrel: no head, ribbon or light until it leaves the muzzle
 - [x] GLB export and a nine-view turnaround (docs/railgun-model/, not committed)
 - [ ] Post pass: AO not added (a screen-space pass would need the volumes kept out of its normal pass); FXAA and bloom already on the ladder
 - [ ] Cloud flicker on Tom's Windows PC: not reproduced headless on D3D11; needs a screen grab
