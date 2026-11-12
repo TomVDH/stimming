@@ -5,7 +5,7 @@ status: draft
 type: task
 priority: normal
 created_at: 2026-11-12T08:57:54Z
-updated_at: 2026-11-12T09:15:02Z
+updated_at: 2026-11-12T09:23:27Z
 parent: stimming-f793
 ---
 
@@ -42,7 +42,7 @@ An on-HUD selector (Tom). Its form is open. It does not use the Bar v2 top-left 
 - Siege changes the `vent` branch in `stepCharge` and adds a cooldown lock on `act.press`.
 - Recoil, Mach ring and blast in `stepShot` assume one shot; Salvo needs them per round.
 
-Salvo spec: `docs/plans/railgun-salvo.md` (Tom approved the sections, 2026-11-12). Next: Tom reviews the spec, then writing-plans.
+Salvo spec: `docs/plans/railgun-salvo.md` (Tom approved the sections, 2026-11-12). Plan: `docs/plans/railgun-salvo-plan.md` (7 tasks; core in `railgun/salvo.js`). Next: Tom reviews the plan and picks the execution method.
 
 ## Open questions
 

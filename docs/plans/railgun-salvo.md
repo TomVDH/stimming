@@ -1,12 +1,12 @@
 # Railgun: Salvo fire mode (`stimming-e39e`) design
 
-> Design spec. Tom approved it section by section, 2026-11-12. Tom reviews this file next. The implementation plan comes after, through superpowers:writing-plans. Build nothing before that.
+> Design spec. Tom approved it section by section, 2026-11-12. Plan: `docs/plans/railgun-salvo-plan.md`. Build nothing until Tom approves the plan.
 
 **Goal:** A second Railgun fire mode beside today's Rail. The hold banks up to five rounds. The release ripples them out. The rounds crater the rock, break it, then hunt its big chunks in the sky.
 
 **Why (Tom):** bigger spectacle, and a mode that fits the capital ship target (`stimming-x3wl`). Not a quicker loop.
 
-**Architecture:** Procedural, in `railgun/index.html`. The single `shot` becomes a list of rounds. The rock gets a damage total and crater spots. Rounds go through the same target seam that the ship plan adds (`tgtHit`). No new library and no asset load.
+**Architecture:** Procedural, in `railgun/index.html`. `shot` stays the gun's one firing cycle; its bolts fly as a global list of rounds. The rock gets a damage total and crater spots. Rounds go through the same target seam that the ship plan adds (`tgtHit`). No new library and no asset load.
 
 ## Decisions
 
@@ -66,19 +66,19 @@ The ranging, the build, the hum and the chaos stay as in Rail. The hold banks ro
 1. A glowing spot marks the hit point on the rock. It cools from white to dull red over about 20 s.
 2. A spall plume throws dust and a spray of burning pips off the face.
 3. A small flash (about a third of a break's flash). The rock lurches a little on its path.
-4. The rock holds up to four crater spots.
+4. A rock carries two crater spots at most: a third crater round breaks it.
 
 ### Break (the round that takes the total past 1.0)
 
 1. Today's `shatter` runs at the salvo's total power, capped at 1.25.
-2. The fireball, the four big chunks, the embers and the smoke tail are as in Rail.
+2. The fireball, the three big chunks, the embers and the smoke tail are as in Rail.
 
 ### Hunt (rounds still in flight after the break)
 
-1. Each round locks onto one of the four big chunks, the biggest first.
+1. Each round locks onto one of the three big chunks, the biggest first.
 2. The round arrives 0.5 s after the last one. The chunk has moved only a few hundred metres. The bolt needs no visible bend.
 3. The hit is a mid-air burst. The chunk's trail ends in a flash. Its embers rain down.
-4. A wounded rock can break on round 1. Then four rounds hunt all four chunks.
+4. A wounded rock can break on round 1. Then three rounds hunt all three chunks, and round 5 misses.
 5. A round with no chunk left flies on past the cloud, as a miss does today.
 
 ### The ship (when `stimming-x3wl` lands)
@@ -99,21 +99,22 @@ Salvo builds on the shot takes that are on `main` at build time. The sound branc
 ## 6. Code shape (`railgun/index.html`)
 
 1. `fireMode`, its persisted value and `__qa.mode(m)`.
-2. `charge.bank`: the count of banked rounds against a `SALVO_BANK` time table. `vent()` empties it.
-3. `shot` becomes `shots[]` (up to five). `fire` takes a round count. `stepShot` steps each round.
-4. Recoil and cradle kick add up over the rounds. `U.uRecoil` stays one uniform.
-5. Each round has its own bolt and ion trail. The one `uShock` ring becomes up to five rings.
-6. `ast.dmg` holds the damage total. Up to four crater spots are uniforms on the rock shader.
-7. At the break, rounds in flight retarget onto `chunks[]`. A chunk burst reuses the late bursts in `blastFx.bursts`.
-8. The target seam: the ship plan's Task 2 adds `tgtHit(c)` and its siblings. Salvo uses the same seam. Whichever lands first builds it.
-9. `busy()` stays true while a round flies or a crater glows.
+2. `charge.bank`: the count of banked rounds against the `BANK` table in `railgun/salvo.js`. `vent()` empties it.
+3. `shot` stays the gun's one cycle: muzzle, recoil, vents, case, Reset glow. Its bolts fly as a global `rounds[]` (up to five per cycle). `fire` takes a round count.
+4. A new fire is dropped only while the last cycle's rounds still launch. A second salvo on a cratered rock fires at once. Rail gets the same rule.
+5. Recoil and cradle kick add up over the rounds. `U.uRecoil` stays one uniform.
+6. Each round has its own bolt and ion trail. The one `uShock` ring becomes up to five rings.
+7. `ast.tally` holds the damage total. Two crater spots are uniforms on the rock shader.
+8. At the break, rounds in flight retarget onto `chunks[]`. A chunk burst reuses the late bursts in `blastFx.bursts`.
+9. The target seam: the ship plan's Task 2 adds `tgtHit(c)` and its siblings. Salvo uses the same seam. Whichever lands first builds it.
+10. `busy()` stays true while a round flies or a crater glows.
 
 ## 7. Cost, quality and QA
 
 1. Hold 30 fps through the hold and with five rounds in flight.
 2. Five bolts and five rings are the cost risk. On rungs 2 and 3, the ion trails of rounds 2 to 5 are thinner.
 3. Reduced motion: no recoil, as today. Flashes halve. Tracers stay.
-4. QA hooks: `__qa.mode(m)`, `__qa.bank(n)` (bank n rounds), `__qa.salvo(n)` (bank and fire n rounds), `__qa.dmg()`.
+4. QA hooks: `__qa.mode(m)`, `__qa.bank(n)` (bank n rounds), `__qa.salvo(n)` (fire n rounds), `__qa.rounds()`, `__qa.tally()`, `__qa.craters()`.
 5. QA runs: Q1 to Q10 in both modes at 1280 × 800, 375 × 812 and 812 × 375, at the three rock sizes. A clean console. `tests/bar-v2.html` stays green.
 
 ## Out of scope
