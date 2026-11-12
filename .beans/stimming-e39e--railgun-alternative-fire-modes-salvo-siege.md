@@ -3,8 +3,9 @@
 title: 'Railgun: alternative fire modes (Salvo, Siege)'
 status: draft
 type: task
+priority: normal
 created_at: 2026-11-12T08:57:54Z
-updated_at: 2026-11-12T08:57:54Z
+updated_at: 2026-11-12T09:15:02Z
 parent: stimming-f793
 ---
 
@@ -41,9 +42,11 @@ An on-HUD selector (Tom). Its form is open. It does not use the Bar v2 top-left 
 - Siege changes the `vent` branch in `stepCharge` and adds a cooldown lock on `act.press`.
 - Recoil, Mach ring and blast in `stepShot` assume one shot; Salvo needs them per round.
 
+Salvo spec: `docs/plans/railgun-salvo.md` (Tom approved the sections, 2026-11-12). Next: Tom reviews the spec, then writing-plans.
+
 ## Open questions
 
 - [ ] The HUD selector: its form, its place, and whether the sight session's HUD holds it.
-- [ ] Salvo: rounds per stage, the gap, and the power per round.
+- [x] Salvo: bank then ripple; five rounds at 0.35; 0.5 s gap; crater, break, hunt; rising recoil to the clearance point (spec).
 - [ ] Siege: is a 20 s lockout fun in a desk toy, or does the gun only look spent?
-- [ ] Order: Siege first (cheapest), or Salvo first (it builds the wound model for the ship)?
+- [x] Order: Salvo first (Tom, 2026-11-12). It builds the wound model the ship shares.
