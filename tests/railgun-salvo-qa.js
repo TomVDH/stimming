@@ -25,6 +25,29 @@ const checks = {
     ok(q().bank() === 0, 'Rail banks no rounds');
     q().release(); settle();
   },
+  task3() {
+    settle();
+    q().salvo(3); q().run(2.5);
+    ok(q().rounds().length === 3, `a 3-round salvo puts 3 rounds in flight (got ${q().rounds().length})`);
+    ok(q().ion().visible, 'the ion trails show');
+    q().salvo(1); q().run(0.5);
+    ok(q().rounds().length === 4, `a second salvo fires once the first has launched (got ${q().rounds().length})`);
+    q().run(12);
+    ok(q().rounds().slice(0, 3).every(r => r.hit), 'every round of the first salvo lands');
+    settle();
+    q().salvo(5); q().salvo(1);
+    ok(q().rounds().length === 5, `a fire during the launch is dropped (got ${q().rounds().length})`);
+    q().run(2.4); q().salvo(1); q().run(0.5);
+    ok(q().rounds().length === 6, `a fire after the last launch starts a new cycle (got ${q().rounds().length})`);
+    settle();
+    q().mode('rail'); q().shoot(1);
+    ok(near(q().shot().T, 8.5, 0.01), `Rail flight time is unchanged (${q().shot().T})`);
+    ok(near(q().shot().hitT, 8.8, 0.01), `Rail hit time is unchanged (${q().shot().hitT})`);
+    ok(q().rounds().length === 1, 'Rail is one round');
+    q().run(9);
+    ok(q().ast().state === 'shatter', 'a Rail hit still breaks the rock');
+    settle();
+  },
 };
 
 export async function run(...names) {

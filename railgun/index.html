@@ -92,7 +92,7 @@ import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
-import { bankAt, ROUND_C } from './salvo.js';
+import { bankAt, launchAt, ROUND_C, MAX_ROUNDS } from './salvo.js';
 // The sight's image intensifier: the NVG toy's tube, used whole.
 import { Tube } from '../nvg/tube.js';
 mark('libs');
@@ -3718,25 +3718,28 @@ function ring(m, c, a, b, r, w, gain) {
 // Forty-eight segments.
 // Each frame they take the head's last quarter second.
 const BOLT_SEG = 48, BOLT_PTS = BOLT_SEG + 1;
-const boltGeo = new THREE.BufferGeometry();
-{
+// Each round in flight has its own ribbon geometry.
+function makeBoltGeo() {
+  const g = new THREE.BufferGeometry();
   const n = BOLT_SEG, pos = new Float32Array(n * 12), idx = [];
   for (let i = 0; i < n; i++) {
     const b = i * 4;
     pos.set([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], i * 12);
     idx.push(b, b + 2, b + 3, b, b + 3, b + 1);
   }
-  boltGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  boltGeo.setIndex(idx);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(idx);
   for (const name of ['aP0', 'aP1']) {
     const a = new THREE.BufferAttribute(new Float32Array(n * 12), 3);
     a.setUsage(THREE.DynamicDrawUsage);
-    boltGeo.setAttribute(name, a);
+    g.setAttribute(name, a);
   }
   const k = new THREE.BufferAttribute(new Float32Array(n * 8), 2);
   k.setUsage(THREE.DynamicDrawUsage);
-  boltGeo.setAttribute('aK', k);
+  g.setAttribute('aK', k);
+  return g;
 }
+const boltGeo = makeBoltGeo();
 const boltMat = new THREE.ShaderMaterial({
   uniforms: { uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr, uBlue: { value: new THREE.Vector3(...linFit(0.85, 0.08, 230)) }, uCore: { value: 3 }, uGain: { value: 6 }, uWide: { value: 110 } },
   transparent: true, depthWrite: false,
@@ -3936,16 +3939,38 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
 }));
 ionPuffs.frustumCulled = false; ionPuffs.renderOrder = 2.55; ionPuffs.visible = false;
 scene.add(ionPuffs);
-// The live line: its start time, flight time and power.
-let ion = null;
+// Tracers: one ribbon and one ion trail per round in flight.
+// Slot 0 is the first set; the copies share every uniform but their own.
+function matCopy(m, own) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...m.uniforms, ...own }, vertexShader: m.vertexShader, fragmentShader: m.fragmentShader, defines: { ...m.defines },
+    transparent: m.transparent, depthWrite: m.depthWrite, depthTest: m.depthTest, side: m.side,
+    blending: m.blending, blendSrc: m.blendSrc, blendDst: m.blendDst, blendSrcAlpha: m.blendSrcAlpha, blendDstAlpha: m.blendDstAlpha,
+  });
+}
+const tracers = [{ bolt, line: ionLine, puffs: ionPuffs, round: null }];
+for (let i = 1; i < MAX_ROUNDS; i++) {
+  const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() } };
+  const t = {
+    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 6 } })),
+    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), round: null,
+  };
+  for (const k of ['bolt', 'line', 'puffs']) { t[k].frustumCulled = false; t[k].renderOrder = tracers[0][k].renderOrder; t[k].visible = false; scene.add(t[k]); }
+  tracers.push(t);
+}
+// Each slot's ion trail follows its round: hot behind the head, then a contrail.
 function updateIon() {
-  if (!ion) { ionLine.visible = ionPuffs.visible = false; return; }
-  const a = simT - ion.t0 - 0.3;
-  if (a > ion.T + 16) { ion = null; ionLine.visible = ionPuffs.visible = false; return; }
-  ionMat.uniforms.uI.value.set(a, ion.T, ion.c);
-  // The hot ribbon only lives a second behind the head.
-  ionLine.visible = a > 0 && a < ion.T + 1.5;
-  ionPuffs.visible = a > 0.15;
+  for (const t of tracers) {
+    const r = t.round;
+    if (!r) { t.line.visible = t.puffs.visible = false; continue; }
+    const a = simT - r.s0 - 0.3;
+    t.line.material.uniforms.uI.value.set(a, r.T, Math.min(r.c, 1.25));
+    // The hot ribbon only lives a second behind the head.
+    t.line.visible = a > 0 && a < r.T + 1.5;
+    t.puffs.visible = a > 0.15;
+    // On rungs 2 and 3, later rounds draw no contrail puffs.
+    if (r.j > 1 && rung >= 2) t.puffs.visible = false;
+  }
 }
 
 /* ---------- glints: streaks of light with a length and a width in metres ---------- */
@@ -5521,23 +5546,34 @@ function stepChunks() {
 // One shot at a time.
 // The slug runs the rails in 0.3 s.
 // Then the bolt crosses to the rock.
-let shot = null, hitFlash = 0, flashNow = 0;
+// shot is the gun's firing cycle; lit is the cycle whose hit lights the sky.
+let shot = null, lit = null, hitFlash = 0, flashNow = 0;
 const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bv = new THREE.Vector3();
-// Where the bolt is t seconds after the shot.
-function boltAt(t, out) {
-  if (!shot) return out.copy(MUZZLE);
-  if (t <= 0) return axisAt(BREECH, out);
+// Rounds in flight.
+// A round's clock starts on the rails, 0.3 s before it leaves the muzzle.
+const rounds = [];
+// Where a round is t seconds after its rail start.
+function roundAt(r, t, out) {
+  if (t <= 0 || !r.target) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
   // It leaves at 1.6 times its mean speed and slows in the air: same arrival, a quicker look.
-  const x = Math.min(1, (t - 0.3) / shot.T), u = 1 - Math.pow(1 - x, 1.6);
-  return out.lerpVectors(shot.muzzle, shot.target, u);
+  const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 1.6);
+  return out.lerpVectors(r.muzzle, r.target, u);
 }
-fire = c => {
-  if (shot) return;
-  // A weak shot takes 11.5 seconds to cross; a full one 8.5.
-  const T = THREE.MathUtils.lerp(11.5, 8.5, c);
-  let canHit = ast.state === 'approach' || ast.state === 'hold';
-  const target = astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), new THREE.Vector3());
+// The target seam: the rock today; the ship plugs in here.
+function tgtPos(out) { return out.copy(ast.pos); }
+// Where the target is after 0.3 + T seconds.
+function tgtLead(T, out) { return astAt(Math.min(1, ast.s + (0.3 + T) / SIZES[opts.size].T), out); }
+// True while a bolt can hit the target.
+function tgtCanHit() { return ast.state === 'approach' || ast.state === 'hold'; }
+// The bolt lands on the target.
+function tgtHit(c) { shatter(c); }
+// A round takes its aim and a tracer slot as it starts down the rails.
+// Each round leads the target on its own, so Track mode leads every round.
+function launchRound(r) {
+  r.launched = true;
+  let canHit = tgtCanHit();
+  const target = tgtLead(r.T, new THREE.Vector3());
   // Laid by hand, the bolt hits only if the bore points within the rock's disc.
   if (manual.on && canHit) {
     const D = target.distanceTo(MUZZLE), off = AX.angleTo(bq.copy(target).sub(MUZZLE));
@@ -5545,7 +5581,55 @@ fire = c => {
   }
   // With no rock in the sky the bolt flies where the barrel points.
   if (!canHit) target.copy(MUZZLE).addScaledVector(AX, Math.max(20000, target.distanceTo(MUZZLE)));
-  shot = { t0: simT, c, T, target, muzzle: MUZZLE.clone(), canHit, hit: false, jolt: false, hitT: 0.3 + T };
+  r.target = target; r.muzzle = MUZZLE.clone(); r.canHit = canHit;
+  // A free slot, else the oldest round's slot.
+  const t = tracers.find(x => !x.round) || tracers.reduce((a, b) => (a.round.s0 <= b.round.s0 ? a : b));
+  if (t.round) t.round.slot = null;
+  t.round = r; r.slot = t;
+  t.line.material.uniforms.uA.value.copy(MUZZLE); t.line.material.uniforms.uB.value.copy(target);
+  t.bolt.material.uniforms.uCore.value = 3 * (0.6 + r.c);
+  t.bolt.material.uniforms.uGain.value = 5 + 3 * r.c;
+}
+// A cycle's hit is decided: its light and its blast follow this round.
+function decide(cy, r, power) {
+  cy.decided = cy.hit = cy.canHit = true;
+  cy.hitT = r.s0 - cy.t0 + 0.3 + r.T;
+  cy.target.copy(r.target);
+  cy.bk = (0.75 + 0.5 * Math.min(power, 1.25)) * SIZES[opts.size].rumble;
+  lit = cy;
+}
+// A round lands.
+// The first round on target breaks the rock.
+function roundHits(r) {
+  const cy = r.cy;
+  if (r.canHit && !cy.decided) { decide(cy, r, r.c); tgtHit(r.c); return; }
+  // The last round lands with no hit: the cycle's hit is a miss.
+  if (!cy.decided && r.j === r.n) cy.hit = true;
+}
+// Rounds launch, land, and leave once their contrail fades.
+function stepRounds() {
+  for (const r of rounds) {
+    const a = simT - r.s0;
+    if (!r.launched && a >= 0) launchRound(r);
+    if (r.launched && !r.hit && a >= 0.3 + r.T) { r.hit = true; roundHits(r); }
+  }
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    const r = rounds[i];
+    if (simT - r.s0 > 0.3 + r.T + 16) { if (r.slot) r.slot.round = null; rounds.splice(i, 1); }
+  }
+}
+fire = (c, n = 1) => {
+  // A new cycle waits until the last cycle's rounds have all left.
+  if (shot && simT < shot.t0 + launchAt(shot.n)) return;
+  // A new cycle throws out a case the last one still holds.
+  if (shot && !shot.ejected) ejectCase();
+  // A weak shot takes 11.5 seconds to cross; a full one 8.5.
+  const T = THREE.MathUtils.lerp(11.5, 8.5, c);
+  shot = { t0: simT, c, n, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T };
+  for (let j = 1; j <= n; j++) rounds.push({ j, n, c, T, cy: shot, s0: simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null });
+  launchRound(rounds[rounds.length - n]);
+  // One round: the cycle knows its target at once.
+  if (n === 1) { const r = rounds[rounds.length - 1]; shot.target.copy(r.target); shot.canHit = r.canHit; }
   // The Mach ring starts at the muzzle's foot.
   // It reaches the eye at the speed of sound.
   shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
@@ -5576,11 +5660,8 @@ fire = c => {
   if (!reduced()) for (let i = 0; i < 9; i++) sandStreams.push({ p: barrelPt(-200 + rnd() * 1050, (rnd() - 0.5) * 40, 30 + rnd() * 20, new THREE.Vector3()), t0: simT + rnd() * 0.4, dur: 3 + 2 * rnd(), acc: 0 });
   // The shot flings the field's motes out along the bore.
   flingMotes();
-  ion = { t0: simT, T, c: Math.min(c, 1.25) };
-  ionMat.uniforms.uA.value.copy(MUZZLE); ionMat.uniforms.uB.value.copy(shot.target);
-  boltMat.uniforms.uCore.value = 3 * (0.6 + c);
-  boltMat.uniforms.uGain.value = 5 + 3 * c;
-  { const ac = kit.live(); if (ac) { shotSound(ac, shot); hitSounds(ac, shot); } }
+  // A salvo's hit sounds wait for the sound pass.
+  { const ac = kit.live(); if (ac) { shotSound(ac, shot); if (n === 1) hitSounds(ac, shot); } }
   wake();
 };
 function shatter(c) {
@@ -5781,22 +5862,23 @@ function stepSand(dt) {
   }
 }
 function stepShot(dt) {
+  stepRounds();
   stepSand(dt);
   stepMotes(dt);
   // Flashes and kicks let go.
   cam.shake *= Math.exp(-dt / 0.4);
   cam.kickP *= Math.exp(-dt / 0.3); cam.kickY *= Math.exp(-dt / 0.3);
   // The blast light: a hard flash, then a slow fireball.
-  if (shot && shot.hit && shot.canHit) {
-    const ha = simT - shot.t0 - shot.hitT;
-    hitFlash = shot.bk * (Math.exp(-ha / 0.4) + 0.3 * Math.exp(-ha / 5) + burstLight(ha));
+  if (lit) {
+    const ha = simT - lit.t0 - lit.hitT;
+    hitFlash = lit.bk * (Math.exp(-ha / 0.4) + 0.3 * Math.exp(-ha / 5) + burstLight(ha));
   } else hitFlash *= Math.exp(-dt / 0.35);
   U.uHit.value.w = hitFlash;
   // uBlast: the blast's world place and the same strength as hitFlash.
   if (blastFx) U.uBlast.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, hitFlash > 0.003 ? hitFlash : 0);
   else U.uBlast.value.w = 0;
   // The power holds after the fireball; the shaders taper the light.
-  if (blastFx) U.uBk.value = (shot && shot.bk ? shot.bk : blastFx.k) * (reduced() ? 0.5 : 1);
+  if (blastFx) U.uBk.value = (lit ? lit.bk : blastFx.k) * (reduced() ? 0.5 : 1);
   // The barrel cools in about ten seconds.
   U.uHeat.value *= Math.exp(-dt / 3.5);
   U.uDustLoad.value *= Math.exp(-dt / 60);
@@ -5865,7 +5947,6 @@ function stepShot(dt) {
   if (!shot.blast && age >= 0.3) { shot.blast = true; blast(shot); }
   // The Mach ring reaches the eye: a jolt, no sound of its own.
   if (!shot.jolt && age >= shot.arrive) { shot.jolt = true; cam.shake += 0.6 * shot.c; }
-  if (!shot.hit && age >= shot.hitT) { shot.hit = true; if (shot.canHit) shatter(shot.c); }
   // The back vents blow in a ripple; then the flap opens and the case leaves.
   // Half-way home the back vents blow; then the flap opens and the case leaves.
   // Laid by hand the gun does not park: the breech cycles 3.5 s after the hit.
@@ -5880,7 +5961,7 @@ function stepShot(dt) {
 }
 // The shot ends. A shattered sky waits for Reset.
 function endShot() {
-  shot = null;
+  shot = null; lit = null;
   bolt.visible = false;
   flare(headFlare, MUZZLE, 1, 0);
 }
@@ -5891,9 +5972,41 @@ function blast(sh) {
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
+// Each round's ribbon: one hot streak with shock diamonds behind the head.
+// It returns the leading round in flight.
+function updateRibbons() {
+  let lead = null;
+  for (const t of tracers) {
+    const r = t.round, a = r ? simT - r.s0 : -1, land = r ? 0.3 + r.T : 0;
+    const live = !!r && a >= 0 && a < land + 0.3;
+    t.bolt.visible = live;
+    if (!live) continue;
+    if (!lead || r.s0 < lead.s0) lead = r;
+    const tail = 0.55 + 0.03 * r.T, g = t.bolt.geometry;
+    const p0 = g.attributes.aP0, p1 = g.attributes.aP1, kk = g.attributes.aK;
+    const fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
+    for (let k = 0; k < BOLT_SEG; k++) {
+      const ta = a - tail * (1 - k / BOLT_SEG), tb = a - tail * (1 - (k + 1) / BOLT_SEG);
+      roundAt(r, ta, bp); roundAt(r, tb, bq);
+      const lag = (a - tb) / tail;
+      // Inside the barrel the slug is hidden.
+      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
+      // The streak tapers to a point at its tail.
+      const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
+      for (let v = 0; v < 4; v++) {
+        const vi = k * 4 + v;
+        p0.setXYZ(vi, bp.x, bp.y, bp.z);
+        p1.setXYZ(vi, bq.x, bq.y, bq.z);
+        kk.setXY(vi, b, taper);
+      }
+    }
+    p0.needsUpdate = p1.needsUpdate = kk.needsUpdate = true;
+  }
+  return lead;
+}
 function updateBolt() {
+  const lead = updateRibbons();
   if (!shot) {
-    bolt.visible = false;
     // A corona spits at the muzzle at rage.
     const cg = charge && !reduced() ? rage * (0.5 + 0.5 * Math.abs(Math.sin(simT * 71) * Math.sin(simT * 13.7))) : 0;
     flare(muzzleFlare, MUZZLE, 50 + 70 * cg, 1.6 * cg); flare(muzzleGlow, MUZZLE, 1, 0);
@@ -5913,34 +6026,14 @@ function updateBolt() {
     flare(hitGlow, MUZZLE, 1, 0);
     flare(headFlare, MUZZLE, 1, 0); flare(hitFlare, MUZZLE, 1, 0); U.uBolt.value.w = 0; grade.uniforms.uLF.value.z = 0; grade.uniforms.uGod.value.z = grade.uniforms.uGod.value.w = 0; return; }
   const age = simT - shot.t0, c = shot.c;
-  const live = age < shot.hitT + 0.3;
-  bolt.visible = live;
-  if (live) {
-    const tail = 0.55 + 0.03 * shot.T;
-    const p0 = boltGeo.attributes.aP0, p1 = boltGeo.attributes.aP1, kk = boltGeo.attributes.aK;
-    const fade = 1 - THREE.MathUtils.smoothstep(age, shot.hitT, shot.hitT + 0.3);
-    for (let k = 0; k < BOLT_SEG; k++) {
-      const ta = age - tail * (1 - k / BOLT_SEG), tb = age - tail * (1 - (k + 1) / BOLT_SEG);
-      boltAt(ta, bp); boltAt(tb, bq);
-      // Brightness: one hot streak with fading shock diamonds.
-      const lag = (age - tb) / tail;
-      // Inside the barrel the slug is hidden.
-      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
-      // The streak tapers to a point at its tail.
-      const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
-      for (let v = 0; v < 4; v++) {
-        const vi = k * 4 + v;
-        p0.setXYZ(vi, bp.x, bp.y, bp.z);
-        p1.setXYZ(vi, bq.x, bq.y, bq.z);
-        kk.setXY(vi, b, taper);
-      }
-    }
-    p0.needsUpdate = p1.needsUpdate = kk.needsUpdate = true;
-    boltAt(age, bp); boltAt(age - 0.02, bq);
+  if (lead) {
+    // The head's glints and flare follow the leading round.
+    const a = simT - lead.s0, land = 0.3 + lead.T, fade = 1 - THREE.MathUtils.smoothstep(a, land, land + 0.3);
+    roundAt(lead, a, bp); roundAt(lead, a - 0.02, bq);
     // The glint lies along the flight line.
     bv.subVectors(bp, bq);
     if (bv.lengthSq() < 1e-6) bv.copy(shot.ax); else bv.normalize();
-    const inGun = age < 0.3, pw = 0.6 + c;
+    const inGun = a < 0.3, pw = 0.6 + lead.c;
     bq.copy(bp).addScaledVector(bv, inGun ? -40 : -220 * pw);
     glint(headGlint, bq, bv, 1100 * pw, 70 * pw, inGun ? 0 : 5 * fade);
     // A lens streak crosses the head, level with the frame.
@@ -5965,16 +6058,16 @@ function updateBolt() {
   flashNow = on * 0.35 * c * Math.exp(-ma / 0.09);
   updateMuzzle(ma, c, m0);
   // The blast: a white core, a wide warm glow, two shock shells.
-  const ha = age - shot.hitT, hk = shot.hit && shot.canHit ? shot.bk : 0, R = ast.R;
+  const ha = lit ? simT - lit.t0 - lit.hitT : 0, hk = lit ? lit.bk : 0, R = ast.R, hitP = lit ? lit.target : MUZZLE;
   // A short white core; the fireball carries the rest.
-  flare(hitFlare, shot.target, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
+  flare(hitFlare, hitP, R * (2 + 2 * (1 - Math.exp(-ha / 0.4))), hk * 14 * Math.exp(-ha / 0.15));
   // A gentle globe of glow swells a little and lingers after the flash.
   // Its tail follows the fire: strong for 8 s, faint to 40 s.
-  flare(hitGlow, shot.target, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.06 * Math.exp(-ha / 8) + 0.01 * Math.exp(-ha / 40)));
+  flare(hitGlow, hitP, R * (18 + 6 * (1 - Math.exp(-ha / 6))), hk * (0.5 * Math.exp(-ha / 0.5) + 0.1 * Math.exp(-ha / 2.5) + 0.06 * Math.exp(-ha / 8) + 0.01 * Math.exp(-ha / 40)));
   // The whole frame overexposes for an instant.
   if (hk > 0) flashNow += hk * (0.6 * Math.exp(-ha / 0.14) + 0.1 * Math.exp(-ha / 1.2));
   // A white lens flare with ghosts, if the hit is in front of the lens.
-  bq.copy(shot.target).project(camera);
+  bq.copy(hitP).project(camera);
   const lfOn = hk > 0 && bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4;
   grade.uniforms.uLF.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, lfOn && !sight ? (reduced() ? 0.5 : 1) * hk * (1.3 * Math.exp(-ha / 0.3) + 0.25 * Math.exp(-ha / 2.5)) : 0);
   // God rays from the core for the hot flash, a few seconds; the sky fills with them.
@@ -6078,7 +6171,7 @@ function landReset() {
   setSun();
   shot = null; hitFlash = 0; flashNow = 0;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; ion = null; dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // Embers from the old rock go too.
   starGeo.instanceCount = 0; head = 0; lastDeath = 0; starMat.uniforms.uShedCut.value = 1e9;
@@ -6112,7 +6205,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 const FRAME = 1000 / 30;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || !!ion || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!ranging || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > 1e-4 || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -6724,7 +6817,10 @@ window.__qa = {
   },
   frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
   ablation: () => ablN,
-  ion: () => ({ visible: ionLine.visible || ionPuffs.visible, glow: ion ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
+  ion: () => ({ visible: tracers.some(t => t.line.visible || t.puffs.visible), glow: tracers[0].round ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
+  // Salvo: the rounds in flight, and a salvo of n rounds fired at once.
+  rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
+  salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
   aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
   release() { act.release('pointer'); },
