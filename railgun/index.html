@@ -2743,10 +2743,14 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uShk0: { value: new THREE.Vector4() }, uShk1: { value: new THREE.Vector4() },
       // Heat shimmer: the barrel's ends on screen, then width, strength, clock.
       uHzA: { value: new THREE.Vector4() }, uHzK: { value: new THREE.Vector3() }, uHtA: { value: new THREE.Vector4() },
-      // The thermal sight: 0 off, 1 on.
+      // The sight: 0 off, 1 on.
       uSight: { value: 0 },
       // The sight's yaw, elevation and clock.
       uSightA: { value: new THREE.Vector3() },
+      // The rangefinder: range in metres, the split prism's offset, the charge.
+      uSightR: { value: new THREE.Vector3() },
+      // The range scale, drawn once.
+      tScale: { value: null },
     },
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */`
@@ -2759,6 +2763,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform float uVeil, uZoom;
     uniform float uSight;
     uniform vec3 uSightA;
+    uniform vec3 uSightR;
+    uniform sampler2D tScale;
     uniform vec4 uShk0, uShk1, uHzA, uHtA;
     uniform vec3 uHzK;
     varying vec2 vUv;
@@ -2784,6 +2790,8 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
       return float(n) / 4294967295.0;
     }
+    // Distance from p to the segment ab.
+    float sgm(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
     void main() {
       // Shock fronts and hot air bend the frame.
       vec2 asp = vec2(uRes.x / uRes.y, 1.0), q0 = (vUv - 0.5) * asp;
@@ -2822,47 +2830,74 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5)) * uLF2.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9)) * uLF.z;
-      // The thermal sight: an old white-hot tube in a round eyepiece.
+      // The sight: the gun's old coincidence rangefinder, an eyepiece down the bore.
+      // Real glass: etched black lines, a split prism, a lamp-lit range scale.
       if (uSight > 0.5) {
-        vec2 sq = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-        float rr = length(sq);
-        // The old tube bulges toward its rim.
-        vec3 s0 = texture2D(tDiffuse, 0.5 + (vUv - 0.5) * (0.9 + 0.45 * rr * rr)).rgb;
-        // Cool smoke stays grey; only real fire and the bolt burn white.
-        float lumS = dot(s0, vec3(0.2126, 0.7152, 0.0722));
-        float heat = 0.22 * smoothstep(0.0, 1.5, lumS) + 0.85 * pow(smoothstep(2.0, 12.0, lumS), 0.7);
-        // Coarse noise, scan lines and a slow roll bar.
-        float sn = h(floor(gl_FragCoord.xy / 2.0) + vec2(uSeed * 13.0, uSeed * 71.0)) - 0.5;
-        float scan = 0.86 + 0.14 * sin(gl_FragCoord.y * 1.9);
-        float roll = 1.0 + 0.07 * exp(-pow(fract(vUv.y * 0.6 - uSightA.z * 0.09) - 0.5, 2.0) * 50.0);
-        // Aged phosphor: a warm white.
-        vec3 th = vec3(1.0, 0.94, 0.8) * (0.016 + 1.5 * heat + 0.022 * sn) * scan * roll;
-        th *= 1.0 - 0.6 * smoothstep(0.18, 0.46, rr);
-        float w = 1.3 / uRes.y;
-        #define LN(x, k) (1.0 - smoothstep(w * k, w * k * 2.0, abs(x)))
-        float ax = abs(sq.x), ay = abs(sq.y);
-        // A gapped cross that thickens into posts at the edge.
-        float cross = max(LN(sq.x, mix(1.0, 3.5, step(0.3, ay))) * step(0.04, ay), LN(sq.y, mix(1.0, 3.5, step(0.3, ax))) * step(0.04, ax)) * step(rr, 0.445);
-        // Mil ticks along both arms.
-        float tk = LN((fract(sq.x * 40.0 + 0.5) - 0.5) / 40.0, 1.0) * step(ay, 0.008) + LN((fract(sq.y * 40.0 + 0.5) - 0.5) / 40.0, 1.0) * step(ax, 0.008);
-        tk *= step(0.05, max(ax, ay)) * step(max(ax, ay), 0.29);
-        // A box holds the bolt at the centre; a dashed ring stands round it.
-        float bx = max(ax, ay), box = LN(bx - 0.02, 1.0) * step(min(ax, ay), 0.012);
-        float ang = atan(sq.y, sq.x);
-        float ring = LN(rr - 0.12, 1.0) * step(0.5, fract(ang / 6.2832 * 32.0));
-        // An elevation ladder slides on the right as the gun climbs.
-        float ly = sq.y + uSightA.y * 2.0;
-        float lad = LN((fract(ly * 25.0 + 0.5) - 0.5) / 25.0, 1.0) * step(0.34, sq.x) * step(sq.x, 0.355 + 0.015 * step(0.8, fract(ly * 5.0 + 0.1))) * step(ay, 0.25);
-        float ret = clamp(cross + tk + box + ring * 0.7 + lad * 0.8, 0.0, 1.0);
-        vec3 inner = mix(th, vec3(1.0, 0.56, 0.14) * 1.5, ret * 0.9);
-        // The bezel: a dark ring whose ticks turn with the yaw.
-        float ba = ang + uSightA.x, t5 = fract(ba / 6.2832 * 72.0), t30 = fract(ba / 6.2832 * 12.0);
-        float d5 = min(t5, 1.0 - t5) * 6.2832 / 72.0 * rr, d30 = min(t30, 1.0 - t30) * 6.2832 / 12.0 * rr;
-        float bt = LN(d5, 1.0) * step(rr, 0.477) + LN(d30, 1.5) * step(rr, 0.49);
-        vec3 bez = vec3(0.035, 0.032, 0.028) * (1.0 + 0.5 * sn) + vec3(0.9, 0.5, 0.12) * bt * 0.8;
-        float mask = smoothstep(0.462, 0.452, rr), outer = smoothstep(0.5, 0.494, rr);
-        c = mix(bez * outer, inner, mask);
-        #undef LN
+        float A = uRes.x / uRes.y;
+        vec2 sq = (vUv - 0.5) * vec2(A, 1.0);
+        // The field stop: a round eyepiece, as large as the screen allows.
+        float R = min(0.465, 0.5 * A - 0.025), k = R / 0.46, rr = length(sq), rn = rr / R;
+        vec2 p = sq / k;
+        float px = 1.0 / (uRes.y * k);
+        // The upper half comes through the second window.
+        // It slides into line as the range is taken.
+        vec2 uv = 0.5 + (vUv - 0.5) * (1.0 + 0.04 * rn * rn);
+        if (sq.y > 0.0) uv.x += uSightR.y;
+        // Old glass: colour fringes grow toward the rim.
+        vec2 ca = (uv - 0.5) * 0.006 * rn * rn;
+        vec3 s0 = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
+        // Aged coatings: a little warm, a little flat, a faint veil.
+        float ls = dot(s0, vec3(0.2126, 0.7152, 0.0722));
+        vec3 img = mix(vec3(ls), s0, 0.72) * vec3(1.0, 0.95, 0.84) + vec3(0.006, 0.005, 0.004);
+        if (sq.y > 0.0) img *= vec3(0.96, 0.98, 1.0);
+        img *= 1.0 - 0.6 * smoothstep(0.55, 1.0, rn);
+        // Etched reticle, black.
+        float d = 1e3;
+        // The aim mark: an open chevron, its point on the split line.
+        d = min(d, sgm(p, vec2(0.0), vec2(-0.026, -0.042)));
+        d = min(d, sgm(p, vec2(0.0), vec2(0.026, -0.042)));
+        // Lead marks: smaller chevrons, two each side.
+        for (int i = 1; i <= 2; i++) {
+          float x = 0.075 * float(i), s = 0.6;
+          for (int j = 0; j < 2; j++) {
+            vec2 c = vec2(j == 0 ? x : -x, 0.0);
+            d = min(d, sgm(p, c, c + vec2(-0.026, -0.042) * s));
+            d = min(d, sgm(p, c, c + vec2(0.026, -0.042) * s));
+          }
+        }
+        float fine = 1.0 - smoothstep(0.6 * px, 1.6 * px, d);
+        // Heavy posts from the rim: two across, one from below.
+        float dh = abs(p.y) + (abs(p.x) < 0.22 ? 1e3 : 0.0), dv = abs(p.x) + (p.y > -0.37 ? 1e3 : 0.0);
+        float dp = min(dh, dv);
+        float post = 1.0 - smoothstep(1.3 * px, 2.4 * px, dp);
+        // The prism's edge: a fine dark line across the field.
+        float split = (1.0 - smoothstep(0.4 * px, 1.2 * px, abs(p.y))) * step(0.035, abs(p.x)) * step(abs(p.x), 0.21);
+        // The range scale: a backlit strip in kilometres under an index.
+        float ys = -0.335, sw = 0.15, sh = 0.022;
+        vec2 sp = p - vec2(0.0, ys);
+        float inS = step(abs(sp.x), sw) * step(abs(sp.y), sh);
+        float km = uSightR.x * 0.001 + sp.x / sw * 6.0;
+        float ink = texture2D(tScale, vec2(km / 80.0, sp.y / (2.0 * sh) + 0.5)).a;
+        vec3 strip = vec3(0.62, 0.52, 0.34) * 0.32 * (1.0 - 0.5 * smoothstep(0.6, 1.0, abs(sp.x) / sw)) * (1.0 - 0.9 * ink);
+        float frame = 1.0 - smoothstep(0.6 * px, 1.6 * px, abs(max(abs(sp.x) - sw, abs(sp.y) - sh)));
+        // The index: a small black pointer over the strip's centre.
+        float ty = sp.y - sh, idx = step(0.0, ty) * step(ty, 0.014) * step(abs(sp.x), ty * 0.6);
+        vec3 inner = mix(img, strip, inS);
+        inner *= 1.0 - 0.92 * clamp(fine + post + split * 0.7 + frame * 0.85 + idx, 0.0, 1.0);
+        // Dust on the reticle glass.
+        float dust = step(0.99993, h(floor((sq + 1.0) * uRes.y * 0.5) + vec2(7.0, 3.0)));
+        inner *= 1.0 - 0.5 * dust;
+        // The housing: black crackle paint, the eyecup's dull rim.
+        float sn = h(floor(gl_FragCoord.xy / 2.0) + vec2(3.0, 9.0)) - 0.5;
+        vec3 bez = vec3(0.018, 0.017, 0.016) * (1.0 + 0.5 * sn);
+        bez += vec3(0.03, 0.028, 0.025) * (1.0 - smoothstep(0.0, 0.035, abs(rn - 1.06) * R));
+        // The ready lamp: a small bulb under red glass, lit at full charge.
+        vec2 lp = sq - vec2(cos(-0.8), sin(-0.8)) * (R + 0.055);
+        float bulb = 1.0 - smoothstep(0.009, 0.011, length(lp));
+        float lit = uSightR.z >= 1.0 ? 1.0 : 0.06 + 0.12 * clamp(uSightR.z, 0.0, 1.0);
+        bez = mix(bez, vec3(0.06, 0.012, 0.006) + vec3(1.6, 0.32, 0.08) * lit * (1.0 - 0.5 * length(lp + 0.003) / 0.011), bulb);
+        bez += vec3(1.0, 0.3, 0.08) * lit * 0.04 * exp(-length(lp) / 0.02) * step(1.0, rn);
+        c = mix(bez, inner, smoothstep(1.0 + 2.0 * px / 0.46, 1.0, rn));
       }
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c *= mix(vec3(0.9, 0.97, 1.12), vec3(1.1, 1.0, 0.88), smoothstep(0.0, 0.5, sqrt(max(l0, 0.0))));
@@ -2949,23 +2984,28 @@ function frame() {
   const sb = cam.swayE, ts = simT;
   camera.position.y += sb * 1.4 * Math.sin(ts * 2.1 + 0.5);
   camera.rotation.set(baseUp + pp + look.pitch + cam.kickP + wp + sb * 0.0012 * Math.sin(ts * 2.1), yaw0 + py + look.yaw + cam.kickY + wy, wr + sb * (0.003 * Math.sin(ts * 1.3) - 0.35 * lookV.yaw));
-  // The sight rides the gun's rangefinder: a 12 degree lens on its mark.
+  // The sight is the gun's rangefinder: a fixed lens that looks down the bore.
+  // It turns and climbs with the gun; it never follows the bolt.
   if (sight) {
-    camera.fov = sightFov * (portrait ? 1.6 : 1);
+    camera.fov = SIGHT_FOV * (portrait ? 1.6 : 1);
     sightEye(camera.position);
+    barrelPt(1, 0, 0, sightDir).sub(barrelPt(0, 0, 0, sightTo)).normalize();
     camera.rotation.set(Math.asin(clamp(sightDir.y, -1, 1)) + wp * 0.3, Math.atan2(-sightDir.x, -sightDir.z) + wy * 0.3, 0);
     grade.uniforms.uSightA.value.set(aimNow.yaw + kick.y, aimNow.elev + kick.p, simT);
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+  if (sight) sightMark();
 }
-// The thermal sight: a narrow lens on the slug, then the blast, else the rock.
-let sight = false, sightFov = 12;
+// The sight: the rangefinder's lens, 22 degrees down the bore.
+const SIGHT_FOV = 22;
+let sight = false;
 const sightDir = new THREE.Vector3(0, 0, -1), sightTo = new THREE.Vector3();
 function toggleSight() {
   sight = !sight;
   grade.uniforms.uSight.value = sight ? 1 : 0;
-  if (sight) { sightDir.copy(sightTarget(sightTo)).sub(sightEye(eyeP)).normalize(); sightFov = 12; }
+  // Each look starts off the range; the halves slide together.
+  if (sight) { sightRng.d = ast.pos.distanceTo(sightEye(eyeP)) * 1.35; sightRng.t = simT; }
   frame();
   wake();
 }
@@ -2974,25 +3014,39 @@ const eyeP = new THREE.Vector3();
 function sightEye(out) {
   return barrelPt(VF.a + 30, VF.x, VF.u, out).addScaledVector(AX, -0.33 * U.uRecoil.value);
 }
-// Where the scope looks: the bolt once it leaves the muzzle, then the blast.
-function sightTarget(out) {
-  if (shot && !shot.hit) return boltAt(Math.max(simT - shot.t0, 0.3), out);
-  if (shot && shot.hit) return out.copy(shot.target);
-  return out.copy(ast.pos);
+// The rangefinder takes the range by hand, a little behind the rock.
+// The split image shows the error until the halves line up.
+const sightRng = { d: 0, t: 0 };
+function sightMark() {
+  const r = grade.uniforms.uSightR.value, dt = clamp(simT - sightRng.t, 0, 0.1);
+  sightRng.t = simT;
+  const D = astMesh.visible ? ast.pos.distanceTo(sightEye(eyeP)) : sightRng.d;
+  sightRng.d += (D - sightRng.d) * (1 - Math.exp(-dt / 0.45));
+  r.set(sightRng.d, clamp((D - sightRng.d) / Math.max(D, 1) * 0.12, -0.05, 0.05), U.uCharge.value);
 }
+// The scale: ticks per half kilometre, a number per five, black on clear.
+function makeScale() {
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  c.width = 4096; c.height = 64;
+  const s = c.width / 80;
+  x.fillStyle = x.strokeStyle = '#000';
+  x.font = '600 22px "Arial Narrow", Arial, sans-serif';
+  x.textAlign = 'center';
+  for (let k = 0; k <= 160; k++) {
+    const X = k * 0.5 * s, big = k % 10 === 0, mid = k % 2 === 0;
+    x.lineWidth = big ? 2.4 : 1.6;
+    x.beginPath(); x.moveTo(X, 64); x.lineTo(X, big ? 34 : mid ? 44 : 52); x.stroke();
+    if (big) x.fillText(String(k / 2), X, 26);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+grade.uniforms.tScale.value = makeScale();
 // A critically damped spring: the lens moves heavy and smooth.
 const lookV = { yaw: 0, pitch: 0 };
 function easeLook(dt) {
-  // The scope follows its mark, a little behind.
-  if (sight) {
-    sightTo.copy(sightTarget(sightTo)).sub(sightEye(eyeP)).normalize();
-    sightDir.lerp(sightTo, 1 - Math.exp(-dt * 9)).normalize();
-    // The lens zooms with the bolt, so it stays big in the box.
-    const d = sightTo.copy(sightTarget(sightTo)).distanceTo(eyeP);
-    const deg = THREE.MathUtils.radToDeg;
-    const want = shot && !shot.hit ? clamp(deg(2 * Math.atan(160 / d)), 1.4, 12) : shot ? clamp(deg(2 * Math.atan(16 * ast.R / d)), 2, 12) : 12;
-    sightFov += (want - sightFov) * (1 - Math.exp(-dt * 5));
-  }
   // The push builds over about twelve seconds of hold and eases out slower.
   const pt = charge ? clamp((simT - charge.t0) / 12, 0, 1) : 0;
   cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
@@ -5461,7 +5515,7 @@ function applyAim() {
 const aimP = new THREE.Vector3();
 // Free aim: the arrow keys or WASD lay the gun by hand.
 // Left turns the muzzle to the frame's left; up raises it.
-const manual = { on: false, yaw: 0, elev: rad(8) };
+const manual = { on: false, yaw: 0, elev: rad(8), hold: 0, idle: 0 };
 const tkeys = new Set();
 const TRAV = { ArrowLeft: [1, 0], KeyA: [1, 0], ArrowRight: [-1, 0], KeyD: [-1, 0], ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1] };
 function setAimMode(v) {
@@ -5470,13 +5524,25 @@ function setAimMode(v) {
   wake();
 }
 function stepTraverse(dt) {
-  if (!tkeys.size || dt <= 0) return;
+  if (dt <= 0) return;
+  if (!tkeys.size) {
+    manual.hold = 0;
+    // Left alone for five seconds, the gun goes back to its default lay.
+    const busyGun = charge || ranging || (shot && !shot.hit);
+    manual.idle = busyGun ? 0 : manual.idle + dt;
+    if (manual.on && manual.idle > 5) ui.setting('aim').set('track', true);
+    return;
+  }
+  manual.idle = 0;
   // The first key press hands the gun over to the keys.
   if (!manual.on) ui.setting('aim').set('free', true);
   let y = 0, e = 0;
   for (const k of tkeys) { y += TRAV[k][0]; e += TRAV[k][1]; }
-  manual.yaw += Math.sign(y) * rad(8) * dt;
-  manual.elev = clamp(manual.elev + Math.sign(e) * rad(5) * dt, rad(2), rad(35));
+  // A heavy mount: it starts slow and builds over four seconds of hold.
+  manual.hold += dt;
+  const ramp = THREE.MathUtils.smoothstep(manual.hold, 0, 4);
+  manual.yaw += Math.sign(y) * rad(1.5 + 13.5 * ramp) * dt;
+  manual.elev = clamp(manual.elev + Math.sign(e) * rad(1 + 5 * ramp) * dt, rad(2), rad(35));
 }
 // The parked aim: straight down the causeway, eight degrees up.
 const PARK = new THREE.Vector3(0, Math.sin(rad(8)), -Math.cos(rad(8)));
@@ -5491,7 +5557,10 @@ function stepAim(dt, snap = false) {
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
   else if (charge && ast.state !== 'shatter') astAt(Math.min(1, ast.s + 10 / SIZES[opts.size].T), aimP).sub(A0);
   else aimP.copy(PARK);
-  const dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw, de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
+  // The short way round: the mount turns a full circle.
+  let dy = Math.atan2(-aimP.x, -aimP.z) - aimNow.yaw;
+  dy -= Math.PI * 2 * Math.round(dy / (Math.PI * 2));
+  const de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
   // The gun's swing home: its first error, for the breech's half-way cue.
   if (parking && shot.parkErr0 == null) shot.parkErr0 = aimNow.err;
@@ -5502,7 +5571,8 @@ function stepAim(dt, snap = false) {
   aimNow.vy += (W * W * dy - 2 * Z * W * aimNow.vy) * dt;
   aimNow.ve += (W * W * de - 2 * Z * W * aimNow.ve) * dt;
   // The mount turns at 3.2 degrees a second at most; by hand, at 7.
-  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(manual.on ? 7 : 3.2);
+  // By hand up to 16 degrees a second; far from its lay it swings home at 10.
+  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(manual.on ? 16 : aimNow.err > rad(20) && !charge ? 10 : 3.2);
   if (sp > top) { aimNow.vy *= top / sp; aimNow.ve *= top / sp; }
   setAim(aimNow.yaw + aimNow.vy * dt, aimNow.elev + aimNow.ve * dt);
 }
@@ -5589,9 +5659,9 @@ function stepShot(dt) {
   // The barrel slams back 60 m in a tenth of a second, then runs out slowly.
   U.uRecoil.value = reduced() ? 0 : 60 * Math.min(shot.c, 1.25) * (1 - Math.exp(-age / 0.05)) * Math.exp(-Math.max(0, age - 0.25) / 2.2);
   shadowDirty = true;
-  // The cradle kicks up 0.5 degrees and settles; the deck sways.
+  // The barrel and breech dip five degrees in a breath and climb back over seconds; the deck sways.
   if (!reduced()) {
-    kick.p = rad(0.5) * shot.c * 1.55 * Math.exp(-age / 0.6) * Math.sin(age * Math.PI / 0.6);
+    kick.p = -rad(5) * Math.min(shot.c, 1.25) * (1 - Math.exp(-age / 0.08)) * Math.exp(-Math.max(0, age - 0.15) / 1.6);
     kick.y = rad(0.1) * shot.c * Math.exp(-age / 0.8) * Math.sin(age * 2 * Math.PI / 0.9);
   }
   applyAim();
