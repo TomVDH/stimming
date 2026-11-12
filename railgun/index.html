@@ -935,6 +935,9 @@ scene.add(far);
 // uCloudC: the clouds' own slow clock, in sim seconds.
 const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 } };
 const CLOUD_FS = /* glsl */`precision highp sampler3D;
+// The noise has no mipmaps: level 0 always.
+// An explicit level needs no derivatives, so samples after a discard or in a branch stay stable on Direct3D.
+#define texture(s, p) textureLod(s, p, 0.0)
 uniform sampler3D uVol;
 varying vec2 vUv;
 varying vec3 vP, vR, vF;
@@ -1130,13 +1133,15 @@ function cloudLayer(list, order) {
   return m;
 }
 // Heaps stand in front of the rock's track: they draw after its smoke.
-// Clusters with open sky between; two small ones nearer.
+// Far clusters with open sky between, a middle row, and small ones near the eye.
+// Each: bearing in degrees, distance, base height, width, height, kind.
 const heaps = cloudLayer([
-  [-6, 37000, 1550, 3600, 2000, 0], [-1, 33000, 1450, 2000, 1300, 0], [3, 36500, 1600, 2400, 1500, 0],
-  [9, 16000, 1250, 900, 650, 0],
-  [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0],
-  [37, 38000, 1650, 4400, 2600, 0], [43, 32000, 1500, 2300, 1400, 0],
-  [50, 14500, 1200, 800, 600, 0], [58, 35000, 1550, 3000, 1800, 0], [63, 29000, 1450, 1800, 1100, 0],
+  [-14, 24000, 1400, 1800, 1100, 0], [-6, 37000, 1550, 3600, 2000, 0], [-1, 33000, 1450, 2000, 1300, 0], [3, 36500, 1600, 2400, 1500, 0],
+  [9, 16000, 1250, 900, 650, 0], [13, 8000, 680, 1150, 720, 0],
+  [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0], [26, 5500, 580, 950, 620, 0],
+  [31, 12000, 1050, 1000, 700, 0], [38, 4300, 500, 760, 500, 0], [37, 38000, 1650, 4400, 2600, 0], [43, 32000, 1500, 2300, 1400, 0],
+  [47, 6500, 620, 1050, 680, 0], [50, 14500, 1200, 800, 600, 0], [58, 35000, 1550, 3000, 1800, 0],
+  [63, 29000, 1450, 1800, 1100, 0], [69, 9000, 760, 1350, 860, 0], [76, 25000, 1400, 2200, 1400, 0],
 ], 2.2);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
@@ -1836,6 +1841,9 @@ function makeTrain(pu) {
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`precision highp sampler3D;
+// The noise has no mipmaps: level 0 always.
+// An explicit level needs no derivatives, so samples after a discard or in a branch stay stable on Direct3D.
+#define texture(s, p) textureLod(s, p, 0.0)
   varying vec3 vP;
   uniform sampler3D uVol;
   uniform vec3 uAstP, uAway, uSide, uUpv, uHot, uFireC, uEmberC, uSoot, uAsh;
@@ -3713,6 +3721,9 @@ function makeVol(decl, extra) {
     vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; varying vec3 vP;
     void main() { vP = uC + position * uR * 1.08; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
     fragmentShader: /* glsl */`precision highp sampler3D;
+// The noise has no mipmaps: level 0 always.
+// An explicit level needs no derivatives, so samples after a discard or in a branch stay stable on Direct3D.
+#define texture(s, p) textureLod(s, p, 0.0)
     varying vec3 vP;
     uniform sampler3D uVol;
     uniform sampler2D uGunD; uniform vec2 uDRes, uNF; uniform vec3 uCamFwd;
