@@ -7614,6 +7614,9 @@ function sillyBoom(p) {
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
 const BURN_T = 3.4, WHITE_T = 1.4;
+// The choir enters this many seconds before contact.
+// It is full by CHOIR_FULL, so it sings before the white takes the frame.
+const CHOIR_IN = 2.8, CHOIR_FULL = 0.5;
 // The ground point the rock strikes.
 const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
 // The horizon's drop at ground distance d, as hzFade draws it.
@@ -7647,6 +7650,7 @@ function endStrike() {
 // d.u: nearness to the ground, 0 to 1; it holds at 1 after contact.
 // d.vol: fades in over the first third, out across the white.
 // d.over: the strain, up to 1 in the burn. Null stops the sound.
+// d.choir: the choir, 0 to 1; it enters in the last seconds before contact.
 // Today it drives the charge hum; a live charge owns the hum.
 function gameOverSound(ac, d) {
   // A surge mix takes the seam; Hum falls through to the charge hum.
@@ -7681,7 +7685,9 @@ function stepStrike(dt) {
     // The rock lights the heaps and the tower harder as it comes down.
     rockGlowK = 1 + 5 * u * u;
     // The surge climbs with the rock's nearness to the ground.
-    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1), crush: 0.3 * THREE.MathUtils.smoothstep(u, 0.85, 1) });
+    // The machines ramp across the fall; the choir joins only near the ground.
+    const tc = (strike.s1 - ast.s) * fallT(), choir = 1 - THREE.MathUtils.smoothstep(tc, CHOIR_FULL, CHOIR_IN);
+    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1), crush: 0.3 * THREE.MathUtils.smoothstep(u, 0.85, 1), choir });
     // Crackle starts as the rock nears the ground.
     if (ac && u > 0.85 && rnd() < dt * 20 * (u - 0.85) / 0.15) crackle(ac, 0.3);
     if (ast.s >= strike.s1) strikeHit();
@@ -7693,7 +7699,7 @@ function stepStrike(dt) {
     // The surge is the impact's sound: it screams through the burn and dies in the white.
     const gv = 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T);
     // The sound crushes as it burns: harder drive, and crackle all through.
-    gameOverSound(ac, { u: 1, vol: gv, over: 0.6 + 0.4 * b, crush: 0.3 + 0.7 * b });
+    gameOverSound(ac, { u: 1, vol: gv, over: 0.6 + 0.4 * b, crush: 0.3 + 0.7 * b, choir: 1 });
     if (ac && gv > 0.05 && rnd() < dt * (10 + 40 * b)) crackle(ac, 0.4 + 0.6 * b);
     // The white holds, then the button's Reset rewinds and cuts to the start.
     if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
@@ -8302,9 +8308,11 @@ function stackStart(ac, P) {
   }
   return h;
 }
-// dv: an optional drive { c, over, rage, lock, vol } in place of the charge.
+// dv: an optional drive { c, over, rage, lock, vol, choir } in place of the charge.
+// dv.choir drives the swarm alone; without it the swarm follows c.
 function stackUpdate(ac, h = hum, dv = null) {
   const P = h.P, c = dv ? dv.c : charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+  const cu = dv && dv.choir != null ? clamp(dv.choir, 0, 1) : u;
   const ov = dv ? dv.over : over, rg = dv ? dv.rage : rage, vol = dv ? dv.vol : 1;
   const locked = dv ? dv.lock : c >= 0.999 && ov < 0.15;
   if (locked && !h.locked) h.lockAt = t;
@@ -8342,7 +8350,7 @@ function stackUpdate(ac, h = hum, dv = null) {
   // The swarm: each voice wanders, then glides to its chord tone.
   // A pre chord holds until the lock, then resolves slowly.
   for (const v of h.voices) {
-    const k = ss(u, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(u, v.enter, 0.97), v.k);
+    const k = ss(cu, v.enter, v.enter + (h.S.fade || 0.08)), conv = Math.pow(ss(cu, v.enter, 0.97), v.k);
     const p = v.ps + 1.5 * Math.sin(t * v.rate + v.ph) * (1 - conv), q = p + ((locked ? v.tgt : v.pre) - p) * conv;
     const fr = h.R * Math.pow(2, (q + ov * v.sour * 0.6) / 12);
     for (const o of v.os) o.frequency.setTargetAtTime(fr, t, locked && v.pre !== v.tgt ? 0.45 : 0.15);
@@ -8391,6 +8399,8 @@ function surgeOver(ac, d) {
     c: THREE.MathUtils.smoothstep(d.u, 0, 0.5), lock: d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
     // The strain sours the chord at half depth, so the chord still reads.
     over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
+    // The choir waits for the last seconds before contact.
+    choir: d.choir ?? 1,
   });
   // Crush: the soft clip is driven hard, so the chord breaks up.
   if (d.crush) goSurge.cg.gain.setTargetAtTime(0.8 + 0.8 * d.u + 1.25 * d.over + 5 * d.crush, ac.currentTime, 0.1);
