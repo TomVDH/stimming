@@ -24,7 +24,7 @@ An unshot rock no longer holds. It falls at one speed from first sight into the 
 - [x] Reduced motion, mute, hidden tab
 - [x] QA: every size, 1280 x 800, 375 x 812, 812 x 375, clean console, 30 fps
 - [x] Stills of the beats in the bean
-- [x] Choir only near the end: the machines ramp across the fall; the choir enters about 1.75 s before contact, is full 1 s before, locks at contact and sings through the burn (CHOIR_IN, CHOIR_FULL)
+- [x] Game-over sound on its first timing: the hum starts at the horizon line and builds straight with nearness; the choir swells on the anamorphic flare curve (from about 22 s out on a Mountain), all voices by about 5 s out, and the full chord resolves gently 1.5 s before contact (CHOIR_FULL, soft accent, 1.1 s glide)
 
 ## Timing
 
