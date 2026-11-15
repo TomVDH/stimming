@@ -7615,8 +7615,6 @@ function sillyBoom(p) {
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
 const BURN_T = 3.4, WHITE_T = 1.4;
-// The full choir comes in this many seconds before contact.
-const CHOIR_FULL = 1.5;
 // The ground point the rock strikes.
 const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
 // The horizon's drop at ground distance d, as hzFade draws it.
@@ -7648,10 +7646,10 @@ function endStrike() {
 }
 // The game-over sound: one seam, so another charge mix can take it over.
 // d.u: nearness to the ground, 0 to 1; it holds at 1 after contact.
-// d.vol: fades in over the first third, out across the white.
+// d.vol: fades in over the first tenth; it cuts as the white comes.
 // d.over: the strain, up to 1 in the burn. Null stops the sound.
-// d.choir: the choir's layers, 0 to 1, full CHOIR_FULL before contact.
-// d.lock: the chord resolves; it holds through the burn.
+// d.choir: the choir's layers, 0 to 1, full at 60 percent of the fall.
+// d.lock: the chord resolves at contact; it holds through the burn.
 // Today it drives the charge hum; a live charge owns the hum.
 function gameOverSound(ac, d) {
   // A surge mix takes the seam; Hum falls through to the charge hum.
@@ -7685,27 +7683,21 @@ function stepStrike(dt) {
     hitFlash = 0.8 * Math.pow(u, 4);
     // The rock lights the heaps and the tower harder as it comes down.
     rockGlowK = 1 + 5 * u * u;
-    // The surge climbs with the rock's nearness to the ground.
-    // The hum starts at the horizon line and layers up across the fall.
-    // The choir swells on the anamorphic flare's curve, a third of the way down.
-    // Every voice is in by CHOIR_FULL before contact; the chord then resolves gently.
-    const T0 = (strike.s1 - 1) * fallT(), tc = (strike.s1 - ast.s) * fallT();
-    const pc = clamp((T0 - tc) / Math.max(T0 - CHOIR_FULL, 0.1), 0, 1);
-    const choir = Math.pow(clamp((pc - 0.3) / 0.7, 0, 1), 2.2);
-    gameOverSound(ac, { u, vol: THREE.MathUtils.smoothstep(u, 0, 0.35), over: 0.6 * THREE.MathUtils.smoothstep(u, 0.85, 1), crush: 0.3 * THREE.MathUtils.smoothstep(u, 0.85, 1), choir, lock: tc <= CHOIR_FULL });
-    // Crackle starts as the rock nears the ground.
-    if (ac && u > 0.85 && rnd() < dt * 20 * (u - 0.85) / 0.15) crackle(ac, 0.3);
-    if (ast.s >= strike.s1) strikeHit();
+    // The surge builds across the whole fall and peaks at contact.
+    // Its nearness curve leads the fall, so the build starts early.
+    // The choir's layers are all in by 60 percent of the fall.
+    const choir = Math.pow(Math.min(1, u / 0.6), 0.7);
+    gameOverSound(ac, { u: Math.pow(u, 0.6), vol: THREE.MathUtils.smoothstep(u, 0, 0.1), over: 0, crush: 0, choir, lock: false });
+    if (ast.s >= strike.s1) { strikeHit(); strikeBoom(ac); }
   } else {
     strike.tb += dt;
     const tb = strike.tb, b = clamp(tb / burnT(), 0, 1);
     // The blast light: a short flash, then it climbs with the burn.
     hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
-    // The surge is the impact's sound: it screams through the burn and dies in the white.
-    const gv = 1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + WHITE_T);
-    // The sound crushes as it burns: harder drive, and crackle all through.
-    gameOverSound(ac, { u: 1, vol: gv, over: 0.6 + 0.4 * b, crush: 0.3 + 0.7 * b, choir: 1, lock: true });
-    if (ac && gv > 0.05 && rnd() < dt * (10 + 40 * b)) crackle(ac, 0.4 + 0.6 * b);
+    // The chord resolves at contact and swells through the burn.
+    // It cuts as the white takes the frame; its echo rings on.
+    const gv = (1 + 0.15 * b) * (1 - THREE.MathUtils.smoothstep(tb, burnT(), burnT() + 0.2));
+    gameOverSound(ac, { u: 1, vol: gv, over: 0, crush: 0, choir: 1, lock: true });
     // The white holds, then the button's Reset rewinds and cuts to the start.
     if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
   }
@@ -8364,9 +8356,11 @@ function stackUpdate(ac, h = hum, dv = null) {
   }
   // The swarm's filter opens from 600 Hz to 9 kHz.
   // Pipe voices open less: from 1.5 kHz to 9 kHz.
-  h.sw.frequency.setTargetAtTime(h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
+  // dv.open sets the filter's floor in its place.
+  h.sw.frequency.setTargetAtTime(dv?.open ? dv.open * Math.pow(9000 / dv.open, u) : h.S.wave === 'pipe' ? 1500 * Math.pow(2, 2.6 * u) : 600 * Math.pow(2, 3.9 * u), t, 0.1);
   // The drive grows with the charge and the over-hold.
-  h.cg.gain.setTargetAtTime(0.8 + 0.8 * u + 2.5 * ov, t, 0.1);
+  // dv.drive sets the drive in its place.
+  h.cg.gain.setTargetAtTime(dv?.drive ?? 0.8 + 0.8 * u + 2.5 * ov, t, 0.1);
   h.g.gain.setTargetAtTime(0.42 * (0.25 + 0.75 * u) * P.hum * (1 + 0.5 * accent) * vol, t, 0.08);
   if (h.vs) h.vs.gain.setTargetAtTime(P.verb * (0.5 + 0.5 * u) * (1 + 0.6 * accent) * vol, t, 0.1);
 }
@@ -8374,7 +8368,7 @@ function stackUpdate(ac, h = hum, dv = null) {
 // The picked surge plays the rock's last fall to the game over.
 // The strike calls surgeOver every sim step with d: { u, vol, over }.
 // d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
-// d.over: the strain, 0.6 at contact, 1 at the end of the burn.
+// d.over: the strain; the strike sends 0, so the chord stays clean.
 // Null stops it. A null ac (muted) stops it hard.
 let goSurge = null;
 // The game over plays its surge without the machines.
@@ -8410,16 +8404,17 @@ function goStackUpdate(ac, h, d) {
   // The machines build straight with nearness, across the whole fall.
   stackUpdate(ac, h, {
     c: d.u, lock: d.lock ?? d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
-    // A soft accent and a slow glide: the choir eases in, it does not hit.
-    accent: 0.25, glide: 1.1,
+    // A full accent and a quick glide: the chord hits at contact.
+    accent: 1, glide: 0.3,
     // The strain sours the chord at half depth, so the chord still reads.
-    over: 0.5 * d.over, vol: d.vol * (charge ? 0.35 : 1),
-    // The choir waits for the last seconds before contact.
+    over: 0.5 * d.over, vol: GO_LEVEL * d.vol * (charge ? 0.35 : 1),
     choir: d.choir ?? 1,
+    // A bright filter and a light drive keep the chord clean.
+    open: 1800, drive: 0.45 + 0.25 * d.u,
   });
-  // Crush: the soft clip is driven hard, so the chord breaks up.
-  if (d.crush) h.cg.gain.setTargetAtTime(0.8 + 0.8 * d.u + 1.25 * d.over + 5 * d.crush, ac.currentTime, 0.1);
 }
+// The game-over stack's level, against its light drive.
+const GO_LEVEL = 1.6;
 // now: a hard stop for mute and a hidden tab; else a two-second fade.
 function surgeOverStop(now = false) {
   if (!goSurge) return;
@@ -8430,6 +8425,16 @@ function surgeOverStop(now = false) {
   for (const n of h.src) n.stop(t + 2.5);
   track(t + 2.6, ...h.src);
 }
+// The impact at contact: a deep drop and a dark blast of air.
+function strikeBoom(ac) {
+  if (!ac || goMix === 'hum') return;
+  const t = ac.currentTime;
+  track(t + 3,
+    blip(ac, kit.out, t, { f0: 80, f1: 26, glide: 1.4, peak: GO_HIT, a: 0.005, dur: 2.6 }),
+    burst(ac, kit.out, t, { dur: 1.6, rate: 0.6, type: 'lowpass', f: 2400, f1: 200, q: 0.5, peak: 0.6 * GO_HIT, a: 0.004 }).src);
+}
+// The impact's level.
+const GO_HIT = 0.32;
 /* ---------- game-over takes ---------- */
 // Three takes beside the surge mixes; the Dev row picks one.
 // Each take returns { src, g, sg, upd }; the stop fades g and sg.
@@ -8440,7 +8445,7 @@ const GO_TAKES = { ascent: goAscent, requiem: goRequiem, undertow: goUndertow };
 // A Shepard hum: octave-spaced tones under one fixed bell.
 // The tones glide by octaves, so the pitch seems to move forever.
 function shepard(ac, src, dest, base = 27.5, n = 7) {
-  const lp = filt(ac, 'lowpass', 300, 0.7), g = ac.createGain();
+  const lp = filt(ac, 'lowpass', 1200, 0.7), g = ac.createGain();
   g.gain.value = 0; lp.connect(g).connect(dest);
   const parts = [];
   for (let i = 0; i < n; i++) {
@@ -8481,7 +8486,7 @@ function goAscent(ac) {
     const t = ac.currentTime, s = h.shep;
     // The climb quickens to an octave in four seconds at contact.
     shepardStep(ac, s, 0.03 + 0.22 * d.u * d.u, d.lock);
-    s.lp.frequency.setTargetAtTime(300 * Math.pow(2, 3.3 * d.u), t, 0.1);
+    s.lp.frequency.setTargetAtTime(1200 * Math.pow(2, 2 * d.u), t, 0.1);
     s.g.gain.setTargetAtTime(GO_SHEP * (0.35 + 1.25 * d.u), t, 0.1);
   };
   return h;
@@ -8495,7 +8500,7 @@ SURGE.undertow = {
   pre: { bass: [-12, -1, 0, 1], mid: [11, 12, 13, 14, 15, 16, 17, 18], high: [22, 23, 24, 25, 26, 27] },
 };
 function goUndertow(ac) {
-  const h = goStack(ac, { ...MIX0, stack: 'undertow', verb: 0.6, pre: 0.08, dark: 4500 });
+  const h = goStack(ac, { ...MIX0, stack: 'undertow', verb: 0.6, pre: 0.08, dark: 9000 });
   // One offset bends every swarm voice down together.
   const bend = ac.createConstantSource();
   bend.offset.value = 0;
@@ -8510,7 +8515,7 @@ function goUndertow(ac) {
     goStackUpdate(ac, h, d);
     const t = ac.currentTime, s = h.shep;
     shepardStep(ac, s, -(0.03 + 0.22 * d.u * d.u), d.lock);
-    s.lp.frequency.setTargetAtTime(250 * Math.pow(2, 2.6 * d.u), t, 0.1);
+    s.lp.frequency.setTargetAtTime(1000 * Math.pow(2, 2 * d.u), t, 0.1);
     s.g.gain.setTargetAtTime(GO_SHEP * (0.35 + 1.25 * d.u), t, 0.1);
     // At the lock the bend lets go, so the chord rises as it opens.
     h.bend.offset.setTargetAtTime(d.lock ? 0 : -500 * Math.pow(d.u, 1.5), t, d.lock ? 0.5 : 0.2);
@@ -8522,7 +8527,7 @@ function goUndertow(ac) {
 // The lock lifts each minor third to a major third.
 const REQ = [[0, 0], [7, 7], [12, 12], [15, 16], [19, 19], [24, 24], [27, 28], [31, 31], [36, 36], [39, 40], [43, 43]];
 // The Requiem's levels: the voices, the pedal, the heart and the whole take.
-const GO_REQ = { voice: 0.42, pedal: 0.25, heart: 0.5, out: 0.27 };
+const GO_REQ = { voice: 0.42, pedal: 0.25, heart: 0.5, out: 0.45 };
 function goRequiem(ac) {
   const src = [], R = 55;
   const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
@@ -8534,7 +8539,7 @@ function goRequiem(ac) {
   drive.gain.value = 0.6; g.gain.value = 0; sg.gain.value = 0;
   drive.connect(shape).connect(g).connect(kit.out); sg.connect(kit.out);
   // The pedal: A0, A1 and a soft square on A2, under a low lid.
-  const plp = filt(ac, 'lowpass', 200, 0.8), pg = ac.createGain(), sq = ac.createGain();
+  const plp = filt(ac, 'lowpass', 500, 0.8), pg = ac.createGain(), sq = ac.createGain();
   pg.gain.value = 0; sq.gain.value = 0.3;
   plp.connect(pg).connect(drive); sq.connect(plp);
   osc('sine', R / 2, plp); osc('sine', R, plp, 3); osc('square', 2 * R, sq, -4);
@@ -8544,7 +8549,7 @@ function goRequiem(ac) {
   const vib = [4.7, 5.2, 5.7].map(fr => { const lg = ac.createGain(); lg.gain.value = 0; osc('sine', fr, lg); return lg; });
   const voices = REQ.map(([tgt, maj], i) => {
     const low = tgt < 12, vg = ac.createGain(), pn = ac.createStereoPanner();
-    const f1 = low ? filt(ac, 'lowpass', 320, 0.7) : filt(ac, 'bandpass', VOWEL.oo[0], 6), f2 = filt(ac, 'bandpass', low ? VOWEL.uu[1] : VOWEL.oo[1], 8);
+    const f1 = low ? filt(ac, 'lowpass', 900, 0.7) : filt(ac, 'bandpass', VOWEL.oo[0], 6), f2 = filt(ac, 'bandpass', low ? VOWEL.uu[1] : VOWEL.oo[1], 8);
     vg.gain.value = 0; pn.pan.value = (i % 2 ? 1 : -1) * Math.min(0.8, 0.08 * i);
     f1.connect(vg); f2.connect(vg); vg.connect(pn).connect(cb);
     // Two saws six cents apart make each voice.
@@ -8553,7 +8558,7 @@ function goRequiem(ac) {
     return { os, f1, f2, vg, tgt, maj, low, enter: 0.05 + 0.7 * i / (REQ.length - 1), ph: 6.28 * Math.random(), sour: Math.random() < 0.5 ? -1 : 1 };
   });
   // The plain's echoes take the whole take.
-  const vs = ac.createGain(), dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', 6000, 0.5);
+  const vs = ac.createGain(), dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', 9000, 0.5);
   vs.gain.value = 0; dl.delayTime.value = 0.06;
   g.connect(vs).connect(dl).connect(dk).connect(plainVerb(ac));
   return { src, g, sg, drive, plp, pg, cb, vib, voices, vs, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
@@ -8571,7 +8576,7 @@ function requiemUpdate(ac, h, d) {
   const u = d.u, cu = d.choir ?? 1, lock = d.lock ?? u >= 0.999, ov = 0.5 * d.over, vol = d.vol * (charge ? 0.35 : 1);
   if (lock && !h.locked) h.lockAt = t;
   h.locked = lock;
-  const accent = 0.3 * Math.exp(-(t - h.lockAt) / 1.2);
+  const accent = 1 * Math.exp(-(t - h.lockAt) / 1.2);
   // The heart races from 44 to 160 beats a minute; it stops at the lock.
   if (!lock && u > 0.02) {
     const per = 60 / (44 + 116 * Math.pow(u, 1.6));
@@ -8581,7 +8586,7 @@ function requiemUpdate(ac, h, d) {
   h.sg.gain.setTargetAtTime(GO_REQ.heart * vol, t, 0.08);
   // The pedal grows from the horizon line; its lid opens with nearness.
   h.pg.gain.setTargetAtTime(GO_REQ.pedal * (0.15 + 0.85 * u), t, 0.1);
-  h.plp.frequency.setTargetAtTime(200 * Math.pow(2, 1.6 * u), t, 0.1);
+  h.plp.frequency.setTargetAtTime(500 * Math.pow(2, 2 * u), t, 0.1);
   // The vowel opens from oo to ah, and screams under the strain.
   const vo = ss(cu, 0.2, 0.9);
   const F1 = lerp(lerp(VOWEL.oo[0], VOWEL.ah[0], vo), VOWEL.scream[0], ov), F2 = lerp(lerp(VOWEL.oo[1], VOWEL.ah[1], vo), VOWEL.scream[1], ov);
@@ -8598,8 +8603,8 @@ function requiemUpdate(ac, h, d) {
   for (const l of h.vib) l.gain.setTargetAtTime(14 * cu, t, 0.2);
   // The choir swells over the pedal as its voices fill in.
   h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (1 + accent), t, 0.08);
-  // Crush drives the soft clip hard, so the chord breaks up in the burn.
-  h.drive.gain.setTargetAtTime(0.4 + 0.9 * u + 1.25 * d.over + 4 * (d.crush || 0), t, 0.1);
+  // A light drive keeps the chord clean.
+  h.drive.gain.setTargetAtTime(0.3 + 0.3 * u, t, 0.1);
   h.g.gain.setTargetAtTime(GO_REQ.out * vol, t, 0.08);
   h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (1 + accent) * vol, t, 0.1);
 }
