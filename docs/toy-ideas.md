@@ -85,6 +85,12 @@ Built toys that never had an idea number. Tom sets the group.
 | Toy | Group | Set by |
 |---|---|---|
 | **Railgun** (`railgun/`) | C | Tom, 2026-11-14 |
+| **Train Ride** (`trainride/`) | C | Tom, 2026-11-14 |
+| **Lit motorway** (`motorway/`) | C | Tom, 2026-11-14 |
+| **Subway** (`subway/`) | C | Tom, 2026-11-14 |
+| **East Van** (`eastvan/`) | C | Tom, 2026-11-14 |
+| **Phaeton** (`phaeton/`) | C | Tom, 2026-11-14 |
+| **Beach walker** (`walker/`) | C | Tom, 2026-11-14 |
 
 ## Later: batch 1
 
