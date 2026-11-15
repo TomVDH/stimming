@@ -554,6 +554,8 @@ const OUTU = {
   tSect: { value: null },
   // uHall is 1 under the Zurich HB hall; uIsl is 1 where an island platform stands behind.
   uHall: { value: 0 },
+  // The near tunnel's two mouths, in world x.
+  uTun: { value: new THREE.Vector2(-1e9, -1e9) },
   uPz: { value: 0 },
   // The station clock's hands, in radians: hours, minutes, seconds.
   uClock: { value: new THREE.Vector3() },
@@ -1874,6 +1876,26 @@ float trainLight(vec3 P) {
   return pane * band / (1.0 + d * d * 0.3);
 }`;
 
+// Tunnels: uTun holds the near tunnel's mouths in world x, or far off when none is near.
+const TUNL = /* glsl */`
+uniform vec2 uTun;
+const vec3 TLAMPC = vec3(1.0, 0.88, 0.72);
+// 1 inside the near tunnel, 0 outside.
+float tunIn(float x) { return step(uTun.x, x) * step(x, uTun.y); }
+// Daylight reaches in from each mouth and fades over some 25 m.
+float tunDay(float x) { return min(1.0, exp(-(x - uTun.x) / 25.0) + exp(-(uTun.y - x) / 25.0)); }
+// The wall lamps every 25 m, high on the far wall, light a point P.
+vec3 tunLamps(vec3 P, vec3 N) {
+  float x0 = floor(P.x / 25.0 + 0.5) * 25.0;
+  vec3 c = vec3(0.0);
+  for (int k = -1; k <= 1; k++) {
+    vec3 L = vec3(x0 + float(k) * 25.0, 2.3, -10.2) - P;
+    float d2 = dot(L, L);
+    c += TLAMPC * 2.5 / (d2 + 1.0) * max(dot(N, L * inversesqrt(d2)) * 0.95 + 0.05, 0.0);
+  }
+  return c;
+}`;
+
 /* The viaduct: a concrete parapet below the window. */
 const parapet = new THREE.Mesh(new THREE.BoxGeometry(400, 1.0, 0.4).translate(0, -2.1, -4.0), new THREE.ShaderMaterial({
   uniforms: OUTU,
@@ -1945,6 +1967,8 @@ function strip(geo, w, cy, add, order, frag) {
       p.x *= ${w.toFixed(3)} + uSmear;
       vL = vec2(p.x, p.y - ${cy.toFixed(3)});
       vK = aK;
+      // A mast inside a tunnel is not drawn.
+      if (aK < -1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
       vW = w.xyz;
       gl_Position = projectionMatrix * viewMatrix * w;
@@ -2731,6 +2755,7 @@ const solid = body => new THREE.ShaderMaterial({
   ${TRAIN}
   ${HAZE}
   ${STNL}
+  ${TUNL}
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(vP - cameraPosition);
@@ -2747,7 +2772,15 @@ const solid = body => new THREE.ShaderMaterial({
     // Station day light, Pixar-lite: a wrapped sun and a strong sky fill with a warm bounce.
     float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
     vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
-    gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
+    vec3 lit = mix(night, day, uDay);
+    // In a tunnel the wall lamps and the carriage's panes light the bed; daylight reaches in at the mouths.
+    float ti = tunIn(vP.x);
+    if (ti > 0.0) {
+      vec3 inside = night * 0.3 + tunLamps(vP, N) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.25;
+      lit = mix(inside, lit, uDay * tunDay(vP.x));
+      glow *= mix(0.2, 1.0, tunDay(vP.x));
+    }
+    gl_FragColor = vec4(alb * lit + glow, 1.0);
   }`,
 });
 const platform = new THREE.Group();
@@ -3252,6 +3285,144 @@ out.add(bed);
     bed.add(m);
   }
 }
+/* Tunnels: a lined tube round both tracks, and a portal face at each mouth. */
+// The tube's section, across the line (z) and up (y): our side wall, the vault, the far wall.
+const TUBE = [[4, -2.6], [4, 3.5], [1.5, 6.2], [-8, 6.2], [-10.5, 3.5], [-10.5, -2.6]];
+const tube = (() => {
+  const pos = [], nrm = [];
+  for (let i = 0; i < TUBE.length - 1; i++) {
+    const [z0, y0] = TUBE[i], [z1, y1] = TUBE[i + 1];
+    // The normal faces the tube's middle.
+    let nz = -(y1 - y0), ny = z1 - z0;
+    const l = Math.hypot(nz, ny), mz = (z0 + z1) / 2, my = (y0 + y1) / 2;
+    nz /= l; ny /= l;
+    if (nz * (-3 - mz) + ny * (1.5 - my) < 0) { nz = -nz; ny = -ny; }
+    for (const [x, y, z] of [[-1500, y0, z0], [1500, y0, z0], [1500, y1, z1], [-1500, y0, z0], [1500, y1, z1], [-1500, y1, z1]]) { pos.push(x, y, z); nrm.push(0, ny, nz); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    side: THREE.DoubleSide,
+    vertexShader: worldVS,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    varying vec3 vN;
+    uniform float uSmear;
+    ${NOISE}
+    ${TRAIN}
+    ${HAZE}
+    ${TUNL}
+    // Cover of a box of half width hw at distance d, blurred over b metres.
+    float boxc(float d, float hw, float b) { return clamp((hw - abs(d)) / max(b, 0.02) + 0.5, 0.0, 1.0); }
+    void main() {
+      if (tunIn(vP.x) < 0.5) discard;
+      vec3 N = normalize(vN);
+      float x = vP.x, y = vP.y;
+      // The motion smear and the pixel's own size blur every pattern along the tube.
+      float bl = uSmear + fwidth(x);
+      float far = smoothstep(0.5, 0.8, N.z);
+      // Grey concrete lining, sooty low down, with wet streaks.
+      vec3 alb = vec3(0.2, 0.195, 0.185) * (0.85 + 0.3 * vnoise(vec2(x * 0.05, y * 0.3)));
+      alb *= mix(0.5, 1.0, smoothstep(-2.6, 0.8, y));
+      alb *= 1.0 - 0.3 * smoothstep(0.55, 0.8, vnoise(vec2(x * 0.6, y * 0.04 + 3.0))) * min(1.0, 0.6 / (0.6 + bl));
+      // Ring joints every 10 m.
+      float jd = mod(x, 10.0) - 5.0;
+      alb *= 1.0 - 0.5 * (1.0 - boxc(jd, 4.96, bl)) * min(1.0, 0.08 / (0.08 + bl));
+      // Refuge niches every 50 m in the far wall.
+      alb *= 1.0 - 0.6 * boxc(mod(x + 12.5, 50.0) - 25.0, 1.0, bl) * boxc(y + 1.4, 1.2, 0.05) * far;
+      // A cable tray runs along the far wall.
+      float tray = boxc(y - 1.6, 0.1, 0.02) * far;
+      alb = mix(alb, vec3(0.06), tray);
+      // Light: the wall lamps, the carriage's lit panes, daylight at the mouths.
+      vec3 light = vec3(0.004, 0.0045, 0.005) + tunLamps(vP, N);
+      float lx = mod(x + 12.5, 25.0) - 12.5, ly = y - 2.3;
+      light += TLAMPC * 0.6 / (lx * lx * 0.8 + ly * ly * 1.5 + 0.6) * far;
+      float f = abs(fract((x - uCamX) / 2.4 + 0.5) - 0.5) * 2.4;
+      light += vec3(1.0, 0.72, 0.45) * mix(smoothstep(0.95, 0.55, f), 0.6, 0.5) * smoothstep(1.7, 0.8, abs(y)) * 0.22 * far;
+      light += (skyA(N.y) * 0.8 + sunC() * 0.15) * uDay * tunDay(x);
+      vec3 c = alb * light;
+      // The lamp fittings glow; a fast pass draws them out into streaks.
+      c += TLAMPC * 5.0 * boxc(lx, 0.3, bl) * boxc(ly, 0.07, 0.02) * far * min(1.0, 0.6 / (0.6 + bl));
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  out.add(m);
+  return m;
+})();
+// Each portal face fills the hillside round the tube's mouth.
+const portals = (() => {
+  // A headwall: 11 m beyond the far wall and 3.5 m over the vault; the hillside meets it.
+  const sh = new THREE.Shape([[6, -3], [6, 9.7], [-22, 9.7], [-22, -3]].map(([a, b]) => new THREE.Vector2(a, b)));
+  sh.holes.push(new THREE.Path(TUBE.map(([a, b]) => new THREE.Vector2(a, b))));
+  const g = new THREE.ShapeGeometry(sh);
+  // Shape (a, b) maps to world (0, b, a): the face stands across the line.
+  g.applyMatrix4(new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1));
+  const mat = solid(/* glsl */`
+  // Rough concrete, darker toward the ground, with rain streaks.
+  alb = vec3(0.3, 0.29, 0.27) * (0.8 + 0.3 * vnoise(vP.zy * 0.4)) * mix(0.6, 1.0, smoothstep(-3.0, 2.0, vP.y));
+  alb *= 1.0 - 0.2 * smoothstep(0.5, 0.8, vnoise(vec2(vP.z * 1.5, vP.y * 0.1)));
+  alb *= 1.0 - 0.25 * uRain;`);
+  mat.side = THREE.DoubleSide;
+  return [0, 1].map(() => { const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.visible = false; out.add(m); return m; });
+})();
+// A hillside at each mouth: it closes over the vault, falls away from the line and sinks into the ground.
+// u runs out from the mouth (negative is over the tunnel); the cutting wall stands at the tube's far wall.
+const mounds = (() => {
+  const Z = [6, -10.5, -10.5, -14, -20, -28, -40, -55, -72, -90];
+  // Full height over the tunnel; outside the mouth it falls away over 45 m.
+  const top = u => 19 * (1 - THREE.MathUtils.smoothstep(u, 0, 45));
+  const prof = z => z > -10.5 ? 1 : 1 - THREE.MathUtils.smoothstep(z, -25, -90);
+  // Over the tunnel each mound reaches half way, so the two meet in the middle.
+  const geo = len => {
+    const um = -Math.min(200, len / 2), U = [um, um / 2, -10, 0, 0.05, 8, 18, 30, 45], pos = [], idx = [];
+    for (let i = 0; i < U.length; i++) for (let j = 0; j < Z.length; j++) {
+      // Out from the mouth nothing spans the line: the first row folds onto the cutting wall's foot.
+      if (U[i] > 0 && j === 0) { pos.push(U[i], -3, -10.5); continue; }
+      // The second -10.5 row is that foot, down at the bed.
+      pos.push(U[i], j === 2 && U[i] > 0 ? -3 : -8 + top(U[i]) * prof(Z[j]), Z[j]);
+    }
+    for (let i = 0; i < U.length - 1; i++) for (let j = 0; j < Z.length - 1; j++) {
+      const a = i * Z.length + j, b = a + Z.length;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  };
+  const mat = solid(/* glsl */`
+  // Grass on the gentle ground, grey rock on the cut.
+  float steep = 1.0 - abs(N.y);
+  vec3 grass = vec3(0.08, 0.14, 0.045) * (0.8 + 0.4 * vnoise(vP.xz * 0.15));
+  vec3 rock = vec3(0.26, 0.25, 0.23) * (0.75 + 0.4 * vnoise(vP.zy * vec2(0.5, 1.5)));
+  alb = mix(grass, rock, smoothstep(0.45, 0.75, steep));
+  alb *= 1.0 - 0.2 * uRain;`);
+  mat.side = THREE.DoubleSide;
+  const ms = [0, 1].map(() => { const m = new THREE.Mesh(geo(400), mat); m.frustumCulled = false; m.visible = false; out.add(m); return m; });
+  let len = 400;
+  // Fits both mounds to the tunnel's length.
+  ms.fit = l => { if (Math.abs(l - len) < 1) return; len = l; for (const m of ms) { m.geometry.dispose(); m.geometry = geo(l); } };
+  return ms;
+})();
+// The tunnels in route metres; each ride lap repeats them.
+const TUNS = ROUTE.tun || [];
+// The tunnel round x, or the nearest within 2.5 km; null when none.
+function tunNear(x) {
+  const lap = Math.floor(x / TILE) * TILE;
+  let best = null, bd = 2500;
+  for (const [a, b] of TUNS) for (const o of [lap - TILE, lap, lap + TILE]) {
+    const d = Math.max(a + o - x, x - b - o, 0);
+    if (d < bd) { bd = d; best = [a + o, b + o]; }
+  }
+  return best;
+}
+// How far the window is inside a tunnel: 0 outside, 1 past the first 20 m.
+let tunT = 0;
+
 /* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
 // The windows look into a saloon: a ceiling light strip, seat backs and the far windows.
 // The glass mirrors the sky and catches the sun; the body curves, so its sheen changes with height.
@@ -3344,10 +3515,11 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
     varying float vU;
     ${TRAIN}
     ${HAZE}
+    ${TUNL}
     ${TSIDE}
     void main() {
       float s = uOpp.w, u = vU;
-      vec4 r = trainSide(vW, u, uOpp.y, s, 1.0, 1.0);
+      vec4 r = trainSide(vW, u, uOpp.y, s, 1.0, 1.0 - tunIn(vW.x) * (1.0 - tunDay(vW.x)));
       if (r.a < 0.02) discard;
       vec3 c = r.rgb;
       // Headlights at the leading nose, day and night.
@@ -4377,7 +4549,23 @@ function place() {
     const fitted = n % 2 === 0 || nearStn;
     lampK[i] = !fitted ? -1 : h < 0.05 ? 0 : h < 0.09 ? (Math.sin(time * 37 + n) > -0.3 ? 1 : 0.15) * (Math.sin(time * 5.3 + n * 3) > -0.8 ? 1 : 0.2) : 1;
   }
+  // No mast stands inside a tunnel.
+  for (let i = 0; i < LAMPS; i++) {
+    const t = tunNear(lampX[i]);
+    if (t && lampX[i] > t[0] - 2 && lampX[i] < t[1] + 2) lampK[i] = -2;
+  }
   for (const a of lampAttrs) a.needsUpdate = true;
+  // The near tunnel: its mouths, the tube round the window and the two portal faces.
+  {
+    const t = tunNear(camX);
+    if (t) OUTU.uTun.value.set(t[0], t[1]); else OUTU.uTun.value.set(-1e9, -1e9);
+    tube.visible = !!t;
+    tube.position.x = Math.round(camX);
+    portals.forEach((m, i) => { m.visible = !!t; if (t) m.position.x = i ? t[1] + 0.05 : t[0] - 0.05; });
+    if (t) mounds.fit(t[1] - t[0]);
+    mounds.forEach((m, i) => { m.visible = !!t; if (t) { m.position.x = i ? t[1] : t[0]; m.scale.x = i ? 1 : -1; } });
+    tunT = t ? THREE.MathUtils.smoothstep(Math.min(camX - t[0], t[1] - camX), 0, 20) : 0;
+  }
   const night = 1 - dayV;
   for (let i = 0; i < NL; i++) OUTU.uLP.value[i].set(lampX[i + 1], 0.1, -2.7, Math.max(0, lampK[i + 1]) * night);
   // The sixteen nearest towns light the haze, the ground and the water.
@@ -4413,10 +4601,13 @@ function place() {
   let sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85) * (1 - Math.min(1, W.uFog.value * 1.1));
   // A station canopy or the HB hall roof shades the window.
   if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 && dx < 200) sunK = 0; }
+  // A tunnel takes the sun away.
+  sunK *= 1 - tunT;
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
-  W.uDay.value = dayV;
+  // In a tunnel the cabin turns to its night look: lamps on, the glass a mirror.
+  W.uDay.value = dayV * (1 - tunT);
   OUTU.uSmear.value = speed / 40;
   OUTU.uSpeed.value = speed;
   W.uSpeed.value = speed;
@@ -4546,7 +4737,7 @@ function update(dt, pace) {
   // Weather eases over: rain arrives in the air first, then wets the pane.
   // The pane dries far more slowly than it wets.
   air += (mode.air - air) * Math.min(1, dt * 0.4);
-  const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2), wetK = wetT > W.uRain.value ? 0.18 : wetT < 0.01 ? 0.4 : 0.08;
+  const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2) * (1 - 0.9 * tunT), wetK = wetT > W.uRain.value ? 0.18 : wetT < 0.01 ? 0.4 : 0.08;
   W.uRain.value += (wetT - W.uRain.value) * Math.min(1, dt * wetK);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 0.12);
   // The hours cross over in about three seconds: daylight, sun, tints.
@@ -4558,8 +4749,9 @@ function update(dt, pace) {
   OUTU.uSunTint.value.lerp(tintT, kh);
   OUTU.uSkyLow.value.lerp(lowT, kh);
   OUTU.uDusk.value += (hourT.dusk - OUTU.uDusk.value) * kh;
-  OUTU.uRain.value = Math.min(1, air);
-  OUTU.uPour.value = air;
+  // No rain falls in a tunnel.
+  OUTU.uRain.value = Math.min(1, air) * (1 - tunT);
+  OUTU.uPour.value = air * (1 - tunT);
   eye.lerp(eyeT, Math.min(1, dt * 7));
   place();
 }
@@ -4582,6 +4774,8 @@ return {
   get oppV() { return opp.v; },
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
+  // How far the window is inside a tunnel, 0 to 1.
+  get tunnel() { return tunT; },
   get day() { return dayV; },
   setTime(v, now) {
     aimHour(hourOf(v));
@@ -4690,7 +4884,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg, tun] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -4710,6 +4904,8 @@ async function loadRoute() {
     // Real woods (tools/woods.py); without them the invented woods serve.
     // Dev: ?nowoods leaves them out, to compare.
     qs.has('nowoods') ? null : opt('woods.png'),
+    // Tunnels in route metres (tools/tunnels.py); without them the line runs in the open.
+    fetch('tunnels.json').then(r => r.ok ? r.json() : []).catch(() => []),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -4803,7 +4999,7 @@ async function loadRoute() {
     wd = new Uint8Array(g5.getImageData(0, 0, wimg.width, wimg.height).data.buffer);
     ww = wimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, tun, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -5146,8 +5342,10 @@ const ARR0 = 35.5, ARR_JOLT = 40.5;
 function recorded(v, ac, now, sp, k) {
   // The cruise loop, shaped to the speed: a low hum at rest, the motors' band under power, the full rush at speed.
   const [g, ls, pk, sub] = eqAt(sp / UREF, sp > 0.3 ? drive : 0);
-  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** (g / 20), now, 0.25);
-  v.bed.ls.gain.setTargetAtTime(ls, now, 0.25);
+  // A tunnel throws the roar back: louder, with more low end.
+  const tk = S.tunnel * Math.min(1, sp / 8);
+  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** ((g + 6 * tk) / 20), now, 0.25);
+  v.bed.ls.gain.setTargetAtTime(ls + 4 * tk, now, 0.25);
   v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
   v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
   v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
