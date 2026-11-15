@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T08:00:07Z
+updated_at: 2026-11-15T08:03:59Z
 parent: stimming-oh7b
 ---
 
@@ -64,3 +64,9 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
   - The far face is the near one mirrored in z, with its triangles turned back, so the slots line up and light passes through.
   - The knurled rim stays steel and still glows with heat; it is a little brighter (0.74, roughness 0.25).
   - The hub moves in from the left edge (wide 0.31, tall 0.43 across), so the body's back sweep stays in frame. On a tall screen the spray now runs off the right edge sooner.
+
+- 2026-11-15, Tom: "default view camera zoomed out a little, allow for lateral horizontal AR wobble". Test set t13 (seen to fail first); t1 to t6 and t8 to t13 pass.
+  - The camera stands further back: wide cz 11.8, tall 16.3. The wheel is about 0.157 of the stage height on a wide stage (was 0.178) and 0.10 on a tall one.
+  - Wobble: the pointer's place across the stage moves the camera up to 1.2 to the side; it still looks at the same point. It eases with a 0.22 s time constant, holds still in a drag, and returns when the pointer leaves. Reduced motion and touch do not move it. The loop sleeps again once it settles.
+  - Not done: device tilt on a phone. Its events never stop, so the page would never sleep, and iOS asks for permission.
+  - No still of the final view: the pane was hidden at the end.

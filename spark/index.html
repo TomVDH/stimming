@@ -1539,7 +1539,21 @@ function aim(fov, cy, cz, ly, fx) {
   const depth = (cy * (cy - ly) + cz * cz) / Math.hypot(cy - ly, cz);
   const x = (1 - 2 * fx) * camera.aspect * Math.tan(fov * Math.PI / 360) * depth;
   camera.position.set(x, cy, cz);
-  camera.lookAt(x, ly, 0);
+  camX = x;
+  lookY = ly;
+}
+// The camera swings a little to the side with the pointer: a parallax wobble.
+// It still looks at the same point, so the wheel turns a little in view.
+const SWAY = 1.2;
+let sway = 0, swayTo = 0, camX = 0, lookY = 0;
+function swayCamera() {
+  camera.position.x = camX + SWAY * sway;
+  camera.lookAt(camX, lookY, 0);
+  camera.updateMatrixWorld();
+  // The wheel's screen centre and radius map a drag to spin.
+  const c = new THREE.Vector3(0, 0, 0).project(camera), e = new THREE.Vector3(0, R, 0).project(camera);
+  centre.set((c.x * 0.5 + 0.5) * size.w, (0.5 - c.y * 0.5) * size.h);
+  rPx = Math.max(20, Math.abs(e.y - c.y) * 0.5 * size.h);
 }
 function frameShot() {
   const asp = size.w / size.h;
@@ -1550,14 +1564,10 @@ function frameShot() {
   aimVolume(narrow ? 1.15 : 0.6);
   // The camera sits low, near the floor: the wheel stands tall and the jet runs across.
   // The hub sits far enough in for the body's back sweep.
-  if (!narrow) aim(30, -0.4, 10.4, 0.05, 0.31);
-  else aim(34, 0.9, 14.4, 0.75, 0.43);
+  if (!narrow) aim(30, -0.4, 11.8, 0.05, 0.31);
+  else aim(34, 0.9, 16.3, 0.75, 0.43);
   camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-  // The wheel's screen centre and radius map a drag to spin.
-  const c = new THREE.Vector3(0, 0, 0).project(camera), e = new THREE.Vector3(0, R, 0).project(camera);
-  centre.set((c.x * 0.5 + 0.5) * size.w, (0.5 - c.y * 0.5) * size.h);
-  rPx = Math.max(20, Math.abs(e.y - c.y) * 0.5 * size.h);
+  swayCamera();
 }
 function resize() {
   const r = stage.getBoundingClientRect();
@@ -1634,12 +1644,12 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04 || flash > 0;
+const lively = () => sway !== swayTo || dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04 || flash > 0;
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
   // Drift: only embers and smoke still move. Every other frame is enough for them.
-  const drift = !dragging && !grinding && wheel.omega <= 0.02 && time >= lastDeath;
+  const drift = !dragging && !grinding && wheel.omega <= 0.02 && time >= lastDeath && sway === swayTo;
   if (drift && (odd = !odd)) return;
   let again = true;
   try {
@@ -1659,6 +1669,12 @@ function frame() {
     heatStep(dt);
     audioStep();
     smokeStep(dt);
+    // The wobble eases to its target; a drag holds it still.
+    if (!dragging && sway !== swayTo) {
+      sway += (swayTo - sway) * (1 - Math.exp(-dt / 0.22));
+      if (Math.abs(swayTo - sway) < 0.002) sway = swayTo;
+      swayCamera();
+    }
     draw();
     again = lively();
   } finally {
@@ -1924,6 +1940,14 @@ canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
+// The pointer's place across the stage sets the wobble; touch has no hover.
+canvas.addEventListener('pointermove', e => {
+  if (reduced() || e.pointerType === 'touch') return;
+  const r = canvas.getBoundingClientRect();
+  swayTo = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+  live();
+});
+canvas.addEventListener('pointerleave', () => { swayTo = 0; live(); });
 canvas.addEventListener('lostpointercapture', up);
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
