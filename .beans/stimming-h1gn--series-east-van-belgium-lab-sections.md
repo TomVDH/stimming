@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:13:12Z
+updated_at: 2026-11-15T09:16:48Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -41,4 +41,5 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Proposal in serieslab/proposal.js: five new series (Vistas, Poke & pop, Light & glass, Wild, Odd one out) and a series for all 88 toys; shown on both shelves at serieslab/categories.html
 - [x] Vistas has the fancy icon: four depth layers and a frame that tilts with the pointer, a gold double ring, sparks, a sheen (shared/series/shots.js, `fancy` and `tiltShots`)
 - [x] Shots for the four other new series: Poke, Prism, Dandelion, Saucer
+- [x] Tom, 2026-11-15: likes a 3D wobblable depth texture. shared/series/depth.js: the Vista as a colour picture and a depth map, a raw WebGL2 parallax shader with relief light, a spring that wobbles, a kick on press; it draws only while the spring moves. Demo at serieslab/depth.html; the proposal page uses it for Vistas, with the layered SVG as the fallback
 - [ ] Tom rules on the categories, the names and the sorting; then series.json and toys.json change
