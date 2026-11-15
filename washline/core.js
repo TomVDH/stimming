@@ -120,7 +120,8 @@ export const K4 = {
 };
 
 /* ---------- fabric and wind ---------- */
-export const FABRIC = { bend: 0.25, damp: 0.992, kgm2: 0.2 };
+// Damp cotton by default: heavy enough to swing, not to snap.
+export const FABRIC = { bend: 0.3, damp: 0.99, kgm2: 0.42 };
 export const WIND = {
   calm: { u: 0.35, turb: 0.3 },
   breeze: { u: 1.3, turb: 0.45 },
@@ -157,10 +158,12 @@ export function ropeAt(r, s, out) {
 }
 
 // A piece is a cloth plus its pegs; hang() places it.
-export function makePiece({ w, h, col, cols = 18, rows = 14 }) {
+// kgm2 and bend override the fabric: a towel is heavier and stiffer than a shirt.
+export function makePiece({ w, h, col, cols = 18, rows = 14, kgm2 = FABRIC.kgm2, bend = FABRIC.bend }) {
   const c = K4.makeCloth(w, h, cols, rows);
   c.col = col;
-  c.mass = w * h * FABRIC.kgm2;
+  c.mass = w * h * kgm2;
+  c.bend = bend;
   c.pegs = [];
   return c;
 }
@@ -305,7 +308,7 @@ export function stepWorld(line, t, wind) {
         ropeAt(r, g.s, tmp);
         c.x[g.p] = tmp[0]; c.y[g.p] = tmp[1] - PEG_DROP; c.z[g.p] = tmp[2];
       }
-      K4.solveCloth(c, FABRIC.bend);
+      K4.solveCloth(c, c.bend ?? FABRIC.bend);
     }
   }
 }
