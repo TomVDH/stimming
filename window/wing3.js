@@ -2,6 +2,7 @@
 // The outside shader draws the sky, the land and the clouds there first.
 import * as THREE from 'three';
 import { lookup } from './sky.js';
+import { ALB_K, ROUGH_K, NRM_K } from './skin.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -119,7 +120,7 @@ varying vec3 vFogW;`)
   };
 }
 
-export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT }) {
+export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT, skin }) {
   FOG_U.uFogN.value = noiseTex;
 
   // Planform: leading and trailing edge x at span z.
@@ -147,14 +148,27 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     const n = Math.ceil((z1 - z0) / step);
     return Array.from({ length: n + 1 }, (_, i) => lerp(z0, z1, i / n));
   };
-  const part = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => section(s0, s1, z)));
+  // Skin UVs: u runs root to tip, v is the chord fraction.
+  // The skin maps are baked in the same space.
+  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
+  const skinUV = g => {
+    const p = g.attributes.position, uv = new Float32Array(p.count * 2);
+    for (let i = 0; i < p.count; i++) {
+      const z = p.getZ(i), le = edge(z, 0);
+      uv[i * 2] = (z - Z0) / (ZT - Z0);
+      uv[i * 2 + 1] = Math.min(1, Math.max(0, (le - p.getX(i)) / (le - edge(z, 1))));
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return g;
+  };
+  const part = (s0, s1, z0, z1) => skinUV(loft(span(z0, z1).map(z => section(s0, s1, z))));
   // A thin plate on the upper skin: a spoiler, or the fixed shroud.
   // Past the rear spar it overhangs the flap nose as the cove lip.
-  const plate = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => {
+  const plate = (s0, s1, z0, z1) => skinUV(loft(span(z0, z1).map(z => {
     const ss = Array.from({ length: 9 }, (_, k) => lerp(s0, s1, k / 8));
     const up = ss.map(s => at(s, z, 1).add(V(0, 0.003, 0)));
     return [...up, ...up.slice().reverse().map(p => p.clone().add(V(0, -0.014, 0)))];
-  }));
+  })));
   // A flap section: the wing's own skin aft of s0, with an elliptic nose.
   // The nose sits under the shroud lip, so the seam reads as a cove.
   const flapSection = (s0, z) => {
@@ -166,13 +180,25 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     };
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
   };
-  const flap = (s0, z0, z1) => loft(span(z0, z1).map(z => flapSection(s0, z)));
+  const flap = (s0, z0, z1) => skinUV(loft(span(z0, z1).map(z => flapSection(s0, z))));
 
   // Grey satin paint: matte when dry, a glossy film of water in rain.
   const DRY = { roughness: 0.66, clearcoat: 0.1, clearcoatRoughness: 0.5 };
   const WET = { roughness: 0.38, clearcoat: 1.0, clearcoatRoughness: 0.06 };
   const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.35, 0.37), ...DRY });
   const flapPaint = paint.clone(); flapPaint.color.setRGB(0.3, 0.31, 0.33);
+  // The wing skin takes baked PBR maps: seams, fasteners, walkway and wear.
+  // Anisotropy keeps the maps sharp at the wing's glancing angle.
+  const tex = data => {
+    const t = new THREE.DataTexture(data, skin.W, skin.H, THREE.RGBAFormat);
+    Object.assign(t, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, anisotropy: renderer.capabilities.getMaxAnisotropy() });
+    t.needsUpdate = true;
+    return t;
+  };
+  const maps = skin ? { map: tex(skin.alb), roughnessMap: tex(skin.rgh), normalMap: tex(skin.nrm), normalScale: new THREE.Vector2(1 / NRM_K, 1 / NRM_K) } : {};
+  const SK = skin ? { a: 1 / ALB_K, r: 1 / ROUGH_K } : { a: 1, r: 1 };
+  const skinPaint = new THREE.MeshPhysicalMaterial({ color: paint.color.clone().multiplyScalar(SK.a), ...DRY, ...maps });
+  const skinFlap = skinPaint.clone(); skinFlap.color.copy(flapPaint.color).multiplyScalar(SK.a);
   const dark = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.6, metalness: 0.4 });
   const metal = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.7, 0.7, 0.72), roughness: 0.22, metalness: 1 });
 
@@ -181,7 +207,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   const seam = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.05, 0.05, 0.055), roughness: 0.8 });
   // Every material writes alpha 0: the cabin pass reads it as no sky.
   // The shadow pass draws front faces, as the mesh mirror flips them.
-  [paint, flapPaint, dark, metal, seam].forEach(m => {
+  [paint, flapPaint, skinPaint, skinFlap, dark, metal, seam].forEach(m => {
     Object.assign(m, {
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor,
       blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.ZeroFactor, shadowSide: THREE.FrontSide,
@@ -191,13 +217,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   // The view's axes are left-handed, so the camera matrix mirrors.
   // Each mesh mirrors its geometry and its scale: the world stays put.
   // The negative scale tells three.js to flip the front face.
-  const add = (geo, mat = paint, parent = air) => {
+  const add = (geo, mat = skinPaint, parent = air) => {
     geo.scale(1, 1, -1);
     const m = new THREE.Mesh(geo, geo.userData.loft ? [mat, seam] : mat);
     m.scale.z = -1;
     m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
-  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   // Main box ahead of the rear spar, and the full-chord tip past the aileron.
   const SPAR = 0.7, LIP = 0.765, FLAP = 0.715, SPOIL = 0.6;
   add(part(0, SPAR, Z0, 23.4));
@@ -213,7 +238,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   };
   // Flap hinges sit on the nose's centre line.
   const noseAt = z => at(FLAP + 0.02, z, 1).lerp(at(FLAP + 0.02, z, -1), 0.5);
-  const flapPart = (z0, z1, role) => hinge(flap(FLAP, z0, z1), noseAt(z0), noseAt(z1), flapPaint, role);
+  const flapPart = (z0, z1, role) => hinge(flap(FLAP, z0, z1), noseAt(z0), noseAt(z1), skinFlap, role);
   // Seams between surfaces are 3 cm wide.
   flapPart(Z0 + 0.3, 7.985, 'flap');
   flapPart(8.015, 9.785, 'flaperon');
@@ -223,7 +248,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   const cuts = [2.0, 4.2, 6.4, 8.6, 10.8, 13.0, 15.2, 17.4];
   for (let i = 0; i < cuts.length - 1; i++) {
     const z0 = cuts[i] + 0.025, z1 = cuts[i + 1] - 0.025;
-    hinge(plate(SPOIL, LIP, z0, z1), at(SPOIL, z0, 1), at(SPOIL, z1, 1), paint, 'spoiler');
+    hinge(plate(SPOIL, LIP, z0, z1), at(SPOIL, z0, 1), at(SPOIL, z1, 1), skinPaint, 'spoiler');
   }
   add(plate(SPOIL, LIP, Z0, 1.975));
   add(plate(SPOIL, LIP, 17.425, 23.3));
@@ -236,7 +261,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     const le = V(w.le, w.y, w.z), te = V(w.le - w.c, w.y, w.z), nrm = V(0, w.ny, w.nz);
     const pt = (s, side) => le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
-  })));
+  })), paint);
 
   // The nacelle hangs on a pylon, clear of the lower skin.
   const nz = NAC.a[2], low = at(0.15, nz, -1).y;
@@ -345,7 +370,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
       mo.wet += (wet - mo.wet) * Math.min(1, dtw * (wet > mo.wet ? 0.5 : 0.08));
-      for (const m of [paint, flapPaint]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
+      for (const m of [paint, flapPaint, skinPaint, skinFlap]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
+      // The skin's roughness map stores a scaled factor; this undoes the scale.
+      skinPaint.roughness *= SK.r; skinFlap.roughness *= SK.r;
       air.rotation.x = bank;
       // An aft seat sees the whole aircraft further forward.
       air.position.x = seatDx;

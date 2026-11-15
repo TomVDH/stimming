@@ -31,6 +31,7 @@
 <link rel="modulepreload" href="./sky.js">
 <link rel="modulepreload" href="./noise3d.js">
 <link rel="modulepreload" href="./wing3.js">
+<link rel="modulepreload" href="./skin.js">
 <link rel="modulepreload" href="./bolts3.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
@@ -97,6 +98,7 @@ import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
+import { bakeSkin } from './skin.js';
 import { createBolts } from './bolts3.js';
 import { bakeOde } from './ode.js';
 import * as THREE from 'three';
@@ -539,7 +541,10 @@ const FAIRS = [10, 14.5, 19].map((z, j) => {
 // The wing light sits on the fuselage, ahead of the root and below the window.
 // It aims out along the leading edge; k is its strength in candela.
 const WING_LIGHT = { p: [11, -0.8, -0.4], aim: [4.3, -1.95, 11], k: 600 };
-const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT });
+// The wing skin's PBR maps bake in a worker, about 0.4 s.
+// ?skin=0 keeps the plain paint, for an A/B check.
+const skin = qs.get('skin') === '0' ? null : await offThread('./skin.js', bakeSkin, [2048, 1024, ST]);
+const wing3 = createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT, skin });
 // The wing tip's flex offset, in world metres, from the last frame.
 let tipBend = [0, 0, 0];
 const tipW = () => toWorldA(TIP).map((v, i) => v + tipBend[i]);
