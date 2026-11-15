@@ -39,5 +39,6 @@ Pixel samples showed a magenta cast on the aircraft at every hour (green lowest)
 - The light from below now uses the deck shader's own cloud terms (sun times 0.075 times sunK, sky ambient times 0.021) and a land term, mixed by cover.
 - Golden hour wing top: (65, 58, 62) before, (84, 71, 73) after. Noon winglet: (99, 90, 98) before, (86, 84, 90) after.
 - Ruled out: sun shadow acne (shadows off changed nothing).
-- Still open: at Golden hour the paint leans pink, as the baked upper sky is violet.
+- Golden hour pink (Tom: warm it): the paint's sky colour now leans 60 percent to the horizon band's hue, keeping each direction's brightness.
+- Golden hour wing top: (84, 71, 73) to (80, 66, 61); winglet (110, 88, 80). Noon stays neutral; Dusk reads dusky red.
 

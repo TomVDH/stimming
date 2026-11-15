@@ -348,6 +348,10 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   // It follows the shader's satin squash of the reflected ray.
   function bakeEnv(sky, HOR) {
     const W = 256, H = 128, data = new Float32Array(W * H * 4);
+    // The horizon band's mean colour: the hue of the hour's dominant light.
+    const band = [0, 0, 0];
+    for (let k = 0; k < 8; k++) lookup(sky.b.L, HOR + 0.02, k / 7 * Math.PI, HOR).forEach((v, c) => { band[c] += v; });
+    const by = 0.3 * band[0] + 0.5 * band[1] + 0.2 * band[2] || 1;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
       const phi = ((i + 0.5) / W - 0.5) * 2 * Math.PI, th = ((j + 0.5) / H - 0.5) * Math.PI;
       const dx = Math.cos(th) * Math.cos(phi), dz = Math.cos(th) * Math.sin(phi), lh = Math.hypot(dx, dz) || 1;
@@ -356,8 +360,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // Level rays meet the eye's own horizon, so the glow band there lights the paint.
       const c = lookup(sky.b.L, HOR + 0.01 + Math.max(th, 0) * 0.45, ph, HOR), o = (j * W + i) * 4;
       // Grey paint keeps half the sky's colour.
+      // That colour leans to the horizon band's hue, so violet upper sky does not tint it.
       const y = 0.3 * c[0] + 0.5 * c[1] + 0.2 * c[2];
-      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k]) / 2 + sky.h.floor[k];
+      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k] * 0.4 + y * band[k] / by * 0.6) / 2 + sky.h.floor[k];
       data[o + 3] = 1;
     }
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
