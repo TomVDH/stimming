@@ -2009,7 +2009,8 @@ vec3 trails(vec3 d, float tEnd) {
     // Tubes glow at the core; thin sheets glow at their rim, like a jellyfish bell.
     vec4 ca = texelFetch(uTrail, ivec2(i, 1), 0), cb = texelFetch(uTrail, ivec2(i + 1, 1), 0);
     float rr = dist / rad, shell = mix(ca.w, cb.w, k);
-    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.3 + exp(-pow((rr - 0.85) / 0.13, 2.0)) * 0.9, shell);
+    // The rim is soft and wide, so overlapping sheets blend without hard rings.
+    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.35 + exp(-pow((rr - 0.78) / 0.24, 2.0)) * 0.75, shell);
     if (glow < 0.002) continue;
     vec3 col = mix(ca.rgb, cb.rgb, k);
     // Thin far trails keep their brightness per pixel, not per km.
