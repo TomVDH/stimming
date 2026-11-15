@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T10:14:34Z
+updated_at: 2026-11-15T10:26:47Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -212,3 +212,5 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - Menu icon (Tom, 2026-11-15): A of spike washline-1 without the sun. The washing leans away from the pointer; a quick stroke is a gust; the clock stops once every hem rests. Emblem shared/emblems/washline.svg (posts, line, three pieces); picks.json records it.
 
 - Tom's feedback (2026-11-15): wide shot by default (eye 14 m back, fov 46; phone 22 m, fov 66); grass rolls in gust bands about 7 m apart with a paler sheen where it bends; cloth heavier (damp cotton 0.42 kg/m2 by default, weight and stiffness per piece); varied wash: shirt, trousers, dress, sock and fringed towel outlines, with stripes, check, dots and bands; + Piece draws from a 15-garment wardrobe and a 12-colour palette; up to 8 pieces.
+
+- Main shelf (Tom, 2026-11-15, "promote to main"): Washing line is number 43, version 1.5, after Fog horn; the menu icon takes the main shelf's enter, move and leave hooks.

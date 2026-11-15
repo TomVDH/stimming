@@ -1402,6 +1402,14 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             <span class="name">Fog horn<span class="beta"><i>(</i>Beta<i>)</i></span></span>
           </a>
         </li>
+        <li>
+          <a class="toy" id="washline" href="washline/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" data-box="12 26 104 84" aria-hidden="true"></svg>
+            </span>
+            <span class="name">Washing line</span>
+          </a>
+        </li>
     </ul>
     <script>
       // Toys fade in through grain as they enter the view, a few frames apart.
@@ -2299,14 +2307,6 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
               </svg>
             </span>
             <span class="name">Ulam spiral</span>
-          </a>
-        </li>
-        <li>
-          <a class="toy" id="washline" href="washline/index.html">
-            <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" data-box="12 26 104 84" aria-hidden="true"></svg>
-            </span>
-            <span class="name">Washing line</span>
           </a>
         </li>
         <li>
@@ -4691,7 +4691,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
   // Washing line: two worn posts, a pulley line and three pieces in the toy's colours.
   // The washing leans away from the pointer; a quick stroke blows it like a gust.
   {
-    const tile = $('washline'), svg = tile.querySelector('svg'), u = 'wl-';
+    const svg = $('washline').querySelector('svg'), u = 'wl-';
     const f = n => +(+n).toFixed(2), clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v)), lerp = (a, b, t) => a + (b - a) * t;
     const NSV = 'http://www.w3.org/2000/svg';
     const mk = (tag, attrs, parent) => { const e = document.createElementNS(NSV, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.append(e); return e; };
@@ -4786,13 +4786,14 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         demo?.kill(); demo = null; last = null; st.px = null; st.live = false; st.wind = 0;
       },
     };
-    toys.washline = { play() { ctl.enter(); return { kill() {} }; }, rest() { ctl.leave(); } };
-    // The Lab calls play and rest only; the icon follows the pointer itself.
-    tile.addEventListener('pointermove', e => {
-      if (e.pointerType === 'touch') return;
-      const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
-      ctl.move([v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height]);
-    });
+    // The main shelf passes the pointer in viewBox units; focus passes none.
+    toys.washline = {
+      enter(p) { ctl.enter(); if (p) ctl.move(p); },
+      move(p) { if (p) ctl.move(p); },
+      leave() { ctl.leave(); },
+      play() { ctl.enter(); return { kill() {} }; },
+      rest() { ctl.leave(); },
+    };
   }
 
   // Fireworks: one peony bloom as a sphere of comet stars, seen from outside.
