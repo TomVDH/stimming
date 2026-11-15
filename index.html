@@ -173,17 +173,26 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
 .web .tag span { color: var(--muted); font-weight: 500; }
 .shelf.lit .web .tag { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .obj .series, .shelf > li, .shelf > li .obj::before, .web .tag { transition: none; } }
-/* Lab sections: one per series under a Wave divider (Tom, 2026-11-15). */
-.lab .sec { --c: var(--muted); display: grid; grid-template-columns: repeat(auto-fill, clamp(96px, 26vw, 150px)); justify-content: center; gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px); width: 100%; max-width: calc(5 * 150px + 4 * 28px); justify-self: center; }
-.lab .sec + .sec { margin-top: clamp(20px, 3.4vw, 40px); }
-.lab .sec > .shelf { display: contents; }
+/* Series sections: one per series under a Wave divider (Tom, 2026-11-15). */
+.sec { --c: var(--muted); display: grid; grid-template-columns: repeat(auto-fill, clamp(96px, 26vw, 150px)); justify-content: center; gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px); width: 100%; max-width: calc(6 * 150px + 5 * 28px); justify-self: center; }
+.lab .sec { max-width: calc(5 * 150px + 4 * 28px); }
+.sec + .sec { margin-top: clamp(20px, 3.4vw, 40px); }
+.sec > .shelf { display: contents; }
+/* A shelf that gave its toys to the sections takes no room. */
+.shelf[hidden] { display: none; }
+:root[data-view="lab"] main > .sec { display: none; }
+/* The Series switch: sections on, or one flat shelf. */
+.series-toggle { justify-self: center; display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 0; border-radius: 999px; background: none; cursor: pointer; font-family: "Iosevka Term Slab", ui-monospace, monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); transition: color 0.2s ease; }
+.series-toggle:hover, .series-toggle[aria-pressed="true"] { color: var(--fg); }
+.series-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.series-toggle svg { width: 26px; height: 8px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 /* The Wave: a wavy line in the series colour; the icon and the name sit in its gap. */
 .sec-hd { --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q6 -1 12 4T24 4' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E"); margin: 0; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 14px; font: 800 clamp(17px, 2.4vw, 22px)/1 var(--sans); letter-spacing: -0.01em; color: var(--c); white-space: nowrap; }
 .sec-hd::before, .sec-hd::after { content: ""; flex: 1; min-width: 12px; height: 8px; background: color-mix(in oklch, var(--c) 65%, transparent); -webkit-mask: var(--wave) 0 0 / 24px 8px repeat-x; mask: var(--wave) 0 0 / 24px 8px repeat-x; }
 .sec-hd .at { display: inline-flex; align-items: center; gap: 10px; }
 .sec-hd svg { display: block; width: clamp(46px, 7vw, 58px); height: clamp(46px, 7vw, 58px); flex: none; }
-/* The flat Lab shelf stays hidden until its sections stand. */
-:root[data-view="lab"][data-sections="wait"] .lab .shelf { visibility: hidden; }
+/* A flat shelf stays hidden until its sections stand. */
+:root[data-sections="wait"] :is(main > .shelf, .lab > .shelf) { visibility: hidden; }
 .sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Planned toys draw as outlines until they ship. */
 .planned .art, .planned .art * { fill: none !important; stroke: var(--sketch) !important; stroke-width: 2px !important; }
@@ -1436,43 +1445,77 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           document.querySelectorAll('.lab .shelf').forEach(shelf => constellation(shelf, series));
         } catch { /* The menu works without badges. */ }
       })();
-      // The Lab shows its toys in sections, one per series, under a Wave divider.
-      // series.json names each series' icon: a shot from shared/series/shots.js.
-      (async () => {
-        const root = document.documentElement;
-        if (root.dataset.view !== 'lab') return;
-        root.dataset.sections = 'wait';
-        try {
-          const [toys, series, { shotIcon }] = await Promise.all([fetch('toys.json').then(r => r.json()), fetch('series.json').then(r => r.json()), import('./shared/series/shots.js')]);
-          if (document.readyState === 'loading') await new Promise(r => addEventListener('DOMContentLoaded', r, { once: true }));
-          const shelf = document.querySelector('.lab .shelf');
-          // Each tile goes to its toy's series; a tile with no series stays last.
-          const groups = new Map(Object.keys(series).map(k => [k, []]));
-          const rest = [];
-          for (const li of [...shelf.children]) (groups.get(toys[li.querySelector('a.toy')?.id]?.series) || rest).push(li);
+      // Series: a switch groups the shelf in view by series, under Wave dividers,
+      // or lays it flat again. series.json names each series' icon: a shot.
+      (() => {
+        const root = document.documentElement, lab = root.dataset.view === 'lab', KEY = 'stimming.series';
+        const shelf = () => document.querySelector(lab ? '.lab > .shelf' : 'main > .shelf');
+        let saved = null;
+        try { saved = localStorage.getItem(KEY); } catch (e) {}
+        // The Lab opens in sections; the main shelf opens flat.
+        let on = saved ? saved === 'on' : lab, flat = null, files = null;
+        const load = () => files ||= Promise.all([fetch('toys.json').then(r => r.json()), fetch('series.json').then(r => r.json()), import('./shared/series/shots.js')]);
+        const parsed = () => document.readyState === 'loading' ? new Promise(r => addEventListener('DOMContentLoaded', r, { once: true })) : null;
+
+        const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'series-toggle' });
+        btn.innerHTML = '<svg viewBox="0 0 26 8" aria-hidden="true"><path d="M1 4Q4 0 7 4T13 4T19 4T25 4"/></svg>Series';
+        btn.setAttribute('aria-pressed', on);
+        document.querySelector('main').prepend(btn);
+
+        async function group() {
+          const [toys, series, { shotIcon }] = await load();
+          await parsed();
+          const home = shelf();
+          if (!home || flat) return;
+          // The flat order comes back when the switch goes off.
+          flat = [...home.children];
+          const groups = new Map(Object.keys(series).map(k => [k, []])), rest = [];
+          for (const li of flat) (groups.get(toys[li.querySelector('a.toy')?.id]?.series) || rest).push(li);
+          const add = (label, tiles) => {
+            const sec = Object.assign(document.createElement('section'), { className: 'sec' });
+            const ul = Object.assign(document.createElement('ul'), { className: 'shelf' });
+            sec.setAttribute('aria-label', label);
+            ul.append(...tiles);
+            sec.append(ul);
+            home.before(sec);
+            return sec;
+          };
           for (const [k, tiles] of groups) {
             if (!tiles.length) continue;
-            const s = series[k], sec = document.createElement('section'), hd = document.createElement('h2');
-            sec.className = 'sec';
+            const s = series[k], sec = add(s.name, tiles), hd = document.createElement('h2');
             sec.style.setProperty('--c', s.color);
-            sec.setAttribute('aria-label', s.name);
             hd.className = 'sec-hd';
             hd.innerHTML = `<span class="at">${s.icon ? shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color }) : ''}<span></span></span>`;
             hd.querySelector('.at > span').textContent = s.name;
-            const ul = Object.assign(document.createElement('ul'), { className: 'shelf' });
-            ul.append(...tiles);
-            sec.append(hd, ul);
-            shelf.before(sec);
+            sec.prepend(hd);
           }
-          // The old shelf becomes the last section; it has no heading.
-          if (rest.length) {
-            const sec = Object.assign(document.createElement('section'), { className: 'sec' });
-            sec.setAttribute('aria-label', 'Other toys');
-            shelf.before(sec);
-            sec.append(shelf);
-          } else shelf.remove();
-        } catch { /* The Lab works as one flat shelf. */ }
-        delete root.dataset.sections;
+          // A toy with no series goes last; that section has no heading.
+          if (rest.length) add('Other toys', rest);
+          home.hidden = true;
+        }
+        function ungroup() {
+          const home = shelf();
+          if (!home || !flat) return;
+          home.append(...flat);
+          home.hidden = false;
+          home.parentElement.querySelectorAll(':scope > .sec').forEach(sec => sec.remove());
+          flat = null;
+        }
+        // Where the browser can, each toy glides to its new place.
+        btn.addEventListener('click', () => {
+          on = !on;
+          btn.setAttribute('aria-pressed', on);
+          try { localStorage.setItem(KEY, on ? 'on' : 'off'); } catch (e) {}
+          const swap = () => on ? group() : ungroup();
+          // A hidden tab gets no frames, so the glide would hold the swap back.
+          if (!document.startViewTransition || document.visibilityState !== 'visible' || matchMedia('(prefers-reduced-motion: reduce)').matches) return swap();
+          shelf()?.parentElement.querySelectorAll('.shelf > li').forEach(li => { const id = li.querySelector('a.toy')?.id; if (id) li.style.viewTransitionName = 'toy-' + id; });
+          // A second click may cut the glide short; the swap itself still runs.
+          document.startViewTransition(swap).ready.catch(() => {});
+        });
+        if (!on) return;
+        root.dataset.sections = 'wait';
+        group().catch(() => { /* The shelf stays flat. */ }).finally(() => { delete root.dataset.sections; });
       })();
       // Hover or focus on a series tile lights its siblings and draws their links.
       function constellation(shelf, series) {
