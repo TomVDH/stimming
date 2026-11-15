@@ -98,6 +98,7 @@ import { BokehShader } from 'three/addons/shaders/BokehShader2.js';
 import { createNoise2D } from 'simplex-noise';
 import { gsap } from 'gsap';
 import { FLARE } from '../shared/flare.js';
+import { makeRocket, makeFlame } from '../shared/rocket.js';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, stage as mark, pageReady, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 mark('libs');
@@ -1168,99 +1169,32 @@ function placeOrbs(pass, list) {
 
 /* ---------- flame: the engine, a hot core with an exhaust tail ---------- */
 const FU = { uAxis: { value: new THREE.Vector3(0, -1, 0) }, uSize: { value: 10 }, uFlick: { value: 1 }, uSpread: { value: 0 } };
-const flame = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FU }, transparent: true, depthWrite: false,
-  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`
-  uniform vec4 uFlame; uniform vec3 uAxis; uniform float uSize, uSpread;
-  varying vec2 vQ;
-  void main() {
-    vec3 V = normalize(cameraPosition - uFlame.xyz);
-    // The tail points down the exhaust, turned to face the eye.
-    vec3 ax = normalize(uAxis - dot(uAxis, V) * V + vec3(0.0, 1e-4, 0.0));
-    vec3 sd = normalize(cross(ax, V));
-    vQ = position.xy;
-    // A long exhaust tail; thin air lets it balloon wide.
-    float along = position.y < 0.0 ? 0.5 : 6.0;
-    vec3 P = uFlame.xyz + sd * position.x * uSize * (0.7 + 2.2 * uSpread) + ax * position.y * uSize * along;
-    gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
-  }`,
-  fragmentShader: /* glsl */`
-  uniform vec4 uFlame; uniform vec3 uFlameC; uniform float uFlick, uSpread, uTime;
-  varying vec2 vQ;
-  ${K2_NOISE}
-  void main() {
-    // y below 0 is the nozzle; y above 0 runs down the tail.
-    float y = max(vQ.y, 0.0), t = uTime;
-    // Turbulence bends the tail; the bend grows down its length.
-    float x = vQ.x + (k2noise(vec2(y * 5.0 - t * 9.0, 1.7)) - 0.5) * 0.3 * y;
-    float wide = mix(1.0, 3.0, uSpread);
-    float core = exp(-(x * x * 40.0 * wide * wide + vQ.y * vQ.y * (vQ.y < 0.0 ? 80.0 : 22.0)));
-    // The tail breathes: its length pulses a little, many times a second.
-    float breath = 1.0 + 0.18 * (k2noise(vec2(t * 11.0, 3.1)) - 0.5);
-    float spread = 0.05 + y * (0.18 + 0.5 * uSpread);
-    float tail = exp(-x * x * wide * wide / (spread * spread * 4.0 + 1e-3) * 0.2) * exp(-y * mix(2.4, 1.3, uSpread) / breath) * step(-0.15, vQ.y);
-    // Eddies run down the tail and break it into tongues.
-    float eddy = k2noise(vec2(x * 7.0, y * 16.0 - t * 34.0)) * 0.6 + k2noise(vec2(x * 15.0, y * 31.0 - t * 52.0)) * 0.4;
-    tail *= mix(1.0, 0.45 + 1.1 * eddy, smoothstep(0.05, 0.3, y));
-    // Shock diamonds: bright knots in the jet, low in thick air only.
-    float jw = 0.16 + 0.06 * y;
-    float n = (y - 0.03) / 0.5 * 4.0, i = floor(n), u = fract(n) * 2.0 - 1.0;
-    float rhomb = 1.0 - abs(u) - abs(x) / (jw * (1.0 - 0.1 * i));
-    float knots = smoothstep(0.0, 0.45, rhomb) * exp(-i * 0.4) * step(0.0, n) * step(n, 4.0);
-    knots *= (1.0 - uSpread) * (0.8 + 0.4 * k2noise(vec2(t * 23.0, i)));
-    // A dark gap sits between knots, so the jet reads as a chain.
-    float jet = exp(-x * x / (jw * jw)) * exp(-y * 4.0) * mix(1.0, 0.5 + 0.5 * abs(u), (1.0 - uSpread) * step(0.0, n) * step(n, 4.0));
-    vec3 hot = mix(vec3(1.0, 0.92, 0.75), uFlameC, smoothstep(0.0, 0.35, y));
-    hot = mix(hot, uFlameC * vec3(1.0, 0.5, 0.35), smoothstep(0.35, 0.9, y));
-    vec3 c = vec3(1.0, 0.96, 0.9) * core * 12.0 + hot * tail * 0.7 * uFlick + vec3(1.0, 0.6, 0.3) * jet * 0.5 + vec3(1.0, 0.95, 0.85) * knots * 14.0;
-    // Every edge of the quad fades to black, so no square outline shows.
-    float win = smoothstep(1.0, 0.55, abs(vQ.x)) * smoothstep(1.0, 0.6, vQ.y) * smoothstep(-1.0, -0.7, vQ.y);
-    gl_FragColor = vec4(c * win * min(uFlame.w, 1.5), 0.0);
-  }`,
-}));
-flame.frustumCulled = false;
+// The shared quad is this toy's own flame shader, on these uniforms.
+const flame = makeFlame({ uniforms: { ...U, ...FU } });
 flame.visible = false;
-flame.renderOrder = 7;
 flame.layers.enable(MIRROR);
 scene.add(flame);
 
-/* ---------- the rocket: a slim body, lit from below by its own flame ---------- */
-// Unit height along y from the nozzle; Heavy adds two side cores.
-const bodyMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uBodySun: { value: 0 } },
-  vertexShader: /* glsl */`varying vec3 vN, vP; void main() { vN = normalize(mat3(modelMatrix) * normal); vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`uniform vec3 uAmb, uGlowC; uniform float uBodySun; varying vec3 vN, vP; ${HEAD}
-  void main() {
-    vec3 F = normalize(uFlame.xyz - vP);
-    float fl = max(dot(vN, F), 0.0) * 0.6 + 0.15;
-    float rim = pow(1.0 - abs(dot(vN, normalize(cameraPosition - vP))), 3.0);
-    // Above the shadow line the body takes the sun: a bright speck in a dark sky.
-    float sun = (max(dot(vN, normalize(uSun)), 0.0) * 0.8 + 0.3) * uBodySun;
-    vec3 c = vec3(0.75, 0.75, 0.72) * (uAmb * 2.0 + uFlameC * uFlame.w * fl * 0.08 + vec3(1.0, 0.9, 0.78) * sun * 1.6) + uGlowC * rim * 0.5;
-    gl_FragColor = vec4(k2haze(c, vP), 1.0);
-  }`,
-});
+/* ---------- the rocket: the shared model, lit from below by its own flame ---------- */
+// shared/rocket.js gives the shape and paint; this toy gives the light.
+const bodyU = { ...U, uBodySun: { value: 0 } };
+const LIGHT = { head: HEAD, uniforms: bodyU, fn: /* glsl */`
+uniform vec3 uAmb, uGlowC; uniform float uBodySun;
+vec3 rocketLight(vec3 paint, vec3 N, vec3 P) {
+  vec3 F = normalize(uFlame.xyz - P);
+  float fl = max(dot(N, F), 0.0) * 0.6 + 0.15;
+  float rim = pow(1.0 - abs(dot(N, normalize(cameraPosition - P))), 3.0);
+  // Above the shadow line the body takes the sun: a bright speck in a dark sky.
+  float sun = (max(dot(N, normalize(uSun)), 0.0) * 0.8 + 0.3) * uBodySun;
+  vec3 c = paint * (uAmb * 2.0 + uFlameC * uFlame.w * fl * 0.08 + vec3(1.0, 0.9, 0.78) * sun * 1.6) + uGlowC * rim * 0.5;
+  return k2haze(c, P);
+}` };
+// One far model per size, in metres; the origin is the burning nozzle.
+const ROCKETS = Object.fromEntries(['small', 'medium', 'heavy'].map(k => [k, makeRocket({ size: k, detail: 'far', light: LIGHT, layers: [MIRROR] })]));
 const body = new THREE.Group();
-const bodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1).translate(0, 0.5, 0);
-const noseGeo = new THREE.ConeGeometry(0.5, 0.12, 10).translate(0, 1.06, 0);
-const core = new THREE.Group();
-core.add(new THREE.Mesh(bodyGeo, bodyMat), new THREE.Mesh(noseGeo, bodyMat));
-const boosters = [-1, 1].map(sd => {
-  const b = new THREE.Group();
-  b.add(new THREE.Mesh(bodyGeo, bodyMat), new THREE.Mesh(noseGeo, bodyMat));
-  b.position.x = sd * 1.0;
-  b.scale.set(1, 0.92, 1);
-  core.add(b);
-  return b;
-});
-body.add(core);
+Object.values(ROCKETS).forEach(r => body.add(r.root));
 body.visible = false;
-body.layers.enable(MIRROR);
-body.traverse(o => o.layers.enable(MIRROR));
 scene.add(body);
-const BODY = { small: [32, 2.2], medium: [55, 3.7], heavy: [62, 3.7] };
 const yUp = new THREE.Vector3(0, 1, 0);
 
 /* ---------- plume: exhaust and steam on a ring of billboards ---------- */
@@ -1709,7 +1643,7 @@ function launch(kind, padX) {
   const D = PAD;
   const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1, done: false };
   PU.uScale.value = D;
-  boosters.forEach(b => { b.visible = kind === 'heavy'; });
+  for (const [k, r] of Object.entries(ROCKETS)) { r.root.visible = k === kind; r.setStage(0); }
   // Fresh fluids for every launch, centred on the pad.
   fluidReset(gFluid);
   fluidX = padX;
@@ -1734,6 +1668,7 @@ function launch(kind, padX) {
 // Staging: the first stage tumbles away as a dim spark; the upper stage is short.
 function stageSep(f) {
   f.stage = 2;
+  ROCKETS[f.kind].setStage(2);
   rocketAt(f, 41.2, rp);
   rocketAt(f, 41.0, rq);
   rv.subVectors(rp, rq).multiplyScalar(0.6 / 0.2).add(tmpA.set(0, -f.D * 0.004, 0));
@@ -1742,7 +1677,7 @@ function stageSep(f) {
 }
 // Two spent boosters fall away as sparks with short trails.
 function separate(f) {
-  boosters.forEach(b => { b.visible = false; });
+  ROCKETS[f.kind].setStage(1);
   rocketAt(f, 18, rp);
   for (const s of [-1, 1]) {
     rv.set(s * f.D * 0.004, -f.D * 0.002, (rnd() - 0.5) * f.D * 0.002);
@@ -1767,16 +1702,14 @@ function flyTo(f) {
   FU.uFlick.value = 0.85 + 0.15 * Math.sin(simT * 53) * Math.sin(simT * 31);
   flame.visible = eng > 0.01;
   // Body and flame shrink as the altitude scale compresses.
-  const sk = scaleAt(h, D), [bl, bw] = BODY[f.kind];
+  const sk = scaleAt(h, D), bl = ROCKETS[f.kind].dims.L;
   // The body stays to the end: a sunlit dot after SECO that fades over the last 8 s.
   const fade = 1 - THREE.MathUtils.smoothstep(te, END - 8, END);
   body.visible = te < END && fade > 0.01;
-  bodyMat.uniforms.uBodySun.value = THREE.MathUtils.smoothstep(h, U.uShadowH.value - 3, U.uShadowH.value + 6);
+  bodyU.uBodySun.value = THREE.MathUtils.smoothstep(h, U.uShadowH.value - 3, U.uShadowH.value + 6);
   body.position.copy(rp);
   body.quaternion.setFromUnitVectors(yUp, tmpA.copy(FU.uAxis.value).negate());
-  // After staging only the upper stage flies, with a smaller engine.
-  const up = f.stage > 1 ? 0.36 : 1;
-  core.scale.set(bw * sk * (f.stage > 1 ? 0.85 : 1) * fade, bl * sk * up * fade, bw * sk * (f.stage > 1 ? 0.85 : 1) * fade);
+  body.scale.setScalar(sk * fade);
   // A floor keeps the flame and its diamonds readable beside the wide trail.
   FU.uSize.value = Math.max(bl * sk * 0.32, D * 0.0075) * k.flame * (f.stage > 1 ? 0.55 : 1);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
