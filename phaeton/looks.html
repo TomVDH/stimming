@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phaeton: strobe studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<style>
+/* Phaeton look spike: the strobe studio, one row of light bulbs. */
+:root { --stage: oklch(0.07 0.008 265); }
+.stage--phaeton canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.6s ease; touch-action: none;
+}
+.stage--phaeton canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--phaeton canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <div class="stage stage--phaeton" id="stage" tabindex="0" role="application" aria-label="A dark studio. A rail gun on a bench aims along a row of six lit light bulbs. Fire sends a slug through the row; a flash shows each bulb as it bursts.">
+      <p class="fail" hidden>Phaeton needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Phaeton</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, stage as mark } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { gradePass } from '../shared/grade.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { makeStudio, makeBench, makeGun, makeHeads, makeSlug, BORE, MUZZLE, SPEED, SLOTS, hueAt } from './rig.js';
+import { makeBulbs } from './targets.js';
+import { makeShot } from './shot.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const smooth = x => { const t = clamp(x); return t * t * (3 - 2 * t); };
+mark('build');
+
+/* ---------- bar ---------- */
+// s is the playhead in real seconds; the Time slider moves it by hand.
+let view = 'photos', playing = false, fired = false, s = 0, seed = 11;
+const act = { fire() {}, reset() {}, seek() {} };
+const ui = initPage({ id: 'phaeton', bar: {
+  choice: { label: 'Camera', value: 'photos', options: [{ value: 'photos', label: 'Photos' }, { value: 'wide', label: 'Wide' }], onPick: v => { view = v; wake(); } },
+  actions: [
+    { verb: 'fire', key: 'Space', onPress: () => act.fire() },
+    { verb: 'reset', key: 'R', onPress: () => act.reset() },
+  ],
+  slider: { label: 'Time', min: 0, max: 1, step: 0.0005, value: 0, onInput: v => act.seek(v) },
+  quality: true,
+  keys: [['space', 'fire'], ['drag', 'time'], ['R', 'reset']],
+} });
+
+/* ---------- renderer ---------- */
+let renderer;
+try {
+  // The scene target carries the MSAA; the canvas has none.
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const canvas = renderer.domElement;
+stage.prepend(canvas);
+
+/* ---------- the set ---------- */
+const studio = makeStudio(renderer), scene = studio.scene;
+makeBench(scene);
+makeGun(scene);
+makeHeads(scene, studio);
+const slug = makeSlug(scene);
+// uT is the shot time. uLead shows a crack this long before its shard moves.
+const clock = { uT: { value: -1 }, uLead: { value: 3e-5 } };
+const bulbs = makeBulbs(scene, SLOTS, clock);
+const shot = makeShot({ muzzle: MUZZLE, speed: SPEED, targets: SLOTS.map(x => ({ x, r: bulbs.radius })) });
+bulbs.build(seed, shot.tHit);
+const camera = new THREE.PerspectiveCamera(24, 1, 0.05, 40);
+
+/* ---------- lens: depth of field ---------- */
+// A gather blur on a golden-angle disc. Each tap counts when its own blur disc reaches this pixel.
+const dofPass = new ShaderPass({
+  defines: { TAPS: 24 },
+  uniforms: {
+    tColor: { value: null }, tDepth: { value: null }, uPx: { value: new THREE.Vector2(1, 1) },
+    uNear: { value: camera.near }, uFar: { value: camera.far }, uFocus: { value: 1 }, uK: { value: 40 }, uCap: { value: 16 },
+  },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tColor, tDepth; uniform vec2 uPx; uniform float uNear, uFar, uFocus, uK, uCap; varying vec2 vUv;
+    float viewZ(vec2 uv) { return uNear * uFar / (uFar - texture2D(tDepth, uv).x * (uFar - uNear)); }
+    // The blur radius in pixels: uK per dioptre away from the focus.
+    float coc(float d) { return min(uK * abs(1.0 / uFocus - 1.0 / d), uCap); }
+    void main() {
+      vec3 acc = texture2D(tColor, vUv).rgb;
+      #if TAPS > 0
+      float d0 = viewZ(vUv), r0 = coc(d0), wsum = 1.0;
+      // Each pixel turns the disc by its own angle; the grain hides the pattern.
+      float turn = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      for (int i = 0; i < TAPS; i++) {
+        float r = sqrt((float(i) + 0.5) / float(TAPS)) * uCap, a = float(i) * 2.39996 + turn;
+        vec2 uv = vUv + vec2(cos(a), sin(a)) * r * uPx;
+        float d = viewZ(uv), rc = coc(d);
+        // A tap behind this pixel blurs no wider than this pixel does.
+        float w = smoothstep(r - 1.0, r + 1.0, d > d0 ? min(rc, r0) : rc);
+        acc += texture2D(tColor, uv).rgb * w;
+        wsum += w;
+      }
+      acc /= wsum;
+      #endif
+      // A cap on the brightest glints keeps the bloom from blocks.
+      gl_FragColor = vec4(min(acc, vec3(14.0)), 1.0);
+    }`,
+}, 'tUnused');
+
+/* ---------- post chain ---------- */
+// The scene draws into its own target with depth. A depth texture keeps its first size.
+let sceneRT = null;
+function makeSceneRT(w, h, samples) {
+  sceneRT?.depthTexture?.dispose();
+  sceneRT?.dispose();
+  sceneRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples, depthTexture: new THREE.DepthTexture(w, h) });
+}
+const composer = new EffectComposer(renderer);
+composer.addPass(dofPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.45, 1.6);
+composer.addPass(bloom);
+const grade = new ShaderPass(gradePass({ tint: new THREE.Vector3(0.0006, 0.0006, 0.0012), vig: 0.6, vigIn: 0.3, grain: 0.04, res: new THREE.Vector2(1, 1) }));
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+/* ---------- size and detail ---------- */
+// High: 40 blur taps. Standard: 24. Low: no blur and a 1024 shadow map.
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => { resize(); wake(); } });
+let size = { w: 1, h: 1, dpr: 1 };
+function resize() {
+  const r = stage.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height), dpr = D.dpr(w, h);
+  size = { w, h, dpr };
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+  // MSAA costs too much above pixel ratio 2.
+  makeSceneRT(pw, ph, dpr > 2 ? 0 : 4);
+  dofPass.uniforms.uPx.value.set(1 / pw, 1 / ph);
+  grade.uniforms.uRes.value.set(pw, ph);
+  const taps = [0, 24, 40][D.level];
+  if (dofPass.material.defines.TAPS !== taps) { dofPass.material.defines.TAPS = taps; dofPass.material.needsUpdate = true; }
+  const map = D.level === 0 ? 1024 : 2048;
+  if (studio.key.shadow.mapSize.x !== map) { studio.key.shadow.mapSize.set(map, map); studio.key.shadow.map?.dispose(); studio.key.shadow.map = null; }
+  camera.aspect = w / h;
+}
+
+/* ---------- the director: camera and light from the playhead ---------- */
+// The slug enters a target at this fraction of its photo.
+const HIT_U = (() => { const sp = shot.spans.find(e => e.kind === 'photo'), f = (shot.tHit[0] - sp.T0) / (sp.T1 - sp.T0); return (1.6 - Math.sqrt(2.56 - 2.4 * f)) / 1.2; })();
+function cue() {
+  if (!fired) return { lit: 0, dim: 1, i: -1, u: 0, wide: true };
+  const sp = shot.at(s);
+  if (sp.kind === 'lead') { const dim = clamp(1 - sp.u * 3); return { lit: 0, dim, i: 0, u: 0, wide: dim > 0 }; }
+  if (sp.kind === 'travel') return sp.u < 0.5 ? { lit: 0, dim: 0, i: sp.i - 1, u: 1 } : { lit: 0, dim: 0, i: sp.i, u: 0 };
+  if (sp.kind === 'photo') {
+    // The flash fires as the slug enters. Reduced motion gets a ramp and a floor.
+    const soft = reduced(), t = s - sp.s0 - HIT_U * (sp.s1 - sp.s0);
+    const lit = Math.min(clamp(t / (soft ? 0.25 : 0.012)), clamp((sp.s1 - s) / (soft ? 0.25 : 0.09))) * (1 - 0.2 * sp.u);
+    return { lit: soft ? Math.max(lit, 0.3) : lit, dim: 0, i: sp.i, u: sp.u };
+  }
+  // The house lights come up while time returns.
+  return { lit: 0.42 * (sp.kind === 'ramp' ? smooth(sp.u * 2.2) : 1), dim: 0, i: -1, u: 0, wide: true };
+}
+
+const look = new THREE.Vector3(), dir = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+function placeCamera(c) {
+  const a = camera.aspect, wide = c.wide || view === 'wide';
+  let dist;
+  if (wide && a < 0.9) {
+    // A narrow stage looks down the row from the gun's end.
+    camera.fov = 38;
+    camera.position.set(-2.95, 1.05, 1.95);
+    look.set(0.15, 0.2, 0);
+    dist = camera.position.distanceTo(look);
+  } else if (wide) {
+    // The wide shot stands at the gun's corner; the row runs away from the lens.
+    camera.fov = 30;
+    look.set(-0.36, 0.24, 0);
+    dir.set(-0.62, 0.2, 1).normalize();
+    dist = Math.max(2.15, 1.5 / a);
+    camera.position.copy(look).addScaledVector(dir, dist);
+  } else {
+    // A photo: close on the target, from a little down the range, with a slow push.
+    camera.fov = 24;
+    look.set(SLOTS[c.i] + 0.022, BORE - 0.014, 0);
+    const t = Math.tan(THREE.MathUtils.degToRad(12));
+    dist = Math.max(0.6, 0.118 / (t * a)) * (1 - 0.07 * c.u);
+    dir.set(0.36, 0.1, 1).normalize().applyAxisAngle(UP, -0.06 * c.u);
+    camera.position.copy(look).addScaledVector(dir, dist);
+  }
+  camera.lookAt(look);
+  camera.updateProjectionMatrix();
+  return dist;
+}
+
+function draw() {
+  const c = cue(), T = fired ? shot.W(s) : -1;
+  clock.uT.value = T;
+  const i = c.i < 0 ? 2 : c.i, focus = placeCamera(c);
+  studio.light(c.lit, c.dim, c.i < 0 ? -0.2 : SLOTS[i], c.i < 0 ? 0 : 1, c.i < 0 ? 30 : hueAt(i));
+  const x = shot.slugX(Math.max(T, 0));
+  slug.visible = fired && T >= 0 && x < 2.6;
+  slug.position.x = x;
+  bulbs.update(T, c.lit, c.dim, size.h * size.dpr / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), smooth((focus - 0.8) / 1.2), c.i < 0 ? 30 : hueAt(i));
+  const u = dofPass.uniforms;
+  u.uFocus.value = focus; u.uK.value = 40 * size.dpr; u.uCap.value = 16 * size.dpr;
+  grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value + 1) % 64;
+  renderer.setRenderTarget(sceneRT);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  u.tColor.value = sceneRT.texture; u.tDepth.value = sceneRT.depthTexture;
+  composer.render();
+}
+
+/* ---------- play ---------- */
+act.fire = () => { fired = true; playing = true; s = 0; wake(); };
+act.reset = () => { fired = false; playing = false; s = 0; seed += 101; bulbs.build(seed, shot.tHit); ui.slider?.set(0); wake(); };
+act.seek = v => { fired = v > 0; playing = false; s = v * shot.dur; wake(); };
+
+// The loop runs while the shot plays; it sleeps at rest.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
+  last = now;
+  if (playing) {
+    // Throttled frames from a hidden pane do not count as slow.
+    if (raw < 0.1) D.frame(raw);
+    s += dt;
+    if (s >= shot.dur) { s = shot.dur; playing = false; }
+    ui.slider?.set(s / shot.dur);
+  }
+  draw();
+  if (playing && visible) raf = requestAnimationFrame(frame);
+}
+
+/* ---------- ready ---------- */
+resize();
+placeCamera(cue());
+const show = () => { ready = true; draw(); canvas.classList.add('on'); mark('first-frame'); };
+renderer.compileAsync(scene, camera).then(show, show);
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+whenVisible(stage, v => { visible = v; if (v) wake(); else { cancelAnimationFrame(raf); raf = 0; } });
+
+// Checks: seek the playhead in seconds, or hold photo i at progress u.
+window.__qa = {
+  shot,
+  seek(sec) { fired = true; playing = false; s = sec; ui.slider?.set(s / shot.dur); wake(); },
+  photo(i, u = 0.5) { const sp = shot.spans.filter(e => e.kind === 'photo')[i]; this.seek(sp.s0 + u * (sp.s1 - sp.s0)); },
+  info: () => ({ s, T: shot.W(s), level: D.level, dpr: size.dpr, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+};
+</script>
+</body>
+</html>

@@ -1,128 +1,145 @@
-# Phaeton (`phaeton`) implementation plan
+# Phaeton rework: Strobe studio
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+## Context
 
-**Goal:** A rail gun diorama, seen from the side. You load it by hand: the rack, the crane, the breech lever. Hold to charge, release to fire. The slug goes sideways through a row of mixed targets in bullet time, then everything bursts at once in real time.
+Phaeton (`phaeton/index.html`, Lab, alpha) is a rail gun that fires through a row of targets in bullet time.
+Tom, 2026-11-15: the idea stays; the hit is weak and the look is wrong. The build starts again from zero.
 
-**Architecture:** three.js 0.170 on one perspective camera with a long lens. A sim clock with a time scale runs the shot, so bullet time is one number. GSAP timelines run the loading machines. Targets are small meshes; debris is instanced meshes; steam, dust and spray are soft points.
+Tom's decisions today:
 
-**Tech stack:** three.js 0.170 (WebGLRenderer, InstancedMesh, Points, MeshPhysicalMaterial, RoundedBoxGeometry), GSAP 3.13, Tone.js through `kit.tone()`.
-
-**Direction:** Tom, 2026-11-10: "Through everything", a mixed row that refills, charge sets power. Then: a high-quality side diorama, a fictional loading process with diegetic parts, firing sideways onto the objects; other modes later. Hands-on loading steps; a stage on a plinth. Tom named it Phaeton. Bean `stimming-xh8y`. The Lab toy Railgun (`railgun/`) is a different toy.
-
-| | |
+| Question | Answer |
 |---|---|
-| Tier | 4, three.js: a lit diorama with moving machines and a tracking camera |
-| Size, estimate | M to L · $30 to $50 |
-| Kits | Burst particles (K6) from `fireworks/index.html` for sparks, in Task 4 |
+| Scope | Same idea, new build: rail gun, hand loading, mixed row, charge sets the reach |
+| Look | Strobe studio: a black room, one hard flash, targets big in the frame |
+| The hit | A photo per target: close camera, flash, time almost stops; at the end the lights come up and all falls at once |
+| Time scrub | Yes, as a second step; the debris runs both ways from the start |
 
-## Art direction (Tom, 2026-11-10)
+Not flagged by Tom, so they stay: the Load, Lock, charge, fire loop; the name; the motto "Through everything".
 
-Zany, 1950s atomic age, dieselpunk. An original proving ground, no names or symbols from any game.
+## Approaches
 
-| Element | Look |
+| | Approach | Trade-off |
+|---|---|---|
+| **A (picked)** | three.js 0.170 WebGL. Pre-fractured meshes. Every pose is a pure function of one shot clock `T` | Free scrub and exact stills. Needs closed-form debris, no stacking physics |
+| B | Step-by-step physics, record every frame for the scrub | Real piles. About 20 MB per shot, and stills are not repeatable |
+| C | WebGPU (three 0.186) with compute particles | More drops. The scene is small and close; fill rate is the cost, not count |
+
+A is my call: the photo per target and the scrub both need exact control of time.
+
+## Design
+
+### The picture
+
+- A black studio. One long optical bench carries the gun (left) and six targets on thin posts.
+- Light: a dim cool modelling light; one hard key flash with a shadow; one rim light with no shadow.
+  The rim hue runs along the row from the toy's accent: orange (55) at target 1 to blue (268) at target 6.
+- The set is black, chrome and anodised metal. The targets carry the colour.
+- No sky, no tilt-shift, no transmission. Glass and water read by reflection and a fresnel rim on black.
+  A small softbox environment (bright rectangles on black, PMREM) gives chrome and glass their highlights.
+- Lens: bloom on hot parts only, depth of field in the close-ups, `gradePass()` from `shared/grade.js`, `OutputPass`.
+
+### The shot
+
+1. Wide shot of the bench while you load, lock and charge (the steps and keys stay: L, K, hold Space or hold the stage).
+2. Release: the room goes dark. The camera is close on target 1.
+3. The slug arrives. The flash fires. Time runs at about 1/500 for about 1.2 s: entry hole, shards, exit cone, full frame, with a slow push of the camera.
+4. Dark again; a fast travel along the bench to the next target. Repeat.
+5. Where the energy ends, the last photo shows the slug held in that target.
+6. The lights come up on the wide shot. Time returns. Everything falls at once.
+7. Refill after 4 s. S shuffles the row.
+
+- Energy stays as today: `E = 0.15 + 1.25 · charge`; each target takes its resistance.
+- The Slow-mo slider sets how long each photo holds.
+- Step two (after Tom's verdict on the hit): after the shot, a drag on the stage runs `T` backward and forward.
+
+### The targets (first pool; my proposal)
+
+| Kind | Break |
 |---|---|
-| Palette | Cream, seafoam, cherry, mustard, Bakelite brown, chrome, copper; hazard stripes |
-| Gun | A streamlined seafoam nacelle with chrome rings, coil portholes, a cherry tail fin, a flared chrome muzzle; twin copper rails outside on standoffs |
-| Machines | A diesel generator with a cherry flywheel and an exhaust stack; six glass vacuum tubes; a Bakelite console with a numbered dial and jewel lamps; a gantry with hazard stripes and a horseshoe magnet |
-| Props | A PROVING GROUND 7 sign with an atom, a DANGER HIGH VOLTAGE sign |
-| Materials | Enamel chips to bare metal on edges and in patches, with dust near the ground; copper turns verdigris in patches; salt crystals glint where they mirror the sun or the key light |
-| Lens | Bloom on hot parts only, a tilt-shift blur that sells the miniature, a warm print grade, vignette, grain |
-| Light | A low sun with a halo, a warm rim light from the sun side, soft violet contact shadows; the diorama floats over a sunset cloud sea (the camera looks down, so the backdrop is below the horizon) |
+| Light bulb | A thin shell in sharp shards; the filament glows and dies |
+| Apple | A small entry, a wide exit cone of flesh and juice; skin outside, flesh on cut faces |
+| Water balloon | The skin tears and pulls back; the water keeps its shape for a moment, then turns to drops |
+| Playing card (edge on, own design) | Cut in two halves that tumble |
+| Gel block | No break: a cavity swells along the track and wobbles; the slug slows in plain view |
+| Steel plate | A hot hole, petals that open away from the gun, sparks |
 
-## The shot
+More kinds (ice, wine glass, egg, melon, concrete) come one by one after the first six.
 
-A slab of salt flat, cut clean like a museum diorama, sits on a dark plinth and floats in a dusk sky. The camera looks at its long side with a long lens, tilted down 15°.
-The cut faces show strata: white crust, grey mud, brown clay. The top shows the hexagon crust. A low sun from the front left throws long shadows to the right.
-On the left stands the gun: a slug rack, a gantry crane, a breech with a sliding block and a red-knobbed lever, a barrel with copper rails and ceramic collars on two trestles. Behind it stand six capacitors and a panel with a dial and three lamps.
-Six targets stand down the lane on thin stands. A steel backstop closes the lane on the right.
+### How it is built
 
-## Loading (diegetic)
+- **Two clocks.** `s` is the director's playhead in real seconds. `T = W(s)` is the shot time.
+  Matter (slug, pieces, drops) reads `T`. Camera, flash, `scene.environmentIntensity` and sound read `s`. The scrub moves `s`.
+- **A photo is a slug position, not a fixed rate.** The six hits span about 6 ms of `T`. `W` holds the slug inside each target for the photo; cone debris leaves at 0.1 to 0.5 of the slug speed, so the cone always shows.
+- **Debris.** `debris.js`. Each piece releases at its own time: slug pass time plus distance from the bore over the crack speed. In a frozen photo the entry side is open and the far side is whole.
+  Pose = flight, two closed-form bounces (restitution 0.3), a friction slide to a dead stop; spin eases to a flat rest pose. All of it runs in the vertex shader, forward and backward.
+  The CPU solves at fire: first contact time, the off-bench flag (the piece falls into black), pile relaxation (landing spots pushed apart, stacked in layers), slug `x(T)` with drag per target.
+- **Geometry.** One merged mesh per target, a piece id per vertex, piece data in a float `DataTexture`. Only drops, sparks and crumbs are instanced. Each debris mesh has a `customDepthMaterial` with the same vertex code, so shadows follow.
+- **Fracture.** `fracture.js`, plain JS, 40 to 60 cells per solid, a few ms each. It runs in idle time (`later()` in `shared/stim.js`) during the intro and the load steps; buffers per kind keep a fixed size and are rewritten at refill.
+  Solids: Voronoi cells cut with bisector planes; outer faces keep the skin material, cut faces the inner one. Shells: a tessellated shell grouped by nearest seed, with thickness. Seeds are denser near the slug axis.
+- **Glass with no transmission.** An additive reflection pass with no depth write; then the same mesh writes depth only, so the blur sees it.
+- **Balloon.** Tear fronts run from the entry and the exit; the skin discards behind a noisy front. The water is a sphere with ripples and an exit bulge, then drops.
+- **Gel.** A cavity radius pulse follows the slug; block vertices move out by it and a damped shear makes the wobble. An alpha fresnel shell sits over a bright cavity mesh.
+- **Depth of field.** Not `BokehPass`: it redraws with an override material and loses the shader-moved debris. Use the Launch pattern (`launch/index.html:2335-2399`): an own target with a depth texture and a gather blur. Standard: half size, 16 taps. Low: off.
+- **Slow frames.** `detail()` from `shared/detail.js` replaces the toy's own ladder (wiring as `ascent/index.html:209-216`). Levels set blur taps, shadow size and piece count. A level change waits for the end of the shot. One hidden mid-burst frame behind the intro compiles every program.
+- **MSAA once:** canvas `antialias: false`, 4 samples on the scene target. This closes bean `stimming-orpt` for the new page.
+- **Comfort.** Flash onsets are 0.5 s apart or more. A Flash setting: Full, Soft (250 ms ramps, a 30% floor), Off (steady light). Reduced motion forces Off, the wide camera and half the pieces. The scrub always uses steady light, because a fast drag can strobe.
 
-| Step | You | The machine |
-|---|---|---|
-| 1. Load | Click the rack, or L | The crane runs to the rack, the magnet takes the top slug, carries it to the tray and sets it down. The LOAD lamp turns green. |
-| 2. Lock | Click the lever, or K | The lever swings, the breech block slides shut over the slug. The LOCK lamp turns green. |
-| 3. Charge | Hold anywhere, or Space | The capacitors light one by one, the dial needle climbs, the rails glow, arcs crawl on the barrel. |
-| 4. Fire | Release | The slug leaves the muzzle with a flash and goes down the lane. |
-| 5. Vent | (by itself) | The block slides open, the lever returns, steam rises from the breech. The gun is empty again. |
-
-- The amber lamp asks for the next step. A step out of order blinks its lamp red.
-- The part that takes the next step glows under the pointer.
-- The rack holds five slugs; it restocks after the last one.
-
-## The shot and the row
-
-- **Power:** the slug carries energy `E = 0.15 + 1.25 · charge`. Each target takes its resistance from E. At E < resistance the slug stops and knocks that target off its stand.
-- **Bullet time:** time drops to the Slow-mo setting (1/8 to 1/100). The track camera runs beside the slug, close in. At the stop point it holds 0.35 s, then time snaps back and the camera pulls out.
-- **Debris:** chunks fly down the lane. Those that leave the slab fall off its edge into the dusk.
-- **Refill:** 4 s after the snap, a new mix of six drops onto the stands. S shuffles it.
-
-| Target | Resistance | Hit (Task 2) |
-|---|---|---|
-| Glass pane | 0.05 | Sharp shards that catch the sky; glitter |
-| Ice block | 0.12 | Clear chunks and a frost cloud |
-| Water tank | 0.15 | The shell splits and throws a sheet of spray; wet stains |
-| Melon | 0.08 | Rind chunks, red pulp, splats |
-| Concrete block | 0.25 | Heavy chunks and a grey dust puff |
-| Steel plate | 0.30 | Petals open round a glowing hole |
-| Backstop | stops all | A dent that glows and cools |
-
-## Bar (Bar v2)
+### Bar (Bar v2)
 
 | Slot | Content |
 |---|---|
-| Top left | none (modes come later) |
+| Top left | none (the other modes stay in Classic) |
 | Bottom left | Load (L), Lock (K), Fire (held, Space) |
-| Bottom right | Slow-mo |
-| Bottom centre | Keys: `[CLICK] rack, lever` · `[HOLD] charge` · `[RELEASE] fire` · `[S] shuffle` |
-| Settings | Camera: Track, Fixed · Dust (toggle) · Quality (shared) |
-| Settings footer | Reset: a fresh row and a clean backstop |
+| Bottom right | Slow-mo (how long each photo holds); at step two it becomes Time, the scrub's keyboard twin |
+| Keys | `[CLICK] rack, lever` · `[HOLD] charge` · `[RELEASE] fire` · `[S] shuffle`; at step two `[DRAG] time` takes the fourth place |
+| Settings | Camera: Photos, Wide · Flash: Full, Soft, Off · Quality · footer Reset |
+| Dev (`?dev`) | Flash power, rim hue, depth of field, photo time scale, pin one target kind, freeze at `T` |
 
-## Sound (Task 5)
+### Files
 
-- **Machines:** crane motor whine, magnet clunk, breech slide and lock, lever ratchet, steam hiss.
-- **Charge:** a 50 Hz hum per capacitor, a rising whine, arc crackle.
-- **Fire:** a supersonic crack and a deep thump, then a late echo.
-- **Hits:** one per material; pitched down in bullet time.
-- Muted by default.
+| File | Role |
+|---|---|
+| `phaeton/legacy.html` | Today's page, kept as Classic (`noindex`); Corridor, Aquarium and Depth live on there |
+| `phaeton/index.html` | New: shell, Bar v2 spec with `dev` rows (pattern: `railgun/index.html:149-200`), renderer, loop |
+| `phaeton/looks.html` | The look spike (step 2), `noindex`; removed when `index.html` takes over |
+| `phaeton/shot.js` | The two clocks, `W(s)`, the photo sequence, energy and stops |
+| `phaeton/debris.js` | Closed-form kinematics (JS and GLSL twin), the piece texture, drops, dust |
+| `phaeton/fracture.js` | Voronoi cells, shell shards |
+| `phaeton/targets.js` | The six kinds: build, hit, materials |
+| `phaeton/rig.js` | Bench, gun, flash heads, loading machines, softbox environment |
+| `tests/phaeton-core.test.mjs` | `node --test`, as `tests/washline-core.test.mjs`: clocks, debris, fracture |
+| `toys.json` | `phaeton.legacy: true` |
+| `docs/plans/phaeton.md` | Replaced by this plan in the repo's plan form |
+| `.beans/stimming-xh8y--toy-rail-gun.md` | A "Rework (Tom, 2026-11-15)" checklist |
 
-## Reduced motion and idle
+Reused as they are: `initPage`, `audioKit`, `whenVisible`, `reduced`, `onReducedChange`, `stage`, `pageReady`, `later` (`shared/stim.js`); `detail()` (`shared/detail.js`); `gradePass()` (`shared/grade.js`).
 
-- **Reduced motion:** no track camera; no flash; half the debris.
-- **Idle:** the loop sleeps when no machine moves, the charge is zero and no debris moves.
+Ported from today's page (line ranges in `phaeton/index.html`): sound 1564-1768 without the diesel chain; gun states and crane timeline 1770-1842; charge 1849-1863; energy 1877-1881; loop 2206-2227; pointer 2229-2265; QA 1953-1987, where `at` becomes `seek(T)`.
+Dropped: post 150-205, sky 216-279, targets and hits 832-1563, camera 2141-2176, the ladder 2190-2204.
 
-## Tasks
+The two builds share `stimming.phaeton.*` storage; the new bar rows take new ids.
 
-### Task 1: Diorama blockout (checkpoint)
+The menu icon, the name, the motto and the Lab place do not change.
 
-- [x] Slab with strata on a plinth, dusk sky, side camera that fits the frame.
-- [x] Gun, rack, crane, breech, lever, capacitors, panel, lamps.
-- [x] Load, lock, charge, fire, vent; refusals blink red; pointer picks the rack and lever.
-- [x] Sideways shot, track camera, box debris that falls off the slab, steam.
-- [x] `toys.json` entry and Lab menu entry. Checkpoint with Tom.
+## Order of work
 
-### Task 2: Targets
+Branch: worktree `.worktrees/stimming-xh8y`, branch `feature/stimming-xh8y`, merged by PR (ADJUDANT git rule for a feature bean). `main` keeps today's toy until Tom says yes.
 
-- [x] A hit for each material: shards, chunks, spray, pulp, petals, dust. Stains on the salt.
-- [ ] Polish: ice reads grey, not clear; the steel petals face away from the camera.
+1. **Set up.** Worktree, bean checklist, `docs/plans/phaeton.md`.
+2. **Look spike, then stop for Tom.** `looks.html` and `rig.js`: studio, bench, wide shot. Then `fracture.js` and `debris.js` with tests first, and one light bulb: `__qa.seek(T)` gives the same frame from both directions. One frozen close-up to Tom at 1280, 375 × 812 and 812 × 375.
+3. **The sequence** (`shot.js`): six photos, dark travel, lights up, refill, on bulbs only.
+4. **The six kinds** (`targets.js`), one at a time, each with a still; 30 fps at Standard in every photo.
+5. **The page.** New `index.html`: gun and loading in the new look, bar, sound (adds a flash pop and the recharge whine), Flash setting, phones. Today's page moves to `legacy.html` and `legacy: true` lands in the same commit.
+6. **Verdict from Tom on the hit.** Then **step two: the time scrub** (drag and the Time slider move `s`).
+7. Later, only when Tom asks: Corridor, Aquarium and Depth in the new look; more target kinds.
 
-### Task 3: Modes
+## Verification
 
-- [x] Tom picked Corridor, Aquarium and Depth (2026-11-10). Mode choice top left, keys 1 to 4, kept per viewer.
-  - Corridor: twenty glass panes, 0.68 m apart, a shard cascade.
-  - Aquarium: one 12 m water tank; water drags 0.09 per metre; bubble trail and shock rings; the tank bursts at the snap.
-  - Depth: 26 steel plates, 0.055 each, so no shot goes through; pierced plates glow; the slug stays stuck; a red flag marks the last depth, a yellow flag the best.
-  - A mode change during a shot waits for the refill.
-
-### Task 4: Light and sparks
-
-- [x] Muzzle plasma, a shock ring and a smoke ring; streak sparks on steel, plates and the backstop; a salt-dust wake under the slug; heat shimmer along its path; stylised inner-lit ice (transmission showed the orange sky).
-
-### Task 5: Sound
-
-- [x] Raw Web Audio through `audioKit` (no Tone.js needed): crane motor, magnet clunk and clank, lever ratchet and lock, steam hiss, refusal buzz, rack clinks; charge as diesel chug, tube hum, rising whine and arc crackle; release zap and thump; muzzle crack; a hit per material, low and long in bullet time; the snap rush and a late echo. Not yet heard by Tom.
-
-### Task 6: Finish and QA
-
-- [ ] Phones, reduced motion, idle sleep, fps ladder. Tick the bean.
+- Main risk is fill rate (frame-filling shards, MSAA, blur): piece caps per level, no MSAA above pixel ratio 2, the shadow map updates only when `T` moves.
+- `node --test tests/phaeton-core.test.mjs`: `W(s)` is monotonic; a piece's pose at `T` is the same forward and backward; no piece rests under the bench; every Voronoi cell is closed and the cells fill the solid.
+- `tests/run.sh` (`tests/bar-v2.html`) passes.
+- Browser pane at `http://localhost:8000/.worktrees/stimming-xh8y/phaeton/index.html`: clean console; load, lock, charge, fire; a weak shot stops in the row; refill; S; Reset; Classic link opens `legacy.html` and back.
+- Stills from `?dev` freeze at each photo, at 1280 px, 375 × 812 and 812 × 375.
+- Reduced motion and Flash off: no pop, wide camera.
+- Frame time with the pane visible; the hidden pane's numbers do not count.
+- No hold or debug build stays loaded in the shared tab after a check.

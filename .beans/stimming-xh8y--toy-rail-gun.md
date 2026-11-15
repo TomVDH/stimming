@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T08:52:13Z
-updated_at: 2026-11-10T09:00:56Z
+updated_at: 2026-11-15T08:41:47Z
 ---
 
 A new Lab toy at `phaeton/`: a rail gun on a salt flat; the slug goes through a row of mixed targets in bullet time. Tom named it Phaeton (2026-11-10). The Lab toy Railgun (`railgun/`, stimming-f793) is a different toy and stays as it is.
@@ -39,3 +39,17 @@ Tom moved the toy to a side diorama with hands-on diegetic loading (rack, crane,
 - [x] Phone: portrait looks down the lane at three-quarters; landscape keeps the side view; bar fits at 375 x 812 and 812 x 375
 - [x] Slow-frame ladder: lower pixel ratio, then no tilt blur and 1024 shadows; throttled frames do not count
 - [ ] Real fps: the hidden browser pane throttles the GPU, so its numbers are not valid; measure with the pane visible or on a device
+
+## Rework: Strobe studio (Tom, 2026-11-15)
+
+Tom: the idea stays; the hit is weak and the look is wrong. New build from zero. Plan: `docs/plans/phaeton.md`.
+Look: a black strobe studio. Hit: a photo per target. Time scrub: a second step.
+
+- [x] Plan approved by Tom
+- [x] Kit: `shot.js`, `debris.js`, `fracture.js`, with `tests/phaeton-core.test.mjs`
+- [x] Look spike `phaeton/looks.html`: studio, bench, first-pass gun, six light bulbs, the photo sequence
+- [ ] Tom's verdict on the look spike (2026-11-15: "unsure if this is the quality"; glass pass done after it)
+- [ ] The other five kinds: apple, water balloon, card, gel block, steel plate
+- [ ] The page: gun and loading in the new look, bar, sound, Flash setting, phones; today's page to `legacy.html`
+- [ ] Time scrub
+- [ ] Fracture at load takes about 0.5 s for six bulbs: move it to idle time
