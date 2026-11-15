@@ -288,7 +288,7 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
     fragmentShader: 'uniform float uA; uniform vec3 uCool, uWarm; varying float vL; void main() { float a = smoothstep(0.5, 0.15, length(gl_PointCoord - 0.5)); gl_FragColor = vec4(mix(uCool, uWarm * 3.0, vL) * uA * a * (0.4 + 2.4 * vL), 1.0); }',
   }));
   {
-    const R = rng(88), N = 5200, p = [], a = [];
+    const R = rng(88), N = 14000, p = [], a = [];
     for (let i = 0; i < N; i++) { p.push(R() * 40, R() * 14, R() * 40); a.push(R()); }
     snow.geometry.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
     snow.geometry.setAttribute('aS', new THREE.Float32BufferAttribute(a, 1));
@@ -730,7 +730,13 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
     const c = card.cam, asp = view.w / view.h, n = 0.1;
     let tu = Math.tan(c.up * RAD), td = Math.tan(c.down * RAD);
     const half = asp * (tu + td) / 2;
-    if (half < c.minHalf) { tu *= c.minHalf / half; td *= c.minHalf / half; }
+    if (half < c.minHalf) {
+      tu *= c.minHalf / half; td *= c.minHalf / half;
+      // upMax and downMax cap one side, in degrees; the other side takes the rest.
+      const sum = tu + td;
+      if (c.upMax && tu > Math.tan(c.upMax * RAD)) { tu = Math.tan(c.upMax * RAD); td = sum - tu; }
+      if (c.downMax && td > Math.tan(c.downMax * RAD)) { td = Math.tan(c.downMax * RAD); tu = sum - td; }
+    }
     const hw = asp * (tu + td) / 2;
     camera.projectionMatrix.makePerspective(-n * hw, n * hw, n * tu, -n * td, n, 1500);
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
