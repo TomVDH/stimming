@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-10T16:21:20Z
+updated_at: 2026-11-15T04:17:27Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -145,3 +145,11 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - The sun sets in a valley notch at the end of the street, beside the bell tower; the slider starts there (0.95).
 - A low sun warms the sky; bloom and exposure follow it.
 - Open: Tom's Alley sign-off.
+
+
+### Garden is a Flemish back garden (Tom, 2026-11-14)
+
+- Brick row-house backs with kitchen extensions, roll shutters and bluestone sills.
+- The pulley runs from an upstairs window to a pole by the shed.
+- Plots side by side behind walls, fences and hedges; sheds, a rotary dryer, a trampoline.
+- A church tower and poplars on the horizon under a big cumulus sky; the sun sets at the end of the row.

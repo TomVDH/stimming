@@ -67,6 +67,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear, cull, ropeAt } from './core.js';
 import { makeLook } from './cloth.js';
 import alley from './places/alley.js';
+import garden from './places/garden.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -81,11 +82,17 @@ const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
 const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-const PLACES = { alley };
+const PLACES = { alley, garden };
+// The address (?place=) or the last visit picks the first place.
+const firstPlace = (() => {
+  let saved = null;
+  try { saved = localStorage.getItem('stimming.washline.place'); } catch { /* storage can be blocked */ }
+  return [new URLSearchParams(location.search).get('place'), saved].find(v => PLACES[v]) || 'alley';
+})();
 // Handlers bind once the scene exists.
 const act = { place() {}, sun() {}, wind() {}, add() {}, release() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Place', value: 'alley', options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
+  choice: { label: 'Place', value: firstPlace, options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.95, onInput: v => act.sun(v) },
   settings: [
     { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
@@ -134,6 +141,7 @@ composer.addPass(new OutputPass());
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
   uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uB: { value: 0 },
+  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -141,7 +149,13 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud; uniform vec2 uDrift;
+      float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vn(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hh(i), hh(i + vec2(1, 0)), f.x), mix(hh(i + vec2(0, 1)), hh(i + 1.0), f.x), f.y);
+      }
+      float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vn(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
       void main() {
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
@@ -150,7 +164,19 @@ const sky = new THREE.Mesh(
         // A low sun warms the sky around it and along the horizon.
         col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * (1.0 - e));
         col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e);
-        col += uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
+        vec3 sun = uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
+        // Cumulus on a flat deck: grey bellies, bright tops, a lit rim near the sun.
+        float d = 0.0;
+        if (uCloud > 0.0 && ray.y > 0.0) {
+          vec2 cp = ray.xz / (ray.y + 0.05) * 0.5 + uDrift;
+          float n = fbm(cp);
+          d = smoothstep(0.62 - 0.22 * uCloud, 0.86 - 0.18 * uCloud, n) * smoothstep(0.0, 0.08, ray.y);
+          vec3 lit = mix(uHor * 1.04, vec3(1.0), 0.55) * mix(0.62, 1.0, smoothstep(0.5, 0.85, fbm(cp * 1.8 + 3.0)));
+          lit *= 1.0 - 0.4 * uB;
+          lit += uSunCol * uB * pow(cs, 10.0) * (1.0 - d) * 2.0;
+          col = mix(col, lit, d * 0.9);
+        }
+        col += sun * (1.0 - 0.9 * d);
         gl_FragColor = vec4(col, 1.0);
       }` }));
 sky.frustumCulled = false;
@@ -173,8 +199,19 @@ const WARM = v3(lin([0.9, 0.11, 60])), WHITE = v3(lin([0.98, 0.025, 85]));
 const P = { place: null, set: null, line: null, look: null, d: 12 };
 function buildPlace(id) {
   const pl = PLACES[id] || alley;
-  if (P.set) { scene.remove(P.set); P.look.dispose(); }
+  if (P.set) {
+    scene.remove(P.set);
+    P.look.dispose();
+    // Free the old set's GPU memory.
+    const done = new Set();
+    P.set.traverse(o => {
+      o.geometry?.dispose();
+      for (const m of [].concat(o.material || [])) if (!done.has(m)) { done.add(m); m.map?.dispose(); m.dispose(); }
+    });
+  }
   P.place = pl;
+  try { localStorage.setItem('stimming.washline.place', pl.id); } catch { /* storage can be blocked */ }
+  skyU.uCloud.value = pl.sky.clouds || 0;
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
   scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), ...(pl.fog || [30, 420]));
@@ -230,12 +267,13 @@ function syncLight() {
   skyU.uSun.value.copy(SUN.dir);
   skyU.uSunCol.value.copy(SUN.col);
   skyU.uB.value = SUN.b;
+  skyU.uDrift.value.set(st.t * 0.004, st.t * 0.0015);
   bloom.strength = 0.3 + 0.12 * SUN.b;
   sunLight.target.position.set(0, 6, -8);
   sunLight.position.copy(sunLight.target.position).addScaledVector(SUN.dir, 60);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
   sunLight.intensity = 3.2;
-  hemi.intensity = 1.35 - 0.3 * SUN.b;
+  hemi.intensity = (P.place.fill ?? 1.35) - 0.3 * SUN.b;
   renderer.toneMappingExposure = 1 - 0.3 * SUN.b;
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
@@ -430,7 +468,7 @@ act.release = () => {
   wake();
 };
 
-buildPlace('alley');
+buildPlace(firstPlace);
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 resize();
