@@ -98,6 +98,9 @@ uniform vec4 uBoom; uniform vec2 uBoomL;
 // uFog is the fog bank now.
 // uSpr: red sprites high over the storm, as map xz, level, seed.
 uniform float uStorm, uFog; uniform vec4 uSpr[2];
+// uFogSun is the sun's light inside the bank.
+// uFogLamp is the tip lights in fog: nav colour, then strobe.
+uniform vec3 uFogSun; uniform vec4 uFogLamp;
 // uWisp: the plane's wrapped place in metres, for wing fog.
 uniform vec3 uWisp;
 // The wingtip nav light: red on the left wing, green on the right.
@@ -1454,7 +1457,7 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
-  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + uNavC * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
+  vec3 fc = (air + uFogSun) * 1.25 + (vec3(0.9, 0.95, 1.0) * uFogLamp.a * 0.05 + uFogLamp.rgb * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
@@ -1476,7 +1479,7 @@ float wispDens(vec3 p) {
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
   float t1 = min(tEnd, 32.0), T = 1.0;
-  vec3 air = stormGlow(d) * 1.3, col = vec3(0.0);
+  vec3 air = (stormGlow(d) + uFogSun) * 1.3, col = vec3(0.0);
   // Sixteen even steps, jittered per pixel; the resolve smooths the grain.
   float dt = (t1 - 0.5) / 16.0, t = 0.5 + dt * hash12(gl_FragCoord.xy + 5.3);
   for (int i = 0; i < 16; i++) {
@@ -1484,7 +1487,7 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
     float dn = wispDens(d * t + uWisp);
     // The strobe and nav light bloom thickly in fog round the tip.
     float ft = length(d * t - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 3.0 + uNavC * 0.25) * exp(-ft / 6.0);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uFogLamp.a * 3.0 + uFogLamp.rgb * 0.25) * exp(-ft / 6.0);
     float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;
@@ -1906,7 +1909,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
     col = col * (1.0 - fog) + hzC * (1.0 - Tc) * fog;
     // Close fog banks hide the tower too.
     float fb = fogAt(d, tIn);
-    col = col * (1.0 - fb) + stormGlow(d) * 1.25 * (1.0 - Tc) * fb;
+    col = col * (1.0 - fb) + (stormGlow(d) + uFogSun) * 1.25 * (1.0 - Tc) * fb;
     c = c * Tc + col;
     skyA *= Tc;
   }

@@ -288,6 +288,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   const boltL = new THREE.DirectionalLight(0xc8ccff, 0);
   const boltH = new THREE.HemisphereLight(0xc8ccff, 0x0c0d14, 0);
   scene.add(boltL, boltL.target, boltH);
+  // The sunlit deck and land below fill the faces that the sun misses.
+  // Only the ground half shines, so upper skins take none of it.
+  const bounce = new THREE.HemisphereLight(0x000000, 0xffffff, 0);
+  // Inside a bank, the fog's own light falls on the skin from all sides.
+  const fogL = new THREE.AmbientLight(0xffffff, 0);
+  scene.add(bounce, fogL);
   // A fog bank swallows the wing; the shader sets the bank's density.
   scene.fog = new THREE.FogExp2(0x000000, 0);
   // The tip strobe and the nav light light the skin near the tip.
@@ -340,7 +346,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
+    // strobe and lamp scale the tip lights on skin and fog.
+    // fogSun is the sun's share of the fog's light.
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0, lamp = 1, fogSun = [0, 0, 0] }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -355,10 +363,10 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
       // The gust's lift bends the wing in its first two modes, 1.1 Hz and 3.2 Hz.
-      // An updraft lifts the tip about 12 cm per m/s; a downdraft drops it.
-      // Slow swells bend it smoothly; sharp chop sets it ringing.
+      // An updraft lifts the tip about 9 cm per m/s; a downdraft drops it.
+      // The airflow damps both modes hard, so the wing never rings.
       const sd = Math.min(dt, 0.05), g = shake ? gust : 0;
-      [[1.1, 0.07, 0.12], [3.2, 0.1, 0.015]].forEach(([hz, z, perMs], j) => {
+      [[1.1, 0.6, 0.09], [3.2, 0.7, 0.006]].forEach(([hz, z, perMs], j) => {
         const w = 2 * Math.PI * hz;
         mo.fv[j] += (w * w * (perMs * g - mo.f[j]) - 2 * z * w * mo.fv[j]) * sd;
         mo.f[j] = Math.max(-0.9, Math.min(0.9, mo.f[j] + mo.fv[j] * sd));
@@ -393,9 +401,15 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const s = V(...sky.sun).normalize(), sl = sky.sunL, m = Math.max(...sl, 1e-6);
       sun.color.setRGB(sl[0] / m, sl[1] / m, sl[2] / m);
       // Towers, storm murk and fog veil the sun, so its glint and shadows fade.
-      sun.intensity = m / 1.5 * veil;
+      // A bank scatters the beam: hard sun goes long before the wing does.
+      const fa = THREE.MathUtils.smoothstep(fogLevel, 0.05, 0.6);
+      sun.intensity = m / 1.5 * veil * (1 - 0.75 * fa);
       // Storm murk also dulls the sky the paint mirrors.
-      scene.environmentIntensity = 1 - 0.6 * storm;
+      // In a bank the paint cannot see the clear sky at all.
+      scene.environmentIntensity = (1 - 0.6 * storm) * (1 - 0.85 * fa);
+      // The ground's bounce: about half the sun's light comes back up.
+      bounce.color.setRGB(0, 0, 0); bounce.groundColor.copy(sun.color);
+      bounce.intensity = 0.5 * m / 1.5 * Math.max(s.y, 0) * veil * (1 - fa);
       const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
@@ -415,14 +429,18 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
       const hc = hz.map((v, i) => 0.5 * (v + zc[i]) + sky.h.floor[i]), gy = 0.3 * hc[0] + 0.5 * hc[1] + 0.2 * hc[2];
       const k = (0.55 - 0.25 * storm) * 1.3;
-      scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
+      // By day the sun lights the bank from inside, as the outside pass has it.
+      scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + fogSun[i] * 1.3 + [0.75, 0.77, 1][i] * flash * 0.004));
+      // A surface inside even light L takes pi times L.
+      fogL.color.copy(scene.fog.color); fogL.intensity = Math.PI * fa;
       // The tip lights ride the bent tip.
       const sT = Math.min(1.1, (V(...tip).dot(FOG_U.uSpanW.value) - 1.2) / 24);
       const bend = FOG_U.uUpW.value.clone().multiplyScalar(mo.f[0] * sT * sT + mo.f[1] * sT * sT * (1 - sT) * 4);
       const tw = V(...tip).add(bend);
-      FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav);
+      // By day, lamp dims the tip lights' glow.
+      FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav).multiplyScalar(lamp);
       strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
-      navL.position.copy(tw).add(V(0.4, -0.5, 0));
+      navL.position.copy(tw).add(V(0.4, -0.5, 0)); navL.intensity = 0.4 * lamp;
       wingL.intensity = beam * WING_LIGHT.k;
       FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
       return [bend.x, bend.y, bend.z];
