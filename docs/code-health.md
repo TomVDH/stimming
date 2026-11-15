@@ -9,6 +9,7 @@ The detail lives in the plans; this page links them and does not repeat them.
 | Shared modules | Which copied code moves into `shared/`? | [modularize.md](plans/modularize.md), [shared-shaders.md](plans/shared-shaders.md) |
 | Toy docs | What does each toy's reference page hold? | [toy-docs.md](plans/toy-docs.md), [template](toys/_template.md) |
 | TypeScript | How do we get type checks? | [typescript.md](plans/typescript.md) |
+| Port list | Which toys get ported, and what each one needs? Main shelf toys start at v1.5 | [ports.md](plans/ports.md) |
 
 ## The site today
 
