@@ -5,6 +5,8 @@
 let uid = 0;
 const P = pts => 'M' + pts.map(p => p.join(' ')).join('L') + 'Z';
 const FIELD = 'x="-70" y="-70" width="240" height="240"';
+// The silhouette ink: one dark tone for every shape against the sky.
+const SIL = 'oklch(0.2 0.045 282)';
 
 export const SHOTS = {
   eastvan: [
@@ -77,73 +79,64 @@ export const SHOTS = {
       <path d="M-20 170V104Q-20 96 -10 96H22Q30 96 30 104V170Z" fill="oklch(0.3 0.07 155)" filter="${k.blur}"/>
       <circle cx="0" cy="112" r="2.2" fill="oklch(0.95 0.12 100)"/><circle cx="10" cy="112" r="2.2" fill="oklch(0.95 0.12 100)"/>`],
   ],
+  // Belgium follows the Wires recipe: one dark shape from straight below,
+  // a plain sky, thin lines to the corners, one small accent.
   belgian: [
-    // Up at the shack's roof sign: a lit cone of frites against the dusk.
-    ['Frites', 1, k => `<rect ${FIELD} fill="${k.lin([[0.05, 'oklch(0.28 0.1 280)'], [0.5, 'oklch(0.55 0.18 340)'], [0.86, 'oklch(0.84 0.15 62)']])}"/>
-      <g fill="oklch(1 0 0 / 0.8)"><circle cx="12" cy="10" r="0.7"/><circle cx="84" cy="6" r="0.9"/><circle cx="70" cy="22" r="0.6"/><circle cx="-10" cy="34" r="0.8"/><circle cx="104" cy="30" r="0.7"/></g>
-      <circle cx="50" cy="34" r="34" fill="oklch(0.92 0.15 92 / 0.4)" filter="${k.blur}"/>
-      ${[[-34, 44], [-20, 52], [-7, 58], [6, 56], [19, 50], [33, 42]].map(([a, l], i) => `<rect x="${25 + i * 8}" y="${48 - l}" width="9" height="${l + 6}" rx="1.6" transform="rotate(${a} ${29.5 + i * 8} 48)" fill="${i % 2 ? 'oklch(0.82 0.16 80)' : 'oklch(0.92 0.15 96)'}"/>`).join('')}
-      <path d="${P([[14, 44], [86, 44], [64, 170], [36, 170]])}" fill="oklch(0.96 0.02 92)"/>
-      ${[0, 1, 2].map(i => `<path d="${P([[20.5 + i * 22, 44], [31.5 + i * 22, 44], [40 + i * 8.7 + 3, 170], [36 + i * 8.7 + 1, 170]])}" fill="oklch(0.6 0.21 26)"/>`).join('')}
-      <path d="${P([[14, 44], [86, 44], [84.6, 52], [15.4, 52]])}" fill="oklch(0 0 0 / 0.14)"/>
-      <path d="M-70 26Q20 50 170 6" stroke="oklch(0.16 0.04 285)" stroke-width="0.7" fill="none"/>
-      ${Array.from({ length: 10 }, (_, i) => { const x = -34 + i * 16, t = (x + 70) / 240, y = 26 * (1 - t) * (1 - t) + 2 * 50 * t * (1 - t) + 6 * t * t; return `<circle cx="${x}" cy="${y.toFixed(1)}" r="4.6" fill="oklch(0.95 0.13 92 / 0.4)" filter="${k.blur}"/><circle cx="${x}" cy="${y.toFixed(1)}" r="1.8" fill="oklch(0.98 0.09 95)"/>`; }).join('')}
-      <path d="M-70 170V112L-8 100L20 112V170Z" fill="oklch(0.15 0.04 285)"/><path d="M-2 104V86h7v19Z" fill="oklch(0.15 0.04 285)"/>
-      <g fill="oklch(1 0 0 / 0.35)" filter="${k.blur}"><circle cx="2" cy="78" r="6"/><circle cx="-4" cy="66" r="8"/><circle cx="6" cy="54" r="7"/></g>`],
-    // Up between the stepped gables at dusk; the belfry stands in the gap.
-    ['Gables', -1, k => `<rect ${FIELD} fill="${k.lin([[0.05, 'oklch(0.32 0.11 275)'], [0.45, 'oklch(0.62 0.18 345)'], [0.72, 'oklch(0.88 0.14 72)']])}"/>
-      <path d="M44.6 100V46h-1.2v-3h2.4v-7h1.6v-4l2.6 -13l2.6 13v4h1.6v7h2.4v3h-1.2V100Z" fill="oklch(0.42 0.11 312)"/><circle cx="50" cy="52" r="2.6" fill="oklch(0.96 0.1 90)"/><path d="M50 52v-1.8M50 52h1.4" stroke="oklch(0.2 0.05 290)" stroke-width="0.5"/>
-      <ellipse cx="50" cy="104" rx="16" ry="20" fill="oklch(0.9 0.15 75 / 0.55)" filter="${k.blur}"/>
-      <path d="M-70 170V-20h14v-8h8v-8h8v8h8v8h8v22h6v-6h6v-6h6v6h6v6h4v18h5v-5h5v-5h5v5h5v5h4v16h4v-4h4v-4h4v4h4v4V170Z" fill="oklch(0.23 0.06 300)"/>
-      <path d="M170 170V-12h-14v-8h-8v-8h-8v8h-8v8h-8v24h-6v-6h-6v-6h-6v6h-6v6h-4v18h-5v-5h-5v-5h-5v5h-5v5h-4v14h-4v-4h-4v-4h-4v4h-4v4V170Z" fill="oklch(0.19 0.05 290)"/>
-      <g fill="oklch(0.93 0.15 90)"><path d="M-48 2h8v12h-8zM-34 26h8v12h-8zM-16 20h5v8h-5zM-4 40h5v8h-5zM10 34h4v6h-4zM20 52h4v6h-4zM34 48h3v5h-3z"/>
-        <path d="M140 8h8v12h-8zM122 34h8v12h-8zM112 26h5v8h-5zM98 48h5v8h-5zM88 40h4v6h-4zM78 60h4v6h-4zM66 54h3v5h-3z"/></g>
-      <g fill="oklch(0.78 0.16 55)"><path d="M-62 30h8v12h-8zM-20 52h5v8h-5zM118 58h5v8h-5zM150 40h8v12h-8z"/></g>
-      <path d="M-30 34Q50 62 130 30M4 64Q50 82 96 62" stroke="oklch(0.14 0.03 285)" stroke-width="0.6" fill="none"/>
-      ${Array.from({ length: 9 }, (_, i) => { const t = (i + 0.5) / 9, x = -30 + 160 * t, y = 34 * (1 - t) * (1 - t) + 2 * 62 * t * (1 - t) + 30 * t * t; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="oklch(0.95 0.13 92 / 0.4)" filter="${k.blur}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="oklch(0.98 0.09 95)"/>`; }).join('')}`],
-    // Cobbles from the ground into a low sun; a wheel goes by.
-    ['Cobbles', 1, k => `<rect ${FIELD} fill="${k.lin([[0.1, 'oklch(0.42 0.13 290)'], [0.3, 'oklch(0.7 0.17 20)'], [0.44, 'oklch(0.93 0.13 85)']])}"/>
-      <circle cx="30" cy="33" r="30" fill="oklch(0.97 0.1 90 / 0.45)" filter="${k.blur}"/><circle cx="30" cy="33" r="9" fill="oklch(0.99 0.06 95)"/>
-      <path d="M-70 30q10 -5 20 0h14v-9l2.4 -9l2.4 9v9h10q5 -9 10 0h30q6 -11 12 0q5 -8 10 0h20q7 -10 14 0H170V40H-70Z" fill="oklch(0.26 0.07 300)"/>
-      <rect x="-70" y="36" width="240" height="140" fill="oklch(0.16 0.04 290)"/>
-      ${[[36, 3, 6], [40.4, 5, 10], [47, 8, 16], [57, 12, 25], [72, 19, 40], [95, 30, 62]].map(([y, h, w], r) => Array.from({ length: Math.ceil(240 / (w * 1.07)) + 1 }, (_, i) => {
-    const x = -70 - (r % 2) * w / 2 + i * w * 1.07, a = Math.max(0.12, 1 - Math.abs(x + w / 2 - 30) / 80).toFixed(2);
-    return `<rect x="${x.toFixed(1)}" y="${y}" width="${w}" height="${h}" rx="${(h * 0.24).toFixed(1)}" fill="${['oklch(0.3 0.05 295)', 'oklch(0.34 0.05 310)', 'oklch(0.27 0.05 285)'][(i * 3 + r * 5) % 3]}"/><rect x="${(x + w * 0.08).toFixed(1)}" y="${y + h * 0.06}" width="${(w * 0.84).toFixed(1)}" height="${(h * 0.2).toFixed(1)}" rx="${(h * 0.1).toFixed(1)}" fill="oklch(0.9 0.13 70 / ${a})"/>`;
-  }).join('')).join('')}
-      <ellipse cx="30" cy="70" rx="13" ry="44" fill="oklch(0.92 0.13 75 / 0.3)" filter="${k.blur}"/>
-      <g transform="translate(94 24)"><circle r="38" fill="none" stroke="oklch(0.1 0.02 285)" stroke-width="5.4"/><path d="M-36 -12A38 38 0 0 0 -22 31" fill="none" stroke="oklch(0.92 0.13 75)" stroke-width="1.2" stroke-linecap="round"/>
-        <g stroke="oklch(0.12 0.02 285)" stroke-width="0.6">${Array.from({ length: 16 }, (_, i) => `<path d="M0 0L${(35 * Math.cos(i * Math.PI / 8 + 0.1)).toFixed(1)} ${(35 * Math.sin(i * Math.PI / 8 + 0.1)).toFixed(1)}"/>`).join('')}</g><circle r="3.6" fill="oklch(0.1 0.02 285)"/></g>
-      <g fill="oklch(0.97 0.08 90 / 0.7)"><circle cx="50" cy="26" r="0.8"/><circle cx="58" cy="20" r="0.6"/><circle cx="44" cy="16" r="0.7"/><circle cx="14" cy="22" r="0.6"/></g>`],
-    // Up at the steel spheres in the last light.
-    ['Spheres', -1, k => `<rect ${FIELD} fill="${k.lin([[0.05, 'oklch(0.26 0.1 275)'], [0.5, 'oklch(0.52 0.17 322)'], [0.88, 'oklch(0.86 0.15 65)']])}"/>
-      <g fill="oklch(1 0 0 / 0.8)"><circle cx="8" cy="8" r="0.8"/><circle cx="96" cy="26" r="0.7"/><circle cx="50" cy="4" r="0.6"/><circle cx="-6" cy="40" r="0.7"/></g>
-      <g stroke="oklch(0.2 0.05 285)" stroke-linecap="round"><path d="M26 76L56 44" stroke-width="9"/><path d="M56 44L74 16M56 44L92 52M56 44L30 18" stroke-width="5"/><path d="M74 16L30 18M74 16L92 52" stroke-width="2.6"/></g>
-      <g stroke="oklch(0.9 0.13 70 / 0.8)" stroke-linecap="round"><path d="M22.6 73L52.6 41" stroke-width="1.5"/><path d="M54.4 43.4L28.6 17.6M55 42.4L72.6 15" stroke-width="0.9"/></g>
-      ${[[26, 78, 31], [56, 44, 16], [74, 16, 9], [92, 52, 11], [30, 18, 8]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${k.rad([[0, 'oklch(0.97 0.09 80)'], [0.3, 'oklch(0.66 0.13 345)'], [1, 'oklch(0.18 0.05 280)']], 0.3, 0.74, 0.95)}"/>`).join('')}
-      ${Array.from({ length: 7 }, (_, i) => `<circle cx="${(26 + 24 * Math.cos(-0.5 - i * 0.24)).toFixed(1)}" cy="${(78 + 24 * Math.sin(-0.5 - i * 0.24)).toFixed(1)}" r="1.1" fill="oklch(0.96 0.12 92)"/>`).join('')}
-      <path d="M56 44m0 -9l1.4 7.6l7.6 1.4l-7.6 1.4l-1.4 7.6l-1.4 -7.6l-7.6 -1.4l7.6 -1.4z" fill="white"/><circle cx="56" cy="44" r="7" fill="oklch(1 0 0 / 0.4)" filter="${k.blur}"/>`],
-    // The canal at dusk: lit windows and their long reflections.
-    ['Canal', 1, k => `<rect ${FIELD} fill="${k.lin([[0.1, 'oklch(0.3 0.09 275)'], [0.4, 'oklch(0.56 0.14 330)'], [0.48, 'oklch(0.84 0.13 70)']])}"/>
-      ${[[-30, 20, 'oklch(0.3 0.06 300)'], [-8, 12, 'oklch(0.26 0.05 290)'], [14, 22, 'oklch(0.32 0.06 310)'], [36, 14, 'oklch(0.27 0.05 285)'], [58, 24, 'oklch(0.31 0.06 300)'], [80, 16, 'oklch(0.26 0.05 290)'], [102, 22, 'oklch(0.3 0.06 305)']].map(([x, top, c], i) =>
-    `<path d="M${x} 48V${top + 12}h3.6v-4h3.6v-4h3.6v-4h2.4v4h3.6v4h3.6v4H${x + 22}V48Z" fill="${c}"/><path d="M${x + 4} ${top + 18}h4.6v6h-4.6zM${x + 13} ${top + 18}h4.6v6h-4.6zM${x + 4} ${top + 28}h4.6v6h-4.6z" fill="${i % 2 ? 'oklch(0.92 0.15 90)' : 'oklch(0.86 0.16 70)'}"/>`).join('')}
-      <rect x="-70" y="48" width="240" height="130" fill="${k.lin([[0, 'oklch(0.4 0.1 310)'], [0.35, 'oklch(0.2 0.06 275)']])}"/>
-      <g filter="${k.blur}" fill="oklch(0.9 0.15 85 / 0.75)">${[-24, -15, -2, 20, 29, 42, 64, 73, 86, 108].map((x, i) => `<rect x="${x}" y="50" width="4.2" height="${22 + (i * 7) % 16}"/>`).join('')}</g>
-      <path d="M-70 60H170M-70 70H170M-70 84H170M-70 102H170" stroke="oklch(0.2 0.06 275)" stroke-width="1.6"/>
-      <path d="M60 48Q82 34 104 48" fill="none" stroke="oklch(0.2 0.04 285)" stroke-width="3"/>
-      <circle cx="6" cy="18" r="16" fill="oklch(0.95 0.14 90 / 0.4)" filter="${k.blur}"/>
-      <path d="M3 170V26h6V170Z" fill="oklch(0.12 0.02 280)"/><path d="M-1 26h14l-3 -10h-8Z" fill="oklch(0.95 0.13 92)"/><path d="M-3 26h18v2.4h-18zM1 14h10l-2 -3h-6Z" fill="oklch(0.12 0.02 280)"/>
-      <path d="M-70 128L170 112V122L-70 138Z" fill="oklch(0.12 0.02 280)"/>`],
-    // A chalice on a terrace table; the square behind is all lights.
-    ['Chalice', -1, k => `<rect ${FIELD} fill="oklch(0.22 0.04 40)"/>
-      <g filter="${k.blur}">${[[10, 20, 9, 'oklch(0.85 0.15 85 / 0.6)'], [30, 34, 6, 'oklch(0.7 0.19 30 / 0.6)'], [-6, 44, 7, 'oklch(0.85 0.15 85 / 0.5)'], [84, 14, 10, 'oklch(0.85 0.15 85 / 0.55)'], [98, 40, 7, 'oklch(0.72 0.14 330 / 0.6)'], [22, 6, 5, 'oklch(0.8 0.1 200 / 0.5)'], [70, 34, 5, 'oklch(0.85 0.15 85 / 0.5)'], [112, 22, 8, 'oklch(0.7 0.19 30 / 0.5)']].map(([x, y, r, c]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}"/>`).join('')}</g>
-      <path d="M-70 76H170V170H-70Z" fill="${k.lin([[0, 'oklch(0.5 0.09 55)'], [1, 'oklch(0.3 0.06 45)']])}"/><path d="M-70 76H170" stroke="oklch(0.7 0.1 70)" stroke-width="1.2"/>
-      <ellipse cx="52" cy="92" rx="26" ry="5" fill="oklch(0.92 0.02 90)"/>
-      <path d="M38 92C38 87 46 85.6 52 85.6S66 87 66 92V93.6H38Z" fill="oklch(0.84 0.04 220)"/><rect x="49.6" y="66" width="4.8" height="21" fill="oklch(0.84 0.04 220)"/>
-      <path d="M22 26H82C82 50 70 68 52 68S22 50 22 26Z" fill="${k.lin([[0, 'oklch(0.84 0.15 82)'], [1, 'oklch(0.62 0.16 55)']])}"/>
-      <path d="M30 34C31 46 36 56 44 62" stroke="oklch(0.97 0.06 90 / 0.8)" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-      <g fill="oklch(0.95 0.08 90 / 0.7)"><circle cx="60" cy="46" r="1.2"/><circle cx="66" cy="38" r="0.9"/><circle cx="56" cy="56" r="1"/><circle cx="72" cy="46" r="0.8"/></g>
-      <path d="M19 28C14 18 22 9 31 12C34 2 49 0 53 8C59 0 76 2 76 12C86 10 91 20 85 28Z" fill="oklch(0.98 0.02 95)"/><path d="M76 26H86V52a5 5 0 0 1 -10 0Z" fill="oklch(0.98 0.02 95)"/>
-      <path d="M26 20q5 -6 11 -3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>`],
+    // Straight up a belfry: a pale clock, bunting to the corners, three pigeons.
+    ['Belfry', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.12 258)'], [0.55, 'oklch(0.72 0.12 40)'], [1, 'oklch(0.92 0.1 86)']])}"/>
+      <circle cx="84" cy="94" r="26" fill="oklch(0.96 0.09 90 / 0.35)" filter="${k.blur}"/><circle cx="84" cy="94" r="10" fill="oklch(0.98 0.07 95)"/>
+      <g fill="none" stroke="${SIL}" stroke-width="0.8" stroke-linecap="round"><path d="M45 66Q8 76 -70 52M55 64Q98 70 170 44M46 34Q16 16 -34 -70M54 34Q88 10 128 -70"/></g>
+      ${[[32, 69.6], [20, 71.4], [8, 71.6], [-4, 70.4], [68, 67.4], [80, 67.6], [92, 66.6], [104, 64.6]].map(([x, y], i) => `<path d="M${x} ${y}l3.6 -0.4l-1.4 5z" fill="${[SIL, 'oklch(0.88 0.16 95)', 'oklch(0.58 0.21 27)'][i % 3]}"/>`).join('')}
+      <path d="${P([[27, 170], [73, 170], [57.4, 30], [42.6, 30]])}" fill="${SIL}"/>
+      <path d="M40.6 30l2.2 -10l2.2 10zM55 30l2.2 -10l2.2 10z" fill="${SIL}"/>
+      <path d="${P([[44.4, 30], [55.6, 30], [54.4, 17], [45.6, 17]])}${P([[44.6, 17], [55.4, 17], [50, -8]])}" fill="${SIL}"/>
+      <path d="M50 -8v-6M50 -14l5 1.6l-5 1.6" stroke="${SIL}" stroke-width="0.8" fill="none"/>
+      <circle cx="50" cy="52" r="5.6" fill="oklch(0.94 0.06 88)"/><path d="M50 52V48M50 52H53" stroke="${SIL}" stroke-width="1" stroke-linecap="round"/>
+      <path d="M45.2 76h3.4v17h-3.4zM51.4 76h3.4v17h-3.4z" fill="oklch(0.62 0.12 40 / 0.55)"/>
+      <path d="M72 22q3 -3.4 6 0q3 -3.4 6 0M84 34q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0M16 20q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
+    // Up at the steel spheres: tubes to every corner, one glint.
+    ['Spheres', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.36 0.13 285)'], [0.55, 'oklch(0.66 0.17 15)'], [1, 'oklch(0.9 0.13 82)']])}"/>
+      <circle cx="16" cy="94" r="26" fill="oklch(0.96 0.09 90 / 0.35)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.98 0.07 95)"/>
+      <g stroke="${SIL}" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M52 56L14 16" stroke-width="5"/><path d="M52 56L90 12" stroke-width="4.4"/><path d="M52 56L98 74" stroke-width="6"/><path d="M52 56L18 108" stroke-width="7"/><path d="M52 56L54 6" stroke-width="3.6"/>
+        <path d="M14 16L54 6L90 12L98 74M14 16L18 108" stroke-width="1.8"/></g>
+      ${[[52, 56, 19], [14, 16, 9], [90, 12, 8], [98, 74, 12], [18, 108, 15], [54, 6, 6]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${SIL}"/><path d="M${(x - r * 0.985).toFixed(1)} ${(y + r * 0.174).toFixed(1)}A${r} ${r} 0 0 0 ${(x - r * 0.174).toFixed(1)} ${(y + r * 0.985).toFixed(1)}" fill="none" stroke="oklch(0.95 0.1 85 / 0.85)" stroke-width="0.9" stroke-linecap="round"/>`).join('')}
+      <path d="M66 43m0 -8l1.2 6.8l6.8 1.2l-6.8 1.2l-1.2 6.8l-1.2 -6.8l-6.8 -1.2l6.8 -1.2z" fill="oklch(0.99 0.03 95)"/>`],
+    // Up at a windmill: four sails cross the whole frame.
+    ['Windmill', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.48 0.1 220)'], [0.6, 'oklch(0.8 0.08 160)'], [1, 'oklch(0.95 0.09 96)']])}"/>
+      <circle cx="84" cy="96" r="26" fill="oklch(0.98 0.07 95 / 0.4)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.05 96)"/>
+      <path d="${P([[30, 170], [70, 170], [58.6, 46], [41.4, 46]])}${P([[39.6, 46], [60.4, 46], [56, 34], [44, 34]])}" fill="${SIL}"/>
+      <rect x="47.8" y="98" width="4.4" height="7" rx="2.2" fill="oklch(0.92 0.15 92)"/>
+      ${[24, 114, 204, 294].map(a => `<g transform="rotate(${a} 50 40)" stroke="${SIL}" fill="none"><path d="M50 40V-40" stroke-width="1.8" stroke-linecap="round"/><path d="M50.9 22V-36H61V22Z" stroke-width="0.8"/><path d="M55.9 22V-36${Array.from({ length: 8 }, (_, i) => `M50.9 ${15.5 - i * 6.5}H61`).join('')}" stroke-width="0.6"/></g>`).join('')}
+      <circle cx="50" cy="40" r="3" fill="${SIL}"/>
+      <path d="M12 26q3 -3.4 6 0q3 -3.4 6 0M22 38q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
+    // Up at the motorway lamps at dusk, one after the other.
+    ['Lamps', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.3 0.1 275)'], [0.55, 'oklch(0.58 0.16 335)'], [1, 'oklch(0.88 0.14 62)']])}"/>
+      <g fill="oklch(1 0 0 / 0.8)"><circle cx="88" cy="10" r="0.8"/><circle cx="60" cy="30" r="0.6"/><circle cx="96" cy="40" r="0.7"/><circle cx="8" cy="30" r="0.6"/></g>
+      <path d="${P([[33, 11], [41, 11], [70, 170], [-20, 170]])}" fill="oklch(0.95 0.14 88 / 0.1)"/>
+      <circle cx="36" cy="12" r="15" fill="oklch(0.95 0.14 88 / 0.6)" filter="${k.blur}"/><circle cx="22" cy="56" r="8.5" fill="oklch(0.95 0.14 88 / 0.6)" filter="${k.blur}"/><circle cx="9.4" cy="83" r="5" fill="oklch(0.95 0.14 88 / 0.6)" filter="${k.blur}"/>
+      <g fill="${SIL}" stroke="${SIL}" stroke-linecap="round" stroke-linejoin="round">
+        <path d="${P([[14.6, 170], [18.4, 170], [17.2, 90], [16.2, 90]])}" stroke="none"/><path d="M16.7 90Q16.6 83.4 11 83.2H9" fill="none" stroke-width="1"/><rect x="6" y="82.2" width="6.4" height="2.4" rx="1.2" stroke="none"/>
+        <path d="${P([[38.6, 170], [44.4, 170], [41.8, 66], [40.2, 66]])}" stroke="none"/><path d="M41 66Q40.8 55.6 31 55.4H26" fill="none" stroke-width="1.7"/><rect x="18" y="53.8" width="10" height="3.6" rx="1.8" stroke="none"/>
+        <path d="${P([[73.6, 170], [82.4, 170], [71.8, 26], [68.6, 26]])}" stroke="none"/><path d="M70.2 26Q69.6 9.4 52 9H44" fill="none" stroke-width="2.8"/><rect x="29" y="6.2" width="16" height="5.6" rx="2.8" stroke="none"/></g>
+      <rect x="31" y="10.4" width="12" height="1.8" rx="0.9" fill="oklch(0.99 0.08 95)"/><rect x="19.4" y="56.2" width="7.4" height="1.3" rx="0.6" fill="oklch(0.99 0.08 95)"/><rect x="6.8" y="83.8" width="4.8" height="0.9" rx="0.4" fill="oklch(0.99 0.08 95)"/>
+      <path d="M-70 148L170 116" stroke="${SIL}" stroke-width="3.4"/><path d="M-40 144v20M0 139v24M40 134v28M80 128v32M120 123v36" stroke="${SIL}" stroke-width="2"/>`],
+    // Stepped gables along the foot of the frame; tram wires and three pigeons.
+    ['Gables', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.34 0.12 270)'], [0.55, 'oklch(0.66 0.16 350)'], [1, 'oklch(0.9 0.13 76)']])}"/>
+      <path d="M84 16A9 9 0 1 0 92 30A7.4 7.4 0 0 1 84 16Z" fill="oklch(0.97 0.05 95)"/>
+      <g fill="none" stroke="${SIL}" stroke-linecap="round"><path d="M-70 34L170 58M-70 42L170 68" stroke-width="0.8"/><path d="M-20 39.2v7.6M10 42.2v7.8M40 45.2v8M70 48.2v8.2M100 51.2v8.4" stroke-width="0.5"/></g>
+      <g fill="${SIL}"><path d="M21 41.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M33 42.6q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M61 45.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/></g>
+      <path d="M-70 170V104h8v-6h6v-6h6v-6h5v6h6v6h6v6h4v-14h6v-7h6v-7h6v-7h6v7h6v7h6v7h4v8h8v-6h6v-6h6v6h6v6h6V86h7v-8h7v-8h7v-8h6v8h7v8h7v8h6v-26h8v-9h8v-9h8v9h8v9h8V170Z" fill="${SIL}"/>
+      <path d="M-14 76h3v10h-3zM60 84h3v10h-3zM108 52h3v10h-3z" fill="${SIL}"/>
+      <rect x="-4" y="104" width="6" height="9" fill="oklch(0.92 0.15 92)"/><rect x="100" y="94" width="6" height="9" fill="oklch(0.86 0.16 70)"/>`],
+    // A cone of frites held up to the sky; a gull has seen it.
+    ['Frites', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.44 0.12 252)'], [0.6, 'oklch(0.76 0.12 38)'], [1, 'oklch(0.93 0.1 88)']])}"/>
+      <circle cx="16" cy="94" r="26" fill="oklch(0.96 0.09 90 / 0.35)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.98 0.07 95)"/>
+      <g fill="${SIL}">${[[-30, 26], [-17, 32], [-5, 36], [7, 34], [19, 30], [31, 24]].map(([a, l], i) => `<rect x="${36.6 + i * 4.6}" y="${60 - l}" width="5" height="${l + 4}" rx="1" transform="rotate(${a} ${39 + i * 4.6} 60)"/>`).join('')}
+        <path d="${P([[34, 58], [68, 58], [57, 112], [45, 112]])}"/><rect x="40" y="100" width="22" height="19" rx="7"/><path d="${P([[42, 170], [64, 170], [59, 112], [44, 112]])}"/></g>
+      <path d="M52 50C49 43 56 38 60 42C63 36 72 40 70 46C75 47 74 55 69 55H56C51 55 50 52 52 50Z" fill="oklch(0.98 0.02 95)"/>
+      <path d="M64 44L76 20" stroke="${SIL}" stroke-width="0.8"/><path d="M76 20l3 1.4l-2.6 5.2l-3 -1.4z" fill="${SIL}"/><path d="M79 21.4l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.88 0.16 95)"/><path d="M82 22.8l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.58 0.21 27)"/>
+      <path d="M-4 24Q8 10 22 22Q32 12 46 20Q34 18 26 28Q22 34 16 28Q8 20 -4 24Z" fill="${SIL}"/>
+      <path d="M84 60q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
   ],
 };
 
