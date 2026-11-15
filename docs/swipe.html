@@ -205,9 +205,19 @@ let state = load();
 const deckEl = $('deck');
 
 const cur = () => state.sets[state.filter];
-const inFilter = (i, f) => (f === 'approved' ? i.approved : !i.approved);
+// A Keep in the queue approves the idea at once.
+const kept = (i) => state.sets.queue.v[i.n] === 'keep';
+const inFilter = (i, f) => (f === 'approved' ? i.approved || kept(i) : !i.approved);
+// Deal the groups in turn, so the category changes with each card.
+function mix(list) {
+  const piles = {};
+  for (const i of list) (piles[i.group] ||= []).push(i);
+  const rows = Object.values(piles), out = [];
+  for (let k = 0; out.length < list.length; k++) for (const p of rows) if (p[k]) out.push(p[k]);
+  return out;
+}
 // The queue leaves out started ideas unless the toggle is on.
-const deckOf = (f) => ideas.filter((i) => inFilter(i, f) && (f === 'approved' || state.all || !i.started));
+const deckOf = (f) => mix(ideas.filter((i) => inFilter(i, f) && (f === 'approved' || state.all || !i.started)));
 const deck = () => deckOf(state.filter);
 const open = () => deck().filter((i) => !cur().v[i.n]);
 
@@ -253,19 +263,21 @@ function render() {
   const done = d.length - left.length;
 
   if (left[1]) deckEl.prepend(card(left[1], 'under'));
+  // A ghost stays above the new top card while it flies off.
+  const ghost = deckEl.querySelector('.ghost');
   if (left[0]) {
-    deckEl.append(card(left[0], 'top'));
+    deckEl.insertBefore(card(left[0], 'top'), ghost);
   } else if (ideas.length) {
     const e = el('div', 'card end top');
     e.append(el('strong', '', 'All done'), 'Copy the JSON.');
-    deckEl.append(e);
+    deckEl.insertBefore(e, ghost);
   }
 
   $('count').innerHTML = `${done} / ${d.length} · <b class="c">can ${tally('can')}</b> · <b class="k">keep ${tally('keep')}</b>`;
   $('bar').style.width = (d.length ? (done / d.length) * 100 : 0) + '%';
   $('can').disabled = $('keep').disabled = !left[0];
   $('undo').disabled = !cur().h.length;
-  $('fQueue').textContent = `Queue (${deckOf('queue').length})`;
+  $('fQueue').textContent = `Queue (${deckOf('queue').filter((i) => !state.sets.queue.v[i.n]).length})`;
   $('fApproved').textContent = `Tool-approved (${deckOf('approved').length})`;
   $('fQueue').setAttribute('aria-pressed', state.filter === 'queue');
   $('fApproved').setAttribute('aria-pressed', state.filter === 'approved');
@@ -300,7 +312,7 @@ function undo() {
   const n = cur().h.pop();
   if (n == null) return;
   delete cur().v[n];
-  save();
+  prune();
   render();
 }
 
@@ -366,7 +378,7 @@ $('reset').addEventListener('click', () => {
   }
   armed = 0;
   state.sets[state.filter] = blank();
-  save();
+  prune();
   $('reset').textContent = 'Reset';
   render();
 });
