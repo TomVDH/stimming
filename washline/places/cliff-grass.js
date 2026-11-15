@@ -56,7 +56,7 @@ const VERT_BLADE = /* glsl */ `
   vec3 objectNormal = normalize(bN + bSide * bS * 1.6);
   vTip = bT;`;
 
-export function grass(group, u, R, { heightAt, edgeZ, wallAt, eye = [0, 9] }) {
+export function grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt, eye = [0, 9] }) {
   // Clumps: one jittered point per 0.6 m cell; a blade joins the nearest.
   const CELL = 0.6;
   const hash = (a, b, k) => { const s = Math.sin(a * 127.1 + b * 311.7 + k * 74.7) * 43758.5453; return s - Math.floor(s); };
@@ -92,7 +92,7 @@ export function grass(group, u, R, { heightAt, edgeZ, wallAt, eye = [0, 9] }) {
     const tint = c.dry > 0.93
       ? col([0.6 + 0.08 * R(), 0.07, 92])
       : col([0.4 + 0.1 * R() + 0.05 * c.hue, 0.1 + 0.035 * c.hue, 124 + 20 * c.hue]);
-    const item = { p: [x, heightAt(x, z) - 0.01, z], yaw: c.yaw + (R() - 0.5) * 1.3, b: [h, w, lean, R()], c: tint };
+    const item = { p: [x, heightAt(x, z) - 0.01, z], yaw: c.yaw + (R() - 0.5) * 1.3, b: [h, w, lean, R()], c: tint.multiplyScalar(aoAt(x, z)) };
     (dist < 11 || z > 4 ? near : far).push(item);
   }
 
@@ -118,8 +118,12 @@ export function grass(group, u, R, { heightAt, edgeZ, wallAt, eye = [0, 9] }) {
   mat.customProgramCacheKey = () => 'cliff-blade';
   airify(mat, u);
 
+  // Shuffled order: drawing the first part of a list thins it evenly.
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const meshes = [];
   const build = (items, S) => {
     if (!items.length) return;
+    shuffle(items);
     const geo = stripGeo(S);
     const blade = new Float32Array(items.length * 4);
     items.forEach((it, i) => blade.set(it.b, i * 4));
@@ -135,8 +139,11 @@ export function grass(group, u, R, { heightAt, edgeZ, wallAt, eye = [0, 9] }) {
     m.frustumCulled = false;
     m.receiveShadow = true;
     group.add(m);
+    meshes.push(m);
   };
   build(near, 6);
   build(far, 3);
+  // A share from 0 to 1 of the blades to draw.
+  w.density = (k) => { for (const m of meshes) m.count = Math.max(1, Math.round(m.instanceMatrix.count * k)); };
   return w;
 }

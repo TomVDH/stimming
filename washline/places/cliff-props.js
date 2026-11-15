@@ -97,7 +97,7 @@ function instance(group, geo, mat, items, cast = true) {
 }
 
 /* ---------- the headland under the eye ---------- */
-export function terrain(group, u, heightAt) {
+export function terrain(group, u, heightAt, aoAt) {
   const g = new THREE.PlaneGeometry(160, 120, 320, 240);
   g.rotateX(-Math.PI / 2);
   const p = g.attributes.position;
@@ -106,9 +106,13 @@ export function terrain(group, u, heightAt) {
     p.setY(i, heightAt(x, z));
     p.setZ(i, z);
   }
+  // Baked shade where the turf meets the wall and the posts.
+  const shade = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { const k = aoAt(p.getX(i), p.getZ(i)); shade.set([k, k, k], i * 3); }
+  g.setAttribute('color', new THREE.BufferAttribute(shade, 3));
   splitByslope(g, 0.6, 2.2, 7);
-  const turf = airify(pbr('grass_ground', 0, { color: col([0.78, 0.07, 135]) }), u);
-  const rock = airify(pbr('seaside_rock', 1, { color: col([0.82, 0.01, 250]) }), u);
+  const turf = airify(pbr('grass_ground', 0, { color: col([0.78, 0.07, 135]), vertexColors: true }), u);
+  const rock = airify(pbr('seaside_rock', 1, { color: col([0.82, 0.01, 250]), vertexColors: true }), u);
   const land = new THREE.Mesh(g, [turf, rock]);
   land.receiveShadow = true;
   group.add(land);
@@ -169,7 +173,8 @@ export function wall(group, u, R, heightAt, { from, to }) {
           p: [x, heightAt(x, z) + y + ch / 2, z],
           s: [len * 1.04, ch * 1.12, dep],
           r: [(R() - 0.5) * 0.12, yaw + (R() - 0.5) * 0.14, side * 0.12 + (R() - 0.5) * 0.1],
-          c: tint(),
+          // The lowest courses sit in the grass and get less sky.
+          c: tint().multiplyScalar(0.62 + 0.38 * Math.min(1, y / 0.45)),
         });
         s += len;
       }
@@ -310,8 +315,8 @@ function pinkGeo() {
   return g;
 }
 
-export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
-  const gw = grass(group, u, R, { heightAt, edgeZ, wallAt });
+export function meadow(group, u, R, heightAt, edgeZ, wallAt, aoAt) {
+  const gw = grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt });
 
   // Thrift clumps crowd the lip and the foot of the wall.
   const heads = [], cushions = [];
@@ -354,6 +359,8 @@ export function headland(group, mats, R, { x, z, w, d, h, sea, seg = [220, 140] 
   g.rotateX(-Math.PI / 2);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, hAt(p.getX(i), p.getZ(i)));
+  // The turf and rock materials read a shade colour; out here it is plain white.
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(p.count * 3).fill(1), 3));
   splitByslope(g, 0.55, 14, 22);
   const m = new THREE.Mesh(g, mats);
   m.position.set(x, sea, z);

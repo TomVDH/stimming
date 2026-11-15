@@ -32,6 +32,13 @@ function wallDist(x, z) {
   const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
   return Math.hypot(x - ax - t * dx, z - az - t * dz);
 }
+// Contact shade: less sky reaches the turf at the wall's foot and round the posts.
+function aoAt(x, z) {
+  const w = Math.max(0, wallDist(x, z) - 0.35);
+  const p = Math.min(Math.hypot(x + 3.63, z), Math.hypot(x - 3.62, z));
+  return 1 - 0.5 * Math.exp(-w / 0.4) - 0.35 * Math.exp(-p / 0.18);
+}
+const PHONE = matchMedia('(pointer: coarse)').matches;
 
 export default {
   id: 'cliff',
@@ -47,6 +54,8 @@ export default {
   start: 3,
   // Three's own fog stays off; the air shader does this work.
   fog: [1e6, 2e6],
+  // Vignette and film grain, before tone mapping.
+  grade: { vig: 0.3, vigIn: 0.5, grain: 0.022 },
   fill: 1.3,
   wash: [
     { w: 1.4, h: 1.1, c: [0.95, 0.01, 90] },
@@ -72,6 +81,11 @@ export default {
   light(sun, { sunLight, hemi, renderer, bloom }) {
     const y = sun.dir.y;
     sunLight.intensity = 3.4 * sm(-0.012, 0.035, y);
+    // The low sun skims the turf: a thin, wide box holds every shadow that shows.
+    const sc = sunLight.shadow.camera;
+    if (sc.top !== 4) { Object.assign(sc, { left: -15, right: 15, top: 4, bottom: -4, near: 1, far: 120 }); sc.updateProjectionMatrix(); }
+    sunLight.target.position.set(0, 0.8, 0);
+    sunLight.position.copy(sunLight.target.position).addScaledVector(sun.dir, 60);
     hemi.intensity = 0.6 + 0.7 * sm(-0.08, 0.04, y);
     // The eye adapts to the dark before dawn.
     renderer.toneMappingExposure = 1.4 - 0.85 * sm(-0.07, 0.05, y);
@@ -87,14 +101,14 @@ export default {
     const u = airUniforms(-SEA);
 
     /* ---------- the near headland ---------- */
-    const { turf, rock } = terrain(group, u, heightAt);
+    const { turf, rock } = terrain(group, u, heightAt, aoAt);
     // The fog hides the sea; it runs out to the horizon under the fog.
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(90000, 43000), airify(new THREE.MeshStandardMaterial({ color: col([0.2, 0.02, 240]), roughness: 0.3 }), u));
     sea.rotation.x = -Math.PI / 2; sea.position.set(0, SEA, -20500);
     group.add(sea);
     wall(group, u, R, heightAt, WALL);
     posts(group, u, R, this.anchors, { p: [-15, heightAt(-15, 4.6) + 0.6, 4.6], ry: -0.9 });
-    const winds = meadow(group, u, R, heightAt, edgeZ, wallDist);
+    const winds = meadow(group, u, R, heightAt, edgeZ, wallDist, aoAt);
 
     /* ---------- far headlands and the lighthouse ---------- */
     // Each rises out of the sea; the fog buries their feet.
@@ -133,6 +147,8 @@ export default {
       const f = Math.abs(Math.cos(a) * toCam.x - Math.sin(a) * toCam.z) ** 60;
       lantern.material.emissiveIntensity = (1.5 + 60 * f) * Math.max(k, 0.35);
     };
+    // Fewer blades at lower detail, and on phones.
+    group.userData.level = (level) => winds[0].density([0.35, PHONE ? 0.5 : 0.7, PHONE ? 0.75 : 1][level]);
     return group;
   },
 };

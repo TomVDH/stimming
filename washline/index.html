@@ -62,7 +62,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { gradePass } from '../shared/grade.js';
+import { detail } from '../shared/detail.js';
+import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear, cull, ropeAt } from './core.js';
 import { makeLook } from './cloth.js';
@@ -138,7 +141,13 @@ const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, 
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.4);
 composer.addPass(bloom);
+// A place may ask for a grade: vignette and film grain, before tone mapping.
+const grade = new ShaderPass(gradePass());
+grade.enabled = false;
+composer.addPass(grade);
 composer.addPass(new OutputPass());
+// Quality and a slow-frame watch give one detail level; a place may follow it.
+const D = detail({ maxDpr: 2, onChange: () => resize() });
 
 /* ---------- sky ---------- */
 // A gradient by ray height, a sun disc and a soft glow around it.
@@ -229,6 +238,9 @@ function buildPlace(id) {
   P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
   // The set builds after the look, so its still cloth can glow too.
   P.set = pl.build(scene, P.look);
+  P.set.userData.level?.(D.level);
+  grade.enabled = !!pl.grade;
+  if (pl.grade) for (const [k, v] of Object.entries({ uVig: pl.grade.vig, uVigIn: pl.grade.vigIn, uGrain: pl.grade.grain })) grade.uniforms[k].value = v;
   P.flyers = [];
   P.pending = null;
   // The wardrobe hangs left to right with small gaps.
@@ -310,6 +322,7 @@ function draw() {
   // A place may move things of its own, such as the sea.
   P.set.userData.tick?.(st.t, SUN, camera, view.h, P.sky, wind());
   syncLight();
+  grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value + 1) % 64;
   composer.render();
   if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
 }
@@ -318,11 +331,13 @@ function draw() {
 function resize() {
   const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
   view.w = w; view.h = h;
-  const dpr = pixelRatio(w, h, { maxDpr: 2 });
+  const dpr = D.dpr(w, h);
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
+  grade.uniforms.uRes.value = [w * dpr, h * dpr];
+  P.set.userData.level?.(D.level);
   // A place may set its own depth range; the rest share this one.
   camera.near = 0.1; camera.far = 900;
   P.place.frame(camera, w / h);
@@ -347,6 +362,8 @@ function frame(now) {
     const idle = now - st.lastInput;
     if (idle > 1500 && now - lastDraw < 31) return;
     const dt = lastT ? Math.min(1 / 15, (now - lastT) / 1000) : 1 / 60;
+    // Only full-rate frames count toward the slow-frame watch.
+    if (lastT && idle <= 1500) D.frame((now - lastT) / 1000);
     lastT = now;
     st.windScale = 1 - smooth(60000, 63000, idle);
     accum += dt;
