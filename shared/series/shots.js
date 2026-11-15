@@ -11,7 +11,7 @@ const SIL = 'oklch(0.2 0.045 282)';
 
 export const SHOTS = {
   eastvan: [
-    // Straight up a power pole at dusk: wires to every corner, one crow.
+    // Straight up a power pole at dusk: wires to every corner. No birds (Tom, 2026-11-15).
     ['Wires', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.13 290)'], [0.55, 'oklch(0.68 0.17 20)'], [1, 'oklch(0.88 0.14 80)']])}"/>
       <circle cx="18" cy="92" r="26" fill="oklch(0.95 0.1 90 / 0.35)" filter="${k.blur}"/><circle cx="18" cy="92" r="11" fill="oklch(0.97 0.08 95)"/>
       <g fill="none" stroke="oklch(0.2 0.04 290)" stroke-width="0.9" stroke-linecap="round"><path d="M23 27Q-10 44 -70 34M23 27Q0 2 -30 -70M81 21Q120 34 170 16M81 21Q104 -10 120 -70M32 46Q-10 70 -70 76M73 41Q120 66 170 70M23 27Q60 78 170 110"/></g>
@@ -19,7 +19,6 @@ export const SHOTS = {
       <path d="${P([[19, 26], [83, 19.5], [83, 24.5], [19, 31]])}M${[[29, 44.5], [75, 40], [75, 44.5], [29, 49]].map(p => p.join(' ')).join('L')}Z" fill="oklch(0.2 0.04 40)"/>
       <path d="M21 21h3.4v6h-3.4zM34 19.6h3.4v6h-3.4zM64 16.6h3.4v6h-3.4zM78 15.2h3.4v6h-3.4z" fill="oklch(0.3 0.05 250)"/>
       <rect x="55" y="50" width="11" height="15" rx="3" fill="oklch(0.22 0.03 270)"/>
-      <path d="M57 11C57 5.5 61 3 65.5 3.4C66.6 1 69.8 0.4 71.6 2L75 3L72 4.4C72.2 8.6 69.4 12 65 13.2L55 16.6Z" fill="oklch(0.16 0.04 290)"/>
       <path d="M-8 44.6V56" stroke="oklch(0.9 0.02 90)" stroke-width="0.6"/><path d="M-12 56h6l2 3.4l4.6 1.4v3.4h-12.6z" fill="oklch(0.62 0.2 25)"/>`, { zoom: 0.82 }],
     // A crow fills the frame; the street behind is out of focus.
     ['Crow', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.6 0.11 205)'], [0.6, 'oklch(0.86 0.07 165)'], [1, 'oklch(0.92 0.08 100)']])}"/>
@@ -138,7 +137,7 @@ export const SHOTS = {
       <path d="M64 44L76 20" stroke="${SIL}" stroke-width="0.8"/><path d="M76 20l3 1.4l-2.6 5.2l-3 -1.4z" fill="${SIL}"/><path d="M79 21.4l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.88 0.16 95)"/><path d="M82 22.8l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.58 0.21 27)"/>
       <path d="M-4 24Q8 10 22 22Q32 12 46 20Q34 18 26 28Q22 34 16 28Q8 20 -4 24Z" fill="${SIL}"/>
       <path d="M84 60q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
-    // Up a flagpole: the three colours fly in the middle of the frame.
+    // Up a flagpole: the three colours fly in the middle of the frame. No birds.
     // The sky is turquoise, so Belgium does not share East Van's dusk.
     ['Flag', -1, k => {
       const X0 = 27.5, wave = x => 3.4 * Math.sin((x - X0) / 6.4) + (x - X0) * 0.1;
@@ -151,13 +150,11 @@ export const SHOTS = {
       return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.38 0.1 218)'], [0.6, 'oklch(0.72 0.11 196)'], [1, 'oklch(0.95 0.07 172)']])}"/>
       <circle cx="84" cy="96" r="26" fill="oklch(0.99 0.05 170 / 0.45)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.03 170)"/>
       <g fill="none" stroke="${SIL}" stroke-width="0.8" stroke-linecap="round"><path d="M-70 96L170 110M-70 104L170 120"/></g>
-      <g fill="${SIL}"><path d="M61 107.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M73 108.2q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/></g>
       ${strip(27.5, 42.5, 'oklch(0.2 0.02 280)')}${strip(42.5, 57.5, 'oklch(0.9 0.17 96)')}${strip(57.5, 72.5, 'oklch(0.58 0.22 27)')}
       ${strip(32, 35, 'oklch(1 0 0 / 0.1)')}${strip(39.5, 42.5, 'oklch(0 0 0 / 0.2)')}${strip(51.5, 56, 'oklch(0 0 0 / 0.16)')}${strip(60.5, 63.5, 'oklch(1 0 0 / 0.16)')}${strip(69.5, 72.5, 'oklch(0 0 0 / 0.18)')}
       <path d="${P([[21.6, 170], [30.4, 170], [27.6, 22], [25.6, 22]])}" fill="${SIL}"/>
       <path d="M27.8 34Q33 90 29 136" fill="none" stroke="${SIL}" stroke-width="0.6"/><path d="M28 134h3.4v2.2h-3.4z" fill="${SIL}"/>
-      <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>
-      <path d="M70 14q3 -3.4 6 0q3 -3.4 6 0M84 28q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`;
+      <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>`;
     }, { zoom: 0.82 }],
   ],
   // The theme series and the proposed ones. Each subject is whole and sits in
