@@ -647,8 +647,8 @@ function emit(dt) {
 const BOX = { x0: -1.4, x1: 3.4, y0: FLOOR, y1: FLOOR + 6, z0: -1.2, z1: 1.2 };
 const BOX_MIN = vec3(BOX.x0, BOX.y0, BOX.z0);
 const BOX_SIZE = vec3(BOX.x1 - BOX.x0, BOX.y1 - BOX.y0, BOX.z1 - BOX.z0);
-// Cells are cubes, 0.06 on a side.
-const GRID = [80, 100, 40];
+// Cells are cubes: 0.06 on a side on Standard, 0.05 on High, 0.075 on the ladder's last rung.
+const GRIDS = { low: [64, 80, 32], standard: [80, 100, 40], high: [96, 120, 48] };
 const SIM_STEP = 1 / 60;
 // Jacobi sweeps stay even, so pressure ends in A.
 const PRESSURE_SWEEPS = 6;
@@ -670,8 +670,8 @@ const uEmitCount = uniform(0, 'int');
 // Emitters past eight wait for the next step.
 const pending = [];
 
-function createK3() {
-  const [GX, GY, GZ] = GRID;
+function createK3(grid) {
+  const [GX, GY, GZ] = grid;
   const CELLS = GX * GY * GZ;
   const CELL = (BOX.y1 - BOX.y0) / GY;
   const DIMS = vec3(GX, GY, GZ);
@@ -908,6 +908,7 @@ function createK3() {
   stepPasses.push(projectPass, dyeForwardPass, dyeCorrectPass);
 
   return {
+    grid,
     get dye() { return dyeRead.value; },
     async compile() {
       await renderer.compileComputeAsync([curlNoisePass, clearPass, ...new Set(stepPasses)]);
@@ -940,7 +941,9 @@ function loadEmitters() {
 }
 /* ---------- end K3 ---------- */
 
-const sim = createK3();
+// High takes the large grid until a slow frame; the ladder's last rung takes the small one.
+const gridNow = () => GRIDS[rung >= 3 ? 'low' : quality() === 'high' && rung === 0 ? 'high' : 'standard'];
+let sim = createK3(gridNow());
 
 /* ---------- smoke ---------- */
 // The volume draws in its own scene, at half size, then blends over the picture.
@@ -951,6 +954,8 @@ let boxCos = 1, boxSin = 0;
 const boxOfWorld = p => [p.x * boxCos - p.z * boxSin, p.y, p.x * boxSin + p.z * boxCos];
 // The ladder sets the step count; the shader takes it as a loop bound.
 const uSteps = uniform(28, 'int');
+// The ladder's last rung drops the smoke's own shadow.
+const uShadow = uniform(1);
 // The cool rim light, as a direction in the box frame.
 const uRimDir = uniform(new THREE.Vector3(0, 1, 0));
 const uRimCol = uniform(rim.color.clone().multiplyScalar(1.3));
@@ -1005,7 +1010,10 @@ volMat.fragmentNode = Fn(() => {
       // Fine noise breaks up the grid cells in thin smoke.
       const dens = dye.r.mul(mx_noise_float(p.mul(5).sub(vec3(0, uTime.mul(0.35), 0))).mul(0.3).add(0.85)).toVar();
       // Two samples toward the rim light give the smoke its own shadow.
-      const shade = exp(dyeAt(p.add(uRimDir.mul(0.14))).r.add(dyeAt(p.add(uRimDir.mul(0.36))).r).mul(-SIGMA * 0.22));
+      const shade = float(1).toVar();
+      If(uShadow.greaterThan(0.5), () => {
+        shade.assign(exp(dyeAt(p.add(uRimDir.mul(0.14))).r.add(dyeAt(p.add(uRimDir.mul(0.36))).r).mul(-SIGMA * 0.22)));
+      });
       const lit = uRimCol.mul(shade).mul(phase).add(uFill).toVar();
       const toC = uContactPos.sub(p);
       lit.addAssign(uContactCol.mul(uContactI.mul(0.16)).div(toC.dot(toC).add(0.2)));
@@ -1063,11 +1071,37 @@ function clearSmoke() {
   pending.length = 0;
   wisps.length = 0;
   smokeLive = false;
+  smokeUntil = 0;
   volBox.visible = false;
 }
+// A new grid starts empty; the old one runs until the new one compiles.
+let building = false;
+async function fitGrid() {
+  if (building || gridNow() === sim.grid) return;
+  building = true;
+  try {
+    const next = createK3(gridNow());
+    await next.compile();
+    const old = sim;
+    sim = next;
+    clearSmoke();
+    old.dispose();
+  } finally {
+    building = false;
+  }
+  // The ladder may have moved during the build.
+  fitGrid();
+}
 function smokeStep(dt) {
-  if (!smokeOn || reduced()) { if (smokeLive) clearSmoke(); return; }
-  const m = METALS[metal], j = clamp(rate / 250);
+  // With Smoke off, or reduced motion, nothing new rises; a live plume fades out.
+  const allowed = smokeOn && !reduced();
+  if (!allowed) {
+    kick = 0;
+    wisps.length = 0;
+    if (!smokeLive) return;
+    smokeUntil = Math.min(smokeUntil, time + FADE_FOR);
+  }
+  const m = METALS[metal], j = allowed ? clamp(rate / 250) : 0;
   // A short kick after a reset stands one thin wisp over the flint.
   const kicking = kick > 0;
   const feed = Math.max(j, kicking ? 0.55 : 0);
@@ -1166,12 +1200,17 @@ function frameShot() {
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom.
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom and the smoke pass.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2e6, low: rung >= 1 }) };
   frameShot();
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
   bloomPass.setResolutionScale(bloomScale());
+  // The ladder trims the smoke: fewer steps, then a smaller pass, then no shadow and a small grid.
+  uSteps.value = rung >= 3 ? 16 : rung >= 2 ? 20 : quality() === 'high' && rung === 0 ? 40 : 28;
+  uShadow.value = rung >= 3 ? 0 : 1;
+  volPass.setResolutionScale(rung >= 2 ? 0.35 : 0.5);
+  fitGrid();
   uRes.value.set(w * size.dpr, h * size.dpr);
   uAsp.value = w / h;
   uEmberDpr.value = size.dpr * h / 800;
@@ -1205,7 +1244,7 @@ function draw() {
 // The renderer's own frame loop runs only while the page is lively.
 const frameLoop = renderer._animation;
 frameLoop.stop();
-let running = false, last = 0, visible = !document.hidden, dragging = false;
+let running = false, last = 0, visible = !document.hidden, dragging = false, odd = false;
 const live = () => wake();
 function wake() {
   if (running || !visible || !ready) return;
@@ -1219,14 +1258,18 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || (smokeOn && !reduced() && time < smokeUntil);
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil;
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
+  // Drift: only embers and smoke still move. Every other frame is enough for them.
+  const drift = !dragging && !grinding && wheel.omega <= 0.02 && time >= lastDeath;
+  if (drift && (odd = !odd)) return;
   let again = true;
   try {
     const raw = (now - last) / 1000;
-    if (raw < 0.1) watchdog(raw);
+    // Drift frames come at half rate on purpose; the ladder ignores them.
+    if (raw < 0.1 && !drift) watchdog(raw);
     const dt = Math.min(0.05, raw);
     last = now;
     time += dt;
@@ -1248,7 +1291,8 @@ function frame() {
 
 /* ---------- performance ladder ---------- */
 // After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
-// Rungs: pixel ratio down, then a half-size bloom, then half the sparks.
+// Rungs: pixel ratio down; then a half-size bloom and a thinner smoke pass;
+// then half the sparks, a small smoke grid and no smoke shadow.
 let runFor = 0, slowFor = 0, avgDt = 1 / 60;
 function watchdog(raw) {
   runFor += raw;

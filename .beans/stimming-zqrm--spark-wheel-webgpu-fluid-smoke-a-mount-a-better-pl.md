@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T04:16:31Z
-updated_at: 2026-11-15T05:35:05Z
+updated_at: 2026-11-15T05:39:13Z
 parent: stimming-oh7b
 ---
 
@@ -16,7 +16,7 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
 - [x] Stage 3: scratch proofs P1 to P4 (untracked)
 - [x] Stage 4: spark/gpu.html, port at parity, no smoke
 - [x] Stage 5: K3 fluid smoke and flame, coupled to the sparks
-- [ ] Stage 6: quality ladder, Smoke toggle, idle, reduced motion
+- [x] Stage 6: quality ladder, Smoke toggle, idle, reduced motion
 - [ ] Stage 7: swap gpu.html to index.html, no-WebGPU redirect, toys.json legacy true
 - [ ] Stage 8: docs and final QA
 
@@ -55,3 +55,12 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
   - Name clash avoided: the sound code owns burst(); the smoke queue is wisp() and wisps.
   - Checked by probe stills at 1280 x 720 and 375 x 812: grind, linger at 1, 4 and 7.5 s, three metals, toggle off, reset, loop stop. The real page loads (first frame mark at 0.64 s with warm caches), grinds and shows no error.
   - Not checked: frame time on a visible screen (stage 6 measures it), smoke in the wet-floor mirror (none drawn), reduced motion (no smoke by rule), 812 x 375.
+
+- Stage 6 (2026-11-14): the ladder and the idle rules reach the smoke.
+  - Grid by quality: 80 x 100 x 40 on Standard, 96 x 120 x 48 on High at rung 0, 64 x 80 x 32 on rung 3. A change builds a new sim, compiles it, then swaps; the plume starts empty.
+  - March steps 28 (High 40, rung 2: 20, rung 3: 16). Rung 2 drops the smoke pass to 0.35 size. Rung 3 drops the smoke's own shadow.
+  - Smoke off, or reduced motion, in mid-plume: nothing new rises and the plume fades over 1.5 s. Before, it cut out at once.
+  - Drift frames: when only embers and smoke move, every other frame is skipped; the sim keeps real time. The ladder ignores drift frames.
+  - GPU time for one frame, submit to done, while grinding at 2496 x 1344 on this Mac (Metal): 5.1 ms without smoke, 7.9 ms with smoke on High, 7.8 ms on rung 1, 6.4 ms on rung 3. Worst frame 14.7 ms. These are from a timer-driven probe in a hidden pane, not a visible 60 Hz run.
+  - Tom's stored site quality is High; the probe used a page flag in its place and did not write the setting.
+  - Not checked: a visible screen, a slower GPU, a phone, reduced motion (code review only).
