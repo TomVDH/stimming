@@ -85,7 +85,7 @@ export const M = {
   bush: std(0.4, 0.09, 150, { flatShading: true }), fir: std(0.32, 0.06, 165, { flatShading: true }),
   bark: std(0.36, 0.035, 55), pole: std(0.43, 0.04, 62), steel: std(0.6, 0.01, 250, { roughness: 0.6 }),
   binK: std(0.24, 0.006, 260, { roughness: 0.6 }), binG: std(0.5, 0.14, 150, { roughness: 0.6 }), binB: std(0.5, 0.15, 255, { roughness: 0.6 }),
-  bagY: std(0.87, 0.16, 98, { flatShading: true }),
+  bagY: std(0.87, 0.16, 98, { flatShading: true }), skin: std(0.68, 0.06, 50),
   link: new THREE.MeshStandardMaterial({ map: linkTex, alphaTest: 0.06, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.5 }),
   winLit: glass({ emissive: WARM }), winDim: glass({ emissive: col(0.5, 0.06, 240), emissiveIntensity: 0.1 }), winTV: glass({ emissive: TV }),
   h1: std(0.62, 0.09, 20, { map: sidingTex }), h2: std(0.8, 0.06, 85, { map: sidingTex }), h3: std(0.6, 0.06, 150, { map: sidingTex }),
@@ -98,6 +98,22 @@ const flatMat = new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.Dou
 const leafGeo = new THREE.PlaneGeometry(0.17, 0.12);
 const crowMat = new THREE.MeshStandardMaterial({ color: col(0.17, 0.025, 285), roughness: 0.5, flatShading: true });
 const wireCol = col(0.13, 0.01, 270);
+// A figure as three geometries: coat, legs, skin. Feet at the origin, facing +z.
+// h: its height. stride: the leg swing in radians. sit: the legs fold onto a seat.
+export function personGeo(h = 1.7, { stride = 0, sit = false } = {}) {
+  const hip = sit ? 0.5 : 0.84;
+  // A box that hangs from a pivot at x, y, z and turns about x.
+  const part = (w, hh, d, x, y, z, rx = 0, drop = 0) => ni(new THREE.BoxGeometry(w, hh, d)).translate(0, -drop, 0).rotateX(rx).translate(x, y, z);
+  const legs = [], coat = [part(0.44, 0.62, 0.25, 0, hip + 0.31, 0)], skin = [ico(0.115, 0.125, 0.115).translate(0, hip + 0.76, 0)];
+  for (const s of [-1, 1]) {
+    if (sit) legs.push(part(0.16, 0.16, 0.46, s * 0.1, hip, 0.2), part(0.14, 0.5, 0.15, s * 0.1, 0.25, 0.42));
+    else legs.push(part(0.16, 0.84, 0.17, s * 0.1, hip, 0, s * stride, 0.42));
+    coat.push(part(0.11, 0.56, 0.13, s * 0.28, hip + 0.58, 0, -s * stride * 0.8, 0.28));
+    skin.push(part(0.09, 0.1, 0.1, s * 0.28, hip + 0.58, 0, -s * stride * 0.8, 0.6));
+  }
+  const k = h / 1.7, join = list => mergeGeometries(list).scale(k, k, k);
+  return { coat: join(coat), legs: join(legs), skin: join(skin) };
+}
 
 const NOISE = /* glsl */`
 float nH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -122,7 +138,7 @@ export const ridgeTex = (seed, lions) => tex(2048, 256, (g, w, h) => {
 const CARD = {
   hour: 12, sun: [0.3, 0.8, 0.5], sunCol: col(1, 0, 0), sunI: 3, hemi: [col(0.8, 0.05, 250), col(0.6, 0.05, 90), 1],
   fog: col(0.8, 0.03, 250), fogD: 0.006, exposure: 1, win: 0.4, tv: 0, glow: 0,
-  rain: 0, rainLamp: [0, -99, 0], wet: false, leaves: 0, wind: 0.3, smoke: 0.15, smokeCol: col(0.9, 0.02, 80),
+  rain: 0, snow: 0, rainLamp: [0, -99, 0], wet: false, leaves: 0, wind: 0.3, smoke: 0.15, smokeCol: col(0.9, 0.02, 80),
   flock: 0, flockDir: 1, flockCol: col(0.1, 0.02, 270), mtn: null, ski: false,
   bloom: [0.45, 0.7, 0.95], tilt: null, shadow: { at: [0, 0, -1], r: 26 },
   sky: { cloudA: 0.3, cov: 0.45, cloud: col(0.8, 0.02, 250), cloudLit: col(0.97, 0.02, 90), hazeA: 0.8, hazeK: 8, disc: 1, sunCol: col(0.95, 0.05, 90, 4) },
@@ -249,6 +265,36 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
     rain.geometry.setAttribute('aE', new THREE.Float32BufferAttribute(e, 1));
     rain.frustumCulled = false;
     scene.add(rain);
+  }
+  /* ----- snow: slow flakes in a box that follows the camera ----- */
+  // The card's `snow` sets the strength; `rainLamp` is the lamp that lights the flakes.
+  const snowU = { uT, uA: { value: 0.5 }, uPx: { value: 1 }, uLamp: rainU.uLamp, uCam: rainU.uCam, uCool: { value: col(0.86, 0.03, 250) }, uWarm: { value: col(0.92, 0.1, 70) } };
+  const snow = new THREE.Points(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
+    uniforms: snowU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute float aS; uniform float uT, uPx; uniform vec3 uLamp, uCam; varying float vL;
+      void main() {
+        float y = mod(position.y - uT * (0.8 + aS * 0.7), 14.0);
+        vec3 p = vec3(mod(position.x + sin(uT * 0.6 + aS * 40.0) * 0.35 + uT * 0.2 - uCam.x, 40.0) - 20.0 + uCam.x,
+          y - 0.3 + max(uCam.y - 5.0, 0.0), mod(position.z + cos(uT * 0.5 + aS * 23.0) * 0.3 - uCam.z, 40.0) - 20.0 + uCam.z);
+        // The lamp lights a cone that widens toward the ground.
+        vec3 q = p - uLamp;
+        float h = max(-q.y, 0.0);
+        vL = exp(-dot(q.xz, q.xz) / (0.6 + h * h * 0.55)) * step(q.y, 0.0) / (1.0 + 0.035 * h * h);
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = clamp((0.035 + aS * 0.03) * uPx / -mv.z, 1.0, 8.0);
+      }`,
+    fragmentShader: 'uniform float uA; uniform vec3 uCool, uWarm; varying float vL; void main() { float a = smoothstep(0.5, 0.15, length(gl_PointCoord - 0.5)); gl_FragColor = vec4(mix(uCool, uWarm * 3.0, vL) * uA * a * (0.4 + 2.4 * vL), 1.0); }',
+  }));
+  {
+    const R = rng(88), N = 5200, p = [], a = [];
+    for (let i = 0; i < N; i++) { p.push(R() * 40, R() * 14, R() * 40); a.push(R()); }
+    snow.geometry.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    snow.geometry.setAttribute('aS', new THREE.Float32BufferAttribute(a, 1));
+    snow.frustumCulled = false;
+    snow.visible = false;
+    scene.add(snow);
   }
   const smokeU = { uT, uPx: { value: 1 }, uA: { value: 0.2 }, uWind: { value: 0.4 }, uCol: cu() };
 
@@ -461,6 +507,22 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
       pts.frustumCulled = false;
       group.add(pts);
     }
+    // A figure that stands still, feet at x, y, z. coat: its material.
+    // o: h, stride, sit (see personGeo), legs and skin (materials).
+    function person(coat, x, z, ry = 0, y = 0, o = {}) {
+      const g = personGeo(o.h, o);
+      at(x, y, z, () => { put(coat, g.coat); put(o.legs || 'iron', g.legs); put(o.skin || 'skin', g.skin); }, ry);
+    }
+    // A string of glowing bulbs at pts (Vector3 list); cols cycle along it.
+    // Returns the mesh. Scale mesh.material.color to dim or brighten the string.
+    function bulbs(pts, cols = [WARM], r = 0.04) {
+      const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 8, 6), new THREE.MeshBasicMaterial(), pts.length);
+      dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
+      pts.forEach((p, i) => { dummy.position.copy(p).applyMatrix4(base); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); mesh.setColorAt(i, cols[i % cols.length]); });
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      return mesh;
+    }
     // A wet, mirror road: w along x, d along z, centre x, z, at height y.
     // It shows only when the card says wet: true. Put a dry road just below it.
     function wetRoad(w, d, x, y, z, base = col(0.2, 0.02, 265)) {
@@ -609,7 +671,7 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
       for (const fn of frameHooks) fn(t, card);
     }
     const k = {
-      THREE, group, at, put, box, limb, gableHouse, win, fence, cart, car, pole, wire, wireAt, tree, litter, fall, smoke, wetRoad, crow,
+      THREE, group, at, put, box, limb, gableHouse, win, fence, cart, car, person, bulbs, pole, wire, wireAt, tree, litter, fall, smoke, wetRoad, crow,
       // onCard(fn): fn(card) runs when a card of this place shows.
       onCard: fn => cardHooks.push(fn),
       // onFrame(fn): fn(t, card) runs each frame; t is seconds.
@@ -646,6 +708,7 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
     renderer.toneMappingExposure = card.exposure;
     M.winLit.emissiveIntensity = card.win; M.winTV.emissiveIntensity = card.tv;
     leafMat.emissiveIntensity = card.glow;
+    snow.visible = card.snow > 0; snowU.uA.value = card.snow;
     rain.visible = card.rain > 0; rainU.uA.value = card.rain; rainU.uLamp.value.set(...card.rainLamp);
     for (const r of p.built.roads) {
       const u = r.material.uniforms;
@@ -677,7 +740,7 @@ export function start(stage, mods, { onCard = () => {} } = {}) {
     sky.position.copy(camera.position);
     rainU.uCam.value.copy(camera.position);
     view.px = view.h * view.dpr / (tu + td);
-    smokeU.uPx.value = view.px;
+    smokeU.uPx.value = snowU.uPx.value = view.px;
     const on = !!card.tilt && !low;
     tiltH.enabled = tiltV.enabled = on;
     if (on) for (const p of [tiltH, tiltV]) { p.uniforms.uFocus.value = card.tilt[0]; p.uniforms.uBand.value = card.tilt[1]; p.uniforms.uAmount.value = card.tilt[2]; }
