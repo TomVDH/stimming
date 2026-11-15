@@ -3,6 +3,7 @@
 // The air comes from shared/air.js: single scatter at every height.
 import * as THREE from 'three';
 import { AIR } from '../shared/air.js';
+import { PAD_GROUND, PAD_U, PAD_V } from './pad.js';
 
 // FBM_DROP trims octaves; a shader defines it before NOISE.
 export const NOISE = /* glsl */`
@@ -27,7 +28,7 @@ export function makeSpace() {
   const U = {
     uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() },
     uEye: { value: new THREE.Vector3(0, 6371.4, 0) }, uSun: { value: new THREE.Vector3(1, 0, 0) },
-    uSite: { value: new THREE.Vector3(0, 1, 0) }, uEast: { value: new THREE.Vector3(1, 0, 0) },
+    uSite: { value: new THREE.Vector3(0, 1, 0) }, uPadU: { value: PAD_U }, uPadV: { value: PAD_V },
     uMoon: { value: new THREE.Vector4(0, 0, 0, 0) },
     uPlanet: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uMilky: { value: new THREE.Vector3(0.3, 0.8, -0.5).normalize() },
@@ -39,7 +40,7 @@ export function makeSpace() {
     fragmentShader: /* glsl */`
     precision highp float;
     uniform mat4 uProjInv, uCamWorld;
-    uniform vec3 uEye, uSun, uSite, uEast, uMilky;
+    uniform vec3 uEye, uSun, uSite, uPadU, uPadV, uMilky;
     uniform vec4 uMoon, uPlanet[3];
     uniform float uSunE, uTime, uCosmos;
     uniform int uOctDrop;
@@ -48,6 +49,7 @@ export function makeSpace() {
     #define FBM_DROP uOctDrop
     ${NOISE}
     ${AIR}
+    ${PAD_GROUND}
     vec2 sph(vec3 o, vec3 d, float r) { return arSphere(o, d, r); }
     vec2 sph(vec3 o, vec3 d, vec3 c, float r) { return arSphere(o - c, d, r); }
     vec3 sunT(vec3 p) { return arSunT(p, uSun); }
@@ -57,13 +59,18 @@ export function makeSpace() {
       float c = fbm3(n * 2.3 + 4.0, fp / R * 2.3, 7);
       float det = fbm3(P / 22.0, fp / 22.0, 8);
       float fine = fbm3(P / 2.5, fp / 2.5, 6);
-      // Near the pad, land lies west and the sea east.
+      // Land for some 90 km round the pad: there is no sea in Ten seconds.
       float near = dot(n, uSite);
-      float coast = dot(n, -uEast) * R / 14.0 + 0.3 + (det - 0.5) * 2.2 + (c - 0.5) * 2.0;
-      float lf = mix(c - 0.535, coast * 0.05, smoothstep(0.97, 0.995, near));
+      float lf = mix(c - 0.535, 0.05, smoothstep(0.9990, 0.99985, near));
       float land = smoothstep(-0.015, 0.015, lf);
+      // Within a few kilometres the pad's own plan takes over: lagoon, flats, marsh.
+      vec3 rel = P - uSite * R;
+      vec2 pq = vec2(dot(rel, uPadU), dot(rel, uPadV)) * 1000.0;
+      vec3 plan = vec3(0.0);
+      if (dot(pq, pq) < 1.0e8) { plan = pgPlan(pq); land *= 1.0 - plan.x; }
       vec3 lc = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.12, 0.06), smoothstep(0.4, 0.75, det + (c - 0.55) * 2.0 + (fine - 0.5) * 0.6));
       vec3 alb = mix(vec3(0.008, 0.028, 0.07), lc, land);
+      if (dot(pq, pq) < 1.0e8) alb = mix(alb, mix(pgAlbedo(pq, plan), vec3(0.01, 0.02, 0.035), plan.x), smoothstep(1.0e8, 6.0e7, dot(pq, pq)));
       float cl = fbm3(n * 4.0 + vec3(1.7, 0.0, 3.1), fp / R * 4.0, 6) * 0.55 + fbm3(P / 34.0, fp / 34.0, 8) * 0.45;
       float cov = smoothstep(0.54, 0.7, cl);
       float mu = dot(n, uSun);

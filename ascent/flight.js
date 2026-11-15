@@ -1,9 +1,13 @@
 // Ascent flight: every state is a function of time t in seconds.
-// Time zero is the cut from the tripod to the hull cameras.
+// Mission time is t + 8: t = -8 is liftoff, t = -11 is ignition.
 // Units are kilometres; the Earth's centre is the origin.
 // The orbit plane is x-y; the pad stands at (0, R, 0) and flies toward +x.
 
 export const R = 6371;
+// The flight starts at ignition; the hold-down lets go three seconds later.
+export const T_START = -11, LIFTOFF = -8;
+// The pad deck sits 2 m under the nozzle exit at rest.
+export const PAD = [0, R - 0.002, 0];
 export const EV = { cores: 52, maxq: 36, meco: 80, sep: 83, ign2: 87, fairing: 98, seco: 138, tli: 150, tliEnd: 168, probeSep: 176, deploy: 182, deployEnd: 202, far: 250, end: 420 };
 
 // Altitude and downrange keys for the climb, in seconds and kilometres.
@@ -32,18 +36,21 @@ function pchip(keys) {
     return (2 * s3 - 3 * s2 + 1) * y[i] + (s3 - 2 * s2 + s) * h * m[i] + (-2 * s3 + 3 * s2) * y[i + 1] + (s3 - s2) * h * m[i + 1];
   };
 }
-const hAt = pchip(H_KEYS), xAt = pchip(X_KEYS);
+const hKeys = pchip(H_KEYS), xKeys = pchip(X_KEYS);
+// Before t = 0 the rocket rises off the pad on a gentle curve.
+const hAt = t => t >= 0 ? hKeys(t) : t <= LIFTOFF ? 0 : 0.4 * ((t - LIFTOFF) / -LIFTOFF) ** 2;
+const xAt = t => (t >= 0 ? xKeys(t) : 0);
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // The path as a table of radius and angle, built once.
 // The angle rate keeps the orbit's angular momentum after the escape burn.
-const DT = 0.05, N = Math.ceil(EV.end / DT) + 2;
+const DT = 0.05, N = Math.ceil((EV.end - T_START) / DT) + 2;
 const TR = new Float64Array(N), TA = new Float64Array(N);
 {
   const w0 = (xAt(EV.seco) - xAt(EV.seco - 1)) / R_ORBIT;
   let a = 0;
   for (let i = 0; i < N; i++) {
-    const t = i * DT;
+    const t = T_START + i * DT;
     if (t <= EV.seco) { TR[i] = R + hAt(t); a = xAt(t) / R; TA[i] = a; continue; }
     // The escape: slow at first, then the Earth falls away fast.
     const k = Math.pow(Math.min(1, Math.max(0, (t - EV.tli) / (EV.far - EV.tli))), 3);
@@ -55,7 +62,7 @@ const TR = new Float64Array(N), TA = new Float64Array(N);
   }
 }
 function polar(t) {
-  const f = Math.min(Math.max(t, 0), EV.end) / DT, i = Math.floor(f), u = f - i;
+  const f = (Math.min(Math.max(t, T_START), EV.end) - T_START) / DT, i = Math.floor(f), u = f - i;
   return [TR[i] + (TR[i + 1] - TR[i]) * u, TA[i] + (TA[i + 1] - TA[i]) * u];
 }
 // Position in kilometres at time t, written to out as x, y, z.
@@ -84,12 +91,14 @@ export function flightAt(t) {
   const speed = vl / 0.8;
   const stage = t < EV.sep ? 1 : 2;
   // Throttle: a bucket through max-q, then off at MECO.
-  const thrust1 = t < EV.meco ? 1 - 0.3 * Math.exp(-(((t - EV.maxq) / 7) ** 2)) : 0;
+  // Ignition: the engines spool up during the hold-down.
+  const spool = Math.min(1, Math.max(0, (t - T_START) / 1.6));
+  const thrust1 = t < EV.meco ? spool * (1 - 0.3 * Math.exp(-(((t - EV.maxq) / 7) ** 2))) : 0;
   const burn2 = (t >= EV.ign2 && t < EV.seco) || (t >= EV.tli && t < EV.tliEnd);
   const thrust2 = burn2 ? Math.min(1, (t - (t < EV.seco ? EV.ign2 : EV.tli)) / 1.5) : 0;
   const rho = Math.exp(-Math.max(h, 0) / 8);
   const q = Math.exp(-(((t - EV.maxq) / 13) ** 2));
-  return { t, p, r, h, up, axis: ax, speed, stage, thrust1, thrust2, rho, q, fairing: t < EV.fairing };
+  return { t, p, r, h, up, axis: ax, speed, stage, thrust1, thrust2, rho, q, fairing: t < EV.fairing, onPad: t < LIFTOFF };
 }
 
 // Dawn as in Ten seconds: 0 is 18 degrees down, 1 is 1 degree down.

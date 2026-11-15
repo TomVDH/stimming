@@ -274,7 +274,7 @@ export function makeFlame({ mode = 'tail', uniforms = {} } = {}) {
         float r = length(vQ), a = atan(vQ.y, vQ.x);
         float nz = k2noise(vec2(a * 4.0 + 7.0, r * 6.0 - t * 20.0)) * 0.6 + k2noise(vec2(a * 9.0, r * 14.0 - t * 35.0)) * 0.4;
         float ring = exp(-pow((r - 0.16) / 0.04, 2.0)) * (1.0 - uSpread) * 4.0;
-        float glow = exp(-r * mix(6.0, 3.0, uSpread)) * (0.4 + 1.0 * nz);
+        float glow = exp(-r * mix(7.0, 3.5, uSpread)) * (0.75 + 0.5 * nz);
         vec3 hotc = mix(vec3(1.0, 0.9, 0.7), uFlameC, smoothstep(0.05, 0.5, r));
         c = vec3(1.0, 0.96, 0.9) * exp(-r * r * 90.0) * 14.0 + hotc * glow * 1.6 + vec3(1.0, 0.92, 0.8) * ring;
         c *= smoothstep(1.0, 0.65, r);

@@ -239,5 +239,5 @@ export function makeVehicle(scene, size = 'medium') {
     }
   }
 
-  return { rocket, lower, upper, probe: probe.group, dims: d, pose, update, M, engineLight, dispose };
+  return { rocket, lower, upper, probe: probe.group, dims: d, pose, update, M, engineLight, dispose, flame: tail1.userData.U };
 }

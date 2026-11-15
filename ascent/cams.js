@@ -11,7 +11,8 @@ const D2R = Math.PI / 180;
 // view: 'aft' looks down the body, 'fwd' looks up it, 'side' looks out.
 // tilt pushes the view away from the hull, in degrees.
 export const CAMS = {
-  engine: { label: 'Engine', stage: 1, at: [0, 's1Top', -3.5, 'r', 0.45], view: 'aft', tilt: 11, dutch: -13, fov: 64 },
+  // The engine cam faces the lagoon and the marsh at liftoff.
+  engine: { label: 'Engine', stage: 1, at: [160, 's1Top', -3.5, 'r', 0.45], view: 'aft', tilt: 20, dutch: -13, fov: 68 },
   fin: { label: 'Fin', stage: 1, at: [200, 'bell', 3.6, 'r', 0.5], view: 'fwd', tilt: 7, dutch: 16, fov: 70 },
   upper: { label: 'Upper', stage: 2, at: [0, 'upperTop', -0.6, 'rf', 0.15], view: 'aft', tilt: 7, dutch: 11, fov: 58 },
   payload: { label: 'Payload', stage: 2, at: [90, 'payload', 0.5, 'rf', -0.8], view: 'fwd', tilt: 24, dutch: -9, fov: 74 },
