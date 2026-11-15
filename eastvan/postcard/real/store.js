@@ -42,7 +42,7 @@ export function build(k) {
   const plateM = std(0xffffff, { roughness: 0.5, map: canvasTex(512, 256, 1, g => {
     g.fillStyle = '#1f5d3a'; g.fillRect(0, 0, 512, 128); g.fillStyle = '#f2c230'; g.fillRect(0, 128, 128, 128); g.fillStyle = '#e9eef2'; g.fillRect(128, 128, 384, 128);
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.font = mono(46);
-    g.fillText('ALDERWICK ST', 256, 34, 480); g.fillText('E MOSSLIGHT AVE', 256, 98, 480);
+    g.fillText('WOODLAND DR', 256, 34, 480); g.fillText('E 4TH AVE', 256, 98, 480);
     g.fillStyle = '#1d4fa8'; g.font = mono(100); g.fillText('ICE', 320, 196);
     g.fillStyle = '#161616'; g.fillRect(22, 182, 52, 20); g.beginPath(); g.moveTo(70, 158); g.lineTo(108, 192); g.lineTo(70, 226); g.fill();
   }) });
