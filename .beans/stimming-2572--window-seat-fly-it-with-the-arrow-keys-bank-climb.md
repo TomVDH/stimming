@@ -30,3 +30,10 @@ Tom (2026-11-15): arrow keys bank the plane and climb or dive.
 - QA (headless shell, ANGLE D3D11): bank left and right, a 25 s dive to 7 km, a 35 s climb to 12 km; 60 fps; no console errors; 375 and 812 x 375 px clean.
 - Changing the shader source drops Chrome's cached program once; the stand-in covers that first visit.
 
+## Inertia (Tom, 2026-11-15)
+
+- Roll: full stick asks for 5 degrees a second; the rate eases toward it (and back to zero) with a 0.9 s time constant. The request fades within 6 degrees of 30.
+- Pitch: a damped spring (1.4 rad/s, damping 0.75) moves the nose toward 6 degrees per full stick, with a little overshoot.
+- Climb: follows the nose 2.5 s late (0.15 km/s at 6 degrees); the request fades within 0.8 km of 7 or 12 km.
+- QA: the same flight test; 60 fps; no console errors.
+

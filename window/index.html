@@ -822,16 +822,20 @@ function stepWeather(dt) {
 }
 
 /* ---------- climb and dive ---------- */
-// The stick sets a vertical speed of 0.15 km/s; the plane eases into it.
-// Near each height limit the climb slows to a stop.
-const climb = { vs: 0, skyAlt: ALT, baking: false };
+// Full stick lifts or drops the nose 6 degrees; a damped spring moves it there.
+// The spring overshoots a little, so the nose settles as a heavy aircraft's does.
+// The climb follows the nose about 2.5 s later: 0.15 km/s at 6 degrees.
+// Near each height limit the request fades, so the plane levels off.
+const climb = { vs: 0, rate: 0, skyAlt: ALT, baking: false };
 function stepClimb(dt) {
   const room = stick.pitch > 0 ? ALT_HI - alt : alt - ALT_LO;
-  const want = stick.pitch * 0.15 * clamp(room / 0.6);
-  climb.vs += (want - climb.vs) * (1 - Math.exp(-dt / 1.2));
+  const want = stick.pitch * 6 * D2R * clamp(room / 0.8);
+  // A natural frequency of 1.4 rad/s and a damping of 0.75.
+  const w = 1.4, z = 0.75, h = Math.min(dt, 0.05);
+  climb.rate += ((want - pitch) * w * w - 2 * z * w * climb.rate) * h;
+  pitch += climb.rate * h;
+  climb.vs += (pitch / (6 * D2R) * 0.15 - climb.vs) * (1 - Math.exp(-dt / 2.5));
   alt = clamp(alt + climb.vs * dt, ALT_LO, ALT_HI);
-  // The nose pitches one degree per 25 m/s of climb: six at most.
-  pitch = climb.vs / 0.025 * D2R;
   rebakeSky();
 }
 // The sky table and the horizon dip follow the height, 0.2 km at a time.
@@ -2057,11 +2061,16 @@ requestAnimationFrame(() => canvas.classList.add('on'));
 const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
 // The stick: -1, 0 or 1 on each axis, from the arrow keys.
 const stick = { roll: 0, pitch: 0 };
+// The roll rate in degrees a second: a heavy airliner builds it and loses it over about a second.
+let rollRate = 0;
 function stepBank(dt) {
-  // The pilot rolls at 8 degrees a second, to 30 degrees at most.
+  // Full stick asks for 5 degrees a second; the rate eases toward it.
+  // Near 30 degrees the request fades, so the bank stops there.
+  const room = clamp((30 - Math.sign(stick.roll) * roll.to) / 6);
+  rollRate += (stick.roll * 5 * room - rollRate) * (1 - Math.exp(-dt / 0.9));
   // The autopilot holds the new bank for 20 s, then flies its own turns again.
-  if (stick.roll) {
-    roll.to = roll.from = clamp(roll.to + stick.roll * 8 * dt, -30, 30);
+  if (stick.roll || Math.abs(rollRate) > 0.05) {
+    roll.to = roll.from = clamp(roll.to + rollRate * dt, -30, 30);
     roll.t0 = t - roll.dur; roll.hold = 20;
   }
   if (t > roll.t0 + roll.dur + roll.hold) {
