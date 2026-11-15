@@ -81,6 +81,9 @@ function deckTexture() {
   return t;
 }
 
+// Obstruction lamps: a hot red that blooms.
+const redMatOf = () => new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 0.4, 0.2), toneMapped: false });
+
 export function makePad(scene) {
   const group = new THREE.Group();
   scene.add(group);
@@ -125,21 +128,36 @@ export function makePad(scene) {
         vec3 Ll = uLamps[i].xyz - vP; float dl = length(Ll);
         lamps += vec3(1.0, 0.68, 0.34) * uLamps[i].w * 3000.0 / (dl * dl + 900.0) * max(dot(N, Ll / dl), 0.0);
       }
+      // Road lamps: a pool of light every 45 m along the access road.
+      if (q.x < -60.0 && q.x > -1400.0) {
+        float k = floor(-q.x / 45.0);
+        for (int j = -1; j < 1; j++) {
+          float lu = -(k + float(j) + 0.5) * 45.0;
+          vec2 lp = vec2(lu, -0.03 * lu + 9.0);
+          lamps += vec3(1.0, 0.62, 0.3) * 0.5 * exp(-dot(q - lp, q - lp) / 260.0);
+        }
+      }
+      // Mud darkens and turns glossy near the water's edge.
+      alb *= 1.0 - 0.5 * smoothstep(0.0, 0.5, plan.x);
       vec3 diffuse = alb * (flame + lamps + uSky * 3.0 + uSun * max(uSunDir.y, 0.0) * 6.0);
-      // Water: dark, with the sky and a bright smear of each light in it.
-      vec2 rip = vec2(pgNoise(q * 0.15 + uTime * 0.3), pgNoise(q * 0.15 + 9.0 - uTime * 0.2)) - 0.5;
-      vec3 Nw = normalize(vec3(rip.x * 0.08, 1.0, rip.y * 0.08));
+      // Water: near black, with the sky and a smear of each light in it.
+      // Wind ripples, longer across the wind: they stretch each light into a streak.
+      vec2 rip = vec2(pgNoise(q * vec2(0.08, 0.3) + uTime * 0.3), pgNoise(q * vec2(0.3, 0.08) + 9.0 - uTime * 0.2)) - 0.5;
+      vec3 Nw = normalize(vec3(rip.x * 0.06, 1.0, rip.y * 0.14));
       vec3 R = reflect(-V, Nw);
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(V, Nw), 0.0), 5.0);
-      vec3 refl = uSky * 3.5 * (0.5 + 0.8 * R.y);
-      vec3 fm = vec3(uFlame.x, -uFlame.y - 3.2, uFlame.z) - vP;
-      refl += uFlameC * uFlame.w * 60.0 * pow(max(dot(R, normalize(fm)), 0.0), 900.0);
-      refl += uFlameC * uFlame.w * 1.2 * pow(max(dot(R, normalize(fm)), 0.0), 30.0);
+      vec3 refl = uSky * 1.2 * (0.4 + 0.9 * R.y);
+      // Each light's mirror image lies as far under the water as the light is above it.
+      float gy = uPad.y - 1.6;
+      vec3 fm = vec3(uFlame.x, 2.0 * gy - uFlame.y, uFlame.z) - vP;
+      float fdist = length(fm), cf = max(dot(R, fm / fdist), 0.0);
+      refl += uFlameC * uFlame.w * (40.0 * pow(cf, 800.0) + 2.0 * pow(cf, 40.0) + 0.3 * pow(cf, 6.0)) * 4.0e4 / (fdist * fdist + 4.0e4);
       for (int i = 0; i < 4; i++) {
-        vec3 lm = vec3(uLamps[i].x, -uLamps[i].y - 3.2, uLamps[i].z) - vP;
-        refl += vec3(1.0, 0.68, 0.34) * uLamps[i].w * 6.0 * pow(max(dot(R, normalize(lm)), 0.0), 600.0);
+        vec3 lm = vec3(uLamps[i].x, 2.0 * gy - uLamps[i].y, uLamps[i].z) - vP;
+        float cl = max(dot(R, normalize(lm)), 0.0);
+        refl += vec3(1.0, 0.68, 0.34) * uLamps[i].w * (8.0 * pow(cl, 600.0) + 0.4 * pow(cl, 40.0));
       }
-      vec3 c = mix(diffuse, refl * (0.3 + fres) + alb * 0.2 * (flame + lamps), water);
+      vec3 c = mix(diffuse, refl * (0.25 + fres) + alb * 0.08 * (flame + lamps), water);
       // Haze thickens with distance; the rim fades to the far Earth.
       float d = length(cameraPosition - vP);
       c = mix(c, uSky * 1.5, 1.0 - exp(-d / 9000.0));
@@ -196,10 +214,64 @@ export function makePad(scene) {
   ib.castShadow = ib.receiveShadow = true;
   tower.add(ib);
   // Red obstruction lamps blink at the top.
-  const redMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 0.4, 0.2), toneMapped: false });
+  const redMat = redMatOf();
   const red = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), redMat);
   red.position.set(0, TOWER_H + 14.4, 0);
   tower.add(red);
+
+  /* ---------- the compound: tanks, a water tower, lightning masts, sheds ---------- */
+  // Places a part at a pad point given along U and V.
+  const at = (u, v, y = 0) => PAD_U.clone().multiplyScalar(u).addScaledVector(PAD_V, v).setY(y);
+  const paint = new THREE.MeshStandardMaterial({ color: 0xc8c6c0, roughness: 0.55, metalness: 0.2 });
+  const shed = new THREE.MeshStandardMaterial({ color: 0x4a4c50, roughness: 0.8 });
+  // Two propellant spheres on legs, east of the pad.
+  for (const [u, v] of [[-115, -95], [-120, 120]]) {
+    const c = at(u, v);
+    add(new THREE.SphereGeometry(9, 32, 20).translate(c.x, 15, c.z), paint);
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2 + Math.PI / 4;
+      add(new THREE.CylinderGeometry(0.5, 0.5, 15, 6).translate(c.x + Math.cos(a) * 6.5, 6, c.z + Math.sin(a) * 6.5), steel);
+    }
+    // A pipe rack runs from each sphere to the deck.
+    const len = Math.hypot(c.x, c.z) - 40;
+    const rack = add(new THREE.BoxGeometry(1.2, 1.4, len).translate(0, 4, len / 2), steel);
+    rack.position.set(c.x, 0, c.z);
+    rack.lookAt(0, 0, 0);
+  }
+  // The water tower for the deluge: a sphere high on four legs.
+  {
+    const c = at(-60, 215);
+    add(new THREE.SphereGeometry(7.5, 28, 18).translate(c.x, 52, c.z), paint);
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2;
+      add(new THREE.CylinderGeometry(0.45, 0.6, 50, 6).translate(c.x + Math.cos(a) * 5, 23.4, c.z + Math.sin(a) * 5), steel);
+    }
+  }
+  // Three lightning masts ring the pad; a red lamp tops each.
+  const masts = [];
+  for (const a of [0.5, 2.6, 4.7]) {
+    const c = at(Math.cos(a) * 62, Math.sin(a) * 62);
+    add(new THREE.CylinderGeometry(0.35, 0.9, 112, 8).translate(c.x, 54.4, c.z), steel);
+    masts.push(new THREE.Vector3(c.x, 111, c.z));
+  }
+  // Sheds and a blockhouse by the road.
+  for (const [u, v, w, h, dd] of [[-95, -30, 18, 8, 10], [-95, 35, 24, 10, 12], [-180, 18, 30, 6, 14]]) {
+    const c = at(u, v);
+    const b = add(new THREE.BoxGeometry(w, h, dd).translate(0, h / 2 - 1.6, 0), shed);
+    b.position.set(c.x, 0, c.z);
+    b.lookAt(c.x + PAD_U.x, 0, c.z + PAD_U.z);
+  }
+  // Small sodium lamps: deck corners and edges, the road, the masts.
+  const dots = [];
+  for (const [x, z] of [[-34, -34], [34, -34], [34, 34], [-34, 34], [0, -35], [0, 35], [-35, 0], [35, 0]]) dots.push(new THREE.Vector3(x, 1.2, z));
+  for (let k = 0; k < 30; k++) { const u = -(k + 0.5) * 45; dots.push(at(u, -0.03 * u + 9, 8)); }
+  masts.forEach(m => dots.push(m.clone().setY(56)));
+  const dotMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.45, 6, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 3, 1.4), toneMapped: false }), dots.length);
+  dots.forEach((p, i) => dotMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
+  group.add(dotMesh);
+  const reds = new THREE.InstancedMesh(new THREE.SphereGeometry(0.6, 8, 6), redMatOf(), masts.length);
+  masts.forEach((p, i) => reds.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
+  group.add(reds);
 
   /* ---------- floodlights on four masts ---------- */
   const lamps = [], lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 2.6, 1.3), toneMapped: false });
@@ -239,6 +311,7 @@ export function makePad(scene) {
     lamps.forEach((p, i) => GU.uLamps.value[i].set(p.x + at.x, p.y + at.y, p.z + at.z, 1));
     spots.forEach(s => { s.intensity = 420; s.target.position.copy(tmp.set(0, 30, 0)); });
     redMat.color.setRGB(Math.sin(t * 3.0) > 0.2 ? 8 : 0.4, 0.3, 0.15);
+    reds.material.color.setRGB(Math.sin(t * 3.0 + 1.3) > 0.2 ? 8 : 0.4, 0.3, 0.15);
   }
   return { group, update, lamps: GU.uLamps.value };
 }
