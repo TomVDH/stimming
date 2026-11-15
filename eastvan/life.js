@@ -1,6 +1,7 @@
-// East Van: the living things on the lot.
-// A crow, a cat, a lawn flamingo, cherry petals and chimney smoke.
-// Each one adds its own poke to the list.
+// East Van: the living things on the walk's modules.
+// houseLife: a crow, a cat, a lawn flamingo, cherry petals and chimney smoke.
+// laneLife: a basketball. Each one adds its own poke to the list.
+// Both work in their module's own numbers, inside the module's group.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
@@ -12,7 +13,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const part = (geo, c, x = 0, y = 0, z = 0) => paint(geo.translate(x, y, z), c);
 const body = (geos, cast = true) => { const m = new THREE.Mesh(mergeGeometries(geos), PAINT); m.castShadow = cast; return m; };
 
-export function buildLife(scene, crown, pokes) {
+export function houseLife(scene, crown, pokes) {
   const still = () => reduced(), updates = [], noInk = [];
   const poke = (id, pos, r, fire) => pokes.push({ id, pos, r, fire });
 
@@ -116,7 +117,7 @@ export function buildLife(scene, crown, pokes) {
     scene.add(mesh); noInk.push(mesh);
     const blobs = PARTS.filter(q => q.k === 'crown');
     // The ground under a point. Off the plinth there is none.
-    const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -28.5 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
+    const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -12.9 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
     function emit(push) {
       const p = list.find(q => !q.on);
       if (!p) return;
@@ -199,6 +200,13 @@ export function buildLife(scene, crown, pokes) {
     });
   }
 
+  return { noInk, update(t, dt) { for (const f of updates) f(t, dt); } };
+}
+
+export function laneLife(scene, crown, pokes) {
+  const still = () => reduced(), updates = [];
+  const poke = (id, pos, r, fire) => pokes.push({ id, pos, r, fire });
+
   /* ---------- basketball: lies in the lane, flies to the hoop ---------- */
   {
     const rest = [1.7, 0.18, -24.3], rim = [3.5, 2.95, -22.88], s = { x: rest[0], y: rest[1], z: rest[2], roll: 0, busy: false };
@@ -222,5 +230,5 @@ export function buildLife(scene, crown, pokes) {
     updates.push(() => { ball.position.set(s.x, s.y, s.z); ball.rotation.set(s.roll, 0, s.roll * 0.6); });
   }
 
-  return { noInk, update(t, dt) { for (const f of updates) f(t, dt); } };
+  return { noInk: [], update(t, dt) { for (const f of updates) f(t, dt); } };
 }

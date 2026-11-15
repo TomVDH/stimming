@@ -63,10 +63,12 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 // This page owns the camera, the pointer and the frame loop.
 import * as THREE from 'three';
 import { pixelRatio, whenVisible, css } from '../shared/stim.js';
-import { buildTown } from './town.js';
-import * as lot from './lot.js';
-import * as alley from './alley.js';
-import { buildLife } from './life.js';
+import { buildTown, buildStage, buildModule } from './town.js';
+import * as house from './modules/house.js';
+import * as yard from './modules/yard.js';
+import * as lane from './modules/lane.js';
+import { houseLife, laneLife } from './life.js';
+import { layWalk, stopWorld } from './walk.js';
 import { createLens } from './lens.js';
 
 const canvas = document.getElementById('c'), read = document.getElementById('read');
@@ -95,11 +97,27 @@ function skyTexture(v0, v1) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-// Two dioramas: the house lot with its alley, and the Drive.
+// Two places: the walk of modules, and the Drive.
 // The Drive loads on the first visit: it reads the baked city data.
 const sky = skyTexture(0.2, 0.8), lens = createLens(renderer);
+// The walk's modules in order, and the life each one carries.
+const WALK = [[house, houseLife], [yard, null], [lane, laneLife]];
+const PLACED = layWalk(WALK.map(([m]) => m), [0, house.ORIGIN[2]]);
+// The walk on one stage: every module in one scene.
+function buildWalk() {
+  const stage = buildStage(sky), mods = WALK.map(([m, life], i) => buildModule(m, PLACED[i], life));
+  for (const m of mods) stage.scene.add(m.group);
+  // The shadow box covers the whole built walk.
+  const zs = PLACED.flatMap(p => [p.centre[2] - p.size[1] / 2, p.centre[2] + p.size[1] / 2]);
+  const z0 = Math.min(...zs), z1 = Math.max(...zs);
+  stage.fitSun(new THREE.Vector3(0, 2, (z0 + z1) / 2), [24, (z1 - z0) / 2 + 2]);
+  return {
+    scene: stage.scene, pokes: mods.flatMap(m => m.pokes), noInk: mods.flatMap(m => m.noInk),
+    update(t, dt) { for (const m of mods) m.update(t, dt); },
+  };
+}
 const PLACES = {
-  home: () => buildTown(sky, [lot, alley], buildLife),
+  home: buildWalk,
   drive: async () => buildTown(sky, [await (await import('./drive.js')).loadDrive()]),
 };
 const towns = {};
@@ -110,8 +128,8 @@ const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 }
 // w and h are the metres the frame must hold. band and range set the depth blur.
 const STOPS = {
   // tall is the width to hold on an upright screen.
-  house: { place: 'home', at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 19, h: 19, band: 5, range: 14 },
-  alley: { place: 'home', at: [0, 2.2, -20.5], yaw: Math.PI + 0.55, w: 27, tall: 19, h: 19, band: 5, range: 14 },
+  house: { place: 'home', ...stopWorld(house.STOP, PLACED[0]) },
+  alley: { place: 'home', ...stopWorld(lane.STOP, PLACED[2]) },
   // The Drive is a disc 116 m across. The view runs up the street from the south.
   drive: { place: 'drive', at: [0, 4, 0], yaw: -Math.PI / 2 + 0.38, pitch: 0.72, w: 130, tall: 122, h: 78, band: 24, range: 64 },
 };
