@@ -108,6 +108,10 @@ const ui = initPage({ id: 'cauldron', bar: {
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
   ],
   slider: { label: 'Fire', min: 0, max: 1, step: 0.01, value: FIRE0, onInput: v => { fire = v; fireSound(v); wake(); } },
+  // The steady simmer can be switched off; the plops and pops still play.
+  settings: [
+    { type: 'toggle', id: 'simmer', label: 'Simmer sound', value: true, persist: true },
+  ],
   dev: [
     { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
@@ -1234,7 +1238,7 @@ function soupAt(x, y) {
   const d = rayAt(x, y), t = (level - cam.pos[1]) / d[1], rs = soupR(level);
   return [(cam.pos[0] + d[0] * t) / rs, (cam.pos[2] + d[2] * t) / rs];
 }
-// The lens fits the rim and the belly; spare height goes mostly to the steam.
+// The lens fits the rim and the belly; spare height splits between the steam and the fire.
 function fit(w, h) {
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   const P = (x, y, z) => {
@@ -1257,7 +1261,7 @@ function fit(w, h) {
   const extra = ah - f * (y1 - y0);
   cam.focal = f;
   cam.ppx = w / 2 - f * (x0 + x1) / 2;
-  cam.ppy = top + extra * 0.62 + f * y1;
+  cam.ppy = top + extra * 0.5 + f * y1;
 }
 
 /* ---------- targets and sizes ---------- */
@@ -1693,7 +1697,8 @@ function stepBodies(dt) {
     // The wall keeps things in; a long thing turns to lie along it.
     const r = Math.hypot(b.x, b.z) + 1e-5, nx = b.x / r, nz = b.z / r;
     const axx = Math.cos(b.yaw), axz = -Math.sin(b.yaw), cosA = axx * nx + axz * nz;
-    const ext = (K.W + (K.L - K.W) * Math.abs(cosA)) * b.scale / rs, lim = 0.97 - ext;
+    // The near rim hides the soup's front edge, so things keep a little off it there.
+    const ext = (K.W + (K.L - K.W) * Math.abs(cosA)) * b.scale / rs, lim = 0.97 - ext - 0.07 * Math.max(0, nz);
     if (r > lim) {
       b.x = nx * Math.max(lim, 0); b.z = nz * Math.max(lim, 0);
       const vn = b.vx * nx + b.vz * nz;
@@ -1975,9 +1980,10 @@ function bedSound(dt) {
   // The simmer swells and falls at random; the fire grumbles under it.
   if (bedT <= 0) {
     bedT = rand(0.12, 0.35);
-    const lvl = reduced() ? 0.03 : (0.02 + 0.16 * fire) * rand(0.5, 1.2);
+    const on = ui.setting('simmer')?.value ?? true;
+    const lvl = !on ? 0 : reduced() ? 0.03 : (0.02 + 0.16 * fire) * rand(0.5, 1.2);
     bed.simmer.gain.setTargetAtTime(lvl, now, 0.08);
-    bed.rumble.gain.setTargetAtTime(0.05 + 0.3 * fire * rand(0.7, 1.1), now, 0.2);
+    bed.rumble.gain.setTargetAtTime(on ? 0.05 + 0.3 * fire * rand(0.7, 1.1) : 0, now, 0.2);
   }
   // A turning pot sloshes.
   const sw = clamp(Math.abs(omega) / 3);
