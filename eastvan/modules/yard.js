@@ -7,7 +7,7 @@ export const ID = 'yard';
 export const SIZE = [14, 9];
 export const ORIGIN = [0, 0, -17.4];
 export const JOIN = 'back';
-export const STOP = { at: [0, 1.2, -17.4], yaw: 0.9, pitch: 0.55, w: 18, tall: 14, h: 12, band: 4, range: 10 };
+export const STOP = { at: [0, 1, -17.4], yaw: 1.15, pitch: 0.72, w: 26, tall: 27, h: 17, band: 5, range: 12 };
 
 const legs = [0, 1, 2, 3, 4, 5].map(i => box([-3.6 + Math.cos(i * 1.047) * 1.45, 0.47, -14.5 + Math.sin(i * 1.047) * 1.45], [0.07, 0.55, 0.07], 'chrome', A));
 

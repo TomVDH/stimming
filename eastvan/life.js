@@ -1,12 +1,12 @@
 // East Van: the living things on the walk's modules.
-// houseLife: a crow, a cat, a lawn flamingo, cherry petals and chimney smoke.
+// houseLife: a cat, a lawn flamingo, cherry petals and chimney smoke.
 // laneLife: a basketball. Each one adds its own poke to the list.
 // Both work in their module's own numbers, inside the module's group.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
 import { reduced } from '../shared/stim.js';
-import { COL, PARTS, CROW } from './lot.js';
+import { COL, PARTS } from './lot.js';
 import { lin, lift, lerp, paint, PAINT, beamGeo } from './kit.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -16,44 +16,6 @@ const body = (geos, cast = true) => { const m = new THREE.Mesh(mergeGeometries(g
 export function houseLife(scene, crown, pokes) {
   const still = () => reduced(), updates = [], noInk = [];
   const poke = (id, pos, r, fire) => pokes.push({ id, pos, r, fire });
-
-  /* ---------- crow: sits on the top wire, flies a loop ---------- */
-  {
-    const HOME = new THREE.Vector3(...CROW.home), s = { u: 0, hop: 0, flying: false }, next = new THREE.Vector3();
-    // The loop: out to the left, up, and back from behind.
-    const at = (u, out) => {
-      const a = Math.sin(Math.PI * u), b = Math.sin(2 * Math.PI * u);
-      return out.set(HOME.x - 4.2 * a * a, HOME.y + 2.4 * a + 0.8 * b + 0.5 * Math.sin(Math.PI * s.hop), HOME.z + 2 * b);
-    };
-    const crow = new THREE.Group(), grey = [0.5, 0.03, 270];
-    crow.add(body([
-      part(new THREE.IcosahedronGeometry(0.17, 1).scale(0.95, 1.05, 1.5), COL.crow, 0, 0.2, 0),
-      part(new THREE.IcosahedronGeometry(0.105, 1), COL.crow, 0, 0.4, 0.2),
-      part(new THREE.ConeGeometry(0.045, 0.2, 5).rotateX(Math.PI / 2), grey, 0, 0.39, 0.37),
-      part(new THREE.BoxGeometry(0.14, 0.03, 0.3).rotateX(0.35), COL.crow, 0, 0.14, -0.34),
-    ]));
-    const wing = side => { const m = body([part(new THREE.BoxGeometry(0.42, 0.025, 0.24), COL.crow, side * 0.21, 0, 0)]); m.position.set(side * 0.1, 0.27, 0); crow.add(m); return m; };
-    const wingL = wing(-1), wingR = wing(1);
-    scene.add(crow);
-    poke('crow', crow.position, 0.7, () => {
-      if (s.flying) return;
-      s.flying = true;
-      const done = () => { s.flying = false; s.u = 0; s.hop = 0; };
-      if (still()) gsap.fromTo(s, { hop: 0 }, { hop: 1, duration: 0.5, ease: 'none', onComplete: done });
-      else gsap.fromTo(s, { u: 0 }, { u: 1, duration: 3.6, ease: 'sine.inOut', onComplete: done });
-    });
-    updates.push(t => {
-      at(s.u, crow.position);
-      const air = s.flying && !still() ? Math.min(1, Math.sin(Math.PI * s.u) * 6) : 0;
-      if (air > 0) {
-        at(Math.min(1, s.u + 0.01), next);
-        crow.rotation.y = lerp(0.5, Math.atan2(next.x - crow.position.x, next.z - crow.position.z), air);
-      } else crow.rotation.y = 0.5;
-      // Folded wings hang down the body. In the air they beat.
-      const beat = lerp(-1.45, Math.sin(t * 20) * 0.9, air);
-      wingL.rotation.z = -beat; wingR.rotation.z = beat;
-    });
-  }
 
   /* ---------- cat: sits on the porch roof, jumps and spins ---------- */
   {
@@ -231,4 +193,56 @@ export function laneLife(scene, crown, pokes) {
   }
 
   return { noInk: [], update(t, dt) { for (const f of updates) f(t, dt); } };
+}
+
+/* ---------- crow: it belongs to the walk, not to one module ---------- */
+// It sits on the street wire at home. A poke flies it over the gaps
+// to the lane wire at away, rests, and flies it home again.
+export function buildCrow(scene, home, away) {
+  const still = () => reduced(), s = { u: 0, hop: 0, busy: false }, next = new THREE.Vector3();
+  const A = new THREE.Vector3(...home), B = new THREE.Vector3(...away);
+  // u runs 0 to 1 on the way out, holds at 1, and runs 1 to 2 back.
+  const at = (u, out) => {
+    const e = u <= 1 ? u : 2 - u, arc = Math.sin(Math.PI * e);
+    out.lerpVectors(A, B, e);
+    out.y += 3 * arc + 0.5 * Math.sin(Math.PI * s.hop);
+    out.x += 1.2 * arc * (u <= 1 ? 1 : -1);
+    return out;
+  };
+  const crow = new THREE.Group(), grey = [0.5, 0.03, 270];
+  crow.add(body([
+    part(new THREE.IcosahedronGeometry(0.17, 1).scale(0.95, 1.05, 1.5), COL.crow, 0, 0.2, 0),
+    part(new THREE.IcosahedronGeometry(0.105, 1), COL.crow, 0, 0.4, 0.2),
+    part(new THREE.ConeGeometry(0.045, 0.2, 5).rotateX(Math.PI / 2), grey, 0, 0.39, 0.37),
+    part(new THREE.BoxGeometry(0.14, 0.03, 0.3).rotateX(0.35), COL.crow, 0, 0.14, -0.34),
+  ]));
+  const wing = side => { const m = body([part(new THREE.BoxGeometry(0.42, 0.025, 0.24), COL.crow, side * 0.21, 0, 0)]); m.position.set(side * 0.1, 0.27, 0); crow.add(m); return m; };
+  const wingL = wing(-1), wingR = wing(1);
+  scene.add(crow);
+  const poke = {
+    id: 'crow', pos: crow.position, r: 0.7,
+    fire() {
+      if (s.busy) return;
+      s.busy = true;
+      const done = () => { s.busy = false; s.u = 0; s.hop = 0; };
+      if (still()) { gsap.fromTo(s, { hop: 0 }, { hop: 1, duration: 0.5, ease: 'none', onComplete: done }); return; }
+      gsap.timeline({ onComplete: done })
+        .fromTo(s, { u: 0 }, { u: 1, duration: 3.6, ease: 'sine.inOut' })
+        .to(s, { u: 2, duration: 3.6, ease: 'sine.inOut' }, '+=2');
+    },
+  };
+  return {
+    poke,
+    update(t) {
+      at(s.u, crow.position);
+      // In the air the wings beat; on a wire they fold.
+      const air = s.busy && !still() ? Math.min(1, Math.abs(Math.sin(Math.PI * s.u)) * 6) : 0;
+      if (air > 0) {
+        at(Math.min(2, s.u + 0.01), next);
+        crow.rotation.y = lerp(crow.rotation.y, Math.atan2(next.x - crow.position.x, next.z - crow.position.z), 0.2);
+      } else crow.rotation.y = s.u >= 1 && s.u < 2 && s.busy ? Math.PI + 0.5 : 0.5;
+      const beat = lerp(-1.45, Math.sin(t * 20) * 0.9, air);
+      wingL.rotation.z = -beat; wingR.rotation.z = beat;
+    },
+  };
 }
