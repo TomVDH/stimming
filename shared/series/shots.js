@@ -20,7 +20,7 @@ export const SHOTS = {
       <path d="M21 21h3.4v6h-3.4zM34 19.6h3.4v6h-3.4zM64 16.6h3.4v6h-3.4zM78 15.2h3.4v6h-3.4z" fill="oklch(0.3 0.05 250)"/>
       <rect x="55" y="50" width="11" height="15" rx="3" fill="oklch(0.22 0.03 270)"/>
       <path d="M57 11C57 5.5 61 3 65.5 3.4C66.6 1 69.8 0.4 71.6 2L75 3L72 4.4C72.2 8.6 69.4 12 65 13.2L55 16.6Z" fill="oklch(0.16 0.04 290)"/>
-      <path d="M-8 44.6V56" stroke="oklch(0.9 0.02 90)" stroke-width="0.6"/><path d="M-12 56h6l2 3.4l4.6 1.4v3.4h-12.6z" fill="oklch(0.62 0.2 25)"/>`],
+      <path d="M-8 44.6V56" stroke="oklch(0.9 0.02 90)" stroke-width="0.6"/><path d="M-12 56h6l2 3.4l4.6 1.4v3.4h-12.6z" fill="oklch(0.62 0.2 25)"/>`, { zoom: 0.82 }],
     // A crow fills the frame; the street behind is out of focus.
     ['Crow', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.6 0.11 205)'], [0.6, 'oklch(0.86 0.07 165)'], [1, 'oklch(0.92 0.08 100)']])}"/>
       <g filter="${k.blur}"><path d="M-70 60L-20 44L10 58L40 40L72 56L110 38L170 56V80H-70Z" fill="oklch(0.6 0.07 250)"/>
@@ -158,117 +158,108 @@ export const SHOTS = {
       <path d="M27.8 34Q33 90 29 136" fill="none" stroke="${SIL}" stroke-width="0.6"/><path d="M28 134h3.4v2.2h-3.4z" fill="${SIL}"/>
       <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>
       <path d="M70 14q3 -3.4 6 0q3 -3.4 6 0M84 28q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`;
-    }],
+    }, { zoom: 0.82 }],
   ],
-  // The theme series, on the same recipe; each sky takes its series hue.
+  // The theme series and the proposed ones. Each subject is whole and sits in
+  // the middle of the frame, in its own colours, on a sky in the series hue.
   science: [
-    // Up at a model atom on its stand: three orbits cross the frame.
-    ['Atom', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.32 0.12 264)'], [0.6, 'oklch(0.64 0.13 235)'], [1, 'oklch(0.92 0.07 195)']])}"/>
-      <circle cx="16" cy="94" r="26" fill="oklch(0.98 0.05 200 / 0.4)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.99 0.03 200)"/>
-      <path d="${P([[45.6, 170], [54.4, 170], [51.2, 56], [48.8, 56]])}" fill="${SIL}"/>
-      <g fill="none" stroke="${SIL}" stroke-width="1.5">${[0, 60, -60].map(a => `<ellipse cx="50" cy="48" rx="72" ry="21" transform="rotate(${a} 50 48)"/>`).join('')}</g>
-      <g fill="${SIL}"><circle cx="46" cy="45" r="6.4"/><circle cx="54.6" cy="45.6" r="6.4"/><circle cx="50" cy="52.6" r="6.4"/><circle cx="50.6" cy="41" r="5.6"/></g>
-      <path d="M41.6 44.6A6.4 6.4 0 0 1 46 38.8M46.2 54.6A6.4 6.4 0 0 0 49.6 59" fill="none" stroke="oklch(0.95 0.06 200 / 0.8)" stroke-width="0.9" stroke-linecap="round"/>
-      <circle cx="84" cy="32" r="7" fill="oklch(0.95 0.14 92 / 0.5)" filter="${k.blur}"/><circle cx="84" cy="32" r="3" fill="oklch(0.96 0.13 92)"/>
-      <circle cx="13.6" cy="29.4" r="2.6" fill="${SIL}"/><circle cx="62" cy="-13" r="2.6" fill="${SIL}"/>`],
+    // An atom: three orbits, a warm nucleus, three bright electrons.
+    ['Atom', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.3 0.12 264)'], [0.6, 'oklch(0.58 0.14 240)'], [1, 'oklch(0.86 0.08 205)']])}"/>
+      <circle cx="50" cy="50" r="20" fill="oklch(0.95 0.08 220 / 0.3)" filter="${k.blur}"/>
+      <g fill="none" stroke="oklch(0.97 0.03 220)" stroke-width="1.8">${[0, 60, -60].map(a => `<ellipse cx="50" cy="50" rx="28" ry="10" transform="rotate(${a} 50 50)"/>`).join('')}</g>
+      <circle cx="47" cy="48" r="5.6" fill="oklch(0.78 0.17 55)"/><circle cx="53.4" cy="48.6" r="5.6" fill="oklch(0.66 0.21 28)"/><circle cx="50" cy="53.8" r="5.6" fill="oklch(0.82 0.16 70)"/>
+      <path d="M43.6 46a4 4 0 0 1 3 -2.8M47 52a4 4 0 0 1 2.6 -2.6" stroke="oklch(1 0 0 / 0.7)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      ${[[76.3, 53.4], [39.8, 25.5], [50.5, 66.5]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="oklch(0.95 0.15 95 / 0.5)" filter="${k.blur}"/><circle cx="${x}" cy="${y}" r="2.7" fill="oklch(0.95 0.15 95)"/>`).join('')}`],
   ],
   dark: [
-    // Up through the firs at the turning stars.
-    ['Star trails', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.18 0.08 285)'], [0.6, 'oklch(0.34 0.13 300)'], [1, 'oklch(0.6 0.16 332)']])}"/>
-      <g fill="none" stroke="oklch(0.96 0.05 90 / 0.8)" stroke-width="0.7" stroke-linecap="round">${Array.from({ length: 15 }, (_, i) => {
-    const r = 7 + i * 7.6, a0 = ((i * 53) % 360) * Math.PI / 180, a1 = a0 + (0.9 + (i % 3) * 0.25);
-    return `<path d="M${(56 + r * Math.cos(a0)).toFixed(1)} ${(38 + r * Math.sin(a0)).toFixed(1)}A${r} ${r} 0 0 1 ${(56 + r * Math.cos(a1)).toFixed(1)} ${(38 + r * Math.sin(a1)).toFixed(1)}"/>`;
-  }).join('')}</g>
-      <circle cx="56" cy="38" r="1.3" fill="oklch(0.99 0.04 95)"/>
-      <path d="M-30 -70L4 40L-10 34L10 80L-8 72L16 124L-6 114L20 170H-70V-70Z" fill="${SIL}"/>
-      <path d="M130 -70L96 28L110 22L88 70L106 62L80 116L104 106L74 170H170V-70Z" fill="${SIL}"/>
-      <path d="M30 170L44 120L38 124L50 86L62 124L56 120L70 170Z" fill="${SIL}"/>
-      <path d="M24 12L40 20" stroke="oklch(0.98 0.05 95)" stroke-width="1.1" stroke-linecap="round"/>`],
+    // A fat crescent moon, three stars, one cloud.
+    ['Moon', -1, k => {
+      const star = (x, y, r) => `<path d="M${x} ${y - r}l${r * 0.24} ${r * 0.76}l${r * 0.76} ${r * 0.24}l${-r * 0.76} ${r * 0.24}l${-r * 0.24} ${r * 0.76}l${-r * 0.24} ${-r * 0.76}l${-r * 0.76} ${-r * 0.24}l${r * 0.76} ${-r * 0.24}z" fill="oklch(0.99 0.04 95)"/>`;
+      return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.2 0.09 285)'], [0.6, 'oklch(0.36 0.14 300)'], [1, 'oklch(0.56 0.16 325)']])}"/>
+      <circle cx="46" cy="48" r="28" fill="oklch(0.95 0.1 95 / 0.28)" filter="${k.blur}"/>
+      <path d="M52 25A23 23 0 1 0 71 61A18.4 18.4 0 0 1 52 25Z" fill="oklch(0.95 0.1 95)"/>
+      <circle cx="40" cy="52" r="3" fill="oklch(0.86 0.1 85)"/><circle cx="48" cy="62" r="2" fill="oklch(0.86 0.1 85)"/><circle cx="36" cy="42" r="1.6" fill="oklch(0.86 0.1 85)"/>
+      ${star(71, 32, 5.4)}${star(30, 72, 3.4)}${star(76, 68, 2.6)}
+      <g fill="oklch(1 0 0 / 0.8)"><circle cx="24" cy="30" r="0.8"/><circle cx="62" cy="20" r="0.7"/><circle cx="82" cy="50" r="0.7"/></g>
+      <path d="M40 78C36 78 34.6 74 37.4 72C37 68 42 66 44.6 68.6C46.6 65 53 65.6 54 69.6C58 69 60.6 72.4 58.6 75.4C59.6 77 58.6 78 57 78Z" fill="oklch(0.32 0.1 296)"/>`;
+    }],
   ],
   goo: [
-    // Up at the goo as it lets go: long drips, one drop on its strand.
-    ['Drips', 1, k => {
-      const G = 'oklch(0.2 0.07 150)';
-      const drip = (x, w, len) => `<rect x="${x - w / 2}" y="-20" width="${w}" height="${len + 20}" rx="${w / 2}" fill="${G}"/><circle cx="${x}" cy="${len}" r="${w * 0.78}" fill="${G}"/><ellipse cx="${x - w * 0.3}" cy="${len - w * 0.2}" rx="${w * 0.16}" ry="${w * 0.3}" fill="oklch(0.97 0.1 120 / 0.85)"/>`;
-      return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.13 152)'], [0.6, 'oklch(0.76 0.18 132)'], [1, 'oklch(0.95 0.13 112)']])}"/>
-      <circle cx="84" cy="96" r="26" fill="oklch(0.98 0.1 110 / 0.4)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.07 110)"/>
-      <path d="M-70 -70H170V10Q150 24 132 12Q116 2 100 14Q84 26 66 12Q52 2 38 14Q22 26 6 12Q-10 0 -30 14Q-50 26 -70 10Z" fill="${G}"/>
-      ${drip(16, 9, 60)}${drip(40, 6, 40)}${drip(62, 12, 84)}${drip(84, 7, 30)}${drip(-8, 8, 46)}${drip(108, 9, 66)}
-      <path d="M40 44V88" stroke="${G}" stroke-width="0.8"/><path d="M40 86C36 92 35 95 35 97a5 5 0 0 0 10 0C45 95 44 92 40 86Z" fill="${G}"/><ellipse cx="38.4" cy="97" rx="0.9" ry="1.8" fill="oklch(0.97 0.1 120 / 0.85)"/>`;
+    // A blob of goo with two eyes; it drips.
+    ['Blob', 1, k => {
+      const G = 'oklch(0.9 0.21 128)', D = 'oklch(0.72 0.2 135)';
+      const eye = (x, y) => `<circle cx="${x}" cy="${y}" r="6" fill="oklch(0.99 0 0)"/><circle cx="${x + 1.6}" cy="${y + 1.4}" r="3.2" fill="oklch(0.14 0.02 150)"/>`;
+      return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.26 0.09 165)'], [0.6, 'oklch(0.44 0.13 155)'], [1, 'oklch(0.66 0.16 142)']])}"/>
+      <path d="M31 60h8v15a4 4 0 0 1 -8 0zM48 60h10v21a5 5 0 0 1 -10 0zM64 60h7v10a3.5 3.5 0 0 1 -7 0z" fill="${D}"/>
+      <path d="M26 64C21 64 19.6 57.4 23 54C22 42 30 33 42 31.6C46 23 58 21.6 64 29.6C74 29.6 80.6 39.6 77.6 49.6C82.6 54 80.6 64 74 64Z" fill="${G}"/>
+      <path d="M30 44C32 38 37 35 43 35" stroke="oklch(1 0 0 / 0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      ${eye(43, 48)}${eye(58, 46)}
+      <path d="M46 58q5 4 10 -0.6" stroke="oklch(0.3 0.1 150)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <circle cx="78" cy="28" r="3" fill="none" stroke="${G}" stroke-width="1.1"/><circle cx="24" cy="30" r="2" fill="none" stroke="${G}" stroke-width="1"/>`;
     }],
   ],
   maths: [
-    // Up a drawing compass; its arc runs out of the frame.
-    ['Compass', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.34 0.12 332)'], [0.6, 'oklch(0.68 0.16 352)'], [1, 'oklch(0.93 0.08 60)']])}"/>
-      <circle cx="16" cy="94" r="26" fill="oklch(0.98 0.07 80 / 0.4)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.99 0.05 85)"/>
-      <circle cx="50" cy="150" r="104" fill="none" stroke="oklch(0.98 0.03 95)" stroke-width="0.9"/>
-      <path d="M-70 76L170 54M30 -70L84 170" fill="none" stroke="oklch(0.98 0.03 95 / 0.6)" stroke-width="0.6" stroke-dasharray="2.4 2.4"/>
-      <g fill="oklch(0.98 0.03 95)"><circle cx="64.4" cy="63.6" r="1.4"/><circle cx="-2" cy="62.4" r="1.2"/></g>
-      <path d="${P([[49, 12], [51.4, 12], [32, 170], [19, 170]])}${P([[48.6, 12], [51, 12], [85, 170], [72, 170]])}" fill="${SIL}"/>
-      <path d="M38 78Q50 84 64 76" fill="none" stroke="${SIL}" stroke-width="1.6"/>
-      <circle cx="50" cy="11" r="4.6" fill="${SIL}"/><rect x="48.4" y="-6" width="3.2" height="14" rx="1.6" fill="${SIL}"/><circle cx="50" cy="11" r="1.5" fill="oklch(0.92 0.14 92)"/>`],
+    // A compass draws a circle: the needle at the centre, the lead on the line.
+    ['Compass', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.3 0.12 335)'], [0.6, 'oklch(0.56 0.17 350)'], [1, 'oklch(0.82 0.11 20)']])}"/>
+      <circle cx="46" cy="58" r="22" fill="oklch(1 0 0 / 0.08)" stroke="oklch(0.99 0.02 90)" stroke-width="1.7"/>
+      <path d="M46 58H68" stroke="oklch(0.99 0.02 90 / 0.8)" stroke-width="1" stroke-dasharray="2.4 2.4"/>
+      <path d="${P([[53.6, 22], [56.4, 22.6], [47, 58], [45.4, 57.6]])}" fill="oklch(0.9 0.03 250)"/>
+      <path d="${P([[54.6, 22.6], [57.6, 21.6], [69.8, 54], [67, 55.4]])}" fill="oklch(0.78 0.04 250)"/>
+      <path d="M67 55.4L69.8 54L69 59.4Z" fill="oklch(0.93 0.15 95)"/>
+      <rect x="54.2" y="10" width="3.2" height="10" rx="1.6" fill="oklch(0.93 0.15 95)"/><circle cx="55.8" cy="21.6" r="4.2" fill="oklch(0.93 0.15 95)"/><circle cx="55.8" cy="21.6" r="1.5" fill="oklch(0.4 0.12 340)"/>
+      <circle cx="46" cy="58" r="1.8" fill="oklch(0.93 0.15 95)"/>`],
   ],
-  // Proposed series (2026-11-15). Vistas is the fancy one: see `fancy` below.
   vistas: [
-    // A deep valley at dusk in four layers: sun, far range, a viaduct with a train, near firs.
-    // The layers shift with the pointer; `par(n)` gives a layer its share of the shift.
-    ['Vista', 0, k => `<rect ${FIELD} fill="${k.lin([[0.1, 'oklch(0.3 0.1 268)'], [0.45, 'oklch(0.6 0.16 352)'], [0.62, 'oklch(0.88 0.14 74)']])}"/>
-      <g fill="oklch(1 0 0 / 0.85)"><circle cx="18" cy="16" r="0.7"/><circle cx="34" cy="8" r="0.5"/><circle cx="80" cy="12" r="0.7"/><circle cx="66" cy="22" r="0.5"/></g>
-      <circle cx="58" cy="57" r="24" fill="oklch(0.97 0.1 88 / 0.5)" filter="${k.blur}"/><circle cx="58" cy="57" r="8.5" fill="oklch(0.99 0.06 95)"/>
-      <g ${k.par(1.2)}><path d="M-70 64L-30 46L-8 58L14 42L34 56L52 46L74 60L98 44L130 62L170 52V140H-70Z" fill="oklch(0.56 0.11 322)"/>
-        <path d="M14 42L19 48L15 47.4L12 50.6L9.6 47ZM98 44L103 50L99 49.4L96 52.6L93.6 49Z" fill="oklch(0.9 0.06 60)"/></g>
-      <g ${k.par(2.6)}><path d="M-70 82L-34 66L-6 78L20 64L46 80L70 68L100 82L134 66L170 80V160H-70Z" fill="oklch(0.36 0.1 302)"/>
-        <g fill="none" stroke="${SIL}" stroke-linecap="round"><path d="M-70 71H170" stroke-width="2.4"/>${Array.from({ length: 16 }, (_, i) => `<path d="M${-62 + i * 14} 72V110" stroke-width="1.8"/><path d="M${-62 + i * 14} 80a7 7 0 0 1 14 0" stroke-width="1.1"/>`).join('')}</g>
-        <path d="M22 66.4h8v3.6h-8zM31 66.4h8v3.6h-8zM40 66.4h8v3.6h-8zM49 65.6h9.6l1.8 2.2v2.2H49z" fill="${SIL}"/>
-        <path d="M23.4 67.2h2v1.2h-2zM27 67.2h2v1.2h-2zM32.4 67.2h2v1.2h-2zM36 67.2h2v1.2h-2zM41.4 67.2h2v1.2h-2zM45 67.2h2v1.2h-2zM51 67h2.4v1.2H51z" fill="oklch(0.95 0.14 90)"/>
-        <circle cx="62.6" cy="68.6" r="3.4" fill="oklch(0.98 0.1 92 / 0.6)" filter="${k.blur}"/>
-        <path d="M70 30q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0M82 38q2 -2.4 4 0q2 -2.4 4 0" stroke="${SIL}" stroke-width="0.9" fill="none" stroke-linecap="round"/></g>
-      <g ${k.par(4.8)} fill="${SIL}"><path d="M-14 170L0 116L-6 119L7 88L1 90.6L12 60L23 90.6L17 88L30 119L24 116L38 170Z"/><path d="M62 170L78 104L71 108L86 70L79 73.4L92 38L105 73.4L98 70L113 108L106 104L122 170Z"/></g>`, { fancy: true }],
+    // A film still: black bars above and below, a low sun over the water, one long flare.
+    ['Vista', 1, k => `<rect ${FIELD} fill="oklch(0.1 0.01 275)"/>
+      <rect x="-70" y="30" width="240" height="40" fill="${k.lin([[0, 'oklch(0.36 0.12 285)'], [0.5, 'oklch(0.66 0.17 20)'], [0.62, 'oklch(0.9 0.13 78)'], [0.63, 'oklch(0.5 0.12 300)'], [1, 'oklch(0.24 0.08 285)']])}"/>
+      <path d="M-70 55L10 52L24 44L34 50L46 40L58 50L70 46L84 53L170 55Z" fill="oklch(0.28 0.08 295)"/>
+      <circle cx="56" cy="52" r="14" fill="oklch(0.98 0.08 90 / 0.45)" filter="${k.blur}"/><path d="M48 55A8 8 0 0 1 64 55Z" fill="oklch(0.99 0.05 95)"/>
+      <path d="M50 58h12M52 61h8M49 64.4h14M53 67.6h6" stroke="oklch(0.97 0.09 88 / 0.8)" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 52H170" stroke="oklch(0.86 0.1 235 / 0.9)" stroke-width="0.7"/><path d="M26 52H86" stroke="oklch(0.95 0.06 230)" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="40" cy="45" r="2.6" fill="oklch(0.9 0.1 200 / 0.4)"/><circle cx="32" cy="41" r="1.4" fill="oklch(0.95 0.1 60 / 0.5)"/>
+      <path d="M24 39q2 -2.4 4 0q2 -2.4 4 0M68 36q1.6 -2 3.2 0q1.6 -2 3.2 0" stroke="oklch(0.14 0.03 285)" stroke-width="0.8" fill="none" stroke-linecap="round"/>`],
   ],
   poke: [
-    // A finger comes down to pop one bubble.
-    ['Poke', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.14 20)'], [0.6, 'oklch(0.7 0.17 38)'], [1, 'oklch(0.94 0.1 86)']])}"/>
-      <circle cx="84" cy="96" r="26" fill="oklch(0.98 0.08 90 / 0.4)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.06 92)"/>
-      <circle cx="50" cy="76" r="15" fill="oklch(1 0 0 / 0.14)" stroke="oklch(0.98 0.03 90)" stroke-width="0.9"/><path d="M40 70A12 12 0 0 1 48 64" fill="none" stroke="oklch(0.99 0.02 90)" stroke-width="1.4" stroke-linecap="round"/>
-      <g stroke="oklch(0.96 0.13 92)" stroke-width="1.3" stroke-linecap="round">${Array.from({ length: 10 }, (_, i) => { const a = Math.PI * (0.06 + i * 0.098) + Math.PI, c = Math.cos(a), n = Math.sin(a); return `<path d="M${(50 + 20 * c).toFixed(1)} ${(66 + 20 * n).toFixed(1)}L${(50 + (27 + (i % 2) * 6) * c).toFixed(1)} ${(66 + (27 + (i % 2) * 6) * n).toFixed(1)}"/>`; }).join('')}</g>
-      <path d="M26 -70H76V4Q76 20 62 20H57V54a7 7 0 0 1 -14 0V20H38Q26 20 26 8Z" fill="${SIL}"/>
-      <path d="M45.6 55.4a4.6 4.6 0 0 0 8.8 0" fill="none" stroke="oklch(0.7 0.1 40 / 0.8)" stroke-width="0.9" stroke-linecap="round"/>`],
+    // One big red button; someone has just let go.
+    ['Button', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.34 0.12 18)'], [0.6, 'oklch(0.6 0.17 34)'], [1, 'oklch(0.88 0.11 80)']])}"/>
+      <ellipse cx="50" cy="70" rx="28" ry="9.6" fill="oklch(0.2 0.03 285)"/><rect x="22" y="60" width="56" height="10" fill="oklch(0.2 0.03 285)"/><ellipse cx="50" cy="60" rx="28" ry="9.6" fill="oklch(0.34 0.04 285)"/>
+      <ellipse cx="50" cy="59" rx="19" ry="6.4" fill="oklch(0.46 0.18 26)"/>
+      <path d="M31 59V50C31 36 69 36 69 50V59A19 6.4 0 0 1 31 59Z" fill="oklch(0.64 0.23 28)"/>
+      <path d="M36 48C37 43 42 40.4 48 40" stroke="oklch(1 0 0 / 0.7)" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <g stroke="oklch(0.96 0.14 95)" stroke-width="1.8" stroke-linecap="round">${[-150, -120, -90, -60, -30].map(a => { const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180); return `<path d="M${(50 + 24 * c).toFixed(1)} ${(46 + 24 * n).toFixed(1)}L${(50 + 31 * c).toFixed(1)} ${(46 + 31 * n).toFixed(1)}"/>`; }).join('')}</g>`],
   ],
   light: [
-    // A prism on a thread: one white ray in, six colours out to the corners.
-    ['Prism', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.28 0.08 245)'], [0.6, 'oklch(0.58 0.1 212)'], [1, 'oklch(0.93 0.06 190)']])}"/>
-      <circle cx="-4" cy="92" r="26" fill="oklch(1 0 0 / 0.4)" filter="${k.blur}"/>
-      <path d="M50 -70V24" stroke="${SIL}" stroke-width="0.7"/>
-      <path d="M-70 110L40 54" stroke="oklch(1 0 0)" stroke-width="1.6" stroke-linecap="round"/>
-      <g stroke-width="1.5" stroke-linecap="round">${[['oklch(0.66 0.23 28)', 2], ['oklch(0.78 0.17 60)', 16], ['oklch(0.9 0.17 98)', 30], ['oklch(0.78 0.18 148)', 44], ['oklch(0.66 0.15 245)', 58], ['oklch(0.6 0.2 300)', 72]].map(([c, y]) => `<path d="M61 50L170 ${y}" stroke="${c}"/>`).join('')}</g>
-      <path d="${P([[50, 22], [77, 70], [23, 70]])}" fill="${SIL}"/>
-      <path d="M50 30L70.6 66.4H29.4Z" fill="none" stroke="oklch(0.9 0.05 200 / 0.6)" stroke-width="0.8" stroke-linejoin="round"/>
-      <path d="M45 44L36 60" stroke="oklch(1 0 0 / 0.7)" stroke-width="1.2" stroke-linecap="round"/>`],
+    // A glass prism: one white ray in, six colours out.
+    ['Prism', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.22 0.07 250)'], [0.6, 'oklch(0.4 0.1 228)'], [1, 'oklch(0.66 0.1 202)']])}"/>
+      <path d="M12 60L42 48" stroke="oklch(1 0 0)" stroke-width="2" stroke-linecap="round"/>
+      <g stroke-width="2" stroke-linecap="round">${[['oklch(0.68 0.23 28)', 37], ['oklch(0.8 0.17 60)', 42.6], ['oklch(0.92 0.17 98)', 48.2], ['oklch(0.8 0.18 148)', 53.8], ['oklch(0.68 0.15 245)', 59.4], ['oklch(0.62 0.2 300)', 65]].map(([c, y]) => `<path d="M59 47L90 ${y}" stroke="${c}"/>`).join('')}</g>
+      <path d="M50 27L71 65H29Z" fill="oklch(0.92 0.05 205 / 0.34)" stroke="oklch(0.98 0.02 205)" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M42 48L59 47" stroke="oklch(1 0 0 / 0.5)" stroke-width="1.2"/>
+      <path d="M46 40L38 55" stroke="oklch(1 0 0 / 0.8)" stroke-width="1.6" stroke-linecap="round"/>`],
   ],
   wild: [
-    // Up at a dandelion clock; five seeds have gone.
-    ['Dandelion', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.44 0.11 232)'], [0.6, 'oklch(0.76 0.1 155)'], [1, 'oklch(0.96 0.1 106)']])}"/>
-      <circle cx="16" cy="94" r="26" fill="oklch(0.99 0.07 100 / 0.45)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.99 0.05 100)"/>
-      <path d="M49 170Q45 104 52 46" fill="none" stroke="${SIL}" stroke-width="2.4" stroke-linecap="round"/>
-      <g fill="none" stroke="${SIL}" stroke-width="0.7" stroke-linecap="round">${Array.from({ length: 30 }, (_, i) => { const a = i * Math.PI * 2 / 30 + 0.1, r = 19 + (i % 3) * 2.4, x = 52 + r * Math.cos(a), y = 44 + r * Math.sin(a), t = a + Math.PI / 2;
-    return `<path d="M52 44L${x.toFixed(1)} ${y.toFixed(1)}M${(x - 2.2 * Math.cos(t)).toFixed(1)} ${(y - 2.2 * Math.sin(t)).toFixed(1)}L${(x + 1.4 * Math.cos(a)).toFixed(1)} ${(y + 1.4 * Math.sin(a)).toFixed(1)}L${(x + 2.2 * Math.cos(t)).toFixed(1)} ${(y + 2.2 * Math.sin(t)).toFixed(1)}"/>`; }).join('')}
-        ${[[74, 26], [84, 14], [92, 30], [100, 6], [80, 40]].map(([x, y]) => `<path d="M${x} ${y}l3.4 5M${x - 2.4} ${y - 1}l2.4 1l1.6 -2.2"/>`).join('')}</g>
-      <circle cx="52" cy="44" r="3.2" fill="${SIL}"/>
-      <path d="M-20 170L-8 118L2 170ZM4 170L14 132L22 170ZM78 170L90 124L98 170ZM96 170L110 110L120 170Z" fill="${SIL}"/>`],
+    // A dandelion clock; three seeds leave.
+    ['Dandelion', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.34 0.1 205)'], [0.6, 'oklch(0.56 0.12 168)'], [1, 'oklch(0.8 0.14 128)']])}"/>
+      <path d="M50 48Q45 68 49 88" fill="none" stroke="oklch(0.86 0.15 135)" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M48 82L34 76L38 82L30 84L40 87Z M50 84L64 77L61 83L70 84L60 88Z" fill="oklch(0.74 0.16 140)"/>
+      <circle cx="50" cy="44" r="19" fill="oklch(1 0 0 / 0.1)"/>
+      <g stroke="oklch(0.99 0.02 100)" stroke-width="0.9" stroke-linecap="round">${Array.from({ length: 24 }, (_, i) => { const a = i * Math.PI / 12 + 0.1, c = Math.cos(a), n = Math.sin(a); return `<path d="M${(50 + 4 * c).toFixed(1)} ${(44 + 4 * n).toFixed(1)}L${(50 + 17 * c).toFixed(1)} ${(44 + 17 * n).toFixed(1)}"/>`; }).join('')}</g>
+      <g fill="oklch(0.99 0.02 100)">${Array.from({ length: 24 }, (_, i) => { const a = i * Math.PI / 12 + 0.1; return `<circle cx="${(50 + 18.4 * Math.cos(a)).toFixed(1)}" cy="${(44 + 18.4 * Math.sin(a)).toFixed(1)}" r="1.5"/>`; }).join('')}</g>
+      <circle cx="50" cy="44" r="3.4" fill="oklch(0.84 0.14 90)"/>
+      <g stroke="oklch(0.99 0.02 100)" stroke-width="0.9" stroke-linecap="round" fill="none">${[[72, 24], [79, 36], [66, 14]].map(([x, y]) => `<path d="M${x} ${y}l-3 5M${x - 2.6} ${y - 1.2}l2.6 1.2l1.8 -2.4"/>`).join('')}</g>`],
   ],
   odd: [
-    // A saucer overhead; its beam has found one sock.
-    ['Saucer', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.24 0.1 300)'], [0.6, 'oklch(0.52 0.19 326)'], [1, 'oklch(0.88 0.13 352)']])}"/>
-      <g fill="oklch(1 0 0 / 0.85)"><circle cx="12" cy="14" r="0.8"/><circle cx="88" cy="8" r="0.7"/><circle cx="78" cy="28" r="0.5"/><circle cx="4" cy="44" r="0.6"/><circle cx="96" cy="50" r="0.6"/></g>
-      <path d="${P([[36, 42], [64, 42], [118, 170], [-18, 170]])}" fill="oklch(0.96 0.14 100 / 0.2)"/>
-      <path d="M36 42L-18 170M64 42L118 170" stroke="oklch(0.97 0.12 100 / 0.8)" stroke-width="0.8"/>
-      <ellipse cx="50" cy="26" rx="13" ry="9" fill="${SIL}"/><ellipse cx="50" cy="35" rx="32" ry="11" fill="${SIL}"/>
-      <ellipse cx="50" cy="38" rx="20" ry="5.4" fill="none" stroke="oklch(0.8 0.1 320 / 0.7)" stroke-width="0.9"/>
-      ${[-27, -18, -9, 0, 9, 18, 27].map((x, i) => `<circle cx="${50 + x}" cy="${(41 - Math.abs(x) * 0.13).toFixed(1)}" r="1.7" fill="${i % 2 ? 'oklch(0.9 0.12 200)' : 'oklch(0.95 0.14 95)'}"/>`).join('')}
-      <path d="M46 82h8v13l6 3.4a3.6 3.6 0 0 1 -3.6 6H46Z" fill="${SIL}" transform="rotate(-14 50 92)"/><path d="M46 85.6h8M46 88.6h8" stroke="oklch(0.95 0.14 95)" stroke-width="1.2" transform="rotate(-14 50 92)"/>`],
+    // A pale saucer, five lights, and one sock in the beam.
+    ['Saucer', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.24 0.1 300)'], [0.6, 'oklch(0.48 0.18 326)'], [1, 'oklch(0.8 0.14 350)']])}"/>
+      <g fill="oklch(1 0 0 / 0.85)"><circle cx="22" cy="26" r="0.8"/><circle cx="78" cy="22" r="0.7"/><circle cx="82" cy="46" r="0.6"/><circle cx="18" cy="52" r="0.6"/></g>
+      <path d="${P([[41, 48], [59, 48], [72, 86], [28, 86]])}" fill="oklch(0.96 0.14 100 / 0.32)"/>
+      <ellipse cx="50" cy="35" rx="11" ry="9.4" fill="oklch(0.86 0.1 205)"/><path d="M43 33a7 6 0 0 1 5 -5" stroke="oklch(1 0 0 / 0.8)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      <ellipse cx="50" cy="44" rx="27" ry="9" fill="oklch(0.86 0.05 325)"/><ellipse cx="50" cy="47" rx="19" ry="4.6" fill="oklch(0.62 0.11 322)"/>
+      ${[-20, -10, 0, 10, 20].map((x, i) => `<circle cx="${50 + x}" cy="${(49.4 - Math.abs(x) * 0.12).toFixed(1)}" r="1.9" fill="${i % 2 ? 'oklch(0.9 0.12 200)' : 'oklch(0.96 0.14 95)'}"/>`).join('')}
+      <g transform="rotate(-14 50 70)"><path d="M46 60h8v12l5.6 3.2a3.6 3.6 0 0 1 -3.4 6.2H46Z" fill="oklch(0.96 0.015 90)"/><path d="M46 63.4h8M46 66.6h8" stroke="oklch(0.62 0.21 27)" stroke-width="1.4"/></g>`],
   ],
 };
-
 
 
 export const TILTS = { Slight: 7, Dutch: 15, Wild: 26 };
@@ -315,11 +306,9 @@ export function shotIcon(key, label, opt) {
     // A top-to-bottom gradient over the shape's own box.
     lin: stops => grad('linearGradient', 'x1="0" y1="0" x2="0" y2="1"', stops),
     rad: (stops, cx, cy, r) => grad('radialGradient', `cx="${cx}" cy="${cy}" r="${r}"`, stops),
-    // A depth layer: it shifts n units for a full pointer swing.
-    par: n => `style="transform:translate(calc(var(--px, 0) * ${n}px), calc(var(--py, 0) * ${(n * 0.6).toFixed(2)}px));transition:transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)"`,
   };
-  if (extra.fancy) return fancy(id, draw(k), defs);
-  const body = draw(k), ang = dir * (TILTS[opt.tilt] ?? 15);
+  // A shot may ask for a zoom: under 1 shows more of the scene.
+  const body = draw(k), ang = dir * (TILTS[opt.tilt] ?? 15), zoom = extra.zoom ? ` translate(50 50) scale(${extra.zoom}) translate(-50 -50)` : '';
   const print = opt.frame === 'Print', view = opt.frame === 'Viewfinder';
   const [crop, outline] = frameOf(opt.frame);
   const ink = opt.line === 'Series' && opt.c ? opt.c : 'oklch(0.95 0.01 90)';
@@ -329,36 +318,7 @@ export function shotIcon(key, label, opt) {
     <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.5"/></filter>
     <radialGradient id="${id}v" cx="0.5" cy="0.5" r="0.72"><stop offset="0.55" style="stop-color:oklch(0 0 0 / 0)"/><stop offset="1" style="stop-color:oklch(0 0 0 / 0.5)"/></radialGradient>${'DEFS'}</defs>
     ${print ? `<rect x="2" y="2" width="96" height="96" rx="5" style="fill:oklch(0.96 0.012 90)"/>` : ''}
-    <g clip-path="url(#${id}c)"><g transform="rotate(${ang} 50 50)">${body}</g><rect x="0" y="0" width="100" height="100" fill="url(#${id}v)"/></g>${line}${marks}</svg>`.replace('DEFS', defs.join(''));
-}
-
-// The fancy icon, for a series that earns one: depth layers that shift and a
-// frame that tilts with the pointer, a gold double ring, sparks and a sheen.
-function fancy(id, body, defs) {
-  const crop = soft(grow(HEX, 0.84), 4.5), spark = (x, y, r) => `<path d="M${x} ${y - r}l${r * 0.24} ${r * 0.76}l${r * 0.76} ${r * 0.24}l${-r * 0.76} ${r * 0.24}l${-r * 0.24} ${r * 0.76}l${-r * 0.24} ${-r * 0.76}l${-r * 0.76} ${-r * 0.24}l${r * 0.76} ${-r * 0.24}z" style="fill:oklch(0.99 0.05 95)"/>`;
-  return `<svg class="shot-fancy" viewBox="0 0 100 100" aria-hidden="true" style="overflow:visible;transform:perspective(260px) rotateY(calc(var(--px, 0) * 18deg)) rotateX(calc(var(--py, 0) * -18deg));transition:transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)"><defs><clipPath id="${id}c"><path d="${crop}"/></clipPath>
-    <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.5"/></filter>
-    <linearGradient id="${id}au" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:oklch(0.97 0.1 98)"/><stop offset="0.5" style="stop-color:oklch(0.8 0.15 82)"/><stop offset="1" style="stop-color:oklch(0.6 0.13 62)"/></linearGradient>
-    <radialGradient id="${id}v" cx="0.5" cy="0.5" r="0.72"><stop offset="0.55" style="stop-color:oklch(0 0 0 / 0)"/><stop offset="1" style="stop-color:oklch(0 0 0 / 0.5)"/></radialGradient>${defs.join('')}</defs>
-    <g clip-path="url(#${id}c)">${body}<rect x="0" y="0" width="100" height="100" fill="url(#${id}v)"/>
-      <path d="M-34 0H-14L26 100H6Z" style="fill:oklch(1 0 0 / 0.16);transform:translateX(calc(64px + var(--px, 0) * 56px));transition:transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)"/></g>
-    <path d="${soft(HEX, 5)}" style="fill:none;stroke:url(#${id}au);stroke-width:2.4;stroke-linejoin:round"/>
-    <path d="${soft(grow(HEX, 0.905), 4.6)}" style="fill:none;stroke:url(#${id}au);stroke-width:0.6;stroke-linejoin:round"/>
-    ${spark(91.6, 26, 5)}${spark(8.4, 74, 3.6)}${spark(50, 2, 2.6)}</svg>`;
-}
-
-// Fancy icons follow the pointer. Call once for a page or a frame's document.
-export function tiltShots(root = document) {
-  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const set = (svg, x, y) => { svg.style.setProperty('--px', x.toFixed(3)); svg.style.setProperty('--py', y.toFixed(3)); };
-  const lim = n => Math.max(-1, Math.min(1, n));
-  root.addEventListener('pointermove', e => {
-    for (const svg of root.querySelectorAll('svg.shot-fancy')) {
-      const r = svg.getBoundingClientRect();
-      set(svg, lim((e.clientX - r.left - r.width / 2) / 170), lim((e.clientY - r.top - r.height / 2) / 170));
-    }
-  }, { passive: true });
-  (root.documentElement || root).addEventListener('pointerleave', () => root.querySelectorAll('svg.shot-fancy').forEach(svg => set(svg, 0, 0)));
+    <g clip-path="url(#${id}c)"><g transform="rotate(${ang} 50 50)${zoom}">${body}</g><rect x="0" y="0" width="100" height="100" fill="url(#${id}v)"/></g>${line}${marks}</svg>`.replace('DEFS', defs.join(''));
 }
 
 // Tom's picks live in the browser.

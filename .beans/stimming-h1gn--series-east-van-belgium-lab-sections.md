@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:16:48Z
+updated_at: 2026-11-15T09:26:17Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -43,3 +43,11 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Shots for the four other new series: Poke, Prism, Dandelion, Saucer
 - [x] Tom, 2026-11-15: likes a 3D wobblable depth texture. shared/series/depth.js: the Vista as a colour picture and a depth map, a raw WebGL2 parallax shader with relief light, a spring that wobbles, a kick on press; it draws only while the spring moves. Demo at serieslab/depth.html; the proposal page uses it for Vistas, with the layered SVG as the fallback
 - [ ] Tom rules on the categories, the names and the sorting; then series.json and toys.json change
+
+## Tom's rulings, 2026-11-15 (later)
+
+- [x] No gold border and no sparks; every series wears the same thin ring
+- [x] No depth icons: shared/series/depth.js and serieslab/depth.html are deleted; the layered tilt icon and its sheen are gone too
+- [x] East Van Wires and the Belgium Flag zoomed out a little (a shot may set `zoom`)
+- [x] Vista and the eight other shots redesigned as whole, centred subjects: Vista (a film still), Atom, Moon, Blob, Compass, Button, Prism, Dandelion, Saucer; series.json now names Moon and Blob
+- [ ] Tom reviews the redesigned shots

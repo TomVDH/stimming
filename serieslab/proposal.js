@@ -1,9 +1,9 @@
 // A proposal (2026-11-15): more series, and one series for every toy.
 // Nothing here ships. series.json and toys.json change only on Tom's yes.
-// Vistas holds the cinematic scenes; its icon is the fancy one.
+// Vistas holds the cinematic scenes; its icon is a film still, plain like the rest.
 export const PROPOSED = {
-  vistas: { name: 'Vistas', nl: 'Vergezichten', kind: 'theme', icon: 'Vista', color: 'oklch(0.86 0.14 88)' },
-  poke: { name: 'Poke & pop', nl: 'Prutsen', kind: 'theme', icon: 'Poke', color: 'oklch(0.76 0.16 28)' },
+  vistas: { name: 'Vistas', nl: 'Vergezichten', kind: 'theme', icon: 'Vista', color: 'oklch(0.93 0.025 90)' },
+  poke: { name: 'Poke & pop', nl: 'Prutsen', kind: 'theme', icon: 'Button', color: 'oklch(0.76 0.16 28)' },
   light: { name: 'Light & glass', nl: 'Licht', kind: 'theme', icon: 'Prism', color: 'oklch(0.88 0.1 200)' },
   wild: { name: 'Wild', nl: 'Buiten', kind: 'theme', icon: 'Dandelion', color: 'oklch(0.84 0.13 112)' },
   odd: { name: 'Odd one out', nl: 'Raar', kind: 'theme', icon: 'Saucer', color: 'oklch(0.76 0.19 322)' },
