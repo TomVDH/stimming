@@ -99,6 +99,7 @@ import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
 import { createBolts } from './bolts3.js';
 import { bakeOde } from './ode.js';
+import { VAN, loadVan } from './van.js';
 import * as THREE from 'three';
 
 // The intro holds until the page, the font and the first frame are ready.
@@ -150,7 +151,10 @@ let alt = ALT;
 // The land below: 0 flat country, 1 relief, 2 relief with parallax.
 // The hidden ode world: ?ode, or type its name. It needs relief land.
 const ODE = qs.has('ode');
-const RELIEF = Math.max(ODE ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
+// The Vancouver world: ?van flies over a baked map of the Lower Mainland.
+// It needs relief land too, and it wins over the ode world.
+const VANC = qs.has('van');
+const RELIEF = Math.max(ODE || VANC ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
 // Its start: map x and y in source pixels, and km per pixel.
 const ODE_AT = [960, 638, 4];
 const SPEED = 0.25;        // ground speed in km/s, real cruise
@@ -170,7 +174,7 @@ const MOON = 0.1;
 const HOURS = {
   dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, ev: 2, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
   morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, ev: 1.8, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
-  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, ev: 1.3, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.012, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, vanAz: 160, rel: 52, ev: 1.3, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.012, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
   // Afternoon: the sun stands behind the plane, so the glory shows on the deck below.
   afternoon: { mood: [0.02, 0.018, 0.016], moon: false, az: 177, rel: 20, ev: 1.5, disc: 5, r: 0.4, stars: 0, flare: 0, tint: [0.89, 0.03, 90], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
   golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, ev: 2.6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.09, 68], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
@@ -186,7 +190,9 @@ let sky = null;
 const skyArgs = h => [alt, HOR + h.rel * D2R, h.E];
 function buildSky(baked) {
   const h = HOURS[opts.hour] || HOURS.dusk;
-  const el = HOR + h.rel * D2R, az = h.az * D2R;
+  // Over Vancouver the window looks north, so the noon sun stands behind the plane.
+  // It lights the south faces of the mountains, the side the seat sees.
+  const el = HOR + h.rel * D2R, az = (VANC && h.vanAz != null ? h.vanAz : h.az) * D2R;
   const b = baked || bake(...skyArgs(h));
   // Night eyes see little colour: moonlit haze goes grey-blue.
   if (h.moon) for (let i = 0; i < b.L.length; i += 4) {
@@ -334,7 +340,7 @@ const noWing = s => s
   // The near fog's march moves too; a fixed jitter shows as grain in bright fog.
   .replace('hash12(gl_FragCoord.xy + 5.3)', 'hash12(gl_FragCoord.xy + 5.3 + uJit)')
   .replace('dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))', 'dot(gl_FragCoord.xy + uJit, vec2(0.0671, 0.00584))');
-const FS1 = noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL }));
+const FS1 = noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL, van: VANC }));
 const M1 = passMaterial(FS1, true), M2 = passMaterial(cabinFS({ ALT, WIN }));
 const P1 = { u: slots(M1), scene: passScene(M1) }, P2 = { u: slots(M2), scene: passScene(M2) };
 // The stand-in shares the full pass's uniforms, so both get every frame's values.
@@ -360,7 +366,7 @@ function uploadSky() {
 // The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
 const NOISE_N = 64;
 // Sky and noise bake side by side, before the bar exists.
-const [noiseVol, firstSky] = await Promise.all([offThread('./noise3d.js', bakeNoise, [NOISE_N]), offThread('./sky.js', bake, skyArgs(HOURS[opts.hour] || HOURS.dusk))]);
+const [noiseVol, firstSky, vanMap] = await Promise.all([offThread('./noise3d.js', bakeNoise, [NOISE_N]), offThread('./sky.js', bake, skyArgs(HOURS[opts.hour] || HOURS.dusk)), VANC ? loadVan() : null]);
 const noiseTex = new THREE.Data3DTexture(noiseVol, NOISE_N, NOISE_N, NOISE_N);
 Object.assign(noiseTex, {
   format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: true, unpackAlignment: 1,
@@ -373,6 +379,14 @@ const odeMask = ODE ? bakeOde() : { W: 1, H: 1, m: new Uint8Array(1) };
 const odeTex = new THREE.DataTexture(odeMask.m, odeMask.W, odeMask.H, THREE.RedFormat, THREE.UnsignedByteType);
 Object.assign(odeTex, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, unpackAlignment: 1 });
 odeTex.needsUpdate = true;
+// The Vancouver maps, with mipmaps for far ground.
+function mapTex(m) {
+  const tx = new THREE.DataTexture(m.data, m.w, m.h, THREE.RGBAFormat, THREE.UnsignedByteType);
+  Object.assign(tx, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+  tx.needsUpdate = true;
+  return tx;
+}
+const vanTex = vanMap ? { coast: mapTex(vanMap.coast), land: mapTex(vanMap.land) } : null;
 // The outside target: half size on Standard, three quarters on High.
 // It keeps a depth buffer and 4x MSAA for the aircraft meshes.
 const outBuf = { w: 0, h: 0 };
@@ -642,6 +656,10 @@ function toScreen(p) {
 // The plane flies along world x; the left window looks along world z.
 // A test hook: ?x=km starts the flight further along, for screenshots.
 const cam = { x: +qs.get('x') || 0, z: 0 };
+// The Vancouver flight: the plane's place on the map in km.
+// A test hook: ?vy=km moves the track north.
+// dir: 1 flies east; a mirrored seat flies west, so the map reads true.
+const van = { x: VAN.startE + cam.x, y: VAN.track + (+qs.get('vy') || 0), dir: 1 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
 // The high wind blows toward the tail, so the anvils stream aft.
@@ -878,6 +896,8 @@ function moveHead(dx, dy, dz) {
   head.ty = clamp(head.ty + dy, REACH.y[0], REACH.y[1]);
   head.tz = clamp(head.tz + dz, REACH.z[0], REACH.z[1]);
 }
+// A test hook: ?peer=x,y,z leans the head at the start, for screenshots.
+if (qs.has('peer')) { moveHead(...qs.get('peer').split(',').map(v => +v || 0)); head.x = head.tx; head.y = head.ty; head.z = head.tz; }
 /* ---------- St Elmo's fire and strikes ---------- */
 // Deep in a storm cloud a violet corona creeps over the leading edges and tips.
 // A strike on the plane flares it, then it fades over a few seconds.
@@ -1078,7 +1098,8 @@ function step(dt) {
   stepTurb(dt);
   stepAurora(dt);
   // The plane cruises at a steady pace.
-  cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
+  const dx = (reduce ? SPEED * 0.4 : SPEED) * dt;
+  cam.x += dx; van.x += van.dir * dx;
   // The bank breathes between about 3 and 9 degrees.
   if (!reduce) stepBank(dt);
   stepClimb(dt);
@@ -1545,8 +1566,23 @@ function airportIn(i, j) {
 }
 // The nearest airports on the window's side, out to the horizon.
 const apList = [];
+// The Vancouver world's real airports, at their places on the map.
+const vanAps = VAN.airports.map((a, i) => ({ ...a, seed: 0.13 + 0.17 * i, th: (90 - a.hdg) * D2R }));
 function nearAirports() {
   apList.length = 0;
+  if (VANC) {
+    for (const a of vanAps) {
+      // The nearest copy round the flight loop, as the shader wraps the map.
+      const dx = ((a.at[0] - van.x + VAN.loop * 1.5) % VAN.loop) - VAN.loop / 2;
+      a.x = cam.x + van.dir * dx; a.z = cam.z + a.at[1] - van.y;
+      // Landings head east, so a twin runway lies to the north.
+      a.c = Math.cos(a.th) * van.dir; a.s = Math.sin(a.th);
+      a.dist = Math.hypot(a.x - cam.x, a.z - cam.z);
+      apList.push(a);
+    }
+    apList.sort((p, q) => p.dist - q.dist);
+    return;
+  }
   const i0 = Math.floor((cam.x - 120) / AP_CELL), i1 = Math.floor((cam.x + 380) / AP_CELL);
   const j0 = Math.floor((cam.z - 40) / AP_CELL), j1 = Math.floor((cam.z + 380) / AP_CELL);
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
@@ -1639,6 +1675,8 @@ function render() {
   // Sea wind in m/s: a breeze under clear sky, fresher under the deck, a gale in a full storm.
   UG.uniform1f(u.uSeaWind, 6 + 4 * clamp((0.62 - opts.cloud) / 0.24) + 18 * opts.storm ** 1.3 + 4 * fog.level);
   UG.tex(u.uOdeMap, odeTex);
+  // The map's place under the plane: map x = dir * world x + offset.
+  if (VANC) { UG.uniform3f(u.uVan, van.x - van.dir * cam.x, van.y - cam.z, van.dir); UG.tex(u.uVanA, vanTex.coast); UG.tex(u.uVanB, vanTex.land); }
   UG.uniform1f(u.uLit, sky.h.lit);
   UG.uniform2f(u.uCam, cam.x, cam.z);
   // A storm closes the deck, fills the mid layer, thickens the cirrus.
@@ -1906,6 +1944,9 @@ function applySeat() {
   if (!SEATS[opts.seat]) opts.seat = 'wl';
   [seatDx, mirror] = SEATS[opts.seat];
   canvas.style.transform = mirror ? 'scaleX(-1)' : '';
+  // The first seat sets where the flight starts; a later change only turns it round.
+  if (VANC && !van.set) { van.x = (mirror ? VAN.startW - cam.x : VAN.startE + cam.x); van.set = true; }
+  van.dir = mirror ? -1 : 1;
   histFresh = true;
 }
 applySeat();
