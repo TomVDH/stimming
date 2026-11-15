@@ -105,7 +105,7 @@ export function terrain(group, u, heightAt) {
     p.setZ(i, z);
   }
   splitByslope(g, 0.6, 2.2, 7);
-  const turf = airify(pbr('grass_ground', 0, { color: col([0.86, 0.035, 125]) }), u);
+  const turf = airify(pbr('grass_ground', 0, { color: col([0.78, 0.07, 135]) }), u);
   const rock = airify(pbr('seaside_rock', 1, { color: col([0.82, 0.01, 250]) }), u);
   const land = new THREE.Mesh(g, [turf, rock]);
   land.receiveShadow = true;
@@ -291,9 +291,13 @@ export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
   const blades = [];
   const green = () => (R() < 0.1 ? col([0.6 + 0.1 * R(), 0.07, 90]) : col([0.4 + 0.14 * R(), 0.09 + 0.04 * R(), 122 + 18 * R()]));
   // Dense near the eye, thin toward the edge; none past the lip.
-  for (let i = 0; i < 130000; i++) {
-    const d = 1 + 39 * Math.pow(R(), 2.1), a = (R() - 0.5) * 1.5;
-    const x = d * Math.sin(a), z = 18 - d * Math.cos(a);
+  // A last band near the eye fills the phone view, which looks down closer.
+  for (let i = 0; i < 150000; i++) {
+    let x, z;
+    if (i < 105000) {
+      const d = 3 + 30 * Math.pow(R(), 1.9), a = (R() - 0.5) * 1.6;
+      x = d * Math.sin(a); z = 10 - d * Math.cos(a);
+    } else { x = (R() - 0.5) * 9; z = 7 + 10 * R(); }
     if (z < edgeZ(x) + 0.4 || wallAt(x, z) < 0.45) continue;
     // Short sea turf, with a few longer tufts.
     const h = R() < 0.12 ? 0.18 + 0.2 * R() : 0.05 + 0.12 * R();
