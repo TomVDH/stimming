@@ -6,14 +6,16 @@ import { EV } from './flight.js';
 
 const D2R = Math.PI / 180;
 
+// at: angle around the body, a height key from the rocket's dims plus metres,
+// and a radius key plus metres. Metres scale with the rocket's length.
 // view: 'aft' looks down the body, 'fwd' looks up it, 'side' looks out.
 // tilt pushes the view away from the hull, in degrees.
 export const CAMS = {
-  engine: { label: 'Engine', stage: 1, at: [0, 33.5, 2.3], view: 'aft', tilt: 11, dutch: -13, fov: 64 },
-  fin: { label: 'Fin', stage: 1, at: [200, 5.2, 2.35], view: 'fwd', tilt: 7, dutch: 16, fov: 70 },
-  upper: { label: 'Upper', stage: 2, at: [0, 49.4, 2.6], view: 'aft', tilt: 7, dutch: 11, fov: 58 },
-  payload: { label: 'Payload', stage: 2, at: [90, 51.8, 1.62], view: 'fwd', tilt: 24, dutch: -9, fov: 74 },
-  window: { label: 'Window', stage: 2, at: [0, 46, 1.95], view: 'side', tilt: 74, dutch: 6, fov: 50 },
+  engine: { label: 'Engine', stage: 1, at: [0, 's1Top', -3.5, 'r', 0.45], view: 'aft', tilt: 11, dutch: -13, fov: 64 },
+  fin: { label: 'Fin', stage: 1, at: [200, 'bell', 3.6, 'r', 0.5], view: 'fwd', tilt: 7, dutch: 16, fov: 70 },
+  upper: { label: 'Upper', stage: 2, at: [0, 'upperTop', -0.6, 'rf', 0.15], view: 'aft', tilt: 7, dutch: 11, fov: 58 },
+  payload: { label: 'Payload', stage: 2, at: [90, 'payload', 0.5, 'rf', -0.8], view: 'fwd', tilt: 24, dutch: -9, fov: 74 },
+  window: { label: 'Window', stage: 2, at: [0, 'upperTop', -4, 'ru', 0.1], view: 'side', tilt: 74, dutch: 6, fov: 50 },
   // Probe mounts use plain points in the probe's frame: eye, target, up.
   probe: { label: 'Probe', stage: 3, eye: [-2.4, 3.4, 4.6], target: [2.6, 1.2, 0.0], dutch: 9, fov: 60 },
   lonely: { label: 'Lonely', stage: 3, eye: [1.15, 2.1, 1.3], target: [6.0, -3.6, -0.6], dutch: -14, fov: 80 },
@@ -33,9 +35,9 @@ export function cutAt(t) {
   return id;
 }
 
-// The mount's pose in the rocket frame.
+// The mount's pose in its body's frame; d is the rocket's dims.
 const m4 = new THREE.Matrix4(), zero = new THREE.Vector3();
-export function mountPose(id) {
+export function mountPose(id, d) {
   const c = CAMS[id];
   if (c.eye) {
     const pos = new THREE.Vector3(...c.eye);
@@ -44,9 +46,9 @@ export function mountPose(id) {
     q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), c.dutch * D2R));
     return { pos, q, fov: c.fov };
   }
-  const a = c.at[0] * D2R;
+  const a = c.at[0] * D2R, k = d.L / 55;
   const rad = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-  const pos = rad.clone().multiplyScalar(c.at[2]).setY(c.at[1]);
+  const pos = rad.clone().multiplyScalar(d[c.at[3]] + c.at[4] * Math.min(1, k)).setY(d[c.at[1]] + c.at[2] * k);
   const tl = c.tilt * D2R;
   let dir, up;
   if (c.view === 'side') {

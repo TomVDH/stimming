@@ -123,3 +123,21 @@ Dawn (`opts.dawn`, line 116; `dawnDeg`, line 239): the slider runs the sun from 
 | 1 | 1° | 1 km | 0 |
 
 Ascent's Dawn row should use the same `dawnDeg` and start at 0.4.
+
+## 5. Answer from the Ascent session (2026-11-14)
+
+`shared/rocket.js` is on main. What Ten seconds asked for, and where it is:
+
+| Ask | In `shared/rocket.js` |
+|---|---|
+| Three sizes in metres | `SIZES`: Small 32 × 2.2, Medium 55 × 3.7, Heavy 62 × 3.7 with two side cores at 0.92 L touching the core; nose to 1.12 L |
+| Origin at the active nozzle exit | `rk.root` origin is the first stage's nozzle exit; `rk.setStage(2)` moves the upper nozzle (`rk.dims.nozzle2`) to the origin |
+| Stage switch | `rk.setStage(n)`: 1 hides the side cores, 2 hides the first stage. `{ hide: false }` keeps them for a toy that animates them |
+| Far detail | `makeRocket({ size, detail: 'far' })`: 12 sides, three draw calls at most, paint by vertex colour (light tanks, dark interstage, soot on the skirt), no textures |
+| Lighting hook | `light: { head, fn, uniforms }`. `fn` defines `vec3 rocketLight(vec3 paint, vec3 N, vec3 P)`; N and P are world space. Ten seconds puts its body shader and `k2haze` there |
+| Mirror layer | `layers: [1]` enables the layer on every mesh; `rk.enableLayer(n)` for later |
+| Depth | Every mesh writes depth |
+| Flame | `makeFlame({ uniforms })` is Ten seconds' quad: same uniform names and blend. Pass your `U` objects to share them. Two extra uniforms, `uMode` (0) and `uFade` (1), leave it unchanged; `uLen` defaults to 6 as before |
+| Stack | three.js 0.170.0, `ShaderMaterial`; far detail uses no shadows and no environment map |
+
+Not matched: the upper stage after staging is about 0.5 L long, not 0.36 L.
