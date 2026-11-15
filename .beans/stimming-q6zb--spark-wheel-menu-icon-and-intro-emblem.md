@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:55:30Z
+updated_at: 2026-11-15T08:56:32Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -48,3 +48,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom on round 10: "this is more like it, but clean this up, slightly more minimal and better framed". Round 11 (icons/spike-spark-11.html): the wheel sits whole inside the porthole and a little smaller, the floor lower; 40 sparks in place of 70, kept inside the frame; no fork stars, no knurl texture, no floor line; a thinner flint post. Behaviour as round 10. The sheet points at round 11.
 
 - 2026-11-15, Tom on round 11: "alter this slightly, the style is much better; don't forget the intro icon; maybe not a circular border outline". Round 12 (icons/spike-spark-12.html): a rounded tile with no outline in place of the ringed porthole, with a faint top light. The intro logo is redrawn for the mask: no background, a white wheel with black slots, white spark arcs, a grey reflection, scaled to fill the box. The sheet points at round 12.
+
+- 2026-11-15, Tom: "Refine more" (no detail). Round 13 (icons/spike-spark-13.html), my read: the reflection is short and fades out below the floor; 34 crisper sparks with brighter cores and less haze; small embers glow where flights land on the floor. The intro logo follows. The sheet points at round 13.
