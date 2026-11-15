@@ -5,12 +5,12 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T06:49:49Z
+updated_at: 2026-11-15T06:55:08Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
 
 - [x] Step 1: series.json (kind, order, eastvan, Belgium name), toys.json tags, East Van badge, AGENTS.md
-- [ ] Step 2: serieslab/sections.html with five new section styles (Spine, Lead tile, Tray, Ghost word, Pips) and motifs for eastvan, belgian, maths
+- [x] Step 2: serieslab/sections.html with five new section styles (Spine, Lead tile, Tray, Ghost word, Pips) and motifs for eastvan, belgian, maths
 - [ ] Tom picks a style and the motifs
 - [ ] Step 3: ship the pick to the Lab view in index.html; move icons.js to shared/series/

@@ -109,6 +109,47 @@ export const M = {
       top: `<path d="M7.4 2.4C6.2 4 8.6 5 7.4 7.4M11.4 1.6C10.2 3.2 12.6 4.2 11.4 6.6" stroke-width="1.5" fill="none" stroke-linecap="round"/>`,
     }],
   ],
+  eastvan: [
+    ['Crow', {
+      fill: `<path d="M4 17.6C3.8 11.8 7.8 8 12.8 7.8C13.8 5 17.2 3.8 19.6 5.6L23.4 6.8L19.9 8.3C20.1 12.8 17.4 16.8 12.6 18.8L1.2 22.4Z"/>`,
+      cut: `<circle cx="17.9" cy="6.7" r="1"/>`,
+      top: `<path d="M10.8 19V22.6M14.2 17.6V22.6" stroke-width="1.3" stroke-linecap="round"/><path d="M7 22.8H23.2" stroke-width="1.3" stroke-linecap="round"/>`,
+    }],
+    ['House', {
+      fill: `<path d="M.8 10.2L12 4L23.2 10.2V11.6H21.8V21.8H2.2V11.6H.8Z"/>`,
+      cut: `<rect x="4.4" y="11.4" width="6.2" height="3.4"/><rect x="13.4" y="11.4" width="6.2" height="3.4"/><rect x="5" y="17" width="3.4" height="4.8"/><rect x="11.6" y="17" width="8" height="2.6"/><path d="M2.2 15.9H21.8" stroke-width="0.9"/>`,
+    }],
+    ['Power pole', {
+      fill: `<path d="M11 1.6H13V23H11Z"/><path d="M4 5.2H20V7H4ZM6.6 9.6H17.4V11.2H6.6Z"/><path d="M4.6 3.4H6V5.2H4.6ZM18 3.4H19.4V5.2H18ZM8.4 3.4H9.8V5.2H8.4ZM14.2 3.4H15.6V5.2H14.2Z"/>`,
+      top: `<path d="M.4 9.4Q3.6 9.4 5.3 4M23.6 9.4Q20.4 9.4 18.7 4M.4 14Q4.8 14 7.2 10.4M23.6 14Q19.2 14 16.8 10.4" stroke-width="1" fill="none" stroke-linecap="round"/>`,
+    }],
+  ],
+  belgian: [
+    ['Frites', {
+      fill: `<path d="M4.6 10.8H19.4L13.8 23.2H10.2Z"/><path d="M6.2 3.6L8.4 3L9.9 9.6H7.5ZM10.9 1.2H13.1V9.6H10.9ZM15.6 3L17.8 3.6L16.5 9.6H14.1Z"/>`,
+      cut: `<path d="M8.6 13.8H15.4" stroke-width="1.5" stroke-linecap="round"/>`,
+    }],
+    ['Tricolour', {
+      fill: `<path d="M1.6 4H8V20H1.6ZM16 4H22.4V20H16Z"/>`,
+      top: `<path d="M9.4 4.7H14.6V19.3H9.4Z" fill="none" stroke-width="1.4"/>`,
+    }],
+    ['Nine spheres', {
+      fill: `<circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="2.9" r="2.1"/><circle cx="12" cy="21.1" r="2.1"/><circle cx="4.4" cy="7.4" r="2.1"/><circle cx="19.6" cy="7.4" r="2.1"/><circle cx="4.4" cy="16.6" r="2.1"/><circle cx="19.6" cy="16.6" r="2.1"/><circle cx="2.9" cy="12" r="1.7"/><circle cx="21.1" cy="12" r="1.7"/>`,
+      top: `<path d="M12 2.9V21.1M4.4 7.4L19.6 16.6M19.6 7.4L4.4 16.6M4.4 7.4L12 2.9L19.6 7.4M4.4 16.6L12 21.1L19.6 16.6" stroke-width="0.9" fill="none"/>`,
+    }],
+  ],
+  maths: [
+    ['Spiral', {
+      top: `<path d="M12 12a1.6 1.6 0 0 1 3.2 0a4.2 4.2 0 0 1-8.4 0a6.8 6.8 0 0 1 13.6 0a9.4 9.4 0 0 1-18.8 0" fill="none" stroke-width="2" stroke-linecap="round"/>`,
+    }],
+    ['Set square', {
+      fill: `<path d="M2.4 21.6V2.6L21.4 21.6Z"/>`,
+      cut: `<path d="M6.4 17.6V11.4L12.6 17.6Z"/>`,
+    }],
+    ['Plus-minus', {
+      fill: `<path d="M10.4 2.2H13.6V7.8H19.4V11H13.6V16.6H10.4V11H4.6V7.8H10.4ZM4.6 19H19.4V22.2H4.6Z"/>`,
+    }],
+  ],
   odd: [
     ['Asterisk', {
       fill: `<g transform="rotate(14 12 12)"><path d="M10.3 1.2H13.7V9.1L20.4 5.2L22.1 8.2L15.4 12L22.1 15.8L20.4 18.8L13.7 14.9V22.8H10.3V14.9L3.6 18.8L1.9 15.8L8.6 12L1.9 8.2L3.6 5.2L10.3 9.1Z"/></g>`,
@@ -140,7 +181,7 @@ export const icon = (m, c) => {
 
 // Tom's picks live in the browser; these are the defaults.
 // Tom's picks, 2026-11-09.
-export const DEFAULTS = { poke: 'Pop!', goo: 'Drop', light: 'Glint', science: 'Atom', dark: 'Moon and star', odd: 'Asterisk', candy: 'Diorama box', sonder: 'Coffee' };
+export const DEFAULTS = { poke: 'Pop!', goo: 'Drop', light: 'Glint', science: 'Atom', dark: 'Moon and star', odd: 'Asterisk', candy: 'Diorama box', sonder: 'Coffee', eastvan: 'Crow', belgian: 'Frites', maths: 'Spiral' };
 export const PICKS_KEY = 'stimming.serieslab.icons3';
 export function picks() {
   let p = {};
