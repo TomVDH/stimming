@@ -11,11 +11,14 @@ const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 
 // Noise, the window shape and the sky lookup, for both passes.
 const common = ({ ALT, WIN }) => `
-const float R = 6371.0, H = ${ALT.toFixed(1)};
+const float R = 6371.0;
+// The eye's height in km: the arrow keys climb and dive.
+uniform float uAlt;
+#define H uAlt
 const float PI = 3.14159265;
 // Lightning's colour inside cloud: a cold, slightly violet blue-white.
 const vec3 FLASH_C = vec3(0.64, 0.72, 1.0);
-uniform vec3 uEye; uniform vec2 uBank;
+uniform vec3 uEye; uniform mat3 uAtt;
 uniform sampler2D uSkyL, uSkyT; uniform vec2 uSunAz; uniform float uHorEl;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
@@ -36,7 +39,7 @@ float sdRecess(vec2 p, float z) { float k = clamp(z / DEPTH, 0.0, 1.0); return s
 // The ray's point on the plane at depth z, in window metres.
 vec2 at(vec3 da, float z) { return (uEye + da * ((z - uEye.z) / da.z)).xy; }
 // Outside rays turn with the bank of the plane.
-vec3 toWorld(vec3 da) { return vec3(da.x, da.y * uBank.x - da.z * uBank.y, da.y * uBank.y + da.z * uBank.x); }
+vec3 toWorld(vec3 da) { return uAtt * da; }
 
 // The baked sky table: azimuth from the light, then elevation.
 // Rows crowd near the eye's horizon, as in sky.js.
@@ -2015,7 +2018,8 @@ vec3 trails(vec3 d, float tEnd) {
     // Tubes glow at the core; thin sheets glow at their rim, like a jellyfish bell.
     vec4 ca = texelFetch(uTrail, ivec2(i, 1), 0), cb = texelFetch(uTrail, ivec2(i + 1, 1), 0);
     float rr = dist / rad, shell = mix(ca.w, cb.w, k);
-    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.3 + exp(-pow((rr - 0.85) / 0.13, 2.0)) * 0.9, shell);
+    // The rim is soft and wide, so overlapping sheets blend without hard rings.
+    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.35 + exp(-pow((rr - 0.78) / 0.24, 2.0)) * 0.75, shell);
     if (glow < 0.002) continue;
     vec3 col = mix(ca.rgb, cb.rgb, k);
     // Thin far trails keep their brightness per pixel, not per km.
@@ -2501,7 +2505,7 @@ vec3 irr(vec3 P, vec3 n, int g) {
   return s * SKIN_A / (fg * fg * PI);
 }
 // The sun in the cabin frame: the bank turned back out.
-vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
+vec3 sunCabin() { return transpose(uAtt) * uSun; }
 // How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
 // The penumbra grows with the distance to the opening and the disc's size.
 float sunThrough(vec3 P) {
@@ -2986,3 +2990,25 @@ void main() {
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
   o = vec4(c, 1.0);
 }`;
+
+// A light stand-in for the outside pass: sky, haze, sun and moon, and flat land.
+// Direct3D takes about 30 s to compile the full pass on a first visit.
+// The stand-in compiles in about 3 s and draws while the full pass compiles.
+// Each listed function keeps its signature; its body returns the given value.
+const STAND_IN = {
+  ground: 'landFlat(w, fw)', landCover: 'g', nearFog: 'c', stormAir: 'c',
+  deck: 'vec4(0.0, 0.0, 0.0, 1.0)', midLayer: 'vec4(0.0, 0.0, 0.0, 1.0)', cirrus: 'vec4(0.0, 0.0, 0.0, 1.0)',
+  stem: 'vec4(0.0, 0.0, 0.0, 1.0)', rainShaft: 'vec4(0.0, 0.0, 0.0, 1.0)', sprites: 'vec3(0.0)', aurora: 'vec3(0.0)',
+};
+export function standIn(src) {
+  for (const [name, ret] of Object.entries(STAND_IN)) {
+    const m = new RegExp(String.raw`^(\w+)\s+${name}\s*\(([^)]*)\)\s*\{`, 'm').exec(src);
+    if (!m) throw new Error(`standIn: no function ${name}`);
+    let i = m.index + m[0].length, depth = 1;
+    while (depth && i < src.length) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; i++; }
+    // Out parameters get zeros, so the stub compiles cleanly.
+    const outs = [...m[2].matchAll(/\bout\s+(\w+)\s+(\w+)/g)].map(([, t, n]) => `${n} = ${t}(0.0);`).join(' ');
+    src = `${src.slice(0, m.index)}${m[1]} ${name}(${m[2]}) { ${outs} return ${ret}; }${src.slice(i)}`;
+  }
+  return src;
+}

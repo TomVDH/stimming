@@ -202,6 +202,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     const n = Math.ceil((z1 - z0) / step);
     return Array.from({ length: n + 1 }, (_, i) => lerp(z0, z1, i / n));
   };
+  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   const part = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => section(s0, s1, z)));
   // A thin plate on the upper skin: a spoiler, or the fixed shroud.
   // Past the rear spar it overhangs the flap nose as the cove lip.
@@ -258,7 +259,6 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     m.scale.z = -1;
     m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
-  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   // Main box ahead of the rear spar, and the full-chord tip past the aileron.
   const SPAR = 0.7, LIP = 0.765, FLAP = 0.715, SPOIL = 0.6;
   add(part(0, SPAR, Z0, 23.4));
@@ -388,15 +388,21 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   // It follows the shader's satin squash of the reflected ray.
   function bakeEnv(sky, HOR) {
     const W = 256, H = 128, data = new Float32Array(W * H * 4);
+    // The horizon band's mean colour: the hue of the hour's dominant light.
+    const band = [0, 0, 0];
+    for (let k = 0; k < 8; k++) lookup(sky.b.L, HOR + 0.02, k / 7 * Math.PI, HOR).forEach((v, c) => { band[c] += v; });
+    const by = 0.3 * band[0] + 0.5 * band[1] + 0.2 * band[2] || 1;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
       const phi = ((i + 0.5) / W - 0.5) * 2 * Math.PI, th = ((j + 0.5) / H - 0.5) * Math.PI;
       const dx = Math.cos(th) * Math.cos(phi), dz = Math.cos(th) * Math.sin(phi), lh = Math.hypot(dx, dz) || 1;
       const ph = Math.acos(Math.max(-1, Math.min(1, (dx * sky.sunAz[0] + dz * sky.sunAz[1]) / lh)));
       // Satin paint never mirrors the ground: it sees the sky just above.
-      const c = lookup(sky.b.L, Math.max(th, 0) * 0.45 + 0.03, ph, HOR), o = (j * W + i) * 4;
+      // Level rays meet the eye's own horizon, so the glow band there lights the paint.
+      const c = lookup(sky.b.L, HOR + 0.01 + Math.max(th, 0) * 0.45, ph, HOR), o = (j * W + i) * 4;
       // Grey paint keeps half the sky's colour.
+      // That colour leans to the horizon band's hue, so violet upper sky does not tint it.
       const y = 0.3 * c[0] + 0.5 * c[1] + 0.2 * c[2];
-      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k]) / 2 + sky.h.floor[k];
+      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k] * 0.4 + y * band[k] / by * 0.6) / 2 + sky.h.floor[k];
       data[o + 3] = 1;
     }
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -414,13 +420,14 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
     // strobe and lamp scale the tip lights on skin and fog.
     // fogSun is the sun's share of the fog's light.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0, lamp = 1, fogSun = [0, 0, 0] }) {
+    update({ basis, bank, pitch = 0, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0, lamp = 1, fogSun = [0, 0, 0] }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
       mo.wet += (wet - mo.wet) * Math.min(1, dtw * (wet > mo.wet ? 0.5 : 0.08));
       for (const m of [paint, flapPaint]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
-      air.rotation.x = bank;
+      // Pitch turns about the span axis, after the bank: Rz(pitch) Rx(bank).
+      air.rotation.set(bank, 0, pitch, 'ZYX');
       // An aft seat sees the whole aircraft further forward.
       air.position.x = seatDx;
       navL.color.setRGB(...nav);
@@ -438,8 +445,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
         mo.f[j] = Math.max(-0.9, Math.min(0.9, mo.f[j] + mo.fv[j] * sd));
       });
       FOG_U.uFlex.value.set(mo.f[0], mo.f[1]);
-      FOG_U.uUpW.value.set(0, 1, 0).applyAxisAngle(V(1, 0, 0), bank);
-      FOG_U.uSpanW.value.set(0, 0, 1).applyAxisAngle(V(1, 0, 0), bank);
+      air.updateMatrix();
+      FOG_U.uUpW.value.set(0, 1, 0).applyQuaternion(air.quaternion);
+      FOG_U.uSpanW.value.set(0, 0, 1).applyQuaternion(air.quaternion);
       FOG_U.uFogLvl.value = fogLevel;
       FOG_U.uFogWisp.value.set(...wisp);
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
@@ -476,12 +484,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // The ground's bounce: about half the sun's light comes back up.
       bounce.color.setRGB(0, 0, 0); bounce.groundColor.copy(sun.color);
       bounce.intensity = 0.5 * m / 1.5 * Math.max(s.y, 0) * veil * (1 - fa);
-      const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
+      const c = V(3 + seatDx, -3, 13).applyQuaternion(air.quaternion);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
       // The shadow maps redraw when the pose moves, and five times a second at rest.
       // A stale map lags a banking wing and flashes.
-      const pose = [bank, mo.f[0], mo.f[1], ail, seatDx, s.x, s.y, s.z];
+      const pose = [bank, pitch, mo.f[0], mo.f[1], ail, seatDx, s.x, s.y, s.z];
       const moved = pose.some((v, i) => Math.abs(v - (mo.pose[i] ?? 9)) > 2e-4);
       if (moved || t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; mo.pose = pose; }
       flashL.intensity = flash * 0.06;
