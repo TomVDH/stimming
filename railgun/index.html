@@ -5912,7 +5912,10 @@ float dens(vec3 p, out vec3 em) {
   float pk = smoothstep(1.6, 3.2, age) * (1.0 - smoothstep(7.0, 11.0, age));
   vec3 nd = qf / max(length(qf), 1.0);
   float lobe = texture(uVol, nd * 0.55 + vec3(uFb.w, 0.12 * age, 0.31)).r - 0.5 + 0.6 * (texture(uVol, nd * 1.3 + vec3(0.2 * age, uFb.w, 0.7)).g - 0.5);
-  float rs = length(qf) / (Rf * (1.0 + pk * 0.45 * lobe)), fd = 0.0, vd = 0.0;
+  // Big heads bulge out of the ball from the first moment.
+  float head = texture(uVol, nd * 0.8 + vec3(0.41, uFb.w, 0.05 * age)).b - 0.45;
+  float eb = 0.35 * smoothstep(0.0, 0.8, age) * (1.0 - 0.5 * smoothstep(6.0, 12.0, age));
+  float rs = length(qf) / (Rf * (1.0 + pk * 0.45 * lobe + eb * head)), fd = 0.0, vd = 0.0;
   if (rs < 1.15 && age < 20.0) {
     float cool = smoothstep(1.5, 12.0, age);
     // The noise scales with the ball, so every cell runs outward with it.
@@ -5935,7 +5938,7 @@ float dens(vec3 p, out vec3 em) {
     float knot = smoothstep(0.36, 0.7, 0.65 * kn + 0.35 * fn);
     // The knots come in after 1 s and ease after 4 s.
     float kk = smoothstep(0.6, 1.8, age) * (1.0 - 0.6 * smoothstep(4.0, 7.0, age));
-    float T = fireEnv(age) * (0.6 + 0.8 * front) * core * mix(0.25 + 1.3 * fn * fn, 0.18 + 1.6 * knot * knot, kk);
+    float T = fireEnv(age) * (0.6 + 0.8 * front) * core * mix(0.25 + 1.3 * fn * fn, 0.1 + 2.1 * knot * knot, kk);
     // Cool fire is dim fire, not pink fire.
     // The glow dips from 1 to 6 s.
     // The hot knots then stay under the clip.
@@ -5946,7 +5949,7 @@ float dens(vec3 p, out vec3 em) {
     // Dark soot veins fill the cool cells between the knots.
     // The fire lights them from inside, so they read brown, not black.
     float vein = ball * (1.0 - knot) * smoothstep(0.25, 1.4, age) * (1.0 - smoothstep(3.0, 5.5, age));
-    vd = vein * (0.6 + 0.9 * smoothstep(0.5, 1.0, rs)) * 1.8 / Rf;
+    vd = vein * (0.6 + 0.9 * smoothstep(0.5, 1.0, rs)) * 3.2 / Rf;
   }
   // The cloud rises slowly as it cools.
   vec3 q = p - uBP - vec3(0.0, 25.0 * age, 0.0);
@@ -6297,7 +6300,8 @@ function updateBlast() {
   const Rb = R * (1 + 11 * (1 - Math.exp(-ha / 4.5)));
   u.uC.value.copy(blastFx.P).y += 25 * ha;
   // The bound holds the soot and the faster fire sphere.
-  u.uR.value = Math.max(Rb * 1.6, R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * 1.2);
+  // The fire's heads bulge out to about 1.4 of its radius.
+  u.uR.value = Math.max(Rb * 1.6, R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * 1.45);
   // The soot ball others fade behind: thick early, thin as it erodes.
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   // The tail's eaten end grows with the cloud and keeps its last size.
