@@ -133,7 +133,7 @@ let chargeMix = (() => {
 })();
 // The shot's sound: Tom's report sample. Mesa, Coil and Thump stay in code.
 const shotMix = 'report';
-// The game-over sound: a surge mix from MIX, or 'hum' for the plain charge hum.
+// The game-over sound: a surge mix from MIX, a take from GO_TAKES, or 'hum'.
 // Surge is the default (Tom, 2026-11-12); every stored pick moves to it once.
 let goMix = (() => {
   try {
@@ -168,8 +168,9 @@ const ui = initPage({ id: 'railgun', bar: {
     // The frame rate cap: film, the toy's own 30, or a fast screen.
     { type: 'choice', id: 'fps', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
     // The game over: the surge that plays as an unshot rock comes down.
+    // Ascent, Requiem and Undertow are takes of their own, not surge mixes.
     // A pick takes effect at the next strike; Strike test brings one on.
-    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
+    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target picks the rock or the capital ship.
@@ -8386,21 +8387,28 @@ function goMixP(key) {
 function surgeOver(ac, d) {
   if (!d || !ac) { surgeOverStop(!ac); return; }
   if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
-  if (!goSurge) {
-    goSurge = stackStart(ac, goMixP(goMix)); goSurge.ac = ac;
-    // A slow tape wobble on every voice; it settles as the rock comes down.
-    const lfo = ac.createOscillator(), lg = ac.createGain();
-    lfo.frequency.value = 0.55; lg.gain.value = 0;
-    lfo.connect(lg);
-    for (const n of goSurge.src) if (n.detune && n.frequency.value > 30) lg.connect(n.detune);
-    lfo.start(); goSurge.src.push(lfo); goSurge.wob = lg;
-  }
-  goSurge.wob.gain.setTargetAtTime(30 * (1 - THREE.MathUtils.smoothstep(d.u, 0.2, 0.85)), ac.currentTime, 0.3);
+  // A take from GO_TAKES builds its own voices; a surge mix builds a stack.
+  if (!goSurge) { goSurge = GO_TAKES[goMix] ? GO_TAKES[goMix](ac) : goStack(ac, goMixP(goMix)); goSurge.ac = ac; }
+  (goSurge.upd || goStackUpdate)(ac, goSurge, d);
+}
+// A machine-free stack for the game over, with a slow tape wobble.
+function goStack(ac, P) {
+  const h = stackStart(ac, P);
+  // The wobble settles as the rock comes down.
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  lfo.frequency.value = 0.55; lg.gain.value = 0;
+  lfo.connect(lg);
+  for (const n of h.src) if (n.detune && n.frequency.value > 30) lg.connect(n.detune);
+  lfo.start(); h.src.push(lfo); h.wob = lg;
+  return h;
+}
+function goStackUpdate(ac, h, d) {
+  h.wob.gain.setTargetAtTime(30 * (1 - THREE.MathUtils.smoothstep(d.u, 0.2, 0.85)), ac.currentTime, 0.3);
   const ss = THREE.MathUtils.smoothstep;
   // The chord resolves gently near contact and holds through the burn.
   // A live charge keeps the lead; the surge ducks under it.
   // The machines build straight with nearness, across the whole fall.
-  stackUpdate(ac, goSurge, {
+  stackUpdate(ac, h, {
     c: d.u, lock: d.lock ?? d.u >= 0.999, rage: ss(d.u, 0.55, 0.85),
     // A soft accent and a slow glide: the choir eases in, it does not hit.
     accent: 0.25, glide: 1.1,
@@ -8410,7 +8418,7 @@ function surgeOver(ac, d) {
     choir: d.choir ?? 1,
   });
   // Crush: the soft clip is driven hard, so the chord breaks up.
-  if (d.crush) goSurge.cg.gain.setTargetAtTime(0.8 + 0.8 * d.u + 1.25 * d.over + 5 * d.crush, ac.currentTime, 0.1);
+  if (d.crush) h.cg.gain.setTargetAtTime(0.8 + 0.8 * d.u + 1.25 * d.over + 5 * d.crush, ac.currentTime, 0.1);
 }
 // now: a hard stop for mute and a hidden tab; else a two-second fade.
 function surgeOverStop(now = false) {
@@ -8421,6 +8429,179 @@ function surgeOverStop(now = false) {
   for (const n of [h.g, h.sg]) n.gain.setTargetAtTime(0, t, 0.5);
   for (const n of h.src) n.stop(t + 2.5);
   track(t + 2.6, ...h.src);
+}
+/* ---------- game-over takes ---------- */
+// Three takes beside the surge mixes; the Dev row picks one.
+// Each take returns { src, g, sg, upd }; the stop fades g and sg.
+// Ascent: a Shepard hum climbs forever under the Surge choir.
+// Requiem: a sung minor chord over a racing heart; it turns major.
+// Undertow: a Shepard hum and a dark cluster sink, then open.
+const GO_TAKES = { ascent: goAscent, requiem: goRequiem, undertow: goUndertow };
+// A Shepard hum: octave-spaced tones under one fixed bell.
+// The tones glide by octaves, so the pitch seems to move forever.
+function shepard(ac, src, dest, base = 27.5, n = 7) {
+  const lp = filt(ac, 'lowpass', 300, 0.7), g = ac.createGain();
+  g.gain.value = 0; lp.connect(g).connect(dest);
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const pg = ac.createGain();
+    pg.gain.value = 0; pg.connect(lp);
+    const os = [-5, 5].map(dt => { const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = base; o.detune.value = dt; o.connect(pg); o.start(); src.push(o); return o; });
+    parts.push({ os, pg, p: -1 });
+  }
+  return { g, lp, parts, base, n, ph: 0, last: 0, land: null };
+}
+// rate: octaves a second; a negative rate falls.
+// lock: the tones settle on the root's octaves and hold.
+function shepardStep(ac, s, rate, lock) {
+  const t = ac.currentTime, dt = s.last ? Math.min(t - s.last, 0.2) : 0;
+  s.last = t;
+  if (lock) {
+    // The glide completes its octave in its own direction.
+    s.land ??= rate >= 0 ? Math.ceil(s.ph) : Math.floor(s.ph);
+    s.ph += (s.land - s.ph) * Math.min(1, dt / 0.5);
+  } else { s.land = null; s.ph += rate * dt; }
+  for (let i = 0; i < s.n; i++) {
+    const P = s.parts[i], p = (((i + s.ph) % s.n) + s.n) % s.n, f = s.base * Math.pow(2, p);
+    // A wrap jumps seven octaves at zero level, so it jumps at once.
+    const wrap = P.p >= 0 && Math.abs(p - P.p) > s.n / 2;
+    for (const o of P.os) {
+      if (wrap) { o.frequency.cancelScheduledValues(t); o.frequency.setValueAtTime(f, t); } else o.frequency.setTargetAtTime(f, t, 0.04);
+    }
+    P.pg.gain.setTargetAtTime(0.06 * (0.5 - 0.5 * Math.cos(2 * Math.PI * p / s.n)), t, 0.04);
+    P.p = p;
+  }
+}
+// Ascent: the Surge choir over a hum that climbs from the horizon line.
+function goAscent(ac) {
+  const h = goStack(ac, goMixP('penta'));
+  h.shep = shepard(ac, h.src, h.cg);
+  h.upd = (ac, h, d) => {
+    goStackUpdate(ac, h, d);
+    const t = ac.currentTime, s = h.shep;
+    // The climb quickens to an octave in four seconds at contact.
+    shepardStep(ac, s, 0.03 + 0.22 * d.u * d.u, d.lock);
+    s.lp.frequency.setTargetAtTime(300 * Math.pow(2, 3.3 * d.u), t, 0.1);
+    s.g.gain.setTargetAtTime(GO_SHEP * (0.35 + 1.25 * d.u), t, 0.1);
+  };
+  return h;
+}
+// The Shepard hum's level into the stack's soft clip.
+const GO_SHEP = 1.6;
+// Undertow: a dark cluster sinks a fourth, then opens bright at the lock.
+SURGE.undertow = {
+  root: 0, wave: 'saw', mech: [], sub: false,
+  bass: [-12, 0, 7, 12], mid: [12, 19, 24, 28, 31, 36, 40, 43], high: [43, 48, 52, 55, 60, 64],
+  pre: { bass: [-12, -1, 0, 1], mid: [11, 12, 13, 14, 15, 16, 17, 18], high: [22, 23, 24, 25, 26, 27] },
+};
+function goUndertow(ac) {
+  const h = goStack(ac, { ...MIX0, stack: 'undertow', verb: 0.6, pre: 0.08, dark: 4500 });
+  // One offset bends every swarm voice down together.
+  const bend = ac.createConstantSource();
+  bend.offset.value = 0;
+  for (const v of h.voices) for (const o of v.os) bend.connect(o.detune);
+  bend.start(); h.src.push(bend); h.bend = bend;
+  h.shep = shepard(ac, h.src, h.cg);
+  // The sub sinks from E1 to A0 across the fall.
+  const sub = ac.createOscillator(), subG = ac.createGain();
+  subG.gain.value = 0.6; subG.connect(h.sg);
+  sub.frequency.value = 41.2; sub.connect(subG); sub.start(); h.src.push(sub); h.sub = sub;
+  h.upd = (ac, h, d) => {
+    goStackUpdate(ac, h, d);
+    const t = ac.currentTime, s = h.shep;
+    shepardStep(ac, s, -(0.03 + 0.22 * d.u * d.u), d.lock);
+    s.lp.frequency.setTargetAtTime(250 * Math.pow(2, 2.6 * d.u), t, 0.1);
+    s.g.gain.setTargetAtTime(GO_SHEP * (0.35 + 1.25 * d.u), t, 0.1);
+    // At the lock the bend lets go, so the chord rises as it opens.
+    h.bend.offset.setTargetAtTime(d.lock ? 0 : -500 * Math.pow(d.u, 1.5), t, d.lock ? 0.5 : 0.2);
+    h.sub.frequency.setTargetAtTime(41.2 * Math.pow(2, -0.58 * d.u), t, 0.3);
+  };
+  return h;
+}
+// Requiem voices: [minor tone, lock tone], in semitones from A1.
+// The lock lifts each minor third to a major third.
+const REQ = [[0, 0], [7, 7], [12, 12], [15, 16], [19, 19], [24, 24], [27, 28], [31, 31], [36, 36], [39, 40], [43, 43]];
+// The Requiem's levels: the voices, the pedal, the heart and the whole take.
+const GO_REQ = { voice: 0.42, pedal: 0.25, heart: 0.5, out: 0.27 };
+function goRequiem(ac) {
+  const src = [], R = 55;
+  const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
+  // One soft clip glues the take; the stop fades g and sg.
+  const drive = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain(), sg = ac.createGain();
+  const curve = new Float32Array(257);
+  for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
+  shape.curve = curve; shape.oversample = '2x';
+  drive.gain.value = 0.6; g.gain.value = 0; sg.gain.value = 0;
+  drive.connect(shape).connect(g).connect(kit.out); sg.connect(kit.out);
+  // The pedal: A0, A1 and a soft square on A2, under a low lid.
+  const plp = filt(ac, 'lowpass', 200, 0.8), pg = ac.createGain(), sq = ac.createGain();
+  pg.gain.value = 0; sq.gain.value = 0.3;
+  plp.connect(pg).connect(drive); sq.connect(plp);
+  osc('sine', R / 2, plp); osc('sine', R, plp, 3); osc('square', 2 * R, sq, -4);
+  // The choir bus, and three slow vibratos shared round the voices.
+  const cb = ac.createGain();
+  cb.gain.value = 0; cb.connect(drive);
+  const vib = [4.7, 5.2, 5.7].map(fr => { const lg = ac.createGain(); lg.gain.value = 0; osc('sine', fr, lg); return lg; });
+  const voices = REQ.map(([tgt, maj], i) => {
+    const low = tgt < 12, vg = ac.createGain(), pn = ac.createStereoPanner();
+    const f1 = low ? filt(ac, 'lowpass', 320, 0.7) : filt(ac, 'bandpass', VOWEL.oo[0], 6), f2 = filt(ac, 'bandpass', low ? VOWEL.uu[1] : VOWEL.oo[1], 8);
+    vg.gain.value = 0; pn.pan.value = (i % 2 ? 1 : -1) * Math.min(0.8, 0.08 * i);
+    f1.connect(vg); f2.connect(vg); vg.connect(pn).connect(cb);
+    // Two saws six cents apart make each voice.
+    const os = [-6, 6].map(dt => { const o = osc('sawtooth', R * Math.pow(2, (tgt - 2) / 12), f1, dt); o.connect(f2); vib[i % 3].connect(o.detune); return o; });
+    // Voices enter low to high.
+    return { os, f1, f2, vg, tgt, maj, low, enter: 0.05 + 0.7 * i / (REQ.length - 1), ph: 6.28 * Math.random(), sour: Math.random() < 0.5 ? -1 : 1 };
+  });
+  // The plain's echoes take the whole take.
+  const vs = ac.createGain(), dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', 6000, 0.5);
+  vs.gain.value = 0; dl.delayTime.value = 0.06;
+  g.connect(vs).connect(dl).connect(dk).connect(plainVerb(ac));
+  return { src, g, sg, drive, plp, pg, cb, vib, voices, vs, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
+}
+// One heartbeat: a low lub, then a softer dub gap seconds later.
+function heartbeat(ac, dest, t, gap, k) {
+  track(t + gap + 0.5,
+    blip(ac, dest, t, { f0: 58, f1: 36, glide: 0.18, peak: 0.55 * k, a: 0.008, dur: 0.3 }),
+    blip(ac, dest, t, { type: 'triangle', f0: 120, f1: 70, glide: 0.1, peak: 0.12 * k, a: 0.005, dur: 0.14 }),
+    blip(ac, dest, t + gap, { f0: 50, f1: 33, glide: 0.15, peak: 0.38 * k, a: 0.008, dur: 0.26 }),
+    blip(ac, dest, t + gap, { type: 'triangle', f0: 105, f1: 62, glide: 0.1, peak: 0.08 * k, a: 0.005, dur: 0.12 }));
+}
+function requiemUpdate(ac, h, d) {
+  const t = ac.currentTime, ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp;
+  const u = d.u, cu = d.choir ?? 1, lock = d.lock ?? u >= 0.999, ov = 0.5 * d.over, vol = d.vol * (charge ? 0.35 : 1);
+  if (lock && !h.locked) h.lockAt = t;
+  h.locked = lock;
+  const accent = 0.3 * Math.exp(-(t - h.lockAt) / 1.2);
+  // The heart races from 44 to 160 beats a minute; it stops at the lock.
+  if (!lock && u > 0.02) {
+    const per = 60 / (44 + 116 * Math.pow(u, 1.6));
+    if (h.next < t - 0.5) h.next = t + 0.05;
+    while (h.next < t + 0.2) { heartbeat(ac, h.sg, h.next, Math.min(0.3, 0.42 * per), 0.3 + 0.7 * u); h.next += per; }
+  }
+  h.sg.gain.setTargetAtTime(GO_REQ.heart * vol, t, 0.08);
+  // The pedal grows from the horizon line; its lid opens with nearness.
+  h.pg.gain.setTargetAtTime(GO_REQ.pedal * (0.15 + 0.85 * u), t, 0.1);
+  h.plp.frequency.setTargetAtTime(200 * Math.pow(2, 1.6 * u), t, 0.1);
+  // The vowel opens from oo to ah, and screams under the strain.
+  const vo = ss(cu, 0.2, 0.9);
+  const F1 = lerp(lerp(VOWEL.oo[0], VOWEL.ah[0], vo), VOWEL.scream[0], ov), F2 = lerp(lerp(VOWEL.oo[1], VOWEL.ah[1], vo), VOWEL.scream[1], ov);
+  const B2 = lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * vo + 0.5 * ov);
+  for (const v of h.voices) {
+    const k = ss(cu, v.enter, v.enter + 0.15);
+    // A voice scoops up two semitones as it enters, and wanders until the lock.
+    const p = (lock ? v.maj : v.tgt) - 2 * (1 - k) + (lock ? 0 : 0.25 * Math.sin(t * 0.6 + v.ph)) + ov * v.sour * 0.6;
+    for (const o of v.os) o.frequency.setTargetAtTime(55 * Math.pow(2, p / 12), t, lock ? 0.4 : 0.15);
+    if (v.low) v.f2.frequency.setTargetAtTime(B2, t, 0.1);
+    else { v.f1.frequency.setTargetAtTime(F1, t, 0.1); v.f2.frequency.setTargetAtTime(F2, t, 0.1); }
+    v.vg.gain.setTargetAtTime(GO_REQ.voice * k, t, 0.1);
+  }
+  for (const l of h.vib) l.gain.setTargetAtTime(14 * cu, t, 0.2);
+  // The choir swells over the pedal as its voices fill in.
+  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (1 + accent), t, 0.08);
+  // Crush drives the soft clip hard, so the chord breaks up in the burn.
+  h.drive.gain.setTargetAtTime(0.4 + 0.9 * u + 1.25 * d.over + 4 * (d.crush || 0), t, 0.1);
+  h.g.gain.setTargetAtTime(GO_REQ.out * vol, t, 0.08);
+  h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (1 + accent) * vol, t, 0.1);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.
 function bell(ac, h, t, u) {
