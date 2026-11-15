@@ -1,11 +1,11 @@
 ---
 # stimming-0d7r
 title: 'Spark wheel: more spark types, a hot wheel, roller detail'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T08:03:59Z
+updated_at: 2026-11-15T08:05:18Z
 parent: stimming-oh7b
 ---
 
@@ -70,3 +70,15 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
   - Wobble: the pointer's place across the stage moves the camera up to 1.2 to the side; it still looks at the same point. It eases with a 0.22 s time constant, holds still in a drag, and returns when the pointer leaves. Reduced motion and touch do not move it. The loop sleeps again once it settles.
   - Not done: device tilt on a phone. Its events never stop, so the page would never sleep, and iOS asks for permission.
   - No still of the final view: the pane was hidden at the end.
+
+- 2026-11-15: Tom saw the swept body and the roller in the pane and said "It is right" to both. These looks are approved; keep them when you fix anything near them.
+
+## Summary of Changes
+
+- Eight spark types in a stepper, each with its own trick; a rim that heats and sheds the heat in a flare, one kind per type.
+- The mount is one swept turquoise enamel body with a fluted brass column and a metal flint; the roller has cream enamel faces with five swept slots and a knurled steel rim. The materials are physically based.
+- A dark teal room, a low camera that stands a little further back, a sideways wobble with the pointer.
+- Every sound goes through one mix at 0.3.
+- Review fixes and two leftovers are in; twelve probe test sets pass (t1 to t6, t8 to t13).
+- Open elsewhere: code comments (stimming-9f1c); the menu icon (stimming-q6zb), whose two drawn icons still show the old steel wheel.
+- Never checked: sound by ear, frame rate on a visible screen, a phone, real reduced motion.
