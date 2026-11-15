@@ -145,6 +145,10 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 const ALT = 11;            // cruise height in km
+// The arrow keys climb and dive between these heights, in km.
+// The mid layer tops out at 6.1 km and the cirrus starts at 12.1 km.
+const ALT_LO = 7, ALT_HI = 12;
+let alt = ALT;
 // The land below: 0 flat country, 1 relief, 2 relief with parallax.
 // The hidden ode world: ?ode, or type its name. It needs relief land.
 const ODE = qs.has('ode');
@@ -152,7 +156,7 @@ const RELIEF = Math.max(ODE ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
 // Its start: map x and y in source pixels, and km per pixel.
 const ODE_AT = [960, 638, 4];
 const SPEED = 0.25;        // ground speed in km/s, real cruise
-const HOR = horizonEl(ALT);
+let HOR = horizonEl(ALT);
 // Each hour places one light: the sun by day and twilight, the moon at midnight.
 // az: bearing from straight out, toward the nose positive, in degrees.
 // rel: height above the eye's horizon, in degrees; the horizon dips 3.4.
@@ -181,7 +185,7 @@ const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', afternoon: 
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // The baked sky and the light terms that follow from it.
 let sky = null;
-const skyArgs = h => [ALT, HOR + h.rel * D2R, h.E];
+const skyArgs = h => [alt, HOR + h.rel * D2R, h.E];
 function buildSky(baked) {
   const h = HOURS[opts.hour] || HOURS.dusk;
   const el = HOR + h.rel * D2R, az = h.az * D2R;
@@ -285,7 +289,7 @@ renderer.shadowMap.autoUpdate = false;
 // The shaders keep their own version line; three.js adds it again.
 const noVer = src => src.replace(/^\s*#version 300 es\s*\n/, '');
 // Each declared uniform gets a slot with a zero value of its type.
-const ZERO = { float: 1, int: 1, bool: 1, vec2: 2, vec3: 3, vec4: 4, ivec2: 2, ivec3: 3, ivec4: 4 };
+const ZERO = { float: 1, int: 1, bool: 1, vec2: 2, vec3: 3, vec4: 4, ivec2: 2, ivec3: 3, ivec4: 4, mat3: 9 };
 function declared(src) {
   const out = {};
   for (const [, type, list] of src.matchAll(/uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+([^;]+);/g)) {
@@ -313,6 +317,7 @@ const passScene = mat => { const sc = new THREE.Scene(), m = new THREE.Mesh(quad
 // A pass's u maps each uniform name to its material slot.
 const slots = m => new Proxy({}, { get: (_, k) => ({ m, n: String(k).replace('[0]', '') }) });
 const put = (l, v) => { const U = l.m.uniforms; if (U[l.n]) U[l.n].value = v; else U[l.n] = { value: v }; };
+const attM = new THREE.Matrix3();
 const UG = {
   uniform1f: put, uniform1i: put, uniform1fv: put, uniform2fv: put, uniform3fv: put, uniform4fv: put,
   uniform2f: (l, a, b) => put(l, [a, b]), uniform3f: (l, a, b, c) => put(l, [a, b, c]), uniform4f: (l, a, b, c, d) => put(l, [a, b, c, d]),
@@ -570,9 +575,17 @@ function quadNormal(v) {
 
 let W = 1, H = 1, dpr = 1, t = 0;
 // The plane banks gently left; the roll drifts slowly.
-let bank = 6 * D2R;
-// Aircraft axes in the world: the left wing dips by the bank.
-const toWorld = v => [v[0], v[1] * Math.cos(bank) - v[2] * Math.sin(bank), v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+// Pitch lifts the nose (+x) while the plane climbs, and drops it in a dive.
+let bank = 6 * D2R, pitch = 0;
+// Aircraft axes in the world: pitch about the span axis, after the bank.
+// Rows of ATT, the matrix Rz(pitch) Rx(bank).
+const ATT = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+function setAtt() {
+  const cb = Math.cos(bank), sb = Math.sin(bank), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  ATT[0] = [cp, -sp * cb, sp * sb]; ATT[1] = [sp, cp * cb, -cp * sb]; ATT[2] = [0, sb, cb];
+}
+const toWorld = v => ATT.map(r => r[0] * v[0] + r[1] * v[1] + r[2] * v[2]);
+setAtt();
 // The seat: over the wing or a few rows aft, on the left or the right.
 // An aft seat moves the whole aircraft forward of the eye, along the roll axis.
 // The right side shows the left side's mirror image: the aircraft is symmetric.
@@ -808,6 +821,33 @@ function stepWeather(dt) {
   fog.level += (goal - fog.level) * (1 - Math.exp(-dt / 0.6));
 }
 
+/* ---------- climb and dive ---------- */
+// The stick sets a vertical speed of 0.15 km/s; the plane eases into it.
+// Near each height limit the climb slows to a stop.
+const climb = { vs: 0, skyAlt: ALT, baking: false };
+function stepClimb(dt) {
+  const room = stick.pitch > 0 ? ALT_HI - alt : alt - ALT_LO;
+  const want = stick.pitch * 0.15 * clamp(room / 0.6);
+  climb.vs += (want - climb.vs) * (1 - Math.exp(-dt / 1.2));
+  alt = clamp(alt + climb.vs * dt, ALT_LO, ALT_HI);
+  // The nose pitches one degree per 25 m/s of climb: six at most.
+  pitch = climb.vs / 0.025 * D2R;
+  rebakeSky();
+}
+// The sky table and the horizon dip follow the height, 0.2 km at a time.
+// The bake runs in a worker; a new hour drops a stale result.
+function rebakeSky() {
+  if (climb.baking || Math.abs(alt - climb.skyAlt) < 0.2) return;
+  climb.baking = true;
+  const a = alt, hor = horizonEl(a), hour = opts.hour, h = HOURS[hour] || HOURS.dusk;
+  offThread('./sky.js', bake, [a, hor + h.rel * D2R, h.E]).then(b => {
+    climb.baking = false;
+    if (opts.hour !== hour) return;
+    HOR = hor; climb.skyAlt = a;
+    buildSky(b); uploadSky();
+  }, () => { climb.baking = false; });
+}
+
 /* ---------- head and glass ---------- */
 // Drag moves the head; hover adds a small sway on mouse devices.
 const head = { x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, hx: 0, hy: 0, thx: 0, thy: 0 };
@@ -835,7 +875,7 @@ function strike() {
   strikeT = t;
   elmo.surge = 1;
   // The bolt's light whites out the view; it burns at the plane's own height.
-  flash(cam.x + 0.05, cam.z + 0.03, 3, null, ALT);
+  flash(cam.x + 0.05, cam.z + 0.03, 3, null, alt);
   if (!reduce) turb.a[1] += 4;
   crack();
 }
@@ -1018,7 +1058,9 @@ function step(dt) {
   // The plane cruises at a steady pace.
   cam.x += (reduce ? SPEED * 0.4 : SPEED) * dt;
   // The bank breathes between about 3 and 9 degrees.
-  if (!reduce) stepBank();
+  if (!reduce) stepBank(dt);
+  stepClimb(dt);
+  setAtt();
   const k = 1 - Math.exp(-dt / 0.35);
   // The head eases toward its target, so moves feel bodily.
   const kh = 1 - Math.exp(-dt / 0.18);
@@ -1113,10 +1155,10 @@ const rocketAt = (r, u) => {
   return [r.x + Math.cos(r.hd) * dr, h, r.z + Math.sin(r.hd) * dr];
 };
 // World point relative to the eye, from map x, height and map z.
-const rel = (x, h, z) => { const X = x - cam.x, Z = z - cam.z; return [X, h - ALT - (X * X + Z * Z) / 12742, Z]; };
+const rel = (x, h, z) => { const X = x - cam.x, Z = z - cam.z; return [X, h - alt - (X * X + Z * Z) / 12742, Z]; };
 // True when a point above the ground stands in sunlight, past the Earth's shadow.
 function sunlit(p) {
-  const P = [p[0], 6371 + ALT + p[1], p[2]], b = dot(P, sky.sun), r2 = dot(P, P);
+  const P = [p[0], 6371 + alt + p[1], p[2]], b = dot(P, sky.sun), r2 = dot(P, P);
   const rmin = b < 0 ? Math.sqrt(Math.max(0, r2 - b * b)) : Math.sqrt(r2);
   return clamp((rmin - 6371 - 12) / 10);
 }
@@ -1502,7 +1544,9 @@ function shared(u) {
   // The shader takes the cabin axes; it turns outside rays by the bank.
   UG.uniform3fv(u.uF, basis.Fa); UG.uniform3fv(u.uR, basis.Ra); UG.uniform3fv(u.uU, basis.Ua);
   UG.uniform3fv(u.uEye, basis.eye);
-  UG.uniform2f(u.uBank, Math.cos(bank), Math.sin(bank));
+  // Matrix3.set takes rows, as ATT holds them.
+  attM.set(...ATT[0], ...ATT[1], ...ATT[2]);
+  UG.tex(u.uAtt, attM); UG.uniform1f(u.uAlt, alt);
   UG.uniform1f(u.uFocal, basis.focal);
   UG.uniform3fv(u.uSun, sky.sun);
   UG.uniform2fv(u.uSunAz, sky.sunAz);
@@ -1596,7 +1640,7 @@ function render() {
   renderer.setRenderTarget(outRT);
   renderer.clear();
   // The aircraft goes first; the outside then fills only the uncovered pixels.
-  tipBend = wing3.update({ basis, bank, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
+  tipBend = wing3.update({ basis, bank, pitch, sky, HOR, W, H, t, flash, strobe: reduce ? 0 : strobe(), tip: toWorldA(TIP), seatDx, nav: navCol(), turb: 0.4 + opts.storm, bolt: lastBolt, gust: turb.gw, fogLevel: fog.level, wet: opts.rain > 0 ? 0.6 + 0.4 * opts.rain : 0,
     veil: (1 - towerCover(sky.sun)) * (1 - opts.storm) ** 2 * (1 - fog.level), storm: opts.storm,
     // The share of cloud below: Clear, Broken, Deck, and more in a storm.
     cover: Math.max(clamp((0.66 - opts.cloud) / 0.3, 0.05, 0.95), opts.storm),
@@ -1610,7 +1654,7 @@ function render() {
   }
   // Bolts add their light over the outside; the wing's depth hides them.
   // A thick bank swallows them.
-  lastBolt = bolts.update({ flashes, camXZ: [cam.x, cam.z], H: ALT, wingCam: wing3.cam, outW: outBuf.w, outH: outBuf.h, cover: opts.cloud, haze: smooth(0.3, 0.9, fog.level), sun: Math.max(...sky.sunL) });
+  lastBolt = bolts.update({ flashes, camXZ: [cam.x, cam.z], H: alt, wingCam: wing3.cam, outW: outBuf.w, outH: outBuf.h, cover: opts.cloud, haze: smooth(0.3, 0.9, fog.level), sun: Math.max(...sky.sunL) });
   renderer.render(bolts.scene, bolts.cam);
   // Resolve into the next history target; the cabin pass reads that.
   sizeHist();
@@ -1665,8 +1709,8 @@ function screenOf(v) {
   if (z < 0.05) return null;
   return [W / 2 + dot(v, basis.R) / z * basis.focal, H / 2 + dot(v, basis.U) / z * basis.focal];
 }
-// World to aircraft frame: undo the bank.
-const toAir = v => [v[0], v[1] * Math.cos(bank) + v[2] * Math.sin(bank), -v[1] * Math.sin(bank) + v[2] * Math.cos(bank)];
+// World to aircraft frame: undo the attitude with the transpose.
+const toAir = v => [0, 1, 2].map(c => ATT[0][c] * v[0] + ATT[1][c] * v[1] + ATT[2][c] * v[2]);
 function sdBox2(x, y, bx, by, rr) {
   const qx = Math.abs(x) - bx + rr, qy = Math.abs(y) - by + rr;
   return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
@@ -1718,7 +1762,7 @@ function towerHit(c, d) {
     const t = (d[0] * cx + d[2] * cz) / a2;
     if (t <= 0) continue;
     const m = Math.hypot(d[0] * t - cx, d[2] * t - cz);
-    const y = Math.hypot(d[0] * t, 6371 + ALT + d[1] * t, d[2] * t) - 6371;
+    const y = Math.hypot(d[0] * t, 6371 + alt + d[1] * t, d[2] * t) - 6371;
     if (m < rr && y > lo && y < hi) return { t, y };
   }
   return null;
@@ -1826,7 +1870,7 @@ function tapAt(x, y) {
     flash(cam.x + d[0] * h.t, cam.z + d[2] * h.t, 1.2, c, clamp(h.y, 3, c.top - 0.8));
     return;
   }
-  const Rr = 6371, b = (Rr + ALT) * d[1], c = (ALT - 2) * (2 * Rr + ALT + 2), disc = b * b - c;
+  const Rr = 6371, b = (Rr + alt) * d[1], c = (alt - 2) * (2 * Rr + alt + 2), disc = b * b - c;
   if (disc < 0 || b > 0) return;
   const tt = -b - Math.sqrt(disc);
   flash(cam.x + d[0] * tt, cam.z + d[2] * tt, 1.2);
@@ -1898,14 +1942,25 @@ stage.addEventListener('pointercancel', e => { touches.delete(e.pointerId); drag
 stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { head.thx = 0; head.thy = 0; } });
 // The wheel leans toward the glass or back into the seat.
 stage.addEventListener('wheel', e => { e.preventDefault(); moveHead(0, 0, -e.deltaY * 0.0004); }, { passive: false });
-// Arrow keys move the head; plus and minus lean.
+// Arrow keys fly the plane: left and right bank, up and down climb and dive.
+// Shift and the arrow keys move the head; plus and minus lean.
+const held = new Set();
+const setStick = () => {
+  // Left banks the left wing down; a mirrored seat sees its own wing rise.
+  stick.roll = ((held.has('ArrowLeft') ? 1 : 0) - (held.has('ArrowRight') ? 1 : 0)) * (mirror ? -1 : 1);
+  stick.pitch = (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0);
+  if (stick.roll || stick.pitch) wake();
+};
 stage.addEventListener('keydown', e => {
+  if (e.key.startsWith('Arrow') && !e.shiftKey) { e.preventDefault(); held.add(e.key); setStick(); return; }
   const m = { ArrowLeft: [-0.02, 0, 0], ArrowRight: [0.02, 0, 0], ArrowUp: [0, 0.02, 0], ArrowDown: [0, -0.02, 0], '+': [0, 0, 0.02], '=': [0, 0, 0.02], '-': [0, 0, -0.02] }[e.key];
   if (!m) return;
   e.preventDefault();
   if (mirror) m[0] = -m[0];
   moveHead(...m);
 });
+stage.addEventListener('keyup', e => { if (held.delete(e.key)) setStick(); });
+addEventListener('blur', () => { held.clear(); setStick(); });
 // Breathe: hold B, or hold the cue itself on touch.
 const cueEl = stage.querySelector('.cue');
 cueEl.innerHTML = matchMedia('(pointer: coarse)').matches ? 'Hold here to breathe' : 'Hold <kbd>B</kbd> to breathe';
@@ -1954,7 +2009,7 @@ const ui = initPage({
       { type: 'choice', id: 'flying', label: 'Flying', value: '', options: [{ value: 'rocket', label: 'Rocket' }, { value: 'jet', label: 'Jet' }], onPick: v => startEvent(v) },
     ],
     quality: true,
-    keys: [['drag', 'lean and peer'], ['scroll', 'lean closer'], ['click', 'a storm flashes'], ['D', 'dim the glass']],
+    keys: [['drag', 'lean and peer'], ['scroll', 'lean closer'], ['click', 'a storm flashes'], ['arrows', 'bank, climb, dive']],
   },
 });
 // Quality sets the canvas size, the pass 1 size and the march steps.
@@ -2000,7 +2055,15 @@ requestAnimationFrame(() => canvas.classList.add('on'));
 // Most turns stay left-wing-down, as the seat looks best; a few roll right.
 // A roll eases in and out at about 2 degrees a second; the hold lasts 12 to 45 s.
 const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
-function stepBank() {
+// The stick: -1, 0 or 1 on each axis, from the arrow keys.
+const stick = { roll: 0, pitch: 0 };
+function stepBank(dt) {
+  // The pilot rolls at 8 degrees a second, to 30 degrees at most.
+  // The autopilot holds the new bank for 20 s, then flies its own turns again.
+  if (stick.roll) {
+    roll.to = roll.from = clamp(roll.to + stick.roll * 8 * dt, -30, 30);
+    roll.t0 = t - roll.dur; roll.hold = 20;
+  }
   if (t > roll.t0 + roll.dur + roll.hold) {
     roll.from = bank / D2R;
     // About one turn in five is steep: up to 28 degrees, rolled in briskly.

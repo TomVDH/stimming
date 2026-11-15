@@ -378,7 +378,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, cover = 0.5, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
+    update({ basis, bank, pitch = 0, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, cover = 0.5, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -386,7 +386,8 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       for (const m of [paint, flapPaint, skinPaint, skinFlap]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
       // The skin's roughness map stores a scaled factor; this undoes the scale.
       skinPaint.roughness *= SK.r; skinFlap.roughness *= SK.r;
-      air.rotation.x = bank;
+      // Pitch turns about the span axis, after the bank: Rz(pitch) Rx(bank).
+      air.rotation.set(bank, 0, pitch, 'ZYX');
       // An aft seat sees the whole aircraft further forward.
       air.position.x = seatDx;
       navL.color.setRGB(...nav);
@@ -406,8 +407,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
         mo.f[j] = Math.max(-0.9, Math.min(0.9, mo.f[j] + mo.fv[j] * sd));
       });
       FOG_U.uFlex.value.set(mo.f[0], mo.f[1]);
-      FOG_U.uUpW.value.set(0, 1, 0).applyAxisAngle(V(1, 0, 0), bank);
-      FOG_U.uSpanW.value.set(0, 0, 1).applyAxisAngle(V(1, 0, 0), bank);
+      air.updateMatrix();
+      FOG_U.uUpW.value.set(0, 1, 0).applyQuaternion(air.quaternion);
+      FOG_U.uSpanW.value.set(0, 0, 1).applyQuaternion(air.quaternion);
       FOG_U.uFogLvl.value = fogLevel;
       FOG_U.uFogWisp.value.set(...wisp);
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
@@ -438,7 +440,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       sun.intensity = m / 1.5 * veil;
       // Storm murk also dulls the sky the paint mirrors.
       scene.environmentIntensity = 1 - 0.6 * storm;
-      const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
+      const c = V(3 + seatDx, -3, 13).applyQuaternion(air.quaternion);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
       if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }

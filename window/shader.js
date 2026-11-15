@@ -11,11 +11,14 @@ const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 
 // Noise, the window shape and the sky lookup, for both passes.
 const common = ({ ALT, WIN }) => `
-const float R = 6371.0, H = ${ALT.toFixed(1)};
+const float R = 6371.0;
+// The eye's height in km: the arrow keys climb and dive.
+uniform float uAlt;
+#define H uAlt
 const float PI = 3.14159265;
 // Lightning's colour inside cloud: a cold, slightly violet blue-white.
 const vec3 FLASH_C = vec3(0.64, 0.72, 1.0);
-uniform vec3 uEye; uniform vec2 uBank;
+uniform vec3 uEye; uniform mat3 uAtt;
 uniform sampler2D uSkyL, uSkyT; uniform vec2 uSunAz; uniform float uHorEl;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
@@ -36,7 +39,7 @@ float sdRecess(vec2 p, float z) { float k = clamp(z / DEPTH, 0.0, 1.0); return s
 // The ray's point on the plane at depth z, in window metres.
 vec2 at(vec3 da, float z) { return (uEye + da * ((z - uEye.z) / da.z)).xy; }
 // Outside rays turn with the bank of the plane.
-vec3 toWorld(vec3 da) { return vec3(da.x, da.y * uBank.x - da.z * uBank.y, da.y * uBank.y + da.z * uBank.x); }
+vec3 toWorld(vec3 da) { return uAtt * da; }
 
 // The baked sky table: azimuth from the light, then elevation.
 // Rows crowd near the eye's horizon, as in sky.js.
@@ -2492,7 +2495,7 @@ vec3 irr(vec3 P, vec3 n, int g) {
   return s * SKIN_A / (fg * fg * PI);
 }
 // The sun in the cabin frame: the bank turned back out.
-vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
+vec3 sunCabin() { return transpose(uAtt) * uSun; }
 // How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
 // The penumbra grows with the distance to the opening and the disc's size.
 float sunThrough(vec3 P) {
