@@ -228,8 +228,8 @@ float puffAt(float rel) {
 float smokeLines(float u, float fw, float rel) {
   float k = floor(u);
   float p = puffAt(rel);
-  float w = uW * (1.0 + 1.5 * p);
-  float gain = (0.74 + 0.26 * h11(k)) * (1.0 + uFlick * (vn(rel * 1.3 + k * 7.31) - 0.5)) * (1.0 + 0.7 * p);
+  float w = uW * (1.0 + 2.6 * p);
+  float gain = (0.74 + 0.26 * h11(k)) * (1.0 + uFlick * (vn(rel * 1.3 + k * 7.31) - 0.5)) * (1.0 + 1.1 * p);
   return (lineSoft(u, w, fw) + 0.05 * lineSoft(u, w * 4.0, fw)) * gain;
 }
 // Torn smoke has a toe: thin mixed haze sinks to black, dense wisps stay.
@@ -859,10 +859,11 @@ let flowT = 0;
 const puffs = [-1e4, -1e4, -1e4, -1e4];
 let puffI = 0;
 // Line uniforms shared by the rake, the first fill and the picture.
+// Lines are about 1 CSS pixel wide; short phone stages get the thinnest.
 function lineUniforms(p) {
   const N = LINES_N[lineSet] ?? 26;
   f1(p, 'uN', N);
-  f1(p, 'uW', (1.25 * tune('width') / across) * N);
+  f1(p, 'uW', ((clamp(across / 600, 0.95, 1.3) * tune('width')) / across) * N);
   f1(p, 'uSeed', 3.17);
   f1(p, 'uFlick', reduced() ? 0 : 0.28);
   gl.uniform4f(p.u('uPuffs'), ...puffs);
@@ -945,7 +946,9 @@ function substep(f, { U, a, eps, fr, vx, vy, wa }) {
   tex(p, 'uVel', f.vel[0].t);
   bcUniforms(p, f, U);
   draw();
-  for (let i = 0; i < f.jac; i++) {
+  // A calm tunnel warm-starts well, so it solves with fewer passes.
+  const jac = calmNow ? Math.round(f.jac * 0.6) : f.jac;
+  for (let i = 0; i < jac; i++) {
     p = use(P.pres, f.pres[1]);
     tex(p, 'uP', f.pres[0].t);
     tex(p, 'uDiv', f.div.t);
@@ -1077,7 +1080,7 @@ function hear(d) {
 }
 // A wake that has not moved for two seconds is steady.
 function wakeSteady() {
-  if (wakeLog.length < 12 || wakeLog[wakeLog.length - 1][0] - wakeLog[0][0] < 1800) return false;
+  if (wakeLog.length < 6 || wakeLog[wakeLog.length - 1][0] - wakeLog[0][0] < 1500) return false;
   let mx = 0;
   for (let i = 1; i < wakeLog.length; i++) for (let k = 1; k < 7; k++) mx = Math.max(mx, Math.abs(wakeLog[i][k] - wakeLog[i - 1][k]));
   return mx < 0.0025;
@@ -1120,7 +1123,7 @@ function show() {
   f1(p, 'uPx', s);
   f1(p, 'uT', flowT);
   f1(p, 'uDyeK', 1.4 * tune('smear'));
-  f1(p, 'uExp', 2.1 * tune('exposure'));
+  f1(p, 'uExp', 1.9 * tune('exposure'));
   f1(p, 'uGlowK', 0.55 * tune('glow'));
   f1(p, 'uGrain', 0.03 * tune('grain'));
   f1(p, 'uFrame', reduced() ? 0 : frameN % 65536);
@@ -1281,7 +1284,7 @@ const toTunnel = ([cx, cy]) => (upright ? [(size.h - cy) / size.w, 1 - cx / size
 // Busy: 60 fps. Calm, two and a half seconds after the hand: 30 fps.
 // Steady: the sim stops; puffs still drift along the frozen lines.
 let raf = 0, visible = !document.hidden, ready = false, lastDraw = 0, acc = 0;
-let lastInput = 0, frozen = false, thawAt = 0, lastPuff = -1e9;
+let lastInput = 0, frozen = false, thawAt = 0, lastPuff = -1e9, calmNow = false;
 function start() {
   if (!raf && visible && ready) { lastDraw = performance.now() - 17; raf = requestAnimationFrame(frame); }
 }
@@ -1292,7 +1295,7 @@ function poke() {
 }
 function frame(now) {
   raf = requestAnimationFrame(frame);
-  const calm = !ptr && now - lastInput > 2500;
+  const calm = (calmNow = !ptr && now - lastInput > 2500);
   const gap = now - lastDraw;
   if (gap < (calm ? 28 : 12)) return;
   const dt = Math.min(gap / 1000, 0.1);
