@@ -241,7 +241,7 @@ stage.prepend(canvas);
 
 const scene = new THREE.Scene();
 // A 20 m near plane keeps depth precision on rocks 40 km out.
-const camera = new THREE.PerspectiveCamera(44, 1, 20, 300000);
+const camera = new THREE.PerspectiveCamera(44, 1, 20, 600000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
@@ -1062,6 +1062,12 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
 sky.renderOrder = -1;
 scene.add(sky);
 
+/* ---------- the planet: one curve for every view ---------- */
+// A small world: the ground drops away d² / 2R from any eye.
+// The image moves; shading keeps the flat world's positions.
+const PLANET_R = 4.0e6;
+const CURVE = /* glsl */`vec3 curved(vec3 p) { vec2 d = p.xz - cameraPosition.xz; p.y -= dot(d, d) / ${(2 * 4.0e6).toFixed(1)}; return p; }`;
+
 /* ---------- ground: a dusty plain with low relief ---------- */
 const GROUND_C = linFit(0.52, 0.035, 65);
 // Low swells on the plain: a few metres, kilometres long, flat round the mount.
@@ -1084,8 +1090,8 @@ float terrH(vec2 p) {
 // The plain reaches out to the ranges' feet: 240 km across.
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 480, 480).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
   uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
-  vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN}
-  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN} ${CURVE}
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(curved(vP), 1.0); }`,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   uniform vec3 uGroundC;
@@ -1194,134 +1200,143 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 480, 480).
 }));
 scene.add(ground);
 
-/* ---------- far country: massive crescent ranges on open flats ---------- */
+/* ---------- far country: crescent ranges on a curved planet, raymarched ---------- */
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
-function buildFar() {
-  // Its own seed keeps the country the same on every load.
-  let s = 7919;
-  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  const pos = [], nrm = [];
-  // Each corner carries its grid normal, so the ranges shade smooth.
-  const tri = (a, b, c) => { for (const q of [a, b, c]) { pos.push(q.x, q.y, q.z); nrm.push(q.n.x, q.n.y, q.n.z); } };
-  // A crescent: a curved ridge whose horns taper to the plain.
-  // The inner face drops steep; the outer face runs out in a long apron.
-  // th, d: the centre. Rc: the arc's radius. H: the crest. span, open: the arc in degrees.
-  function crescent(th, d, Rc, H, span, open) {
-    const c = polar(th, d), NU = 160, NV = 14, grid = [];
-    const sp = rad(span), a0 = rad(open) + Math.PI - sp / 2;
-    const ph = r() * 6.28;
-    for (let i = 0; i <= NU; i++) {
-      const u = i / NU, ang = a0 + sp * u;
-      // The range tapers to both ends; its crest sweeps in long, slow waves.
-      const t = Math.pow(Math.sin(Math.PI * u), 0.8);
-      // Long, smooth waves sweep the crest into a few tapered peaks.
-      const hc = H * t * (0.74 + 0.16 * Math.sin(u * 7 + ph) + 0.1 * Math.sin(u * 17 + 2 * ph));
-      const row = [];
-      for (let j = 0; j <= NV; j++) {
-        const v = j / NV * 2 - 1;
-        // Inner face: a steep scarp. Outer face: a long apron.
-        const off = v < 0 ? v * 0.1 * Rc * (0.3 + t) : v * 0.32 * Rc * (0.3 + t);
-        // Crags: each point sits at its own height.
-        const y = j === 0 || j === NV ? -60 : hc * Math.pow(1 - Math.abs(v), v < 0 ? 0.5 : 1.5) * (0.97 + 0.06 * r());
-        const rr = Rc + off + (r() - 0.5) * 0.006 * Rc;
-        row.push(v3(c.x + Math.cos(ang) * rr, y, c.z + Math.sin(ang) * rr));
-      }
-      grid.push(row);
-    }
-    // Grid normals from the neighbours along and across.
-    for (let i = 0; i <= NU; i++) for (let j = 0; j <= NV; j++) {
-      const a = grid[Math.min(i + 1, NU)][j].clone().sub(grid[Math.max(i - 1, 0)][j]);
-      const b = grid[i][Math.min(j + 1, NV)].clone().sub(grid[i][Math.max(j - 1, 0)]);
-      grid[i][j].n = new THREE.Vector3().crossVectors(b, a).normalize();
-      if (grid[i][j].n.y < 0) grid[i][j].n.negate();
-    }
-    for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
-      const p00 = grid[i][j], p10 = grid[i + 1][j], p01 = grid[i][j + 1], p11 = grid[i + 1][j + 1];
-      tri(p00, p10, p11); tri(p00, p11, p01);
-    }
+// Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
+// The last two stand behind the Profile and Horizon views.
+const RANGES = [
+  [10, 150000, 62000, 18000, 140, 10], [42, 125000, 44000, 14500, 150, 200], [-12, 110000, 32000, 11000, 130, 60],
+  [27, 85000, 22000, 7200, 150, 150], [57, 70000, 16000, 5000, 135, 250], [0, 60000, 12000, 3400, 120, 300],
+  [100, 175000, 56000, 16000, 150, 155], [190, 140000, 60000, 17000, 150, 64],
+];
+const FAR_U = {
+  // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
+  uRg: { value: RANGES.map(m => { const c = polar(rad(m[0]), m[1]); return new THREE.Vector4(c.x, c.z, m[2], m[3]); }) },
+  uRa: { value: RANGES.map((m, i) => new THREE.Vector4(rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, 0)) },
+  uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
+  // March steps: High takes more, the ladder's rungs fewer.
+  uFarSteps: { value: 96 },
+  uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+};
+const FAR_GLSL = /* glsl */`
+uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
+// The ranges' height over the flat plain at p, in metres.
+float rangeH(vec2 p) {
+  float h = 0.0;
+  for (int i = 0; i < ${RANGES.length}; i++) {
+    vec2 q = p - uRg[i].xy;
+    float Rc = uRg[i].z, r = length(q), off = r - Rc;
+    if (abs(off) > 0.75 * Rc) continue;
+    float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
+    if (u > 1.0) continue;
+    // The range tapers to both ends; long waves sweep its crest.
+    float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
+    float hc = uRg[i].w * t * (0.74 + 0.16 * sin(u * 7.0 + ph) + 0.1 * sin(u * 17.0 + 2.0 * ph));
+    // Inner face: a steep scarp. Outer face: a long apron.
+    float v = abs(off) / (Rc * (off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
+    if (v >= 1.0) continue;
+    h = max(h, hc * pow(1.0 - v, off < 0.0 ? 0.5 : 1.5));
   }
-  // Angle, range, arc radius, crest, span, opening.
-  // Far ranges: tens of kilometres across, kilometres high.
-  for (const m of [
-    [10, 150000, 62000, 18000, 140, 10], [42, 125000, 44000, 14500, 150, 200], [-12, 110000, 32000, 11000, 130, 60],
-    [27, 85000, 22000, 7200, 150, 150], [57, 70000, 16000, 5000, 135, 250], [0, 60000, 12000, 3400, 120, 300],
-    // Behind the profile view and behind the horizon view.
-    [100, 175000, 56000, 16000, 150, 155], [190, 140000, 60000, 17000, 150, 64],
-  ]) crescent(rad(m[0]), m[1], m[2], m[3], m[4], m[5]);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  return g;
+  return h;
 }
-const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
-  uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) } },
-  side: THREE.DoubleSide,
-  // The world curves away: far ranges sink their feet below the horizon.
-  // The curve is drawn three times deeper than the earth's, to sell the distance.
-  vertexShader: /* glsl */`varying vec3 vP, vN; void main() {
-    vP = (modelMatrix * vec4(position, 1.0)).xyz; vN = normal;
-    float d = length(vP.xz - cameraPosition.xz);
-    vec3 q = vP; q.y -= d * d / 4.2e6;
-    gl_Position = projectionMatrix * viewMatrix * vec4(q, 1.0);
-  }`,
+// Ridged erosion: sharp spurs and deep gullies, a few kilometres across.
+float ridged(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
+  return s;
+}
+float farH(vec2 p) {
+  float h = rangeH(p);
+  return h > 1.0 ? h * (0.84 + 0.36 * ridged(p / 7000.0)) : 0.0;
+}`;
+const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U },
+  depthWrite: true, depthTest: true,
+  vertexShader: /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
   fragmentShader: /* glsl */`
-  varying vec3 vP, vN;
-  uniform vec3 uGroundC, uRockC;
+  varying vec2 vN;
+  uniform mat4 uInvVP, uVP;
+  uniform int uFarSteps;
+  uniform vec3 uRockC, uGroundC;
   ${HEAD}
   ${AIR}
-  // Crag relief: ridged noise, deep gullies down the slopes.
-  float crag(vec3 p) {
-    vec2 q = p.xz * 0.0011 + vec2(0.0, p.y * 0.0018);
-    return 1.0 - abs(k2noise(q) * 2.0 - 1.0) + 0.5 * (1.0 - abs(k2noise(q * 2.7 + 3.1) * 2.0 - 1.0));
-  }
+  ${FAR_GLSL}
+  const float PLANET_R = ${PLANET_R.toFixed(1)};
+  // The curved ground's drop at p, below the eye's level plane.
+  float drop(vec3 p) { vec2 d = p.xz - cameraPosition.xz; return dot(d, d) / (2.0 * PLANET_R); }
   void main() {
-    // The smooth form, cut by crags and gullies in the shading.
-    vec3 N0 = normalize(vN);
-    float e = 120.0, c0 = crag(vP);
-    vec3 gr = vec3(crag(vP + vec3(e, 0.0, 0.0)) - c0, crag(vP + vec3(0.0, e, 0.0)) - c0, crag(vP + vec3(0.0, 0.0, e)) - c0) / e;
-    vec3 N = normalize(N0 - 110.0 * (gr - N0 * dot(gr, N0)));
-    float wall = smoothstep(0.85, 0.35, N.y);
-    // Tilted beds sweep along each ridge; gullies run down it.
-    float bed = k2noise(vec2((vP.y + 0.08 * vP.x) * 0.02, 1.5)) * 0.6 + k2noise(vec2(vP.y * 0.09, 7.5)) * 0.4;
-    float gully = k2noise(vec2((vP.x + vP.z) * 0.006, vP.y * 0.002));
-    // The crests run darker: wind-scoured stone.
-    float crest = smoothstep(300.0, 2200.0, vP.y);
-    vec3 alb = mix(uGroundC * 0.9, uRockC * (0.6 + 0.6 * bed) * (0.8 + 0.4 * gully) * (1.0 - 0.35 * crest), wall);
-    // The foot turns to sand, so a range rises out of the plain with no rim.
-    alb = mix(uGroundC * 0.95, alb, smoothstep(40.0, 900.0, vP.y));
-    // A wrap term keeps the shadow side from going flat black.
+    vec4 w = uInvVP * vec4(vN, 1.0, 1.0);
+    vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
+    // The march starts past the near plain's heart and ends past the far ranges.
+    float t = 25000.0, tp = t, hit = -1.0;
+    for (int i = 0; i < 160; i++) {
+      if (i >= uFarSteps) break;
+      vec3 p = ro + rd * t;
+      float hh = farH(p.xz), dy = p.y - (hh - drop(p));
+      if (dy < 0.0) {
+        // The ray crossed the surface: halve the last step to find it.
+        float a = tp, b = t;
+        for (int k = 0; k < 7; k++) {
+          float m = 0.5 * (a + b);
+          vec3 q = ro + rd * m;
+          if (q.y - (farH(q.xz) - drop(q)) < 0.0) b = m; else a = m;
+        }
+        hit = b;
+        break;
+      }
+      // Rising past every crest: the ray leaves the country.
+      if (p.y > 20000.0 && rd.y > 0.0) break;
+      tp = t;
+      // Over open plain a stride of 3% keeps grazing rays inside the budget.
+      // Inside a range's footprint the stride shrinks, so no crest is skipped.
+      t += max(0.45 * dy, (hh > 1.0 ? 0.0035 : 0.03) * t);
+      if (t > 450000.0) break;
+    }
+    if (hit < 0.0) discard;
+    vec3 p = ro + rd * hit;
+    // Bare ground in reach of the near plain: the plain draws it.
+    float h0 = farH(p.xz);
+    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
+    // Shade on the flat world: the curve only moves the image.
+    vec3 P = vec3(p.x, h0, p.z);
+    float e = max(60.0, 0.002 * hit);
+    vec3 N = normalize(vec3(farH(p.xz - vec2(e, 0.0)) - farH(p.xz + vec2(e, 0.0)), 2.0 * e, farH(p.xz - vec2(0.0, e)) - farH(p.xz + vec2(0.0, e))));
+    // A short march toward the light: the crests shade the valleys.
+    float sh = 1.0, sd = 400.0;
+    for (int j = 0; j < 7; j++) {
+      vec3 q = P + uSun * sd;
+      sh = min(sh, clamp(8.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
+      sd *= 2.0;
+    }
+    float wall = smoothstep(0.92, 0.5, N.y);
+    vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
+    alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
-    vec3 col = alb * (ambient(N) + uSunC * (1.5 * nl + 0.15 * wr) + keyLight(N));
-    // Backlit crests take a thin rim of light.
-    vec3 V = normalize(cameraPosition - vP);
-    col += uSunC * 0.35 * pow(1.0 - max(dot(N, V), 0.0), 4.0) * max(dot(-V, uSun), 0.0) * (1.0 - nightK());
-    // Aerial perspective, held in check: a range never melts into the haze.
-    // The haze thickens toward each foot; the high crests stand clearer.
-    vec3 dir = normalize(vP - cameraPosition);
-    float hb = 1.0 - 0.65 * smoothstep(0.0, 15000.0, vP.y);
-    float hz = min(1.0 - exp(-length(vP - cameraPosition) / 70000.0), 0.68) * hb;
-    vec3 T = airT(vP);
-    col = mix(col, k2hazeColor(dir), hz) * mix(T, vec3(1.0), 0.5) + k2skyB(dir, 0.0) * (1.0 - T) * 0.5;
+    vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
+    // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
+    vec3 Pa = vec3(p.x, P.y, p.z);
+    float hR = 8000.0, hM = 1600.0;
+    float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+    float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
+    float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
+    vec3 tau = (vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(2.2e-5) * aM) * hit;
+    vec3 T = exp(-tau);
+    // The air's own light: the horizon sky, and a warm glow toward the sun.
+    float mu = dot(rd, uSunD), g = 0.76;
+    float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
+    vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
+    col = col * T + inL * (1.0 - T);
     gl_FragColor = vec4(col, 1.0);
+    vec4 cp = uVP * vec4(p, 1.0);
+    gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
   }`,
 }));
-far.frustumCulled = false;
-scene.add(far);
-// Past the plain's edge: a plain sand disc 700 km across, under the lowest trough.
-// It hides the edge, so no false horizon shows from the far eyes.
-const farGround = new THREE.Mesh(new THREE.CircleGeometry(350000, 96).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
-  uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
-  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y = -150.0; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; uniform vec3 uGroundC; uniform vec2 uGLift; ${HEAD} ${AIR}
-  void main() {
-    vec3 N = vec3(0.0, 1.0, 0.0);
-    float nl = clamp(dot(N, uSun) * uGLift.x + uGLift.y, 0.0, 1.2);
-    gl_FragColor = vec4(air(uGroundC * (ambient(N) + uSunC * nl), vP), 1.0);
-  }`,
-}));
-farGround.renderOrder = -0.5;
-scene.add(farGround);
+farPass.frustumCulled = false;
+// After the sky dome, before everything nearer.
+farPass.renderOrder = -0.9;
+farPass.onBeforeRender = (r, sc, cam) => { const u = farPass.material.uniforms; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); };
+scene.add(farPass);
 
 /* ---------- clouds: low heaps far out, one storm tower beyond ---------- */
 // Each cloud is one card that turns about the vertical to face the eye.
@@ -1531,6 +1546,7 @@ void main() {
 }`;
 const CLOUD_VS = /* glsl */`
 attribute vec4 aC, aS;
+${CURVE}
 uniform float uCloudC;
 varying vec2 vUv;
 varying vec3 vP, vR, vF;
@@ -1555,7 +1571,8 @@ void main() {
   vec3 P = C + R * uv.x * aC.w + vec3(0.0, uv.y * aS.x, 0.0);
   vUv = uv; vP = P; vR = R; vF = f;
   vS = vec4(aC.w, aS.x, aS.y, aS.z);
-  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  // The clouds ride the planet's curve too.
+  gl_Position = projectionMatrix * viewMatrix * vec4(curved(P), 1.0);
 }`;
 // list: [angle in degrees, range m, base m, half width m, height m, kind].
 function cloudLayer(list, order) {
@@ -4325,6 +4342,8 @@ function resize() {
   // Rungs 2 and 3 march the trail in fewer steps.
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
+  // The far country's march: fewer steps on Standard and on the ladder's rungs.
+  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 64 : quality() === 'high' ? 150 : 110;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
@@ -6534,6 +6553,8 @@ function updateDomes() {
     L[d.i].set(d.P.x, d.P.y, d.P.z, impK === 2 ? 0 : f);
     const u = d.m.material.uniforms, Hd = d.S * (0.12 + 0.88 * (1 - Math.exp(-a / 7))), Rd = d.S * 0.7 * (0.3 + 0.7 * (1 - Math.exp(-a / 5))) * (1 + 0.35 * THREE.MathUtils.smoothstep(a, 10, 60));
     u.uDc.value.copy(d.P).addScaledVector(DOME_WIND, a);
+    // The dome stands on the curved ground.
+    u.uDc.value.y -= ((u.uDc.value.x - camera.position.x) ** 2 + (u.uDc.value.z - camera.position.z) ** 2) / (2 * PLANET_R);
     u.uDm.value.set(a, d.S, 0.37 * d.i + 0.11, f);
     // The bound holds the sheared dome and its skirt.
     u.uC.value.copy(u.uDc.value);
