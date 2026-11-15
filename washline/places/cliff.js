@@ -5,13 +5,14 @@ import * as THREE from 'three';
 import { rng, col } from './kit.js';
 import { airUniforms, airify, cliffSky, beams } from './cliff-air.js';
 import { terrain, wall, posts, meadow, headland, lighthouse } from './cliff-props.js';
+import { flyby } from './cliff-flyby.js';
 
 const LINE_Z = 0;
 const SEA = -60;
 const EYE = [0, 1.3, 9];
 const EYE_PHONE = [0, 1.3, 17];
 // The lantern height comes from the headland under it.
-const LAMP = [520, 0, -1600];
+const LAMP = [455, 0, -1300];
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // The cliff edge wanders across the headland, about 16 m past the line.
@@ -97,25 +98,29 @@ export default {
 
     /* ---------- far headlands and the lighthouse ---------- */
     // Each rises out of the sea; the fog buries their feet.
-    const near = headland(group, [turf, rock], R, { x: 480, z: -1600, w: 430, d: 250, h: 68, sea: SEA });
+    const near = headland(group, [turf, rock], R, { x: 420, z: -1300, w: 380, d: 230, h: 62, sea: SEA });
+    // Sea stacks stand off the lighthouse point.
+    for (const [x, z, w, h] of [[-20, -1290, 26, 38], [-55, -1250, 14, 24], [-5, -1230, 9, 15]]) headland(group, [turf, rock], R, { x, z, w, d: w * 0.8, h, sea: SEA, seg: [40, 32] });
     headland(group, [turf, rock], R, { x: -1100, z: -3300, w: 1150, d: 520, h: 120, sea: SEA });
     headland(group, [turf, rock], R, { x: 2200, z: -7200, w: 2700, d: 950, h: 220, sea: SEA });
     const base = near(LAMP[0], LAMP[2]) - 0.5;
-    LAMP[1] = base + 26.7;
+    LAMP[1] = base + 29.7;
     const lantern = lighthouse(group, u, base, [LAMP[0], LAMP[2]]);
 
     /* ---------- sky and beam ---------- */
     const dome = cliffSky(group, u);
     const beam = beams(group, LAMP);
+    const pair = flyby(group, u, rng(7));
     const toCam = new THREE.Vector3();
     const W = new THREE.Vector3(this.windDir[0], 0, this.windDir[1]).normalize();
     group.userData.tick = (t, sun, cam, viewH, sky, wind) => {
       u.uSunDir.value.copy(sun.dir);
       // Grass bends with the line's wind; low sun glows through the blades.
       const push = (wind ? wind.u * wind.scale : 1.3) * 0.08;
-      const glow = 0.12 * sm(-0.01, 0.04, sun.dir.y);
+      const glow = 0.08 * sm(-0.01, 0.04, sun.dir.y);
       for (const w of winds) { w.uWind.value.copy(W).multiplyScalar(push); w.uTrans.value.copy(sun.col).multiplyScalar(glow); }
       u.uT.value = t;
+      pair.tick(t, sun);
       dome.position.copy(cam.position);
       // Before dawn the beam turns; at sunrise it fades out.
       const k = 1 - sm(-0.03, 0.02, sun.dir.y);
@@ -126,7 +131,7 @@ export default {
       // The lantern flashes when a beam sweeps past the eye.
       toCam.set(cam.position.x - LAMP[0], 0, cam.position.z - LAMP[2]).normalize();
       const f = Math.abs(Math.cos(a) * toCam.x - Math.sin(a) * toCam.z) ** 60;
-      lantern.material.emissiveIntensity = (1.5 + 60 * f) * Math.max(k, 0.15);
+      lantern.material.emissiveIntensity = (1.5 + 60 * f) * Math.max(k, 0.35);
     };
     return group;
   },

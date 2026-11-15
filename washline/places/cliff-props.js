@@ -73,6 +73,7 @@ function windify(mat, key) {
         }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uTrans; varying float vTip;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 0.45 + 0.55 * sqrt(max(vTip, 0.0));')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uTrans * vTip * diffuseColor.rgb;');
   };
   mat.customProgramCacheKey = () => key;
@@ -198,7 +199,7 @@ export function wall(group, u, R, heightAt, { from, to }) {
   return mat;
 }
 
-/* ---------- posts, pulley brackets and the gate ---------- */
+/* ---------- posts, pulley blocks and the gate ---------- */
 function postGeo(R, h, r0, r1) {
   let g = new THREE.CylinderGeometry(r0, r1, h, 9, 8);
   const p = g.attributes.position, uv = g.attributes.uv;
@@ -214,24 +215,63 @@ function postGeo(R, h, r0, r1) {
   return g;
 }
 
-export function posts(group, u, R, { a, b }, gate) {
-  const wood = airify(pbr('rough_wood', 0, { color: col([0.78, 0.012, 80]) }), u);
-  const steel = airify(new THREE.MeshStandardMaterial({ color: col([0.32, 0.01, 60]), roughness: 0.55, metalness: 0.7 }), u);
-  const add = (geo, mat, x, y, z, rz = 0, ry = 0) => {
+// A sawn square post: slightly out of true, its corners worn round.
+function squarePostGeo(R, h, w) {
+  const g = new THREE.BoxGeometry(w, h, w, 3, 12, 3);
+  const p = g.attributes.position, uv = g.attributes.uv, n = g.attributes.normal;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    // Corners pull in a little, so the edges read as worn.
+    const corner = Math.abs(x) > w * 0.45 && Math.abs(z) > w * 0.45 ? 0.88 : 1;
+    p.setXYZ(i, x * corner + 0.01 * Math.sin(y * 1.3), y, z * corner + 0.006 * Math.sin(y * 2.1 + 1));
+    // Side faces run the grain up the post.
+    if (Math.abs(n.getY(i)) < 0.5) uv.setXY(i, uv.getX(i) * w * 3, uv.getY(i) * h * 0.8);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+// A pulley block: a grooved wheel between two cheek plates, on a strap to the post.
+// The wheel's rim ring comes from cloth.js; this adds its body.
+function pulleyBlock(group, steel, galv, c, toPost) {
+  const at = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z); m.rotation.set(0, ry, rz);
+    m.position.set(c[0] + x, c[1] + y, c[2] + z);
+    m.castShadow = true;
+    group.add(m);
+    return m;
+  };
+  const disc = new THREE.CylinderGeometry(0.056, 0.056, 0.014, 28).rotateX(Math.PI / 2);
+  at(disc, galv, 0, 0, 0);
+  at(new THREE.CylinderGeometry(0.014, 0.014, 0.05, 12).rotateX(Math.PI / 2), steel, 0, 0, 0);
+  // The cheeks are taller than the wheel and meet at the top.
+  for (const z of [-0.016, 0.016]) at(new THREE.BoxGeometry(0.05, 0.15, 0.005), steel, 0, 0.03, z);
+  at(new THREE.BoxGeometry(0.05, 0.012, 0.04), steel, 0, 0.108, 0);
+  // A flat strap runs from the block's top to a bolt in the post.
+  const len = Math.abs(toPost);
+  at(new THREE.BoxGeometry(len, 0.03, 0.008), steel, toPost / 2, 0.1, 0);
+  at(new THREE.CylinderGeometry(0.012, 0.012, 0.012, 8).rotateZ(Math.PI / 2), galv, toPost, 0.1, 0);
+}
+
+export function posts(group, u, R, { a, b }, gate) {
+  const wood = airify(pbr('rough_wood', 0, { color: col([0.86, 0.012, 80]) }), u);
+  const steel = airify(new THREE.MeshStandardMaterial({ color: col([0.34, 0.01, 60]), roughness: 0.6, metalness: 0.6 }), u);
+  const galv = airify(new THREE.MeshStandardMaterial({ color: col([0.72, 0.008, 240]), roughness: 0.35, metalness: 0.85 }), u);
+  const add = (geo, mat, x, y, z, rz = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); m.rotation.z = rz;
     m.castShadow = m.receiveShadow = true;
     group.add(m);
     return m;
   };
-  const hA = a[1] + 0.35, hB = b[1] + 0.3;
-  add(postGeo(R, hA, 0.085, 0.1), wood, a[0] - 0.1, hA / 2 - 0.02, a[2]);
-  add(postGeo(R, hB, 0.075, 0.09), wood, b[0] + 0.1, hB / 2 - 0.02, b[2], -0.06);
-  // Each pulley hangs from a short steel arm bolted to its post.
-  for (const [p, s] of [[a, 1], [b, -1]]) {
-    add(new THREE.BoxGeometry(0.13, 0.025, 0.035), steel, p[0] - s * 0.04, p[1] + 0.065, p[2] - 0.035);
-    add(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8), steel, p[0], p[1] + 0.065, p[2], 0, 0).rotation.x = Math.PI / 2;
-  }
+  // The near post is sawn and square; the far one is an old split fence post.
+  const hA = a[1] + 0.4, hB = b[1] + 0.32, wA = 0.11;
+  add(squarePostGeo(R, hA, wA), wood, a[0] - 0.13, hA / 2 - 0.02, a[2]);
+  add(postGeo(R, hB, 0.075, 0.09), wood, b[0] + 0.12, hB / 2 - 0.02, b[2], -0.06);
+  // A sloped tin cap keeps the rain off the near post's end grain.
+  add(new THREE.BoxGeometry(0.15, 0.008, 0.15), galv, a[0] - 0.13, hA - 0.015, a[2], 0.12);
+  pulleyBlock(group, steel, galv, [a[0], a[1] + 0.065, a[2]], -0.13 + wA / 2);
+  pulleyBlock(group, steel, galv, [b[0], b[1] + 0.065, b[2]], 0.12 - 0.06);
   // A five-bar field gate stands open at the wall's far end.
   const gt = new THREE.Group();
   gt.position.set(...gate.p); gt.rotation.y = gate.ry;
@@ -252,7 +292,7 @@ function bladeGeo() {
   for (let i = 0; i <= S; i++) {
     const t = i / S, w = 0.5 * Math.pow(1 - t, 0.7), z = 0.3 * t * t;
     pos.push(-w, t, z, w, t, z);
-    nrm.push(0, 0.9, 0.44, 0, 0.9, 0.44);
+    nrm.push(0, 0.99, 0.14, 0, 0.99, 0.14);
   }
   for (let i = 0; i < S; i++) {
     const l0 = i * 2, r0 = l0 + 1, l1 = l0 + 2, r1 = l0 + 3;
@@ -289,7 +329,7 @@ function pinkGeo() {
 
 export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
   const blades = [];
-  const green = () => (R() < 0.1 ? col([0.6 + 0.1 * R(), 0.07, 90]) : col([0.4 + 0.14 * R(), 0.09 + 0.04 * R(), 122 + 18 * R()]));
+  const green = () => (R() < 0.04 ? col([0.58 + 0.08 * R(), 0.06, 95]) : col([0.36 + 0.14 * R(), 0.1 + 0.04 * R(), 128 + 16 * R()]));
   // Dense near the eye, thin toward the edge; none past the lip.
   // A last band near the eye fills the phone view, which looks down closer.
   for (let i = 0; i < 150000; i++) {
@@ -300,7 +340,7 @@ export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
     } else { x = (R() - 0.5) * 9; z = 7 + 10 * R(); }
     if (z < edgeZ(x) + 0.4 || wallAt(x, z) < 0.45) continue;
     // Short sea turf, with a few longer tufts.
-    const h = R() < 0.12 ? 0.18 + 0.2 * R() : 0.05 + 0.12 * R();
+    const h = R() < 0.07 ? 0.14 + 0.14 * R() : 0.035 + 0.085 * R();
     blades.push({ p: [x, heightAt(x, z) - 0.02, z], s: [0.006 + 0.008 * R(), h, h], r: [(R() - 0.5) * 0.5, R() * 6.283, (R() - 0.5) * 0.5], c: green() });
   }
   const gm = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
@@ -332,16 +372,20 @@ export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
 /* ---------- far headlands ---------- */
 // A flat-topped headland with sea cliffs, on a noisy outline.
 // Returns the mesh and its height above the sea at a local point.
-export function headland(group, mats, R, { x, z, w, d, h, sea }) {
+export function headland(group, mats, R, { x, z, w, d, h, sea, seg = [220, 140] }) {
   const s1 = R() * 10, s2 = R() * 10, s3 = R() * 10;
   const hAt = (lx, lz) => {
     const a = Math.atan2(lz / d, lx / w), r = Math.hypot(lx / w, lz / d);
-    const edge = 1 + 0.13 * Math.sin(3 * a + s1) + 0.07 * Math.sin(7 * a + s2) + 0.035 * Math.sin(15 * a + s3);
+    // A ragged outline: coves, points and small bites out of the cliff.
+    const edge = 1 + 0.13 * Math.sin(3 * a + s1) + 0.07 * Math.sin(7 * a + s2) + 0.035 * Math.sin(15 * a + s3)
+      + 0.018 * Math.sin(31 * a + s2) + 0.01 * Math.sin(57 * a + s1);
     const q = r / edge;
-    const top = h * (0.8 + 0.2 * (1 - q * q)) + h * 0.05 * Math.sin(lx / 37 + s1) * Math.sin(lz / 29 + s2);
-    return -6 + (top + 6) * sm(1.0, 0.94, q);
+    const top = h * (0.8 + 0.2 * (1 - q * q)) + h * 0.05 * Math.sin(lx / 37 + s1) * Math.sin(lz / 29 + s2)
+      + h * 0.02 * Math.sin(lx / 9 + s3) * Math.sin(lz / 11);
+    // Sheer faces fall straight to the sea.
+    return -6 + (top + 6) * sm(1.0, 0.975, q);
   };
-  const g = new THREE.PlaneGeometry(w * 2.6, d * 2.6, 140, 90);
+  const g = new THREE.PlaneGeometry(w * 2.6, d * 2.6, ...seg);
   g.rotateX(-Math.PI / 2);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, hAt(p.getX(i), p.getZ(i)));
@@ -356,12 +400,15 @@ export function headland(group, mats, R, { x, z, w, d, h, sea }) {
 // A white tapered tower, a gallery, the lantern and a dark red cap.
 export function lighthouse(group, u, base, at) {
   const paint = (c, extra = {}) => airify(new THREE.MeshStandardMaterial({ color: col(c), roughness: 0.7, ...extra }), u);
-  const prof = [[5.8, 0], [5.6, 1.5], [4.6, 18], [4.3, 24]].map(([r, y]) => new THREE.Vector2(r, y));
+  const prof = [[5.8, 0], [5.6, 1.5], [4.6, 20], [4.3, 27]].map(([r, y]) => new THREE.Vector2(r, y));
   const add = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.set(at[0], base + y, at[1]); group.add(m); return m; };
   add(new THREE.LatheGeometry(prof, 24), paint([0.93, 0.01, 90]), 0);
-  add(new THREE.CylinderGeometry(5.6, 5.6, 0.7, 24), paint([0.25, 0.01, 60]), 24.3);
-  const lantern = add(new THREE.CylinderGeometry(3.2, 3.2, 4, 16), paint([0.2, 0.01, 60], { emissive: col([0.9, 0.1, 85]), emissiveIntensity: 2 }), 26.7);
-  add(new THREE.SphereGeometry(3.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), paint([0.36, 0.12, 25]), 28.6);
+  add(new THREE.CylinderGeometry(5.6, 5.6, 0.7, 24), paint([0.25, 0.01, 60]), 27.3);
+  add(new THREE.TorusGeometry(5.5, 0.09, 4, 32).rotateX(Math.PI / 2), paint([0.25, 0.01, 60]), 28.5);
+  const lantern = add(new THREE.CylinderGeometry(3.2, 3.2, 4, 16), paint([0.2, 0.01, 60], { emissive: col([0.9, 0.1, 85]), emissiveIntensity: 2 }), 29.7);
+  add(new THREE.SphereGeometry(3.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), paint([0.36, 0.12, 25]), 31.6);
+  // A black band at the gallery foot makes the tower read from far off.
+  add(new THREE.CylinderGeometry(4.36, 4.45, 2.2, 24, 1, true), paint([0.2, 0.01, 60]), 25.6);
   // The keeper's cottage sits beside the tower, toward the land.
   add(new THREE.BoxGeometry(16, 5.5, 7), paint([0.9, 0.01, 90]), 2.6).position.x += 15;
   const roof = add(new THREE.CylinderGeometry(4.6, 4.6, 16.4, 3), paint([0.32, 0.03, 40]), 6.4);
