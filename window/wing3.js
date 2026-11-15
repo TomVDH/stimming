@@ -159,6 +159,20 @@ varying vec3 vFogW, vSurf;`)
   };
 }
 
+// The shadow pass bends the wing as the colour pass does.
+// An unbent caster throws false shade on the flexed skin.
+const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+depthMat.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, FOG_U);
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+uniform vec3 uUpW, uSpanW; uniform vec2 uFlex;${BEND_GLSL}`)
+    .replace('#include <project_vertex>', `vec4 wpos = modelMatrix * vec4(transformed, 1.0);
+wpos.xyz += uUpW * bendAt(dot(wpos.xyz, uSpanW));
+vec4 mvPosition = viewMatrix * wpos;
+gl_Position = projectionMatrix * mvPosition;`);
+};
+
 export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT }) {
   FOG_U.uFogN.value = noiseTex;
 
@@ -240,6 +254,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     // Parts off the wing carry no skin detail.
     if (!geo.attributes.aSurf) geo.setAttribute('aSurf', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(-1), 3));
     const m = new THREE.Mesh(geo, geo.userData.loft ? [mat, seam] : mat);
+    m.customDepthMaterial = depthMat;
     m.scale.z = -1;
     m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
@@ -364,7 +379,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   air.add(wingL, wingL.target);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, pose: [], wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -464,7 +479,11 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
-      if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
+      // The shadow maps redraw when the pose moves, and five times a second at rest.
+      // A stale map lags a banking wing and flashes.
+      const pose = [bank, mo.f[0], mo.f[1], ail, seatDx, s.x, s.y, s.z];
+      const moved = pose.some((v, i) => Math.abs(v - (mo.pose[i] ?? 9)) > 2e-4);
+      if (moved || t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; mo.pose = pose; }
       flashL.intensity = flash * 0.06;
       // The light swells in about 40 ms and fades over about 200 ms.
       // So a stroke blooms on the skin instead of a hard pop.
