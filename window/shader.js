@@ -165,6 +165,8 @@ vec3 aurora(vec3 d, float soft) {
 
 // Sky light along a ray, from the baked table, with the aurora.
 vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
+// How far the sun is up, 0 to 1; the dim moon counts as night.
+float dayAmt() { return smoothstep(0.02, 0.3, uSun.y) * smoothstep(0.8, 2.0, uSunL.g); }
 
 /* ---------- the land: relief, cover, water and airports ---------- */
 // Value noise with its gradient, for hill shading.
@@ -1180,6 +1182,9 @@ vec4 deck(vec3 d) {
   // So deck and towers read as one.
   vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 1.05 : vec3(0.0);
   float sunStorm = 1.0 - 0.85 * uStorm;
+  // The deck lies under most of the air, so its sky is brighter than ours.
+  // By day that blue fill keeps the tops white, not cream.
+  float ambK = mix(0.026, 0.055, dayAmt());
   vec3 col = vec3(0.0), last = vec3(0.0);
   float Tc = 1.0, lastD = 0.0;
   for (int i = 0; i < 40; i++) {
@@ -1210,7 +1215,7 @@ vec4 deck(vec3 d) {
       // Murk light is flat, as on the towers: folds and crowns see about the same.
       float hk = clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0);
       sky = mix(sky, 0.45 * (0.4 + 0.6 * hk), 0.6 * uStorm);
-      S += mix(uAmb * 0.026, murk, uStorm) * sky;
+      S += mix(uAmb * ambK, murk, uStorm) * sky;
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
@@ -1392,10 +1397,11 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   if (uLand > 1.5 && cl.a * ml.a > 0.002) w = reliefParallax(w, d, normalize(P));
   // Ground under thick cloud never shows, so it costs nothing.
   vec3 g = cl.a * ml.a > 0.002 ? landCover(ground(w, fw), fw, d, normalize(P)) : vec3(0.0);
-  g = g * cl.a + cl.rgb;
-  g = g * ml.a + ml.rgb;
   // The air between: the baked view ray dims the ground and adds its glow.
-  return g * T + L + uFloor * 0.5;
+  // Light off the bright cloud scatters back into the ray.
+  // So by day the air dims the cloud but barely tints it.
+  vec3 Tc = mix(T, vec3(dot(T, vec3(0.3, 0.5, 0.2))), 0.8 * dayAmt());
+  return g * (cl.a * ml.a) * T + (cl.rgb * ml.a + ml.rgb) * Tc + L + uFloor * 0.5;
 }
 
 
