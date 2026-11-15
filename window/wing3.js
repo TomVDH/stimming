@@ -451,8 +451,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // Light up from below: the sun and the sky on land and cloud, with its albedo.
       // Land and sea return about a tenth; a cloud deck about seven tenths.
       // The air between keeps about four fifths.
-      // Four times that stands in for bounce off the wing and bright haze.
-      const A = 4 * (0.1 + 0.6 * cover) * 0.8, sunUp = Math.max(s.y, 0) * veil / 1.5;
+      const A = (0.1 + 0.6 * cover) * 0.8, sunUp = Math.max(s.y, 0) * veil / 1.5;
       bounce.groundColor.setRGB(...hc.map((v, i) => A * (sl[i] * sunUp + Math.PI * v * (1 - 0.6 * storm))));
       const k = (0.55 - 0.25 * storm) * 1.3;
       scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
