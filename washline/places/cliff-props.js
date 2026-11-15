@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { col } from './kit.js';
 import { airify } from './cliff-air.js';
+import { grass } from './cliff-grass.js';
 
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const TEX = new URL('../tex/', import.meta.url).href;
@@ -286,25 +287,7 @@ export function posts(group, u, R, { a, b }, gate) {
 }
 
 /* ---------- grass and sea pinks ---------- */
-// A blade: a tapered strip, curved forward, with both sides facing out.
-function bladeGeo() {
-  const S = 3, pos = [], nrm = [], idx = [];
-  for (let i = 0; i <= S; i++) {
-    const t = i / S, w = 0.5 * Math.pow(1 - t, 0.7), z = 0.3 * t * t;
-    pos.push(-w, t, z, w, t, z);
-    nrm.push(0, 0.99, 0.14, 0, 0.99, 0.14);
-  }
-  for (let i = 0; i < S; i++) {
-    const l0 = i * 2, r0 = l0 + 1, l1 = l0 + 2, r1 = l0 + 3;
-    idx.push(l0, r0, l1, r0, r1, l1, l0, l1, r0, r0, l1, r1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setIndex(idx);
-  return g;
-}
-
+// The grass lives in cliff-grass.js.
 // A thrift flower: a thin stem and a round pink head, in vertex colours.
 function pinkGeo() {
   const stem = new THREE.CylinderGeometry(0.02, 0.025, 1, 4, 1, true).translate(0, 0.5, 0).toNonIndexed();
@@ -328,25 +311,7 @@ function pinkGeo() {
 }
 
 export function meadow(group, u, R, heightAt, edgeZ, wallAt) {
-  const blades = [];
-  const green = () => (R() < 0.04 ? col([0.58 + 0.08 * R(), 0.06, 95]) : col([0.36 + 0.14 * R(), 0.1 + 0.04 * R(), 128 + 16 * R()]));
-  // Dense near the eye, thin toward the edge; none past the lip.
-  // A last band near the eye fills the phone view, which looks down closer.
-  for (let i = 0; i < 150000; i++) {
-    let x, z;
-    if (i < 105000) {
-      const d = 3 + 30 * Math.pow(R(), 1.9), a = (R() - 0.5) * 1.6;
-      x = d * Math.sin(a); z = 10 - d * Math.cos(a);
-    } else { x = (R() - 0.5) * 9; z = 7 + 10 * R(); }
-    if (z < edgeZ(x) + 0.4 || wallAt(x, z) < 0.45) continue;
-    // Short sea turf, with a few longer tufts.
-    const h = R() < 0.07 ? 0.14 + 0.14 * R() : 0.035 + 0.085 * R();
-    blades.push({ p: [x, heightAt(x, z) - 0.02, z], s: [0.006 + 0.008 * R(), h, h], r: [(R() - 0.5) * 0.5, R() * 6.283, (R() - 0.5) * 0.5], c: green() });
-  }
-  const gm = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
-  const gw = windify(gm, 'cliff-grass');
-  airify(gm, u);
-  instance(group, bladeGeo(), gm, blades, false);
+  const gw = grass(group, u, R, { heightAt, edgeZ, wallAt });
 
   // Thrift clumps crowd the lip and the foot of the wall.
   const heads = [], cushions = [];
