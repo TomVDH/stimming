@@ -2,7 +2,7 @@
 // One scattering model lights them all, so far things fade into their sky.
 // Units: metres. Scene y = 0 is the turf; the sea lies at y = -60.
 import * as THREE from 'three';
-import { ATMO } from './sr-atmo.js';
+import { ATMO } from './atmo.js';
 
 const R_EARTH = 6.371e6;
 

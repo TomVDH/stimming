@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T08:56:21Z
+updated_at: 2026-11-15T08:59:19Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -202,3 +202,5 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - Cliff grass rebuild (Tom, 2026-11-15): cliff-grass.js after the Ghost of Tsushima talk: bezier blades bent by a drifting gust field, rounded normals, Voronoi clumps (facing, lean, tint, tall tussocks), dark roots, light through the blades toward the sun, far blades widened, 6-segment near and 3-segment far meshes.
 
 - Cliff step 4 (2026-11-15): grade pass from shared/grade.js (vignette, grain) for places that ask; shared/detail.js drives the pixel ratio and a place level hook (grass density 35/70/100 percent, phones 50/75); baked contact shade at the wall foot and posts (turf vertex colour, grass tint, low wall courses); a thin wide sun-shadow box for the low sun. GTAO skipped: its normal pass cannot run the bezier grass shader.
+
+- Step 5 (Tom, 2026-11-15): Alley, Garden, Beach and Strangereal retired; git keeps them. The page builds the cliff only; the Place choice is gone; sr-atmo.js is now atmo.js (ATMO only).

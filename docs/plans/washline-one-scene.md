@@ -96,7 +96,7 @@ Grass and sea pinks move in the wind. The fog drifts and breathes. The lighthous
 2. Sky and fog: the scattering sky, the fog raymarch, the sun slider.
 3. Hero props: the wall, posts, pulleys, grass, the lighthouse.
 4. Grade, ambient occlusion, soft shadows; the phone frame.
-5. Retire the four old places in one commit.
+5. Retire the four old places in one commit. Done 2026-11-15: the page has one place and no Place choice; `sr-atmo.js` became `atmo.js`.
 
 ### Open question
 CC0 textures from Poly Haven (dry stone, weathered wood, rock, grass) would lift the near surfaces most. They need Tom's yes to download, with a row each in `washline/CREDITS.md`.

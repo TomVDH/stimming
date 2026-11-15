@@ -69,10 +69,6 @@ import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, onQuality
 import { intro as playIntro } from '../shared/intro.js';
 import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear, cull, ropeAt } from './core.js';
 import { makeLook } from './cloth.js';
-import alley from './places/alley.js';
-import garden from './places/garden.js';
-import beach from './places/beach.js';
-import strangereal from './places/strangereal.js';
 import cliff from './places/cliff.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -88,17 +84,11 @@ const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
 const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-const PLACES = { cliff, alley, garden, beach, strangereal };
-// The address (?place=) or the last visit picks the first place.
-const firstPlace = (() => {
-  let saved = null;
-  try { saved = localStorage.getItem('stimming.washline.place'); } catch { /* storage can be blocked */ }
-  return [new URLSearchParams(location.search).get('place'), saved].find(v => PLACES[v]) || 'alley';
-})();
+// One place: the cliff top at dawn. The older places live in git history.
+const PLACE = cliff;
 // Handlers bind once the scene exists.
-const act = { place() {}, sun() {}, wind() {}, add() {}, release() {} };
+const act = { sun() {}, wind() {}, add() {}, release() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Place', value: firstPlace, options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.95, onInput: v => act.sun(v) },
   settings: [
     { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
@@ -210,8 +200,8 @@ const WARM = v3(lin([0.9, 0.11, 60])), WHITE = v3(lin([0.98, 0.025, 85]));
 
 /* ---------- the place ---------- */
 const P = { place: null, set: null, line: null, look: null, d: 12 };
-function buildPlace(id) {
-  const pl = PLACES[id] || alley;
+function buildPlace() {
+  const pl = PLACE;
   if (P.set) {
     scene.remove(P.set);
     P.look.dispose();
@@ -223,7 +213,6 @@ function buildPlace(id) {
     });
   }
   P.place = pl;
-  try { localStorage.setItem('stimming.washline.place', pl.id); } catch { /* storage can be blocked */ }
   skyU.uCloud.value = pl.sky.clouds || 0;
   skyU.uWarm.value = pl.sky.warm ?? 1;
   // A lower curve brings the zenith colour nearer the horizon.
@@ -481,7 +470,6 @@ stage.addEventListener('pointerup', end);
 stage.addEventListener('pointercancel', end);
 
 /* ---------- controls ---------- */
-act.place = v => { buildPlace(v); resize(); wake(); };
 act.sun = v => { setSun(v); wake(); };
 act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
 // + Piece reels the line out until the near end is free, then hangs it.
@@ -499,7 +487,7 @@ act.release = () => {
   wake();
 };
 
-buildPlace(firstPlace);
+buildPlace();
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 resize();

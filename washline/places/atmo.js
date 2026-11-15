@@ -1,9 +1,7 @@
-// Strangereal atmosphere: single scattering with Rayleigh, Mie and ozone over
-// a flat earth, sunlight dimmed by the Kasten-Young airmass. The sky dome and
-// the city's aerial perspective use the same functions, so far towers fade
-// into exactly the sky behind them. Units: metres; altitude 0 is the street.
-import * as THREE from 'three';
-
+// Atmosphere: single scattering with Rayleigh, Mie and ozone over a flat earth.
+// The Kasten-Young airmass dims the sunlight; the Earth's shadow rises after sunset.
+// cliff-air.js uses it for the sky, the fog light and the aerial perspective.
+// Units: metres. Pass altitudes above the sea.
 export const ATMO = /* glsl */ `
   const float PI_A = 3.14159265;
   const float HR = 8000.0, HM = 1100.0;
@@ -59,34 +57,3 @@ export const ATMO = /* glsl */ `
     inS += E * vec3(1.0, 0.4, 0.13) * 0.035 * glow * pow(az, 5.0) * exp(-max(d.y, 0.0) * 10.0) * (1.0 - T);
   }
 `;
-
-// The sky dome: the scattering above, plus a sun disc while the sun is up.
-export function atmoDome(group, H) {
-  const u = { uSun: { value: new THREE.Vector3(0, 1, 0) }, uE: { value: 18 }, uH: { value: H } };
-  const mat = new THREE.ShaderMaterial({
-    uniforms: u, side: THREE.BackSide, depthWrite: false, fog: false,
-    vertexShader: /* glsl */ `varying vec3 vD; void main() { vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */ `
-      varying vec3 vD; uniform vec3 uSun; uniform float uE, uH;
-      ${ATMO}
-      void main() {
-        vec3 d = normalize(vD), inS, T;
-        float h0 = cameraPosition.y + uH;
-        scatter(h0, d, -1.0, uSun, uE, inS, T);
-        float cs = dot(d, uSun);
-        inS += uE * 6.0 * sunAt(uSun, h0) * smoothstep(0.99995, 0.99999, cs) * T;
-        gl_FragColor = vec4(inS, 1.0);
-      }`,
-  });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(28000, 64, 32), mat);
-  dome.renderOrder = -9;
-  dome.frustumCulled = false;
-  group.add(dome);
-  return {
-    u,
-    tick(sunDir, cam) {
-      u.uSun.value.copy(sunDir);
-      dome.position.copy(cam.position);
-    },
-  };
-}
