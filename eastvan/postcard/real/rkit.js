@@ -725,7 +725,13 @@ export function start(stage, mods, { onScene = () => {} } = {}) {
     const c = card.cam, asp = view.w / view.h, n = 0.1;
     let tu = Math.tan(c.up * RAD), td = Math.tan(c.down * RAD);
     const half = asp * (tu + td) / 2;
-    if (half < c.minHalf) { tu *= c.minHalf / half; td *= c.minHalf / half; }
+    if (half < c.minHalf) {
+      tu *= c.minHalf / half; td *= c.minHalf / half;
+      // upMax and downMax cap one side, in degrees; the other side takes the rest.
+      const sum = tu + td;
+      if (c.upMax && tu > Math.tan(c.upMax * RAD)) { tu = Math.tan(c.upMax * RAD); td = sum - tu; }
+      if (c.downMax && td > Math.tan(c.downMax * RAD)) { td = Math.tan(c.downMax * RAD); tu = sum - td; }
+    }
     const hw = asp * (tu + td) / 2;
     camera.projectionMatrix.makePerspective(-n * hw, n * hw, n * tu, -n * td, n, 1500);
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
