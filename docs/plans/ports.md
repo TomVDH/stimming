@@ -25,7 +25,7 @@ A toy adopts a module only after its reference port proves it ([modularize.md](m
 | Module | Reference port | Proof |
 |---|---|---|
 | `audioKit()` | `eyes`, 2026-11-15 (`stimming-4u0b`) | The hand copy goes; first frame pixel-equal, same sound. SwiftShader only |
-| `oklchLinear` | `rain`, 2026-11-15 (`stimming-zaqb`) | Not bit-equal: the copies round the matrix to 10 digits. 2 to 31 pixels per frame move by 1/255. Real GPU and SwiftShader. Tom decides if that counts as the same frame |
+| `oklchLinear` | `rain`, 2026-11-15 (`stimming-zaqb`) | Not bit-equal: the copies round the matrix to 10 digits. 2 to 31 pixels per frame move by 1/255. Real GPU and SwiftShader. Tom accepts this as the same frame (2026-11-15): ready for the toys below |
 | `output.js`: `ouAces` | `stone`, 2026-11-15 (`stimming-hmvj`) | Same text; 0 pixels differ in 25 frames, real GPU and SwiftShader. Ready for the toys below that copy `aces()` |
 | `output.js`: `ouSrgb`, `ouKnee`, `ouDither` | Not yet | Stone has none of them. `dijkstra` holds the exact `srgb()` text. The clamped `srgb()` copies (`kaleido`, `neon`, `rain`, `chladni`, `eyes`) keep their clamp |
 

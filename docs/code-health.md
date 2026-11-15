@@ -40,6 +40,7 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | 9 | Dev tools | A `package.json` with TypeScript and library types is approved. `node_modules/` stays git-ignored |
 | 10 | Type check in CI | No. It runs locally only |
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
+| 12 | Same frame | A shift of 1/255 on a few pixels counts as the same frame (2026-11-15, from Rain's `oklchLinear` proof). A larger change needs Tom's look |
 
 ## Stack types
 
