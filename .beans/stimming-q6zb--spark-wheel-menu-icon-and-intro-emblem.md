@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:52:50Z
+updated_at: 2026-11-15T08:53:43Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -44,3 +44,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom: "Yes, keep going" on round 8. Round 9 (icons/spike-spark-9.html) adds the Isometric block in the same language, after Pin art's block: a flat-shaded slab (teal sides, slate top), the bead wheel standing on it in the left face's plane, a spray of warm beads lying on the top. Studs swell under the pointer; a sideways sweep turns the wheel and each passing stud skids a bead out along the top, where it cools. The Shaded object is round 8's. The sheet points at round 9. Waits on Tom's pick.
 
 - 2026-11-15, Tom: "you took pin art so literal; check wind map, galaxy, sonar: all unique and nice". Rounds 8 and 9 copied Pin art's beads. Round 10 (icons/spike-spark-10.html) draws the toy's signature image as a live miniature, after Wind map: a porthole on the teal room, the cream slotted wheel at the left, a long-exposure fountain of 70 sparks (each a real flight with drag, gravity and a floor skid, tapering white to ember), small stars where sparks fork, the spray mirrored in the wet floor. On hover comets run along every flight; the spray turns toward the pointer and grinds harder the farther it is; a quick stroke spins the wheel. It returns to the picture and stops on leave. The Isometric block is round 9's. The sheet points at round 10.
+
+- 2026-11-15, Tom on round 10: "this is more like it, but clean this up, slightly more minimal and better framed". Round 11 (icons/spike-spark-11.html): the wheel sits whole inside the porthole and a little smaller, the floor lower; 40 sparks in place of 70, kept inside the frame; no fork stars, no knurl texture, no floor line; a thinner flint post. Behaviour as round 10. The sheet points at round 11.
