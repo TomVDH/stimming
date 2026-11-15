@@ -94,7 +94,7 @@
 import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound, stage as mark, pageReady } from '../shared/stim.js';
 mark('libs');
 import { intro as playIntro } from '../shared/intro.js';
-import { QUAD_VS, outsideFS, cabinFS } from './shader.js';
+import { QUAD_VS, outsideFS, cabinFS, standIn } from './shader.js';
 import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
@@ -298,11 +298,11 @@ function declared(src) {
   }
   return out;
 }
-function passMaterial(fs, behind = false) {
+function passMaterial(fs, behind = false, uniforms = null) {
   const src = noVer(fs);
   // Behind sits the quad on the far plane: the depth test skips pixels under the wing.
   const vs = behind ? noVer(QUAD_VS).replace('vec4(aPos, 0.0, 1.0)', 'vec4(aPos, 1.0, 1.0)') : noVer(QUAD_VS);
-  return new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vs, fragmentShader: src, uniforms: declared(src), depthTest: behind, depthWrite: false, depthFunc: THREE.LessEqualDepth });
+  return new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vs, fragmentShader: src, uniforms: uniforms || declared(src), depthTest: behind, depthWrite: false, depthFunc: THREE.LessEqualDepth });
 }
 // One big triangle covers the screen.
 const quadGeo = new THREE.BufferGeometry();
@@ -329,8 +329,16 @@ const noWing = s => s
   .replace('hash12(gl_FragCoord.xy)', 'hash12(gl_FragCoord.xy + uJit)')
   .replace('hash12(gl_FragCoord.xy + 17.0)', 'hash12(gl_FragCoord.xy + 17.0 + uJit)')
   .replace('dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))', 'dot(gl_FragCoord.xy + uJit, vec2(0.0671, 0.00584))');
-const M1 = passMaterial(noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL })), true), M2 = passMaterial(cabinFS({ ALT, WIN }));
+const FS1 = noWing(outsideFS({ ALT, WIN, MAXCELL, MAXFL }));
+const M1 = passMaterial(FS1, true), M2 = passMaterial(cabinFS({ ALT, WIN }));
 const P1 = { u: slots(M1), scene: passScene(M1) }, P2 = { u: slots(M2), scene: passScene(M2) };
+// The stand-in shares the full pass's uniforms, so both get every frame's values.
+// It draws only while the full pass compiles; see the start section.
+const M1s = passMaterial(standIn(FS1), true, M1.uniforms);
+// A constant alpha of 1 replaces the target; less lays the stand-in over the full pass.
+Object.assign(M1s, { blending: THREE.CustomBlending, blendSrc: THREE.ConstantAlphaFactor, blendDst: THREE.OneMinusConstantAlphaFactor, blendAlpha: 1 });
+// After the swap, the stand-in fades out over the full pass in 1.5 s.
+const fade = { scene: null, t0: 0 };
 // Pass 1 needs a float target for its bright lamps and discs.
 const floatOK = renderer.extensions.has('EXT_color_buffer_float');
 function dataTex(data, w, h) {
@@ -1592,6 +1600,11 @@ function render() {
     wisp: [(cam.x * 1000) % 3264, 0, (cam.z * 1000) % 63], shake: !reduce, beam: wlight.level, elmo: Math.min(1.6, elmo.level + elmo.surge * 1.6) });
   renderer.render(wing3.scene, wing3.cam);
   renderer.render(P1.scene, quadCam);
+  if (fade.scene) {
+    const k = clamp((performance.now() - fade.t0) / 1500);
+    if (k >= 1 || reduce) fade.scene = null;
+    else { M1s.blendAlpha = 1 - k * k * (3 - 2 * k); renderer.render(fade.scene, quadCam); }
+  }
   // Bolts add their light over the outside; the wing's depth hides them.
   // A thick bank swallows them.
   lastBolt = bolts.update({ flashes, camXZ: [cam.x, cam.z], H: ALT, wingCam: wing3.cam, outW: outBuf.w, outH: outBuf.h, cover: opts.cloud, haze: smooth(0.3, 0.9, fog.level), sun: Math.max(...sky.sunL) });
@@ -1947,6 +1960,28 @@ onQuality(() => resize(true));
 /* ---------- start ---------- */
 // The flight opens with a few cells already standing.
 for (let i = 0; i < Math.round(opts.storm * MAXCELL); i++) { const c = newCell(false); c.age = rnd(50, 80); c.s = 1; cells.push(c); }
+// The full outside pass compiles in the background, where the browser allows it.
+// A cached program is ready at once; a cold compile on Direct3D takes about 30 s.
+// Until it is ready, the stand-in draws pass 1. ?standin pins the stand-in.
+if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+  const full = P1.scene;
+  const done = qs.has('standin') ? new Promise(() => {}) : renderer.compileAsync(full, quadCam).then(() => {
+    // A failed link keeps the stand-in, so a weak chip still gets a view.
+    const prog = renderer.properties.get(M1).currentProgram?.program;
+    if (prog && !gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.warn('window: full pass failed to link; the stand-in stays'); return false; }
+    return true;
+  });
+  const ok = await Promise.race([done, new Promise(r => setTimeout(() => r(null), 300))]);
+  if (ok !== true) {
+    P1.scene = passScene(M1s);
+    done.then(good => {
+      if (!good) return;
+      fade.scene = P1.scene; fade.t0 = performance.now();
+      P1.scene = full; mark('full-pass');
+      if (ready) render();
+    });
+  }
+}
 buildSky(firstSky);
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);

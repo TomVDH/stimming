@@ -2977,3 +2977,25 @@ void main() {
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
   o = vec4(c, 1.0);
 }`;
+
+// A light stand-in for the outside pass: sky, haze, sun and moon, and flat land.
+// Direct3D takes about 30 s to compile the full pass on a first visit.
+// The stand-in compiles in about 3 s and draws while the full pass compiles.
+// Each listed function keeps its signature; its body returns the given value.
+const STAND_IN = {
+  ground: 'landFlat(w, fw)', landCover: 'g', nearFog: 'c', stormAir: 'c',
+  deck: 'vec4(0.0, 0.0, 0.0, 1.0)', midLayer: 'vec4(0.0, 0.0, 0.0, 1.0)', cirrus: 'vec4(0.0, 0.0, 0.0, 1.0)',
+  stem: 'vec4(0.0, 0.0, 0.0, 1.0)', rainShaft: 'vec4(0.0, 0.0, 0.0, 1.0)', sprites: 'vec3(0.0)', aurora: 'vec3(0.0)',
+};
+export function standIn(src) {
+  for (const [name, ret] of Object.entries(STAND_IN)) {
+    const m = new RegExp(String.raw`^(\w+)\s+${name}\s*\(([^)]*)\)\s*\{`, 'm').exec(src);
+    if (!m) throw new Error(`standIn: no function ${name}`);
+    let i = m.index + m[0].length, depth = 1;
+    while (depth && i < src.length) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; i++; }
+    // Out parameters get zeros, so the stub compiles cleanly.
+    const outs = [...m[2].matchAll(/\bout\s+(\w+)\s+(\w+)/g)].map(([, t, n]) => `${n} = ${t}(0.0);`).join(' ');
+    src = `${src.slice(0, m.index)}${m[1]} ${name}(${m[2]}) { ${outs} return ${ret}; }${src.slice(i)}`;
+  }
+  return src;
+}
