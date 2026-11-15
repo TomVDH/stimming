@@ -5,13 +5,13 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T05:51:27Z
+updated_at: 2026-11-15T05:55:42Z
 parent: stimming-oh7b
 ---
 
 Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly smaller, more pizazz, zany. He picked way 3: types that behave, plus a wheel that heats up and sheds the heat in a flare. Design: docs/plans/spark-zany.md.
 
-- [ ] Design doc approved by Tom
+- [x] Design doc approved by Tom
 - [ ] Plan written and approved
 
 ## Notes
