@@ -37,7 +37,36 @@
   </main>
   <section class="about" aria-labelledby="toy-name">
     <h1 class="display" id="toy-name">Car wash</h1>
-    <div class="vignette" hidden></div>
+    <div class="vignette">
+      <div>
+        <h2>Twenty metres of water, cloth and air</h2>
+        <p>In a tunnel car wash the car stays in neutral, and a roller in the floor pushes one wheel along at about a third of a metre a second. Each arch does one job. Pre-soak loosens the road film, foam carries soap onto every panel, then soft cloth scrubs: hanging strips first, then drums of cloth that spin round the sides and roll over the roof.</p>
+        <p>Soap works because each molecule has a head that likes water and a tail that likes oil. The tails grip the grime and the water carries it off. Wax does the opposite to the glass: it makes it shed water, so the film breaks into round beads. Beads are what the dryer's sheet of air can chase up the windscreen and off the roof. Hold <em>Wipers</em> to do it the old way.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 240 96" role="img" aria-label="A side view of the tunnel. A car sits at the left on the conveyor line. Eight arches stand along it: pre-soak, foam, cloth strips, brushes, rinse, wax, spot-free rinse and the dryer.">
+          <path d="M6 78H234" stroke="oklch(0.45 0.02 280)" stroke-width="1.5"/>
+          <g stroke-dasharray="3 4" stroke="oklch(0.62 0.12 75)" stroke-width="1.2"><path d="M6 82H234"/></g>
+          <path d="M10 76V68Q11 63 17 62L24 61L30 55Q32 53 36 53H46Q50 53 52 56L56 61L62 62Q66 63 66 67V76Z" fill="oklch(0.3 0.02 280)"/>
+          <circle cx="21" cy="77" r="4" fill="oklch(0.18 0.01 280)"/><circle cx="56" cy="77" r="4" fill="oklch(0.18 0.01 280)"/>
+          <g fill="none" stroke-width="2.4" stroke-linecap="round">
+            <path d="M80 78V30H92V78" stroke="oklch(0.8 0.14 212)"/>
+            <path d="M100 78V30H112V78" stroke="oklch(0.64 0.28 350)"/>
+            <path d="M120 78V30H132V78" stroke="oklch(0.58 0.25 298)"/>
+            <path d="M140 78V30H152V78" stroke="oklch(0.85 0.09 75)"/>
+            <path d="M160 78V30H172V78" stroke="oklch(0.8 0.14 212)"/>
+            <path d="M180 78V30H192V78" stroke="oklch(0.64 0.28 350)"/>
+            <path d="M200 78V30H212V78" stroke="oklch(0.93 0.03 240)"/>
+            <path d="M220 78V30H232V78" stroke="oklch(0.8 0.165 68)"/>
+          </g>
+          <g fill="oklch(0.85 0.03 280)" font-size="7" text-anchor="middle" font-family="inherit">
+            <text x="86" y="22">soak</text><text x="106" y="14">foam</text><text x="126" y="22">cloth</text><text x="146" y="14">brush</text>
+            <text x="166" y="22">rinse</text><text x="186" y="14">wax</text><text x="206" y="22">spot</text><text x="226" y="14">dry</text>
+          </g>
+        </svg>
+        <figcaption>Eight stations, one after the other.</figcaption>
+      </figure>
+    </div>
   </section>
 </div>
 
@@ -632,6 +661,12 @@ vec3 endWall(vec3 H) {
 vec3 facade(vec3 H) {
   float rib = 0.6 + 0.4 * smoothstep(0.0, 0.12, abs(fract(H.x * 2.5) - 0.5));
   vec3 c = vec3(0.003, 0.003, 0.004) * rib + spill(H) * rib;
+  // The name over the door, in neon.
+  if (abs(H.x) < 1.75 && H.y > 3.5 && H.y < 4.3) {
+    float w = signAt(9, vec2((H.x + 1.75) / 3.5, (H.y - 3.5) / 0.8));
+    float flick = 0.92 + 0.08 * step(0.5, fract(uTime * 0.37));
+    c += mix(uZone[0], uZone[1], step(0.0, H.x)) * w * 3.0 * flick + mix(uZone[0], uZone[1], 0.5) * 0.02;
+  }
   bool hit = false;
   vec3 sg = signal(H.xy, vec2(-2.42, 1.65), uSig.x, hit);
   return hit ? sg : c;
@@ -891,18 +926,20 @@ vec3 blower(vec3 d, float tG, inout float t, vec3 col) {
   vec2 inv = 1.0 / d.yz;
   vec2 ta = (lo - vec2(0.0)) * inv, tb = (hi - vec2(0.0)) * inv;
   vec2 tn = min(ta, tb), tf = max(ta, tb);
-  float t0 = max(tn.x, tn.y), t1 = min(tf.x, tf.y);
-  if (t0 < t1 && t0 > tG && t0 < t) {
+  float t0 = max(max(tn.x, tn.y), tG), t1 = min(tf.x, tf.y);
+  if (t0 < t1 && t0 < t) {
     vec3 P = d * t0;
     float X = P.x + EX;
     if (abs(X) < 1.8) {
       t = t0;
       vec3 W = vec3(X, P.y + EY, uS - P.z);
-      col = lightAt(W, vec3(0.0, -0.3, -1.0)) * 0.08;
-      // The slot glows amber along the nozzle's lower lip.
-      float lip = smoothstep(0.03, 0.0, abs(P.y - (uBlow.y - 0.09)));
-      col += uArchC[8] * lip * 3.0;
-      col *= 1.0 - 0.3 * step(0.5, fract(X * 4.0));
+      // The underside holds the air slot; the front carries a thin light.
+      bool under = tn.x > tn.y;
+      col = lightAt(W, under ? vec3(0.0, -1.0, 0.0) : vec3(0.0, 0.0, -1.0)) * 0.06;
+      float pw = max(0.004, t0 * uPix);
+      float line_ = under ? smoothstep(pw * 2.0, 0.0, abs(-P.z - uBlow.x) - 0.012) : smoothstep(pw * 2.0, 0.0, abs(P.y - (uBlow.y - 0.08)) - 0.006);
+      col += uArchC[8] * line_ * (under ? 4.0 : 2.5);
+      col *= 1.0 - 0.25 * step(0.5, fract(X * 4.0));
     }
   }
   // The side towers.
@@ -1064,6 +1101,9 @@ uniform vec2 uRes, uSimRes, uM;
 uniform float uAsp, uTime, uF, uHZ, uFlow, uWind, uSheetT, uFog;
 // Blade angles: driver, passenger.
 uniform vec2 uWipA;
+// The dryer's air line: its frame v, how hard it blows, its colour.
+uniform vec3 uKnife;
+uniform vec3 uKnifeC;
 uniform vec3 uDash;
 // The tunnel's own light round the car: it lights the foam from every side.
 uniform vec3 uAmb;
@@ -1158,6 +1198,13 @@ void main() {
     col = mix(col, through * T + glow, cov);
   }
 
+  // The dryer's air line tears the water into a bright mist along the glass.
+  if (uKnife.y > 0.0) {
+    float dk = uv.y - uKnife.x;
+    float mist = exp(-dk * dk / 0.0006) * (0.6 + 0.8 * cwN(vec2(q.x * 30.0 - uTime * 9.0, uTime * 3.0)));
+    col += uKnifeC * mist * uKnife.y * 0.35 + uKnifeC * smoothstep(0.0, 0.25, dk) * smoothstep(0.5, 0.25, dk) * uKnife.y * 0.03;
+  }
+
   // The wipers: blades on the glass, a little soft this close.
   for (int b = 0; b < 2; b++) {
     vec2 piv = b == 0 ? PIV1 : PIV2;
@@ -1227,7 +1274,7 @@ const vao = gl.createVertexArray();
 
 /* ---------- signs ---------- */
 // Each station names itself on a lit board; the words draw once into a small atlas.
-const SIGN_WORDS = ['PRE-SOAK', 'TRIPLE FOAM', 'SOFT CLOTH', 'BRUSHES', 'RINSE', 'HOT WAX', 'SPOT FREE', 'DRYER', 'EXIT', ''];
+const SIGN_WORDS = ['PRE-SOAK', 'TRIPLE FOAM', 'SOFT CLOTH', 'BRUSHES', 'RINSE', 'HOT WAX', 'SPOT FREE', 'DRYER', 'EXIT', 'CAR WASH'];
 const signTex = gl.createTexture();
 function drawSigns() {
   const cv = document.createElement('canvas');
@@ -1593,6 +1640,8 @@ function draw() {
   gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.wind); gl.uniform1f(u('uSheetT'), motion.sheetT);
   gl.uniform1f(u('uFog'), 0.04);
   gl.uniform2f(u('uWipA'), wip.a, passenger(wip.a));
+  gl.uniform3f(u('uKnife'), U.knife[1], U.knife[2], 0);
+  gl.uniform3fv(u('uKnifeC'), ARCH_C[8]);
   gl.uniform3f(u('uDash'), 0.004, 0.0035, 0.004);
   gl.uniform3fv(u('uAmb'), U.amb);
   run(paneP, rtPane);
@@ -1623,6 +1672,8 @@ function stepCar(dt) {
     car.s = Math.min(S1, car.s + car.v * dt);
     if (car.s >= S1 - 0.002) { car.mode = 'done'; car.v = 0; car.stopAt = time; }
   }
+  // The dryer's air shakes the body a little.
+  if (air > 0.05 && !reduced()) { bob.vp += (Math.random() - 0.5) * 0.05 * air * dt * 30; bob.vh += (Math.random() - 0.5) * 0.04 * air * dt * 30; }
   // Pitch and heave on a damped spring.
   const k = 30, c = 7;
   bob.vp += (-k * bob.p - c * bob.vp) * dt;
@@ -1880,7 +1931,22 @@ act.go = go;
 act.jump = k => { jumpTo(STOPS[k]); stillFor = 0; wake(); };
 act.reset = () => { fading = null; fade = 1; toEntry(); stages(0); draw(); };
 act.paint = v => { paint = linFit(...PAINTS[v]); gloss = v === 'pearl' ? 0.7 : 1; draw(); };
-act.wipeDown = () => { wip.held = true; if (wip.mode !== 'cycle') { wip.mode = 'cycle'; wip.t = 0; } stillFor = 0; wake(); };
+// With motion reduced, a wipe clears its fan in one step and the blades rest again.
+function instantWipe() {
+  wip.prev = PARK; wip.a = TOPA;
+  stages(0);
+  simStep(0);
+  wip.prev = wip.a = PARK;
+  stages(0);
+  draw();
+}
+act.wipeDown = () => {
+  if (reduced()) { instantWipe(); return; }
+  wip.held = true;
+  if (wip.mode !== 'cycle') { wip.mode = 'cycle'; wip.t = 0; }
+  stillFor = 0;
+  wake();
+};
 act.wipeUp = () => { wip.held = false; };
 
 /* ---------- pointer ---------- */
@@ -1905,7 +1971,7 @@ canvas.addEventListener('pointermove', e => {
 function release(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
   const tap = !ptr.drag && e?.type === 'pointerup';
-  if (ptr.drag) wip.mode = 'rest';
+  if (ptr.drag) { wip.mode = 'rest'; if (reduced()) instantWipe(); }
   ptr = null;
   if (!tap) { wake(); return; }
   if (car.mode === 'rolling' && !reduced()) { wip.mode = 'cycle'; wip.t = 0; wip.held = false; stillFor = 0; wake(); }
