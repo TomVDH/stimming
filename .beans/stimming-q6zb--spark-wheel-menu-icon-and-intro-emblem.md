@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T07:19:19Z
+updated_at: 2026-11-15T07:25:01Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -26,3 +26,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
   - The standard is in AGENTS.md (Icon standard); icons/picks.json iterates A and D.
   - icons/spike-spark-2.html holds Spark wheel's Current, A (Shaded object) and D (Isometric block), drawn before the stop. Not iterated, not installed. Round 1 (spike-spark-1) stays as a file, off the sheet.
   - Next: Tom looks at the sheet and marks what to draw or redo.
+
+- 2026-11-15, Tom: "ensure that all remain interactive when moused over". The sheet's Current column was a still copy; it is now the menu's own tiles in a frame laid over the column, so every icon on the sheet reacts. A click on a Current tile marks it and does not open the toy.

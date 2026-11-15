@@ -44,6 +44,7 @@ Read `README.md` for the toy list and the full rules.
 
   - Draw no other style: no Stencil cut-out, no Single-weight line, no Abstract mark.
   - `icons/sheet.html` is the reference: one row per toy in `toys.json` order, with Current, Shaded object and Isometric block as Icon, Intro logo (the luminance emblem) or Both. An empty slot says `To draw` or `Cut`.
+  - Every icon on the sheet stays live under the pointer (Tom, 2026-11-15). The Current column is the menu itself in a frame, so each tile keeps its own hover; each alt pair is its gallery in a frame. Never swap a live icon for a still copy.
   - Read the sheet before any icon work. Generate no icon until the sheet shows its slot; when the sheet is out of date, renew the sheet first.
   - Tom marks a tile or an empty slot on the sheet with a click; `Copy marks` gives the list as JSON.
   - A new round is one gallery, `icons/spike-<toy>-<n>.html`, with three cards: Current, A (Shaded object) and D (Isometric block). Then add the toy to the sheet's `GALLERY` table.

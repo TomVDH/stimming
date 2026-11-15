@@ -61,8 +61,12 @@ h3 span { color: var(--faint); }
 .cell { position: relative; display: grid; gap: 6px; width: var(--tile); border-radius: 14px; cursor: pointer; }
 .tile, .logo, .slot { width: var(--tile); aspect-ratio: 1; border-radius: 14px; }
 /* The Current column sits on its own panel. */
-.tile { display: grid; place-items: center; background: var(--panel); }
-.tile svg { display: block; width: 84%; height: 84%; overflow: visible; }
+.tile { background: var(--panel); }
+/* The live menu lies over the Current column, so each icon keeps its hover. */
+#rows { position: relative; }
+#live { position: absolute; left: -10000px; top: 0; width: 1280px; height: 900px; border: 0; visibility: hidden; }
+#live.on { left: 0; width: var(--tile); height: 100%; z-index: 1; background: transparent; visibility: visible; }
+.trans #live.on { visibility: hidden; }
 /* The intro logo: the emblem as a luminance mask, white on dark glass. */
 .logo { display: none; place-items: center; background: oklch(0.12 0.01 275); }
 .logo i { display: block; width: 70%; aspect-ratio: 1; background: #fff; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; -webkit-mask: var(--emblem) center / contain no-repeat; }
@@ -103,7 +107,7 @@ h3 span { color: var(--faint); }
     </div>
     <div class="cols"><span>Toy</span><span>Current</span><span class="two"><span>Shaded object</span><span>Isometric block<em>The alt style</em></span></span></div>
   </div>
-  <div id="rows"></div>
+  <div id="rows"><div id="list"></div></div>
   <p class="note">Click a tile or an empty slot to mark it. Copy marks gives the list as JSON.</p>
 </div>
 <script type="module">
@@ -155,38 +159,13 @@ const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
 const archived = await fetch('archive/cut.json').then(r => r.json()).catch(() => ({ cut: {} }));
 const gone = new Set(Object.entries(archived.cut || {}).flatMap(([id, ls]) => ls.map(l => `${id}-${l.toLowerCase()}`)));
 
-// The menu gives the toy order and each Current icon.
-// It renders off screen first, because its script draws some icons.
-const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html?lab', title: 'Menu', tabIndex: -1 });
-menuFrame.setAttribute('aria-hidden', 'true');
-menuFrame.style.cssText = 'position: absolute; left: -10000px; top: 0; width: 1280px; height: 900px; visibility: hidden;';
-document.body.append(menuFrame);
+// The menu gives the toy list and the Current icons.
+// It loads off screen at full width first, because its script fits each icon.
+const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html?lab', title: 'Current menu icons', id: 'live' });
+$('rows').append(menuFrame);
 await new Promise(r => { menuFrame.addEventListener('load', r, { once: true }); setTimeout(r, 6000); });
 await new Promise(r => setTimeout(r, 900));
 const menu = menuFrame.contentDocument;
-// The menu's shared gradients come along under ids of their own.
-function menuIcon(id) {
-  const svg = menu?.querySelector(`a.toy#${id} svg`);
-  if (!svg) return '';
-  const own = svg.cloneNode(true), seen = new Set();
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  const take = el => {
-    for (const [, ref] of el.outerHTML.matchAll(/(?:url\(#|href="#)([\w-]+)/g)) {
-      if (seen.has(ref) || own.querySelector(`[id="${ref}"]`)) continue;
-      const d = menu.getElementById(ref);
-      if (!d) continue;
-      seen.add(ref);
-      const c = d.cloneNode(true);
-      defs.append(c);
-      take(c);
-    }
-  };
-  take(own);
-  own.prepend(defs);
-  let html = own.outerHTML;
-  for (const ref of seen) html = html.replaceAll(`#${ref})`, `#m-${id}-${ref})`).replaceAll(`"#${ref}"`, `"#m-${id}-${ref}"`).replaceAll(`id="${ref}"`, `id="m-${id}-${ref}"`);
-  return html;
-}
 // The order is toys.json: the main shelf by number, then the Lab by name.
 // The menu says which toys it shows and which sit in the Lab.
 const links = new Map([...(menu?.querySelectorAll('a.toy[id]') || [])].map(a => [a.id, !!a.closest('.lab')]));
@@ -206,26 +185,74 @@ const row = ({ id }) => {
   return `<section class="row" id="row-${id}" data-toy="${id}">
     <h2>${nameOf(id)}</h2>
     <div class="cell" data-key="${id}-current" tabindex="0" role="button" aria-label="${nameOf(id)}, Current">
-      <div class="tile">${menuIcon(id)}</div>
+      <div class="tile"></div>
       <div class="logo">${emb ? `<i style="--emblem: url(../${emb})"></i>` : ''}</div>
     </div>
     <div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l))).join('')}</div>
   </section>`;
 };
 const group = (title, list) => (list.length ? `<h3>${title} <span>· ${list.length}</span></h3>${list.map(row).join('')}` : '');
-$('rows').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
-menuFrame.remove();
+$('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
+
+// The menu frame turns into the Current column: only its tiles stay, one on each row.
+// A tile keeps its own listeners, styles and gradients, so its hover is the menu's own.
+const tiles = new Map();
+const NAKED = 'display: block !important; position: static !important; transform: none !important; filter: none !important; opacity: 1 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; animation: none !important; transition: none !important; contain: none !important;';
+function goLive() {
+  if (!links.size) { menuFrame.remove(); return; }
+  const keep = new Set(), off = n => n.style.setProperty('display', 'none', 'important');
+  for (const a of menu.querySelectorAll('a.toy[id]')) {
+    if (tiles.has(a.id) || !document.getElementById(`row-${a.id}`)) { off(a); continue; }
+    tiles.set(a.id, a);
+    for (let n = a.parentElement; n && n !== menu.documentElement; n = n.parentElement) keep.add(n);
+  }
+  // Everything that is not a tile, or on the way to one, goes.
+  for (const n of keep) {
+    for (const c of n.children) if (!keep.has(c) && !tiles.has(c.id) && !c.matches('svg.defs, script, style, link')) off(c);
+    n.style.cssText += `; ${NAKED}`;
+  }
+  for (const a of tiles.values()) {
+    for (const c of a.children) if (!c.matches('.obj')) off(c);
+    a.style.cssText += '; position: absolute !important; left: 0 !important; display: grid !important; place-items: center !important; gap: 0 !important; margin: 0 !important; padding: 0 !important; opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important;';
+  }
+  const css = menu.createElement('style');
+  css.textContent = `
+    html, body { background: transparent !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; }
+    a.toy { width: var(--tile) !important; height: var(--tile) !important; border-radius: 14px !important; }
+    a.toy .obj { width: 100% !important; height: 100% !important; max-width: none !important; }
+    a.toy .obj svg { width: 90% !important; height: 90% !important; }
+    a.toy .obj .series, a.toy .obj::after { display: none !important; }
+    a.toy:focus-visible { outline: 2px solid oklch(0.84 0.13 205) !important; outline-offset: -2px !important; }`;
+  menu.head.append(css);
+  // A click marks the tile; it does not open the toy.
+  menu.addEventListener('click', e => {
+    const a = e.target.closest?.('a.toy');
+    if (!a) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    toggle(`${a.id}-current`);
+  }, true);
+  menu.addEventListener('keydown', onKey);
+  menuFrame.classList.add('on');
+}
+// Each tile sits on its row's Current cell.
+const place = () => {
+  if (!tiles.size) return;
+  menuFrame.style.left = `${document.querySelector('.cell').offsetLeft}px`;
+  for (const [id, a] of tiles) a.style.setProperty('top', `${document.querySelector(`#row-${id} .cell`).offsetTop}px`, 'important');
+};
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
 $('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric`;
 
 // The tile size fits three columns; the name moves above them on phones.
 const layout = () => {
-  const w = $('rows').clientWidth, narrow = matchMedia('(max-width: 640px)').matches;
+  const w = $('list').clientWidth, narrow = matchMedia('(max-width: 640px)').matches;
   const tile = Math.floor(Math.min(128, narrow ? (w - 8 - 8) / 3 : (w - 160 - 64 - 14) / 3));
-  for (const el of [document.documentElement, ...docs.map(d => d.documentElement)]) {
-    el.style.setProperty('--tile', `${tile}px`);
-    el.style.setProperty('--gap', narrow ? '8px' : '14px');
+  for (const el of [document.documentElement, menu?.documentElement, ...docs.map(d => d.documentElement)]) {
+    el?.style.setProperty('--tile', `${tile}px`);
+    el?.style.setProperty('--gap', narrow ? '8px' : '14px');
   }
+  place();
 };
 
 // Marks: a click toggles one; the list goes out as JSON.
@@ -268,6 +295,7 @@ const show = v => {
   view = v;
   for (const d of [document, ...docs]) { d.body.classList.toggle('trans', v === 'trans'); d.body.classList.toggle('both', v === 'both'); }
   for (const n of VIEWS) $(`v-${n}`).setAttribute('aria-pressed', String(n === v));
+  place();
 };
 for (const n of VIEWS) $(`v-${n}`).addEventListener('click', () => show(n));
 
@@ -348,9 +376,12 @@ for (const sec of document.querySelectorAll('.row')) {
   const id = sec.dataset.toy;
   if (COLS.some(([l]) => stateOf(id, l) === 'have')) near.observe(sec);
 }
+goLive();
 layout();
 paint();
 addEventListener('resize', layout);
+// A change of view changes the row heights; the tiles follow.
+new ResizeObserver(place).observe($('list'));
 </script>
 </body>
 </html>
