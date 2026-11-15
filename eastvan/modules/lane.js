@@ -8,7 +8,7 @@ export const ID = 'lane';
 export const SIZE = [14, 12];
 export const ORIGIN = [0, 0, -22.5];
 export const JOIN = 'east';
-export const STOP = { at: [0, 2.2, -22.5], yaw: Math.PI + 0.55, w: 20, tall: 24, h: 14, band: 5, range: 12 };
+export const STOP = { at: [0, 1.4, -22.5], yaw: Math.PI + 0.5, pitch: 0.78, w: 21, tall: 24, h: 16, band: 5, range: 12 };
 
 // A lane bin. The lid turns on its fence-side edge.
 const bin = (x, c, id) => [
@@ -70,7 +70,34 @@ export const PARTS = [
 
   // The far side stays low, so the camera sees the lane over it.
   fence('x', 4.2, 6.7, -27.2, 1.1),
-  ...[[-6.2, 0.6], [-4.9, 0.45], [-2.6, 0.7], [-1.5, 0.5], [0.8, 0.65], [2.4, 0.5], [3.4, 0.4]].map(([x, r]) => blob([x, 0.17 + r * 0.7, -27.2], r, 'hedge', A)),
+  ...[[-6.2, 0.6], [-4.9, 0.45], [2.4, 0.5], [3.4, 0.4]].map(([x, r]) => blob([x, 0.17 + r * 0.7, -27.2], r, 'hedge', A)),
+
+  // A neighbour's garage across the lane, cut open like a doll's house:
+  // no roof and no back wall, so the lit workshop shows from above.
+  box([-1, 0.15, -27.65], [4.6, 0.1, 1.7], 'concrete', A),
+  box([-3.25, 1.45, -27.65], [0.12, 2.5, 1.7], 'mustard', A, { k: 'wall' }), box([1.25, 1.45, -27.65], [0.12, 2.5, 1.7], 'mustard', A, { k: 'wall' }),
+  box([-1, 2.5, -26.86], [4.6, 0.4, 0.12], 'mustard', A), box([-3, 1.25, -26.86], [0.5, 2.1, 0.12], 'mustard', A), box([1, 1.25, -26.86], [0.5, 2.1, 0.12], 'mustard', A),
+  box([-1, 2.72, -26.86], [4.8, 0.06, 0.2], 'cream', A),
+  box([-2, 0.65, -28.15], [1.8, 0.9, 0.55], 'wood', A), box([-2, 1.12, -28.15], [1.9, 0.05, 0.6], 'cedar', A),
+  box([-3.17, 1.6, -27.7], [0.04, 0.9, 1.1], 'cedar', A),
+  box([0.4, 0.45, -28], [0.5, 0.6, 0.4], 'tomato', A), box([0.4, 0.8, -28], [0.4, 0.1, 0.3], 'crow', A),
+  box([-1, 2.1, -28.3], [0.3, 0.08, 0.12], 'lamp', A, { k: 'lens', sw: 'shop2', on: true, gain: 2.2 }),
+  ...on('garage2', [-1, 2.27, -26.78], [0, 1, 2, 3].map(i => box([-1, 0.45 + 0.52 * i, -26.78], [3.4, 0.5, 0.05], 'white', A))),
+
+  // A bike locked to the far fence.
+  ...[4.85, 6.05].map(x => ({ t: 'ring', p: [x, 0.52, -26.95], r: 0.34, tube: 0.035, c: 'tyre', L: A, ax: 'z' })).slice(1),
+  beam([4.85, 0.52, -26.95], [5.35, 0.95, -26.95], 0.05, 'tomato', A), beam([5.35, 0.95, -26.95], [6.05, 0.52, -26.95], 0.05, 'tomato', A),
+  beam([5.35, 0.95, -26.95], [5.5, 0.52, -26.95], 0.05, 'tomato', A), beam([4.85, 0.52, -26.95], [5.5, 0.52, -26.95], 0.05, 'tomato', A),
+  box([5.35, 1.05, -26.95], [0.28, 0.06, 0.12], 'crow', A), beam([4.85, 0.52, -26.95], [4.95, 1.15, -26.95], 0.04, 'chrome', A),
+  box([4.95, 1.17, -26.95], [0.06, 0.04, 0.45], 'chrome', A),
+  ...on('bike', [4.85, 0.52, -26.95], [{ t: 'ring', p: [4.85, 0.52, -26.95], r: 0.34, tube: 0.035, c: 'tyre', L: A, ax: 'z' }, box([4.85, 0.52, -26.95], [0.62, 0.025, 0.02], 'chrome', A), box([4.85, 0.52, -26.95], [0.025, 0.62, 0.02], 'chrome', A)]),
+
+  // A compost bin by the garage. Its lid is in laneLife.
+  box([-0.3, 0.6, -17.3], [0.8, 0.8, 0.8], 'binGreen', A),
+  box([-0.3, 0.55, -16.89], [0.5, 0.3, 0.02], 'hedge', A),
+
+  // The pulley line: a peg on the garage wall.
+  box([0.55, 2.4, -19.6], [0.1, 0.1, 0.1], 'can', A),
 ];
 
 // The lane wires run along x on the lane pole.
@@ -80,6 +107,8 @@ const span = (y, z) => [
 ];
 export const WIRES = [
   ...span(8.6, -23.9), ...span(8.6, -25), ...span(8.6, -22.8), ...span(7.68, -23.3), ...span(7.68, -24.5),
+  // The washing line runs on a pulley from the garage wall to the pole.
+  { a: [0.55, 2.4, -19.6], b: [-5.85, 4.4, -23.8], sag: 0.25 },
 ];
 
 export const POKES = [
@@ -87,12 +116,17 @@ export const POKES = [
   { id: 'garage', at: [3.5, 1.3, -22.6], r: 1.4 }, { id: 'sensor', at: [5.9, 2.72, -22.6], r: 0.45 },
   { id: 'lane', at: [-4.3, 7.45, -24.7], r: 0.6 }, { id: 'lidC', at: [-5.3, 0.9, -22.8], r: 0.5 }, { id: 'lidD', at: [-4.5, 0.9, -22.8], r: 0.5 },
   { id: 'puddle', at: [-0.5, 0.1, -24.7], r: 0.8 }, { id: 'tv', at: [1.25, 0.4, -23.1], r: 0.45 },
+  { id: 'garage2', at: [-1, 1.3, -26.8], r: 1.4 }, { id: 'bike', at: [5.4, 0.7, -26.95], r: 0.7 },
+  { id: 'shop2', at: [-1, 2.1, -28.2], r: 0.5 },
 ];
 
 export const MOVES = {
   backgate: (g, k) => { g.rotation.y = -1.3 * k; },
   // The door rolls up: it shrinks toward its top edge.
   garage: (g, k) => { g.scale.y = 1 - 0.94 * k; },
+  garage2: (g, k) => { g.scale.y = 1 - 0.94 * k; },
+  // The front wheel spins about its hub.
+  bike: (g, k) => { g.rotation.z = -k * Math.PI * 8; },
   lidC: (g, k) => { g.rotation.x = 1.9 * k; },
   lidD: (g, k) => { g.rotation.x = 1.9 * k; },
   raccoon: (g, k, h) => { g.position.y = h[1] + 0.42 * k; },
@@ -103,6 +137,8 @@ export const MOVES = {
 export const ACTS = {
   backgate: [['swing', 'backgate', { duration: 0.9, ease: 'elastic.out(1, 0.5)' }, { duration: 0.5, ease: 'power2.in' }]],
   garage: [['swing', 'garage', { duration: 1.3, ease: 'power1.inOut' }, { duration: 1, ease: 'power1.inOut' }]],
+  garage2: [['swing', 'garage2', { duration: 1.3, ease: 'power1.inOut' }, { duration: 1, ease: 'power1.inOut' }]],
+  bike: [['run', 'bike', 2.2]],
   sensor: [['flip', 'sensor', true]], lane: [['flip', 'lane', true]], tv: [['flip', 'tv', true]],
   lidC: [['pulse', 'lidC', 0.2, 1.4, 0.5, 'bounce.out'], ['pulse', 'raccoon', 0.4, 1, 0.3, 'power2.in']],
   lidD: [['pulse', 'lidD', 0.2, 0.25, 0.6, 'bounce.out']],
@@ -114,4 +150,5 @@ export const LAMPS = [
   { col: [0.95, 0.06, 95], at: [5.9, 2.7, -22.7], to: [4.6, 0, -24.6], power: 160, range: 12, of: 'sw:sensor' },
   { col: [0.86, 0.14, 65], at: [-4.3, 7.4, -24.7], to: [-3.6, 0, -24.4], power: 420, range: 20, of: 'sw:lane' },
   { col: [0.84, 0.1, 190], at: [1.25, 0.5, -23.6], power: 5, range: 5, of: 'sw:tv' },
+  { col: [0.88, 0.13, 68], at: [-1, 1.8, -27.7], power: 14, range: 7, of: 'sw:shop2' },
 ];
