@@ -5,6 +5,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WATER } from '../../shared/water.js';
 import { rng, ok, col, inst, paint, canvasTex } from './kit.js';
 import { dressBeach } from './beach-dress.js';
+import { beachLife } from './beach-life.js';
 
 const HX = -4.5;
 const SHORE = -3.5;
@@ -192,6 +193,7 @@ export default {
     // Rock spurs reach out on both sides; scrub clings to their tops.
     const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
     const scrub = [];
+    const rocks = [];
     const spur = (x0, z0, x1, z1, h0, h1, n) => {
       for (let i = 0; i < n; i++) {
         const t = i / (n - 1), h = h0 + (h1 - h0) * t * (0.7 + R() * 0.5);
@@ -201,6 +203,7 @@ export default {
         m.rotation.y = R() * 6;
         m.castShadow = m.receiveShadow = true;
         group.add(m);
+        rocks.push(m);
         for (let k = 0; k < 6 + h; k++) {
           const a = R() * Math.PI * 2, u = R() * 0.6;
           scrub.push({ p: [m.position.x + Math.cos(a) * s[0] * u, h * (0.75 + R() * 0.15), m.position.z + Math.sin(a) * s[2] * u], s: [1, 0.6, 1].map(v => v * (0.6 + R() * 1.2)), c: col([0.45 + R() * 0.1, 0.07, 115 + R() * 20]) });
@@ -221,11 +224,16 @@ export default {
     inst(group, new THREE.BoxGeometry(1, 1, 1), paint(0.9), B);
     inst(group, new THREE.CylinderGeometry(1, 1.15, 1, 7), paint(0.95), C);
 
-    dressBeach(group, R, { HX, SHORE, LINE_Z, hut, look, anchors: this.anchors });
+    const { afloat } = dressBeach(group, R, { HX, SHORE, LINE_Z, hut, look, anchors: this.anchors });
+    // Its own seed keeps the earlier layout as it was.
+    const life = beachLife(group, rng(17), { HX, SHORE, LINE_Z, hut, look, rocks, stone, rock: (() => { const lr = rng(99); return sz => rock(lr, sz); })(), anchors: this.anchors });
 
     // The sea moves with the toy's clock and the sun.
     group.userData.tick = (t, sun, cam, viewH, sky) => {
       u.uT.value = t;
+      life.tick(t);
+      // Boats at anchor ride the swell.
+      afloat.forEach((b, i) => { b.position.y = b.userData.y + 0.12 * Math.sin(t * 0.8 + i * 2); b.rotation.z = 0.04 * Math.sin(t * 0.7 + i); b.rotation.x = 0.03 * Math.sin(t * 0.9 + i * 3); });
       u.uSun.value.copy(sun.dir); u.uSunCol.value.copy(sun.col); u.uB.value = sun.b;
       u.uZen.value.copy(sky.zen); u.uHor.value.copy(sky.hor); u.uHaze.value.copy(sky.haze);
       u.uFocal.value = viewH / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)));

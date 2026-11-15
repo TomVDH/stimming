@@ -5,7 +5,7 @@ import { col, pick, inst, paint } from './kit.js';
 
 // A caique: a side profile with a curved sheer, extruded and rounded.
 // Vertex colours paint the bottom, a blue band and a white topside.
-function caique(len, beam, band) {
+export function caique(len, beam, band) {
   const sh = new THREE.Shape(), n = 24, top = [], bot = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n, x = (t - 0.5) * len;
@@ -48,8 +48,8 @@ export function dressBeach(group, R, { HX, SHORE, LINE_Z, hut, anchors }) {
   };
   // One caique rests on the pebbles behind the line; one rides at anchor.
   boat(6.2, 0.05, SHORE + 0.4, 1.05, 0.12, [0.5, 0.15, 250], 4.6);
-  boat(-7, -0.35, -24, 2.2, 0, [0.55, 0.17, 30], 6);
-  boat(14, -0.35, -60, 0.8, 0, [0.6, 0.12, 150], 5.5);
+  const afloat = [boat(-7, -0.35, -24, 2.2, 0, [0.55, 0.17, 30], 6), boat(14, -0.35, -60, 0.8, 0, [0.6, 0.12, 150], 5.5)];
+  for (const b of afloat) b.userData.y = b.position.y;
 
   // Fishing nets in a heap with cork floats, and stacked crates.
   for (let i = 0; i < 26; i++) O.push({ p: [4.4 + (R() - 0.5) * 1.1, 0.12 + R() * 0.25, SHORE + 3.4 + (R() - 0.5) * 0.9], s: [0.32, 0.18, 0.3], c: col(pick(R, [[0.72, 0.16, 70], [0.78, 0.15, 90], [0.6, 0.16, 40]])) });
@@ -139,4 +139,5 @@ export function dressBeach(group, R, { HX, SHORE, LINE_Z, hut, anchors }) {
   inst(group, box, paint(0.8), B);
   inst(group, new THREE.CylinderGeometry(1, 1, 1, 8), paint(0.8), C);
   inst(group, new THREE.IcosahedronGeometry(1, 1), paint(0.85), O);
+  return { afloat };
 }
