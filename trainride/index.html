@@ -199,7 +199,7 @@ float ridged(vec2 p, int oct) {
 
 // Real ground from the route map: heights relative to the eye, a lake flag, town density.
 const LAND = /* glsl */`
-uniform sampler2D tH, tF, tS, tLk, tR, tN, tFd;
+uniform sampler2D tH, tF, tS, tLk, tR, tN, tFd, tW;
 vec2 rt(vec2 xz) {
   float t = clamp(-xz.y, -400.0, 18400.0);
   float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
@@ -270,6 +270,13 @@ float landO(vec2 xz, int oct) {
 float land(vec2 xz) { return landO(xz, 7); }
 // Metres to the edge of the nearest mapped road; below zero is on the road.
 // The road map (tools/roads.py) covers the 500 m beside the line.
+// Real woods (tools/woods.py): tree cover, conifer share, canopy height in metres.
+// x is below zero when the map is missing.
+vec3 woodsAt(vec2 xz) {
+  ${ROUTE.wd ? '' : 'return vec3(-1.0);'}
+  vec3 w = textureLod(tW, vec2(xz.x / ${f8(TILE)}, rt(xz).y), 0.0).rgb;
+  return vec3(w.r, w.g, w.b * 51.0);
+}
 float roadD(vec2 xz) {
   float t = -xz.y;
   if (t < 0.0 || t > 500.0) return 20.0;
@@ -446,12 +453,17 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   // Flat floors stay open; lone woods there read as dark holes.
   fm -= 0.3 * smoothstep(0.08, 0.02, slope);
   float forest = smoothstep(0.5, 0.7, fm);
-  forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
+  forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - vm * 0.8);
+  // The real woods take over where the map exists; a fine noise frays their edges.
+  vec3 wm = woodsAt(xz);
+  if (wm.x >= 0.0) forest = smoothstep(0.3, 0.7, wm.x + (vnoise(xz * 0.04) - 0.5) * 0.2);
+  forest *= (1.0 - house) * (1.0 - vine) * step(3.0, wd);
   // Crowns show up close; the pattern fades before it can shimmer.
   float crown = vnoise(xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(xz * 0.45))));
   // Dark spruce mixes with brighter beech.
   // Woods stay rich green, not black: deep spruce and bright beech.
-  vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(xz * 0.003 + 7.0)));
+  float bl = wm.x >= 0.0 ? 1.0 - wm.y : smoothstep(0.35, 0.65, fbm(xz * 0.003 + 7.0));
+  vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), bl);
   alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
   // Rock on steep faces and high crags; snow above the snow line.
   float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
@@ -497,7 +509,9 @@ const tR = new THREE.DataTexture(ROUTE.rd || new Uint8Array([255]), ROUTE.rd ? R
 const tLk = new THREE.DataTexture(ROUTE.lk, ROUTE.w, 1, THREE.RedFormat, THREE.HalfFloatType);
 // Farm parcels: class and seed, edge distance, heading.
 const tFd = new THREE.DataTexture(ROUTE.fd || new Uint8Array(4), ROUTE.fd ? ROUTE.fw : 1, ROUTE.fd ? ROUTE.fd.length / 4 / ROUTE.fw : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
-for (const t of [tH, tF, tS, tLk, tR, tN, tFd]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+// Real woods on the route map's rows: cover, conifer share, canopy height.
+const tW = new THREE.DataTexture(ROUTE.wd || new Uint8Array(4), ROUTE.wd ? ROUTE.ww : 1, ROUTE.wd ? ROUTE.wd.length / 4 / ROUTE.ww : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+for (const t of [tH, tF, tS, tLk, tR, tN, tFd, tW]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
 const OUTU = {
   tH: { value: tH },
   tF: { value: tF },
@@ -513,6 +527,7 @@ const OUTU = {
   // 1 for a high plane that draws a contrail; 0 for a near one on its way down.
   uPlaneK: { value: 0 },
   tFd: { value: tFd },
+  tW: { value: tW },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   // The sun stands beyond the window, low on the left, so it shines into the cabin.
@@ -1176,6 +1191,8 @@ bool inYard(vec2 xz, float m) {
 }
 // The same woods the land paints: fbm on the slopes, none on flat floors.
 float forestAt(vec2 xz, float slope) {
+  vec3 wm = woodsAt(xz);
+  if (wm.x >= 0.0) return smoothstep(0.3, 0.7, wm.x);
   float fm = fbm(xz * 0.0035 + 4.0) + slope * 0.9 + (vnoise(xz * 0.04) - 0.5) * 0.1;
   fm -= 0.3 * smoothstep(0.08, 0.02, slope);
   return smoothstep(0.5, 0.7, fm);
@@ -1327,8 +1344,12 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     if (h > f * 0.92 + 0.02 * (1.0 - f) + 0.05 * tw - tw * f * 0.6) return vec4(0.0);
     // Spruce holds the high, steep ground; broadleaf the low.
     float sp = clamp((smoothstep(250.0, 900.0, y + 20.0) + s * 1.5) * 0.7 + 0.2, 0.1, 0.95);
+    // The real woods give the conifer share and the canopy height.
+    vec3 wm = woodsAt(xz);
+    float hk = 1.0;
+    if (wm.x >= 0.0) { sp = wm.y; hk = wm.z > 2.0 ? clamp(wm.z / 24.0, 0.6, 1.4) : 1.0; }
     float kind = hash1(vec2(a.z * 0.133, k + 4.0)) < sp ? 1.0 : 0.0;
-    return vec4(xz.x, y, xz.y, 0.7 + 0.6 * hash1(vec2(a.z, k + 9.0)) + kind * 10.0);
+    return vec4(xz.x, y, xz.y, (0.7 + 0.6 * hash1(vec2(a.z, k + 9.0))) * hk + kind * 10.0);
   }`);
   // Shrubs: a low fringe along the line, beyond the second track.
   const SP = 900, ns = PW * 32, ds = new Float32Array(ns * 4);
@@ -4669,7 +4690,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg, pbin] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -4686,6 +4707,9 @@ async function loadRoute() {
     qs.has('nofields') ? null : opt('fields.png'),
     // Car paths on the bigger mapped roads (tools/carpaths.py); without them no cars drive.
     fetch('paths.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
+    // Real woods (tools/woods.py); without them the invented woods serve.
+    // Dev: ?nowoods leaves them out, to compare.
+    qs.has('nowoods') ? null : opt('woods.png'),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -4769,7 +4793,17 @@ async function loadRoute() {
     fd = new Uint8Array(g4.getImageData(0, 0, fimg.width, fimg.height).data.buffer);
     fw = fimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  // The woods map keeps its RGBA bytes too.
+  let wd = null, ww = 0;
+  if (wimg && wimg.width <= maxW) {
+    const c5 = document.createElement('canvas');
+    c5.width = wimg.width; c5.height = wimg.height;
+    const g5 = c5.getContext('2d', { willReadFrequently: true });
+    g5.drawImage(wimg, 0, 0);
+    wd = new Uint8Array(g5.getImageData(0, 0, wimg.width, wimg.height).data.buffer);
+    ww = wimg.width;
+  }
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
