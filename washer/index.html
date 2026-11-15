@@ -180,7 +180,8 @@ function target(texs) {
   gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
   return fb;
 }
-// Two buffers of one map: a pass reads src and writes the other.
+// Two buffers of one map.
+// A pass reads src and writes the other.
 function pingpong(w, h, internal = gl.RGBA16F, format = gl.RGBA) {
   const t = [texture(w, h, internal, format), texture(w, h, internal, format)];
   const f = t.map(x => target([x]));
@@ -212,7 +213,7 @@ float fbm(vec2 p) {
   for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
   return s / 0.97;
 }
-// Voronoi: distance to the nearest seed, the gap to the second, the cell hash.
+// Voronoi: the nearest seed distance, the gap to the second, the hash.
 vec3 vor(vec2 x) {
   vec2 n = floor(x), f = fract(x), id = vec2(0);
   float d1 = 8.0, d2 = 8.0;
@@ -229,8 +230,9 @@ const WORLD = `
 uniform vec4 uWorld;
 vec2 toW(vec2 uv) { return uWorld.xy + uv * uWorld.zw; }
 `;
-// The picture under the grime: colour in the left half, data in the right.
-// Data: R is a joint line, G is the picture's mask, B is brass or a burn.
+// The picture under the grime.
+// The left half holds colour; the right half holds data.
+// Data: R joints, G the picture's mask, B brass or burns.
 const PIC = `
 uniform sampler2D uPic;
 uniform vec3 uPicR;
@@ -240,7 +242,8 @@ vec3 picCol(vec2 u) { return texture(uPic, vec2(0.001 + u.x * 0.498, u.y)).rgb; 
 vec3 picDat(vec2 u) { return texture(uPic, vec2(0.501 + u.x * 0.498, u.y)).rgb; }
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 `;
-// The jet: a fan of water, a line on the ground with a hard core and a soft fringe.
+// The jet: a fan of water hits the ground as a line.
+// The line has a hard core and a soft fringe.
 const JET = `
 uniform vec4 uJ0, uJ1;
 uniform vec4 uJP, uJB;
@@ -253,7 +256,8 @@ float fanI(vec2 p, vec2 a, vec2 b) {
   float fringe = 0.2 * exp(-max(s - 0.86 * hl, 0.0) / (0.2 * hl + 0.006));
   return max(core, fringe) * exp(-d * d / (uJP.x * uJP.x));
 }
-// The jet's dwell on p over one frame, in seconds at full strength.
+// The jet's dwell on p over one frame.
+// The unit is seconds at full strength.
 // uJP: the across width, the substeps, the frame time, on.
 float exposure(vec2 p) {
   float n = uJP.y, e = 0.0;
@@ -287,7 +291,8 @@ vec3 alb;
 float gloss, hgt, por, joint, metal, fw;
 
 // Herringbone in brick units: bricks 2 by 1.
-// The lattice is a(1,1) + b(2,-2); each cell holds one flat and one standing brick.
+// The lattice is a(1,1) + b(2,-2).
+// Each cell holds one flat brick and one standing brick.
 void herring(vec2 p, out vec2 lc, out vec2 sz, out vec2 id) {
   float u = p.x - p.y, v = p.x + p.y;
   float b0 = floor((u - 2.0) / 4.0), a0 = floor((v - 3.0) / 2.0);
@@ -333,7 +338,8 @@ void patio(vec2 p) {
   st *= 0.9 + 0.2 * fbm(p * 9.0 + 5.0);
   st *= 0.95 + 0.1 * noise(p * 640.0);
   float jl = smoothstep(0.3, 0.7, dat.r), mt = smoothstep(0.3, 0.7, dat.b) * (1.0 - jl);
-  // The stones are honed flat; the brass sits flush; the cut joints are tight.
+  // The stones are honed flat, and the brass sits flush.
+  // The cut joints are tight.
   alb = mix(alb, mix(st, sand * 0.85, jl), m);
   hgt = mix(hgt, mix(0.95, 0.8, jl), m);
   gloss = mix(gloss, mix(0.55, 0.85, mt), m);
@@ -395,7 +401,8 @@ void deck(vec2 p) {
 }
 
 void pool(vec2 p) {
-  // Glass tiles, 25 mm, in pale grout; a lane line runs each side.
+  // Glass tiles, 25 mm, sit in pale grout.
+  // A lane line runs down each side.
   const float TS = 0.025, GW = 0.0011;
   vec2 g = p / TS + uSeed;
   vec2 id = floor(g), lc = (g - id) * TS;
@@ -410,11 +417,11 @@ void pool(vec2 p) {
   // The picture colours whole tiles.
   vec2 u = picUv(tc);
   if (inPic(u) && picDat(u).g > 0.5) c = lin(picCol(u)) * (0.92 + 0.16 * h2);
-  float dome = smoothstep(GW, GW + 0.004, e);
+  float dome = smoothstep(GW, GW + 0.006, e);
   vec3 grout = uPal[4] * (0.82 + 0.3 * noise(p * 900.0));
   alb = mix(c * (0.96 + 0.08 * noise(p * 700.0)), grout, jt);
   hgt = mix(0.45 + 0.55 * dome, 0.12, jt);
-  gloss = mix(0.92, 0.2, jt); por = mix(0.06, 0.95, jt); joint = jt; metal = 0.0;
+  gloss = mix(0.8, 0.2, jt); por = mix(0.06, 0.95, jt); joint = jt; metal = 0.0;
 }
 
 void mosaic(vec2 p) {
@@ -463,7 +470,9 @@ void main() {
 
 /* ---------- grime ---------- */
 // The grime map: film, crust, film tint, crust kind.
-// Mode 0 grows fresh grime; 1 carries an old map to a new size; 2 regrows over the current map.
+// Mode 0 grows fresh grime.
+// Mode 1 carries an old map to a new size.
+// Mode 2 regrows grime over the current map.
 const DIRT_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -475,7 +484,8 @@ uniform float uGrow;
 out vec4 o;
 ${NOISE}
 ${WORLD}
-// A leaf in some cells: an almond blade on a random heading, with a stalk.
+// Some cells hold a leaf: an almond blade with a stalk.
+// Each leaf points a random way.
 float leaf(vec2 p, float cell, float chance, float sd) {
   vec2 c = floor(p / cell);
   float best = 0.0;
@@ -504,11 +514,13 @@ vec4 grime(vec2 p, vec4 b1) {
   float wx = p.x - 0.4 * sin(p.y * 1.1 + uSeed.x) - 0.15 * sin(p.y * 2.9 + uSeed.y);
   float path = exp(-wx * wx / 0.12);
   if (uKind == 0) {
-    // Grime packs the brick joints darker than the tops; the tight inlay joints stay hidden.
+    // Grime packs the brick joints darker than the tops.
+    // The tight inlay joints stay hidden.
     float bj = smoothstep(0.75, 1.0, jt);
     film += 0.6 * bj + 0.12 * lo;
     film *= 1.0 - 0.3 * path;
-    // Moss grows in patches: it fills the brick joints and creeps onto the edges.
+    // Moss grows in patches.
+    // It fills the brick joints and creeps onto the edges.
     float m = smoothstep(0.5, 0.72, fbm(p * 3.2 + uSeed * 3.0));
     crust = (bj * m * (0.7 + 0.5 * fine) + lo * 0.6 * m * smoothstep(0.55, 0.8, fbm(p * 9.0 - uSeed))) * (1.0 - 0.6 * path);
     // Lichen: small, ragged, grey-green rosettes on a few bricks.
@@ -525,7 +537,7 @@ vec4 grime(vec2 p, vec4 b1) {
     // The wood has weathered grey; mildew blooms in dark clusters.
     film = 0.95 + 0.4 * big + 0.25 * mid + 0.35 * jt;
     film *= 1.0 - 0.25 * path;
-    tint = clamp(smoothstep(0.5, 0.64, fbm(p * 4.5 + uSeed) + 0.25 * noise(p * 40.0)) + 0.6 * jt, 0.0, 1.0);
+    tint = clamp(smoothstep(0.4, 0.72, fbm(p * 3.2 + uSeed) + 0.12 * noise(p * 30.0)) + 0.6 * jt, 0.0, 1.0);
     float alg = smoothstep(0.38, 0.65, fbm(p * 3.2 + uSeed * 2.0));
     crust = jt * 0.9 * alg + lo * 0.35 * alg;
     // Black mildew spots: round, in clusters.
@@ -578,7 +590,8 @@ void main() {
 }`;
 
 /* ---------- the jet on the grime ---------- */
-// It runs only over the swept box; the box is then copied back.
+// It runs only over the swept box.
+// A blit then copies the box back.
 const STAMP_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -642,7 +655,8 @@ void main() {
   if (back.x < 0.0 || back.x > 1.0 || back.y < 0.0 || back.y > 1.0) s = vec4(0.0);
   float wet = w.b;
   vec4 dt = texture(uDirt, vUv);
-  // The jet brings water and foam, and lifts grime into the water as mud.
+  // The jet brings water and foam.
+  // It lifts grime into the water as mud.
   float e = exposure(p);
   if (e > 1e-5) {
     float kr = dt.a < 0.3 ? uKr.x : dt.a < 0.7 ? uKr.y : uKr.z;
@@ -659,7 +673,8 @@ void main() {
     float hl = 0.5 * length(uJ1.zw - uJ1.xy);
     wet = max(wet, 0.75 * (1.0 - smoothstep(hl, hl + 0.06, length(p - c0 - cc * t))));
   }
-  // Porous ground drinks the water; an algae skin seals it; the rest evaporates.
+  // Porous ground drinks the water; an algae skin seals it.
+  // The rest of the water evaporates.
   float bare = exp(-5.0 * dt.r) * (1.0 - smoothstep(0.05, 0.6, dt.g));
   s.r = min(max(0.0, s.r - (0.04 + 0.22 * mix(0.3, b1.g, bare)) * uDt * uDry) * exp(-0.3 * uDt * uDry), 2.5);
   s.g = min(s.g * exp(-0.35 * uDt), s.r * 1.6);
@@ -671,7 +686,8 @@ void main() {
 }`;
 
 /* ---------- mist ---------- */
-// Fine spray hangs in the air, drifts with the breeze and thins out.
+// Fine spray hangs in the air.
+// It drifts with the breeze and thins out.
 const MIST_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -698,8 +714,10 @@ void main() {
 }`;
 
 /* ---------- shading ---------- */
-// The eye stands past the bottom edge; the low sun sits past the top.
-// Wet ground throws the sun back as glare; the mist glows against it.
+// The eye stands past the bottom edge.
+// The low sun sits past the top edge.
+// Wet ground throws the sun back as glare.
+// The mist glows against the sun.
 const SHADE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uB0, uB1, uDirt, uWat, uMist;
@@ -716,7 +734,8 @@ float ggx(vec3 N, vec3 H, float r) {
   float nh = max(dot(N, H), 0.0), d = nh * nh * (a2 - 1.0) + 1.0;
   return a2 / (3.14159 * d * d);
 }
-// The sky the wet ground mirrors: warm at the horizon, blue above, slow clouds.
+// The sky in the wet ground: warm low, blue high.
+// Slow clouds drift across it.
 vec3 sky(vec3 R) {
   float e = clamp(R.z, 0.0, 1.0);
   vec3 c = mix(uSky0, uSky1, pow(e, 0.55));
@@ -739,7 +758,8 @@ void main() {
   float h1x = texture(uB1, ruv + vec2(uTxS.x, 0.0)).r, h1y = texture(uB1, ruv + vec2(0.0, uTxS.y)).r;
   vec4 dX = texture(uDirt, ruv + vec2(uTxS.x, 0.0)), dY = texture(uDirt, ruv + vec2(0.0, uTxS.y));
   // Relief: the floor plus the crust on it.
-  // Thick grime fills the shallow joints, so the floor's relief fades under it.
+  // Thick grime fills the shallow joints.
+  // So the floor's relief fades under it.
   float tm = uTxS.x * uWorld.z;
   float af = 1.0 - exp(-5.0 * dt.r);
   float c0 = smoothstep(0.05, 0.6, dt.g), cX = smoothstep(0.05, 0.6, dX.g), cY = smoothstep(0.05, 0.6, dY.g);
@@ -752,7 +772,8 @@ void main() {
 
   vec3 alb = t0.rgb;
   float gloss = t0.a, por = t1.g, metal = t1.a;
-  // Grime: a dark film over the floor, darker where it lies thick, then crust on top.
+  // Grime: a dark film over the floor, darker where it is thick.
+  // Crust sits on top of the film.
   vec3 fc = mix(uFilm[0], uFilm[1], dt.b) * (0.8 + 0.4 * noise(p * 120.0)) * (0.85 + 0.3 * noise(p * 21.0));
   fc *= 1.12 - 0.3 * smoothstep(0.9, 1.9, dt.r);
   alb = mix(alb, fc, af);
@@ -772,7 +793,8 @@ void main() {
 
   vec3 P3 = vec3(p, 0.0);
   vec3 V = normalize(uEye - P3), L = uL;
-  // The water skin: its slope from the depth, and small ripples running downhill.
+  // The water skin takes its slope from the depth.
+  // Small ripples run downhill on it.
   vec2 rp = vec2(noise(p * 70.0 + vec2(0.0, uTime * 0.9)), noise(p * 70.0 + vec2(5.2, 1.3 + uTime * 0.9))) - 0.5;
   vec3 Nw = normalize(vec3(-vec2(wx, wy) * 0.9 + rp * 0.35, 1.0));
   vec3 Ns = normalize(mix(N, Nw, film));
@@ -784,7 +806,7 @@ void main() {
   vec3 H = normalize(L + V);
   vec3 F0 = mix(vec3(mix(0.04, 0.05, film)), alb * 1.4 + 0.1, metal * (1.0 - film));
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
-  vec3 spec = uSun * ggx(Ns, H, rough) * F * 0.25 * step(0.0, dot(Ns, L)) * mix(0.35, 1.0, max(wet, metal));
+  vec3 spec = uSun * ggx(Ns, H, rough) * F * 0.25 * step(0.0, dot(Ns, L)) * mix(0.2, 1.0, max(wet, metal));
   vec3 R = reflect(-V, Ns);
   vec3 Fr = F0 + (1.0 - F0) * pow(1.0 - max(dot(Ns, V), 0.0), 5.0);
   float shine = max(film, wet * 0.55 * (1.0 - rough)) + metal * 0.6;
@@ -793,7 +815,8 @@ void main() {
   // Muddy water clouds the floor; foam rides on top.
   float mudA = clamp(w.g * 1.8, 0.0, 0.92) * smoothstep(0.0, 0.12, w.r);
   vec3 mudLit = uMud * (uSun * 0.5 + uSky1 * 0.6) * (0.8 + 0.4 * noise(p * 30.0 + uTime * 0.3));
-  // Mud is murky: it keeps the glints but dulls the sky in it.
+  // Mud is murky: it keeps the glints.
+  // It dulls the sky in the water.
   col = mix(col, mudLit + spec * 0.6 + sky(R) * Fr * 0.25, mudA);
   vec3 foamLit = vec3(1.0, 0.99, 0.97) * (uSun * 0.55 + uSky1 * 0.8);
   // Foam: soft clumps of bubbles that shrink as it thins.
@@ -829,7 +852,8 @@ uniform vec4 uWorld;
 uniform float uPpm;
 out float vA;
 void main() {
-  // A drop in the air shows a little up the screen, and larger.
+  // A drop in the air shows higher up the screen.
+  // It also shows larger.
   vec2 sp = aP.xy + vec2(0.0, aP.z * 0.55);
   gl_Position = vec4((sp - uWorld.xy) / uWorld.zw * 2.0 - 1.0, 0.0, 1.0);
   gl_PointSize = max(1.5, (0.0025 + aP.z * 0.006) * uPpm);
@@ -847,7 +871,7 @@ void main() {
 }`;
 
 /* ---------- run-off rivulets ---------- */
-// Each rivulet head pours water and mud into the water map as it runs.
+// Each rivulet head pours water and mud into the water map.
 const RIV_VS = `#version 300 es
 layout(location = 0) in vec4 aR;
 uniform vec4 uWorld;
@@ -899,13 +923,13 @@ const SURF = {
     kind: 0, seed: [3.1, 7.7],
     floor: [[0.6, 0.13, 40], [0.5, 0.12, 31], [0.67, 0.115, 54], [0.4, 0.06, 36], [0.76, 0.04, 84], [0, 0, 0]],
     film: [[0.29, 0.035, 130], [0.32, 0.03, 76]],
-    crust: [[0.42, 0.09, 128], [0.54, 0.035, 105], [0.2, 0.025, 130]],
+    crust: [[0.42, 0.09, 128], [0.48, 0.04, 112], [0.2, 0.025, 130]],
     mud: [0.34, 0.06, 65], kr: [1, 0.8, 1],
   },
   deck: {
     kind: 1, seed: [5.3, 1.9],
     floor: [[0.64, 0.105, 62], [0.57, 0.115, 52], [0.5, 0.1, 42], [0.32, 0.06, 45], [0.5, 0.012, 250], [0.24, 0.05, 40]],
-    film: [[0.6, 0.012, 85], [0.32, 0.02, 120]],
+    film: [[0.6, 0.012, 85], [0.4, 0.022, 115]],
     crust: [[0.45, 0.09, 130], [0.38, 0.06, 65], [0.18, 0.012, 100]],
     mud: [0.42, 0.035, 75], kr: [1, 2.5, 1],
   },
@@ -936,8 +960,10 @@ const SUN = linFit(0.97, 0.05, 75).map(v => v * 2.4);
 const SKY0 = linFit(0.82, 0.07, 65), SKY1 = linFit(0.62, 0.11, 245);
 
 /* ---------- pictures ---------- */
-// A picture hides under each floor. Canvas 2D draws it once per surface.
-// The canvas is two squares: colour on the left, data on the right.
+// A picture hides under each floor.
+// Canvas 2D draws it once per surface.
+// The canvas is two squares.
+// Colour fills the left square; data fills the right.
 const PN = 1024;
 const INK = Object.fromEntries(Object.entries({
   ring: [0.3, 0.02, 250], slateL: [0.62, 0.02, 250], slateD: [0.38, 0.025, 255], rustL: [0.64, 0.13, 42], rustD: [0.47, 0.12, 34],
@@ -987,7 +1013,8 @@ function compass(g, data) {
   main.forEach(k => { poly(g, [k[1], k[2], k[0], k[3]]); g.fill(); });
   main.forEach(k => halves(k).forEach(h => { poly(g, h); g.stroke(); }));
   g.beginPath(); disc(38); g.stroke();
-  // G: the inlay reaches past the stone, so its rim joint lies inside it.
+  // G: the inlay mask reaches past the stone.
+  // So the rim joint lies inside the mask.
   g.globalCompositeOperation = 'lighter';
   g.fillStyle = 'rgb(0,255,0)'; g.beginPath(); disc(490); g.fill();
   // B: the brass ring, the boss and the letters.
@@ -1034,7 +1061,8 @@ function treasure(g) {
   g.setLineDash([]);
   g.lineWidth = 18;
   g.beginPath(); g.moveTo(640, 420); g.lineTo(710, 490); g.moveTo(710, 420); g.lineTo(640, 490); g.stroke();
-  // A sea serpent in the top right: three humps, a head, an eye.
+  // A sea serpent swims in the top right.
+  // It has three humps, a head and an eye.
   g.lineWidth = 12;
   for (const x of [700, 770, 840]) { g.beginPath(); g.arc(x, 200, 30, PI, 0); g.stroke(); }
   g.beginPath(); g.arc(905, 168, 26, 0, TAU); g.stroke();
@@ -1195,7 +1223,8 @@ function makePic() {
 }
 
 /* ---------- maps ---------- */
-// The stage shows a box of floor in metres; every map covers that box.
+// The stage shows a box of floor, in metres.
+// Every map covers that box.
 let W = 1, H = 1, dpr = 1, S = 300, world = [0, 0, 1, 1], picR = [0, 0, 1];
 let sim = null, bake = null, dirt = null, water = null, mist = null, hdr = null;
 let eye = [0, -2, 1.75], sunDir = [0, 0.9, 0.44];
@@ -1217,11 +1246,13 @@ function bakeFloor() {
   bind(0, picTex);
   gl.uniform1i(bakeP.u('uPic'), 0);
   tri();
-  // The water reads a blurred copy of the height, so it makes mipmaps.
+  // The water reads a blurred copy of the height.
+  // Mipmaps give that copy.
   gl.bindTexture(gl.TEXTURE_2D, bake.t1);
   gl.generateMipmap(gl.TEXTURE_2D);
 }
-// Mode 0 grows fresh grime, 1 carries an old map, 2 regrows to amount g.
+// Mode 0 grows fresh grime; mode 1 carries an old map.
+// Mode 2 regrows the grime to amount g.
 function growDirt(mode, oldTex = null, oldWorld = null, g = 1) {
   const s = SURF[kind];
   gl.bindFramebuffer(gl.FRAMEBUFFER, dirt.dstFb);
@@ -1254,17 +1285,20 @@ function layout() {
   canvas.width = Math.max(1, Math.round(W * dpr));
   canvas.height = Math.max(1, Math.round(H * dpr));
   frameTarget();
-  // The short side shows 2.4 m of floor; a small screen shows less.
+  // The short side shows 2.4 m of floor.
+  // A small screen shows less floor.
   S = Math.max(Math.min(W, H) / 2.4, 200);
   const hw = W / 2 / S, hh = H / 2 / S, old = world;
   world = [-hw, -hh, 2 * hw, 2 * hh];
   picR = [0, 0, 0.43 * Math.min(2 * hw, 2 * hh)];
   // The eye stands past the bottom edge at head height.
-  // The sun sits where its glare lands on the upper left of the floor.
+  // The sun sits where its glare lands.
+  // The glare lands on the upper left of the floor.
   eye = [0, -hh - 1.1, 1.75];
   const d = [-hw + 0.56 * hw - eye[0], -hh + 1.72 * hh - eye[1], eye[2]], n = Math.hypot(...d);
   sunDir = d.map(v => v / n);
-  // Maps per level: High follows the screen, Low drops to one texel per pixel.
+  // Map size per level: High follows the screen.
+  // Low drops to one texel per CSS pixel.
   const lv = D.level;
   const cap = lv >= 2 ? 2 : lv === 1 ? 1.5 : 1, budget = lv >= 2 ? 3.6e6 : lv === 1 ? 2e6 : 1e6;
   const sk = Math.min(cap, window.devicePixelRatio || 1, Math.sqrt(budget / (W * H)));
@@ -1299,7 +1333,8 @@ const jet = { on: false, tx: 0, ty: 0, x: 0, y: 0, c2: -1, s2: 0, speed: 0, J0: 
 const fanHalf = () => 0.012 + 0.15 * fan ** 1.25;
 const sigmaOf = hl => 0.006 + 0.12 * hl;
 // A narrow jet cuts harder than a wide fan.
-// A small screen shows less floor per pixel, so the jet cuts faster there.
+// A small screen shows fewer pixels per metre.
+// So the jet cuts faster there.
 const rateOf = hl => 300 * Math.sqrt(0.09 / Math.max(hl, 0.02)) * clamp(320 / S, 0.8, 1.8) * tune.power;
 function substeps(J0, J1, sig) {
   const d = Math.max(Math.hypot(J1[0] - J0[0], J1[1] - J0[1]), Math.hypot(J1[2] - J0[2], J1[3] - J0[3]));
@@ -1314,7 +1349,8 @@ function setJet(p, J0, J1, sig, n, dt, on) {
     Math.max(J0[0], J0[2], J1[0], J1[2]) + m, Math.max(J0[1], J0[3], J1[1], J1[3]) + m);
 }
 const NOJET = [0, 0, 0, 0];
-// The stamp covers the swept box only, then copies it to the other buffer.
+// The stamp covers only the swept box.
+// A blit copies the box to the other buffer.
 function stampDirt(J0, J1, sig, n, dt, rf) {
   const m = sig * 3 + 0.04;
   const xs = [J0[0], J0[2], J1[0], J1[2]], ys = [J0[1], J0[3], J1[1], J1[3]];
@@ -1426,7 +1462,8 @@ function drawDrops() {
 }
 
 /* ---------- run-off ---------- */
-// Muddy rivulets run downhill from the jet; the water map keeps their wet trails.
+// Muddy rivulets run downhill from the jet.
+// The water map keeps their wet trails.
 const MAXR = 40, rivs = [], rivData = new Float32Array(MAXR * 4);
 const rivVao = gl.createVertexArray(), rivBuf = gl.createBuffer();
 gl.bindVertexArray(rivVao);
@@ -1517,7 +1554,8 @@ function render() {
 }
 
 /* ---------- grime on the CPU ---------- */
-// A coarse copy of the grime: the sound hears it, the progress counts it.
+// A coarse copy of the grime lives on the CPU.
+// The sound reads it, and the progress check counts it.
 const grid = { gx: 0, gy: 0, a: null, w: [0, 0, 1, 1] };
 function gridMake(carry) {
   const [x0, y0, ww, hh] = world;
@@ -1578,7 +1616,8 @@ const glide = (p, v, t, tau) => {
   if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else p.cancelScheduledValues(t);
   p.setTargetAtTime(v, t, tau);
 };
-// The jet voice: a motor, a hiss off the nozzle, a roar off the ground.
+// The jet voice has three parts.
+// A motor, a hiss off the nozzle, a roar off the ground.
 let jv = null;
 function jetVoice(ac) {
   const pan = ac.createStereoPanner();
@@ -1601,7 +1640,8 @@ function jetVoice(ac) {
   lp.type = 'lowpass'; lp.frequency.value = 230; lp.Q.value = 0.8;
   rumble.gain.value = 0;
   n2.connect(lp).connect(rumble).connect(pan);
-  // The motor: a saw and a square through a resonant lowpass, throbbed by the pump.
+  // The motor: a saw and a square through a resonant lowpass.
+  // The pump throbs its level.
   const m1 = ac.createOscillator(), m2 = ac.createOscillator(), mlp = ac.createBiquadFilter();
   m1.type = 'sawtooth'; m1.frequency.value = 22;
   m2.type = 'square'; m2.frequency.value = 44.3;
@@ -1675,7 +1715,8 @@ function sprayTick(speed, grime, lifted, x) {
   glide(jv.pan.pan, pan, t, 0.05);
   if (Math.random() < clamp(lifted * 0.8)) burst(ac, t + Math.random() * 0.02, { f: 1400 + 2600 * Math.random(), q: 2, dur: 0.006 + 0.01 * Math.random(), level: 0.25, pan });
 }
-// Release: the pressure drops at once; the motor winds down; water runs off.
+// Release: the pressure drops at once.
+// The motor winds down, and the water runs off.
 function sprayStop() {
   const ac = kit.live();
   if (!ac || !jv) return;
@@ -1750,7 +1791,8 @@ function chime() {
 }
 
 /* ---------- frame loop ---------- */
-// Lively while the jet runs, the grime regrows or water runs and dries.
+// The loop runs while the jet sprays or the grime regrows.
+// It also runs while water flows and dries.
 // When only drying is left, frames slow to fifteen a second.
 let raf = 0, tmo = 0, last = 0, visible = !document.hidden, ready = false;
 let settleAt = 0, slowAt = 0, regrow = null, done = false, meanAt = 0;
@@ -1793,7 +1835,8 @@ function frame(now) {
     } else kit.rest(() => !raf && !tmo && !jet.on);
   }
 }
-// One frame of spraying: water and mud first, then the grime, then the spray.
+// One frame of spraying.
+// Water and mud go first, then the grime, then the spray.
 function sprayFrame(dt) {
   const px = jet.x, py = jet.y;
   jet.x = jet.tx;
@@ -1809,7 +1852,8 @@ function sprayFrame(dt) {
   }
   const phi = Math.atan2(jet.s2, jet.c2) / 2, hl = fanHalf(), sig = sigmaOf(hl), rf = rateOf(hl);
   let ex = Math.cos(phi) * hl, ey = Math.sin(phi) * hl;
-  // The fan's ends keep their order, so a frame never sweeps a bow-tie.
+  // The fan's ends keep their order.
+  // So a frame never sweeps a bow-tie.
   if (jet.J1 && (jet.J1[2] - jet.J1[0]) * ex + (jet.J1[3] - jet.J1[1]) * ey < 0) { ex = -ex; ey = -ey; }
   const J = [jet.x - ex, jet.y - ey, jet.x + ex, jet.y + ey];
   const J0 = jet.J1 || J;
