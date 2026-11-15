@@ -16,6 +16,19 @@ Tom's decisions today:
 
 Not flagged by Tom, so they stay: the Load, Lock, charge, fire loop; the name; the motto "Through everything".
 
+## Correction after the first spike (Tom, 2026-11-15)
+
+Tom saw the first spike (a plain black bench, a new first-pass gun) and corrected the direction:
+
+| Tom said | What it means for the build |
+|---|---|
+| "I like the atompunk style and the loading process" | The old machines stay as they were: the seafoam gun, the rack and crane, the tubes, the generator, the console, the signs. They move into the dark lab (`phaeton/machines.js`). The Load, Lock, charge, fire steps stay |
+| "I do not see a strobe lab in this" | The lab must read as a photo lab. Tom's pick: the photo as an object. Each flash leaves a print on a glass plate in a lightbox above the row |
+| "The toy isn't intuitive, but that's for another time" | Open item for a later round. No change now |
+
+Not picked by Tom, so not built: shock waves in the air, strobes that fire in view, lab instruments.
+Where the rest of this plan says "black, chrome and anodised set" or "gun and loading in the new look", this section wins.
+
 ## Approaches
 
 | | Approach | Trade-off |

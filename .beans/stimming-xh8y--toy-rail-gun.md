@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-10T08:52:13Z
-updated_at: 2026-11-15T08:41:47Z
+updated_at: 2026-11-15T08:55:18Z
 ---
 
 A new Lab toy at `phaeton/`: a rail gun on a salt flat; the slug goes through a row of mixed targets in bullet time. Tom named it Phaeton (2026-11-10). The Lab toy Railgun (`railgun/`, stimming-f793) is a different toy and stays as it is.
@@ -48,7 +48,11 @@ Look: a black strobe studio. Hit: a photo per target. Time scrub: a second step.
 - [x] Plan approved by Tom
 - [x] Kit: `shot.js`, `debris.js`, `fracture.js`, with `tests/phaeton-core.test.mjs`
 - [x] Look spike `phaeton/looks.html`: studio, bench, first-pass gun, six light bulbs, the photo sequence
-- [ ] Tom's verdict on the look spike (2026-11-15: "unsure if this is the quality"; glass pass done after it)
+- [x] Tom's verdict on the first spike (2026-11-15): he likes the atompunk style and the loading; he saw no strobe lab. Picks: dark lab with the atompunk gear; the photo as an object
+- [x] Atompunk machines in the dark lab (`phaeton/machines.js`), with load, lock, charge, fire
+- [x] Plate rack: each flash leaves a print on a plate above its target
+- [ ] Tom's verdict on the second spike
+- [ ] Later round (Tom): "the toy isn't intuitive"
 - [ ] The other five kinds: apple, water balloon, card, gel block, steel plate
 - [ ] The page: gun and loading in the new look, bar, sound, Flash setting, phones; today's page to `legacy.html`
 - [ ] Time scrub

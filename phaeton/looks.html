@@ -26,7 +26,7 @@
 <body>
 <div class="wrap">
   <main>
-    <div class="stage stage--phaeton" id="stage" tabindex="0" role="application" aria-label="A dark studio. A rail gun on a bench aims along a row of six lit light bulbs. Fire sends a slug through the row; a flash shows each bulb as it bursts.">
+    <div class="stage stage--phaeton" id="stage" tabindex="0" role="application" aria-label="A dark lab. A rail gun on a bench aims along a row of six lit light bulbs. Load a slug, lock the breech, hold to charge and release to fire. A flash shows each bulb as it bursts and leaves a photo on a plate.">
       <p class="fail" hidden>Phaeton needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -57,7 +57,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { makeStudio, makeBench, makeGun, makeHeads, makeSlug, BORE, MUZZLE, SPEED, SLOTS, hueAt } from './rig.js';
+import { makeStudio, makeBench, makeHeads, makePlates, BORE, MUZZLE, SPEED, SLOTS, hueAt } from './rig.js';
+import { makeMachines, S as GUN_SCALE } from './machines.js';
 import { makeBulbs } from './targets.js';
 import { makeShot } from './shot.js';
 
@@ -67,19 +68,23 @@ const smooth = x => { const t = clamp(x); return t * t * (3 - 2 * t); };
 mark('build');
 
 /* ---------- bar ---------- */
-// s is the playhead in real seconds; the Time slider moves it by hand.
-let view = 'photos', playing = false, fired = false, s = 0, seed = 11;
-const act = { fire() {}, reset() {}, seek() {} };
+// s is the playhead in real seconds; after a shot the Time slider moves it by hand.
+let view = 'photos', playing = false, fired = false, printed = false, s = 0, seed = 11;
+// The handlers bind once the scene exists.
+const act = { load() {}, lock() {}, down() {}, up() {}, reset() {}, seek() {} };
 const ui = initPage({ id: 'phaeton', bar: {
   choice: { label: 'Camera', value: 'photos', options: [{ value: 'photos', label: 'Photos' }, { value: 'wide', label: 'Wide' }], onPick: v => { view = v; wake(); } },
   actions: [
-    { verb: 'fire', key: 'Space', onPress: () => act.fire() },
-    { verb: 'reset', key: 'R', onPress: () => act.reset() },
+    { verb: 'load', key: 'L', onPress: () => act.load() },
+    { verb: 'lock', key: 'K', onPress: () => act.lock() },
+    { verb: 'fire', key: 'Space', hold: true, onDown: () => act.down(), onUp: () => act.up() },
   ],
   slider: { label: 'Time', min: 0, max: 1, step: 0.0005, value: 0, onInput: v => act.seek(v) },
+  reset: () => act.reset(),
   quality: true,
-  keys: [['space', 'fire'], ['drag', 'time'], ['R', 'reset']],
+  keys: [['click', 'rack, lever'], ['hold', 'charge'], ['release', 'fire'], ['drag', 'time']],
 } });
+if (ui.slider) ui.slider.disabled = true;
 
 /* ---------- renderer ---------- */
 let renderer;
@@ -101,15 +106,21 @@ stage.prepend(canvas);
 /* ---------- the set ---------- */
 const studio = makeStudio(renderer), scene = studio.scene;
 makeBench(scene);
-makeGun(scene);
 makeHeads(scene, studio);
-const slug = makeSlug(scene);
+const gun = makeMachines(scene, { wake: () => wake() });
 // uT is the shot time. uLead shows a crack this long before its shard moves.
 const clock = { uT: { value: -1 }, uLead: { value: 3e-5 } };
 const bulbs = makeBulbs(scene, SLOTS, clock);
 const shot = makeShot({ muzzle: MUZZLE, speed: SPEED, targets: SLOTS.map(x => ({ x, r: bulbs.radius })) });
 bulbs.build(seed, shot.tHit);
 const camera = new THREE.PerspectiveCamera(24, 1, 0.05, 40);
+// Each flash leaves a print: one small target per plate.
+const PRINT = { w: 400, h: 300 };
+const prints = SLOTS.map(() => new THREE.WebGLRenderTarget(PRINT.w, PRINT.h, { type: THREE.HalfFloatType, samples: 4 }));
+const plates = makePlates(scene, prints.map(p => p.texture));
+const photos = shot.spans.filter(e => e.kind === 'photo');
+// A print shows its photo at this point of the hold.
+const printAt = photos.map(p => p.s0 + 0.62 * (p.s1 - p.s0));
 
 /* ---------- lens: depth of field ---------- */
 // A gather blur on a golden-angle disc. Each tap counts when its own blur disc reaches this pixel.
@@ -157,8 +168,7 @@ function makeSceneRT(w, h, samples) {
 }
 const composer = new EffectComposer(renderer);
 composer.addPass(dofPass);
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.45, 1.6);
-composer.addPass(bloom);
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.45, 1.6));
 const grade = new ShaderPass(gradePass({ tint: new THREE.Vector3(0.0006, 0.0006, 0.0012), vig: 0.6, vigIn: 0.3, grain: 0.04, res: new THREE.Vector2(1, 1) }));
 composer.addPass(grade);
 composer.addPass(new OutputPass());
@@ -188,11 +198,11 @@ function resize() {
 
 /* ---------- the director: camera and light from the playhead ---------- */
 // The slug enters a target at this fraction of its photo.
-const HIT_U = (() => { const sp = shot.spans.find(e => e.kind === 'photo'), f = (shot.tHit[0] - sp.T0) / (sp.T1 - sp.T0); return (1.6 - Math.sqrt(2.56 - 2.4 * f)) / 1.2; })();
+const HIT_U = (() => { const sp = photos[0], f = (shot.tHit[0] - sp.T0) / (sp.T1 - sp.T0); return (1.6 - Math.sqrt(2.56 - 2.4 * f)) / 1.2; })();
 function cue() {
-  if (!fired) return { lit: 0, dim: 1, i: -1, u: 0, wide: true };
+  if (!fired) return { lit: 0, dim: 1, i: -1, u: 0, wide: true, gun: true };
   const sp = shot.at(s);
-  if (sp.kind === 'lead') { const dim = clamp(1 - sp.u * 3); return { lit: 0, dim, i: 0, u: 0, wide: dim > 0 }; }
+  if (sp.kind === 'lead') { const dim = clamp(1 - sp.u * 3); return { lit: 0, dim, i: 0, u: 0, wide: dim > 0, gun: true }; }
   if (sp.kind === 'travel') return sp.u < 0.5 ? { lit: 0, dim: 0, i: sp.i - 1, u: 1 } : { lit: 0, dim: 0, i: sp.i, u: 0 };
   if (sp.kind === 'photo') {
     // The flash fires as the slug enters. Reduced motion gets a ramp and a floor.
@@ -204,48 +214,76 @@ function cue() {
   return { lit: 0.42 * (sp.kind === 'ramp' ? smooth(sp.u * 2.2) : 1), dim: 0, i: -1, u: 0, wide: true };
 }
 
-const look = new THREE.Vector3(), dir = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
-function placeCamera(c) {
-  const a = camera.aspect, wide = c.wide || view === 'wide';
-  let dist;
+const look = new THREE.Vector3(), dir = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0), GUN_AT = new THREE.Vector3(-1.75, 0.2, 0.05);
+// Places the camera. Gives the focus distance.
+function placeCamera(c, photo) {
+  const a = camera.aspect, wide = !photo && (c.wide || view === 'wide');
+  let focus;
   if (wide && a < 0.9) {
-    // A narrow stage looks down the row from the gun's end.
-    camera.fov = 38;
-    camera.position.set(-2.95, 1.05, 1.95);
-    look.set(0.15, 0.2, 0);
-    dist = camera.position.distanceTo(look);
+    // A narrow stage looks down the bench from the gun's end.
+    camera.fov = 40;
+    camera.position.set(-3.9, 1.15, 2.1);
+    look.set(-0.7, 0.16, 0);
+    focus = c.gun ? camera.position.distanceTo(GUN_AT) : camera.position.distanceTo(look);
   } else if (wide) {
     // The wide shot stands at the gun's corner; the row runs away from the lens.
     camera.fov = 30;
-    look.set(-0.36, 0.24, 0);
-    dir.set(-0.62, 0.2, 1).normalize();
-    dist = Math.max(2.15, 1.5 / a);
-    camera.position.copy(look).addScaledVector(dir, dist);
+    look.set(-0.95, 0.25, 0);
+    dir.set(-0.4, 0.26, 1).normalize();
+    camera.position.copy(look).addScaledVector(dir, Math.max(3.85, 5.1 / a));
+    // The lens holds the gun while you load, then the row.
+    focus = c.gun ? camera.position.distanceTo(GUN_AT) : camera.position.distanceTo(look) + 0.5;
   } else {
     // A photo: close on the target, from a little down the range, with a slow push.
     camera.fov = 24;
-    look.set(SLOTS[c.i] + 0.022, BORE - 0.014, 0);
+    look.set(SLOTS[c.i] + 0.022, BORE - 0.016, 0);
     const t = Math.tan(THREE.MathUtils.degToRad(12));
-    dist = Math.max(0.6, 0.118 / (t * a)) * (1 - 0.07 * c.u);
+    focus = Math.max(0.6, 0.118 / (t * a)) * (1 - 0.07 * c.u);
     dir.set(0.36, 0.1, 1).normalize().applyAxisAngle(UP, -0.06 * c.u);
-    camera.position.copy(look).addScaledVector(dir, dist);
+    camera.position.copy(look).addScaledVector(dir, focus);
   }
   camera.lookAt(look);
   camera.updateProjectionMatrix();
-  return dist;
+  return { focus, wide };
+}
+
+// Sets every object for the playhead. photo forces the close camera, for a print.
+function setStage(pxHeight, photo = false) {
+  const c = cue(), T = fired ? shot.W(s) : -1;
+  clock.uT.value = T;
+  const i = c.i < 0 ? 2 : c.i, cam = placeCamera(c, photo);
+  studio.light(c.lit, c.dim, c.i < 0 ? (c.gun ? -1.1 : -0.2) : SLOTS[i], c.i < 0 ? 0 : 1, c.i < 0 ? 30 : hueAt(i));
+  // The dart's nose leads its centre.
+  const x = shot.slugX(Math.max(T, 0));
+  gun.slug.visible = fired && T >= 0 && x < 2.6;
+  gun.slug.position.x = x - 0.32 * 0.66 * GUN_SCALE;
+  bulbs.update(T, c.lit, c.dim, pxHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), cam.wide ? 1 : 0, c.i < 0 ? 30 : hueAt(i));
+  // A plate lights when its photo is taken; the last shot's plates stay lit.
+  plates.mats.forEach((m, k) => m.color.setScalar(printed && (!fired || s >= printAt[k]) ? 0.8 : 0));
+  return cam;
+}
+
+// Takes the six photos of this shot into the plates, before the shot plays.
+function printAll() {
+  const keep = { s, aspect: camera.aspect };
+  plates.group.visible = false;
+  camera.aspect = plates.aspect;
+  printAt.forEach((at, i) => {
+    s = at;
+    setStage(PRINT.h, true);
+    renderer.setRenderTarget(prints[i]);
+    renderer.render(scene, camera);
+  });
+  renderer.setRenderTarget(null);
+  plates.group.visible = true;
+  s = keep.s;
+  camera.aspect = keep.aspect;
+  printed = true;
 }
 
 function draw() {
-  const c = cue(), T = fired ? shot.W(s) : -1;
-  clock.uT.value = T;
-  const i = c.i < 0 ? 2 : c.i, focus = placeCamera(c);
-  studio.light(c.lit, c.dim, c.i < 0 ? -0.2 : SLOTS[i], c.i < 0 ? 0 : 1, c.i < 0 ? 30 : hueAt(i));
-  const x = shot.slugX(Math.max(T, 0));
-  slug.visible = fired && T >= 0 && x < 2.6;
-  slug.position.x = x;
-  bulbs.update(T, c.lit, c.dim, size.h * size.dpr / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))), smooth((focus - 0.8) / 1.2), c.i < 0 ? 30 : hueAt(i));
-  const u = dofPass.uniforms;
-  u.uFocus.value = focus; u.uK.value = 40 * size.dpr; u.uCap.value = 16 * size.dpr;
+  const cam = setStage(size.h * size.dpr), u = dofPass.uniforms;
+  u.uFocus.value = cam.focus; u.uK.value = (cam.wide ? 16 : 40) * size.dpr; u.uCap.value = 16 * size.dpr;
   grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value + 1) % 64;
   renderer.setRenderTarget(sceneRT);
   renderer.render(scene, camera);
@@ -255,11 +293,28 @@ function draw() {
 }
 
 /* ---------- play ---------- */
-act.fire = () => { fired = true; playing = true; s = 0; wake(); };
-act.reset = () => { fired = false; playing = false; s = 0; seed += 101; bulbs.build(seed, shot.tHit); ui.slider?.set(0); wake(); };
-act.seek = v => { fired = v > 0; playing = false; s = v * shot.dur; wake(); };
+// A new slug clears the last shot: a fresh row stands up.
+function freshRow() {
+  if (!fired) return;
+  fired = false; playing = false; s = 0; seed += 101;
+  bulbs.build(seed, shot.tHit);
+  ui.slider?.set(0);
+  if (ui.slider) ui.slider.disabled = true;
+}
+function fire() {
+  fired = true; playing = true; s = 0;
+  printAll();
+  if (ui.slider) ui.slider.disabled = false;
+  wake();
+}
+act.load = () => { if (gun.load()) freshRow(); };
+act.lock = () => gun.lock();
+act.down = () => gun.startCharge();
+act.up = () => { if (gun.release() !== null) fire(); };
+act.reset = () => { freshRow(); printed = false; wake(); };
+act.seek = v => { if (!fired) return; playing = false; s = v * shot.dur; gun.vent(); wake(); };
 
-// The loop runs while the shot plays; it sleeps at rest.
+// The loop runs while the shot plays or a machine moves; it sleeps at rest.
 let raf = 0, last = 0, visible = !document.hidden, ready = false;
 function wake() {
   if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -272,27 +327,69 @@ function frame(now) {
     // Throttled frames from a hidden pane do not count as slow.
     if (raw < 0.1) D.frame(raw);
     s += dt;
-    if (s >= shot.dur) { s = shot.dur; playing = false; }
+    if (s >= shot.dur) { s = shot.dur; playing = false; gun.vent(); }
     ui.slider?.set(s / shot.dur);
   }
+  const busy = gun.step(dt);
   draw();
-  if (playing && visible) raf = requestAnimationFrame(frame);
+  if ((playing || busy) && visible) raf = requestAnimationFrame(frame);
 }
+
+/* ---------- pointer ---------- */
+// The rack and the lever take clicks; a hold anywhere else charges.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e) {
+  if (fired && playing) return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (ray.intersectObject(gun.lever, true).length || ray.intersectObject(gun.block, true).length) return 'lever';
+  if (ray.intersectObject(gun.rack, true).length) return 'rack';
+  return null;
+}
+let pointerId = null;
+canvas.addEventListener('pointermove', e => {
+  if (pointerId !== null || e.pointerType !== 'mouse') return;
+  const p = pick(e);
+  if (p === gun.hover) return;
+  gun.hover = p;
+  stage.style.cursor = p ? 'pointer' : '';
+  wake();
+});
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || pointerId !== null) return;
+  const p = pick(e);
+  if (p === 'rack') { act.load(); return; }
+  if (p === 'lever') { act.lock(); return; }
+  pointerId = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  act.down();
+});
+const up = e => {
+  if (e.pointerId !== pointerId) return;
+  pointerId = null;
+  act.up();
+};
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---------- ready ---------- */
 resize();
-placeCamera(cue());
+placeCamera(cue(), false);
 const show = () => { ready = true; draw(); canvas.classList.add('on'); mark('first-frame'); };
 renderer.compileAsync(scene, camera).then(show, show);
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
 whenVisible(stage, v => { visible = v; if (v) wake(); else { cancelAnimationFrame(raf); raf = 0; } });
 
-// Checks: seek the playhead in seconds, or hold photo i at progress u.
+// Checks: fire at once, seek the playhead in seconds, or hold photo i at progress u.
 window.__qa = {
-  shot,
-  seek(sec) { fired = true; playing = false; s = sec; ui.slider?.set(s / shot.dur); wake(); },
-  photo(i, u = 0.5) { const sp = shot.spans.filter(e => e.kind === 'photo')[i]; this.seek(sp.s0 + u * (sp.s1 - sp.s0)); },
-  info: () => ({ s, T: shot.W(s), level: D.level, dpr: size.dpr, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+  shot, gun,
+  fire() { fire(); },
+  seek(sec) { if (!fired) { fired = true; printAll(); } playing = false; s = sec; if (ui.slider) { ui.slider.disabled = false; ui.slider.set(s / shot.dur); } wake(); },
+  photo(i, u = 0.5) { this.seek(photos[i].s0 + u * (photos[i].s1 - photos[i].s0)); },
+  info: () => ({ s, T: shot.W(s), level: D.level, dpr: size.dpr, gun: gun.state.s }),
 };
 </script>
 </body>
