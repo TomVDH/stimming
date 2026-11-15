@@ -57,3 +57,46 @@ A line between two stilt houses over wet mudflats. The flats mirror the dusk sky
 2. A grey blockout of the shot for composition; Tom checks it.
 3. Light and air; then hero props; then the grade.
 4. Retire the four places in one commit.
+
+## Chosen: A, cliff top in sea fog at sunrise (Tom, 2026-11-15)
+
+### The shot
+- One camera at line height (about 1.9 m) on a grassy headland, looking east over a bay at dawn.
+- The line runs 7 m across the frame: from a weathered post beside a dry-stone wall (left, near) to a crooked fence post (right). Both posts carry pulley wheels.
+- Fifteen metres past the line the headland ends at a cliff edge, 60 m above the sea.
+- Below, a sea of fog fills the bay. Its top undulates and drifts.
+- A white lighthouse stands on a far headland (about 1.5 km), rising out of the fog. Two more headlands fade behind it (3 and 7 km).
+- The sun rises over the sea horizon, behind the washing.
+
+### Layers, near to far
+| Layer | Content | Method |
+|---|---|---|
+| Grass | Wind-blown grass, sea pinks, a few stones | Instanced blades with a wind shader, up to 40k |
+| Wall and posts | Dry-stone wall, two posts, pulleys, a gate | Modelled meshes: stones with bevels, wood with cracks and lichen |
+| Cliff edge | Turf lip, rock face falling away | Displaced mesh, rock shading |
+| Fog sea | Volumetric fog slab, 0 to 45 m above the sea | Screen-space raymarch against scene depth, half resolution, lit by the low sun with forward scattering |
+| Headlands | Lighthouse headland, two far headlands | Heightfield meshes rising from the fog, aerial perspective |
+| Sky | Dawn sky, sun disc, thin high cirrus lit pink | The physical scattering model from Strangereal, generalised |
+
+### Light and the Sun slider
+- Left end: pre-dawn, the sun 4° under the horizon. Blue hour light; the lighthouse beam sweeps through the fog.
+- Right end: sunrise, the sun 3° up, straight behind the washing. The cloth glows; the fog top turns gold; the beam fades out.
+- Soft sun shadows; ambient occlusion in the grass and at the wall's foot.
+
+### Motion
+Grass and sea pinks move in the wind. The fog drifts and breathes. The lighthouse beam turns. A few gulls ride the updraft at the cliff edge. The washing plays as now: reel, unclip, + Piece, Release.
+
+### Budget
+- 60 fps on a desktop, 30 or more on a phone. The fog runs at half resolution with a depth-aware upsample.
+- The first frame comes within 1 s on a warm load.
+- Checks at 1280, 375 × 812 and 812 × 375.
+
+### Build order
+1. Grey blockout: terrain, cliff, posts, line and camera. Tom checks the composition.
+2. Sky and fog: the scattering sky, the fog raymarch, the sun slider.
+3. Hero props: the wall, posts, pulleys, grass, the lighthouse.
+4. Grade, ambient occlusion, soft shadows; the phone frame.
+5. Retire the four old places in one commit.
+
+### Open question
+CC0 textures from Poly Haven (dry stone, weathered wood, rock, grass) would lift the near surfaces most. They need Tom's yes to download, with a row each in `washline/CREDITS.md`.
