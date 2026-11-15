@@ -21,3 +21,16 @@ Notes:
 - The storefront extract leaves out business names. The toy shows no real shop name.
 - The building outlines and heights date from 2009.
 - The toy is not endorsed by the City of Vancouver.
+
+## Textures: the realistic postcard
+
+`eastvan/postcard/real/` uses five texture sets from [Poly Haven](https://polyhaven.com/), all CC0 1.0. Each set is three 1k JPG files in `eastvan/postcard/real/assets/`: colour (`_diff`), normal (`_nor_gl`) and AO, roughness, metal (`_arm`). Tom approved the list on 2026-11-14.
+
+| Files | Source | Author | Licence | Size | Fetched |
+|---|---|---|---|---|---|
+| `asphalt_02_*_1k.jpg` | <https://polyhaven.com/a/asphalt_02> | Rob Tuytel | CC0 1.0 | 2.3 MB | 2026-11-14 |
+| `white_planks_clean_*_1k.jpg` | <https://polyhaven.com/a/white_planks_clean> | Rob Tuytel | CC0 1.0 | 1.4 MB | 2026-11-14 |
+| `concrete_floor_02_*_1k.jpg` | <https://polyhaven.com/a/concrete_floor_02> | Rob Tuytel | CC0 1.0 | 1.1 MB | 2026-11-14 |
+| `bark_brown_02_*_1k.jpg` | <https://polyhaven.com/a/bark_brown_02> | Rob Tuytel | CC0 1.0 | 1.9 MB | 2026-11-14 |
+| `leafy_grass_*_1k.jpg` | <https://polyhaven.com/a/leafy_grass> | Charlotte Baglioni | CC0 1.0 | 3.7 MB | 2026-11-14 |
+

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>East Van postcard: realistic study</title>
+<meta name="robots" content="noindex">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../../../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+html, body { height: 100%; margin: 0; background: oklch(0.16 0.012 275); color: oklch(0.84 0.012 275); }
+.card {
+  position: fixed; inset: 0; box-sizing: border-box; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 6px;
+  padding: clamp(10px, 2.4vmin, 28px) clamp(10px, 2.4vmin, 28px) clamp(4px, 1vmin, 12px);
+}
+.stage { position: relative; overflow: hidden; border-radius: 5px; background: oklch(0.1 0.01 275); }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.35s ease; }
+.stage canvas.on { opacity: 1; }
+.fail { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; }
+.fail[hidden] { display: none; }
+.foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; min-height: 34px;
+  font: 500 12px/16px "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.flip { all: unset; display: grid; place-items: center; height: 34px; padding: 0 8px; cursor: pointer; color: oklch(0.6 0.012 275); }
+.flip[aria-pressed="true"] { color: oklch(0.96 0.02 90); box-shadow: inset 0 -2px 0 currentColor; }
+.flip:focus-visible { outline: 2px solid oklch(0.8 0.1 250); outline-offset: -2px; }
+/* The block-out page lies over this one; it takes no clicks. */
+.blockout { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.blockout[hidden] { display: none; }
+/* The button stays on top, on a plain ground, so it reads over both pages. */
+.flip { position: relative; z-index: 2; background: oklch(0.16 0.012 275); }
+@media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="stage" id="stage" role="img" aria-label="A house lot in East Vancouver in the rain at dusk.">
+    <p class="fail" hidden>This page needs WebGL 2.</p>
+  </div>
+  <div class="foot">
+    <span id="cap">East 4th · 4:52 pm · Rain</span>
+    <button class="flip" type="button" aria-pressed="false">B · Block-out</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { start } from './real.js';
+
+const stage = document.getElementById('stage'), flip = document.querySelector('.flip');
+let page;
+try {
+  page = start(stage);
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  throw err;
+}
+// B lays the block-out card over this page, on the same lens.
+let frame = null;
+function toggle() {
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.className = 'blockout'; frame.src = '../index.html#1'; frame.tabIndex = -1; frame.title = 'Block-out postcard'; frame.hidden = true;
+    document.body.append(frame);
+  }
+  frame.hidden = !frame.hidden;
+  flip.setAttribute('aria-pressed', String(!frame.hidden));
+  flip.textContent = frame.hidden ? 'B · Block-out' : 'B · Realistic';
+}
+addEventListener('keydown', e => { if ((e.key === 'b' || e.key === 'B') && !e.metaKey && !e.ctrlKey && !e.altKey) toggle(); });
+flip.addEventListener('click', toggle);
+</script>
+</body>
+</html>
