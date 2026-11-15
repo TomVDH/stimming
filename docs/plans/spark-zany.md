@@ -1,6 +1,6 @@
 # Spark wheel: spark types, a hot wheel, a better roller (`stimming-0d7r`) design
 
-> Design spec. Tom picked the direction on 2026-11-14. Plan: `docs/plans/spark-zany-plan.md` (not written yet). Build nothing until Tom approves this doc, then the plan.
+> Design spec. Tom approved it on 2026-11-14. Plan: `docs/plans/spark-zany-plan.md`. Built on 2026-11-14 in `spark/index.html`; it waits on Tom's look on a visible screen.
 
 **Goal:** Spark wheel gets five new spark types that each have a trick, a wheel that heats up while it grinds and sheds the heat in one big flare, a roller with more detail, and a slightly smaller wheel on the stage.
 
