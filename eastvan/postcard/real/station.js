@@ -55,7 +55,7 @@ export function build(k) {
   const coolIn = glow(col(0.88, 0.04, 220, 0.62)), warmIn = glow(col(0.8, 0.1, 75, 0.6)), goldIn = glow(col(0.78, 0.12, 62, 0.62)), cabin = glow(col(0.86, 0.06, 88, 0.65));
   // The frame hook sets the three signal colours.
   const sigR = glow(RED), sigA = glow(AMB), sigG = glow(GRN);
-  const boardM = signMat('MOSSLIGHT JUNCTION', { w: 1024, h: 80, bg: '#0c1a30', fg: '#eaf2ff', font: mono(60), k: 1.4 });
+  const boardM = signMat('COMMERCIAL–BROADWAY', { w: 1024, h: 80, bg: '#0c1a30', fg: '#eaf2ff', font: mono(60), k: 1.4 });
   const destM = signMat('HARBOUR END', { w: 512, h: 96, bg: '#0a0a0a', fg: '#ffb43c', font: mono(64), k: 1.6 });
   const busF = signMat('77 SALTGRASS', { w: 640, h: 112, bg: '#0c0c0c', fg: '#ffb43c', font: mono(76), k: 1.6 }), busR = signMat('77', { w: 128, h: 64, bg: '#0c0c0c', fg: '#ffb43c', font: mono(52), k: 1.6 });
   const names = [['NIGHT OWL PIZZA', '#2a0808', '#ff6a4d'], ['SALMONBERRY CAFE', '#06231f', '#7dffd8'], ['GOLDEN CRANE NOODLE', '#2b1d02', '#ffcf5a'], ['RAINCOAT RECORDS', '#160a2e', '#c9a2ff'], ['LATE GROCER', '#f3ead8', '#b3261e']]
