@@ -17,5 +17,6 @@ export const RECT = { kind: 'rect', e0: -18, n0: 21.9, e1: 12, n1: 51.9 };
 // The parts come from the baked city data on the first visit.
 export async function load() {
   const d = await (await fetch(new URL('../data/drive.json', import.meta.url))).json();
-  return driveParts(d, RECT);
+  const lidar = await fetch(new URL('../data/lidar.json', import.meta.url)).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  return driveParts(d, RECT, lidar);
 }

@@ -74,12 +74,17 @@ function shop(i, x0, x1, zf, cat, dir) {
 }
 
 // A street tree from its record: height, trunk size and kind.
-function tree(x, z, h, d, name) {
-  const c = TREE.find(([re]) => re.test(name || ''))[1], r = Math.max(0.9, h * 0.2), y = h * 0.66;
+// A measured canopy (from LiDAR) sets the height and the spread.
+function tree(x, z, h, d, name, canopy = null) {
+  if (canopy) h = canopy.h;
+  const c = TREE.find(([re]) => re.test(name || ''))[1], y = h * 0.66;
+  // A canopy's spread can take in its neighbour's, so it stays near the tree's own size.
+  const r = canopy ? Math.max(0.9, Math.min(canopy.r * 0.55, h * 0.32)) : Math.max(0.9, h * 0.2);
+  const k = canopy ? { k: 'canopy' } : {};
   return [
     cyl([x, 0.15 + h * 0.24, z], Math.max(0.1, (d || 20) / 200), h * 0.48, 'trunk', A),
-    blob([x, y, z], r, c, A), blob([x - r * 0.7, y - r * 0.35, z + r * 0.2], r * 0.72, c, A),
-    blob([x + r * 0.65, y - r * 0.3, z - r * 0.25], r * 0.75, c, A), blob([x + r * 0.1, y + r * 0.7, z], r * 0.65, c, A),
+    blob([x, y, z], r, c, A, k), blob([x - r * 0.7, y - r * 0.35, z + r * 0.2], r * 0.72, c, A, k),
+    blob([x + r * 0.65, y - r * 0.3, z - r * 0.25], r * 0.75, c, A, k), blob([x + r * 0.1, y + r * 0.7, z], r * 0.65, c, A, k),
   ];
 }
 // A parked car: two boxes and four wheels.
@@ -111,12 +116,38 @@ const bus = (x, z) => on('bus', [x, 0, z], [
 // The Corner: the whole disc. It reads the baked city data.
 export async function loadDrive() {
   const d = await (await fetch(new URL('./data/drive.json', import.meta.url))).json();
-  return driveParts(d, { kind: 'disc', r: R });
+  // The LiDAR bake is optional: without it the roofs are guessed.
+  const lidar = await fetch(new URL('./data/lidar.json', import.meta.url)).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  return driveParts(d, { kind: 'disc', r: R }, lidar);
+}
+// Calms a roof grid: each cell takes the median of its neighbours,
+// rounded to 20 cm, so scan noise reads as plain steps.
+function smooth(cells, s) {
+  const H = new Map(cells.map(([e, n, h]) => [`${Math.round(e / s)},${Math.round(n / s)}`, h]));
+  return cells.map(([e, n, h]) => {
+    const i = Math.round(e / s), j = Math.round(n / s), near = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const v = H.get(`${i + di},${j + dj}`); if (v !== undefined) near.push(v); }
+    near.sort((a, c) => a - c);
+    return [e, n, Math.round(near[near.length >> 1] * 5) / 5];
+  });
+}
+// A point in a ring of [e, n] pairs.
+function inRing([x, y], ring) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
 }
 
 // The Drive's parts from city data, cut to clip:
 // { kind: 'disc', r } or { kind: 'rect', e0, n0, e1, n1 }.
-export function driveParts(d, clip) {
+// lidar: the LiDAR bake, or null. It gives real roofs and canopies.
+export function driveParts(d, clip, lidar = null) {
+  const roofCells = new Map(), canopies = new Map();
+  for (const b of lidar ? lidar.b : []) roofCells.set(b.id, [...(roofCells.get(b.id) || []), ...b.cells]);
+  for (const t of lidar ? lidar.trees : []) canopies.set(t.at.join(), t);
   const disc = clip.kind === 'disc';
   const SHAPE = disc
     ? Array.from({ length: 64 }, (_, i) => [Math.cos(i / 64 * 2 * Math.PI) * clip.r, Math.sin(i / 64 * 2 * Math.PI) * clip.r])
@@ -169,6 +200,20 @@ export function driveParts(d, clip) {
     if (ring.length < 3 || area(ring) < 6) return;
     const es = ring.map(p => p[0]), ns = ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), n0 = Math.min(...ns), n1 = Math.max(...ns);
     const cutOff = area(ring) < area(whole) - 0.5, pitched = b.roof !== 'Flat' && !cutOff && b.h > 4;
+    // Measured roof cells inside this outline replace the guessed shape.
+    // Cells under a metre are ground the scan took for roof.
+    const own = (roofCells.get(b.id) || []).filter(p => p[2] > 1 && inRing(p, ring) && inside(p[0], p[1], 0.3));
+    if (own.length >= 12) {
+      const cells = smooth(own, lidar.cell);
+      const hs = cells.map(p => p[2]).sort((a, c) => a - c), top = hs[Math.floor(hs.length * 0.85)], eave = hs[Math.floor(hs.length * 0.1)];
+      const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0;
+      const c = b.roof === 'Flat' ? (side ? WALL[i % WALL.length] : 'garage') : HOUSE[b.id % HOUSE.length];
+      // The walls stand on the true outline to the eave; the measured roof sits above.
+      add(poly(ring, 0.16, Math.max(0.5, eave - 0.3), c));
+      add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'found' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
+      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c });
+      return;
+    }
     if (pitched) {
       // A house: walls to the eave, then a gable roof along its long side.
       const alongX = n1 - n0 > e1 - e0, span = alongX ? e1 - e0 : n1 - n0, long = alongX ? n1 - n0 : e1 - e0;
@@ -220,7 +265,7 @@ export function driveParts(d, clip) {
   });
 
   /* ---------- street: trees and poles from the records ---------- */
-  for (const t of d.trees) if (inside(t.at[0], t.at[1], 2.5) && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name));
+  for (const t of d.trees) if (inside(t.at[0], t.at[1], 2.5) && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name, canopies.get(t.at.join())));
   const lights = [];
   for (const [e, n] of d.poles) {
     if (!inside(e, n, 3) || Math.abs(e) > 12.5 || Math.abs(e) < 6) continue;

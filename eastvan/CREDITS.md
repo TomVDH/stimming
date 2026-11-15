@@ -17,6 +17,10 @@ All five extracts cover 170 m around Commercial Drive and East 4th Avenue.
 | `bake/raw/poles.geojson` | <https://opendata.vancouver.ca/explore/dataset/street-lighting-poles/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-10 |
 | `bake/raw/stores.geojson` | <https://opendata.vancouver.ca/explore/dataset/storefronts-inventory/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-10 |
 
+| `bake/raw/lidar/494000_5457000.zip` (not in git; 1 GB) | <https://opendata.vancouver.ca/explore/dataset/lidar-2022/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-14 |
+
+`eastvan/bake/lidar.py` bakes the LiDAR tile to `eastvan/data/lidar.json`: roof heights per building on a half-metre grid, and the height and spread of each street tree.
+
 Notes:
 - The storefront extract leaves out business names. The toy shows no real shop name.
 - The building outlines and heights date from 2009.

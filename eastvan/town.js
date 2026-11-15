@@ -10,6 +10,47 @@ import { lin, lift, lerp, paint, PAINT, glowMat, beamGeo } from './kit.js';
 
 
 /* ---------- geometry from parts ---------- */
+// A measured roof: a height grid of [x, z, h] cells.
+// The top is a smooth surface through the cell corners; the walls drop
+// from each open edge to the ground. Both come back painted.
+function roofGrid(q) {
+  const s = q.cell, H = new Map(), key = (a, b) => a * 100003 + b;
+  for (const [x, z, h] of q.cells) H.set(key(Math.round(x / s), Math.round(z / s)), h);
+  // A corner's height is the mean of the cells round it.
+  const corner = (a, b) => {
+    let t = 0, n = 0;
+    for (const [da, db] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) { const h = H.get(key(a + da, b + db)); if (h !== undefined) { t += h; n++; } }
+    return q.y + t / n;
+  };
+  // The walls drop to base, where the outline's own walls stop.
+  const top = [], wall = [], y0 = q.y + (q.base ?? 0);
+  const P = (a, b, y) => [(a - 0.5) * s, y, (b - 0.5) * s];
+  const tri = (out, p, r, t) => out.push(...p, ...r, ...t);
+  for (const k of H.keys()) {
+    const i = Math.round(k / 100003), j = k - i * 100003;
+    const c00 = P(i, j, corner(i, j)), c10 = P(i + 1, j, corner(i + 1, j)), c01 = P(i, j + 1, corner(i, j + 1)), c11 = P(i + 1, j + 1, corner(i + 1, j + 1));
+    tri(top, c00, c01, c10); tri(top, c10, c01, c11);
+    // Each open side gets a wall, wound to face outward.
+    const quad = (a, b, flip) => {
+      const A = [a[0], y0, a[2]], B = [b[0], y0, b[2]];
+      if (flip) { tri(wall, A, b, B); tri(wall, A, a, b); } else { tri(wall, A, B, b); tri(wall, A, b, a); }
+    };
+    if (!H.has(key(i - 1, j))) quad(c00, c01, false);
+    if (!H.has(key(i + 1, j))) quad(c10, c11, true);
+    if (!H.has(key(i, j - 1))) quad(c00, c10, true);
+    if (!H.has(key(i, j + 1))) quad(c01, c11, false);
+  }
+  // Merged parts must share attributes, so the grid carries an empty uv.
+  const geo = arr => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(arr.length / 3 * 2), 2));
+    g.computeVertexNormals();
+    return g;
+  };
+  return [paint(geo(top), COL[q.top]), paint(geo(wall), COL[q.c])];
+}
+
 const roofEave = q => { const hw = q.s[0] / 2 + q.over, slope = q.s[1] / (q.s[0] / 2); return { hw, slope, y: q.p[1] + q.s[1] - slope * hw }; };
 function geomsOf(q) {
   const out = [];
@@ -24,6 +65,7 @@ function geomsOf(q) {
     const g = new THREE.TorusGeometry(q.r, q.tube, 6, 20);
     add(q.ax === 'z' ? g : g.rotateX(Math.PI / 2), ...q.p);
   } else if (q.t === 'slab') add(new THREE.BoxGeometry(...q.s).rotateX(q.rx), ...q.p);
+  else if (q.t === 'roofgrid') return roofGrid(q);
   else if (q.t === 'poly') {
     // A ground outline [x, z], pushed up to a height.
     const sh = new THREE.Shape(q.ring.map(([x, z]) => new THREE.Vector2(x, -z)));

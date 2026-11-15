@@ -34,3 +34,25 @@ test('lane mouth is open', () => {
     assert.ok(!(n > 37.6 && n < 40.3 && e < -11.9), `a building stands in the lane at n ${n.toFixed(1)}, e ${e.toFixed(1)}`);
   }
 });
+
+// The LiDAR bake: real roof heights per building, and real canopies.
+const lidarFile = new URL('../data/lidar.json', import.meta.url);
+const lidar = fs.existsSync(lidarFile) ? JSON.parse(fs.readFileSync(lidarFile)) : null;
+
+test('lidar roofs replace the guessed shapes', { skip: !lidar && 'no lidar.json yet' }, () => {
+  const { PARTS } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const grids = PARTS.filter(q => q.t === 'roofgrid');
+  assert.ok(grids.length >= 10, `only ${grids.length} buildings have a roof grid`);
+  // A roof grid's cells sit inside the disc and stand above the ground.
+  for (const g of grids) for (const [x, z, h] of g.cells) {
+    assert.ok(Math.hypot(x, z) < 58.6, `a roof cell at ${x}, ${z} is off the disc`);
+    assert.ok(h > 0 && h < 40, `a roof cell is ${h} m high`);
+  }
+  // No guessed gable stands where a measured roof stands.
+  assert.equal(PARTS.filter(q => q.t === 'roof').length, 0);
+});
+
+test('lidar canopies size the trees', { skip: !lidar && 'no lidar.json yet' }, () => {
+  const measured = driveParts(data, { kind: 'disc', r: 58 }, lidar).PARTS.filter(q => q.k === 'canopy');
+  assert.ok(measured.length >= 10, `only ${measured.length} trees take a measured canopy`);
+});
