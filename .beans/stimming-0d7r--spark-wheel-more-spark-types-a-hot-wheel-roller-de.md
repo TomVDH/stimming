@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T07:53:29Z
+updated_at: 2026-11-15T08:00:07Z
 parent: stimming-oh7b
 ---
 
@@ -58,3 +58,9 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
   - Rejected by Tom on sight: orbit rings and electron balls at the axle (my wrong read of "atom style"); a hoop arm that stood on a stepped plinth.
   - Room: dark teal background, turquoise backdrop glow, teal tabletop, a cream rim light.
   - Name clashes met: mix (TSL) and body (the blackbody ramp); the new names are quiet and shell.
+
+- 2026-11-15, Tom: "now the wheel itself". Test set t12 (seen to fail first); t1 to t6 and t8 to t12 pass.
+  - The faces are cream enamel under a clear coat, with five swept slots that trail the spin (a turbine look) in place of the five round holes. The lathe-ring maps are gone.
+  - The far face is the near one mirrored in z, with its triangles turned back, so the slots line up and light passes through.
+  - The knurled rim stays steel and still glows with heat; it is a little brighter (0.74, roughness 0.25).
+  - The hub moves in from the left edge (wide 0.31, tall 0.43 across), so the body's back sweep stays in frame. On a tall screen the spray now runs off the right edge sooner.

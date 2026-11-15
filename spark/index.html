@@ -214,48 +214,42 @@ function knurlMap() {
   };
   return { normal: tex(data), glow: tex(ridge) };
 }
-// The face: fine lathe rings, a darker axle hole in the centre.
-function faceMaps() {
-  const S = 256, c = new Uint8Array(S * S * 4), r = new Uint8Array(S * S * 4);
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const d = Math.hypot(x / S - 0.5, y / S - 0.5) * 2, i = (y * S + x) * 4;
-      const ring = 0.5 + 0.5 * Math.sin(d * 260);
-      const hole = d < 0.2 ? 0.08 : d < 0.24 ? 0.5 : 1;
-      c[i] = c[i + 1] = c[i + 2] = 255 * hole;
-      r[i + 1] = 255 * (0.18 + 0.14 * ring);
-      c[i + 3] = r[i + 3] = 255;
-    }
-  }
-  const tex = d => { const t = new THREE.DataTexture(d, S, S); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
-  const map = tex(c);
-  map.colorSpace = THREE.SRGBColorSpace;
-  return { map, rough: tex(r) };
-}
-
 /* ---------- scene ---------- */
-const steel = col(0.68, 0.008, 250);
-// The rim is an open tube; through a hole its inner wall shows, so it has two sides.
+// The rim is an open tube of bright knurled steel.
+// Its inner wall shows through the slots, so it has two sides.
 const knurl = knurlMap();
-const rimMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 0.3, normalMap: knurl.normal, normalScale: new THREE.Vector2(1, 1), emissiveMap: knurl.glow, side: THREE.DoubleSide });
-const fm = faceMaps();
-// A plate's cap UVs are its own x and y, from -1 to 1.
-for (const t of [fm.map, fm.rough]) { t.repeat.set(0.5, 0.5); t.offset.set(0.5, 0.5); }
-const faceMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 1, map: fm.map, roughnessMap: fm.rough });
+const rimMat = new THREE.MeshStandardMaterial({ color: col(0.74, 0.006, 250), metalness: 1, roughness: 0.25, normalMap: knurl.normal, normalScale: new THREE.Vector2(1, 1), emissiveMap: knurl.glow, side: THREE.DoubleSide, envMap: scene.environment, envMapIntensity: 0.2 });
+// The faces are cream enamel under a clear coat.
+const faceMat = new THREE.MeshPhysicalMaterial({ color: col(0.84, 0.045, 92), metalness: 0, roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.08, envMap: scene.environment, envMapIntensity: 0.45 });
 const rimGeo = new THREE.CylinderGeometry(R, R, WIDTH, 160, 1, true);
-// Each face is a plate with five holes, so the spin shows.
-// One hole sits at the top, so a plate turned round still lines up.
-const HOLES = 5, HOLE_R = 0.16, HOLE_AT = 0.58, PLATE = 0.04, BEVEL = 0.03;
+// Each face is a plate with five swept slots, so the spin shows.
+const SLOTS = 5, PLATE = 0.04, BEVEL = 0.03;
+// A slot runs out from the hub and trails the spin, as a turbine blade does.
+function bladeSlot(a0) {
+  const left = [], right = [], dr = 0.37, da = -0.95;
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20, r = 0.37 + dr * t, a = a0 + da * t, w = 0.04 + 0.075 * Math.sin(Math.PI * t) ** 0.7;
+    // The two sides sit across the slot's centre line.
+    const tx = dr * Math.cos(a) - r * da * Math.sin(a), ty = dr * Math.sin(a) + r * da * Math.cos(a), l = Math.hypot(tx, ty);
+    const cx = r * Math.cos(a), cy = r * Math.sin(a);
+    left.push(new THREE.Vector2(cx - (ty / l) * w, cy + (tx / l) * w));
+    right.push(new THREE.Vector2(cx + (ty / l) * w, cy - (tx / l) * w));
+  }
+  return new THREE.Path([...left, ...right.reverse()]);
+}
 const plateShape = new THREE.Shape();
 plateShape.absarc(0, 0, R - BEVEL, 0, TAU, false);
-for (let i = 0; i < HOLES; i++) {
-  const a = Math.PI / 2 + (i * TAU) / HOLES, hole = new THREE.Path();
-  hole.absarc(Math.cos(a) * HOLE_AT, Math.sin(a) * HOLE_AT, HOLE_R, 0, TAU, true);
-  plateShape.holes.push(hole);
-}
+for (let i = 0; i < SLOTS; i++) plateShape.holes.push(bladeSlot(Math.PI / 2 + (i * TAU) / SLOTS));
 const plateGeo = new THREE.ExtrudeGeometry(plateShape, { depth: PLATE, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 2, curveSegments: 48 });
 // The plate's full width ends at the rim's edge; its bevel is the chamfer beyond.
 plateGeo.translate(0, 0, WIDTH / 2 - PLATE);
+// The far face is the near one mirrored through the wheel, so the slots line up.
+const farGeo = plateGeo.clone().scale(1, 1, -1);
+// A mirror turns each triangle over; two swapped corners turn it back.
+for (const at of Object.values(farGeo.attributes)) {
+  const a = at.array, n = at.itemSize;
+  for (let i = 0; i < a.length; i += 3 * n) for (let k = 0; k < n; k++) [a[i + n + k], a[i + 2 * n + k]] = [a[i + 2 * n + k], a[i + n + k]];
+}
 const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, WIDTH - 0.1, 32, 1);
 
 /* ---------- the lighter ---------- */
@@ -354,8 +348,7 @@ function makeWheel() {
   const spin = new THREE.Group();
   const rimTube = new THREE.Mesh(rimGeo, rimMat);
   rimTube.rotation.x = Math.PI / 2;
-  const near = new THREE.Mesh(plateGeo, faceMat), far = new THREE.Mesh(plateGeo, faceMat);
-  far.rotation.y = Math.PI;
+  const near = new THREE.Mesh(plateGeo, faceMat), far = new THREE.Mesh(farGeo, faceMat);
   const hub = new THREE.Mesh(hubGeo, chrome);
   hub.rotation.x = Math.PI / 2;
   spin.add(rimTube, near, far, hub);
@@ -1556,8 +1549,9 @@ function frameShot() {
   setYaw(narrow ? 1.15 : 0.6);
   aimVolume(narrow ? 1.15 : 0.6);
   // The camera sits low, near the floor: the wheel stands tall and the jet runs across.
-  if (!narrow) aim(30, -0.4, 10.4, 0.05, 0.27);
-  else aim(34, 0.9, 14.4, 0.75, 0.3);
+  // The hub sits far enough in for the body's back sweep.
+  if (!narrow) aim(30, -0.4, 10.4, 0.05, 0.31);
+  else aim(34, 0.9, 14.4, 0.75, 0.43);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   // The wheel's screen centre and radius map a drag to spin.
