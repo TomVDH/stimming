@@ -120,16 +120,29 @@ export async function loadDrive() {
   const lidar = await fetch(new URL('./data/lidar.json', import.meta.url)).then(r => (r.ok ? r.json() : null)).catch(() => null);
   return driveParts(d, { kind: 'disc', r: R }, lidar);
 }
-// Calms a roof grid: each cell takes the median of its neighbours,
-// rounded to 20 cm, so scan noise reads as plain steps.
-function smooth(cells, s) {
+// Calms a roof grid. Each cell first takes the median of a 5 x 5 patch.
+// A flat roof then snaps to its main levels (at most three),
+// so rooftop units and scan noise fold into plain terraces.
+// A pitched roof keeps its slope, rounded to 10 cm.
+function smooth(cells, s, flat) {
   const H = new Map(cells.map(([e, n, h]) => [`${Math.round(e / s)},${Math.round(n / s)}`, h]));
-  return cells.map(([e, n, h]) => {
+  const calm = cells.map(([e, n]) => {
     const i = Math.round(e / s), j = Math.round(n / s), near = [];
-    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const v = H.get(`${i + di},${j + dj}`); if (v !== undefined) near.push(v); }
+    for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) { const v = H.get(`${i + di},${j + dj}`); if (v !== undefined) near.push(v); }
     near.sort((a, c) => a - c);
-    return [e, n, Math.round(near[near.length >> 1] * 5) / 5];
+    return [e, n, near[near.length >> 1]];
   });
+  if (!flat) return calm.map(([e, n, h]) => [e, n, Math.round(h * 10) / 10]);
+  // The main levels: half-metre bins that hold at least 12% of the roof.
+  const bins = new Map();
+  for (const [, , h] of calm) { const b = Math.round(h * 2) / 2; bins.set(b, (bins.get(b) || 0) + 1); }
+  // A level counts only when it stands a metre or more from a bigger one.
+  const levels = [];
+  for (const [b, n] of [...bins].sort((a, c) => c[1] - a[1])) {
+    if (levels.length && (n < calm.length * 0.12 || levels.length >= 3)) break;
+    if (levels.every(l => Math.abs(l - b) >= 1)) levels.push(b);
+  }
+  return calm.map(([e, n, h]) => [e, n, levels.reduce((a, c) => (Math.abs(c - h) < Math.abs(a - h) ? c : a))]);
 }
 // A point in a ring of [e, n] pairs.
 function inRing([x, y], ring) {
@@ -204,13 +217,13 @@ export function driveParts(d, clip, lidar = null) {
     // Cells under a metre are ground the scan took for roof.
     const own = (roofCells.get(b.id) || []).filter(p => p[2] > 1 && inRing(p, ring) && inside(p[0], p[1], 0.3));
     if (own.length >= 12) {
-      const cells = smooth(own, lidar.cell);
+      const cells = smooth(own, lidar.cell, b.roof === 'Flat');
       const hs = cells.map(p => p[2]).sort((a, c) => a - c), top = hs[Math.floor(hs.length * 0.85)], eave = hs[Math.floor(hs.length * 0.1)];
       const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0;
       const c = b.roof === 'Flat' ? (side ? WALL[i % WALL.length] : 'garage') : HOUSE[b.id % HOUSE.length];
       // The walls stand on the true outline to the eave; the measured roof sits above.
       add(poly(ring, 0.16, Math.max(0.5, eave - 0.3), c));
-      add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'found' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
+      add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'tar' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
       if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c });
       return;
     }

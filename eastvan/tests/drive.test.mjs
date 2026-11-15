@@ -56,3 +56,12 @@ test('lidar canopies size the trees', { skip: !lidar && 'no lidar.json yet' }, (
   const measured = driveParts(data, { kind: 'disc', r: 58 }, lidar).PARTS.filter(q => q.k === 'canopy');
   assert.ok(measured.length >= 10, `only ${measured.length} trees take a measured canopy`);
 });
+
+test('flat roofs settle on a few levels', { skip: !lidar && 'no lidar.json yet' }, () => {
+  const grids = driveParts(data, { kind: 'disc', r: 58 }, lidar).PARTS.filter(q => q.t === 'roofgrid' && q.top !== 'roof');
+  assert.ok(grids.length > 5);
+  for (const g of grids) {
+    const levels = new Set(g.cells.map(c => c[2]));
+    assert.ok(levels.size <= 3, `a flat roof has ${levels.size} levels`);
+  }
+});
