@@ -26,22 +26,56 @@ td i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margi
 td em { font-style: normal; color: var(--muted); }
 </style>
 <body>
-<div class="bar" role="group" aria-label="Shelf"><span>Shelf</span>
+<div class="bar">
+  <span>Shelf</span>
   <button type="button" data-v="main">Main shelf</button>
   <button type="button" data-v="lab">Lab</button>
+  <span style="margin-left: 18px">Divider</span>
+  <button type="button" data-d="wave">Wave</button>
+  <button type="button" data-d="chain">Chain</button>
+  <button type="button" data-d="thread">Thread</button>
+  <button type="button" data-d="plate">Plate</button>
+  <button type="button" data-d="stack">Stack</button>
+  <button type="button" data-d="under">Underline</button>
 </div>
 <table id="counts"></table>
 <script type="module">
 import { shotIcon } from '../shared/series/shots.js';
 import { PROPOSED, ORDER, seriesOf } from './proposal.js';
 
+// One small hexagon, as a mask tile for the Chain divider.
+const HEXES = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='12' viewBox='0 0 14 12'%3E%3Cpath d='M7 1L12 3.75V8.25L7 11L2 8.25V3.75Z' fill='none' stroke='black' stroke-width='1.3'/%3E%3C/svg%3E")`;
 // The frame's own styles cover the Lab; the main shelf needs the same rules.
 const CSS = `
 .sec { --c: var(--muted); display: grid; grid-template-columns: repeat(auto-fill, clamp(96px, 26vw, 150px)); justify-content: center; gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px); width: 100%; max-width: calc(6 * 150px + 5 * 28px); justify-self: center; }
 .lab .sec { max-width: calc(5 * 150px + 4 * 28px); }
 .sec + .sec { margin-top: clamp(20px, 3.4vw, 40px); }
 .sec > .shelf { display: contents; }
-.sec-hd .ct { font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.06em; color: var(--muted); margin-left: 2px; }
+
+/* The divider styles. Wave is the menu's own; the others restyle the same heading. */
+/* Chain: the line is a row of small hexagons. */
+html[data-d="chain"] .sec-hd::before, html[data-d="chain"] .sec-hd::after { height: 12px; background: color-mix(in oklch, var(--c) 70%, transparent); -webkit-mask: ${HEXES} 0 0 / 14px 12px repeat-x; mask: ${HEXES} 0 0 / 14px 12px repeat-x; }
+/* Thread: one straight line runs into the hexagon from both sides; the name hangs under it. */
+html[data-d="thread"] .sec-hd { position: relative; gap: 0; padding-bottom: 24px; }
+html[data-d="thread"] .sec-hd::before, html[data-d="thread"] .sec-hd::after { height: 1.4px; background: color-mix(in oklch, var(--c) 80%, transparent); -webkit-mask: none; mask: none; }
+html[data-d="thread"] .sec-hd svg { margin-inline: -4.4px; }
+html[data-d="thread"] .sec-hd .nm { position: absolute; left: 50%; bottom: 0; translate: -50% 0; font: 500 13px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.16em; text-transform: uppercase; }
+/* Plate: the icon and the name sit in one long hexagon. */
+html[data-d="plate"] .sec-hd::before, html[data-d="plate"] .sec-hd::after { display: none; }
+html[data-d="plate"] .sec-hd .at { position: relative; isolation: isolate; gap: 12px; padding: 7px 36px 7px 14px; }
+html[data-d="plate"] .sec-hd .at::before, html[data-d="plate"] .sec-hd .at::after { content: ""; position: absolute; z-index: -1; clip-path: polygon(22px 0, calc(100% - 22px) 0, 100% 50%, calc(100% - 22px) 100%, 22px 100%, 0 50%); }
+html[data-d="plate"] .sec-hd .at::before { inset: 0; background: color-mix(in oklch, var(--c) 75%, transparent); }
+html[data-d="plate"] .sec-hd .at::after { inset: 1.5px; background: var(--bg); }
+/* Stack: no line. The icon stands over its name. */
+html[data-d="stack"] .sec-hd::before, html[data-d="stack"] .sec-hd::after { display: none; }
+html[data-d="stack"] .sec-hd .at { flex-direction: column; gap: 8px; }
+html[data-d="stack"] .sec-hd svg { width: clamp(60px, 9vw, 78px); height: clamp(60px, 9vw, 78px); }
+/* Underline: from the left; a big name over a short wave. */
+html[data-d="under"] .sec-hd { justify-content: flex-start; }
+html[data-d="under"] .sec-hd::before, html[data-d="under"] .sec-hd::after { display: none; }
+html[data-d="under"] .sec-hd .at { gap: 14px; }
+html[data-d="under"] .sec-hd .nm { position: relative; font-size: clamp(24px, 3.6vw, 34px); color: var(--fg); }
+html[data-d="under"] .sec-hd .nm::after { content: ""; position: absolute; left: 0; right: 0; bottom: -11px; height: 8px; background: var(--c); -webkit-mask: var(--wave) 0 0 / 24px 8px repeat-x; mask: var(--wave) 0 0 / 24px 8px repeat-x; }
 `;
 
 const series = { ...(await fetch('../series.json').then(r => r.json())), ...PROPOSED };
@@ -50,8 +84,18 @@ frame.title = 'Menu';
 document.body.append(frame);
 const fit = d => { const end = Math.max(...[...d.body.children].map(el => el.getBoundingClientRect().bottom)); frame.style.height = Math.ceil(end + 32) + 'px'; };
 
+// The divider style lives on the frame's root, so a switch needs no reload.
+let divider = 'wave';
+try { divider = localStorage.getItem('stimming.serieslab.divider') || 'wave'; } catch (e) {}
+function style(name) {
+  divider = name;
+  try { localStorage.setItem('stimming.serieslab.divider', name); } catch (e) {}
+  document.querySelectorAll('.bar button[data-d]').forEach(b => b.setAttribute('aria-pressed', b.dataset.d === name));
+  const d = frame.contentDocument;
+  if (d?.documentElement) { d.documentElement.dataset.d = name; requestAnimationFrame(() => fit(d)); }
+}
 async function show(view) {
-  document.querySelectorAll('.bar button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view));
+  document.querySelectorAll('.bar button[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view));
   try { localStorage.setItem('stimming.serieslab.catview', view); } catch (e) {}
   frame.src = view === 'lab' ? '../index.html?lab' : '../index.html';
   await new Promise(r => frame.addEventListener('load', r, { once: true }));
@@ -80,10 +124,11 @@ async function show(view) {
   for (const [k, list] of groups) {
     if (!list.length) continue;
     const s = series[k];
-    add(s.name, s.color, `<h2 class="sec-hd"><span class="at">${shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color })}<span>${s.name.replace('&', '&amp;')}</span><span class="ct">${list.length}</span></span></h2>`, list);
+    add(s.name, s.color, `<h2 class="sec-hd"><span class="at">${shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color })}<span class="nm">${s.name.replace('&', '&amp;')}</span></span></h2>`, list);
   }
   if (rest.length) add('Other toys', null, '', rest);
   old.forEach(el => el.remove());
+  style(divider);
   new ResizeObserver(() => fit(d)).observe(d.documentElement);
   fit(d);
 }
@@ -96,10 +141,12 @@ document.getElementById('counts').innerHTML = `<tr><th>Series</th><th>Main</th><
   return `<tr><td style="--c:${series[k].color}"><i></i>${series[k].name.replace('&', '&amp;')}${PROPOSED[k] ? ' <em>new</em>' : ''}</td><td>${m || '<em>0</em>'}</td><td>${SORT[k].length - m || '<em>0</em>'}</td></tr>`;
 }).join('');
 
-document.querySelectorAll('.bar button').forEach(b => b.addEventListener('click', () => show(b.dataset.v)));
+document.querySelectorAll('.bar button[data-v]').forEach(b => b.addEventListener('click', () => show(b.dataset.v)));
+document.querySelectorAll('.bar button[data-d]').forEach(b => b.addEventListener('click', () => style(b.dataset.d)));
 let saved = 'main';
 try { saved = localStorage.getItem('stimming.serieslab.catview') || 'main'; } catch (e) {}
-const asked = new URLSearchParams(location.search).get('v');
+const asked = new URLSearchParams(location.search).get('v'), askedD = new URLSearchParams(location.search).get('d');
+if (['wave', 'chain', 'thread', 'plate', 'stack', 'under'].includes(askedD)) divider = askedD;
 show(asked === 'lab' || asked === 'main' ? asked : saved);
 </script>
 </body>

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:45:44Z
+updated_at: 2026-11-15T09:51:32Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -54,3 +54,10 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Tom, 2026-11-15: different colours for Vistas. Eight colourways (Teal, Day, Sand, Ember, Mint, Mono, Night, Rose); each Vistas shot wears its own, and the sheet has a Vistas colours knob
 - [x] Tom, 2026-11-15: Vistas takes Layers in Mint (serieslab/proposal.js)
 - [ ] Tom reviews the other redesigned shots
+
+## Dividers again (Tom, 2026-11-15)
+
+- [x] No counters in the dividers
+- [x] A new round of divider styles round the hex icon, on a switch at serieslab/categories.html: Wave, Chain, Thread, Plate, Stack, Underline. The old divider lab (sections.html) is deleted
+- [x] The proposal sorts the ten new Lab toys too (98 toys)
+- [ ] Tom picks the divider; nothing more ports before that
