@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:28:53Z
+updated_at: 2026-11-15T07:36:07Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -21,6 +21,7 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Funk icons for East Van and Belgium (serieslab/funk.html, drawings in serieslab/funk.js): six skewed subjects each, knobs for wonk, colour and googly eyes
 - [x] Depth forms on Tom's ask (slab, shaded, like the isometric blocks): Shaded, Slab, Block, Cube
 - [x] Tom, 2026-11-15: the depth forms are the same drawings on other canvases. Native isometric block models at serieslab/iso.html (kit and models in serieslab/iso.js): East Van has Crow, House, Pole, Crane, Skunk, North Shore; Belgium has Frites, Waffle, Tricolour, Beer, Spheres, Gables
+- [x] Ten more block models each (Tom, 2026-11-15): East Van adds Containers, Train, Trolley bus, Corner store, Raccoon, Rain, Silos, Couch, Blossom, Sulphur; Belgium adds Chocolate, Pralines, Crate, Belfry, Cobbles, Mussels, Frietkot, Motorway, Sprouts, Fountain
 - [ ] Tom picks the subject for East Van and Belgium
 - [ ] Theme series icons in the same style
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
