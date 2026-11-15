@@ -21,7 +21,7 @@ A map-driven world for the outside pass, behind the test hook `?van`. Real eleva
 - [x] Classic (legacy.html) still renders
 - [x] QA: clean console, 30 fps at 1280 and 375, Noon and Dusk screenshots
 - [x] PR open: https://github.com/TomVDH/stimming/pull/61
-- [ ] Tom decides: a Settings option or the default
+- [x] Tom decides: the default (2026-11-15). `?van=0` flies the invented country; `?ode` still wins
 
 ## Notes (2026-11-15)
 

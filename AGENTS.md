@@ -68,7 +68,7 @@ Read `README.md` for the toy list and the full rules.
 - `tvtree/channels.js` holds the TV tree's 155 channel shaders in seven groups of 25, one shader each.
   `tvtree/channels.html` is the live contact sheet. `tvtree/lab.html` is the older four-tree lab, `noindex`.
   Publish all three TV tree files with the page.
-- Window seat's Vancouver world (`window/?van`, a test hook until Tom places it): the flight passes over a baked map of the Lower Mainland.
+- Window seat's Vancouver world is the default flight (Tom, 2026-11-15): it passes over a baked map of the Lower Mainland. `window/?van=0` flies the invented country; `?ode` still wins.
   `window/van.js` holds the track, the start, the airports and the loader. `window/van-coast.png` and `window/van-land.png` are the map (641 KB); `tools/vancouver/bake.py` bakes them and names the sources.
   `outsideFS({ van: true })` builds the map code into the outside pass; the usual pass and Classic compile none of it. `?vy=km` moves the track north and `?peer=x,y,z` leans the head, for screenshots.
 - `glasslab/` (noindex) is a dev page for pane rain: every glass-rain shader split A/B at full resolution, with knobs. `shared/glassrain.js` (Tom's base, 2026-11-09) and `shared/bokeh.js` are the shared shaders it tests.
