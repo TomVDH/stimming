@@ -264,6 +264,7 @@ export function buildCrow(scene, home, away) {
   };
   return {
     poke,
+    visible(v) { crow.visible = v; },
     update(t) {
       at(s.u, crow.position);
       // In the air the wings beat; on a wire they fold.

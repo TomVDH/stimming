@@ -1,4 +1,6 @@
-// East Van: the Drive. A disc of city, cut round the corner of Commercial Drive and East 4th Avenue.
+// East Van: the Drive, from city data, cut to a shape.
+// The Corner is a disc round Commercial Drive and East 4th Avenue.
+// The walk's Drive module is a square slice at the lane's mouth.
 // Lots, building outlines and heights, shop units, trees and poles come from city data:
 // data/drive.json, baked by bake/drive.py from the City of Vancouver Open Data Portal.
 // Shop names are not used. Each shop shows a neon icon for its kind of trade.
@@ -17,12 +19,12 @@ const slab = (p, s, rx, c) => ({ t: 'slab', p, s, rx, c, L: A });
 const poly = (ring, y, h, c, o = {}) => ({ t: 'poly', ring: ring.map(([e, n]) => [n, e]), y, h, c, L: A, ...o });
 const area = r => Math.abs(r.reduce((s, p, i) => s + p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1], 0)) / 2;
 
-// The disc as a 64-sided ring. A shape is cut to it one side at a time.
-const DISC = Array.from({ length: 64 }, (_, i) => [Math.cos(i / 64 * 2 * Math.PI) * R, Math.sin(i / 64 * 2 * Math.PI) * R]);
-function cut(ring) {
+// Cuts a ring to a convex shape, one side at a time.
+// The shape's corners run anticlockwise, as [e, n] pairs.
+function clipTo(ring, shape) {
   let out = ring;
-  for (let i = 0; i < DISC.length && out.length; i++) {
-    const a = DISC[i], b = DISC[(i + 1) % DISC.length], side = p => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]), next = [];
+  for (let i = 0; i < shape.length && out.length; i++) {
+    const a = shape[i], b = shape[(i + 1) % shape.length], side = p => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]), next = [];
     for (let j = 0; j < out.length; j++) {
       const p = out[j], q = out[(j + 1) % out.length], sp = side(p), sq = side(q);
       if (sp >= 0) next.push(p);
@@ -32,7 +34,6 @@ function cut(ring) {
   }
   return out;
 }
-const rect = (e0, n0, e1, n1) => cut([[e0, n0], [e1, n0], [e1, n1], [e0, n1]]);
 // Trims a ring at one north-south line. more keeps the east side of it.
 function trim(ring, limit, more) {
   const out = [], inside = p => (more ? p[0] >= limit : p[0] <= limit);
@@ -94,9 +95,9 @@ const pole = (x, z, side) => [
   box([x + 0.16, 6.3, z - 0.2], [0.04, 0.9, 0.2], 'binGreen', A), box([x + 0.16, 6.3, z], [0.04, 0.9, 0.2], 'white', A), box([x + 0.16, 6.3, z + 0.2], [0.04, 0.9, 0.2], 'tomato', A),
 ];
 
-const STOP = 30, LANE = -4.3;
-// The trolley bus, built on the origin of its lane. Its front faces south.
-const bus = z => on('bus', [0, 0, z], [
+const LANE = -4.3;
+// The trolley bus, built at x on its lane. Its front faces south.
+const bus = (x, z) => on('bus', [x, 0, z], [
   box([0, 1.95, z], [12, 2.3, 2.5], 'white', A), box([0, 0.95, z], [12.02, 1.1, 2.52], 'binBlue', A),
   box([0, 2.3, z + 1.26], [10.6, 0.9, 0.03], 'glassDark', A), box([0, 2.3, z - 1.26], [10.6, 0.9, 0.03], 'glassDark', A),
   box([-6.01, 2.2, z], [0.03, 1.1, 2.2], 'glassDark', A), box([2, 3.2, z], [5, 0.2, 1.6], 'can', A),
@@ -105,30 +106,53 @@ const bus = z => on('bus', [0, 0, z], [
   box([6.01, 0.9, z + 0.9], [0.03, 0.2, 0.25], 'red', A), box([6.01, 0.9, z - 0.9], [0.03, 0.2, 0.25], 'red', A),
   ...[-3.9, 3.9].flatMap(dx => [-1.1, 1.1].map(dz => cyl([dx, 0.5, z + dz], 0.5, 0.3, 'tyre', A, { ax: 'z' }))),
   beam([4, 3.3, z - 0.3], [9.6, 5.68, z - 0.3], 0.06, 'crow', A), beam([4, 3.3, z + 0.3], [9.6, 5.68, z + 0.3], 0.06, 'crow', A),
-]);
+].map(q => ({ ...q, ...(q.p ? { p: [q.p[0] + x, q.p[1], q.p[2]] } : {}), ...(q.a ? { a: [q.a[0] + x, q.a[1], q.a[2]], b: [q.b[0] + x, q.b[1], q.b[2]] } : {}) })));
 
+// The Corner: the whole disc. It reads the baked city data.
 export async function loadDrive() {
   const d = await (await fetch(new URL('./data/drive.json', import.meta.url))).json();
+  return driveParts(d, { kind: 'disc', r: R });
+}
+
+// The Drive's parts from city data, cut to clip:
+// { kind: 'disc', r } or { kind: 'rect', e0, n0, e1, n1 }.
+export function driveParts(d, clip) {
+  const disc = clip.kind === 'disc';
+  const SHAPE = disc
+    ? Array.from({ length: 64 }, (_, i) => [Math.cos(i / 64 * 2 * Math.PI) * clip.r, Math.sin(i / 64 * 2 * Math.PI) * clip.r])
+    : [[clip.e0, clip.n0], [clip.e1, clip.n0], [clip.e1, clip.n1], [clip.e0, clip.n1]];
+  const B = disc ? { e0: -clip.r, e1: clip.r, n0: -clip.r, n1: clip.r } : clip;
+  // A point is inside when it stands m metres in from the edge.
+  const inside = (e, n, m = 0) => (disc ? Math.hypot(e, n) < clip.r - m : e > B.e0 + m && e < B.e1 - m && n > B.n0 + m && n < B.n1 - m);
+  const cut = ring => clipTo(ring, SHAPE), rect = (e0, n0, e1, n1) => cut([[e0, n0], [e1, n0], [e1, n1], [e0, n1]]);
+  const BIG = 500, STOP = disc ? 30 : (B.n0 + B.n1) / 2;
   const P = [], W = [], pokes = [], acts = {};
   const add = (...q) => P.push(...q.flat());
   const flat = { k: 'ground' };
 
   /* ---------- ground: a disc of asphalt, the lots on it, the walks ---------- */
-  add(cyl([0, -0.225, 0], R, 0.35, 'soil', A, { k: 'plinth', seg: 64 }), cyl([0, -0.7, 0], R - 0.05, 0.6, 'earth', A, { k: 'plinth', seg: 64 }), cyl([0, -1.175, 0], R, 0.35, 'rock', A, { k: 'plinth', seg: 64 }));
-  add(cyl([0, -0.025, 0], R, 0.05, 'asphalt', A, { k: 'ground', seg: 64 }));
+  // The disc carries its own plinth. The walk gives a slice its plinth.
+  if (disc) {
+    const r = clip.r;
+    add(cyl([0, -0.225, 0], r, 0.35, 'soil', A, { k: 'plinth', seg: 64 }), cyl([0, -0.7, 0], r - 0.05, 0.6, 'earth', A, { k: 'plinth', seg: 64 }), cyl([0, -1.175, 0], r, 0.35, 'rock', A, { k: 'plinth', seg: 64 }));
+    add(cyl([0, -0.025, 0], r, 0.05, 'asphalt', A, { k: 'ground', seg: 64 }));
+  } else add(box([(B.n0 + B.n1) / 2, -0.025, (B.e0 + B.e1) / 2], [B.n1 - B.n0, 0.05, B.e1 - B.e0], 'asphalt', A, { k: 'ground' }));
   // Each lot is a low slab. What the lots leave bare is street and lane.
   d.lots.forEach((l, i) => {
     const ring = cut(l.ring.slice(0, -1));
     if (ring.length >= 3 && area(ring) > 2) add(poly(ring, 0, 0.16, /COMMERCIAL/.test(l.street || '') ? 'lane' : i % 2 ? 'grass' : 'verge', flat));
   });
   const walk = (e0, n0, e1, n1) => { const r = rect(e0, n0, e1, n1); if (r.length >= 3) add(poly(r, 0, 0.15, 'concrete', flat)); };
-  walk(LOT_W, -R, KERB_W, WEST_LEG[0]); walk(LOT_W, WEST_LEG[1], KERB_W, R);
-  walk(KERB_E, -R, LOT_E, EAST_LEG[0]); walk(KERB_E, EAST_LEG[1], LOT_E, R);
-  walk(-R, WEST_LEG[0], KERB_W, WEST_LEG[0] + 3); walk(-R, WEST_LEG[1] - 3, KERB_W, WEST_LEG[1]);
-  walk(KERB_E, EAST_LEG[0], R, EAST_LEG[0] + 1.5); walk(KERB_E, EAST_LEG[1] - 1.5, R, EAST_LEG[1]);
+  walk(LOT_W, -BIG, KERB_W, WEST_LEG[0]); walk(LOT_W, WEST_LEG[1], KERB_W, BIG);
+  walk(KERB_E, -BIG, LOT_E, EAST_LEG[0]); walk(KERB_E, EAST_LEG[1], LOT_E, BIG);
+  walk(-BIG, WEST_LEG[0], KERB_W, WEST_LEG[0] + 3); walk(-BIG, WEST_LEG[1] - 3, KERB_W, WEST_LEG[1]);
+  walk(KERB_E, EAST_LEG[0], BIG, EAST_LEG[0] + 1.5); walk(KERB_E, EAST_LEG[1] - 1.5, BIG, EAST_LEG[1]);
   // Road paint is too thin for an ink line.
   const mark = (p, s, c) => box(p, s, c, A, { k: 'ground', noInk: true });
-  for (const [x0, x1] of [[-R + 3, WEST_LEG[0] - 2], [EAST_LEG[1] + 2, R - 3]]) {
+  for (const [a, b] of [[-BIG, WEST_LEG[0] - 2], [EAST_LEG[1] + 2, BIG]]) {
+    // Each run of paint stops short of the edge.
+    const x0 = Math.max(a, B.n0 + 3), x1 = Math.min(b, B.n1 - 3);
+    if (x1 - x0 < 2) continue;
     add(mark([(x0 + x1) / 2, 0.005, MID - 0.15], [x1 - x0, 0.01, 0.1], 'mustard'), mark([(x0 + x1) / 2, 0.005, MID + 0.15], [x1 - x0, 0.01, 0.1], 'mustard'));
     for (let x = x0 + 2; x < x1 - 2; x += 6) add(mark([x, 0.005, MID - 3.25], [3, 0.01, 0.12], 'white'), mark([x, 0.005, MID + 3.25], [3, 0.01, 0.12], 'white'));
   }
@@ -196,10 +220,10 @@ export async function loadDrive() {
   });
 
   /* ---------- street: trees and poles from the records ---------- */
-  for (const t of d.trees) if (Math.hypot(...t.at) < R - 2.5 && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name));
+  for (const t of d.trees) if (inside(t.at[0], t.at[1], 2.5) && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name));
   const lights = [];
   for (const [e, n] of d.poles) {
-    if (Math.hypot(e, n) > R - 3 || Math.abs(e) > 12.5 || Math.abs(e) < 6) continue;
+    if (!inside(e, n, 3) || Math.abs(e) > 12.5 || Math.abs(e) < 6) continue;
     const side = e < 0 ? 1 : -1;
     // Two poles can stand two metres apart: one lamp arm is enough.
     if (lights.some(l => Math.abs(l[0] - n) < 6 && l[2] === side)) continue;
@@ -208,38 +232,45 @@ export async function loadDrive() {
     if (side > 0) W.push({ a: [n, 6.1, e], b: [n, 6.1, KERB_E + 0.4], sag: 0.15, clip: 999 });
   }
   // Two pairs of trolley wires: one pair for each way.
-  for (const z of [LANE - 0.3, LANE + 0.3, MID + 4.2, MID + 4.8]) W.push({ a: [-R - 2, 5.7, z], b: [R + 2, 5.7, z], sag: 0.1, clip: Math.sqrt(R * R - z * z) - 0.3 });
+  for (const z of [LANE - 0.3, LANE + 0.3, MID + 4.2, MID + 4.8]) {
+    if (disc) W.push({ a: [-clip.r - 2, 5.7, z], b: [clip.r + 2, 5.7, z], sag: 0.1, clip: Math.sqrt(clip.r * clip.r - z * z) - 0.3 });
+    else W.push({ a: [B.n0 + 0.3, 5.7, z], b: [B.n1 - 0.3, 5.7, z], sag: 0.1, clip: 999 });
+  }
 
   /* ---------- life on the street ---------- */
-  add(bus(LANE), car(-34, KERB_W + 1.3, 'tomato'), car(12, KERB_W + 1.3, 'mustard'), car(46, KERB_W + 1.3, 'binBlue'), car(-9, KERB_E - 1.3, 'hydrangea'), car(26, KERB_E - 1.3, 'cream'), car(-40, KERB_E - 1.3, 'binGreen'));
+  add(bus(STOP, LANE), car(-34, KERB_W + 1.3, 'tomato'), car(12, KERB_W + 1.3, 'mustard'), car(46, KERB_W + 1.3, 'binBlue'), car(-9, KERB_E - 1.3, 'hydrangea'), car(26, KERB_E - 1.3, 'cream'), car(-40, KERB_E - 1.3, 'binGreen'));
   // Paper boxes and a bench at the north-west corner, a fruit stand at the grocer.
   add([['binBlue', 0], ['tomato', 0.7], ['mustard', 1.4]].map(([c, dx]) => box([WEST_LEG[1] + 1.4 + dx, 0.7, KERB_W - 0.8], [0.5, 1.1, 0.45], c, A)));
   add(box([WEST_LEG[1] + 6, 0.6, KERB_W - 0.9], [1.8, 0.1, 0.5], 'cedar', A), box([WEST_LEG[1] + 5.3, 0.38, KERB_W - 0.9], [0.1, 0.45, 0.5], 'can', A), box([WEST_LEG[1] + 6.7, 0.38, KERB_W - 0.9], [0.1, 0.45, 0.5], 'can', A));
-  const grocer = d.stores.find(s => s.cat === 'Convenience Goods' && s.at[0] < 0 && s.at[0] > -38 && Math.hypot(...s.at) < R - 8 && s.at[1] > 0);
+  const grocer = d.stores.find(s => s.cat === 'Convenience Goods' && s.at[0] < 0 && s.at[0] > -38 && inside(s.at[0], s.at[1], 8) && s.at[1] > 0);
   if (grocer) {
     const gx = grocer.at[1] - 1, gz = LOT_W + 0.6;
     add([0, 1, 2].map(i => box([gx + i * 1.1, 0.55, gz], [1, 0.5, 0.7], 'cedar', A)));
     add(on('fruit', [gx + 1.1, 0.8, gz], [0, 1, 2].flatMap(i => [0, 1, 2, 3, 4, 5].map(j => blob([gx + i * 1.1 - 0.3 + (j % 3) * 0.3, 0.88, gz - 0.15 + Math.floor(j / 3) * 0.3], 0.14, ['tomato', 'mustard', 'binGreen'][i], A)))));
     pokes.push({ id: 'fruit', at: [gx + 1.1, 0.9, gz], r: 1.6 });
   }
-  const near = lights.slice().sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+  // The lamps nearest the middle light the scene: three on the disc, two on a slice.
+  const mid = disc ? 0 : STOP, near = lights.slice().sort((a, b) => Math.abs(a[0] - mid) - Math.abs(b[0] - mid));
   pokes.push({ id: 'bus', at: [STOP, 2, LANE], r: 3.5 }, { id: 'lamps', at: near[0] ? [near[0][0], 9.1, near[0][1] + near[0][2] * 2.7] : [0, 9, 0], r: 1.3 });
 
+  // A part whose centre falls off the shape goes.
+  const keep = q => { const c = q.p || q.a || q.at; return !c || inside(c[2], c[0], -0.6); };
+  const lo = B.n0 - 8, hi = B.n1 + 8;
   return {
-    PARTS: P, WIRES: W, POKES: pokes,
+    PARTS: P.filter(keep), WIRES: W, POKES: pokes.filter(keep),
     MOVES: {
       // The bus leaves south, then comes back in from the north edge.
-      bus: (g, k) => {
-        const far = R + 8, u = k < 0.5 ? k / 0.5 : (k - 0.5) / 0.5, x = k < 0.5 ? STOP - (far + STOP) * u * u : far - (far - STOP) * (1 - (1 - u) * (1 - u));
-        // It pops out of sight where the disc ends.
-        const s = Math.min(1, Math.max(0, (R - 5 - Math.abs(x)) / 4));
+      bus: (g, k, h) => {
+        const u = k < 0.5 ? k / 0.5 : (k - 0.5) / 0.5, x = k < 0.5 ? STOP - (STOP - lo) * u * u : hi - (hi - STOP) * (1 - (1 - u) * (1 - u));
+        // It pops out of sight where the shape ends.
+        const s = Math.min(1, Math.max(0, (Math.min(x - B.n0, B.n1 - x) - 5) / 4));
         g.position.x = x; g.visible = s > 0.01; g.scale.setScalar(Math.max(s, 0.01));
       },
       fruit: (g, k, h) => { g.position.y = h[1] + 0.5 * k; g.rotation.y = 0.6 * Math.sin(k * 9.4); },
     },
     ACTS: { ...acts, bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]] },
-    LAMPS: near.slice(0, 3).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
-    SUN: { target: [0, 3, 0], half: [R + 10, R + 10] },
+    LAMPS: near.slice(0, disc ? 3 : 2).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
+    SUN: disc ? { target: [0, 3, 0], half: [clip.r + 10, clip.r + 10] } : { target: [STOP, 3, (B.e0 + B.e1) / 2], half: [20, 20] },
   };
 }
 

@@ -28,7 +28,13 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .credit:hover, .credit:focus-visible { opacity: 1; }
 [hidden] { display: none !important; }
 .keys kbd { font: inherit; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: oklch(0.2 0.02 280 / 0.7); margin-left: 8px; }
-@media (max-width: 640px) { .keys { display: none; } }
+@media (max-width: 640px) {
+  .keys { display: none; }
+  .top .name { display: none; }
+  .seg button { padding: 9px 8px; font-size: 12px; }
+  /* On a phone the credit sits above the readout, clear of the buttons. */
+  .credit { top: auto; bottom: calc(34px + env(safe-area-inset-bottom, 0px)); left: 14px; right: 14px; max-width: none; text-align: left; }
+}
 </style>
 <script type="importmap">
 {
@@ -66,6 +72,7 @@ import * as house from './modules/house.js';
 import * as yard from './modules/yard.js';
 import * as lane from './modules/lane.js';
 import * as run from './modules/run.js';
+import * as drive from './modules/drive.js';
 import { houseLife, laneLife, runLife, buildCrow } from './life.js';
 import { layWalk, near, stopWorld } from './walk.js';
 import { createLens } from './lens.js';
@@ -102,7 +109,7 @@ const still = () => reduced();
 
 /* ---------- the walk: modules in order, built when the camera comes near ---------- */
 // Each entry: the module file, its life, and its label on the place buttons.
-const WALK = [[house, houseLife, 'House'], [yard, null, 'Yard'], [lane, laneLife, 'Lane'], [run, runLife, 'Lane run']];
+const WALK = [[house, houseLife, 'House'], [yard, null, 'Yard'], [lane, laneLife, 'Lane'], [run, runLife, 'Run'], [drive, null, 'Drive']];
 const PLACED = layWalk(WALK.map(([m]) => m), [0, house.ORIGIN[2]]);
 const STOPS = WALK.map(([m], i) => stopWorld(m.STOP, PLACED[i]));
 const stage = buildStage(sky), built = [], building = [];
@@ -113,8 +120,9 @@ const crow = buildCrow(stage.scene, house.CROW.home, awayWorld.toArray());
 // Builds a module once. A second call waits on the first.
 function build(i) {
   if (built[i]) return Promise.resolve(built[i]);
-  return (building[i] ||= Promise.resolve().then(() => {
-    const [m, life] = WALK[i], mod = buildModule(m, PLACED[i], life);
+  return (building[i] ||= Promise.resolve().then(async () => {
+    // A module with load() reads its parts on the first visit.
+    const [m, life] = WALK[i], data = m.load ? { ...m, ...(await m.load()) } : m, mod = buildModule(data, PLACED[i], life);
     stage.scene.add(mod.group);
     built[i] = mod;
     return mod;
@@ -161,6 +169,8 @@ function activate(i) {
   built.forEach((m, j) => m && m.setActive(set.includes(j)));
   for (const [j, m] of built.entries()) if (m) m.group.visible = !solo || j === i;
   fitSunTo(set);
+  // The Drive module is built from city data: its licence asks for this credit.
+  document.getElementById('credit').hidden = !set.some(j => WALK[j][0].ID === 'drive');
 }
 function setButtons() {
   for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(inCorner ? b.dataset.v === 'corner' : +b.dataset.v === cur));
@@ -194,7 +204,6 @@ async function goTo(i, { snap = false } = {}) {
   // A later key press wins.
   if (ticket !== wantGo) return;
   inCorner = false; cur = i;
-  document.getElementById('credit').hidden = true;
   activate(i);
   setButtons();
   aimAt(STOPS[i], snap);
@@ -254,7 +263,7 @@ function aim() {
 // Every built module's pokes, and the crow's. Each knows its module.
 function pokeList() {
   if (inCorner) return corner ? corner.pokes.map(q => ({ q, i: -1 })) : [];
-  const list = [{ q: crow.poke, i: -1 }];
+  const list = built[0] && built[0].group.visible ? [{ q: crow.poke, i: -1 }] : [];
   built.forEach((m, i) => { if (m && m.group.visible) for (const q of m.pokes) list.push({ q, i }); });
   return list;
 }
@@ -323,6 +332,8 @@ function frame(now) {
     lens.render(corner.scene, cam, d, corner.noInk);
   } else if (built.some(Boolean)) {
     for (const m of built) m?.update(now / 1000, dt);
+    // The crow lives on the house's wire, so it shows with the house.
+    crow.visible(!!built[0] && built[0].group.visible);
     crow.update(now / 1000);
     lens.render(stage.scene, cam, d, built.flatMap(m => (m ? m.noInk : [])));
   }
