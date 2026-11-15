@@ -43,6 +43,7 @@ Read `README.md` for the toy list and the full rules.
   | Isometric block | The one alt style. The toy's object stands on a block, or is the block, in 30 degree isometric view: a light top, a mid left face, a dark right face, a rim highlight on the top edges. |
 
   - Draw no other style: no Stencil cut-out, no Single-weight line, no Abstract mark.
+  - Draw in the menu's own language (Tom, 2026-11-15: a small model of the toy is "really bad"). Look at the main-shelf icons first. One bold object fills the box. Its body is one gradient, then the same shape with the shared `lit`, then a `rim` line 2 wide. Details are few, flat and bold. No dark outlines, no thin lines, no tiny parts, no sparkle clutter. Prism, Fidget board and Heat putty are the reference.
   - `icons/sheet.html` is the reference: one row per toy in `toys.json` order, with Current, Shaded object and Isometric block as Icon, Intro logo (the luminance emblem) or Both. An empty slot says `To draw` or `Cut`.
   - Every icon on the sheet stays live under the pointer (Tom, 2026-11-15). The Current column is the menu itself in a frame, so each tile keeps its own hover; each alt pair is its gallery in a frame. Never swap a live icon for a still copy.
   - Read the sheet before any icon work. Generate no icon until the sheet shows its slot; when the sheet is out of date, renew the sheet first.

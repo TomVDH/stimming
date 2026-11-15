@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:23:31Z
+updated_at: 2026-11-15T08:29:17Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -30,3 +30,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom: "ensure that all remain interactive when moused over". The sheet's Current column was a still copy; it is now the menu's own tiles in a frame laid over the column, so every icon on the sheet reacts. A click on a Current tile marks it and does not open the toy.
 
 - 2026-11-15, Tom: "show me icon choices". Round 3 (icons/spike-spark-3.html) redraws the Shaded object and the Isometric block in the approved look: swept turquoise body, cream roller with five swept slots, brass column and cap, knurled steel rim. The sheet now points Spark wheel at round 3. Both react under the pointer and go idle after; no error. Round 2 stays as a file (the old steel look). Waits on Tom's pick.
+
+- 2026-11-15, Tom on round 3: "they are all really bad, take a look at the toy icons that most of the main menu has". Round 3 was a small detailed model of the toy. Round 4 (icons/spike-spark-4.html) is drawn in the menu's language: one bold cream wheel with five swept slots and a ring of knurl ticks, a turquoise sweep, a brass flint, sparks as five flat rays. The Isometric block is the same wheel on a turquoise block. Under the pointer the wheel turns, the rays grow and the knurl heats. The sheet points at round 4; the rule is in AGENTS.md. Waits on Tom.
