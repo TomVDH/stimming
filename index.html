@@ -3198,6 +3198,38 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
             <span class="name">Wind tunnel</span>
           </a>
         </li>
+        <li>
+          <a class="toy" id="carwash" href="carwash/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <defs>
+                  <clipPath id="carwash-glass"><path d="M16 38Q64 24 112 38L106 96Q64 102 22 96Z"/></clipPath>
+                </defs>
+                <path d="M16 38Q64 24 112 38L106 96Q64 102 22 96Z" fill="oklch(0.17 0.03 290)"/>
+                <g clip-path="url(#carwash-glass)">
+                  <g fill="none" stroke-width="2.6" stroke-linecap="round">
+                    <path d="M38 96V56H90V96" stroke="oklch(0.64 0.28 350)"/>
+                    <path d="M48 96V64H80V96" stroke="oklch(0.8 0.14 212)"/>
+                    <path d="M56 96V70H72V96" stroke="oklch(0.8 0.165 68)"/>
+                  </g>
+                  <path d="M10 97Q64 91 118 97V106H10Z" fill="oklch(0.1 0.012 290)"/>
+                  <g id="carwash-foam">
+                    <path id="carwash-f1" d="M12 30H52V52Q49 58 46 52Q43 64 39 54Q35 60 31 52Q27 62 23 51Q19 57 16 50Q13 54 12 50Z" fill="oklch(0.74 0.17 350)"/>
+                    <path id="carwash-f2" d="M46 26H82V50Q79 60 75 49Q72 56 68 48Q64 62 60 50Q56 57 52 47Q49 53 46 46Z" fill="oklch(0.86 0.09 215)"/>
+                    <path id="carwash-f3" d="M76 30H116V50Q113 56 110 49Q106 60 102 50Q98 57 94 48Q90 61 86 50Q82 55 79 48Q77 52 76 49Z" fill="oklch(0.87 0.11 78)"/>
+                  </g>
+                </g>
+                <g id="carwash-wiper">
+                  <path d="M40 100L72 95" stroke="oklch(0.24 0.01 280)" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M58 98L104 91" stroke="oklch(0.2 0.01 280)" stroke-width="4.2" stroke-linecap="round"/>
+                  <path d="M60 96.4L103 89.8" stroke="oklch(0.8 0.04 280)" stroke-width="1" stroke-linecap="round"/>
+                </g>
+                <circle cx="40" cy="100" r="3" fill="oklch(0.3 0.01 280)"/>
+              </svg>
+            </span>
+            <span class="name">Car wash</span>
+          </a>
+        </li>
       </ul>
     </section>
   </main>
@@ -6576,6 +6608,51 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         const ph = st.ph + ((((REST.ph - st.ph) % TAU) + TAU) % TAU);
         gsap.to(st, { cy: REST.cy, amp: REST.amp, ph, duration: 0.8, ease: 'power2.out', overwrite: true, onUpdate: draw });
       },
+    };
+  }
+
+  // Car wash: tri-colour foam creeps down the windscreen. The wiper follows the pointer
+  // round its pivot, and each patch of foam it passes is wiped away.
+  {
+    const wiper = $('carwash-wiper'), foam = ['carwash-f1', 'carwash-f2', 'carwash-f3'].map($);
+    // The blade turns about its pivot; a patch is wiped once the blade passes its angle.
+    const PIV = '40 100', PARK = -7.6, REACH = [-84, -58, -37];
+    let on = false, creep = null;
+    gsap.set(wiper, { rotation: 0, svgOrigin: PIV });
+    const wipe = rot => foam.forEach((f, i) => {
+      if (rot <= REACH[i]) gsap.to(f, { opacity: 0.08, scaleY: 0.6, transformOrigin: '50% 0%', duration: 0.25, overwrite: 'auto' });
+    });
+    const turn = (rot, duration = 0.3) => gsap.to(wiper, {
+      rotation: rot, svgOrigin: PIV, duration, ease: 'power2.out', overwrite: 'auto',
+      onUpdate() { wipe(gsap.getProperty(wiper, 'rotation')); },
+    });
+    // The blade points at the pointer, between its park and its top.
+    const aim = p => turn(Math.max(-110, Math.min(0, Math.atan2(p[1] - 100, p[0] - 40) * 180 / Math.PI - PARK)));
+    toys.carwash = {
+      enter(p) {
+        on = true;
+        creep?.kill();
+        creep = gsap.to(foam, { y: 9, duration: 3, ease: 'sine.inOut', stagger: 0.25 });
+        if (p) aim(p);
+      },
+      move(p) { if (on && p) aim(p); },
+      leave() {
+        on = false;
+        creep?.kill();
+        turn(0, 0.7);
+        // Fresh foam lands again from the top.
+        gsap.fromTo(foam, { y: -14 }, { y: 0, opacity: 1, scaleY: 1, transformOrigin: '50% 0%', duration: 0.9, ease: 'power2.out', stagger: 0.12, overwrite: true });
+      },
+      // With no pointer, the wiper makes one full stroke and back.
+      play() {
+        toys.carwash.enter(null);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 })
+          .add(turn(-110, 0.6), 0.8)
+          .add(turn(0, 0.6), 1.5)
+          .to(foam, { y: 0, opacity: 1, scaleY: 1, duration: 0.6, stagger: 0.1 }, 2.4);
+        return { kill() { tl.kill(); } };
+      },
+      rest() { toys.carwash.leave(); },
     };
   }
 
