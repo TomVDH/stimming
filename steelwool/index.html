@@ -343,8 +343,9 @@ function makeBurn(p, seed) {
   const hot = new Int32Array(n);
   const pend = [];
   const stamps = [];
-  const B = { dyn, rows, hot, stamps, R, nf: 0, hn: 0, hh: 0, now: 0, burnt: 0, lo: 1e9, hi: -1, burning: 0, cx: 0, cy: 0, lastIgn: -1e9 };
-  const dirty = i => { if (i < B.lo) B.lo = i; if (i > B.hi) B.hi = i; };
+  // A flag per texture row marks the rows that changed.
+  const B = { dyn, rows, hot, stamps, R, nf: 0, hn: 0, hh: 0, now: 0, burnt: 0, rowDirty: new Uint8Array(rows), anyDirty: false, burning: 0, cx: 0, cy: 0, lastIgn: -1e9 };
+  const dirty = i => { B.rowDirty[(i / TEXW) | 0] = 1; B.anyDirty = true; };
   function addFront(i, d) {
     if (B.nf >= MAXF) return;
     fp[B.nf] = i; fd[B.nf] = d; fa[B.nf] = 0; B.nf++;
@@ -554,7 +555,7 @@ void main() {
   float a = core * vCov;
   // The glow: the wire's core, and a soft skirt round hot wire.
   float skirt = vGlowW > 0.01 ? exp(-pow(max(abs(vDist) - vHalf, 0.0) / vGlowW, 2.0) * 2.0) : 0.0;
-  float ew = max(core * max(vCov, 0.6), skirt * 0.5);
+  float ew = max(core * max(vCov, 0.6), skirt * 0.38);
   float burnt = step(0.0, vAge);
   // Oxide crumbles: gaps open along a cold, burnt thread.
   float crumb = smoothstep(0.4, 3.0, vAge) * burnt;
@@ -664,7 +665,10 @@ ${GRADE}
 ${OUTPUT}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  // A soft knee keeps a big blaze from flooding to white.
+  vec3 b = texture(uBloom, uv).rgb * uBloomK;
+  b /= 1.0 + 0.22 * max(max(b.r, b.g), b.b);
+  vec3 c = texture(uHdr, uv).rgb + b;
   c = gdGrade(c, uv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, 0.6, 0.45, 0.035);
   o = vec4(ouFilm(c, uExpo, gl_FragCoord.xy), 1.0);
 }`;
@@ -716,15 +720,23 @@ function uploadPad() {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
   gl.bindVertexArray(null);
-  burn.lo = 1e9; burn.hi = -1;
+  burn.rowDirty.fill(0);
+  burn.anyDirty = false;
 }
-// Only the rows that changed go up each frame.
+// Only the rows that changed go up each frame, in runs.
 function uploadDyn() {
-  if (burn.hi < 0) return;
-  const r0 = Math.floor(burn.lo / TEXW), r1 = Math.floor(burn.hi / TEXW);
+  if (!burn.anyDirty) return;
+  const rd = burn.rowDirty;
   gl.bindTexture(gl.TEXTURE_2D, tDyn);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r0, TEXW, r1 - r0 + 1, gl.RG, gl.FLOAT, burn.dyn, r0 * TEXW * 2);
-  burn.lo = 1e9; burn.hi = -1;
+  for (let r = 0; r < rd.length; r++) {
+    if (!rd[r]) continue;
+    let e = r;
+    while (e + 1 < rd.length && rd[e + 1]) e++;
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEXW, e - r + 1, gl.RG, gl.FLOAT, burn.dyn, r * TEXW * 2);
+    rd.fill(0, r, e + 1);
+    r = e;
+  }
+  burn.anyDirty = false;
 }
 
 /* ---------- heat memory ---------- */
@@ -1099,7 +1111,7 @@ function soundFrame(dt) {
   const pan = B ? panOf(toScreen(burn.cx, burn.cy)[0]) : 0;
   bed.pan.pan.setTargetAtTime(pan, now, 0.1);
   if (!B) return;
-  const rate = Math.min(90, 5 + 3.2 * Math.sqrt(B)) * (1 + 0.5 * b);
+  const rate = Math.min(70, 5 + 3 * Math.sqrt(B)) * (1 + 0.4 * b);
   let n = Math.floor(rate * dt + Math.random());
   while (n-- > 0) crackle(ac, now + 0.02 + Math.random() * dt, 0.16 * jit(0.6), clamp(pan + (Math.random() - 0.5) * 0.4, -1, 1), 1600 + 5200 * Math.random());
   // Forks pop high and short.
