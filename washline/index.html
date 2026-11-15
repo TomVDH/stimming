@@ -240,18 +240,26 @@ function buildPlace() {
   settle(2.5);
 }
 
-const GAP = 0.14, MAX_ON = 6;
+const GAP = 0.14, MAX_ON = 8;
+// Light through a colour: a touch paler and richer than its face.
+const thru = c => lin([Math.min(0.95, c[0] + 0.05), c[1] * 1.4, c[2]]);
+// A piece may carry a second colour, a shape, a pattern and its own weight.
 function hangPiece(it, s0) {
-  const c = makePiece({ w: it.w, h: it.h, col: 0 });
+  const c = makePiece({ w: it.w, h: it.h, col: 0, kgm2: it.kg, bend: it.bend });
   hang(P.line, c, s0);
-  P.look.addPiece(c, { alb: lin(it.c), tr: lin([Math.min(0.95, it.c[0] + 0.05), it.c[1] * 1.4, it.c[2]]) });
+  const c2 = it.c2 || it.c;
+  P.look.addPiece(c, { alb: lin(it.c), tr: thru(it.c), alb2: lin(c2), tr2: thru(c2), shape: it.shape || 0, pat: it.pat || 0, patS: it.s || 0.1 });
   return c;
 }
-// A new piece takes a size from the wardrobe and a colour from the palette.
+const pickOf = a => a[Math.floor(Math.random() * a.length)];
+// A new piece: a garment from the wardrobe, a little resized, in palette colours.
+// A garment with its own colours keeps them, as jeans stay denim.
 function newPiece() {
-  const pl = P.place, base = pl.wash[Math.floor(Math.random() * pl.wash.length)], k = 0.85 + Math.random() * 0.3;
+  const pl = P.place, base = pickOf(pl.wardrobe || pl.wash), k = 0.88 + Math.random() * 0.24;
   const pal = pl.palette || pl.wash.map(w => w.c);
-  return { w: Math.min(1.6, base.w * k), h: base.h * k, c: pal[Math.floor(Math.random() * pal.length)] };
+  let c = base.c || pickOf(pal), c2 = base.c2 || pickOf(pal);
+  while (!base.c2 && c2 === c && pal.length > 1) c2 = pickOf(pal);
+  return { ...base, w: Math.min(1.6, base.w * k), h: base.h * k, c, c2 };
 }
 const onLine = () => P.line.pieces.filter(c => c.pegs.length).length;
 function syncBar() {

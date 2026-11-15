@@ -1,0 +1,27 @@
+---
+# stimming-jfba
+title: 'Railgun: a globular shock and Worley soot'
+status: completed
+type: task
+priority: normal
+created_at: 2026-11-15T08:11:48Z
+updated_at: 2026-11-15T08:13:32Z
+parent: stimming-f793
+---
+
+Tom (2026-11-15), on the blast: a globular shockwave emanating out as a sphere, and a more Worley, spherical explosion volume, smartly shaded.
+
+## Checklist
+
+- [x] Shock front and Wilson shell as whole spheres: a faint veil, a thick rim, Worley condensation patches, a lit side with a soft terminator, the far side seen through
+- [x] Soot billows from the Worley cells (channel B), mid point re-centred so the mass holds
+- [x] Fire light inside the soot falls off toward the outer billows after 1 s
+- [x] Sky light is cut deep inside the soot (a cheap occlusion)
+- [x] Stills at 1 to 12 s, 1280 and 375 x 812; clean console
+- [x] Tom's verdict (2026-11-15: yes, keep it)
+
+## Summary of Changes
+
+The blast's shock and Wilson shells are whole spheres with Worley condensation patches and a lit side. The soot billows on Worley cells; the fire's light dies toward the outer billows; the sky's light is cut deep inside.
+
+Not timed; the blast at night not checked.

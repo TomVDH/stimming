@@ -1,0 +1,1448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.012 255); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wind tunnel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Wind tunnel: smoke lines stream past one shape in a dark test section. */
+:root { --stage: oklch(0.07 0.012 255); }
+.stage--windtunnel canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--windtunnel canvas.on { opacity: 1; }
+.stage--windtunnel { cursor: crosshair; }
+.stage--windtunnel[data-hover] { cursor: grab; }
+.stage--windtunnel[data-drag] { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--windtunnel canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Wind tunnel</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--windtunnel" id="stage" tabindex="0" role="application" aria-label="A smoke wind tunnel. Thin smoke lines stream past one shape and roll up into whirls behind it. Drag the shape to move it. Drag around it to turn it. Click to send it to a spot. Arrow keys move and turn it.">
+      <p class="fail" hidden>Wind tunnel needs WebGL 2 with float targets, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Wind tunnel</h1>
+    <div class="vignette">
+      <div>
+        <h2>Whirls that take turns</h2>
+        <p>Around 1900 Étienne-Jules Marey built a box with dozens of parallel threads of smoke and photographed them flowing past plates and wings. The threads draw what the air does. At a crawl they bend smoothly round an object and close up behind it.</p>
+        <p>Faster, the air behind the object rolls into whirls that peel off in turn, one from each side, and drift away in two staggered rows. In 1911 Theodore von Kármán showed why only the staggered street lasts. Its beat is steady: about a fifth of the wind speed divided by the width of the object. Wires sing in a breeze at that beat. <em>Wind</em> takes the tunnel from smooth, through shedding, to torn.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 300 140" role="img" aria-label="Smoke lines bend round a dark disc. Behind it, whirls sit in two rows, the top row offset from the bottom row.">
+          <g fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" stroke-linecap="round">
+            <path d="M6 30H40C52 30 60 40 66 44"/>
+            <path d="M6 52H36C46 52 52 50 58 50"/>
+            <path d="M6 88H36C46 88 52 90 58 90"/>
+            <path d="M6 110H40C52 110 60 100 66 96"/>
+          </g>
+          <circle cx="66" cy="70" r="17" fill="oklch(0.16 0.01 255)" stroke="currentColor" stroke-width="1.2" opacity="0.9"/>
+          <g fill="none" stroke="oklch(0.95 0.015 85)" stroke-width="1.4" stroke-linecap="round">
+            <path d="M84 62C96 54 104 52 112 52A10.5 10.5 0 0 0 91 52A7.5 7.5 0 0 0 106 52A4.75 4.75 0 0 0 96.5 52"/>
+            <path d="M140 88A10.5 10.5 0 0 1 161 88A7.5 7.5 0 0 1 146 88A4.75 4.75 0 0 1 155.5 88" opacity="0.85"/>
+            <path d="M178 52A11 11 0 0 0 200 52A8 8 0 0 0 184 52A5 5 0 0 0 194 52" opacity="0.7"/>
+            <path d="M226 88A11.5 11.5 0 0 1 249 88A8.5 8.5 0 0 1 232 88A5.5 5.5 0 0 1 243 88" opacity="0.55"/>
+            <path d="M266 52A12 12 0 0 0 290 52A9 9 0 0 0 272 52" opacity="0.4"/>
+          </g>
+        </svg>
+        <figcaption>A vortex street: whirls shed in turn behind a cylinder.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, sound, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { detail } from '../shared/detail.js';
+import { OUTPUT } from '../shared/output.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const TAU = Math.PI * 2, DEG = Math.PI / 180;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+let shapeId = 'cylinder', wind = 0.5, lineSet = 'some';
+// The handlers bind once the GL state exists.
+const act = { pick() {}, wind() {}, puff() {}, reset() {}, lines() {} };
+const ui = initPage({ id: 'windtunnel', bar: {
+  choice: { label: 'Shape', value: 'cylinder', options: [
+    { value: 'cylinder', label: 'Cylinder', key: '1' },
+    { value: 'wing', label: 'Wing', key: '2' },
+    { value: 'plate', label: 'Plate', key: '3' },
+    { value: 'duck', label: 'Duck', key: '4' },
+    { value: 'teapot', label: 'Teapot', key: '5' },
+  ], onPick: v => { shapeId = v; act.pick(); } },
+  slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.5, onInput: v => { wind = v; act.wind(); } },
+  actions: [{ verb: 'puff', key: 'Space', onPress: () => act.puff() }],
+  settings: [
+    { type: 'choice', id: 'lines', label: 'Smoke lines', value: 'some', persist: true, options: [
+      { value: 'few', label: 'Few' }, { value: 'some', label: 'Some' }, { value: 'many', label: 'Many' },
+    ], onPick: v => { lineSet = v; act.lines(); } },
+  ],
+  dev: [
+    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.4, max: 2.5, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 3, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 3, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'width', label: 'Line width', min: 0.5, max: 2.5, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'smear', label: 'Torn smoke', min: 0.2, max: 3, step: 0.01, value: 1, persist: true },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'move'], ['drag around', 'turn'], ['click', 'place'], ['← →', 'turn']],
+} });
+lineSet = ui.setting('lines')?.value ?? 'some';
+const tune = id => ui.setting(id)?.value ?? 1;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Wind tunnel needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function target(w, h, internal, format, type = gl.HALF_FLOAT, filter = gl.LINEAR) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return { t, fb, w, h };
+}
+const drop = x => { if (x) { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.fb); } };
+gl.bindVertexArray(gl.createVertexArray());
+
+/* ---------- GLSL ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 o;
+`;
+// The shape: display distance in r, sim distance in g, tunnel units.
+// Outside the box, the distance to the box adds on.
+const SDF = `
+uniform sampler2D uSdf;
+uniform vec2 uC, uRot;
+uniform float uBox;
+vec2 toLocal(vec2 p) {
+  vec2 d = p - uC;
+  return vec2(uRot.x * d.x + uRot.y * d.y, -uRot.y * d.x + uRot.x * d.y);
+}
+vec2 sdfPair(vec2 p) {
+  vec2 q = toLocal(p);
+  vec2 ex = max(abs(q) - uBox, 0.0);
+  return texture(uSdf, clamp(q / (2.0 * uBox) + 0.5, 0.0, 1.0)).rg + length(ex);
+}
+`;
+// Smoke lines: lines sit at label u = k + 0.5, box-filtered over a footprint.
+const LINES = `
+uniform float uN, uW, uSeed, uFlick;
+uniform vec4 uPuffs;
+float h11(float x) { return fract(sin(x * 127.1 + uSeed) * 43758.5453); }
+float vn(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h11(i), h11(i + 1.0), f); }
+// A soft line of width w, widened by the pixel footprint fw.
+// The peak drops as it widens, so each line keeps its smoke.
+// Past a third of the spacing, lines merge into their mean.
+float lineSoft(float u, float w, float fw) {
+  float s = 0.42 * w, se = sqrt(s * s + fw * fw / 12.0);
+  float d = abs(fract(u) - 0.5);
+  float g = (s / se) * exp(-0.5 * d * d / (se * se));
+  return mix(g, 2.5066 * s, smoothstep(0.14, 0.3, se));
+}
+// A puff is a band of extra smoke, keyed to its release time.
+float puffAt(float rel) {
+  vec4 d = (rel - uPuffs) / 0.16;
+  vec4 g = exp(-d * d);
+  return g.x + g.y + g.z + g.w;
+}
+// Smoke at label u, footprint fw in line units, released at time rel.
+float smokeLines(float u, float fw, float rel) {
+  float k = floor(u);
+  float p = puffAt(rel);
+  float w = uW * (1.0 + 1.5 * p);
+  float gain = (0.74 + 0.26 * h11(k)) * (1.0 + uFlick * (vn(rel * 1.3 + k * 7.31) - 0.5)) * (1.0 + 0.7 * p);
+  return (lineSoft(u, w, fw) + 0.05 * lineSoft(u, w * 4.0, fw)) * gain;
+}
+// Torn smoke has a toe: thin mixed haze sinks to black, dense wisps stay.
+float toe(float d) { d = max(d, 0.0); return d * d / (d + 0.07); }
+`;
+// The light sheet is brightest through the middle of the tunnel.
+const SHEET = `
+float sheet(float y) { float d = (y - 0.5) / 0.34; return 0.3 + 0.7 * exp(-d * d); }
+`;
+// Boundary rules: inflow on the left, free-slip walls, the shape moves its cells.
+const BC = `
+uniform sampler2D uObs;
+uniform ivec2 uSize;
+uniform float uU, uPert, uT;
+vec2 bc(vec2 v, ivec2 ij) {
+  // A lost value (NaN or a runaway) resets to the inflow.
+  v = length(v) < 4.0 * uU + 6.0 ? v : vec2(uU, 0.0);
+  vec4 ob = texelFetch(uObs, ij, 0);
+  v = mix(v, ob.gb, ob.r);
+  if (ij.y == 0 || ij.y == uSize.y - 1) v.y = 0.0;
+  if (ij.x == 0) {
+    float y = (float(ij.y) + 0.5) / float(uSize.y);
+    v = vec2(uU, uPert * (sin(y * 23.0 + uT * 1.7) + 0.6 * sin(y * 41.0 - uT * 2.9)));
+  }
+  return v;
+}
+// A neighbour's velocity: inflow, outflow, wall mirror or the shape.
+vec2 nb(sampler2D t, ivec2 q, vec2 vc) {
+  if (q.x < 0) return vec2(uU, 0.0);
+  if (q.x >= uSize.x) return vc;
+  if (q.y < 0 || q.y >= uSize.y) return vec2(vc.x, -vc.y);
+  vec4 ob = texelFetch(uObs, q, 0);
+  return ob.r > 0.5 ? ob.gb : texelFetch(t, q, 0).xy;
+}
+`;
+// A neighbour's pressure: walls and the shape mirror it, the outlet holds zero.
+const PNB = `
+float pn(sampler2D P, ivec2 q, float pc) {
+  if (q.x < 0 || q.y < 0 || q.y >= uSize.y) return pc;
+  if (q.x >= uSize.x) return 0.0;
+  if (texelFetch(uObs, q, 0).r > 0.5) return pc;
+  return texelFetch(P, q, 0).r;
+}
+`;
+
+/* ---------- sim passes ---------- */
+// The shape's cells: solid fraction, then the shape's velocity there.
+const OBS_FS = `${HEAD}
+uniform vec2 uV;
+uniform float uW, uL, uNy;
+${SDF}
+void main() {
+  vec2 p = vec2(vUv.x * uL, vUv.y);
+  float h = 1.0 / uNy;
+  float d = sdfPair(p).g;
+  // The sim wall sits a third of a cell out, so thin edges stay shut.
+  float solid = clamp(0.5 - (d - 0.3 * h) / h, 0.0, 1.0);
+  vec2 r = (p - uC) * uNy;
+  o = vec4(solid, uV + uW * vec2(-r.y, r.x), d * uNy);
+}`;
+// MacCormack advection, step one: a plain backward trace.
+const VADV1_FS = `${HEAD}
+uniform sampler2D uVel;
+uniform vec2 uTexel;
+uniform float uDt;
+void main() {
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 v2 = texture(uVel, vUv - 0.5 * uDt * v * uTexel).xy;
+  o = vec4(texture(uVel, vUv - uDt * v2 * uTexel).xy, 0.0, 1.0);
+}`;
+// Step two: trace back again, halve the error, clamp to the source cell.
+const VADV2_FS = `${HEAD}
+uniform sampler2D uVel, uHat;
+uniform vec2 uTexel;
+uniform float uDt;
+${BC}
+void main() {
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 v2 = texture(uVel, vUv - 0.5 * uDt * v * uTexel).xy;
+  vec2 d = uDt * v2 * uTexel;
+  vec2 hat = texture(uHat, vUv).xy;
+  vec2 res = hat + 0.5 * (v - texture(uHat, vUv + d).xy);
+  vec2 t = (vUv - d) * vec2(uSize) - 0.5;
+  ivec2 i0 = ivec2(floor(t)), mx = uSize - 1;
+  vec2 a = texelFetch(uVel, clamp(i0, ivec2(0), mx), 0).xy;
+  vec2 b = texelFetch(uVel, clamp(i0 + ivec2(1, 0), ivec2(0), mx), 0).xy;
+  vec2 c = texelFetch(uVel, clamp(i0 + ivec2(0, 1), ivec2(0), mx), 0).xy;
+  vec2 e = texelFetch(uVel, clamp(i0 + ivec2(1, 1), ivec2(0), mx), 0).xy;
+  // Out of the source range, the plain trace replaces the correction.
+  vec2 cl = clamp(res, min(min(a, b), min(c, e)), max(max(a, b), max(c, e)));
+  res = mix(res, hat, step(1e-6, abs(res - cl)));
+  o = vec4(bc(res, ivec2(gl_FragCoord.xy)), 0.0, 1.0);
+}`;
+// Viscosity: one Jacobi step of the implicit diffusion solve.
+const VISC_FS = `${HEAD}
+uniform sampler2D uX, uRhs;
+uniform float uA;
+${BC}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec2 xc = texelFetch(uX, ij, 0).xy;
+  vec2 s = nb(uX, ij + ivec2(-1, 0), xc) + nb(uX, ij + ivec2(1, 0), xc) + nb(uX, ij + ivec2(0, -1), xc) + nb(uX, ij + ivec2(0, 1), xc);
+  o = vec4(bc((texelFetch(uRhs, ij, 0).xy + uA * s) / (1.0 + 4.0 * uA), ij), 0.0, 1.0);
+}`;
+const CURL_FS = `${HEAD}
+uniform sampler2D uVel;
+${BC}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec2 vc = texelFetch(uVel, ij, 0).xy;
+  vec2 l = nb(uVel, ij + ivec2(-1, 0), vc), r = nb(uVel, ij + ivec2(1, 0), vc);
+  vec2 b = nb(uVel, ij + ivec2(0, -1), vc), t = nb(uVel, ij + ivec2(0, 1), vc);
+  o = vec4(0.5 * ((r.y - l.y) - (t.x - b.x)), 0.0, 0.0, 1.0);
+}`;
+// Vorticity confinement: it feeds the small whirls at the top of the range.
+// It acts only behind the model, so the oncoming lines stay calm.
+const CONF_FS = `${HEAD}
+uniform sampler2D uVel, uCurl;
+uniform float uEps, uDt, uFrom;
+${BC}
+float wa(ivec2 q) { return abs(texelFetch(uCurl, clamp(q, ivec2(0), uSize - 1), 0).r); }
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec2 g = 0.5 * vec2(wa(ij + ivec2(1, 0)) - wa(ij - ivec2(1, 0)), wa(ij + ivec2(0, 1)) - wa(ij - ivec2(0, 1)));
+  vec2 n = g / (length(g) + 1e-5);
+  float w = texelFetch(uCurl, ij, 0).r;
+  float behind = smoothstep(uFrom, uFrom + 12.0, float(ij.x));
+  vec2 v = texelFetch(uVel, ij, 0).xy + behind * uEps * uDt * vec2(n.y, -n.x) * w;
+  o = vec4(bc(v, ij), 0.0, 1.0);
+}`;
+const DIV_FS = `${HEAD}
+uniform sampler2D uVel;
+${BC}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  vec2 vc = texelFetch(uVel, ij, 0).xy;
+  float d = 0.5 * (nb(uVel, ij + ivec2(1, 0), vc).x - nb(uVel, ij + ivec2(-1, 0), vc).x
+    + nb(uVel, ij + ivec2(0, 1), vc).y - nb(uVel, ij + ivec2(0, -1), vc).y);
+  if (texelFetch(uObs, ij, 0).r > 0.5) d = 0.0;
+  o = vec4(d, 0.0, 0.0, 1.0);
+}`;
+const PRES_FS = `${HEAD}
+uniform sampler2D uP, uDiv;
+${BC}
+${PNB}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  float pc = texelFetch(uP, ij, 0).r;
+  float p = 0.25 * (pn(uP, ij + ivec2(-1, 0), pc) + pn(uP, ij + ivec2(1, 0), pc)
+    + pn(uP, ij + ivec2(0, -1), pc) + pn(uP, ij + ivec2(0, 1), pc) - texelFetch(uDiv, ij, 0).r);
+  if (texelFetch(uObs, ij, 0).r > 0.5) p = 0.0;
+  o = vec4(p, 0.0, 0.0, 1.0);
+}`;
+const PROJ_FS = `${HEAD}
+uniform sampler2D uVel, uP;
+${BC}
+${PNB}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  float pc = texelFetch(uP, ij, 0).r;
+  vec2 g = 0.5 * vec2(pn(uP, ij + ivec2(1, 0), pc) - pn(uP, ij + ivec2(-1, 0), pc), pn(uP, ij + ivec2(0, 1), pc) - pn(uP, ij + ivec2(0, -1), pc));
+  o = vec4(bc(texelFetch(uVel, ij, 0).xy - g, ij), 0.0, 1.0);
+}`;
+// Smoke: r dye, g label offset (label minus y), b torn, a age in seconds.
+// The label is the inlet height a parcel left from; it stays smooth.
+const SADV1_FS = `${HEAD}
+uniform sampler2D uS, uVel;
+uniform vec2 uVT;
+uniform float uDt, uDtS;
+void main() {
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 v2 = texture(uVel, vUv - 0.5 * uDt * v * uVT).xy;
+  vec2 back = vUv - uDt * v2 * uVT;
+  vec4 s = texture(uS, back);
+  s.g += back.y - vUv.y;
+  s.a += uDtS;
+  o = s;
+}`;
+const SADV2_FS = `${HEAD}
+uniform sampler2D uS, uHat, uVel;
+uniform vec2 uVT, uST;
+uniform ivec2 uSSize;
+uniform float uDt, uDtS, uT, uL, uTorn0, uTorn1;
+${LINES}
+${SDF}
+void main() {
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 v2 = texture(uVel, vUv - 0.5 * uDt * v * uVT).xy;
+  vec2 d = uDt * v2 * uVT;
+  vec2 back = vUv - d, fwd = vUv + d;
+  vec4 rev = texture(uHat, fwd);
+  rev.g += fwd.y - vUv.y;
+  rev.a -= uDtS;
+  vec4 hat = texture(uHat, vUv);
+  vec4 res = hat + 0.5 * (texture(uS, vUv) - rev);
+  // Out of the range of the four source texels, the plain trace wins.
+  vec2 t = back * vec2(uSSize) - 0.5;
+  ivec2 i0 = ivec2(floor(t)), mx = uSSize - 1;
+  vec4 lo = vec4(1e9), hi = vec4(-1e9);
+  for (int k = 0; k < 4; k++) {
+    ivec2 q = clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), mx);
+    vec4 s = texelFetch(uS, q, 0);
+    s.g += (float(q.y) + 0.5) * uST.y - vUv.y;
+    s.a += uDtS;
+    lo = min(lo, s);
+    hi = max(hi, s);
+  }
+  res = mix(res, hat, step(1e-6, abs(res - clamp(res, lo, hi))));
+  // Packed or folded labels mean the flow tears; torn smoke stays torn.
+  float gx = (texture(uHat, vUv + vec2(uST.x, 0.0)).g - texture(uHat, vUv - vec2(uST.x, 0.0)).g) / (2.0 * uST.x * uL);
+  float gy = 1.0 + (texture(uHat, vUv + vec2(0.0, uST.y)).g - texture(uHat, vUv - vec2(0.0, uST.y)).g) / (2.0 * uST.y);
+  res.b = max(res.b, smoothstep(uTorn0, uTorn1, length(vec2(gx, gy))));
+  res.a = min(res.a, 600.0);
+  vec2 p = vec2(vUv.x * uL, vUv.y);
+  if (sdfPair(p).g < 0.0) res = vec4(0.0, 0.0, 1.0, 0.0);
+  // The rake: fresh smoke lines at the inlet.
+  if (p.x < 2.0 * uST.y) res = vec4(smokeLines(p.y * uN, uN * uST.y, uT), 0.0, 0.0, 0.0);
+  o = res;
+}`;
+// A fresh tunnel: even wind, a small kick behind the shape.
+// The labels draw the first lines; the dye starts empty, so start-up wakes stay dark.
+const INITV_FS = `${HEAD}
+uniform sampler2D uObs;
+uniform vec2 uC;
+uniform float uU, uL;
+void main() {
+  vec2 p = vec2(vUv.x * uL, vUv.y);
+  vec2 k = p - uC - vec2(0.2, 0.0);
+  vec2 v = vec2(uU, 0.3 * uU * exp(-dot(k, k) / 0.006));
+  vec4 ob = texture(uObs, vUv);
+  o = vec4(mix(v, ob.gb, ob.r), 0.0, 1.0);
+}`;
+const INITS_FS = `${HEAD}
+uniform float uL, uV, uT;
+uniform ivec2 uSSize;
+${LINES}
+void main() {
+  vec2 p = vec2(vUv.x * uL, vUv.y);
+  o = vec4(0.0, 0.0, 0.0, p.x / uV);
+}`;
+// A resize keeps the tunnel's coordinates: x stretches, the rest copies.
+const COPY_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform float uK;
+uniform vec4 uMul;
+void main() { o = texture(uSrc, vec2(vUv.x * uK, vUv.y)) * uMul; }`;
+// Four probes behind the shape read the wake for the sound and the idle watch.
+const PROBE_FS = `${HEAD}
+uniform sampler2D uVel;
+uniform vec2 uP0, uP1, uP2, uP3;
+void main() {
+  int i = int(gl_FragCoord.x);
+  vec2 p = i == 0 ? uP0 : i == 1 ? uP1 : i == 2 ? uP2 : uP3;
+  o = vec4(texture(uVel, p).xy, 0.0, 1.0);
+}`;
+
+/* ---------- picture passes ---------- */
+// Glow: dense torn smoke under the light sheet, at half the smoke size, blurred.
+// Crisp lines carry their own halo, so the black between them stays black.
+const GLOWP_FS = `${HEAD}
+uniform sampler2D uS;
+${SHEET}
+void main() {
+  vec4 s = texture(uS, vUv);
+  float d = max(s.r, 0.0);
+  o = vec4(d * d / (d + 0.12) * (0.15 + 0.85 * clamp(s.b, 0.0, 1.0)) * sheet(vUv.y), 0.0, 0.0, 1.0);
+}`;
+const BLUR_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+void main() {
+  float c = texture(uSrc, vUv).r * 0.227027;
+  c += (texture(uSrc, vUv + uDir * 1.3846).r + texture(uSrc, vUv - uDir * 1.3846).r) * 0.3162162;
+  c += (texture(uSrc, vUv + uDir * 3.2308).r + texture(uSrc, vUv - uDir * 3.2308).r) * 0.0702703;
+  o = vec4(c, 0.0, 0.0, 1.0);
+}`;
+// The lab photograph: crisp lines, torn smoke, the model, glow and grain.
+const SHOW_FS = `${HEAD}
+const float TAU = 6.2831853;
+uniform sampler2D uS, uGlow;
+uniform vec2 uSSize, uRes, uB, uMarks;
+uniform mat2 uM;
+uniform float uL, uPx, uT, uDyeK, uExp, uGlowK, uGrain, uFrame;
+uniform vec3 uBg, uHaze, uSmokeC, uBodyC, uRimC, uRing, uEye;
+${LINES}
+${SDF}
+${SHEET}
+${OUTPUT}
+vec4 cubicW(float v) {
+  vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
+  vec4 s = n * n * n;
+  float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+  return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+}
+// A cubic B-spline read: smooth labels give smooth, kink-free lines.
+vec4 bicubic(sampler2D t, vec2 uv, vec2 size) {
+  uv = uv * size - 0.5;
+  vec2 f = fract(uv);
+  uv -= f;
+  vec4 xc = cubicW(f.x), yc = cubicW(f.y);
+  vec4 c = uv.xxyy + vec2(-0.5, 1.5).xyxy;
+  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+  vec4 off = (c + vec4(xc.yw, yc.yw) / s) / size.xxyy;
+  vec4 s0 = texture(t, off.xz), s1 = texture(t, off.yz), s2 = texture(t, off.xw), s3 = texture(t, off.yw);
+  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
+  return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);
+}
+float grain(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u) ^ (uint(uFrame) * 2654435769u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}
+void main() {
+  vec2 tp = uM * gl_FragCoord.xy + uB;
+  vec2 uv = vec2(tp.x / uL, tp.y);
+  vec4 s = bicubic(uS, uv, uSSize);
+  float u = (tp.y + s.g) * uN, fw = fwidth(u);
+  float crisp = smokeLines(u, fw, uT - s.a);
+  // Torn smoke: the dye, softened by its own blurred copy.
+  // The scrambled labels draw fine filaments in it that follow the flow.
+  float glow = texture(uGlow, uv).r;
+  float fil = lineSoft(u * 2.0 + 0.5, 0.35, fw * 2.0) / 0.3685;
+  float torn = (0.55 * toe(s.r) + 0.8 * glow) * uDyeK * mix(1.0, fil, 0.6);
+  float sm = mix(crisp, torn, clamp(s.b, 0.0, 1.0));
+  // Lines leave the rake at the inlet edge.
+  sm *= smoothstep(0.0, 0.015, tp.x);
+  vec2 sd = sdfPair(tp);
+  sm *= clamp(sd.g / uPx + 0.5, 0.0, 1.0);
+  float lit = sheet(tp.y);
+  // The back wall, faint air in the sheet, and the turntable ring.
+  vec3 col = uBg * (0.7 + 0.5 * lit) + uHaze * lit;
+  vec2 dd = tp - uC;
+  float r = length(dd), ang = atan(dd.y, dd.x);
+  float ring = 1.0 - smoothstep(0.4, 1.4, abs(r - uRing.x) / uPx);
+  float seg = TAU / 24.0;
+  float tick = (1.0 - smoothstep(0.4, 1.3, abs((fract(ang / seg + 0.5) - 0.5) * seg * r) / uPx)) * step(uRing.x - 0.012, r) * step(r, uRing.x);
+  float rel = ang - uRing.z;
+  float idx = (1.0 - smoothstep(0.6, 1.6, abs((fract(rel / TAU + 0.5) - 0.5) * TAU * r) / uPx)) * step(uRing.x - 0.026, r) * step(r, uRing.x + 0.008);
+  col += uRimC * uRing.y * (0.45 * ring + 0.3 * tick + 0.9 * idx);
+  col += uSmokeC * (sm * lit * uExp + glow * uGlowK);
+  // The model: a dark body, a thin rim where the sheet grazes its edge.
+  // Screen derivatives must run outside the branch.
+  vec2 n = normalize(vec2(dFdx(sd.r), dFdy(sd.r)) + 1e-7);
+  float inside = clamp(0.5 - sd.r / uPx, 0.0, 1.0);
+  if (inside > 0.0) {
+    float face = dot(n, normalize(vec2(-0.55, 0.83)));
+    float band = smoothstep(-3.0 * uPx, -0.7 * uPx, sd.r);
+    vec3 body = uBodyC * (0.6 + 0.9 * smoothstep(-0.06, 0.0, sd.r) * max(face, 0.0));
+    body += uRimC * band * (0.18 + 0.75 * max(face, 0.0) + 0.12 * max(-face, 0.0)) * (0.6 + 0.4 * lit);
+    vec2 q = toLocal(tp);
+    float mark = uMarks.x * (1.0 - smoothstep(0.5, 1.3, abs(q.y) / uPx)) * step(0.012, q.x) * step(q.x, 0.075);
+    mark += uMarks.y * (1.0 - smoothstep(1.4, 2.4, length(q) / uPx));
+    if (uEye.z > 0.0) mark += 2.5 * (1.0 - smoothstep(uEye.z - uPx, uEye.z, length(q - uEye.xy)));
+    body += uRimC * 0.12 * mark;
+    col = mix(col, body, inside);
+  }
+  vec2 vq = (gl_FragCoord.xy / uRes - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.4 * smoothstep(0.35, 1.15, length(vq));
+  vec3 outC = ouFilm(col, 1.0, gl_FragCoord.xy);
+  o = vec4(outC + (grain(gl_FragCoord.xy) - 0.5) * uGrain, 1.0);
+}`;
+
+const P = {
+  obs: program(OBS_FS), vadv1: program(VADV1_FS), vadv2: program(VADV2_FS), visc: program(VISC_FS),
+  curl: program(CURL_FS), conf: program(CONF_FS), div: program(DIV_FS), pres: program(PRES_FS), proj: program(PROJ_FS),
+  sadv1: program(SADV1_FS), sadv2: program(SADV2_FS), initV: program(INITV_FS), initS: program(INITS_FS),
+  copy: program(COPY_FS), probe: program(PROBE_FS), glowP: program(GLOWP_FS), blur: program(BLUR_FS), show: program(SHOW_FS),
+};
+
+/* ---------- pass helpers ---------- */
+let unit = 0;
+function use(p, dst) {
+  gl.useProgram(p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
+  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
+  unit = 0;
+  return p;
+}
+function tex(p, name, t) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.uniform1i(p.u(name), unit++);
+}
+const f1 = (p, n, a) => gl.uniform1f(p.u(n), a);
+const f2 = (p, n, a, b) => gl.uniform2f(p.u(n), a, b);
+const i2 = (p, n, a, b) => gl.uniform2i(p.u(n), a, b);
+const draw = () => gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+/* ---------- shapes ---------- */
+// Each shape draws in tunnel units, y up, round its pivot.
+// The distance map spans BOX each way from the pivot.
+// SIZE scales every model; the cylinder is SIZE times 0.2 across.
+const BOX = 0.3, SDF_N = 512, SIZE = 0.85;
+// A NACA 2412 wing section, pivot at 30 % of the chord.
+const WING = (() => {
+  const m = 0.02, p = 0.4, t = 0.12, c = 0.36, piv = 0.3, n = 90, up = [], lo = [];
+  for (let i = 0; i <= n; i++) {
+    const x = (1 - Math.cos((i / n) * Math.PI)) / 2;
+    const yt = 5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
+    const k = x < p ? m / (p * p) : m / ((1 - p) ** 2);
+    const yc = x < p ? k * (2 * p * x - x * x) : k * (1 - 2 * p + 2 * p * x - x * x);
+    const th = Math.atan(2 * k * (p - x));
+    up.push([(x - yt * Math.sin(th) - piv) * c, (yc + yt * Math.cos(th) - 0.03) * c]);
+    lo.push([(x + yt * Math.sin(th) - piv) * c, (yc - yt * Math.cos(th) - 0.03) * c]);
+  }
+  return up.concat(lo.reverse());
+})();
+const SHAPES = {
+  cylinder: { angle: 0, marks: [1, 1], draw(c) { c.beginPath(); c.arc(0, 0, 0.1, 0, TAU); c.fill(); } },
+  wing: { angle: -5 * DEG, marks: [0, 1], draw(c) {
+    c.beginPath();
+    WING.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.closePath();
+    c.fill();
+  } },
+  plate: { angle: 90 * DEG, marks: [0, 1], draw(c) { c.beginPath(); c.rect(-0.14, -0.012, 0.28, 0.024); c.fill(); } },
+  // A rubber duck faces into the wind; its head sits deep in the body.
+  duck: { angle: 0, marks: [0, 0], eye: [-0.062, 0.1, 0.0085], draw(c) {
+    c.beginPath();
+    c.moveTo(-0.11, 0.035);
+    c.bezierCurveTo(-0.135, -0.03, -0.1, -0.09, -0.02, -0.092);
+    c.bezierCurveTo(0.07, -0.095, 0.145, -0.075, 0.16, -0.005);
+    c.lineTo(0.19, 0.07);
+    c.bezierCurveTo(0.15, 0.06, 0.12, 0.045, 0.08, 0.045);
+    c.bezierCurveTo(0.03, 0.045, -0.02, 0.05, -0.05, 0.062);
+    c.closePath();
+    c.fill();
+    c.beginPath(); c.arc(-0.055, 0.088, 0.058, 0, TAU); c.fill();
+    c.beginPath();
+    c.moveTo(-0.1, 0.104);
+    c.quadraticCurveTo(-0.15, 0.1, -0.172, 0.08);
+    c.quadraticCurveTo(-0.145, 0.062, -0.098, 0.068);
+    c.closePath();
+    c.fill();
+  } },
+  // The handle hole shows on screen; the sim fills it, since 2D air cannot pass.
+  teapot: { angle: 0, marks: [0, 0], hole: true, draw(c, sim) {
+    c.save();
+    c.scale(0.84, 0.84);
+    c.beginPath(); c.ellipse(0, -0.01, 0.118, 0.088, 0, 0, TAU); c.fill();
+    c.beginPath(); c.rect(-0.07, -0.106, 0.14, 0.03); c.fill();
+    c.beginPath(); c.ellipse(0, 0.068, 0.064, 0.032, 0, 0, Math.PI); c.fill();
+    c.beginPath(); c.arc(0, 0.112, 0.017, 0, TAU); c.fill();
+    c.beginPath();
+    c.moveTo(-0.1, -0.046);
+    c.bezierCurveTo(-0.155, -0.042, -0.172, 0.0, -0.206, 0.07);
+    c.lineTo(-0.184, 0.079);
+    c.bezierCurveTo(-0.16, 0.032, -0.14, 0.012, -0.1, 0.014);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.ellipse(0.132, 0.0, 0.064, 0.072, 0, 0, TAU);
+    if (!sim) c.ellipse(0.142, 0.0, 0.034, 0.043, 0, 0, TAU);
+    c.fill('evenodd');
+    c.restore();
+  } },
+};
+
+/* ---------- distance maps ---------- */
+// Felzenszwalb's 1D squared distance transform, in place on f.
+function edt1(f, n, d, v, z) {
+  v[0] = 0; z[0] = -1e20; z[1] = 1e20;
+  for (let q = 1, k = 0; q < n; q++) {
+    let s;
+    do { const r = v[k]; s = (f[q] + q * q - f[r] - r * r) / (2 * q - 2 * r); } while (s <= z[k] && --k > -1);
+    k++; v[k] = q; z[k] = s; z[k + 1] = 1e20;
+  }
+  for (let q = 0, k = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const r = v[k];
+    d[q] = (q - r) * (q - r) + f[r];
+  }
+  for (let q = 0; q < n; q++) f[q] = d[q];
+}
+function edt(g, n) {
+  const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  for (let x = 0; x < n; x++) {
+    for (let y = 0; y < n; y++) f[y] = g[y * n + x];
+    edt1(f, n, d, v, z);
+    for (let y = 0; y < n; y++) g[y * n + x] = f[y];
+  }
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) f[x] = g[y * n + x];
+    edt1(f, n, d, v, z);
+    for (let x = 0; x < n; x++) g[y * n + x] = f[x];
+  }
+}
+// Signed distance from an alpha mask, in tunnel units; rows run up.
+function sdfOf(alpha) {
+  const n = SDF_N, N2 = n * n, out = new Float64Array(N2), inn = new Float64Array(N2);
+  for (let i = 0; i < N2; i++) {
+    const a = alpha[i * 4 + 3] / 255;
+    out[i] = a >= 1 ? 0 : a <= 0 ? 1e20 : Math.max(0, 0.5 - a) ** 2;
+    inn[i] = a >= 1 ? 1e20 : a <= 0 ? 0 : Math.max(0, a - 0.5) ** 2;
+  }
+  edt(out, n);
+  edt(inn, n);
+  const res = new Float32Array(N2), px = (2 * BOX) / n;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (n - 1 - y) * n + x;
+    res[y * n + x] = (Math.sqrt(out[i]) - Math.sqrt(inn[i])) * px;
+  }
+  return res;
+}
+const maps = new Map();
+// Bakes a shape once: the display map, the sim map and its reach.
+function bake(id) {
+  if (maps.has(id)) return maps.get(id);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = SDF_N;
+  const c = cv.getContext('2d', { willReadFrequently: true });
+  const one = sim => {
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, SDF_N, SDF_N);
+    c.setTransform(SDF_N / (2 * BOX), 0, 0, -SDF_N / (2 * BOX), SDF_N / 2, SDF_N / 2);
+    c.scale(SIZE, SIZE);
+    c.fillStyle = '#fff';
+    SHAPES[id].draw(c, sim);
+    return sdfOf(c.getImageData(0, 0, SDF_N, SDF_N).data);
+  };
+  const disp = one(false), sim = SHAPES[id].hole ? one(true) : disp;
+  const rg = new Float32Array(SDF_N * SDF_N * 2);
+  let R = 0;
+  for (let y = 0; y < SDF_N; y++) for (let x = 0; x < SDF_N; x++) {
+    const i = y * SDF_N + x;
+    rg[2 * i] = disp[i];
+    rg[2 * i + 1] = sim[i];
+    if (disp[i] < 0) R = Math.max(R, Math.hypot(((x + 0.5) / SDF_N - 0.5) * 2 * BOX, ((y + 0.5) / SDF_N - 0.5) * 2 * BOX));
+  }
+  const m = { id, rg, disp, R };
+  maps.set(id, m);
+  return m;
+}
+const sdfTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+let cur = null;
+function useShape(id) {
+  cur = bake(id);
+  gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, SDF_N, SDF_N, 0, gl.RG, gl.FLOAT, cur.rg);
+}
+// The display distance at a tunnel point, read on the CPU for the grab test.
+function shapeDist(x, y) {
+  const dx = x - pose.x, dy = y - pose.y, c = Math.cos(pose.a), s = Math.sin(pose.a);
+  const qx = c * dx + s * dy, qy = -s * dx + c * dy, n = SDF_N;
+  const ex = Math.hypot(Math.max(0, Math.abs(qx) - BOX), Math.max(0, Math.abs(qy) - BOX));
+  const fx = clamp((qx / (2 * BOX) + 0.5) * n - 0.5, 0, n - 1.001), fy = clamp((qy / (2 * BOX) + 0.5) * n - 0.5, 0, n - 1.001);
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, d = cur.disp, i = iy * n + ix;
+  return (d[i] * (1 - tx) + d[i + 1] * tx) * (1 - ty) + (d[i + n] * (1 - tx) + d[i + n + 1] * tx) * ty + ex;
+}
+
+/* ---------- wind ---------- */
+// The slider sets the speed and the Reynolds number together.
+// Low: smooth and steady. Middle: a clean vortex street. Top: torn.
+const speed = w => 0.15 + 0.5 * w;
+// Numerical viscosity adds to these, so the street needs a nominal 190.
+const RE = [[0, 18], [0.25, 45], [0.5, 190], [0.75, 480], [0.9, 900], [1, 1500]];
+function reynolds(w) {
+  for (let i = 1; i < RE.length; i++) {
+    const [w0, r0] = RE[i - 1], [w1, r1] = RE[i];
+    if (w <= w1) return r0 * (r1 / r0) ** ((w - w0) / (w1 - w0));
+  }
+  return RE[RE.length - 1][1];
+}
+// Confinement feeds small whirls only near the top of the range.
+const confine = w => (w > 0.85 ? ((w - 0.85) / 0.15) * 0.12 : 0);
+const LINES_N = { few: 16, some: 26, many: 42 };
+
+/* ---------- fields ---------- */
+// Velocity in cells per sim step of 1/60 s; pressure and divergence in f32.
+// Smoke is finer: k cells per velocity cell.
+const GRID = [{ ny: 112, k: 2, jac: 22 }, { ny: 160, k: 2, jac: 30 }, { ny: 200, k: 2.5, jac: 40 }];
+let F = null;
+function allocate(Ny, k, L) {
+  const Nx = Math.max(16, Math.round(Ny * L)), My = Math.round(Ny * k), Mx = Math.max(16, Math.round(My * L));
+  const V = () => target(Nx, Ny, gl.RG16F, gl.RG);
+  const R = () => target(Nx, Ny, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+  const S = () => target(Mx, My, gl.RGBA16F, gl.RGBA);
+  const G = () => target(Math.max(4, Mx >> 1), Math.max(4, My >> 1), gl.R16F, gl.RED);
+  return {
+    Nx, Ny, Mx, My, L, k, vel: [V(), V(), V()], pres: [R(), R()], div: R(),
+    curl: target(Nx, Ny, gl.R16F, gl.RED, gl.HALF_FLOAT, gl.NEAREST), obs: target(Nx, Ny, gl.RGBA16F, gl.RGBA),
+    smoke: [S(), S(), S()], glow: [G(), G()],
+  };
+}
+function free(f) {
+  [...f.vel, ...f.pres, f.div, f.curl, f.obs, ...f.smoke, ...f.glow].forEach(drop);
+}
+function clearTo(t, v = 0) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+  gl.clearColor(v, v, v, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+
+/* ---------- shape pose ---------- */
+// The hand sets the goal; the model follows it with some weight.
+const pose = { x: 0.6, y: 0.5, a: 0 }, goal = { x: 0.6, y: 0.5, a: 0 }, simPose = { x: 0.6, y: 0.5, a: 0 };
+let glide = false, handSpeed = 0;
+const home = () => ({ x: Math.min(0.62, 0.34 * Lt), y: 0.5 });
+function clampGoal() {
+  const R = cur?.R ?? 0.1;
+  goal.x = clamp(goal.x, 0.12 + R, Math.max(0.12 + R, Lt - 0.2 - 0.5 * R));
+  goal.y = clamp(goal.y, R + 0.035, 1 - R - 0.035);
+}
+// The model moves at 1.2 tunnel heights a second at most, and turns at 4 rad.
+function springs(dt) {
+  const k = 1 - Math.exp(-dt / (glide ? 0.3 : 0.07)), ka = 1 - Math.exp(-dt / 0.08);
+  const x0 = pose.x, y0 = pose.y;
+  let dx = (goal.x - pose.x) * k, dy = (goal.y - pose.y) * k;
+  const m = Math.hypot(dx, dy), cap = 1.2 * dt;
+  if (m > cap) { dx *= cap / m; dy *= cap / m; }
+  pose.x += dx;
+  pose.y += dy;
+  pose.a += clamp((goal.a - pose.a) * ka, -4 * dt, 4 * dt);
+  if (Math.abs(goal.x - pose.x) + Math.abs(goal.y - pose.y) < 1e-4) { pose.x = goal.x; pose.y = goal.y; glide = false; }
+  if (Math.abs(goal.a - pose.a) < 1e-4) pose.a = goal.a;
+  handSpeed += (Math.hypot(pose.x - x0, pose.y - y0) / Math.max(dt, 1e-3) - handSpeed) * 0.3;
+}
+
+/* ---------- sim ---------- */
+let flowT = 0;
+const puffs = [-1e4, -1e4, -1e4, -1e4];
+let puffI = 0;
+// Line uniforms shared by the rake, the first fill and the picture.
+function lineUniforms(p) {
+  const N = LINES_N[lineSet] ?? 26;
+  f1(p, 'uN', N);
+  f1(p, 'uW', (1.25 * tune('width') / across) * N);
+  f1(p, 'uSeed', 3.17);
+  f1(p, 'uFlick', reduced() ? 0 : 0.28);
+  gl.uniform4f(p.u('uPuffs'), ...puffs);
+}
+function shapeUniforms(p, at = pose) {
+  tex(p, 'uSdf', sdfTex);
+  f2(p, 'uC', at.x, at.y);
+  f2(p, 'uRot', Math.cos(at.a), Math.sin(at.a));
+  f1(p, 'uBox', BOX);
+}
+function obstacle(f, at, vx = 0, vy = 0, wa = 0) {
+  const p = use(P.obs, f.obs);
+  shapeUniforms(p, at);
+  f2(p, 'uV', vx, vy);
+  f1(p, 'uW', wa);
+  f1(p, 'uL', f.L);
+  f1(p, 'uNy', f.Ny);
+  draw();
+}
+function bcUniforms(p, f, U) {
+  tex(p, 'uObs', f.obs.t);
+  i2(p, 'uSize', f.Nx, f.Ny);
+  f1(p, 'uU', U);
+  f1(p, 'uPert', U * 0.004);
+  f1(p, 'uT', flowT);
+}
+const rot = (a, i, j) => { const t = a[i]; a[i] = a[j]; a[j] = t; };
+// One sim step, or a part of one: fr is the fraction of 1/60 s.
+function substep(f, { U, a, eps, fr, vx, vy, wa }) {
+  obstacle(f, simPose, vx, vy, wa);
+  const vt = [1 / f.Nx, 1 / f.Ny];
+  // Velocity: MacCormack advection.
+  let p = use(P.vadv1, f.vel[2]);
+  tex(p, 'uVel', f.vel[0].t);
+  f2(p, 'uTexel', ...vt);
+  f1(p, 'uDt', fr);
+  draw();
+  p = use(P.vadv2, f.vel[1]);
+  tex(p, 'uVel', f.vel[0].t);
+  tex(p, 'uHat', f.vel[2].t);
+  bcUniforms(p, f, U);
+  f2(p, 'uTexel', ...vt);
+  f1(p, 'uDt', fr);
+  draw();
+  rot(f.vel, 0, 1);
+  // Viscosity: a few Jacobi steps of the implicit solve.
+  if (a > 0.01) {
+    const K = Math.min(8, 2 + Math.ceil(a * 5)), rhs = f.vel[0], outs = [f.vel[1], f.vel[2]];
+    let x = rhs;
+    for (let i = 0; i < K; i++) {
+      const dst = outs[i & 1];
+      p = use(P.visc, dst);
+      tex(p, 'uX', x.t);
+      tex(p, 'uRhs', rhs.t);
+      bcUniforms(p, f, U);
+      f1(p, 'uA', a);
+      draw();
+      x = dst;
+    }
+    const rest = f.vel.filter(t => t !== x);
+    f.vel = [x, rest[0], rest[1]];
+  }
+  if (eps > 0) {
+    p = use(P.curl, f.curl);
+    tex(p, 'uVel', f.vel[0].t);
+    bcUniforms(p, f, U);
+    draw();
+    p = use(P.conf, f.vel[1]);
+    tex(p, 'uVel', f.vel[0].t);
+    tex(p, 'uCurl', f.curl.t);
+    bcUniforms(p, f, U);
+    f1(p, 'uEps', eps);
+    f1(p, 'uDt', fr);
+    f1(p, 'uFrom', ((simPose.x - 0.5 * cur.R) / f.L) * f.Nx);
+    draw();
+    rot(f.vel, 0, 1);
+  }
+  // Projection: divergence, a warm-started Jacobi solve, the gradient.
+  p = use(P.div, f.div);
+  tex(p, 'uVel', f.vel[0].t);
+  bcUniforms(p, f, U);
+  draw();
+  for (let i = 0; i < f.jac; i++) {
+    p = use(P.pres, f.pres[1]);
+    tex(p, 'uP', f.pres[0].t);
+    tex(p, 'uDiv', f.div.t);
+    bcUniforms(p, f, U);
+    draw();
+    rot(f.pres, 0, 1);
+  }
+  p = use(P.proj, f.vel[1]);
+  tex(p, 'uVel', f.vel[0].t);
+  tex(p, 'uP', f.pres[0].t);
+  bcUniforms(p, f, U);
+  draw();
+  rot(f.vel, 0, 1);
+  // Smoke: MacCormack advection of dye, label, torn flag and age.
+  flowT += fr / 60;
+  p = use(P.sadv1, f.smoke[2]);
+  tex(p, 'uS', f.smoke[0].t);
+  tex(p, 'uVel', f.vel[0].t);
+  f2(p, 'uVT', ...vt);
+  f1(p, 'uDt', fr);
+  f1(p, 'uDtS', fr / 60);
+  draw();
+  p = use(P.sadv2, f.smoke[1]);
+  tex(p, 'uS', f.smoke[0].t);
+  tex(p, 'uHat', f.smoke[2].t);
+  tex(p, 'uVel', f.vel[0].t);
+  shapeUniforms(p, simPose);
+  lineUniforms(p);
+  f2(p, 'uVT', ...vt);
+  f2(p, 'uST', 1 / f.Mx, 1 / f.My);
+  i2(p, 'uSSize', f.Mx, f.My);
+  f1(p, 'uDt', fr);
+  f1(p, 'uDtS', fr / 60);
+  f1(p, 'uT', flowT);
+  f1(p, 'uL', f.L);
+  f1(p, 'uTorn0', 4);
+  f1(p, 'uTorn1', 10);
+  draw();
+  rot(f.smoke, 0, 1);
+}
+let uCells = 1;
+// Runs n sim steps; the model moves in even parts across them.
+function simulate(n) {
+  const f = F, V = speed(wind), U = (V * f.Ny) / 60;
+  const nu = (V * 0.2 * SIZE) / reynolds(wind), a = (nu * f.Ny * f.Ny) / 60;
+  // Substeps keep each trace near one cell, for the wind and for the model.
+  const move = (Math.hypot(pose.x - simPose.x, pose.y - simPose.y) * f.Ny + Math.abs(pose.a - simPose.a) * cur.R * f.Ny) / n;
+  const eps = confine(wind), m = Math.min(4, Math.max(1, Math.ceil(U / 1.45), Math.ceil(move / 1.5))), fr = 1 / m;
+  uCells = U;
+  const from = { ...simPose };
+  for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
+    const t = (i + (j + 1) / m) / n;
+    const nx = from.x + (pose.x - from.x) * t, ny = from.y + (pose.y - from.y) * t, na = from.a + (pose.a - from.a) * t;
+    const vx = ((nx - simPose.x) / fr) * f.Ny, vy = ((ny - simPose.y) / fr) * f.Ny, wa = (na - simPose.a) / fr;
+    simPose.x = nx; simPose.y = ny; simPose.a = na;
+    substep(f, { U, a: a * fr, eps, fr, vx, vy, wa });
+  }
+}
+// A fresh tunnel: even wind, lines everywhere, a kick to start the street.
+function fill(f) {
+  const V = speed(wind), U = (V * f.Ny) / 60;
+  Object.assign(simPose, pose);
+  obstacle(f, simPose);
+  let p = use(P.initV, f.vel[0]);
+  tex(p, 'uObs', f.obs.t);
+  f2(p, 'uC', simPose.x, simPose.y);
+  f1(p, 'uU', U);
+  f1(p, 'uL', f.L);
+  draw();
+  p = use(P.initS, f.smoke[0]);
+  lineUniforms(p);
+  f1(p, 'uL', f.L);
+  f1(p, 'uV', V);
+  f1(p, 'uT', flowT);
+  i2(p, 'uSSize', f.Mx, f.My);
+  draw();
+  f.pres.forEach(t => clearTo(t));
+}
+// A new grid copies the old fields across, so a resize keeps the flow.
+function resample(a, b) {
+  const copy = (src, dst, mul) => {
+    const p = use(P.copy, dst);
+    tex(p, 'uSrc', src.t);
+    f1(p, 'uK', b.L / a.L);
+    gl.uniform4f(p.u('uMul'), ...mul);
+    draw();
+  };
+  const s = b.Ny / a.Ny;
+  copy(a.vel[0], b.vel[0], [s, s, 1, 1]);
+  copy(a.smoke[0], b.smoke[0], [1, 1, 1, 1]);
+  b.pres.forEach(t => clearTo(t));
+}
+
+/* ---------- probes ---------- */
+// The wake behind the model, read back a frame or two later.
+const probeT = target(4, 1, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+const pbo = gl.createBuffer();
+gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+gl.bufferData(gl.PIXEL_PACK_BUFFER, 64, gl.STREAM_READ);
+gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+const probeOut = new Float32Array(16), wakeLog = [];
+let fence = null, shed = 0, shedEnv = 0;
+function probe() {
+  if (fence) {
+    if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+    gl.deleteSync(fence);
+    fence = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, probeOut);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    hear(probeOut);
+  }
+  const f = F, p = use(P.probe, probeT), R = Math.max(0.06, cur.R);
+  tex(p, 'uVel', f.vel[0].t);
+  [1.3, 2.4, 3.8, 5.5].forEach((k, i) => f2(p, `uP${i}`, clamp((simPose.x + R * k) / f.L, 0, 1), simPose.y));
+  draw();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.readPixels(0, 0, 4, 1, gl.RGBA, gl.FLOAT, 0);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+}
+// Cross-wind speed over inflow speed: it swings as the wake sheds.
+function hear(d) {
+  const U = Math.max(uCells, 1e-3), now = performance.now();
+  shed = d[5] / U;
+  shedEnv += (Math.abs(shed) - shedEnv) * 0.25;
+  wakeLog.push([now, d[0] / U, d[1] / U, d[4] / U, d[5] / U, d[8] / U, d[9] / U]);
+  while (wakeLog.length && now - wakeLog[0][0] > 2000) wakeLog.shift();
+}
+// A wake that has not moved for two seconds is steady.
+function wakeSteady() {
+  if (wakeLog.length < 12 || wakeLog[wakeLog.length - 1][0] - wakeLog[0][0] < 1800) return false;
+  let mx = 0;
+  for (let i = 1; i < wakeLog.length; i++) for (let k = 1; k < 7; k++) mx = Math.max(mx, Math.abs(wakeLog[i][k] - wakeLog[i - 1][k]));
+  return mx < 0.0025;
+}
+
+/* ---------- picture ---------- */
+const COL = {
+  bg: linFit(0.1, 0.014, 255), haze: linFit(0.24, 0.02, 250).map(v => v * 0.05),
+  smoke: linFit(0.97, 0.014, 85), body: linFit(0.2, 0.012, 255), rim: linFit(0.92, 0.02, 85),
+};
+let frameN = 0, ringA = 0.06, ringGoal = 0.06;
+function glowPass() {
+  const f = F, [g0, g1] = f.glow;
+  let p = use(P.glowP, g0);
+  tex(p, 'uS', f.smoke[0].t);
+  draw();
+  for (const s of [1, 2.6]) {
+    p = use(P.blur, g1);
+    tex(p, 'uSrc', g0.t);
+    f2(p, 'uDir', s / g0.w, 0);
+    draw();
+    p = use(P.blur, g0);
+    tex(p, 'uSrc', g1.t);
+    f2(p, 'uDir', 0, s / g0.h);
+    draw();
+  }
+}
+function show() {
+  const f = F, p = use(P.show, null), d = size.dpr, s = 1 / (across * d);
+  tex(p, 'uS', f.smoke[0].t);
+  tex(p, 'uGlow', f.glow[0].t);
+  shapeUniforms(p, pose);
+  lineUniforms(p);
+  f2(p, 'uSSize', f.Mx, f.My);
+  f2(p, 'uRes', canvas.width, canvas.height);
+  // Device pixels to tunnel units; upright stages run the flow upward.
+  gl.uniformMatrix2fv(p.u('uM'), false, upright ? [0, -s, s, 0] : [s, 0, 0, s]);
+  f2(p, 'uB', 0, upright ? 1 : 0);
+  f1(p, 'uL', f.L);
+  f1(p, 'uPx', s);
+  f1(p, 'uT', flowT);
+  f1(p, 'uDyeK', 1.4 * tune('smear'));
+  f1(p, 'uExp', 2.1 * tune('exposure'));
+  f1(p, 'uGlowK', 0.55 * tune('glow'));
+  f1(p, 'uGrain', 0.03 * tune('grain'));
+  f1(p, 'uFrame', reduced() ? 0 : frameN % 65536);
+  gl.uniform3f(p.u('uBg'), ...COL.bg);
+  gl.uniform3f(p.u('uHaze'), ...COL.haze);
+  gl.uniform3f(p.u('uSmokeC'), ...COL.smoke);
+  gl.uniform3f(p.u('uBodyC'), ...COL.body);
+  gl.uniform3f(p.u('uRimC'), ...COL.rim);
+  gl.uniform3f(p.u('uRing'), cur.R + 0.03, ringA, pose.a);
+  const sh = SHAPES[cur.id];
+  f2(p, 'uMarks', ...sh.marks);
+  gl.uniform3f(p.u('uEye'), ...(sh.eye || [0, 0, 0]).map(v => v * SIZE));
+  draw();
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.7 });
+let voice = null;
+// Four seconds of stereo pink noise: the tunnel's rush.
+function pink(ac, sec) {
+  const n = Math.round(ac.sampleRate * sec), b = ac.createBuffer(2, n, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046;
+      b1 = 0.963 * b1 + w * 0.2965164;
+      b2 = 0.57 * b2 + w * 1.0526913;
+      d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.18;
+    }
+  }
+  return b;
+}
+// The voice: rush and hiss with the speed, a fan hum, a flutter with the wake.
+function makeVoice(ac) {
+  const bq = (type, f, q = 0.7) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const g = v => { const n = ac.createGain(); n.gain.value = v; return n; };
+  const src = ac.createBufferSource();
+  src.buffer = pink(ac, 4);
+  src.loop = true;
+  const out = kit.out;
+  const rushF = bq('lowpass', 400, 0.5), rushG = g(0);
+  src.connect(rushF).connect(rushG).connect(out);
+  const hissF = bq('highpass', 2800, 0.6), hissG = g(0);
+  src.connect(hissF).connect(hissG).connect(out);
+  const flutF = bq('bandpass', 150, 1.3), flutG = g(0), flutP = ac.createStereoPanner();
+  src.connect(flutF).connect(flutG).connect(flutP).connect(out);
+  const lfo = ac.createOscillator(), lfoG = g(0);
+  lfo.frequency.value = 11;
+  lfo.connect(lfoG).connect(flutG.gain);
+  const whF = bq('bandpass', 700, 1.4), whG = g(0);
+  src.connect(whF).connect(whG).connect(out);
+  const fan = ac.createOscillator(), fan2 = ac.createOscillator(), fanF = bq('lowpass', 190, 0.8), fanG = g(0), fan2G = g(0.35);
+  fan.type = fan2.type = 'sawtooth';
+  fan.frequency.value = 40;
+  fan2.frequency.value = 80.3;
+  fan.connect(fanF);
+  fan2.connect(fan2G).connect(fanF);
+  fanF.connect(fanG).connect(out);
+  src.start();
+  lfo.start();
+  fan.start();
+  fan2.start();
+  return { rushF, rushG, hissG, flutF, flutG, flutP, lfo, lfoG, whF, whG, fan, fan2, fanG };
+}
+function soundFrame() {
+  const ac = kit.live();
+  if (!ac) return;
+  voice ||= makeVoice(ac);
+  const t = ac.currentTime, w = wind, v = voice;
+  const set = (prm, x, tc = 0.12) => prm.setTargetAtTime(x, t, tc);
+  set(v.rushF.frequency, 240 + 2300 * w ** 1.5);
+  set(v.rushG.gain, 0.05 + 0.3 * w ** 1.4, 0.25);
+  set(v.hissG.gain, 0.003 + 0.045 * w ** 2.4, 0.25);
+  const hum = 32 + 44 * w;
+  set(v.fan.frequency, hum, 0.6);
+  set(v.fan2.frequency, hum * 2.006, 0.6);
+  set(v.fanG.gain, 0.02 + 0.035 * w, 0.4);
+  // The flutter swells with each whirl the wake sheds.
+  const fl = clamp(shedEnv * 2.2) * (0.35 + 0.65 * w);
+  set(v.flutG.gain, 0.32 * fl, 0.06);
+  set(v.lfoG.gain, 0.22 * fl, 0.06);
+  set(v.lfo.frequency, 7 + 9 * w, 0.3);
+  set(v.flutF.frequency, 110 + 120 * w, 0.3);
+  set(v.flutP.pan, clamp(shed * 1.5, -0.5, 0.5), 0.1);
+  const hs = clamp(handSpeed / 1.2);
+  set(v.whG.gain, 0.28 * hs, 0.05);
+  set(v.whF.frequency, 400 + 1800 * hs, 0.05);
+}
+// A short noise burst through a filter, with a fast attack and a fall.
+function burst(ac, at, { f, f2 = f, q = 1.2, dur, level, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.Q.value = q;
+  flt.frequency.setValueAtTime(f, at);
+  flt.frequency.exponentialRampToValueAtTime(f2, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + 0.012);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  src.connect(flt).connect(g).connect(kit.out);
+  src.start(at, Math.random() * Math.max(0, kit.noise.duration - dur - 0.05), dur + 0.05);
+}
+// The puff: the smoke pump breathes out.
+function puffSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.01, { f: 1900, f2: 420, q: 0.9, dur: 0.5, level: 0.32 });
+}
+// A new model clicks onto its mount.
+function clunkSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(150, at);
+  o.frequency.exponentialRampToValueAtTime(70, at + 0.12);
+  g.gain.setValueAtTime(0.35, at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 0.16);
+  o.connect(g).connect(kit.out);
+  o.start(at);
+  o.stop(at + 0.2);
+  burst(ac, at, { f: 2400, q: 1.5, dur: 0.03, level: 0.2 });
+}
+
+/* ---------- layout ---------- */
+// Wide stages run the flow left to right; tall ones run it upward.
+let size = { w: 1, h: 1, dpr: 1 }, upright = false, Lt = 16 / 9, across = 720;
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => resize() });
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  upright = w / h < 0.9;
+  across = upright ? w : h;
+  Lt = upright ? h / w : w / h;
+  const lv = GRID[D.level], Ny = Math.max(72, Math.min(lv.ny, Math.round(across * 0.5)));
+  if (F && F.Ny === Ny && F.k === lv.k && Math.abs(F.L - Lt) < 1e-4) { F.jac = lv.jac; return; }
+  const nf = allocate(Ny, lv.k, Lt);
+  nf.jac = lv.jac;
+  if (F) { resample(F, nf); free(F); }
+  F = nf;
+  if (!ready) return;
+  clampGoal();
+  Object.assign(pose, goal);
+  Object.assign(simPose, goal);
+}
+// Stage pixels to tunnel units.
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+const toTunnel = ([cx, cy]) => (upright ? [(size.h - cy) / size.w, 1 - cx / size.w] : [cx / size.h, (size.h - cy) / size.h]);
+
+/* ---------- frame loop ---------- */
+// Busy: 60 fps. Calm, two and a half seconds after the hand: 30 fps.
+// Steady: the sim stops; puffs still drift along the frozen lines.
+let raf = 0, visible = !document.hidden, ready = false, lastDraw = 0, acc = 0;
+let lastInput = 0, frozen = false, thawAt = 0, lastPuff = -1e9;
+function start() {
+  if (!raf && visible && ready) { lastDraw = performance.now() - 17; raf = requestAnimationFrame(frame); }
+}
+function poke() {
+  lastInput = performance.now();
+  if (frozen) { frozen = false; thawAt = lastInput; wakeLog.length = 0; }
+  start();
+}
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  const calm = !ptr && now - lastInput > 2500;
+  const gap = now - lastDraw;
+  if (gap < (calm ? 28 : 12)) return;
+  const dt = Math.min(gap / 1000, 0.1);
+  lastDraw = now;
+  if (!calm) D.frame(dt);
+  springs(dt);
+  let n = 0;
+  if (!frozen) {
+    acc += dt * 60;
+    n = Math.min(Math.floor(acc), 3);
+    acc = n === 3 ? 0 : acc - n;
+  } else flowT += dt;
+  if (n) { simulate(n); probe(); }
+  ringA += (ringGoal - ringA) * (1 - Math.exp(-dt / 0.15));
+  frameN++;
+  glowPass();
+  show();
+  soundFrame();
+  // Nothing moves and nothing is coming: stop the sim.
+  if (!frozen && calm && now - thawAt > 4000 && now - lastPuff > 9000 && wakeSteady()) frozen = true;
+}
+
+/* ---------- pointer ---------- */
+// On the model a press grabs it; off the model a drag turns it.
+// A press that does not move places the model there.
+let ptr = null;
+const grabR = () => 0.022 + 10 / across;
+function hover(t) {
+  const on = shapeDist(t[0], t[1]) < grabR();
+  stage.toggleAttribute('data-hover', on);
+  ringGoal = on ? 0.22 : 0.06;
+}
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const c = local(e), t = toTunnel(c);
+  const grab = shapeDist(t[0], t[1]) < grabR();
+  ptr = { id: e.pointerId, c0: c, mode: grab ? 'move' : 'press', off: [goal.x - t[0], goal.y - t[1]], last: Math.atan2(t[1] - pose.y, t[0] - pose.x), turn: 0, a0: goal.a };
+  if (grab) { stage.toggleAttribute('data-drag', true); glide = false; ringGoal = 0.3; }
+  poke();
+}
+function move(e) {
+  const c = local(e), t = toTunnel(c);
+  if (!ptr) { if (e.pointerType === 'mouse') { hover(t); poke(); } return; }
+  if (e.pointerId !== ptr.id) return;
+  if (ptr.mode === 'press' && Math.hypot(c[0] - ptr.c0[0], c[1] - ptr.c0[1]) > 6) {
+    ptr.mode = 'turn';
+    stage.toggleAttribute('data-drag', true);
+    ringGoal = 0.45;
+  }
+  if (ptr.mode === 'move') {
+    goal.x = t[0] + ptr.off[0];
+    goal.y = t[1] + ptr.off[1];
+    clampGoal();
+  } else if (ptr.mode === 'turn' && Math.hypot(t[0] - pose.x, t[1] - pose.y) > 0.03) {
+    // The model turns by the angle the hand sweeps round its pivot.
+    const a = Math.atan2(t[1] - pose.y, t[0] - pose.x);
+    let da = a - ptr.last;
+    da -= TAU * Math.round(da / TAU);
+    ptr.last = a;
+    ptr.turn += da;
+    goal.a = ptr.a0 + ptr.turn;
+  }
+  poke();
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup';
+  const t = toTunnel(ptr.c0);
+  ptr = null;
+  stage.removeAttribute('data-drag');
+  ringGoal = 0.06;
+  if (tap) { goal.x = t[0]; goal.y = t[1]; glide = true; clampGoal(); }
+  poke();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') { stage.removeAttribute('data-hover'); ringGoal = 0.06; } });
+// Arrow keys: up and down move the model across the screen; left and right turn it.
+stage.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'ArrowUp' || k === 'ArrowDown') {
+    const s = k === 'ArrowUp' ? 1 : -1;
+    if (upright) goal.x += s * 0.04; else goal.y += s * 0.03;
+    glide = true;
+    clampGoal();
+  } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    goal.a += (k === 'ArrowLeft' ? 1 : -1) * 5 * DEG;
+  } else return;
+  e.preventDefault();
+  poke();
+});
+
+/* ---------- actions ---------- */
+// A new model keeps its place and takes its own starting angle.
+act.pick = () => {
+  useShape(shapeId);
+  goal.a = pose.a = simPose.a = SHAPES[shapeId].angle;
+  clampGoal();
+  clunkSound();
+  poke();
+};
+act.wind = () => poke();
+act.lines = () => poke();
+act.puff = () => {
+  puffs[puffI++ % 4] = flowT + 0.03;
+  lastPuff = performance.now();
+  puffSound();
+  poke();
+};
+act.reset = () => {
+  wind = 0.5;
+  ui.slider?.set(0.5);
+  Object.assign(goal, home(), { a: SHAPES[shapeId].angle });
+  clampGoal();
+  Object.assign(pose, goal);
+  fill(F);
+  poke();
+};
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders compile and the first frame draws.
+useShape(shapeId);
+resize();
+Object.assign(goal, home(), { a: SHAPES[shapeId].angle });
+clampGoal();
+Object.assign(pose, goal);
+fill(F);
+simulate(1);
+glowPass();
+show();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+poke();
+
+new ResizeObserver(() => { resize(); if (ready) poke(); }).observe(stage);
+onReducedChange(() => poke());
+// A hidden tab stops the loop, the sim clock and the sound.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  if (sound.on) kit.wake();
+  poke();
+});
+</script>
+</body>
+</html>

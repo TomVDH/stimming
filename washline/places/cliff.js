@@ -9,8 +9,9 @@ import { flyby } from './cliff-flyby.js';
 
 const LINE_Z = 0;
 const SEA = -60;
-const EYE = [0, 1.3, 9];
-const EYE_PHONE = [0, 1.3, 17];
+// A wide shot: the line, the turf and the bay together.
+const EYE = [0, 1.4, 14];
+const EYE_PHONE = [0, 1.35, 22];
 // The lantern height comes from the headland under it.
 const LAMP = [455, 0, -1300];
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -50,25 +51,51 @@ export default {
   sky: { zen: [0.42, 0.09, 255], hor: [0.84, 0.07, 55], haze: [0.78, 0.05, 60], clouds: 0, warm: 1 },
   amb: { hi: [0.75, 0.04, 250], lo: [0.5, 0.04, 120] },
   cord: [0.05, 0.05, 0.05],
-  hangFrom: 0.5,
-  start: 3,
   // Three's own fog stays off; the air shader does this work.
   fog: [1e6, 2e6],
   // Vignette and film grain, before tone mapping.
   grade: { vig: 0.3, vigIn: 0.5, grain: 0.022 },
   fill: 1.3,
+  // The wash: shape 1 shirt, 2 trousers, 3 dress, 4 sock, 5 fringed towel, else a plain sheet.
+  // pat 1 stripes down, 2 across, 3 check, 4 dots, 5 two bands; s is the repeat in metres.
+  // kg is weight per square metre, bend the stiffness: jeans and towels hang heavy.
   wash: [
-    { w: 1.4, h: 1.1, c: [0.95, 0.01, 90] },
-    { w: 0.75, h: 1.0, c: [0.55, 0.1, 250] },
-    { w: 0.9, h: 0.65, c: [0.75, 0.1, 30] },
-    { w: 0.6, h: 0.45, c: [0.85, 0.08, 95] },
+    { w: 1.35, h: 1.15, c: [0.94, 0.02, 85], kg: 0.38 },
+    { w: 0.82, h: 0.74, shape: 1, c: [0.92, 0.03, 240], c2: [0.5, 0.12, 258], pat: 1, s: 0.035, kg: 0.3 },
+    { w: 0.46, h: 1.0, shape: 2, c: [0.44, 0.09, 255], kg: 0.75, bend: 0.55 },
+    { w: 0.7, h: 0.5, shape: 5, c: [0.7, 0.15, 32], c2: [0.95, 0.02, 90], pat: 5, kg: 0.6, bend: 0.45 },
+    { w: 0.12, h: 0.3, shape: 4, c: [0.84, 0.12, 88], c2: [0.42, 0.03, 250], pat: 2, s: 0.04, kg: 0.5 },
+    { w: 0.12, h: 0.3, shape: 4, c: [0.84, 0.12, 88], c2: [0.42, 0.03, 250], pat: 2, s: 0.04, kg: 0.5 },
   ],
-  palette: [[0.95, 0.01, 90], [0.55, 0.1, 250], [0.75, 0.1, 30], [0.85, 0.08, 95], [0.6, 0.08, 150], [0.4, 0.03, 250]],
+  hangFrom: 0.3,
+  start: 6,
+  // + Piece draws from here; a garment with its own colours keeps them.
+  wardrobe: [
+    { w: 1.3, h: 1.1, kg: 0.38 },
+    { w: 0.72, h: 0.52, pat: 3, s: 0.08, kg: 0.32 },
+    { w: 0.5, h: 0.7, pat: 3, s: 0.045, kg: 0.42 },
+    { w: 0.42, h: 0.42, pat: 2, s: 0.05, kg: 0.36 },
+    { w: 0.78, h: 0.7, shape: 1, kg: 0.3 },
+    { w: 0.8, h: 0.74, shape: 1, pat: 1, s: 0.03, kg: 0.3 },
+    { w: 0.46, h: 0.42, shape: 1, pat: 2, s: 0.06, kg: 0.28 },
+    { w: 0.46, h: 1.0, shape: 2, c: [0.44, 0.09, 255], kg: 0.75, bend: 0.55 },
+    { w: 0.42, h: 0.46, shape: 2, kg: 0.5, bend: 0.4 },
+    { w: 0.62, h: 0.95, shape: 3, pat: 4, s: 0.06, kg: 0.3 },
+    { w: 0.6, h: 0.9, shape: 3, kg: 0.3 },
+    { w: 0.9, h: 0.6, shape: 5, pat: 5, kg: 0.62, bend: 0.45 },
+    { w: 0.6, h: 0.42, shape: 5, kg: 0.58, bend: 0.4 },
+    { w: 0.12, h: 0.3, shape: 4, pat: 2, s: 0.035, kg: 0.5 },
+    { w: 0.11, h: 0.28, shape: 4, kg: 0.5 },
+  ],
+  palette: [
+    [0.95, 0.01, 90], [0.9, 0.04, 80], [0.82, 0.07, 230], [0.48, 0.12, 258], [0.62, 0.19, 28], [0.72, 0.15, 35],
+    [0.84, 0.13, 88], [0.68, 0.08, 150], [0.72, 0.09, 300], [0.8, 0.1, 355], [0.38, 0.02, 250], [0.6, 0.09, 200],
+  ],
 
   // Under the line, so the washing stands against the dawn sky.
   frame(cam, aspect) {
     const phone = aspect < 1, eye = phone ? EYE_PHONE : EYE;
-    cam.fov = phone ? 64 : 38;
+    cam.fov = phone ? 66 : 46;
     cam.near = 0.1;
     cam.far = 45000;
     cam.aspect = aspect;

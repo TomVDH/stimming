@@ -11,7 +11,7 @@ const SIL = 'oklch(0.2 0.045 282)';
 
 export const SHOTS = {
   eastvan: [
-    // Straight up a power pole at dusk: wires to every corner, one crow.
+    // Straight up a power pole at dusk: wires to every corner. No birds (Tom, 2026-11-15).
     ['Wires', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.13 290)'], [0.55, 'oklch(0.68 0.17 20)'], [1, 'oklch(0.88 0.14 80)']])}"/>
       <circle cx="18" cy="92" r="26" fill="oklch(0.95 0.1 90 / 0.35)" filter="${k.blur}"/><circle cx="18" cy="92" r="11" fill="oklch(0.97 0.08 95)"/>
       <g fill="none" stroke="oklch(0.2 0.04 290)" stroke-width="0.9" stroke-linecap="round"><path d="M23 27Q-10 44 -70 34M23 27Q0 2 -30 -70M81 21Q120 34 170 16M81 21Q104 -10 120 -70M32 46Q-10 70 -70 76M73 41Q120 66 170 70M23 27Q60 78 170 110"/></g>
@@ -19,7 +19,6 @@ export const SHOTS = {
       <path d="${P([[19, 26], [83, 19.5], [83, 24.5], [19, 31]])}M${[[29, 44.5], [75, 40], [75, 44.5], [29, 49]].map(p => p.join(' ')).join('L')}Z" fill="oklch(0.2 0.04 40)"/>
       <path d="M21 21h3.4v6h-3.4zM34 19.6h3.4v6h-3.4zM64 16.6h3.4v6h-3.4zM78 15.2h3.4v6h-3.4z" fill="oklch(0.3 0.05 250)"/>
       <rect x="55" y="50" width="11" height="15" rx="3" fill="oklch(0.22 0.03 270)"/>
-      <path d="M57 11C57 5.5 61 3 65.5 3.4C66.6 1 69.8 0.4 71.6 2L75 3L72 4.4C72.2 8.6 69.4 12 65 13.2L55 16.6Z" fill="oklch(0.16 0.04 290)"/>
       <path d="M-8 44.6V56" stroke="oklch(0.9 0.02 90)" stroke-width="0.6"/><path d="M-12 56h6l2 3.4l4.6 1.4v3.4h-12.6z" fill="oklch(0.62 0.2 25)"/>`, { zoom: 0.82 }],
     // A crow fills the frame; the street behind is out of focus.
     ['Crow', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.6 0.11 205)'], [0.6, 'oklch(0.86 0.07 165)'], [1, 'oklch(0.92 0.08 100)']])}"/>
@@ -138,7 +137,7 @@ export const SHOTS = {
       <path d="M64 44L76 20" stroke="${SIL}" stroke-width="0.8"/><path d="M76 20l3 1.4l-2.6 5.2l-3 -1.4z" fill="${SIL}"/><path d="M79 21.4l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.88 0.16 95)"/><path d="M82 22.8l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.58 0.21 27)"/>
       <path d="M-4 24Q8 10 22 22Q32 12 46 20Q34 18 26 28Q22 34 16 28Q8 20 -4 24Z" fill="${SIL}"/>
       <path d="M84 60q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
-    // Up a flagpole: the three colours fly in the middle of the frame.
+    // Up a flagpole: the three colours fly in the middle of the frame. No birds.
     // The sky is turquoise, so Belgium does not share East Van's dusk.
     ['Flag', -1, k => {
       const X0 = 27.5, wave = x => 3.4 * Math.sin((x - X0) / 6.4) + (x - X0) * 0.1;
@@ -151,13 +150,11 @@ export const SHOTS = {
       return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.38 0.1 218)'], [0.6, 'oklch(0.72 0.11 196)'], [1, 'oklch(0.95 0.07 172)']])}"/>
       <circle cx="84" cy="96" r="26" fill="oklch(0.99 0.05 170 / 0.45)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.03 170)"/>
       <g fill="none" stroke="${SIL}" stroke-width="0.8" stroke-linecap="round"><path d="M-70 96L170 110M-70 104L170 120"/></g>
-      <g fill="${SIL}"><path d="M61 107.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M73 108.2q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/></g>
       ${strip(27.5, 42.5, 'oklch(0.2 0.02 280)')}${strip(42.5, 57.5, 'oklch(0.9 0.17 96)')}${strip(57.5, 72.5, 'oklch(0.58 0.22 27)')}
       ${strip(32, 35, 'oklch(1 0 0 / 0.1)')}${strip(39.5, 42.5, 'oklch(0 0 0 / 0.2)')}${strip(51.5, 56, 'oklch(0 0 0 / 0.16)')}${strip(60.5, 63.5, 'oklch(1 0 0 / 0.16)')}${strip(69.5, 72.5, 'oklch(0 0 0 / 0.18)')}
       <path d="${P([[21.6, 170], [30.4, 170], [27.6, 22], [25.6, 22]])}" fill="${SIL}"/>
       <path d="M27.8 34Q33 90 29 136" fill="none" stroke="${SIL}" stroke-width="0.6"/><path d="M28 134h3.4v2.2h-3.4z" fill="${SIL}"/>
-      <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>
-      <path d="M70 14q3 -3.4 6 0q3 -3.4 6 0M84 28q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`;
+      <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>`;
     }, { zoom: 0.82 }],
   ],
   // The theme series and the proposed ones. Each subject is whole and sits in
@@ -210,15 +207,76 @@ export const SHOTS = {
       <circle cx="46" cy="58" r="1.8" fill="oklch(0.93 0.15 95)"/>`],
   ],
   vistas: [
+    // Every Vistas shot paints from a colourway `k.c`: sky (top, middle, foot),
+    // sun, far, mid, near and one accent. Each shot names its own; the sheet's
+    // Colours knob can put any colourway on all of them.
     // A film still: black bars above and below, a low sun over the water, one long flare.
     ['Vista', 1, k => `<rect ${FIELD} fill="oklch(0.1 0.01 275)"/>
-      <rect x="-70" y="30" width="240" height="40" fill="${k.lin([[0, 'oklch(0.36 0.12 285)'], [0.5, 'oklch(0.66 0.17 20)'], [0.62, 'oklch(0.9 0.13 78)'], [0.63, 'oklch(0.5 0.12 300)'], [1, 'oklch(0.24 0.08 285)']])}"/>
-      <path d="M-70 55L10 52L24 44L34 50L46 40L58 50L70 46L84 53L170 55Z" fill="oklch(0.28 0.08 295)"/>
-      <circle cx="56" cy="52" r="14" fill="oklch(0.98 0.08 90 / 0.45)" filter="${k.blur}"/><path d="M48 55A8 8 0 0 1 64 55Z" fill="oklch(0.99 0.05 95)"/>
-      <path d="M50 58h12M52 61h8M49 64.4h14M53 67.6h6" stroke="oklch(0.97 0.09 88 / 0.8)" stroke-width="1" stroke-linecap="round"/>
-      <path d="M-70 52H170" stroke="oklch(0.86 0.1 235 / 0.9)" stroke-width="0.7"/><path d="M26 52H86" stroke="oklch(0.95 0.06 230)" stroke-width="1.5" stroke-linecap="round"/>
-      <circle cx="40" cy="45" r="2.6" fill="oklch(0.9 0.1 200 / 0.4)"/><circle cx="32" cy="41" r="1.4" fill="oklch(0.95 0.1 60 / 0.5)"/>
-      <path d="M24 39q2 -2.4 4 0q2 -2.4 4 0M68 36q1.6 -2 3.2 0q1.6 -2 3.2 0" stroke="oklch(0.14 0.03 285)" stroke-width="0.8" fill="none" stroke-linecap="round"/>`],
+      <rect x="-70" y="30" width="240" height="40" fill="${k.lin([[0, k.c.sky[0]], [0.5, k.c.sky[1]], [0.62, k.c.sky[2]], [0.63, k.c.mid], [1, k.c.near]])}"/>
+      <path d="M-70 55L10 52L24 44L34 50L46 40L58 50L70 46L84 53L170 55Z" fill="${k.c.near}"/>
+      <circle cx="56" cy="52" r="14" fill="${k.c.sun}" fill-opacity="0.45" filter="${k.blur}"/><path d="M48 55A8 8 0 0 1 64 55Z" fill="${k.c.sun}"/>
+      <path d="M50 58h12M52 61h8M49 64.4h14M53 67.6h6" stroke="${k.c.sun}" stroke-opacity="0.8" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 52H170" stroke="oklch(0.92 0.05 230 / 0.9)" stroke-width="0.7"/><path d="M26 52H86" stroke="oklch(0.98 0.02 230)" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="40" cy="45" r="2.6" fill="oklch(1 0 0 / 0.3)"/><circle cx="32" cy="41" r="1.4" fill="${k.c.accent}" fill-opacity="0.6"/>`, { pal: 'Teal' }],
+    // One peak with snow on it, the sun behind, and its picture in the lake.
+    ['Peak', 1, k => `<rect ${FIELD} fill="${k.lin([[0, k.c.sky[0]], [0.5, k.c.sky[1]], [0.72, k.c.sky[2]]])}"/>
+      <circle cx="62" cy="40" r="20" fill="${k.c.sun}" fill-opacity="0.4" filter="${k.blur}"/><circle cx="62" cy="40" r="11" fill="${k.c.sun}"/>
+      <path d="${P([[50, 22], [80, 68], [20, 68]])}" fill="${k.c.mid}"/><path d="${P([[50, 22], [80, 68], [55, 68], [57, 46]])}" fill="oklch(0 0 0 / 0.2)"/>
+      <path d="M50 22L58.4 35L54.4 33L51.6 38.6L47.2 33.6L42.6 36.4Z" fill="oklch(0.99 0.005 250)"/>
+      <rect x="-70" y="68" width="240" height="120" fill="${k.c.far}"/>
+      <path d="${P([[20, 68], [80, 68], [50, 92]])}" fill="${k.c.mid}" fill-opacity="0.55"/>
+      <path d="M26 73h14M48 77h16M34 81h10M58 72h12M44 85h12" stroke="${k.c.sun}" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 68Q10 62 26 67L30 60L34 67Q50 70 66 67L70 61L74 67Q100 64 170 68V70H-70Z" fill="${k.c.near}"/>`, { pal: 'Day' }],
+    // A coin viewer at a lookout, turned to the sea.
+    ['Viewer', -1, k => `<rect ${FIELD} fill="${k.lin([[0, k.c.sky[0]], [0.55, k.c.sky[1]], [0.7, k.c.sky[2]]])}"/>
+      <circle cx="28" cy="64" r="16" fill="${k.c.sun}" fill-opacity="0.45" filter="${k.blur}"/><path d="M19 64A9 9 0 0 1 37 64Z" fill="${k.c.sun}"/>
+      <rect x="-70" y="64" width="240" height="120" fill="${k.c.far}"/><path d="M16 68h24M22 72h14M56 69h18M66 74h12" stroke="${k.c.sun}" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 82H170V170H-70Z" fill="${k.c.near}"/>
+      <path d="${P([[44, 82], [60, 82], [56.6, 78], [47.4, 78]])}" fill="oklch(0.18 0.03 270)"/><rect x="50.2" y="54" width="3.6" height="25" fill="oklch(0.18 0.03 270)"/>
+      <rect x="47.4" y="60" width="9.2" height="8" rx="1.6" fill="${k.c.accent}"/><rect x="50.4" y="62.4" width="3.2" height="0.9" fill="oklch(0.18 0.03 270)"/>
+      <g transform="rotate(-10 52 44)"><path d="M44 52V46M60 52V46" stroke="oklch(0.18 0.03 270)" stroke-width="2.4"/><path d="M44 52H60" stroke="oklch(0.18 0.03 270)" stroke-width="2.4" stroke-linecap="round"/>
+        <rect x="32" y="35" width="38" height="16" rx="8" fill="oklch(0.9 0.02 240)"/><path d="M40 35H62A8 8 0 0 1 70 43H32A8 8 0 0 1 40 35Z" fill="oklch(0.98 0.008 240)"/>
+        <ellipse cx="33.6" cy="43" rx="3.4" ry="7.4" fill="oklch(0.22 0.04 260)"/><ellipse cx="33" cy="41" rx="1.2" ry="2.8" fill="oklch(0.8 0.08 220)"/>
+        <rect x="68" y="38" width="6" height="4.4" rx="1.6" fill="oklch(0.22 0.04 260)"/><rect x="68" y="44" width="6" height="4.4" rx="1.6" fill="oklch(0.22 0.04 260)"/></g>`, { pal: 'Sand' }],
+    // A road that runs straight to the sun.
+    ['Road', 1, k => `<rect ${FIELD} fill="${k.lin([[0.1, k.c.sky[0]], [0.45, k.c.sky[1]], [0.6, k.c.sky[2]]])}"/>
+      <circle cx="50" cy="56" r="26" fill="${k.c.sun}" fill-opacity="0.4" filter="${k.blur}"/><path d="M36 56A14 14 0 0 1 64 56Z" fill="${k.c.sun}"/>
+      <path d="M-70 56Q6 44 38 56ZM62 56Q90 46 170 56Z" fill="${k.c.far}"/>
+      <rect x="-70" y="56" width="240" height="120" fill="${k.c.mid}"/>
+      <path d="${P([[48.8, 56], [51.2, 56], [80, 112], [20, 112]])}" fill="${k.c.near}"/>
+      <path d="M48.8 56L20 112M51.2 56L80 112" stroke="oklch(0.97 0.02 90 / 0.75)" stroke-width="0.9"/>
+      <path d="${P([[49.7, 59], [50.3, 59], [50.5, 62.4], [49.5, 62.4]])}${P([[49.3, 65.6], [50.7, 65.6], [51.1, 71], [48.9, 71]])}${P([[48.7, 75.6], [51.3, 75.6], [52, 84], [48, 84]])}${P([[47.6, 90], [52.4, 90], [53.6, 104], [46.4, 104]])}" fill="${k.c.accent}"/>`, { pal: 'Ember' }],
+    // Hills behind hills: five bands from far to near under one sun.
+    // Tom's pick for Vistas, in Mint (2026-11-15).
+    ['Layers', -1, k => `<rect ${FIELD} fill="${k.lin([[0.1, k.c.sky[0]], [0.4, k.c.sky[1]], [0.56, k.c.sky[2]]])}"/>
+      <circle cx="60" cy="36" r="20" fill="${k.c.sun}" fill-opacity="0.4" filter="${k.blur}"/><circle cx="60" cy="36" r="9.6" fill="${k.c.sun}"/>
+      ${['M-70 50Q10 38 36 46T80 42T170 48V170H-70Z', 'M-70 58Q0 50 30 56T72 50T170 58V170H-70Z', 'M-70 66Q14 56 44 64T90 60T170 66V170H-70Z', 'M-70 74Q4 66 34 73T78 68T170 76V170H-70Z', 'M-70 84Q20 74 50 82T100 78T170 84V170H-70Z']
+    .map((d, i) => `<path d="${d}" fill="color-mix(in oklch, ${k.c.far} ${100 - i * 25}%, ${k.c.near})"/>`).join('')}`, { pal: 'Mint' }],
+    // A view in a viewfinder: four corner marks round a small sun and hill.
+    ['Frame', 1, k => `<rect ${FIELD} fill="${k.lin([[0.1, k.c.sky[0]], [0.5, k.c.sky[1]], [0.7, k.c.sky[2]]])}"/>
+      <circle cx="54" cy="52" r="18" fill="${k.c.sun}" fill-opacity="0.45" filter="${k.blur}"/><circle cx="54" cy="52" r="8" fill="${k.c.sun}"/>
+      <path d="M-70 60Q20 46 44 58T170 54V170H-70Z" fill="${k.c.mid}"/><path d="M-70 70Q30 60 60 68T170 66V170H-70Z" fill="${k.c.near}"/>
+      <path d="M27 40V30H37M63 30H73V40M73 62V72H63M37 72H27V62" fill="none" stroke="oklch(0.99 0.01 90)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M46 51H54M50 47V55" stroke="oklch(0.99 0.01 90)" stroke-width="1.2" stroke-linecap="round"/><circle cx="68" cy="35.4" r="1.9" fill="${k.c.accent}"/>`, { pal: 'Mono' }],
+    // A clapperboard; the slate shows a small horizon.
+    ['Clapper', -1, k => {
+      const bar = `<rect x="27" y="35" width="46" height="8.4" rx="1.6" fill="oklch(0.14 0.02 275)"/>${[0, 1, 2, 3].map(i => `<path d="M${31 + i * 11.4} 35h5.6l-4 8.4h-5.6z" fill="oklch(0.98 0.008 90)"/>`).join('')}`;
+      return `<rect ${FIELD} fill="${k.lin([[0, k.c.sky[0]], [0.6, k.c.sky[1]], [1, k.c.sky[2]]])}"/>
+      <rect x="27" y="44" width="46" height="30" rx="2.6" fill="oklch(0.14 0.02 275)"/>
+      <path d="M33 66H67" stroke="oklch(0.98 0.008 90)" stroke-width="1.5" stroke-linecap="round"/><path d="M42 66A8 8 0 0 1 58 66" fill="none" stroke="${k.c.accent}" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M50 52V55M41.4 55.4L43.4 57.6M58.6 55.4L56.6 57.6" stroke="${k.c.accent}" stroke-width="1.4" stroke-linecap="round"/>
+      ${bar}<g transform="rotate(-20 27 35)"><g transform="translate(0 -8.4)">${bar}</g></g>
+      <circle cx="27.6" cy="35" r="2" fill="${k.c.accent}"/>`;
+    }, { pal: 'Night' }],
+    // Field glasses; each lens holds its own small view.
+    ['Glasses', 1, k => {
+      const lens = x => `<circle cx="${x}" cy="52" r="14" fill="oklch(0.18 0.03 275)"/><circle cx="${x}" cy="52" r="10.6" fill="${k.lin([[0.1, k.c.sky[0]], [0.55, k.c.sky[1]], [0.75, k.c.sky[2]]])}"/>
+        <circle cx="${x + 2}" cy="53" r="3" fill="${k.c.sun}"/><path d="M${x - 10.1} 55A10.6 10.6 0 0 0 ${x + 10.1} 55Z" fill="${k.c.near}"/>
+        <path d="M${x - 7.4} 47a8.6 8.6 0 0 1 5 -4.6" fill="none" stroke="oklch(1 0 0 / 0.75)" stroke-width="1.6" stroke-linecap="round"/>`;
+      return `<rect ${FIELD} fill="${k.lin([[0, k.c.mid], [1, k.c.far]])}"/>
+      <rect x="44" y="45" width="12" height="10" rx="2" fill="oklch(0.28 0.03 275)"/><circle cx="50" cy="40" r="3.6" fill="oklch(0.28 0.03 275)"/><circle cx="50" cy="40" r="1.4" fill="${k.c.accent}"/>
+      ${lens(36)}${lens(64)}`;
+    }, { pal: 'Rose' }],
   ],
   poke: [
     // One big red button; someone has just let go.
@@ -266,6 +324,17 @@ export const TILTS = { Slight: 7, Dutch: 15, Wild: 26 };
 // The Hex frames crop the shot to a hexagon; Ring and Askew keep the outline apart.
 export const FRAMES = ['Thin', 'Hex', 'Hex flat', 'Hex ring', 'Hex askew', 'Circle', 'Print', 'Viewfinder', 'Bare'];
 export const LINES = ['Light', 'Series'];
+// Colourways for the Vistas shots: sky (top, middle, foot), sun, far, mid, near, accent.
+export const PALETTES = {
+  Teal: { sky: ['oklch(0.28 0.07 220)', 'oklch(0.54 0.09 200)', 'oklch(0.86 0.12 70)'], sun: 'oklch(0.97 0.09 80)', far: 'oklch(0.5 0.08 205)', mid: 'oklch(0.36 0.07 215)', near: 'oklch(0.2 0.05 228)', accent: 'oklch(0.76 0.17 50)' },
+  Day: { sky: ['oklch(0.6 0.14 250)', 'oklch(0.78 0.09 228)', 'oklch(0.95 0.04 205)'], sun: 'oklch(0.99 0.04 100)', far: 'oklch(0.7 0.1 215)', mid: 'oklch(0.6 0.13 155)', near: 'oklch(0.38 0.11 152)', accent: 'oklch(0.9 0.16 95)' },
+  Sand: { sky: ['oklch(0.62 0.1 238)', 'oklch(0.84 0.07 85)', 'oklch(0.95 0.06 88)'], sun: 'oklch(0.99 0.04 95)', far: 'oklch(0.66 0.09 215)', mid: 'oklch(0.72 0.11 62)', near: 'oklch(0.52 0.11 45)', accent: 'oklch(0.62 0.2 27)' },
+  Ember: { sky: ['oklch(0.26 0.09 18)', 'oklch(0.56 0.19 34)', 'oklch(0.88 0.15 86)'], sun: 'oklch(0.98 0.08 96)', far: 'oklch(0.52 0.15 28)', mid: 'oklch(0.36 0.12 18)', near: 'oklch(0.18 0.06 12)', accent: 'oklch(0.93 0.15 95)' },
+  Mint: { sky: ['oklch(0.24 0.07 282)', 'oklch(0.5 0.13 182)', 'oklch(0.88 0.14 152)'], sun: 'oklch(0.98 0.07 150)', far: 'oklch(0.62 0.11 185)', mid: 'oklch(0.4 0.09 225)', near: 'oklch(0.2 0.06 268)', accent: 'oklch(0.9 0.16 140)' },
+  Mono: { sky: ['oklch(0.22 0 0)', 'oklch(0.5 0 0)', 'oklch(0.86 0 0)'], sun: 'oklch(0.98 0 0)', far: 'oklch(0.62 0 0)', mid: 'oklch(0.4 0 0)', near: 'oklch(0.18 0 0)', accent: 'oklch(0.66 0.22 27)' },
+  Night: { sky: ['oklch(0.15 0.05 272)', 'oklch(0.26 0.08 266)', 'oklch(0.44 0.1 250)'], sun: 'oklch(0.95 0.03 250)', far: 'oklch(0.38 0.07 258)', mid: 'oklch(0.26 0.06 265)', near: 'oklch(0.13 0.04 272)', accent: 'oklch(0.93 0.15 95)' },
+  Rose: { sky: ['oklch(0.3 0.1 275)', 'oklch(0.62 0.17 345)', 'oklch(0.9 0.13 76)'], sun: 'oklch(0.985 0.06 94)', far: 'oklch(0.62 0.12 322)', mid: 'oklch(0.42 0.1 302)', near: 'oklch(0.22 0.06 285)', accent: 'oklch(0.93 0.15 95)' },
+};
 
 const HEX = [[50, 2], [91.57, 26], [91.57, 74], [50, 98], [8.43, 74], [8.43, 26]];
 const grow = (pts, k) => pts.map(([x, y]) => [50 + (x - 50) * k, 50 + (y - 50) * k]);
@@ -290,7 +359,7 @@ const frameOf = name => {
   return [SQUARE, name === 'Thin' ? SQUARE : null];
 };
 
-// One icon: key, motif and the knobs { tilt, frame, line }; `c` is the series colour.
+// One icon: key, motif and the knobs { tilt, frame, line, pal }; `c` is the series colour.
 export function shotIcon(key, label, opt) {
   const list = SHOTS[key];
   if (!list) return '';
@@ -306,6 +375,8 @@ export function shotIcon(key, label, opt) {
     // A top-to-bottom gradient over the shape's own box.
     lin: stops => grad('linearGradient', 'x1="0" y1="0" x2="0" y2="1"', stops),
     rad: (stops, cx, cy, r) => grad('radialGradient', `cx="${cx}" cy="${cy}" r="${r}"`, stops),
+    // The colourway: the knob's, else the shot's own.
+    c: PALETTES[opt.pal] || PALETTES[extra.pal] || PALETTES.Rose,
   };
   // A shot may ask for a zoom: under 1 shows more of the scene.
   const body = draw(k), ang = dir * (TILTS[opt.tilt] ?? 15), zoom = extra.zoom ? ` translate(50 50) scale(${extra.zoom}) translate(-50 -50)` : '';
@@ -328,7 +399,7 @@ export function shotPicks() {
   try { p = JSON.parse(localStorage.getItem(SHOT_KEY)) || {}; } catch (e) {}
   return {
     // A save from before the Hex ring pick takes the new defaults.
-    tilt: TILTS[p.tilt] ? p.tilt : 'Dutch', frame: p.v === 3 && FRAMES.includes(p.frame) ? p.frame : 'Hex ring', line: p.v === 3 && LINES.includes(p.line) ? p.line : 'Series',
+    tilt: TILTS[p.tilt] ? p.tilt : 'Dutch', frame: p.v === 3 && FRAMES.includes(p.frame) ? p.frame : 'Hex ring', line: p.v === 3 && LINES.includes(p.line) ? p.line : 'Series', pal: PALETTES[p.pal] ? p.pal : 'As drawn',
     ...Object.fromEntries(Object.keys(SHOTS).map(key => [key, SHOTS[key].some(([l]) => l === p[key]) ? p[key] : SHOTS[key][0][0]])),
   };
 }

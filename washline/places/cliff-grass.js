@@ -21,7 +21,7 @@ function stripGeo(S) {
 const VERT_COMMON = /* glsl */ `
   uniform float uT; uniform vec3 uWind;
   attribute vec4 aBlade;
-  varying float vTip;
+  varying float vTip, vGust;
   float gH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float gN(vec2 p) {
     vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -34,13 +34,17 @@ const VERT_BLADE = /* glsl */ `
   float bH = aBlade.x, bW = aBlade.y, bLean = aBlade.z, bPh = aBlade.w;
   vec3 bIp = instanceMatrix[3].xyz;
   mat3 bRot = mat3(instanceMatrix);
-  // A gust field drifts downwind; each blade adds its own flutter.
+  // Gusts roll downwind as bands about seven metres apart, broken up by noise.
+  // Each blade adds its own flutter.
   float bWs = length(uWind);
   vec2 bDir = bWs > 1e-5 ? uWind.xz / bWs : vec2(0.0, 1.0);
-  vec2 bG = bIp.xz * 0.11 - bDir * uT * (0.6 + 2.2 * bWs);
-  float bGust = 0.65 * gN(bG) + 0.35 * gN(bG * 2.3 + 7.1);
+  vec2 bG = bIp.xz * 0.09 - bDir * uT * (0.8 + 3.0 * bWs);
+  float bNoise = 0.6 * gN(bG) + 0.4 * gN(bG * 2.3 + 7.1);
+  float bWave = 0.5 + 0.5 * sin(dot(bIp.xz, bDir) * 0.9 - uT * (2.2 + 6.0 * bWs) + bNoise * 3.0);
+  float bGust = mix(bNoise, bWave, 0.55);
   float bFl = 0.12 * sin(uT * (5.0 + 3.0 * bPh) + bPh * 6.28);
-  vec3 bWl = transpose(bRot) * uWind * 3.0 * (bGust * 1.4 + 0.15 + bFl);
+  vec3 bWl = transpose(bRot) * uWind * 6.0 * (bGust * 1.6 + 0.12 + bFl);
+  vGust = bGust;
   // Quadratic bezier: root, a control point, the tip pushed by the wind.
   vec3 bP2 = vec3(0.0, 0.0, bH * bLean) + bWl * bH;
   float bOff = length(bP2.xz);
@@ -56,7 +60,7 @@ const VERT_BLADE = /* glsl */ `
   vec3 objectNormal = normalize(bN + bSide * bS * 1.6);
   vTip = bT;`;
 
-export function grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt, eye = [0, 9] }) {
+export function grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt, eye = [0, 14] }) {
   // Clumps: one jittered point per 0.6 m cell; a blade joins the nearest.
   const CELL = 0.6;
   const hash = (a, b, k) => { const s = Math.sin(a * 127.1 + b * 311.7 + k * 74.7) * 43758.5453; return s - Math.floor(s); };
@@ -77,9 +81,9 @@ export function grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt, eye = [0, 9]
   for (let i = 0; i < 160000; i++) {
     let x, z;
     if (i < 115000) {
-      const d = 3 + 30 * Math.pow(R(), 1.9), a = (R() - 0.5) * 1.6;
-      x = d * Math.sin(a); z = 10 - d * Math.cos(a);
-    } else { x = (R() - 0.5) * 9; z = 7 + 10 * R(); }
+      const d = 2.5 + 32 * Math.pow(R(), 1.9), a = (R() - 0.5) * 1.8;
+      x = d * Math.sin(a); z = eye[1] - d * Math.cos(a);
+    } else { x = (R() - 0.5) * 10; z = 9 + 12 * R(); }
     if (z < edgeZ(x) + 0.4 || wallAt(x, z) < 0.45) continue;
     const c = clumpOf(x, z);
     // Most clumps are short sea turf; a few grow into longer tufts.
@@ -105,11 +109,13 @@ export function grass(group, u, R, { heightAt, edgeZ, wallAt, aoAt, eye = [0, 9]
       .replace('#include <beginnormal_vertex>', VERT_BLADE)
       .replace('#include <begin_vertex>', 'vec3 transformed = bPos;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uTrans; varying float vTip;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uTrans; varying float vTip, vGust;')
       // Dark at the root, a touch paler toward the tip.
       .replace('#include <color_fragment>', `#include <color_fragment>
         float gTip = clamp(vTip, 0.0, 1.0);
-        diffuseColor.rgb *= mix(0.35, 1.12, gTip);`)
+        diffuseColor.rgb *= mix(0.35, 1.12, gTip);
+        // Bent blades catch more sky: gusts show as paler bands.
+        diffuseColor.rgb *= 0.86 + 0.32 * clamp(vGust, 0.0, 1.0);`)
       // Light through the blade: strongest looking toward the sun, near the tip.
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         float gBack = pow(max(dot(normalize(vAirW - cameraPosition), uSunDir), 0.0), 3.0);

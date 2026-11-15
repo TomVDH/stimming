@@ -1,0 +1,1997 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pressure washer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Pressure washer: a filthy floor seen from above, under a low evening sun. */
+:root { --stage: oklch(0.16 0.012 120); }
+.stage--washer canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--washer canvas.on { opacity: 1; }
+.stage--washer { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--washer canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Pressure washer</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--washer" id="stage" tabindex="0" role="application" aria-label="A filthy floor seen from above. Hold and drag to spray it clean with a pressure washer.">
+      <p class="fail" hidden>Pressure washer needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Pressure washer</h1>
+    <div class="vignette">
+      <div>
+        <h2>Clean lines</h2>
+        <p>A pressure washer drives water through a tiny nozzle at a hundred to two hundred times the pressure of the air. The tip sets the shape of the jet. A red tip makes a pencil-thin jet that cuts hard; a white tip opens it into a wide, gentle fan. Yellow and green sit between them.</p>
+        <p>Some artists clean pictures into dirt instead of painting them on. In 2006, Alexandre Orion wiped hundreds of skulls into the soot of a road tunnel in São Paulo. The city could find no law against cleaning, so it washed the tunnel instead.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 320 200" role="img" aria-label="Four nozzle tips, red, yellow, green and white, each spray a fan onto a strip of grime. The red tip cuts a hairline; the white tip cuts a wide band.">
+          <rect x="8" y="150" width="304" height="20" rx="2" fill="oklch(0.3 0.035 125)"/>
+          <g fill="oklch(0.66 0.13 42)">
+            <rect x="48.5" y="150" width="3" height="20"/>
+            <rect x="106" y="150" width="28" height="20"/>
+            <rect x="166.5" y="150" width="47" height="20"/>
+            <rect x="231.5" y="150" width="77" height="20"/>
+          </g>
+          <g fill="oklch(0.95 0.02 220)" opacity="0.7">
+            <path d="M50 44L48.5 150H51.5Z"/>
+            <path d="M120 44L106 150H134Z"/>
+            <path d="M190 44L166.5 150H213.5Z"/>
+            <path d="M270 44L231.5 150H308.5Z"/>
+          </g>
+          <rect x="43" y="20" width="14" height="24" rx="2" fill="oklch(0.6 0.2 28)"/>
+          <rect x="113" y="20" width="14" height="24" rx="2" fill="oklch(0.86 0.16 95)"/>
+          <rect x="183" y="20" width="14" height="24" rx="2" fill="oklch(0.68 0.16 150)"/>
+          <rect x="263" y="20" width="14" height="24" rx="2" fill="oklch(0.95 0.01 220)"/>
+          <g fill="currentColor" font-size="12" text-anchor="middle" opacity="0.7">
+            <text x="50" y="190">0°</text><text x="120" y="190">15°</text><text x="190" y="190">25°</text><text x="270" y="190">40°</text>
+          </g>
+        </svg>
+        <figcaption>Nozzle tips by colour, from a pencil jet to a wide fan.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, css, stage as mark, pageReady } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const PI = Math.PI, TAU = 2 * PI;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+let kind = 'patio', fan = 0.6;
+// Builder tuning; the Dev sheet sets it with ?dev.
+const tune = { expo: 1, bloom: 0.5, mist: 1, power: 1, dry: 1 };
+// The handlers bind once the GL state exists.
+const act = { pick() {}, reset() {}, look() {} };
+const ui = initPage({ id: 'washer', bar: {
+  choice: { label: 'Surface', value: 'patio', options: [
+    { value: 'patio', label: 'Patio', key: '1' },
+    { value: 'deck', label: 'Deck', key: '2' },
+    { value: 'pool', label: 'Pool', key: '3' },
+    { value: 'mosaic', label: 'Mosaic', key: '4' },
+  ], onPick: v => { kind = v; act.pick(); } },
+  actions: [{ verb: 'reset', key: 'R', onPress: () => act.reset() }],
+  slider: { label: 'Fan', min: 0, max: 1, step: 0.01, value: 0.6, onInput: v => { fan = v; } },
+  dev: [
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => { tune.expo = v; act.look(); } },
+    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.5, persist: true, onInput: v => { tune.bloom = v; act.look(); } },
+    { type: 'slider', id: 'mist', label: 'Mist', min: 0, max: 2, step: 0.01, value: 1, persist: true, onInput: v => { tune.mist = v; } },
+    { type: 'slider', id: 'power', label: 'Jet power', min: 0.3, max: 3, step: 0.01, value: 1, persist: true, onInput: v => { tune.power = v; } },
+    { type: 'slider', id: 'dry', label: 'Drying', min: 0.3, max: 3, step: 0.01, value: 1, persist: true, onInput: v => { tune.dry = v; } },
+  ],
+  quality: true,
+  keys: [['hold + drag', 'spray'], ['r', 'reset'], ['1-4', 'surface']],
+} });
+for (const k of Object.keys(tune)) tune[k] = ui.setting(k)?.value ?? tune[k];
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Pressure washer needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs, vs = VS) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, internal = gl.RGBA16F, format = gl.RGBA) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  return fb;
+}
+// Two buffers of one map.
+// A pass reads src and writes the other.
+function pingpong(w, h, internal = gl.RGBA16F, format = gl.RGBA) {
+  const t = [texture(w, h, internal, format), texture(w, h, internal, format)];
+  const f = t.map(x => target([x]));
+  return {
+    t, f, w, h, i: 0,
+    get src() { return this.t[this.i]; },
+    get srcFb() { return this.f[this.i]; },
+    get dstFb() { return this.f[1 - this.i]; },
+    flip() { this.i = 1 - this.i; },
+    clear() { for (const fb of f) { gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); } },
+    free() { t.forEach(x => gl.deleteTexture(x)); f.forEach(x => gl.deleteFramebuffer(x)); },
+  };
+}
+const vao = gl.createVertexArray();
+const tri = () => { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+const bind = (unit, t) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); };
+
+/* ---------- GLSL ---------- */
+const NOISE = `
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 19.19)); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
+  return s / 0.97;
+}
+// Voronoi: the nearest seed distance, the gap to the second, the hash.
+vec3 vor(vec2 x) {
+  vec2 n = floor(x), f = fract(x), id = vec2(0);
+  float d1 = 8.0, d2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j)), r = g + hash2(n + g) - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = n + g; } else if (d < d2) d2 = d;
+  }
+  return vec3(sqrt(d1), sqrt(d2) - sqrt(d1), hash(id * 1.37));
+}
+`;
+// Every map covers the stage's world box, in metres, y up.
+const WORLD = `
+uniform vec4 uWorld;
+vec2 toW(vec2 uv) { return uWorld.xy + uv * uWorld.zw; }
+`;
+// The picture under the grime.
+// The left half holds colour; the right half holds data.
+// Data: R joints, G the picture's mask, B brass or burns.
+const PIC = `
+uniform sampler2D uPic;
+uniform vec3 uPicR;
+vec2 picUv(vec2 p) { return (p - uPicR.xy) / (2.0 * uPicR.z) + 0.5; }
+bool inPic(vec2 u) { return u.x > 0.0 && u.x < 1.0 && u.y > 0.0 && u.y < 1.0; }
+vec3 picCol(vec2 u) { return texture(uPic, vec2(0.001 + u.x * 0.498, u.y)).rgb; }
+vec3 picDat(vec2 u) { return texture(uPic, vec2(0.501 + u.x * 0.498, u.y)).rgb; }
+vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
+`;
+// The jet: a fan of water hits the ground as a line.
+// The line has a hard core and a soft fringe.
+const JET = `
+uniform vec4 uJ0, uJ1;
+uniform vec4 uJP, uJB;
+float fanI(vec2 p, vec2 a, vec2 b) {
+  vec2 ab = b - a;
+  float L = max(length(ab), 1e-5), hl = 0.5 * L;
+  vec2 dir = ab / L, q = p - 0.5 * (a + b);
+  float s = abs(dot(q, dir)), d = dot(q, vec2(-dir.y, dir.x));
+  float core = 1.0 - smoothstep(0.86 * hl, hl, s);
+  float fringe = 0.2 * exp(-max(s - 0.86 * hl, 0.0) / (0.2 * hl + 0.006));
+  return max(core, fringe) * exp(-d * d / (uJP.x * uJP.x));
+}
+// The jet's dwell on p over one frame.
+// The unit is seconds at full strength.
+// uJP: the across width, the substeps, the frame time, on.
+float exposure(vec2 p) {
+  float n = uJP.y, e = 0.0;
+  // uJB is the swept box; nothing outside it gets wet.
+  if (n < 0.5 || p.x < uJB.x || p.y < uJB.y || p.x > uJB.z || p.y > uJB.w) return 0.0;
+  for (int i = 0; i < 40; i++) {
+    if (float(i) >= n) break;
+    float t = (float(i) + 0.5) / n;
+    e += fanI(p, mix(uJ0.xy, uJ1.xy, t), mix(uJ0.zw, uJ1.zw, t));
+  }
+  return e * uJP.z / n;
+}
+`;
+
+/* ---------- floor bake ---------- */
+// One bake per surface and size writes two maps.
+// Map 0: albedo (linear), gloss. Map 1: height, porosity, joint, metal.
+const BAKE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform int uKind;
+uniform vec2 uSeed;
+uniform float uPx;
+uniform vec3 uPal[6];
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+${NOISE}
+${WORLD}
+${PIC}
+vec3 alb;
+float gloss, hgt, por, joint, metal, fw;
+
+// Herringbone in brick units: bricks 2 by 1.
+// The lattice is a(1,1) + b(2,-2).
+// Each cell holds one flat brick and one standing brick.
+void herring(vec2 p, out vec2 lc, out vec2 sz, out vec2 id) {
+  float u = p.x - p.y, v = p.x + p.y;
+  float b0 = floor((u - 2.0) / 4.0), a0 = floor((v - 3.0) / 2.0);
+  lc = vec2(0.5); sz = vec2(2.0, 1.0); id = vec2(0.0);
+  for (int j = 0; j <= 2; j++) for (int i = 0; i <= 2; i++) {
+    float a = a0 + float(i), b = b0 + float(j);
+    vec2 r = p - vec2(a + 2.0 * b, a - 2.0 * b);
+    if (r.x >= 0.0 && r.x < 2.0 && r.y >= 0.0 && r.y < 1.0) { lc = r; sz = vec2(2.0, 1.0); id = vec2(a, 2.0 * b); }
+    else if (r.x >= -1.0 && r.x < 0.0 && r.y >= 0.0 && r.y < 2.0) { lc = r + vec2(1.0, 0.0); sz = vec2(1.0, 2.0); id = vec2(a, 2.0 * b + 1.0); }
+  }
+}
+
+void patio(vec2 p) {
+  // Clay pavers, 100 by 200 mm, in herringbone at 45 degrees.
+  const float BW = 0.1, JW = 0.004;
+  vec2 q = mat2(0.70711, 0.70711, -0.70711, 0.70711) * p / BW + uSeed;
+  vec2 lc, sz, id;
+  herring(q, lc, sz, id);
+  vec2 e2 = min(lc, sz - lc) * BW;
+  float e = min(e2.x, e2.y);
+  float jt = 1.0 - smoothstep(JW - fw, JW + fw, e);
+  float bev = smoothstep(JW, JW + 0.011, e);
+  float h1 = hash(id + 0.37), h2 = hash(id * 1.31 + 7.7), h3 = hash(id * 0.71 + 3.3);
+  vec3 c = h1 < 0.42 ? uPal[0] : h1 < 0.72 ? uPal[1] : h1 < 0.9 ? uPal[2] : uPal[3];
+  c *= 0.84 + 0.32 * h2;
+  // Firing clouds across each brick, then the sand grain.
+  c *= 0.8 + 0.4 * fbm(p * 16.0 + id * 1.7);
+  c *= 0.86 + 0.28 * noise(p * 520.0);
+  // Brick edges fire darker.
+  c *= 0.8 + 0.2 * smoothstep(0.0, 0.03, e);
+  float pit = smoothstep(0.8, 0.93, noise(p * 240.0 + id * 3.0));
+  vec3 sand = uPal[4] * (0.7 + 0.6 * noise(p * 900.0));
+  alb = mix(c * (1.0 - 0.35 * pit), sand, jt);
+  hgt = mix(0.2 + 0.8 * bev - 0.2 * pit + 0.06 * (h3 - 0.5), 0.12 + 0.1 * noise(p * 600.0), jt);
+  gloss = 0.3; por = mix(0.85, 1.0, jt); joint = jt; metal = 0.0;
+  // A compass rose of cut stone sits in the middle.
+  vec2 u = picUv(p);
+  if (!inPic(u)) return;
+  vec3 dat = picDat(u);
+  float m = smoothstep(0.35, 0.65, dat.g);
+  if (m <= 0.0) return;
+  vec3 st = lin(picCol(u));
+  st *= 0.9 + 0.2 * fbm(p * 9.0 + 5.0);
+  st *= 0.95 + 0.1 * noise(p * 640.0);
+  float jl = smoothstep(0.3, 0.7, dat.r), mt = smoothstep(0.3, 0.7, dat.b) * (1.0 - jl);
+  // The stones are honed flat, and the brass sits flush.
+  // The cut joints are tight.
+  alb = mix(alb, mix(st, sand * 0.85, jl), m);
+  hgt = mix(hgt, mix(0.95, 0.8, jl), m);
+  gloss = mix(gloss, mix(0.55, 0.85, mt), m);
+  por = mix(por, mix(mix(0.45, 0.05, mt), 1.0, jl), m);
+  // Half a joint: grime fills it, but no moss grows there.
+  joint = mix(joint, 0.5 * jl, m);
+  metal = mix(metal, mt, m);
+}
+
+void deck(vec2 p) {
+  // Grooved boards, 145 mm wide, run across; joists sit every 400 mm.
+  const float BW = 0.145, L = 2.4, GAP = 0.003;
+  vec2 q = p + uSeed;
+  float row = floor(q.y / BW), yl = q.y - row * BW;
+  float xo = q.x + hash(vec2(row, 1.7)) * L;
+  float k = floor(xo / L), xl = xo - k * L;
+  vec2 id = vec2(k, row);
+  float h1 = hash(id + 0.5), h2 = hash(id * 1.9 + 3.1), h3 = hash(id * 2.7 + 8.3), h4 = hash(id * 3.3 + 1.1);
+  float ey = min(yl, BW - yl), ex = min(xl, L - xl);
+  float gap = 1.0 - smoothstep(GAP - fw, GAP + fw, ey);
+  float butt = 1.0 - smoothstep(0.001 - fw, 0.001 + fw, ex);
+  vec3 c = mix(uPal[0], uPal[1], h1);
+  c = mix(c, uPal[2], smoothstep(0.7, 1.0, h2) * 0.8);
+  // Rings: a slanted cut through the log draws cathedral arcs.
+  float yc = yl - BW * (0.5 + (h2 - 0.5) * 1.4);
+  float dz = 0.01 + 0.03 * h3 + 0.015 * sin(xl * (0.7 + h1) + h1 * 6.0);
+  float rr = length(vec2(yc, dz)) * (110.0 + 80.0 * h4) + 2.4 * fbm(vec2(xl * 0.8, yl * 20.0) + id * 5.0);
+  float late = pow(0.5 + 0.5 * cos(6.2832 * rr), 3.0);
+  c *= 1.0 - 0.42 * late;
+  // Fine streaks run along the grain; a few long dark mineral streaks.
+  c *= 0.86 + 0.28 * noise(vec2(xl * 3.0, yl * 520.0) + id * 9.0);
+  c *= 1.0 - 0.25 * smoothstep(0.72, 0.9, noise(vec2(xl * 0.7, yl * 90.0) + id * 3.0));
+  // A knot on some boards, with rings round it.
+  vec2 kc = vec2(h3 * L, BW * (0.25 + 0.5 * h4));
+  float kd = length((vec2(xl, yl) - kc) * vec2(0.55, 1.0));
+  float kr = 0.009 + 0.012 * h1, has = step(0.45, h2);
+  float knot = has * (1.0 - smoothstep(kr * 0.8, kr, kd));
+  float kring = has * smoothstep(kr * 2.6, kr, kd) * (1.0 - knot);
+  c = mix(c, uPal[3], knot * 0.9);
+  c *= 1.0 - 0.25 * kring * (0.5 + 0.5 * cos(kd * 900.0));
+  // End grain darkens the butt ends.
+  c *= 0.78 + 0.22 * smoothstep(0.0, 0.025, ex);
+  // Anti-slip grooves: twelve ridges along each board.
+  float gr = 0.5 + 0.5 * cos(yl / BW * 6.2832 * 12.0);
+  c *= 0.93 + 0.07 * gr;
+  // Burnt lines: someone drew a map on the boards.
+  vec2 u = picUv(p);
+  float burn = inPic(u) ? smoothstep(0.2, 0.8, picDat(u).b) : 0.0;
+  c = mix(c, uPal[5] * (0.8 + 0.4 * noise(p * 300.0)), burn * 0.92);
+  // Screws: two per board on each joist.
+  float jx = q.x - floor(q.x / 0.4 + 0.5) * 0.4;
+  vec2 sl = vec2(jx, ey - 0.026);
+  float scr = 1.0 - smoothstep(0.0038, 0.0048, length(sl));
+  float xr = (1.0 - smoothstep(0.0005, 0.001, min(abs(sl.x - sl.y), abs(sl.x + sl.y)) * 0.7071)) * scr;
+  vec3 steel = uPal[4] * (0.8 + 0.3 * noise(p * 900.0)) * (1.0 - 0.7 * xr);
+  alb = mix(mix(c, steel, scr), vec3(0.01, 0.009, 0.008), gap);
+  hgt = (0.55 + 0.35 * gr + 0.1 * smoothstep(0.0, 0.01, ey)) * (1.0 - gap) * (1.0 - 0.6 * butt) - 0.1 * scr;
+  gloss = mix(0.22, 0.7, scr); por = mix(0.9, 0.1, scr); joint = max(gap, butt); metal = scr * (1.0 - xr);
+}
+
+void pool(vec2 p) {
+  // Glass tiles, 25 mm, sit in pale grout.
+  // A lane line runs down each side.
+  const float TS = 0.025, GW = 0.0011;
+  vec2 g = p / TS + uSeed;
+  vec2 id = floor(g), lc = (g - id) * TS;
+  vec2 tc = (id + 0.5 - uSeed) * TS;
+  float e = min(min(lc.x, TS - lc.x), min(lc.y, TS - lc.y));
+  float jt = 1.0 - smoothstep(GW - fw, GW + fw, e);
+  float h1 = hash(id + 0.21), h2 = hash(id + 17.3);
+  vec3 c = h1 < 0.62 ? uPal[0] : h1 < 0.9 ? uPal[1] : uPal[2];
+  c *= 0.9 + 0.2 * h2;
+  float lane = step(abs(abs(tc.x) - uPicR.z - 0.42), 0.126);
+  c = mix(c, uPal[3] * (0.9 + 0.2 * h2), lane);
+  // The picture colours whole tiles.
+  vec2 u = picUv(tc);
+  if (inPic(u) && picDat(u).g > 0.5) c = lin(picCol(u)) * (0.92 + 0.16 * h2);
+  float dome = smoothstep(GW, GW + 0.006, e);
+  vec3 grout = uPal[4] * (0.82 + 0.3 * noise(p * 900.0));
+  alb = mix(c * (0.96 + 0.08 * noise(p * 700.0)), grout, jt);
+  hgt = mix(0.45 + 0.55 * dome, 0.12, jt);
+  gloss = mix(0.8, 0.2, jt); por = mix(0.06, 0.95, jt); joint = jt; metal = 0.0;
+}
+
+void mosaic(vec2 p) {
+  // Opus tessellatum: cut stones about 21 mm across, in lime mortar.
+  const float CS = 0.021, JW = 0.0016;
+  vec2 g = p / CS + uSeed;
+  vec2 n = floor(g), f = g - n, mr = vec2(0.0), mn = vec2(0.0);
+  float md = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 o = vec2(float(i), float(j));
+    vec2 r = o + 0.5 + (hash2(n + o) - 0.5) * 0.45 - f;
+    float d = dot(r, r);
+    if (d < md) { md = d; mr = r; mn = n + o; }
+  }
+  // The distance to the stone's edge: the nearest bisector.
+  float ed = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 o = vec2(float(i), float(j));
+    vec2 r = o + 0.5 + (hash2(n + o) - 0.5) * 0.45 - f, dd = r - mr;
+    if (dot(dd, dd) > 1e-6) ed = min(ed, dot(0.5 * (mr + r), normalize(dd)));
+  }
+  float e = ed * CS;
+  vec2 sc = (mn + 0.5 + (hash2(mn) - 0.5) * 0.45 - uSeed) * CS;
+  float h1 = hash(mn + 3.3), h2 = hash(mn + 7.1);
+  vec3 c = uPal[0] * (0.9 + 0.14 * h1);
+  if (h2 > 0.94) c = mix(uPal[1], uPal[2], step(0.5, h1)) * (0.9 + 0.2 * h1);
+  vec2 u = picUv(sc);
+  if (inPic(u) && picDat(u).g > 0.5) c = lin(picCol(u)) * (0.86 + 0.24 * h1);
+  float jt = 1.0 - smoothstep(JW - fw, JW + fw, e);
+  vec3 mortar = uPal[4] * (0.78 + 0.4 * noise(p * 800.0));
+  alb = mix(c * (0.92 + 0.16 * noise(p * 420.0 + h1 * 9.0)), mortar, jt);
+  hgt = mix(0.4 + 0.6 * smoothstep(JW, JW + 0.005, e), 0.12, jt);
+  gloss = mix(0.6, 0.15, jt); por = mix(0.4, 1.0, jt); joint = jt; metal = 0.0;
+}
+
+void main() {
+  vec2 p = toW(vUv);
+  fw = uPx * 0.75;
+  if (uKind == 1) deck(p);
+  else if (uKind == 2) pool(p);
+  else if (uKind == 3) mosaic(p);
+  else patio(p);
+  o0 = vec4(alb, gloss);
+  o1 = vec4(hgt, por, joint, metal);
+}`;
+
+/* ---------- grime ---------- */
+// The grime map: film, crust, film tint, crust kind.
+// Mode 0 grows fresh grime.
+// Mode 1 carries an old map to a new size.
+// Mode 2 regrows grime over the current map.
+const DIRT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uB1, uOld;
+uniform vec4 uOldW;
+uniform int uKind, uMode;
+uniform vec2 uSeed;
+uniform float uGrow;
+out vec4 o;
+${NOISE}
+${WORLD}
+// Some cells hold a leaf: an almond blade with a stalk.
+// Each leaf points a random way.
+float leaf(vec2 p, float cell, float chance, float sd) {
+  vec2 c = floor(p / cell);
+  float best = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 id = c + vec2(float(i), float(j));
+    if (hash(id + sd) > chance) continue;
+    vec2 ctr = (id + hash2(id * 1.7 + sd)) * cell;
+    float a = hash(id * 3.1 + sd) * 6.2832;
+    float len = cell * (0.22 + 0.14 * hash(id * 5.3 + sd));
+    vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * (p - ctr);
+    float x = q.x / len + 0.5;
+    float w = 0.2 * len * pow(max(sin(3.1416 * clamp(x, 0.0, 1.0)), 0.0), 0.75);
+    float m = (1.0 - smoothstep(w * 0.8, w, abs(q.y))) * step(0.0, x) * step(x, 1.0);
+    m = max(m, (1.0 - smoothstep(0.0015, 0.003, abs(q.y))) * step(-0.12, x) * step(x, 0.0));
+    best = max(best, m);
+  }
+  return best;
+}
+vec4 grime(vec2 p, vec4 b1) {
+  float jt = b1.b, lo = 1.0 - b1.r;
+  float big = fbm(p * 0.8 + uSeed), mid = fbm(p * 2.7 - uSeed), fine = noise(p * 45.0 + uSeed);
+  float film = 0.85 + 0.55 * big + 0.3 * mid;
+  float tint = smoothstep(0.3, 0.7, fbm(p * 1.4 + uSeed * 2.0));
+  float crust = 0.0, kind = 0.1;
+  // A worn path: feet thin the grime along a winding band.
+  float wx = p.x - 0.4 * sin(p.y * 1.1 + uSeed.x) - 0.15 * sin(p.y * 2.9 + uSeed.y);
+  float path = exp(-wx * wx / 0.12);
+  if (uKind == 0) {
+    // Grime packs the brick joints darker than the tops.
+    // The tight inlay joints stay hidden.
+    float bj = smoothstep(0.75, 1.0, jt);
+    film += 0.6 * bj + 0.12 * lo;
+    film *= 1.0 - 0.3 * path;
+    // Moss grows in patches.
+    // It fills the brick joints and creeps onto the edges.
+    float m = smoothstep(0.5, 0.72, fbm(p * 3.2 + uSeed * 3.0));
+    crust = (bj * m * (0.7 + 0.5 * fine) + lo * 0.6 * m * smoothstep(0.55, 0.8, fbm(p * 9.0 - uSeed))) * (1.0 - 0.6 * path);
+    // Lichen: small, ragged, grey-green rosettes on a few bricks.
+    vec3 v = vor(p * 2.4 + uSeed * 1.3);
+    float r = 0.08 + 0.08 * hash(vec2(v.z * 31.0, 1.3));
+    r *= 0.8 + 0.4 * noise(p * 60.0 + v.z * 20.0);
+    float lich = (1.0 - smoothstep(r * 0.6, r, v.x)) * step(0.82, v.z) * (0.6 + 0.4 * fine) * (1.0 - jt);
+    if (lich > crust) { crust = lich; kind = 0.5; }
+    // Old leaves stain the clay with tannin.
+    float lf = leaf(p, 0.5, 0.4, uSeed.x);
+    film += 0.7 * lf;
+    tint = max(tint, lf);
+  } else if (uKind == 1) {
+    // The wood has weathered grey; mildew blooms in dark clusters.
+    film = 0.95 + 0.4 * big + 0.25 * mid + 0.35 * jt;
+    film *= 1.0 - 0.25 * path;
+    tint = clamp(smoothstep(0.4, 0.72, fbm(p * 3.2 + uSeed) + 0.12 * noise(p * 30.0)) + 0.6 * jt, 0.0, 1.0);
+    float alg = smoothstep(0.38, 0.65, fbm(p * 3.2 + uSeed * 2.0));
+    crust = jt * 0.9 * alg + lo * 0.35 * alg;
+    // Black mildew spots: round, in clusters.
+    vec3 v = vor(p * 28.0 + uSeed);
+    float sr = 0.12 + 0.2 * hash(vec2(v.z * 17.0, 4.1));
+    float sp = (1.0 - smoothstep(sr * 0.7, sr, v.x)) * step(0.5, v.z) * smoothstep(0.42, 0.68, fbm(p * 1.8 - uSeed));
+    if (sp > crust) { crust = sp; kind = 0.9; }
+    float lf = leaf(p, 0.6, 0.25, uSeed.y);
+    if (lf > crust) { crust = lf; kind = 0.5; }
+  } else if (uKind == 2) {
+    // Green slime over the tiles; sludge banks up in drifts.
+    film = 1.0 + 0.45 * big + 0.3 * mid + 0.3 * jt;
+    float sl = smoothstep(0.42, 0.72, fbm(p * 1.7 + uSeed * 4.0));
+    crust = sl * (0.7 + 0.6 * mid);
+    kind = 0.9;
+    float lf = leaf(p, 0.32, 0.6, uSeed.x);
+    if (lf > 0.2) { crust = max(crust, lf); kind = 0.5; }
+  } else {
+    // Dry earth: a thick crust, cracked into plates.
+    film = 1.1 + 0.4 * big + 0.2 * mid;
+    vec3 v = vor(p * 8.0 + uSeed);
+    float crack = 1.0 - smoothstep(0.03, 0.1, v.y);
+    crust = (0.8 + 0.4 * mid) * (1.0 - 0.9 * crack);
+    kind = 0.9;
+    tint = mix(tint, 1.0, crack);
+    float gr = smoothstep(0.74, 0.86, fbm(p * 5.0 + uSeed * 2.0));
+    if (gr > 0.25) { crust = max(crust, gr); kind = 0.1; }
+    // A few pebbles sit in the earth.
+    vec3 pv = vor(p * 14.0 + uSeed * 3.0);
+    float pb = (1.0 - smoothstep(0.2, 0.3, pv.x)) * step(0.93, pv.z);
+    if (pb > 0.3) { crust = max(crust, pb); kind = 0.5; }
+  }
+  return vec4(max(film, 0.0), clamp(crust, 0.0, 1.2), clamp(tint, 0.0, 1.0), kind);
+}
+void main() {
+  vec2 p = toW(vUv);
+  vec4 b1 = textureLod(uB1, vUv, 0.0);
+  vec4 g = grime(p, b1);
+  if (uMode == 1) {
+    // Carry: wherever the old map reached, its state stays.
+    vec2 ou = (p - uOldW.xy) / uOldW.zw;
+    if (ou.x > 0.0 && ou.x < 1.0 && ou.y > 0.0 && ou.y < 1.0) g.rg = texture(uOld, ou).rg;
+  } else if (uMode == 2) {
+    // Regrow: the joints go first, then the grime spreads in patches.
+    vec2 cur = texture(uOld, vUv).rg;
+    float at = 0.6 * fbm(p * 1.5 + uSeed * 5.0) + 0.25 * (1.0 - b1.b);
+    g.rg = mix(cur, g.rg, smoothstep(at, at + 0.25, uGrow * 1.15));
+  }
+  o = g;
+}`;
+
+/* ---------- the jet on the grime ---------- */
+// It runs only over the swept box.
+// A blit then copies the box back.
+const STAMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uPrev;
+uniform vec3 uRate, uKr;
+out vec4 o;
+${NOISE}
+${WORLD}
+${JET}
+void main() {
+  vec4 d = texture(uPrev, vUv);
+  vec2 p = toW(vUv);
+  float e = exposure(p);
+  float kr = d.a < 0.3 ? uKr.x : d.a < 0.7 ? uKr.y : uKr.z;
+  d.r *= exp(-uRate.x * e);
+  // Crust breaks off in chunks, so its rate varies.
+  d.g *= exp(-uRate.y * e * kr * (0.6 + 0.8 * noise(p * 80.0)));
+  o = d;
+}`;
+
+/* ---------- water ---------- */
+// The water map: depth, mud, wetness of the ground, foam.
+// Depth and mud advect; the ground's wetness stays put and dries.
+const WATER_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uW, uDirt, uB1;
+uniform vec2 uTx, uSlope;
+uniform float uDt, uDry, uLod, uFlow;
+uniform vec3 uRate, uKr;
+out vec4 o;
+${NOISE}
+${WORLD}
+${JET}
+// The blast drives water away from the fan.
+vec2 push(vec2 p) {
+  if (uJP.w < 0.5) return vec2(0.0);
+  vec2 a = uJ1.xy, ab = uJ1.zw - a;
+  float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+  vec2 d = p - a - ab * t;
+  float l = length(d);
+  return l > 1e-5 ? d / l * 1.1 * exp(-l / 0.05) : vec2(0.0);
+}
+void main() {
+  vec2 p = toW(vUv);
+  vec4 w = texture(uW, vUv);
+  vec4 b1 = textureLod(uB1, vUv, uLod);
+  // Water runs downhill and slides into the low joints.
+  float hx = textureLod(uB1, vUv + vec2(uTx.x, 0.0), uLod).r - textureLod(uB1, vUv - vec2(uTx.x, 0.0), uLod).r;
+  float hy = textureLod(uB1, vUv + vec2(0.0, uTx.y), uLod).r - textureLod(uB1, vUv - vec2(0.0, uTx.y), uLod).r;
+  float deep = smoothstep(0.02, 0.45, w.r);
+  vec2 v = uSlope * deep - vec2(hx, hy) * 0.35 + push(p);
+  // Running water meanders a little.
+  v += (vec2(noise(p * 9.0), noise(p * 9.0 + 7.0)) - 0.5) * 0.14 * deep;
+  vec2 back = vUv - v * uFlow * uDt / uWorld.zw;
+  vec4 s = texture(uW, back);
+  // Piled water evens out with its neighbours; a blur keeps the amount.
+  vec4 nb = 0.25 * (texture(uW, back + vec2(uTx.x, 0.0)) + texture(uW, back - vec2(uTx.x, 0.0))
+    + texture(uW, back + vec2(0.0, uTx.y)) + texture(uW, back - vec2(0.0, uTx.y)));
+  s.rga = mix(s.rga, nb.rga, clamp(uDt * 5.0 * uFlow, 0.0, 0.5));
+  if (back.x < 0.0 || back.x > 1.0 || back.y < 0.0 || back.y > 1.0) s = vec4(0.0);
+  float wet = w.b;
+  vec4 dt = texture(uDirt, vUv);
+  // The jet brings water and foam.
+  // It lifts grime into the water as mud.
+  float e = exposure(p);
+  if (e > 1e-5) {
+    float kr = dt.a < 0.3 ? uKr.x : dt.a < 0.7 ? uKr.y : uKr.z;
+    float lift = dt.r * (1.0 - exp(-uRate.x * e)) + dt.g * (1.0 - exp(-uRate.y * e * kr));
+    s.r += e * 140.0;
+    s.g += lift * 2.0;
+    s.a += e * 18.0 + lift * 0.35;
+    wet = max(wet, smoothstep(0.0, 0.006, e));
+  }
+  // Overspray wets a band round the jet's path.
+  if (uJP.w > 0.5) {
+    vec2 c0 = 0.5 * (uJ0.xy + uJ0.zw), c1 = 0.5 * (uJ1.xy + uJ1.zw), cc = c1 - c0;
+    float t = clamp(dot(p - c0, cc) / max(dot(cc, cc), 1e-8), 0.0, 1.0);
+    float hl = 0.5 * length(uJ1.zw - uJ1.xy);
+    wet = max(wet, 0.75 * (1.0 - smoothstep(hl, hl + 0.06, length(p - c0 - cc * t))));
+  }
+  // Porous ground drinks the water; an algae skin seals it.
+  // The rest of the water evaporates.
+  float bare = exp(-5.0 * dt.r) * (1.0 - smoothstep(0.05, 0.6, dt.g));
+  s.r = min(max(0.0, s.r - (0.04 + 0.22 * mix(0.3, b1.g, bare)) * uDt * uDry) * exp(-0.3 * uDt * uDry), 2.5);
+  s.g = min(s.g * exp(-0.35 * uDt), s.r * 1.6);
+  s.a = min(s.a * exp(-4.0 * uDt), 1.4);
+  // Wet ground dries from the tops; joints hold water longest.
+  float rate = uDry * (0.22 + 0.14 * (1.0 - b1.g)) * (1.0 - 0.45 * b1.b) * (0.75 + 0.5 * noise(p * 6.0));
+  wet = max(wet - rate * uDt, smoothstep(0.0, 0.08, s.r));
+  o = vec4(s.r, s.g, clamp(wet, 0.0, 1.0), s.a);
+}`;
+
+/* ---------- mist ---------- */
+// Fine spray hangs in the air.
+// It drifts with the breeze and thins out.
+const MIST_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uM;
+uniform vec2 uTx, uWind;
+uniform float uDt, uSrc;
+out vec4 o;
+${WORLD}
+${JET}
+void main() {
+  vec2 p = toW(vUv);
+  vec2 b = vUv - uWind * uDt / uWorld.zw;
+  float m = texture(uM, b).r * 0.6
+    + 0.1 * (texture(uM, b + vec2(uTx.x, 0.0)).r + texture(uM, b - vec2(uTx.x, 0.0)).r
+    + texture(uM, b + vec2(0.0, uTx.y)).r + texture(uM, b - vec2(0.0, uTx.y)).r);
+  m *= exp(-0.5 * uDt);
+  if (uJP.w > 0.5) {
+    vec2 a = uJ1.xy, ab = uJ1.zw - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    float d = length(p - a - ab * t);
+    m += uSrc * uDt * exp(-d * d / 0.01);
+  }
+  o = vec4(min(m, 3.0), 0.0, 0.0, 1.0);
+}`;
+
+/* ---------- shading ---------- */
+// The eye stands past the bottom edge.
+// The low sun sits past the top edge.
+// Wet ground throws the sun back as glare.
+// The mist glows against the sun.
+const SHADE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uB0, uB1, uDirt, uWat, uMist;
+uniform vec2 uRes, uTxS, uTxW;
+uniform vec3 uL, uEye, uSun, uSky0, uSky1;
+uniform vec3 uFilm[2], uCrust[3], uMud;
+uniform vec4 uJ;
+uniform float uJetOn, uTime, uMistK;
+out vec4 o;
+${NOISE}
+${WORLD}
+float ggx(vec3 N, vec3 H, float r) {
+  float a = r * r, a2 = a * a;
+  float nh = max(dot(N, H), 0.0), d = nh * nh * (a2 - 1.0) + 1.0;
+  return a2 / (3.14159 * d * d);
+}
+// The sky in the wet ground: warm low, blue high.
+// Slow clouds drift across it.
+vec3 sky(vec3 R) {
+  float e = clamp(R.z, 0.0, 1.0);
+  vec3 c = mix(uSky0, uSky1, pow(e, 0.55));
+  float s = max(dot(R, uL), 0.0);
+  c += uSun * (0.08 * pow(s, 8.0) + 0.6 * pow(s, 90.0));
+  vec2 cp = R.xy / max(R.z, 0.12) * 0.7 + vec2(uTime * 0.006, 0.0);
+  float cl = smoothstep(0.5, 0.85, fbm(cp));
+  return mix(c, mix(uSky0, vec3(1.0), 0.3) * 1.1, cl * 0.55 * smoothstep(0.05, 0.35, e));
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p = toW(uv);
+  vec4 w = texture(uWat, uv);
+  float wx = texture(uWat, uv + vec2(uTxW.x, 0.0)).r - texture(uWat, uv - vec2(uTxW.x, 0.0)).r;
+  float wy = texture(uWat, uv + vec2(0.0, uTxW.y)).r - texture(uWat, uv - vec2(0.0, uTxW.y)).r;
+  float film = smoothstep(0.03, 0.25, w.r);
+  // Flowing water bends the floor seen through it.
+  vec2 ruv = uv - vec2(wx, wy) * 0.006 * film;
+  vec4 t0 = texture(uB0, ruv), t1 = texture(uB1, ruv), dt = texture(uDirt, ruv);
+  float h1x = texture(uB1, ruv + vec2(uTxS.x, 0.0)).r, h1y = texture(uB1, ruv + vec2(0.0, uTxS.y)).r;
+  vec4 dX = texture(uDirt, ruv + vec2(uTxS.x, 0.0)), dY = texture(uDirt, ruv + vec2(0.0, uTxS.y));
+  // Relief: the floor plus the crust on it.
+  // Thick grime fills the shallow joints.
+  // So the floor's relief fades under it.
+  float tm = uTxS.x * uWorld.z;
+  float af = 1.0 - exp(-5.0 * dt.r);
+  float c0 = smoothstep(0.05, 0.6, dt.g), cX = smoothstep(0.05, 0.6, dX.g), cY = smoothstep(0.05, 0.6, dY.g);
+  float relief = 0.004 * (1.0 - 0.7 * af) * (1.0 - 0.9 * c0);
+  float H0 = t1.r * relief + c0 * 0.003;
+  float HX = h1x * relief + cX * 0.003, HY = h1y * relief + cY * 0.003;
+  vec3 N = normalize(vec3(-(HX - H0) / tm, -(HY - H0) / tm, 1.0));
+  vec2 fz = vec2(noise(p * 150.0), noise(p * 150.0 + 3.7)) - 0.5;
+  N = normalize(N + vec3(fz * 0.4 * c0, 0.0));
+
+  vec3 alb = t0.rgb;
+  float gloss = t0.a, por = t1.g, metal = t1.a;
+  // Grime: a dark film over the floor, darker where it is thick.
+  // Crust sits on top of the film.
+  vec3 fc = mix(uFilm[0], uFilm[1], dt.b) * (0.8 + 0.4 * noise(p * 120.0)) * (0.85 + 0.3 * noise(p * 21.0));
+  fc *= 1.12 - 0.3 * smoothstep(0.9, 1.9, dt.r);
+  alb = mix(alb, fc, af);
+  vec3 cc = dt.a < 0.3 ? uCrust[0] : dt.a < 0.7 ? uCrust[1] : uCrust[2];
+  cc *= (0.85 + 0.3 * noise(p * 90.0 + dt.a * 13.0)) * (0.9 + 0.2 * noise(p * 17.0)) * (0.8 + 0.4 * fbm(p * 2.0));
+  alb = mix(alb, cc, c0);
+  float bare = (1.0 - af) * (1.0 - c0);
+  gloss *= bare;
+  metal *= bare;
+  por = mix(0.6, por, bare);
+  // Wet ground darkens and deepens in colour.
+  float wet = max(w.b, film);
+  vec3 walb = alb * mix(1.0, 0.42 + 0.3 * alb.g, por);
+  float wl = dot(walb, vec3(0.2126, 0.7152, 0.0722));
+  walb = max(mix(vec3(wl), walb, 1.2), 0.0);
+  alb = mix(alb, walb, wet);
+
+  vec3 P3 = vec3(p, 0.0);
+  vec3 V = normalize(uEye - P3), L = uL;
+  // The water skin takes its slope from the depth.
+  // Small ripples run downhill on it.
+  vec2 rp = vec2(noise(p * 70.0 + vec2(0.0, uTime * 0.9)), noise(p * 70.0 + vec2(5.2, 1.3 + uTime * 0.9))) - 0.5;
+  vec3 Nw = normalize(vec3(-vec2(wx, wy) * 0.9 + rp * 0.35, 1.0));
+  vec3 Ns = normalize(mix(N, Nw, film));
+  float ao = mix(1.0, mix(0.55, 1.0, t1.r), (1.0 - 0.7 * af) * (1.0 - 0.9 * c0));
+  vec3 diff = alb * (uSun * max(dot(N, L), 0.0) * (0.75 + 0.25 * ao) + uSky1 * 0.55 * ao * (0.5 + 0.5 * N.z)) * (1.0 - 0.85 * metal);
+  float rough = mix(0.9, mix(0.8, 0.12, gloss), bare);
+  rough = mix(rough, min(rough, 0.24), wet);
+  rough = mix(rough, 0.05, film);
+  vec3 H = normalize(L + V);
+  vec3 F0 = mix(vec3(mix(0.04, 0.05, film)), alb * 1.4 + 0.1, metal * (1.0 - film));
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+  vec3 spec = uSun * ggx(Ns, H, rough) * F * 0.25 * step(0.0, dot(Ns, L)) * mix(0.2, 1.0, max(wet, metal));
+  vec3 R = reflect(-V, Ns);
+  vec3 Fr = F0 + (1.0 - F0) * pow(1.0 - max(dot(Ns, V), 0.0), 5.0);
+  float shine = max(film, wet * 0.55 * (1.0 - rough)) + metal * 0.6;
+  vec3 col = diff + spec + sky(R) * Fr * shine;
+
+  // Muddy water clouds the floor; foam rides on top.
+  float mudA = clamp(w.g * 1.8, 0.0, 0.92) * smoothstep(0.0, 0.12, w.r);
+  vec3 mudLit = uMud * (uSun * 0.5 + uSky1 * 0.6) * (0.8 + 0.4 * noise(p * 30.0 + uTime * 0.3));
+  // Mud is murky: it keeps the glints.
+  // It dulls the sky in the water.
+  col = mix(col, mudLit + spec * 0.6 + sky(R) * Fr * 0.25, mudA);
+  vec3 foamLit = vec3(1.0, 0.99, 0.97) * (uSun * 0.55 + uSky1 * 0.8);
+  // Foam: soft clumps of bubbles that shrink as it thins.
+  float fb = 0.6 * noise(p * 55.0 + vec2(uTime * 0.7, 0.0)) + 0.4 * noise(p * 130.0 - vec2(0.0, uTime * 0.9));
+  float fo = smoothstep(1.0 - 0.6 * clamp(w.a, 0.0, 1.0), 1.05 - 0.45 * clamp(w.a, 0.0, 1.0), fb + 0.25) * clamp(w.a * 1.5, 0.0, 1.0);
+  // Foam that carries mud turns tan.
+  vec3 foamC = mix(foamLit, mudLit * 1.6, clamp(w.g / max(w.r, 0.05), 0.0, 0.75));
+  col = mix(col, foamC, fo * 0.7);
+
+  // The jet's line on the ground: white water, flickering.
+  if (uJetOn > 0.001) {
+    vec2 a = uJ.xy, ab = uJ.zw - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+    float d = length(p - a - ab * t);
+    float al = 1.0 - smoothstep(0.7, 1.0, abs(t * 2.0 - 1.0));
+    float fl = 0.5 + noise(vec2(t * 70.0, uTime * 50.0));
+    col += foamLit * (exp(-d * d / 3.0e-5) * al * 2.2 + exp(-d / 0.025) * (0.3 + 0.7 * al) * 0.3) * fl * uJetOn;
+  }
+
+  // Mist: it dims the floor and scatters the sun toward the eye.
+  float m = texture(uMist, uv).r * uMistK;
+  float ct = dot(normalize(P3 - uEye), L);
+  float ph = 0.0509 / pow(1.36 - 1.2 * ct, 1.5);
+  float ma = 1.0 - exp(-m);
+  col = col * (1.0 - 0.4 * ma) + (uSun * ph * 2.0 + uSky1 * 0.25) * ma;
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------- spray droplets ---------- */
+const DROP_VS = `#version 300 es
+layout(location = 0) in vec4 aP;
+uniform vec4 uWorld;
+uniform float uPpm;
+out float vA;
+void main() {
+  // A drop in the air shows higher up the screen.
+  // It also shows larger.
+  vec2 sp = aP.xy + vec2(0.0, aP.z * 0.55);
+  gl_Position = vec4((sp - uWorld.xy) / uWorld.zw * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = max(1.5, (0.0025 + aP.z * 0.006) * uPpm);
+  vA = aP.w;
+}`;
+const DROP_FS = `#version 300 es
+precision mediump float;
+in float vA;
+uniform vec3 uCol;
+out vec4 o;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float k = max(0.0, 1.0 - dot(q, q));
+  o = vec4(uCol * k * k * vA, 1.0);
+}`;
+
+/* ---------- run-off rivulets ---------- */
+// Each rivulet head pours water and mud into the water map.
+const RIV_VS = `#version 300 es
+layout(location = 0) in vec4 aR;
+uniform vec4 uWorld;
+uniform float uPpw;
+out vec2 vM;
+void main() {
+  gl_Position = vec4((aR.xy - uWorld.xy) / uWorld.zw * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = max(2.0, (0.008 + 0.008 * aR.z) * uPpw * 2.0);
+  vM = aR.zw;
+}`;
+const RIV_FS = `#version 300 es
+precision mediump float;
+in vec2 vM;
+uniform float uAmt;
+out vec4 o;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float a = max(0.0, 1.0 - dot(q, q)) * uAmt * (0.5 + 0.5 * vM.x);
+  o = vec4(a, a * vM.y, 0.0, 0.0);
+}`;
+
+/* ---------- composite ---------- */
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExpo;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c *= gdVignette(uv, uRes.x / uRes.y, 0.4, 0.5);
+  c *= gdGrain(gdHash(gl_FragCoord.xy), gdLuma(c), 0.03, vec2(0.6, 1.0));
+  o = vec4(ouFilm(c, uExpo, gl_FragCoord.xy), 1.0);
+}`;
+
+const bakeP = program(BAKE_FS), dirtP = program(DIRT_FS), stampP = program(STAMP_FS);
+const waterP = program(WATER_FS), mistP = program(MIST_FS), shadeP = program(SHADE_FS);
+const dropP = program(DROP_FS, DROP_VS), rivP = program(RIV_FS, RIV_VS), compP = program(COMP_FS);
+const bloom = bloomChain(gl);
+
+/* ---------- surfaces ---------- */
+// Each surface: the floor palette, the grime palette and the crust rates.
+// Colours are OKLCH; linFit turns them into linear light for the shaders.
+const SURF = {
+  patio: {
+    kind: 0, seed: [3.1, 7.7],
+    floor: [[0.6, 0.13, 40], [0.5, 0.12, 31], [0.67, 0.115, 54], [0.4, 0.06, 36], [0.76, 0.04, 84], [0, 0, 0]],
+    film: [[0.29, 0.035, 130], [0.32, 0.03, 76]],
+    crust: [[0.42, 0.09, 128], [0.48, 0.04, 112], [0.2, 0.025, 130]],
+    mud: [0.34, 0.06, 65], kr: [1, 0.8, 1],
+  },
+  deck: {
+    kind: 1, seed: [5.3, 1.9],
+    floor: [[0.64, 0.105, 62], [0.57, 0.115, 52], [0.5, 0.1, 42], [0.32, 0.06, 45], [0.5, 0.012, 250], [0.24, 0.05, 40]],
+    film: [[0.6, 0.012, 85], [0.4, 0.022, 115]],
+    crust: [[0.45, 0.09, 130], [0.38, 0.06, 65], [0.18, 0.012, 100]],
+    mud: [0.42, 0.035, 75], kr: [1, 2.5, 1],
+  },
+  pool: {
+    kind: 2, seed: [8.8, 2.4],
+    floor: [[0.8, 0.1, 205], [0.7, 0.12, 222], [0.58, 0.13, 245], [0.28, 0.07, 265], [0.9, 0.012, 215], [0, 0, 0]],
+    film: [[0.5, 0.1, 135], [0.4, 0.07, 100]],
+    crust: [[0.38, 0.09, 125], [0.42, 0.07, 60], [0.3, 0.06, 105]],
+    mud: [0.45, 0.07, 120], kr: [1, 3, 1.1],
+  },
+  mosaic: {
+    kind: 3, seed: [2.2, 6.6],
+    floor: [[0.88, 0.035, 85], [0.62, 0.012, 80], [0.66, 0.11, 70], [0, 0, 0], [0.78, 0.02, 80], [0, 0, 0]],
+    film: [[0.52, 0.05, 68], [0.4, 0.05, 58]],
+    crust: [[0.46, 0.08, 115], [0.48, 0.02, 70], [0.52, 0.055, 64]],
+    mud: [0.45, 0.06, 62], kr: [1, 2, 1.3],
+  },
+};
+const flat = list => new Float32Array(list.flatMap(c => linFit(...c)));
+for (const s of Object.values(SURF)) {
+  s.floorLin = flat(s.floor);
+  s.filmLin = flat(s.film);
+  s.crustLin = flat(s.crust);
+  s.mudLin = new Float32Array(linFit(...s.mud));
+}
+// The light rig: a low, warm sun and a hazy evening sky.
+const SUN = linFit(0.97, 0.05, 75).map(v => v * 2.4);
+const SKY0 = linFit(0.82, 0.07, 65), SKY1 = linFit(0.62, 0.11, 245);
+
+/* ---------- pictures ---------- */
+// A picture hides under each floor.
+// Canvas 2D draws it once per surface.
+// The canvas is two squares.
+// Colour fills the left square; data fills the right.
+const PN = 1024;
+const INK = Object.fromEntries(Object.entries({
+  ring: [0.3, 0.02, 250], slateL: [0.62, 0.02, 250], slateD: [0.38, 0.025, 255], rustL: [0.64, 0.13, 42], rustD: [0.47, 0.12, 34],
+  lime: [0.77, 0.045, 76], brass: [0.8, 0.13, 85],
+  body: [0.66, 0.17, 32], bodyD: [0.55, 0.17, 26], bodyL: [0.77, 0.13, 48], sucker: [0.88, 0.07, 45], eye: [0.97, 0.01, 220], pupil: [0.22, 0.03, 260], bubble: [0.95, 0.03, 200],
+  cream: [0.9, 0.035, 85], black: [0.19, 0.012, 60], red: [0.5, 0.16, 32], grey: [0.6, 0.012, 80], white: [0.97, 0.01, 90],
+}).map(([k, v]) => [k, css(v)]));
+const poly = (g, pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+
+// Patio: an inlaid compass rose of slate, rust stone and brass.
+function compass(g, data) {
+  const C = 500, at = (th, r) => [C + r * Math.sin(th), C - r * Math.cos(th)];
+  const disc = (r, ccw = false) => g.arc(C, C, r, 0, TAU, ccw);
+  const kite = (th, len, w) => [[C, C], at(th, len), at(th - PI / 4, w), at(th + PI / 4, w)];
+  const diag = [0, 1, 2, 3].map(i => kite(PI / 4 + i * PI / 2, 292, 74));
+  const main = [0, 1, 2, 3].map(i => kite(i * PI / 2, 398, 104));
+  const halves = k => [[k[0], k[1], k[2]], [k[0], k[1], k[3]]];
+  const letters = () => {
+    g.font = '800 60px Gabarito, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    ['N', 'E', 'S', 'W'].forEach((ch, i) => {
+      const [x, y] = at(i * PI / 2, 449);
+      g.save(); g.translate(x, y); g.rotate(i * PI / 2); g.fillText(ch, 0, 3); g.restore();
+    });
+  };
+  if (!data) {
+    g.fillStyle = INK.ring; g.beginPath(); disc(481); g.fill();
+    g.fillStyle = INK.brass; g.beginPath(); disc(418); g.fill();
+    g.fillStyle = INK.lime; g.beginPath(); disc(406); g.fill();
+    for (const k of [...diag, ...main]) {
+      const [a, b] = halves(k), big = main.includes(k);
+      g.fillStyle = big ? INK.slateL : INK.rustL; poly(g, a); g.fill();
+      g.fillStyle = big ? INK.slateD : INK.rustD; poly(g, b); g.fill();
+    }
+    g.fillStyle = INK.brass; g.beginPath(); disc(38); g.fill();
+    g.fillStyle = INK.ring; g.beginPath(); disc(15); g.fill();
+    g.fillStyle = INK.brass;
+    letters();
+    return;
+  }
+  // R: a joint round every stone. Main points cover the diagonal joints.
+  g.strokeStyle = 'rgb(255,0,0)'; g.lineWidth = 4.5; g.lineJoin = 'round';
+  [481, 418, 406].forEach(r => { g.beginPath(); disc(r); g.stroke(); });
+  diag.forEach(k => halves(k).forEach(h => { poly(g, h); g.stroke(); }));
+  g.fillStyle = '#000';
+  main.forEach(k => { poly(g, [k[1], k[2], k[0], k[3]]); g.fill(); });
+  main.forEach(k => halves(k).forEach(h => { poly(g, h); g.stroke(); }));
+  g.beginPath(); disc(38); g.stroke();
+  // G: the inlay mask reaches past the stone.
+  // So the rim joint lies inside the mask.
+  g.globalCompositeOperation = 'lighter';
+  g.fillStyle = 'rgb(0,255,0)'; g.beginPath(); disc(490); g.fill();
+  // B: the brass ring, the boss and the letters.
+  g.fillStyle = 'rgb(0,0,255)';
+  g.beginPath(); disc(418); disc(406, true); g.fill();
+  g.beginPath(); disc(38); disc(15, true); g.fill();
+  letters();
+}
+
+// Deck: a treasure map burnt into the boards.
+function treasure(g) {
+  g.strokeStyle = g.fillStyle = 'rgb(0,0,255)';
+  g.lineCap = g.lineJoin = 'round';
+  const cx = 470, cy = 530;
+  const isle = th => 300 * (1 + 0.15 * Math.sin(3 * th + 0.6) + 0.09 * Math.sin(5 * th + 2.1) + 0.05 * Math.sin(11 * th + 1.3));
+  const coast = (k, w) => {
+    g.lineWidth = w;
+    g.beginPath();
+    for (let i = 0; i <= 240; i++) {
+      const th = (i / 240) * TAU, r = isle(th) * k;
+      const x = cx + 1.25 * r * Math.cos(th), y = cy + 0.85 * r * Math.sin(th);
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.stroke();
+  };
+  coast(1, 10);
+  coast(1.1, 3.5);
+  // Waves on the open sea.
+  g.lineWidth = 5;
+  [[110, 130], [230, 80], [870, 760], [910, 640], [110, 900], [760, 930], [70, 520], [520, 70]].forEach(([x, y]) => {
+    g.beginPath(); g.moveTo(x - 26, y); g.quadraticCurveTo(x - 13, y - 13, x, y); g.quadraticCurveTo(x + 13, y + 13, x + 26, y); g.stroke();
+  });
+  // A palm on the hill.
+  g.lineWidth = 11;
+  g.beginPath(); g.moveTo(340, 640); g.quadraticCurveTo(310, 560, 352, 470); g.stroke();
+  g.lineWidth = 7;
+  for (const [dx, dy, cx2, cy2] of [[-78, 8, -40, -40], [-60, -48, -30, -60], [10, -70, -10, -70], [70, -40, 40, -60], [84, 12, 50, -30]]) {
+    g.beginPath(); g.moveTo(352, 470); g.quadraticCurveTo(352 + cx2, 470 + cy2, 352 + dx, 470 + dy); g.stroke();
+  }
+  // The trail: dashes from the beach to the cross.
+  g.setLineDash([22, 18]);
+  g.lineWidth = 7;
+  g.beginPath(); g.moveTo(205, 700); g.bezierCurveTo(330, 760, 420, 620, 500, 640); g.bezierCurveTo(600, 665, 560, 470, 650, 450); g.stroke();
+  g.setLineDash([]);
+  g.lineWidth = 18;
+  g.beginPath(); g.moveTo(640, 420); g.lineTo(710, 490); g.moveTo(710, 420); g.lineTo(640, 490); g.stroke();
+  // A sea serpent swims in the top right.
+  // It has three humps, a head and an eye.
+  g.lineWidth = 12;
+  for (const x of [700, 770, 840]) { g.beginPath(); g.arc(x, 200, 30, PI, 0); g.stroke(); }
+  g.beginPath(); g.arc(905, 168, 26, 0, TAU); g.stroke();
+  g.beginPath(); g.moveTo(640, 200); g.quadraticCurveTo(610, 230, 640, 250); g.stroke();
+  g.beginPath(); g.arc(912, 162, 6, 0, TAU); g.fill();
+}
+
+// Pool: a cheeky octopus in glass tiles.
+function octopus(g, data) {
+  const ink = k => (data ? 'rgb(0,255,0)' : INK[k]);
+  g.lineCap = g.lineJoin = 'round';
+  const arms = 8;
+  for (let i = 0; i < arms; i++) {
+    const a0 = -0.28 + (PI + 0.56) * (i / (arms - 1));
+    const sign = i % 2 ? 1 : -1, wob = (i * 37 % 5) / 5;
+    let x = 500 + 140 * Math.cos(a0), y = 470 + 70 * Math.sin(a0), hd = a0;
+    const pts = [];
+    for (let k = 0; k <= 64; k++) {
+      const t = k / 64;
+      pts.push([x, y, 66 * (1 - 0.84 * t)]);
+      hd += sign * (0.006 + 0.2 * t ** 4) + 0.025 * Math.sin(t * 7 + i * 1.7) * (0.5 + wob);
+      x += 7.4 * Math.cos(hd);
+      y += 7.4 * Math.sin(hd);
+    }
+    g.fillStyle = ink('body');
+    for (const [px, py, w] of pts) { g.beginPath(); g.arc(px, py, w / 2, 0, TAU); g.fill(); }
+    // Suckers line the inner side of each arm.
+    g.fillStyle = ink('sucker');
+    for (let k = 6; k < pts.length - 4; k += 5) {
+      const [px, py, w] = pts[k], [nx, ny] = pts[k + 1];
+      const dx = nx - px, dy = ny - py, l = Math.hypot(dx, dy) || 1;
+      g.beginPath(); g.arc(px - (dy / l) * w * 0.22 * sign, py + (dx / l) * w * 0.22 * sign, w * 0.2, 0, TAU); g.fill();
+    }
+  }
+  // The mantle, a darker rim, a sheen.
+  g.fillStyle = ink('bodyD'); g.beginPath(); g.ellipse(500, 345, 185, 212, 0, 0, TAU); g.fill();
+  g.fillStyle = ink('body'); g.beginPath(); g.ellipse(500, 330, 172, 196, 0, 0, TAU); g.fill();
+  g.fillStyle = ink('bodyL'); g.beginPath(); g.ellipse(440, 250, 58, 80, -0.4, 0, TAU); g.fill();
+  g.fillStyle = ink('bodyD');
+  [[580, 220, 22], [620, 300, 16], [545, 160, 14]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); });
+  // Big eyes and a grin.
+  g.fillStyle = ink('eye');
+  [[425, 405], [575, 405]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 50, 0, TAU); g.fill(); });
+  g.fillStyle = ink('pupil');
+  [[438, 418], [588, 418]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 25, 0, TAU); g.fill(); });
+  g.strokeStyle = ink('pupil'); g.lineWidth = 22;
+  g.beginPath(); g.moveTo(455, 480); g.quadraticCurveTo(500, 520, 545, 480); g.stroke();
+  // Bubbles rise to the right.
+  g.strokeStyle = ink('bubble'); g.lineWidth = 16;
+  [[720, 170, 32], [790, 95, 22], [760, 40, 14]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, TAU); g.stroke(); });
+}
+
+// Mosaic: a Roman doorstep. Beware of the dog.
+function caveCanem(g) {
+  const X0 = 60, Y0 = 140, X1 = 940, Y1 = 860;
+  g.fillStyle = INK.black; g.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+  g.fillStyle = INK.cream; g.fillRect(X0 + 22, Y0 + 22, X1 - X0 - 44, Y1 - Y0 - 44);
+  g.fillStyle = INK.black; g.fillRect(X0 + 34, Y0 + 34, X1 - X0 - 68, Y1 - Y0 - 68);
+  g.fillStyle = INK.cream; g.fillRect(X0 + 80, Y0 + 80, X1 - X0 - 160, Y1 - Y0 - 160);
+  // A running wave round the frame.
+  g.strokeStyle = INK.cream; g.lineWidth = 9; g.lineCap = 'round';
+  const wave = (ax, ay, bx, by) => {
+    const L = Math.hypot(bx - ax, by - ay), n = Math.round(L / 52), ux = (bx - ax) / L, uy = (by - ay) / L;
+    g.beginPath();
+    for (let i = 0; i <= n * 12; i++) {
+      const s = (i / (n * 12)) * L, o = 11 * Math.sin((s / L) * n * TAU);
+      const x = ax + ux * s - uy * o, y = ay + uy * s + ux * o;
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.stroke();
+  };
+  const m = 57;
+  wave(X0 + m, Y0 + m, X1 - m, Y0 + m); wave(X1 - m, Y0 + m, X1 - m, Y1 - m);
+  wave(X1 - m, Y1 - m, X0 + m, Y1 - m); wave(X0 + m, Y1 - m, X0 + m, Y0 + m);
+  // The dog: black, barking, braced on its chain.
+  g.save();
+  g.translate(30, 18);
+  g.fillStyle = g.strokeStyle = INK.black;
+  g.lineCap = g.lineJoin = 'round';
+  const line = (w, ...pts) => { g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
+  const oval = (x, y, rx, ry, r = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, r, 0, TAU); g.fill(); };
+  line(30, [600, 440], [628, 510], [672, 552], [662, 606]);
+  line(28, [400, 450], [392, 530], [384, 606]);
+  oval(525, 420, 165, 60, -0.04);
+  oval(372, 418, 72, 72);
+  line(72, [360, 400], [290, 336]);
+  oval(262, 318, 62, 48, -0.25);
+  line(30, [238, 314], [168, 334]);
+  line(20, [244, 344], [178, 374]);
+  poly(g, [[256, 290], [284, 222], [316, 286]]); g.fill();
+  line(56, [640, 430], [660, 500]);
+  line(30, [660, 500], [714, 545], [700, 606]);
+  line(28, [378, 450], [360, 530], [336, 604]);
+  line(22, [672, 398], [742, 380], [776, 300]);
+  [[700, 608], [662, 608], [384, 608], [336, 606]].forEach(([x, y]) => oval(x - 8, y, 24, 12));
+  // A red collar and an iron chain to the wall.
+  g.strokeStyle = INK.red; line(20, [306, 392], [352, 342]);
+  g.strokeStyle = INK.grey; g.setLineDash([16, 9]); g.lineWidth = 9;
+  g.beginPath(); g.moveTo(318, 380); g.quadraticCurveTo(230, 520, 112, 446); g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle = INK.grey; g.lineWidth = 10; g.beginPath(); g.arc(104, 440, 18, 0, TAU); g.stroke();
+  // A white eye and a row of teeth.
+  g.fillStyle = INK.white; oval(272, 306, 10, 9);
+  g.strokeStyle = INK.white; line(7, [222, 330], [180, 344]);
+  g.restore();
+  // The warning, in capitals.
+  g.fillStyle = INK.black;
+  g.font = '900 104px "Times New Roman", Times, Georgia, serif';
+  g.textBaseline = 'alphabetic';
+  g.textAlign = 'left';
+  const text = 'CAVE CANEM', gapX = 8;
+  const widths = [...text].map(ch => g.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + gapX * (text.length - 1);
+  // The line narrows to fit inside the frame.
+  g.save();
+  g.translate(500, 762);
+  g.scale(Math.min(1, 660 / total), 1);
+  let x = -total / 2;
+  [...text].forEach((ch, i) => { g.fillText(ch, x, 0); x += widths[i] + gapX; });
+  g.restore();
+}
+
+const PICS = {
+  patio: { colour: g => compass(g, false), data: g => compass(g, true) },
+  deck: { colour: () => {}, data: treasure },
+  pool: { colour: g => octopus(g, false), data: g => { g.globalCompositeOperation = 'lighter'; octopus(g, true); } },
+  mosaic: { colour: caveCanem, data: g => { g.fillStyle = 'rgb(0,255,0)'; g.fillRect(60, 140, 880, 720); } },
+};
+function drawPicture(k) {
+  const cv = document.createElement('canvas');
+  cv.width = PN * 2;
+  cv.height = PN;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, PN * 2, PN);
+  for (const [x0, fn] of [[0, PICS[k].colour], [PN, PICS[k].data]]) {
+    g.save();
+    g.beginPath(); g.rect(x0, 0, PN, PN); g.clip();
+    g.translate(x0, 0);
+    g.scale(PN / 1000, PN / 1000);
+    fn(g);
+    g.restore();
+  }
+  return cv;
+}
+let picTex = null;
+function makePic() {
+  picTex ||= gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, picTex);
+  // Canvas rows run down; world y runs up.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, drawPicture(kind));
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+/* ---------- maps ---------- */
+// The stage shows a box of floor, in metres.
+// Every map covers that box.
+let W = 1, H = 1, dpr = 1, S = 300, world = [0, 0, 1, 1], picR = [0, 0, 1];
+let sim = null, bake = null, dirt = null, water = null, mist = null, hdr = null;
+let eye = [0, -2, 1.75], sunDir = [0, 0.9, 0.44];
+const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { layout(); if (ready) render(); } });
+const setWorld = p => gl.uniform4f(p.u('uWorld'), ...world);
+
+function freeBake(b) { gl.deleteTexture(b.t0); gl.deleteTexture(b.t1); gl.deleteFramebuffer(b.fb); }
+function bakeFloor() {
+  const s = SURF[kind];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bake.fb);
+  gl.viewport(0, 0, bake.w, bake.h);
+  gl.useProgram(bakeP);
+  setWorld(bakeP);
+  gl.uniform1i(bakeP.u('uKind'), s.kind);
+  gl.uniform2f(bakeP.u('uSeed'), ...s.seed);
+  gl.uniform1f(bakeP.u('uPx'), world[2] / bake.w);
+  gl.uniform3fv(bakeP.u('uPal'), s.floorLin);
+  gl.uniform3f(bakeP.u('uPicR'), ...picR);
+  bind(0, picTex);
+  gl.uniform1i(bakeP.u('uPic'), 0);
+  tri();
+  // The water reads a blurred copy of the height.
+  // Mipmaps give that copy.
+  gl.bindTexture(gl.TEXTURE_2D, bake.t1);
+  gl.generateMipmap(gl.TEXTURE_2D);
+}
+// Mode 0 grows fresh grime; mode 1 carries an old map.
+// Mode 2 regrows the grime to amount g.
+function growDirt(mode, oldTex = null, oldWorld = null, g = 1) {
+  const s = SURF[kind];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dirt.dstFb);
+  gl.viewport(0, 0, dirt.w, dirt.h);
+  gl.useProgram(dirtP);
+  setWorld(dirtP);
+  gl.uniform1i(dirtP.u('uKind'), s.kind);
+  gl.uniform1i(dirtP.u('uMode'), mode);
+  gl.uniform2f(dirtP.u('uSeed'), ...s.seed);
+  gl.uniform1f(dirtP.u('uGrow'), g);
+  gl.uniform4f(dirtP.u('uOldW'), ...(oldWorld || [0, 0, 1, 1]));
+  bind(0, bake.t1);
+  gl.uniform1i(dirtP.u('uB1'), 0);
+  bind(1, oldTex || dirt.src);
+  gl.uniform1i(dirtP.u('uOld'), 1);
+  tri();
+  dirt.flip();
+}
+function frameTarget() {
+  if (hdr && hdr.w === canvas.width && hdr.h === canvas.height) return;
+  if (hdr) { gl.deleteTexture(hdr.tex); gl.deleteFramebuffer(hdr.fb); }
+  const tex = texture(canvas.width, canvas.height);
+  hdr = { tex, fb: target([tex]), w: canvas.width, h: canvas.height };
+}
+function layout() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width);
+  H = Math.max(1, r.height);
+  dpr = D.dpr(W, H);
+  canvas.width = Math.max(1, Math.round(W * dpr));
+  canvas.height = Math.max(1, Math.round(H * dpr));
+  frameTarget();
+  // The short side shows 2.4 m of floor.
+  // A small screen shows less floor.
+  S = Math.max(Math.min(W, H) / 2.4, 200);
+  const hw = W / 2 / S, hh = H / 2 / S, old = world;
+  world = [-hw, -hh, 2 * hw, 2 * hh];
+  picR = [0, 0, 0.43 * Math.min(2 * hw, 2 * hh)];
+  // The eye stands past the bottom edge at head height.
+  // The sun sits where its glare lands.
+  // The glare lands on the upper left of the floor.
+  eye = [0, -hh - 1.1, 1.75];
+  const d = [-hw + 0.56 * hw - eye[0], -hh + 1.72 * hh - eye[1], eye[2]], n = Math.hypot(...d);
+  sunDir = d.map(v => v / n);
+  // Map size per level: High follows the screen.
+  // Low drops to one texel per CSS pixel.
+  const lv = D.level;
+  const cap = lv >= 2 ? 2 : lv === 1 ? 1.5 : 1, budget = lv >= 2 ? 3.6e6 : lv === 1 ? 2e6 : 1e6;
+  const sk = Math.min(cap, window.devicePixelRatio || 1, Math.sqrt(budget / (W * H)));
+  const sw = Math.max(16, Math.round(W * sk)), sh = Math.max(16, Math.round(H * sk));
+  const same = sim && sim.w === sw && sim.h === sh && old.every((v, i) => Math.abs(v - world[i]) < 1e-6);
+  if (same) return;
+  sim = { w: sw, h: sh };
+  // The floor bakes again; the grime carries over by world position.
+  const oldDirt = dirt;
+  if (bake) freeBake(bake);
+  const t0 = texture(sw, sh), t1 = texture(sw, sh);
+  gl.bindTexture(gl.TEXTURE_2D, t1);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  bake = { t0, t1, fb: target([t0, t1]), w: sw, h: sh };
+  bakeFloor();
+  dirt = pingpong(sw, sh);
+  growDirt(oldDirt ? 1 : 0, oldDirt?.src, old);
+  oldDirt?.free();
+  water?.free();
+  mist?.free();
+  water = pingpong(Math.max(8, Math.round(W / 3)), Math.max(8, Math.round(H / 3)));
+  mist = pingpong(Math.max(8, Math.round(W / 8)), Math.max(8, Math.round(H / 8)), gl.R16F, gl.RED);
+  water.clear();
+  mist.clear();
+  gridMake(true);
+}
+
+/* ---------- the jet ---------- */
+// The fan lies across the stroke, so each stroke cuts one stripe.
+// Angles are doubled, so the line has no head or tail.
+const jet = { on: false, tx: 0, ty: 0, x: 0, y: 0, c2: -1, s2: 0, speed: 0, J0: null, J1: null, level: 0 };
+const fanHalf = () => 0.012 + 0.15 * fan ** 1.25;
+const sigmaOf = hl => 0.006 + 0.12 * hl;
+// A narrow jet cuts harder than a wide fan.
+// A small screen shows fewer pixels per metre.
+// So the jet cuts faster there.
+const rateOf = hl => 300 * Math.sqrt(0.09 / Math.max(hl, 0.02)) * clamp(320 / S, 0.8, 1.8) * tune.power;
+function substeps(J0, J1, sig) {
+  const d = Math.max(Math.hypot(J1[0] - J0[0], J1[1] - J0[1]), Math.hypot(J1[2] - J0[2], J1[3] - J0[3]));
+  return Math.min(40, Math.max(1, Math.ceil(d / (sig * 0.6))));
+}
+function setJet(p, J0, J1, sig, n, dt, on) {
+  gl.uniform4f(p.u('uJ0'), ...J0);
+  gl.uniform4f(p.u('uJ1'), ...J1);
+  gl.uniform4f(p.u('uJP'), sig, n, dt, on);
+  const m = sig * 3 + 0.04;
+  gl.uniform4f(p.u('uJB'), Math.min(J0[0], J0[2], J1[0], J1[2]) - m, Math.min(J0[1], J0[3], J1[1], J1[3]) - m,
+    Math.max(J0[0], J0[2], J1[0], J1[2]) + m, Math.max(J0[1], J0[3], J1[1], J1[3]) + m);
+}
+const NOJET = [0, 0, 0, 0];
+// The stamp covers only the swept box.
+// A blit copies the box to the other buffer.
+function stampDirt(J0, J1, sig, n, dt, rf) {
+  const m = sig * 3 + 0.04;
+  const xs = [J0[0], J0[2], J1[0], J1[2]], ys = [J0[1], J0[3], J1[1], J1[3]];
+  const tx = x => Math.floor(((x - world[0]) / world[2]) * dirt.w), ty = y => Math.floor(((y - world[1]) / world[3]) * dirt.h);
+  const x0 = clamp(tx(Math.min(...xs) - m), 0, dirt.w), x1 = clamp(tx(Math.max(...xs) + m) + 1, 0, dirt.w);
+  const y0 = clamp(ty(Math.min(...ys) - m), 0, dirt.h), y1 = clamp(ty(Math.max(...ys) + m) + 1, 0, dirt.h);
+  if (x1 <= x0 || y1 <= y0) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dirt.dstFb);
+  gl.viewport(0, 0, dirt.w, dirt.h);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x0, y0, x1 - x0, y1 - y0);
+  gl.useProgram(stampP);
+  setWorld(stampP);
+  setJet(stampP, J0, J1, sig, n, dt, 1);
+  gl.uniform3f(stampP.u('uRate'), rf, rf * 0.55, 0);
+  gl.uniform3f(stampP.u('uKr'), ...SURF[kind].kr);
+  bind(0, dirt.src);
+  gl.uniform1i(stampP.u('uPrev'), 0);
+  tri();
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, dirt.dstFb);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dirt.srcFb);
+  gl.blitFramebuffer(x0, y0, x1, y1, x0, y0, x1, y1, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.disable(gl.SCISSOR_TEST);
+}
+function stepWater(dt, J0, J1, sig, n, rf) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, water.dstFb);
+  gl.viewport(0, 0, water.w, water.h);
+  gl.useProgram(waterP);
+  setWorld(waterP);
+  setJet(waterP, J0, J1, sig, n, dt, n > 0 ? 1 : 0);
+  gl.uniform2f(waterP.u('uTx'), 1 / water.w, 1 / water.h);
+  gl.uniform2f(waterP.u('uSlope'), 0, -0.4);
+  gl.uniform1f(waterP.u('uDt'), dt);
+  gl.uniform1f(waterP.u('uDry'), tune.dry);
+  gl.uniform1f(waterP.u('uLod'), Math.max(0, Math.log2(sim.w / water.w)));
+  gl.uniform1f(waterP.u('uFlow'), reduced() ? 0 : 1);
+  gl.uniform3f(waterP.u('uRate'), rf, rf * 0.55, 0);
+  gl.uniform3f(waterP.u('uKr'), ...SURF[kind].kr);
+  bind(0, water.src); gl.uniform1i(waterP.u('uW'), 0);
+  bind(1, dirt.src); gl.uniform1i(waterP.u('uDirt'), 1);
+  bind(2, bake.t1); gl.uniform1i(waterP.u('uB1'), 2);
+  tri();
+  water.flip();
+}
+function stepMist(dt, J1, on) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, mist.dstFb);
+  gl.viewport(0, 0, mist.w, mist.h);
+  gl.useProgram(mistP);
+  setWorld(mistP);
+  setJet(mistP, J1, J1, 0.02, 1, dt, on ? 1 : 0);
+  gl.uniform2f(mistP.u('uTx'), 1 / mist.w, 1 / mist.h);
+  gl.uniform2f(mistP.u('uWind'), ...(reduced() ? [0, 0] : [0.07, 0.11]));
+  gl.uniform1f(mistP.u('uDt'), dt);
+  gl.uniform1f(mistP.u('uSrc'), 7);
+  bind(0, mist.src); gl.uniform1i(mistP.u('uM'), 0);
+  tri();
+  mist.flip();
+}
+
+/* ---------- droplets ---------- */
+// Spray flies off the fan in small arcs and lands at once.
+const MAXD = 600, drops = [], dropData = new Float32Array(MAXD * 4);
+const dropVao = gl.createVertexArray(), dropBuf = gl.createBuffer();
+gl.bindVertexArray(dropVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, dropBuf);
+gl.bufferData(gl.ARRAY_BUFFER, dropData.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+const DROP_COL = SUN.map(v => v * 0.9);
+function spawnDrops(dt) {
+  if (reduced() || !jet.J1) return;
+  const [ax, ay, bx, by] = jet.J1;
+  const lx = bx - ax, ly = by - ay, ll = Math.hypot(lx, ly) || 1, nx = -ly / ll, ny = lx / ll;
+  const n = Math.min(30, Math.round(dt * 380 * (0.6 + Math.random() * 0.8)));
+  for (let i = 0; i < n && drops.length < MAXD; i++) {
+    const t = Math.random(), side = Math.random() < 0.5 ? -1 : 1, sp = 0.3 + 1.5 * Math.random() ** 2;
+    drops.push({
+      x: ax + lx * t, y: ay + ly * t, z: 0.005,
+      vx: nx * side * sp + (Math.random() - 0.5) * 0.5, vy: ny * side * sp + (Math.random() - 0.5) * 0.5,
+      vz: 0.4 + 1.5 * Math.random(),
+    });
+  }
+}
+function stepDrops(dt) {
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.vz -= 9.8 * dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.z += d.vz * dt;
+    if (d.z < 0) { drops[i] = drops[drops.length - 1]; drops.pop(); }
+  }
+}
+function drawDrops() {
+  if (!drops.length) return;
+  drops.forEach((d, i) => dropData.set([d.x, d.y, d.z, Math.min(1, d.z * 12)], i * 4));
+  gl.bindBuffer(gl.ARRAY_BUFFER, dropBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, dropData, 0, drops.length * 4);
+  gl.useProgram(dropP);
+  setWorld(dropP);
+  gl.uniform1f(dropP.u('uPpm'), S * dpr);
+  gl.uniform3f(dropP.u('uCol'), ...DROP_COL);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindVertexArray(dropVao);
+  gl.drawArrays(gl.POINTS, 0, drops.length);
+  gl.disable(gl.BLEND);
+}
+
+/* ---------- run-off ---------- */
+// Muddy rivulets run downhill from the jet.
+// The water map keeps their wet trails.
+const MAXR = 40, rivs = [], rivData = new Float32Array(MAXR * 4);
+const rivVao = gl.createVertexArray(), rivBuf = gl.createBuffer();
+gl.bindVertexArray(rivVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, rivBuf);
+gl.bufferData(gl.ARRAY_BUFFER, rivData.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+// More grime under the jet makes more rivulets, and muddier ones.
+function spawnRivs(dt, J, grime) {
+  if (reduced() || rivs.length >= MAXR || Math.random() > dt * (5 + 12 * grime)) return;
+  const t = Math.random();
+  rivs.push({
+    x: J[0] + (J[2] - J[0]) * t, y: J[1] + (J[3] - J[1]) * t,
+    vol: 0.8 + 0.6 * Math.random(), mud: 0.3 + 0.9 * grime, ph: Math.random() * TAU, lean: (Math.random() - 0.5) * 0.6,
+  });
+}
+function stepRivs(dt) {
+  for (let i = rivs.length - 1; i >= 0; i--) {
+    const r = rivs[i], sp = 0.12 + 0.3 * Math.min(1, r.vol);
+    // A rivulet wanders as it runs, and slows as it thins.
+    r.ph += dt * (2 + 2 * Math.random());
+    r.lean = clamp(r.lean + (Math.random() - 0.5) * 4 * dt, -0.8, 0.8);
+    r.x += (0.3 * Math.sin(r.ph) + 0.35 * r.lean) * sp * dt;
+    r.y -= sp * dt;
+    r.vol -= 0.4 * dt;
+    if (r.vol <= 0 || r.y < world[1] - 0.05) { rivs[i] = rivs[rivs.length - 1]; rivs.pop(); }
+  }
+}
+function drawRivs(dt) {
+  if (!rivs.length) return;
+  rivs.forEach((r, i) => rivData.set([r.x, r.y, Math.min(1, r.vol), r.mud], i * 4));
+  gl.bindBuffer(gl.ARRAY_BUFFER, rivBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, rivData, 0, rivs.length * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, water.srcFb);
+  gl.viewport(0, 0, water.w, water.h);
+  gl.useProgram(rivP);
+  setWorld(rivP);
+  gl.uniform1f(rivP.u('uPpw'), water.w / world[2]);
+  gl.uniform1f(rivP.u('uAmt'), dt * 20);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindVertexArray(rivVao);
+  gl.drawArrays(gl.POINTS, 0, rivs.length);
+  gl.disable(gl.BLEND);
+}
+
+/* ---------- render ---------- */
+let time = 0;
+function render() {
+  const s = SURF[kind];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, hdr.w, hdr.h);
+  gl.useProgram(shadeP);
+  setWorld(shadeP);
+  gl.uniform2f(shadeP.u('uRes'), hdr.w, hdr.h);
+  gl.uniform2f(shadeP.u('uTxS'), 1 / sim.w, 1 / sim.h);
+  gl.uniform2f(shadeP.u('uTxW'), 1 / water.w, 1 / water.h);
+  gl.uniform3f(shadeP.u('uL'), ...sunDir);
+  gl.uniform3f(shadeP.u('uEye'), ...eye);
+  gl.uniform3f(shadeP.u('uSun'), ...SUN);
+  gl.uniform3f(shadeP.u('uSky0'), ...SKY0);
+  gl.uniform3f(shadeP.u('uSky1'), ...SKY1);
+  gl.uniform3fv(shadeP.u('uFilm'), s.filmLin);
+  gl.uniform3fv(shadeP.u('uCrust'), s.crustLin);
+  gl.uniform3fv(shadeP.u('uMud'), s.mudLin);
+  gl.uniform4f(shadeP.u('uJ'), ...(jet.J1 || NOJET));
+  gl.uniform1f(shadeP.u('uJetOn'), jet.J1 ? jet.level : 0);
+  gl.uniform1f(shadeP.u('uTime'), time);
+  gl.uniform1f(shadeP.u('uMistK'), tune.mist * (reduced() ? 0.5 : 1));
+  [bake.t0, bake.t1, dirt.src, water.src, mist.src].forEach((t, i) => bind(i, t));
+  ['uB0', 'uB1', 'uDirt', 'uWat', 'uMist'].forEach((n, i) => gl.uniform1i(shadeP.u(n), i));
+  tri();
+  drawDrops();
+  const bl = bloom.render(hdr.tex, hdr.w, hdr.h, { threshold: 0.95, cap: 8, levels: glowDetail(D.level).levels });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(compP);
+  gl.uniform2f(compP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(compP.u('uBloomK'), tune.bloom);
+  gl.uniform1f(compP.u('uExpo'), tune.expo);
+  bind(0, hdr.tex);
+  bind(1, bl);
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  tri();
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* ---------- grime on the CPU ---------- */
+// A coarse copy of the grime lives on the CPU.
+// The sound reads it, and the progress check counts it.
+const grid = { gx: 0, gy: 0, a: null, w: [0, 0, 1, 1] };
+function gridMake(carry) {
+  const [x0, y0, ww, hh] = world;
+  const gx = Math.max(8, Math.round(ww / 0.04)), gy = Math.max(8, Math.round(hh / 0.04));
+  const a = new Float32Array(gx * gy).fill(1);
+  if (carry && grid.a) {
+    const [ox, oy, ow, oh] = grid.w;
+    for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+      const u = (x0 + ((i + 0.5) / gx) * ww - ox) / ow, v = (y0 + ((j + 0.5) / gy) * hh - oy) / oh;
+      if (u > 0 && u < 1 && v > 0 && v < 1) a[j * gx + i] = grid.a[Math.floor(v * grid.gy) * grid.gx + Math.floor(u * grid.gx)];
+    }
+  }
+  Object.assign(grid, { gx, gy, a, w: [...world] });
+}
+function fanJS(px, py, ax, ay, bx, by, sig) {
+  const lx = bx - ax, ly = by - ay, L = Math.max(Math.hypot(lx, ly), 1e-5), hl = L / 2;
+  const dx = lx / L, dy = ly / L, qx = px - (ax + bx) / 2, qy = py - (ay + by) / 2;
+  const s = Math.abs(qx * dx + qy * dy), d = -qx * dy + qy * dx;
+  const t = clamp((s - 0.86 * hl) / (0.14 * hl)), core = 1 - t * t * (3 - 2 * t);
+  const fringe = 0.2 * Math.exp(-Math.max(s - 0.86 * hl, 0) / (0.2 * hl + 0.006));
+  return Math.max(core, fringe) * Math.exp(-(d * d) / (sig * sig));
+}
+// Returns how much grime the stroke lifted, in cells.
+function gridStamp(J0, J1, sig, n, dt, rf) {
+  const [x0, y0, ww, hh] = grid.w, { gx, gy, a } = grid, m = sig * 3 + 0.05;
+  const i0 = clamp(Math.floor(((Math.min(J0[0], J0[2], J1[0], J1[2]) - m - x0) / ww) * gx), 0, gx - 1);
+  const i1 = clamp(Math.floor(((Math.max(J0[0], J0[2], J1[0], J1[2]) + m - x0) / ww) * gx), 0, gx - 1);
+  const j0 = clamp(Math.floor(((Math.min(J0[1], J0[3], J1[1], J1[3]) - m - y0) / hh) * gy), 0, gy - 1);
+  const j1 = clamp(Math.floor(((Math.max(J0[1], J0[3], J1[1], J1[3]) + m - y0) / hh) * gy), 0, gy - 1);
+  let lifted = 0;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const px = x0 + ((i + 0.5) / gx) * ww, py = y0 + ((j + 0.5) / gy) * hh;
+    let e = 0;
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      e += fanJS(px, py, J0[0] + (J1[0] - J0[0]) * t, J0[1] + (J1[1] - J0[1]) * t, J0[2] + (J1[2] - J0[2]) * t, J0[3] + (J1[3] - J0[3]) * t, sig);
+    }
+    const idx = j * gx + i, before = a[idx];
+    a[idx] *= Math.exp(-rf * 0.8 * e * dt / n);
+    lifted += before - a[idx];
+  }
+  return lifted;
+}
+function gridNear(x, y, r) {
+  const [x0, y0, ww, hh] = grid.w, { gx, gy, a } = grid;
+  const i = clamp(Math.floor(((x - x0) / ww) * gx), 0, gx - 1), j = clamp(Math.floor(((y - y0) / hh) * gy), 0, gy - 1);
+  const k = Math.max(1, Math.round((r / ww) * gx));
+  let s = 0, c = 0;
+  for (let jj = Math.max(0, j - k); jj <= Math.min(gy - 1, j + k); jj++) for (let ii = Math.max(0, i - k); ii <= Math.min(gx - 1, i + k); ii++) { s += a[jj * gx + ii]; c++; }
+  return c ? s / c : 0;
+}
+const gridMean = () => grid.a.reduce((s, v) => s + v, 0) / grid.a.length;
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.5 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const glide = (p, v, t, tau) => {
+  if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else p.cancelScheduledValues(t);
+  p.setTargetAtTime(v, t, tau);
+};
+// The jet voice has three parts.
+// A motor, a hiss off the nozzle, a roar off the ground.
+let jv = null;
+function jetVoice(ac) {
+  const pan = ac.createStereoPanner();
+  pan.connect(kit.out);
+  const n1 = ac.createBufferSource(), n2 = ac.createBufferSource();
+  n1.buffer = n2.buffer = kit.noise;
+  n1.loop = n2.loop = true;
+  // A slower read of the same noise keeps the two bands apart.
+  n2.playbackRate.value = 0.73;
+  const hp = ac.createBiquadFilter(), pk = ac.createBiquadFilter(), hiss = ac.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 3000; hp.Q.value = 0.5;
+  pk.type = 'peaking'; pk.frequency.value = 7500; pk.Q.value = 1; pk.gain.value = 5;
+  hiss.gain.value = 0;
+  n1.connect(hp).connect(pk).connect(hiss).connect(pan);
+  const bp = ac.createBiquadFilter(), roar = ac.createGain();
+  bp.type = 'bandpass'; bp.frequency.value = 800; bp.Q.value = 0.6;
+  roar.gain.value = 0;
+  n2.connect(bp).connect(roar).connect(pan);
+  const lp = ac.createBiquadFilter(), rumble = ac.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 230; lp.Q.value = 0.8;
+  rumble.gain.value = 0;
+  n2.connect(lp).connect(rumble).connect(pan);
+  // The motor: a saw and a square through a resonant lowpass.
+  // The pump throbs its level.
+  const m1 = ac.createOscillator(), m2 = ac.createOscillator(), mlp = ac.createBiquadFilter();
+  m1.type = 'sawtooth'; m1.frequency.value = 22;
+  m2.type = 'square'; m2.frequency.value = 44.3;
+  mlp.type = 'lowpass'; mlp.frequency.value = 320; mlp.Q.value = 4;
+  const throb = ac.createGain(), pump = ac.createOscillator(), depth = ac.createGain(), motor = ac.createGain();
+  throb.gain.value = 0.7;
+  pump.frequency.value = 23;
+  depth.gain.value = 0.3;
+  motor.gain.value = 0;
+  pump.connect(depth).connect(throb.gain);
+  m1.connect(mlp);
+  m2.connect(mlp);
+  mlp.connect(throb).connect(motor).connect(kit.out);
+  [n1, n2, m1, m2, pump].forEach(s => s.start());
+  return { pan, hiss, roar, bp, rumble, motor, m1, m2 };
+}
+// A short noise burst through a filter: grit cracking off.
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource(), flt = ac.createBiquadFilter(), g = ac.createGain(), pn = ac.createStereoPanner();
+  src.buffer = kit.noise;
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A drop: a small air pocket rings with a rising chirp.
+function plop(ac, at, { f, level, pan = 0, dur = 0.05 }) {
+  const o = ac.createOscillator(), g = ac.createGain(), pn = ac.createStereoPanner(), f0 = f * jit(0.15);
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * 2.2, at + dur);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.25), at + 0.003);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// The trigger: the motor spins up, then the pressure arrives.
+function sprayStart() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  jv ||= jetVoice(ac);
+  jet.voiced = true;
+  const t = ac.currentTime;
+  glide(jv.motor.gain, 0.15, t, 0.05);
+  glide(jv.m1.frequency, 46, t, 0.12);
+  glide(jv.m2.frequency, 92.6, t, 0.12);
+  glide(jv.hiss.gain, 0.07, t + 0.05, 0.03);
+  glide(jv.roar.gain, 0.28, t + 0.05, 0.03);
+  glide(jv.rumble.gain, 0.2, t + 0.05, 0.05);
+}
+// Each frame: speed brightens the roar; grime makes it lower and gritty.
+function sprayTick(speed, grime, lifted, x) {
+  // Sound switched on mid-stroke joins the stroke.
+  if (!jet.voiced) sprayStart();
+  const ac = kit.live();
+  if (!ac || !jv) return;
+  const t = ac.currentTime, sp = clamp(speed / 3.5), pan = clamp(x / (world[2] / 2), -1, 1) * 0.6;
+  glide(jv.bp.frequency, 380 + 1500 * sp + 500 * (1 - grime), t, 0.05);
+  glide(jv.roar.gain, 0.2 + 0.18 * sp + 0.06 * grime, t, 0.05);
+  glide(jv.hiss.gain, 0.05 + 0.05 * sp + 0.03 * (1 - grime), t, 0.05);
+  glide(jv.rumble.gain, 0.08 + 0.22 * grime * (1 - 0.5 * sp), t, 0.08);
+  glide(jv.m1.frequency, 46 - 5 * grime - 2 * sp, t, 0.2);
+  glide(jv.m2.frequency, 92.6 - 10 * grime - 4 * sp, t, 0.2);
+  glide(jv.pan.pan, pan, t, 0.05);
+  if (Math.random() < clamp(lifted * 0.8)) burst(ac, t + Math.random() * 0.02, { f: 1400 + 2600 * Math.random(), q: 2, dur: 0.006 + 0.01 * Math.random(), level: 0.25, pan });
+}
+// Release: the pressure drops at once.
+// The motor winds down, and the water runs off.
+function sprayStop() {
+  const ac = kit.live();
+  if (!ac || !jv) return;
+  const t = ac.currentTime;
+  glide(jv.hiss.gain, 0, t, 0.04);
+  glide(jv.roar.gain, 0, t, 0.04);
+  glide(jv.rumble.gain, 0, t, 0.06);
+  glide(jv.m1.frequency, 18, t, 0.35);
+  glide(jv.m2.frequency, 36, t, 0.35);
+  glide(jv.motor.gain, 0, t + 0.1, 0.3);
+  const at = t + 0.05, dur = 2.6;
+  const src = ac.createBufferSource(), bpf = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bpf.type = 'bandpass'; bpf.frequency.value = 1300; bpf.Q.value = 1.4;
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.05, at + 0.15);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  src.connect(bpf).connect(g).connect(kit.out);
+  src.start(at);
+  src.stop(at + dur + 0.1);
+  for (let i = 0; i < 9; i++) plop(ac, at + Math.random() * dur * 0.8, { f: 600 + 1200 * Math.random(), level: 0.05 * (1 - i / 12), dur: 0.04 });
+}
+// Reset: years pass in a slow swell of wind.
+function regrowSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const t = ac.currentTime + 0.02, dur = 2.4;
+  const src = ac.createBufferSource(), bpf = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bpf.type = 'bandpass'; bpf.Q.value = 2;
+  bpf.frequency.setValueAtTime(260, t);
+  bpf.frequency.exponentialRampToValueAtTime(1700, t + dur * 0.55);
+  bpf.frequency.exponentialRampToValueAtTime(420, t + dur);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.16, t + 0.6);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+  src.connect(bpf).connect(g).connect(kit.out);
+  src.start(t);
+  src.stop(t + dur + 0.1);
+}
+// A new floor: a soft thud underfoot.
+function thud() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const t = ac.currentTime + 0.01, o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(110, t);
+  o.frequency.exponentialRampToValueAtTime(60, t + 0.16);
+  g.gain.setValueAtTime(0.35, t);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.2);
+  o.connect(g).connect(kit.out);
+  o.start(t);
+  o.stop(t + 0.22);
+  burst(ac, t, { f: 500, type: 'lowpass', q: 0.7, dur: 0.04, level: 0.25 });
+}
+// The whole floor is clean: a bright chime.
+function chime() {
+  const ac = kit.live();
+  if (!ac) return;
+  const t = ac.currentTime + 0.03;
+  [784, 988, 1175, 1568].forEach((f, i) => {
+    const o = ac.createOscillator(), g = ac.createGain(), at = t + i * 0.09;
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.07, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(1e-4, at + 1.8);
+    o.connect(g).connect(kit.out);
+    o.start(at);
+    o.stop(at + 1.9);
+  });
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while the jet sprays or the grime regrows.
+// It also runs while water flows and dries.
+// When only drying is left, frames slow to fifteen a second.
+let raf = 0, tmo = 0, last = 0, visible = !document.hidden, ready = false;
+let settleAt = 0, slowAt = 0, regrow = null, done = false, meanAt = 0;
+function wake() {
+  if (raf || tmo || !visible || !ready) return;
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+function frame(now) {
+  raf = 0;
+  let busy = false;
+  try {
+    const raw = (now - last) / 1000;
+    last = now;
+    const slow = !jet.on && !regrow && time > slowAt;
+    if (!slow) D.frame(raw);
+    const dt = clamp(raw, 0, slow ? 0.1 : 0.05);
+    time += dt;
+    jet.level += ((jet.on ? 1 : 0) - jet.level) * (1 - Math.exp(-dt / (jet.on ? 0.03 : 0.06)));
+    if (regrow) {
+      regrow.t += dt;
+      const g = Math.min(1, regrow.t / regrow.dur);
+      growDirt(2, null, null, g);
+      if (g >= 1) { regrow = null; grid.a.fill(1); }
+    }
+    if (jet.on) sprayFrame(dt);
+    else if (time < settleAt) {
+      stepWater(dt, NOJET, NOJET, 0.02, 0, 0);
+      stepMist(dt, jet.J1 || NOJET, false);
+    }
+    stepRivs(dt);
+    drawRivs(dt);
+    stepDrops(dt);
+    render();
+    busy = jet.on || !!regrow || time < settleAt || drops.length > 0 || rivs.length > 0 || jet.level > 0.002;
+  } finally {
+    if (busy && visible) {
+      if (!jet.on && !regrow && time > slowAt) tmo = setTimeout(() => { tmo = 0; raf = requestAnimationFrame(frame); }, 55);
+      else raf = requestAnimationFrame(frame);
+    } else kit.rest(() => !raf && !tmo && !jet.on);
+  }
+}
+// One frame of spraying.
+// Water and mud go first, then the grime, then the spray.
+function sprayFrame(dt) {
+  const px = jet.x, py = jet.y;
+  jet.x = jet.tx;
+  jet.y = jet.ty;
+  const vx = (jet.x - px) / Math.max(dt, 1e-3), vy = (jet.y - py) / Math.max(dt, 1e-3), sp = Math.hypot(vx, vy);
+  jet.speed += (sp - jet.speed) * (1 - Math.exp(-dt / 0.08));
+  if (sp > 0.1) {
+    // The first real move of a stroke turns the fan at once.
+    const th = Math.atan2(vy, vx) + PI / 2, k = jet.fresh && sp > 0.3 ? 1 : 1 - Math.exp(-dt / 0.06);
+    jet.c2 += (Math.cos(2 * th) - jet.c2) * k;
+    jet.s2 += (Math.sin(2 * th) - jet.s2) * k;
+    if (sp > 0.3) jet.fresh = false;
+  }
+  const phi = Math.atan2(jet.s2, jet.c2) / 2, hl = fanHalf(), sig = sigmaOf(hl), rf = rateOf(hl);
+  let ex = Math.cos(phi) * hl, ey = Math.sin(phi) * hl;
+  // The fan's ends keep their order.
+  // So a frame never sweeps a bow-tie.
+  if (jet.J1 && (jet.J1[2] - jet.J1[0]) * ex + (jet.J1[3] - jet.J1[1]) * ey < 0) { ex = -ex; ey = -ey; }
+  const J = [jet.x - ex, jet.y - ey, jet.x + ex, jet.y + ey];
+  const J0 = jet.J1 || J;
+  jet.J0 = J0;
+  jet.J1 = J;
+  const n = substeps(J0, J, sig);
+  stepWater(dt, J0, J, sig, n, rf);
+  stampDirt(J0, J, sig, n, dt, rf);
+  const lifted = gridStamp(J0, J, sig, n, dt, rf);
+  stepMist(dt, J, true);
+  spawnDrops(dt);
+  const grime = gridNear(jet.x, jet.y, hl);
+  spawnRivs(dt, J, grime);
+  sprayTick(jet.speed, grime, lifted, jet.x);
+  settleAt = time + 12 / tune.dry;
+  slowAt = time + 5;
+  // Twice a second, check whether the whole floor is clean.
+  if (time > meanAt) {
+    meanAt = time + 0.5;
+    if (!done && gridMean() < 0.035) { done = true; chime(); }
+  }
+}
+
+/* ---------- pointer ---------- */
+let ptr = null;
+const toWorld = e => {
+  const r = stage.getBoundingClientRect();
+  return [world[0] + ((e.clientX - r.left) / W) * world[2], world[1] + (1 - (e.clientY - r.top) / H) * world[3]];
+};
+canvas.addEventListener('pointerdown', e => {
+  if (ptr !== null || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = e.pointerId;
+  [jet.tx, jet.ty] = toWorld(e);
+  jet.x = jet.tx;
+  jet.y = jet.ty;
+  jet.J1 = null;
+  jet.speed = 0;
+  jet.fresh = true;
+  jet.voiced = false;
+  jet.on = true;
+  sprayStart();
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerId !== ptr) return;
+  [jet.tx, jet.ty] = toWorld(e);
+});
+const release = e => {
+  if (e.pointerId !== ptr) return;
+  ptr = null;
+  jet.on = false;
+  sprayStop();
+  wake();
+};
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('lostpointercapture', release);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- actions ---------- */
+// The first view: one stripe already cut, part of the way across.
+function teaser() {
+  const [x0, y0, ww, hh] = world;
+  const y = y0 + hh * 0.3, xa = x0 - 0.12, xb = x0 + ww * 0.56;
+  const hl = 0.09, sig = sigmaOf(hl), rf = rateOf(hl) / tune.power;
+  const steps = Math.ceil((xb - xa) / 0.04);
+  let prev = null;
+  for (let i = 0; i <= steps; i++) {
+    const x = xa + ((xb - xa) * i) / steps, yy = y + 0.03 * Math.sin(x * 2.3 + 1);
+    const J = [x, yy - hl, x, yy + hl];
+    if (prev) {
+      const n = substeps(prev, J, sig);
+      stampDirt(prev, J, sig, n, 0.04, rf);
+      gridStamp(prev, J, sig, n, 0.04, rf);
+    }
+    prev = J;
+  }
+}
+function freshFloor() {
+  regrow = null;
+  done = false;
+  makePic();
+  bakeFloor();
+  growDirt(0);
+  grid.a.fill(1);
+  teaser();
+  water.clear();
+  mist.clear();
+  drops.length = rivs.length = 0;
+}
+act.pick = () => {
+  freshFloor();
+  thud();
+  if (ready) render();
+  wake();
+};
+act.reset = () => {
+  done = false;
+  if (reduced()) {
+    regrow = null;
+    growDirt(0);
+    grid.a.fill(1);
+    if (ready) render();
+    return;
+  }
+  regrow = { t: 0, dur: 2.4 };
+  regrowSound();
+  wake();
+};
+act.look = () => { if (ready && !raf && !tmo) render(); };
+
+/* ---------- ready ---------- */
+// The compass letters wait for the font, but never long.
+try { await Promise.race([document.fonts.load('800 60px Gabarito'), new Promise(r => setTimeout(r, 900))]); } catch { /* The fallback face draws instead. */ }
+makePic();
+layout();
+teaser();
+render();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+
+new ResizeObserver(() => { layout(); if (ready) render(); }).observe(stage);
+onReducedChange(() => { drops.length = rivs.length = 0; });
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) {
+    cancelAnimationFrame(raf);
+    clearTimeout(tmo);
+    raf = tmo = 0;
+    kit.rest(() => true);
+    return;
+  }
+  wake();
+});
+</script>
+</body>
+</html>

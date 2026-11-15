@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:26:17Z
+updated_at: 2026-11-15T10:07:14Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -50,4 +50,16 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] No depth icons: shared/series/depth.js and serieslab/depth.html are deleted; the layered tilt icon and its sheen are gone too
 - [x] East Van Wires and the Belgium Flag zoomed out a little (a shot may set `zoom`)
 - [x] Vista and the eight other shots redesigned as whole, centred subjects: Vista (a film still), Atom, Moon, Blob, Compass, Button, Prism, Dandelion, Saucer; series.json now names Moon and Blob
-- [ ] Tom reviews the redesigned shots
+- [x] Alternate Vistas shots on Tom's ask, agnostic of the toys (his rule): Peak, Viewer, Road, Layers, Frame, Clapper, Glasses, beside the film still. Window, Viaduct, Lighthouse and Launch pointed at toys and are out
+- [x] Tom, 2026-11-15: different colours for Vistas. Eight colourways (Teal, Day, Sand, Ember, Mint, Mono, Night, Rose); each Vistas shot wears its own, and the sheet has a Vistas colours knob
+- [x] Tom, 2026-11-15: Vistas takes Layers in Mint (serieslab/proposal.js)
+- [ ] Tom reviews the other redesigned shots
+
+## Dividers again (Tom, 2026-11-15)
+
+- [x] No counters in the dividers
+- [x] A new round of divider styles round the hex icon, on a switch at serieslab/categories.html: Wave, Chain, Thread, Plate, Stack, Underline. The old divider lab (sections.html) is deleted
+- [x] The proposal sorts the ten new Lab toys too (98 toys)
+- [x] Tom, 2026-11-15: "a bit more Awwwards". Three editorial styles added to the switch: Editorial (hairline, huge name, icon right), Centre, Side (the heading stays at the left while its toys scroll); headings come in on scroll; the proposal frame now scrolls by itself
+- [x] Tom, 2026-11-15: the divider is the Wave. A Series switch on the menu turns the dividers on or off and regroups the toys; the main shelf opens flat, the Lab in sections (stimming.series)
+- [x] The sorting is applied: series.json has eleven series, toys.json gives every toy one (bench has no tile). The proposal pages are deleted

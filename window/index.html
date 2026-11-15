@@ -853,19 +853,22 @@ function stepWeather(dt) {
 }
 
 /* ---------- climb and dive ---------- */
-// Full stick lifts or drops the nose 6 degrees; a damped spring moves it there.
-// The spring overshoots a little, so the nose settles as a heavy aircraft's does.
-// The climb follows the nose about 2.5 s later: 0.15 km/s at 6 degrees.
+// The stick works as a yoke: Down pulls the nose up, Up pushes it down.
+// Full stick asks for 5 degrees; a slow, well-damped spring moves the nose there.
+// The plane climbs along its nose: the cruise speed times the sine of the pitch.
+// That is about 22 m/s at 5 degrees: a firm airliner climb or descent.
+// The path follows the nose about 4 s later, as a heavy aircraft's does.
 // Near each height limit the request fades, so the plane levels off.
+const PITCH_MAX = 5 * D2R;
 const climb = { vs: 0, rate: 0, skyAlt: ALT, baking: false };
 function stepClimb(dt) {
   const room = stick.pitch > 0 ? ALT_HI - alt : alt - ALT_LO;
-  const want = stick.pitch * 6 * D2R * clamp(room / 0.8);
-  // A natural frequency of 1.4 rad/s and a damping of 0.75.
-  const w = 1.4, z = 0.75, h = Math.min(dt, 0.05);
+  const want = stick.pitch * PITCH_MAX * clamp(room / 0.4);
+  // A natural frequency of 0.7 rad/s and a damping of 0.9.
+  const w = 0.7, z = 0.9, h = Math.min(dt, 0.05);
   climb.rate += ((want - pitch) * w * w - 2 * z * w * climb.rate) * h;
   pitch += climb.rate * h;
-  climb.vs += (pitch / (6 * D2R) * 0.15 - climb.vs) * (1 - Math.exp(-dt / 2.5));
+  climb.vs += (SPEED * Math.sin(pitch) - climb.vs) * (1 - Math.exp(-dt / 4));
   alt = clamp(alt + climb.vs * dt, ALT_LO, ALT_HI);
   rebakeSky();
 }
@@ -2040,13 +2043,14 @@ stage.addEventListener('pointercancel', e => { touches.delete(e.pointerId); drag
 stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { head.thx = 0; head.thy = 0; } });
 // The wheel leans toward the glass or back into the seat.
 stage.addEventListener('wheel', e => { e.preventDefault(); moveHead(0, 0, -e.deltaY * 0.0004); }, { passive: false });
-// Arrow keys fly the plane: left and right bank, up and down climb and dive.
+// Arrow keys fly the plane: left and right bank.
+// Down pulls the yoke back to climb; Up pushes it forward to dive.
 // Shift and the arrow keys move the head; plus and minus lean.
 const held = new Set();
 const setStick = () => {
   // Left banks the left wing down; a mirrored seat sees its own wing rise.
   stick.roll = ((held.has('ArrowLeft') ? 1 : 0) - (held.has('ArrowRight') ? 1 : 0)) * (mirror ? -1 : 1);
-  stick.pitch = (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0);
+  stick.pitch = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0);
   if (stick.roll || stick.pitch) wake();
 };
 stage.addEventListener('keydown', e => {
@@ -2155,25 +2159,25 @@ requestAnimationFrame(() => canvas.classList.add('on'));
 const roll = { from: 6, to: 6, t0: 0, dur: 1, hold: rnd(10, 25) };
 // The stick: -1, 0 or 1 on each axis, from the arrow keys.
 const stick = { roll: 0, pitch: 0 };
-// The roll rate in degrees a second: a heavy airliner builds it and loses it over about a second.
+// The roll rate in degrees a second: a heavy airliner builds it and loses it slowly.
 let rollRate = 0;
 function stepBank(dt) {
-  // Full stick asks for 5 degrees a second; the rate eases toward it.
-  // Near 30 degrees the request fades, so the bank stops there.
-  const room = clamp((30 - Math.sign(stick.roll) * roll.to) / 6);
-  rollRate += (stick.roll * 5 * room - rollRate) * (1 - Math.exp(-dt / 0.9));
+  // Full stick asks for 3 degrees a second; the rate eases toward it over about 1.5 s.
+  // Near 25 degrees the request fades, so the bank stops there: an airliner's limit.
+  const room = clamp((25 - Math.sign(stick.roll) * roll.to) / 6);
+  rollRate += (stick.roll * 3 * room - rollRate) * (1 - Math.exp(-dt / 1.5));
   // The autopilot holds the new bank for 20 s, then flies its own turns again.
   if (stick.roll || Math.abs(rollRate) > 0.05) {
-    roll.to = roll.from = clamp(roll.to + rollRate * dt, -30, 30);
+    roll.to = roll.from = clamp(roll.to + rollRate * dt, -25, 25);
     roll.t0 = t - roll.dur; roll.hold = 20;
   }
   if (t > roll.t0 + roll.dur + roll.hold) {
     roll.from = bank / D2R;
-    // About one turn in five is steep: up to 28 degrees, rolled in briskly.
+    // About one turn in five is steep: up to 25 degrees, rolled in a little faster.
     // The fast roll throws the ailerons and spoilers hard.
     const steep = Math.random() < 0.2;
-    roll.to = steep ? (Math.random() < 0.6 ? rnd(20, 28) : rnd(-20, -14)) : Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
-    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / (steep ? 4 : 2); roll.hold = steep ? rnd(8, 18) : rnd(12, 45);
+    roll.to = steep ? (Math.random() < 0.6 ? rnd(18, 25) : rnd(-20, -14)) : Math.random() < 0.75 ? rnd(2, 14) : rnd(-8, 18);
+    roll.t0 = t; roll.dur = 2 + Math.abs(roll.to - roll.from) / (steep ? 3 : 2); roll.hold = steep ? rnd(8, 18) : rnd(12, 45);
   }
   const k = clamp((t - roll.t0) / roll.dur), e = k * k * k * (k * (k * 6 - 15) + 10);
   // A slow wander rides on top, as the autopilot trims.
