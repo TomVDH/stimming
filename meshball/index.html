@@ -271,7 +271,7 @@ float bubbleAt(vec3 p, ivec2 t, float r, float B, vec2 q, out vec4 bb) {
   float h = texelFetch(uCells, ivec2(t.x * 2 + 1, t.y), 0).y;
   bb = vec4(s.xyz, h);
   float top = mix(h * (1.06 - dot(q, q) / 0.8836), 10.0, smoothstep(0.5, 1.0, h / (0.94 * uHalf * B)));
-  return smax(length(p - s.xyz) - s.w, r - B - top, 0.012);
+  return smax(length(p - s.xyz) - s.w, r - B - top, uHalf * 0.076);
 }
 
 // Scene distance in the ball frame.
@@ -313,8 +313,10 @@ float scene(vec3 p, out float mat, out vec4 bub, out vec4 cell) {
   float groove = 1.0 - smoothstep(0.0, uStrand * 3.2, edge);
   float dBase = (r - B + uBite * groove) * 0.8;
   // Neighbours merge into one mass of goo; the cords cut a channel in it.
-  float dBub = smin(smin(d0, dx, 0.06), smin(dy, dz, 0.06), 0.06);
-  float dGoo = smax(smin(dBase, dBub, 0.06), uStrand * 0.3 - min(sx, sy), uStrand * 0.6);
+  // The blends scale with the hole, so a fine mesh keeps its strands clear.
+  float kb = uHalf * 0.38;
+  float dBub = smin(smin(d0, dx, kb), smin(dy, dz, kb), kb);
+  float dGoo = smax(smin(dBase, dBub, kb), uStrand * 0.3 - min(sx, sy), uStrand * 0.6);
   bub = b0;
   float near = d0;
   if (dx < near) { near = dx; bub = bx; }
@@ -617,7 +619,7 @@ function targetOf(cell, active) {
     dent = Math.max(dent, s * clamp((p.kind.theta * 1.05 - th) / (p.kind.theta * 0.5)));
   }
   const t = REST * cell.g + P * (0.24 * cell.g + 0.85 * ring * cell.g2);
-  return Math.min(t * (1 - 0.55 * dent), 1.25);
+  return Math.min(t * (1 - 0.3 * dent), 1.25);
 }
 
 /* ---------- sound ---------- */
@@ -701,7 +703,7 @@ function squelchVoice(ac) {
   const mod = ac.createBufferSource();
   mod.buffer = kit.noise;
   mod.loop = true;
-  mod.playbackRate.value = 0.02;
+  mod.playbackRate.value = 0.0015;
   const modG = ac.createGain();
   modG.gain.value = 380;
   mod.connect(modG).connect(bp.frequency);
@@ -755,7 +757,8 @@ function resize() {
   canvas.height = Math.max(1, Math.round(h * dpr));
   size = { w, h, dpr };
   makeHdr(canvas.width, canvas.height);
-  R = Math.min(w, h) * (w < 640 ? 0.36 : 0.33);
+  // A short stage keeps room for full bubbles under the top row.
+  R = Math.min(w, h) * (h < 420 ? 0.3 : w < 640 ? 0.36 : 0.33);
   centre = [w / 2, h / 2];
 }
 // The focal length that shows the unit ball at R pixels.
@@ -788,7 +791,7 @@ function step(dt) {
   // Presses: the depth springs; a released dent springs back.
   for (let i = presses.length - 1; i >= 0; i--) {
     const p = presses[i];
-    const goal = p.held ? p.kind.max * (0.75 + 0.25 * p.hold) : 0;
+    const goal = p.held ? p.kind.max * (0.75 + 0.25 * p.hold) * p.force : 0;
     const z = rm ? 1 : p.held ? 0.7 : 0.32;
     for (let s = 0, n = Math.ceil(dt / 0.008); s < n; s++) {
       const h = dt / n;
@@ -958,6 +961,8 @@ function frame(now) {
 // Each pointer is one finger; three fingers at most.
 const fingers = new Map();
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// A pen or a pressure screen presses harder; a mouse reads 0.5 and counts as even.
+const forceOf = e => (e.pointerType !== 'mouse' && e.pressure > 0 && e.pressure !== 0.5 && e.pressure !== 1 ? 0.7 + 0.6 * e.pressure : 1);
 function aim(x, y) {
   if (reduced()) { key.to = [...K0]; return; }
   const qx = clamp((x - centre[0]) / R, -1.6, 1.6), qy = clamp((centre[1] - y) / R, -1.6, 1.6);
@@ -965,7 +970,7 @@ function aim(x, y) {
 }
 function press(kind, dir, id) {
   if (presses.filter(p => p.held).length >= 3) return null;
-  const p = { id, kind, held: true, dir: [...dir], to: [...dir], db: apply(M, dir), depth: 0, vel: 0, t: 0, hold: 0 };
+  const p = { id, kind, held: true, dir: [...dir], to: [...dir], db: apply(M, dir), depth: 0, vel: 0, t: 0, hold: 0, force: 1 };
   // A free slot reuses the oldest released dent.
   if (presses.length >= 3) presses.splice(presses.findIndex(q => !q.held), 1);
   presses.push(p);
@@ -976,6 +981,7 @@ function down(e) {
   const [x, y] = local(e);
   const p = press(FINGER, pointDir(x, y), e.pointerId);
   if (!p) return;
+  p.force = forceOf(e);
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   fingers.set(e.pointerId, { p, x, y, t: e.timeStamp });
   stage.classList.add('is-held');
@@ -991,6 +997,7 @@ function move(e) {
     return;
   }
   f.p.to = pointDir(x, y);
+  f.p.force = forceOf(e);
   // Speed in ball radii a second drives the squelch.
   const dt = Math.max(1e-3, (e.timeStamp - f.t) / 1000);
   squelchSound(Math.hypot(x - f.x, y - f.y) / R / dt, panOf(f.p.db));
@@ -1029,7 +1036,7 @@ addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !held());
 let palms = [];
 act.hug = () => {
   if (palms.length) return;
-  palms = [norm3([-1, 0.06, 0.32]), norm3([1, -0.04, 0.32])].map(d => press(PALM, d, 'palm')).filter(Boolean);
+  palms = [norm3([-1, 0.05, 0.14]), norm3([1, -0.03, 0.14])].map(d => press(PALM, d, 'palm')).filter(Boolean);
   if (palms.length) { stage.classList.add('is-held'); squishSound(0, 1.2); }
   wake();
 };
