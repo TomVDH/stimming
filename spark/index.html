@@ -602,6 +602,8 @@ function floorHit(p0, v0, k, life) {
 // k: drag. fork: chance to burst. depth: fork levels. kids: children of a burst.
 // split: chance to split on the floor. speed: scale of the launch speed.
 // spark: the spark's own colour and mix, NO_TINT for the heat ramp, or 'hue' for a random hue.
+// trail: tail length in seconds. shards: the most pieces of a floor split. loft: upward launch speed.
+// flutter: Confetti's slow second fall. pop: Popcorn's wait and jump. bits: seconds a floor bit lies.
 // smoke: amount. fog: the smoke's colour. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
 const TYPES = {
   ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, depth: 1, kids: [3, 8], split: 0.5, size: 1.6, speed: 1, spark: NO_TINT,
@@ -610,15 +612,17 @@ const TYPES = {
     smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]] },
   titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, depth: 1, kids: [2, 4], split: 0.15, size: 1.9, speed: 1, spark: NO_TINT,
     smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]] },
-  sparkler: { n: 1.6, life: [0.25, 0.5], heat: [0.9, 0.55], k: [4, 6], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 0.8, spark: NO_TINT,
+  sparkler: { n: 1.4, life: [0.3, 0.6], heat: [0.9, 0.55], k: [3.5, 5], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 1, spark: NO_TINT,
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
-  comet: { n: 0.22, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, size: 3.4, speed: 0.5, spark: NO_TINT,
+  comet: { n: 0.04, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, shards: 3, trail: 0.22, loft: 4.5, size: 3.4, speed: 0.6, spark: NO_TINT,
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
   ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
   confetti: { n: 1.6, life: [0.5, 0.8], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 2.0, speed: 0.9, spark: 'hue',
+    flutter: { life: [1.2, 2.2], k: [7, 10], drift: 0.8 }, bits: 6,
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
-  popcorn: { n: 0.9, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
+  popcorn: { n: 0.6, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
+    pop: { wait: [0.25, 0.9], up: [4, 7], size: 3, tint: [1, 0.95, 0.8, 1] }, bits: 6,
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
 };
 // The colour a new spark of this type carries.
@@ -629,54 +633,103 @@ function tintOf(m) {
 }
 const span = ([a, b]) => a + (b - a) * rnd();
 const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
+// The most fork children one frame may write; the spark ring holds 8000.
+const FORK_CAP = 600;
+let forks = 0;
+// Popcorn kernels that wait on the floor: where, and when each pops.
+const corn = [];
 // One spark: write its flight, then schedule what ends it.
 // o.fd counts fork depth; o.bd counts floor bounces; o.act marks a second act.
+// Act 1 is Confetti's flutter; act 2 is a popped corn.
 function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
   const { fd = 0, bd = 0, tint = NO_TINT, act = 0 } = o;
   const m = TYPES[pick];
   const hit = floorHit(p0, v0, k, life);
   // A burst comes late in the flight, before the spark lands.
-  const forkAt = fd === 0 && bd === 0 && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
+  // Reduced motion allows one fork level at most.
+  const depth = reduced() ? Math.min(m.depth, 1) : m.depth;
+  const canFork = act === 0 && bd === 0 && fd < depth && forks < FORK_CAP;
+  const forkAt = canFork && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
   const end = Math.min(life, hit, forkAt);
   const heatEnd = heat0 + (heat1 - heat0) * (end / life);
   const trail = o.trail ?? (fd ? 0.03 : 0.07);
   writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1, tint);
   if (end === forkAt) {
-    // A burst: three to eight short stars in a sphere.
+    // A burst: short stars in a sphere. Each level halves the count and the life.
     const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
-    const n = Math.round(span(m.kids));
+    const n = Math.max(1, Math.round(span(m.kids) / (1 << fd)));
+    forks += n;
     for (let i = 0; i < n; i++) {
       Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(3 + 4 * rnd());
       const cv = v.clone().multiplyScalar(0.5).add(Q);
-      const kid = span([0.1, 0.28]);
+      const kid = span([0.1, 0.28]) / (1 << fd);
       launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, { fd: fd + 1, bd, tint });
     }
     cue(t0 + end, 'pop', p, heatEnd);
     wisp(t0 + end, p, FEED.pop * m.smoke);
-  } else if (end === hit) {
-    const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
-    p.y = FLOOR + 0.001;
-    // The floor takes most of the fall and some of the slide.
-    const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
-    const rest = life - end;
-    // Hot sparks hiss on the wet floor.
-    if (heatEnd > 0.55 && mirror.visible) {
-      cue(t0 + end, 'hiss', p, heatEnd);
-      // A hot spark on the wet floor lifts a wisp of steam.
-      wisp(t0 + end, p, FEED.steam);
+    return;
+  }
+  if (end !== hit) {
+    // Confetti that burns out in the air goes on as a slow, drifting fall.
+    if (act === 0 && m.flutter) {
+      const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+      const turn = rnd() * TAU;
+      v.multiplyScalar(0.25).add(Q.set(Math.cos(turn), 0, Math.sin(turn)).multiplyScalar(m.flutter.drift));
+      launch(p, v, t0 + end, span(m.flutter.life), heatEnd, heatEnd, span(m.flutter.k), size, { act: 1, fd: 9, tint, trail: 0.03, bits: m.bits });
     }
-    if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
-      const splits = heatEnd > 0.6 && rnd() < m.split;
-      const parts = splits ? 2 : 1;
-      for (let i = 0; i < parts; i++) {
-        const pv = bv.clone();
-        if (splits) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i ? 1 : -1) * (0.3 + 0.4 * rnd()));
-        launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (splits ? 0.75 : 0.9), { fd, bd: bd + 1, tint });
-      }
-    } else if (heatEnd > 0.3) {
-      // A slow, hot spark comes to rest as an ember.
-      addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85), tint);
+    return;
+  }
+  const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+  p.y = FLOOR + 0.001;
+  // The floor takes most of the fall and some of the slide.
+  const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
+  const rest = life - end;
+  // A popped corn bounces once, then lies as a pale bit.
+  if (act === 2) {
+    if (bd < 1 && rest > 0.05) launch(p, bv, t0 + end, rest, heatEnd, heat1, k, size * 0.9, { act: 2, fd: 9, bd: bd + 1, tint, bits: o.bits });
+    else addEmber(p.x, p.z, t0 + end, o.bits / 4, 0.7, tint);
+    return;
+  }
+  // Confetti lies where it lands, in its own colour.
+  if (act === 1 || m.flutter) {
+    addEmber(p.x, p.z, t0 + end, (o.bits ?? m.bits) / 4, 0.7, tint);
+    return;
+  }
+  // A kernel lies on the floor and waits for its pop.
+  if (m.pop) {
+    addEmber(p.x, p.z, t0 + end, 0.4, 0.5, tint);
+    corn.push({ p, tPop: t0 + end + span(m.pop.wait), pop: m.pop, bits: m.bits });
+    return;
+  }
+  // Hot sparks hiss on the wet floor.
+  if (heatEnd > 0.55 && mirror.visible) {
+    cue(t0 + end, 'hiss', p, heatEnd);
+    // A hot spark on the wet floor lifts a wisp of steam.
+    wisp(t0 + end, p, FEED.steam);
+  }
+  if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
+    const splits = heatEnd > 0.6 && rnd() < m.split;
+    const parts = splits ? (m.shards === 3 && rnd() < 0.5 ? 3 : 2) : 1;
+    for (let i = 0; i < parts; i++) {
+      const pv = bv.clone();
+      if (splits) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i === 2 ? 0 : i ? 1 : -1) * (0.3 + 0.4 * rnd()));
+      launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (splits ? 0.75 : 0.9), { fd, bd: bd + 1, tint });
     }
+  } else if (heatEnd > 0.3) {
+    // A slow, hot spark comes to rest as an ember.
+    addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85), tint);
+  }
+}
+// Each waiting kernel jumps up white when its time comes.
+function popCorn() {
+  for (let i = corn.length - 1; i >= 0; i--) {
+    const c = corn[i];
+    if (c.tPop > time) continue;
+    corn.splice(i, 1);
+    const turn = rnd() * TAU;
+    V.set(Math.cos(turn) * 1.5 * rnd(), span(c.pop.up), Math.sin(turn) * 1.5 * rnd());
+    launch(c.p, V.clone(), c.tPop, 0.9, 0.9, 0.7, 2, c.pop.size, { act: 2, fd: 9, tint: c.pop.tint, bits: c.bits });
+    cue(c.tPop, 'pop', c.p, 0.8);
   }
 }
 // The contact point and the rim's direction of travel there.
@@ -693,6 +746,8 @@ const CONE = Math.tan(12 * Math.PI / 180);
 let toothAcc = 0, rate = 0;
 // Each passing tooth scrapes 0 to 3 particles off the flint.
 function emit(dt) {
+  forks = 0;
+  popCorn();
   if (wheel.omega <= 0) { toothAcc = 0; return 0; }
   const teethRate = wheel.omega * TEETH / TAU;
   if (teethRate < 4) return 0;
@@ -707,12 +762,15 @@ function emit(dt) {
     const t0 = time - dt * (toothAcc / Math.max(1, teethRate * dt));
     // Single ticks while the teeth are slow; the rasp takes over above 25 a second.
     if (teethRate < 26) cue(t0, 'tick', P.set(0, -R, 0), 1 - clamp((teethRate - 14) / 12));
-    const count = Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
+    // A type with under one spark a tooth throws one now and then.
+    const count = m.n < 1 ? (rnd() < m.n * lite ? 1 : 0) : Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
       V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
         .multiplyScalar((2 + Math.min(16, rim * (0.45 + 0.45 * rnd()))) * m.speed);
-      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), { fd: reduced() ? 9 : 0, tint: tintOf(m) });
+      // A lofted type leaves in an arc.
+      if (m.loft) V.y += m.loft * (0.7 + 0.6 * rnd());
+      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), { fd: reduced() && m.depth < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail });
       n++;
     }
   }
@@ -1337,7 +1395,7 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil;
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0;
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
@@ -1571,6 +1629,7 @@ act.reset = () => {
   head = 0; dirtyFrom = -1; dirtyN = 0; lastDeath = 0;
   for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
+  corn.length = 0;
   clearSmoke();
   kick = KICK;
   live();
