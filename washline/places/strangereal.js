@@ -1,33 +1,32 @@
-// Strangereal: a tower roof on an anime-blue afternoon.
+// Strangereal: a tower roof at blue hour, seen through a long lens.
 // The line runs from a stair bulkhead to an antenna mast at the far parapet.
-// The city stacks in pale bands to the horizon; furballs wheel high above it.
+// Beyond it the city stacks in bands toward the horizon; furballs turn far off.
 // The roof deck is y = 0; the street lies 140 m below.
 import * as THREE from 'three';
 import { rng, ok, col, inst, paint, canvasTex } from './kit.js';
 import { cityBands } from './sr-city.js';
 import { furball } from './sr-furball.js';
-import { skyDome } from './sr-sky.js';
 
 const H = 140;
 const LINE_Z = -3;
 const PARAPET = -6;
-const EYE = [0.1, 1.65, 12];
-const EYE_PHONE = [0.1, 1.7, 14];
+const EYE = [0.1, 2.15, 24];
+const EYE_PHONE = [0.1, 2.3, 26];
 
 export default {
   id: 'strangereal',
   name: 'Strangereal',
   anchors: { a: [-3.38, 2.3, LINE_Z], b: [3.6, 2.2, LINE_Z] },
   windDir: [0.3, 0.95],
-  // A high sun behind the viewer; then lower, behind the city on the right.
-  sun: { front: [-0.3, 0.62, 0.72], back: [0.72, 0.34, -0.6] },
-  sky: { zen: [0.4, 0.17, 262], hor: [0.88, 0.07, 225], haze: [0.82, 0.06, 228], clouds: 0, warm: 0, curve: 0.45 },
-  amb: { hi: [0.8, 0.08, 245], lo: [0.45, 0.05, 260] },
+  // Dusk light from behind the viewer; then the afterglow behind the city.
+  sun: { front: [-0.35, 0.05, 0.94], back: [0.12, 0.008, -0.99] },
+  sky: { zen: [0.24, 0.09, 266], hor: [0.5, 0.07, 290], haze: [0.3, 0.06, 268], clouds: 0, warm: 0.25 },
+  amb: { hi: [0.55, 0.06, 260], lo: [0.35, 0.04, 280] },
   cord: [0.03, 0.03, 0.035],
   hangFrom: 0.4,
   start: 3,
   fog: [200, 30000],
-  fill: 1.3,
+  fill: 1.8,
   wash: [
     { w: 1.2, h: 0.9, c: [0.95, 0.01, 90] },
     { w: 0.75, h: 0.95, c: [0.6, 0.15, 25] },
@@ -36,15 +35,15 @@ export default {
   ],
   palette: [[0.95, 0.01, 90], [0.6, 0.15, 25], [0.5, 0.12, 250], [0.85, 0.12, 95], [0.3, 0.02, 260], [0.7, 0.12, 330], [0.65, 0.12, 160]],
 
-  // A lens tilted up: the city in the lower third, the furball in the sky.
+  // A level long lens; the city fills the band around the horizon.
   frame(cam, aspect) {
-    const phone = aspect < 1, eye = phone ? EYE_PHONE : EYE, tilt = phone ? 0.16 : 0.13;
-    cam.fov = phone ? 62 : 34;
+    const phone = aspect < 1, eye = phone ? EYE_PHONE : EYE;
+    cam.fov = phone ? 34 : 15;
     cam.near = 0.5;
     cam.far = 30000;
     cam.aspect = aspect;
     cam.position.set(...eye);
-    cam.lookAt(0, eye[1] + Math.tan(tilt) * 400, -400);
+    cam.lookAt(0, eye[1] - 0.45, -400);
     cam.updateProjectionMatrix();
   },
 
@@ -100,8 +99,7 @@ export default {
     }
     for (let i = 0; i < 9; i++) {
       const x = (R() - 0.5) * 34, z = 4 + R() * 16;
-      // Nothing stands near the camera.
-      if (z > 8 || Math.abs(x) < 3.5) continue;
+      if (Math.abs(x) < 3.5 && z > 14) continue;
       B.push({ p: [x, 0.55, z], s: [1.2, 1.1, 1.0], c: col([0.7, 0.01, 250]) });
       C.push({ p: [x, 1.12, z], s: [0.42, 0.04, 0.42], c: col([0.15, 0.01, 260]) });
     }
@@ -111,18 +109,9 @@ export default {
     }
     B.push({ p: [-1.5, 0.12, 9], s: [24, 0.18, 0.4], c: col([0.45, 0.01, 260]) });
 
-    // Life by the door: potted plants and lit glass.
-    for (let i = 0; i < 4; i++) {
-      const x = -7.2 + i * 0.55, z = 0.7 + (i % 2) * 0.35;
-      C.push({ p: [x, 0.2, z], s: [0.2, 0.4, 0.2], c: col([0.55, 0.1, 45]) });
-      for (let k = 0; k < 5; k++) B.push({ p: [x + (R() - 0.5) * 0.3, 0.55 + R() * 0.35, z + (R() - 0.5) * 0.3], s: [0.18, 0.2, 0.18], r: [R(), R(), R()], c: col([0.42 + R() * 0.1, 0.11, 140]) });
-    }
-    lamps.push({ p: [-5.0, 1.55, 0.06], s: [0.5, 0.6, 0.02] });
     inst(group, new THREE.BoxGeometry(1, 1, 1), paint(0.85), B);
     inst(group, new THREE.CylinderGeometry(1, 1, 1, 12), paint(0.7, 0.2), C);
     inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.9, 0.08, 80]), emissive: col([0.85, 0.12, 75]), emissiveIntensity: 2 }), lamps, false);
-
-    const dome = skyDome(group);
 
     /* ---------- the city and the sky war ---------- */
     const city = cityBands(group, rng(31), { H, PARAPET });
@@ -132,7 +121,6 @@ export default {
       // The mast light blinks once a second.
       red.material.emissiveIntensity = (t % 1.2) < 0.25 ? 6 : 0.2;
       city.tick(t, sun, cam, viewH, sky);
-      dome.tick(t, sun, cam);
       war.tick(t, sun, cam, viewH, sky);
     };
     return group;

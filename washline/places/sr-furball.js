@@ -5,28 +5,26 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { col } from './kit.js';
 
-// Three furballs wheel high above the city, kilometres out.
 const BALLS = [
-  { c: [-2600, 2300, -7200], r: 1600, n: 8 },
-  { c: [2900, 3300, -9400], r: 1900, n: 8 },
-  { c: [300, 1600, -5600], r: 1200, n: 6 },
+  { c: [-700, 360, -5200], r: 800, n: 8 },
+  { c: [900, 520, -6800], r: 950, n: 8 },
+  { c: [150, 230, -3600], r: 550, n: 6 },
 ];
-const MAX_TRAILS = 96, PTS = 96, STEP = 0.13;
+const MAX_TRAILS = 96, PTS = 64, STEP = 0.08;
 const KINDS = {
-  contrail: { life: 10, w: 7, spread: 4, col: [1, 1, 1], a: 0.92 },
-  missile: { life: 9, w: 5, spread: 5, col: [1, 1, 1], a: 0.95 },
-  flare: { life: 5, w: 3, spread: 4, col: [1, 1, 1], a: 0.7 },
-  debris: { life: 11, w: 8, spread: 6, col: [0.22, 0.21, 0.22], a: 0.85 },
+  contrail: { life: 5, w: 3, spread: 1.4, col: [1.0, 0.93, 0.86], a: 0.5 },
+  missile: { life: 6, w: 2, spread: 2.2, col: [0.9, 0.9, 0.92], a: 0.75 },
+  flare: { life: 4, w: 1.5, spread: 2.5, col: [0.95, 0.95, 0.95], a: 0.55 },
+  debris: { life: 9, w: 4, spread: 3.5, col: [0.25, 0.24, 0.24], a: 0.8 },
 };
 
 // A fighter: fuselage, delta wing, twin fins. About 15 m long.
 function jetGeometry() {
-  // Drawn at three times scale, so a jet reads kilometres away.
   const body = new THREE.BoxGeometry(1.1, 1.0, 15);
   const wing = new THREE.Shape([new THREE.Vector2(0, 3.5), new THREE.Vector2(-5.5, -5.5), new THREE.Vector2(5.5, -5.5)]);
   const wg = new THREE.ExtrudeGeometry(wing, { depth: 0.2, bevelEnabled: false }).rotateX(Math.PI / 2);
   const fins = [-1, 1].map(k => new THREE.BoxGeometry(0.15, 2.4, 2.6).rotateZ(k * 0.3).translate(k * 1.0, 1.3, -6));
-  return mergeGeometries([body, wg, ...fins].map(g => g.toNonIndexed())).scale(3, 3, 3);
+  return mergeGeometries([body, wg, ...fins].map(g => g.toNonIndexed()));
 }
 
 export function furball(group, R, { H }) {
@@ -34,22 +32,18 @@ export function furball(group, R, { H }) {
   const jets = [];
   BALLS.forEach((b, bi) => {
     for (let i = 0; i < b.n; i++) {
-      // Each jet flies a tilted, wandering loop: no two share a plane.
-      const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler((R() - 0.5) * 1.6, R() * 6.3, (R() - 0.5) * 1.6));
       jets.push({
-        ball: bi, a1: b.r * (0.45 + R() * 0.6), a2: b.r * (0.2 + R() * 0.35), w1: (0.16 + R() * 0.12) * (R() < 0.5 ? -1 : 1), w2: 0.37 + R() * 0.5,
-        w3: 0.05 + R() * 0.06, p1: R() * 6.3, p2: R() * 6.3, p3: R() * 6.3, tilt,
+        ball: bi, a1: b.r * (0.5 + R() * 0.6), a2: b.r * (0.15 + R() * 0.3), w1: (0.22 + R() * 0.12) * (R() < 0.5 ? -1 : 1), w2: 0.5 + R() * 0.6,
+        w3: 0.3 + R() * 0.4, vy: 60 + R() * 120, p1: R() * 6.3, p2: R() * 6.3, p3: R() * 6.3,
         pos: new THREE.Vector3(), vel: new THREE.Vector3(), dead: 0, trail: -1, next: 0,
       });
     }
   });
   const pathAt = (j, t, out) => {
     const b = BALLS[j.ball].c, a = j.w1 * t + j.p1, c = j.w2 * t + j.p2;
-    // An ellipse with a faster wobble, tilted, its centre drifting slowly.
-    out.set(j.a1 * Math.cos(a) + j.a2 * Math.cos(c), j.a2 * 0.6 * Math.sin(c * 1.3), j.a1 * 0.55 * Math.sin(a) + j.a2 * 0.4 * Math.sin(c)).applyQuaternion(j.tilt);
-    return out.add(new THREE.Vector3(b[0] + 600 * Math.sin(j.w3 * t + j.p3), b[1] + 250 * Math.sin(j.w3 * 1.7 * t), b[2] + 500 * Math.cos(j.w3 * t + j.p3)));
+    return out.set(b[0] + j.a1 * Math.cos(a) + j.a2 * Math.cos(c), b[1] + j.vy * Math.sin(j.w3 * t + j.p3), b[2] + j.a1 * Math.sin(a) + j.a2 * 0.6 * Math.sin(c));
   };
-  const jetMesh = new THREE.InstancedMesh(jetGeometry(), new THREE.MeshStandardMaterial({ color: col([0.45, 0.02, 250]), roughness: 0.45, metalness: 0.5 }), jets.length);
+  const jetMesh = new THREE.InstancedMesh(jetGeometry(), new THREE.MeshStandardMaterial({ color: col([0.32, 0.01, 260]), roughness: 0.5, metalness: 0.4 }), jets.length);
   jetMesh.frustumCulled = false;
   group.add(jetMesh);
 
@@ -172,10 +166,6 @@ export function furball(group, R, { H }) {
         if (j.trail < 0) j.trail = newTrail('contrail');
         if (j.trail >= 0) feed(j.trail, tmp2.copy(j.pos).addScaledVector(j.vel, -0.04), t);
         glow.add(tmp2, 2.2, 1.0, 0.55, 0.25, 0.9);
-        // Navigation lights: red port, green starboard, a white strobe.
-        glow.add(tmp.set(-16, 0, -15).applyQuaternion(q).add(j.pos), 2, 1.0, 0.1, 0.05, 1);
-        glow.add(tmp.set(16, 0, -15).applyQuaternion(q).add(j.pos), 2, 0.1, 1.0, 0.3, 1);
-        if ((t * 1.1 + j.p1) % 1 < 0.08) glow.add(tmp.set(0, 4, -18).applyQuaternion(q).add(j.pos), 3.5, 1, 1, 1, 1.4);
       });
       jetMesh.instanceMatrix.needsUpdate = true;
 
@@ -246,12 +236,7 @@ export function furball(group, R, { H }) {
           sx *= hw / sl; sy *= hw / sl; sz *= hw / sl;
           rPos.set([x + sx, y + sy, z + sz, x - sx, y - sy, z - sz], v * 3);
           const a = kind.a * Math.pow(Math.max(0, 1 - age / kind.life), 1.5) * Math.min(1, i / 2);
-          // Trails are white in the sun; their side away from it takes the sky's blue.
-          let c = kind.col;
-          if (tr.kind !== 'debris') {
-            const lit = 0.5 + 0.5 * Math.max(-1, Math.min(1, (sx * sun.dir.x + sy * sun.dir.y + sz * sun.dir.z) / (hw || 1)));
-            c = [0.78 + 0.22 * lit, 0.86 + 0.14 * lit, 1.0];
-          }
+          const c = kind.col;
           rCol.set([c[0], c[1], c[2], a, c[0], c[1], c[2], a], v * 4);
         }
       }
