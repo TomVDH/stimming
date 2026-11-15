@@ -2415,23 +2415,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="spark" href="spark/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <rect x="44" y="72" width="9" height="24" fill="oklch(0.42 0.008 70)"/>
-                <circle cx="48" cy="48" r="25" fill="oklch(0.5 0.01 250)"/>
-                <circle id="spark-knurl" cx="48" cy="48" r="22.5" fill="none" stroke="oklch(0.86 0.01 250)" stroke-width="5" stroke-dasharray="2.6 2.3"/>
-                <circle cx="48" cy="48" r="15" fill="oklch(0.36 0.01 250)"/>
-                <circle cx="48" cy="48" r="4" fill="oklch(0.12 0.01 250)"/>
-                <g id="spark-fly" stroke-linecap="round" stroke-width="2.4" opacity="0">
-                  <line x1="54" y1="73" x2="66" y2="74" stroke="oklch(0.95 0.08 90)"/>
-                  <line x1="54" y1="73" x2="64" y2="78" stroke="oklch(0.85 0.15 70)"/>
-                  <line x1="54" y1="73" x2="67" y2="70" stroke="oklch(0.95 0.08 90)"/>
-                  <line x1="54" y1="73" x2="63" y2="81" stroke="oklch(0.75 0.17 50)"/>
-                  <line x1="54" y1="73" x2="65" y2="76" stroke="oklch(0.85 0.15 70)"/>
-                </g>
-                <g fill="oklch(0.72 0.17 45)">
-                  <circle cx="82" cy="106" r="1.8"/><circle cx="96" cy="103" r="1.4"/><circle cx="104" cy="108" r="1.6"/>
-                </g>
-              </svg>
+              <svg class="art" viewBox="0 0 128 128" data-box="24 30 88 72" aria-hidden="true"></svg>
             </span>
             <span class="name">Spark wheel</span>
           </a>
@@ -3701,24 +3685,137 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     rest() { gsap.to(nvStrobe, { opacity: 0.2, scale: 1, svgOrigin: '62 72', duration: 0.3, overwrite: true }); },
   };
 
-  // The knurl turns and sparks fly off the flint to the right.
+  // Spark wheel: a fountain of sparks off a steel wheel, mirrored on a wet floor.
+  // Each spark is a real flight: drag, gravity, then a skid on the floor.
+  // The spray turns toward the pointer; a quick stroke spins the wheel.
   {
-    const knurl = $('spark-knurl'), fly = $('spark-fly'), lines = [...fly.children];
-    toys.spark = {
-      play: () => {
-        gsap.set(fly, { opacity: 1 });
-        const tl = loop({ repeatDelay: 0.15 });
-        tl.fromTo(knurl, { rotation: 0, svgOrigin: '48 48' }, { rotation: 140, svgOrigin: '48 48', duration: 0.7, ease: 'power2.out' }, 0);
-        lines.forEach((el, i) => tl.fromTo(el,
-          { x: 0, y: 0, opacity: 1, scale: 0.4, svgOrigin: '54 73' },
-          { x: 30 + i * 6, y: 14 + i * 5, opacity: 0, scale: 1.2, svgOrigin: '54 73', duration: 0.55, ease: 'power1.in' }, i * 0.05));
-        return tl;
-      },
-      rest() {
-        gsap.to(fly, { opacity: 0, duration: 0.25, overwrite: true });
-        gsap.to(knurl, { rotation: 0, svgOrigin: '48 48', duration: 0.4, overwrite: true });
-      },
+    const tile = $('spark'), svg = tile.querySelector('svg'), u = 'sw-';
+    const f = n => +(+n).toFixed(2), RAD = Math.PI / 180, clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+    const FL = 84, F = [46, 54], RX = 13.5, RY = 22, BX = 39, K = [F[0] + 4, F[1] + RY - 0.5], G = 210;
+    // A fixed seed keeps the resting picture the same on every load.
+    let seed = 11;
+    const sr = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const SPK = Array.from({ length: 34 }, () => ({ a: sr() * 2 - 1, v: sr(), k: 0.5 + 1.3 * sr(), life: 0.45 + 0.55 * sr(), hot: sr(), ph: sr() }));
+    const fly = (s, aim, power) => {
+      const ang = (aim + s.a * (14 + 10 * s.v)) * RAD, sp = (80 + 92 * s.v) * power, dt = s.life / 14;
+      let x = K[0], y = K[1], vx = sp * Math.cos(ang), vy = sp * Math.sin(ang);
+      const pts = [[x, y]];
+      for (let i = 0; i < 14; i++) {
+        vx -= s.k * vx * dt;
+        vy += (G - s.k * vy) * dt;
+        x += vx * dt;
+        y += vy * dt;
+        if (y > FL) { y = FL; vy *= -0.28; vx *= 0.72; }
+        pts.push([x, y]);
+      }
+      return pts;
     };
+    const dOf = pts => 'M' + pts.map(([x, y]) => `${f(x)} ${f(y)}`).join('L');
+    const stop = (o, c, op) => `<stop offset="${o}" style="stop-color: ${c}"${op != null ? ` stop-opacity="${op}"` : ''}/>`;
+    const REST = { aim: -18, power: 0.86 };
+    svg.classList.add(`${u}x`);
+    svg.innerHTML = `
+      <style>.${u}x .cm { opacity: 0; animation: ${u}flow 0.9s linear infinite paused; transition: opacity 0.3s; } .${u}x.live .cm { opacity: 1; animation-play-state: running; } @keyframes ${u}flow { to { stroke-dashoffset: -26; } }</style>
+      <defs>
+        <clipPath id="${u}fl"><rect x="0" y="${FL}" width="128" height="40"/></clipPath>
+        <linearGradient id="${u}fade" x1="0" y1="0" x2="0" y2="1">${stop(0, '#fff', 1)}${stop(1, '#fff', 0)}</linearGradient>
+        <mask id="${u}mk" maskUnits="userSpaceOnUse" x="0" y="${FL}" width="128" height="20"><rect x="0" y="${FL}" width="128" height="18" fill="url(#${u}fade)"/></mask>
+        <radialGradient id="${u}glow">${stop(0, 'oklch(0.92 0.13 85)', 0.95)}${stop(0.35, 'oklch(0.75 0.17 60)', 0.45)}${stop(1, 'oklch(0.6 0.17 45)', 0)}</radialGradient>
+        <linearGradient id="${u}m" gradientUnits="userSpaceOnUse" x1="0" y1="${F[1] - RY}" x2="0" y2="${F[1] + RY}">${stop(0, 'oklch(0.3 0.02 262)')}${stop(0.12, 'oklch(0.9 0.01 255)')}${stop(0.3, 'oklch(0.6 0.018 255)')}${stop(0.62, 'oklch(0.32 0.022 262)')}${stop(0.88, 'oklch(0.7 0.11 70)')}${stop(1, 'oklch(0.86 0.13 82)')}</linearGradient>
+        <radialGradient id="${u}f" cx="0.32" cy="0.2" r="1.05">${stop(0, 'oklch(0.97 0.006 250)')}${stop(0.45, 'oklch(0.76 0.014 252)')}${stop(0.85, 'oklch(0.5 0.02 258)')}${stop(1, 'oklch(0.66 0.1 70)')}</radialGradient>
+        ${SPK.map((_, i) => `<linearGradient id="${u}g${i}" gradientUnits="userSpaceOnUse">${stop(0, '#fff', 1)}${stop(0.22, 'oklch(0.95 0.12 92)', 0.95)}${stop(0.6, 'oklch(0.8 0.17 62)', 0.7)}${stop(1, 'oklch(0.58 0.19 36)', 0)}</linearGradient>`).join('')}
+      </defs>
+      <circle class="pool" cx="${K[0] + 22}" cy="${FL}" r="34" fill="url(#${u}glow)" opacity="0.5"/>
+      <g clip-path="url(#${u}fl)" mask="url(#${u}mk)" opacity="0.4"><use href="#${u}spray" transform="matrix(1 0 0 -1 0 ${2 * FL})"/></g>
+      <rect x="${K[0] - 2.2}" y="${K[1] + 2}" width="4.4" height="${FL - K[1] - 2}" rx="1" fill="oklch(0.62 0.12 70)"/>
+      <path d="M${F[0]} ${F[1] - RY}H${BX}A${RX} ${RY} 0 0 0 ${BX} ${F[1] + RY}H${F[0]}Z" fill="url(#${u}m)"/>
+      <ellipse cx="${F[0]}" cy="${F[1]}" rx="${RX}" ry="${RY}" fill="url(#${u}f)"/>
+      <ellipse cx="${F[0]}" cy="${F[1]}" rx="${RX}" ry="${RY}" fill="url(#lit)"/>
+      <g fill="none" stroke="#fff" stroke-width="0.6"><ellipse cx="${F[0]}" cy="${F[1]}" rx="${f(RX * 0.78)}" ry="${f(RY * 0.78)}" opacity="0.35"/><ellipse cx="${F[0]}" cy="${F[1]}" rx="${f(RX * 0.42)}" ry="${f(RY * 0.42)}" opacity="0.25"/></g>
+      <ellipse cx="${F[0] + 0.6}" cy="${F[1] + 0.8}" rx="3.6" ry="5.4" fill="#000" opacity="0.25"/>
+      <ellipse cx="${F[0]}" cy="${F[1]}" rx="3.2" ry="4.8" fill="oklch(0.82 0.13 86)"/>
+      <ellipse cx="${F[0] - 0.9}" cy="${F[1] - 1.6}" rx="0.9" ry="1.4" fill="#fff" opacity="0.85"/>
+      <path class="spin" d="M${BX} ${F[1] - RY}A${RX} ${RY} 0 0 0 ${BX} ${F[1] + RY}" fill="none" stroke="oklch(0.2 0.02 260)" stroke-opacity="0.55" stroke-width="2.4" stroke-dasharray="0.9 1.6"/>
+      <path class="rimlit" d="M${f(F[0] - RX * 0.7)} ${f(F[1] + RY * 0.72)}A${RX} ${RY} 0 0 0 ${f(F[0] + RX)} ${F[1]}" fill="none" stroke="oklch(0.9 0.13 80)" stroke-width="1.2" opacity="0.7"/>
+      <g id="${u}spray" style="mix-blend-mode: screen">
+        <g class="halo" fill="none" stroke-linecap="round" stroke="oklch(0.75 0.16 58)" stroke-width="2.2" opacity="0.12"></g>
+        <g class="core" fill="none" stroke-linecap="round"></g>
+      </g>
+      <g class="emb"></g>
+      <g class="comet" fill="none" stroke-linecap="round" stroke="#fff" stroke-width="1.1" style="mix-blend-mode: screen"></g>
+      <circle class="hot" cx="${K[0]}" cy="${K[1]}" r="11" fill="url(#${u}glow)"/>`;
+    const q = s => svg.querySelector(s);
+    const grads = SPK.map((_, i) => q(`#${u}g${i}`));
+    const halo = SPK.map(() => el('path', {}, q('.halo')));
+    const core = SPK.map((s, i) => el('path', { stroke: `url(#${u}g${i})`, 'stroke-width': f(0.65 + 0.75 * s.hot) }, q('.core')));
+    const comet = SPK.map(s => el('path', { class: 'cm', 'stroke-dasharray': `${f(2 + 3 * s.hot)} 24`, style: `animation-duration: ${f(0.55 + 0.6 * s.ph)}s; animation-delay: -${f(s.ph)}s` }, q('.comet')));
+    const embs = SPK.filter((_, i) => i % 3 === 0).map(() => el('ellipse', { ry: 0.7, fill: 'oklch(0.78 0.17 55)' }, q('.emb')));
+    const spin = q('.spin'), hot = q('.hot'), pool = q('.pool'), rimlit = q('.rimlit');
+    const st = { ...REST, ang: 0, w: 0 };
+    // Every flight is drawn whole, as a long exposure; the comets run along them.
+    const draw = () => {
+      const all = SPK.map(s => fly(s, st.aim, st.power));
+      all.forEach((pts, i) => {
+        const d = dOf(pts), e = pts[pts.length - 1];
+        halo[i].setAttribute('d', dOf(pts.slice(0, 8)));
+        core[i].setAttribute('d', d);
+        comet[i].setAttribute('d', d);
+        grads[i].setAttribute('x1', f(K[0])); grads[i].setAttribute('y1', f(K[1]));
+        grads[i].setAttribute('x2', f(e[0])); grads[i].setAttribute('y2', f(e[1]));
+      });
+      // An ember glows at the end of every third flight.
+      embs.forEach((e, n) => {
+        const [x, y] = all[n * 3][14];
+        e.setAttribute('cx', f(x)); e.setAttribute('cy', f(Math.min(y, FL) - 0.3));
+        e.setAttribute('rx', f(1.2 + SPK[n * 3].hot)); e.setAttribute('opacity', y >= FL - 0.5 ? 0.85 : 0);
+      });
+      // The knurl runs round the tread with the spin.
+      spin.setAttribute('stroke-dashoffset', f((st.ang * 0.06) % 2.5));
+      const k = clamp((st.power - 0.7) / 0.6);
+      hot.setAttribute('r', f(10 + 6 * k));
+      pool.setAttribute('opacity', f(0.4 + 0.4 * k));
+      rimlit.setAttribute('opacity', f(0.55 + 0.45 * k));
+    };
+    draw();
+    let on = false, last = null, demo = null;
+    const tick = (t, dt) => {
+      const s = Math.min(dt, 50) / 1000;
+      st.ang += st.w * s;
+      st.w += (240 - st.w) * (1 - Math.exp(-s / 0.4));
+      draw();
+    };
+    const start = () => { if (on) return; on = true; svg.classList.add('live'); gsap.ticker.add(tick); };
+    const stopNow = () => { on = false; svg.classList.remove('live'); gsap.ticker.remove(tick); st.w = 0; draw(); };
+    // The spray turns toward the pointer; the farther it is, the harder the grind.
+    const aim = p => {
+      const a = Math.atan2(p[1] - K[1], p[0] - K[0]) / RAD;
+      gsap.to(st, { aim: clamp(a, -42, 20), power: clamp(0.72 + Math.hypot(p[0] - K[0], p[1] - K[1]) / 180, 0.72, 1), duration: 0.35, ease: 'power2.out', overwrite: 'auto' });
+    };
+    const ctl = {
+      // With no pointer, the spray sweeps by itself.
+      enter() {
+        start();
+        const o = { a: 0 };
+        demo = gsap.to(o, { a: TAU, duration: 3, repeat: -1, ease: 'none', onUpdate: () => aim([88 + 14 * Math.cos(o.a), 62 + 12 * Math.sin(o.a)]) });
+      },
+      move(p) {
+        if (!on) return;
+        // The pointer takes over from the sweep.
+        demo?.kill(); demo = null;
+        // A quick stroke spins the wheel harder for a moment.
+        if (last) st.w = Math.min(900, st.w + Math.hypot(p[0] - last[0], p[1] - last[1]) * 18);
+        last = p;
+        aim(p);
+      },
+      leave() { demo?.kill(); demo = null; last = null; gsap.to(st, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: stopNow }); },
+    };
+    toys.spark = { play() { ctl.enter(); return { kill() {} }; }, rest() { ctl.leave(); } };
+    // The Lab calls play and rest only; the icon follows the pointer itself.
+    tile.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') return;
+      const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      ctl.move([v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height]);
+    });
   }
 
   // A flash slides along the polished stroke, as the light moves over it.

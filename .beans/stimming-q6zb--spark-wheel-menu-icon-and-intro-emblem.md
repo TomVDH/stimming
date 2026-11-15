@@ -1,19 +1,19 @@
 ---
 # stimming-q6zb
 title: 'Spark wheel: menu icon and intro emblem'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T09:00:41Z
+updated_at: 2026-11-15T09:04:04Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
 
 - [x] Icon spike 1: four directions with emblems (icons/spike-spark-1.html)
-- [ ] Tom picks a direction
-- [ ] Install the pick on the menu (index.html, the toy's enter/move/leave hook)
-- [ ] Emblem to shared, toys.json emblem, icons/picks.json note
+- [x] Tom picks a direction
+- [x] Install the pick on the menu (index.html, the toy's enter/move/leave hook)
+- [x] Emblem to shared, toys.json emblem, icons/picks.json note
 
 ## Notes
 
@@ -54,3 +54,13 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom picked "the wheel" and "framing and colour" to refine. Round 14 (icons/spike-spark-14.html): a bigger plain steel wheel (brushed face, two faint lathe rings, a brass hub with a glint, the knurl running round the tread on hover) in place of the slotted cream face; the wheel sits further in from the left edge with a higher floor. Two rooms side by side: A deep teal, A2 night blue with a warm floor. The intro logo is a plain wheel with a hub. The sheet points at round 14 (it shows A only).
 
 - 2026-11-15, Tom on round 14: "no frame like that; so many other icons do not have that". Round 15 (icons/spike-spark-15.html): no tile, no room, no floor fill. The steel wheel, the flint post, the spray, its fading reflection, the embers and the warm glow float free on the menu ground, like Galaxy and Fire. The spray is held a little shorter so it stays inside the icon box. The sheet points at round 15.
+
+- 2026-11-15, Tom: "Yes, install" on round 15.
+
+## Summary of Changes
+
+- The menu tile (index.html) draws the round 15 icon: a steel wheel throws a long-exposure fountain of 34 sparks, each a real flight with drag, gravity and a floor skid, mirrored on a wet floor with embers where they land. No frame. On hover light runs along the flights and the spray sweeps; the pointer then aims it, and a quick stroke spins the wheel. It stops when the pointer leaves.
+- The intro logo is shared/emblems/spark.svg, set in toys.json.
+- icons/picks.json records the pick; the sheet shows round 15.
+- The Isometric block in the gallery is still the older bead style.
+- Checked in the pane: the tile renders and reacts with no error; the intro shows the logo. Not checked on a phone.
