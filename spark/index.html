@@ -617,33 +617,34 @@ function floorHit(p0, v0, k, life) {
 // lift: how the smoke rises; under zero it sinks. warm: the type burns, so it heats, flames and hisses.
 // trailSmoke: smoke a comet lays along its path. steam: smoke of one pop.
 // glow: the rim's colour at low, middle and full heat, or 'cycle'. light: the spark light's colour.
+// flare: what a full heat throws, and flareN how many. flareFork and flareSize change its sparks.
 const TYPES = {
   ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, depth: 1, kids: [3, 8], split: 0.5, size: 1.6, speed: 1, spark: NO_TINT,
     smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: true,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 220, flareFork: 1 },
   steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, depth: 1, kids: [4, 9], split: 0.2, size: 1.4, speed: 1, spark: NO_TINT,
     smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]], lift: 1.4, warm: true,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 160 },
   titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, depth: 1, kids: [2, 4], split: 0.15, size: 1.9, speed: 1, spark: NO_TINT,
     smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]], lift: 1.4, warm: true,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 140, flareSize: 1.5 },
   sparkler: { n: 1.4, life: [0.3, 0.6], heat: [0.9, 0.55], k: [3.5, 5], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 1, spark: NO_TINT,
     smoke: 0.35, fog: [0.7, 0.03, 85], flame: 0.6, ramp: [[0.97, 0.06, 95], [0.85, 0.15, 85], [0.6, 0.17, 60]], lift: 1.4, warm: true,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'star', flareN: 60 },
   comet: { n: 0.04, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, shards: 3, trail: 0.22, loft: 4.5, size: 3.4, speed: 0.6, spark: NO_TINT,
     smoke: 0, fog: [0.6, 0.01, 80], flame: 0.3, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.2, warm: true, trailSmoke: 0.3,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'salvo', flareN: 12 },
   ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
     smoke: 1.6, fog: [0.86, 0.03, 230], flame: 0, ramp: [[0.97, 0.02, 230], [0.8, 0.08, 225], [0.5, 0.1, 250]], lift: -3.2, warm: false,
-    glow: [[0.3, 0.12, 260], [0.6, 0.12, 225], [0.9, 0.06, 225]], light: [0.86, 0.07, 230] },
+    glow: [[0.3, 0.12, 260], [0.6, 0.12, 225], [0.9, 0.06, 225]], light: [0.86, 0.07, 230], flare: 'frost', flareN: 180 },
   confetti: { n: 1.6, life: [0.5, 0.8], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 2.0, speed: 0.9, spark: 'hue',
     flutter: { life: [1.2, 2.2], k: [7, 10], drift: 0.8 }, bits: 6,
     smoke: 0, fog: [0.6, 0, 0], flame: 0, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: false,
-    glow: 'cycle', light: 'cycle' },
+    glow: 'cycle', light: 'cycle', flare: 'cannon', flareN: 320 },
   popcorn: { n: 0.6, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
     pop: { wait: [0.25, 0.9], up: [4, 7], size: 3, tint: [1, 0.95, 0.8, 1] }, bits: 6,
     smoke: 0.15, fog: [0.8, 0.01, 90], flame: 0.5, ramp: [[0.97, 0.06, 95], [0.86, 0.14, 88], [0.6, 0.16, 65]], lift: 1.6, warm: true, steam: 0.08,
-    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'popAll', flareN: 60 },
 };
 // The colour a new spark of this type carries.
 function tintOf(m) {
@@ -667,9 +668,10 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
   const hit = floorHit(p0, v0, k, life);
   // A burst comes late in the flight, before the spark lands.
   // Reduced motion allows one fork level at most.
-  const depth = reduced() ? Math.min(m.depth, 1) : m.depth;
+  // A flare may set its own fork depth and fork chance.
+  const depth = Math.min(o.depth ?? m.depth, reduced() ? 1 : 9);
   const canFork = act === 0 && bd === 0 && fd < depth && forks < FORK_CAP;
-  const forkAt = canFork && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
+  const forkAt = canFork && rnd() < (o.fork ?? m.fork) ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
   const end = Math.min(life, hit, forkAt);
   const heatEnd = heat0 + (heat1 - heat0) * (end / life);
   const trail = o.trail ?? (fd ? 0.03 : 0.07);
@@ -687,7 +689,7 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
       Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(3 + 4 * rnd());
       const cv = v.clone().multiplyScalar(0.5).add(Q);
       const kid = span([0.1, 0.28]) / (1 << fd);
-      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, { fd: fd + 1, bd, tint });
+      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, { fd: fd + 1, bd, tint, depth: o.depth, fork: o.fork });
     }
     cue(t0 + end, 'pop', p, heatEnd);
     wisp(t0 + end, p, FEED.pop * m.smoke);
@@ -809,10 +811,69 @@ function emit(dt) {
 // rise and fall are shares of the full range a second.
 const HEAT = { rise: 1 / 6, fall: 1 / 5, after: 0.35, strike: 0.04 };
 let hot = 0;
+// The flare's light: 1 at the flare, gone a quarter second later.
+let flash = 0;
 function heatStep(dt) {
   // Heat follows the wheel's speed, so a type with few sparks heats as well.
   const j = clamp(wheel.omega / GRIND);
   hot = clamp(hot + (j > 0.1 ? HEAT.rise * j : -HEAT.fall) * dt);
+  flash = Math.max(0, flash - dt / 0.25);
+  if (hot >= 1) flare();
+}
+// A puff into the fluid from outside the smoke step.
+function blast(o) {
+  if (!smokeOn || reduced()) return;
+  puff(o);
+  smokeUntil = Math.max(smokeUntil, time + LINGER);
+}
+// A full heat sheds in one flare; each type has its own.
+// Reduced motion halves the count and drops the flash.
+function flare() {
+  const m = TYPES[pick], n = Math.round(m.flareN * (reduced() ? 0.5 : 1));
+  const UP = THREE.Object3D.DEFAULT_UP;
+  const from = () => new THREE.Vector3(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
+  // A direction round the jet: a turn inside the fan, then some lift.
+  const aim = (fan, lift) => new THREE.Vector3().copy(TANGENT).applyAxisAngle(UP, (rnd() - 0.5) * fan * Math.PI / 180).setY(lift).normalize();
+  const shoot = (v, o = {}, lifeK = 1) => launch(from(), v, time, span(m.life) * lifeK, m.heat[0], m.heat[1], span(m.k),
+    m.size * (0.8 + 0.6 * rnd()) * (m.flareSize ?? 1), { tint: tintOf(m), trail: m.trail, ...o });
+  if (m.flare === 'fan') {
+    // A wide fan of the type's own sparks.
+    for (let i = 0; i < n; i++) shoot(aim(70, 0.05 + 0.5 * rnd()).multiplyScalar(6 + 12 * rnd()), m.flareFork ? { fork: m.flareFork } : {}, 1.2);
+  } else if (m.flare === 'star') {
+    // One huge star: sparks in a sphere that fork three levels deep.
+    for (let i = 0; i < n; i++) shoot(new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.15 - 0.15, rnd() * 2 - 1).normalize().multiplyScalar(4 + 5 * rnd()), { depth: 3 }, 1.3);
+  } else if (m.flare === 'salvo') {
+    // A salvo of comets in a fan, each in its own arc.
+    for (let i = 0; i < n; i++) {
+      const v = aim(90, 0).multiplyScalar(4 + 4 * rnd());
+      v.y += m.loft * (0.8 + 0.6 * rnd());
+      shoot(v);
+    }
+  } else if (m.flare === 'frost') {
+    // A low fan of ice, and a fog bank that rolls out down the jet.
+    for (let i = 0; i < n; i++) shoot(aim(120, 0.02 + 0.15 * rnd()).multiplyScalar(5 + 9 * rnd()));
+    for (const x of [0.5, 1.3, 2.1]) blast({ pos: [x, FLOOR + 0.45, 0], radius: 0.6, vel: [2, -0.3, 0], grip: 0.5, smoke: 1.2 });
+  } else if (m.flare === 'cannon') {
+    // A tall cone of confetti, aimed up and down the jet.
+    const axis = new THREE.Vector3().copy(TANGENT).multiplyScalar(0.6).setY(0.8).normalize(), wide = Math.tan(17.5 * Math.PI / 180);
+    for (let i = 0; i < n; i++) {
+      Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(wide * rnd());
+      shoot(new THREE.Vector3().copy(axis).add(Q).normalize().multiplyScalar(7 + 8 * rnd()));
+    }
+  } else if (m.flare === 'popAll') {
+    // Every kernel on the floor pops now, and new kernels fly.
+    for (const c of corn) c.tPop = time + 0.25 * rnd();
+    for (let i = 0; i < n; i++) {
+      const v = aim(70, 0).multiplyScalar(3 + 6 * rnd());
+      v.y += 2 + 3 * rnd();
+      shoot(v);
+    }
+  }
+  // A burning type sends up a fireball.
+  if (m.warm) blast({ pos: [0.25, -R + 0.1, 0], radius: 0.55, vel: [0, 2.5, 0], grip: 0.6, smoke: 1.2 * m.smoke, heat: 1.5 });
+  flash = reduced() ? 0 : 1;
+  cue(time, 'thump', P.set(0, -R, 0), 1);
+  hot = HEAT.after;
 }
 
 /* ---------- K3: volume fluid ---------- */
@@ -1435,7 +1496,7 @@ function draw() {
   sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
   // The contact light follows the spark rate, so the knurl flashes warm.
-  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : (6 + 3 * hot) * clamp(rate / 250);
+  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : (6 + 3 * hot) * clamp(rate / 250) + 12 * flash;
   uContactI.value = contact.intensity;
   pipeline.render();
 }
@@ -1459,7 +1520,7 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04;
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04 || flash > 0;
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
@@ -1518,8 +1579,8 @@ const tmpV = new THREE.Vector3();
 const panAt = p => clamp(tmpV.copy(p).project(camera).x * 0.85, -1, 1);
 // Spark events wait here until the sim clock reaches them.
 const queue = [];
-const nextAt = { tick: 0, pop: 0, hiss: 0, pawl: 0 };
-const GAP = { tick: 1 / 26, pop: 1 / 40, hiss: 1 / 30, pawl: 1 / 22 };
+const nextAt = { tick: 0, pop: 0, hiss: 0, pawl: 0, thump: 0 };
+const GAP = { tick: 1 / 26, pop: 1 / 40, hiss: 1 / 30, pawl: 1 / 22, thump: 1 / 2 };
 let rasp = null;
 function cue(t, kind, p, level) {
   if (!kit.live() || queue.length > 600) return;
@@ -1595,6 +1656,10 @@ function play(ac, at, e) {
   } else if (e.kind === 'pawl') {
     burst(ac, at, { f: 2200, q: 3, dur: 0.012, level: 0.18, pan });
     blip(ac, at, { f: 900, dur: 0.02, level: 0.06, pan });
+  } else if (e.kind === 'thump') {
+    // The flare: a low thump under a short rush of noise.
+    blip(ac, at, { f: 70, dur: 0.35, level: 0.5, pan });
+    burst(ac, at, { f: 900, q: 0.8, dur: 0.5, level: 0.22, pan });
   }
 }
 // Each frame steers the rasp and plays the events now due.
@@ -1696,6 +1761,7 @@ act.reset = () => {
   for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
   hot = 0;
+  flash = 0;
   corn.length = 0;
   clearSmoke();
   kick = KICK;
