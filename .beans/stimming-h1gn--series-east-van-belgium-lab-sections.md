@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:04:58Z
+updated_at: 2026-11-15T07:14:00Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -16,5 +16,7 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Style: Tom likes G Wave (2026-11-14); it opens first in the lab
 - [x] Place icons redone with no hex: six motifs each for East Van and Belgium in three treatments (Colour, Tones, Solid); sheet at serieslab/places.html, drawings in serieslab/places.js
 - [ ] Tom picks the East Van and Belgium icons (motif and treatment)
-- [ ] Theme series icons get the same redo
+- [x] Tom, 2026-11-15: icons must share one style and geometry across all series, highly stylized. Three systems for all six series at serieslab/systems.html (drawings in serieslab/systems.js): Tiles (6 x 6 mosaic), Fold (silhouette with a diagonal fold), Line (one line, one dot)
+- [ ] Tom picks the icon system
+- [ ] More motifs per series in the picked system
 - [ ] Step 3: ship the pick to the Lab view in index.html; move icons.js to shared/series/

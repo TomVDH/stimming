@@ -32,6 +32,7 @@ iframe { display: block; width: 100%; border: 0; }
 <script type="module">
 import { M, icon, picks, motif, PICKS_KEY } from './icons.js';
 import { PLACES, placeIcon, placePicks, savePlacePick } from './places.js';
+import { SYSTEMS, systemPick } from './systems.js';
 
 const MONO = '"Iosevka Term Slab", ui-monospace, monospace';
 // The wave is a mask tile, so the line takes the series colour.
@@ -165,6 +166,9 @@ for (const li of [...shelf.children]) {
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 // A place series takes its icon from the places sheet; a theme keeps the hex.
 const draw = (k, c) => {
+  // A picked icon system draws every series; the older icons are the fallback.
+  const sys = systemPick();
+  if (sys) return SYSTEMS[sys].draw(k, c);
   if (PLACES[k]) { const p = placePicks()[k]; return placeIcon(k, p.m, p.t, c); }
   return M[k] ? icon(motif(k, picks()[k]), c) : '';
 };
@@ -196,6 +200,7 @@ d.addEventListener('click', e => {
   const b = e.target.closest('.hd .pick');
   if (!b) return;
   const sec = b.closest('.sec'), k = sec.dataset.k;
+  if (systemPick()) return;
   if (PLACES[k]) {
     const p = placePicks()[k], names = PLACES[k].map(([l]) => l);
     p.m = names[(names.indexOf(p.m) + 1) % names.length];
