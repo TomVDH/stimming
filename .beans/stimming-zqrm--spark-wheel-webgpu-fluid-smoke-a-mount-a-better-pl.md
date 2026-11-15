@@ -5,14 +5,14 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T04:16:31Z
-updated_at: 2026-11-15T04:42:36Z
+updated_at: 2026-11-15T04:45:06Z
 parent: stimming-oh7b
 ---
 
 Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU build with the K3 volume fluid for smoke and a flame lick; the present WebGL build stays as Classic. The wheel sits bigger, lower left, on a striker mount.
 
 - [ ] Stage 1: placement, mount and yaw flip on the WebGL build; stills for Tom
-- [ ] Stage 2: copy to spark/legacy.html (noindex)
+- [x] Stage 2: copy to spark/legacy.html (noindex)
 - [ ] Stage 3: scratch proofs P1 to P4 (untracked)
 - [ ] Stage 4: spark/gpu.html, port at parity, no smoke
 - [ ] Stage 5: K3 fluid smoke and flame, coupled to the sparks
