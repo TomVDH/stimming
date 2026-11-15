@@ -149,8 +149,8 @@ let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
-  // View: the wide eye and seven locked-off cinematic angles; keys 1 to 8.
-  choice: { label: 'View', display: 'stepper', value: 'wide', options: [{ value: 'wide', label: 'Wide', key: '1' }, { value: 'monolith', label: 'Monolith', key: '2' }, { value: 'profile', label: 'Profile', key: '3' }, { value: 'horizon', label: 'Horizon', key: '4' }, { value: 'low', label: 'Low', key: '5' }, { value: 'rock', label: 'Rock', key: '6' }, { value: 'beneath', label: 'Beneath', key: '7' }, { value: 'distant', label: 'Distant', key: '8' }], onPick: v => setView(v) },
+  // The seven cinematic views are parked (Tom, 2026-11-15): the wide eye only.
+  // poseOf keeps them; __qa.view still reaches them for stills.
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
@@ -241,7 +241,7 @@ stage.prepend(canvas);
 
 const scene = new THREE.Scene();
 // A 20 m near plane keeps depth precision on rocks 40 km out.
-const camera = new THREE.PerspectiveCamera(44, 1, 20, 600000);
+const camera = new THREE.PerspectiveCamera(44, 1, 20, 800000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
@@ -710,13 +710,13 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-// The nearing rock fills the sky with fire: strongest round it and low down.
-// The sky's own colour also leans to orange under it.
+// The nearing rock lights the sky round itself with fire.
+// The glow stays near the rock; the far sky only warms a little.
 vec3 rockFill(vec3 c, vec3 dir) {
   if (uFill < 0.001) return c;
-  float toward = pow(max(dot(dir, uAst.xyz), 0.0), 3.0), low = exp(-max(dir.y, 0.0) * 3.0);
-  c = mix(c, c * vec3(1.3, 0.82, 0.55), 0.6 * uFill);
-  return c + uAstC * uFill * (0.05 + 0.6 * toward + 0.12 * low);
+  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), wide = pow(m, 10.0);
+  c = mix(c, c * vec3(1.25, 0.85, 0.6), 0.25 * uFill * wide);
+  return c + uAstC * uFill * (0.9 * near_ + 0.3 * wide + 0.01);
 }
 vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
@@ -892,7 +892,7 @@ vec3 impSky(vec3 dir) {
 // A low sun throws cloud and trail shadows through a dust layer.
 // Each shadow is its occluder pushed away from the sun.
 // The view ray's length in lit air sets the rays' light.
-const SHAFT_N = 56, SHAFT_TR = 7;
+const SHAFT_N = 72, SHAFT_TR = 7;
 const SHAFT_U = {
   // Strength, the dust layer's top in metres, the ray's reach in metres.
   // The veil stands taller than real air.
@@ -1074,10 +1074,10 @@ sky.renderOrder = -1;
 scene.add(sky);
 
 /* ---------- the planet: one curve for every view ---------- */
-// A small world: the ground drops away d² / 2R from any eye.
+// A small world, about Earth's size: the ground drops away d² / 2R from any eye.
 // The image moves; shading keeps the flat world's positions.
-const PLANET_R = 4.0e6;
-const CURVE = /* glsl */`vec3 curved(vec3 p) { vec2 d = p.xz - cameraPosition.xz; p.y -= dot(d, d) / ${(2 * 4.0e6).toFixed(1)}; return p; }`;
+const PLANET_R = 6.0e6;
+const CURVE = /* glsl */`vec3 curved(vec3 p) { vec2 d = p.xz - cameraPosition.xz; p.y -= dot(d, d) / ${(2 * 6.0e6).toFixed(1)}; return p; }`;
 
 /* ---------- ground: a dusty plain with low relief ---------- */
 const GROUND_C = linFit(0.52, 0.035, 65);
@@ -1217,9 +1217,9 @@ const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d)
 // Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
 // The last two stand behind the Profile and Horizon views.
 const RANGES = [
-  [10, 150000, 62000, 26000, 140, 10], [42, 125000, 44000, 21000, 150, 200], [-12, 110000, 32000, 16000, 130, 60],
-  [27, 85000, 22000, 11000, 150, 150], [57, 70000, 16000, 8000, 135, 250], [0, 60000, 12000, 5500, 120, 300],
-  [100, 175000, 56000, 16000, 150, 155], [190, 140000, 60000, 17000, 150, 64],
+  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 24000, 150, 200], [-12, 148000, 42000, 18500, 130, 60],
+  [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250], [0, 81000, 16000, 6400, 120, 300],
+  [100, 236000, 73000, 13600, 150, 155], [190, 189000, 78000, 14400, 150, 64],
 ];
 const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
@@ -1232,6 +1232,12 @@ const FAR_U = {
 };
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
+// Three smooth octaves: rounded folds, no knife-edge crests.
+float fbm3(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * k2noise(p); p = p * 2.07 + vec2(17.1, 9.2); a *= 0.5; }
+  return s / 0.875;
+}
 // The ranges' height over the flat plain at p, in metres.
 // near is 1 inside any range's broad band, where the march must step short.
 float rangeH(vec2 p, out float near) {
@@ -1244,13 +1250,26 @@ float rangeH(vec2 p, out float near) {
     float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
     if (u > 1.0) continue;
     near = 1.0;
-    // The range tapers to both ends; long waves sweep its crest.
+    // The range tapers to both ends; its crest rolls in peaks and saddles.
     float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
-    float hc = uRg[i].w * t * (0.74 + 0.16 * sin(u * 7.0 + ph) + 0.1 * sin(u * 17.0 + 2.0 * ph));
+    // A power on the crest wave sharpens the peaks and widens the saddles.
+    float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
+    float hc = uRg[i].w * t * pow(cw, 1.7) * 1.35;
     // Inner face: a steep scarp. Outer face: a long apron.
     float v = abs(off) / (Rc * (off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
     if (v >= 1.0) continue;
-    h = max(h, hc * pow(1.0 - v, off < 0.0 ? 0.5 : 1.5));
+    // A rounded profile: the crest swells, then falls away in long slopes.
+    float prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
+    // A line of foothills rolls along the outer apron.
+    if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
+    // Flows follow the crescent: parallel ridgelines wander along the arc,
+    // and soft folds run stretched along it, kilometres long.
+    float sv = sign(off) * v, arc = u * uRa[i].y * Rc;
+    float bands = 0.5 + 0.5 * sin(sv * 15.7 + 3.0 * fbm3(vec2(arc / 30000.0, sv * 1.5) + ph));
+    float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
+    // The folds take a gentle ridge: firm spurs, no knife edges.
+    folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
+    h = max(h, hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5)));
   }
   return h;
 }
@@ -1260,15 +1279,9 @@ float ridged(vec2 p) {
   for (int i = 0; i < 4; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
   return s;
 }
-// The shape takes three octaves: the silhouette stays clean.
-float ridged3(vec2 p) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 3; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
-  return s;
-}
 float farHN(vec2 p, out float near) {
   float h = rangeH(p, near);
-  return h > 1.0 ? h * (0.84 + 0.4 * ridged3(p / 7000.0)) : 0.0;
+  return h > 1.0 ? h : 0.0;
 }
 float farH(vec2 p) { float n; return farHN(p, n); }`;
 const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
@@ -1291,7 +1304,7 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
     // The march starts past the near plain's heart and ends past the far ranges.
     float t = 25000.0, tp = t, hit = -1.0;
-    for (int i = 0; i < 240; i++) {
+    for (int i = 0; i < 380; i++) {
       if (i >= uFarSteps) break;
       vec3 p = ro + rd * t;
       float nr, hh = farHN(p.xz, nr), dy = p.y - (hh - drop(p));
@@ -1307,13 +1320,16 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
         break;
       }
       // Rising past every crest: the ray leaves the country.
-      if (p.y > 30000.0 && rd.y > 0.0) break;
+      // The ceiling sits above the tallest crest: the crests reach about 45 km.
+      if (p.y > 50000.0 && rd.y > 0.0) break;
       tp = t;
       // Over open plain a stride of 3% keeps grazing rays inside the budget.
       // Near any range the stride shrinks, so no crest or horn is skipped.
       // In a band the stride is also capped, so it never leaps a thin crest.
-      t += nr > 0.5 ? clamp(0.45 * dy, 0.003 * t, 0.012 * t) : max(0.45 * dy, 0.03 * t);
-      if (t > 450000.0) break;
+      // In a band the stride stays short: 0.5% near the surface, 1% high above it.
+      // A narrow summit can rise between two long strides.
+      t += nr > 0.5 ? clamp(0.3 * dy, 0.0015 * t, dy < 0.05 * t ? 0.005 * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
+      if (t > 650000.0) break;
     }
     if (hit < 0.0) discard;
     vec3 p = ro + rd * hit;
@@ -1325,11 +1341,12 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     float e = max(60.0, 0.002 * hit);
     vec3 N = normalize(vec3(farH(p.xz - vec2(e, 0.0)) - farH(p.xz + vec2(e, 0.0)), 2.0 * e, farH(p.xz - vec2(0.0, e)) - farH(p.xz + vec2(0.0, e))));
     // A short march toward the light: the crests shade the valleys.
-    float sh = 1.0, sd = 400.0;
-    for (int j = 0; j < 7; j++) {
+    // Each pixel starts at its own offset, so the shadow never bands.
+    float sh = 1.0, sd = 300.0 * (1.0 + fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))));
+    for (int j = 0; j < 9; j++) {
       vec3 q = P + uSun * sd;
-      sh = min(sh, clamp(8.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
-      sd *= 2.0;
+      sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
+      sd *= 1.7;
     }
     float wall = smoothstep(0.92, 0.5, N.y);
     vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
@@ -1346,7 +1363,7 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
     float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
     float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
-    vec3 tau = (vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(2.2e-5) * aM) * hit;
+    vec3 tau = (vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.3e-5) * aM) * hit;
     vec3 T = exp(-tau);
     // The air's own light: the horizon sky, and a warm glow toward the sun.
     float mu = dot(rd, uSunD), g = 0.76;
@@ -1638,17 +1655,14 @@ const heaps = cloudLayer(HEAPS, 2.2);
 // A far band of big heaps sits at the ranges' feet and between them.
 // Some stand round the side and reverse views.
 const FARHEAPS = [
-  [-20, 60000, 2200, 5000, 3200, 0], [4, 75000, 2500, 6500, 3800, 0], [18, 55000, 2000, 4500, 2800, 0], [33, 90000, 2600, 7000, 4200, 0],
-  [48, 65000, 2300, 5200, 3000, 0], [66, 80000, 2400, 6000, 3600, 0], [-35, 35000, 1600, 3000, 1800, 0], [95, 45000, 1800, 4000, 2500, 0],
-  [110, 70000, 2200, 6000, 3400, 0], [125, 30000, 1500, 2500, 1600, 0], [175, 50000, 2000, 5000, 3000, 0], [195, 80000, 2400, 6500, 3800, 0],
+  [-18, 62000, 2200, 5000, 3200, 0], [8, 78000, 2500, 6500, 3800, 0], [36, 70000, 2400, 6000, 3600, 0], [60, 58000, 2200, 5200, 3000, 0],
 ];
 const farHeaps = cloudLayer(FARHEAPS, 1.7);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
 // Storm towers stand among the far ranges, as tall as their peaks.
-// Two more stand behind the side and reverse views.
-const TOWERS = [[-3, 130000, 2000, 14000, 18000, 1], [27, 112000, 2000, 18000, 21000, 1], [49, 140000, 2000, 15000, 19000, 1], [71, 100000, 2000, 11000, 15000, 1], [100, 120000, 2000, 14000, 18000, 1], [185, 130000, 2000, 16000, 20000, 1]];
+const TOWERS = [[-22, 120000, 2000, 15000, 24000, 1], [5, 150000, 2200, 19000, 28000, 1], [30, 105000, 2000, 16000, 25000, 1], [52, 135000, 2200, 18000, 27000, 1], [76, 115000, 2000, 14000, 23000, 1]];
 const tower = cloudLayer(TOWERS, 1.5);
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
@@ -1672,9 +1686,9 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
     a.set([v.dot(AX) / L, recoil, seed + 2 * fixed, tone], i * 4);
   }
   geo.setAttribute('aPart', new THREE.Float32BufferAttribute(a, 4));
-  // Normals come from screen derivatives.
+  // Each piece keeps its own normals: boxes stay crisp, drums and bevels shade smooth.
   geo.deleteAttribute('uv');
-  geo.deleteAttribute('normal');
+  if (!geo.attributes.normal) geo.computeVertexNormals();
   return geo;
 }
 // A block in the world frame; y is its centre.
@@ -1688,6 +1702,8 @@ function bslab(w, h, a0, a1, x = 0, u = 0, r = 4) {
   let g = new RoundedBoxGeometry(w, h, a1 - a0, 1, r);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
+  // Shared corners give the bevel a smooth roll of light.
+  g.computeVertexNormals();
   return toBarrel(g, a0, a1, x, u);
 }
 const tube = (r, a0, a1, x = 0, u = 0) => toBarrel(new THREE.CylinderGeometry(r, r, a1 - a0, 24, 1).rotateX(Math.PI / 2), a0, a1, x, u);
@@ -1903,6 +1919,13 @@ vec3 aim(vec3 p, float f, float g) {
   p = mix(p, vec3(p.x, r.x + ${TRUN_Y.toFixed(1)}, r.y), e);
   vec3 t = vec3(p.x * uYaw.x + p.z * uYaw.y, p.y, p.z * uYaw.x - p.x * uYaw.y);
   return mix(p, t, g);
+}
+// A normal turns with its piece: the climb, then the mount's yaw; no slide.
+vec3 aimN(vec3 n, float f, float g) {
+  vec2 r = vec2(n.y * uDrop.x + n.z * uDrop.y, n.z * uDrop.x - n.y * uDrop.y);
+  n = mix(n, vec3(n.x, r.x, r.y), step(0.25, f));
+  vec3 t = vec3(n.x * uYaw.x + n.z * uYaw.y, n.y, n.z * uYaw.x - n.x * uYaw.y);
+  return mix(n, t, g);
 }`;
 // The gun and the ship share the panel seams.
 const SEAM = /* glsl */`
@@ -1917,11 +1940,12 @@ const gunMat = new THREE.ShaderMaterial({
   attribute vec4 aPart;
   ${AIM}
   uniform vec3 uAxisUp; uniform float uOver, uTime;
-  varying vec3 vP, vO; varying vec4 vPart;
+  varying vec3 vP, vO, vN; varying vec4 vPart;
   void main() {
     // vO holds still, so the seams ride with the barrel.
     vO = position;
     vP = aim(vO, aPart.y, 1.0 - step(1.5, aPart.z));
+    vN = aimN(normal, aPart.y, 1.0 - step(1.5, aPart.z));
     // Loose dark plates on the barrel rattle through the over-hold.
     float loose = step(1.5, aPart.w) * step(aPart.w, 2.5) * step(0.25, aPart.y);
     vP += uAxisUp * loose * uOver * 1.6 * sin(uTime * 53.0 + fract(aPart.z) * 91.0);
@@ -1929,14 +1953,17 @@ const gunMat = new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  varying vec3 vP, vO; varying vec4 vPart;
+  varying vec3 vP, vO, vN; varying vec4 vPart;
   uniform vec3 uShellC, uDarkC, uHullC, uBandC, uGroundC;
   uniform float uHeat, uHeatT;
   ${HEAD}
   ${SEAM}
   void main() {
-    // Exact flat faces from the screen derivatives.
-    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
+    // The piece's own normal: crisp on boxes, smooth round drums and bevels.
+    // The flat face is the fallback where an interpolated normal turns away.
+    vec3 Nf = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 N = normalize(vN);
+    if (dot(N, Nf) < 0.2) N = Nf;
     float sand = step(3.5, vPart.w), yel = step(2.5, vPart.w) - sand, dark = step(1.5, vPart.w) - step(2.5, vPart.w), shell = 1.0 - dark, wall = step(abs(N.y), 0.5);
     vec3 alb = mix(mix(mix(uShellC, uHullC, vPart.y), uBandC, yel), uDarkC, dark) * (0.92 + 0.16 * vPart.z);
     // Age: broad stains, then rain streaks down the walls.
@@ -4358,9 +4385,9 @@ function aimAst() {
   const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
-  // The sky fills with the rock's fire over the last two thirds of its fall.
+  // The sky round the rock fills with its fire over the last third of its fall.
   // The strike drives rockGlowK up: the fill reaches full as it comes down.
-  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.pow(sstep(Math.min(ast.s, 1), 0.3, 1), 1.2) * Math.min(1, 0.7 + 0.3 * rockGlowK) : 0;
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.pow(sstep(Math.min(ast.s, 1), 0.65, 1), 1.5) * Math.min(1, 0.7 + 0.3 * rockGlowK) : 0;
   U.uFill.value = fk;
   // The rock's own flare: faint far out, strong near the end; the strike has its own.
   tmpA.copy(ast.pos).project(camera);
@@ -4397,7 +4424,7 @@ function resize() {
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // The far country's march: fewer steps on Standard and on the ladder's rungs.
-  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 90 : quality() === 'high' ? 220 : 160;
+  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
@@ -9774,7 +9801,7 @@ window.__qa = {
   // Set the sun rays' gain, as the Dev slider does.
   shafts(v) { shaftGain = v; draw(); },
   // Pick a view at once, with no move.
-  view(v) { ui.choice.set(v); setView(v); viewFrom = null; frame(); draw(); },
+  view(v) { setView(v); viewFrom = null; frame(); draw(); },
   // Turn the dusk sun v degrees right of the look.
   swing(v) { sunSwing = v; aimSky(); setSun(); },
   hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
