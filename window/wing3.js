@@ -509,8 +509,10 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const tw = V(...tip).add(bend);
       // By day, lamp dims the tip lights' glow.
       FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav).multiplyScalar(lamp);
-      strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
-      navL.position.copy(tw).add(V(0.4, -0.5, 0)); navL.intensity = 0.4 * lamp;
+      // The lens sits in the leading edge; its light spills up and inboard.
+      // So it reaches the winglet's inner face and the outer skin.
+      strobeL.position.copy(tw).add(V(0.3, 0.35, -0.3)); strobeL.intensity = strobe * 40;
+      navL.position.copy(tw).add(V(0.35, 0.3, -0.25)); navL.intensity = 0.4 * lamp;
       wingL.intensity = beam * WING_LIGHT.k;
       FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
       return [bend.x, bend.y, bend.z];

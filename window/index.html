@@ -539,7 +539,11 @@ const WINGLET = (() => {
 })();
 // A flat quad stands in for the winglet in the ray tests.
 const LET = (() => { const a = WINGLET(0.3), b = WINGLET(1); return [[a.le, a.y, a.z], [b.le, b.y, b.z], [b.le - b.c, b.y, b.z], [a.le - a.c, a.y, a.z]]; })();
-const TIP = (() => { const b = WINGLET(1); return [b.le - b.c * 0.5, b.y - 0.05, b.z]; })();
+// The nav light and the strobe share a lens in the leading edge.
+// It sits at the corner where the winglet starts, as on the real aircraft.
+const TIP = (() => { const b = WINGLET(0.06); return [b.le + 0.02, b.y, b.z]; })();
+// The middle of the sail: the tap target for a strike.
+const SAIL = (() => { const b = WINGLET(0.6); return [b.le - b.c * 0.5, b.y, b.z]; })();
 // The trailing edge x at span z.
 function teAt(z) {
   for (let i = 1; i < ST.length; i++) if (z <= ST[i][2]) { const f = (z - ST[i - 1][2]) / (ST[i][2] - ST[i - 1][2]); return ST[i - 1][1] + (ST[i][1] - ST[i - 1][1]) * f; }
@@ -1823,7 +1827,7 @@ const toPx = e => { const r = canvas.getBoundingClientRect(), x = (e.clientX - r
 function tapAt(x, y) {
   setBasis();
   // A tap on the winglet calls a strike on the plane.
-  const tip = toScreen([TIP[0] + seatDx, TIP[1], TIP[2]]);
+  const tip = toScreen([SAIL[0] + seatDx, SAIL[1], SAIL[2]]);
   if (Math.hypot(tip[0] - x, tip[1] - y) < 0.07 * Math.min(W, H)) { strike(); return; }
   const d = norm([0, 1, 2].map(i => basis.F[i] * basis.focal + basis.R[i] * (x - W / 2) + basis.U[i] * (y - H / 2)));
   // The nearest tower under the tap flashes where the tap meets it.
