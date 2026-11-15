@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:36:07Z
+updated_at: 2026-11-15T07:45:32Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -22,7 +22,9 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Depth forms on Tom's ask (slab, shaded, like the isometric blocks): Shaded, Slab, Block, Cube
 - [x] Tom, 2026-11-15: the depth forms are the same drawings on other canvases. Native isometric block models at serieslab/iso.html (kit and models in serieslab/iso.js): East Van has Crow, House, Pole, Crane, Skunk, North Shore; Belgium has Frites, Waffle, Tricolour, Beer, Spheres, Gables
 - [x] Ten more block models each (Tom, 2026-11-15): East Van adds Containers, Train, Trolley bus, Corner store, Raccoon, Rain, Silos, Couch, Blossom, Sulphur; Belgium adds Chocolate, Pralines, Crate, Belfry, Cobbles, Mussels, Frietkot, Motorway, Sprouts, Fountain
-- [ ] Tom picks the subject for East Van and Belgium
+- [x] Tom, 2026-11-15: the voxel dioramas are "cute but not the style". Read icons/sheet.html: the Isometric block is one bold block with face art. New set at serieslab/blocks.html (kit and icons in serieslab/blocks.js, on the sheet's cube geometry): East Van has House, Crow, Containers, Rain, Trolley bus, Peaks; Belgium has Tricolour, Waffle, Frites, Beer, Chocolate, Frietkot
+- [x] Dutch-angle photo framings as a second style (Tom's ask): serieslab/shots.html, six shots each, knobs for tilt and frame
+- [ ] Tom picks the subject and the style for East Van and Belgium
 - [ ] Theme series icons in the same style
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
 - [ ] Step 3: ship the pick to the Lab view in index.html; move icons.js to shared/series/

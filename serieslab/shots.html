@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Dutch-angle shots</title>
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+:root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.6 0.02 275); --focus: oklch(0.84 0.13 205); --mono: "Iosevka Term Slab", ui-monospace, monospace; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: "Gabarito", system-ui, sans-serif; }
+/* The knobs stay on top while the sheet scrolls. */
+.knobs { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: center; padding: 12px 16px; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(8px); }
+.knob { display: inline-flex; align-items: center; gap: 6px; }
+.knob > span { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.knob button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--muted); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 8px 12px; cursor: pointer; }
+.knob button[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+.knob button:focus-visible, .cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+main { box-sizing: border-box; width: 100%; max-width: 900px; margin: 0 auto; padding: clamp(20px, 4vw, 44px) 16px 80px; display: grid; gap: clamp(44px, 7vw, 80px); }
+.place { --c: var(--muted); display: grid; gap: 26px; }
+/* The Wave divider, as the Lab will show it. */
+.wave { margin: 0; display: flex; align-items: center; justify-content: center; gap: 14px; }
+.wave::before, .wave::after { content: ""; flex: 1; min-width: 12px; height: 8px; background: color-mix(in oklch, var(--c) 65%, transparent); -webkit-mask: var(--wave) 0 0 / 24px 8px repeat-x; mask: var(--wave) 0 0 / 24px 8px repeat-x; }
+.wave .at { display: inline-flex; align-items: center; gap: 10px; }
+.wave svg { display: block; width: 46px; height: 46px; }
+.wave .nm { font: 800 clamp(17px, 2.4vw, 22px)/1 "Gabarito", system-ui, sans-serif; letter-spacing: -0.01em; color: var(--c); white-space: nowrap; }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(6px, 1.6vw, 14px); }
+.cell { all: unset; box-sizing: border-box; display: grid; justify-items: center; gap: 10px; padding: clamp(8px, 1.8vw, 16px) 4px 10px; border-radius: 16px; border: 1px solid transparent; cursor: pointer; min-width: 0; }
+.cell:hover { background: oklch(0.2 0.014 275); }
+.cell[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklch, var(--c) 9%, transparent); }
+.cell svg { display: block; width: min(100%, 132px); height: auto; aspect-ratio: 1; transition: rotate 0.35s cubic-bezier(.3,1.7,.5,1), scale 0.35s cubic-bezier(.3,1.7,.5,1); }
+.cell:hover svg:first-child { rotate: -7deg; scale: 1.08; }
+.cell .small { width: 40px; }
+.cell span { font: 500 10px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); text-align: center; }
+@media (max-width: 560px) { .row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .cell svg { transition: none; } }
+</style>
+<body>
+<div class="knobs">
+  <div class="knob" data-k="tilt" role="group" aria-label="Tilt"><span>Tilt</span></div>
+  <div class="knob" data-k="frame" role="group" aria-label="Frame"><span>Frame</span></div>
+</div>
+<main id="sheet"></main>
+<script type="module">
+import { SHOTS, TILTS, FRAMES, shotIcon, shotPicks, saveShotPicks } from './shots.js';
+
+const WAVE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q6 -1 12 4T24 4' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")`;
+document.documentElement.style.setProperty('--wave', WAVE);
+const series = await fetch('../series.json').then(r => r.json());
+const sheet = document.getElementById('sheet');
+const picks = shotPicks();
+// A query can pin the knobs for a still: ?tilt=Wild&frame=Viewfinder.
+const q = new URLSearchParams(location.search);
+if (TILTS[q.get('tilt')]) picks.tilt = q.get('tilt');
+if (FRAMES.includes(q.get('frame'))) picks.frame = q.get('frame');
+
+const OPTIONS = { tilt: Object.keys(TILTS), frame: FRAMES };
+for (const el of document.querySelectorAll('.knob')) {
+  const key = el.dataset.k;
+  for (const value of OPTIONS[key]) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', textContent: value, value });
+    b.addEventListener('click', () => { picks[key] = value; saveShotPicks(picks); draw(); });
+    el.append(b);
+  }
+}
+
+function draw() {
+  document.querySelectorAll('.knob').forEach(el => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.value === picks[el.dataset.k])));
+  sheet.innerHTML = '';
+  for (const key of Object.keys(SHOTS)) {
+    const s = series[key], sec = document.createElement('section');
+    sec.className = 'place';
+    sec.style.setProperty('--c', s.color);
+    sec.setAttribute('aria-label', s.name);
+    const cells = SHOTS[key].map(([m]) =>
+      `<button class="cell" type="button" data-key="${key}" data-m="${m}" aria-pressed="${picks[key] === m}">${shotIcon(key, m, picks)}${shotIcon(key, m, picks).replace('<svg', '<svg class="small"')}<span>${m}</span></button>`).join('');
+    sec.innerHTML = `<h2 class="wave"><span class="at">${shotIcon(key, picks[key], picks)}<span class="nm">${s.name}</span></span></h2><div class="row">${cells}</div>`;
+    sheet.append(sec);
+  }
+}
+// A click on a shot makes it the pick for its series.
+sheet.addEventListener('click', e => {
+  const b = e.target.closest('.cell');
+  if (!b) return;
+  picks[b.dataset.key] = b.dataset.m;
+  saveShotPicks(picks);
+  draw();
+});
+draw();
+</script>
+</body>
+</html>
