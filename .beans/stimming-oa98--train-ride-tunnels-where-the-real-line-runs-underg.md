@@ -37,3 +37,4 @@ The traced OSM ways carry tunnel tags: the Kerenzerberg tunnel (60.97 to 64.91 k
 - [x] Mound faces textured: limestone beds of uneven thickness, moss in the seams, shrubs on the ledges; meadow patches and scrub on the grass. The grass and rock split uses the face normal, so grass no longer creeps down the cut.
 - [x] The mound's far rim sinks to 30 m down, so no flat shelf floats over the Walensee at the east mouth.
 - [x] Checked in headless Chrome (ANGLE D3D11) at 1280 and 375 px, parked and at 97 km/h, day and night: 60 fps, no console errors.
+- [x] A cabin knock and a low thud as the train enters a tunnel above 12 m/s, softer as it leaves (the recorded thump, through the knock and thud channels)

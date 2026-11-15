@@ -5354,7 +5354,7 @@ function passBy(ac, tMeet, dur) {
   knock(end, 1.1, 0.6, chan(ac, 'thud'));
 }
 // The running sound follows the speed at every instant; the events hang on what the train does.
-const REC = { dep: null, arr: null, depDone: false, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+const REC = { dep: null, arr: null, depDone: false, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false, tun: 0 };
 // In the arrival clip the last jolt falls 40.5 s in; the cut starts 5 s before it.
 const ARR0 = 35.5, ARR_JOLT = 40.5;
 function recorded(v, ac, now, sp, k) {
@@ -5396,6 +5396,13 @@ function recorded(v, ac, now, sp, k) {
   const o = S.oppAt, vr = sp + S.oppV;
   if (o === o && o < vr * 0.8 && !REC.opp) { passBy(ac, o / vr, S.oppLen / vr); REC.opp = true; }
   if (o !== o) REC.opp = false;
+  // The air in the cabin knocks as the train enters a tunnel at speed, and softer as it leaves.
+  if (sp > 12 && (REC.tun > 0) !== (S.tunnel > 0)) {
+    const into = S.tunnel > 0, lv = (into ? 0.7 : 0.4) * k;
+    shot(ac, clips.thump, lv, 0, 0.005, into ? 0.9 : 1.05, 'knock');
+    shot(ac, clips.thump, lv * 2, 0, 0.005, 0.5, 'thud');
+  }
+  REC.tun = S.tunnel;
   REC.prevSp = sp;
   // Dev: the layer state, for QA.
   if (window.__train) window.__rec = `${Math.round(sp * 3.6)} km/h · drive ${drive.toFixed(2)} · EQ ${g.toFixed(0)} / ${ls.toFixed(0)} / ${pk.toFixed(0)} dB · whine ${v.whine.g.gain.value.toFixed(1)}${REC.dep && now < REC.dep.end ? ' · departure' : ''}${REC.arr ? ' · arrival' : ''} · door ${DOOR.open ? 'open' : 'shut'}`;
