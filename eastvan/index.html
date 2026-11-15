@@ -56,7 +56,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   <div class="seg" id="stops" role="group" aria-label="Place"></div>
   <div class="seg"><button type="button" id="solo" aria-pressed="false">Solo</button></div>
 </div>
-<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver</a>
+<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver · Building tags and places © OpenStreetMap contributors (ODbL)</a>
 <div class="foot">
   <span class="read" id="read"></span>
   <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1–5</kbd> place <kbd>S</kbd> solo</span>
@@ -67,7 +67,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 import { pixelRatio, whenVisible, css, reduced, idle } from '../shared/stim.js';
-import { buildTown, buildStage, buildModule } from './town.js';
+import { buildTown, buildStage, buildModule, signsReady } from './town.js';
 import { wireY } from './lot.js';
 import * as house from './modules/house.js';
 import * as yard from './modules/yard.js';
@@ -123,7 +123,10 @@ function build(i) {
   if (built[i]) return Promise.resolve(built[i]);
   return (building[i] ||= Promise.resolve().then(async () => {
     // A module with load() reads its parts on the first visit.
-    const [m, life] = WALK[i], data = m.load ? { ...m, ...(await m.load()) } : m, mod = buildModule(data, PLACED[i], life);
+    const [m, life] = WALK[i], data = m.load ? { ...m, ...(await m.load()) } : m;
+    // Shop signs draw their names in the page font.
+    if (m.load) await signsReady;
+    const mod = buildModule(data, PLACED[i], life);
     stage.scene.add(mod.group);
     built[i] = mod;
     place(i);
@@ -235,7 +238,9 @@ async function goTo(i, { snap = false } = {}) {
 }
 async function goCorner() {
   const ticket = ++wantGo;
-  corner ||= await buildTown(sky, [await (await import('./drive.js')).loadDrive()]);
+  const parts = await (await import('./drive.js')).loadDrive();
+  await signsReady;
+  corner ||= buildTown(sky, [parts]);
   if (ticket !== wantGo) return;
   inCorner = true;
   setCredit();

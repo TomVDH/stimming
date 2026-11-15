@@ -19,10 +19,16 @@ All five extracts cover 170 m around Commercial Drive and East 4th Avenue.
 
 | `bake/raw/lidar/494000_5457000.zip` (not in git; 1 GB) | <https://opendata.vancouver.ca/explore/dataset/lidar-2022/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-14 |
 
+| `bake/raw/heritage.geojson` | <https://opendata.vancouver.ca/explore/dataset/heritage-sites/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-14 |
+| `bake/raw/tax.json` (build years) | <https://opendata.vancouver.ca/explore/dataset/property-tax-report/> | City of Vancouver | Open Government Licence – Vancouver 1.0 | 2026-11-14 |
+| `bake/raw/osm.json` (building floors, roofs, start dates, names; named places) | <https://www.openstreetmap.org/copyright> via the Overpass API | OpenStreetMap contributors | ODbL 1.0 | 2026-11-14 |
+
+`bake/raw/stores.geojson` now carries `business_name` (refetched 2026-11-14).
+
 `eastvan/bake/lidar.py` bakes the LiDAR tile to `eastvan/data/lidar.json`: roof heights per building on a half-metre grid, and the height and spread of each street tree.
 
 Notes:
-- The storefront extract leaves out business names. The toy shows no real shop name.
+- Shop signs show the business names on record (Tom, 2026-11-14), as plain text, with no logos. The names belong to their businesses.
 - The building outlines and heights date from 2009.
 - The toy is not endorsed by the City of Vancouver.
 

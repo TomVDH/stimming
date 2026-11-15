@@ -52,24 +52,35 @@ const TRADE = {
   'Comparison Goods': { stripes: ['binBlue', 'cream'], icon: (x, y, z) => [{ t: 'ring', p: [x, y, z], r: 0.42, tube: 0.07, c: 'bulbPink', L: A, ax: 'z' }, cyl([x, y, z], 0.14, 0.04, 'bulbPink', A, { ax: 'z' })] },
   'Service Commercial': { stripes: ['mustard', 'cream'], icon: (x, y, z) => [box([x - 0.45, y, z], [0.24, 0.8, 0.04], 'bulbPink', A), box([x, y, z], [0.24, 0.8, 0.04], 'white', A), box([x + 0.45, y, z], [0.24, 0.8, 0.04], 'bulbTeal', A)] },
 };
+// A frontage's era from its build year. With none, a low shop row reads early.
+const eraOf = y => (!y ? null : y < 1940 ? 'early' : y < 1980 ? 'postwar' : 'modern');
+const ERA_WALL = { early: ['brick', 'mustard', 'teal', 'tomatoDark', 'cream'], postwar: ['cream', 'blossom2', 'hydrangea', 'verge'], modern: ['garage', 'binBlue', 'found'] };
 const TREE = [[/CHERRY/, 'blossom'], [/MAPLE/, 'mapleRed'], [/LINDEN/, 'linden'], [/./, 'oak']];
 const WALL = ['brick', 'teal', 'mustard', 'hydrangea', 'cream', 'tomatoDark', 'garage'], HOUSE = ['teal', 'mustard', 'blossom2', 'hydrangea', 'cream', 'binBlue', 'tomato'];
 
 // One shop bay: glass, a door, a sign board with its icon, a striped awning.
 // zf is the wall. dir is 1 where the shop faces east, -1 where it faces west.
-function shop(i, x0, x1, zf, cat, dir) {
+// name: the shop's name on record, or null. era: early, postwar or modern.
+function shop(i, x0, x1, zf, cat, dir, name = null, era = 'early') {
   const w = x1 - x0, cx = (x0 + x1) / 2, t = TRADE[cat] || TRADE['Service Commercial'], sw = 'shop' + i, n = Math.max(1, Math.round(w / 4.2)), z = d => zf + dir * d;
   const lit = { k: 'pane', sw, on: true, gain: 1.15 }, out = [
     box([cx, 0.45, z(0.04)], [w - 0.3, 0.6, 0.1], 'found', A),
     box([cx, 1.95, z(0.03)], [w - 0.5, 2.3, 0.06], 'glass', A, lit),
     box([cx, 1.3, z(0.07)], [1, 2.3, 0.06], t.stripes[0], A), box([cx, 2.05, z(0.1)], [0.6, 0.6, 0.03], 'glass', A, lit),
     box([cx, 3.62, z(0.08)], [w - 0.3, 1.1, 0.14], 'roof', A),
-    // The sign shares the shop's switch and burns brighter than the glass.
-    ...t.icon(cx, 3.62, z(0.17)).map(q => ({ ...q, sw, on: true, boost: 1.9 })),
+    // A named shop shows its name; an unnamed one shows its trade's icon.
+    ...(name
+      ? [{ t: 'sign', kind: 'shop', text: /^vacant$/i.test(name) ? 'FOR LEASE' : name, style: cat, p: [cx, 3.62, z(0.16)], s: [w - 0.5, 0.86], nrm: [0, dir], L: A }]
+      : t.icon(cx, 3.62, z(0.17)).map(q => ({ ...q, sw, on: true, boost: 1.9 }))),
   ];
   for (let j = 1; j < n; j++) out.push(box([x0 + w * j / n, 1.95, z(0.07)], [0.12, 2.3, 0.06], 'cream', A));
-  const strips = Math.max(1, Math.round((w - 0.4) / 0.6)), sw0 = (w - 0.4) / strips;
-  for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, t.stripes[j % 2]));
+  // Early shops wear striped awnings, post-war a flat canopy, modern a thin glass one.
+  if (era === 'early') {
+    const strips = Math.max(1, Math.round((w - 0.4) / 0.6)), sw0 = (w - 0.4) / strips;
+    for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, t.stripes[j % 2]));
+    out.push(box([x0 + 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A), box([x1 - 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A));
+  } else if (era === 'postwar') out.push(box([cx, 3.08, z(0.8)], [w - 0.1, 0.16, 1.6], t.stripes[0], A));
+  else out.push(box([cx, 3.1, z(0.7)], [w - 0.1, 0.06, 1.4], 'glass', A), box([cx, 3.14, z(1.38)], [w - 0.1, 0.12, 0.05], 'chrome', A));
   return out;
 }
 
@@ -213,6 +224,10 @@ export function driveParts(d, clip, lidar = null) {
     if (ring.length < 3 || area(ring) < 6) return;
     const es = ring.map(p => p[0]), ns = ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), n0 = Math.min(...ns), n1 = Math.max(...ns);
     const cutOff = area(ring) < area(whole) - 0.5, pitched = b.roof !== 'Flat' && !cutOff && b.h > 4;
+    // The lot under the building gives its build year; OpenStreetMap fills gaps.
+    const mid0 = [(e0 + e1) / 2, (n0 + n1) / 2], lot = d.lots.find(l => inRing(mid0, l.ring));
+    const year = (lot && lot.year) || (b.start ? parseInt(b.start, 10) : null), era = eraOf(year) || ((+b.levels || 2) >= 4 ? 'postwar' : 'early');
+    const eraWall = ERA_WALL[era][i % ERA_WALL[era].length];
     // Measured roof cells inside this outline replace the guessed shape.
     // Cells under a metre are ground the scan took for roof.
     const own = (roofCells.get(b.id) || []).filter(p => p[2] > 1 && inRing(p, ring) && inside(p[0], p[1], 0.3));
@@ -220,11 +235,11 @@ export function driveParts(d, clip, lidar = null) {
       const cells = smooth(own, lidar.cell, b.roof === 'Flat');
       const hs = cells.map(p => p[2]).sort((a, c) => a - c), top = hs[Math.floor(hs.length * 0.85)], eave = hs[Math.floor(hs.length * 0.1)];
       const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0;
-      const c = b.roof === 'Flat' ? (side ? WALL[i % WALL.length] : 'garage') : HOUSE[b.id % HOUSE.length];
+      const c = b.roof === 'Flat' ? (side ? eraWall : 'garage') : HOUSE[b.id % HOUSE.length];
       // The walls stand on the true outline to the eave; the measured roof sits above.
       add(poly(ring, 0.16, Math.max(0.5, eave - 0.3), c));
       add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'tar' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
-      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c });
+      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year });
       return;
     }
     if (pitched) {
@@ -235,10 +250,10 @@ export function driveParts(d, clip, lidar = null) {
         { t: 'roof', p: [at[0], at[1], at[2]], s: [span, rise, long + 0.5], over: 0.35, th: 0.16, courses: 4, c: 'roof', L: A, ax: alongX ? 'x' : 'z' });
       return;
     }
-    const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0, c = WALL[i % WALL.length], h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
+    const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0, c = eraWall, h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
     // A flat roof gets a grey cap, so the wall colour stays on the walls.
     add(poly(ring, 0.16, h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
-    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c });
+    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year });
   });
   // Neighbours of one height and one building make one frontage.
   const faces = [];
@@ -251,31 +266,58 @@ export function driveParts(d, clip, lidar = null) {
     }
   }
 
-  /* ---------- frontages: shops below, windows above, a cornice ---------- */
+  /* ---------- frontages: shops below, windows above, by era ---------- */
   let shops = 0;
+  const FACES = [];
   faces.forEach((f, fi) => {
     const w = f.x1 - f.x0, dir = f.side, z = o => f.zf + dir * o, mid = (f.x0 + f.x1) / 2;
     // The shop units geocoded to this frontage. Units at the rear are upstairs.
     const units = d.stores.filter(s => Math.sign(s.at[0]) === -dir && Math.abs(s.at[0]) < 38 && s.at[1] >= f.x0 - 1 && s.at[1] <= f.x1 + 1).sort((a, b) => +b.civic - +a.civic);
-    const cats = (units.length ? units.map(u => u.cat) : ['Service Commercial']).slice(0, Math.max(1, Math.floor(w / 3.6)));
-    cats.forEach((cat, k) => {
+    const cats = (units.length ? units : [{ cat: 'Service Commercial', name: null }]).slice(0, Math.max(1, Math.floor(w / 3.6)));
+    cats.forEach((u, k) => {
       const x0 = f.x0 + w * k / cats.length, x1 = f.x0 + w * (k + 1) / cats.length;
-      add(shop(shops, x0, x1, f.zf, cat, dir));
+      add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era));
       pokes.push({ id: 'shop' + shops, at: [(x0 + x1) / 2, 3.3, z(0.3)], r: 1.8 });
       acts['shop' + shops] = [['flip', 'shop' + shops, true]];
       shops++;
     });
-    add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], 'cream', A), box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], 'cream', A));
-    // Upper windows: a row for each floor that fits.
-    const cols = Math.max(1, Math.round(w / 2.7));
+    FACES.push({ x0: f.x0, x1: f.x1, side: dir, era: f.era, year: f.year });
+    add(box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], 'cream', A));
+    // Early: a cornice, tall windows with sills. Post-war: a ribbon of glass per floor.
+    // Modern: a glass wall with thin mullions.
+    if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], 'cream', A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], 'cream', A));
+    const cols = Math.max(1, Math.round(w / (f.era === 'modern' ? 1.6 : 2.7)));
     let any = false;
-    for (let y = 5.7; y < f.h - 1.2; y += 3) for (let j = 0; j < cols; j++) {
-      const x = f.x0 + w * (j + 0.5) / cols, lit = (j * 7 + Math.round(y) + fi) % 3 !== 0;
-      any ||= lit;
-      add(box([x, y, z(0.03)], [1.36, 1.76, 0.06], 'cream', A), box([x, y, z(0.06)], [1.1, 1.5, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}));
+    for (let y = 5.7; y < f.h - 1.2; y += 3) {
+      if (f.era === 'postwar') {
+        const lit = (Math.round(y) + fi) % 2 === 0;
+        any ||= lit;
+        add(box([mid, y, z(0.05)], [w - 1, 1.1, 0.06], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}), box([mid, y - 0.62, z(0.08)], [w - 0.8, 0.12, 0.16], 'cream', A));
+        continue;
+      }
+      for (let j = 0; j < cols; j++) {
+        const x = f.x0 + w * (j + 0.5) / cols, lit = (j * 7 + Math.round(y) + fi) % 3 !== 0;
+        any ||= lit;
+        if (f.era === 'modern') add(box([x, y, z(0.05)], [w / cols - 0.1, 2.6, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}));
+        else add(box([x, y, z(0.03)], [1.2, 2.1, 0.06], 'cream', A), box([x, y, z(0.06)], [0.95, 1.85, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}),
+          box([x, y - 1.1, z(0.12)], [1.3, 0.1, 0.22], 'cream', A));
+      }
     }
+    if (f.era === 'modern') for (let y = 4.4; y < f.h; y += 3) add(box([mid, y, z(0.09)], [w, 0.1, 0.1], 'chrome', A));
     if (any) pokes.push({ id: 'up' + fi, at: [mid, 5.7, z(0.2)], r: 2.2 });
   });
+
+  /* ---------- heritage: a nameplate on each listed building ---------- */
+  for (const hsite of d.heritage || []) {
+    const [he, hn] = hsite.at;
+    if (!inside(he, hn, 2)) continue;
+    const bld = d.b.find(bb => inRing([he, hn], bb.ring)) || d.b.find(bb => bb.name && /highland/i.test(bb.name));
+    if (!bld) continue;
+    const r0 = bld.ring, ns = r0.map(p => p[1]), es = r0.map(p => p[0]), nMin = Math.min(...ns);
+    const yr = bld.start || (d.lots.find(l => inRing([he, hn], l.ring)) || {}).year || '';
+    // The plate faces south, toward the avenue, at the middle of the wall.
+    add({ t: 'sign', kind: 'plate', text: `${(hsite.name || bld.name || '').toUpperCase()} ${yr}`.trim(), style: 'plate', p: [nMin - 0.08, 3.2, (Math.min(...es) + Math.max(...es)) / 2], s: [3.4, 0.6], nrm: [-1, 0], L: A });
+  }
 
   /* ---------- street: trees and poles from the records ---------- */
   for (const t of d.trees) if (inside(t.at[0], t.at[1], 2.5) && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name, canopies.get(t.at.join())));
@@ -315,7 +357,7 @@ export function driveParts(d, clip, lidar = null) {
   const keep = q => { const c = q.p || q.a || q.at; return !c || inside(c[2], c[0], -0.6); };
   const lo = B.n0 - 8, hi = B.n1 + 8;
   return {
-    PARTS: P.filter(keep), WIRES: W, POKES: pokes.filter(keep),
+    PARTS: P.filter(keep), WIRES: W, POKES: pokes.filter(keep), FACES,
     MOVES: {
       // The bus leaves south, then comes back in from the north edge.
       bus: (g, k, h) => {

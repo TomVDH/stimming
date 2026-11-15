@@ -9,6 +9,55 @@ import { COL } from './lot.js';
 import { lin, lift, lerp, paint, PAINT, glowMat, beamGeo } from './kit.js';
 
 
+/* ---------- signs: real names, painted into one texture ---------- */
+// Ink and board colours for each kind of trade.
+const SIGN = {
+  'Food & Beverage': ['#ffd27a', '#3a1f1a'], 'Convenience Goods': ['#c9f2a8', '#16301f'],
+  'Comparison Goods': ['#ffb3d6', '#2c1830'], 'Service Commercial': ['#a8ecf0', '#122a33'],
+  'Automotive Goods & Services': ['#ffe9a8', '#2b2b2b'], Vacant: ['#e8e2d6', '#3a3a3a'], plate: ['#efe3c4', '#1d3a2c'],
+};
+const FONT = '"Gabarito", system-ui, sans-serif';
+// All signs of a module as one mesh: one canvas, one draw call.
+function signMesh(signs) {
+  const ROW = 96, W = 2048, cells = [];
+  let x = 0, y = 0;
+  for (const q of signs) {
+    const w = Math.min(W, Math.max(ROW * 2, Math.round(ROW * q.s[0] / q.s[1])));
+    if (x + w > W) { x = 0; y += ROW; }
+    cells.push({ q, x, y, w }); x += w;
+  }
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = Math.max(ROW, 2 ** Math.ceil(Math.log2(y + ROW)));
+  const g = cv.getContext('2d');
+  for (const { q, x: cx, y: cy, w } of cells) {
+    const [ink, board] = SIGN[q.text === 'FOR LEASE' ? 'Vacant' : q.style] || SIGN['Service Commercial'];
+    g.fillStyle = board; g.fillRect(cx, cy, w, ROW);
+    g.strokeStyle = ink; g.globalAlpha = 0.5; g.lineWidth = 3; g.strokeRect(cx + 5, cy + 5, w - 10, ROW - 10); g.globalAlpha = 1;
+    // The name shrinks until it fits the board.
+    let size = ROW * 0.56;
+    g.font = `700 ${size}px ${FONT}`;
+    while (g.measureText(q.text).width > w - 28 && size > 14) { size -= 2; g.font = `700 ${size}px ${FONT}`; }
+    g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = ink; g.shadowBlur = q.kind === 'plate' ? 0 : 10;
+    g.fillText(q.text, cx + w / 2, cy + ROW / 2 + 2);
+    g.shadowBlur = 0;
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const geos = cells.map(({ q, x: cx, y: cy, w }) => {
+    const geo = new THREE.PlaneGeometry(q.s[0], q.s[1]), uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (cx + uv.getX(i) * w) / cv.width, 1 - (cy + (1 - uv.getY(i)) * ROW) / cv.height);
+    // The plane faces along nrm: [x, z] in the module's frame.
+    geo.rotateY(Math.atan2(q.nrm[0], q.nrm[1]));
+    return geo.translate(...q.p);
+  });
+  // The signs glow a little: the alpha is the lens's glow mask.
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.8, blending: THREE.NoBlending });
+  return new THREE.Mesh(mergeGeometries(geos), mat);
+}
+// Signs wait for the page font, so the names draw in Gabarito.
+export const signsReady = document.fonts ? document.fonts.load(`700 40px ${FONT}`).catch(() => {}) : Promise.resolve();
+
 /* ---------- geometry from parts ---------- */
 // A measured roof: a height grid of [x, z, h] cells.
 // The top is a smooth surface through the cell corners; the walls drop
@@ -197,6 +246,8 @@ export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = 
   const crown = mesh(bins.crown, PAINT, true), pivot = PARTS.find(q => q.k === 'crown')?.pivot;
   if (crown && pivot) { crown.geometry.translate(-pivot[0], -pivot[1], -pivot[2]); crown.position.set(...pivot); }
   for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) body.add(m);
+  const signs = PARTS.filter(q => q.t === 'sign');
+  if (signs.length) body.add(signMesh(signs));
   for (const s of Object.values(sw)) s.mat = glowMat(s.gain);
   for (const id in sw) if (sw[id].geos.length) body.add(mesh(sw[id].geos, sw[id].mat, false, false));
   for (const id in mv) {

@@ -65,3 +65,27 @@ test('flat roofs settle on a few levels', { skip: !lidar && 'no lidar.json yet' 
     assert.ok(levels.size <= 3, `a flat roof has ${levels.size} levels`);
   }
 });
+
+// Names and styles from public sources (Tom, 2026-11-14).
+test('shops carry their real names', () => {
+  const { PARTS } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const signs = PARTS.filter(q => q.t === 'sign' && q.kind === 'shop');
+  assert.ok(signs.length >= 8, `only ${signs.length} named signs`);
+  const names = new Set(data.stores.map(s => s.name));
+  for (const s of signs) assert.ok(names.has(s.text) || s.text === 'FOR LEASE', `"${s.text}" is not a shop on record`);
+  assert.ok(!signs.some(s => s.text === 'Vacant'), 'a vacant unit shows "Vacant"');
+});
+
+test('frontages take the style of their era', () => {
+  const { FACES } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const era = y => FACES.find(f => f.year === y)?.era;
+  assert.equal(era(1920), 'early');
+  assert.equal(era(1962), 'postwar');
+  assert.equal(era(2002), 'modern');
+  for (const f of FACES) assert.ok(['early', 'postwar', 'modern'].includes(f.era));
+});
+
+test('The Highland carries its nameplate', () => {
+  const { PARTS } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  assert.ok(PARTS.some(q => q.t === 'sign' && q.kind === 'plate' && /THE HIGHLAND/.test(q.text) && /1911/.test(q.text)));
+});
