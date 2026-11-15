@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T08:57:39Z
-updated_at: 2026-11-15T09:41:34Z
+updated_at: 2026-11-15T09:44:28Z
 parent: stimming-oh7b
 ---
 
@@ -23,6 +23,16 @@ Tier: raw WebGL2 (instanced sprites, a baked night scene lit by the fireflies, b
 - [x] Gestures: tap scatters, drag sweeps, hold leads; Shuffle; Pull slider; Rhythm choice (Pulse, Double, Burst)
 - [x] Sound: ticks, rain, heartbeat through audioKit, muted by default
 - [x] Quality: detail level, pixel ratio, slow-frame step, whenVisible, reduced motion
-- [ ] QA in the browser pane: console, gestures, controls, sound, 1280, 375 x 812, 812 x 375
+- [x] QA in the browser pane: console, gestures, controls, sound, 1280, 375 x 812, 812 x 375
 - [x] Toy doc docs/toys/fireflies.md
-- [ ] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
+- [x] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
+
+## Summary of Changes
+
+- `fireflies/index.html`: a new Lab toy on Bar v2, raw WebGL2. About 730 fireflies on a night meadow seen from a low rise, with woods, a lantern tree and front grass.
+- Phase model: each firefly keeps a clock and sees the flashes near it on a 1.5 m ground grid; late ones hurry, early ones wait. Pull is a multiple of the Kuramoto threshold. No lock below about 0.25; at the default 0.45 the meadow locks in about a minute.
+- Rhythm choice: Pulse, Double, Burst. A spread factor per rhythm keeps each near a minute. Light saturates and never slows a clock below a third, so a volley cannot freeze the meadow.
+- Gestures: tap startles a ring of flashes and resets the patch; drag sweeps; a still hold shines a lantern the swarm follows. Shuffle (S), Lead (L, held), keys 1 to 3, Space on the stage.
+- Look: a baked night lit per frame by a small light map (ground pools, air glow in three depth bands), instanced sprites with lens blur up close, shared bloom, grade and film curve.
+- Sound through audioKit: rain-like patter and glass ticks out of step; a lub-dub heartbeat and a warm chord in step; a bell for the lantern.
+- `docs/toys/fireflies.md`: the toy doc. Handoff files in the lab10 scratchpad.

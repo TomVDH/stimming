@@ -77,19 +77,19 @@ Drift: none known. The noise GLSL is a local copy of the one in `stone/` (`docs/
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 1342 | The page: CSS, markup, vignette, one module script |
+| `index.html` | 1357 | The page: CSS, markup, vignette, one module script |
 <!-- /gen:files -->
 
 ## Render pipeline
 
 | Pass | Target | Shader or material | Does |
 |---|---|---|---|
-| Bake (once per size) | Two RGBA16F maps, full size | `BAKE_FS` (`:233`) | Sky, stars, woods at 160 m, the lantern tree, the meadow, three layers of front grass. Map 0: colour and inverse depth. Map 1: grass cover, grass rim, surface kind, leaf glow |
-| Light | RGBA16F at a third to a sixth of the size | `LIGHT_VS`/`LIGHT_FS` (`:381`), instanced splats | Red: a pool on the ground under each flashing firefly. Green, blue, alpha: air glow in three depth bands (4, 12, 35 m) |
-| Scene | HDR, full size | `SCENE_FS` (`:403`) | Lights the bake: pools on the meadow, air glow on leaves and bark, a warm rim on the front grass, haze over the sky; the grass sways |
-| Fireflies | HDR, additive | `FLY_VS`/`FLY_FS` (`:445`), instanced quads | A sharp core far off, a soft disc nearer than 12 m; a nearer surface in the bake hides a firefly |
+| Bake (once per size) | Two RGBA16F maps, full size | `BAKE_FS` (`:234`) | Sky, stars, woods at 160 m, the lantern tree, the meadow, three layers of front grass. Map 0: colour and inverse depth. Map 1: grass cover, grass rim, surface kind, leaf glow |
+| Light | RGBA16F at a third to a sixth of the size | `LIGHT_VS`/`LIGHT_FS` (`:384`), instanced splats | Red: a pool on the ground under each flashing firefly. Green, blue, alpha: air glow in three depth bands (4, 12, 35 m) |
+| Scene | HDR, full size | `SCENE_FS` (`:406`) | Lights the bake: pools on the meadow, air glow on leaves and bark, a warm rim on the front grass, haze over the sky; the grass sways |
+| Fireflies | HDR, additive | `FLY_VS`/`FLY_FS` (`:448`), instanced quads | A sharp core far off, a soft disc nearer than 12 m; a nearer surface in the bake hides a firefly |
 | Bloom | Half size chain | `bloomChain` from `shared/glow.js` | Threshold 0.9, five levels (three on Low) |
-| Composite | Screen | `COMP_FS` (`:495`) | Bloom, `gdGrade` (tint, vignette, grain), `ouFilm` (ACES, sRGB, dither) |
+| Composite | Screen | `COMP_FS` (`:506`) | Bloom, `gdGrade` (tint, vignette, grain), `ouFilm` (ACES, sRGB, dither) |
 
 ### Uniforms
 
@@ -105,10 +105,10 @@ Tuned through the Dev rows; the shaders take them as uniforms.
 
 ## Phase model
 
-Each firefly keeps a clock `TH` from 0 to 1 and its own speed, spread about one beat by `Spread` times a factor per rhythm (`:567`).
-Each step (`:832`), every flash is splatted onto a 1.5 m ground grid, with the firefly count beside it. Both blur by `Sight` (3 m). Their ratio is the mean flash a firefly sees.
+Each firefly keeps a clock `TH` from 0 to 1 and its own speed, spread about one beat by `Spread` times a factor per rhythm (`:578`).
+Each step (`:843`), every flash is splatted onto a 1.5 m ground grid, with the firefly count beside it. Both blur by `Sight` (3 m). Their ratio is the mean flash a firefly sees.
 The seen light, saturated, drives a phase response `-sin(2 pi (TH - centre))`: a flash just before a firefly's own hurries it, one just after slows it. `Reach` (0.25) mixes in the mean of the whole meadow.
-`Pull` sets the coupling as a multiple of the Kuramoto threshold for the spread (`:600`): 12 x Pull^1.75. The meadow never locks below about Pull 0.25; at 0.45 it locks in 40 to 60 s; at 1 it snaps in a few seconds.
+`Pull` sets the coupling as a multiple of the Kuramoto threshold for the spread (`:611`): 12 x Pull^1.75. The meadow never locks below about Pull 0.25; at 0.45 it locks in 40 to 60 s; at 1 it snaps in a few seconds.
 Light never slows a clock below a third of its speed, so a bright volley cannot freeze the meadow.
 
 ## Sound
