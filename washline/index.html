@@ -68,6 +68,7 @@ import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear,
 import { makeLook } from './cloth.js';
 import alley from './places/alley.js';
 import garden from './places/garden.js';
+import beach from './places/beach.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -82,7 +83,7 @@ const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
 const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-const PLACES = { alley, garden };
+const PLACES = { alley, garden, beach };
 // The address (?place=) or the last visit picks the first place.
 const firstPlace = (() => {
   let saved = null;
@@ -212,6 +213,7 @@ function buildPlace(id) {
   P.place = pl;
   try { localStorage.setItem('stimming.washline.place', pl.id); } catch { /* storage can be blocked */ }
   skyU.uCloud.value = pl.sky.clouds || 0;
+  P.sky = { zen: v3(lin(pl.sky.zen)), hor: v3(lin(pl.sky.hor)), haze: v3(lin(pl.sky.haze)) };
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
   scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), ...(pl.fog || [30, 420]));
@@ -297,6 +299,8 @@ function tick(dt) {
 }
 function draw() {
   P.look.sync(camera, view.h, P.flyers);
+  // A place may move things of its own, such as the sea.
+  P.set.userData.tick?.(st.t, SUN, camera, view.h, P.sky);
   syncLight();
   composer.render();
   if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }

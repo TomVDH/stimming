@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T04:17:27Z
+updated_at: 2026-11-15T04:57:58Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -120,7 +120,7 @@ Tom asked for a full redo. The checklists above are superseded; the old pages st
 - [x] R1: core (K4 rope, cloth, pulley, pegs) plus Alley blockout; old pages archived; checkpoint with Tom
 - [x] R2: hands on: reel, + Piece, unclip and fly, cloth drag, Release
 - [x] R3: backlit glow; Alley sign-off (Tom, 2026-11-10)
-- [ ] R4: Garden; sign-off
+- [x] R4: Garden; sign-off (Tom, 2026-11-14)
 - [ ] R5: Beach; sign-off
 - [ ] R6: Strangereal (fully new, jet furball); sign-off
 - [ ] R7: sound: reel, peg click, whoosh, place ambience
@@ -153,3 +153,9 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - The pulley runs from an upstairs window to a pole by the shed.
 - Plots side by side behind walls, fences and hedges; sheds, a rotary dryer, a trampoline.
 - A church tower and poplars on the horizon under a big cumulus sky; the sun sets at the end of the row.
+
+
+### Beach is a Greek island cove (Tom, 2026-11-14)
+
+- Whitewashed fisherman's hut with a blue door to a weathered post on the pebbles; caique on the beach, rocky headlands, turquoise water, the sun low over the sea.
+- Tom: do not forget an epic Strangereal (R6).
