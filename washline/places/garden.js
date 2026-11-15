@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { rng, ok, col, pick, inst, paint, canvasTex, quad } from './kit.js';
 import { dressGarden } from './garden-dress.js';
+import { houseRelief } from './garden-walls.js';
+import { gardenLife } from './garden-life.js';
 
 const HX = -4.5;
 const PLOT = 5.6;
@@ -190,7 +192,7 @@ export default {
         copings.push({ p: [HX + ext / 2, eh + 0.05, zc], s: [ext + 0.1, 0.1, ew + 0.1], c: col([0.25, 0.01, 250]) });
         copings.push({ p: [HX + ext + 0.02, eh - 0.02, zc], s: [0.08, 0.14, ew + 0.1], c: col([0.7, 0.01, 250]) });
       }
-      plots.push({ k, zc, z0, z1, ours, ext });
+      plots.push({ k, zc, z0, z1, ours, ext, eave, brick });
     }
     inst(group, new THREE.BoxGeometry(1, 1, 1), paint(0.9), copings);
     inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.38, 0.02, 250]), roughness: 0.7 }), sills);
@@ -229,16 +231,20 @@ export default {
       walls.push({ p: [HX + 2, wh / 2, z], s: [4, wh, 0.22], c: col([0.46 + R() * 0.05, 0.09, 35]) });
       walls.push({ p: [HX + 2, wh + 0.03, z], s: [4.05, 0.08, 0.3], c: col([0.4, 0.01, 250]) });
       const kind = R();
-      if (p.k === 1) {
+      if (p.k === 0) {
+        const L = 0.4;
+        for (let x = HX + 4.2; x < EX; x += 0.42) hedge.push({ p: [x, 0.45, z], s: [0.36, 0.48, 0.35], c: col([L + R() * 0.06, 0.1, 140]) });
+      } else if (p.k === 1) {
         // A low picket fence keeps our lawn in view.
         for (let x = HX + 4.1; x < EX; x += 0.16) planks.push({ p: [x, 0.5, z], s: [0.08, 1.0, 0.025], c: col([0.92, 0.01, 90]) });
         planks.push({ p: [(HX + 4 + EX) / 2, 0.75, z], s: [EX - HX - 4, 0.06, 0.03], c: col([0.92, 0.01, 90]) });
       } else if (kind < 0.45) {
-        const fh = 1.2 + R() * 0.5;
+        const fh = 0.9 + R() * 0.4;
         planks.push({ p: [(HX + 4 + EX) / 2, fh / 2, z], s: [EX - HX - 4, fh, 0.04], c: col([0.42 + R() * 0.1, 0.06, 55]) });
         for (let x = HX + 4.9; x < EX; x += 1.8) planks.push({ p: [x, fh / 2 + 0.05, z], s: [0.09, fh + 0.1, 0.09], c: col([0.36, 0.05, 55]) });
       } else {
-        const L = 0.36 + R() * 0.1, top = 1.2 + R() * 0.8;
+        // Our back hedge stays low, so the next gardens show.
+        const L = 0.36 + R() * 0.1, top = p.k === 0 ? 0.85 : 0.9 + R() * 0.6;
         for (let x = HX + 4.2; x < EX; x += 0.42) {
           hedge.push({ p: [x, top * 0.5, z], s: [0.36, top * 0.55, 0.35], c: col([L, 0.1, 140]) });
           hedge.push({ p: [x + 0.2, top * (0.75 + R() * 0.25), z + (R() - 0.5) * 0.2], s: [0.3, 0.3, 0.32], c: col([L + 0.05, 0.11, 135]) });
@@ -252,7 +258,11 @@ export default {
     inst(group, box, paint(0.9), planks);
     inst(group, new THREE.IcosahedronGeometry(1, 1), paint(0.9), hedge);
 
-    dressGarden(group, R, { HX, EX, PLOT, LINE_Z, plots, look, anchors: this.anchors });
+    const ctx = { HX, EX, PLOT, LINE_Z, plots, look, anchors: this.anchors };
+    // Each pass draws from its own seed, so one never reshuffles another.
+    houseRelief(group, rng(21), ctx);
+    gardenLife(group, rng(31), ctx);
+    dressGarden(group, R, ctx);
     return group;
   },
 };
