@@ -254,13 +254,16 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   add(plate(SPOIL, LIP, 17.425, 23.3));
 
   // The winglet: a blended curve out of the tip, then a swept, tapered blade.
-  // Its root section starts inside the wing tip, so no seam shows.
-  const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
-  add(loft(Array.from({ length: 16 }, (_, i) => {
-    const w = WINGLET(i / 15);
-    const le = V(w.le, w.y, w.z), te = V(w.le - w.c, w.y, w.z), nrm = V(0, w.ny, w.nz);
-    const pt = (s, side) => le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
-    return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
+  // Its root section is the wing tip's own; the difference fades out up the bend.
+  // Sections bunch in the bend, so its shading stays smooth.
+  const sm = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+  const chordS = Array.from({ length: N + 1 }, (_, k) => (1 - Math.cos(Math.PI * k / N)) / 2);
+  const ring = [...chordS.map(s => [s, 1]), ...chordS.slice(1, -1).reverse().map(s => [s, -1])];
+  const blade = (w, s, side) => V(w.le - s * w.c, w.y, w.z).addScaledVector(V(0, w.ny, w.nz), side * 0.09 * naca(s) * w.c);
+  const W0 = WINGLET(0), tipSec = section(0, 1, ZT), NW = 30;
+  add(loft(Array.from({ length: NW }, (_, i) => {
+    const u = Math.pow(i / (NW - 1), 1.5), w = WINGLET(u), k = 1 - sm(u / 0.3);
+    return ring.map(([s, side], j) => blade(w, s, side).add(tipSec[j].clone().sub(blade(W0, s, side)).multiplyScalar(k)));
   })), paint);
 
   // The nacelle hangs on a pylon, clear of the lower skin.
