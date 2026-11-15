@@ -198,7 +198,8 @@ vec3 spectral(float l) {
   float a = (l - 610.0) / 45.0, b = (l - 430.0) / 25.0, c = (l - 545.0) / 45.0, d = (l - 455.0) / 35.0;
   return vec3(exp(-a * a) + 0.2 * exp(-b * b), exp(-c * c), exp(-d * d));
 }
-// A circular polariscope passes sin^2 of each colour for a retardation of d nm.
+// Crossed circular polarisers pass sin^2 of each colour.
+// d is the retardation in nm.
 // The sum over the spectrum gives the interference colours.
 vec3 fringe(float d) {
   vec3 c = vec3(0.0), w = vec3(0.0);
@@ -213,7 +214,7 @@ vec3 fringe(float d) {
 }
 `;
 
-/* ---------- scene: one raymarch for the drop, the tools and the floor ---------- */
+/* ---------- scene: one ray march for drop, tools and floor ---------- */
 const SCENE_FS = `#version 300 es
 precision highp float;
 precision highp int;
@@ -221,7 +222,8 @@ uniform vec2 uRes;
 uniform vec3 uCam;
 uniform mat3 uCamM;
 uniform float uFocal;
-// Body A runs from the head; piece B is the tip past the cut.
+// Body A runs from the head.
+// Piece B is the tip past the cut.
 uniform vec4 uA[18];
 uniform float uAs[18];
 uniform int uNA;
@@ -233,7 +235,7 @@ uniform mat4 uBMat;
 uniform vec4 uBndA;
 uniform vec4 uBndB;
 uniform float uLen;
-// Arc s runs from 0 at the tail tip to 1 at the back of the head.
+// Arc s runs from the tail tip (0) to the head (1).
 uniform float uFront;
 uniform float uCrack;
 uniform float uGone;
@@ -327,14 +329,14 @@ float sdTri(vec3 p, vec2 h) {
   vec3 q = abs(p);
   return max(q.z - h.y, max(q.x * 0.866025 + p.y * 0.5, -p.y) - h.x * 0.5);
 }
-// The hammer in its own frame: the head along y, face down; the handle along +x.
+// The hammer's frame: head along y, face down, handle along +x.
 vec2 sdHammer(vec3 p) {
   float head = sdCapCyl(p, 0.62, 0.85) - 0.1;
   float grip = sdRBox(p - vec3(4.0, 0.0, 0.0), vec3(3.4, 0.2, 0.14), 0.12);
   return head < grip ? vec2(head, 2.0) : vec2(grip, 3.0);
 }
-// The pliers in their own frame: the cut at the origin, x along the tail to its tip.
-// Two jaws bite the tail from above and below; the handles rise to the right.
+// The pliers' frame: the cut at the origin, x toward the tip.
+// Two jaws bite the tail; the handles rise to the right.
 vec2 sdCutters(vec3 p) {
   const vec2 piv = vec2(1.35, 0.0);
   vec2 best = vec2(1e4, 4.0);
@@ -345,11 +347,11 @@ vec2 sdCutters(vec3 p) {
     float a = sg * uCutOpen, c = cos(a), s = sin(a);
     vec2 d = p.xy - piv;
     vec2 q2 = vec2(c * d.x - s * d.y, s * d.x + c * d.y) + piv;
-    // The jaw: a flat grip face on the tail, a back that thickens toward the pivot.
+    // A jaw has a flat grip face and thickens toward the pivot.
     vec3 q = vec3(q2.x, sg * q2.y, p.z);
     float back = (q.y - (e + 0.06 + 0.2 * q.x)) * 0.98;
     float jaw = max(max(e - q.y, back), max(max(-q.x, q.x - piv.x - 0.3), abs(q.z) - 0.14)) - 0.015;
-    // The handle bends up at the pivot; the lower jaw's arm holds the lower handle.
+    // Each handle bends up at the pivot.
     float ha = k == 0 ? 0.42 : 0.86;
     vec2 hd = vec2(cos(ha), sin(ha));
     vec2 hq = q2 - piv;
@@ -365,7 +367,9 @@ vec2 sdCutters(vec3 p) {
   if (rivet < best.x) best = vec2(rivet, 4.0);
   return best;
 }
-// x: distance. y: material. 1 glass A, 1.5 glass B, 2 steel, 3 grip, 4 jaw, 5 jaw grip.
+// x is the distance; y is the material.
+// 1 glass A, 1.5 glass B, 2 steel, 3 grip.
+// 4 jaw steel, 5 jaw grip.
 vec2 mapAll(vec3 p) {
   vec2 r = vec2(mapA(p), 1.0);
   float b = mapB(p);
@@ -400,7 +404,7 @@ vec3 nAll(vec3 p) {
 }
 
 /* the drop's axis */
-// The nearest axis point: arc s, local radius, the point and the tangent.
+// The nearest axis point gives arc s, radius, point and tangent.
 struct Ax { float s; float r; vec3 a; vec3 t; };
 Ax axisA(vec3 p) {
   Ax o = Ax(1.0, 1.0, uA[0].xyz, vec3(1.0, 0.0, 0.0));
@@ -418,11 +422,11 @@ Ax axisA(vec3 p) {
       best = d;
       o.a = c; o.r = r; o.t = ba / l;
       o.s = mix(uAs[i], uAs[i + 1], h);
-      // Behind the head centre, s climbs to 1 at the back of the head.
+      // Behind the head centre, s climbs to 1 at the back.
       if (i == 0 && hu < 0.0) o.s = min(1.0, uAs[0] - hu * l / uLen);
     }
   }
-  // Round the steep neck, the first three cones blend their axis points softly.
+  // At the steep neck, the first three cones blend their axis points.
   // The blend fades out down the tail, where one cone always wins.
   float nb = smoothstep(0.17, 0.3, o.r);
   if (nb > 0.0 && uNA > 3) {
@@ -457,7 +461,8 @@ Ax axisB(vec3 q) {
 }
 
 /* light */
-// The studio: a top box behind and above, two rim strips behind, a dim fill behind the camera.
+// The studio: a top box behind and above, and two rim strips.
+// A dim fill sits behind the camera.
 // The lights show only in the glass and the steel.
 vec3 lights(vec3 ro, vec3 rd) {
   vec3 c = vec3(0.0);
@@ -489,14 +494,15 @@ vec3 wall(vec3 ro, vec3 rd) {
   vec3 p = ro + rd * t;
   vec2 d = (p.xy - vec2(0.3, 2.0)) / vec2(7.0, 4.6);
   vec3 c = mix(uBack1, uBack0, exp(-dot(d, d) * 1.8));
-  // A low glow runs along the foot of the wall, as on a lit sweep.
+  // A low glow runs along the foot of the wall.
   return c + uBack0 * 1.6 * exp(-max(p.y, 0.0) / 1.1) * exp(-p.x * p.x / 60.0);
 }
 // Between crossed polarisers the lit studio goes almost black.
 const float DARK = 0.93;
-// The floor's mirror sees only the wall; the lights stay off the floor.
+// The floor's mirror sees only the wall, never the lights.
 vec3 sky(vec3 ro, vec3 rd) { return wall(ro, rd) * (1.0 - DARK * uPolar); }
-// Light along a ray that has left the glass or the steel: a plain wet floor, or the studio.
+// Light along a ray that leaves the glass or the steel.
+// It sees a plain wet floor or the studio.
 vec3 env(vec3 ro, vec3 rd) {
   if (rd.y < 0.0 && ro.y > 0.0) {
     vec3 p = ro + rd * (-ro.y / rd.y);
@@ -508,7 +514,8 @@ vec3 env(vec3 ro, vec3 rd) {
   }
   return (wall(ro, rd) + lights(ro, rd)) * (1.0 - DARK * uPolar);
 }
-// Glowing glass: a hot colour for heat t from 0 to 1, linear and unit peak.
+// The colour of hot glass for heat t from 0 to 1.
+// Linear light, unit peak.
 vec3 hot(float t) {
   float k = 7.5 + 11.5 * t;
   float g = clamp(0.39008158 * log(k) - 0.63184144, 0.0, 1.0);
@@ -562,9 +569,9 @@ float inside(vec3 q, vec3 d, int steps) {
 vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   bool isA = body < 1.25;
   vec3 n = nGlass(p);
-  // The march stops a hair outside; this sets the point on the skin.
+  // The march stops just outside; this moves the point onto the skin.
   p -= n * mapGlass(p);
-  // Faint quench waves on the skin, and the ring of a hammer blow.
+  // Faint quench waves ripple the skin, and a blow rings it.
   vec3 w = vec3(sin(p.y * 11.0 + p.z * 6.0), sin(p.z * 9.0 + p.x * 7.0), sin(p.x * 8.0 + p.y * 9.0)) * 0.012;
   float ring = 0.0;
   if (uHit.w >= 0.0 && uHit.w < 1.5) {
@@ -624,7 +631,7 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   Ax am;
   if (isA) am = axisA(midL); else am = axisB(midL);
   // The section through the path's middle, square to the axis.
-  // A short march from the axis out through the middle finds the skin.
+  // A short march from the axis through the middle finds the skin.
   vec3 axW = isA ? am.a : (uBMat * vec4(am.a, 1.0)).xyz;
   vec3 rv = mid - axW;
   float bM = length(rv);
@@ -640,7 +647,7 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   float frostA = 0.0, frontG = 0.0;
   vec3 frostC = vec3(0.0);
   if (isA && uCrack > 0.5) {
-    // Cracks race ahead in the stretched core and lag in the squeezed skin.
+    // Cracks lead in the stretched core and lag in the squeezed skin.
     float sCore = am.s + 0.6 * (1.0 - beta * beta) * am.r / uLen;
     float sSkin = axisA(p).s;
     float dc = (sCore - uFront) * uLen, ds = (sSkin - uFront) * uLen;
@@ -665,7 +672,7 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   }
   // Photoelastic stress: retardation across a tempered rod, in nm.
   float gam = sqrt(max(1.0 - beta * beta, 0.0));
-  // Thin glass cools fastest, so the tail keeps more stress than its width.
+  // Thin glass cools fastest, so the tail keeps extra stress.
   // A slow wobble along the drop keeps the rings from looking drawn.
   float wob = 1.0 + 0.14 * sin(am.s * 23.0 + 1.3) + 0.08 * sin(dot(midL, vec3(3.1, 4.7, 2.3)));
   float dlt = uStress * pow(rT, 0.62) * gam * (0.533 - 2.933 * beta * beta) * wob;
@@ -673,7 +680,7 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   dlt += ring * 1300.0;
   float relax = (1.0 - frostA) * (1.0 - smoothstep(0.05, 0.6, uHeat));
   vec3 fr = fringe(abs(dlt) * relax);
-  // The eye reads the fringes as stronger colour than the plain sum gives.
+  // Real fringes look more saturated than the plain sum.
   fr = max(mix(vec3(dot(fr, vec3(0.2126, 0.7152, 0.0722))), fr, 1.7), 0.0);
   vec3 pol = fr * 0.85 * (1.0 - 0.6 * F) * smoothstep(1.0, 0.9, beta) + refl * F * 0.25 + frostC * frostA * 0.8;
   col = mix(col, frostC, frostA);
@@ -741,7 +748,7 @@ vec2 rain(vec2 xz) {
   }
   return g * uRain.w * fall * 0.6;
 }
-// Key light on the floor: the drop's lens shadow with its bright focus.
+// Key light on the floor: the lens shadow and its bright focus.
 vec3 floorLight(vec3 p, out vec3 glow) {
   vec3 lit = vec3(1.0), caus = vec3(0.0);
   glow = vec3(0.0);
@@ -822,7 +829,8 @@ vec4 steam(vec3 ro, vec3 rd, float tMax) {
   vec3 head = uA[0].xyz;
   for (int i = 0; i < 10; i++) {
     vec3 x = ro + rd * (t0 + dt * (float(i) + j));
-    // A plume rises over the whole drop, thickest over the head, thinning as it climbs.
+    // A plume rises over the whole drop, thickest over the head.
+    // It thins as it climbs.
     vec2 ax = x.xz - vec2(clamp(x.x, -2.4, 3.3), 0.0);
     float wdt = 0.12 + 0.14 * x.y;
     float shape = exp(-dot(ax, ax) / wdt) * (0.3 + 0.7 * exp(-(x.x - head.x) * (x.x - head.x) * 0.35));
@@ -898,11 +906,12 @@ out float vPx;
 out float vDist;
 vec3 h3(float n) { return fract(sin(vec3(n, n + 1.7, n + 3.1)) * vec3(43758.5453, 22578.1459, 19642.349)); }
 void main() {
-  // aP: start and arc s. aV: velocity and size. aR: seed, spin, release, fall speed.
+  // aP holds the start and arc s; aV the velocity and size.
+  // aR holds the seed, spin, release time and fall speed.
   float u = uTau - aR.z;
   if (u < 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec3 p = aP.xyz + aV.xyz * (1.0 - exp(-uK * u)) / uK;
-  // The slow clock pulls the cloud down; each shard keeps its own top speed.
+  // The real clock pulls the cloud down at each shard's top speed.
   float T = uClock;
   float fall = aR.w * (T - 0.35 * (1.0 - exp(-T / 0.35)));
   float floorY = aV.w * 0.35;
@@ -1032,7 +1041,8 @@ const rot = (v, k, a) => {
   const c = Math.cos(a), s = Math.sin(a);
   return add(add(mul(v, c), mul(cross(k, v), s)), mul(k, dot(k, v) * (1 - c)));
 };
-// World to local for a frame with axes x, y, z at origin t: a column-major mat4.
+// World to local for axes x, y, z at origin t.
+// The result is a column-major mat4.
 function invFrame(x, y, z, t) {
   const m = new Float32Array(16), A = [x, y, z];
   for (let i = 0; i < 3; i++) {
@@ -1047,7 +1057,8 @@ const IDENT = invFrame([1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 0]);
 const frameMat = (x, y, z, t) => new Float32Array([...x, 0, ...y, 0, ...z, 0, ...t, 1]);
 
 /* ---------- the drop ---------- */
-// The drop's control points, from the head to the tail tip: centre and radius in head radii.
+// The drop's control points, from the head to the tail tip.
+// Each holds a centre and a radius, in head radii.
 const CTRL = [
   [-2.1, 1.0, 0.0, 1.0],
   [-0.84, 0.64, 0.02, 0.4],
@@ -1059,7 +1070,8 @@ const CTRL = [
   [3.56, 1.38, -0.17, 0.026],
 ];
 // A smooth curve through them; the radius tapers on a log scale.
-// Each pair of points makes one round cone; the first one is the teardrop head.
+// Each pair of points makes one round cone.
+// The first cone is the teardrop head.
 const REST = (() => {
   const P = CTRL.map(c => [c[0], c[1], c[2], Math.log(c[3])]);
   const at = (i, t) => {
@@ -1075,12 +1087,12 @@ const REST = (() => {
   return out;
 })();
 const SEG = REST.slice(1).map((p, i) => len(sub(p, REST[i])));
-// The arc length of the whole drop, from the back of the head to the tip.
+// The drop's arc length, from the head's back to the tip.
 const LEN = REST[0][3] + SEG.reduce((a, b) => a + b, 0);
-// Arc s of each point: 1 at the back of the head, 0 at the tip.
+// Arc s per point: 1 at the head, 0 at the tip.
 const S = [];
 { let c = REST[0][3]; S.push(1 - c / LEN); SEG.forEach(l => { c += l; S.push(1 - c / LEN); }); }
-// The tail ends where the radius drops under 0.24: the head lies above that.
+// The tail ends where the radius drops under 0.24.
 const S_NECK = (() => {
   for (let i = 0; i + 1 < REST.length; i++) {
     const a = REST[i][3], b = REST[i + 1][3];
@@ -1091,7 +1103,7 @@ const S_NECK = (() => {
 const HEAD_TOP = [REST[0][0], REST[0][1] + REST[0][3], REST[0][2]];
 const HEAD_FOOT = [REST[0][0], 0, REST[0][2]];
 
-// The part of a chain with s above c, from the head down to the cut.
+// The chain's part with s above c: head to cut.
 function headSide(pts, ss, c) {
   const out = [], os = [];
   for (let i = 0; i < pts.length; i++) {
@@ -1104,7 +1116,7 @@ function headSide(pts, ss, c) {
   }
   return { pts: out, ss: os };
 }
-// The part of a chain with s below c, from the cut out to the tip.
+// The chain's part with s below c: cut to tip.
 function tipSide(pts, ss, c) {
   const out = [], os = [];
   for (let i = 1; i < pts.length; i++) {
@@ -1132,7 +1144,7 @@ function sdChain(p, pts) {
   for (let i = 0; i + 1 < pts.length; i++) d = Math.min(d, sdRC(p, pts[i], pts[i + 1]));
   return d;
 }
-// The nearest axis point of a chain: arc s, radius, the point and the tangent.
+// A chain's nearest axis point: arc s, radius, point and tangent.
 function axisOf(p, pts, ss) {
   let best = 1e9, o = null;
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -1161,7 +1173,7 @@ function bound(pts) {
 }
 
 /* ---------- state ---------- */
-// whole: the drop at rest. snip: the jaws close. burst: the slow motion. forming: a new drop.
+// States: whole (at rest), snip (jaws close), burst, forming (a new drop).
 let state = 'whole';
 let wall = 0;
 const ham = { on: false, t: 0, from: 0.95, lift: 1.4, hits: 0 };
@@ -1185,7 +1197,7 @@ function schedule(sCut) {
   const burst = (1 - sCut) * FRONT_T, ramp = burst + HOLD;
   return { burst, ramp, end: ramp + RAMP * 0.5 + FALL, dust: ramp + 0.45 };
 }
-// The real clock under the slow motion: still at first, then up to full speed.
+// The real clock under the slow motion: still, then up to speed.
 function clock(t) {
   if (!sched || t <= sched.ramp) return 0;
   const u = t - sched.ramp;
@@ -1194,7 +1206,7 @@ function clock(t) {
 const frontAt = t => cut.s + Math.max(0, t) / FRONT_T;
 
 /* ---------- dust ---------- */
-// Shards take their start inside the drop, their speed from its stored stress.
+// Shards start inside the drop; the stored stress sets their speed.
 const DUST = [5000, 9000, 14000];
 const PART_MAX = DUST[2];
 const partData = new Float32Array(PART_MAX * 12);
@@ -1252,7 +1264,7 @@ function makeDust(sCut, n) {
     v[1] += 0.35 * rnd();
     const big = rnd() < 0.05;
     const size = (big ? 0.055 + 0.07 * rnd() : 0.012 + 0.03 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(ax.r, 1)));
-    // Tail shards crumble after the front passes; the head goes all at once.
+    // Tail shards crumble behind the front; the head goes at once.
     const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, (ax.s - sCut) * FRONT_T + LAG + 0.12 * rnd());
     const o = k * 12;
     partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], o);
@@ -1277,8 +1289,10 @@ function loadA(pts, ss) {
   bndA = nA >= 2 ? bound(pts) : [0, 0, 0, 0];
   if (nA < 2) nA = 0;
 }
-// The hammer swings about a wrist off the stage; lift raises its head.
-// The handle rises away from the camera; the face meets the glass square on.
+// The hammer swings about a wrist off the stage.
+// lift raises its head.
+// The handle rises away from the camera.
+// The face meets the glass square on.
 const HX0 = norm([1, 0.5, -0.45]), HY0 = norm(sub([0, 1, 0], mul(HX0, HX0[1]))), HZ0 = cross(HX0, HY0);
 const HIT_AT = add(REST[0].slice(0, 3), HY0);
 const HC0 = add(HIT_AT, mul(HY0, 0.95));
@@ -1289,10 +1303,10 @@ function hammerPose(lift, dy = 0) {
   hamInv = invFrame(x, y, HZ0, c);
   hamBnd = [...add(c, mul(x, 3.5)), 4.6];
 }
-// The pliers sit at the cut, their jaws along the tail, open by angle a.
+// The pliers sit at the cut, their jaws open by angle a.
 // away slides them off to the upper right.
 function cutterPose(a, away) {
-  // They come down from the upper right at 55 degrees and bite across the tail.
+  // They come down from the upper right at 55 degrees.
   const t = cut.t, up = norm(sub([0, 1, 0], mul(t, t[1])));
   const x = norm(add(mul(t, Math.cos(0.95)), mul(up, Math.sin(0.95))));
   const y = norm(sub(mul(up, Math.cos(0.95)), mul(t, Math.sin(0.95))));
@@ -1323,7 +1337,7 @@ function pose() {
     const rel = Math.min(S_NECK, cut.s + Math.max(0, tau - LAG) / FRONT_T);
     gone = clamp((tau - sched.burst) / GONE);
     if (gone < 1) { const a = headSide(REST, S, Math.max(cut.s, rel)); loadA(a.pts, a.ss); } else nA = 0;
-    // The tip piece drops on the real clock and tips over as it lands.
+    // The tip falls on the real clock and tips as it lands.
     const T = clock(tau);
     const fallD = Math.min(0.5 * 7 * T * T, tipPose.low);
     const tilt = -0.25 * (fallD / Math.max(tipPose.low, 1e-3));
@@ -1383,7 +1397,7 @@ function formPose(t, dy) {
 const FOV = 24 * Math.PI / 180;
 const cam = { p: [0, 0, 12], r: [1, 0, 0], u: [0, 1, 0], f: [0, 0, -1], focal: 1, focalCss: 1 };
 let size = { w: 1, h: 1, dpr: 1 };
-// The framing box: the drop, room above for the hammer, its mirror below.
+// The framing box: the drop, hammer room above, the mirror below.
 // Short stages keep less room, so the drop stays large.
 const BOX = [];
 for (const x of [-3.25, 3.75]) for (const y of [0, 2.15]) for (const z of [-0.3, 0.3]) BOX.push([x, y, z]);
@@ -1395,7 +1409,7 @@ function setCam(dist, pitch, yaw, tgt) {
   cam.r = norm(cross(cam.f, [0, 1, 0]));
   cam.u = cross(cam.r, cam.f);
 }
-// CSS pixels of a world point, from the top left of the stage.
+// A world point in CSS pixels from the stage's top left.
 function project(p) {
   const v = sub(p, cam.p), z = dot(v, cam.f);
   return [size.w / 2 + dot(v, cam.r) / z * cam.focalCss, size.h / 2 - dot(v, cam.u) / z * cam.focalCss, z];
@@ -1505,7 +1519,7 @@ function draw() {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  // The shards add their glints on top, and their mirror in the wet floor.
+  // The shards add their glints, and their mirror in the floor.
   if (state === 'burst' && partN) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fbP);
     gl.viewport(0, 0, W, H);
@@ -1548,7 +1562,7 @@ function draw() {
   gl.uniform2f(compP.u('uRes'), W, H);
   gl.uniform1f(compP.u('uBloomK'), dev('bloom') ?? 0.3);
   gl.uniform1f(compP.u('uExposure'), dev('exposure') ?? 1.15);
-  // The grade eases in at the snip and out as the real clock catches up.
+  // The grade eases in at the snip and out at the ramp.
   const slow = state === 'burst' && !reduced() ? smooth((wall - slowAt) / 0.35) * (1 - smooth((tau - sched.ramp) / RAMP)) : 0;
   gl.uniform1f(compP.u('uSlow'), slow);
   gl.bindVertexArray(vao);
@@ -1597,7 +1611,7 @@ function hiss(ac, at, { f, dur, level, q = 1, type = 'bandpass', pan = 0, attack
   src.stop(at + dur + 0.05);
 }
 const live = () => { const ac = kit.live(); return ac && kit.noise ? ac : null; };
-// The hammer: a click, the bead of glass rings, the steel pings, the table thuds.
+// Hammer: a click, a glass ring, a steel ping, a thud.
 function hammerSound(k) {
   const ac = live();
   if (!ac) return;
@@ -1641,7 +1655,7 @@ function crackle(n, pan) {
     if (Math.random() < 0.15) partial(ac, t, { f: 500 + 1300 * Math.random(), dur: 0.3 + 0.4 * Math.random(), level: 0.018, pan, attack: 0.01 });
   }
 }
-// The burst, stretched: a long low boom and a cloud of slowed tinkles.
+// The stretched burst: a long low boom and slowed tinkles.
 function burstSound() {
   const ac = live();
   if (!ac) return;
@@ -1690,13 +1704,14 @@ function plipSound(p) {
   const at = ac.currentTime + 0.004;
   partial(ac, at, { f: 650 * jit(0.1), f1: 1400, dur: 0.06, level: 0.14, pan: panOf(p) });
 }
-// The gob: a whoosh as it falls, a hiss of steam, cooling ticks, a last ting.
+// The gob whooshes as it falls.
 function dripSound() {
   const ac = live();
   if (!ac) return;
   const at = ac.currentTime + 0.01;
   hiss(ac, at, { f: 300, f1: 1300, q: 1.2, dur: LAND + 0.05, level: 0.12, attack: 0.45 });
 }
+// The quench: a hiss of steam, cooling ticks, a last ting.
 function quenchSound() {
   const ac = live();
   if (!ac) return;
@@ -1791,7 +1806,7 @@ function startBurst() {
   slowSound();
   ui.slider.disabled = false;
   ui.slider.set(0);
-  // Reduced motion skips the replay: the dust lies still; the slider still scrubs.
+  // Reduced motion skips the replay; the slider still scrubs.
   if (reduced()) { tau = sched.end; playing = false; ui.slider.set(1); }
 }
 // Sounds and rings that the replay passes on its way forward.
@@ -1907,7 +1922,7 @@ function tap(x, y) {
     if (k.kind === 'head') return hammer();
     if (k.kind === 'tail') return snip(k.s);
   }
-  // A tap after the dust settles drips a new drop; mid-burst it pauses.
+  // A tap mid-burst pauses; after the dust settles, it drips anew.
   if (state === 'burst' && !scrubbing) {
     if (tau >= sched.end - 1e-3) return act.reset();
     playing = !playing;
