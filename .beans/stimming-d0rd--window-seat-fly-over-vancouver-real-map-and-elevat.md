@@ -20,7 +20,8 @@ A map-driven world for the outside pass, behind the test hook `?van`. Real eleva
 - [x] Flight track chosen and explained
 - [x] Classic (legacy.html) still renders
 - [x] QA: clean console, 30 fps at 1280 and 375, Noon and Dusk screenshots
-- [ ] PR open; ask Tom: Settings option or default
+- [x] PR open: https://github.com/TomVDH/stimming/pull/61
+- [ ] Tom decides: a Settings option or the default
 
 ## Notes (2026-11-15)
 
