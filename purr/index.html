@@ -104,7 +104,7 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- pelts ---------- */
-// Each pelt sets the fur: length, strands per blob unit, how flat it lies.
+// Each pelt sets the fur's length, density and how flat it lies.
 // Colours are OKLCH: root, tip, undercoat, sheen, rim, eyes and glow.
 const PELTS = {
   velvet: {
@@ -240,14 +240,16 @@ uniform vec2 uExt;
 uniform vec2 uCrown;
 vec2 uvOf(vec2 p) { return p / uExt * 0.5 + 0.5; }
 vec2 blobOf(vec2 uv) { return (uv * 2.0 - 1.0) * uExt; }
-// 0 at the centre, 1 on the skin's edge. The egg term narrows the head.
+// 0 at the centre, 1 on the skin's edge.
+// The egg term narrows the head.
 float shapeR(vec2 p) {
   float a = atan(p.y, p.x + 1e-7);
   float w = 1.0 + 0.016 * sin(3.0 * a + 0.9) + 0.012 * sin(5.0 * a + 2.4) + 0.006 * sin(7.0 * a + 0.3);
   float ax = uShape.x * (1.0 - uShape.w * p.y / uShape.y);
   return length(vec2(p.x / ax, p.y / uShape.y)) / w;
 }
-// The natural grain: a whorl on the crown, then a flow down the back.
+// The natural grain whorls on the crown.
+// Away from the crown, it flows down the back.
 vec2 grain(vec2 p) {
   vec2 d = p - uCrown;
   float r = length(d) + 1e-4;
@@ -255,7 +257,8 @@ vec2 grain(vec2 p) {
   vec2 g = rad + vec2(-rad.y, rad.x) * 0.9 * exp(-r * r / 0.12) + vec2(0.0, -0.45) * smoothstep(0.15, 0.9, r);
   return normalize(g);
 }
-// The comb at rest: fur on the crown stands up, so the whorl has no hole.
+// The comb at rest.
+// Fur on the crown stands up, so the whorl has no hole.
 vec4 natural(vec2 p) {
   float r = length(p - uCrown);
   return vec4(grain(p) * 0.55 * smoothstep(0.0, 0.16, r), 0.0, 0.0);
@@ -272,7 +275,8 @@ out vec4 o;
 ${COMMON}
 void main() { o = natural(blobOf(vUv)); }`;
 
-// One stamp: a stroke from uA to uB, a poke at uA, or a blend back to the grain.
+// A stamp strokes from uA to uB or pokes at uA.
+// Mode 2 blends the map back to the grain.
 const COMB_STAMP_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -300,7 +304,8 @@ void main() {
     return;
   }
   vec2 dir = normalize(ab + 1e-7);
-  // With or across the grain the fur lies flat; against it, it rises.
+  // With or across the grain, the fur lies flat.
+  // Against the grain, it rises.
   // Mode 3 lays the fur flat whatever the grain.
   float lay = uMode == 3 ? 1.0 : smoothstep(-0.5, -0.12, dot(dir, grain(p)));
   c.xy = mix(c.xy, dir * mix(0.42, 1.0, lay), w);
@@ -308,7 +313,8 @@ void main() {
   c.w = clamp(c.w + w * ((1.0 - lay) * 0.45 - lay * 0.5 * c.w), 0.0, 1.0);
   o = c;
 }`;
-// Bristle and muss settle; the lie direction stays, as velvet keeps a track.
+// Bristle and muss settle.
+// The lie direction stays, as velvet keeps a track.
 const COMB_RELAX_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -319,8 +325,9 @@ void main() { vec4 c = texture(uPrev, vUv); o = vec4(c.xy, c.z * uKeep.x, c.w * 
 
 /* ---------- fur and body maps, each frame ---------- */
 // Map 0: the strand vector (length times direction) and the root flag.
-// The flag is 0 where no hair grows, else 1 plus the bristle.
-// Map 1: the skin height, the normal (x, y) and the skin mask.
+// The flag is 0 where no hair grows.
+// Elsewhere it is 1 plus the bristle.
+// Map 1: skin height, normal x and y, and the skin mask.
 const PARAMS_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -410,8 +417,9 @@ void main() {
 
 /* ---------- the fur ---------- */
 // A shell march per pixel: from the tips down to the skin.
-// Shell t looks up the root that would reach this pixel at height t.
-// Each root cell holds one strand; each shell tests one piece of it.
+// Shell t finds the root that reaches this pixel at height t.
+// Each root cell holds one strand.
+// Each shell tests one piece of that strand.
 const FUR_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uFur, uBody;
@@ -440,7 +448,7 @@ uvec2 pcg2d(uvec2 v) {
   v ^= v >> 16u;
   return v;
 }
-// The table: a dark sheet, a soft key pool and the creature's shadow.
+// The table: a dark sheet, a key pool and the shadow.
 vec3 ground(vec2 u, vec2 q, float rho) {
   vec2 c = u - vec2(-0.35, 0.25);
   vec3 col = uBg * (0.3 + 2.4 * exp(-dot(c, c) * 0.26));
@@ -448,7 +456,7 @@ vec3 ground(vec2 u, vec2 q, float rho) {
   float ao = smoothstep(1.25, 0.98, rho);
   return col * (1.0 - 0.8 * sh) * (1.0 - 0.65 * ao);
 }
-// One strand piece: Kajiya-Kay light with two sheens, a rim and a glow.
+// One strand piece: Kajiya-Kay light, two sheens, a rim, a glow.
 vec3 strand(vec3 F, float tn, float t, vec4 rn, float br, vec3 n, float nl, vec3 H, bool guard, bool bare) {
   vec3 D = normalize(F);
   // The root rises along the skin normal; each strand twists a little.
@@ -458,7 +466,7 @@ vec3 strand(vec3 F, float tn, float t, vec4 rn, float br, vec3 n, float nl, vec3
   alb = mix(alb, uUnder, clamp(br, 0.0, 1.0) * (1.0 - 0.5 * tn) * 0.75);
   // Deep fur sits in its own shade.
   float ao = mix(uLook.w, 1.0, pow(smoothstep(0.0, 0.95, t), 1.4));
-  // The body's form: lit on the key side, dark where it turns away.
+  // The body's form: lit on the key side, dark beyond.
   float form = smoothstep(-0.4, 0.95, nl);
   float TL = dot(T, uL);
   float kd = sqrt(max(1.0 - TL * TL, 0.0));
@@ -640,7 +648,7 @@ const S = {
   eyes: 0.55, eyesGoal: 0.55, eyesHold: 6, blink: 4, look: [0.2, -0.5], lookGoal: [0.2, -0.5],
   fluff: 0, fluffGoal: 0, fluffHold: 0, shakeT: -1, shakeSwap: null,
   jig: 0, jigV: 0, dents: [],
-  lean: [0, 0], leanGoal: [0, 0], bump: 0, press: 0,
+  lean: [0, 0], leanGoal: [0, 0], bump: 0, press: 0, melt: 0,
   hand: [0, 0], rhythm: 0, lastStart: 0, lastGap: 0, lastGood: -9, puffCool: 0,
   fuzz: 0, time: 0,
 };
@@ -650,7 +658,8 @@ const breathAt = ph => (ph < 0.4 ? smooth(0, 0.4, ph) : 1 - smooth(0.4, 1, ph));
 const sighAt = t => (t < 0 ? 0 : t < 0.7 ? smooth(0, 0.7, t) : 1 - smooth(0.7, 2.4, t));
 
 /* ---------- layout ---------- */
-// The blob sits a little low; the scale keeps it and its fur on the stage.
+// The blob sits a little low.
+// The scale keeps the blob and its fur on the stage.
 let size = { w: 1, h: 1, dpr: 1 }, scale = 100, centre = [0, 0];
 // The body transform: lean shift (screen units), turn and scale.
 const X = { shift: [0, 0], ang: 0, sx: 1, sy: 1, hk: 1, inv: [1, 0, 0, 1] };
@@ -680,7 +689,8 @@ const onSkin = p => shapeR(p[0], p[1]) < 1.04;
 
 /* ---------- pelt uniforms ---------- */
 let pelt = PELTS[peltId];
-// A strand cell never drops below two device pixels, so small stages stay crisp.
+// A strand cell never drops below two device pixels.
+// Small stages then stay crisp.
 const cells = () => Math.min(pelt.cells, scale * size.dpr / 2);
 // Enough shells that one step never skips half a strand cell.
 const shells = () => Math.round(clamp(2.4 * pelt.L * 1.35 * cells() * dev('shells'), 12, 96));
@@ -768,7 +778,8 @@ function setEyes(p) {
   gl.uniform4f(p.u('uEyeA'), ...l, ...EYE.r);
   gl.uniform2f(p.u('uEyeB'), ...r);
 }
-// The key light comes from the upper left; the rim from behind, lower right.
+// The key light comes from the upper left.
+// The rim light comes from behind, lower right.
 const LIGHT = (() => { const v = [-0.5, 0.56, 0.66], n = Math.hypot(...v); return v.map(c => c / n); })();
 function fur() {
   const p = furP, d = size.dpr;
@@ -862,13 +873,16 @@ function sleepBlit() {
 function bodyTransform() {
   const still = reduced();
   const b = (breathAt(S.ph) - 0.5) + 1.4 * sighAt(S.sigh);
-  const amp = still ? 0 : S.amp, jig = still ? 0 : S.jig;
-  X.sx = 1 + amp * b + 0.03 * jig;
-  X.sy = 1 + amp * 0.75 * b - 0.035 * jig;
-  X.hk = 1 + 2.4 * amp * b - 0.05 * jig;
+  const amp = still ? 0 : S.amp, jig = still ? 0 : S.jig, m = S.melt;
+  // Asleep, it slumps: lower and a little wider.
+  X.sx = (1 + amp * b + 0.03 * jig) * (1 + 0.025 * m);
+  X.sy = (1 + amp * 0.75 * b - 0.035 * jig) * (1 - 0.012 * m);
+  X.hk = (1 + 2.4 * amp * b - 0.05 * jig) * (1 - 0.14 * m);
   const st = S.shakeT;
   X.ang = !still && st >= 0 ? 0.05 * Math.sin(st * Math.PI * 2 * 5.5) * (1 - smooth(0, 1, st)) ** 2 : 0;
-  X.shift = still ? [0, 0] : S.lean;
+  // A loud purr buzzes the whole body.
+  const buzz = still ? 0 : 0.0028 * S.purr * S.purr;
+  X.shift = still ? [0, 0] : [S.lean[0] + buzz * (Math.random() - 0.5), S.lean[1] + buzz * (Math.random() - 0.5)];
   const c = Math.cos(X.ang), s = Math.sin(X.ang);
   // Column-major inverse of rotate(ang) * scale(sx, sy).
   X.inv = [c / X.sx, -s / X.sy, s / X.sx, c / X.sy];
@@ -907,11 +921,13 @@ function step(dt) {
   S.dents = S.dents.filter(d => d.t < 1.2);
   // The body leans toward a hand on it, slowly.
   const handOn = ptr && ptr.on && ptr.mode !== 'press';
-  S.leanGoal = handOn ? [(ptr.ux ?? 0) * 0.035, (ptr.uy ?? 0) * 0.035] : [0, 0];
+  S.leanGoal = handOn ? [(ptr.ux ?? 0) * 0.05, (ptr.uy ?? 0) * 0.05] : [0, 0];
   S.lean = S.lean.map((v, i) => mix(v, S.leanGoal[i], ease(dt, handOn ? 0.45 : 0.9)));
-  S.bump = mix(S.bump, handOn ? 0.07 : 0, ease(dt, 0.35));
+  S.bump = mix(S.bump, handOn ? 0.1 : 0, ease(dt, 0.35));
+  S.melt = mix(S.melt, S.state === 'awake' ? 0 : 1, ease(dt, S.state === 'awake' ? 0.25 : 1.6));
   S.press = mix(S.press, ptr?.mode === 'hold' && ptr.on ? 1 : 0, ease(dt, 0.25));
-  // Eyes: open on a poke, half open while it watches, shut in bliss.
+  // Eyes open on a poke and half open while it watches.
+  // They shut in bliss.
   if (S.eyesHold > 0) S.eyesHold -= dt;
   else S.eyesGoal = S.state !== 'awake' || S.content > 0.4 || S.press > 0.5 ? 0 : (S.time - S.lastTouch < 3 ? 0.45 : 0);
   S.blink -= dt;
@@ -944,7 +960,8 @@ function touch() {
   wake();
 }
 S.lastTouch = -9;
-// One stroke segment, from a to b in blob space, over dt seconds.
+// One stroke segment from a to b in blob space.
+// It takes dt seconds.
 function strokeSeg(a, b, dt) {
   const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
   if (len < 1e-4) return;
@@ -957,12 +974,13 @@ function strokeSeg(a, b, dt) {
   const g = grain(...mid), al = (dx * g[0] + dy * g[1]) / len;
   rustle(mid, v, al);
   if (!on) return;
-  // A calm stroke with the grain pleases; against it, or a scrub, annoys.
-  const calm = Math.exp(-((Math.log(Math.max(v, 1e-3) / 0.9)) ** 2) / (2 * 0.65 ** 2));
+  // A calm stroke with the grain pleases it.
+  // A stroke against the grain, or a scrub, annoys it.
+  const calm = Math.exp(-((Math.log(Math.max(v, 1e-3) / 1.4)) ** 2) / (2 * 0.8 ** 2));
   const good = calm * smooth(-0.15, 0.6, al);
-  const bad = smooth(-0.2, -0.65, al) + 0.7 * smooth(3.5, 7, v);
+  const bad = smooth(-0.2, -0.65, al) + 0.7 * smooth(5, 9, v);
   if (good > 0.15) S.lastGood = S.time;
-  S.content = clamp(S.content + good * len * 0.11 * (1 + 0.7 * S.rhythm) - bad * len * 0.12);
+  S.content = clamp(S.content + good * len * 0.13 * (1 + 0.7 * S.rhythm) - bad * len * 0.12);
   S.irr = clamp(S.irr + bad * len * 0.32);
   if (S.irr > 0.6 && S.puffCool <= 0) puff();
 }
@@ -1011,8 +1029,8 @@ function shake(swap = null) {
 }
 function goSleep() {
   S.state = 'asleep';
-  S.content = 0;
-  S.eyes = 0;
+  S.content = S.purr = S.eyes = 0;
+  hush();
   cache.valid = false;
 }
 
@@ -1020,7 +1038,8 @@ function goSleep() {
 const kit = audioKit({ gain: 0.7 });
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 const panOf = p => clamp(p[0] / (shape.A + 0.2), -1, 1) * 0.6;
-// The purr: breath noise chopped by a pulse train, over a soft buzz.
+// The purr: breath noise chopped by a pulse train.
+// A soft buzz runs under it.
 let purrV = null;
 function purrVoice(ac) {
   const src = ac.createBufferSource();
@@ -1030,7 +1049,8 @@ function purrVoice(ac) {
   bp.type = 'bandpass';
   bp.frequency.value = 280;
   bp.Q.value = 0.8;
-  // The chop gain sits at a floor; the pulse train adds to it.
+  // The chop gain sits at a floor.
+  // The pulse train adds to it.
   const chop = ac.createGain();
   chop.gain.value = 0.12;
   const lfo = ac.createOscillator();
@@ -1066,7 +1086,8 @@ function purrVoice(ac) {
   saw.start();
   return { level, lfo, saw, bp, bzG };
 }
-// Each frame the purr follows the breath: brighter and quicker on the in-breath.
+// Each frame, the purr follows the breath.
+// The in-breath is brighter and quicker.
 function purrTick() {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -1084,7 +1105,14 @@ function purrTick() {
   purrV.bzG.gain.setTargetAtTime(0.35 + 0.35 * S.purr, now, 0.1);
   purrV.level.gain.setTargetAtTime(S.purr * (0.72 + 0.28 * inh) * dip * 1.6, now, 0.05);
 }
-// The fur rustle: a soft hiss held by each stroke event, with static against the grain.
+// Sleep or a hidden tab fades the purr and the rustle.
+function hush() {
+  const ac = kit.ac;
+  if (!ac) return;
+  for (const g of [purrV?.level.gain, rustleV?.g.gain]) if (g) { g.cancelScheduledValues(ac.currentTime); g.setTargetAtTime(0, ac.currentTime, 0.08); }
+}
+// The fur rustle: each stroke event holds a soft hiss.
+// A stroke against the grain crackles with static.
 let rustleV = null;
 function rustleVoice(ac) {
   const src = ac.createBufferSource();
@@ -1175,7 +1203,8 @@ function voice(ac, at, { f0, f1, f2, dur, level, trill = 32, depthT = 0.45, pan 
   o.stop(at + dur + 0.05);
   tr.stop(at + dur + 0.05);
 }
-// A poke: a curious "mrrp?", or a grumpy "mrrh" once it is cross.
+// A poke gets a curious "mrrp?".
+// Once it is cross, it gives a grumpy "mrrh".
 function chirpSound(p, grumpy) {
   const ac = kit.live();
   if (!ac) return;
@@ -1198,7 +1227,8 @@ function grumbleSound() {
   voice(ac, at, { f0: f, f1: f * 0.9, f2: f * 0.7, dur: 0.6, level: 0.4, trill: 23, depthT: 0.6, form: [480, 1300] });
   burst(ac, at, { f: 2800, type: 'highpass', q: 0.7, dur: 0.28, level: 0.12 });
 }
-// A sigh: a breath in, a long breath out, a soft hum under it.
+// A sigh: a breath in, then a long breath out.
+// A soft hum runs under it.
 function sighSound() {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -1260,8 +1290,10 @@ function shakeSound() {
 }
 
 /* ---------- frame loop ---------- */
-// Awake, the loop runs: the body breathes and the purr follows the breath.
-// Asleep, a cached frame breathes at 20 frames a second, or holds still.
+// Awake, the loop runs: the body breathes.
+// The purr follows the breath.
+// Asleep, a cached frame breathes at about 20 frames a second.
+// With reduced motion, it holds still.
 let raf = 0, timer = 0, last = 0, visible = !document.hidden, ready = false;
 function wake() {
   if (!raf && !timer && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -1290,12 +1322,15 @@ function sleepFrame(dt) {
     kit.rest(() => S.state === 'asleep' && !ptr);
   }
   sleepBlit();
+  clearTimeout(timer);
+  timer = 0;
   if (reduced() || !visible) return;
   timer = setTimeout(() => { timer = 0; if (visible) { last = performance.now() - 50; raf = requestAnimationFrame(frame); } }, 45);
 }
 
 /* ---------- pointer ---------- */
-// A press becomes a stroke after 6 px, or a resting hand after 320 ms.
+// A press becomes a stroke after 6 px.
+// A press held 320 ms becomes a resting hand.
 // A release that is neither is a poke.
 let ptr = null, holdTo = 0;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -1356,7 +1391,8 @@ canvas.addEventListener('lostpointercapture', up);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---------- keys on the stage ---------- */
-// With the stage focused, an arrow key strokes the back; Enter or Space pokes.
+// With the stage focused, an arrow key strokes the back.
+// Enter or Space pokes.
 function keyStroke(dx, dy) {
   touch();
   strokeStart();
@@ -1376,7 +1412,8 @@ stage.addEventListener('keydown', e => {
 });
 
 /* ---------- actions ---------- */
-// A new pelt: the creature shakes, and the new coat settles out of the puff.
+// A new pelt: the creature shakes.
+// The new coat settles out of the puff.
 act.pelt = v => { if (v === peltId && S.shakeT < 0) return; shake(() => { peltId = v; pelt = PELTS[v]; }); };
 act.shake = () => shake();
 act.reset = () => { combInit(); S.content = S.irr = S.purr = S.fluff = 0; S.eyes = 0; S.dents = []; touch(); };
@@ -1393,7 +1430,7 @@ canvas.classList.add('on');
 ready = true;
 mark('first-frame');
 wake();
-// The first look and the sleep clock wait for the intro to leave.
+// The first look and the sleep clock wait for the intro.
 function afterIntro(fn) {
   if (!document.querySelector('.intro')) { fn(); return; }
   const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); fn(); } });
@@ -1401,12 +1438,21 @@ function afterIntro(fn) {
 }
 afterIntro(() => { S.idle = 0; S.eyesHold = 2.6; S.blink = 1.3; });
 
-new ResizeObserver(() => { resize(); if (ready) { if (S.state === 'asleep') { cache.valid = false; sleepFrame(0); } else render(); } }).observe(stage);
+// A resize redraws at once.
+// Asleep, the slow breath restarts from a new cache.
+new ResizeObserver(() => {
+  resize();
+  if (!ready) return;
+  if (S.state !== 'asleep') { render(); return; }
+  cancelAnimationFrame(raf);
+  raf = 0;
+  sleepFrame(0);
+}).observe(stage);
 onReducedChange(() => { bodyTransform(); wake(); });
 // A hidden tab stops the loop and the sound with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; kit.rest(() => true); return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; hush(); kit.rest(() => true); return; }
   wake();
 });
 </script>
