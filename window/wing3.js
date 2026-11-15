@@ -228,11 +228,11 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   add(plate(SPOIL, LIP, Z0, 1.975));
   add(plate(SPOIL, LIP, 17.425, 23.3));
 
-  // The winglet: a blended curve out of the tip, then a swept, tapered blade.
+  // The winglet: one long curve out of the tip, raked back and tapered.
   // Its root section starts inside the wing tip, so no seam shows.
   const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
-  add(loft(Array.from({ length: 16 }, (_, i) => {
-    const w = WINGLET(i / 15);
+  add(loft(Array.from({ length: 28 }, (_, i) => {
+    const w = WINGLET(i / 27);
     const le = V(w.le, w.y, w.z), te = V(w.le - w.c, w.y, w.z), nrm = V(0, w.ny, w.nz);
     const pt = (s, side) => le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];

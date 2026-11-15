@@ -509,17 +509,32 @@ const WS = ST.map(([l, t, z]) => [[l, flex(z), z], [t, flex(z), z]]);
 // Each panel runs leading edge root, leading edge tip, trailing edge tip, trailing edge root.
 const PANELS = WS.slice(1).map((w, i) => [WS[i][0], w[0], w[1], WS[i][1]]);
 const SPAN = ST.map(w => (w[2] - ST[0][2]) / (ST[5][2] - ST[0][2]));
-// The winglet, after Boeing's blended type: it curves up out of the tip.
-// A 0.6 m bend turns it to 85 degrees; a straight blade follows.
-// It sits 35 cm aft on the tip; its trailing edge meets the wing's.
-// The leading edge sweeps back 38 degrees; the chord tapers 1.25 m to 0.55 m.
+// The winglet, after the A350's: the wing turns up into a tall, broad sail.
+// Shape read from photos: Wikimedia Commons, A350 winglet, cabin and ramp views.
+// It carries on the wing's own edges; no step shows at the joint.
+// The cant turns from the wing's slope, 8 degrees, to 86 by half way up.
+// The leading edge is convex: its sweep grows from 28 to 54 degrees, then rounds over.
+// The trailing edge stands steeper: 11 to 26 degrees.
+// So the sail starts broad and ends in a raked point.
+// It rises 2.5 m along 3.1 m of curve.
 const YT = flex(25.0);
-const WINGLET = u => {
-  const R = 0.6, PH = 85 * D2R, LS = 1.85, S = R * PH + LS, s = u * S;
-  const ph = Math.min(s / R, PH), q = Math.max(0, s - R * PH);
-  const dz = R * Math.sin(ph) + q * Math.cos(PH), dy = R * (1 - Math.cos(ph)) + q * Math.sin(PH);
-  return { le: -3.35 - Math.tan(38 * D2R) * dy, c: 1.25 - 0.7 * Math.pow(u, 0.8), y: YT - 0.07 + dy, z: 24.85 + dz, ny: Math.cos(ph), nz: -Math.sin(ph) };
-};
+const WINGLET = (() => {
+  const S = 3.1, N = 96, lerp = (a, b, k) => a + (b - a) * k;
+  const ease = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+  const cant = u => (8 + 78 * ease(0, 0.5, u)) * D2R;
+  // The curve is the sum of small straight steps.
+  const tab = [{ le: -2.97, te: -4.56, y: 0, z: 0 }];
+  for (let i = 1; i <= N; i++) {
+    const u = (i - 0.5) / N, ds = S / N, p = tab[i - 1], ph = cant(u);
+    const sl = (28 + 26 * u * u + 8 * ease(0.88, 1, u)) * D2R, st = (11 + 15 * u) * D2R;
+    tab.push({ le: p.le - Math.tan(sl) * ds, te: p.te - Math.tan(st) * ds, y: p.y + Math.sin(ph) * ds, z: p.z + Math.cos(ph) * ds });
+  }
+  return u => {
+    const f = clamp(u) * N, i = Math.min(N - 1, Math.floor(f)), k = f - i, a = tab[i], b = tab[i + 1], ph = cant(u);
+    const le = lerp(a.le, b.le, k);
+    return { le, c: le - lerp(a.te, b.te, k), y: YT - 0.08 + lerp(a.y, b.y, k), z: 24.85 + lerp(a.z, b.z, k), ny: Math.cos(ph), nz: -Math.sin(ph) };
+  };
+})();
 // A flat quad stands in for the winglet in the ray tests.
 const LET = (() => { const a = WINGLET(0.3), b = WINGLET(1); return [[a.le, a.y, a.z], [b.le, b.y, b.z], [b.le - b.c, b.y, b.z], [a.le - a.c, a.y, a.z]]; })();
 const TIP = (() => { const b = WINGLET(1); return [b.le - b.c * 0.5, b.y - 0.05, b.z]; })();

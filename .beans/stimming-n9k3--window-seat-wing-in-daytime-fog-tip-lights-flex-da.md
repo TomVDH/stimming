@@ -1,7 +1,7 @@
 ---
 # stimming-n9k3
 title: 'Window seat: wing in daytime fog, tip lights, flex damping, curved winglet'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-15T09:26:56Z
 updated_at: 2026-11-15T09:26:56Z
@@ -15,7 +15,7 @@ Tom, 2026-11-15: the wingtip shades wrongly in fog, the wing does not blend with
 - [x] Tip lights dim by day on skin and in fog (uFogLamp, lampK); Classic keeps its glow
 - [x] Shaded faces take the ground's bounce, so the winglet is no longer black
 - [x] Wing flex damped: ratios 0.07 and 0.1 to 0.6 and 0.7, step overshoot 80% to 8%
-- [x] Winglet reshaped after the A350: one long curve, raked, 2.3 m tall
+- [x] Winglet reshaped after the A350, from Wikimedia Commons photos: a broad sail, vertical by half way up, convex swept leading edge, steeper trailing edge, raked point, 2.5 m tall
 
 ## Summary of Changes
 
