@@ -57,14 +57,15 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FLARE } from '../shared/flare.js';
 import { GRADE } from '../shared/grade.js';
-import { initPage, whenVisible, pixelRatio, onQuality, reduced } from '../shared/stim.js';
-import { EV, flightAt, posAt, sunDir, sunLight } from './flight.js';
+import { initPage, whenVisible, reduced } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { EV, flightAt, posAt, sunDir, sunLight, dawnDeg } from './flight.js';
 import { makeSpace } from './space.js';
-import { makeRocket } from './rocket.js';
-import { CAMS, CAM_IDS, cutAt, mountPose } from './cams.js';
+import { makeVehicle } from './rocket.js';
+import { CAMS, CAM_IDS, CUTS, cutAt, mountPose } from './cams.js';
 
 const q = new URLSearchParams(location.search);
-const state = { t: Math.min(EV.end, Math.max(0, +(q.get('t') ?? 0) || 0)), playing: !q.has('t'), cam: 'auto', dawn: 0.4 };
+const state = { t: Math.min(EV.end, Math.max(0, +(q.get('t') ?? 0) || 0)), playing: !q.has('t'), cam: 'auto', dawn: 0.4, size: 'medium', expo: 0, clock: true };
 
 const ui = initPage({ id: 'ascent', silent: true, bar: {
   choice: {
@@ -78,8 +79,16 @@ const ui = initPage({ id: 'ascent', silent: true, bar: {
     { verb: 'pause', label: 'Pause', onPress: () => { state.playing = !state.playing; syncPlay(); wake(); } },
   ],
   settings: [
-    // Dawn moves the sun at the pad from 9 to 1 degrees under the horizon.
-    { type: 'slider', id: 'dawn', label: 'Dawn', min: 0, max: 1, step: 0.01, value: 0.4, onInput: v => { state.dawn = v; envAt = -1; wake(); } },
+    // Dawn runs the sun at the pad from 18 to 1 degrees down, as in Ten seconds.
+    { type: 'slider', id: 'dawn', label: 'Dawn', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { state.dawn = v; envAt = -1; wake(); } },
+    { type: 'choice', id: 'size', label: 'Rocket', value: 'medium', persist: true,
+      options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }],
+      onPick: v => setSize(v) },
+  ],
+  dev: [
+    // Exposure: zero follows the light; above zero pins it.
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0, max: 8, step: 0.05, value: 0, onInput: v => { state.expo = v; wake(); } },
+    { type: 'toggle', id: 'clock', label: 'Clock', value: true, persist: true, onToggle: on => { state.clock = on; clock.hidden = !on; } },
   ],
   quality: true,
   keys: [['space', 'pause'], ['← →', 'skip 5 s'], ['1–8', 'camera']],
@@ -90,6 +99,9 @@ function syncPlay() { if (pauseLabel) pauseLabel.textContent = state.playing ? '
 
 const stage = document.getElementById('stage');
 const clock = stage.querySelector('.clock');
+// Stored settings take over from the defaults.
+for (const id of ['dawn', 'size', 'clock']) { const v = ui.setting(id)?.value; if (v !== undefined && v !== null) state[id] = v; }
+clock.hidden = !state.clock;
 
 let renderer;
 try {
@@ -133,7 +145,15 @@ scene.add(sun, sun.target);
 const hemi = new THREE.HemisphereLight(0x6688cc, 0x112233, 1.2);
 scene.add(hemi);
 
-const R = makeRocket(scene);
+let R = makeVehicle(scene, state.size);
+function setSize(v) {
+  if (v === state.size) return;
+  state.size = v;
+  R.dispose();
+  R = makeVehicle(scene, v);
+  envAt = -1;
+  wake();
+}
 
 /* ---------- sky for reflections, rebuilt as the light changes ---------- */
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -184,23 +204,25 @@ composer.addPass(new ShaderPass({
 }));
 composer.addPass(new OutputPass());
 
-/* ---------- size ---------- */
+/* ---------- size and detail ---------- */
+// Low detail trims the backdrop's noise and draws it smaller.
+const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => resize() });
 function resize() {
   const r = stage.getBoundingClientRect();
   const W = Math.max(1, r.width), H = Math.max(1, r.height);
-  const dpr = pixelRatio(W, H, { maxDpr: 2, budget: 2.2e6 });
+  const dpr = D.dpr(W, H), low = D.level === 0;
   renderer.setPixelRatio(dpr);
   renderer.setSize(W, H, false);
   composer.setPixelRatio(dpr);
   composer.setSize(W, H);
-  bgRT.setSize(Math.round(W * dpr), Math.round(H * dpr));
+  bgRT.setSize(Math.round(W * dpr * (low ? 0.6 : 1)), Math.round(H * dpr * (low ? 0.6 : 1)));
+  space.U.uOctDrop.value = low ? 2 : 0;
   FIN.uRes.value.set(W * dpr, H * dpr);
   cam.aspect = W / H;
   cam.updateProjectionMatrix();
   wake();
 }
 new ResizeObserver(resize).observe(stage);
-onQuality(() => resize());
 
 /* ---------- the sky's other bodies ---------- */
 // The Moon sits beyond the Earth as seen on the way out, a little aside.
@@ -215,12 +237,15 @@ const qr = new THREE.Quaternion(), m3 = new THREE.Matrix4();
 const X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3();
 const shakeQ = new THREE.Quaternion(), eul = new THREE.Euler();
 const sunArr = [0, 0, 0], lit = [0, 0, 0], sunV = new THREE.Vector3(), tmp = new THREE.Vector3();
-// Exposure by phase: dark dawn air, then hard sunlight in space.
-const EXPO = [[0, 7], [40, 5], [60, 2.0], [90, 1.0], [140, 1.1], [170, 0.85], [EV.far, 0.8], [EV.end, 1.0]];
+// Exposure in sunlight, by phase; in the dark the camera opens up.
+const EXPO = [[0, 1.0], [140, 1.1], [170, 0.85], [EV.far, 0.8], [EV.end, 1.0]];
+const NIGHT_EXPO = 5.5;
+let expoNow = 0;
 const expoAt = t => { for (let i = 1; i < EXPO.length; i++) if (t <= EXPO[i][0]) { const [t0, a] = EXPO[i - 1], [t1, b] = EXPO[i]; return a + (b - a) * (t - t0) / (t1 - t0); } return EXPO[EXPO.length - 1][1]; };
 let lastId = '';
 
-function frame(t, wall) {
+// dt is the wall time since the last frame; zero snaps the exposure.
+function frame(t, wall, dt = 0) {
   const f = flightAt(t);
   // The rocket's attitude: y along the axis, z across the orbit plane.
   Y.set(f.axis[0], f.axis[1], f.axis[2]);
@@ -232,7 +257,7 @@ function frame(t, wall) {
   let id = state.cam === 'auto' ? cutAt(t) : state.cam;
   if (CAMS[id].stage === 1 && t >= EV.sep) id = 'upper';
   if (CAMS[id].stage === 2 && t >= EV.probeSep + 3) id = 'probe';
-  const mp = mountPose(id);
+  const mp = mountPose(id, R.dims);
   // Each mount rides its own body: first stage, upper stage or probe.
   R.pose(t);
   const holder = [R.lower, R.upper, R.probe][CAMS[id].stage - 1];
@@ -250,7 +275,7 @@ function frame(t, wall) {
   if (cam.fov !== mp.fov) { cam.fov = mp.fov; cam.updateProjectionMatrix(); }
   cam.updateMatrixWorld();
   // Light: the sun and what the air leaves of it at the rocket.
-  sunDir(9 - 8 * state.dawn, sunArr);
+  sunDir(dawnDeg(state.dawn), sunArr);
   sunV.set(sunArr[0], sunArr[1], sunArr[2]);
   sunLight(f.p, sunArr, lit);
   sun.color.setRGB(lit[0], lit[1], lit[2]);
@@ -261,11 +286,14 @@ function frame(t, wall) {
   hemi.color.setRGB(0.25, 0.35, 0.6).multiplyScalar((1 - thin) * (0.08 + 0.92 * day) + 0.01);
   hemi.groundColor.setRGB(0.1, 0.2, 0.35).multiplyScalar(0.05 + 0.95 * day * (1 - THREE.MathUtils.smoothstep(f.h, 2000, 60000)));
   if (envAt < 0 || Math.abs(t - envAt) > 2) { buildEnv(f, lit); envAt = t; }
-  // The flame keeps its screen brightness while exposure rides the dark sky.
-  R.update(f, t, lit, sunV, cam.position, 1.6 / expoAt(t));
+  // The camera adapts with a lag: it blows out at the sunstrike, then settles.
+  const target = state.expo > 0 ? state.expo : NIGHT_EXPO + (expoAt(t) - NIGHT_EXPO) * THREE.MathUtils.smoothstep(day, 0, 0.5);
+  expoNow = dt > 0 && expoNow > 0 ? expoNow + (target - expoNow) * Math.min(1, dt * 1.5) : target;
+  // The flame keeps its screen brightness while the exposure moves.
+  R.update(f, t, lit, sunV, cam.position, 1.6 / expoNow);
   // The shadow box follows the probe once it flies alone, at finer grain.
   const alone = t > EV.probeSep;
-  const mid = alone ? R.probe.getWorldPosition(tmp) : tmp.set(0, 30, 0).applyMatrix4(R.rocket.matrixWorld);
+  const mid = alone ? R.probe.getWorldPosition(tmp) : tmp.set(0, R.dims.L * 0.5, 0).applyMatrix4(R.rocket.matrixWorld);
   const box = alone ? 9 : 45;
   if (sun.shadow.camera.right !== box) { Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box }); sun.shadow.camera.updateProjectionMatrix(); }
   sun.target.position.copy(mid);
@@ -279,7 +307,7 @@ function frame(t, wall) {
   U.uTime.value = t;
   // The long coast turns cosmic: the Milky Way and the stars come up.
   U.uCosmos.value = THREE.MathUtils.smoothstep(t, EV.deployEnd, EV.end - 40);
-  renderer.toneMappingExposure = expoAt(t);
+  renderer.toneMappingExposure = expoNow;
   // The sun's flare shows only while the sun is in frame.
   const sn = tmp.copy(sunV).multiplyScalar(1000).project(cam);
   const front = sunV.dot(new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion)) > 0;
@@ -307,14 +335,29 @@ function loop(now) {
   if (!visible) return;
   const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
   last = now;
-  if (state.playing && !reduced()) {
+  const run = state.playing && !reduced();
+  if (run) {
     state.t = Math.min(EV.end, state.t + dt);
     if (state.t >= EV.end) { state.playing = false; syncPlay(); }
     if (now - sliderAt > 250) { ui.slider?.set(state.t); sliderAt = now; }
+    D.frame(dt);
   }
-  frame(state.t, now / 1000);
+  frame(state.t, now / 1000, run ? dt : 0);
   if (state.playing && !reduced()) raf = requestAnimationFrame(loop);
   else last = 0;
+  if (state.playing && reduced() && !stepTimer) stepTimer = setTimeout(stepReduced, 5000);
+}
+// Reduced motion: the flight steps from cut to cut, one still each.
+let stepTimer = 0;
+function stepReduced() {
+  stepTimer = 0;
+  if (!state.playing || !reduced() || !visible) return;
+  const next = CUTS.find(([s]) => s > state.t + 0.5);
+  state.t = next ? Math.min(EV.end, next[0] + 1.5) : EV.end;
+  if (!next) { state.playing = false; syncPlay(); }
+  ui.slider?.set(state.t);
+  frame(state.t, state.t);
+  if (state.playing) stepTimer = setTimeout(stepReduced, 5000);
 }
 function wake() { if (!raf && visible) raf = requestAnimationFrame(loop); }
 whenVisible(stage, on => { visible = on; if (on) wake(); });

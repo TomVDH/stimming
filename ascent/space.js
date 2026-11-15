@@ -1,8 +1,10 @@
 // Ascent backdrop: the air, the Earth, the Moon, the Sun, planets and stars.
 // One full-screen pass in kilometres, from the Earth's centre.
-// The air is single scatter on the GPU, so it holds at every height.
+// The air comes from shared/air.js: single scatter at every height.
 import * as THREE from 'three';
+import { AIR } from '../shared/air.js';
 
+// FBM_DROP trims octaves; a shader defines it before NOISE.
 export const NOISE = /* glsl */`
 float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float vn3(vec3 x) {
@@ -14,7 +16,7 @@ float vn3(vec3 x) {
 float fbm3(vec3 p, float fp, int oct) {
   float s = 0.0, a = 0.5, f = 1.0;
   for (int i = 0; i < 9; i++) {
-    if (i >= oct) break;
+    if (i >= oct - FBM_DROP) break;
     s += a * mix(0.5, vn3(p * f), 1.0 - smoothstep(0.25, 0.5, f * fp));
     f *= 2.03; a *= 0.5;
   }
@@ -29,7 +31,7 @@ export function makeSpace() {
     uMoon: { value: new THREE.Vector4(0, 0, 0, 0) },
     uPlanet: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uMilky: { value: new THREE.Vector3(0.3, 0.8, -0.5).normalize() },
-    uSunE: { value: 20 }, uTime: { value: 0 }, uCosmos: { value: 0 },
+    uSunE: { value: 20 }, uTime: { value: 0 }, uCosmos: { value: 0 }, uOctDrop: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms: U, depthTest: false, depthWrite: false, toneMapped: false,
@@ -40,61 +42,15 @@ export function makeSpace() {
     uniform vec3 uEye, uSun, uSite, uEast, uMilky;
     uniform vec4 uMoon, uPlanet[3];
     uniform float uSunE, uTime, uCosmos;
+    uniform int uOctDrop;
     varying vec2 vUv;
-    const float R = 6371.0, RA = 6471.0, PI = 3.14159265;
-    const vec3 BR = vec3(5.802e-3, 13.558e-3, 33.1e-3);
-    const float BMS = 3.996e-3, BME = 4.44e-3, G = 0.76;
-    const vec3 BO = vec3(0.65e-3, 1.881e-3, 0.085e-3);
+    const float R = 6371.0, PI = 3.14159265;
+    #define FBM_DROP uOctDrop
     ${NOISE}
-    vec2 sph(vec3 o, vec3 d, float r) {
-      float b = dot(o, d), c = dot(o, o) - r * r, h = b * b - c;
-      if (h < 0.0) return vec2(-1.0, -2.0);
-      h = sqrt(h);
-      return vec2(-b - h, -b + h);
-    }
-    vec2 sph(vec3 o, vec3 d, vec3 c, float r) { return sph(o - c, d, r); }
-    vec3 dens(float h) { return vec3(exp(-h / 8.0), exp(-h / 1.2), max(0.0, 1.0 - abs(h - 25.0) / 15.0)); }
-    vec3 extOf(vec3 od) { return BR * od.x + BME * od.y + BO * od.z; }
-    // Sunlight that reaches p; the Earth's shadow has a soft edge.
-    vec3 sunT(vec3 p) {
-      float r = length(p), b = dot(p, uSun);
-      float rmin = b < 0.0 ? sqrt(max(0.0, r * r - b * b)) : r;
-      float vis = smoothstep(-2.0, 2.0, rmin - R);
-      if (vis <= 0.0) return vec3(0.0);
-      float tt = max(sph(p, uSun, RA).y, 0.0), ds = tt / 6.0;
-      vec3 od = vec3(0.0);
-      for (int i = 0; i < 6; i++) { vec3 q = p + uSun * (float(i) + 0.5) * ds; od += dens(max(length(q) - R, 0.0)) * ds; }
-      return vis * exp(-extOf(od));
-    }
-    // Light scattered toward the eye, and what passes, along o + d t.
-    void air(vec3 o, vec3 d, float tMax, out vec3 L, out vec3 T) {
-      L = vec3(0.0); T = vec3(1.0);
-      vec2 ta = sph(o, d, RA);
-      if (ta.y < 0.0) return;
-      float t0 = max(ta.x, 0.0), t1 = min(ta.y, tMax);
-      if (t1 <= t0) return;
-      float mu = dot(d, uSun);
-      float pR = 3.0 / (16.0 * PI) * (1.0 + mu * mu);
-      float pM = 3.0 / (8.0 * PI) * ((1.0 - G * G) * (1.0 + mu * mu)) / ((2.0 + G * G) * pow(1.0 + G * G - 2.0 * G * mu, 1.5));
-      // Samples crowd near the eye, where the air changes fastest.
-      bool inside = length(o) < RA;
-      float span = t1 - t0;
-      vec3 od = vec3(0.0);
-      const int N = 18;
-      for (int i = 0; i < N; i++) {
-        float s0 = float(i) / float(N), s1 = float(i + 1) / float(N);
-        float a = inside ? s0 * s0 : s0, b = inside ? s1 * s1 : s1;
-        float ds = (b - a) * span;
-        vec3 p = o + d * (t0 + 0.5 * (a + b) * span);
-        float h = max(length(p) - R, 0.0);
-        vec3 dn = dens(h);
-        vec3 tv = exp(-extOf(od) - extOf(dn) * ds * 0.5);
-        L += tv * sunT(p) * (BR * dn.x * pR + BMS * dn.y * pM) * ds;
-        od += dn * ds;
-      }
-      T = exp(-extOf(od));
-      L *= uSunE;
-    }
+    ${AIR}
+    vec2 sph(vec3 o, vec3 d, float r) { return arSphere(o, d, r); }
+    vec2 sph(vec3 o, vec3 d, vec3 c, float r) { return arSphere(o - c, d, r); }
+    vec3 sunT(vec3 p) { return arSunT(p, uSun); }
     // The Earth's surface radiance at P. fp is the pixel footprint in km.
     vec3 earth(vec3 P, vec3 d, float fp) {
       vec3 n = normalize(P);
@@ -152,6 +108,8 @@ export function makeSpace() {
       // The Milky Way: a narrow core, a wide glow, a bright bulge, dust lanes.
       float lat = dot(d, uMilky);
       float core = exp(-lat * lat / 0.012), wide = exp(-lat * lat / 0.1);
+      // Far from the band the noise costs more than it shows.
+      if (wide < 0.02) return acc;
       vec3 gc = normalize(cross(uMilky, vec3(0.3, 0.1, 0.9)));
       float bulge = exp(-(1.0 - dot(d, gc)) * 5.0);
       vec3 w = d * 16.0 + vec3(fbm3(d * 5.0, px * 5.0, 4), fbm3(d * 5.0 + 7.0, px * 5.0, 4), 0.0) * 1.5;
@@ -189,7 +147,7 @@ export function makeSpace() {
       bool hitE = te > 0.0 && (tm < 0.0 || te < tm);
       if (hitE) col = earth(uEye + d * te, d, px * te);
       vec3 L, T;
-      air(uEye, d, hitE ? te : 1e9, L, T);
+      arScatter(uEye, d, hitE ? te : 1e9, uSun, uSunE, L, T);
       col = col * T + L;
       // Far away the limb is thinner than a pixel: a halo keeps it seen.
       float de = length(uEye);

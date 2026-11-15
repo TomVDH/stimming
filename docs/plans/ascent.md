@@ -131,7 +131,7 @@ Muted by default; `audioKit` and Tone.js, as on every toy.
 | Phase | Work | Done when |
 |---|---|---|
 | 0 | Tom's choices: link style, shared rocket, Earth map, flight length | Done, 2026-11-14 |
-| 1 | Clean-up: modules, bar and dev rows, live playback, perf | Plays at 30 fps; Bar v2 test passes |
+| 1 | Clean-up: modules, bar and dev rows, live playback, perf | Done 2026-11-14: 21 to 27 ms a frame at 2496 × 1504 (High); live playback in a visible pane still unwatched |
 | 2 | Hero shots in story order, one at a time, shown to Tom | Each signed off |
 | 3 | The link: After dark series, the shared rocket in both toys, the pad look | Tiles linked; both fly `shared/rocket.js` |
 | 4 | Sound | Tom has listened |
@@ -148,10 +148,16 @@ Muted by default; `audioKit` and Tone.js, as on every toy.
 
 | File | Holds |
 |---|---|
-| `ascent/index.html` | Page, bar, post, loop, exposure by phase. `?t=<s>` opens paused there. `?debug` gives `window.__as.still(t, cam)`. |
-| `ascent/flight.js` | Every state as a function of time: height, downrange, attitude, events (`EV`), sun, sunlight through the air. |
-| `ascent/space.js` | The backdrop: single-scatter air on the GPU at any height, Earth, towns, Moon, Sun, planets, stars, Milky Way. |
-| `ascent/rocket.js` | Stages, fairing halves, flames (tail and end-on disc), trail, vapour, ice flakes. |
+| `shared/rocket.js` | The rocket for both toys: Small, Medium, Heavy; near and far detail; `setStage`; a light hook for Ten seconds; the flame (`makeFlame`, `flamePair`). |
+| `shared/air.js` | Single-scatter air in GLSL (`AIR`, `arScatter`, `arSunT`) and its CPU twin (`sunLight`, `shadowHeight`). No fxlab card yet: the library chat adds it. |
+| `ascent/index.html` | Page, bar (Settings: Dawn, Rocket; Dev: Exposure, Clock), post, loop, exposure that follows the light, detail levels, reduced-motion steps. `?t=<s>` opens paused there; `?debug` gives `window.__as.still(t, cam)`. |
+| `ascent/flight.js` | Every state as a function of time: height, downrange, attitude, events (`EV`), Ten seconds' dawn curve (`dawnDeg`), the sun. |
+| `ascent/space.js` | The backdrop: air from `shared/air.js`, Earth, towns, Moon, Sun, planets, stars, Milky Way. Low detail drops noise octaves. |
+| `ascent/rocket.js` | `makeVehicle`: the shared rocket plus probe, flames, trail, vapour, ice, and the staging, fairing and probe poses. |
 | `ascent/probe.js` | Probe bus, dish, boom, two folding wings with a sun drive. |
-| `ascent/cams.js` | Hull mounts, probe mounts and the director's cuts. |
-| `ascent/looks.html` | The look spike: three shots in three looks. |
+| `ascent/cams.js` | Hull mounts placed by the rocket's dims, probe mounts, and the director's cuts. |
+| `ascent/archive/looks.html` | The look spike: three shots in three looks. |
+
+## 10. Notes
+
+- Dawn now uses Ten seconds' curve. At the shared default (0.4) the sun is 9.75° down, so the rocket meets the sun near 93 km, at about T+98. Tom may want a later default dawn for an earlier sunstrike.
