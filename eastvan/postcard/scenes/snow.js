@@ -15,13 +15,13 @@ export const cards = [
   { cap: 'East 12th · 9:10 pm · Snow', hour: 21.6,
     cam: { pos: [2.2, 2.2, 15], yaw: 0, pitch: 0, up: 31, down: 18, minHalf: 0.37 },
     // No moon: the cloud glows and the snow returns it.
-    sun: [-0.3, 0.8, 0.5], sunCol: col(0.8, 0.04, 285), sunI: 0.3, hemi: [col(0.72, 0.045, 285), col(0.6, 0.03, 262), 1.5],
-    fog: col(0.36, 0.035, 25), fogD: 0.011,
-    sky: { cloudA: 0.95, cov: 0.16, cloud: col(0.36, 0.035, 25), cloudLit: col(0.45, 0.04, 40), hazeA: 0.9, hazeK: 5, disc: 0, stars: 0, sunCol: col(0.6, 0.08, 50, 0.2) },
-    exposure: 1.1, lamp: 110, porch: 4, spill: 8, string: 5, win: 1.7, tv: 1.1,
+    sun: [-0.3, 0.8, 0.5], sunCol: col(0.8, 0.04, 285), sunI: 0.3, hemi: [col(0.62, 0.06, 275), col(0.5, 0.04, 262), 0.95],
+    fog: col(0.27, 0.04, 15), fogD: 0.013,
+    sky: { cloudA: 0.95, cov: 0.16, cloud: col(0.22, 0.035, 5), cloudLit: col(0.34, 0.05, 30), hazeA: 0.9, hazeK: 5, disc: 0, stars: 0, sunCol: col(0.6, 0.08, 50, 0.2) },
+    exposure: 1.15, lamp: 170, porch: 4, spill: 8, string: 5, win: 1.7, tv: 1.1,
     snow: 0.9, rainLamp: LAMP, wind: 0.2, smoke: 0.3, smokeCol: col(0.62, 0.03, 40),
     shadow: { at: [2, 0, -2], r: 28 },
-    bloom: [0.5, 0.7, 0.95], grade: { con: 1.05, sat: 1.08, vig: 0.4, grain: 0.07, lift: [0.012, 0.008, 0.02] } },
+    bloom: [0.5, 0.7, 0.95], grade: { con: 1.08, sat: 1.06, vig: 0.48, grain: 0.07, lift: [0.004, 0.008, 0.03] } },
 ];
 
 export function build(k) {
@@ -121,7 +121,13 @@ export function build(k) {
   box(walkS, 700, 0.04, 1.5, 0, 0.005, 0.45);
   for (const z of [3.0, 14.0]) box(snowG, 700, 0.19, 0.3, 0, -0.045, z);
   // Two cars went by: four tyre tracks show the road.
-  for (const z of [5.3, 6.8, 9.2, 10.7]) box(track, 700, 0.03, 0.3, 0, -0.14, z);
+  // The tracks wander a little; each runs in two-metre pieces.
+  for (const [z, ph] of [[5.3, 0], [6.8, 0], [9.2, 2], [10.7, 2]]) for (let x = -60; x < 60; x += 2) box(track, 2.05, 0.03, 0.3, x + 1, -0.14, z + Math.sin(x * 0.07 + ph) * 0.35, 0, -Math.cos(x * 0.07 + ph) * 0.0245);
+  // The plough left a lumpy bank along each curb.
+  {
+    const P = rng(44);
+    for (let i = 0; i < 160; i++) { const x = -40 + P() * 80, far = i % 3 === 0, r = 0.25 + P() * 0.4; put(snowG, ico(r * 1.8, r * 0.7, r, 1), x, -0.05, far ? 13.6 + P() * 0.4 : 3.35 + P() * 0.35, 0, P() * 0.4); }
+  }
   // The hero driveway has two tracks, from the garage to the curb.
   for (const s of [-1, 1]) box(track, 0.26, 0.012, 7.6, -2.3 + s * 0.72, 0.05, -0.9);
   // One neighbour has cleared the path to the door.
