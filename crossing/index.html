@@ -1,0 +1,1589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.02 275); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossing button</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Crossing button: the push-button box at a night crossing, close up. */
+:root { --stage: oklch(0.09 0.025 275); }
+.stage--crossing { cursor: pointer; }
+.stage--crossing canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--crossing canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--crossing canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Crossing button</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--crossing" id="stage" tabindex="0" role="application" aria-label="A crossing button on a pole at night. Press it as often as you like. The ticker speeds up, then the light goes green.">
+      <p class="fail" hidden>Crossing button needs a canvas, which this browser has turned off.</p>
+      <p class="sr" id="say" aria-live="polite"></p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Crossing button</h1>
+    <div class="vignette">
+      <div>
+        <h2>A tick for red, a rattle for green</h2>
+        <p>Many crossing buttons in Belgium and the Netherlands carry a ticker for people who cannot see the lights. On red it ticks slowly, so a blind pedestrian can find the pole by ear. On green it rattles fast, and on many boxes a small arrow shakes under the hand. The Dutch name for it is the <em>rateltikker</em>: the rattle ticker.</p>
+        <p>The lamp that lights when you press says only that your request is in. A real box counts one press and ignores the rest, and some lights run on a fixed timer anyway. This box keeps count.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 320 96" role="img" aria-label="One cycle as a row of ticks: slow red ticks, a press, red ticks that come faster and faster, a dense green rattle, then slow red ticks again.">
+          <path d="M8 60H312" stroke="oklch(0.36 0.02 275)" stroke-width="1"/>
+          <path d="M12 50v10M30 50v10M48 50v10M286 50v10M304 50v10" stroke="oklch(0.64 0.22 27)" stroke-width="2"/>
+          <path d="M66 46v14M82 46v14M96 46v14M108.5 46v14M119.5 46v14M129.3 46v14M138 46v14M145.7 46v14M152.5 46v14M158.5 46v14M163.8 46v14M168.5 46v14M172.7 46v14M176.5 46v14M179.9 46v14M183 46v14" stroke="oklch(0.7 0.2 40)" stroke-width="1.6"/>
+          <path d="M190 40v20M193 40v20M196 40v20M199 40v20M202 40v20M205 40v20M208 40v20M211 40v20M214 40v20M217 40v20M220 40v20M223 40v20M226 40v20M229 40v20M232 40v20M235 40v20M238 40v20M241 40v20M244 40v20M247 40v20M250 40v20M253 40v20M256 40v20M259 40v20M262 40v20M265 40v20M268 40v20" stroke="oklch(0.82 0.17 165)" stroke-width="1.4"/>
+          <circle cx="58" cy="78" r="6" fill="oklch(0.82 0.16 85)"/>
+          <circle cx="58" cy="78" r="3.4" fill="oklch(0.16 0.02 260)"/>
+        </svg>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, audioKit, css, oklchRgb, stage as mark, pageReady } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const say = document.getElementById('say');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const mix = (a, b, t) => a + (b - a) * t;
+const TAU = Math.PI * 2;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- colour ---------- */
+// Tokens are OKLCH; rgb() gives 0 to 255 for canvas strings.
+const rgb = lch => oklchRgb(lch).map(v => Math.round(v * 255));
+const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const K = {
+  red: rgb([0.66, 0.25, 28]),
+  green: rgb([0.84, 0.17, 168]),
+  led: rgb([0.7, 0.23, 33]),
+  ledG: rgb([0.88, 0.18, 160]),
+  sodium: rgb([0.8, 0.15, 66]),
+  warm: rgb([0.94, 0.05, 85]),
+  tail: rgb([0.6, 0.23, 25]),
+  ink: rgb([0.96, 0.03, 80]),
+  pink: rgb([0.7, 0.2, 350]),
+  cool: rgb([0.78, 0.07, 235]),
+  amber: rgb([0.78, 0.15, 60]),
+};
+const CAP = [rgb([0.5, 0.02, 255]), rgb([0.22, 0.02, 260]), rgb([0.08, 0.01, 260])];
+const PALE = rgb([0.82, 0.01, 250]), MAN = rgb([0.72, 0.012, 250]);
+
+/* ---------- bar ---------- */
+// The handlers bind once the state exists.
+const act = { reset() {} };
+let waitK = 1, glowK = 1;
+const ui = initPage({ id: 'crossing', bar: {
+  dev: [
+    { type: 'slider', id: 'wait', label: 'Wait', min: 0.4, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { waitK = v; } },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { glowK = v; wake(); } },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['click', 'press'], ['hold', 'push hard'], ['space', 'press']],
+} });
+waitK = ui.setting('wait')?.value ?? 1;
+glowK = ui.setting('glow')?.value ?? 1;
+
+/* ---------- canvas ---------- */
+const cv = document.createElement('canvas');
+stage.prepend(cv);
+const g = cv.getContext('2d', { alpha: false });
+if (!g) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls();
+  mark('first-frame');
+  throw new Error('Crossing button needs a 2D canvas.');
+}
+const layer = (cw = 1, ch = 1) => Object.assign(document.createElement('canvas'), { width: Math.max(1, Math.round(cw)), height: Math.max(1, Math.round(ch)) });
+const ctx = c => c.getContext('2d');
+const circle = (c, x, y, r) => { c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); };
+// The detail level joins the site quality with a slow-frame watch.
+const D = detail({ maxDpr: 2, budget: 3.2e6, onChange: () => { resize(); wake(); } });
+
+/* ---------- layout ---------- */
+// The street is a ground plane: y = yH + kz / z for a depth of z metres.
+const Z_NEAR = 3.2, Z_FAR = 14, EYE = 1.4;
+let w = 1, h = 1, dpr = 1, land = true;
+let bx = 0, by = 0, u = 1;
+let yFar = 0, yNear = 0, yH = 0, kz = 1, fx = 1, px0 = 0;
+const sig = { x: 0, y: 0, r: 1, ry: 0, gy: 0 };
+const lamps = [];
+function layout() {
+  land = w / h > 1.05;
+  // The box is a hundred units tall; u is one unit in CSS pixels.
+  const bh = land ? Math.min(h * 0.68, w * 0.44) : Math.min(h * 0.48, w);
+  u = bh / 100;
+  bx = land ? w * 0.4 : w * 0.5;
+  by = land ? h * 0.53 : h * 0.6;
+  yFar = h * (land ? 0.47 : 0.33);
+  yNear = h * (land ? 0.93 : 0.9);
+  kz = (yNear - yFar) / (1 / Z_NEAR - 1 / Z_FAR);
+  yH = yFar - kz / Z_FAR;
+  fx = Math.min(kz / EYE, w * 0.8);
+  px0 = w * (land ? 0.5 : 0.42);
+  // The far signal head stands at the far corner of the crossing: a red lens over a green one.
+  sig.r = land ? Math.min(w * 0.03, h * 0.052) : Math.min(w * 0.075, h * 0.04);
+  sig.x = land ? clamp(gx(3.9, Z_FAR + 0.4), w * 0.62, w * 0.82) : w * 0.8;
+  sig.y = h * (land ? 0.27 : 0.15);
+  sig.ry = sig.y - 1.2 * sig.r;
+  sig.gy = sig.y + 1.2 * sig.r;
+  // Street lamps, kept clear of the logo in the top left corner.
+  const m = Math.min(w, h);
+  lamps.length = 0;
+  lamps.push(
+    { x: -w * 0.01, y: h * (land ? 0.3 : 0.24), r: m * 0.17 },
+    { x: w * (land ? 0.58 : 0.3), y: h * (land ? 0.08 : 0.07), r: m * 0.05 },
+    { x: w * 1.01, y: h * (land ? 0.4 : 0.3), r: m * 0.08 },
+  );
+}
+const gx = (xm, z) => px0 + fx * xm / z;
+const gy = z => yH + kz / z;
+
+/* ---------- the street, out of focus ---------- */
+// Shares of the width (x, w) and of the facade height (y, h), then a colour.
+const WINDOWS = [
+  [0.05, 0.42, 0.05, 0.15, 1], [0.15, 0.3, 0.04, 0.15, 0], [0.33, 0.14, 0.04, 0.14, 0],
+  [0.47, 0.2, 0.05, 0.16, 1], [0.63, 0.44, 0.04, 0.13, 0], [0.88, 0.16, 0.05, 0.16, 2], [0.93, 0.44, 0.04, 0.15, 1],
+];
+const WIN = [[0.5, 0.1, 70], [0.34, 0.07, 55], [0.38, 0.06, 245]];
+// City lights along the far side: x, y (share of the facade), radius (share of the short side), colour, strength.
+const CITY = [
+  [0.08, 0.86, 0.035, 'warm', 0.32], [0.19, 0.78, 0.03, 'pink', 0.34], [0.27, 0.9, 0.02, 'amber', 0.36], [0.5, 0.88, 0.022, 'cool', 0.3],
+  [0.58, 0.82, 0.03, 'warm', 0.24], [0.69, 0.92, 0.018, 'amber', 0.4], [0.91, 0.84, 0.03, 'cool', 0.3], [0.97, 0.92, 0.024, 'warm', 0.34],
+  [0.36, 0.56, 0.018, 'pink', 0.2], [0.13, 0.58, 0.016, 'amber', 0.22],
+];
+// Canvas blur where the browser has it; soft upscale steps where it does not.
+const CAN_BLUR = (() => { const c = ctx(layer(2, 2)); c.filter = 'blur(2px)'; return c.filter === 'blur(2px)'; })();
+let bg = layer(), barMask = layer(), barCrop = [0, 0, 1, 1], bgS = 1;
+// Paints the out-of-focus shapes and returns them, cropped, at the size it asks.
+// The overscan margin keeps the blur from darkening the frame's edges.
+function softLayer(paint) {
+  const q = CAN_BLUR ? 0.25 : 1 / 12, M = Math.round(Math.max(w, h) * 0.06);
+  const lo = layer((w + 2 * M) * q, (h + 2 * M) * q), l = ctx(lo);
+  l.setTransform(q, 0, 0, q, M * q, M * q);
+  paint(l);
+  const crop = [M * q, M * q, w * q, h * q];
+  if (CAN_BLUR) {
+    const soft = layer(lo.width, lo.height), s = ctx(soft);
+    s.filter = `blur(${(Math.min(w, h) * 0.012 * q).toFixed(2)}px)`;
+    s.drawImage(lo, 0, 0);
+    return [soft, crop];
+  }
+  // Each step doubles the size; many small steps hide the pixel grid.
+  let src = layer(crop[2], crop[3]);
+  ctx(src).drawImage(lo, ...crop, 0, 0, src.width, src.height);
+  while (src.width * 2 < w * bgS) {
+    const next = layer(src.width * 2, src.height * 2);
+    ctx(next).drawImage(src, 0, 0, next.width, next.height);
+    src = next;
+  }
+  return [src, [0, 0, src.width, src.height]];
+}
+function buildBackground() {
+  bgS = dpr * 0.5;
+  bg = layer(w * bgS, h * bgS);
+  const [base, crop] = softLayer(paintBase);
+  [barMask, barCrop] = softLayer(l => { l.fillStyle = '#fff'; bars(l); });
+  const c = ctx(bg);
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(base, ...crop, 0, 0, bg.width, bg.height);
+  c.setTransform(bgS, 0, 0, bgS, 0, 0);
+  paintLights(c);
+}
+function paintBase(l) {
+  // Fills run past the frame, into the overscan margin.
+  const X0 = -w * 0.2, XW = w * 1.4;
+  // The facades across the road.
+  let gr = l.createLinearGradient(0, 0, 0, yFar);
+  gr.addColorStop(0, css([0.09, 0.03, 285]));
+  gr.addColorStop(0.75, css([0.13, 0.035, 312]));
+  gr.addColorStop(1, css([0.19, 0.045, 330]));
+  l.fillStyle = gr;
+  l.fillRect(X0, -h * 0.2, XW, yFar + h * 0.2 + 1);
+  for (const [x, y, ww, hh, k] of WINDOWS) {
+    l.fillStyle = css(WIN[k]);
+    l.fillRect(x * w, y * yFar, ww * w, hh * yFar);
+  }
+  // Two shop windows at street level.
+  l.fillStyle = css([0.7, 0.09, 78]);
+  l.fillRect(w * 0.02, yFar * 0.74, w * 0.24, yFar * 0.22);
+  l.fillStyle = css([0.55, 0.07, 225]);
+  l.fillRect(w * 0.86, yFar * 0.76, w * 0.14, yFar * 0.2);
+  // The far pavement, wet, then the kerb.
+  const kerb = (yNear - yFar) * 0.04;
+  l.fillStyle = css([0.22, 0.03, 300]);
+  l.fillRect(X0, yFar - kerb * 2, XW, kerb * 2);
+  l.fillStyle = css([0.34, 0.02, 290]);
+  l.fillRect(X0, yFar - kerb * 0.3, XW, kerb * 0.6);
+  // The road gets darker toward the eye.
+  gr = l.createLinearGradient(0, yFar, 0, yNear);
+  gr.addColorStop(0, css([0.17, 0.025, 285]));
+  gr.addColorStop(1, css([0.1, 0.018, 265]));
+  l.fillStyle = gr;
+  l.fillRect(X0, yFar, XW, yNear - yFar);
+  // The zebra: wet paint, grey at night.
+  l.fillStyle = css([0.38, 0.012, 270]);
+  bars(l);
+  // The near kerb, then the pavement under the box.
+  l.fillStyle = css([0.36, 0.01, 265]);
+  l.fillRect(X0, yNear, XW, h * 0.012);
+  gr = l.createLinearGradient(0, yNear, 0, h);
+  gr.addColorStop(0, css([0.16, 0.012, 265]));
+  gr.addColorStop(1, css([0.08, 0.01, 265]));
+  l.fillStyle = gr;
+  l.fillRect(X0, yNear + h * 0.012, XW, h * 0.3);
+  // The far signal: its pole and its housing.
+  const R = sig.r;
+  l.fillStyle = css([0.11, 0.01, 260]);
+  l.fillRect(sig.x - 0.2 * R, sig.y, 0.4 * R, yFar - sig.y);
+  l.beginPath();
+  l.roundRect(sig.x - 1.45 * R, sig.y - 2.7 * R, 2.9 * R, 5.4 * R, 0.4 * R);
+  l.fill();
+}
+// The zebra bars: half a metre of paint, then half a metre of road.
+function bars(l) {
+  for (let z = Z_NEAR + 0.35; z < Z_FAR - 0.4; z += 1) {
+    const z1 = z + 0.5, y0 = gy(z), y1 = gy(z1);
+    l.beginPath();
+    l.moveTo(gx(-0.9, z1), y1);
+    l.lineTo(gx(3.3, z1), y1);
+    l.lineTo(gx(3.3, z), y0);
+    l.lineTo(gx(-0.9, z), y0);
+    l.closePath();
+    l.fill();
+  }
+}
+// A soft disc of out-of-focus light with a faint bright rim.
+function bokeh(c, x, y, r, col, a) {
+  const gr = c.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, rgba(col, a * 0.72));
+  gr.addColorStop(0.74, rgba(col, a * 0.84));
+  gr.addColorStop(0.92, rgba(col, a));
+  gr.addColorStop(1, rgba(col, 0));
+  c.fillStyle = gr;
+  c.fillRect(x - r, y - r, 2 * r, 2 * r);
+}
+// A light's reflection on the wet road: soft dashes down from the kerb.
+function ripples(c, x, y0, len, wid, col, a, seed = 1) {
+  let s = seed;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const n = 28;
+  for (let i = 0; i < n; i++) {
+    const t = i / n, y = y0 + len * t ** 1.3;
+    const ww = wid * (0.5 + 0.9 * rnd()) * (1 + 0.7 * t), hh = Math.max(1.5, (len / n) * (0.6 + rnd()));
+    const k = a * (1 - t) ** 1.3 * (0.45 + 0.55 * rnd());
+    c.save();
+    c.translate(x + (rnd() - 0.5) * wid * 0.3, y);
+    c.scale(ww, hh);
+    const gr = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    gr.addColorStop(0, rgba(col, k));
+    gr.addColorStop(1, rgba(col, 0));
+    c.fillStyle = gr;
+    c.fillRect(-1, -1, 2, 2);
+    c.restore();
+  }
+}
+function paintLights(c) {
+  c.globalCompositeOperation = 'lighter';
+  for (const L of lamps) bokeh(c, L.x, L.y, L.r, K.sodium, 0.5);
+  const m = Math.min(w, h);
+  for (const [x, y, r, k, a] of CITY) bokeh(c, x * w, y * yFar, r * m, K[k], a);
+  // Each light leaves a long streak on the wet road.
+  const road = yNear - yFar;
+  ripples(c, lamps[0].x + lamps[0].r * 0.4, yFar + 2, road, lamps[0].r * 0.45, K.sodium, 0.2, 3);
+  ripples(c, lamps[1].x, yFar + 2, road * 0.8, lamps[1].r * 0.9, K.sodium, 0.16, 5);
+  ripples(c, w * 0.14, yFar + 2, road * 0.75, w * 0.1, K.warm, 0.13, 7);
+  ripples(c, w * 0.93, yFar + 2, road * 0.6, w * 0.06, K.cool, 0.12, 9);
+  ripples(c, w * 0.19, yFar + 2, road * 0.6, m * 0.03, K.pink, 0.16, 17);
+  // The far signal's lenses stay dark until lit.
+  c.globalCompositeOperation = 'source-over';
+  for (const [y, k] of [[sig.ry, 'red'], [sig.gy, 'green']]) {
+    c.fillStyle = css([0.08, 0.01, 260]);
+    circle(c, sig.x, y, sig.r * 1.08);
+    c.fillStyle = rgba(K[k], 0.1);
+    circle(c, sig.x, y, sig.r);
+  }
+}
+
+/* ---------- the far signal's light ---------- */
+// Each lens has a sprite and a spill: the light on the wet street.
+const spill = { red: layer(), green: layer() };
+const lampSpr = { red: layer(), green: layer() };
+function buildSpill() {
+  for (const k of ['red', 'green']) {
+    const cvs = spill[k] = layer(w * bgS * 0.5, h * bgS * 0.5);
+    const s = cvs.width / w, c = ctx(cvs), col = K[k], ly = k === 'red' ? sig.ry : sig.gy;
+    c.setTransform(s, 0, 0, s, 0, 0);
+    c.globalCompositeOperation = 'lighter';
+    // The light falls on the facade behind the head.
+    let gr = c.createRadialGradient(sig.x, ly, 0, sig.x, ly, sig.r * 7);
+    gr.addColorStop(0, rgba(col, 0.3));
+    gr.addColorStop(1, rgba(col, 0));
+    c.fillStyle = gr;
+    c.fillRect(0, 0, w, yFar);
+    // A pool on the road; the wet paint keeps more of it.
+    const pool = layer(cvs.width, cvs.height), p = ctx(pool);
+    p.setTransform(s, 0, 0, s, 0, 0);
+    p.beginPath();
+    p.rect(0, yFar - (yNear - yFar) * 0.08, w, h);
+    p.clip();
+    p.translate(sig.x - w * 0.05, yFar + (yNear - yFar) * 0.16);
+    p.scale(1, 0.42);
+    gr = p.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h) * 0.55);
+    gr.addColorStop(0, rgba(col, 0.6));
+    gr.addColorStop(0.45, rgba(col, 0.2));
+    gr.addColorStop(1, rgba(col, 0));
+    p.fillStyle = gr;
+    p.fillRect(-w * 2, -h * 3, w * 4, h * 6);
+    c.globalAlpha = 0.32;
+    c.drawImage(pool, 0, 0, w, h);
+    p.setTransform(1, 0, 0, 1, 0, 0);
+    p.globalCompositeOperation = 'destination-in';
+    p.imageSmoothingQuality = 'high';
+    p.drawImage(barMask, ...barCrop, 0, 0, pool.width, pool.height);
+    c.globalAlpha = 0.95;
+    c.drawImage(pool, 0, 0, w, h);
+    c.globalAlpha = 1;
+    // The lamp's own reflection: a long, broken streak.
+    ripples(c, sig.x, yFar + 1, (yNear - yFar) * 1.05, sig.r * 1.7, col, 0.75, k === 'red' ? 11 : 13);
+  }
+}
+// The pictograms: a standing man and a walking man, in lens units.
+function figure(c, kind, style, ox = 0, oy = 0) {
+  c.strokeStyle = c.fillStyle = style;
+  c.lineCap = c.lineJoin = 'round';
+  const seg = (lw, ...p) => {
+    c.lineWidth = lw;
+    c.beginPath();
+    c.moveTo(p[0] + ox, p[1] + oy);
+    for (let i = 2; i < p.length; i += 2) c.lineTo(p[i] + ox, p[i + 1] + oy);
+    c.stroke();
+  };
+  if (kind === 'stand') {
+    circle(c, ox, oy - 0.56, 0.15);
+    seg(0.3, 0, -0.32, 0, 0.12);
+    seg(0.12, -0.17, -0.3, -0.21, 0.14);
+    seg(0.12, 0.17, -0.3, 0.21, 0.14);
+    seg(0.14, -0.07, 0.12, -0.08, 0.72);
+    seg(0.14, 0.07, 0.12, 0.08, 0.72);
+  } else {
+    circle(c, ox + 0.06, oy - 0.58, 0.14);
+    seg(0.26, 0.02, -0.34, 0.06, 0.1);
+    seg(0.12, 0, -0.3, -0.24, -0.06, -0.3, 0.06);
+    seg(0.12, 0.06, -0.3, 0.26, -0.08, 0.36, 0.04);
+    seg(0.14, 0.05, 0.08, -0.1, 0.4, -0.3, 0.68);
+    seg(0.14, 0.07, 0.08, 0.26, 0.38, 0.34, 0.7);
+  }
+}
+function buildLamps() {
+  const R = sig.r, s = dpr * 0.5;
+  for (const k of ['red', 'green']) {
+    const cvs = lampSpr[k] = layer(10 * R * s, 10 * R * s), c = ctx(cvs), col = K[k];
+    c.setTransform(s, 0, 0, s, 5 * R * s, 5 * R * s);
+    c.globalCompositeOperation = 'lighter';
+    // A wide halo in the damp air.
+    const gr = c.createRadialGradient(0, 0, 0, 0, 0, 5 * R);
+    gr.addColorStop(0, rgba(col, 0.45));
+    gr.addColorStop(0.22, rgba(col, 0.2));
+    gr.addColorStop(0.5, rgba(col, 0.05));
+    gr.addColorStop(1, rgba(col, 0));
+    c.fillStyle = gr;
+    c.fillRect(-5 * R, -5 * R, 10 * R, 10 * R);
+    c.fillStyle = rgba(col, 0.3);
+    circle(c, 0, 0, R);
+    // The figure is drawn small, then scaled up, so it stays soft.
+    for (const [style, a] of [[rgba(col, 1), 1], ['rgba(255,245,235,1)', 0.45]]) {
+      const fig = layer(22, 22), f = ctx(fig);
+      f.setTransform(11, 0, 0, 11, 11, 11);
+      figure(f, k === 'red' ? 'stand' : 'walk', style);
+      c.globalAlpha = a;
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(fig, -R, -R, 2 * R, 2 * R);
+    }
+    c.globalAlpha = 1;
+  }
+}
+
+/* ---------- the box ---------- */
+// The box spans x -30 to 30 and y -50 to 50; the side face adds six.
+const BOX = { x: -40, y: -64, w: 82, h: 128 };
+const RING = 20.2, DOTS = 16;
+const FACE = new Path2D();
+FACE.roundRect(-30, -50, 60, 100, 7);
+const SIDE = new Path2D('M29 -47.5L35.5 -45L35.5 46.5Q35.5 48 34 48.4L29 49.6Z');
+const SHAPE = new Path2D();
+SHAPE.addPath(FACE);
+SHAPE.addPath(SIDE);
+// Beads of rain on the face: x, y, radius.
+const BEADS = [[-24, -18, 0.9], [-19, -9, 0.6], [-26, 12, 1.1], [22, -17, 0.8], [25.5, -3, 0.6], [24, 19, 1], [-22, 26, 0.7], [20, 33, 0.8], [-7, -21, 0.55], [9, -20.5, 0.7], [-26, 38, 0.9], [26, 40, 0.6], [-14, 47, 0.7], [15, 47.5, 0.9]];
+// Wet trails from the hood: x, top, bottom.
+const DRIPS = [[-15, -46, -36], [14.5, -46, -31], [27, -46, -24]];
+let boxSpr = layer();
+function buildBox() {
+  const s = u * dpr;
+  boxSpr = layer(BOX.w * s, BOX.h * s);
+  const c = ctx(boxSpr);
+  c.setTransform(s, 0, 0, s, -BOX.x * s, -BOX.y * s);
+  paintBox(c);
+}
+function bead(c, x, y, r) {
+  c.fillStyle = 'rgba(70,30,0,0.28)';
+  circle(c, x + 0.25 * r, y + 0.35 * r, r);
+  const gr = c.createRadialGradient(x - 0.3 * r, y - 0.3 * r, 0, x, y, r);
+  gr.addColorStop(0, 'rgba(255,250,235,0.55)');
+  gr.addColorStop(0.5, 'rgba(255,230,160,0.12)');
+  gr.addColorStop(1, 'rgba(255,230,160,0.05)');
+  c.fillStyle = gr;
+  circle(c, x, y, r);
+  c.fillStyle = 'rgba(255,255,250,0.95)';
+  circle(c, x - 0.35 * r, y - 0.38 * r, 0.26 * r);
+}
+function paintBox(c) {
+  // Two clamps hold the box on the pole.
+  for (const y of [-58, 52]) {
+    const gr = c.createLinearGradient(-9.5, 0, 9.5, 0);
+    gr.addColorStop(0, css([0.2, 0.01, 260]));
+    gr.addColorStop(0.28, css([0.62, 0.05, 70]));
+    gr.addColorStop(0.55, css([0.3, 0.01, 260]));
+    gr.addColorStop(1, css([0.1, 0.01, 260]));
+    c.fillStyle = gr;
+    c.beginPath();
+    c.roundRect(-9.6, y, 19.2, 6, 1.2);
+    c.fill();
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(-9.6, y + 4.6, 19.2, 1.4);
+  }
+  // The box throws a soft shadow down the pole.
+  let gr = c.createLinearGradient(0, 48, 0, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,0.6)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = gr;
+  c.fillRect(-7.6, 48, 15.2, 16);
+  // The side face turns toward the far signal.
+  gr = c.createLinearGradient(0, -47, 0, 49);
+  gr.addColorStop(0, css([0.52, 0.12, 72]));
+  gr.addColorStop(1, css([0.27, 0.08, 55]));
+  c.fillStyle = gr;
+  c.fill(SIDE);
+  // The front face: traffic yellow under a sodium lamp.
+  gr = c.createLinearGradient(-30, -50, 30, 50);
+  gr.addColorStop(0, css([0.88, 0.15, 90]));
+  gr.addColorStop(0.42, css([0.79, 0.165, 80]));
+  gr.addColorStop(1, css([0.55, 0.14, 64]));
+  c.fillStyle = gr;
+  c.fill(FACE);
+  c.save();
+  c.clip(FACE);
+  // The lamp's hot spot sits at the upper left.
+  gr = c.createRadialGradient(-28, -52, 0, -28, -52, 75);
+  gr.addColorStop(0, rgba(K.sodium, 0.45));
+  gr.addColorStop(1, rgba(K.sodium, 0));
+  c.globalCompositeOperation = 'lighter';
+  c.fillStyle = gr;
+  c.fillRect(-30, -50, 60, 100);
+  c.globalCompositeOperation = 'source-over';
+  // The lower half falls out of the light.
+  gr = c.createLinearGradient(0, -5, 0, 50);
+  gr.addColorStop(0, 'rgba(30,12,0,0)');
+  gr.addColorStop(1, 'rgba(30,12,0,0.42)');
+  c.fillStyle = gr;
+  c.fillRect(-30, -50, 60, 100);
+  // A wet sheen runs across the face.
+  c.beginPath();
+  c.moveTo(-30, -16);
+  c.lineTo(30, -44);
+  c.lineTo(30, -35);
+  c.lineTo(-30, -6);
+  c.closePath();
+  gr = c.createLinearGradient(-10, -40, 0, -10);
+  gr.addColorStop(0, 'rgba(255,240,210,0)');
+  gr.addColorStop(0.5, 'rgba(255,240,210,0.12)');
+  gr.addColorStop(1, 'rgba(255,240,210,0)');
+  c.fillStyle = gr;
+  c.fill();
+  // The hood shades the top of the face.
+  gr = c.createLinearGradient(0, -47, 0, -40);
+  gr.addColorStop(0, 'rgba(40,15,0,0.5)');
+  gr.addColorStop(1, 'rgba(40,15,0,0)');
+  c.fillStyle = gr;
+  c.fillRect(-30, -50, 60, 10);
+  c.restore();
+  // The rim: lit along the top and left, dark along the bottom and right.
+  gr = c.createLinearGradient(-30, -50, 30, 50);
+  gr.addColorStop(0, 'rgba(255,246,214,0.9)');
+  gr.addColorStop(0.5, 'rgba(240,200,110,0.25)');
+  gr.addColorStop(1, 'rgba(70,30,0,0.9)');
+  c.strokeStyle = gr;
+  c.lineWidth = 0.9;
+  c.beginPath();
+  c.roundRect(-29.55, -49.55, 59.1, 99.1, 6.6);
+  c.stroke();
+  // The hood over the lamp window.
+  gr = c.createLinearGradient(0, -53.5, 0, -47);
+  gr.addColorStop(0, css([0.92, 0.12, 92]));
+  gr.addColorStop(0.35, css([0.74, 0.15, 78]));
+  gr.addColorStop(1, css([0.48, 0.12, 62]));
+  c.fillStyle = gr;
+  c.beginPath();
+  c.roundRect(-31.6, -53.5, 67.6, 6.5, [3, 3, 1.5, 1.5]);
+  c.fill();
+  // Wet trails run down from the hood.
+  for (const [x, y0, y1] of DRIPS) {
+    gr = c.createLinearGradient(0, y0, 0, y1);
+    gr.addColorStop(0, 'rgba(255,240,200,0)');
+    gr.addColorStop(1, 'rgba(255,240,200,0.24)');
+    c.fillStyle = gr;
+    c.fillRect(x - 0.35, y0, 0.7, y1 - y0);
+    bead(c, x, y1 + 0.5, 0.95);
+  }
+  // The lamp window: smoked glass in a dark frame.
+  c.fillStyle = css([0.3, 0.07, 58]);
+  c.beginPath();
+  c.roundRect(-24, -42, 48, 19, 3);
+  c.fill();
+  c.fillStyle = css([0.08, 0.02, 30]);
+  c.beginPath();
+  c.roundRect(-22.8, -40.8, 45.6, 16.6, 2);
+  c.fill();
+  // The button's steel bezel and its dark socket.
+  gr = c.createLinearGradient(-12, -8, 12, 16);
+  gr.addColorStop(0, css([0.88, 0.01, 250]));
+  gr.addColorStop(0.5, css([0.52, 0.01, 250]));
+  gr.addColorStop(1, css([0.2, 0.01, 250]));
+  c.fillStyle = gr;
+  circle(c, 0, 4, 16.2);
+  c.fillStyle = css([0.05, 0.01, 260]);
+  circle(c, 0, 4, 13.9);
+  // A darker band carries the LED ring.
+  c.strokeStyle = 'rgba(60,22,0,0.3)';
+  c.lineWidth = 4;
+  c.beginPath();
+  c.arc(0, 4, RING, 0, TAU);
+  c.stroke();
+  for (let i = 0; i < DOTS; i++) {
+    const a = -Math.PI / 2 + (i * TAU) / DOTS, x = Math.cos(a) * RING, y = 4 + Math.sin(a) * RING;
+    c.fillStyle = css([0.15, 0.03, 30]);
+    circle(c, x, y, 1.45);
+    c.fillStyle = 'rgba(255,220,200,0.22)';
+    circle(c, x - 0.45, y - 0.45, 0.35);
+  }
+  // The ticker's grille: three rows of holes.
+  for (let j = 0; j < 3; j++) {
+    for (let i = 0; i < 9; i++) {
+      const x = -12 + i * 3, y = 29 + j * 3;
+      c.fillStyle = 'rgba(255,235,190,0.35)';
+      circle(c, x + 0.15, y + 0.3, 0.98);
+      c.fillStyle = css([0.12, 0.03, 50]);
+      circle(c, x, y, 0.92);
+    }
+  }
+  // The plate for the tactile arrow.
+  c.fillStyle = css([0.2, 0.01, 260]);
+  c.beginPath();
+  c.roundRect(-13, 38.8, 26, 7.6, 1.8);
+  c.fill();
+  c.strokeStyle = 'rgba(255,240,210,0.22)';
+  c.lineWidth = 0.4;
+  c.stroke();
+  for (const [x, y, r] of BEADS) bead(c, x, y, r);
+}
+
+/* ---------- the LED legend ---------- */
+// The lamp window holds a matrix of 35 by 7 LEDs.
+const COLS = 35, ROWS = 7, PITCH = 1.2;
+const ledX = i => -20.4 + i * PITCH, ledY = j => -32.5 + (j - 3) * PITCH;
+const LEG = { x: -24, y: -42, w: 48, h: 19 };
+const FONT = {
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  C: ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+  D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+  G: ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
+  H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  J: ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  W: ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
+  '!': ['00100', '00100', '00100', '00100', '00100', '00000', '00100'],
+  ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+};
+// The cells a word lights, centred in the matrix.
+function cells(text) {
+  const start = Math.floor((COLS - (text.length * 6 - 1)) / 2), out = [];
+  [...text].forEach((ch, k) => {
+    (FONT[ch] || FONT[' ']).forEach((row, j) => {
+      for (let i = 0; i < 5; i++) if (row[i] === '1') out.push([start + k * 6 + i, j]);
+    });
+  });
+  return out;
+}
+let unlit = layer(), legend = { key: '', lit: layer(), glow: layer() };
+const legendLayer = () => {
+  const s = u * dpr, cvs = layer(LEG.w * s, LEG.h * s), c = ctx(cvs);
+  c.setTransform(s, 0, 0, s, -LEG.x * s, -LEG.y * s);
+  return [cvs, c];
+};
+// The dark matrix and the glass over it.
+function buildLegend() {
+  const [cvs, c] = legendLayer();
+  c.fillStyle = rgba(K.led, 0.1);
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) circle(c, ledX(i), ledY(j), 0.42);
+  const gr = c.createLinearGradient(-22, -41, 6, -24);
+  gr.addColorStop(0, 'rgba(255,240,220,0.1)');
+  gr.addColorStop(0.45, 'rgba(255,240,220,0.03)');
+  gr.addColorStop(0.5, 'rgba(255,240,220,0)');
+  c.fillStyle = gr;
+  c.beginPath();
+  c.roundRect(-22.8, -40.8, 45.6, 16.6, 2);
+  c.fill();
+  unlit = cvs;
+  legend.key = '';
+}
+function legendFor(text, colKey) {
+  const key = `${text}|${colKey}`;
+  if (legend.key === key) return legend;
+  const [lit, lc] = legendLayer(), [halo, hc] = legendLayer(), col = K[colKey];
+  hc.globalCompositeOperation = 'lighter';
+  for (const [i, j] of cells(text)) {
+    const x = ledX(i), y = ledY(j);
+    lc.fillStyle = rgba(col, 1);
+    circle(lc, x, y, 0.45);
+    lc.fillStyle = 'rgba(255,236,222,0.8)';
+    circle(lc, x - 0.08, y - 0.08, 0.2);
+    hc.drawImage(glowSpr[colKey], x - 2.6, y - 2.6, 5.2, 5.2);
+  }
+  legend = { key, lit, glow: halo };
+  return legend;
+}
+
+/* ---------- glows, grade and grain ---------- */
+const glowSpr = {};
+for (const k of ['led', 'ledG', 'warm', 'tail', 'ink', 'red', 'green']) {
+  const cvs = layer(64, 64), c = ctx(cvs), col = K[k];
+  const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, rgba(col, 1));
+  gr.addColorStop(0.18, rgba(col, 0.5));
+  gr.addColorStop(0.45, rgba(col, 0.12));
+  gr.addColorStop(1, rgba(col, 0));
+  c.fillStyle = gr;
+  c.fillRect(0, 0, 64, 64);
+  glowSpr[k] = cvs;
+}
+const glow = (key, x, y, r, a) => {
+  g.globalAlpha = a;
+  g.drawImage(glowSpr[key], x - r, y - r, 2 * r, 2 * r);
+};
+const glowRect = (key, x, y, ww, hh, a) => {
+  g.globalAlpha = a;
+  g.drawImage(glowSpr[key], x, y, ww, hh);
+};
+// A car body: a dark smudge with wide soft edges, as far out of focus as the street.
+const carSpr = layer(128, 48);
+{
+  const c = ctx(carSpr);
+  c.translate(64, 26);
+  c.scale(1, 0.34);
+  const gr = c.createRadialGradient(0, 0, 0, 0, 0, 64);
+  gr.addColorStop(0, 'rgba(5,6,11,1)');
+  gr.addColorStop(0.55, 'rgba(5,6,11,0.85)');
+  gr.addColorStop(1, 'rgba(5,6,11,0)');
+  c.fillStyle = gr;
+  c.fillRect(-64, -76, 128, 152);
+}
+let vig = layer();
+function buildVignette() {
+  vig = layer(w * bgS, h * bgS);
+  const c = ctx(vig), cw = vig.width, ch = vig.height;
+  const gr = c.createRadialGradient(cw * 0.46, ch * 0.5, 0, cw * 0.46, ch * 0.5, Math.hypot(cw, ch) * 0.62);
+  gr.addColorStop(0, 'rgba(3,3,10,0)');
+  gr.addColorStop(0.55, 'rgba(3,3,10,0.08)');
+  gr.addColorStop(1, 'rgba(3,3,10,0.7)');
+  c.fillStyle = gr;
+  c.fillRect(0, 0, cw, ch);
+}
+// A large tile, so its repeat does not show.
+const grainTile = layer(256, 256);
+{
+  const c = ctx(grainTile), img = c.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+}
+const grain = g.createPattern(grainTile, 'repeat');
+// The pole's light: sodium on the left, shade on the right.
+let poleGrad = null;
+function buildPole() {
+  const x0 = bx - 7.5 * u, x1 = bx + 7.5 * u;
+  poleGrad = g.createLinearGradient(x0, 0, x1, 0);
+  poleGrad.addColorStop(0, css([0.13, 0.01, 260]));
+  poleGrad.addColorStop(0.22, css([0.44, 0.05, 68]));
+  poleGrad.addColorStop(0.42, css([0.25, 0.015, 260]));
+  poleGrad.addColorStop(0.85, css([0.11, 0.01, 260]));
+  poleGrad.addColorStop(1, css([0.07, 0.01, 260]));
+}
+
+/* ---------- size ---------- */
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const nw = Math.max(1, r.width), nh = Math.max(1, r.height), nd = D.dpr(nw, nh);
+  // The prerender is costly, so an unchanged size keeps it.
+  if (nw === w && nh === h && nd === dpr) return;
+  w = nw;
+  h = nh;
+  dpr = nd;
+  cv.width = Math.max(1, Math.round(w * dpr));
+  cv.height = Math.max(1, Math.round(h * dpr));
+  layout();
+  buildBackground();
+  buildSpill();
+  buildLamps();
+  buildBox();
+  buildLegend();
+  buildVignette();
+  buildPole();
+}
+
+/* ---------- clock ---------- */
+// Logical seconds; time stops while the stage is hidden.
+let pausedAt = 0, pausedFor = 0, paused = false;
+const now = () => ((paused ? pausedAt : performance.now()) - pausedFor) / 1000;
+
+/* ---------- the cycle ---------- */
+// Red ticks slowly. A press starts the wait: sixteen dots, one out per tick.
+// The ticks come faster as the dots run out; then green rattles, then flashes.
+const FILL = 0.32, LOCATOR = 1.05, RATTLE = 1 / 11;
+const GREEN = 5.2, FLASH = 2.4, CLEAR = 1, DOZE = 30, LOOK = 0.06;
+const gap = n => waitK * (0.16 + 0.5 * (n / DOTS) ** 1.5);
+let phase = 'red', phaseAt = 0, pending = false, holdUntil = 0;
+let dots = 0, fillAt = -9, presses = 0, level = 0, levelAt = -9, blinkAt = -9, legendOn = -9;
+let nextTick = null, tickN = 0, greenAt = null, gaveIn = false, nextCar = null, burstAt = -9, joltAt = -9;
+let lastInput = 0, dozing = false, shout = null, mashN = 0;
+const outAt = new Float64Array(DOTS).fill(-1e9);
+const tell = text => { say.textContent = text; };
+// The legend words, by how often the hand pressed.
+const WORDS = ['WACHT', 'WACHT!', 'JA JA!', 'GEDULD'];
+const levelOf = n => (n >= 10 ? 3 : n >= 7 ? 2 : n >= 4 ? 1 : 0);
+
+function startWait(T, full) {
+  phase = 'wait';
+  phaseAt = T;
+  pending = false;
+  dots = DOTS;
+  greenAt = null;
+  gaveIn = false;
+  outAt.fill(-1e9);
+  // A request made during the last green keeps its count.
+  if (!full) { presses = 1; level = 0; levelAt = -9; }
+  fillAt = full ? T - FILL : T;
+  legendOn = full ? -9 : T;
+  nextTick = fillAt + FILL + gap(DOTS);
+  nextCar = reduced() ? null : T + 0.5 + Math.random() * 0.9;
+  if (!full) { beep(T); fillSound(T); }
+  tell('Request in. Wait.');
+}
+// One tick knocks one dot out; the last dot brings the green.
+function knock(T, byHand) {
+  dots--;
+  outAt[DOTS - 1 - dots] = T;
+  const prog = 1 - dots / DOTS;
+  tickSound(T, byHand ? 1.08 : 0.92 + 0.22 * prog, byHand ? 0.9 : 0.6 + 0.3 * prog);
+  addArc(T, byHand ? 0.8 : 0.45 + 0.3 * prog);
+  joltAt = T;
+  if (dots > 0) { nextTick = T + gap(dots); return; }
+  nextTick = null;
+  // A hand that empties the ring by force wins, and the box says so.
+  gaveIn = presses >= 6 && (byHand || T - lastInput < 0.8);
+  greenAt = T + (gaveIn ? 0.55 : 0.12);
+  if (gaveIn) { shout = { text: 'ALLEE!', col: 'led', at: T, until: greenAt }; sigh(T); }
+}
+function startGreen(T) {
+  phase = 'green';
+  phaseAt = T;
+  greenAt = null;
+  nextCar = null;
+  nextTick = T;
+  tickN = 0;
+  burstAt = T;
+  if (gaveIn) shout = { text: 'ALLEE!', col: 'ledG', at: T, until: T + 1.4 };
+  tell('Green. Cross now.');
+}
+function startFlash(T) {
+  phase = 'flash';
+  phaseAt = T;
+}
+function startRed(T) {
+  phase = 'red';
+  phaseAt = T;
+  holdUntil = T + CLEAR;
+  dots = 0;
+  nextTick = T + 0.4;
+  tell(pending ? 'Red. Request in.' : 'Red.');
+}
+function commitTick() {
+  const T = nextTick;
+  if (phase === 'wait') { knock(T, false); return; }
+  if (phase === 'green' || phase === 'flash') {
+    // The rattle: a strong tick, then a weak one.
+    tickSound(T, tickN & 1 ? 1.2 : 1.1, tickN & 1 ? 0.5 : 0.68, true);
+    addArc(T, 0.42);
+    joltAt = T;
+    tickN++;
+    nextTick = T + (phase === 'flash' ? RATTLE * 1.25 : RATTLE);
+    return;
+  }
+  // Red: the slow locator tick.
+  tickSound(T, 0.86, 0.5);
+  addArc(T, 0.28);
+  nextTick = T + LOCATOR;
+}
+// The scheduler runs ahead of the frame loop, so ticks keep exact time.
+let pumpT = 0;
+function pump() {
+  clearTimeout(pumpT);
+  pumpT = 0;
+  if (!visible) return;
+  const T = now();
+  if (phase === 'wait' && greenAt !== null && T >= greenAt) startGreen(greenAt);
+  if (phase === 'green' && T >= phaseAt + GREEN) startFlash(phaseAt + GREEN);
+  if (phase === 'flash' && T >= phaseAt + FLASH) startRed(phaseAt + FLASH);
+  if (phase === 'red' && pending && T >= holdUntil) startWait(T, true);
+  // Left alone on red, the box dozes and stops ticking.
+  if (phase === 'red' && !pending && T - lastInput > DOZE) { dozing = true; nextTick = null; }
+  if (phase === 'wait' && nextCar !== null && T >= nextCar) {
+    spawnCar(T);
+    nextCar = T + 1.5 + Math.random() * 1.9;
+  }
+  let ticked = false;
+  while (nextTick !== null && nextTick <= T + LOOK) { commitTick(); ticked = true; }
+  if (ticked || phase !== 'red') wake();
+  if (!dozing) pumpT = setTimeout(pump, 15);
+}
+
+/* ---------- the hand ---------- */
+const btn = { x: 0, v: 0, t: 0 }, wob = { x: 0, v: 0 };
+let held = 0, push = 0;
+function down() {
+  held++;
+  const T = now();
+  lastInput = T;
+  if (dozing) { dozing = false; nextTick = T + 0.6; }
+  pressSound(T);
+  // Each press rattles the box on its clamps, harder as the box gets cross.
+  if (!reduced()) wob.v += (mashN++ & 1 ? 1 : -1) * (0.05 + 0.03 * level);
+  if (phase === 'wait' || pending) {
+    presses++;
+    if (phase === 'wait' && T >= fillAt + FILL && dots > 0 && greenAt === null) knock(T, true);
+    const lv = levelOf(presses);
+    if (lv > level) { level = lv; levelAt = T; grumble(T, lv); } else blinkAt = T;
+  } else if (phase === 'red') {
+    if (T < holdUntil) { pending = true; presses = 1; level = 0; legendOn = T; beep(T); tell('Request in.'); }
+    else startWait(T, false);
+  } else if (phase === 'green') {
+    // Pressing on green: the box says go.
+    shout = { text: 'GA!', col: 'ledG', at: T, until: T + 0.7 };
+    gaSound(T);
+  } else {
+    pending = true;
+    presses = 1;
+    level = 0;
+    legendOn = T;
+    beep(T);
+  }
+  pump();
+  wake();
+}
+function up() {
+  held = Math.max(0, held - 1);
+  if (held) return;
+  releaseSound(now());
+  wake();
+}
+const pointers = new Set();
+cv.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  try { cv.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  pointers.add(e.pointerId);
+  down();
+});
+const lift = e => { if (pointers.delete(e.pointerId)) up(); };
+cv.addEventListener('pointerup', lift);
+cv.addEventListener('pointercancel', lift);
+cv.addEventListener('lostpointercapture', lift);
+cv.addEventListener('contextmenu', e => e.preventDefault());
+// Space and Enter press the button, except on a control or in a sheet.
+const keysDown = new Set();
+addEventListener('keydown', e => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.target.closest?.('button, a, input, textarea, select, [contenteditable], .s2-sheet')) return;
+  e.preventDefault();
+  if (e.repeat || keysDown.has(e.key)) return;
+  keysDown.add(e.key);
+  down();
+});
+addEventListener('keyup', e => { if (keysDown.delete(e.key)) up(); });
+addEventListener('blur', () => {
+  for (const k of keysDown) { keysDown.delete(k); up(); }
+});
+
+/* ---------- traffic ---------- */
+// While you wait, cars swish past on the wet road.
+const cars = [];
+function spawnCar(T) {
+  const near = Math.random() < 0.55, dir = Math.random() < 0.5 ? 1 : -1;
+  const c = { near, dir, at: T, dur: (near ? 1.15 : 1.7) * (0.85 + 0.3 * Math.random()) };
+  cars.push(c);
+  carSound(T, c);
+}
+function drawCars(T) {
+  const f = kz / EYE;
+  for (let i = cars.length - 1; i >= 0; i--) {
+    const c = cars[i], p = (T - c.at) / c.dur;
+    if (p >= 1) { cars.splice(i, 1); continue; }
+    if (p < 0) continue;
+    // Pixels per metre at the lane's depth.
+    const z = c.near ? 6.3 : 10.5, yg = gy(z), sc = f / z;
+    const len = 4.4 * sc, pad = 0.12 * w + len;
+    const front = c.dir > 0 ? mix(-pad + len, w + pad, p) : mix(w + pad - len, -pad, p);
+    const rear = front - c.dir * len, yl = yg - 0.62 * sc, R = 0.85 * sc;
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 0.5;
+    g.drawImage(carSpr, Math.min(front, rear) - 0.5 * sc, yg - 2 * sc, len + sc, 2.4 * sc);
+    g.globalCompositeOperation = 'lighter';
+    // Headlights: a glare and a flat flare along the road.
+    const hx = front - c.dir * 0.25 * sc;
+    glow('warm', hx, yl, R * 1.5, 0.95);
+    glowRect('warm', hx - 4 * R, yl - 0.22 * R, 8 * R, 0.44 * R, 0.6);
+    glow('tail', rear + c.dir * 0.2 * sc, yl, R * 0.75, 0.85);
+    // Their streaks on the wet road, and the beam ahead.
+    glowRect('warm', hx - R * 0.7, yg - R * 0.3, R * 1.4, R * 5.5, 0.4);
+    glowRect('tail', rear + c.dir * 0.2 * sc - R * 0.45, yg - R * 0.3, R * 0.9, R * 3.8, 0.35);
+    glowRect('warm', c.dir > 0 ? hx : hx - 10 * R, yg - 0.6 * R, 10 * R, 1.2 * R, 0.22);
+  }
+  g.globalAlpha = 1;
+}
+
+/* ---------- sound marks ---------- */
+// Each tick throws two small arcs off the box, like a cartoon sound.
+const arcs = [];
+function addArc(T, k) {
+  if (reduced()) return;
+  arcs.push({ at: T, k });
+  if (arcs.length > 10) arcs.shift();
+}
+function drawArcs(T) {
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round';
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const a = arcs[i], age = (T - a.at) / 0.34;
+    if (age >= 1) { arcs.splice(i, 1); continue; }
+    if (age < 0) continue;
+    const al = a.k * (1 - age) ** 1.5, r = 6 + 11 * age;
+    for (const [cx, a0] of [[30, 0], [-24, Math.PI]]) {
+      for (const off of [0, 3.4]) {
+        g.globalAlpha = al * (off ? 0.5 : 1);
+        g.strokeStyle = rgba(K.ink, 1);
+        g.lineWidth = 0.8;
+        g.beginPath();
+        g.arc(cx, 31, r + off, a0 - 0.5, a0 + 0.5);
+        g.stroke();
+      }
+    }
+  }
+  g.globalAlpha = 1;
+}
+
+/* ---------- drawing ---------- */
+let Lr = 1, Lg = 0, frameN = 0;
+const blink = T => (Math.floor((T - phaseAt) / 0.3) % 2 === 0 ? 1 : reduced() ? 0.35 : 0);
+const redTarget = () => (phase === 'red' || phase === 'wait' ? 1 : 0);
+const greenTarget = T => (phase === 'green' ? 1 : phase === 'flash' ? blink(T) : 0);
+const FLICK = [0.3, 0, 0.8, 0.15, 1, 0.55, 1, 1];
+function legendState(T) {
+  if (shout && T < shout.until) return { text: shout.text, col: shout.col, b: T - shout.at < 0.05 ? 0.35 : 1 };
+  if (phase !== 'wait' && !pending) return null;
+  let b = 1;
+  const on = T - legendOn;
+  // Switching on: a short flicker. A press blinks it; a new word flickers hard.
+  if (on >= 0 && on < 0.25) b = FLICK[Math.floor((on / 0.25) * FLICK.length)];
+  if (T - blinkAt < 0.07) b = 0.15;
+  if (T - levelAt < 0.32) b = Math.floor((T - levelAt) * 36) % 2 ? 1 : 0.1;
+  return { text: WORDS[level], col: 'led', b };
+}
+function draw(T) {
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(bg, 0, 0, w, h);
+  // The far lamps, and the light they throw on the wet street.
+  g.globalCompositeOperation = 'lighter';
+  const R = sig.r;
+  if (Lr > 0.003) {
+    g.globalAlpha = Lr;
+    g.drawImage(spill.red, 0, 0, w, h);
+    g.drawImage(lampSpr.red, sig.x - 5 * R, sig.ry - 5 * R, 10 * R, 10 * R);
+  }
+  if (Lg > 0.003) {
+    g.globalAlpha = Lg;
+    g.drawImage(spill.green, 0, 0, w, h);
+    g.drawImage(lampSpr.green, sig.x - 5 * R, sig.gy - 5 * R, 10 * R, 10 * R);
+  }
+  // The signal's colour hangs in the damp air; green arrives with a flash.
+  const burst = T >= burstAt ? Math.exp(-(T - burstAt) / 0.3) : 0;
+  g.globalAlpha = 1;
+  g.fillStyle = rgba(K.red, 0.03 * Lr);
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = rgba(K.green, 0.06 * Lg + (reduced() ? 0.05 : 0.2) * burst);
+  g.fillRect(0, 0, w, h);
+  drawCars(T);
+  // The pole runs the full height of the frame.
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.fillStyle = poleGrad;
+  g.fillRect(bx - 7.5 * u, 0, 15 * u, h);
+  g.globalCompositeOperation = 'lighter';
+  for (const [col, I] of [[K.red, Lr], [K.green, Lg]]) {
+    if (I < 0.01) continue;
+    g.fillStyle = rgba(col, 0.22 * I);
+    g.fillRect(bx + 5 * u, 0, 2.5 * u, h);
+  }
+  drawBox(T, burst);
+  // The grade: a vignette, then fine grain that moves each frame.
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(vig, 0, 0, w, h);
+  if (D.level > 0) {
+    g.setTransform(1, 0, 0, 1, Math.floor(Math.random() * 256), Math.floor(Math.random() * 256));
+    g.globalCompositeOperation = 'overlay';
+    g.globalAlpha = 0.07;
+    g.fillStyle = grain;
+    g.fillRect(-256, -256, cv.width + 256, cv.height + 256);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
+}
+function drawBox(T, burst) {
+  g.save();
+  // Each tick gives the box a tiny knock.
+  const jolt = reduced() ? 0 : 0.3 * Math.exp(-Math.max(0, T - joltAt) / 0.03) * (T >= joltAt ? 1 : 0);
+  g.translate(bx, by + jolt * u);
+  g.rotate(wob.x);
+  // A hard push leans the box back, away from the eye.
+  const sk = 1 - 0.014 * push;
+  g.scale(sk, sk);
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(boxSpr, BOX.x * u, BOX.y * u, BOX.w * u, BOX.h * u);
+  g.scale(u, u);
+  // The far signal colours the side face and the right edge.
+  g.globalCompositeOperation = 'lighter';
+  for (const [col, I] of [[K.red, Lr], [K.green, Lg + burst]]) {
+    if (I < 0.01) continue;
+    const gr = g.createLinearGradient(22, 0, 36, 0);
+    gr.addColorStop(0, rgba(col, 0));
+    gr.addColorStop(0.5, rgba(col, 0.14 * I));
+    gr.addColorStop(1, rgba(col, 0.55 * I));
+    g.fillStyle = gr;
+    g.fill(SHAPE);
+  }
+  // Green light falls on the whole face; it arrives with a flash.
+  if (Lg + burst > 0.01) {
+    g.fillStyle = rgba(K.green, 0.05 * Lg + 0.2 * burst);
+    g.fill(SHAPE);
+  }
+  drawLegend(T);
+  drawRing(T);
+  drawButton();
+  drawArrow(T);
+  drawArcs(T);
+  g.restore();
+}
+function drawLegend(T) {
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(unlit, LEG.x, LEG.y, LEG.w, LEG.h);
+  const st = legendState(T);
+  if (!st || st.b <= 0.01) return;
+  const L = legendFor(st.text, st.col);
+  g.globalCompositeOperation = 'lighter';
+  g.globalAlpha = Math.min(1, st.b);
+  g.drawImage(L.lit, LEG.x, LEG.y, LEG.w, LEG.h);
+  g.globalAlpha = Math.min(1, st.b * glowK);
+  g.drawImage(L.glow, LEG.x, LEG.y, LEG.w, LEG.h);
+  // The lamp lights the face round the window, and the damp air past the box.
+  glowRect(st.col, -44, -60, 88, 56, st.b * 0.32 * glowK);
+  glowRect(st.col, -80, -82, 160, 100, st.b * 0.1 * glowK);
+  g.globalAlpha = 1;
+}
+function drawRing(T) {
+  for (let i = 0; i < DOTS; i++) {
+    let b = 0, col = 'led';
+    if (phase === 'wait') {
+      const filled = i < (DOTS * (T - fillAt)) / FILL;
+      if (filled && (i >= DOTS - dots || outAt[i] > T)) b = 1;
+      // A dot flares as it goes out.
+      const age = T - outAt[i];
+      if (age >= 0 && age < 0.22) b = Math.max(b, 1.7 * (1 - age / 0.22));
+    } else if (phase === 'red' && pending) b = 1;
+    else if (phase === 'green') {
+      col = 'ledG';
+      // A bright head chases round the ring, one step per rattle tick.
+      const d = ((((T - phaseAt) / RATTLE - i) % DOTS) + DOTS) % DOTS;
+      b = reduced() ? 0.8 : 0.25 + 0.95 * Math.max(0, 1 - d / 5);
+    } else if (phase === 'flash') { col = 'ledG'; b = blink(T); }
+    if (b <= 0.01) continue;
+    const a = -Math.PI / 2 + (i * TAU) / DOTS, x = Math.cos(a) * RING, y = 4 + Math.sin(a) * RING;
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    g.fillStyle = rgba(K[col], Math.min(1, b));
+    circle(g, x, y, 1.2);
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = `rgba(255,236,226,${(Math.min(1, b) * 0.7).toFixed(3)})`;
+    circle(g, x - 0.1, y - 0.1, 0.55);
+    glow(col, x, y, 8 + 4 * Math.max(0, b - 1), Math.min(1, b * 0.8 * glowK));
+    g.globalAlpha = 1;
+  }
+}
+function drawButton() {
+  const d = clamp(btn.x, -0.3, 1.3), r = 13 * (1 - 0.05 * Math.max(0, d)), cy = 4 + 0.8 * d;
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  // The cap: glossy black, lit from the upper left.
+  const gr = g.createRadialGradient(-4.5, cy - 5.5, 0.5, 0, cy, r);
+  gr.addColorStop(0, rgba(CAP[0]));
+  gr.addColorStop(0.45, rgba(CAP[1]));
+  gr.addColorStop(1, rgba(CAP[2]));
+  g.fillStyle = gr;
+  circle(g, 0, cy, r);
+  // The walking man, pressed into the cap.
+  g.save();
+  g.translate(0, cy + 0.6);
+  g.scale(r * 0.6, r * 0.6);
+  figure(g, 'walk', 'rgb(0,0,0)', 0.035, 0.05);
+  figure(g, 'walk', rgba(MAN));
+  g.restore();
+  // Sinking in, it falls into the socket's shade.
+  if (d > 0.01) {
+    g.fillStyle = `rgba(0,0,0,${(0.34 * clamp(d)).toFixed(3)})`;
+    circle(g, 0, cy, r);
+  }
+  // A glint from the street lamp.
+  g.fillStyle = `rgba(255,248,236,${(0.55 - 0.25 * clamp(d)).toFixed(3)})`;
+  g.beginPath();
+  g.ellipse(-5.2, cy - 6.6, 3.2, 1.3, -0.55, 0, TAU);
+  g.fill();
+}
+// The tactile arrow shakes on green.
+function arrowPath(ox, oy) {
+  g.beginPath();
+  g.moveTo(-8 + ox, 41.9 + oy);
+  g.lineTo(3 + ox, 41.9 + oy);
+  g.lineTo(3 + ox, 39.9 + oy);
+  g.lineTo(9 + ox, 42.6 + oy);
+  g.lineTo(3 + ox, 45.3 + oy);
+  g.lineTo(3 + ox, 43.3 + oy);
+  g.lineTo(-8 + ox, 43.3 + oy);
+  g.closePath();
+}
+function drawArrow(T) {
+  const v = phase === 'green' ? 1 : phase === 'flash' ? 0.6 : 0;
+  const dx = v && !reduced() ? (frameN & 1 ? 0.45 : -0.45) * v : 0;
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  arrowPath(dx + 0.35, 0.35);
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  g.fill();
+  arrowPath(dx, 0);
+  g.fillStyle = rgba(PALE, 1);
+  g.fill();
+  if (v && !reduced()) {
+    g.strokeStyle = rgba(K.ink, 0.45 * v);
+    g.lineWidth = 0.4;
+    g.beginPath();
+    g.moveTo(-11.5, 40.6);
+    g.lineTo(-10, 40.6);
+    g.moveTo(-11.8, 44.6);
+    g.lineTo(-10.3, 44.6);
+    g.stroke();
+  }
+}
+
+/* ---------- motion ---------- */
+// The button rides a stiff spring; the box swings slowly on its clamps.
+const WK = (TAU * 1.3) ** 2, WC = 2.4;
+function step(dt, T) {
+  if (held) {
+    const p0 = push;
+    push = Math.min(1, push + dt / 0.8);
+    if (p0 < 0.7 && push >= 0.7) creak(T);
+    // Pushed all the way in, the box complains.
+    if (p0 < 1 && push >= 1 && phase !== 'green') {
+      shout = { text: 'AU!', col: 'led', at: T, until: T + 0.9 };
+      ouch(T);
+    }
+  } else push = Math.max(0, push - dt / 0.2);
+  btn.t = held ? 1 + 0.22 * push : 0;
+  const n = Math.max(1, Math.ceil(dt / 0.004));
+  for (let s = 0; s < n; s++) {
+    const k = dt / n;
+    btn.v += (1100 * (btn.t - btn.x) - 40 * btn.v) * k;
+    btn.x += btn.v * k;
+    wob.v += (-WK * wob.x - WC * wob.v) * k;
+    wob.x += wob.v * k;
+  }
+  // The lamps ease like warm LEDs.
+  const e = 1 - Math.exp(-dt / 0.05);
+  Lr += (redTarget() - Lr) * e;
+  Lg += (greenTarget(T) - Lg) * e;
+}
+function busy(T) {
+  return phase !== 'red' || pending || held > 0 || push > 0 || arcs.length > 0 || cars.length > 0
+    || Math.abs(btn.v) > 1e-3 || Math.abs(btn.x - btn.t) > 1e-3
+    || Math.abs(wob.v) > 1e-4 || Math.abs(wob.x) > 1e-4
+    || Math.abs(Lr - redTarget()) > 0.003 || Math.abs(Lg - greenTarget(T)) > 0.003
+    || (shout !== null && T < shout.until + 0.1) || T - burstAt < 1.5 || T - joltAt < 0.15
+    || T - legendOn < 0.3 || T - levelAt < 0.4 || T - blinkAt < 0.1;
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while anything moves, and sleeps between idle ticks.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) raf = requestAnimationFrame(frame);
+}
+function frame(ms) {
+  raf = 0;
+  const raw = last ? (ms - last) / 1000 : 0;
+  last = ms;
+  if (raw > 0 && raw < 0.25) D.frame(raw);
+  const dt = clamp(raw, 0, 0.05), T = now();
+  step(dt, T);
+  draw(T);
+  frameN++;
+  if (busy(T)) raf = requestAnimationFrame(frame);
+  else {
+    last = 0;
+    if (dozing) kit.rest(() => dozing && !raf && !held);
+  }
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.6 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+let bus = null, buf = null;
+// Audio time for logical time T: a short lead absorbs timer jitter.
+const LEAD = 0.025;
+function out() {
+  const ac = kit.live();
+  if (!ac) return null;
+  if (!bus) {
+    bus = ac.createGain();
+    // The street answers: a short slap off the facades and a damp tail.
+    const verb = ac.createConvolver(), wet = ac.createGain();
+    verb.buffer = streetIR(ac);
+    wet.gain.value = 0.22;
+    bus.connect(kit.out);
+    bus.connect(verb).connect(wet).connect(kit.out);
+    buf = makeBuffers(ac);
+  }
+  return ac;
+}
+const at = (ac, T) => ac.currentTime + LEAD + Math.max(0, T - now());
+function streetIR(ac) {
+  const sr = ac.sampleRate, n = Math.round(sr * 1.3), b = ac.createBuffer(2, n, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    for (const [ms, gn] of [[23, 0.5], [41, 0.42], [67, 0.34], [89, 0.3], [131, 0.22], [173, 0.15]]) {
+      const i = Math.round((sr * (ms + (ch ? 3.1 : 0) + Math.random() * 2)) / 1000);
+      if (i < n) d[i] += gn * (Math.random() < 0.5 ? -1 : 1);
+    }
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      lp += 0.35 * (Math.random() * 2 - 1 - lp);
+      d[i] += lp * 0.45 * Math.exp(-t / 0.3) * Math.min(1, t / 0.02);
+    }
+  }
+  return b;
+}
+// Every short sound is written once, sample by sample, then replayed.
+function makeBuffers(ac) {
+  const sr = ac.sampleRate;
+  let s = 7;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  const make = (dur, fn) => {
+    const n = Math.round(sr * dur), b = ac.createBuffer(1, n, sr), d = b.getChannelData(0);
+    let peak = 1e-6;
+    for (let i = 0; i < n; i++) { d[i] = fn(i / sr); peak = Math.max(peak, Math.abs(d[i])); }
+    for (let i = 0; i < n; i++) d[i] *= 0.9 / peak;
+    return b;
+  };
+  return {
+    // The ticker: a hard click, then a short ring of its plastic shell.
+    tick: make(0.08, t => 0.8 * rnd() * Math.exp(-t / 0.0011)
+      + 0.5 * Math.sin(TAU * 1150 * t) * Math.exp(-t / 0.02)
+      + 0.28 * Math.sin(TAU * 2830 * t + 0.7) * Math.exp(-t / 0.008)
+      + 0.3 * Math.sin(TAU * 410 * t) * Math.exp(-t / 0.014)),
+    // The rattle's tick is drier, so fast ticks stay apart.
+    rattle: make(0.05, t => 0.85 * rnd() * Math.exp(-t / 0.0009)
+      + 0.45 * Math.sin(TAU * 1320 * t) * Math.exp(-t / 0.009)
+      + 0.25 * Math.sin(TAU * 3150 * t + 0.4) * Math.exp(-t / 0.005)),
+    // The button: a clack on contact, then a thud as it bottoms out.
+    down: [0, 1, 2].map(k => make(0.18, t => 0.6 * rnd() * Math.exp(-t / 0.0018)
+      + 0.75 * Math.sin(TAU * ((165 + 18 * k) * t - 120 * t * t)) * Math.exp(-t / 0.05)
+      + 0.3 * Math.sin(TAU * (760 + 40 * k) * t) * Math.exp(-t / 0.011))),
+    // Release: a lighter click as the spring returns the cap.
+    up: make(0.06, t => 0.5 * rnd() * Math.exp(-t / 0.0012) + 0.3 * Math.sin(TAU * 1480 * t) * Math.exp(-t / 0.007)),
+  };
+}
+function play(T, b, rate, gain, pan = 0) {
+  const ac = out();
+  if (!ac) return;
+  const src = ac.createBufferSource(), gn = ac.createGain();
+  src.buffer = buf[b] instanceof Array ? buf[b][Math.floor(Math.random() * buf[b].length)] : buf[b];
+  src.playbackRate.value = rate;
+  gn.gain.value = gain;
+  let node = src.connect(gn);
+  if (pan) {
+    const p = ac.createStereoPanner();
+    p.pan.value = pan;
+    node = node.connect(p);
+  }
+  node.connect(bus);
+  src.start(at(ac, T));
+}
+function tickSound(T, rate, level, rattle = false) {
+  play(T, rattle ? 'rattle' : 'tick', rate * jit(0.012), level * 0.5);
+}
+function pressSound(T) { play(T, 'down', jit(0.05), 0.75); }
+function releaseSound(T) { play(T, 'up', jit(0.06), 0.42); }
+// A short envelope on any oscillator.
+function tone(ac, t, { type = 'sine', f, f1 = f, dur, gain, lp = 0, q = 0.7 }) {
+  const o = ac.createOscillator(), gn = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
+  if (f1 !== f) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(gain, t + 0.006);
+  gn.gain.setValueAtTime(gain, t + Math.max(0.006, dur - 0.03));
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let node = o.connect(gn);
+  if (lp) {
+    const f2 = ac.createBiquadFilter();
+    f2.type = 'lowpass';
+    f2.frequency.value = lp;
+    f2.Q.value = q;
+    node = node.connect(f2);
+  }
+  node.connect(bus);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+// The request is in: two quick notes up.
+function beep(T) {
+  const ac = out();
+  if (!ac) return;
+  const t = at(ac, T);
+  tone(ac, t, { type: 'square', f: 1568, dur: 0.05, gain: 0.05, lp: 3200 });
+  tone(ac, t + 0.065, { type: 'square', f: 2093, dur: 0.08, gain: 0.05, lp: 3200 });
+}
+// The ring fills with a run of tiny blips.
+function fillSound(T) {
+  const ac = out();
+  if (!ac) return;
+  const t = at(ac, T) + 0.03;
+  for (let i = 0; i < DOTS; i++) tone(ac, t + (i * FILL) / DOTS, { f: 900 * 2 ** (i / 11), dur: 0.035, gain: 0.035 });
+}
+// The box gets cross: a buzz, two buzzes, then a long sagging one.
+function grumble(T, lv) {
+  const ac = out();
+  if (!ac) return;
+  const t = at(ac, T);
+  const n = lv === 2 ? 2 : 1, dur = lv === 3 ? 0.45 : 0.15;
+  for (let k = 0; k < n; k++) {
+    for (const det of [1, 1.05]) {
+      tone(ac, t + k * 0.19, { type: 'sawtooth', f: (lv === 3 ? 124 : 98) * det, f1: (lv === 3 ? 72 : 98) * det, dur, gain: 0.07, lp: 900, q: 2 });
+    }
+  }
+}
+// The box gives in: a long falling sigh, and a breath of air.
+function sigh(T) {
+  const ac = out();
+  if (!ac) return;
+  const t = at(ac, T);
+  tone(ac, t, { type: 'triangle', f: 620, f1: 230, dur: 0.52, gain: 0.11, lp: 1800 });
+  if (!kit.noise) return;
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), gn = ac.createGain();
+  src.buffer = kit.noise;
+  bp.type = 'bandpass';
+  bp.frequency.value = 900;
+  bp.Q.value = 0.8;
+  gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(0.06, t + 0.08);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  src.connect(bp).connect(gn).connect(bus);
+  src.start(t, Math.random() * 0.4, 0.5);
+}
+// A press on green: two bright bips.
+function gaSound(T) {
+  const ac = out();
+  if (!ac) return;
+  const t = at(ac, T);
+  tone(ac, t, { type: 'triangle', f: 1760, dur: 0.05, gain: 0.07 });
+  tone(ac, t + 0.07, { type: 'triangle', f: 2349, dur: 0.07, gain: 0.07 });
+}
+// Pushed too hard: a short falling squeak.
+function ouch(T) {
+  const ac = out();
+  if (!ac) return;
+  tone(ac, at(ac, T), { type: 'triangle', f: 1500, f1: 820, dur: 0.14, gain: 0.08 });
+}
+// A hard push makes the clamps creak.
+function creak(T) {
+  const ac = out();
+  if (!ac || reduced()) return;
+  const t = at(ac, T), o = ac.createOscillator(), bp = ac.createBiquadFilter(), gn = ac.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(34, t);
+  o.frequency.linearRampToValueAtTime(52, t + 0.38);
+  bp.type = 'bandpass';
+  bp.frequency.value = 1150;
+  bp.Q.value = 6;
+  gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(0.12, t + 0.05);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+  o.connect(bp).connect(gn).connect(bus);
+  o.start(t);
+  o.stop(t + 0.45);
+}
+// A car on the wet road: a swish that pans across, and tyre hiss.
+function carSound(T, c) {
+  const ac = out();
+  if (!ac || !kit.noise) return;
+  const t = at(ac, T), d = c.dur;
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter(), hp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(1300, t);
+  bp.frequency.exponentialRampToValueAtTime(460, t + d);
+  hp.type = 'highpass';
+  hp.frequency.value = 3200;
+  const gn = ac.createGain(), hs = ac.createGain(), pn = ac.createStereoPanner();
+  const peak = c.near ? 0.16 : 0.08;
+  for (const [node, k] of [[gn, 1], [hs, 0.45]]) {
+    node.gain.setValueAtTime(0.0001, t);
+    node.gain.exponentialRampToValueAtTime(peak * k, t + d * 0.5);
+    node.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  }
+  pn.pan.setValueAtTime(-0.9 * c.dir, t);
+  pn.pan.linearRampToValueAtTime(0.9 * c.dir, t + d);
+  src.connect(bp).connect(gn).connect(pn);
+  src.connect(hp).connect(hs).connect(pn);
+  pn.connect(bus);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + d + 0.05);
+}
+
+/* ---------- actions ---------- */
+act.reset = () => {
+  const T = now();
+  phase = 'red';
+  phaseAt = T;
+  pending = false;
+  holdUntil = 0;
+  dots = presses = level = 0;
+  greenAt = nextCar = shout = null;
+  gaveIn = false;
+  cars.length = arcs.length = 0;
+  outAt.fill(-1e9);
+  wob.x = wob.v = 0;
+  lastInput = T;
+  dozing = false;
+  nextTick = T + 0.5;
+  tell('Red.');
+  pump();
+  wake();
+};
+
+/* ---------- ready ---------- */
+// The intro holds until the first frame draws.
+resize();
+lastInput = now();
+nextTick = now() + 0.8;
+draw(now());
+cv.classList.add('on');
+ready = true;
+mark('first-frame');
+pump();
+
+// Resizes land on the next frame, one at a time.
+let sizeRaf = 0;
+new ResizeObserver(() => {
+  cancelAnimationFrame(sizeRaf);
+  sizeRaf = requestAnimationFrame(() => { resize(); draw(now()); wake(); });
+}).observe(stage);
+// A hidden tab stops the clock, the ticks and the loop.
+whenVisible(stage, v => {
+  if (v === visible) return;
+  visible = v;
+  if (!v) {
+    pausedAt = performance.now();
+    paused = true;
+    clearTimeout(pumpT);
+    cancelAnimationFrame(raf);
+    raf = 0;
+    kit.rest(() => true);
+    return;
+  }
+  if (paused) { pausedFor += performance.now() - pausedAt; paused = false; }
+  last = 0;
+  pump();
+  wake();
+});
+</script>
+</body>
+</html>
