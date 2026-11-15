@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-15T04:49:14Z
-updated_at: 2026-11-15T05:01:19Z
+updated_at: 2026-11-15T05:01:33Z
 parent: stimming-guw5
 ---
 
@@ -18,7 +18,7 @@ Tom, 2026-11-14: "We need to bring the quality up to the ones we had before plea
 - [x] The station
 - [x] East 12th in snow
 - [x] Check at 1280 x 800 and 375 x 812; cards 1 to 8 unchanged
-- [ ] Stills to Tom
+- [x] Stills to Tom
 - [x] Commit and push
 
 ## Gaps against cards 1 to 8
