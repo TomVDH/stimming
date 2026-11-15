@@ -74,17 +74,17 @@ Drift: none known. The page keeps its own value noise, gradient noise and Vorono
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 1022 | The page: CSS, markup, vignette, one module script |
+| `index.html` | 1033 | The page: CSS, markup, vignette, one module script |
 <!-- /gen:files -->
 
 ## Render pipeline
 
 | Pass | Target | Shader | Does |
 |---|---|---|---|
-| 1. Field | 512 x 512 RGBA16F, ping-pong, wraps | `FIELD_FS` (`:260`) | Cools the breaks, blanks texels that wrap round the window, adds up to 8 stamps a pass |
-| 2. Scene | Full-size RGBA16F | `SCENE_FS` (`:303`) | Plates and seams (Voronoi), fine cracks, ropes, breaks; black-body light; the dusk sky in the glass |
+| 1. Field | 512 x 512 RGBA16F, ping-pong, wraps | `FIELD_FS` (`:263`) | Cools the breaks, blanks texels that wrap round the window, adds up to 8 stamps a pass |
+| 2. Scene | Full-size RGBA16F | `SCENE_FS` (`:306`) | Plates and seams (Voronoi), fine cracks, ropes, breaks; black-body light; the dusk sky in the glass |
 | 3. Bloom | glow.js chain | `bloomChain` | Threshold 0.9; 5 levels, 3 on Low |
-| 4. Frame | Canvas | `COMP_FS` (`:476`) | Heat shimmer from the bloom, bloom add, grade.js vignette and grain, output.js film curve |
+| 4. Frame | Canvas | `COMP_FS` (`:479`) | Heat shimmer from the bloom, bloom add, grade.js vignette and grain, output.js film curve |
 
 The field lives in the lava's own frame: the view moves over it by `drift`, so the creep needs no advection.
 The window is 16 world units a side; the view always fits inside it with a margin.
@@ -108,18 +108,18 @@ Temperature model: emission is Planck at 650, 540 and 430 nm, red 1 at 1300 K. S
 |---|---|
 | Graph | `audioKit({ noiseSeconds: 4 })` |
 | Engine | Raw Web Audio |
-| Voices | Bed: lowpassed noise rumble, a 210 Hz grumble and a 43 Hz sine, breathing on a 0.09 Hz wave, louder with heat, surge and a fed well. Crack: highpass snap, glass slivers (two detuned partials), low falling thump. Tear: crackle in step with the drag. Blorp: a gulp as a well feeds. Ticks: cooling skin clicks, more after each break. Surge: a deep falling thump and a run of cracks across the stereo field |
+| Voices | Bed: lowpassed noise rumble, a 210 Hz grumble and a 43 Hz sine, breathing on a 0.09 Hz wave, louder with heat, surge and a fed well; about -27 dBFS RMS at default heat (offline render, 2026-11-15). Crack: highpass snap, glass slivers (two detuned partials), low falling thump. Tear: crackle in step with the drag. Blorp: a gulp as a well feeds. Ticks: cooling skin clicks, more after each break. Surge: a deep falling thump and a run of cracks across the stereo field |
 | Sleep | The bed fades with the flow; the kit suspends when the loop stops |
 
 ## Quality and performance
 
 | | |
 |---|---|
-| Pixel ratio | `detail({ maxDpr: 2, budget: 2.4e6 })` (`:524`) |
+| Pixel ratio | `detail({ maxDpr: 2, budget: 2.4e6 })` (`:528`) |
 | Slow-frame step | `detail()`; it reads only frames at the full rate |
-| Idle | Lively (a hand, a surge, input in the last 3 s): every frame. At rest: 24 frames a second. After 60 s with no input the flow stalls over about 10 s; once the last break has cooled (3 cooling times), the loop sleeps |
+| Idle | Lively (a hand, a surge, input in the last 3 s): every frame. At rest: 24 frames a second. A mouse hover keeps the flow awake at that rate. After 60 s with no input the flow stalls over about 10 s; once the last break has cooled (3 cooling times), the loop sleeps. Measured 2026-11-15: no draw calls from about 80 s after the last input |
 | Reduced motion | No creep, no seam cycles, no vents, no shimmer. Breaks still open and crust over |
-| Measured | 2026-11-15, Apple laptop, Quality High, 1984 x 1440 px: 120 fps (8.3 ms median frame interval) while held |
+| Measured | 2026-11-15, Apple laptop, Quality High, 1984 x 1440 px: 120 fps (8.3 ms median frame interval) while held. At rest: 24 frames a second (288 draw calls a second) |
 
 ## State and storage
 
@@ -130,7 +130,8 @@ Temperature model: emission is Planck at 650, 540 and 430 nm, red 1 at 1300 K. S
 
 ## Tests and QA
 
-No files in `tests/`. Checked in the browser pane on 2026-11-15: clean console, press, hold and drag with synthetic pointer events, Surge, Shuffle, the Settings sheet, 1280 x 800, 375 x 812 and 812 x 375. Tom has not listened to the sound yet.
+No files in `tests/`. Checked in the browser pane on 2026-11-15: clean console, press, hold and drag with synthetic pointer events, Surge, Shuffle, the Settings sheet, 1280 x 800, 375 x 812 and 812 x 375.
+Sound: a real click turned it on; the context ran and click, drag and Surge built their voices with no error. Levels came from an offline render: crack peak -9.5 dBFS, tick peak -22 dBFS, bed -27 dBFS RMS. Nobody has listened to it yet.
 
 ## Known issues
 

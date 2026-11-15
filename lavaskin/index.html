@@ -202,8 +202,9 @@ float gnoise(vec2 p) {
 // Plates are cells of a jittered grid; seams are the cell borders.
 const CELLS = `
 struct Cell { float d; vec2 n; vec2 c; vec2 id; vec2 nb; };
-// d: distance to the nearest border. n: the way to it.
-// c: the cell's centre point from here. id, nb: this cell and the cell over the border.
+// d is the distance to the nearest border; n points to it.
+// c points from here to the cell's centre point.
+// id is this cell; nb is the cell over that border.
 Cell plates(vec2 x) {
   vec2 ip = floor(x), fp = fract(x), mg = vec2(0.0), mr = vec2(0.0);
   float md = 8.0;
@@ -256,7 +257,9 @@ float cracks(vec2 x) {
 /* ---------- the field: breaks in the skin ---------- */
 // The field lives in the lava's own frame, so the flow needs no advection.
 // It wraps in a square window; texels that wrap round start blank.
-// r: melt (open lava). g: heat of the fresh lava. b: dome height. a: folds.
+// Red holds the melt: open lava, 0 to 1.
+// Green holds the heat of the fresh lava.
+// Blue holds the dome height; alpha holds the folds.
 const FIELD_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uPrev;
@@ -289,7 +292,7 @@ void main() {
     float r = b.x * (1.0 + 0.3 * (gnoise(X * 2.6) - 0.5) + 0.26 * (noise(X * 7.0) - 0.5)) + 0.07 * min(1.0, b.x / 0.3) * (noise(X * 13.0 + 5.0) - 0.5);
     r = max(r, 0.02);
     // Melt is open lava; the heat holds a plateau in the middle.
-    f.r = max(f.r, b.y * (1.0 - smoothstep(0.45 * r, r, d)));
+    f.r = max(f.r, b.y * (1.0 - smoothstep(0.65 * r, r, d)));
     f.g = max(f.g, b.z * (1.0 - smoothstep(0.2 * r, 1.1 * r, d)));
     f.b = min(1.0, f.b + b.w * exp(-d * d / (r * r * 0.7)));
     // The skin buckles into folds in a ring outside the break.
@@ -380,7 +383,7 @@ void main() {
   pc += 1.1 * (vec2(noise(pc * 0.35 + 1.3), noise(pc * 0.35 + 8.1)) - 0.5);
   float d2 = cracks(pc);
   float line2 = 1.0 - smoothstep(0.0, 0.05, d2);
-  tSeam = max(tSeam - 0.3 * line2 * exp(-out1 / rimW), 0.0);
+  tSeam = max(tSeam - 0.3 * line2 * (1.0 - mSeam) * exp(-out1 / rimW), 0.0);
   float thin = smoothstep(0.55, 0.8, gnoise(P * 0.42 + 13.0));
 
   /* ropes: each plate folds its skin across its own flow line */
@@ -406,7 +409,7 @@ void main() {
   // Cracks in the forming skin show the hotter lava beneath.
   float crk = (1.0 - smoothstep(0.0, 0.08 + 0.1 * melt, d2 + rag * 5.2)) * smoothstep(0.95, 0.75, melt);
   // Not every border splits: the network stays broken and uneven.
-  crk *= 0.3 + 0.7 * smoothstep(0.25, 0.65, noise(P * 2.2 + 3.0));
+  crk *= 0.15 + 0.85 * smoothstep(0.35, 0.7, gnoise(P * 1.6 + 3.0));
   tBreak *= 1.0 - 0.75 * crk;
   float liquid = smoothstep(0.55, 0.9, melt) * onB;
   float Tb = Tbase + 200.0 * hb;
@@ -417,7 +420,7 @@ void main() {
   float mol = max(mSeam, liquid);
   // Open lava streaks as it moves: thin cooler veins.
   float vn = abs(gnoise(P * 6.0 + vec2(uClock * 0.06, 0.0)) * 2.0 - 1.0);
-  Ts -= 35.0 * (1.0 - smoothstep(0.0, 0.2, vn)) * mol;
+  Ts -= 22.0 * (1.0 - smoothstep(0.0, 0.16, vn)) * mol;
 
   /* height: swells, plate lips, ropes, cracks and domes */
   float base = 0.06 * gnoise(P * 0.55 + 2.0) + 0.02 * gnoise(P * 2.8 + 7.0) + 0.07 * bul;
@@ -429,7 +432,7 @@ void main() {
   // The forming skin wrinkles while it is still soft.
   h += 0.016 * (1.0 - abs(noise(P * 9.0) * 2.0 - 1.0)) * melt * (1.0 - melt) * onB;
   // Fine cracks score the young skin; old skin keeps few.
-  float young = max(exp(-out1 / 0.12) * open, onB * (1.0 - liquid));
+  float young = max(exp(-out1 / 0.12) * open, smoothstep(0.03, 0.3, melt) * (1.0 - liquid));
   h -= 0.0025 * line2 * lip * (1.0 - onB) * (0.05 + 0.95 * max(young, thin));
   if (uLevel > 0.5) h += 0.002 * noise(P * 38.0) + 0.001 * noise(P * 90.0);
   h = mix(h, base - 0.002, mol);
@@ -446,7 +449,7 @@ void main() {
   float Fr = 0.05 + 0.95 * pow(1.0 - NV, 5.0);
   // A thin oxide film tints fresh glass blue and gold.
   vec3 film = 0.65 + 0.35 * cos(6.2832 * (1.3 * noise(P * 1.7 + 2.0) + vec3(0.0, 0.33, 0.67)));
-  vec3 refl = sky(R) * uSheen * gloss * mix(vec3(1.0), film, 0.5 * young);
+  vec3 refl = sky(R) * uSheen * gloss * mix(vec3(1.0), film, 0.22 * young);
   vec3 L = SKYB, Hh = normalize(L + V);
   float a2 = mix(0.32, 0.14, young);
   a2 *= a2;
@@ -519,7 +522,8 @@ function clearField() {
 }
 
 /* ---------- layout ---------- */
-// unit: CSS pixels per world unit. The view must fit in the field window.
+// unit is CSS pixels per world unit.
+// The view must fit inside the field window.
 let size = { w: 1, h: 1, dpr: 1 }, unit = 100;
 const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { resize(); if (ready) draw(); } });
 function resize() {
@@ -697,7 +701,8 @@ addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !ptr); })
 const kit = audioKit({ noiseSeconds: 4 });
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 const panOf = x => clamp((x / size.w) * 2 - 1, -1, 1) * 0.7;
-// cool: fresh skin that still ticks as it cools. well: a fed well, 0 to 1.
+// cool counts fresh skin that still ticks as it cools.
+// well is a fed well, 0 to 1; wellS follows it smoothly.
 let cool = 0, well = 0, wellS = 0;
 // Noise through a filter, with a fast attack and an exponential fall.
 function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
@@ -816,8 +821,8 @@ function tick() {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
   const at = ac.currentTime + Math.random() * 0.02, pan = (Math.random() * 2 - 1) * 0.7;
-  burst(ac, at, { f: 2500 + Math.random() * 3500, q: 6, dur: 0.004 + Math.random() * 0.005, level: 0.12 * jit(0.4), pan });
-  if (Math.random() < 0.35) shard(ac, at, { f: 3800 + Math.random() * 3000, dur: 0.03 + Math.random() * 0.04, level: 0.016, pan });
+  burst(ac, at, { f: 2500 + Math.random() * 3500, q: 4, dur: 0.004 + Math.random() * 0.005, level: 0.35 * jit(0.4), pan });
+  if (Math.random() < 0.5) shard(ac, at, { f: 3800 + Math.random() * 3000, dur: 0.03 + Math.random() * 0.04, level: 0.03, pan });
 }
 // The bed: a low rumble that breathes, a mid grumble and a sub tone.
 let bed = null;
@@ -858,9 +863,11 @@ function soundStep(dt) {
   if (!ac || !kit.noise) return;
   bed ||= bedVoice(ac);
   const t = ac.currentTime, k = alive * (0.5 + heatE);
-  bed.low.gain.setTargetAtTime(0.16 * k + 0.5 * surge + 0.25 * wellS, t, 0.3);
-  bed.grum.gain.setTargetAtTime(0.05 * k + 0.12 * surge + 0.12 * wellS, t, 0.3);
-  bed.subG.gain.setTargetAtTime(0.05 * k + 0.12 * surge, t, 0.4);
+  // Lowpassed noise keeps about a twentieth of its level, so the gains run high.
+  // At default heat the bed sits near -27 dBFS; a surge lifts it about 8 dB.
+  bed.low.gain.setTargetAtTime(0.9 * k + 1.6 * surge + 0.6 * wellS, t, 0.3);
+  bed.grum.gain.setTargetAtTime(0.25 * k + 0.35 * surge + 0.25 * wellS, t, 0.3);
+  bed.subG.gain.setTargetAtTime(0.03 * k + 0.07 * surge, t, 0.4);
   if (Math.random() < (0.25 * alive + 2.6 * cool) * dt) tick();
   if (wellS > 0.05 && Math.random() < (2 + 4 * wellS) * dt) blorp(ac, t + 0.01, { f: 70 + 40 * Math.random(), level: 0.18 + 0.2 * wellS, pan: ptr ? panOf(ptr.x) : 0 });
 }
