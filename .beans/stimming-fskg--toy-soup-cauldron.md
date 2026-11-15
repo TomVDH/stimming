@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-15T10:16:46Z
+updated_at: 2026-11-15T10:28:23Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -16,14 +16,14 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 
 ## Checklist
 - [x] Page skeleton on Bar v2 (intro fallback, stage, vignette)
-- [ ] Camera and framing for wide, tall and short stages
+- [x] Camera and framing for wide, tall and short stages
 - [x] Pot, fire and background
 - [x] CPU fluid: stir with weight, vortex, damping by thickness
 - [x] Dye field: OKLab tint, mixing, fat, glitter
-- [ ] Soup surface: vortex dip, ripples, bubbles, gloss, submerged things
+- [x] Soup surface: vortex dip, ripples, bubbles, gloss, submerged things
 - [x] Things: throw, splash, bob, cook, break up, tint (ten kinds and their pieces)
-- [ ] Steam volume and puffs
-- [ ] Spoon and keyboard stir
+- [x] Steam volume and puffs
+- [x] Spoon and keyboard stir
 - [x] Clear (drain and refill) and Reset
 - [ ] Sound: simmer, pops, plops, stir scrape, squeak, drain (audioKit, muted by default)
 - [ ] Quality: detail level, pixel ratio, slow-frame step, idle simmer at 30 fps, stop when hidden, reduced motion
