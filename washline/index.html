@@ -69,6 +69,7 @@ import { makeLook } from './cloth.js';
 import alley from './places/alley.js';
 import garden from './places/garden.js';
 import beach from './places/beach.js';
+import strangereal from './places/strangereal.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -83,7 +84,7 @@ const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
 const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-const PLACES = { alley, garden, beach };
+const PLACES = { alley, garden, beach, strangereal };
 // The address (?place=) or the last visit picks the first place.
 const firstPlace = (() => {
   let saved = null;
@@ -142,7 +143,7 @@ composer.addPass(new OutputPass());
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
   uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uB: { value: 0 },
-  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() },
+  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uWarm: { value: 1 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -150,7 +151,7 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud; uniform vec2 uDrift;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud, uWarm; uniform vec2 uDrift;
       float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float vn(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -163,8 +164,8 @@ const sky = new THREE.Mesh(
         float e = max(ray.y, 0.0), cs = max(dot(ray, uSun), 0.0);
         vec3 col = mix(uHor, uZen, pow(e, 0.45));
         // A low sun warms the sky around it and along the horizon.
-        col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * (1.0 - e));
-        col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e);
+        col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * uWarm * (1.0 - e));
+        col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e) * mix(0.35, 1.0, uWarm);
         vec3 sun = uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
         // Cumulus on a flat deck: grey bellies, bright tops, a lit rim near the sun.
         float d = 0.0;
@@ -213,6 +214,7 @@ function buildPlace(id) {
   P.place = pl;
   try { localStorage.setItem('stimming.washline.place', pl.id); } catch { /* storage can be blocked */ }
   skyU.uCloud.value = pl.sky.clouds || 0;
+  skyU.uWarm.value = pl.sky.warm ?? 1;
   P.sky = { zen: v3(lin(pl.sky.zen)), hor: v3(lin(pl.sky.hor)), haze: v3(lin(pl.sky.haze)) };
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
@@ -315,6 +317,8 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
+  // A place may set its own depth range; the rest share this one.
+  camera.near = 0.1; camera.far = 900;
   P.place.frame(camera, w / h);
   kick();
 }

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T04:57:58Z
+updated_at: 2026-11-15T05:29:40Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -121,7 +121,7 @@ Tom asked for a full redo. The checklists above are superseded; the old pages st
 - [x] R2: hands on: reel, + Piece, unclip and fly, cloth drag, Release
 - [x] R3: backlit glow; Alley sign-off (Tom, 2026-11-10)
 - [x] R4: Garden; sign-off (Tom, 2026-11-14)
-- [ ] R5: Beach; sign-off
+- [x] R5: Beach; sign-off (Tom, 2026-11-14)
 - [ ] R6: Strangereal (fully new, jet furball); sign-off
 - [ ] R7: sound: reel, peg click, whoosh, place ambience
 - [ ] R8: Bar v2 Settings, persistence, QA (1280, 375 × 812, 812 × 375; tests/bar-v2.html)
@@ -159,3 +159,10 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 
 - Whitewashed fisherman's hut with a blue door to a weathered post on the pebbles; caique on the beach, rocky headlands, turquoise water, the sun low over the sea.
 - Tom: do not forget an epic Strangereal (R6).
+
+
+### Strangereal, epic (Tom, 2026-11-14)
+
+- Blue hour through a long lens: layered skylines stacked to the horizon, furballs far off, thin contrails, the first city lights.
+- Rare distant bursts: now and then a far hit with a flash, a smoke puff and debris trails.
+- Line on a tower roof from a stair bulkhead to an antenna mast.
