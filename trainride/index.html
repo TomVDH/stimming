@@ -591,6 +591,11 @@ const OUTU = {
   uDusk: { value: 0 },
   // How still the lakes lie, 0 breezy to 1 a mirror.
   uCalm: { value: 0 },
+  // Mist on the lakes and low cloud on the slopes, 0 to 1; the lake's height near the eye; the banks' drift clock.
+  uMist: { value: 0 },
+  uCloud: { value: 0 },
+  uLakeY: { value: -12 },
+  uMistT: { value: 0 },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -687,7 +692,7 @@ vec3 skyCol(vec3 d) {
   dc = mix(dc, vec3(0.42, 0.45, 0.5) * (0.75 + 0.35 * up), uRain * 0.85);
   return mix(n, dc, uDay);
 }
-float hazeAmt(vec3 P) {
+float hazeBase(vec3 P) {
   float dist = length(P - cameraPosition);
   // Night: valley haze with a 90 m scale height, and mist on the water.
   float k = 1.0 / 90.0, h0 = cameraPosition.y + 50.0, h1 = max(P.y + 50.0, 0.0), dh = h1 - h0;
@@ -701,13 +706,65 @@ float hazeAmt(vec3 P) {
   return mix(night, day, uDay);
 }
 // Haze takes the horizon colour: warmed over each town at night, lit by the sun by day.
-vec3 hazeCol(vec3 d, vec3 P) {
+vec3 hazeBaseCol(vec3 d, vec3 P) {
   vec3 hz = skyCol(normalize(vec3(d.x, max(d.y, 0.0) * 0.4 + 0.02, d.z)));
   vec3 n = hz * 0.7;
   if (uDay < 0.99) for (int i = 0; i < ${NG}; i++) n += uGC[i].rgb * uGP[i].w * 0.3 * exp(-length(P.xz - uGP[i].xz) / 110.0);
   vec3 dy = hz * 0.92 + vec3(1.0, 0.9, 0.75) * pow(max(dot(d, uSun), 0.0), 8.0) * 0.25 * (1.0 - uRain);
   return mix(n, dy, uDay);
-}`;
+}
+// Mist and low cloud: uMist lies on the lakes, uCloud hangs on the slopes.
+// uLakeY is the lake's height near the eye; uMistT drifts the banks.
+uniform float uMist, uCloud, uLakeY, uMistT;
+float mHash(vec2 p) { p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 19.19); return fract(p.x * p.y); }
+float mNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mHash(i), mHash(i + vec2(1.0, 0.0)), u.x), mix(mHash(i + vec2(0.0, 1.0)), mHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// Banks: two octaves, slowly drifting down the valley.
+float mBank(vec2 p) { return mNoise(p) * 0.65 + mNoise(p * 2.7 + 5.3) * 0.35; }
+float mistAmt(vec3 P) {
+  if (uMist + uCloud <= 0.0) return 0.0;
+  vec3 C = cameraPosition, D = P - C;
+  float dist = length(D), tau = 0.0;
+  if (uMist > 0.0) {
+    // The lake mist thins with a 14 m scale height above the water.
+    float k = 1.0 / 14.0, h0 = max(C.y - uLakeY, 0.0), h1 = max(P.y - uLakeY, 0.0), dh = h1 - h0;
+    float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+    // It clears near the train, so the bank beside the line stays sharp.
+    float bank = smoothstep(0.3, 0.75, mBank(P.xz * 0.0035 + vec2(uMistT * 0.012, uMistT * 0.004)));
+    tau += uMist * 0.0035 * avg * max(dist - 50.0, 0.0) * (0.2 + 0.8 * bank);
+  }
+  if (uCloud > 0.0) {
+    // Low cloud fills a band 550 to 1000 m above the eye.
+    float c0 = 550.0, c1 = 1000.0, ya = C.y, yb = P.y;
+    float lo = max(min(ya, yb), c0), hi = min(max(ya, yb), c1);
+    if (hi > lo) {
+      float len = abs(yb - ya) > 1.0 ? (hi - lo) / abs(yb - ya) * dist : dist;
+      // The cloud's texture is read where the ray crosses the middle of the band.
+      vec3 Q = C + D * clamp((0.5 * (lo + hi) - ya) / (yb - ya + 1e-4), 0.0, 1.0);
+      float n = smoothstep(0.35, 0.7, mBank(Q.xz * 0.0012 + vec2(uMistT * 0.004, 0.0)));
+      // The band's edges are soft: the cloud thickens toward its middle.
+      float mid = 1.0 - abs(0.5 * (lo + hi) - 0.5 * (c0 + c1)) / (0.5 * (c1 - c0));
+      tau += uCloud * 0.008 * len * n * (0.3 + 0.7 * mid);
+    }
+  }
+  return 1.0 - exp(-tau);
+}
+// Haze and mist together: mist on top of the haze.
+float hazeAmt(vec3 P) { return 1.0 - (1.0 - hazeBase(P)) * (1.0 - mistAmt(P)); }
+vec3 hazeCol(vec3 d, vec3 P) {
+  vec3 hc = hazeBaseCol(d, P);
+  float m = mistAmt(P);
+  if (m <= 0.0) return hc;
+  float h = hazeBase(P);
+  // Mist is paler than haze: grey-white by day, toward the sun a little warm.
+  float l = dot(hc, vec3(0.2126, 0.7152, 0.0722));
+  vec3 day = mix(hc, vec3(l), 0.65) * 1.2 + sunC() * 0.04 * pow(max(dot(d, uSun), 0.0), 3.0);
+  vec3 mc = mix(hc * 0.95, day, uDay);
+  return mix(hc, mc, m / max(m + h * (1.0 - m), 1e-4));
+}
+`;
 
 /* Sky dome: stars and moonlit cloud by night, cumulus by day. */
 // The dome follows the camera, so a long ride never leaves it.
@@ -752,6 +809,10 @@ const sky = (() => {
         // Far cloud sinks into the haze at the horizon.
         c = mix(c, mix(nightC, dayC, uDay), cl * 0.95 * smoothstep(0.0, 0.12, d.y));
       }
+      // Low cloud and mist hide the sky behind them too.
+      vec3 Pm = cameraPosition + d * 6000.0;
+      float mm = mistAmt(Pm);
+      if (mm > 0.0) c = mix(c, hazeCol(d, Pm), mm);
       gl_FragColor = vec4(c, 1.0);
     }`,
   }));
@@ -4746,21 +4807,24 @@ function frame(w, h, pr) {
 let time = 0, camX = qs.has('x') ? +qs.get('x') : S0('Zürich Enge') - 1, speed = 0, target = 27;
 // Each weather sets the rain in the air, the water on the pane and the pane fog.
 // air above 1 only thickens the streaks; the sky and haze cap at 1.
+// mist lies on the lakes outside; cloud hangs low on the slopes.
 const MODES = {
-  clear: { air: 0, wet: 0, fog: 0 },
-  drizzle: { air: 0.35, wet: 0.45, fog: 0.1 },
-  rain: { air: 1, wet: 1, fog: 0 },
-  downpour: { air: 1.8, wet: 1.2, fog: 0.15 },
-  mist: { air: 0.1, wet: 0.25, fog: 0.55 },
-  fog: { air: 0.45, wet: 0.45, fog: 0.85 },
+  clear: { air: 0, wet: 0, fog: 0, mist: 0, cloud: 0 },
+  drizzle: { air: 0.35, wet: 0.45, fog: 0.1, mist: 0.15, cloud: 0.45 },
+  rain: { air: 1, wet: 1, fog: 0, mist: 0.1, cloud: 0.65 },
+  downpour: { air: 1.8, wet: 1.2, fog: 0.15, mist: 0.2, cloud: 0.85 },
+  // The pane fogs less than it did, so the mist outside reads.
+  mist: { air: 0.1, wet: 0.25, fog: 0.15, mist: 1, cloud: 0.4 },
+  fog: { air: 0.45, wet: 0.45, fog: 0.35, mist: 1.6, cloud: 1 },
 };
 let wetMul = 1;
-let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0;
+let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0, mistV = 0, cloudV = 0;
 // Five hours (Tom, 2026-11-10). day is the daylight share; sun is the direction to the sun.
 // tint colours the sun; low colours the horizon, and dusk sets how strong that band is.
 // calm stills the lakes: the wind drops at dawn and dusk, so they mirror the shore.
+// mist is the lake mist the hour brings in any weather: a thin veil at dawn.
 const HOURS = {
-  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4, calm: 0.75 },
+  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4, calm: 0.75, mist: 0.3 },
   noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0, calm: 0.1 },
   afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1, calm: 0 },
   evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85, calm: 0.8 },
@@ -5132,6 +5196,15 @@ function update(dt, pace) {
   // No rain falls in a tunnel.
   OUTU.uRain.value = Math.min(1, air) * (1 - tunT);
   OUTU.uPour.value = air * (1 - tunT);
+  // Mist rolls in and lifts slowly; a tunnel holds none.
+  const km = Math.min(1, dt * 0.15);
+  mistV += (Math.max(mode.mist, hourT.mist || 0) - mistV) * km;
+  cloudV += (mode.cloud - cloudV) * km;
+  OUTU.uMist.value = mistV * (1 - tunT);
+  OUTU.uCloud.value = cloudV * (1 - tunT);
+  OUTU.uMistT.value = time;
+  // The lake's height in the route column at the eye.
+  OUTU.uLakeY.value = THREE.DataUtils.fromHalfFloat(ROUTE.lk[Math.floor((((camX % TILE) + TILE) % TILE) / TILE * ROUTE.w) % ROUTE.w]);
   eye.lerp(eyeT, Math.min(1, dt * 7));
   place();
 }
@@ -5236,7 +5309,7 @@ return {
   setMode(v, now) {
     mode = MODES[v] || MODES.rain;
     mk = now ? 1 : 0;
-    if (now) { air = mode.air; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
+    if (now) { air = mode.air; mistV = Math.max(mode.mist, hourT.mist || 0); cloudV = mode.cloud; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
   },
   setWet(k) { wetMul = k; mk = 0; },
   setExpress(on) { express = on; stopX = null; if (on) dwell = 0; },
