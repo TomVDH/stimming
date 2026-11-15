@@ -26,5 +26,7 @@ Today the root is 1.25 m against a 1.6 m wing tip and sits 35 cm aft. The 0.6 m 
 - The root ring is the wing tip's own section at z = 25. The offset to the plain blade fades out by u = 0.3, inside the bend.
 - `TIP` and `LET` follow `WINGLET`, so the nav light, the strobe and the ray tests moved with it.
 - QA (headless shell, ANGLE D3D11): 60 fps at 1280 and 375 px; no console errors.
-- Out of scope (Tom's pick): the blade's inner face still reads darker than the wing.
+- Dark inner face (Tom: lighten it): the paint's sky map turns every downward direction into horizon sky, so nothing lit the blade from below.
+- A hemisphere light now adds light up from land and cloud: albedo 0.1 to 0.7 by the Cloud setting, times 0.8 for the air, times 4 for bounce off the wing and haze.
+- A 20x test lit the blade fully, so its normals are right.
 

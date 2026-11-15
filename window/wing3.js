@@ -310,6 +310,10 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   scene.add(sun, sun.target);
   const flashL = new THREE.AmbientLight(0xb8bdff, 0);
   scene.add(flashL);
+  // The paint's sky map holds no ground, so light from below comes from here.
+  // Sunlit cloud and land below light the winglet's inner face and the undersides.
+  const bounce = new THREE.HemisphereLight(0x000000, 0x000000, 1);
+  scene.add(bounce);
   // The nearest bright flash lights the skin from its own side.
   // A flash is a glowing cloud kilometres wide, not a point.
   // So most of its light is soft fill, which gives no hot spots.
@@ -368,7 +372,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
+    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, cover = 0.5, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
@@ -444,6 +448,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // The fog takes the outside pass's murk colour, so the wing sinks into the same grey.
       const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
       const hc = hz.map((v, i) => 0.5 * (v + zc[i]) + sky.h.floor[i]), gy = 0.3 * hc[0] + 0.5 * hc[1] + 0.2 * hc[2];
+      // Light up from below: the sun and the sky on land and cloud, with its albedo.
+      // Land and sea return about a tenth; a cloud deck about seven tenths.
+      // The air between keeps about four fifths.
+      // Four times that stands in for bounce off the wing and bright haze.
+      const A = 4 * (0.1 + 0.6 * cover) * 0.8, sunUp = Math.max(s.y, 0) * veil / 1.5;
+      bounce.groundColor.setRGB(...hc.map((v, i) => A * (sl[i] * sunUp + Math.PI * v * (1 - 0.6 * storm))));
       const k = (0.55 - 0.25 * storm) * 1.3;
       scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
       // The tip lights ride the bent tip.
