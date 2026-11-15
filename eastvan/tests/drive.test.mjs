@@ -22,7 +22,8 @@ test('rect cut stays inside', () => {
 
 test('disc still builds', () => {
   const d = driveParts(data, { kind: 'disc', r: 58 });
-  assert.equal(d.POKES.filter(p => p.id.startsWith('shop')).length, 24);
+  // 24 before the SW block's frontage counted (reference notes, 2026-11-14).
+  assert.equal(d.POKES.filter(p => p.id.startsWith('shop')).length, 29);
   assert.equal(d.LAMPS.length, 3);
 });
 
@@ -78,14 +79,24 @@ test('shops carry their real names', () => {
 
 test('frontages take the style of their era', () => {
   const { FACES } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
-  const era = y => FACES.find(f => f.year === y)?.era;
+  // Frontages with a reference note take the note's style instead.
+  const era = y => FACES.find(f => f.year === y && !f.noted)?.era;
   assert.equal(era(1920), 'early');
   assert.equal(era(1962), 'postwar');
-  assert.equal(era(2002), 'modern');
+  assert.equal(era(1983), 'modern');
   for (const f of FACES) assert.ok(['early', 'postwar', 'modern'].includes(f.era));
 });
 
 test('The Highland carries its nameplate', () => {
   const { PARTS } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
   assert.ok(PARTS.some(q => q.t === 'sign' && q.kind === 'plate' && /THE HIGHLAND/.test(q.text) && /1911/.test(q.text)));
+});
+
+test('reference notes override the guessed facades', () => {
+  const { FACES } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const at = (side, n) => FACES.find(f => f.side === side && f.x0 <= n && f.x1 >= n);
+  assert.equal(at(-1, 25)?.wall, 'brickDark', 'The Highland is dark brick');
+  assert.equal(at(-1, -5)?.fascia, 'navy', 'the SE corner shop has a navy fascia');
+  assert.equal(at(1, -40)?.era, 'modern', 'the SW block is modern');
+  assert.equal(at(1, 8)?.wall, 'stucco', 'the NW corner is white stucco');
 });

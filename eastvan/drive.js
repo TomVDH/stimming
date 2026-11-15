@@ -52,6 +52,20 @@ const TRADE = {
   'Comparison Goods': { stripes: ['binBlue', 'cream'], icon: (x, y, z) => [{ t: 'ring', p: [x, y, z], r: 0.42, tube: 0.07, c: 'bulbPink', L: A, ax: 'z' }, cyl([x, y, z], 0.14, 0.04, 'bulbPink', A, { ax: 'z' })] },
   'Service Commercial': { stripes: ['mustard', 'cream'], icon: (x, y, z) => [box([x - 0.45, y, z], [0.24, 0.8, 0.04], 'bulbPink', A), box([x, y, z], [0.24, 0.8, 0.04], 'white', A), box([x + 0.45, y, z], [0.24, 0.8, 0.04], 'bulbTeal', A)] },
 };
+// Hand notes on the corner's frontages, taken by eye from street-level
+// reference (2024). side 1 is the Drive's west side, -1 its east side;
+// n0 to n1 is the stretch of the Drive the note covers, in data metres.
+const NOTES = [
+  { side: 1, n0: -2, n1: 17, wall: 'stucco', era: 'postwar', band: 'greyBand', fascia: 'greyBand' },
+  { side: 1, n0: 17, n1: 28.2, wall: 'stucco', era: 'early' },
+  { side: 1, n0: 28.2, n1: 37, wall: 'stucco', era: 'early', bays: true, fascia: 'crow' },
+  { side: 1, n0: -60, n1: -20.5, wall: 'tan', trim: 'sage', era: 'modern' },
+  { side: -1, n0: -16, n1: 7, wall: 'cream', era: 'postwar', fascia: 'navy' },
+  { side: -1, n0: 16.5, n1: 33.4, wall: 'brickDark', trim: 'cream', era: 'early' },
+  { side: -1, n0: 33.4, n1: 41.6, wall: 'lilac', era: 'early' },
+  { side: -1, n0: 41.6, n1: 51, wall: 'cream', era: 'postwar', awning: 'awnYellow' },
+];
+const noteFor = (side, n) => NOTES.find(x => x.side === side && n >= x.n0 && n <= x.n1);
 // A frontage's era from its build year. With none, a low shop row reads early.
 const eraOf = y => (!y ? null : y < 1940 ? 'early' : y < 1980 ? 'postwar' : 'modern');
 const ERA_WALL = { early: ['brick', 'mustard', 'teal', 'tomatoDark', 'cream'], postwar: ['cream', 'blossom2', 'hydrangea', 'verge'], modern: ['garage', 'binBlue', 'found'] };
@@ -61,13 +75,14 @@ const WALL = ['brick', 'teal', 'mustard', 'hydrangea', 'cream', 'tomatoDark', 'g
 // One shop bay: glass, a door, a sign board with its icon, a striped awning.
 // zf is the wall. dir is 1 where the shop faces east, -1 where it faces west.
 // name: the shop's name on record, or null. era: early, postwar or modern.
-function shop(i, x0, x1, zf, cat, dir, name = null, era = 'early') {
+// note: the reference note for this frontage, or null.
+function shop(i, x0, x1, zf, cat, dir, name = null, era = 'early', note = null) {
   const w = x1 - x0, cx = (x0 + x1) / 2, t = TRADE[cat] || TRADE['Service Commercial'], sw = 'shop' + i, n = Math.max(1, Math.round(w / 4.2)), z = d => zf + dir * d;
   const lit = { k: 'pane', sw, on: true, gain: 1.15 }, out = [
     box([cx, 0.45, z(0.04)], [w - 0.3, 0.6, 0.1], 'found', A),
     box([cx, 1.95, z(0.03)], [w - 0.5, 2.3, 0.06], 'glass', A, lit),
     box([cx, 1.3, z(0.07)], [1, 2.3, 0.06], t.stripes[0], A), box([cx, 2.05, z(0.1)], [0.6, 0.6, 0.03], 'glass', A, lit),
-    box([cx, 3.62, z(0.08)], [w - 0.3, 1.1, 0.14], 'roof', A),
+    box([cx, 3.62, z(0.08)], [w - 0.3, 1.1, 0.14], note?.fascia || 'roof', A),
     // A named shop shows its name; an unnamed one shows its trade's icon.
     ...(name
       ? [{ t: 'sign', kind: 'shop', text: /^vacant$/i.test(name) ? 'FOR LEASE' : name, style: cat, p: [cx, 3.62, z(0.16)], s: [w - 0.5, 0.86], nrm: [0, dir], L: A }]
@@ -77,9 +92,10 @@ function shop(i, x0, x1, zf, cat, dir, name = null, era = 'early') {
   // Early shops wear striped awnings, post-war a flat canopy, modern a thin glass one.
   if (era === 'early') {
     const strips = Math.max(1, Math.round((w - 0.4) / 0.6)), sw0 = (w - 0.4) / strips;
-    for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, t.stripes[j % 2]));
+    const stripes = note?.awning ? [note.awning, 'cream'] : t.stripes;
+    for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, stripes[j % 2]));
     out.push(box([x0 + 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A), box([x1 - 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A));
-  } else if (era === 'postwar') out.push(box([cx, 3.08, z(0.8)], [w - 0.1, 0.16, 1.6], t.stripes[0], A));
+  } else if (era === 'postwar') out.push(box([cx, 3.08, z(0.8)], [w - 0.1, 0.16, 1.6], note?.awning || t.stripes[0], A));
   else out.push(box([cx, 3.1, z(0.7)], [w - 0.1, 0.06, 1.4], 'glass', A), box([cx, 3.14, z(1.38)], [w - 0.1, 0.12, 0.05], 'chrome', A));
   return out;
 }
@@ -226,20 +242,25 @@ export function driveParts(d, clip, lidar = null) {
     const cutOff = area(ring) < area(whole) - 0.5, pitched = b.roof !== 'Flat' && !cutOff && b.h > 4;
     // The lot under the building gives its build year; OpenStreetMap fills gaps.
     const mid0 = [(e0 + e1) / 2, (n0 + n1) / 2], lot = d.lots.find(l => inRing(mid0, l.ring));
-    const year = (lot && lot.year) || (b.start ? parseInt(b.start, 10) : null), era = eraOf(year) || ((+b.levels || 2) >= 4 ? 'postwar' : 'early');
-    const eraWall = ERA_WALL[era][i % ERA_WALL[era].length];
+    const year = (lot && lot.year) || (b.start ? parseInt(b.start, 10) : null);
+    let era = eraOf(year) || ((+b.levels || 2) >= 4 ? 'postwar' : 'early');
+    let eraWall = ERA_WALL[era][i % ERA_WALL[era].length];
+    // A reference note on this stretch of the Drive wins over the guess.
+    const sideOf = e1 < 0 && e1 > LOT_W - 1.6 ? 1 : e0 > 0 && e0 < LOT_E + 1.6 ? -1 : 0, note = sideOf ? noteFor(sideOf, (n0 + n1) / 2) : null;
+    if (note) { era = note.era; eraWall = note.wall; }
     // Measured roof cells inside this outline replace the guessed shape.
     // Cells under a metre are ground the scan took for roof.
     const own = (roofCells.get(b.id) || []).filter(p => p[2] > 1 && inRing(p, ring) && inside(p[0], p[1], 0.3));
     if (own.length >= 12) {
       const cells = smooth(own, lidar.cell, b.roof === 'Flat');
       const hs = cells.map(p => p[2]).sort((a, c) => a - c), top = hs[Math.floor(hs.length * 0.85)], eave = hs[Math.floor(hs.length * 0.1)];
-      const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0;
+      // A frontage stands within 1.6 m of the lot line.
+      const side = sideOf;
       const c = b.roof === 'Flat' ? (side ? eraWall : 'garage') : HOUSE[b.id % HOUSE.length];
       // The walls stand on the true outline to the eave; the measured roof sits above.
       add(poly(ring, 0.16, Math.max(0.5, eave - 0.3), c));
       add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'tar' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
-      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year });
+      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year, note });
       return;
     }
     if (pitched) {
@@ -250,10 +271,10 @@ export function driveParts(d, clip, lidar = null) {
         { t: 'roof', p: [at[0], at[1], at[2]], s: [span, rise, long + 0.5], over: 0.35, th: 0.16, courses: 4, c: 'roof', L: A, ax: alongX ? 'x' : 'z' });
       return;
     }
-    const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0, c = eraWall, h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
+    const side = sideOf, c = eraWall, h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
     // A flat roof gets a grey cap, so the wall colour stays on the walls.
     add(poly(ring, 0.16, h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
-    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year });
+    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year, note });
   });
   // Neighbours of one height and one building make one frontage.
   const faces = [];
@@ -276,16 +297,21 @@ export function driveParts(d, clip, lidar = null) {
     const cats = (units.length ? units : [{ cat: 'Service Commercial', name: null }]).slice(0, Math.max(1, Math.floor(w / 3.6)));
     cats.forEach((u, k) => {
       const x0 = f.x0 + w * k / cats.length, x1 = f.x0 + w * (k + 1) / cats.length;
-      add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era));
+      add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era, f.note));
       pokes.push({ id: 'shop' + shops, at: [(x0 + x1) / 2, 3.3, z(0.3)], r: 1.8 });
       acts['shop' + shops] = [['flip', 'shop' + shops, true]];
       shops++;
     });
-    FACES.push({ x0: f.x0, x1: f.x1, side: dir, era: f.era, year: f.year });
-    add(box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], 'cream', A));
+    FACES.push({ x0: f.x0, x1: f.x1, side: dir, era: f.era, year: f.year, wall: f.c, fascia: f.note?.fascia, noted: !!f.note });
+    const trim = f.note?.trim || 'cream';
+    add(box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], trim, A));
+    // A darker ground floor band, where the note gives one.
+    if (f.note?.band) add(box([mid, 2.2, z(0.02)], [w, 4.1, 0.05], f.note.band, A));
     // Early: a cornice, tall windows with sills. Post-war: a ribbon of glass per floor.
     // Modern: a glass wall with thin mullions.
-    if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], 'cream', A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], 'cream', A));
+    if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], trim, A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], trim, A));
+    // Bay windows stand out at both ends of the upper floors.
+    if (f.note?.bays) for (const x of [f.x0 + 1.1, f.x1 - 1.1]) for (let y = 5.9; y < f.h - 1; y += 3) add(box([x, y, z(0.45)], [1.7, 2.5, 0.9], f.c, A), box([x, y, z(0.92)], [1.1, 1.8, 0.05], 'glass', A, { k: 'pane', sw: 'up' + fi, on: true }));
     const cols = Math.max(1, Math.round(w / (f.era === 'modern' ? 1.6 : 2.7)));
     let any = false;
     for (let y = 5.7; y < f.h - 1.2; y += 3) {
