@@ -596,6 +596,7 @@ const OUTU = {
   uCloud: { value: 0 },
   uLakeY: { value: -12 },
   uMistT: { value: 0 },
+  uWet: { value: 0 },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -668,6 +669,8 @@ void landTile(vec2 xz, out vec4 a, out vec4 b) {
 const HAZE = /* glsl */`
 uniform vec3 uMoon, uSun, uSunTint, uSkyLow;
 uniform float uDay, uRain, uDusk;
+// How wet the ground is, 0 to 1: it lags the rain and dries slowly.
+uniform float uWet;
 uniform vec4 uGP[${NG}];
 uniform vec4 uGC[${NG}];
 // Day light: the sun and the blue sky; rain greys both.
@@ -1003,7 +1006,30 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Terrain shadow: a short march toward the sun at each pixel.
     float vSh = 1.0;
     if (uDay > 0.01 && dist > 60.0) vSh = sunShadow(vP);
+    // Grey ground is road, paving or roof: smooth, so it shines when wet.
+    float mxA = max(alb.r, max(alb.g, alb.b)), satA = (mxA - min(alb.r, min(alb.g, alb.b))) / max(mxA, 1e-4);
+    // Wet soil and grass darken.
+    alb *= 1.0 - 0.22 * uWet;
     vec3 c = litLand(vP, alb, N, ao, glowK, V, vSh);
+    if (uWet > 0.0) {
+      float smoothG = mix(0.55, 0.1, smoothstep(0.15, 0.45, satA));
+      // Mapped roads beside the line shine most.
+      smoothG = max(smoothG, (1.0 - smoothstep(0.3, 1.2, roadD(vP.xz))) * 0.8);
+      // Puddles stand in the hollows of flat ground near the line: few in grass, more on roads and bare earth.
+      // Their pattern fades before a pixel can span it.
+      float pq = 1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.3)));
+      float pt = mix(0.82, 0.7, smoothG);
+      float pud = smoothstep(0.99, 0.998, N.y) * smoothstep(pt, pt + 0.04, vnoise(vP.xz * 0.3) * 0.7 + vnoise(vP.xz * 1.1 + 3.1) * 0.3) * pq;
+      pud *= smoothstep(0.4, 0.9, uWet) * smoothstep(8.0, 20.0, -vP.z) * step(2.0, wd);
+      vec3 Nr = normalize(mix(N, vec3(0.0, 1.0, 0.0), pud));
+      vec3 Rw = reflect(-V, Nr);
+      Rw.y = abs(Rw.y);
+      float Fw = 0.02 + 0.98 * pow(1.0 - max(dot(Nr, V), 0.0), 5.0);
+      // Rough ground spreads its sheen thin; a puddle is a mirror over dark water.
+      vec3 sk = skyCol(Rw);
+      c += sk * Fw * smoothG * 0.6 * uWet * (1.0 - pud);
+      c = mix(c, c * 0.35 + sk * (0.1 + 0.9 * Fw), pud * 0.85);
+    }
     // Water: rippled on the river, calm on the lakes.
     // Lakes are flat; the coarse lake mask must not paint water up a cliff.
     float water = smoothstep(2.0, -2.0, wd) * smoothstep(0.985, 0.997, normalize(vN).y);
@@ -3434,8 +3460,10 @@ out.add(bed);
     // The slope is grass, with a little stone near its top.
     alb = mix(alb, vec3(0.08, 0.15, 0.04) * (0.85 + 0.3 * vnoise(vP.xz * 2.0)), smoothstep(-2.6, -3.4, vP.y));
   }
-  // Rain wets the bed.
-  alb *= 1.0 - 0.25 * uRain;`;
+  // Rain wets the bed: the stones darken and the sleepers take a sky sheen.
+  alb *= 1.0 - 0.3 * uWet;
+  float Fb = 0.02 + 0.98 * pow(1.0 - max(dot(N, -V), 0.0), 5.0);
+  glow += skyCol(reflect(V, N)) * Fb * uWet * 0.25 * uDay;`;
   for (const g of [top, slope]) {
     const m = new THREE.Mesh(g, solid(body));
     m.frustumCulled = false;
@@ -5196,6 +5224,9 @@ function update(dt, pace) {
   // No rain falls in a tunnel.
   OUTU.uRain.value = Math.min(1, air) * (1 - tunT);
   OUTU.uPour.value = air * (1 - tunT);
+  // The ground wets in about a minute of rain and dries over several.
+  const wetG = Math.min(1, air) > 0.2 ? Math.min(1, air) : 0;
+  OUTU.uWet.value += (wetG - OUTU.uWet.value) * Math.min(1, dt * (wetG > OUTU.uWet.value ? 0.05 : 0.008));
   // Mist rolls in and lifts slowly; a tunnel holds none.
   const km = Math.min(1, dt * 0.15);
   mistV += (Math.max(mode.mist, hourT.mist || 0) - mistV) * km;
@@ -5309,7 +5340,7 @@ return {
   setMode(v, now) {
     mode = MODES[v] || MODES.rain;
     mk = now ? 1 : 0;
-    if (now) { air = mode.air; mistV = Math.max(mode.mist, hourT.mist || 0); cloudV = mode.cloud; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
+    if (now) { air = mode.air; OUTU.uWet.value = mode.air > 0.2 ? Math.min(1, mode.air) : 0; mistV = Math.max(mode.mist, hourT.mist || 0); cloudV = mode.cloud; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
   },
   setWet(k) { wetMul = k; mk = 0; },
   setExpress(on) { express = on; stopX = null; if (on) dwell = 0; },
