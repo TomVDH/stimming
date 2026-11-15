@@ -175,7 +175,7 @@ let rung = 0;
 
 /* ---------- knurl ---------- */
 // A diamond knurl: two groove sets at 45 degrees round the rim.
-// The map holds tangent-space normals from a pyramid height field.
+// One map holds tangent-space normals from a pyramid height field; one shapes the hot glow.
 function knurlMap() {
   const W = 1152, H = 64;
   const across = (WIDTH / (TAU * R / TEETH));
@@ -183,7 +183,7 @@ function knurlMap() {
     const a = (u * TEETH + v * across) % 1, b = (((u * TEETH - v * across) % 1) + 1) % 1;
     return 1 - Math.max(Math.abs(a - 0.5), Math.abs(b - 0.5)) * 2;
   };
-  const data = new Uint8Array(W * H * 4);
+  const data = new Uint8Array(W * H * 4), ridge = new Uint8Array(W * H * 4);
   const du = 1 / W, dv = 1 / H, k = 0.035;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -196,16 +196,22 @@ function knurlMap() {
       data[i + 1] = (-sy / l * 0.5 + 0.5) * 255;
       data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
       data[i + 3] = 255;
+      // The glow map: ridges glow, grooves stay darker.
+      ridge[i] = ridge[i + 1] = ridge[i + 2] = 255 * (0.35 + 0.65 * hgt(u, v) ** 1.5);
+      ridge[i + 3] = 255;
     }
   }
-  const t = new THREE.DataTexture(data, W, H);
-  t.wrapS = THREE.RepeatWrapping;
-  t.magFilter = THREE.LinearFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.generateMipmaps = true;
-  t.anisotropy = renderer.getMaxAnisotropy();
-  t.needsUpdate = true;
-  return t;
+  const tex = d => {
+    const t = new THREE.DataTexture(d, W, H);
+    t.wrapS = THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = renderer.getMaxAnisotropy();
+    t.needsUpdate = true;
+    return t;
+  };
+  return { normal: tex(data), glow: tex(ridge) };
 }
 // The face: fine lathe rings, a darker axle hole in the centre.
 function faceMaps() {
@@ -229,7 +235,8 @@ function faceMaps() {
 /* ---------- scene ---------- */
 const steel = col(0.68, 0.008, 250);
 // The rim is an open tube; through a hole its inner wall shows, so it has two sides.
-const rimMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 0.3, normalMap: knurlMap(), normalScale: new THREE.Vector2(1, 1), side: THREE.DoubleSide });
+const knurl = knurlMap();
+const rimMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 0.3, normalMap: knurl.normal, normalScale: new THREE.Vector2(1, 1), emissiveMap: knurl.glow, side: THREE.DoubleSide });
 const fm = faceMaps();
 // A plate's cap UVs are its own x and y, from -1 to 1.
 for (const t of [fm.map, fm.rough]) { t.repeat.set(0.5, 0.5); t.offset.set(0.5, 0.5); }
@@ -255,6 +262,8 @@ const flintGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 32, 1);
 // The striker mount: a fork holds the axle, a tube holds the flint.
 const mountMat = new THREE.MeshStandardMaterial({ color: col(0.4, 0.008, 250), metalness: 0.7, roughness: 0.5 });
 const tubeGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.45, 40, 1);
+// The tube glows with the rim; the fork and the foot stay dark.
+const tubeMat = mountMat.clone();
 const footGeo = new THREE.BoxGeometry(1.4, 0.12, 0.84);
 const armGeo = new THREE.BoxGeometry(0.16, 1.88, 0.07);
 const pinGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.9, 32, 1);
@@ -275,7 +284,7 @@ function makeWheel() {
   spin.add(rimTube, near, far, hub);
   const flint = new THREE.Mesh(flintGeo, flintMat);
   flint.position.y = -R - 0.07;
-  const tube = new THREE.Mesh(tubeGeo, mountMat);
+  const tube = new THREE.Mesh(tubeGeo, tubeMat);
   tube.position.y = -R - 0.31;
   const foot = new THREE.Mesh(footGeo, mountMat);
   foot.position.set(-0.25, FLOOR + 0.06, 0);
@@ -607,25 +616,34 @@ function floorHit(p0, v0, k, life) {
 // smoke: amount. fog: the smoke's colour. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
 // lift: how the smoke rises; under zero it sinks. warm: the type burns, so it heats, flames and hisses.
 // trailSmoke: smoke a comet lays along its path. steam: smoke of one pop.
+// glow: the rim's colour at low, middle and full heat, or 'cycle'. light: the spark light's colour.
 const TYPES = {
   ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, depth: 1, kids: [3, 8], split: 0.5, size: 1.6, speed: 1, spark: NO_TINT,
-    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: true },
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
   steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, depth: 1, kids: [4, 9], split: 0.2, size: 1.4, speed: 1, spark: NO_TINT,
-    smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]], lift: 1.4, warm: true },
+    smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
   titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, depth: 1, kids: [2, 4], split: 0.15, size: 1.9, speed: 1, spark: NO_TINT,
-    smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]], lift: 1.4, warm: true },
+    smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
   sparkler: { n: 1.4, life: [0.3, 0.6], heat: [0.9, 0.55], k: [3.5, 5], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 1, spark: NO_TINT,
-    smoke: 0.35, fog: [0.7, 0.03, 85], flame: 0.6, ramp: [[0.97, 0.06, 95], [0.85, 0.15, 85], [0.6, 0.17, 60]], lift: 1.4, warm: true },
+    smoke: 0.35, fog: [0.7, 0.03, 85], flame: 0.6, ramp: [[0.97, 0.06, 95], [0.85, 0.15, 85], [0.6, 0.17, 60]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
   comet: { n: 0.04, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, shards: 3, trail: 0.22, loft: 4.5, size: 3.4, speed: 0.6, spark: NO_TINT,
-    smoke: 0, fog: [0.6, 0.01, 80], flame: 0.3, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.2, warm: true, trailSmoke: 0.3 },
+    smoke: 0, fog: [0.6, 0.01, 80], flame: 0.3, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.2, warm: true, trailSmoke: 0.3,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
   ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
-    smoke: 1.6, fog: [0.86, 0.03, 230], flame: 0, ramp: [[0.97, 0.02, 230], [0.8, 0.08, 225], [0.5, 0.1, 250]], lift: -3.2, warm: false },
+    smoke: 1.6, fog: [0.86, 0.03, 230], flame: 0, ramp: [[0.97, 0.02, 230], [0.8, 0.08, 225], [0.5, 0.1, 250]], lift: -3.2, warm: false,
+    glow: [[0.3, 0.12, 260], [0.6, 0.12, 225], [0.9, 0.06, 225]], light: [0.86, 0.07, 230] },
   confetti: { n: 1.6, life: [0.5, 0.8], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 2.0, speed: 0.9, spark: 'hue',
     flutter: { life: [1.2, 2.2], k: [7, 10], drift: 0.8 }, bits: 6,
-    smoke: 0, fog: [0.6, 0, 0], flame: 0, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: false },
+    smoke: 0, fog: [0.6, 0, 0], flame: 0, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: false,
+    glow: 'cycle', light: 'cycle' },
   popcorn: { n: 0.6, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
     pop: { wait: [0.25, 0.9], up: [4, 7], size: 3, tint: [1, 0.95, 0.8, 1] }, bits: 6,
-    smoke: 0.15, fog: [0.8, 0.01, 90], flame: 0.5, ramp: [[0.97, 0.06, 95], [0.86, 0.14, 88], [0.6, 0.16, 65]], lift: 1.6, warm: true, steam: 0.08 },
+    smoke: 0.15, fog: [0.8, 0.01, 90], flame: 0.5, ramp: [[0.97, 0.06, 95], [0.86, 0.14, 88], [0.6, 0.16, 65]], lift: 1.6, warm: true, steam: 0.08,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62] },
 };
 // The colour a new spark of this type carries.
 function tintOf(m) {
@@ -770,18 +788,31 @@ function emit(dt) {
     // Single ticks while the teeth are slow; the rasp takes over above 25 a second.
     if (teethRate < 26) cue(t0, 'tick', P.set(0, -R, 0), 1 - clamp((teethRate - 14) / 12));
     // A type with under one spark a tooth throws one now and then.
-    const count = m.n < 1 ? (rnd() < m.n * lite ? 1 : 0) : Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
+    // A hot wheel throws more sparks, and bigger ones.
+    const more = m.n * lite * (1 + 0.8 * hot);
+    const count = more < 1 ? (rnd() < more ? 1 : 0) : Math.floor(more * 2 * rnd() + 0.5 * rnd());
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
       V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
         .multiplyScalar((2 + Math.min(16, rim * (0.45 + 0.45 * rnd()))) * m.speed);
       // A lofted type leaves in an arc.
       if (m.loft) V.y += m.loft * (0.7 + 0.6 * rnd());
-      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), { fd: reduced() && m.depth < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail });
+      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()) * (1 + 0.4 * hot), { fd: reduced() && m.depth < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail });
       n++;
     }
   }
   return n;
+}
+
+/* ---------- heat ---------- */
+// The wheel heats while it turns fast, and cools when it stops.
+// rise and fall are shares of the full range a second.
+const HEAT = { rise: 1 / 6, fall: 1 / 5, after: 0.35, strike: 0.04 };
+let hot = 0;
+function heatStep(dt) {
+  // Heat follows the wheel's speed, so a type with few sparks heats as well.
+  const j = clamp(wheel.omega / GRIND);
+  hot = clamp(hot + (j > 0.1 ? HEAT.rise * j : -HEAT.fall) * dt);
 }
 
 /* ---------- K3: volume fluid ---------- */
@@ -1115,7 +1146,12 @@ const uJet = uniform(0), uJetCol = uniform(col(0.82, 0.16, 62));
 const JET_A = vec3(0.1, -R, 0), JET_AB = vec3(2.4, -0.35, 0);
 // The type sets the smoke's colour and the flame's ramp; both glide on a change.
 const tones = {};
-for (const [id, m] of Object.entries(TYPES)) tones[id] = { fog: col(...m.fog), ramp: m.ramp.map(c => col(...c)) };
+for (const [id, m] of Object.entries(TYPES)) {
+  tones[id] = { fog: col(...m.fog), ramp: m.ramp.map(c => col(...c)),
+    glow: m.glow === 'cycle' ? 'cycle' : m.glow.map(c => col(...c)), light: m.light === 'cycle' ? 'cycle' : col(...m.light) };
+}
+// The rim's glow now, and the colour it glides to.
+const glowNow = new THREE.Color(0, 0, 0), glowTo = new THREE.Color(0, 0, 0);
 const uTint = uniform(tones.ferro.fog.clone());
 const uRamp = tones.ferro.ramp.map(c => uniform(c.clone()));
 const uFlame = uniform(1);
@@ -1269,9 +1305,9 @@ function smokeStep(dt) {
     if (feed > 0.02) {
       // The contact puff: smoke and heat leave the flint down the jet.
       // Cold fog leaves downward.
-      puff({ pos: [0.12, -R + 0.02, 0], radius: 0.2, vel: [0.6 * j, m.lift < 0 ? -0.4 : 0.9, 0], grip: 0.3 * feed, smoke: FEED.smoke * feed * m.smoke });
+      puff({ pos: [0.12, -R + 0.02, 0], radius: 0.2, vel: [0.6 * j, m.lift < 0 ? -0.4 : 0.9, 0], grip: 0.3 * feed, smoke: FEED.smoke * feed * m.smoke * (1 + 1.5 * hot) });
       // The flame lick: heat a little down the jet, where it clears the rim.
-      if (j > 0.02 && m.warm) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * m.smoke, heat: FEED.heat * j * m.flame });
+      if (j > 0.02 && m.warm) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * m.smoke, heat: FEED.heat * j * m.flame * (1 + 2 * hot) });
       // The jet drags the air along its first stretch.
       if (j > 0.02) {
         const speed = 2 + Math.min(16, wheel.omega * R * 0.675);
@@ -1382,11 +1418,24 @@ function draw() {
   uRamp.forEach((u, i) => u.value.lerp(tone.ramp[i], 0.08));
   uFlame.value += (TYPES[pick].flame - uFlame.value) * 0.08;
   uLift.value += (TYPES[pick].lift - uLift.value) * 0.08;
+  // The rim's glow runs through the type's three colours as the heat rises.
+  // Confetti's glow turns through the hues once in 1.5 s.
+  if (tone.glow === 'cycle') glowTo.copy(col(0.75, 0.16, (time / 1.5 * 360) % 360));
+  else glowTo.copy(tone.glow[0]).lerp(tone.glow[1], clamp(hot * 2)).lerp(tone.glow[2], clamp(hot * 2 - 1));
+  glowNow.lerp(glowTo, tone.glow === 'cycle' ? 0.5 : 0.12);
+  rimMat.emissive.copy(glowNow);
+  rimMat.emissiveIntensity = 2.2 * hot * hot;
+  tubeMat.emissive.copy(glowNow);
+  tubeMat.emissiveIntensity = 1.3 * hot * hot;
+  // The spark light takes the type's colour; the smoke is lit by the same.
+  contact.color.lerp(tone.light === 'cycle' ? glowTo : tone.light, 0.12);
+  uContactCol.value.copy(contact.color);
+  uJetCol.value.copy(contact.color);
   uJet.value = clamp(rate / 250);
   sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
   // The contact light follows the spark rate, so the knurl flashes warm.
-  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : 6 * clamp(rate / 250);
+  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : (6 + 3 * hot) * clamp(rate / 250);
   uContactI.value = contact.intensity;
   pipeline.render();
 }
@@ -1410,7 +1459,7 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0;
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04;
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
@@ -1432,6 +1481,7 @@ function frame() {
     // The spark rate eases over 60 ms, so the light flashes, not flickers.
     const n = emit(dt);
     rate += (n / Math.max(dt, 1e-3) - rate) * (1 - Math.exp(-dt / 0.06));
+    heatStep(dt);
     audioStep();
     smokeStep(dt);
     draw();
@@ -1632,6 +1682,7 @@ function up(e) {
 function strike() {
   if (wheel.omega < 3) scrape();
   wheel.omega = Math.max(wheel.omega, (Math.PI / 2) / FRICTION);
+  hot = clamp(hot + HEAT.strike);
   live();
 }
 act.reset = () => {
@@ -1644,6 +1695,7 @@ act.reset = () => {
   head = 0; dirtyFrom = -1; dirtyN = 0; lastDeath = 0;
   for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
+  hot = 0;
   corn.length = 0;
   clearSmoke();
   kick = KICK;
