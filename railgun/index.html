@@ -892,7 +892,7 @@ vec3 impSky(vec3 dir) {
 // A low sun throws cloud and trail shadows through a dust layer.
 // Each shadow is its occluder pushed away from the sun.
 // The view ray's length in lit air sets the rays' light.
-const SHAFT_N = 32, SHAFT_TR = 7;
+const SHAFT_N = 56, SHAFT_TR = 7;
 const SHAFT_U = {
   // Strength, the dust layer's top in metres, the ray's reach in metres.
   // The veil stands taller than real air.
@@ -1035,7 +1035,7 @@ function updateShafts() {
   // The clouds take the shade at any sun height; not by night.
   u.uCShade.value = 1 - U.uStars.value;
   if (k < 0.001 && u.uCShade.value < 0.001) return;
-  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...shaftList(MIDS)];
+  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...shaftList(MIDS), ...shaftList(FARHEAPS)];
   const t = CLOUD_U.uCloudC.value;
   let n = 0;
   for (const c of shaftOcc) {
@@ -1336,6 +1336,10 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
     vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
+    // The blast lights the faces turned to it, faintly at this range.
+    col += alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
+    // The nearing rock warms the faces turned to it.
+    col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
     // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
     vec3 Pa = vec3(p.x, P.y, p.z);
     float hR = 8000.0, hM = 1600.0;
@@ -1631,15 +1635,27 @@ const HEAPS = [
   [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 1450, 2100, 1300, 0],
 ];
 const heaps = cloudLayer(HEAPS, 2.2);
+// A far band of big heaps sits at the ranges' feet and between them.
+// Some stand round the side and reverse views.
+const FARHEAPS = [
+  [-20, 60000, 2200, 5000, 3200, 0], [4, 75000, 2500, 6500, 3800, 0], [18, 55000, 2000, 4500, 2800, 0], [33, 90000, 2600, 7000, 4200, 0],
+  [48, 65000, 2300, 5200, 3000, 0], [66, 80000, 2400, 6000, 3600, 0], [-35, 35000, 1600, 3000, 1800, 0], [95, 45000, 1800, 4000, 2500, 0],
+  [110, 70000, 2200, 6000, 3400, 0], [125, 30000, 1500, 2500, 1600, 0], [175, 50000, 2000, 5000, 3000, 0], [195, 80000, 2400, 6500, 3800, 0],
+];
+const farHeaps = cloudLayer(FARHEAPS, 1.7);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
-const TOWERS = [[-3, 96000, 1500, 9000, 10500, 1], [27, 74000, 1500, 15000, 15500, 1], [49, 88000, 1500, 10500, 12500, 1], [71, 104000, 1500, 7500, 9000, 1]];
+// Storm towers stand among the far ranges, as tall as their peaks.
+// Two more stand behind the side and reverse views.
+const TOWERS = [[-3, 130000, 2000, 14000, 18000, 1], [27, 112000, 2000, 18000, 21000, 1], [49, 140000, 2000, 15000, 19000, 1], [71, 100000, 2000, 11000, 15000, 1], [100, 120000, 2000, 14000, 18000, 1], [185, 130000, 2000, 16000, 20000, 1]];
 const tower = cloudLayer(TOWERS, 1.5);
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
   [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
   [38, 45000, 5200, 3800, 2000, 0], [48, 26000, 4600, 2200, 1200, 0], [57, 38000, 5000, 3400, 1800, 0], [66, 31000, 4300, 2600, 1400, 0],
+  // Farther out and round the other views.
+  [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0], [105, 40000, 5000, 4000, 2000, 0], [140, 60000, 5600, 5000, 2400, 0], [185, 45000, 5200, 4500, 2200, 0],
 ];
 const mids = cloudLayer(MIDS, 2.15);
 
@@ -4746,7 +4762,8 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 /* ---------- the bow shock: a glowing arc of air in front of the rock ---------- */
 // A camera-facing card; the arc opens toward the rock's travel on screen.
 const bowMat = new THREE.ShaderMaterial({
-  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 },
+  // uAp: the rock's nearness, 0 far out to 1 at the end of its fall.
+  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 }, uAp: { value: 0 },
     uCos: { value: new THREE.Vector3(...linFit(0.8, 0.13, 290)) },
     uHot: { value: new THREE.Vector3(...linFit(0.97, 0.05, 85)) }, uRim: { value: new THREE.Vector3(...linFit(0.78, 0.17, 50)) } },
   transparent: true, depthWrite: false,
@@ -4760,7 +4777,7 @@ const bowMat = new THREE.ShaderMaterial({
     // The card spans six rock radii each way.
     gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
-  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
+  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand, uAp; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
   // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
@@ -4773,15 +4790,23 @@ const bowMat = new THREE.ShaderMaterial({
     vec2 q = vUv * 6.0;
     float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
     float px = length(fwidth(q));
-    // A thin crescent hugs the nose and wraps a little way down the flanks.
+    // A crescent hugs the nose and wraps down the flanks.
+    // Nearer the ground the air is thicker: the shock presses in, thickens and wraps farther.
     // It never thins below about a pixel, so it does not shimmer.
-    float d = shellD(along, across, 1.3, 0.5, 1.0);
-    float w = max(0.035, 0.7 * px);
-    float g = (exp(-d * d / (w * w)) + 0.15 * exp(-abs(d) / 0.2)) * exp(-across * across / 2.2) * smoothstep(-1.2, 0.6, along);
-    g *= 0.92 + 0.08 * sin(uTime * 23.0 + across * 7.0);
-    // Hot white at the nose, orange where it wraps.
+    float d = shellD(along, across, 1.3 - 0.18 * uAp, 0.5, 1.0 - 0.15 * uAp);
+    float w = max(0.035 + 0.06 * uAp, 0.7 * px);
+    // Plasma breaks the shell into racing filaments.
+    float fil = 0.72 + 0.28 * sin(across * 9.0 - uTime * 31.0 + 2.0 * sin(along * 5.0 + uTime * 7.0));
+    float wrap = exp(-across * across / (2.2 + 5.0 * uAp));
+    float g = (exp(-d * d / (w * w)) * fil + (0.15 + 0.4 * uAp) * exp(-abs(d) / (0.2 + 0.3 * uAp))) * wrap * smoothstep(-1.2 - 1.8 * uAp, 0.6, along);
+    // Compressed air glows ahead of the nose.
+    g += 0.3 * uAp * exp(-max(d, 0.0) / (0.5 + 0.9 * uAp)) * smoothstep(0.0, 0.8, along) * exp(-across * across / 1.5);
+    // Hot gas peels off the flanks in two streamers.
+    float side = abs(across) - (1.4 + 0.7 * uAp);
+    g += 0.55 * uAp * exp(-side * side / 0.06) * smoothstep(0.8, -2.5, along) * smoothstep(-5.5, -1.0, along) * (0.6 + 0.4 * sin(along * 3.0 + uTime * 9.0));
+    // White-hot at the nose, bluer as it nears; orange where it wraps.
     float k = smoothstep(0.0, 1.6, across);
-    vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
+    vec3 c = mix(mix(uHot * 3.0, vec3(3.2, 3.4, 4.2), 0.5 * uAp), uRim * 1.2, k);
     vec3 col = c * g;
     // The strike: a second thin crescent, violet, a little farther out.
     if (uGrand > 0.01) {
@@ -4838,7 +4863,10 @@ function updateBow() {
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
   bowMat.uniforms.uGrand.value = g;
-  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (1 + 1.5 * g);
+  // The shock brightens and grows as the rock comes down the last stretch.
+  const ap = Math.max(clamp((Math.min(ast.s, 1) - 0.25) / 0.75, 0, 1), g);
+  bowMat.uniforms.uAp.value = ap;
+  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (0.5 + 2.5 * ap * ap) * (1 + 1.5 * g);
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
