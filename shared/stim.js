@@ -883,7 +883,10 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   place(narrowNow);
   fit();
   document.fonts?.ready.then(fit);
-  new ResizeObserver(fit).observe(frame);
+  // The top corners are watched too: a font or pointer change resizes them, not the frame.
+  // Hiding the name shrinks the left corner once; the next fit then settles.
+  const ro = new ResizeObserver(fit);
+  for (const el of [frame, tl, tr]) ro.observe(el);
 
   const ui = {
     choice,
