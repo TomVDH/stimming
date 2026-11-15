@@ -33,6 +33,15 @@ main { box-sizing: border-box; width: 100%; max-width: 900px; margin: 0 auto; pa
 .cell:hover svg:first-child { rotate: -7deg; scale: 1.08; }
 .cell .small { width: 40px; }
 .cell span { font: 500 10px/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); text-align: center; }
+/* The stage: one icon as large as the window allows. A click on any icon puts it here. */
+.stage { display: grid; justify-items: center; gap: 12px; scroll-margin-top: 150px; }
+.stage svg { display: block; width: min(86vw, 62vh, 560px); height: auto; aspect-ratio: 1; }
+.stage b { font: 800 clamp(20px, 3vw, 28px)/1 "Gabarito", system-ui, sans-serif; letter-spacing: -0.01em; color: var(--c); }
+.stage small { font: 500 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+/* The set: the picked icon of every series, side by side. */
+.set { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 14px 6px; }
+.set .cell svg { width: min(100%, 96px); }
+.set .cell[aria-pressed="true"] { border-color: var(--c); }
 @media (max-width: 560px) { .row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .cell svg { transition: none; } }
 </style>
@@ -42,7 +51,11 @@ main { box-sizing: border-box; width: 100%; max-width: 900px; margin: 0 auto; pa
   <div class="knob" data-k="frame" role="group" aria-label="Frame"><span>Frame</span></div>
   <div class="knob" data-k="line" role="group" aria-label="Line"><span>Line</span></div>
 </div>
-<main id="sheet"></main>
+<main>
+  <div class="stage" id="stage"></div>
+  <div class="set" id="set"></div>
+  <div id="sheet" style="display: grid; gap: clamp(44px, 7vw, 80px)"></div>
+</main>
 <script type="module">
 import { SHOTS, TILTS, FRAMES, LINES, shotIcon, shotPicks, saveShotPicks } from './shots.js';
 import { PROPOSED } from './proposal.js';
@@ -51,7 +64,7 @@ const WAVE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' 
 document.documentElement.style.setProperty('--wave', WAVE);
 // Proposed series show here too, before they reach series.json.
 const series = { ...PROPOSED, ...(await fetch('../series.json').then(r => r.json())) };
-const sheet = document.getElementById('sheet');
+const sheet = document.getElementById('sheet'), stage = document.getElementById('stage'), set = document.getElementById('set');
 const picks = shotPicks();
 // A query can pin the knobs for a still: ?tilt=Wild&frame=Viewfinder.
 const q = new URLSearchParams(location.search);
@@ -69,7 +82,14 @@ for (const el of document.querySelectorAll('.knob')) {
   }
 }
 
+// The icon on the stage: a series and one of its shots.
+let big = null;
 function draw() {
+  if (!big) big = { key: Object.keys(SHOTS)[0], m: picks[Object.keys(SHOTS)[0]] };
+  const bs = series[big.key];
+  stage.style.setProperty('--c', bs.color);
+  stage.innerHTML = `${shotIcon(big.key, big.m, { ...picks, c: bs.color })}<b>${bs.name.replace('&', '&amp;')}</b><small>${big.m}</small>`;
+  set.innerHTML = Object.keys(SHOTS).map(key => `<button class="cell" type="button" data-key="${key}" data-m="${picks[key]}" data-set style="--c:${series[key].color}" aria-pressed="${big.key === key && big.m === picks[key]}">${shotIcon(key, picks[key], { ...picks, c: series[key].color })}<span>${series[key].name.replace('&', '&amp;')}</span></button>`).join('');
   document.querySelectorAll('.knob').forEach(el => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.value === picks[el.dataset.k])));
   sheet.innerHTML = '';
   for (const key of Object.keys(SHOTS)) {
@@ -83,13 +103,14 @@ function draw() {
     sheet.append(sec);
   }
 }
-// A click on a shot makes it the pick for its series.
-sheet.addEventListener('click', e => {
+// A click on a shot makes it the pick for its series and puts it on the stage.
+document.querySelector('main').addEventListener('click', e => {
   const b = e.target.closest('.cell');
   if (!b) return;
-  picks[b.dataset.key] = b.dataset.m;
-  saveShotPicks(picks);
+  big = { key: b.dataset.key, m: b.dataset.m };
+  if (!('set' in b.dataset)) { picks[b.dataset.key] = b.dataset.m; saveShotPicks(picks); }
   draw();
+  stage.scrollIntoView({ block: 'start', behavior: 'smooth' });
 });
 draw();
 </script>
