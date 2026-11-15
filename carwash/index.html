@@ -1025,7 +1025,7 @@ vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
     float i = base + float(j);
     if (i < 0.0 || i > 8.0) continue;
     float cx = (i + 0.5) * 0.42 - 1.9 + (cwN(vec2(i * 3.7, fy * 0.6)) - 0.5) * 0.09 * (0.3 + drop);
-    float hw = (0.06 + 0.07 * cwH(vec2(i, 1.0))) * (0.45 + 0.55 * smoothstep(0.0, 1.0, drop) + 0.25 * drop) * (0.7 + 0.6 * cwN(vec2(i * 5.0, fy * 1.3)));
+    float hw = (0.09 + 0.08 * cwH(vec2(i, 1.0))) * (0.5 + 0.5 * smoothstep(0.0, 1.0, drop) + 0.3 * drop) * (0.75 + 0.5 * cwN(vec2(i * 5.0, fy * 1.3)));
     float dx = abs(H.x - cx) / hw + (cwN(vec2(H.x * 30.0, fy * 4.0)) - 0.5) * 0.35;
     float b = smoothstep(1.0, 0.7, dx);
     // Low down a stream breaks into falling blobs.
@@ -1039,6 +1039,14 @@ vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
   float lump = l1 * 0.75 + cwN(vec2(H.x * 45.0, fy * 1.2)) * 0.25;
   // Light from the slot catches the tops of the lumps.
   shade *= 0.45 + 0.9 * lump + clamp((l1u - l1) * 4.0, -0.25, 0.35);
+  // Lather: round bubbles in the body, each a small bright dome.
+  vec2 bp = vec2(H.x * 55.0, fy * 40.0), bi = floor(bp), bf = fract(bp);
+  float bd = 1.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 o = vec2(x, y) + vec2(cwH(bi + vec2(x, y)), cwH(bi + vec2(x, y) + 3.1)) - bf;
+    bd = min(bd, dot(o, o));
+  }
+  shade *= 0.72 + 0.45 * smoothstep(0.5, 0.0, bd);
   vec3 dye = uDye[int(mod(si, 3.0))];
   vec3 L = lightAt(H, vec3(0.0, 0.0, -1.0));
   // Floods in the slot light the foam from above; it carries the light down inside itself.
@@ -1427,7 +1435,7 @@ let F = 1.3, HZ = 0.42, asp = 16 / 9;
 function lens() {
   asp = canvas.width / Math.max(1, canvas.height);
   const tall = smooth(1.3, 0.7, asp);
-  const lo = mix(20, 18.5, tall) * D2R, hi = mix(22, 21.5, tall) * D2R;
+  const lo = mix(18.5, 18, tall) * D2R, hi = mix(20, 21, tall) * D2R;
   F = 1 / (Math.tan(hi) + Math.tan(lo));
   HZ = Math.tan(lo) * F;
 }
@@ -1503,6 +1511,8 @@ function zoneAt(a) {
 }
 // The glass motion: runs fall at rest; the blower turns them up the glass.
 const motion = { flow: 0, m: [0, -1], wind: 0, sheetT: 0, shift: 0 };
+// Where the eye focuses: 0 through dry glass on the tunnel, 1 on wet glass.
+const focus = { k: 0 };
 let air = 0;
 
 /* ---------- wipers ---------- */
@@ -1577,6 +1587,9 @@ function stages(dt) {
   U.knife.set([kv0, kv1, kv1 > -0.1 && kv1 < WS.len + 0.1 ? air : 0, 0]);
   // The air pushes the beads up the rake as it goes.
   motion.shift += dt * air * 0.22;
+  // Water on the glass pulls the eye's focus onto it, over about a second and a half.
+  const wetNow = car.s > A.soak - 0.9 || car.mode === 'done' ? 1 : 0;
+  focus.k = dt > 0 ? focus.k + (wetNow - focus.k) * (1 - Math.exp(-dt / 1.5)) : wetNow;
   U.on.set([station(A.soak), station(A.foam), station(A.rinse), station(A.wax)]);
   U.onSpot = station(A.spot);
   // The floods' light on the car, for the foam.
@@ -1736,6 +1749,7 @@ function draw() {
   gl.uniform1i(u('tSrc'), 0);
   gl.uniform1f(u('uFocus'), 0.75);
   const lensR = bokehAt(car.s);
+  lensR[0] = mix(0.0035, lensR[0], focus.k);
   for (const [rt, k, rim] of [[rtBokS, 0.45, 0.25], [rtBokL, 1, lensR[1]]]) {
     gl.uniform2f(u('uRad'), lensR[0] * k * H / W, lensR[0] * k);
     gl.uniform2f(u('uDst'), rt.w, rt.h);
