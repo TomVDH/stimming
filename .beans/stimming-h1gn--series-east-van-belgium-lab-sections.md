@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T08:54:32Z
+updated_at: 2026-11-15T09:13:12Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -35,3 +35,10 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [ ] Tom reviews the four theme shots
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
 - [x] Step 3: the Lab view (/?lab) shows the series as sections under the Wave divider with Hex ring shot icons; shots live in shared/series/shots.js; series.json names each icon
+
+## Categories proposal (Tom, 2026-11-15: more categories; the vistas get a fancy icon)
+
+- [x] Proposal in serieslab/proposal.js: five new series (Vistas, Poke & pop, Light & glass, Wild, Odd one out) and a series for all 88 toys; shown on both shelves at serieslab/categories.html
+- [x] Vistas has the fancy icon: four depth layers and a frame that tilts with the pointer, a gold double ring, sparks, a sheen (shared/series/shots.js, `fancy` and `tiltShots`)
+- [x] Shots for the four other new series: Poke, Prism, Dandelion, Saucer
+- [ ] Tom rules on the categories, the names and the sorting; then series.json and toys.json change
