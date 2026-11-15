@@ -18,6 +18,7 @@ Tom (2026-11-14): sky and post first; sun rays first. The low sun sat 63 degrees
 - [x] The low sun swings to the frame's right edge; above about 15 degrees it eases back to the old bearing
 - [x] Stills at dawn, dusk, noon and night, 1280 and 375 x 812; clean console
 - [ ] Tom's verdict on the swung sun (the gun is backlit at dusk now)
+- [x] Better blending (Tom): soft penumbra edges, shadows fade over about 110 km behind their caster, shade turns cool before dim
 - [ ] Tom's verdict on the rays' strength
 
 ## Notes

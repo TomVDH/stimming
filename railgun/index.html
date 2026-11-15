@@ -901,6 +901,9 @@ vec2 shSide(vec2 iv, float a, float b) {
   float tz = -a / b;
   return b > 0.0 ? vec2(iv.x, min(iv.y, tz)) : vec2(max(iv.x, tz), iv.y);
 }
+// Skylight fills a shadow far behind its caster.
+// x is the distance behind the caster, in metres.
+float shFade(float x) { return exp(-max(x, 0.0) / 110000.0); }
 // It returns the ray's lit share, 0 to 1, and its layer depth.
 vec2 shafts(vec3 ro, vec3 rd, float L) {
   vec3 s = uSunD;
@@ -912,14 +915,17 @@ vec2 shafts(vec3 ro, vec3 rd, float L) {
     vec3 o = ro - uOcc[i].xyz, d = rd, sq = s;
     o.y *= q; d.y *= q; sq.y *= q; sq = normalize(sq);
     // Seen down the sunlight, the shadow is a disc.
+    // A wider disc with a soft edge stands in for the penumbra.
     vec3 op = o - sq * dot(o, sq), dp = d - sq * dot(d, sq);
-    float A = dot(dp, dp), B = dot(op, dp), C = dot(op, op) - uOcc[i].w * uOcc[i].w, D = B * B - A * C;
+    float r = uOcc[i].w, rs = 1.5 * r;
+    float A = dot(dp, dp), B = dot(op, dp), C = dot(op, op) - rs * rs, D = B * B - A * C;
     if (D <= 0.0 || A < 1e-9) continue;
+    float w = smoothstep(rs, 0.4 * r, sqrt(max(dot(op, op) - B * B / A, 0.0)));
     D = sqrt(D);
     vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
     // Only the side away from the sun lies in shadow.
     iv = shSide(iv, dot(o, sq), dot(d, sq));
-    dark += shM(ro, rd, iv.x, iv.y);
+    dark += shM(ro, rd, iv.x, iv.y) * w * shFade(-dot(o + d * 0.5 * (iv.x + iv.y), sq));
   }
   for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
     if (i >= uTrN - 1) break;
@@ -931,9 +937,10 @@ vec2 shafts(vec3 ro, vec3 rd, float L) {
     u /= len;
     vec3 rp = r - s * dot(r, s), dp = rd - s * dot(rd, s);
     vec3 w0 = rp - u * dot(rp, u), w1 = dp - u * dot(dp, u);
-    float rad = 0.5 * (uTr[i].w + uTr[i + 1].w);
-    float A = dot(w1, w1), B = dot(w0, w1), C = dot(w0, w0) - rad * rad, D = B * B - A * C;
+    float rad = 0.5 * (uTr[i].w + uTr[i + 1].w), rs = 1.5 * rad;
+    float A = dot(w1, w1), B = dot(w0, w1), C = dot(w0, w0) - rs * rs, D = B * B - A * C;
     if (D <= 0.0 || A < 1e-9) continue;
+    float w = smoothstep(rs, 0.4 * rad, sqrt(max(dot(w0, w0) - B * B / A, 0.0)));
     D = sqrt(D);
     vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
     // Keep to the piece's own stretch.
@@ -941,7 +948,7 @@ vec2 shafts(vec3 ro, vec3 rd, float L) {
     iv = shSide(iv, ga - len, gb);
     iv = shSide(iv, -ga, -gb);
     iv = shSide(iv, dot(r - 0.5 * (a1 - a0), s), dot(rd, s));
-    dark += shM(ro, rd, iv.x, iv.y);
+    dark += shM(ro, rd, iv.x, iv.y) * w * shFade(-dot(r - 0.5 * (a1 - a0) + rd * 0.5 * (iv.x + iv.y), s));
   }
   return vec2(1.0 - min(dark / max(all_, 1.0), 1.0), all_);
 }
@@ -953,10 +960,12 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
   float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cs, 1.5) * 0.08 + 0.05;
   // The bands stay off the horizon.
   // The heaps' low shadows pile up there.
-  float dk = 0.7 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
+  float dk = 1.1 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
   // A long path through lit dust stops adding light.
   float lit = 1.0 - exp(-sh.y * sh.x / 40000.0);
-  return c * (1.0 - min(dk * uShaft.x, 0.85)) + uGlowC * ph * lit * 0.4 * uShaft.x;
+  // Shade loses the warm sunlight first: it turns cool, then dim.
+  float k = min(dk * uShaft.x, 0.85);
+  return mix(c, c * vec3(0.5, 0.58, 0.74), k) + uGlowC * ph * lit * 0.4 * uShaft.x;
 }`;
 // Each cloud's world centre, as the cloud vertex shader drifts it.
 const hs1 = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
