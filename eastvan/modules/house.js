@@ -8,7 +8,7 @@ export const ID = 'house';
 export const SIZE = [14, 22.9];
 export const ORIGIN = [0, 0, -1.45];
 export const JOIN = 'back';
-export const STOP = { at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 19, h: 19, band: 5, range: 14 };
+export const STOP = { at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 26, h: 19, band: 5, range: 14 };
 
 const backSteps = [0, 1, 2, 3].map(i => box([-1.5, (0.2 + 1.15 - 0.25 * i) / 2, -11.55 - 0.3 * i], [1.5, 0.95 - 0.25 * i, 0.3], 'concrete', A, { k: 'step' }));
 

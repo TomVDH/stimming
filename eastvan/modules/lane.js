@@ -8,7 +8,7 @@ export const ID = 'lane';
 export const SIZE = [14, 12];
 export const ORIGIN = [0, 0, -22.5];
 export const JOIN = 'east';
-export const STOP = { at: [0, 1.4, -22.5], yaw: Math.PI + 0.5, pitch: 0.78, w: 21, tall: 24, h: 16, band: 5, range: 12 };
+export const STOP = { at: [0, 1.4, -22.5], yaw: Math.PI + 0.5, pitch: 0.78, w: 21, tall: 24, h: 20, band: 5, range: 12 };
 
 // A lane bin. The lid turns on its fence-side edge.
 const bin = (x, c, id) => [

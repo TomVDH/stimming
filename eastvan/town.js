@@ -108,8 +108,11 @@ export function buildStage(skyTexture) {
 export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = null) {
   const PARTS = mod.PARTS, WIRES = mod.WIRES || [], POKES = mod.POKES || [], LAMPS = mod.LAMPS || [];
   const MOVES = mod.MOVES || {}, ACTS = mod.ACTS || {};
-  const group = new THREE.Group();
+  // group holds the lamps; body holds everything else, so Solo hides
+  // the module's meshes and never takes a light out of the scene.
+  const group = new THREE.Group(), body = new THREE.Group();
   group.position.set(...placed.offset); group.rotation.y = placed.yaw || 0;
+  group.add(body);
   group.updateMatrixWorld();
 
   // Sort the parts: static paint, ground, crown, flowers, glow, switches, movers.
@@ -151,16 +154,16 @@ export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = 
   // The crown turns about its pivot: the foot of the trunk.
   const crown = mesh(bins.crown, PAINT, true), pivot = PARTS.find(q => q.k === 'crown')?.pivot;
   if (crown && pivot) { crown.geometry.translate(-pivot[0], -pivot[1], -pivot[2]); crown.position.set(...pivot); }
-  for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) group.add(m);
+  for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) body.add(m);
   for (const s of Object.values(sw)) s.mat = glowMat(s.gain);
-  for (const id in sw) if (sw[id].geos.length) group.add(mesh(sw[id].geos, sw[id].mat, false, false));
+  for (const id in sw) if (sw[id].geos.length) body.add(mesh(sw[id].geos, sw[id].mat, false, false));
   for (const id in mv) {
     const m = mv[id], g = m.group = new THREE.Group();
     g.position.set(...m.hinge); m.k = 0; m.open = false;
     if (m.paint.length) g.add(mesh(m.paint, PAINT, true));
     if (m.glow.length) g.add(mesh(m.glow, glow, false, false));
     for (const s in m.sw) g.add(mesh(m.sw[s], sw[s].mat, false, false));
-    group.add(g);
+    body.add(g);
   }
 
   // Lamps that light the scene: each follows a switch or a mover.
@@ -211,16 +214,20 @@ export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = 
   });
   // Life registers pokes on a list of its own; each takes the world getter.
   const lifePokes = [];
-  const alive = life ? life(group, crown, lifePokes) : { noInk: [], update() {} };
+  const alive = life ? life(body, crown, lifePokes) : { noInk: [], update() {} };
   for (const q of lifePokes) pokes.push(pokeOf(q.id, q.pos, q.r, q.fire));
 
   const on = new THREE.Color();
-  let active = true;
-  return {
+  let active = true, shown = true;
+  const self = {
     id: mod.ID, group, pokes,
     // The lens leaves these out of the ink line.
     noInk: [flowers, ...alive.noInk].filter(Boolean),
     get active() { return active; },
+    get shown() { return shown; },
+    // Solo hides a module's meshes but keeps its lamps in the scene:
+    // a change in the light count would recompile every material.
+    setShown(v) { shown = v; body.visible = v; },
     // A far module stands still: no updates, no shadows, lamps dark.
     setActive(v) {
       active = v;
@@ -239,6 +246,10 @@ export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = 
       alive.update(t, dt);
     },
   };
+  // One pass puts every mover and switch in its first state,
+  // so a module built out of view never shows its authored pose.
+  self.update(0, 0);
+  return self;
 }
 
 // One whole diorama on its own stage: the Corner uses this.

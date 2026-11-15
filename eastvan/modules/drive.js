@@ -10,7 +10,7 @@ export const SIZE = [30, 30];
 export const ORIGIN = [36.9, 0, -3];
 export const JOIN = 'east';
 export const YAW = Math.PI / 2;
-export const STOP = { at: [36.9, 1.6, -3], yaw: Math.PI / 2 + 0.5, pitch: 0.82, w: 52, tall: 54, h: 38, band: 9, range: 24 };
+export const STOP = { at: [36.9, 1.6, -3], yaw: Math.PI / 2 + 0.5, pitch: 0.82, w: 52, tall: 54, h: 44, band: 9, range: 24 };
 // The slice in the data frame: e is east of the corner, n is north of it.
 export const RECT = { kind: 'rect', e0: -18, n0: 21.9, e1: 12, n1: 51.9 };
 
