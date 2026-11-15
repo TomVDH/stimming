@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:42:00Z
+updated_at: 2026-11-15T09:44:25Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -51,4 +51,5 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] East Van Wires and the Belgium Flag zoomed out a little (a shot may set `zoom`)
 - [x] Vista and the eight other shots redesigned as whole, centred subjects: Vista (a film still), Atom, Moon, Blob, Compass, Button, Prism, Dandelion, Saucer; series.json now names Moon and Blob
 - [x] Alternate Vistas shots on Tom's ask, agnostic of the toys (his rule): Peak, Viewer, Road, Layers, Frame, Clapper, Glasses, beside the film still. Window, Viaduct, Lighthouse and Launch pointed at toys and are out
-- [ ] Tom reviews the redesigned shots and picks the Vistas one
+- [x] Tom, 2026-11-15: different colours for Vistas. Eight colourways (Teal, Day, Sand, Ember, Mint, Mono, Night, Rose); each Vistas shot wears its own, and the sheet has a Vistas colours knob
+- [ ] Tom reviews the redesigned shots and picks the Vistas icon and its colours
