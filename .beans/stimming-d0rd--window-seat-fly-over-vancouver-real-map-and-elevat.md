@@ -1,11 +1,13 @@
 ---
 # stimming-d0rd
 title: 'Window seat: fly over Vancouver (real map and elevation, ocean shader sea)'
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-15T10:27:43Z
-updated_at: 2026-11-15T10:27:43Z
+updated_at: 2026-11-15T18:19:58Z
 ---
+
 
 Tom, 2026-11-15: "can we have it fly over vancouver -- get map and altimetry data for the lower mainland (ft ocean shader too)".
 
