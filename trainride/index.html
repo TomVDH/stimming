@@ -648,12 +648,13 @@ const tiles = CAS.map(([s, W, H]) => {
 });
 tiles.forEach((t, k) => { OUTU['tA' + k] = { value: t.a.texture }; OUTU['tB' + k] = { value: t.b.texture }; });
 // The land shader's lookup: the finest tile that holds the point, eased into the next one at its rim.
-const tileTap = (k, v) => { const [s, W, H] = CAS[k], sc = `vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))})`; return `a${v} = textureGrad(tA${k}, p * ${sc}, gx * ${sc}, gy * ${sc}); b${v} = textureGrad(tB${k}, p * ${sc}, gx * ${sc}, gy * ${sc});`; };
+const tileTap = (k, v) => { const [s, W, H] = CAS[k], sc = `vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))})`; return `a${v} = textureGrad(tA${k}, p * ${sc}, gxa * ${sc}, gya * ${sc}); b${v} = textureGrad(tB${k}, p * ${sc}, gx * ${sc}, gy * ${sc});`; };
 const LANDTILE = /* glsl */`
 ${CAS.map((c, k) => `uniform sampler2D tA${k}, tB${k};`).join('\n')}
-void landTile(vec2 xz, out vec4 a, out vec4 b) {
+// blur widens the colour's filter; the normal keeps its own.
+void landTile(vec2 xz, float blur, out vec4 a, out vec4 b) {
   // p runs along the line and out from it; its screen gradients set the filter for every tile.
-  vec2 p = vec2(xz.x, -xz.y), gx = dFdx(p), gy = dFdy(p);
+  vec2 p = vec2(xz.x, -xz.y), gx = dFdx(p), gy = dFdy(p), gxa = gx * blur, gya = gy * blur;
   float ax = abs(xz.x - uCamX), t = -xz.y;
   vec4 a2, b2;
   ${CAS.slice(0, -1).map(([s, W, H], k) => { const X = W * s / 2, Z = H * s; return `if (ax < ${f8(X * 0.94)} && t < ${f8(Z * 0.94)}) {
@@ -947,6 +948,48 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     }`).join(' else ')}
     a = vec4(-1.0); b = vec4(0.0);
   }
+  // Limestone seen from the side, at f (along the face, height): colour, and grass on ledges in a.
+  // Each layer fades before a pixel can span it.
+  vec4 cliffSide(vec2 f) {
+    vec2 fw = fwidth(f);
+    // Bedding wanders a little along the face.
+    float y = f.y + 14.0 * gnoise(vec2(f.x * 0.004, 0.0));
+    float bed = gnoise(vec2(f.x * 0.002, y * 0.05)) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.05));
+    float bed2 = gnoise(vec2(f.x * 0.006, y * 0.15)) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.15));
+    // Water streaks run long and dark down the face.
+    float st = gnoise(vec2(f.x * 0.025, f.y * 0.002)) * (1.0 - smoothstep(0.3, 0.8, fw.x * 0.025));
+    vec3 lime = vec3(0.19, 0.18, 0.165) * (0.85 + 0.5 * bed + 0.25 * bed2);
+    lime *= 1.0 - 0.45 * smoothstep(0.05, 0.35, st);
+    float ledge = smoothstep(0.15, 0.35, gnoise(vec2(f.x * 0.004, y * 0.04 + 3.0))) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.04));
+    return vec4(lime, ledge);
+  }
+  // Tree crowns seen from the side, at f (along the slope, height): a light factor round 1.
+  // Two offset rows of crowns some 18 m wide, so no grid shows; sizes vary and a third are pointed spruce.
+  // The sky lights each crown's top; the gaps between fall into shade.
+  // The pattern settles to its mean before a pixel can span a crown.
+  float crownLayer(vec2 g, float soft, float seed) {
+    g.x += floor(g.y) * 0.5;
+    vec2 id = floor(g) + seed;
+    if (hash1(id + 2.7) < 0.12) return 0.0;
+    float sz = 0.75 + 0.35 * hash1(id + 5.9);
+    vec2 q = (fract(g) - 0.5 - (hash2(id) - 0.5) * vec2(0.5, 0.3)) / sz;
+    float cone = smoothstep(0.03 + soft, -soft, abs(q.x) - (0.42 - q.y) * 0.55) * step(-0.45, q.y);
+    float round = smoothstep(0.46, 0.46 - soft, length(q * vec2(1.0, 0.9)));
+    float crown = mix(round, cone, step(0.66, hash1(id + 7.1)));
+    return crown * (0.92 + 0.28 * clamp(q.y + 0.3, 0.0, 1.0)) * (0.92 + 0.16 * hash1(id + 3.3));
+  }
+  float canopySide(vec2 f) {
+    vec2 g = f / vec2(18.0, 14.0);
+    vec2 fw = fwidth(g);
+    float keep = 1.0 - smoothstep(0.2, 0.55, max(fw.x, fw.y));
+    // Clumps: darker stands of spruce among lighter beech.
+    float clump = 0.88 + 0.24 * gnoise(f * 0.012);
+    if (keep <= 0.0) return clump;
+    float soft = clamp(max(fw.x, fw.y) * 1.5, 0.05, 0.3);
+    float a = crownLayer(g, soft, 0.0), b = crownLayer(g * 0.83 + vec2(0.37, 0.52), soft, 41.0) * 0.92;
+    float v = max(max(a, b), 0.74);
+    return clump * mix(1.0, v / 0.96, keep);
+  }
   // The lake's mirror: the reflected ray climbs to the far slopes.
   // The march runs along the ray's heading and keeps the highest skyline it sees.
   // The ray's depth under that skyline sets the cover, so the mirrored edge is soft.
@@ -998,11 +1041,32 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     vec3 sg = seg(vP.x);
     // Colour, normal, sky cover and shore distance come from the baked tiles.
     vec4 m0, m1;
-    landTile(vP.xz, m0, m1);
+    // A steep face seen from above smears its colour down the fall line.
+    // There the tiles give only a wide blur; the rock's detail comes from the side below.
+    float steepG = smoothstep(0.15, 0.45, 1.0 - normalize(vN).y) * smoothstep(60.0, 160.0, dist);
+    landTile(vP.xz, 1.0 + 14.0 * steepG, m0, m1);
     // The colour is stored as its square root, to keep the dark tones fine.
     vec3 alb = m0.rgb * m0.rgb;
     float glowK = m0.a * 0.32, ao = m1.z, wd = m1.w;
     vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
+    // Cliffs: limestone drawn on the face itself, blended by how it faces x or z.
+    float steep = smoothstep(0.35, 0.6, 1.0 - N.y) * smoothstep(60.0, 160.0, dist) * (1.0 - smoothstep(0.4, 0.7, max(alb.r, max(alb.g, alb.b))));
+    if (steep > 0.0) {
+      vec2 wq = N.xz * N.xz;
+      wq /= wq.x + wq.y + 1e-5;
+      vec4 rk = wq.x * cliffSide(vec2(vP.z, vP.y)) + wq.y * cliffSide(vec2(vP.x, vP.y));
+      // Grass holds on the ledges in the tiles' broad colour.
+      alb = mix(alb, mix(rk.rgb, alb * 0.85, rk.a), steep);
+    }
+    // Far woods: tree crowns seen from the side, where the near trees stand no more.
+    // The tiles' glow holds the wood's share: 0.12 for open ground, 0.32 for full wood.
+    float woodK = clamp((glowK - 0.12) / 0.2, 0.0, 1.0) * smoothstep(350.0, 650.0, dist) * (1.0 - steep);
+    if (woodK > 0.0) {
+      vec2 wq = N.xz * N.xz;
+      wq /= wq.x + wq.y + 1e-5;
+      float cf = wq.x * canopySide(vec2(vP.z, vP.y)) + wq.y * canopySide(vec2(vP.x, vP.y));
+      alb *= mix(1.0, cf, woodK);
+    }
     // Terrain shadow: a short march toward the sun at each pixel.
     float vSh = 1.0;
     if (uDay > 0.01 && dist > 60.0) vSh = sunShadow(vP);
