@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-15T04:25:39Z
-updated_at: 2026-11-15T04:41:04Z
+updated_at: 2026-11-15T04:41:07Z
 parent: stimming-guw5
 ---
 
@@ -14,7 +14,7 @@ Tom: "we'd like a lot more here". Five more block-out places in eastvan/postcard
 - [x] kit.js: snow card field, shared prefabs; the eight old cards stay the same (stills are byte-identical)
 - [ ] index.html: thirteen cards, arrow keys, foot buttons fit 375 px
 - [x] Trout Lake at dawn (scenes/lake.js)
-- [ ] The station at night (scenes/station.js)
+- [x] The station at night (scenes/station.js)
 - [ ] The wooden coaster, summer evening (scenes/coaster.js)
 - [ ] New Brighton pool, hot noon (scenes/pool.js)
 - [ ] Vancouver Specials, first snow (scenes/snow.js)
