@@ -55,7 +55,7 @@ if (!navigator.gpu && !/\/legacy\.html$/.test(new URL(document.referrer || locat
 
 <div class="wrap">
   <main>
-    <div class="stage stage--spark" id="stage" tabindex="0" role="application" aria-label="A knurled steel wheel on a flint, close up. Drag down to flick the wheel and throw sparks. Click to strike. Hold Space to grind.">
+    <div class="stage stage--spark" id="stage" tabindex="0" role="application" aria-label="A knurled steel wheel on a flint, close up. Drag down to flick the wheel and throw sparks. Click to strike. Hold Space to grind. Keys 1 to 8 pick the kind of spark.">
       <p class="fail" hidden><span>Spark wheel needs WebGPU, which this browser doesn't have. <a href="legacy.html">Open the classic build</a>.</span></p>
     </div>
   </main>
@@ -85,15 +85,20 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- bar ---------- */
-let metal = 'ferro', grinding = false;
+let pick = 'ferro', grinding = false;
 // The handlers bind once the scene exists.
 const act = { reset() {} };
 const ui = initPage({ id: 'spark', bar: {
-  choice: { label: 'Metal', value: 'ferro', options: [
+  choice: { label: 'Sparks', value: 'ferro', options: [
     { value: 'ferro', label: 'Ferro', key: '1' },
     { value: 'steel', label: 'Steel', key: '2' },
     { value: 'titanium', label: 'Titanium', key: '3' },
-  ], onPick: v => { metal = v; } },
+    { value: 'sparkler', label: 'Sparkler', key: '4' },
+    { value: 'comet', label: 'Comet', key: '5' },
+    { value: 'ice', label: 'Ice', key: '6' },
+    { value: 'confetti', label: 'Confetti', key: '7' },
+    { value: 'popcorn', label: 'Popcorn', key: '8' },
+  ], onPick: v => { pick = v; } },
   actions: [{ verb: 'grind', key: 'Space', hold: true,
     onDown: () => { grinding = true; live(); }, onUp: () => { grinding = false; live(); } }],
   settings: [
@@ -352,7 +357,7 @@ mirror.add(ghostHaze);
 /* ---------- embers ---------- */
 // Each ember cools from its start temperature; the colour follows a blackbody ramp.
 // An ember is one instanced quad, sized in pixels in the vertex stage.
-const EMBERS = 512;
+const EMBERS = 2048;
 const emberGeo = new THREE.InstancedBufferGeometry();
 emberGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], 3));
 emberGeo.setIndex([0, 1, 2, 2, 1, 3]);
@@ -360,9 +365,13 @@ const ePos = new Float32Array(EMBERS * 3), eAttr = new Float32Array(EMBERS * 3);
 const ePosAt = new THREE.InstancedBufferAttribute(ePos, 3);
 // x: birth time, y: cooling time, z: start temperature as 0 to 1.
 const eAt = new THREE.InstancedBufferAttribute(eAttr, 3);
-for (const a of [ePosAt, eAt]) a.setUsage(THREE.DynamicDrawUsage);
+// rgb: the ember's own colour. a: 0 keeps the heat ramp, 1 is that colour alone.
+const eTint = new Float32Array(EMBERS * 4);
+const eTintAt = new THREE.InstancedBufferAttribute(eTint, 4);
+for (const a of [ePosAt, eAt, eTintAt]) a.setUsage(THREE.DynamicDrawUsage);
 emberGeo.setAttribute('aP', ePosAt);
 emberGeo.setAttribute('aE', eAt);
+emberGeo.setAttribute('aC', eTintAt);
 emberGeo.instanceCount = 0;
 const body = t => {
   let c = mix(vec3(0.35, 0.015, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.0, 0.45, t));
@@ -386,15 +395,16 @@ function emberMat(mirrored) {
   const c = clipOf(mirrored ? vec3(P0.x, float(2 * FLOOR).sub(P0.y), P0.z) : P0);
   // Half the point size in pixels; it shrinks with distance.
   const half = temp.mul(10).add(4).mul(uEmberDpr).mul(8).div(c.w);
-  const vT = varying(temp), vQ = varying(positionGeometry.xy);
+  const vT = varying(temp), vQ = varying(positionGeometry.xy), vTint = varying(attribute('aC', 'vec4'));
   const m = additive(new THREE.NodeMaterial());
   m.vertexNode = vec4(c.xy.add(positionGeometry.xy.mul(half).div(uRes.mul(0.5)).mul(c.w)), c.z, c.w);
   m.fragmentNode = Fn(() => {
     const r2 = vQ.dot(vQ);
     // A hot core inside a soft glow.
     const a = exp(r2.mul(-9)).add(exp(r2.mul(-2.5)).mul(0.25).mul(smoothstep(0.6, 1.0, r2.sqrt()).oneMinus()));
-    // Radiance rises steeply with temperature.
-    return vec4(body(vT).mul(pow(vT, 3).mul(9)).mul(a), 0);
+    // Radiance rises steeply with temperature; a tinted bit fades evenly.
+    const glow = mix(pow(vT, 3).mul(9), vT.mul(2.2), vTint.a);
+    return vec4(mix(body(vT), vTint.rgb, vTint.a).mul(glow).mul(a), 0);
   })();
   return m;
 }
@@ -411,12 +421,15 @@ let seed = 1031;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 let emberHead = 0, emberN = 0, emberEnd = 0;
 // Embers fill a ring; the oldest gives way.
-function addEmber(x, z, born, tau, t0) {
+const NO_TINT = [1, 1, 1, 0];
+function addEmber(x, z, born, tau, t0, tint = NO_TINT) {
   const i = emberHead;
   emberHead = (emberHead + 1) % EMBERS;
   emberN = Math.max(emberN, emberHead || EMBERS);
   ePos.set([x, FLOOR + 0.02, z], i * 3);
   eAttr.set([born, tau, t0], i * 3);
+  eTint.set(tint, i * 4);
+  eTintAt.needsUpdate = true;
   emberGeo.instanceCount = emberN;
   ePosAt.needsUpdate = true;
   eAt.needsUpdate = true;
@@ -455,11 +468,13 @@ const slot = name => {
   return a;
 };
 // aA: start point, start time. aB: start velocity, drag. aC: start heat, life, trail, size. aD: kind, seed, end heat, gain.
-const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD');
+// aE: the spark's own colour, and how far it replaces the heat ramp.
+const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD'), aE = slot('aE');
 sparkGeo.instanceCount = 0;
 const uDpr = uniform(1), uTrail = uniform(1), uG = uniform(G);
 function sparkMat(mirrored) {
-  const A = attribute('aA', 'vec4'), B = attribute('aB', 'vec4'), C = attribute('aC', 'vec4'), D = attribute('aD', 'vec4');
+  const A = attribute('aA', 'vec4'), B = attribute('aB', 'vec4'), C = attribute('aC', 'vec4'), D = attribute('aD', 'vec4'), E = attribute('aE', 'vec4');
+  const tinted = h => mix(body(h), E.rgb, E.a);
   // The wet floor mirrors the sparks at half strength.
   const gain = mirrored ? 0.5 : 1;
   const age = uTime.sub(A.w), life = C.y;
@@ -496,7 +511,7 @@ function sparkMat(mirrored) {
   const heat = mix(C.x, D.z, f);
   const e = pow(max(heat, 0), 2.5).mul(5).mul(D.w).mul(gain).mul(smoothstep(0.85, 1.0, f).mul(0.6).oneMinus());
   // The tail is cooler and redder than the head.
-  const vCol = varying(body(heat).mul(e)), vColT = varying(body(heat.mul(0.7)).mul(e).mul(0.5));
+  const vCol = varying(tinted(heat).mul(e)), vColT = varying(tinted(heat.mul(0.7)).mul(e).mul(0.5));
   const vS = varying(s), vY = varying(py.mul(W)), vLen = varying(len), vw = varying(w), vW = varying(W);
   const vSeed = varying(D.y), vSpark = varying(mix(float(0.3), float(0.9), step(0.5, D.x)));
   const m = additive(new THREE.NodeMaterial());
@@ -531,7 +546,7 @@ sparksGhost.renderOrder = 0;
 scene.add(sparks, sparksGhost);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one segment into the next slot; the oldest slot gives way.
-function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain) {
+function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain, tint = NO_TINT) {
   const i = head;
   head = (head + 1) % CAP;
   if (dirtyFrom < 0) dirtyFrom = i;
@@ -540,6 +555,7 @@ function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain) 
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, heat0, life, trail, size);
   aD.setXYZW(i, kind, rnd() * 100, heat1, gain);
+  aE.setXYZW(i, tint[0], tint[1], tint[2], tint[3]);
   sparkGeo.instanceCount = Math.max(sparkGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
 }
@@ -547,7 +563,7 @@ function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain) 
 function commitSparks() {
   if (dirtyFrom < 0) return;
   const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
-  for (const at of [aA, aB, aC, aD]) {
+  for (const at of [aA, aB, aC, aD, aE]) {
     at.addUpdateRange(a * 4, run * 4);
     if (n > run) at.addUpdateRange(0, (n - run) * 4);
     at.needsUpdate = true;
@@ -580,32 +596,51 @@ function floorHit(p0, v0, k, life) {
 }
 /* ---------- end K6 ---------- */
 
-/* ---------- metals ---------- */
-// Spark tests read a metal by its sparks.
+/* ---------- spark types ---------- */
+// Spark tests read a metal by its sparks; the other types each have a trick.
 // n: sparks per tooth. life: burn time. heat: start and end, 0 to 1.
-// k: drag. fork: chance to burst, and children. split: chance to split on the floor.
-// smoke: amount and tint. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
-const METALS = {
-  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, kids: [3, 8], split: 0.5, size: 1.6,
-    smoke: 1, tint: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
-  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, kids: [4, 9], split: 0.2, size: 1.4,
-    smoke: 0.6, tint: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]] },
-  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, kids: [2, 4], split: 0.15, size: 1.9,
-    smoke: 0.35, tint: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]] },
+// k: drag. fork: chance to burst. depth: fork levels. kids: children of a burst.
+// split: chance to split on the floor. speed: scale of the launch speed.
+// spark: the spark's own colour and mix, NO_TINT for the heat ramp, or 'hue' for a random hue.
+// smoke: amount. fog: the smoke's colour. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
+const TYPES = {
+  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, depth: 1, kids: [3, 8], split: 0.5, size: 1.6, speed: 1, spark: NO_TINT,
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, depth: 1, kids: [4, 9], split: 0.2, size: 1.4, speed: 1, spark: NO_TINT,
+    smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]] },
+  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, depth: 1, kids: [2, 4], split: 0.15, size: 1.9, speed: 1, spark: NO_TINT,
+    smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]] },
+  sparkler: { n: 1.6, life: [0.25, 0.5], heat: [0.9, 0.55], k: [4, 6], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 0.8, spark: NO_TINT,
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  comet: { n: 0.22, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, size: 3.4, speed: 0.5, spark: NO_TINT,
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  confetti: { n: 1.6, life: [0.5, 0.8], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 2.0, speed: 0.9, spark: 'hue',
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  popcorn: { n: 0.9, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
 };
+// The colour a new spark of this type carries.
+function tintOf(m) {
+  if (m.spark !== 'hue') return m.spark;
+  const c = col(0.8, 0.19, rnd() * 360);
+  return [c.r, c.g, c.b, 1];
+}
 const span = ([a, b]) => a + (b - a) * rnd();
 const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
 // One spark: write its flight, then schedule what ends it.
-// fd counts fork depth; bd counts floor bounces.
-function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
-  const m = METALS[metal];
+// o.fd counts fork depth; o.bd counts floor bounces; o.act marks a second act.
+function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
+  const { fd = 0, bd = 0, tint = NO_TINT, act = 0 } = o;
+  const m = TYPES[pick];
   const hit = floorHit(p0, v0, k, life);
   // A burst comes late in the flight, before the spark lands.
   const forkAt = fd === 0 && bd === 0 && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
   const end = Math.min(life, hit, forkAt);
   const heatEnd = heat0 + (heat1 - heat0) * (end / life);
-  const trail = fd ? 0.03 : 0.07;
-  writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1);
+  const trail = o.trail ?? (fd ? 0.03 : 0.07);
+  writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1, tint);
   if (end === forkAt) {
     // A burst: three to eight short stars in a sphere.
     const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
@@ -614,7 +649,7 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
       Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(3 + 4 * rnd());
       const cv = v.clone().multiplyScalar(0.5).add(Q);
       const kid = span([0.1, 0.28]);
-      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, fd + 1, bd);
+      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, { fd: fd + 1, bd, tint });
     }
     cue(t0 + end, 'pop', p, heatEnd);
     wisp(t0 + end, p, FEED.pop * m.smoke);
@@ -631,16 +666,16 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
       wisp(t0 + end, p, FEED.steam);
     }
     if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
-      const hot = heatEnd > 0.6 && rnd() < m.split;
-      const parts = hot ? 2 : 1;
+      const splits = heatEnd > 0.6 && rnd() < m.split;
+      const parts = splits ? 2 : 1;
       for (let i = 0; i < parts; i++) {
         const pv = bv.clone();
-        if (hot) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i ? 1 : -1) * (0.3 + 0.4 * rnd()));
-        launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (hot ? 0.75 : 0.9), fd, bd + 1);
+        if (splits) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i ? 1 : -1) * (0.3 + 0.4 * rnd()));
+        launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (splits ? 0.75 : 0.9), { fd, bd: bd + 1, tint });
       }
     } else if (heatEnd > 0.3) {
       // A slow, hot spark comes to rest as an ember.
-      addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85));
+      addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85), tint);
     }
   }
 }
@@ -662,7 +697,7 @@ function emit(dt) {
   const teethRate = wheel.omega * TEETH / TAU;
   if (teethRate < 4) return 0;
   toothAcc += teethRate * dt;
-  const m = METALS[metal], rim = wheel.omega * R;
+  const m = TYPES[pick], rim = wheel.omega * R;
   let n = 0;
   // Reduced motion and the ladder's last rung each halve the count; so does a tall stage.
   const lite = (reduced() ? 0.5 : 1) * (rung >= 3 ? 0.5 : 1) * (narrow ? 0.6 : 1);
@@ -676,8 +711,8 @@ function emit(dt) {
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
       V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
-        .multiplyScalar(2 + Math.min(16, rim * (0.45 + 0.45 * rnd())));
-      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), reduced() ? 9 : 0);
+        .multiplyScalar((2 + Math.min(16, rim * (0.45 + 0.45 * rnd()))) * m.speed);
+      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), { fd: reduced() ? 9 : 0, tint: tintOf(m) });
       n++;
     }
   }
@@ -1010,10 +1045,10 @@ const uContactPos = uniform(contact.position.clone()), uContactCol = uniform(con
 // The spark jet lights the smoke along its first stretch.
 const uJet = uniform(0), uJetCol = uniform(col(0.82, 0.16, 62));
 const JET_A = vec3(0.1, -R, 0), JET_AB = vec3(2.4, -0.35, 0);
-// The metal sets the smoke's tint and the flame's ramp; both glide on a change.
+// The type sets the smoke's colour and the flame's ramp; both glide on a change.
 const tones = {};
-for (const [id, m] of Object.entries(METALS)) tones[id] = { tint: col(...m.tint), ramp: m.ramp.map(c => col(...c)) };
-const uTint = uniform(tones.ferro.tint.clone());
+for (const [id, m] of Object.entries(TYPES)) tones[id] = { fog: col(...m.fog), ramp: m.ramp.map(c => col(...c)) };
+const uTint = uniform(tones.ferro.fog.clone());
 const uRamp = tones.ferro.ramp.map(c => uniform(c.clone()));
 const uFlame = uniform(1);
 const dyeShow = texture3D(sim.dye);
@@ -1145,7 +1180,7 @@ function smokeStep(dt) {
     if (!smokeLive) return;
     smokeUntil = Math.min(smokeUntil, time + FADE_FOR);
   }
-  const m = METALS[metal], j = allowed ? clamp(rate / 250) : 0;
+  const m = TYPES[pick], j = allowed ? clamp(rate / 250) : 0;
   // A short kick after a reset stands one thin wisp over the flint.
   const kicking = kick > 0;
   const feed = Math.max(j, kicking ? 0.55 : 0);
@@ -1269,11 +1304,11 @@ function draw() {
   for (const w of [real, ghost]) w.spin.rotation.z = wheel.angle;
   uTime.value = time;
   uTrail.value = 0.25 + 1.75 * trails;
-  // The smoke takes the metal's tint and flame; both glide.
-  const tone = tones[metal];
-  uTint.value.lerp(tone.tint, 0.08);
+  // The smoke takes the type's colour and flame; both glide.
+  const tone = tones[pick];
+  uTint.value.lerp(tone.fog, 0.08);
   uRamp.forEach((u, i) => u.value.lerp(tone.ramp[i], 0.08));
-  uFlame.value += (METALS[metal].flame - uFlame.value) * 0.08;
+  uFlame.value += (TYPES[pick].flame - uFlame.value) * 0.08;
   uJet.value = clamp(rate / 250);
   sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
