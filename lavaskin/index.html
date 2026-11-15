@@ -191,6 +191,13 @@ float noise(vec2 p) {
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
 }
+// Gradient noise, about 0 to 1: rounder blobs, with no grid crosses.
+float gnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  float a = dot(hash22(i) * 2.0 - 1.0, f), b = dot(hash22(i + vec2(1.0, 0.0)) * 2.0 - 1.0, f - vec2(1.0, 0.0));
+  float c = dot(hash22(i + vec2(0.0, 1.0)) * 2.0 - 1.0, f - vec2(0.0, 1.0)), d = dot(hash22(i + vec2(1.0, 1.0)) * 2.0 - 1.0, f - vec2(1.0, 1.0));
+  return 0.5 + 0.75 * mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
 `;
 // Plates are cells of a jittered grid; seams are the cell borders.
 const CELLS = `
@@ -279,7 +286,7 @@ void main() {
     vec4 a = uA[i], b = uB[i];
     float d = seg(X, a.xy, a.zw);
     // Two noises rag the edge: one in step with the size, one fixed.
-    float r = b.x * (1.0 + 0.32 * (noise(X * 7.0 + float(i) * 13.1) - 0.5)) + 0.07 * min(1.0, b.x / 0.3) * (noise(X * 13.0 + 5.0) - 0.5);
+    float r = b.x * (1.0 + 0.3 * (gnoise(X * 2.6) - 0.5) + 0.26 * (noise(X * 7.0) - 0.5)) + 0.07 * min(1.0, b.x / 0.3) * (noise(X * 13.0 + 5.0) - 0.5);
     r = max(r, 0.02);
     // Melt is open lava; the heat holds a plateau in the middle.
     f.r = max(f.r, b.y * (1.0 - smoothstep(0.45 * r, r, d)));
@@ -374,7 +381,7 @@ void main() {
   float d2 = cracks(pc);
   float line2 = 1.0 - smoothstep(0.0, 0.05, d2);
   tSeam = max(tSeam - 0.3 * line2 * exp(-out1 / rimW), 0.0);
-  float thin = smoothstep(0.6, 0.9, noise(P * 0.42 + 13.0));
+  float thin = smoothstep(0.55, 0.8, gnoise(P * 0.42 + 13.0));
 
   /* ropes: each plate folds its skin across its own flow line */
   float ch = hash12(c.id + 3.7);
@@ -393,7 +400,7 @@ void main() {
   /* breaks: the field from the hand and the vents */
   float onB = smoothstep(0.01, 0.06, melt);
   // New skin forms in patches; fresh melt has almost none.
-  float patchy = 0.6 * noise(P * 3.1 + 7.0) + 0.4 * noise(P * 8.3);
+  float patchy = 0.6 * gnoise(P * 3.1 + 7.0) + 0.4 * gnoise(P * 8.3);
   // It darkens through orange and red to black in about twenty seconds.
   float tBreak = 1.8 * pow(1.0 - melt, 2.2) * (0.75 + 0.5 * patchy) + (0.06 + 0.12 * patchy) * melt;
   // Cracks in the forming skin show the hotter lava beneath.
@@ -409,11 +416,11 @@ void main() {
   Ts = max(Ts, onB * (TAMB + (Tb - TAMB) * exp(-tBreak)));
   float mol = max(mSeam, liquid);
   // Open lava streaks as it moves: thin cooler veins.
-  float vn = abs(noise(P * 6.0 + vec2(uClock * 0.06, 0.0)) * 2.0 - 1.0);
+  float vn = abs(gnoise(P * 6.0 + vec2(uClock * 0.06, 0.0)) * 2.0 - 1.0);
   Ts -= 35.0 * (1.0 - smoothstep(0.0, 0.2, vn)) * mol;
 
   /* height: swells, plate lips, ropes, cracks and domes */
-  float base = 0.06 * noise(P * 0.55 + 2.0) + 0.02 * noise(P * 2.8 + 7.0) + 0.07 * bul;
+  float base = 0.06 * gnoise(P * 0.55 + 2.0) + 0.02 * gnoise(P * 2.8 + 7.0) + 0.07 * bul;
   float lip = smoothstep(0.0, 0.05, out1);
   float scar = 0.005 + 0.01 * smoothstep(0.0, 0.3, open + 0.5 * act * act);
   // Folds round a break follow the edge of its dome.
@@ -539,19 +546,20 @@ let seed = [...SEED0], flow = [Math.cos(FLOW0), Math.sin(FLOW0)];
 let drift = [0, 0], clock = 0, heatE = heat;
 // alive: 1 while the lava creeps, 0 once it stalls.
 let alive = reduced() ? 0 : 1, surge = 0, surgeAt = -1;
-let lastInput = performance.now(), busyUntil = 0;
+// lastInput: any hand on the stage. lastAct: a press, a key or a control.
+let lastInput = performance.now(), lastAct = lastInput, busyUntil = 0;
 // Stamps wait here until the next field step applies them.
 const stamps = [];
 // Vents: breakouts that grow on their own for a second or two.
 const vents = [], pending = [];
 // After this long with no hand, the flow stalls and the loop sleeps.
-const IDLE_AFTER = 75;
+const IDLE_AFTER = 60;
 const tauMelt = () => mix(7, 13, heatE), tauHeat = () => mix(8, 14, heatE);
 
 // One break: lava at a, or along a to b, of radius r in world units.
 function stamp(a, b, r, melt, hot, dome, folds) {
   stamps.push({ a, b, r, melt, hot, dome, folds });
-  busyUntil = performance.now() + 4.2 * Math.max(tauMelt(), tauHeat()) * 1000;
+  busyUntil = performance.now() + 3 * Math.max(tauMelt(), tauHeat()) * 1000;
   cool = Math.min(1.6, cool + r * melt * 0.5);
 }
 const sA = new Float32Array(32), sB = new Float32Array(32), sW = new Float32Array(8);
@@ -638,7 +646,8 @@ function down(e) {
   poke();
 }
 function move(e) {
-  if (!ptr || e.pointerId !== ptr.id) return;
+  if (!ptr) { if (e.pointerType === 'mouse' && performance.now() - lastInput > 500) stir(); return; }
+  if (e.pointerId !== ptr.id) return;
   const [x, y] = local(e), now = performance.now();
   if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 8) ptr.mode = 'tear';
   if (ptr.mode === 'tear') {
@@ -902,13 +911,15 @@ function draw() {
 }
 
 /* ---------- frame loop ---------- */
-// Lively: a hand, a vent or a surge. At rest the creep draws 24 frames a second.
+// Lively: a hand or a surge. At rest the creep draws 24 frames a second.
 // After IDLE_AFTER seconds the flow stalls; once the breaks seal, the loop sleeps.
 let raf = 0, last = 0, lastDt = 0, visible = !document.hidden, ready = false, fullRate = false, introUp = false;
 function wake() {
   if (!raf && visible && ready && !introUp) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
-function poke() { lastInput = performance.now(); wake(); }
+function poke() { lastInput = lastAct = performance.now(); wake(); }
+// A hover keeps the flow awake but asks for no full-rate frames.
+function stir() { lastInput = performance.now(); wake(); }
 function step(dt, now) {
   lastDt = dt;
   realT += dt;
@@ -936,7 +947,7 @@ function frame(now) {
   raf = 0;
   let again = false;
   try {
-    const lively = !!ptr || vents.length > 0 || pending.length > 0 || surge > 0.001 || now - lastInput < 3000;
+    const lively = !!ptr || pending.length > 0 || surge > 0.001 || now - lastAct < 3000;
     if (!lively && now - last < 1000 / 24 - 4) { again = true; return; }
     const raw = (now - last) / 1000;
     // The slow-frame watch reads only frames at the full rate.
