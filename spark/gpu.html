@@ -28,6 +28,8 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/GaussianBlurNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/math/curlNoise.js">
 <style>
 /* Spark wheel: a knurled wheel on a flint, close up, in the dark. */
 :root { --stage: oklch(0.07 0.008 250); }
@@ -111,16 +113,20 @@ function fail() {
   mark('first-frame');
 }
 if (!navigator.gpu) { fail(); throw new Error('Spark wheel: no WebGPU'); }
-const [THREE, TSL, { bloom }, { RoomEnvironment }] = await Promise.all([
+const [THREE, TSL, { bloom }, { RoomEnvironment }, { gaussianBlur }, { snoiseVec3 }] = await Promise.all([
   import('three/webgpu'),
   import('three/tsl'),
   import('three/addons/tsl/display/BloomNode.js'),
   import('three/addons/environments/RoomEnvironment.js'),
+  import('three/addons/tsl/display/GaussianBlurNode.js'),
+  import('three/addons/tsl/math/curlNoise.js'),
 ]);
 // TSL's floor and clamp stay on the namespace; the page has its own.
 const {
   vec2, vec3, vec4, float, Fn, uniform, attribute, varying, mix, smoothstep, min, max, exp, pow, fract, sin, step,
   cameraProjectionMatrix, cameraViewMatrix, positionGeometry, pass, screenUV, screenCoordinate, hash, uv,
+  uvec3, texture3D, textureStore, storageTexture, storage, instanceIndex, Loop, If, Break,
+  mx_noise_float, interleavedGradientNoise, cameraPosition, positionWorld,
 } = TSL;
 const renderer = new THREE.WebGPURenderer({ powerPreference: 'high-performance' });
 await renderer.init();
@@ -534,10 +540,14 @@ function floorHit(p0, v0, k, life) {
 // Spark tests read a metal by its sparks.
 // n: sparks per tooth. life: burn time. heat: start and end, 0 to 1.
 // k: drag. fork: chance to burst, and children. split: chance to split on the floor.
+// smoke: amount and tint. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
 const METALS = {
-  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, kids: [3, 8], split: 0.5, size: 1.6 },
-  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, kids: [4, 9], split: 0.2, size: 1.4 },
-  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, kids: [2, 4], split: 0.15, size: 1.9 },
+  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, kids: [3, 8], split: 0.5, size: 1.6,
+    smoke: 1, tint: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]] },
+  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, kids: [4, 9], split: 0.2, size: 1.4,
+    smoke: 0.6, tint: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]] },
+  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, kids: [2, 4], split: 0.15, size: 1.9,
+    smoke: 0.35, tint: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]] },
 };
 const span = ([a, b]) => a + (b - a) * rnd();
 const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
@@ -563,6 +573,7 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
       launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, fd + 1, bd);
     }
     cue(t0 + end, 'pop', p, heatEnd);
+    wisp(t0 + end, p, FEED.pop * m.smoke);
   } else if (end === hit) {
     const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
     p.y = FLOOR + 0.001;
@@ -570,7 +581,11 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
     const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
     const rest = life - end;
     // Hot sparks hiss on the wet floor.
-    if (heatEnd > 0.55 && mirror.visible) cue(t0 + end, 'hiss', p, heatEnd);
+    if (heatEnd > 0.55 && mirror.visible) {
+      cue(t0 + end, 'hiss', p, heatEnd);
+      // A hot spark on the wet floor lifts a wisp of steam.
+      wisp(t0 + end, p, FEED.steam);
+    }
     if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
       const hot = heatEnd > 0.6 && rnd() < m.split;
       const parts = hot ? 2 : 1;
@@ -625,19 +640,491 @@ function emit(dt) {
   return n;
 }
 
+/* ---------- K3: volume fluid ---------- */
+// Lifted from ink/index.html and retuned for smoke: hot dye rises and thins.
+// The box rides the wheel's pivot frame: x runs down the jet, z along the axle.
+// Dye r holds smoke density; dye g holds heat.
+const BOX = { x0: -1.4, x1: 3.4, y0: FLOOR, y1: FLOOR + 6, z0: -1.2, z1: 1.2 };
+const BOX_MIN = vec3(BOX.x0, BOX.y0, BOX.z0);
+const BOX_SIZE = vec3(BOX.x1 - BOX.x0, BOX.y1 - BOX.y0, BOX.z1 - BOX.z0);
+// Cells are cubes, 0.06 on a side.
+const GRID = [80, 100, 40];
+const SIM_STEP = 1 / 60;
+// Jacobi sweeps stay even, so pressure ends in A.
+const PRESSURE_SWEEPS = 6;
+// At most eight emitters act in one step; each takes three vec4.
+const EMIT_MAX = 8;
+const uDt = uniform(SIM_STEP);
+// Heat lifts the smoke hard; the smoke itself keeps a slow rise.
+const uBuoyancy = uniform(5), uLift = uniform(1.4);
+const uVorticity = uniform(5), uVelDamping = uniform(0.6), uViscosity = uniform(0.15), uTurbulence = uniform(0.9);
+// Each step keeps this share: smoke thins over seconds, heat in a quarter second.
+const THIN = Math.exp(-SIM_STEP / 3.2), FADE = Math.exp(-SIM_STEP / 0.4);
+const uThin = uniform(THIN), uCool = uniform(Math.exp(-SIM_STEP / 0.25));
+// The wheel's spin, so the rim drags the air.
+const uOmega = uniform(0);
+// Each emitter: position and radius, velocity and grip, then smoke and heat.
+const emitAttr = new THREE.StorageBufferAttribute(new Float32Array(EMIT_MAX * 3 * 4), 4);
+const emitBuf = storage(emitAttr, 'vec4', EMIT_MAX * 3).toReadOnly();
+const uEmitCount = uniform(0, 'int');
+// Emitters past eight wait for the next step.
+const pending = [];
+
+function createK3() {
+  const [GX, GY, GZ] = GRID;
+  const CELLS = GX * GY * GZ;
+  const CELL = (BOX.y1 - BOX.y0) / GY;
+  const DIMS = vec3(GX, GY, GZ);
+  const TX = 1 / GX, TY = 1 / GY, TZ = 1 / GZ;
+
+  // rgba16float is storage-writable and linearly filterable.
+  const textures = [];
+  function createStorage3D(name) {
+    const texture = new THREE.Storage3DTexture(GX, GY, GZ);
+    texture.name = name;
+    texture.format = THREE.RGBAFormat;
+    texture.type = THREE.HalfFloatType;
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping;
+    textures.push(texture);
+    return texture;
+  }
+  const velTexA = createStorage3D('velocity A');
+  const velTexB = createStorage3D('velocity B');
+  // Dye A is the current field, B the forward pass, C the corrected result.
+  const dyeTexA = createStorage3D('dye A');
+  const dyeTexB = createStorage3D('dye B');
+  const dyeTexC = createStorage3D('dye C');
+  const divTex = createStorage3D('divergence');
+  const pressTexA = createStorage3D('pressure A');
+  const pressTexB = createStorage3D('pressure B');
+  const curlNoiseTex = createStorage3D('curl noise');
+  curlNoiseTex.wrapS = curlNoiseTex.wrapT = curlNoiseTex.wrapR = THREE.RepeatWrapping;
+  // Curl holds the vorticity vector in xyz and its length in w.
+  const curlTex = createStorage3D('curl');
+  // A and C swap each step through these two nodes.
+  const dyeRead = texture3D(dyeTexA);
+  const dyeWrite = storageTexture(dyeTexC).toWriteOnly();
+  const curlNoiseNode = texture3D(curlNoiseTex);
+
+  const voxel = id => uvec3(id.mod(GX), id.div(GX).mod(GY), id.div(GX * GY));
+  const uvwOf = coord => vec3(coord).add(0.5).div(DIMS);
+  const boxOf = uvw => uvw.mul(BOX_SIZE).add(BOX_MIN);
+  // 1 inside the wheel's body, 0 outside; the wheel sits at the frame's origin.
+  const inWheel = p => smoothstep(0.94, 1.02, p.xy.length()).oneMinus().mul(step(p.z.abs(), 0.33));
+  // 1 in a thin shell of air round the rim.
+  const atRim = p => smoothstep(0.94, 1.02, p.xy.length()).mul(smoothstep(1.06, 1.2, p.xy.length()).oneMinus()).mul(step(p.z.abs(), 0.33));
+
+  // Curl noise is computed once into a 3D texture.
+  const curlNoisePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const p = uvwOf(coord).mul(vec3(GX / GY, 1, GZ / GY)).mul(6);
+    const e = float(0.02);
+    const dx = vec3(e, 0, 0), dy = vec3(0, e, 0), dz = vec3(0, 0, e);
+    const x0 = snoiseVec3(p.sub(dx)), x1 = snoiseVec3(p.add(dx));
+    const y0 = snoiseVec3(p.sub(dy)), y1 = snoiseVec3(p.add(dy));
+    const z0 = snoiseVec3(p.sub(dz)), z1 = snoiseVec3(p.add(dz));
+    const x = y1.z.sub(y0.z).sub(z1.y).add(z0.y);
+    const y = z1.x.sub(z0.x).sub(x1.z).add(x0.z);
+    const z = x1.y.sub(x0.y).sub(y1.x).add(y0.x);
+    textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).div(e.mul(2)), 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Clear empties velocity, pressure and both dye fields.
+  const clearPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    textureStore(velTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(pressTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexC, coord, vec4(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Vorticity is the curl of the projected velocity.
+  const curlPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexA, uvw.add(vec3(TX, 0, 0)), 0).xyz;
+    const vL = texture3D(velTexA, uvw.sub(vec3(TX, 0, 0)), 0).xyz;
+    const vU = texture3D(velTexA, uvw.add(vec3(0, TY, 0)), 0).xyz;
+    const vD = texture3D(velTexA, uvw.sub(vec3(0, TY, 0)), 0).xyz;
+    const vF = texture3D(velTexA, uvw.add(vec3(0, 0, TZ)), 0).xyz;
+    const vB = texture3D(velTexA, uvw.sub(vec3(0, 0, TZ)), 0).xyz;
+    const w = vec3(
+      vU.z.sub(vD.z).sub(vF.y.sub(vB.y)),
+      vF.x.sub(vB.x).sub(vR.z.sub(vL.z)),
+      vR.y.sub(vL.y).sub(vU.x.sub(vD.x)),
+    ).div(2 * CELL);
+    textureStore(curlTex, coord, vec4(w, w.length())).toWriteOnly();
+  })().compute(CELLS);
+
+  // A sphere test for emitter i: 1 at the centre, 0 at the rim.
+  const emitWeight = (p, i) => {
+    const e0 = emitBuf.element(i.mul(3));
+    return smoothstep(0, 1, p.distance(e0.xyz).div(e0.w).oneMinus().mul(1.6));
+  };
+
+  // Advects velocity, then adds buoyancy, curl noise, the rim's drag and emitters.
+  const advectVelocityPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(BOX_SIZE).mul(uDt));
+    const v = texture3D(velTexA, prevPos, 0).xyz.toVar();
+    // A light viscous blend damps the odd-even stripes of the pressure solve.
+    const near = texture3D(velTexA, prevPos.add(vec3(TX, 0, 0)), 0).xyz
+      .add(texture3D(velTexA, prevPos.sub(vec3(TX, 0, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.add(vec3(0, TY, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.sub(vec3(0, TY, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.add(vec3(0, 0, TZ)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.sub(vec3(0, 0, TZ)), 0).xyz);
+    v.assign(mix(v, near.div(6), uViscosity));
+    const dye = dyeRead.sample(uvw).level(0);
+    const smoky = dye.r.mul(2).clamp(0, 1);
+
+    // Hot smoke rises.
+    v.addAssign(vec3(0, dye.g.mul(uBuoyancy).add(dye.r.mul(uLift)), 0).mul(uDt));
+    const noisePos = uvw.mul(0.8).add(vec3(0, uTime.mul(-0.03), uTime.mul(0.012)));
+    v.addAssign(curlNoiseNode.sample(noisePos).level(0).xyz.mul(uTurbulence.mul(smoky)).mul(uDt));
+    v.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
+
+    // Vorticity confinement keeps the fine curls; smoke weights it.
+    const wC = texture3D(curlTex, uvw, 0);
+    const eta = vec3(
+      texture3D(curlTex, uvw.add(vec3(TX, 0, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(TX, 0, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, TY, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, TY, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, 0, TZ)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, 0, TZ)), 0).w),
+    );
+    const N = eta.div(eta.length().add(1e-5));
+    v.addAssign(N.cross(wC.xyz).mul(uVorticity.mul(CELL)).mul(smoky.mul(0.8).add(0.2)).mul(uDt));
+
+    // Emitters pull velocity toward their own inside their spheres.
+    // A var: a value first used inside a loop is undefined when the loop runs no pass.
+    const p = boxOf(uvw).toVar();
+    Loop(uEmitCount, ({ i }) => {
+      const e1 = emitBuf.element(i.mul(3).add(1));
+      v.assign(mix(v, e1.xyz, emitWeight(p, i).mul(e1.w)));
+    });
+
+    // The spinning rim drags a thin shell of air; the wheel's body holds none.
+    v.assign(mix(v, vec3(p.y.negate(), p.x, 0).mul(uOmega).mul(0.06), atRim(p).mul(0.5)));
+    v.mulAssign(inWheel(p).oneMinus());
+
+    // Velocity fades near the box walls.
+    const edge = min(uvw, vec3(1).sub(uvw));
+    v.mulAssign(smoothstep(0.0, 0.035, min(edge.x, min(edge.y, edge.z))));
+    textureStore(velTexB, coord, vec4(v, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  const divergencePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexB, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const vL = texture3D(velTexB, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const vU = texture3D(velTexB, uvw.add(vec3(0, TY, 0)), 0).y;
+    const vD = texture3D(velTexB, uvw.sub(vec3(0, TY, 0)), 0).y;
+    const vF = texture3D(velTexB, uvw.add(vec3(0, 0, TZ)), 0).z;
+    const vB = texture3D(velTexB, uvw.sub(vec3(0, 0, TZ)), 0).z;
+    const divergence = vR.sub(vL).add(vU.sub(vD)).add(vF.sub(vB)).mul(0.5);
+    textureStore(divTex, coord, vec4(divergence, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Jacobi pressure solve ping-pongs between A and B.
+  const jacobi = (pressRead, pressWrite) => Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressRead, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressRead, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressRead, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressRead, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressRead, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressRead, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const divergence = texture3D(divTex, uvw, 0).x;
+    const pressure = pR.add(pL).add(pU).add(pD).add(pF).add(pB).sub(divergence).div(6);
+    textureStore(pressWrite, coord, vec4(pressure, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+  const jacobiPassAB = jacobi(pressTexA, pressTexB);
+  const jacobiPassBA = jacobi(pressTexB, pressTexA);
+
+  // Subtracting the pressure gradient makes velocity divergence-free.
+  const projectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressTexA, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressTexA, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressTexA, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressTexA, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressTexA, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressTexA, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const gradient = vec3(pR.sub(pL), pU.sub(pD), pF.sub(pB)).mul(0.5);
+    const vel = texture3D(velTexB, uvw, 0).xyz.sub(gradient);
+    textureStore(velTexA, coord, vec4(vel, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 1: a plain semi-Lagrangian pass into B.
+  const dyeForwardPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(BOX_SIZE).mul(uDt));
+    textureStore(dyeTexB, coord, dyeRead.sample(prevPos).level(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 2: trace B back and correct by half the error.
+  // The result stays inside the neighbours' range, so it never rings.
+  // Smoke thins, heat cools and emitters add both here.
+  const dyeCorrectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const shift = texture3D(velTexA, uvw, 0).xyz.div(BOX_SIZE).mul(uDt);
+    const prevPos = uvw.sub(shift);
+    const forward = texture3D(dyeTexB, uvw, 0);
+    const back = texture3D(dyeTexB, uvw.add(shift), 0);
+    const now = dyeRead.sample(uvw).level(0);
+    const dye = forward.add(now.sub(back).mul(0.5)).toVar();
+    const base = TSL.floor(prevPos.mul(DIMS).sub(0.5));
+    const lo = vec4(1e4).toVar(), hi = vec4(-1e4).toVar();
+    for (const o of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]) {
+      const near = dyeRead.sample(base.add(vec3(...o)).add(0.5).div(DIMS)).level(0);
+      lo.assign(min(lo, near));
+      hi.assign(max(hi, near));
+    }
+    dye.assign(min(max(dye, lo), hi).mul(vec4(uThin, uCool, 1, 1)));
+
+    // Emitters add smoke and heat; fine noise makes each puff uneven.
+    // A var: a value first used inside a loop is undefined when the loop runs no pass.
+    const p = boxOf(uvw).toVar();
+    Loop(uEmitCount, ({ i }) => {
+      const e2 = emitBuf.element(i.mul(3).add(2));
+      const lumpy = mx_noise_float(p.mul(9).add(e2.xyz.mul(7))).mul(0.45).add(0.8);
+      dye.addAssign(e2.mul(emitWeight(p, i)).mul(lumpy));
+    });
+    // The wheel's body holds no smoke; the box's top lets it out.
+    dye.mulAssign(inWheel(p).oneMinus().mul(smoothstep(0.0, 0.1, uvw.y.oneMinus())));
+    textureStore(dyeWrite, coord, max(dye, vec4(0))).toWriteOnly();
+  })().compute(CELLS);
+
+  const stepPasses = [curlPass, advectVelocityPass, divergencePass];
+  for (let i = 0; i < PRESSURE_SWEEPS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
+  stepPasses.push(projectPass, dyeForwardPass, dyeCorrectPass);
+
+  return {
+    get dye() { return dyeRead.value; },
+    async compile() {
+      await renderer.compileComputeAsync([curlNoisePass, clearPass, ...new Set(stepPasses)]);
+      renderer.compute(curlNoisePass);
+      renderer.compute(clearPass);
+    },
+    step() {
+      renderer.compute(stepPasses);
+      const swap = dyeRead.value;
+      dyeRead.value = dyeWrite.value;
+      dyeWrite.value = swap;
+    },
+    clear() { renderer.compute(clearPass); },
+    dispose() { textures.forEach(t => t.dispose()); },
+  };
+}
+
+// Queues one emitter for a coming step; positions are in the box frame.
+function puff({ pos, radius, vel = [0, 0, 0], grip = 0, smoke = 0, heat = 0 }) {
+  pending.push([pos, radius, vel, grip, smoke, heat]);
+}
+function loadEmitters() {
+  const a = emitAttr.array;
+  const batch = pending.splice(0, EMIT_MAX);
+  batch.forEach(([pos, radius, vel, grip, smoke, heat], i) => {
+    a.set([...pos, radius, ...vel, grip, smoke, heat, 0, 0], i * 12);
+  });
+  emitAttr.needsUpdate = true;
+  uEmitCount.value = batch.length;
+}
+/* ---------- end K3 ---------- */
+
+const sim = createK3();
+
+/* ---------- smoke ---------- */
+// The volume draws in its own scene, at half size, then blends over the picture.
+// Its box turns with the wheel's yaw; the march runs in the box frame.
+const uCy = uniform(1), uSy = uniform(0);
+const toBox = v => vec3(v.x.mul(uCy).sub(v.z.mul(uSy)), v.y, v.x.mul(uSy).add(v.z.mul(uCy)));
+let boxCos = 1, boxSin = 0;
+const boxOfWorld = p => [p.x * boxCos - p.z * boxSin, p.y, p.x * boxSin + p.z * boxCos];
+// The ladder sets the step count; the shader takes it as a loop bound.
+const uSteps = uniform(28, 'int');
+// The cool rim light, as a direction in the box frame.
+const uRimDir = uniform(new THREE.Vector3(0, 1, 0));
+const uRimCol = uniform(rim.color.clone().multiplyScalar(1.3));
+// A little cool fill, so thin smoke still reads in the dark.
+const uFill = uniform(new THREE.Vector3(0.03, 0.034, 0.045));
+// The warm contact light; its strength follows the spark rate.
+const uContactPos = uniform(contact.position.clone()), uContactCol = uniform(contact.color.clone()), uContactI = uniform(0);
+// The spark jet lights the smoke along its first stretch.
+const uJet = uniform(0), uJetCol = uniform(col(0.82, 0.16, 62));
+const JET_A = vec3(0.1, -R, 0), JET_AB = vec3(2.4, -0.35, 0);
+// The metal sets the smoke's tint and the flame's ramp; both glide on a change.
+const tones = {};
+for (const [id, m] of Object.entries(METALS)) tones[id] = { tint: col(...m.tint), ramp: m.ramp.map(c => col(...c)) };
+const uTint = uniform(tones.ferro.tint.clone());
+const uRamp = tones.ferro.ramp.map(c => uniform(c.clone()));
+const uFlame = uniform(1);
+const dyeShow = texture3D(sim.dye);
+const dyeAt = p => dyeShow.sample(p.sub(BOX_MIN).div(BOX_SIZE)).level(0);
+// Extinction per unit of smoke and length.
+const SIGMA = 2.4;
+const volMat = new THREE.NodeMaterial();
+volMat.side = THREE.BackSide;
+volMat.depthTest = false;
+volMat.depthWrite = false;
+volMat.blending = THREE.NoBlending;
+volMat.fragmentNode = Fn(() => {
+  const ro = toBox(cameraPosition).toVar(), rd = toBox(positionWorld.sub(cameraPosition)).normalize().toVar();
+  const t0 = BOX_MIN.sub(ro).div(rd), t1 = BOX_MIN.add(BOX_SIZE).sub(ro).div(rd);
+  const tmin = min(t0, t1), tmax = max(t0, t1);
+  const tNear = max(max(tmin.x, tmin.y), max(tmin.z, 0)).toVar();
+  const tFar = min(min(tmax.x, tmax.y), tmax.z).toVar();
+  // The wheel hides the smoke behind it: a ray stops at the wheel's cylinder.
+  const qa = rd.x.mul(rd.x).add(rd.y.mul(rd.y)).max(1e-6);
+  const qb = ro.x.mul(rd.x).add(ro.y.mul(rd.y));
+  const qh = qb.mul(qb).sub(qa.mul(ro.x.mul(ro.x).add(ro.y.mul(ro.y)).sub(R * R))).toVar();
+  const root = qh.max(0).sqrt();
+  const za = float(-WIDTH / 2).sub(ro.z).div(rd.z), zb = float(WIDTH / 2).sub(ro.z).div(rd.z);
+  const tin = max(qb.negate().sub(root).div(qa), min(za, zb)).toVar();
+  const tout = min(qb.negate().add(root).div(qa), max(za, zb)).toVar();
+  If(qh.greaterThan(0).and(tin.lessThan(tout)).and(tout.greaterThan(0)), () => { tFar.assign(min(tFar, max(tin, 0))); });
+  const ds = tFar.sub(tNear).max(0).div(uSteps.toFloat()).toVar();
+  // A jittered start hides the step bands.
+  const t = tNear.add(ds.mul(interleavedGradientNoise(screenCoordinate))).toVar();
+  const T = float(1).toVar(), L = vec3(0).toVar();
+  // Looking toward the rim light, the smoke scatters forward and glows at its edge.
+  const cosT = rd.dot(uRimDir);
+  const phase = float(1 - 0.45 * 0.45).div(float(1 + 0.45 * 0.45).sub(cosT.mul(0.9)).pow(1.5));
+  Loop(uSteps, () => {
+    const p = ro.add(rd.mul(t)).toVar();
+    const dye = dyeAt(p).toVar();
+    If(dye.r.greaterThan(0.003), () => {
+      // Fine noise breaks up the grid cells in thin smoke.
+      const dens = dye.r.mul(mx_noise_float(p.mul(5).sub(vec3(0, uTime.mul(0.35), 0))).mul(0.3).add(0.85)).toVar();
+      // Two samples toward the rim light give the smoke its own shadow.
+      const shade = exp(dyeAt(p.add(uRimDir.mul(0.14))).r.add(dyeAt(p.add(uRimDir.mul(0.36))).r).mul(-SIGMA * 0.22));
+      const lit = uRimCol.mul(shade).mul(phase).add(uFill).toVar();
+      const toC = uContactPos.sub(p);
+      lit.addAssign(uContactCol.mul(uContactI.mul(0.16)).div(toC.dot(toC).add(0.2)));
+      // The jet lights the smoke as a short warm line.
+      const pa = p.sub(JET_A);
+      const along = pa.dot(JET_AB).div(JET_AB.dot(JET_AB)).clamp(0, 1);
+      const off = pa.sub(JET_AB.mul(along));
+      lit.addAssign(uJetCol.mul(uJet.mul(0.5)).div(off.dot(off).add(0.14)));
+      const a = exp(dens.mul(ds).mul(-SIGMA)).oneMinus();
+      // Heat glows: the flame is the hot core of the smoke.
+      const heat = dye.g.clamp(0, 1);
+      const flame = mix(mix(uRamp[2], uRamp[1], smoothstep(0.0, 0.5, heat)), uRamp[0], smoothstep(0.5, 1.0, heat))
+        .mul(heat.pow(1.6)).mul(uFlame).mul(26);
+      L.addAssign(T.mul(lit.mul(uTint).mul(a).add(flame.mul(ds))));
+      T.mulAssign(a.oneMinus());
+    });
+    t.addAssign(ds);
+    // An opaque ray stops; later steps add nothing visible.
+    If(T.lessThan(0.01), () => { Break(); });
+  });
+  // rgb: light from the smoke. a: its opacity, so an empty pixel keeps the picture.
+  return vec4(L, T.oneMinus());
+})();
+const volGeo = new THREE.BoxGeometry(BOX.x1 - BOX.x0, BOX.y1 - BOX.y0, BOX.z1 - BOX.z0);
+volGeo.translate((BOX.x0 + BOX.x1) / 2, (BOX.y0 + BOX.y1) / 2, (BOX.z0 + BOX.z1) / 2);
+const volBox = new THREE.Mesh(volGeo, volMat);
+volBox.frustumCulled = false;
+volBox.visible = false;
+const volPivot = new THREE.Group();
+volPivot.add(volBox);
+const volScene = new THREE.Scene();
+volScene.add(volPivot);
+// The box and its lights turn with the wheel.
+function aimVolume(yaw) {
+  volPivot.rotation.y = yaw;
+  boxCos = Math.cos(yaw); boxSin = Math.sin(yaw);
+  uCy.value = boxCos; uSy.value = boxSin;
+  uRimDir.value.set(...boxOfWorld(rim.position.clone().normalize()));
+}
+
+// Puffs from bursts and floor hits wait here until their time comes.
+const wisps = [];
+function wisp(t, p, smoke) {
+  if (!smokeOn || reduced() || wisps.length > 240) return;
+  wisps.push({ t, pos: boxOfWorld(p), smoke });
+}
+// What each source adds in one step: the flint's smoke and heat, a burst, a hiss of steam.
+const FEED = { smoke: 0.22, heat: 0.2, pop: 0.06, steam: 0.05 };
+// Smoke lives for a while after the last puff, then fades and clears.
+const LINGER = 9, FADE_FOR = 1.5, KICK = 0.9;
+let simAcc = 0, smokeUntil = 0, smokeLive = false, kick = 0;
+function clearSmoke() {
+  sim.clear();
+  dyeShow.value = sim.dye;
+  pending.length = 0;
+  wisps.length = 0;
+  smokeLive = false;
+  volBox.visible = false;
+}
+function smokeStep(dt) {
+  if (!smokeOn || reduced()) { if (smokeLive) clearSmoke(); return; }
+  const m = METALS[metal], j = clamp(rate / 250);
+  // A short kick after a reset stands one thin wisp over the flint.
+  const kicking = kick > 0;
+  const feed = Math.max(j, kicking ? 0.55 : 0);
+  kick = Math.max(0, kick - dt);
+  wisps.sort((a, b) => a.t - b.t);
+  if (feed > 0.02 || (wisps.length && wisps[0].t <= time)) smokeUntil = time + LINGER;
+  if (time >= smokeUntil) { if (smokeLive) clearSmoke(); return; }
+  smokeLive = true;
+  volBox.visible = true;
+  uThin.value = smokeUntil - time < FADE_FOR ? FADE : THIN;
+  uOmega.value = Math.min(wheel.omega, 40);
+  simAcc = Math.min(simAcc + dt, 2 * SIM_STEP);
+  while (simAcc >= SIM_STEP) {
+    simAcc -= SIM_STEP;
+    if (feed > 0.02) {
+      // The contact puff: smoke and heat leave the flint down the jet.
+      puff({ pos: [0.12, -R + 0.02, 0], radius: 0.2, vel: [0.6 * j, 0.9, 0], grip: 0.3 * feed, smoke: FEED.smoke * feed * m.smoke });
+      // The flame lick: heat a little down the jet, where it clears the rim.
+      if (j > 0.02) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * m.smoke, heat: FEED.heat * j * m.flame });
+      // The jet drags the air along its first stretch.
+      if (j > 0.02) {
+        const speed = 2 + Math.min(16, wheel.omega * R * 0.675);
+        puff({ pos: [0.7, -R - 0.15, 0], radius: 0.32, vel: [0.3 * speed, -0.2, 0], grip: 0.22 * j, smoke: 0.012 * j * m.smoke });
+        puff({ pos: [1.6, -R - 0.38, 0], radius: 0.42, vel: [0.18 * speed, -0.2, 0], grip: 0.14 * j, smoke: 0.006 * j * m.smoke });
+      }
+    }
+    // The kick's wisp starts clear of the rim, a little warm, so it shows and rises.
+    if (kicking) puff({ pos: [0.45, -R + 0.1, 0.2], radius: 0.18, vel: [0.15, 0.7, 0], grip: 0.25, smoke: 0.1 * m.smoke, heat: 0.05 });
+    // At most four join a step; the rest wait.
+    for (let n = 0; n < 4 && wisps.length && wisps[0].t <= time; n++) {
+      const b = wisps.shift();
+      puff({ pos: b.pos, radius: 0.16, vel: [0, 0.6, 0], grip: 0.3, smoke: b.smoke });
+    }
+    loadEmitters();
+    sim.step();
+  }
+  dyeShow.value = sim.dye;
+}
+
 /* ---------- post ---------- */
-// Scene, then bloom, then a linear grade; the pipeline tone-maps last.
+// Scene, then smoke, then bloom, then a linear grade; the pipeline tone-maps last.
 // The stock blur spreads wider than the classic build's; more strength keeps the glow.
 const POST = { bloom: [1.2, 0.45, 0.85], tint: [0.0008, 0.0009, 0.0013], vig: 0.55, vigIn: 0.35, grain: 0.035 };
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 2 });
-const bloomPass = bloom(scenePass, ...POST.bloom);
+const volPass = pass(volScene, camera);
+volPass.setResolutionScale(0.5);
+// A light blur hides the half-size pixels and the jitter.
+const vol = gaussianBlur(volPass, 0.75, 1);
+const withSmoke = vec4(scenePass.rgb.mul(vol.a.oneMinus()).add(vol.rgb), 1);
+const bloomPass = bloom(withSmoke, ...POST.bloom);
 // Half size on High, 0.35 on Standard, a quarter on the ladder's rung 2.
 const bloomScale = () => 0.5 * (rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7);
 const uAsp = uniform(1);
 // The grade: haze lift, vignette, fixed grain.
 pipeline.outputNode = Fn(() => {
-  const c = scenePass.rgb.add(bloomPass.rgb).add(vec3(...POST.tint)).toVar();
+  const c = withSmoke.rgb.add(bloomPass.rgb).add(vec3(...POST.tint)).toVar();
   const q = screenUV.sub(0.5).mul(vec2(uAsp, 1));
   c.mulAssign(smoothstep(POST.vigIn, 1.1, q.length()).mul(POST.vig).oneMinus());
   const lum = c.dot(vec3(0.2126, 0.7152, 0.0722));
@@ -666,6 +1153,7 @@ function frameShot() {
   narrow = asp < 0.9;
   // Tall stages turn the spray further from the camera, so it stays in frame.
   setYaw(narrow ? 1.15 : 0.8);
+  aimVolume(narrow ? 1.15 : 0.8);
   if (!narrow) aim(30, 1.6, 8.8, 0.28, 0.3);
   else aim(34, 3, 12.4, 1.1, 0.34);
   camera.updateProjectionMatrix();
@@ -698,15 +1186,22 @@ function draw() {
   for (const w of [real, ghost]) w.mesh.rotation.y = wheel.angle;
   uTime.value = time;
   uTrail.value = 0.25 + 1.75 * trails;
+  // The smoke takes the metal's tint and flame; both glide.
+  const tone = tones[metal];
+  uTint.value.lerp(tone.tint, 0.08);
+  uRamp.forEach((u, i) => u.value.lerp(tone.ramp[i], 0.08));
+  uFlame.value += (METALS[metal].flame - uFlame.value) * 0.08;
+  uJet.value = clamp(rate / 250);
   sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
   // The contact light follows the spark rate, so the knurl flashes warm.
   contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : 6 * clamp(rate / 250);
+  uContactI.value = contact.intensity;
   pipeline.render();
 }
 
 /* ---------- frame loop ---------- */
-// Lively while the wheel turns or embers glow.
+// Lively while the wheel turns, embers glow or smoke hangs.
 // The renderer's own frame loop runs only while the page is lively.
 const frameLoop = renderer._animation;
 frameLoop.stop();
@@ -724,7 +1219,7 @@ function halt() {
   renderer.setAnimationLoop(null);
   frameLoop.stop();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd;
+const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || (smokeOn && !reduced() && time < smokeUntil);
 function frame() {
   // The loop makes its first call at once, with no time stamp.
   const now = performance.now();
@@ -743,6 +1238,7 @@ function frame() {
     const n = emit(dt);
     rate += (n / Math.max(dt, 1e-3) - rate) * (1 - Math.exp(-dt / 0.06));
     audioStep();
+    smokeStep(dt);
     draw();
     again = lively();
   } finally {
@@ -952,6 +1448,8 @@ act.reset = () => {
   head = 0; dirtyFrom = -1; dirtyN = 0; lastDeath = 0;
   for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
+  clearSmoke();
+  kick = KICK;
   live();
 };
 
@@ -960,7 +1458,8 @@ act.reset = () => {
 let ready = false;
 resize();
 seedEmbers(0);
-renderer.compileAsync(scene, camera).then(() => {
+Promise.all([renderer.compileAsync(scene, camera), sim.compile()]).then(() => {
+  kick = KICK;
   draw();
   canvas.classList.add('on');
   ready = true;

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T04:16:31Z
-updated_at: 2026-11-15T05:17:31Z
+updated_at: 2026-11-15T05:35:05Z
 parent: stimming-oh7b
 ---
 
@@ -15,7 +15,7 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
 - [x] Stage 2: copy to spark/legacy.html (noindex)
 - [x] Stage 3: scratch proofs P1 to P4 (untracked)
 - [x] Stage 4: spark/gpu.html, port at parity, no smoke
-- [ ] Stage 5: K3 fluid smoke and flame, coupled to the sparks
+- [x] Stage 5: K3 fluid smoke and flame, coupled to the sparks
 - [ ] Stage 6: quality ladder, Smoke toggle, idle, reduced motion
 - [ ] Stage 7: swap gpu.html to index.html, no-WebGPU redirect, toys.json legacy true
 - [ ] Stage 8: docs and final QA
@@ -44,3 +44,14 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
   - Test artefact, not a page fault: in a hidden browser pane no rAF fires, so three's node frame stands still and environment, intensity and bloom uniforms do not update. Probes drive frames by timer and tick renderer._animation.nodes.nodeFrame.update() themselves.
   - Checked by probe stills against classic at 1280 x 720 and 375 x 812: rest, grind, three metals, dry floor, long trails, reset, strike, loop stop after the embers cool. The real page loads, grinds and takes a tap with no console error.
   - Not checked: fps on a visible screen, drag by hand, sound by ear, reduced motion, 812 x 375 still.
+
+- Stage 5 (2026-11-14): spark/gpu.html has the K3 volume fluid, copied from Ink between K3 markers and retuned for smoke.
+  - Box in the wheel's pivot frame: x -1.4 to 3.4, y from the floor up 6, z ±1.2; grid 80 x 100 x 40 (320k cells), 6 Jacobi sweeps, at most two steps of 1/60 s a frame. Dye r is smoke, g is heat.
+  - Sources: a contact puff at the flint, a heat puff a little down the jet (the flame lick), two jet-drag spheres, puffs from bursts and from hot sparks on the wet floor (at most four a step). The rim drags a thin shell of air; the wheel's body holds no smoke.
+  - March in the box frame in its own scene, half size, blurred, blended as scene x (1 - a) + rgb before bloom. The wheel hides smoke behind it by a ray and cylinder test. Light: cool rim light with a two-sample shadow, the warm contact light, a warm line along the jet, a little fill.
+  - Per metal in METALS: smoke amount and tint, flame gain and ramp. Proposals for Tom.
+  - Smoke lingers 9 s after the last puff, fades over the last 1.5 s, then clears; the loop stops after that. The Smoke toggle and reset clear it. Reset stands one small wisp by the rim.
+  - Pitfall, same as the sparks: a value first used inside a TSL Loop is undefined when the loop runs no pass. The box position is a var before the emitter loops; without it the smoke vanished when the last emitter stopped.
+  - Name clash avoided: the sound code owns burst(); the smoke queue is wisp() and wisps.
+  - Checked by probe stills at 1280 x 720 and 375 x 812: grind, linger at 1, 4 and 7.5 s, three metals, toggle off, reset, loop stop. The real page loads (first frame mark at 0.64 s with warm caches), grinds and shows no error.
+  - Not checked: frame time on a visible screen (stage 6 measures it), smoke in the wet-floor mirror (none drawn), reduced motion (no smoke by rule), 812 x 375.
