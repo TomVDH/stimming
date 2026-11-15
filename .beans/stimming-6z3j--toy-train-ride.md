@@ -241,7 +241,7 @@ Open from the critics:
 - [x] The catenary mast is solid at rest (its 3 % see-through showed the view as a ghost)
 - [x] Far houses go dark again past 600 m: their mean window glow read as dense strips; the far light points carry the far shore
 - [x] Water lights cleaned: slim soft streaks under each light, each with its own length and strength; ripples dash only the near ones; a narrower, fainter moon path
-- [ ] Tunnels: the real line runs in tunnels in places (Kerenzerberg at 62 to 64 km); the ride shows a hillside there
+- [x] Tunnels: the real line runs in tunnels in places (Kerenzerberg at 62 to 64 km); the ride shows a hillside there. Done in stimming-t14e: seven OSM tunnels with bore, portals, cabin light and sound
 
 - [x] Softer cabin light at night (Tom): one warm, dimmed light colour for wall, reveal and cross bar; a wide shallow pool with no hard spot; the baked cabin's lamps dim and warm at night
 - [x] Cabin mirror blurred (Tom): the cube map reads from a coarse mip; the reveal's mirror image stays sharp
