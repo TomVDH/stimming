@@ -1,7 +1,33 @@
 # TypeScript feasibility
 
-Bean: `stimming-35mm` (epic `stimming-3s8z`). Written 2026-11-14. Plan only: nothing is converted, nothing is installed.
-TypeScript tooling (`tsc`, esbuild, Vite) is a new tool. Tom decides. This file proposes.
+Bean: `stimming-35mm` (epic `stimming-3s8z`). Written 2026-11-14.
+Tom picked path (a) on 2026-11-14 (`docs/code-health.md`, decisions 8 to 10). Steps 1 to 3 and the pilot are done (bean `stimming-bn47`).
+
+## Run the check
+
+```bash
+npm install
+```
+
+```bash
+npm run check
+```
+
+- `npm run check` runs `tsc --noEmit` over the `include` list in `tsconfig.json`: `shared/` and `foghorn/` today.
+- The check runs locally only. No CI job runs it (Tom, 2026-11-14).
+- `node_modules/` is git-ignored. The site never loads it; `python3 -m http.server` works without it.
+- TypeScript is pinned to 6.0.3. Version 7 is the native build and reads JSDoc differently; move to it as one planned step.
+- A toy joins the check when its own chat moves its module script to `<id>/main.js` and adds the folder to `include`.
+- `strict` stays off until `shared/` is clean under it (migration step 5).
+
+| Scope | Errors before | Errors after | Real bugs found |
+|---|---|---|---|
+| `shared/` | 59 | 0 | None. Every error was a missing type: option bags typed from their defaults, `Element` where the code uses an `HTMLElement`, culori's mode literal |
+| `foghorn/` | 6 | 0 | None. `initPage` returned a union, so Bar v2 handles looked missing |
+
+The shell contracts now carry JSDoc types in `shared/stim.js`: `InitOptions`, `BarSpec` and its parts (`ChoiceSpec`, `ActionSpec`, `SliderSpec`, `SettingRow`, `KeyEntry`), `ControlHandle`, `BarUI`, `DprOptions` and `Quality`. `audioKit()` and `tone()` are typed too.
+`detail()`, `environment()` (`EnvOptions`), `skyAt()` (`SkyPalette`) and `intro()` (`IntroOptions`) are typed.
+`intro.js` is clean, but its `VARIETIES` and `TIMING` tables have no typedefs yet (migration step 4).
 
 ## Where the code is today
 

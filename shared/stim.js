@@ -92,8 +92,9 @@ const GESTURE = {
 function mouseKeys() {
   document.querySelectorAll('.how dt').forEach(dt => {
     const walk = document.createTreeWalker(dt, NodeFilter.SHOW_TEXT);
+    /** @type {Text[]} */
     const hits = [];
-    while (walk.nextNode()) if (!walk.currentNode.parentElement.closest('.touch, kbd')) hits.push(walk.currentNode);
+    while (walk.nextNode()) if (!walk.currentNode.parentElement.closest('.touch, kbd')) hits.push(/** @type {Text} */ (walk.currentNode));
     hits.forEach(node => {
       const m = node.data.match(/\b(click|drag|hold)\b/i);
       // "Hold still" asks for no movement, so it stays a word.
@@ -131,7 +132,7 @@ function howTip() {
   btn.addEventListener('click', () => set(!tip.classList.contains('is-open')));
   tip.addEventListener('mouseenter', () => btn.setAttribute('aria-expanded', 'true'));
   tip.addEventListener('mouseleave', () => { if (!tip.classList.contains('is-open')) btn.setAttribute('aria-expanded', 'false'); });
-  document.addEventListener('pointerdown', e => { if (!tip.contains(e.target)) set(false); });
+  document.addEventListener('pointerdown', e => { if (!tip.contains(/** @type {Node} */ (e.target))) set(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 
@@ -144,7 +145,8 @@ function fitStage() {
     if (bar) {
       // The how-to line stacks when it wraps under the controls.
       bar.classList.remove('is-stacked');
-      const how = bar.querySelector('.how'), first = bar.firstElementChild;
+      const how = /** @type {HTMLElement | null} */ (bar.querySelector('.how'));
+      const first = /** @type {HTMLElement | null} */ (bar.firstElementChild);
       const tipped = how?.closest('.how-tip');
       if (how && !tipped && first && how !== first && how.offsetTop >= first.offsetTop + first.offsetHeight) bar.classList.add('is-stacked');
     }
@@ -158,8 +160,22 @@ function fitStage() {
   fit();
 }
 
-export function initPage({ id, silent = false, home = '../index.html', bar = null } = {}) {
-  const stage = bar && document.querySelector('.stage');
+/**
+ * Builds the shell for one toy page.
+ * With a bar spec it returns every Bar v2 handle.
+ * @overload
+ * @param {InitOptions & { bar: BarSpec }} options
+ * @returns {{ sound: typeof sound } & BarUI}
+ */
+/**
+ * Without a bar spec it returns only the sound toggle.
+ * @overload
+ * @param {InitOptions} options
+ * @returns {{ sound: typeof sound } & Partial<BarUI>}
+ */
+/** @param {InitOptions} options */
+export function initPage({ id, silent = false, home = '../index.html', bar = null }) {
+  const stage = bar && /** @type {HTMLElement | null} */ (document.querySelector('.stage'));
   const ui = stage ? buildBar(stage, bar, { id, home }) : null;
   const shell = document.querySelector('header[data-shell]');
   if (!ui && shell && !shell.children.length) shell.innerHTML = headerHTML(home);
@@ -187,6 +203,99 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
 /* ---------- bar v2: the Corners shell ---------- */
 // The shell lays its controls in the four corners of the stage.
 // Spec: docs/plans/bar-v2.md.
+
+/* types: the contract a toy writes by hand */
+/**
+ * The options a toy page passes to initPage.
+ * @typedef {object} InitOptions
+ * @property {string} id The toy id, as in toys.json and the folder name.
+ * @property {boolean} [silent] Hides the sound button.
+ * @property {string} [home] The menu address for the back link.
+ * @property {BarSpec | null} [bar] Bar v2 spec; without it the page keeps the v1 header.
+ */
+/**
+ * One Bar v2 spec: every control the shell builds over the stage.
+ * @typedef {object} BarSpec
+ * @property {ChoiceSpec} [choice] Top left: one choice group.
+ * @property {ActionSpec[]} [actions] Bottom left: three at most.
+ * @property {SliderSpec} [slider] Bottom right: one main slider.
+ * @property {SettingRow[]} [settings] Rows in the Settings sheet.
+ * @property {SettingRow[]} [dev] Tuning rows; the Dev button shows only with ?dev.
+ * @property {KeyEntry[]} [keys] The key strip: four entries at most.
+ * @property {boolean} [quality] Adds the site Quality row to Settings.
+ * @property {() => void} [reset] Adds Reset to the Settings footer.
+ */
+/**
+ * One option of a choice group or a choice row.
+ * @typedef {object} ChoiceOption
+ * @property {string} value
+ * @property {string} label
+ * @property {string} [icon] SVG or text that leads the label.
+ * @property {string} [dot] A CSS colour for a swatch dot.
+ * @property {string} [key] A shortcut key that picks this option.
+ */
+/**
+ * The top-left choice group.
+ * @typedef {object} ChoiceSpec
+ * @property {string} label
+ * @property {ChoiceOption[]} options
+ * @property {string} [value] The first value; the default is the first option.
+ * @property {'segments' | 'stepper' | 'tray'} [display] The default picks by option count.
+ * @property {(value: string) => void} [onPick] Runs on user input and on set(v, true).
+ */
+/**
+ * One action chip.
+ * @typedef {object} ActionSpec
+ * @property {string} verb A shared verb (add, shuffle, clear, reset) or one literal word.
+ * @property {string} [noun] The noun after "+" for the add verb.
+ * @property {string} [label] Replaces the label the verb gives.
+ * @property {string} [key] A shortcut key.
+ * @property {boolean} [hold] Runs onDown on press and onUp on release.
+ * @property {() => void} [onPress]
+ * @property {() => void} [onDown]
+ * @property {() => void} [onUp]
+ */
+/**
+ * The main slider: a word label and no number.
+ * @typedef {object} SliderSpec
+ * @property {string} label
+ * @property {number} [min]
+ * @property {number} [max]
+ * @property {number} [step]
+ * @property {number} [value]
+ * @property {(value: number) => void} [onInput]
+ */
+/**
+ * The fields every settings row shares.
+ * @typedef {object} RowBase
+ * @property {string} id The storage key part: stimming.<toy>.<id>.
+ * @property {string} label
+ * @property {boolean} [persist] Stores the value and restores it on load.
+ */
+/**
+ * @typedef {RowBase & { type: 'slider', value: number, min?: number, max?: number, step?: number, onInput?: (value: number) => void }} SliderRow
+ * @typedef {RowBase & { type: 'choice', value: string, options: ChoiceOption[], display?: 'segments' | 'stepper', onPick?: (value: string) => void }} ChoiceRow
+ * @typedef {RowBase & { type: 'toggle', value: boolean, onToggle?: (on: boolean) => void }} ToggleRow
+ * @typedef {RowBase & { type: 'link', href: string, text?: string, title?: string }} LinkRow
+ * @typedef {RowBase & { type: 'button', text?: string, onClick?: () => void }} ButtonRow
+ * @typedef {SliderRow | ChoiceRow | ToggleRow} ValueRow
+ * @typedef {ValueRow | LinkRow | ButtonRow} SettingRow
+ */
+/**
+ * One key strip entry: the gesture or key, then the verb.
+ * @typedef {[word: string, verb: string]} KeyEntry
+ */
+/**
+ * The Bar v2 handles: initPage returns them with the sound toggle.
+ * @typedef {ReturnType<typeof buildBar>} BarUI
+ */
+/**
+ * The handle a toy gets for a choice, a slider, an action or a row.
+ * @typedef {object} ControlHandle
+ * @property {any} value
+ * @property {(value: any, fire?: boolean) => void} set
+ * @property {boolean} disabled
+ */
 const make = (tag, cls = '', html = '') => {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
@@ -256,7 +365,7 @@ function keyBinder() {
   const map = new Map();
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
-    if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+    if (/** @type {Element} */ (e.target).closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
     const fn = map.get(e.key.toLowerCase());
     if (!fn) return;
     e.preventDefault();
@@ -349,6 +458,7 @@ function makeChoice(spec, display, state, pick, layer) {
 }
 
 /* slider: a word label, a bar thumb, no number */
+/** @param {SliderSpec} spec */
 function makeSlider({ label, min = 0, max = 1, step = 0.01, value = min, onInput }) {
   const el = make('label', 's2-slider', `<span>${label}</span>`);
   const input = make('input');
@@ -432,6 +542,10 @@ function makeAction(a, bindKey) {
 
 /* settings rows: slider, choice or toggle */
 // A stored value restores only when it is valid for its row.
+/**
+ * @param {ValueRow} row
+ * @param {string} key
+ */
 function restore(row, key) {
   const raw = row.persist ? store.get(key) : null;
   if (raw == null || raw === '') return row.value;
@@ -442,6 +556,12 @@ function restore(row, key) {
   if (row.type === 'toggle') return raw === '1' ? true : raw === '0' ? false : row.value;
   return row.options.some(o => o.value === raw) ? raw : row.value;
 }
+/**
+ * @param {SettingRow} row
+ * @param {string} key
+ * @param {HTMLElement} layer
+ * @returns {{ el: HTMLElement, handle: ControlHandle }}
+ */
 function makeRow(row, key, layer) {
   const save = v => { if (row.persist) store.set(key, row.type === 'toggle' ? (v ? '1' : '0') : String(v)); };
   // A link row opens another page; it holds no value.
@@ -465,7 +585,7 @@ function makeRow(row, key, layer) {
   }
   const value = restore(row, key);
   if (row.type === 'slider') {
-    const sl = makeSlider({ ...row, value, onInput: v => { save(v); row.onInput?.(v); } });
+    const sl = makeSlider({ ...row, value: /** @type {number} */ (value), onInput: v => { save(v); row.onInput?.(v); } });
     sl.el.classList.add('s2-row');
     const set = sl.handle.set;
     sl.handle.set = (v, fire = false) => { set(v, fire); save(v); };
@@ -483,7 +603,8 @@ function makeRow(row, key, layer) {
     state.value = v;
     ctl.sync();
     save(out(v));
-    if (fire) (toggle ? row.onToggle : row.onPick)?.(out(v));
+    // The row type fixes the value type, so the callback takes any.
+    if (fire) (/** @type {((value: any) => void) | undefined} */ (toggle ? row.onToggle : row.onPick))?.(out(v));
   };
   // More than five options step one at a time.
   const display = toggle ? 'segments' : row.display === 'stepper' || options.length > 5 ? 'stepper' : 'segments';
@@ -558,6 +679,12 @@ function makeKeys(entries, stage, info, delay) {
   return { el, handle: { show: () => show(true), hide: () => show(false), get shown() { return !el.classList.contains('is-faded'); } } };
 }
 
+/**
+ * Builds Bar v2 over a stage; initPage calls it when a toy passes a bar spec.
+ * @param {HTMLElement} stage
+ * @param {BarSpec} [spec]
+ * @param {{ id?: string, home?: string, keyDelay?: number }} [options]
+ */
 export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDelay = 8000 } = {}) {
   document.documentElement.classList.add('stim2');
   // The frame holds the stage and the layer, so control events skip the stage.
@@ -592,7 +719,9 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   const bindKey = keyBinder();
 
   /* the choice: one group, after the name */
-  let choice = null, choiceCtl = null, choiceShow = null;
+  let choice = null, choiceShow = null;
+  /** @type {ReturnType<typeof makeChoice> | null} */
+  let choiceCtl = null;
   if (spec.choice?.options?.length) {
     const c = spec.choice;
     const state = { value: c.value ?? c.options[0].value, disabled: false };
@@ -793,11 +922,24 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
 /* ---------- audio kit ---------- */
 // One AudioContext per page, built on the first real gesture.
 // The master gain feeds a compressor so stacked voices never clip.
+/**
+ * @param {object} [options]
+ * @param {number} [options.gain] The master gain before the compressor.
+ * @param {Set<string> | null} [options.keys] Only these keys wake audio; null lets every key wake it.
+ * @param {number} [options.noiseSeconds] The shared white-noise buffer length; 0 skips it.
+ * @param {number} [options.sleepMs] The idle time before rest() suspends the context.
+ */
 export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs = 1500 } = {}) {
-  let ac = null, out = null, noise = null, askedAt = -1e9, restT = 0;
+  /** @type {AudioContext | null} */
+  let ac = null;
+  /** @type {GainNode | null} */
+  let out = null;
+  /** @type {AudioBuffer | null} */
+  let noise = null;
+  let askedAt = -1e9, restT = 0;
   function wake() {
     if (!ac) {
-      const AC = window.AudioContext || window.webkitAudioContext;
+      const AC = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
       if (!AC) return null;
       try { ac = new AC(); } catch (err) { return null; }
       const comp = ac.createDynamicsCompressor();
@@ -844,6 +986,7 @@ export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs =
   };
   // Tone.js runs on this kit's context, so mute, gesture start and sleep still hold.
   // Connect Tone nodes to kit.out; it returns null before the first gesture.
+  /** @returns {Promise<typeof import('tone') | null>} */
   async function tone() {
     if (!ac) return null;
     toneMod ||= import(TONE_URL).then(T => {
@@ -854,6 +997,7 @@ export function audioKit({ gain = 0.55, keys = null, noiseSeconds = 1, sleepMs =
     return toneMod;
   }
 }
+/** @type {Promise<typeof import('tone')> | null} */
 let toneMod = null;
 
 /* ---------- chip groups ---------- */
@@ -886,7 +1030,10 @@ export function choices(group, onPick) {
 /* ---------- graphics quality ---------- */
 // One site-wide choice: 'standard' keeps the caps, 'high' renders at full resolution.
 const QUALITY_KEY = 'stimming.quality', QUALITY_EVENT = 'stim:quality';
+/** @typedef {'standard' | 'high'} Quality */
+/** @returns {Quality} */
 export const quality = () => (store.get(QUALITY_KEY) === 'high' ? 'high' : 'standard');
+/** @param {string} q Any value other than 'high' sets 'standard'. */
 export function setQuality(q) {
   q = q === 'high' ? 'high' : 'standard';
   if (q === quality()) return;
@@ -894,8 +1041,12 @@ export function setQuality(q) {
   dispatchEvent(new CustomEvent(QUALITY_EVENT, { detail: q }));
 }
 // The callback hears each change, from this page or from another tab.
+/**
+ * @param {(q: Quality) => void} fn
+ * @returns {() => void} Unsubscribes.
+ */
 export function onQuality(fn) {
-  const local = e => fn(e.detail);
+  const local = /** @param {CustomEvent<Quality>} e */ e => fn(e.detail);
   const other = e => { if (e.key === QUALITY_KEY) fn(quality()); };
   addEventListener(QUALITY_EVENT, local);
   addEventListener('storage', other);
@@ -906,6 +1057,20 @@ export function onQuality(fn) {
 // Standard caps the ratio at maxDpr and keeps the pixel count under the budget.
 // Low is the toy's slow-frame flag: Standard drops to 1, High drops to Standard.
 // A toy with its own lower tier passes quality: 'standard' to keep the caps.
+/**
+ * The options for pixelRatio and fitCanvas.
+ * @typedef {object} DprOptions
+ * @property {number} [maxDpr] The Standard cap on the ratio.
+ * @property {number} [budget] The Standard cap on the pixel count.
+ * @property {boolean} [low] The toy's slow-frame flag.
+ * @property {Quality} [quality] The default is the site setting.
+ */
+/**
+ * @param {number} w CSS pixels.
+ * @param {number} h CSS pixels.
+ * @param {DprOptions} [options]
+ * @returns {number}
+ */
 export function pixelRatio(w, h, { maxDpr = 2, budget = 1.4e6, low = false, quality: q = quality() } = {}) {
   const dev = window.devicePixelRatio || 1;
   if (q === 'high' && !low) return Math.min(dev, 3);
@@ -942,7 +1107,7 @@ function settingsTray() {
   if (tip) { tip.before(edge); edge.append(box, tip); } else { bar.append(edge); edge.append(box); }
   const open = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
   btn.addEventListener('click', () => open(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) open(false); });
+  document.addEventListener('pointerdown', e => { if (!box.contains(/** @type {Node} */ (e.target))) open(false); });
   addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
   return tray;
 }
@@ -967,6 +1132,11 @@ export function qualitySetting(tray = null) {
 
 /* ---------- canvas sizing ---------- */
 // The quality setting picks the pixel ratio; see pixelRatio.
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {DprOptions} [options]
+ * @returns {{ w: number, h: number, dpr: number, W: number, H: number }} CSS size, ratio and backing size.
+ */
 export function fitCanvas(canvas, { maxDpr = 2, budget = 1.4e6, low = false, quality: q = quality() } = {}) {
   const r = canvas.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
@@ -1014,6 +1184,12 @@ export function later(fn) {
 // Colours are OKLCH, given as (L, C, h) or as one [L, C, h] array.
 // culori maps any colour into sRGB by reducing chroma, as CSS Color 4 does.
 const toLin = converter('lrgb'), toRgb = converter('rgb'), fit = toGamut('rgb', 'oklch');
+/**
+ * @param {number | number[]} L Lightness, or one [L, C, h] array.
+ * @param {number} [C]
+ * @param {number} [h] Hue in degrees.
+ * @returns {import('culori').Oklch}
+ */
 const ok = (L, C, h) => (Array.isArray(L) ? { mode: 'oklch', l: L[0], c: L[1], h: L[2] } : { mode: 'oklch', l: L, c: C, h });
 // OKLCH in, linear sRGB out, not clamped.
 export function oklchLinear(L, C, h) {

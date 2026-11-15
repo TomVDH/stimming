@@ -112,7 +112,20 @@ const BLUE = { zen: [0.0059, 0.0201, 0.0796], mid: [0.1009, 0.0418, 0.1188], ban
 const LAST = { zen: [0.0298, 0.0881, 0.2177], mid: [0.3232, 0.1618, 0.3036], band: [1, 0.4406, 0.1071], anti: [0.1818, 0.1588, 0.2757], cloudLit: [1, 0.5, 0.25], cloudShade: [0.06, 0.06, 0.12], stars: 0, day: 0.3 };
 const DAWN = { zen: [0.03, 0.075, 0.1887], mid: [0.3773, 0.1787, 0.2781], band: [1, 0.5354, 0.15], anti: [0.1805, 0.1477, 0.2579], cloudLit: [1, 0.6, 0.32], cloudShade: [0.06, 0.06, 0.12], stars: 0, day: 0.3 };
 const DAY = { zen: [0.0612, 0.2218, 0.6034], mid: [0.2728, 0.515, 0.7461], band: [0.6511, 0.8477, 0.9208], anti: [0.3419, 0.5427, 0.7637], cloudLit: [0.95, 0.95, 0.95], cloudShade: [0.35, 0.4, 0.5], stars: 0, day: 1 };
+/**
+ * One sky palette: linear RGB colours, the star level and the daylight level.
+ * @typedef {object} SkyPalette
+ * @property {number[]} zen The colour straight up.
+ * @property {number[]} mid The colour halfway down.
+ * @property {number[]} band The colour at the horizon on the sun's side.
+ * @property {number[]} anti The colour at the horizon away from the sun.
+ * @property {number[]} cloudLit
+ * @property {number[]} cloudShade
+ * @property {number} stars 0 to 1.
+ * @property {number} day 0 at night, 1 in full daylight.
+ */
 // The day as keyframes: hour, then the palette at that hour.
+/** @type {[hour: number, palette: SkyPalette][]} */
 const KEYS = [[0, NIGHT], [4.5, NIGHT], [5.5, BLUE], [6.5, DAWN], [8.5, DAY], [16.5, DAY], [18.5, LAST], [19.5, BLUE], [21, NIGHT], [24, NIGHT]];
 
 // The cloud budget at a detail level (shared/detail.js): 0 low, 1 standard, 2 high.
@@ -121,6 +134,10 @@ export const skyDetail = level => ({ cloudOctaves: level > 0 ? 5 : 3 });
 // The sky at an hour of the day, 0 to 24. Every value is ready for a uniform.
 // sun is the unit direction to the sun: it rises on the left and sets on the right.
 // day is 0 at night and 1 in full daylight; use it to switch lamps and exposure.
+/**
+ * @param {number} hour 0 to 24; other values wrap.
+ * @returns {SkyPalette & { sun: number[] }}
+ */
 export function skyAt(hour) {
   const h = ((hour % 24) + 24) % 24;
   let i = 0;
