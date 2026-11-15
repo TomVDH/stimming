@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T08:01:26Z
+updated_at: 2026-11-15T08:03:29Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -28,7 +28,8 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Tom, 2026-11-15: East Van takes the Wires shot with a thin border (no print border); Belgium the same, drawn better. Thin frame is the default; Belgium's Frites, Gables, Cobbles and Spheres shots are redrawn (silhouette, vivid dusk sky); the sections lab shows the shots
 - [x] Tom, 2026-11-15: the redrawn Belgium shots are still not good. All six replaced by silhouettes on the Wires recipe (one dark shape from below, plain sky, thin lines, one accent): Belfry, Spheres, Windmill, Lamps, Gables, Frites
 - [x] Tom, 2026-11-15: add a flag for Belgium, in addition to the six. Flag shot added: the tricolour from straight below, on a pole
-- [ ] Tom picks the Belgium shot
+- [x] Tom, 2026-11-15: try hexagonal icons and outline crops. Frames added to the shots: Hex, Hex flat, Hex ring (outline apart from the crop), Hex askew (outline turned 10 degrees), Circle; a Line knob (Light or the series colour)
+- [ ] Tom picks the Belgium shot and the crop
 - [ ] Theme series icons in the same style
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
 - [ ] Step 3: ship the pick to the Lab view in index.html; move icons.js to shared/series/

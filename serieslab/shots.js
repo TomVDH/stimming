@@ -162,9 +162,34 @@ export const SHOTS = {
 
 export const TILTS = { Slight: 7, Dutch: 15, Wild: 26 };
 // Thin is Tom's pick (2026-11-15): no print border, one thin line round the shot.
-export const FRAMES = ['Thin', 'Print', 'Viewfinder', 'Bare'];
+// The Hex frames crop the shot to a hexagon; Ring and Askew keep the outline apart.
+export const FRAMES = ['Thin', 'Hex', 'Hex flat', 'Hex ring', 'Hex askew', 'Circle', 'Print', 'Viewfinder', 'Bare'];
+export const LINES = ['Light', 'Series'];
 
-// One icon: key, motif and the knobs { tilt, frame }.
+const HEX = [[50, 2], [91.57, 26], [91.57, 74], [50, 98], [8.43, 74], [8.43, 26]];
+const grow = (pts, k) => pts.map(([x, y]) => [50 + (x - 50) * k, 50 + (y - 50) * k]);
+const turn = (pts, deg) => { const a = deg * Math.PI / 180, c = Math.cos(a), n = Math.sin(a); return pts.map(([x, y]) => [50 + (x - 50) * c - (y - 50) * n, 50 + (x - 50) * n + (y - 50) * c]); };
+// A polygon path with every corner rounded by r.
+const soft = (pts, r) => pts.map((q, i) => {
+  const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+  const la = Math.hypot(a[0] - q[0], a[1] - q[1]), lb = Math.hypot(b[0] - q[0], b[1] - q[1]);
+  const A = [q[0] + (a[0] - q[0]) / la * r, q[1] + (a[1] - q[1]) / la * r], B = [q[0] + (b[0] - q[0]) / lb * r, q[1] + (b[1] - q[1]) / lb * r];
+  return `${i ? 'L' : 'M'}${A[0].toFixed(2)} ${A[1].toFixed(2)}Q${q[0].toFixed(2)} ${q[1].toFixed(2)} ${B[0].toFixed(2)} ${B[1].toFixed(2)}`;
+}).join('') + 'Z';
+const SQUARE = 'M12 3H88A9 9 0 0 1 97 12V88A9 9 0 0 1 88 97H12A9 9 0 0 1 3 88V12A9 9 0 0 1 12 3Z';
+const CIRCLE = 'M3 50a47 47 0 1 0 94 0a47 47 0 1 0 -94 0Z';
+// A frame is [the crop, the outline]; no outline draws no line.
+const frameOf = name => {
+  if (name === 'Hex') { const h = soft(HEX, 5); return [h, h]; }
+  if (name === 'Hex flat') { const h = soft(HEX.map(([x, y]) => [y, x]), 5); return [h, h]; }
+  if (name === 'Hex ring') return [soft(grow(HEX, 0.8), 4), soft(HEX, 5)];
+  if (name === 'Hex askew') return [soft(grow(HEX, 0.9), 4.5), soft(turn(grow(HEX, 0.97), -10), 5)];
+  if (name === 'Circle') return [CIRCLE, CIRCLE];
+  if (name === 'Print') return ['M12 9H88A3 3 0 0 1 91 12V88A3 3 0 0 1 88 91H12A3 3 0 0 1 9 88V12A3 3 0 0 1 12 9Z', null];
+  return [SQUARE, name === 'Thin' ? SQUARE : null];
+};
+
+// One icon: key, motif and the knobs { tilt, frame, line }; `c` is the series colour.
 export function shotIcon(key, label, opt) {
   const list = SHOTS[key];
   if (!list) return '';
@@ -183,14 +208,15 @@ export function shotIcon(key, label, opt) {
   };
   const body = draw(k), ang = dir * (TILTS[opt.tilt] ?? 15);
   const print = opt.frame === 'Print', view = opt.frame === 'Viewfinder';
-  const [x, w, rx] = print ? [9, 82, 3] : [3, 94, 9];
-  const thin = opt.frame === 'Thin' ? `<rect x="3" y="3" width="94" height="94" rx="9" style="fill:none;stroke:oklch(0.95 0.01 90);stroke-width:1.1"/>` : '';
+  const [crop, outline] = frameOf(opt.frame);
+  const ink = opt.line === 'Series' && opt.c ? opt.c : 'oklch(0.95 0.01 90)';
+  const line = outline ? `<path d="${outline}" style="fill:none;stroke:${ink};stroke-width:1.1;stroke-linejoin:round"/>` : '';
   const marks = view ? `<g fill="none" stroke="oklch(1 0 0 / 0.85)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20V10H20M80 10H90V20M90 80V90H80M20 90H10V80"/><path d="M44 50H56M50 44V56" stroke-width="0.8"/></g><circle cx="84" cy="16" r="2" fill="oklch(0.65 0.24 25)"/>` : '';
-  return `<svg viewBox="0 0 100 100" aria-hidden="true"><defs><clipPath id="${id}c"><rect x="${x}" y="${x}" width="${w}" height="${w}" rx="${rx}"/></clipPath>
+  return `<svg viewBox="0 0 100 100" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${crop}"/></clipPath>
     <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.5"/></filter>
     <radialGradient id="${id}v" cx="0.5" cy="0.5" r="0.72"><stop offset="0.55" style="stop-color:oklch(0 0 0 / 0)"/><stop offset="1" style="stop-color:oklch(0 0 0 / 0.5)"/></radialGradient>${'DEFS'}</defs>
     ${print ? `<rect x="2" y="2" width="96" height="96" rx="5" style="fill:oklch(0.96 0.012 90)"/>` : ''}
-    <g clip-path="url(#${id}c)"><g transform="rotate(${ang} 50 50)">${body}</g><rect x="0" y="0" width="100" height="100" fill="url(#${id}v)"/></g>${thin}${marks}</svg>`.replace('DEFS', defs.join(''));
+    <g clip-path="url(#${id}c)"><g transform="rotate(${ang} 50 50)">${body}</g><rect x="0" y="0" width="100" height="100" fill="url(#${id}v)"/></g>${line}${marks}</svg>`.replace('DEFS', defs.join(''));
 }
 
 // Tom's picks live in the browser.
@@ -200,7 +226,7 @@ export function shotPicks() {
   try { p = JSON.parse(localStorage.getItem(SHOT_KEY)) || {}; } catch (e) {}
   return {
     // A save from before the Thin frame takes the new default.
-    tilt: TILTS[p.tilt] ? p.tilt : 'Dutch', frame: p.v === 2 && FRAMES.includes(p.frame) ? p.frame : 'Thin',
+    tilt: TILTS[p.tilt] ? p.tilt : 'Dutch', frame: p.v === 2 && FRAMES.includes(p.frame) ? p.frame : 'Thin', line: LINES.includes(p.line) ? p.line : 'Light',
     ...Object.fromEntries(Object.keys(SHOTS).map(key => [key, SHOTS[key].some(([l]) => l === p[key]) ? p[key] : SHOTS[key][0][0]])),
   };
 }

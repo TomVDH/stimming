@@ -40,10 +40,11 @@ main { box-sizing: border-box; width: 100%; max-width: 900px; margin: 0 auto; pa
 <div class="knobs">
   <div class="knob" data-k="tilt" role="group" aria-label="Tilt"><span>Tilt</span></div>
   <div class="knob" data-k="frame" role="group" aria-label="Frame"><span>Frame</span></div>
+  <div class="knob" data-k="line" role="group" aria-label="Line"><span>Line</span></div>
 </div>
 <main id="sheet"></main>
 <script type="module">
-import { SHOTS, TILTS, FRAMES, shotIcon, shotPicks, saveShotPicks } from './shots.js';
+import { SHOTS, TILTS, FRAMES, LINES, shotIcon, shotPicks, saveShotPicks } from './shots.js';
 
 const WAVE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q6 -1 12 4T24 4' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")`;
 document.documentElement.style.setProperty('--wave', WAVE);
@@ -54,8 +55,9 @@ const picks = shotPicks();
 const q = new URLSearchParams(location.search);
 if (TILTS[q.get('tilt')]) picks.tilt = q.get('tilt');
 if (FRAMES.includes(q.get('frame'))) picks.frame = q.get('frame');
+if (LINES.includes(q.get('line'))) picks.line = q.get('line');
 
-const OPTIONS = { tilt: Object.keys(TILTS), frame: FRAMES };
+const OPTIONS = { tilt: Object.keys(TILTS), frame: FRAMES, line: LINES };
 for (const el of document.querySelectorAll('.knob')) {
   const key = el.dataset.k;
   for (const value of OPTIONS[key]) {
@@ -74,8 +76,8 @@ function draw() {
     sec.style.setProperty('--c', s.color);
     sec.setAttribute('aria-label', s.name);
     const cells = SHOTS[key].map(([m]) =>
-      `<button class="cell" type="button" data-key="${key}" data-m="${m}" aria-pressed="${picks[key] === m}">${shotIcon(key, m, picks)}${shotIcon(key, m, picks).replace('<svg', '<svg class="small"')}<span>${m}</span></button>`).join('');
-    sec.innerHTML = `<h2 class="wave"><span class="at">${shotIcon(key, picks[key], picks)}<span class="nm">${s.name}</span></span></h2><div class="row">${cells}</div>`;
+      `<button class="cell" type="button" data-key="${key}" data-m="${m}" aria-pressed="${picks[key] === m}">${shotIcon(key, m, { ...picks, c: s.color })}${shotIcon(key, m, { ...picks, c: s.color }).replace('<svg', '<svg class="small"')}<span>${m}</span></button>`).join('');
+    sec.innerHTML = `<h2 class="wave"><span class="at">${shotIcon(key, picks[key], { ...picks, c: s.color })}<span class="nm">${s.name}</span></span></h2><div class="row">${cells}</div>`;
     sheet.append(sec);
   }
 }
