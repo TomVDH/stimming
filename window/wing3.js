@@ -353,7 +353,8 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const dx = Math.cos(th) * Math.cos(phi), dz = Math.cos(th) * Math.sin(phi), lh = Math.hypot(dx, dz) || 1;
       const ph = Math.acos(Math.max(-1, Math.min(1, (dx * sky.sunAz[0] + dz * sky.sunAz[1]) / lh)));
       // Satin paint never mirrors the ground: it sees the sky just above.
-      const c = lookup(sky.b.L, Math.max(th, 0) * 0.45 + 0.03, ph, HOR), o = (j * W + i) * 4;
+      // Level rays meet the eye's own horizon, so the glow band there lights the paint.
+      const c = lookup(sky.b.L, HOR + 0.01 + Math.max(th, 0) * 0.45, ph, HOR), o = (j * W + i) * 4;
       // Grey paint keeps half the sky's colour.
       const y = 0.3 * c[0] + 0.5 * c[1] + 0.2 * c[2];
       for (let k = 0; k < 3; k++) data[o + k] = (y + c[k]) / 2 + sky.h.floor[k];
@@ -384,6 +385,8 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // An aft seat sees the whole aircraft further forward.
       air.position.x = seatDx;
       navL.color.setRGB(...nav);
+      // The nav lamp is weak beside daylight: it lights the skin only as man-made light shows.
+      navL.intensity = 0.4 * sky.h.lit;
       // The roll rate drives the controls; a low-pass keeps them smooth.
       const dt = mo.t === null ? 0 : t - mo.t;
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
@@ -448,11 +451,14 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       // The fog takes the outside pass's murk colour, so the wing sinks into the same grey.
       const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
       const hc = hz.map((v, i) => 0.5 * (v + zc[i]) + sky.h.floor[i]), gy = 0.3 * hc[0] + 0.5 * hc[1] + 0.2 * hc[2];
-      // Light up from below: the sun and the sky on land and cloud, with its albedo.
-      // Land and sea return about a tenth; a cloud deck about seven tenths.
-      // The air between keeps about four fifths.
-      const A = (0.1 + 0.6 * cover) * 0.8, sunUp = Math.max(s.y, 0) * veil / 1.5;
-      bounce.groundColor.setRGB(...hc.map((v, i) => A * (sl[i] * sunUp + Math.PI * v * (1 - 0.6 * storm))));
+      // Light up from below takes the outside pass's own cloud and land light.
+      // Cloud tops: the deck shader's sun and sky terms, so the hour's colour matches.
+      // Land: a tenth of the sun and sky light it receives.
+      // The air between keeps four fifths.
+      const sunK = sm((s.y + 0.15) / 0.35), sunUp = Math.max(s.y, 0) * veil / 1.5;
+      const cloudL = sl.map((v, i) => v * 0.075 * sunK * (1 - 0.85 * storm) + sky.amb[i] * 0.021);
+      const landL = sl.map((v, i) => 0.1 * (v * sunUp / Math.PI + sky.amb[i] / 12));
+      bounce.groundColor.setRGB(...cloudL.map((v, i) => Math.PI * 0.8 * (cover * v + (1 - cover) * landL[i])));
       const k = (0.55 - 0.25 * storm) * 1.3;
       scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
       // The tip lights ride the bent tip.

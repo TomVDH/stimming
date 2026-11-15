@@ -30,3 +30,14 @@ Today the root is 1.25 m against a 1.6 m wing tip and sits 35 cm aft. The 0.6 m 
 - A hemisphere light now adds light up from land and cloud: albedo 0.1 to 0.7 by the Cloud setting, times 0.8 for the air. Tom found 4x too light, so it runs at the physical value (1x).
 - A 20x test lit the blade fully, so its normals are right.
 
+## Light to match the scene and the hour (Tom, 2026-11-15)
+
+Pixel samples showed a magenta cast on the aircraft at every hour (green lowest), against a warm or neutral scene.
+
+- The red nav lamp lit the skin at full strength by day. It now scales with the hour's man-made light (`h.lit`: Noon 0, Golden hour 0.15, Dusk to Midnight 1).
+- The paint's sky map began at +1.7 degrees true elevation; the eye's horizon is at -3.4 degrees. So the warm glow band never lit the paint. Level rays now meet the eye's horizon.
+- The light from below now uses the deck shader's own cloud terms (sun times 0.075 times sunK, sky ambient times 0.021) and a land term, mixed by cover.
+- Golden hour wing top: (65, 58, 62) before, (84, 71, 73) after. Noon winglet: (99, 90, 98) before, (86, 84, 90) after.
+- Ruled out: sun shadow acne (shadows off changed nothing).
+- Still open: at Golden hour the paint leans pink, as the baked upper sky is violet.
+
