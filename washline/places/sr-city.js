@@ -1,7 +1,8 @@
 // Strangereal city: bands of towers that rise with distance, windows by shader,
 // sodium streets below, far ridges, and red lights on the tallest roofs.
+// Light and haze come from the shared scattering model, as the sky does.
 import * as THREE from 'three';
-import { col } from './kit.js';
+import { ATMO } from './sr-atmo.js';
 
 // Each band: near and far distance, height range, width range, count.
 // Heights put each skyline a little higher in angle than the one before.
@@ -13,20 +14,28 @@ const BANDS = [
   [5500, 8000, 220, 700, 30, 70, 340],
 ];
 
-const HAZE = /* glsl */ `
-  // Haze is warm and thick near the ground, a dark blue higher up.
-  vec3 hazeAt(vec3 w, float H, out float amt) {
-    float dist = length(w - cameraPosition), up = clamp((w.y + H) / 500.0, 0.0, 1.0);
-    amt = 1.0 - exp(-dist / 3000.0 * mix(1.1, 0.8, up));
-    // A little afterglow warms the low haze; most of it stays blue.
-    return mix(mix(uHaze, uHor, 0.75), mix(uHaze, uHor, 0.35), up);
+const AIR = ATMO + /* glsl */ `
+  // Aerial perspective: the air between the camera and a point.
+  vec3 aerial(vec3 c, vec3 w, float H) {
+    vec3 v = w - cameraPosition, inS, T;
+    float L = length(v);
+    scatter(cameraPosition.y + H, v / L, L, uSunDir, uE, inS, T);
+    return c * T + inS;
+  }
+  // Light on a surface: the sun as it reaches that height, and the sky above.
+  vec3 lightAt(vec3 n, vec3 w, float H) {
+    float h = max(w.y + H, 0.0);
+    vec3 sun = uE * sunAt(uSunDir, h) * max(dot(n, uSunDir), 0.0) / PI_A;
+    vec3 inS, T;
+    scatter(h, vec3(0.0, 1.0, 0.0), -1.0, uSunDir, uE, inS, T);
+    return sun + inS * (0.35 + 0.65 * (0.5 + 0.5 * n.y));
   }
   float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`;
 
 export function cityBands(group, R, { H }) {
   const u = {
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3(1, 1, 1) },
-    uHor: { value: new THREE.Vector3() }, uHaze: { value: new THREE.Vector3() }, uFocal: { value: 1500 }, uT: { value: 0 },
+    uFocal: { value: 1500 }, uT: { value: 0 }, uE: { value: 18 },
   };
 
   /* ---------- towers ---------- */
@@ -58,29 +67,36 @@ export function cityBands(group, R, { H }) {
       }`,
     fragmentShader: /* glsl */ `
       varying vec3 vW, vN; varying float vSeed;
-      uniform vec3 uSunDir, uSunCol, uHor, uHaze; uniform float uFocal, uT;
-      ${HAZE}
+      uniform vec3 uSunDir; uniform float uFocal, uT, uE;
+      ${AIR}
       void main() {
         vec3 n = normalize(vN);
         float up = vW.y + ${H.toFixed(1)};
-        // A dark facade that the low sun warms where it faces it.
-        vec3 base = vec3(0.03, 0.035, 0.055) + uSunCol * 0.02 * max(dot(n, uSunDir), 0.0);
-        float glow = 0.0; vec3 wc = vec3(1.0, 0.72, 0.42);
+        // Dark glass and concrete; each tower its own shade.
+        vec3 alb = mix(vec3(0.07, 0.08, 0.1), vec3(0.16, 0.17, 0.19), fract(max(vSeed, 0.0) * 13.1));
+        if (n.y > 0.5) alb *= 0.7;
+        vec3 c = alb * lightAt(n, vW, ${H.toFixed(1)});
+        // The street canyons hold less light near the ground.
+        c *= mix(0.45, 1.0, smoothstep(0.0, 160.0, up));
         if (abs(n.y) < 0.5 && vSeed >= 0.0) {
           float along = abs(n.x) > 0.5 ? vW.z : vW.x;
           vec2 g = vec2(along / 3.2, up / 3.6), cell = floor(g), f = fract(g);
-          float win = step(0.3, f.x) * step(f.x, 0.7) * step(0.35, f.y) * step(f.y, 0.75);
-          float frac = 0.04 + 0.16 * fract(vSeed * 7.13);
-          float lit = step(hh(cell + vSeed * 91.7), frac);
-          wc = mix(wc, vec3(0.72, 0.84, 1.0), step(0.72, hh(cell * 1.31 + vSeed)));
+          // Window edges are soft, so far panes never shimmer.
+          float aa = clamp(length(vW - cameraPosition) / uFocal / 3.2, 0.02, 0.5);
+          float win = smoothstep(0.26 - aa, 0.26 + aa, f.x) * smoothstep(0.74 + aa, 0.74 - aa, f.x) * smoothstep(0.3 - aa, 0.3 + aa, f.y) * smoothstep(0.78 + aa, 0.78 - aa, f.y);
+          // Offices light floor by floor in runs; homes light one window at a time.
+          float frac = 0.05 + 0.18 * fract(vSeed * 7.13);
+          float run = step(hh(vec2(floor(cell.x / 5.0), cell.y) + vSeed * 17.0), frac * 1.6);
+          float lit = max(run * step(hh(cell + vSeed * 91.7), 0.8), step(hh(cell * 1.7 + vSeed), frac * 0.4));
+          float k = hh(cell * 1.31 + vSeed);
+          vec3 wc = k < 0.55 ? vec3(1.0, 0.68, 0.38) : k < 0.88 ? vec3(0.78, 0.86, 1.0) : vec3(0.7, 1.0, 0.82);
+          wc *= 0.55 + 0.45 * hh(cell * 2.3 + vSeed);
           // Past a pixel per window, the windows blend to their mean glow.
           float foot = length(vW - cameraPosition) / uFocal;
-          glow = mix(frac * 0.16, win * lit, smoothstep(1.6, 0.5, foot));
+          float glow = mix(frac * 0.5 * 0.35, win * lit, smoothstep(1.6, 0.5, foot));
+          c += wc * glow * 1.1;
         }
-        if (n.y > 0.5) base *= 0.6;
-        float amt; vec3 hz = hazeAt(vW, ${H.toFixed(1)}, amt);
-        vec3 c = mix(base, hz, amt) + wc * glow * 1.7 * (1.0 - 0.65 * amt);
-        gl_FragColor = vec4(c, 1.0);
+        gl_FragColor = vec4(aerial(c, vW, ${H.toFixed(1)}), 1.0);
       }`,
   }), mats.length);
   mats.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -95,16 +111,15 @@ export function cityBands(group, R, { H }) {
     vertexShader: /* glsl */ `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */ `
       varying vec3 vW;
-      uniform vec3 uHor, uHaze; uniform float uFocal;
-      ${HAZE}
+      uniform vec3 uSunDir; uniform float uFocal, uE;
+      ${AIR}
       void main() {
         vec2 g = vW.xz / 110.0, f = abs(fract(g) - 0.5);
         float foot = length(vW - cameraPosition) / uFocal;
         float street = smoothstep(0.47, 0.5, max(f.x, f.y));
         street = mix(0.18, street, smoothstep(30.0, 6.0, foot));
-        vec3 c = vec3(0.03, 0.03, 0.035) + vec3(1.0, 0.55, 0.2) * street * 0.9;
-        float amt; vec3 hz = hazeAt(vW, ${H.toFixed(1)}, amt);
-        gl_FragColor = vec4(mix(c, hz, amt) + vec3(1.0, 0.55, 0.2) * street * 0.3 * (1.0 - amt), 1.0);
+        vec3 c = vec3(0.04) * lightAt(vec3(0.0, 1.0, 0.0), vW, ${H.toFixed(1)}) + vec3(1.0, 0.55, 0.2) * street * 0.5;
+        gl_FragColor = vec4(aerial(c, vW, ${H.toFixed(1)}), 1.0);
       }`,
   }));
   ground.rotation.x = -Math.PI / 2;
@@ -113,7 +128,7 @@ export function cityBands(group, R, { H }) {
 
   /* ---------- ridges ---------- */
   // Dark ridges close the far end of the plain.
-  for (const [z, top, L, ph] of [[-11000, 900, 0.3, 1], [-14000, 1400, 0.36, 4]]) {
+  for (const [z, top, ph] of [[-11000, 900, 1], [-14000, 1400, 4]]) {
     const sh = new THREE.Shape(), w = 40000;
     sh.moveTo(-w / 2, -H - 50);
     for (let i = 0; i <= 120; i++) {
@@ -121,7 +136,15 @@ export function cityBands(group, R, { H }) {
       sh.lineTo(x, -H + top * (0.45 + 0.3 * Math.sin(k + ph) + 0.15 * Math.sin(k * 2.7 + ph * 2) + 0.08 * Math.sin(k * 7.1)));
     }
     sh.lineTo(w / 2, -H - 50);
-    const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: col([L, 0.05, 268]), fog: false }));
+    // Ridges take the same light and air as the towers.
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.ShaderMaterial({
+      uniforms: u,
+      vertexShader: /* glsl */ `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: /* glsl */ `
+        varying vec3 vW; uniform vec3 uSunDir; uniform float uE;
+        ${AIR}
+        void main() { vec3 c = vec3(0.05, 0.06, 0.05) * lightAt(normalize(vec3(0.0, 0.5, 1.0)), vW, ${H.toFixed(1)}); gl_FragColor = vec4(aerial(c, vW, ${H.toFixed(1)}), 1.0); }`,
+    }));
     m.position.z = z;
     group.add(m);
   }
@@ -145,7 +168,6 @@ export function cityBands(group, R, { H }) {
     tick(t, sun, cam, viewH, sky) {
       u.uT.value = t;
       u.uSunDir.value.copy(sun.dir); u.uSunCol.value.copy(sun.col);
-      u.uHor.value.copy(sky.hor); u.uHaze.value.copy(sky.haze);
       u.uFocal.value = viewH / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)));
     },
   };

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { rng, ok, col, inst, paint, canvasTex } from './kit.js';
 import { cityBands } from './sr-city.js';
 import { furball } from './sr-furball.js';
+import { atmoDome } from './sr-atmo.js';
 
 const H = 140;
 const LINE_Z = -3;
@@ -19,7 +20,8 @@ export default {
   anchors: { a: [-3.38, 2.3, LINE_Z], b: [3.6, 2.2, LINE_Z] },
   windDir: [0.3, 0.95],
   // Dusk light from behind the viewer; then the afterglow behind the city.
-  sun: { front: [-0.35, 0.05, 0.94], back: [0.12, 0.008, -0.99] },
+  // Back: the sun sits five degrees under the horizon: blue hour.
+  sun: { front: [-0.35, 0.05, 0.94], back: [0.12, -0.087, -0.99] },
   sky: { zen: [0.24, 0.09, 266], hor: [0.5, 0.07, 290], haze: [0.3, 0.06, 268], clouds: 0, warm: 0.25 },
   amb: { hi: [0.55, 0.06, 260], lo: [0.35, 0.04, 280] },
   cord: [0.03, 0.03, 0.035],
@@ -114,12 +116,15 @@ export default {
     inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.9, 0.08, 80]), emissive: col([0.85, 0.12, 75]), emissiveIntensity: 2 }), lamps, false);
 
     /* ---------- the city and the sky war ---------- */
+    // One scattering model lights the sky, the city and its haze.
+    const dome = atmoDome(group, H);
     const city = cityBands(group, rng(31), { H, PARAPET });
     const war = furball(group, rng(41), { H });
 
     group.userData.tick = (t, sun, cam, viewH, sky) => {
       // The mast light blinks once a second.
       red.material.emissiveIntensity = (t % 1.2) < 0.25 ? 6 : 0.2;
+      dome.tick(sun.dir, cam);
       city.tick(t, sun, cam, viewH, sky);
       war.tick(t, sun, cam, viewH, sky);
     };

@@ -218,7 +218,8 @@ export function furball(group, R, { H }) {
       glow.flush(); smoke.flush();
 
       // Build every trail's ribbon, facing the camera and fading with age.
-      const cp = cam.position;
+      const cp = cam.position, up = Math.min(1, Math.max(0, (sun.dir.y + 0.1) / 0.15));
+      const tint = [0.32 + 0.68 * up, 0.38 + 0.55 * up, 0.55 + 0.31 * up];
       for (let m = 0; m < MAX_TRAILS; m++) {
         const tr = T[m], kind = tr.on ? KINDS[tr.kind] : null;
         if (tr.on && t - tr.end > kind.life) tr.on = false;
@@ -235,8 +236,10 @@ export function furball(group, R, { H }) {
           const hw = Math.max(kind.w + kind.spread * age, (1.3 * dist) / focal) / 2, sl = Math.hypot(sx, sy, sz) || 1;
           sx *= hw / sl; sy *= hw / sl; sz *= hw / sl;
           rPos.set([x + sx, y + sy, z + sz, x - sx, y - sy, z - sz], v * 3);
-          const a = kind.a * Math.pow(Math.max(0, 1 - age / kind.life), 1.5) * Math.min(1, i / 2);
-          const c = kind.col;
+          // Far trails sink into the air like everything else.
+          const a = kind.a * Math.pow(Math.max(0, 1 - age / kind.life), 1.5) * Math.min(1, i / 2) * (1 - 0.6 * Math.min(1, Math.max(0, (dist - 2500) / 7000)));
+          // Trails take the light of the hour: white in sun, slate blue at dusk.
+          const c = kind.col.map((v, k) => v * tint[k]);
           rCol.set([c[0], c[1], c[2], a, c[0], c[1], c[2], a], v * 4);
         }
       }

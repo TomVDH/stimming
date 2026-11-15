@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T06:48:23Z
+updated_at: 2026-11-15T06:50:07Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -176,3 +176,5 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - [ ] East Van place: a very iconic East Vancouver scene (Tom, 2026-11-14), after Strangereal.
 
 - Tom (2026-11-14): the anime and supertall passes looked unrealistic; back to the blue-hour version (R6 commit c0684177).
+
+- Tom (2026-11-14): harsh lines and poor blending; no Rayleigh. Plan: physical scattering for sky and aerial perspective, MSAA.
