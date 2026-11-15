@@ -876,27 +876,33 @@ function commitTick() {
   addArc(T, 0.28);
   nextTick = T + LOCATOR;
 }
-// The scheduler runs ahead of the frame loop, so ticks keep exact time.
+// The scheduler commits each event a little early, at its exact time.
+// It sleeps until the next event enters that lookahead.
 let pumpT = 0;
 function pump() {
   clearTimeout(pumpT);
   pumpT = 0;
   if (!visible) return;
-  const T = now();
-  if (phase === 'wait' && greenAt !== null && T >= greenAt) startGreen(greenAt);
-  if (phase === 'green' && T >= phaseAt + GREEN) startFlash(phaseAt + GREEN);
-  if (phase === 'flash' && T >= phaseAt + FLASH) startRed(phaseAt + FLASH);
-  if (phase === 'red' && pending && T >= holdUntil) startWait(T, true);
+  const T = now(), soon = T + LOOK;
+  if (phase === 'wait' && greenAt !== null && soon >= greenAt) startGreen(greenAt);
+  if (phase === 'green' && soon >= phaseAt + GREEN) startFlash(phaseAt + GREEN);
+  if (phase === 'flash' && soon >= phaseAt + FLASH) startRed(phaseAt + FLASH);
+  if (phase === 'red' && pending && soon >= holdUntil) startWait(Math.max(T, holdUntil), true);
   // Left alone on red, the box dozes and stops ticking.
   if (phase === 'red' && !pending && T - lastInput > DOZE) { dozing = true; nextTick = null; }
-  if (phase === 'wait' && nextCar !== null && T >= nextCar) {
-    spawnCar(T);
-    nextCar = T + 1.5 + Math.random() * 1.9;
+  if (phase === 'wait' && nextCar !== null && soon >= nextCar) {
+    // No car starts near the green, so none drives through it.
+    if (dots > 4 && level < 1) spawnCar(nextCar);
+    nextCar += 1.5 + Math.random() * 1.9;
   }
   let ticked = false;
-  while (nextTick !== null && nextTick <= T + LOOK) { commitTick(); ticked = true; }
-  if (ticked || phase !== 'red') wake();
-  if (!dozing) pumpT = setTimeout(pump, 15);
+  while (nextTick !== null && nextTick <= soon) { commitTick(); ticked = true; }
+  if (ticked || phase !== 'red' || pending) wake();
+  if (dozing) return;
+  const ends = phase === 'green' ? phaseAt + GREEN : phase === 'flash' ? phaseAt + FLASH : Infinity;
+  const due = Math.min(nextTick ?? Infinity, greenAt ?? Infinity, nextCar ?? Infinity, ends,
+    phase === 'red' ? (pending ? holdUntil : lastInput + DOZE + LOOK + 0.01) : Infinity);
+  pumpT = setTimeout(pump, clamp((due - LOOK - now()) * 1000, 4, 1000));
 }
 
 /* ---------- the hand ---------- */
@@ -909,7 +915,7 @@ function down() {
   if (dozing) { dozing = false; nextTick = T + 0.6; }
   pressSound(T);
   // Each press rattles the box on its clamps, harder as the box gets cross.
-  if (!reduced()) wob.v += (mashN++ & 1 ? 1 : -1) * (0.05 + 0.03 * level);
+  if (!reduced()) wob.v += (mashN++ & 1 ? 1 : -1) * (0.08 + 0.05 * level);
   if (phase === 'wait' || pending) {
     presses++;
     if (phase === 'wait' && T >= fillAt + FILL && dots > 0 && greenAt === null) knock(T, true);
@@ -1008,14 +1014,14 @@ function drawCars(T) {
 const arcs = [];
 function addArc(T, k) {
   if (reduced()) return;
-  arcs.push({ at: T, k });
+  arcs.push({ at: T, k, life: k < 0.3 ? 0.24 : 0.34 });
   if (arcs.length > 10) arcs.shift();
 }
 function drawArcs(T) {
   g.globalCompositeOperation = 'lighter';
   g.lineCap = 'round';
   for (let i = arcs.length - 1; i >= 0; i--) {
-    const a = arcs[i], age = (T - a.at) / 0.34;
+    const a = arcs[i], age = (T - a.at) / a.life;
     if (age >= 1) { arcs.splice(i, 1); continue; }
     if (age < 0) continue;
     const al = a.k * (1 - age) ** 1.5, r = 6 + 11 * age;
@@ -1394,10 +1400,10 @@ function play(T, b, rate, gain, pan = 0) {
   src.start(at(ac, T));
 }
 function tickSound(T, rate, level, rattle = false) {
-  play(T, rattle ? 'rattle' : 'tick', rate * jit(0.012), level * 0.5);
+  play(T, rattle ? 'rattle' : 'tick', rate * jit(0.012), level * 0.62);
 }
-function pressSound(T) { play(T, 'down', jit(0.05), 0.75); }
-function releaseSound(T) { play(T, 'up', jit(0.06), 0.42); }
+function pressSound(T) { play(T, 'down', jit(0.05), 0.62); }
+function releaseSound(T) { play(T, 'up', jit(0.06), 0.36); }
 // A short envelope on any oscillator.
 function tone(ac, t, { type = 'sine', f, f1 = f, dur, gain, lp = 0, q = 0.7 }) {
   const o = ac.createOscillator(), gn = ac.createGain();
