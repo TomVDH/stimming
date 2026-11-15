@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T06:09:27Z
+updated_at: 2026-11-15T06:16:39Z
 parent: stimming-oh7b
 ---
 
@@ -16,7 +16,7 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
 - [x] Task 1: smaller wheel, roller detail
 - [x] Task 2: types table, tints, stepper
 - [x] Task 3: the tricks in flight
-- [ ] Task 4: smoke per type
+- [x] Task 4: smoke per type
 - [ ] Task 5: the hot wheel
 - [ ] Task 6: the flare
 - [ ] Task 7: whole-page check
