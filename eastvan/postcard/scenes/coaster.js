@@ -17,17 +17,17 @@ const PTS = [
 
 export const cards = [
   { cap: 'Hastings Park · 8:40 pm · Summer', hour: 18.2,
-    // The viewer looks north, 22 degrees off the line of the ride.
-    cam: { pos: [1.7, 1.7, 68.3], yaw: -5.7, pitch: 0, up: 25, down: 9, minHalf: 0.37, upMax: 42 },
+    // The viewer stands far back on the midway and looks north.
+    cam: { pos: [-8, 1.5, 84], yaw: 0, pitch: 0, up: 22, down: 8, minHalf: 0.26, downMax: 14 },
     // The sun stands low in the north-west: it lights the west flank.
     sun: [-0.85, 0.16, -0.49], sunCol: col(0.86, 0.13, 60), sunI: 3.6, hemi: [col(0.74, 0.07, 265), col(0.55, 0.07, 55), 1.1],
     fog: col(0.8, 0.08, 50), fogD: 0.0022,
-    sky: { cloudA: 0.35, cov: 0.5, cloud: col(0.68, 0.07, 320), cloudLit: col(0.93, 0.1, 45), hazeA: 0.85, hazeK: 7, disc: 1, sunCol: col(0.9, 0.14, 60, 5) },
+    sky: { cloudA: 0.65, cov: 0.44, cloud: col(0.68, 0.07, 320), cloudLit: col(0.93, 0.1, 45), hazeA: 0.85, hazeK: 7, disc: 1, sunCol: col(0.9, 0.14, 60, 5) },
     exposure: 0.95, bulbs: 4, lamp: 50,
     leaves: 0, smoke: 0, flock: 36, flockDir: 1, flockCol: col(0.14, 0.02, 280),
     mtn: [col(0.62, 0.07, 305), col(0.54, 0.08, 290)], ski: false,
-    shadow: { at: [0, 0, 5], r: 62 },
-    bloom: [0.55, 0.75, 0.9], tilt: [0.42, 0.26, 0.7], grade: { con: 1.06, sat: 1.14, vig: 0.34, grain: 0.05, lift: [0.03, 0.012, 0], gain: [1, 0.98, 0.95] } },
+    shadow: { at: [-6, 0, 22], r: 66 },
+    bloom: [0.55, 0.75, 0.9], tilt: [0.42, 0.26, 0.7], grade: { con: 1.06, sat: 1.14, vig: 0.44, grain: 0.06, lift: [0.03, 0.012, 0], gain: [1, 0.98, 0.95] } },
 ];
 
 export function build(k) {
@@ -173,7 +173,7 @@ export function build(k) {
   k.group.add(ride);
 
   /* ----- the ferris wheel, behind the ride ----- */
-  const WR = 14, HUB = 23, WX = 33, WZ = -37, WY = 0.25;
+  const WR = 14, HUB = 23, WX = -40, WZ = -45, WY = 0.35;
   const hubG = new THREE.Group(), wheel = new THREE.Group(), wp = [ni(new THREE.CylinderGeometry(0.7, 0.7, 3.4, 10)).rotateX(Math.PI / 2)];
   for (const s of [-1, 1]) {
     wp.push(ni(new THREE.TorusGeometry(WR, 0.16, 5, 48)).translate(0, 0, s * 1.2), ni(new THREE.TorusGeometry(WR * 0.55, 0.12, 5, 32)).translate(0, 0, s * 1.2));
@@ -205,7 +205,19 @@ export function build(k) {
 
   /* ----- the midway: ground, tents, trees, people ----- */
   box('lawn', 900, 0.2, 700, 0, -0.1, -150);
-  box(asph, 170, 0.06, 150, 0, 0, 15);
+  // The midway: old asphalt with patches and painted joints.
+  const lot = std(1, 0, 0, { noCast: true, roughness: 0.95, map: tex(256, 256, (g, w, h) => {
+    const P = rng(4);
+    g.fillStyle = '#6d6259'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) { g.globalAlpha = 0.12 + P() * 0.18; g.fillStyle = P() < 0.5 ? '#3d3631' : '#8a7d70'; g.fillRect(P() * w, P() * h, 10 + P() * 60, 8 + P() * 40); }
+    g.globalAlpha = 0.5; g.fillStyle = '#2e2925'; g.fillRect(0, 0, w, 2); g.fillRect(0, 0, 2, h);
+  }, { rx: 24, ry: 20 }) });
+  box(lot, 170, 0.06, 150, 0, 0, 15);
+  // An exhibition hall stands off the frame, west; its long shadow crosses the midway.
+  box('stucco', 9, 8, 24, -34, 4, 66); box('roof', 9.6, 0.4, 24.6, -34, 8.2, 66);
+  // Paper cups and tickets lie on the asphalt.
+  const PR = rng(23);
+  for (let i = 0; i < 70; i++) { const x = -26 + PR() * 34, z = 30 + PR() * 50; box(PR() < 0.6 ? 'trim' : red, 0.12 + PR() * 0.1, 0.02, 0.08 + PR() * 0.06, x, 0.04, z, 0, PR() * 3); }
   // A game tent: a counter, four posts, a striped roof, a lit back wall.
   const tent = (x, z, ry, base, roof, w = 4.6) => at(x, 0, z, () => {
     box(base, w, 1.05, w * 0.7, 0, 0.525, 0);
@@ -221,23 +233,19 @@ export function build(k) {
     if (R() < 0.6) put('bush', ico(2 + R(), h / 2, 2 + R()), x, h / 2 + 1.5, z); else put('fir', new THREE.ConeGeometry(3 + R(), h, 7), x, 2 + h / 2, z);
     put('bark', new THREE.CylinderGeometry(0.3, 0.4, 3, 6), x, 1.5, z);
   }
-  // The crowd: a couple, a walker, a child with a balloon, two who watch.
-  k.person('h4', 0.4, 55.3, Math.PI, 0.03, { h: 1.76 }); k.person('door', 1.05, 55.2, Math.PI, 0.03, { h: 1.62 });
-  k.person('h3', -3.1, 47.3, Math.PI / 2, 0.03, { stride: 0.35 });
-  k.person('bagY', 5.2, 52.3, 2.8, 0.03, { h: 1.15 });
-  put(std(0.6, 0.22, 28, { roughness: 0.3 }), ico(0.22, 0.27, 0.22), 5.5, 2.25, 52.3); box('trim', 0.03, 1.2, 0.03, 5.48, 1.42, 52.3);
-  k.person('purple', 1.1, 36.3, 2.9, 0.03); k.person('trim', 0.2, 36.8, -2.9, 0.03, { h: 1.6 });
+  // Small figures stroll between the tents, far off.
+  for (const [x, z, ry, m, h] of [[-12, 24, 0.4, 'h4', 1.75], [-11.3, 24.4, 0.2, 'door', 1.6], [-19, 10, 2.6, 'h3', 1.7], [-6, 30, -0.8, 'purple', 1.7], [-17.5, 2, 1.2, 'bagY', 1.2]]) k.person(m, x, z, ry, 0.03, { h, stride: 0.2 });
   // A swag of coloured bulbs crosses the top of the view.
-  const A = V(-10, 8.6, 53), B = V(13.5, 8.6, 51), swag = [];
-  for (const p of [A, B]) put('iron', new THREE.CylinderGeometry(0.08, 0.11, 8.7, 6), p.x, 4.35, p.z);
+  const A = V(-19, 6.4, 71), B = V(5, 6.8, 70), swag = [];
+  for (const p of [A, B]) put('iron', new THREE.CylinderGeometry(0.08, 0.11, p.y + 0.1, 6), p.x, p.y / 2, p.z);
   k.wire(A, B, 1.5, 0.018, 0);
-  for (let i = 1; i < 36; i++) { const u = i / 36; swag.push(V(lerp(A.x, B.x, u), 8.52 - 6 * u * (1 - u), lerp(A.z, B.z, u))); }
+  for (let i = 1; i < 36; i++) { const u = i / 36; swag.push(V(lerp(A.x, B.x, u), lerp(A.y, B.y, u) - 0.08 - 6 * u * (1 - u), lerp(A.z, B.z, u))); }
   const swagBulbs = k.bulbs(swag, [col(0.65, 0.22, 28), col(0.85, 0.16, 88), col(0.7, 0.18, 150), col(0.65, 0.15, 250), col(0.7, 0.2, 340)], 0.075);
   // A crow stands on a waste drum, near the viewer.
-  put('binG', new THREE.CylinderGeometry(0.3, 0.3, 0.95, 12), 4.5, 0.505, 61.3);
-  box(red, 0.13, 0.2, 0.09, 5.2, 0.08, 61.6, 1.4, 0.5);
+  put('binK', new THREE.CylinderGeometry(0.3, 0.3, 0.95, 12), -6.4, 0.505, 77.4);
+  box(red, 0.13, 0.2, 0.09, -5.7, 0.08, 77.7, 1.4, 0.5);
   const crow = k.crow();
-  crow.obj.position.set(4.5, 0.98, 61.52);
+  crow.obj.position.set(-6.4, 0.98, 77.62);
 
   // One warm lamp hangs under the station roof.
   const lamp = new THREE.PointLight(WARM, 0, 16, 1.6);
