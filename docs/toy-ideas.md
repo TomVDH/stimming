@@ -452,6 +452,18 @@ Close to a built toy: Snow crystal (Frost), Embers (Fire), Soft life (Slime), Bo
 | 359 | **Degauss** | The picture wobbles in rainbow, then folds to one dot. |
 | 360 | **Fibre lamp** | Brush a spray of light fibres; the tips change colour. |
 
+## Tool-approved
+
+Tom kept these 41 ideas on 2026-11-15 with `docs/swipe.html`. Each stays in its table above.
+The swipe page reads this list: it keeps these ideas out of the main queue and shows them under the Tool-approved filter.
+
+- **A.** BZ reaction (3), Stir vortex (85), Double slit (123), Chemical garden (124), Rupert's drop (127), Wave machine (128), Cloud in a bottle (129), Superconductor track (130), Glowing pickle (134)
+- **B.** Spectrogram (54), Sorting sounds (9), Epicycles (10), Desire paths (14), Pi walk (51), Contour map (52), Traffic wave (93)
+- **C.** Desert eclipse (17), Fjord aurora (18), Deep vent (19), Wheat storm (21), Calving (57), Observatory (58), Lantern lake (60), Lava coast (99), Spillway (101)
+- **D.** Pea pod (67), Geoboard (24), Velcro (62)
+- **E.** Water wheel (73), Soup cauldron (363), Wrecking ball (72), Tablecloth yank (112)
+- **F.** Terrarium (361), Aquarium (362), Chromatography (38), Dichroic glass (39), Glowing tide (40), Leaf shadows (76), Jellyfish tank (80), Opal turn (116), Moire veils (117)
+
 ## Cut
 
 Tom cut these 77 ideas on 2026-11-15 with `docs/swipe.html`. Do not propose them again.

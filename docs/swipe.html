@@ -39,7 +39,10 @@ h1 { font-size: 22px; line-height: 1.1; font-weight: 800; margin: 0; }
 .bar { height: 2px; margin-top: 12px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
 
-.deck { position: relative; height: clamp(300px, 52vh, 390px); margin-top: 22px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.filters { display: flex; gap: 8px; margin-top: 16px; }
+.filters .chip[aria-pressed="true"] { color: var(--ink); background: var(--panel); border-color: var(--muted); }
+
+.deck { position: relative; height: clamp(300px, 52vh, 390px); margin-top: 14px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .card {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   padding: 22px 24px 24px; border-radius: 22px; overflow: hidden;
@@ -103,6 +106,10 @@ label.chip input { accent-color: var(--ink); margin: 0; }
     <div class="count" id="count"></div>
   </div>
   <div class="bar"><i id="bar"></i></div>
+  <div class="filters" role="group" aria-label="Filter">
+    <button class="chip" id="fQueue" type="button">Queue</button>
+    <button class="chip" id="fApproved" type="button">Tool-approved</button>
+  </div>
 
   <div class="deck" id="deck"></div>
 
@@ -137,12 +144,17 @@ const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Read every numbered table row; headings give the section and the group.
+// The Tool-approved list names Tom's kept ideas by number.
 function parse(md) {
-  const out = [];
+  const out = [], approved = new Set();
   let section = '', group = '';
   for (const line of md.split('\n')) {
     let m;
     if ((m = /^## (.+)/.exec(line))) { section = m[1].trim(); group = ''; continue; }
+    if (section === 'Tool-approved' && line.startsWith('- ')) {
+      for (const k of line.matchAll(/\((S?\d+)\)/g)) approved.add(k[1]);
+      continue;
+    }
     if ((m = /^### ([A-F])\./.exec(line))) { group = m[1]; continue; }
     if (!/^\|\s*S?\d+\s*\|/.test(line)) continue;
     const c = line.split('|').slice(1, -1).map((s) => s.trim());
@@ -154,6 +166,7 @@ function parse(md) {
       text: c[c.length - 1],
     });
   }
+  for (const i of out) i.approved = approved.has(i.n);
   return out;
 }
 
@@ -171,11 +184,19 @@ async function startedNames() {
   return names;
 }
 
+// Each filter has its own verdicts (v) and undo history (h).
+const blank = () => ({ v: {}, h: [] });
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { v: s.v || {}, h: s.h || [], all: !!s.all };
-  } catch { return { v: {}, h: [], all: false }; }
+    // The first build held one set; it becomes the queue set.
+    const sets = s.sets || { queue: { v: s.v || {}, h: s.h || [] } };
+    return {
+      sets: { queue: sets.queue || blank(), approved: sets.approved || blank() },
+      all: !!s.all,
+      filter: s.filter === 'approved' ? 'approved' : 'queue',
+    };
+  } catch { return { sets: { queue: blank(), approved: blank() }, all: false, filter: 'queue' }; }
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
 
@@ -183,8 +204,23 @@ let ideas = [];
 let state = load();
 const deckEl = $('deck');
 
-const deck = () => ideas.filter((i) => state.all || !i.started);
-const open = () => deck().filter((i) => !state.v[i.n]);
+const cur = () => state.sets[state.filter];
+const inFilter = (i, f) => (f === 'approved' ? i.approved : !i.approved);
+// The queue leaves out started ideas unless the toggle is on.
+const deckOf = (f) => ideas.filter((i) => inFilter(i, f) && (f === 'approved' || state.all || !i.started));
+const deck = () => deckOf(state.filter);
+const open = () => deck().filter((i) => !cur().v[i.n]);
+
+// Verdicts on ideas that left a filter go away.
+function prune() {
+  for (const f of ['queue', 'approved']) {
+    const ok = new Set(ideas.filter((i) => inFilter(i, f)).map((i) => i.n));
+    const s = state.sets[f];
+    for (const n of Object.keys(s.v)) if (!ok.has(n)) delete s.v[n];
+    s.h = s.h.filter((n) => s.v[n]);
+  }
+  save();
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -213,7 +249,7 @@ function render() {
   deckEl.querySelectorAll('.card:not(.ghost)').forEach((c) => c.remove());
   const d = deck();
   const left = open();
-  const tally = (v) => ideas.filter((i) => state.v[i.n] === v).length;
+  const tally = (v) => d.filter((i) => cur().v[i.n] === v).length;
   const done = d.length - left.length;
 
   if (left[1]) deckEl.prepend(card(left[1], 'under'));
@@ -228,7 +264,12 @@ function render() {
   $('count').innerHTML = `${done} / ${d.length} · <b class="c">can ${tally('can')}</b> · <b class="k">keep ${tally('keep')}</b>`;
   $('bar').style.width = (d.length ? (done / d.length) * 100 : 0) + '%';
   $('can').disabled = $('keep').disabled = !left[0];
-  $('undo').disabled = !state.h.length;
+  $('undo').disabled = !cur().h.length;
+  $('fQueue').textContent = `Queue (${deckOf('queue').length})`;
+  $('fApproved').textContent = `Tool-approved (${deckOf('approved').length})`;
+  $('fQueue').setAttribute('aria-pressed', state.filter === 'queue');
+  $('fApproved').setAttribute('aria-pressed', state.filter === 'approved');
+  $('all').disabled = state.filter === 'approved';
   $('all').checked = state.all;
   $('allText').textContent = `Include started (${ideas.filter((i) => i.started).length})`;
 }
@@ -238,8 +279,8 @@ function decide(verdict, from = { x: 0, y: 0 }) {
   const idea = open()[0];
   const top = deckEl.querySelector('.card.top');
   if (!idea || !top) return;
-  state.v[idea.n] = verdict;
-  state.h.push(idea.n);
+  cur().v[idea.n] = verdict;
+  cur().h.push(idea.n);
   save();
 
   const dir = verdict === 'keep' ? 1 : -1;
@@ -256,9 +297,9 @@ function decide(verdict, from = { x: 0, y: 0 }) {
 }
 
 function undo() {
-  const n = state.h.pop();
+  const n = cur().h.pop();
   if (n == null) return;
-  delete state.v[n];
+  delete cur().v[n];
   save();
   render();
 }
@@ -309,9 +350,12 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
 });
 
+for (const [id, f] of [['fQueue', 'queue'], ['fApproved', 'approved']]) {
+  $(id).addEventListener('click', () => { state.filter = f; save(); render(); });
+}
 $('all').addEventListener('change', (e) => { state.all = e.target.checked; save(); render(); });
 
-// Reset needs a second click within two seconds.
+// Reset clears the open filter only; it needs a second click.
 let armed = 0;
 $('reset').addEventListener('click', () => {
   if (Date.now() - armed > 2000) {
@@ -321,7 +365,7 @@ $('reset').addEventListener('click', () => {
     return;
   }
   armed = 0;
-  state = { v: {}, h: [], all: state.all };
+  state.sets[state.filter] = blank();
   save();
   $('reset').textContent = 'Reset';
   render();
@@ -330,13 +374,14 @@ $('reset').addEventListener('click', () => {
 // One idea per line keeps the JSON short to paste.
 function output() {
   const row = (i) => JSON.stringify({ n: i.n, name: i.name, group: i.group, section: i.section, started: i.started });
-  const pick = (v) => ideas.filter((i) => state.v[i.n] === v).map(row);
+  const pick = (v) => ideas.filter((i) => cur().v[i.n] === v).map(row);
   const can = pick('can'), keep = pick('keep');
   const unseen = open().map((i) => i.n);
   const list = (rows) => (rows.length ? '[\n    ' + rows.join(',\n    ') + '\n  ]' : '[]');
   return [
     '{',
     `  "source": ${JSON.stringify(SOURCE)},`,
+    `  "filter": ${JSON.stringify(state.filter === 'approved' ? 'tool-approved' : 'queue')},`,
     `  "date": ${JSON.stringify(new Date().toLocaleDateString('en-CA'))},`,
     `  "counts": ${JSON.stringify({ can: can.length, keep: keep.length, unseen: unseen.length })},`,
     `  "can": ${list(can)},`,
@@ -371,6 +416,7 @@ try {
     const k = norm(i.name);
     i.started = names.has(k) || names.has(ALIAS[k]);
   }
+  if (ideas.length) prune();
   render();
 } catch {
   // A file link has no data; the page needs the local server.
