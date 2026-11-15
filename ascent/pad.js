@@ -1,9 +1,9 @@
-// Ascent pad: the ground round the pad, the deck, the tower, the floodlights, the steam.
+// Ascent pad: the ground round the pad, the deck, the tower, the floodlights.
+// The steam is a volume pass: ascent/steam.js.
 // Layout follows Ten seconds (docs/plans/ascent-launch.md, section 4).
 // Metres; the pad frame's origin is the deck's centre; x east, y up, z north.
 // From the pad, U points to Ten seconds' tripod (west-north-west); V runs along the shore.
 import * as THREE from 'three';
-import { T_START, LIFTOFF } from './flight.js';
 
 export const PAD_U = new THREE.Vector3(-0.970, 0, 0.242).normalize();
 export const PAD_V = new THREE.Vector3(0.242, 0, 0.970).normalize();
@@ -106,11 +106,11 @@ export function makePad(scene) {
       vec3 plan = pgPlan(q);
       vec3 alb = pgAlbedo(q, plan);
       // The compound: a square of dark gravel round the deck, and an access road.
-      vec2 bq = abs(q) - vec2(70.0);
+      vec2 bq = abs(q) - vec2(70.0) + (pgNoise(q * 0.08) - 0.5) * 14.0;
       float box = length(max(bq, 0.0)) + min(max(bq.x, bq.y), 0.0);
       float road = smoothstep(5.0, 3.5, abs(q.y + 0.03 * q.x)) * step(q.x, -60.0) * step(-1400.0, q.x);
       float apron = max(smoothstep(4.0, -4.0, box), road);
-      vec3 grav = mix(vec3(0.055, 0.054, 0.05), vec3(0.07, 0.068, 0.062), pgNoise(q * 0.4) * 0.3 + pgNoise(q * 3.0) * 0.7);
+      vec3 grav = mix(vec3(0.04, 0.038, 0.034), vec3(0.06, 0.056, 0.05), pgNoise(q * 0.4) * 0.3 + pgNoise(q * 3.0) * 0.7);
       // Soot spreads from the trench mouths over the gravel.
       grav *= 1.0 - 0.7 * smoothstep(60.0, 0.0, abs(q.x)) * smoothstep(110.0, 30.0, abs(q.y));
       alb = mix(alb, grav, apron);
@@ -221,91 +221,6 @@ export function makePad(scene) {
     return s;
   });
 
-  /* ---------- steam and smoke rolling out of the trench ---------- */
-  const PUFFS = 260;
-  const puffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
-  {
-    let seed = 41;
-    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const a = new Float32Array(PUFFS * 4), b = new Float32Array(PUFFS * 4);
-    for (let i = 0; i < PUFFS; i++) {
-      const kind = i < 210 ? (i % 2 ? 1 : -1) : 0;
-      // Birth time, side (+V, -V, or under the rocket), spread angle, seed.
-      // Births crowd the first seconds: the deluge flashes to steam at ignition.
-      a.set([T_START + 0.25 + Math.pow(rnd(), 1.8) * 16 + (kind === 0 ? 1.5 : 0), kind, (rnd() - 0.5) * 0.9, rnd()], i * 4);
-      b.set([60 + rnd() * 120, 0.6 + rnd() * 0.8, rnd(), rnd()], i * 4);
-    }
-    puffGeo.setAttribute('iA', new THREE.InstancedBufferAttribute(a, 4));
-    puffGeo.setAttribute('iB', new THREE.InstancedBufferAttribute(b, 4));
-    puffGeo.instanceCount = PUFFS;
-  }
-  const SU = {
-    uT: { value: 0 }, uFlame: GU.uFlame, uFlameC: GU.uFlameC, uSky: GU.uSky, uLamps: GU.uLamps,
-    uU: { value: PAD_U }, uV: { value: PAD_V }, uSun: GU.uSun, uSunDir: GU.uSunDir,
-  };
-  const steam = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
-    uniforms: SU, transparent: true, depthWrite: false,
-    vertexShader: /* glsl */`
-    attribute vec4 iA, iB; uniform float uT; uniform vec3 uU, uV;
-    varying vec2 vQ; varying vec3 vC; varying float vA, vS;
-    void main() {
-      float age = uT - iA.x;
-      vQ = position.xy; vS = iA.w;
-      if (age <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
-      vec3 c;
-      float r;
-      if (abs(iA.y) > 0.5) {
-        // Out of the trench mouth, rolling along the ground and slowing.
-        vec3 dir = normalize(uV * iA.y + uU * iA.z);
-        float run = iB.x * (1.0 - exp(-age / 3.5));
-        c = uV * iA.y * 38.0 + dir * run + vec3(0.0, 3.0 + 6.0 * pow(age, 0.7) * iB.y, 0.0);
-        r = 7.0 + 10.0 * pow(age, 0.6) * iB.y;
-      } else {
-        // Under the rocket: a boiling dome that climbs with the plume.
-        float an = iB.z * 6.2831;
-        c = vec3(cos(an), 0.0, sin(an)) * (6.0 + 20.0 * (1.0 - exp(-age / 2.0))) + vec3(0.0, 4.0 + 10.0 * pow(age, 0.6) * iB.y, 0.0);
-        r = 6.0 + 7.0 * pow(age, 0.5);
-      }
-      vA = smoothstep(0.0, 0.8, age) * (1.0 - smoothstep(30.0, 50.0, age));
-      vec4 w = modelMatrix * vec4(c, 1.0);
-      vC = w.xyz;
-      vec3 rt = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-      gl_Position = projectionMatrix * viewMatrix * vec4(w.xyz + (rt * position.x + up * position.y) * r, 1.0);
-    }`,
-    fragmentShader: /* glsl */`
-    uniform vec4 uFlame, uLamps[4]; uniform vec3 uFlameC, uSky, uSun, uSunDir;
-    varying vec2 vQ; varying vec3 vC; varying float vA, vS;
-    ${PAD_GROUND}
-    void main() {
-      float r = length(vQ);
-      float n = pgFbm(vQ * 1.6 + vS * 31.0) * 0.7 + pgNoise(vQ * 4.0 + vS * 7.0) * 0.3;
-      float a = smoothstep(1.0, 0.35, r + (n - 0.5) * 0.7) * vA * 0.42;
-      // A billow at the lens thins out, so the frame never fills with fog.
-      a *= smoothstep(6.0, 40.0, length(vC - cameraPosition));
-      if (a < 0.004) discard;
-      // A rough sphere normal from the quad, in world space by the view.
-      vec3 nv = normalize(vec3(vQ, sqrt(max(1.0 - r * r, 0.0)) + 0.3));
-      mat3 vw = transpose(mat3(viewMatrix));
-      vec3 N = normalize(vw * nv);
-      vec3 Lf = uFlame.xyz - vC; float df = length(Lf);
-      float wf = 0.35 + 0.65 * max(dot(N, Lf / df), 0.0);
-      vec3 c = uFlameC * uFlame.w * 1.1e4 / (df * df + 2500.0) * wf;
-      for (int i = 0; i < 4; i++) {
-        vec3 Ll = uLamps[i].xyz - vC; float dl = length(Ll);
-        c += vec3(1.0, 0.68, 0.34) * uLamps[i].w * 1500.0 / (dl * dl + 900.0) * (0.4 + 0.6 * max(dot(N, Ll / dl), 0.0));
-      }
-      c += uSky * (2.0 + 2.0 * N.y) + uSun * max(dot(N, uSunDir), 0.0) * 5.0;
-      // Light leaks through the cloud, so no billow goes black.
-      c += uFlameC * uFlame.w * 2.0e3 / (df * df + 900.0);
-      // Billows: the dense cores read darker than the lit rims.
-      c *= mix(0.55, 1.0, n) * mix(0.8, 1.0, r);
-      gl_FragColor = vec4(c, a);
-    }`,
-  }));
-  steam.frustumCulled = false;
-  steam.renderOrder = 6;
-  group.add(steam);
-
   const tmp = new THREE.Vector3();
   // Places the pad in the camera-centred world and lights it.
   // at: the deck centre in this world. flame: the flame's world point and strength.
@@ -320,12 +235,10 @@ export function makePad(scene) {
     GU.uSun.value.copy(sunC);
     GU.uSunDir.value.copy(sunDir);
     GU.uTime.value = t;
-    SU.uT.value = t;
     // The floodlights stay on; they dim a little as the flame takes over.
     lamps.forEach((p, i) => GU.uLamps.value[i].set(p.x + at.x, p.y + at.y, p.z + at.z, 1));
     spots.forEach(s => { s.intensity = 420; s.target.position.copy(tmp.set(0, 30, 0)); });
     redMat.color.setRGB(Math.sin(t * 3.0) > 0.2 ? 8 : 0.4, 0.3, 0.15);
-    steam.visible = t > T_START;
   }
-  return { group, update, LIFTOFF };
+  return { group, update, lamps: GU.uLamps.value };
 }

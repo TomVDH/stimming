@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:51:41Z
-updated_at: 2026-11-15T05:59:11Z
+updated_at: 2026-11-15T06:03:46Z
 parent: stimming-ng4g
 ---
 
@@ -15,6 +15,6 @@ Phase 2, hero shot 1 of docs/plans/ascent.md: the engine cam at liftoff. The fli
 - [x] Flight time is mission time: ignition at T-3, liftoff at T 0
 - [x] Ground near the pad: marsh, channels, lagoon, flats, as in Ten seconds (first pass)
 - [x] Pad, trench, tower, floodlights (first pass)
-- [x] Steam and smoke rolling out (billboard puffs; reads as cotton)
+- [x] Steam and smoke rolling out: a raymarched volume (ascent/steam.js), lit by the flame with self-shadow; about 3 ms on High
 - [ ] Light: flame on the ground and the cloud, dawn sky, exposure
 - [ ] Stills to Tom; his sign-off

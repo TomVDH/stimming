@@ -62,7 +62,8 @@ import { detail } from '../shared/detail.js';
 import { EV, T_START, PAD, flightAt, posAt, sunDir, sunLight, dawnDeg } from './flight.js';
 import { makeSpace } from './space.js';
 import { makeVehicle } from './rocket.js';
-import { makePad } from './pad.js';
+import { makePad, PAD_U, PAD_V } from './pad.js';
+import { SteamPass } from './steam.js';
 import { CAMS, CAM_IDS, CUTS, cutAt, mountPose } from './cams.js';
 
 const q = new URLSearchParams(location.search);
@@ -181,8 +182,13 @@ function buildEnv(f, lit) {
 }
 
 /* ---------- post ---------- */
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
+// The scene's depth feeds the steam march.
+const sceneRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
+sceneRT.depthTexture = new THREE.DepthTexture(4, 4);
+const composer = new EffectComposer(renderer, sceneRT);
 composer.addPass(new RenderPass(scene, cam));
+const steam = new SteamPass();
+composer.addPass(steam);
 // Only flames and the sun bloom; sunlit paint stays clean.
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.4, 0.4, 5.0);
 composer.addPass(bloom);
@@ -305,6 +311,22 @@ function frame(t, wall, dt = 0) {
     padSun.setRGB(padLit[0], padLit[1], padLit[2]);
   }
   pad.update(t, padAt, R.flame.uFlame.value, padSky, padSun, sunV, near);
+  // The steam: a volume round the pad for the first minute.
+  const age = t - T_START;
+  steam.enabled = !state.noSteam && near && f.h < 4 && age < 80;
+  if (steam.enabled) {
+    const S = steam.U;
+    S.uProjInv.value.copy(cam.projectionMatrixInverse);
+    S.uCamWorld.value.copy(cam.matrixWorld);
+    S.uNear.value = cam.near; S.uFar.value = cam.far;
+    S.uEye.value.copy(cam.position);
+    S.uPad.value.copy(padAt);
+    S.uU.value.copy(PAD_U); S.uV.value.copy(PAD_V);
+    S.uAge.value = age; S.uH.value = f.h * 1000 + 2; S.uTime.value = t;
+    S.uFlame.value.copy(R.flame.uFlame.value);
+    pad.lamps.forEach((l, i) => S.uLamps.value[i].copy(l));
+    S.uSky.value.copy(padSky); S.uSun.value.copy(padSun); S.uSunDir.value.copy(sunV);
+  }
   // The shadow box follows the probe once it flies alone, at finer grain.
   const alone = t > EV.probeSep;
   const mid = alone ? R.probe.getWorldPosition(tmp) : tmp.set(0, R.dims.L * 0.5, 0).applyMatrix4(R.rocket.matrixWorld);
@@ -391,7 +413,7 @@ addEventListener('keydown', e => {
 
 resize();
 syncPlay();
-if (q.has('debug')) window.__as = { R, scene, frame, state, renderer, flightAt, still(t, c = 'auto') { state.cam = c; state.t = t; state.playing = false; frame(t, t); return renderer.domElement; } };
+if (q.has('debug')) window.__as = { R, scene, frame, composer, steam, state, renderer, flightAt, still(t, c = 'auto') { state.cam = c; state.t = t; state.playing = false; frame(t, t); return renderer.domElement; } };
 </script>
 </body>
 </html>
