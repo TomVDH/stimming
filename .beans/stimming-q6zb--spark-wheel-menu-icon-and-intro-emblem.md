@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:34:59Z
+updated_at: 2026-11-15T08:39:26Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -34,3 +34,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom on round 3: "they are all really bad, take a look at the toy icons that most of the main menu has". Round 3 was a small detailed model of the toy. Round 4 (icons/spike-spark-4.html) is drawn in the menu's language: one bold cream wheel with five swept slots and a ring of knurl ticks, a turquoise sweep, a brass flint, sparks as five flat rays. The Isometric block is the same wheel on a turquoise block. Under the pointer the wheel turns, the rays grow and the knurl heats. The sheet points at round 4; the rule is in AGENTS.md. Waits on Tom.
 
 - 2026-11-15, Tom on round 4: "it's just too busy; our main menu has a much more focused direction". Round 5 (icons/spike-spark-5.html) is one object and one accent: a knurled steel wheel with a plain cream face and a brass hub, and one spark of three flat rays off its rim. No body, no flint, no slots. The Isometric block is that wheel on a turquoise block with the same spark. Under the pointer the knurl runs, the rays grow and the rim heats. The sheet points at round 5. Waits on Tom.
+
+- 2026-11-15, Tom on round 5: "redo shaded object ... fidelity??". Round 5 was focused but flat. Round 6 (icons/spike-spark-6.html) redraws only the Shaded object, as the Heat putty icon is built: one solid wheel in three-quarter view, a knurled tread with chrome bands and an embossed knurl, a dished cream enamel face, a brass hub dome with a soft shadow, and one glowing spark (a white core, four gradient needles, warm light on the wheel and the floor). Under the pointer the knurl runs, the tread heats to gold and the spark grows. The Isometric block is round 5's. The sheet points at round 6. Waits on Tom.
