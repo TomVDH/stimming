@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T08:57:39Z
-updated_at: 2026-11-15T09:25:52Z
+updated_at: 2026-11-15T09:34:04Z
 parent: stimming-oh7b
 ---
 
@@ -18,9 +18,9 @@ Tier: raw WebGL2 (instanced sprites, a baked night scene lit by the fireflies, b
 ## Checklist
 - [x] Phase model: pulse-coupled clocks on a light grid, tuned in a node prototype
 - [x] Page skeleton on Bar v2 (intro fallback, stage, vignette)
-- [ ] Night scene: sky, tree line, lantern tree, meadow, front grass, lit by the fireflies
-- [ ] Fireflies: instanced sprites with depth, bokeh, glow; bloom and grade
-- [ ] Gestures: tap scatters, drag sweeps, hold leads; Shuffle; Pull slider
+- [x] Night scene: sky, tree line, lantern tree, meadow, front grass, lit by the fireflies
+- [x] Fireflies: instanced sprites with depth, bokeh, glow; bloom and grade
+- [x] Gestures: tap scatters, drag sweeps, hold leads; Shuffle; Pull slider; Rhythm choice (Pulse, Double, Burst)
 - [ ] Sound: ticks, rain, heartbeat through audioKit, muted by default
 - [ ] Quality: detail level, pixel ratio, slow-frame step, whenVisible, reduced motion
 - [ ] QA in the browser pane: console, gestures, controls, sound, 1280, 375 x 812, 812 x 375

@@ -94,11 +94,16 @@ mark('build');
 
 /* ---------- bar ---------- */
 // The handlers bind once the meadow exists.
-const act = { shuffle() {}, leadDown() {}, leadUp() {}, reset() {} };
-const tune = { exposure: 1, bloom: 0.6, light: 1, spread: 0.01, sight: 3, reach: 0.15, aperture: 0.06 };
+const act = { shuffle() {}, leadDown() {}, leadUp() {}, reset() {}, rhythm() {}, spread() {}, sight() {} };
+const tune = { exposure: 1, bloom: 0.6, light: 1, spread: 0.01, sight: 3, reach: 0.25, aperture: 0.06 };
 const PULL0 = 0.45;
 let pull = PULL0;
 const ui = initPage({ id: 'fireflies', bar: {
+  choice: { label: 'Rhythm', value: 'pulse', options: [
+    { value: 'pulse', label: 'Pulse', key: '1' },
+    { value: 'double', label: 'Double', key: '2' },
+    { value: 'burst', label: 'Burst', key: '3' },
+  ], onPick: v => act.rhythm(v) },
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
     { verb: 'lead', key: 'L', hold: true, onDown: () => act.leadDown(), onUp: () => act.leadUp() },
@@ -111,7 +116,7 @@ const ui = initPage({ id: 'fireflies', bar: {
     { type: 'slider', id: 'aperture', label: 'Aperture', min: 0, max: 0.2, step: 0.005, value: 0.06, persist: true, onInput: v => { tune.aperture = v; } },
     { type: 'slider', id: 'spread', label: 'Spread', min: 0.002, max: 0.06, step: 0.001, value: 0.01, persist: true, onInput: v => { tune.spread = v; act.spread(); } },
     { type: 'slider', id: 'sight', label: 'Sight', min: 1, max: 10, step: 0.25, value: 3, persist: true, onInput: v => { tune.sight = v; act.sight(); } },
-    { type: 'slider', id: 'reach', label: 'Reach', min: 0, max: 0.5, step: 0.01, value: 0.15, persist: true, onInput: v => { tune.reach = v; } },
+    { type: 'slider', id: 'reach', label: 'Reach', min: 0, max: 0.5, step: 0.01, value: 0.25, persist: true, onInput: v => { tune.reach = v; } },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -477,8 +482,9 @@ void main() {
   float I = vB.x * k * vis;
   if (I < 1e-4) discard;
   vec3 tint = mix(uFly, uLamp, vB.z);
-  // A strong core runs toward white.
-  o = vec4(mix(tint, vec3(1.0, 1.0, 0.9), clamp(I * 0.05, 0.0, 0.55)) * I, 1.0);
+  // A strong core runs toward white; the lantern's white is warm.
+  vec3 hot = mix(vec3(1.0, 1.0, 0.9), vec3(1.0, 0.78, 0.5), vB.z);
+  o = vec4(mix(tint, hot, clamp(I * 0.05, 0.0, 0.55)) * I, 1.0);
 }`;
 
 /* ---------- composite ---------- */
@@ -549,14 +555,31 @@ const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const gauss = () => { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * rnd()); };
 
 /* ---------- flash and phase response ---------- */
-// One flash per cycle: a quick rise, then an exponential fade.
-// Reduced motion trades flashes for slow glows.
-const T0 = 0.95;
+// A rhythm: its cycle in seconds and its flashes within one cycle.
+// Each flash is a quick rise, then an exponential fade.
+// Burst flashes stay 0.36 s apart: under three flashes a second.
+// sp widens the spread of a slow rhythm, so each one locks in about a minute.
+const RHYTHM = {
+  pulse: { T: 0.95, at: [0], amp: [1], a: 0.04, tau: 0.09, sp: 1 },
+  double: { T: 1.3, at: [0, 0.16], amp: [1, 0.7], a: 0.03, tau: 0.06, sp: 1.37 },
+  burst: { T: 3.4, at: [0, 0.106, 0.212, 0.318], amp: [1, 0.95, 0.9, 0.82], a: 0.012, tau: 0.026, sp: 3 },
+};
+let RH = RHYTHM.pulse, T0 = RH.T;
 let FA = 0.04, FT = 0.09, BBAR = 0.11, THC = 0.1, F1 = 0.87;
-const flash = th => (th < FA ? Math.sin((Math.PI / 2) * th / FA) ** 2 : Math.exp(-(th - FA) / FT));
+const shapeAt = x => (x < FA ? Math.sin((Math.PI / 2) * x / FA) ** 2 : Math.exp(-(x - FA) / FT));
+function flash(th) {
+  let b = 0;
+  for (let k = 0; k < RH.at.length; k++) {
+    let x = th - RH.at[k];
+    if (x < 0) x += 1;
+    b += RH.amp[k] * shapeAt(x);
+  }
+  return b;
+}
+// Reduced motion trades flashes for slow glows.
 function flashShape() {
-  FA = reduced() ? 0.14 : 0.04;
-  FT = reduced() ? 0.22 : 0.09;
+  FA = RH.a * (reduced() ? 3.5 : 1);
+  FT = RH.tau * (reduced() ? 2.4 : 1);
   // Mean, centre and first harmonic of the flash over one cycle.
   let m = 0, cx = 0, cy = 0;
   for (let i = 0; i < 2000; i++) {
@@ -569,7 +592,7 @@ function flashShape() {
 }
 // The pull at the threshold of a mean-field crowd (Kuramoto).
 // The slider moves from no pull, past the threshold, to a snap.
-const kc = () => (1.596 * tune.spread * (1 / T0)) / F1;
+const kc = () => (1.596 * tune.spread * RH.sp * (1 / T0)) / F1;
 const coupling = () => 12 * pull ** 1.75 * kc();
 
 /* ---------- the light grid ---------- */
@@ -656,7 +679,7 @@ function spawn() {
   scramble();
 }
 // Natural speeds: one shared beat, spread by a little each.
-function retune() { for (let i = 0; i < N; i++) NU[i] = (1 / T0) * (1 + tune.spread * GN[i]); }
+function retune() { for (let i = 0; i < N; i++) NU[i] = (1 / T0) * (1 + tune.spread * RH.sp * GN[i]); }
 function scramble() {
   for (let i = 0; i < N; i++) { TH[i] = Math.random(); ST[i] = 0; SD[i] = -1; }
 }
@@ -790,7 +813,8 @@ function scatter(sx, sy, power = 1, dir = null) {
 
 /* ---------- step ---------- */
 // One sim step: drift, light, clocks, flashes. dt in seconds.
-const onsets = [];
+// Onsets list the fireflies that start a flash this step, and which flash.
+const onsets = [], onsetK = [];
 let simT = 0, order = 0;
 function step(dt) {
   simT += dt;
@@ -844,21 +868,28 @@ function step(dt) {
   const mean = sum / N;
   // Clocks: late ones hurry, early ones wait, by the light they see.
   // The global share stands for the faint glow of the whole meadow.
-  const K = coupling(), G = tune.reach;
-  onsets.length = 0;
+  const K = coupling(), G = tune.reach, at = RH.at;
+  onsets.length = onsetK.length = 0;
   let cx = 0, cy = 0;
   for (let i = 0; i < N; i++) {
     const loc = sample(gB, GXC[i], GZC[i]) / Math.max(0.05, sample(gC, GXC[i], GZC[i]));
-    const S = ((1 - G) * loc + G * mean) / BBAR;
+    let S = ((1 - G) * loc + G * mean) / BBAR;
+    // A bright crowd dazzles: the response saturates.
+    S /= 1 + S * 0.125;
     let d = (NU[i] + K * S * -Math.sin(TAU * (TH[i] - THC))) * dt;
-    if (d < 0) d = 0;
-    let th = TH[i] + d;
-    if (th >= 1) {
-      th -= 1;
-      onsets.push(i);
-      // A flash lifts the firefly a little, like a short swoop.
-      if (!rm && i < NM) VY[i] += 0.16;
+    // Light slows a clock to a third at most; it never stops it.
+    if (d < NU[i] * dt * 0.3) d = NU[i] * dt * 0.3;
+    const th0 = TH[i], end = th0 + d;
+    // Each flash of the rhythm starts as the clock passes its mark.
+    for (let k = 0; k < at.length; k++) {
+      if ((at[k] >= th0 && at[k] < end) || (end >= 1 && at[k] < end - 1)) {
+        onsets.push(i);
+        onsetK.push(k);
+        // A flash lifts the firefly a little, like a short swoop.
+        if (k === 0 && !rm && i < NM) VY[i] += 0.16;
+      }
     }
+    const th = end >= 1 ? end - 1 : end;
     TH[i] = th;
     cx += Math.cos(TAU * th); cy += Math.sin(TAU * th);
     // Startle flashes run on their own short clock.
@@ -869,8 +900,9 @@ function step(dt) {
   // The lantern keeps its own beat and pulls on no one's clock but theirs.
   lamp.b = 0;
   if (lamp.k > 0) {
-    lamp.th += dt / T0;
-    if (lamp.th >= 1) { lamp.th -= 1; if (lamp.on) lampSound(); }
+    const l0 = lamp.th, l1 = l0 + dt / T0;
+    for (let k = 0; k < at.length; k++) if (lamp.on && ((at[k] >= l0 && at[k] < l1) || (l1 >= 1 && at[k] < l1 - 1))) lampSound(RH.amp[k]);
+    lamp.th = l1 >= 1 ? l1 - 1 : l1;
     lamp.b = flash(lamp.th);
   }
 }
@@ -899,7 +931,7 @@ function fill() {
     SX[i] = sx; SY[i] = sy;
     const glow = FL[i] + 0.9 * ST[i];
     // Mid-field fireflies keep a faint ember between flashes; lens-close ones go dark.
-    const ember = 0.022 * clamp((16 - z) / 8) * clamp((z - 4.5) / 2);
+    const ember = 0.016 * clamp((16 - z) / 8) * clamp((z - 4.5) / 2);
     const s = clamp((0.022 * f) / z, 0.55, 2.0);
     const coc = ap * f * Math.max(0, iz - 1 / zf);
     const R = Math.max(s * 9 + coc * 0.5, coc + s * 3) + 2;
@@ -919,10 +951,10 @@ function fill() {
   }
   if (lamp.k > 0) {
     const z = lamp.Z, iz = 1 / z, glow = (0.35 + lamp.b) * lamp.k;
-    const s = 2.6, coc = ap * f * Math.max(0, iz - 1 / zf) * 0.6;
+    const s = 3.4, coc = ap * f * Math.max(0, iz - 1 / zf) * 0.4;
     const o = ns * 8;
     SPR[o] = lamp.x; SPR[o + 1] = lamp.y; SPR[o + 2] = s; SPR[o + 3] = coc;
-    SPR[o + 4] = E0 * 2.4 * glow; SPR[o + 5] = iz; SPR[o + 6] = 1; SPR[o + 7] = 0;
+    SPR[o + 4] = E0 * 3 * glow; SPR[o + 5] = iz; SPR[o + 6] = 1; SPR[o + 7] = 0;
     ns++;
     const ra = (2.4 * f) / z;
     putSplat(lamp.x, lamp.y, ra, ra, glow * 2.2, z, false);
@@ -1074,11 +1106,17 @@ function thump(ac, at, level, f0, f1) {
   src.connect(lp).connect(gn).connect(kit.out);
   src.start(at, Math.random() * 0.8, 0.1);
 }
-// A whole crowd in step: lub, dub, and a warm chord that blooms.
-function heartbeat(ac, at, level) {
-  thump(ac, at, level * 0.9, 96, 48);
-  thump(ac, at + 0.2, level * 0.55, 84, 44);
-  if (level < 0.2) return;
+// A whole crowd in step lands as a heartbeat; a big crowd adds a warm chord.
+// Pulse: each flash is a lub and a dub. Double: its two flashes are the lub and the dub.
+// Burst: each flash is one low beat, falling through the volley.
+function heartbeat(ac, at, level, k) {
+  if (RH === RHYTHM.pulse) {
+    thump(ac, at, level * 0.9, 96, 48);
+    thump(ac, at + 0.2, level * 0.55, 84, 44);
+  } else if (RH === RHYTHM.double) {
+    if (k) thump(ac, at, level * 0.6, 84, 44); else thump(ac, at, level * 0.9, 96, 48);
+  } else thump(ac, at, level * (0.85 - 0.1 * k), 104 - 8 * k, 50 - 2 * k);
+  if (level < 0.2 || k) return;
   [146.83, 220, 293.66, 369.99].forEach((fr, i) => {
     const o = ac.createOscillator(), g = ac.createGain();
     o.frequency.value = fr;
@@ -1090,8 +1128,8 @@ function heartbeat(ac, at, level) {
     o.start(at); o.stop(at + 1.45);
   });
 }
-// The lantern rings a low bell on its own beat.
-function lampSound() {
+// The lantern rings a low bell on each of its flashes.
+function lampSound(amp = 1) {
   const ac = kit.live();
   if (!ac) return;
   const at = ac.currentTime + 0.02;
@@ -1099,7 +1137,7 @@ function lampSound() {
     const o = ac.createOscillator(), g = ac.createGain();
     o.frequency.value = fr;
     g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(lv, at + 0.006);
+    g.gain.linearRampToValueAtTime(lv * amp, at + 0.006);
     g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
     o.connect(g);
     voice(ac, at, g, panOf(lamp.x));
@@ -1122,27 +1160,35 @@ function whoosh(ac, at, power, pan) {
   src.start(at, Math.random() * 0.6, 0.35);
 }
 // Onsets in the last frames find a crowd that flashes as one.
-const win = [0, 0, 0];
-let peak = 0, rising = false, lastBeat = -9;
+// Each frame keeps its onset count and the flash most of them started.
+const win = [0, 0, 0], winK = [0, 0, 0], perK = [0, 0, 0, 0];
+let peak = 0, peakK = 0, rising = false, lastBeat = -9;
 function listen(dt) {
   const ac = kit.live();
   const n = onsets.length;
+  perK.fill(0);
+  for (const k of onsetK) perK[k]++;
+  let top = 0;
+  for (let k = 1; k < 4; k++) if (perK[k] > perK[top]) top = k;
   win.shift(); win.push(n);
+  winK.shift(); winK.push(top);
   const sum = win[0] + win[1] + win[2];
-  // Out of step, about N * dt / T0 onsets land in each frame.
-  const expect = (N * 3 * dt) / T0;
-  if (sum > peak) { peak = sum; rising = true; }
+  // Out of step, about N * dt * flashes / T0 onsets land in each frame.
+  const expect = (N * 3 * dt * RH.at.length) / T0;
+  if (sum > peak) { peak = sum; peakK = winK[win.indexOf(Math.max(...win))]; rising = true; }
   let beat = 0;
   if (rising && sum < peak) {
     rising = false;
+    // The next beat may come one flash later, but never sooner.
+    const gap = RH.at.length > 1 ? (RH.at[1] - RH.at[0]) * T0 * 0.8 : 0.35;
     const excess = (peak - expect * 1.6) / (0.42 * N);
-    if (excess > 0.03 && simT - lastBeat > 0.35) { beat = Math.min(1, excess); lastBeat = simT; }
+    if (excess > 0.03 && simT - lastBeat > gap) { beat = Math.min(1, excess); lastBeat = simT; }
     peak = sum;
   }
   if (!rising) peak = Math.min(peak, sum);
   if (!ac || !kit.noise) { startle.length = 0; return; }
   const at = ac.currentTime + 0.03;
-  if (beat) heartbeat(ac, at, 0.5 * beat ** 0.8);
+  if (beat) heartbeat(ac, at, 0.5 * beat ** 0.8, peakK);
   // Rain: a few drops and one tick per frame, from the nearest flashes.
   if (n) {
     let best = -1;
@@ -1243,6 +1289,13 @@ act.reset = () => {
 };
 act.spread = () => { retune(); };
 act.sight = () => { makeKernel(); };
+// A new rhythm keeps every clock where it is, so order carries over.
+act.rhythm = v => {
+  RH = RHYTHM[v] || RHYTHM.pulse;
+  T0 = RH.T;
+  flashShape();
+  retune();
+};
 
 /* ---------- ready ---------- */
 // The intro holds until the shaders compile and the first frame draws.
@@ -1252,7 +1305,7 @@ spawn();
 bake();
 // A short warm-up puts the first frame mid-blink.
 for (let i = 0; i < 90; i++) step(1 / 60);
-onsets.length = 0;
+onsets.length = onsetK.length = 0;
 draw(simT);
 gl.finish();
 canvas.classList.add('on');
