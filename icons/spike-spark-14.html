@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Spark wheel 14</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Spark wheel 14</h1>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const RAD = Math.PI / 180, TAU = Math.PI * 2;
+  const BG = 'oklch(0.16 0.012 275)';
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => `<linearGradient id="${u}rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.62"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient><radialGradient id="${u}lit" cx="0.32" cy="0.26" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>`;
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c]) => `<stop offset="${o}" style="stop-color: ${c}"/>`).join('')}</linearGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+
+  // The toy's sparks: white at the head, gold, amber, then ember red.
+  const WHITE = 'oklch(0.99 0.03 95)', GOLD = 'oklch(0.94 0.11 92)', AMBER = 'oklch(0.86 0.15 75)', EMBER = 'oklch(0.72 0.19 45)';
+  const SPARKS = [WHITE, GOLD, AMBER, EMBER];
+  // A spark that forks: a four-point star.
+  const STAR = 'M0 -1L0.2 -0.2L1 0L0.2 0.2L0 1L-0.2 0.2L-1 0L-0.2 -0.2Z';
+  const star = (x, y, r, fill) => `<path d="${STAR}" transform="translate(${x} ${y}) scale(${r})" fill="${fill}" stroke="none"/>`;
+  // A frozen streak: amber body, white head.
+  const streaks = L => L.map(([x1, y1, x2, y2, w]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${AMBER}" stroke-width="${w}"/><line x1="${f(lerp(x1, x2, 0.55))}" y1="${f(lerp(y1, y2, 0.55))}" x2="${x2}" y2="${y2}" stroke="${WHITE}" stroke-width="${w}"/>`).join('');
+  // Five holes on a circle, turned by a.
+  const holesAt = (a, r) => [0, 1, 2, 3, 4].map(i => { const t = -a + (i * 72 - 90) * RAD; return [f(r * Math.cos(t)), f(r * Math.sin(t))]; });
+  const HEX = r => [0, 1, 2, 3, 4, 5].map(i => `${f(r * Math.cos(i * 60 * RAD))},${f(r * Math.sin(i * 60 * RAD))}`).join(' ');
+  // The rim's glow: deep red, orange, white.
+  const HEAT = [[0.5, 0.2, 28], [0.74, 0.19, 52], [0.98, 0.07, 95]];
+  const heatCol = h => {
+    const t = clamp(h) * 2, i = t < 1 ? 0 : 1, k = t - i, A = HEAT[i], B = HEAT[i + 1];
+    return `oklch(${f(lerp(A[0], B[0], k))} ${f(lerp(A[1], B[1], k))} ${f(lerp(A[2], B[2], k))})`;
+  };
+
+  // Sparks: a pool of streak lines, each on its own flight.
+  // O: at, a (degrees), v, g, floor (a number or a function of x), life, w, tail, cols.
+  const jet = (parent, n, O) => {
+    const ps = Array.from({ length: n }, () => ({ el: el('line', { opacity: 0 }, parent), age: 1, life: 0 }));
+    let next = 0;
+    return {
+      emit(o = {}) {
+        const p = ps[next];
+        next = (next + 1) % n;
+        const sp = rnd(O.v[0], O.v[1]) * (o.speed ?? 1), a = (rnd(O.a[0], O.a[1]) + (o.turn ?? 0)) * RAD;
+        Object.assign(p, { x: O.at[0], y: O.at[1], vx: sp * Math.cos(a), vy: sp * Math.sin(a), age: 0, life: rnd(O.life[0], O.life[1]) * (o.life ?? 1) });
+        if (O.cols) p.el.setAttribute('stroke', O.cols[(Math.random() * O.cols.length) | 0]);
+        p.el.setAttribute('stroke-width', f(rnd(O.w[0], O.w[1]) * (O.even ? 1 : o.size ?? 1)));
+      },
+      step(dt) {
+        let live = 0;
+        for (const p of ps) {
+          if (p.age >= p.life) continue;
+          p.age += dt;
+          if (p.age >= p.life) { p.el.setAttribute('opacity', 0); continue; }
+          live++;
+          p.vy += O.g * dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          // A spark skips on the floor.
+          const fl = typeof O.floor === 'function' ? O.floor(p.x) : O.floor;
+          if (fl != null && p.y > fl && p.vy > 0) { p.y = fl; p.vy *= -0.35; p.vx *= 0.7; }
+          const ty = p.y - p.vy * O.tail, e = p.el;
+          e.setAttribute('x1', f(p.x));
+          e.setAttribute('y1', f(p.y));
+          e.setAttribute('x2', f(p.x - p.vx * O.tail));
+          e.setAttribute('y2', f(fl != null ? Math.min(fl, ty) : ty));
+          e.setAttribute('opacity', f(1 - (p.age / p.life) ** 2));
+        }
+        return live;
+      },
+    };
+  };
+
+  // The gesture: pointer travel flicks the wheel.
+  // Spin throws sparks and heats the rim; a full heat flares.
+  const GRIND = 16;
+  const drive = (T, J, still) => {
+    const st = { w: 0, a: 0, hot: 0, on: false, demo: false, last: null, owe: 0, run: false };
+    const stop = () => {
+      st.run = false;
+      gsap.ticker.remove(tick);
+      gsap.to(still, { opacity: 1, duration: 0.5, overwrite: true });
+    };
+    function tick() {
+      const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
+      // A hover holds a slow turn; keyboard focus holds a full grind.
+      const hold = st.demo ? GRIND : st.on ? 5 : 0;
+      st.w = Math.max(hold, st.w - (1.2 * st.w + 2) * dt);
+      st.a += st.w * dt;
+      const j = clamp(st.w / GRIND);
+      st.hot = clamp(st.hot + (j > 0.45 ? 0.4 * j : -0.3) * dt);
+      st.owe += j * 40 * (1 + 0.6 * st.hot) * dt;
+      while (st.owe >= 1) { st.owe--; J.emit({ speed: 0.55 + 0.6 * j }); }
+      if (st.hot >= 1) {
+        for (let i = 0; i < 16; i++) J.emit({ speed: 1.5, turn: rnd(-45, 25), life: 1.5, size: 1.5 });
+        st.hot = 0.35;
+        T.flash();
+      }
+      const live = J.step(dt);
+      T.set(st.a, st.hot, j);
+      if (!st.on && st.w === 0 && !live && st.hot === 0) stop();
+    }
+    T.set(0, 0, 0);
+    return {
+      enter(p) {
+        Object.assign(st, { on: true, last: p, demo: !p, w: Math.max(st.w, 11) });
+        if (st.run) return;
+        st.run = true;
+        gsap.ticker.add(tick);
+        gsap.to(still, { opacity: 0, duration: 0.2, overwrite: true });
+      },
+      move(p) {
+        if (!p) return;
+        if (st.last) st.w = Math.min(26, st.w + Math.hypot(p[0] - st.last[0], p[1] - st.last[1]) * 0.22);
+        st.last = p;
+        st.demo = false;
+      },
+      leave() { st.on = false; st.demo = false; st.last = null; },
+    };
+  };
+  const pulse = (node, at) => gsap.fromTo(node, { opacity: 0.9, scale: 0.8, svgOrigin: at }, { opacity: 0, scale: 1.4, svgOrigin: at, duration: 0.5, ease: 'power2.out' });
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `
+        <rect x="44" y="72" width="9" height="24" fill="oklch(0.42 0.008 70)"/>
+        <circle cx="48" cy="48" r="25" fill="oklch(0.5 0.01 250)"/>
+        <circle class="kn" cx="48" cy="48" r="22.5" fill="none" stroke="oklch(0.86 0.01 250)" stroke-width="5" stroke-dasharray="2.6 2.3"/>
+        <circle cx="48" cy="48" r="15" fill="oklch(0.36 0.01 250)"/>
+        <circle cx="48" cy="48" r="4" fill="oklch(0.12 0.01 250)"/>
+        <g class="fly" stroke-linecap="round" stroke-width="2.4" opacity="0">
+          <line x1="54" y1="73" x2="66" y2="74" stroke="oklch(0.95 0.08 90)"/>
+          <line x1="54" y1="73" x2="64" y2="78" stroke="oklch(0.85 0.15 70)"/>
+          <line x1="54" y1="73" x2="67" y2="70" stroke="oklch(0.95 0.08 90)"/>
+          <line x1="54" y1="73" x2="63" y2="81" stroke="oklch(0.75 0.17 50)"/>
+          <line x1="54" y1="73" x2="65" y2="76" stroke="oklch(0.85 0.15 70)"/>
+        </g>
+        <g fill="oklch(0.72 0.17 45)"><circle cx="82" cy="106" r="1.8"/><circle cx="96" cy="103" r="1.4"/><circle cx="104" cy="108" r="1.6"/></g>`;
+      const knurl = svg.querySelector('.kn'), fly = svg.querySelector('.fly'), lines = [...fly.children];
+      let tl = null;
+      return {
+        enter() {
+          if (tl) return;
+          gsap.set(fly, { opacity: 1 });
+          tl = gsap.timeline({ repeat: -1, repeatDelay: 0.15 });
+          tl.fromTo(knurl, { rotation: 0, svgOrigin: '48 48' }, { rotation: 140, svgOrigin: '48 48', duration: 0.7, ease: 'power2.out' }, 0);
+          lines.forEach((e, i) => tl.fromTo(e, { x: 0, y: 0, opacity: 1, scale: 0.4, svgOrigin: '54 73' }, { x: 30 + i * 6, y: 14 + i * 5, opacity: 0, scale: 1.2, svgOrigin: '54 73', duration: 0.55, ease: 'power1.in' }, i * 0.05));
+        },
+        move() {},
+        leave() {
+          tl?.kill();
+          tl = null;
+          gsap.to(fly, { opacity: 0, duration: 0.25, overwrite: true });
+          gsap.to(knurl, { rotation: 0, svgOrigin: '48 48', duration: 0.4, overwrite: true });
+        },
+      };
+    },
+  });
+
+  // The menu's language: one object and one accent. Here: the wheel and its spark.
+  const CREAM = [[0, 'oklch(0.97 0.03 95)'], [1, 'oklch(0.78 0.06 82)']], STEELY = [[0, 'oklch(0.9 0.01 250)'], [1, 'oklch(0.5 0.022 256)']], BRASSY = [[0, 'oklch(0.93 0.12 92)'], [1, 'oklch(0.64 0.15 60)']];
+  // The spark: three flat rays from the point where the rim strikes.
+  const RAYS = ['oklch(0.98 0.05 98)', 'oklch(0.88 0.15 82)', 'oklch(0.72 0.19 48)'];
+  const rays = (a0, a1, len, fill) => RAYS.map((c, i) => {
+    const a = lerp(a0, a1, i / 2) * RAD, h = ((a1 - a0) / 2) * 0.36 * RAD, L = len[i];
+    return `<path class="ray" d="M0 0L${f(L * Math.cos(a - h))} ${f(L * Math.sin(a - h))}L${f(L * Math.cos(a + h))} ${f(L * Math.sin(a + h))}Z" fill="${fill || c}"/>`;
+  }).join('');
+  // The spark is drawn as rays, so the engine gets an empty spark pool.
+  const NO_JET = { emit() {}, step: () => 0 };
+  const flick = (els, a, j) => els.forEach((e, i) => e.setAttribute('transform', `scale(${f((0.9 + 0.45 * j) * (1 + 0.1 * j * Math.sin(a * 3 + i * 1.7)))})`));
+
+  /* ================= A · Shaded object ================= */
+
+  // A: the toy's signature image in a porthole, after Wind map and Star trails.
+  // A long-exposure fountain of sparks leaves the wheel and skids on the wet floor.
+  // It is a live miniature: each spark is a real flight with gravity, drag and a bounce.
+  {
+    const C = [64, 64], PR = 50, FL = 84, F = [46, 54], RX = 13.5, RY = 22, BX = 39;
+    const K = [F[0] + 4, F[1] + RY - 0.5];
+    const N = 34, G = 210;
+    // A fixed seed keeps the resting picture the same on every load.
+    let seed = 11;
+    const sr = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const SPK = Array.from({ length: N }, () => ({ a: sr() * 2 - 1, v: sr(), k: 0.5 + 1.3 * sr(), life: 0.45 + 0.55 * sr(), hot: sr(), fork: false, ph: sr() }));
+    // One flight from the contact point: drag, gravity, then a skid on the floor.
+    const fly = (s, aim, power) => {
+      const ang = (aim + s.a * (14 + 10 * s.v)) * RAD, sp = (80 + 92 * s.v) * power;
+      let x = K[0], y = K[1], vx = sp * Math.cos(ang), vy = sp * Math.sin(ang);
+      const pts = [[x, y]], dt = s.life / 14;
+      for (let i = 0; i < 14; i++) {
+        vx -= s.k * vx * dt;
+        vy += (G - s.k * vy) * dt;
+        x += vx * dt;
+        y += vy * dt;
+        if (y > FL) { y = FL; vy *= -0.28; vx *= 0.72; }
+        pts.push([x, y]);
+      }
+      return pts;
+    };
+    const dOf = pts => 'M' + pts.map(([x, y]) => `${f(x)} ${f(y)}`).join('L');
+    const SLOT = r => { const L = [], B = []; for (let i = 0; i <= 10; i++) { const t = i / 10, q = 0.36 + 0.4 * t, a = -0.95 * t, w = r * (0.06 + 0.085 * Math.sin(Math.PI * t) ** 0.7), tx = 0.4 * Math.cos(a) + q * 0.95 * Math.sin(a), ty = 0.4 * Math.sin(a) - q * 0.95 * Math.cos(a), l = Math.hypot(tx, ty), cx = r * q * Math.cos(a), cy = r * q * Math.sin(a); L.push([cx - (ty / l) * w, cy + (tx / l) * w]); B.unshift([cx + (ty / l) * w, cy - (tx / l) * w]); } return poly([...L, ...B]); };
+    const stop = (o, c, op) => `<stop offset="${o}" style="stop-color: ${c}"${op != null ? ` stop-opacity="${op}"` : ''}/>`;
+    const REST = { aim: -18, power: 1 };
+    const ROOMS = [
+      ['A', 'Shaded object', { top: 'oklch(0.27 0.05 196)', low: 'oklch(0.11 0.025 218)', f0: 'oklch(0.2 0.04 200)', f1: 'oklch(0.12 0.025 212)' }],
+      ['A2', 'Night room', { top: 'oklch(0.22 0.04 262)', low: 'oklch(0.1 0.02 268)', f0: 'oklch(0.21 0.03 55)', f1: 'oklch(0.11 0.015 260)' }],
+    ];
+    for (const [L, NAME, PAL] of ROOMS) DIRS.push({
+      l: L, name: NAME,
+      box: [14, 14, 100, 100],
+      art(svg, u) {
+        svg.classList.add(`${u}x`);
+        svg.innerHTML = `
+          <style>.${u}x .cm { opacity: 0; animation: ${u}flow 0.9s linear infinite paused; transition: opacity 0.3s; } .${u}x.live .cm { opacity: 1; animation-play-state: running; } @keyframes ${u}flow { to { stroke-dashoffset: -26; } }</style>
+          <defs>${light(u)}
+            <clipPath id="${u}c"><rect x="14" y="14" width="100" height="100" rx="20"/></clipPath>
+            <clipPath id="${u}fl"><rect x="0" y="${FL}" width="128" height="40"/></clipPath>
+            <linearGradient id="${u}fade" x1="0" y1="0" x2="0" y2="1">${stop(0, '#fff', 1)}${stop(1, '#fff', 0)}</linearGradient>
+            <mask id="${u}mk" maskUnits="userSpaceOnUse" x="0" y="${FL}" width="128" height="20"><rect x="0" y="${FL}" width="128" height="18" fill="url(#${u}fade)"/></mask>
+            <radialGradient id="${u}room" cx="0.42" cy="0.62" r="0.75">${stop(0, PAL.top)}${stop(1, PAL.low)}</radialGradient>
+            <linearGradient id="${u}floor" x1="0" y1="0" x2="0" y2="1">${stop(0, PAL.f0)}${stop(1, PAL.f1)}</linearGradient>
+            <radialGradient id="${u}glow">${stop(0, 'oklch(0.92 0.13 85)', 0.95)}${stop(0.35, 'oklch(0.75 0.17 60)', 0.45)}${stop(1, 'oklch(0.6 0.17 45)', 0)}</radialGradient>
+            <linearGradient id="${u}m" gradientUnits="userSpaceOnUse" x1="0" y1="${F[1] - RY}" x2="0" y2="${F[1] + RY}">${stop(0, 'oklch(0.3 0.02 262)')}${stop(0.12, 'oklch(0.9 0.01 255)')}${stop(0.3, 'oklch(0.6 0.018 255)')}${stop(0.62, 'oklch(0.32 0.022 262)')}${stop(0.88, 'oklch(0.7 0.11 70)')}${stop(1, 'oklch(0.86 0.13 82)')}</linearGradient>
+            <radialGradient id="${u}f" cx="0.32" cy="0.2" r="1.05">${stop(0, 'oklch(0.97 0.006 250)')}${stop(0.45, 'oklch(0.76 0.014 252)')}${stop(0.85, 'oklch(0.5 0.02 258)')}${stop(1, 'oklch(0.66 0.1 70)')}</radialGradient>
+            <pattern id="${u}k" patternUnits="userSpaceOnUse" width="3.4" height="3.4"><path d="M-1 -1L4.4 4.4M4.4 -1L-1 4.4" stroke="#000" stroke-width="0.6" opacity="0.5"/></pattern>
+            ${SPK.map((s, i) => `<linearGradient id="${u}g${i}" gradientUnits="userSpaceOnUse">${stop(0, '#fff', 1)}${stop(0.22, 'oklch(0.95 0.12 92)', 0.95)}${stop(0.6, 'oklch(0.8 0.17 62)', 0.7)}${stop(1, 'oklch(0.58 0.19 36)', 0)}</linearGradient>`).join('')}
+          </defs>
+          <g clip-path="url(#${u}c)">
+            <rect x="0" y="0" width="128" height="${FL}" fill="url(#${u}room)"/>
+            <rect x="0" y="${FL}" width="128" height="40" fill="url(#${u}floor)"/>
+            <rect x="14" y="14" width="100" height="100" fill="url(#${u}lit)" opacity="0.35"/>
+            <circle class="pool" cx="${K[0] + 22}" cy="${FL}" r="34" fill="url(#${u}glow)" opacity="0.5"/>
+            <g clip-path="url(#${u}fl)" mask="url(#${u}mk)" opacity="0.4"><use href="#${u}spray" transform="matrix(1 0 0 -1 0 ${2 * FL})"/></g>
+            <rect x="${K[0] - 2.2}" y="${K[1] + 2}" width="4.4" height="${FL - K[1] - 2}" rx="1" fill="oklch(0.62 0.12 70)"/>
+            <path d="M${F[0]} ${F[1] - RY}H${BX}A${RX} ${RY} 0 0 0 ${BX} ${F[1] + RY}H${F[0]}Z" fill="url(#${u}m)"/>
+            <ellipse cx="${F[0]}" cy="${F[1]}" rx="${RX}" ry="${RY}" fill="url(#${u}f)"/>
+            <ellipse cx="${F[0]}" cy="${F[1]}" rx="${RX}" ry="${RY}" fill="url(#${u}lit)"/>
+            <g fill="none" stroke="#fff" stroke-width="0.6"><ellipse cx="${F[0]}" cy="${F[1]}" rx="${f(RX * 0.78)}" ry="${f(RY * 0.78)}" opacity="0.35"/><ellipse cx="${F[0]}" cy="${F[1]}" rx="${f(RX * 0.42)}" ry="${f(RY * 0.42)}" opacity="0.25"/></g>
+            <ellipse cx="${F[0] + 0.6}" cy="${F[1] + 0.8}" rx="3.6" ry="5.4" fill="#000" opacity="0.25"/>
+            <ellipse cx="${F[0]}" cy="${F[1]}" rx="3.2" ry="4.8" fill="oklch(0.82 0.13 86)"/>
+            <ellipse cx="${F[0] - 0.9}" cy="${F[1] - 1.6}" rx="0.9" ry="1.4" fill="#fff" opacity="0.85"/>
+            <path class="spin" d="M${BX} ${F[1] - RY}A${RX} ${RY} 0 0 0 ${BX} ${F[1] + RY}" fill="none" stroke="oklch(0.2 0.02 260)" stroke-opacity="0.55" stroke-width="2.4" stroke-dasharray="0.9 1.6"/>
+            <path d="M${f(F[0] - RX * 0.7)} ${f(F[1] + RY * 0.72)}A${RX} ${RY} 0 0 0 ${f(F[0] + RX)} ${F[1]}" fill="none" stroke="oklch(0.9 0.13 80)" stroke-width="1.2" class="rimlit" opacity="0.7"/>
+            <g id="${u}spray" style="mix-blend-mode: screen">
+              <g class="halo" fill="none" stroke-linecap="round" stroke="oklch(0.75 0.16 58)" stroke-width="2.2" opacity="0.12"></g>
+              <g class="core" fill="none" stroke-linecap="round" stroke-width="0.8"></g>
+              <g class="star" stroke="oklch(0.97 0.08 95)" stroke-width="0.6" stroke-linecap="round"></g>
+            </g>
+            <g class="emb"></g>
+            <g class="comet" fill="none" stroke-linecap="round" stroke="#fff" stroke-width="1.1" style="mix-blend-mode: screen"></g>
+            <circle class="hot" cx="${K[0]}" cy="${K[1]}" r="11" fill="url(#${u}glow)"/>
+          </g>
+          `;
+        const q = s => svg.querySelector(s);
+        const halo = [], core = [], comet = [], stars = [], grads = SPK.map((_, i) => q(`#${u}g${i}`));
+        SPK.forEach((s, i) => {
+          halo.push(el('path', {}, q('.halo')));
+          core.push(el('path', { stroke: `url(#${u}g${i})`, 'stroke-width': f(0.65 + 0.75 * s.hot) }, q('.core')));
+          comet.push(el('path', { class: 'cm', 'stroke-dasharray': `${f(2 + 3 * s.hot)} 24`, style: `animation-duration: ${f(0.55 + 0.6 * s.ph)}s; animation-delay: -${f(s.ph)}s` }, q('.comet')));
+          stars.push(s.fork ? el('path', {}, q('.star')) : null);
+        });
+        const embs = SPK.filter((_, i) => i % 3 === 0).map(() => el('ellipse', { ry: 0.7, fill: 'oklch(0.78 0.17 55)' }, q('.emb')));
+        const spin = q('.spin'), hot = q('.hot'), pool = q('.pool'), rimlit = q('.rimlit');
+        const st = { ...REST, ang: 0, w: 0 };
+        // Every flight is drawn whole, as a long exposure; the comets run along them.
+        const draw = () => {
+          SPK.forEach((s, i) => {
+            const pts = fly(s, st.aim, st.power), d = dOf(pts), e = pts[pts.length - 1];
+            halo[i].setAttribute('d', dOf(pts.slice(0, 8)));
+            core[i].setAttribute('d', d);
+            comet[i].setAttribute('d', d);
+            grads[i].setAttribute('x1', f(K[0])); grads[i].setAttribute('y1', f(K[1]));
+            grads[i].setAttribute('x2', f(e[0])); grads[i].setAttribute('y2', f(e[1]));
+            // A forking spark ends in a small star where it burst.
+            if (stars[i]) { const [x, y] = pts[9], r = 1.6 + 1.6 * s.hot; stars[i].setAttribute('d', `M${f(x - r)} ${f(y)}H${f(x + r)}M${f(x)} ${f(y - r)}V${f(y + r)}M${f(x - r * 0.6)} ${f(y - r * 0.6)}L${f(x + r * 0.6)} ${f(y + r * 0.6)}`); }
+          });
+          // An ember glows at the end of every third flight.
+          embs.forEach((e, n) => { const pts = fly(SPK[n * 3], st.aim, st.power), [x, y] = pts[pts.length - 1]; e.setAttribute('cx', f(x)); e.setAttribute('cy', f(Math.min(y, FL) - 0.3)); e.setAttribute('rx', f(1.2 + SPK[n * 3].hot)); e.setAttribute('opacity', f(y >= FL - 0.5 ? 0.85 : 0)); });
+          // The knurl runs round the tread with the spin.
+          spin.setAttribute('stroke-dashoffset', f((st.ang * 0.06) % 2.5));
+          const k = clamp((st.power - 0.7) / 0.6);
+          hot.setAttribute('r', f(10 + 6 * k));
+          pool.setAttribute('opacity', f(0.4 + 0.4 * k));
+          rimlit.setAttribute('opacity', f(0.55 + 0.45 * k));
+        };
+        draw();
+        let on = false, last = null, demo = null;
+        const tick = (t, dt) => {
+          const s = Math.min(dt, 50) / 1000;
+          st.ang += st.w * s;
+          st.w += (240 - st.w) * (1 - Math.exp(-s / 0.4));
+          draw();
+        };
+        const start = () => { if (on) return; on = true; svg.classList.add('live'); gsap.ticker.add(tick); };
+        const stopNow = () => { on = false; svg.classList.remove('live'); gsap.ticker.remove(tick); st.w = 0; draw(); };
+        // The spray turns toward the pointer; the farther it is, the harder the grind.
+        const aim = p => {
+          const a = Math.atan2(p[1] - K[1], p[0] - K[0]) / RAD;
+          gsap.to(st, { aim: clamp(a, -42, 20), power: clamp(0.8 + Math.hypot(p[0] - K[0], p[1] - K[1]) / 140, 0.8, 1.2), duration: 0.35, ease: 'power2.out', overwrite: 'auto' });
+        };
+        return {
+          enter(p) {
+            start();
+            if (p) { aim(p); last = p; return; }
+            const o = { a: 0 };
+            demo = gsap.to(o, { a: TAU, duration: 3, repeat: -1, ease: 'none', onUpdate: () => aim([88 + 14 * Math.cos(o.a), 62 + 12 * Math.sin(o.a)]) });
+          },
+          move(p) {
+            if (!p || demo) return;
+            // A quick stroke spins the wheel harder for a moment.
+            if (last) st.w = Math.min(900, st.w + Math.hypot(p[0] - last[0], p[1] - last[1]) * 18);
+            last = p;
+            aim(p);
+          },
+          leave() { demo?.kill(); demo = null; last = null; gsap.to(st, { ...REST, duration: 0.8, ease: 'power2.inOut', overwrite: 'auto', onComplete: stopNow }); },
+        };
+      },
+      emblem: (() => {
+        const arcs = SPK.map(s => fly(s, REST.aim, REST.power)), TREAD = `M${F[0]} ${F[1] - RY}H${BX}A${RX} ${RY} 0 0 0 ${BX} ${F[1] + RY}H${F[0]}Z`;
+        const spray = (op, k) => arcs.map((pts, i) => `<path d="${dOf(pts.slice(0, 11))}" stroke-width="${f((0.8 + 0.9 * SPK[i].hot) * k)}" stroke-opacity="${f((0.45 + 0.55 * SPK[i].hot) * op)}"/>`).join('');
+        return `${EMB_HEAD}<g transform="translate(64 64) scale(1.32) translate(-71 -72)"><g fill="none" stroke="#fff" stroke-linecap="round">${spray(1, 1.2)}</g><g transform="matrix(1 0 0 -1 0 ${2 * FL})" fill="none" stroke="#fff" stroke-linecap="round" opacity="0.35">${spray(1, 1)}</g><rect x="${K[0] - 2.4}" y="${K[1] + 2}" width="4.8" height="${FL - K[1] - 2}" fill="#9a9a9a"/><path d="${TREAD}" fill="#8a8a8a"/><ellipse cx="${F[0]}" cy="${F[1]}" rx="${RX}" ry="${RY}" fill="#fff"/><ellipse cx="${F[0]}" cy="${F[1]}" rx="${f(RX * 0.74)}" ry="${f(RY * 0.74)}" fill="none" stroke="#000" stroke-width="1.4"/><ellipse cx="${F[0]}" cy="${F[1]}" rx="3.2" ry="4.8" fill="#000"/></g></svg>`;
+      })(),
+    });
+  }
+
+  /* ================= D · Isometric block ================= */
+
+  // D, after Pin art's block: a flat-shaded slab, and the bead wheel stands on it.
+  // Sparks skid along the top as warm beads and cool there.
+  {
+    const HW = 25 * Math.sqrt(3), HH = 25, DEP = 14, M = [64, 84];
+    const T = [64, M[1] - HH], UR = [64 + HW, M[1]], C0 = [64, M[1] + HH], UL = [64 - HW, M[1]];
+    const LR = [UR[0], UR[1] + DEP], BB = [64, C0[1] + DEP], LL = [UL[0], UL[1] + DEP];
+    // The wheel stands in the plane of the left face; B is where it meets the top.
+    const B = [47, 86], R = 21, N = 24, S0 = 2.5, Cw = [B[0], B[1] - R], U = [0.866, 0.5];
+    const at = t => [Cw[0] + U[0] * R * Math.cos(t), Cw[1] + U[1] * R * Math.cos(t) - R * Math.sin(t)];
+    // The resting spray lies on the top: beads along three directions on the slab.
+    const DIRS3 = [[0.866, 0.5], [1, 0], [0.866, -0.5]];
+    const FAN = DIRS3.flatMap(([dx, dy], i) => [9, 17, 25, 33].map((s, k) => [B[0] + 4 + dx * s, B[1] + dy * s, [3.2, 2.5, 1.9, 1.3][k], 1 - 0.18 * k]));
+    const stop = (o, c) => `<stop offset="${o}" style="stop-color: ${c}"/>`;
+    DIRS.push({
+      l: 'D', name: 'Isometric block',
+      box: [18, 36, 92, 86],
+      art(svg, u) {
+        svg.innerHTML = `
+          <defs>
+            <radialGradient id="${u}s" cx="0.36" cy="0.3" r="0.72">${stop(0, 'oklch(0.99 0.004 250)')}${stop(0.45, 'oklch(0.8 0.012 252)')}${stop(1, 'oklch(0.5 0.02 258)')}</radialGradient>
+            <radialGradient id="${u}w" cx="0.36" cy="0.3" r="0.72">${stop(0, 'oklch(0.99 0.04 98)')}${stop(0.45, 'oklch(0.88 0.15 82)')}${stop(1, 'oklch(0.66 0.19 45)')}</radialGradient>
+          </defs>
+          <path d="${poly([UL, C0, BB, LL])}" style="fill: oklch(0.6 0.1 196)"/>
+          <path d="${poly([C0, UR, LR, BB])}" style="fill: oklch(0.44 0.085 202)"/>
+          <path d="${poly([T, UR, C0, UL])}" style="fill: oklch(0.31 0.035 212)"/>
+          <g class="fan" fill="url(#${u}w)">${FAN.map(([x, y, r, o]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill-opacity="${f(o)}"/>`).join('')}</g>
+          <g class="fly" fill="url(#${u}w)"></g>
+          <circle cx="${Cw[0]}" cy="${Cw[1]}" r="4.6" fill="url(#${u}s)"/>
+          <g class="ring" fill="url(#${u}s)"></g>`;
+        const ring = svg.querySelector('.ring'), fly = svg.querySelector('.fly'), fan = [...svg.querySelector('.fan').children];
+        const studs = Array.from({ length: N }, (_, i) => ({ n: el('circle', { r: S0 }, ring), t: (i * TAU) / N }));
+        const beads = Array.from({ length: 14 }, () => el('circle', { r: 0 }, fly));
+        let rot = 0, passed = 0, next = 0, last = null;
+        // The far half of the ring draws first, so near studs cover it.
+        const place = () => {
+          studs.forEach(s => { const [x, y] = at(s.t + rot); s.n.setAttribute('cx', f(x)); s.n.setAttribute('cy', f(y)); s.x = x; s.y = y; });
+        };
+        place();
+        // A spark skids out along the top and cools there.
+        const spit = () => {
+          const b = beads[next], [dx, dy] = DIRS3[(Math.random() * 3) | 0], s = rnd(22, 38), w = rnd(-0.25, 0.25);
+          next = (next + 1) % beads.length;
+          gsap.timeline({ overwrite: true })
+            .fromTo(b, { attr: { cx: B[0] + 3, cy: B[1], r: 3.4 }, opacity: 1 }, { attr: { cx: f(B[0] + 3 + (dx - w * dy) * s), cy: f(B[1] + (dy + w * dx) * s), r: 1.6 }, duration: rnd(0.35, 0.5), ease: 'power3.out' })
+            .to(b, { opacity: 0, duration: 0.8, ease: 'power1.in' });
+          gsap.fromTo(fan, { attr: { 'fill-opacity': 1 } }, { attr: { 'fill-opacity': (i) => f(1 - 0.18 * (i % 4)) }, duration: 0.5, overwrite: true });
+        };
+        const turn = da => {
+          rot += da;
+          place();
+          const now = Math.floor(rot / (TAU / N));
+          if (now !== passed) { for (let i = 0; i < Math.min(4, Math.abs(now - passed)); i++) spit(); passed = now; }
+        };
+        // Studs near the pointer swell and sink back, as Pin art's pins do.
+        const press = p => studs.forEach(s => {
+          const r = S0 + 2.2 * Math.exp(-((p[0] - s.x) ** 2 + (p[1] - s.y) ** 2) / (2 * 10 * 10));
+          if (r <= +s.n.getAttribute('r') + 0.2) return;
+          gsap.timeline({ overwrite: true })
+            .to(s.n, { attr: { r }, duration: 0.12, ease: 'power2.out' })
+            .to(s.n, { attr: { r: S0 }, duration: 1.1, ease: 'power2.inOut' }, '+=0.3');
+        });
+        return {
+          enter(p) {
+            if (!p) { const o = { v: 0 }; let was = 0; gsap.to(o, { v: 2.2, duration: 1.1, ease: 'power2.out', onUpdate() { turn(o.v - was); was = o.v; } }); return; }
+            last = p;
+            press(p);
+          },
+          move(p) {
+            if (!p) return;
+            press(p);
+            // A sideways sweep turns the wheel, as a thumb on the knurl.
+            if (last) turn((p[0] - last[0]) * 0.07 + Math.max(0, p[1] - last[1]) * 0.05);
+            last = p;
+          },
+          leave() { last = null; },
+        };
+      },
+      emblem: `${EMB_HEAD}<path d="${poly([UL, C0, BB, LL])}${poly([C0, UR, LR, BB])}" fill="#fff"/><path d="${poly([T, UR, C0, UL])}" fill="#000"/><path d="M${f(C0[0])} ${f(C0[1])}V${f(BB[1])}" stroke="#000" stroke-width="2.4"/><g fill="#fff">${FAN.map(([x, y, r]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r * 1.1)}"/>`).join('')}${Array.from({ length: N }, (_, i) => { const [x, y] = at((i * TAU) / N); return `<circle cx="${f(x)}" cy="${f(y)}" r="3"/>`; }).join('')}<circle cx="${Cw[0]}" cy="${Cw[1]}" r="5"/></g></svg>`,
+    });
+  }
+
+  /* ================= Gallery ================= */
+  const NAME = 'Spark wheel';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-spark';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `spark-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+})();
+</script>
+</body>
+</html>
