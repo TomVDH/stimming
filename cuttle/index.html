@@ -190,6 +190,12 @@ float fbm(vec2 p) {
   for (int i = 0; i < 4; i++) { s += a * noise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(7.3, 1.7); a *= 0.5; }
   return s / 0.9375;
 }
+// Three octaves, for fields that need less grain.
+float fbm3(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * noise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(7.3, 1.7); a *= 0.5; }
+  return s / 0.875;
+}
 // The tissue drifts slowly; cells and layers move together.
 vec2 warp(vec2 p, float t) {
   return 0.011 * (vec2(noise(p * 2.2 + vec2(t * 0.13, 0.0)), noise(p * 2.2 + vec2(5.2, t * 0.11))) - 0.5);
@@ -545,9 +551,9 @@ float papillae(vec2 p) {
   }
   return h;
 }
-// The broad swell and fine grain of the skin.
+// The broad swell and fine grain of the skin: three noise reads.
 float relief(vec2 p) {
-  return 0.012 * fbm(p * 2.6 + vec2(uFleshT * 0.02, 0.0)) + 0.0012 * noise(p * 46.0);
+  return 0.008 * noise(p * 2.6) + 0.004 * noise(mat2(1.6, 1.2, -1.2, 1.6) * p * 2.6 + 7.3) + 0.0012 * noise(p * 46.0);
 }
 void main() {
   vec2 fc = gl_FragCoord.xy, uv = fc / uRes;
@@ -581,7 +587,7 @@ void main() {
   vec3 L = Lv / ld, V = vec3(0.0, 0.0, 1.0), H = normalize(L + V);
 
   // Leucophores: soft white patches; bare flesh between them is dusky.
-  float leu = smoothstep(0.34, 0.66, fbm(p * 2.2 + 13.0));
+  float leu = smoothstep(0.34, 0.66, fbm3(p * 2.2 + 13.0));
   leu = 0.1 + 0.9 * leu * (0.85 + 0.15 * noise(p * 70.0));
   vec3 base = mix(uFlesh, uWhite, leu) * sh;
   float diff = 0.74 + 0.26 * dot(N, normalize(vec3(-0.4, 0.5, 1.0)));
@@ -591,14 +597,14 @@ void main() {
   vec3 Nw = normalize(vec3(Nm.xy * 4.0, 1.0));
   float cw = clamp(dot(H, Nw), 0.0, 1.0);
   // Small domains of plates vary the film's thickness.
-  float dom = fbm(p * 11.0 + 3.0);
-  float thick = fbm(p * 1.1 + vec2(21.0, uT * 0.01)) + 0.45 * dom;
+  float dom = 0.67 * noise(p * 11.0 + 3.0) + 0.33 * noise(p * 23.0 - 5.0);
+  float thick = 0.67 * noise(p * 1.1 + vec2(21.0, uT * 0.01)) + 0.33 * noise(p * 2.3 - 9.0) + 0.45 * dom;
   float ph = thick * 1.2 + (1.0 - cw) * 2.4;
   vec3 film = filmCol(ph);
   // The sheen lives round the light, where the plates face it.
   // A pale display bares the whole iridescent layer, in patches.
   float broad = (0.03 + 0.42 * smoothstep(0.86, 1.0, cw)) * (1.0 - 0.4 * leu);
-  broad += uIrid * (0.16 + 0.4 * smoothstep(0.5, 1.0, cw)) * smoothstep(0.3, 0.72, dom) * (0.7 + 0.6 * fbm(p * 3.0 - 4.0));
+  if (uIrid > 0.01) broad += uIrid * (0.16 + 0.4 * smoothstep(0.5, 1.0, cw)) * smoothstep(0.3, 0.72, dom) * (0.7 + 0.6 * noise(p * 3.0 - 4.0));
   vec3 irid = film * broad * uSheen * (1.0 + uGlow);
   // A soft pool of light follows the light; the rest of the skin is dimmer.
   float pool = 0.66 + 0.4 * exp(-dlen * dlen / 0.25);
@@ -709,7 +715,7 @@ function resize() {
   // A hidden or tiny stage still gets a sane scale.
   const short = Math.max(160, Math.min(w, h));
   // Small stages look closer, large ones look wider.
-  baseZoom = clamp(1100 / short, 0.9, 2.2);
+  baseZoom = clamp(920 / short, 0.8, 1.9);
   unitCss = short * zoom();
   // The lattices cover the stage at the widest zoom, up to a cap.
   allocLayers(Math.min(3, (0.5 * Math.hypot(w, h)) / (short * baseZoom * 0.6) + 0.08));
@@ -1072,7 +1078,7 @@ function frame(now) {
     time += dt;
     // A long still spell slows the skin to rest.
     drowsy = (now - lastInput) / 1000 > IDLE() ? 1 : 0;
-    sleep += (drowsy - sleep) * (1 - Math.exp(-dt / (drowsy ? 2.5 : 0.35)));
+    sleep += (drowsy - sleep) * (1 - Math.exp(-dt / (drowsy ? 1.6 : 0.35)));
     const pace = (reduced() ? 0.2 : 1) * (1 - sleep);
     patT += dt * pace;
     fleshT += dt * pace;
