@@ -5084,10 +5084,11 @@ const spike = makeFlare(linFit(0.95, 0.05, 230), /* glsl */`
 // Side jets blow out of the brake's ports, square to the barrel.
 const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linFit(0.92, 0.07, 230)));
 // A shell: a thin skin of condensed air, lit by the sun and by uEm.
-function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
-  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() }, uSq: { value: new THREE.Vector4(0, 1, 0, 1) } },
-  transparent: true, depthWrite: false,
+// glob draws the whole sphere: a veil, Worley patches and a lit side.
+function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62, glob = false) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, glob ? 5 : 4), new THREE.ShaderMaterial({
+  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() }, uSq: { value: new THREE.Vector4(0, 1, 0, 1) }, uVol: { value: volRT.texture } },
+  transparent: true, depthWrite: false, side: glob ? THREE.DoubleSide : THREE.FrontSide,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; uniform vec4 uSq; varying vec3 vP, vN;
@@ -5098,7 +5099,24 @@ function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
     vP = uC + p * uR;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
-  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
+  fragmentShader: glob ? /* glsl */`precision highp sampler3D; uniform sampler3D uVol;
+  varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
+  void main() {
+    vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
+    float f = 1.0 - abs(dot(N, V));
+    // Condensation gathers in round Worley patches on the skin.
+    float w = textureLod(uVol, N * 0.9 + vec3(uSeed * 0.013), 0.0).b;
+    float w2 = textureLod(uVol, N * 2.3 + vec3(0.3, uSeed * 0.007, 0.6), 0.0).g;
+    float cells = smoothstep(${lo.toFixed(2)}, ${hi.toFixed(2)}, 0.7 * w + 0.3 * w2);
+    // The whole sphere shows faintly; its rim, seen edge on, thickens.
+    float a = (0.18 + 1.6 * pow(max(f, 0.0), ${sharp.toFixed(1)})) * (0.3 + 0.7 * cells) * uGain;
+    // The far side shows through the near side, dimmer.
+    if (!gl_FrontFacing) a *= 0.45;
+    // A soft terminator; the skin toward the sun glows through.
+    float lit = smoothstep(-0.35, 0.7, dot(N, uSun));
+    vec3 col = vec3(0.95) * (0.8 * ambient(N) + uSunC * (0.15 + 0.85 * lit)) + uSunC * 0.6 * pow(max(dot(-V, uSun), 0.0), 6.0) + uEm;
+    gl_FragColor = vec4(k2haze(col, vP) * a, a);
+  }` : /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
   void main() {
     vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
     float f = 1.0 - abs(dot(N, V));
@@ -6126,8 +6144,10 @@ float dens(vec3 p, out vec3 em) {
   w += (texture(uVol, w * 0.6 + vec3(age * 0.006)).rgb - 0.5) * (0.25 + 0.4 * old);
   // Three octaves of billows push the surface in and out.
   // Large billows first: the octaves sit at a broad scale, so the ball rolls, not grains.
-  float n = 0.6 * texture(uVol, w * 0.26).r + 0.28 * texture(uVol, w * 0.6).r + 0.12 * texture(uVol, w * 1.4).r;
-  float shape = smoothstep(0.95, 0.75, r + (0.72 - n) * (1.3 + 0.6 * old)) * smoothstep(1.3, 1.15, r);
+  // Worley cells round each billow off, like a heap's turrets.
+  float n = 0.6 * texture(uVol, w * 0.26).b + 0.28 * texture(uVol, w * 0.6).b + 0.12 * texture(uVol, w * 1.4).r;
+  // The Worley cells run lower than the old billows: the mid point moves down.
+  float shape = smoothstep(0.95, 0.75, r + (0.48 - n) * (1.5 + 0.7 * old)) * smoothstep(1.3, 1.15, r);
   // Fine cells carve small lobes into each billow.
   float d = clamp(shape * (0.55 + 0.6 * texture(uVol, w * 2.6).g) - 0.12, 0.0, 1.0) * 1.4;
   // The fire clears its own soot for the first seconds.
@@ -6149,7 +6169,13 @@ vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 vec3 vlight(vec3 p) {
   vec3 b = p - uBP;
   float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(26.0, 38.0, uFb.x));
-  vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0);
+  // Soot between the core and p swallows the fire's light.
+  // The outer billows then take the sun, not the fire.
+  float rr = length(b) / rb();
+  vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0) * mix(1.0, exp(-2.2 * smoothstep(0.25, 1.0, rr)), smoothstep(1.0, 4.0, uFb.x));
+  // Deep inside, the sky's light is shut out: a cheap occlusion.
+  // VOLFX adds the sky light; this takes part of it back.
+  L -= mix(uHorC, uZenC, 0.5) * 0.3 * 0.7 * (1.0 - smoothstep(0.15, 0.8, rr));
   // At night the moon lights the soot faintly and silvers its far edge.
   vec3 nb = normalize(b);
   float edge = pow(1.0 - abs(dot(nb, normalize(cameraPosition - uBP))), 2.0);
@@ -6430,7 +6456,8 @@ function updateBridge(ha, R) {
 }
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
-const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
+// The Wilson cloud and the shock front are whole spheres.
+const hitShellA = makeShell(3.0, 0.45, 0.75, true), hitShellB = makeShell(4.0, 0.35, 0.7, true);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
 const hitShellC = makeShell(7.0, -0.1, 0.45);
 // The live blast: start time, place, rock radius and power.
