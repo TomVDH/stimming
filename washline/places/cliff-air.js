@@ -91,8 +91,11 @@ export function airUniforms(H) {
 }
 
 // A standard material gets the fog sea and the air instead of three's fog.
+// A patch already on the material runs first.
 export function airify(mat, u) {
-  mat.onBeforeCompile = (sh) => {
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey();
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vAirW;')
@@ -106,7 +109,7 @@ export function airify(mat, u) {
       .replace('#include <common>', `#include <common>\nvarying vec3 vAirW;\n${AIR}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = airApply(gl_FragColor.rgb, vAirW);');
   };
-  mat.customProgramCacheKey = () => 'cliff-air';
+  mat.customProgramCacheKey = () => 'cliff-air|' + key;
   return mat;
 }
 
