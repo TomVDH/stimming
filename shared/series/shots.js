@@ -247,6 +247,7 @@ export const SHOTS = {
       <path d="M48.8 56L20 112M51.2 56L80 112" stroke="oklch(0.97 0.02 90 / 0.75)" stroke-width="0.9"/>
       <path d="${P([[49.7, 59], [50.3, 59], [50.5, 62.4], [49.5, 62.4]])}${P([[49.3, 65.6], [50.7, 65.6], [51.1, 71], [48.9, 71]])}${P([[48.7, 75.6], [51.3, 75.6], [52, 84], [48, 84]])}${P([[47.6, 90], [52.4, 90], [53.6, 104], [46.4, 104]])}" fill="${k.c.accent}"/>`, { pal: 'Ember' }],
     // Hills behind hills: five bands from far to near under one sun.
+    // Tom's pick for Vistas, in Mint (2026-11-15).
     ['Layers', -1, k => `<rect ${FIELD} fill="${k.lin([[0.1, k.c.sky[0]], [0.4, k.c.sky[1]], [0.56, k.c.sky[2]]])}"/>
       <circle cx="60" cy="36" r="20" fill="${k.c.sun}" fill-opacity="0.4" filter="${k.blur}"/><circle cx="60" cy="36" r="9.6" fill="${k.c.sun}"/>
       ${['M-70 50Q10 38 36 46T80 42T170 48V170H-70Z', 'M-70 58Q0 50 30 56T72 50T170 58V170H-70Z', 'M-70 66Q14 56 44 64T90 60T170 66V170H-70Z', 'M-70 74Q4 66 34 73T78 68T170 76V170H-70Z', 'M-70 84Q20 74 50 82T100 78T170 84V170H-70Z']
