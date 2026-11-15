@@ -31,8 +31,7 @@ iframe { display: block; width: 100%; border: 0; }
 </div>
 <script type="module">
 import { M, icon, picks, motif, PICKS_KEY } from './icons.js';
-import { PLACES, placeIcon, placePicks, savePlacePick } from './places.js';
-import { SYSTEMS, systemPick } from './systems.js';
+import { FUNK, funkIcon, funkPicks, saveFunkPicks } from './funk.js';
 
 const MONO = '"Iosevka Term Slab", ui-monospace, monospace';
 // The wave is a mask tile, so the line takes the series colour.
@@ -111,7 +110,7 @@ html[data-s="g"] .hd { display: flex; align-items: center; justify-content: cent
 html[data-s="g"] .hd::before, html[data-s="g"] .hd::after { content: ""; flex: 1; min-width: 12px; height: 8px; background: color-mix(in oklch, var(--c) 65%, transparent); -webkit-mask: ${WAVE} 0 0 / 24px 8px repeat-x; mask: ${WAVE} 0 0 / 24px 8px repeat-x; }
 html[data-s="g"] .hd .nm { font: 800 clamp(17px, 2.4vw, 22px)/1 var(--sans); letter-spacing: -0.01em; }
 html[data-s="g"] .hd .cap { display: none; }
-html[data-s="g"] .hd .pick { width: 32px; height: 32px; }
+html[data-s="g"] .hd .pick { width: 40px; height: 40px; }
 
 /* H, Beam: a line of light that fades to the right. */
 html[data-s="h"] .hd { position: relative; display: flex; align-items: center; gap: 12px; padding-bottom: 12px; }
@@ -164,12 +163,9 @@ for (const li of [...shelf.children]) {
   (groups.get(k) || rest).push(li);
 }
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-// A place series takes its icon from the places sheet; a theme keeps the hex.
+// A place series takes its icon from the funk sheet; a theme keeps the hex.
 const draw = (k, c) => {
-  // A picked icon system draws every series; the older icons are the fallback.
-  const sys = systemPick();
-  if (sys) return SYSTEMS[sys].draw(k, c);
-  if (PLACES[k]) { const p = placePicks()[k]; return placeIcon(k, p.m, p.t, c); }
+  if (FUNK[k]) { const p = funkPicks(); return funkIcon(k, p[k], p, c); }
   return M[k] ? icon(motif(k, picks()[k]), c) : '';
 };
 for (const [k, tiles] of groups) {
@@ -200,13 +196,12 @@ d.addEventListener('click', e => {
   const b = e.target.closest('.hd .pick');
   if (!b) return;
   const sec = b.closest('.sec'), k = sec.dataset.k;
-  if (systemPick()) return;
-  if (PLACES[k]) {
-    const p = placePicks()[k], names = PLACES[k].map(([l]) => l);
-    p.m = names[(names.indexOf(p.m) + 1) % names.length];
-    savePlacePick(k, p);
-    b.innerHTML = placeIcon(k, p.m, p.t, series[k].color);
-    b.title = p.m;
+  if (FUNK[k]) {
+    const p = funkPicks(), names = FUNK[k].map(([l]) => l);
+    p[k] = names[(names.indexOf(p[k]) + 1) % names.length];
+    saveFunkPicks(p);
+    b.innerHTML = funkIcon(k, p[k], p, series[k].color);
+    b.title = p[k];
     return;
   }
   if (!M[k]) return;
