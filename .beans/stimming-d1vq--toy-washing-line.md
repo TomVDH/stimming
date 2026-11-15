@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T07:11:42Z
+updated_at: 2026-11-15T07:32:48Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -183,3 +183,8 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 ### East Van place (Tom, 2026-11-15)
 
 - A Grandview back lane: the line runs from a back porch to a wooden power pole over the gravel lane; garages, Vancouver Specials and old Edwardian houses, tangled wires, crows, the North Shore mountains behind; the lit East Van Cross and downtown seen far off between the houses.
+
+
+### East Van canned; one scene next (Tom, 2026-11-15)
+
+- Tom canned East Van and the multi-place iteration: come up with one incredibly high-quality scene; Tom reviews the proposal before any build.
