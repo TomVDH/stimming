@@ -15,10 +15,10 @@ export const cards = [
     sun: [0.4, 0.7, 0.5], sunCol: col(0.7, 0.05, 255), sunI: 0.25, hemi: [col(0.42, 0.06, 285), col(0.3, 0.05, 60), 0.85],
     fog: col(0.2, 0.045, 325), fogD: 0.009,
     sky: { cloudA: 0.95, cov: 0.2, cloud: col(0.19, 0.04, 320), cloudLit: col(0.3, 0.06, 45), hazeA: 0.8, hazeK: 6, disc: 0, stars: 0, sunCol: col(0.6, 0.1, 50, 0.2) },
-    exposure: 1.15, lamp: 460, plat: 110, under: 90, win: 1.4,
+    exposure: 1.12, lamp: 460, plat: 80, under: 90, win: 1.4,
     rain: 0.18, rainLamp: [26, 9.3, -7.6], wet: true, leaves: 0, wind: -0.3, smoke: 0,
     shadow: { at: [20, 0, 0], r: 45 },
-    bloom: [0.6, 0.7, 0.95], grade: { con: 1.08, sat: 1.12, vig: 0.4, grain: 0.07, lift: [0.006, 0.006, 0.028] } },
+    bloom: [0.5, 0.6, 0.97], grade: { con: 1.08, sat: 1.12, vig: 0.4, grain: 0.07, lift: [0.006, 0.006, 0.028] } },
 ];
 
 export function build(k) {
