@@ -1010,12 +1010,15 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     }
     float cover = smoothstep(-wid, wid, best - slope);
     if (cover <= 0.0) return vec4(0.0);
-    // Three halvings place the hit; a miss shows the skyline itself, faintly.
+    // Four halvings bracket the hit; a straight line between the bracket's ends places it.
+    // Without that last step the hit moves in steps, and ripples cut the image into hard bands.
+    // A miss shows the skyline itself, faintly.
     float sh = sBest;
     if (sHit > 0.0) {
       float lo = sHit / 1.25, hi = sHit;
-      for (int b = 0; b < 3; b++) { float m = 0.5 * (lo + hi); if (landO(P.xz + hd * m, 3) - P.y > slope * m) hi = m; else lo = m; }
-      sh = hi;
+      for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); if (landO(P.xz + hd * m, 3) - P.y > slope * m) hi = m; else lo = m; }
+      float dl = slope * lo - (landO(P.xz + hd * lo, 3) - P.y), dhv = slope * hi - (landO(P.xz + hd * hi, 3) - P.y);
+      sh = mix(lo, hi, clamp(dl / max(dl - dhv, 1e-4), 0.0, 1.0));
     }
     vec2 qxz = P.xz + hd * sh;
     vec3 q = vec3(qxz.x, landO(qxz, 3), qxz.y);
