@@ -170,4 +170,4 @@ Scalars travel through a second advection program on the same velocity. Add ligh
 
 ## Kit handoff
 
-K5, marked, with scalar advection and bubble splats. Kelvin dropper does not need it. Chromatography (38) or Marbling's own rework could copy it.
+K5, marked, with scalar advection and bubble splats. Chromatography (38) or Marbling's own rework could copy it.

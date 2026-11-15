@@ -1,11 +1,11 @@
-# Development plans: the next fifteen toys
+# Development plans: the next twelve toys
 
 Drafted 2026-11-04. Tom decides; nothing here is built.
+Tom cut Collatz coral, Dry ice fog, Pull chain and Kelvin dropper on 2026-11-15; ranks 12 to 14 are gone.
 
 These plans cover ranks 5 to 19 of the ranking in [toy-plan.md](../toy-plan.md).
 Ranks 1 to 4 (Night viaduct, Star trails, Sonar, Cloud chamber) already have briefs in [toy-dev-plan.md](../toy-dev-plan.md).
 Rank 19, "the chemistry bench", is one page with two experiments: Electrolysis and Iodine clock.
-Kelvin dropper stays its own toy: it is a K1 toy, not a fluid.
 
 ## Start a build
 
@@ -16,7 +16,7 @@ Open one fresh session per toy with:
 The session reads those three files, `shared/stim.js`, and only the source sections its plan names.
 Large pages stay closed.
 
-## The fifteen
+## The twelve
 
 | Rank | Toy | id | Tech | Kits | Size | Estimate | Waits on |
 |---|---|---|---|---|---|---|---|
@@ -27,24 +27,21 @@ Large pages stay closed.
 | 9 | [Wind map](windmap.md) | `windmap` | 2D | uses K1 | S | $10 to $15 | |
 | 10 | [Coast and meteor](meteor.md) | `meteor` | 3D | uses K2, K6 | L | $40 to $70 | D1, Fireworks |
 | 11 | [Wind farm](windfarm.md) | `windfarm` | 3D | uses K2 | M | $20 to $30 | D1 |
-| 12 | [Collatz coral](coral.md) | `coral` | 2D | | S | $10 to $15 | |
-| 13 | [Dry ice fog](dryice.md) | `dryice` | VOL | uses K3 | M | $20 to $30 | D3, Ink in water |
-| 14 | [Pull chain](chain.md) | `chain` | SIM + 3D | builds K4 rope | S to M | $12 to $25 | |
 | 15 | [Ulam spiral](ulam.md) | `ulam` | 2D | | S | $10 to $15 | |
 | 16 | [Canal at dusk](canal.md) | `canal` | 3D | uses K2 | L | $40 to $70 | D1 |
 | 17 | [Marsh launch](launch.md) | `launch` | 3D | uses K2, K6 | M to L | $25 to $50 | D1, Fireworks |
-| 18 | [Washing line](washline.md) | `washline` | SIM + 3D | uses K4, adds cloth | M | $20 to $30 | Pull chain |
+| 18 | [Washing line](washline.md) | `washline` | SIM + 3D | uses K4, adds cloth | M | $20 to $30 | |
 | 19 | [Bench](bench.md) | `bench` | 2D | uses K5 | M | $20 to $35 | D5 |
-| | **Total** | | | | | **$297 to $510** | |
+| | **Total** | | | | | **$255 to $440** | |
 
 ## Budget
 
 The $250 in toy-plan.md covers the first four toys and about two more.
-These fifteen cost $297 to $510 on top, at the current size table.
+These twelve cost $255 to $440 on top, at the current size table.
 No real cost is recorded yet: every toy bean still has "Record the session cost" open.
 Rescale this table once Star trails, Sonar and Night viaduct carry real numbers.
 
-If money stays tight, five toys give the most per dollar and wait on nothing: Sunbeam dust, Wind map, Collatz coral, Ulam spiral and Pull chain.
+If money stays tight, three toys give the most per dollar and wait on nothing: Sunbeam dust, Wind map and Ulam spiral.
 
 ## Decisions for Tom
 
@@ -54,7 +51,7 @@ Answer these in one batch. A build that waits on one starts after the answer.
 |---|---|---|---|
 | D1 | Night viaduct is parked as broken. What broke? If it is the sky, haze, snow, bloom or grade, the first K2 toy fixes it in its own copy. | Fireworks, Coast and meteor, Wind farm, Canal at dusk, Marsh launch | Fireworks lifts K2 and fixes what Tom names. |
 | D2 | Ship two image files in `windowseat/`: night lights (NASA Black Marble, public domain, about 1 MB) and a land mask (Natural Earth, public domain, about 100 KB)? Credit goes in the vignette. | Window seat | Yes. Procedural city lights look fake. |
-| D3 | Two more WebGPU-only toys on three.js 0.186.1, as Fire and Galaxy are? Browsers without WebGPU see Fire's notice. | Ink in water, Dry ice fog | Yes. |
+| D3 | One more WebGPU-only toy on three.js 0.186.1, as Fire and Galaxy are? Browsers without WebGPU see Fire's notice. | Ink in water | Yes. |
 | D4 | Ink in water's stage is a bright lightbox; the page around it stays dark. Does a bright stage fit "dark only"? | Ink in water | Backlit by default; Dark field in Settings. |
 | D5 | One Bench page with two chips, Electrolysis and Clock? | Bench | Yes. If no, Electrolysis ships alone as `electro`. |
 | D6 | Ulam spiral can show digits on the cells at the deepest zoom. Is that copy on the stage? | nothing | Off, with a Settings toggle. |
@@ -67,8 +64,8 @@ toy-plan.md lists five kits. The code already holds two of them, so their first 
 |---|---|---|---|
 | K1. Phosphor plate | `trails/index.html`, from `K1: accumulation and decay` to `end K1` | Built and marked | Wind map |
 | K2. Night scene | `viaduct/index.html`: `NOISE`, `LIGHT` (its `haze()`), and the sky, snow and post sections | Built but not marked; the toy is parked as broken; its loop never sleeps | Fireworks first; then Wind farm, Coast and meteor, Canal at dusk, Marsh launch |
-| K3. Volume fluid | `fire/index.html`, `fluid simulation kernels` (WebGPU, TSL) | Built for fire; needs a sinking dye and colour absorption | Ink in water first, then Dry ice fog |
-| K4. Verlet rope | `balloons/index.html`, `physics: soft balloons on springs, verlet strings` | Rope exists; cloth does not | Pull chain (rope), then Washing line (adds cloth) |
+| K3. Volume fluid | `fire/index.html`, `fluid simulation kernels` (WebGPU, TSL) | Built for fire; needs a sinking dye and colour absorption | Ink in water |
+| K4. Verlet rope | `balloons/index.html`, `physics: soft balloons on springs, verlet strings` | Rope exists; cloth does not | Washing line (adds cloth) |
 | K5. 2D fluid | `marble/index.html`, `one frame of fluid`: `simStep()` runs force, advect, divergence, 24 Jacobi sweeps and gradient | Built, raw WebGL2 | Bench |
 | K6. Burst particles (new) | none | Fireworks builds it | Coast and meteor, Marsh launch |
 

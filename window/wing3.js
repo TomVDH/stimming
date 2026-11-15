@@ -15,7 +15,9 @@ const lerp = (a, b, f) => a + (b - a) * f;
 function loft(sections) {
   const M = sections[0].length, pos = [], idx = [];
   const cen = sections.map(s => s.reduce((a, p) => a.add(p), V(0, 0, 0)).multiplyScalar(1 / M));
-  sections.forEach(s => s.forEach(p => pos.push(p.x, p.y, p.z)));
+  // A point may carry its place on the skin: chord fraction, span, chord.
+  const surf = [], sf = p => surf.push(...(p.surf || [0, 0, -1]));
+  sections.forEach(s => s.forEach(p => { pos.push(p.x, p.y, p.z); sf(p); }));
   const P = i => V(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
   const tri = (a, b, c, out) => {
     const n = P(b).sub(P(a)).cross(P(c).sub(P(a)));
@@ -33,7 +35,7 @@ function loft(sections) {
   const sideN = idx.length;
   [[0, axis.clone().negate()], [sections.length - 1, axis]].forEach(([j, out]) => {
     const c0 = pos.length / 3;
-    sections[j].forEach(p => pos.push(p.x, p.y, p.z));
+    sections[j].forEach(p => { pos.push(p.x, p.y, p.z); sf(p); });
     let i = 0, k = M - 1, up = true;
     while (k - i > 1) {
       if (up) { tri(c0 + i, c0 + i + 1, c0 + k, out); i++; } else { tri(c0 + i, c0 + k - 1, c0 + k, out); k--; }
@@ -42,6 +44,7 @@ function loft(sections) {
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aSurf', new THREE.Float32BufferAttribute(surf, 3));
   g.setIndex(idx);
   g.userData.loft = true;
   // Group 0 is the skin; group 1 is the end caps, the seam faces.
@@ -64,24 +67,61 @@ float bendAt(float span) {
   float s = clamp((span - 1.2) / 24.0, 0.0, 1.1);
   return uFlex.x * s * s + uFlex.y * s * s * (1.0 - s) * 4.0;
 }`;
-function fogFlex(m) {
+// The painted skin's detail, from chord fraction, span and chord.
+// Bare metal lips the leading edge; seams part the panels; grime streaks run aft.
+const SKIN_GLSL = `
+  vec2 skinG = vec2(0.0);
+  float skinLip = 0.0;
+  if (vSurf.z > 0.0) {
+    float cs = vSurf.x, sp = vSurf.y, ch = vSurf.z, dm = cs * ch;
+    float blot = texture(uFogN, vec3(sp * 0.07, cs * 0.9, 0.21)).r - 0.5;
+    float streak = texture(uFogN, vec3(sp * 0.55, cs * 0.16, 0.63)).r;
+    // A line keeps its true width near by; thinner than a pixel, it fades.
+    float pz = max(fwidth(sp), 1e-5), pc = max(fwidth(dm), 1e-5);
+    float rib = abs(fract(sp / 1.15) - 0.5) * 1.15;
+    float seam = clamp((0.007 - rib) / pz + 0.5, 0.0, 1.0) * min(1.0, 0.014 / pz);
+    float jd = min(abs(cs - 0.1), abs(cs - 0.36)) * ch;
+    seam = max(seam, clamp((0.007 - jd) / pc + 0.5, 0.0, 1.0) * min(1.0, 0.014 / pc));
+    // The slats take a paler paint; their lip is bare metal.
+    float slat = 1.0 - smoothstep(0.098, 0.102, cs);
+    skinLip = 1.0 - smoothstep(0.1, 0.14, dm);
+    float grime = smoothstep(0.52, 0.8, streak) * smoothstep(0.25, 0.7, cs);
+    diffuseColor.rgb *= (1.0 + 0.07 * slat + 0.1 * blot) * (1.0 - 0.14 * grime) * (1.0 - 0.5 * seam);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.74, 0.75, 0.77), skinLip);
+    roughnessFactor = clamp(roughnessFactor + 0.3 * blot + 0.12 * grime + 0.2 * seam, 0.08, 1.0);
+    roughnessFactor = mix(roughnessFactor, 0.3 + 0.2 * blot, skinLip);
+    metalnessFactor = mix(metalnessFactor, 1.0, skinLip);
+    // Panels are never dead flat: the skin's normal wanders a little.
+    skinG = texture(uFogN, vec3(sp * 0.23, cs * 2.1, 0.47)).gb - 0.5;
+  }`;
+function fogFlex(m, skin = false) {
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, FOG_U);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 uniform vec3 uUpW, uSpanW; uniform vec2 uFlex;
-varying vec3 vFogW;${BEND_GLSL}`)
+attribute vec3 aSurf;
+varying vec3 vFogW, vSurf;${BEND_GLSL}`)
       .replace('#include <project_vertex>', `vec4 wpos = modelMatrix * vec4(transformed, 1.0);
 wpos.xyz += uUpW * bendAt(dot(wpos.xyz, uSpanW));
-vFogW = wpos.xyz;
+vFogW = wpos.xyz; vSurf = aSurf;
 vec4 mvPosition = viewMatrix * wpos;
 gl_Position = projectionMatrix * mvPosition;`);
+    if (skin) sh.fragmentShader = sh.fragmentShader
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>${SKIN_GLSL}`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  normal = normalize(normal + 0.035 * (viewMatrix * vec4(vec3(skinG.x, 0.0, 0.0) + uSpanW * skinG.y, 0.0)).xyz);`)
+      // Bare metal carries no clear coat.
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+  #ifdef USE_CLEARCOAT
+  material.clearcoat *= 1.0 - skinLip;
+  #endif`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform highp sampler3D uFogN; uniform float uFogLvl; uniform vec3 uFogWisp;
 uniform vec3 uTipP, uNavL; uniform float uStrobeL;
 uniform float uElmo, uElmoT; uniform vec3 uSpanW;
-varying vec3 vFogW;`)
+varying vec3 vFogW, vSurf;`)
       // St Elmo's fire: a violet corona flickers on the leading edges and the tips.
       // It burns after the fog, so it glows through the bank.
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
@@ -119,6 +159,20 @@ varying vec3 vFogW;`)
   };
 }
 
+// The shadow pass bends the wing as the colour pass does.
+// An unbent caster throws false shade on the flexed skin.
+const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+depthMat.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, FOG_U);
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+uniform vec3 uUpW, uSpanW; uniform vec2 uFlex;${BEND_GLSL}`)
+    .replace('#include <project_vertex>', `vec4 wpos = modelMatrix * vec4(transformed, 1.0);
+wpos.xyz += uUpW * bendAt(dot(wpos.xyz, uSpanW));
+vec4 mvPosition = viewMatrix * wpos;
+gl_Position = projectionMatrix * mvPosition;`);
+};
+
 export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex, WING_LIGHT }) {
   FOG_U.uFogN.value = noiseTex;
 
@@ -134,8 +188,9 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     return { le, c, yc: flex(z) - T(z) * c * 0.5 - camber(0.3) * c, t: T(z) };
   };
   const at = (s, z, side) => {
-    const f = frame(z);
-    return V(f.le - s * f.c, f.yc + (camber(s) + side * f.t * naca(s)) * f.c, z);
+    const f = frame(z), p = V(f.le - s * f.c, f.yc + (camber(s) + side * f.t * naca(s)) * f.c, z);
+    p.surf = [s, z, f.c];
+    return p;
   };
   // One airfoil section from chord s0 to s1, upper then lower.
   const N = 18;
@@ -147,13 +202,15 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     const n = Math.ceil((z1 - z0) / step);
     return Array.from({ length: n + 1 }, (_, i) => lerp(z0, z1, i / n));
   };
+  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   const part = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => section(s0, s1, z)));
   // A thin plate on the upper skin: a spoiler, or the fixed shroud.
   // Past the rear spar it overhangs the flap nose as the cove lip.
   const plate = (s0, s1, z0, z1) => loft(span(z0, z1).map(z => {
     const ss = Array.from({ length: 9 }, (_, k) => lerp(s0, s1, k / 8));
     const up = ss.map(s => at(s, z, 1).add(V(0, 0.003, 0)));
-    return [...up, ...up.slice().reverse().map(p => p.clone().add(V(0, -0.014, 0)))];
+    const low = p => { const q = p.clone().add(V(0, -0.014, 0)); q.surf = p.surf; return q; };
+    return [...up, ...up.slice().reverse().map(low)];
   }));
   // A flap section: the wing's own skin aft of s0, with an elliptic nose.
   // The nose sits under the shroud lip, so the seam reads as a cove.
@@ -162,14 +219,16 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     const nose = (1 - s0) * 0.14;
     const pt = (s, side) => {
       const u = at(s, z, 1), l = at(s, z, -1), x = Math.min(1, (s - s0) / nose);
-      return V(u.x, (u.y + l.y) / 2 - 0.016 + side * (u.y - l.y) / 2 * Math.sqrt(x * (2 - x)), z);
+      const p = V(u.x, (u.y + l.y) / 2 - 0.016 + side * (u.y - l.y) / 2 * Math.sqrt(x * (2 - x)), z);
+      p.surf = u.surf;
+      return p;
     };
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
   };
   const flap = (s0, z0, z1) => loft(span(z0, z1).map(z => flapSection(s0, z)));
 
-  // Grey satin paint: matte when dry, a glossy film of water in rain.
-  const DRY = { roughness: 0.66, clearcoat: 0.1, clearcoatRoughness: 0.5 };
+  // Grey polyurethane topcoat: a soft sheen when dry, a glossy film in rain.
+  const DRY = { roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3 };
   const WET = { roughness: 0.38, clearcoat: 1.0, clearcoatRoughness: 0.06 };
   const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.35, 0.37), ...DRY });
   const flapPaint = paint.clone(); flapPaint.color.setRGB(0.3, 0.31, 0.33);
@@ -186,18 +245,20 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor,
       blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.ZeroFactor, shadowSide: THREE.FrontSide,
     });
-    fogFlex(m);
+    fogFlex(m, m === paint || m === flapPaint);
   });
   // The view's axes are left-handed, so the camera matrix mirrors.
   // Each mesh mirrors its geometry and its scale: the world stays put.
   // The negative scale tells three.js to flip the front face.
   const add = (geo, mat = paint, parent = air) => {
     geo.scale(1, 1, -1);
+    // Parts off the wing carry no skin detail.
+    if (!geo.attributes.aSurf) geo.setAttribute('aSurf', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(-1), 3));
     const m = new THREE.Mesh(geo, geo.userData.loft ? [mat, seam] : mat);
+    m.customDepthMaterial = depthMat;
     m.scale.z = -1;
     m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
-  const Z0 = ST[0][2], ZT = ST[ST.length - 1][2];
   // Main box ahead of the rear spar, and the full-chord tip past the aileron.
   const SPAR = 0.7, LIP = 0.765, FLAP = 0.715, SPOIL = 0.6;
   add(part(0, SPAR, Z0, 23.4));
@@ -228,13 +289,18 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   add(plate(SPOIL, LIP, Z0, 1.975));
   add(plate(SPOIL, LIP, 17.425, 23.3));
 
-  // The winglet: a blended curve out of the tip, then a swept, tapered blade.
+  // The winglet: one long curve out of the tip, raked back and tapered.
   // Its root section starts inside the wing tip, so no seam shows.
   const ss = Array.from({ length: 13 }, (_, k) => (1 - Math.cos(Math.PI * k / 12)) / 2);
-  add(loft(Array.from({ length: 16 }, (_, i) => {
-    const w = WINGLET(i / 15);
+  add(loft(Array.from({ length: 28 }, (_, i) => {
+    const w = WINGLET(i / 27);
     const le = V(w.le, w.y, w.z), te = V(w.le - w.c, w.y, w.z), nrm = V(0, w.ny, w.nz);
-    const pt = (s, side) => le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
+    const pt = (s, side) => {
+      const p = le.clone().lerp(te, s).addScaledVector(nrm, side * 0.09 * naca(s) * w.c);
+      // The winglet's span runs on from the tip, along its curve.
+      p.surf = [s, 25 + 3.1 * i / 27, w.c];
+      return p;
+    };
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
   })));
 
@@ -288,6 +354,12 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   const boltL = new THREE.DirectionalLight(0xc8ccff, 0);
   const boltH = new THREE.HemisphereLight(0xc8ccff, 0x0c0d14, 0);
   scene.add(boltL, boltL.target, boltH);
+  // The sunlit deck and land below fill the faces that the sun misses.
+  // Only the ground half shines, so upper skins take none of it.
+  const bounce = new THREE.HemisphereLight(0x000000, 0xffffff, 0);
+  // Inside a bank, the fog's own light falls on the skin from all sides.
+  const fogL = new THREE.AmbientLight(0xffffff, 0);
+  scene.add(bounce, fogL);
   // A fog bank swallows the wing; the shader sets the bank's density.
   scene.fog = new THREE.FogExp2(0x000000, 0);
   // The tip strobe and the nav light light the skin near the tip.
@@ -307,7 +379,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   air.add(wingL, wingL.target);
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
-  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
+  const mo = { t: null, bank: 0, rate: 0, shadowT: -1, pose: [], wet: 0, f: [0, 0], fv: [0, 0], bolt: 0 };
   cam.matrixAutoUpdate = false;
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envFor = null, envRT = null;
@@ -316,15 +388,21 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   // It follows the shader's satin squash of the reflected ray.
   function bakeEnv(sky, HOR) {
     const W = 256, H = 128, data = new Float32Array(W * H * 4);
+    // The horizon band's mean colour: the hue of the hour's dominant light.
+    const band = [0, 0, 0];
+    for (let k = 0; k < 8; k++) lookup(sky.b.L, HOR + 0.02, k / 7 * Math.PI, HOR).forEach((v, c) => { band[c] += v; });
+    const by = 0.3 * band[0] + 0.5 * band[1] + 0.2 * band[2] || 1;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
       const phi = ((i + 0.5) / W - 0.5) * 2 * Math.PI, th = ((j + 0.5) / H - 0.5) * Math.PI;
       const dx = Math.cos(th) * Math.cos(phi), dz = Math.cos(th) * Math.sin(phi), lh = Math.hypot(dx, dz) || 1;
       const ph = Math.acos(Math.max(-1, Math.min(1, (dx * sky.sunAz[0] + dz * sky.sunAz[1]) / lh)));
       // Satin paint never mirrors the ground: it sees the sky just above.
-      const c = lookup(sky.b.L, Math.max(th, 0) * 0.45 + 0.03, ph, HOR), o = (j * W + i) * 4;
+      // Level rays meet the eye's own horizon, so the glow band there lights the paint.
+      const c = lookup(sky.b.L, HOR + 0.01 + Math.max(th, 0) * 0.45, ph, HOR), o = (j * W + i) * 4;
       // Grey paint keeps half the sky's colour.
+      // That colour leans to the horizon band's hue, so violet upper sky does not tint it.
       const y = 0.3 * c[0] + 0.5 * c[1] + 0.2 * c[2];
-      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k]) / 2 + sky.h.floor[k];
+      for (let k = 0; k < 3; k++) data[o + k] = (y + c[k] * 0.4 + y * band[k] / by * 0.6) / 2 + sky.h.floor[k];
       data[o + 3] = 1;
     }
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -340,13 +418,16 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   return {
     scene, cam,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
-    update({ basis, bank, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0 }) {
+    // strobe and lamp scale the tip lights on skin and fog.
+    // fogSun is the sun's share of the fog's light.
+    update({ basis, bank, pitch = 0, sky, HOR, W, H, t, flash, strobe, tip, turb, bolt, fogLevel = 0, wet = 0, veil = 1, storm = 0, wisp = [0, 0, 0], shake = true, gust = 0, seatDx = 0, nav = [1, 0.1, 0.05], beam = 0, elmo = 0, lamp = 1, fogSun = [0, 0, 0] }) {
       if (envFor !== sky) { bakeEnv(sky, HOR); envFor = sky; }
       // The skin wets fast in rain and dries over about half a minute.
       const dtw = mo.t === null ? 1 : Math.min(1, Math.max(0, t - mo.t));
       mo.wet += (wet - mo.wet) * Math.min(1, dtw * (wet > mo.wet ? 0.5 : 0.08));
       for (const m of [paint, flapPaint]) for (const k in DRY) m[k] = DRY[k] + (WET[k] - DRY[k]) * mo.wet;
-      air.rotation.x = bank;
+      // Pitch turns about the span axis, after the bank: Rz(pitch) Rx(bank).
+      air.rotation.set(bank, 0, pitch, 'ZYX');
       // An aft seat sees the whole aircraft further forward.
       air.position.x = seatDx;
       navL.color.setRGB(...nav);
@@ -355,17 +436,18 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       if (dt > 1e-4) mo.rate += ((bank - mo.bank) / dt - mo.rate) * Math.min(1, dt * 1.2);
       mo.t = t; mo.bank = bank;
       // The gust's lift bends the wing in its first two modes, 1.1 Hz and 3.2 Hz.
-      // An updraft lifts the tip about 12 cm per m/s; a downdraft drops it.
-      // Slow swells bend it smoothly; sharp chop sets it ringing.
+      // An updraft lifts the tip about 9 cm per m/s; a downdraft drops it.
+      // The airflow damps both modes hard, so the wing never rings.
       const sd = Math.min(dt, 0.05), g = shake ? gust : 0;
-      [[1.1, 0.07, 0.12], [3.2, 0.1, 0.015]].forEach(([hz, z, perMs], j) => {
+      [[1.1, 0.6, 0.09], [3.2, 0.7, 0.006]].forEach(([hz, z, perMs], j) => {
         const w = 2 * Math.PI * hz;
         mo.fv[j] += (w * w * (perMs * g - mo.f[j]) - 2 * z * w * mo.fv[j]) * sd;
         mo.f[j] = Math.max(-0.9, Math.min(0.9, mo.f[j] + mo.fv[j] * sd));
       });
       FOG_U.uFlex.value.set(mo.f[0], mo.f[1]);
-      FOG_U.uUpW.value.set(0, 1, 0).applyAxisAngle(V(1, 0, 0), bank);
-      FOG_U.uSpanW.value.set(0, 0, 1).applyAxisAngle(V(1, 0, 0), bank);
+      air.updateMatrix();
+      FOG_U.uUpW.value.set(0, 1, 0).applyQuaternion(air.quaternion);
+      FOG_U.uSpanW.value.set(0, 0, 1).applyQuaternion(air.quaternion);
       FOG_U.uFogLvl.value = fogLevel;
       FOG_U.uFogWisp.value.set(...wisp);
       // Rolling left lifts our aileron and spoilers; a steady bank holds them still.
@@ -393,13 +475,23 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const s = V(...sky.sun).normalize(), sl = sky.sunL, m = Math.max(...sl, 1e-6);
       sun.color.setRGB(sl[0] / m, sl[1] / m, sl[2] / m);
       // Towers, storm murk and fog veil the sun, so its glint and shadows fade.
-      sun.intensity = m / 1.5 * veil;
+      // A bank scatters the beam: hard sun goes long before the wing does.
+      const fa = THREE.MathUtils.smoothstep(fogLevel, 0.05, 0.6);
+      sun.intensity = m / 1.5 * veil * (1 - 0.75 * fa);
       // Storm murk also dulls the sky the paint mirrors.
-      scene.environmentIntensity = 1 - 0.6 * storm;
-      const c = V(3 + seatDx, -3, 13).applyAxisAngle(V(1, 0, 0), bank);
+      // In a bank the paint cannot see the clear sky at all.
+      scene.environmentIntensity = (1 - 0.6 * storm) * (1 - 0.85 * fa);
+      // The ground's bounce: about half the sun's light comes back up.
+      bounce.color.setRGB(0, 0, 0); bounce.groundColor.copy(sun.color);
+      bounce.intensity = 0.5 * m / 1.5 * Math.max(s.y, 0) * veil * (1 - fa);
+      const c = V(3 + seatDx, -3, 13).applyQuaternion(air.quaternion);
       sun.target.position.copy(c); sun.position.copy(c).addScaledVector(s, 60);
       sun.target.updateMatrixWorld();
-      if (t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; }
+      // The shadow maps redraw when the pose moves, and five times a second at rest.
+      // A stale map lags a banking wing and flashes.
+      const pose = [bank, pitch, mo.f[0], mo.f[1], ail, seatDx, s.x, s.y, s.z];
+      const moved = pose.some((v, i) => Math.abs(v - (mo.pose[i] ?? 9)) > 2e-4);
+      if (moved || t - mo.shadowT > 0.2 || t < mo.shadowT) { renderer.shadowMap.needsUpdate = true; mo.shadowT = t; mo.pose = pose; }
       flashL.intensity = flash * 0.06;
       // The light swells in about 40 ms and fades over about 200 ms.
       // So a stroke blooms on the skin instead of a hard pop.
@@ -415,14 +507,20 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       const hz = lookup(sky.b.L, HOR + 0.03, Math.acos(Math.max(-1, Math.min(1, sky.sunAz[1]))), HOR), zc = lookup(sky.b.L, Math.PI / 2, 0, HOR);
       const hc = hz.map((v, i) => 0.5 * (v + zc[i]) + sky.h.floor[i]), gy = 0.3 * hc[0] + 0.5 * hc[1] + 0.2 * hc[2];
       const k = (0.55 - 0.25 * storm) * 1.3;
-      scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + [0.75, 0.77, 1][i] * flash * 0.004));
+      // By day the sun lights the bank from inside, as the outside pass has it.
+      scene.fog.color.setRGB(...[0.9, 0.96, 1.06].map((m, i) => (gy + (hc[i] - gy) * 0.3) * m * k + fogSun[i] * 1.3 + [0.75, 0.77, 1][i] * flash * 0.004));
+      // A surface inside even light L takes pi times L.
+      fogL.color.copy(scene.fog.color); fogL.intensity = Math.PI * fa;
       // The tip lights ride the bent tip.
       const sT = Math.min(1.1, (V(...tip).dot(FOG_U.uSpanW.value) - 1.2) / 24);
       const bend = FOG_U.uUpW.value.clone().multiplyScalar(mo.f[0] * sT * sT + mo.f[1] * sT * sT * (1 - sT) * 4);
       const tw = V(...tip).add(bend);
-      FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav);
-      strobeL.position.copy(tw).add(V(-0.3, 0, 0)); strobeL.intensity = strobe * 40;
-      navL.position.copy(tw).add(V(0.4, -0.5, 0));
+      // By day, lamp dims the tip lights' glow.
+      FOG_U.uTipP.value.copy(tw); FOG_U.uStrobeL.value = strobe; FOG_U.uNavL.value.set(...nav).multiplyScalar(lamp);
+      // The lens sits in the leading edge; its light spills up and inboard.
+      // So it reaches the winglet's inner face and the outer skin.
+      strobeL.position.copy(tw).add(V(0.3, 0.35, -0.3)); strobeL.intensity = strobe * 40;
+      navL.position.copy(tw).add(V(0.35, 0.3, -0.25)); navL.intensity = 0.4 * lamp;
       wingL.intensity = beam * WING_LIGHT.k;
       FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
       return [bend.x, bend.y, bend.z];

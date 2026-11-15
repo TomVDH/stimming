@@ -11,11 +11,14 @@ const W2 = v => `vec2(${v[0].toFixed(4)}, ${v[1].toFixed(4)})`;
 
 // Noise, the window shape and the sky lookup, for both passes.
 const common = ({ ALT, WIN }) => `
-const float R = 6371.0, H = ${ALT.toFixed(1)};
+const float R = 6371.0;
+// The eye's height in km: the arrow keys climb and dive.
+uniform float uAlt;
+#define H uAlt
 const float PI = 3.14159265;
 // Lightning's colour inside cloud: a cold, slightly violet blue-white.
 const vec3 FLASH_C = vec3(0.64, 0.72, 1.0);
-uniform vec3 uEye; uniform vec2 uBank;
+uniform vec3 uEye; uniform mat3 uAtt;
 uniform sampler2D uSkyL, uSkyT; uniform vec2 uSunAz; uniform float uHorEl;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec2 hash22(vec2 p) { return vec2(hash12(p), hash12(p + 19.19)); }
@@ -36,7 +39,7 @@ float sdRecess(vec2 p, float z) { float k = clamp(z / DEPTH, 0.0, 1.0); return s
 // The ray's point on the plane at depth z, in window metres.
 vec2 at(vec3 da, float z) { return (uEye + da * ((z - uEye.z) / da.z)).xy; }
 // Outside rays turn with the bank of the plane.
-vec3 toWorld(vec3 da) { return vec3(da.x, da.y * uBank.x - da.z * uBank.y, da.y * uBank.y + da.z * uBank.x); }
+vec3 toWorld(vec3 da) { return uAtt * da; }
 
 // The baked sky table: azimuth from the light, then elevation.
 // Rows crowd near the eye's horizon, as in sky.js.
@@ -98,6 +101,9 @@ uniform vec4 uBoom; uniform vec2 uBoomL;
 // uFog is the fog bank now.
 // uSpr: red sprites high over the storm, as map xz, level, seed.
 uniform float uStorm, uFog; uniform vec4 uSpr[2];
+// uFogSun is the sun's light inside the bank.
+// uFogLamp is the tip lights in fog: nav colour, then strobe.
+uniform vec3 uFogSun; uniform vec4 uFogLamp;
 // uWisp: the plane's wrapped place in metres, for wing fog.
 uniform vec3 uWisp;
 // The wingtip nav light: red on the left wing, green on the right.
@@ -162,6 +168,8 @@ vec3 aurora(vec3 d, float soft) {
 
 // Sky light along a ray, from the baked table, with the aurora.
 vec3 skyL(vec3 d) { return texture(uSkyL, skyUV(d)).rgb + uFloor; }
+// How far the sun is up, 0 to 1; the dim moon counts as night.
+float dayAmt() { return smoothstep(0.02, 0.3, uSun.y) * smoothstep(0.8, 2.0, uSunL.g); }
 
 /* ---------- the land: relief, cover, water and airports ---------- */
 // Value noise with its gradient, for hill shading.
@@ -1177,6 +1185,9 @@ vec4 deck(vec3 d) {
   // So deck and towers read as one.
   vec3 murk = uStorm > 0.0 ? stormGlow(vec3(0.0, 1.0, 0.0)) * 1.05 : vec3(0.0);
   float sunStorm = 1.0 - 0.85 * uStorm;
+  // The deck lies under most of the air, so its sky is brighter than ours.
+  // By day that blue fill keeps the tops white, not cream.
+  float ambK = mix(0.026, 0.055, dayAmt());
   vec3 col = vec3(0.0), last = vec3(0.0);
   float Tc = 1.0, lastD = 0.0;
   for (int i = 0; i < 40; i++) {
@@ -1207,7 +1218,7 @@ vec4 deck(vec3 d) {
       // Murk light is flat, as on the towers: folds and crowns see about the same.
       float hk = clamp((p.y - 1.55) / (2.0 + 3.0 * gSkirt), 0.0, 1.0);
       sky = mix(sky, 0.45 * (0.4 + 0.6 * hk), 0.6 * uStorm);
-      S += mix(uAmb * 0.026, murk, uStorm) * sky;
+      S += mix(uAmb * ambK, murk, uStorm) * sky;
       // Streets light the base; the cloud filters that light as it rises.
       float town = mix(ua, ub, (t - t0) / max(t1 - t0, 1e-3));
       S += vec3(1.0, 0.5, 0.2) * town * 0.04 * exp(-SIG * 0.4 * max(p.y - 1.55, 0.0));
@@ -1389,10 +1400,11 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   if (uLand > 1.5 && cl.a * ml.a > 0.002) w = reliefParallax(w, d, normalize(P));
   // Ground under thick cloud never shows, so it costs nothing.
   vec3 g = cl.a * ml.a > 0.002 ? landCover(ground(w, fw), fw, d, normalize(P)) : vec3(0.0);
-  g = g * cl.a + cl.rgb;
-  g = g * ml.a + ml.rgb;
   // The air between: the baked view ray dims the ground and adds its glow.
-  return g * T + L + uFloor * 0.5;
+  // Light off the bright cloud scatters back into the ray.
+  // So by day the air dims the cloud but barely tints it.
+  vec3 Tc = mix(T, vec3(dot(T, vec3(0.3, 0.5, 0.2))), 0.8 * dayAmt());
+  return g * (cl.a * ml.a) * T + (cl.rgb * ml.a + ml.rgb) * Tc + L + uFloor * 0.5;
 }
 
 
@@ -1454,7 +1466,7 @@ vec3 stormAir(vec3 c, vec3 d, float t, inout float skyA) {
   float fa = fogAt(d, t);
   // In fog, the strobe and the nav light bloom into the murk.
   float tip = dot(d, normalize(uTip));
-  vec3 fc = air * 1.25 + (vec3(0.9, 0.95, 1.0) * uStrobe * 0.05 + uNavC * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
+  vec3 fc = (air + uFogSun) * 1.25 + (vec3(0.9, 0.95, 1.0) * uFogLamp.a * 0.05 + uFogLamp.rgb * 0.6 * 0.004) * exp(-(1.0 - tip) * 60.0);
   c = mix(c, fc, fa);
   skyA *= clamp(1.0 - 2.2 * hz, 0.0, 1.0) * (1.0 - fa);
   return c;
@@ -1476,7 +1488,7 @@ float wispDens(vec3 p) {
 vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   if (uFog <= 0.05) return c;
   float t1 = min(tEnd, 32.0), T = 1.0;
-  vec3 air = stormGlow(d) * 1.3, col = vec3(0.0);
+  vec3 air = (stormGlow(d) + uFogSun) * 1.3, col = vec3(0.0);
   // Sixteen even steps, jittered per pixel; the resolve smooths the grain.
   float dt = (t1 - 0.5) / 16.0, t = 0.5 + dt * hash12(gl_FragCoord.xy + 5.3);
   for (int i = 0; i < 16; i++) {
@@ -1484,7 +1496,7 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
     float dn = wispDens(d * t + uWisp);
     // The strobe and nav light bloom thickly in fog round the tip.
     float ft = length(d * t - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uStrobe * 3.0 + uNavC * 0.25) * exp(-ft / 6.0);
+    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uFogLamp.a * 3.0 + uFogLamp.rgb * 0.25) * exp(-ft / 6.0);
     float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;
@@ -1906,7 +1918,7 @@ vec3 towers(vec3 d, float tEnd, vec3 c, inout float skyA) {
     col = col * (1.0 - fog) + hzC * (1.0 - Tc) * fog;
     // Close fog banks hide the tower too.
     float fb = fogAt(d, tIn);
-    col = col * (1.0 - fb) + stormGlow(d) * 1.25 * (1.0 - Tc) * fb;
+    col = col * (1.0 - fb) + (stormGlow(d) + uFogSun) * 1.25 * (1.0 - Tc) * fb;
     c = c * Tc + col;
     skyA *= Tc;
   }
@@ -2006,7 +2018,8 @@ vec3 trails(vec3 d, float tEnd) {
     // Tubes glow at the core; thin sheets glow at their rim, like a jellyfish bell.
     vec4 ca = texelFetch(uTrail, ivec2(i, 1), 0), cb = texelFetch(uTrail, ivec2(i + 1, 1), 0);
     float rr = dist / rad, shell = mix(ca.w, cb.w, k);
-    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.3 + exp(-pow((rr - 0.85) / 0.13, 2.0)) * 0.9, shell);
+    // The rim is soft and wide, so overlapping sheets blend without hard rings.
+    float glow = mix(exp(-rr * rr), exp(-rr * rr) * 0.35 + exp(-pow((rr - 0.78) / 0.24, 2.0)) * 0.75, shell);
     if (glow < 0.002) continue;
     vec3 col = mix(ca.rgb, cb.rgb, k);
     // Thin far trails keep their brightness per pixel, not per km.
@@ -2492,7 +2505,7 @@ vec3 irr(vec3 P, vec3 n, int g) {
   return s * SKIN_A / (fg * fg * PI);
 }
 // The sun in the cabin frame: the bank turned back out.
-vec3 sunCabin() { return vec3(uSun.x, uSun.y * uBank.x + uSun.z * uBank.y, -uSun.y * uBank.y + uSun.z * uBank.x); }
+vec3 sunCabin() { return transpose(uAtt) * uSun; }
 // How much of the sun reaches cabin point P through the skin opening, from 0 to 1.
 // The penumbra grows with the distance to the opening and the disc's size.
 float sunThrough(vec3 P) {
@@ -2977,3 +2990,25 @@ void main() {
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
   o = vec4(c, 1.0);
 }`;
+
+// A light stand-in for the outside pass: sky, haze, sun and moon, and flat land.
+// Direct3D takes about 30 s to compile the full pass on a first visit.
+// The stand-in compiles in about 3 s and draws while the full pass compiles.
+// Each listed function keeps its signature; its body returns the given value.
+const STAND_IN = {
+  ground: 'landFlat(w, fw)', landCover: 'g', nearFog: 'c', stormAir: 'c',
+  deck: 'vec4(0.0, 0.0, 0.0, 1.0)', midLayer: 'vec4(0.0, 0.0, 0.0, 1.0)', cirrus: 'vec4(0.0, 0.0, 0.0, 1.0)',
+  stem: 'vec4(0.0, 0.0, 0.0, 1.0)', rainShaft: 'vec4(0.0, 0.0, 0.0, 1.0)', sprites: 'vec3(0.0)', aurora: 'vec3(0.0)',
+};
+export function standIn(src) {
+  for (const [name, ret] of Object.entries(STAND_IN)) {
+    const m = new RegExp(String.raw`^(\w+)\s+${name}\s*\(([^)]*)\)\s*\{`, 'm').exec(src);
+    if (!m) throw new Error(`standIn: no function ${name}`);
+    let i = m.index + m[0].length, depth = 1;
+    while (depth && i < src.length) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; i++; }
+    // Out parameters get zeros, so the stub compiles cleanly.
+    const outs = [...m[2].matchAll(/\bout\s+(\w+)\s+(\w+)/g)].map(([, t, n]) => `${n} = ${t}(0.0);`).join(' ');
+    src = `${src.slice(0, m.index)}${m[1]} ${name}(${m[2]}) { ${outs} return ${ret}; }${src.slice(i)}`;
+  }
+  return src;
+}

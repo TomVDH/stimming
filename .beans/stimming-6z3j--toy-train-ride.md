@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T11:06:33Z
+updated_at: 2026-11-15T05:30:30Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -189,7 +189,7 @@ Open from the critics:
 - [x] Dev: window.__train.S.hold(x) parks the train at a route metre
 - [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
 - [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
-- [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
+- [x] Walensee: the mirrored far shore at Murg shows jagged grey blocks. The mirror no longer shows them; the pale cliff band and shore seam behind them are fixed in stimming-1f2m
 - [x] Signs matte: no self light, flat muted navy, soft white rule; station LED strips dark by day, half as strong at night; columns and slab matte, warm light concrete, calmer sky fill
 - [x] Terrain restyle, smooth and neat: muted sage meadows in wide bands, no grain, far roofs merge into a soft town tint (no speckle), gentle woods, softer shadows
 - [x] Props, placed on the GPU from the map (a placement pass per kind writes base point and size per texel): broadleaf and spruce trees (woods dense, lone trees on meadows, none past 1 km), low shrubs beyond the second track, Swiss chalets (plaster ground floor, timber above, shuttered windows lit at night), barns on farms, plaster blocks in Zurich, timber fences that follow the ground, white round bales in groups, a country road with timber poles and three sagging wires
@@ -227,7 +227,7 @@ Open from the critics:
 - [x] Variety at the same polygon count: one roof mesh makes gable, half-hip, hip, tent and spire; a third of the houses turn their ridge; six plaster tints, five roof colours, five shutter colours, some houses without shutters; window spacing per house; plinths; barn doors
 - [x] Near shore of both lakes at higher resolution (far shore stays): tools/shore.py bakes shore.png (8192 x 128, 60 KB), a signed distance to the OSM lake outlines for the 768 m beside the line, 8.7 m by 6 m texels, quarter-metre steps. shore() reads it there; the land lies flat at the column's lake level inside the outline and rises gently on the bank. The bake follows the drawn land's half-texel offset. Rebuild check: tools reproduce route.png bit for bit
 - [x] Light OSM road data: tools/roads.py fetches 1,604 ways (205 km; motorway to residential, no tunnels) within 540 m on the lake side and bakes roads.png (204 KB): a distance map, 4.4 m by 4 m texels, two halves stacked. The land paints asphalt and verges from it; trees, shrubs, fences and bales keep off it. The invented country road is gone; its pole line stays
-- [ ] Fields and pastures: realistic tilings in clusters, deterministic, all baked
+- [x] Fields and pastures: realistic tilings in clusters, deterministic, all baked (real BLW parcels: stimming-w7nl; real woods: stimming-k7f5)
 - [ ] Train horn of the current Swiss stock
 
 - [ ] Train horn: no source gives the pitch; candidate clip freesound 20065 (Swiss train whistle, licence unchecked). Tom to supply a clip and say when it sounds

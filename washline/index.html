@@ -62,11 +62,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, pixelRatio, onQuality } from '../shared/stim.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { gradePass } from '../shared/grade.js';
+import { detail } from '../shared/detail.js';
+import { initPage, whenVisible, reduced, onReducedChange, oklchLinear, onQuality } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { H, WIND, makeLine, makePiece, hang, reel, stepWorld, unpeg, roomAtNear, cull, ropeAt } from './core.js';
 import { makeLook } from './cloth.js';
-import alley from './places/alley.js';
+import cliff from './places/cliff.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let markReady;
@@ -81,11 +84,11 @@ const lin = ([L, C, h]) => oklchLinear(L, C, h).map(v => Math.max(0, v));
 const v3 = a => new THREE.Vector3(...a);
 
 /* ---------- the bar ---------- */
-const PLACES = { alley };
+// One place: the cliff top at dawn. The older places live in git history.
+const PLACE = cliff;
 // Handlers bind once the scene exists.
-const act = { place() {}, sun() {}, wind() {}, add() {}, release() {} };
+const act = { sun() {}, wind() {}, add() {}, release() {} };
 const ui = initPage({ id: 'washline', silent: true, bar: {
-  choice: { label: 'Place', value: 'alley', options: Object.values(PLACES).map(p => ({ value: p.id, label: p.name })), onPick: v => act.place(v) },
   slider: { label: 'Sun', min: 0, max: 1, step: 0.001, value: 0.95, onInput: v => act.sun(v) },
   settings: [
     { type: 'choice', id: 'wind', label: 'Wind', value: 'breeze', persist: true, onPick: v => act.wind(v),
@@ -123,17 +126,25 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 900);
-const composer = new EffectComposer(renderer);
+// Four samples smooth every edge, from rooftops to the line.
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.4);
 composer.addPass(bloom);
+// A place may ask for a grade: vignette and film grain, before tone mapping.
+const grade = new ShaderPass(gradePass());
+grade.enabled = false;
+composer.addPass(grade);
 composer.addPass(new OutputPass());
+// Quality and a slow-frame watch give one detail level; a place may follow it.
+const D = detail({ maxDpr: 2, onChange: () => resize() });
 
 /* ---------- sky ---------- */
 // A gradient by ray height, a sun disc and a soft glow around it.
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
   uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uB: { value: 0 },
+  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uWarm: { value: 1 }, uCurve: { value: 0.45 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -141,16 +152,34 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud, uWarm, uCurve; uniform vec2 uDrift;
+      float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vn(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hh(i), hh(i + vec2(1, 0)), f.x), mix(hh(i + vec2(0, 1)), hh(i + 1.0), f.x), f.y);
+      }
+      float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vn(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
       void main() {
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
         float e = max(ray.y, 0.0), cs = max(dot(ray, uSun), 0.0);
-        vec3 col = mix(uHor, uZen, pow(e, 0.45));
+        vec3 col = mix(uHor, uZen, pow(e, uCurve));
         // A low sun warms the sky around it and along the horizon.
-        col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * (1.0 - e));
-        col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e);
-        col += uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
+        col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * uWarm * (1.0 - e));
+        col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e) * mix(0.35, 1.0, uWarm);
+        vec3 sun = uSunCol * (0.08 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0) + 12.0 * smoothstep(0.99955, 0.9998, cs));
+        // Cumulus on a flat deck: grey bellies, bright tops, a lit rim near the sun.
+        float d = 0.0;
+        if (uCloud > 0.0 && ray.y > 0.0) {
+          vec2 cp = ray.xz / (ray.y + 0.05) * 0.5 + uDrift;
+          float n = fbm(cp);
+          d = smoothstep(0.62 - 0.22 * uCloud, 0.86 - 0.18 * uCloud, n) * smoothstep(0.0, 0.08, ray.y);
+          vec3 lit = mix(uHor * 1.04, vec3(1.0), 0.55) * mix(0.62, 1.0, smoothstep(0.5, 0.85, fbm(cp * 1.8 + 3.0)));
+          lit *= 1.0 - 0.4 * uB;
+          lit += uSunCol * uB * pow(cs, 10.0) * (1.0 - d) * 2.0;
+          col = mix(col, lit, d * 0.9);
+        }
+        col += sun * (1.0 - 0.9 * d);
         gl_FragColor = vec4(col, 1.0);
       }` }));
 sky.frustumCulled = false;
@@ -171,10 +200,24 @@ const WARM = v3(lin([0.9, 0.11, 60])), WHITE = v3(lin([0.98, 0.025, 85]));
 
 /* ---------- the place ---------- */
 const P = { place: null, set: null, line: null, look: null, d: 12 };
-function buildPlace(id) {
-  const pl = PLACES[id] || alley;
-  if (P.set) { scene.remove(P.set); P.look.dispose(); }
+function buildPlace() {
+  const pl = PLACE;
+  if (P.set) {
+    scene.remove(P.set);
+    P.look.dispose();
+    // Free the old set's GPU memory.
+    const done = new Set();
+    P.set.traverse(o => {
+      o.geometry?.dispose();
+      for (const m of [].concat(o.material || [])) if (!done.has(m)) { done.add(m); m.map?.dispose(); m.dispose(); }
+    });
+  }
   P.place = pl;
+  skyU.uCloud.value = pl.sky.clouds || 0;
+  skyU.uWarm.value = pl.sky.warm ?? 1;
+  // A lower curve brings the zenith colour nearer the horizon.
+  skyU.uCurve.value = pl.sky.curve ?? 0.45;
+  P.sky = { zen: v3(lin(pl.sky.zen)), hor: v3(lin(pl.sky.hor)), haze: v3(lin(pl.sky.haze)) };
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));
   scene.fog = new THREE.Fog(new THREE.Color().setRGB(...lin(pl.sky.haze)), ...(pl.fog || [30, 420]));
@@ -184,6 +227,9 @@ function buildPlace(id) {
   P.look = makeLook(scene, P.line, { cord: pl.cord, peg: lin([0.62, 0.08, 65]), amb: { hi: lin(pl.amb.hi), lo: lin(pl.amb.lo) } });
   // The set builds after the look, so its still cloth can glow too.
   P.set = pl.build(scene, P.look);
+  P.set.userData.level?.(D.level);
+  grade.enabled = !!pl.grade;
+  if (pl.grade) for (const [k, v] of Object.entries({ uVig: pl.grade.vig, uVigIn: pl.grade.vigIn, uGrain: pl.grade.grain })) grade.uniforms[k].value = v;
   P.flyers = [];
   P.pending = null;
   // The wardrobe hangs left to right with small gaps.
@@ -230,13 +276,16 @@ function syncLight() {
   skyU.uSun.value.copy(SUN.dir);
   skyU.uSunCol.value.copy(SUN.col);
   skyU.uB.value = SUN.b;
+  skyU.uDrift.value.set(st.t * 0.004, st.t * 0.0015);
   bloom.strength = 0.3 + 0.12 * SUN.b;
   sunLight.target.position.set(0, 6, -8);
   sunLight.position.copy(sunLight.target.position).addScaledVector(SUN.dir, 60);
   sunLight.color.setRGB(SUN.col.x, SUN.col.y, SUN.col.z).multiplyScalar(1 / 2.6);
   sunLight.intensity = 3.2;
-  hemi.intensity = 1.35 - 0.3 * SUN.b;
+  hemi.intensity = (P.place.fill ?? 1.35) - 0.3 * SUN.b;
   renderer.toneMappingExposure = 1 - 0.3 * SUN.b;
+  // A place may set its own light, such as a sun under the horizon.
+  P.place.light?.(SUN, { sunLight, hemi, renderer, bloom });
   camera.updateMatrixWorld();
   skyU.uInv.value.copy(camera.matrixWorld).multiply(camera.projectionMatrixInverse);
 }
@@ -259,7 +308,10 @@ function tick(dt) {
 }
 function draw() {
   P.look.sync(camera, view.h, P.flyers);
+  // A place may move things of its own, such as the sea.
+  P.set.userData.tick?.(st.t, SUN, camera, view.h, P.sky, wind());
   syncLight();
+  grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value + 1) % 64;
   composer.render();
   if (!canvas.classList.contains('on')) { canvas.classList.add('on'); markReady(); }
 }
@@ -268,11 +320,15 @@ function draw() {
 function resize() {
   const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
   view.w = w; view.h = h;
-  const dpr = pixelRatio(w, h, { maxDpr: 2 });
+  const dpr = D.dpr(w, h);
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
+  grade.uniforms.uRes.value = [w * dpr, h * dpr];
+  P.set.userData.level?.(D.level);
+  // A place may set its own depth range; the rest share this one.
+  camera.near = 0.1; camera.far = 900;
   P.place.frame(camera, w / h);
   kick();
 }
@@ -295,6 +351,8 @@ function frame(now) {
     const idle = now - st.lastInput;
     if (idle > 1500 && now - lastDraw < 31) return;
     const dt = lastT ? Math.min(1 / 15, (now - lastT) / 1000) : 1 / 60;
+    // Only full-rate frames count toward the slow-frame watch.
+    if (lastT && idle <= 1500) D.frame((now - lastT) / 1000);
     lastT = now;
     st.windScale = 1 - smooth(60000, 63000, idle);
     accum += dt;
@@ -412,7 +470,6 @@ stage.addEventListener('pointerup', end);
 stage.addEventListener('pointercancel', end);
 
 /* ---------- controls ---------- */
-act.place = v => { buildPlace(v); resize(); wake(); };
 act.sun = v => { setSun(v); wake(); };
 act.wind = v => { if (WIND[v]) st.wind = v; wake(); };
 // + Piece reels the line out until the near end is free, then hangs it.
@@ -430,7 +487,7 @@ act.release = () => {
   wake();
 };
 
-buildPlace('alley');
+buildPlace();
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
 resize();

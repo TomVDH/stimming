@@ -158,7 +158,27 @@ void main() {
 //   onLevel   called when the detail level changes.
 //   glass     other GLSL for the pane's glass step: for tests.
 //   share     another runner: this one uses its state, clock, motion and detail.
-export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, share = null, maxDpr = 2, budget = 2.6e6 } = {}) {
+/**
+ * The options for environment(); the list above gives each meaning.
+ * @typedef {object} EnvOptions
+ * @property {string} scene GLSL with vec3 envScene(vec2 uv).
+ * @property {Record<string, () => number | number[]>} [uniforms]
+ * @property {Record<string, string>} [textures] Uniform name to picture URL.
+ * @property {boolean} [animated]
+ * @property {() => boolean} [active]
+ * @property {((t: number) => void) | null} [onFrame]
+ * @property {(() => void) | null} [onLevel]
+ * @property {string} [glass]
+ * @property {{ state: object, clock: object, motion: object, detail: object } | null} [share] Another runner.
+ * @property {number} [maxDpr]
+ * @property {number} [budget]
+ */
+/**
+ * Runs one raw WebGL2 environment scene with every shared bundle wired in.
+ * @param {HTMLCanvasElement} canvas
+ * @param {EnvOptions} options
+ */
+export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, share = null, maxDpr = 2, budget = 2.6e6 }) {
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   function compile(fs) {

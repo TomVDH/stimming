@@ -1,6 +1,7 @@
 # Toy plan: feasibility, ranking, budget
 
 Covers the 27 shortlisted toys in [toy-ideas.md](toy-ideas.md). Drafted 2026-11-04; Tom decides.
+Tom cut four of them on 2026-11-15: Collatz coral, Dry ice fog, Pull chain and Kelvin dropper.
 Tom chose the top four to build first; their briefs are in [toy-dev-plan.md](toy-dev-plan.md).
 Ranks 5 to 19 have development plans in [plans/](plans/README.md). Its index corrects the kit table below: K4 and K5 already exist in the code.
 
@@ -32,10 +33,10 @@ Five toys share one trick. Build the trick once in the first toy, then copy it i
 
 | Kit | First built in | Reused by |
 |---|---|---|
-| **K1. Phosphor buffer**: a fading trail buffer | Star trails | Cloud chamber, Sonar, Wind map, Kelvin dropper |
+| **K1. Phosphor buffer**: a fading trail buffer | Star trails | Cloud chamber, Sonar, Wind map |
 | **K2. Night scene**: sky, height fog, water reflection, bloom, falling snow or rain | Night viaduct | Fireworks, Wind farm, Canal at dusk, Marsh launch, Coast and meteor |
-| **K3. Volume fluid**: Fire's grid, retuned | Ink in water | Dry ice fog, Sunbeam dust (optional) |
-| **K4. Verlet rope and cloth** | Pull chain | Washing line, Pea pod |
+| **K3. Volume fluid**: Fire's grid, retuned | Ink in water | Sunbeam dust (optional) |
+| **K4. Verlet rope and cloth** | Washing line | Pea pod |
 | **K5. 2D fluid**: stable fluids on a grid | Electrolysis | Iodine clock, Calm jar |
 
 ## Feasibility
@@ -49,19 +50,15 @@ Five toys share one trick. Build the trick once in the first toy, then copy it i
 | S2 | Fireworks | 3D | K2 | S to M | Low | GPU particles plus bloom; shell types are data. |
 | 12 | Wind map | 2D | K1 | S | Low | Particles on a noise field; simplex-noise is in the set. |
 | 49 | Ulam spiral | 2D | | S | Medium | Easy to build; the risk is "too minimal". Needs a deep zoom and glow. |
-| 50 | Collatz coral | 2D | | S | Low | Known, lovely visual; tune the bend angles. |
 | 35 | Ink in water | VOL | K3 | M | Low | Fire's sim with dye that sinks and a light background. WebGPU only. |
-| 47 | Dry ice fog | VOL | K3 | M | Medium | Heavy fog in Fire's grid; the basin rim and the spill need care. WebGPU only. |
 | 16 | Night viaduct | 3D | K2 | M to L | Medium | Keep it stylised (silhouette arches, lit windows, snow, fog) to hold cost. |
 | 59 | Wind farm | 3D | K2 | M | Low | Instanced turbines, height fog, sea. Cheap once K2 exists. |
 | 56 | Window seat | 3D | | M to L | Medium | Night Earth needs a city-lights texture. NASA Black Marble is public domain; procedural lights look fake. A texture file is an asset, not a library. |
 | 15 | Coast and meteor | 3D | K2 | L | High | Many effects in one scene: cliffs, water, sky, impact, the sea pulling back. Build it after K2 has proved itself. |
 | 61 | Canal at dusk | 3D | K2 | L | High | Procedural step-gable facades, wet reflections, rain ripples. Art-heavy. |
 | 55 | Marsh launch | 3D | K2 | M to L | Medium | Plume and dawn light carry it; the delayed sound is the hook. |
-| 63 | Pull chain | SIM | K4 | S to M | Low | Verlet chains, lamp toggles, tones. |
 | 42 | Iodine clock | 2D | K5 | S | Medium | One snap per pour: the loop is thin. Stronger as a chip in a shared bench toy. |
 | 43 | Electrolysis | 2D | K5 | M | Medium | Bubble particles plus coloured clouds. |
-| 46 | Kelvin dropper | 2D | K1 | M | Medium | People may not read what charges up. Needs a clear charge meter. |
 | 34 | Washing line | SIM + 3D | K4 | M | Medium | Verlet cloth with wind; feel matters. |
 | 65 | Rain stick | SIM | | M | Medium | About 300 beads among pins with a spatial hash; the sound sells it. |
 | 23 | Peel | 3D | | M | Medium | Curl geometry that follows the pointer; feel is everything. |
@@ -82,8 +79,8 @@ Order weighs four things: how much Tom wants it, cost, risk, and whether it buil
 7. **Ink in water** (M). Rides on Fire's sim.
 8. **Sunbeam dust** (S). Cheap and beautiful.
 
-Next tier, when budget allows: Wind map, Coast and meteor, Wind farm, Collatz coral, Dry ice fog, Pull chain, Ulam spiral.
-Last tier, costly or risky: Canal at dusk, Marsh launch, Washing line, the chemistry bench, Kelvin dropper, Rain stick, Peel, Calm jar, Pea pod, Water wheel.
+Next tier, when budget allows: Wind map, Coast and meteor, Wind farm, Ulam spiral.
+Last tier, costly or risky: Canal at dusk, Marsh launch, Washing line, the chemistry bench, Rain stick, Peel, Calm jar, Pea pod, Water wheel.
 
 ## Next set (Tom, 2026-11-04)
 
@@ -123,5 +120,5 @@ Coast and meteor waits for the next budget, after Night viaduct proves the cinem
 2. Point the session at `shared/stim.js` and the Pop field reference port only. Large pages (Glass, Prism, Neon: 4,500 to 5,900 lines) stay closed.
 3. Screenshots: one or two mid-build, then the QA set at 1280px and 375px at the end.
 4. Tom's feedback in batches, not one tweak per message.
-5. Optional, Tom's call: run the small 2D toys (Ulam, Collatz, Wind map) on Sonnet 5.5, at half the price per token.
-6. Merge where it is honest. Spectrogram goes into Sonar. Iodine clock, Electrolysis and Kelvin dropper could be one "Bench" toy with three chips.
+5. Optional, Tom's call: run the small 2D toys (Ulam, Wind map) on Sonnet 5.5, at half the price per token.
+6. Merge where it is honest. Spectrogram goes into Sonar. Iodine clock and Electrolysis could be one "Bench" toy with two chips.

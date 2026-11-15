@@ -159,4 +159,4 @@ Vorticity confinement (`curlPass`, `uVorticity`) stays; it keeps the fine curls.
 
 ## Kit handoff
 
-K3, marked, with the grid size, dye channels, buoyancy sign and pressure iterations as named constants at the top of the section. Dry ice fog copies it from here, not from Fire.
+K3, marked, with the grid size, dye channels, buoyancy sign and pressure iterations as named constants at the top of the section.

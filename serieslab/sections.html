@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Series sections lab</title>
+<meta name="color-scheme" content="dark">
+<style>
+html, body { margin: 0; background: oklch(0.16 0.012 275); }
+/* The real Lab view runs in the frame, so every icon and hover still works. */
+iframe { display: block; width: 100%; border: 0; }
+/* The style switch: one section style at a time, on the same Lab. */
+.styles { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 12px 16px; background: color-mix(in oklch, oklch(0.16 0.012 275) 92%, transparent); backdrop-filter: blur(8px); }
+.styles button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: oklch(0.6 0.02 275); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+.styles button[aria-pressed="true"] { color: oklch(0.16 0.012 275); background: oklch(0.95 0.008 275); border-color: oklch(0.95 0.008 275); }
+.styles button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<body>
+<div class="styles" role="group" aria-label="Section style">
+  <button type="button" data-s="a">A · Spine</button>
+  <button type="button" data-s="b">B · Lead tile</button>
+  <button type="button" data-s="c">C · Tray</button>
+  <button type="button" data-s="d">D · Ghost word</button>
+  <button type="button" data-s="e">E · Pips</button>
+  <button type="button" data-s="f">F · Tab</button>
+  <button type="button" data-s="g">G · Wave</button>
+  <button type="button" data-s="h">H · Beam</button>
+  <button type="button" data-s="i">I · Brace</button>
+  <button type="button" data-s="j">J · Contents</button>
+</div>
+<script type="module">
+import { M, icon, picks, motif, PICKS_KEY } from './icons.js';
+import { SHOTS, shotIcon, shotPicks, saveShotPicks } from './shots.js';
+
+const MONO = '"Iosevka Term Slab", ui-monospace, monospace';
+// The wave is a mask tile, so the line takes the series colour.
+const WAVE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q6 -1 12 4T24 4' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E")`;
+const CSS = `
+/* One section per series: the heading and the tiles share one grid. */
+.sec { --c: var(--muted); --w: calc(5 * 150px + 4 * 28px); position: relative; box-sizing: border-box; display: grid; grid-template-columns: repeat(auto-fill, clamp(96px, 26vw, 150px)); justify-content: center; gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px); width: 100%; max-width: var(--w); justify-self: center; }
+.sec + .sec { margin-top: clamp(20px, 3.4vw, 40px); }
+.sec > .shelf { display: contents; }
+.hd { margin: 0; font: inherit; grid-column: 1 / -1; }
+.hd .pick { all: unset; display: inline-grid; cursor: pointer; border-radius: 8px; }
+.hd .pick:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.hd .pick svg { display: block; width: 100%; height: 100%; transition: rotate 0.4s cubic-bezier(.3,1.6,.5,1); }
+.hd .pick:hover svg { rotate: 30deg; }
+.hd .nm { color: var(--c); white-space: nowrap; }
+.hd .cap { display: inline-flex; gap: 0.7em; font: 500 13px/1 ${MONO}; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.hd .ghost, .hd .pips { display: none; }
+
+/* A, Spine: a colour line down the left; the name runs along it. */
+html[data-s="a"] .sec { --rail: 44px; padding-left: var(--rail); max-width: calc(var(--w) + var(--rail)); }
+html[data-s="a"] .hd { position: absolute; left: 0; top: 0; bottom: 0; width: 30px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 2px 0 0 8px; border-left: 2px solid var(--c); }
+html[data-s="a"] .hd .card { display: contents; }
+html[data-s="a"] .hd .pick { width: 24px; height: 24px; flex: none; }
+html[data-s="a"] .hd .nm, html[data-s="a"] .hd .cap { writing-mode: vertical-rl; }
+html[data-s="a"] .hd .nm { font: 700 13px/1 ${MONO}; letter-spacing: 0.16em; text-transform: uppercase; }
+html[data-s="a"] .hd .cap { font-size: 11px; }
+
+/* B, Lead tile: the heading takes the first cell of the section. */
+html[data-s="b"] .hd { grid-column: auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; justify-items: center; align-content: start; }
+html[data-s="b"] .hd .cap { width: 100%; flex-wrap: wrap; justify-content: center; gap: 4px 0.7em; }
+html[data-s="b"] .hd .card { box-sizing: border-box; width: 100%; aspect-ratio: 1; display: grid; place-content: center; justify-items: center; gap: 8%; border-radius: 22%; border: 1.5px solid color-mix(in oklch, var(--c) 50%, transparent); background: color-mix(in oklch, var(--c) 9%, transparent); }
+html[data-s="b"] .hd .pick { width: clamp(40px, 11vw, 60px); height: clamp(40px, 11vw, 60px); }
+html[data-s="b"] .hd .nm { font: 800 clamp(13px, 3.4vw, 18px)/1 var(--sans); letter-spacing: -0.01em; }
+
+/* C, Tray: a tinted panel holds the section; the name notches its top edge. */
+html[data-s="c"] .sec { --pad: clamp(10px, 2.4vw, 20px); padding: 34px var(--pad) 22px; max-width: calc(var(--w) + 2 * var(--pad) + 2px); border-radius: 24px; }
+html[data-s="c"] .sec:not(.sec--other) { border: 1px solid color-mix(in oklch, var(--c) 30%, transparent); background: color-mix(in oklch, var(--c) 6%, transparent); }
+html[data-s="c"] .sec.sec--other { padding-top: 0; }
+html[data-s="c"] .hd { position: absolute; top: 0; left: 20px; translate: 0 -50%; display: inline-flex; align-items: center; gap: 10px; padding: 5px 14px 5px 6px; border-radius: 999px; background: var(--bg); border: 1px solid color-mix(in oklch, var(--c) 45%, transparent); }
+html[data-s="c"] .hd .card { display: inline-flex; align-items: center; gap: 8px; }
+html[data-s="c"] .hd .pick { width: 26px; height: 26px; }
+html[data-s="c"] .hd .nm { font: 700 15px/1 var(--sans); }
+html[data-s="c"] .hd .cap { font-size: 11px; }
+
+/* D, Ghost word: the name sits huge and dim behind the first row. */
+html[data-s="d"] .sec { isolation: isolate; }
+html[data-s="d"] .hd { display: flex; align-items: center; gap: 12px; min-height: clamp(34px, 7vw, 64px); }
+html[data-s="d"] .hd .card { display: inline-flex; align-items: center; gap: 8px; }
+html[data-s="d"] .hd .pick { width: 24px; height: 24px; }
+html[data-s="d"] .hd .nm { font: 700 13px/1 ${MONO}; letter-spacing: 0.16em; text-transform: uppercase; }
+html[data-s="d"] .hd .ghost { display: block; position: absolute; z-index: -1; left: 0; right: 0; top: -0.1em; overflow: hidden; pointer-events: none; user-select: none; font: 900 clamp(64px, 17vw, 168px)/0.86 var(--sans); letter-spacing: -0.05em; white-space: nowrap; color: color-mix(in oklch, var(--c) 15%, var(--bg)); padding-left: 0.5em; mask: linear-gradient(90deg, #000 70%, transparent); }
+
+/* E, Pips: a thin centred line; one dot for each toy. */
+html[data-s="e"] .hd { display: flex; align-items: center; justify-content: center; gap: 12px; }
+html[data-s="e"] .hd::before, html[data-s="e"] .hd::after { content: ""; flex: 1; height: 1px; background: color-mix(in oklch, var(--c) 30%, transparent); }
+html[data-s="e"] .hd .card { display: inline-flex; align-items: center; gap: 8px; }
+html[data-s="e"] .hd .pick { width: 22px; height: 22px; }
+html[data-s="e"] .hd .nm { font: 700 13px/1 ${MONO}; letter-spacing: 0.16em; text-transform: uppercase; }
+html[data-s="e"] .hd .cap { display: none; }
+html[data-s="e"] .hd .pips { display: inline-flex; align-items: center; gap: 5px; }
+.hd .pips i { box-sizing: border-box; width: 7px; height: 7px; border-radius: 50%; border: 1px solid color-mix(in oklch, var(--c) 70%, transparent); transition: scale 0.25s cubic-bezier(.3,1.8,.5,1), background 0.15s; }
+.hd .pips i.on { background: var(--c); scale: 1.7; }
+
+/* Round 2: true dividers. Each one is a full row above its tiles. */
+html:is([data-s="f"], [data-s="g"], [data-s="h"], [data-s="i"], [data-s="j"]) .hd .card { display: inline-flex; align-items: center; gap: 8px; }
+html:is([data-s="f"], [data-s="g"], [data-s="h"], [data-s="i"], [data-s="j"]) .hd .pick { width: 24px; height: 24px; flex: none; }
+
+/* F, Tab: a folder tab rises from a thin line. */
+html[data-s="f"] .hd { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1px solid color-mix(in oklch, var(--c) 45%, transparent); }
+html[data-s="f"] .hd .card { margin-bottom: -1px; padding: 7px 16px 7px 8px; border: 1px solid color-mix(in oklch, var(--c) 45%, transparent); border-bottom-color: var(--bg); border-radius: 12px 12px 0 0; background: linear-gradient(color-mix(in oklch, var(--c) 14%, var(--bg)), var(--bg)); }
+html[data-s="f"] .hd .nm { font: 700 15px/1 var(--sans); }
+html[data-s="f"] .hd .cap { padding-bottom: 9px; font-size: 11px; }
+
+/* G, Wave: a wavy line; the name sits in its gap. */
+html[data-s="g"] .hd { display: flex; align-items: center; justify-content: center; gap: 14px; }
+html[data-s="g"] .hd::before, html[data-s="g"] .hd::after { content: ""; flex: 1; min-width: 12px; height: 8px; background: color-mix(in oklch, var(--c) 65%, transparent); -webkit-mask: ${WAVE} 0 0 / 24px 8px repeat-x; mask: ${WAVE} 0 0 / 24px 8px repeat-x; }
+html[data-s="g"] .hd .nm { font: 800 clamp(17px, 2.4vw, 22px)/1 var(--sans); letter-spacing: -0.01em; }
+html[data-s="g"] .hd .cap { display: none; }
+html[data-s="g"] .hd .pick { width: 46px; height: 46px; }
+
+/* H, Beam: a line of light that fades to the right. */
+html[data-s="h"] .hd { position: relative; display: flex; align-items: center; gap: 12px; padding-bottom: 12px; }
+html[data-s="h"] .hd::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, color-mix(in oklch, var(--c) 40%, white), var(--c) 30%, transparent 92%); filter: drop-shadow(0 0 5px var(--c)) drop-shadow(0 0 12px var(--c)); }
+html[data-s="h"] .hd .nm { font: 800 clamp(17px, 2.4vw, 22px)/1 var(--sans); letter-spacing: -0.01em; color: color-mix(in oklch, var(--c) 40%, white); }
+html[data-s="h"] .hd .cap { margin-left: auto; font-size: 11px; }
+
+/* I, Brace: a bracket holds the row below; the name breaks the line. */
+html[data-s="i"] .hd { display: flex; align-items: flex-start; justify-content: center; gap: 12px; padding-top: 2px; }
+html[data-s="i"] .hd::before, html[data-s="i"] .hd::after { content: ""; flex: 1; min-width: 12px; height: 14px; margin-top: 11px; border-top: 1.5px solid color-mix(in oklch, var(--c) 60%, transparent); }
+html[data-s="i"] .hd::before { border-left: 1.5px solid color-mix(in oklch, var(--c) 60%, transparent); border-top-left-radius: 10px; }
+html[data-s="i"] .hd::after { border-right: 1.5px solid color-mix(in oklch, var(--c) 60%, transparent); border-top-right-radius: 10px; }
+html[data-s="i"] .hd .nm { font: 700 13px/1 ${MONO}; letter-spacing: 0.16em; text-transform: uppercase; }
+html[data-s="i"] .hd .cap { display: none; }
+
+/* J, Contents: a solid name chip, dot leaders, then the count. */
+html[data-s="j"] .hd { display: flex; align-items: center; gap: 10px; }
+html[data-s="j"] .hd .pick { display: none; }
+html[data-s="j"] .hd .card { padding: 6px 12px; border-radius: 8px; background: var(--c); }
+html[data-s="j"] .hd .nm { font: 800 15px/1 var(--sans); color: oklch(0.17 0.014 275); }
+html[data-s="j"] .hd::after { content: ""; order: 1; flex: 1; min-width: 16px; height: 2px; background: radial-gradient(circle, color-mix(in oklch, var(--c) 60%, transparent) 1px, transparent 1.4px) 0 0 / 8px 2px repeat-x; }
+html[data-s="j"] .hd .cap { order: 2; align-items: baseline; }
+html[data-s="j"] .hd .ct { font: 700 16px/1 ${MONO}; color: var(--c); }
+
+@media (max-width: 560px) {
+  /* On a phone the spine and the tray use the page gutter; three tiles still fit. */
+  html[data-s="a"] .sec { --rail: 0px; }
+  html[data-s="a"] .hd { left: -19px; width: 19px; padding-left: 4px; gap: 8px; }
+  html[data-s="a"] .hd .pick { width: 16px; height: 16px; }
+  html[data-s="a"] .hd .nm { font-size: 11px; }
+  html[data-s="a"] .hd .cap { display: none; }
+  html[data-s="c"] .sec { --pad: 10px; width: calc(100% + 20px); max-width: none; margin-inline: -10px; border-radius: 18px; }
+  html[data-s="c"] .hd { left: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .hd .pick svg, .hd .pips i { transition: none; } }`;
+
+const frame = Object.assign(document.createElement('iframe'), { src: '../index.html?lab', title: 'Lab' });
+document.body.append(frame);
+await new Promise(r => frame.addEventListener('load', r, { once: true }));
+const d = frame.contentDocument;
+d.head.append(Object.assign(d.createElement('style'), { textContent: CSS }));
+
+const [toys, series] = await Promise.all(['../toys.json', '../series.json'].map(u => fetch(u).then(r => r.json())));
+const shelf = d.querySelector('.lab .shelf');
+// Each tile goes to its toy's series; a tile with no series stays last.
+const groups = new Map(Object.keys(series).map(k => [k, []]));
+const rest = [];
+for (const li of [...shelf.children]) {
+  const k = toys[li.querySelector('a.toy')?.id]?.series;
+  (groups.get(k) || rest).push(li);
+}
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+// A place series takes its icon from the shots sheet; a theme keeps the hex.
+const draw = (k, c) => {
+  if (SHOTS[k]) { const p = shotPicks(); return shotIcon(k, p[k], { ...p, c }); }
+  return M[k] ? icon(motif(k, picks()[k]), c) : '';
+};
+for (const [k, tiles] of groups) {
+  if (!tiles.length) continue;
+  const s = series[k], sec = d.createElement('section');
+  sec.className = 'sec';
+  sec.dataset.k = k;
+  sec.style.setProperty('--c', s.color);
+  sec.setAttribute('aria-label', s.name);
+  // The Flemish name shows only where it differs from the name.
+  const nl = s.nl && s.nl !== s.name ? `<span class="nl">${esc(s.nl)}</span>` : '';
+  sec.innerHTML = `<h2 class="hd"><span class="card"><button class="pick" type="button" title="Tap for the next motif">${draw(k, s.color)}</button><span class="nm">${esc(s.name)}</span></span><span class="cap">${nl}<span class="ct">${tiles.length}</span></span><span class="pips" aria-hidden="true">${'<i></i>'.repeat(tiles.length)}</span><span class="ghost" aria-hidden="true">${esc(s.name)}</span></h2>`;
+  const ul = Object.assign(d.createElement('ul'), { className: 'shelf' });
+  ul.append(...tiles);
+  sec.append(ul);
+  shelf.before(sec);
+}
+// The old shelf becomes the last section; it has no heading.
+if (rest.length) {
+  const sec = Object.assign(d.createElement('section'), { className: 'sec sec--other' });
+  sec.setAttribute('aria-label', 'Other toys');
+  shelf.before(sec);
+  sec.append(shelf);
+} else shelf.remove();
+
+// A tap on a section's icon steps to that series' next motif and saves it.
+d.addEventListener('click', e => {
+  const b = e.target.closest('.hd .pick');
+  if (!b) return;
+  const sec = b.closest('.sec'), k = sec.dataset.k;
+  if (SHOTS[k]) {
+    const p = shotPicks(), names = SHOTS[k].map(([l]) => l);
+    p[k] = names[(names.indexOf(p[k]) + 1) % names.length];
+    saveShotPicks(p);
+    b.innerHTML = shotIcon(k, p[k], { ...p, c: series[k].color });
+    b.title = p[k];
+    return;
+  }
+  if (!M[k]) return;
+  const list = M[k].map(([l]) => l), next = list[(list.indexOf(picks()[k]) + 1) % list.length];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(PICKS_KEY)) || {}; } catch (err) {}
+  saved[k] = next;
+  try { localStorage.setItem(PICKS_KEY, JSON.stringify(saved)); } catch (err) {}
+  b.innerHTML = icon(motif(k, next), series[k].color);
+  b.title = next;
+});
+// Pips: the tile under the pointer or the focus lights its own dot.
+const light = li => {
+  d.querySelectorAll('.pips i.on').forEach(i => i.classList.remove('on'));
+  if (!li) return;
+  const i = [...li.parentElement.children].indexOf(li);
+  li.closest('.sec').querySelectorAll('.pips i')[i]?.classList.add('on');
+};
+const tileOf = e => e.target.closest?.('.sec .shelf > li') || null;
+d.addEventListener('pointerover', e => light(tileOf(e)));
+d.addEventListener('focusin', e => light(tileOf(e)));
+d.addEventListener('focusout', () => light(null));
+d.documentElement.addEventListener('pointerleave', () => light(null));
+
+// The frame takes the height of the content, so it can also shrink.
+const fit = () => {
+  const end = Math.max(...[...d.body.children].map(el => el.getBoundingClientRect().bottom));
+  frame.style.height = Math.ceil(end + 32) + 'px';
+};
+const KEY = 'stimming.serieslab.section';
+const setStyle = s => {
+  d.documentElement.dataset.s = s;
+  document.querySelectorAll('.styles button').forEach(b => b.setAttribute('aria-pressed', b.dataset.s === s));
+  try { localStorage.setItem(KEY, s); } catch (e) {}
+  requestAnimationFrame(fit);
+};
+document.querySelectorAll('.styles button').forEach(b => b.addEventListener('click', () => setStyle(b.dataset.s)));
+// Tom likes the Wave (2026-11-14), so it opens first.
+let saved = 'g';
+try { saved = localStorage.getItem(KEY) || 'a'; } catch (e) {}
+const asked = new URLSearchParams(location.search).get('s');
+setStyle('abcdefghij'.includes(asked || '?') ? asked : saved);
+new ResizeObserver(fit).observe(d.documentElement);
+fit();
+</script>
+</body>
+</html>

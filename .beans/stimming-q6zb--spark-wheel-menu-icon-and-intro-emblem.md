@@ -1,0 +1,66 @@
+---
+# stimming-q6zb
+title: 'Spark wheel: menu icon and intro emblem'
+status: completed
+type: task
+priority: normal
+created_at: 2026-11-15T06:58:02Z
+updated_at: 2026-11-15T09:04:04Z
+---
+
+Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
+
+- [x] Icon spike 1: four directions with emblems (icons/spike-spark-1.html)
+- [x] Tom picks a direction
+- [x] Install the pick on the menu (index.html, the toy's enter/move/leave hook)
+- [x] Emblem to shared, toys.json emblem, icons/picks.json note
+
+## Notes
+
+- 2026-11-14, spike 1. A: on its mount (three-quarter view, cold at rest). B: close on the flint. C: face on. D: the hot wheel (glows at rest; each flare changes the spark type). In all four a pointer sweep flicks the wheel, spin throws sparks and heats the rim, a full heat flares. Checked in the pane: no error, sparks and flare seen at 256, 128 and 64, no DOM change once at rest.
+
+- 2026-11-15: Tom could not see the intro logos. The app's file view opens the page as a data: document, so the emblem files did not resolve. The spike page now carries each emblem inside the page; the files stay for the install.
+
+- 2026-11-15, Tom: round 1 was off the house styles ("we had a sprawl of good icons across 4 diff styles, abide by that"). Then the standard: Isometric block is the one alt style; a toy has Current, Shaded object and Isometric block. No new icons until the sheet is ready.
+  - icons/sheet.html is renewed: one row per toy in toys.json order, Current, Shaded object, Isometric block; Icon, Intro logo or Both; a click marks a tile; empty slots say To draw or Cut. 88 toys, 20 shaded, 27 isometric.
+  - The standard is in AGENTS.md (Icon standard); icons/picks.json iterates A and D.
+  - icons/spike-spark-2.html holds Spark wheel's Current, A (Shaded object) and D (Isometric block), drawn before the stop. Not iterated, not installed. Round 1 (spike-spark-1) stays as a file, off the sheet.
+  - Next: Tom looks at the sheet and marks what to draw or redo.
+
+- 2026-11-15, Tom: "ensure that all remain interactive when moused over". The sheet's Current column was a still copy; it is now the menu's own tiles in a frame laid over the column, so every icon on the sheet reacts. A click on a Current tile marks it and does not open the toy.
+
+- 2026-11-15, Tom: "show me icon choices". Round 3 (icons/spike-spark-3.html) redraws the Shaded object and the Isometric block in the approved look: swept turquoise body, cream roller with five swept slots, brass column and cap, knurled steel rim. The sheet now points Spark wheel at round 3. Both react under the pointer and go idle after; no error. Round 2 stays as a file (the old steel look). Waits on Tom's pick.
+
+- 2026-11-15, Tom on round 3: "they are all really bad, take a look at the toy icons that most of the main menu has". Round 3 was a small detailed model of the toy. Round 4 (icons/spike-spark-4.html) is drawn in the menu's language: one bold cream wheel with five swept slots and a ring of knurl ticks, a turquoise sweep, a brass flint, sparks as five flat rays. The Isometric block is the same wheel on a turquoise block. Under the pointer the wheel turns, the rays grow and the knurl heats. The sheet points at round 4; the rule is in AGENTS.md. Waits on Tom.
+
+- 2026-11-15, Tom on round 4: "it's just too busy; our main menu has a much more focused direction". Round 5 (icons/spike-spark-5.html) is one object and one accent: a knurled steel wheel with a plain cream face and a brass hub, and one spark of three flat rays off its rim. No body, no flint, no slots. The Isometric block is that wheel on a turquoise block with the same spark. Under the pointer the knurl runs, the rays grow and the rim heats. The sheet points at round 5. Waits on Tom.
+
+- 2026-11-15, Tom on round 5: "redo shaded object ... fidelity??". Round 5 was focused but flat. Round 6 (icons/spike-spark-6.html) redraws only the Shaded object, as the Heat putty icon is built: one solid wheel in three-quarter view, a knurled tread with chrome bands and an embossed knurl, a dished cream enamel face, a brass hub dome with a soft shadow, and one glowing spark (a white core, four gradient needles, warm light on the wheel and the floor). Under the pointer the knurl runs, the tread heats to gold and the spark grows. The Isometric block is round 5's. The sheet points at round 6. Waits on Tom.
+
+- 2026-11-15, Tom on round 6: "better but just not at the interactive fidelity of the other icons on main menu". Round 7 (icons/spike-spark-7.html) keeps round 6's drawing and rebuilds the Shaded object's behaviour: the pointer is the thumb. A downward stroke turns the knurl one for one; an upward stroke does nothing (the ratchet); the wheel spins on and slows. Spin throws live sparks that fly, fall and skip on the floor, and lights the contact glow; a long grind heats the tread and sheds in a burst. The enamel's gloss and the hub's shine lean toward the pointer. Keyboard focus strokes it by itself. Checked by script in a background tab (no error, settles); motion there is throttled, so not judged by eye.
+
+- 2026-11-15, Tom on round 7: "its not good"; he named Pin art as the icon to match. Round 8 (icons/spike-spark-8.html) draws the Shaded object in Pin art's language: glossy beads only, one gradient each, a thin frame ring. A ring of 30 steel studs is the knurled wheel, with a hub bead; a fan of warm beads is the spark. Studs near the pointer swell and sink back, as Pin art's pins do. Moving the pointer round the ring turns it; each stud that passes the contact point throws a bead and flares the spray. Focus turns it a third of a turn. Gesture only, no per-frame loop. The Isometric block is round 5's. The sheet points at round 8. Waits on Tom.
+
+- 2026-11-15, Tom: "Yes, keep going" on round 8. Round 9 (icons/spike-spark-9.html) adds the Isometric block in the same language, after Pin art's block: a flat-shaded slab (teal sides, slate top), the bead wheel standing on it in the left face's plane, a spray of warm beads lying on the top. Studs swell under the pointer; a sideways sweep turns the wheel and each passing stud skids a bead out along the top, where it cools. The Shaded object is round 8's. The sheet points at round 9. Waits on Tom's pick.
+
+- 2026-11-15, Tom: "you took pin art so literal; check wind map, galaxy, sonar: all unique and nice". Rounds 8 and 9 copied Pin art's beads. Round 10 (icons/spike-spark-10.html) draws the toy's signature image as a live miniature, after Wind map: a porthole on the teal room, the cream slotted wheel at the left, a long-exposure fountain of 70 sparks (each a real flight with drag, gravity and a floor skid, tapering white to ember), small stars where sparks fork, the spray mirrored in the wet floor. On hover comets run along every flight; the spray turns toward the pointer and grinds harder the farther it is; a quick stroke spins the wheel. It returns to the picture and stops on leave. The Isometric block is round 9's. The sheet points at round 10.
+
+- 2026-11-15, Tom on round 10: "this is more like it, but clean this up, slightly more minimal and better framed". Round 11 (icons/spike-spark-11.html): the wheel sits whole inside the porthole and a little smaller, the floor lower; 40 sparks in place of 70, kept inside the frame; no fork stars, no knurl texture, no floor line; a thinner flint post. Behaviour as round 10. The sheet points at round 11.
+
+- 2026-11-15, Tom on round 11: "alter this slightly, the style is much better; don't forget the intro icon; maybe not a circular border outline". Round 12 (icons/spike-spark-12.html): a rounded tile with no outline in place of the ringed porthole, with a faint top light. The intro logo is redrawn for the mask: no background, a white wheel with black slots, white spark arcs, a grey reflection, scaled to fill the box. The sheet points at round 12.
+
+- 2026-11-15, Tom: "Refine more" (no detail). Round 13 (icons/spike-spark-13.html), my read: the reflection is short and fades out below the floor; 34 crisper sparks with brighter cores and less haze; small embers glow where flights land on the floor. The intro logo follows. The sheet points at round 13.
+
+- 2026-11-15, Tom picked "the wheel" and "framing and colour" to refine. Round 14 (icons/spike-spark-14.html): a bigger plain steel wheel (brushed face, two faint lathe rings, a brass hub with a glint, the knurl running round the tread on hover) in place of the slotted cream face; the wheel sits further in from the left edge with a higher floor. Two rooms side by side: A deep teal, A2 night blue with a warm floor. The intro logo is a plain wheel with a hub. The sheet points at round 14 (it shows A only).
+
+- 2026-11-15, Tom on round 14: "no frame like that; so many other icons do not have that". Round 15 (icons/spike-spark-15.html): no tile, no room, no floor fill. The steel wheel, the flint post, the spray, its fading reflection, the embers and the warm glow float free on the menu ground, like Galaxy and Fire. The spray is held a little shorter so it stays inside the icon box. The sheet points at round 15.
+
+- 2026-11-15, Tom: "Yes, install" on round 15.
+
+## Summary of Changes
+
+- The menu tile (index.html) draws the round 15 icon: a steel wheel throws a long-exposure fountain of 34 sparks, each a real flight with drag, gravity and a floor skid, mirrored on a wet floor with embers where they land. No frame. On hover light runs along the flights and the spray sweeps; the pointer then aims it, and a quick stroke spins the wheel. It stops when the pointer leaves.
+- The intro logo is shared/emblems/spark.svg, set in toys.json.
+- icons/picks.json records the pick; the sheet shows round 15.
+- The Isometric block in the gallery is still the older bead style.
+- Checked in the pane: the tile renders and reacts with no error; the intro shows the logo. Not checked on a phone.

@@ -199,7 +199,7 @@ float ridged(vec2 p, int oct) {
 
 // Real ground from the route map: heights relative to the eye, a lake flag, town density.
 const LAND = /* glsl */`
-uniform sampler2D tH, tF, tS, tLk, tR, tN, tFd;
+uniform sampler2D tH, tF, tS, tLk, tR, tN, tFd, tW;
 vec2 rt(vec2 xz) {
   float t = clamp(-xz.y, -400.0, 18400.0);
   float j = (-8.0 + sqrt(64.0 + ${f8(4 * TB)} * (t + 400.0))) / ${f8(2 * TB)};
@@ -270,6 +270,13 @@ float landO(vec2 xz, int oct) {
 float land(vec2 xz) { return landO(xz, 7); }
 // Metres to the edge of the nearest mapped road; below zero is on the road.
 // The road map (tools/roads.py) covers the 500 m beside the line.
+// Real woods (tools/woods.py): tree cover, conifer share, canopy height in metres.
+// x is below zero when the map is missing.
+vec3 woodsAt(vec2 xz) {
+  ${ROUTE.wd ? '' : 'return vec3(-1.0);'}
+  vec3 w = textureLod(tW, vec2(xz.x / ${f8(TILE)}, rt(xz).y), 0.0).rgb;
+  return vec3(w.r, w.g, w.b * 51.0);
+}
 float roadD(vec2 xz) {
   float t = -xz.y;
   if (t < 0.0 || t > 500.0) return 20.0;
@@ -288,6 +295,10 @@ float roadW(float x) {
 // Light and view change none of these, so the tiles bake them once per texel; no frame runs this.
 const LANDMAT = /* glsl */`
 uniform vec2 uBG[${NG}];
+uniform sampler2D tAerN, tAerF;
+// The aerial maps: near rows, far rows, strength.
+uniform vec3 uAer;
+uniform vec3 uCell;
 // Farm parcels from the federal map (tools/fields.py), 4 km out on the lake side.
 // It paints the parcel's crop into alb and returns the map's cover.
 float fieldMap(vec2 xz, float dist, inout vec3 alb) {
@@ -345,6 +356,9 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   // The eye's distance when the point passes nearest: its offset from the line, and a little more.
   float dist = max(-xz.y, 4.0) * 1.08;
   float wd = shore(xz);
+  // The coarse lake flag spills onto steep far shores and would paint the cliffs as bare bank.
+  // Ground well above the lake is never that close to the water: height sets a floor.
+  wd = max(wd, (hY - textureLod(tLk, vec2(xz.x / ${f8(TILE)}, 0.5), 0.0).r - 1.5) * 2.0);
   vec3 sg = seg(xz.x);
   // Height above the lakes, near enough.
   float hh = hY + 20.0;
@@ -365,6 +379,8 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   alb = mix(alb, vec3(0.12, 0.115, 0.06), smoothstep(1100.0, 1500.0, hh + (n1 - 0.5) * 300.0));
   // Grass texture close by; it fades before it can shimmer.
   alb *= 0.95 + 0.1 * vnoise(xz * 0.02);
+  // The bare meadow, before farms and towns: the aerial photo's grass takes it.
+  vec3 alb0 = alb;
   // Mapped parcels first; the invented farms fill in only past the map.
   float fk = wd >= 4.0 ? fieldMap(xz, dist, alb) : 0.0;
   // Farms on the flat floor, in hives: each cluster of fields shares a heading, a tiling and its crops.
@@ -446,12 +462,17 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   // Flat floors stay open; lone woods there read as dark holes.
   fm -= 0.3 * smoothstep(0.08, 0.02, slope);
   float forest = smoothstep(0.5, 0.7, fm);
-  forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - house) * (1.0 - vm * 0.8) * (1.0 - vine) * step(3.0, wd);
+  forest *= smoothstep(1450.0, 1200.0, hh + (n1 - 0.5) * 350.0) * (1.0 - vm * 0.8);
+  // The real woods take over where the map exists; a fine noise frays their edges.
+  vec3 wm = woodsAt(xz);
+  if (wm.x >= 0.0) forest = smoothstep(0.3, 0.7, wm.x + (vnoise(xz * 0.04) - 0.5) * 0.2);
+  forest *= (1.0 - house) * (1.0 - vine) * step(3.0, wd);
   // Crowns show up close; the pattern fades before it can shimmer.
   float crown = vnoise(xz * 0.45) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(xz * 0.45))));
   // Dark spruce mixes with brighter beech.
   // Woods stay rich green, not black: deep spruce and bright beech.
-  vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), smoothstep(0.35, 0.65, fbm(xz * 0.003 + 7.0)));
+  float bl = wm.x >= 0.0 ? 1.0 - wm.y : smoothstep(0.35, 0.65, fbm(xz * 0.003 + 7.0));
+  vec3 wood = mix(vec3(0.06, 0.1, 0.05), vec3(0.09, 0.13, 0.055), bl);
   alb = mix(alb, wood * (0.92 + 0.16 * crown), forest);
   // Rock on steep faces and high crags; snow above the snow line.
   float rock = max(smoothstep(0.4 - 0.08 * sg.y, 0.6 - 0.08 * sg.y, slope), smoothstep(1550.0, 1800.0, hh + (n1 - 0.5) * 400.0) * 0.8) * step(3.0, wd) * (1.0 - house);
@@ -480,6 +501,38 @@ void landMat(vec2 xz, out vec3 albO, out vec3 NO, out float aoO, out float glowO
   alb = mix(alb, vec3(0.03, 0.05, 0.02), rimH * flatL * 0.6 * smoothstep(150.0, 400.0, dist) * (1.0 - smoothstep(3.0, 7.0, fwidth(xz.x))));
   // Valleys and the feet of slopes see less sky.
   float ao = 0.7 + 0.3 * smoothstep(-0.25, 0.25, n1 - 0.5 + (1.0 - slope) * 0.2);
+  // The aerial photo (tools/sat.py) says what lies where; the toy's own colours paint it.
+  // It skips the water, the line's own bank, steep faces, rock and snow.
+  // A photo taken from above smears down a steep face.
+  float st = -xz.y, aK = uAer.z * smoothstep(2.0, 5.0, wd) * smoothstep(12.0, 30.0, st) * smoothstep(6900.0, 6000.0, st) * (1.0 - rock) * (1.0 - snow) * (1.0 - smoothstep(0.18, 0.32, slope));
+  // Over the loop's last 3 km the land eases to the start's; the photo fades out there.
+  float ax = mod(xz.x, ${f8(TILE)});
+  aK *= 1.0 - smoothstep(${f8(TILE - 3000)}, ${f8(TILE - 600)}, ax);
+  if (aK > 0.0) {
+    // Near the line the fine map serves; past 1 km, and in coarse tiles, the far one.
+    float nf = uCell.y > 4.0 ? 1.0 : smoothstep(1000.0, 1150.0, st);
+    vec3 ph = vec3(0.0);
+    if (nf < 1.0) ph += (1.0 - nf) * textureLod(tAerN, vec2(ax / ${f8(TILE)}, (st + 400.0) / (uAer.x * 4.0)), max(log2(uCell.y / 4.0), 0.0)).rgb;
+    if (nf > 0.0) ph += nf * textureLod(tAerF, vec2(ax / ${f8(TILE)}, (st + 400.0) / (uAer.y * 10.0)), max(log2(uCell.y / 10.0), 0.0)).rgb;
+    // The photo is sRGB; the bake works in linear light.
+    ph = pow(ph, vec3(2.2));
+    float L = dot(ph, vec3(0.2126, 0.7152, 0.0722)) + 0.004;
+    // Grey: roofs, roads and paving, where blue keeps up with red and green.
+    // Out of town only flat ground counts: grey on a slope is scree or shade.
+    // Close to the line the photo's yards would read as flat slabs.
+    float grey = (1.0 - smoothstep(0.12, 0.32, (max(ph.r, ph.g) - ph.b) / L)) * max(smoothstep(0.1, 0.4, vm), smoothstep(0.12, 0.05, slope)) * smoothstep(40.0, 200.0, st);
+    // Red-brown: roof tile in a town, bare earth in the fields.
+    float tile = smoothstep(0.1, 0.3, (ph.r - ph.g) / L) * (1.0 - grey);
+    // The rest is grass and crops: the bare meadow, with the photo's light and dark patches.
+    vec3 pc = alb0 * clamp(L / 0.12, 0.72, 1.3);
+    // Pale walls and paving show in towns; out of town grey is a lane or a yard.
+    pc = mix(pc, mix(vec3(0.15, 0.15, 0.155), vec3(0.42, 0.4, 0.36), smoothstep(0.18, 0.35, L) * smoothstep(0.1, 0.4, vm)) * clamp(L / 0.15, 0.6, 1.3), grey);
+    vec3 roofC = mix(vec3(0.2, 0.1, 0.07), vec3(0.14, 0.1, 0.08), smoothstep(0.08, 0.16, L));
+    pc = mix(pc, mix(vec3(0.13, 0.1, 0.065) * clamp(L / 0.1, 0.8, 1.25), roofC, smoothstep(0.15, 0.45, vm)), tile);
+    // The mapped woods keep their own colour.
+    pc = mix(pc, wood * (0.92 + 0.16 * crown), forest * (1.0 - grey));
+    alb = mix(alb, pc, aK);
+  }
   albO = alb; NO = N; aoO = ao; wdO = wd;
   // How much the ground glows against the sun: grass and leaves do, rock does not.
   glowO = 0.12 * (1.0 - rock) + 0.2 * forest;
@@ -497,7 +550,17 @@ const tR = new THREE.DataTexture(ROUTE.rd || new Uint8Array([255]), ROUTE.rd ? R
 const tLk = new THREE.DataTexture(ROUTE.lk, ROUTE.w, 1, THREE.RedFormat, THREE.HalfFloatType);
 // Farm parcels: class and seed, edge distance, heading.
 const tFd = new THREE.DataTexture(ROUTE.fd || new Uint8Array(4), ROUTE.fd ? ROUTE.fw : 1, ROUTE.fd ? ROUTE.fd.length / 4 / ROUTE.fw : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
-for (const t of [tH, tF, tS, tLk, tR, tN, tFd]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+// Real woods on the route map's rows: cover, conifer share, canopy height.
+const tW = new THREE.DataTexture(ROUTE.wd || new Uint8Array(4), ROUTE.wd ? ROUTE.ww : 1, ROUTE.wd ? ROUTE.wd.length / 4 / ROUTE.ww : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+for (const t of [tH, tF, tS, tLk, tR, tN, tFd, tW]) { t.wrapS = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+// The aerial photo, near and far (tools/sat.py): sRGB colour, mipped for the coarse tiles.
+const aerTex = a => {
+  const t = new THREE.DataTexture(a ? a.px : new Uint8Array(4), a ? a.w : 1, a ? a.h : 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.wrapS = THREE.RepeatWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = true; t.anisotropy = 8; t.needsUpdate = true;
+  return t;
+};
+const tAerN = aerTex(ROUTE.aerN), tAerF = aerTex(ROUTE.aerF);
 const OUTU = {
   tH: { value: tH },
   tF: { value: tF },
@@ -513,6 +576,11 @@ const OUTU = {
   // 1 for a high plane that draws a contrail; 0 for a near one on its way down.
   uPlaneK: { value: 0 },
   tFd: { value: tFd },
+  tW: { value: tW },
+  tAerN: { value: tAerN },
+  tAerF: { value: tAerF },
+  // The aerial maps' row counts, and the photo's strength: 0 without the maps.
+  uAer: { value: new THREE.Vector3(ROUTE.aerN ? ROUTE.aerN.h : 1, ROUTE.aerF ? ROUTE.aerF.h : 1, ROUTE.aerN && ROUTE.aerF && !qs.has('noaerial') ? 1 : 0) },
   uTime: { value: 0 },
   uMoon: { value: new THREE.Vector3(0.3, 0.2, -0.93).normalize() },
   // The sun stands beyond the window, low on the left, so it shines into the cabin.
@@ -521,6 +589,14 @@ const OUTU = {
   uSunTint: { value: new THREE.Vector3(1, 0.95, 0.86) },
   uSkyLow: { value: new THREE.Vector3(1, 0.8, 0.6) },
   uDusk: { value: 0 },
+  // How still the lakes lie, 0 breezy to 1 a mirror.
+  uCalm: { value: 0 },
+  // Mist on the lakes and low cloud on the slopes, 0 to 1; the lake's height near the eye; the banks' drift clock.
+  uMist: { value: 0 },
+  uCloud: { value: 0 },
+  uLakeY: { value: -12 },
+  uMistT: { value: 0 },
+  uWet: { value: 0 },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -539,6 +615,13 @@ const OUTU = {
   tSect: { value: null },
   // uHall is 1 under the Zurich HB hall; uIsl is 1 where an island platform stands behind.
   uHall: { value: 0 },
+  // The near tunnel's two mouths, in world x.
+  uTun: { value: new THREE.Vector2(-1e9, -1e9) },
+  // The two rail bridges nearest the eye, as world x from and to; and what each crosses.
+  uBr: { value: new THREE.Vector4(-1e9, -1e9, -1e9, -1e9) },
+  uBrK: { value: new THREE.Vector2() },
+  // The two road decks nearest the eye, over the line: centre x and half width, twice.
+  uOv: { value: new THREE.Vector4(-1e9, 0, -1e9, 0) },
   uPz: { value: 0 },
   // The station clock's hands, in radians: hours, minutes, seconds.
   uClock: { value: new THREE.Vector3() },
@@ -565,12 +648,13 @@ const tiles = CAS.map(([s, W, H]) => {
 });
 tiles.forEach((t, k) => { OUTU['tA' + k] = { value: t.a.texture }; OUTU['tB' + k] = { value: t.b.texture }; });
 // The land shader's lookup: the finest tile that holds the point, eased into the next one at its rim.
-const tileTap = (k, v) => { const [s, W, H] = CAS[k], sc = `vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))})`; return `a${v} = textureGrad(tA${k}, p * ${sc}, gx * ${sc}, gy * ${sc}); b${v} = textureGrad(tB${k}, p * ${sc}, gx * ${sc}, gy * ${sc});`; };
+const tileTap = (k, v) => { const [s, W, H] = CAS[k], sc = `vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))})`; return `a${v} = textureGrad(tA${k}, p * ${sc}, gxa * ${sc}, gya * ${sc}); b${v} = textureGrad(tB${k}, p * ${sc}, gx * ${sc}, gy * ${sc});`; };
 const LANDTILE = /* glsl */`
 ${CAS.map((c, k) => `uniform sampler2D tA${k}, tB${k};`).join('\n')}
-void landTile(vec2 xz, out vec4 a, out vec4 b) {
+// blur widens the colour's filter; the normal keeps its own.
+void landTile(vec2 xz, float blur, out vec4 a, out vec4 b) {
   // p runs along the line and out from it; its screen gradients set the filter for every tile.
-  vec2 p = vec2(xz.x, -xz.y), gx = dFdx(p), gy = dFdy(p);
+  vec2 p = vec2(xz.x, -xz.y), gx = dFdx(p), gy = dFdy(p), gxa = gx * blur, gya = gy * blur;
   float ax = abs(xz.x - uCamX), t = -xz.y;
   vec4 a2, b2;
   ${CAS.slice(0, -1).map(([s, W, H], k) => { const X = W * s / 2, Z = H * s; return `if (ax < ${f8(X * 0.94)} && t < ${f8(Z * 0.94)}) {
@@ -586,6 +670,8 @@ void landTile(vec2 xz, out vec4 a, out vec4 b) {
 const HAZE = /* glsl */`
 uniform vec3 uMoon, uSun, uSunTint, uSkyLow;
 uniform float uDay, uRain, uDusk;
+// How wet the ground is, 0 to 1: it lags the rain and dries slowly.
+uniform float uWet;
 uniform vec4 uGP[${NG}];
 uniform vec4 uGC[${NG}];
 // Day light: the sun and the blue sky; rain greys both.
@@ -610,7 +696,7 @@ vec3 skyCol(vec3 d) {
   dc = mix(dc, vec3(0.42, 0.45, 0.5) * (0.75 + 0.35 * up), uRain * 0.85);
   return mix(n, dc, uDay);
 }
-float hazeAmt(vec3 P) {
+float hazeBase(vec3 P) {
   float dist = length(P - cameraPosition);
   // Night: valley haze with a 90 m scale height, and mist on the water.
   float k = 1.0 / 90.0, h0 = cameraPosition.y + 50.0, h1 = max(P.y + 50.0, 0.0), dh = h1 - h0;
@@ -624,13 +710,65 @@ float hazeAmt(vec3 P) {
   return mix(night, day, uDay);
 }
 // Haze takes the horizon colour: warmed over each town at night, lit by the sun by day.
-vec3 hazeCol(vec3 d, vec3 P) {
+vec3 hazeBaseCol(vec3 d, vec3 P) {
   vec3 hz = skyCol(normalize(vec3(d.x, max(d.y, 0.0) * 0.4 + 0.02, d.z)));
   vec3 n = hz * 0.7;
   if (uDay < 0.99) for (int i = 0; i < ${NG}; i++) n += uGC[i].rgb * uGP[i].w * 0.3 * exp(-length(P.xz - uGP[i].xz) / 110.0);
   vec3 dy = hz * 0.92 + vec3(1.0, 0.9, 0.75) * pow(max(dot(d, uSun), 0.0), 8.0) * 0.25 * (1.0 - uRain);
   return mix(n, dy, uDay);
-}`;
+}
+// Mist and low cloud: uMist lies on the lakes, uCloud hangs on the slopes.
+// uLakeY is the lake's height near the eye; uMistT drifts the banks.
+uniform float uMist, uCloud, uLakeY, uMistT;
+float mHash(vec2 p) { p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 19.19); return fract(p.x * p.y); }
+float mNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mHash(i), mHash(i + vec2(1.0, 0.0)), u.x), mix(mHash(i + vec2(0.0, 1.0)), mHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// Banks: two octaves, slowly drifting down the valley.
+float mBank(vec2 p) { return mNoise(p) * 0.65 + mNoise(p * 2.7 + 5.3) * 0.35; }
+float mistAmt(vec3 P) {
+  if (uMist + uCloud <= 0.0) return 0.0;
+  vec3 C = cameraPosition, D = P - C;
+  float dist = length(D), tau = 0.0;
+  if (uMist > 0.0) {
+    // The lake mist thins with a 14 m scale height above the water.
+    float k = 1.0 / 14.0, h0 = max(C.y - uLakeY, 0.0), h1 = max(P.y - uLakeY, 0.0), dh = h1 - h0;
+    float avg = abs(dh) < 0.01 ? exp(-h0 * k) : (exp(-h0 * k) - exp(-h1 * k)) / (dh * k);
+    // It clears near the train, so the bank beside the line stays sharp.
+    float bank = smoothstep(0.3, 0.75, mBank(P.xz * 0.0035 + vec2(uMistT * 0.012, uMistT * 0.004)));
+    tau += uMist * 0.0035 * avg * max(dist - 50.0, 0.0) * (0.2 + 0.8 * bank);
+  }
+  if (uCloud > 0.0) {
+    // Low cloud fills a band 550 to 1000 m above the eye.
+    float c0 = 550.0, c1 = 1000.0, ya = C.y, yb = P.y;
+    float lo = max(min(ya, yb), c0), hi = min(max(ya, yb), c1);
+    if (hi > lo) {
+      float len = abs(yb - ya) > 1.0 ? (hi - lo) / abs(yb - ya) * dist : dist;
+      // The cloud's texture is read where the ray crosses the middle of the band.
+      vec3 Q = C + D * clamp((0.5 * (lo + hi) - ya) / (yb - ya + 1e-4), 0.0, 1.0);
+      float n = smoothstep(0.35, 0.7, mBank(Q.xz * 0.0012 + vec2(uMistT * 0.004, 0.0)));
+      // The band's edges are soft: the cloud thickens toward its middle.
+      float mid = 1.0 - abs(0.5 * (lo + hi) - 0.5 * (c0 + c1)) / (0.5 * (c1 - c0));
+      tau += uCloud * 0.008 * len * n * (0.3 + 0.7 * mid);
+    }
+  }
+  return 1.0 - exp(-tau);
+}
+// Haze and mist together: mist on top of the haze.
+float hazeAmt(vec3 P) { return 1.0 - (1.0 - hazeBase(P)) * (1.0 - mistAmt(P)); }
+vec3 hazeCol(vec3 d, vec3 P) {
+  vec3 hc = hazeBaseCol(d, P);
+  float m = mistAmt(P);
+  if (m <= 0.0) return hc;
+  float h = hazeBase(P);
+  // Mist is paler than haze: grey-white by day, toward the sun a little warm.
+  float l = dot(hc, vec3(0.2126, 0.7152, 0.0722));
+  vec3 day = mix(hc, vec3(l), 0.65) * 1.2 + sunC() * 0.04 * pow(max(dot(d, uSun), 0.0), 3.0);
+  vec3 mc = mix(hc * 0.95, day, uDay);
+  return mix(hc, mc, m / max(m + h * (1.0 - m), 1e-4));
+}
+`;
 
 /* Sky dome: stars and moonlit cloud by night, cumulus by day. */
 // The dome follows the camera, so a long ride never leaves it.
@@ -675,6 +813,10 @@ const sky = (() => {
         // Far cloud sinks into the haze at the horizon.
         c = mix(c, mix(nightC, dayC, uDay), cl * 0.95 * smoothstep(0.0, 0.12, d.y));
       }
+      // Low cloud and mist hide the sky behind them too.
+      vec3 Pm = cameraPosition + d * 6000.0;
+      float mm = mistAmt(Pm);
+      if (mm > 0.0) c = mix(c, hazeCol(d, Pm), mm);
       gl_FragColor = vec4(c, 1.0);
     }`,
   }));
@@ -708,6 +850,14 @@ const terrain = (() => {
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   return g;
 })();
+// Rail bridges (tools/line.py): uBr holds the two spans nearest the eye in world x.
+const BRL = /* glsl */`
+uniform vec4 uBr;
+uniform vec2 uBrK;
+// Metres onto the nearest rail bridge; below zero off it.
+float brIn(float x) { return max(min(x - uBr.x, uBr.y - x), min(x - uBr.z, uBr.w - x)); }
+// Under a bridge the ground is dug out to a floor 6.5 m under the rails; it climbs back by 41 m out.
+float brFloor(float z) { return mix(-9.0, -1.0, smoothstep(26.0, 41.0, -z)); }`;
 const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   uniforms: OUTU,
   vertexShader: /* glsl */`
@@ -738,54 +888,26 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${LAND}
   ${HAZE}
   ${LANDTILE}
+  ${BRL}
   ${WATER}
-  // The reflected ray climbs to the far slopes; a coarse march finds them.
-  // Four halvings between the last miss and the hit place the shore.
-  vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
-    float t = 20.0;
-    for (int i = 0; i < 32; i++) {
-      vec3 q = P + Rm * t;
-      if (landO(q.xz, 3) > q.y) {
-        float lo = t / 1.25, hi = t;
-        for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); vec3 qm = P + Rm * m; if (landO(qm.xz, 3) > qm.y) hi = m; else lo = m; }
-        q = P + Rm * hi;
-        float qh = landO(q.xz, 3) + 20.0;
-        vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
-        a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sgz), mix(1650.0, 1280.0, sgz), qh));
-        vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
-        return mix(a * lit, hazeCol(Rm, q), hazeAmt(q));
-      }
-      t *= 1.25;
+  uniform float uScale, uCalm;
+  // Terrain shadow: a short march toward the sun, soft-edged.
+  // The march starts on the smooth map, a little up: small bumps must not shade themselves.
+  float sunShadow(vec3 P) {
+    vec3 o = vec3(P.x, max(P.y, landC(P.xz)) + 4.0, P.z);
+    float st = 30.0, s = 1.0;
+    for (int i = 0; i < 11; i++) {
+      vec3 q = o + uSun * st;
+      s = min(s, clamp(4.0 * (q.y - landC(q.xz)) / st + 0.5, 0.0, 1.0));
+      st *= 1.75;
     }
-    return sky;
+    return smoothstep(0.0, 1.0, s);
   }
-  void main() {
-    vec3 V = normalize(cameraPosition - vP);
-    float dist = length(cameraPosition - vP);
-    vec3 sg = seg(vP.x);
-    // Colour, normal, sky cover and shore distance come from the baked tiles.
-    vec4 m0, m1;
-    landTile(vP.xz, m0, m1);
-    // The colour is stored as its square root, to keep the dark tones fine.
-    vec3 alb = m0.rgb * m0.rgb;
-    float glowK = m0.a * 0.32, ao = m1.z, wd = m1.w;
-    vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
-    // Wrapped key light: the sun bends softly round each hill.
-    // Terrain self-shadow stays gentle: the coarse vertex march must never punch black holes.
-    // Terrain shadow: a short march toward the sun at each pixel, soft-edged.
-    float vSh = 1.0;
-    if (uDay > 0.01 && dist > 60.0) {
-      // The march starts on the smooth map, a little up: small bumps must not shade themselves.
-      vec3 o = vec3(vP.x, max(vP.y, landC(vP.xz)) + 4.0, vP.z);
-      float st = 30.0;
-      for (int i = 0; i < 11; i++) {
-        vec3 q = o + uSun * st;
-        vSh = min(vSh, clamp(4.0 * (q.y - landC(q.xz)) / st + 0.5, 0.0, 1.0));
-        st *= 1.75;
-      }
-      vSh = smoothstep(0.0, 1.0, vSh);
-    }
+  // The land's light at P, seen along V toward the eye: sun, sky, rim, moon and town pools.
+  vec3 litLand(vec3 P, vec3 alb, vec3 N, float ao, float glowK, vec3 V, float vSh) {
+    float dist = length(cameraPosition - P);
     float shSoft = mix(0.72 + 0.28 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
+    // Wrapped key light: the sun bends softly round each hill.
     float wrapD = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
     float keyL = wrapD * wrapD * shSoft;
     // Shade is tinted cool blue, never dead black.
@@ -798,7 +920,6 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     // Against the sun, grass and leaves glow at their edges.
     float back = pow(max(dot(-V, uSun), 0.0), 6.0) * (1.0 - uRain);
     day += sunC() * back * glowK * vec3(0.9, 1.0, 0.6);
-    // Night: the moon behind the peaks, and a faint sky.
     // Night: moonlight wraps too, and ridges keep a cool moon rim.
     vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
     night += vec3(0.25, 0.3, 0.42) * 0.12 * pow(1.0 - max(dot(N, V), 0.0), 3.0);
@@ -807,10 +928,174 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     if (uDay < 0.99) {
       vec3 pool = vec3(0.0);
       for (int i = 0; i < ${NG}; i++) {
-        float d = length(uGP[i].xyz - vP);
+        float d = length(uGP[i].xyz - P);
         pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0);
       }
       c += alb * pool * (1.0 - uDay);
+    }
+    return c;
+  }
+  // The baked tiles at a level of detail: foot is the metres one sample must cover.
+  // The finest tile that holds the point answers; x of a is below zero past every tile.
+  void landTileLod(vec2 xz, float foot, out vec4 a, out vec4 b) {
+    float ax = abs(xz.x - uCamX), t = -xz.y;
+    vec2 p = vec2(xz.x, t);
+    ${CAS.map(([s, W, H], k) => `if (ax < ${f8(W * s / 2 * 0.94)} && t < ${f8(H * s * 0.94)}) {
+      vec2 uv = p * vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))});
+      float l = max(log2(foot / ${f8(s)}), 0.0);
+      a = textureLod(tA${k}, uv, l); b = textureLod(tB${k}, uv, l);
+      return;
+    }`).join(' else ')}
+    a = vec4(-1.0); b = vec4(0.0);
+  }
+  // Limestone seen from the side, at f (along the face, height): colour, and grass on ledges in a.
+  // Each layer fades before a pixel can span it.
+  vec4 cliffSide(vec2 f) {
+    vec2 fw = fwidth(f);
+    // Bedding wanders a little along the face.
+    float y = f.y + 14.0 * gnoise(vec2(f.x * 0.004, 0.0));
+    float bed = gnoise(vec2(f.x * 0.002, y * 0.05)) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.05));
+    float bed2 = gnoise(vec2(f.x * 0.006, y * 0.15)) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.15));
+    // Water streaks run long and dark down the face.
+    float st = gnoise(vec2(f.x * 0.025, f.y * 0.002)) * (1.0 - smoothstep(0.3, 0.8, fw.x * 0.025));
+    vec3 lime = vec3(0.19, 0.18, 0.165) * (0.85 + 0.5 * bed + 0.25 * bed2);
+    lime *= 1.0 - 0.45 * smoothstep(0.05, 0.35, st);
+    float ledge = smoothstep(0.15, 0.35, gnoise(vec2(f.x * 0.004, y * 0.04 + 3.0))) * (1.0 - smoothstep(0.3, 0.8, fw.y * 0.04));
+    return vec4(lime, ledge);
+  }
+  // Tree crowns seen from the side, at f (along the slope, height): a light factor round 1.
+  // Two offset rows of crowns some 18 m wide, so no grid shows; sizes vary and a third are pointed spruce.
+  // The sky lights each crown's top; the gaps between fall into shade.
+  // The pattern settles to its mean before a pixel can span a crown.
+  float crownLayer(vec2 g, float soft, float seed) {
+    g.x += floor(g.y) * 0.5;
+    vec2 id = floor(g) + seed;
+    if (hash1(id + 2.7) < 0.12) return 0.0;
+    float sz = 0.75 + 0.35 * hash1(id + 5.9);
+    vec2 q = (fract(g) - 0.5 - (hash2(id) - 0.5) * vec2(0.5, 0.3)) / sz;
+    float cone = smoothstep(0.03 + soft, -soft, abs(q.x) - (0.42 - q.y) * 0.55) * step(-0.45, q.y);
+    float round = smoothstep(0.46, 0.46 - soft, length(q * vec2(1.0, 0.9)));
+    float crown = mix(round, cone, step(0.66, hash1(id + 7.1)));
+    return crown * (0.92 + 0.28 * clamp(q.y + 0.3, 0.0, 1.0)) * (0.92 + 0.16 * hash1(id + 3.3));
+  }
+  float canopySide(vec2 f) {
+    vec2 g = f / vec2(18.0, 14.0);
+    vec2 fw = fwidth(g);
+    float keep = 1.0 - smoothstep(0.2, 0.55, max(fw.x, fw.y));
+    // Clumps: darker stands of spruce among lighter beech.
+    float clump = 0.88 + 0.24 * gnoise(f * 0.012);
+    if (keep <= 0.0) return clump;
+    float soft = clamp(max(fw.x, fw.y) * 1.5, 0.05, 0.3);
+    float a = crownLayer(g, soft, 0.0), b = crownLayer(g * 0.83 + vec2(0.37, 0.52), soft, 41.0) * 0.92;
+    float v = max(max(a, b), 0.74);
+    return clump * mix(1.0, v / 0.96, keep);
+  }
+  // The lake's mirror: the reflected ray climbs to the far slopes.
+  // The march runs along the ray's heading and keeps the highest skyline it sees.
+  // The ray's depth under that skyline sets the cover, so the mirrored edge is soft.
+  // wid is that edge's width as a slope; foot0 is the eye's footprint on the water.
+  // It returns the lit land in rgb and its cover in a.
+  vec4 mirrorLand(vec3 P, vec3 Rm, float wid, float foot0) {
+    float hl = length(Rm.xz);
+    vec2 hd = Rm.xz / hl;
+    float slope = Rm.y / hl, s = 20.0, best = -1e3, sBest = 20.0, sHit = -1.0;
+    // 32 steps reach 20 km, past the ridges behind the far shore.
+    for (int i = 0; i < 32; i++) {
+      float a = (landO(P.xz + hd * s, 3) - P.y) / s;
+      if (a > best) { best = a; sBest = s; }
+      // Past the hit, a few more steps find any higher skyline behind.
+      if (sHit < 0.0 && a > slope) sHit = s;
+      if (sHit > 0.0 && s > sHit * 2.5) break;
+      s *= 1.25;
+    }
+    float cover = smoothstep(-wid, wid, best - slope);
+    if (cover <= 0.0) return vec4(0.0);
+    // Four halvings bracket the hit; a straight line between the bracket's ends places it.
+    // Without that last step the hit moves in steps, and ripples cut the image into hard bands.
+    // A miss shows the skyline itself, faintly.
+    float sh = sBest;
+    if (sHit > 0.0) {
+      float lo = sHit / 1.25, hi = sHit;
+      for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); if (landO(P.xz + hd * m, 3) - P.y > slope * m) hi = m; else lo = m; }
+      float dl = slope * lo - (landO(P.xz + hd * lo, 3) - P.y), dhv = slope * hi - (landO(P.xz + hd * hi, 3) - P.y);
+      sh = mix(lo, hi, clamp(dl / max(dl - dhv, 1e-4), 0.0, 1.0));
+    }
+    vec2 qxz = P.xz + hd * sh;
+    vec3 q = vec3(qxz.x, landO(qxz, 3), qxz.y);
+    // The image blurs with distance, and the ripples smear it further.
+    float tq = length(q - P);
+    vec4 m0, m1;
+    landTileLod(q.xz, foot0 + tq / (uScale * 400.0) + tq * wid * 0.5, m0, m1);
+    vec3 col;
+    vec3 Vq = normalize(P - q);
+    if (m0.x < 0.0) col = vec3(0.03, 0.07, 0.025) * mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
+    else {
+      vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
+      float vSh = uDay > 0.01 ? sunShadow(q) : 1.0;
+      col = litLand(q, m0.rgb * m0.rgb, N, m1.z, m0.a * 0.32, Vq, vSh);
+    }
+    return vec4(mix(col, hazeCol(-Vq, q), hazeAmt(q)), cover);
+  }
+  void main() {
+    // Under a rail bridge a road, a river or a dip passes below: the ground there is dug out.
+    if (brIn(vP.x) > 0.0 && vP.z < -8.0 && vP.z > -42.0 && vP.y > brFloor(vP.z) - 0.05) discard;
+    vec3 V = normalize(cameraPosition - vP);
+    float dist = length(cameraPosition - vP);
+    vec3 sg = seg(vP.x);
+    // Colour, normal, sky cover and shore distance come from the baked tiles.
+    vec4 m0, m1;
+    // A steep face seen from above smears its colour down the fall line.
+    // There the tiles give only a wide blur; the rock's detail comes from the side below.
+    float steepG = smoothstep(0.15, 0.45, 1.0 - normalize(vN).y) * smoothstep(60.0, 160.0, dist);
+    landTile(vP.xz, 1.0 + 14.0 * steepG, m0, m1);
+    // The colour is stored as its square root, to keep the dark tones fine.
+    vec3 alb = m0.rgb * m0.rgb;
+    float glowK = m0.a * 0.32, ao = m1.z, wd = m1.w;
+    vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
+    // Cliffs: limestone drawn on the face itself, blended by how it faces x or z.
+    float steep = smoothstep(0.35, 0.6, 1.0 - N.y) * smoothstep(60.0, 160.0, dist) * (1.0 - smoothstep(0.4, 0.7, max(alb.r, max(alb.g, alb.b))));
+    if (steep > 0.0) {
+      vec2 wq = N.xz * N.xz;
+      wq /= wq.x + wq.y + 1e-5;
+      vec4 rk = wq.x * cliffSide(vec2(vP.z, vP.y)) + wq.y * cliffSide(vec2(vP.x, vP.y));
+      // Grass holds on the ledges in the tiles' broad colour.
+      alb = mix(alb, mix(rk.rgb, alb * 0.85, rk.a), steep);
+    }
+    // Far woods: tree crowns seen from the side, where the near trees stand no more.
+    // The tiles' glow holds the wood's share: 0.12 for open ground, 0.32 for full wood.
+    float woodK = clamp((glowK - 0.12) / 0.2, 0.0, 1.0) * smoothstep(350.0, 650.0, dist) * (1.0 - steep);
+    if (woodK > 0.0) {
+      vec2 wq = N.xz * N.xz;
+      wq /= wq.x + wq.y + 1e-5;
+      float cf = wq.x * canopySide(vec2(vP.z, vP.y)) + wq.y * canopySide(vec2(vP.x, vP.y));
+      alb *= mix(1.0, cf, woodK);
+    }
+    // Terrain shadow: a short march toward the sun at each pixel.
+    float vSh = 1.0;
+    if (uDay > 0.01 && dist > 60.0) vSh = sunShadow(vP);
+    // Grey ground is road, paving or roof: smooth, so it shines when wet.
+    float mxA = max(alb.r, max(alb.g, alb.b)), satA = (mxA - min(alb.r, min(alb.g, alb.b))) / max(mxA, 1e-4);
+    // Wet soil and grass darken.
+    alb *= 1.0 - 0.22 * uWet;
+    vec3 c = litLand(vP, alb, N, ao, glowK, V, vSh);
+    if (uWet > 0.0) {
+      float smoothG = mix(0.55, 0.1, smoothstep(0.15, 0.45, satA));
+      // Mapped roads beside the line shine most.
+      smoothG = max(smoothG, (1.0 - smoothstep(0.3, 1.2, roadD(vP.xz))) * 0.8);
+      // Puddles stand in the hollows of flat ground near the line: few in grass, more on roads and bare earth.
+      // Their pattern fades before a pixel can span it.
+      float pq = 1.0 - smoothstep(0.3, 0.8, length(fwidth(vP.xz * 0.3)));
+      float pt = mix(0.82, 0.7, smoothG);
+      float pud = smoothstep(0.99, 0.998, N.y) * smoothstep(pt, pt + 0.04, vnoise(vP.xz * 0.3) * 0.7 + vnoise(vP.xz * 1.1 + 3.1) * 0.3) * pq;
+      pud *= smoothstep(0.4, 0.9, uWet) * smoothstep(8.0, 20.0, -vP.z) * step(2.0, wd);
+      vec3 Nr = normalize(mix(N, vec3(0.0, 1.0, 0.0), pud));
+      vec3 Rw = reflect(-V, Nr);
+      Rw.y = abs(Rw.y);
+      float Fw = 0.02 + 0.98 * pow(1.0 - max(dot(Nr, V), 0.0), 5.0);
+      // Rough ground spreads its sheen thin; a puddle is a mirror over dark water.
+      vec3 sk = skyCol(Rw);
+      c += sk * Fw * smoothG * 0.6 * uWet * (1.0 - pud);
+      c = mix(c, c * 0.35 + sk * (0.1 + 0.9 * Fw), pud * 0.85);
     }
     // Water: rippled on the river, calm on the lakes.
     // Lakes are flat; the coarse lake mask must not paint water up a cliff.
@@ -819,7 +1104,8 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // The shared water (shared/water.js): swell, chop and wave sets; a wave too fine
       // for a pixel moves into sig2, so far water becomes a smooth glitter path.
       float foot = max(max(fwidth(vP.x), fwidth(vP.z)), 0.001), sig2;
-      vec2 slopeW = wtWaves(vP.xz, uTime, foot, 0.012, 0.16, 0.4, sig2);
+      // A calm hour lowers the chop most; the long swell stays a little.
+      vec2 slopeW = wtWaves(vP.xz, uTime, foot, 0.012 * (1.0 - 0.5 * uCalm), 0.16 * (1.0 - 0.75 * uCalm), 0.4, sig2);
       // Rain rings, as hard as it falls.
       slopeW += wtRings(vP.xz, uTime, foot, uRain, 0.6, sig2);
       vec3 Nw = wtNormal(slopeW);
@@ -828,10 +1114,11 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       float F = wtFresnel(-V, Nw);
       vec3 refl = skyCol(R);
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
-      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.45, 1.0, -slopeW.y * 0.45)));
+      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.3, 1.0, -slopeW.y * 0.3)));
       Rm.y = max(Rm.y, 0.005);
-      // Two mirror rays a hair apart, averaged, so the mirrored shoreline has a soft edge.
-      refl = 0.5 * (mirrorLand(vP, Rm, refl, sg.z) + mirrorLand(vP, normalize(Rm + vec3(0.0, 0.006, 0.0)), refl, sg.z));
+      // The mirrored skyline softens with the roughness no pixel resolves.
+      vec4 ml = mirrorLand(vP, Rm, 0.003 + sqrt(sig2) * 0.12, foot);
+      refl = mix(refl, ml.rgb, ml.a);
       // Lake Zurich is blue-green; the Walensee is emerald; shallows near the shore run lighter.
       float shallow = smoothstep(-25.0, -2.0, wd);
       vec3 deep = mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z);
@@ -840,7 +1127,10 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // The sun lays a glittering path; each facet that tilts to it flashes.
       if (uDay > 0.01) wc += sunC() * wtGlint(R, uSun, sig2, 0.02) * F * 40.0 * uDay * (1.0 - 0.8 * uRain);
       // A thin pale lap line where the water meets the shore.
-      wc = mix(wc, mix(vec3(0.02), vec3(0.35, 0.38, 0.36), uDay), smoothstep(-1.2, -0.2, wd) * smoothstep(0.6, -0.2, wd) * 0.5);
+      // It is about a metre wide, so it fades once a pixel covers more ground than that.
+      // Past the near band the coarse lake map would smear it into a wide bright seam.
+      float lapK = clamp(1.2 / foot, 0.0, 1.0) * (1.0 - smoothstep(600.0, 760.0, abs(vP.z)));
+      wc = mix(wc, mix(vec3(0.02), vec3(0.35, 0.38, 0.36), uDay), smoothstep(-1.2, -0.2, wd) * smoothstep(0.6, -0.2, wd) * 0.5 * lapK);
       // Lights and the moon on the water: slim streaks under each light.
       // Their length comes from the calm surface, so it holds steady;
       // their sideways wobble comes from the rippled one, so near streaks shatter and far ones stay clean.
@@ -1118,7 +1408,6 @@ const bakeQ = new FullScreenQuad(new THREE.ShaderMaterial({
   uniforms: bakeU,
   vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: /* glsl */`
-  uniform vec3 uCell;
   ${NOISE}
   ${LAND}
   ${LANDMAT}
@@ -1163,6 +1452,7 @@ const PROPG = /* glsl */`
 uniform float uCamX;
 uniform vec2 uStn;
 ${ROAD}
+${BRL}
 // Wraps a patch x round the camera; y counts the wraps, so each pass differs.
 vec2 wrapP(float x, float P) { float wx = uCamX + mod(x - uCamX + P * 0.5, P) - P * 0.5; return vec2(wx, floor((wx - x) / P + 0.5)); }
 float slopeAt(vec2 xz, float e) { float h = land(xz); return 1.0 - normalize(vec3(h - land(xz + vec2(e, 0.0)), e, h - land(xz + vec2(0.0, e)))).y; }
@@ -1170,12 +1460,16 @@ bool atStation(vec2 xz, float m) { return uStn.y > 0.0 && abs(xz.x - uStn.x) < u
 // True within m metres of a mapped road's middle line.
 bool onRoad(vec2 xz, float m) { return roadD(xz) < m - 2.6; }
 // Zurich HB's track field, from 260 m behind the hall to the throat 2.1 km out.
+// Every prop also keeps off the ground dug out under a rail bridge.
 bool inYard(vec2 xz, float m) {
+  if (brIn(xz.x) > -3.0 && xz.y > -44.0) return true;
   float d = mod(xz.x + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
   return d > -280.0 - m && d < 2100.0 + m && xz.y > -76.0 + 66.0 * smoothstep(1400.0, 2050.0, d) - 9.0 - m;
 }
 // The same woods the land paints: fbm on the slopes, none on flat floors.
 float forestAt(vec2 xz, float slope) {
+  vec3 wm = woodsAt(xz);
+  if (wm.x >= 0.0) return smoothstep(0.3, 0.7, wm.x);
   float fm = fbm(xz * 0.0035 + 4.0) + slope * 0.9 + (vnoise(xz * 0.04) - 0.5) * 0.1;
   fm -= 0.3 * smoothstep(0.08, 0.02, slope);
   return smoothstep(0.5, 0.7, fm);
@@ -1327,8 +1621,12 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
     if (h > f * 0.92 + 0.02 * (1.0 - f) + 0.05 * tw - tw * f * 0.6) return vec4(0.0);
     // Spruce holds the high, steep ground; broadleaf the low.
     float sp = clamp((smoothstep(250.0, 900.0, y + 20.0) + s * 1.5) * 0.7 + 0.2, 0.1, 0.95);
+    // The real woods give the conifer share and the canopy height.
+    vec3 wm = woodsAt(xz);
+    float hk = 1.0;
+    if (wm.x >= 0.0) { sp = wm.y; hk = wm.z > 2.0 ? clamp(wm.z / 24.0, 0.6, 1.4) : 1.0; }
     float kind = hash1(vec2(a.z * 0.133, k + 4.0)) < sp ? 1.0 : 0.0;
-    return vec4(xz.x, y, xz.y, 0.7 + 0.6 * hash1(vec2(a.z, k + 9.0)) + kind * 10.0);
+    return vec4(xz.x, y, xz.y, (0.7 + 0.6 * hash1(vec2(a.z, k + 9.0))) * hk + kind * 10.0);
   }`);
   // Shrubs: a low fringe along the line, beyond the second track.
   const SP = 900, ns = PW * 32, ds = new Float32Array(ns * 4);
@@ -1853,6 +2151,26 @@ float trainLight(vec3 P) {
   return pane * band / (1.0 + d * d * 0.3);
 }`;
 
+// Tunnels: uTun holds the near tunnel's mouths in world x, or far off when none is near.
+const TUNL = /* glsl */`
+uniform vec2 uTun;
+const vec3 TLAMPC = vec3(1.0, 0.88, 0.72);
+// 1 inside the near tunnel, 0 outside.
+float tunIn(float x) { return step(uTun.x, x) * step(x, uTun.y); }
+// Daylight reaches in from each mouth and fades over some 25 m.
+float tunDay(float x) { return min(1.0, exp(-(x - uTun.x) / 25.0) + exp(-(uTun.y - x) / 25.0)); }
+// The wall lamps every 25 m, high on the far wall, light a point P.
+vec3 tunLamps(vec3 P, vec3 N) {
+  float x0 = floor(P.x / 25.0 + 0.5) * 25.0;
+  vec3 c = vec3(0.0);
+  for (int k = -1; k <= 1; k++) {
+    vec3 L = vec3(x0 + float(k) * 25.0, 2.3, -10.2) - P;
+    float d2 = dot(L, L);
+    c += TLAMPC * 2.5 / (d2 + 1.0) * max(dot(N, L * inversesqrt(d2)) * 0.95 + 0.05, 0.0);
+  }
+  return c;
+}`;
+
 /* The viaduct: a concrete parapet below the window. */
 const parapet = new THREE.Mesh(new THREE.BoxGeometry(400, 1.0, 0.4).translate(0, -2.1, -4.0), new THREE.ShaderMaterial({
   uniforms: OUTU,
@@ -1924,6 +2242,8 @@ function strip(geo, w, cy, add, order, frag) {
       p.x *= ${w.toFixed(3)} + uSmear;
       vL = vec2(p.x, p.y - ${cy.toFixed(3)});
       vK = aK;
+      // A mast inside a tunnel is not drawn.
+      if (aK < -1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       vec4 w = modelMatrix * vec4(p + vec3(aX, 0.0, 0.0), 1.0);
       vW = w.xyz;
       gl_Position = projectionMatrix * viewMatrix * w;
@@ -2698,7 +3018,8 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 // A lit solid: the fragment sets alb (and may add glow) from vP and N.
-const solid = body => new THREE.ShaderMaterial({
+// extra adds GLSL the body needs, such as the land heights.
+const solid = (body, extra = '') => new THREE.ShaderMaterial({
   uniforms: OUTU,
   vertexShader: worldVS,
   fragmentShader: /* glsl */`
@@ -2710,6 +3031,10 @@ const solid = body => new THREE.ShaderMaterial({
   ${TRAIN}
   ${HAZE}
   ${STNL}
+  ${TUNL}
+  ${BRL}
+  ${extra}
+  uniform vec4 uOv;
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(vP - cameraPosition);
@@ -2726,7 +3051,15 @@ const solid = body => new THREE.ShaderMaterial({
     // Station day light, Pixar-lite: a wrapped sun and a strong sky fill with a warm bounce.
     float wrapS = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
     vec3 day = sunC() * wrapS * wrapS * shade + skyA(N.y) * 1.15 + sunC() * vec3(0.08, 0.07, 0.055);
-    gl_FragColor = vec4(alb * mix(night, day, uDay) + glow, 1.0);
+    vec3 lit = mix(night, day, uDay);
+    // In a tunnel the wall lamps and the carriage's panes light the bed; daylight reaches in at the mouths.
+    float ti = tunIn(vP.x);
+    if (ti > 0.0) {
+      vec3 inside = night * 0.3 + tunLamps(vP, N) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.25;
+      lit = mix(inside, lit, uDay * tunDay(vP.x));
+      glow *= mix(0.2, 1.0, tunDay(vP.x));
+    }
+    gl_FragColor = vec4(alb * lit + glow, 1.0);
   }`,
 });
 const platform = new THREE.Group();
@@ -3144,6 +3477,10 @@ out.add(bed);
   const top = new THREE.PlaneGeometry(500, 9.5).rotateX(-Math.PI / 2).translate(0, -2.5, -5.25);
   const slope = new THREE.PlaneGeometry(500, 7.2).rotateX(-Math.PI / 2).rotateX(Math.atan2(-3.5, 6.2)).translate(0, -4.25, -13.1);
   const body = /* glsl */`
+  // On a bridge the bank gives way to the deck: nothing stands past its edge.
+  if (brIn(vP.x) > 0.0 && (N.y < 0.95 || vP.z < -8.3)) discard;
+  // A road deck overhead shades the bed by day.
+  shade *= 1.0 - 0.85 * max(step(abs(vP.x - uOv.x), uOv.y), step(abs(vP.x - uOv.z), uOv.w));
   // zc runs across the second track from its centre line, 5.6 m out.
   float zc = vP.z + 5.6;
   float s = uSmear;
@@ -3184,14 +3521,16 @@ out.add(bed);
     // A concrete cable trough runs along the bed between the tracks.
     alb = mix(alb, vec3(0.32, 0.31, 0.29), smoothstep(0.26, 0.2, abs(zc - 2.9)) * 0.8);
     // Weeds and grass take the far verge, so the bed melts into the slope.
-    float verge = smoothstep(-2.6, -4.0, zc + (vnoise(vec2(vP.x * 0.8, 1.0)) - 0.5) * 0.8);
+    float verge = smoothstep(-2.6, -4.0, zc + (vnoise(vec2(vP.x * 0.8, 1.0)) - 0.5) * 0.8) * step(brIn(vP.x), 0.0);
     alb = mix(alb, vec3(0.08, 0.15, 0.04) * (0.8 + 0.4 * mix(vnoise(vP.xz * 3.0), 0.5, smoothstep(0.3, 0.8, (fwidth(vP.x) + s) * 3.0))), verge);
   } else {
     // The slope is grass, with a little stone near its top.
     alb = mix(alb, vec3(0.08, 0.15, 0.04) * (0.85 + 0.3 * vnoise(vP.xz * 2.0)), smoothstep(-2.6, -3.4, vP.y));
   }
-  // Rain wets the bed.
-  alb *= 1.0 - 0.25 * uRain;`;
+  // Rain wets the bed: the stones darken and the sleepers take a sky sheen.
+  alb *= 1.0 - 0.3 * uWet;
+  float Fb = 0.02 + 0.98 * pow(1.0 - max(dot(N, -V), 0.0), 5.0);
+  glow += skyCol(reflect(V, N)) * Fb * uWet * 0.25 * uDay;`;
   for (const g of [top, slope]) {
     const m = new THREE.Mesh(g, solid(body));
     m.frustumCulled = false;
@@ -3231,6 +3570,342 @@ out.add(bed);
     bed.add(m);
   }
 }
+/* Tunnels: a lined tube round both tracks, and a portal face at each mouth. */
+// The tube's section, across the line (z) and up (y): our side wall, the vault, the far wall.
+const TUBE = [[4, -2.6], [4, 3.5], [1.5, 6.2], [-8, 6.2], [-10.5, 3.5], [-10.5, -2.6]];
+const tube = (() => {
+  const pos = [], nrm = [];
+  for (let i = 0; i < TUBE.length - 1; i++) {
+    const [z0, y0] = TUBE[i], [z1, y1] = TUBE[i + 1];
+    // The normal faces the tube's middle.
+    let nz = -(y1 - y0), ny = z1 - z0;
+    const l = Math.hypot(nz, ny), mz = (z0 + z1) / 2, my = (y0 + y1) / 2;
+    nz /= l; ny /= l;
+    if (nz * (-3 - mz) + ny * (1.5 - my) < 0) { nz = -nz; ny = -ny; }
+    for (const [x, y, z] of [[-1500, y0, z0], [1500, y0, z0], [1500, y1, z1], [-1500, y0, z0], [1500, y1, z1], [-1500, y1, z1]]) { pos.push(x, y, z); nrm.push(0, ny, nz); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: OUTU,
+    side: THREE.DoubleSide,
+    vertexShader: worldVS,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    varying vec3 vN;
+    uniform float uSmear;
+    ${NOISE}
+    ${TRAIN}
+    ${HAZE}
+    ${TUNL}
+    // Cover of a box of half width hw at distance d, blurred over b metres.
+    float boxc(float d, float hw, float b) { return clamp((hw - abs(d)) / max(b, 0.02) + 0.5, 0.0, 1.0); }
+    void main() {
+      if (tunIn(vP.x) < 0.5) discard;
+      vec3 N = normalize(vN);
+      float x = vP.x, y = vP.y;
+      // The motion smear and the pixel's own size blur every pattern along the tube.
+      float bl = uSmear + fwidth(x);
+      float far = smoothstep(0.5, 0.8, N.z);
+      // Grey concrete lining, sooty low down, with wet streaks.
+      vec3 alb = vec3(0.2, 0.195, 0.185) * (0.85 + 0.3 * vnoise(vec2(x * 0.05, y * 0.3)));
+      alb *= mix(0.5, 1.0, smoothstep(-2.6, 0.8, y));
+      alb *= 1.0 - 0.3 * smoothstep(0.55, 0.8, vnoise(vec2(x * 0.6, y * 0.04 + 3.0))) * min(1.0, 0.6 / (0.6 + bl));
+      // Ring joints every 10 m.
+      float jd = mod(x, 10.0) - 5.0;
+      alb *= 1.0 - 0.5 * (1.0 - boxc(jd, 4.96, bl)) * min(1.0, 0.08 / (0.08 + bl));
+      // Refuge niches every 50 m in the far wall.
+      alb *= 1.0 - 0.6 * boxc(mod(x + 12.5, 50.0) - 25.0, 1.0, bl) * boxc(y + 1.4, 1.2, 0.05) * far;
+      // A cable tray runs along the far wall.
+      float tray = boxc(y - 1.6, 0.1, 0.02) * far;
+      alb = mix(alb, vec3(0.06), tray);
+      // Light: the wall lamps, the carriage's lit panes, daylight at the mouths.
+      vec3 light = vec3(0.004, 0.0045, 0.005) + tunLamps(vP, N);
+      float lx = mod(x + 12.5, 25.0) - 12.5, ly = y - 2.3;
+      light += TLAMPC * 0.6 / (lx * lx * 0.8 + ly * ly * 1.5 + 0.6) * far;
+      float f = abs(fract((x - uCamX) / 2.4 + 0.5) - 0.5) * 2.4;
+      light += vec3(1.0, 0.72, 0.45) * mix(smoothstep(0.95, 0.55, f), 0.6, 0.5) * smoothstep(1.7, 0.8, abs(y)) * 0.22 * far;
+      light += (skyA(N.y) * 0.8 + sunC() * 0.15) * uDay * tunDay(x);
+      vec3 c = alb * light;
+      // The lamp fittings glow; a fast pass draws them out into streaks.
+      c += TLAMPC * 5.0 * boxc(lx, 0.3, bl) * boxc(ly, 0.07, 0.02) * far * min(1.0, 0.6 / (0.6 + bl));
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  }));
+  m.frustumCulled = false;
+  out.add(m);
+  return m;
+})();
+// Each portal face fills the hillside round the tube's mouth.
+const portals = (() => {
+  // A headwall: 11 m beyond the far wall and 3.5 m over the vault; the hillside meets it.
+  const sh = new THREE.Shape([[6, -3], [6, 9.7], [-22, 9.7], [-22, -3]].map(([a, b]) => new THREE.Vector2(a, b)));
+  sh.holes.push(new THREE.Path(TUBE.map(([a, b]) => new THREE.Vector2(a, b))));
+  const g = new THREE.ShapeGeometry(sh);
+  // Shape (a, b) maps to world (0, b, a): the face stands across the line.
+  g.applyMatrix4(new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1));
+  const mat = solid(/* glsl */`
+  // Rough concrete, darker toward the ground, with rain streaks.
+  alb = vec3(0.3, 0.29, 0.27) * (0.8 + 0.3 * vnoise(vP.zy * 0.4)) * mix(0.6, 1.0, smoothstep(-3.0, 2.0, vP.y));
+  alb *= 1.0 - 0.2 * smoothstep(0.5, 0.8, vnoise(vec2(vP.z * 1.5, vP.y * 0.1)));
+  alb *= 1.0 - 0.25 * uRain;`);
+  mat.side = THREE.DoubleSide;
+  return [0, 1].map(() => { const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.visible = false; out.add(m); return m; });
+})();
+// A hillside at each mouth: it closes over the vault, falls away from the line and sinks into the ground.
+// u runs out from the mouth (negative is over the tunnel); the cutting wall stands at the tube's far wall.
+const mounds = (() => {
+  const Z = [6, -10.5, -10.5, -14, -20, -28, -40, -55, -72, -90];
+  // Full height over the tunnel; outside the mouth it falls away over 45 m.
+  const top = u => 19 * (1 - THREE.MathUtils.smoothstep(u, 0, 45));
+  // MathUtils.smoothstep needs its low edge first, so the profile runs on -z.
+  const prof = z => z > -10.5 ? 1 : 1 - THREE.MathUtils.smoothstep(-z, 25, 90);
+  // Over the tunnel each mound reaches half way, so the two meet in the middle.
+  const geo = len => {
+    const um = -Math.min(200, len / 2), U = [um, um / 2, -10, 0, 0.05, 8, 18, 30, 45], pos = [], idx = [];
+    for (let i = 0; i < U.length; i++) for (let j = 0; j < Z.length; j++) {
+      // Out from the mouth nothing spans the line: the first row folds onto the cutting wall's foot.
+      if (U[i] > 0 && j === 0) { pos.push(U[i], -3, -10.5); continue; }
+      // The second -10.5 row is that foot, down at the bed.
+      // The far rim sinks to 30 m down, under the land and the lakes, so no shelf shows.
+      pos.push(U[i], j === 2 && U[i] > 0 ? -3 : -30 + (22 + top(U[i])) * prof(Z[j]), Z[j]);
+    }
+    for (let i = 0; i < U.length - 1; i++) for (let j = 0; j < Z.length - 1; j++) {
+      const a = i * Z.length + j, b = a + Z.length;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  };
+  const mat = solid(/* glsl */`
+  // The smear blurs detail along the line.
+  float keep = 1.0 - smoothstep(0.2, 0.8, (fwidth(vP.x) + uSmear) * 1.5);
+  // Rock on the cut: limestone in tilted beds, each its own tone, dark seams with moss.
+  // Beds differ in thickness: the warp stretches some and squeezes others.
+  float strat = vP.y * 0.7 + vP.x * 0.03 + gnoise(vec2(vP.x * 0.04, vP.z * 0.05)) * 2.0 + gnoise(vec2(vP.y * 0.35, 5.0)) * 1.4;
+  float layer = fract(strat), tone = hash1(vec2(floor(strat), 3.0));
+  float grain = gnoise(vec2(vP.x * 1.3, vP.y * 2.6 + vP.z)) * keep;
+  float seam = smoothstep(0.12, 0.0, layer);
+  vec3 rock = vec3(0.17, 0.16, 0.14) * (0.55 + 0.7 * tone) * (0.85 + 0.35 * grain) * (1.0 - 0.7 * seam);
+  rock *= 0.85 + 0.3 * smoothstep(0.75, 1.0, layer);
+  rock = mix(rock, vec3(0.05, 0.085, 0.03), seam * smoothstep(0.35, 0.65, vnoise(vec2(vP.x * 0.25, floor(strat)))) * 0.8);
+  // Shrubs cling to the ledges.
+  rock = mix(rock, vec3(0.05, 0.09, 0.03) * (0.8 + 0.4 * grain), smoothstep(0.55, 0.75, vnoise(vec2(vP.x * 0.15, vP.y * 0.5))) * smoothstep(0.8, 1.0, layer) * 0.9);
+  // Grass on the gentle ground: meadow tones in patches, darker scrub clumps.
+  float gp = vnoise(vP.xz * 0.12) * 0.6 + vnoise(vP.xz * 0.6) * 0.4 * keep;
+  vec3 grass = mix(vec3(0.07, 0.12, 0.04), vec3(0.11, 0.15, 0.05), gp);
+  grass = mix(grass, vec3(0.035, 0.06, 0.025), smoothstep(0.62, 0.72, vnoise(vP.xz * 0.35 + 7.0)) * 0.8);
+  // Steepness comes from the face itself; smoothed normals let grass creep down the cut.
+  // The edge between grass and rock is ragged, not a straight line.
+  float steep = 1.0 - abs(normalize(cross(dFdx(vP), dFdy(vP))).y) + (vnoise(vP.xy * 0.4 + vP.zz * 0.3) - 0.5) * 0.3;
+  alb = mix(grass, rock, smoothstep(0.45, 0.6, steep));
+  alb *= 1.0 - 0.2 * uRain;`);
+  mat.side = THREE.DoubleSide;
+  const ms = [0, 1].map(() => { const m = new THREE.Mesh(geo(400), mat); m.frustumCulled = false; m.visible = false; out.add(m); return m; });
+  let len = 400;
+  // Fits both mounds to the tunnel's length.
+  ms.fit = l => { if (Math.abs(l - len) < 1) return; len = l; for (const m of ms) { m.geometry.dispose(); m.geometry = geo(l); } };
+  return ms;
+})();
+// The tunnels in route metres; each ride lap repeats them.
+const TUNS = ROUTE.tun || [];
+// The tunnel round x, or the nearest within 2.5 km; null when none.
+function tunNear(x) {
+  const lap = Math.floor(x / TILE) * TILE;
+  let best = null, bd = 2500;
+  for (const [a, b] of TUNS) for (const o of [lap - TILE, lap, lap + TILE]) {
+    const d = Math.max(a + o - x, x - b - o, 0);
+    if (d < bd) { bd = d; best = [a + o, b + o]; }
+  }
+  return best;
+}
+// How far the window is inside a tunnel: 0 outside, 1 past the first 20 m.
+let tunT = 0;
+
+/* Bridges (tools/line.py): where the line crosses a road, a river or a dip, and where a road crosses over it. */
+const LINE = ROUTE.line;
+// Each rail bridge as world x from and to, at its place nearest x, with its kind and its distance from x.
+const brSpans = x => LINE.rail.map(([a, b, k]) => { const x0 = x + ((((a - x + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2; return [x0, x0 + b - a, k, Math.max(x0 - x, x - x0 - (b - a), 0)]; }).sort((p, q) => p[3] - q[3]);
+// Each road over the line as world centre x and width along the line, nearest x first.
+const ovSpans = x => LINE.over.map(([c, w, sk, cl]) => { const xc = x + ((((c - x + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2; return [xc, w, sk, cl, Math.max(Math.abs(xc - x) - w / 2, 0)]; }).sort((p, q) => p[4] - q[4]);
+// One bridge is drawn at each of the two nearest spans: a floor and two abutments below, the deck edge and a railing.
+// The floor and walls read the land, so they show only where the dig cuts below it.
+const bridges = [0, 1].map(() => {
+  const g = new THREE.Group();
+  // uSpan: the span's start x, its length, and what it crosses (0 road, 1 water, 2 dip).
+  const U = { ...OUTU, uSpan: { value: new THREE.Vector3(0, 1, 0) } };
+  const floorM = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */`
+    ${BRL}
+    varying vec3 vP;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      w.y = brFloor(w.z);
+      vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    uniform float uSmear, uTime;
+    uniform vec3 uSpan;
+    ${NOISE}
+    ${LAND}
+    ${TRAIN}
+    ${HAZE}
+    void main() {
+      // Where the land lies lower than the dig, the land shows itself.
+      if (land(vP.xz) < vP.y - 0.05) discard;
+      float L = uSpan.y, k = uSpan.z, c = abs(vP.x - uSpan.x - L * 0.5), d = L * 0.5 - c;
+      vec3 V = normalize(vP - cameraPosition);
+      float keep = 1.0 - smoothstep(0.2, 0.8, (fwidth(vP.x) + uSmear) * 1.5);
+      // Grass with dark clumps on the banks and the climb out.
+      vec3 alb = mix(vec3(0.07, 0.12, 0.04), vec3(0.1, 0.14, 0.05), vnoise(vP.xz * 0.5) * keep + 0.5 * (1.0 - keep));
+      float wet = 0.0;
+      if (k < 0.5) {
+        // A road: asphalt as wide as the gap allows, a white edge line, a dashed middle.
+        float hw = min(3.5, L * 0.5 - 1.5);
+        float road = smoothstep(hw + 0.1, hw - 0.1, c);
+        vec3 asph = vec3(0.09, 0.09, 0.095) * (0.9 + 0.2 * vnoise(vP.xz * 3.0) * keep);
+        asph = mix(asph, vec3(0.7), smoothstep(0.12, 0.05, abs(c - hw + 0.3)) * keep);
+        asph = mix(asph, vec3(0.7), smoothstep(0.07, 0.03, c) * step(0.5, fract(vP.z / 6.0)) * keep);
+        alb = mix(alb, asph, road);
+      } else if (k < 1.5) {
+        // A river: it fills the gap but for a bank at each end.
+        wet = smoothstep(2.4, 3.2, d);
+      } else {
+        // A dip: rough grass and a gravel track down the middle.
+        alb = mix(alb, vec3(0.16, 0.15, 0.13), smoothstep(1.4, 1.0, c) * 0.8);
+      }
+      vec3 day = sunC() * clamp((uSun.y + 0.3) / 1.3, 0.0, 1.0) * 0.8 + skyA(1.0) * 1.1;
+      vec3 night = vec3(0.006, 0.007, 0.01) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.04;
+      // The deck shades the ground right under it.
+      vec3 col = alb * mix(night, day, uDay) * mix(1.0, 0.4, smoothstep(-13.0, -9.0, vP.z));
+      if (wet > 0.0) {
+        // The water runs out from under the bridge; ripples move with it and blur with the smear.
+        vec2 q = vec2(vP.x * 0.6, vP.z * 0.25 + uTime * 0.6);
+        vec3 Nw = normalize(vec3((vnoise(q * 3.0) - 0.5) * 0.12 * keep, 1.0, (vnoise(q * 3.0 + 7.0) - 0.5) * 0.12));
+        vec3 R = reflect(V, Nw);
+        float F = 0.03 + 0.97 * pow(1.0 - max(-V.y, 0.0), 5.0);
+        vec3 body = mix(vec3(0.0, 0.004, 0.006), vec3(0.02, 0.05, 0.045), uDay);
+        vec3 wc = (body * (1.0 - F) + skyCol(R) * F) * mix(1.0, 0.35, smoothstep(-13.0, -9.0, vP.z));
+        col = mix(col, wc, wet);
+      }
+      gl_FragColor = vec4(mix(col, hazeCol(V, vP), hazeAmt(vP)), 1.0);
+    }`,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 34, 1, 30).rotateX(-Math.PI / 2).translate(0.5, 0, -25.2), floorM);
+  // The abutments: concrete faces from the floor up to the land, one at each end, facing into the gap.
+  const wallM = solid(/* glsl */`
+    if (land(vP.xz) < vP.y - 0.05 || vP.y < brFloor(vP.z) - 0.1) discard;
+    // Board-marked concrete near the deck; further out the wing walls weather and moss over.
+    alb = vec3(0.3, 0.29, 0.27) * (0.85 + 0.2 * vnoise(vec2(vP.z * 0.3, vP.y * 2.0)));
+    alb *= 1.0 - 0.15 * step(0.85, fract(vP.y / 0.6));
+    alb = mix(alb, vec3(0.08, 0.11, 0.05), smoothstep(-16.0, -30.0, vP.z) * 0.6);
+    alb *= 1.0 - 0.2 * uRain;`, LAND);
+  wallM.side = THREE.DoubleSide;
+  const wall = x => new THREE.Mesh(new THREE.PlaneGeometry(34, 10.5).rotateY(Math.PI / 2).translate(x, -4.25, -25.2), wallM);
+  // The deck edge past the second track: its concrete face, then a low upstand.
+  const edge = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.55).translate(0.5, -2.9, -8.3), solid(/* glsl */`
+    alb = vec3(0.32, 0.31, 0.29) * (0.88 + 0.15 * vnoise(vec2(vP.x * 0.4, vP.y * 6.0)));
+    // A drip line under the deck edge.
+    alb *= 1.0 - 0.35 * smoothstep(-3.3, -3.6, vP.y);
+    alb *= 1.0 - 0.2 * uRain;`));
+  // The railing: posts every 2 m and two rails, drawn as one quad that the smear blurs.
+  const rail = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.2).translate(0.5, -1.55, -8.35), new THREE.ShaderMaterial({
+    uniforms: OUTU, transparent: true, depthWrite: false,
+    vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    uniform float uSmear, uCamX;
+    ${HAZE}
+    float boxc(float d, float hw, float b) { return clamp((hw - abs(d)) / max(b, 0.01) + 0.5, 0.0, 1.0); }
+    void main() {
+      float bl = uSmear + fwidth(vP.x);
+      // A post's cover falls as the smear spreads it.
+      float post = boxc(mod(vP.x, 2.0) - 1.0, 0.04, bl) * min(1.0, 0.08 / (0.08 + bl));
+      // A handrail on top and two lighter rails below; at 8 m a thinner one would vanish.
+      float rl = max(boxc(vP.y + 1.0, 0.06, 0.01), max(boxc(vP.y + 1.42, 0.035, 0.01), boxc(vP.y + 1.8, 0.035, 0.01)));
+      float a = max(post, rl);
+      if (a < 0.01) discard;
+      vec3 day = vec3(0.28, 0.29, 0.3) * (sunC() * max(uSun.y, 0.0) * 0.5 + skyA(0.5) * 1.2);
+      vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * 0.006;
+      gl_FragColor = vec4(mix(night, day, uDay), a);
+    }`,
+  }));
+  rail.renderOrder = 3;
+  // The deck and its railing ride with the track; the floor and walls stand in the land.
+  const deck = new THREE.Group();
+  deck.add(edge, rail);
+  g.add(floor, wall(0), wall(1), deck);
+  g.traverse(m => { m.frustumCulled = false; });
+  g.visible = false;
+  out.add(g);
+  return { g, deck, U };
+});
+// Roads over the line: a deck across both tracks on a far abutment, with wing walls that fall to the ground.
+// Each deck is built for its width when it comes near.
+const ovMat = solid(/* glsl */`
+  // Board-marked concrete; the deck's underside sits in its own shade.
+  alb = vec3(0.3, 0.295, 0.28) * (0.88 + 0.18 * vnoise(vec2(vP.x * 0.3 + vP.z * 0.3, vP.y * 1.5)));
+  alb *= 1.0 - 0.12 * step(0.88, fract(vP.y / 0.7));
+  if (N.y < -0.5) { alb *= 0.55; shade = 0.0; }
+  // Rain streaks run down from the deck's lip.
+  alb *= 1.0 - 0.25 * smoothstep(0.55, 0.85, vnoise(vec2(vP.x * 1.5 + vP.z, 1.0))) * smoothstep(3.6, 1.0, vP.y) * step(0.5, abs(N.z));
+  alb *= 1.0 - 0.2 * uRain;`);
+ovMat.side = THREE.DoubleSide;
+const overs = [0, 1].map(() => {
+  const m = new THREE.Mesh(new THREE.BufferGeometry(), ovMat);
+  m.frustumCulled = false; m.visible = false; m.userData.w = -1;
+  out.add(m);
+  return m;
+});
+// The deck spans z = 7 to z = -12, 6 m over the rails; the far abutment's face stands at z = -10.
+function ovGeo(w) {
+  const parts = [];
+  const box = (x0, x1, y0, y1, z0, z1) => parts.push(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2).toNonIndexed());
+  const h = w / 2;
+  box(-h, h, 3.55, 4.65, -12, 7);
+  // The parapets along the road's two edges.
+  box(-h, -h + 0.35, 4.65, 5.7, -12, 7);
+  box(h - 0.35, h, 4.65, 5.7, -12, 7);
+  // The far abutment, and wing walls whose tops fall to the ground over 12 m.
+  box(-h, h, -3.2, 3.55, -16, -10);
+  const wing = new THREE.BufferGeometry(), P = [];
+  for (const sx of [-1, 1]) {
+    const a = sx * h, b = sx * (h + 12);
+    P.push(a, -3.2, -10, b, -3.2, -10, a, 4.65, -10, b, -3.2, -10, b, -2.6, -10, a, 4.65, -10);
+  }
+  wing.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  // Both wings face the train; winding alone would turn one of them away.
+  wing.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({ length: P.length / 3 }, () => [0, 0, 1]).flat(), 3));
+  let n = 0;
+  for (const g of parts) { g.computeVertexNormals(); n += g.attributes.position.count; }
+  parts.push(wing);
+  n += wing.attributes.position.count;
+  const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
+  let o = 0;
+  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nrm.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  return geo;
+}
+// The line's curvature at x, in 1 / m: positive turns toward the window.
+const curveAt = x => {
+  const K = LINE.curve.k, n = K.length;
+  if (!n) return 0;
+  const f = (((x % TILE) + TILE) % TILE) / LINE.curve.ds, i = Math.floor(f) % n;
+  return (K[i] + (K[(i + 1) % n] - K[i]) * (f - Math.floor(f))) * 1e-4;
+};
+// brK is 1 on a rail bridge and ovK 1 under a road deck; the sound and the cabin light read them.
+// cant is the carriage's roll on a curve; sway is the head's lean from the curve's pull.
+let brK = 0, ovK = 0, cant = 0, sway = 0;
+
 /* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
 // The windows look into a saloon: a ceiling light strip, seat backs and the far windows.
 // The glass mirrors the sky and catches the sun; the body curves, so its sheen changes with height.
@@ -3300,6 +3975,8 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
 }`;
 /* The oncoming train: now and then a two-unit train rushes past on the second track. */
 // One quad spans its whole side; the shader draws body, windows and doors, blurred by the relative speed.
+// oppMesh rolls with the track on curves.
+let oppMesh = null;
 {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 4.0).translate(0.5, -0.4, -4.95), new THREE.ShaderMaterial({
     uniforms: OUTU, transparent: true, depthWrite: true,
@@ -3323,10 +4000,11 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
     varying float vU;
     ${TRAIN}
     ${HAZE}
+    ${TUNL}
     ${TSIDE}
     void main() {
       float s = uOpp.w, u = vU;
-      vec4 r = trainSide(vW, u, uOpp.y, s, 1.0, 1.0);
+      vec4 r = trainSide(vW, u, uOpp.y, s, 1.0, 1.0 - tunIn(vW.x) * (1.0 - tunDay(vW.x)));
       if (r.a < 0.02) discard;
       vec3 c = r.rgb;
       // Headlights at the leading nose, day and night.
@@ -3337,6 +4015,7 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
   }));
   m.frustumCulled = false;
   m.renderOrder = 2;
+  oppMesh = m;
   out.add(m);
 }
 
@@ -3837,10 +4516,10 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Near its edges the pane mirrors the reveal, not the cabin.
       float rv = smoothstep(0.0, 0.006, sdRR(q + Rs.xy / max(Rs.z, 0.05) * REVEAL / (2.0 * uTan.y), uHalf, uRad));
       // The cabin shows only faintly and out of focus; the reveal's image stays sharp and always lies over it.
-      vec3 room = textureLod(tRoom, R, 3.2).rgb * 0.18 * (1.0 - rv);
+      vec3 room = textureLod(tRoom, R, 3.2).rgb * 0.06 * (1.0 - rv);
       // Fog scatters the room light, so its reflection blurs and grows.
-      vec3 roomSoft = textureLod(tRoom, R, 4.5).rgb * (1.0 - rv);
-      vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.22 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
+      vec3 roomSoft = textureLod(tRoom, R, 5.5).rgb * (1.0 - rv);
+      vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.12 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
       col = col * (1.0 - 0.8 * fog) + veil * fog * 0.9;
       // By day the sunlit cabin shows a little more in the pane.
       col += room * F * mix(0.5, 1.1, uDay) * (1.0 - fog);
@@ -3850,7 +4529,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // The reveal's pale lining, as the pane mirrors it: faint, strongest at a slant.
       col += vec3(0.82, 0.81, 0.78) * mix(CABN * 0.085, vec3(0.16), uDay) * rv * (F + 0.03) * (1.0 - fog);
       // The inner pane of the double glazing adds a faint second image.
-      col += textureLod(tRoom, R + vec3(0.03, -0.045, 0.0), 3.6).rgb * F * 0.05 * (1.0 - fog) * (1.0 - rv);
+      col += textureLod(tRoom, R + vec3(0.03, -0.045, 0.0), 3.6).rgb * F * 0.02 * (1.0 - fog) * (1.0 - rv);
       // The glass reflects the lit carriage as a soft warm gradient.
       float rg = smoothstep(-0.7, 0.4, -p.y * 0.8 + p.x * 0.35) * 0.7 + 0.3 * smoothstep(0.1, 0.5, p.y);
       col += warm * 0.012 * rg * (1.0 - 0.5 * fog) * (1.0 - uDay);
@@ -4102,7 +4781,7 @@ const room = new THREE.Scene();
 const ROOMU = { uD: { value: 0 }, uS: { value: OUTU.uSun.value } };
 let bakedDay = -1, roomLamps = () => {};
 const bakedSun = new THREE.Vector3();
-const roomRT = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const roomRT = new THREE.WebGLCubeRenderTarget(1024, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
 const roomCam = new THREE.CubeCamera(0.05, 60, roomRT);
 W.tRoom.value = roomRT.texture;
 {
@@ -4128,7 +4807,7 @@ W.tRoom.value = roomRT.texture;
       float pane = smoothstep(0.78, 0.7, abs(fract(H.x / 2.4) - 0.5) * 2.4) * smoothstep(0.48, 0.42, abs(H.y - 0.05));
       float sunP = pane * step(0.0, tt) * step(vP.z, 1.75 + 0.1);
       // The patches glow; their bounce fills the whole cabin with a warm wash.
-      vec3 dayC = vec3(0.5, 0.52, 0.55) * 0.3 + vec3(1.0, 0.84, 0.6) * (sunP * 5.0 + 0.3);
+      vec3 dayC = vec3(0.5, 0.52, 0.55) * 0.3 + vec3(1.0, 0.84, 0.6) * (sunP * 2.5 + 0.3);
       gl_FragColor = vec4(mix(c, dayC, uD), 1.0);
     }`,
   })));
@@ -4223,24 +4902,28 @@ function frame(w, h, pr) {
 let time = 0, camX = qs.has('x') ? +qs.get('x') : S0('Zürich Enge') - 1, speed = 0, target = 27;
 // Each weather sets the rain in the air, the water on the pane and the pane fog.
 // air above 1 only thickens the streaks; the sky and haze cap at 1.
+// mist lies on the lakes outside; cloud hangs low on the slopes.
 const MODES = {
-  clear: { air: 0, wet: 0, fog: 0 },
-  drizzle: { air: 0.35, wet: 0.45, fog: 0.1 },
-  rain: { air: 1, wet: 1, fog: 0 },
-  downpour: { air: 1.8, wet: 1.2, fog: 0.15 },
-  mist: { air: 0.1, wet: 0.25, fog: 0.55 },
-  fog: { air: 0.45, wet: 0.45, fog: 0.85 },
+  clear: { air: 0, wet: 0, fog: 0, mist: 0, cloud: 0 },
+  drizzle: { air: 0.35, wet: 0.45, fog: 0.1, mist: 0.15, cloud: 0.45 },
+  rain: { air: 1, wet: 1, fog: 0, mist: 0.1, cloud: 0.65 },
+  downpour: { air: 1.8, wet: 1.2, fog: 0.15, mist: 0.2, cloud: 0.85 },
+  // The pane fogs less than it did, so the mist outside reads.
+  mist: { air: 0.1, wet: 0.25, fog: 0.15, mist: 1, cloud: 0.4 },
+  fog: { air: 0.45, wet: 0.45, fog: 0.35, mist: 1.6, cloud: 1 },
 };
 let wetMul = 1;
-let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0;
+let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0, mistV = 0, cloudV = 0;
 // Five hours (Tom, 2026-11-10). day is the daylight share; sun is the direction to the sun.
 // tint colours the sun; low colours the horizon, and dusk sets how strong that band is.
+// calm stills the lakes: the wind drops at dawn and dusk, so they mirror the shore.
+// mist is the lake mist the hour brings in any weather: a thin veil at dawn.
 const HOURS = {
-  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4 },
-  noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0 },
-  afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1 },
-  evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85 },
-  night: { day: 0, sun: [-0.76, 0.07, -0.65], tint: [1.0, 0.58, 0.3], low: [0.4, 0.3, 0.3], dusk: 0 },
+  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4, calm: 0.75, mist: 0.3 },
+  noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0, calm: 0.1 },
+  afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1, calm: 0 },
+  evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85, calm: 0.8 },
+  night: { day: 0, sun: [-0.76, 0.07, -0.65], tint: [1.0, 0.58, 0.3], low: [0.4, 0.3, 0.3], dusk: 0, calm: 0.55 },
 };
 const hourOf = v => HOURS[v === 'day' ? 'afternoon' : v] || HOURS.night;
 let hourT = hourOf('night');
@@ -4287,14 +4970,26 @@ function place() {
   const yaw = Math.atan2(eye.x, eye.z) * (0.55 + 0.35 * near);
   W.uYaw.value = yaw;
   // The cabin rides the same jolts and a slow sway, so the window bobs with the outside.
+  // On a curve the carriage rolls on the cant; the far land tilts in the window, the track does not.
+  // The roll is about the line, so for a camera looking out sideways it is a pitch.
+  const cv = curveAt(camX);
+  // Real cant tops out near 150 mm, some 0.1 rad; a little less reads better in a window.
+  cant = THREE.MathUtils.clamp(cv * 60, -0.06, 0.06);
+  // The view swings back on a curve toward the window side, forward on one away from it.
+  const swing = THREE.MathUtils.clamp(cv * 25, -0.06, 0.06);
+  // The pull the cant leaves over sways the head: off the glass toward the window side's curve, onto it on the other.
+  sway += (THREE.MathUtils.clamp((speed * speed * cv - 9.81 * cant) * 0.006, -0.03, 0.03) - sway) * 0.04;
+  bed.rotation.x = -cant;
+  if (oppMesh) oppMesh.rotation.x = -cant;
   W.uEye.value.copy(eye);
+  W.uEye.value.z += sway;
   W.uEye.value.y += j * 0.004 + Math.sin(time * 1.3) * 0.0012 * k;
   W.uEye.value.x += Math.sin(time * 0.71 + 1.0) * 0.0015 * k + nod;
   // The wall sits 1 m out; the jolt and the roll move only the world outside.
-  outCam.position.set(camX + eye.x + nod, eye.y + j * 0.006, eye.z - 1);
+  outCam.position.set(camX + eye.x + nod, eye.y + j * 0.006, eye.z - 1 + sway);
   // Under the Churfirsten the eye lifts to the summits.
   const sg = seg(camX);
-  outCam.rotation.set(pitch0 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
+  outCam.rotation.set(pitch0 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016 - cant, yaw + swing + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
   parapet.position.x = camX;
   bed.position.x = camX;
   // The nearest station within a kilometre gets the platform.
@@ -4356,7 +5051,56 @@ function place() {
     const fitted = n % 2 === 0 || nearStn;
     lampK[i] = !fitted ? -1 : h < 0.05 ? 0 : h < 0.09 ? (Math.sin(time * 37 + n) > -0.3 ? 1 : 0.15) * (Math.sin(time * 5.3 + n * 3) > -0.8 ? 1 : 0.2) : 1;
   }
+  // No mast stands inside a tunnel.
+  for (let i = 0; i < LAMPS; i++) {
+    const t = tunNear(lampX[i]);
+    if (t && lampX[i] > t[0] - 2 && lampX[i] < t[1] + 2) lampK[i] = -2;
+  }
   for (const a of lampAttrs) a.needsUpdate = true;
+  // The near tunnel: its mouths, the tube round the window and the two portal faces.
+  {
+    const t = tunNear(camX);
+    if (t) OUTU.uTun.value.set(t[0], t[1]); else OUTU.uTun.value.set(-1e9, -1e9);
+    tube.visible = !!t;
+    tube.position.x = Math.round(camX);
+    portals.forEach((m, i) => { m.visible = !!t; if (t) m.position.x = i ? t[1] + 0.05 : t[0] - 0.05; });
+    if (t) mounds.fit(t[1] - t[0]);
+    mounds.forEach((m, i) => { m.visible = !!t; if (t) { m.position.x = i ? t[1] : t[0]; m.scale.x = i ? 1 : -1; } });
+    tunT = t ? THREE.MathUtils.smoothstep(Math.min(camX - t[0], t[1] - camX), 0, 20) : 0;
+  }
+  // The two nearest rail bridges: their spans for the shaders, a dig, abutments, a deck edge and a railing.
+  {
+    const sp = brSpans(camX);
+    const [p = [-1e9, -1e9, 0, 1e9], q = [-1e9, -1e9, 0, 1e9]] = sp;
+    OUTU.uBr.value.set(p[0], p[1], q[0], q[1]);
+    OUTU.uBrK.value.set(p[2], q[2]);
+    [p, q].forEach((b, i) => {
+      const B = bridges[i];
+      B.g.visible = b[3] < 500;
+      if (!B.g.visible) return;
+      B.g.position.x = b[0];
+      B.g.scale.x = b[1] - b[0];
+      B.U.uSpan.value.set(b[0], b[1] - b[0], b[2]);
+      B.deck.rotation.x = -cant;
+    });
+    brK = THREE.MathUtils.smoothstep(Math.min(camX - p[0], p[1] - camX), -2, 2);
+  }
+  // The two nearest roads over the line: a deck built for each one's width.
+  {
+    const sp = ovSpans(camX);
+    sp.slice(0, 2).forEach((o, i) => {
+      const m = overs[i];
+      m.visible = !!o && o[4] < 600;
+      if (!m.visible) return;
+      if (m.userData.w !== o[1]) { m.geometry.dispose(); m.geometry = ovGeo(o[1]); m.userData.w = o[1]; }
+      m.position.x = o[0];
+      // A skew bridge turns about the line; past half a radian it would cross the window side on.
+      m.rotation.y = THREE.MathUtils.clamp(o[2], -0.5, 0.5);
+    });
+    const [a = [-1e9, 0], b = [-1e9, 0]] = sp;
+    OUTU.uOv.value.set(a[0], a[1] / 2, b[0], b[1] / 2);
+    ovK = a[0] > -1e8 ? THREE.MathUtils.smoothstep(a[1] / 2 + 1.5 - Math.abs(camX - a[0]), 0, 3) : 0;
+  }
   const night = 1 - dayV;
   for (let i = 0; i < NL; i++) OUTU.uLP.value[i].set(lampX[i + 1], 0.1, -2.7, Math.max(0, lampK[i + 1]) * night);
   // The sixteen nearest towns light the haze, the ground and the water.
@@ -4392,10 +5136,15 @@ function place() {
   let sunK = dayV * (1 - Math.min(1, OUTU.uRain.value) * 0.85) * (1 - Math.min(1, W.uFog.value * 1.1));
   // A station canopy or the HB hall roof shades the window.
   if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 && dx < 200) sunK = 0; }
+  // A tunnel takes the sun away.
+  sunK *= 1 - tunT;
+  // A road deck overhead takes the sun away for a moment.
+  sunK *= 1 - ovK;
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
-  W.uDay.value = dayV;
+  // In a tunnel the cabin turns to its night look: lamps on, the glass a mirror.
+  W.uDay.value = dayV * (1 - tunT);
   OUTU.uSmear.value = speed / 40;
   OUTU.uSpeed.value = speed;
   W.uSpeed.value = speed;
@@ -4525,7 +5274,7 @@ function update(dt, pace) {
   // Weather eases over: rain arrives in the air first, then wets the pane.
   // The pane dries far more slowly than it wets.
   air += (mode.air - air) * Math.min(1, dt * 0.4);
-  const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2), wetK = wetT > W.uRain.value ? 0.18 : wetT < 0.01 ? 0.4 : 0.08;
+  const wetT = Math.min(mode.wet * wetMul, 0.25 + air * 1.2) * (1 - 0.9 * tunT), wetK = wetT > W.uRain.value ? 0.18 : wetT < 0.01 ? 0.4 : 0.08;
   W.uRain.value += (wetT - W.uRain.value) * Math.min(1, dt * wetK);
   W.uFog.value += (mode.fog - W.uFog.value) * Math.min(1, dt * 0.12);
   // The hours cross over in about three seconds: daylight, sun, tints.
@@ -4537,8 +5286,23 @@ function update(dt, pace) {
   OUTU.uSunTint.value.lerp(tintT, kh);
   OUTU.uSkyLow.value.lerp(lowT, kh);
   OUTU.uDusk.value += (hourT.dusk - OUTU.uDusk.value) * kh;
-  OUTU.uRain.value = Math.min(1, air);
-  OUTU.uPour.value = air;
+  // Rain brings wind: it roughens a calm lake.
+  OUTU.uCalm.value += (hourT.calm * (1 - Math.min(1, air)) - OUTU.uCalm.value) * kh;
+  // No rain falls in a tunnel.
+  OUTU.uRain.value = Math.min(1, air) * (1 - tunT);
+  OUTU.uPour.value = air * (1 - tunT);
+  // The ground wets in about a minute of rain and dries over several.
+  const wetG = Math.min(1, air) > 0.2 ? Math.min(1, air) : 0;
+  OUTU.uWet.value += (wetG - OUTU.uWet.value) * Math.min(1, dt * (wetG > OUTU.uWet.value ? 0.05 : 0.008));
+  // Mist rolls in and lifts slowly; a tunnel holds none.
+  const km = Math.min(1, dt * 0.15);
+  mistV += (Math.max(mode.mist, hourT.mist || 0) - mistV) * km;
+  cloudV += (mode.cloud - cloudV) * km;
+  OUTU.uMist.value = mistV * (1 - tunT);
+  OUTU.uCloud.value = cloudV * (1 - tunT);
+  OUTU.uMistT.value = time;
+  // The lake's height in the route column at the eye.
+  OUTU.uLakeY.value = THREE.DataUtils.fromHalfFloat(ROUTE.lk[Math.floor((((camX % TILE) + TILE) % TILE) / TILE * ROUTE.w) % ROUTE.w]);
   eye.lerp(eyeT, Math.min(1, dt * 7));
   place();
 }
@@ -4561,10 +5325,15 @@ return {
   get oppV() { return opp.v; },
   get camX() { return camX; },
   get rain() { return W.uRain.value; },
+  // How far the window is inside a tunnel, 0 to 1.
+  get tunnel() { return tunT; },
+  // 1 on a rail bridge, and 1 under a road deck.
+  get bridge() { return brK; },
+  get under() { return ovK; },
   get day() { return dayV; },
   setTime(v, now) {
     aimHour(hourOf(v));
-    if (now) { dayV = dayT; OUTU.uSun.value.copy(sunT); W.uSunW.value.copy(sunT); OUTU.uSunTint.value.copy(tintT); OUTU.uSkyLow.value.copy(lowT); OUTU.uDusk.value = hourT.dusk; place(); }
+    if (now) { dayV = dayT; OUTU.uSun.value.copy(sunT); W.uSunW.value.copy(sunT); OUTU.uSunTint.value.copy(tintT); OUTU.uSkyLow.value.copy(lowT); OUTU.uDusk.value = hourT.dusk; OUTU.uCalm.value = hourT.calm * (1 - Math.min(1, air)); place(); }
   },
   setSpeed(v) { target = v; },
   // Dev: a plan view of the outside from h metres up; off returns to the window.
@@ -4574,6 +5343,8 @@ return {
     if (!on) topCam = null;
     W.uTop.value = on ? 1 : 0;
   },
+  // Dev: the aerial photo's strength, 0 to 1; every tile rebakes.
+  aerial(k) { OUTU.uAer.value.z = k; for (const t of tiles) t.lo = t.hi = 0; },
   // Dev: bring on the next plane or the next crows at once.
   cue(k) { if (k === 'plane') planeAt = 0; else crowAt = 0; },
   // Dev: where the plane and the crows are now, to find them on screen.
@@ -4636,7 +5407,7 @@ return {
   setMode(v, now) {
     mode = MODES[v] || MODES.rain;
     mk = now ? 1 : 0;
-    if (now) { air = mode.air; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
+    if (now) { air = mode.air; OUTU.uWet.value = mode.air > 0.2 ? Math.min(1, mode.air) : 0; mistV = Math.max(mode.mist, hourT.mist || 0); cloudV = mode.cloud; W.uRain.value = mode.wet * wetMul; W.uFog.value = mode.fog; OUTU.uRain.value = Math.min(1, air); OUTU.uPour.value = air; }
   },
   setWet(k) { wetMul = k; mk = 0; },
   setExpress(on) { express = on; stopX = null; if (on) dwell = 0; },
@@ -4669,7 +5440,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg, pbin] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg, tun, line, anImg, afImg] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -4686,6 +5457,17 @@ async function loadRoute() {
     qs.has('nofields') ? null : opt('fields.png'),
     // Car paths on the bigger mapped roads (tools/carpaths.py); without them no cars drive.
     fetch('paths.bin').then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).catch(() => new ArrayBuffer(0)),
+    // Real woods (tools/woods.py); without them the invented woods serve.
+    // Dev: ?nowoods leaves them out, to compare.
+    qs.has('nowoods') ? null : opt('woods.png'),
+    // Tunnels in route metres (tools/tunnels.py); without them the line runs in the open.
+    fetch('tunnels.json').then(r => r.ok ? r.json() : []).catch(() => []),
+    // Bridges, roads over the line and its curvature (tools/line.py); without them the line runs straight on its bank.
+    fetch('line.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    // The aerial photo, near and far (tools/sat.py); without it the land keeps its own colours.
+    // Dev: ?noaerial leaves it out, to compare.
+    qs.has('noaerial') ? null : opt('sat-near.webp'),
+    qs.has('noaerial') ? null : opt('sat-far.webp'),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -4769,7 +5551,51 @@ async function loadRoute() {
     fd = new Uint8Array(g4.getImageData(0, 0, fimg.width, fimg.height).data.buffer);
     fw = fimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  // The woods map keeps its RGBA bytes too.
+  let wd = null, ww = 0;
+  if (wimg && wimg.width <= maxW) {
+    const c5 = document.createElement('canvas');
+    c5.width = wimg.width; c5.height = wimg.height;
+    const g5 = c5.getContext('2d', { willReadFrequently: true });
+    g5.drawImage(wimg, 0, 0);
+    wd = new Uint8Array(g5.getImageData(0, 0, wimg.width, wimg.height).data.buffer);
+    ww = wimg.width;
+  }
+  // An aerial map comes as one image, or as two halves one over the other when wider than 8192.
+  // A GPU with small textures gets it at half width or less: each texel averages those it covers.
+  const aerial = (im, cols) => {
+    if (!im) return null;
+    const c6 = document.createElement('canvas');
+    c6.width = im.width; c6.height = im.height;
+    const g6 = c6.getContext('2d', { willReadFrequently: true });
+    g6.drawImage(im, 0, 0);
+    const src = g6.getImageData(0, 0, im.width, im.height).data;
+    const halves = cols > im.width, rows = halves ? im.height / 2 : im.height;
+    let k = 1;
+    while (cols / k > maxW) k *= 2;
+    const w = Math.floor(cols / k), px = new Uint8Array(w * rows * 4);
+    // Full width: whole rows copy across.
+    if (k === 1) {
+      const w1 = Math.min(cols, im.width);
+      for (let y = 0; y < rows; y++) {
+        px.set(src.subarray(y * im.width * 4, (y * im.width + w1) * 4), y * w * 4);
+        if (halves) px.set(src.subarray((y + rows) * im.width * 4, ((y + rows) * im.width + cols - w1) * 4), (y * w + w1) * 4);
+      }
+      return { px, w, h: rows };
+    }
+    for (let y = 0; y < rows; y++) for (let x = 0; x < w; x++) for (let ch = 0; ch < 4; ch++) {
+      let sum = 0;
+      for (let q = 0; q < k; q++) {
+        const c = x * k + q, sx = halves && c >= im.width ? c - im.width : c, sy = halves && c >= im.width ? y + rows : y;
+        sum += src[(sy * im.width + sx) * 4 + ch];
+      }
+      px[(y * w + x) * 4 + ch] = sum / k;
+    }
+    return { px, w, h: rows };
+  };
+  // The near map has 5 m columns, the far map 10 m: their counts follow the route's length.
+  const aerN = aerial(anImg, Math.round(meta.L / 5)), aerF = aerial(afImg, Math.round(meta.L / 10));
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, aerN, aerF, tun, line: line || { rail: [], over: [], curve: { ds: 20, k: [] } }, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -5106,14 +5932,18 @@ function passBy(ac, tMeet, dur) {
   knock(end, 1.1, 0.6, chan(ac, 'thud'));
 }
 // The running sound follows the speed at every instant; the events hang on what the train does.
-const REC = { dep: null, arr: null, depDone: false, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false };
+const REC = { dep: null, arr: null, depDone: false, prevSp: 0, stn: Infinity, nextJoint: 20, opp: false, tun: 0 };
 // In the arrival clip the last jolt falls 40.5 s in; the cut starts 5 s before it.
 const ARR0 = 35.5, ARR_JOLT = 40.5;
 function recorded(v, ac, now, sp, k) {
   // The cruise loop, shaped to the speed: a low hum at rest, the motors' band under power, the full rush at speed.
   const [g, ls, pk, sub] = eqAt(sp / UREF, sp > 0.3 ? drive : 0);
-  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** (g / 20), now, 0.25);
-  v.bed.ls.gain.setTargetAtTime(ls, now, 0.25);
+  // A tunnel throws the roar back: louder, with more low end.
+  const tk = S.tunnel * Math.min(1, sp / 8);
+  // A bridge rings hollow and a little louder; a road deck overhead throws back a short rush.
+  const bk = S.bridge * Math.min(1, sp / 8), ok = S.under * Math.min(1, sp / 8);
+  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** ((g + 6 * tk + 2.5 * bk + 4 * ok) / 20), now, ok > 0 ? 0.06 : 0.25);
+  v.bed.ls.gain.setTargetAtTime(ls + 4 * tk + 3 * bk, now, 0.25);
   v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
   v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
   v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
@@ -5146,6 +5976,13 @@ function recorded(v, ac, now, sp, k) {
   const o = S.oppAt, vr = sp + S.oppV;
   if (o === o && o < vr * 0.8 && !REC.opp) { passBy(ac, o / vr, S.oppLen / vr); REC.opp = true; }
   if (o !== o) REC.opp = false;
+  // The air in the cabin knocks as the train enters a tunnel at speed, and softer as it leaves.
+  if (sp > 12 && (REC.tun > 0) !== (S.tunnel > 0)) {
+    const into = S.tunnel > 0, lv = (into ? 0.7 : 0.4) * k;
+    shot(ac, clips.thump, lv, 0, 0.005, into ? 0.9 : 1.05, 'knock');
+    shot(ac, clips.thump, lv * 2, 0, 0.005, 0.5, 'thud');
+  }
+  REC.tun = S.tunnel;
   REC.prevSp = sp;
   // Dev: the layer state, for QA.
   if (window.__train) window.__rec = `${Math.round(sp * 3.6)} km/h · drive ${drive.toFixed(2)} · EQ ${g.toFixed(0)} / ${ls.toFixed(0)} / ${pk.toFixed(0)} dB · whine ${v.whine.g.gain.value.toFixed(1)}${REC.dep && now < REC.dep.end ? ' · departure' : ''}${REC.arr ? ' · arrival' : ''} · door ${DOOR.open ? 'open' : 'shut'}`;
