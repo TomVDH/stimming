@@ -158,4 +158,4 @@ Without `EXT_color_buffer_float`, a CPU path advects 8,000 particles over a 128 
 
 ## Kit handoff
 
-`SEG_TEX_VS` joins K1 as a variant for GPU particles. Kelvin dropper can copy it from here.
+`SEG_TEX_VS` joins K1 as a variant for GPU particles.

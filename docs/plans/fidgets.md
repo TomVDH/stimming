@@ -28,7 +28,7 @@ Fidget board (`fidget/parts/`) already holds 51 parts. Four ideas in this pool a
 | 7 | Pea pod | `peapod` | SIM + 3D | K4 from Washing line | M | High | $25 to $40 | none. A soft body that splits is fiddly to make satisfying. |
 | 8 | Chalk and sponge | `chalk` | 2D | none | S to M | Low | $12 to $20 | Glow paper and Zen sand (draw and wipe). The drying wet streak is the only new part. |
 | 9 | Velcro | `velcro` | 2D | none | S to M | Medium | $12 to $20 | Zipper: the same strip, the same speed-led sound. |
-| 10 | Worry beads | `beads` | SIM + 3D | K4 | M | Medium | $20 to $30 | Coil (a clacking ring chain), Magnet balls, Pull chain plan. |
+| 10 | Worry beads | `beads` | SIM + 3D | K4 | M | Medium | $20 to $30 | Coil (a clacking ring chain), Magnet balls. |
 | 11 | Geoboard | `geoboard` | SIM + 2D | K4 | M | Medium | $15 to $25 | String harp and the Fidget board `string` part (pluck and twang). Pegboard is skeuomorphic. |
 | 12 | Toggle wall | `toggles` | 2D | none | S to M | Low | $12 to $20 | Sequin brush (flip in your trail), Fidget board `switchbank` and `tog`. |
 | 13 | Bead board | `beadboard` | 2D | none | S | Low | $10 to $15 | Sequin brush, Glow paper, Fidget board `sketch`. |
