@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:59:14Z
+updated_at: 2026-11-15T08:01:26Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -27,6 +27,7 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Tom, 2026-11-15: yes to the single-block style, more of these. Ten more each: East Van adds Corner store, Bin, Couch, Blossom, Train, Pole, Nigiri, Log, Ferry, Skunk; Belgium adds Crate, Cobbles, Pralines, Belfry, Gable, Speculoos, Bread machine, Motorway, Canal, Spheres
 - [x] Tom, 2026-11-15: East Van takes the Wires shot with a thin border (no print border); Belgium the same, drawn better. Thin frame is the default; Belgium's Frites, Gables, Cobbles and Spheres shots are redrawn (silhouette, vivid dusk sky); the sections lab shows the shots
 - [x] Tom, 2026-11-15: the redrawn Belgium shots are still not good. All six replaced by silhouettes on the Wires recipe (one dark shape from below, plain sky, thin lines, one accent): Belfry, Spheres, Windmill, Lamps, Gables, Frites
+- [x] Tom, 2026-11-15: add a flag for Belgium, in addition to the six. Flag shot added: the tricolour from straight below, on a pole
 - [ ] Tom picks the Belgium shot
 - [ ] Theme series icons in the same style
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
