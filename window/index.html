@@ -1042,12 +1042,15 @@ function step(dt) {
 const pulse = p => (p < 0.05 || (p >= 0.12 && p < 0.17) ? 1.25 : 0);
 // How far the sun is up, 0 to 1; the moon counts as night.
 const dayK = () => (sky.h.moon ? 0 : smooth(-2, 8, sky.h.rel));
+// The strobe runs at night and in bad weather only (Tom, 2026-11-15).
+// Bad weather is a storm, rain or a fog bank.
+const strobeOn = () => Math.max(1 - smooth(0.2, 0.6, dayK()), smooth(0.2, 0.45, opts.storm), smooth(0.08, 0.3, fog.level), opts.rain > 0 ? 1 : 0);
 // The wingtip strobe double-flashes every 1.6 seconds.
 // By day it burns brighter against the sky, as the real lamp reads at noon.
-function strobe() { return pulse(t % 1.6) * (1 + 5 * dayK()); }
+function strobe() { return pulse(t % 1.6) * (1 + 5 * dayK()) * strobeOn(); }
 // Daylight swamps the tip lights' glow on the skin and in fog.
 const lampK = () => 1 - 0.92 * dayK();
-const fogStrobe = () => (reduce ? 0 : pulse(t % 1.6) * lampK());
+const fogStrobe = () => (reduce ? 0 : pulse(t % 1.6) * lampK() * strobeOn());
 // The sun lights a fog bank from inside; storms and thick cores dim it.
 // Moonlight stays out, so night fog keeps its look.
 function fogSun() {
