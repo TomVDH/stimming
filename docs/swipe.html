@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Idea swipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+
+:root {
+  --bg: oklch(0.155 0.014 285);
+  --panel: oklch(0.2 0.017 285);
+  --panel-2: oklch(0.18 0.015 285);
+  --line: oklch(0.29 0.018 285);
+  --ink: oklch(0.94 0.008 285);
+  --muted: oklch(0.67 0.02 285);
+  --faint: oklch(0.48 0.02 285);
+  --keep: oklch(0.82 0.15 155);
+  --can: oklch(0.72 0.18 25);
+  --mono: "Iosevka Term Slab", ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); overflow-x: hidden; }
+body { font: 15px/1.45 Gabarito, system-ui, sans-serif; padding: 28px 16px 48px; }
+.wrap { max-width: 440px; margin: 0 auto; }
+
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+h1 { font-size: 22px; line-height: 1.1; font-weight: 800; margin: 0; }
+.count { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+.count b { font-weight: 500; }
+.count .c { color: var(--can); }
+.count .k { color: var(--keep); }
+.bar { height: 2px; margin-top: 12px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
+
+.deck { position: relative; height: clamp(300px, 52vh, 390px); margin-top: 22px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.card {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  padding: 22px 24px 24px; border-radius: 22px; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line);
+  will-change: transform; cursor: grab;
+}
+.card.drag { cursor: grabbing; }
+.card.back { transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.card.under { transform: translateY(20px) scale(0.95); background: var(--panel-2); pointer-events: none; }
+.card.under > * { opacity: 0.35; }
+.card.ghost { pointer-events: none; transition: transform 0.24s ease-in, opacity 0.24s ease-in; }
+.card.end { align-items: center; justify-content: center; text-align: center; cursor: default; color: var(--muted); }
+.card.end strong { display: block; font-size: 28px; font-weight: 800; color: var(--ink); }
+
+.meta { display: flex; align-items: center; gap: 8px; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.meta .grp { color: oklch(0.84 0.12 var(--h)); }
+.meta .sec { margin-left: auto; color: var(--faint); }
+.card h2 { margin: auto 0 0; font-size: 34px; line-height: 1.05; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+.card p { margin: 10px 0 0; font-size: 16px; line-height: 1.4; color: oklch(0.84 0.012 285); text-wrap: pretty; }
+.card code { font: 500 0.86em var(--mono); color: var(--muted); }
+.card .tag { align-self: flex-start; margin-top: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.card .letter { position: absolute; right: 4px; top: 8px; font-size: 210px; line-height: 1; font-weight: 900; color: oklch(0.84 0.12 var(--h) / 0.07); pointer-events: none; }
+.card h2, .card p, .card .tag, .meta { position: relative; }
+
+.stamp {
+  position: absolute; top: 62px; padding: 6px 12px; border-radius: 10px; border: 3px solid currentColor;
+  font: 500 22px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; opacity: 0; pointer-events: none;
+}
+.stamp.k { left: 22px; color: var(--keep); transform: rotate(-10deg); opacity: var(--k, 0); }
+.stamp.c { right: 22px; color: var(--can); transform: rotate(10deg); opacity: var(--c, 0); }
+
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.acts { display: flex; gap: 10px; margin-top: 26px; }
+.acts button { flex: 1; height: 50px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font-weight: 700; font-size: 16px; }
+.acts .c { color: var(--can); }
+.acts .k { color: var(--keep); }
+.acts .u { flex: 0 0 76px; color: var(--muted); font-weight: 500; font-size: 14px; }
+.acts button:hover { border-color: currentColor; }
+.acts button:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
+.keys { margin: 10px 0 0; text-align: center; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+@media (hover: none) { .keys { display: none; } }
+
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); }
+.chip { min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.chip:hover { color: var(--ink); border-color: var(--muted); }
+.chip.main { color: var(--ink); background: var(--panel); }
+label.chip { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+label.chip input { accent-color: var(--ink); margin: 0; }
+.tools .gap { flex: 1; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card.ghost, .card.back, .bar i { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Idea swipe</h1>
+    <div class="count" id="count"></div>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+
+  <div class="deck" id="deck"></div>
+
+  <div class="acts">
+    <button class="c" id="can" type="button">← Can</button>
+    <button class="u" id="undo" type="button">Undo</button>
+    <button class="k" id="keep" type="button">Keep →</button>
+  </div>
+  <p class="keys">← can · → keep · Z undo</p>
+
+  <div class="tools">
+    <button class="chip main" id="copy" type="button">Copy JSON</button>
+    <button class="chip" id="save" type="button">Download</button>
+    <span class="gap"></span>
+    <label class="chip"><input type="checkbox" id="all"> <span id="allText">Include started</span></label>
+    <button class="chip" id="reset" type="button">Reset</button>
+  </div>
+</div>
+
+<script type="module">
+const KEY = 'stimming.ideas.swipe';
+const SOURCE = 'docs/toy-ideas.md';
+const GROUPS = {
+  A: ['Lab experiments', 230], B: ['Data visualisation', 300], C: ['Cinematic dioramas', 40],
+  D: ['Stimming and fidget', 155], E: ['Physics loops', 85], F: ['Quiet and rich', 195],
+};
+// Idea names that differ from the toy or bean name.
+const ALIAS = { flametests: 'flametest', inkinwater: 'inkwater', marshlaunch: 'tenseconds', smokerings: 'smokeringcannon' };
+
+const $ = (id) => document.getElementById(id);
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Read every numbered table row; headings give the section and the group.
+function parse(md) {
+  const out = [];
+  let section = '', group = '';
+  for (const line of md.split('\n')) {
+    let m;
+    if ((m = /^## (.+)/.exec(line))) { section = m[1].trim(); group = ''; continue; }
+    if ((m = /^### ([A-F])\./.exec(line))) { group = m[1]; continue; }
+    if (!/^\|\s*S?\d+\s*\|/.test(line)) continue;
+    const c = line.split('|').slice(1, -1).map((s) => s.trim());
+    out.push({
+      n: c[0],
+      name: c[1].replace(/\*\*|†/g, '').trim(),
+      group: c.length > 3 ? c[2] : group,
+      section,
+      text: c[c.length - 1],
+    });
+  }
+  return out;
+}
+
+// A toy in toys.json or a "Toy:" bean marks an idea as started.
+async function startedNames() {
+  const names = new Set();
+  try {
+    const toys = await (await fetch('../toys.json')).json();
+    for (const t of Object.values(toys)) names.add(norm(t.name));
+  } catch {}
+  try {
+    const list = await (await fetch('../.beans/')).text();
+    for (const m of list.matchAll(/--toy-([a-z0-9-]+)\.md/g)) names.add(norm(m[1]));
+  } catch {}
+  return names;
+}
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) || '{}');
+    return { v: s.v || {}, h: s.h || [], all: !!s.all };
+  } catch { return { v: {}, h: [], all: false }; }
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+
+let ideas = [];
+let state = load();
+const deckEl = $('deck');
+
+const deck = () => ideas.filter((i) => state.all || !i.started);
+const open = () => deck().filter((i) => !state.v[i.n]);
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function card(idea, cls) {
+  const g = GROUPS[idea.group] || ['', 285];
+  const c = el('div', 'card ' + cls);
+  c.style.setProperty('--h', g[1]);
+  c.append(el('span', 'letter', idea.group));
+  const meta = el('div', 'meta');
+  meta.append(el('span', '', '#' + idea.n), el('span', 'grp', idea.group + ' · ' + g[0]), el('span', 'sec', idea.section.replace(/^Later: b/, 'B')));
+  const p = el('p');
+  // Backticks in the source become code spans.
+  idea.text.split('`').forEach((part, k) => p.append(k % 2 ? el('code', '', part) : part));
+  c.append(meta, el('h2', '', idea.name), p);
+  if (idea.started) c.append(el('span', 'tag', 'Started'));
+  c.append(el('span', 'stamp k', 'Keep'), el('span', 'stamp c', 'Can'));
+  return c;
+}
+
+function render() {
+  deckEl.querySelectorAll('.card:not(.ghost)').forEach((c) => c.remove());
+  const d = deck();
+  const left = open();
+  const tally = (v) => ideas.filter((i) => state.v[i.n] === v).length;
+  const done = d.length - left.length;
+
+  if (left[1]) deckEl.prepend(card(left[1], 'under'));
+  if (left[0]) {
+    deckEl.append(card(left[0], 'top'));
+  } else if (ideas.length) {
+    const e = el('div', 'card end top');
+    e.append(el('strong', '', 'All done'), 'Copy the JSON.');
+    deckEl.append(e);
+  }
+
+  $('count').innerHTML = `${done} / ${d.length} · <b class="c">can ${tally('can')}</b> · <b class="k">keep ${tally('keep')}</b>`;
+  $('bar').style.width = (d.length ? (done / d.length) * 100 : 0) + '%';
+  $('can').disabled = $('keep').disabled = !left[0];
+  $('undo').disabled = !state.h.length;
+  $('all').checked = state.all;
+  $('allText').textContent = `Include started (${ideas.filter((i) => i.started).length})`;
+}
+
+// The verdict sticks at once; the old card flies off as a ghost.
+function decide(verdict, from = { x: 0, y: 0 }) {
+  const idea = open()[0];
+  const top = deckEl.querySelector('.card.top');
+  if (!idea || !top) return;
+  state.v[idea.n] = verdict;
+  state.h.push(idea.n);
+  save();
+
+  const dir = verdict === 'keep' ? 1 : -1;
+  top.classList.remove('top', 'drag', 'back');
+  top.classList.add('ghost');
+  top.style.setProperty(verdict === 'keep' ? '--k' : '--c', 1);
+  render();
+  if (calm) { top.remove(); return; }
+  // Force a style flush so the transition starts from the drag position.
+  top.getBoundingClientRect();
+  top.style.transform = `translate(${dir * (innerWidth * 0.6 + 300)}px, ${from.y * 0.3 + 30}px) rotate(${dir * 22}deg)`;
+  top.style.opacity = 0;
+  setTimeout(() => top.remove(), 260);
+}
+
+function undo() {
+  const n = state.h.pop();
+  if (n == null) return;
+  delete state.v[n];
+  save();
+  render();
+}
+
+// Drag the top card; past the threshold it takes the verdict.
+let grab = null;
+deckEl.addEventListener('pointerdown', (e) => {
+  const top = e.target.closest('.card.top');
+  if (!top || top.classList.contains('end') || e.button > 0) return;
+  grab = { top, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+  top.classList.remove('back');
+  top.classList.add('drag');
+  top.setPointerCapture(e.pointerId);
+});
+deckEl.addEventListener('pointermove', (e) => {
+  if (!grab) return;
+  grab.dx = e.clientX - grab.x;
+  grab.dy = e.clientY - grab.y;
+  const t = Math.min(1, Math.abs(grab.dx) / limit());
+  grab.top.style.transform = `translate(${grab.dx}px, ${grab.dy * 0.3}px) rotate(${grab.dx * 0.05}deg)`;
+  grab.top.style.setProperty('--k', grab.dx > 0 ? t : 0);
+  grab.top.style.setProperty('--c', grab.dx < 0 ? t : 0);
+});
+const limit = () => Math.min(120, deckEl.clientWidth * 0.3);
+function drop() {
+  if (!grab) return;
+  const { top, dx, dy } = grab;
+  grab = null;
+  if (Math.abs(dx) >= limit()) { decide(dx > 0 ? 'keep' : 'can', { x: dx, y: dy }); return; }
+  top.classList.remove('drag');
+  top.classList.add('back');
+  top.style.transform = '';
+  top.style.setProperty('--k', 0);
+  top.style.setProperty('--c', 0);
+}
+deckEl.addEventListener('pointerup', drop);
+deckEl.addEventListener('pointercancel', drop);
+
+$('can').addEventListener('click', () => decide('can'));
+$('keep').addEventListener('click', () => decide('keep'));
+$('undo').addEventListener('click', undo);
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'ArrowLeft') decide('can');
+  else if (e.key === 'ArrowRight') decide('keep');
+  else if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') undo();
+  else return;
+  e.preventDefault();
+});
+
+$('all').addEventListener('change', (e) => { state.all = e.target.checked; save(); render(); });
+
+// Reset needs a second click within two seconds.
+let armed = 0;
+$('reset').addEventListener('click', () => {
+  if (Date.now() - armed > 2000) {
+    armed = Date.now();
+    $('reset').textContent = 'Sure?';
+    setTimeout(() => { $('reset').textContent = 'Reset'; }, 2000);
+    return;
+  }
+  armed = 0;
+  state = { v: {}, h: [], all: state.all };
+  save();
+  $('reset').textContent = 'Reset';
+  render();
+});
+
+// One idea per line keeps the JSON short to paste.
+function output() {
+  const row = (i) => JSON.stringify({ n: i.n, name: i.name, group: i.group, section: i.section, started: i.started });
+  const pick = (v) => ideas.filter((i) => state.v[i.n] === v).map(row);
+  const can = pick('can'), keep = pick('keep');
+  const unseen = open().map((i) => i.n);
+  const list = (rows) => (rows.length ? '[\n    ' + rows.join(',\n    ') + '\n  ]' : '[]');
+  return [
+    '{',
+    `  "source": ${JSON.stringify(SOURCE)},`,
+    `  "date": ${JSON.stringify(new Date().toLocaleDateString('en-CA'))},`,
+    `  "counts": ${JSON.stringify({ can: can.length, keep: keep.length, unseen: unseen.length })},`,
+    `  "can": ${list(can)},`,
+    `  "keep": ${list(keep)},`,
+    `  "unseen": ${JSON.stringify(unseen)}`,
+    '}',
+  ].join('\n');
+}
+
+function flash(id, text) {
+  const b = $(id), was = b.textContent;
+  b.textContent = text;
+  setTimeout(() => { b.textContent = was; }, 1400);
+}
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(output()); flash('copy', 'Copied'); } catch { flash('copy', 'Copy failed'); }
+});
+$('save').addEventListener('click', () => {
+  const a = el('a');
+  a.href = URL.createObjectURL(new Blob([output() + '\n'], { type: 'application/json' }));
+  a.download = 'idea-verdicts.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+try {
+  const res = await fetch('toy-ideas.md');
+  if (!res.ok) throw new Error(res.status);
+  const [md, names] = await Promise.all([res.text(), startedNames()]);
+  ideas = parse(md);
+  for (const i of ideas) {
+    const k = norm(i.name);
+    i.started = names.has(k) || names.has(ALIAS[k]);
+  }
+  render();
+} catch {
+  // A file link has no data; the page needs the local server.
+  const e = el('div', 'card end');
+  e.append(el('strong', '', 'No ideas'), 'Open this page over the local server.');
+  deckEl.append(e);
+}
+</script>
+</body>
+</html>
