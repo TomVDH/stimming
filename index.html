@@ -2659,8 +2659,28 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="schlieren" href="schlieren/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" data-temp aria-hidden="true">
-                <g id="schlieren-temp"><circle cx="64" cy="64" r="40" fill="oklch(0.42 0.012 255)"/><rect x="59" y="78" width="10" height="22" fill="oklch(0.95 0.04 85)"/><path d="M64 76C58 66 70 58 62 48C56 40 68 34 64 26" fill="none" stroke="oklch(0.95 0.04 85)" stroke-width="3" stroke-linecap="round"/></g>
+              <svg class="art" viewBox="0 0 128 128" data-box="10 10 108 108" aria-hidden="true">
+                <defs>
+                  <clipPath id="schlieren-disc"><circle cx="64" cy="64" r="50"/></clipPath>
+                  <filter id="schlieren-knife" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="1.5"/>
+                    <feDiffuseLighting surfaceScale="3.2" diffuseConstant="1.05" lighting-color="oklch(0.86 0.006 260)">
+                      <feDistantLight azimuth="180" elevation="48"/>
+                    </feDiffuseLighting>
+                  </filter>
+                </defs>
+                <circle cx="64" cy="64" r="54" fill="oklch(0.2 0.008 260)"/>
+                <g clip-path="url(#schlieren-disc)">
+                  <g filter="url(#schlieren-knife)" fill="none" stroke="oklch(0 0 0)" stroke-linecap="round">
+                    <path id="schlieren-plume" stroke-width="5" d="M64 70C64 62 63 55 64 48S66 40 65 34"/>
+                    <path id="schlieren-hook-l" stroke-width="3.6" d="M65 34C63 28 58 25 53 27S47 33 51 35"/>
+                    <path id="schlieren-hook-r" stroke-width="3.6" d="M65 34C67 28 72 25 77 27S83 33 79 35"/>
+                    <path id="schlieren-top" stroke-width="3" d="M65 30C64 22 68 16 64 9S60 2 63 -2"/>
+                  </g>
+                  <path d="M57 86.5h14v42H57z" fill="oklch(0.09 0.006 260)"/>
+                  <path id="schlieren-flame" d="M64 70.5c-2.6 4.6-3.2 8.6 0 11.8c3.2-3.2 2.6-7.2 0-11.8z" fill="oklch(0.97 0.035 85)"/>
+                  <path d="M64 86.5v-4.3" stroke="oklch(0.09 0.006 260)" stroke-width="1.1"/>
+                </g>
               </svg>
             </span>
             <span class="name">Schlieren candle</span>
@@ -5406,6 +5426,65 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     leave: () => aimBeam(68),
   };
 
+  // Schlieren candle: a knife edge embosses the heat over a candle.
+  // The plume sways while hovered.
+  // The pointer is a hand that pushes it aside.
+  {
+    const plume = $('schlieren-plume'), hookL = $('schlieren-hook-l'), hookR = $('schlieren-hook-r'), top = $('schlieren-top');
+    const flame = $('schlieren-flame');
+    const P = { ph: 0, amp: 0.8, lean: 0 };
+    // The centre line: laminar low down, wider and wilder higher up.
+    const at = h => [64 + P.lean * h * h + P.amp * (0.5 + 9 * h * h) * Math.sin(P.ph + h * 8.5), 70 - h * 66];
+    // A smooth path through the points, as Catmull-Rom curves.
+    const path = pts => pts.reduce((s, c, i) => {
+      if (!i) return `M${c[0].toFixed(1)} ${c[1].toFixed(1)}`;
+      const a = pts[i - 2] || pts[i - 1], b = pts[i - 1], d = pts[i + 1] || c;
+      return s + `C${(b[0] + (c[0] - a[0]) / 6).toFixed(1)} ${(b[1] + (c[1] - a[1]) / 6).toFixed(1)} ${(c[0] - (d[0] - b[0]) / 6).toFixed(1)} ${(c[1] - (d[1] - b[1]) / 6).toFixed(1)} ${c[0].toFixed(1)} ${c[1].toFixed(1)}`;
+    }, '');
+    // A puff rolls over into a hook on each side.
+    const hook = s => {
+      const [x, y] = at(0.54), k = 1 + 0.18 * Math.sin(P.ph * 2 + s);
+      return [[x, y], [x + s * 4 * k, y - 6], [x + s * 10 * k, y - 8.5], [x + s * 14.5 * k, y - 5.5], [x + s * 14 * k, y - 0.5], [x + s * 10.5 * k, y + 1]];
+    };
+    const draw = () => {
+      plume.setAttribute('d', path(Array.from({ length: 7 }, (_, i) => at((0.54 * i) / 6))));
+      hookL.setAttribute('d', path(hook(-1)));
+      hookR.setAttribute('d', path(hook(1)));
+      top.setAttribute('d', path(Array.from({ length: 6 }, (_, i) => at(0.6 + (0.46 * i) / 5))));
+    };
+    draw();
+    let sway = null;
+    toys.schlieren = {
+      // The column wavers and the flame flickers.
+      play() {
+        sway?.kill();
+        gsap.to(P, { amp: 1, duration: 0.6, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
+        sway = gsap.timeline({ repeat: -1 })
+          .to(P, { ph: `+=${Math.PI * 2}`, duration: 2.6, ease: 'none', onUpdate: draw }, 0)
+          .to(flame, { scaleY: 0.86, scaleX: 1.08, svgOrigin: '64 82', duration: 0.18, ease: 'sine.inOut', yoyo: true, repeat: 13 }, 0);
+        return sway;
+      },
+      // The hand pushes the plume away and stirs it.
+      move(p) {
+        const dx = p[0] - 64;
+        gsap.to(P, { lean: Math.max(-1, Math.min(1, -dx / 26)) * 18, amp: 1 + 1.2 * Math.exp(-(dx * dx) / 500), duration: 0.45, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
+      },
+      rest() {
+        sway?.kill();
+        sway = null;
+        gsap.to(P, { lean: 0, amp: 0.8, ph: Math.round(P.ph / (Math.PI * 2)) * Math.PI * 2, duration: 0.7, ease: 'power2.inOut', overwrite: 'auto', onUpdate: draw });
+        gsap.to(flame, { scaleY: 1, scaleX: 1, svgOrigin: '64 82', duration: 0.3, overwrite: true });
+      },
+    };
+    // The Lab calls only play and rest.
+    // So the icon follows the pointer itself.
+    const tile = $('schlieren'), svg = tile.querySelector('svg');
+    if (!reduce) tile.addEventListener('pointermove', e => {
+      const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      toys.schlieren.move([v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height]);
+    });
+  }
+
   // Temp icons: one pulse each, until the toy's own icon lands.
   const tempIcon = id => {
     const g = document.getElementById(id + '-temp');
@@ -5414,7 +5493,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
       rest: () => gsap.to(g, { scale: 1, rotation: 0, svgOrigin: '64 64', duration: 0.3, overwrite: true }),
     };
   };
-  for (const id of ['crossing', 'turing', 'fireflies', 'meshball', 'washer', 'steelwool', 'lavaskin', 'schlieren', 'purr', 'cuttle']) toys[id] = tempIcon(id);
+  for (const id of ['crossing', 'turing', 'fireflies', 'meshball', 'washer', 'steelwool', 'lavaskin', 'purr', 'cuttle']) toys[id] = tempIcon(id);
 
   // Lab icons: hover or focus plays a loop; touch plays them in view.
   const running = new Map();
