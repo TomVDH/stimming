@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
+> **Status, 2026-11-15.** Built from this plan as a WebGL page; that build is now Classic (`spark/legacy.html`). The Fresh page (`spark/index.html`) has moved on. Read "Since this plan" below before you trust a detail here.
+
 **Goal:** A knurled steel wheel rests on a flint, close up, in the dark. Flick it and a fan of sparks sprays out, forks into stars, hits a wet floor, skids and cools to embers. The ratchet of the knurl clicks under every flick.
 
 **Architecture:** three.js 0.170 as a thin host. The wheel and flint are two small meshes with a procedural knurl shader. Sparks are K6 burst particles, lifted from Fireworks and given gravity, drag, a floor bounce and a fork on burn. A warm point light sits at the contact point and follows the spark rate. Bloom and grade come from K2.
@@ -15,6 +17,19 @@
 | Size, estimate | S to M · $12 to $20 |
 | Kits | K6 burst particles from `fireworks/index.html` (`K6: burst particles` to `end K6`). K2 bloom and grade from the same page. |
 | Before the build | F5 in [fidgets.md](fidgets.md): the wheel and flint only, no lighter body |
+
+## Since this plan
+
+| Change | Where it is written |
+|---|---|
+| Fresh runs on the three.js 0.186.1 WebGPU build, with TSL node materials. Without WebGPU the page goes to Classic. | Bean `stimming-zqrm` |
+| The smoke is the K3 volume fluid (copied from Ink Water): the spark jet pushes and lights it, and a flame licks at the flint. The flat smoke sprites are gone. | Bean `stimming-zqrm` |
+| The wheel is bigger, sits lower left and stands on a striker mount: fork, flint tube, foot. The yaw is flipped, so the sparks fly right and away from the camera. | Bean `stimming-zqrm`; F5 in [fidgets.md](fidgets.md) |
+| The choice is `Sparks`, a stepper of eight types (keys 1 to 8): Ferro, Steel, Titanium, Sparkler, Comet, Ice, Confetti, Popcorn. Each new type has its own trick. | [spark-zany.md](spark-zany.md) |
+| The rim heats while the wheel grinds: red, orange, white. A full heat sheds in one flare, one kind per type, with a thump. | [spark-zany.md](spark-zany.md) |
+| The roller has a face with five holes, a bevel and axle nuts. | [spark-zany.md](spark-zany.md) |
+
+Still open: Tom's look on a visible screen, the frame rate there, sound by ear, a phone, real reduced motion.
 
 ## The shot
 

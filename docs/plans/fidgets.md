@@ -58,7 +58,7 @@ Answer in one batch. A build that waits on one starts after the answer.
 | F2 | Peel as its own toy: does Pop field's "peel corner" diegetic proposal drop? | Peel | Peel takes the gesture; the Pop field proposal stays Tom's call, untouched. |
 | F3 | Worry stone drops "warms in colour" (Heat putty owns it) and keeps polish and play of colour. Yes? | Worry stone | Yes. Opal stays out, so Opal turn (#116) keeps its own idea. |
 | F4 | Abacus, Detent dial, Doorstop twang and Toggle wall are Fidget board parts today. Cut them from the pool? | nothing | Cut. A better build of one goes into Fidget board as a part. |
-| F5 | Spark wheel shows only the knurled wheel and the flint, close up: no lighter body, no thumb. Yes? | Spark wheel | Yes (the Look rule: no props). |
+| F5 | Spark wheel shows only the knurled wheel and the flint, close up: no lighter body, no thumb. Yes? | Spark wheel | Yes (the Look rule: no props). Tom, 2026-11-14: the wheel now stands on a plain striker mount (fork, flint tube, foot). Still no lighter body and no thumb. |
 
 Tom, 2026-11-09: "Go for it". Every default above holds. Spark wheel builds first.
 
@@ -66,7 +66,7 @@ Tom, 2026-11-09: "Go for it". Every default above holds. Spark wheel builds firs
 
 | Toy | State |
 |---|---|
-| Spark wheel | built, Lab (`stimming-1dfl`) |
+| Spark wheel | built, Lab (`stimming-1dfl`); then a WebGPU build with fluid smoke and a mount (`stimming-zqrm`) and eight spark types with a rim that heats (`stimming-0d7r`); the WebGL build is Classic |
 | Worry stone | built, Lab (`stimming-1pxz`) |
 | Ice tray | built, Lab (`stimming-9lcg`); Tom picked it on 2026-11-10 in place of Rain stick; plan in [ice.md](ice.md) |
 | Rain stick, Peel, Calm jar | waiting |

@@ -1,24 +1,24 @@
 ---
 # stimming-zqrm
 title: 'Spark wheel: WebGPU fluid smoke, a mount, a better place'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-15T04:16:31Z
-updated_at: 2026-11-15T05:41:23Z
+updated_at: 2026-11-15T07:30:44Z
 parent: stimming-oh7b
 ---
 
 Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU build with the K3 volume fluid for smoke and a flame lick; the present WebGL build stays as Classic. The wheel sits bigger, lower left, on a striker mount.
 
-- [ ] Stage 1: placement, mount and yaw flip on the WebGL build; stills for Tom
+- [x] Stage 1: placement, mount and yaw flip on the WebGL build; stills for Tom
 - [x] Stage 2: copy to spark/legacy.html (noindex)
 - [x] Stage 3: scratch proofs P1 to P4 (untracked)
 - [x] Stage 4: spark/gpu.html, port at parity, no smoke
 - [x] Stage 5: K3 fluid smoke and flame, coupled to the sparks
 - [x] Stage 6: quality ladder, Smoke toggle, idle, reduced motion
 - [x] Stage 7: swap gpu.html to index.html, no-WebGPU redirect, toys.json legacy true
-- [ ] Stage 8: docs and final QA
+- [x] Stage 8: docs and final QA
 
 ## Notes
 
@@ -68,3 +68,13 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
 - Stage 7 (2026-11-14): spark/index.html is the WebGPU build; spark/gpu.html is gone; toys.json has legacy true, so Settings shows Classic on the fresh page and Fresh on the classic page.
   - No WebGPU: a head script, an adapter check before three.js loads, and a backend check after init each send the visitor to legacy.html and keep the query. A visitor who came from legacy.html stays and reads the fail line, which links back. legacy.html never redirects, so no loop.
   - Tested with a throwaway twin whose WebGPU check always fails: a direct visit landed on legacy.html?t=1; a visit from the classic page stayed and showed the line and its link.
+
+- Stage 8 (2026-11-15): docs. AGENTS.md names Spark wheel in the legacy list and the 0.186.1 list, with the no-WebGPU redirect rule; docs/stack.md, docs/plans/spark.md (a "Since this plan" table) and F5 in docs/plans/fidgets.md follow. Final QA is the fix-pass check of 2026-11-14: the real page loads, takes a type key, a grind and a tap with no error.
+
+## Summary of Changes
+
+- spark/index.html is the WebGPU build (three.js 0.186.1, TSL): sparks, embers, haze, bloom and grade ported at parity; K3 volume fluid for smoke and a flame lick; a quality ladder; idle rules.
+- spark/legacy.html is the WebGL build (Classic); toys.json has legacy true; a browser with no WebGPU goes to Classic.
+- The wheel is bigger, lower left, on a striker mount; the yaw is flipped.
+- Later work on the same page is in stimming-0d7r (eight spark types, the hot wheel, the roller).
+- Never checked, by Tom or by the agent: frame rate on a visible screen, sound by ear, drag by hand, a phone, real reduced motion.
