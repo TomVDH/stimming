@@ -129,6 +129,22 @@ const pole = (x, z, side) => [
   beam([x, 7.75, z], [x, 7.75, z + side * 0.75], 0.04, 'can', A), beam([x, 7.75, z], [x, 7.75, z - side * 0.75], 0.04, 'can', A),
   box([x, 7.05, z + side * 0.45], [0.04, 1.35, 0.55], 'hydrangea', A, { k: 'banner' }), box([x, 7.05, z - side * 0.45], [0.04, 1.35, 0.55], 'white', A, { k: 'banner' }),
 ];
+// A sash window. The glass sits back in the wall; the frame, a sash bar
+// and a sill stand proud. alongX: the window spans x and faces z; else the reverse.
+// wall is the wall's plane, out is +1 or -1 toward the street.
+function sash(c, y, w, h, wall, out, alongX, lit, sw, trim = 'cream') {
+  const at = (u, yy, d) => (alongX ? [c + u, yy, wall + out * d] : [wall + out * d, yy, c + u]);
+  const sz = (a, b, depth) => (alongX ? [a, b, depth] : [depth, b, a]);
+  const glass = lit ? { k: 'pane', sw, on: true, gain: 1.05 } : {};
+  return [
+    box(at(0, y, 0.015), sz(w, h, 0.03), lit ? 'glass' : 'glassDark', A, glass),
+    box(at(0, y + h / 2 + 0.05, 0.06), sz(w + 0.2, 0.1, 0.1), trim, A), box(at(0, y - h / 2 - 0.04, 0.08), sz(w + 0.3, 0.08, 0.16), trim, A),
+    box(at(-w / 2 - 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A), box(at(w / 2 + 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A),
+    box(at(0, y + h * 0.08, 0.05), sz(w, 0.06, 0.06), trim, A),
+  ];
+}
+// Two in five windows burn; which ones is fixed per building.
+const isLit = (a, b, c) => ((a * 7 + b * 13 + c * 5) % 5) < 2;
 // A signal on a mast arm. The arm reaches from the corner at z0 to z1;
 // the head hangs at its tip and faces along face (+1 north, -1 south).
 const signal = (x, z0, z1, face) => [
@@ -335,22 +351,27 @@ export function driveParts(d, clip, lidar = null) {
     // Modern: a glass wall with thin mullions.
     if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], trim, A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], trim, A));
     // Bay windows stand out at both ends of the upper floors.
-    if (f.note?.bays) for (const x of [f.x0 + 1.1, f.x1 - 1.1]) for (let y = 5.9; y < f.h - 1; y += 3) add(box([x, y, z(0.45)], [1.7, 2.5, 0.9], f.c, A), box([x, y, z(0.92)], [1.1, 1.8, 0.05], 'glass', A, { k: 'pane', sw: 'up' + fi, on: true }));
+    if (f.note?.bays) for (const x of [f.x0 + 1.1, f.x1 - 1.1]) for (let y = 5.9; y < f.h - 1; y += 3) add(box([x, y, z(0.45)], [1.7, 2.5, 0.9], f.c, A), sash(x, y, 1, 1.6, z(0.9), dir, true, isLit(fi, x | 0, y | 0), 'up' + fi, trim));
     const cols = Math.max(1, Math.round(w / (f.era === 'modern' ? 1.6 : 2.7)));
     let any = false;
     for (let y = 5.7; y < f.h - 1.2; y += 3) {
       if (f.era === 'postwar') {
-        const lit = (Math.round(y) + fi) % 2 === 0;
-        any ||= lit;
-        add(box([mid, y, z(0.05)], [w - 1, 1.1, 0.06], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}), box([mid, y - 0.62, z(0.08)], [w - 0.8, 0.12, 0.16], 'cream', A));
+        // A ribbon: panes set back between thin mullions, a sill below.
+        const n = Math.max(1, Math.round((w - 1) / 1.3)), pw = (w - 1) / n;
+        for (let j = 0; j < n; j++) {
+          const lit = isLit(fi, j, y | 0), x = f.x0 + 0.5 + pw * (j + 0.5);
+          any ||= lit;
+          add(box([x, y, z(0.015)], [pw - 0.08, 1.1, 0.03], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true, gain: 1.05 } : {}), box([f.x0 + 0.5 + pw * j, y, z(0.05)], [0.06, 1.1, 0.06], trim, A));
+        }
+        add(box([mid, y - 0.62, z(0.08)], [w - 0.8, 0.12, 0.16], trim, A), box([mid, y + 0.6, z(0.05)], [w - 0.9, 0.08, 0.06], trim, A));
         continue;
       }
       for (let j = 0; j < cols; j++) {
-        const x = f.x0 + w * (j + 0.5) / cols, lit = (j * 7 + Math.round(y) + fi) % 3 !== 0;
+        const x = f.x0 + w * (j + 0.5) / cols, lit = isLit(fi, j, y | 0);
         any ||= lit;
-        if (f.era === 'modern') add(box([x, y, z(0.05)], [w / cols - 0.1, 2.6, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}));
-        else add(box([x, y, z(0.03)], [1.2, 2.1, 0.06], 'cream', A), box([x, y, z(0.06)], [0.95, 1.85, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}),
-          box([x, y - 1.1, z(0.12)], [1.3, 0.1, 0.22], 'cream', A));
+        // Modern: dark glass set back, chrome mullions proud. Early: sash windows.
+        if (f.era === 'modern') add(box([x, y, z(0.015)], [w / cols - 0.06, 2.5, 0.03], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true, gain: 0.9 } : {}), box([f.x0 + w * j / cols, y, z(0.05)], [0.06, 2.6, 0.08], 'chrome', A));
+        else add(sash(x, y, 0.95, 1.7, f.zf, dir, true, lit, 'up' + fi, trim));
       }
     }
     if (f.era === 'modern') for (let y = 4.4; y < f.h; y += 3) add(box([mid, y, z(0.09)], [w, 0.1, 0.1], 'chrome', A));
@@ -363,10 +384,10 @@ export function driveParts(d, clip, lidar = null) {
     const es = hl.ring.map(p => p[0]), ns = hl.ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), x = Math.min(...ns), zm = (e0 + e1) / 2;
     add(fireEscape(x - 0.55, zm, [4.4, 7.3, 10.2]));
     for (const y of [4.25, 7.15]) add(box([x - 0.05, y, zm], [0.12, 0.18, e1 - e0], 'cream', A));
-    // Paired windows each side of the fire escape, on the upper floors.
+    // Sash windows each side of the fire escape, on the upper floors.
     for (const y of [5.75, 8.65]) for (let z = e0 + 1.4; z < e1 - 1; z += 1.8) {
       if (Math.abs(z - zm) < 2) continue;
-      add(box([x - 0.03, y, z], [0.06, 1.75, 1.25], 'cream', A), box([x - 0.06, y, z - 0.29], [0.05, 1.5, 0.5], 'glass', A), box([x - 0.06, y, z + 0.29], [0.05, 1.5, 0.5], 'glass', A));
+      add(sash(z, y, 0.9, 1.6, x, -1, false, isLit(3, z | 0, y | 0), 'highland'));
     }
   }
 
