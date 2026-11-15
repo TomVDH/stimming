@@ -422,6 +422,22 @@ Ax axisA(vec3 p) {
       if (i == 0 && hu < 0.0) o.s = min(1.0, uAs[0] - hu * l / uLen);
     }
   }
+  // Round the steep neck, the first three cones blend their axis points softly.
+  // The blend fades out down the tail, where one cone always wins.
+  float nb = smoothstep(0.17, 0.3, o.r);
+  if (nb > 0.0 && uNA > 3) {
+    vec3 ac = vec3(0.0);
+    float ws = 0.0;
+    for (int i = 0; i < 3; i++) {
+      vec3 a = uA[i].xyz, ba = uA[i + 1].xyz - a;
+      float h = clamp(dot(p - a, ba) / dot(ba, ba), 0.0, 1.0);
+      vec3 c = a + ba * h;
+      float w = exp(-(length(p - c) - mix(uA[i].w, uA[i + 1].w, h) - best) * 18.0);
+      ac += c * w;
+      ws += w;
+    }
+    o.a = mix(o.a, ac / ws, nb);
+  }
   return o;
 }
 Ax axisB(vec3 q) {
@@ -607,10 +623,20 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   vec3 midL = isA ? mid : toB(mid);
   Ax am;
   if (isA) am = axisA(midL); else am = axisB(midL);
-  // The true local radius and depth come from the field, so cone joins stay smooth.
+  // The section through the path's middle, square to the axis.
+  // A short march from the axis out through the middle finds the skin.
   vec3 axW = isA ? am.a : (uBMat * vec4(am.a, 1.0)).xyz;
-  float rT = max(-mapGlass(axW), 1e-3);
-  float beta = clamp(1.0 - max(-mapGlass(mid), 0.0) / rT, 0.0, 1.0);
+  vec3 rv = mid - axW;
+  float bM = length(rv);
+  vec3 ru = bM > 1e-4 ? rv / bM : vec3(0.0, 1.0, 0.0);
+  float rT = bM;
+  for (int k = 0; k < 10; k++) {
+    float d = -mapGlass(axW + ru * rT);
+    if (d < 0.002) break;
+    rT += d;
+  }
+  rT = max(rT, 1e-3);
+  float beta = clamp(bM / rT, 0.0, 1.0);
   float frostA = 0.0, frontG = 0.0;
   vec3 frostC = vec3(0.0);
   if (isA && uCrack > 0.5) {
