@@ -1,5 +1,5 @@
 // East Van postcards: New Brighton Park on a hot noon. One card.
-// The viewer stands on the grass bank, south of the pool, and looks north.
+// The viewer crouches on the south deck and looks north across the water.
 // The lawn is y = 0. The inlet lies 0.6 m lower.
 import { THREE, V, M, col, rng, tex, signTex, std, ico, ni, mergeGeometries } from '../kit.js';
 
@@ -12,23 +12,35 @@ const PW = -13, PE = 17, PN = 3, PS = 20, WY = 0.14;
 
 export const cards = [
   { cap: 'New Brighton · 12:30 pm · Clear', hour: 12.5,
-    cam: { pos: [-4, 7.1, 44], yaw: -8, pitch: 0, up: 14.5, down: 25, minHalf: 0.34 },
-    // The sun stands high in the south, behind the viewer.
-    sun: [0.2, 0.88, 0.43], sunCol: col(0.99, 0.02, 90), sunI: 3.5, hemi: [col(0.85, 0.05, 240), col(0.7, 0.06, 110), 1.0],
-    fog: col(0.86, 0.035, 235), fogD: 0.0013,
-    sky: { cloudA: 0.85, cov: 0.6, cloud: col(0.85, 0.02, 250), cloudLit: col(0.99, 0.01, 90), hazeA: 0.5, hazeK: 12, disc: 1, sunCol: col(1, 0.03, 90, 4) },
+    cam: { pos: [-1.5, 1.45, 22.4], yaw: -5, pitch: 0, up: 21, down: 13, minHalf: 0.3, downMax: 20 },
+    // The sun stands high in the south-east, behind the viewer.
+    sun: [0.42, 0.8, 0.43], sunCol: col(0.98, 0.04, 85), sunI: 4.2, hemi: [col(0.78, 0.07, 240), col(0.6, 0.07, 95), 0.7],
+    fog: col(0.88, 0.03, 80), fogD: 0.0022,
+    sky: { cloudA: 0.7, cov: 0.56, cloud: col(0.86, 0.02, 240), cloudLit: col(0.99, 0.01, 90), hazeA: 0.85, hazeK: 7, disc: 1, sunCol: col(1, 0.04, 90, 4) },
     exposure: 0.9, win: 0.1, wet: true, rain: 0, leaves: 0, wind: 0.2, smoke: 0,
-    mtn: [col(0.6, 0.05, 245), col(0.45, 0.07, 175)], ski: false,
-    shadow: { at: [2, 0, 4], r: 38 },
-    bloom: [0.25, 0.6, 0.97], tilt: [0.42, 0.3, 0.7], grade: { con: 1.06, sat: 1.15, vig: 0.22, grain: 0.035, gain: [1, 1, 0.99] } },
+    mtn: [col(0.66, 0.045, 240), col(0.56, 0.05, 210)], ski: false,
+    shadow: { at: [0, 0, 12], r: 40 },
+    bloom: [0.3, 0.7, 0.95], tilt: [0.44, 0.24, 0.9], grade: { con: 1.08, sat: 1.0, vig: 0.34, grain: 0.05, lift: [0.025, 0.018, 0.01], gain: [1.02, 1, 0.95] } },
 ];
 
 export function build(k) {
   const { box, put, at, limb, fence, person } = k;
   const R = rng(71), pick = a => a[Math.floor(R() * a.length)];
   const sand = std(0.82, 0.05, 85, { noCast: true, roughness: 1 }), coping = std(0.8, 0.01, 90), pale = std(0.8, 0.02, 85);
-  const water = std(0.78, 0.1, 200, { roughness: 0.5, noCast: true }), shallow = std(0.85, 0.08, 195, { roughness: 0.5, noCast: true });
-  const floorLine = std(0.45, 0.1, 240, { noCast: true }), leafA = std(0.5, 0.13, 140, { flatShading: true }), leafB = std(0.43, 0.11, 150, { flatShading: true });
+  const water = std(0.6, 0.12, 218, { roughness: 0.4, noCast: true }), shallow = std(0.7, 0.1, 205, { roughness: 0.4, noCast: true });
+  // Summer lawn: dry gold patches in tired green.
+  const grass = (rx, ry) => std(1, 0, 0, { noCast: true, roughness: 1, map: tex(256, 256, (g, w, h) => {
+    const P = rng(12);
+    g.fillStyle = '#6f8a3a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) {
+      g.globalAlpha = 0.18 + P() * 0.3; g.fillStyle = P() < 0.55 ? '#b5a456' : '#4f6e2c';
+      const x = P() * w, y = P() * h, r = 6 + P() * 26;
+      for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) { g.beginPath(); g.ellipse(x + dx, y + dy, r, r * 0.5, 0, 0, 7); g.fill(); }
+    }
+  }, { rx, ry }) });
+  // The deck: pale slabs with dark joints.
+  const deck = std(1, 0, 0, { roughness: 0.85, map: tex(64, 64, (g, w, h) => { g.fillStyle = '#c9c4b6'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(60,50,40,0.35)'; g.fillRect(0, h - 2, w, 2); g.fillRect(w - 2, 0, 2, h); }, { rx: 26, ry: 15 }) });
+  const leafA = std(0.5, 0.13, 140, { flatShading: true }), leafB = std(0.43, 0.11, 150, { flatShading: true });
   const SUIT = [std(0.6, 0.2, 28), std(0.55, 0.15, 255), M.bagY, std(0.65, 0.16, 150), std(0.7, 0.17, 350)];
   // A striped cloth: eight bands of two colours.
   const stripes = (a, b) => std(1, 0, 0, { map: tex(64, 4, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? a : b; g.fillRect(i * 8, 0, 8, h); } }), side: THREE.DoubleSide });
@@ -36,8 +48,8 @@ export function build(k) {
   const TOWEL = [stripes('#f08a2c', '#f6efe0'), stripes('#3d6fc4', '#f2c230'), stripes('#e2483a', '#f4b0c0')];
 
   /* ----- ground: bank, lawn, path, beach ----- */
-  box('lawn', 340, 0.4, 72, 140, -0.2, 24);
-  box('lawn', 120, 0.4, 31 / Math.cos(TH), 0, bank(44.5) - 0.2 * Math.cos(TH), 44.5 + 0.2 * Math.sin(TH), -TH);
+  box(grass(60, 13), 340, 0.4, 72, 140, -0.2, 24);
+  box(grass(22, 6), 120, 0.4, 31 / Math.cos(TH), 0, bank(44.5) - 0.2 * Math.cos(TH), 44.5 + 0.2 * Math.sin(TH), -TH);
   box('walk', 330, 0.06, 1.8, 135, 0, -11);
   box(sand, 330, 0.4, 15.03, 135, -0.64, -19.5, -0.0612);
   // Drift logs lie on the sand, as seats.
@@ -58,21 +70,16 @@ export function build(k) {
     for (let i = 0; i < 5; i++) { const a = i * 1.3 + R(), r = i ? 1.5 * s : 0, b = (1.7 + R() * 0.6) * s; put(i % 2 ? leafA : leafB, ico(b, b * 0.85, b), x + Math.cos(a) * r, (i ? 4.4 : 5.8) * s + R() * 0.6, z + Math.sin(a) * r); }
   };
   gtree(27, -8.5, 1); gtree(34, -3.5, 1.2); gtree(40, -9, 0.9); gtree(46, 4, 1.3);
-  // The bank holds a few people; narrow screens see them.
-  // They sit below the frame of a wide screen.
-  lie(-1.6, bank(34), 34, 0.15, TOWEL[0], SUIT[1], -TH); lie(-5.4, bank(32), 32, -0.2, TOWEL[2], SUIT[4], -TH);
-  person(SUIT[2], -3.6, 38.6, Math.PI, bank(38.6) - 0.38, { sit: true, legs: 'skin' }); person(SUIT[0], -2.9, 38.5, Math.PI + 0.2, bank(38.5) - 0.4, { sit: true, legs: 'skin', h: 1.25 });
-  umbrella(UMB[2], -8.5, bank(31.5) - 0.1, 31.5);
 
   /* ----- the pool ----- */
-  box('conc', 51, 0.3, 29, 4.5, -0.05, 11.5);
-  box(water, PE - PW, 0.04, PS - PN, 2, WY - 0.02, 11.5);
-  box(shallow, PE - PW, 0.01, 6.5, 2, WY + 0.015, 16.75);
+  box(deck, 51, 0.3, 29, 4.5, -0.05, 11.5);
+  box(water, PE - PW, 0.04, PS - PN, 2, WY - 0.06, 11.5);
+  // The surface mirrors the sky, the silos and the bridge.
+  k.wetRoad(PE - PW, PS - PN, 2, WY, 11.5, col(0.62, 0.12, 205));
   for (const [w, d, x, z] of [[30.7, 0.35, 2, PN - 0.175], [30.7, 0.35, 2, PS + 0.175], [0.35, 17, PW - 0.175, 11.5], [0.35, 17, PE + 0.175, 11.5]]) box(coping, w, 0.16, d, x, 0.18, z);
   // Four lanes run east to west; a rope marks the shallow end.
   const rope = std(1, 0, 0, { map: tex(4, 32, (g, w, h) => { g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, h); g.fillStyle = '#d83a2e'; g.fillRect(0, 0, w, 8); g.fillStyle = '#2b62c0'; g.fillRect(0, 16, w, 8); }, { ry: 30 }), noCast: true });
   for (let i = 0; i < 4; i++) {
-    box(floorLine, 27, 0.01, 0.25, 2, WY + 0.015, 4.3 + i * 2.6);
     put(rope, new THREE.CylinderGeometry(0.06, 0.06, 30, 6).rotateZ(Math.PI / 2), 2, WY + 0.03, 5.6 + i * 2.6);
   }
   // Two sheets of caustics drift apart over the water.
@@ -84,15 +91,24 @@ export function build(k) {
       g.globalAlpha = 0.35 + P() * 0.5; g.lineWidth = 1.5 + P() * 2;
       for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) { g.beginPath(); g.ellipse(x + dx, y + dy, rx, ry, a, 0, 6.3); g.stroke(); }
     }
-  }, { rx: 6, ry: 3.4 });
+  }, { rx: 9, ry: 5 });
   const c2 = c1.clone();
   c2.repeat.set(4.3, 2.4); c2.needsUpdate = true;
   const sheet = new THREE.PlaneGeometry(PE - PW, PS - PN).rotateX(-Math.PI / 2);
   for (const [t, y] of [[c1, WY + 0.04], [c2, WY + 0.06]]) {
-    const m = new THREE.Mesh(sheet, new THREE.MeshBasicMaterial({ map: t, color: col(0.97, 0.04, 190), transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const m = new THREE.Mesh(sheet, new THREE.MeshBasicMaterial({ map: t, color: col(0.97, 0.04, 190), transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending }));
     m.position.set(2, y, 11.5);
     k.group.add(m);
   }
+  // A ladder hangs in the near corner: two bent rails and three steps.
+  for (const dx of [-0.32, 0.32]) {
+    limb('steel', V(12 + dx, 0.2, 21.3), V(12 + dx, 1.0, 21.0), 0.03, 0.03);
+    limb('steel', V(12 + dx, 1.0, 21.0), V(12 + dx, 1.05, 20.25), 0.03, 0.03);
+    limb('steel', V(12 + dx, 1.05, 20.25), V(12 + dx, -0.9, 19.95), 0.03, 0.03);
+  }
+  for (const y of [-0.05, -0.4, -0.75]) box('steel', 0.62, 0.04, 0.1, 12, y, 20.0);
+  // A towel and a pair of sandals wait on the near coping.
+  box(TOWEL[1], 1.6, 0.03, 0.8, -4.6, 0.115, 21.4, 0, 0.12); box(SUIT[2], 0.14, 0.03, 0.28, -2.6, 0.115, 21.0); box(SUIT[2], 0.14, 0.03, 0.28, -2.35, 0.115, 21.1, 0, 0.3);
   // The fence runs round the deck; the change rooms close the east side.
   fence(-20.6, 25.6, 29.6, 25.6, 1.2); fence(-20.6, 25.6, -20.6, -2.6, 1.2); fence(-20.6, -2.6, 21, -2.6, 1.2); fence(29.6, 25.6, 29.6, 14, 1.2);
   box(std(0.88, 0.03, 220), 8, 3.4, 16, 25, 1.8, 6); box('roof', 9.2, 0.25, 17.2, 25, 3.62, 6);
@@ -108,9 +124,7 @@ export function build(k) {
     umbrella(UMB[0], 0, 2.0, -0.42, 1.1);
   });
   // People on the deck, on the edge and in the shallow end.
-  person(SUIT[1], -6, 22.8, Math.PI, 0.1, { legs: 'skin' }); person(SUIT[4], -5.2, 22.5, Math.PI - 0.3, 0.1, { legs: 'skin', h: 1.15 });
-  person('skin', 6.5, 23.2, Math.PI + 0.4, 0.1, { legs: SUIT[3], stride: 0.25 }); person(SUIT[3], 8, 2.82, 0, -0.16, { sit: true, legs: 'skin' });
-  person(SUIT[2], 4, 17, 2.2, -0.75, { legs: 'skin' }); person('skin', 5.3, 16.3, -1.2, -0.62, { legs: 'skin', h: 1.2 }); person(SUIT[0], 9.4, 18.4, 3.6, -0.7, { legs: 'skin' });
+  person(SUIT[2], 4, 13, 2.2, -0.75, { legs: 'skin', h: 1.2 }); person('skin', 5.1, 12.6, -1.2, -0.62, { legs: 'skin', h: 1.1 });
   lie(-17, 0.1, 9, 0.1, TOWEL[1], SUIT[2]); lie(-16.4, 0.1, 15, -0.2, TOWEL[0], SUIT[4]);
 
   /* ----- the lawn and the beach ----- */
@@ -230,15 +244,15 @@ export function build(k) {
   /* ----- swimmers, a ball, gulls ----- */
   // Each swimmer: a body, a cap, two arms that windmill, some foam.
   const bodyG = mergeGeometries([ni(new THREE.BoxGeometry(1.1, 0.14, 0.4)).translate(-0.1, 0, 0), ico(0.11, 0.12, 0.11).translate(0.6, 0.07, 0)]);
-  const capG = ico(0.115, 0.09, 0.115).translate(0.6, 0.12, 0), armG = ico(0.08, 0.08, 0.08, 0), foamG = new THREE.BoxGeometry(0.6, 0.03, 0.36);
-  const foamM = new THREE.MeshBasicMaterial({ color: col(0.97, 0.01, 200) });
+  const capG = ico(0.115, 0.09, 0.115).translate(0.6, 0.12, 0), armG = ico(0.08, 0.08, 0.08, 0), foamG = ico(0.4, 0.02, 0.22, 1);
+  const foamM = new THREE.MeshBasicMaterial({ color: col(0.95, 0.02, 200), transparent: true, opacity: 0.55, depthWrite: false });
   const SX = PW + 1.2, LAP = PE - PW - 2.4, sw = [];
   for (let i = 0; i < 4; i++) {
     const g = new THREE.Group(), body = new THREE.Mesh(bodyG, M.skin), l = new THREE.Mesh(armG, M.skin), r = new THREE.Mesh(armG, M.skin), f = new THREE.Mesh(foamG, foamM);
     body.castShadow = true;
-    f.position.set(-0.9, -0.01, 0);
+    f.position.set(-0.7, 0.1, 0);
     g.add(body, new THREE.Mesh(capG, SUIT[i]), l, r, f);
-    g.position.set(SX, WY + 0.02, 4.3 + i * 2.6);
+    g.position.set(SX, WY - 0.09, 4.3 + i * 2.6);
     k.group.add(g);
     sw.push({ g, l, r, f, v: 1.0 + R() * 0.45, ph: R() * 2, w: 3.4 + R() });
   }
@@ -246,7 +260,7 @@ export function build(k) {
   ball.castShadow = true;
   // A gull: two wings in a shallow V.
   const gullG = mergeGeometries([new THREE.BoxGeometry(0.9, 0.03, 0.26).rotateZ(0.3).translate(0.42, 0.12, 0), new THREE.BoxGeometry(0.9, 0.03, 0.26).rotateZ(-0.3).translate(-0.42, 0.12, 0), new THREE.BoxGeometry(0.16, 0.12, 0.5)]);
-  const gulls = [0, 1, 2].map(() => new THREE.Mesh(gullG, M.trim));
+  const gullM = std(0.95, 0.01, 250, { emissive: col(0.5, 0.01, 250) }), gulls = [0, 1, 2].map(() => new THREE.Mesh(gullG, gullM));
   k.group.add(ball, ...gulls);
 
   k.onFrame(t => {
@@ -263,9 +277,9 @@ export function build(k) {
     ball.rotation.set(t * 0.2, 0, Math.sin(t * 0.9) * 0.2);
     for (let i = 0; i < 3; i++) {
       const g = gulls[i], th = t * (0.22 + i * 0.05) + i * 2.1, r = 14 + i * 7;
-      g.position.set(8 + Math.cos(th) * r, 9 + i * 2.5 + Math.sin(t * 0.4 + i) * 0.8, -42 + Math.sin(th) * r);
+      g.position.set(8 + Math.cos(th) * r, 13 + i * 3 + Math.sin(t * 0.4 + i) * 0.8, -70 + Math.sin(th) * r);
       g.rotation.y = -th;
-      g.scale.set(1.5, 1.5 * (0.6 + 0.5 * Math.sin(t * 4 + i * 2)), 1.5);
+      g.scale.set(1, 0.6 + 0.5 * Math.sin(t * 4 + i * 2), 1);
     }
     // The freighter sails east, under the main span, and comes again.
     ship.position.x = -84 + (t * 1.1 + 110) % 320;
