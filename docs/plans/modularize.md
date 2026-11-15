@@ -109,7 +109,7 @@ One module at a time, one toy at a time, picked by Tom. Each step names a refere
 |---|---|---|---|---|
 | 1 | `audioKit()` for the hand copies | `eyes` | Its `audio()` is the kit's text word for word; no sound changes | The 28 others, as each toy's chat comes up |
 | 2 | `lin` to `oklchLinear` | `rain` (done 2026-11-15) | Same maths, a main shelf toy, a shader toy (the value goes into a uniform). Not bit-equal: `lin` rounds the matrix to 10 digits, so values move by 2.4e-7 at most and a few pixels by 1 of 255 (`docs/toys/rain.md`) | `morpher`, `kaleido`, `chladni`, ... |
-| 3 | `aces`, `srgb` to `output.js` | `stone` | Text equal to `ouAces`; small page | The family-A raw toys |
+| 3 | `aces`, `srgb` to `output.js` | `stone` (done 2026-11-15) | Its `aces` is `ouAces` byte for byte; small page. Bit-equal: 0 pixels differ in 25 frames, real GPU and SwiftShader. Stone has no `srgb()`: it ends with `pow(c, 1/2.2)`, which stays. So Stone proves `ouAces` only; `ouSrgb` still needs a first adopter (`dijkstra` holds the exact text) | The family-A raw toys |
 | 4 | `shared/gl.js` (new) | `bismuth` | Family A in full (`compile`, `locate`, `renderable`, `target`, `bind`, the compile poll); it also has the dead `rung` to fix with step 5 | Family A, then B (`trails`), then C (`rain`) |
 | 5 | `detail()` with `steps` | `subway` | `detail.js` holds Subway's numbers already | `trainride` (the shader library's planned first adopter), then the 38 fps ladders |
 | 6 | `fitRenderer` into `stim.js` | `pins` | Exact copy; S tier, so Tom watches it closely | The other 12 |

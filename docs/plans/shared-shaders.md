@@ -158,7 +158,8 @@ For raw WebGL2 toys only. A three.js toy keeps the renderer's ACES and its `Outp
 
 | Toy | Today | Replace with |
 |---|---|---|
-| `lava`, `pool`, `vortex`, `dijkstra`, `lichtenberg`, `chocolate`, `rubens`, `bismuth`, `flametest`, `beer`, `stone` | Local `aces()` and `srgb()` | `ouAces()`, `ouSrgb()`: the same functions. Each toy keeps its own exposure number |
+| `lava`, `pool`, `vortex`, `dijkstra`, `lichtenberg`, `chocolate`, `rubens`, `bismuth`, `flametest`, `beer` | Local `aces()` and `srgb()` | `ouAces()`, `ouSrgb()`: the same functions. Each toy keeps its own exposure number |
+| `stone` (done 2026-11-15) | Local `aces()`, then `pow(c, 1/2.2)` | `ouAces()`. The 2.2 gamma stays: `ouSrgb` would change the picture |
 | `rain`, `frost`, `chladni` | Local `knee()`, `srgb()` and a dither line | `ouDither(ouSrgb(ouKnee(col)), px)`; keep the toy's own offset in `px`. `eyes` has its own knee numbers and stays |
 | About twenty more raw toys | `+ (hash(px) - 0.5) / 255.0` | `ouDither(c, px)`: the same hash |
 

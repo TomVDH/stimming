@@ -18,6 +18,15 @@ The decisions behind each column are in [code-health.md](../code-health.md).
 - Only approved modules: `audioKit()`, `oklchLinear`, `output.js`, `gl.js`, `detail()`, `fitRenderer`, `noise.js`. Rows marked "waits" need Tom first.
 - Tom sets the version after a port. Nothing raises it on its own.
 
+## Proved modules
+
+A toy adopts a module only after its reference port proves it ([modularize.md](modularize.md), Adoption order).
+
+| Module | Reference port | Proof |
+|---|---|---|
+| `output.js`: `ouAces` | `stone`, 2026-11-15 (`stimming-hmvj`) | Same text; 0 pixels differ in 25 frames, real GPU and SwiftShader. Ready for the toys below that copy `aces()` |
+| `output.js`: `ouSrgb`, `ouKnee`, `ouDither` | Not yet | Stone has none of them. `dijkstra` holds the exact `srgb()` text. The clamped `srgb()` copies (`kaleido`, `neon`, `rain`, `chladni`, `eyes`) keep their clamp |
+
 ## The list
 
 Key: **Type** is the stack type now, then the proposed one. **Map** means the importmap holds only the three.js entries; paste the standard text.
