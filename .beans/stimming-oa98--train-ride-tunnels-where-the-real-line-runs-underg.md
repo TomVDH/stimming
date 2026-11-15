@@ -31,3 +31,9 @@ The traced OSM ways carry tunnel tags: the Kerenzerberg tunnel (60.97 to 64.91 k
 ## Open
 - Tom to ride through at speed and listen.
 - The mounds are plain grass and rock, with no trees on them.
+
+## Fixes (2026-11-14, Train Ride chat)
+- [x] The mound's profile was upside down: `MathUtils.smoothstep` needs its low edge first, so the hill sat low by the line and high far out. A sloped sheet then crossed the window inside each mouth (a flat green screen 15 m into the Kerenzerberg). The profile now runs on -z.
+- [x] Mound faces textured: limestone beds of uneven thickness, moss in the seams, shrubs on the ledges; meadow patches and scrub on the grass. The grass and rock split uses the face normal, so grass no longer creeps down the cut.
+- [x] The mound's far rim sinks to 30 m down, so no flat shelf floats over the Walensee at the east mouth.
+- [x] Checked in headless Chrome (ANGLE D3D11) at 1280 and 375 px, parked and at 97 km/h, day and night: 60 fps, no console errors.
