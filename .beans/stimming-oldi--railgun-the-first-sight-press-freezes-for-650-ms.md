@@ -1,10 +1,11 @@
 ---
 # stimming-oldi
 title: 'Railgun: the first Sight press freezes for 650 ms'
-status: todo
+status: completed
 type: bug
+priority: normal
 created_at: 2026-11-15T06:02:30Z
-updated_at: 2026-11-15T06:02:30Z
+updated_at: 2026-11-15T06:18:37Z
 parent: stimming-f793
 ---
 
@@ -16,6 +17,14 @@ Evidence (cold browser, Standard, 1280 at 2x): the worst frame round the first V
 
 ## Checklist
 
-- [ ] Build the tube and compile its programs in the warm-up
-- [ ] Initialize the flagged variables in nvg/tube.js (the NVG toy shares it)
-- [ ] Check the first V press on a cold browser: no frame over 100 ms, no X4000 warnings
+- [x] Build the tube and compile its programs in the warm-up
+- [x] Initialize the flagged variables in nvg/tube.js (the NVG toy shares it)
+- [x] Check the first V press on a cold browser: no frame over 100 ms, no X4000 warnings
+
+
+## Summary of Changes
+
+- The warm-up renders one sight frame behind the intro, then clears the tube. The first V press links no programs.
+- nvg/tube.js: sigAt, mcp and poisson each have one return. D3D compiles them first time, with no X4000 warnings or retries.
+
+Checks on cold browsers (1280 at 2x, ANGLE D3D11): the worst frame on the first V press drops from 650 ms to 17 ms, on Standard and High. Sight holds 30 fps. Load and first V show no console warnings. The median time to first frame is 12.9 s against 12.3 s before (spread 11.7 to 14.0 s). The NVG toy loads clean and looks the same.

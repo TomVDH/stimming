@@ -13,13 +13,17 @@ const SIG = /* glsl */`
   uniform vec4 uCamXf;
   uniform vec3 uW;
   vec3 s2l(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+  // One return per function: D3D rejects early returns here as uninitialized.
   float sigAt(vec2 uv) {
+    float s;
     if (uCam > 0.5) {
       vec2 u = uv * uCamXf.xy + uCamXf.zw;
       if (uMirror > 0.5) u.x = 1.0 - u.x;
-      return dot(s2l(texture(tCam, u).rgb), uW) * uCamExpo;
+      s = dot(s2l(texture(tCam, u).rgb), uW) * uCamExpo;
+    } else {
+      s = dot(max(texture(tScene, uv).rgb, 0.0), uW) * uExpo;
     }
-    return dot(max(texture(tScene, uv).rgb, 0.0), uW) * uExpo;
+    return s;
   }`;
 
 // Tube layout: centre and radius in CSS pixels, and a per-tube gain trim.
@@ -219,17 +223,18 @@ export class Tube {
       // MCP gain varies per photoelectron: a gamma law, shape 2, mean 1.
       // Excess noise factor 1 + 1/k = 1.5, as measured for chevron MCPs.
       float mcp(float n, inout uint s) {
-        if (n < 0.5) return 0.0;
+        float a = 0.0;
         if (n > 8.5) {
           float u1 = max(rnd(s), 1e-7), u2 = rnd(s);
-          return max(0.0, n + sqrt(n * 0.5) * sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2));
+          a = max(0.0, n + sqrt(n * 0.5) * sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2));
+        } else if (n >= 0.5) {
+          for (int j = 0; j < 9; j++) {
+            if (float(j) >= n) break;
+            a -= log(max(rnd(s) * rnd(s), 1e-9));
+          }
+          a *= 0.5;
         }
-        float a = 0.0;
-        for (int j = 0; j < 9; j++) {
-          if (float(j) >= n) break;
-          a -= log(max(rnd(s) * rnd(s), 1e-9));
-        }
-        return a * 0.5;
+        return a;
       }
       float vn(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -237,13 +242,15 @@ export class Tube {
       }
 
       float poisson(float lam, inout uint s) {
+        float k = 0.0;
         if (lam < 10.0) {
-          float L = exp(-lam), p = 1.0, k = 0.0;
+          float L = exp(-lam), p = 1.0;
           for (int j = 0; j < 26; j++) { p *= rnd(s); if (p <= L) break; k += 1.0; }
-          return k;
+        } else {
+          float u1 = max(rnd(s), 1e-7), u2 = rnd(s);
+          k = max(0.0, lam + sqrt(lam) * sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2));
         }
-        float u1 = max(rnd(s), 1e-7), u2 = rnd(s);
-        return max(0.0, lam + sqrt(lam) * sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2));
+        return k;
       }
 
       // Hex lattice: cell id in xy, distance to the cell edge in z.
