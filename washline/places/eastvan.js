@@ -38,7 +38,7 @@ export default {
   cord: [0.05, 0.05, 0.05],
   hangFrom: 0.5,
   start: 3,
-  fog: [120, 16000],
+  fog: [400, 40000],
   fill: 1.5,
   wash: [
     { w: 1.4, h: 1.1, c: [0.95, 0.01, 90] },
@@ -161,22 +161,22 @@ export default {
           B.push({ p: [px, 2.7, zc + 1.2], s: [2.4, 0.15, 3], c: col([0.9, 0.01, 90]) });
           for (let k = 0; k < 6; k++) B.push({ p: [px - side * (0.9 + k * 0.3), 2.3 - k * 0.42, zc + 3.2], s: [0.3, 0.06, 1.0], c: col([0.6, 0.04, 60]) });
           for (const dz of [-0.2, 2.6]) C.push({ p: [px - side * 1.1, 1.35, zc + dz], s: [0.07, 2.7, 0.07], c: col([0.9, 0.01, 90]) });
-          for (const wy of [2.0, 4.6]) for (const dz of [-1.6, 1.4]) glass.push({ p: [hxc - side * (hd / 2 + 0.03), wy, zc + dz], s: [0.06, 1.3, 0.9] });
+          for (const wy of [2.0, 4.6]) for (const dz of [-1.6, 1.4]) (R() < 0.3 ? lamps : glass).push({ p: [hxc - side * (hd / 2 + 0.03), wy, zc + dz], s: [0.06, 1.3, 0.9] });
         } else {
           const m = new THREE.Mesh(new THREE.BoxGeometry(hd, 5.8, hw + 1), new THREE.MeshStandardMaterial({ color: col(R() < 0.6 ? [0.88, 0.02, 85] : [0.78, 0.03, 70]), roughness: 0.95 }));
           m.position.set(hxc, 2.9, zc); m.castShadow = m.receiveShadow = true; group.add(m);
           B.push({ p: [hxc, 5.95, zc], s: [hd + 0.8, 0.3, hw + 1.8], c: col([0.3, 0.02, 40]) });
           B.push({ p: [hxc - side * (hd / 2 + 0.6), 3.0, zc], s: [1.2, 0.12, hw * 0.8], c: col([0.7, 0.01, 250]) });
-          for (const dz of [-2, 0.5]) glass.push({ p: [hxc - side * (hd / 2 + 0.03), 4.2, zc + dz], s: [0.06, 1.1, 2.0] });
+          for (const dz of [-2, 0.5]) (R() < 0.3 ? lamps : glass).push({ p: [hxc - side * (hd / 2 + 0.03), 4.2, zc + dz], s: [0.06, 1.1, 2.0] });
         }
         lot.house = { x: hxc, d: hd };
         lots.push(lot);
       }
     }
-    // Rows of houses step down the hill toward the flats.
+    // Rows of houses step down the hill, leaving the view down the lane open.
     for (let z = -100; z > -420; z -= 9) {
       for (const side of [-1, 1]) for (let k = 0; k < 3; k++) {
-        const y = groundY(z), x = side * (LANE + 8 + k * 26 + R() * 6), h = 6 + R() * 2;
+        const y = groundY(z), x = side * (LANE + 18 + k * 26 + R() * 6), h = 5 + R() * 2;
         B.push({ p: [x, y + h / 2, z], s: [11, h, 7.5], c: col(R() < 0.5 ? pick(R, SIDING) : [0.86, 0.02, 85]) });
         B.push({ p: [x, y + h + 1.1, z], s: [11.5, 2.2, 6], r: [0.5, 0, 0], c: col([0.3, 0.02, 30]) });
       }
@@ -185,13 +185,18 @@ export default {
     inst(group, new THREE.BoxGeometry(1, 1, 1), paint(0.85), B);
     inst(group, new THREE.CylinderGeometry(1, 1, 1, 8), paint(0.8), C);
     inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.2, 0.02, 240]), roughness: 0.15, metalness: 0.3 }), glass, false);
-    inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.9, 0.08, 80]), emissive: col([0.85, 0.12, 75]), emissiveIntensity: 1.6 }), lamps, false);
+    // Warm windows and lamps come up as the sun goes down.
+    const lampMat = new THREE.MeshStandardMaterial({ color: col([0.9, 0.08, 80]), emissive: col([0.85, 0.12, 75]), emissiveIntensity: 1.6 });
+    inst(group, new THREE.BoxGeometry(1, 1, 1), lampMat, lamps, false);
 
     const wires = laneWires(group, rng(17), { LANE, LINE_Z, lots, anchors: this.anchors, groundY });
     const far = farView(group, rng(19), { groundY });
     const life = laneLife(group, rng(23), { LANE, LINE_Z, lots, wires, look });
 
-    group.userData.tick = (t, sun, cam) => { wires.tick(t); far.tick(t, sun, cam); life.tick(t); };
+    group.userData.tick = (t, sun, cam, viewH, sky) => {
+      lampMat.emissiveIntensity = 0.25 + 1.5 * (1 - Math.min(1, Math.max(0, (sun.dir.y - 0.02) / 0.3)));
+      wires.tick(t); far.tick(t, sun, cam); life.tick(t, sun, cam, sky);
+    };
     return group;
   },
 };

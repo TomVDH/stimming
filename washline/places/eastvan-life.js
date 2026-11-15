@@ -51,6 +51,81 @@ export function laneLife(group, R, { LANE, LINE_Z, lots, wires, look }) {
   B.push({ p: [-1.5, 1.4, -48.4], s: [1.5, 0.6, 2.2], c: col([0.25, 0.02, 240]) });
   for (const [dx, dz] of [[-0.85, -1.3], [0.85, -1.3], [-0.85, 1.3], [0.85, 1.3]]) C.push({ p: [-1.5 + dx, 0.3, -48 + dz], s: [0.3, 0.2, 0.3], r: [0, 0, Math.PI / 2], c: col([0.15, 0.01, 250]) });
 
+  /* ---------- puddles ---------- */
+  // Rainwater in the dips holds the sky, brighter at a glancing view.
+  const pu = { uHor: { value: new THREE.Vector3(0.8, 0.8, 0.85) }, uZen: { value: new THREE.Vector3(0.3, 0.4, 0.7) }, uSun: { value: new THREE.Vector3(0, 1, 0) } };
+  const puddleMat = new THREE.ShaderMaterial({
+    uniforms: pu, transparent: true, depthWrite: false,
+    vertexShader: /* glsl */ `varying vec3 vW; varying vec2 vUv; void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */ `
+      varying vec3 vW; varying vec2 vUv; uniform vec3 uHor, uZen, uSun;
+      void main() {
+        vec3 V = normalize(vW - cameraPosition), r = reflect(V, vec3(0.0, 1.0, 0.0));
+        vec3 sky = mix(uHor, uZen, pow(max(r.y, 0.0), 0.5)) + vec3(1.0, 0.85, 0.6) * pow(max(dot(r, uSun), 0.0), 200.0) * 4.0;
+        float F = 0.02 + 0.98 * pow(1.0 - max(-V.y, 0.0), 5.0);
+        float edge = smoothstep(0.5, 0.36, length(vUv - 0.5));
+        gl_FragColor = vec4(mix(vec3(0.04, 0.04, 0.045), sky * 0.72, F), edge * 0.9);
+      }`,
+  });
+  for (let i = 0; i < 7; i++) {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.5, 24), puddleMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set((R() - 0.5) * (LANE * 1.4), 0.018, -3 - R() * 40);
+    m.scale.set(1.2 + R() * 1.8, 0.6 + R() * 1.0, 1);
+    m.renderOrder = 2;
+    group.add(m);
+  }
+
+  /* ---------- garage murals, lamps, hedges ---------- */
+  // Murals on the garage ends that face us: suns, waves, ridges, a crow. No words.
+  const mural = k => {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+    const g = cv.getContext('2d');
+    const hue = [20, 200, 300, 140][k % 4];
+    g.fillStyle = `oklch(0.62 0.14 ${hue})`; g.fillRect(0, 0, 256, 128);
+    g.fillStyle = `oklch(0.85 0.15 ${(hue + 70) % 360})`; g.beginPath(); g.arc(70 + k * 40, 50, 30, 0, Math.PI * 2); g.fill();
+    g.fillStyle = `oklch(0.4 0.1 ${(hue + 180) % 360})`;
+    g.beginPath(); g.moveTo(0, 128); for (let x = 0; x <= 256; x += 32) g.lineTo(x, 80 - ((x * 7 + k * 13) % 40)); g.lineTo(256, 128); g.fill();
+    g.strokeStyle = `oklch(0.95 0.05 ${hue})`; g.lineWidth = 6;
+    for (let y = 96; y < 128; y += 12) { g.beginPath(); for (let x = 0; x <= 256; x += 8) g.lineTo(x, y + Math.sin(x / 14 + k) * 4); g.stroke(); }
+    g.fillStyle = '#111'; g.beginPath(); g.ellipse(190, 40, 18, 8, -0.2, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.moveTo(176, 38); g.lineTo(150, 26); g.lineTo(186, 34); g.fill();
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 });
+  };
+  const murals = [0, 1, 2, 3].map(mural);
+  const lamps = [];
+  lots.forEach((lot, i) => {
+    if (lot.z < -95 || lot.ours) return;
+    const edge = lot.side * LANE;
+    if (lot.garage) {
+      if (R() < 0.45) {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(6, lot.garage.h), murals[i % 4]);
+        m.position.set(lot.garage.x, lot.garage.h / 2, lot.z + lot.garage.w / 2 + 0.02);
+        group.add(m);
+      }
+      lamps.push({ p: [edge + lot.side * 0.36, 2.35, lot.z + 1.2], s: [0.14, 0.18, 0.14] });
+    } else if (R() < 0.45) {
+      // A tall cedar hedge behind the fence.
+      for (let z = lot.z - 4.6; z < lot.z + 4.6; z += 0.55) {
+        const h = 2.4 + R() * 0.8;
+        O.push({ p: [edge + lot.side * 1.0, h * 0.5, z], s: [0.55, h * 0.55, 0.5], c: col([0.3 + R() * 0.04, 0.07, 150]) });
+      }
+    }
+  });
+  inst(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: col([0.9, 0.08, 80]), emissive: col([0.85, 0.12, 75]), emissiveIntensity: 1.2 }), lamps, false);
+
+  /* ---------- sneakers on the wire ---------- */
+  // A pair of sneakers hangs by their laces from the phone cable.
+  const cable = wires.perches[9];
+  if (cable) {
+    const hang = cable.getPoint(0.35);
+    for (const [dx, c] of [[-0.12, [0.95, 0.01, 90]], [0.12, [0.6, 0.18, 28]]]) {
+      B.push({ p: [hang.x + dx, hang.y - 0.55, hang.z], s: [0.11, 0.1, 0.28], r: [0.3 * Math.sign(dx), 0, 0.2], c: col(c) });
+      C.push({ p: [hang.x + dx * 0.5, hang.y - 0.25, hang.z], s: [0.004, 0.5, 0.004], r: [0, 0, -dx], c: col([0.9, 0.01, 90]) });
+    }
+  }
+
   /* ---------- trees ---------- */
   // A cherry in full bloom over a fence; a big chestnut further down.
   const tree = (x, z, h, r, c, n, pink) => {
@@ -109,7 +184,9 @@ export function laneLife(group, R, { LANE, LINE_Z, lots, wires, look }) {
   inst(group, new THREE.IcosahedronGeometry(1, 0), paint(0.6), blooms, false);
 
   return {
-    tick(t) {
+    tick(t, sun, cam, sky) {
+      if (sky) { pu.uHor.value.copy(sky.hor); pu.uZen.value.copy(sky.zen); }
+      if (sun) pu.uSun.value.copy(sun.dir);
       for (const f of fliers) {
         const x = ((t + f.ph) * f.sp) % 80 - Math.sign(f.sp) * 40;
         f.g.position.set(x, f.y + Math.sin(t * 0.7 + f.ph), f.z);

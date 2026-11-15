@@ -20,7 +20,7 @@ function range(x0, x1, z, peaks, base, snow, R) {
   sh.lineTo(x1, FLATS - 20);
   const g = new THREE.ShapeGeometry(sh);
   const p = g.attributes.position, c = new Float32Array(p.count * 3);
-  const forest = col([0.34, 0.04, 210]), rock = col([0.5, 0.02, 250]), white = col([0.94, 0.01, 250]);
+  const forest = col([0.28, 0.05, 215]), rock = col([0.42, 0.02, 250]), white = col([0.95, 0.01, 250]);
   const k = new THREE.Color();
   for (let i = 0; i < p.count; i++) {
     const h = p.getY(i) - FLATS;
@@ -93,12 +93,50 @@ export function farView(group, R) {
   }
   const tm = inst(group, new THREE.BoxGeometry(1, 1, 1), towerMat, towers, false);
 
+  /* ---------- the guideway ---------- */
+  // An elevated concrete guideway crosses the flats on columns; a train runs on it.
+  const GZ = -690, GY = FLATS + 9;
+  const deck = [];
+  for (let x = -1400; x <= 1400; x += 32) deck.push({ p: [x, FLATS + 4.3, GZ], s: [1.6, 8.6, 1.6] });
+  deck.push({ p: [0, GY, GZ], s: [2800, 1.2, 8], c: col([0.7, 0.01, 250]) });
+  deck.push({ p: [0, GY + 0.9, GZ - 3.6], s: [2800, 0.8, 0.3], c: col([0.66, 0.01, 250]) });
+  deck.push({ p: [0, GY + 0.9, GZ + 3.6], s: [2800, 0.8, 0.3], c: col([0.66, 0.01, 250]) });
+  for (const d of deck) d.c ||= col([0.68, 0.01, 250]);
+  inst(group, new THREE.BoxGeometry(1, 1, 1), paint(0.9), deck);
+  const train = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: col([0.93, 0.01, 250]), roughness: 0.4 });
+  const band = new THREE.MeshStandardMaterial({ color: col([0.4, 0.12, 255]), roughness: 0.4 });
+  const win = new THREE.MeshStandardMaterial({ color: col([0.2, 0.02, 240]), roughness: 0.1, emissive: col([0.8, 0.06, 90]), emissiveIntensity: 0.3 });
+  for (let k = 0; k < 4; k++) {
+    const x = k * 17.6;
+    const car = new THREE.Mesh(new THREE.BoxGeometry(17, 3.2, 2.7), body); car.position.set(x, 2.2, 0); train.add(car);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(17.02, 0.35, 2.72), band); st.position.set(x, 1.0, 0); train.add(st);
+    const wn = new THREE.Mesh(new THREE.BoxGeometry(15.5, 0.9, 2.74), win); wn.position.set(x, 2.5, 0); train.add(wn);
+  }
+  train.position.set(0, GY + 0.6, GZ - 1.6);
+  group.add(train);
+
+  /* ---------- the dome by the water ---------- */
+  // A silver geodesic dome stands where the flats meet the end of False Creek.
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(1400, 260), new THREE.MeshStandardMaterial({ color: col([0.4, 0.05, 230]), roughness: 0.08, metalness: 0.6 }));
+  water.rotation.x = -Math.PI / 2; water.position.set(-650, FLATS + 0.05, -2650);
+  group.add(water);
+  const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(24, 2), new THREE.MeshStandardMaterial({ color: col([0.85, 0.01, 250]), roughness: 0.25, metalness: 0.8, flatShading: true }));
+  dome.position.set(-380, FLATS + 26, -2480);
+  group.add(dome);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(14, 16, 6, 16), new THREE.MeshStandardMaterial({ color: col([0.7, 0.01, 250]), roughness: 0.8 }));
+  base.position.set(-380, FLATS + 3, -2480);
+  group.add(base);
+
   /* ---------- the north shore ---------- */
   group.add(range(-6000, 16000, -7000, [[2200, 1180, 1800], [6200, 1300, 2200], [-1800, 980, 1500]], 820, 0, R));
   group.add(range(-4000, 18000, -10500, [[3800, 1640, 900], [4700, 1620, 800], [9000, 1700, 2000], [-600, 1450, 1600]], 1050, 1300, R));
 
   return {
     tick(t, sun) {
+      // The train shuttles across the flats, a little over 20 m/s.
+      train.position.x = ((t * 22) % 3200) - 1600;
+      win.emissiveIntensity = 0.1 + 1.0 * (1 - Math.min(1, Math.max(0, (sun.dir.y + 0.02) / 0.25)));
       // Downtown lights rise as the sun sinks.
       towerMat.emissiveIntensity = 0.15 + 1.4 * (1 - Math.min(1, Math.max(0, (sun.dir.y + 0.02) / 0.25)));
     },
