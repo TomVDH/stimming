@@ -78,6 +78,14 @@ Three toys Tom asked for by name. The interactions are proposals.
 | 362 | **Aquarium** | F | A planted tank. Drop food and the fish rise; tap the glass and they scatter. Close to Jellyfish tank (80). |
 | 363 | **Soup cauldron** | E | A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour. |
 
+## Built outside the pool
+
+Built toys that never had an idea number. Tom sets the group.
+
+| Toy | Group | Set by |
+|---|---|---|
+| **Railgun** (`railgun/`) | C | Tom, 2026-11-14 |
+
 ## Later: batch 1
 
 ### A. School and uni lab experiments
