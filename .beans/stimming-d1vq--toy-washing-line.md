@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T09:03:21Z
+updated_at: 2026-11-15T09:12:08Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -206,3 +206,5 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - Step 5 (Tom, 2026-11-15): Alley, Garden, Beach and Strangereal retired; git keeps them. The page builds the cliff only; the Place choice is gone; sr-atmo.js is now atmo.js (ATMO only).
 
 - Shell fix (2026-11-15): the Bar v2 fit now also watches the two top corners, so a pointer or font change that grows the header refits it. Seen as the Washing line title under Settings on phones. tests/bar-v2.html 108/108.
+
+- Icon round 1 (2026-11-15): icons/spike-washline-1.html: Current, A Shaded object (low sun follows the pointer, pieces glow as it passes behind, quick moves gust), D Isometric block (turf block, line corner to corner, pointer reels the washing, wheels turn). Emblems in icons/spike/emblems/washline-a.svg and -d.svg; on the sheet's GALLERY table.
