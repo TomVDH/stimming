@@ -61,7 +61,7 @@ A line between two stilt houses over wet mudflats. The flats mirror the dusk sky
 ## Chosen: A, cliff top in sea fog at sunrise (Tom, 2026-11-15)
 
 ### The shot
-- One camera at line height (about 1.9 m) on a grassy headland, looking east over a bay at dawn.
+- One camera at about 1.3 m, under the line, on a grassy headland, looking east over a bay at dawn. The washing stands against the sky, and the sun rises behind it (blockout, 2026-11-15).
 - The line runs 7 m across the frame: from a weathered post beside a dry-stone wall (left, near) to a crooked fence post (right). Both posts carry pulley wheels.
 - Fifteen metres past the line the headland ends at a cliff edge, 60 m above the sea.
 - Below, a sea of fog fills the bay. Its top undulates and drifts.

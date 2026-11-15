@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T07:32:48Z
+updated_at: 2026-11-15T07:44:10Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -188,3 +188,7 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 ### East Van canned; one scene next (Tom, 2026-11-15)
 
 - Tom canned East Van and the multi-place iteration: come up with one incredibly high-quality scene; Tom reviews the proposal before any build.
+
+- Tom approved the cliff-top fog spec and CC0 Poly Haven textures (2026-11-15). Step 1: grey blockout.
+
+- Cliff blockout (2026-11-15): eye at 1.3 m, under the line, so the washing stands against the sky. Phone eye 17 m back, fov 64. Headlands lower and flatter. The wall recedes left from the near post.
