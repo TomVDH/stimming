@@ -170,6 +170,12 @@ Per-toy work beyond the recipe:
 - Kaleido: the settle loop yields every 12 ms.
 - Dijkstra: `maps/index.json` preloads; the city is random, so its file does not.
 - Fidget: the part modules still load one at a time.
+- Launch and Frietkot: recipe only. First frame stays near 1.3 s and the intro lift near 5.0 s in the harness, before and after.
+  The jsDelivr lookup sets both numbers, so the preloads show no gain on a direct cold visit.
+- Railgun, Train ride, Foghorn: recipe only. Foghorn already used `pageReady`; it gains the `libs` mark and the full preload list.
+- Railgun warm frame (PR 40): every hidden mesh compiles and draws once before `first-frame`.
+  It costs one task of about 185 ms behind the intro; the intro lifts at the same time as before.
+  Five harness runs of two shots each: no long task at a shot; one 200 ms frame gap in one first charge.
 
 Open:
 
@@ -179,4 +185,11 @@ Open:
 - Direct cold visit in the harness: the jsDelivr DNS lookup takes about 1 s when it starts with the font lookups.
   Main shows the same stall in about half its runs. A visit from the menu never shows it.
   Check a direct link on Pages in a real browser.
+  The cause is the resolver on the test machine: one of three parallel uncached lookups takes 1 to 2 s in a plain `getaddrinfo` test.
+  A page that preloads culori starts that lookup with the font lookups, so it meets the stall on every run here.
+- The local preview server resets connections under parallel requests, on main and on the branch. A reset module request stops the toy.
 - Sound on the first gesture is not exercised by the harness.
+- Railgun sweep after PR 41, branch against main: desktop, 375 px, reduced motion, low quality, changed graphics settings, 6x CPU throttle.
+  Idle, charge, shot, sight and reset frames match. No page error. First frame at 2.1 s under the throttle.
+  Railgun holds the intro up to 15 s for the scene; main held it with no cap.
+- Railgun sweep repeated after PR 43 (cloud towers): the same six cases match main. Two shots show no long task and no frame gap.

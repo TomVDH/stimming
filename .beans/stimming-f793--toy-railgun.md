@@ -1,11 +1,11 @@
 ---
 # stimming-f793
 title: 'Toy: Railgun'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-09T19:40:51Z
-updated_at: 2026-11-09T23:56:29Z
+updated_at: 2026-11-10T23:30:16Z
 ---
 
 Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to charge, release to fire; the slug crosses the sky and shatters a looming asteroid. Plan: `docs/plans/railgun.md`. three.js 0.170 on K2 and K6 lifted from `launch/index.html`. Bar v2.
@@ -82,3 +82,147 @@ Railgun (`railgun`). One colossal planetside railgun on a braced pylon; hold to 
 ## Notes for other toys (2026-11-09)
 
 - Tom: the trail shading "VERY impressive"; it may go to another toy ("ten seconds"). The `vol` and `trail` blocks in `railgun/index.html` lift as a pair.
+
+## Main shelf (2026-11-10)
+
+- [x] Menu icon: the far shot at dusk (icons/spike-railgun-2.html, A); the rock follows the pointer, rest to charge and fire, the clouds flash
+- [x] Main shelf as beta: number 40, stage beta; Tom's call
+- [x] Emblem for the intro (shared/emblems/railgun.svg) and an accent (proposal: dusk lilac to fireball amber; Tom sets the final)
+
+## Final tweaks (2026-11-10)
+
+- [x] Remove the case ejection synth; the landing thump stays
+- [x] Case smoke wisp: built, then removed at Tom's call
+- [x] The soot cloud: lobed billows, a curl warp, rim-first erosion into tufts, gone by 30 s
+- [x] A thin first shock skirt leaves the hit to ten radii in a second
+- [x] The charge dust ring centres on the plinth and never breaks
+- [x] The shot dust wall and pall fan out in an arc ahead of the bore
+
+- [x] Cirrus: thin streaks run across the whole sky; random seeds no longer leave it bare
+
+- [x] Soot cloud: about two thirds the density, fewer steps once it is soot
+- [x] A thin shock skirt leaves the muzzle and grows to about a kilometre
+- [x] Air distortion: both shock fronts refract the frame; the hot barrel shimmers
+
+- [x] Charge dust rebuilt: radial inflow, a low streaked sheet, beat rings, rage devils, uneven tops; the shot blows the ring outward
+
+
+## Cinematic pass (2026-11-10)
+
+- [x] 4. The sky answers the blast: the light sweeps out at 60 km/s, a 15 s amber afterglow, a slow heave bows and clears the cirrus, the plain takes the blast light
+- [x] 1. Light shafts: the fireball throws shafts through the soot for about 20 s; the gun's shadow cuts the dust (the sun stays behind the camera, so no sun shafts in frame)
+- [x] 2. Smoke shadows (see the queue)
+- [x] 3. Air, distance and dust: the plain and mesas take the Rayleigh air; each shot loads the low air with dust that hazes and reddens it, settling over a minute
+- [x] 6. Lens: a blue-white streak on the muzzle flash, warm halation in the widest bloom, procedural lens dirt that lights with the bloom (off on rung 3)
+- [x] 7. Debris lights the plain: a landing throws a ring of dust and leaves an ember pool that cools over about twenty seconds
+- [x] 5. The plain answers the shock: sand ripples trail the Mach front; three thin devils wake on the plain ahead as the front reaches them
+- [x] 8. The gun breathes: steam from the housing joints during the charge, a dull red barrel tail over about 40 s, thin sand streams from the ledges after the kick
+- [x] 10. Exposure and focus: the exposure dips after the hit (about 40 %) and the muzzle flash (15 %) and recovers over seconds; the lens softens on the hit and refocuses in about a second
+- [x] 9. A slow sun drift: ±3° round the slider over ten minutes, stepped every 2 s, never below 2°, off under reduced motion and during the Reset spin
+
+- [x] Fix: charge dust back to the old frame cost (36 ms vs 57 ms at a full hold, headless)
+- [x] Fix: the cloud glow and the heave taper out; nothing cuts
+- [x] Fix: no smoke hangs at the muzzle; the bolt trail drifts on the wind and fades in about 15 s
+
+- [x] Fix: the night plain stays dark; the rock only warms it
+- [x] Fix: more contrast and colour in the grade, a deeper vignette
+- [x] Fix: the blast lights the meteor trail softly; the trail lingers about 150 s
+- [x] Fix: softer, cheaper shafts; the cirrus glow fades over about 80 s
+- [x] Fix: depth: the soot draws before the trails; the soot hides shards, sparks and trail behind it; far shards take the air
+- [x] Fix: with no rock in the sky the bolt flies along the bore
+
+- [x] Fix: the sky glow fades with the big flash, gone by about 15 s; the blast lights the trail softly, so its creases show
+
+
+## Queue from Tom (2026-11-10), in order
+
+- [x] Night flash: the foreground stays a stark silhouette against the lit sky
+- [x] 2. Smoke shadows: the soot ball's shadow, steered so it falls on the seen plain and the gun; the trail's real shadow lands out of frame, so it is left out
+- [x] Remove the light shafts altogether
+- [x] Light the comet's main smoke column properly again under the blast
+- [x] Remove the small ejecta that have no full trail
+- [x] The big trailed ejecta fall a little faster
+- [x] Rework the charge dust at the base: it still slows the whole toy
+- [ ] Post pass: FXAA, AO, better bloom; every pass scales with the quality ladder
+- [x] Quality ladder: 100/82/68/55 % of the quality's resolution per rung, High capped at 2x, FXAA when MSAA drops
+- [x] Remaining cinematic items: 3, 5, 6, 7, 8, 10, 9
+
+- [ ] The muzzle: flash, ring, shock wave and smoke puffs, one more look
+- [x] Release lag spike: a warm-up frame behind the intro links every program and uploads every buffer (programs flat at 67 from load); the echo impulse builds in idle time during the hold; the shot samples prefetch in later()
+- [ ] Last: one more look at the charge-up effect
+
+- [x] The soot cloud: lit like the trail, pale ash as it cools, thinner as it grows
+- [x] The case lands without the synth thump
+
+- [x] Faint glow globes round the falling debris after the blast
+- [x] The charge dust: closed-form shading, fewer steps, a tighter bound (58 ms to 14 ms a frame at a full hold, headless)
+- [x] Daytime cirrus: denser and brighter by day, still subtle until the blast lights it
+- [x] Fiery sky: a hotter, wider glow on the clouds and the trail at the hit, still ending with the flash
+- [x] The mid rock is the default; each Reset brings the next size
+
+- [x] The blast lights the asteroid's tail down its whole length, fading with the flash
+
+- [x] Less white wash on the clouds; a bright rim runs at the light front first; the impact cloud swells in lobes and shears with the wind
+
+- [x] The tail's end frays into the impact cloud; the tail takes the blast light all at once, not as a front crawling up it
+
+- [x] A gentle glow globe lingers round the blast for about 10 s; the cirrus melts into the horizon
+
+- [x] No orange night glow on the base or the plain; the rock warms only a pool under it
+- [x] The ridged cumulus near the horizon melts into the haze at its base; the cirrus edge is back as it was
+
+- [x] Blast light reaches every object at the same moment (no travel delay)
+- [x] The lingering glow lights the plain and the gun's side that faces the blast
+- [x] Glow globes smaller and quieter; they light the smoke round them from inside
+- [x] Trailed debris: wider spread, more speed, falling on the arc the rock came in on
+- [x] The big tail fades out slowly after the hit, starting sooner; no broken look
+- [x] The cumulus heaps dissipate when the blast hits; no hard tufts
+
+- [x] The storm tower reacts more to the blast; two more towers spread across the sky
+
+- [x] Settings: long choices step instead of overflowing; graphics rows for Resolution, Smoke detail, Bloom and FXAA
+
+- [x] Muzzle: a tighter flash, a torn shock disc square to the bore, smoke from the brake ports
+- [x] Ejecta: dark silhouettes, faint embers and globes; half burn away in the air, the rest land and their trails fade; the case lands without a jolt
+
+- [x] The clouds' shock rim is a faint warm ripple, not a white wave; the impact cloud takes the moon at night; the gun fires only when aimed; the storm towers ripple as the blast wave passes
+
+- [x] The barrel heats only once the slug leaves; no glow through the over-hold; the conical muzzle plume (fire and smoke) is off, for a redo
+
+- [x] Muzzle redo: a bright brief flash, a torus shock ring square to the bore, a billowing smoke burst lit by the flash
+- [x] The impact lens flare is a wide orange glow
+- [x] Projectile redo: it lights the clouds and the sky faintly as it races past
+
+- [x] Muzzle: a cinematic redo: a volumetric white vapour ring square to the bore, a short fireball, a lobed smoke burst
+- [x] Storm towers: a slow lean away from the hit and a long gentle swell, not a wobble
+
+- [x] The bolt flies 2.5 s longer; its sky and cloud light is much subtler; it lights the plain faintly as it climbs
+
+- [x] Night: no orange on the plain or the gun: the rock lights nothing near at night, and the haze takes the bare sky
+
+- [x] Cirrus edges feather into the sky; towers and heaps stand off it with light through their bodies and silver edges
+
+- [x] Towers lean hard and slump as the wave passes and ease back over a minute; heaps clear slowly; horizon clouds take the tail's light model (Beer, multiple scattering, two-lobe phase, powder), as in Window seat
+
+- [x] Storm towers rebuilt as raymarched volumes lit like the comet's smoke (light marched through them, dark undersides); lumpy columns, anvils sheared downwind; the blast wave leans them; card heaps dim at night
+
+- [x] Clouds: the card towers return in their old form, scattered (four, uneven sizes, distances and gaps); heaps and towers take the full distance haze and hue shift, the tail's light model, dark bases and a dim night; the volume towers are gone
+
+- [x] Villeneuve grade: AgX tone mapping, colour pulled back, cool shadows and warm highs, a soft matte floor, more contrast; moonlit silver tops on the clouds at night
+
+- [x] Over-hold: a quiet 'Release to fire' hint fades in 1.3 s past the overcharge point; a crackle grows with the over-hold on top of the souring chord
+
+- [x] Charge dust: a tighter, lower, thinner ring with softer wisps and more steps (less grain)
+- [x] Settings: Tone map (AgX, ACES, Neutral), Exposure, Contrast and Saturation
+- [x] Debris arcs: four pieces fan out, lob, then fall in a ballistic arc
+- [x] Sand: longer, less regular dunes, band-limited per pixel against aliasing
+- [x] Brightness slider in Settings, beside exposure, contrast and saturation
+- [x] Shed embers: big weightless pieces drift slowly far back up the trail
+- [x] Reset: speed capped at 1.5 days a second, a long shutter blends the light, a dust wall hides the cut; wind roar replaces the whoosh
+- [x] Embers and fragment fire dimmed so the pieces read; old embers clear on reset
+- [x] Default tone from Tom's pick: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06
+- [x] Tone defaults: ACES, exposure 0.55, brightness 0.78, contrast 0.24, saturation 1.06 (Tom's look)
+- [x] Reset redo: a 2.4 s rewind (sky and clouds run backward, long shutter), then a soft white veil, a crisp ring that closes in, and a chime; the dust wall is gone
+- [x] Reset: 1.8 s rewind into a full white fill; the cut happens under the white; white burns off fast while the frame settles from overexposure and springs back from a 6% punch-in; ring and chime gone
+- [x] Bloom: threshold 2 with a wide soft knee; sunlit cloud and smoke bloom only a trace, fire and sparks in full
+- [x] Shell casing: real gravity, a slow shove out, slow spin, a low dead hop on landing

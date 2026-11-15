@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>East Van</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+html, body { margin: 0; height: 100%; background: oklch(0.14 0.02 280); overflow: hidden; }
+body { font: 500 13px/1 "Gabarito", system-ui, sans-serif; color: oklch(0.92 0.01 280); }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.top { position: fixed; left: 14px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 10px; align-items: center; }
+.name { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; color: inherit; text-decoration: none; }
+.name:hover, .name:focus-visible { opacity: 1; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: oklch(0.18 0.02 280 / 0.72); backdrop-filter: blur(8px); }
+.seg button { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; border-radius: 999px; padding: 9px 13px; min-height: 34px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: oklch(0.93 0.02 90); color: oklch(0.2 0.03 280); }
+.seg button:focus-visible { outline: 2px solid oklch(0.85 0.12 85); outline-offset: 1px; }
+.foot {
+  position: fixed; left: 14px; right: 14px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex; justify-content: space-between; gap: 12px; pointer-events: none; opacity: 0.78;
+  text-shadow: 0 1px 6px oklch(0.1 0.02 280 / 0.7);
+}
+.read { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.credit { position: fixed; right: 14px; top: calc(16px + env(safe-area-inset-top, 0px)); max-width: 46vw; text-align: right; font-size: 11px; line-height: 1.3; color: inherit; opacity: 0.6; }
+.credit:hover, .credit:focus-visible { opacity: 1; }
+[hidden] { display: none !important; }
+.keys kbd { font: inherit; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: oklch(0.2 0.02 280 / 0.7); margin-left: 8px; }
+@media (max-width: 640px) { .keys { display: none; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c" aria-label="East Van house lot"></canvas>
+<div class="top">
+  <a class="name" href="../index.html?lab" aria-label="Back to the Lab">East Van</a>
+  <div class="seg" id="stops" role="group" aria-label="Place">
+    <button type="button" data-v="house">House</button>
+    <button type="button" data-v="alley">Alley</button>
+    <button type="button" data-v="drive">Drive</button>
+  </div>
+</div>
+<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver</a>
+<div class="foot">
+  <span class="read" id="read"></span>
+  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1 2 3</kbd> place</span>
+</div>
+<script type="module">
+// East Van: the Toy-town house lot. town.js builds it; lens.js draws it.
+// This page owns the camera, the pointer and the frame loop.
+import * as THREE from 'three';
+import { pixelRatio, whenVisible, css } from '../shared/stim.js';
+import { buildTown } from './town.js';
+import * as lot from './lot.js';
+import * as alley from './alley.js';
+import { buildLife } from './life.js';
+import { createLens } from './lens.js';
+
+const canvas = document.getElementById('c'), read = document.getElementById('read');
+const lerp = (a, b, t) => a + (b - a) * t, clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/* ---------- sky: a dusk gradient behind the plinth ---------- */
+const SKY = [[0, [0.9, 0.08, 75]], [0.3, [0.84, 0.1, 48]], [0.42, [0.68, 0.11, -5]], [0.55, [0.5, 0.1, -55]], [0.75, [0.36, 0.08, -95]], [1, [0.28, 0.07, -100]]];
+function skyAt(v) {
+  let i = 1;
+  while (i < SKY.length - 1 && SKY[i][0] < v) i++;
+  const [v0, a] = SKY[i - 1], [v1, b] = SKY[i], t = clamp((v - v0) / (v1 - v0), 0, 1);
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+function skyTexture(v0, v1) {
+  const cv = document.createElement('canvas');
+  cv.width = 4; cv.height = 512;
+  const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 512, 0, 0);
+  for (let i = 0; i <= 24; i++) grad.addColorStop(i / 24, css(skyAt(lerp(v0, v1, i / 24))));
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 512);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* ---------- scene, lens, camera ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Two dioramas: the house lot with its alley, and the Drive.
+// The Drive loads on the first visit: it reads the baked city data.
+const sky = skyTexture(0.2, 0.8), lens = createLens(renderer);
+const PLACES = {
+  home: () => buildTown(sky, [lot, alley], buildLife),
+  drive: async () => buildTown(sky, [await (await import('./drive.js')).loadDrive()]),
+};
+const towns = {};
+let town = null, place = '', stop = null;
+const cam = new THREE.PerspectiveCamera(22, 1, 5, 160);
+const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 };
+// A stop is a place the camera rests on: a target and a side to look from.
+// w and h are the metres the frame must hold. band and range set the depth blur.
+const STOPS = {
+  // tall is the width to hold on an upright screen.
+  house: { place: 'home', at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 19, h: 19, band: 5, range: 14 },
+  alley: { place: 'home', at: [0, 2.2, -20.5], yaw: Math.PI + 0.55, w: 27, tall: 19, h: 19, band: 5, range: 14 },
+  // The Drive is a disc 116 m across. The view runs up the street from the south.
+  drive: { place: 'drive', at: [0, 4, 0], yaw: -Math.PI / 2 + 0.38, pitch: 0.72, w: 130, tall: 122, h: 78, band: 24, range: 64 },
+};
+const TARGET = new THREE.Vector3(0, 2.6, 0), goal = new THREE.Vector3(0, 2.6, 0);
+function refit() {
+  if (!stop) return;
+  const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight), t = Math.tan(cam.fov * Math.PI / 360);
+  view.fit = Math.max(stop.h / (2 * t), (w < h ? stop.tall : stop.w) / (2 * t * (w / h)));
+}
+async function setStop(name, snap) {
+  const s = STOPS[name];
+  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(b.dataset.v === name));
+  if (s.place !== place) {
+    // Another diorama: build it once, then open on it with no travel.
+    towns[s.place] ||= await PLACES[s.place]();
+    town = towns[s.place]; place = s.place; snap = true;
+  }
+  stop = s;
+  // The Drive is built from city data: its licence asks for this credit.
+  document.getElementById('credit').hidden = s.place !== 'drive';
+  refit();
+  lens.uniforms.lens.uBand.value = s.band; lens.uniforms.lens.uRange.value = s.range;
+  goal.set(...s.at);
+  // Turn the short way round to the stop's side.
+  view.ty += Math.atan2(Math.sin(s.yaw - view.ty), Math.cos(s.yaw - view.ty));
+  view.tp = s.pitch ?? 0.3; view.tz = 1;
+  // The first stop has no travel: the page opens on it.
+  if (snap) { view.yaw = view.ty; view.pitch = view.tp; TARGET.copy(goal); }
+  wake();
+}
+function resize() {
+  const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight);
+  renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 2 }));
+  renderer.setSize(w, h, false);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  lens.resize(size.x, size.y, renderer.getPixelRatio());
+  cam.aspect = w / h;
+  refit();
+}
+function aim() {
+  view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
+  TARGET.lerp(goal, 0.1);
+  const d = view.fit * view.zoom, cp = Math.cos(view.pitch);
+  cam.position.set(TARGET.x + Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, TARGET.z + Math.cos(view.yaw) * cp * d);
+  cam.lookAt(TARGET);
+  const span = stop ? stop.w * 0.9 : 24;
+  cam.near = Math.max(3, d - span - 20); cam.far = d + span + 40;
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+  return d;
+}
+
+/* ---------- pokes: the nearest target under the pointer ---------- */
+const v = new THREE.Vector3();
+function pokeAt(x, y) {
+  const r = canvas.getBoundingClientRect();
+  let best = null, bestD = Infinity;
+  for (const q of town ? town.pokes : []) {
+    v.copy(q.pos).applyMatrix4(cam.matrixWorldInverse);
+    const reach = q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
+    v.applyMatrix4(cam.projectionMatrix);
+    const d = Math.hypot((v.x * 0.5 + 0.5) * r.width - (x - r.left), (0.5 - v.y * 0.5) * r.height - (y - r.top));
+    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = q; bestD = d; }
+  }
+  return best;
+}
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), moved: false };
+  wake();
+});
+canvas.addEventListener('pointermove', e => {
+  wake();
+  if (!drag) { if (e.pointerType === 'mouse') canvas.style.cursor = pokeAt(e.clientX, e.clientY) ? 'pointer' : 'grab'; return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
+  if (!drag.moved) return;
+  view.ty -= dx * 0.006;
+  view.tp = clamp(view.tp + dy * 0.005, 0.06, 0.95);
+});
+canvas.addEventListener('pointerup', e => {
+  if (drag && !drag.moved && performance.now() - drag.t < 500) { const q = pokeAt(e.clientX, e.clientY); if (q) q.fire(); }
+  drag = null;
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, 1.9); wake(); }, { passive: false });
+document.getElementById('stops').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setStop(b.dataset.v); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === '1') setStop('house'); else if (e.key === '2') setStop('alley'); else if (e.key === '3') setStop('drive');
+});
+
+/* ---------- frame loop ---------- */
+let raf = 0, visible = true, lastInput = performance.now(), last = 0, fps = 60, readAt = 0;
+function frame(now) {
+  raf = 0;
+  // A wake can stamp a time just after this frame's, so dt keeps a floor.
+  const dt = Math.min(0.1, Math.max(1 / 240, (now - last) / 1000 || 0.016));
+  last = now;
+  fps = lerp(fps, 1 / dt, 0.08);
+  const d = aim();
+  if (town) {
+    town.update(now / 1000, dt);
+    lens.render(town.scene, cam, d, town.noInk);
+  }
+  if (now - readAt > 300) {
+    readAt = now;
+    read.textContent = `${Math.round(fps)} fps · ${renderer.info.render.calls} calls · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris`;
+  }
+  // The loop sleeps 60 s after the last input.
+  if (visible && now - lastInput < 60000) raf = requestAnimationFrame(frame);
+}
+function wake() {
+  lastInput = performance.now();
+  if (!raf && visible) { last = lastInput; raf = requestAnimationFrame(frame); }
+}
+whenVisible(canvas, on => { visible = on; if (on) wake(); });
+// The pane can open at zero size, so the canvas itself reports its size.
+new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
+resize();
+setStop(STOPS[new URLSearchParams(location.search).get('at')] ? new URLSearchParams(location.search).get('at') : 'house', true);
+</script>
+</body>
+</html>

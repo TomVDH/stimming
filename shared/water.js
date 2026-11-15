@@ -18,6 +18,9 @@
 // Rain on the water, before wtNormal:
 //   slope += wtRings(p, time, foot, rain, 0.6, sig2);
 // rain 0 to 1 is how hard it falls. size 1 makes rings up to 1.4 m wide, to read from afar.
+// Detail: waterDetail(level) gives the budget for shared/detail.js's level.
+//   wtWavesN(..., q.octaves, sig2) and wtRingsN(..., q.ringLayers, sig2) take it.
+// A cut octave moves into sig2, so the water keeps its brightness.
 // Sources: Wind farm (swell), Beach walker (chop, glitter), Buoy Business (sets, rain rings).
 
 export const WATER = /* glsl */`
@@ -47,24 +50,27 @@ vec3 wtSwell(vec2 p, float t, float foot, float amp) {
   }
   return g;
 }
-// Chop: seven octaves of noise from 4 m down, stretched along x.
-// Detail too fine for a pixel leaves the slope and adds to sig2.
-vec2 wtChop(vec2 p, float t, float foot, float amp, inout float sig2) {
+// Chop: up to seven octaves of noise from 4 m down, stretched along x.
+// An octave past the budget, or too fine for a pixel, only adds to sig2.
+vec2 wtChopN(vec2 p, float t, float foot, float amp, int octaves, inout float sig2) {
   vec2 g = vec2(0.0);
   float fr = 0.25;
   for (int i = 0; i < 7; i++) {
-    float fi = float(i), an = 0.45 * sin(fi * 2.4), ca = cos(an), sa = sin(an);
-    vec2 rp = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
-    vec2 q = fr * vec2(rp.x * 0.3, rp.y) + vec2(fi * 7.1, fi * 3.3 + t * (0.2 + 0.5 / (fi + 1.0)));
-    vec2 gq = wtNoised(q).yz * vec2(0.3, 1.0);
-    float wgt = 1.0 - smoothstep(0.15, 0.5, foot * fr);
-    g += vec2(ca * gq.x + sa * gq.y, -sa * gq.x + ca * gq.y) * amp * wgt;
+    float wgt = i < octaves ? 1.0 - smoothstep(0.15, 0.5, foot * fr) : 0.0;
+    if (wgt > 0.0) {
+      float fi = float(i), an = 0.45 * sin(fi * 2.4), ca = cos(an), sa = sin(an);
+      vec2 rp = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+      vec2 q = fr * vec2(rp.x * 0.3, rp.y) + vec2(fi * 7.1, fi * 3.3 + t * (0.2 + 0.5 / (fi + 1.0)));
+      vec2 gq = wtNoised(q).yz * vec2(0.3, 1.0);
+      g += vec2(ca * gq.x + sa * gq.y, -sa * gq.x + ca * gq.y) * amp * wgt;
+    }
     sig2 += (1.0 - wgt) * amp * amp * 0.35;
     fr *= 1.9;
     amp *= 0.7;
   }
   return g;
 }
+vec2 wtChop(vec2 p, float t, float foot, float amp, inout float sig2) { return wtChopN(p, t, foot, amp, 7, sig2); }
 // Wave groups: slow envelopes scale the waves, so no two crests repeat.
 // scatter brings sets of high waves with near-calm water between them.
 float wtSets(vec2 p, float t, float scatter) {
@@ -77,11 +83,14 @@ float wtSets(vec2 p, float t, float scatter) {
   return mix(e, 0.06 + 1.54 * smoothstep(-0.15, 0.6, s), scatter);
 }
 // The whole surface. Returns the slope; sig2 gets the roughness no pixel resolves.
-vec2 wtWaves(vec2 p, float t, float foot, float swell, float chop, float scatter, out float sig2) {
+vec2 wtWavesN(vec2 p, float t, float foot, float swell, float chop, float scatter, int octaves, out float sig2) {
   sig2 = 0.0008;
   float e = wtSets(p, t, scatter);
   vec2 g = wtSwell(p, t, foot, swell * e).xy;
-  return g + wtChop(p, t, foot, chop * (0.4 + 0.6 * e), sig2);
+  return g + wtChopN(p, t, foot, chop * (0.4 + 0.6 * e), octaves, sig2);
+}
+vec2 wtWaves(vec2 p, float t, float foot, float swell, float chop, float scatter, out float sig2) {
+  return wtWavesN(p, t, foot, swell, chop, scatter, 7, sig2);
 }
 // One layer of rain rings. A share of the cells holds a drop; each drop falls once a cycle.
 vec2 wtRingLayer(vec2 p, float t, float amount, float size, float rate) {
@@ -96,14 +105,17 @@ vec2 wtRingLayer(vec2 p, float t, float amount, float size, float rate) {
 }
 // Rain rings: each drop lays a ring that spreads and fades. Add the result to the slope.
 // Rings too small for a pixel fade out and roughen the water through sig2.
-vec2 wtRings(vec2 p, float t, float foot, float amount, float size, inout float sig2) {
+vec2 wtRingsN(vec2 p, float t, float foot, float amount, float size, int layers, inout float sig2) {
   if (amount <= 0.0) return vec2(0.0);
   float seen = 1.0 - smoothstep(0.15, 0.5, foot / (0.39 * size));
   sig2 += (1.0 - seen) * amount * 0.004;
   if (seen <= 0.0) return vec2(0.0);
-  // Two offset layers, so drops never fall on a grid.
-  return (wtRingLayer(p, t, amount, size, 0.55) + wtRingLayer(p + vec2(1.4, 0.9) * size, t, amount, size, 0.45)) * 0.5 * seen;
+  // Two offset layers, so drops never fall on a grid. Low detail keeps one.
+  vec2 g = wtRingLayer(p, t, amount, size, 0.55);
+  if (layers > 1) g += wtRingLayer(p + vec2(1.4, 0.9) * size, t, amount, size, 0.45);
+  return g * 0.5 * seen;
 }
+vec2 wtRings(vec2 p, float t, float foot, float amount, float size, inout float sig2) { return wtRingsN(p, t, foot, amount, size, 2, sig2); }
 vec3 wtNormal(vec2 slope) { return normalize(vec3(-slope.x, 1.0, -slope.y)); }
 // Schlick: water mirrors little from above and almost all at a grazing view.
 float wtFresnel(vec3 d, vec3 n) { return 0.02 + 0.98 * pow(1.0 - clamp(dot(-d, n), 0.0, 1.0), 5.0); }
@@ -115,6 +127,9 @@ float wtGlint(vec3 r, vec3 l, float sig2, float size) {
   return exp(-dot(q, q) / (2.0 * s2)) * (size * size / s2);
 }
 `;
+
+// The water's budget at a detail level (shared/detail.js): 0 low, 1 standard, 2 high.
+export const waterDetail = level => ({ octaves: level > 0 ? 7 : 4, ringLayers: level > 0 ? 2 : 1 });
 
 // The swell's height at a point, on the CPU: for a boat or a buoy.
 // It mirrors wtSwell with no pixel fade. amp is the same slope gain.

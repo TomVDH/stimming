@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Train Ride 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans); padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased; }
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; max-width: 70ch; }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.icons { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); cursor: pointer; }
+.tile svg { display: block; overflow: visible; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Train Ride 1</h1>
+<p class="lede">Four directions in the toy's daytime palette: pale sky, soft cloud, the deep lake, a green far shore, the cream cabin wall. A red Swiss-style train with no marks or logos. No offset slab. Each shows at 256, 128 and 64, then its intro emblem. Hover a tile to play it.</p>
+<div class="row" id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Shared paints, from a daytime frame of the toy.
+  const C = {
+    sky0: 'oklch(0.72 0.09 240)', sky1: 'oklch(0.93 0.03 230)', cloud: 'oklch(0.98 0.01 240)',
+    far: 'oklch(0.62 0.07 150)', farD: 'oklch(0.52 0.07 155)', peak: 'oklch(0.78 0.03 250)', snow: 'oklch(0.98 0.005 250)',
+    lake: 'oklch(0.5 0.1 240)', lakeL: 'oklch(0.72 0.07 230)', grass: 'oklch(0.7 0.15 135)', grassD: 'oklch(0.58 0.14 140)',
+    wall: 'oklch(0.9 0.02 85)', wallD: 'oklch(0.78 0.025 80)', bar: 'oklch(0.22 0.01 260)',
+    red: 'oklch(0.56 0.2 27)', redD: 'oklch(0.44 0.17 27)', white: 'oklch(0.97 0.005 90)', glass: 'oklch(0.24 0.03 250)', grey: 'oklch(0.55 0.01 260)',
+    roof: 'oklch(0.45 0.1 40)',
+  };
+  // The view through the window: sky, cloud, far shore with a village, lake and near meadow.
+  const view = (id) => `
+    <defs><linearGradient id="${id}-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky0}"/><stop offset="1" stop-color="${C.sky1}"/></linearGradient>
+    <linearGradient id="${id}-lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.lakeL}"/><stop offset="1" stop-color="${C.lake}"/></linearGradient></defs>
+    <rect x="0" y="0" width="128" height="128" fill="url(#${id}-sky)"/>
+    <g class="cloud"><ellipse cx="44" cy="40" rx="14" ry="5" fill="${C.cloud}"/><ellipse cx="52" cy="37" rx="9" ry="6" fill="${C.cloud}"/><ellipse cx="88" cy="46" rx="11" ry="3.5" fill="${C.cloud}" opacity="0.85"/></g>
+    <path d="M0 64 Q20 56 40 60 T80 57 T128 59 V72 H0Z" fill="${C.far}"/>
+    <g fill="${C.white}"><rect x="58" y="62" width="3" height="2.4"/><rect x="63" y="61.5" width="2.6" height="2.8"/><rect x="92" y="62" width="3" height="2.2"/></g>
+    <g fill="${C.roof}"><rect x="58" y="61.2" width="3" height="1"/><rect x="63" y="60.8" width="2.6" height="1"/><rect x="92" y="61.2" width="3" height="1"/></g>
+    <rect x="0" y="66" width="128" height="20" fill="url(#${id}-lake)"/>
+    <g class="glint" stroke="${C.cloud}" stroke-width="1.2" stroke-linecap="round" opacity="0.8"><path d="M30 72h10M70 76h14M100 71h8M50 80h9"/></g>
+    <path d="M0 84 Q40 81 70 83 T128 82 V128 H0Z" fill="${C.grass}"/>
+    <path d="M0 92 Q50 88 128 91 V128 H0Z" fill="${C.grassD}"/>`;
+  // A red train side: one long car with a window band, a white line, doors and a grey roof.
+  const trainSide = (x, y, w) => `
+    <g class="train">
+      <path d="M${x} ${y + 3} q0 -3 4 -3 H${x + w - 6} q6 0 8 7 v9 H${x}Z" fill="${C.red}"/>
+      <rect x="${x}" y="${y - 2}" width="${w - 4}" height="2.6" rx="1" fill="${C.grey}"/>
+      <rect x="${x + 4}" y="${y + 3}" width="${w - 12}" height="4.4" rx="1.2" fill="${C.glass}"/>
+      ${Array.from({ length: Math.floor((w - 14) / 8) }, (_, i) => `<rect x="${x + 9 + i * 8}" y="${y + 3}" width="1.4" height="4.4" fill="${C.red}"/>`).join('')}
+      <rect x="${x}" y="${y + 10.4}" width="${w - 2}" height="1.1" fill="${C.white}"/>
+      <rect x="${x + w * 0.33}" y="${y + 2.4}" width="3.4" height="9" rx="0.6" fill="${C.redD}"/>
+      <rect x="${x + w * 0.66}" y="${y + 2.4}" width="3.4" height="9" rx="0.6" fill="${C.redD}"/>
+      <rect x="${x}" y="${y + 13}" width="${w + 2}" height="3" fill="${C.bar}"/>
+    </g>`;
+  const DIRS = [
+    {
+      key: 'A', name: 'Window by day', idea: 'The cleaned-up window: cream wall, a deep rounded reveal, the cross bar backlit. A mast and the shore slide past on hover.',
+      svg: id => `<svg viewBox="0 0 128 128"><defs><clipPath id="${id}-c"><rect x="18" y="26" width="92" height="70" rx="12"/></clipPath></defs>
+        <rect x="6" y="6" width="116" height="116" rx="14" fill="${C.wall}"/>
+        <rect x="13" y="21" width="102" height="80" rx="16" fill="${C.wallD}"/>
+        <g clip-path="url(#${id}-c)"><g class="scene">${view(id)}</g>
+          <g class="mast"><rect x="96" y="26" width="5" height="70" fill="${C.bar}"/><rect x="88" y="44" width="14" height="2.4" fill="${C.bar}"/></g>
+          <rect x="18" y="44" width="92" height="2.2" fill="${C.bar}" opacity="0.9"/><rect x="18" y="43.4" width="92" height="0.7" fill="${C.cloud}" opacity="0.7"/>
+        </g>
+        <rect x="18" y="26" width="92" height="70" rx="12" fill="none" stroke="${C.bar}" stroke-opacity="0.25" stroke-width="1.5"/></svg>`,
+      play: (s) => gsap.timeline({ repeat: -1 }).fromTo(s.querySelector('.mast'), { x: 30 }, { x: -110, duration: 0.6, ease: 'none' }).fromTo(s.querySelectorAll('.glint'), { x: 0 }, { x: -24, duration: 0.6, ease: 'none' }, 0),
+      emblem: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="12" y="20" width="104" height="82" rx="18" fill="white"/><rect x="20" y="28" width="88" height="66" rx="11" fill="black"/><path d="M20 62 Q44 54 64 58 T108 56 V94 H20Z" fill="white"/><rect x="20" y="66" width="88" height="5" fill="black"/><rect x="20" y="44" width="88" height="3" fill="white"/><rect x="88" y="28" width="6" height="66" fill="white"/></svg>`,
+    },
+    {
+      key: 'B', name: 'Red train by the lake', idea: 'A Swiss scene in a rounded square: snow peaks, the lake, and a red train along the shore. It glides through on hover.',
+      svg: id => `<svg viewBox="0 0 128 128"><defs><clipPath id="${id}-c"><rect x="6" y="6" width="116" height="116" rx="16"/></clipPath>
+        <linearGradient id="${id}-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.sky0}"/><stop offset="1" stop-color="${C.sky1}"/></linearGradient></defs>
+        <g clip-path="url(#${id}-c)">
+          <rect width="128" height="128" fill="url(#${id}-sky)"/>
+          <ellipse cx="36" cy="30" rx="13" ry="4.5" fill="${C.cloud}"/><ellipse cx="44" cy="27" rx="8" ry="5" fill="${C.cloud}"/>
+          <path d="M-4 66 L28 34 L44 50 L66 24 L92 52 L104 42 L132 66Z" fill="${C.peak}"/>
+          <path d="M28 34 L36 42 L31 44 L26 40Z M66 24 L76 35 L70 37 L66 33 L61 36 L58 32Z M104 42 L110 48 L104 49Z" fill="${C.snow}"/>
+          <path d="M-4 66 Q30 58 64 62 T132 60 V76 H-4Z" fill="${C.far}"/>
+          <rect x="0" y="72" width="128" height="16" fill="${C.lake}"/>
+          <path d="M18 78h12M56 82h16M96 77h10" stroke="${C.lakeL}" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M0 88 Q60 84 128 87 V128 H0Z" fill="${C.grass}"/>
+          <rect x="0" y="99" width="128" height="3" fill="${C.wallD}"/>
+          <g class="ride">${trainSide(18, 86, 92)}</g>
+          <path d="M0 105 Q60 101 128 104 V128 H0Z" fill="${C.grassD}"/>
+        </g></svg>`,
+      play: (s) => gsap.timeline({ repeat: -1 }).fromTo(s.querySelector('.ride'), { x: -120 }, { x: 130, duration: 1.6, ease: 'none' }),
+      emblem: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M4 70 L32 40 L46 54 L66 30 L90 56 L102 46 L124 70Z" fill="white"/><path d="M14 80 q0 -4 5 -4 H104 q8 0 10 9 v8 H14Z" fill="white"/><rect x="20" y="81" width="80" height="5" rx="1.5" fill="black"/><rect x="12" y="96" width="106" height="3" fill="white"/></svg>`,
+    },
+    {
+      key: 'C', name: 'Train through the window', idea: 'The window, with a red train passing on the next track. It rushes through on hover; the lake shows again behind it.',
+      svg: id => `<svg viewBox="0 0 128 128"><defs><clipPath id="${id}-c"><rect x="18" y="26" width="92" height="70" rx="12"/></clipPath></defs>
+        <rect x="6" y="6" width="116" height="116" rx="14" fill="${C.wall}"/>
+        <rect x="13" y="21" width="102" height="80" rx="16" fill="${C.wallD}"/>
+        <g clip-path="url(#${id}-c)"><g class="scene">${view(id)}</g>
+          <g class="pass"><path d="M8 52 q0 -6 8 -6 H140 V96 H8Z" fill="${C.red}"/>
+            <rect x="14" y="56" width="126" height="14" rx="3" fill="${C.glass}"/>
+            ${[0, 1, 2, 3, 4].map(i => `<rect x="${40 + i * 24}" y="56" width="3" height="14" fill="${C.red}"/><rect x="${22 + i * 24}" y="58" width="12" height="3" rx="1" fill="oklch(0.85 0.09 75)" opacity="0.55"/>`).join('')}
+            <rect x="8" y="76" width="132" height="2.4" fill="${C.white}"/>
+            <rect x="70" y="52" width="9" height="40" rx="1.5" fill="${C.redD}"/>
+            <path d="M14 48 H140" stroke="${C.cloud}" stroke-width="1" opacity="0.6"/></g>
+          <rect x="18" y="44" width="92" height="2.2" fill="${C.bar}" opacity="0.9"/>
+        </g>
+        <rect x="18" y="26" width="92" height="70" rx="12" fill="none" stroke="${C.bar}" stroke-opacity="0.25" stroke-width="1.5"/></svg>`,
+      rest: (s) => gsap.set(s.querySelector('.pass'), { x: 26 }),
+      play: (s) => gsap.timeline({ repeat: -1, repeatDelay: 0.25 }).fromTo(s.querySelector('.pass'), { x: 120 }, { x: -150, duration: 0.7, ease: 'none' }),
+      emblem: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="12" y="20" width="104" height="82" rx="18" fill="white"/><rect x="20" y="28" width="88" height="66" rx="11" fill="black"/><path d="M34 54 q0 -6 8 -6 H108 V94 H34Z" fill="white"/><rect x="40" y="58" width="68" height="13" rx="3" fill="black"/><rect x="34" y="78" width="74" height="3" fill="black"/></svg>`,
+    },
+    {
+      key: 'D', name: 'The nose', idea: 'A red train head-on, on white: dark windscreen, three lights in a triangle, a white skirt line. The lights flare on hover.',
+      svg: id => `<svg viewBox="0 0 128 128"><defs><radialGradient id="${id}-g"><stop offset="0" stop-color="oklch(0.99 0.03 90)"/><stop offset="1" stop-color="oklch(0.99 0.03 90)" stop-opacity="0"/></radialGradient></defs>
+        <rect x="6" y="6" width="116" height="116" rx="16" fill="${C.sky1}"/>
+        <path d="M6 96 H122 V106 Q122 122 106 122 H22 Q6 122 6 106Z" fill="${C.grassD}"/>
+        <path d="M58 96 L34 122 H94 L70 96Z" fill="${C.wallD}"/>
+        <path d="M30 98 Q28 50 40 34 Q64 24 88 34 Q100 50 98 98Z" fill="${C.red}"/>
+        <path d="M40 40 Q64 31 88 40 L92 62 Q64 58 36 62Z" fill="${C.glass}"/>
+        <path d="M44 43 Q60 38 74 40" stroke="${C.cloud}" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.7"/>
+        <rect x="30" y="86" width="68" height="3" fill="${C.white}"/>
+        <rect x="30" y="92" width="68" height="6" fill="${C.bar}"/>
+        <rect x="58" y="62" width="12" height="20" rx="2" fill="${C.redD}" opacity="0.5"/>
+        <g class="lamps" fill="${C.white}"><circle cx="64" cy="31.5" r="2.6"/><circle cx="40" cy="76" r="3.4"/><circle cx="88" cy="76" r="3.4"/></g>
+        <g class="flare" opacity="0"><circle cx="64" cy="31.5" r="11" fill="url(#${id}-g)"/><circle cx="40" cy="76" r="14" fill="url(#${id}-g)"/><circle cx="88" cy="76" r="14" fill="url(#${id}-g)"/></g></svg>`,
+      play: (s) => gsap.timeline({ repeat: -1, yoyo: true }).to(s.querySelector('.flare'), { opacity: 1, duration: 0.5, ease: 'sine.inOut' }),
+      emblem: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M28 104 Q26 52 38 34 Q64 22 90 34 Q102 52 100 104Z" fill="white"/><path d="M40 41 Q64 32 88 41 L92 63 Q64 59 36 63Z" fill="black"/><circle cx="40" cy="80" r="5" fill="black"/><circle cx="88" cy="80" r="5" fill="black"/><circle cx="64" cy="29" r="3.5" fill="black"/><rect x="28" y="92" width="72" height="4" fill="black"/></svg>`,
+    },
+  ];
+  const out = document.getElementById('out');
+  for (const d of DIRS) {
+    const card = document.createElement('div');
+    card.className = 'dir';
+    card.innerHTML = `<header><b>${d.key}</b><span>${d.name}</span></header><div class="icons">${[256, 128, 64].map(n => `<div class="tile t${n}" tabindex="0">${d.svg(`${d.key}${n}`)}</div>`).join('')}</div>
+      <div class="emb"><div class="flash"><i style="--emblem:url('data:image/svg+xml,${encodeURIComponent(d.emblem)}')"></i></div><div class="glass"><i style="--emblem:url('data:image/svg+xml,${encodeURIComponent(d.emblem)}')"></i></div></div><p class="idea">${d.idea}</p>`;
+    out.appendChild(card);
+    for (const t of card.querySelectorAll('.tile')) {
+      const s = t.querySelector('svg');
+      d.rest?.(s);
+      let tl = null;
+      const on = () => { if (reduce || tl) return; tl = d.play(s); };
+      const off = () => { if (!tl) return; tl.kill(); tl = null; gsap.set(s.querySelectorAll('.mast,.glint,.ride,.flare'), { clearProps: 'all' }); d.rest?.(s); };
+      t.addEventListener('pointerenter', on); t.addEventListener('pointerleave', off);
+      t.addEventListener('focus', on); t.addEventListener('blur', off);
+    }
+  }
+})();
+</script>
+</body>
+</html>

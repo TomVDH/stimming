@@ -41,7 +41,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 | Slot | Holds | Limit |
 |---|---|---|
 | Top left | Stimming logo (unboxed), `/ TOY NAME`, then the choice | One choice group. See the choice rules below. |
-| Top right | Sound, Settings, (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order. Does not count to the limit. |
+| Top right | Sound, Settings, Dev (only with `?dev`), (i). The Classic or Fresh link (only with `legacy`) sits in Settings, under Build | Fixed order. Does not count to the limit. |
 | Bottom left | Actions | Three at most. |
 | Bottom right | Main slider | One at most. A word label, no number. |
 | Bottom centre | Key strip | Four entries at most. |
@@ -167,6 +167,17 @@ It drops from the top-right cluster, right-aligned, 280 px wide (full width less
 - Focus moves into the sheet when it opens. Tab stays inside it.
 - A row with `persist: true` stores its value in `stimming.<id>.<setting id>`.
 - With no toy rows and no Quality, the Settings button hides.
+
+### Dev sheet (Tom, 2026-11-12)
+
+Settings is for everyone who plays with the toy. Dev is for the people who build it.
+
+- A toy passes tuning rows in `dev: [...]`, the same row shapes as `settings`.
+- With `?dev` in the address, a Dev button (a code bracket) sits right of Settings and opens its own sheet, titled Dev.
+- Without `?dev`, the button and the sheet do not exist. The rows still do: `ui.setting(id)` reads them, with their stored or default values.
+- Goes in Dev: look and tone tuning (grain, bloom, exposure, contrast), sound picks under trial, dev pins (a fixed rock size), anti-aliasing modes.
+- Stays in Settings: comfort (letterbox), controls (aim mode), performance (resolution, detail), the site Quality row.
+- Railgun is the first toy on it. Other toys move when Tom picks them.
 
 ## 4. API
 

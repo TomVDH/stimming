@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-08T11:02:11Z
-updated_at: 2026-11-10T08:47:24Z
+updated_at: 2026-11-10T11:06:33Z
 ---
 
 Lab toy grown from viaduct/protos/window.html: a night valley seen through one carriage window on a high viaduct, with rain and breath on the glass.
@@ -262,3 +262,37 @@ Open from the critics:
 - [x] The whine stays as a layer, at the level Tom set in the mixer (2.3 times the first try), driven by power and brake
 - [x] Mixer rows follow the new layers; it reads only keys it knows
 - [ ] Not run with live sound: the departure and arrival cuts (the pane was hidden). Tom to listen
+
+## Round 26: life outside (Tom, 2026-11-10)
+
+- [x] Boats: 14 lake steamers (two decks, lit windows at night, a wake) that run 1.5 km each way; 320 sails by day, most within a kilometre of the near shore; one car ferry that crosses at Horgen with cars on deck. One placer, three meshes on one shader
+- [x] Birds: 340 gull flocks over the water (flap, then glide), 16 buzzards that circle over dry ground, and crows that sit in a field and lift off as the train draws near (about once a minute by day, at speed, clear of stations and water). All roost at night. One mesh, two triangles a bird
+- [x] Plane: most pass 6 km out on their way down, a small grey shape by day and three lights at night (steady, red pulse, double strobe); one in three by day is a high one with a contrail. One every few minutes
+- [x] Dev: S.cue('plane' or 'crows') and S.life, to bring them on and find them
+- [ ] Not seen yet: gulls and buzzards up close, the ferry from the window, the contrail against blue sky. Tom to look
+
+- [x] Headlights (Tom): tools/carpaths.py turns the bigger mapped roads (motorway to unclassified, no residential) into 177 paths, 52 km, paths.bin 19 KB. 713 cars drive them at night: paired headlights toward the eye, red tail lights away, a faint pool on the road, a wider halo in rain; pace and spacing by road class; they fade at a path's ends. One mesh, three quads a car. Seen: a car at Bäch, a line of lights on the motorway near Bilten
+- [ ] Cars by day are not drawn; cars do not stop at junctions or meet each other
+
+## Round 27: stations, yard, small things (Tom, 2026-11-10)
+
+- [x] Sound body: the bus EQ now lifts the lows (+4 dB under 180 Hz), dips 2.8 kHz and rolls off the top; level 0.42 to 0.32. The motor band is lower and wider (120 to 500 Hz) and comes through plainly only with the compartment door open
+- [x] A click on the view leans to the glass or sits back
+- [x] A passing train's lit saloon washes the wall and the reveal while it is alongside
+
+- [x] Platforms stand beyond the second track (the old ones sat on it): a gravel apron with grassed banks carries each; canopy lights, signs, masts and fence move with it
+- [x] Rural halt redone: a short, narrow platform, five warm masts, a glass shelter with a bench and a yellow departures board, a clock on a post
+- [x] Station clock with the real time; the red seconds hand waits at the top for the minute
+- [x] Town stations: a two-floor station house with arched ground floor openings behind the platform (in place of the island platform)
+- [x] Zürich HB: the five tracks join the line one by one from 1.5 km; six trains stand in the yard and one shunts; the land keeps below the deck
+- [x] Line button (L): a strip with the route, a tick per station and the train; a drag jumps along the line; with ?dev it holds the top view
+- [x] Main shelf as beta, No. 41 (Tom, 2026-11-10): menu tile moved, toys.json, AGENTS.md
+- [ ] No intro emblem yet (emblem is null); icons are for the toy's icon chat
+- [x] The ride starts standing at Zurich Enge (3.14 km), the last stop before the lake opens up (Tom, 2026-11-10); ?x= still sets any start
+- [x] Time of day in five hours (Tom, 2026-11-10): morning, noon, afternoon, evening, night. Each sets the daylight share, the sun's direction and colour, a horizon tint for sky and haze, and its strength; a change eases over in about three seconds (sun, tints, daylight, cabin sun patches, lamps); the cabin rebakes as the sun moves; T steps through the hours; an old saved 'day' reads as afternoon
+- [x] Menu icon: Tom picked A of spike trainride-1 (window by day; mast sweeps and lake glints on hover); emblem shared/emblems/trainride.svg; picks.json records it
+- [x] Night walls: at a slant the merged window glow stays in a band per floor, never the whole wall
+- [x] Water: six swells with exact slopes and one noise layer (was four noise octaves, each sampled three times); one mirror ray on the bilinear map, 24 steps and three halvings (was two rays, 32 cubic steps); sunlit crests glow; light and moon reflections follow the rippled surface, shards near and a soft column far. Night lake at 3840x2400: 42 to 26 ms and 56 to 31 ms per frame against the previous build
+- [x] Water rebuild reverted (Tom: way worse); the previous water is back while a shared water shader is studied
+- [x] Water adopts shared/water.js (Buoy Business, Beach walker and Wind farm lineage): swell, chop and wave sets with unresolved waves moved into roughness; rain rings in rain; Fresnel and the sun glint from the module; town lights and the moon reflect as lobes stretched along the path by the view's slant, broken by the ripples near the eye. The lake colours, shore line and land mirror stay
+- [x] Night reflections cleaned up (Tom): slim streaks under each light and a moon path, their length from the calm surface and their sideways wobble from the shared water's ripples. Still to do (master bean stimming-ssrh): adoption steps 1 to 4, and wtLights() once the library builds it

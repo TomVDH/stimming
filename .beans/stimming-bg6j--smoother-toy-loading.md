@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: low
 created_at: 2026-11-04T12:00:00Z
-updated_at: 2026-11-09T21:50:20Z
+updated_at: 2026-11-10T20:41:39Z
 ---
 
 Make toys open faster from the menu. Shelved by Tom on 2026-11-04 in favour of the toy builds.
@@ -34,10 +34,15 @@ Tom asked for staged, chunked loading with caching, toy by toy, heaviest first. 
 - [x] Menu: GSAP preload; warm the shell in idle time; warm a toy on hover, focus or touch
 - [x] Shell: `stage()`, `idle()`, `pageReady()`, `later()`; one `toys.json` request per page
 - [x] TV tree: preloads, stage marks, first-frame `ready`, tree mesh in a worker
-- [ ] Tom checks TV tree on Pages
+- [x] PR 35 merged; all 36 pass the harness on Pages
 - [x] All 35 other main-shelf toys: preloads, stage marks, first-frame `ready`; results in `docs/plans/loading.md`
 - [ ] Tom checks sound and a direct cold link on Pages
 - [x] Trails, Wind map: parallel shader compile
+- [x] Launch and Frietkot use the stage contract
+- [x] Railgun, Train ride, Foghorn use the stage contract
+- [x] Railgun re-checked after PR 40: marks in order, warm frame holds
+- [x] Railgun sweep after PR 41: six cases match main; intro cap raised to 15 s
+- [x] Railgun sweep after PR 43: six cases match main
 - [ ] Slow-load cue: candidates in `introlab/` for Tom to pick
 - [ ] Elective offline cache: service worker behind a "Keep offline" switch
 

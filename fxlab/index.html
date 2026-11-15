@@ -8,7 +8,7 @@
 <title>FX lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..800&display=swap">
 <style>
-/* FX lab: every shared shader on one scene, each on a switch. A second mode checks a toy's copy against a module. */
+/* FX lab: shared/environment.js runs every shared shader on one scene, each on a switch. A second mode checks a toy's copy against a module. */
 :root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); --bad: oklch(0.72 0.17 25); --good: oklch(0.8 0.14 150); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
@@ -68,12 +68,18 @@ input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; marg
   <h1>FX lab</h1>
   <div class="seg" id="mode" style="margin:6px 0 8px"><button data-v="stack" aria-pressed="true">All effects</button><button data-v="check" aria-pressed="false">Check a copy</button></div>
   <div id="pStack">
-    <p class="note">One window on a harbour, every shared shader. Switch each on or off. Drag the light.</p>
+    <p class="note">One window, every shared shader. Switch each on or off. Drag the light.</p>
     <h2>Look</h2>
     <div class="seg" id="looks"></div>
     <div class="seg" style="margin-top:6px"><button id="pause" aria-pressed="false">Pause</button></div>
+    <h2>Scene</h2>
+    <div class="seg" id="scene"><button data-v="harbour" aria-pressed="true">Harbour</button><button data-v="sea" aria-pressed="false">Open sea</button></div>
     <h2>Weather</h2>
     <label class="row"><span>Dry to storm</span><input type="range" id="wx" min="0" max="1" step="0.01" value="0.5"><output id="wxOut">0.5</output></label>
+    <h2>Quality</h2>
+    <div class="seg" id="qual"><button data-v="standard" aria-pressed="false">Standard</button><button data-v="high" aria-pressed="false">High</button></div>
+    <div class="seg" style="margin-top:6px"><button id="slow" aria-pressed="false">Act as a slow device</button></div>
+    <p class="note" id="perf" style="margin-top:6px"></p>
     <h2>Shaders</h2>
     <div id="cards"></div>
   </div>
@@ -104,11 +110,16 @@ input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; marg
 import { FLARE } from '../shared/flare.js';
 import { GRADE, gradePass } from '../shared/grade.js';
 import { GLASS_RAIN } from '../shared/glassrain.js';
-import { BOKEH } from '../shared/bokeh.js';
-import { WET_GLASS, wetGlassMotion } from '../shared/wetglass.js';
+import { WET_GLASS } from '../shared/wetglass.js';
 import { WATER } from '../shared/water.js';
+import { LEVELS } from '../shared/detail.js';
+import { quality, setQuality } from '../shared/stim.js';
 import { weather } from '../shared/weather.js';
-import { SKY, skyAt } from '../shared/sky.js';
+import { SKY } from '../shared/sky.js';
+import { OUTPUT } from '../shared/output.js';
+import { PRECIP } from '../shared/precip.js';
+import { GLOW } from '../shared/glow.js';
+import { environment, ENV_DEFAULTS } from '../shared/environment.js';
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), view = $('view');
@@ -124,8 +135,9 @@ const KNOBS = {
   tintK: ['Tint', 0, 40, 0.1, 1], vig: ['Vignette', 0, 1, 0.01, 0.5], vigIn: ['Inner edge', 0, 1, 0.01, 0.4], grain: ['Grain', 0, 0.3, 0.001, 0.03],
   seed: ['Grain seed', 0, 20, 1, 0], box: ['Letterbox', 0, 1, 1, 0], flick: ['Flicker', -0.1, 0.1, 0.001, 0],
   starsK: ['Stars', 0, 3, 0.01, 1], sunAz: ['Sun bearing', -3.14, 3.14, 0.01, 0.6], hazeD: ['Haze', 0, 0.003, 0.00005, 0.0006], hazeH: ['Haze height', 20, 400, 1, 120],
+  expo: ['Exposure', 0.2, 3, 0.01, 1],
 };
-const FXS = { flare: 'Lens flare', grade: 'Grade', sky: 'Sky and haze' };
+const FXS = { flare: 'Lens flare', grade: 'Grade', sky: 'Sky and haze', output: 'Output', glow: 'Glow' };
 // The lab's tint at Tint 1: the night-scene toys' haze lift.
 const TINT = [0.0008, 0.0009, 0.0014];
 const uName = k => 'u' + k[0].toUpperCase() + k.slice(1);
@@ -483,6 +495,59 @@ PRESETS.push(
   },
 );
 
+/* ---------- output: the copies ---------- */
+// These sides return screen colour, so the lab adds no curve of its own.
+const OUT_PRE = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+vec3 knee(vec3 c) { return mix(c, 0.8 + 0.2 * (1.0 - exp(-(c - 0.8) * 5.0)), step(0.8, c)); }`;
+PRESETS.push(
+  {
+    fx: 'output', id: 'film', name: 'Film curve and sRGB', a: 'Lava lamp', b: 'ouAces(), ouSrgb()', light: 'sun', encoded: true,
+    knobs: { expo: 1.05 }, pre: OUT_PRE,
+    use: 'The same two functions sit in Caustic pool, Vortex, Dijkstra, Lichtenberg, Chocolate, Rubens, Bismuth, Flame test and Beer.',
+    A: `
+  return srgb(aces(base * uExpo));`,
+    B: `
+  return ouSrgb(ouAces(base * uExpo));`,
+  },
+  {
+    fx: 'output', id: 'knee', name: 'Soft knee and dither', a: 'Rain on glass', b: 'ouKnee(), ouDither()', light: 'white', encoded: true,
+    knobs: {}, pre: OUT_PRE,
+    use: 'Also Frost and Chladni. Twenty-odd raw WebGL2 toys end on the same dither line.',
+    A: `
+  return srgb(knee(base)) + (hash(gl_FragCoord.xy + 7.0) - 0.5) / 255.0;`,
+    B: `
+  return ouDither(ouSrgb(ouKnee(base)), gl_FragCoord.xy + 7.0);`,
+  },
+);
+
+/* ---------- glow: the copies ---------- */
+PRESETS.push(
+  {
+    fx: 'glow', id: 'orb', name: 'Light orb (the kit)', a: 'Fireworks', b: 'gwOrb(), gwRoll()', light: 'sun',
+    knobs: { gain: 1, size: 1 },
+    use: 'Also Night viaduct and Ten seconds.\nThe bloom chain has no check here: it needs several passes. It is Lichtenberg\'s and Dijkstra\'s chain.',
+    A: `
+  vec3 c = base;
+  vec2 d = uv - uSrc;
+  float r = length(vec2(d.x * uAsp * 0.6, d.y));
+  // A tight core and a wide skirt; z holds the orb size.
+  c += uCol * uGain * (exp(-r * 40.0 / uSize) + 0.35 * exp(-r * 9.0 / uSize));
+  // A soft roll-off above 2 keeps bloom free of square tiles.
+  float m = max(max(c.r, c.g), c.b);
+  c *= m > 2.0 ? (2.0 + log(m - 1.0)) / m : 1.0;
+  return c;`,
+    B: `
+  return gwRoll(base + uCol * uGain * gwOrb(uv, uSrc, uAsp, uSize));`,
+  },
+);
+
 /* ---------- shaders ---------- */
 const UNI = `uniform vec2 uSrc, uRes; uniform vec3 uCol, uTint; uniform int uBack; uniform float uAsp;
 uniform float ${Object.keys(KNOBS).map(uName).join(', ')};`;
@@ -509,13 +574,14 @@ vec3 scene(vec2 uv) {
   return c + uCol * 3.0 * smoothstep(0.011, 0.007, length(d));
 }`;
 // Every module goes into every shader, so a name clash shows at once.
-const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${SKY}\n${p.pre || ''}
+const body = p => `${UNI}\n${SCENE}\n${FLARE}\n${GRADE}\n${SKY}\n${GLASS_RAIN}\n${WET_GLASS}\n${WATER}\n${OUTPUT}\n${PRECIP}\n${GLOW}\n${p.pre || ''}
 vec3 sideA(vec2 uv, vec3 base) {${p.A}\n}
 vec3 sideB(vec2 uv, vec3 base) {${p.B}\n}`;
-const OUT = side => `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`;
-const rawFS = (p, side) => `#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outC;\n${body(p)}\nvoid main() { outC = ${OUT(side)}; }`;
+// An encoded copy returns screen colour; the rest get the lab's plain gamma.
+const OUT = (side, p) => (p.encoded ? `vec4(side${side}(vUv, scene(vUv)), 1.0)` : `vec4(pow(max(side${side}(vUv, scene(vUv)), 0.0), vec3(1.0 / 2.2)), 1.0)`);
+const rawFS = (p, side) => `#version 300 es\nprecision highp float;\nin vec2 vUv;\nout vec4 outC;\n${body(p)}\nvoid main() { outC = ${OUT(side, p)}; }`;
 // three.js adds the version, the precision and gl_FragColor itself.
-const threeFS = p => `varying vec2 vUv;\n${body(p)}\nvoid main() { gl_FragColor = ${OUT('B')}; }`;
+const threeFS = p => `varying vec2 vUv;\n${body(p)}\nvoid main() { gl_FragColor = ${OUT('B', p)}; }`;
 const TRI_VS = `#version 300 es
 out vec2 vUv;
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
@@ -747,8 +813,8 @@ window.fxlab = { checkAll };
 // The lab opens on the stack; the check is the second mode.
 let mode = 'stack';
 const touch = () => {
-  if (mode === 'stack') { kick(); if (looping) return; }
-  if (!dirty) { dirty = true; requestAnimationFrame(() => (mode === 'stack' ? drawStack() : draw())); }
+  if (mode === 'stack') { current().touch(); return; }
+  if (!dirty) { dirty = true; requestAnimationFrame(() => draw()); }
 };
 
 /* ---------- panel ---------- */
@@ -820,33 +886,8 @@ seg('bmode', v => { bMode = v; if (v === 'three') loadThree(); });
 seg('vmode', v => { vMode = +v; });
 
 /* ---------- the stack: every shared shader on one scene ---------- */
-// A harbour town at night behind a window. Each module is one step.
-const hdr = !!gl.getExtension('EXT_color_buffer_float');
-function hdrTarget() {
-  const t = target();
-  gl.bindTexture(gl.TEXTURE_2D, t.tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  t.w = t.h = 0;
-  t.size = (w, h) => {
-    if (t.w === w && t.h === h) return;
-    t.w = w; t.h = h;
-    gl.bindTexture(gl.TEXTURE_2D, t.tex);
-    if (hdr) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  };
-  return t;
-}
-const rtScene = hdrTarget(), rt4 = hdrTarget(), rt8 = hdrTarget(), rtBok = hdrTarget();
-const ST_HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
-// The scene pass: sky, ridge, town, the lamp, and water.js below the shore.
-const progScene = compile(TRI_VS, ST_HEAD + `
-uniform vec2 uRes, uLamp;
-uniform float uTime, uWaterOn, uSwell, uChop, uSets, uRings, uSkyOn, uStars, uHazeD, uDay;
-uniform vec3 uLampCol, uZen, uMid, uBand, uAnti, uSunD;
-${GLASS_RAIN}
-${WATER}
-${SKY}
+// shared/environment.js runs the frame. This page gives it one scene: a harbour town.
+const HARBOUR = `
 // The camera stands 3 m over the water; the far shore lies just under the horizon.
 const float HZ = 0.38, SHORE = 0.376, FOC = 1.6, CAMH = 3.0;
 vec3 lightCol(float pick) {
@@ -854,44 +895,66 @@ vec3 lightCol(float pick) {
 }
 // sky.js: the haze takes the colour of the low sky that way.
 vec3 hazeCol(vec3 dir) { return skDusk(normalize(vec3(dir.x, 0.04, dir.z)), uSunD, uZen, uMid, uBand, uAnti) * 0.9; }
-// All that stands above the water. lamp 0 leaves the dragged light out.
-vec3 above(vec2 uv, float lamp) {
+// The far shore lies 2.4 km off; haze covers a share of it.
+float farHaze() { return uSkyOn > 0.5 ? skHaze(vec3(0.0, CAMH, 0.0), vec3(0.0, 30.0, -2400.0), uHazeD, 150.0) : 0.0; }
+float ridge(float qx) { return 0.44 + 0.04 * sin(qx * 3.0) + 0.02 * sin(qx * 9.0); }
+// The sky, the clouds and the ridge. full 0 is the cheap copy for the water's mirror.
+vec3 backdrop(vec2 uv, float full) {
   float asp = uRes.x / uRes.y;
-  vec2 q = vec2(uv.x * asp, uv.y);
   // sky.js: the sky by direction, with stars. Off, the sky is one flat colour.
   vec3 dir = normalize(vec3((uv.x - 0.5) * asp, max(uv.y - HZ, 0.0), -FOC));
-  vec3 c = uSkyOn > 0.5 ? skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars, uTime) : vec3(0.012, 0.015, 0.03);
-  // The far shore lies 2.4 km off; haze covers a share of it.
-  float far = uSkyOn > 0.5 ? skHaze(vec3(0.0, CAMH, 0.0), vec3(0.0, 30.0, -2400.0), uHazeD, 150.0) : 0.0;
+  vec3 c = vec3(0.012, 0.015, 0.03);
+  if (uSkyOn > 0.5) {
+    c = skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars * full, uTime);
+    // sky.js: a cloud deck covers the stars.
+    vec4 cl = skCloudsN(dir, uSunD, uTime, uCloud, uCloudLit, uCloudShade, full > 0.5 ? uCloudOct : 3);
+    c = mix(c, cl.rgb, cl.a);
+  }
+  if (uv.y < ridge(uv.x * asp)) c = mix(mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y), hazeCol(dir), farHaze());
+  return c;
+}
+// The lights: the town, the quay or the street, and the lamp you drag.
+vec3 lights(vec2 uv, float lamp) {
+  float asp = uRes.x / uRes.y;
+  vec2 q = vec2(uv.x * asp, uv.y);
+  vec3 c = vec3(0.0);
   // Town lights go out by day; haze dims them.
-  float lit = (1.0 - smoothstep(0.3, 0.8, uDay)) * (1.0 - 0.6 * far);
-  float hill = 0.44 + 0.04 * sin(q.x * 3.0) + 0.02 * sin(q.x * 9.0);
-  if (uv.y < hill) c = mix(mix(vec3(0.006, 0.008, 0.01), vec3(0.16, 0.2, 0.14), uDay) * (0.7 + 0.3 * uv.y), hazeCol(dir), far);
-  // Small town lights in a band under the ridge.
-  vec2 g = vec2(q.x * 140.0, (uv.y - hill) * 140.0);
-  vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
-  float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
-  vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
-  c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
-  if (uWaterOn > 0.5) {
-    // Quay lights in one row on the shore.
-    float cx = q.x * 14.0, ci = floor(cx);
-    vec2 dq = vec2((fract(cx) - 0.3 - 0.4 * grH(vec2(ci, 7.0))) / 14.0, uv.y - SHORE - 0.006);
-    c += lightCol(grH(vec2(ci, 4.1))) * step(0.35, grH(vec2(ci, 2.0))) * exp(-dot(dq, dq) * 60000.0) * 5.0 * lit;
-  } else {
-    // Street lights on the land below.
-    vec2 g2 = q * 22.0;
-    vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
-    float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
-    c += lightCol(grH(id2 + 4.1)) * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+  float lit = (1.0 - smoothstep(0.3, 0.8, uDay)) * (1.0 - 0.6 * farHaze());
+  if (lit > 0.0) {
+    // Small town lights in a band under the ridge.
+    vec2 g = vec2(q.x * 140.0, (uv.y - ridge(q.x)) * 140.0);
+    vec2 id = floor(g), f = fract(g) - 0.25 - 0.5 * grH2(id + 3.0);
+    float on = step(0.62, grH(id)) * step(-6.0, id.y) * step(id.y, -1.0);
+    vec3 lc = mix(vec3(1.0, 0.72, 0.4), vec3(0.85, 0.9, 1.0), step(0.8, grH(id + 9.0)));
+    c += lc * on * exp(-dot(f, f) * 60.0) * 3.0 * lit;
+    if (uWaterOn > 0.5) {
+      // Quay lights in one row on the shore.
+      float cx = q.x * 14.0, ci = floor(cx);
+      vec2 dq = vec2((fract(cx) - 0.3 - 0.4 * grH(vec2(ci, 7.0))) / 14.0, uv.y - SHORE - 0.006);
+      c += lightCol(grH(vec2(ci, 4.1))) * step(0.35, grH(vec2(ci, 2.0))) * exp(-dot(dq, dq) * 60000.0) * 5.0 * lit;
+      // glow.js: an orb round each quay light; the neighbours' skirts reach here too.
+      if (uOrbs > 0.0) for (int j = -1; j <= 1; j++) {
+        float cj = ci + float(j);
+        vec2 at = vec2((cj + 0.3 + 0.4 * grH(vec2(cj, 7.0))) / 14.0 / asp, SHORE + 0.006);
+        c += lightCol(grH(vec2(cj, 4.1))) * step(0.35, grH(vec2(cj, 2.0))) * gwOrb(uv, at, asp, 0.22) * 0.35 * uOrbs * lit;
+      }
+    } else {
+      // Street lights on the land below.
+      vec2 g2 = q * 22.0;
+      vec2 id2 = floor(g2), f2 = fract(g2) - 0.25 - 0.5 * grH2(id2 + 5.0);
+      float on2 = step(0.86, grH(id2 + 1.3)) * step(1.0, id2.y) * step(id2.y, 7.0);
+      c += lightCol(grH(id2 + 4.1)) * on2 * exp(-dot(f2, f2) * 900.0) * 2.5 * lit;
+    }
   }
   // The near lamp: the light you drag.
   vec2 d = q - vec2(uLamp.x * asp, uLamp.y);
   float r2 = dot(d, d);
-  return c + uLampCol * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12) * lamp;
+  c += uLampCol * (exp(-r2 * 900.0) * 6.0 + exp(-r2 * 30.0) * 0.12) * lamp;
+  // glow.js: the lamp's own orb.
+  if (uOrbs > 0.0) c += uLampCol * gwOrb(uv, uLamp, asp, 0.6) * 0.5 * uOrbs * lamp;
+  return c;
 }
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
+vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
   vec3 c;
   if (uWaterOn > 0.5 && uv.y < SHORE) {
@@ -900,9 +963,9 @@ void main() {
     float dist = CAMH / -d.y;
     vec2 p = d.xz * dist;
     float sig2, foot = wtFoot(dist, -d.y, uRes.y * FOC);
-    vec2 slope = wtWaves(p, uTime, foot, uSwell, uChop, uSets, sig2);
+    vec2 slope = wtWavesN(p, uTime, foot, uSwell, uChop, uSets, uOct, sig2);
     // Rain lays rings on the water.
-    slope += wtRings(p, uTime, foot, uRings, 0.6, sig2);
+    slope += wtRingsN(p, uTime, foot, uRings, 0.6, uRingN, sig2);
     vec3 n = wtNormal(slope);
     vec3 r = reflect(d, n);
     r.y = abs(r.y);
@@ -910,19 +973,23 @@ void main() {
     // The mirrored ray lands back on the frame.
     float rz = max(-r.z, 0.05);
     vec2 ur = vec2(0.5 + r.x / rz * FOC / asp, HZ + r.y / rz * FOC);
-    // Rough water smears each light into a tall streak.
+    // The sky and the ridge mirror once; they are smooth.
+    // Rough water smears each light into a tall streak, so the lights take the taps.
     float len = 2.0 * sqrt(sig2) * FOC;
     vec3 refl = vec3(0.0);
     float ws = 0.0;
     for (int i = -3; i <= 3; i++) {
-      float fi = float(i) / 3.0, w = exp(-fi * fi * 2.0);
+      // Low detail takes five taps, not seven.
+      if (abs(i) > uTapN) continue;
+      float fi = float(i) / float(uTapN), w = exp(-fi * fi * 2.0);
       vec2 at = ur + vec2(0.0, fi * len);
       at.y = SHORE + abs(at.y - SHORE);
-      refl += above(at, 0.0) * w;
+      refl += lights(at, 0.0) * w;
       ws += w;
     }
+    refl = refl / ws + backdrop(vec2(ur.x, SHORE + abs(ur.y - SHORE)), 0.0);
     vec3 deep = mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay);
-    c = mix(deep, refl / ws, F);
+    c = mix(deep, refl, F);
     // The lamp lays a glitter path on the water.
     if (uLamp.y > HZ) {
       vec3 l = normalize(vec3((uLamp.x - 0.5) * asp, uLamp.y - HZ, -FOC));
@@ -930,29 +997,9 @@ void main() {
     }
     // sky.js: far water fades into the haze, so the horizon has no hard line.
     if (uSkyOn > 0.5) c = mix(c, hazeCol(d), skHaze(vec3(0.0, CAMH, 0.0), vec3(p.x, 0.0, p.y), uHazeD, 150.0));
-  } else c = above(uv, 1.0);
-  outC = vec4(c, 1.0);
-}`);
-const progDown = compile(TRI_VS, ST_HEAD + `
-uniform sampler2D tSrc;
-uniform vec2 uTx, uDst;
-void main() {
-  vec2 uv = gl_FragCoord.xy / uDst;
-  outC = vec4(0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
-    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb), 1.0);
-}`);
-const progBok = compile(TRI_VS, ST_HEAD + `
-uniform sampler2D tSrc;
-uniform vec2 uRad, uDst;
-uniform float uBlades, uRimB;
-${BOKEH}
-void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, uBlades, 0.015, 500.0, uRimB), 1.0); }`);
-// The pane, two ways. The module version is what the lab shows.
-const GLASS_MOD = `
-    WgPane g = wgPane(pane, uZoom, uM, uFlow, uWet, uWind, 0.4, uFog, uPatch, edge);
-    vec2 su = uv + g.off / vec2(asp, 1.0);
-    col = wgView(g, texture(tScene, su).rgb, texture(tBok, su).rgb, uScatter, vec3(0.8, 0.84, 0.81), veil, glint);
-    rim = g.rim; cover = g.cover; fog = g.fog;`;
+  } else c = backdrop(uv, 1.0) + lights(uv, 1.0);
+  return c;
+}`;
 // Train Ride's own lines, for the check. They have no zoom and no scatter.
 const GLASS_HAND = `
     vec2 p = pane;
@@ -975,62 +1022,75 @@ const GLASS_HAND = `
     col *= 1.0 - 0.7 * rm;
     col += glint * spec;
     rim = rm; cover = cv; fog = fg;`;
-// The pane pass: wet glass, then flare, then grade.
-const paneFS = glass => ST_HEAD + `
-uniform sampler2D tScene, tBok;
-uniform vec2 uRes, uM, uLamp;
-uniform vec3 uLampCol, uTint;
-uniform float uDay, uFlow, uWet, uWind, uZoom, uFog, uPatch, uScatter, uFlGain, uFlSize, uVig, uGrain, uSeed;
-uniform float uGlassOn, uFlareOn, uGradeOn;
-${GLASS_RAIN}
-${WET_GLASS}
-${FLARE}
-${GRADE}
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  float asp = uRes.x / uRes.y, day = uDay;
-  // The pane is one unit tall; its frame is the edge of the view.
-  vec2 pane = (uv - 0.5) * vec2(asp, 1.0);
-  float edge = max(abs(pane.x) - 0.5 * asp, abs(pane.y) - 0.5);
-  vec3 warm = vec3(1.0, 0.85, 0.7);
-  vec3 veil = warm * 0.02 * (1.0 - day) + vec3(0.03) * day;
-  vec3 glint = mix(warm * 0.3, vec3(0.6, 0.63, 0.66), day);
-  vec3 col = texture(tScene, uv).rgb;
-  float rim = 0.0, cover = 0.0, fog = 0.0;
-  // wetglass.js: beads, runs, fog and the scattered view, together.
-  if (uGlassOn > 0.5) {${glass}
+// A second scene in thirty lines: the same bundles, another place.
+const SEA = `
+// Open sea: the sky above the horizon, water.js below it.
+const float HZ = 0.45, FOC = 1.4, CAMH = 6.0;
+vec3 seaSky(vec3 dir, float full) {
+  if (uSkyOn < 0.5) return vec3(0.012, 0.015, 0.03);
+  vec3 c = skSky(dir, uSunD, uZen, uMid, uBand, uAnti, uStars * full, uTime);
+  vec4 cl = skCloudsN(dir, uSunD, uTime, uCloud, uCloudLit, uCloudShade, full > 0.5 ? uCloudOct : 3);
+  return mix(c, cl.rgb, cl.a);
+}
+vec3 envScene(vec2 uv) {
+  float asp = uRes.x / uRes.y;
+  vec3 d = normalize(vec3((uv.x - 0.5) * asp, uv.y - HZ, -FOC));
+  vec3 l = normalize(vec3((uLamp.x - 0.5) * asp, max(uLamp.y - HZ, 0.002), -FOC));
+  if (d.y >= 0.0 || uWaterOn < 0.5) {
+    // The key light is a sun or a moon: a disc, a soft glow and an orb.
+    vec3 up = vec3(d.x, abs(d.y), d.z), q = up - l;
+    vec3 c = seaSky(up, 1.0) + uLampCol * (6.0 * exp(-dot(q, q) * 4000.0) + 0.12 * exp(-dot(q, q) * 60.0));
+    return uOrbs > 0.0 ? c + uLampCol * gwOrb(uv, uLamp, asp, 0.6) * 0.5 * uOrbs : c;
   }
-  // The near lamp lights the drops and the fog it passes.
-  float near = length(vec2((uv.x - uLamp.x) * asp, uv.y - uLamp.y));
-  col += uLampCol * ((cover * 0.5 + rim * 0.9) * exp(-near * 7.0) + fog * 0.6 * exp(-near * 5.0));
-  // flare.js: the lamp flares the lens.
-  if (uFlareOn > 0.5) col = flScreen(col, flFlare(uv, uLamp, asp, uLampCol, uFlSize, vec3(1.0)) * uFlGain);
-  // grade.js: tint, vignette and grain.
-  if (uGradeOn > 0.5) col = gdGrade(col, uv, asp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, uVig, 0.4, uGrain);
-  col = clamp((col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14), 0.0, 1.0);
-  outC = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+  float dist = CAMH / -d.y;
+  vec2 p = d.xz * dist;
+  float sig2, foot = wtFoot(dist, -d.y, uRes.y * FOC);
+  vec2 slope = wtWavesN(p, uTime, foot, uSwell, uChop, uSets, uOct, sig2);
+  slope += wtRingsN(p, uTime, foot, uRings, 0.6, uRingN, sig2);
+  vec3 n = wtNormal(slope);
+  vec3 r = reflect(d, n);
+  r.y = abs(r.y);
+  float F = wtFresnel(d, n);
+  vec3 c = mix(mix(vec3(0.004, 0.008, 0.012), vec3(0.02, 0.07, 0.1), uDay), seaSky(r, 0.0), F);
+  c += uLampCol * 6.0 * wtGlint(r, l, sig2, 0.03) * F;
+  // Far water fades into the haze.
+  if (uSkyOn > 0.5) c = mix(c, skDusk(normalize(vec3(d.x, 0.04, d.z)), uSunD, uZen, uMid, uBand, uAnti) * 0.9, skHaze(vec3(0.0, CAMH, 0.0), vec3(p.x, 0.0, p.y), uHazeD, 150.0));
+  return c;
 }`;
-const progPane = compile(TRI_VS, paneFS(GLASS_MOD)), progPaneHand = compile(TRI_VS, paneFS(GLASS_HAND));
+let perfT = 0, sceneId = 'harbour';
+const hooks = { onLevel: () => syncQuality(), onFrame: raw => { if ((perfT += raw) > 0.5) { perfT = 0; syncQuality(); } } };
+const env = environment(cv, { scene: HARBOUR, active: () => mode === 'stack' && sceneId === 'harbour', ...hooks });
+// The open sea runs on the harbour's state, clock and detail.
+const envSea = environment(cv, { scene: SEA, share: env, active: () => mode === 'stack' && sceneId === 'sea', ...hooks });
+const current = () => (sceneId === 'sea' ? envSea : env);
+// A second runner with Train Ride's lines, on the same state and clock.
+const envHand = environment(cv, { scene: HARBOUR, glass: GLASS_HAND, share: env, active: () => false });
+const S = env.state, D = env.detail, motion = env.motion, DEF = ENV_DEFAULTS;
+// The light you drag is the runner's key light.
+S.light = src;
+S.look = 'Everything';
 
 // One card per effect: a switch and its sliders.
 const CARDS = [
   { id: 'glass', name: 'Wet glass', file: 'wetglass.js', knobs: [['wet', 'Rain', 0, 1.4, 0.05], ['wind', 'Wind', 0, 45, 0.5], ['zoom', 'Drop size', 0.4, 3, 0.05], ['fog', 'Fog', 0, 1, 0.05], ['patch', 'Fog patches', 0, 1, 0.05], ['defocus', 'Scatter', 0, 1, 0.05], ['rad', 'Disc size', 0.3, 2.5, 0.05]] },
   { id: 'water', name: 'Water', file: 'water.js', knobs: [['swell', 'Swell', 0, 0.04, 0.001], ['chop', 'Chop', 0, 0.4, 0.01], ['sets', 'Wave sets', 0, 1, 0.05], ['rings', 'Rain rings', 0, 1, 0.05]] },
-  { id: 'sky', name: 'Sky and haze', file: 'sky.js', knobs: [['hour', 'Time', 0, 24, 0.25], ['stars', 'Stars', 0, 2, 0.05], ['haze', 'Haze', 0, 1, 0.05]] },
+  { id: 'air', name: 'Rain and snow in the air', file: 'precip.js', knobs: [['air', 'Amount', 0, 1, 0.05], ['snow', 'Snow', 0, 1, 1]] },
+  { id: 'sky', name: 'Sky and haze', file: 'sky.js', knobs: [['hour', 'Time', 0, 24, 0.25], ['stars', 'Stars', 0, 2, 0.05], ['clouds', 'Clouds', 0, 1, 0.05], ['haze', 'Haze', 0, 1, 0.05]] },
   { id: 'flare', name: 'Lens flare', file: 'flare.js', knobs: [['flGain', 'Gain', 0, 2, 0.01], ['flSize', 'Size', 0.1, 2, 0.01]] },
+  { id: 'glow', name: 'Glow', file: 'glow.js', knobs: [['bloom', 'Bloom', 0, 1.5, 0.01], ['thr', 'Threshold', 0, 2, 0.01], ['orbs', 'Orbs', 0, 2, 0.01]] },
   { id: 'grade', name: 'Grade', file: 'grade.js', knobs: [['vig', 'Vignette', 0, 1, 0.01], ['grain', 'Grain', 0, 0.3, 0.005], ['tintK', 'Tint', 0, 40, 0.5]] },
+  { id: 'out', name: 'Output', file: 'output.js', knobs: [['expo', 'Exposure', 0.3, 3, 0.01]] },
 ];
 const LOOKS = {
-  Everything: { on: ['glass', 'water', 'sky', 'flare', 'grade'] },
+  Everything: { on: ['glass', 'water', 'air', 'sky', 'flare', 'glow', 'grade', 'out'] },
   Clear: { on: [] },
-  Harbour: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 19.25 },
-  Dawn: { on: ['water', 'sky', 'flare', 'grade'], rings: 0, hour: 6.25, haze: 0.6 },
-  Drizzle: { on: ['glass', 'water', 'sky'], hour: 20, wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
-  Storm: { on: ['glass', 'water', 'sky', 'grade'], hour: 23, haze: 0.8, stars: 0, wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
-  'Fogged up': { on: ['glass', 'sky', 'flare'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
+  Harbour: { on: ['water', 'sky', 'flare', 'glow', 'grade', 'out'], rings: 0, hour: 19.25 },
+  Dawn: { on: ['water', 'sky', 'flare', 'glow', 'grade', 'out'], rings: 0, hour: 6.25, haze: 0.6 },
+  Drizzle: { on: ['glass', 'water', 'air', 'sky', 'out'], air: 0.3, hour: 20, wet: 0.5, wind: 0, fog: 0, patch: 0, defocus: 0.6, rings: 0.3 },
+  Storm: { on: ['glass', 'water', 'air', 'sky', 'glow', 'grade', 'out'], air: 1, hour: 23, haze: 0.8, stars: 0, clouds: 0.95, wet: 1.35, wind: 9, fog: 0.2, patch: 0.15, defocus: 0.25, swell: 0.025, chop: 0.3, rings: 1 },
+  Snow: { on: ['water', 'air', 'sky', 'flare', 'glow', 'grade', 'out'], air: 0.8, snow: 1, rings: 0, hour: 22, haze: 0.7, chop: 0.08, clouds: 0.9 },
+  'Fogged up': { on: ['glass', 'sky', 'flare', 'out'], wet: 0.7, wind: 0, fog: 0.75, patch: 0.7 },
 };
-const DEF = { wet: 1, wind: 3, zoom: 1, fog: 0.4, patch: 0.4, defocus: 0, rad: 1, swell: 0.012, chop: 0.16, sets: 0.5, rings: 0.6, hour: 21.5, stars: 1, haze: 0.4, flGain: 0.6, flSize: 0.7, vig: 0.5, grain: 0.04, tintK: 1 };
-const S = { on: {}, look: 'Everything', ...DEF };
 function buildCards() {
   const host = $('cards');
   host.textContent = '';
@@ -1077,97 +1137,40 @@ for (const name of Object.keys(LOOKS)) {
   $('looks').append(b);
 }
 
-// Motion: the runs flow, the waves roll, the grain moves.
-const still = matchMedia('(prefers-reduced-motion: reduce)');
-const motion = wetGlassMotion();
-let looping = false, paused = false, lastT = 0, time = 0, seed = 0, frameN = 0;
-const moving = () => mode === 'stack' && !paused && !document.hidden && !still.matches && ((S.on.glass && S.wet > 0.001) || S.on.water || S.on.sky);
-function kick() {
-  if (looping || !moving()) return;
-  looping = true;
-  lastT = 0;
-  requestAnimationFrame(loop);
+// detail.js: the site quality and the frame time give one level for every bundle.
+function syncQuality() {
+  for (const b of $('qual').children) b.setAttribute('aria-pressed', b.dataset.v === quality());
+  $('perf').textContent = `Level: ${LEVELS[D.level]} · ${current().size.w} × ${current().size.h} px · ${(D.frameTime * 1000).toFixed(1)} ms a frame`;
 }
-function loop(t) {
-  if (!moving()) { looping = false; touch(); return; }
-  const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0.016);
-  lastT = t;
-  motion.step(dt, S.wind);
-  time += dt;
-  if (++frameN & 1) seed = seed % 997 + 1;
-  drawStack();
-  requestAnimationFrame(loop);
-}
-document.addEventListener('visibilitychange', touch);
-$('pause').addEventListener('click', () => { paused = !paused; $('pause').setAttribute('aria-pressed', paused); touch(); });
-// fw and fh force a frame size; prog picks the pane program. The check uses them.
-function drawStack(fw, fh, prog = progPane) {
-  dirty = false;
-  if (!looping) motion.step(0, S.wind, true);
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  const w = fw || Math.max(1, Math.round(view.clientWidth * dpr)), h = fh || Math.max(1, Math.round(view.clientHeight * dpr));
-  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
-  rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w / 2), Math.ceil(h / 2));
-  // sky.js: the hour sets the palette, the sun and the daylight.
-  const sk = skyAt(S.hour), day = S.on.sky ? sk.day : 0;
-  // By day the light you drag is a pale sun.
-  const lamp = day > 0.5 ? [1.0, 0.93, 0.8] : [1.0, 0.8, 0.55];
-  const run = (pr, rt) => pass(pr, rt ? rt.fbo : null, rt ? rt.w : w, rt ? rt.h : h);
-  gl.activeTexture(gl.TEXTURE0);
-  let u = progScene.loc;
-  gl.useProgram(progScene.p);
-  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), src[0], src[1]); gl.uniform3fv(u('uLampCol'), lamp);
-  gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
-  gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
-  gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
-  gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
-  run(progScene, rtScene);
-  if (S.on.glass) {
-    // bokeh.js: two 4x4 box steps to an eighth, then the disc gather at half size.
-    u = progDown.loc;
-    gl.useProgram(progDown.p);
-    gl.uniform1i(u('tSrc'), 0);
-    gl.bindTexture(gl.TEXTURE_2D, rtScene.tex); gl.uniform2f(u('uTx'), 1 / w, 1 / h); gl.uniform2f(u('uDst'), rt4.w, rt4.h);
-    run(progDown, rt4);
-    gl.bindTexture(gl.TEXTURE_2D, rt4.tex); gl.uniform2f(u('uTx'), 1 / rt4.w, 1 / rt4.h); gl.uniform2f(u('uDst'), rt8.w, rt8.h);
-    run(progDown, rt8);
-    u = progBok.loc;
-    gl.useProgram(progBok.p);
-    gl.bindTexture(gl.TEXTURE_2D, rt8.tex);
-    gl.uniform1i(u('tSrc'), 0);
-    // Scatter sets the disc size; fog alone keeps a fair disc.
-    const rad = 0.024 * S.rad * Math.max(S.defocus, S.fog > 0 || S.patch > 0 ? 0.6 : 0);
-    gl.uniform2f(u('uRad'), rad * h / w, rad); gl.uniform2f(u('uDst'), rtBok.w, rtBok.h);
-    gl.uniform1f(u('uBlades'), 0); gl.uniform1f(u('uRimB'), 0.3);
-    run(progBok, rtBok);
-  }
-  u = prog.loc;
-  gl.useProgram(prog.p);
-  gl.bindTexture(gl.TEXTURE_2D, rtScene.tex);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rtBok.tex);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBok'), 1);
-  gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uM'), motion.m[0], motion.m[1]); gl.uniform2f(u('uLamp'), src[0], src[1]);
-  gl.uniform3fv(u('uLampCol'), lamp); gl.uniform3fv(u('uTint'), TINT.map(x => x * S.tintK));
-  gl.uniform1f(u('uDay'), day); gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.speed); gl.uniform1f(u('uSeed'), seed);
-  gl.uniform1f(u('uScatter'), Math.min(1, S.defocus / 0.15));
-  for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain']]) gl.uniform1f(u(name), S[k]);
-  for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare'], ['uGradeOn', 'grade']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
-  run(prog, null);
-}
+$('qual').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  setQuality(b.dataset.v);
+  // A new choice clears the slow step; the slow-device switch puts it back.
+  if ($('slow').getAttribute('aria-pressed') === 'true') D.drop();
+  syncQuality();
+  touch();
+});
+$('slow').addEventListener('click', () => {
+  const on = $('slow').getAttribute('aria-pressed') !== 'true';
+  $('slow').setAttribute('aria-pressed', on);
+  if (on) D.drop(); else D.reset();
+});
+$('pause').addEventListener('click', () => { env.paused = envSea.paused = !env.paused; $('pause').setAttribute('aria-pressed', env.paused); });
+
 // wetglass.js against Train Ride's own lines, on one frozen frame.
 function checkGlass() {
-  const keep = { on: { ...S.on }, zoom: S.zoom, defocus: S.defocus, paused };
+  const keep = { on: { ...S.on }, zoom: S.zoom, defocus: S.defocus, paused: env.paused };
   Object.assign(S, { zoom: 1, defocus: 0 });
   S.on.glass = true;
-  paused = true;
-  const grab = prog => {
-    drawStack(640, 360, prog);
+  env.paused = true;
+  const grab = e => {
+    e.draw(640, 360);
     const px = new Uint8Array(640 * 360 * 4);
     gl.readPixels(0, 0, 640, 360, gl.RGBA, gl.UNSIGNED_BYTE, px);
     return px;
   };
-  const a = grab(progPaneHand), b = grab(progPane);
+  const a = grab(envHand), b = grab(env);
   let m = 0, over = 0;
   for (let i = 0; i < a.length; i += 4) {
     const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
@@ -1176,22 +1179,52 @@ function checkGlass() {
   }
   Object.assign(S, { zoom: keep.zoom, defocus: keep.defocus });
   S.on = keep.on;
-  paused = keep.paused;
+  env.paused = keep.paused;
   touch();
   return { m, share: over / (640 * 360) * 100 };
 }
 seg('mode', v => { mode = v; $('pStack').hidden = v !== 'stack'; $('pCheck').hidden = v !== 'check'; });
+seg('scene', v => { sceneId = v; });
 // weather.js: one value drives the glass and the water together.
 $('wx').addEventListener('input', () => {
   const k = +$('wx').value, w = weather(k);
   $('wxOut').textContent = k;
-  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets, haze: w.haze });
-  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets', 'haze']) S[key] = +S[key].toFixed(3);
+  Object.assign(S, { wet: w.rain, wind: w.wind, fog: w.fog, patch: w.patches, rings: w.rings, chop: w.chop, swell: w.swell, sets: w.sets, haze: w.haze, air: w.air, clouds: w.clouds });
+  for (const key of ['wet', 'wind', 'fog', 'patch', 'rings', 'chop', 'swell', 'sets', 'haze', 'air', 'clouds']) S[key] = +S[key].toFixed(3);
   for (const b of $('looks').children) b.setAttribute('aria-pressed', 'false');
   buildCards();
   touch();
 });
-Object.assign(window.fxlab, { state: S, checkGlass });
+// The real cost of one frame: draw, then wait for the GPU to finish.
+// It does not depend on the screen's refresh, so it also works in a hidden tab.
+function bench(n = 20, w = 1440, h = 1536) {
+  const px = new Uint8Array(4);
+  const once = () => { env.draw(w, h); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+  once();
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) { env.clock.time += 0.016; once(); }
+  const ms = +((performance.now() - t0) / n).toFixed(2);
+  touch();
+  return ms;
+}
+// One frozen frame of a look, as a checksum: the same shaders give the same number.
+function shot(name) {
+  const keep = { paused: env.paused, look: S.look };
+  useLook(name);
+  env.paused = true;
+  env.clock.time = 12.34; env.clock.seed = 5;
+  motion.step(0, S.wind, true);
+  motion.flow = 3.3;
+  env.draw(640, 360);
+  const px = new Uint8Array(640 * 360 * 4);
+  gl.readPixels(0, 0, 640, 360, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let h = 2166136261;
+  for (let i = 0; i < px.length; i++) h = Math.imul(h ^ px[i], 16777619);
+  env.paused = keep.paused;
+  useLook(keep.look);
+  return (h >>> 0).toString(16);
+}
+Object.assign(window.fxlab, { state: S, env, checkGlass, bench, shot });
 
 /* ---------- pointer ---------- */
 function drag(el, move) {
@@ -1205,6 +1238,7 @@ new ResizeObserver(touch).observe(view);
 
 useFx('flare');
 useLook('Everything');
+syncQuality();
 </script>
 </body>
 </html>

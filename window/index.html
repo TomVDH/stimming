@@ -50,6 +50,25 @@
 }
 .stage--window canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--window canvas { transition: none; } }
+/* The breathe cue: one line in the key strip's look, as in Ten seconds. */
+/* It fades in only while the face is close to the glass. */
+.stage--window .cue {
+  position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 1; margin: 0;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
+  font-size: 11px; letter-spacing: 0.08em; color: oklch(0.94 0.008 275 / 0.78);
+  text-shadow: var(--halo, 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9));
+  opacity: 0; transition: opacity 0.6s ease; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.stage--window .cue.on { opacity: 1; pointer-events: auto; cursor: pointer; touch-action: none; }
+.stage--window .cue kbd {
+  font: 700 10px/1 var(--slab, ui-monospace, monospace); letter-spacing: 0.06em; padding: 3px 5px;
+  color: oklch(0.94 0.008 275 / 0.92); background: var(--glass, oklch(0.13 0.012 275 / 0.86));
+  border: 1px solid oklch(0.94 0.008 275 / 0.45); border-radius: 2px; text-shadow: none;
+}
+@media (max-height: 480px) { .stage--window .cue { bottom: 30%; } }
+/* On touch the cue is the button: 34 px tall at least. */
+@media (pointer: coarse) { .stage--window .cue { padding: 10px 16px; } }
+@media (prefers-reduced-motion: reduce) { .stage--window .cue { transition: none; } }
 </style>
 </head>
 <body>
@@ -61,6 +80,7 @@
   <main>
     <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to peer around, pull the time of day, dim the glass, tap a storm to make it flash.">
       <p class="fail" hidden>Window seat needs WebGL2, which this browser has turned off.</p>
+      <p class="cue" aria-live="polite"></p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -78,6 +98,7 @@ import { bake, lookup, horizonEl, NU, NV } from './sky.js';
 import { bakeNoise } from './noise3d.js';
 import { createWing3 } from './wing3.js';
 import { createBolts } from './bolts3.js';
+import { bakeOde } from './ode.js';
 import * as THREE from 'three';
 
 // The intro holds until the page, the font and the first frame are ready.
@@ -122,26 +143,38 @@ let reduce = reduced();
 onReducedChange(v => { reduce = v; });
 
 const ALT = 11;            // cruise height in km
+// The land below: 0 flat country, 1 relief, 2 relief with parallax.
+// The hidden ode world: ?ode, or type its name. It needs relief land.
+const ODE = qs.has('ode');
+const RELIEF = Math.max(ODE ? 1 : 0, qs.has('land') ? +qs.get('land') : 2);
+// Its start: map x and y in source pixels, and km per pixel.
+const ODE_AT = [960, 638, 4];
 const SPEED = 0.25;        // ground speed in km/s, real cruise
 const HOR = horizonEl(ALT);
 // Each hour places one light: the sun by day and twilight, the moon at midnight.
 // az: bearing from straight out, toward the nose positive, in degrees.
 // rel: height above the eye's horizon, in degrees; the horizon dips 3.4.
-// E: light strength for the sky bake. disc: disc brightness.
-// tint: a small OKLCH grade for the hour.
+// ev: the camera's exposure for the hour, in stops.
+// The light itself never changes: the sun has strength 1, the moon MOON.
+// So E, the bake's gain, is the source times 2 to the power ev.
+// Noon has the most light, so it takes the least exposure.
+// disc: disc brightness.
+// tint: the hour's white balance, a small OKLCH grade.
 // mood: the cabin's own lamps, as the 787 tunes them through a flight.
 // lit: how strongly towns and streets burn below.
+const MOON = 0.1;
 const HOURS = {
-  dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, E: 4, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
-  morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, E: 5, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
-  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, E: 4, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.02, 230], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  dawn: { mood: [0.016, 0.0105, 0.012], moon: false, az: 10, rel: 1.6, ev: 2, disc: 5, r: 0.4, stars: 0.12, flare: 0.5, tint: [0.85, 0.05, 70], floor: [0.0003, 0.0003, 0.0006], lit: 0.7 },
+  morning: { mood: [0.02, 0.018, 0.015], moon: false, az: 22, rel: 14, ev: 1.8, disc: 5, r: 0.4, stars: 0, flare: 0.45, tint: [0.88, 0.03, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  noon: { mood: [0.018, 0.018, 0.019], moon: false, az: 35, rel: 52, ev: 1.3, disc: 5, r: 0.4, stars: 0, flare: 0.35, tint: [0.9, 0.012, 85], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
   // Afternoon: the sun stands behind the plane, so the glory shows on the deck below.
-  afternoon: { mood: [0.02, 0.018, 0.016], moon: false, az: 177, rel: 20, E: 5, disc: 5, r: 0.4, stars: 0, flare: 0, tint: [0.89, 0.03, 90], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
-  golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, E: 6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.07, 60], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
-  dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, E: 13, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
-  blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, E: 14, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
-  night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, E: 0.5, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
+  afternoon: { mood: [0.02, 0.018, 0.016], moon: false, az: 177, rel: 20, ev: 1.5, disc: 5, r: 0.4, stars: 0, flare: 0, tint: [0.89, 0.03, 90], floor: [0.0003, 0.0003, 0.0005], lit: 0 },
+  golden: { mood: [0.022, 0.016, 0.011], moon: false, az: 26, rel: 6, ev: 2.6, disc: 5, r: 0.4, stars: 0, flare: 0.6, tint: [0.84, 0.09, 68], floor: [0.0003, 0.0003, 0.0005], lit: 0.15 },
+  dusk: { mood: [0.017, 0.012, 0.009], moon: false, az: 30, rel: -0.7, ev: 3.9, disc: 0, r: 0.4, stars: 0.45, flare: 0, tint: [0.8, 0.06, 330], floor: [0.0004, 0.0004, 0.0009], lit: 1 },
+  blue: { mood: [0.008, 0.008, 0.02], moon: false, az: 30, rel: -4.5, ev: 3.8, disc: 0, r: 0.4, stars: 0.7, flare: 0, tint: [0.76, 0.06, 265], floor: [0.0004, 0.0005, 0.0011], lit: 1 },
+  night: { mood: [0.0055, 0.0062, 0.016], moon: true, az: 14, rel: 9, ev: 2.3, skyK: 0.45, disc: 1.5, r: 0.5, stars: 1, flare: 0.25, tint: [0.8, 0.05, 255], floor: [0.0005, 0.0007, 0.0014], lit: 1 },
 };
+for (const h of Object.values(HOURS)) h.E = (h.moon ? MOON : 1) * 2 ** h.ev;
 const HOUR_NAMES = { dawn: 'Dawn', morning: 'Morning', noon: 'Noon', afternoon: 'Afternoon', golden: 'Golden hour', dusk: 'Dusk', blue: 'Blue hour', night: 'Midnight' };
 const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // The baked sky and the light terms that follow from it.
@@ -187,7 +220,10 @@ function buildSky(baked) {
     flareCol: norm(Tsun.map((v, i) => v * shift[i] + 1e-4)).map(v => v * 1.2),
   };
   // Daylight through the cabin's windows adds to the lamps' mood.
-  sky.cabin = h.mood.map((v, i) => v + Math.min(glow[i], 6) * 0.0025);
+  // The low glow lights the cabin at twilight.
+  // A high sun pours in through every window and lights it most.
+  const inSun = Math.max(Math.sin(el), 0) / 1.5 * 0.005;
+  sky.cabin = h.mood.map((v, i) => v + Math.min(glow[i], 6) * 0.0025 + sunL[i] * inSun);
 }
 const FOV = 64 * D2R;      // field of view across the short side
 const ROLL = -6 * D2R;     // the camera tilts a little: a slanted, close look
@@ -218,6 +254,22 @@ const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-fr
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' }); } catch { fail(); }
 const gl = renderer.getContext();
+// A shader that fails to link stops the toy; retries reset weak GPUs.
+let broken = false;
+const giveUp = () => {
+  if (broken) return;
+  broken = true;
+  // The loop may not exist yet during the first compile.
+  try { cancelAnimationFrame(raf); raf = 0; } catch {}
+  const p = stage.querySelector('.fail');
+  p.textContent = 'Window seat is too heavy for this graphics chip.';
+  p.hidden = false;
+  canvas.style.visibility = 'hidden';
+};
+renderer.debug.onShaderError = (g, prog) => { console.warn('window: shader link failed', g.getProgramInfoLog(prog)); giveUp(); };
+// A lost context stops the loop; the toy wakes again only if it still works.
+canvas.addEventListener('webglcontextlost', () => { try { cancelAnimationFrame(raf); raf = 0; } catch {} });
+canvas.addEventListener('webglcontextrestored', () => wake());
 renderer.autoClear = false;
 renderer.setPixelRatio(1);
 renderer.setClearColor(0x000000, 0);
@@ -301,6 +353,11 @@ Object.assign(noiseTex, {
   wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, wrapR: THREE.RepeatWrapping,
 });
 noiseTex.needsUpdate = true;
+// The ode world's land mask; a blank pixel stands in when it is off.
+const odeMask = ODE ? bakeOde() : { W: 1, H: 1, m: new Uint8Array(1) };
+const odeTex = new THREE.DataTexture(odeMask.m, odeMask.W, odeMask.H, THREE.RedFormat, THREE.UnsignedByteType);
+Object.assign(odeTex, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, unpackAlignment: 1 });
+odeTex.needsUpdate = true;
 // The outside target: half size on Standard, three quarters on High.
 // It keeps a depth buffer and 4x MSAA for the aircraft meshes.
 const outBuf = { w: 0, h: 0 };
@@ -541,7 +598,8 @@ function toScreen(p) {
 
 /* ---------- flight ---------- */
 // The plane flies along world x; the left window looks along world z.
-const cam = { x: 0, z: 0 };
+// A test hook: ?x=km starts the flight further along, for screenshots.
+const cam = { x: +qs.get('x') || 0, z: 0 };
 
 // Storm cells live on the map; new ones form ahead as old ones fall behind.
 // The high wind blows toward the tail, so the anvils stream aft.
@@ -830,10 +888,8 @@ function stepBreath(dt) {
   const close = head.tz > 0.09;
   if (close !== breath.shown) {
     breath.shown = close;
-    const el = document.querySelector('.s2-chip[aria-keyshortcuts="B"]');
-    if (el) Object.assign(el.style, { transition: 'opacity 0.3s', opacity: close ? '1' : '0', pointerEvents: close ? '' : 'none' });
-    const h = ui.action('breathe');
-    if (h) h.disabled = !close;
+    cueEl.classList.toggle('on', close);
+    if (!close) breath.out = false;
   }
   const near = smooth(0.06, 0.16, head.z);
   // The mouth sits 6 cm under the eye.
@@ -864,18 +920,20 @@ const spr = new Float32Array(8);
 const fl = new Float32Array(MAXFL * 4), tw = new Float32Array(MAXCELL * 4), twB = new Float32Array(MAXCELL * 4), twC = new Float32Array(MAXCELL * 4), twD = new Float32Array(MAXCELL * 4);
 function frameFn(now) {
   raf = 0;
+  if (broken) return;
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
   last = now;
   step(dt);
   render();
   if (visible) raf = requestAnimationFrame(frameFn);
 }
-function wake() { if (visible && ready && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
+function wake() { if (visible && ready && !broken && !raf) { last = 0; raf = requestAnimationFrame(frameFn); } }
 // Turbulence: in a storm the plane meets bumpy patches, 5 to 20 s long, with calm between.
 // One smooth gust field drives it all: the cabin's jolts, the wing's flex, the rumble.
 // gw: vertical gust in m/s, up positive. gl: sideways gust.
 // Each is a slow swell (2 s) plus a fast chop (0.35 s), as real air turbulence has.
 // vz: the plane's own climb rate, which follows the gust about a second late.
+const rough = { level: 0, until: -1 };
 const turb = { x: 0, y: 0, vx: 0, vy: 0, on: false, until: 0, level: 0, a: [0, 0, 0, 0], gw: 0, gl: 0, vz: 0, vl: 0 };
 // A standard normal sample.
 const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(TAU * Math.random());
@@ -888,11 +946,16 @@ function stepTurb(dt) {
   // Inside a thick fog bank the air is rough whatever the storm.
   // The dense core is the roughest air of all, rougher than a full storm.
   const inFog = reduce ? 0 : smooth(0.2, 0.8, fog.level) * 0.9 + smooth(0.75, 1, fog.level) * 0.5;
-  turb.level += (Math.max(turb.on ? s : 0, inFog) - turb.level) * Math.min(1, dt / 1.5);
+  // Rough air after Cozy quiet flight eases in over 2 s and out over 6 s.
+  rough.level += ((t < rough.until && !reduce ? 1 : 0) - rough.level) * Math.min(1, dt / (t < rough.until ? 2 : 6));
+  turb.level += (Math.max(turb.on ? s : 0, inFog, rough.level) - turb.level) * Math.min(1, dt / 1.5);
   // Gust strength: about 3.5 m/s at full, moderate turbulence.
-  const sig = 3.5 * turb.level, h = Math.min(dt, 0.05);
+  const sig = 3.5 * turb.level * (1 + 0.7 * rough.level), h = Math.min(dt, 0.05);
+  // Rough air chops faster: every band's time shortens.
+  const fast = 1 + 2 * rough.level;
   // Four noise bands: slow and fast, vertical and sideways.
   [[2.0, 1], [0.35, 0.5], [2.4, 0.4], [0.4, 0.2]].forEach(([tau, k], i) => {
+    tau /= fast;
     turb.a[i] += -turb.a[i] / tau * h + sig * k * Math.sqrt(2 * h / tau) * randn();
   });
   turb.gw = turb.a[0] + turb.a[1];
@@ -901,8 +964,9 @@ function stepTurb(dt) {
   const az = (turb.gw - turb.vz) / 1.1, al = (turb.gl - turb.vl) / 1.1;
   turb.vz += az * h; turb.vl += al * h;
   // An upward lurch leaves the eye behind: it dips, and the spring brings it back.
-  turb.vy += (-0.16 * az - 60 * turb.y - 7 * turb.vy) * h;
-  turb.vx += (-0.08 * al - 60 * turb.x - 7 * turb.vx) * h;
+  // The spring is critically damped, so the head settles without a bob.
+  turb.vy += (-0.07 * az - 40 * turb.y - 13 * turb.vy) * h;
+  turb.vx += (-0.035 * al - 40 * turb.x - 13 * turb.vx) * h;
   turb.x += turb.vx * h; turb.y += turb.vy * h;
 }
 // A big push on the slider answers at once: a flash in the nearest cell or the deck, and a lurch.
@@ -917,6 +981,17 @@ function stormKick(v) {
 }
 // The slider sets a target; the weather builds fast and calms slowly.
 let stormTarget = opts.storm;
+// Cozy quiet flight is a joke: it throws the flight into its worst weather.
+// Full storm, the thick fog bank, and 40 s of fast, hard turbulence.
+function cozy() {
+  stormTarget = 1;
+  save('storm', 1);
+  ui.slider?.set(1);
+  fog.ep = { age: 0, rise: 3, hold: 30, fall: 7, peak: 1 };
+  rough.until = t + 40;
+  stormKick(1);
+  wake();
+}
 // The wing light switches on at once and dies in a blink.
 const wlight = { on: false, level: 0 };
 function step(dt) {
@@ -1316,8 +1391,22 @@ function vnoise2(px, py) {
   const a = hash12(ix, iy), b = hash12(ix + 1, iy), c = hash12(ix, iy + 1), e = hash12(ix + 1, iy + 1);
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
 }
-const SEA = 0.3;
+const SEA = 0.3, SEAR = 0.42;
 const seaField = (x, z) => vnoise2(x / 260 + 3.7, z / 260 + 3.7) * 0.65 + vnoise2((0.8 * x + 0.6 * z) / 95 + 1.3, (-0.6 * x + 0.8 * z) / 95 + 1.3) * 0.35;
+// The shader's landField: the sea field, or the ode world's mask.
+function landField(x, z) {
+  if (!ODE) return seaField(x, z);
+  const { W, H, m } = odeMask;
+  const u = ((ODE_AT[0] + x / ODE_AT[2] - 55) / 1890) * W - 0.5, v = clamp(((ODE_AT[1] - z / ODE_AT[2] - 55) / 1085) * H - 0.5, 0, H - 1);
+  const i = Math.floor(u), j = Math.min(Math.floor(v), H - 2), fu = u - i, fv = v - j;
+  const at = (a, b) => m[b * W + (((a % W) + W) % W)] / 255;
+  const k = (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv;
+  const fr = (vnoise2(x / 70 + 5.1, z / 70 + 5.1) - 0.5) * 0.3 + (vnoise2(x / 22 + 9.7, z / 22 + 9.7) - 0.5) * 0.1;
+  return SEAR + 0.8 * (k - 0.5) + fr;
+}
+// The shader's beltField, so no airport lands on a peak.
+const smooth01 = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const beltField = (x, z) => smooth01(0.55, 0.9, 1 - Math.abs(2 * vnoise2((0.6 * x + 0.8 * z) / 170 + 11.3, (-0.8 * x + 0.6 * z) / 170 + 11.3) - 1)) * smooth01(0.25, 0.6, vnoise2(x / 75 + 2.2, z / 75 + 2.2));
 const apCache = new Map();
 function airportIn(i, j) {
   const key = `${i},${j}`;
@@ -1325,7 +1414,7 @@ function airportIn(i, j) {
   let a = null;
   if (ihash(i, j, 11) < 0.5) {
     const x = (i + 0.2 + 0.6 * ihash(i, j, 12)) * AP_CELL, z = (j + 0.2 + 0.6 * ihash(i, j, 13)) * AP_CELL;
-    if (seaField(x, z) > SEA + 0.08) {
+    if (RELIEF < 0.5 ? seaField(x, z) > SEA + 0.08 : landField(x, z) > SEAR + 0.08 && beltField(x, z) < 0.02) {
       const th = ihash(i, j, 14) * PI, big = ihash(i, j, 15);
       // The runway end that faces the wind takes the landings.
       const s = Math.cos(th) * LAND[0] + Math.sin(th) * LAND[1] < 0 ? -1 : 1;
@@ -1424,6 +1513,12 @@ function render() {
   shared(u);
   UG.uniform2f(u.uOutRes, outBuf.w, outBuf.h);
   UG.uniform1f(u.uTowns, opts.towns);
+  UG.uniform1f(u.uLand, RELIEF);
+  UG.uniform4f(u.uOde, ODE ? 1 : 0, ...ODE_AT);
+  UG.uniform1f(u.uSeaNight, sky.h.moon ? 1 : 0);
+  // Sea wind in m/s: a breeze under clear sky, fresher under the deck, a gale in a full storm.
+  UG.uniform1f(u.uSeaWind, 6 + 4 * clamp((0.62 - opts.cloud) / 0.24) + 18 * opts.storm ** 1.3 + 4 * fog.level);
+  UG.tex(u.uOdeMap, odeTex);
   UG.uniform1f(u.uLit, sky.h.lit);
   UG.uniform2f(u.uCam, cam.x, cam.z);
   // A storm closes the deck, fills the mid layer, thickens the cirrus.
@@ -1790,6 +1885,26 @@ stage.addEventListener('keydown', e => {
   if (mirror) m[0] = -m[0];
   moveHead(...m);
 });
+// Breathe: hold B, or hold the cue itself on touch.
+const cueEl = stage.querySelector('.cue');
+cueEl.innerHTML = matchMedia('(pointer: coarse)').matches ? 'Hold here to breathe' : 'Hold <kbd>B</kbd> to breathe';
+const breathe = on => { breath.out = on && breath.shown; if (on) wake(); };
+addEventListener('keydown', e => { if ((e.key === 'b' || e.key === 'B') && !e.repeat && !e.metaKey && !e.ctrlKey) breathe(true); });
+addEventListener('keyup', e => { if (e.key === 'b' || e.key === 'B') breathe(false); });
+addEventListener('blur', () => breathe(false));
+// The cue's own press must not start a head drag.
+cueEl.addEventListener('pointerdown', e => { e.stopPropagation(); try { cueEl.setPointerCapture(e.pointerId); } catch {} breathe(true); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => cueEl.addEventListener(ev, () => breathe(false)));
+// An easter egg: typing the ode world's name flies over it, or back home.
+let typed = '';
+addEventListener('keydown', e => {
+  if (e.key.length !== 1 || e.metaKey || e.ctrlKey) return;
+  typed = (typed + e.key.toLowerCase()).slice(-11);
+  if (typed !== 'strangereal') return;
+  const q = new URLSearchParams(location.search);
+  if (ODE) q.delete('ode'); else q.set('ode', '');
+  location.search = q.toString();
+});
 
 /* ---------- bar ---------- */
 if (!HOURS[opts.hour]) opts.hour = 'dusk';
@@ -1806,7 +1921,7 @@ const ui = initPage({
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
       { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
-      { verb: 'breathe', label: 'Breathe', key: 'B', hold: true, onDown: () => { breath.out = true; wake(); }, onUp: () => { breath.out = false; } }],
+      { verb: 'cozy', label: 'Cozy quiet flight', key: 'Q', onPress: cozy }],
     settings: [
       { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
       { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
@@ -1923,7 +2038,8 @@ function stepRumble() {
   const { g, lp, ac } = rumble;
   // The bank sets the level; turbulence buffets it and opens the filter a little.
   const lvl = smooth(0.1, 0.8, fog.level) * 0.9 + 0.15 * opts.storm * turb.level;
-  const buffet = Math.min(1, Math.abs(turb.vy) * 12);
+  // The damped head moves a third as fast, so the gain is three times higher.
+  const buffet = Math.min(1, Math.abs(turb.vy) * 36);
   g.gain.setTargetAtTime(lvl * (0.75 + 0.6 * buffet), ac.currentTime, 0.25);
   lp.frequency.setTargetAtTime(100 + 90 * buffet, ac.currentTime, 0.2);
 }
