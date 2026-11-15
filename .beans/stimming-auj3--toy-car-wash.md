@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:43:25Z
-updated_at: 2026-11-15T10:21:17Z
+updated_at: 2026-11-15T10:26:33Z
 ---
 
 Idea 234 (Group C, cinematic dioramas): "Seen from the seat: foam, brushes, water curtain, coloured light."
@@ -25,7 +25,7 @@ Tier: raw WebGL2. Own pass chain in the runner's order (shared/environment.js ha
 - [ ] Stage: rinse, wax mist
 - [ ] Stage: blowers
 - [ ] Stage: exit into the night
-- [ ] Sound: cabin, roof drumming, brush thump and swish, blower roar, wipers
+- [x] Sound: cabin, roof drumming, brush thump and swish, blower roar, wipers
 - [ ] Idle: loop stops when parked and settled; whenVisible; detail level; slow-frame step
 - [ ] Reduced motion
 - [ ] Intro fallback text and vignette

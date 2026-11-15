@@ -358,7 +358,8 @@ void main() {
     float ang = atan(p.y, p.x);
     float da = a1 - a0;
     if (abs(da) > 1e-4 && swept(ang, a0, a1)) {
-      foam = 0.0; sheet *= 0.15; beads = 0.02; smear = 1.0;
+      // The rubber leaves a thin wet film and a trace of soap.
+      foam *= 0.03; sheet = 0.28; beads = 0.02; smear = 1.0;
     } else if (abs(da) > 1e-4) {
       // A thin ridge rides in front of the blade.
       float ahead = (ang - a1) * sign(da);
@@ -1110,6 +1111,11 @@ void main() {
   float r0 = cwN(rp);
   vec2 rip = vec2(cwN(rp + vec2(0.08, 0.0)) - r0, cwN(rp + vec2(0.0, 0.08)) - r0);
   vec2 bend = (vec2(gx, gy) * 0.014 + rip * 0.22) * sheet;
+  // A wiped film shows the blade's chatter as fine arcs round its pivot.
+  if (s1.a > 0.02) {
+    float rr = length(q - PIV1);
+    bend += vec2(0.0, (cwN(vec2(rr * 260.0, atan(q.y - PIV1.y, q.x - PIV1.x) * 3.0)) - 0.5) * 0.004 * s1.a);
+  }
   // Beads, runs and fog from the shared wet glass. The air sets their run.
   float edge = vBase - uv.y;
   // Foam covers the beads under it.
@@ -1435,7 +1441,21 @@ function stages(dt) {
   motion.flow += dt * (0.3 + 1.6 * air);
   motion.sheetT += dt * 1.6;
   U.wip.set([wip.prev, wip.a, passenger(wip.prev), passenger(wip.a)]);
+  // What the cabin hears: a station is over the car from its nose to its boot.
+  const over = a => smooth(2.6, 0.9, a - s) * smooth(-2.1, -1.3, a - s);
+  AU.water = live * Math.max(over(A.soak + 0.22) * 0.7, over(A.rinse + 0.2), over(A.spot + 0.22) * 0.55, over(A.wax) * 0.3);
+  AU.foam = live * over(A.foam + 0.22);
+  AU.top = (brush.rate / 9) * smooth(3.4, 1.8, ub) * smooth(-2.3, -1.5, ub);
+  AU.wrap = (wrap.rate / 8) * smooth(4.0, 2.4, A.wrap - s) * smooth(-2.6, -1.6, A.wrap - s);
+  AU.mitt = mk * over(A.mitt);
+  AU.air = air;
+  // A curtain that reaches the bottom of the glass splashes it.
+  for (const [arr, i, kind] of [[U.c1, 0, 'soak'], [U.c1, 2, 'foam'], [U.c2, 0, 'rinse'], [U.c2, 2, 'spot']]) {
+    if (arr[i] < 0 && arr[i + 1] >= 0) AU.events.push(kind);
+  }
 }
+// Sound cues from the run, read by the sound step.
+const AU = { water: 0, foam: 0, top: 0, wrap: 0, mitt: 0, air: 0, events: [] };
 // The blower's nozzle: a hand above the car's top.
 function brushAxisLow(u) {
   let y = 0.3;
@@ -1620,6 +1640,154 @@ function advance(dt) {
   if (++seed > 997) seed = 1;
 }
 
+/* ---------- sound ---------- */
+// Everything outside reaches the ear through the car's body: low, boxy and close.
+const kit = audioKit({ keys: new Set(['g', 'G', 'w', 'W', ' ', 'Enter']), noiseSeconds: 2 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+let snd = null;
+// Water on a steel roof: thousands of short ticks, baked once into a loop.
+function drumBuffer(ac) {
+  const n = Math.round(ac.sampleRate * 2.5), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+  for (let k = 0; k < 2600; k++) {
+    const at = Math.floor(Math.random() * n), amp = (0.15 + Math.random() * 0.85) * (Math.random() < 0.08 ? 2 : 1);
+    const tau = ac.sampleRate * (0.001 + Math.random() * 0.004);
+    for (let i = 0; i < tau * 6; i++) d[(at + i) % n] += (Math.random() * 2 - 1) * amp * Math.exp(-i / tau);
+  }
+  let m = 1e-6;
+  for (let i = 0; i < n; i++) m = Math.max(m, Math.abs(d[i]));
+  for (let i = 0; i < n; i++) d[i] /= m;
+  return buf;
+}
+// A looped source through a chain of nodes, at gain 0 until a step raises it.
+function bed(ac, buffer, chain, to) {
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buffer;
+  src.loop = true;
+  g.gain.value = 0;
+  let node = src;
+  for (const n of chain) node = node.connect(n);
+  node.connect(g).connect(to);
+  src.start(0, Math.random() * buffer.duration);
+  return g;
+}
+const filter = (ac, type, f, q = 0.7, gain = 0) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; b.gain.value = gain; return b; };
+function startSound() {
+  const ac = kit.live();
+  if (!ac || snd || !kit.noise) return;
+  const cabin = filter(ac, 'lowpass', 900, 0.6), boom = filter(ac, 'peaking', 125, 1.1, 6);
+  cabin.connect(boom).connect(kit.out);
+  // The engine idles: two low tones and a little rumble.
+  const hum = ac.createGain();
+  hum.gain.value = 0;
+  for (const [f, type, k] of [[31, 'sine', 1], [47, 'triangle', 0.5], [62, 'sine', 0.25]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.value = f;
+    g.gain.value = k;
+    o.connect(g).connect(hum);
+    o.start();
+  }
+  hum.connect(filter(ac, 'lowpass', 140)).connect(kit.out);
+  const drum = drumBuffer(ac);
+  snd = {
+    ac, cabin, hum,
+    // Water drums the roof; a duller copy is the glass right by the ear.
+    roof: bed(ac, drum, [filter(ac, 'lowpass', 1500, 0.5)], cabin),
+    glass: bed(ac, drum, [filter(ac, 'bandpass', 700, 0.6)], kit.out),
+    hiss: bed(ac, kit.noise, [filter(ac, 'bandpass', 1300, 0.6)], cabin),
+    // The brushes: a low flutter of cloth and a motor under it.
+    cloth: bed(ac, kit.noise, [filter(ac, 'lowpass', 380, 1.2)], cabin),
+    // The dryer: a broad roar and a turbine's whine.
+    roar: bed(ac, kit.noise, [filter(ac, 'lowpass', 1600, 0.5), filter(ac, 'peaking', 420, 2, 8)], kit.out),
+    last: { slap: 0, chunk: 0, wipe: 0, dir: 0 },
+  };
+  // The cloth flutters at the rate strips hit the car.
+  const lfo = ac.createOscillator(), depth = ac.createGain();
+  lfo.frequency.value = 9;
+  depth.gain.value = 0;
+  lfo.connect(depth).connect(snd.cloth.gain);
+  lfo.start();
+  snd.flutter = depth;
+}
+// A short filtered noise burst: splashes, slaps and the chain's clunk.
+function burst(at, { f, q = 1, dur, level, type = 'bandpass', to = snd.cabin, pan = 0 }) {
+  const ac = snd.ac, src = ac.createBufferSource(), g = ac.createGain(), p = ac.createStereoPanner();
+  src.buffer = kit.noise;
+  const b = filter(ac, type, f * jit(0.1), q);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.15), at + Math.min(0.012, dur * 0.2));
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  p.pan.value = pan;
+  src.connect(b).connect(g).connect(p).connect(to);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.05), dur + 0.05);
+}
+// A low sine knock: the body of a slap or a thump.
+function knock(at, { f, dur, level, to = snd.cabin, drop = 0.7 }) {
+  const ac = snd.ac, o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(f * jit(0.08), at);
+  o.frequency.exponentialRampToValueAtTime(f * drop, at + dur);
+  g.gain.setValueAtTime(level * jit(0.15), at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  o.connect(g).connect(to);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+function soundStep(dt) {
+  const ac = kit.live();
+  if (!ac) { AU.events.length = 0; return; }
+  if (!snd) startSound();
+  if (!snd) return;
+  const now = ac.currentTime, L = snd.last;
+  const set = (g, v, tc = 0.2) => g.gain.setTargetAtTime(v, now, tc);
+  const rolling = car.mode === 'rolling';
+  set(snd.hum, 0.05);
+  set(snd.roof, AU.water * 1.6 + AU.foam * 0.3);
+  set(snd.glass, AU.water * 0.7);
+  set(snd.hiss, AU.water * 0.25 + AU.air * 0.08);
+  set(snd.cloth, (AU.top + AU.wrap * 0.6) * 0.5);
+  set(snd.flutter, (AU.top + AU.wrap * 0.6) * 0.35);
+  set(snd.roar, AU.air * 1.1, 0.5);
+  // A curtain reaching the glass lands with a heavy splash.
+  for (const e of AU.events) {
+    if (e === 'foam') { burst(now, { f: 260, dur: 0.9, level: 0.5, type: 'lowpass', q: 0.5 }); knock(now, { f: 70, dur: 0.4, level: 0.3 }); }
+    else { burst(now, { f: 900, dur: 1.1, level: e === 'rinse' ? 0.6 : 0.4, q: 0.5 }); burst(now + 0.02, { f: 2500, dur: 0.5, level: 0.15, type: 'highpass', to: kit.out }); }
+  }
+  AU.events.length = 0;
+  // Cloth slaps the roof and glass in bursts while a brush or the mitters are on the car.
+  const slapRate = AU.top * 11 + AU.wrap * 5 + AU.mitt * 3;
+  if (slapRate > 0.2 && now - L.slap > 1 / slapRate * jit(0.5)) {
+    L.slap = now;
+    const k = Math.min(1, AU.top + AU.wrap * 0.5 + AU.mitt * 0.7);
+    burst(now, { f: 500, dur: 0.07, level: 0.2 * k, q: 0.9, pan: (Math.random() - 0.5) * 0.8 });
+    knock(now, { f: 95, dur: 0.12, level: 0.22 * k });
+  }
+  // The conveyor's roller chain knocks under the floor.
+  if (rolling && now - L.chunk > 2.3) { L.chunk = now; knock(now, { f: 58, dur: 0.18, level: 0.16, to: kit.out, drop: 0.85 }); burst(now, { f: 180, dur: 0.12, level: 0.08, type: 'lowpass', to: kit.out }); }
+  // The wipers: a motor while they move, a rubber knock as they turn.
+  const da = wip.a - wip.prev, dir = Math.sign(da);
+  if (Math.abs(da) > 1e-4) {
+    if (now - L.wipe > 0.09) { L.wipe = now; burst(now, { f: 140, dur: 0.11, level: 0.05, type: 'lowpass', to: kit.out }); }
+    if (L.dir && dir !== L.dir) { knock(now, { f: 420, dur: 0.06, level: 0.12, to: kit.out, drop: 0.6 }); burst(now, { f: 3200, dur: 0.05, level: 0.04, to: kit.out }); }
+    L.dir = dir;
+  } else if (L.dir) { knock(now, { f: 300, dur: 0.07, level: 0.1, to: kit.out }); L.dir = 0; }
+}
+function soundGo() {
+  const ac = kit.live();
+  if (!ac) return;
+  if (!snd) startSound();
+  if (!snd) return;
+  // The roller takes the wheel with a clunk.
+  const now = ac.currentTime;
+  knock(now, { f: 80, dur: 0.3, level: 0.4, to: kit.out, drop: 0.6 });
+  burst(now, { f: 300, dur: 0.2, level: 0.18, type: 'lowpass', to: kit.out });
+}
+// The sound fades out when the glass settles.
+function soundRest() {
+  if (!snd) return;
+  const now = snd.ac.currentTime;
+  for (const g of [snd.hum, snd.roof, snd.glass, snd.hiss, snd.cloth, snd.roar]) g.gain.setTargetAtTime(0, now, 0.4);
+}
+
 /* ---------- the loop ---------- */
 let raf = 0, last = 0, visible = true, ready = false;
 // The glass settles for 12 s after the car stops; then the loop sleeps.
@@ -1639,7 +1807,9 @@ function frame(now) {
   stepFade(dt);
   advance(dt);
   draw();
+  soundStep(dt);
   if (busy() && visible) raf = requestAnimationFrame(frame);
+  else { soundRest(); kit.rest(() => !raf); }
 }
 
 /* ---------- go ---------- */
@@ -1664,6 +1834,7 @@ function roll() {
   car.mode = 'rolling';
   // The roller's first pull rocks the car back a little.
   bob.vp += 0.012; bob.vh -= 0.02;
+  soundGo();
 }
 function go() {
   stillFor = 0;
@@ -1702,6 +1873,7 @@ function jumpTo(s) {
   else if (reduced()) car.mode = 'held';
   car.v = 0;
   stages(0);
+  AU.events.length = 0;
   draw();
 }
 act.go = go;
@@ -1761,7 +1933,7 @@ onReducedChange(() => { if (reduced()) { cancelAnimationFrame(raf); raf = 0; } }
 // A hidden tab stops the loop and the clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; soundRest(); kit.rest(() => true); return; }
   wake();
 });
 </script>
