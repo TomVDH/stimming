@@ -1206,8 +1206,8 @@ const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d)
 // Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
 // The last two stand behind the Profile and Horizon views.
 const RANGES = [
-  [10, 150000, 62000, 18000, 140, 10], [42, 125000, 44000, 14500, 150, 200], [-12, 110000, 32000, 11000, 130, 60],
-  [27, 85000, 22000, 7200, 150, 150], [57, 70000, 16000, 5000, 135, 250], [0, 60000, 12000, 3400, 120, 300],
+  [10, 150000, 62000, 26000, 140, 10], [42, 125000, 44000, 21000, 150, 200], [-12, 110000, 32000, 16000, 130, 60],
+  [27, 85000, 22000, 11000, 150, 150], [57, 70000, 16000, 8000, 135, 250], [0, 60000, 12000, 5500, 120, 300],
   [100, 175000, 56000, 16000, 150, 155], [190, 140000, 60000, 17000, 150, 64],
 ];
 const FAR_U = {
@@ -1222,14 +1222,17 @@ const FAR_U = {
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
 // The ranges' height over the flat plain at p, in metres.
-float rangeH(vec2 p) {
+// near is 1 inside any range's broad band, where the march must step short.
+float rangeH(vec2 p, out float near) {
   float h = 0.0;
+  near = 0.0;
   for (int i = 0; i < ${RANGES.length}; i++) {
     vec2 q = p - uRg[i].xy;
     float Rc = uRg[i].z, r = length(q), off = r - Rc;
     if (abs(off) > 0.75 * Rc) continue;
     float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
     if (u > 1.0) continue;
+    near = 1.0;
     // The range tapers to both ends; long waves sweep its crest.
     float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
     float hc = uRg[i].w * t * (0.74 + 0.16 * sin(u * 7.0 + ph) + 0.1 * sin(u * 17.0 + 2.0 * ph));
@@ -1246,10 +1249,17 @@ float ridged(vec2 p) {
   for (int i = 0; i < 4; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
   return s;
 }
-float farH(vec2 p) {
-  float h = rangeH(p);
-  return h > 1.0 ? h * (0.84 + 0.36 * ridged(p / 7000.0)) : 0.0;
-}`;
+// The shape takes three octaves: the silhouette stays clean.
+float ridged3(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
+  return s;
+}
+float farHN(vec2 p, out float near) {
+  float h = rangeH(p, near);
+  return h > 1.0 ? h * (0.84 + 0.4 * ridged3(p / 7000.0)) : 0.0;
+}
+float farH(vec2 p) { float n; return farHN(p, n); }`;
 const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
   uniforms: { ...U, ...FAR_U },
   depthWrite: true, depthTest: true,
@@ -1270,10 +1280,10 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
     // The march starts past the near plain's heart and ends past the far ranges.
     float t = 25000.0, tp = t, hit = -1.0;
-    for (int i = 0; i < 160; i++) {
+    for (int i = 0; i < 240; i++) {
       if (i >= uFarSteps) break;
       vec3 p = ro + rd * t;
-      float hh = farH(p.xz), dy = p.y - (hh - drop(p));
+      float nr, hh = farHN(p.xz, nr), dy = p.y - (hh - drop(p));
       if (dy < 0.0) {
         // The ray crossed the surface: halve the last step to find it.
         float a = tp, b = t;
@@ -1286,11 +1296,12 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
         break;
       }
       // Rising past every crest: the ray leaves the country.
-      if (p.y > 20000.0 && rd.y > 0.0) break;
+      if (p.y > 30000.0 && rd.y > 0.0) break;
       tp = t;
       // Over open plain a stride of 3% keeps grazing rays inside the budget.
-      // Inside a range's footprint the stride shrinks, so no crest is skipped.
-      t += max(0.45 * dy, (hh > 1.0 ? 0.0035 : 0.03) * t);
+      // Near any range the stride shrinks, so no crest or horn is skipped.
+      // In a band the stride is also capped, so it never leaps a thin crest.
+      t += nr > 0.5 ? clamp(0.45 * dy, 0.003 * t, 0.012 * t) : max(0.45 * dy, 0.03 * t);
       if (t > 450000.0) break;
     }
     if (hit < 0.0) discard;
@@ -4178,7 +4189,8 @@ function poseOf(v, portrait, k) {
     // Eighty kilometres off, square to the shot: the gun is lost.
     // Its flash, the bolt and the rock still read.
     P.p.set(79000, 40, -38000);
-    P.fov = 24 * tall;
+    // A phone's narrow frame still spans the flash and the rock: 38 degrees across.
+    P.fov = Math.max(24, 2 * Math.atan(Math.tan(rad(19)) / asp) * 180 / Math.PI);
     return frameAt(P, poseT.set(-4250, 6000, -21000), 0, 0.1, asp);
   }
   // The wide eye: a locked-off lens, a man's height over the dust.
@@ -4343,7 +4355,7 @@ function resize() {
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // The far country's march: fewer steps on Standard and on the ladder's rungs.
-  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 64 : quality() === 'high' ? 150 : 110;
+  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 90 : quality() === 'high' ? 220 : 160;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
