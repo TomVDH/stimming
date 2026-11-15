@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:14:00Z
+updated_at: 2026-11-15T07:23:02Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -17,6 +17,10 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Place icons redone with no hex: six motifs each for East Van and Belgium in three treatments (Colour, Tones, Solid); sheet at serieslab/places.html, drawings in serieslab/places.js
 - [ ] Tom picks the East Van and Belgium icons (motif and treatment)
 - [x] Tom, 2026-11-15: icons must share one style and geometry across all series, highly stylized. Three systems for all six series at serieslab/systems.html (drawings in serieslab/systems.js): Tiles (6 x 6 mosaic), Fold (silhouette with a diagonal fold), Line (one line, one dot)
-- [ ] Tom picks the icon system
-- [ ] More motifs per series in the picked system
+- [x] Tom, 2026-11-15: all three systems are out ("all bad"); the hex icons and the places sheet are out too
+- [x] Funk icons for East Van and Belgium (serieslab/funk.html, drawings in serieslab/funk.js): six skewed subjects each, knobs for wonk, colour and googly eyes
+- [x] Depth forms on Tom's ask (slab, shaded, like the isometric blocks): Shaded, Slab, Block, Cube
+- [ ] Tom picks the subject and the form for East Van and Belgium
+- [ ] Theme series icons in the same style
+- [ ] Remove the rejected lab pages (places, systems) once the pick ships
 - [ ] Step 3: ship the pick to the Lab view in index.html; move icons.js to shared/series/

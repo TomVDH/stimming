@@ -2,7 +2,6 @@
 // A piece is [cx, cy, tilt, shear, body]; the body draws around 0,0.
 // The wonk knob scales every tilt and shear.
 // Colours: A, B, C are the icon's own; W white, M cream, G grey, K ink.
-const BG = 'oklch(0.16 0.012 275)';
 const F = c => `style="fill:${c}"`;
 const S = (c, w) => `style="fill:none;stroke:${c};stroke-width:${w};stroke-linecap:round;stroke-linejoin:round"`;
 
@@ -70,9 +69,9 @@ export const FUNK = {
     // A waffle with a bite gone and chocolate on top.
     ['Waffle', ['oklch(0.83 0.13 80)', 'oklch(0.44 0.08 45)', 'oklch(0.65 0.13 62)'], k => [
       [0, 0, 0, 0, `<rect x="40" y="5" width="2.6" height="2.6" transform="rotate(20 41 6)" ${F(k.A)}/><rect x="44" y="13" width="2" height="2" transform="rotate(-15 45 14)" ${F(k.A)}/>`],
-      [23, 25, 13, -6, `<rect x="-15" y="-15" width="30" height="30" rx="6" ${F(k.A)}/>${[-11, -3, 5].map(y => [-11, -3, 5].map(x => `<rect x="${x}" y="${y}" width="6" height="6" rx="1.2" ${F(k.C)}/>`).join('')).join('')}
+      [23, 25, 13, -6, `<mask id="${k.bite = k.id()}" maskUnits="userSpaceOnUse" x="-20" y="-24" width="44" height="48"><rect x="-20" y="-24" width="44" height="48" fill="white"/><circle cx="14.6" cy="-14.6" r="6.4"/><circle cx="7" cy="-16.4" r="3.4"/><circle cx="16.4" cy="-7" r="3.4"/></mask><g mask="url(#${k.bite})"><rect x="-15" y="-15" width="30" height="30" rx="6" ${F(k.A)}/>${[-11, -3, 5].map(y => [-11, -3, 5].map(x => `<rect x="${x}" y="${y}" width="6" height="6" rx="1.2" ${F(k.C)}/>`).join('')).join('')}
         <path d="M-15 -8V-11A4 4 0 0 1 -11 -15H3C3 -11 -0.6 -11 -0.6 -8.4C-0.6 -5.6 -4.4 -5.6 -4.4 -9C-4.4 -11 -7 -11 -7 -8V-2a2 2 0 0 1 -4 0V-9C-11 -11 -15 -11 -15 -8Z" ${F(k.B)}/>
-        <circle cx="14.6" cy="-14.6" r="6.4" ${F(BG)}/><circle cx="7" cy="-16.4" r="3.4" ${F(BG)}/><circle cx="16.4" cy="-7" r="3.4" ${F(BG)}/>${k.eye(-4, 3, 3.1)}${k.eye(5, 3, 3.1)}`],
+        </g>${k.eye(-4, 3, 3.1)}${k.eye(5, 3, 3.1)}`],
     ]],
     // A chalice that tips; the foam runs over.
     ['Chalice', ['oklch(0.77 0.15 70)', 'oklch(0.9 0.08 85)', 'oklch(0.82 0.04 220)'], k => [
@@ -98,8 +97,45 @@ export const FUNK = {
 
 export const WONK = { Mild: 0.45, Wonky: 1, Unhinged: 1.7 };
 export const PALETTES = ['Party', 'Series'];
+// Forms: Flat is the plain drawing; the others give it depth.
+// Shaded: a soft top-left light makes the shapes puffy and glossy.
+// Slab: the drawing is a thick cut-out with a dark side.
+// Block: the shaded drawing stands on an isometric block in the series colour.
+// Cube: the drawing sits on the left face of an isometric cube.
+export const FORMS = ['Flat', 'Shaded', 'Slab', 'Block', 'Cube'];
+let uid = 0;
+const mix = (c, pct, to) => `color-mix(in oklch, ${c} ${pct}%, ${to})`;
+// The menu light: from the top left, as on the toy icons.
+const gloss = id => `<filter id="${id}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceAlpha" stdDeviation="1.1" result="b"/>
+  <feDiffuseLighting in="b" surfaceScale="3.2" diffuseConstant="1.15" lighting-color="white" result="d"><feDistantLight azimuth="225" elevation="58"/></feDiffuseLighting>
+  <feComposite in="SourceGraphic" in2="d" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="lit"/>
+  <feSpecularLighting in="b" surfaceScale="3.2" specularConstant="0.7" specularExponent="22" lighting-color="white" result="s"><feDistantLight azimuth="225" elevation="52"/></feSpecularLighting>
+  <feComposite in="s" in2="SourceAlpha" operator="in" result="s2"/>
+  <feComposite in="s2" in2="lit" operator="arithmetic" k1="0" k2="1" k3="1" k4="0"/>
+</filter>`;
+// An isometric face set: light top, mid left, dark right, a rim on the top edges.
+const faces = (top, left, right, rim, cols) => `<path d="${top}" ${F(cols[0])}/><path d="${left}" ${F(cols[1])}/><path d="${right}" ${F(cols[2])}/><path d="${rim}" ${S('oklch(1 0 0 / 0.6)', 0.8)}/>`;
+function form(inner, name, c) {
+  const id = 'fk' + (uid++);
+  if (name === 'Shaded') return `<defs>${gloss(id)}</defs><g filter="url(#${id})">${inner}</g>`;
+  if (name === 'Slab') {
+    const D = 5, N = 10;
+    return `<defs><g id="${id}">${inner}</g></defs><g transform="translate(0 ${-D / 2})"><g style="filter:brightness(0.48) saturate(1.2)">${Array.from({ length: N }, (_, i) => `<use href="#${id}" y="${(i + 1) * D / N}"/>`).join('')}</g><use href="#${id}"/></g>`;
+  }
+  if (name === 'Block') {
+    const block = faces('M24 24.4L41 34.2L24 44L7 34.2Z', 'M7 34.2L24 44V48L7 38.2Z', 'M24 44L41 34.2V38.2L24 48Z', 'M7 34.2L24 44L41 34.2', [c, mix(c, 60, 'black'), mix(c, 36, 'black')]);
+    return `${block}<ellipse cx="24" cy="35.6" rx="9" ry="3.4" ${F('oklch(0 0 0 / 0.28)')}/><defs>${gloss(id)}</defs><g transform="translate(24 37) scale(0.7) translate(-24 -46)" filter="url(#${id})">${inner}</g>`;
+  }
+  if (name === 'Cube') {
+    const dark = 'oklch(0.13 0.012 275)';
+    const cube = faces('M24 0L44.8 12L24 24L3.2 12Z', 'M3.2 12L24 24V48L3.2 36Z', 'M24 24L44.8 12V36L24 48Z', 'M3.2 12L24 24L44.8 12M24 24V48', [c, mix(c, 34, dark), mix(c, 16, dark)]);
+    return `<g transform="translate(24 24) scale(0.94) translate(-24 -24)">${cube}<g transform="matrix(0.4333 0.25 0 0.5 3.2 12) translate(24 24) scale(0.84) translate(-24 -24)">${inner}</g></g>`;
+  }
+  return inner;
+}
 
-// One icon: key, motif, and the knobs { wonk, pal, eyes }, plus the series colour.
+// One icon: key, motif, and the knobs { form, wonk, pal, eyes }, plus the series colour.
 export function funkIcon(key, label, opt, c) {
   const list = FUNK[key];
   if (!list) return '';
@@ -110,12 +146,15 @@ export function funkIcon(key, label, opt, c) {
     B: series ? `color-mix(in oklch, ${c} 45%, white)` : own[1],
     C: series ? `color-mix(in oklch, ${c} 58%, black)` : own[2],
     W: 'oklch(0.96 0.01 90)', M: 'oklch(0.97 0.03 100)', G: 'oklch(0.58 0.03 275)', K: 'oklch(0.2 0.02 275)',
+    // A fresh id, for a mask that cuts a real hole.
+    id: () => 'fm' + (uid++),
     // A googly eye; an animal keeps its eye when the knob is off.
     eye: (x, y, r, dx = 0.3, dy = 0.25, always = false) => (opt.eyes || always)
       ? `<circle cx="${x}" cy="${y}" r="${r}" ${F('oklch(0.98 0.005 90)')}/><circle cx="${x + dx * r}" cy="${y + dy * r}" r="${r * 0.55}" ${F('oklch(0.14 0.01 275)')}/>` : '',
   };
   const body = parts(k).map(([x, y, rot, sk, d]) => `<g transform="translate(${x} ${y}) rotate(${rot * w}) skewX(${sk * w})">${d}</g>`).join('');
-  return `<svg viewBox="0 0 48 48" aria-hidden="true" style="overflow:visible"><g transform="translate(24 24) skewX(${-5 * w}) translate(-24 -24)">${body}</g></svg>`;
+  const inner = `<g transform="translate(24 24) skewX(${-5 * w}) translate(-24 -24)">${body}</g>`;
+  return `<svg viewBox="0 0 48 48" aria-hidden="true" style="overflow:visible">${form(inner, opt.form, c)}</svg>`;
 }
 
 // Tom's picks live in the browser.
@@ -124,7 +163,7 @@ export function funkPicks() {
   let p = {};
   try { p = JSON.parse(localStorage.getItem(FUNK_KEY)) || {}; } catch (e) {}
   return {
-    wonk: WONK[p.wonk] ? p.wonk : 'Wonky', pal: PALETTES.includes(p.pal) ? p.pal : 'Party', eyes: !!p.eyes,
+    form: FORMS.includes(p.form) ? p.form : 'Flat', wonk: WONK[p.wonk] ? p.wonk : 'Wonky', pal: PALETTES.includes(p.pal) ? p.pal : 'Party', eyes: !!p.eyes,
     ...Object.fromEntries(Object.keys(FUNK).map(key => [key, FUNK[key].some(([l]) => l === p[key]) ? p[key] : FUNK[key][0][0]])),
   };
 }
