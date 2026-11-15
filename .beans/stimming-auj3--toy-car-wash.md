@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:43:25Z
-updated_at: 2026-11-15T10:32:44Z
+updated_at: 2026-11-15T22:55:55Z
 ---
 
 Idea 234 (Group C, cinematic dioramas): "Seen from the seat: foam, brushes, water curtain, coloured light."
@@ -39,3 +39,21 @@ Tier: raw WebGL2. Own pass chain in the runner's order (shared/environment.js ha
 - `docs/toys/carwash.md`: the toy doc.
 - Handoff files for the menu tile, its GSAP icon and the toys.json entry, in the batch scratchpad.
 - Not used: `shared/environment.js`; it has no glass-state pass and no per-pixel hook in its glass step.
+
+## Pass two (Tom, 2026-11-15)
+
+Tom: "the wind shield isnt angled and this should be a surface against which the water and all liquid effects respond - bokeh -- bloom fine tuning and generally a better look for the car wash".
+
+- [x] Glass geometry: a raked, bowed windscreen; the sim and every drop in glass coordinates; refraction through the glass Jacobian
+- [x] Car frame: leaning A-pillar, header and roof lining, dash top, parked wipers on the cowl, mirror stub
+- [x] Liquids: gravity down the rake, rivulets, pooling at the cowl and the parked blades
+- [x] Curtains and rinse land on a line that moves along the glass; the water spreads from it
+- [ ] Foam as lather: body, sag, sheets, a film behind; the foam fall as lather
+- [ ] Brushes and mitters: real contact bands, smear, streaks in their travel; cloth in motion
+- [x] Wipers: true arcs on the glass, a bow wave of water and foam
+- [x] Dryer: beads pushed up the rake, shiver, tracks
+- [x] Bokeh: focus on the glass; discs that sharpen where wiped, swell and smear where wet
+- [x] Bloom: soft knee, hot cores, smooth halos; dithered output
+- [ ] Look: olive foam fixed, each station a distinct picture, the entry kept
+- [ ] Stills before and after at every station, desktop and phone; frame time on Standard and High
+- [ ] Toy doc updated

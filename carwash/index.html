@@ -200,27 +200,37 @@ const ARCHES = [A.soak, A.foam, A.mitt, A.wrap, A.top, A.rinse, A.wax, A.spot, A
 const S0 = STOPS.entry, S1 = STOPS.exit;
 // A conveyor pulls at about 0.33 m/s: the whole run takes 80 s.
 const SPEED = 0.33;
-// The car, from the driver's eye: u is metres ahead, y metres up.
-// The glass runs from its base (u 0.95, y -0.33) to its top (u 0.12, y 0.2).
-const GLASS = { base: 0.95, top: 0.12, y: -0.33, k: 0.639 };
-const glassY = u => GLASS.y + (GLASS.base - u) * GLASS.k;
-const bonnetY = u => GLASS.y - 0.13 * (u - GLASS.base);
-const NOSE = 2.25;
-// The sim covers the frame and 30 % of glass above it, so foam slides into view.
-const SV0 = -0.02, SV1 = 1.3;
+// The car, from the driver's eye: u is metres ahead, y metres up, x to the right.
+// The windscreen leans back 31 degrees. Its cowl edge is 1.15 m ahead and 0.34 m down;
+// its header is 0.4 m ahead and 0.12 m up. On the glass, gx runs across and gh up the rake.
+const WS = { cu: 1.15, cy: -0.34, hu: 0.4, hy: 0.12 };
+WS.len = Math.hypot(WS.cu - WS.hu, WS.hy - WS.cy);
+WS.ru = (WS.cu - WS.hu) / WS.len;
+WS.ry = (WS.hy - WS.cy) / WS.len;
+const glassY = u => WS.cy + (WS.cu - u) * WS.ry / WS.ru;
+// How far up the rake the glass is u metres ahead of the eye.
+const ghAt = u => (WS.cu - u) / WS.ru;
+const bonnetY = u => WS.cy - 0.02 - 0.128 * (u - WS.cu);
+const NOSE = 2.4;
+// The glass map, in glass metres: its corner and its size.
+const GMAP = [-0.76, -0.06, 1.52, 1.0];
 
 const f3 = x => x.toFixed(4);
 const CONSTS = `
 const float HW = 2.3, CH = 3.6, TL = ${f3(A.end)}, EX = -0.36, EY = 1.2, DW = 2.05, DH = 3.15;
-const float GB = 0.95, GT = 0.12, GY = -0.33, GK = 0.639, GC = 0.27705;
-const float BN = ${f3(NOSE)}, BK = 0.13, BC = -0.2065, CX = 0.36;
-const float SV0 = ${f3(SV0)}, SV1 = ${f3(SV1)};
+const float CU = ${f3(WS.cu)}, HU = ${f3(WS.hu)}, BN = ${f3(NOSE)}, BK = 0.128, BC = ${f3(WS.cy - 0.02 + 0.128 * WS.cu)}, CX = 0.36;
 const float A_SOAK = ${f3(A.soak)}, A_FOAM = ${f3(A.foam)}, A_MITT = ${f3(A.mitt)}, A_WRAP = ${f3(A.wrap)}, A_TOP = ${f3(A.top)};
 const float A_RINSE = ${f3(A.rinse)}, A_WAX = ${f3(A.wax)}, A_SPOT = ${f3(A.spot)}, A_BLOW = ${f3(A.blow)};
 const float AK[9] = float[9](${ARCHES.map(f3).join(', ')});
-// The wiper pivots on the frame, in frame units; the blade's inner and outer reach.
-const vec2 PIV1 = vec2(-0.02, -0.56), PIV2 = vec2(0.98, -0.6);
-const vec2 BL1 = vec2(0.36, 1.02), BL2 = vec2(0.34, 1.05);
+// The windscreen: the middle of its cowl edge, the rake up the glass, the outward normal.
+const vec3 G0 = vec3(CX, ${f3(WS.cy)}, ${f3(-WS.cu)});
+const vec3 GR = vec3(0.0, ${f3(WS.ry)}, ${f3(WS.ru)}), GN = vec3(0.0, ${f3(WS.ru)}, ${f3(-WS.ry)});
+const float GLEN = ${f3(WS.len)}, GBOW = 0.035;
+// The glass map: its corner and size in glass metres.
+const vec4 GM = vec4(${GMAP.map(f3).join(', ')});
+// The wiper pivots under the cowl, in glass metres; each blade's inner and outer reach.
+const vec2 PIV1 = vec2(-0.4, 0.012), PIV2 = vec2(0.2, 0.004);
+const vec2 BL1 = vec2(0.12, 0.58), BL2 = vec2(0.1, 0.55);
 `;
 const NOISE = `
 float cwH(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -230,23 +240,38 @@ float cwN(vec2 p) {
 }
 float cwFbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * cwN(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 `;
+// The windscreen in GLSL: where a view ray meets it, and how wide it is.
+const GLASS_GL = `
+float glassHW(float gh) { return mix(0.72, 0.62, clamp(gh / GLEN, 0.0, 1.0)); }
+// The glass bows forward a little in the middle.
+float glassBow(float gx) { return GBOW * (1.0 - min(gx * gx / 0.56, 1.0)); }
+// A view ray from the eye meets the windscreen: returns t, then gx across and gh up the rake.
+vec3 glassHit(vec3 d) {
+  float dn = dot(d, GN);
+  if (dn <= 1e-4) return vec3(-1.0, 0.0, -9.0);
+  float c = dot(G0, GN);
+  float t = (c + glassBow(d.x * (c / dn) - CX)) / dn;
+  vec3 P = d * t;
+  return vec3(t, P.x - CX, dot(P - G0, GR));
+}
+`;
 
 /* ---------- glass state ---------- */
-// The glass, as the frame sees it. Two maps, stepped each frame.
+// The windscreen's state, mapped on the glass itself in metres. Two maps, stepped each frame.
 // Map 0: foam depth, sheet water, bead wetness, foam dye.
-// Map 1: the foam's own offset (x, y), soap haze, a wiper smear.
+// Map 1: the foam's own offset (x, y), the soap film it leaves, a smear from cloth and blades.
 const SIM_FS = `#version 300 es
 precision highp float;
 uniform sampler2D tS0, tS1;
 uniform vec2 uSimRes;
-uniform float uAsp, uDt, uTime, uF, uHZ, uInit;
-// Bands swept since the last step, in frame v: soak and foam, then rinse and spot.
+uniform float uDt, uTime, uInit;
+// Lines swept since the last step, as gh up the rake: soak and foam, then rinse and spot.
 uniform vec4 uC1, uC2;
-// The blower's air line: the last and the present v, the air, the pull at the frame sides.
+// The dryer's air line: the last and the present gh, the air.
 uniform vec4 uKnife;
-// The top brush on the glass: lowest and highest v, the press, the cloth speed.
+// The top brush on the glass: lowest and highest gh, the press, the cloth's speed down the rake.
 uniform vec4 uBrush;
-// Mitter strips on the glass: lowest and highest v, on, the strips' drift.
+// Mitter strips on the glass: lowest and highest gh, on, the strips' sway.
 uniform vec4 uMit;
 // The blades: driver's last and present angle, then the passenger's.
 uniform vec4 uWip;
@@ -256,119 +281,121 @@ layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 ${CONSTS}
 ${NOISE}
-// A frame point v to the sim's own v.
-float simV(float v) { return (v - SV0) / (SV1 - SV0); }
-// The angle a blade swept, between a and b; true when x lies inside it.
-bool swept(float x, float a, float b) { return x >= min(a, b) - 0.004 && x <= max(a, b) + 0.004; }
+// True when x lies between a and b.
+bool between(float x, float a, float b) { return x >= min(a, b) - 0.002 && x <= max(a, b) + 0.002; }
+vec2 toMap(vec2 g) { return (g - GM.xy) / GM.zw; }
 void main() {
   vec2 su = gl_FragCoord.xy / uSimRes;
-  float v = SV0 + su.y * (SV1 - SV0);
-  vec2 q = vec2((su.x - 0.5) * uAsp, v - 0.5);
+  vec2 g = GM.xy + su * GM.zw;
   // A new run starts on a dry night glass with a few old beads.
   if (uInit > 0.5) {
-    float old = smoothstep(0.55, 0.85, cwFbm(q * 3.0 + 4.0)) * 0.35;
-    o0 = vec4(0.0, 0.0, old, 0.0);
+    o0 = vec4(0.0, 0.0, smoothstep(0.55, 0.85, cwFbm(g * 9.0 + 4.0)) * 0.35, 0.0);
     o1 = vec4(0.0);
     return;
   }
-  // Frame units to sim units.
-  vec2 k = vec2(1.0 / uAsp, 1.0 / (SV1 - SV0));
   vec4 c0 = texture(tS0, su), c1 = texture(tS1, su);
-  // Foam creeps down; thick foam slips faster and in fingers.
-  float fn = cwN(vec2(q.x * 7.0, v * 2.0 - uTime * 0.05));
-  float vf = -(0.006 + 0.04 * clamp(c0.r, 0.0, 1.6) * (0.3 + 1.2 * fn));
-  // Sheet water runs down fast; the blower drives it up.
-  float vs = -(0.22 + 0.9 * c0.g);
+  // Water runs fastest in lanes, so a sheet breaks into rivulets.
+  float lane = cwN(vec2(g.x * 26.0, g.y * 1.5 - uTime * 0.2));
+  float fn = cwN(vec2(g.x * 18.0, g.y * 5.0 - uTime * 0.04));
+  // Speeds down the rake in metres a second: a thick coat slips; a thin film clings.
+  float vf = -(0.004 + 0.022 * clamp(c0.r, 0.0, 1.6) * (0.3 + 1.2 * fn));
+  float vs = -(0.08 + 0.6 * c0.g) * (0.4 + 1.2 * lane);
   // A heavy rinse carries the foam down with it.
-  vf -= 0.7 * max(c0.g - 0.9, 0.0);
-  // The brush cloth drags everything down the glass.
-  float inBrush = uBrush.z * smoothstep(uBrush.x - 0.03, uBrush.x + 0.02, v) * smoothstep(uBrush.y + 0.03, uBrush.y - 0.02, v);
+  vf -= 0.5 * max(c0.g - 0.9, 0.0);
+  // Brush cloth drags everything down the glass in its band.
+  float inBrush = uBrush.z * smoothstep(uBrush.x - 0.02, uBrush.x + 0.02, g.y) * smoothstep(uBrush.y + 0.02, uBrush.y - 0.02, g.y);
   vf -= inBrush * uBrush.w;
   vs -= inBrush * uBrush.w;
-  // Mitter strips lie in lanes and drag up as the car moves on.
-  float lane = 0.0;
-  if (uMit.z > 0.5 && v > uMit.x - 0.02 && v < uMit.y + 0.02) {
-    // The glass point's place across the tunnel, from the frame point.
-    float vy = v - uHZ;
-    float ug = GC * uF / (vy + GK * uF);
-    float X = q.x * ug / uF + EX;
-    float lf = fract((X + uMit.w) / 0.15);
-    lane = smoothstep(0.0, 0.08, lf) * smoothstep(0.78, 0.7, lf) * smoothstep(uMit.x - 0.02, uMit.x + 0.02, v) * smoothstep(uMit.y + 0.02, uMit.y - 0.02, v);
-    vf += lane * 0.25;
+  // Mitter strips lie in lanes and drag up the glass as the car moves on.
+  float strips = 0.0;
+  if (uMit.z > 0.5 && g.y > uMit.x - 0.03 && g.y < uMit.y + 0.03) {
+    float lf = fract((g.x + uMit.w) / 0.15);
+    strips = smoothstep(0.0, 0.08, lf) * smoothstep(0.78, 0.7, lf) * smoothstep(uMit.x - 0.03, uMit.x + 0.01, g.y) * smoothstep(uMit.y + 0.03, uMit.y - 0.01, g.y);
+    vf += strips * 0.22;
   }
-  // The air line: water ahead of it runs up and piles in a ridge.
+  // The dryer's air: water ahead of its line runs up the rake and piles in a ridge.
   float air = 0.0;
   if (uKnife.z > 0.0) {
-    float d = v - uKnife.y;
-    air = uKnife.z * smoothstep(-0.1, 0.0, d) * smoothstep(0.22, 0.02, d);
-    vs += air * 2.4;
-    vf += air * 1.5;
+    float dk = g.y - uKnife.y;
+    air = uKnife.z * smoothstep(-0.05, 0.0, dk) * smoothstep(0.16, 0.02, dk);
+    vs += air * 1.9;
+    vf += air * 1.2;
   }
+  // The cowl holds a pool; a parked blade dams the water above it.
+  float dam = 0.0;
+  for (int b = 0; b < 2; b++) {
+    vec2 piv = b == 0 ? PIV1 : PIV2, bl = b == 0 ? BL1 : BL2;
+    float a = b == 0 ? uWip.y : uWip.w;
+    vec2 dir = vec2(cos(a), sin(a));
+    if (abs(dir.x) < 0.5) continue;
+    float r = (g.x - piv.x) / dir.x;
+    if (r < bl.x || r > bl.y) continue;
+    float above = g.y - (piv.y + dir.y * r) - 0.01;
+    dam = max(dam, smoothstep(0.022, 0.0, above) * step(-0.006, above));
+  }
+  float hold = max(dam, smoothstep(0.02, 0.004, g.y));
+  vs *= 1.0 - hold;
+  vf *= 1.0 - hold;
   // Semi-Lagrangian steps: each texel takes what was upstream.
-  vec2 fromF = su - vec2(0.0, vf * uDt) * k;
-  vec2 fromS = su - vec2(0.0, vs * uDt) * k;
+  vec2 fromF = su - vec2(0.0, vf * uDt / GM.w), fromS = su - vec2(0.0, vs * uDt / GM.w);
   vec4 aF = texture(tS0, fromF), aF1 = texture(tS1, fromF), aS = texture(tS0, fromS);
-  // Nothing comes down from past the top of the sim.
-  float topF = step(fromF.y, 1.0), topS = step(fromS.y, 1.0);
-  float foam = aF.r * topF, hue = aF.a;
+  // Nothing comes down from past the top of the map.
+  float foam = aF.r * step(fromF.y, 1.0), hue = aF.a;
   vec2 off = aF1.rg - vec2(0.0, vf * uDt);
-  float sheet = aS.g * topS;
-  float beads = c0.b, haze = c1.b, smear = c1.a;
-  // Bubbles pop slowly; a film of water thins as it drains.
+  float sheet = aS.g * step(fromS.y, 1.0);
+  float beads = c0.b, film = c1.b, smear = c1.a;
+  // Bubbles pop slowly; a sheet thins as it drains; pools and dams drain slowly into the cowl.
   foam *= exp(-uDt / 32.0);
-  sheet *= exp(-uDt / (0.9 + 1.4 * smoothstep(0.0, 0.6, v)));
+  sheet *= exp(-uDt / (1.1 + 1.6 * smoothstep(0.0, 0.5, g.y)));
+  sheet = mix(sheet, max(sheet, c0.g * exp(-uDt / 3.0)), hold);
   smear *= exp(-uDt / 2.5);
-  haze *= exp(-uDt / 25.0);
   // A draining sheet leaves beads behind it.
-  beads = max(beads, min(1.0, sheet * 1.4));
+  beads = max(beads, min(1.0, sheet * 1.3));
 
-  // Pre-soak: the curtain line climbs the glass and floods it.
-  float n1 = cwN(q * 9.0 + uTime * 0.7);
-  if (swept(v, uC1.x, uC1.y)) { sheet = max(sheet, 0.9 + 0.3 * n1); beads = 1.0; }
-  beads = max(beads, uMist.x * smoothstep(0.55, 0.8, cwN(q * 26.0 + uTime * 3.0)));
-  // Foam: the fall lays a thick coat in three dyes, which then creeps.
-  if (swept(v, uC1.z, uC1.w)) {
-    float lump = cwFbm(q * vec2(4.0, 6.0) + 11.0);
-    float stream = 0.8 + 0.2 * cwN(vec2(q.x * 5.0, 3.0));
-    float f = (0.85 + 0.65 * lump) * stream;
+  float n1 = cwN(g * 40.0 + uTime * 0.7);
+  // Pre-soak: the curtain's line climbs the rake; water lands on it and spreads down.
+  if (between(g.y, uC1.x, uC1.y + 0.03)) { sheet = max(sheet, 0.9 + 0.3 * n1); beads = 1.0; }
+  beads = max(beads, uMist.x * smoothstep(0.55, 0.8, cwN(g * 90.0 + uTime * 3.0)));
+  // Foam: the fall lays a thick coat in three dyes, which then sags and creeps.
+  if (between(g.y, uC1.z, uC1.w + 0.04)) {
+    float lump = cwFbm(g * vec2(12.0, 18.0) + 11.0);
+    float f = (0.85 + 0.65 * lump) * (0.8 + 0.2 * cwN(vec2(g.x * 14.0, 3.0)));
     if (f > foam) {
-      // The three dyes land in patches: magenta, cyan, amber.
-      hue = clamp(cwFbm(q * 3.4 + 3.0) * 1.9 - 0.45 + q.x * 0.12, 0.0, 1.0);
+      hue = clamp(cwFbm(g * 9.0 + 3.0) * 1.9 - 0.45 + g.x * 0.3, 0.0, 1.0);
       off = vec2(0.0);
       foam = f;
     }
   }
   // Rinse: the jets flood the glass; only a heavy flow strips the foam.
-  if (swept(v, uC2.x, uC2.y)) { sheet = max(sheet, 1.25 + 0.4 * n1); beads = 1.0; }
-  float jets = uMist.y * smoothstep(0.55, 0.85, cwN(q * 7.0 + vec2(uTime * 1.7, -uTime * 2.3)));
+  if (between(g.y, uC2.x, uC2.y + 0.03)) { sheet = max(sheet, 1.25 + 0.4 * n1); beads = 1.0; }
+  float jets = uMist.y * smoothstep(0.55, 0.85, cwN(g * 22.0 + vec2(uTime * 1.7, -uTime * 2.3)));
   sheet = max(sheet, jets * 1.3);
   foam *= exp(-uDt * (4.0 * max(sheet - 0.9, 0.0) + 2.5 * uMist.y));
   // Spot rinse: a last soft curtain.
-  if (swept(v, uC2.z, uC2.w)) { sheet = max(sheet, 0.7 + 0.2 * n1); beads = 1.0; }
+  if (between(g.y, uC2.z, uC2.w + 0.03)) { sheet = max(sheet, 0.7 + 0.2 * n1); beads = 1.0; }
   // Wax mist beads the glass and leaves a faint haze.
-  float wax = uMist.z * smoothstep(0.4, 0.75, cwN(q * 40.0 + uTime * 2.0));
-  beads = max(beads, wax);
-  haze = min(1.0, haze + uMist.z * uDt * 0.5);
-  // Brush splash.
+  beads = max(beads, uMist.z * smoothstep(0.4, 0.75, cwN(g * 130.0 + uTime * 2.0)));
+  film = min(1.0, film + uMist.z * uDt * 0.4);
   beads = max(beads, uMist.w * 0.8);
 
-  // Brush cloth: presses the foam thin, wets the glass and smears it.
+  // Brush cloth: presses the foam thin and leaves wet streaks along its travel.
   if (inBrush > 0.0) {
-    foam *= exp(-uDt * 1.6 * inBrush);
-    sheet = max(sheet, 0.55 * inBrush);
+    float streak = smoothstep(0.35, 0.75, cwN(vec2(g.x * 70.0, g.y * 3.0 + uTime * 2.0)));
+    foam *= exp(-uDt * 1.8 * inBrush);
+    sheet = max(sheet, 0.5 * inBrush * (0.6 + 0.6 * streak));
     beads = max(beads, inBrush);
-    smear = max(smear, inBrush);
+    smear = max(smear, inBrush * (0.4 + 0.6 * streak));
   }
   // Mitter strips wipe lanes through the foam.
-  foam *= exp(-uDt * 3.0 * lane);
-  sheet = max(sheet, 0.35 * lane);
-  smear = max(smear, lane * 0.7);
+  foam *= exp(-uDt * 3.0 * strips);
+  sheet = max(sheet, 0.35 * strips);
+  smear = max(smear, strips * 0.7);
 
   // The air line strips the glass behind it and feeds the ridge ahead.
   if (uKnife.z > 0.0) {
-    float behind = uKnife.z * smoothstep(0.0, -0.06, v - uKnife.y);
+    float behind = uKnife.z * smoothstep(0.0, -0.05, g.y - uKnife.y);
     // Beads keep their hold near the glass edges.
-    float edge = smoothstep(0.42, 0.62, abs(q.x - 0.25));
+    float edge = smoothstep(0.42, 0.66, abs(g.x));
     beads = mix(beads, 0.08 + 0.4 * edge, behind * clamp(uDt * 9.0, 0.0, 1.0));
     sheet *= exp(-uDt * 9.0 * behind);
     foam *= exp(-uDt * 12.0 * (behind + air));
@@ -376,29 +403,32 @@ void main() {
     beads *= 1.0 - air * clamp(uDt * 5.0, 0.0, 1.0);
   }
 
-  // The blades: whatever they sweep, they push ahead of them.
+  // The blades: whatever they sweep rides ahead of them as a bow wave.
   for (int b = 0; b < 2; b++) {
-    vec2 piv = b == 0 ? PIV1 : PIV2;
-    vec2 bl = b == 0 ? BL1 : BL2;
+    vec2 piv = b == 0 ? PIV1 : PIV2, bl = b == 0 ? BL1 : BL2;
     float a0 = b == 0 ? uWip.x : uWip.z, a1 = b == 0 ? uWip.y : uWip.w;
-    vec2 p = q - piv;
-    float r = length(p);
-    if (r < bl.x - 0.02 || r > bl.y + 0.02) continue;
+    vec2 p = g - piv;
+    float r = length(p), da = a1 - a0;
+    if (r < bl.x - 0.01 || r > bl.y + 0.02 || abs(da) < 1e-4) continue;
     float ang = atan(p.y, p.x);
-    float da = a1 - a0;
-    if (abs(da) > 1e-4 && swept(ang, a0, a1)) {
+    if (between(ang, a0, a1)) {
       // The rubber leaves a thin wet film and a trace of soap.
-      foam *= 0.03; sheet = 0.28; beads = 0.02; smear = 1.0;
-    } else if (abs(da) > 1e-4) {
-      // A thin ridge rides in front of the blade.
+      foam *= 0.03; sheet = 0.22; beads = 0.02; smear = 1.0;
+    } else {
       float ahead = (ang - a1) * sign(da);
-      float ridge = smoothstep(0.0, 0.01, ahead) * smoothstep(0.06, 0.02, ahead);
-      foam *= 1.0 + ridge * abs(da) * 8.0;
-      sheet += ridge * 0.2;
+      if (ahead > 0.0 && ahead < 0.09) {
+        vec4 sw = texture(tS0, toMap(piv + r * vec2(cos(0.5 * (a0 + a1)), sin(0.5 * (a0 + a1)))));
+        float k = min(1.0, abs(da) / 0.09) * smoothstep(0.09, 0.0, ahead);
+        foam += sw.r * k;
+        sheet += sw.g * k * 0.8;
+        if (sw.r * k > 0.02) hue = mix(hue, sw.a, 0.5);
+      }
     }
   }
+  // Foam that moves on leaves a soapy film; a heavy rinse washes the film off.
+  film = clamp(film + max(c0.r - foam, 0.0) * 0.6, 0.0, 1.0) * exp(-uDt * 2.0 * max(sheet - 0.8, 0.0));
   o0 = vec4(min(foam, 2.5), min(sheet, 2.0), clamp(beads, 0.0, 1.0), hue);
-  o1 = vec4(off, haze, smear);
+  o1 = vec4(off, film, smear);
 }`;
 
 /* ---------- the view ---------- */
@@ -440,15 +470,16 @@ float signAt(int cell, vec2 p) {
 ${CONSTS}
 ${NOISE}
 ${PRECIP}
+${GLASS_GL}
 
 // The mitter felt.
 const vec3 MITT_FELT = vec3(0.07, 0.1, 0.26);
 // The car's top, as height under the eye at u metres ahead.
 float carTop(float u) {
   if (u > BN) return -9.0;
-  if (u > GB) return GY - BK * (u - GB);
-  if (u > GT) return GY + (GB - u) * GK;
-  return 0.2;
+  if (u > CU) return G0.y - 0.02 - BK * (u - CU);
+  if (u > HU) return G0.y + (CU - u) * GR.y / GR.z;
+  return 0.19;
 }
 // The colour of the wall strips along the tunnel.
 vec3 zoneCol(float a) {
@@ -747,10 +778,10 @@ vec3 bonnet(vec3 d, vec3 Dw, inout float t, vec3 col) {
   float tb = BC / den;
   vec3 B = d * tb;
   float u = -B.z, x = B.x - CX;
-  float k = clamp((u - GB) / (BN - GB), 0.0, 1.0);
+  float k = clamp((u - CU) / (BN - CU), 0.0, 1.0);
   float hw = mix(0.8, 0.7, k);
   // The nose curves back at its corners.
-  if (u < GB || u > BN - 0.3 * pow(abs(x) / hw, 4.0) || abs(x) > hw || tb >= t) return col;
+  if (u < CU || u > BN - 0.3 * pow(abs(x) / hw, 4.0) || abs(x) > hw || tb >= t) return col;
   t = tb;
   vec3 n = normalize(vec3(-0.22 * x / hw, 1.0, -(BK + 0.12 * k)));
   vec3 W = vec3(B.x + EX, B.y + EY, uS + u);
@@ -1032,8 +1063,8 @@ void main() {
   vec3 d = normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
   float cp = cos(uBob.x), sp = sin(uBob.x);
   vec3 dw = vec3(d.x, d.y * cp - d.z * sp, d.y * sp + d.z * cp);
-  float den = d.y - GK * d.z;
-  float tG = den > 1e-4 ? GC / den : 0.0;
+  vec3 gH = glassHit(d);
+  float tG = max(gH.x, 0.0);
   vec3 E = vec3(EX, EY + uBob.y, uS);
   vec3 D = vec3(dw.x, dw.y, -dw.z);
   float t;
@@ -1045,10 +1076,13 @@ void main() {
   col = curtain(E, D, tG, t, A_SPOT + 0.22, uArchC[7], uOnSpot * 0.8, col);
   col = waxMist(E, D, tG, t, col);
   col = curtain(E, D, tG, t, A_RINSE + 0.2, uArchC[5], uOn.z * 1.3, col);
+  float depth = t;
   vec4 tb = topBrush(dw, tG, t);
   col = col * (1.0 - tb.a) + tb.rgb;
+  if (tb.a > 0.5) depth = min(depth, max(length(vec2(uTop.y, uTop.x)) - 0.3, tG));
   vec4 wb = wrapBrushes(dw, tG, t);
   col = col * (1.0 - wb.a) + wb.rgb;
+  if (wb.a > 0.5) depth = min(depth, max(A_WRAP - uS - 0.3, tG));
   vec4 mt = mitters(dw, tG, t);
   col = mix(col, mt.rgb, mt.a);
   col = foamFall(E, D, tG, t, uOn.y, col);
@@ -1069,10 +1103,11 @@ void main() {
   if (uSpray.w > 0.0) col += uArchC[8] * 0.12 * high * ppRain(uv, asp, uTime * 1.4, uSpray.w * 0.5, vec2(0.0, 1.0), nl);
   // Damp air hazes the far tunnel in its own light.
   col += zoneCol(uS + 4.0) * 0.012 * (1.0 - exp(-t * 0.12)) * step(uS, TL);
-  outC = vec4(col, 1.0);
+  outC = vec4(col, clamp(depth, 0.3, 80.0));
 }`;
 
 /* ---------- bokeh: the shared gather ---------- */
+// Box steps down; depth rides along in alpha.
 const DOWN_FS = `#version 300 es
 precision highp float;
 uniform sampler2D tSrc;
@@ -1080,37 +1115,46 @@ uniform vec2 uTx, uDst;
 out vec4 outC;
 void main() {
   vec2 uv = gl_FragCoord.xy / uDst;
-  outC = vec4(0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
-    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb), 1.0);
+  outC = 0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)) + texture(tSrc, uv + uTx * vec2(1.0, -1.0))
+    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)) + texture(tSrc, uv + uTx * vec2(1.0, 1.0)));
 }`;
+// The eye focuses on the glass, so the tunnel opens into discs. Near things stay sharper.
 const BOK_FS = `#version 300 es
 precision highp float;
 uniform sampler2D tSrc;
 uniform vec2 uRad, uDst;
+uniform float uFocus, uRim;
 out vec4 outC;
 ${BOKEH}
-void main() { outC = vec4(bokeh(tSrc, gl_FragCoord.xy / uDst, uRad, 0.0, 0.015, 500.0, 0.35), 1.0); }`;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  float z = max(texture(tSrc, uv).a, 0.2);
+  float coc = clamp(abs(1.0 / uFocus - 1.0 / z) * uFocus, 0.12, 1.0);
+  outC = vec4(bokeh(tSrc, uv, uRad * coc, 0.0, 0.015, 500.0, uRim), 1.0);
+}`;
 
 /* ---------- the pane ---------- */
-// The windscreen: sheet water, beads and runs, foam, the wipers, the car around it.
+// The windscreen, seen in perspective: everything on it lives in glass metres.
+// Sheet water, beads and runs, lather, the wipers, then the car round the glass.
 const PANE_FS = `#version 300 es
 precision highp float;
 out vec4 outC;
-uniform sampler2D tScene, tBok, tWide, tFar, tFar2, tS0, tS1;
+uniform sampler2D tScene, tBokS, tBokL, tWide, tFar, tFar2, tS0, tS1;
 uniform vec2 uRes, uSimRes, uM;
-uniform float uAsp, uTime, uF, uHZ, uFlow, uWind, uSheetT, uFog;
+uniform float uAsp, uTime, uF, uHZ, uFlow, uWind, uSheetT, uFog, uShift, uShiver;
 // Blade angles: driver, passenger.
 uniform vec2 uWipA;
-// The dryer's air line: its frame v, how hard it blows, its colour.
-uniform vec3 uKnife;
-uniform vec3 uKnifeC;
+// The dryer's air line: its gh, how hard it blows; and its colour.
+uniform vec3 uKnife, uKnifeC;
 uniform vec3 uDash;
-// The tunnel's own light round the car: it lights the foam from every side.
+// The floods' light on the car: it lights the lather from outside.
 uniform vec3 uAmb;
 ${CONSTS}
 ${NOISE}
+${GLASS_GL}
 ${GLASS_RAIN}
 ${WET_GLASS}
+vec2 toScreen(vec3 P) { return vec2(0.5 + P.x / -P.z * uF / uAsp, uHZ + P.y / -P.z * uF); }
 // Foam cells: distance to the nearest cell wall, distance to the cell's middle, and its hash.
 vec3 cells(vec2 p) {
   vec2 n = floor(p), f = fract(p);
@@ -1127,116 +1171,160 @@ vec3 cells(vec2 p) {
 float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
 // The foam dye along one value: magenta at 0, cyan at 0.5, amber at 1.
 vec3 dyeOf(float h) {
-  vec3 m = vec3(1.0, 0.25, 0.7), c = vec3(0.3, 0.85, 1.0), a = vec3(1.0, 0.7, 0.25);
+  vec3 m = vec3(1.0, 0.3, 0.72), c = vec3(0.32, 0.85, 1.0), a = vec3(1.0, 0.72, 0.3);
   return h < 0.5 ? mix(m, c, smoothstep(0.3, 0.45, h)) : mix(c, a, smoothstep(0.55, 0.7, h));
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec2 q = (uv - 0.5) * vec2(uAsp, 1.0);
-  vec2 su = vec2(uv.x, (uv.y - SV0) / (SV1 - SV0));
+  vec3 d = normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
+  vec3 H = glassHit(d);
+  vec2 g = H.yz;
+  vec3 P = d * max(H.x, 0.05);
+  // Screen motion per metre of glass, across and up the rake: the glass's own perspective.
+  mat2 J = mat2(toScreen(P + vec3(0.003, 0.0, 0.0)) - uv, toScreen(P + GR * 0.003) - uv) / 0.003;
+  vec2 su = (g - GM.xy) / GM.zw;
   vec4 s0 = texture(tS0, su), s1 = texture(tS1, su);
-  // The car's frame: where the glass ends at the dash and the pillar.
-  vec3 d = normalize(vec3(q.x, uv.y - uHZ, -uF));
-  float den = d.y - GK * d.z;
-  float tg = den > 1e-4 ? GC / den : 1e9;
-  float ug = -d.z * tg, xg = d.x * tg - CX;
-  float hw = mix(0.79, 0.67, clamp((GB - ug) / (GB - GT), 0.0, 1.0));
-  float vBase = uHZ + GY / GB * uF;
-  // Sheet water: its slope bends the view; crests run down it.
-  vec2 tx = 1.0 / uSimRes;
-  float gx = texture(tS0, su + vec2(tx.x, 0.0)).g - texture(tS0, su - vec2(tx.x, 0.0)).g;
-  float gy = texture(tS0, su + vec2(0.0, tx.y)).g - texture(tS0, su - vec2(0.0, tx.y)).g;
-  float sheet = min(s0.g, 1.2);
-  vec2 rp = vec2(q.x * 4.0, q.y * 13.0 + uSheetT);
-  float r0 = cwN(rp);
-  vec2 rip = vec2(cwN(rp + vec2(0.08, 0.0)) - r0, cwN(rp + vec2(0.0, 0.08)) - r0);
-  vec2 bend = (vec2(gx, gy) * 0.014 + rip * 0.22) * sheet;
-  // A wiped film shows the blade's chatter as fine arcs round its pivot.
-  if (s1.a > 0.02) {
-    float rr = length(q - PIV1);
-    bend += vec2(0.0, (cwN(vec2(rr * 260.0, atan(q.y - PIV1.y, q.x - PIV1.x) * 3.0)) - 0.5) * 0.004 * s1.a);
-  }
-  // Beads, runs and fog from the shared wet glass. The air sets their run.
-  float edge = vBase - uv.y;
-  // Foam covers the beads under it.
-  float wet = s0.b * (1.0 - smoothstep(0.05, 0.35, s0.r));
-  WgPane g = wgPane(q, 1.15, uM, uFlow, wet, uWind, 0.45, uFog + s1.b * 0.3, 0.0, edge);
-  vec2 at = uv + (g.off + bend) / vec2(uAsp, 1.0);
-  vec3 sharp = texture(tScene, at).rgb, bok = texture(tBok, at).rgb;
-  vec3 wide = texture(tWide, uv).rgb;
-  // Running water smears the view toward the blur.
-  sharp = mix(sharp, bok, clamp(sheet * 0.45 + s1.a * 0.2, 0.0, 0.7));
-  vec3 col = wgView(g, sharp, bok, 0.0, vec3(0.95, 0.97, 0.96), vec3(0.0015), vec3(0.6, 0.62, 0.66) * (0.15 + wide * 1.5));
-  // A sheet's surface catches the light as a soft sheen.
-  col += texture(tWide, uv + bend * 3.0).rgb * sheet * (0.06 + 0.3 * smoothstep(0.5, 0.8, r0));
+  float hw = glassHW(g.y);
+  // How far inside the glass the pixel is, in metres; negative outside it.
+  float inside = min(min(g.y, GLEN - g.y), hw - abs(g.x));
+  vec3 room = texture(tFar2, vec2(0.5, 0.55)).rgb;
 
-  // Foam on the glass, lit from behind by the tunnel.
+  // Sheet water: its slope bends the view; crests run down the rake.
+  vec2 tx = 1.0 / uSimRes;
+  float sgx = texture(tS0, su + vec2(tx.x, 0.0)).g - texture(tS0, su - vec2(tx.x, 0.0)).g;
+  float sgy = texture(tS0, su + vec2(0.0, tx.y)).g - texture(tS0, su - vec2(0.0, tx.y)).g;
+  float sheet = min(s0.g, 1.2), film = s1.b, smear = s1.a;
+  vec2 rp = vec2(g.x * 9.0, g.y * 34.0 + uSheetT * 3.0);
+  float r0 = cwN(rp);
+  vec2 rip = vec2(cwN(rp + vec2(0.1, 0.0)) - r0, cwN(rp + vec2(0.0, 0.1)) - r0);
+  vec2 bend = (vec2(sgx, sgy) * 0.008 + rip * 0.05) * sheet;
+  // A wiped film shows the blade's chatter as fine arcs round its pivot.
+  if (smear > 0.02) {
+    vec2 pr = g - PIV1;
+    bend += normalize(pr) * (cwN(vec2(length(pr) * 900.0, atan(pr.y, pr.x) * 3.0)) - 0.5) * 0.0016 * smear;
+  }
+  // Beads and runs: the shared wet glass, in glass metres. Foam covers the beads under it.
+  float wet = s0.b * (1.0 - smoothstep(0.05, 0.35, s0.r));
+  vec2 gb = g + vec2(0.0, uShift) + vec2(sin(uTime * 53.0), sin(uTime * 41.0 + 1.0)) * 0.0007 * uShiver;
+  WgPane wg = wgPane(gb, 1.3, uM, uFlow, wet, uWind, 0.45, uFog + film * 0.25, 0.0, -inside);
+  vec2 at = uv + J * (wg.off + bend);
+  // The eye focuses on the glass. Wiped glass shows tighter discs; water swells and smears them.
+  float wiped = smear * (1.0 - min(sheet * 2.0, 1.0));
+  float swell = clamp(0.35 + sheet * 0.9 + film * 0.35 - wiped * 0.4, 0.0, 1.0);
+  vec3 near = texture(tBokS, at).rgb, far = texture(tBokL, at).rgb;
+  vec2 run = J * vec2(0.0, 0.03) * sheet;
+  far = (far * 2.0 + texture(tBokL, at + run).rgb + texture(tBokL, at - run).rgb) * 0.25;
+  // A drop is a small lens: inside it the view is tight.
+  vec3 view = mix(mix(near, far, swell), near, wg.cover * 0.6);
+  vec3 wide = texture(tWide, uv).rgb;
+  vec3 col = wgView(wg, view, far, 0.0, vec3(0.95, 0.97, 0.96), vec3(0.0015), vec3(0.6, 0.62, 0.66) * (0.15 + wide * 1.5));
+  // A running sheet catches the light in soft crests.
+  col += texture(tWide, uv + J * bend * 3.0).rgb * sheet * (0.05 + 0.25 * smoothstep(0.5, 0.8, r0));
+  // A soap film greys the view a touch and shimmers faintly.
+  vec3 sheen = 0.5 + 0.5 * cos(6.2832 * (vec3(0.0, 0.33, 0.67) + cwN(g * 30.0) * 1.5));
+  col = col * (1.0 - 0.15 * film) + (room * 0.05 + sheen * wide * 0.04) * film;
+
+  // Lather on the glass, lit from outside by the floods.
   float f = s0.r;
   if (f > 0.01) {
-    vec2 mq = q + s1.rg;
-    // Bubbles grow larger in some places and finer in others.
-    float bs = 0.7 + 0.6 * cwN(mq * 2.6 + 9.0);
-    vec3 cb = cells(mq * vec2(34.0, 30.0) / bs);
-    vec3 cs = cells(mq * vec2(95.0, 86.0) + 5.0);
-    float lump = cwFbm(mq * vec2(5.0, 4.0));
+    vec2 mq = g + s1.rg;
+    vec3 cb = cells(mq * 105.0);
+    vec3 cs = cells(mq * 260.0 + 5.0);
+    float lump = cwFbm(mq * vec2(16.0, 12.0));
+    float lumpU = cwFbm(mq * vec2(16.0, 12.0) + vec2(0.0, 0.12));
     float th = f * (0.55 + 0.9 * lump);
     // Thick foam covers the glass; thin foam keeps only its bubble walls, a lace.
     float wallB = 1.0 - smoothstep(0.0, 0.09, cb.x), wallS = 1.0 - smoothstep(0.0, 0.12, cs.x);
     float solid = smoothstep(0.22, 0.5, th);
     float cov = max(solid, max(wallB, wallS * 0.8) * smoothstep(0.06, 0.2, th) * 0.55);
-    // Lit from outside: each bubble glows like a small dome; the walls bend light away.
+    // Each bubble glows like a small dome; the walls bend light away.
     float dome = (1.0 - 0.35 * smoothstep(0.1, 0.62, cb.y)) * (1.0 - 0.18 * smoothstep(0.1, 0.62, cs.y));
     float face = (0.85 + 0.25 * cb.z) * dome * (1.0 - 0.17 * wallB * solid) * (1.0 - 0.08 * wallS * solid);
-    vec3 far = mix(texture(tFar, uv).rgb, texture(tFar2, uv).rgb, 0.6);
+    // The lather's body: folds catch the light from above and shade below.
+    face *= 0.85 + clamp((lumpU - lump) * 5.0, -0.3, 0.35);
+    // The floods' hue is tamed, so the dyes stay pink, cyan and amber under any light.
+    vec3 farL = mix(texture(tFar, uv).rgb, texture(tFar2, uv).rgb, 0.6);
+    vec3 Lf = uAmb * 1.5 + farL * 2.2 + 0.015;
+    Lf = mix(vec3(dot(Lf, vec3(0.3, 0.55, 0.15))), Lf, 0.3);
     vec3 tint = mix(vec3(1.0), dyeOf(s0.a), 0.72);
-    // Deep foam sends more light back out, so it reads a little darker inside.
-    vec3 glow = (uAmb + far * 1.6) * tint * face * (1.2 - 0.5 * smoothstep(0.5, 1.8, th));
+    vec3 glow = Lf * tint * face * (1.2 - 0.5 * smoothstep(0.5, 1.8, th));
     // A thin edge lets light through and shines.
     glow *= 1.0 + 0.5 * smoothstep(0.5, 0.2, th) * cov;
     float T = exp(-(0.3 + 1.7 * th));
-    vec3 through = mix(col, texture(tBok, uv).rgb, 0.6);
-    col = mix(col, through * T + glow, cov);
+    col = mix(col, mix(col, far, 0.6) * T + glow, cov);
   }
 
   // The dryer's air line tears the water into a bright mist along the glass.
   if (uKnife.y > 0.0) {
-    float dk = uv.y - uKnife.x;
-    float mist = exp(-dk * dk / 0.0006) * (0.6 + 0.8 * cwN(vec2(q.x * 30.0 - uTime * 9.0, uTime * 3.0)));
-    col += uKnifeC * mist * uKnife.y * 0.35 + uKnifeC * smoothstep(0.0, 0.25, dk) * smoothstep(0.5, 0.25, dk) * uKnife.y * 0.03;
+    float dk = g.y - uKnife.x;
+    float mist = exp(-dk * dk / 0.00012) * (0.5 + 0.9 * cwN(vec2(g.x * 60.0 - uTime * 9.0, uTime * 3.0)));
+    col += uKnifeC * (mist * 0.35 + smoothstep(0.0, 0.06, dk) * smoothstep(0.14, 0.06, dk) * 0.03) * uKnife.y;
   }
 
-  // The wipers: blades on the glass, a little soft this close.
+  // The wipers: arms and blades on the glass, a little soft this close.
   for (int b = 0; b < 2; b++) {
-    vec2 piv = b == 0 ? PIV1 : PIV2;
-    vec2 bl = b == 0 ? BL1 : BL2;
+    vec2 piv = b == 0 ? PIV1 : PIV2, bl = b == 0 ? BL1 : BL2;
     float a = b == 0 ? uWipA.x : uWipA.y;
     vec2 dir = vec2(cos(a), sin(a));
-    float db = seg(q, piv + dir * bl.x, piv + dir * bl.y);
-    float darm = seg(q, piv, piv + dir * (bl.x + bl.y) * 0.52);
-    float blade = smoothstep(0.011, 0.006, db);
-    float arm = smoothstep(0.008, 0.004, darm);
-    vec3 shine = texture(tWide, uv).rgb * 0.6;
-    col = mix(col, vec3(0.002) + shine * smoothstep(0.004, 0.0, abs(db - 0.006)), max(blade, arm) * 0.96);
+    float db = seg(g, piv + dir * bl.x, piv + dir * bl.y);
+    float darm = seg(g, piv, piv + dir * (bl.x + bl.y) * 0.5);
+    float blade = smoothstep(0.017, 0.011, db), arm = smoothstep(0.012, 0.007, darm);
+    vec3 shine = wide * 0.6 * smoothstep(0.005, 0.0, abs(db - 0.011));
+    col = mix(col, vec3(0.002) + shine, max(blade, arm) * 0.96);
   }
 
-  // The dash mirrored faintly in the glass, and the instruments' glow.
-  float above = uv.y - vBase;
-  col += uDash * exp(-above * 30.0) * step(0.0, above) * 0.5;
-  col += vec3(0.9, 0.55, 0.25) * 0.012 * exp(-dot(q - vec2(-0.08, vBase - 0.43), q - vec2(-0.08, vBase - 0.43)) * 30.0);
-  // The dash: dark, lit a little by the tunnel through the glass.
-  if (uv.y < vBase) {
-    float dk = smoothstep(vBase, vBase - 0.02, uv.y);
-    vec3 dc = texture(tWide, vec2(uv.x, 0.12)).rgb * 0.06 + uDash * 0.3;
-    dc *= 0.5 + 0.5 * smoothstep(vBase - 0.05, vBase, uv.y);
-    col = mix(col, dc, dk);
+  // The car round the glass: the dash's glow in the glass, the dash, the pillars, the header and lining.
+  col += uDash * exp(-max(g.y, 0.0) * 14.0) * 0.4;
+  float aa = max(fwidth(g.y), 1e-4);
+  // The rear-view mirror hangs from the header in the middle of the car.
+  vec2 mq0 = vec2(abs(g.x), g.y - GLEN + 0.085);
+  float mir = length(max(abs(mq0) - vec2(0.07, 0.014), 0.0)) - 0.012;
+  float stem = max(abs(g.x) - 0.008, abs(g.y - GLEN + 0.035) - 0.035);
+  float mirror = smoothstep(aa * 2.0, -aa, min(mir, stem));
+  col = mix(col, room * 0.05 + vec3(0.003) + wide * 0.05 * smoothstep(aa * 3.0, 0.0, abs(mir)), mirror);
+  // Beside the glass: the leaning pillar, then the side window.
+  float side = abs(g.x) - hw;
+  if (side > -0.01) {
+    float pillar = smoothstep(-aa * 3.0, aa * 2.0, side) * smoothstep(0.1 + aa * 2.0, 0.1 - aa, side);
+    vec3 pc = room * 0.05 + vec3(0.0025) + wide * 0.06 * smoothstep(0.02, 0.0, abs(side - 0.012));
+    col = mix(col * mix(1.0, 0.55, smoothstep(0.09, 0.11, side)), pc, pillar);
   }
-  // The left pillar.
-  if (den > 1e-4 && ug < GB + 0.2) {
-    float px = (xg + hw) / max(tg, 0.2) * uF;
-    float pil = smoothstep(0.004, -0.006, px);
-    col = mix(col, vec3(0.003) + texture(tWide, uv).rgb * 0.05, pil);
+  // Above the glass: the header, then the roof lining, lit a little by the glass.
+  if (g.y > GLEN - 0.01) {
+    float head = smoothstep(GLEN - aa * 2.0, GLEN + aa * 2.0, g.y);
+    vec3 hc = mix(vec3(0.0025), room * 0.12 + vec3(0.004), smoothstep(GLEN + 0.06, GLEN + 0.2, g.y) * exp(-(g.y - GLEN) * 2.0));
+    col = mix(col, hc, head);
+  }
+  // Below the glass: the dash top, dark, with the vent slots along the cowl.
+  if (g.y < 0.01 || H.x < 0.0) {
+    float dash = H.x < 0.0 ? 1.0 : smoothstep(aa * 2.0, -aa * 2.0, g.y);
+    float vent = step(0.5, fract(g.x * 40.0)) * smoothstep(-0.07, -0.05, g.y) * smoothstep(-0.015, -0.03, g.y);
+    vec3 dc = (room * 0.06 + uDash * 0.4) * (1.0 - 0.6 * vent) * (0.6 + 0.4 * smoothstep(-0.3, 0.0, g.y));
+    col = mix(col, dc, dash);
   }
   outC = vec4(col, 1.0);
+}`;
+
+/* ---------- glow ---------- */
+// A soft knee picks the light for the bloom; halos lean a little toward white.
+const KNEE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D tSrc;
+uniform vec2 uTx, uDst;
+uniform float uThr, uKnee;
+out vec4 outC;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uDst;
+  vec3 c = 0.25 * (texture(tSrc, uv + uTx * vec2(-1.0, -1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, -1.0)).rgb
+    + texture(tSrc, uv + uTx * vec2(-1.0, 1.0)).rgb + texture(tSrc, uv + uTx * vec2(1.0, 1.0)).rgb);
+  float br = max(c.r, max(c.g, c.b));
+  // Light just over the threshold eases in, so no hard rim forms round a sign.
+  float s = clamp(br - uThr + uKnee, 0.0, 2.0 * uKnee);
+  s = s * s / (4.0 * uKnee + 1e-4);
+  c *= max(s, br - uThr) / max(br, 1e-4);
+  // A sign's halo is a little paler than its tube, so it never floods one flat colour.
+  c = mix(c, vec3(dot(c, vec3(0.3, 0.55, 0.15))), 0.25);
+  outC = vec4(min(c, vec3(8.0)), 1.0);
 }`;
 
 /* ---------- the last pass ---------- */
@@ -1253,7 +1341,14 @@ void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   vec3 col = texture(tPane, uv).rgb + texture(tBloom, uv).rgb * uBloomK;
   col = gdGrade(col, uv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, uVig, 0.4, uGrain);
-  outC = vec4(ouFilm(col * uFade, uExpo, gl_FragCoord.xy), 1.0);
+  col *= uFade * uExpo;
+  // The hottest light goes toward white before the curve, so tube cores burn white, not flat.
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, vec3(max(col.r, max(col.g, col.b))), smoothstep(1.0, 5.0, l) * 0.55);
+  vec3 c = ouSrgb(ouAces(col));
+  // Two hashes give a triangular dither of one step: dark gradients do not band.
+  c += (ouHash(gl_FragCoord.xy) + ouHash(gl_FragCoord.xy + vec2(71.3, 19.7)) - 1.0) / 255.0;
+  outC = vec4(c, 1.0);
 }`;
 // A plain copy keeps the glass when the frame changes size.
 const COPY_FS = `#version 300 es
@@ -1266,8 +1361,11 @@ void main() { vec2 uv = gl_FragCoord.xy / uDst; o0 = texture(tA, uv); o1 = textu
 
 const simP = program(SIM_FS, 'sim'), sceneP = program(SCENE_FS, 'scene'), downP = program(DOWN_FS, 'down');
 const bokP = program(BOK_FS, 'bokeh'), paneP = program(PANE_FS, 'pane'), finalP = program(FINAL_FS, 'final'), copyP = program(COPY_FS, 'copy');
+const kneeP = program(KNEE_FS, 'knee');
 const bloom = bloomChain(gl);
-const rtScene = target(), rt4 = target(), rt8 = target(), rt32 = target(), rt128 = target(), rtBok = target(), rtPane = target();
+const rtScene = target(), rt4 = target(), rt8 = target(), rt32 = target(), rt128 = target(), rtPane = target();
+// Two lens blurs: tight discs for wiped glass, wide ones for wet glass. The knee feeds the bloom.
+const rtBokS = target(), rtBokL = target(), rtKnee = target();
 const sims = [target(2), target(2)];
 let si = 0;
 const vao = gl.createVertexArray();
@@ -1324,45 +1422,42 @@ let time = 0, lastS = S0;
 // Bobbing: pitch and heave ease after the jolts.
 const bob = { p: 0, h: 0, vp: 0, vh: 0 };
 // The lens: a narrow frame takes a wider one.
-let F = 1.672, HZ = 0.625, asp = 16 / 9;
+let F = 1.3, HZ = 0.42, asp = 16 / 9;
+// The frame runs from the dash top to the roof lining; a tall frame keeps all of the glass.
 function lens() {
   asp = canvas.width / Math.max(1, canvas.height);
-  F = Math.min(1.672, asp / 2 / Math.tan(20 * D2R));
-  HZ = F * Math.tan(20.5 * D2R);
+  const tall = smooth(1.3, 0.7, asp);
+  const lo = mix(20, 18.5, tall) * D2R, hi = mix(22, 21.5, tall) * D2R;
+  F = 1 / (Math.tan(hi) + Math.tan(lo));
+  HZ = Math.tan(lo) * F;
 }
-// The frame v of the glass line where a plane u metres ahead cuts it.
-function lineV(u) {
-  if (u > GLASS.base) return -1;
-  if (u < GLASS.top) return 3;
-  return HZ + glassY(u) / u * F;
+// How far up the rake a plane u metres ahead cuts the glass: -1 short of it, 3 past it.
+function ghLine(u) {
+  if (u > WS.cu) return -1;
+  if (u < WS.hu) return 3;
+  return ghAt(u);
 }
-// The frame v of any car point.
-const frameV = (u, y) => HZ + y / u * F;
-
-// The top brush rides the car: its axis keeps clear of the bonnet, glass and roof.
+// The top brush rides the car: its axis keeps clear of the bonnet, the glass and the roof.
 const BR = 0.5, BRC = 0.42;
 function brushAxis(u) {
   let y = 0.95 - 1.2;
-  if (u < NOSE + BRC) y = Math.max(y, bonnetY(Math.min(Math.max(u, GLASS.base), NOSE)) + Math.sqrt(Math.max(0, BRC * BRC - Math.max(0, u - NOSE) ** 2)));
-  // The glass: the axis stays BRC from its plane while the touch point is on it.
-  const foot = u - 0.538 * BRC;
-  if (foot < GLASS.base + 0.05 && foot > GLASS.top - 0.15) y = Math.max(y, 0.27705 + 1.1868 * BRC - 0.639 * u);
-  if (u < GLASS.top + 0.4) y = Math.max(y, 0.2 + BRC * Math.min(1, (GLASS.top + 0.4 - u) / 0.3));
+  if (u < NOSE + BRC) y = Math.max(y, bonnetY(clamp(u, WS.cu, NOSE)) + Math.sqrt(Math.max(0, BRC * BRC - Math.max(0, u - NOSE) ** 2)));
+  // On the glass the axis stays BRC off its plane.
+  const gh = (WS.cu + WS.ry * BRC - u) / WS.ru;
+  if (gh > -0.1 && gh < WS.len + 0.15) y = Math.max(y, WS.cy + WS.ry * gh + WS.ru * BRC);
+  if (u < WS.hu + 0.45) y = Math.max(y, 0.19 + BRC * Math.min(1, (WS.hu + 0.45 - u) / 0.3));
   return y;
 }
-// Where the brush cloth presses on the glass: a band of frame v.
+// Where the brush cloth presses on the glass: a band of gh, and how hard it presses.
 function brushBand(ub, yb) {
-  // The glass line in (u, y): y = 0.27705 - 0.639 u.
-  const dir = [0.8426, -0.5384];
-  const rel = [ub - 0, yb - 0.27705];
-  const along = rel[0] * dir[0] + rel[1] * dir[1];
-  const foot = [along * dir[0], 0.27705 + along * dir[1]];
-  const dist = Math.hypot(ub - foot[0], yb - foot[1]);
-  if (dist > BR) return null;
-  const h = Math.sqrt(BR * BR - dist * dist);
-  const a = [foot[0] - h * dir[0], foot[1] - h * dir[1]], b = [foot[0] + h * dir[0], foot[1] + h * dir[1]];
-  const va = a[0] > GLASS.top ? frameV(a[0], a[1]) : 3, vb = b[0] < GLASS.base ? frameV(b[0], b[1]) : -1;
-  return [Math.min(va, vb), Math.max(va, vb), clamp((BR - dist) / (BR - BRC + 0.05))];
+  // The glass line is (u, y) = (cu - ru gh, cy + ry gh); the band is where it comes within BR.
+  const a = WS.cu - ub, b = WS.cy - yb;
+  const p = WS.ry * b - WS.ru * a, q = a * a + b * b - BR * BR, disc = p * p - q;
+  if (disc <= 0) return null;
+  const r = Math.sqrt(disc), lo = -p - r, hi = -p + r;
+  if (hi < 0 || lo > WS.len) return null;
+  const dist = Math.sqrt(Math.max(0, q + BR * BR - p * p));
+  return [Math.max(lo, -0.05), Math.min(hi, WS.len + 0.05), clamp((BR - dist) / (BR - BRC + 0.05))];
 }
 const brush = { y: 0.95 - 1.2, spin: 0, rate: 0 };
 const wrap = { spin: 0, rate: 0 };
@@ -1387,6 +1482,16 @@ function carLight(s) {
   const z = zoneAt(a0), inside = smooth(A.end + 1, A.end - 1, a0) * smooth(-1, 1, a0);
   return out.map((v, i) => (v + z[i] * 0.04) * 4 * inside + PAL.sod[i] * 0.03 * (1 - inside));
 }
+// The lens per station: the disc radius in frame heights, then how bright its rim is.
+// Foam and brushes sit close, so their discs stay small; the open night opens them wide.
+function bokehAt(s) {
+  let r = 0.02, rim = 0.4;
+  r = mix(r, 0.016, smooth(2.0, 3.5, s) * smooth(11.5, 10.5, s));
+  r = mix(r, 0.022, smooth(11.5, 12.5, s));
+  r = mix(r, 0.03, smooth(18.0, 20.5, s));
+  rim = mix(rim, 0.55, smooth(18.0, 20.5, s));
+  return [r, rim];
+}
 // The wall strips' colour along the tunnel, as the scene shader has it.
 function zoneAt(a) {
   let c = PAL.cya;
@@ -1397,14 +1502,14 @@ function zoneAt(a) {
   return mix3(c, mix3(PAL.amb, PAL.wht, 0.5), smooth(15.9, 16.8, a));
 }
 // The glass motion: runs fall at rest; the blower turns them up the glass.
-const motion = { flow: 0, m: [0, -1], wind: 0, sheetT: 0 };
+const motion = { flow: 0, m: [0, -1], wind: 0, sheetT: 0, shift: 0 };
 let air = 0;
 
 /* ---------- wipers ---------- */
 // Angles in radians round each pivot; the passenger blade follows the driver's.
-const PARK = 0.13, TOPA = 2.0;
+const PARK = 0.05, TOPA = 1.85;
 const wip = { a: PARK, prev: PARK, mode: 'rest', t: 0, target: PARK, held: false };
-const passenger = a => 0.1 + (a - PARK) * 0.82;
+const passenger = a => 0.04 + (a - PARK) * 0.84;
 function stepWipers(dt) {
   wip.prev = wip.a;
   if (wip.mode === 'cycle') {
@@ -1429,7 +1534,7 @@ function stepWipers(dt) {
 function stages(dt) {
   const s = car.s, ps = lastS;
   // Swept glass lines for the curtains: last step to this step.
-  const sweep = (a, out, i) => { out[i] = lineV(a - ps); out[i + 1] = lineV(a - s); };
+  const sweep = (a, out, i) => { out[i] = ghLine(a - ps); out[i + 1] = ghLine(a - s); };
   sweep(A.soak + 0.22, U.c1, 0);
   sweep(A.foam + 0.22, U.c1, 2);
   sweep(A.rinse + 0.2, U.c2, 0);
@@ -1457,8 +1562,8 @@ function stages(dt) {
   const um = A.mitt + 0.28 * Math.sin(time * 2.6) * mk - s;
   const sway = 0.03 * Math.sin(time * 1.7) * mk;
   U.mitS.set([um, sway, um > -0.5 ? 1 : 0, 0]);
-  if (um > GLASS.top && um < GLASS.base + 0.45) {
-    const v0 = lineV(Math.min(um + 0.42, GLASS.base)), v1 = lineV(Math.max(um, GLASS.top));
+  if (um > WS.hu && um < WS.cu + 0.45) {
+    const v0 = ghLine(Math.min(um + 0.42, WS.cu)), v1 = ghLine(Math.max(um, WS.hu));
     U.mit.set([Math.min(v0, v1), Math.max(v0, v1), 1, sway]);
   } else U.mit.set([0, 0, 0, 0]);
   // The blower nozzle rides the car's top too, a hand above it.
@@ -1467,9 +1572,11 @@ function stages(dt) {
   blowY.y += (ny - blowY.y) * (1 - Math.exp(-dt / 0.15));
   U.blow.set([un, blowY.y, un > -0.6 ? 1 : 0, 0]);
   // The air line on the glass, and how hard it blows.
-  const kv0 = lineV(A.blow - ps + 0.05), kv1 = lineV(A.blow - s + 0.05);
+  const kv0 = ghLine(A.blow - ps + 0.05), kv1 = ghLine(A.blow - s + 0.05);
   air = live ? smooth(3.0, 1.0, A.blow - s) * smooth(-1.6, -0.2, A.blow - s) : 0;
-  U.knife.set([kv0, kv1, kv1 > -0.5 && kv1 < 2.5 ? air : 0, 0]);
+  U.knife.set([kv0, kv1, kv1 > -0.1 && kv1 < WS.len + 0.1 ? air : 0, 0]);
+  // The air pushes the beads up the rake as it goes.
+  motion.shift += dt * air * 0.22;
   U.on.set([station(A.soak), station(A.foam), station(A.rinse), station(A.wax)]);
   U.onSpot = station(A.spot);
   // The floods' light on the car, for the foam.
@@ -1482,7 +1589,7 @@ function stages(dt) {
   // The runs on the glass: down at rest, up the glass under the air.
   motion.wind = mix(0.5, 26, air);
   const upK = smooth(0.15, 0.55, air);
-  motion.m = [0.12 * (1 - upK) + 0.18 * upK, -1 + 2 * upK];
+  motion.m = [0.04 + 0.04 * upK, -1 + 2 * upK];
   const ml = Math.hypot(...motion.m);
   motion.m = [motion.m[0] / ml, motion.m[1] / ml];
   motion.flow += dt * (0.3 + 1.6 * air);
@@ -1506,9 +1613,9 @@ const AU = { water: 0, foam: 0, top: 0, wrap: 0, mitt: 0, air: 0, events: [] };
 // The blower's nozzle: a hand above the car's top.
 function brushAxisLow(u) {
   let y = 0.3;
-  if (u < NOSE + 0.2) y = Math.max(y, bonnetY(Math.min(Math.max(u, GLASS.base), NOSE)) + 0.2);
-  if (u < GLASS.base + 0.1 && u > GLASS.top - 0.2) y = Math.max(y, glassY(Math.min(u, GLASS.base)) + 0.24);
-  if (u < GLASS.top + 0.2) y = Math.max(y, 0.42);
+  if (u < NOSE + 0.2) y = Math.max(y, bonnetY(clamp(u, WS.cu, NOSE)) + 0.2);
+  if (u < WS.cu + 0.15 && u > WS.hu - 0.25) y = Math.max(y, glassY(clamp(u, WS.hu, WS.cu)) + 0.24);
+  if (u < WS.hu + 0.2) y = Math.max(y, 0.19 + 0.25);
   return y;
 }
 
@@ -1530,11 +1637,12 @@ function resize() {
   rt8.size(Math.ceil(W / 8), Math.ceil(H / 8));
   rt32.size(Math.ceil(W / 32), Math.ceil(H / 32));
   rt128.size(Math.ceil(W / 128), Math.ceil(H / 128));
-  rtBok.size(Math.ceil(W * gq.bokehScale), Math.ceil(H * gq.bokehScale));
+  rtBokS.size(Math.ceil(W * gq.bokehScale), Math.ceil(H * gq.bokehScale));
+  rtBokL.size(Math.ceil(W * gq.bokehScale), Math.ceil(H * gq.bokehScale));
+  rtKnee.size(Math.ceil(W / 2), Math.ceil(H / 2));
   rtPane.size(W, H);
-  // The glass map keeps about the same texel count at any frame shape.
-  const n = [190, 280, 330][D.level], ar = asp / (SV1 - SV0);
-  const sw = Math.round(n * Math.sqrt(ar)), sh = Math.round(n / Math.sqrt(ar));
+  // The glass map lies on the glass itself: about 3 to 5 mm a texel, whatever the frame.
+  const sw = [300, 400, 480][D.level], sh = Math.round(sw * GMAP[3] / GMAP[2]);
   if (sw !== simW || sh !== simH) {
     const had = sims[0].w > 0;
     const old = sims[si];
@@ -1575,8 +1683,7 @@ function simStep(dt) {
   const u = simP.u;
   gl.uniform1i(u('tS0'), 0); gl.uniform1i(u('tS1'), 1);
   gl.uniform2f(u('uSimRes'), simW, simH);
-  gl.uniform1f(u('uAsp'), asp); gl.uniform1f(u('uDt'), dt); gl.uniform1f(u('uTime'), time);
-  gl.uniform1f(u('uF'), F); gl.uniform1f(u('uHZ'), HZ); gl.uniform1f(u('uInit'), initNext ? 1 : 0);
+  gl.uniform1f(u('uDt'), dt); gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uInit'), initNext ? 1 : 0);
   gl.uniform4fv(u('uC1'), U.c1); gl.uniform4fv(u('uC2'), U.c2); gl.uniform4fv(u('uKnife'), U.knife);
   gl.uniform4fv(u('uBrush'), U.brush); gl.uniform4fv(u('uMit'), U.mit); gl.uniform4fv(u('uWip'), U.wip); gl.uniform4fv(u('uMist'), U.mist);
   run(simP, dst);
@@ -1622,19 +1729,27 @@ function draw() {
   run(downP, rt32);
   bindTex(0, rt32.tex); gl.uniform2f(u('uTx'), 1 / rt32.w, 1 / rt32.h); gl.uniform2f(u('uDst'), rt128.w, rt128.h);
   run(downP, rt128);
+  // bokeh.js: the lens. The eye focuses on the glass, 0.75 m off; the tunnel opens into discs.
   gl.useProgram(bokP);
   u = bokP.u;
-  bindTex(0, rt8.tex);
+  bindTex(0, rt4.tex);
   gl.uniform1i(u('tSrc'), 0);
-  const rad = 0.022;
-  gl.uniform2f(u('uRad'), rad * H / W, rad); gl.uniform2f(u('uDst'), rtBok.w, rtBok.h);
-  run(bokP, rtBok);
+  gl.uniform1f(u('uFocus'), 0.75);
+  const lensR = bokehAt(car.s);
+  for (const [rt, k, rim] of [[rtBokS, 0.45, 0.25], [rtBokL, 1, lensR[1]]]) {
+    gl.uniform2f(u('uRad'), lensR[0] * k * H / W, lensR[0] * k);
+    gl.uniform2f(u('uDst'), rt.w, rt.h);
+    gl.uniform1f(u('uRim'), rim);
+    run(bokP, rt);
+  }
   // The pane.
   gl.useProgram(paneP);
   u = paneP.u;
-  bindTex(0, rtScene.tex); bindTex(1, rtBok.tex); bindTex(2, rt8.tex);
-  bindTex(3, sims[si].texs[0]); bindTex(4, sims[si].texs[1]); bindTex(5, rt32.tex); bindTex(6, rt128.tex);
-  gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBok'), 1); gl.uniform1i(u('tWide'), 2); gl.uniform1i(u('tS0'), 3); gl.uniform1i(u('tS1'), 4); gl.uniform1i(u("tFar"), 5); gl.uniform1i(u("tFar2"), 6);
+  bindTex(0, rtScene.tex); bindTex(1, rtBokS.tex); bindTex(2, rt8.tex);
+  bindTex(3, sims[si].texs[0]); bindTex(4, sims[si].texs[1]); bindTex(5, rt32.tex); bindTex(6, rt128.tex); bindTex(7, rtBokL.tex);
+  gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBokS'), 1); gl.uniform1i(u('tWide'), 2); gl.uniform1i(u('tS0'), 3); gl.uniform1i(u('tS1'), 4);
+  gl.uniform1i(u('tFar'), 5); gl.uniform1i(u('tFar2'), 6); gl.uniform1i(u('tBokL'), 7);
+  gl.uniform1f(u('uShift'), motion.shift); gl.uniform1f(u('uShiver'), air);
   gl.uniform2f(u('uRes'), W, H); gl.uniform2f(u('uSimRes'), simW, simH); gl.uniform2fv(u('uM'), motion.m);
   gl.uniform1f(u('uAsp'), asp); gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uF'), F); gl.uniform1f(u('uHZ'), HZ);
   gl.uniform1f(u('uFlow'), motion.flow); gl.uniform1f(u('uWind'), motion.wind); gl.uniform1f(u('uSheetT'), motion.sheetT);
@@ -1645,9 +1760,15 @@ function draw() {
   gl.uniform3f(u('uDash'), 0.004, 0.0035, 0.004);
   gl.uniform3fv(u('uAmb'), U.amb);
   run(paneP, rtPane);
+  // A soft knee picks the glow at half size; glow.js spreads it, with no threshold of its own.
+  gl.useProgram(kneeP);
+  u = kneeP.u;
   bindTex(0, rtPane.tex);
-  // glow.js: the bloom chain, then the grade and the film curve.
-  const glow = bloom.render(rtPane.tex, W, H, { threshold: 1.0, levels: glowDetail(D.level).levels });
+  gl.uniform1i(u('tSrc'), 0);
+  gl.uniform2f(u('uTx'), 1 / W, 1 / H); gl.uniform2f(u('uDst'), rtKnee.w, rtKnee.h);
+  gl.uniform1f(u('uThr'), 1.1); gl.uniform1f(u('uKnee'), 0.6);
+  run(kneeP, rtKnee);
+  const glow = bloom.render(rtKnee.tex, rtKnee.w, rtKnee.h, { threshold: 0, levels: glowDetail(D.level).levels });
   gl.useProgram(finalP);
   u = finalP.u;
   bindTex(1, glow); bindTex(0, rtPane.tex);
@@ -1952,12 +2073,18 @@ act.wipeUp = () => { wip.held = false; };
 /* ---------- pointer ---------- */
 // A press that moves 8 px takes the wipers by hand; a tap goes, or flicks the wipers once rolling.
 let ptr = null;
+// The glass point under the pointer, in glass metres, as the shaders find it.
 const paneAt = e => {
   const r = stage.getBoundingClientRect();
-  return [((e.clientX - r.left) / r.width - 0.5) * (r.width / r.height), 0.5 - (e.clientY - r.top) / r.height];
+  const u = (e.clientX - r.left) / r.width, v = 1 - (e.clientY - r.top) / r.height;
+  const d = [(u - 0.5) * asp, v - HZ, -F];
+  const dn = d[1] * WS.ru - d[2] * WS.ry, c = WS.cy * WS.ru + WS.cu * WS.ry;
+  if (dn <= 1e-4) return [0, 0];
+  const t = c / dn;
+  return [d[0] * t - 0.36, (d[1] * t - WS.cy) * WS.ry + (d[2] * t + WS.cu) * WS.ru];
 };
-// The blade angle that points at frame point p.
-const angleAt = p => clamp(Math.atan2(p[1] + 0.56, p[0] + 0.02), PARK, TOPA);
+// The blade angle that points at glass point p, round the driver's pivot.
+const angleAt = p => clamp(Math.atan2(p[1] - 0.012, p[0] + 0.4), PARK, TOPA);
 canvas.addEventListener('pointerdown', e => {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
