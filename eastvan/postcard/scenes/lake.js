@@ -17,7 +17,7 @@ const GA = [0, 0.33, 0.62, 1.05, 1.36];
 
 export const cards = [
   { cap: 'Trout Lake · 6:50 am · Mist', hour: 6.8,
-    cam: { pos: [0, 1.55, 10], yaw: 0, pitch: 0, up: 15, down: 18, minHalf: 0.3, downMax: 26 },
+    cam: { pos: [0.6, 1.5, 7.6], yaw: 0, pitch: 0, up: 15, down: 10, minHalf: 0.3, downMax: 18 },
     // The sun stands low in the east, a little north.
     sun: [0.86, 0.17, -0.3], sunCol: col(0.88, 0.11, 55), sunI: 3, hemi: [col(0.8, 0.05, 290), col(0.62, 0.06, 60), 1],
     fog: col(0.84, 0.055, 45), fogD: 0.0042,
@@ -25,7 +25,7 @@ export const cards = [
     exposure: 1, wet: true, rain: 0, wind: 0.05, smoke: 0, flock: 26, flockDir: -1, flockCol: col(0.3, 0.03, 310),
     mtn: [col(0.74, 0.055, 320), col(0.64, 0.065, 300)], ski: false,
     shadow: { at: [1, 0, -5], r: 24 },
-    bloom: [0.4, 0.8, 0.9], tilt: [0.54, 0.26, 0.7], grade: { con: 1.04, sat: 1.1, vig: 0.3, grain: 0.05, lift: [0.03, 0.012, 0.015], gain: [1, 0.985, 0.97] } },
+    bloom: [0.4, 0.8, 0.9], tilt: [0.42, 0.2, 0.8], grade: { con: 1.04, sat: 1.1, vig: 0.3, grain: 0.05, lift: [0.03, 0.012, 0.015], gain: [1, 0.985, 0.97] } },
 ];
 
 // A goose as three geometries: body, dark, pale. It faces +z.
@@ -47,8 +47,8 @@ function goose(mode) {
 export function build(k) {
   const { box, put, limb } = k;
   const sand = std(0.78, 0.05, 80, { roughness: 1, noCast: true }), mud = std(0.4, 0.04, 75, { roughness: 1, noCast: true });
-  const willowM = std(0.66, 0.12, 112, { flatShading: true }), reedM = std(0.62, 0.1, 100, { flatShading: true });
-  const crowns = [std(0.5, 0.09, 135, { flatShading: true }), std(0.6, 0.12, 95, { flatShading: true }), std(0.62, 0.14, 65, { flatShading: true })];
+  const willowM = std(0.6, 0.11, 112, { flatShading: true }), willowD = std(0.48, 0.09, 125, { flatShading: true }), reedM = std(0.62, 0.1, 100, { flatShading: true });
+  const crowns = [std(0.34, 0.07, 145, { flatShading: true }), std(0.42, 0.09, 115, { flatShading: true }), std(0.5, 0.13, 65, { flatShading: true }), std(0.3, 0.05, 165, { flatShading: true })];
   const gBody = std(0.47, 0.04, 70), gDark = std(0.16, 0.01, 270), gPale = std(0.84, 0.02, 85);
 
   /* ----- the shore line and the land ----- */
@@ -74,6 +74,12 @@ export function build(k) {
   // The beach dips under the water near z = -7.6.
   put(sand, new THREE.CylinderGeometry(1, 1, 0.3, 40).scale(13, 1, 6.5), 5.5, sandTop(-3.9) - 0.15, -3.9, -Math.atan(0.055));
   box('gravel', 160, 0.04, 2.2, 0, 0.012, 4);
+  // Pebbles and a few feathers lie on the wet sand.
+  {
+    const P = rng(29), peb = std(0.42, 0.02, 60, { flatShading: true });
+    for (let i = 0; i < 60; i++) { const x = -4 + P() * 12, z = -1 - P() * 5.5, r = 0.03 + P() * 0.06; put(peb, ico(r, r * 0.6, r, 0), x, sandTop(z) + r * 0.3, z); }
+    for (let i = 0; i < 8; i++) { const x = -3 + P() * 8, z = -1.5 - P() * 4; box('trim', 0.03, 0.01, 0.16, x, sandTop(z) + 0.01, z, 0, P() * 3); }
+  }
   k.litter(70, R => [-9 + R() * 16, 0.045, 1 + R() * 4.6], 6);
   // Reeds stand on the mud of the near shores.
   {
@@ -105,15 +111,16 @@ export function build(k) {
   const willow = (x, z, s, seed, lean = 0) => {
     const R = rng(seed), cx = x + lean * 2 * s, fork = V(cx, 4.2 * s, z);
     limb('bark', V(x, -0.3, z), fork, 0.45 * s, 0.28 * s);
-    put(willowM, ico(4.4 * s, 2.4 * s, 4.4 * s), cx, 6.6 * s, z);
-    for (let i = 0; i < 14; i++) {
-      const a = i / 14 * 6.2832 + R() * 0.3, r = (3.3 + R() * 0.9) * s, len = (1.8 + R()) * s;
-      if (i % 4 === 0) limb('bark', fork, V(cx + Math.cos(a) * r * 0.7, 6.4 * s, z + Math.sin(a) * r * 0.7), 0.16 * s, 0.06 * s);
-      put(willowM, ico(0.75 * s, len, 0.75 * s), cx + Math.cos(a) * r, 6.3 * s - len * 0.75, z + Math.sin(a) * r);
+    for (let i = 0; i < 7; i++) { const a = i * 0.9 + R(), r = i ? 2.2 * s : 0, b = (1.8 + R() * 0.8) * s; put(willowM, ico(b, b * 0.6, b), cx + Math.cos(a) * r, (6.6 + R() * 1.2) * s, z + Math.sin(a) * r); }
+    // Thin strands hang from the dome edge almost to the ground.
+    for (let i = 0; i < 220; i++) {
+      const a = R() * 6.2832, r = (2.4 + R() * 2.2) * s, len = (1.4 + R() * 3.4) * s * (r / (4.6 * s) + 0.25);
+      if (i % 20 === 0) limb('bark', fork, V(cx + Math.cos(a) * r * 0.7, 6.6 * s, z + Math.sin(a) * r * 0.7), 0.15 * s, 0.05 * s);
+      put(i % 3 ? willowM : willowD, ico(0.07 * s, len, 0.07 * s, 0), cx + Math.cos(a) * r, 6.5 * s - len * 0.85, z + Math.sin(a) * r);
     }
   };
   // The west willow leans over the water and frames the left edge.
-  willow(-10.5, -9, 1.15, 3, 1); willow(20.5, -38, 1, 4, -0.6);
+  willow(-13, -26, 1.2, 3, 1); willow(20.5, -38, 1, 4, -0.6);
   willow(-33, -31, 0.9, 5, 0.5); willow(42, -62, 0.9, 6, -0.5); willow(-57.5, -96, 1, 7, 0.5); willow(58, -122, 1, 8, -0.5);
   // A ring of big park trees: two rows behind the far shores.
   {
@@ -123,10 +130,17 @@ export function build(k) {
       if (p.z > -44) continue;
       for (let row = 0; row < 2; row++) {
         const o = row ? 18 + R() * 22 : 4 + R() * 9, x = p.x + NX[i] * o + (R() - 0.5) * 4, z = p.z + NZ[i] * o, h = (13 + R() * 11) * (row ? 1.25 : 1);
-        if (R() < 0.35) { put('fir', new THREE.ConeGeometry(h * 0.2, h, 7), x, 1.5 + h / 2, z); put('bark', new THREE.CylinderGeometry(0.3, 0.4, 2, 6), x, 1, z); continue; }
-        const m = crowns[Math.floor(R() * 3)], r = h * 0.3;
+        if (R() < 0.42) {
+          // A tall fir: three stacked cones.
+          const H = h * 1.3;
+          for (let j = 0; j < 3; j++) put('fir', new THREE.ConeGeometry(H * (0.2 - j * 0.045), H * (0.5 - j * 0.1), 7), x, 1.5 + H * (0.3 + j * 0.24), z);
+          put('bark', new THREE.CylinderGeometry(0.3, 0.4, 2, 6), x, 1, z);
+          continue;
+        }
+        const m = crowns[Math.floor(R() * 4)], r = h * 0.22;
         put('bark', new THREE.CylinderGeometry(0.3, 0.45, h * 0.5, 6), x, h * 0.25, z);
-        put(m, ico(r, r * 1.1, r), x, h * 0.62, z); put(m, ico(r * 0.7, r * 0.7, r * 0.7), x + (R() - 0.5) * r, h * 0.84, z + (R() - 0.5) * r);
+        // A crown of four to six blobs, wider than tall.
+        for (let j = 0, n = 4 + Math.floor(R() * 3); j < n; j++) { const a = R() * 6.28, d = j ? r * (0.7 + R() * 0.5) : 0, b = r * (0.65 + R() * 0.45); put(m, ico(b, b * 0.85, b), x + Math.cos(a) * d, h * (0.58 + R() * 0.28), z + Math.sin(a) * d); }
       }
     }
   }
@@ -184,7 +198,7 @@ export function build(k) {
   });
 
   /* ----- the dog walker ----- */
-  const walker = new THREE.Group(), coatM = std(0.55, 0.17, 25), hatM = std(0.8, 0.14, 85), dogM = std(0.7, 0.11, 75);
+  const walker = new THREE.Group(), coatM = std(0.36, 0.08, 30), hatM = std(0.8, 0.14, 85), dogM = std(0.7, 0.11, 75);
   // Three poses: two strides and one at rest.
   const pose = o => {
     const g = personGeo(1.72, o), grp = new THREE.Group();

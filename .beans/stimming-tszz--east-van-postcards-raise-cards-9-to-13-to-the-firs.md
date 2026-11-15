@@ -5,14 +5,14 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T04:49:14Z
-updated_at: 2026-11-15T05:00:58Z
+updated_at: 2026-11-15T05:01:00Z
 parent: stimming-guw5
 ---
 
 Tom, 2026-11-14: "We need to bring the quality up to the ones we had before please". Cards 9 to 13 (stimming-m23q) read as flatter and more toy-like than cards 1 to 8.
 
 - [x] Name the gaps against cards 1 to 8
-- [ ] Trout Lake
+- [x] Trout Lake
 - [x] New Brighton pool
 - [x] The wooden coaster
 - [ ] The station
