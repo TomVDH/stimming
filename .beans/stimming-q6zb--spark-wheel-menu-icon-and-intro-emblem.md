@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:46:23Z
+updated_at: 2026-11-15T08:48:24Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -40,3 +40,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom on round 6: "better but just not at the interactive fidelity of the other icons on main menu". Round 7 (icons/spike-spark-7.html) keeps round 6's drawing and rebuilds the Shaded object's behaviour: the pointer is the thumb. A downward stroke turns the knurl one for one; an upward stroke does nothing (the ratchet); the wheel spins on and slows. Spin throws live sparks that fly, fall and skip on the floor, and lights the contact glow; a long grind heats the tread and sheds in a burst. The enamel's gloss and the hub's shine lean toward the pointer. Keyboard focus strokes it by itself. Checked by script in a background tab (no error, settles); motion there is throttled, so not judged by eye.
 
 - 2026-11-15, Tom on round 7: "its not good"; he named Pin art as the icon to match. Round 8 (icons/spike-spark-8.html) draws the Shaded object in Pin art's language: glossy beads only, one gradient each, a thin frame ring. A ring of 30 steel studs is the knurled wheel, with a hub bead; a fan of warm beads is the spark. Studs near the pointer swell and sink back, as Pin art's pins do. Moving the pointer round the ring turns it; each stud that passes the contact point throws a bead and flares the spray. Focus turns it a third of a turn. Gesture only, no per-frame loop. The Isometric block is round 5's. The sheet points at round 8. Waits on Tom.
+
+- 2026-11-15, Tom: "Yes, keep going" on round 8. Round 9 (icons/spike-spark-9.html) adds the Isometric block in the same language, after Pin art's block: a flat-shaded slab (teal sides, slate top), the bead wheel standing on it in the left face's plane, a spray of warm beads lying on the top. Studs swell under the pointer; a sideways sweep turns the wheel and each passing stud skids a bead out along the top, where it cools. The Shaded object is round 8's. The sheet points at round 9. Waits on Tom's pick.
