@@ -680,8 +680,11 @@ vec3 landVan(vec2 w, vec2 p, float fw) {
   float fk;
   vec3 crop = farmland(w, fw, fk);
   vec3 open = mix(vec3(0.27, 0.32, 0.16) * (0.85 + 0.3 * fn), crop, farm);
-  // Under the town: lawns and paving, not fields.
-  open = mix(open, vec3(0.3, 0.31, 0.25), smoothstep(0.1, 0.5, B.g));
+  // The town by day: grey roofs and paving, mottled by block and by district.
+  // It reads darker than the fields and lighter than the forest.
+  float cn = 0.6 * vnoise(w / 0.9 + 12.0) + 0.4 * mix(0.5, vnoise(w / 0.22 + 5.0), fd(0.22, fw));
+  vec3 town = vec3(0.215, 0.205, 0.19) * (0.7 + 0.6 * cn) * (0.8 + 0.4 * mix(0.5, vnoise(w / 0.13 + 3.0), fd(0.13, fw)));
+  open = mix(open, town, smoothstep(0.12, 0.5, B.g + 0.3 * (cn - 0.5)));
   // High open ground: alpine meadow, then rock; steep faces stay bare.
   float grit = mix(0.5, vnoise(w / 0.6 + 3.3), fd(0.6, fw));
   vec3 rock = vec3(0.36, 0.33, 0.3) * (0.7 + 0.6 * grit);
@@ -689,16 +692,23 @@ vec3 landVan(vec2 w, vec2 p, float fw) {
   open = mix(open, rock, smoothstep(0.7, 1.2, slope));
   vec3 alb = mix(open, vec3(0.04, 0.075, 0.04), forest);
   // Gentle ground gets its slopes tripled, so the uplands read from 11 km.
-  vec2 Gs = G * mix(3.0, 1.0, smoothstep(0.06, 0.3, slope));
+  // Steep ground keeps a smaller lift, so ridges read through the haze.
+  vec2 Gs = G * mix(3.0, 1.6, smoothstep(0.06, 0.3, slope));
   vec3 n = normalize(vec3(-Gs.x, 1.0, -Gs.y));
   vec2 lz = normalize(uSun.xz + 1e-5);
-  // Snow: a spring snow line near 1.3 km, lower on shaded slopes.
-  // Snow under trees shows less; steep rock sheds it.
-  float sl = 1.3 + 0.3 * (vnoise(w / 7.0 + 1.7) - 0.5) + 0.2 * dot(n.xz, lz);
-  float snow = smoothstep(sl - 0.2, sl + 0.15, E) * smoothstep(1.6, 0.8, slope) * (1.0 - 0.55 * forest);
-  alb = mix(alb, vec3(1.7, 1.8, 1.95), snow);
+  // Snow: a late winter snow line near 1 km, lower on shaded slopes.
+  // It caps the North Shore peaks; the map's coarse height runs a little low.
+  // Steep rock sheds it. Forest hides it near the line and whitens higher up.
+  // So valleys stay dark between white ridges, and snow never reads as cloud.
+  float sl = 1.0 + 0.3 * (vnoise(w / 7.0 + 1.7) - 0.5) + 0.2 * dot(n.xz, lz);
+  float snow = smoothstep(sl - 0.2, sl + 0.15, E) * smoothstep(1.6, 0.8, slope);
+  snow *= 1.0 - forest * mix(0.8, 0.2, smoothstep(sl + 0.1, sl + 0.6, E));
+  // A plain white, not the far peaks' glare: wide snow must keep its shading.
+  alb = mix(alb, vec3(0.8, 0.86, 0.98), snow);
+  // Inside the fence: mown grass, dark runways, a pale apron.
+  // The grass stays dull; a real field between twin runways is large.
   vec3 am = apMasks(fw);
-  alb = mix(mix(mix(alb, vec3(0.75, 0.85, 0.55), am.x), vec3(0.3), am.y), vec3(1.7), am.z);
+  alb = mix(mix(mix(alb, vec3(0.4, 0.45, 0.28), 0.8 * am.x), vec3(0.3), am.y), vec3(1.2), am.z);
   float skyK = clamp(1.0 - length(Gs), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
   float sh = gWater < 1.0 ? vanShadow(w, E) : 1.0;
   vec3 g = uAmb * 0.03 * alb * skyK;
@@ -1231,6 +1241,10 @@ vec3 ground(vec2 w, float fw) {
     float grain = mix(0.5, vnoise(wq / 0.12 + 3.0), fd(0.12, fw));
     vec3 roof = vec3(dot(gLand, vec3(0.3, 0.5, 0.2))) * vec3(1.0, 1.0, 1.02) * (1.0 + 0.4 * grain);
     vec3 dl = (roof - gLand) * lit * 0.6;
+#ifdef VAN
+    // The map's own town colour stands; it needs no second coat of roofs.
+    if (van) dl = vec3(0.0);
+#endif
     gLand += dl; g += dl;
   }
   if (lit > 0.002) {
@@ -1263,6 +1277,10 @@ vec3 ground(vec2 w, float fw) {
     // Roofs and the low haze catch some of the street light.
     g += mix(avg, vec3(1.0, 0.55, 0.22), 0.4) * lit * min(t.dens, 1.3) * 0.004;
   }
+#ifdef VAN
+  // By day the arterial roads show as thin dark lines across the town.
+  if (van) { vec3 dr = -gLand * 0.3 * band(t.road, 0.02, max(fw, 1e-3)) * t.fade; gLand += dr; g += dr; }
+#endif
   // Roads: a faint thread of traffic, lit with lamps through towns and villages.
   float rw = max(0.012, fw * 0.6);
   if (t.road < 0.3 + 4.0 * rw) {

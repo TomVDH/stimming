@@ -17,12 +17,14 @@ export const VAN = {
   size: [2048, 1100],
   // The land file's top height in km; bake.py holds the same number.
   emax: 2.7,
-  // The track runs east along the 49th parallel, 30 km south of downtown.
-  // The window shows ground from about 19 km out, so the city sits mid-view.
-  track: at(49.0, 0)[1],
-  // Eastbound flights start over the Strait of Georgia, off Galiano Island.
+  // The track runs east at 49.13 N: over Ladner, Surrey, Langley and the valley floor.
+  // The wing hides the ground ahead; the clear view is aft and 15 to 40 km out.
+  // So the city, the inlet and the North Shore pass 17 to 35 km to the north.
+  track: at(49.13, 0)[1],
+  // Eastbound flights start south of the city (Tom, 2026-11-15).
+  // Howe Sound and the North Shore mountains stand in view, aft of the wing.
   // Westbound flights, on a right-hand seat, start over the valley near Hope.
-  startE: at(0, -123.55)[0], startW: at(0, -121.6)[0],
+  startE: at(0, -123.08)[0], startW: at(0, -121.6)[0],
   // Airports: the main runway's centre, its true heading in degrees, half its length in km.
   // Positions: Canada Flight Supplement, by Wikipedia's Lower Mainland airport list.
   // Headings: the runway number plus 16 degrees of magnetic variation.
