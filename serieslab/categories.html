@@ -9,16 +9,20 @@
 <style>
 @font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
 :root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.6 0.02 275); --mono: "Iosevka Term Slab", ui-monospace, monospace; }
-html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: "Gabarito", system-ui, sans-serif; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "Gabarito", system-ui, sans-serif; }
+/* The frame scrolls by itself, as the real page does: sticky parts and reveals then work. */
+body { display: flex; flex-direction: column; }
 /* The real menu runs in the frame, so every icon and hover still works. */
-iframe { display: block; width: 100%; border: 0; }
-.bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; padding: 12px 16px; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(8px); }
+iframe { display: block; width: 100%; border: 0; flex: 1; min-height: 0; }
+.bar { flex: none; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; padding: 12px 16px; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(8px); }
 .bar span { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
 .bar button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--muted); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
 .bar button[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 .bar button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
 /* The count table: each series and its toys on each shelf. */
-table { margin: 8px auto 4px; border-collapse: collapse; font: 500 12px/1.3 var(--mono); letter-spacing: 0.04em; }
+details { flex-basis: 100%; text-align: center; }
+summary { cursor: pointer; font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); list-style: none; }
+table { margin: 10px auto 4px; border-collapse: collapse; font: 500 12px/1.3 var(--mono); letter-spacing: 0.04em; }
 td, th { padding: 4px 14px; text-align: left; }
 th { color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
 td:nth-child(n+2), th:nth-child(n+2) { text-align: right; }
@@ -32,13 +36,16 @@ td em { font-style: normal; color: var(--muted); }
   <button type="button" data-v="lab">Lab</button>
   <span style="margin-left: 18px">Divider</span>
   <button type="button" data-d="wave">Wave</button>
+  <button type="button" data-d="edit">Editorial</button>
+  <button type="button" data-d="centre">Centre</button>
+  <button type="button" data-d="side">Side</button>
   <button type="button" data-d="chain">Chain</button>
   <button type="button" data-d="thread">Thread</button>
   <button type="button" data-d="plate">Plate</button>
   <button type="button" data-d="stack">Stack</button>
   <button type="button" data-d="under">Underline</button>
+  <details><summary>Counts</summary><table id="counts"></table></details>
 </div>
-<table id="counts"></table>
 <script type="module">
 import { shotIcon } from '../shared/series/shots.js';
 import { PROPOSED, ORDER, seriesOf } from './proposal.js';
@@ -51,6 +58,52 @@ const CSS = `
 .lab .sec { max-width: calc(5 * 150px + 4 * 28px); }
 .sec + .sec { margin-top: clamp(20px, 3.4vw, 40px); }
 .sec > .shelf { display: contents; }
+
+/* Parts that only the editorial styles show. */
+.sec-hd .nl, .sec-hd .ln { display: none; }
+.sec-hd .tx { display: inline-block; }
+
+/* The editorial styles: big type, one hairline, the Flemish name as a small caption.
+   A heading comes in when it enters the view: the line draws, the name rises. */
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd::before, html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd::after { display: none; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd { white-space: normal; justify-content: initial; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd .nm { overflow: hidden; padding-bottom: 0.1em; color: var(--fg); letter-spacing: -0.045em; line-height: 0.92; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd .tx { translate: 0 112%; transition: translate 1s cubic-bezier(0.16, 1, 0.3, 1) 0.08s; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd.in .tx { translate: 0 0; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd .ln { display: block; height: 1px; background: color-mix(in oklch, var(--fg) 30%, transparent); scale: 0 1; transition: scale 1.1s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd.in .ln { scale: 1 1; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd:hover .ln { background: var(--c); }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd .nl { display: block; font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: var(--c); opacity: 0; transition: opacity 0.8s ease 0.35s; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd svg { opacity: 0; scale: 0.82; transition: opacity 0.7s ease 0.25s, scale 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.25s; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec-hd.in :is(svg, .nl) { opacity: 1; scale: 1; }
+html:is([data-d="edit"], [data-d="centre"], [data-d="side"]) .sec + .sec { margin-top: clamp(48px, 9vw, 120px); }
+/* Editorial: a hairline, a huge name from the left, the icon at the right. */
+html[data-d="edit"] .sec-hd { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0 24px; }
+html[data-d="edit"] .sec-hd .at { display: contents; }
+html[data-d="edit"] .sec-hd .ln { grid-column: 1 / -1; grid-row: 1; transform-origin: left; margin-bottom: 18px; }
+html[data-d="edit"] .sec-hd .nm { grid-column: 1; grid-row: 2; font-size: clamp(44px, 9.5vw, 118px); }
+html[data-d="edit"] .sec-hd svg { grid-column: 2; grid-row: 2; width: clamp(56px, 9vw, 96px); height: clamp(56px, 9vw, 96px); margin-bottom: 0.6em; }
+html[data-d="edit"] .sec-hd .nl { grid-column: 1 / -1; grid-row: 3; margin-top: 6px; }
+/* Centre: the icon, then a huge name, all on the middle axis. */
+html[data-d="centre"] .sec-hd { display: grid; justify-items: center; text-align: center; gap: 14px; }
+html[data-d="centre"] .sec-hd .ln { width: 100%; order: -1; transform-origin: center; margin-bottom: 12px; }
+html[data-d="centre"] .sec-hd .at { display: grid; justify-items: center; gap: 14px; }
+html[data-d="centre"] .sec-hd svg { width: clamp(60px, 8vw, 88px); height: clamp(60px, 8vw, 88px); }
+html[data-d="centre"] .sec-hd .nm { font-size: clamp(40px, 8vw, 100px); }
+/* Side: the heading stays at the left while its toys scroll by on the right. */
+html[data-d="side"] .sec-hd { display: grid; justify-items: start; gap: 14px; }
+html[data-d="side"] .sec-hd .ln { width: 100%; order: -1; transform-origin: left; margin-bottom: 6px; }
+html[data-d="side"] .sec-hd .at { display: grid; justify-items: start; gap: 16px; }
+html[data-d="side"] .sec-hd svg { width: clamp(56px, 7vw, 84px); height: clamp(56px, 7vw, 84px); }
+html[data-d="side"] .sec-hd .nm { font-size: clamp(34px, 4.6vw, 58px); }
+@media (min-width: 760px) {
+  html[data-d="side"] .sec { grid-template-columns: minmax(200px, 0.36fr) minmax(0, 1fr); gap: 0 clamp(24px, 4vw, 56px); max-width: 1180px; }
+  html[data-d="side"] .sec > .shelf { grid-column: 2; display: grid; grid-template-columns: repeat(auto-fill, clamp(96px, 26vw, 150px)); justify-content: start; gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px); width: auto; max-width: none; margin: 0; }
+  html[data-d="side"] .sec-hd { grid-column: 1; position: sticky; top: 28px; align-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sec-hd .tx, .sec-hd .ln, .sec-hd .nl, .sec-hd svg { transition: none !important; translate: 0 0 !important; scale: 1 !important; opacity: 1 !important; }
+}
 
 /* The divider styles. Wave is the menu's own; the others restyle the same heading. */
 /* Chain: the line is a row of small hexagons. */
@@ -82,17 +135,23 @@ const series = { ...(await fetch('../series.json').then(r => r.json())), ...PROP
 const frame = document.createElement('iframe');
 frame.title = 'Menu';
 document.body.append(frame);
-const fit = d => { const end = Math.max(...[...d.body.children].map(el => el.getBoundingClientRect().bottom)); frame.style.height = Math.ceil(end + 32) + 'px'; };
 
 // The divider style lives on the frame's root, so a switch needs no reload.
-let divider = 'wave';
+let divider = 'wave', watch = null;
 try { divider = localStorage.getItem('stimming.serieslab.divider') || 'wave'; } catch (e) {}
 function style(name) {
   divider = name;
   try { localStorage.setItem('stimming.serieslab.divider', name); } catch (e) {}
   document.querySelectorAll('.bar button[data-d]').forEach(b => b.setAttribute('aria-pressed', b.dataset.d === name));
   const d = frame.contentDocument;
-  if (d?.documentElement) { d.documentElement.dataset.d = name; requestAnimationFrame(() => fit(d)); }
+  if (!d?.documentElement) return;
+  d.documentElement.dataset.d = name;
+  // The headings come in again, so the switch shows each style's entrance.
+  const heads = [...d.querySelectorAll('.sec-hd')];
+  heads.forEach(h => h.classList.remove('in'));
+  watch?.disconnect();
+  watch = new frame.contentWindow.IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); watch.unobserve(e.target); } }), { threshold: 0.35 });
+  requestAnimationFrame(() => heads.forEach(h => watch.observe(h)));
 }
 async function show(view) {
   document.querySelectorAll('.bar button[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view));
@@ -124,13 +183,11 @@ async function show(view) {
   for (const [k, list] of groups) {
     if (!list.length) continue;
     const s = series[k];
-    add(s.name, s.color, `<h2 class="sec-hd"><span class="at">${shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color })}<span class="nm">${s.name.replace('&', '&amp;')}</span></span></h2>`, list);
+    add(s.name, s.color, `<h2 class="sec-hd"><span class="at">${shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color })}<span class="nm"><span class="tx">${s.name.replace('&', '&amp;')}</span></span></span><span class="nl">${s.nl && s.nl !== s.name ? s.nl : s.kind === 'place' ? 'Place' : 'Series'}</span><span class="ln"></span></h2>`, list);
   }
   if (rest.length) add('Other toys', null, '', rest);
   old.forEach(el => el.remove());
   style(divider);
-  new ResizeObserver(() => fit(d)).observe(d.documentElement);
-  fit(d);
 }
 
 // The count table: how many toys each series holds on each shelf.
@@ -146,7 +203,7 @@ document.querySelectorAll('.bar button[data-d]').forEach(b => b.addEventListener
 let saved = 'main';
 try { saved = localStorage.getItem('stimming.serieslab.catview') || 'main'; } catch (e) {}
 const asked = new URLSearchParams(location.search).get('v'), askedD = new URLSearchParams(location.search).get('d');
-if (['wave', 'chain', 'thread', 'plate', 'stack', 'under'].includes(askedD)) divider = askedD;
+if (['wave', 'edit', 'centre', 'side', 'chain', 'thread', 'plate', 'stack', 'under'].includes(askedD)) divider = askedD;
 show(asked === 'lab' || asked === 'main' ? asked : saved);
 </script>
 </body>

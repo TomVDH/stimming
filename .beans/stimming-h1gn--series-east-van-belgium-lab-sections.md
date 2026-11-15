@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:51:32Z
+updated_at: 2026-11-15T10:01:13Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -60,4 +60,5 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] No counters in the dividers
 - [x] A new round of divider styles round the hex icon, on a switch at serieslab/categories.html: Wave, Chain, Thread, Plate, Stack, Underline. The old divider lab (sections.html) is deleted
 - [x] The proposal sorts the ten new Lab toys too (98 toys)
+- [x] Tom, 2026-11-15: "a bit more Awwwards". Three editorial styles added to the switch: Editorial (hairline, huge name, icon right), Centre, Side (the heading stays at the left while its toys scroll); headings come in on scroll; the proposal frame now scrolls by itself
 - [ ] Tom picks the divider; nothing more ports before that
