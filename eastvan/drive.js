@@ -125,7 +125,26 @@ const pole = (x, z, side) => [
   box([x, 9.15, z + side * 2.7], [0.3, 0.12, 0.7], 'can', A),
   box([x, 9.08, z + side * 2.7], [0.22, 0.04, 0.5], 'lamp', A, { k: 'lens', sw: 'lamps', on: true, gain: 2.4 }),
   box([x + 0.16, 6.3, z - 0.2], [0.04, 0.9, 0.2], 'binGreen', A), box([x + 0.16, 6.3, z], [0.04, 0.9, 0.2], 'white', A), box([x + 0.16, 6.3, z + 0.2], [0.04, 0.9, 0.2], 'tomato', A),
+  // Two banners hang from short arms, purple over the road, white over the walk.
+  beam([x, 7.75, z], [x, 7.75, z + side * 0.75], 0.04, 'can', A), beam([x, 7.75, z], [x, 7.75, z - side * 0.75], 0.04, 'can', A),
+  box([x, 7.05, z + side * 0.45], [0.04, 1.35, 0.55], 'hydrangea', A, { k: 'banner' }), box([x, 7.05, z - side * 0.45], [0.04, 1.35, 0.55], 'white', A, { k: 'banner' }),
 ];
+// A signal on a mast arm. The arm reaches from the corner at z0 to z1;
+// the head hangs at its tip and faces along face (+1 north, -1 south).
+const signal = (x, z0, z1, face) => [
+  cyl([x, 3.2, z0], 0.12, 6.4, 'can', A), beam([x, 6.1, z0], [x, 6.1, z1], 0.1, 'can', A),
+  box([x, 5.45, z1], [0.32, 1.1, 0.36], 'awnYellow', A), box([x + face * 0.17, 5.45, z1], [0.02, 1.0, 0.3], 'crow', A),
+  blob([x + face * 0.2, 5.8, z1], 0.11, 'red', A, { sw: 'sigR', on: false, gain: 2.4 }),
+  blob([x + face * 0.2, 5.45, z1], 0.11, 'glassDark', A),
+  blob([x + face * 0.2, 5.1, z1], 0.11, 'binGreen', A, { sw: 'sigG', on: true, gain: 2.4 }),
+];
+// The Highland's fire escape: a platform, a rail and a stair at each floor.
+// x is just south of the wall; z is the middle of the run.
+const fireEscape = (x, z, floors) => floors.flatMap((y, i) => [
+  box([x, y, z], [1, 0.06, 3], 'crow', A, { k: 'fireEscape' }),
+  box([x - 0.48, y + 0.5, z], [0.04, 0.9, 3], 'crow', A, { k: 'fireEscape' }),
+  ...(i < floors.length - 1 ? [beam([x, y, z + (i % 2 ? 1.3 : -1.3)], [x, floors[i + 1], z + (i % 2 ? -1.3 : 1.3)], 0.08, 'crow', A)] : []),
+]);
 
 const LANE = -4.3;
 // The trolley bus, built at x on its lane. Its front faces south.
@@ -227,10 +246,15 @@ export function driveParts(d, clip, lidar = null) {
     add(mark([(x0 + x1) / 2, 0.005, MID - 0.15], [x1 - x0, 0.01, 0.1], 'mustard'), mark([(x0 + x1) / 2, 0.005, MID + 0.15], [x1 - x0, 0.01, 0.1], 'mustard'));
     for (let x = x0 + 2; x < x1 - 2; x += 6) add(mark([x, 0.005, MID - 3.25], [3, 0.01, 0.12], 'white'), mark([x, 0.005, MID + 3.25], [3, 0.01, 0.12], 'white'));
   }
-  // Zebra crossings: three over the Drive, one over each leg of the avenue.
-  for (const x of [WEST_LEG[0] + 1.5, WEST_LEG[1] - 1.5, EAST_LEG[1] - 0.75]) for (let z = KERB_W + 0.7; z < KERB_E - 0.4; z += 1) add(mark([x, 0.005, z], [2.4, 0.01, 0.5], 'white'));
-  for (let x = WEST_LEG[0] + 3.5; x < WEST_LEG[1] - 3; x += 1) add(mark([x, 0.005, LOT_W + 1.4], [0.5, 0.01, 2.4], 'white'));
-  for (let x = EAST_LEG[0] + 2; x < EAST_LEG[1] - 1.5; x += 1) add(mark([x, 0.005, LOT_E - 1.4], [0.5, 0.01, 2.4], 'white'));
+  // Crossings: three over the Drive, one over each leg of the avenue,
+  // painted red, white and green as the street paints them.
+  const TRI = ['tomato', 'white', 'binGreen'], bar = (p, sz, i) => box(p, sz, TRI[i % 3], A, { k: 'crossing', noInk: true });
+  for (const x of [WEST_LEG[0] + 1.5, WEST_LEG[1] - 1.5, EAST_LEG[1] - 0.75]) { let i = 0; for (let z = KERB_W + 0.7; z < KERB_E - 0.4; z += 1) add(bar([x, 0.005, z], [2.4, 0.01, 0.5], i++)); }
+  { let i = 0; for (let x = WEST_LEG[0] + 3.5; x < WEST_LEG[1] - 3; x += 1) add(bar([x, 0.005, LOT_W + 1.4], [0.5, 0.01, 2.4], i++)); }
+  { let i = 0; for (let x = EAST_LEG[0] + 2; x < EAST_LEG[1] - 1.5; x += 1) add(bar([x, 0.005, LOT_E - 1.4], [0.5, 0.01, 2.4], i++)); }
+  // Signals hang over the Drive from the north-west and south-east corners.
+  add(signal(WEST_LEG[1] + 0.6, KERB_W - 0.6, -3.2, -1), signal(EAST_LEG[0] - 0.6, KERB_E + 0.6, 3.6, 1));
+  pokes.push({ id: 'signal', at: [WEST_LEG[1] + 0.6, 5.45, -3.2], r: 1.2 }, { id: 'signal', at: [EAST_LEG[0] - 0.6, 5.45, 3.6], r: 1.2 });
 
   /* ---------- buildings: real outlines and heights, cut to the disc ---------- */
   const fronts = [];
@@ -333,6 +357,19 @@ export function driveParts(d, clip, lidar = null) {
     if (any) pokes.push({ id: 'up' + fi, at: [mid, 5.7, z(0.2)], r: 2.2 });
   });
 
+  /* ---------- The Highland: a fire escape, paired windows, floor bands ---------- */
+  const hl = d.b.find(bb => bb.name && /highland/i.test(bb.name));
+  if (hl && inside(hl.ring[0][0], hl.ring[0][1])) {
+    const es = hl.ring.map(p => p[0]), ns = hl.ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), x = Math.min(...ns), zm = (e0 + e1) / 2;
+    add(fireEscape(x - 0.55, zm, [4.4, 7.3, 10.2]));
+    for (const y of [4.25, 7.15]) add(box([x - 0.05, y, zm], [0.12, 0.18, e1 - e0], 'cream', A));
+    // Paired windows each side of the fire escape, on the upper floors.
+    for (const y of [5.75, 8.65]) for (let z = e0 + 1.4; z < e1 - 1; z += 1.8) {
+      if (Math.abs(z - zm) < 2) continue;
+      add(box([x - 0.03, y, z], [0.06, 1.75, 1.25], 'cream', A), box([x - 0.06, y, z - 0.29], [0.05, 1.5, 0.5], 'glass', A), box([x - 0.06, y, z + 0.29], [0.05, 1.5, 0.5], 'glass', A));
+    }
+  }
+
   /* ---------- heritage: a nameplate on each listed building ---------- */
   for (const hsite of d.heritage || []) {
     const [he, hn] = hsite.at;
@@ -394,7 +431,7 @@ export function driveParts(d, clip, lidar = null) {
       },
       fruit: (g, k, h) => { g.position.y = h[1] + 0.5 * k; g.rotation.y = 0.6 * Math.sin(k * 9.4); },
     },
-    ACTS: { ...acts, bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]] },
+    ACTS: { ...acts, signal: [['flip', 'sigR'], ['flip', 'sigG']], bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]] },
     LAMPS: near.slice(0, disc ? 3 : 2).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
     SUN: disc ? { target: [0, 3, 0], half: [clip.r + 10, clip.r + 10] } : { target: [STOP, 3, (B.e0 + B.e1) / 2], half: [20, 20] },
   };

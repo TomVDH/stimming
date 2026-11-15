@@ -100,3 +100,12 @@ test('reference notes override the guessed facades', () => {
   assert.equal(at(1, -40)?.era, 'modern', 'the SW block is modern');
   assert.equal(at(1, 8)?.wall, 'stucco', 'the NW corner is white stucco');
 });
+
+test('the corner carries its details', () => {
+  const { PARTS, POKES, ACTS } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const crossing = new Set(PARTS.filter(q => q.k === 'crossing').map(q => q.c));
+  assert.ok(crossing.has('tomato') && crossing.has('white') && crossing.has('binGreen'), 'the crossings are red, white and green');
+  assert.ok(PARTS.filter(q => q.k === 'fireEscape').length >= 6, 'The Highland has a fire escape');
+  assert.ok(PARTS.some(q => q.k === 'banner'), 'the lamp poles carry banners');
+  assert.ok(POKES.some(p => p.id === 'signal') && ACTS.signal, 'the signals take a poke');
+});
