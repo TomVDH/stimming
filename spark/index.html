@@ -72,8 +72,8 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const col = (L, C, h) => new THREE.Color().setRGB(...linFit(L, C, h), THREE.LinearSRGBColorSpace);
 
 /* ---------- the wheel ---------- */
-// Units: the wheel radius is 1. The floor lies below the flint.
-const R = 1, WIDTH = 0.55, TEETH = 36, FLOOR = -2.35;
+// Units: the wheel radius is 1. The mount's foot stands on the floor.
+const R = 1, WIDTH = 0.55, TEETH = 36, FLOOR = -1.65;
 // Friction stops a free wheel in about a second.
 const FRICTION = 0.35, GRIND = 30, MAXW = 60;
 const wheel = { angle: 0, omega: 0 };
@@ -125,7 +125,7 @@ stage.prepend(canvas);
 const BG = col(0.075, 0.008, 250);
 const scene = new THREE.Scene();
 scene.background = BG;
-scene.fog = new THREE.Fog(BG, 9, 26);
+scene.fog = new THREE.Fog(BG, 5, 22);
 // Faint room reflections let bare steel read as metal.
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -194,33 +194,56 @@ const fm = faceMaps();
 const faceMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 1, map: fm.map, roughnessMap: fm.rough });
 const wheelGeo = new THREE.CylinderGeometry(R, R, WIDTH, 160, 1);
 const flintMat = new THREE.MeshStandardMaterial({ color: col(0.36, 0.006, 70), metalness: 0.1, roughness: 0.92 });
-const flintGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 40, 1);
+const flintGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 32, 1);
+// The striker mount: a fork holds the axle, a tube holds the flint.
+const mountMat = new THREE.MeshStandardMaterial({ color: col(0.4, 0.008, 250), metalness: 0.7, roughness: 0.5 });
+const tubeGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.45, 40, 1);
+const footGeo = new THREE.BoxGeometry(1.4, 0.12, 0.84);
+const armGeo = new THREE.BoxGeometry(0.16, 1.88, 0.07);
+const pinGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.9, 32, 1);
 
 // The yaw shows the knurled rim band three-quarter on.
+// The pivot's x axis is the spray direction; the mount turns with it.
 function makeWheel() {
   const pivot = new THREE.Group();
-  pivot.rotation.y = -0.75;
+  pivot.rotation.y = 0.8;
   const mesh = new THREE.Mesh(wheelGeo, [rimMat, faceMat, faceMat]);
   mesh.rotation.x = Math.PI / 2;
-  pivot.add(mesh);
   const flint = new THREE.Mesh(flintGeo, flintMat);
-  flint.position.y = -R - 0.4;
-  return { pivot, mesh, flint };
+  flint.position.y = -R - 0.07;
+  const tube = new THREE.Mesh(tubeGeo, mountMat);
+  tube.position.y = -R - 0.31;
+  const foot = new THREE.Mesh(footGeo, mountMat);
+  foot.position.set(-0.25, FLOOR + 0.06, 0);
+  const pin = new THREE.Mesh(pinGeo, mountMat);
+  pin.rotation.x = Math.PI / 2;
+  pivot.add(mesh, flint, tube, foot, pin);
+  // The arms lean back from the hub, so the spray side stays clear.
+  for (const z of [-0.36, 0.36]) {
+    const arm = new THREE.Mesh(armGeo, mountMat);
+    arm.position.set(-0.37, -0.7, z);
+    arm.rotation.z = -0.49;
+    pivot.add(arm);
+  }
+  return { pivot, mesh };
 }
 const real = makeWheel();
-scene.add(real.pivot, real.flint);
+scene.add(real.pivot);
 
 /* ---------- lights ---------- */
-// A cool rim light from behind on the right picks out the knurl.
+// A cool rim light from behind on the left picks out the knurl.
 const rim = new THREE.DirectionalLight(col(0.9, 0.03, 240), 2.4);
-rim.position.set(4, 5, -4);
-// A weak fill from the front left shows the face.
+rim.position.set(-4, 5, -4);
+// A weak fill from the front right shows the face.
 const fill = new THREE.DirectionalLight(col(0.8, 0.02, 80), 0.35);
-fill.position.set(-4, 2, 6);
+fill.position.set(4, 2, 6);
 // The contact light flashes warm with the spray.
+// It rides the pivot, below the flint on the camera side.
+// From there it washes the face, the mount and the floor.
 const contact = new THREE.PointLight(col(0.82, 0.16, 62), 0, 7, 2);
-contact.position.set(0.35, -R + 0.2, 0.7);
-scene.add(rim, fill, contact);
+contact.position.set(0.1, -R - 0.25, 0.9);
+real.pivot.add(contact);
+scene.add(rim, fill);
 
 /* ---------- floor ---------- */
 // A wet floor: a dark, glossy sheet over a mirrored copy of the scene.
@@ -234,7 +257,7 @@ const mirror = new THREE.Group();
 mirror.scale.y = -1;
 mirror.position.y = 2 * FLOOR;
 const ghost = makeWheel();
-mirror.add(ghost.pivot, ghost.flint);
+mirror.add(ghost.pivot);
 scene.add(mirror);
 function setFloor(v) {
   mirror.visible = v === 'wet';
@@ -339,9 +362,10 @@ function seedEmbers(t) {
   eAttr.fill(0);
   emberHead = emberN = 0;
   emberEnd = 0;
+  // They lie down the jet, where sparks land.
   for (let i = 0; i < 6; i++) {
-    const [x, z] = narrow ? [0.4 + rnd() * 1.8, -1 + rnd() * 3.6] : [0.8 + rnd() * 3.6, -1.6 + rnd() * 4.2];
-    addEmber(x, z, t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25);
+    const d = narrow ? 0.9 + rnd() * 3 : 1.2 + rnd() * 4.2, s = (rnd() - 0.5) * (narrow ? 1.6 : 2.4);
+    addEmber(TANGENT.x * d + AXIS.x * s, TANGENT.z * d + AXIS.z * s, t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25);
   }
 }
 
@@ -569,7 +593,7 @@ function setYaw(yaw) {
   TANGENT.crossVectors(AXIS, new THREE.Vector3(0, -1, 0)).normalize();
   SIDE.crossVectors(TANGENT, AXIS).normalize();
 }
-setYaw(-0.75);
+setYaw(0.8);
 const CONE = Math.tan(12 * Math.PI / 180);
 let toothAcc = 0, rate = 0;
 // Each passing tooth scrapes 0 to 3 particles off the flint.
@@ -724,24 +748,26 @@ composer.addPass(grade);
 composer.addPass(new OutputPass());
 
 /* ---------- layout ---------- */
-// Wide stages hold the wheel at the left third; tall ones at the top centre.
+// The wheel stands low on the left; the spray runs right, away from the camera.
 let size = { w: 1, h: 1, dpr: 1 }, rPx = 100, narrow = false;
 const centre = new THREE.Vector2();
+// The camera looks straight down -z from (x, cy, cz) at height ly.
+// It slides sideways until the hub sits at the screen fraction fx.
+function aim(fov, cy, cz, ly, fx) {
+  camera.fov = fov;
+  const depth = (cy * (cy - ly) + cz * cz) / Math.hypot(cy - ly, cz);
+  const x = (1 - 2 * fx) * camera.aspect * Math.tan(fov * Math.PI / 360) * depth;
+  camera.position.set(x, cy, cz);
+  camera.lookAt(x, ly, 0);
+}
 function frameShot() {
   const asp = size.w / size.h;
   camera.aspect = asp;
   narrow = asp < 0.9;
-  // Tall stages turn the wheel toward the camera, so the spray stays in frame.
-  setYaw(narrow ? -1.3 : -0.75);
-  if (!narrow) {
-    camera.fov = 30;
-    camera.position.set(2.6, 0.9, 13);
-    camera.lookAt(2.6, -1.1, 0);
-  } else {
-    camera.fov = 34;
-    camera.position.set(0.8, 1.2, 18.5);
-    camera.lookAt(0.8, -2.9, 0);
-  }
+  // Tall stages turn the spray further from the camera, so it stays in frame.
+  setYaw(narrow ? 1.15 : 0.8);
+  if (!narrow) aim(30, 1.6, 8.8, 0.28, 0.3);
+  else aim(34, 3, 12.4, 1.1, 0.34);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   // The wheel's screen centre and radius map a drag to spin.
@@ -964,7 +990,8 @@ function spinFrom(dx, dy, dt) {
   // The thumb drives the wheel up to its own rim speed, never brakes it.
   if (fwd > 0) {
     const was = wheel.omega;
-    wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / rPx));
+    // The wheel is large on screen; the gain keeps a short flick lively.
+    wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / (rPx * 0.7)));
     if (was < 3 && wheel.omega >= 4) scrape();
     return;
   }
