@@ -138,25 +138,26 @@ export const SHOTS = {
       <path d="M64 44L76 20" stroke="${SIL}" stroke-width="0.8"/><path d="M76 20l3 1.4l-2.6 5.2l-3 -1.4z" fill="${SIL}"/><path d="M79 21.4l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.88 0.16 95)"/><path d="M82 22.8l3 1.4l-2.6 5.2l-3 -1.4z" fill="oklch(0.58 0.21 27)"/>
       <path d="M-4 24Q8 10 22 22Q32 12 46 20Q34 18 26 28Q22 34 16 28Q8 20 -4 24Z" fill="${SIL}"/>
       <path d="M84 60q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`],
-    // Straight up a flagpole: the three colours fly from the top.
+    // Up a flagpole: the three colours fly in the middle of the frame.
+    // The sky is turquoise, so Belgium does not share East Van's dusk.
     ['Flag', -1, k => {
-      const wave = x => 3.4 * Math.sin((x - 51) / 6.4) + (x - 51) * 0.11;
+      const X0 = 27.5, wave = x => 3.4 * Math.sin((x - X0) / 6.4) + (x - X0) * 0.1;
       // One strip of cloth between x0 and x1; both edges follow the wave.
       const strip = (x0, x1, c) => {
         const top = [], bot = [];
-        for (let x = x0; x <= x1 + 0.01; x += 1.5) { top.push([x.toFixed(1), (11 + wave(x)).toFixed(1)]); bot.unshift([x.toFixed(1), (45 + wave(x) * 1.2).toFixed(1)]); }
+        for (let x = x0; x <= x1 + 0.01; x += 1.5) { top.push([x.toFixed(1), (30 + wave(x)).toFixed(1)]); bot.unshift([x.toFixed(1), (64 + wave(x) * 1.2).toFixed(1)]); }
         return `<path d="${P([...top, ...bot])}" fill="${c}"/>`;
       };
-      return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.13 262)'], [0.6, 'oklch(0.72 0.14 25)'], [1, 'oklch(0.92 0.11 84)']])}"/>
-      <circle cx="16" cy="94" r="26" fill="oklch(0.96 0.09 90 / 0.35)" filter="${k.blur}"/><circle cx="16" cy="94" r="10" fill="oklch(0.98 0.07 95)"/>
-      <g fill="none" stroke="${SIL}" stroke-width="0.8" stroke-linecap="round"><path d="M-70 98L170 76M-70 106L170 86"/></g>
-      <g fill="${SIL}"><path d="M73 84.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M85 83.2q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/></g>
-      ${strip(51, 66, 'oklch(0.2 0.02 280)')}${strip(66, 81, 'oklch(0.89 0.17 95)')}${strip(81, 97.5, 'oklch(0.58 0.22 27)')}
-      ${strip(55.5, 58.5, 'oklch(1 0 0 / 0.1)')}${strip(63, 66, 'oklch(0 0 0 / 0.2)')}${strip(75, 79.5, 'oklch(0 0 0 / 0.16)')}${strip(84, 87, 'oklch(1 0 0 / 0.16)')}${strip(93, 96, 'oklch(0 0 0 / 0.18)')}
-      <path d="${P([[45.6, 170], [54.4, 170], [51, 8], [49, 8]])}" fill="${SIL}"/>
-      <path d="M51.2 14Q57 72 52.6 124" fill="none" stroke="${SIL}" stroke-width="0.6"/><path d="M51.6 122h3.4v2.2h-3.4z" fill="${SIL}"/>
-      <circle cx="50" cy="6" r="2.6" fill="oklch(0.9 0.14 92)"/>
-      <path d="M12 30q3 -3.4 6 0q3 -3.4 6 0M24 44q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`;
+      return `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.38 0.1 218)'], [0.6, 'oklch(0.72 0.11 196)'], [1, 'oklch(0.95 0.07 172)']])}"/>
+      <circle cx="84" cy="96" r="26" fill="oklch(0.99 0.05 170 / 0.45)" filter="${k.blur}"/><circle cx="84" cy="96" r="10" fill="oklch(0.99 0.03 170)"/>
+      <g fill="none" stroke="${SIL}" stroke-width="0.8" stroke-linecap="round"><path d="M-70 96L170 110M-70 104L170 120"/></g>
+      <g fill="${SIL}"><path d="M61 107.4q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/><path d="M73 108.2q-2.6 -5 2 -5.4q1 -2 2.8 -0.6l2 0.6l-1.8 0.9q0.2 3.6 -3.4 4.7z"/></g>
+      ${strip(27.5, 42.5, 'oklch(0.2 0.02 280)')}${strip(42.5, 57.5, 'oklch(0.9 0.17 96)')}${strip(57.5, 72.5, 'oklch(0.58 0.22 27)')}
+      ${strip(32, 35, 'oklch(1 0 0 / 0.1)')}${strip(39.5, 42.5, 'oklch(0 0 0 / 0.2)')}${strip(51.5, 56, 'oklch(0 0 0 / 0.16)')}${strip(60.5, 63.5, 'oklch(1 0 0 / 0.16)')}${strip(69.5, 72.5, 'oklch(0 0 0 / 0.18)')}
+      <path d="${P([[21.6, 170], [30.4, 170], [27.6, 22], [25.6, 22]])}" fill="${SIL}"/>
+      <path d="M27.8 34Q33 90 29 136" fill="none" stroke="${SIL}" stroke-width="0.6"/><path d="M28 134h3.4v2.2h-3.4z" fill="${SIL}"/>
+      <circle cx="26.6" cy="20" r="2.6" fill="oklch(0.9 0.14 92)"/>
+      <path d="M70 14q3 -3.4 6 0q3 -3.4 6 0M84 28q2.4 -2.8 4.8 0q2.4 -2.8 4.8 0" stroke="${SIL}" stroke-width="1" fill="none" stroke-linecap="round"/>`;
     }],
   ],
   // The theme series, on the same recipe; each sky takes its series hue.

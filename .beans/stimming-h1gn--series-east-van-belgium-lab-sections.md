@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T08:52:35Z
+updated_at: 2026-11-15T08:54:32Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -30,7 +30,7 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Tom, 2026-11-15: add a flag for Belgium, in addition to the six. Flag shot added: the tricolour from straight below, on a pole
 - [x] Tom, 2026-11-15: try hexagonal icons and outline crops. Frames added to the shots: Hex, Hex flat, Hex ring (outline apart from the crop), Hex askew (outline turned 10 degrees), Circle; a Line knob (Light or the series colour)
 - [x] Tom, 2026-11-15: the crop is Hex ring; East Van is Wires
-- [ ] Tom picks the Belgium shot (Flag is the proposal in series.json)
+- [x] Tom, 2026-11-15: Belgium is the Flag, with the flag centred and a different hue from East Van; redrawn on a turquoise sky
 - [x] One shot per theme series on the same recipe: Atom, Star trails, Drips, Compass
 - [ ] Tom reviews the four theme shots
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships
